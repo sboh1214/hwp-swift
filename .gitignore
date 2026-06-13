@@ -1,5 +1,3 @@
-.DS_Store
-
 # Created by https://www.toptal.com/developers/gitignore/api/swift,swiftpackagemanager,xcode
 # Edit at https://www.toptal.com/developers/gitignore?templates=swift,swiftpackagemanager,xcode
 
@@ -75,3 +73,9 @@ Package.resolved
 **/xcshareddata/WorkspaceSettings.xcsettings
 
 # End of https://www.toptal.com/developers/gitignore/api/swift,swiftpackagemanager,xcode
+
+# macOS
+.DS_Store
+
+# AI generated files
+/.omo/
