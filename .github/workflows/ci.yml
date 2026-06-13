@@ -12,17 +12,10 @@ concurrency:
 
 jobs:
   test-macos:
-    name: Test (macOS, Swift ${{ matrix.swift }})
+    name: Test (macOS)
     runs-on: macos-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        swift: ["5.9", "6"]
     steps:
       - uses: actions/checkout@v5
-      - uses: swift-actions/setup-swift@v2
-        with:
-          swift-version: ${{ matrix.swift }}
       - name: Run tests
         run: |
           swift --version
@@ -31,11 +24,15 @@ jobs:
   test-linux:
     name: Test (Linux, Swift ${{ matrix.swift }})
     runs-on: ubuntu-latest
-    container: swift:${{ matrix.swift }}-noble
+    container: ${{ matrix.image }}
     strategy:
       fail-fast: false
       matrix:
-        swift: ["5.9", "6"]
+        include:
+          - swift: "5.9"
+            image: swift:5.9-jammy
+          - swift: "6.1"
+            image: swift:6.1-noble
     steps:
       - uses: actions/checkout@v5
       - name: Run tests
