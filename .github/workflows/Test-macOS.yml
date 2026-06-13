@@ -14,17 +14,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        swift: ["5.2", "5.6"]
+        swift: ["5.9", "6.0"]
 
     steps:
-    - uses: actions/checkout@v2
-    - name: Install swiftenv
-      run: brew install kylef/formulae/swiftenv
-    - name: Install and set swift@${{ matrix.swift }}
-      if: ${{ matrix.swift != "5.6" }}
-      run: |
-        swiftenv install ${{ matrix.swift }}
-        swiftenv global ${{ matrix.swift }}
+    - uses: actions/checkout@v4
+    - uses: swift-actions/setup-swift@v2
+      with:
+        swift-version: ${{ matrix.swift }}
     - name: Run tests
       run: |
         swift --version

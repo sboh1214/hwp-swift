@@ -1,2 +1,2 @@
---swiftversion 5.2
+--swiftversion 5.9
 --disable hoistTry

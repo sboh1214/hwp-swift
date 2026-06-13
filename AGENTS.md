@@ -7,7 +7,7 @@
 
 한글과컴퓨터의 한글 문서 파일(`.hwp`)을 파싱하는 Swift package. HWP 파일은
 OLE compound document이며, 그 안의 stream들은 record tree 구조로 인코딩되어
-있다. 단일 library target `CoreHwp` (Swift 5.2, LGPL).
+있다. 단일 library target `CoreHwp` (Swift 5.9+, macOS 14+/iOS 17+, LGPL).
 
 ## 구조
 
@@ -16,7 +16,7 @@ hwp-swift/
 ├── Sources/CoreHwp/       # 라이브러리 (81 .swift files, ~4250 LOC)
 ├── Tests/CoreHwpTests/    # XCTest + Nimble + .hwp 픽스처
 ├── Tests/LinuxMain.swift  # SwiftPM Linux test entry (legacy)
-├── Package.swift          # swift-tools-version:5.2
+├── Package.swift          # swift-tools-version:5.9
 └── .github/workflows/     # Test-{macOS,Linux}, Coverage, Lint, Docs, PR
 ```
 
@@ -66,15 +66,15 @@ hwp-swift/
 - [`Utils/Protocols/`](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/Utils/Protocols/)의 **loader 프로토콜**은 `static load(...)`를 default 구현으로 제공하며 EOF를 강제한다 — reader에 잔여 byte가 있으면 `HwpError.bytesAreNotEOF`를 throw. 채택 측은 `init(_ reader: inout DataReader, ...)`만 작성.
 - public 타입의 **한국어 doc-comment**는 한컴 공개 문서의 절을 참조한다. 편집 시 보존할 것.
 - **`Tests/` 외부에서 `import XCTest` 금지.**
-- **SwiftFormat** (`--swiftversion 5.2 --disable hoistTry`)과 **SwiftLint**가 CI 및 `pre-commit`에서 강제됨.
+- **SwiftFormat** (`--swiftversion 5.9 --disable hoistTry`)과 **SwiftLint**가 CI 및 `pre-commit`에서 강제됨.
 
 ## 안티 패턴 (이 프로젝트 한정)
 
 - 테스트에서 `XCTAssert*` 사용 — SwiftLint custom rule `no_xctassert` (severity: error)로 금지. Nimble `expect(...) == ...` 사용.
 - EOF를 검사하지 않고 silent하게 byte 잔여 — loader 프로토콜의 `load`가 `bytesAreNotEOF`를 throw하도록 설계되어 있으므로, manual `init` 호출로 우회 금지.
 - 공백을 제거하려고 디렉토리명 변경 — 한컴 공개 문서의 절 제목과 의도적으로 일치시킨 것.
-- `Package.swift`에 platform 제약 추가 — Linux도 의도된 빌드 대상 (CI matrix: macOS + ubuntu-20.04).
-- `swift-tools-version`을 5.2에서 올릴 때 `.swift-version`, `.swiftformat`, **양쪽** `Test-*.yml` matrix 동시 갱신 누락 (`CONTRIBUTING.md` 참조).
+- `Package.swift`의 Darwin platform 최소 버전을 더 낮추기 — 의존성 `SWCompression 4.9.1` / `BitByteData 2.1.0`이 macOS 14+/iOS 17+를 요구한다. Linux는 별도로 항상 지원 (CI matrix: macOS + ubuntu-latest).
+- `swift-tools-version` 변경 시 `.swift-version`, `.swiftformat`, **양쪽** `Test-*.yml` matrix 동시 갱신 누락 (`CONTRIBUTING.md` 참조).
 
 ## 명령어
 
@@ -91,7 +91,7 @@ pre-commit install && pre-commit run --all     # hook 설치 + 전체 실행
 ## 의존성 (모두 exact pinning)
 
 - `OLEKit 0.3.1` — OLE compound document 파싱
-- `SWCompression 4.8.5` — 압축 stream의 deflate
+- `SWCompression 4.9.1` — 압축 stream의 deflate (4.9.0에서 untrusted Deflate 입력에 대한 crash 패치 포함)
 - `Nimble 9.2.1` — 테스트 DSL (testTarget 전용)
 
 ## 노트
