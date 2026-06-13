@@ -7,14 +7,14 @@ extension Array {
      * arr.remove((0..<2)) // 0,1
      * arr // 2,3
      */
-    mutating func pop<T: BinaryInteger>(_ count: T) -> Array {
+    mutating func pop(_ count: some BinaryInteger) -> Array {
         let values = Array(self[0 ..< Int(count)])
         removeSubrange(0 ..< Int(count))
         return values
     }
 }
 
-public extension Array where Element == WCHAR {
+public extension [WCHAR] {
     var string: String {
         reduce("") { result, current in result + String(Character(UnicodeScalar(current)!)) }
     }
@@ -24,8 +24,8 @@ public extension Array where Element == WCHAR {
     }
 }
 
-// [bytes] to Data
-extension Array where Element == UInt8 {
+/// [bytes] to Data
+extension [UInt8] {
     var data: Data {
         Data(self)
     }

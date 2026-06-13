@@ -1,3 +1,5 @@
 extension StringProtocol {
-    var asciiValues: [UInt8] { compactMap(\.asciiValue) }
+    var asciiValues: [UInt8] {
+        compactMap(\.asciiValue)
+    }
 }

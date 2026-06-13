@@ -1,6 +1,6 @@
 import Foundation
 
-// Data to [bytes]
+/// Data to [bytes]
 extension Data {
     var bytes: [UInt8] {
         [UInt8](self)

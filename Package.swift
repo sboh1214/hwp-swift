@@ -11,7 +11,7 @@ let package = Package(
         .watchOS(.v10),
     ],
     products: [
-        .library(name: "CoreHwp", targets: ["CoreHwp"])
+        .library(name: "CoreHwp", targets: ["CoreHwp"]),
     ],
     dependencies: [
         .package(url: "https://github.com/CoreOffice/OLEKit.git", exact: "0.3.1"),

@@ -1,8 +1,7 @@
-import Nimble
-import XCTest
-
 @testable import CoreHwp
+import Nimble
 import SWCompression
+import XCTest
 
 final class HwpUtilTests: XCTestCase {
     func testBitsFromInt8() {

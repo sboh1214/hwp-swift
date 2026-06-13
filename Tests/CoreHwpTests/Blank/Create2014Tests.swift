@@ -6,7 +6,7 @@ import XCTest
  program version : 10.30.3(2478)
  */
 final class Create2014Tests: XCTestCase {
-    func testCreate() throws {
+    func testCreate() {
         // expect(expected, actual)
     }
 

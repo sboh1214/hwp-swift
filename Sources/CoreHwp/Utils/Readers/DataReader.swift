@@ -16,7 +16,7 @@ struct DataReader {
         data.count - offset
     }
 
-    @discardableResult mutating func readBytes<T: BinaryInteger>(_ length: T) -> Data {
+    @discardableResult mutating func readBytes(_ length: some BinaryInteger) -> Data {
         precondition(offset + Int(length) < data.count + 1)
         defer {
             offset += Int(length)
@@ -51,7 +51,7 @@ struct DataReader {
         }
     }
 
-    mutating func read<T, U: BinaryInteger>(_: T.Type, _ length: U) -> [T] {
+    mutating func read<T>(_: T.Type, _ length: some BinaryInteger) -> [T] {
         var array = [T]()
         for _ in 0 ..< Int(length) {
             array.append(read(T.self))

@@ -1,7 +1,6 @@
+import CoreHwp
 import Nimble
 import XCTest
-
-import CoreHwp
 
 final class VersionTests: XCTestCase {
     func test2007() throws {

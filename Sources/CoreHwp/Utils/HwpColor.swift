@@ -41,9 +41,9 @@ public extension HwpColor {
     #if os(iOS) || os(watchOS) || os(tvOS) || os(macOS)
         @available(iOS 13.0, *)
         var cgColor: CGColor {
-            let red = CGFloat(self.red) / CGFloat(255)
-            let green = CGFloat(self.green) / CGFloat(255)
-            let blue = CGFloat(self.blue) / CGFloat(255)
+            let red = CGFloat(red) / CGFloat(255)
+            let green = CGFloat(green) / CGFloat(255)
+            let blue = CGFloat(blue) / CGFloat(255)
             let alpha = CGFloat(1)
             return CGColor(red: red, green: green, blue: blue, alpha: alpha)
         }
@@ -51,9 +51,9 @@ public extension HwpColor {
 
     #if canImport(UIKit)
         var uiColor: UIColor {
-            let red = CGFloat(self.red) / CGFloat(255)
-            let green = CGFloat(self.green) / CGFloat(255)
-            let blue = CGFloat(self.blue) / CGFloat(255)
+            let red = CGFloat(red) / CGFloat(255)
+            let green = CGFloat(green) / CGFloat(255)
+            let blue = CGFloat(blue) / CGFloat(255)
             let alpha = CGFloat(1)
             return UIColor(red: red, green: green, blue: blue, alpha: alpha)
         }
@@ -68,9 +68,9 @@ public extension HwpColor {
     #if canImport(SwiftUI)
         @available(iOS 13.0, OSX 10.15, *)
         func color(colorSpace: Color.RGBColorSpace = .sRGB) -> Color {
-            let red = Double(self.red) / Double(255)
-            let green = Double(self.green) / Double(255)
-            let blue = Double(self.blue) / Double(255)
+            let red = Double(red) / Double(255)
+            let green = Double(green) / Double(255)
+            let blue = Double(blue) / Double(255)
             let opacity = Double(1)
             return Color(colorSpace, red: red, green: green, blue: blue, opacity: opacity)
         }
