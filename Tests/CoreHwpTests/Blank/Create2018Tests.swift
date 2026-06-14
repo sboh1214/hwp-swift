@@ -1,7 +1,6 @@
+import CoreHwp
 import Nimble
 import XCTest
-
-import CoreHwp
 
 /**
  doc  version : 5.1.0.1.1
@@ -66,7 +65,7 @@ class Create2018Tests: XCTestCase {
         // expect(thisParagraph.ctrlHeaderArray![0]) == officialParagraph.ctrlHeaderArray![0]
         // expect(thisParagraph.ctrlHeaderArray![1]) == officialParagraph.ctrlHeaderArray![1]
 
-        for officialCtrlId in officialParagraph.ctrlHeaderArray! {
+        for officialCtrlId in try XCTUnwrap(officialParagraph.ctrlHeaderArray) {
             switch officialCtrlId {
             case let .section(hwpSectionDef):
                 dump(hwpSectionDef.footNoteShape.unknown)

@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-macos:
+    name: Test (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Run tests
+        run: |
+          swift --version
+          swift test
+
+  test-linux:
+    name: Test (Linux, Swift ${{ matrix.swift }})
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - swift: "5.9"
+            image: swift:5.9-jammy
+          - swift: "6.1"
+            image: swift:6.1-noble
+    steps:
+      - uses: actions/checkout@v5
+      - name: Run tests
+        run: |
+          swift --version
+          swift test
+
+  lint:
+    name: Lint
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install tools
+        run: brew install swiftformat swiftlint
+      - name: SwiftFormat
+        run: swiftformat --lint .
+      - name: SwiftLint
+        run: swiftlint
+
+  coverage:
+    name: Coverage
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Run tests with coverage
+        run: swift test --enable-code-coverage
+      - name: Export lcov
+        run: |
+          set -euo pipefail
+          PROF_DATA=$(find .build -name 'default.profdata' -type f | head -1)
+          XCTEST_BUNDLE=$(find .build -name '*PackageTests.xctest' -type d | head -1)
+          BIN_NAME=$(basename "$XCTEST_BUNDLE" .xctest)
+          BINARY="$XCTEST_BUNDLE/Contents/MacOS/$BIN_NAME"
+          xcrun llvm-cov export -format=lcov "$BINARY" \
+            -instr-profile="$PROF_DATA" \
+            -ignore-filename-regex='(\.build|Tests/)' \
+            > coverage.lcov
+      - uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.lcov
+          fail_ci_if_error: false

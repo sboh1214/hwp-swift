@@ -3,7 +3,7 @@ import Nimble
 import XCTest
 
 class HwpErrorTests: XCTestCase {
-    func test() throws {
+    func test() {
         expect { try openHwp(#file, "") }.to(throwError())
     }
 }

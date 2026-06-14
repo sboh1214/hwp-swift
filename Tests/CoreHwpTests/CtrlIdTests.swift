@@ -9,7 +9,7 @@ private func makeCtrlId(_ string: String) -> UInt32 {
 }
 
 final class CtrlIdTests: XCTestCase {
-    func testCommonCtrlId() throws {
+    func testCommonCtrlId() {
         expect(HwpCommonCtrlId.table.rawValue) == makeCtrlId("tbl ")
 
         expect(HwpCommonCtrlId.line.rawValue) == makeCtrlId("$lin")
@@ -27,7 +27,7 @@ final class CtrlIdTests: XCTestCase {
         expect(HwpCommonCtrlId.genShapeObject.rawValue) == makeCtrlId("gso ")
     }
 
-    func testOtherCtrlID() throws {
+    func testOtherCtrlID() {
         expect(HwpOtherCtrlId.section.rawValue) == makeCtrlId("secd")
         expect(HwpOtherCtrlId.column.rawValue) == makeCtrlId("cold")
         expect(HwpOtherCtrlId.header.rawValue) == makeCtrlId("head")
@@ -46,7 +46,7 @@ final class CtrlIdTests: XCTestCase {
         expect(HwpOtherCtrlId.hiddenComment.rawValue) == makeCtrlId("tcmt")
     }
 
-    func testFieldCtrlId() throws {
+    func testFieldCtrlId() {
         expect(HwpFieldCtrlId.unknown.rawValue) == makeCtrlId("%unk")
         expect(HwpFieldCtrlId.date.rawValue) == makeCtrlId("$dte")
         expect(HwpFieldCtrlId.docDate.rawValue) == makeCtrlId("%ddt")

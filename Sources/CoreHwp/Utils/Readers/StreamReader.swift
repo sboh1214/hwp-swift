@@ -29,8 +29,7 @@ struct StreamReader {
         let reader = try ole.stream(stream)
         let data = reader.readDataToEnd()
         if isCompressed {
-            let decompressed = try Deflate.decompress(data: data)
-            return decompressed
+            return try Deflate.decompress(data: data)
         } else {
             return data
         }

@@ -6,8 +6,8 @@ public enum HwpCtrlId {
     case section(HwpSectionDef)
     case column(HwpColumn)
     case pageNumberPosition(HwpPageNumberPosition)
-    // field
-    // not implemented
+    /// field
+    /// not implemented
     case notImplemented(HwpCtrlHeader)
 }
 

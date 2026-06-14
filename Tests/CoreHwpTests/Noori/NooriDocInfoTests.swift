@@ -1,7 +1,6 @@
+import CoreHwp
 import Nimble
 import XCTest
-
-import CoreHwp
 
 final class NooriDocInfoTests: XCTestCase {
     func testSectionSize() throws {
@@ -47,15 +46,15 @@ final class NooriDocInfoTests: XCTestCase {
         let korean = hwp.docInfo.idMappings.faceNameKoreanArray
         expect(korean[0].faceName) == "굴림"
         expect(korean[0].alternativeFaceName).to(beNil())
-        expect(korean[0].defaultFaceName!) == "Gulim"
+        expect(try XCTUnwrap(korean[0].defaultFaceName)) == "Gulim"
 
         expect(korean[1].faceName) == "굴림체"
         expect(korean[1].alternativeFaceName).to(beNil())
-        expect(korean[1].defaultFaceName!) == "GulimChe"
+        expect(try XCTUnwrap(korean[1].defaultFaceName)) == "GulimChe"
 
         let user = hwp.docInfo.idMappings.faceNameUserArray
         expect(user[10].faceName) == "Myeongjo"
-        expect(user[10].alternativeFaceName!) == "명조"
+        expect(try XCTUnwrap(user[10].alternativeFaceName)) == "명조"
         expect(user[10].defaultFaceName).to(beNil())
     }
 
@@ -80,7 +79,7 @@ final class NooriDocInfoTests: XCTestCase {
         expect(char[0].shadeColor) == HwpColor(255, 255, 255)
         expect(char[0].shadowColor) == HwpColor(178, 178, 178)
         expect(char[0].underlineColor) == HwpColor(0, 0, 0)
-        expect(char[0].strikethroughColor!) == HwpColor(0, 0, 0)
+        expect(try XCTUnwrap(char[0].strikethroughColor)) == HwpColor(0, 0, 0)
     }
 
     func testTabDef() throws {
@@ -91,7 +90,7 @@ final class NooriDocInfoTests: XCTestCase {
         expect(shape[46].property1) == 268
     }
 
-    func testCtrlHeader() throws {
+    func testCtrlHeader() {
         // expect(hwp.sectionArray[0].paragraph[2].ctrlHeaderArray![0].ctrlId) == 1885826672)
     }
 
@@ -99,11 +98,11 @@ final class NooriDocInfoTests: XCTestCase {
         let hwp = try openHwp(#file, "noori")
 
         let compatible = hwp.docInfo.compatibleDocument
-        expect(compatible!.targetDocument) == 0
-        expect(compatible!.layoutCompatibility!.char) == 0
-        expect(compatible!.layoutCompatibility!.paragraph) == 0
-        expect(compatible!.layoutCompatibility!.section) == 0
-        expect(compatible!.layoutCompatibility!.object) == 0
-        expect(compatible!.layoutCompatibility!.field) == 0
+        expect(try XCTUnwrap(compatible?.targetDocument)) == 0
+        expect(try XCTUnwrap(compatible?.layoutCompatibility?.char)) == 0
+        expect(try XCTUnwrap(compatible?.layoutCompatibility?.paragraph)) == 0
+        expect(try XCTUnwrap(compatible?.layoutCompatibility?.section)) == 0
+        expect(try XCTUnwrap(compatible?.layoutCompatibility?.object)) == 0
+        expect(try XCTUnwrap(compatible?.layoutCompatibility?.field)) == 0
     }
 }

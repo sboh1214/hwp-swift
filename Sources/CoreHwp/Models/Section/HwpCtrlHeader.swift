@@ -11,7 +11,6 @@ extension HwpCtrlHeader: HwpPrimitive {
 
     static func load(_ record: HwpRecord) throws -> Self {
         var reader = DataReader(record.payload)
-        let hwpFromRecord = try self.init(&reader, record.children)
-        return hwpFromRecord
+        return try self.init(&reader, record.children)
     }
 }

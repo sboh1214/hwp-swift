@@ -14,12 +14,12 @@ final class NooriSectionTests: XCTestCase {
         let hwp = try openHwp(#file, "noori")
 
         let text = hwp.sectionArray[0].paragraph[0].paraText
-        expect(text!.charArray[0].type) == .extended
-        expect(text!.charArray[3].type) == .char
+        expect(try XCTUnwrap(text?.charArray[0].type)) == .extended
+        expect(try XCTUnwrap(text?.charArray[3].type)) == .char
 
-        expect(text!.charArray[0].value) == 2
-        expect(text!.charArray[2].value) == 11
-        expect(text!.charArray[3].value) == 13
+        expect(try XCTUnwrap(text?.charArray[0].value)) == 2
+        expect(try XCTUnwrap(text?.charArray[2].value)) == 11
+        expect(try XCTUnwrap(text?.charArray[3].value)) == 13
 
         expect(hwp.sectionArray[0].paragraph[15].paraText).to(beNil())
         expect(hwp.sectionArray[0].paragraph[16].paraText).to(beNil())
@@ -54,7 +54,7 @@ final class NooriSectionTests: XCTestCase {
     func testTable() throws {
         let hwp = try openHwp(#file, "noori")
 
-        switch hwp.sectionArray[0].paragraph[1].ctrlHeaderArray![0] {
+        switch try XCTUnwrap(hwp.sectionArray[0].paragraph[1].ctrlHeaderArray?[0]) {
         case let .table(hwpTable):
             expect(hwpTable.commonCtrlProperty.verticalOffset) == 0
             expect(hwpTable.commonCtrlProperty.horizontalOffset) == 0
@@ -69,7 +69,7 @@ final class NooriSectionTests: XCTestCase {
     func testGenShapeObject() throws {
         let hwp = try openHwp(#file, "noori")
 
-        switch hwp.sectionArray[0].paragraph[0].ctrlHeaderArray![2] {
+        switch try XCTUnwrap(hwp.sectionArray[0].paragraph[0].ctrlHeaderArray?[2]) {
         case let .genShapeObject(hwpGenShapeObject):
             expect(hwpGenShapeObject.commonCtrlProperty.verticalOffset) == 0
             expect(hwpGenShapeObject.commonCtrlProperty.horizontalOffset) == 0
@@ -84,7 +84,7 @@ final class NooriSectionTests: XCTestCase {
     func testColumn() throws {
         let hwp = try openHwp(#file, "noori")
 
-        switch hwp.sectionArray[0].paragraph[0].ctrlHeaderArray![1] {
+        switch try XCTUnwrap(hwp.sectionArray[0].paragraph[0].ctrlHeaderArray?[1]) {
         case let .column(hwpColumn):
             expect(hwpColumn.widthArray).to(beNil())
         default:

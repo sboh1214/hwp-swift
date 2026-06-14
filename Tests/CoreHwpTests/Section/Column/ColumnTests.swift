@@ -11,9 +11,9 @@ final class ColumnTests: XCTestCase {
             $0.ctrlHeaderArray!.compactMap {
                 switch $0 {
                 case let .column(hwpColumn):
-                    return hwpColumn
+                    hwpColumn
                 default:
-                    return nil
+                    nil
                 }
             }[0]
         }
