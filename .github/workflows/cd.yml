@@ -10,11 +10,20 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
+  pull-requests: read
 
 jobs:
+  release-drafter:
+    name: Release Drafter
+    runs-on: ubuntu-latest
+    steps:
+      - uses: release-drafter/release-drafter@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   docs:
     name: Build DocC
     runs-on: macos-latest
