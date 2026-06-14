@@ -36,10 +36,11 @@ jobs:
             generate-documentation --target CoreHwp \
             --disable-indexing \
             --transform-for-static-hosting \
-            --hosting-base-path hwp-swift \
             --output-path ./docs
       - name: Overlay landing page
         run: cp .github/pages/index.html ./docs/index.html
+      - name: Write CNAME
+        run: echo 'hwp-swift.sboh.dev' > ./docs/CNAME
       - uses: actions/upload-pages-artifact@v3
         with:
           path: ./docs
