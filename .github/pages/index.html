@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="한글 파일(.hwp)을 읽고 쓰기 위한 스위프트 패키지 Hwp-Swift 소개와 CoreHwp 문서 안내">
+  <title>Hwp-Swift — 한글 파일을 읽고 쓰기 위한 Swift 패키지</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f7f3ec;
+      --surface: #fffaf2;
+      --surface-muted: #eee6d9;
+      --text: #1d1a16;
+      --text-muted: #645b50;
+      --border: #ded2c0;
+      --primary: #245d4f;
+      --primary-text: #ffffff;
+      --primary-hover: #17483c;
+      --secondary-hover: #ebe1d2;
+      --accent: #bf6a30;
+      --focus: #d97706;
+      --shadow: 0 24px 70px rgba(79, 57, 34, 0.14);
+      --radius-lg: 28px;
+      --radius-md: 18px;
+      --radius-pill: 999px;
+      --space-1: 0.25rem;
+      --space-2: 0.5rem;
+      --space-3: 0.75rem;
+      --space-4: 1rem;
+      --space-5: 1.5rem;
+      --space-6: 2rem;
+      --space-7: 3rem;
+      --space-8: 4.5rem;
+      --max: 720px;
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+      --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1e211f;
+        --surface: #282c29;
+        --surface-muted: #222622;
+        --text: #f4efe7;
+        --text-muted: #c9bfb1;
+        --border: #454139;
+        --primary: #8fd3bf;
+        --primary-text: #11231e;
+        --primary-hover: #a8dfcf;
+        --secondary-hover: #333832;
+        --accent: #f0a35f;
+        --focus: #f4b26b;
+        --shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      background:
+        radial-gradient(circle at 18% 8%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 30rem),
+        radial-gradient(circle at 82% 18%, color-mix(in srgb, var(--primary) 18%, transparent), transparent 28rem),
+        linear-gradient(180deg, var(--bg), color-mix(in srgb, var(--bg) 88%, var(--surface-muted)));
+      color: var(--text);
+      font-family: var(--font);
+      line-height: 1.65;
+      text-rendering: optimizeLegibility;
+    }
+
+    body::before {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+      content: "";
+      background-image:
+        linear-gradient(color-mix(in srgb, var(--text) 4%, transparent) 1px, transparent 1px),
+        linear-gradient(90deg, color-mix(in srgb, var(--text) 4%, transparent) 1px, transparent 1px);
+      background-size: 44px 44px;
+      mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.5), transparent 70%);
+    }
+
+    a {
+      color: inherit;
+      text-decoration-thickness: 0.08em;
+      text-underline-offset: 0.18em;
+    }
+
+    a:hover {
+      color: var(--primary-hover);
+    }
+
+    a:focus-visible {
+      outline: 3px solid var(--focus);
+      outline-offset: 4px;
+      border-radius: var(--space-2);
+    }
+
+    .page {
+      width: min(100% - 2rem, var(--max));
+      margin: 0 auto;
+      padding: var(--space-7) 0 var(--space-5);
+    }
+
+    .hero {
+      padding: var(--space-7) 0 var(--space-6);
+    }
+
+    h1,
+    h2,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      max-width: 14ch;
+      margin-bottom: var(--space-4);
+      font-size: clamp(3.3rem, 11vw, 6.2rem);
+      line-height: 0.96;
+      letter-spacing: 0.02em;
+    }
+
+    h2 {
+      margin-bottom: var(--space-3);
+      font-size: clamp(1.35rem, 3vw, 1.75rem);
+      line-height: 1.25;
+      letter-spacing: -0.035em;
+    }
+
+    .tagline {
+      max-width: 34rem;
+      margin-bottom: var(--space-6);
+      color: var(--text-muted);
+      font-size: clamp(1.125rem, 3vw, 1.45rem);
+      line-height: 1.55;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-3);
+    }
+
+    .button {
+      display: inline-flex;
+      min-height: 3rem;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-pill);
+      padding: 0.82rem 1.15rem;
+      font-weight: 800;
+      line-height: 1;
+      text-decoration: none;
+      transition: transform 160ms ease, background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+    }
+
+    .button:hover {
+      transform: translateY(-2px);
+    }
+
+    .button-primary {
+      border-color: var(--primary);
+      background: var(--primary);
+      color: var(--primary-text);
+      box-shadow: 0 14px 34px color-mix(in srgb, var(--primary) 24%, transparent);
+    }
+
+    .button-primary:hover {
+      background: var(--primary-hover);
+      color: var(--primary-text);
+    }
+
+    .button-secondary {
+      background: color-mix(in srgb, var(--surface) 78%, transparent);
+      color: var(--text);
+    }
+
+    .button-secondary:hover {
+      background: var(--secondary-hover);
+      color: var(--text);
+    }
+
+    main {
+      display: grid;
+      gap: var(--space-5);
+    }
+
+    section {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      background: color-mix(in srgb, var(--surface) 92%, transparent);
+      box-shadow: var(--shadow);
+      padding: clamp(1.25rem, 4vw, 2rem);
+    }
+
+    section p:last-child {
+      margin-bottom: 0;
+    }
+
+    .note {
+      color: var(--text-muted);
+    }
+
+    pre {
+      margin: var(--space-4) 0 0;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--surface-muted);
+      padding: var(--space-4);
+      overflow-x: auto;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 0.94rem;
+      line-height: 1.6;
+    }
+
+    code {
+      font-family: var(--mono);
+    }
+
+    footer {
+      padding: var(--space-6) 0 0;
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      text-align: center;
+    }
+
+    @media (max-width: 520px) {
+      .page {
+        width: min(100% - 1.25rem, var(--max));
+        padding-top: var(--space-5);
+      }
+
+      .hero {
+        padding-top: var(--space-6);
+      }
+
+      .actions,
+      .button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="hero">
+      <h1>Hwp-Swift</h1>
+      <p class="tagline">한글 파일(.hwp)을 읽고 쓰기 위한 스위프트 패키지</p>
+      <nav class="actions" aria-label="주요 링크">
+        <a class="button button-primary" href="./documentation/corehwp/">CoreHwp 문서 보기 →</a>
+        <a class="button button-secondary" href="https://github.com/sboh1214/hwp-swift">GitHub</a>
+      </nav>
+    </header>
+
+    <main>
+      <section aria-labelledby="intro-title">
+        <h2 id="intro-title">소개</h2>
+        <p>한글 파일을 읽고 쓰기 위한 스위프트 패키지</p>
+        <p class="note">본 제품은 한글과컴퓨터의 한글 문서 파일(.hwp) 공개 문서를 참고하여 개발하였습니다.</p>
+        <p class="note">라이브러리 구조와 공개 형식은 CoreHwp 문서에서 확인할 수 있습니다.</p>
+      </section>
+
+      <section aria-labelledby="install-title">
+        <h2 id="install-title">설치</h2>
+        <p>Xcode에서 <code>File</code> &gt; <code>Swift Packages</code> &gt; <code>Add Package Dependency...</code> 메뉴를 선택하세요.</p>
+        <p>또는 의존성을 아래와 같이 수동으로 추가합니다.</p>
+        <pre><code>dependencies: [
+    .package(url: "https://github.com/sboh1214/hwp-swift.git", branch: "main"),
+],</code></pre>
+        <p class="note">안정 릴리스가 태깅되면 <code>branch: "main"</code> 대신 <code>from: "x.y.z"</code>로 고정하는 것을 권장합니다.</p>
+      </section>
+
+      <section aria-labelledby="contributing-title">
+        <h2 id="contributing-title">기여</h2>
+        <p><a href="https://github.com/sboh1214/hwp-swift/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a>를 방문하세요.</p>
+      </section>
+
+      <section aria-labelledby="license-title">
+        <h2 id="license-title">라이센스</h2>
+        <p>본 라이브러리는 <a href="https://github.com/sboh1214/hwp-swift/blob/main/LICENSE">LGPL 라이센스</a>를 따릅니다.</p>
+      </section>
+    </main>
+
+    <footer>
+      <p>© Hwp-Swift · LGPL</p>
+    </footer>
+  </div>
+</body>
+</html>
