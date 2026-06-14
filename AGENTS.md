@@ -1,7 +1,7 @@
 # 프로젝트 지식 베이스
 
-**Commit:** 8ecd926
-**Branch:** chore@actions-deps
+**Commit:** ca79c1a
+**Branch:** docs@landing-page
 
 ## 개요
 
@@ -16,7 +16,8 @@ hwp-swift/
 ├── Sources/CoreHwp/       # 라이브러리 (81 .swift files, ~4250 LOC)
 ├── Tests/CoreHwpTests/    # XCTest + Nimble + .hwp 픽스처
 ├── Package.swift          # swift-tools-version:5.9
-└── .github/workflows/     # Test-{macOS,Linux}, Coverage, Lint, Docs, PR
+├── .github/workflows/     # ci.yml (test+lint+coverage), cd.yml (DocC+release-drafter)
+└── .github/pages/         # cd.yml이 ./docs/index.html에 overlay하는 DocC 사이트 루트 랜딩 페이지
 ```
 
 폴더명은 **공백을 포함한 PascalCase** (예: `Ctrl Header/`,
