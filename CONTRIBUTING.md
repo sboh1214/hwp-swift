@@ -42,9 +42,15 @@ swift package --disable-sandbox preview-documentation --target CoreHwp
 ### 배포본과 동일한 정적 사이트 생성
 
 GitHub Pages에 배포되는 결과물 그대로 확인하고 싶다면 정적 사이트를 직접
-생성한 뒤 로컬 HTTP 서버로 띄웁니다. 루트 랜딩 페이지(`/hwp-swift/`)는
-DocC 생성 후 `.github/pages/index.html`로 덮어쓰는 구조이므로, 마지막 두
-단계로 이를 재현합니다.
+생성한 뒤 로컬 HTTP 서버로 띄웁니다. 출력 위치(`./docs`)와 인자는
+`cd.yml`의 `docs` job과 동일하며, 마지막의 랜딩 페이지 overlay까지 같은
+순서로 재현합니다. `./docs`는 `.gitignore`에 포함되어 있어 작업 후
+별도로 정리하지 않아도 됩니다.
+
+`--hosting-base-path hwp-swift`로 DocC 내부 자산이 `/hwp-swift/...`
+절대 경로로 굳어지므로, 로컬에서도 같은 URL 프리픽스가 필요합니다.
+임시 디렉터리에 심볼릭 링크를 두어 repo는 깨끗하게 유지하면서 그
+프리픽스만 만들어 줍니다.
 
 ```sh
 rm -rf ./docs
@@ -55,7 +61,10 @@ swift package --allow-writing-to-directory ./docs \
   --hosting-base-path hwp-swift \
   --output-path ./docs
 cp .github/pages/index.html ./docs/index.html
-python3 -m http.server 8000 --directory .
+
+rm -rf /tmp/hwp-preview && mkdir -p /tmp/hwp-preview
+ln -s "$(pwd)/docs" /tmp/hwp-preview/hwp-swift
+python3 -m http.server 8000 --directory /tmp/hwp-preview
 ```
 
 이후 `http://localhost:8000/hwp-swift/`에서 랜딩 페이지를,

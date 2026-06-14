@@ -77,6 +77,9 @@ Package.resolved
 # macOS
 .DS_Store
 
+# DocC build artifacts
+/docs/
+
 # AI generated files
 /.omo/
 /.playwright-mcp/
