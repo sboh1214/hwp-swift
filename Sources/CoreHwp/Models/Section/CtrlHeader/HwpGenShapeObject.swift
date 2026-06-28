@@ -65,9 +65,6 @@ extension HwpGenShapeObject: HwpFromRecord {
 
         var reader = DataReader(record.payload)
         var object = try self.init(&reader, record.children, version)
-        if !reader.isEOF {
-            throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
-        }
         object.rawPayload = record.payload
         return object
     }

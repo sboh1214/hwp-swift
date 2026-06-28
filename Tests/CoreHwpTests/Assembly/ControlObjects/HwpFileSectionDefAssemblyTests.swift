@@ -208,7 +208,7 @@ private func expectSectionDef(in hwp: HwpFile, match injected: InjectedSectionDe
     let sectionDef = sectionDefs(from: hwp).last
 
     expect(sectionDef?.rawPayload) == injected.payload
-    expect(sectionDef?.property) == HwpOtherCtrlId.section.rawValue
+    expect(sectionDef?.ctrlId) == HwpOtherCtrlId.section.rawValue
     expect(sectionDef?.columnSpacing) == 0x1111
     expect(sectionDef?.verticalLineAlign) == 0x2222
     expect(sectionDef?.horizontalLineAlign) == 0x3333

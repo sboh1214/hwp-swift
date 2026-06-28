@@ -236,17 +236,15 @@ final class FileHeaderTests: XCTestCase {
 
         expect(encryptedHeader.fileProperty.doesEncryptAccreditedCertificate) == true
         expect(encryptedHeader.fileProperty.unsupportedFeature) == .encryptedDocument
-        expect(drmHeader.fileProperty.isAccreditedCertificateDRMDocment) == true
         expect(drmHeader.fileProperty.isAccreditedCertificateDRMDocument) == true
         expect(drmHeader.fileProperty.unsupportedFeature) == .drmDocument
     }
 
-    func testAccreditedCertificateDRMAliasUpdatesStoredFlag() {
+    func testAccreditedCertificateDRMDocumentFlagUpdatesUnsupportedFeature() {
         var fileProperty = HwpFileProperty()
 
         fileProperty.isAccreditedCertificateDRMDocument = true
 
-        expect(fileProperty.isAccreditedCertificateDRMDocment) == true
         expect(fileProperty.isAccreditedCertificateDRMDocument) == true
         expect(fileProperty.unsupportedFeature) == .drmDocument
     }

@@ -18,8 +18,8 @@ public struct HwpSectionDef {
     /** raw payload */
     public var rawPayload: Data
 
-    /** 속성 */
-    public var property: UInt32
+    /** ctrl id */
+    public var ctrlId: UInt32
     /** 동일한 페이지에서 서로 다른 단 사이의 간격 */
     public var columnSpacing: HWPUNIT16
     /**
@@ -92,9 +92,9 @@ extension HwpSectionDef: HwpFromRecordWithVersion {
         pageBorderFillOdd = try HwpPageBorderFill.load(pageBorderFillRecords.third.payload)
         unknownChildren = unconsumedSectionDefChildren(children)
 
-        property = try reader.read(UInt32.self)
-        guard property == HwpOtherCtrlId.section.rawValue else {
-            throw HwpError.invalidCtrlId(ctrlId: property)
+        ctrlId = try reader.read(UInt32.self)
+        guard ctrlId == HwpOtherCtrlId.section.rawValue else {
+            throw HwpError.invalidCtrlId(ctrlId: ctrlId)
         }
         columnSpacing = try reader.read(HWPUNIT16.self)
         verticalLineAlign = try reader.read(HWPUNIT16.self)
@@ -140,7 +140,7 @@ extension HwpSectionDef {
         unknownChildren = []
         rawPayload = Data()
 
-        property = 1_936_024_420
+        ctrlId = 1_936_024_420
         columnSpacing = 0
         verticalLineAlign = 0
         horizontalLineAlign = 1134

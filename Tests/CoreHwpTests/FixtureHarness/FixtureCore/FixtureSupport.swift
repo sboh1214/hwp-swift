@@ -307,7 +307,7 @@ private extension FixtureAssertions {
                 expect(actual.rawPayload.count) == rawPayloadLength
             }
             if let propertyRawValue = expected.propertyRawValue {
-                expect(actual.property) == propertyRawValue
+                expect(actual.ctrlId) == propertyRawValue
             }
             assertPageDef(actual.pageDef, expected)
             assertFootnoteShapes(actual, expected)

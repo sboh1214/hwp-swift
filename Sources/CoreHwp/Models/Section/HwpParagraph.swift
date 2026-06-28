@@ -287,7 +287,7 @@ private extension HwpParagraph {
         case .container:
             return .container(control)
         case .table, .genShapeObject:
-            return .shape(control)
+            throw HwpError.invalidCtrlId(ctrlId: ctrlId.rawValue)
         }
     }
 

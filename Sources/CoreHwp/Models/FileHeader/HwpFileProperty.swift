@@ -25,18 +25,7 @@ public struct HwpFileProperty {
     /** 전자 서명 예비 저장 여부 */
     public var doesSaveSpareSignature: Bool
     /** 공인 인증서 DRM 보안 문서 여부 */
-    public var isAccreditedCertificateDRMDocment: Bool
-
-    /** 공인 인증서 DRM 보안 문서 여부 */
-    public var isAccreditedCertificateDRMDocument: Bool {
-        get {
-            isAccreditedCertificateDRMDocment
-        }
-        set {
-            isAccreditedCertificateDRMDocment = newValue
-        }
-    }
-
+    public var isAccreditedCertificateDRMDocument: Bool
     /** CCL 문서 여부 */
     public var isCCLDocument: Bool
     /** 모바일 최적화 여부 */
@@ -70,7 +59,7 @@ extension HwpFileProperty: HwpFromUInt {
         doesHaveSignature = try reader.readBit()
         doesEncryptAccreditedCertificate = try reader.readBit()
         doesSaveSpareSignature = try reader.readBit()
-        isAccreditedCertificateDRMDocment = try reader.readBit()
+        isAccreditedCertificateDRMDocument = try reader.readBit()
         isCCLDocument = try reader.readBit()
         doesOptimizeMobile = try reader.readBit()
         isPersonalInformationSecurityDocument = try reader.readBit()
@@ -119,7 +108,7 @@ extension HwpFileProperty {
         doesHaveSignature = false
         doesEncryptAccreditedCertificate = false
         doesSaveSpareSignature = false
-        isAccreditedCertificateDRMDocment = false
+        isAccreditedCertificateDRMDocument = false
         isCCLDocument = false
         doesOptimizeMobile = false
         isPersonalInformationSecurityDocument = false
