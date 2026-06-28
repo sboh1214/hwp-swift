@@ -38,9 +38,24 @@ extension HwpFromX {
 }
 ```
 
-**채택 측은 `init(...)`만 작성한다. `load`를 override하지 말 것.** EOF 체크는
-load-bearing 규약이다 — 스펙 오독뿐 아니라 silent하게 truncate된 payload도
-잡아낸다.
+기본 원칙은 **채택 측이 `init(...)`만 작성하고 `load`는 override하지 않는 것**이다.
+EOF 체크는 load-bearing 규약이다 — 스펙 오독뿐 아니라 silent하게 truncate된
+payload도 잡아낸다.
+
+예외는 다음 경우에만 허용한다.
+
+- record tag 검증이 default `load`보다 먼저 필요하다.
+- stream payload 전체를 `parseTreeRecord(data:)`에 넘겨야 한다.
+- unknown record/control 또는 아직 해석하지 않는 trailing bytes를
+  `rawPayload`/`rawTrailing`/`unknown`으로 보존해야 한다.
+- public convenience loader가 OLE/FileWrapper 같은 다른 입력 형태를 다룬다.
+
+새 예외를 추가하거나 기존 예외를 수정할 때는
+`// MARK: loader contract exemption - <reason>` 주석을 `load` override 또는
+consumes-all `init` 근처에 남긴다. override는 default loader와 동등하게
+`bytesAreNotEOF` 또는 더 구체적인 typed `HwpError`를 보장해야 하며,
+`readToEnd()`/`readBytes(reader.remainBytes)`는 그 byte 자체가 모델 값으로 보존될
+때만 사용한다.
 
 | 프로토콜 | 언제 사용 |
 |----------|-----------|
@@ -89,5 +104,7 @@ dispatch.
   사용 — malformed HWP 입력은 모두 typed `HwpError`로 반환해야 한다.
 - 여섯 번째 loader 프로토콜 추가 — (Data|Record) × (Version|noVersion) + UInt의
   matrix로 이미 충분하다. 기존 것을 확장할 것.
-- 프로토콜 `init`에서 모든 byte를 소진하지 않고 return — 하위 코드가 신뢰하는
-  EOF 보장이 깨진다.
+- 프로토콜 `init`에서 이유 없이 모든 byte를 소진하지 않거나, 반대로
+  `readToEnd()`로 잔여 byte를 숨긴다. 기본 모델은 해석한 byte만 소비하고 default
+  loader가 EOF를 검증하게 둔다. raw 보존/record-tree 파싱 예외는 위 계약에 맞춰
+  명시한다.
