@@ -129,9 +129,7 @@ extension HwpFieldControl: HwpPrimitive {
         let parsedCandidates = candidates.compactMap {
             fieldParameter(from: data, textOffset: textOffset, length: $0)
         }
-        guard let parsedParameter = parsedCandidates.max(by: {
-            fieldParameterScore($0.value) < fieldParameterScore($1.value)
-        }) else {
+        guard let parsedParameter = selectedFieldParameter(from: parsedCandidates) else {
             return nil
         }
         return parsedParameter
@@ -164,6 +162,7 @@ extension HwpFieldControl: HwpPrimitive {
         return HwpFieldParameterParseResult(
             value: value,
             characterCount: length.characterCount,
+            isByteSwapped: length.isByteSwapped,
             rawPayload: Data(data.dropFirst(textOffset).prefix(byteCount)),
             rawTrailing: Data(data.dropFirst(consumedBytes))
         )
@@ -194,23 +193,20 @@ extension HwpFieldControl: HwpPrimitive {
         return candidates
     }
 
-    private static func fieldParameterScore(_ value: String) -> Int {
-        var score = value.hasPrefix("MEMO/") ? 100 : 0
-        if value.contains("/") {
-            score += 10
+    private static func selectedFieldParameter(
+        from candidates: [HwpFieldParameterParseResult]
+    ) -> HwpFieldParameterParseResult? {
+        guard let natural = candidates.first(where: { !$0.isByteSwapped }) else {
+            return candidates.first
         }
-        for scalar in value.unicodeScalars {
-            if scalar.value >= 0x20, scalar.value <= 0x7E {
-                score += 3
-            } else if scalar.value >= 0xAC00, scalar.value <= 0xD7A3 {
-                score += 2
-            } else if CharacterSet.whitespacesAndNewlines.contains(scalar) {
-                score += 1
-            } else if CharacterSet.controlCharacters.contains(scalar) {
-                score -= 5
-            }
+
+        if let swapped = candidates.first(where: \.isByteSwapped),
+           isStrongFieldParameterText(swapped.value),
+           !isStrongFieldParameterText(natural.value)
+        {
+            return swapped
         }
-        return score
+        return natural
     }
 
     private static func isSupportedFieldParameterText(_ value: String) -> Bool {
@@ -218,6 +214,10 @@ extension HwpFieldControl: HwpPrimitive {
             !CharacterSet.controlCharacters.contains($0)
                 || CharacterSet.whitespacesAndNewlines.contains($0)
         }
+    }
+
+    private static func isStrongFieldParameterText(_ value: String) -> Bool {
+        value.hasPrefix("MEMO/")
     }
 
     private static func fieldParameterLengthInfo(from data: Data)
@@ -280,6 +280,7 @@ extension HwpFieldControl: HwpPrimitive {
 private struct HwpFieldParameterParseResult {
     let value: String
     let characterCount: Int
+    let isByteSwapped: Bool
     let rawPayload: Data
     let rawTrailing: Data
 }

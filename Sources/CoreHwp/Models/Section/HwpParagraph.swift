@@ -287,7 +287,9 @@ private extension HwpParagraph {
         case .container:
             return .container(control)
         case .table, .genShapeObject:
-            throw HwpError.invalidCtrlId(ctrlId: ctrlId.rawValue)
+            throw HwpError.invalidRecordTree(
+                reason: "common shape control \(ctrlId) was dispatched through common shape parser"
+            )
         }
     }
 

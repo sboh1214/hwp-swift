@@ -48,7 +48,7 @@ public struct HwpDocInfo: HwpFromDataWithVersion {
     init(_ reader: inout DataReader, _ version: HwpVersion) throws {
         let startOffset = reader.byteOffset
         rawPayload = Data()
-        let record = try parseTreeRecord(data: try reader.readToEnd())
+        let record = try parseTreeRecord(data: try reader.readBytes(reader.remainBytes))
         let children = record.children
 
         guard let documentProperties = children
@@ -125,13 +125,6 @@ public struct HwpDocInfo: HwpFromDataWithVersion {
 
         unknownRecords = Self.unconsumedRecords(from: children).map(HwpUnknownRecord.init)
         rawPayload = try reader.consumedData(from: startOffset)
-    }
-
-    public static func load(_ data: Data, _ version: HwpVersion) throws -> Self {
-        var reader = DataReader(data)
-        var docInfo = try self.init(&reader, version)
-        docInfo.rawPayload = data
-        return docInfo
     }
 }
 

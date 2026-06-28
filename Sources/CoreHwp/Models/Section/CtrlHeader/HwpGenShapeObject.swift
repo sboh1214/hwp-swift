@@ -30,7 +30,7 @@ extension HwpGenShapeObject: HwpFromRecord {
         guard commonCtrlProperty.commonCtrlId == .genShapeObject else {
             throw HwpError.invalidCtrlId(ctrlId: commonCtrlProperty.commonCtrlId.rawValue)
         }
-        rawTrailing = try reader.readToEnd()
+        rawTrailing = try reader.readBytes(reader.remainBytes)
         rawPayload = try reader.consumedData(from: startOffset)
         shapeComponentArray = try children
             .filter { $0.tagId == HwpSectionTag.shapeComponent.rawValue }
@@ -54,6 +54,7 @@ extension HwpGenShapeObject: HwpFromRecord {
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
 
+        // The protocol default cannot validate the section record tag.
         var reader = DataReader(record.payload)
         var object = try self.init(&reader, record.children)
         object.rawPayload = record.payload
@@ -63,6 +64,7 @@ extension HwpGenShapeObject: HwpFromRecord {
     static func load(_ record: HwpRecord, _ version: HwpVersion) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
 
+        // The protocol default cannot validate the section record tag.
         var reader = DataReader(record.payload)
         var object = try self.init(&reader, record.children, version)
         object.rawPayload = record.payload
