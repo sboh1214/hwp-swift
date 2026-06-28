@@ -1,6 +1,7 @@
 import Foundation
 import OLEKit
 
+/// HWP 문서 파일을 읽기 전용으로 표현하는 최상위 모델입니다.
 public struct HwpFile: HwpPrimitive {
     public let fileHeader: HwpFileHeader
     public let docInfo: HwpDocInfo
@@ -10,6 +11,7 @@ public struct HwpFile: HwpPrimitive {
     public let previewImage: HwpPreviewImage
     public let binaryDataArray: [HwpBinaryData]
 
+    /// 비어 있는 기본 HWP 문서 모델을 생성합니다.
     public init() {
         fileHeader = HwpFileHeader()
         docInfo = HwpDocInfo()
@@ -20,7 +22,10 @@ public struct HwpFile: HwpPrimitive {
         binaryDataArray = []
     }
 
+    /// 파일 경로의 HWP 문서를 읽습니다.
     public init(fromPath filePath: String, readLimits: HwpReadLimits = .default) throws {
+        try readLimits.validate()
+
         let ole: OLEFile
         do {
             ole = try OLEFile(filePath)
@@ -37,16 +42,22 @@ public struct HwpFile: HwpPrimitive {
     }
 
     #if os(iOS) || os(watchOS) || os(tvOS) || os(macOS)
+        /// 메모리의 HWP 문서 데이터를 읽습니다.
         public init(fromData data: Data, readLimits: HwpReadLimits = .default) throws {
+            try readLimits.validate()
+
             let fileWrapper = FileWrapper(regularFileWithContents: data)
             fileWrapper.preferredFilename = "document.hwp"
             try self.init(fromWrapper: fileWrapper, readLimits: readLimits)
         }
 
+        /// `FileWrapper`로 전달된 HWP 문서를 읽습니다.
         public init(
             fromWrapper fileWrapper: FileWrapper,
             readLimits: HwpReadLimits = .default
         ) throws {
+            try readLimits.validate()
+
             let ole: OLEFile
             do {
                 ole = try OLEFile(fileWrapper)
@@ -64,6 +75,8 @@ public struct HwpFile: HwpPrimitive {
     #endif
 
     private init(fromOLE ole: OLEFile, readLimits: HwpReadLimits = .default) throws {
+        try readLimits.validate()
+
         let streams = try StreamReader.rootStreams(from: ole.root.children)
         let reader = StreamReader(ole, streams, readLimits: readLimits)
 

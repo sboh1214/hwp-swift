@@ -75,6 +75,8 @@ public struct HwpMemoFieldParameter: HwpPrimitive {
 }
 
 extension HwpFieldControl: HwpPrimitive {
+    // MARK: loader contract exemption - preserves field rawTrailing for best-effort parameters
+
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
         let startOffset = reader.byteOffset
         let rawCtrlId = try reader.read(UInt32.self)
@@ -102,6 +104,8 @@ extension HwpFieldControl: HwpPrimitive {
         rawPayload = try reader.consumedData(from: startOffset)
         unknownChildren = children.map(HwpUnknownRecord.init)
     }
+
+    // MARK: loader contract exemption - validates field control tag before raw preservation
 
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)

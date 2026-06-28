@@ -44,6 +44,8 @@ public struct HwpDocInfo: HwpFromDataWithVersion {
         compatibleDocument = HwpCompatibleDocument()
     }
 
+    // MARK: loader contract exemption - DocInfo stream must be parsed as one record tree
+
     // swiftlint:disable:next function_body_length
     init(_ reader: inout DataReader, _ version: HwpVersion) throws {
         let startOffset = reader.byteOffset

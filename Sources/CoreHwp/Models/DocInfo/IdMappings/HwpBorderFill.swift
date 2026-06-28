@@ -40,6 +40,8 @@ extension HwpBorderFill: HwpFromData {
         fillInfo = [BYTE]()
     }
 
+    // MARK: loader contract exemption - fillInfo consumes the remaining raw fill payload
+
     init(_ reader: inout DataReader) throws {
         let startOffset = reader.byteOffset
         property = try reader.read(UInt16.self)
@@ -52,6 +54,8 @@ extension HwpBorderFill: HwpFromData {
         fillInfo = try reader.readToEnd().bytes
         rawPayload = try reader.consumedData(from: startOffset)
     }
+
+    // MARK: loader contract exemption - restores complete rawPayload after fillInfo preservation
 
     static func load(_ data: Data) throws -> Self {
         var reader = DataReader(data)

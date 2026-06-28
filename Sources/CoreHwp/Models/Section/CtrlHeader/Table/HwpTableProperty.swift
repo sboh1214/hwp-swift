@@ -42,6 +42,8 @@ public struct HwpTableProperty {
 }
 
 extension HwpTableProperty: HwpFromDataWithVersion {
+    // MARK: loader contract exemption - preserves table-property trailing payload
+
     init(_ reader: inout DataReader, _ version: HwpVersion) throws {
         let startOffset = reader.byteOffset
         property = try reader.read(UInt32.self)
@@ -72,6 +74,8 @@ extension HwpTableProperty: HwpFromDataWithVersion {
         rawTrailing = try reader.readToEnd()
         rawPayload = try reader.consumedData(from: startOffset)
     }
+
+    // MARK: loader contract exemption - restores complete table-property rawPayload
 
     static func load(_ data: Data, _ version: HwpVersion) throws -> Self {
         var reader = DataReader(data)

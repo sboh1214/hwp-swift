@@ -19,6 +19,8 @@ public struct HwpForbiddenChar {
 }
 
 extension HwpForbiddenChar: HwpFromData {
+    // MARK: loader contract exemption - forbidden-char payload is stored as opaque raw data
+
     init(_ reader: inout DataReader) throws {
         data = try reader.readToEnd()
         rawPayload = data
@@ -27,9 +29,13 @@ extension HwpForbiddenChar: HwpFromData {
 }
 
 extension HwpForbiddenChar: HwpFromRecord {
+    // MARK: loader contract exemption - validates DocInfo tag before preserving raw payload
+
     static func load(_ record: HwpRecord) throws -> Self {
         try loadDocInfoRecord(record, expectedTag: .forbiddenChar, as: Self.self)
     }
+
+    // MARK: loader contract exemption - forbidden-char record payload is opaque raw data
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
         data = try reader.readToEnd()

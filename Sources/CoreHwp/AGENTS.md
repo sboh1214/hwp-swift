@@ -46,6 +46,10 @@ CoreHwp/
    `reader.getDataFromStorage(...)`로 연결 (후자는 child stream 배열을 반환).
 4. version 처리: 기존 호출과 동일하게 `fileHeader.version`과
    `isCompressed`를 그대로 전달할 것. 둘 다 version 별 디코딩에 필요.
+5. 새 stream도 `HwpReadLimits` 경로를 거쳐야 한다. 압축 입력과 비압축 stream은
+   OLE directory `streamSize`로 사전 제한하지만, deflate 출력 한도는
+   `SWCompression`이 반환한 뒤 typed error로 후처리 거부하는 제한이며 압축 해제 중
+   메모리 할당 cap이 아니다.
 
 ## 새 컨트롤 ID 추가하기
 

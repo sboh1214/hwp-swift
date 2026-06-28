@@ -79,6 +79,9 @@ struct StreamReader {
         _ isCompressed: Bool,
         _ streamName: HwpStreamName
     ) throws -> Data {
+        let inputLimit = streamByteLimit(isCompressed: isCompressed)
+        try Self.validateStreamByteCount(stream.streamSize, limit: inputLimit, for: streamName)
+
         let data: Data
         do {
             let reader = try ole.stream(stream)
@@ -86,6 +89,8 @@ struct StreamReader {
         } catch {
             throw HwpError.invalidOLEFile(reason: String(describing: error))
         }
+
+        try Self.validateStreamByteCount(data.count, limit: inputLimit, for: streamName)
         if isCompressed {
             return try decompress(data, for: streamName)
         }
@@ -332,13 +337,14 @@ struct StreamReader {
 }
 
 private extension StreamReader {
-    func decompress(_ data: Data, for streamName: HwpStreamName) throws -> Data {
-        try Self.validateStreamByteCount(
-            data.count,
-            limit: readLimits.maxCompressedStreamBytes,
-            for: streamName
-        )
+    func streamByteLimit(isCompressed: Bool) -> Int {
+        if isCompressed {
+            return readLimits.maxCompressedStreamBytes
+        }
+        return readLimits.maxDecompressedStreamBytes
+    }
 
+    func decompress(_ data: Data, for streamName: HwpStreamName) throws -> Data {
         let decompressed: Data
         do {
             decompressed = try Deflate.decompress(data: data)
@@ -355,6 +361,20 @@ private extension StreamReader {
     }
 
     static func validateStreamByteCount(
+        _ byteCount: UInt64,
+        limit: Int,
+        for streamName: HwpStreamName
+    ) throws {
+        guard byteCount <= UInt64(limit) else {
+            throw HwpError.streamSizeLimitExceeded(
+                name: streamName,
+                limit: limit,
+                actual: clampedInt(byteCount)
+            )
+        }
+    }
+
+    static func validateStreamByteCount(
         _ byteCount: Int,
         limit: Int,
         for streamName: HwpStreamName
@@ -366,6 +386,13 @@ private extension StreamReader {
                 actual: byteCount
             )
         }
+    }
+
+    private static func clampedInt(_ value: UInt64) -> Int {
+        if value > UInt64(Int.max) {
+            return Int.max
+        }
+        return Int(value)
     }
 }
 

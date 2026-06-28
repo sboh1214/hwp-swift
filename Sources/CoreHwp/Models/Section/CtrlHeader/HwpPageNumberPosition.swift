@@ -27,6 +27,8 @@ public struct HwpPageNumberPosition {
 }
 
 extension HwpPageNumberPosition: HwpFromData {
+    // MARK: loader contract exemption - preserves page-number-position trailing payload
+
     init(_ reader: inout DataReader) throws {
         let startOffset = reader.byteOffset
         let ctrlId = try reader.read(UInt32.self)
@@ -57,6 +59,8 @@ extension HwpPageNumberPosition: HwpFromRecord {
         try self.init(&reader)
         unknownChildren = children.map(HwpUnknownRecord.init)
     }
+
+    // MARK: loader contract exemption - validates control-header tag before decoding
 
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)

@@ -139,21 +139,21 @@ class HwpErrorTests: XCTestCase {
     }
 
     func testEOFDescriptionsUseModelTypeNames() {
-        expect(HwpError.bytesAreNotEOF(model: HwpFile.self, remain: 1).description) ==
+        expect(HwpError.bytesAreNotEOF(modelName: "HwpFile", remain: 1).description) ==
             "Bytes are not EOF : 1 bytes remain in HwpFile"
-        expect(HwpError.bitsAreNotEOF(model: HwpFile.self, remain: 2).description) ==
+        expect(HwpError.bitsAreNotEOF(modelName: "HwpFile", remain: 2).description) ==
             "Bits are not EOF : 2 bits remain in HwpFile"
         expect(HwpError.invalidRawValueForEnum(
-            model: HwpBinDataType.self,
+            modelName: "HwpBinDataType",
             rawValue: 9
         ).description) ==
             "Invalid rawValue : 9 for initiating enum : HwpBinDataType"
     }
 
     func testEOFDescriptionsUseInstanceTypeNames() {
-        expect(HwpError.bytesAreNotEOF(model: HwpFile(), remain: 1).description) ==
+        expect(HwpError.bytesAreNotEOF(modelName: "HwpFile", remain: 1).description) ==
             "Bytes are not EOF : 1 bytes remain in HwpFile"
-        expect(HwpError.bitsAreNotEOF(model: HwpFile(), remain: 2).description) ==
+        expect(HwpError.bitsAreNotEOF(modelName: "HwpFile", remain: 2).description) ==
             "Bits are not EOF : 2 bits remain in HwpFile"
     }
 

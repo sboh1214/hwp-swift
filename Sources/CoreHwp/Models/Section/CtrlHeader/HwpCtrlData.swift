@@ -14,12 +14,16 @@ public struct HwpCtrlData {
 }
 
 extension HwpCtrlData: HwpFromRecord {
+    // MARK: loader contract exemption - validates CTRL_DATA tag before raw preservation
+
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlData)
 
         var reader = DataReader(record.payload)
         return try self.init(&reader, record.children)
     }
+
+    // MARK: loader contract exemption - CTRL_DATA payload is currently opaque raw data
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
         rawPayload = try reader.readToEnd()

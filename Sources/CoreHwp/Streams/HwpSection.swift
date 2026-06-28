@@ -16,6 +16,8 @@ public struct HwpSection: HwpFromDataWithVersion {
         unknownRecords = []
     }
 
+    // MARK: loader contract exemption - BodyText section stream must be parsed as one record tree
+
     init(_ reader: inout DataReader, _ version: HwpVersion) throws {
         let startOffset = reader.byteOffset
         rawPayload = Data()
@@ -39,6 +41,8 @@ public struct HwpSection: HwpFromDataWithVersion {
         self.unknownRecords = unknownRecords
         rawPayload = try reader.consumedData(from: startOffset)
     }
+
+    // MARK: loader contract exemption - raw section payload is restored after record-tree parse
 
     public static func load(_ data: Data, _ version: HwpVersion) throws -> Self {
         var reader = DataReader(data)

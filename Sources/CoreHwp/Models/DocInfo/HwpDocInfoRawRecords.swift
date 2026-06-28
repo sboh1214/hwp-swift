@@ -11,9 +11,13 @@ public struct HwpDocData: HwpFromRecord {
     public let forbiddenCharArray: [HwpForbiddenChar]
     public let unknownChildren: [HwpUnknownRecord]
 
+    // MARK: loader contract exemption - validates DocInfo tag before preserving raw payload
+
     static func load(_ record: HwpRecord) throws -> Self {
         try loadDocInfoRecord(record, expectedTag: .docData, as: Self.self)
     }
+
+    // MARK: loader contract exemption - DOC_DATA payload is retained for best-effort views
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
         rawPayload = try reader.readToEnd()
@@ -47,9 +51,13 @@ public struct HwpDistributeDocData: HwpFromRecord {
     public let distributeDocDataInfo: HwpDistributeDocDataInfo?
     public let unknownChildren: [HwpUnknownRecord]
 
+    // MARK: loader contract exemption - validates DocInfo tag before preserving raw payload
+
     static func load(_ record: HwpRecord) throws -> Self {
         try loadDocInfoRecord(record, expectedTag: .distributeDocData, as: Self.self)
     }
+
+    // MARK: loader contract exemption - DISTRIBUTE_DOC_DATA payload is retained as raw data
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
         rawPayload = try reader.readToEnd()
@@ -78,9 +86,13 @@ public struct HwpTrackChange: HwpFromRecord {
     public let trackChangeInfo: HwpTrackChangeInfo?
     public let unknownChildren: [HwpUnknownRecord]
 
+    // MARK: loader contract exemption - validates DocInfo tag before preserving raw payload
+
     static func load(_ record: HwpRecord) throws -> Self {
         try loadDocInfoRecord(record, expectedTag: .trackChange, as: Self.self)
     }
+
+    // MARK: loader contract exemption - TRACK_CHANGE payload is retained for best-effort views
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
         rawPayload = try reader.readToEnd()
@@ -109,9 +121,13 @@ public struct HwpMemoShape: HwpFromRecord {
     public let shapeInfo: HwpMemoShapeInfo?
     public let unknownChildren: [HwpUnknownRecord]
 
+    // MARK: loader contract exemption - validates DocInfo tag before preserving raw payload
+
     static func load(_ record: HwpRecord) throws -> Self {
         try loadDocInfoRecord(record, expectedTag: .memoShape, as: Self.self)
     }
+
+    // MARK: loader contract exemption - MEMO_SHAPE payload is retained for best-effort views
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
         rawPayload = try reader.readToEnd()
@@ -150,9 +166,13 @@ public struct HwpTrackChangeContent: HwpFromRecord {
     public let contentInfo: HwpTrackChangeContentInfo?
     public let unknownChildren: [HwpUnknownRecord]
 
+    // MARK: loader contract exemption - validates DocInfo tag before preserving raw payload
+
     static func load(_ record: HwpRecord) throws -> Self {
         try loadDocInfoRecord(record, expectedTag: .trackChangeContent, as: Self.self)
     }
+
+    // MARK: loader contract exemption - TRACK_CHANGE_CONTENT payload is retained for views
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
         rawPayload = try reader.readToEnd()
@@ -194,9 +214,13 @@ public struct HwpTrackChangeAuthor: HwpFromRecord {
     public let authorInfo: HwpTrackChangeAuthorInfo?
     public let unknownChildren: [HwpUnknownRecord]
 
+    // MARK: loader contract exemption - validates DocInfo tag before preserving raw payload
+
     static func load(_ record: HwpRecord) throws -> Self {
         try loadDocInfoRecord(record, expectedTag: .trackChangeAuthor, as: Self.self)
     }
+
+    // MARK: loader contract exemption - TRACK_CHANGE_AUTHOR payload is retained for views
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
         rawPayload = try reader.readToEnd()
@@ -282,6 +306,7 @@ private extension Data {
 }
 
 private extension HwpTrackChangeAuthor {
+    /// Best-effort typed view: malformed author metadata leaves rawPayload intact.
     static func authorInfo(from payload: Data) -> HwpTrackChangeAuthorInfo? {
         let lengthByteCount = MemoryLayout<UInt32>.size
         let characterByteCount = MemoryLayout<UInt16>.size

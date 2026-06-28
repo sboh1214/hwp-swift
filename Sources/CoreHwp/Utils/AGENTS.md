@@ -69,7 +69,10 @@ consumes-all `init` 근처에 남긴다. override는 default loader와 동등하
 
 - **`StreamReader`** — `(OLEFile, [String: DirectoryEntry])`를 보관. 이름 있는
   stream 또는 storage를 가져와 필요시 `SWCompression`으로 deflate.
-  `HwpFile.init(fromOLE:)`에서만 사용.
+  `HwpFile.init(fromOLE:)`에서만 사용. `HwpReadLimits`는 OLE directory의
+  `streamSize`로 압축 입력과 비압축 stream을 읽기 전에 제한하지만, deflate 출력
+  한도는 `SWCompression.Deflate.decompress(data:)`가 반환한 뒤 검사하는 후처리
+  거부다. 현재 구현은 압축 해제 중 메모리 할당 cap을 보장하지 않는다.
 - **`DataReader`** — `Data` 위의 cursor. `read(T.Type)`은 정수 폭(1/2/4
   byte)으로 분기하며, 미지원 타입은 `HwpError.unsupportedDataReadType`을
   throw한다. `readBytes`/array read는 음수·overflow·범위 초과를

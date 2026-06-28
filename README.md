@@ -36,6 +36,13 @@ dependencies: [
 `HwpError`로 반환하고, 아직 완전히 해석하지 못한 record/control은 raw payload를
 보존하는 방향으로 확장하고 있습니다.
 
+`HwpReadLimits`는 OLE directory의 stream size를 기준으로 압축 입력과 비압축
+stream을 읽기 전에 제한하고, 압축 해제 결과가 한도를 넘으면
+`HwpError.streamSizeLimitExceeded`로 거부합니다. 단, 현재 `SWCompression`
+Deflate API는 bounded streaming inflate를 제공하지 않으므로 압축 해제 결과 한도는
+inflate가 끝난 뒤 검사하는 후처리 거부입니다. 이 제한은 typed error 반환을 위한
+검증이지, 압축 해제 중 메모리 할당 상한을 보장하지 않습니다.
+
 2026-06-28 기준 `swift test --enable-code-coverage`를 실행한 뒤
 `.build/out/Products/Debug/codecov/Hwp-Swift.json`에서 `Sources/CoreHwp`만
 집계했을 때 line coverage는 98.60% (5481/5559), region coverage는

@@ -32,6 +32,8 @@ public struct HwpBullet {
 }
 
 extension HwpBullet: HwpFromData {
+    // MARK: loader contract exemption - preserves undocumented trailing bytes after known fields
+
     init(_ reader: inout DataReader) throws {
         let startOffset = reader.byteOffset
         info = try reader.readBytes(8).bytes
@@ -48,6 +50,8 @@ extension HwpBullet: HwpFromData {
         undocumentedTrailing = try reader.readToEnd().bytes
         rawPayload = try reader.consumedData(from: startOffset)
     }
+
+    // MARK: loader contract exemption - restores complete rawPayload after trailing preservation
 
     static func load(_ data: Data) throws -> Self {
         var reader = DataReader(data)

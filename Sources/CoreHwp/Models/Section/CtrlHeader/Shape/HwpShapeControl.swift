@@ -27,6 +27,8 @@ extension HwpShapeControl: HwpFromRecord {
         try self.init(&reader, children, nil)
     }
 
+    // MARK: loader contract exemption - shape control preserves raw payload for fallback parsing
+
     init(
         _ reader: inout DataReader,
         _ children: [HwpRecord],
@@ -75,6 +77,8 @@ extension HwpShapeControl: HwpFromRecord {
             .map(HwpUnknownRecord.init)
     }
 
+    // MARK: loader contract exemption - validates shape control tag before raw preservation
+
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
 
@@ -85,6 +89,8 @@ extension HwpShapeControl: HwpFromRecord {
         }
         return shapeControl
     }
+
+    // MARK: loader contract exemption - validates shape control tag before versioned decode
 
     static func load(_ record: HwpRecord, _ version: HwpVersion) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
@@ -130,6 +136,8 @@ public struct HwpEquationEdit {
 }
 
 extension HwpEquationEdit: HwpFromRecord {
+    // MARK: loader contract exemption - equation edit payload is best-effort raw-backed
+
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
         rawPayload = try reader.readToEnd()
         equationTextLength = Self.equationTextLength(from: rawPayload)
@@ -139,6 +147,8 @@ extension HwpEquationEdit: HwpFromRecord {
         rawTrailing = Self.rawTrailing(from: rawPayload)
         unknownChildren = children.map(HwpUnknownRecord.init)
     }
+
+    // MARK: loader contract exemption - validates equation edit tag before raw preservation
 
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .eqEdit)

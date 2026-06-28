@@ -26,6 +26,8 @@ public struct HwpParagraph: HwpFromRecordWithVersion {
         ]
     }
 
+    // MARK: loader contract exemption - validates paragraph record tag before decoding children
+
     static func load(_ record: HwpRecord, _ version: HwpVersion) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .paraHeader)
 
@@ -36,6 +38,8 @@ public struct HwpParagraph: HwpFromRecordWithVersion {
         }
         return paragraph
     }
+
+    // MARK: loader contract exemption - paragraph header payload is forwarded to versioned loader
 
     // swiftlint:disable:next cyclomatic_complexity function_body_length
     init(_ reader: inout DataReader, _ children: [HwpRecord], _ version: HwpVersion) throws {

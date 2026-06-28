@@ -1,11 +1,16 @@
 import Foundation
 
+/// 읽기 전용 reader가 지원하지 않는 HWP 보안/배포 기능입니다.
 public enum HwpUnsupportedFeature: String, HwpPrimitive {
+    /// 암호로 보호된 문서입니다.
     case encryptedDocument
+    /// 배포용 문서입니다.
     case deploymentDocument
+    /// DRM 또는 공인 인증서 DRM이 적용된 문서입니다.
     case drmDocument
 }
 
+/// HWP 파일을 읽는 동안 발생할 수 있는 typed error입니다.
 public enum HwpError: Error {
     case streamDoesNotExist(name: HwpStreamName)
     case streamDecompressFailed(name: HwpStreamName)
@@ -23,61 +28,71 @@ public enum HwpError: Error {
     case invalidDataLength(length: String)
     case unsupportedDataReadType(type: String)
     case unsupportedFeature(HwpUnsupportedFeature)
-    case bytesAreNotEOF(model: Any, remain: Int)
-    case bitsAreNotEOF(model: Any, remain: Int)
-    case invalidRawValueForEnum(model: Any, rawValue: Int)
+    case bytesAreNotEOF(modelName: String, remain: Int)
+    case bitsAreNotEOF(modelName: String, remain: Int)
+    case invalidRawValueForEnum(modelName: String, rawValue: Int)
 }
 
 extension HwpError: CustomStringConvertible {
     public var description: String {
         switch self {
         case let .streamDoesNotExist(name):
-            return "Stream '\(name)' does not exist"
+            "Stream '\(name)' does not exist"
         case let .streamDecompressFailed(name):
-            return "Stream '\(name)' failed to decompress"
+            "Stream '\(name)' failed to decompress"
         case let .streamSizeLimitExceeded(name, limit, actual):
-            return "Stream '\(name)' exceeded size limit: \(actual) bytes > \(limit) bytes"
+            "Stream '\(name)' exceeded size limit: \(actual) bytes > \(limit) bytes"
         case let .invalidOLEFile(reason):
-            return "Invalid OLE file: \(reason)"
+            "Invalid OLE file: \(reason)"
         case let .invalidDataForString(data, name):
-            return
-                """
-                Cannot convert data to utf16le string
-                data: '\(data)'
-                name: '\(name)'
-                """
+            """
+            Cannot convert data to utf16le string
+            data: '\(data)'
+            name: '\(name)'
+            """
         case let .recordDoesNotExist(tag):
-            return "Record '\(tag)' does not exist."
+            "Record '\(tag)' does not exist."
         case let .invalidRecordTree(reason):
-            return "Invalid record tree: \(reason)"
+            "Invalid record tree: \(reason)"
         case let .invalidFileHeaderSignature(signature):
-            return "Invalid signature in FileHeader stream : get'\(signature)'"
+            "Invalid signature in FileHeader stream : get'\(signature)'"
         case let .invalidUnicodeScalar(value):
-            return "Invalid Unicode scalar value for WCHAR: \(value)"
+            "Invalid Unicode scalar value for WCHAR: \(value)"
         case let .unidentifiedTag(tagId):
-            return "Cannot Read HwpRecord Tag : '\(tagId)'"
+            "Cannot Read HwpRecord Tag : '\(tagId)'"
         case let .invalidCtrlId(ctrlId):
-            return "Invalid Ctrl Id in HwpParagraph : '\(ctrlId)'"
+            "Invalid Ctrl Id in HwpParagraph : '\(ctrlId)'"
         case let .truncatedData(expected, actual):
-            return "Truncated data: expected \(expected) bytes, got \(actual) bytes"
+            "Truncated data: expected \(expected) bytes, got \(actual) bytes"
         case let .truncatedBits(expected, actual):
-            return "Truncated bits: expected \(expected) bits, got \(actual) bits"
+            "Truncated bits: expected \(expected) bits, got \(actual) bits"
         case let .invalidDataLength(length):
-            return "Invalid data length: \(length)"
+            "Invalid data length: \(length)"
         case let .unsupportedDataReadType(type):
-            return "Unsupported data read type: \(type)"
+            "Unsupported data read type: \(type)"
         case let .unsupportedFeature(feature):
-            return "Unsupported HWP feature: \(feature.rawValue)"
-        case let .bytesAreNotEOF(model, remain):
-            let typeOfModel = hwpErrorModelName(model)
-            return "Bytes are not EOF : \(remain) bytes remain in \(typeOfModel)"
-        case let .bitsAreNotEOF(model, remain):
-            let typeOfModel = hwpErrorModelName(model)
-            return "Bits are not EOF : \(remain) bits remain in \(typeOfModel)"
-        case let .invalidRawValueForEnum(model, rawValue):
-            let typeOfModel = hwpErrorModelName(model)
-            return "Invalid rawValue : \(rawValue) for initiating enum : \(typeOfModel)"
+            "Unsupported HWP feature: \(feature.rawValue)"
+        case let .bytesAreNotEOF(modelName, remain):
+            "Bytes are not EOF : \(remain) bytes remain in \(modelName)"
+        case let .bitsAreNotEOF(modelName, remain):
+            "Bits are not EOF : \(remain) bits remain in \(modelName)"
+        case let .invalidRawValueForEnum(modelName, rawValue):
+            "Invalid rawValue : \(rawValue) for initiating enum : \(modelName)"
         }
+    }
+}
+
+extension HwpError {
+    static func bytesAreNotEOF(model: Any, remain: Int) -> HwpError {
+        .bytesAreNotEOF(modelName: hwpErrorModelName(model), remain: remain)
+    }
+
+    static func bitsAreNotEOF(model: Any, remain: Int) -> HwpError {
+        .bitsAreNotEOF(modelName: hwpErrorModelName(model), remain: remain)
+    }
+
+    static func invalidRawValueForEnum(model: Any, rawValue: Int) -> HwpError {
+        .invalidRawValueForEnum(modelName: hwpErrorModelName(model), rawValue: rawValue)
     }
 }
 

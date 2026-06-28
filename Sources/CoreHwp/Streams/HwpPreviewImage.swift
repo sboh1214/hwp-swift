@@ -16,6 +16,8 @@ public struct HwpPreviewImage: HwpFromData {
         format = HwpPreviewImageFormat(data: rawPayload)
     }
 
+    // MARK: loader contract exemption - PrvImage stream is preserved as raw image payload
+
     init(_ reader: inout DataReader) throws {
         self.init(rawPayload: try reader.readToEnd())
     }

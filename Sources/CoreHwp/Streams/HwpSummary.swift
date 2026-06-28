@@ -12,6 +12,8 @@ public struct HwpSummary: HwpFromData {
         self.rawPayload = rawPayload
     }
 
+    // MARK: loader contract exemption - summary stream is an opaque raw payload
+
     init(_ reader: inout DataReader) throws {
         self.init(rawPayload: try reader.readToEnd())
     }

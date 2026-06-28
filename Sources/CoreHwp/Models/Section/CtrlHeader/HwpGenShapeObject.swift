@@ -20,6 +20,8 @@ extension HwpGenShapeObject: HwpFromRecord {
         try self.init(&reader, children, nil)
     }
 
+    // MARK: loader contract exemption - preserves common object trailing payload
+
     init(
         _ reader: inout DataReader,
         _ children: [HwpRecord],
@@ -51,6 +53,8 @@ extension HwpGenShapeObject: HwpFromRecord {
             .map(HwpUnknownRecord.init)
     }
 
+    // MARK: loader contract exemption - validates control-header tag before object decode
+
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
 
@@ -60,6 +64,8 @@ extension HwpGenShapeObject: HwpFromRecord {
         object.rawPayload = record.payload
         return object
     }
+
+    // MARK: loader contract exemption - validates control-header tag before versioned decode
 
     static func load(_ record: HwpRecord, _ version: HwpVersion) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)

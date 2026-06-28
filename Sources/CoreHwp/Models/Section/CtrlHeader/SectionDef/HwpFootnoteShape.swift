@@ -67,6 +67,8 @@ public struct HwpFootnoteShape {
 }
 
 extension HwpFootnoteShape: HwpFromData {
+    // MARK: loader contract exemption - preserves required unknown footnote-shape tail
+
     init(_ reader: inout DataReader) throws {
         let startOffset = reader.byteOffset
         property = try reader.read(UInt32.self)
@@ -97,6 +99,8 @@ extension HwpFootnoteShape: HwpFromData {
         unknown = rawTrailing
         rawPayload = try reader.consumedData(from: startOffset)
     }
+
+    // MARK: loader contract exemption - restores complete FOOTNOTE_SHAPE rawPayload
 
     static func load(_ data: Data) throws -> Self {
         var reader = DataReader(data)

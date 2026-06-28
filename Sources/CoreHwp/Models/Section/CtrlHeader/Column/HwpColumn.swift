@@ -30,6 +30,8 @@ public struct HwpColumn {
 }
 
 extension HwpColumn: HwpFromData {
+    // MARK: loader contract exemption - preserves column trailing payload
+
     init(_ reader: inout DataReader) throws {
         let startOffset = reader.byteOffset
         let ctrlId = try reader.read(UInt32.self)
@@ -67,6 +69,8 @@ extension HwpColumn: HwpFromRecord {
         try self.init(&reader)
         unknownChildren = children.map(HwpUnknownRecord.init)
     }
+
+    // MARK: loader contract exemption - validates column control tag before decoding
 
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)

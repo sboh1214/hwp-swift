@@ -33,6 +33,8 @@ public struct HwpPreviewText: HwpFromData {
         self.rawPayload = rawPayload
     }
 
+    // MARK: loader contract exemption - PrvText stream is preserved as raw UTF-16 payload
+
     init(_ reader: inout DataReader) throws {
         try self.init(rawPayload: reader.readToEnd())
     }

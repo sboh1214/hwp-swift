@@ -25,6 +25,8 @@ public struct HwpPageBorderFill {
 }
 
 extension HwpPageBorderFill: HwpFromData {
+    // MARK: loader contract exemption - preserves PAGE_BORDER_FILL trailing payload
+
     init(_ reader: inout DataReader) throws {
         let startOffset = reader.byteOffset
         property = try reader.read(UInt32.self)
@@ -36,6 +38,8 @@ extension HwpPageBorderFill: HwpFromData {
         rawTrailing = try reader.readToEnd()
         rawPayload = try reader.consumedData(from: startOffset)
     }
+
+    // MARK: loader contract exemption - restores complete PAGE_BORDER_FILL rawPayload
 
     static func load(_ data: Data) throws -> Self {
         var reader = DataReader(data)

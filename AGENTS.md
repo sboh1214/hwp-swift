@@ -61,6 +61,13 @@ hwp-swift/
 압축 여부는 `HwpFileHeader.fileProperty.isCompressed`에 있고, 이후 모든
 하위 `load` 호출에 인자로 전달된다.
 
+`HwpReadLimits`는 OLE directory의 `streamSize`를 이용해 압축 입력과 비압축
+stream을 읽기 전에 제한하고, 압축 해제 결과가 한도를 넘으면 typed
+`HwpError.streamSizeLimitExceeded`로 후처리 거부한다. 현재 `SWCompression`
+Deflate API는 bounded streaming inflate를 노출하지 않으므로, 압축 해제 결과
+한도는 메모리 할당 cap이 아니다. PR/문서에서 decompression-bomb 방어를 설명할 때
+이 한계를 명시한다.
+
 ## 컨벤션
 
 - **`HwpPrimitive = Hashable & Codable`** — 모든 모델이 채택 (typealias는 [`HwpPrimitive.swift`](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/Utils/Protocols/HwpPrimitive.swift)).

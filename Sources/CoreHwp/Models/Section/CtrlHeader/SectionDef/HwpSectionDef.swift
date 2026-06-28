@@ -108,9 +108,14 @@ extension HwpSectionDef: HwpFromRecordWithVersion {
         if version >= HwpVersion(5, 0, 1, 5) {
             defaultLanguage = try reader.read(UInt16.self)
         }
+
+        // MARK: loader contract exemption - preserves SECTION_DEF version-specific tail
+
         unknown = try reader.readToEnd()
         rawPayload = try reader.consumedData(from: startOffset)
     }
+
+    // MARK: loader contract exemption - validates section control tag before versioned decode
 
     static func load(_ record: HwpRecord, _ version: HwpVersion) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)

@@ -1,5 +1,7 @@
 import Foundation
 
+// swiftlint:disable file_length
+
 /** 개체 요소 세부 raw record */
 public struct HwpShapeComponentRawRecord {
     /** 원본 payload */
@@ -9,6 +11,8 @@ public struct HwpShapeComponentRawRecord {
 }
 
 extension HwpShapeComponentRawRecord: HwpPrimitive {
+    // MARK: loader contract exemption - raw shape-component record keeps entire payload
+
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
         rawPayload = try reader.readToEnd()
         unknownChildren = children.map(HwpUnknownRecord.init)
@@ -22,12 +26,16 @@ protocol HwpShapeComponentRawRecordBacked: HwpFromRecord {
 }
 
 extension HwpShapeComponentRawRecordBacked {
+    // MARK: loader contract exemption - raw-backed shape records keep entire payload
+
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
         self.init(
             rawPayload: try reader.readToEnd(),
             unknownChildren: children.map(HwpUnknownRecord.init)
         )
     }
+
+    // MARK: loader contract exemption - validates shape record tag before raw preservation
 
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: expectedSectionTag)
@@ -200,6 +208,8 @@ public struct HwpShapeComponent {
 }
 
 extension HwpShapeComponent: HwpFromRecord {
+    // MARK: loader contract exemption - preserves common shape-component payload as raw data
+
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
         rawPayload = try reader.readToEnd()
         rawCtrlId = Self.rawCtrlId(from: rawPayload)
@@ -243,6 +253,8 @@ extension HwpShapeComponent: HwpFromRecord {
             .map(HwpUnknownRecord.init)
     }
 
+    // MARK: loader contract exemption - parses nested text-box lists after raw preservation
+
     static func load(_ record: HwpRecord, _ version: HwpVersion) throws -> Self {
         var component = try load(record)
         let parsedTextBox = try parseTextBoxLists(record.children, version)
@@ -256,6 +268,8 @@ extension HwpShapeComponent: HwpFromRecord {
             .map { HwpUnknownRecord($0.element) }
         return component
     }
+
+    // MARK: loader contract exemption - validates shape-component tag before raw preservation
 
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .shapeComponent)
@@ -378,10 +392,14 @@ public struct HwpShapeComponentRectangle {
 }
 
 extension HwpShapeComponentRectangle: HwpFromRecord {
+    // MARK: loader contract exemption - rectangle component payload is raw-backed
+
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
         rawPayload = try reader.readToEnd()
         unknownChildren = children.map(HwpUnknownRecord.init)
     }
+
+    // MARK: loader contract exemption - validates rectangle component tag before raw preservation
 
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .shapeComponentRectangle)
@@ -408,12 +426,16 @@ public struct HwpShapeComponentOLE {
 }
 
 extension HwpShapeComponentOLE: HwpFromRecord {
+    // MARK: loader contract exemption - OLE component payload is best-effort raw-backed
+
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
         rawPayload = try reader.readToEnd()
         binaryDataId = Self.binaryDataId(from: rawPayload)
         rawTrailing = Self.rawTrailing(from: rawPayload)
         unknownChildren = children.map(HwpUnknownRecord.init)
     }
+
+    // MARK: loader contract exemption - validates OLE component tag before raw preservation
 
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .shapeComponentOle)
@@ -458,12 +480,16 @@ public struct HwpShapeComponentPicture {
 }
 
 extension HwpShapeComponentPicture: HwpFromRecord {
+    // MARK: loader contract exemption - picture component payload is best-effort raw-backed
+
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
         rawPayload = try reader.readToEnd()
         binaryDataId = Self.binaryDataId(from: rawPayload)
         rawTrailing = Self.rawTrailing(from: rawPayload)
         unknownChildren = children.map(HwpUnknownRecord.init)
     }
+
+    // MARK: loader contract exemption - validates picture component tag before raw preservation
 
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .shapeComponentPicture)

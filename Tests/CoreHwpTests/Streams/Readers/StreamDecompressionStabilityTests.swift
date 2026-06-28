@@ -7,11 +7,11 @@ import XCTest
 final class StreamDecompressionStabilityTests: XCTestCase {
     func testCompressedStreamInputLimitThrowsTypedError() {
         let limits = HwpReadLimits(
-            maxCompressedStreamBytes: 0,
+            maxCompressedStreamBytes: 1,
             maxDecompressedStreamBytes: .max
         )
 
-        expectStreamSizeLimitExceeded(.docInfo, limit: 0) {
+        expectStreamSizeLimitExceeded(.docInfo, limit: 1) {
             _ = try HwpFile(
                 fromPath: hwpURL(#file, "plain-text-minimal").path,
                 readLimits: limits
@@ -31,6 +31,44 @@ final class StreamDecompressionStabilityTests: XCTestCase {
                 fromPath: hwpURL(#file, "plain-text-minimal").path,
                 readLimits: limits
             )
+        }
+    }
+
+    func testUncompressedStreamLimitThrowsTypedErrorBeforeReadingFileHeader() {
+        let limits = HwpReadLimits(
+            maxCompressedStreamBytes: .max,
+            maxDecompressedStreamBytes: 1
+        )
+
+        expectStreamSizeLimitExceeded(.fileHeader, limit: 1) {
+            _ = try HwpFile(
+                fromPath: hwpURL(#file, "plain-text-minimal").path,
+                readLimits: limits
+            )
+        }
+    }
+
+    func testReadLimitsRejectNonPositiveValuesWithTypedError() {
+        let cases = [
+            HwpReadLimits(maxCompressedStreamBytes: 0),
+            HwpReadLimits(maxDecompressedStreamBytes: 0),
+            HwpReadLimits(maxCompressedStreamBytes: -1),
+            HwpReadLimits(maxDecompressedStreamBytes: -1),
+        ]
+
+        for limits in cases {
+            expect {
+                _ = try HwpFile(
+                    fromPath: hwpURL(#file, "plain-text-minimal").path,
+                    readLimits: limits
+                )
+            }.to(throwError { error in
+                guard case let HwpError.invalidDataLength(length) = error else {
+                    return fail("Expected invalidDataLength, got \(error)")
+                }
+                expect(length).to(contain("HwpReadLimits"))
+                expect(length).to(contain("greater than 0"))
+            })
         }
     }
 

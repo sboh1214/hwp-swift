@@ -93,6 +93,8 @@ public struct HwpOtherControlBookmarkInfo: HwpPrimitive {
 }
 
 extension HwpOtherControl: HwpFromRecord {
+    // MARK: loader contract exemption - preserves other-control trailing payload for typed views
+
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
         let startOffset = reader.byteOffset
         let rawCtrlId = try reader.read(UInt32.self)
@@ -113,6 +115,8 @@ extension HwpOtherControl: HwpFromRecord {
             .filter { $0.tagId != HwpSectionTag.ctrlData.rawValue }
             .map(HwpUnknownRecord.init)
     }
+
+    // MARK: loader contract exemption - validates other control tag before raw preservation
 
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)

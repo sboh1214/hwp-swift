@@ -7,6 +7,8 @@ public struct HwpCtrlHeader {
 }
 
 extension HwpCtrlHeader: HwpPrimitive {
+    // MARK: loader contract exemption - malformed ctrl header still preserves raw payload
+
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
         let startOffset = reader.byteOffset
         do {
@@ -18,6 +20,8 @@ extension HwpCtrlHeader: HwpPrimitive {
         rawPayload = try reader.consumedData(from: startOffset)
         unknownChildren = children.map(HwpUnknownRecord.init)
     }
+
+    // MARK: loader contract exemption - validates control-header tag before raw preservation
 
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)

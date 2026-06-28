@@ -10,6 +10,8 @@ public struct HwpTable {
 }
 
 extension HwpTable: HwpFromRecordWithVersion {
+    // MARK: loader contract exemption - preserves table control trailing payload
+
     init(_ reader: inout DataReader, _ children: [HwpRecord], _ version: HwpVersion) throws {
         let startOffset = reader.byteOffset
         commonCtrlProperty = try HwpCommonCtrlProperty(&reader)
@@ -36,6 +38,8 @@ extension HwpTable: HwpFromRecordWithVersion {
         cellArray = parsedChildren.cells
         unknownChildren = parsedChildren.unknownChildren
     }
+
+    // MARK: loader contract exemption - validates table control tag before child parsing
 
     static func load(_ record: HwpRecord, _ version: HwpVersion) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
@@ -113,6 +117,8 @@ public struct HwpTableCellHeader {
 }
 
 extension HwpTableCellHeader: HwpFromRecord {
+    // MARK: loader contract exemption - preserves table-cell header trailing payload
+
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
         let startOffset = reader.byteOffset
         paragraphCount = try reader.read(Int32.self)
@@ -121,6 +127,8 @@ extension HwpTableCellHeader: HwpFromRecord {
         rawPayload = try reader.consumedData(from: startOffset)
         unknownChildren = children.map(HwpUnknownRecord.init)
     }
+
+    // MARK: loader contract exemption - validates LIST_HEADER tag before cell header decode
 
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .listHeader)

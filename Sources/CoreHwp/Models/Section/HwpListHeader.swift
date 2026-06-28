@@ -29,6 +29,8 @@ public struct HwpListHeader: HwpFromData {
         rawTrailingWords = []
     }
 
+    // MARK: loader contract exemption - preserves optional trailing list-header bytes
+
     init(_ reader: inout DataReader) throws {
         let startOffset = reader.byteOffset
         paragraphCount = try reader.read(Int32.self)
@@ -37,6 +39,8 @@ public struct HwpListHeader: HwpFromData {
         rawTrailingWords = rawTrailing.littleEndianUInt16ArrayIfAligned()
         rawPayload = try reader.consumedData(from: startOffset)
     }
+
+    // MARK: loader contract exemption - init consumes trailing bytes as rawTrailing
 
     static func load(_ data: Data) throws -> Self {
         var reader = DataReader(data)

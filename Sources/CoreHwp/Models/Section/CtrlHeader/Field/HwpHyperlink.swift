@@ -25,6 +25,8 @@ public struct HwpHyperlink {
 }
 
 extension HwpHyperlink: HwpPrimitive {
+    // MARK: loader contract exemption - preserves hyperlink trailing payload
+
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
         let startOffset = reader.byteOffset
         ctrlId = try reader.read(UInt32.self)
@@ -44,6 +46,8 @@ extension HwpHyperlink: HwpPrimitive {
         rawPayload = try reader.consumedData(from: startOffset)
         unknownChildren = children.map(HwpUnknownRecord.init)
     }
+
+    // MARK: loader contract exemption - validates hyperlink control tag before decoding
 
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)

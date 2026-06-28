@@ -33,6 +33,8 @@ public struct HwpPageDef {
 }
 
 extension HwpPageDef: HwpFromData {
+    // MARK: loader contract exemption - preserves PAGE_DEF trailing payload
+
     init(_ reader: inout DataReader) throws {
         let startOffset = reader.byteOffset
         width = try reader.read(HWPUNIT.self)
@@ -48,6 +50,8 @@ extension HwpPageDef: HwpFromData {
         rawTrailing = try reader.readToEnd()
         rawPayload = try reader.consumedData(from: startOffset)
     }
+
+    // MARK: loader contract exemption - restores complete PAGE_DEF rawPayload
 
     static func load(_ data: Data) throws -> Self {
         var reader = DataReader(data)
