@@ -116,6 +116,8 @@ class HwpErrorTests: XCTestCase {
         let descriptions = [
             HwpError.streamDoesNotExist(name: .fileHeader).description,
             HwpError.streamDecompressFailed(name: .docInfo).description,
+            HwpError.streamSizeLimitExceeded(name: .docInfo, limit: 1, actual: 2)
+                .description,
             HwpError.invalidOLEFile(reason: "bad").description,
             HwpError.invalidDataForString(data: Data([0x00]), name: "test").description,
             HwpError.recordDoesNotExist(tag: 16).description,

@@ -5,10 +5,16 @@ import SWCompression
 struct StreamReader {
     private let ole: OLEFile
     private let streams: [String: DirectoryEntry]
+    private let readLimits: HwpReadLimits
 
-    init(_ ole: OLEFile, _ streams: [String: DirectoryEntry]) {
+    init(
+        _ ole: OLEFile,
+        _ streams: [String: DirectoryEntry],
+        readLimits: HwpReadLimits = .default
+    ) {
         self.ole = ole
         self.streams = streams
+        self.readLimits = readLimits
     }
 
     func getDataFromStream(_ streamName: HwpStreamName, _ isCompressed: Bool) throws -> Data {
@@ -81,14 +87,9 @@ struct StreamReader {
             throw HwpError.invalidOLEFile(reason: String(describing: error))
         }
         if isCompressed {
-            do {
-                return try Deflate.decompress(data: data)
-            } catch {
-                throw HwpError.streamDecompressFailed(name: streamName)
-            }
-        } else {
-            return data
+            return try decompress(data, for: streamName)
         }
+        return data
     }
 
     private static func validateEntryType(
@@ -327,6 +328,44 @@ struct StreamReader {
             .sorted { lhs, rhs in
                 storageChildNamePrecedes(lhs.name, rhs.name, for: streamName)
             }
+    }
+}
+
+private extension StreamReader {
+    func decompress(_ data: Data, for streamName: HwpStreamName) throws -> Data {
+        try Self.validateStreamByteCount(
+            data.count,
+            limit: readLimits.maxCompressedStreamBytes,
+            for: streamName
+        )
+
+        let decompressed: Data
+        do {
+            decompressed = try Deflate.decompress(data: data)
+        } catch {
+            throw HwpError.streamDecompressFailed(name: streamName)
+        }
+
+        try Self.validateStreamByteCount(
+            decompressed.count,
+            limit: readLimits.maxDecompressedStreamBytes,
+            for: streamName
+        )
+        return decompressed
+    }
+
+    static func validateStreamByteCount(
+        _ byteCount: Int,
+        limit: Int,
+        for streamName: HwpStreamName
+    ) throws {
+        guard byteCount <= limit else {
+            throw HwpError.streamSizeLimitExceeded(
+                name: streamName,
+                limit: limit,
+                actual: byteCount
+            )
+        }
     }
 }
 

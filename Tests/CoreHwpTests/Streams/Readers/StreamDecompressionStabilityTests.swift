@@ -5,6 +5,35 @@ import OLEKit
 import XCTest
 
 final class StreamDecompressionStabilityTests: XCTestCase {
+    func testCompressedStreamInputLimitThrowsTypedError() {
+        let limits = HwpReadLimits(
+            maxCompressedStreamBytes: 0,
+            maxDecompressedStreamBytes: .max
+        )
+
+        expectStreamSizeLimitExceeded(.docInfo, limit: 0) {
+            _ = try HwpFile(
+                fromPath: hwpURL(#file, "plain-text-minimal").path,
+                readLimits: limits
+            )
+        }
+    }
+
+    func testCompressedStreamOutputLimitThrowsTypedError() {
+        let limit = 256
+        let limits = HwpReadLimits(
+            maxCompressedStreamBytes: .max,
+            maxDecompressedStreamBytes: limit
+        )
+
+        expectStreamSizeLimitExceeded(.docInfo, limit: limit) {
+            _ = try HwpFile(
+                fromPath: hwpURL(#file, "plain-text-minimal").path,
+                readLimits: limits
+            )
+        }
+    }
+
     func testCorruptedCompressedDocInfoStreamThrowsTypedDecompressError() throws {
         let url = try temporaryHwp(
             basedOnFixture: "plain-text-minimal",
@@ -153,6 +182,23 @@ private func expectStreamDecompressFailed(
             return fail("Expected streamDecompressFailed, got \(error)")
         }
         expect(name) == expectedName
+    })
+}
+
+private func expectStreamSizeLimitExceeded(
+    _ expectedName: HwpStreamName,
+    limit: Int,
+    _ expression: @escaping () throws -> Void
+) {
+    expect {
+        try expression()
+    }.to(throwError { error in
+        guard case let HwpError.streamSizeLimitExceeded(name, actualLimit, actual) = error else {
+            return fail("Expected streamSizeLimitExceeded, got \(error)")
+        }
+        expect(name) == expectedName
+        expect(actualLimit) == limit
+        expect(actual) > limit
     })
 }
 

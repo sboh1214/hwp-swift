@@ -20,7 +20,7 @@ public struct HwpFile: HwpPrimitive {
         binaryDataArray = []
     }
 
-    public init(fromPath filePath: String) throws {
+    public init(fromPath filePath: String, readLimits: HwpReadLimits = .default) throws {
         let ole: OLEFile
         do {
             ole = try OLEFile(filePath)
@@ -28,7 +28,7 @@ public struct HwpFile: HwpPrimitive {
             throw HwpError.invalidOLEFile(reason: String(describing: error))
         }
         do {
-            try self.init(fromOLE: ole)
+            try self.init(fromOLE: ole, readLimits: readLimits)
         } catch let error as HwpError {
             throw error
         } catch {
@@ -37,13 +37,16 @@ public struct HwpFile: HwpPrimitive {
     }
 
     #if os(iOS) || os(watchOS) || os(tvOS) || os(macOS)
-        public init(fromData data: Data) throws {
+        public init(fromData data: Data, readLimits: HwpReadLimits = .default) throws {
             let fileWrapper = FileWrapper(regularFileWithContents: data)
             fileWrapper.preferredFilename = "document.hwp"
-            try self.init(fromWrapper: fileWrapper)
+            try self.init(fromWrapper: fileWrapper, readLimits: readLimits)
         }
 
-        public init(fromWrapper fileWrapper: FileWrapper) throws {
+        public init(
+            fromWrapper fileWrapper: FileWrapper,
+            readLimits: HwpReadLimits = .default
+        ) throws {
             let ole: OLEFile
             do {
                 ole = try OLEFile(fileWrapper)
@@ -51,7 +54,7 @@ public struct HwpFile: HwpPrimitive {
                 throw HwpError.invalidOLEFile(reason: String(describing: error))
             }
             do {
-                try self.init(fromOLE: ole)
+                try self.init(fromOLE: ole, readLimits: readLimits)
             } catch let error as HwpError {
                 throw error
             } catch {
@@ -60,9 +63,9 @@ public struct HwpFile: HwpPrimitive {
         }
     #endif
 
-    private init(fromOLE ole: OLEFile) throws {
+    private init(fromOLE ole: OLEFile, readLimits: HwpReadLimits = .default) throws {
         let streams = try StreamReader.rootStreams(from: ole.root.children)
-        let reader = StreamReader(ole, streams)
+        let reader = StreamReader(ole, streams, readLimits: readLimits)
 
         let fileHeader = try HwpFileHeader.load(reader.getDataFromStream(.fileHeader, false))
         if let unsupportedFeature = fileHeader.fileProperty.unsupportedFeature {

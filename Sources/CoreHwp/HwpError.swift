@@ -9,6 +9,7 @@ public enum HwpUnsupportedFeature: String, HwpPrimitive {
 public enum HwpError: Error {
     case streamDoesNotExist(name: HwpStreamName)
     case streamDecompressFailed(name: HwpStreamName)
+    case streamSizeLimitExceeded(name: HwpStreamName, limit: Int, actual: Int)
     case invalidOLEFile(reason: String)
     case invalidDataForString(data: Data, name: String)
     case recordDoesNotExist(tag: UInt32)
@@ -34,6 +35,8 @@ extension HwpError: CustomStringConvertible {
             return "Stream '\(name)' does not exist"
         case let .streamDecompressFailed(name):
             return "Stream '\(name)' failed to decompress"
+        case let .streamSizeLimitExceeded(name, limit, actual):
+            return "Stream '\(name)' exceeded size limit: \(actual) bytes > \(limit) bytes"
         case let .invalidOLEFile(reason):
             return "Invalid OLE file: \(reason)"
         case let .invalidDataForString(data, name):
