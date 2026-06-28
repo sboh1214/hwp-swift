@@ -141,9 +141,6 @@ public struct HwpFile: HwpPrimitive {
                 reason: "BodyText sectionSize \(expectedSectionCount) is invalid"
             )
         }
-        guard !sectionDataArray.isEmpty else {
-            throw HwpError.streamDoesNotExist(name: .bodyText)
-        }
         if sectionDataArray.count != expectedSectionCount {
             let reason = "BodyText section count \(sectionDataArray.count) " +
                 "!= sectionSize \(expectedSectionCount)"

@@ -369,7 +369,7 @@ private extension HwpParagraph {
                 return .other(try HwpOtherControl.load(record))
             }
         } catch let error as HwpError {
-            guard error.canFallbackToRawControl else {
+            guard error.canFallbackToRawListControl else {
                 throw error
             }
             return try .other(HwpOtherControl.load(record))
@@ -413,6 +413,15 @@ private extension HwpError {
             true
         default:
             false
+        }
+    }
+
+    var canFallbackToRawListControl: Bool {
+        switch self {
+        case .recordDoesNotExist, .invalidRecordTree:
+            true
+        default:
+            canFallbackToRawControl
         }
     }
 

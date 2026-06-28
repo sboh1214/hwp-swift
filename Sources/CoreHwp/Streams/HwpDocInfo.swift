@@ -130,9 +130,6 @@ public struct HwpDocInfo: HwpFromDataWithVersion {
     public static func load(_ data: Data, _ version: HwpVersion) throws -> Self {
         var reader = DataReader(data)
         var docInfo = try self.init(&reader, version)
-        if !reader.isEOF {
-            throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
-        }
         docInfo.rawPayload = data
         return docInfo
     }

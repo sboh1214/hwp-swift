@@ -90,7 +90,7 @@ final class ListControlStabilityTests: XCTestCase {
         ]
     }
 
-    func testParagraphDoesNotHideInvalidListTreeAsGenericOtherControl() {
+    func testParagraphPreservesMissingListParagraphAsGenericOtherControl() throws {
         let record = listControlRecord(children: [
             HwpRecord(
                 tagId: HwpSectionTag.listHeader.rawValue,
@@ -99,32 +99,31 @@ final class ListControlStabilityTests: XCTestCase {
             ),
         ])
 
-        expect {
-            _ = try HwpParagraph.load(
-                listControlParagraphRecord(children: [
-                    HwpRecord(
-                        tagId: HwpSectionTag.paraCharShape.rawValue,
-                        level: 1,
-                        payload: Data()
-                    ),
-                    HwpRecord(
-                        tagId: HwpSectionTag.paraLineSeg.rawValue,
-                        level: 1,
-                        payload: Data()
-                    ),
-                    record,
-                ]),
-                HwpVersion(5, 0, 1, 1)
-            )
-        }.to(throwError { error in
-            guard case let HwpError.invalidRecordTree(reason) = error else {
-                return fail("Expected invalidRecordTree, got \(error)")
-            }
-            expect(reason) == "list control paragraph is missing"
-        })
+        expectInvalidListControl {
+            _ = try HwpListControl.load(record, HwpVersion(5, 0, 1, 1))
+        }
+
+        let paragraph = try HwpParagraph.load(
+            listControlParagraphRecord(children: [
+                HwpRecord(
+                    tagId: HwpSectionTag.paraCharShape.rawValue,
+                    level: 1,
+                    payload: Data()
+                ),
+                HwpRecord(
+                    tagId: HwpSectionTag.paraLineSeg.rawValue,
+                    level: 1,
+                    payload: Data()
+                ),
+                record,
+            ]),
+            HwpVersion(5, 0, 1, 1)
+        )
+
+        assertListControlFallback(paragraph, record)
     }
 
-    func testParagraphDoesNotHideMissingListHeaderAsGenericOtherControl() {
+    func testParagraphPreservesMissingListHeaderAsGenericOtherControl() throws {
         let record = listControlRecord(children: [
             HwpRecord(tagId: 0x2FE, level: 2, payload: Data([0xAA])),
         ])
@@ -132,24 +131,24 @@ final class ListControlStabilityTests: XCTestCase {
         expectRecordDoesNotExist(tag: HwpSectionTag.listHeader.rawValue) {
             _ = try HwpListControl.load(record, HwpVersion(5, 0, 1, 1))
         }
-        expectRecordDoesNotExist(tag: HwpSectionTag.listHeader.rawValue) {
-            _ = try HwpParagraph.load(
-                listControlParagraphRecord(children: [
-                    HwpRecord(
-                        tagId: HwpSectionTag.paraCharShape.rawValue,
-                        level: 1,
-                        payload: Data()
-                    ),
-                    HwpRecord(
-                        tagId: HwpSectionTag.paraLineSeg.rawValue,
-                        level: 1,
-                        payload: Data()
-                    ),
-                    record,
-                ]),
-                HwpVersion(5, 0, 1, 1)
-            )
-        }
+        let paragraph = try HwpParagraph.load(
+            listControlParagraphRecord(children: [
+                HwpRecord(
+                    tagId: HwpSectionTag.paraCharShape.rawValue,
+                    level: 1,
+                    payload: Data()
+                ),
+                HwpRecord(
+                    tagId: HwpSectionTag.paraLineSeg.rawValue,
+                    level: 1,
+                    payload: Data()
+                ),
+                record,
+            ]),
+            HwpVersion(5, 0, 1, 1)
+        )
+
+        assertListControlFallback(paragraph, record)
     }
 
     func testListControlNegativeParagraphCountThrowsTypedError() {
@@ -231,6 +230,46 @@ final class ListControlStabilityTests: XCTestCase {
             _ = try HwpListControl.load(record, HwpVersion(5, 0, 1, 1))
         }
     }
+
+    func testParagraphPreservesUnexpectedListParagraphTagAsGenericOtherControl() throws {
+        let record = listControlRecord(children: [
+            HwpRecord(
+                tagId: HwpSectionTag.listHeader.rawValue,
+                level: 2,
+                payload: listHeaderPayload(paragraphCount: 1)
+            ),
+            HwpRecord(tagId: 0x2FF, level: 2, payload: Data([0xAA])),
+        ])
+        let paragraph = try HwpParagraph.load(
+            listControlParagraphRecord(children: [
+                HwpRecord(
+                    tagId: HwpSectionTag.paraCharShape.rawValue,
+                    level: 1,
+                    payload: Data()
+                ),
+                HwpRecord(
+                    tagId: HwpSectionTag.paraLineSeg.rawValue,
+                    level: 1,
+                    payload: Data()
+                ),
+                record,
+            ]),
+            HwpVersion(5, 0, 1, 1)
+        )
+
+        assertListControlFallback(paragraph, record)
+    }
+}
+
+private func assertListControlFallback(_ paragraph: HwpParagraph, _ record: HwpRecord) {
+    guard case let .other(other) = paragraph.ctrlHeaderArray?.first else {
+        return fail("Expected invalid list control to be preserved as other")
+    }
+
+    expect(other.ctrlId) == .header
+    expect(other.rawPayload) == record.payload
+    expect(other.rawTrailing).to(beEmpty())
+    expect(other.unknownChildren) == record.children.map(HwpUnknownRecord.init)
 }
 
 private func expectInvalidListControl(_ expression: @escaping () throws -> Void) {

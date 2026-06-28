@@ -251,7 +251,7 @@ final class HwpFileStreamAssemblyTests: XCTestCase {
         })
     }
 
-    func testDecodedStreamsRejectMissingBodyTextSections() {
+    func testDecodedStreamsRejectEmptyBodyTextSectionsWithCountMismatch() {
         expect {
             _ = try HwpFile(
                 fileHeader: HwpFileHeader(),
@@ -259,10 +259,10 @@ final class HwpFileStreamAssemblyTests: XCTestCase {
                 sectionDataArray: []
             )
         }.to(throwError { error in
-            guard case let HwpError.streamDoesNotExist(name) = error else {
-                return fail("Expected streamDoesNotExist, got \(error)")
+            guard case let HwpError.invalidRecordTree(reason) = error else {
+                return fail("Expected invalidRecordTree, got \(error)")
             }
-            expect(name) == .bodyText
+            expect(reason) == "BodyText section count 0 != sectionSize 1"
         })
     }
 

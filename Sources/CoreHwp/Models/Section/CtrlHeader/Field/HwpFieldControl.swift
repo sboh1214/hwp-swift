@@ -125,16 +125,26 @@ extension HwpFieldControl: HwpPrimitive {
         } catch {
             return nil
         }
-        guard let parsedLength = parsedLength(
-            length,
-            remainingBytes: data.count - textOffset
-        )
-        else {
+        let candidates = parsedLengthCandidates(length, remainingBytes: data.count - textOffset)
+        let parsedCandidates = candidates.compactMap {
+            fieldParameter(from: data, textOffset: textOffset, length: $0)
+        }
+        guard let parsedParameter = parsedCandidates.max(by: {
+            fieldParameterScore($0.value) < fieldParameterScore($1.value)
+        }) else {
             return nil
         }
+        return parsedParameter
+    }
+
+    private static func fieldParameter(
+        from data: Data,
+        textOffset: Int,
+        length: HwpFieldParameterLengthCandidate
+    ) -> HwpFieldParameterParseResult? {
         let chars: [WCHAR]
         do {
-            chars = try (0 ..< parsedLength.characterCount).map { index in
+            chars = try (0 ..< length.characterCount).map { index in
                 try data.readLittleEndianUInt16(
                     at: textOffset + index * MemoryLayout<WCHAR>.size
                 )
@@ -142,34 +152,72 @@ extension HwpFieldControl: HwpPrimitive {
         } catch {
             return nil
         }
-        let parameterChars = parsedLength.isByteSwapped
-            ? chars.map(\.byteSwapped)
-            : chars
+        let parameterChars = length.isByteSwapped ? chars.map(\.byteSwapped) : chars
         guard let value = parameterChars.stringIfValid else {
             return nil
         }
-        let consumedBytes = textOffset + parsedLength.characterCount * MemoryLayout<WCHAR>.size
-        let byteCount = parsedLength.characterCount * MemoryLayout<WCHAR>.size
+        guard isSupportedFieldParameterText(value) else {
+            return nil
+        }
+        let byteCount = length.characterCount * MemoryLayout<WCHAR>.size
+        let consumedBytes = textOffset + byteCount
         return HwpFieldParameterParseResult(
             value: value,
+            characterCount: length.characterCount,
             rawPayload: Data(data.dropFirst(textOffset).prefix(byteCount)),
             rawTrailing: Data(data.dropFirst(consumedBytes))
         )
     }
 
-    private static func parsedLength(
+    private static func parsedLengthCandidates(
         _ length: WORD,
         remainingBytes: Int
-    ) -> (characterCount: Int, isByteSwapped: Bool)? {
+    ) -> [HwpFieldParameterLengthCandidate] {
         let maxCharacterCount = remainingBytes / MemoryLayout<WCHAR>.size
+        var candidates = [HwpFieldParameterLengthCandidate]()
         if let count = Int(exactly: length), count <= maxCharacterCount {
-            return (count, false)
+            candidates.append(HwpFieldParameterLengthCandidate(
+                characterCount: count,
+                isByteSwapped: false
+            ))
         }
         let swappedLength = length.byteSwapped
-        if let count = Int(exactly: swappedLength), count <= maxCharacterCount {
-            return (count, true)
+        if swappedLength != length,
+           let count = Int(exactly: swappedLength),
+           count <= maxCharacterCount
+        {
+            candidates.append(HwpFieldParameterLengthCandidate(
+                characterCount: count,
+                isByteSwapped: true
+            ))
         }
-        return nil
+        return candidates
+    }
+
+    private static func fieldParameterScore(_ value: String) -> Int {
+        var score = value.hasPrefix("MEMO/") ? 100 : 0
+        if value.contains("/") {
+            score += 10
+        }
+        for scalar in value.unicodeScalars {
+            if scalar.value >= 0x20, scalar.value <= 0x7E {
+                score += 3
+            } else if scalar.value >= 0xAC00, scalar.value <= 0xD7A3 {
+                score += 2
+            } else if CharacterSet.whitespacesAndNewlines.contains(scalar) {
+                score += 1
+            } else if CharacterSet.controlCharacters.contains(scalar) {
+                score -= 5
+            }
+        }
+        return score
+    }
+
+    private static func isSupportedFieldParameterText(_ value: String) -> Bool {
+        value.unicodeScalars.allSatisfy {
+            !CharacterSet.controlCharacters.contains($0)
+                || CharacterSet.whitespacesAndNewlines.contains($0)
+        }
     }
 
     private static func fieldParameterLengthInfo(from data: Data)
@@ -186,17 +234,20 @@ extension HwpFieldControl: HwpPrimitive {
             let rawPayload = Data(
                 data.dropFirst(lengthOffset).prefix(MemoryLayout<WORD>.size)
             )
-            guard let parsed = parsedLength(
+            let candidates = parsedLengthCandidates(
                 length,
                 remainingBytes: data.count - textOffset
-            ) else {
+            )
+            guard let characterCount = fieldParameter(from: data)?.characterCount
+                ?? candidates.first?.characterCount
+            else {
                 return HwpFieldParameterLengthInfo(
                     characterCount: nil,
                     rawPayload: rawPayload
                 )
             }
             return HwpFieldParameterLengthInfo(
-                characterCount: parsed.characterCount,
+                characterCount: characterCount,
                 rawPayload: rawPayload
             )
         } catch {
@@ -228,8 +279,14 @@ extension HwpFieldControl: HwpPrimitive {
 
 private struct HwpFieldParameterParseResult {
     let value: String
+    let characterCount: Int
     let rawPayload: Data
     let rawTrailing: Data
+}
+
+private struct HwpFieldParameterLengthCandidate {
+    let characterCount: Int
+    let isByteSwapped: Bool
 }
 
 private struct HwpFieldParameterLengthInfo {

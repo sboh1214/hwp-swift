@@ -116,6 +116,37 @@ final class FieldControlParameterStabilityTests: XCTestCase {
         expect(control.rawTrailing) == rawTrailing
     }
 
+    func testByteSwappedFieldParameterWinsOverGarbledNaturalEndianCandidate() throws {
+        let parameter = "M"
+        let swappedPayload = byteSwappedUTF16Payload(parameter)
+        let naturalCandidatePadding = Data(
+            repeating: 0,
+            count: Int(WORD(parameter.utf16.count).byteSwapped)
+                * MemoryLayout<WCHAR>.size
+                - swappedPayload.count
+        )
+        let rawTrailing = littleEndianData(UInt32(0x8001))
+            + littleEndianData(WORD(parameter.utf16.count).byteSwapped)
+            + swappedPayload
+            + naturalCandidatePadding
+            + Data([0xAA, 0xBB])
+        var rawPayload = littleEndianData(HwpFieldCtrlId.unknown.rawValue)
+        rawPayload.append(rawTrailing)
+        let record = HwpRecord(
+            tagId: HwpSectionTag.ctrlHeader.rawValue,
+            level: 1,
+            payload: rawPayload
+        )
+
+        let control = try HwpFieldControl.load(record)
+
+        expect(control.fieldParameterCharacterCount) == parameter.utf16.count
+        expect(control.fieldParameterLengthRawPayload) == Data([0, 1])
+        expect(control.fieldParameter) == parameter
+        expect(control.fieldParameterRawPayload) == swappedPayload
+        expect(control.fieldParameterRawTrailing) == naturalCandidatePadding + Data([0xAA, 0xBB])
+    }
+
     func testFieldParameterWithNonZeroStartIndexPreservesMemoMetadata() throws {
         let parameter = "MEMO/1/2/3/4/writer/body"
         let rawTrailing = fieldParameterTrailing(parameter) + Data([0xAA, 0xBB])
