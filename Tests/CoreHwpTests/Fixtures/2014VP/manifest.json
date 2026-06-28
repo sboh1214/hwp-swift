@@ -1,0 +1,307 @@
+{
+  "id": "2014VP",
+  "generationTool": "Existing repository fixture",
+  "hwpVersion": "5.0.5.0",
+  "source": "Migrated from Tests/CoreHwpTests/Versions/2014VP.hwp",
+  "features": [
+    "version",
+    "doc-info",
+    "doc-properties",
+    "preview-text",
+    "preview-image"
+  ],
+  "expectations": {
+    "fileHeaderRawPayloadLength": 256,
+    "fileHeaderRawPayloadPrefixBytes": [
+      72,
+      87,
+      80,
+      32,
+      68,
+      111,
+      99,
+      117
+    ],
+    "fileHeaderRawPayloadSuffixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "fileHeaderVersionRawBytes": [
+      0,
+      5,
+      0,
+      5
+    ],
+    "fileHeaderReservedLength": 207,
+    "fileHeaderReservedPrefixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "fileHeaderReservedSuffixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "sectionCount": 1,
+    "sectionRawPayloadCount": 1,
+    "sectionRawPayloadTotalByteCount": 351,
+    "sectionRawPayloadPrefixBytes": [
+      [
+        66,
+        0,
+        128,
+        1,
+        17,
+        0,
+        0,
+        128
+      ]
+    ],
+    "sectionRawPayloadSuffixBytes": [
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    ],
+    "paragraphCount": 1,
+    "sectionUnknownRecordCount": 0,
+    "docInfoRawPayloadLength": 4361,
+    "docInfoRawPayloadPrefixBytes": [
+      16,
+      0,
+      160,
+      1,
+      1,
+      0,
+      1,
+      0
+    ],
+    "docInfoRawPayloadSuffixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "summaryLength": 485,
+    "summaryPrefixBytes": [
+      254,
+      255,
+      0,
+      0,
+      6,
+      2,
+      2,
+      0
+    ],
+    "summarySuffixBytes": [
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0
+    ],
+    "previewTextLength": 1,
+    "previewTextRawPayloadLength": 4,
+    "previewTextPrefixBytes": [
+      13,
+      0,
+      10,
+      0
+    ],
+    "previewTextSuffixBytes": [
+      13,
+      0,
+      10,
+      0
+    ],
+    "previewImageLength": 1146,
+    "previewImageFormat": "gif",
+    "previewImagePrefixBytes": [
+      71,
+      73,
+      70,
+      56,
+      57,
+      97,
+      177,
+      0
+    ],
+    "previewImageSuffixBytes": [
+      226,
+      137,
+      40,
+      154,
+      24,
+      16,
+      0,
+      59
+    ],
+    "docInfoUnknownRecordCount": 0,
+    "docInfoRawRecordCount": 0,
+    "documentProperties": {
+      "sectionSize": 1,
+      "rawPayloadLength": 26,
+      "rawPayloadPrefixBytes": [
+        1,
+        0,
+        1,
+        0,
+        1,
+        0,
+        1,
+        0
+      ],
+      "rawPayloadSuffixBytes": [
+        0,
+        0,
+        0,
+        0,
+        16,
+        0,
+        0,
+        0
+      ],
+      "startingIndex": {
+        "page": 1,
+        "rawPayloadLength": 12,
+        "rawPayloadPrefixBytes": [
+          1,
+          0,
+          1,
+          0,
+          1,
+          0,
+          1,
+          0
+        ],
+        "rawPayloadSuffixBytes": [
+          1,
+          0,
+          1,
+          0,
+          1,
+          0,
+          1,
+          0
+        ],
+        "footnote": 1,
+        "endnote": 1,
+        "picture": 1,
+        "table": 1,
+        "equation": 1
+      },
+      "caratLocation": {
+        "listId": 0,
+        "rawPayloadLength": 12,
+        "rawPayloadPrefixBytes": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "rawPayloadSuffixBytes": [
+          0,
+          0,
+          0,
+          0,
+          16,
+          0,
+          0,
+          0
+        ],
+        "paragraphId": 0,
+        "charIndex": 16
+      }
+    },
+    "docInfoIdMappings": {
+      "binDataCount": 0,
+      "faceNameKoreanCount": 2,
+      "faceNameEnglishCount": 2,
+      "faceNameChineseCount": 2,
+      "faceNameJapaneseCount": 2,
+      "faceNameEtcCount": 2,
+      "faceNameSymbolCount": 2,
+      "faceNameUserCount": 2,
+      "faceNameRawPayloadTotalByteCount": 616,
+      "borderFillCount": 2,
+      "borderFillRawPayloadTotalByteCount": 93,
+      "charShapeCount": 7,
+      "charShapeRawPayloadTotalByteCount": 518,
+      "charShapePropertyRawValues": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "tabDefCount": 2,
+      "tabDefRawPayloadTotalByteCount": 16,
+      "numberingCount": 1,
+      "bulletCount": 0,
+      "paraShapeCount": 16,
+      "paraShapeRawPayloadTotalByteCount": 864,
+      "styleCount": 18,
+      "forbiddenCharCount": 1,
+      "unknownChildCount": 0
+    },
+    "controlCount": 2,
+    "controlTypeCounts": {
+      "column": 1,
+      "section": 1
+    },
+    "columns": [
+      {
+        "ctrlId": 1668246628,
+        "ctrlIdName": "column",
+        "unknownChildCount": 0
+      }
+    ],
+    "sections": [
+      {
+        "unknownChildCount": 0
+      }
+    ],
+    "fileProperty": {
+      "rawValue": 1
+    },
+    "fileLicense": {
+      "rawValue": 0
+    }
+  }
+}

@@ -1,0 +1,1040 @@
+{
+  "id": "BinData",
+  "generationTool": "Existing repository fixture",
+  "hwpVersion": "5.1.0.1",
+  "source": "Migrated from Tests/CoreHwpTests/DocInfo/BinData/BinData.hwp",
+  "features": [
+    "doc-info",
+    "bin-data",
+    "embedded-image-reference",
+    "preview-image"
+  ],
+  "expectations": {
+    "fileHeaderRawPayloadLength": 256,
+    "fileHeaderRawPayloadPrefixBytes": [
+      72,
+      87,
+      80,
+      32,
+      68,
+      111,
+      99,
+      117
+    ],
+    "fileHeaderRawPayloadSuffixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "fileHeaderVersionRawBytes": [
+      1,
+      0,
+      1,
+      5
+    ],
+    "fileHeaderReservedLength": 207,
+    "fileHeaderReservedPrefixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "fileHeaderReservedSuffixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "sectionCount": 1,
+    "sectionRawPayloadCount": 1,
+    "sectionRawPayloadTotalByteCount": 1856,
+    "sectionRawPayloadPrefixBytes": [
+      [
+        66,
+        0,
+        128,
+        1,
+        25,
+        0,
+        0,
+        0
+      ]
+    ],
+    "sectionRawPayloadSuffixBytes": [
+      [
+        24,
+        166,
+        0,
+        0,
+        0,
+        0,
+        6,
+        0
+      ]
+    ],
+    "paragraphCount": 4,
+    "sectionUnknownRecordCount": 0,
+    "docInfoRawPayloadLength": 4723,
+    "docInfoRawPayloadPrefixBytes": [
+      16,
+      0,
+      160,
+      1,
+      1,
+      0,
+      1,
+      0
+    ],
+    "docInfoRawPayloadSuffixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "summaryLength": 477,
+    "summaryPrefixBytes": [
+      254,
+      255,
+      0,
+      0,
+      0,
+      4,
+      2,
+      0
+    ],
+    "summarySuffixBytes": [
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0
+    ],
+    "previewTextLength": 4,
+    "previewTextRawPayloadLength": 16,
+    "previewTextPrefixBytes": [
+      13,
+      0,
+      10,
+      0,
+      13,
+      0,
+      10,
+      0
+    ],
+    "previewTextSuffixBytes": [
+      13,
+      0,
+      10,
+      0,
+      13,
+      0,
+      10,
+      0
+    ],
+    "previewImageLength": 35596,
+    "previewImageFormat": "png",
+    "previewImageSuffixBytes": [
+      73,
+      69,
+      78,
+      68,
+      174,
+      66,
+      96,
+      130
+    ],
+    "previewImagePrefixBytes": [
+      137,
+      80,
+      78,
+      71
+    ],
+    "binaryDataCount": 3,
+    "binaryDataNames": [
+      "BIN0001.png",
+      "BIN0002.jpeg",
+      "BIN0003.gif"
+    ],
+    "binaryDataEntryNames": [
+      "BIN0001.png",
+      "BIN0002.jpeg",
+      "BIN0003.gif"
+    ],
+    "binaryDataStreamIds": [
+      1,
+      2,
+      3
+    ],
+    "binaryDataExtensionNames": [
+      "png",
+      "jpeg",
+      "gif"
+    ],
+    "binaryDataPayloadLengths": [
+      62875,
+      51551,
+      20462
+    ],
+    "binaryDataPayloadPrefixBytes": [
+      [
+        137,
+        80,
+        78,
+        71,
+        13,
+        10,
+        26,
+        10
+      ],
+      [
+        255,
+        216,
+        255,
+        224,
+        0,
+        16,
+        74,
+        70
+      ],
+      [
+        71,
+        73,
+        70,
+        56,
+        57,
+        97,
+        128,
+        7
+      ]
+    ],
+    "binaryDataPayloadSuffixBytes": [
+      [
+        73,
+        69,
+        78,
+        68,
+        174,
+        66,
+        96,
+        130
+      ],
+      [
+        138,
+        0,
+        40,
+        162,
+        138,
+        0,
+        255,
+        217
+      ],
+      [
+        211,
+        63,
+        61,
+        52,
+        7,
+        4,
+        0,
+        59
+      ]
+    ],
+    "binaryDataTotalByteCount": 134888,
+    "documentProperties": {
+      "sectionSize": 1,
+      "startingIndex": {
+        "page": 1,
+        "footnote": 1,
+        "endnote": 1,
+        "picture": 1,
+        "table": 1,
+        "equation": 1
+      },
+      "caratLocation": {
+        "listId": 0,
+        "paragraphId": 3,
+        "charIndex": 0
+      }
+    },
+    "docInfoIdMappings": {
+      "binDataCount": 3,
+      "faceNameKoreanCount": 2,
+      "faceNameEnglishCount": 2,
+      "faceNameChineseCount": 2,
+      "faceNameJapaneseCount": 2,
+      "faceNameEtcCount": 2,
+      "faceNameSymbolCount": 2,
+      "faceNameUserCount": 2,
+      "faceNameRawPayloadTotalByteCount": 476,
+      "borderFillCount": 2,
+      "borderFillRawPayloadTotalByteCount": 93,
+      "charShapeCount": 7,
+      "charShapeRawPayloadTotalByteCount": 518,
+      "charShapePropertyRawValues": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "tabDefCount": 3,
+      "tabDefRawPayloadTotalByteCount": 24,
+      "numberingCount": 1,
+      "bulletCount": 0,
+      "paraShapeCount": 19,
+      "paraShapeRawPayloadTotalByteCount": 1102,
+      "styleCount": 21,
+      "forbiddenCharCount": 1,
+      "unknownChildCount": 0
+    },
+    "docInfoBinData": [
+      {
+        "propertyRawValue": 33,
+        "type": "embedding",
+        "compressType": "never",
+        "state": "never",
+        "streamId": 1,
+        "extensionName": "png",
+        "extensionNameRawPayloadLength": 6,
+        "extensionNameRawPayloadPrefixBytes": [
+          112,
+          0,
+          110,
+          0,
+          103,
+          0
+        ],
+        "extensionNameRawPayloadSuffixBytes": [
+          112,
+          0,
+          110,
+          0,
+          103,
+          0
+        ],
+        "rawPayloadLength": 12,
+        "rawPayloadPrefixBytes": [
+          33,
+          0,
+          1,
+          0,
+          3,
+          0,
+          112,
+          0,
+          110,
+          0,
+          103,
+          0
+        ],
+        "rawPayloadSuffixBytes": [
+          33,
+          0,
+          1,
+          0,
+          3,
+          0,
+          112,
+          0,
+          110,
+          0,
+          103,
+          0
+        ]
+      },
+      {
+        "propertyRawValue": 33,
+        "type": "embedding",
+        "compressType": "never",
+        "state": "never",
+        "streamId": 2,
+        "extensionName": "jpeg",
+        "extensionNameRawPayloadLength": 8,
+        "extensionNameRawPayloadPrefixBytes": [
+          106,
+          0,
+          112,
+          0,
+          101,
+          0,
+          103,
+          0
+        ],
+        "extensionNameRawPayloadSuffixBytes": [
+          106,
+          0,
+          112,
+          0,
+          101,
+          0,
+          103,
+          0
+        ],
+        "rawPayloadLength": 14,
+        "rawPayloadPrefixBytes": [
+          33,
+          0,
+          2,
+          0,
+          4,
+          0,
+          106,
+          0,
+          112,
+          0,
+          101,
+          0
+        ],
+        "rawPayloadSuffixBytes": [
+          2,
+          0,
+          4,
+          0,
+          106,
+          0,
+          112,
+          0,
+          101,
+          0,
+          103,
+          0
+        ]
+      },
+      {
+        "propertyRawValue": 33,
+        "type": "embedding",
+        "compressType": "never",
+        "state": "never",
+        "streamId": 3,
+        "extensionName": "gif",
+        "extensionNameRawPayloadLength": 6,
+        "extensionNameRawPayloadPrefixBytes": [
+          103,
+          0,
+          105,
+          0,
+          102,
+          0
+        ],
+        "extensionNameRawPayloadSuffixBytes": [
+          103,
+          0,
+          105,
+          0,
+          102,
+          0
+        ],
+        "rawPayloadLength": 12,
+        "rawPayloadPrefixBytes": [
+          33,
+          0,
+          3,
+          0,
+          3,
+          0,
+          103,
+          0,
+          105,
+          0,
+          102,
+          0
+        ],
+        "rawPayloadSuffixBytes": [
+          33,
+          0,
+          3,
+          0,
+          3,
+          0,
+          103,
+          0,
+          105,
+          0,
+          102,
+          0
+        ]
+      }
+    ],
+    "docInfoUnknownRecordCount": 0,
+    "docInfoRawRecordCount": 0,
+    "controlCount": 5,
+    "controlTypeCounts": {
+      "column": 1,
+      "genShapeObject": 3,
+      "section": 1
+    },
+    "genShapeObjects": [
+      {
+        "ctrlId": 1735618336,
+        "ctrlIdName": "genShapeObject",
+        "width": 35449,
+        "height": 19938,
+        "commonCtrlPropertyRawPayloadLength": 102,
+        "commonCtrlPropertyRawPayloadPrefixBytes": [
+          32,
+          111,
+          115,
+          103,
+          17,
+          35,
+          10,
+          4,
+          0,
+          0,
+          0,
+          0
+        ],
+        "commonCtrlPropertyRawPayloadSuffixBytes": [
+          115,
+          0,
+          116,
+          0,
+          46,
+          0,
+          112,
+          0,
+          110,
+          0,
+          103,
+          0
+        ],
+        "rawPayloadLength": 102,
+        "rawPayloadPrefixBytes": [
+          32,
+          111,
+          115,
+          103,
+          17,
+          35,
+          10,
+          4,
+          0,
+          0,
+          0,
+          0
+        ],
+        "rawPayloadSuffixBytes": [
+          115,
+          0,
+          116,
+          0,
+          46,
+          0,
+          112,
+          0,
+          110,
+          0,
+          103,
+          0
+        ],
+        "rawTrailingLength": 0,
+        "rawTrailingPrefixBytes": [],
+        "rawTrailingSuffixBytes": [],
+        "shapeComponents": [
+          {
+            "ctrlId": 611346787,
+            "ctrlIdName": "picture",
+            "rawPayloadLength": 196,
+            "rawPayloadPrefixBytes": [
+              99,
+              105,
+              112,
+              36,
+              99,
+              105,
+              112,
+              36,
+              0,
+              0,
+              0,
+              0
+            ],
+            "rawPayloadSuffixBytes": [
+              0,
+              0,
+              240,
+              63,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "pictureCount": 1,
+            "pictureRawPayloadLengths": [
+              91
+            ],
+            "pictureRawPayloadPrefixBytes": [
+              [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "pictureRawPayloadSuffixBytes": [
+              [
+                0,
+                0,
+                0,
+                128,
+                50,
+                2,
+                0,
+                104,
+                60,
+                1,
+                0,
+                0
+              ]
+            ],
+            "pictureRawTrailingLengths": [
+              18
+            ],
+            "pictureRawTrailingPrefixBytes": [
+              [
+                0,
+                110,
+                166,
+                35,
+                30,
+                0,
+                0,
+                0,
+                0,
+                128,
+                50,
+                2
+              ]
+            ],
+            "pictureRawTrailingSuffixBytes": [
+              [
+                0,
+                0,
+                0,
+                128,
+                50,
+                2,
+                0,
+                104,
+                60,
+                1,
+                0,
+                0
+              ]
+            ],
+            "pictureBinaryDataIds": [
+              1
+            ],
+            "ctrlDataCount": 0,
+            "unknownChildCount": 0
+          }
+        ],
+        "ctrlDataCount": 0,
+        "unknownChildCount": 0,
+        "unknownChildTagIds": []
+      },
+      {
+        "ctrlId": 1735618336,
+        "ctrlIdName": "genShapeObject",
+        "width": 35449,
+        "height": 19938,
+        "commonCtrlPropertyRawPayloadLength": 104,
+        "commonCtrlPropertyRawPayloadPrefixBytes": [
+          32,
+          111,
+          115,
+          103,
+          17,
+          35,
+          10,
+          4,
+          0,
+          0,
+          0,
+          0
+        ],
+        "commonCtrlPropertyRawPayloadSuffixBytes": [
+          116,
+          0,
+          46,
+          0,
+          106,
+          0,
+          112,
+          0,
+          101,
+          0,
+          103,
+          0
+        ],
+        "rawPayloadLength": 104,
+        "rawPayloadPrefixBytes": [
+          32,
+          111,
+          115,
+          103,
+          17,
+          35,
+          10,
+          4,
+          0,
+          0,
+          0,
+          0
+        ],
+        "rawPayloadSuffixBytes": [
+          116,
+          0,
+          46,
+          0,
+          106,
+          0,
+          112,
+          0,
+          101,
+          0,
+          103,
+          0
+        ],
+        "rawTrailingLength": 0,
+        "rawTrailingPrefixBytes": [],
+        "rawTrailingSuffixBytes": [],
+        "shapeComponents": [
+          {
+            "ctrlId": 611346787,
+            "ctrlIdName": "picture",
+            "rawPayloadLength": 196,
+            "rawPayloadPrefixBytes": [
+              99,
+              105,
+              112,
+              36,
+              99,
+              105,
+              112,
+              36,
+              0,
+              0,
+              0,
+              0
+            ],
+            "rawPayloadSuffixBytes": [
+              0,
+              0,
+              240,
+              63,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "pictureCount": 1,
+            "pictureRawPayloadLengths": [
+              91
+            ],
+            "pictureRawPayloadPrefixBytes": [
+              [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "pictureRawPayloadSuffixBytes": [
+              [
+                0,
+                0,
+                0,
+                128,
+                50,
+                2,
+                0,
+                104,
+                60,
+                1,
+                0,
+                0
+              ]
+            ],
+            "pictureRawTrailingLengths": [
+              18
+            ],
+            "pictureRawTrailingPrefixBytes": [
+              [
+                0,
+                112,
+                166,
+                35,
+                30,
+                0,
+                0,
+                0,
+                0,
+                128,
+                50,
+                2
+              ]
+            ],
+            "pictureRawTrailingSuffixBytes": [
+              [
+                0,
+                0,
+                0,
+                128,
+                50,
+                2,
+                0,
+                104,
+                60,
+                1,
+                0,
+                0
+              ]
+            ],
+            "pictureBinaryDataIds": [
+              2
+            ],
+            "ctrlDataCount": 0,
+            "unknownChildCount": 0
+          }
+        ],
+        "ctrlDataCount": 0,
+        "unknownChildCount": 0,
+        "unknownChildTagIds": []
+      },
+      {
+        "ctrlId": 1735618336,
+        "ctrlIdName": "genShapeObject",
+        "width": 35449,
+        "height": 19938,
+        "commonCtrlPropertyRawPayloadLength": 102,
+        "commonCtrlPropertyRawPayloadPrefixBytes": [
+          32,
+          111,
+          115,
+          103,
+          17,
+          35,
+          10,
+          4,
+          0,
+          0,
+          0,
+          0
+        ],
+        "commonCtrlPropertyRawPayloadSuffixBytes": [
+          115,
+          0,
+          116,
+          0,
+          46,
+          0,
+          103,
+          0,
+          105,
+          0,
+          102,
+          0
+        ],
+        "rawPayloadLength": 102,
+        "rawPayloadPrefixBytes": [
+          32,
+          111,
+          115,
+          103,
+          17,
+          35,
+          10,
+          4,
+          0,
+          0,
+          0,
+          0
+        ],
+        "rawPayloadSuffixBytes": [
+          115,
+          0,
+          116,
+          0,
+          46,
+          0,
+          103,
+          0,
+          105,
+          0,
+          102,
+          0
+        ],
+        "rawTrailingLength": 0,
+        "rawTrailingPrefixBytes": [],
+        "rawTrailingSuffixBytes": [],
+        "shapeComponents": [
+          {
+            "ctrlId": 611346787,
+            "ctrlIdName": "picture",
+            "rawPayloadLength": 196,
+            "rawPayloadPrefixBytes": [
+              99,
+              105,
+              112,
+              36,
+              99,
+              105,
+              112,
+              36,
+              0,
+              0,
+              0,
+              0
+            ],
+            "rawPayloadSuffixBytes": [
+              0,
+              0,
+              240,
+              63,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "pictureCount": 1,
+            "pictureRawPayloadLengths": [
+              91
+            ],
+            "pictureRawPayloadPrefixBytes": [
+              [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "pictureRawPayloadSuffixBytes": [
+              [
+                0,
+                0,
+                0,
+                128,
+                50,
+                2,
+                0,
+                104,
+                60,
+                1,
+                0,
+                0
+              ]
+            ],
+            "pictureRawTrailingLengths": [
+              18
+            ],
+            "pictureRawTrailingPrefixBytes": [
+              [
+                0,
+                114,
+                166,
+                35,
+                30,
+                0,
+                0,
+                0,
+                0,
+                128,
+                50,
+                2
+              ]
+            ],
+            "pictureRawTrailingSuffixBytes": [
+              [
+                0,
+                0,
+                0,
+                128,
+                50,
+                2,
+                0,
+                104,
+                60,
+                1,
+                0,
+                0
+              ]
+            ],
+            "pictureBinaryDataIds": [
+              3
+            ],
+            "ctrlDataCount": 0,
+            "unknownChildCount": 0
+          }
+        ],
+        "ctrlDataCount": 0,
+        "unknownChildCount": 0,
+        "unknownChildTagIds": []
+      }
+    ],
+    "fileProperty": {
+      "rawValue": 1
+    },
+    "fileLicense": {
+      "rawValue": 0
+    }
+  }
+}

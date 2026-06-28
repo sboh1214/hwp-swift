@@ -1,0 +1,450 @@
+{
+  "id": "plain-text-hancom-mac2026",
+  "generationTool": "Hancom Office HWP for macOS 12.30.0 (build 6382)",
+  "hwpVersion": "5.1.1.0",
+  "source": "Generated locally with Hancom Office HWP on 2026-06-24",
+  "features": [
+    "hancom-mac2026",
+    "paragraph-text",
+    "multi-paragraph",
+    "preview-text",
+    "preview-image"
+  ],
+  "expectations": {
+    "fileProperty": {
+      "rawValue": 1,
+      "isCompressed": true,
+      "isEncrypted": false,
+      "isDeploymentDocument": false
+    },
+    "fileLicense": {
+      "rawValue": 0
+    },
+    "fileHeaderRawPayloadLength": 256,
+    "fileHeaderRawPayloadPrefixBytes": [
+      72,
+      87,
+      80,
+      32,
+      68,
+      111,
+      99,
+      117
+    ],
+    "fileHeaderRawPayloadSuffixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "fileHeaderVersionRawBytes": [
+      0,
+      1,
+      1,
+      5
+    ],
+    "fileHeaderReservedLength": 207,
+    "fileHeaderReservedPrefixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "fileHeaderReservedSuffixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "encryptVersion": 4,
+    "koreaOpenLicense": 0,
+    "sectionCount": 1,
+    "sectionRawPayloadCount": 1,
+    "sectionRawPayloadTotalByteCount": 579,
+    "sectionRawPayloadPrefixBytes": [
+      [
+        66,
+        0,
+        128,
+        1,
+        51,
+        0,
+        0,
+        0
+      ]
+    ],
+    "sectionRawPayloadSuffixBytes": [
+      [
+        24,
+        166,
+        0,
+        0,
+        0,
+        0,
+        6,
+        0
+      ]
+    ],
+    "sectionParagraphCounts": [
+      2
+    ],
+    "sectionVisibleTexts": [
+      "CoreHwp Hancom macOS 2026 fixture.\rSecond line checks paragraph parsing.\r"
+    ],
+    "paragraphCount": 2,
+    "allParagraphCount": 2,
+    "paraTextRawPayloadCount": 2,
+    "paraTextRawPayloadTotalByteCount": 178,
+    "paraTextRawPayloadPrefixBytes": [
+      [
+        2,
+        0,
+        100,
+        99,
+        101,
+        115,
+        0,
+        0
+      ],
+      [
+        83,
+        0,
+        101,
+        0,
+        99,
+        0,
+        111,
+        0
+      ]
+    ],
+    "paraTextRawPayloadSuffixBytes": [
+      [
+        114,
+        0,
+        101,
+        0,
+        46,
+        0,
+        13,
+        0
+      ],
+      [
+        110,
+        0,
+        103,
+        0,
+        46,
+        0,
+        13,
+        0
+      ]
+    ],
+    "paraTextPayloadCount": 2,
+    "paraTextPayloadTotalByteCount": 28,
+    "paraTextPayloadPrefixBytes": [
+      [
+        100,
+        99,
+        101,
+        115,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        100,
+        108,
+        111,
+        99,
+        0,
+        0,
+        0,
+        0
+      ]
+    ],
+    "paraTextPayloadSuffixBytes": [
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0
+      ]
+    ],
+    "paraHeaderPayloadCount": 2,
+    "paraHeaderPayloadTotalByteCount": 48,
+    "paraHeaderPayloadPrefixBytes": [
+      [
+        51,
+        0,
+        0,
+        0,
+        4,
+        0,
+        0,
+        0
+      ],
+      [
+        38,
+        0,
+        0,
+        128,
+        0,
+        0,
+        0,
+        0
+      ]
+    ],
+    "paraHeaderPayloadSuffixBytes": [
+      [
+        1,
+        0,
+        210,
+        148,
+        9,
+        186,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    ],
+    "paraCharShapePayloadCount": 2,
+    "paraCharShapePayloadTotalByteCount": 16,
+    "paraCharShapePayloadPrefixBytes": [
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    ],
+    "paraCharShapePayloadSuffixBytes": [
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    ],
+    "paraLineSegPayloadCount": 2,
+    "paraLineSegPayloadTotalByteCount": 72,
+    "paraLineSegPayloadPrefixBytes": [
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        64,
+        6,
+        0,
+        0
+      ]
+    ],
+    "paraLineSegPayloadSuffixBytes": [
+      [
+        24,
+        166,
+        0,
+        0,
+        0,
+        0,
+        6,
+        0
+      ],
+      [
+        24,
+        166,
+        0,
+        0,
+        0,
+        0,
+        6,
+        0
+      ]
+    ],
+    "paraRangeTagCount": 0,
+    "paraRangeTagPayloadTotalByteCount": 0,
+    "controlCount": 2,
+    "allControlCount": 2,
+    "controlTypeCounts": {
+      "column": 1,
+      "section": 1
+    },
+    "visibleTextContains": [
+      "CoreHwp Hancom macOS 2026 fixture.",
+      "Second line checks paragraph parsing."
+    ],
+    "summaryLength": 525,
+    "summaryPrefixBytes": [
+      254,
+      255,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "summarySuffixBytes": [
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0
+    ],
+    "previewTextLength": 73,
+    "previewTextRawPayloadLength": 150,
+    "previewTextPrefixBytes": [
+      67,
+      0,
+      111,
+      0,
+      114,
+      0,
+      101,
+      0
+    ],
+    "previewTextSuffixBytes": [
+      103,
+      0,
+      46,
+      0,
+      13,
+      0,
+      10,
+      0
+    ],
+    "previewTextContains": [
+      "CoreHwp Hancom macOS 2026 fixture.",
+      "Second line checks paragraph parsing."
+    ],
+    "previewImageLength": 22690,
+    "previewImageFormat": "png",
+    "previewImagePrefixBytes": [
+      137,
+      80,
+      78,
+      71,
+      13,
+      10,
+      26,
+      10
+    ],
+    "previewImageSuffixBytes": [
+      73,
+      69,
+      78,
+      68,
+      174,
+      66,
+      96,
+      130
+    ],
+    "binaryDataCount": 0,
+    "binaryDataNames": [],
+    "binaryDataEntryNames": [],
+    "binaryDataStreamIds": [],
+    "binaryDataExtensionNames": [],
+    "binaryDataPayloadLengths": [],
+    "binaryDataPayloadPrefixBytes": [],
+    "binaryDataPayloadSuffixBytes": [],
+    "binaryDataTotalByteCount": 0,
+    "docInfoRawPayloadLength": 4775,
+    "docInfoRawPayloadPrefixBytes": [
+      16,
+      0,
+      160,
+      1,
+      1,
+      0,
+      1,
+      0
+    ],
+    "docInfoRawPayloadSuffixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  }
+}

@@ -1,5 +1,11 @@
-extension Character: Codable {
-    public init(from decoder: Decoder) throws {
+#if compiler(>=6.0)
+    extension Character: @retroactive Codable {}
+#else
+    extension Character: Codable {}
+#endif
+
+public extension Character {
+    init(from decoder: Decoder) throws {
         var container = try decoder.unkeyedContainer()
         let string = try container.decode(String.self)
         guard !string.isEmpty else {
@@ -17,7 +23,7 @@ extension Character: Codable {
         self = string[string.startIndex]
     }
 
-    public func encode(to encoder: Encoder) throws {
+    func encode(to encoder: Encoder) throws {
         var container = encoder.unkeyedContainer()
         try container.encode(String(self))
     }

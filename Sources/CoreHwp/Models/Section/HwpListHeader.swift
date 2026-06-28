@@ -6,6 +6,9 @@ import Foundation
  Tag ID : HWPTAG_LIST_HEADER
  */
 public struct HwpListHeader: HwpFromData {
+    /** 원본 payload */
+    @ExcludeEquatable
+    public var rawPayload: Data
     /**
      문단 수
 
@@ -13,14 +16,32 @@ public struct HwpListHeader: HwpFromData {
      */
     public let paragraphCount: Int32
     public let property: UInt32
+    /** 아직 해석하지 않은 trailing bytes */
+    public let rawTrailing: Data
+    /** trailing bytes를 little-endian WORD 단위로 해석한 값 */
+    public let rawTrailingWords: [UInt16]?
 
     init() {
+        rawPayload = Data()
         paragraphCount = 0
         property = 0
+        rawTrailing = Data()
+        rawTrailingWords = []
     }
 
     init(_ reader: inout DataReader) throws {
-        paragraphCount = reader.read(Int32.self)
-        property = reader.read(UInt32.self)
+        let startOffset = reader.byteOffset
+        paragraphCount = try reader.read(Int32.self)
+        property = try reader.read(UInt32.self)
+        rawTrailing = try reader.readToEnd()
+        rawTrailingWords = rawTrailing.littleEndianUInt16ArrayIfAligned()
+        rawPayload = try reader.consumedData(from: startOffset)
+    }
+
+    static func load(_ data: Data) throws -> Self {
+        var reader = DataReader(data)
+        var listHeader = try self.init(&reader)
+        listHeader.rawPayload = data
+        return listHeader
     }
 }

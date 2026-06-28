@@ -1,0 +1,322 @@
+{
+  "id": "CharShapeProperty",
+  "generationTool": "Existing repository fixture",
+  "hwpVersion": "5.1.0.1",
+  "source": "Migrated from Tests/CoreHwpTests/DocInfo/CharShape/CharShapeProperty.hwp",
+  "features": [
+    "doc-info",
+    "char-shape-property",
+    "doc-properties",
+    "preview-text",
+    "preview-image"
+  ],
+  "expectations": {
+    "fileHeaderRawPayloadLength": 256,
+    "fileHeaderRawPayloadPrefixBytes": [
+      72,
+      87,
+      80,
+      32,
+      68,
+      111,
+      99,
+      117
+    ],
+    "fileHeaderRawPayloadSuffixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "fileHeaderVersionRawBytes": [
+      1,
+      0,
+      1,
+      5
+    ],
+    "fileHeaderReservedLength": 207,
+    "fileHeaderReservedPrefixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "fileHeaderReservedSuffixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "sectionCount": 1,
+    "sectionRawPayloadCount": 1,
+    "sectionRawPayloadTotalByteCount": 1661,
+    "sectionRawPayloadPrefixBytes": [
+      [
+        66,
+        0,
+        128,
+        1,
+        20,
+        0,
+        0,
+        0
+      ]
+    ],
+    "sectionRawPayloadSuffixBytes": [
+      [
+        24,
+        166,
+        0,
+        0,
+        0,
+        0,
+        6,
+        0
+      ]
+    ],
+    "paragraphCount": 15,
+    "sectionUnknownRecordCount": 0,
+    "docInfoRawPayloadLength": 5843,
+    "docInfoRawPayloadPrefixBytes": [
+      16,
+      0,
+      160,
+      1,
+      1,
+      0,
+      1,
+      0
+    ],
+    "docInfoRawPayloadSuffixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "summaryLength": 485,
+    "summaryPrefixBytes": [
+      254,
+      255,
+      0,
+      0,
+      0,
+      4,
+      2,
+      0
+    ],
+    "summarySuffixBytes": [
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0
+    ],
+    "previewTextLength": 71,
+    "previewTextRawPayloadLength": 172,
+    "previewTextPrefixBytes": [
+      48,
+      174,
+      184,
+      198,
+      132,
+      199,
+      13,
+      0
+    ],
+    "previewTextSuffixBytes": [
+      13,
+      0,
+      10,
+      0,
+      13,
+      0,
+      10,
+      0
+    ],
+    "previewImageLength": 31104,
+    "previewImageFormat": "png",
+    "previewImagePrefixBytes": [
+      137,
+      80,
+      78,
+      71,
+      13,
+      10,
+      26,
+      10
+    ],
+    "previewImageSuffixBytes": [
+      73,
+      69,
+      78,
+      68,
+      174,
+      66,
+      96,
+      130
+    ],
+    "docInfoUnknownRecordCount": 0,
+    "docInfoRawRecordCount": 0,
+    "documentProperties": {
+      "sectionSize": 1,
+      "rawPayloadLength": 26,
+      "rawPayloadPrefixBytes": [
+        1,
+        0,
+        1,
+        0,
+        1,
+        0,
+        1,
+        0
+      ],
+      "rawPayloadSuffixBytes": [
+        14,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "startingIndex": {
+        "page": 1,
+        "rawPayloadLength": 12,
+        "rawPayloadPrefixBytes": [
+          1,
+          0,
+          1,
+          0,
+          1,
+          0,
+          1,
+          0
+        ],
+        "rawPayloadSuffixBytes": [
+          1,
+          0,
+          1,
+          0,
+          1,
+          0,
+          1,
+          0
+        ],
+        "footnote": 1,
+        "endnote": 1,
+        "picture": 1,
+        "table": 1,
+        "equation": 1
+      },
+      "caratLocation": {
+        "listId": 0,
+        "rawPayloadLength": 12,
+        "rawPayloadPrefixBytes": [
+          0,
+          0,
+          0,
+          0,
+          14,
+          0,
+          0,
+          0
+        ],
+        "rawPayloadSuffixBytes": [
+          14,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "paragraphId": 14,
+        "charIndex": 0
+      }
+    },
+    "docInfoIdMappings": {
+      "binDataCount": 0,
+      "faceNameKoreanCount": 2,
+      "faceNameEnglishCount": 2,
+      "faceNameChineseCount": 2,
+      "faceNameJapaneseCount": 2,
+      "faceNameEtcCount": 2,
+      "faceNameSymbolCount": 2,
+      "faceNameUserCount": 2,
+      "faceNameRawPayloadTotalByteCount": 476,
+      "borderFillCount": 2,
+      "borderFillRawPayloadTotalByteCount": 93,
+      "charShapeCount": 22,
+      "charShapeRawPayloadTotalByteCount": 1628,
+      "charShapePropertyRawValues": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        2,
+        4,
+        256,
+        2048,
+        4096,
+        8192,
+        16384,
+        32768,
+        65536,
+        0,
+        262152,
+        2097152,
+        33554432,
+        1073741824
+      ],
+      "tabDefCount": 3,
+      "tabDefRawPayloadTotalByteCount": 24,
+      "numberingCount": 1,
+      "bulletCount": 0,
+      "paraShapeCount": 19,
+      "paraShapeRawPayloadTotalByteCount": 1102,
+      "styleCount": 21,
+      "forbiddenCharCount": 1,
+      "unknownChildCount": 0
+    },
+    "controlCount": 2,
+    "visibleTextContains": [
+      "기울임",
+      "커닝"
+    ],
+    "controlTypeCounts": {
+      "column": 1,
+      "section": 1
+    },
+    "fileProperty": {
+      "rawValue": 1
+    },
+    "fileLicense": {
+      "rawValue": 0
+    }
+  }
+}

@@ -62,7 +62,7 @@ final class NooriSectionTests: XCTestCase {
             expect(hwpTable.commonCtrlProperty.height) == 6869
             expect(hwpTable.commonCtrlProperty.zOrder) == 0
         default:
-            XCTFail("Ctrl is not Table")
+            fail("Ctrl is not Table")
         }
     }
 
@@ -77,7 +77,7 @@ final class NooriSectionTests: XCTestCase {
             expect(hwpGenShapeObject.commonCtrlProperty.height) == 6134
             expect(hwpGenShapeObject.commonCtrlProperty.zOrder) == 8
         default:
-            XCTFail("Ctrl is not GenShapeObject")
+            fail("Ctrl is not GenShapeObject")
         }
     }
 
@@ -88,7 +88,7 @@ final class NooriSectionTests: XCTestCase {
         case let .column(hwpColumn):
             expect(hwpColumn.widthArray).to(beNil())
         default:
-            XCTFail("Ctrl is not Column")
+            fail("Ctrl is not Column")
         }
     }
 }

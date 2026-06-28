@@ -20,9 +20,10 @@ hwp-swift/
 └── .github/pages/         # cd.yml이 ./docs/index.html에 overlay하는 DocC 사이트 루트 랜딩 페이지
 ```
 
-폴더명은 **공백을 포함한 PascalCase** (예: `Ctrl Header/`,
-`Document Properties/`, `Id Mappings/`). 이는 한컴 공개 문서의 절 제목을
-그대로 옮긴 것이므로 의도된 명명이며, 변경 금지.
+폴더명과 파일명은 **공백 없는 PascalCase**를 사용한다 (예:
+`CtrlHeader/`, `DocumentProperties/`, `IdMappings/`). 한컴 공개 문서의
+절 제목은 public doc-comment와 문서 설명에서 보존하고, 실제 경로명에서는
+공백을 제거한다.
 
 ## 어디를 볼 것인가
 
@@ -30,7 +31,7 @@ hwp-swift/
 |------|------|
 | 새 stream 파서 추가 | `Sources/CoreHwp/Streams/` + `HwpFile.init(fromOLE:)`에 등록 |
 | 새 record 태그 추가 | `Sources/CoreHwp/Enums/Hwp{DocInfo,Section}Tag.swift` |
-| 새 컨트롤 ID 추가 | `Sources/CoreHwp/Enums/Ctrl Id/` + `Models/Section/Ctrl Header/` + `HwpCtrlId` enum |
+| 새 컨트롤 ID 추가 | `Sources/CoreHwp/Enums/CtrlId/` + `Models/Section/CtrlHeader/` + `HwpCtrlId` enum |
 | 새 모델 추가 | `Sources/CoreHwp/Models/...` 하위에 `Utils/Protocols/`의 프로토콜을 채택하여 작성 |
 | 기본 타입 확장 | `Sources/CoreHwp/Utils/Extensions/` |
 | 테스트 픽스처 추가 | 테스트 파일과 같은 폴더에 `.hwp` 배치 (`openHwp(#file, "name")` 사용) |
@@ -72,7 +73,7 @@ hwp-swift/
 
 - 테스트에서 `XCTAssert*` 사용 — SwiftLint custom rule `no_xctassert` (severity: error)로 금지. Nimble `expect(...) == ...` 사용.
 - EOF를 검사하지 않고 silent하게 byte 잔여 — loader 프로토콜의 `load`가 `bytesAreNotEOF`를 throw하도록 설계되어 있으므로, manual `init` 호출로 우회 금지.
-- 공백을 제거하려고 디렉토리명 변경 — 한컴 공개 문서의 절 제목과 의도적으로 일치시킨 것.
+- 공백이 있는 새 파일/디렉터리명 추가 — 경로명은 PascalCase + 무공백을 유지.
 - `Package.swift`의 Darwin platform 최소 버전을 더 낮추기 — 의존성 `SWCompression 4.9.1` / `BitByteData 2.1.0`이 macOS 14+/iOS 17+를 요구한다. Linux는 별도로 항상 지원 (CI matrix: macOS + ubuntu-latest).
 - `swift-tools-version` 변경 시 `.swift-version`, `.swiftformat`, **양쪽** `Test-*.yml` matrix 동시 갱신 누락 (`CONTRIBUTING.md` 참조).
 

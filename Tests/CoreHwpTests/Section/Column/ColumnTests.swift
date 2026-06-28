@@ -1,21 +1,15 @@
 import CoreHwp
+import Foundation
 import Nimble
 import XCTest
 
 final class ColumnTests: XCTestCase {
     func testColumn() throws {
         let hwp = try openHwp(#file, "Column")
-        let paragraphArray = hwp.sectionArray[0].paragraph
+        let columnArray = columns(in: hwp)
 
-        let columnArray: [HwpColumn] = paragraphArray.map {
-            $0.ctrlHeaderArray!.compactMap {
-                switch $0 {
-                case let .column(hwpColumn):
-                    hwpColumn
-                default:
-                    nil
-                }
-            }[0]
+        guard columnArray.count >= 5 else {
+            return fail("Expected at least 5 column controls, got \(columnArray.count)")
         }
 
         expect(columnArray[0].property.count) == 1
@@ -23,6 +17,7 @@ final class ColumnTests: XCTestCase {
         expect(columnArray[2].property.count) == 3
         expect(columnArray[3].property.count) == 2
         expect(columnArray[4].property.count) == 2
+        expect(columnArray.map(\.property.rawValue)) == [4100, 4104, 4108, 8, 8, 4100]
 
         expect(columnArray[0].property.isSameWidth) == true
         expect(columnArray[1].property.isSameWidth) == true
@@ -36,9 +31,32 @@ final class ColumnTests: XCTestCase {
         expect(columnArray[1].widthArray).to(beNil())
         expect(columnArray[2].widthArray).to(beNil())
 
-        expect(columnArray[3].widthArray?[0]) == 0
-        expect(columnArray[3].widthArray?[1]) == 10339
-        expect(columnArray[4].widthArray?[0]) == 0
-        expect(columnArray[4].widthArray?[1]) == 20680
+        expect(columnArray[3].widthArray) == [0, 10339]
+        expect(columnArray[4].widthArray) == [0, 20680]
     }
+
+    func testColumnFixtureSurvivesHwpFileCodableRoundTrip() throws {
+        let hwp = try openHwp(#file, "Column")
+        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
+        let expectedColumns = try columnManifestExpectations()
+
+        FixtureAssertions.assertColumns(expectedColumns, columns(in: decoded))
+        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
+        expect(decoded.sectionArray.map(\.rawPayload)) == hwp.sectionArray.map(\.rawPayload)
+        expect(decoded.previewText.rawPayload) == hwp.previewText.rawPayload
+        expect(decoded.previewImage.rawPayload) == hwp.previewImage.rawPayload
+    }
+}
+
+private func columns(in hwp: HwpFile) -> [HwpColumn] {
+    FixtureDerivedValues.columns(from: hwp)
+}
+
+private func columnManifestExpectations() throws -> [FixtureColumnExpectations] {
+    guard let columns = try FixtureLoader.load(id: "Column").manifest.expectations.columns else {
+        fail("Expected Column fixture manifest to declare column expectations")
+        return []
+    }
+
+    return columns
 }

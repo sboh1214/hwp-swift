@@ -1,0 +1,77 @@
+{
+  "id": "배포용문서",
+  "generationTool": "Existing repository fixture",
+  "hwpVersion": "5.0.5.0",
+  "source": "Migrated from Tests/CoreHwpTests/FileHeader/배포용문서.hwp",
+  "features": [
+    "deployment-document",
+    "unsupported"
+  ],
+  "expectations": {
+    "fileProperty": {
+      "rawValue": 5,
+      "isCompressed": true,
+      "isEncrypted": false,
+      "isDeploymentDocument": true,
+      "isDRMDocument": false,
+      "doesEncryptAccreditedCertificate": false,
+      "isAccreditedCertificateDRMDocument": false
+    },
+    "fileHeaderRawPayloadLength": 256,
+    "fileHeaderRawPayloadPrefixBytes": [
+      72,
+      87,
+      80,
+      32,
+      68,
+      111,
+      99,
+      117
+    ],
+    "fileHeaderRawPayloadSuffixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "fileHeaderVersionRawBytes": [
+      0,
+      5,
+      0,
+      5
+    ],
+    "fileHeaderReservedLength": 207,
+    "fileHeaderReservedPrefixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "fileHeaderReservedSuffixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "docInfoRawRecordCount": 0,
+    "fileLicense": {
+      "rawValue": 0
+    }
+  },
+  "expectedError": {
+    "code": "unsupportedFeature.deploymentDocument",
+    "description": "Unsupported HWP feature: deploymentDocument"
+  }
+}

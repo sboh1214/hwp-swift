@@ -23,11 +23,9 @@ public extension HwpColor {
     }
 
     init(_ data: COLORREF) {
-        var reader = BitsReader(from: data)
-        // reader.readBits(8)
-        red = reader.readInt(8)
-        green = reader.readInt(8)
-        blue = reader.readInt(8)
+        red = Int(data & 0xFF)
+        green = Int((data >> 8) & 0xFF)
+        blue = Int((data >> 16) & 0xFF)
     }
 
     init(_ red: Int, _ green: Int, _ blue: Int) {
@@ -61,7 +59,11 @@ public extension HwpColor {
 
     #if canImport(AppKit)
         var nsColor: NSColor {
-            NSColor(cgColor: cgColor)!
+            let red = CGFloat(red) / CGFloat(255)
+            let green = CGFloat(green) / CGFloat(255)
+            let blue = CGFloat(blue) / CGFloat(255)
+            let alpha = CGFloat(1)
+            return NSColor(red: red, green: green, blue: blue, alpha: alpha)
         }
     #endif
 

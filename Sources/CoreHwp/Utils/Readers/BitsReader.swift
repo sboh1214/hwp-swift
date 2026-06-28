@@ -16,47 +16,58 @@ struct BitsReader<T: BinaryInteger> {
         bits.count - offset
     }
 
-    mutating func readBit() -> Bool {
+    mutating func readBit() throws -> Bool {
+        guard remainBits >= 1 else {
+            throw HwpError.truncatedBits(expected: 1, actual: remainBits)
+        }
         defer {
             offset += 1
         }
         return bits[offset]
     }
 
-    @discardableResult mutating func readBits(_ count: Int) -> [Bool] {
+    @discardableResult mutating func readBits(_ count: Int) throws -> [Bool] {
+        guard count >= 0 else {
+            throw HwpError.invalidDataLength(length: String(count))
+        }
+        guard remainBits >= count else {
+            throw HwpError.truncatedBits(expected: count, actual: remainBits)
+        }
         defer {
             offset += count
         }
         return Array(bits[offset ..< (offset + count)])
     }
 
-    mutating func readInt(_ count: Int) -> Int {
-        let array = readBits(count)
-        return array
-            .map { $0 ? 1 : 0 }
-            .enumerated().reversed()
-            .reduce(0) { accumulate, current in
-                let index = current.0
-                let element = current.1
-                return accumulate + element * 2 ^^ index
+    mutating func readInt(_ count: Int) throws -> Int {
+        guard count < Int.bitWidth else {
+            throw HwpError.invalidDataLength(length: "\(count) bits cannot fit in Int")
+        }
+        let array = try readBits(count)
+        return array.enumerated().reduce(0) { value, current in
+            let (index, bit) = current
+            guard bit else {
+                return value
             }
+            return value | (1 << index)
+        }
     }
 }
 
-precedencegroup PowerPrecedence { higherThan: MultiplicationPrecedence }
-infix operator ^^: PowerPrecedence
-func ^^ (radix: Int, power: Int) -> Int {
-    Int(pow(Double(radix), Double(power)))
-}
+func getBitValue<T: FixedWidthInteger>(mask: T, start: Int, end: Int) -> T {
+    guard start >= 0, end >= start, end < T.bitWidth else {
+        return 0
+    }
 
-func getBitValue<T: BinaryInteger>(mask: T, start: Int, end: Int) -> T {
     let target = mask >> start
-
-    var temp: T = 0
-    for _ in 0 ... (end - start) {
-        temp <<= 1
-        temp += 1
+    let width = end - start + 1
+    let bitMask: T = if width == T.bitWidth {
+        ~T.zero
+    } else {
+        (0 ..< width).reduce(T.zero) { mask, bitOffset in
+            mask | (T(1) << bitOffset)
+        }
     }
 
-    return target & temp
+    return target & bitMask
 }

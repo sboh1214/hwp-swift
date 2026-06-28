@@ -1,0 +1,738 @@
+{
+  "id": "equation",
+  "generationTool": "Hancom Office HWP for macOS 12.30.0 (build 6382)",
+  "hwpVersion": "5.1.1.0",
+  "source": "Generated locally with Hancom Office HWP on 2026-06-15",
+  "features": [
+    "equation",
+    "paragraph-text",
+    "doc-info",
+    "doc-properties",
+    "preview-text",
+    "preview-image"
+  ],
+  "expectations": {
+    "fileProperty": {
+      "rawValue": 1,
+      "isCompressed": true,
+      "isEncrypted": false,
+      "isDeploymentDocument": false
+    },
+    "fileHeaderRawPayloadLength": 256,
+    "fileHeaderRawPayloadPrefixBytes": [
+      72,
+      87,
+      80,
+      32,
+      68,
+      111,
+      99,
+      117
+    ],
+    "fileHeaderRawPayloadSuffixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "fileHeaderVersionRawBytes": [
+      0,
+      1,
+      1,
+      5
+    ],
+    "fileHeaderReservedLength": 207,
+    "fileHeaderReservedPrefixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "fileHeaderReservedSuffixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "sectionCount": 1,
+    "sectionRawPayloadCount": 1,
+    "sectionRawPayloadTotalByteCount": 663,
+    "sectionRawPayloadPrefixBytes": [
+      [
+        66,
+        0,
+        128,
+        1,
+        47,
+        0,
+        0,
+        0
+      ]
+    ],
+    "sectionRawPayloadSuffixBytes": [
+      [
+        109,
+        0,
+        69,
+        0,
+        81,
+        0,
+        78,
+        0
+      ]
+    ],
+    "paragraphCount": 2,
+    "allParagraphCount": 2,
+    "paraTextRawPayloadCount": 2,
+    "paraTextRawPayloadTotalByteCount": 112,
+    "paraTextRawPayloadPrefixBytes": [
+      [
+        2,
+        0,
+        100,
+        99,
+        101,
+        115,
+        0,
+        0
+      ],
+      [
+        11,
+        0,
+        100,
+        101,
+        113,
+        101,
+        0,
+        0
+      ]
+    ],
+    "paraTextRawPayloadSuffixBytes": [
+      [
+        120,
+        0,
+        116,
+        0,
+        46,
+        0,
+        13,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        11,
+        0,
+        13,
+        0
+      ]
+    ],
+    "paraTextPayloadCount": 3,
+    "paraTextPayloadTotalByteCount": 42,
+    "paraTextPayloadPrefixBytes": [
+      [
+        100,
+        99,
+        101,
+        115,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        100,
+        108,
+        111,
+        99,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        100,
+        101,
+        113,
+        101,
+        0,
+        0,
+        0,
+        0
+      ]
+    ],
+    "paraTextPayloadSuffixBytes": [
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        11,
+        0
+      ]
+    ],
+    "paraHeaderPayloadCount": 2,
+    "paraHeaderPayloadTotalByteCount": 48,
+    "paraHeaderPayloadPrefixBytes": [
+      [
+        47,
+        0,
+        0,
+        0,
+        4,
+        0,
+        0,
+        0
+      ],
+      [
+        9,
+        0,
+        0,
+        128,
+        0,
+        8,
+        0,
+        0
+      ]
+    ],
+    "paraHeaderPayloadSuffixBytes": [
+      [
+        1,
+        0,
+        210,
+        148,
+        9,
+        186,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    ],
+    "paraCharShapePayloadCount": 2,
+    "paraCharShapePayloadTotalByteCount": 16,
+    "paraCharShapePayloadPrefixBytes": [
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    ],
+    "paraCharShapePayloadSuffixBytes": [
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    ],
+    "paraLineSegPayloadCount": 2,
+    "paraLineSegPayloadTotalByteCount": 72,
+    "paraLineSegPayloadPrefixBytes": [
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        64,
+        6,
+        0,
+        0
+      ]
+    ],
+    "paraLineSegPayloadSuffixBytes": [
+      [
+        24,
+        166,
+        0,
+        0,
+        0,
+        0,
+        6,
+        0
+      ],
+      [
+        24,
+        166,
+        0,
+        0,
+        0,
+        0,
+        6,
+        0
+      ]
+    ],
+    "paraRangeTagCount": 0,
+    "paraRangeTagPayloadTotalByteCount": 0,
+    "sectionUnknownRecordCount": 0,
+    "docInfoRawPayloadLength": 4775,
+    "docInfoRawPayloadPrefixBytes": [
+      16,
+      0,
+      160,
+      1,
+      1,
+      0,
+      1,
+      0
+    ],
+    "docInfoRawPayloadSuffixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "summaryLength": 517,
+    "summaryPrefixBytes": [
+      254,
+      255,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "summarySuffixBytes": [
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0
+    ],
+    "previewTextLength": 32,
+    "previewTextRawPayloadLength": 68,
+    "previewTextPrefixBytes": [
+      67,
+      0,
+      111,
+      0,
+      114,
+      0,
+      101,
+      0
+    ],
+    "previewTextSuffixBytes": [
+      13,
+      0,
+      10,
+      0,
+      13,
+      0,
+      10,
+      0
+    ],
+    "previewImageLength": 19075,
+    "previewImageFormat": "png",
+    "previewImagePrefixBytes": [
+      137,
+      80,
+      78,
+      71,
+      13,
+      10,
+      26,
+      10
+    ],
+    "previewImageSuffixBytes": [
+      73,
+      69,
+      78,
+      68,
+      174,
+      66,
+      96,
+      130
+    ],
+    "previewTextContains": [
+      "CoreHwp equation fixture text."
+    ],
+    "docInfoUnknownRecordCount": 0,
+    "docInfoRawRecordCount": 0,
+    "documentProperties": {
+      "sectionSize": 1,
+      "rawPayloadLength": 26,
+      "rawPayloadPrefixBytes": [
+        1,
+        0,
+        1,
+        0,
+        1,
+        0,
+        1,
+        0
+      ],
+      "rawPayloadSuffixBytes": [
+        1,
+        0,
+        0,
+        0,
+        8,
+        0,
+        0,
+        0
+      ],
+      "startingIndex": {
+        "page": 1,
+        "rawPayloadLength": 12,
+        "rawPayloadPrefixBytes": [
+          1,
+          0,
+          1,
+          0,
+          1,
+          0,
+          1,
+          0
+        ],
+        "rawPayloadSuffixBytes": [
+          1,
+          0,
+          1,
+          0,
+          1,
+          0,
+          1,
+          0
+        ],
+        "footnote": 1,
+        "endnote": 1,
+        "picture": 1,
+        "table": 1,
+        "equation": 1
+      },
+      "caratLocation": {
+        "listId": 0,
+        "rawPayloadLength": 12,
+        "rawPayloadPrefixBytes": [
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "rawPayloadSuffixBytes": [
+          1,
+          0,
+          0,
+          0,
+          8,
+          0,
+          0,
+          0
+        ],
+        "paragraphId": 1,
+        "charIndex": 8
+      }
+    },
+    "docInfoIdMappings": {
+      "binDataCount": 0,
+      "faceNameKoreanCount": 2,
+      "faceNameEnglishCount": 2,
+      "faceNameChineseCount": 2,
+      "faceNameJapaneseCount": 2,
+      "faceNameEtcCount": 2,
+      "faceNameSymbolCount": 2,
+      "faceNameUserCount": 2,
+      "faceNameRawPayloadTotalByteCount": 476,
+      "borderFillCount": 2,
+      "borderFillRawPayloadTotalByteCount": 93,
+      "charShapeCount": 7,
+      "charShapeRawPayloadTotalByteCount": 518,
+      "charShapePropertyRawValues": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "tabDefCount": 3,
+      "tabDefRawPayloadTotalByteCount": 24,
+      "numberingCount": 1,
+      "bulletCount": 0,
+      "paraShapeCount": 20,
+      "paraShapeRawPayloadTotalByteCount": 1160,
+      "styleCount": 22,
+      "forbiddenCharCount": 1,
+      "unknownChildCount": 0
+    },
+    "controlCount": 3,
+    "allControlCount": 3,
+    "controlTypeCounts": {
+      "column": 1,
+      "section": 1,
+      "equation": 1
+    },
+    "allControlTypeCounts": {
+      "column": 1,
+      "section": 1,
+      "equation": 1
+    },
+    "shapeControls": [
+      {
+        "ctrlId": 1701930340,
+        "ctrlIdName": "equation",
+        "commonCtrlPropertyRawPayloadLength": 58,
+        "commonCtrlPropertyRawPayloadPrefixBytes": [
+          100,
+          101,
+          113,
+          101,
+          17,
+          35,
+          42,
+          12,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "commonCtrlPropertyRawPayloadSuffixBytes": [
+          0,
+          0,
+          6,
+          0,
+          24,
+          194,
+          221,
+          194,
+          133,
+          199,
+          200,
+          178,
+          228,
+          178,
+          46,
+          0
+        ],
+        "rawPayloadLength": 58,
+        "rawPayloadPrefixBytes": [
+          100,
+          101,
+          113,
+          101,
+          17,
+          35,
+          42,
+          12,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "rawPayloadSuffixBytes": [
+          0,
+          0,
+          6,
+          0,
+          24,
+          194,
+          221,
+          194,
+          133,
+          199,
+          200,
+          178,
+          228,
+          178,
+          46,
+          0
+        ],
+        "rawTrailingLength": 0,
+        "rawTrailingPrefixBytes": [],
+        "rawTrailingSuffixBytes": [],
+        "eqEditCount": 1,
+        "eqEditPayloadLengths": [
+          84
+        ],
+        "eqEditPayloadPrefixBytes": [
+          [
+            0,
+            0,
+            0,
+            0,
+            3,
+            0,
+            120,
+            0,
+            61,
+            0,
+            49,
+            0,
+            232,
+            3,
+            0,
+            0
+          ]
+        ],
+        "eqEditPayloadSuffixBytes": [
+          [
+            97,
+            0,
+            110,
+            0,
+            99,
+            0,
+            111,
+            0,
+            109,
+            0,
+            69,
+            0,
+            81,
+            0,
+            78,
+            0
+          ]
+        ],
+        "eqEditTextLengths": [
+          3
+        ],
+        "eqEditTextLengthRawPayloadLengths": [
+          2
+        ],
+        "eqEditTextLengthRawPayloadPrefixBytes": [
+          [
+            3,
+            0
+          ]
+        ],
+        "eqEditTextLengthRawPayloadSuffixBytes": [
+          [
+            3,
+            0
+          ]
+        ],
+        "eqEditTexts": [
+          "x=1"
+        ],
+        "unknownChildCount": 0
+      }
+    ],
+    "columns": [
+      {
+        "ctrlId": 1668246628,
+        "ctrlIdName": "column",
+        "propertyCount": 1,
+        "isSameWidth": true,
+        "rawPayloadLength": 16,
+        "unknownChildCount": 0
+      }
+    ],
+    "sections": [
+      {
+        "rawPayloadLength": 47,
+        "unknownChildCount": 0
+      }
+    ],
+    "visibleTextContains": [
+      "CoreHwp equation fixture text."
+    ],
+    "fileLicense": {
+      "rawValue": 0
+    }
+  }
+}

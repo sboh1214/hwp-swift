@@ -11,4 +11,6 @@ public struct ExcludeEquatable<Value: HwpPrimitive>: HwpPrimitive {
     public static func == (_: ExcludeEquatable<Value>, _: ExcludeEquatable<Value>) -> Bool {
         true
     }
+
+    public func hash(into _: inout Hasher) {}
 }

@@ -1,0 +1,1000 @@
+{
+  "id": "공공누리",
+  "generationTool": "Existing repository fixture",
+  "hwpVersion": "5.0.5.0",
+  "source": "Migrated from Tests/CoreHwpTests/FileHeader/공공누리.hwp",
+  "features": [
+    "file-header",
+    "kogl",
+    "preview-text",
+    "preview-image",
+    "paragraph-text",
+    "hyperlink",
+    "shape-object",
+    "doc-info",
+    "doc-properties",
+    "bin-data"
+  ],
+  "expectations": {
+    "fileProperty": {
+      "rawValue": 32769,
+      "isCompressed": true,
+      "isCCLDocument": false,
+      "isKOGLDocument": true
+    },
+    "fileLicense": {
+      "rawValue": 0,
+      "doesHaveKoreaOpenLicense": false,
+      "doesLimitReplication": false,
+      "doesHavePermission": false
+    },
+    "fileHeaderRawPayloadLength": 256,
+    "fileHeaderRawPayloadPrefixBytes": [
+      72,
+      87,
+      80,
+      32,
+      68,
+      111,
+      99,
+      117
+    ],
+    "fileHeaderRawPayloadSuffixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "fileHeaderVersionRawBytes": [
+      0,
+      5,
+      0,
+      5
+    ],
+    "fileHeaderReservedLength": 207,
+    "fileHeaderReservedPrefixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "fileHeaderReservedSuffixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "encryptVersion": 4,
+    "koreaOpenLicense": 0,
+    "sectionCount": 1,
+    "sectionRawPayloadCount": 1,
+    "sectionRawPayloadTotalByteCount": 1448,
+    "sectionRawPayloadPrefixBytes": [
+      [
+        66,
+        0,
+        128,
+        1,
+        79,
+        0,
+        0,
+        0
+      ]
+    ],
+    "sectionRawPayloadSuffixBytes": [
+      [
+        24,
+        166,
+        0,
+        0,
+        0,
+        0,
+        6,
+        0
+      ]
+    ],
+    "paragraphCount": 2,
+    "paraTextRawPayloadCount": 1,
+    "paraTextRawPayloadTotalByteCount": 158,
+    "paraTextRawPayloadPrefixBytes": [
+      [
+        2,
+        0,
+        100,
+        99,
+        101,
+        115,
+        0,
+        0
+      ]
+    ],
+    "paraTextRawPayloadSuffixBytes": [
+      [
+        0,
+        0,
+        0,
+        0,
+        4,
+        0,
+        13,
+        0
+      ]
+    ],
+    "paraTextPayloadCount": 5,
+    "paraTextPayloadTotalByteCount": 70,
+    "paraTextPayloadPrefixBytes": [
+      [
+        100,
+        99,
+        101,
+        115,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        100,
+        108,
+        111,
+        99,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        32,
+        111,
+        115,
+        103,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        107,
+        108,
+        104,
+        37,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        107,
+        108,
+        104,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    ],
+    "paraTextPayloadSuffixBytes": [
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        11,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        3,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        4,
+        0
+      ]
+    ],
+    "paraHeaderPayloadCount": 2,
+    "paraHeaderPayloadTotalByteCount": 48,
+    "paraHeaderPayloadPrefixBytes": [
+      [
+        79,
+        0,
+        0,
+        0,
+        28,
+        8,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0,
+        128,
+        0,
+        0,
+        0,
+        0
+      ]
+    ],
+    "paraHeaderPayloadSuffixBytes": [
+      [
+        1,
+        0,
+        196,
+        49,
+        76,
+        171,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    ],
+    "paraCharShapePayloadCount": 2,
+    "paraCharShapePayloadTotalByteCount": 32,
+    "paraCharShapePayloadPrefixBytes": [
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    ],
+    "paraCharShapePayloadSuffixBytes": [
+      [
+        70,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    ],
+    "paraLineSegPayloadCount": 2,
+    "paraLineSegPayloadTotalByteCount": 72,
+    "paraLineSegPayloadPrefixBytes": [
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        79,
+        18,
+        0,
+        0
+      ]
+    ],
+    "paraLineSegPayloadSuffixBytes": [
+      [
+        24,
+        166,
+        0,
+        0,
+        0,
+        0,
+        6,
+        0
+      ],
+      [
+        24,
+        166,
+        0,
+        0,
+        0,
+        0,
+        6,
+        0
+      ]
+    ],
+    "paraRangeTagCount": 0,
+    "paraRangeTagPayloadTotalByteCount": 0,
+    "sectionUnknownRecordCount": 0,
+    "docInfoRawPayloadLength": 4467,
+    "docInfoRawPayloadPrefixBytes": [
+      16,
+      0,
+      160,
+      1,
+      1,
+      0,
+      1,
+      0
+    ],
+    "docInfoRawPayloadSuffixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "summaryLength": 501,
+    "summaryPrefixBytes": [
+      254,
+      255,
+      0,
+      0,
+      6,
+      2,
+      2,
+      0
+    ],
+    "summarySuffixBytes": [
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0
+    ],
+    "previewTextLength": 40,
+    "previewTextRawPayloadLength": 84,
+    "previewTextPrefixBytes": [
+      32,
+      0,
+      116,
+      199,
+      32,
+      0,
+      0,
+      200
+    ],
+    "previewTextSuffixBytes": [
+      13,
+      0,
+      10,
+      0,
+      13,
+      0,
+      10,
+      0
+    ],
+    "previewImageLength": 1573,
+    "previewImageFormat": "gif",
+    "previewImagePrefixBytes": [
+      71,
+      73,
+      70,
+      56,
+      57,
+      97,
+      177,
+      0
+    ],
+    "previewImageSuffixBytes": [
+      5,
+      222,
+      124,
+      119,
+      21,
+      16,
+      0,
+      59
+    ],
+    "binaryDataCount": 1,
+    "binaryDataNames": [
+      "BIN0001.gif"
+    ],
+    "binaryDataEntryNames": [
+      "BIN0001.gif"
+    ],
+    "binaryDataStreamIds": [
+      1
+    ],
+    "binaryDataExtensionNames": [
+      "gif"
+    ],
+    "binaryDataPayloadLengths": [
+      2219
+    ],
+    "binaryDataPayloadPrefixBytes": [
+      [
+        173,
+        143,
+        249,
+        63,
+        211,
+        141,
+        3,
+        192
+      ]
+    ],
+    "binaryDataPayloadSuffixBytes": [
+      [
+        59,
+        55,
+        249,
+        232,
+        209,
+        8,
+        0,
+        0
+      ]
+    ],
+    "binaryDataTotalByteCount": 2219,
+    "docInfoUnknownRecordCount": 0,
+    "docInfoRawRecordCount": 0,
+    "docInfoIdMappings": {
+      "binDataCount": 1,
+      "faceNameRawPayloadTotalByteCount": 616,
+      "borderFillRawPayloadTotalByteCount": 93,
+      "charShapeRawPayloadTotalByteCount": 592,
+      "tabDefRawPayloadTotalByteCount": 24,
+      "paraShapeRawPayloadTotalByteCount": 864
+    },
+    "docInfoBinData": [
+      {
+        "propertyRawValue": 1,
+        "type": "embedding",
+        "compressType": "followStorage",
+        "state": "never",
+        "streamId": 1,
+        "extensionName": "gif",
+        "rawPayloadLength": 12,
+        "rawPayloadPrefixBytes": [
+          1,
+          0,
+          1,
+          0,
+          3,
+          0,
+          103,
+          0,
+          105,
+          0,
+          102,
+          0
+        ],
+        "rawPayloadSuffixBytes": [
+          1,
+          0,
+          1,
+          0,
+          3,
+          0,
+          103,
+          0,
+          105,
+          0,
+          102,
+          0
+        ]
+      }
+    ],
+    "documentProperties": {
+      "sectionSize": 1,
+      "rawPayloadLength": 26,
+      "rawPayloadPrefixBytes": [
+        1,
+        0,
+        1,
+        0,
+        1,
+        0,
+        1,
+        0
+      ],
+      "rawPayloadSuffixBytes": [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "startingIndex": {
+        "page": 1,
+        "rawPayloadLength": 12,
+        "rawPayloadPrefixBytes": [
+          1,
+          0,
+          1,
+          0,
+          1,
+          0,
+          1,
+          0
+        ],
+        "rawPayloadSuffixBytes": [
+          1,
+          0,
+          1,
+          0,
+          1,
+          0,
+          1,
+          0
+        ],
+        "footnote": 1,
+        "endnote": 1,
+        "picture": 1,
+        "table": 1,
+        "equation": 1
+      },
+      "caratLocation": {
+        "listId": 0,
+        "rawPayloadLength": 12,
+        "rawPayloadPrefixBytes": [
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "rawPayloadSuffixBytes": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "paragraphId": 1,
+        "charIndex": 0
+      }
+    },
+    "controlCount": 4,
+    "visibleTextContains": [
+      "공공누리",
+      "출처표시 조건"
+    ],
+    "controlTypeCounts": {
+      "column": 1,
+      "genShapeObject": 1,
+      "hyperLink": 1,
+      "section": 1
+    },
+    "hyperlinks": [
+      {
+        "ctrlId": 627600491,
+        "ctrlIdName": "hyperLink",
+        "url": "http://www.kogl.or.kr/open/info/license_info/by.do;1;0;1",
+        "urlLengthRawPayloadLength": 2,
+        "urlLengthRawPayloadPrefixBytes": [
+          56,
+          0
+        ],
+        "urlLengthRawPayloadSuffixBytes": [
+          56,
+          0
+        ],
+        "urlRawPayloadLength": 112,
+        "urlRawPayloadPrefixBytes": [
+          104,
+          0,
+          116,
+          0,
+          116,
+          0,
+          112,
+          0
+        ],
+        "urlRawPayloadSuffixBytes": [
+          59,
+          0,
+          48,
+          0,
+          59,
+          0,
+          49,
+          0
+        ],
+        "rawPayloadLength": 131,
+        "rawPayloadPrefixBytes": [
+          107,
+          108,
+          104,
+          37,
+          0,
+          168,
+          0,
+          0,
+          0,
+          56,
+          0,
+          104,
+          0,
+          116,
+          0,
+          116
+        ],
+        "rawPayloadSuffixBytes": [
+          59,
+          0,
+          48,
+          0,
+          59,
+          0,
+          49,
+          0,
+          189,
+          38,
+          129,
+          89,
+          0,
+          0,
+          0,
+          0
+        ],
+        "rawTrailingLength": 8,
+        "rawTrailingPrefixBytes": [
+          189,
+          38,
+          129,
+          89,
+          0,
+          0,
+          0,
+          0
+        ],
+        "rawTrailingSuffixBytes": [
+          189,
+          38,
+          129,
+          89,
+          0,
+          0,
+          0,
+          0
+        ],
+        "unknownChildCount": 0
+      }
+    ],
+    "genShapeObjects": [
+      {
+        "ctrlId": 1735618336,
+        "ctrlIdName": "genShapeObject",
+        "width": 11062,
+        "height": 4087,
+        "commonCtrlPropertyRawPayloadLength": 168,
+        "commonCtrlPropertyRawPayloadPrefixBytes": [
+          32,
+          111,
+          115,
+          103,
+          17,
+          34,
+          42,
+          4,
+          0,
+          0,
+          0,
+          0
+        ],
+        "commonCtrlPropertyRawPayloadSuffixBytes": [
+          50,
+          0,
+          112,
+          0,
+          105,
+          0,
+          120,
+          0,
+          101,
+          0,
+          108,
+          0
+        ],
+        "rawPayloadLength": 168,
+        "rawPayloadPrefixBytes": [
+          32,
+          111,
+          115,
+          103,
+          17,
+          34,
+          42,
+          4,
+          0,
+          0,
+          0,
+          0
+        ],
+        "rawPayloadSuffixBytes": [
+          50,
+          0,
+          112,
+          0,
+          105,
+          0,
+          120,
+          0,
+          101,
+          0,
+          108,
+          0
+        ],
+        "rawTrailingLength": 0,
+        "rawTrailingPrefixBytes": [],
+        "rawTrailingSuffixBytes": [],
+        "shapeComponents": [
+          {
+            "ctrlId": 611346787,
+            "ctrlIdName": "picture",
+            "rawPayloadLength": 196,
+            "rawPayloadPrefixBytes": [
+              99,
+              105,
+              112,
+              36,
+              99,
+              105,
+              112,
+              36,
+              0,
+              0,
+              0,
+              0
+            ],
+            "rawPayloadSuffixBytes": [
+              0,
+              0,
+              240,
+              63,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "pictureCount": 1,
+            "pictureRawPayloadLengths": [
+              90
+            ],
+            "pictureRawPayloadPrefixBytes": [
+              [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "pictureRawPayloadSuffixBytes": [
+              [
+                0,
+                0,
+                0,
+                0,
+                116,
+                49,
+                0,
+                0,
+                72,
+                18,
+                0,
+                0
+              ]
+            ],
+            "pictureRawTrailingLengths": [
+              17
+            ],
+            "pictureRawTrailingPrefixBytes": [
+              [
+                0,
+                188,
+                38,
+                129,
+                25,
+                0,
+                0,
+                0,
+                0,
+                116,
+                49,
+                0
+              ]
+            ],
+            "pictureRawTrailingSuffixBytes": [
+              [
+                0,
+                0,
+                0,
+                0,
+                116,
+                49,
+                0,
+                0,
+                72,
+                18,
+                0,
+                0
+              ]
+            ],
+            "pictureBinaryDataIds": [
+              1
+            ],
+            "ctrlDataCount": 1,
+            "ctrlDataPayloadLengths": [
+              134
+            ],
+            "ctrlDataPayloadPrefixBytes": [
+              [
+                27,
+                2,
+                1,
+                0,
+                0,
+                0,
+                111,
+                2,
+                0,
+                128,
+                111,
+                2
+              ]
+            ],
+            "ctrlDataPayloadSuffixBytes": [
+              [
+                59,
+                0,
+                49,
+                0,
+                59,
+                0,
+                48,
+                0,
+                59,
+                0,
+                49,
+                0
+              ]
+            ],
+            "unknownChildCount": 0
+          }
+        ],
+        "ctrlDataCount": 1,
+        "ctrlDataPayloadLengths": [
+          134
+        ],
+        "ctrlDataPayloadPrefixBytes": [
+          [
+            27,
+            2,
+            1,
+            0,
+            0,
+            0,
+            111,
+            2,
+            0,
+            128,
+            111,
+            2
+          ]
+        ],
+        "ctrlDataPayloadSuffixBytes": [
+          [
+            59,
+            0,
+            49,
+            0,
+            59,
+            0,
+            48,
+            0,
+            59,
+            0,
+            49,
+            0
+          ]
+        ],
+        "unknownChildCount": 0,
+        "unknownChildTagIds": [],
+        "unknownChildPayloadLengths": []
+      }
+    ],
+    "preservedControls": []
+  }
+}

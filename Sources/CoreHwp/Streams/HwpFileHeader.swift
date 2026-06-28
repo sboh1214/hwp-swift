@@ -1,4 +1,5 @@
 import Foundation
+import OLEKit
 
 /**
  3.2.1. 파일 인식 정보
@@ -6,6 +7,9 @@ import Foundation
  한글의 문서 파일이라는 것을 나타내기 위해 ‘파일 인식 정보’가 저장된다.
  */
 public struct HwpFileHeader: HwpFromData {
+    /** 원본 payload */
+    @ExcludeEquatable
+    public var rawPayload: Data
     /**
      signature
 
@@ -30,8 +34,13 @@ public struct HwpFileHeader: HwpFromData {
     /** 공공누리 Korea Open Government License */
     public var koreaOpenLicense: UInt8
 
+    /** 아직 해석하지 않은 예약 영역 */
+    @ExcludeEquatable
+    public var reserved: Data
+
     init(_ reader: inout DataReader) throws {
-        let signatureData = reader.readBytes(32)
+        let startOffset = reader.byteOffset
+        let signatureData = try reader.readBytes(32)
         guard let signature = signatureData.stringASCII else {
             throw HwpError.invalidDataForString(data: signatureData, name: "signature")
         }
@@ -40,20 +49,22 @@ public struct HwpFileHeader: HwpFromData {
             throw HwpError.invalidFileHeaderSignature(signature: signature)
         }
 
-        version = try HwpVersion.load(reader.readBytes(4))
+        version = try HwpVersion.load(try reader.readBytes(4))
 
-        fileProperty = try HwpFileProperty.load(reader.read(DWORD.self))
-        fileLicense = try HwpFileLicense.load(reader.read(DWORD.self))
+        fileProperty = try HwpFileProperty.load(try reader.read(DWORD.self))
+        fileLicense = try HwpFileLicense.load(try reader.read(DWORD.self))
 
-        encryptVersion = reader.read(UInt32.self)
-        koreaOpenLicense = reader.read(UInt8.self)
+        encryptVersion = try reader.read(UInt32.self)
+        koreaOpenLicense = try reader.read(UInt8.self)
 
-        reader.readBytes(207)
+        reserved = try reader.readBytes(207)
+        rawPayload = try reader.consumedData(from: startOffset)
     }
 }
 
 extension HwpFileHeader {
     init() {
+        rawPayload = Data()
         signature = "HWP Document File\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
         version = HwpVersion()
 
@@ -62,5 +73,40 @@ extension HwpFileHeader {
 
         encryptVersion = 4
         koreaOpenLicense = 0
+        reserved = Data(repeating: 0, count: 207)
+    }
+
+    static func load(fromPath filePath: String) throws -> Self {
+        let ole: OLEFile
+        do {
+            ole = try OLEFile(filePath)
+        } catch {
+            throw HwpError.invalidOLEFile(reason: String(describing: error))
+        }
+        return try load(fromOLE: ole)
+    }
+
+    #if os(iOS) || os(watchOS) || os(tvOS) || os(macOS)
+        static func load(fromData data: Data) throws -> Self {
+            let fileWrapper = FileWrapper(regularFileWithContents: data)
+            fileWrapper.preferredFilename = "document.hwp"
+            return try load(fromWrapper: fileWrapper)
+        }
+
+        static func load(fromWrapper fileWrapper: FileWrapper) throws -> Self {
+            let ole: OLEFile
+            do {
+                ole = try OLEFile(fileWrapper)
+            } catch {
+                throw HwpError.invalidOLEFile(reason: String(describing: error))
+            }
+            return try load(fromOLE: ole)
+        }
+    #endif
+
+    private static func load(fromOLE ole: OLEFile) throws -> Self {
+        let streams = try StreamReader.rootStreams(from: ole.root.children)
+        let reader = StreamReader(ole, streams)
+        return try load(reader.getDataFromStream(.fileHeader, false))
     }
 }

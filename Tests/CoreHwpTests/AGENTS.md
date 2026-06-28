@@ -8,29 +8,97 @@ XCTest target. **Nimble 단독 사용** — `XCTAssert*`는 SwiftLint custom rul
 ```
 CoreHwpTests/
 ├── Utils.swift              # openHwp() + createHwp() helper (아래 참조)
-├── HwpUtilTests.swift
-├── HwpErrorTests.swift
-├── CtrlIdTests.swift
-├── FileHeader/              # *.hwp 픽스처 + *Tests.swift 같은 폴더에 배치
-├── Blank/                   # Create2014Tests, Create2018Tests, BlankTests
-├── Noori/                   # NooriPreviewTests, NooriDocInfoTests, NooriSectionTests
-├── Versions/                # 2007.hwp, 2014VP.hwp + VersionTests
-├── DocInfo/{BinData,CharShape}/   # 서브시스템별 픽스처
+├── Assembly/                # HwpFile assembly/entrypoint regression tests
+│   ├── ControlObjects/
+│   ├── ControlText/
+│   ├── DocInfo/
+│   ├── Entrypoints/
+│   ├── Records/
+│   └── Streams/
+├── Controls/                # control ID, payload, fallback/preservation tests
+│   ├── Common/
+│   ├── Field/
+│   ├── List/
+│   ├── Other/
+│   ├── ShapeComponents/
+│   ├── ShapeObjects/
+│   └── Table/
+├── Entries/                 # OLE DirectoryEntry mutation/entrypoint tests
+│   ├── DirectoryEntry/
+│   └── FileHeader/
+├── FixtureHarness/          # manifest 기반 harness/assertion/gate tests
+│   ├── DocInfoCore/
+│   ├── DocInfoRaw/
+│   ├── FieldControls/
+│   ├── FixtureCore/
+│   ├── FixtureRegression/
+│   ├── ListControls/
+│   ├── Manifest/
+│   ├── OtherControls/
+│   ├── PageControls/
+│   ├── Paragraphs/
+│   ├── ShapeObjects/
+│   ├── Streams/
+│   └── TableColumn/
+├── Models/                  # standalone model tests
+│   ├── Document/
+│   └── Layout/
+├── Stability/               # parser/model malformed, unknown, stability tests
+│   ├── Core/
+│   ├── Formats/
+│   ├── Paragraphs/
+│   └── Parsing/
+├── Streams/                 # stream, preview, decompression, binary-data tests
+│   ├── BinaryData/
+│   ├── Preview/
+│   └── Readers/
+├── Utils/                   # reader/error/project utility tests
+│   ├── Core/
+│   ├── Project/
+│   └── Readers/
+├── Fixtures/                # fixture-id/document.hwp + manifest.json + README.md
+├── Fixture*.swift           # tests that read manifest support files by root path
+├── FileHeader/
+├── Blank/
+├── Noori/
+├── Versions/
+├── DocInfo/{BinData,CharShape}/
 └── Section/Column/
 ```
 
 상위 폴더의 `Tests/LinuxMain.swift`는 SwiftPM Linux의 legacy 진입점이다.
 `swift test --enable-test-discovery`가 깨지지 않는 한 건드릴 일 없음.
 
-## 픽스처 로딩
+## Fixture 구조
 
-픽스처 `.hwp` 파일은 **그 파일을 사용하는 테스트 파일과 같은 폴더에**
-배치한다. [`Utils.swift`](file:///Users/sboh/Repos/hwp-swift/Tests/CoreHwpTests/Utils.swift)의 두 helper로 로드:
+새 fixture는 다음 구조로 추가한다.
+
+```text
+Tests/CoreHwpTests/Fixtures/<fixture-id>/
+  document.hwp
+  manifest.json
+  README.md
+```
+
+- `document.hwp`: 실제 한컴오피스 저장본, 기존 repo fixture 이관본, 또는
+  명시적으로 표시한 derived fixture.
+- `manifest.json`: 생성 도구, HWP 버전, 출처, feature tag, 의미 있는 기대값
+  (section/paragraph/text/control count, payload sample, unsupported error 등).
+- `README.md`: 재생성 절차와 파생 fixture라면 원본/변형 절차.
+
+새 기대값은 가능하면 `FixtureLoader`/`FixtureManifest`/`FixtureAssertions` 계열
+harness에 추가하고, 단순히 "열린다"가 아니라 manifest 값과 실제 파싱 결과를
+비교한다. 저수준 corrupt/malformed regression만 synthetic data를 사용한다.
+
+## Fixture 로딩
+
+[`Utils.swift`](file:///Users/sboh/Repos/hwp-swift/Tests/CoreHwpTests/Utils.swift)의
+두 helper로 로드한다. helper는 기존 colocated fixture를 먼저 찾고, 없으면
+중앙 fixture root의 `Fixtures/<name>/document.hwp`를 사용한다.
 
 ```swift
-let hwp = try openHwp(#file, "noori")          // → ./noori.hwp 파싱
+let hwp = try openHwp(#file, "plain-text-minimal")
 let (this, official) = try createHwp(#file, "blank-win2020")
-                                                // → 빈 HwpFile() + 파싱된 official
 ```
 
 `#file`은 컴파일러가 주입하는 절대 경로다. **항상 `#file`을 넘길 것** —
@@ -60,8 +128,8 @@ resource bundle을 선언하지 않았다).
 - `XCTAssertEqual`, `XCTAssertTrue` 등 — `no_xctassert`로 CI fail.
 - 픽스처 lookup에 `Bundle.module` / `Bundle(for:)` 사용 — `Package.swift`에
   resource 선언이 없으므로 `openHwp(#file, ...)` 사용.
-- 공용 `Fixtures/` 폴더에 픽스처 모으기 — colocation 컨벤션 위반.
-  helper는 `#file.deletingLastPathComponent`로 경로를 해석한다.
+- 새 `.hwp` 파일을 `Blank/`, `FileHeader/`, `Noori/` 같은 legacy test 폴더에
+  직접 추가하기 — 새 fixture는 `Fixtures/<fixture-id>/` 구조로 추가한다.
 - 주석 처리된 테스트 (예: `testIsDepolymentDocument`) 삭제 — 스펙 갭을
   표시하는 자리표시자다. 정식 테스트로 바꾸려면 누락된 파서 경로를 먼저
   구현해야 한다.

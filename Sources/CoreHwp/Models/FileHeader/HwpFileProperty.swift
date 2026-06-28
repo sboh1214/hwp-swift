@@ -1,6 +1,9 @@
 import Foundation
 
 public struct HwpFileProperty {
+    /** 원본 bit field */
+    @ExcludeEquatable
+    public var rawValue: UInt32
     /** 압축 여부 */
     public var isCompressed: Bool
     /** 암호 설정 여부 */
@@ -23,6 +26,17 @@ public struct HwpFileProperty {
     public var doesSaveSpareSignature: Bool
     /** 공인 인증서 DRM 보안 문서 여부 */
     public var isAccreditedCertificateDRMDocment: Bool
+
+    /** 공인 인증서 DRM 보안 문서 여부 */
+    public var isAccreditedCertificateDRMDocument: Bool {
+        get {
+            isAccreditedCertificateDRMDocment
+        }
+        set {
+            isAccreditedCertificateDRMDocment = newValue
+        }
+    }
+
     /** CCL 문서 여부 */
     public var isCCLDocument: Bool
     /** 모바일 최적화 여부 */
@@ -45,31 +59,56 @@ extension HwpFileProperty: HwpFromUInt {
     typealias UIntType = UInt32
 
     init(_ reader: inout BitsReader<UIntType>) throws {
-        isCompressed = reader.readBit()
-        isEncrypted = reader.readBit()
-        isDeploymentDocument = reader.readBit()
-        doesSaveScript = reader.readBit()
-        isDRMDocument = reader.readBit()
-        doesHaveXMLTemplate = reader.readBit()
-        doesHaveDocumentHistory = reader.readBit()
-        doesHaveSignature = reader.readBit()
-        doesEncryptAccreditedCertificate = reader.readBit()
-        doesSaveSpareSignature = reader.readBit()
-        isAccreditedCertificateDRMDocment = reader.readBit()
-        isCCLDocument = reader.readBit()
-        doesOptimizeMobile = reader.readBit()
-        isPersonalInformationSecurityDocument = reader.readBit()
-        isTracingChange = reader.readBit()
-        isKOGLDocument = reader.readBit()
-        doesHaveVideoControl = reader.readBit()
-        doesHaveTOCFieldControl = reader.readBit()
+        rawValue = 0
+        isCompressed = try reader.readBit()
+        isEncrypted = try reader.readBit()
+        isDeploymentDocument = try reader.readBit()
+        doesSaveScript = try reader.readBit()
+        isDRMDocument = try reader.readBit()
+        doesHaveXMLTemplate = try reader.readBit()
+        doesHaveDocumentHistory = try reader.readBit()
+        doesHaveSignature = try reader.readBit()
+        doesEncryptAccreditedCertificate = try reader.readBit()
+        doesSaveSpareSignature = try reader.readBit()
+        isAccreditedCertificateDRMDocment = try reader.readBit()
+        isCCLDocument = try reader.readBit()
+        doesOptimizeMobile = try reader.readBit()
+        isPersonalInformationSecurityDocument = try reader.readBit()
+        isTracingChange = try reader.readBit()
+        isKOGLDocument = try reader.readBit()
+        doesHaveVideoControl = try reader.readBit()
+        doesHaveTOCFieldControl = try reader.readBit()
 
-        unused = reader.readBits(14)
+        unused = try reader.readBits(14)
+    }
+
+    static func load(_ uint: UIntType) throws -> Self {
+        var reader = BitsReader(from: uint)
+        var fileProperty = try self.init(&reader)
+        if !reader.isEOF {
+            throw HwpError.bitsAreNotEOF(model: Self.self, remain: reader.remainBits)
+        }
+        fileProperty.rawValue = uint
+        return fileProperty
     }
 }
 
 extension HwpFileProperty {
+    public var unsupportedFeature: HwpUnsupportedFeature? {
+        if isEncrypted || doesEncryptAccreditedCertificate {
+            return .encryptedDocument
+        }
+        if isDeploymentDocument {
+            return .deploymentDocument
+        }
+        if isDRMDocument || isAccreditedCertificateDRMDocument {
+            return .drmDocument
+        }
+        return nil
+    }
+
     init() {
+        rawValue = 1
         isCompressed = true
         isEncrypted = false
         isDeploymentDocument = false

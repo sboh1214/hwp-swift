@@ -8,7 +8,7 @@ import Foundation
 public struct HwpIdMappings {
     /** 메모 모양 (5.0.2.1 이상) */
     public var memoShapeCount: Int32?
-    /** 변경추적 (5.0.3.2 이상) */
+    /** 변경 추적 내용 (5.0.3.2 이상) */
     public var changeTraceCount: Int32?
     /** 변경추적 사용자 (5.0.3.2 이상) */
     public var changeTraceUserCount: Int32?
@@ -45,16 +45,37 @@ public struct HwpIdMappings {
     public var paraShapeArray: [HwpParaShape]
     /** 스타일 */
     public var styleArray: [HwpStyle]
+    /** 메모 모양 */
+    public var memoShapeArray: [HwpMemoShape]
+    /** 변경 추적 정보 */
+    public var trackChangeArray: [HwpTrackChange]
+    /** 변경 추적 내용 */
+    public var trackChangeContentArray: [HwpTrackChangeContent]
+    /** 변경 추적 작성자 */
+    public var trackChangeAuthorArray: [HwpTrackChangeAuthor]
     /**
      금칙처리문자
 
      NOTE : 문서화되어있지 않음
      */
     public var forbiddenCharArray: [HwpForbiddenChar]
+    /** 아직 해석하지 않은 child record */
+    public var unknownChildren: [HwpUnknownRecord]
 }
 
 extension HwpIdMappings: HwpFromRecordWithVersion {
-    // swiftlint:disable function_body_length
+    static func load(_ record: HwpRecord, _ version: HwpVersion) throws -> Self {
+        try validateDocInfoRecordTag(record, expectedTag: .idMappings)
+
+        var reader = DataReader(record.payload)
+        let idMappings = try self.init(&reader, record.children, version)
+        if !reader.isEOF {
+            throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
+        }
+        return idMappings
+    }
+
+    // swiftlint:disable:next function_body_length
     init() {
         memoShapeCount = 0
         changeTraceCount = 0
@@ -165,69 +186,117 @@ extension HwpIdMappings: HwpFromRecordWithVersion {
             HwpStyle("차례 3", "TOC 3", nextId: 20, paraShapeId: 15, charShapeId: 6),
         ]
 
+        memoShapeArray = []
+        trackChangeArray = []
+        trackChangeContentArray = []
+        trackChangeAuthorArray = []
         forbiddenCharArray = [HwpForbiddenChar(data: Data(repeating: 0, count: 16))]
+        unknownChildren = []
         // swiftlint:enable line_length
     }
 
+    // swiftlint:disable:next function_body_length
     init(_ reader: inout DataReader, _ children: [HwpRecord], _ version: HwpVersion) throws {
-        let binaryDataCount = reader.read(Int32.self)
-        let faceNameKoreanCount = reader.read(Int32.self)
-        let faceNameEnglishCount = reader.read(Int32.self)
-        let faceNameChineseCount = reader.read(Int32.self)
-        let faceNameJapaneseCount = reader.read(Int32.self)
-        let faceNameEtcCount = reader.read(Int32.self)
-        let faceNameSymbolCount = reader.read(Int32.self)
-        let faceNameUserCount = reader.read(Int32.self)
-        let borderFillCount = reader.read(Int32.self)
-        let charShapeCount = reader.read(Int32.self)
-        let tabDefCount = reader.read(Int32.self)
-        let numberingCount = reader.read(Int32.self)
-        let bulletCount = reader.read(Int32.self)
-        let paraShapeCount = reader.read(Int32.self)
-        let styleCount = reader.read(Int32.self)
+        let binaryDataCount = try reader.read(Int32.self)
+        let faceNameKoreanCount = try reader.read(Int32.self)
+        let faceNameEnglishCount = try reader.read(Int32.self)
+        let faceNameChineseCount = try reader.read(Int32.self)
+        let faceNameJapaneseCount = try reader.read(Int32.self)
+        let faceNameEtcCount = try reader.read(Int32.self)
+        let faceNameSymbolCount = try reader.read(Int32.self)
+        let faceNameUserCount = try reader.read(Int32.self)
+        let borderFillCount = try reader.read(Int32.self)
+        let charShapeCount = try reader.read(Int32.self)
+        let tabDefCount = try reader.read(Int32.self)
+        let numberingCount = try reader.read(Int32.self)
+        let bulletCount = try reader.read(Int32.self)
+        let paraShapeCount = try reader.read(Int32.self)
+        let styleCount = try reader.read(Int32.self)
         if version >= HwpVersion(5, 0, 2, 1) {
-            memoShapeCount = reader.read(Int32.self)
+            memoShapeCount = try reader.read(Int32.self)
         }
         if version >= HwpVersion(5, 0, 3, 2) {
-            changeTraceCount = reader.read(Int32.self)
-            changeTraceUserCount = reader.read(Int32.self)
+            changeTraceCount = try reader.read(Int32.self)
+            changeTraceUserCount = try reader.read(Int32.self)
         }
 
         var childrenArray = children
+        var previouslyCountedTags = Set<UInt32>()
 
-        binDataArray = try childrenArray.pop(binaryDataCount)
+        func popRequired(
+            _ expectedTag: HwpDocInfoTag,
+            _ count: Int32,
+            completesTag: Bool = true
+        ) throws -> [HwpRecord] {
+            let records = try popTagged(
+                expectedTag,
+                count,
+                from: &childrenArray,
+                preservingPreviouslyCountedTags: previouslyCountedTags
+            )
+            if completesTag {
+                previouslyCountedTags.insert(expectedTag.rawValue)
+            }
+            return records
+        }
+
+        binDataArray = try popRequired(.binData, binaryDataCount)
             .map { try HwpBinData.load($0.payload) }
-        faceNameKoreanArray = try childrenArray.pop(faceNameKoreanCount)
+        faceNameKoreanArray = try popRequired(.faceName, faceNameKoreanCount, completesTag: false)
             .map { try HwpFaceName.load($0.payload) }
-        faceNameEnglishArray = try childrenArray.pop(faceNameEnglishCount)
+        faceNameEnglishArray = try popRequired(.faceName, faceNameEnglishCount, completesTag: false)
             .map { try HwpFaceName.load($0.payload) }
-        faceNameChineseArray = try childrenArray.pop(faceNameChineseCount)
+        faceNameChineseArray = try popRequired(.faceName, faceNameChineseCount, completesTag: false)
             .map { try HwpFaceName.load($0.payload) }
-        faceNameJapaneseArray = try childrenArray.pop(faceNameJapaneseCount)
+        let faceNameJapaneseRecords = try popRequired(
+            .faceName,
+            faceNameJapaneseCount,
+            completesTag: false
+        )
+        faceNameJapaneseArray = try faceNameJapaneseRecords.map { try HwpFaceName.load($0.payload) }
+        faceNameEtcArray = try popRequired(.faceName, faceNameEtcCount, completesTag: false)
             .map { try HwpFaceName.load($0.payload) }
-        faceNameEtcArray = try childrenArray.pop(faceNameEtcCount)
+        faceNameSymbolArray = try popRequired(.faceName, faceNameSymbolCount, completesTag: false)
             .map { try HwpFaceName.load($0.payload) }
-        faceNameSymbolArray = try childrenArray.pop(faceNameSymbolCount)
-            .map { try HwpFaceName.load($0.payload) }
-        faceNameUserArray = try childrenArray.pop(faceNameUserCount)
+        faceNameUserArray = try popRequired(.faceName, faceNameUserCount)
             .map { try HwpFaceName.load($0.payload) }
 
-        borderFillArray = try childrenArray.pop(borderFillCount)
+        borderFillArray = try popRequired(.borderFill, borderFillCount)
             .map { try HwpBorderFill.load($0.payload) }
-        charShapeArray = try childrenArray.pop(charShapeCount)
+        charShapeArray = try popRequired(.charShape, charShapeCount)
             .map { try HwpCharShape.load($0.payload, version) }
-        tabDefArray = try childrenArray.pop(tabDefCount)
+        tabDefArray = try popRequired(.tabDef, tabDefCount)
             .map { try HwpTabDef.load($0.payload) }
-        numberingArray = try childrenArray.pop(numberingCount)
+        numberingArray = try popRequired(.numbering, numberingCount)
             .map { try HwpNumbering.load($0.payload, version) }
-        bulletArray = try childrenArray.pop(bulletCount)
+        bulletArray = try popRequired(.bullet, bulletCount)
             .map { try HwpBullet.load($0.payload) }
-        paraShapeArray = try childrenArray.pop(paraShapeCount)
+        paraShapeArray = try popRequired(.paraShape, paraShapeCount)
             .map { try HwpParaShape.load($0.payload, version) }
-        styleArray = try childrenArray.pop(styleCount)
+        styleArray = try popRequired(.style, styleCount)
             .map { try HwpStyle.load($0.payload) }
+        memoShapeArray = try popOptionalTagged(
+            .memoShape,
+            memoShapeCount ?? 0,
+            from: &childrenArray
+        )
+        .map(HwpMemoShape.load)
+        trackChangeArray = try popAllTagged(.trackChange, from: &childrenArray)
+            .map(HwpTrackChange.load)
+        trackChangeContentArray = try popOptionalTagged(
+            .trackChangeContent,
+            changeTraceCount ?? 0,
+            from: &childrenArray
+        )
+        .map(HwpTrackChangeContent.load)
+        trackChangeAuthorArray = try popOptionalTagged(
+            .trackChangeAuthor,
+            changeTraceUserCount ?? 0,
+            from: &childrenArray
+        ).map(HwpTrackChangeAuthor.load)
 
         forbiddenCharArray = [HwpForbiddenChar]()
+        unknownChildren = []
 
         if childrenArray.isEmpty {
             return
@@ -235,10 +304,113 @@ extension HwpIdMappings: HwpFromRecordWithVersion {
         for child in childrenArray {
             switch child.tagId {
             case HwpDocInfoTag.forbiddenChar.rawValue:
-                forbiddenCharArray.append(try HwpForbiddenChar.load(child.payload))
+                forbiddenCharArray.append(try HwpForbiddenChar.load(child))
             default:
-                throw HwpError.unidentifiedTag(tagId: child.tagId)
+                unknownChildren.append(HwpUnknownRecord(child))
             }
         }
     }
+}
+
+private func popTagged(
+    _ expectedTag: HwpDocInfoTag,
+    _ count: Int32,
+    from children: inout [HwpRecord],
+    preservingPreviouslyCountedTags previouslyCountedTags: Set<UInt32> = []
+) throws -> [HwpRecord] {
+    let expectedCount = try validatedRecordCount(count, for: expectedTag)
+    guard expectedCount > 0 else {
+        return []
+    }
+    guard expectedCount <= children.count else {
+        throw HwpError.invalidRecordTree(
+            reason:
+            "record count \(expectedCount) exceeds available child records \(children.count)"
+        )
+    }
+
+    var records = [HwpRecord]()
+    var consumedIndexes = Set<Int>()
+    for (index, child) in children.enumerated() {
+        if child.tagId == expectedTag.rawValue {
+            records.append(child)
+            consumedIndexes.insert(index)
+            if records.count == expectedCount {
+                break
+            }
+        } else if previouslyCountedTags.contains(child.tagId) {
+            continue
+        } else if HwpDocInfoTag(rawValue: child.tagId) == .reserved {
+            continue
+        } else if HwpDocInfoTag(rawValue: child.tagId) != nil {
+            throw HwpError.invalidRecordTree(
+                reason: "expected DocInfo tag \(expectedTag.rawValue), got \(child.tagId)"
+            )
+        }
+    }
+
+    guard records.count == expectedCount else {
+        throw HwpError.invalidRecordTree(
+            reason: "expected \(expectedCount) tag \(expectedTag.rawValue), got \(records.count)"
+        )
+    }
+
+    children = children.enumerated()
+        .filter { !consumedIndexes.contains($0.offset) }
+        .map(\.element)
+    return records
+}
+
+private func popOptionalTagged(
+    _ expectedTag: HwpDocInfoTag,
+    _ count: Int32,
+    from children: inout [HwpRecord]
+) throws -> [HwpRecord] {
+    let expectedCount = try validatedRecordCount(count, for: expectedTag)
+    guard expectedCount > 0 else {
+        return []
+    }
+
+    var records = [HwpRecord]()
+    var remaining = [HwpRecord]()
+    for child in children {
+        if child.tagId == expectedTag.rawValue, records.count < expectedCount {
+            records.append(child)
+        } else {
+            remaining.append(child)
+        }
+    }
+    guard records.count == expectedCount else {
+        throw HwpError.invalidRecordTree(
+            reason: "expected \(expectedCount) tag \(expectedTag.rawValue), got \(records.count)"
+        )
+    }
+    children = remaining
+    return records
+}
+
+private func validatedRecordCount(_ count: Int32, for tag: HwpDocInfoTag) throws -> Int {
+    guard let expectedCount = Int(exactly: count), expectedCount >= 0 else {
+        throw HwpError.invalidRecordTree(
+            reason: "invalid DocInfo record count \(count) for tag \(tag.rawValue)"
+        )
+    }
+    return expectedCount
+}
+
+private func popAllTagged(
+    _ expectedTag: HwpDocInfoTag,
+    from children: inout [HwpRecord]
+) -> [HwpRecord] {
+    var records = [HwpRecord]()
+    var remaining = [HwpRecord]()
+    for child in children {
+        if child.tagId == expectedTag.rawValue {
+            records.append(child)
+        } else {
+            remaining.append(child)
+        }
+    }
+    children = remaining
+    return records
 }

@@ -44,9 +44,9 @@ CoreHwp/
 HWP의 "컨트롤"(표, 다단, 도형, 구역 등)은 단락 stream에 박힌 4-byte 컨트롤
 ID로 dispatch된다.
 
-1. 4-byte ID를 `Enums/Ctrl Id/` 아래 알맞은 파일(Common, Other, Field)에 추가.
-2. `Models/Section/Ctrl Header/`에 payload struct 추가.
-3. `Enums/Ctrl Id/HwpCtrlId.swift`의 enum에 case 추가하고, manual
+1. 4-byte ID를 `Enums/CtrlId/` 아래 알맞은 파일(Common, Other, Field)에 추가.
+2. `Models/Section/CtrlHeader/`에 payload struct 추가.
+3. `Enums/CtrlId/HwpCtrlId.swift`의 enum에 case 추가하고, manual
    `Codable` 구현 (`CodingKeys`, `init(from:)`, `encode(to:)`)도 갱신할 것.
    이종 associated value 때문에 자동 합성되지 않는다.
 

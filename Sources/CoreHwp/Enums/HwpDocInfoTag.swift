@@ -1,7 +1,7 @@
 /**
  ’문서 정보’의 데이터 레코드
  */
-enum HwpDocInfoTag: UInt32 {
+enum HwpDocInfoTag: UInt32, CaseIterable {
     case documentProperties = 16
     case idMappings = 17
     case binData = 18

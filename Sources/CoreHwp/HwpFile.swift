@@ -5,46 +5,172 @@ public struct HwpFile: HwpPrimitive {
     public let fileHeader: HwpFileHeader
     public let docInfo: HwpDocInfo
     public let sectionArray: [HwpSection]
+    public let summary: HwpSummary
     public let previewText: HwpPreviewText
+    public let previewImage: HwpPreviewImage
+    public let binaryDataArray: [HwpBinaryData]
 
     public init() {
         fileHeader = HwpFileHeader()
         docInfo = HwpDocInfo()
         sectionArray = [HwpSection()]
+        summary = HwpSummary()
         previewText = HwpPreviewText()
+        previewImage = HwpPreviewImage()
+        binaryDataArray = []
     }
 
     public init(fromPath filePath: String) throws {
-        let ole = try OLEFile(filePath)
-        try self.init(fromOLE: ole)
+        let ole: OLEFile
+        do {
+            ole = try OLEFile(filePath)
+        } catch {
+            throw HwpError.invalidOLEFile(reason: String(describing: error))
+        }
+        do {
+            try self.init(fromOLE: ole)
+        } catch let error as HwpError {
+            throw error
+        } catch {
+            throw HwpError.invalidOLEFile(reason: String(describing: error))
+        }
     }
 
     #if os(iOS) || os(watchOS) || os(tvOS) || os(macOS)
+        public init(fromData data: Data) throws {
+            let fileWrapper = FileWrapper(regularFileWithContents: data)
+            fileWrapper.preferredFilename = "document.hwp"
+            try self.init(fromWrapper: fileWrapper)
+        }
+
         public init(fromWrapper fileWrapper: FileWrapper) throws {
-            let ole = try OLEFile(fileWrapper)
-            try self.init(fromOLE: ole)
+            let ole: OLEFile
+            do {
+                ole = try OLEFile(fileWrapper)
+            } catch {
+                throw HwpError.invalidOLEFile(reason: String(describing: error))
+            }
+            do {
+                try self.init(fromOLE: ole)
+            } catch let error as HwpError {
+                throw error
+            } catch {
+                throw HwpError.invalidOLEFile(reason: String(describing: error))
+            }
         }
     #endif
 
     private init(fromOLE ole: OLEFile) throws {
-        let streams = Dictionary(uniqueKeysWithValues: ole.root.children.map { ($0.name, $0) })
+        let streams = try StreamReader.rootStreams(from: ole.root.children)
         let reader = StreamReader(ole, streams)
 
         let fileHeader = try HwpFileHeader.load(reader.getDataFromStream(.fileHeader, false))
-        self.fileHeader = fileHeader
-
+        if let unsupportedFeature = fileHeader.fileProperty.unsupportedFeature {
+            throw HwpError.unsupportedFeature(unsupportedFeature)
+        }
         let isCompressed = fileHeader.fileProperty.isCompressed
 
         let docInfoData = try reader.getDataFromStream(.docInfo, isCompressed)
-        docInfo = try HwpDocInfo.load(docInfoData, fileHeader.version)
+        let docInfo = try HwpDocInfo.load(docInfoData, fileHeader.version)
+        let sectionDataArray = try reader.getDataFromStorage(
+            .bodyText,
+            isCompressed,
+            expectedCount: Int(docInfo.documentProperties.sectionSize)
+        )
+        let summaryData = try reader.getOptionalDataFromStream(.summary, false)
+        let previewTextData = try reader.getOptionalDataFromStream(.previewText, false)
+        let previewImageData = try reader.getOptionalDataFromStream(.previewImage, false)
+        let binaryData = try reader.getOptionalNamedDataFromStorage(.binData, false)
 
-        sectionArray = try reader.getDataFromStorage(.bodyText, isCompressed)
-            .map { try HwpSection.load($0, fileHeader.version) }
+        try self.init(
+            fileHeader: fileHeader,
+            docInfo: docInfo,
+            sectionDataArray: sectionDataArray,
+            summaryData: summaryData,
+            previewTextData: previewTextData,
+            previewImageData: previewImageData,
+            binaryData: binaryData
+        )
+    }
 
-        guard let previewTextStream = streams[HwpStreamName.previewText.rawValue] else {
-            throw HwpError.streamDoesNotExist(name: HwpStreamName.previewText)
+    init(
+        fileHeader: HwpFileHeader,
+        docInfoData: Data,
+        sectionDataArray: [Data],
+        summaryData: Data? = nil,
+        previewTextData: Data? = nil,
+        previewImageData: Data? = nil,
+        binaryData: [(name: String, data: Data)] = []
+    ) throws {
+        if let unsupportedFeature = fileHeader.fileProperty.unsupportedFeature {
+            throw HwpError.unsupportedFeature(unsupportedFeature)
         }
-        let previewTextReader = try ole.stream(previewTextStream)
-        previewText = try HwpPreviewText.load(previewTextReader.readDataToEnd())
+
+        let docInfo = try HwpDocInfo.load(docInfoData, fileHeader.version)
+        try self.init(
+            fileHeader: fileHeader,
+            docInfo: docInfo,
+            sectionDataArray: sectionDataArray,
+            summaryData: summaryData,
+            previewTextData: previewTextData,
+            previewImageData: previewImageData,
+            binaryData: binaryData
+        )
+    }
+
+    init(
+        fileHeader: HwpFileHeader,
+        docInfo: HwpDocInfo,
+        sectionDataArray: [Data],
+        summaryData: Data? = nil,
+        previewTextData: Data? = nil,
+        previewImageData: Data? = nil,
+        binaryData: [(name: String, data: Data)] = []
+    ) throws {
+        self.fileHeader = fileHeader
+
+        if let unsupportedFeature = fileHeader.fileProperty.unsupportedFeature {
+            throw HwpError.unsupportedFeature(unsupportedFeature)
+        }
+
+        self.docInfo = docInfo
+
+        let expectedSectionCount = Int(docInfo.documentProperties.sectionSize)
+        guard expectedSectionCount > 0 else {
+            throw HwpError.invalidRecordTree(
+                reason: "BodyText sectionSize \(expectedSectionCount) is invalid"
+            )
+        }
+        guard !sectionDataArray.isEmpty else {
+            throw HwpError.streamDoesNotExist(name: .bodyText)
+        }
+        if sectionDataArray.count != expectedSectionCount {
+            let reason = "BodyText section count \(sectionDataArray.count) " +
+                "!= sectionSize \(expectedSectionCount)"
+            throw HwpError.invalidRecordTree(
+                reason: reason
+            )
+        }
+        sectionArray = try sectionDataArray.map { try HwpSection.load($0, fileHeader.version) }
+
+        if let summaryData {
+            summary = try HwpSummary.load(summaryData)
+        } else {
+            summary = HwpSummary()
+        }
+
+        if let previewTextData {
+            previewText = try HwpPreviewText.load(previewTextData)
+        } else {
+            previewText = HwpPreviewText()
+        }
+
+        if let previewImageData {
+            previewImage = try HwpPreviewImage.load(previewImageData)
+        } else {
+            previewImage = HwpPreviewImage()
+        }
+
+        binaryDataArray = binaryData.map { HwpBinaryData(name: $0.name, data: $0.data) }
     }
 }
