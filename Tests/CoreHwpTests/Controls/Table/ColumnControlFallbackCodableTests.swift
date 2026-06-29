@@ -5,8 +5,10 @@ import XCTest
 
 final class ColumnControlFallbackCodableTests: XCTestCase {
     func testTruncatedColumnFallbackPreservesNestedChildrenThroughParagraphCodable() throws {
-        let rawPayload = columnFallbackLittleEndianData(HwpOtherCtrlId.column.rawValue)
-            + Data([0xAA])
+        let rawPayload = concatenatedData(
+            columnFallbackLittleEndianData(HwpOtherCtrlId.column.rawValue),
+            Data([0xAA])
+        )
         let unknownChild = columnFallbackNestedChildRecord(
             tagId: 0x2FE,
             level: 2,

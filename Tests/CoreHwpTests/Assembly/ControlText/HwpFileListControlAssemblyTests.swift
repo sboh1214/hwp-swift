@@ -67,8 +67,8 @@ private struct InjectedListControls {
             InjectedListControl(ctrlId: .footnote, index: 2),
             InjectedListControl(ctrlId: .endnote, index: 3),
         ]
-        sectionData = specs.reduce(baseSectionData) { data, spec in
-            data + spec.recordData
+        sectionData = specs.reduce(into: baseSectionData) { data, spec in
+            data.append(spec.recordData)
         }
     }
 }
@@ -90,7 +90,10 @@ private struct InjectedListControl {
     init(ctrlId: HwpOtherCtrlId, index: UInt8) {
         self.ctrlId = ctrlId
         controlRawTrailing = Data([0xA0 + index])
-        controlPayload = listLittleEndianData(ctrlId.rawValue) + controlRawTrailing
+        controlPayload = concatenatedData(
+            listLittleEndianData(ctrlId.rawValue),
+            controlRawTrailing
+        )
         listHeaderRawTrailing = Data([0xB0 + index, 0xB8 + index])
         listHeaderPayload = makeListHeaderPayload(
             paragraphCount: 1,
@@ -104,39 +107,41 @@ private struct InjectedListControl {
         controlUnknownPayload = Data([0xD0 + index])
         controlGrandchildPayload = Data([0xD8 + index])
 
-        recordData = listRecordData(
-            tagId: HwpSectionTag.ctrlHeader.rawValue,
-            level: 1,
-            payload: controlPayload
-        )
-            + listRecordData(
+        recordData = concatenatedData(
+            listRecordData(
+                tagId: HwpSectionTag.ctrlHeader.rawValue,
+                level: 1,
+                payload: controlPayload
+            ),
+            listRecordData(
                 tagId: HwpSectionTag.listHeader.rawValue,
                 level: 2,
                 payload: listHeaderPayload
-            )
-            + listRecordData(
+            ),
+            listRecordData(
                 tagId: 0x320 + UInt32(index),
                 level: 3,
                 payload: listHeaderUnknownPayload
-            )
-            + listRecordData(
+            ),
+            listRecordData(
                 tagId: 0x330 + UInt32(index),
                 level: 4,
                 payload: listHeaderGrandchildPayload
-            )
-            + listRecordData(
+            ),
+            listRecordData(
                 tagId: HwpSectionTag.paraHeader.rawValue,
                 level: 2,
                 payload: paragraphPayload
-            )
-            + listRecordData(tagId: HwpSectionTag.paraCharShape.rawValue, level: 3, payload: Data())
-            + listRecordData(tagId: HwpSectionTag.paraLineSeg.rawValue, level: 3, payload: Data())
-            + listRecordData(tagId: 0x340 + UInt32(index), level: 2, payload: controlUnknownPayload)
-            + listRecordData(
+            ),
+            listRecordData(tagId: HwpSectionTag.paraCharShape.rawValue, level: 3, payload: Data()),
+            listRecordData(tagId: HwpSectionTag.paraLineSeg.rawValue, level: 3, payload: Data()),
+            listRecordData(tagId: 0x340 + UInt32(index), level: 2, payload: controlUnknownPayload),
+            listRecordData(
                 tagId: 0x350 + UInt32(index),
                 level: 3,
                 payload: controlGrandchildPayload
             )
+        )
     }
 }
 
@@ -153,26 +158,31 @@ private struct InjectedMalformedListControl {
     init(baseSectionData: Data) {
         ctrlId = .footer
         controlRawTrailing = Data([0xEE])
-        controlPayload = listLittleEndianData(ctrlId.rawValue) + controlRawTrailing
+        controlPayload = concatenatedData(
+            listLittleEndianData(ctrlId.rawValue),
+            controlRawTrailing
+        )
         listHeaderPayload = Data([0xAA])
         listHeaderUnknownPayload = Data([0xAB])
         controlUnknownPayload = Data([0xAC])
         controlGrandchildPayload = Data([0xAD])
 
-        sectionData = baseSectionData
-            + listRecordData(
+        sectionData = concatenatedData(
+            baseSectionData,
+            listRecordData(
                 tagId: HwpSectionTag.ctrlHeader.rawValue,
                 level: 1,
                 payload: controlPayload
-            )
-            + listRecordData(
+            ),
+            listRecordData(
                 tagId: HwpSectionTag.listHeader.rawValue,
                 level: 2,
                 payload: listHeaderPayload
-            )
-            + listRecordData(tagId: 0x360, level: 3, payload: listHeaderUnknownPayload)
-            + listRecordData(tagId: 0x361, level: 2, payload: controlUnknownPayload)
-            + listRecordData(tagId: 0x362, level: 3, payload: controlGrandchildPayload)
+            ),
+            listRecordData(tagId: 0x360, level: 3, payload: listHeaderUnknownPayload),
+            listRecordData(tagId: 0x361, level: 2, payload: controlUnknownPayload),
+            listRecordData(tagId: 0x362, level: 3, payload: controlGrandchildPayload)
+        )
     }
 }
 
@@ -400,9 +410,11 @@ private func makeListHeaderPayload(
     property: UInt32,
     rawTrailing: Data
 ) -> Data {
-    listLittleEndianData(paragraphCount)
-        + listLittleEndianData(property)
-        + rawTrailing
+    concatenatedData(
+        listLittleEndianData(paragraphCount),
+        listLittleEndianData(property),
+        rawTrailing
+    )
 }
 
 private func listParagraphHeaderPayload(paraId: UInt32) -> Data {

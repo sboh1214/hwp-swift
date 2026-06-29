@@ -52,8 +52,8 @@ private struct InjectedRawOtherControls {
             InjectedRawOtherControl(ctrlId: .hiddenComment, index: 3),
             InjectedRawOtherControl(ctrlId: .form, index: 4),
         ]
-        sectionData = specs.reduce(baseSectionData) { data, spec in
-            data + spec.recordData
+        sectionData = specs.reduce(into: baseSectionData) { data, spec in
+            data.append(spec.recordData)
         }
     }
 }
@@ -71,19 +71,24 @@ private struct InjectedRawOtherControl {
     init(ctrlId: HwpOtherCtrlId, index: UInt8) {
         self.ctrlId = ctrlId
         rawTrailing = Data([0xA0 + index, 0xB0 + index])
-        payload = rawOtherLittleEndianData(ctrlId.rawValue) + rawTrailing
+        payload = concatenatedData(
+            rawOtherLittleEndianData(ctrlId.rawValue),
+            rawTrailing
+        )
         unknownPayload = Data([0xC0 + index])
         grandchildPayload = Data([0xD0 + index])
         unknownTagId = 0x370 + UInt32(index)
         grandchildTagId = 0x380 + UInt32(index)
 
-        recordData = rawOtherRecordData(
-            tagId: HwpSectionTag.ctrlHeader.rawValue,
-            level: 1,
-            payload: payload
+        recordData = concatenatedData(
+            rawOtherRecordData(
+                tagId: HwpSectionTag.ctrlHeader.rawValue,
+                level: 1,
+                payload: payload
+            ),
+            rawOtherRecordData(tagId: unknownTagId, level: 2, payload: unknownPayload),
+            rawOtherRecordData(tagId: grandchildTagId, level: 3, payload: grandchildPayload)
         )
-            + rawOtherRecordData(tagId: unknownTagId, level: 2, payload: unknownPayload)
-            + rawOtherRecordData(tagId: grandchildTagId, level: 3, payload: grandchildPayload)
     }
 }
 

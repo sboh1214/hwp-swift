@@ -7,7 +7,7 @@ final class ColumnControlStabilityTests: XCTestCase {
     func testColumnInitializerPreservesRawPayloadWithNonZeroDataStartIndex() throws {
         let rawTrailing = Data([0xCA, 0xFE])
         let rawPayload = columnPayload(rawTrailing: rawTrailing)
-        let slicedPayload = (Data([0xEF]) + rawPayload).dropFirst()
+        let slicedPayload = concatenatedData(Data([0xEF]), rawPayload).dropFirst()
         let unknownPayload = Data([0xCD])
         let unknownChild = HwpRecord(tagId: 0x2FA, level: 2, payload: unknownPayload)
         var reader = DataReader(slicedPayload)
@@ -33,8 +33,10 @@ final class ColumnControlStabilityTests: XCTestCase {
     }
 
     func testParagraphPreservesTruncatedColumnControlAsGenericOtherControl() throws {
-        let rawPayload = columnStabilityLittleEndianData(HwpOtherCtrlId.column.rawValue)
-            + Data([0xAA])
+        let rawPayload = concatenatedData(
+            columnStabilityLittleEndianData(HwpOtherCtrlId.column.rawValue),
+            Data([0xAA])
+        )
         let record = HwpRecord(
             tagId: HwpSectionTag.ctrlHeader.rawValue,
             level: 1,

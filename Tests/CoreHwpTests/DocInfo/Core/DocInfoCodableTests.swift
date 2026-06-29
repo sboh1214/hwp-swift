@@ -358,7 +358,7 @@ private func docInfoUnknownRecords(for fixture: DocInfoCodableFixture) -> [Data]
 }
 
 private func docInfoDocumentPropertiesPayload() -> Data {
-    docInfoLittleEndianData(UInt16(1)) + Data(repeating: 0, count: 24)
+    concatenatedData(docInfoLittleEndianData(UInt16(1)), Data(repeating: 0, count: 24))
 }
 
 private func docInfoIdMappingsPayload() -> Data {

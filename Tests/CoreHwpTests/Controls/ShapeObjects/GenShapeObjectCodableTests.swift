@@ -7,8 +7,8 @@ final class GenShapeObjectCodableTests: XCTestCase {
     func testGenShapeObjectInitializerPreservesRawPayloadWithNonZeroDataStartIndex() throws {
         let commonPayload = genShapeCommonPropertyPayload()
         let rawTrailing = Data([0xCA, 0xFE])
-        let rawPayload = commonPayload + rawTrailing
-        let slicedPayload = (Data([0xEF]) + rawPayload).dropFirst()
+        let rawPayload = concatenatedData(commonPayload, rawTrailing)
+        let slicedPayload = concatenatedData(Data([0xEF]), rawPayload).dropFirst()
         let unknownChild = HwpRecord(tagId: 0x2FE, level: 2, payload: Data([0xDD]))
         var reader = DataReader(slicedPayload)
 
@@ -71,8 +71,10 @@ private struct GenShapeCodableFixture {
 private func genShapeCodableFixture() throws -> GenShapeCodableFixture {
     let commonPayload = genShapeCommonPropertyPayload()
     let rawTrailing = Data([0xDE, 0xAD])
-    let componentPayload = littleEndianGenShapeData(HwpCommonCtrlId.rectangle.rawValue)
-        + Data([0xA0, 0xA1])
+    let componentPayload = concatenatedData(
+        littleEndianGenShapeData(HwpCommonCtrlId.rectangle.rawValue),
+        Data([0xA0, 0xA1])
+    )
     let rectanglePayload = Data([0x10, 0x11])
     let record = genShapeRecord(
         commonPayload: commonPayload,
@@ -84,7 +86,7 @@ private func genShapeCodableFixture() throws -> GenShapeCodableFixture {
 
     return GenShapeCodableFixture(
         commonPayload: commonPayload,
-        rawPayload: commonPayload + rawTrailing,
+        rawPayload: concatenatedData(commonPayload, rawTrailing),
         rawTrailing: rawTrailing,
         componentPayload: componentPayload,
         rectanglePayload: rectanglePayload,
@@ -118,7 +120,7 @@ private func genShapeRecord(
     let record = HwpRecord(
         tagId: HwpSectionTag.ctrlHeader.rawValue,
         level: 1,
-        payload: commonPayload + rawTrailing
+        payload: concatenatedData(commonPayload, rawTrailing)
     )
     record.children = [
         genShapeComponentRecord(

@@ -6,7 +6,7 @@ import XCTest
 final class LayoutCompatibilityStabilityTests: XCTestCase {
     func testLayoutCompatibilityDataLoaderPreservesRawPayloadWithNonZeroDataStartIndex() throws {
         let payload = layoutCompatibilityPayload(1, 2, 3, 4, 5)
-        let slicedPayload = (Data([0xEE]) + payload).dropFirst()
+        let slicedPayload = concatenatedData(Data([0xEE]), payload).dropFirst()
 
         let layoutCompatibility = try HwpLayoutCompatibility.load(slicedPayload)
 
@@ -39,7 +39,10 @@ final class LayoutCompatibilityStabilityTests: XCTestCase {
     }
 
     func testLayoutCompatibilityRejectsTrailingBytesWithTypedError() {
-        let payload = layoutCompatibilityPayload(1, 2, 3, 4, 5) + Data([0xAA, 0xBB])
+        let payload = concatenatedData(
+            layoutCompatibilityPayload(1, 2, 3, 4, 5),
+            Data([0xAA, 0xBB])
+        )
 
         expect {
             _ = try HwpLayoutCompatibility.load(layoutCompatibilityRecord(

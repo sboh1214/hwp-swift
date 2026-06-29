@@ -80,8 +80,10 @@ private struct InjectedBookmarkControl {
 
     init(baseSectionData: Data) {
         rawTrailing = Data([0xA9, 0xAA])
-        controlPayload = otherControlLittleEndianData(HwpOtherCtrlId.bookmark.rawValue)
-            + rawTrailing
+        controlPayload = concatenatedData(
+            otherControlLittleEndianData(HwpOtherCtrlId.bookmark.rawValue),
+            rawTrailing
+        )
         bookmarkName = "CoreHwpBookmarkInjected"
         bookmarkNameRawPayload = otherControlUTF16LittleEndianData(bookmarkName)
         ctrlDataRawTrailing = Data([0xCA, 0xFE])
@@ -93,32 +95,34 @@ private struct InjectedBookmarkControl {
         unknownChildPayload = Data([0xC1, 0xC2])
         unknownGrandchildPayload = Data([0xC3])
 
-        sectionData = baseSectionData
-            + otherControlRecordData(
+        sectionData = concatenatedData(
+            baseSectionData,
+            otherControlRecordData(
                 tagId: HwpSectionTag.ctrlHeader.rawValue,
                 level: 1,
                 payload: controlPayload
-            )
-            + otherControlRecordData(
+            ),
+            otherControlRecordData(
                 tagId: HwpSectionTag.ctrlData.rawValue,
                 level: 2,
                 payload: ctrlDataPayload
-            )
-            + otherControlRecordData(
+            ),
+            otherControlRecordData(
                 tagId: 0x2F2,
                 level: 3,
                 payload: ctrlDataUnknownPayload
-            )
-            + otherControlRecordData(
+            ),
+            otherControlRecordData(
                 tagId: 0x2F1,
                 level: 2,
                 payload: unknownChildPayload
-            )
-            + otherControlRecordData(
+            ),
+            otherControlRecordData(
                 tagId: 0x2F0,
                 level: 3,
                 payload: unknownGrandchildPayload
             )
+        )
     }
 
     private static func bookmarkCtrlDataPayload(
@@ -151,49 +155,59 @@ private struct InjectedPageHideIndexmark {
 
     init(baseSectionData: Data) {
         pageHideInfoRawTrailing = Data([0xA1, 0xA2])
-        pageHideRawTrailing = otherControlLittleEndianData(UInt32(0x20))
-            + pageHideInfoRawTrailing
-        pageHidePayload = otherControlLittleEndianData(HwpOtherCtrlId.pageHide.rawValue)
-            + pageHideRawTrailing
+        pageHideRawTrailing = concatenatedData(
+            otherControlLittleEndianData(UInt32(0x20)),
+            pageHideInfoRawTrailing
+        )
+        pageHidePayload = concatenatedData(
+            otherControlLittleEndianData(HwpOtherCtrlId.pageHide.rawValue),
+            pageHideRawTrailing
+        )
         pageHideUnknownPayload = Data([0xA3, 0xA4])
 
         indexmarkText = "InjectedIndex"
         indexmarkTextPayload = otherControlUTF16LittleEndianData(indexmarkText)
         indexmarkInfoRawTrailing = Data([0xB1, 0xB2, 0xB3])
-        indexmarkRawTrailing = otherControlLittleEndianData(UInt16(indexmarkText.utf16.count))
-            + indexmarkTextPayload
-            + indexmarkInfoRawTrailing
-        indexmarkPayload = otherControlLittleEndianData(HwpOtherCtrlId.indexmark.rawValue)
-            + indexmarkRawTrailing
+        indexmarkRawTrailing = concatenatedData(
+            otherControlLittleEndianData(UInt16(indexmarkText.utf16.count)),
+            indexmarkTextPayload,
+            indexmarkInfoRawTrailing
+        )
+        indexmarkPayload = concatenatedData(
+            otherControlLittleEndianData(HwpOtherCtrlId.indexmark.rawValue),
+            indexmarkRawTrailing
+        )
         indexmarkUnknownPayload = Data([0xB4, 0xB5])
         indexmarkGrandchildPayload = Data([0xB6])
 
-        sectionData = baseSectionData
-            + otherControlRecordData(
+        sectionData = concatenatedData(
+            baseSectionData,
+            otherControlRecordData(
                 tagId: HwpSectionTag.ctrlHeader.rawValue,
                 level: 1,
                 payload: pageHidePayload
-            )
-            + otherControlRecordData(
+            ),
+            otherControlRecordData(
                 tagId: 0x2E8,
                 level: 2,
                 payload: pageHideUnknownPayload
-            )
-            + otherControlRecordData(
+            ),
+            otherControlRecordData(
                 tagId: HwpSectionTag.ctrlHeader.rawValue,
                 level: 1,
                 payload: indexmarkPayload
-            )
-            + otherControlRecordData(
+            ),
+            otherControlRecordData(
                 tagId: 0x2E9,
                 level: 2,
                 payload: indexmarkUnknownPayload
-            )
-            + otherControlRecordData(
+            ),
+            otherControlRecordData(
                 tagId: 0x2EA,
                 level: 3,
                 payload: indexmarkGrandchildPayload
             )
+        )
     }
 }
 

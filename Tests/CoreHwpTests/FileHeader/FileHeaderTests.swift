@@ -60,7 +60,7 @@ final class FileHeaderTests: XCTestCase {
     }
 
     func testTruncatedFilePropertyThrowsTypedError() {
-        let payload = validHwpSignatureData() + Data([1, 0, 1, 5])
+        let payload = concatenatedData(validHwpSignatureData(), Data([1, 0, 1, 5]))
 
         expect {
             _ = try HwpFileHeader.load(payload)
@@ -74,32 +74,46 @@ final class FileHeaderTests: XCTestCase {
     }
 
     func testTruncatedFixedWidthFileHeaderFieldsThrowTypedError() {
-        let signatureAndVersion = validHwpSignatureData() + Data([1, 0, 1, 5])
+        let signatureAndVersion = concatenatedData(validHwpSignatureData(), Data([1, 0, 1, 5]))
         let fileProperty = littleEndianData(UInt32(0))
         let fileLicense = littleEndianData(UInt32(0))
         let encryptVersion = littleEndianData(UInt32(4))
         let scenarios = [
             FileHeaderTruncationScenario(
                 name: "version",
-                payload: validHwpSignatureData() + Data([1, 0]),
+                payload: concatenatedData(validHwpSignatureData(), Data([1, 0])),
                 expected: 4,
                 actual: 2
             ),
             FileHeaderTruncationScenario(
                 name: "fileLicense",
-                payload: signatureAndVersion + fileProperty + Data([0xAA, 0xBB]),
+                payload: concatenatedData(
+                    signatureAndVersion,
+                    fileProperty,
+                    Data([0xAA, 0xBB])
+                ),
                 expected: 4,
                 actual: 2
             ),
             FileHeaderTruncationScenario(
                 name: "encryptVersion",
-                payload: signatureAndVersion + fileProperty + fileLicense + Data([0xAA]),
+                payload: concatenatedData(
+                    signatureAndVersion,
+                    fileProperty,
+                    fileLicense,
+                    Data([0xAA])
+                ),
                 expected: 4,
                 actual: 1
             ),
             FileHeaderTruncationScenario(
                 name: "koreaOpenLicense",
-                payload: signatureAndVersion + fileProperty + fileLicense + encryptVersion,
+                payload: concatenatedData(
+                    signatureAndVersion,
+                    fileProperty,
+                    fileLicense,
+                    encryptVersion
+                ),
                 expected: 1,
                 actual: 0
             ),
@@ -119,7 +133,7 @@ final class FileHeaderTests: XCTestCase {
     }
 
     func testNonASCIISignatureThrowsTypedError() {
-        let signature = Data([0xFF]) + Data(repeating: 0, count: 31)
+        let signature = concatenatedData(Data([0xFF]), Data(repeating: 0, count: 31))
 
         expect {
             _ = try HwpFileHeader.load(fileHeaderPayload(signature: signature))
@@ -315,7 +329,7 @@ final class FileHeaderTests: XCTestCase {
     }
 
     func testTrailingFileHeaderBytesThrowTypedEOFError() {
-        let payload = fileHeaderPayload() + Data([0xAA, 0xBB])
+        let payload = concatenatedData(fileHeaderPayload(), Data([0xAA, 0xBB]))
 
         expect {
             _ = try HwpFileHeader.load(payload)
@@ -424,7 +438,7 @@ private func fileLicense(_ rawValue: UInt32) throws -> HwpFileLicense {
 }
 
 private func validHwpSignatureData() -> Data {
-    Data("HWP Document File".utf8) + Data(repeating: 0, count: 15)
+    concatenatedData(Data("HWP Document File".utf8), Data(repeating: 0, count: 15))
 }
 
 private func littleEndianData(_ value: some FixedWidthInteger) -> Data {

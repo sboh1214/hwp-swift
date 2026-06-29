@@ -40,10 +40,12 @@ final class ParagraphRequiredRecordStabilityTests: XCTestCase {
     }
 
     func testInvalidRangeTagChildThrowsTypedErrorFromParagraphDispatch() {
-        let invalidRangeTagPayload = requiredParagraphLittleEndianData(UInt32(1))
-            + requiredParagraphLittleEndianData(UInt32(9))
-            + requiredParagraphLittleEndianData(UInt32(0xABCD))
-            + Data([0xFF])
+        let invalidRangeTagPayload = concatenatedData(
+            requiredParagraphLittleEndianData(UInt32(1)),
+            requiredParagraphLittleEndianData(UInt32(9)),
+            requiredParagraphLittleEndianData(UInt32(0xABCD)),
+            Data([0xFF])
+        )
         let paraHeader = requiredParagraphRecord(children: [
             HwpRecord(tagId: HwpSectionTag.paraCharShape.rawValue, level: 1, payload: Data()),
             HwpRecord(tagId: HwpSectionTag.paraLineSeg.rawValue, level: 1, payload: Data()),
@@ -118,7 +120,10 @@ final class ParagraphRequiredRecordStabilityTests: XCTestCase {
 
     func testParaTextCountUsesRawTextUnitsForInlineControls() throws {
         let inlinePayload = Data(repeating: 0xAA, count: 14)
-        let paraTextPayload = requiredParagraphLittleEndianData(WCHAR(4)) + inlinePayload
+        let paraTextPayload = concatenatedData(
+            requiredParagraphLittleEndianData(WCHAR(4)),
+            inlinePayload
+        )
         let rawTextUnitCount = UInt32(paraTextPayload.count / MemoryLayout<WCHAR>.size)
         let paraHeader = requiredParagraphRecord(
             headerPayload: requiredParagraphHeaderPayload(charCount: rawTextUnitCount),
@@ -249,7 +254,10 @@ private func requiredParagraphHeaderPayload(
 }
 
 private func requiredParagraphCharShapePayload(shapeId: UInt32) -> Data {
-    requiredParagraphLittleEndianData(UInt32(0)) + requiredParagraphLittleEndianData(shapeId)
+    concatenatedData(
+        requiredParagraphLittleEndianData(UInt32(0)),
+        requiredParagraphLittleEndianData(shapeId)
+    )
 }
 
 private func requiredParagraphLineSegPayload() -> Data {
@@ -267,9 +275,11 @@ private func requiredParagraphLineSegPayload() -> Data {
 }
 
 private func requiredParagraphRangeTagPayload() -> Data {
-    requiredParagraphLittleEndianData(UInt32(1))
-        + requiredParagraphLittleEndianData(UInt32(9))
-        + requiredParagraphLittleEndianData(UInt32(0xABCD))
+    concatenatedData(
+        requiredParagraphLittleEndianData(UInt32(1)),
+        requiredParagraphLittleEndianData(UInt32(9)),
+        requiredParagraphLittleEndianData(UInt32(0xABCD))
+    )
 }
 
 private func requiredParagraphLittleEndianData(_ value: some FixedWidthInteger) -> Data {

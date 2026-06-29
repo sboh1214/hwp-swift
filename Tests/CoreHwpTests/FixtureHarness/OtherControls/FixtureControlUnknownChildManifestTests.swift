@@ -69,9 +69,9 @@ final class FixtureControlUnknownChildManifestTests: XCTestCase {
 }
 
 private func typedControlsWithUnknownChildren() throws -> UnknownChildControls {
-    let fieldPayload = littleEndianData(HwpFieldCtrlId.memo.rawValue) + Data([0xCA, 0xFE])
-    let otherPayload = littleEndianData(HwpOtherCtrlId.bookmark.rawValue) + Data([0xBA, 0xAD])
-    let shapePayload = littleEndianData(HwpCommonCtrlId.equation.rawValue) + Data([0xFA, 0xCE])
+    let fieldPayload = concatenatedData(littleEndianData(HwpFieldCtrlId.memo.rawValue), Data([0xCA, 0xFE]))
+    let otherPayload = concatenatedData(littleEndianData(HwpOtherCtrlId.bookmark.rawValue), Data([0xBA, 0xAD]))
+    let shapePayload = concatenatedData(littleEndianData(HwpCommonCtrlId.equation.rawValue), Data([0xFA, 0xCE]))
 
     return UnknownChildControls(
         field: try HwpFieldControl.load(
@@ -222,7 +222,7 @@ private func otherControl(
     _ ctrlId: HwpOtherCtrlId,
     rawTrailing: [UInt8]
 ) throws -> HwpOtherControl {
-    let payload = littleEndianData(ctrlId.rawValue) + Data(rawTrailing)
+    let payload = concatenatedData(littleEndianData(ctrlId.rawValue), Data(rawTrailing))
     let record = HwpRecord(
         tagId: HwpSectionTag.ctrlHeader.rawValue,
         level: 1,

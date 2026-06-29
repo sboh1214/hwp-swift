@@ -364,7 +364,11 @@ private func listHeaderPayload(
     paragraphCount: Int32,
     rawTrailing: Data = Data()
 ) -> Data {
-    littleEndianData(paragraphCount) + littleEndianData(UInt32(0x1122_3344)) + rawTrailing
+    concatenatedData(
+        littleEndianData(paragraphCount),
+        littleEndianData(UInt32(0x1122_3344)),
+        rawTrailing
+    )
 }
 
 private func hyperlinkPayload(url: String, rawTrailing: Data) -> Data {

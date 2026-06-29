@@ -87,10 +87,14 @@ private func assertTextBoxShapeControl(
 }
 
 private func textBoxCodableFixture() -> TextBoxCodableFixture {
-    let controlPayload = textBoxCodableLittleEndianData(HwpCommonCtrlId.rectangle.rawValue)
-        + Data([0xAB])
-    let componentPayload = textBoxCodableLittleEndianData(HwpCommonCtrlId.rectangle.rawValue)
-        + Data([0xA0])
+    let controlPayload = concatenatedData(
+        textBoxCodableLittleEndianData(HwpCommonCtrlId.rectangle.rawValue),
+        Data([0xAB])
+    )
+    let componentPayload = concatenatedData(
+        textBoxCodableLittleEndianData(HwpCommonCtrlId.rectangle.rawValue),
+        Data([0xA0])
+    )
     let firstHeaderPayload = textBoxCodableListHeaderPayload(rawTrailing: Data([0xC1]))
     let secondHeaderPayload = textBoxCodableListHeaderPayload(rawTrailing: Data([0xC2, 0xC3]))
 

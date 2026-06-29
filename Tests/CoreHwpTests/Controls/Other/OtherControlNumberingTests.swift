@@ -6,9 +6,11 @@ import XCTest
 final class OtherControlNumberingTests: XCTestCase {
     func testAutoAndNewNumberControlsExposeParsedNumberingInfo() throws {
         for ctrlId in [HwpOtherCtrlId.autoNumber, .newNumber] {
-            let rawTrailing = littleEndianData(UInt32(2))
-                + littleEndianData(UInt32(7))
-                + littleEndianData(UInt32(0x0029_0000))
+            let rawTrailing = concatenatedData(
+                littleEndianData(UInt32(2)),
+                littleEndianData(UInt32(7)),
+                littleEndianData(UInt32(0x0029_0000))
+            )
             var rawPayload = littleEndianData(ctrlId.rawValue)
             rawPayload.append(rawTrailing)
             let record = HwpRecord(
@@ -30,7 +32,7 @@ final class OtherControlNumberingTests: XCTestCase {
     }
 
     func testShortNumberingPayloadIsPreservedWithoutParsedNumberingInfo() throws {
-        let rawTrailing = littleEndianData(UInt32(2)) + Data([0xAA, 0xBB])
+        let rawTrailing = concatenatedData(littleEndianData(UInt32(2)), Data([0xAA, 0xBB]))
         var rawPayload = littleEndianData(HwpOtherCtrlId.autoNumber.rawValue)
         rawPayload.append(rawTrailing)
         let unknownChild = HwpRecord(tagId: 0x2FD, level: 2, payload: Data([0xCC]))
@@ -68,10 +70,12 @@ final class OtherControlNumberingTests: XCTestCase {
 
     func testNumberingInfoPreservesExtraTrailingBytes() throws {
         let extraTrailing = Data([0xAA, 0xBB])
-        let rawTrailing = littleEndianData(UInt32(2))
-            + littleEndianData(UInt32(7))
-            + littleEndianData(UInt32(0x0029_0000))
-            + extraTrailing
+        let rawTrailing = concatenatedData(
+            littleEndianData(UInt32(2)),
+            littleEndianData(UInt32(7)),
+            littleEndianData(UInt32(0x0029_0000)),
+            extraTrailing
+        )
         var rawPayload = littleEndianData(HwpOtherCtrlId.autoNumber.rawValue)
         rawPayload.append(rawTrailing)
         let record = HwpRecord(
@@ -91,11 +95,16 @@ final class OtherControlNumberingTests: XCTestCase {
     }
 
     func testNumberingInfoWithNonZeroStartIndexPayloadPreservesParsedFields() throws {
-        let rawTrailing = littleEndianData(UInt32(4))
-            + littleEndianData(UInt32(15))
-            + littleEndianData(UInt32(0x0031_0000))
-        let rawPayload = littleEndianData(HwpOtherCtrlId.autoNumber.rawValue) + rawTrailing
-        let slicedPayload = (Data([0xFF, 0xEE]) + rawPayload).dropFirst(2)
+        let rawTrailing = concatenatedData(
+            littleEndianData(UInt32(4)),
+            littleEndianData(UInt32(15)),
+            littleEndianData(UInt32(0x0031_0000))
+        )
+        let rawPayload = concatenatedData(
+            littleEndianData(HwpOtherCtrlId.autoNumber.rawValue),
+            rawTrailing
+        )
+        let slicedPayload = concatenatedData(Data([0xFF, 0xEE]), rawPayload).dropFirst(2)
         let record = HwpRecord(
             tagId: HwpSectionTag.ctrlHeader.rawValue,
             level: 1,
@@ -115,7 +124,7 @@ final class OtherControlNumberingTests: XCTestCase {
 
     func testParagraphDispatchPreservesShortNumberingControlsAsTypedOtherControls() throws {
         for ctrlId in [HwpOtherCtrlId.autoNumber, .newNumber] {
-            let rawTrailing = littleEndianData(UInt32(2)) + Data([0xAA, 0xBB])
+            let rawTrailing = concatenatedData(littleEndianData(UInt32(2)), Data([0xAA, 0xBB]))
             var rawPayload = littleEndianData(ctrlId.rawValue)
             rawPayload.append(rawTrailing)
             let controlRecord = HwpRecord(
@@ -161,10 +170,12 @@ final class OtherControlNumberingTests: XCTestCase {
     func testParagraphDispatchAndCodablePreserveParsedNumberingInfo() throws {
         for ctrlId in [HwpOtherCtrlId.autoNumber, .newNumber] {
             let extraTrailing = Data([0xAA, 0xBB, 0xCC])
-            let rawTrailing = littleEndianData(UInt32(3))
-                + littleEndianData(UInt32(12))
-                + littleEndianData(UInt32(0x0031_0000))
-                + extraTrailing
+            let rawTrailing = concatenatedData(
+                littleEndianData(UInt32(3)),
+                littleEndianData(UInt32(12)),
+                littleEndianData(UInt32(0x0031_0000)),
+                extraTrailing
+            )
             let roundTrip = try parsedAndRoundTrippedNumberingControl(
                 ctrlId: ctrlId,
                 rawTrailing: rawTrailing

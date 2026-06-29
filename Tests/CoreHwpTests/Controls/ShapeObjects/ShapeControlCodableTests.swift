@@ -56,7 +56,7 @@ final class ShapeControlCodableTests: XCTestCase {
             ctrlId: HwpCommonCtrlId.picture.rawValue
         )
         let rawTrailing = Data([0xDE, 0xAD])
-        let rawPayload = commonPayload + rawTrailing
+        let rawPayload = concatenatedData(commonPayload, rawTrailing)
         let record = HwpRecord(
             tagId: HwpSectionTag.ctrlHeader.rawValue,
             level: 1,
@@ -94,7 +94,7 @@ private func shapeCodableFixture() throws -> ShapeCodableFixture {
         ctrlId: HwpCommonCtrlId.picture.rawValue
     )
     let picturePayload = shapeCodablePicturePayload(binaryDataId: 7)
-    let olePayload = littleEndianShapeCodableData(UInt32(9)) + Data([0xAB])
+    let olePayload = concatenatedData(littleEndianShapeCodableData(UInt32(9)), Data([0xAB]))
     let record = shapeCodableRecord(
         commonPayload: commonPayload,
         componentPayload: componentPayload,
@@ -312,7 +312,7 @@ private func shapeCodableCommonCtrlPropertyPayload(ctrlId: UInt32) -> Data {
 }
 
 private func shapeCodableComponentPayload(ctrlId: UInt32) -> Data {
-    littleEndianShapeCodableData(ctrlId) + Data([0xA0, 0xA1])
+    concatenatedData(littleEndianShapeCodableData(ctrlId), Data([0xA0, 0xA1]))
 }
 
 private func shapeCodablePicturePayload(binaryDataId: UInt16) -> Data {

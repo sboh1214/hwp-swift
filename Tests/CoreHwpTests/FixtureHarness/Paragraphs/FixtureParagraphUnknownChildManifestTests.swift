@@ -39,16 +39,18 @@ private func decodeParagraphFixtureManifest(_ json: String) throws -> FixtureMan
 }
 
 private func paragraphManifestDocInfoData() -> Data {
-    paragraphManifestRecordData(
-        tagId: HwpDocInfoTag.documentProperties.rawValue,
-        level: 0,
-        payload: paragraphManifestDocumentPropertiesPayload()
-    )
-        + paragraphManifestRecordData(
+    concatenatedData(
+        paragraphManifestRecordData(
+            tagId: HwpDocInfoTag.documentProperties.rawValue,
+            level: 0,
+            payload: paragraphManifestDocumentPropertiesPayload()
+        ),
+        paragraphManifestRecordData(
             tagId: HwpDocInfoTag.idMappings.rawValue,
             level: 0,
             payload: paragraphManifestIdMappingsPayload()
         )
+    )
 }
 
 private func paragraphManifestSectionData() -> Data {
@@ -76,7 +78,7 @@ private func paragraphManifestSectionData() -> Data {
 }
 
 private func paragraphManifestDocumentPropertiesPayload() -> Data {
-    paragraphManifestLittleEndianData(UInt16(1)) + Data(repeating: 0, count: 24)
+    concatenatedData(paragraphManifestLittleEndianData(UInt16(1)), Data(repeating: 0, count: 24))
 }
 
 private func paragraphManifestIdMappingsPayload() -> Data {
@@ -86,20 +88,24 @@ private func paragraphManifestIdMappingsPayload() -> Data {
 }
 
 private func paragraphManifestParaHeaderPayload() -> Data {
-    paragraphManifestLittleEndianData(UInt32(0x8000_0000))
-        + paragraphManifestLittleEndianData(UInt32(0))
-        + paragraphManifestLittleEndianData(UInt16(0))
-        + Data([0, 0])
-        + paragraphManifestLittleEndianData(UInt16(1))
-        + paragraphManifestLittleEndianData(UInt16(0))
-        + paragraphManifestLittleEndianData(UInt16(0))
-        + paragraphManifestLittleEndianData(UInt32(0))
-        + paragraphManifestLittleEndianData(UInt16(0))
+    concatenatedData(
+        paragraphManifestLittleEndianData(UInt32(0x8000_0000)),
+        paragraphManifestLittleEndianData(UInt32(0)),
+        paragraphManifestLittleEndianData(UInt16(0)),
+        Data([0, 0]),
+        paragraphManifestLittleEndianData(UInt16(1)),
+        paragraphManifestLittleEndianData(UInt16(0)),
+        paragraphManifestLittleEndianData(UInt16(0)),
+        paragraphManifestLittleEndianData(UInt32(0)),
+        paragraphManifestLittleEndianData(UInt16(0))
+    )
 }
 
 private func paragraphManifestParaCharShapePayload() -> Data {
-    paragraphManifestLittleEndianData(UInt32(0))
-        + paragraphManifestLittleEndianData(UInt32(0))
+    concatenatedData(
+        paragraphManifestLittleEndianData(UInt32(0)),
+        paragraphManifestLittleEndianData(UInt32(0))
+    )
 }
 
 private func paragraphManifestRecordData(tagId: UInt32, level: UInt32, payload: Data) -> Data {

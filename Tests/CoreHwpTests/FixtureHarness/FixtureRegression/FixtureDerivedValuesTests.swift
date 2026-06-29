@@ -41,12 +41,15 @@ final class FixtureDerivedValuesTests: XCTestCase {
     func testPreservedControlsIncludesNestedUnknownAndNotImplementedTableControls() throws {
         let nestedUnknownHeader = HwpCtrlHeader(
             ctrlId: 0x1122_3344,
-            rawPayload: littleEndianData(UInt32(0x1122_3344)) + Data([0xAA, 0xBB]),
+            rawPayload: concatenatedData(
+                littleEndianData(UInt32(0x1122_3344)),
+                Data([0xAA, 0xBB])
+            ),
             unknownChildren: []
         )
         let nestedNotImplementedHeader = HwpCtrlHeader(
             ctrlId: 0x5566_7788,
-            rawPayload: littleEndianData(UInt32(0x5566_7788)) + Data([0xCC]),
+            rawPayload: concatenatedData(littleEndianData(UInt32(0x5566_7788)), Data([0xCC])),
             unknownChildren: [
                 HwpUnknownRecord(
                     HwpRecord(tagId: 0x2FA, level: 2, payload: Data([0xDD]))
@@ -89,7 +92,10 @@ final class FixtureDerivedValuesTests: XCTestCase {
             rawTrailing: Data([0xAA]),
             fieldParameterHeaderRawPayload: nil,
             fieldParameter: nil,
-            rawPayload: littleEndianData(HwpFieldCtrlId.revisionSign.rawValue) + Data([0xAA]),
+            rawPayload: concatenatedData(
+                littleEndianData(HwpFieldCtrlId.revisionSign.rawValue),
+                Data([0xAA])
+            ),
             unknownChildren: []
         )
         var paragraph = HwpParagraph()
@@ -166,7 +172,7 @@ private func tablePropertyPayload(rowCount: UInt16, columnCount: UInt16) -> Data
 }
 
 private func listHeaderPayload(paragraphCount: Int32) -> Data {
-    littleEndianData(paragraphCount) + littleEndianData(UInt32(0))
+    concatenatedData(littleEndianData(paragraphCount), littleEndianData(UInt32(0)))
 }
 
 private func littleEndianData(_ value: some FixedWidthInteger) -> Data {

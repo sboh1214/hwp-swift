@@ -6,8 +6,8 @@ import XCTest
 final class SectionDefStabilityTests: XCTestCase {
     func testSectionDefInitializerPreservesRawPayloadWithNonZeroDataStartIndex() throws {
         let rawTrailing = Data([0xCA, 0xFE])
-        let rawPayload = sectionDefPayload() + rawTrailing
-        let slicedPayload = (Data([0xEF]) + rawPayload).dropFirst()
+        let rawPayload = concatenatedData(sectionDefPayload(), rawTrailing)
+        let slicedPayload = concatenatedData(Data([0xEF]), rawPayload).dropFirst()
         let unknownPayload = Data([0xDD])
         let unknownChild = HwpRecord(tagId: 0x2FE, level: 2, payload: unknownPayload)
         var reader = DataReader(slicedPayload)
@@ -29,7 +29,7 @@ final class SectionDefStabilityTests: XCTestCase {
     func testPageDefInitializerPreservesRawPayloadWithNonZeroDataStartIndex() throws {
         let rawTrailing = Data([0xCA, 0xFE])
         let rawPayload = pageDefPayload(rawTrailing: rawTrailing)
-        let slicedPayload = (Data([0xEF]) + rawPayload).dropFirst()
+        let slicedPayload = concatenatedData(Data([0xEF]), rawPayload).dropFirst()
         var reader = DataReader(slicedPayload)
 
         let pageDef = try HwpPageDef(&reader)
@@ -42,7 +42,7 @@ final class SectionDefStabilityTests: XCTestCase {
     func testFootnoteShapeInitializerPreservesRawPayloadWithNonZeroDataStartIndex() throws {
         let rawTrailing = Data([0x00, 0x00, 0xCA, 0xFE])
         let rawPayload = footnoteShapePayload(rawTrailing: rawTrailing)
-        let slicedPayload = (Data([0xEF]) + rawPayload).dropFirst()
+        let slicedPayload = concatenatedData(Data([0xEF]), rawPayload).dropFirst()
         var reader = DataReader(slicedPayload)
 
         let shape = try HwpFootnoteShape(&reader)
@@ -56,7 +56,7 @@ final class SectionDefStabilityTests: XCTestCase {
     func testPageBorderFillInitializerPreservesRawPayloadWithNonZeroDataStartIndex() throws {
         let rawTrailing = Data([0xCA, 0xFE])
         let rawPayload = pageBorderFillPayload(rawTrailing: rawTrailing)
-        let slicedPayload = (Data([0xEF]) + rawPayload).dropFirst()
+        let slicedPayload = concatenatedData(Data([0xEF]), rawPayload).dropFirst()
         var reader = DataReader(slicedPayload)
 
         let fill = try HwpPageBorderFill(&reader)

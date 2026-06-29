@@ -329,7 +329,7 @@ private func appendFixtureRecord(
 }
 
 private func fixtureDocumentPropertiesPayload() -> Data {
-    fixtureLittleEndianData(UInt16(1)) + Data(repeating: 0, count: 24)
+    concatenatedData(fixtureLittleEndianData(UInt16(1)), Data(repeating: 0, count: 24))
 }
 
 private func fixtureIdMappingsPayload() -> Data {

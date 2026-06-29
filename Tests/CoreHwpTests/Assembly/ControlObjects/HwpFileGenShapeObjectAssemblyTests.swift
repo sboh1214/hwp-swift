@@ -62,10 +62,12 @@ private struct InjectedGenShapeObject {
             instanceId: 0x5555_6666
         )
         rawTrailing = Data([0xDE, 0xAD])
-        controlPayload = commonPayload + rawTrailing
+        controlPayload = concatenatedData(commonPayload, rawTrailing)
         componentRawTrailing = Data([0xA0, 0xA1])
-        componentPayload = genShapeLittleEndianData(HwpCommonCtrlId.rectangle.rawValue)
-            + componentRawTrailing
+        componentPayload = concatenatedData(
+            genShapeLittleEndianData(HwpCommonCtrlId.rectangle.rawValue),
+            componentRawTrailing
+        )
         rectanglePayload = Data([0x10, 0x11])
         rectangleUnknownPayload = Data([0x20])
         componentCtrlDataPayload = Data([0xCC])

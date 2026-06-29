@@ -183,7 +183,7 @@ private func paragraphHeaderPayload(
 }
 
 private func paragraphCharShapePayload(shapeId: UInt32) -> Data {
-    littleEndianData(UInt32(0)) + littleEndianData(shapeId)
+    concatenatedData(littleEndianData(UInt32(0)), littleEndianData(shapeId))
 }
 
 private func paragraphLineSegPayload(lineLocation: Int32) -> Data {

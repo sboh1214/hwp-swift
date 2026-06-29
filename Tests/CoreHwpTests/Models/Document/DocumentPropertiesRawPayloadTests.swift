@@ -10,7 +10,7 @@ final class DocumentPropertiesRawPayloadTests: XCTestCase {
             startingIndex: [1, 2, 3, 4, 5, 6],
             caratLocation: [7, 8, 9]
         )
-        let slicedPayload = (Data([0xEF]) + payload).dropFirst()
+        let slicedPayload = concatenatedData(Data([0xEF]), payload).dropFirst()
         var reader = DataReader(slicedPayload)
 
         let properties = try HwpDocumentProperties(&reader)
@@ -27,7 +27,7 @@ final class DocumentPropertiesRawPayloadTests: XCTestCase {
             startingIndex: [10, 11, 12, 13, 14, 15],
             caratLocation: [0, 0, 0]
         ).dropFirst(2).prefix(12)
-        let slicedPayload = (Data([0xEF]) + payload).dropFirst()
+        let slicedPayload = concatenatedData(Data([0xEF]), payload).dropFirst()
         var reader = DataReader(slicedPayload)
 
         let startingIndex = try HwpStartingIndex(&reader)
@@ -44,7 +44,7 @@ final class DocumentPropertiesRawPayloadTests: XCTestCase {
             startingIndex: [0, 0, 0, 0, 0, 0],
             caratLocation: [16, 17, 18]
         ).dropFirst(14).prefix(12)
-        let slicedPayload = (Data([0xEF]) + payload).dropFirst()
+        let slicedPayload = concatenatedData(Data([0xEF]), payload).dropFirst()
         var reader = DataReader(slicedPayload)
 
         let caratLocation = try HwpCaratLocation(&reader)
@@ -110,13 +110,17 @@ final class DocumentPropertiesRawPayloadTests: XCTestCase {
             ),
             DocumentPropertiesTruncationScenario(
                 name: "startingIndex",
-                payload: sectionSize + Data(repeating: 0, count: 11),
+                payload: concatenatedData(sectionSize, Data(repeating: 0, count: 11)),
                 expected: 12,
                 actual: 11
             ),
             DocumentPropertiesTruncationScenario(
                 name: "caratLocation",
-                payload: sectionSize + startingIndex + Data(repeating: 0, count: 11),
+                payload: concatenatedData(
+                    sectionSize,
+                    startingIndex,
+                    Data(repeating: 0, count: 11)
+                ),
                 expected: 12,
                 actual: 11
             ),
@@ -140,10 +144,11 @@ final class DocumentPropertiesRawPayloadTests: XCTestCase {
             sectionSize: 1,
             startingIndex: [1, 2, 3, 4, 5, 6],
             caratLocation: [7, 8, 9]
-        ) + Data([0xFF])
+        )
+        let payloadWithTrailing = concatenatedData(payload, Data([0xFF]))
 
         expect {
-            _ = try HwpDocumentProperties.load(payload)
+            _ = try HwpDocumentProperties.load(payloadWithTrailing)
         }.to(throwError { error in
             guard case let HwpError.bytesAreNotEOF(model, remain) = error else {
                 return fail("Expected bytesAreNotEOF, got \(error)")
@@ -154,8 +159,11 @@ final class DocumentPropertiesRawPayloadTests: XCTestCase {
     }
 
     func testDocumentPropertySubrecordsRejectTrailingBytesWithTypedError() {
-        let startingIndexPayload = Data(repeating: 0, count: 12) + Data([0xAA])
-        let caratLocationPayload = Data(repeating: 0, count: 12) + Data([0xBB, 0xCC])
+        let startingIndexPayload = concatenatedData(Data(repeating: 0, count: 12), Data([0xAA]))
+        let caratLocationPayload = concatenatedData(
+            Data(repeating: 0, count: 12),
+            Data([0xBB, 0xCC])
+        )
         let scenarios = [
             DocumentPropertiesTrailingScenario(
                 name: "HwpStartingIndex",

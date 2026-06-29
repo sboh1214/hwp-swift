@@ -112,7 +112,10 @@ private struct InjectedMalformedSectionDef {
 
     init(baseSectionData: Data) {
         rawTrailing = Data([0xAA])
-        payload = sectionDefLittleEndianData(HwpOtherCtrlId.section.rawValue) + rawTrailing
+        payload = concatenatedData(
+            sectionDefLittleEndianData(HwpOtherCtrlId.section.rawValue),
+            rawTrailing
+        )
         childRecords = [
             SectionDefChildSpec(.pageDef, sectionDefPageDefPayload()),
             SectionDefChildSpec(.footnoteShape, sectionDefFootnoteShapePayload()),
@@ -124,18 +127,26 @@ private struct InjectedMalformedSectionDef {
         unknownPayload = Data([0xD1, 0xD2])
         unknownGrandchildPayload = Data([0xD3])
 
-        sectionData = childRecords.reduce(
-            baseSectionData
-                + sectionDefRecordData(
+        let childSectionData = childRecords.reduce(
+            concatenatedData(
+                baseSectionData,
+                sectionDefRecordData(
                     tagId: HwpSectionTag.ctrlHeader.rawValue,
                     level: 1,
                     payload: payload
                 )
+            )
         ) { data, child in
-            data + sectionDefRecordData(tagId: child.tag.rawValue, level: 2, payload: child.payload)
+            concatenatedData(
+                data,
+                sectionDefRecordData(tagId: child.tag.rawValue, level: 2, payload: child.payload)
+            )
         }
-            + sectionDefRecordData(tagId: 0x2C3, level: 2, payload: unknownPayload)
-            + sectionDefRecordData(tagId: 0x2C4, level: 3, payload: unknownGrandchildPayload)
+        sectionData = concatenatedData(
+            childSectionData,
+            sectionDefRecordData(tagId: 0x2C3, level: 2, payload: unknownPayload),
+            sectionDefRecordData(tagId: 0x2C4, level: 3, payload: unknownGrandchildPayload)
+        )
     }
 }
 

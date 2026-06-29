@@ -151,7 +151,10 @@ private func sectionCodableParaHeaderPayload() -> Data {
 }
 
 private func sectionCodableParaCharShapePayload() -> Data {
-    sectionCodableLittleEndianData(UInt32(0)) + sectionCodableLittleEndianData(UInt32(0))
+    concatenatedData(
+        sectionCodableLittleEndianData(UInt32(0)),
+        sectionCodableLittleEndianData(UInt32(0))
+    )
 }
 
 private func sectionCodableRecordData(tagId: UInt32, level: UInt32, payload: Data) -> Data {

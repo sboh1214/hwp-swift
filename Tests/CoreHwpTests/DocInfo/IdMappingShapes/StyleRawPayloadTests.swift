@@ -12,7 +12,7 @@ final class StyleRawPayloadTests: XCTestCase {
             paraShapeId: 2,
             charShapeId: 3
         )
-        let slicedPayload = (Data([0xFF, 0xEE]) + payload).dropFirst(2)
+        let slicedPayload = concatenatedData(Data([0xFF, 0xEE]), payload).dropFirst(2)
         var reader = DataReader(slicedPayload)
 
         let style = try HwpStyle(&reader)
@@ -73,7 +73,7 @@ final class StyleRawPayloadTests: XCTestCase {
             paraShapeId: 2,
             charShapeId: 3
         )
-        let slicedPayload = (Data([0xFF, 0xEE]) + payload).dropFirst(2)
+        let slicedPayload = concatenatedData(Data([0xFF, 0xEE]), payload).dropFirst(2)
 
         let style = try HwpStyle.load(slicedPayload)
 
@@ -110,10 +110,11 @@ final class StyleRawPayloadTests: XCTestCase {
             nextId: 1,
             paraShapeId: 2,
             charShapeId: 3
-        ) + Data([0xFF])
+        )
+        let payloadWithTrailing = concatenatedData(payload, Data([0xFF]))
 
         expect {
-            _ = try HwpStyle.load(payload)
+            _ = try HwpStyle.load(payloadWithTrailing)
         }.to(throwError { error in
             guard case let HwpError.bytesAreNotEOF(model, remain) = error else {
                 return fail("Expected bytesAreNotEOF, got \(error)")
@@ -171,11 +172,12 @@ final class StyleRawPayloadTests: XCTestCase {
     func testBulletPreservesExtraUndocumentedTrailingBytes() throws {
         let payload = bulletPayload(
             undocumentedTrailing: [0xAA, 0xBB, 0xCC, 0xDD, 0xEE]
-        ) + Data([0xFF])
+        )
+        let payloadWithTrailing = concatenatedData(payload, Data([0xFF]))
 
-        let bullet = try HwpBullet.load(payload)
+        let bullet = try HwpBullet.load(payloadWithTrailing)
 
-        expect(bullet.rawPayload) == payload
+        expect(bullet.rawPayload) == payloadWithTrailing
         expect(bullet.charRawPayload) == wcharPayload("\u{2022}")
         expect(bullet.checkCharRawPayload) == wcharPayload("\u{2611}")
         expect(bullet.undocumentedTrailing) == [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF]
@@ -183,7 +185,7 @@ final class StyleRawPayloadTests: XCTestCase {
 
     func testBulletWithNonZeroStartIndexPayloadPreservesCharRawPayloads() throws {
         let payload = bulletPayload(undocumentedTrailing: [0xAA, 0xBB])
-        let slicedPayload = (Data([0xFF, 0xEE]) + payload).dropFirst(2)
+        let slicedPayload = concatenatedData(Data([0xFF, 0xEE]), payload).dropFirst(2)
 
         let bullet = try HwpBullet.load(slicedPayload)
 
@@ -194,7 +196,7 @@ final class StyleRawPayloadTests: XCTestCase {
 
     func testBulletInitializerPreservesRawPayloadWithNonZeroDataStartIndex() throws {
         let payload = bulletPayload(undocumentedTrailing: [0xAA, 0xBB])
-        let slicedPayload = (Data([0xFF, 0xEE]) + payload).dropFirst(2)
+        let slicedPayload = concatenatedData(Data([0xFF, 0xEE]), payload).dropFirst(2)
         var reader = DataReader(slicedPayload)
 
         let bullet = try HwpBullet(&reader)
@@ -251,7 +253,7 @@ final class StyleRawPayloadTests: XCTestCase {
                 "^\(index)"
             }
         })
-        let slicedPayload = (Data([0xFF, 0xEE]) + payload).dropFirst(2)
+        let slicedPayload = concatenatedData(Data([0xFF, 0xEE]), payload).dropFirst(2)
 
         let numbering = try HwpNumbering.load(slicedPayload, HwpVersion())
 
@@ -264,7 +266,7 @@ final class StyleRawPayloadTests: XCTestCase {
 
     func testNumberingInitializerPreservesRawPayloadWithNonZeroDataStartIndex() throws {
         let payload = numberingPayload()
-        let slicedPayload = (Data([0xFF, 0xEE]) + payload).dropFirst(2)
+        let slicedPayload = concatenatedData(Data([0xFF, 0xEE]), payload).dropFirst(2)
         var reader = DataReader(slicedPayload)
 
         let numbering = try HwpNumbering(&reader, HwpVersion())
@@ -276,7 +278,7 @@ final class StyleRawPayloadTests: XCTestCase {
     }
 
     func testNumberingRejectsTrailingBytesWithTypedError() {
-        let payload = numberingPayload() + Data([0xFF])
+        let payload = concatenatedData(numberingPayload(), Data([0xFF]))
 
         expect {
             _ = try HwpNumbering.load(payload, HwpVersion())
@@ -307,10 +309,11 @@ final class StyleRawPayloadTests: XCTestCase {
         let payload = numberingPayload(
             startingIndexArray: [1, 2, 3, 4, 5, 6],
             includesExtendedLevels: false
-        ) + Data([0xFF])
+        )
+        let payloadWithTrailing = concatenatedData(payload, Data([0xFF]))
 
         expect {
-            _ = try HwpNumbering.load(payload, HwpVersion(5, 0, 3, 0))
+            _ = try HwpNumbering.load(payloadWithTrailing, HwpVersion(5, 0, 3, 0))
         }.to(throwError { error in
             guard case let HwpError.truncatedData(expected, actual) = error else {
                 return fail("Expected truncatedData, got \(error)")
@@ -406,20 +409,24 @@ private func stylePayloadWithInvalidLocalName() -> Data {
 }
 
 private func bulletPayload(undocumentedTrailing: [BYTE]) -> Data {
-    Data([1, 2, 3, 4, 5, 6, 7, 8])
-        + littleEndianData(WCHAR(0x2022))
-        + littleEndianData(Int32(42))
-        + Data([9, 10, 11, 12])
-        + littleEndianData(WCHAR(0x2611))
-        + Data(undocumentedTrailing)
+    concatenatedData(
+        Data([1, 2, 3, 4, 5, 6, 7, 8]),
+        littleEndianData(WCHAR(0x2022)),
+        littleEndianData(Int32(42)),
+        Data([9, 10, 11, 12]),
+        littleEndianData(WCHAR(0x2611)),
+        Data(undocumentedTrailing)
+    )
 }
 
 private func truncatedBulletPayloadBeforeCheckChar() -> Data {
-    Data([1, 2, 3, 4, 5, 6, 7, 8])
-        + littleEndianData(WCHAR(0x2022))
-        + littleEndianData(Int32(42))
-        + Data([9, 10, 11, 12])
-        + Data([0x11])
+    concatenatedData(
+        Data([1, 2, 3, 4, 5, 6, 7, 8]),
+        littleEndianData(WCHAR(0x2022)),
+        littleEndianData(Int32(42)),
+        Data([9, 10, 11, 12]),
+        Data([0x11])
+    )
 }
 
 private func numberingPayload(

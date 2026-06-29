@@ -21,7 +21,10 @@ private func listControlWithUnknownChildren() throws -> HwpListControl {
     return HwpListControl(
         header: HwpCtrlHeader(
             ctrlId: HwpOtherCtrlId.header.rawValue,
-            rawPayload: littleEndianData(HwpOtherCtrlId.header.rawValue) + Data([171, 205]),
+            rawPayload: concatenatedData(
+                littleEndianData(HwpOtherCtrlId.header.rawValue),
+                Data([171, 205])
+            ),
             unknownChildren: []
         ),
         listArray: [

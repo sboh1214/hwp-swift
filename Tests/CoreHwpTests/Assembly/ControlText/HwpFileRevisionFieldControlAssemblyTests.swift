@@ -49,27 +49,31 @@ private struct InjectedRevisionFieldControl {
     init(baseSectionData: Data) {
         ctrlId = .revisionDelete
         rawTrailing = Data([0xA1, 0xA2, 0xA3])
-        revisionPayload = revisionFieldLittleEndianData(ctrlId.rawValue)
-            + rawTrailing
+        revisionPayload = concatenatedData(
+            revisionFieldLittleEndianData(ctrlId.rawValue),
+            rawTrailing
+        )
         revisionChildPayload = Data([0xB0, 0xB1])
         revisionGrandchildPayload = Data([0xB2])
 
-        sectionData = baseSectionData
-            + revisionFieldRecordData(
+        sectionData = concatenatedData(
+            baseSectionData,
+            revisionFieldRecordData(
                 tagId: HwpSectionTag.ctrlHeader.rawValue,
                 level: 1,
                 payload: revisionPayload
-            )
-            + revisionFieldRecordData(
+            ),
+            revisionFieldRecordData(
                 tagId: 0x2F8,
                 level: 2,
                 payload: revisionChildPayload
-            )
-            + revisionFieldRecordData(
+            ),
+            revisionFieldRecordData(
                 tagId: 0x2F7,
                 level: 3,
                 payload: revisionGrandchildPayload
             )
+        )
     }
 }
 

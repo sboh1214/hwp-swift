@@ -64,7 +64,7 @@ final class CharShapeTests: XCTestCase {
 
     func testCharShapeInitializerPreservesRawPayloadWithNonZeroDataStartIndex() throws {
         let payload = charShapePayload()
-        let slicedPayload = (Data([0xFF, 0xEE]) + payload).dropFirst(2)
+        let slicedPayload = concatenatedData(Data([0xFF, 0xEE]), payload).dropFirst(2)
         var reader = DataReader(slicedPayload)
 
         let charShape = try HwpCharShape(&reader, HwpVersion())
@@ -95,7 +95,7 @@ final class CharShapeTests: XCTestCase {
     }
 
     func testCharShapeRejectsTrailingBytesWithTypedError() {
-        let payload = charShapePayload() + Data([0xFF])
+        let payload = concatenatedData(charShapePayload(), Data([0xFF]))
 
         expect {
             _ = try HwpCharShape.load(payload, HwpVersion())

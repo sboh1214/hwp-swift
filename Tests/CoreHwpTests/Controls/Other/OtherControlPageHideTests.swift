@@ -6,8 +6,8 @@ import XCTest
 final class OtherControlPageHideTests: XCTestCase {
     func testPageHideControlExposesRawBitField() throws {
         let extraTrailing = Data([0xAA, 0xBB])
-        let rawTrailing = littleEndianData(UInt32(0x20)) + extraTrailing
-        let rawPayload = littleEndianData(HwpOtherCtrlId.pageHide.rawValue) + rawTrailing
+        let rawTrailing = concatenatedData(littleEndianData(UInt32(0x20)), extraTrailing)
+        let rawPayload = concatenatedData(littleEndianData(HwpOtherCtrlId.pageHide.rawValue), rawTrailing)
         let record = HwpRecord(
             tagId: HwpSectionTag.ctrlHeader.rawValue,
             level: 1,
@@ -37,7 +37,7 @@ final class OtherControlPageHideTests: XCTestCase {
 
     func testShortPageHidePayloadIsPreservedWithoutParsedInfo() throws {
         let rawTrailing = Data([0x20, 0x00, 0x00])
-        let rawPayload = littleEndianData(HwpOtherCtrlId.pageHide.rawValue) + rawTrailing
+        let rawPayload = concatenatedData(littleEndianData(HwpOtherCtrlId.pageHide.rawValue), rawTrailing)
         let record = HwpRecord(
             tagId: HwpSectionTag.ctrlHeader.rawValue,
             level: 1,

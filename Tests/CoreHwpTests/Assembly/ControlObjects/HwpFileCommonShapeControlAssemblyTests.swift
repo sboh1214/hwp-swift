@@ -78,7 +78,7 @@ private struct InjectedCommonShapeControl {
             instanceId: UInt32(0x3000 + index)
         )
         rawTrailing = Data([BYTE(0x40 + index), BYTE(0x50 + index)])
-        controlPayload = commonPayload + rawTrailing
+        controlPayload = concatenatedData(commonPayload, rawTrailing)
         childTagId = 0x3E0 + UInt32(index)
         childPayload = Data([BYTE(0x60 + index)])
         grandchildTagId = 0x3E8 + UInt32(index)

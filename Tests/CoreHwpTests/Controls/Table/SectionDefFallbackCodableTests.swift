@@ -5,8 +5,10 @@ import XCTest
 
 final class SectionDefFallbackCodableTests: XCTestCase {
     func testTruncatedSectionDefFallbackPreservesNestedChildrenThroughParagraphCodable() throws {
-        let rawPayload = sectionDefFallbackLittleEndianData(HwpOtherCtrlId.section.rawValue)
-            + Data([0xAA])
+        let rawPayload = concatenatedData(
+            sectionDefFallbackLittleEndianData(HwpOtherCtrlId.section.rawValue),
+            Data([0xAA])
+        )
         let unknownChild = sectionDefFallbackNestedChildRecord(
             tagId: 0x2FE,
             level: 2,

@@ -80,29 +80,35 @@ private struct InjectedGenericFieldControl {
         parameter = "CoreHwp field parameter"
         parameterPayload = fieldControlUTF16Payload(parameter)
         parameterRawTrailing = Data([0xCA, 0xFE])
-        fieldRawTrailing = fieldControlParameterTrailing(parameter)
-            + parameterRawTrailing
-        fieldPayload = fieldControlLittleEndianData(ctrlId.rawValue)
-            + fieldRawTrailing
+        fieldRawTrailing = concatenatedData(
+            fieldControlParameterTrailing(parameter),
+            parameterRawTrailing
+        )
+        fieldPayload = concatenatedData(
+            fieldControlLittleEndianData(ctrlId.rawValue),
+            fieldRawTrailing
+        )
         fieldChildPayload = Data([0xD0, 0xD1])
         fieldGrandchildPayload = Data([0xD2])
 
-        sectionData = baseSectionData
-            + fieldControlRecordData(
+        sectionData = concatenatedData(
+            baseSectionData,
+            fieldControlRecordData(
                 tagId: HwpSectionTag.ctrlHeader.rawValue,
                 level: 1,
                 payload: fieldPayload
-            )
-            + fieldControlRecordData(
+            ),
+            fieldControlRecordData(
                 tagId: 0x2F6,
                 level: 2,
                 payload: fieldChildPayload
-            )
-            + fieldControlRecordData(
+            ),
+            fieldControlRecordData(
                 tagId: 0x2F5,
                 level: 3,
                 payload: fieldGrandchildPayload
             )
+        )
     }
 }
 
@@ -122,29 +128,35 @@ private struct InjectedMemoFieldControl {
         parameter = "MEMO/1/2/3/4/writer/body"
         parameterPayload = fieldControlUTF16Payload(parameter)
         parameterRawTrailing = Data([0xB3, 0xB4])
-        fieldRawTrailing = fieldControlParameterTrailing(parameter)
-            + parameterRawTrailing
-        fieldPayload = fieldControlLittleEndianData(ctrlId.rawValue)
-            + fieldRawTrailing
+        fieldRawTrailing = concatenatedData(
+            fieldControlParameterTrailing(parameter),
+            parameterRawTrailing
+        )
+        fieldPayload = concatenatedData(
+            fieldControlLittleEndianData(ctrlId.rawValue),
+            fieldRawTrailing
+        )
         fieldChildPayload = Data([0xE0, 0xE1])
         fieldGrandchildPayload = Data([0xE2])
 
-        sectionData = baseSectionData
-            + fieldControlRecordData(
+        sectionData = concatenatedData(
+            baseSectionData,
+            fieldControlRecordData(
                 tagId: HwpSectionTag.ctrlHeader.rawValue,
                 level: 1,
                 payload: fieldPayload
-            )
-            + fieldControlRecordData(
+            ),
+            fieldControlRecordData(
                 tagId: 0x2F4,
                 level: 2,
                 payload: fieldChildPayload
-            )
-            + fieldControlRecordData(
+            ),
+            fieldControlRecordData(
                 tagId: 0x2F3,
                 level: 3,
                 payload: fieldGrandchildPayload
             )
+        )
     }
 }
 

@@ -152,7 +152,7 @@ private func unknownControlRecord(
     let record = HwpRecord(
         tagId: HwpSectionTag.ctrlHeader.rawValue,
         level: 1,
-        payload: littleEndianData(ctrlId) + rawTrailing
+        payload: concatenatedData(littleEndianData(ctrlId), rawTrailing)
     )
     record.children = [child]
     return record

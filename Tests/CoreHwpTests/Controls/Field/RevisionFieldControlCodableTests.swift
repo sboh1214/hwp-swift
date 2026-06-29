@@ -7,7 +7,10 @@ final class RevisionFieldControlCodableTests: XCTestCase {
     func testRevisionFieldControlsPreserveRawPayloadsThroughParagraphCodable() throws {
         for (index, ctrlId) in revisionFieldCodableControlIds.enumerated() {
             let rawTrailing = Data([UInt8(index), 0xCA, 0xFE])
-            let rawPayload = revisionFieldCodableLittleEndianData(ctrlId.rawValue) + rawTrailing
+            let rawPayload = concatenatedData(
+                revisionFieldCodableLittleEndianData(ctrlId.rawValue),
+                rawTrailing
+            )
             let record = revisionFieldCodableControlRecord(
                 rawPayload: rawPayload,
                 childPayload: Data([UInt8(index), 0xDD])

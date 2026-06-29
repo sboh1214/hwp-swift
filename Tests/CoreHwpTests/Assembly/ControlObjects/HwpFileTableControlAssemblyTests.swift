@@ -76,7 +76,7 @@ private struct InjectedTableControl {
             instanceId: 0x5555_6666
         )
         controlRawTrailing = Data([0xCA, 0xFE])
-        controlPayload = commonPayload + controlRawTrailing
+        controlPayload = concatenatedData(commonPayload, controlRawTrailing)
         tablePropertyRawTrailing = Data([0xA1, 0xA2])
         tablePropertyPayload = makeTablePropertyPayload(
             rowCount: 1,
@@ -125,32 +125,34 @@ private func assembledTableControlData(
     baseSectionData: Data,
     parts: TableControlRecordParts
 ) -> Data {
-    baseSectionData
-        + tableRecordData(
+    concatenatedData(
+        baseSectionData,
+        tableRecordData(
             tagId: HwpSectionTag.ctrlHeader.rawValue,
             level: 1,
             payload: parts.controlPayload
-        )
-        + tableRecordData(
+        ),
+        tableRecordData(
             tagId: HwpSectionTag.table.rawValue,
             level: 2,
             payload: parts.tablePropertyPayload
-        )
-        + tableRecordData(
+        ),
+        tableRecordData(
             tagId: HwpSectionTag.listHeader.rawValue,
             level: 2,
             payload: parts.cellHeaderPayload
-        )
-        + tableRecordData(tagId: 0x380, level: 3, payload: parts.cellHeaderUnknownPayload)
-        + tableRecordData(
+        ),
+        tableRecordData(tagId: 0x380, level: 3, payload: parts.cellHeaderUnknownPayload),
+        tableRecordData(
             tagId: HwpSectionTag.paraHeader.rawValue,
             level: 2,
             payload: parts.paragraphPayload
-        )
-        + tableRecordData(tagId: HwpSectionTag.paraCharShape.rawValue, level: 3, payload: Data())
-        + tableRecordData(tagId: HwpSectionTag.paraLineSeg.rawValue, level: 3, payload: Data())
-        + tableRecordData(tagId: 0x390, level: 2, payload: parts.unknownPayload)
-        + tableRecordData(tagId: 0x391, level: 3, payload: parts.unknownGrandchildPayload)
+        ),
+        tableRecordData(tagId: HwpSectionTag.paraCharShape.rawValue, level: 3, payload: Data()),
+        tableRecordData(tagId: HwpSectionTag.paraLineSeg.rawValue, level: 3, payload: Data()),
+        tableRecordData(tagId: 0x390, level: 2, payload: parts.unknownPayload),
+        tableRecordData(tagId: 0x391, level: 3, payload: parts.unknownGrandchildPayload)
+    )
 }
 
 private struct InjectedMalformedTableControl {
@@ -172,20 +174,22 @@ private struct InjectedMalformedTableControl {
         unknownPayload = Data([0xAC])
         unknownGrandchildPayload = Data([0xAD])
 
-        sectionData = baseSectionData
-            + tableRecordData(
+        sectionData = concatenatedData(
+            baseSectionData,
+            tableRecordData(
                 tagId: HwpSectionTag.ctrlHeader.rawValue,
                 level: 1,
                 payload: controlPayload
-            )
-            + tableRecordData(
+            ),
+            tableRecordData(
                 tagId: HwpSectionTag.table.rawValue,
                 level: 2,
                 payload: tablePropertyPayload
-            )
-            + tableRecordData(tagId: 0x3A0, level: 3, payload: tablePropertyUnknownPayload)
-            + tableRecordData(tagId: 0x3A1, level: 2, payload: unknownPayload)
-            + tableRecordData(tagId: 0x3A2, level: 3, payload: unknownGrandchildPayload)
+            ),
+            tableRecordData(tagId: 0x3A0, level: 3, payload: tablePropertyUnknownPayload),
+            tableRecordData(tagId: 0x3A1, level: 2, payload: unknownPayload),
+            tableRecordData(tagId: 0x3A2, level: 3, payload: unknownGrandchildPayload)
+        )
     }
 }
 
@@ -254,7 +258,7 @@ private func expectTableControl(in hwp: HwpFile, match injected: InjectedTableCo
     let cell = table?.cellArray.first
     expect(cell?.header.rawPayload) == injected.cellHeaderPayload
     expect(cell?.header.rawTrailing) ==
-        Data(repeating: 0, count: 39) + injected.cellHeaderRawTrailing
+        concatenatedData(Data(repeating: 0, count: 39), injected.cellHeaderRawTrailing)
     expect(cell?.header.paragraphCount) == 1
     expect(cell?.header.unknownChildren) == [
         expectedTableUnknownRecord(

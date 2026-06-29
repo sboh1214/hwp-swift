@@ -32,3 +32,9 @@ func testsRoot(from location: String) -> URL {
     }
     return url
 }
+
+func concatenatedData(_ chunks: Data...) -> Data {
+    chunks.reduce(into: Data()) { data, chunk in
+        data.append(chunk)
+    }
+}

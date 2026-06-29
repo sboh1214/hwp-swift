@@ -9,7 +9,7 @@ final class ParagraphCodableTests: XCTestCase {
         let nestedUnknownPayload = Data([0x21])
         let ctrlId: UInt32 = 0x1234_5678
         let ctrlTrailing = Data([0xCA, 0xFE])
-        let ctrlPayload = paragraphCodableLittleEndianData(ctrlId) + ctrlTrailing
+        let ctrlPayload = concatenatedData(paragraphCodableLittleEndianData(ctrlId), ctrlTrailing)
         let ctrlChildPayload = Data([0xDD])
 
         let record = HwpRecord(
@@ -62,11 +62,15 @@ final class ParagraphCodableTests: XCTestCase {
 
     func testParagraphTextAndInlineControlSurviveCodableRoundTrip() throws {
         let inlineControlTrailing = Data(0x01 ... 0x0A)
-        let inlineControlPayload = paragraphCodableLittleEndianData(HwpOtherCtrlId.section.rawValue)
-            + inlineControlTrailing
-        let paraTextPayload = paragraphCodableLittleEndianData(WCHAR(4))
-            + inlineControlPayload
-            + paragraphCodableLittleEndianData(WCHAR(65))
+        let inlineControlPayload = concatenatedData(
+            paragraphCodableLittleEndianData(HwpOtherCtrlId.section.rawValue),
+            inlineControlTrailing
+        )
+        let paraTextPayload = concatenatedData(
+            paragraphCodableLittleEndianData(WCHAR(4)),
+            inlineControlPayload,
+            paragraphCodableLittleEndianData(WCHAR(65))
+        )
         let charCount = UInt32(paraTextPayload.count / MemoryLayout<WCHAR>.size)
 
         let paragraph = try HwpParagraph.load(
@@ -171,8 +175,10 @@ private struct ParagraphDuplicateFixture {
     let firstTextPayload = paragraphCodableLittleEndianData(WCHAR(0x0041))
     let duplicateTextPayload = paragraphCodableLittleEndianData(WCHAR(0x0042))
     let duplicateTextChildPayload = Data([0xA1])
-    let duplicateCharShapePayload = paragraphCodableLittleEndianData(UInt32(0))
-        + paragraphCodableLittleEndianData(UInt32(1))
+    let duplicateCharShapePayload = concatenatedData(
+        paragraphCodableLittleEndianData(UInt32(0)),
+        paragraphCodableLittleEndianData(UInt32(1))
+    )
     let duplicateLineSegPayload = Data([0xB1, 0xB2])
 
     var record: HwpRecord {
@@ -246,7 +252,10 @@ private func paragraphCodableParaHeaderPayload(charCount: UInt32 = 0) -> Data {
 }
 
 private func paragraphCodableParaCharShapePayload() -> Data {
-    paragraphCodableLittleEndianData(UInt32(0)) + paragraphCodableLittleEndianData(UInt32(0))
+    concatenatedData(
+        paragraphCodableLittleEndianData(UInt32(0)),
+        paragraphCodableLittleEndianData(UInt32(0))
+    )
 }
 
 private func paragraphCodableLittleEndianData(_ value: some FixedWidthInteger) -> Data {

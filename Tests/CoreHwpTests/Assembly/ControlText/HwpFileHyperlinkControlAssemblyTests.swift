@@ -66,22 +66,24 @@ private struct InjectedHyperlinkControl {
         unknownChildPayload = Data([0xD4, 0xD5])
         unknownGrandchildPayload = Data([0xD6])
 
-        sectionData = baseSectionData
-            + hyperlinkRecordData(
+        sectionData = concatenatedData(
+            baseSectionData,
+            hyperlinkRecordData(
                 tagId: HwpSectionTag.ctrlHeader.rawValue,
                 level: 1,
                 payload: hyperlinkPayload
-            )
-            + hyperlinkRecordData(
+            ),
+            hyperlinkRecordData(
                 tagId: 0x2EF,
                 level: 2,
                 payload: unknownChildPayload
-            )
-            + hyperlinkRecordData(
+            ),
+            hyperlinkRecordData(
                 tagId: 0x2EE,
                 level: 3,
                 payload: unknownGrandchildPayload
             )
+        )
     }
 
     private static func payload(

@@ -46,7 +46,7 @@ private func hyperlinkWithUnknownChildren() -> HwpHyperlink {
         url: "docs",
         urlRawPayload: Data([100, 0, 111, 0, 99, 0, 115, 0]),
         rawTrailing: Data([222, 173]),
-        rawPayload: littleEndianData(HwpFieldCtrlId.hyperLink.rawValue) + Data([222, 173]),
+        rawPayload: concatenatedData(littleEndianData(HwpFieldCtrlId.hyperLink.rawValue), Data([222, 173])),
         unknownChildren: [
             unknownRecord(
                 tagId: 0x2E1,
@@ -69,7 +69,7 @@ private func columnWithUnknownChildren() -> HwpColumn {
         dividerThickness: 0,
         dividerColor: HwpColor(0, 0, 0),
         unknown: Data([202, 254]),
-        rawPayload: littleEndianData(HwpOtherCtrlId.column.rawValue) + Data([202, 254]),
+        rawPayload: concatenatedData(littleEndianData(HwpOtherCtrlId.column.rawValue), Data([202, 254])),
         rawTrailing: Data([202, 254]),
         rawTrailingWords: [0xFECA],
         unknownChildren: [
@@ -103,7 +103,7 @@ private func tableWithUnknownChildren() throws -> HwpTable {
     return HwpTable(
         commonCtrlProperty: commonCtrlProperty,
         tableProperty: tableProperty(),
-        rawPayload: commonCtrlProperty.rawPayload + Data([170, 187]),
+        rawPayload: concatenatedData(commonCtrlProperty.rawPayload, Data([170, 187])),
         rawTrailing: Data([170, 187]),
         cellArray: [HwpTableCell(header: cellHeader, paragraphArray: [])],
         unknownChildren: [

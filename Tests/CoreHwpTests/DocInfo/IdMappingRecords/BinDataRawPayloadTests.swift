@@ -7,9 +7,11 @@ final class BinDataRawPayloadTests: XCTestCase {
     func testLinkBinDataPreservesRawPayloadWithoutChangingEquality() throws {
         let absolutePath = "/tmp/image.png"
         let relativePath = "image.png"
-        let payload = littleEndianData(UInt16(0))
-            + utf16LengthPrefixedString(absolutePath)
-            + utf16LengthPrefixedString(relativePath)
+        let payload = concatenatedData(
+            littleEndianData(UInt16(0)),
+            utf16LengthPrefixedString(absolutePath),
+            utf16LengthPrefixedString(relativePath)
+        )
 
         let binData = try HwpBinData.load(payload)
         var sameBinData = binData
@@ -54,10 +56,12 @@ final class BinDataRawPayloadTests: XCTestCase {
     }
 
     func testLinkBinDataWithNonZeroStartIndexPayloadPreservesPaths() throws {
-        let payload = littleEndianData(UInt16(0))
-            + utf16LengthPrefixedString("/tmp/image.png")
-            + utf16LengthPrefixedString("image.png")
-        let slicedPayload = (Data([0xFF, 0xEE]) + payload).dropFirst(2)
+        let payload = concatenatedData(
+            littleEndianData(UInt16(0)),
+            utf16LengthPrefixedString("/tmp/image.png"),
+            utf16LengthPrefixedString("image.png")
+        )
+        let slicedPayload = concatenatedData(Data([0xFF, 0xEE]), payload).dropFirst(2)
 
         let binData = try HwpBinData.load(slicedPayload)
 
@@ -74,7 +78,7 @@ final class BinDataRawPayloadTests: XCTestCase {
 
     func testEmbeddedBinDataWithNonZeroStartIndexPayloadPreservesMetadata() throws {
         let payload = embeddedBinDataPayload()
-        let slicedPayload = (Data([0xFF, 0xEE]) + payload).dropFirst(2)
+        let slicedPayload = concatenatedData(Data([0xFF, 0xEE]), payload).dropFirst(2)
 
         let binData = try HwpBinData.load(slicedPayload)
 
@@ -93,9 +97,11 @@ final class BinDataRawPayloadTests: XCTestCase {
         let property = UInt16(HwpBinDataType.storage.rawValue)
             | UInt16(HwpBinDataCompressType.always.rawValue << 4)
             | UInt16(HwpBinDataState.ignored.rawValue << 6)
-        let payload = littleEndianData(property)
-            + littleEndianData(UInt16(7))
-            + utf16LengthPrefixedString("OLE")
+        let payload = concatenatedData(
+            littleEndianData(property),
+            littleEndianData(UInt16(7)),
+            utf16LengthPrefixedString("OLE")
+        )
 
         let binData = try HwpBinData.load(payload)
 
@@ -118,15 +124,19 @@ final class BinDataRawPayloadTests: XCTestCase {
         let absolutePath = "/tmp/" + supplementaryScalar + ".png"
         let relativePath = supplementaryScalar + ".png"
         let extensionName = "jp" + supplementaryScalar
-        let linkPayload = littleEndianData(UInt16(HwpBinDataType.link.rawValue))
-            + utf16LengthPrefixedString(absolutePath)
-            + utf16LengthPrefixedString(relativePath)
+        let linkPayload = concatenatedData(
+            littleEndianData(UInt16(HwpBinDataType.link.rawValue)),
+            utf16LengthPrefixedString(absolutePath),
+            utf16LengthPrefixedString(relativePath)
+        )
         let embeddedProperty = UInt16(HwpBinDataType.embedding.rawValue)
             | UInt16(HwpBinDataCompressType.never.rawValue << 4)
             | UInt16(HwpBinDataState.successed.rawValue << 6)
-        let embeddedPayload = littleEndianData(embeddedProperty)
-            + littleEndianData(UInt16(42))
-            + utf16LengthPrefixedString(extensionName)
+        let embeddedPayload = concatenatedData(
+            littleEndianData(embeddedProperty),
+            littleEndianData(UInt16(42)),
+            utf16LengthPrefixedString(extensionName)
+        )
 
         let linkBinData = try HwpBinData.load(linkPayload)
         let embeddedBinData = try HwpBinData.load(embeddedPayload)
@@ -192,7 +202,7 @@ final class BinDataRawPayloadTests: XCTestCase {
     }
 
     func testBinDataRejectsTrailingBytesWithTypedError() {
-        let payload = embeddedBinDataPayload() + Data([0xFF])
+        let payload = concatenatedData(embeddedBinDataPayload(), Data([0xFF]))
 
         expect {
             _ = try HwpBinData.load(payload)
@@ -216,16 +226,20 @@ final class BinDataRawPayloadTests: XCTestCase {
             ),
             BinDataTruncationScenario(
                 name: "absolutePath",
-                payload: linkProperty
-                    + littleEndianData(UInt16(2))
-                    + littleEndianData(WCHAR(0x0041)),
+                payload: concatenatedData(
+                    linkProperty,
+                    littleEndianData(UInt16(2)),
+                    littleEndianData(WCHAR(0x0041))
+                ),
                 expected: 4,
                 actual: 2
             ),
             BinDataTruncationScenario(
                 name: "relativePathLength",
-                payload: linkProperty
-                    + utf16LengthPrefixedString("/tmp/image.png"),
+                payload: concatenatedData(
+                    linkProperty,
+                    utf16LengthPrefixedString("/tmp/image.png")
+                ),
                 expected: 2,
                 actual: 0
             ),
@@ -252,19 +266,23 @@ final class BinDataRawPayloadTests: XCTestCase {
             ),
             BinDataTruncationScenario(
                 name: "extensionName",
-                payload: littleEndianData(embeddedProperty)
-                    + littleEndianData(UInt16(42))
-                    + littleEndianData(UInt16(2))
-                    + littleEndianData(WCHAR(0x006A)),
+                payload: concatenatedData(
+                    littleEndianData(embeddedProperty),
+                    littleEndianData(UInt16(42)),
+                    littleEndianData(UInt16(2)),
+                    littleEndianData(WCHAR(0x006A))
+                ),
                 expected: 4,
                 actual: 2
             ),
             BinDataTruncationScenario(
                 name: "storageExtensionName",
-                payload: littleEndianData(storageProperty)
-                    + littleEndianData(UInt16(7))
-                    + littleEndianData(UInt16(3))
-                    + littleEndianData(WCHAR(0x004F)),
+                payload: concatenatedData(
+                    littleEndianData(storageProperty),
+                    littleEndianData(UInt16(7)),
+                    littleEndianData(UInt16(3)),
+                    littleEndianData(WCHAR(0x004F))
+                ),
                 expected: 6,
                 actual: 2
             ),
@@ -276,9 +294,11 @@ final class BinDataRawPayloadTests: XCTestCase {
     }
 
     func testLinkBinDataRejectsInvalidPathUnicodeScalarWithTypedError() {
-        let payload = littleEndianData(UInt16(HwpBinDataType.link.rawValue))
-            + invalidUTF16LengthPrefixedString()
-            + utf16LengthPrefixedString("image.png")
+        let payload = concatenatedData(
+            littleEndianData(UInt16(HwpBinDataType.link.rawValue)),
+            invalidUTF16LengthPrefixedString(),
+            utf16LengthPrefixedString("image.png")
+        )
 
         expectInvalidUnicodeScalar {
             _ = try HwpBinData.load(payload)
@@ -286,9 +306,11 @@ final class BinDataRawPayloadTests: XCTestCase {
     }
 
     func testLinkBinDataRejectsInvalidRelativePathUnicodeScalarWithTypedError() {
-        let payload = littleEndianData(UInt16(HwpBinDataType.link.rawValue))
-            + utf16LengthPrefixedString("/tmp/image.png")
-            + invalidUTF16LengthPrefixedString()
+        let payload = concatenatedData(
+            littleEndianData(UInt16(HwpBinDataType.link.rawValue)),
+            utf16LengthPrefixedString("/tmp/image.png"),
+            invalidUTF16LengthPrefixedString()
+        )
 
         expectInvalidUnicodeScalar {
             _ = try HwpBinData.load(payload)
@@ -299,9 +321,11 @@ final class BinDataRawPayloadTests: XCTestCase {
         let property = UInt16(HwpBinDataType.embedding.rawValue)
             | UInt16(HwpBinDataCompressType.never.rawValue << 4)
             | UInt16(HwpBinDataState.successed.rawValue << 6)
-        let payload = littleEndianData(property)
-            + littleEndianData(UInt16(42))
-            + invalidUTF16LengthPrefixedString()
+        let payload = concatenatedData(
+            littleEndianData(property),
+            littleEndianData(UInt16(42)),
+            invalidUTF16LengthPrefixedString()
+        )
 
         expectInvalidUnicodeScalar {
             _ = try HwpBinData.load(payload)
@@ -312,9 +336,11 @@ final class BinDataRawPayloadTests: XCTestCase {
         let property = UInt16(HwpBinDataType.storage.rawValue)
             | UInt16(HwpBinDataCompressType.always.rawValue << 4)
             | UInt16(HwpBinDataState.ignored.rawValue << 6)
-        let payload = littleEndianData(property)
-            + littleEndianData(UInt16(7))
-            + invalidUTF16LengthPrefixedString()
+        let payload = concatenatedData(
+            littleEndianData(property),
+            littleEndianData(UInt16(7)),
+            invalidUTF16LengthPrefixedString()
+        )
 
         expectInvalidUnicodeScalar {
             _ = try HwpBinData.load(payload)
@@ -358,9 +384,11 @@ private func embeddedBinDataPayload() -> Data {
     let property = UInt16(HwpBinDataType.embedding.rawValue)
         | UInt16(HwpBinDataCompressType.never.rawValue << 4)
         | UInt16(HwpBinDataState.successed.rawValue << 6)
-    return littleEndianData(property)
-        + littleEndianData(UInt16(42))
-        + utf16LengthPrefixedString("jpg")
+    return concatenatedData(
+        littleEndianData(property),
+        littleEndianData(UInt16(42)),
+        utf16LengthPrefixedString("jpg")
+    )
 }
 
 private func utf16LengthPrefixedString(_ string: String) -> Data {
@@ -379,7 +407,7 @@ private func utf16StringPayload(_ string: String) -> Data {
 }
 
 private func invalidUTF16LengthPrefixedString() -> Data {
-    littleEndianData(UInt16(1)) + littleEndianData(UInt16(0xD800))
+    concatenatedData(littleEndianData(UInt16(1)), littleEndianData(UInt16(0xD800)))
 }
 
 private func expectInvalidUnicodeScalar(_ expression: @escaping () throws -> Void) {

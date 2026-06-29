@@ -44,8 +44,10 @@ final class FixturePreservedControlManifestTests: XCTestCase {
         ]
         let header = HwpCtrlHeader(
             ctrlId: 0x1234_5678,
-            rawPayload: preservedControlLittleEndianData(UInt32(0x1234_5678))
-                + Data([0xCA, 0xFE]),
+            rawPayload: concatenatedData(
+                preservedControlLittleEndianData(UInt32(0x1234_5678)),
+                Data([0xCA, 0xFE])
+            ),
             unknownChildren: [
                 HwpUnknownRecord(unknownChildRecord),
             ]
@@ -191,7 +193,7 @@ private func preservedHeader(
 
     return HwpCtrlHeader(
         ctrlId: ctrlId,
-        rawPayload: preservedControlLittleEndianData(ctrlId) + Data(trailing),
+        rawPayload: concatenatedData(preservedControlLittleEndianData(ctrlId), Data(trailing)),
         unknownChildren: children
     )
 }

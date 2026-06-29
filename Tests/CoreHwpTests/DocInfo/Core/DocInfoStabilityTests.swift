@@ -310,17 +310,21 @@ final class DocInfoStabilityTests: XCTestCase {
         let topLevelForbiddenChildPayload = Data([0x12])
         let unknownPayload = Data([0x09])
         let compatibleUnknownPayload = Data([0x0A])
-        let duplicateLayoutPayload = littleEndianData(UInt32(6))
-            + littleEndianData(UInt32(7))
-            + littleEndianData(UInt32(8))
-            + littleEndianData(UInt32(9))
-            + littleEndianData(UInt32(10))
+        let duplicateLayoutPayload = concatenatedData(
+            littleEndianData(UInt32(6)),
+            littleEndianData(UInt32(7)),
+            littleEndianData(UInt32(8)),
+            littleEndianData(UInt32(9)),
+            littleEndianData(UInt32(10))
+        )
         let duplicateLayoutChildPayload = Data([0x0F])
-        let layoutPayload = littleEndianData(UInt32(1))
-            + littleEndianData(UInt32(2))
-            + littleEndianData(UInt32(3))
-            + littleEndianData(UInt32(4))
-            + littleEndianData(UInt32(5))
+        let layoutPayload = concatenatedData(
+            littleEndianData(UInt32(1)),
+            littleEndianData(UInt32(2)),
+            littleEndianData(UInt32(3)),
+            littleEndianData(UInt32(4)),
+            littleEndianData(UInt32(5))
+        )
 
         var data = recordData(
             tagId: HwpDocInfoTag.documentProperties.rawValue,
@@ -494,7 +498,7 @@ final class DocInfoStabilityTests: XCTestCase {
 // swiftlint:enable type_body_length
 
 private func documentPropertiesPayload() -> Data {
-    littleEndianData(UInt16(1)) + Data(repeating: 0, count: 24)
+    concatenatedData(littleEndianData(UInt16(1)), Data(repeating: 0, count: 24))
 }
 
 private func idMappingsPayload(_ counts: [Int32] = Array(repeating: Int32(0), count: 18)) -> Data {

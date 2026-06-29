@@ -7,8 +7,8 @@ import XCTest
 final class TableControlRawPayloadStabilityTests: XCTestCase {
     func testTableInitializerPreservesRawPayloadWithNonZeroDataStartIndex() throws {
         let rawTrailing = Data([0xCA, 0xFE])
-        let rawPayload = tableStabilityCommonCtrlPropertyPayload() + rawTrailing
-        let slicedPayload = (Data([0xEF]) + rawPayload).dropFirst()
+        let rawPayload = concatenatedData(tableStabilityCommonCtrlPropertyPayload(), rawTrailing)
+        let slicedPayload = concatenatedData(Data([0xEF]), rawPayload).dropFirst()
         let tablePropertyPayload = tableStabilityTablePropertyPayload(
             rowCount: 1,
             columnCount: 1,
@@ -18,7 +18,7 @@ final class TableControlRawPayloadStabilityTests: XCTestCase {
             paragraphCount: 0,
             rawTrailing: Data([0xBC])
         )
-        let expectedCellRawTrailing = Data(repeating: 0, count: 39) + Data([0xBC])
+        let expectedCellRawTrailing = concatenatedData(Data(repeating: 0, count: 39), Data([0xBC]))
         let unknownPayload = Data([0xDD])
         let unknownChild = HwpRecord(tagId: 0x2FE, level: 2, payload: unknownPayload)
         let cellHeader = HwpRecord(
@@ -69,7 +69,7 @@ final class TableControlRawPayloadStabilityTests: XCTestCase {
         )
         rawPayload.append(tableStabilityZonePropertyPayload(borderFillId: 7))
         rawPayload.append(rawTrailing)
-        let slicedPayload = (Data([0xEF]) + rawPayload).dropFirst()
+        let slicedPayload = concatenatedData(Data([0xEF]), rawPayload).dropFirst()
         var reader = DataReader(slicedPayload)
 
         let property = try HwpTableProperty(&reader, HwpVersion(5, 0, 1, 1))
@@ -89,7 +89,7 @@ final class TableControlRawPayloadStabilityTests: XCTestCase {
             paragraphCount: 0,
             rawTrailing: rawTrailing
         )
-        let slicedPayload = (Data([0xEF]) + rawPayload).dropFirst()
+        let slicedPayload = concatenatedData(Data([0xEF]), rawPayload).dropFirst()
         let unknownPayload = Data([0xCD])
         var reader = DataReader(slicedPayload)
 
@@ -99,7 +99,7 @@ final class TableControlRawPayloadStabilityTests: XCTestCase {
         )
 
         expect(header.rawPayload) == slicedPayload
-        expect(header.rawTrailing) == Data(repeating: 0, count: 39) + rawTrailing
+        expect(header.rawTrailing) == concatenatedData(Data(repeating: 0, count: 39), rawTrailing)
         expect(header.paragraphCount) == 0
         expect(header.property) == 0
         expect(header.unknownChildren) == [

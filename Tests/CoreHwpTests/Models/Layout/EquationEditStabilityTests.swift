@@ -5,8 +5,8 @@ import XCTest
 
 final class EquationEditStabilityTests: XCTestCase {
     func testEquationEditPayloadWithNonZeroDataStartIndexDoesNotTrap() throws {
-        let rawPayload = equationEditPayload(text: "y=2") + Data([0xCC, 0xDD])
-        let slicedPayload = (Data([0xFE, 0xED]) + rawPayload).dropFirst(2)
+        let rawPayload = concatenatedData(equationEditPayload(text: "y=2"), Data([0xCC, 0xDD]))
+        let slicedPayload = concatenatedData(Data([0xFE, 0xED]), rawPayload).dropFirst(2)
         let record = HwpRecord(
             tagId: HwpSectionTag.eqEdit.rawValue,
             level: 2,
@@ -33,10 +33,12 @@ final class EquationEditStabilityTests: XCTestCase {
 
     func testEquationEditPreservesInvalidTextAsRawPayload() throws {
         let rawTrailing = Data([0xAA, 0xBB])
-        let rawPayload = Data([0x00, 0x00, 0x00, 0x00])
-            + littleEndianData(UInt16(1))
-            + littleEndianData(WCHAR(0xD800))
-            + rawTrailing
+        let rawPayload = concatenatedData(
+            Data([0x00, 0x00, 0x00, 0x00]),
+            littleEndianData(UInt16(1)),
+            littleEndianData(WCHAR(0xD800)),
+            rawTrailing
+        )
         let record = HwpRecord(
             tagId: HwpSectionTag.eqEdit.rawValue,
             level: 2,
@@ -62,9 +64,11 @@ final class EquationEditStabilityTests: XCTestCase {
     }
 
     func testEquationEditTruncatedTextHasNoRawTrailing() throws {
-        let rawPayload = Data([0x00, 0x00, 0x00, 0x00])
-            + littleEndianData(UInt16(4))
-            + littleEndianData(WCHAR(0x0078))
+        let rawPayload = concatenatedData(
+            Data([0x00, 0x00, 0x00, 0x00]),
+            littleEndianData(UInt16(4)),
+            littleEndianData(WCHAR(0x0078))
+        )
         let record = HwpRecord(
             tagId: HwpSectionTag.eqEdit.rawValue,
             level: 2,
@@ -132,11 +136,13 @@ private func assertEquationEdit(_ edit: HwpEquationEdit, matches expected: Expec
 
 private func equationEditPayload(text: String) -> Data {
     let values = Array(text.utf16)
-    return Data([0x00, 0x00, 0x00, 0x00])
-        + littleEndianData(UInt16(values.count))
-        + values.reduce(into: Data()) { data, value in
+    return concatenatedData(
+        Data([0x00, 0x00, 0x00, 0x00]),
+        littleEndianData(UInt16(values.count)),
+        values.reduce(into: Data()) { data, value in
             data.append(littleEndianData(value))
         }
+    )
 }
 
 private func littleEndianData(_ value: some FixedWidthInteger) -> Data {

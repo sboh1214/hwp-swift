@@ -288,7 +288,7 @@ private func compatibleLayoutPayload() -> Data {
 }
 
 private func compatibleDocPropertiesPayload() -> Data {
-    compatibleLittleEndianData(UInt16(1)) + Data(repeating: 0, count: 24)
+    concatenatedData(compatibleLittleEndianData(UInt16(1)), Data(repeating: 0, count: 24))
 }
 
 private func compatibleIdMappingsPayload() -> Data {

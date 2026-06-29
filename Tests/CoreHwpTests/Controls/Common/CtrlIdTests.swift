@@ -529,7 +529,7 @@ private func otherControl(_ ctrlId: HwpOtherCtrlId) -> HwpOtherControl {
     HwpOtherControl(
         ctrlId: ctrlId,
         rawTrailing: Data([0xAA]),
-        rawPayload: littleEndianData(ctrlId.rawValue) + Data([0xAA]),
+        rawPayload: concatenatedData(littleEndianData(ctrlId.rawValue), Data([0xAA])),
         ctrlDataRecords: [],
         unknownChildren: []
     )

@@ -8,7 +8,7 @@ final class FieldControlPreservationTests: XCTestCase {
         let parameter = "MEMO/1"
         var payload = littleEndianData(HwpFieldCtrlId.unknown.rawValue)
         payload.append(fieldParameterTrailing(parameter))
-        let slicedPayload = (Data([0xEF]) + payload).dropFirst()
+        let slicedPayload = concatenatedData(Data([0xEF]), payload).dropFirst()
         let childPayload = Data([0xAA])
         let child = HwpRecord(tagId: 0x2FD, level: 2, payload: childPayload)
         var reader = DataReader(slicedPayload)

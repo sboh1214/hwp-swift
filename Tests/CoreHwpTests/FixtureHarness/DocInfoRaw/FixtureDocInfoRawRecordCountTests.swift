@@ -71,49 +71,53 @@ private func rawRecordCountDocInfoData(
     idMappingTrackChangePayload: Data,
     topLevelTrackChangePayload: Data
 ) -> Data {
-    rawRecordCountRecordData(
-        tagId: HwpDocInfoTag.documentProperties.rawValue,
-        level: 0,
-        payload: rawRecordCountDocumentPropertiesPayload()
-    )
-        + rawRecordCountRecordData(
+    concatenatedData(
+        rawRecordCountRecordData(
+            tagId: HwpDocInfoTag.documentProperties.rawValue,
+            level: 0,
+            payload: rawRecordCountDocumentPropertiesPayload()
+        ),
+        rawRecordCountRecordData(
             tagId: HwpDocInfoTag.idMappings.rawValue,
             level: 0,
             payload: rawRecordCountIdMappingsPayload()
-        )
-        + rawRecordCountRecordData(
+        ),
+        rawRecordCountRecordData(
             tagId: HwpDocInfoTag.trackChange.rawValue,
             level: 1,
             payload: idMappingTrackChangePayload
-        )
-        + rawRecordCountRecordData(
+        ),
+        rawRecordCountRecordData(
             tagId: HwpDocInfoTag.trackChange.rawValue,
             level: 0,
             payload: topLevelTrackChangePayload
         )
+    )
 }
 
 private func rawRecordCountDocInfoData(
     idMappingCounts: [Int32],
     idMappingChildren: [Data]
 ) -> Data {
-    rawRecordCountRecordData(
-        tagId: HwpDocInfoTag.documentProperties.rawValue,
-        level: 0,
-        payload: rawRecordCountDocumentPropertiesPayload()
-    )
-        + rawRecordCountRecordData(
+    concatenatedData(
+        rawRecordCountRecordData(
+            tagId: HwpDocInfoTag.documentProperties.rawValue,
+            level: 0,
+            payload: rawRecordCountDocumentPropertiesPayload()
+        ),
+        rawRecordCountRecordData(
             tagId: HwpDocInfoTag.idMappings.rawValue,
             level: 0,
             payload: rawRecordCountIdMappingsPayload(idMappingCounts)
-        )
-        + idMappingChildren.reduce(into: Data()) { data, child in
+        ),
+        idMappingChildren.reduce(into: Data()) { data, child in
             data.append(child)
         }
+    )
 }
 
 private func rawRecordCountDocumentPropertiesPayload() -> Data {
-    rawRecordCountLittleEndianData(UInt16(1)) + Data(repeating: 0, count: 24)
+    concatenatedData(rawRecordCountLittleEndianData(UInt16(1)), Data(repeating: 0, count: 24))
 }
 
 private func rawRecordCountIdMappingsPayload(

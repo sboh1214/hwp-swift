@@ -64,37 +64,39 @@ private struct InjectedTrackChangeDocInfo {
         authorChildPayload = Data([0xE1, 0xE2])
         authorGrandchildPayload = Data([0xE3])
 
-        docInfoData = baseDocInfoData
-            + trackChangeDocInfoRecordData(
+        docInfoData = concatenatedData(
+            baseDocInfoData,
+            trackChangeDocInfoRecordData(
                 tagId: HwpDocInfoTag.trackChangeContent.rawValue,
                 level: 0,
                 payload: contentPayload
-            )
-            + trackChangeDocInfoRecordData(
+            ),
+            trackChangeDocInfoRecordData(
                 tagId: 0x320,
                 level: 1,
                 payload: contentChildPayload
-            )
-            + trackChangeDocInfoRecordData(
+            ),
+            trackChangeDocInfoRecordData(
                 tagId: 0x321,
                 level: 2,
                 payload: contentGrandchildPayload
-            )
-            + trackChangeDocInfoRecordData(
+            ),
+            trackChangeDocInfoRecordData(
                 tagId: HwpDocInfoTag.trackChangeAuthor.rawValue,
                 level: 0,
                 payload: authorPayload
-            )
-            + trackChangeDocInfoRecordData(
+            ),
+            trackChangeDocInfoRecordData(
                 tagId: 0x322,
                 level: 1,
                 payload: authorChildPayload
-            )
-            + trackChangeDocInfoRecordData(
+            ),
+            trackChangeDocInfoRecordData(
                 tagId: 0x323,
                 level: 2,
                 payload: authorGrandchildPayload
             )
+        )
     }
 }
 

@@ -6,11 +6,10 @@ import XCTest
 final class RecordParserStabilityTests: XCTestCase {
     func testRecordParserHandlesNonZeroStartIndexPayload() throws {
         let payload = Data([0xAA, 0xBB])
-        let data = (Data([0xFF, 0xFE]) + recordData(
-            tagId: 16,
-            level: 0,
-            payload: payload
-        )).dropFirst(2)
+        let data = concatenatedData(
+            Data([0xFF, 0xFE]),
+            recordData(tagId: 16, level: 0, payload: payload)
+        ).dropFirst(2)
 
         let root = try parseTreeRecord(data: data)
 
@@ -34,10 +33,12 @@ final class RecordParserStabilityTests: XCTestCase {
     }
 
     func testRecordTreeReparentsChildrenAfterReturningToShallowLevel() throws {
-        let data = recordData(tagId: 0x10, level: 0, payload: Data([0x10]))
-            + recordData(tagId: 0x11, level: 1, payload: Data([0x11]))
-            + recordData(tagId: 0x20, level: 0, payload: Data([0x20]))
-            + recordData(tagId: 0x21, level: 1, payload: Data([0x21]))
+        let data = concatenatedData(
+            recordData(tagId: 0x10, level: 0, payload: Data([0x10])),
+            recordData(tagId: 0x11, level: 1, payload: Data([0x11])),
+            recordData(tagId: 0x20, level: 0, payload: Data([0x20])),
+            recordData(tagId: 0x21, level: 1, payload: Data([0x21]))
+        )
 
         let root = try parseTreeRecord(data: data)
 
@@ -133,8 +134,10 @@ final class RecordParserStabilityTests: XCTestCase {
     }
 
     func testRecordLevelJumpThrowsTypedError() {
-        let data = recordData(tagId: 16, level: 0, payload: Data())
-            + recordData(tagId: 17, level: 2, payload: Data())
+        let data = concatenatedData(
+            recordData(tagId: 16, level: 0, payload: Data()),
+            recordData(tagId: 17, level: 2, payload: Data())
+        )
 
         expect {
             _ = try parseTreeRecord(data: data)

@@ -84,12 +84,15 @@ private struct DuplicateDocInfoSingletonFixture {
     }
 
     private func requiredRecords() -> Data {
-        duplicateDocInfoRecordData(
-            tagId: HwpDocInfoTag.documentProperties.rawValue,
-            payload: duplicateDocInfoDocumentPropertiesPayload()
-        ) + duplicateDocInfoRecordData(
-            tagId: HwpDocInfoTag.idMappings.rawValue,
-            payload: duplicateDocInfoIdMappingsPayload()
+        concatenatedData(
+            duplicateDocInfoRecordData(
+                tagId: HwpDocInfoTag.documentProperties.rawValue,
+                payload: duplicateDocInfoDocumentPropertiesPayload()
+            ),
+            duplicateDocInfoRecordData(
+                tagId: HwpDocInfoTag.idMappings.rawValue,
+                payload: duplicateDocInfoIdMappingsPayload()
+            )
         )
     }
 
@@ -183,7 +186,7 @@ private struct DuplicateDocInfoSingletonFixture {
 }
 
 private func duplicateDocInfoDocumentPropertiesPayload() -> Data {
-    duplicateDocInfoLittleEndianData(UInt16(1)) + Data(repeating: 0, count: 24)
+    concatenatedData(duplicateDocInfoLittleEndianData(UInt16(1)), Data(repeating: 0, count: 24))
 }
 
 private func duplicateDocInfoIdMappingsPayload() -> Data {
@@ -210,11 +213,13 @@ private func duplicateDocInfoLayoutPayload(
     _ object: UInt32,
     _ field: UInt32
 ) -> Data {
-    duplicateDocInfoLittleEndianData(char)
-        + duplicateDocInfoLittleEndianData(paragraph)
-        + duplicateDocInfoLittleEndianData(section)
-        + duplicateDocInfoLittleEndianData(object)
-        + duplicateDocInfoLittleEndianData(field)
+    concatenatedData(
+        duplicateDocInfoLittleEndianData(char),
+        duplicateDocInfoLittleEndianData(paragraph),
+        duplicateDocInfoLittleEndianData(section),
+        duplicateDocInfoLittleEndianData(object),
+        duplicateDocInfoLittleEndianData(field)
+    )
 }
 
 private func duplicateDocInfoLittleEndianData(_ value: some FixedWidthInteger) -> Data {

@@ -96,10 +96,12 @@ final class HwpFileDocInfoRawRecordAssemblyTests: XCTestCase {
         let unknownPayload = Data([0xA9, 0xB8, 0xC7])
         let childPayload = Data([0xD6, 0xE5])
         let grandchildPayload = Data([0xF4])
-        let docInfoData = streams.docInfoData
-            + rawRecordData(tagId: 0x2EE, level: 0, payload: unknownPayload)
-            + rawRecordData(tagId: 0x2EF, level: 1, payload: childPayload)
-            + rawRecordData(tagId: 0x2F0, level: 2, payload: grandchildPayload)
+        let docInfoData = concatenatedData(
+            streams.docInfoData,
+            rawRecordData(tagId: 0x2EE, level: 0, payload: unknownPayload),
+            rawRecordData(tagId: 0x2EF, level: 1, payload: childPayload),
+            rawRecordData(tagId: 0x2F0, level: 2, payload: grandchildPayload)
+        )
 
         let hwp = try HwpFile(
             fileHeader: streams.fileHeader,
@@ -134,10 +136,13 @@ final class HwpFileDocInfoRawRecordAssemblyTests: XCTestCase {
 
     func testActualFixtureBasedAssemblyRejectsTruncatedInjectedDocInfoRecord() throws {
         let streams = try actualReadableHwpStreams(fromFixture: "plain-text-minimal")
-        let docInfoData = streams.docInfoData + truncatedExtendedRawRecordData(
-            tagId: HwpDocInfoTag.distributeDocData.rawValue,
-            declaredPayloadSize: 5,
-            actualPayload: Data([0xAA, 0xBB])
+        let docInfoData = concatenatedData(
+            streams.docInfoData,
+            truncatedExtendedRawRecordData(
+                tagId: HwpDocInfoTag.distributeDocData.rawValue,
+                declaredPayloadSize: 5,
+                actualPayload: Data([0xAA, 0xBB])
+            )
         )
 
         expect {
@@ -157,10 +162,13 @@ final class HwpFileDocInfoRawRecordAssemblyTests: XCTestCase {
             return fail("Expected actual fixture to include Section0")
         }
 
-        let sectionData = firstSectionData + truncatedExtendedRawRecordData(
-            tagId: 0x2FE,
-            declaredPayloadSize: 6,
-            actualPayload: Data([0xCC])
+        let sectionData = concatenatedData(
+            firstSectionData,
+            truncatedExtendedRawRecordData(
+                tagId: 0x2FE,
+                declaredPayloadSize: 6,
+                actualPayload: Data([0xCC])
+            )
         )
 
         expect {
@@ -182,9 +190,11 @@ final class HwpFileDocInfoRawRecordAssemblyTests: XCTestCase {
 
         let unknownPayload = Data([0x5E, 0xC7])
         let unknownChildPayload = Data([0xC1])
-        let sectionData = firstSectionData
-            + rawRecordData(tagId: 0x2FE, level: 0, payload: unknownPayload)
-            + rawRecordData(tagId: 0x2FD, level: 1, payload: unknownChildPayload)
+        let sectionData = concatenatedData(
+            firstSectionData,
+            rawRecordData(tagId: 0x2FE, level: 0, payload: unknownPayload),
+            rawRecordData(tagId: 0x2FD, level: 1, payload: unknownChildPayload)
+        )
 
         let hwp = try HwpFile(
             fileHeader: streams.fileHeader,
@@ -217,17 +227,22 @@ final class HwpFileDocInfoRawRecordAssemblyTests: XCTestCase {
         }
 
         let ctrlId: UInt32 = 0x1234_5678
-        let controlPayload = littleEndianRecordHeader(ctrlId) + Data([0x9A, 0xBC])
+        let controlPayload = concatenatedData(
+            littleEndianRecordHeader(ctrlId),
+            Data([0x9A, 0xBC])
+        )
         let controlChildPayload = Data([0xE1, 0xE2])
         let controlGrandchildPayload = Data([0xF3])
-        let sectionData = firstSectionData
-            + rawRecordData(
+        let sectionData = concatenatedData(
+            firstSectionData,
+            rawRecordData(
                 tagId: HwpSectionTag.ctrlHeader.rawValue,
                 level: 1,
                 payload: controlPayload
-            )
-            + rawRecordData(tagId: 0x2FC, level: 2, payload: controlChildPayload)
-            + rawRecordData(tagId: 0x2FB, level: 3, payload: controlGrandchildPayload)
+            ),
+            rawRecordData(tagId: 0x2FC, level: 2, payload: controlChildPayload),
+            rawRecordData(tagId: 0x2FB, level: 3, payload: controlGrandchildPayload)
+        )
 
         let hwp = try HwpFile(
             fileHeader: streams.fileHeader,
@@ -270,13 +285,15 @@ final class HwpFileDocInfoRawRecordAssemblyTests: XCTestCase {
 
         let controlPayload = Data([0x01, 0x02, 0x03])
         let controlChildPayload = Data([0xE4, 0xE5])
-        let sectionData = firstSectionData
-            + rawRecordData(
+        let sectionData = concatenatedData(
+            firstSectionData,
+            rawRecordData(
                 tagId: HwpSectionTag.ctrlHeader.rawValue,
                 level: 1,
                 payload: controlPayload
-            )
-            + rawRecordData(tagId: 0x2FA, level: 2, payload: controlChildPayload)
+            ),
+            rawRecordData(tagId: 0x2FA, level: 2, payload: controlChildPayload)
+        )
 
         let hwp = try HwpFile(
             fileHeader: streams.fileHeader,
@@ -377,12 +394,14 @@ private struct InjectedTopLevelRawDocInfoRecords {
         firstTrackChangePayload = Data([0x71, 0x72, 0x73])
         firstTrackChangeChildPayload = Data([0x7A])
         secondTrackChangePayload = Data([0x81, 0x82])
-        docInfoData = baseDocInfoData
-            + rawRecordData(.distributeDocData, payload: distributePayload)
-            + rawRecordData(tagId: 0x315, level: 1, payload: distributeChildPayload)
-            + rawRecordData(.trackChange, payload: firstTrackChangePayload)
-            + rawRecordData(tagId: 0x316, level: 1, payload: firstTrackChangeChildPayload)
-            + rawRecordData(.trackChange, payload: secondTrackChangePayload)
+        docInfoData = concatenatedData(
+            baseDocInfoData,
+            rawRecordData(.distributeDocData, payload: distributePayload),
+            rawRecordData(tagId: 0x315, level: 1, payload: distributeChildPayload),
+            rawRecordData(.trackChange, payload: firstTrackChangePayload),
+            rawRecordData(tagId: 0x316, level: 1, payload: firstTrackChangeChildPayload),
+            rawRecordData(.trackChange, payload: secondTrackChangePayload)
+        )
     }
 }
 
@@ -404,13 +423,15 @@ private struct InjectedMemoForbiddenRecords {
         forbiddenCharPayload = Data([0xF0, 0xF1, 0xF2])
         forbiddenCharChildPayload = Data([0xC1, 0xC2])
         forbiddenCharGrandchildPayload = Data([0xC3])
-        docInfoData = baseDocInfoData
-            + rawRecordData(.memoShape, payload: memoShapePayload)
-            + rawRecordData(tagId: 0x324, level: 1, payload: memoShapeChildPayload)
-            + rawRecordData(tagId: 0x325, level: 2, payload: memoShapeGrandchildPayload)
-            + rawRecordData(.forbiddenChar, payload: forbiddenCharPayload)
-            + rawRecordData(tagId: 0x326, level: 1, payload: forbiddenCharChildPayload)
-            + rawRecordData(tagId: 0x327, level: 2, payload: forbiddenCharGrandchildPayload)
+        docInfoData = concatenatedData(
+            baseDocInfoData,
+            rawRecordData(.memoShape, payload: memoShapePayload),
+            rawRecordData(tagId: 0x324, level: 1, payload: memoShapeChildPayload),
+            rawRecordData(tagId: 0x325, level: 2, payload: memoShapeGrandchildPayload),
+            rawRecordData(.forbiddenChar, payload: forbiddenCharPayload),
+            rawRecordData(tagId: 0x326, level: 1, payload: forbiddenCharChildPayload),
+            rawRecordData(tagId: 0x327, level: 2, payload: forbiddenCharGrandchildPayload)
+        )
     }
 }
 
@@ -428,23 +449,27 @@ private struct InjectedCodableRawRecords {
     init(baseDocInfoData: Data, baseSectionData: Data) {
         docInfoPayload = Data([0xA1, 0xA2, 0xA3])
         docInfoChildPayload = Data([0xB1, 0xB2])
-        docInfoData = baseDocInfoData
-            + rawRecordData(tagId: 0x2EE, level: 0, payload: docInfoPayload)
-            + rawRecordData(tagId: 0x2EF, level: 1, payload: docInfoChildPayload)
+        docInfoData = concatenatedData(
+            baseDocInfoData,
+            rawRecordData(tagId: 0x2EE, level: 0, payload: docInfoPayload),
+            rawRecordData(tagId: 0x2EF, level: 1, payload: docInfoChildPayload)
+        )
         ctrlId = 0x1234_5678
-        controlPayload = littleEndianRecordHeader(ctrlId) + Data([0xC1, 0xC2])
+        controlPayload = concatenatedData(littleEndianRecordHeader(ctrlId), Data([0xC1, 0xC2]))
         controlChildPayload = Data([0xD1])
         sectionUnknownPayload = Data([0xE1, 0xE2])
         sectionUnknownChildPayload = Data([0xE3])
-        sectionData = baseSectionData
-            + rawRecordData(
+        sectionData = concatenatedData(
+            baseSectionData,
+            rawRecordData(
                 tagId: HwpSectionTag.ctrlHeader.rawValue,
                 level: 1,
                 payload: controlPayload
-            )
-            + rawRecordData(tagId: 0x2FC, level: 2, payload: controlChildPayload)
-            + rawRecordData(tagId: 0x2FD, level: 0, payload: sectionUnknownPayload)
-            + rawRecordData(tagId: 0x2FE, level: 1, payload: sectionUnknownChildPayload)
+            ),
+            rawRecordData(tagId: 0x2FC, level: 2, payload: controlChildPayload),
+            rawRecordData(tagId: 0x2FD, level: 0, payload: sectionUnknownPayload),
+            rawRecordData(tagId: 0x2FE, level: 1, payload: sectionUnknownChildPayload)
+        )
     }
 }
 
@@ -637,19 +662,21 @@ private struct InjectedMalformedTableControl {
         tablePropertyPayload = Data([0xA1])
         tablePropertyChildPayload = Data([0xA2])
         controlChildPayload = Data([0xB2, 0xC3])
-        sectionData = baseSectionData
-            + rawRecordData(
+        sectionData = concatenatedData(
+            baseSectionData,
+            rawRecordData(
                 tagId: HwpSectionTag.ctrlHeader.rawValue,
                 level: 1,
                 payload: controlPayload
-            )
-            + rawRecordData(
+            ),
+            rawRecordData(
                 tagId: HwpSectionTag.table.rawValue,
                 level: 2,
                 payload: tablePropertyPayload
-            )
-            + rawRecordData(tagId: 0x2FB, level: 3, payload: tablePropertyChildPayload)
-            + rawRecordData(tagId: 0x2FC, level: 2, payload: controlChildPayload)
+            ),
+            rawRecordData(tagId: 0x2FB, level: 3, payload: tablePropertyChildPayload),
+            rawRecordData(tagId: 0x2FC, level: 2, payload: controlChildPayload)
+        )
     }
 }
 

@@ -22,7 +22,7 @@ final class ParaShapeRawPayloadTests: XCTestCase {
 
     func testParaShapeInitializerPreservesRawPayloadWithNonZeroDataStartIndex() throws {
         let payload = paraShapePayload()
-        let slicedPayload = (Data([0xFF, 0xEE]) + payload).dropFirst(2)
+        let slicedPayload = concatenatedData(Data([0xFF, 0xEE]), payload).dropFirst(2)
         var reader = DataReader(slicedPayload)
 
         let paraShape = try HwpParaShape(&reader, HwpVersion())
@@ -34,7 +34,7 @@ final class ParaShapeRawPayloadTests: XCTestCase {
     }
 
     func testParaShapeRejectsTrailingBytesWithTypedError() {
-        let payload = paraShapePayload() + Data([0xFF])
+        let payload = concatenatedData(paraShapePayload(), Data([0xFF]))
 
         expect {
             _ = try HwpParaShape.load(payload, HwpVersion())

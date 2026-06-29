@@ -41,11 +41,12 @@ final class HwpFileStreamAssemblyTests: XCTestCase {
     func testDecodedStreamsPreserveMultipleSectionsInInputOrder() throws {
         let firstSectionData = minimalSectionData()
         let secondUnknownPayload = Data([0xCA, 0xFE])
-        let secondSectionData = fixtureRecordData(
+        let secondUnknownRecordData = fixtureRecordData(
             tagId: 0x2FE,
             level: 0,
             payload: secondUnknownPayload
-        ) + minimalSectionData()
+        )
+        let secondSectionData = concatenatedData(secondUnknownRecordData, minimalSectionData())
 
         let hwp = try HwpFile(
             fileHeader: HwpFileHeader(),
@@ -420,33 +421,37 @@ private func assertUnsupportedFeatureIsRejectedBeforeParsingStreams(
 }
 
 private func minimalDocInfoData(sectionSize: UInt16) -> Data {
-    fixtureRecordData(
-        tagId: HwpDocInfoTag.documentProperties.rawValue,
-        level: 0,
-        payload: fixtureDocumentPropertiesPayload(sectionSize: sectionSize)
-    )
-        + fixtureRecordData(
+    concatenatedData(
+        fixtureRecordData(
+            tagId: HwpDocInfoTag.documentProperties.rawValue,
+            level: 0,
+            payload: fixtureDocumentPropertiesPayload(sectionSize: sectionSize)
+        ),
+        fixtureRecordData(
             tagId: HwpDocInfoTag.idMappings.rawValue,
             level: 0,
             payload: fixtureIdMappingsPayload()
         )
+    )
 }
 
 private func minimalSectionData() -> Data {
-    fixtureRecordData(
-        tagId: HwpSectionTag.paraHeader.rawValue,
-        level: 0,
-        payload: fixtureParaHeaderPayload()
-    )
-        + fixtureRecordData(
+    concatenatedData(
+        fixtureRecordData(
+            tagId: HwpSectionTag.paraHeader.rawValue,
+            level: 0,
+            payload: fixtureParaHeaderPayload()
+        ),
+        fixtureRecordData(
             tagId: HwpSectionTag.paraCharShape.rawValue,
             level: 1,
             payload: fixtureParaCharShapePayload()
         )
+    )
 }
 
 private func fixtureDocumentPropertiesPayload(sectionSize: UInt16) -> Data {
-    fixtureLittleEndianData(sectionSize) + Data(repeating: 0, count: 24)
+    concatenatedData(fixtureLittleEndianData(sectionSize), Data(repeating: 0, count: 24))
 }
 
 private func fixtureIdMappingsPayload() -> Data {
@@ -470,7 +475,7 @@ private func fixtureParaHeaderPayload() -> Data {
 }
 
 private func fixtureParaCharShapePayload() -> Data {
-    fixtureLittleEndianData(UInt32(0)) + fixtureLittleEndianData(UInt32(0))
+    concatenatedData(fixtureLittleEndianData(UInt32(0)), fixtureLittleEndianData(UInt32(0)))
 }
 
 private func fixtureRecordData(tagId: UInt32, level: UInt32, payload: Data) -> Data {

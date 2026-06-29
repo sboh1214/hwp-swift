@@ -84,7 +84,7 @@ final class DocInfoDocDataStabilityTests: XCTestCase {
     func testDocDataPayloadWithNonZeroDataStartIndexDoesNotTrap() throws {
         let rawTrailing = Data([0xEE, 0xFF])
         let payload = docDataPayload(values: [0x0102_0304], rawTrailing: rawTrailing)
-        let paddedPayload = Data([0x00, 0x01]) + payload
+        let paddedPayload = concatenatedData(Data([0x00, 0x01]), payload)
         let slicedPayload = paddedPayload.dropFirst(2)
         let record = HwpRecord(
             tagId: HwpDocInfoTag.docData.rawValue,
@@ -102,9 +102,10 @@ final class DocInfoDocDataStabilityTests: XCTestCase {
 }
 
 private func docDataPayload(values: [UInt32], rawTrailing: Data) -> Data {
-    values.reduce(into: Data()) { payload, value in
+    let payload = values.reduce(into: Data()) { payload, value in
         payload.append(littleEndianData(value))
-    } + rawTrailing
+    }
+    return concatenatedData(payload, rawTrailing)
 }
 
 private func littleEndianData(_ value: some FixedWidthInteger) -> Data {

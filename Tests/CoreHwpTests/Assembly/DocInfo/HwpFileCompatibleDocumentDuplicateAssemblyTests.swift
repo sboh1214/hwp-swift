@@ -57,21 +57,23 @@ private struct DuplicateCompatibleDocumentFixture {
         firstUnknownGrandchildPayload = Data([0xC3])
         duplicatePayload = compatibleDocumentLittleEndianData(UInt32(2))
         duplicateChildPayload = Data([0xC4, 0xC5])
-        docInfoData = baseDocInfoData
-            + compatibleDocumentRecordData(.compatibleDocument, payload: firstPayload)
-            + compatibleDocumentRecordData(
+        docInfoData = concatenatedData(
+            baseDocInfoData,
+            compatibleDocumentRecordData(.compatibleDocument, payload: firstPayload),
+            compatibleDocumentRecordData(
                 .layoutCompatibility,
                 level: 1,
                 payload: firstLayoutPayload
-            )
-            + compatibleDocumentRecordData(tagId: 0x31D, level: 1, payload: firstUnknownPayload)
-            + compatibleDocumentRecordData(
+            ),
+            compatibleDocumentRecordData(tagId: 0x31D, level: 1, payload: firstUnknownPayload),
+            compatibleDocumentRecordData(
                 tagId: 0x31E,
                 level: 2,
                 payload: firstUnknownGrandchildPayload
-            )
-            + compatibleDocumentRecordData(.compatibleDocument, payload: duplicatePayload)
-            + compatibleDocumentRecordData(tagId: 0x31F, level: 1, payload: duplicateChildPayload)
+            ),
+            compatibleDocumentRecordData(.compatibleDocument, payload: duplicatePayload),
+            compatibleDocumentRecordData(tagId: 0x31F, level: 1, payload: duplicateChildPayload)
+        )
     }
 }
 

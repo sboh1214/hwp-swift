@@ -94,8 +94,11 @@ final class ShapeComponentRawRecordTests: XCTestCase {
     }
 
     func testShapeComponentPayloadWithNonZeroDataStartIndexExtractsControlId() throws {
-        let rawPayload = littleEndianData(HwpCommonCtrlId.ole.rawValue) + Data([0xAA, 0xBB])
-        let slicedPayload = (Data([0xFE, 0xED]) + rawPayload).dropFirst(2)
+        let rawPayload = concatenatedData(
+            littleEndianData(HwpCommonCtrlId.ole.rawValue),
+            Data([0xAA, 0xBB])
+        )
+        let slicedPayload = concatenatedData(Data([0xFE, 0xED]), rawPayload).dropFirst(2)
         let record = HwpRecord(
             tagId: HwpSectionTag.shapeComponent.rawValue,
             level: 2,
@@ -149,7 +152,10 @@ final class ShapeComponentRawRecordTests: XCTestCase {
     }
 
     func testPictureComponentReadsBinaryDataIdAtMinimumPayloadLength() throws {
-        let rawPayload = Data(repeating: 0xAB, count: 71) + littleEndianData(UInt16(42))
+        let rawPayload = concatenatedData(
+            Data(repeating: 0xAB, count: 71),
+            littleEndianData(UInt16(42))
+        )
         let record = HwpRecord(
             tagId: HwpSectionTag.shapeComponentPicture.rawValue,
             level: 2,
@@ -177,10 +183,12 @@ final class ShapeComponentRawRecordTests: XCTestCase {
     }
 
     func testPictureComponentPayloadWithNonZeroDataStartIndexDoesNotTrap() throws {
-        let rawPayload = Data(repeating: 0xAB, count: 71)
-            + littleEndianData(UInt16(43))
-            + Data([0xC1, 0xC2])
-        let slicedPayload = (Data([0xFE, 0xED]) + rawPayload).dropFirst(2)
+        let rawPayload = concatenatedData(
+            Data(repeating: 0xAB, count: 71),
+            littleEndianData(UInt16(43)),
+            Data([0xC1, 0xC2])
+        )
+        let slicedPayload = concatenatedData(Data([0xFE, 0xED]), rawPayload).dropFirst(2)
         let record = HwpRecord(
             tagId: HwpSectionTag.shapeComponentPicture.rawValue,
             level: 2,
@@ -266,8 +274,8 @@ final class ShapeComponentRawRecordTests: XCTestCase {
     }
 
     func testOLEComponentPayloadWithNonZeroDataStartIndexDoesNotTrap() throws {
-        let rawPayload = littleEndianData(UInt32(43)) + Data([0xC3])
-        let slicedPayload = (Data([0xFE, 0xED]) + rawPayload).dropFirst(2)
+        let rawPayload = concatenatedData(littleEndianData(UInt32(43)), Data([0xC3]))
+        let slicedPayload = concatenatedData(Data([0xFE, 0xED]), rawPayload).dropFirst(2)
         let record = HwpRecord(
             tagId: HwpSectionTag.shapeComponentOle.rawValue,
             level: 2,

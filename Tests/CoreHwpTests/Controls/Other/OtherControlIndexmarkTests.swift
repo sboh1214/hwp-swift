@@ -8,7 +8,7 @@ final class OtherControlIndexmarkTests: XCTestCase {
         let text = "개별행위설"
         let extraTrailing = Data([0xAA, 0xBB])
         let rawTrailing = indexmarkRawTrailing(text: text, rawTrailing: extraTrailing)
-        let rawPayload = littleEndianData(HwpOtherCtrlId.indexmark.rawValue) + rawTrailing
+        let rawPayload = concatenatedData(littleEndianData(HwpOtherCtrlId.indexmark.rawValue), rawTrailing)
         let record = HwpRecord(
             tagId: HwpSectionTag.ctrlHeader.rawValue,
             level: 1,
@@ -45,8 +45,8 @@ final class OtherControlIndexmarkTests: XCTestCase {
     }
 
     func testMalformedIndexmarkPayloadIsPreservedWithoutParsedInfo() throws {
-        let rawTrailing = littleEndianData(UInt16(3)) + littleEndianData(UInt16(0xAC1C))
-        let rawPayload = littleEndianData(HwpOtherCtrlId.indexmark.rawValue) + rawTrailing
+        let rawTrailing = concatenatedData(littleEndianData(UInt16(3)), littleEndianData(UInt16(0xAC1C)))
+        let rawPayload = concatenatedData(littleEndianData(HwpOtherCtrlId.indexmark.rawValue), rawTrailing)
         let record = HwpRecord(
             tagId: HwpSectionTag.ctrlHeader.rawValue,
             level: 1,
@@ -73,8 +73,8 @@ final class OtherControlIndexmarkTests: XCTestCase {
     }
 
     func testInvalidIndexmarkUtf16IsPreservedWithoutParsedInfo() throws {
-        let rawTrailing = littleEndianData(UInt16(1)) + littleEndianData(UInt16(0xD800))
-        let rawPayload = littleEndianData(HwpOtherCtrlId.indexmark.rawValue) + rawTrailing
+        let rawTrailing = concatenatedData(littleEndianData(UInt16(1)), littleEndianData(UInt16(0xD800)))
+        let rawPayload = concatenatedData(littleEndianData(HwpOtherCtrlId.indexmark.rawValue), rawTrailing)
         let record = HwpRecord(
             tagId: HwpSectionTag.ctrlHeader.rawValue,
             level: 1,

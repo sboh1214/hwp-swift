@@ -5,7 +5,7 @@ import XCTest
 
 final class StyleMalformedStabilityTests: XCTestCase {
     func testStyleRejectsTruncatedLocalNameWithTypedError() {
-        let payload = littleEndianData(UInt16(2)) + littleEndianData(WCHAR(0x004C))
+        let payload = concatenatedData(littleEndianData(UInt16(2)), littleEndianData(WCHAR(0x004C)))
 
         expect {
             _ = try HwpStyle.load(payload)
@@ -19,9 +19,11 @@ final class StyleMalformedStabilityTests: XCTestCase {
     }
 
     func testStyleRejectsTruncatedEnglishNameWithTypedError() {
-        let payload = wcharStringData("Local")
-            + littleEndianData(UInt16(3))
-            + littleEndianData(WCHAR(0x0045))
+        let payload = concatenatedData(
+            wcharStringData("Local"),
+            littleEndianData(UInt16(3)),
+            littleEndianData(WCHAR(0x0045))
+        )
 
         expect {
             _ = try HwpStyle.load(payload)

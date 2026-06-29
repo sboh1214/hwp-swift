@@ -6,7 +6,7 @@ import XCTest
 final class FaceNameRawPayloadTests: XCTestCase {
     func testFaceNameInitializerPreservesRawPayloadWithNonZeroDataStartIndex() throws {
         let payload = faceNamePayload()
-        let slicedPayload = (Data([0xFF, 0xEE]) + payload).dropFirst(2)
+        let slicedPayload = concatenatedData(Data([0xFF, 0xEE]), payload).dropFirst(2)
         var reader = DataReader(slicedPayload)
 
         let faceName = try HwpFaceName(&reader)
@@ -45,7 +45,7 @@ final class FaceNameRawPayloadTests: XCTestCase {
     }
 
     func testFaceNameRejectsTrailingBytesWithTypedError() {
-        let payload = faceNamePayload() + Data([0xFF])
+        let payload = concatenatedData(faceNamePayload(), Data([0xFF]))
 
         expect {
             _ = try HwpFaceName.load(payload)
@@ -69,9 +69,11 @@ final class FaceNameRawPayloadTests: XCTestCase {
     }
 
     func testFaceNameDecodesNonBMPNamesAsUTF16() throws {
-        let payload = Data([0x20])
-            + utf16LengthPrefixedString("Base😀")
-            + utf16LengthPrefixedString("Default🚀")
+        let payload = concatenatedData(
+            Data([0x20]),
+            utf16LengthPrefixedString("Base😀"),
+            utf16LengthPrefixedString("Default🚀")
+        )
         let faceName = try HwpFaceName.load(payload)
         let initializedFaceName = HwpFaceName("Base😀", [1, 2, 3], "Default🚀")
 
@@ -90,7 +92,7 @@ final class FaceNameRawPayloadTests: XCTestCase {
 
     func testFaceNameWithNonZeroStartIndexPayloadPreservesNameRawPayloads() throws {
         let payload = faceNamePayload()
-        let slicedPayload = (Data([0xFF, 0xEE]) + payload).dropFirst(2)
+        let slicedPayload = concatenatedData(Data([0xFF, 0xEE]), payload).dropFirst(2)
 
         let faceName = try HwpFaceName.load(slicedPayload)
 

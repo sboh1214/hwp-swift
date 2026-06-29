@@ -192,8 +192,8 @@ private func roundTrippedIndexmark(_ control: HwpOtherControl) throws -> HwpOthe
 
 private func assertFootnoteAutoNumberControl(_ control: HwpOtherControl, kind: UInt32) {
     let kindBytes = kind == 2 ? Data([2, 0, 0, 0]) : Data([1, 0, 0, 0])
-    let rawTrailing = kindBytes + Data([1, 0, 0, 0, 0, 0, 41, 0])
-    let rawPayload = Data([111, 110, 116, 97]) + rawTrailing
+    let rawTrailing = concatenatedData(kindBytes, Data([1, 0, 0, 0, 0, 0, 41, 0]))
+    let rawPayload = concatenatedData(Data([111, 110, 116, 97]), rawTrailing)
 
     expect(control.ctrlId) == .autoNumber
     expect(control.numberingInfo?.kind) == kind
@@ -240,8 +240,8 @@ private func assertLegacyPageHideControl(_ control: HwpOtherControl) {
 private func assertLegacyIndexmarkControl(_ control: HwpOtherControl) {
     let textRawPayload = Data([28, 172, 196, 188, 137, 213, 4, 199, 36, 193])
     let infoTrailing = Data([0, 0, 0, 0, 0, 0])
-    let rawTrailing = Data([5, 0]) + textRawPayload + infoTrailing
-    let rawPayload = Data([109, 120, 100, 105]) + rawTrailing
+    let rawTrailing = concatenatedData(Data([5, 0]), textRawPayload, infoTrailing)
+    let rawPayload = concatenatedData(Data([109, 120, 100, 105]), rawTrailing)
 
     expect(control.ctrlId) == .indexmark
     expect(control.indexmarkInfo?.textCharacterCount) == 5

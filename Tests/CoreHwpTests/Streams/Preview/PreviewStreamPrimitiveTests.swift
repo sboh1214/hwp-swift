@@ -34,7 +34,7 @@ final class PreviewStreamPrimitiveTests: XCTestCase {
     func testPreviewTextLoadHandlesNonZeroStartIndexPayload() throws {
         let text = "Slice\r\n"
         let payload = utf16LittleEndianData(text)
-        let data = (Data([0xFF]) + payload).dropFirst(1)
+        let data = concatenatedData(Data([0xFF]), payload).dropFirst(1)
 
         let preview = try HwpPreviewText.load(data)
 
@@ -115,7 +115,7 @@ final class PreviewStreamPrimitiveTests: XCTestCase {
 
     func testPreviewImageLoadDetectsFormatFromNonZeroStartIndexPayload() throws {
         let payload = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00])
-        let data = (Data([0xFF, 0xFE]) + payload).dropFirst(2)
+        let data = concatenatedData(Data([0xFF, 0xFE]), payload).dropFirst(2)
 
         let preview = try HwpPreviewImage.load(data)
 
@@ -157,7 +157,7 @@ final class PreviewStreamPrimitiveTests: XCTestCase {
 
     func testSummaryLoadHandlesNonZeroStartIndexPayload() throws {
         let payload = Data([0x05, 0x48, 0x57, 0x50])
-        let data = (Data([0xAA, 0xBB]) + payload).dropFirst(2)
+        let data = concatenatedData(Data([0xAA, 0xBB]), payload).dropFirst(2)
 
         let summary = try HwpSummary.load(data)
         let decoded = try JSONDecoder().decode(

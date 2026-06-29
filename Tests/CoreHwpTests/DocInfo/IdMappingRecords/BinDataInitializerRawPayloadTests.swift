@@ -5,10 +5,12 @@ import XCTest
 
 final class BinDataInitializerRawPayloadTests: XCTestCase {
     func testLinkBinDataInitializerPreservesRawPayloadWithNonZeroDataStartIndex() throws {
-        let payload = binDataInitializerLittleEndianData(UInt16(0))
-            + binDataInitializerUTF16LengthPrefixedString("/tmp/image.png")
-            + binDataInitializerUTF16LengthPrefixedString("image.png")
-        let slicedPayload = (Data([0xFF, 0xEE]) + payload).dropFirst(2)
+        let payload = concatenatedData(
+            binDataInitializerLittleEndianData(UInt16(0)),
+            binDataInitializerUTF16LengthPrefixedString("/tmp/image.png"),
+            binDataInitializerUTF16LengthPrefixedString("image.png")
+        )
+        let slicedPayload = concatenatedData(Data([0xFF, 0xEE]), payload).dropFirst(2)
         var reader = DataReader(slicedPayload)
 
         let binData = try HwpBinData(&reader)
@@ -22,7 +24,7 @@ final class BinDataInitializerRawPayloadTests: XCTestCase {
 
     func testEmbeddedBinDataInitializerPreservesRawPayloadWithNonZeroDataStartIndex() throws {
         let payload = embeddedBinDataInitializerPayload()
-        let slicedPayload = (Data([0xFF, 0xEE]) + payload).dropFirst(2)
+        let slicedPayload = concatenatedData(Data([0xFF, 0xEE]), payload).dropFirst(2)
         var reader = DataReader(slicedPayload)
 
         let binData = try HwpBinData(&reader)
@@ -38,9 +40,11 @@ private func embeddedBinDataInitializerPayload() -> Data {
     let property = UInt16(HwpBinDataType.embedding.rawValue)
         | UInt16(HwpBinDataCompressType.never.rawValue << 4)
         | UInt16(HwpBinDataState.successed.rawValue << 6)
-    return binDataInitializerLittleEndianData(property)
-        + binDataInitializerLittleEndianData(UInt16(42))
-        + binDataInitializerUTF16LengthPrefixedString("jpg")
+    return concatenatedData(
+        binDataInitializerLittleEndianData(property),
+        binDataInitializerLittleEndianData(UInt16(42)),
+        binDataInitializerUTF16LengthPrefixedString("jpg")
+    )
 }
 
 private func binDataInitializerUTF16LengthPrefixedString(_ string: String) -> Data {

@@ -8,7 +8,7 @@ import XCTest
 final class DocInfoTrackChangeStabilityTests: XCTestCase {
     func testTrackChangeExposesHeaderAndPreservesTrailingBytes() throws {
         let rawTrailing = Data([0x01, 0x00, 0xAA, 0xBB])
-        let payload = littleEndianData(UInt32(56)) + rawTrailing
+        let payload = concatenatedData(littleEndianData(UInt32(56)), rawTrailing)
         let record = HwpRecord(
             tagId: HwpDocInfoTag.trackChange.rawValue,
             level: 0,
@@ -53,8 +53,8 @@ final class DocInfoTrackChangeStabilityTests: XCTestCase {
 
     func testTrackChangePayloadWithNonZeroDataStartIndexDoesNotTrap() throws {
         let rawTrailing = Data([0xCC, 0xDD])
-        let payload = littleEndianData(UInt32(56)) + rawTrailing
-        let paddedPayload = Data([0xAA, 0xBB]) + payload
+        let payload = concatenatedData(littleEndianData(UInt32(56)), rawTrailing)
+        let paddedPayload = concatenatedData(Data([0xAA, 0xBB]), payload)
         let slicedPayload = paddedPayload.dropFirst(2)
         let record = HwpRecord(
             tagId: HwpDocInfoTag.trackChange.rawValue,
@@ -106,7 +106,10 @@ final class DocInfoTrackChangeStabilityTests: XCTestCase {
     }
 
     func testMalformedTrackChangeContentPayloadIsPreservedWithoutParsedInfo() throws {
-        let payload = littleEndianData(UInt32(17)) + littleEndianData(UInt16(2026))
+        let payload = concatenatedData(
+            littleEndianData(UInt32(17)),
+            littleEndianData(UInt16(2026))
+        )
         let record = HwpRecord(
             tagId: HwpDocInfoTag.trackChangeContent.rawValue,
             level: 0,
@@ -168,7 +171,7 @@ final class DocInfoTrackChangeStabilityTests: XCTestCase {
             kind: 16,
             timestamp: TrackChangeContentTimestamp(2026, 6, 15, 4, 31)
         )
-        let paddedPayload = Data([0xAA, 0xBB]) + payload
+        let paddedPayload = concatenatedData(Data([0xAA, 0xBB]), payload)
         let slicedPayload = paddedPayload.dropFirst(2)
         let record = HwpRecord(
             tagId: HwpDocInfoTag.trackChangeContent.rawValue,
@@ -238,7 +241,7 @@ final class DocInfoTrackChangeStabilityTests: XCTestCase {
 
     func testTrackChangeAuthorAllowsEmptyNameAndPreservesTrailingBytes() throws {
         let rawTrailing = Data([0x01, 0x02, 0x03, 0x04])
-        let payload = littleEndianData(UInt32(0)) + rawTrailing
+        let payload = concatenatedData(littleEndianData(UInt32(0)), rawTrailing)
         let record = HwpRecord(
             tagId: HwpDocInfoTag.trackChangeAuthor.rawValue,
             level: 0,
@@ -255,9 +258,11 @@ final class DocInfoTrackChangeStabilityTests: XCTestCase {
     }
 
     func testTrackChangeAuthorWithInvalidUtf16IsPreservedWithoutParsedInfo() throws {
-        let payload = littleEndianData(UInt32(1))
-            + littleEndianData(WCHAR(0xD800))
-            + Data([0xAA, 0xBB])
+        let payload = concatenatedData(
+            littleEndianData(UInt32(1)),
+            littleEndianData(WCHAR(0xD800)),
+            Data([0xAA, 0xBB])
+        )
         let record = HwpRecord(
             tagId: HwpDocInfoTag.trackChangeAuthor.rawValue,
             level: 0,
@@ -277,7 +282,7 @@ final class DocInfoTrackChangeStabilityTests: XCTestCase {
     }
 
     func testMalformedTrackChangeAuthorPayloadIsPreservedWithoutParsedInfo() throws {
-        let payload = littleEndianData(UInt32(5)) + Data([0x43, 0x00])
+        let payload = concatenatedData(littleEndianData(UInt32(5)), Data([0x43, 0x00]))
         let record = HwpRecord(
             tagId: HwpDocInfoTag.trackChangeAuthor.rawValue,
             level: 0,
@@ -297,9 +302,11 @@ final class DocInfoTrackChangeStabilityTests: XCTestCase {
     }
 
     func testTrackChangeAuthorWithOversizedLengthIsPreservedWithoutParsedInfo() throws {
-        let payload = littleEndianData(UInt32.max)
-            + littleEndianData(WCHAR(0x0043))
-            + Data([0xAA, 0xBB])
+        let payload = concatenatedData(
+            littleEndianData(UInt32.max),
+            littleEndianData(WCHAR(0x0043)),
+            Data([0xAA, 0xBB])
+        )
         let record = HwpRecord(
             tagId: HwpDocInfoTag.trackChangeAuthor.rawValue,
             level: 0,
@@ -320,7 +327,7 @@ final class DocInfoTrackChangeStabilityTests: XCTestCase {
 
     func testTrackChangeAuthorPayloadWithNonZeroDataStartIndexDoesNotTrap() throws {
         let payload = trackChangeAuthorPayload(name: "CoreHwp Fixture")
-        let paddedPayload = Data([0xAA, 0xBB]) + payload
+        let paddedPayload = concatenatedData(Data([0xAA, 0xBB]), payload)
         let slicedPayload = paddedPayload.dropFirst(2)
         let record = HwpRecord(
             tagId: HwpDocInfoTag.trackChangeAuthor.rawValue,
@@ -479,20 +486,23 @@ private struct MergedTrackChangeDocInfoFixture {
         idMappingCounts[16] = 1
         idMappingCounts[17] = 1
 
-        return recordData(
-            tagId: HwpDocInfoTag.documentProperties.rawValue,
-            level: 0,
-            payload: documentPropertiesPayload()
-        ) + recordData(
-            tagId: HwpDocInfoTag.idMappings.rawValue,
-            level: 0,
-            payload: idMappingsPayload(idMappingCounts)
+        return concatenatedData(
+            recordData(
+                tagId: HwpDocInfoTag.documentProperties.rawValue,
+                level: 0,
+                payload: documentPropertiesPayload()
+            ),
+            recordData(
+                tagId: HwpDocInfoTag.idMappings.rawValue,
+                level: 0,
+                payload: idMappingsPayload(idMappingCounts)
+            )
         )
     }
 }
 
 private func documentPropertiesPayload() -> Data {
-    littleEndianData(UInt16(1)) + Data(repeating: 0, count: 24)
+    concatenatedData(littleEndianData(UInt16(1)), Data(repeating: 0, count: 24))
 }
 
 private func idMappingsPayload(_ counts: [Int32] = Array(repeating: Int32(0), count: 18)) -> Data {
@@ -585,7 +595,10 @@ private func trackChangeAuthorNamePayload(_ name: String) -> Data {
 }
 
 private func recordData(tagId: UInt32, level: UInt32, payload: Data) -> Data {
-    littleEndianData(tagId | (level << 10) | (UInt32(payload.count) << 20)) + payload
+    concatenatedData(
+        littleEndianData(tagId | (level << 10) | (UInt32(payload.count) << 20)),
+        payload
+    )
 }
 
 private func littleEndianData(_ value: some FixedWidthInteger) -> Data {

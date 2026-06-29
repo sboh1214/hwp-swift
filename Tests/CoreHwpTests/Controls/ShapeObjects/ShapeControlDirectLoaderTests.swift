@@ -6,10 +6,14 @@ import XCTest
 final class ShapeControlDirectLoaderTests: XCTestCase {
     func testShapeControlWithoutVersionParsesShapeComponentChildren() throws {
         let rawPayload = directCommonShapeControlPayload(ctrlId: HwpCommonCtrlId.picture.rawValue)
-        let componentPayload = directLittleEndianData(HwpCommonCtrlId.picture.rawValue)
-            + Data([0xCA])
-        let picturePayload = Data(repeating: 0xAB, count: 71)
-            + directLittleEndianData(UInt16(9))
+        let componentPayload = concatenatedData(
+            directLittleEndianData(HwpCommonCtrlId.picture.rawValue),
+            Data([0xCA])
+        )
+        let picturePayload = concatenatedData(
+            Data(repeating: 0xAB, count: 71),
+            directLittleEndianData(UInt16(9))
+        )
         let componentRecord = HwpRecord(
             tagId: HwpSectionTag.shapeComponent.rawValue,
             level: 2,

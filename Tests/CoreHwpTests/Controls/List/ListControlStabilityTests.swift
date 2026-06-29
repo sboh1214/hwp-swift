@@ -6,8 +6,8 @@ import XCTest
 final class ListControlStabilityTests: XCTestCase {
     func testListHeaderInitializerPreservesRawPayloadWithNonZeroDataStartIndex() throws {
         let rawTrailing = Data([0xCA, 0xFE])
-        let rawPayload = listHeaderPayload(paragraphCount: 2) + rawTrailing
-        let slicedPayload = (Data([0xEF]) + rawPayload).dropFirst()
+        let rawPayload = concatenatedData(listHeaderPayload(paragraphCount: 2), rawTrailing)
+        let slicedPayload = concatenatedData(Data([0xEF]), rawPayload).dropFirst()
         var reader = DataReader(slicedPayload)
 
         let header = try HwpListHeader(&reader)
@@ -22,7 +22,7 @@ final class ListControlStabilityTests: XCTestCase {
 
     func testListHeaderOddTrailingBytesRemainRawOnly() throws {
         let rawTrailing = Data([0xAA])
-        let rawPayload = listHeaderPayload(paragraphCount: 1) + rawTrailing
+        let rawPayload = concatenatedData(listHeaderPayload(paragraphCount: 1), rawTrailing)
         var reader = DataReader(rawPayload)
 
         let header = try HwpListHeader(&reader)
@@ -339,7 +339,7 @@ private func listControlParagraphHeaderPayload() -> Data {
 }
 
 private func listHeaderPayload(paragraphCount: Int32) -> Data {
-    littleEndianData(paragraphCount) + littleEndianData(UInt32(0))
+    concatenatedData(littleEndianData(paragraphCount), littleEndianData(UInt32(0)))
 }
 
 private func littleEndianData(_ value: some FixedWidthInteger) -> Data {

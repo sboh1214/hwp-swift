@@ -59,11 +59,11 @@ final class ModelPrimitiveTests: XCTestCase {
     }
 
     func testParaRangeTagLoad() throws {
-        let tag = try HwpParaRangeTag.load(
-            littleEndianData(UInt32(1))
-                + littleEndianData(UInt32(9))
-                + littleEndianData(UInt32(0xABCD_EF01))
-        )
+        let tag = try HwpParaRangeTag.load(concatenatedData(
+            littleEndianData(UInt32(1)),
+            littleEndianData(UInt32(9)),
+            littleEndianData(UInt32(0xABCD_EF01))
+        ))
 
         expect(tag.start) == 1
         expect(tag.end) == 9
@@ -71,9 +71,11 @@ final class ModelPrimitiveTests: XCTestCase {
     }
 
     func testListHeaderLoad() throws {
-        let payload = littleEndianData(Int32(3))
-            + littleEndianData(UInt32(0x0102_0304))
-            + Data([0xAA, 0xBB])
+        let payload = concatenatedData(
+            littleEndianData(Int32(3)),
+            littleEndianData(UInt32(0x0102_0304)),
+            Data([0xAA, 0xBB])
+        )
         let header = try HwpListHeader.load(payload)
 
         expect(header.rawPayload) == payload
@@ -84,11 +86,13 @@ final class ModelPrimitiveTests: XCTestCase {
 
     func testZonePropertyLoad() throws {
         let property = try HwpZoneProperty.load(
-            littleEndianData(UInt16(1))
-                + littleEndianData(UInt16(2))
-                + littleEndianData(UInt16(3))
-                + littleEndianData(UInt16(4))
-                + littleEndianData(UInt16(5))
+            concatenatedData(
+                littleEndianData(UInt16(1)),
+                littleEndianData(UInt16(2)),
+                littleEndianData(UInt16(3)),
+                littleEndianData(UInt16(4)),
+                littleEndianData(UInt16(5))
+            )
         )
 
         expect(property.startColumnIndex) == 1
@@ -170,11 +174,11 @@ final class ModelPrimitiveTests: XCTestCase {
     #endif
 
     func testBinDataLinkLoad() throws {
-        let binData = try HwpBinData.load(
-            littleEndianData(UInt16(0))
-                + wcharStringData("/tmp/image.png")
-                + wcharStringData("image.png")
-        )
+        let binData = try HwpBinData.load(concatenatedData(
+            littleEndianData(UInt16(0)),
+            wcharStringData("/tmp/image.png"),
+            wcharStringData("image.png")
+        ))
 
         expect(binData.property.type) == .link
         expect(binData.absolutePath) == "/tmp/image.png"
@@ -187,11 +191,11 @@ final class ModelPrimitiveTests: XCTestCase {
         let property = UInt16(HwpBinDataType.storage.rawValue)
             | UInt16(HwpBinDataCompressType.always.rawValue << 4)
             | UInt16(HwpBinDataState.failed.rawValue << 6)
-        let binData = try HwpBinData.load(
-            littleEndianData(property)
-                + littleEndianData(UInt16(42))
-                + wcharStringData("ole")
-        )
+        let binData = try HwpBinData.load(concatenatedData(
+            littleEndianData(property),
+            littleEndianData(UInt16(42)),
+            wcharStringData("ole")
+        ))
 
         expect(binData.property.type) == .storage
         expect(binData.property.compressType) == .always
@@ -267,12 +271,14 @@ final class ModelPrimitiveTests: XCTestCase {
     func testFaceNameLoadWithOptionalFields() throws {
         let faceTypeInfo = Data([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
         let faceName = try HwpFaceName.load(
-            Data([0xE0])
-                + wcharStringData("Base")
-                + Data([1])
-                + wcharStringData("Alt")
-                + faceTypeInfo
-                + wcharStringData("Default")
+            concatenatedData(
+                Data([0xE0]),
+                wcharStringData("Base"),
+                Data([1]),
+                wcharStringData("Alt"),
+                faceTypeInfo,
+                wcharStringData("Default")
+            )
         )
 
         expect(faceName.property) == 0xE0

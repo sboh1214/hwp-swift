@@ -36,7 +36,7 @@ final class ShapeControlPreservationTests: XCTestCase {
     }
 
     func testEquationEditPreservesRawPayloadAndExtractsEquationText() throws {
-        let rawPayload = equationEditPayload(text: "x=1") + Data([0xAA, 0xBB])
+        let rawPayload = concatenatedData(equationEditPayload(text: "x=1"), Data([0xAA, 0xBB]))
         let record = HwpRecord(
             tagId: HwpSectionTag.eqEdit.rawValue,
             level: 2,
@@ -58,9 +58,11 @@ final class ShapeControlPreservationTests: XCTestCase {
     }
 
     func testEquationEditPreservesTruncatedTextAsRawPayload() throws {
-        let rawPayload = Data([0x00, 0x00, 0x00, 0x00])
-            + littleEndianData(UInt16(4))
-            + littleEndianData(WCHAR(0x0078))
+        let rawPayload = concatenatedData(
+            Data([0x00, 0x00, 0x00, 0x00]),
+            littleEndianData(UInt16(4)),
+            littleEndianData(WCHAR(0x0078))
+        )
         let record = HwpRecord(
             tagId: HwpSectionTag.eqEdit.rawValue,
             level: 2,
@@ -78,10 +80,12 @@ final class ShapeControlPreservationTests: XCTestCase {
     }
 
     func testEquationEditPreservesInvalidUtf16TextAsRawPayload() throws {
-        let rawPayload = Data([0x00, 0x00, 0x00, 0x00])
-            + littleEndianData(UInt16(1))
-            + littleEndianData(WCHAR(0xD800))
-            + Data([0xCA, 0xFE])
+        let rawPayload = concatenatedData(
+            Data([0x00, 0x00, 0x00, 0x00]),
+            littleEndianData(UInt16(1)),
+            littleEndianData(WCHAR(0xD800)),
+            Data([0xCA, 0xFE])
+        )
         let record = HwpRecord(
             tagId: HwpSectionTag.eqEdit.rawValue,
             level: 2,
@@ -176,7 +180,10 @@ final class ShapeControlPreservationTests: XCTestCase {
     }
 
     func testShapeComponentExposesControlIdMetadataAndPreservesChildren() throws {
-        let rawPayload = littleEndianData(HwpCommonCtrlId.ole.rawValue) + Data([0xAA, 0xBB])
+        let rawPayload = concatenatedData(
+            littleEndianData(HwpCommonCtrlId.ole.rawValue),
+            Data([0xAA, 0xBB])
+        )
         let record = HwpRecord(
             tagId: HwpSectionTag.shapeComponent.rawValue,
             level: 2,
@@ -201,11 +208,14 @@ final class ShapeControlPreservationTests: XCTestCase {
     }
 
     func testShapeComponentParsesTextBoxListParagraphsWhenVersionIsProvided() throws {
-        let rawPayload = littleEndianData(HwpCommonCtrlId.rectangle.rawValue) + Data([0xAA])
+        let rawPayload = concatenatedData(
+            littleEndianData(HwpCommonCtrlId.rectangle.rawValue),
+            Data([0xAA])
+        )
         let listHeader = HwpRecord(
             tagId: HwpSectionTag.listHeader.rawValue,
             level: 3,
-            payload: listHeaderPayload(paragraphCount: 1) + Data([0xEE])
+            payload: concatenatedData(listHeaderPayload(paragraphCount: 1), Data([0xEE]))
         )
         let rectangleChild = HwpRecord(
             tagId: HwpSectionTag.shapeComponentRectangle.rawValue,
@@ -264,13 +274,13 @@ final class ShapeControlPreservationTests: XCTestCase {
         let record = HwpRecord(
             tagId: HwpSectionTag.shapeComponentOle.rawValue,
             level: 2,
-            payload: littleEndianData(UInt32(3)) + Data([0xAA, 0xBB])
+            payload: concatenatedData(littleEndianData(UInt32(3)), Data([0xAA, 0xBB]))
         )
         record.children.append(HwpRecord(tagId: 0x2FA, level: 3, payload: Data([0xCD])))
 
         let ole = try HwpShapeComponentOLE.load(record)
 
-        expect(ole.rawPayload) == littleEndianData(UInt32(3)) + Data([0xAA, 0xBB])
+        expect(ole.rawPayload) == concatenatedData(littleEndianData(UInt32(3)), Data([0xAA, 0xBB]))
         expect(ole.binaryDataId) == 3
         expect(ole.rawTrailing) == Data([0xAA, 0xBB])
         expect(ole.unknownChildren) == [

@@ -8,7 +8,7 @@ final class HyperlinkStabilityTests: XCTestCase {
         let url = "docs"
         let rawTrailing = Data([0xAA, 0xBB])
         let payload = hyperlinkPayload(url: url, rawTrailing: rawTrailing)
-        let slicedPayload = (Data([0xEF]) + payload).dropFirst()
+        let slicedPayload = concatenatedData(Data([0xEF]), payload).dropFirst()
         let childPayload = Data([0xCC])
         let child = HwpRecord(tagId: 0x2FA, level: 2, payload: childPayload)
         var reader = DataReader(slicedPayload)
@@ -54,7 +54,7 @@ final class HyperlinkStabilityTests: XCTestCase {
         let url = "docs"
         let rawTrailing = Data([0xCC, 0xDD])
         let expectedPayload = hyperlinkPayload(url: url, rawTrailing: rawTrailing)
-        let slicedPayload = (Data([0xFF, 0xEE]) + expectedPayload).dropFirst(2)
+        let slicedPayload = concatenatedData(Data([0xFF, 0xEE]), expectedPayload).dropFirst(2)
         let record = HwpRecord(
             tagId: HwpSectionTag.ctrlHeader.rawValue,
             level: 1,
@@ -71,8 +71,10 @@ final class HyperlinkStabilityTests: XCTestCase {
     }
 
     func testHyperlinkTruncatedFixedHeaderThrowsTypedError() {
-        let rawPayload = hyperlinkLittleEndianData(HwpFieldCtrlId.hyperLink.rawValue)
-            + Data([0xAA, 0xBB])
+        let rawPayload = concatenatedData(
+            hyperlinkLittleEndianData(HwpFieldCtrlId.hyperLink.rawValue),
+            Data([0xAA, 0xBB])
+        )
 
         expectTruncatedHyperlink(rawPayload, expected: 4, actual: 2)
     }

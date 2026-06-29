@@ -76,10 +76,12 @@ private struct InjectedRawShapeComponentControl {
             instanceId: 0x99AA_BBCC
         )
         controlRawTrailing = Data([0xC1, 0xC2])
-        controlPayload = commonPayload + controlRawTrailing
+        controlPayload = concatenatedData(commonPayload, controlRawTrailing)
         componentRawTrailing = Data([0xD1, 0xD2, 0xD3])
-        componentPayload = rawShapeLittleEndianData(HwpCommonCtrlId.rectangle.rawValue)
-            + componentRawTrailing
+        componentPayload = concatenatedData(
+            rawShapeLittleEndianData(HwpCommonCtrlId.rectangle.rawValue),
+            componentRawTrailing
+        )
         linePayload = Data([0x10, 0x11])
         lineUnknownPayload = Data([0x12])
         rectanglePayload = Data([0x20, 0x21, 0x22])
@@ -89,7 +91,7 @@ private struct InjectedRawShapeComponentControl {
         polygonPayload = Data([0x50, 0x51, 0x52])
         curvePayload = Data([0x60])
         oleRawTrailing = Data([0x70, 0x71])
-        olePayload = rawShapeLittleEndianData(UInt32(7)) + oleRawTrailing
+        olePayload = concatenatedData(rawShapeLittleEndianData(UInt32(7)), oleRawTrailing)
         oleUnknownPayload = Data([0x72])
         containerPayload = Data([0x80])
         chartDataPayload = Data([0x90, 0x91])

@@ -51,34 +51,44 @@ private struct InjectedNumberingControls {
 
     init(baseSectionData: Data) {
         autoInfoTrailing = Data([0xA1, 0xA2])
-        autoRawTrailing = numberingPayload(kind: 3, number: 12, format: 0x0031_0000)
-            + autoInfoTrailing
-        autoPayload = numberingLittleEndianData(HwpOtherCtrlId.autoNumber.rawValue)
-            + autoRawTrailing
+        autoRawTrailing = concatenatedData(
+            numberingPayload(kind: 3, number: 12, format: 0x0031_0000),
+            autoInfoTrailing
+        )
+        autoPayload = concatenatedData(
+            numberingLittleEndianData(HwpOtherCtrlId.autoNumber.rawValue),
+            autoRawTrailing
+        )
         autoUnknownPayload = Data([0xA3, 0xA4])
 
         newInfoTrailing = Data([0xB1])
-        newRawTrailing = numberingPayload(kind: 4, number: 99, format: 0x0029_0000)
-            + newInfoTrailing
-        newPayload = numberingLittleEndianData(HwpOtherCtrlId.newNumber.rawValue)
-            + newRawTrailing
+        newRawTrailing = concatenatedData(
+            numberingPayload(kind: 4, number: 99, format: 0x0029_0000),
+            newInfoTrailing
+        )
+        newPayload = concatenatedData(
+            numberingLittleEndianData(HwpOtherCtrlId.newNumber.rawValue),
+            newRawTrailing
+        )
         newUnknownPayload = Data([0xB2, 0xB3])
         newGrandchildPayload = Data([0xB4])
 
-        sectionData = baseSectionData
-            + numberingRecordData(
+        sectionData = concatenatedData(
+            baseSectionData,
+            numberingRecordData(
                 tagId: HwpSectionTag.ctrlHeader.rawValue,
                 level: 1,
                 payload: autoPayload
-            )
-            + numberingRecordData(tagId: 0x2E4, level: 2, payload: autoUnknownPayload)
-            + numberingRecordData(
+            ),
+            numberingRecordData(tagId: 0x2E4, level: 2, payload: autoUnknownPayload),
+            numberingRecordData(
                 tagId: HwpSectionTag.ctrlHeader.rawValue,
                 level: 1,
                 payload: newPayload
-            )
-            + numberingRecordData(tagId: 0x2E5, level: 2, payload: newUnknownPayload)
-            + numberingRecordData(tagId: 0x2E6, level: 3, payload: newGrandchildPayload)
+            ),
+            numberingRecordData(tagId: 0x2E5, level: 2, payload: newUnknownPayload),
+            numberingRecordData(tagId: 0x2E6, level: 3, payload: newGrandchildPayload)
+        )
     }
 }
 
@@ -188,9 +198,11 @@ private func newNumberControls(from hwp: HwpFile) -> [HwpOtherControl] {
 }
 
 private func numberingPayload(kind: UInt32, number: UInt32, format: UInt32) -> Data {
-    numberingLittleEndianData(kind)
-        + numberingLittleEndianData(number)
-        + numberingLittleEndianData(format)
+    concatenatedData(
+        numberingLittleEndianData(kind),
+        numberingLittleEndianData(number),
+        numberingLittleEndianData(format)
+    )
 }
 
 private func numberingRecordData(tagId: UInt32, level: UInt32, payload: Data) -> Data {

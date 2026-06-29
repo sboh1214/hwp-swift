@@ -5,7 +5,7 @@ import XCTest
 
 final class BorderFillRawPayloadTests: XCTestCase {
     func testBorderFillInitializerPreservesRawPayloadWithNonZeroDataStartIndex() throws {
-        let slicedPayload = (Data([0xFF, 0xEE]) + borderFillPayload()).dropFirst(2)
+        let slicedPayload = concatenatedData(Data([0xFF, 0xEE]), borderFillPayload()).dropFirst(2)
         var reader = DataReader(slicedPayload)
 
         let borderFill = try HwpBorderFill(&reader)
@@ -54,7 +54,7 @@ final class BorderFillRawPayloadTests: XCTestCase {
             ),
             BorderFillTruncationScenario(
                 name: "borderType",
-                payload: littleEndianData(UInt16(0x1234)) + Data([1, 2, 3]),
+                payload: concatenatedData(littleEndianData(UInt16(0x1234)), Data([1, 2, 3])),
                 expectedBytes: 4,
                 actualBytes: 3
             ),

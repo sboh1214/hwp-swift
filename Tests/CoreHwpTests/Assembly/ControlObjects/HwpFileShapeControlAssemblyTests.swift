@@ -48,7 +48,7 @@ private struct InjectedShapeControls {
     init(baseSectionData: Data) {
         picture = InjectedPictureShapeControl()
         equation = InjectedEquationShapeControl()
-        sectionData = baseSectionData + picture.recordData + equation.recordData
+        sectionData = concatenatedData(baseSectionData, picture.recordData, equation.recordData)
     }
 }
 
@@ -74,38 +74,44 @@ private struct InjectedPictureShapeControl {
             instanceId: 0x5555_6666
         )
         controlRawTrailing = Data([0xCA, 0xFE])
-        controlPayload = commonPayload + controlRawTrailing
+        controlPayload = concatenatedData(commonPayload, controlRawTrailing)
         componentRawTrailing = Data([0xA1, 0xA2])
-        componentPayload = shapeLittleEndianData(HwpCommonCtrlId.picture.rawValue)
-            + componentRawTrailing
+        componentPayload = concatenatedData(
+            shapeLittleEndianData(HwpCommonCtrlId.picture.rawValue),
+            componentRawTrailing
+        )
         pictureRawTrailing = Data([0xA3, 0xA4])
-        picturePayload = Data(repeating: 0xAB, count: 71)
-            + shapeLittleEndianData(UInt16(9))
-            + pictureRawTrailing
+        picturePayload = concatenatedData(
+            Data(repeating: 0xAB, count: 71),
+            shapeLittleEndianData(UInt16(9)),
+            pictureRawTrailing
+        )
         pictureUnknownPayload = Data([0xA5])
         componentUnknownPayload = Data([0xA6])
         controlUnknownPayload = Data([0xA7])
         controlUnknownGrandchildPayload = Data([0xA8])
 
-        recordData = shapeRecordData(
-            tagId: HwpSectionTag.ctrlHeader.rawValue,
-            level: 1,
-            payload: controlPayload
-        )
-            + shapeRecordData(
+        recordData = concatenatedData(
+            shapeRecordData(
+                tagId: HwpSectionTag.ctrlHeader.rawValue,
+                level: 1,
+                payload: controlPayload
+            ),
+            shapeRecordData(
                 tagId: HwpSectionTag.shapeComponent.rawValue,
                 level: 2,
                 payload: componentPayload
-            )
-            + shapeRecordData(
+            ),
+            shapeRecordData(
                 tagId: HwpSectionTag.shapeComponentPicture.rawValue,
                 level: 3,
                 payload: picturePayload
-            )
-            + shapeRecordData(tagId: 0x3B0, level: 4, payload: pictureUnknownPayload)
-            + shapeRecordData(tagId: 0x3B1, level: 3, payload: componentUnknownPayload)
-            + shapeRecordData(tagId: 0x3B2, level: 2, payload: controlUnknownPayload)
-            + shapeRecordData(tagId: 0x3B3, level: 3, payload: controlUnknownGrandchildPayload)
+            ),
+            shapeRecordData(tagId: 0x3B0, level: 4, payload: pictureUnknownPayload),
+            shapeRecordData(tagId: 0x3B1, level: 3, payload: componentUnknownPayload),
+            shapeRecordData(tagId: 0x3B2, level: 2, payload: controlUnknownPayload),
+            shapeRecordData(tagId: 0x3B3, level: 3, payload: controlUnknownGrandchildPayload)
+        )
     }
 }
 
@@ -130,28 +136,32 @@ private struct InjectedEquationShapeControl {
             instanceId: 0x090A_0B0C
         )
         controlRawTrailing = Data([0xE1, 0xE2])
-        controlPayload = commonPayload + controlRawTrailing
+        controlPayload = concatenatedData(commonPayload, controlRawTrailing)
         equationText = "x=1"
         equationTextLengthRawPayload = Data([0x03, 0x00])
         equationTextRawPayload = Data([0x78, 0x00, 0x3D, 0x00, 0x31, 0x00])
         eqEditRawTrailing = Data([0xE3, 0xE4])
-        eqEditPayload = shapeEquationEditPayload(text: equationText)
-            + eqEditRawTrailing
+        eqEditPayload = concatenatedData(
+            shapeEquationEditPayload(text: equationText),
+            eqEditRawTrailing
+        )
         eqEditUnknownPayload = Data([0xE5])
         controlUnknownPayload = Data([0xE6])
 
-        recordData = shapeRecordData(
-            tagId: HwpSectionTag.ctrlHeader.rawValue,
-            level: 1,
-            payload: controlPayload
-        )
-            + shapeRecordData(
+        recordData = concatenatedData(
+            shapeRecordData(
+                tagId: HwpSectionTag.ctrlHeader.rawValue,
+                level: 1,
+                payload: controlPayload
+            ),
+            shapeRecordData(
                 tagId: HwpSectionTag.eqEdit.rawValue,
                 level: 2,
                 payload: eqEditPayload
-            )
-            + shapeRecordData(tagId: 0x3C0, level: 3, payload: eqEditUnknownPayload)
-            + shapeRecordData(tagId: 0x3C1, level: 2, payload: controlUnknownPayload)
+            ),
+            shapeRecordData(tagId: 0x3C0, level: 3, payload: eqEditUnknownPayload),
+            shapeRecordData(tagId: 0x3C1, level: 2, payload: controlUnknownPayload)
+        )
     }
 }
 

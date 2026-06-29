@@ -124,8 +124,10 @@ private struct InjectedPreservedControls {
 
     init(baseSectionData: Data) {
         unknownControlId = 0x1234_5678
-        unknownControlPayload = preservedControlLittleEndianData(unknownControlId)
-            + Data([0x9A, 0xBC])
+        unknownControlPayload = concatenatedData(
+            preservedControlLittleEndianData(unknownControlId),
+            Data([0x9A, 0xBC])
+        )
         unknownChildPayload = Data([0xE1, 0xE2])
         unknownGrandchildPayload = Data([0xF3])
         tableControlPayload = preservedControlLittleEndianData(HwpCommonCtrlId.table.rawValue)
@@ -133,42 +135,44 @@ private struct InjectedPreservedControls {
         tableChildPayload = Data([0xA2])
         tableSiblingPayload = Data([0xB2, 0xC3])
 
-        sectionData = baseSectionData
-            + preservedControlRecordData(
+        sectionData = concatenatedData(
+            baseSectionData,
+            preservedControlRecordData(
                 tagId: HwpSectionTag.ctrlHeader.rawValue,
                 level: 1,
                 payload: unknownControlPayload
-            )
-            + preservedControlRecordData(
+            ),
+            preservedControlRecordData(
                 tagId: 0x2FC,
                 level: 2,
                 payload: unknownChildPayload
-            )
-            + preservedControlRecordData(
+            ),
+            preservedControlRecordData(
                 tagId: 0x2FB,
                 level: 3,
                 payload: unknownGrandchildPayload
-            )
-            + preservedControlRecordData(
+            ),
+            preservedControlRecordData(
                 tagId: HwpSectionTag.ctrlHeader.rawValue,
                 level: 1,
                 payload: tableControlPayload
-            )
-            + preservedControlRecordData(
+            ),
+            preservedControlRecordData(
                 tagId: HwpSectionTag.table.rawValue,
                 level: 2,
                 payload: tablePayload
-            )
-            + preservedControlRecordData(
+            ),
+            preservedControlRecordData(
                 tagId: 0x2FA,
                 level: 3,
                 payload: tableChildPayload
-            )
-            + preservedControlRecordData(
+            ),
+            preservedControlRecordData(
                 tagId: 0x2FD,
                 level: 2,
                 payload: tableSiblingPayload
             )
+        )
     }
 }
 
@@ -235,45 +239,49 @@ private struct InjectedOtherControlFallbacks {
     let listUnknownPayload: Data
 
     init(baseSectionData: Data) {
-        columnPayload = preservedControlLittleEndianData(HwpOtherCtrlId.column.rawValue)
-            + Data([0xAA])
-        columnChildPayload = Data([0xC0])
-        pageNumberPayload = preservedControlLittleEndianData(
-            HwpOtherCtrlId.pageNumberPosition.rawValue
+        columnPayload = concatenatedData(
+            preservedControlLittleEndianData(HwpOtherCtrlId.column.rawValue),
+            Data([0xAA])
         )
-            + preservedControlLittleEndianData(UInt32(0x0102_0304))
-            + preservedControlLittleEndianData(WCHAR(0))
-            + preservedControlLittleEndianData(WCHAR(45))
-            + preservedControlLittleEndianData(WCHAR(45))
+        columnChildPayload = Data([0xC0])
+        pageNumberPayload = concatenatedData(
+            preservedControlLittleEndianData(HwpOtherCtrlId.pageNumberPosition.rawValue),
+            preservedControlLittleEndianData(UInt32(0x0102_0304)),
+            preservedControlLittleEndianData(WCHAR(0)),
+            preservedControlLittleEndianData(WCHAR(45)),
+            preservedControlLittleEndianData(WCHAR(45))
+        )
         pageNumberChildPayload = Data([0xD0])
         listPayload = preservedControlLittleEndianData(HwpOtherCtrlId.header.rawValue)
         listHeaderPayload = Data([0xE0])
         listUnknownPayload = Data([0xE1, 0xE2])
 
-        sectionData = baseSectionData
-            + preservedControlRecordData(
+        sectionData = concatenatedData(
+            baseSectionData,
+            preservedControlRecordData(
                 tagId: HwpSectionTag.ctrlHeader.rawValue,
                 level: 1,
                 payload: columnPayload
-            )
-            + preservedControlRecordData(tagId: 0x2FA, level: 2, payload: columnChildPayload)
-            + preservedControlRecordData(
+            ),
+            preservedControlRecordData(tagId: 0x2FA, level: 2, payload: columnChildPayload),
+            preservedControlRecordData(
                 tagId: HwpSectionTag.ctrlHeader.rawValue,
                 level: 1,
                 payload: pageNumberPayload
-            )
-            + preservedControlRecordData(tagId: 0x2FB, level: 2, payload: pageNumberChildPayload)
-            + preservedControlRecordData(
+            ),
+            preservedControlRecordData(tagId: 0x2FB, level: 2, payload: pageNumberChildPayload),
+            preservedControlRecordData(
                 tagId: HwpSectionTag.ctrlHeader.rawValue,
                 level: 1,
                 payload: listPayload
-            )
-            + preservedControlRecordData(
+            ),
+            preservedControlRecordData(
                 tagId: HwpSectionTag.listHeader.rawValue,
                 level: 2,
                 payload: listHeaderPayload
-            )
-            + preservedControlRecordData(tagId: 0x2FC, level: 2, payload: listUnknownPayload)
+            ),
+            preservedControlRecordData(tagId: 0x2FC, level: 2, payload: listUnknownPayload)
+        )
     }
 }
 
@@ -285,32 +293,38 @@ private struct InjectedFieldControlFallback {
     let rawTrailing: Data
 
     init(baseSectionData: Data) {
-        rawTrailing = preservedControlLittleEndianData(UInt32(0))
-            + preservedControlLittleEndianData(BYTE(0xFF))
-            + preservedControlLittleEndianData(WORD(1))
-            + preservedControlLittleEndianData(WCHAR(0xD83D))
-            + Data([0xF1, 0xF2])
-        hyperlinkPayload = preservedControlLittleEndianData(HwpFieldCtrlId.hyperLink.rawValue)
-            + rawTrailing
+        rawTrailing = concatenatedData(
+            preservedControlLittleEndianData(UInt32(0)),
+            preservedControlLittleEndianData(BYTE(0xFF)),
+            preservedControlLittleEndianData(WORD(1)),
+            preservedControlLittleEndianData(WCHAR(0xD83D)),
+            Data([0xF1, 0xF2])
+        )
+        hyperlinkPayload = concatenatedData(
+            preservedControlLittleEndianData(HwpFieldCtrlId.hyperLink.rawValue),
+            rawTrailing
+        )
         hyperlinkChildPayload = Data([0xA0, 0xA1])
         hyperlinkGrandchildPayload = Data([0xA2])
 
-        sectionData = baseSectionData
-            + preservedControlRecordData(
+        sectionData = concatenatedData(
+            baseSectionData,
+            preservedControlRecordData(
                 tagId: HwpSectionTag.ctrlHeader.rawValue,
                 level: 1,
                 payload: hyperlinkPayload
-            )
-            + preservedControlRecordData(
+            ),
+            preservedControlRecordData(
                 tagId: 0x2FA,
                 level: 2,
                 payload: hyperlinkChildPayload
-            )
-            + preservedControlRecordData(
+            ),
+            preservedControlRecordData(
                 tagId: 0x2F9,
                 level: 3,
                 payload: hyperlinkGrandchildPayload
             )
+        )
     }
 }
 

@@ -6,7 +6,7 @@ import XCTest
 final class StreamRawPayloadInitializerTests: XCTestCase {
     func testDocInfoInitializerPreservesRawPayloadWithNonZeroDataStartIndex() throws {
         let payload = streamRawPayloadMinimalDocInfoData(sectionSize: 1)
-        let slicedPayload = (Data([0xFF, 0xEE]) + payload).dropFirst(2)
+        let slicedPayload = concatenatedData(Data([0xFF, 0xEE]), payload).dropFirst(2)
         var reader = DataReader(slicedPayload)
 
         let docInfo = try HwpDocInfo(&reader, HwpVersion())
@@ -19,7 +19,7 @@ final class StreamRawPayloadInitializerTests: XCTestCase {
 
     func testSectionInitializerPreservesRawPayloadWithNonZeroDataStartIndex() throws {
         let payload = streamRawPayloadMinimalSectionData()
-        let slicedPayload = (Data([0xFF, 0xEE]) + payload).dropFirst(2)
+        let slicedPayload = concatenatedData(Data([0xFF, 0xEE]), payload).dropFirst(2)
         var reader = DataReader(slicedPayload)
 
         let section = try HwpSection(&reader, HwpVersion())
@@ -32,33 +32,37 @@ final class StreamRawPayloadInitializerTests: XCTestCase {
 }
 
 private func streamRawPayloadMinimalDocInfoData(sectionSize: UInt16) -> Data {
-    streamRawPayloadRecordData(
-        tagId: HwpDocInfoTag.documentProperties.rawValue,
-        level: 0,
-        payload: streamRawPayloadDocumentPropertiesPayload(sectionSize: sectionSize)
-    )
-        + streamRawPayloadRecordData(
+    concatenatedData(
+        streamRawPayloadRecordData(
+            tagId: HwpDocInfoTag.documentProperties.rawValue,
+            level: 0,
+            payload: streamRawPayloadDocumentPropertiesPayload(sectionSize: sectionSize)
+        ),
+        streamRawPayloadRecordData(
             tagId: HwpDocInfoTag.idMappings.rawValue,
             level: 0,
             payload: streamRawPayloadIdMappingsPayload()
         )
+    )
 }
 
 private func streamRawPayloadMinimalSectionData() -> Data {
-    streamRawPayloadRecordData(
-        tagId: HwpSectionTag.paraHeader.rawValue,
-        level: 0,
-        payload: streamRawPayloadParaHeaderPayload()
-    )
-        + streamRawPayloadRecordData(
+    concatenatedData(
+        streamRawPayloadRecordData(
+            tagId: HwpSectionTag.paraHeader.rawValue,
+            level: 0,
+            payload: streamRawPayloadParaHeaderPayload()
+        ),
+        streamRawPayloadRecordData(
             tagId: HwpSectionTag.paraCharShape.rawValue,
             level: 1,
             payload: streamRawPayloadParaCharShapePayload()
         )
+    )
 }
 
 private func streamRawPayloadDocumentPropertiesPayload(sectionSize: UInt16) -> Data {
-    streamRawPayloadLittleEndianData(sectionSize) + Data(repeating: 0, count: 24)
+    concatenatedData(streamRawPayloadLittleEndianData(sectionSize), Data(repeating: 0, count: 24))
 }
 
 private func streamRawPayloadIdMappingsPayload() -> Data {
@@ -68,19 +72,24 @@ private func streamRawPayloadIdMappingsPayload() -> Data {
 }
 
 private func streamRawPayloadParaHeaderPayload() -> Data {
-    streamRawPayloadLittleEndianData(UInt32(0x8000_0000))
-        + streamRawPayloadLittleEndianData(UInt32(0))
-        + streamRawPayloadLittleEndianData(UInt16(0))
-        + Data([0, 0])
-        + streamRawPayloadLittleEndianData(UInt16(1))
-        + streamRawPayloadLittleEndianData(UInt16(0))
-        + streamRawPayloadLittleEndianData(UInt16(0))
-        + streamRawPayloadLittleEndianData(UInt32(0))
-        + streamRawPayloadLittleEndianData(UInt16(0))
+    concatenatedData(
+        streamRawPayloadLittleEndianData(UInt32(0x8000_0000)),
+        streamRawPayloadLittleEndianData(UInt32(0)),
+        streamRawPayloadLittleEndianData(UInt16(0)),
+        Data([0, 0]),
+        streamRawPayloadLittleEndianData(UInt16(1)),
+        streamRawPayloadLittleEndianData(UInt16(0)),
+        streamRawPayloadLittleEndianData(UInt16(0)),
+        streamRawPayloadLittleEndianData(UInt32(0)),
+        streamRawPayloadLittleEndianData(UInt16(0))
+    )
 }
 
 private func streamRawPayloadParaCharShapePayload() -> Data {
-    streamRawPayloadLittleEndianData(UInt32(0)) + streamRawPayloadLittleEndianData(UInt32(0))
+    concatenatedData(
+        streamRawPayloadLittleEndianData(UInt32(0)),
+        streamRawPayloadLittleEndianData(UInt32(0))
+    )
 }
 
 private func streamRawPayloadRecordData(tagId: UInt32, level: UInt32, payload: Data) -> Data {

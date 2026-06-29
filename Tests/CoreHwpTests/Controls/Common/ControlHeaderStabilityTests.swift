@@ -5,8 +5,10 @@ import XCTest
 
 final class ControlHeaderStabilityTests: XCTestCase {
     func testControlHeaderLoaderPreservesValidPayloadAndUnknownChildren() throws {
-        let payload = controlHeaderLittleEndianData(HwpOtherCtrlId.bookmark.rawValue)
-            + Data([0xAA, 0xBB])
+        let payload = concatenatedData(
+            controlHeaderLittleEndianData(HwpOtherCtrlId.bookmark.rawValue),
+            Data([0xAA, 0xBB])
+        )
         let childPayload = Data([0x01, 0x02, 0x03])
         let grandchildPayload = Data([0x04, 0x05])
         let child = HwpRecord(tagId: 0x2FF, level: 2, payload: childPayload)
@@ -38,7 +40,7 @@ final class ControlHeaderStabilityTests: XCTestCase {
 
     func testControlHeaderLoaderHandlesPayloadWithNonZeroDataStartIndex() throws {
         let payload = controlHeaderLittleEndianData(HwpOtherCtrlId.pageHide.rawValue)
-        let slicedPayload = (Data([0xEE, 0xFF]) + payload).dropFirst(2)
+        let slicedPayload = concatenatedData(Data([0xEE, 0xFF]), payload).dropFirst(2)
         let record = HwpRecord(
             tagId: HwpSectionTag.ctrlHeader.rawValue,
             level: 1,
@@ -75,8 +77,10 @@ final class ControlHeaderStabilityTests: XCTestCase {
     }
 
     func testControlHeaderInitializerConsumesAndPreservesRawTrailingBytesAndChildren() throws {
-        let payload = controlHeaderLittleEndianData(HwpOtherCtrlId.comment.rawValue)
-            + Data([0xAA, 0xBB])
+        let payload = concatenatedData(
+            controlHeaderLittleEndianData(HwpOtherCtrlId.comment.rawValue),
+            Data([0xAA, 0xBB])
+        )
         let childPayload = Data([0xCC])
         let child = HwpRecord(tagId: 0x2FF, level: 2, payload: childPayload)
         var reader = DataReader(payload)

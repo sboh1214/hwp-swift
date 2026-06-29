@@ -193,13 +193,15 @@ private func binDataEmbeddingPayload(streamId: UInt16, extensionName: String) ->
     let property = UInt16(HwpBinDataType.embedding.rawValue)
         | UInt16(HwpBinDataCompressType.never.rawValue << 4)
         | UInt16(HwpBinDataState.successed.rawValue << 6)
-    return littleEndianData(property)
-        + littleEndianData(streamId)
-        + lengthPrefixedUTF16Data(extensionName)
+    return concatenatedData(
+        littleEndianData(property),
+        littleEndianData(streamId),
+        lengthPrefixedUTF16Data(extensionName)
+    )
 }
 
 private func faceNamePayload(_ name: String) -> Data {
-    Data([0]) + lengthPrefixedUTF16Data(name)
+    concatenatedData(Data([0]), lengthPrefixedUTF16Data(name))
 }
 
 private func lengthPrefixedUTF16Data(_ string: String) -> Data {

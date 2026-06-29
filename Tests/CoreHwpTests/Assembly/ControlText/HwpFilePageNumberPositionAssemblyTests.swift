@@ -70,14 +70,16 @@ private struct InjectedPageNumberPosition {
         payload = pageNumberPositionPayload(rawTrailing: rawTrailing)
         childPayload = Data([0xC1, 0xC2])
         grandchildPayload = Data([0xC3])
-        sectionData = baseSectionData
-            + pageNumberPositionRecordData(
+        sectionData = concatenatedData(
+            baseSectionData,
+            pageNumberPositionRecordData(
                 tagId: HwpSectionTag.ctrlHeader.rawValue,
                 level: 1,
                 payload: payload
-            )
-            + pageNumberPositionRecordData(tagId: 0x2E1, level: 2, payload: childPayload)
-            + pageNumberPositionRecordData(tagId: 0x2E2, level: 3, payload: grandchildPayload)
+            ),
+            pageNumberPositionRecordData(tagId: 0x2E1, level: 2, payload: childPayload),
+            pageNumberPositionRecordData(tagId: 0x2E2, level: 3, payload: grandchildPayload)
+        )
     }
 }
 
@@ -93,14 +95,16 @@ private struct InjectedMalformedPageNumberPosition {
         rawTrailing = Data(payload.dropFirst(MemoryLayout<UInt32>.size))
         childPayload = Data([0xD1, 0xD2])
         grandchildPayload = Data([0xD3])
-        sectionData = baseSectionData
-            + pageNumberPositionRecordData(
+        sectionData = concatenatedData(
+            baseSectionData,
+            pageNumberPositionRecordData(
                 tagId: HwpSectionTag.ctrlHeader.rawValue,
                 level: 1,
                 payload: payload
-            )
-            + pageNumberPositionRecordData(tagId: 0x2E3, level: 2, payload: childPayload)
-            + pageNumberPositionRecordData(tagId: 0x2E4, level: 3, payload: grandchildPayload)
+            ),
+            pageNumberPositionRecordData(tagId: 0x2E3, level: 2, payload: childPayload),
+            pageNumberPositionRecordData(tagId: 0x2E4, level: 3, payload: grandchildPayload)
+        )
     }
 }
 

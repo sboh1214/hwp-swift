@@ -5,7 +5,7 @@ import XCTest
 
 final class TabDefRawPayloadTests: XCTestCase {
     func testTabDefInitializerPreservesRawPayloadWithNonZeroDataStartIndex() throws {
-        let slicedPayload = (Data([0xFF, 0xEE]) + tabDefPayload()).dropFirst(2)
+        let slicedPayload = concatenatedData(Data([0xFF, 0xEE]), tabDefPayload()).dropFirst(2)
         var reader = DataReader(slicedPayload)
 
         let tabDef = try HwpTabDef(&reader)
@@ -36,7 +36,7 @@ final class TabDefRawPayloadTests: XCTestCase {
     }
 
     func testTabInfoWithNonZeroStartIndexPayloadPreservesRawPayload() throws {
-        let slicedPayload = (Data([0xFF, 0xEE]) + tabInfoPayload()).dropFirst(2)
+        let slicedPayload = concatenatedData(Data([0xFF, 0xEE]), tabInfoPayload()).dropFirst(2)
 
         let tabInfo = try HwpTabInfo.load(slicedPayload)
 
@@ -48,7 +48,7 @@ final class TabDefRawPayloadTests: XCTestCase {
     }
 
     func testTabInfoInitializerPreservesRawPayloadWithNonZeroDataStartIndex() throws {
-        let slicedPayload = (Data([0xFF, 0xEE]) + tabInfoPayload()).dropFirst(2)
+        let slicedPayload = concatenatedData(Data([0xFF, 0xEE]), tabInfoPayload()).dropFirst(2)
         var reader = DataReader(slicedPayload)
 
         let tabInfo = try HwpTabInfo(&reader)
@@ -129,7 +129,7 @@ final class TabDefRawPayloadTests: XCTestCase {
     }
 
     func testTabDefRejectsTrailingBytesWithTypedError() {
-        let payload = tabDefPayload() + Data([0xFF])
+        let payload = concatenatedData(tabDefPayload(), Data([0xFF]))
 
         expect {
             _ = try HwpTabDef.load(payload)
@@ -157,7 +157,7 @@ final class TabDefRawPayloadTests: XCTestCase {
     }
 
     func testTabInfoRejectsTrailingBytesWithTypedError() {
-        let payload = tabInfoPayload() + Data([0xFF])
+        let payload = concatenatedData(tabInfoPayload(), Data([0xFF]))
 
         expect {
             _ = try HwpTabInfo.load(payload)

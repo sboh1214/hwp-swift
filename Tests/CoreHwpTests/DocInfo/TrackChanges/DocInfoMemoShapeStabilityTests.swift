@@ -45,7 +45,7 @@ final class DocInfoMemoShapeStabilityTests: XCTestCase {
 
     func testMemoShapePayloadWithNonZeroDataStartIndexDoesNotTrap() throws {
         let payload = memoShapePayload()
-        let slicedPayload = (Data([0xFE, 0xED]) + payload).dropFirst(2)
+        let slicedPayload = concatenatedData(Data([0xFE, 0xED]), payload).dropFirst(2)
         let record = HwpRecord(
             tagId: HwpDocInfoTag.memoShape.rawValue,
             level: 0,

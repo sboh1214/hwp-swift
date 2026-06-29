@@ -46,7 +46,7 @@ final class DocInfoDistributeDocDataStabilityTests: XCTestCase {
             values: [0x0100_57D1],
             rawTrailing: rawTrailing
         )
-        let paddedPayload = Data([0x00, 0x01]) + payload
+        let paddedPayload = concatenatedData(Data([0x00, 0x01]), payload)
         let slicedPayload = paddedPayload.dropFirst(2)
         let record = HwpRecord(
             tagId: HwpDocInfoTag.distributeDocData.rawValue,
@@ -85,9 +85,10 @@ final class DocInfoDistributeDocDataStabilityTests: XCTestCase {
 }
 
 private func distributeDocDataPayload(values: [UInt32], rawTrailing: Data) -> Data {
-    values.reduce(into: Data()) { payload, value in
+    let payload = values.reduce(into: Data()) { payload, value in
         payload.append(littleEndianData(value))
-    } + rawTrailing
+    }
+    return concatenatedData(payload, rawTrailing)
 }
 
 private func littleEndianData(_ value: some FixedWidthInteger) -> Data {

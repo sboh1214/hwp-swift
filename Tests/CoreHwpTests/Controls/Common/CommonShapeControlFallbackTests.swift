@@ -252,8 +252,10 @@ private func commonShapeFallbackParagraphHeaderPayload() -> Data {
 }
 
 private func commonShapeFallbackListHeaderPayload(paragraphCount: Int32) -> Data {
-    commonShapeFallbackLittleEndianData(paragraphCount)
-        + commonShapeFallbackLittleEndianData(UInt32(0))
+    concatenatedData(
+        commonShapeFallbackLittleEndianData(paragraphCount),
+        commonShapeFallbackLittleEndianData(UInt32(0))
+    )
 }
 
 private func commonShapeFallbackLittleEndianData(_ value: some FixedWidthInteger) -> Data {

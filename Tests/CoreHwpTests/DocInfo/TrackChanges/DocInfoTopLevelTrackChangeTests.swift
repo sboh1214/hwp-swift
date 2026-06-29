@@ -92,7 +92,7 @@ final class DocInfoTopLevelTrackChangeTests: XCTestCase {
 }
 
 private func topLevelTrackChangeDocumentPropertiesPayload() -> Data {
-    topLevelTrackChangeLittleEndianData(UInt16(1)) + Data(repeating: 0, count: 24)
+    concatenatedData(topLevelTrackChangeLittleEndianData(UInt16(1)), Data(repeating: 0, count: 24))
 }
 
 private func topLevelTrackChangeIdMappingsPayload() -> Data {

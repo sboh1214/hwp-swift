@@ -78,7 +78,7 @@ private func expectRecordDoesNotExist(
 }
 
 private func documentPropertiesPayload() -> Data {
-    littleEndianData(UInt16(1)) + Data(repeating: 0, count: 24)
+    concatenatedData(littleEndianData(UInt16(1)), Data(repeating: 0, count: 24))
 }
 
 private func idMappingsPayload(_ counts: [Int32] = Array(repeating: Int32(0), count: 18)) -> Data {

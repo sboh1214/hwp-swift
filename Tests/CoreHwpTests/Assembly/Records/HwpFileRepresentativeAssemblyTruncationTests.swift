@@ -22,10 +22,13 @@ final class HwpFileAssemblyTruncationTests: XCTestCase {
     func testRepresentativeFixtureAssemblyRejectsTruncatedInjectedDocInfoRecord() throws {
         for fixtureId in representativeAssemblyFixtureIds {
             let streams = try representativeAssemblyStreams(fromFixture: fixtureId)
-            let docInfoData = streams.docInfoData + representativeTruncatedExtendedRecordData(
-                tagId: HwpDocInfoTag.distributeDocData.rawValue,
-                declaredPayloadSize: 7,
-                actualPayload: Data([0xA1, 0xB2, 0xC3])
+            let docInfoData = concatenatedData(
+                streams.docInfoData,
+                representativeTruncatedExtendedRecordData(
+                    tagId: HwpDocInfoTag.distributeDocData.rawValue,
+                    declaredPayloadSize: 7,
+                    actualPayload: Data([0xA1, 0xB2, 0xC3])
+                )
             )
 
             expect {

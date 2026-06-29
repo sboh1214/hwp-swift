@@ -6,7 +6,7 @@ import XCTest
 final class ParagraphRawPayloadStabilityTests: XCTestCase {
     func testParaHeaderInitializerPreservesRawPayloadWithNonZeroDataStartIndex() throws {
         let rawPayload = paraHeaderData(charCount: 17, paraId: 99, traceChange: 3)
-        let slicedPayload = (Data([0xEF]) + rawPayload).dropFirst()
+        let slicedPayload = concatenatedData(Data([0xEF]), rawPayload).dropFirst()
         var reader = DataReader(slicedPayload)
 
         let header = try HwpParaHeader(&reader, HwpVersion(5, 0, 3, 2))
@@ -20,8 +20,12 @@ final class ParagraphRawPayloadStabilityTests: XCTestCase {
 
     func testParaTextInitializerPreservesRawPayloadWithNonZeroDataStartIndex() throws {
         let inlinePayload = controlPayload(HwpFieldCtrlId.memo.rawValue)
-        let rawPayload = littleEndianData(WCHAR(4)) + inlinePayload + littleEndianData(WCHAR(65))
-        let slicedPayload = (Data([0xEF]) + rawPayload).dropFirst()
+        let rawPayload = concatenatedData(
+            littleEndianData(WCHAR(4)),
+            inlinePayload,
+            littleEndianData(WCHAR(65))
+        )
+        let slicedPayload = concatenatedData(Data([0xEF]), rawPayload).dropFirst()
         var reader = DataReader(slicedPayload)
 
         let text = try HwpParaText(&reader)
@@ -34,7 +38,7 @@ final class ParagraphRawPayloadStabilityTests: XCTestCase {
 
     func testParaCharShapeInitializerPreservesRawPayloadWithNonZeroDataStartIndex() throws {
         let rawPayload = charShapeData(shapeId: 19)
-        let slicedPayload = (Data([0xEF]) + rawPayload).dropFirst()
+        let slicedPayload = concatenatedData(Data([0xEF]), rawPayload).dropFirst()
         var reader = DataReader(slicedPayload)
 
         let charShape = try HwpParaCharShape(&reader)
@@ -47,7 +51,7 @@ final class ParagraphRawPayloadStabilityTests: XCTestCase {
 
     func testParaLineSegInitializerPreservesRawPayloadWithNonZeroDataStartIndex() throws {
         let rawPayload = lineSegData(textStartingIndex: 0, lineLocation: 100, width: 42520)
-        let slicedPayload = (Data([0xEF]) + rawPayload).dropFirst()
+        let slicedPayload = concatenatedData(Data([0xEF]), rawPayload).dropFirst()
         var reader = DataReader(slicedPayload)
 
         let lineSeg = try HwpParaLineSeg(&reader)
@@ -59,10 +63,12 @@ final class ParagraphRawPayloadStabilityTests: XCTestCase {
     }
 
     func testParaRangeTagInitializerPreservesRawPayloadWithNonZeroDataStartIndex() throws {
-        let rawPayload = littleEndianData(UInt32(1))
-            + littleEndianData(UInt32(9))
-            + littleEndianData(UInt32(0xABCD))
-        let slicedPayload = (Data([0xEF]) + rawPayload).dropFirst()
+        let rawPayload = concatenatedData(
+            littleEndianData(UInt32(1)),
+            littleEndianData(UInt32(9)),
+            littleEndianData(UInt32(0xABCD))
+        )
+        let slicedPayload = concatenatedData(Data([0xEF]), rawPayload).dropFirst()
         var reader = DataReader(slicedPayload)
 
         let rangeTag = try HwpParaRangeTag(&reader)
@@ -79,9 +85,11 @@ final class ParagraphTextControlCodeStabilityTests: XCTestCase {
     func testParaTextConsumesPayloadForEveryInlineControlCode() throws {
         for code in [WCHAR](4 ... 9) + [19, 20] {
             let payload = Data(repeating: UInt8(code), count: 14)
-            let data = littleEndianData(code)
-                + payload
-                + littleEndianData(WCHAR(65))
+            let data = concatenatedData(
+                littleEndianData(code),
+                payload,
+                littleEndianData(WCHAR(65))
+            )
 
             let paraText = try HwpParaText.load(data)
 
@@ -98,9 +106,11 @@ final class ParagraphTextControlCodeStabilityTests: XCTestCase {
 
         for code in extendedCodes {
             let payload = Data(repeating: UInt8(code), count: 14)
-            let data = littleEndianData(code)
-                + payload
-                + littleEndianData(WCHAR(65))
+            let data = concatenatedData(
+                littleEndianData(code),
+                payload,
+                littleEndianData(WCHAR(65))
+            )
 
             let paraText = try HwpParaText.load(data)
 
@@ -143,11 +153,13 @@ final class ParagraphDataStabilityTests: XCTestCase {
     func testParaTextPreservesInlineAndExtendedPayloads() throws {
         let inlinePayload = Data(0 ..< 14)
         let extendedPayload = Data(14 ..< 28)
-        let data = littleEndianData(WCHAR(4))
-            + inlinePayload
-            + littleEndianData(WCHAR(2))
-            + extendedPayload
-            + littleEndianData(WCHAR(65))
+        let data = concatenatedData(
+            littleEndianData(WCHAR(4)),
+            inlinePayload,
+            littleEndianData(WCHAR(2)),
+            extendedPayload,
+            littleEndianData(WCHAR(65))
+        )
 
         let paraText = try HwpParaText.load(data)
         var sameParaText = paraText
@@ -164,9 +176,11 @@ final class ParagraphDataStabilityTests: XCTestCase {
     }
 
     func testParaTextControlCharactersDoNotConsumePayloadBytes() throws {
-        let data = littleEndianData(WCHAR(0))
-            + littleEndianData(WCHAR(1))
-            + littleEndianData(WCHAR(13))
+        let data = concatenatedData(
+            littleEndianData(WCHAR(0)),
+            littleEndianData(WCHAR(1)),
+            littleEndianData(WCHAR(13))
+        )
 
         let paraText = try HwpParaText.load(data)
 
@@ -180,10 +194,12 @@ final class ParagraphDataStabilityTests: XCTestCase {
     func testParaTextExposesInlineControlIdsFromPayloads() throws {
         let sectionPayload = controlPayload(HwpOtherCtrlId.section.rawValue)
         let columnPayload = controlPayload(HwpOtherCtrlId.column.rawValue)
-        let data = littleEndianData(WCHAR(2))
-            + sectionPayload
-            + littleEndianData(WCHAR(2))
-            + columnPayload
+        let data = concatenatedData(
+            littleEndianData(WCHAR(2)),
+            sectionPayload,
+            littleEndianData(WCHAR(2)),
+            columnPayload
+        )
 
         let paraText = try HwpParaText.load(data)
         let controls = paraText.charArray.compactMap(\.inlineControl)
@@ -200,8 +216,8 @@ final class ParagraphDataStabilityTests: XCTestCase {
 
     func testParaTextInlineControlHandlesNonZeroStartIndexPayload() throws {
         let inlinePayload = controlPayload(HwpFieldCtrlId.memo.rawValue)
-        let expectedData = littleEndianData(WCHAR(4)) + inlinePayload
-        let data = (Data([0xFF, 0xEE]) + expectedData).dropFirst(2)
+        let expectedData = concatenatedData(littleEndianData(WCHAR(4)), inlinePayload)
+        let data = concatenatedData(Data([0xFF, 0xEE]), expectedData).dropFirst(2)
 
         let paraText = try HwpParaText.load(data)
         let control = paraText.charArray.first?.inlineControl
@@ -219,7 +235,10 @@ final class ParagraphDataStabilityTests: XCTestCase {
     func testInlineControlClassifiesKnownUnknownAndShortPayloads() {
         let commonPayload = controlPayload(HwpCommonCtrlId.picture.rawValue)
         let fieldPayload = controlPayload(HwpFieldCtrlId.hyperLink.rawValue)
-        let unknownPayload = littleEndianData(UInt32(0x1234_5678)) + Data([0xCA, 0xFE])
+        let unknownPayload = concatenatedData(
+            littleEndianData(UInt32(0x1234_5678)),
+            Data([0xCA, 0xFE])
+        )
         let shortPayload = Data([0xAA, 0xBB, 0xCC])
 
         let common = HwpInlineControl(rawPayload: commonPayload)
@@ -316,8 +335,10 @@ final class ParagraphDataStabilityTests: XCTestCase {
     }
 
     func testParaHeaderRejectsTrailingBytesWithTypedError() {
-        let data = paraHeaderData(charCount: 4, paraId: 7, traceChange: nil)
-            + Data([0xFF])
+        let data = concatenatedData(
+            paraHeaderData(charCount: 4, paraId: 7, traceChange: nil),
+            Data([0xFF])
+        )
 
         expect {
             _ = try HwpParaHeader.load(data, HwpVersion(5, 0, 3, 1))
@@ -345,8 +366,10 @@ final class ParagraphDataStabilityTests: XCTestCase {
     }
 
     func testParaCharShapeRejectsNonZeroFirstStartingIndexWithTypedError() {
-        let data = littleEndianData(UInt32(1))
-            + littleEndianData(UInt32(19))
+        let data = concatenatedData(
+            littleEndianData(UInt32(1)),
+            littleEndianData(UInt32(19))
+        )
 
         expect {
             _ = try HwpParaCharShape.load(data)
@@ -360,10 +383,12 @@ final class ParagraphDataStabilityTests: XCTestCase {
     }
 
     func testParaCharShapePreservesRawPayloadWithoutChangingEquality() throws {
-        let data = littleEndianData(UInt32(0))
-            + littleEndianData(UInt32(19))
-            + littleEndianData(UInt32(8))
-            + littleEndianData(UInt32(20))
+        let data = concatenatedData(
+            littleEndianData(UInt32(0)),
+            littleEndianData(UInt32(19)),
+            littleEndianData(UInt32(8)),
+            littleEndianData(UInt32(20))
+        )
 
         let paraCharShape = try HwpParaCharShape.load(data)
         var sameParaCharShape = paraCharShape
@@ -390,8 +415,10 @@ final class ParagraphDataStabilityTests: XCTestCase {
     }
 
     func testParaLineSegPreservesRawPayloadWithoutChangingEquality() throws {
-        let data = lineSegData(textStartingIndex: 0, lineLocation: 100, width: 42520)
-            + lineSegData(textStartingIndex: 12, lineLocation: 1200, width: 30000)
+        let data = concatenatedData(
+            lineSegData(textStartingIndex: 0, lineLocation: 100, width: 42520),
+            lineSegData(textStartingIndex: 12, lineLocation: 1200, width: 30000)
+        )
 
         let paraLineSeg = try HwpParaLineSeg.load(data)
         var sameParaLineSeg = paraLineSeg
@@ -405,7 +432,7 @@ final class ParagraphDataStabilityTests: XCTestCase {
     }
 
     func testParaRangeTagPartialRecordThrowsTypedError() {
-        let data = littleEndianData(UInt32(1)) + littleEndianData(UInt32(9))
+        let data = concatenatedData(littleEndianData(UInt32(1)), littleEndianData(UInt32(9)))
 
         expect {
             _ = try HwpParaRangeTag.load(data)
@@ -419,10 +446,12 @@ final class ParagraphDataStabilityTests: XCTestCase {
     }
 
     func testParaRangeTagRejectsTrailingBytesWithTypedError() {
-        let data = littleEndianData(UInt32(1))
-            + littleEndianData(UInt32(9))
-            + littleEndianData(UInt32(0xABCD))
-            + Data([0xFF])
+        let data = concatenatedData(
+            littleEndianData(UInt32(1)),
+            littleEndianData(UInt32(9)),
+            littleEndianData(UInt32(0xABCD)),
+            Data([0xFF])
+        )
 
         expect {
             _ = try HwpParaRangeTag.load(data)
@@ -436,9 +465,11 @@ final class ParagraphDataStabilityTests: XCTestCase {
     }
 
     func testParaRangeTagPreservesRawPayloadWithoutChangingEquality() throws {
-        let data = littleEndianData(UInt32(1))
-            + littleEndianData(UInt32(9))
-            + littleEndianData(UInt32(0xABCD))
+        let data = concatenatedData(
+            littleEndianData(UInt32(1)),
+            littleEndianData(UInt32(9)),
+            littleEndianData(UInt32(0xABCD))
+        )
 
         let rangeTag = try HwpParaRangeTag.load(data)
         var sameRangeTag = rangeTag
@@ -458,11 +489,11 @@ private func littleEndianData(_ value: some FixedWidthInteger) -> Data {
 }
 
 private func controlPayload(_ ctrlId: UInt32) -> Data {
-    littleEndianData(ctrlId) + Data(repeating: 0, count: 10)
+    concatenatedData(littleEndianData(ctrlId), Data(repeating: 0, count: 10))
 }
 
 private func charShapeData(shapeId: UInt32) -> Data {
-    littleEndianData(UInt32(0)) + littleEndianData(shapeId)
+    concatenatedData(littleEndianData(UInt32(0)), littleEndianData(shapeId))
 }
 
 private func paraHeaderData(charCount: UInt32, paraId: UInt32, traceChange: UInt16?) -> Data {

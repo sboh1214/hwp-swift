@@ -5,7 +5,7 @@ import XCTest
 
 final class CompatibleDocumentStabilityTests: XCTestCase {
     func testCompatibleDocumentInitializerPreservesRawPayloadWithNonZeroDataStartIndex() throws {
-        let payload = (Data([0xEF]) + littleEndianData(UInt32(7))).dropFirst()
+        let payload = concatenatedData(Data([0xEF]), littleEndianData(UInt32(7))).dropFirst()
         let unknownPayload = Data([0xA0])
         let unknown = HwpRecord(tagId: 0x2FA, level: 1, payload: unknownPayload)
         var reader = DataReader(payload)
@@ -37,7 +37,7 @@ final class CompatibleDocumentStabilityTests: XCTestCase {
     }
 
     func testCompatibleDocumentRejectsTrailingBytesWithTypedError() {
-        let payload = littleEndianData(UInt32(7)) + Data([0xAA])
+        let payload = concatenatedData(littleEndianData(UInt32(7)), Data([0xAA]))
 
         expect {
             _ = try HwpCompatibleDocument.load(compatibleDocumentRecord(

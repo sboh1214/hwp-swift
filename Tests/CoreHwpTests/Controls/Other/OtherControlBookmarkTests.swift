@@ -215,7 +215,7 @@ final class OtherControlBookmarkTests: XCTestCase {
     func testBookmarkCtrlDataWithNonZeroDataStartIndexDoesNotTrap() throws {
         let name = "CoreHwpBookmark"
         let ctrlDataPayload = bookmarkCtrlDataPayload(name: name)
-        let paddedPayload = Data([0xAA, 0xBB]) + ctrlDataPayload
+        let paddedPayload = concatenatedData(Data([0xAA, 0xBB]), ctrlDataPayload)
         let slicedPayload = paddedPayload.dropFirst(2)
         let rawPayload = littleEndianData(HwpOtherCtrlId.bookmark.rawValue)
         let record = HwpRecord(

@@ -136,33 +136,37 @@ private func expectAssemblyRequiredRecordDoesNotExist(
 }
 
 private func assemblyRequiredMinimalDocInfoData(sectionSize: UInt16) -> Data {
-    assemblyRequiredRecordData(
-        tagId: HwpDocInfoTag.documentProperties.rawValue,
-        level: 0,
-        payload: assemblyRequiredDocumentPropertiesPayload(sectionSize: sectionSize)
-    )
-        + assemblyRequiredRecordData(
+    concatenatedData(
+        assemblyRequiredRecordData(
+            tagId: HwpDocInfoTag.documentProperties.rawValue,
+            level: 0,
+            payload: assemblyRequiredDocumentPropertiesPayload(sectionSize: sectionSize)
+        ),
+        assemblyRequiredRecordData(
             tagId: HwpDocInfoTag.idMappings.rawValue,
             level: 0,
             payload: assemblyRequiredIdMappingsPayload()
         )
+    )
 }
 
 private func assemblyRequiredMinimalSectionData() -> Data {
-    assemblyRequiredRecordData(
-        tagId: HwpSectionTag.paraHeader.rawValue,
-        level: 0,
-        payload: assemblyRequiredParaHeaderPayload()
-    )
-        + assemblyRequiredRecordData(
+    concatenatedData(
+        assemblyRequiredRecordData(
+            tagId: HwpSectionTag.paraHeader.rawValue,
+            level: 0,
+            payload: assemblyRequiredParaHeaderPayload()
+        ),
+        assemblyRequiredRecordData(
             tagId: HwpSectionTag.paraCharShape.rawValue,
             level: 1,
             payload: assemblyRequiredParaCharShapePayload()
         )
+    )
 }
 
 private func assemblyRequiredDocumentPropertiesPayload(sectionSize: UInt16) -> Data {
-    assemblyRequiredLittleEndianData(sectionSize) + Data(repeating: 0, count: 24)
+    concatenatedData(assemblyRequiredLittleEndianData(sectionSize), Data(repeating: 0, count: 24))
 }
 
 private func assemblyRequiredIdMappingsPayload() -> Data {
@@ -186,7 +190,10 @@ private func assemblyRequiredParaHeaderPayload() -> Data {
 }
 
 private func assemblyRequiredParaCharShapePayload() -> Data {
-    assemblyRequiredLittleEndianData(UInt32(0)) + assemblyRequiredLittleEndianData(UInt32(0))
+    concatenatedData(
+        assemblyRequiredLittleEndianData(UInt32(0)),
+        assemblyRequiredLittleEndianData(UInt32(0))
+    )
 }
 
 private func assemblyRequiredRecordData(tagId: UInt32, level: UInt32, payload: Data) -> Data {
@@ -247,8 +254,10 @@ private func assemblyRequiredSerializedRecordHeader(
         return assemblyRequiredLittleEndianData(tagAndLevel | (size << 20))
     }
 
-    return assemblyRequiredLittleEndianData(tagAndLevel | (0xFFF << 20))
-        + assemblyRequiredLittleEndianData(size)
+    return concatenatedData(
+        assemblyRequiredLittleEndianData(tagAndLevel | (0xFFF << 20)),
+        assemblyRequiredLittleEndianData(size)
+    )
 }
 
 private func assemblyRequiredLittleEndianData(_ value: some FixedWidthInteger) -> Data {

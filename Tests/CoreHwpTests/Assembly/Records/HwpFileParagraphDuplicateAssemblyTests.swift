@@ -11,19 +11,21 @@ final class HwpFileParagraphDuplicateAssemblyTests: XCTestCase {
         let baseSection = try XCTUnwrap(base.sectionArray.first)
         let baseParagraph = try XCTUnwrap(baseSection.paragraph.last)
         let duplicate = DuplicateTextAndLineSegRecords()
-        let sectionData = baseSection.rawPayload
-            + paragraphRecordData(
+        let sectionData = concatenatedData(
+            baseSection.rawPayload,
+            paragraphRecordData(
                 tagId: HwpSectionTag.paraText.rawValue,
                 level: 1,
                 payload: duplicate.textPayload
-            )
-            + paragraphRecordData(tagId: 0x2FA, level: 2, payload: duplicate.textChildPayload)
-            + paragraphRecordData(
+            ),
+            paragraphRecordData(tagId: 0x2FA, level: 2, payload: duplicate.textChildPayload),
+            paragraphRecordData(
                 tagId: HwpSectionTag.paraLineSeg.rawValue,
                 level: 1,
                 payload: duplicate.lineSegPayload
-            )
-            + paragraphRecordData(tagId: 0x2F9, level: 2, payload: duplicate.lineSegChildPayload)
+            ),
+            paragraphRecordData(tagId: 0x2F9, level: 2, payload: duplicate.lineSegChildPayload)
+        )
 
         let hwp = try HwpFile(
             fileHeader: base.fileHeader,
@@ -52,13 +54,15 @@ final class HwpFileParagraphDuplicateAssemblyTests: XCTestCase {
         let baseParagraph = try XCTUnwrap(baseSection.paragraph.last)
         let duplicatePayload = Data([0xC5, 0xC6, 0xC7, 0xC8])
         let duplicateChildPayload = Data([0xD1, 0xD2])
-        let sectionData = baseSection.rawPayload
-            + paragraphRecordData(
+        let sectionData = concatenatedData(
+            baseSection.rawPayload,
+            paragraphRecordData(
                 tagId: HwpSectionTag.paraCharShape.rawValue,
                 level: 1,
                 payload: duplicatePayload
-            )
-            + paragraphRecordData(tagId: 0x2FA, level: 2, payload: duplicateChildPayload)
+            ),
+            paragraphRecordData(tagId: 0x2FA, level: 2, payload: duplicateChildPayload)
+        )
 
         let hwp = try HwpFile(
             fileHeader: base.fileHeader,

@@ -115,19 +115,21 @@ private struct DuplicateDocInfoSingletonInjection {
         firstDocDataChildPayload = Data([0xF1])
         duplicateDocDataPayload = Data([0xD0, 0xC2, 0xD2])
         duplicateDocDataChildPayload = Data([0xF2, 0xF3])
-        docInfoData = baseDocInfoData
-            + duplicateDocInfoRecordData(.docData, payload: firstDocDataPayload)
-            + duplicateDocInfoRecordData(
+        docInfoData = concatenatedData(
+            baseDocInfoData,
+            duplicateDocInfoRecordData(.docData, payload: firstDocDataPayload),
+            duplicateDocInfoRecordData(
                 tagId: 0x315,
                 level: 1,
                 payload: firstDocDataChildPayload
-            )
-            + duplicateDocInfoRecordData(.docData, payload: duplicateDocDataPayload)
-            + duplicateDocInfoRecordData(
+            ),
+            duplicateDocInfoRecordData(.docData, payload: duplicateDocDataPayload),
+            duplicateDocInfoRecordData(
                 tagId: 0x316,
                 level: 1,
                 payload: duplicateDocDataChildPayload
             )
+        )
     }
 }
 
@@ -143,19 +145,21 @@ private struct DuplicateDistributeDocDataInjection {
         firstChildPayload = Data([0xE1])
         duplicatePayload = Data([0xD2, 0x57, 0x00, 0x01, 0x99])
         duplicateChildPayload = Data([0xE2, 0xE3])
-        docInfoData = baseDocInfoData
-            + duplicateDocInfoRecordData(.distributeDocData, payload: firstPayload)
-            + duplicateDocInfoRecordData(
+        docInfoData = concatenatedData(
+            baseDocInfoData,
+            duplicateDocInfoRecordData(.distributeDocData, payload: firstPayload),
+            duplicateDocInfoRecordData(
                 tagId: 0x317,
                 level: 1,
                 payload: firstChildPayload
-            )
-            + duplicateDocInfoRecordData(.distributeDocData, payload: duplicatePayload)
-            + duplicateDocInfoRecordData(
+            ),
+            duplicateDocInfoRecordData(.distributeDocData, payload: duplicatePayload),
+            duplicateDocInfoRecordData(
                 tagId: 0x318,
                 level: 1,
                 payload: duplicateChildPayload
             )
+        )
     }
 }
 
@@ -171,19 +175,21 @@ private struct DuplicateLayoutCompatibilityInjection {
         firstChildPayload = Data([0xE4])
         duplicatePayload = duplicateDocInfoLayoutPayload(6, 7, 8, 9, 10)
         duplicateChildPayload = Data([0xE5, 0xE6])
-        docInfoData = baseDocInfoData
-            + duplicateDocInfoRecordData(.layoutCompatibility, payload: firstPayload)
-            + duplicateDocInfoRecordData(
+        docInfoData = concatenatedData(
+            baseDocInfoData,
+            duplicateDocInfoRecordData(.layoutCompatibility, payload: firstPayload),
+            duplicateDocInfoRecordData(
                 tagId: 0x319,
                 level: 1,
                 payload: firstChildPayload
-            )
-            + duplicateDocInfoRecordData(.layoutCompatibility, payload: duplicatePayload)
-            + duplicateDocInfoRecordData(
+            ),
+            duplicateDocInfoRecordData(.layoutCompatibility, payload: duplicatePayload),
+            duplicateDocInfoRecordData(
                 tagId: 0x31A,
                 level: 1,
                 payload: duplicateChildPayload
             )
+        )
     }
 }
 
@@ -195,27 +201,31 @@ private struct DuplicateRequiredDocInfoInjection {
     let idMappingsChildPayload: Data
 
     init(baseDocInfoData: Data) {
-        documentPropertiesPayload = duplicateDocInfoLittleEndianData(UInt16(7))
-            + Data(repeating: 0xD0, count: 24)
+        documentPropertiesPayload = concatenatedData(
+            duplicateDocInfoLittleEndianData(UInt16(7)),
+            Data(repeating: 0xD0, count: 24)
+        )
         documentPropertiesChildPayload = Data([0xD1, 0xD2])
         idMappingsPayload = Data([0xE0, 0xE1, 0xE2])
         idMappingsChildPayload = Data([0xE3])
-        docInfoData = baseDocInfoData
-            + duplicateDocInfoRecordData(
+        docInfoData = concatenatedData(
+            baseDocInfoData,
+            duplicateDocInfoRecordData(
                 .documentProperties,
                 payload: documentPropertiesPayload
-            )
-            + duplicateDocInfoRecordData(
+            ),
+            duplicateDocInfoRecordData(
                 tagId: 0x31B,
                 level: 1,
                 payload: documentPropertiesChildPayload
-            )
-            + duplicateDocInfoRecordData(.idMappings, payload: idMappingsPayload)
-            + duplicateDocInfoRecordData(
+            ),
+            duplicateDocInfoRecordData(.idMappings, payload: idMappingsPayload),
+            duplicateDocInfoRecordData(
                 tagId: 0x31C,
                 level: 1,
                 payload: idMappingsChildPayload
             )
+        )
     }
 }
 
@@ -402,11 +412,13 @@ private func duplicateDocInfoLayoutPayload(
     _ object: UInt32,
     _ field: UInt32
 ) -> Data {
-    duplicateDocInfoLittleEndianData(char)
-        + duplicateDocInfoLittleEndianData(paragraph)
-        + duplicateDocInfoLittleEndianData(section)
-        + duplicateDocInfoLittleEndianData(object)
-        + duplicateDocInfoLittleEndianData(field)
+    concatenatedData(
+        duplicateDocInfoLittleEndianData(char),
+        duplicateDocInfoLittleEndianData(paragraph),
+        duplicateDocInfoLittleEndianData(section),
+        duplicateDocInfoLittleEndianData(object),
+        duplicateDocInfoLittleEndianData(field)
+    )
 }
 
 private func duplicateDocInfoRecordData(_ tag: HwpDocInfoTag, payload: Data) -> Data {

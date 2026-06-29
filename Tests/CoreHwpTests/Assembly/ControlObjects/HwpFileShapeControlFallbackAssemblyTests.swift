@@ -63,17 +63,19 @@ private struct InjectedShapeControlFallbacks {
         )
         pictureListHeaderPayload = shapeFallbackListHeaderPayload(paragraphCount: 1)
 
-        sectionData = baseSectionData
-            + shapeFallbackMalformedShapeControlRecordData(
+        sectionData = concatenatedData(
+            baseSectionData,
+            shapeFallbackMalformedShapeControlRecordData(
                 ctrlPayload: genShapePayload,
                 componentPayload: genShapeComponentPayload,
                 listHeaderPayload: genShapeListHeaderPayload
-            )
-            + shapeFallbackMalformedShapeControlRecordData(
+            ),
+            shapeFallbackMalformedShapeControlRecordData(
                 ctrlPayload: picturePayload,
                 componentPayload: pictureComponentPayload,
                 listHeaderPayload: pictureListHeaderPayload
             )
+        )
     }
 }
 
@@ -161,21 +163,23 @@ private func shapeFallbackMalformedShapeControlRecordData(
     componentPayload: Data,
     listHeaderPayload: Data
 ) -> Data {
-    shapeFallbackRecordData(
-        tagId: HwpSectionTag.ctrlHeader.rawValue,
-        level: 1,
-        payload: ctrlPayload
-    )
-        + shapeFallbackRecordData(
+    concatenatedData(
+        shapeFallbackRecordData(
+            tagId: HwpSectionTag.ctrlHeader.rawValue,
+            level: 1,
+            payload: ctrlPayload
+        ),
+        shapeFallbackRecordData(
             tagId: HwpSectionTag.shapeComponent.rawValue,
             level: 2,
             payload: componentPayload
-        )
-        + shapeFallbackRecordData(
+        ),
+        shapeFallbackRecordData(
             tagId: HwpSectionTag.listHeader.rawValue,
             level: 3,
             payload: listHeaderPayload
         )
+    )
 }
 
 private func shapeFallbackRecordData(
@@ -237,8 +241,10 @@ private func shapeFallbackCommonShapeControlPayload(ctrlId: UInt32) -> Data {
 }
 
 private func shapeFallbackListHeaderPayload(paragraphCount: Int32) -> Data {
-    shapeFallbackLittleEndianData(paragraphCount)
-        + shapeFallbackLittleEndianData(UInt32(0))
+    concatenatedData(
+        shapeFallbackLittleEndianData(paragraphCount),
+        shapeFallbackLittleEndianData(UInt32(0))
+    )
 }
 
 private func shapeFallbackLittleEndianData(_ value: some FixedWidthInteger) -> Data {

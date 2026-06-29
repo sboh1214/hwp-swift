@@ -66,14 +66,16 @@ private struct InjectedColumnControl {
         payload = columnControlPayload(rawTrailing: rawTrailing)
         childPayload = Data([0xC1, 0xC2])
         grandchildPayload = Data([0xC3])
-        sectionData = baseSectionData
-            + columnRecordData(
+        sectionData = concatenatedData(
+            baseSectionData,
+            columnRecordData(
                 tagId: HwpSectionTag.ctrlHeader.rawValue,
                 level: 1,
                 payload: payload
-            )
-            + columnRecordData(tagId: 0x2D1, level: 2, payload: childPayload)
-            + columnRecordData(tagId: 0x2D2, level: 3, payload: grandchildPayload)
+            ),
+            columnRecordData(tagId: 0x2D1, level: 2, payload: childPayload),
+            columnRecordData(tagId: 0x2D2, level: 3, payload: grandchildPayload)
+        )
     }
 }
 
@@ -86,17 +88,22 @@ private struct InjectedMalformedColumnControl {
 
     init(baseSectionData: Data) {
         rawTrailing = Data([0xAA])
-        payload = columnLittleEndianData(HwpOtherCtrlId.column.rawValue) + rawTrailing
+        payload = concatenatedData(
+            columnLittleEndianData(HwpOtherCtrlId.column.rawValue),
+            rawTrailing
+        )
         childPayload = Data([0xD1, 0xD2])
         grandchildPayload = Data([0xD3])
-        sectionData = baseSectionData
-            + columnRecordData(
+        sectionData = concatenatedData(
+            baseSectionData,
+            columnRecordData(
                 tagId: HwpSectionTag.ctrlHeader.rawValue,
                 level: 1,
                 payload: payload
-            )
-            + columnRecordData(tagId: 0x2D3, level: 2, payload: childPayload)
-            + columnRecordData(tagId: 0x2D4, level: 3, payload: grandchildPayload)
+            ),
+            columnRecordData(tagId: 0x2D3, level: 2, payload: childPayload),
+            columnRecordData(tagId: 0x2D4, level: 3, payload: grandchildPayload)
+        )
     }
 }
 

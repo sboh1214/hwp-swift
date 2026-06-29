@@ -9,7 +9,7 @@ final class FieldControlParameterStabilityTests: XCTestCase {
         let record = HwpRecord(
             tagId: HwpSectionTag.ctrlHeader.rawValue,
             level: 1,
-            payload: littleEndianData(invalidCtrlId) + Data([0xCA, 0xFE])
+            payload: concatenatedData(littleEndianData(invalidCtrlId), Data([0xCA, 0xFE]))
         )
 
         expect {
@@ -88,10 +88,12 @@ final class FieldControlParameterStabilityTests: XCTestCase {
 
     func testByteSwappedFieldParameterLengthPreservesRawPayload() throws {
         let parameter = "OK"
-        let rawTrailing = littleEndianData(UInt32(0x8001))
-            + littleEndianData(WORD(parameter.utf16.count).byteSwapped)
-            + byteSwappedUTF16Payload(parameter)
-            + Data([0xAA, 0xBB])
+        let rawTrailing = concatenatedData(
+            littleEndianData(UInt32(0x8001)),
+            littleEndianData(WORD(parameter.utf16.count).byteSwapped),
+            byteSwappedUTF16Payload(parameter),
+            Data([0xAA, 0xBB])
+        )
         var rawPayload = littleEndianData(HwpFieldCtrlId.unknown.rawValue)
         rawPayload.append(rawTrailing)
         let record = HwpRecord(
@@ -125,11 +127,13 @@ final class FieldControlParameterStabilityTests: XCTestCase {
                 * MemoryLayout<WCHAR>.size
                 - swappedPayload.count
         )
-        let rawTrailing = littleEndianData(UInt32(0x8001))
-            + littleEndianData(WORD(parameter.utf16.count).byteSwapped)
-            + swappedPayload
-            + naturalCandidatePadding
-            + Data([0xAA, 0xBB])
+        let rawTrailing = concatenatedData(
+            littleEndianData(UInt32(0x8001)),
+            littleEndianData(WORD(parameter.utf16.count).byteSwapped),
+            swappedPayload,
+            naturalCandidatePadding,
+            Data([0xAA, 0xBB])
+        )
         var rawPayload = littleEndianData(HwpFieldCtrlId.unknown.rawValue)
         rawPayload.append(rawTrailing)
         let record = HwpRecord(
@@ -144,7 +148,8 @@ final class FieldControlParameterStabilityTests: XCTestCase {
         expect(control.fieldParameterLengthRawPayload) == Data([0, 1])
         expect(control.fieldParameter) == parameter
         expect(control.fieldParameterRawPayload) == swappedPayload
-        expect(control.fieldParameterRawTrailing) == naturalCandidatePadding + Data([0xAA, 0xBB])
+        expect(control.fieldParameterRawTrailing) ==
+            concatenatedData(naturalCandidatePadding, Data([0xAA, 0xBB]))
     }
 
     func testNaturalEndianFieldParameterWinsOverLongPrintableByteSwappedCandidate() throws {
@@ -153,11 +158,13 @@ final class FieldControlParameterStabilityTests: XCTestCase {
         let byteSwappedCandidatePadding = (0 ..< 255).reduce(into: Data()) { data, _ in
             data.append(littleEndianData(WCHAR(0x4200)))
         }
-        let rawTrailing = littleEndianData(UInt32(0x8001))
-            + littleEndianData(WORD(parameter.utf16.count))
-            + naturalPayload
-            + byteSwappedCandidatePadding
-            + Data([0xAA, 0xBB])
+        let rawTrailing = concatenatedData(
+            littleEndianData(UInt32(0x8001)),
+            littleEndianData(WORD(parameter.utf16.count)),
+            naturalPayload,
+            byteSwappedCandidatePadding,
+            Data([0xAA, 0xBB])
+        )
         var rawPayload = littleEndianData(HwpFieldCtrlId.unknown.rawValue)
         rawPayload.append(rawTrailing)
         let record = HwpRecord(
@@ -173,15 +180,15 @@ final class FieldControlParameterStabilityTests: XCTestCase {
         expect(control.fieldParameter) == parameter
         expect(control.fieldParameterRawPayload) == naturalPayload
         expect(control.fieldParameterRawTrailing) ==
-            byteSwappedCandidatePadding + Data([0xAA, 0xBB])
+            concatenatedData(byteSwappedCandidatePadding, Data([0xAA, 0xBB]))
     }
 
     func testFieldParameterWithNonZeroStartIndexPreservesMemoMetadata() throws {
         let parameter = "MEMO/1/2/3/4/writer/body"
-        let rawTrailing = fieldParameterTrailing(parameter) + Data([0xAA, 0xBB])
+        let rawTrailing = concatenatedData(fieldParameterTrailing(parameter), Data([0xAA, 0xBB]))
         var rawPayload = littleEndianData(HwpFieldCtrlId.unknown.rawValue)
         rawPayload.append(rawTrailing)
-        let slicedPayload = (Data([0xFF, 0xEE]) + rawPayload).dropFirst(2)
+        let slicedPayload = concatenatedData(Data([0xFF, 0xEE]), rawPayload).dropFirst(2)
         let record = HwpRecord(
             tagId: HwpSectionTag.ctrlHeader.rawValue,
             level: 1,
@@ -214,7 +221,7 @@ final class FieldControlParameterStabilityTests: XCTestCase {
 
     func testMemoParameterRawPayloadSurvivesCodableRoundTrip() throws {
         let parameter = "MEMO/1/2/3/4/writer/body"
-        let rawTrailing = fieldParameterTrailing(parameter) + Data([0xAA, 0xBB])
+        let rawTrailing = concatenatedData(fieldParameterTrailing(parameter), Data([0xAA, 0xBB]))
         var rawPayload = littleEndianData(HwpFieldCtrlId.unknown.rawValue)
         rawPayload.append(rawTrailing)
         let record = HwpRecord(
@@ -248,9 +255,11 @@ private struct InvalidFieldParameterFixture {
 }
 
 private func invalidFieldParameterRecord() -> InvalidFieldParameterFixture {
-    let rawTrailing = littleEndianData(UInt32(0x8001))
-        + littleEndianData(WORD(1))
-        + littleEndianData(WCHAR(0xD800))
+    let rawTrailing = concatenatedData(
+        littleEndianData(UInt32(0x8001)),
+        littleEndianData(WORD(1)),
+        littleEndianData(WCHAR(0xD800))
+    )
     var rawPayload = littleEndianData(HwpFieldCtrlId.unknown.rawValue)
     rawPayload.append(rawTrailing)
     let record = HwpRecord(

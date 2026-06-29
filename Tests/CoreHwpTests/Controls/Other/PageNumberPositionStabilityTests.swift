@@ -7,7 +7,7 @@ final class PageNumberPositionStabilityTests: XCTestCase {
     func testPageNumberPositionInitializerPreservesRawPayloadWithNonZeroDataStartIndex() throws {
         let rawTrailing = Data([0xCA, 0xFE])
         let ctrlPayload = pageNumberPositionPayload(rawTrailing: rawTrailing)
-        let slicedPayload = (Data([0xEF]) + ctrlPayload).dropFirst()
+        let slicedPayload = concatenatedData(Data([0xEF]), ctrlPayload).dropFirst()
         let unknownPayload = Data([0xCC])
         let unknownChild = HwpRecord(tagId: 0x2FE, level: 2, payload: unknownPayload)
         var reader = DataReader(slicedPayload)
