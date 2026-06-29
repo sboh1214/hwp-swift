@@ -172,15 +172,17 @@ private func assemblyRequiredIdMappingsPayload() -> Data {
 }
 
 private func assemblyRequiredParaHeaderPayload() -> Data {
-    assemblyRequiredLittleEndianData(UInt32(0x8000_0000))
-        + assemblyRequiredLittleEndianData(UInt32(0))
-        + assemblyRequiredLittleEndianData(UInt16(0))
-        + Data([0, 0])
-        + assemblyRequiredLittleEndianData(UInt16(1))
-        + assemblyRequiredLittleEndianData(UInt16(0))
-        + assemblyRequiredLittleEndianData(UInt16(0))
-        + assemblyRequiredLittleEndianData(UInt32(0))
-        + assemblyRequiredLittleEndianData(UInt16(0))
+    var data = Data()
+    data.append(assemblyRequiredLittleEndianData(UInt32(0x8000_0000)))
+    data.append(assemblyRequiredLittleEndianData(UInt32(0)))
+    data.append(assemblyRequiredLittleEndianData(UInt16(0)))
+    data.append(Data([0, 0]))
+    data.append(assemblyRequiredLittleEndianData(UInt16(1)))
+    data.append(assemblyRequiredLittleEndianData(UInt16(0)))
+    data.append(assemblyRequiredLittleEndianData(UInt16(0)))
+    data.append(assemblyRequiredLittleEndianData(UInt32(0)))
+    data.append(assemblyRequiredLittleEndianData(UInt16(0)))
+    return data
 }
 
 private func assemblyRequiredParaCharShapePayload() -> Data {

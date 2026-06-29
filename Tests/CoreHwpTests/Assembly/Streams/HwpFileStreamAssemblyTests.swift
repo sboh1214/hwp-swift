@@ -456,15 +456,17 @@ private func fixtureIdMappingsPayload() -> Data {
 }
 
 private func fixtureParaHeaderPayload() -> Data {
-    fixtureLittleEndianData(UInt32(0x8000_0000))
-        + fixtureLittleEndianData(UInt32(0))
-        + fixtureLittleEndianData(UInt16(0))
-        + Data([0, 0])
-        + fixtureLittleEndianData(UInt16(1))
-        + fixtureLittleEndianData(UInt16(0))
-        + fixtureLittleEndianData(UInt16(0))
-        + fixtureLittleEndianData(UInt32(0))
-        + fixtureLittleEndianData(UInt16(0))
+    var data = Data()
+    data.append(fixtureLittleEndianData(UInt32(0x8000_0000)))
+    data.append(fixtureLittleEndianData(UInt32(0)))
+    data.append(fixtureLittleEndianData(UInt16(0)))
+    data.append(Data([0, 0]))
+    data.append(fixtureLittleEndianData(UInt16(1)))
+    data.append(fixtureLittleEndianData(UInt16(0)))
+    data.append(fixtureLittleEndianData(UInt16(0)))
+    data.append(fixtureLittleEndianData(UInt32(0)))
+    data.append(fixtureLittleEndianData(UInt16(0)))
+    return data
 }
 
 private func fixtureParaCharShapePayload() -> Data {

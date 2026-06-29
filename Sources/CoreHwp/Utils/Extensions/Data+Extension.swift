@@ -11,7 +11,10 @@ extension Data {
     }
 
     var stringASCII: String? {
-        String(data: self, encoding: .ascii)
+        guard allSatisfy({ $0 < 0x80 }) else {
+            return nil
+        }
+        return String(data: self, encoding: .ascii)
     }
 
     func readUInt8(at offset: Int) throws -> UInt8 {

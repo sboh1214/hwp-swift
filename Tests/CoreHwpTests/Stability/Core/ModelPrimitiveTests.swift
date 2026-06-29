@@ -302,6 +302,7 @@ final class ModelPrimitiveTests: XCTestCase {
         expect(data.bytes) == [3, 128]
         expect(data.bits.count) == 16
         expect(Data("HWP".utf8).stringASCII) == "HWP"
+        expect(Data([0xFF]).stringASCII).to(beNil())
 
         var values = [1, 2, 3, 4]
         expect(try values.pop(2)) == [1, 2]
