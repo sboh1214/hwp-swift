@@ -232,15 +232,17 @@ private func paragraphCodableRecord(
 }
 
 private func paragraphCodableParaHeaderPayload(charCount: UInt32 = 0) -> Data {
-    paragraphCodableLittleEndianData(charCount | 0x8000_0000)
-        + paragraphCodableLittleEndianData(UInt32(0))
-        + paragraphCodableLittleEndianData(UInt16(0))
-        + Data([0, 0])
-        + paragraphCodableLittleEndianData(UInt16(1))
-        + paragraphCodableLittleEndianData(UInt16(0))
-        + paragraphCodableLittleEndianData(UInt16(0))
-        + paragraphCodableLittleEndianData(UInt32(0))
-        + paragraphCodableLittleEndianData(UInt16(0))
+    var data = Data()
+    data.append(paragraphCodableLittleEndianData(charCount | 0x8000_0000))
+    data.append(paragraphCodableLittleEndianData(UInt32(0)))
+    data.append(paragraphCodableLittleEndianData(UInt16(0)))
+    data.append(contentsOf: [0, 0])
+    data.append(paragraphCodableLittleEndianData(UInt16(1)))
+    data.append(paragraphCodableLittleEndianData(UInt16(0)))
+    data.append(paragraphCodableLittleEndianData(UInt16(0)))
+    data.append(paragraphCodableLittleEndianData(UInt32(0)))
+    data.append(paragraphCodableLittleEndianData(UInt16(0)))
+    return data
 }
 
 private func paragraphCodableParaCharShapePayload() -> Data {

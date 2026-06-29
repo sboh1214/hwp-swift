@@ -607,15 +607,19 @@ private func docInfoRawRecordExpectationCount(
         return 0
     }
 
-    return [
-        records.docData,
-        records.distributeDocData,
-    ].compactMap { $0 }.count
-        + (records.trackChanges?.count ?? 0)
-        + (records.memoShapes?.count ?? 0)
-        + (records.trackChangeContents?.count ?? 0)
-        + (records.trackChangeAuthors?.count ?? 0)
-        + (records.forbiddenChars?.count ?? 0)
+    var count = 0
+    if records.docData != nil {
+        count += 1
+    }
+    if records.distributeDocData != nil {
+        count += 1
+    }
+    count += records.trackChanges?.count ?? 0
+    count += records.memoShapes?.count ?? 0
+    count += records.trackChangeContents?.count ?? 0
+    count += records.trackChangeAuthors?.count ?? 0
+    count += records.forbiddenChars?.count ?? 0
+    return count
 }
 
 private func assertControlCountExpectationsAreInternallyConsistent(

@@ -253,15 +253,17 @@ private func requiredParagraphCharShapePayload(shapeId: UInt32) -> Data {
 }
 
 private func requiredParagraphLineSegPayload() -> Data {
-    requiredParagraphLittleEndianData(UInt32(0))
-        + requiredParagraphLittleEndianData(Int32(100))
-        + requiredParagraphLittleEndianData(Int32(1000))
-        + requiredParagraphLittleEndianData(Int32(1000))
-        + requiredParagraphLittleEndianData(Int32(850))
-        + requiredParagraphLittleEndianData(Int32(600))
-        + requiredParagraphLittleEndianData(Int32(0))
-        + requiredParagraphLittleEndianData(Int32(42520))
-        + requiredParagraphLittleEndianData(UInt32(393_216))
+    var data = Data()
+    data.append(requiredParagraphLittleEndianData(UInt32(0)))
+    data.append(requiredParagraphLittleEndianData(Int32(100)))
+    data.append(requiredParagraphLittleEndianData(Int32(1000)))
+    data.append(requiredParagraphLittleEndianData(Int32(1000)))
+    data.append(requiredParagraphLittleEndianData(Int32(850)))
+    data.append(requiredParagraphLittleEndianData(Int32(600)))
+    data.append(requiredParagraphLittleEndianData(Int32(0)))
+    data.append(requiredParagraphLittleEndianData(Int32(42520)))
+    data.append(requiredParagraphLittleEndianData(UInt32(393_216)))
+    return data
 }
 
 private func requiredParagraphRangeTagPayload() -> Data {

@@ -20,22 +20,33 @@ func binaryDataStreamHasPayloadSamples(_ expectations: FixtureExpectations) -> B
         return false
     }
 
-    return count > 0
-        && names.count == count
-        && entryNames == names
-        && streamIds.count == count
-        && extensionNames.count == count
-        && payloadLengths.count == count
-        && payloadPrefixes.count == count
-        && payloadSuffixes.count == count
-        && totalByteCount == payloadLengths.reduce(0, +)
-        && zip(zip(names, streamIds), extensionNames).allSatisfy {
-            binaryDataMetadataMatchesName(name: $0.0.0, streamId: $0.0.1, extensionName: $0.1)
+    guard count > 0,
+          names.count == count,
+          entryNames == names,
+          streamIds.count == count,
+          extensionNames.count == count,
+          payloadLengths.count == count,
+          payloadPrefixes.count == count,
+          payloadSuffixes.count == count,
+          totalByteCount == payloadLengths.reduce(0, +),
+          payloadLengths.allSatisfy({ $0 > 0 }),
+          payloadPrefixes.allSatisfy({ !$0.isEmpty }),
+          payloadSuffixes.allSatisfy({ !$0.isEmpty }),
+          expectations.docInfoBinData?.count == count
+    else {
+        return false
+    }
+
+    for index in names.indices {
+        guard binaryDataMetadataMatchesName(
+            name: names[index],
+            streamId: streamIds[index],
+            extensionName: extensionNames[index]
+        ) else {
+            return false
         }
-        && payloadLengths.allSatisfy { $0 > 0 }
-        && payloadPrefixes.allSatisfy { !$0.isEmpty }
-        && payloadSuffixes.allSatisfy { !$0.isEmpty }
-        && expectations.docInfoBinData?.count == count
+    }
+    return true
 }
 
 private func binaryDataMetadataMatchesName(

@@ -187,15 +187,17 @@ private func paragraphCharShapePayload(shapeId: UInt32) -> Data {
 }
 
 private func paragraphLineSegPayload(lineLocation: Int32) -> Data {
-    littleEndianData(UInt32(0))
-        + littleEndianData(lineLocation)
-        + littleEndianData(Int32(1000))
-        + littleEndianData(Int32(1000))
-        + littleEndianData(Int32(850))
-        + littleEndianData(Int32(600))
-        + littleEndianData(Int32(0))
-        + littleEndianData(Int32(42520))
-        + littleEndianData(UInt32(393_216))
+    var data = Data()
+    data.append(littleEndianData(UInt32(0)))
+    data.append(littleEndianData(lineLocation))
+    data.append(littleEndianData(Int32(1000)))
+    data.append(littleEndianData(Int32(1000)))
+    data.append(littleEndianData(Int32(850)))
+    data.append(littleEndianData(Int32(600)))
+    data.append(littleEndianData(Int32(0)))
+    data.append(littleEndianData(Int32(42520)))
+    data.append(littleEndianData(UInt32(393_216)))
+    return data
 }
 
 private func littleEndianData(_ value: some FixedWidthInteger) -> Data {

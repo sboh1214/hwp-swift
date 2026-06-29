@@ -137,15 +137,17 @@ private func sectionCodableParagraphRecordData() -> Data {
 }
 
 private func sectionCodableParaHeaderPayload() -> Data {
-    sectionCodableLittleEndianData(UInt32(0x8000_0000))
-        + sectionCodableLittleEndianData(UInt32(0))
-        + sectionCodableLittleEndianData(UInt16(0))
-        + Data([0, 0])
-        + sectionCodableLittleEndianData(UInt16(1))
-        + sectionCodableLittleEndianData(UInt16(0))
-        + sectionCodableLittleEndianData(UInt16(0))
-        + sectionCodableLittleEndianData(UInt32(0))
-        + sectionCodableLittleEndianData(UInt16(0))
+    var data = Data()
+    data.append(sectionCodableLittleEndianData(UInt32(0x8000_0000)))
+    data.append(sectionCodableLittleEndianData(UInt32(0)))
+    data.append(sectionCodableLittleEndianData(UInt16(0)))
+    data.append(contentsOf: [0, 0])
+    data.append(sectionCodableLittleEndianData(UInt16(1)))
+    data.append(sectionCodableLittleEndianData(UInt16(0)))
+    data.append(sectionCodableLittleEndianData(UInt16(0)))
+    data.append(sectionCodableLittleEndianData(UInt32(0)))
+    data.append(sectionCodableLittleEndianData(UInt16(0)))
+    return data
 }
 
 private func sectionCodableParaCharShapePayload() -> Data {

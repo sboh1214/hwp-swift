@@ -466,15 +466,16 @@ private func charShapeData(shapeId: UInt32) -> Data {
 }
 
 private func paraHeaderData(charCount: UInt32, paraId: UInt32, traceChange: UInt16?) -> Data {
-    var data = littleEndianData(charCount | 0x8000_0000)
-        + littleEndianData(UInt32(4))
-        + littleEndianData(UInt16(0))
-        + Data([0])
-        + Data([3])
-        + littleEndianData(UInt16(1))
-        + littleEndianData(UInt16(0))
-        + littleEndianData(UInt16(1))
-        + littleEndianData(paraId)
+    var data = Data()
+    data.append(littleEndianData(charCount | 0x8000_0000))
+    data.append(littleEndianData(UInt32(4)))
+    data.append(littleEndianData(UInt16(0)))
+    data.append(contentsOf: [0])
+    data.append(contentsOf: [3])
+    data.append(littleEndianData(UInt16(1)))
+    data.append(littleEndianData(UInt16(0)))
+    data.append(littleEndianData(UInt16(1)))
+    data.append(littleEndianData(paraId))
     if let traceChange {
         data.append(littleEndianData(traceChange))
     }
@@ -482,13 +483,15 @@ private func paraHeaderData(charCount: UInt32, paraId: UInt32, traceChange: UInt
 }
 
 private func lineSegData(textStartingIndex: UInt32, lineLocation: Int32, width: Int32) -> Data {
-    littleEndianData(textStartingIndex)
-        + littleEndianData(lineLocation)
-        + littleEndianData(Int32(1000))
-        + littleEndianData(Int32(1000))
-        + littleEndianData(Int32(850))
-        + littleEndianData(Int32(600))
-        + littleEndianData(Int32(0))
-        + littleEndianData(width)
-        + littleEndianData(UInt32(393_216))
+    var data = Data()
+    data.append(littleEndianData(textStartingIndex))
+    data.append(littleEndianData(lineLocation))
+    data.append(littleEndianData(Int32(1000)))
+    data.append(littleEndianData(Int32(1000)))
+    data.append(littleEndianData(Int32(850)))
+    data.append(littleEndianData(Int32(600)))
+    data.append(littleEndianData(Int32(0)))
+    data.append(littleEndianData(width))
+    data.append(littleEndianData(UInt32(393_216)))
+    return data
 }
