@@ -8,10 +8,14 @@ import Foundation
  텍스트 문자 Shape 레코드를 글자 모양 정보 수(Character Shapes)만큼 읽는다.
  */
 public struct HwpParaText: HwpFromData {
+    /** 원본 payload */
+    @ExcludeEquatable
+    public var rawPayload: Data
     /** 문자수만큼의 텍스트 */
     public var charArray: [HwpChar]
 
     init() {
+        rawPayload = Data()
         let char0 = HwpChar(type: .extended, value: 2)
         let char1 = HwpChar(type: .extended, value: 2)
         let char2 = HwpChar(type: .char, value: 13)
@@ -19,22 +23,34 @@ public struct HwpParaText: HwpFromData {
     }
 
     init(_ reader: inout DataReader) throws {
+        let startOffset = reader.byteOffset
         var array = [HwpChar]()
         while !reader.isEOF {
-            let char = reader.read(WCHAR.self)
+            let char = try reader.read(WCHAR.self)
             switch char {
             case 0, 1, 13:
                 array.append(HwpChar(type: .char, value: char))
             case 4 ... 9, 19 ... 20:
-                array.append(HwpChar(type: .inline, value: char))
-                reader.readBytes(14)
-            case 1 ... 3, 11 ... 12, 14 ... 18, 21 ... 23:
-                array.append(HwpChar(type: .extended, value: char))
-                reader.readBytes(14)
+                let payload = try reader.readBytes(14)
+                array.append(HwpChar(type: .inline, value: char, payload: payload))
+            case 2 ... 3, 11 ... 12, 14 ... 18, 21 ... 23:
+                let payload = try reader.readBytes(14)
+                array.append(HwpChar(type: .extended, value: char, payload: payload))
             default:
                 array.append(HwpChar(type: .char, value: char))
             }
         }
         charArray = array
+        rawPayload = try reader.consumedData(from: startOffset)
+    }
+
+    public static func load(_ data: Data) throws -> Self {
+        var reader = DataReader(data)
+        var paraText = try self.init(&reader)
+        if !reader.isEOF {
+            throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
+        }
+        paraText.rawPayload = data
+        return paraText
     }
 }

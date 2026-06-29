@@ -63,13 +63,52 @@ jobs:
         run: |
           set -euo pipefail
           PROF_DATA=$(find .build -name 'default.profdata' -type f | head -1)
-          XCTEST_BUNDLE=$(find .build -name '*PackageTests.xctest' -type d | head -1)
+          XCTEST_BUNDLE=$(find .build -name '*.xctest' -type d | head -1)
+          if [ -z "$XCTEST_BUNDLE" ]; then
+            echo "No XCTest bundle found" >&2
+            exit 1
+          fi
           BIN_NAME=$(basename "$XCTEST_BUNDLE" .xctest)
           BINARY="$XCTEST_BUNDLE/Contents/MacOS/$BIN_NAME"
+          if [ ! -x "$BINARY" ]; then
+            echo "No executable test binary found at $BINARY" >&2
+            exit 1
+          fi
           xcrun llvm-cov export -format=lcov "$BINARY" \
             -instr-profile="$PROF_DATA" \
             -ignore-filename-regex='(\.build|Tests/)' \
             > coverage.lcov
+      - name: Enforce CoreHwp coverage
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          threshold = 95.0
+          total_lines = 0
+          hit_lines = 0
+          include_file = False
+
+          for line in Path("coverage.lcov").read_text(encoding="utf-8").splitlines():
+              if line.startswith("SF:"):
+                  include_file = "Sources/CoreHwp/" in line
+              elif include_file and line.startswith("LF:"):
+                  total_lines += int(line.removeprefix("LF:"))
+              elif include_file and line.startswith("LH:"):
+                  hit_lines += int(line.removeprefix("LH:"))
+              elif line == "end_of_record":
+                  include_file = False
+
+          if total_lines == 0:
+              raise SystemExit("No Sources/CoreHwp coverage records found in coverage.lcov")
+
+          coverage = hit_lines * 100 / total_lines
+          print(f"CoreHwp line coverage: {coverage:.2f}% ({hit_lines}/{total_lines})")
+          if coverage < threshold:
+              raise SystemExit(
+                  f"CoreHwp line coverage {coverage:.2f}% is below {threshold:.2f}%"
+              )
+          PY
       - uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}

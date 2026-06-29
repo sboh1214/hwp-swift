@@ -8,9 +8,9 @@ import XCTest
  */
 class Create2018Tests: XCTestCase {
     func testCreate() throws {
-        let (this, official) = try createHwp(#file, "blank-win2018")
+        let (_, official) = try createHwp(#file, "blank-win2018")
 
-        // expect(this) == official
+        expect(official.sectionArray).notTo(beEmpty())
     }
 
     func testfileHeader() throws {
@@ -61,20 +61,6 @@ class Create2018Tests: XCTestCase {
         expect(thisParagraph.paraLineSeg) == officialParagraph.paraLineSeg
         expect(thisParagraph.paraRangeTagArray) == officialParagraph.paraRangeTagArray
         expect(thisParagraph.listHeaderArray) == officialParagraph.listHeaderArray
-
-        // expect(thisParagraph.ctrlHeaderArray![0]) == officialParagraph.ctrlHeaderArray![0]
-        // expect(thisParagraph.ctrlHeaderArray![1]) == officialParagraph.ctrlHeaderArray![1]
-
-        for officialCtrlId in try XCTUnwrap(officialParagraph.ctrlHeaderArray) {
-            switch officialCtrlId {
-            case let .section(hwpSectionDef):
-                dump(hwpSectionDef.footNoteShape.unknown)
-                dump(hwpSectionDef.endNoteShape.unknown)
-                dump(hwpSectionDef.unknown)
-            default:
-                break
-            }
-        }
 
         // expect(this.sectionArray) == official.sectionArray
     }

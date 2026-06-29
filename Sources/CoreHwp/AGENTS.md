@@ -24,11 +24,19 @@ CoreHwp/
    - `HwpFromRecord` — child record가 있는 record
    - `HwpFromRecordWithVersion` — child record + version
    - `HwpFromUInt` — bit packing된 `DWORD`/`UInt32` 속성 struct
-2. `init(_ reader: inout DataReader, ...)`만 구현. `load(...)`는 프로토콜의
-   default 구현이 제공하며 EOF를 강제한다.
-3. `init` 안에서 **모든 byte를 정확히 소진**할 것. 잔여가 있으면
-   `HwpError.bytesAreNotEOF`가 throw 된다.
-4. 사용자 코드에서 접근이 필요하면 타입과 stored property를 `public`으로.
+2. 기본은 `init(_ reader: inout DataReader, ...)`만 구현한다. `load(...)`는
+   프로토콜의 default 구현이 제공하며 EOF를 강제한다.
+3. 예외: record tag 검증, stream 전체 record-tree 파싱, unknown/raw payload
+   보존처럼 default loader로 표현할 수 없는 경우에는 `load(...)`를 override할 수
+   있다. 새 예외를 추가하거나 기존 예외를 수정할 때는
+   `// MARK: loader contract exemption - <reason>` 주석으로 이유를 남기고,
+   override 안에서 동일한 EOF/typed-error 보장을 직접 유지한다.
+4. 기본 모델 `init`은 해석한 byte만 소비한다. unknown payload, raw trailing,
+   preview/summary/blob 보존, record-tree stream처럼 남은 byte 자체가 모델 값인
+   경우에만 `readToEnd()` 또는 `readBytes(reader.remainBytes)`를 사용할 수 있다.
+   이 경우에도 field 이름을 `rawPayload`, `rawTrailing`, `unknown`처럼 보존
+   목적이 드러나게 둔다.
+5. 사용자 코드에서 접근이 필요하면 타입과 stored property를 `public`으로.
 
 ## 새 stream 추가하기
 
@@ -38,15 +46,19 @@ CoreHwp/
    `reader.getDataFromStorage(...)`로 연결 (후자는 child stream 배열을 반환).
 4. version 처리: 기존 호출과 동일하게 `fileHeader.version`과
    `isCompressed`를 그대로 전달할 것. 둘 다 version 별 디코딩에 필요.
+5. 새 stream도 `HwpReadLimits` 경로를 거쳐야 한다. 압축 입력과 비압축 stream은
+   OLE directory `streamSize`로 사전 제한하지만, deflate 출력 한도는
+   `SWCompression`이 반환한 뒤 typed error로 후처리 거부하는 제한이며 압축 해제 중
+   메모리 할당 cap이 아니다.
 
 ## 새 컨트롤 ID 추가하기
 
 HWP의 "컨트롤"(표, 다단, 도형, 구역 등)은 단락 stream에 박힌 4-byte 컨트롤
 ID로 dispatch된다.
 
-1. 4-byte ID를 `Enums/Ctrl Id/` 아래 알맞은 파일(Common, Other, Field)에 추가.
-2. `Models/Section/Ctrl Header/`에 payload struct 추가.
-3. `Enums/Ctrl Id/HwpCtrlId.swift`의 enum에 case 추가하고, manual
+1. 4-byte ID를 `Enums/CtrlId/` 아래 알맞은 파일(Common, Other, Field)에 추가.
+2. `Models/Section/CtrlHeader/`에 payload struct 추가.
+3. `Enums/CtrlId/HwpCtrlId.swift`의 enum에 case 추가하고, manual
    `Codable` 구현 (`CodingKeys`, `init(from:)`, `encode(to:)`)도 갱신할 것.
    이종 associated value 때문에 자동 합성되지 않는다.
 
@@ -63,7 +75,7 @@ ID로 dispatch된다.
 
 - 모델 안에서 `HwpError`를 catch해서 default 값을 반환 — `HwpFile.init`까지
   전파시킬 것.
-- 모델 `init` 안에서 `reader.readToEnd()` 호출 — 잔여 byte 검사가 무효화된다.
-  `parseTreeRecord` 호출 측에서만 사용.
+- 이유 없는 `load(...)` override 또는 `reader.readToEnd()` 호출 — EOF 검사를
+  우회한다. raw 보존, record-tree 파싱, tag 검증 같은 예외 목적이 명확해야 한다.
 - `Sources/`에 `import XCTest`, `@testable`, Nimble 추가 — 모두 금지.
 - `HwpPrimitive` 미채택 타입을 `public`으로 승격.

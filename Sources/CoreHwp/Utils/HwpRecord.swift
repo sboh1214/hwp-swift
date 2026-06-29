@@ -35,27 +35,72 @@ class HwpRecord {
     }
 }
 
-func parseTreeRecord(data: Data) -> HwpRecord {
+public struct HwpUnknownRecord: HwpPrimitive {
+    public let tagId: UInt32
+    public let level: UInt32
+    public let payload: Data
+    public let children: [HwpUnknownRecord]
+
+    public init(
+        tagId: UInt32,
+        level: UInt32,
+        payload: Data,
+        children: [HwpUnknownRecord] = []
+    ) {
+        self.tagId = tagId
+        self.level = level
+        self.payload = payload
+        self.children = children
+    }
+
+    init(_ record: HwpRecord) {
+        self.init(
+            tagId: record.tagId,
+            level: record.level,
+            payload: record.payload,
+            children: record.children.map(HwpUnknownRecord.init)
+        )
+    }
+}
+
+func parseTreeRecord(data: Data) throws -> HwpRecord {
     var reader = DataReader(data)
     let root = HwpRecord(tagId: 0, level: 0, payload: Data())
+    var stack = [root]
 
     while !reader.isEOF {
-        let value = reader.read(UInt32.self)
+        let value = try reader.read(UInt32.self)
         let tagId = value & 0x3FF
         let level = (value >> 10) & 0x3FF
         var size = (value >> 20) & 0xFFF
+        let parentIndex = Int(level)
+        guard parentIndex < stack.count else {
+            throw HwpError.invalidRecordTree(reason: "record level \(level) has no parent")
+        }
         if size == 0xFFF {
-            size = reader.read(UInt32.self)
+            size = try reader.read(UInt32.self)
         }
-        let payload = reader.readBytes(size)
+        let payload = try reader.readBytes(size)
+        let parent = stack[parentIndex]
+        let record = HwpRecord(tagId: tagId, level: level, payload: payload)
+        parent.children.append(record)
 
-        var parent = root
-
-        for _ in 0 ..< level {
-            parent = parent.children.last!
+        if stack.count > parentIndex + 1 {
+            stack.removeSubrange((parentIndex + 1) ..< stack.count)
         }
-        parent.children.append(HwpRecord(tagId: tagId, level: level, payload: payload))
+        stack.append(record)
     }
 
     return root
+}
+
+func validateSectionRecordTag(
+    _ record: HwpRecord,
+    expectedTag: HwpSectionTag
+) throws {
+    guard record.tagId == expectedTag.rawValue else {
+        throw HwpError.invalidRecordTree(
+            reason: "expected Section tag \(expectedTag.rawValue), got \(record.tagId)"
+        )
+    }
 }

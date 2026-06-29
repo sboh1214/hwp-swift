@@ -80,6 +80,16 @@ Package.resolved
 # DocC build artifacts
 /docs/
 
+# LLVM coverage artifacts
+/default.profraw
+
+# Ad-hoc local executable output
+/main
+
+# Python helper artifacts
+__pycache__/
+*.py[cod]
+
 # AI generated files
 /.omo/
 /.playwright-mcp/

@@ -1,0 +1,76 @@
+{
+  "id": "문서암호설정-보안수준높음",
+  "generationTool": "Existing repository fixture",
+  "hwpVersion": "5.0.5.0",
+  "source": "Migrated from Tests/CoreHwpTests/FileHeader/문서암호설정-보안수준높음.hwp",
+  "features": [
+    "encrypted",
+    "unsupported"
+  ],
+  "expectations": {
+    "fileProperty": {
+      "rawValue": 3,
+      "isCompressed": true,
+      "isEncrypted": true,
+      "isDeploymentDocument": false,
+      "isDRMDocument": false,
+      "doesEncryptAccreditedCertificate": false,
+      "isAccreditedCertificateDRMDocument": false
+    },
+    "fileHeaderRawPayloadLength": 256,
+    "fileHeaderRawPayloadPrefixBytes": [
+      72,
+      87,
+      80,
+      32,
+      68,
+      111,
+      99,
+      117
+    ],
+    "fileHeaderRawPayloadSuffixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "fileHeaderVersionRawBytes": [
+      0,
+      5,
+      0,
+      5
+    ],
+    "fileHeaderReservedLength": 207,
+    "fileHeaderReservedPrefixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "fileHeaderReservedSuffixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "fileLicense": {
+      "rawValue": 0
+    }
+  },
+  "expectedError": {
+    "code": "unsupportedFeature.encryptedDocument",
+    "description": "Unsupported HWP feature: encryptedDocument"
+  }
+}

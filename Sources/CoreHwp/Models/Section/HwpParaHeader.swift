@@ -7,6 +7,9 @@ import Foundation
  텍스트의 수가 1 이상이면 문자 수만큼 텍스트를 로드하고 그렇지 않을 경우 PARA_BREAK로 문단을 생성한다.
  */
 public struct HwpParaHeader: HwpFromDataWithVersion {
+    /** 원본 payload */
+    @ExcludeEquatable
+    public var rawPayload: Data
     /** if (nchars & 0x80000000) { nchars &= 0x7fffffff;} */
     public let isLastInList: Bool
     /**text(=chars) */
@@ -37,6 +40,7 @@ public struct HwpParaHeader: HwpFromDataWithVersion {
     public var isTraceChange: UInt16?
 
     init() {
+        rawPayload = Data()
         isLastInList = true
         charCount = 17
         controlMask = 4
@@ -51,7 +55,8 @@ public struct HwpParaHeader: HwpFromDataWithVersion {
     }
 
     init(_ reader: inout DataReader, _ version: HwpVersion) throws {
-        let value = reader.read(UInt32.self)
+        let startOffset = reader.byteOffset
+        let value = try reader.read(UInt32.self)
         if (value & 0x8000_0000) == 0x8000_0000 {
             isLastInList = true
             charCount = (value & 0x7FFF_FFFF)
@@ -59,16 +64,27 @@ public struct HwpParaHeader: HwpFromDataWithVersion {
             isLastInList = false
             charCount = value
         }
-        controlMask = reader.read(UInt32.self)
-        paraShapeId = reader.read(UInt16.self)
-        paraStyleId = reader.read(UInt8.self)
-        columnType = reader.read(UInt8.self)
-        charShapeInfoCount = reader.read(UInt16.self)
-        rangeTagInfoCount = reader.read(UInt16.self)
-        alignInfoCount = reader.read(UInt16.self)
-        paraId = reader.read(UInt32.self)
+        controlMask = try reader.read(UInt32.self)
+        paraShapeId = try reader.read(UInt16.self)
+        paraStyleId = try reader.read(UInt8.self)
+        columnType = try reader.read(UInt8.self)
+        charShapeInfoCount = try reader.read(UInt16.self)
+        rangeTagInfoCount = try reader.read(UInt16.self)
+        alignInfoCount = try reader.read(UInt16.self)
+        paraId = try reader.read(UInt32.self)
         if version >= HwpVersion(5, 0, 3, 2) {
-            isTraceChange = reader.read(UInt16.self)
+            isTraceChange = try reader.read(UInt16.self)
         }
+        rawPayload = try reader.consumedData(from: startOffset)
+    }
+
+    public static func load(_ data: Data, _ version: HwpVersion) throws -> Self {
+        var reader = DataReader(data)
+        var paraHeader = try self.init(&reader, version)
+        if !reader.isEOF {
+            throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
+        }
+        paraHeader.rawPayload = data
+        return paraHeader
     }
 }

@@ -27,13 +27,23 @@ let package = Package(
             dependencies: [
                 "OLEKit",
                 "SWCompression",
+            ],
+            exclude: [
+                "AGENTS.md",
+                "Models/Section/AGENTS.md",
+                "Utils/AGENTS.md",
             ]
         ),
         .testTarget(
             name: "CoreHwpTests",
             dependencies: [
                 "CoreHwp",
+                "OLEKit",
                 "Nimble",
+            ],
+            exclude: [
+                "AGENTS.md",
+                "Fixtures",
             ]
         ),
     ]

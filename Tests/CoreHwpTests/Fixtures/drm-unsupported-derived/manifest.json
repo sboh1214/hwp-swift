@@ -1,0 +1,77 @@
+{
+  "id": "drm-unsupported-derived",
+  "generationTool": "Derived from Hancom Office HWP for macOS 12.30.0 (build 6382) output",
+  "hwpVersion": "5.1.1.0",
+  "source": "Derived from plain-text-minimal by setting FileHeader fileProperty DRM bit on 2026-06-17",
+  "features": [
+    "drm",
+    "unsupported",
+    "derived-drm"
+  ],
+  "expectations": {
+    "fileProperty": {
+      "rawValue": 17,
+      "isCompressed": true,
+      "isEncrypted": false,
+      "isDeploymentDocument": false,
+      "isDRMDocument": true,
+      "doesEncryptAccreditedCertificate": false,
+      "isAccreditedCertificateDRMDocument": false
+    },
+    "fileHeaderRawPayloadLength": 256,
+    "fileHeaderRawPayloadPrefixBytes": [
+      72,
+      87,
+      80,
+      32,
+      68,
+      111,
+      99,
+      117
+    ],
+    "fileHeaderRawPayloadSuffixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "fileHeaderVersionRawBytes": [
+      0,
+      1,
+      1,
+      5
+    ],
+    "fileHeaderReservedLength": 207,
+    "fileHeaderReservedPrefixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "fileHeaderReservedSuffixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "fileLicense": {
+      "rawValue": 0
+    }
+  },
+  "expectedError": {
+    "code": "unsupportedFeature.drmDocument",
+    "description": "Unsupported HWP feature: drmDocument"
+  }
+}

@@ -1,7 +1,7 @@
 /**
  ‘본문’의 데이터 레코드
  */
-enum HwpSectionTag: UInt32, HwpPrimitive {
+enum HwpSectionTag: UInt32, HwpPrimitive, CaseIterable {
     case paraHeader = 66
     case paraText = 67
     case paraCharShape = 68

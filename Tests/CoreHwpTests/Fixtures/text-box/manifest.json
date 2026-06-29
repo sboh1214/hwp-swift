@@ -1,0 +1,481 @@
+{
+  "id": "text-box",
+  "generationTool": "Hancom Office HWP for macOS 12.30.0 (build 6382)",
+  "hwpVersion": "5.1.1.0",
+  "source": "Generated locally with Hancom Office HWP on 2026-06-17",
+  "features": [
+    "text-box",
+    "shape-object",
+    "preview-text",
+    "preview-image",
+    "missing-bin-data"
+  ],
+  "expectations": {
+    "fileProperty": {
+      "rawValue": 1,
+      "isCompressed": true,
+      "isEncrypted": false,
+      "isDeploymentDocument": false,
+      "isDRMDocument": false
+    },
+    "fileHeaderRawPayloadLength": 256,
+    "fileHeaderRawPayloadPrefixBytes": [
+      72,
+      87,
+      80,
+      32,
+      68,
+      111,
+      99,
+      117
+    ],
+    "fileHeaderRawPayloadSuffixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "fileHeaderVersionRawBytes": [
+      0,
+      1,
+      1,
+      5
+    ],
+    "fileHeaderReservedLength": 207,
+    "fileHeaderReservedPrefixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "fileHeaderReservedSuffixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "documentProperties": {
+      "sectionSize": 1,
+      "startingIndex": {
+        "page": 1,
+        "footnote": 1,
+        "endnote": 1,
+        "picture": 1,
+        "table": 1,
+        "equation": 1
+      },
+      "caratLocation": {
+        "listId": 1,
+        "paragraphId": 1,
+        "charIndex": 10
+      }
+    },
+    "docInfoIdMappings": {
+      "binDataCount": 0,
+      "faceNameKoreanCount": 2,
+      "faceNameEnglishCount": 2,
+      "faceNameChineseCount": 2,
+      "faceNameJapaneseCount": 2,
+      "faceNameEtcCount": 2,
+      "faceNameSymbolCount": 2,
+      "faceNameUserCount": 2,
+      "borderFillCount": 2,
+      "charShapeCount": 7,
+      "tabDefCount": 3,
+      "numberingCount": 1,
+      "bulletCount": 0,
+      "forbiddenCharCount": 1,
+      "unknownChildCount": 0,
+      "charShapePropertyRawValues": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    "sectionCount": 1,
+    "sectionRawPayloadCount": 1,
+    "sectionRawPayloadTotalByteCount": 985,
+    "sectionRawPayloadPrefixBytes": [
+      [
+        66,
+        0,
+        128,
+        1,
+        25,
+        0,
+        0,
+        128,
+        4,
+        8,
+        0,
+        0
+      ]
+    ],
+    "sectionRawPayloadSuffixBytes": [
+      [
+        207,
+        35,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        207,
+        35,
+        0,
+        0
+      ]
+    ],
+    "sectionParagraphCounts": [
+      1
+    ],
+    "paragraphCount": 1,
+    "allParagraphCount": 3,
+    "summaryLength": 461,
+    "summaryPrefixBytes": [
+      254,
+      255,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "summarySuffixBytes": [
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0
+    ],
+    "previewTextLength": 30,
+    "previewTextRawPayloadLength": 62,
+    "previewTextPrefixBytes": [
+      60,
+      0,
+      84,
+      0,
+      101,
+      0,
+      120,
+      0,
+      116,
+      0,
+      32,
+      0
+    ],
+    "previewTextSuffixBytes": [
+      98,
+      0,
+      111,
+      0,
+      120,
+      0,
+      62,
+      0,
+      13,
+      0,
+      10,
+      0
+    ],
+    "previewTextContains": [
+      "Text box fixture inside box"
+    ],
+    "previewImageLength": 19296,
+    "previewImageFormat": "png",
+    "previewImagePrefixBytes": [
+      137,
+      80,
+      78,
+      71,
+      13,
+      10,
+      26,
+      10,
+      0,
+      0,
+      0,
+      13
+    ],
+    "previewImageSuffixBytes": [
+      0,
+      0,
+      0,
+      0,
+      73,
+      69,
+      78,
+      68,
+      174,
+      66,
+      96,
+      130
+    ],
+    "binaryDataCount": 0,
+    "binaryDataNames": [],
+    "binaryDataStreamIds": [],
+    "binaryDataExtensionNames": [],
+    "binaryDataPayloadLengths": [],
+    "binaryDataPayloadPrefixBytes": [],
+    "binaryDataPayloadSuffixBytes": [],
+    "binaryDataTotalByteCount": 0,
+    "docInfoRawPayloadLength": 4775,
+    "docInfoRawPayloadPrefixBytes": [
+      16,
+      0,
+      160,
+      1,
+      1,
+      0,
+      1,
+      0,
+      1,
+      0,
+      1,
+      0
+    ],
+    "docInfoRawPayloadSuffixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "controlCount": 3,
+    "allControlCount": 3,
+    "controlTypeCounts": {
+      "section": 1,
+      "column": 1,
+      "genShapeObject": 1
+    },
+    "allControlTypeCounts": {
+      "section": 1,
+      "column": 1,
+      "genShapeObject": 1
+    },
+    "visibleTextContains": [
+      "Text box fixture",
+      "inside box"
+    ],
+    "genShapeObjects": [
+      {
+        "ctrlId": 1735618336,
+        "ctrlIdName": "genShapeObject",
+        "width": 22936,
+        "height": 9167,
+        "commonCtrlPropertyRawPayloadLength": 60,
+        "commonCtrlPropertyRawPayloadPrefixBytes": [
+          32,
+          111,
+          115,
+          103,
+          0,
+          64,
+          106,
+          4,
+          102,
+          39,
+          0,
+          0
+        ],
+        "commonCtrlPropertyRawPayloadSuffixBytes": [
+          1,
+          172,
+          21,
+          214,
+          133,
+          199,
+          200,
+          178,
+          228,
+          178,
+          46,
+          0
+        ],
+        "rawPayloadLength": 60,
+        "rawPayloadPrefixBytes": [
+          32,
+          111,
+          115,
+          103,
+          0,
+          64,
+          106,
+          4,
+          102,
+          39,
+          0,
+          0
+        ],
+        "rawPayloadSuffixBytes": [
+          1,
+          172,
+          21,
+          214,
+          133,
+          199,
+          200,
+          178,
+          228,
+          178,
+          46,
+          0
+        ],
+        "rawTrailingLength": 0,
+        "rawTrailingPrefixBytes": [],
+        "rawTrailingSuffixBytes": [],
+        "shapeComponents": [
+          {
+            "ctrlId": 611476835,
+            "ctrlIdName": "rectangle",
+            "rawPayloadLength": 252,
+            "rawPayloadPrefixBytes": [
+              99,
+              101,
+              114,
+              36,
+              99,
+              101,
+              114,
+              36,
+              0,
+              0,
+              0,
+              0
+            ],
+            "rawPayloadSuffixBytes": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              203,
+              203,
+              147,
+              2,
+              0,
+              0
+            ],
+            "pictureCount": 0,
+            "oleCount": 0,
+            "ctrlDataCount": 0,
+            "textBoxListCount": 1,
+            "textBoxParagraphCounts": [
+              2
+            ],
+            "textBoxVisibleTextContains": [
+              "Text box fixture",
+              "inside box"
+            ],
+            "textBoxListHeaderRawPayloadLengths": [
+              33
+            ],
+            "textBoxListHeaderRawPayloadPrefixBytes": [
+              [
+                2,
+                0,
+                0,
+                0,
+                32,
+                0,
+                0,
+                0,
+                27,
+                1,
+                27,
+                1
+              ]
+            ],
+            "textBoxListHeaderRawPayloadSuffixBytes": [
+              [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            ],
+            "rectangleCount": 1,
+            "rectangleRawPayloadLengths": [
+              33
+            ],
+            "rectangleRawPayloadPrefixBytes": [
+              [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                152,
+                89,
+                0
+              ]
+            ],
+            "rectangleRawPayloadSuffixBytes": [
+              [
+                207,
+                35,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                207,
+                35,
+                0,
+                0
+              ]
+            ],
+            "unknownChildCount": 0
+          }
+        ],
+        "ctrlDataCount": 0,
+        "unknownChildCount": 0
+      }
+    ],
+    "fileLicense": {
+      "rawValue": 0
+    }
+  }
+}

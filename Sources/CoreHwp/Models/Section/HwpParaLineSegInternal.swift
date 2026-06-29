@@ -41,15 +41,15 @@ public struct HwpParaLineSegInternal: HwpPrimitive {
         property = 393_216
     }
 
-    init(_ reader: inout DataReader) {
-        textStartingIndex = reader.read(UInt32.self)
-        lineLocation = reader.read(Int32.self)
-        lineHeight = reader.read(Int32.self)
-        textHeight = reader.read(Int32.self)
-        baselineDistance = reader.read(Int32.self)
-        lineSpacing = reader.read(Int32.self)
-        startingLocation = reader.read(Int32.self)
-        width = reader.read(Int32.self)
-        property = reader.read(UInt32.self)
+    init(_ reader: inout DataReader) throws {
+        textStartingIndex = try reader.read(UInt32.self)
+        lineLocation = try reader.read(Int32.self)
+        lineHeight = try reader.read(Int32.self)
+        textHeight = try reader.read(Int32.self)
+        baselineDistance = try reader.read(Int32.self)
+        lineSpacing = try reader.read(Int32.self)
+        startingLocation = try reader.read(Int32.self)
+        width = try reader.read(Int32.self)
+        property = try reader.read(UInt32.self)
     }
 }

@@ -1,5 +1,10 @@
 extension WCHAR {
     var character: Character {
-        Character(UnicodeScalar(self)!)
+        get throws {
+            guard let scalar = UnicodeScalar(self) else {
+                throw HwpError.invalidUnicodeScalar(value: self)
+            }
+            return Character(scalar)
+        }
     }
 }

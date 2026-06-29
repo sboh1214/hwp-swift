@@ -8,6 +8,9 @@ import Foundation
  Tag ID : HWPTAG_PARA_RANGE_TAG
  */
 public struct HwpParaRangeTag: HwpFromData {
+    /** 원본 payload */
+    @ExcludeEquatable
+    public var rawPayload: Data
     /** 영역 시작 */
     public let start: UInt32
     /** 영역 끝 */
@@ -20,14 +23,27 @@ public struct HwpParaRangeTag: HwpFromData {
     public let tag: UInt32
 
     init() {
+        rawPayload = Data()
         start = 0
         end = 0
         tag = 0
     }
 
     init(_ reader: inout DataReader) throws {
-        start = reader.read(UInt32.self)
-        end = reader.read(UInt32.self)
-        tag = reader.read(UInt32.self)
+        let startOffset = reader.byteOffset
+        start = try reader.read(UInt32.self)
+        end = try reader.read(UInt32.self)
+        tag = try reader.read(UInt32.self)
+        rawPayload = try reader.consumedData(from: startOffset)
+    }
+
+    public static func load(_ data: Data) throws -> Self {
+        var reader = DataReader(data)
+        var paraRangeTag = try self.init(&reader)
+        if !reader.isEOF {
+            throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
+        }
+        paraRangeTag.rawPayload = data
+        return paraRangeTag
     }
 }
