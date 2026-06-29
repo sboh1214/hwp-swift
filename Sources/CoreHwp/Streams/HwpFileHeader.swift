@@ -86,23 +86,13 @@ extension HwpFileHeader {
         return try load(fromOLE: ole)
     }
 
-    #if os(iOS) || os(watchOS) || os(tvOS) || os(macOS)
-        static func load(fromData data: Data) throws -> Self {
-            let fileWrapper = FileWrapper(regularFileWithContents: data)
-            fileWrapper.preferredFilename = "document.hwp"
-            return try load(fromWrapper: fileWrapper)
-        }
+    static func load(fromData data: Data) throws -> Self {
+        try load(fromOLE: coreHwpOLEFile(fromData: data))
+    }
 
-        static func load(fromWrapper fileWrapper: FileWrapper) throws -> Self {
-            let ole: OLEFile
-            do {
-                ole = try OLEFile(fileWrapper)
-            } catch {
-                throw HwpError.invalidOLEFile(reason: String(describing: error))
-            }
-            return try load(fromOLE: ole)
-        }
-    #endif
+    static func load(fromWrapper fileWrapper: FileWrapper) throws -> Self {
+        try load(fromOLE: coreHwpOLEFile(fromWrapper: fileWrapper))
+    }
 
     private static func load(fromOLE ole: OLEFile) throws -> Self {
         let streams = try StreamReader.rootStreams(from: ole.root.children)

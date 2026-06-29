@@ -16,6 +16,7 @@ public enum HwpError: Error {
     case streamDecompressFailed(name: HwpStreamName)
     case streamSizeLimitExceeded(name: HwpStreamName, limit: Int, actual: Int)
     case invalidOLEFile(reason: String)
+    case temporaryFileWriteFailed(reason: String)
     case invalidDataForString(data: Data, name: String)
     case recordDoesNotExist(tag: UInt32)
     case invalidRecordTree(reason: String)
@@ -44,6 +45,8 @@ extension HwpError: CustomStringConvertible {
             "Stream '\(name)' exceeded size limit: \(actual) bytes > \(limit) bytes"
         case let .invalidOLEFile(reason):
             "Invalid OLE file: \(reason)"
+        case let .temporaryFileWriteFailed(reason):
+            "Temporary file write failed: \(reason)"
         case let .invalidDataForString(data, name):
             """
             Cannot convert data to utf16le string

@@ -41,38 +41,36 @@ public struct HwpFile: HwpPrimitive {
         }
     }
 
-    #if os(iOS) || os(watchOS) || os(tvOS) || os(macOS)
-        /// 메모리의 HWP 문서 데이터를 읽습니다.
-        public init(fromData data: Data, readLimits: HwpReadLimits = .default) throws {
-            try readLimits.validate()
+    /// 메모리의 HWP 문서 데이터를 읽습니다.
+    public init(fromData data: Data, readLimits: HwpReadLimits = .default) throws {
+        try readLimits.validate()
 
-            let fileWrapper = FileWrapper(regularFileWithContents: data)
-            fileWrapper.preferredFilename = "document.hwp"
-            try self.init(fromWrapper: fileWrapper, readLimits: readLimits)
+        let ole = try coreHwpOLEFile(fromData: data)
+        do {
+            try self.init(fromOLE: ole, readLimits: readLimits)
+        } catch let error as HwpError {
+            throw error
+        } catch {
+            throw HwpError.invalidOLEFile(reason: String(describing: error))
         }
+    }
 
-        /// `FileWrapper`로 전달된 HWP 문서를 읽습니다.
-        public init(
-            fromWrapper fileWrapper: FileWrapper,
-            readLimits: HwpReadLimits = .default
-        ) throws {
-            try readLimits.validate()
+    /// `FileWrapper`로 전달된 HWP 문서를 읽습니다.
+    public init(
+        fromWrapper fileWrapper: FileWrapper,
+        readLimits: HwpReadLimits = .default
+    ) throws {
+        try readLimits.validate()
 
-            let ole: OLEFile
-            do {
-                ole = try OLEFile(fileWrapper)
-            } catch {
-                throw HwpError.invalidOLEFile(reason: String(describing: error))
-            }
-            do {
-                try self.init(fromOLE: ole, readLimits: readLimits)
-            } catch let error as HwpError {
-                throw error
-            } catch {
-                throw HwpError.invalidOLEFile(reason: String(describing: error))
-            }
+        let ole = try coreHwpOLEFile(fromWrapper: fileWrapper)
+        do {
+            try self.init(fromOLE: ole, readLimits: readLimits)
+        } catch let error as HwpError {
+            throw error
+        } catch {
+            throw HwpError.invalidOLEFile(reason: String(describing: error))
         }
-    #endif
+    }
 
     private init(fromOLE ole: OLEFile, readLimits: HwpReadLimits = .default) throws {
         try readLimits.validate()

@@ -119,6 +119,7 @@ class HwpErrorTests: XCTestCase {
             HwpError.streamSizeLimitExceeded(name: .docInfo, limit: 1, actual: 2)
                 .description,
             HwpError.invalidOLEFile(reason: "bad").description,
+            HwpError.temporaryFileWriteFailed(reason: "disk full").description,
             HwpError.invalidDataForString(data: Data([0x00]), name: "test").description,
             HwpError.recordDoesNotExist(tag: 16).description,
             HwpError.invalidRecordTree(reason: "bad level").description,
