@@ -12,7 +12,7 @@ public struct HwpBinaryData: HwpPrimitive {
     public let streamId: UInt16?
     /** BinData stream 이름에서 추출한 확장자 */
     public let extensionName: String?
-    /** BinData stream의 원본 payload */
+    /** BinData stream의 payload. 압축된 BinData는 압축 해제된 payload를 저장한다. */
     public let data: Data
 
     public init() {
@@ -31,7 +31,7 @@ public struct HwpBinaryData: HwpPrimitive {
     }
 }
 
-private extension HwpBinaryData {
+extension HwpBinaryData {
     static func metadata(from name: String) -> (streamId: UInt16?, extensionName: String?) {
         let parts = name.split(separator: ".", omittingEmptySubsequences: false)
         guard parts.count == 2,

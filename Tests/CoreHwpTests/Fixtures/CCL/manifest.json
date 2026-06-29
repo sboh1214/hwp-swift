@@ -419,33 +419,33 @@
       "png"
     ],
     "binaryDataPayloadLengths": [
-      11588
+      11555
     ],
     "binaryDataPayloadPrefixBytes": [
       [
-        0,
-        0,
-        16,
-        255,
-        239,
         137,
         80,
-        78
+        78,
+        71,
+        13,
+        10,
+        26,
+        10
       ]
     ],
     "binaryDataPayloadSuffixBytes": [
       [
-        255,
-        253,
-        3,
-        135,
-        35,
-        45,
-        0,
-        0
+        73,
+        69,
+        78,
+        68,
+        174,
+        66,
+        96,
+        130
       ]
     ],
-    "binaryDataTotalByteCount": 11588,
+    "binaryDataTotalByteCount": 11555,
     "docInfoUnknownRecordCount": 0,
     "docInfoRawRecordCount": 0,
     "docInfoIdMappings": {

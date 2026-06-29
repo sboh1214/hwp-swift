@@ -606,33 +606,33 @@
       "OLE"
     ],
     "binaryDataPayloadLengths": [
-      4355
+      15876
     ],
     "binaryDataPayloadPrefixBytes": [
       [
-        236,
-        87,
-        77,
-        108,
-        19,
-        87,
-        16,
-        30
+        0,
+        62,
+        0,
+        0,
+        208,
+        207,
+        17,
+        224
       ]
     ],
     "binaryDataPayloadSuffixBytes": [
       [
-        194,
-        164,
-        38,
-        115,
-        4,
-        62,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
         0,
         0
       ]
     ],
-    "binaryDataTotalByteCount": 4355,
+    "binaryDataTotalByteCount": 15876,
     "controlCount": 3,
     "allControlCount": 3,
     "controlTypeCounts": {

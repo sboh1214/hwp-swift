@@ -1044,33 +1044,33 @@
       "bmp"
     ],
     "binaryDataPayloadLengths": [
-      1046
+      1302
     ],
     "binaryDataPayloadPrefixBytes": [
       [
-        109,
-        148,
-        119,
-        52,
-        23,
-        124,
-        20,
-        198
-      ]
-    ],
-    "binaryDataPayloadSuffixBytes": [
-      [
-        123,
-        165,
-        207,
-        39,
+        66,
+        77,
         22,
         5,
+        0,
+        0,
         0,
         0
       ]
     ],
-    "binaryDataTotalByteCount": 1046,
+    "binaryDataPayloadSuffixBytes": [
+      [
+        254,
+        254,
+        254,
+        254,
+        254,
+        0,
+        0,
+        0
+      ]
+    ],
+    "binaryDataTotalByteCount": 1302,
     "docInfoBinData": [
       {
         "propertyRawValue": 1,

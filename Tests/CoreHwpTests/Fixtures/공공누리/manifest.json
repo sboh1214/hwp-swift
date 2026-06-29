@@ -479,33 +479,33 @@
       "gif"
     ],
     "binaryDataPayloadLengths": [
-      2219
+      2257
     ],
     "binaryDataPayloadPrefixBytes": [
       [
-        173,
-        143,
-        249,
-        63,
-        211,
-        141,
-        3,
-        192
+        71,
+        73,
+        70,
+        56,
+        57,
+        97,
+        169,
+        0
       ]
     ],
     "binaryDataPayloadSuffixBytes": [
       [
-        59,
-        55,
-        249,
-        232,
-        209,
-        8,
+        164,
+        193,
+        32,
+        130,
+        32,
         0,
-        0
+        0,
+        59
       ]
     ],
-    "binaryDataTotalByteCount": 2219,
+    "binaryDataTotalByteCount": 2257,
     "docInfoUnknownRecordCount": 0,
     "docInfoRawRecordCount": 0,
     "docInfoIdMappings": {

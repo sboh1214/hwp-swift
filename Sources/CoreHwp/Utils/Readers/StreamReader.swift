@@ -57,21 +57,7 @@ struct StreamReader {
         _ streamName: HwpStreamName,
         _ isCompressed: Bool
     ) throws -> [(name: String, data: Data)] {
-        guard let storage = streams[streamName.rawValue] else {
-            return []
-        }
-        try Self.validateEntryType(storage, expectedType: .storage, for: streamName)
-        try Self.validateUniqueStorageChildNames(storage.children.map(\.name), for: streamName)
-        try Self.validateOptionalStorageChildTypes(
-            storage.children.map { (name: $0.name, type: $0.type) },
-            for: streamName
-        )
-        return try sortedStorageChildrenWithoutRequiredValidation(
-            storage,
-            for: streamName
-        ).map { entry in
-            try (entry.name, readData(entry, isCompressed, streamName))
-        }
+        try getOptionalNamedDataFromStorage(streamName) { _ in isCompressed }
     }
 
     private func readData(
@@ -333,6 +319,29 @@ struct StreamReader {
             .sorted { lhs, rhs in
                 storageChildNamePrecedes(lhs.name, rhs.name, for: streamName)
             }
+    }
+}
+
+extension StreamReader {
+    func getOptionalNamedDataFromStorage(
+        _ streamName: HwpStreamName,
+        compressionByChildName: (String) -> Bool
+    ) throws -> [(name: String, data: Data)] {
+        guard let storage = streams[streamName.rawValue] else {
+            return []
+        }
+        try Self.validateEntryType(storage, expectedType: .storage, for: streamName)
+        try Self.validateUniqueStorageChildNames(storage.children.map(\.name), for: streamName)
+        try Self.validateOptionalStorageChildTypes(
+            storage.children.map { (name: $0.name, type: $0.type) },
+            for: streamName
+        )
+        return try sortedStorageChildrenWithoutRequiredValidation(
+            storage,
+            for: streamName
+        ).map { entry in
+            try (entry.name, readData(entry, compressionByChildName(entry.name), streamName))
+        }
     }
 }
 

@@ -174,12 +174,12 @@ private func assertChartBinaryDataStorage(_ hwp: HwpFile) {
     expect(hwp.binaryDataArray.map(\.name)) == ["BIN0001.OLE"]
     expect(hwp.binaryDataArray.map(\.streamId)) == [1]
     expect(hwp.binaryDataArray.map(\.extensionName)) == ["OLE"]
-    expect(hwp.binaryDataArray.map(\.data.count)) == [4355]
+    expect(hwp.binaryDataArray.map(\.data.count)) == [15876]
     expect(hwp.binaryDataArray.map { Array($0.data.prefix(8)) }) == [
-        [236, 87, 77, 108, 19, 87, 16, 30],
+        [0, 62, 0, 0, 208, 207, 17, 224],
     ]
     expect(hwp.binaryDataArray.map { Array($0.data.suffix(8)) }) == [
-        [194, 164, 38, 115, 4, 62, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
     ]
 }
 

@@ -725,7 +725,11 @@ private func actualReadableHwpStreams(fromFixture id: String) throws -> ActualRe
     let summaryData = try reader.getOptionalDataFromStream(.summary, false)
     let previewTextData = try reader.getOptionalDataFromStream(.previewText, false)
     let previewImageData = try reader.getOptionalDataFromStream(.previewImage, false)
-    let binaryData = try reader.getOptionalNamedDataFromStorage(.binData, false)
+    let binaryData = try readBinaryDataStreams(
+        reader,
+        docInfo: docInfo,
+        storageIsCompressed: fileHeader.fileProperty.isCompressed
+    )
 
     return ActualReadableHwpStreams(
         fileHeader: fileHeader,

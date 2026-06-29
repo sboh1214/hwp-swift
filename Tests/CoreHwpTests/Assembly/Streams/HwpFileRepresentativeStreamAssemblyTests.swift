@@ -150,6 +150,10 @@ private func representativeReadableStreams(
         summaryData: reader.getOptionalDataFromStream(.summary, false),
         previewTextData: reader.getOptionalDataFromStream(.previewText, false),
         previewImageData: reader.getOptionalDataFromStream(.previewImage, false),
-        binaryData: reader.getOptionalNamedDataFromStorage(.binData, false)
+        binaryData: readBinaryDataStreams(
+            reader,
+            docInfo: docInfo,
+            storageIsCompressed: fileHeader.fileProperty.isCompressed
+        )
     )
 }

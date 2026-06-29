@@ -94,7 +94,16 @@ public struct HwpFile: HwpPrimitive {
         let summaryData = try reader.getOptionalDataFromStream(.summary, false)
         let previewTextData = try reader.getOptionalDataFromStream(.previewText, false)
         let previewImageData = try reader.getOptionalDataFromStream(.previewImage, false)
-        let binaryData = try reader.getOptionalNamedDataFromStorage(.binData, false)
+        let binaryDataCompression = Self.binaryDataCompressionByStreamId(
+            docInfo: docInfo,
+            storageIsCompressed: isCompressed
+        )
+        let binaryData = try reader.getOptionalNamedDataFromStorage(.binData) { name in
+            guard let streamId = HwpBinaryData.metadata(from: name).streamId else {
+                return false
+            }
+            return binaryDataCompression[streamId] ?? false
+        }
 
         try self.init(
             fileHeader: fileHeader,
@@ -183,5 +192,26 @@ public struct HwpFile: HwpPrimitive {
         }
 
         binaryDataArray = binaryData.map { HwpBinaryData(name: $0.name, data: $0.data) }
+    }
+
+    static func binaryDataCompressionByStreamId(
+        docInfo: HwpDocInfo,
+        storageIsCompressed: Bool
+    ) -> [UInt16: Bool] {
+        var compressionByStreamId = [UInt16: Bool]()
+        for binData in docInfo.idMappings.binDataArray {
+            guard let streamId = binData.streamId else {
+                continue
+            }
+            switch binData.property.compressType {
+            case .always:
+                compressionByStreamId[streamId] = true
+            case .followStorage:
+                compressionByStreamId[streamId] = storageIsCompressed
+            case .never:
+                compressionByStreamId[streamId] = false
+            }
+        }
+        return compressionByStreamId
     }
 }
