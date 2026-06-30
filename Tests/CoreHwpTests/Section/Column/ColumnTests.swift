@@ -31,8 +31,16 @@ final class ColumnTests: XCTestCase {
         expect(columnArray[1].widthArray).to(beNil())
         expect(columnArray[2].widthArray).to(beNil())
 
-        expect(columnArray[3].widthArray) == [0, 10339]
-        expect(columnArray[4].widthArray) == [0, 20680]
+        expect(columnArray[3].property2) == 0
+        expect(columnArray[4].property2) == 0
+        expect(columnArray[3].widthArray) == [10339, 20682]
+        expect(columnArray[4].widthArray) == [20680, 10341]
+        expect(columnArray[3].gapArray) == [1747, 0]
+        expect(columnArray[4].gapArray) == [1747, 0]
+        expect(columnArray[3].dividerType) == 0
+        expect(columnArray[4].dividerType) == 0
+        expect(columnArray[3].rawTrailing).to(beEmpty())
+        expect(columnArray[4].rawTrailing).to(beEmpty())
     }
 
     func testColumnFixtureSurvivesHwpFileCodableRoundTrip() throws {

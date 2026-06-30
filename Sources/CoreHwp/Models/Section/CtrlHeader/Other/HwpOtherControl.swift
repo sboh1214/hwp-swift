@@ -160,7 +160,21 @@ private extension HwpOtherControl {
             return nil
         }
 
-        return ctrlDataRecords.compactMap { bookmarkInfo(from: $0.rawPayload) }.first
+        return ctrlDataRecords.compactMap { bookmarkInfo(from: $0) }.first
+    }
+
+    static func bookmarkInfo(from ctrlData: HwpCtrlData) -> HwpOtherControlBookmarkInfo? {
+        if let item = ctrlData.parameterSet?.stringItem {
+            return HwpOtherControlBookmarkInfo(
+                nameCharacterCount: item.valueCharacterCount,
+                nameLengthRawPayload: item.valueLengthRawPayload,
+                name: item.value,
+                nameRawPayload: item.valueRawPayload,
+                rawTrailing: item.rawTrailing
+            )
+        }
+
+        return bookmarkInfo(from: ctrlData.rawPayload)
     }
 
     static func indexmarkInfo(

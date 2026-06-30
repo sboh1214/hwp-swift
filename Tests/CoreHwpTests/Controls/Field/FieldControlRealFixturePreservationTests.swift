@@ -61,20 +61,21 @@ private func assertMemoFixtureFieldControl(_ memo: HwpFieldControl) {
     expect(memo.semanticKind) == .memo
     expect(memo.isMemoField) == true
     expect(memo.isRevisionField) == false
+    assertMemoFixtureTypedFieldHeader(memo, parameter)
     expect(memo.fieldParameterHeaderValue) == 0x8001
     expect(memo.fieldParameterHeaderRawPayload) == Data([1, 128, 0, 0])
     expect(memo.fieldParameterCharacterCount) == parameter.utf16.count
-    expect(memo.fieldParameterLengthRawPayload) == Data([0, 40])
+    expect(memo.fieldParameterLengthRawPayload) == Data([40, 0])
     expect(memo.fieldParameter) == parameter
     expect(memo.fieldParameterRawPayload?.count) == 80
     expect(Array(memo.fieldParameterRawPayload?.prefix(8) ?? Data())) == [
-        0, 77, 0, 69, 0, 77, 0, 79,
+        77, 0, 69, 0, 77, 0, 79, 0,
     ]
     expect(Array(memo.fieldParameterRawPayload?.suffix(8) ?? Data())) == [
-        0, 47, 0, 92, 0, 59, 0, 59,
+        47, 0, 92, 0, 59, 0, 59, 0,
     ]
-    expect(memo.fieldParameterRawTrailing) == Data(memo.rawTrailing.dropFirst(86))
-    expect(memo.fieldParameterRawTrailing?.count) == 9
+    expect(memo.fieldParameterRawTrailing) == Data(memo.rawTrailing.dropFirst(87))
+    expect(memo.fieldParameterRawTrailing?.count) == 8
     expect(memo.memoParameter?.rawValue) == parameter
     expect(memo.memoParameter?.rawPayload) == memo.fieldParameterRawPayload
     expect(memo.memoParameter?.marker) == "MEMO"
@@ -95,9 +96,51 @@ private func assertMemoFixtureFieldControl(_ memo: HwpFieldControl) {
     expect(memo.unknownChildren).to(beEmpty())
 }
 
+private func assertMemoFixtureTypedFieldHeader(
+    _ memo: HwpFieldControl,
+    _ parameter: String
+) {
+    expect(memo.properties) == 0x8001
+    expect(memo.propertiesRawPayload) == Data([1, 128, 0, 0])
+    expect(memo.propertyInfo?.rawValue) == 0x8001
+    expect(memo.propertyInfo?.isInitialState) == false
+    expect(memo.extraProperties) == 0
+    expect(memo.extraPropertiesRawPayload) == Data([0])
+    expect(memo.commandCharacterCount) == parameter.utf16.count
+    expect(memo.commandLengthRawPayload) == Data([40, 0])
+    expect(memo.command) == parameter
+    expect(memo.commandRawPayload?.count) == 80
+    expect(Array(memo.commandRawPayload?.prefix(8) ?? Data())) == [
+        77, 0, 69, 0, 77, 0, 79, 0,
+    ]
+    expect(Array(memo.commandRawPayload?.suffix(8) ?? Data())) == [
+        47, 0, 92, 0, 59, 0, 59, 0,
+    ]
+    expect(memo.commandRawTrailing) == Data(memo.rawTrailing.dropFirst(87))
+    expect(memo.commandRawTrailing?.count) == 8
+    expect(memo.fieldId) == 0x4279_408C
+    expect(memo.fieldIdRawPayload) == Data([140, 64, 121, 66])
+    expect(memo.memoIndex) == 1
+    expect(memo.memoIndexRawPayload) == Data([1, 0, 0, 0])
+}
+
 private func assertMemoFieldPayloadsMatch(_ decoded: HwpFieldControl, _ original: HwpFieldControl) {
     expect(decoded.ctrlId) == original.ctrlId
     expect(decoded.semanticKind) == original.semanticKind
+    expect(decoded.properties) == original.properties
+    expect(decoded.propertiesRawPayload) == original.propertiesRawPayload
+    expect(decoded.propertyInfo) == original.propertyInfo
+    expect(decoded.extraProperties) == original.extraProperties
+    expect(decoded.extraPropertiesRawPayload) == original.extraPropertiesRawPayload
+    expect(decoded.commandCharacterCount) == original.commandCharacterCount
+    expect(decoded.commandLengthRawPayload) == original.commandLengthRawPayload
+    expect(decoded.command) == original.command
+    expect(decoded.commandRawPayload) == original.commandRawPayload
+    expect(decoded.commandRawTrailing) == original.commandRawTrailing
+    expect(decoded.fieldId) == original.fieldId
+    expect(decoded.fieldIdRawPayload) == original.fieldIdRawPayload
+    expect(decoded.memoIndex) == original.memoIndex
+    expect(decoded.memoIndexRawPayload) == original.memoIndexRawPayload
     expect(decoded.fieldParameterHeaderValue) == original.fieldParameterHeaderValue
     expect(decoded.fieldParameterHeaderRawPayload) == original.fieldParameterHeaderRawPayload
     expect(decoded.fieldParameterCharacterCount) == original.fieldParameterCharacterCount

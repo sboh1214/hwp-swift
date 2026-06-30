@@ -110,7 +110,16 @@ extension HwpTableCell: HwpPrimitive {}
 
 public struct HwpTableCellHeader {
     public var paragraphCount: Int32
+    /** LIST_HEADER의 텍스트 방향, 줄바꿈 방식, 세로 정렬 속성 */
     public var property: UInt32
+    /** `property`를 bit field로 해석한 값 */
+    public var propertyInfo: HwpListHeaderProperty
+    /** LIST_HEADER bytes 6-7의 셀 확장 속성 */
+    public var listHeaderWidthRef: UInt16
+    /** 셀 확장 속성을 bit field로 해석한 값 */
+    public var cellPropertyInfo: HwpTableCellHeaderProperty
+    /** 제목 셀 여부 */
+    public var isHeader: Bool
     public var rawTrailing: Data
     public var rawPayload: Data
     public var unknownChildren: [HwpUnknownRecord]
@@ -121,8 +130,12 @@ extension HwpTableCellHeader: HwpFromRecord {
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
         let startOffset = reader.byteOffset
-        paragraphCount = try reader.read(Int32.self)
+        paragraphCount = Int32(try reader.read(UInt16.self))
         property = try reader.read(UInt32.self)
+        propertyInfo = try HwpListHeaderProperty.load(property)
+        listHeaderWidthRef = try reader.read(UInt16.self)
+        cellPropertyInfo = HwpTableCellHeaderProperty(rawValue: listHeaderWidthRef)
+        isHeader = cellPropertyInfo.isHeader
         rawTrailing = try reader.readToEnd()
         rawPayload = try reader.consumedData(from: startOffset)
         unknownChildren = children.map(HwpUnknownRecord.init)

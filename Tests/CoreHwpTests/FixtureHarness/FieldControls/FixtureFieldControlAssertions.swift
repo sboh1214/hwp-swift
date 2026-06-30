@@ -33,6 +33,7 @@ extension FixtureAssertions {
             if let isRevisionField = expected.isRevisionField {
                 expect(actual.isRevisionField) == isRevisionField
             }
+            assertFieldControlTypedHeader(actual, expected)
             if let fieldParameter = expected.fieldParameter {
                 expect(actual.fieldParameter) == fieldParameter
             }
@@ -45,6 +46,88 @@ extension FixtureAssertions {
             assertRawTrailing(actual, expected)
             assertUnknownChildren(actual, expected)
         }
+    }
+}
+
+private func assertFieldControlTypedHeader(
+    _ actual: HwpFieldControl,
+    _ expected: FixtureFieldControlExpectations
+) {
+    if let properties = expected.properties {
+        expect(actual.properties) == properties
+        expect(actual.propertyInfo?.rawValue) == properties
+    }
+    if let propertyInitialState = expected.propertyInitialState {
+        expect(actual.propertyInfo?.isInitialState) == propertyInitialState
+    }
+    if let extraProperties = expected.extraProperties {
+        expect(actual.extraProperties) == extraProperties
+    }
+    if let commandCharacterCount = expected.commandCharacterCount {
+        expect(actual.commandCharacterCount) == commandCharacterCount
+    }
+    if let command = expected.command {
+        expect(actual.command) == command
+    }
+    assertCommandLength(actual, expected)
+    assertCommandRawPayload(actual, expected)
+    assertCommandRawTrailing(actual, expected)
+    if let fieldId = expected.fieldId {
+        expect(actual.fieldId) == fieldId
+    }
+    if let memoIndex = expected.memoIndex {
+        expect(actual.memoIndex) == memoIndex
+    }
+}
+
+private func assertCommandLength(
+    _ actual: HwpFieldControl,
+    _ expected: FixtureFieldControlExpectations
+) {
+    if let rawLength = expected.commandLengthRawLength {
+        expect(actual.commandLengthRawPayload?.count) == rawLength
+    }
+    if let rawPrefixBytes = expected.commandLengthRawPrefixBytes {
+        let prefix = Array(actual.commandLengthRawPayload?.prefix(rawPrefixBytes.count) ?? Data())
+        expect(prefix) == rawPrefixBytes
+    }
+    if let rawSuffixBytes = expected.commandLengthRawSuffixBytes {
+        let suffix = Array(actual.commandLengthRawPayload?.suffix(rawSuffixBytes.count) ?? Data())
+        expect(suffix) == rawSuffixBytes
+    }
+}
+
+private func assertCommandRawPayload(
+    _ actual: HwpFieldControl,
+    _ expected: FixtureFieldControlExpectations
+) {
+    if let rawLength = expected.commandRawPayloadLength {
+        expect(actual.commandRawPayload?.count) == rawLength
+    }
+    if let rawPrefixBytes = expected.commandRawPayloadPrefixBytes {
+        let prefix = Array(actual.commandRawPayload?.prefix(rawPrefixBytes.count) ?? Data())
+        expect(prefix) == rawPrefixBytes
+    }
+    if let rawSuffixBytes = expected.commandRawPayloadSuffixBytes {
+        let suffix = Array(actual.commandRawPayload?.suffix(rawSuffixBytes.count) ?? Data())
+        expect(suffix) == rawSuffixBytes
+    }
+}
+
+private func assertCommandRawTrailing(
+    _ actual: HwpFieldControl,
+    _ expected: FixtureFieldControlExpectations
+) {
+    if let rawLength = expected.commandRawTrailingLength {
+        expect(actual.commandRawTrailing?.count) == rawLength
+    }
+    if let rawPrefixBytes = expected.commandRawTrailingPrefixBytes {
+        let prefix = Array(actual.commandRawTrailing?.prefix(rawPrefixBytes.count) ?? Data())
+        expect(prefix) == rawPrefixBytes
+    }
+    if let rawSuffixBytes = expected.commandRawTrailingSuffixBytes {
+        let suffix = Array(actual.commandRawTrailing?.suffix(rawSuffixBytes.count) ?? Data())
+        expect(suffix) == rawSuffixBytes
     }
 }
 

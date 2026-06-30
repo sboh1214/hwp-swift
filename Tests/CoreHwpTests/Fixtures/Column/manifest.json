@@ -448,6 +448,17 @@
         "propertyRawValue": 8,
         "propertyCount": 2,
         "isSameWidth": false,
+        "property2": 0,
+        "widthArray": [
+          10339,
+          20682
+        ],
+        "gapArray": [
+          1747,
+          0
+        ],
+        "dividerType": 0,
+        "dividerThickness": 0,
         "rawPayloadLength": 22,
         "rawPayloadPrefixBytes": [
           100,
@@ -485,23 +496,9 @@
           0,
           0
         ],
-        "rawTrailingLength": 6,
-        "rawTrailingPrefixBytes": [
-          0,
-          0,
-          0,
-          0,
-          0,
-          0
-        ],
-        "rawTrailingSuffixBytes": [
-          0,
-          0,
-          0,
-          0,
-          0,
-          0
-        ],
+        "rawTrailingLength": 0,
+        "rawTrailingPrefixBytes": [],
+        "rawTrailingSuffixBytes": [],
         "unknownChildCount": 0
       },
       {
@@ -510,6 +507,17 @@
         "propertyRawValue": 8,
         "propertyCount": 2,
         "isSameWidth": false,
+        "property2": 0,
+        "widthArray": [
+          20680,
+          10341
+        ],
+        "gapArray": [
+          1747,
+          0
+        ],
+        "dividerType": 0,
+        "dividerThickness": 0,
         "rawPayloadLength": 22,
         "rawPayloadPrefixBytes": [
           100,
@@ -547,23 +555,9 @@
           0,
           0
         ],
-        "rawTrailingLength": 6,
-        "rawTrailingPrefixBytes": [
-          0,
-          0,
-          0,
-          0,
-          0,
-          0
-        ],
-        "rawTrailingSuffixBytes": [
-          0,
-          0,
-          0,
-          0,
-          0,
-          0
-        ],
+        "rawTrailingLength": 0,
+        "rawTrailingPrefixBytes": [],
+        "rawTrailingSuffixBytes": [],
         "unknownChildCount": 0
       },
       {

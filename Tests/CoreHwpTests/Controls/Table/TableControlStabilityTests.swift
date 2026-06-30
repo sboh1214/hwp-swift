@@ -164,7 +164,7 @@ final class TableControlStabilityTests: XCTestCase {
         expect(decodedHeader) == header
     }
 
-    func testTableControlNegativeCellParagraphCountThrowsTypedError() {
+    func testTableControlOversizedCellParagraphCountThrowsTypedError() {
         let record = tableStabilityControlRecord(children: [
             HwpRecord(
                 tagId: HwpSectionTag.table.rawValue,
@@ -184,7 +184,7 @@ final class TableControlStabilityTests: XCTestCase {
             guard case let HwpError.invalidRecordTree(reason) = error else {
                 return fail("Expected invalidRecordTree, got \(error)")
             }
-            expect(reason).to(contain("table cell paragraph count is negative: -1"))
+            expect(reason).to(contain("table cell paragraph is missing"))
         })
     }
 
@@ -463,8 +463,9 @@ private func tableStabilityCellHeaderPayload(
     rawTrailing: Data = Data()
 ) -> Data {
     var data = Data()
-    data.append(tableStabilityLittleEndianData(paragraphCount))
+    data.append(tableStabilityLittleEndianData(UInt16(truncatingIfNeeded: paragraphCount)))
     data.append(tableStabilityLittleEndianData(UInt32(0)))
+    data.append(tableStabilityLittleEndianData(UInt16(0)))
     data.append(Data(repeating: 0, count: 39))
     data.append(rawTrailing)
     return data

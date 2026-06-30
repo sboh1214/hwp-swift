@@ -19,6 +19,8 @@ final class SectionDefStabilityTests: XCTestCase {
         )
 
         expect(sectionDef.rawPayload) == slicedPayload
+        expect(sectionDef.property) == 0x0000_0004
+        expect(sectionDef.propertyInfo.hideMasterPage) == true
         expect(sectionDef.unknown) == rawTrailing
         expect(sectionDef.unknownChildren) == [
             expectedTestUnknownRecord(tagId: 0x2FE, level: 2, payload: unknownPayload),
@@ -80,7 +82,7 @@ final class SectionDefStabilityTests: XCTestCase {
             guard case let HwpError.truncatedData(expected, actual) = error else {
                 return fail("Expected truncatedData, got \(error)")
             }
-            expect(expected) == 2
+            expect(expected) == 4
             expect(actual) == 0
         })
 
@@ -435,6 +437,7 @@ private func expectedUnknownRecords(from records: [HwpRecord]) -> [HwpUnknownRec
 private func sectionDefPayload() -> Data {
     var data = Data()
     data.append(littleEndianData(HwpOtherCtrlId.section.rawValue))
+    data.append(littleEndianData(UInt32(0x0000_0004)))
     data.append(littleEndianData(HWPUNIT16(0)))
     data.append(littleEndianData(HWPUNIT16(0)))
     data.append(littleEndianData(HWPUNIT16(0)))

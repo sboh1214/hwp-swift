@@ -275,6 +275,8 @@ private func assertBookmarkPayloadsMatch(
     expect(decoded.rawTrailing) == original.rawTrailing
     expect(decoded.ctrlDataRecords.map(\.rawPayload)) ==
         original.ctrlDataRecords.map(\.rawPayload)
+    expect(decoded.ctrlDataRecords.map(\.parameterSet)) ==
+        original.ctrlDataRecords.map(\.parameterSet)
     expect(decoded.bookmarkInfo?.nameCharacterCount) ==
         original.bookmarkInfo?.nameCharacterCount
     expect(decoded.bookmarkInfo?.nameLengthRawPayload) ==
@@ -299,7 +301,26 @@ private func assertBookmarkFixtureControl(_ bookmark: HwpOtherControl) {
     expect(bookmark.ctrlDataRecords.map { Array($0.rawPayload.suffix(16)) }) == [
         [66, 0, 111, 0, 111, 0, 107, 0, 109, 0, 97, 0, 114, 0, 107, 0],
     ]
+    assertBookmarkFixtureCtrlDataParameterSet(bookmark.ctrlDataRecords.first)
     expect(bookmark.unknownChildren).to(beEmpty())
+}
+
+private func assertBookmarkFixtureCtrlDataParameterSet(_ ctrlData: HwpCtrlData?) {
+    expect(ctrlData?.parameterSet?.parameterSetId) == 0x021B
+    expect(ctrlData?.parameterSet?.parameterSetIdRawPayload) == Data([27, 2])
+    expect(ctrlData?.parameterSet?.itemCount) == 1
+    expect(ctrlData?.parameterSet?.itemCountRawPayload) == Data([1, 0])
+    expect(ctrlData?.parameterSet?.stringItem.itemId) == 0x4000_0000
+    expect(ctrlData?.parameterSet?.stringItem.itemIdRawPayload) == Data([0, 0, 0, 64])
+    expect(ctrlData?.parameterSet?.stringItem.valueType) == 1
+    expect(ctrlData?.parameterSet?.stringItem.valueTypeRawPayload) == Data([1, 0])
+    expect(ctrlData?.parameterSet?.stringItem.valueCharacterCount) == 15
+    expect(ctrlData?.parameterSet?.stringItem.valueLengthRawPayload) == Data([15, 0])
+    expect(ctrlData?.parameterSet?.stringItem.value) == "CoreHwpBookmark"
+    expect(ctrlData?.parameterSet?.stringItem.valueRawPayload.count) == 30
+    expect(ctrlData?.parameterSet?.stringItem.valueRawPayload.prefix(2)) == Data([67, 0])
+    expect(ctrlData?.parameterSet?.stringItem.valueRawPayload.suffix(2)) == Data([107, 0])
+    expect(ctrlData?.parameterSet?.stringItem.rawTrailing).to(beEmpty())
 }
 
 private func assertLegacyHiddenCommentUnknownChildren(_ hiddenComment: HwpOtherControl) {

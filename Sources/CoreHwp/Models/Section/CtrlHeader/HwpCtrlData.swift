@@ -4,6 +4,8 @@ import Foundation
 public struct HwpCtrlData {
     /** 원본 payload */
     public var rawPayload: Data
+    /** 알려진 ParameterSet payload를 해석한 값 */
+    public var parameterSet: HwpCtrlDataParameterSet?
     /** 아직 해석하지 않은 child record */
     public var unknownChildren: [HwpUnknownRecord]
 
@@ -27,6 +29,7 @@ extension HwpCtrlData: HwpFromRecord {
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
         rawPayload = try reader.readToEnd()
+        parameterSet = HwpCtrlDataParameterSet(rawPayload)
         unknownChildren = children.map(HwpUnknownRecord.init)
     }
 }

@@ -113,6 +113,7 @@ private func commonCtrlPropertyPayload(ctrlId: UInt32) -> Data {
 private func sectionDefPayload(ctrlId: UInt32) -> Data {
     var data = Data()
     data.append(littleEndianData(ctrlId))
+    data.append(littleEndianData(UInt32(0)))
     data.append(littleEndianData(HWPUNIT16(0)))
     data.append(littleEndianData(HWPUNIT16(0)))
     data.append(littleEndianData(HWPUNIT16(0)))

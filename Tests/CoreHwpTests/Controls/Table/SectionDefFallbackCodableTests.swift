@@ -30,7 +30,7 @@ final class SectionDefFallbackCodableTests: XCTestCase {
             guard case let HwpError.truncatedData(expected, actual) = error else {
                 return fail("Expected truncatedData, got \(error)")
             }
-            expect(expected) == 2
+            expect(expected) == 4
             expect(actual) == 1
         })
 

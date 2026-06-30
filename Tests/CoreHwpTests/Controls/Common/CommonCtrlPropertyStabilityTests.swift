@@ -4,6 +4,42 @@ import Nimble
 import XCTest
 
 final class CommonCtrlPropertyStabilityTests: XCTestCase {
+    func testCommonControlPropertyInfoDecodesErrataCommonObjectBits() throws {
+        let restrictInPageInfo = try HwpCommonCtrlPropertyInfo.load(0x002A_2210)
+        let unrestrictedInfo = try HwpCommonCtrlPropertyInfo.load(0x002A_0210)
+
+        expect(restrictInPageInfo.restrictInPage) == true
+        expect(restrictInPageInfo.allowOverlap) == false
+        expect(restrictInPageInfo.effectiveAllowOverlap) == false
+        expect(restrictInPageInfo.widthRelativeTo) == .absolute
+        expect(restrictInPageInfo.heightRelativeTo) == .absolute
+        expect(restrictInPageInfo.textWrap) == .topAndBottom
+
+        expect(unrestrictedInfo.restrictInPage) == false
+        expect(unrestrictedInfo.widthRelativeTo) == .absolute
+        expect(unrestrictedInfo.heightRelativeTo) == .absolute
+        expect(unrestrictedInfo.textWrap) == .topAndBottom
+    }
+
+    func testCommonControlPropertyDecodesPropertyInfoFromPayload() throws {
+        let payload = commonCtrlPropertyPayload(
+            ctrlId: HwpCommonCtrlId.genShapeObject.rawValue,
+            property: 0x046A_4000
+        )
+        var reader = DataReader(payload)
+
+        let property = try HwpCommonCtrlProperty(&reader)
+
+        expect(property.propertyInfo.rawValue) == 0x046A_4000
+        expect(property.propertyInfo.restrictInPage) == false
+        expect(property.propertyInfo.allowOverlap) == true
+        expect(property.propertyInfo.effectiveAllowOverlap) == true
+        expect(property.propertyInfo.widthRelativeTo) == .absolute
+        expect(property.propertyInfo.heightRelativeTo) == .absolute
+        expect(property.propertyInfo.textWrap) == .inFrontOfText
+        expect(property.propertyInfo.numberingCategory) == .figure
+    }
+
     func testCommonControlPropertyAcceptsLegacyPayloadWithoutObjectDescription() throws {
         var payload = commonCtrlPropertyPayload(ctrlId: HwpCommonCtrlId.genShapeObject.rawValue)
         payload.removeLast(MemoryLayout<WORD>.size)
@@ -190,21 +226,24 @@ final class CommonCtrlPropertyStabilityTests: XCTestCase {
 
 private func commonCtrlPropertyPayload(
     ctrlId: UInt32,
+    property: UInt32 = 0,
     objectDescription: String = ""
 ) -> Data {
     commonCtrlPropertyPayload(
         ctrlId: ctrlId,
+        property: property,
         objectDescriptionPayload: wcharPayload(objectDescription)
     )
 }
 
 private func commonCtrlPropertyPayload(
     ctrlId: UInt32,
+    property: UInt32 = 0,
     objectDescriptionPayload: Data
 ) -> Data {
     var data = Data()
     data.append(littleEndianData(ctrlId))
-    data.append(littleEndianData(UInt32(0)))
+    data.append(littleEndianData(property))
     data.append(littleEndianData(HWPUNIT(0)))
     data.append(littleEndianData(HWPUNIT(0)))
     data.append(littleEndianData(HWPUNIT(0)))

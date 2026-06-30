@@ -33,6 +33,11 @@ final class OtherControlBookmarkTests: XCTestCase {
         expect(control.rawPayload) == rawPayload
         expect(control.rawTrailing).to(beEmpty())
         expect(control.ctrlDataRecords.map(\.rawPayload)) == [ctrlDataPayload]
+        assertBookmarkCtrlDataParameterSet(
+            control.ctrlDataRecords.first,
+            name: name,
+            rawTrailing: Data()
+        )
 
         guard case let .bookmark(roundTripped) = decoded else {
             return fail("Expected bookmark after Codable round-trip")
@@ -45,6 +50,11 @@ final class OtherControlBookmarkTests: XCTestCase {
         expect(roundTripped.bookmarkInfo?.rawTrailing) == Data()
         expect(roundTripped.rawPayload) == rawPayload
         expect(roundTripped.ctrlDataRecords.map(\.rawPayload)) == [ctrlDataPayload]
+        assertBookmarkCtrlDataParameterSet(
+            roundTripped.ctrlDataRecords.first,
+            name: name,
+            rawTrailing: Data()
+        )
     }
 
     func testBookmarkInfoPreservesRawTrailingAfterName() throws {
@@ -74,6 +84,11 @@ final class OtherControlBookmarkTests: XCTestCase {
         expect(control.bookmarkInfo?.nameRawPayload) == utf16LittleEndianData(name)
         expect(control.bookmarkInfo?.rawTrailing) == rawTrailing
         expect(control.ctrlDataRecords.map(\.rawPayload)) == [ctrlDataPayload]
+        assertBookmarkCtrlDataParameterSet(
+            control.ctrlDataRecords.first,
+            name: name,
+            rawTrailing: rawTrailing
+        )
 
         guard case let .bookmark(roundTripped) = decoded else {
             return fail("Expected bookmark after Codable round-trip")
@@ -84,6 +99,11 @@ final class OtherControlBookmarkTests: XCTestCase {
         expect(roundTripped.bookmarkInfo?.name) == name
         expect(roundTripped.bookmarkInfo?.nameRawPayload) == utf16LittleEndianData(name)
         expect(roundTripped.bookmarkInfo?.rawTrailing) == rawTrailing
+        assertBookmarkCtrlDataParameterSet(
+            roundTripped.ctrlDataRecords.first,
+            name: name,
+            rawTrailing: rawTrailing
+        )
     }
 
     func testBookmarkControlDecodesUtf16SurrogatePairsFromCtrlData() throws {
@@ -136,6 +156,7 @@ final class OtherControlBookmarkTests: XCTestCase {
         expect(control.bookmarkInfo).to(beNil())
         expect(control.rawPayload) == rawPayload
         expect(control.ctrlDataRecords.map(\.rawPayload)) == [ctrlDataPayload]
+        expect(control.ctrlDataRecords.first?.parameterSet).to(beNil())
 
         guard case let .bookmark(roundTripped) = decoded else {
             return fail("Expected bookmark after Codable round-trip")
@@ -204,6 +225,7 @@ final class OtherControlBookmarkTests: XCTestCase {
 
         expect(control.bookmarkInfo).to(beNil())
         expect(control.ctrlDataRecords.map(\.rawPayload)) == [ctrlDataPayload]
+        expect(control.ctrlDataRecords.first?.parameterSet).to(beNil())
 
         guard case let .bookmark(roundTripped) = decoded else {
             return fail("Expected bookmark after Codable round-trip")
@@ -270,6 +292,23 @@ private func bookmarkCtrlDataPayload(name: String, rawTrailing: Data = Data()) -
     }
     payload.append(rawTrailing)
     return payload
+}
+
+private func assertBookmarkCtrlDataParameterSet(
+    _ ctrlData: HwpCtrlData?,
+    name: String,
+    rawTrailing: Data
+) {
+    expect(ctrlData?.parameterSet?.parameterSetId) == 0x021B
+    expect(ctrlData?.parameterSet?.itemCount) == 1
+    expect(ctrlData?.parameterSet?.stringItem.itemId) == 0x4000_0000
+    expect(ctrlData?.parameterSet?.stringItem.valueType) == 1
+    expect(ctrlData?.parameterSet?.stringItem.valueCharacterCount) == name.utf16.count
+    expect(ctrlData?.parameterSet?.stringItem.valueLengthRawPayload) ==
+        littleEndianData(UInt16(name.utf16.count))
+    expect(ctrlData?.parameterSet?.stringItem.value) == name
+    expect(ctrlData?.parameterSet?.stringItem.valueRawPayload) == utf16LittleEndianData(name)
+    expect(ctrlData?.parameterSet?.stringItem.rawTrailing) == rawTrailing
 }
 
 private func utf16LittleEndianData(_ text: String) -> Data {

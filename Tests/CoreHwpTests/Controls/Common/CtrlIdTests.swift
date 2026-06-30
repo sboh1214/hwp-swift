@@ -194,6 +194,11 @@ final class CtrlIdTests: XCTestCase {
                 HwpPageNumberPosition(
                     otherCtrlId: .pageNumberPosition,
                     property: 1,
+                    propertyInfo: HwpPageNumberPositionProperty(
+                        rawValue: 1,
+                        numberFormat: 1,
+                        displayPosition: 0
+                    ),
                     userSymbol: 0,
                     headDecoration: 45,
                     tailDecoration: 45,
@@ -454,6 +459,11 @@ private func semanticOtherControlIds() -> [(id: HwpOtherCtrlId, name: String)] {
             HwpPageNumberPosition(
                 otherCtrlId: .pageNumberPosition,
                 property: 1,
+                propertyInfo: HwpPageNumberPositionProperty(
+                    rawValue: 1,
+                    numberFormat: 1,
+                    displayPosition: 0
+                ),
                 userSymbol: 0,
                 headDecoration: 45,
                 tailDecoration: 45,

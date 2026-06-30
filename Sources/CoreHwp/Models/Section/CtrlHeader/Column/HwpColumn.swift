@@ -7,10 +7,12 @@ public struct HwpColumn {
     public var property: HwpColumnProperty
     /** 단 사이 간격 */
     public var spacing: HWPUNIT16?
-    /** 단 너비가 동일하지 않으면, 단의 개수만큼 단의 폭 */
+    /** 단 너비가 동일하지 않으면, 단의 개수만큼 단의 비례 폭 */
     public var widthArray: [WORD]?
     /** 속성의 bit 16-32 */
     public var property2: UInt16?
+    /** 단 너비가 동일하지 않으면, 단의 개수만큼 단의 비례 간격 */
+    public var gapArray: [WORD]?
     /** 단 구분선 종류 */
     public var dividerType: UInt8
     /** 단 구분선 굵기 */
@@ -47,8 +49,22 @@ extension HwpColumn: HwpFromData {
         if property.count < 2 || property.isSameWidth {
             spacing = try reader.read(HWPUNIT16.self)
             property2 = try reader.read(UInt16.self)
+            widthArray = nil
+            gapArray = nil
         } else {
-            widthArray = try reader.read(WORD.self, property.count)
+            spacing = nil
+            property2 = try reader.read(UInt16.self)
+
+            var widths: [WORD] = []
+            var gaps: [WORD] = []
+            widths.reserveCapacity(property.count)
+            gaps.reserveCapacity(property.count)
+            for _ in 0 ..< property.count {
+                widths.append(try reader.read(WORD.self))
+                gaps.append(try reader.read(WORD.self))
+            }
+            widthArray = widths
+            gapArray = gaps
         }
         self.property = property
 
@@ -90,6 +106,9 @@ extension HwpColumn {
         otherCtrlId = .column
         property = HwpColumnProperty()
         spacing = 0
+        widthArray = nil
+        property2 = 0
+        gapArray = nil
         dividerType = 0
         dividerThickness = 0
         dividerColor = HwpColor(0, 0, 0)

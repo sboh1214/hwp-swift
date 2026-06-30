@@ -16,6 +16,8 @@ public struct HwpListHeader: HwpFromData {
      */
     public let paragraphCount: Int32
     public let property: UInt32
+    /** 문단 리스트 속성을 bit field로 해석한 값 */
+    public let propertyInfo: HwpListHeaderProperty
     /** 아직 해석하지 않은 trailing bytes */
     public let rawTrailing: Data
     /** trailing bytes를 little-endian WORD 단위로 해석한 값 */
@@ -25,6 +27,7 @@ public struct HwpListHeader: HwpFromData {
         rawPayload = Data()
         paragraphCount = 0
         property = 0
+        propertyInfo = HwpListHeaderProperty()
         rawTrailing = Data()
         rawTrailingWords = []
     }
@@ -35,6 +38,7 @@ public struct HwpListHeader: HwpFromData {
         let startOffset = reader.byteOffset
         paragraphCount = try reader.read(Int32.self)
         property = try reader.read(UInt32.self)
+        propertyInfo = try HwpListHeaderProperty.load(property)
         rawTrailing = try reader.readToEnd()
         rawTrailingWords = rawTrailing.littleEndianUInt16ArrayIfAligned()
         rawPayload = try reader.consumedData(from: startOffset)

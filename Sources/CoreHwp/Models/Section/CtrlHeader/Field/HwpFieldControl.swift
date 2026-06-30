@@ -6,6 +6,40 @@ public struct HwpFieldControl {
     public var ctrlId: HwpFieldCtrlId
     /** ctrl id 이후의 아직 해석하지 않은 payload */
     public var rawTrailing: Data
+    /** 필드 속성 */
+    public var properties: UInt32?
+    /** 필드 속성 원문 payload */
+    @ExcludeEquatable
+    public var propertiesRawPayload: Data?
+    /** 필드 속성을 bit field로 해석한 값 */
+    public var propertyInfo: HwpFieldControlProperty?
+    /** 기타 속성 */
+    public var extraProperties: UInt8?
+    /** 기타 속성 원문 payload */
+    @ExcludeEquatable
+    public var extraPropertiesRawPayload: Data?
+    /** command 문자열의 글자 수 */
+    public var commandCharacterCount: Int?
+    /** command length WORD 원문 payload */
+    @ExcludeEquatable
+    public var commandLengthRawPayload: Data?
+    /** 필드 command 문자열 */
+    public var command: String?
+    /** command 문자열 원문 WCHAR payload */
+    @ExcludeEquatable
+    public var commandRawPayload: Data?
+    /** command 문자열 이후의 field id, memo index, 기타 payload */
+    public var commandRawTrailing: Data?
+    /** 필드 ID */
+    public var fieldId: UInt32?
+    /** 필드 ID 원문 payload */
+    @ExcludeEquatable
+    public var fieldIdRawPayload: Data?
+    /** 메모 모양 참조 인덱스 */
+    public var memoIndex: Int32?
+    /** 메모 모양 참조 인덱스 원문 payload */
+    @ExcludeEquatable
+    public var memoIndexRawPayload: Data?
     /** field parameter 길이 앞의 알려진 32-bit header 값 */
     public var fieldParameterHeaderValue: UInt32?
     /** field parameter 길이 앞의 알려진 32-bit header 원문 payload */
@@ -85,12 +119,37 @@ extension HwpFieldControl: HwpPrimitive {
         }
         self.ctrlId = ctrlId
         rawTrailing = try reader.readToEnd()
-        fieldParameterHeaderValue = Self.fieldParameterHeaderValue(from: rawTrailing)
-        fieldParameterHeaderRawPayload = Self.fieldParameterHeaderRawPayload(from: rawTrailing)
-        let lengthInfo = Self.fieldParameterLengthInfo(from: rawTrailing)
-        fieldParameterCharacterCount = lengthInfo?.characterCount
-        fieldParameterLengthRawPayload = lengthInfo?.rawPayload
-        let parsedParameter = Self.fieldParameter(from: rawTrailing)
+        let parsedControl = Self.fieldControlPayload(from: rawTrailing)
+        let fallbackLengthInfo = Self.fieldParameterLengthInfo(from: rawTrailing)
+        let fallbackParameter = Self.fieldParameter(from: rawTrailing)
+        let parsedProperties = parsedControl?.properties
+            ?? Self.fieldParameterHeaderValue(from: rawTrailing)
+        let parsedPropertiesRawPayload = parsedControl?.propertiesRawPayload
+            ?? Self.fieldParameterHeaderRawPayload(from: rawTrailing)
+        let parsedCommandLengthRawPayload = parsedControl?.commandLengthRawPayload
+
+        properties = parsedProperties
+        propertiesRawPayload = parsedPropertiesRawPayload
+        propertyInfo = try parsedProperties.map(HwpFieldControlProperty.load)
+        extraProperties = parsedControl?.extraProperties
+        extraPropertiesRawPayload = parsedControl?.extraPropertiesRawPayload
+        commandCharacterCount = parsedControl?.command.characterCount
+        commandLengthRawPayload = parsedCommandLengthRawPayload
+        command = parsedControl?.command.value
+        commandRawPayload = parsedControl?.command.rawPayload
+        commandRawTrailing = parsedControl?.command.rawTrailing
+        fieldId = parsedControl?.fieldId
+        fieldIdRawPayload = parsedControl?.fieldIdRawPayload
+        memoIndex = parsedControl?.memoIndex
+        memoIndexRawPayload = parsedControl?.memoIndexRawPayload
+
+        fieldParameterHeaderValue = parsedProperties
+        fieldParameterHeaderRawPayload = parsedPropertiesRawPayload
+        fieldParameterCharacterCount = parsedControl?.command.characterCount
+            ?? fallbackLengthInfo?.characterCount
+        fieldParameterLengthRawPayload = parsedCommandLengthRawPayload
+            ?? fallbackLengthInfo?.rawPayload
+        let parsedParameter = parsedControl?.command ?? fallbackParameter
         fieldParameter = parsedParameter?.value
         fieldParameterRawPayload = parsedParameter?.rawPayload
         fieldParameterRawTrailing = parsedParameter?.rawTrailing
@@ -119,6 +178,14 @@ extension HwpFieldControl: HwpPrimitive {
     private static func fieldParameter(from data: Data) -> HwpFieldParameterParseResult? {
         let lengthOffset = MemoryLayout<UInt32>.size
         let textOffset = lengthOffset + MemoryLayout<WORD>.size
+        return fieldParameter(from: data, lengthOffset: lengthOffset, textOffset: textOffset)
+    }
+
+    private static func fieldParameter(
+        from data: Data,
+        lengthOffset: Int,
+        textOffset: Int
+    ) -> HwpFieldParameterParseResult? {
         guard data.count >= textOffset else {
             return nil
         }
@@ -229,6 +296,18 @@ extension HwpFieldControl: HwpPrimitive {
     {
         let lengthOffset = MemoryLayout<UInt32>.size
         let textOffset = lengthOffset + MemoryLayout<WORD>.size
+        return fieldParameterLengthInfo(
+            from: data,
+            lengthOffset: lengthOffset,
+            textOffset: textOffset
+        )
+    }
+
+    private static func fieldParameterLengthInfo(
+        from data: Data,
+        lengthOffset: Int,
+        textOffset: Int
+    ) -> HwpFieldParameterLengthInfo? {
         guard data.count >= textOffset else {
             return nil
         }
@@ -259,6 +338,115 @@ extension HwpFieldControl: HwpPrimitive {
         }
     }
 
+    private static func fieldControlPayload(
+        from data: Data
+    ) -> HwpFieldControlPayloadParseResult? {
+        guard let parsedCommand = fieldControlCommand(from: data) else {
+            return nil
+        }
+
+        return fieldControlPayload(
+            from: data,
+            command: parsedCommand.command,
+            offsets: parsedCommand.offsets
+        )
+    }
+
+    private static func fieldControlCommand(
+        from data: Data
+    ) -> (command: HwpFieldParameterParseResult, offsets: HwpFieldControlPayloadOffsets)? {
+        let propertiesOffset = 0
+        let extraPropertiesOffset = propertiesOffset + MemoryLayout<UInt32>.size
+        let lengthOffset = extraPropertiesOffset + MemoryLayout<UInt8>.size
+        let textOffset = lengthOffset + MemoryLayout<WORD>.size
+        guard data.count >= textOffset else {
+            return nil
+        }
+        guard let command = fieldParameter(
+            from: data,
+            lengthOffset: lengthOffset,
+            textOffset: textOffset
+        ) else {
+            return nil
+        }
+
+        let fieldIdOffset = textOffset + command.rawPayload.count
+        let memoIndexOffset = fieldIdOffset + MemoryLayout<UInt32>.size
+        let endOffset = memoIndexOffset + MemoryLayout<Int32>.size
+        guard data.count == endOffset else {
+            return nil
+        }
+        let offsets = HwpFieldControlPayloadOffsets(
+            properties: propertiesOffset,
+            extraProperties: extraPropertiesOffset,
+            commandLength: lengthOffset,
+            fieldId: fieldIdOffset,
+            memoIndex: memoIndexOffset
+        )
+        return (command, offsets)
+    }
+
+    private static func fieldControlPayload(
+        from data: Data,
+        command: HwpFieldParameterParseResult,
+        offsets: HwpFieldControlPayloadOffsets
+    ) -> HwpFieldControlPayloadParseResult? {
+        do {
+            let properties = try data.readLittleEndianUInt32(at: offsets.properties)
+            let extraProperties = try data.readUInt8(at: offsets.extraProperties)
+            let fieldId = try data.readLittleEndianUInt32(at: offsets.fieldId)
+            let memoIndexRawValue = try data.readLittleEndianUInt32(at: offsets.memoIndex)
+            return HwpFieldControlPayloadParseResult(
+                properties: properties,
+                propertiesRawPayload: rawFieldPayload(
+                    from: data,
+                    offset: offsets.properties,
+                    byteCount: MemoryLayout<UInt32>.size
+                ),
+                extraProperties: extraProperties,
+                extraPropertiesRawPayload: rawFieldPayload(
+                    from: data,
+                    offset: offsets.extraProperties,
+                    byteCount: MemoryLayout<UInt8>.size
+                ),
+                commandLengthRawPayload: rawFieldPayload(
+                    from: data,
+                    offset: offsets.commandLength,
+                    byteCount: MemoryLayout<WORD>.size
+                ),
+                command: HwpFieldParameterParseResult(
+                    value: command.value,
+                    characterCount: command.characterCount,
+                    isByteSwapped: command.isByteSwapped,
+                    rawPayload: command.rawPayload,
+                    rawTrailing: Data(data.dropFirst(offsets.fieldId))
+                ),
+                fieldId: fieldId,
+                fieldIdRawPayload: rawFieldPayload(
+                    from: data,
+                    offset: offsets.fieldId,
+                    byteCount: MemoryLayout<UInt32>.size
+                ),
+                memoIndex: Int32(bitPattern: memoIndexRawValue),
+                memoIndexRawPayload: rawFieldPayload(
+                    from: data,
+                    offset: offsets.memoIndex,
+                    byteCount: MemoryLayout<Int32>.size
+                )
+            )
+        } catch {
+            return nil
+        }
+    }
+
+    private static func rawFieldPayload(
+        from data: Data,
+        offset: Int,
+        byteCount: Int
+    ) -> Data {
+        Data(data.dropFirst(offset).prefix(byteCount))
+    }
+
     private static func fieldParameterHeaderValue(from data: Data) -> UInt32? {
         guard data.count >= MemoryLayout<UInt32>.size else {
             return nil
@@ -278,41 +466,5 @@ extension HwpFieldControl: HwpPrimitive {
         }
 
         return Data(data.prefix(byteCount))
-    }
-}
-
-private struct HwpFieldParameterParseResult {
-    let value: String
-    let characterCount: Int
-    let isByteSwapped: Bool
-    let rawPayload: Data
-    let rawTrailing: Data
-}
-
-private struct HwpFieldParameterLengthCandidate {
-    let characterCount: Int
-    let isByteSwapped: Bool
-}
-
-private struct HwpFieldParameterLengthInfo {
-    let characterCount: Int?
-    let rawPayload: Data
-}
-
-private extension HwpMemoFieldParameter {
-    init?(_ rawValue: String, rawPayload: Data, rawTrailing: Data) {
-        let components = rawValue
-            .split(separator: "/", omittingEmptySubsequences: false)
-            .map(String.init)
-        guard let marker = components.first, marker == "MEMO" else {
-            return nil
-        }
-        self.rawValue = rawValue
-        self.rawPayload = rawPayload
-        self.components = components
-        self.marker = marker
-        fields = Array(components.dropFirst())
-        author = components.indices.contains(5) ? components[5] : nil
-        self.rawTrailing = rawTrailing
     }
 }

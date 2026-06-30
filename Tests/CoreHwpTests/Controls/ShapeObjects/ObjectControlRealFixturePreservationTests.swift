@@ -81,6 +81,29 @@ final class ObjectFixturePreservationTests: XCTestCase {
         expect(decoded.sectionArray.map(\.rawPayload)) == hwp.sectionArray.map(\.rawPayload)
     }
 
+    func testEquationFixtureEqEditParsesVersionInfoAfterUnknownBaselineField() throws {
+        let hwp = try openHwp(#file, "equation")
+        let edit = try equationEdit(in: hwp)
+
+        expect(edit.property) == 0
+        expect(edit.equationTextLength) == 3
+        expect(edit.equationText) == "x=1"
+        expect(edit.letterSize) == 1000
+        expect(edit.textColor) == HwpColor(0, 0, 0)
+        expect(edit.unknownAfterBaseline) == 0
+        expect(edit.unknownAfterBaselineRawPayload) == Data([0, 0])
+        expect(edit.versionInfoLength) == 19
+        expect(edit.versionInfo) == "Equation Version 60"
+        expect(edit.fontNameLength) == 9
+        expect(edit.fontName) == "HancomEQN"
+        expect(edit.rawTrailing) == Data()
+
+        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
+        let decodedEdit = try equationEdit(in: decoded)
+
+        expect(decodedEdit) == edit
+    }
+
     func testTextBoxFixtureGenShapeObjectSurvivesHwpFileCodableRoundTrip() throws {
         let fixture = try FixtureLoader.load(id: "text-box")
         let hwp = try HwpFile(fromPath: fixture.documentURL.path)
@@ -157,6 +180,17 @@ private func equationShapeControlExpectations(
     }
 
     return controls
+}
+
+private func equationEdit(in hwp: HwpFile) throws -> HwpEquationEdit {
+    let edits = FixtureDerivedValues.shapeControls(from: hwp).flatMap(\.eqEditArray)
+    guard let edit = edits.first else {
+        fail("Expected equation fixture to contain an EQEDIT record")
+        throw HwpError.recordDoesNotExist(tag: HwpSectionTag.eqEdit.rawValue)
+    }
+
+    expect(edits.count) == 1
+    return edit
 }
 
 private func textBoxGenShapeObjectExpectations(

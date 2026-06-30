@@ -11,6 +11,8 @@ public struct HwpBorderFill {
     public var rawPayload: Data
     /** 속성 */
     public let property: UInt16
+    /** 4방향 테두리선 정보 */
+    public let borderLineArray: [HwpBorderLine]
     /** 4방향 테두리선 종류 */
     public let borderType: [UInt8]
     /** 4방향 테두리선 굵기 */
@@ -31,9 +33,10 @@ extension HwpBorderFill: HwpFromData {
     init() {
         rawPayload = Data()
         property = 0
-        borderType = [0, 0, 0, 0]
-        borderThickness = [0, 0, 0, 0]
-        borderColor = Array(repeating: HwpColor(), count: 4)
+        borderLineArray = Array(repeating: HwpBorderLine(), count: 4)
+        borderType = borderLineArray.map(\.typeRawValue)
+        borderThickness = borderLineArray.map(\.thickness)
+        borderColor = borderLineArray.map(\.color)
         diagonalType = 0
         diagonalThickness = 0
         diagonalColor = HwpColor()
@@ -45,9 +48,15 @@ extension HwpBorderFill: HwpFromData {
     init(_ reader: inout DataReader) throws {
         let startOffset = reader.byteOffset
         property = try reader.read(UInt16.self)
-        borderType = try reader.readBytes(4).bytes
-        borderThickness = try reader.readBytes(4).bytes
-        borderColor = try reader.read(UInt32.self, 4).map { HwpColor($0) }
+        borderLineArray = try (0 ..< 4).map { _ in
+            let typeRawValue = try reader.read(UInt8.self)
+            let thickness = try reader.read(UInt8.self)
+            let color = HwpColor(try reader.read(UInt32.self))
+            return HwpBorderLine(typeRawValue: typeRawValue, thickness: thickness, color: color)
+        }
+        borderType = borderLineArray.map(\.typeRawValue)
+        borderThickness = borderLineArray.map(\.thickness)
+        borderColor = borderLineArray.map(\.color)
         diagonalType = try reader.read(UInt8.self)
         diagonalThickness = try reader.read(UInt8.self)
         diagonalColor = HwpColor(try reader.read(UInt32.self))
@@ -72,12 +81,36 @@ extension HwpBorderFill {
     init(fillInfo: [BYTE]) {
         rawPayload = Data()
         property = 0
-        borderType = [0, 0, 0, 0]
-        borderThickness = [0, 0, 0, 0]
-        borderColor = Array(repeating: HwpColor(), count: 4)
+        borderLineArray = Array(repeating: HwpBorderLine(), count: 4)
+        borderType = borderLineArray.map(\.typeRawValue)
+        borderThickness = borderLineArray.map(\.thickness)
+        borderColor = borderLineArray.map(\.color)
         diagonalType = 1
         diagonalThickness = 0
         diagonalColor = HwpColor()
         self.fillInfo = fillInfo
+    }
+}
+
+/**
+ 테두리/배경의 한 방향 테두리선 정보
+ */
+public struct HwpBorderLine: HwpPrimitive {
+    /** 테두리선 종류 raw 값 */
+    public let typeRawValue: UInt8
+    /** 테두리선 종류 */
+    public let type: HwpBorderType?
+    /** 테두리선 굵기 */
+    public let thickness: UInt8
+    /** 테두리선 색상 */
+    public let color: HwpColor
+}
+
+public extension HwpBorderLine {
+    init(typeRawValue: UInt8 = 0, thickness: UInt8 = 0, color: HwpColor = HwpColor(0, 0, 0)) {
+        self.typeRawValue = typeRawValue
+        type = HwpBorderType(rawValue: Int(typeRawValue))
+        self.thickness = thickness
+        self.color = color
     }
 }

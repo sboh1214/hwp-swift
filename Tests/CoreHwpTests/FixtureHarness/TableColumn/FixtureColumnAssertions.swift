@@ -24,6 +24,7 @@ extension FixtureAssertions {
             if let isSameWidth = expected.isSameWidth {
                 expect(actual.property.isSameWidth) == isSameWidth
             }
+            assertColumnTypedFields(actual, expected)
             assertPayloadSample(
                 actual.rawPayload,
                 length: expected.rawPayloadLength,
@@ -43,6 +44,30 @@ extension FixtureAssertions {
                         : nil)
             }
             assertColumnUnknownChildren(actual.unknownChildren, expected)
+        }
+    }
+
+    static func assertColumnTypedFields(
+        _ actual: HwpColumn,
+        _ expected: FixtureColumnExpectations
+    ) {
+        if let spacing = expected.spacing {
+            expect(actual.spacing) == spacing
+        }
+        if let property2 = expected.property2 {
+            expect(actual.property2) == property2
+        }
+        if let widthArray = expected.widthArray {
+            expect(actual.widthArray) == widthArray
+        }
+        if let gapArray = expected.gapArray {
+            expect(actual.gapArray) == gapArray
+        }
+        if let dividerType = expected.dividerType {
+            expect(actual.dividerType) == dividerType
+        }
+        if let dividerThickness = expected.dividerThickness {
+            expect(actual.dividerThickness) == dividerThickness
         }
     }
 

@@ -65,6 +65,7 @@ private func columnWithUnknownChildren() -> HwpColumn {
         spacing: 0,
         widthArray: nil,
         property2: 0,
+        gapArray: nil,
         dividerType: 0,
         dividerThickness: 0,
         dividerColor: HwpColor(0, 0, 0),
@@ -87,6 +88,10 @@ private func tableWithUnknownChildren() throws -> HwpTable {
     let cellHeader = HwpTableCellHeader(
         paragraphCount: 0,
         property: 0,
+        propertyInfo: HwpListHeaderProperty(),
+        listHeaderWidthRef: 0,
+        cellPropertyInfo: HwpTableCellHeaderProperty(),
+        isHeader: false,
         rawTrailing: Data([170]),
         rawPayload: Data([0, 0, 0, 0, 0, 0, 0, 0, 170]),
         unknownChildren: [

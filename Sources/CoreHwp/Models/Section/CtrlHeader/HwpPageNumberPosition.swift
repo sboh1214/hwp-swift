@@ -8,6 +8,8 @@ public struct HwpPageNumberPosition {
     public var otherCtrlId: HwpOtherCtrlId
     /** 속성 */
     public var property: UInt32
+    /** 속성의 비트 필드 */
+    public var propertyInfo: HwpPageNumberPositionProperty
     /** 사용자 기호 */
     public var userSymbol: WCHAR
     /** 앞 장식 문자 */
@@ -39,6 +41,7 @@ extension HwpPageNumberPosition: HwpFromData {
         }
         self.otherCtrlId = otherCtrlId
         property = try reader.read(UInt32.self)
+        propertyInfo = try HwpPageNumberPositionProperty.load(property)
         userSymbol = try reader.read(WCHAR.self)
         headDecoration = try reader.read(WCHAR.self)
         tailDecoration = try reader.read(WCHAR.self)
