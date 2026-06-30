@@ -8,7 +8,9 @@
   binary 값에 맞춰 정정했습니다. `none = 0`이 추가되었고, 기존 `line`,
   `longDotLine`, `dotLine`의 raw value는 각각 `0`, `1`, `2`에서 `1`, `2`, `3`으로
   바뀝니다. 저장된 raw value나 JSON snapshot에서 `HwpBorderType`을 직접 비교하던
-  코드는 새 값으로 갱신해야 합니다.
+  코드는 새 값으로 갱신해야 합니다. 예를 들어 snapshot에서 raw 숫자 `0`을 `line`으로
+  기대했다면 이제 `0`은 `none`, `1`이 `line`이므로 expected JSON을 재생성하거나
+  숫자 대신 enum case 의미를 비교하도록 마이그레이션합니다.
 - `Sources/CoreHwp/Models/Section/CtrlHeader/Field/HwpFieldControl.swift`의
   `HwpFieldControl` `Codable` 형상이 바뀌었습니다. 필드 payload를 `properties`,
   `propertyInfo`, `extraProperties`, `command`, `fieldId`, `memoIndex`와 각 raw payload
