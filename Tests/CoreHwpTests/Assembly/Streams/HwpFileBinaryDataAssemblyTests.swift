@@ -44,6 +44,23 @@ final class HwpFileBinaryDataAssemblyTests: XCTestCase {
         expect(decoded.sectionArray.map(\.rawPayload)) == hwp.sectionArray.map(\.rawPayload)
     }
 
+    func testBinaryDataCompressionMapSkipsUnnumberedStreamsAndHonorsAlwaysCompress() throws {
+        let unnumberedLink = try HwpBinData.load(linkBinDataPayload())
+        let alwaysCompressedStorage = try HwpBinData.load(storageBinDataPayload(
+            streamId: 7,
+            compressType: .always,
+            extensionName: "ole"
+        ))
+        let docInfo = try docInfoWithBinData([unnumberedLink, alwaysCompressedStorage])
+
+        let compressionByStreamId = HwpFile.binaryDataCompressionByStreamId(
+            docInfo: docInfo,
+            storageIsCompressed: false
+        )
+
+        expect(compressionByStreamId) == [7: true]
+    }
+
     #if os(iOS) || os(watchOS) || os(tvOS) || os(macOS)
         func testActualBinaryDataStreamsLoadEquivalentlyThroughDataAndFileWrapper() throws {
             let url = hwpURL(#file, "BinData")
@@ -122,4 +139,65 @@ private func decodedPictureBinaryDataIds(from hwp: HwpFile) -> [UInt16] {
         .flatMap(\.shapeComponentArray)
         .flatMap(\.pictureArray)
         .compactMap(\.binaryDataId)
+}
+
+private func docInfoWithBinData(_ binDataArray: [HwpBinData]) throws -> HwpDocInfo {
+    let encoder = JSONEncoder()
+    guard var root = try JSONSerialization.jsonObject(
+        with: encoder.encode(HwpDocInfo())
+    ) as? [String: Any],
+        var idMappings = root["idMappings"] as? [String: Any]
+    else {
+        throw BinaryDataAssemblyTestError.invalidDocInfoJSON
+    }
+
+    idMappings["binDataArray"] = try JSONSerialization.jsonObject(
+        with: encoder.encode(binDataArray)
+    )
+    root["idMappings"] = idMappings
+
+    return try JSONDecoder().decode(
+        HwpDocInfo.self,
+        from: JSONSerialization.data(withJSONObject: root)
+    )
+}
+
+private func linkBinDataPayload() -> Data {
+    concatenatedData(
+        binaryDataAssemblyLittleEndianData(UInt16(HwpBinDataType.link.rawValue)),
+        binaryDataAssemblyLittleEndianData(WORD(0)),
+        binaryDataAssemblyLittleEndianData(WORD(0))
+    )
+}
+
+private func storageBinDataPayload(
+    streamId: UInt16,
+    compressType: HwpBinDataCompressType,
+    extensionName: String
+) -> Data {
+    let property = UInt16(HwpBinDataType.storage.rawValue)
+        | UInt16(compressType.rawValue << 4)
+        | UInt16(HwpBinDataState.never.rawValue << 6)
+    return concatenatedData(
+        binaryDataAssemblyLittleEndianData(property),
+        binaryDataAssemblyLittleEndianData(streamId),
+        binaryDataAssemblyUTF16LengthPrefixedString(extensionName)
+    )
+}
+
+private func binaryDataAssemblyUTF16LengthPrefixedString(_ string: String) -> Data {
+    var data = binaryDataAssemblyLittleEndianData(UInt16(string.utf16.count))
+    for codeUnit in string.utf16 {
+        data.append(binaryDataAssemblyLittleEndianData(UInt16(codeUnit)))
+    }
+    return data
+}
+
+private func binaryDataAssemblyLittleEndianData(_ value: some FixedWidthInteger) -> Data {
+    var littleEndian = value.littleEndian
+    return withUnsafeBytes(of: &littleEndian) { Data($0) }
+}
+
+private enum BinaryDataAssemblyTestError: Error {
+    case invalidDocInfoJSON
 }

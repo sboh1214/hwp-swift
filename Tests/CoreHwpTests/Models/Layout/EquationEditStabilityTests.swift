@@ -93,6 +93,24 @@ final class EquationEditStabilityTests: XCTestCase {
         assertEquationEdit(decoded, matches: expected)
     }
 
+    func testEquationEditMissingTextLengthPreservesOnlyProperty() throws {
+        let rawPayload = Data([0x01, 0x00, 0x00, 0x00])
+        let record = HwpRecord(
+            tagId: HwpSectionTag.eqEdit.rawValue,
+            level: 2,
+            payload: rawPayload
+        )
+
+        let edit = try HwpEquationEdit.load(record)
+
+        expect(edit.rawPayload) == rawPayload
+        expect(edit.property) == 1
+        expect(edit.propertyRawPayload) == rawPayload
+        expect(edit.equationTextLength).to(beNil())
+        expect(edit.equationTextLengthRawPayload).to(beNil())
+        expect(edit.rawTrailing).to(beNil())
+    }
+
     func testEquationEditPartialLayoutStopsAtLastCompleteField() throws {
         let textColor = UInt32(0x00AA_BBCC)
         let textColorBytes = littleEndianData(textColor)

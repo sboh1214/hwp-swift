@@ -1,4 +1,4 @@
-import CoreHwp
+@testable import CoreHwp
 import Foundation
 import Nimble
 import XCTest
@@ -152,9 +152,9 @@ class HwpErrorTests: XCTestCase {
     }
 
     func testEOFDescriptionsUseInstanceTypeNames() {
-        expect(HwpError.bytesAreNotEOF(modelName: "HwpFile", remain: 1).description) ==
+        expect(HwpError.bytesAreNotEOF(model: HwpFile(), remain: 1).description) ==
             "Bytes are not EOF : 1 bytes remain in HwpFile"
-        expect(HwpError.bitsAreNotEOF(modelName: "HwpFile", remain: 2).description) ==
+        expect(HwpError.bitsAreNotEOF(model: HwpFile(), remain: 2).description) ==
             "Bits are not EOF : 2 bits remain in HwpFile"
     }
 

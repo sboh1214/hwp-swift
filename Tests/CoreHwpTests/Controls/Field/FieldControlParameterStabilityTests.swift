@@ -196,6 +196,39 @@ final class FieldControlParameterStabilityTests: XCTestCase {
             concatenatedData(byteSwappedCandidatePadding, Data([0xAA, 0xBB]))
     }
 
+    func testStrongByteSwappedFieldParameterWinsOverPrintableNaturalCandidate() throws {
+        let parameter = "MEMO/"
+        let swappedPayload = byteSwappedUTF16Payload(parameter)
+        let naturalCandidatePadding = (0 ..< (
+            Int(WORD(parameter.utf16.count).byteSwapped) - parameter.utf16.count
+        )).reduce(into: Data()) { data, _ in
+            data.append(littleEndianData(WCHAR(0x0041)))
+        }
+        let rawTrailing = concatenatedData(
+            littleEndianData(UInt32(0x8001)),
+            littleEndianData(WORD(parameter.utf16.count).byteSwapped),
+            swappedPayload,
+            naturalCandidatePadding,
+            Data([0xAA, 0xBB])
+        )
+        var rawPayload = littleEndianData(HwpFieldCtrlId.unknown.rawValue)
+        rawPayload.append(rawTrailing)
+        let record = HwpRecord(
+            tagId: HwpSectionTag.ctrlHeader.rawValue,
+            level: 1,
+            payload: rawPayload
+        )
+
+        let control = try HwpFieldControl.load(record)
+
+        expect(control.fieldParameterCharacterCount) == parameter.utf16.count
+        expect(control.fieldParameterLengthRawPayload) == Data([0, 5])
+        expect(control.fieldParameter) == parameter
+        expect(control.fieldParameterRawPayload) == swappedPayload
+        expect(control.fieldParameterRawTrailing) ==
+            concatenatedData(naturalCandidatePadding, Data([0xAA, 0xBB]))
+    }
+
     func testFieldParameterWithNonZeroStartIndexPreservesMemoMetadata() throws {
         let parameter = "MEMO/1/2/3/4/writer/body"
         let rawTrailing = concatenatedData(fieldParameterTrailing(parameter), Data([0xAA, 0xBB]))
