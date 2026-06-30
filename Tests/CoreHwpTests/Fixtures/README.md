@@ -274,7 +274,7 @@ local Downloads/Documents/Desktop folders와
 도움말의 `automatic_action` 문서는 빠른 교정의 `입력어 자동 실행` 설명이어서
 fixture 생성 자동화 API로 보지 않습니다.
 
-2026-06-20에는 local temporary Swift scanner를 사용해
+2026-06-20에는 local 임시 Swift scanner를 사용해
 repo fixture, local Downloads folder, `/Applications/Hancom Office HWP.app`
 아래 `.hwp`/`.hwt` 352개를 다시 스캔했습니다. `CoreHwp`로 readable인 파일은
 348개였고, unreadable 4개는 기존 suite의 encrypted 2개, deployment 1개,
