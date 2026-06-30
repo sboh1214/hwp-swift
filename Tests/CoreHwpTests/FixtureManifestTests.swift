@@ -7,21 +7,37 @@ import XCTest
 // swiftlint:disable:next type_body_length
 final class FixtureManifestTests: XCTestCase {
     func testReadmeDocumentsReaderSupportAndKnownGaps() throws {
-        let readmeURL = FixtureLoader.root
+        let projectRoot = FixtureLoader.root
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appendingPathComponent("README.md")
-        let readme = try String(contentsOf: readmeURL, encoding: .utf8)
+        let projectReadme = try String(
+            contentsOf: projectRoot.appendingPathComponent("README.md"),
+            encoding: .utf8
+        )
+        let readerSupport = try String(
+            contentsOf: projectRoot
+                .appendingPathComponent("Sources")
+                .appendingPathComponent("CoreHwp")
+                .appendingPathComponent("AGENTS.md"),
+            encoding: .utf8
+        )
+        let fixtureGuide = try String(
+            contentsOf: FixtureLoader.root.appendingPathComponent("README.md"),
+            encoding: .utf8
+        )
 
-        expect(readme).to(contain("## 지원 범위"))
-        expect(readme).to(contain("`HwpError`"))
-        expect(readme).to(contain("raw payload"))
-        expect(readme).to(contain("payload prefix/suffix bytes"))
-        expect(readme).to(contain("`DISTRIBUTE_DOC_DATA`"))
-        expect(readme).to(contain("DocInfo `TRACK_CHANGE`는 `noori` fixture"))
-        expect(readme).to(contain("DRM unsupported"))
-        expect(readme).to(contain("## Fixture 기준"))
+        expect(projectReadme).to(contain("[Sources/CoreHwp/AGENTS.md]"))
+        expect(projectReadme).to(contain("[Tests/CoreHwpTests/Fixtures/README.md]"))
+        expect(projectReadme).notTo(contain("### Fixture coverage"))
+        expect(readerSupport).to(contain("## 지원 범위"))
+        expect(readerSupport).to(contain("`HwpError`"))
+        expect(readerSupport).to(contain("raw payload"))
+        expect(readerSupport).to(contain("`DISTRIBUTE_DOC_DATA`"))
+        expect(readerSupport).to(contain("DocInfo `TRACK_CHANGE`는 `noori` fixture"))
+        expect(fixtureGuide).to(contain("payload prefix/suffix"))
+        expect(fixtureGuide).to(contain("DRM unsupported"))
+        expect(fixtureGuide).to(contain("## Fixture 기준"))
     }
 
     func testFixtureManifests() throws {

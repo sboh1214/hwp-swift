@@ -3,8 +3,24 @@ import Nimble
 import XCTest
 
 final class ReadmeSupportDocumentationTests: XCTestCase {
-    func testReadmeDocumentsReaderCompletionEvidence() throws {
-        let readme = try String(contentsOf: projectReadmeURL(), encoding: .utf8)
+    func testProjectReadmeStaysConciseAndLinksDetailedDocs() throws {
+        let readme = try String(
+            contentsOf: projectRootURL().appendingPathComponent("README.md"),
+            encoding: .utf8
+        )
+
+        expect(readme).to(contain("[Sources/CoreHwp/AGENTS.md]"))
+        expect(readme).to(contain("[Tests/CoreHwpTests/Fixtures/README.md]"))
+        expect(readme).to(contain("[edwardkim/rhwp](https://github.com/edwardkim/rhwp)"))
+        expect(readme).to(contain("hwp_spec_errata.md"))
+        expect(readme).to(contain("[Documentation/ErrataAudit.md](Documentation/ErrataAudit.md)"))
+        expect(readme).notTo(contain("### Fixture coverage"))
+        expect(readme).notTo(contain("2026-06-25 현재 Downloads HWP 5개"))
+        expect(readme).notTo(contain("readable external 후보 384개"))
+    }
+
+    func testLowerDocumentationDocumentsReaderCompletionEvidence() throws {
+        let readme = try lowerReaderDocumentation()
 
         expect(readme).to(contain("`HwpError`"))
         expect(readme).to(contain("`unknownRecords`에 raw payload 보존"))
@@ -45,6 +61,22 @@ final class ReadmeSupportDocumentationTests: XCTestCase {
     }
 }
 
+private func lowerReaderDocumentation() throws -> String {
+    let root = projectRootURL()
+    let readerSupport = try String(
+        contentsOf: root
+            .appendingPathComponent("Sources")
+            .appendingPathComponent("CoreHwp")
+            .appendingPathComponent("AGENTS.md"),
+        encoding: .utf8
+    )
+    let fixtureGuide = try String(
+        contentsOf: FixtureLoader.root.appendingPathComponent("README.md"),
+        encoding: .utf8
+    )
+    return readerSupport + "\n" + fixtureGuide
+}
+
 private func assertPublicRepositoryScanEvidence(in readme: String) {
     expect(readme).to(contain("edwardkim/rhwp"))
     expect(readme).to(contain("123jimin/node-hwp"))
@@ -66,10 +98,9 @@ private func assertPublicRepositoryScanEvidence(in readme: String) {
     expect(readme).to(contain("provenance"))
 }
 
-private func projectReadmeURL() -> URL {
+private func projectRootURL() -> URL {
     FixtureLoader.root
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
-        .appendingPathComponent("README.md")
 }
