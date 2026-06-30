@@ -4,6 +4,19 @@ import Nimble
 import XCTest
 
 final class FieldControlParameterStabilityTests: XCTestCase {
+    func testFieldControlPropertyDefaultInitializerUsesInitialState() throws {
+        let defaultProperty = HwpFieldControlProperty()
+        let loadedInitialProperty = try HwpFieldControlProperty.load(0)
+        let loadedEditedProperty = try HwpFieldControlProperty.load(1 << 15)
+
+        expect(defaultProperty.rawValue) == 0
+        expect(defaultProperty.isInitialState) == true
+        expect(loadedInitialProperty.rawValue) == 0
+        expect(loadedInitialProperty.isInitialState) == true
+        expect(loadedEditedProperty.rawValue) == 1 << 15
+        expect(loadedEditedProperty.isInitialState) == false
+    }
+
     func testInvalidFieldCtrlIdThrowsTypedError() {
         let invalidCtrlId: UInt32 = 0x1234_5678
         let record = HwpRecord(

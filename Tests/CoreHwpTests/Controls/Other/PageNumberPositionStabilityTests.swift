@@ -4,6 +4,18 @@ import Nimble
 import XCTest
 
 final class PageNumberPositionStabilityTests: XCTestCase {
+    func testPageNumberPositionPropertyDefaultInitializerUsesEmptyBitField() throws {
+        let defaultProperty = HwpPageNumberPositionProperty()
+        let loadedProperty = try HwpPageNumberPositionProperty.load(0x0000_0A05)
+
+        expect(defaultProperty.rawValue) == 0
+        expect(defaultProperty.numberFormat) == 0
+        expect(defaultProperty.displayPosition) == 0
+        expect(loadedProperty.rawValue) == 0x0000_0A05
+        expect(loadedProperty.numberFormat) == 5
+        expect(loadedProperty.displayPosition) == 10
+    }
+
     func testPageNumberPositionInitializerPreservesRawPayloadWithNonZeroDataStartIndex() throws {
         let rawTrailing = Data([0xCA, 0xFE])
         let ctrlPayload = pageNumberPositionPayload(rawTrailing: rawTrailing)

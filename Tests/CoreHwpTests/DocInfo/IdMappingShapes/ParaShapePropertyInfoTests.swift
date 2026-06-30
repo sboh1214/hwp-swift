@@ -15,6 +15,14 @@ final class ParaShapePropertyInfoTests: XCTestCase {
         expect(defaultProperty.borderIgnoreMargin) == false
     }
 
+    func testParaShapeProperty1DefaultInitializerUsesEmptyBitField() {
+        let property = HwpParaShapeProperty1()
+
+        expect(property.rawValue) == 0
+        expect(property.borderConnect) == false
+        expect(property.borderIgnoreMargin) == false
+    }
+
     func testParaShapeProperty1InfoIsWiredFromRealFixture() throws {
         let hwp = try openHwp(#file, "noori")
         let paraShapes = hwp.docInfo.idMappings.paraShapeArray

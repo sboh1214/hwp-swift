@@ -3,6 +3,24 @@ import Nimble
 import XCTest
 
 final class SectionDefPropertyRealFixtureTests: XCTestCase {
+    func testSectionDefPropertyDefaultInitializerUsesEmptyBitField() {
+        let property = HwpSectionDefProperty()
+
+        expect(property.rawValue) == 0
+        expect(property.hideHeader) == false
+        expect(property.hideFooter) == false
+        expect(property.hideMasterPage) == false
+        expect(property.hideBorder) == false
+        expect(property.hideFill) == false
+        expect(property.hidePageNumberPosition) == false
+        expect(property.showFirstPageBorderOnly) == false
+        expect(property.showFirstPageFillOnly) == false
+        expect(property.textDirectionRawValue) == 0
+        expect(property.hideEmptyLine) == false
+        expect(property.newPageNumberApplyRawValue) == 0
+        expect(property.applyManuscriptPaper) == false
+    }
+
     func testHancomFixtureDecodesSectionDefPropertyAndAlignedFields() throws {
         let hwp = try openHwp(#file, "plain-text-minimal")
         let sectionDef = try firstSectionDef(in: hwp)

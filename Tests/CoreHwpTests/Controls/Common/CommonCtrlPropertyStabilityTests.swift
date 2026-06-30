@@ -4,6 +4,32 @@ import Nimble
 import XCTest
 
 final class CommonCtrlPropertyStabilityTests: XCTestCase {
+    func testCommonControlPropertyInfoDefaultInitializerUsesSpecDefaults() {
+        let info = HwpCommonCtrlPropertyInfo()
+
+        expect(info.rawValue) == 0
+        expect(info.treatAsChar) == false
+        expect(info.affectsLineSpacing) == false
+        expect(info.verticalRelativeToRawValue) == 0
+        expect(info.verticalAlignmentRawValue) == 0
+        expect(info.horizontalRelativeToRawValue) == 0
+        expect(info.horizontalAlignmentRawValue) == 0
+        expect(info.restrictInPage) == false
+        expect(info.allowOverlap) == false
+        expect(info.effectiveAllowOverlap) == false
+        expect(info.widthRelativeToRawValue) == 0
+        expect(info.widthRelativeTo) == .paper
+        expect(info.heightRelativeToRawValue) == 0
+        expect(info.heightRelativeTo) == .paper
+        expect(info.protectSizeInParagraphVertRelTo) == false
+        expect(info.textWrapRawValue) == 0
+        expect(info.textWrap) == .square
+        expect(info.textFlowSideRawValue) == 0
+        expect(info.textFlowSide) == .bothSides
+        expect(info.numberingCategoryRawValue) == 0
+        expect(info.numberingCategory) == HwpCommonCtrlNumberingCategory.none
+    }
+
     func testCommonControlPropertyInfoDecodesErrataCommonObjectBits() throws {
         let restrictInPageInfo = try HwpCommonCtrlPropertyInfo.load(0x002A_2210)
         let unrestrictedInfo = try HwpCommonCtrlPropertyInfo.load(0x002A_0210)

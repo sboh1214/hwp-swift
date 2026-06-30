@@ -92,6 +92,64 @@ final class EquationEditStabilityTests: XCTestCase {
         expect(decoded) == edit
         assertEquationEdit(decoded, matches: expected)
     }
+
+    func testEquationEditPartialLayoutStopsAtLastCompleteField() throws {
+        let textColor = UInt32(0x00AA_BBCC)
+        let textColorBytes = littleEndianData(textColor)
+        let baselineBytes = littleEndianData(UInt16(bitPattern: Int16(-12)))
+        let unknownAfterBaselineBytes = littleEndianData(UInt16(0x2211))
+        let versionInfo = hwpStringPayload("Equation")
+        let truncatedFontName = concatenatedData(
+            littleEndianData(UInt16(2)),
+            littleEndianData(WCHAR(0x0048))
+        )
+
+        let missingTextColor = try equationEdit(
+            layoutTrailing: littleEndianData(HWPUNIT(2400))
+        )
+        expect(missingTextColor.letterSize) == 2400
+        expect(missingTextColor.textColorRawValue).to(beNil())
+
+        let missingBaseline = try equationEdit(
+            layoutTrailing: concatenatedData(littleEndianData(HWPUNIT(2400)), textColorBytes)
+        )
+        expect(missingBaseline.textColorRawValue) == textColor
+        expect(missingBaseline.baseline).to(beNil())
+
+        let missingUnknownAfterBaseline = try equationEdit(
+            layoutTrailing: concatenatedData(
+                littleEndianData(HWPUNIT(2400)),
+                textColorBytes,
+                baselineBytes
+            )
+        )
+        expect(missingUnknownAfterBaseline.baseline) == -12
+        expect(missingUnknownAfterBaseline.unknownAfterBaseline).to(beNil())
+
+        let missingVersionInfo = try equationEdit(
+            layoutTrailing: concatenatedData(
+                littleEndianData(HWPUNIT(2400)),
+                textColorBytes,
+                baselineBytes,
+                unknownAfterBaselineBytes
+            )
+        )
+        expect(missingVersionInfo.unknownAfterBaseline) == UInt16(0x2211)
+        expect(missingVersionInfo.versionInfo).to(beNil())
+
+        let truncatedFont = try equationEdit(
+            layoutTrailing: concatenatedData(
+                littleEndianData(HWPUNIT(2400)),
+                textColorBytes,
+                baselineBytes,
+                unknownAfterBaselineBytes,
+                versionInfo,
+                truncatedFontName
+            )
+        )
+        expect(truncatedFont.versionInfo) == "Equation"
+        expect(truncatedFont.fontName).to(beNil())
+    }
 }
 
 private func roundTrippedEquationEdit(_ edit: HwpEquationEdit) throws -> HwpEquationEdit {
@@ -134,15 +192,31 @@ private func assertEquationEdit(_ edit: HwpEquationEdit, matches expected: Expec
     expect(edit.unknownChildren).to(beEmpty())
 }
 
-private func equationEditPayload(text: String) -> Data {
+private func equationEdit(layoutTrailing: Data) throws -> HwpEquationEdit {
+    let record = HwpRecord(
+        tagId: HwpSectionTag.eqEdit.rawValue,
+        level: 2,
+        payload: equationEditPayload(text: "x", layoutTrailing: layoutTrailing)
+    )
+    return try HwpEquationEdit.load(record)
+}
+
+private func equationEditPayload(text: String, layoutTrailing: Data = Data()) -> Data {
     let values = Array(text.utf16)
     return concatenatedData(
         Data([0x00, 0x00, 0x00, 0x00]),
         littleEndianData(UInt16(values.count)),
         values.reduce(into: Data()) { data, value in
             data.append(littleEndianData(value))
-        }
+        },
+        layoutTrailing
     )
+}
+
+private func hwpStringPayload(_ string: String) -> Data {
+    string.utf16.reduce(into: littleEndianData(UInt16(string.utf16.count))) { data, value in
+        data.append(littleEndianData(value))
+    }
 }
 
 private func littleEndianData(_ value: some FixedWidthInteger) -> Data {
