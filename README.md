@@ -6,7 +6,6 @@
 
 [![CI](https://github.com/sboh1214/hwp-swift/actions/workflows/ci.yml/badge.svg)](https://github.com/sboh1214/hwp-swift/actions/workflows/ci.yml)
 [![CD](https://github.com/sboh1214/hwp-swift/actions/workflows/cd.yml/badge.svg)](https://github.com/sboh1214/hwp-swift/actions/workflows/cd.yml)
-[![codecov](https://codecov.io/gh/sboh1214/hwp-swift/branch/main/graph/badge.svg)](https://codecov.io/gh/sboh1214/hwp-swift)
 
 한글 파일을 읽기 위한 스위프트 패키지
 
