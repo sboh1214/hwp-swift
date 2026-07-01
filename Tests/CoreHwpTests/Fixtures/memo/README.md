@@ -10,8 +10,17 @@ typed value로 함께 노출한다.
 - 본문 문단 텍스트 1개
 - 메모 1개
 - 메모 field control raw payload 및 structured parameter 보존
+- 필드 CTRL_HEADER의 `properties`, `extra_properties`, `command_len`, `field_id`,
+  `memo_index` typed layout 검증
 - 기본 DocInfo/id mapping
 - PreviewText stream
+
+## 검증 대상 errata
+
+- rhwp `hwp_spec_errata.md` 항목 18: `field_id` 뒤 4바이트 `memo_index`
+  (`memoIndex == 1`, 첫 번째 `MemoShape` 참조)
+- rhwp `hwp_spec_errata.md` 항목 21: 필드 속성 bit 15
+  (`properties == 0x00008001`, `isInitialState == false`)
 
 ## 재생성 절차
 

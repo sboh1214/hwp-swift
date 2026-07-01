@@ -4,6 +4,19 @@ import Nimble
 import XCTest
 
 final class FieldControlParameterStabilityTests: XCTestCase {
+    func testFieldControlPropertyDefaultInitializerUsesInitialState() throws {
+        let defaultProperty = HwpFieldControlProperty()
+        let loadedInitialProperty = try HwpFieldControlProperty.load(0)
+        let loadedEditedProperty = try HwpFieldControlProperty.load(1 << 15)
+
+        expect(defaultProperty.rawValue) == 0
+        expect(defaultProperty.isInitialState) == true
+        expect(loadedInitialProperty.rawValue) == 0
+        expect(loadedInitialProperty.isInitialState) == true
+        expect(loadedEditedProperty.rawValue) == 1 << 15
+        expect(loadedEditedProperty.isInitialState) == false
+    }
+
     func testInvalidFieldCtrlIdThrowsTypedError() {
         let invalidCtrlId: UInt32 = 0x1234_5678
         let record = HwpRecord(
@@ -181,6 +194,39 @@ final class FieldControlParameterStabilityTests: XCTestCase {
         expect(control.fieldParameterRawPayload) == naturalPayload
         expect(control.fieldParameterRawTrailing) ==
             concatenatedData(byteSwappedCandidatePadding, Data([0xAA, 0xBB]))
+    }
+
+    func testStrongByteSwappedFieldParameterWinsOverPrintableNaturalCandidate() throws {
+        let parameter = "MEMO/"
+        let swappedPayload = byteSwappedUTF16Payload(parameter)
+        let naturalCandidatePadding = (0 ..< (
+            Int(WORD(parameter.utf16.count).byteSwapped) - parameter.utf16.count
+        )).reduce(into: Data()) { data, _ in
+            data.append(littleEndianData(WCHAR(0x0041)))
+        }
+        let rawTrailing = concatenatedData(
+            littleEndianData(UInt32(0x8001)),
+            littleEndianData(WORD(parameter.utf16.count).byteSwapped),
+            swappedPayload,
+            naturalCandidatePadding,
+            Data([0xAA, 0xBB])
+        )
+        var rawPayload = littleEndianData(HwpFieldCtrlId.unknown.rawValue)
+        rawPayload.append(rawTrailing)
+        let record = HwpRecord(
+            tagId: HwpSectionTag.ctrlHeader.rawValue,
+            level: 1,
+            payload: rawPayload
+        )
+
+        let control = try HwpFieldControl.load(record)
+
+        expect(control.fieldParameterCharacterCount) == parameter.utf16.count
+        expect(control.fieldParameterLengthRawPayload) == Data([0, 5])
+        expect(control.fieldParameter) == parameter
+        expect(control.fieldParameterRawPayload) == swappedPayload
+        expect(control.fieldParameterRawTrailing) ==
+            concatenatedData(naturalCandidatePadding, Data([0xAA, 0xBB]))
     }
 
     func testFieldParameterWithNonZeroStartIndexPreservesMemoMetadata() throws {

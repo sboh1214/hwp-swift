@@ -4,6 +4,16 @@ import Nimble
 import XCTest
 
 final class ListControlStabilityTests: XCTestCase {
+    func testListHeaderPropertyDefaultInitializerUsesSpecDefaults() {
+        let property = HwpListHeaderProperty()
+
+        expect(property.rawValue) == 0
+        expect(property.textDirectionRawValue) == 0
+        expect(property.textWrapRawValue) == 0
+        expect(property.verticalAlignmentRawValue) == 0
+        expect(property.verticalAlignment) == .top
+    }
+
     func testListHeaderInitializerPreservesRawPayloadWithNonZeroDataStartIndex() throws {
         let rawTrailing = Data([0xCA, 0xFE])
         let rawPayload = concatenatedData(listHeaderPayload(paragraphCount: 2), rawTrailing)

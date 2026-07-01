@@ -93,20 +93,21 @@ final class FixtureKnownMissingGoalTests: XCTestCase {
     }
 
     func testKnownMissingGoalFixturesStayDocumented() throws {
-        let projectReadme = try String(contentsOf: projectReadmeURL(), encoding: .utf8)
+        let readerSupport = try String(contentsOf: readerSupportURL(), encoding: .utf8)
         let fixtureGuide = try String(
             contentsOf: FixtureLoader.root.appendingPathComponent("README.md"),
             encoding: .utf8
         )
 
-        for document in [projectReadme, fixtureGuide] {
-            expect(document).to(contain("DISTRIBUTE_DOC_DATA"))
-            expect(document).to(contain("top-level `TRACK_CHANGE`"))
-            expect(document).to(contain("missing-preview-image"))
-            expect(document).to(contain("DRM"))
-        }
+        expect(readerSupport).to(contain("DISTRIBUTE_DOC_DATA"))
+        expect(readerSupport).to(contain("top-level `TRACK_CHANGE`"))
+        expect(readerSupport).to(contain("DRM"))
+        expect(fixtureGuide).to(contain("DISTRIBUTE_DOC_DATA"))
+        expect(fixtureGuide).to(contain("top-level `TRACK_CHANGE`"))
+        expect(fixtureGuide).to(contain("missing-preview-image"))
+        expect(fixtureGuide).to(contain("DRM"))
 
-        expect(projectReadme).to(contain("별도 확보 필요"))
+        expect(fixtureGuide).to(contain("별도 확보 필요"))
         expect(fixtureGuide).to(contain("아직 필요한 fixture"))
         expect(fixtureGuide).to(contain("drm-unsupported-derived"))
         expect(fixtureGuide).to(contain("missing-preview-text-derived"))
@@ -119,8 +120,8 @@ final class FixtureKnownMissingGoalTests: XCTestCase {
         expect(fixtureGuide).to(contain("error -192"))
         expect(fixtureGuide).to(contain("hwp` URL scheme"))
         expect(fixtureGuide).to(contain("automatic_action"))
-        assertLocalScanHistoryIsDocumented(projectReadme, fixtureGuide)
-        assertCoverageHistoryIsDocumented(projectReadme, fixtureGuide)
+        assertLocalScanHistoryIsDocumented(fixtureGuide, fixtureGuide)
+        assertCoverageHistoryIsDocumented(readerSupport, fixtureGuide)
     }
 
     func testDerivedFixturesAreExplicitlyMarkedAndDoNotSatisfyActualFixtureGaps() throws {
@@ -198,12 +199,14 @@ final class FixtureKnownMissingGoalTests: XCTestCase {
     }
 }
 
-private func projectReadmeURL() -> URL {
+private func readerSupportURL() -> URL {
     FixtureLoader.root
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
-        .appendingPathComponent("README.md")
+        .appendingPathComponent("Sources")
+        .appendingPathComponent("CoreHwp")
+        .appendingPathComponent("AGENTS.md")
 }
 
 private func actualReadableFeatureSet(from fixtures: [LoadedFixture]) throws -> Set<String> {

@@ -11,6 +11,8 @@ public struct HwpParaShape {
     public var rawPayload: Data
     /** 속성 1 */
     public let property1: UInt32
+    /** 속성 1 bit field */
+    public let property1Info: HwpParaShapeProperty1
     /** 왼쪽 여백 */
     public let marginLeft: Int32
     /** 오른쪽 여백 */
@@ -52,6 +54,7 @@ extension HwpParaShape: HwpFromDataWithVersion {
         let startOffset = reader.byteOffset
         rawPayload = Data()
         property1 = try reader.read(UInt32.self)
+        property1Info = try HwpParaShapeProperty1.load(property1)
         marginLeft = try reader.read(Int32.self)
         marginRight = try reader.read(Int32.self)
         indent = try reader.read(Int32.self)
@@ -97,6 +100,7 @@ extension HwpParaShape {
     {
         rawPayload = Data()
         self.property1 = property1
+        property1Info = HwpParaShapeProperty1(rawValue: property1)
         self.marginLeft = marginLeft
         marginRight = 0
         self.indent = indent

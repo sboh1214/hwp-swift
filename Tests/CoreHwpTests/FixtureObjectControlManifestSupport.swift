@@ -80,6 +80,12 @@ struct FixtureColumnExpectations: Decodable {
     let propertyRawValue: UInt16?
     let propertyCount: Int?
     let isSameWidth: Bool?
+    let spacing: Int16?
+    let property2: UInt16?
+    let widthArray: [UInt16]?
+    let gapArray: [UInt16]?
+    let dividerType: UInt8?
+    let dividerThickness: UInt8?
     let rawPayloadLength: Int?
     let rawPayloadPrefixBytes: [UInt8]?
     let rawPayloadSuffixBytes: [UInt8]?

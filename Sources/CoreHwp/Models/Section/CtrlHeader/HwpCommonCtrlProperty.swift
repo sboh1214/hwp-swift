@@ -11,6 +11,8 @@ public struct HwpCommonCtrlProperty: HwpPrimitive {
     public var commonCtrlId: HwpCommonCtrlId
     /** 속성 */
     public var property: UInt32
+    /** 속성 bit field */
+    public var propertyInfo: HwpCommonCtrlPropertyInfo
     /** 세로 오프셋 값 */
     public var verticalOffset: HWPUNIT
     /** 가로 오프셋 값 */
@@ -46,17 +48,13 @@ public struct HwpCommonCtrlProperty: HwpPrimitive {
         }
 
         property = try reader.read(UInt32.self)
+        propertyInfo = try HwpCommonCtrlPropertyInfo.load(property)
         verticalOffset = try reader.read(HWPUNIT.self)
         horizontalOffset = try reader.read(HWPUNIT.self)
         width = try reader.read(HWPUNIT.self)
         height = try reader.read(HWPUNIT.self)
         zOrder = try reader.read(Int32.self)
-        marginArray = [
-            try reader.read(HWPUNIT16.self),
-            try reader.read(HWPUNIT16.self),
-            try reader.read(HWPUNIT16.self),
-            try reader.read(HWPUNIT16.self),
-        ]
+        marginArray = try (0 ..< 4).map { _ in try reader.read(HWPUNIT16.self) }
         instanceId = try reader.read(UInt32.self)
         guard reader.remainBytes > 0 else {
             isDividablePage = false

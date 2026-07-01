@@ -507,6 +507,57 @@
         "semanticKind": "memo",
         "isMemoField": true,
         "isRevisionField": false,
+        "properties": 32769,
+        "propertyInitialState": false,
+        "extraProperties": 0,
+        "commandCharacterCount": 40,
+        "command": "MEMO/65535/1/239261456/31259664/sboh/\\;;",
+        "commandLengthRawLength": 2,
+        "commandLengthRawPrefixBytes": [
+          40,
+          0
+        ],
+        "commandLengthRawSuffixBytes": [
+          40,
+          0
+        ],
+        "commandRawPayloadLength": 80,
+        "commandRawPayloadPrefixBytes": [
+          77,
+          0,
+          69,
+          0,
+          77,
+          0,
+          79,
+          0
+        ],
+        "commandRawPayloadSuffixBytes": [
+          47,
+          0,
+          92,
+          0,
+          59,
+          0,
+          59,
+          0
+        ],
+        "commandRawTrailingLength": 8,
+        "commandRawTrailingPrefixBytes": [
+          140
+        ],
+        "commandRawTrailingSuffixBytes": [
+          140,
+          64,
+          121,
+          66,
+          1,
+          0,
+          0,
+          0
+        ],
+        "fieldId": 1115242636,
+        "memoIndex": 1,
         "fieldParameter": "MEMO/65535/1/239261456/31259664/sboh/\\;;",
         "fieldParameterHeaderRawLength": 4,
         "fieldParameterHeaderRawPrefixBytes": [
@@ -524,37 +575,37 @@
         "fieldParameterCharacterCount": 40,
         "fieldParameterLengthRawLength": 2,
         "fieldParameterLengthRawPrefixBytes": [
-          0,
-          40
+          40,
+          0
         ],
         "fieldParameterLengthRawSuffixBytes": [
-          0,
-          40
+          40,
+          0
         ],
         "fieldParameterRawPayloadLength": 80,
         "fieldParameterRawPayloadPrefixBytes": [
-          0,
           77,
           0,
           69,
           0,
           77,
           0,
-          79
+          79,
+          0
         ],
         "fieldParameterRawPayloadSuffixBytes": [
-          0,
           47,
           0,
           92,
           0,
           59,
           0,
-          59
-        ],
-        "fieldParameterRawTrailingLength": 9,
-        "fieldParameterRawTrailingPrefixBytes": [
+          59,
           0
+        ],
+        "fieldParameterRawTrailingLength": 8,
+        "fieldParameterRawTrailingPrefixBytes": [
+          140
         ],
         "fieldParameterRawTrailingSuffixBytes": [
           140,
@@ -570,24 +621,24 @@
           "rawValue": "MEMO/65535/1/239261456/31259664/sboh/\\;;",
           "rawPayloadLength": 80,
           "rawPayloadPrefixBytes": [
-            0,
             77,
             0,
             69,
             0,
             77,
             0,
-            79
+            79,
+            0
           ],
           "rawPayloadSuffixBytes": [
-            0,
             47,
             0,
             92,
             0,
             59,
             0,
-            59
+            59,
+            0
           ],
           "marker": "MEMO",
           "components": [
@@ -608,9 +659,9 @@
             "\\;;"
           ],
           "author": "sboh",
-          "rawTrailingLength": 9,
+          "rawTrailingLength": 8,
           "rawTrailingPrefixBytes": [
-            0
+            140
           ],
           "rawTrailingSuffixBytes": [
             140,

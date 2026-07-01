@@ -11,6 +11,14 @@
 - document properties
 - preview text
 
+## Reader 검증 메모
+
+- 이 fixture의 책갈피 child `CTRL_DATA`는 ParameterSet `0x021B`, item raw id
+  `0x40000000`, value type `1` 문자열로 `CoreHwpBookmark`를 저장한다.
+- rhwp errata 항목 20의 ClickHere field name과 같은 ParameterSet 문자열 layout을
+  검증하는 보조 Hancom fixture로 사용한다. ClickHere field name 의미 검증은 별도
+  누름틀 fixture가 필요하다.
+
 ## 재생성
 
 1. `/Applications/Hancom Office HWP.app`을 실행한다.

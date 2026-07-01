@@ -20,6 +20,10 @@ public struct HwpSectionDef {
 
     /** ctrl id */
     public var ctrlId: UInt32
+    /** 속성(표 130 참조) */
+    public var property: UInt32
+    /** 속성 bit field */
+    public var propertyInfo: HwpSectionDefProperty
     /** 동일한 페이지에서 서로 다른 단 사이의 간격 */
     public var columnSpacing: HWPUNIT16
     /**
@@ -73,7 +77,7 @@ public struct HwpSectionDef {
      5.0.1.5 이상
      */
     public var defaultLanguage: UInt16?
-    /** unknown 12, 21bytes */
+    /** 아직 해석하지 않은 version-specific tail */
     public var unknown: Data
 }
 
@@ -96,6 +100,8 @@ extension HwpSectionDef: HwpFromRecordWithVersion {
         guard ctrlId == HwpOtherCtrlId.section.rawValue else {
             throw HwpError.invalidCtrlId(ctrlId: ctrlId)
         }
+        property = try reader.read(UInt32.self)
+        propertyInfo = try HwpSectionDefProperty.load(property)
         columnSpacing = try reader.read(HWPUNIT16.self)
         verticalLineAlign = try reader.read(HWPUNIT16.self)
         horizontalLineAlign = try reader.read(HWPUNIT16.self)
@@ -146,18 +152,20 @@ extension HwpSectionDef {
         rawPayload = Data()
 
         ctrlId = 1_936_024_420
-        columnSpacing = 0
+        property = 0
+        propertyInfo = HwpSectionDefProperty()
+        columnSpacing = 1134
         verticalLineAlign = 0
-        horizontalLineAlign = 1134
-        defaultTabSpacing = 0
-        numberParaShapeId = 8000
+        horizontalLineAlign = 0
+        defaultTabSpacing = 8000
+        numberParaShapeId = 1
         pageStartNumber = 0
-        pictureStartNumber = 1
+        pictureStartNumber = 0
         tableStartNumber = 0
         equationNumber = 0
 
         defaultLanguage = 0
-        unknown = Data(Array(repeating: 0, count: 21))
+        unknown = Data(Array(repeating: 0, count: 17))
     }
 }
 

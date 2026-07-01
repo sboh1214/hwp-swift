@@ -220,6 +220,10 @@ private func expectSectionDef(in hwp: HwpFile, match injected: InjectedSectionDe
 
     expect(sectionDef?.rawPayload) == injected.payload
     expect(sectionDef?.ctrlId) == HwpOtherCtrlId.section.rawValue
+    expect(sectionDef?.property) == 0x0008_0004
+    expect(sectionDef?.propertyInfo.rawValue) == 0x0008_0004
+    expect(sectionDef?.propertyInfo.hideMasterPage) == true
+    expect(sectionDef?.propertyInfo.hideEmptyLine) == true
     expect(sectionDef?.columnSpacing) == 0x1111
     expect(sectionDef?.verticalLineAlign) == 0x2222
     expect(sectionDef?.horizontalLineAlign) == 0x3333
@@ -317,6 +321,7 @@ private func sectionDefOtherControls(from hwp: HwpFile) -> [HwpOtherControl] {
 private func sectionDefPayload(rawTrailing: Data = Data()) -> Data {
     var data = Data()
     data.append(sectionDefLittleEndianData(HwpOtherCtrlId.section.rawValue))
+    data.append(sectionDefLittleEndianData(UInt32(0x0008_0004)))
     data.append(sectionDefLittleEndianData(HWPUNIT16(0x1111)))
     data.append(sectionDefLittleEndianData(HWPUNIT16(0x2222)))
     data.append(sectionDefLittleEndianData(HWPUNIT16(0x3333)))

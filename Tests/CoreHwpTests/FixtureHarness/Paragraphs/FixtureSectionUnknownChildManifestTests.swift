@@ -45,7 +45,7 @@ private let sectionDefUnknownJSON = """
   "expectations": {
     "sections": [
       {
-        "propertyRawValue": 1936024420,
+        "propertyRawValue": 4,
         "pageDefPropertyRawValue": 0,
         "footNoteShapePropertyRawValue": 0,
         "endNoteShapePropertyRawValue": 0,
@@ -83,6 +83,7 @@ private func sectionDefManifestChild(_ tag: HwpSectionTag, _ payload: Data) -> H
 private func sectionDefManifestPayload() -> Data {
     var data = Data()
     data.append(sectionDefManifestLittleEndianData(HwpOtherCtrlId.section.rawValue))
+    data.append(sectionDefManifestLittleEndianData(UInt32(0x0000_0004)))
     data.append(sectionDefManifestLittleEndianData(HWPUNIT16(0)))
     data.append(sectionDefManifestLittleEndianData(HWPUNIT16(0)))
     data.append(sectionDefManifestLittleEndianData(HWPUNIT16(0)))

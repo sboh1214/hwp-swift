@@ -52,6 +52,28 @@ func memoFieldControlHasSemanticPayloadSamples(
         && control.semanticKind == HwpFieldControlKind.memo.rawValue
         && control.isMemoField == true
         && control.fieldParameter?.isEmpty == false
+        && control.properties != nil
+        && control.propertyInitialState != nil
+        && control.extraProperties != nil
+        && control.command?.isEmpty == false
+        && control.commandCharacterCount != nil
+        && payloadSampleIsDeclared(
+            length: control.commandLengthRawLength,
+            prefix: control.commandLengthRawPrefixBytes,
+            suffix: control.commandLengthRawSuffixBytes
+        )
+        && payloadSampleIsDeclared(
+            length: control.commandRawPayloadLength,
+            prefix: control.commandRawPayloadPrefixBytes,
+            suffix: control.commandRawPayloadSuffixBytes
+        )
+        && payloadSampleIsDeclared(
+            length: control.commandRawTrailingLength,
+            prefix: control.commandRawTrailingPrefixBytes,
+            suffix: control.commandRawTrailingSuffixBytes
+        )
+        && control.fieldId != nil
+        && control.memoIndex != nil
         && payloadSampleIsDeclared(
             length: control.fieldParameterHeaderRawLength,
             prefix: control.fieldParameterHeaderRawPrefixBytes,

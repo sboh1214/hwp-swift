@@ -400,8 +400,9 @@ private func tablePropertyPayload() -> Data {
 
 private func tableCellHeaderPayload(paragraphCount: Int32) -> Data {
     var data = Data()
-    data.append(littleEndianData(paragraphCount))
+    data.append(littleEndianData(UInt16(truncatingIfNeeded: paragraphCount)))
     data.append(littleEndianData(UInt32(0)))
+    data.append(littleEndianData(UInt16(0)))
     data.append(Data(repeating: 0, count: 39))
     return data
 }
@@ -409,6 +410,7 @@ private func tableCellHeaderPayload(paragraphCount: Int32) -> Data {
 private func sectionDefPayload() -> Data {
     var data = Data()
     data.append(littleEndianData(HwpOtherCtrlId.section.rawValue))
+    data.append(littleEndianData(UInt32(0x0000_0004)))
     data.append(littleEndianData(HWPUNIT16(0)))
     data.append(littleEndianData(HWPUNIT16(0)))
     data.append(littleEndianData(HWPUNIT16(0)))

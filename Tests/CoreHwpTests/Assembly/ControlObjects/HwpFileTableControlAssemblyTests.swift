@@ -397,8 +397,9 @@ private func tableCellHeaderPayload(
     rawTrailing: Data
 ) -> Data {
     var data = Data()
-    data.append(tableLittleEndianData(paragraphCount))
+    data.append(tableLittleEndianData(UInt16(truncatingIfNeeded: paragraphCount)))
     data.append(tableLittleEndianData(UInt32(0x1010_2020)))
+    data.append(tableLittleEndianData(UInt16(0)))
     data.append(Data(repeating: 0, count: 39))
     data.append(rawTrailing)
     return data

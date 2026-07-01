@@ -135,6 +135,8 @@ final class ColumnControlStabilityTests: XCTestCase {
         let rawTrailing = Data([0xCA, 0xFE])
         let rawPayload = variableWidthColumnPayload(
             widths: [0x1111, 0x2222],
+            gaps: [0x3333, 0x4444],
+            property2: 0xABCD,
             rawTrailing: rawTrailing
         )
         let record = HwpRecord(
@@ -148,9 +150,10 @@ final class ColumnControlStabilityTests: XCTestCase {
         expect(column.property.rawValue) == variableWidthColumnProperty(count: 2)
         expect(column.property.count) == 2
         expect(column.property.isSameWidth) == false
+        expect(column.property2) == 0xABCD
         expect(column.widthArray) == [0x1111, 0x2222]
+        expect(column.gapArray) == [0x3333, 0x4444]
         expect(column.spacing).to(beNil())
-        expect(column.property2).to(beNil())
         expect(column.rawPayload) == rawPayload
         expect(column.rawTrailing) == rawTrailing
         expect(column.rawTrailingWords) == [UInt16(0xFECA)]
@@ -176,8 +179,11 @@ final class ColumnControlStabilityTests: XCTestCase {
         var rawPayload = Data()
         rawPayload.append(columnStabilityLittleEndianData(HwpOtherCtrlId.column.rawValue))
         rawPayload.append(columnStabilityLittleEndianData(variableWidthColumnProperty(count: 3)))
+        rawPayload.append(columnStabilityLittleEndianData(UInt16(0)))
         rawPayload.append(columnStabilityLittleEndianData(WORD(0x1111)))
+        rawPayload.append(columnStabilityLittleEndianData(WORD(0x0101)))
         rawPayload.append(columnStabilityLittleEndianData(WORD(0x2222)))
+        rawPayload.append(columnStabilityLittleEndianData(WORD(0x0202)))
         let record = HwpRecord(
             tagId: HwpSectionTag.ctrlHeader.rawValue,
             level: 1,
@@ -190,8 +196,8 @@ final class ColumnControlStabilityTests: XCTestCase {
             guard case let HwpError.truncatedData(expected, actual) = error else {
                 return fail("Expected truncatedData, got \(error)")
             }
-            expect(expected) == 6
-            expect(actual) == 4
+            expect(expected) == 2
+            expect(actual) == 0
         })
     }
 
@@ -211,7 +217,7 @@ final class ColumnControlStabilityTests: XCTestCase {
             guard case let HwpError.truncatedData(expected, actual) = error else {
                 return fail("Expected truncatedData, got \(error)")
             }
-            expect(expected) == 255 * MemoryLayout<WORD>.size
+            expect(expected) == MemoryLayout<UInt16>.size
             expect(actual) == 0
         })
     }
@@ -242,12 +248,19 @@ private func columnPayload(rawTrailing: Data = Data()) -> Data {
     return data
 }
 
-private func variableWidthColumnPayload(widths: [WORD], rawTrailing: Data = Data()) -> Data {
+private func variableWidthColumnPayload(
+    widths: [WORD],
+    gaps: [WORD],
+    property2: UInt16 = 0,
+    rawTrailing: Data = Data()
+) -> Data {
     var data = Data()
     data.append(columnStabilityLittleEndianData(HwpOtherCtrlId.column.rawValue))
     data.append(columnStabilityLittleEndianData(variableWidthColumnProperty(count: widths.count)))
-    for width in widths {
+    data.append(columnStabilityLittleEndianData(property2))
+    for (width, gap) in zip(widths, gaps) {
         data.append(columnStabilityLittleEndianData(width))
+        data.append(columnStabilityLittleEndianData(gap))
     }
     data.append(columnStabilityLittleEndianData(UInt8(0x55)))
     data.append(columnStabilityLittleEndianData(UInt8(0x66)))

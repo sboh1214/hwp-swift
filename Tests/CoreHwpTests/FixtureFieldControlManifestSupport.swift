@@ -6,6 +6,22 @@ struct FixtureFieldControlExpectations: Decodable {
     let semanticKind: String?
     let isMemoField: Bool?
     let isRevisionField: Bool?
+    let properties: UInt32?
+    let propertyInitialState: Bool?
+    let extraProperties: UInt8?
+    let commandCharacterCount: Int?
+    let command: String?
+    let commandLengthRawLength: Int?
+    let commandLengthRawPrefixBytes: [UInt8]?
+    let commandLengthRawSuffixBytes: [UInt8]?
+    let commandRawPayloadLength: Int?
+    let commandRawPayloadPrefixBytes: [UInt8]?
+    let commandRawPayloadSuffixBytes: [UInt8]?
+    let commandRawTrailingLength: Int?
+    let commandRawTrailingPrefixBytes: [UInt8]?
+    let commandRawTrailingSuffixBytes: [UInt8]?
+    let fieldId: UInt32?
+    let memoIndex: Int32?
     let fieldParameter: String?
     let fieldParameterHeaderRawLength: Int?
     let fieldParameterHeaderRawPrefixBytes: [UInt8]?
