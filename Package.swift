@@ -12,6 +12,9 @@ let package = Package(
     ],
     products: [
         .library(name: "CoreHwp", targets: ["CoreHwp"]),
+        .library(name: "HwpKitCore", targets: ["HwpKitCore"]),
+        .library(name: "HwpKitNative", targets: ["HwpKitNative"]),
+        .library(name: "HwpKit", targets: ["HwpKit"]),
     ],
     dependencies: [
         .package(url: "https://github.com/CoreOffice/OLEKit.git", exact: "0.3.1"),
@@ -34,6 +37,25 @@ let package = Package(
                 "Utils/AGENTS.md",
             ]
         ),
+        .target(
+            name: "HwpKitCore",
+            dependencies: [
+                "CoreHwp",
+            ]
+        ),
+        .target(
+            name: "HwpKitNative",
+            dependencies: [
+                "HwpKitCore",
+                "CoreHwp",
+            ]
+        ),
+        .target(
+            name: "HwpKit",
+            dependencies: [
+                "HwpKitNative",
+            ]
+        ),
         .testTarget(
             name: "CoreHwpTests",
             dependencies: [
@@ -44,6 +66,30 @@ let package = Package(
             exclude: [
                 "AGENTS.md",
                 "Fixtures",
+            ]
+        ),
+        .testTarget(
+            name: "HwpKitCoreTests",
+            dependencies: [
+                "HwpKitCore",
+                "CoreHwp",
+                .product(name: "Nimble", package: "Nimble"),
+            ]
+        ),
+        .testTarget(
+            name: "HwpKitNativeTests",
+            dependencies: [
+                "HwpKitNative",
+                "CoreHwp",
+                .product(name: "Nimble", package: "Nimble"),
+            ]
+        ),
+        .testTarget(
+            name: "HwpKitTests",
+            dependencies: [
+                "HwpKit",
+                "CoreHwp",
+                .product(name: "Nimble", package: "Nimble"),
             ]
         ),
     ]
