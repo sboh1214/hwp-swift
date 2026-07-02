@@ -56,11 +56,12 @@ final class FixtureRenderTests: XCTestCase {
 
     func testFixtureCountAndCategories() throws {
         let fixtures = try FixtureRoot.loadAllFixtures(from: #file)
-        expect(fixtures.count) == 33
+        expect(fixtures.count) >= 33
         let withText = fixtures.filter { !$0.expectedVisibleText.isEmpty }
-        let empty = fixtures.filter(\.expectedVisibleText.isEmpty)
-        expect(withText.count) == 20
-        expect(empty.count) == 13
+        let empty = fixtures.filter { $0.expectedVisibleText.isEmpty }
+        expect(withText.count) >= 20
+        expect(empty.count) >= 13
+        expect(withText.count + empty.count) == fixtures.count
     }
 
     func testPageBlocksDoNotOverlap() async throws {

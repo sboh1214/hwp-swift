@@ -93,7 +93,11 @@ private extension HwpPaginator {
                 return
             }
 
-            appendBlock(height: paragraphHeight, attributedString: attributedString)
+            appendBlock(
+                height: paragraphHeight,
+                attributedString: attributedString,
+                hyperlinkURL: hyperlinkURL(in: paragraph)
+            )
             appendEmbeddedBlocks(from: paragraph)
             advanceParagraph()
             await Task.yield()
@@ -144,7 +148,11 @@ private extension HwpPaginator {
         }
     }
 
-    func appendBlock(height: CGFloat, attributedString: NSAttributedString) {
+    func appendBlock(
+        height: CGFloat,
+        attributedString: NSAttributedString,
+        hyperlinkURL: String? = nil
+    ) {
         let immutable = NSAttributedString(attributedString: attributedString)
         let contentFrame = currentPageGeometry.contentFrame
         let frame = CGRect(
@@ -156,9 +164,20 @@ private extension HwpPaginator {
         currentBlocks.append(AnyHwpBlock(
             frame: frame,
             kind: .text,
-            attributedString: immutable
+            attributedString: immutable,
+            hyperlinkURL: hyperlinkURL
         ))
         contentHeightUsed += height
+    }
+
+    func hyperlinkURL(in paragraph: CoreHwp.HwpParagraph) -> String? {
+        guard let ctrls = paragraph.ctrlHeaderArray else { return nil }
+        for ctrl in ctrls {
+            if case let .hyperLink(link) = ctrl, !link.url.isEmpty {
+                return link.url
+            }
+        }
+        return nil
     }
 
     func appendEmbeddedBlocks(from paragraph: CoreHwp.HwpParagraph) {

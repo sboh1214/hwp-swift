@@ -17,6 +17,9 @@ public struct HwpHitTester {
     public func hit(page: HwpPage, point: CGPoint) -> HwpHitResult? {
         for (index, block) in page.blocks.enumerated().reversed() {
             guard block.frame.contains(point) else { continue }
+            if let url = block.hyperlinkURL {
+                return .hyperlink(url: url, blockIndex: index)
+            }
             switch block.kind {
             case .text:
                 return .text(blockIndex: index, characterIndex: nil)

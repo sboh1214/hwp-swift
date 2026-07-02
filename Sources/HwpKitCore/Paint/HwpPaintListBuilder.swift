@@ -13,6 +13,9 @@ public struct HwpPaintListBuilder: Sendable {
         var commands: [HwpPaintCommand] = []
         for block in page.blocks {
             commands.append(contentsOf: paintCommands(for: block))
+            if let url = block.hyperlinkURL {
+                commands.append(.hyperlink(rect: block.frame, url: url))
+            }
         }
         return HwpPaintList(commands: commands)
     }

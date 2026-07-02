@@ -42,6 +42,7 @@ public struct HwpPage: Sendable, Hashable {
         hasher.combine(margins)
         hasher.combine(blocks)
         hasher.combine(pageNumber)
+        hasher.combine(paintList.commands.count)
     }
 
     public static func == (lhs: HwpPage, rhs: HwpPage) -> Bool {
@@ -49,5 +50,6 @@ public struct HwpPage: Sendable, Hashable {
             && lhs.margins == rhs.margins
             && lhs.blocks == rhs.blocks
             && lhs.pageNumber == rhs.pageNumber
+            && lhs.paintList.commands.count == rhs.paintList.commands.count
     }
 }
