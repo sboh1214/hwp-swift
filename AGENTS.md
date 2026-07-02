@@ -5,19 +5,29 @@
 
 ## 개요
 
-한글과컴퓨터의 한글 문서 파일(`.hwp`)을 파싱하는 Swift package. HWP 파일은
-OLE compound document이며, 그 안의 stream들은 record tree 구조로 인코딩되어
-있다. 단일 library target `CoreHwp` (Swift 5.9+, macOS 14+/iOS 17+, LGPL).
+한글과컴퓨터의 한글 문서 파일(`.hwp`)을 파싱하고 렌더링하는 Swift package.
+HWP 파일은 OLE compound document이며, 그 안의 stream들은 record tree 구조로
+인코딩되어 있다. Swift 5.9+, macOS 14+/iOS 17+, LGPL.
+
+**4개 library target**:
+- `CoreHwp` — 파서 (read-only, binary HWP → typed model)
+- `HwpKitCore` — 렌더 코어 (platform-neutral, CoreGraphics/CoreText/Foundation only)
+- `HwpKitNative` — 플랫폼 브릿지 (AppKit + UIKit)
+- `HwpKit` — SwiftUI 공개 API
 
 ## 구조
 
 ```
 hwp-swift/
-├── Sources/CoreHwp/       # 라이브러리 (81 .swift files, ~4250 LOC)
-├── Tests/CoreHwpTests/    # XCTest + Nimble + .hwp 픽스처
+├── Sources/CoreHwp/       # 파서 (81 .swift files)
+├── Sources/HwpKitCore/    # 렌더 코어 — 파이프라인/모델/paint list (AGENTS.md 참조)
+├── Sources/HwpKitNative/  # 플랫폼 브릿지 — CALayer/View (AGENTS.md 참조)
+├── Sources/HwpKit/        # SwiftUI 공개 API (AGENTS.md 참조)
+├── Tests/{Core,HwpKitCore,HwpKitNative,HwpKit}Tests/
+├── Sample/                # HwpSwiftSample.xcodeproj (xcodegen, path: ..)
 ├── Package.swift          # swift-tools-version:5.9
-├── .github/workflows/     # ci.yml (test+lint+coverage), cd.yml (DocC+release-drafter)
-└── .github/pages/         # cd.yml이 ./docs/index.html에 overlay하는 DocC 사이트 루트 랜딩 페이지
+├── .github/workflows/     # ci.yml, cd.yml
+└── .github/pages/         # DocC 사이트 루트 랜딩
 ```
 
 폴더명과 파일명은 **공백 없는 PascalCase**를 사용한다 (예:
