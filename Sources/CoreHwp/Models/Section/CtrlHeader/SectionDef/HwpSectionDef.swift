@@ -136,7 +136,7 @@ extension HwpSectionDef: HwpFromRecordWithVersion {
     }
 }
 
-extension HwpSectionDef {
+public extension HwpSectionDef {
     init() {
         pageDef = HwpPageDef()
         footNoteShape = HwpFootnoteShape(

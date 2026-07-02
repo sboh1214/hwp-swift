@@ -22,6 +22,21 @@ public struct HwpOtherControl {
     public var unknownChildren: [HwpUnknownRecord]
 
     public init(
+        header: HwpCtrlHeader,
+        rawPayload: Data
+    ) {
+        ctrlId = HwpOtherCtrlId(rawValue: header.ctrlId) ?? .form
+        numberingInfo = nil
+        pageHideInfo = nil
+        indexmarkInfo = nil
+        bookmarkInfo = nil
+        rawTrailing = Data()
+        self.rawPayload = rawPayload
+        ctrlDataRecords = []
+        unknownChildren = header.unknownChildren
+    }
+
+    public init(
         ctrlId: HwpOtherCtrlId,
         rawTrailing: Data,
         rawPayload: Data,

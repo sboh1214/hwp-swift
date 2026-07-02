@@ -93,6 +93,29 @@ extension HwpParaShape: HwpFromDataWithVersion {
 }
 
 extension HwpParaShape {
+    public init() {
+        rawPayload = Data()
+        property1 = 0
+        property1Info = HwpParaShapeProperty1(rawValue: 0)
+        marginLeft = 0
+        marginRight = 0
+        indent = 0
+        paragraphSpacingTop = 0
+        paragraphSpacingBottom = 0
+        lineSpacing = 160
+        tabDefId = 0
+        numberingOrBulletId = 0
+        borderFillId = 2
+        borderSpacingLeft = 0
+        borderSpacingRight = 0
+        borderSpacingTop = 0
+        borderSpacingBottom = 0
+        property2 = nil
+        property3 = nil
+        lineSpacing2 = nil
+        unknown = nil
+    }
+
     init(property1: UInt32, marginLeft: Int32, indent: Int32 = 0,
          paragraphSpacingTop: Int32 = 0, paragraphSpacingBottom: Int32 = 0,
          lineSpacing: Int32 = 160, tabDefId: UInt16, lineSpacing2: UInt32 = 160,

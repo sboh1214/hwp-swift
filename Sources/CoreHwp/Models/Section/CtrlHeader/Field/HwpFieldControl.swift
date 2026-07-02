@@ -82,6 +82,51 @@ public struct HwpFieldControl {
         }
         return .field
     }
+
+    public init(ctrlId: HwpFieldCtrlId = .memo) {
+        self.ctrlId = ctrlId
+        rawTrailing = Data()
+        properties = nil
+        propertiesRawPayload = nil
+        propertyInfo = nil
+        extraProperties = nil
+        extraPropertiesRawPayload = nil
+        commandCharacterCount = nil
+        commandLengthRawPayload = nil
+        command = nil
+        commandRawPayload = nil
+        commandRawTrailing = nil
+        fieldId = nil
+        fieldIdRawPayload = nil
+        memoIndex = nil
+        memoIndexRawPayload = nil
+        fieldParameterHeaderValue = nil
+        fieldParameterHeaderRawPayload = nil
+        fieldParameterCharacterCount = nil
+        fieldParameterLengthRawPayload = nil
+        fieldParameter = nil
+        fieldParameterRawPayload = nil
+        fieldParameterRawTrailing = nil
+        memoParameter = nil
+        rawPayload = Data()
+        unknownChildren = []
+    }
+
+    public init(
+        ctrlId: HwpFieldCtrlId,
+        rawTrailing: Data,
+        fieldParameterHeaderRawPayload: Data?,
+        fieldParameter: String?,
+        rawPayload: Data,
+        unknownChildren: [HwpUnknownRecord]
+    ) {
+        self.init(ctrlId: ctrlId)
+        self.rawTrailing = rawTrailing
+        self.fieldParameterHeaderRawPayload = fieldParameterHeaderRawPayload
+        self.fieldParameter = fieldParameter
+        self.rawPayload = rawPayload
+        self.unknownChildren = unknownChildren
+    }
 }
 
 public enum HwpFieldControlKind: String, HwpPrimitive {

@@ -12,7 +12,7 @@ public struct HwpParagraph: HwpFromRecordWithVersion {
     @ExcludeEquatable
     public var unknownChildren: [HwpUnknownRecord]
 
-    init() {
+    public init() {
         paraHeader = HwpParaHeader()
         paraText = HwpParaText()
         paraCharShape = HwpParaCharShape()

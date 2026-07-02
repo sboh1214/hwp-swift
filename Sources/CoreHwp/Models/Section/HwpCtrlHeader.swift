@@ -4,6 +4,18 @@ public struct HwpCtrlHeader {
     public var ctrlId: UInt32
     public var rawPayload: Data
     public var unknownChildren: [HwpUnknownRecord]
+
+    public init(ctrlId: UInt32, rawPayload: Data) {
+        self.ctrlId = ctrlId
+        self.rawPayload = rawPayload
+        unknownChildren = []
+    }
+
+    public init(ctrlId: UInt32, rawPayload: Data, unknownChildren: [HwpUnknownRecord]) {
+        self.ctrlId = ctrlId
+        self.rawPayload = rawPayload
+        self.unknownChildren = unknownChildren
+    }
 }
 
 extension HwpCtrlHeader: HwpPrimitive {

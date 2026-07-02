@@ -7,6 +7,31 @@ public struct HwpTable {
     public var rawTrailing: Data
     public var cellArray: [HwpTableCell]
     public var unknownChildren: [HwpUnknownRecord]
+
+    public init(property: HwpTableProperty, cellArray: [HwpTableCell]) {
+        commonCtrlProperty = HwpCommonCtrlProperty(commonCtrlId: .table)
+        tableProperty = property
+        rawPayload = Data()
+        rawTrailing = Data()
+        self.cellArray = cellArray
+        unknownChildren = []
+    }
+
+    public init(
+        commonCtrlProperty: HwpCommonCtrlProperty,
+        tableProperty: HwpTableProperty,
+        rawPayload: Data,
+        rawTrailing: Data,
+        cellArray: [HwpTableCell],
+        unknownChildren: [HwpUnknownRecord]
+    ) {
+        self.commonCtrlProperty = commonCtrlProperty
+        self.tableProperty = tableProperty
+        self.rawPayload = rawPayload
+        self.rawTrailing = rawTrailing
+        self.cellArray = cellArray
+        self.unknownChildren = unknownChildren
+    }
 }
 
 extension HwpTable: HwpFromRecordWithVersion {

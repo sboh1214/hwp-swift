@@ -79,6 +79,15 @@ extension HwpCharShape: HwpFromDataWithVersion {
 }
 
 extension HwpCharShape {
+    public init() {
+        self.init(
+            faceId: [0, 0, 0, 0, 0, 0, 0],
+            faceSpacing: [0, 0, 0, 0, 0, 0, 0],
+            baseSize: 1000,
+            faceColor: HwpColor()
+        )
+    }
+
     init(faceId: [WORD], faceSpacing: [Int8], baseSize: Int32, faceColor: HwpColor) {
         rawPayload = Data()
         self.faceId = faceId

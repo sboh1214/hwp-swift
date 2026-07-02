@@ -26,6 +26,46 @@ public struct HwpPageNumberPosition {
     public var rawTrailing: Data
     /** unknown child records */
     public var unknownChildren: [HwpUnknownRecord]
+
+    public init() {
+        otherCtrlId = .pageNumberPosition
+        property = 0
+        propertyInfo = HwpPageNumberPositionProperty()
+        userSymbol = 0
+        headDecoration = 0
+        tailDecoration = 0
+        unused = 0
+        unknown = 0
+        rawPayload = Data()
+        rawTrailing = Data()
+        unknownChildren = []
+    }
+
+    public init(
+        otherCtrlId: HwpOtherCtrlId,
+        property: UInt32,
+        propertyInfo: HwpPageNumberPositionProperty,
+        userSymbol: WCHAR,
+        headDecoration: WCHAR,
+        tailDecoration: WCHAR,
+        unused: WCHAR,
+        unknown: UInt32,
+        rawPayload: Data,
+        rawTrailing: Data,
+        unknownChildren: [HwpUnknownRecord]
+    ) {
+        self.otherCtrlId = otherCtrlId
+        self.property = property
+        self.propertyInfo = propertyInfo
+        self.userSymbol = userSymbol
+        self.headDecoration = headDecoration
+        self.tailDecoration = tailDecoration
+        self.unused = unused
+        self.unknown = unknown
+        self.rawPayload = rawPayload
+        self.rawTrailing = rawTrailing
+        self.unknownChildren = unknownChildren
+    }
 }
 
 extension HwpPageNumberPosition: HwpFromData {

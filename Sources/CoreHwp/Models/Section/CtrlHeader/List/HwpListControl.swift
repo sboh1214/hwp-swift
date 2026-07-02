@@ -9,6 +9,22 @@ public struct HwpListControl: HwpPrimitive {
     /** 아직 해석하지 않은 child record */
     public var unknownChildren: [HwpUnknownRecord]
 
+    public init() {
+        header = HwpCtrlHeader(ctrlId: HwpOtherCtrlId.header.rawValue, rawPayload: Data())
+        listArray = []
+        unknownChildren = []
+    }
+
+    public init(
+        header: HwpCtrlHeader,
+        listArray: [HwpListControlList],
+        unknownChildren: [HwpUnknownRecord]
+    ) {
+        self.header = header
+        self.listArray = listArray
+        self.unknownChildren = unknownChildren
+    }
+
     static func load(_ record: HwpRecord, _ version: HwpVersion) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
 

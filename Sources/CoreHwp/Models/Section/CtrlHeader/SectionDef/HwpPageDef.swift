@@ -64,7 +64,7 @@ extension HwpPageDef: HwpFromData {
     }
 }
 
-extension HwpPageDef {
+public extension HwpPageDef {
     init() {
         width = 59528
         height = 84186

@@ -20,6 +20,45 @@ public struct HwpShapeControl {
     public var ctrlDataRecords: [HwpCtrlData]
     /** 아직 해석하지 않은 child record */
     public var unknownChildren: [HwpUnknownRecord]
+
+    public init(
+        header: HwpCtrlHeader,
+        commonProperty: HwpCommonCtrlProperty,
+        shapeComponentArray: [HwpShapeComponent],
+        ctrlDataArray: [HwpCtrlData]
+    ) {
+        ctrlId = HwpCommonCtrlId(rawValue: header.ctrlId) ?? commonProperty.commonCtrlId
+        commonCtrlProperty = commonProperty
+        rawPayload = header.rawPayload
+        rawTrailing = Data()
+        self.shapeComponentArray = shapeComponentArray
+        eqEditArray = []
+        eqEditRecords = []
+        ctrlDataRecords = ctrlDataArray
+        unknownChildren = header.unknownChildren
+    }
+
+    public init(
+        ctrlId: HwpCommonCtrlId,
+        commonCtrlProperty: HwpCommonCtrlProperty?,
+        rawPayload: Data,
+        rawTrailing: Data,
+        shapeComponentArray: [HwpShapeComponent],
+        eqEditArray: [HwpEquationEdit],
+        eqEditRecords: [HwpUnknownRecord],
+        ctrlDataRecords: [HwpCtrlData],
+        unknownChildren: [HwpUnknownRecord]
+    ) {
+        self.ctrlId = ctrlId
+        self.commonCtrlProperty = commonCtrlProperty
+        self.rawPayload = rawPayload
+        self.rawTrailing = rawTrailing
+        self.shapeComponentArray = shapeComponentArray
+        self.eqEditArray = eqEditArray
+        self.eqEditRecords = eqEditRecords
+        self.ctrlDataRecords = ctrlDataRecords
+        self.unknownChildren = unknownChildren
+    }
 }
 
 extension HwpShapeControl: HwpFromRecord {

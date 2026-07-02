@@ -22,6 +22,43 @@ public struct HwpHyperlink {
     public var rawPayload: Data
     /** 아직 해석하지 않은 child record */
     public var unknownChildren: [HwpUnknownRecord]
+
+    public init() {
+        ctrlId = HwpFieldCtrlId.hyperLink.rawValue
+        property = 0
+        unknownPrefix = 0
+        urlLength = 0
+        urlLengthRawPayload = Data()
+        url = ""
+        urlRawPayload = Data()
+        rawTrailing = Data()
+        rawPayload = Data()
+        unknownChildren = []
+    }
+
+    public init(
+        ctrlId: UInt32,
+        property: UInt32,
+        unknownPrefix: BYTE,
+        urlLength: WORD,
+        urlLengthRawPayload: Data,
+        url: String,
+        urlRawPayload: Data,
+        rawTrailing: Data,
+        rawPayload: Data,
+        unknownChildren: [HwpUnknownRecord]
+    ) {
+        self.ctrlId = ctrlId
+        self.property = property
+        self.unknownPrefix = unknownPrefix
+        self.urlLength = urlLength
+        self.urlLengthRawPayload = urlLengthRawPayload
+        self.url = url
+        self.urlRawPayload = urlRawPayload
+        self.rawTrailing = rawTrailing
+        self.rawPayload = rawPayload
+        self.unknownChildren = unknownChildren
+    }
 }
 
 extension HwpHyperlink: HwpPrimitive {

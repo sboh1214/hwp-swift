@@ -39,6 +39,55 @@ public struct HwpTableProperty {
     public var rawPayload: Data
     /** 아직 해석하지 않은 trailing payload */
     public var rawTrailing: Data
+
+    public init() {
+        property = 0
+        rowCount = 0
+        columnCount = 0
+        cellSpacing = 0
+        leftInnerMargin = 0
+        rightInnerMargin = 0
+        topInnerMargin = 0
+        bottomInnerMargin = 0
+        rowSize = []
+        borderFillId = 0
+        validZoneInfoSize = nil
+        zonePropertyArray = nil
+        rawPayload = Data()
+        rawTrailing = Data()
+    }
+
+    public init(
+        property: UInt32,
+        rowCount: UInt16,
+        columnCount: UInt16,
+        cellSpacing: HWPUNIT16,
+        leftInnerMargin: HWPUNIT16,
+        rightInnerMargin: HWPUNIT16,
+        topInnerMargin: HWPUNIT16,
+        bottomInnerMargin: HWPUNIT16,
+        rowSize: [BYTE],
+        borderFillId: UInt16,
+        validZoneInfoSize: UInt16?,
+        zonePropertyArray: [HwpZoneProperty]?,
+        rawPayload: Data,
+        rawTrailing: Data
+    ) {
+        self.property = property
+        self.rowCount = rowCount
+        self.columnCount = columnCount
+        self.cellSpacing = cellSpacing
+        self.leftInnerMargin = leftInnerMargin
+        self.rightInnerMargin = rightInnerMargin
+        self.topInnerMargin = topInnerMargin
+        self.bottomInnerMargin = bottomInnerMargin
+        self.rowSize = rowSize
+        self.borderFillId = borderFillId
+        self.validZoneInfoSize = validZoneInfoSize
+        self.zonePropertyArray = zonePropertyArray
+        self.rawPayload = rawPayload
+        self.rawTrailing = rawTrailing
+    }
 }
 
 extension HwpTableProperty: HwpFromDataWithVersion {
