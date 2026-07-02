@@ -82,9 +82,8 @@ public struct HwpDocumentView: View {
             if let zoomScale {
                 view.zoomScale = zoomScale.wrappedValue
             }
-            if let currentPage {
-                view.updateVisiblePages(range: currentPage.wrappedValue ..< (currentPage.wrappedValue + 1))
-            }
+            let pageIndex = currentPage.map { max(0, $0.wrappedValue - 1) } ?? 0
+            view.updateVisiblePages(range: pageIndex ..< pageIndex + 1)
             view.onHyperlinkTapped = context.coordinator.handleHyperlinkTapped(_:)
             view.onUnsupportedElement = context.coordinator.handleUnsupportedElement(_:)
             view.onPageChanged = context.coordinator.handlePageChanged(_:)
@@ -129,7 +128,7 @@ public struct HwpDocumentView: View {
             }
 
             func handlePageChanged(_ page: Int) {
-                currentPage?.wrappedValue = page
+                currentPage?.wrappedValue = page + 1
             }
         }
     }
@@ -173,9 +172,8 @@ public struct HwpDocumentView: View {
             if let zoomScale {
                 view.zoomScale = zoomScale.wrappedValue
             }
-            if let currentPage {
-                view.updateVisiblePages(range: currentPage.wrappedValue ..< (currentPage.wrappedValue + 1))
-            }
+            let pageIndex = currentPage.map { max(0, $0.wrappedValue - 1) } ?? 0
+            view.updateVisiblePages(range: pageIndex ..< pageIndex + 1)
             view.onHyperlinkTapped = context.coordinator.handleHyperlinkTapped(_:)
             view.onUnsupportedElement = context.coordinator.handleUnsupportedElement(_:)
             view.onPageChanged = context.coordinator.handlePageChanged(_:)
@@ -220,7 +218,7 @@ public struct HwpDocumentView: View {
             }
 
             func handlePageChanged(_ page: Int) {
-                currentPage?.wrappedValue = page
+                currentPage?.wrappedValue = page + 1
             }
         }
     }

@@ -42,6 +42,17 @@ struct ContentView: View {
                 errorMessage = error.localizedDescription
             }
         }
+        .onOpenURL { url in
+            loadDocument(from: url)
+        }
+        .task {
+            if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+                let candidate = docs.appendingPathComponent("document.hwp")
+                if FileManager.default.fileExists(atPath: candidate.path), document == nil {
+                    loadDocument(from: candidate)
+                }
+            }
+        }
     }
 
     @ViewBuilder

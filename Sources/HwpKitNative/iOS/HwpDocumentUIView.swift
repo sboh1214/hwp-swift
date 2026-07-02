@@ -67,6 +67,12 @@
                 let layer = HwpPageLayer()
                 layer.frame = frameForPage(at: index)
                 layer.pageHeight = layer.frame.height
+                layer.backgroundColor = UIColor.white.cgColor
+                layer.shadowColor = UIColor.black.cgColor
+                layer.shadowOpacity = 0.12
+                layer.shadowRadius = 4
+                layer.shadowOffset = CGSize(width: 0, height: -1)
+                layer.paintList = paintListForPage(at: index)
                 contentView.layer.addSublayer(layer)
                 pageLayers[index] = layer
             }
@@ -74,6 +80,9 @@
             for (index, layer) in pageLayers {
                 layer.frame = frameForPage(at: index)
                 layer.pageHeight = layer.frame.height
+                if layer.paintList == nil {
+                    layer.paintList = paintListForPage(at: index)
+                }
             }
 
             if let firstVisible = validRange.first {
@@ -179,6 +188,10 @@
 
         private func pageSize(at index: Int) -> CGSize {
             document?.pages[safe: index]?.size ?? defaultPageSize
+        }
+
+        private func paintListForPage(at index: Int) -> HwpPaintList? {
+            document?.pages[safe: index]?.paintList
         }
 
         private func pagePoint(containing location: CGPoint) -> (Int, CGPoint)? {

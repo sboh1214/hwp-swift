@@ -130,18 +130,24 @@
             max(0, visibleRange.lowerBound - 2) ..< max(visibleRange.upperBound, visibleRange.upperBound + 2)
         }
 
-        private func makePageLayer(for index: Int) -> HwpPageLayer {
-            let pageLayer = HwpPageLayer()
-            let pageSize = sizeForPage(at: index)
-            pageLayer.pageHeight = pageSize.height
-            pageLayer.bounds = CGRect(origin: .zero, size: pageSize)
-            pageLayer.backgroundColor = NSColor.white.cgColor
-            pageLayer.shadowColor = NSColor.black.cgColor
-            pageLayer.shadowOpacity = 0.12
-            pageLayer.shadowRadius = 4
-            pageLayer.shadowOffset = CGSize(width: 0, height: -1)
-            return pageLayer
-        }
+    private func makePageLayer(for index: Int) -> HwpPageLayer {
+        let pageLayer = HwpPageLayer()
+        let pageSize = sizeForPage(at: index)
+        pageLayer.pageHeight = pageSize.height
+        pageLayer.bounds = CGRect(origin: .zero, size: pageSize)
+        pageLayer.backgroundColor = NSColor.white.cgColor
+        pageLayer.shadowColor = NSColor.black.cgColor
+        pageLayer.shadowOpacity = 0.12
+        pageLayer.shadowRadius = 4
+        pageLayer.shadowOffset = CGSize(width: 0, height: -1)
+        pageLayer.paintList = paintListForPage(at: index)
+        return pageLayer
+    }
+
+    private func paintListForPage(at index: Int) -> HwpPaintList? {
+        guard let document, document.pages.indices.contains(index) else { return nil }
+        return document.pages[index].paintList
+    }
 
         private func layoutPageLayers() {
             for (index, pageLayer) in pageLayers {

@@ -16,6 +16,9 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
     override public init() {
         super.init()
         needsDisplayOnBoundsChange = true
+        #if os(macOS)
+            isGeometryFlipped = true
+        #endif
     }
 
     override public init(layer: Any) {
@@ -25,6 +28,9 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
         }
         super.init(layer: layer)
         needsDisplayOnBoundsChange = true
+        #if os(macOS)
+            isGeometryFlipped = true
+        #endif
     }
 
     @available(*, unavailable)

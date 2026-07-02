@@ -22,8 +22,9 @@ public struct HwpPaintListBuilder: Sendable {
         let black = CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1)
         switch block.kind {
         case .text:
+            let attributed = block.attributedString ?? NSAttributedString(string: "")
             return [.drawText(
-                attributedString: NSAttributedString(string: ""),
+                attributedString: attributed,
                 origin: frame.origin,
                 lineWidth: frame.width
             )]

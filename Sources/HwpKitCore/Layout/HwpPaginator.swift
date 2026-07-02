@@ -7,6 +7,7 @@ public actor HwpPaginator {
     private let sections: [CoreHwp.HwpSection]
     private let index: HwpIndex
     private let fontResolver: HwpFontResolver
+    private let paintListBuilder: HwpPaintListBuilder
     private var nextSectionIndex = 0
     private var nextParagraphIndex = 0
     private var currentPageGeometry: HwpPageGeometry
@@ -24,6 +25,7 @@ public actor HwpPaginator {
         self.sections = sections
         self.index = index
         self.fontResolver = fontResolver
+        paintListBuilder = HwpPaintListBuilder(fontResolver: fontResolver)
         currentPageGeometry = Self.initialGeometry(for: sections)
     }
 
@@ -81,7 +83,9 @@ private extension HwpPaginator {
                 currentPageGeometry = HwpPageGeometry.compute(pageDef: sectionDef.pageDef, sectionDef: sectionDef)
             }
 
-            let paragraphFrame = try await layout(paragraph)
+            let attributedString = HwpTextRunBuilder(index: index, fontResolver: fontResolver)
+                .build(paragraph: paragraph)
+            let paragraphFrame = try await layout(paragraph, attributedString: attributedString)
             let paragraphHeight = height(for: paragraph, fallback: paragraphFrame.totalHeight)
             let contentHeight = currentPageGeometry.contentFrame.height
             if contentHeightUsed > 0, contentHeightUsed + paragraphHeight > contentHeight {
@@ -89,7 +93,7 @@ private extension HwpPaginator {
                 return
             }
 
-            appendBlock(height: paragraphHeight)
+            appendBlock(height: paragraphHeight, attributedString: attributedString)
             advanceParagraph()
             await Task.yield()
         }
@@ -98,10 +102,11 @@ private extension HwpPaginator {
         didFinishPagination = true
     }
 
-    func layout(_ paragraph: CoreHwp.HwpParagraph) async throws -> HwpParagraphFrame {
+    func layout(
+        _ paragraph: CoreHwp.HwpParagraph,
+        attributedString: NSAttributedString
+    ) async throws -> HwpParagraphFrame {
         await Task.yield()
-        let attributedString = HwpTextRunBuilder(index: index, fontResolver: fontResolver)
-            .build(paragraph: paragraph)
         guard let paraShape = index.paraShape(id: UInt32(paragraph.paraHeader.paraShapeId))
             ?? index.paraShape(id: 0)
         else {
@@ -138,7 +143,7 @@ private extension HwpPaginator {
         }
     }
 
-    func appendBlock(height: CGFloat) {
+    func appendBlock(height: CGFloat, attributedString: NSAttributedString) {
         let contentFrame = currentPageGeometry.contentFrame
         let frame = CGRect(
             x: contentFrame.minX,
@@ -146,17 +151,29 @@ private extension HwpPaginator {
             width: contentFrame.width,
             height: height
         )
-        currentBlocks.append(AnyHwpBlock(frame: frame, kind: .text))
+        currentBlocks.append(AnyHwpBlock(
+            frame: frame,
+            kind: .text,
+            attributedString: attributedString
+        ))
         contentHeightUsed += height
     }
 
     func cacheCurrentPage() {
         let pageIndex = cachedPages.count
-        cachedPages[pageIndex] = HwpPage(
+        let page = HwpPage(
             size: currentPageGeometry.pageSize,
             margins: currentPageGeometry.margins,
             blocks: currentBlocks,
             pageNumber: pageIndex + 1
+        )
+        let paintList = paintListBuilder.build(for: page, index: index)
+        cachedPages[pageIndex] = HwpPage(
+            size: page.size,
+            margins: page.margins,
+            blocks: page.blocks,
+            pageNumber: page.pageNumber,
+            paintList: paintList
         )
         currentBlocks = []
         contentHeightUsed = 0
