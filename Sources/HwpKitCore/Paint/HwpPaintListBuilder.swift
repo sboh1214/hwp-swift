@@ -38,13 +38,31 @@ public struct HwpPaintListBuilder: Sendable {
                 strokeWidth: 1
             )]
         case .table:
-            return [.strokeRect(rect: frame, color: black, width: 1)]
+            var commands: [HwpPaintCommand] = [
+                .strokeRect(rect: frame, color: black, width: 1),
+            ]
+            if let attributed = block.attributedString, attributed.length > 0 {
+                commands.append(.drawText(
+                    attributedString: attributed,
+                    origin: frame.origin,
+                    lineWidth: max(frame.width, 1)
+                ))
+            }
+            return commands
         case .textbox:
             let white = CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)
-            return [
+            var commands: [HwpPaintCommand] = [
                 .fillRect(rect: frame, color: white),
                 .strokeRect(rect: frame, color: black, width: 1),
             ]
+            if let attributed = block.attributedString, attributed.length > 0 {
+                commands.append(.drawText(
+                    attributedString: attributed,
+                    origin: frame.origin,
+                    lineWidth: max(frame.width, 1)
+                ))
+            }
+            return commands
         case .footnote:
             let separatorFrame = CGRect(
                 x: frame.minX,
@@ -52,12 +70,13 @@ public struct HwpPaintListBuilder: Sendable {
                 width: frame.width * 0.3,
                 height: 1
             )
+            let attributed = block.attributedString ?? NSAttributedString(string: "")
             return [
                 .strokeRect(rect: separatorFrame, color: black, width: 1),
                 .drawText(
-                    attributedString: NSAttributedString(string: ""),
+                    attributedString: attributed,
                     origin: frame.origin,
-                    lineWidth: frame.width
+                    lineWidth: max(frame.width, 1)
                 ),
             ]
         case .placeholder:
