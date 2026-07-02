@@ -36,6 +36,9 @@ public struct HwpPage: Sendable, Hashable {
         self.paintList = paintList
     }
 
+    /// paintList contributes only commands.count (structural fingerprint); its CF
+    /// payloads (NSAttributedString/CGImage/CGPath/CGColor) are not Equatable, so
+    /// pages with same count but different rendered content compare equal.
     public func hash(into hasher: inout Hasher) {
         hasher.combine(size.width)
         hasher.combine(size.height)

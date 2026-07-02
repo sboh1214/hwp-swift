@@ -7,15 +7,15 @@ import XCTest
 final class HwpIndexTests: XCTestCase {
     func testBlankDocument() {
         let index = HwpIndex(from: CoreHwp.HwpFile())
-        expect(index.charShapes.count) >= 0
-        expect(index.paraShapes.count) >= 0
-        expect(index.borderFills.count) >= 0
-        expect(index.tabDefs.count) >= 0
-        expect(index.styles.count) >= 0
-        expect(index.bullets.count) >= 0
-        expect(index.numberings.count) >= 0
-        expect(index.binData.count) >= 0
-        expect(index.faceNamesKorean.count) >= 0
+        expect(index.charShapes.count) > 0
+        expect(index.paraShapes.count) > 0
+        expect(index.borderFills.count) > 0
+        expect(index.tabDefs.count) > 0
+        expect(index.styles.count) > 0
+        expect(index.bullets) == [:]
+        expect(index.numberings.count) > 0
+        expect(index.binData) == [:]
+        expect(index.faceNamesKorean.count) > 0
     }
 
     func testMissingIdReturnsNil() {

@@ -8,12 +8,14 @@ public actor HwpPaginator {
     private let index: HwpIndex
     private let fontResolver: HwpFontResolver
     private let paintListBuilder: HwpPaintListBuilder
+    private let unsupportedDetector = HwpUnsupportedDetector()
     private var nextSectionIndex = 0
     private var nextParagraphIndex = 0
     private var currentPageGeometry: HwpPageGeometry
     private var currentBlocks: [AnyHwpBlock] = []
     private var contentHeightUsed: CGFloat = 0
     private var didFinishPagination = false
+    private var collectedUnsupported: [HwpUnsupportedElement] = []
 
     var cachedPages: [Int: HwpPage] = [:]
 
@@ -43,6 +45,10 @@ public actor HwpPaginator {
     public func totalPages() async -> Int {
         await Task.yield()
         return max(1, cachedPages.count)
+    }
+
+    public func unsupportedElements() async -> [HwpUnsupportedElement] {
+        collectedUnsupported
     }
 }
 
@@ -99,6 +105,7 @@ private extension HwpPaginator {
                 hyperlinkURL: hyperlinkURL(in: paragraph)
             )
             appendEmbeddedBlocks(from: paragraph)
+            collectUnsupported(from: paragraph)
             advanceParagraph()
             await Task.yield()
         }
@@ -180,6 +187,55 @@ private extension HwpPaginator {
         return nil
     }
 
+    func collectUnsupported(from paragraph: CoreHwp.HwpParagraph) {
+        guard let ctrls = paragraph.ctrlHeaderArray else { return }
+        let page = cachedPages.count + 1
+        walkUnsupported(ctrls: ctrls, page: page)
+    }
+
+    func walkUnsupported(ctrls: [CoreHwp.HwpCtrlId], page: Int) {
+        for ctrl in ctrls {
+            if let element = unsupportedDetector.classify(ctrl: ctrl, page: page) {
+                collectedUnsupported.append(element)
+            }
+            for nested in nestedParagraphs(in: ctrl) {
+                guard let nestedCtrls = nested.ctrlHeaderArray else { continue }
+                walkUnsupported(ctrls: nestedCtrls, page: page)
+            }
+        }
+    }
+
+    func nestedParagraphs(in ctrl: CoreHwp.HwpCtrlId) -> [CoreHwp.HwpParagraph] {
+        switch ctrl {
+        case let .header(list), let .footer(list),
+             let .footnote(list), let .endnote(list):
+            list.listArray.flatMap(\.paragraphArray)
+        case let .table(table):
+            table.cellArray.flatMap(\.paragraphArray)
+        case let .shape(shape),
+             let .line(shape),
+             let .rectangle(shape),
+             let .ellipse(shape),
+             let .arc(shape),
+             let .polygon(shape),
+             let .curve(shape),
+             let .equation(shape),
+             let .equationLegacy(shape),
+             let .picture(shape),
+             let .ole(shape),
+             let .container(shape):
+            shape.shapeComponentArray
+                .flatMap(\.textBoxListArray)
+                .flatMap(\.paragraphArray)
+        case let .genShapeObject(genShape):
+            genShape.shapeComponentArray
+                .flatMap(\.textBoxListArray)
+                .flatMap(\.paragraphArray)
+        default:
+            []
+        }
+    }
+
     func appendEmbeddedBlocks(from paragraph: CoreHwp.HwpParagraph) {
         guard let ctrls = paragraph.ctrlHeaderArray else { return }
         let builder = HwpTextRunBuilder(index: index, fontResolver: fontResolver)
@@ -198,7 +254,8 @@ private extension HwpPaginator {
             currentBlocks.append(AnyHwpBlock(
                 frame: frame,
                 kind: kind,
-                attributedString: attributedString
+                attributedString: attributedString,
+                hyperlinkURL: hyperlinkURL(in: embeddedParagraph)
             ))
             contentHeightUsed += embeddedHeight
         }

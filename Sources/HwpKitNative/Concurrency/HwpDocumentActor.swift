@@ -64,10 +64,11 @@ public actor HwpDocumentActor {
             pageCount: pages.count,
             previewText: previewText.isEmpty ? nil : String(previewText.prefix(500))
         )
+        let unsupported = await paginator.unsupportedElements()
         return HwpDocument(
             pages: pages,
             metadata: metadata,
-            unsupportedElements: []
+            unsupportedElements: unsupported
         )
     }
 

@@ -108,6 +108,7 @@ struct ContentView: View {
 
     private func loadDocument(from url: URL) {
         errorMessage = nil
+        document = nil
         isLoading = true
         let didStart = url.startAccessingSecurityScopedResource()
         Task {

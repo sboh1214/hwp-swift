@@ -17,9 +17,9 @@ final class HwpDocumentViewTests: XCTestCase {
         expect(String(describing: type(of: view.body))).toNot(beEmpty())
     }
 
-    @MainActor
-    func testBindingsPropagateThroughNativeWrapper() {
-        #if os(macOS)
+    #if os(macOS)
+        @MainActor
+        func testBindingsPropagateThroughNativeWrapper() {
             var zoomScale = CGFloat(1.75)
             var currentPage = 0
             let view = HwpDocumentView(
@@ -41,10 +41,8 @@ final class HwpDocumentViewTests: XCTestCase {
             nativeView.updateVisiblePages(range: 2 ..< 3)
 
             expect(currentPage) == 3
-        #else
-            expect(true) == true
-        #endif
-    }
+        }
+    #endif
 }
 
 #if os(macOS)
