@@ -1,7 +1,7 @@
-import SwiftUI
-import UniformTypeIdentifiers
 import HwpKit
 import HwpKitCore
+import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @State private var document: HwpDocument?
@@ -32,13 +32,13 @@ struct ContentView: View {
             isPresented: $showPicker,
             allowedContentTypes: [
                 UTType(filenameExtension: "hwp") ?? .data,
-                .data
+                .data,
             ]
         ) { result in
             switch result {
-            case .success(let url):
+            case let .success(url):
                 loadDocument(from: url)
-            case .failure(let error):
+            case let .failure(error):
                 errorMessage = error.localizedDescription
             }
         }
@@ -55,7 +55,6 @@ struct ContentView: View {
         }
     }
 
-    @ViewBuilder
     private func loadedView(document: HwpDocument) -> some View {
         VStack(spacing: 0) {
             HwpDocumentToolbar {

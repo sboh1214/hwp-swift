@@ -58,7 +58,7 @@ final class FixtureRenderTests: XCTestCase {
         let fixtures = try FixtureRoot.loadAllFixtures(from: #file)
         expect(fixtures.count) == 33
         let withText = fixtures.filter { !$0.expectedVisibleText.isEmpty }
-        let empty = fixtures.filter { $0.expectedVisibleText.isEmpty }
+        let empty = fixtures.filter(\.expectedVisibleText.isEmpty)
         expect(withText.count) == 20
         expect(empty.count) == 13
     }
@@ -73,10 +73,10 @@ final class FixtureRenderTests: XCTestCase {
                 let document = try await HwpDocumentLoader().load(from: fixture.documentURL)
                 for (pageIndex, page) in document.pages.enumerated() {
                     let blocks = page.blocks
-                    for i in 0 ..< blocks.count {
-                        for j in (i + 1) ..< blocks.count {
-                            let frameA = blocks[i].frame
-                            let frameB = blocks[j].frame
+                    for lhs in 0 ..< blocks.count {
+                        for rhs in (lhs + 1) ..< blocks.count {
+                            let frameA = blocks[lhs].frame
+                            let frameB = blocks[rhs].frame
                             guard frameA.width > 0, frameA.height > 0,
                                   frameB.width > 0, frameB.height > 0
                             else { continue }
@@ -84,7 +84,8 @@ final class FixtureRenderTests: XCTestCase {
                             let overlapY = min(frameA.maxY, frameB.maxY) - max(frameA.minY, frameB.minY)
                             if overlapX > tolerance, overlapY > tolerance {
                                 failures.append(
-                                    "[\(fixture.id)] page \(pageIndex) block \(i) \(frameA) overlaps block \(j) \(frameB)"
+                                    "[\(fixture.id)] page \(pageIndex) " +
+                                        "block \(lhs) \(frameA) overlaps block \(rhs) \(frameB)"
                                 )
                             }
                         }

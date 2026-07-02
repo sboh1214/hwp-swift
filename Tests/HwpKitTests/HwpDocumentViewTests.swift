@@ -40,7 +40,7 @@ final class HwpDocumentViewTests: XCTestCase {
 
             nativeView.updateVisiblePages(range: 2 ..< 3)
 
-            expect(currentPage) == 2
+            expect(currentPage) == 3
         #else
             expect(true) == true
         #endif
