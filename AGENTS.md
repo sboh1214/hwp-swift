@@ -1,7 +1,6 @@
 # 프로젝트 지식 베이스
 
-**Commit:** ca79c1a
-**Branch:** docs@landing-page
+**Branch:** feat/hwpkit-viewer
 
 ## 개요
 

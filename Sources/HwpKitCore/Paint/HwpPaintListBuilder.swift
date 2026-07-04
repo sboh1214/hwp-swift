@@ -22,7 +22,6 @@ public struct HwpPaintListBuilder: Sendable {
 
     private func paintCommands(for block: AnyHwpBlock) -> [HwpPaintCommand] {
         let frame = block.frame
-        let black = CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1)
         switch block.kind {
         case .text:
             let attributed = block.attributedString ?? NSAttributedString(string: "")
@@ -37,53 +36,67 @@ public struct HwpPaintListBuilder: Sendable {
             return [.drawPath(
                 path: CGPath(rect: frame, transform: nil),
                 fill: nil,
-                stroke: black,
+                stroke: .hwpBlack,
                 strokeWidth: 1
             )]
         case .table:
-            var commands: [HwpPaintCommand] = [
-                .strokeRect(rect: frame, color: black, width: 1),
-            ]
-            if let attributed = block.attributedString, attributed.length > 0 {
-                commands.append(.drawText(
-                    attributedString: attributed,
-                    origin: frame.origin,
-                    lineWidth: max(frame.width, 1)
-                ))
-            }
-            return commands
+            return tableCommands(for: block, frame: frame)
         case .textbox:
-            let white = CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)
-            var commands: [HwpPaintCommand] = [
-                .fillRect(rect: frame, color: white),
-                .strokeRect(rect: frame, color: black, width: 1),
-            ]
-            if let attributed = block.attributedString, attributed.length > 0 {
-                commands.append(.drawText(
-                    attributedString: attributed,
-                    origin: frame.origin,
-                    lineWidth: max(frame.width, 1)
-                ))
-            }
-            return commands
+            return textboxCommands(for: block, frame: frame)
         case .footnote:
-            let separatorFrame = CGRect(
-                x: frame.minX,
-                y: frame.minY - 4,
-                width: frame.width * 0.3,
-                height: 1
-            )
-            let attributed = block.attributedString ?? NSAttributedString(string: "")
-            return [
-                .strokeRect(rect: separatorFrame, color: black, width: 1),
-                .drawText(
-                    attributedString: attributed,
-                    origin: frame.origin,
-                    lineWidth: max(frame.width, 1)
-                ),
-            ]
+            return footnoteCommands(for: block, frame: frame)
         case .placeholder:
             return [.drawPlaceholder(rect: frame, text: "[placeholder]")]
         }
+    }
+
+    private func tableCommands(for block: AnyHwpBlock, frame: CGRect) -> [HwpPaintCommand] {
+        var commands: [HwpPaintCommand] = [
+            .strokeRect(rect: frame, color: .hwpBlack, width: 1),
+        ]
+        if let text = textCommand(for: block, frame: frame) {
+            commands.append(text)
+        }
+        return commands
+    }
+
+    private func textboxCommands(for block: AnyHwpBlock, frame: CGRect) -> [HwpPaintCommand] {
+        var commands: [HwpPaintCommand] = [
+            .fillRect(rect: frame, color: .hwpWhite),
+            .strokeRect(rect: frame, color: .hwpBlack, width: 1),
+        ]
+        if let text = textCommand(for: block, frame: frame) {
+            commands.append(text)
+        }
+        return commands
+    }
+
+    private func footnoteCommands(for block: AnyHwpBlock, frame: CGRect) -> [HwpPaintCommand] {
+        let separatorFrame = CGRect(
+            x: frame.minX,
+            y: frame.minY - 4,
+            width: frame.width * 0.3,
+            height: 1
+        )
+        let attributed = block.attributedString ?? NSAttributedString(string: "")
+        return [
+            .strokeRect(rect: separatorFrame, color: .hwpBlack, width: 1),
+            .drawText(
+                attributedString: attributed,
+                origin: frame.origin,
+                lineWidth: max(frame.width, 1)
+            ),
+        ]
+    }
+
+    private func textCommand(for block: AnyHwpBlock, frame: CGRect) -> HwpPaintCommand? {
+        guard let attributed = block.attributedString, attributed.length > 0 else {
+            return nil
+        }
+        return .drawText(
+            attributedString: attributed,
+            origin: frame.origin,
+            lineWidth: max(frame.width, 1)
+        )
     }
 }

@@ -82,9 +82,25 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
         in ctx: CGContext
     ) {
         let framesetter = CTFramesetterCreateWithAttributedString(attributedString)
+        drawFrame(
+            framesetter: framesetter,
+            length: attributedString.length,
+            origin: origin,
+            lineWidth: lineWidth,
+            in: ctx
+        )
+    }
+
+    private func drawFrame(
+        framesetter: CTFramesetter,
+        length: Int,
+        origin: CGPoint,
+        lineWidth: CGFloat,
+        in ctx: CGContext
+    ) {
         let suggestedSize = CTFramesetterSuggestFrameSizeWithConstraints(
             framesetter,
-            CFRange(location: 0, length: attributedString.length),
+            CFRange(location: 0, length: length),
             nil,
             CGSize(width: lineWidth, height: .greatestFiniteMagnitude),
             nil
@@ -100,7 +116,7 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
         let path = CGPath(rect: textRect, transform: nil)
         let frame = CTFramesetterCreateFrame(
             framesetter,
-            CFRange(location: 0, length: attributedString.length),
+            CFRange(location: 0, length: length),
             path,
             nil
         )
@@ -134,13 +150,15 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
         }
     }
 
+    private static let placeholderFont = CTFontCreateWithName("Helvetica" as CFString, 12, nil)
+
     private func drawPlaceholder(_ text: String, in rect: CGRect, context ctx: CGContext) {
         ctx.setFillColor(CGColor(gray: 0.9, alpha: 1))
         ctx.fill(rect)
 
         let attributes: [NSAttributedString.Key: Any] = [
             .foregroundColor: CGColor(gray: 0, alpha: 1),
-            .font: CTFontCreateWithName("Helvetica" as CFString, 12, nil),
+            .font: Self.placeholderFont,
         ]
         let attributedString = NSAttributedString(string: text, attributes: attributes)
         let framesetter = CTFramesetterCreateWithAttributedString(attributedString)
@@ -155,6 +173,12 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
             x: rect.midX - textSize.width / 2,
             y: rect.midY - textSize.height / 2
         )
-        drawText(attributedString, origin: origin, lineWidth: max(textSize.width, 1), in: ctx)
+        drawFrame(
+            framesetter: framesetter,
+            length: attributedString.length,
+            origin: origin,
+            lineWidth: max(textSize.width, 1),
+            in: ctx
+        )
     }
 }

@@ -44,9 +44,10 @@ import XCTest
         }
 
         func testCenterAlignmentOffsetsLineFromLeftEdge() {
+            // 정렬 방식은 property1 bits 2-4: 3(가운데) << 2
             let frame = layout().layout(
                 attributedString: attributedString("hi"),
-                paraShape: paraShape(property1: 2),
+                paraShape: paraShape(property1: 3 << 2),
                 columnWidth: 300
             )
 
@@ -57,7 +58,7 @@ import XCTest
 
     private extension HwpParagraphLayoutTests {
         func layout() -> HwpParagraphLayout {
-            HwpParagraphLayout(fontResolver: .testDeterministic)
+            HwpParagraphLayout()
         }
 
         func attributedString(_ string: String) -> NSAttributedString {
@@ -71,7 +72,12 @@ import XCTest
         }
 
         func paraShape(property1: UInt32 = 0) -> CoreHwp.HwpParaShape {
-            CoreHwp.HwpParaShape(property1: property1, marginLeft: 0, tabDefId: 0, lineSpacing2: 160)
+            CoreHwp.HwpParaShape(
+                property1: property1,
+                marginLeft: 0,
+                tabDefId: 0,
+                lineSpacing2: 160
+            )
         }
     }
 #endif

@@ -28,7 +28,7 @@ public struct HwpUnsupportedDetector: Sendable {
     ///   - page: The page number where this control appears
     /// - Returns: nil if supported, or HwpUnsupportedElement for v1 OUT types
     public func classify(ctrl: CoreHwp.HwpCtrlId, page: Int) -> HwpUnsupportedElement? {
-        guard !isSupported(ctrl: ctrl), let hint = unsupportedHint(for: ctrl) else {
+        guard let hint = unsupportedHint(for: ctrl) else {
             return nil
         }
         return HwpUnsupportedElement(kind: .placeholder, page: page, hint: hint)
@@ -36,19 +36,15 @@ public struct HwpUnsupportedDetector: Sendable {
 }
 
 private extension HwpUnsupportedDetector {
-    func isSupported(ctrl: CoreHwp.HwpCtrlId) -> Bool {
+    // Exhaustive over HwpCtrlId (no `default:`) so the compiler forces every
+    // new control case to be classified as supported (nil) or unsupported.
+    // swiftlint:disable:next cyclomatic_complexity
+    func unsupportedHint(for ctrl: CoreHwp.HwpCtrlId) -> String? {
         switch ctrl {
         case .table, .shape, .line, .rectangle, .ellipse, .arc, .polygon, .curve,
              .picture, .container, .genShapeObject, .section, .column,
              .pageNumberPosition, .header, .footer, .footnote, .endnote, .hyperLink:
-            true
-        default:
-            false
-        }
-    }
-
-    func unsupportedHint(for ctrl: CoreHwp.HwpCtrlId) -> String? {
-        switch ctrl {
+            nil
         case .equation, .equationLegacy:
             "수식"
         case .ole:
@@ -85,8 +81,6 @@ private extension HwpUnsupportedDetector {
             "알 수 없음: notImplemented"
         case .unknown:
             "알 수 없음: unknown"
-        default:
-            nil
         }
     }
 }

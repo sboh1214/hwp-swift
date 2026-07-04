@@ -19,7 +19,10 @@ public actor HwpImageCache {
         self.maxBytes = maxBytes
     }
 
-    public func fetch(_ key: UInt32, decode: @escaping @Sendable () async -> CGImage?) async -> CGImage? {
+    public func fetch(
+        _ key: UInt32,
+        decode: @escaping @Sendable () async -> CGImage?
+    ) async -> CGImage? {
         if var entry = storage[key] {
             entry.timestamp = Date()
             storage[key] = entry

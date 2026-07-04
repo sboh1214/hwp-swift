@@ -20,10 +20,18 @@ public struct HwpParagraph: HwpFromRecordWithVersion {
         paraRangeTagArray = [HwpParaRangeTag]()
         listHeaderArray = [HwpListHeader]()
         unknownChildren = []
-        ctrlHeaderArray = [
+        ctrlHeaderArray = nil
+    }
+
+    /// 새 문서의 첫 문단. 구역/단 정의 컨트롤은 구역의 첫 문단에만 붙는다는
+    /// 파싱 경로 불변식이 있으므로 일반 `init()`에는 포함하지 않는다.
+    public static func blankDocumentParagraph() -> HwpParagraph {
+        var paragraph = HwpParagraph()
+        paragraph.ctrlHeaderArray = [
             .section(HwpSectionDef()),
             .column(HwpColumn()),
         ]
+        return paragraph
     }
 
     // MARK: loader contract exemption - validates paragraph record tag before decoding children

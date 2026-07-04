@@ -9,7 +9,12 @@ import XCTest
 
     final class HwpTableLayoutTests: XCTestCase {
         func testTwoByTwoUniformTableProducesTwoRowsAndTwoCells() {
-            let result = layout().layout(table: table(), availableWidth: 200, availableHeight: 400, index: index())
+            let result = layout().layout(
+                table: table(),
+                availableWidth: 200,
+                availableHeight: 400,
+                index: index()
+            )
 
             guard case let .success(frame) = result else {
                 fail("expected table layout success")
@@ -45,7 +50,12 @@ import XCTest
         }
 
         func testOverflowReturnsPlaceholderFailure() {
-            let result = layout().layout(table: table(), availableWidth: 200, availableHeight: 1, index: index())
+            let result = layout().layout(
+                table: table(),
+                availableWidth: 200,
+                availableHeight: 1,
+                index: index()
+            )
 
             guard case let .failure(element) = result else {
                 fail("expected table layout failure")
@@ -96,7 +106,13 @@ import XCTest
             rowSpan: UInt16 = 1,
             columnSpan: UInt16 = 1
         ) -> CoreHwp.HwpTableCell {
-            CoreHwp.HwpTableCell(
+            let rawTrailing = placementData(
+                row: row,
+                column: column,
+                rowSpan: rowSpan,
+                columnSpan: columnSpan
+            )
+            return CoreHwp.HwpTableCell(
                 header: CoreHwp.HwpTableCellHeader(
                     paragraphCount: 1,
                     property: 0,
@@ -104,7 +120,7 @@ import XCTest
                     listHeaderWidthRef: 0,
                     cellPropertyInfo: CoreHwp.HwpTableCellHeaderProperty(),
                     isHeader: false,
-                    rawTrailing: placementData(row: row, column: column, rowSpan: rowSpan, columnSpan: columnSpan),
+                    rawTrailing: rawTrailing,
                     rawPayload: Data(),
                     unknownChildren: []
                 ),
@@ -127,9 +143,15 @@ import XCTest
         }
 
         func index() -> HwpIndex {
-            HwpIndex(
+            let paraShape = CoreHwp.HwpParaShape(
+                property1: 0,
+                marginLeft: 0,
+                tabDefId: 0,
+                lineSpacing2: 160
+            )
+            return HwpIndex(
                 charShapes: [:],
-                paraShapes: [0: CoreHwp.HwpParaShape(property1: 0, marginLeft: 0, tabDefId: 0, lineSpacing2: 160)],
+                paraShapes: [0: paraShape],
                 borderFills: [:],
                 tabDefs: [:],
                 styles: [:],
@@ -146,7 +168,12 @@ import XCTest
             )
         }
 
-        func placementData(row: UInt16, column: UInt16, rowSpan: UInt16, columnSpan: UInt16) -> Data {
+        func placementData(
+            row: UInt16,
+            column: UInt16,
+            rowSpan: UInt16,
+            columnSpan: UInt16
+        ) -> Data {
             var data = Data()
             append(column, to: &data)
             append(row, to: &data)

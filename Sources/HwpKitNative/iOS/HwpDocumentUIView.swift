@@ -7,6 +7,10 @@
     public final class HwpDocumentUIView: UIView, UIScrollViewDelegate {
         public var document: HwpDocument? {
             didSet {
+                guard document != oldValue else { return }
+                pageLayers.values.forEach { $0.removeFromSuperlayer() }
+                pageLayers.removeAll()
+                rebuildPageOrigins()
                 updateContentSize()
                 updateVisiblePages(range: 0 ..< min(document?.pages.count ?? 0, 3))
                 notifyUnsupportedElements()
@@ -34,6 +38,8 @@
         private let hitTester = HwpHitTester()
         private let pageGap: CGFloat = 24
         private let defaultPageSize = CGSize(width: 595, height: 842)
+        /// Prefix sums of page Y origins so frame lookups are O(1) during scrolling.
+        private var pageOriginsY: [CGFloat] = []
 
         override public init(frame: CGRect) {
             imageCache = HwpImageCache()
@@ -78,16 +84,33 @@
             }
 
             for (index, layer) in pageLayers {
-                layer.frame = frameForPage(at: index)
-                layer.pageHeight = layer.frame.height
+                let frame = frameForPage(at: index)
+                if layer.frame != frame {
+                    layer.frame = frame
+                    layer.pageHeight = frame.height
+                }
                 if layer.paintList == nil {
                     layer.paintList = paintListForPage(at: index)
                 }
             }
+        }
 
-            if let firstVisible = validRange.first {
-                onPageChanged?(firstVisible)
-            }
+        /// Scrolls so the given page's top edge is at the top of the viewport.
+        public func scrollToPage(at index: Int) {
+            guard let document, document.pages.indices.contains(index) else { return }
+            let target = contentView.convert(frameForPage(at: index), to: scrollView)
+            let maxOffsetY = max(0, scrollView.contentSize.height - scrollView.bounds.height)
+            let offsetY = max(0, min(target.minY, maxOffsetY))
+            scrollView.setContentOffset(
+                CGPoint(x: scrollView.contentOffset.x, y: offsetY),
+                animated: false
+            )
+            updateVisiblePages(range: index ..< (index + 1))
+        }
+
+        /// The first page currently intersecting the viewport.
+        public func currentVisiblePage() -> Int {
+            visiblePageRange().first ?? 0
         }
 
         public func viewForZooming(in _: UIScrollView) -> UIView? {
@@ -95,7 +118,11 @@
         }
 
         public func scrollViewDidScroll(_: UIScrollView) {
-            updateVisiblePages(range: visiblePageRange())
+            let range = visiblePageRange()
+            updateVisiblePages(range: range)
+            if let firstVisible = range.first {
+                onPageChanged?(firstVisible)
+            }
         }
 
         public func scrollViewDidZoom(_ scrollView: UIScrollView) {
@@ -137,8 +164,18 @@
             document?.unsupportedElements.forEach { onUnsupportedElement?($0) }
         }
 
+        private func rebuildPageOrigins() {
+            var origins: [CGFloat] = []
+            var originY: CGFloat = 0
+            for index in 0 ..< (document?.pages.count ?? 0) {
+                origins.append(originY)
+                originY += pageSize(at: index).height + pageGap
+            }
+            pageOriginsY = origins
+        }
+
         private func updateContentSize() {
-            let pageCount = max(document?.pages.count ?? 0, pageLayers.keys.max().map { $0 + 1 } ?? 0)
+            let pageCount = document?.pages.count ?? 0
             let largestWidth = (0 ..< pageCount)
                 .map { pageSize(at: $0).width }
                 .max() ?? defaultPageSize.width
@@ -146,18 +183,32 @@
                 partial + pageSize(at: index).height + (index == pageCount - 1 ? 0 : pageGap)
             }
             let contentSize = CGSize(width: largestWidth, height: totalHeight)
-            contentView.frame = CGRect(origin: .zero, size: contentSize)
-            scrollView.contentSize = contentSize
+            // The content view may carry a zoom transform, so set bounds/center
+            // (frame is undefined under a non-identity transform) and keep the
+            // scroll view's content size in zoomed coordinates.
+            contentView.bounds = CGRect(origin: .zero, size: contentSize)
+            let scale = scrollView.zoomScale
+            contentView.center = CGPoint(
+                x: contentSize.width * scale / 2,
+                y: contentSize.height * scale / 2
+            )
+            scrollView.contentSize = CGSize(
+                width: contentSize.width * scale,
+                height: contentSize.height * scale
+            )
         }
 
         private func visiblePageRange() -> Range<Int> {
-            let pageCount = max(document?.pages.count ?? 0, pageLayers.keys.max().map { $0 + 1 } ?? 0)
+            let pageCount = document?.pages.count ?? 0
             guard pageCount > 0 else { return 0 ..< 0 }
 
+            // Convert into content-view coordinates so zooming is accounted for.
             let visibleRect = scrollView.bounds.isEmpty
                 ? CGRect(origin: scrollView.contentOffset, size: bounds.size)
-                : CGRect(origin: scrollView.contentOffset, size: scrollView.bounds.size)
-            let visibleIndices = (0 ..< pageCount).filter { frameForPage(at: $0).intersects(visibleRect) }
+                : scrollView.convert(scrollView.bounds, to: contentView)
+            let visibleIndices = (0 ..< pageCount).filter {
+                frameForPage(at: $0).intersects(visibleRect)
+            }
             guard let first = visibleIndices.first, let last = visibleIndices.last else {
                 return 0 ..< min(pageCount, 1)
             }
@@ -165,24 +216,22 @@
         }
 
         private func clampedPageRange(_ range: Range<Int>) -> Range<Int> {
-            let upperBound = max(document?.pages.count ?? 0, range.upperBound)
-            let lower = max(0, min(range.lowerBound, upperBound))
-            let upper = max(lower, min(range.upperBound, upperBound))
+            let pageCount = document?.pages.count ?? 0
+            let lower = max(0, min(range.lowerBound, pageCount))
+            let upper = max(lower, min(range.upperBound, pageCount))
             return lower ..< upper
         }
 
         private func expandedRange(_ range: Range<Int>) -> Range<Int> {
             guard !range.isEmpty else { return range }
-            let pageCount = max(document?.pages.count ?? 0, range.upperBound)
+            let pageCount = document?.pages.count ?? 0
             let lower = max(0, range.lowerBound - 2)
             let upper = min(pageCount, range.upperBound + 2)
             return lower ..< upper
         }
 
         private func frameForPage(at index: Int) -> CGRect {
-            let originY = (0 ..< index).reduce(CGFloat(0)) { partial, pageIndex in
-                partial + pageSize(at: pageIndex).height + pageGap
-            }
+            let originY = pageOriginsY[safe: index] ?? 0
             return CGRect(origin: CGPoint(x: 0, y: originY), size: pageSize(at: index))
         }
 

@@ -28,7 +28,8 @@ import XCTest
 
         func testMixedKoreanAndEnglishChunksOnScriptSwitch() throws {
             let paragraph = paragraph(text: "안녕hello", runs: [(0, 0)])
-            let result = builder(shapes: [0: try charShape(faceScaleX: [100, 110, 100, 100, 100, 100, 100])])
+            let shape = try charShape(faceScaleX: [100, 110, 100, 100, 100, 100, 100])
+            let result = builder(shapes: [0: shape])
                 .build(paragraph: paragraph)
             let rangeCount = fontRanges(in: result).count
 
@@ -37,7 +38,8 @@ import XCTest
 
         func testBoldFlagProducesBoldCTFontTrait() throws {
             let paragraph = paragraph(text: "hello", runs: [(0, 0)])
-            let result = builder(shapes: [0: try charShape(property: 0b10)]).build(paragraph: paragraph)
+            let result = builder(shapes: [0: try charShape(property: 0b10)])
+                .build(paragraph: paragraph)
             let font = fontRanges(in: result).first?.font
 
             expect(font).notTo(beNil())
@@ -46,7 +48,8 @@ import XCTest
 
         func testUnderlineFlagAddsSingleUnderlineStyle() throws {
             let paragraph = paragraph(text: "hello", runs: [(0, 0)])
-            let result = builder(shapes: [0: try charShape(property: 0b100)]).build(paragraph: paragraph)
+            let result = builder(shapes: [0: try charShape(property: 0b100)])
+                .build(paragraph: paragraph)
             let value = result.attribute(.underlineStyle, at: 0, effectiveRange: nil) as? NSNumber
 
             expect(value?.intValue) == NSUnderlineStyle.single.rawValue
@@ -115,7 +118,8 @@ import XCTest
                 kCTFontAttributeName as NSAttributedString.Key,
                 in: NSRange(location: 0, length: string.length)
             ) { value, range, _ in
-                ranges.append((range, value.map { $0 as! CTFont })) // swiftlint:disable:this force_cast
+                // swiftlint:disable:next force_cast
+                ranges.append((range, value.map { $0 as! CTFont }))
             }
             return ranges
         }

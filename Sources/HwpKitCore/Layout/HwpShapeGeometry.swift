@@ -21,20 +21,20 @@ public struct HwpShapeGeometry: Sendable {
     /// - Returns: 변환된 geometry, 또는 지원하지 않는 shape 종류이면 nil
     public static func build(from ctrl: CoreHwp.HwpCtrlId, index _: HwpIndex) -> HwpShapeGeometry? {
         switch ctrl {
-        case let .rectangle(sc):
-            guard let prop = sc.commonCtrlProperty else { return nil }
+        case let .rectangle(shapeControl):
+            guard let prop = shapeControl.commonCtrlProperty else { return nil }
             return HwpShapeGeometry(
                 path: rectanglePath(from: boundingRect(from: prop)),
                 fillColor: nil,
-                strokeColor: CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1),
+                strokeColor: CGColor.hwpBlack,
                 strokeWidth: 1.0
             )
-        case let .ellipse(sc):
-            guard let prop = sc.commonCtrlProperty else { return nil }
+        case let .ellipse(shapeControl):
+            guard let prop = shapeControl.commonCtrlProperty else { return nil }
             return HwpShapeGeometry(
                 path: ellipsePath(from: boundingRect(from: prop)),
                 fillColor: nil,
-                strokeColor: CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1),
+                strokeColor: CGColor.hwpBlack,
                 strokeWidth: 1.0
             )
         default:

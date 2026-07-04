@@ -25,7 +25,10 @@ final class HwpPaintListBuilderTests: XCTestCase {
     }
 
     func testPlaceholderBlockProducesDrawPlaceholder() {
-        let block = AnyHwpBlock(frame: CGRect(x: 72, y: 100, width: 200, height: 100), kind: .placeholder)
+        let block = AnyHwpBlock(
+            frame: CGRect(x: 72, y: 100, width: 200, height: 100),
+            kind: .placeholder
+        )
         let list = builder.build(for: makePage(blocks: [block]), index: index)
         expect(list.commands.count) == 1
         guard case .drawPlaceholder = list.commands[0] else {
@@ -67,7 +70,10 @@ final class HwpPaintListBuilderTests: XCTestCase {
     }
 
     func testTextboxBlockProducesFillAndStroke() {
-        let block = AnyHwpBlock(frame: CGRect(x: 72, y: 100, width: 200, height: 80), kind: .textbox)
+        let block = AnyHwpBlock(
+            frame: CGRect(x: 72, y: 100, width: 200, height: 80),
+            kind: .textbox
+        )
         let list = builder.build(for: makePage(blocks: [block]), index: index)
         expect(list.commands.count) == 2
         guard case .fillRect = list.commands[0] else {
@@ -81,7 +87,10 @@ final class HwpPaintListBuilderTests: XCTestCase {
     }
 
     func testFootnoteBlockProducesSeparatorAndText() {
-        let block = AnyHwpBlock(frame: CGRect(x: 72, y: 700, width: 400, height: 60), kind: .footnote)
+        let block = AnyHwpBlock(
+            frame: CGRect(x: 72, y: 700, width: 400, height: 60),
+            kind: .footnote
+        )
         let list = builder.build(for: makePage(blocks: [block]), index: index)
         expect(list.commands.count) == 2
         guard case .strokeRect = list.commands[0] else {

@@ -21,11 +21,14 @@ public struct HwpOtherControl {
     /** 아직 해석하지 않은 child record */
     public var unknownChildren: [HwpUnknownRecord]
 
-    public init(
+    /// header의 ctrl id가 알려진 기타 컨트롤이 아니면 nil을 반환한다.
+    /// (파싱 경로는 미지의 ctrl id를 `.unknown`으로 보존하므로 임의 강제 변환하지 않는다.)
+    public init?(
         header: HwpCtrlHeader,
         rawPayload: Data
     ) {
-        ctrlId = HwpOtherCtrlId(rawValue: header.ctrlId) ?? .form
+        guard let ctrlId = HwpOtherCtrlId(rawValue: header.ctrlId) else { return nil }
+        self.ctrlId = ctrlId
         numberingInfo = nil
         pageHideInfo = nil
         indexmarkInfo = nil

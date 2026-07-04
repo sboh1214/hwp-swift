@@ -43,7 +43,14 @@ public actor HwpPaginator {
     }
 
     public func totalPages() async -> Int {
-        await Task.yield()
+        while !didFinishPagination {
+            await Task.yield()
+            do {
+                try await computeNextPage()
+            } catch {
+                break
+            }
+        }
         return max(1, cachedPages.count)
     }
 
@@ -86,7 +93,10 @@ private extension HwpPaginator {
                     cacheCurrentPage()
                     return
                 }
-                currentPageGeometry = HwpPageGeometry.compute(pageDef: sectionDef.pageDef, sectionDef: sectionDef)
+                currentPageGeometry = HwpPageGeometry.compute(
+                    pageDef: sectionDef.pageDef,
+                    sectionDef: sectionDef
+                )
             }
 
             let attributedString = HwpTextRunBuilder(index: index, fontResolver: fontResolver)
@@ -124,7 +134,7 @@ private extension HwpPaginator {
         else {
             return HwpParagraphFrame(totalHeight: 0, lines: [])
         }
-        return HwpParagraphLayout(fontResolver: fontResolver).layout(
+        return HwpParagraphLayout().layout(
             attributedString: attributedString,
             paraShape: paraShape,
             columnWidth: currentPageGeometry.contentFrame.width
@@ -132,15 +142,13 @@ private extension HwpPaginator {
     }
 
     func nextParagraph() -> CoreHwp.HwpParagraph? {
-        var sectionIndex = nextSectionIndex
-        var paragraphIndex = nextParagraphIndex
-        while sections.indices.contains(sectionIndex) {
-            let paragraphs = sections[sectionIndex].paragraph
-            if paragraphs.indices.contains(paragraphIndex) {
-                return paragraphs[paragraphIndex]
+        while sections.indices.contains(nextSectionIndex) {
+            let paragraphs = sections[nextSectionIndex].paragraph
+            if paragraphs.indices.contains(nextParagraphIndex) {
+                return paragraphs[nextParagraphIndex]
             }
-            sectionIndex += 1
-            paragraphIndex = 0
+            nextSectionIndex += 1
+            nextParagraphIndex = 0
         }
         return nil
     }
@@ -206,12 +214,20 @@ private extension HwpPaginator {
     }
 
     func nestedParagraphs(in ctrl: CoreHwp.HwpCtrlId) -> [CoreHwp.HwpParagraph] {
+        childParagraphs(of: ctrl).map(\.0)
+    }
+
+    /// Single traversal point for paragraph-bearing containers: both the
+    /// unsupported-element walk and embedded-block emission consume this list,
+    /// so a container added here is handled by both automatically.
+    func childParagraphs(of ctrl: CoreHwp.HwpCtrlId) -> [(CoreHwp.HwpParagraph, HwpBlockKind)] {
         switch ctrl {
-        case let .header(list), let .footer(list),
-             let .footnote(list), let .endnote(list):
-            list.listArray.flatMap(\.paragraphArray)
+        case let .header(list), let .footer(list):
+            list.listArray.flatMap(\.paragraphArray).map { ($0, HwpBlockKind.text) }
+        case let .footnote(list), let .endnote(list):
+            list.listArray.flatMap(\.paragraphArray).map { ($0, HwpBlockKind.footnote) }
         case let .table(table):
-            table.cellArray.flatMap(\.paragraphArray)
+            table.cellArray.flatMap(\.paragraphArray).map { ($0, HwpBlockKind.table) }
         case let .shape(shape),
              let .line(shape),
              let .rectangle(shape),
@@ -227,10 +243,12 @@ private extension HwpPaginator {
             shape.shapeComponentArray
                 .flatMap(\.textBoxListArray)
                 .flatMap(\.paragraphArray)
+                .map { ($0, HwpBlockKind.textbox) }
         case let .genShapeObject(genShape):
             genShape.shapeComponentArray
                 .flatMap(\.textBoxListArray)
                 .flatMap(\.paragraphArray)
+                .map { ($0, HwpBlockKind.textbox) }
         default:
             []
         }
@@ -239,9 +257,12 @@ private extension HwpPaginator {
     func appendEmbeddedBlocks(from paragraph: CoreHwp.HwpParagraph) {
         guard let ctrls = paragraph.ctrlHeaderArray else { return }
         let builder = HwpTextRunBuilder(index: index, fontResolver: fontResolver)
-        let contentFrame = currentPageGeometry.contentFrame
         let embeddedHeight: CGFloat = 20
         for (embeddedParagraph, kind) in embeddedParagraphs(from: ctrls) {
+            let contentFrame = currentPageGeometry.contentFrame
+            if contentHeightUsed > 0, contentHeightUsed + embeddedHeight > contentFrame.height {
+                cacheCurrentPage()
+            }
             let attributedString = NSAttributedString(
                 attributedString: builder.build(paragraph: embeddedParagraph)
             )
@@ -266,65 +287,12 @@ private extension HwpPaginator {
     ) -> [(CoreHwp.HwpParagraph, HwpBlockKind)] {
         var result: [(CoreHwp.HwpParagraph, HwpBlockKind)] = []
         for ctrl in ctrls {
-            switch ctrl {
-            case let .header(list), let .footer(list):
-                appendEmbeddedFromList(list, kind: .text, into: &result)
-            case let .footnote(list), let .endnote(list):
-                appendEmbeddedFromList(list, kind: .footnote, into: &result)
-            case let .table(table):
-                for cell in table.cellArray {
-                    for para in cell.paragraphArray {
-                        result.append((para, .table))
-                        appendNestedEmbedded(from: para, into: &result)
-                    }
-                }
-            case let .shape(shape),
-                 let .line(shape),
-                 let .rectangle(shape),
-                 let .ellipse(shape),
-                 let .arc(shape),
-                 let .polygon(shape),
-                 let .curve(shape),
-                 let .equation(shape),
-                 let .equationLegacy(shape),
-                 let .picture(shape),
-                 let .ole(shape),
-                 let .container(shape):
-                appendEmbeddedFromShape(shape.shapeComponentArray, into: &result)
-            case let .genShapeObject(genShape):
-                appendEmbeddedFromShape(genShape.shapeComponentArray, into: &result)
-            default:
-                continue
-            }
-        }
-        return result
-    }
-
-    func appendEmbeddedFromList(
-        _ list: CoreHwp.HwpListControl,
-        kind: HwpBlockKind,
-        into result: inout [(CoreHwp.HwpParagraph, HwpBlockKind)]
-    ) {
-        for entry in list.listArray {
-            for para in entry.paragraphArray {
+            for (para, kind) in childParagraphs(of: ctrl) {
                 result.append((para, kind))
                 appendNestedEmbedded(from: para, into: &result)
             }
         }
-    }
-
-    func appendEmbeddedFromShape(
-        _ components: [CoreHwp.HwpShapeComponent],
-        into result: inout [(CoreHwp.HwpParagraph, HwpBlockKind)]
-    ) {
-        for component in components {
-            for textBoxList in component.textBoxListArray {
-                for para in textBoxList.paragraphArray {
-                    result.append((para, .textbox))
-                    appendNestedEmbedded(from: para, into: &result)
-                }
-            }
-        }
+        return result
     }
 
     func appendNestedEmbedded(

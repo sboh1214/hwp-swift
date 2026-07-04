@@ -23,7 +23,7 @@ CoreHwp.HwpFile
 ## 블록 모델 gotchas
 
 - `AnyHwpBlock.attributedString` — CT 페이로드. **immutable copy 필수** (`NSAttributedString(attributedString:)`)
-- `AnyHwpBlock.hyperlinkURL` — block-level. `HwpPaginator.paragraphURL` 이 top-level 및 nested paragraph 양쪽에서 추출
+- `AnyHwpBlock.hyperlinkURL` — block-level. `HwpPaginator.hyperlinkURL(in:)` 이 top-level 및 nested paragraph 양쪽에서 추출
 - **랜덤 UUID identifier 금지.** equality/hash 는 `frame + kind + attributedString + url` 기반. 같은 문서 두 번 로드 시 동일 블록으로 인식되어야 함
 - `HwpBlockKind`: `text` / `image` / `shape` / `table` / `textbox` / `footnote` / `placeholder`
 
@@ -36,19 +36,19 @@ CoreHwp.HwpFile
 ## 컨벤션
 
 - **HWPUNIT canonical**: 변환은 `Utils/HwpUnits.swift` 에서만. `pt` / `px` / `HWPUNIT` 혼용 금지
-- **번들 폰트 금지**. `Fonts/HwpFontMap.default` = script-aware fallback 매핑. `HwpFontResolver` 는 init 시 `CTFontManagerCopyAvailableFontFamilyNames` + `CTFontDescriptorCreateMatchingFontDescriptor` 로 PS-name → family 매핑 구축
+- **번들 폰트 금지**. `Fonts/HwpFontMap.default` = script-aware fallback 매핑. `HwpFontResolver.resolve` 는 `CTFontDescriptorCreateMatchingFontDescriptor` 로 family/PS-name 후보를 매칭하고 결과를 (faceName, script, size) 키로 캐시
 - Sendable actor: `HwpPaginator`, `HwpImageCache` (HwpKitNative)
 - `HwpFontResolver.testDeterministic` — 스냅샷 테스트용 (system font 만 사용하는 결정론적 resolver)
 
 ## 새 블록 종류 추가
 
 1. `Model/HwpBlock.swift` 의 `HwpBlockKind` 에 case 추가
-2. `Layout/HwpPaginator.swift` 의 `computeNextPage` 또는 `embeddedParagraphs` 에서 emit
+2. `Layout/HwpPaginator.swift` 의 `childParagraphs(of:)` 에서 emit (unsupported walk 와 embedded 블록이 이 한 곳을 공유)
 3. `Paint/HwpPaintListBuilder.swift` 의 `paintCommands(for:)` 에 케이스 추가
 4. `Layout/HwpHitTester.swift` 의 `hit(page:point:)` 에 케이스 추가
 
 ## 안티 패턴
 
 - `HwpPage` 렌더 결과가 다른지 `==` 로 확인 — 안 됨 (count 만 비교). blocks 배열이나 paintList.commands 를 직접 순회할 것
-- `HwpBlockKind.image/.shape` block 을 `.zero` 프레임으로 emit — 현재 그렇게 되어 있으나 정상 좌표 연결 전에 시각 fidelity 를 주장하지 말 것 (embedded shape geometry 미연결)
-- generated/semantic 텍스트 컨트롤 (`.pageNumberPosition`, `.autoNumber`, `.newNumber`, equation edit body) 을 조용히 무시 — 현재 미연결. 추가하려면 `HwpPaginator.embeddedParagraphs` 확장
+- `HwpBlockKind.image/.shape` block 은 현재 어떤 경로에서도 emit 되지 않음 (embedded shape/image geometry 미연결). 좌표 연결 전에 시각 fidelity 를 주장하지 말 것
+- generated/semantic 텍스트 컨트롤 (`.pageNumberPosition`, `.autoNumber`, `.newNumber`, equation edit body) 을 조용히 무시 — 현재 미연결. 추가하려면 `HwpPaginator.childParagraphs(of:)` 확장

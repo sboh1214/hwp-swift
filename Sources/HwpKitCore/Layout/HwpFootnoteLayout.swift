@@ -67,7 +67,7 @@ public struct HwpFootnoteLayout {
         let columnWidth = contentFrame.width
 
         let textRunBuilder = HwpTextRunBuilder(index: index, fontResolver: fontResolver)
-        let paragraphLayout = HwpParagraphLayout(fontResolver: fontResolver)
+        let paragraphLayout = HwpParagraphLayout()
 
         let firstFootnoteY = reservedTop
         let separatorLine = CGRect(
@@ -98,8 +98,14 @@ public struct HwpFootnoteLayout {
             guard cumulativeHeight + blockHeight <= reservedHeight else { break }
 
             let blockY = firstFootnoteY + cumulativeHeight
+            let blockFrame = CGRect(
+                x: contentFrame.minX,
+                y: blockY,
+                width: columnWidth,
+                height: blockHeight
+            )
             blocks.append(HwpFootnoteBlock(
-                frame: CGRect(x: contentFrame.minX, y: blockY, width: columnWidth, height: blockHeight),
+                frame: blockFrame,
                 paragraphFrames: [paraFrame],
                 number: footnoteIdx + 1,
                 separatorLine: separatorLine

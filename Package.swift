@@ -41,6 +41,9 @@ let package = Package(
             name: "HwpKitCore",
             dependencies: [
                 "CoreHwp",
+            ],
+            exclude: [
+                "AGENTS.md",
             ]
         ),
         .target(
@@ -48,12 +51,18 @@ let package = Package(
             dependencies: [
                 "HwpKitCore",
                 "CoreHwp",
+            ],
+            exclude: [
+                "AGENTS.md",
             ]
         ),
         .target(
             name: "HwpKit",
             dependencies: [
                 "HwpKitNative",
+            ],
+            exclude: [
+                "AGENTS.md",
             ]
         ),
         .testTarget(

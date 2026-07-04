@@ -27,7 +27,7 @@ HwpKitNative/
 - `HwpFile` (URL/Data) 을 background executor 에서 파싱
 - `HwpIndex` + `HwpPaginator` 구축
 - `page(at:)` 를 페이지 nil 이 나올 때까지 loop 하여 `HwpDocument.pages` 채움
-- **`HwpUnsupportedDetector` 를 top-level + nested ctrls (list/table/shape) 에 walk** 하여 `HwpDocument.unsupportedElements` 채움
+- `await paginator.unsupportedElements()` 로 `HwpDocument.unsupportedElements` 채움 — 실제 `HwpUnsupportedDetector` walk (top-level + nested ctrls) 는 HwpKitCore 의 `HwpPaginator.collectUnsupported`/`walkUnsupported` 가 pagination 중 수행
 - 반환된 `HwpDocument` 는 fully-paginated (View 는 lazy 재요청 안 함)
 
 ## 레이어 가상화

@@ -61,7 +61,8 @@ final class HwpHyperlinkPipelineTests: XCTestCase {
         let block = makeHyperlinkBlock(url: "https://example.com", frame: frame)
         let page = makePage(with: [block])
 
-        let paintList = HwpPaintListBuilder().build(for: page, index: HwpIndex(from: CoreHwp.HwpFile()))
+        let paintList = HwpPaintListBuilder()
+            .build(for: page, index: HwpIndex(from: CoreHwp.HwpFile()))
 
         let hyperlinkCommand = paintList.commands.first { command in
             if case .hyperlink = command { return true }
@@ -83,7 +84,8 @@ final class HwpHyperlinkPipelineTests: XCTestCase {
         )
         let page = makePage(with: [plain])
 
-        let paintList = HwpPaintListBuilder().build(for: page, index: HwpIndex(from: CoreHwp.HwpFile()))
+        let paintList = HwpPaintListBuilder()
+            .build(for: page, index: HwpIndex(from: CoreHwp.HwpFile()))
 
         let hasHyperlink = paintList.commands.contains { command in
             if case .hyperlink = command { return true }

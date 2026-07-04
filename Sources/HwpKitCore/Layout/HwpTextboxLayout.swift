@@ -65,7 +65,8 @@ public struct HwpTextboxLayout {
         width: CGFloat,
         index: HwpIndex
     ) -> HwpTextboxFrame? {
-        guard let component = textbox.shapeComponentArray.first(where: { !$0.textBoxListArray.isEmpty })
+        guard let component = textbox.shapeComponentArray
+            .first(where: { !$0.textBoxListArray.isEmpty })
         else {
             return nil
         }
@@ -76,7 +77,7 @@ public struct HwpTextboxLayout {
         let outerFrame = CGRect(x: 0, y: 0, width: resolvedWidth, height: max(0, outerHeight))
 
         let textRunBuilder = HwpTextRunBuilder(index: index, fontResolver: fontResolver)
-        let paragraphLayout = HwpParagraphLayout(fontResolver: fontResolver)
+        let paragraphLayout = HwpParagraphLayout()
         var paragraphFrames: [HwpParagraphFrame] = []
 
         for list in component.textBoxListArray {

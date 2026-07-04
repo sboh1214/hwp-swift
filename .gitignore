@@ -65,6 +65,8 @@ Package.resolved
 /*.gcno
 
 ### Xcode Patch ###
+*.xcodeproj
+!Sample/HwpSwiftSample.xcodeproj
 *.xcodeproj/*
 !*.xcodeproj/project.pbxproj
 !*.xcodeproj/xcshareddata/

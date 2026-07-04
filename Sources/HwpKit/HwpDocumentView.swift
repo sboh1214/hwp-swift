@@ -44,6 +44,54 @@ public struct HwpDocumentView: View {
     }
 }
 
+/// Platform-neutral bridge between the native views' callbacks and SwiftUI
+/// bindings — shared by the macOS and iOS representables.
+final class HwpDocumentCoordinator {
+    private var zoomScale: Binding<CGFloat>?
+    private var currentPage: Binding<Int>?
+    private var onHyperlinkTapped: ((String) -> Void)?
+    private var onUnsupportedElement: ((HwpUnsupportedElement) -> Void)?
+
+    init(
+        zoomScale: Binding<CGFloat>?,
+        currentPage: Binding<Int>?,
+        onHyperlinkTapped: ((String) -> Void)?,
+        onUnsupportedElement: ((HwpUnsupportedElement) -> Void)?
+    ) {
+        self.zoomScale = zoomScale
+        self.currentPage = currentPage
+        self.onHyperlinkTapped = onHyperlinkTapped
+        self.onUnsupportedElement = onUnsupportedElement
+    }
+
+    func update(
+        zoomScale: Binding<CGFloat>?,
+        currentPage: Binding<Int>?,
+        onHyperlinkTapped: ((String) -> Void)?,
+        onUnsupportedElement: ((HwpUnsupportedElement) -> Void)?
+    ) {
+        self.zoomScale = zoomScale
+        self.currentPage = currentPage
+        self.onHyperlinkTapped = onHyperlinkTapped
+        self.onUnsupportedElement = onUnsupportedElement
+    }
+
+    func handleHyperlinkTapped(_ url: String) {
+        onHyperlinkTapped?(url)
+    }
+
+    func handleUnsupportedElement(_ element: HwpUnsupportedElement) {
+        onUnsupportedElement?(element)
+    }
+
+    func handlePageChanged(_ page: Int) {
+        // The equality guard keeps configure()'s echo of the binding-derived
+        // page from writing state back during a SwiftUI view update.
+        guard let currentPage, currentPage.wrappedValue != page + 1 else { return }
+        currentPage.wrappedValue = page + 1
+    }
+}
+
 #if os(macOS)
     private struct NSViewWrapper: NSViewRepresentable {
         let document: HwpDocument
@@ -68,8 +116,8 @@ public struct HwpDocumentView: View {
             configure(nsView, context: context)
         }
 
-        func makeCoordinator() -> Coordinator {
-            Coordinator(
+        func makeCoordinator() -> HwpDocumentCoordinator {
+            HwpDocumentCoordinator(
                 zoomScale: zoomScale,
                 currentPage: currentPage,
                 onHyperlinkTapped: onHyperlinkTapped,
@@ -78,58 +126,19 @@ public struct HwpDocumentView: View {
         }
 
         private func configure(_ view: HwpDocumentNSView, context: Context) {
-            view.document = document
-            if let zoomScale {
+            // Callbacks must be wired before the document assignment so the
+            // document didSet notifications reach the coordinator.
+            view.onHyperlinkTapped = context.coordinator.handleHyperlinkTapped(_:)
+            view.onUnsupportedElement = context.coordinator.handleUnsupportedElement(_:)
+            view.onPageChanged = context.coordinator.handlePageChanged(_:)
+            if view.document != document {
+                view.document = document
+            }
+            if let zoomScale, view.zoomScale != zoomScale.wrappedValue {
                 view.zoomScale = zoomScale.wrappedValue
             }
             let pageIndex = currentPage.map { max(0, $0.wrappedValue - 1) } ?? 0
             view.updateVisiblePages(range: pageIndex ..< pageIndex + 1)
-            view.onHyperlinkTapped = context.coordinator.handleHyperlinkTapped(_:)
-            view.onUnsupportedElement = context.coordinator.handleUnsupportedElement(_:)
-            view.onPageChanged = context.coordinator.handlePageChanged(_:)
-        }
-
-        final class Coordinator {
-            private var zoomScale: Binding<CGFloat>?
-            private var currentPage: Binding<Int>?
-            private var onHyperlinkTapped: ((String) -> Void)?
-            private var onUnsupportedElement: ((HwpUnsupportedElement) -> Void)?
-
-            init(
-                zoomScale: Binding<CGFloat>?,
-                currentPage: Binding<Int>?,
-                onHyperlinkTapped: ((String) -> Void)?,
-                onUnsupportedElement: ((HwpUnsupportedElement) -> Void)?
-            ) {
-                self.zoomScale = zoomScale
-                self.currentPage = currentPage
-                self.onHyperlinkTapped = onHyperlinkTapped
-                self.onUnsupportedElement = onUnsupportedElement
-            }
-
-            func update(
-                zoomScale: Binding<CGFloat>?,
-                currentPage: Binding<Int>?,
-                onHyperlinkTapped: ((String) -> Void)?,
-                onUnsupportedElement: ((HwpUnsupportedElement) -> Void)?
-            ) {
-                self.zoomScale = zoomScale
-                self.currentPage = currentPage
-                self.onHyperlinkTapped = onHyperlinkTapped
-                self.onUnsupportedElement = onUnsupportedElement
-            }
-
-            func handleHyperlinkTapped(_ url: String) {
-                onHyperlinkTapped?(url)
-            }
-
-            func handleUnsupportedElement(_ element: HwpUnsupportedElement) {
-                onUnsupportedElement?(element)
-            }
-
-            func handlePageChanged(_ page: Int) {
-                currentPage?.wrappedValue = page + 1
-            }
         }
     }
 #endif
@@ -158,8 +167,8 @@ public struct HwpDocumentView: View {
             configure(uiView, context: context)
         }
 
-        func makeCoordinator() -> Coordinator {
-            Coordinator(
+        func makeCoordinator() -> HwpDocumentCoordinator {
+            HwpDocumentCoordinator(
                 zoomScale: zoomScale,
                 currentPage: currentPage,
                 onHyperlinkTapped: onHyperlinkTapped,
@@ -168,57 +177,22 @@ public struct HwpDocumentView: View {
         }
 
         private func configure(_ view: HwpDocumentUIView, context: Context) {
-            view.document = document
-            if let zoomScale {
-                view.zoomScale = zoomScale.wrappedValue
-            }
-            let pageIndex = currentPage.map { max(0, $0.wrappedValue - 1) } ?? 0
-            view.updateVisiblePages(range: pageIndex ..< pageIndex + 1)
+            // Callbacks must be wired before the document assignment so the
+            // document didSet notifications reach the coordinator.
             view.onHyperlinkTapped = context.coordinator.handleHyperlinkTapped(_:)
             view.onUnsupportedElement = context.coordinator.handleUnsupportedElement(_:)
             view.onPageChanged = context.coordinator.handlePageChanged(_:)
-        }
-
-        final class Coordinator {
-            private var zoomScale: Binding<CGFloat>?
-            private var currentPage: Binding<Int>?
-            private var onHyperlinkTapped: ((String) -> Void)?
-            private var onUnsupportedElement: ((HwpUnsupportedElement) -> Void)?
-
-            init(
-                zoomScale: Binding<CGFloat>?,
-                currentPage: Binding<Int>?,
-                onHyperlinkTapped: ((String) -> Void)?,
-                onUnsupportedElement: ((HwpUnsupportedElement) -> Void)?
-            ) {
-                self.zoomScale = zoomScale
-                self.currentPage = currentPage
-                self.onHyperlinkTapped = onHyperlinkTapped
-                self.onUnsupportedElement = onUnsupportedElement
+            if view.document != document {
+                view.document = document
             }
-
-            func update(
-                zoomScale: Binding<CGFloat>?,
-                currentPage: Binding<Int>?,
-                onHyperlinkTapped: ((String) -> Void)?,
-                onUnsupportedElement: ((HwpUnsupportedElement) -> Void)?
-            ) {
-                self.zoomScale = zoomScale
-                self.currentPage = currentPage
-                self.onHyperlinkTapped = onHyperlinkTapped
-                self.onUnsupportedElement = onUnsupportedElement
+            if let zoomScale, view.zoomScale != zoomScale.wrappedValue {
+                view.zoomScale = zoomScale.wrappedValue
             }
-
-            func handleHyperlinkTapped(_ url: String) {
-                onHyperlinkTapped?(url)
-            }
-
-            func handleUnsupportedElement(_ element: HwpUnsupportedElement) {
-                onUnsupportedElement?(element)
-            }
-
-            func handlePageChanged(_ page: Int) {
-                currentPage?.wrappedValue = page + 1
+            if let currentPage {
+                let pageIndex = max(0, currentPage.wrappedValue - 1)
+                if view.currentVisiblePage() != pageIndex {
+                    view.scrollToPage(at: pageIndex)
+                }
             }
         }
     }

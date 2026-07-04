@@ -28,11 +28,7 @@ public struct HwpParagraphFrame: Sendable, Hashable {
 }
 
 public struct HwpParagraphLayout {
-    private let fontResolver: HwpFontResolver
-
-    public init(fontResolver: HwpFontResolver = HwpFontResolver()) {
-        self.fontResolver = fontResolver
-    }
+    public init() {}
 
     public func layout(
         attributedString: NSAttributedString,
@@ -43,10 +39,11 @@ public struct HwpParagraphLayout {
             return HwpParagraphFrame(totalHeight: 0, lines: [])
         }
 
-        _ = fontResolver
-
         let paragraphMetrics = ParagraphMetrics(paraShape: paraShape)
-        let paragraphStyle = ctParagraphStyle(from: paragraphMetrics, property: paraShape.property1Info)
+        let paragraphStyle = ctParagraphStyle(
+            from: paragraphMetrics,
+            property: paraShape.property1Info
+        )
 
         let mutable = NSMutableAttributedString(attributedString: attributedString)
         mutable.addAttribute(
@@ -58,7 +55,12 @@ public struct HwpParagraphLayout {
         let framesetter = CTFramesetterCreateWithAttributedString(mutable as CFAttributedString)
         let frameSize = CGSize(width: max(1, columnWidth), height: .greatestFiniteMagnitude)
         let path = CGPath(rect: CGRect(origin: .zero, size: frameSize), transform: nil)
-        let frame = CTFramesetterCreateFrame(framesetter, CFRange(location: 0, length: 0), path, nil)
+        let frame = CTFramesetterCreateFrame(
+            framesetter,
+            CFRange(location: 0, length: 0),
+            path,
+            nil
+        )
         let lines = (CTFrameGetLines(frame) as? [CTLine]) ?? []
         guard !lines.isEmpty else {
             return HwpParagraphFrame(totalHeight: 0, lines: [])
@@ -67,6 +69,19 @@ public struct HwpParagraphLayout {
         var origins = Array(repeating: CGPoint.zero, count: lines.count)
         CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
 
+        let (lineFrames, totalLineHeight) = makeLineFrames(lines: lines, origins: origins)
+        let totalHeight = paragraphMetrics.paragraphSpacingBefore
+            + totalLineHeight
+            + paragraphMetrics.paragraphSpacing
+        return HwpParagraphFrame(totalHeight: max(1, totalHeight), lines: lineFrames)
+    }
+}
+
+private extension HwpParagraphLayout {
+    func makeLineFrames(
+        lines: [CTLine],
+        origins: [CGPoint]
+    ) -> (frames: [HwpLineFrame], totalLineHeight: CGFloat) {
         let referenceY = origins[0].y
         var lineFrames: [HwpLineFrame] = []
         lineFrames.reserveCapacity(lines.count)
@@ -82,22 +97,23 @@ public struct HwpParagraphLayout {
             let width = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
 
             totalLineHeight += max(1, ascent + descent + leading)
+            let attributedRange = NSRange(
+                location: Int(range.location),
+                length: Int(range.length)
+            )
             lineFrames.append(
                 HwpLineFrame(
                     origin: CGPoint(x: origin.x, y: referenceY - origin.y),
                     width: width,
                     baseline: ascent,
-                    attributedRange: NSRange(location: Int(range.location), length: Int(range.length))
+                    attributedRange: attributedRange
                 )
             )
         }
 
-        let totalHeight = paragraphMetrics.paragraphSpacingBefore + totalLineHeight + paragraphMetrics.paragraphSpacing
-        return HwpParagraphFrame(totalHeight: max(1, totalHeight), lines: lineFrames)
+        return (lineFrames, totalLineHeight)
     }
-}
 
-private extension HwpParagraphLayout {
     struct ParagraphMetrics {
         var firstLineHeadIndent: CGFloat
         var headIndent: CGFloat
@@ -120,18 +136,26 @@ private extension HwpParagraphLayout {
         }
     }
 
-    func ctParagraphStyle(
-        from metrics: ParagraphMetrics,
-        property: CoreHwp.HwpParaShapeProperty1
-    ) -> CTParagraphStyle {
-        let alignment = pointer(to: textAlignment(from: property))
-        let firstLineHeadIndent = pointer(to: metrics.firstLineHeadIndent)
-        let headIndent = pointer(to: metrics.headIndent)
-        let tailIndent = pointer(to: metrics.tailIndent)
-        let paragraphSpacingBefore = pointer(to: metrics.paragraphSpacingBefore)
-        let paragraphSpacing = pointer(to: metrics.paragraphSpacing)
-        let lineSpacing = pointer(to: metrics.lineSpacing)
-        defer {
+    struct StyleValuePointers {
+        let alignment: UnsafeMutablePointer<CTTextAlignment>
+        let firstLineHeadIndent: UnsafeMutablePointer<CGFloat>
+        let headIndent: UnsafeMutablePointer<CGFloat>
+        let tailIndent: UnsafeMutablePointer<CGFloat>
+        let paragraphSpacingBefore: UnsafeMutablePointer<CGFloat>
+        let paragraphSpacing: UnsafeMutablePointer<CGFloat>
+        let lineSpacing: UnsafeMutablePointer<CGFloat>
+
+        init(metrics: ParagraphMetrics, alignment: CTTextAlignment) {
+            self.alignment = Self.pointer(to: alignment)
+            firstLineHeadIndent = Self.pointer(to: metrics.firstLineHeadIndent)
+            headIndent = Self.pointer(to: metrics.headIndent)
+            tailIndent = Self.pointer(to: metrics.tailIndent)
+            paragraphSpacingBefore = Self.pointer(to: metrics.paragraphSpacingBefore)
+            paragraphSpacing = Self.pointer(to: metrics.paragraphSpacing)
+            lineSpacing = Self.pointer(to: metrics.lineSpacing)
+        }
+
+        func deallocate() {
             alignment.deinitialize(count: 1)
             alignment.deallocate()
             firstLineHeadIndent.deinitialize(count: 1)
@@ -148,52 +172,77 @@ private extension HwpParagraphLayout {
             lineSpacing.deallocate()
         }
 
-        let settings = [
+        static func pointer<T>(to value: T) -> UnsafeMutablePointer<T> {
+            let pointer = UnsafeMutablePointer<T>.allocate(capacity: 1)
+            pointer.initialize(to: value)
+            return pointer
+        }
+    }
+
+    func ctParagraphStyle(
+        from metrics: ParagraphMetrics,
+        property: CoreHwp.HwpParaShapeProperty1
+    ) -> CTParagraphStyle {
+        let pointers = StyleValuePointers(
+            metrics: metrics,
+            alignment: textAlignment(from: property)
+        )
+        defer { pointers.deallocate() }
+
+        let settings = styleSettings(from: pointers)
+        return CTParagraphStyleCreate(settings, settings.count)
+    }
+
+    func styleSettings(from pointers: StyleValuePointers) -> [CTParagraphStyleSetting] {
+        [
             CTParagraphStyleSetting(
                 spec: .alignment,
                 valueSize: MemoryLayout<CTTextAlignment>.size,
-                value: alignment
+                value: pointers.alignment
             ),
             CTParagraphStyleSetting(
                 spec: .firstLineHeadIndent,
                 valueSize: MemoryLayout<CGFloat>.size,
-                value: firstLineHeadIndent
+                value: pointers.firstLineHeadIndent
             ),
-            CTParagraphStyleSetting(spec: .headIndent, valueSize: MemoryLayout<CGFloat>.size, value: headIndent),
-            CTParagraphStyleSetting(spec: .tailIndent, valueSize: MemoryLayout<CGFloat>.size, value: tailIndent),
+            CTParagraphStyleSetting(
+                spec: .headIndent,
+                valueSize: MemoryLayout<CGFloat>.size,
+                value: pointers.headIndent
+            ),
+            CTParagraphStyleSetting(
+                spec: .tailIndent,
+                valueSize: MemoryLayout<CGFloat>.size,
+                value: pointers.tailIndent
+            ),
             CTParagraphStyleSetting(
                 spec: .paragraphSpacingBefore,
                 valueSize: MemoryLayout<CGFloat>.size,
-                value: paragraphSpacingBefore
+                value: pointers.paragraphSpacingBefore
             ),
             CTParagraphStyleSetting(
                 spec: .paragraphSpacing,
                 valueSize: MemoryLayout<CGFloat>.size,
-                value: paragraphSpacing
+                value: pointers.paragraphSpacing
             ),
             CTParagraphStyleSetting(
                 spec: .lineSpacingAdjustment,
                 valueSize: MemoryLayout<CGFloat>.size,
-                value: lineSpacing
+                value: pointers.lineSpacing
             ),
         ]
-        return CTParagraphStyleCreate(settings, settings.count)
-    }
-
-    func pointer<T>(to value: T) -> UnsafeMutablePointer<T> {
-        let pointer = UnsafeMutablePointer<T>.allocate(capacity: 1)
-        pointer.initialize(to: value)
-        return pointer
     }
 
     func textAlignment(from property: CoreHwp.HwpParaShapeProperty1) -> CTTextAlignment {
-        switch property.rawValue & 0b111 {
-        case 1:
-            .right
-        case 2:
-            .center
-        case 3:
+        // 문단 모양 속성1: bits 0-1 = 줄 간격 종류, bits 2-4 = 정렬 방식
+        // (0 양쪽, 1 왼쪽, 2 오른쪽, 3 가운데, 4 배분, 5 나눔)
+        switch (property.rawValue >> 2) & 0b111 {
+        case 0, 4, 5:
             .justified
+        case 2:
+            .right
+        case 3:
+            .center
         default:
             .left
         }

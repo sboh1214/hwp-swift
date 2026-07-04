@@ -40,13 +40,21 @@ final class HwpHitTesterTests: XCTestCase {
     func testOverlappingBlocksLastWins() {
         let bottom = AnyHwpBlock(frame: CGRect(x: 0, y: 0, width: 100, height: 100), kind: .image)
         let top = AnyHwpBlock(frame: CGRect(x: 50, y: 50, width: 100, height: 100), kind: .text)
-        let page = HwpPage(size: pageSize, margins: defaultMargins, blocks: [bottom, top], pageNumber: 1)
+        let page = HwpPage(
+            size: pageSize,
+            margins: defaultMargins,
+            blocks: [bottom, top],
+            pageNumber: 1
+        )
         let result = tester.hit(page: page, point: CGPoint(x: 60, y: 60))
         expect(result) == .text(blockIndex: 1, characterIndex: nil)
     }
 
     func testPlaceholderBlockHit() {
-        let block = AnyHwpBlock(frame: CGRect(x: 10, y: 10, width: 80, height: 80), kind: .placeholder)
+        let block = AnyHwpBlock(
+            frame: CGRect(x: 10, y: 10, width: 80, height: 80),
+            kind: .placeholder
+        )
         let page = HwpPage(size: pageSize, margins: defaultMargins, blocks: [block], pageNumber: 1)
         let result = tester.hit(page: page, point: CGPoint(x: 50, y: 50))
         expect(result) == .placeholder(blockIndex: 0, kind: .placeholder)

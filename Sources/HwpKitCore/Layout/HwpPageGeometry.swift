@@ -2,14 +2,16 @@ import CoreGraphics
 @preconcurrency import CoreHwp
 import Foundation
 
-/// Converts `HwpPageDef` (and optional `HwpSectionDef`) into point-based geometry for a single page.
+/// Converts `HwpPageDef` (and optional `HwpSectionDef`) into point-based geometry
+/// for a single page.
 public struct HwpPageGeometry: Sendable, Hashable {
     public let pageSize: CGSize
     public let margins: HwpPageMargins
     public let contentFrame: CGRect
     public let headerFrame: CGRect?
     public let footerFrame: CGRect?
-    /// Always `[contentFrame]` in v1; column count requires the Column control, not `HwpSectionDef`.
+    /// Always `[contentFrame]` in v1; column count requires the Column control,
+    /// not `HwpSectionDef`.
     public let columnFrames: [CGRect]
 
     public static func compute(
@@ -50,7 +52,8 @@ public struct HwpPageGeometry: Sendable, Hashable {
             : nil
 
         // Column count lives in the Column control (CtrlHeader/Column/), not in HwpSectionDef.
-        // sectionDef is accepted for future v2 multi-column support; v1 always returns [contentFrame].
+        // sectionDef is accepted for future v2 multi-column support;
+        // v1 always returns [contentFrame].
         _ = sectionDef
         let columnFrames: [CGRect] = [contentFrame]
 

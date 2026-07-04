@@ -23,12 +23,19 @@ public struct HwpTextRunBuilder {
 
         let output = NSMutableAttributedString()
         var chunk = Chunk(shapeId: activeShapeId(at: 0, in: paragraph.paraCharShape), script: nil)
+        // startingIndex는 원본 WCHAR 스트림 위치 기준: inline/extended 컨트롤은
+        // charArray에서 1개 요소지만 스트림에서는 8 WCHAR를 차지한다.
+        var wcharPosition: UInt32 = 0
+        var pendingHighSurrogate: UInt16?
 
-        for (position, hwpChar) in units.enumerated() {
-            let text = string(from: hwpChar)
+        for hwpChar in units {
+            let position = wcharPosition
+            wcharPosition += wcharLength(of: hwpChar)
+
+            let text = string(from: hwpChar, pendingHighSurrogate: &pendingHighSurrogate)
             guard !text.isEmpty else { continue }
 
-            let shapeId = activeShapeId(at: UInt32(position), in: paragraph.paraCharShape)
+            let shapeId = activeShapeId(at: position, in: paragraph.paraCharShape)
             let script = detectScript(in: text)
             if chunk.script == nil {
                 chunk.shapeId = shapeId
@@ -40,6 +47,9 @@ public struct HwpTextRunBuilder {
             chunk.text += text
         }
 
+        if let lone = pendingHighSurrogate {
+            chunk.text += String(decoding: [lone], as: UTF16.self)
+        }
         append(chunk, paragraph: paragraph, to: output)
         return output
     }
@@ -52,13 +62,24 @@ private extension HwpTextRunBuilder {
         var text = ""
     }
 
-    func append(_ chunk: Chunk, paragraph: CoreHwp.HwpParagraph, to output: NSMutableAttributedString) {
+    func append(
+        _ chunk: Chunk,
+        paragraph: CoreHwp.HwpParagraph,
+        to output: NSMutableAttributedString
+    ) {
         guard !chunk.text.isEmpty, let script = chunk.script else { return }
         let shape = resolvedShape(id: chunk.shapeId, paragraph: paragraph)
-        output.append(NSAttributedString(string: chunk.text, attributes: attributes(for: shape, script: script)))
+        let attributed = NSAttributedString(
+            string: chunk.text,
+            attributes: attributes(for: shape, script: script)
+        )
+        output.append(attributed)
     }
 
-    func attributes(for shape: CoreHwp.HwpCharShape, script: HwpScript) -> [NSAttributedString.Key: Any] {
+    func attributes(
+        for shape: CoreHwp.HwpCharShape,
+        script: HwpScript
+    ) -> [NSAttributedString.Key: Any] {
         let slot = script.slotIndex
         let baseSize = HwpUnits.points(fromHwpUnit: shape.baseSize)
         let size = baseSize * (CGFloat(value(at: slot, in: shape.faceScaleX, default: 100)) / 100)
@@ -67,14 +88,16 @@ private extension HwpTextRunBuilder {
         var font = fontResolver.resolve(faceName: faceName, script: script, size: size)
         font = copy(font, adding: symbolicTraits(for: shape.property))
 
+        let spacing = CGFloat(value(at: slot, in: shape.faceSpacing, default: 0))
+        let location = CGFloat(value(at: slot, in: shape.faceLocation, default: 0))
         var attributes: [NSAttributedString.Key: Any] = [
             kCTFontAttributeName as NSAttributedString.Key: font,
             kCTForegroundColorAttributeName as NSAttributedString.Key: shape.faceColor.cgColor,
             kCTKernAttributeName as NSAttributedString.Key: NSNumber(
-                value: Double(CGFloat(value(at: slot, in: shape.faceSpacing, default: 0)) * baseSize / 100)
+                value: Double(spacing * baseSize / 100)
             ),
             kCTBaselineOffsetAttributeName as NSAttributedString.Key: NSNumber(
-                value: Double(CGFloat(value(at: slot, in: shape.faceLocation, default: 0)) * baseSize / 100)
+                value: Double(location * baseSize / 100)
             ),
         ]
 
@@ -102,7 +125,8 @@ private extension HwpTextRunBuilder {
 
     func activeShapeId(at position: UInt32, in paraCharShape: CoreHwp.HwpParaCharShape) -> UInt32 {
         var active: UInt32 = paraCharShape.shapeId.first ?? 0
-        for (index, start) in paraCharShape.startingIndex.enumerated() where start <= position {
+        for (index, start) in paraCharShape.startingIndex.enumerated() {
+            guard start <= position else { break }
             active = value(at: index, in: paraCharShape.shapeId, default: active)
         }
         return active
@@ -112,12 +136,36 @@ private extension HwpTextRunBuilder {
         text.unicodeScalars.first.map(HwpScript.detect(from:)) ?? .english
     }
 
-    func string(from hwpChar: CoreHwp.HwpChar) -> String {
+    func wcharLength(of hwpChar: CoreHwp.HwpChar) -> UInt32 {
+        switch hwpChar.type {
+        case .char: 1
+        case .inline, .extended: 8
+        }
+    }
+
+    func string(from hwpChar: CoreHwp.HwpChar, pendingHighSurrogate: inout UInt16?) -> String {
         switch hwpChar.type {
         case .char:
-            String(decoding: [hwpChar.value], as: UTF16.self)
+            let unit = hwpChar.value
+            if let high = pendingHighSurrogate {
+                pendingHighSurrogate = nil
+                if UTF16.isTrailSurrogate(unit) {
+                    return String(decoding: [high, unit], as: UTF16.self)
+                }
+                let lone = String(decoding: [high], as: UTF16.self)
+                return lone + string(from: hwpChar, pendingHighSurrogate: &pendingHighSurrogate)
+            }
+            if UTF16.isLeadSurrogate(unit) {
+                pendingHighSurrogate = unit
+                return ""
+            }
+            return String(decoding: [unit], as: UTF16.self)
         case .inline, .extended:
-            "\u{FFFC}"
+            if let lone = pendingHighSurrogate {
+                pendingHighSurrogate = nil
+                return String(decoding: [lone], as: UTF16.self) + "\u{FFFC}"
+            }
+            return "\u{FFFC}"
         }
     }
 

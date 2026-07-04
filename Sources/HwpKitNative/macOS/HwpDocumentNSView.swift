@@ -7,9 +7,11 @@
     public final class HwpDocumentNSView: NSView {
         public var document: HwpDocument? {
             didSet {
+                guard document != oldValue else { return }
                 pageLayers.values.forEach { $0.removeFromSuperlayer() }
                 pageLayers.removeAll()
                 needsLayout = true
+                notifyUnsupportedElements()
             }
         }
 
@@ -43,6 +45,12 @@
         @available(*, unavailable)
         public required init?(coder _: NSCoder) {
             fatalError("init(coder:) has not been implemented")
+        }
+
+        /// Page layers are laid out top-down; without flipping, AppKit's y-up
+        /// coordinate space would stack pages bottom-to-top.
+        override public var isFlipped: Bool {
+            true
         }
 
         override public func viewDidMoveToWindow() {
@@ -81,8 +89,15 @@
             onPageChanged?(range.lowerBound)
         }
 
+        private func notifyUnsupportedElements() {
+            document?.unsupportedElements.forEach { onUnsupportedElement?($0) }
+        }
+
         private func setupClickGesture() {
-            let clickGesture = NSClickGestureRecognizer(target: self, action: #selector(handleClick(_:)))
+            let clickGesture = NSClickGestureRecognizer(
+                target: self,
+                action: #selector(handleClick(_:))
+            )
             addGestureRecognizer(clickGesture)
         }
 
@@ -92,7 +107,8 @@
             guard let hit = pageHit(at: viewPoint) else { return }
 
             if let document, document.pages.indices.contains(hit.pageIndex) {
-                dispatchHitResult(hitTester.hit(page: document.pages[hit.pageIndex], point: hit.point))
+                let result = hitTester.hit(page: document.pages[hit.pageIndex], point: hit.point)
+                dispatchHitResult(result)
                 return
             }
 
@@ -163,12 +179,18 @@
             let scaledWidth = pageSize.width * zoomScale
             let scaledHeight = pageSize.height * zoomScale
             let xCenter = max((bounds.width - scaledWidth) / 2, 0) + scaledWidth / 2
-            let yCenter = CGFloat(index) * (scaledHeight + pageSpacing) + scaledHeight / 2
+            // The view has no scroll surface, so pages are positioned relative to
+            // the requested visible range: the anchor page sits at the top and
+            // retained neighbors flow above/below it.
+            let relativeIndex = CGFloat(index - activeVisibleRange.lowerBound)
+            let yCenter = relativeIndex * (scaledHeight + pageSpacing) + scaledHeight / 2
             return CGPoint(x: xCenter, y: yCenter)
         }
 
         private func sizeForPage(at index: Int) -> CGSize {
-            guard let document, document.pages.indices.contains(index) else { return defaultPageSize }
+            guard let document, document.pages.indices.contains(index) else {
+                return defaultPageSize
+            }
             return document.pages[index].size
         }
     }

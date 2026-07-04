@@ -12,7 +12,7 @@ public struct HwpSection: HwpFromDataWithVersion {
 
     init() {
         rawPayload = Data()
-        paragraph = [HwpParagraph()]
+        paragraph = [HwpParagraph.blankDocumentParagraph()]
         unknownRecords = []
     }
 

@@ -26,7 +26,8 @@ final class FixtureRenderTests: XCTestCase {
         }
 
         if !failures.isEmpty {
-            fail("Fixture render failures (\(failures.count)):\n" + failures.joined(separator: "\n"))
+            fail("Fixture render failures (\(failures.count)):\n" +
+                failures.joined(separator: "\n"))
         }
     }
 
@@ -42,7 +43,9 @@ final class FixtureRenderTests: XCTestCase {
                 for phrase in fixture.expectedVisibleText where !paintText.contains(phrase) {
                     let preview = String(paintText.prefix(200))
                         .replacingOccurrences(of: "\n", with: "\\n")
-                    failures.append("[\(fixture.id)] paint list missing '\(phrase)' — got: '\(preview)'")
+                    failures.append(
+                        "[\(fixture.id)] paint list missing '\(phrase)' — got: '\(preview)'"
+                    )
                 }
             } catch {
                 failures.append("[\(fixture.id)] load threw: \(error)")
@@ -50,7 +53,8 @@ final class FixtureRenderTests: XCTestCase {
         }
 
         if !failures.isEmpty {
-            fail("Paint list render failures (\(failures.count)):\n" + failures.joined(separator: "\n"))
+            fail("Paint list render failures (\(failures.count)):\n" +
+                failures.joined(separator: "\n"))
         }
     }
 
@@ -81,8 +85,10 @@ final class FixtureRenderTests: XCTestCase {
                             guard frameA.width > 0, frameA.height > 0,
                                   frameB.width > 0, frameB.height > 0
                             else { continue }
-                            let overlapX = min(frameA.maxX, frameB.maxX) - max(frameA.minX, frameB.minX)
-                            let overlapY = min(frameA.maxY, frameB.maxY) - max(frameA.minY, frameB.minY)
+                            let overlapX = min(frameA.maxX, frameB.maxX) -
+                                max(frameA.minX, frameB.minX)
+                            let overlapY = min(frameA.maxY, frameB.maxY) -
+                                max(frameA.minY, frameB.minY)
                             if overlapX > tolerance, overlapY > tolerance {
                                 failures.append(
                                     "[\(fixture.id)] page \(pageIndex) " +

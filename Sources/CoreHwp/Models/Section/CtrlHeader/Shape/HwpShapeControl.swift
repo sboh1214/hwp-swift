@@ -21,13 +21,16 @@ public struct HwpShapeControl {
     /** 아직 해석하지 않은 child record */
     public var unknownChildren: [HwpUnknownRecord]
 
-    public init(
+    /// header의 ctrl id가 알려진 개체 컨트롤이 아니면 nil을 반환한다.
+    /// (파싱 경로는 `HwpError.invalidCtrlId`를 던지므로 임의 강제 변환하지 않는다.)
+    public init?(
         header: HwpCtrlHeader,
         commonProperty: HwpCommonCtrlProperty,
         shapeComponentArray: [HwpShapeComponent],
         ctrlDataArray: [HwpCtrlData]
     ) {
-        ctrlId = HwpCommonCtrlId(rawValue: header.ctrlId) ?? commonProperty.commonCtrlId
+        guard let ctrlId = HwpCommonCtrlId(rawValue: header.ctrlId) else { return nil }
+        self.ctrlId = ctrlId
         commonCtrlProperty = commonProperty
         rawPayload = header.rawPayload
         rawTrailing = Data()

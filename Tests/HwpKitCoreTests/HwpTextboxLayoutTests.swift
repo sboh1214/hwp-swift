@@ -17,7 +17,8 @@ import XCTest
                 ctrlDataRecords: [],
                 unknownChildren: []
             )
-            let result = HwpTextboxLayout().layout(textbox: textbox, width: 300, index: emptyIndex())
+            let result = HwpTextboxLayout()
+                .layout(textbox: textbox, width: 300, index: emptyIndex())
             expect(result).to(beNil())
         }
 
@@ -42,7 +43,8 @@ import XCTest
                 ctrlDataRecords: [],
                 unknownChildren: []
             )
-            let result = HwpTextboxLayout().layout(textbox: textbox, width: 300, index: emptyIndex())
+            let result = HwpTextboxLayout()
+                .layout(textbox: textbox, width: 300, index: emptyIndex())
             expect(result).to(beNil())
         }
 
@@ -73,7 +75,8 @@ import XCTest
                 ctrlDataRecords: [],
                 unknownChildren: []
             )
-            let result = HwpTextboxLayout().layout(textbox: textbox, width: 300, index: emptyIndex())
+            let result = HwpTextboxLayout()
+                .layout(textbox: textbox, width: 300, index: emptyIndex())
             expect(result).toNot(beNil())
             expect(result?.paragraphFrames.count) == 0
         }
@@ -106,7 +109,8 @@ import XCTest
                 ctrlDataRecords: [],
                 unknownChildren: []
             )
-            let result = HwpTextboxLayout().layout(textbox: textbox, width: 200, index: emptyIndex())
+            let result = HwpTextboxLayout()
+                .layout(textbox: textbox, width: 200, index: emptyIndex())
             expect(result?.outerFrame.width) == 200
         }
     }

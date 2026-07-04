@@ -30,7 +30,10 @@ final class HwpPageLayerTests: XCTestCase {
         layer.bounds = CGRect(x: 0, y: 0, width: 100, height: 100)
         layer.pageHeight = 100
         layer.paintList = HwpPaintList(commands: [
-            .fillRect(rect: CGRect(x: 0, y: 0, width: 100, height: 100), color: CGColor(gray: 0, alpha: 1)),
+            .fillRect(
+                rect: CGRect(x: 0, y: 0, width: 100, height: 100),
+                color: CGColor(gray: 0, alpha: 1)
+            ),
         ])
 
         let context = try XCTUnwrap(makeBitmapContext())
@@ -56,7 +59,11 @@ final class HwpPageLayerTests: XCTestCase {
             ]
         )
         layer.paintList = HwpPaintList(commands: [
-            .drawText(attributedString: attributedString, origin: CGPoint(x: 8, y: 8), lineWidth: 180),
+            .drawText(
+                attributedString: attributedString,
+                origin: CGPoint(x: 8, y: 8),
+                lineWidth: 180
+            ),
         ])
 
         let context = try XCTUnwrap(makeBitmapContext(width: 200, height: 120))

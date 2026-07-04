@@ -44,79 +44,32 @@ public struct HwpTableLayout {
             return .failure(HwpUnsupportedElement(kind: .placeholder, page: 0, hint: "표: 중첩 표"))
         }
 
-        let rowCount = max(Int(table.tableProperty.rowCount), Int(table.tableProperty.rowSize.count / 2))
+        let rowCount = max(
+            Int(table.tableProperty.rowCount),
+            Int(table.tableProperty.rowSize.count / 2)
+        )
         let columnCount = Int(table.tableProperty.columnCount)
         guard rowCount > 0, columnCount > 0 else {
             return .success(emptyFrame(availableWidth: availableWidth))
         }
 
-        let spacing = max(0, HwpUnits.points(fromHwpUnit16: table.tableProperty.cellSpacing))
-        let columnWidths = Self.columnWidths(
-            count: columnCount,
+        let metrics = TableMetrics(
+            table: table,
             availableWidth: availableWidth,
-            spacing: spacing
+            columnCount: columnCount
         )
-        let innerWidthAdjustment = HwpUnits.points(fromHwpUnit16: table.tableProperty.leftInnerMargin)
-            + HwpUnits.points(fromHwpUnit16: table.tableProperty.rightInnerMargin)
-        let innerHeightAdjustment = HwpUnits.points(fromHwpUnit16: table.tableProperty.topInnerMargin)
-            + HwpUnits.points(fromHwpUnit16: table.tableProperty.bottomInnerMargin)
+        let (placedCells, computedRowHeights) = placeCells(
+            table: table,
+            rowCount: rowCount,
+            columnCount: columnCount,
+            metrics: metrics,
+            index: index
+        )
+        var rowHeights = computedRowHeights
 
-        let textBuilder = HwpTextRunBuilder(index: index, fontResolver: fontResolver)
-        let paragraphLayout = HwpParagraphLayout(fontResolver: fontResolver)
-        var rowHeights = Array(repeating: CGFloat(0), count: rowCount)
-        var placedCells: [PlacedCell] = []
-        var occupied = Set<GridPosition>()
-
-        for cell in table.cellArray {
-            guard let placement = placement(
-                for: cell,
-                rowCount: rowCount,
-                columnCount: columnCount,
-                occupied: occupied
-            ) else { continue }
-
-            let columnSpan = min(placement.columnSpan, columnCount - placement.column)
-            let rowSpan = min(placement.rowSpan, rowCount - placement.row)
-            let spannedWidth = width(
-                from: placement.column,
-                span: columnSpan,
-                columnWidths: columnWidths,
-                spacing: spacing
-            )
-            let innerWidth = max(1, spannedWidth - innerWidthAdjustment)
-            let paragraphFrames = cell.paragraphArray.compactMap { paragraph -> HwpParagraphFrame? in
-                guard let paraShape = index.paraShape(id: UInt32(paragraph.paraHeader.paraShapeId)) else {
-                    return nil
-                }
-                return paragraphLayout.layout(
-                    attributedString: textBuilder.build(paragraph: paragraph),
-                    paraShape: paraShape,
-                    columnWidth: innerWidth
-                )
-            }
-            let contentHeight = paragraphFrames.reduce(CGFloat(0)) { $0 + $1.totalHeight } + innerHeightAdjustment
-            rowHeights[placement.row] = max(rowHeights[placement.row], contentHeight)
-            placedCells.append(
-                PlacedCell(
-                    row: placement.row,
-                    column: placement.column,
-                    rowSpan: rowSpan,
-                    columnSpan: columnSpan,
-                    paragraphFrames: paragraphFrames
-                )
-            )
-            markOccupied(
-                row: placement.row,
-                column: placement.column,
-                rowSpan: rowSpan,
-                columnSpan: columnSpan,
-                in: &occupied
-            )
-        }
-
-        let defaultRowHeight = max(1, innerHeightAdjustment)
+        let defaultRowHeight = max(1, metrics.innerHeightAdjustment)
         rowHeights = rowHeights.map { $0 > 0 ? $0 : defaultRowHeight }
-        let totalHeight = rowHeights.reduce(CGFloat(0), +) + spacing * CGFloat(rowCount + 1)
+        let totalHeight = rowHeights.reduce(CGFloat(0), +) + metrics.spacing * CGFloat(rowCount + 1)
         guard totalHeight <= availableHeight else {
             return .failure(HwpUnsupportedElement(kind: .placeholder, page: 0, hint: "표: 다중 페이지"))
         }
@@ -127,8 +80,8 @@ public struct HwpTableLayout {
                 rows: rows(
                     placedCells: placedCells,
                     rowHeights: rowHeights,
-                    columnWidths: columnWidths,
-                    spacing: spacing
+                    columnWidths: metrics.columnWidths,
+                    spacing: metrics.spacing
                 ),
                 borderColor: Self.defaultBorderColor,
                 borderWidth: 1
@@ -138,6 +91,27 @@ public struct HwpTableLayout {
 }
 
 private extension HwpTableLayout {
+    struct TableMetrics {
+        let spacing: CGFloat
+        let columnWidths: [CGFloat]
+        let innerWidthAdjustment: CGFloat
+        let innerHeightAdjustment: CGFloat
+
+        init(table: CoreHwp.HwpTable, availableWidth: CGFloat, columnCount: Int) {
+            let property = table.tableProperty
+            spacing = max(0, HwpUnits.points(fromHwpUnit16: property.cellSpacing))
+            columnWidths = HwpTableLayout.columnWidths(
+                count: columnCount,
+                availableWidth: availableWidth,
+                spacing: spacing
+            )
+            innerWidthAdjustment = HwpUnits.points(fromHwpUnit16: property.leftInnerMargin)
+                + HwpUnits.points(fromHwpUnit16: property.rightInnerMargin)
+            innerHeightAdjustment = HwpUnits.points(fromHwpUnit16: property.topInnerMargin)
+                + HwpUnits.points(fromHwpUnit16: property.bottomInnerMargin)
+        }
+    }
+
     struct GridPosition: Hashable {
         let row: Int
         let column: Int
@@ -158,7 +132,7 @@ private extension HwpTableLayout {
         let paragraphFrames: [HwpParagraphFrame]
     }
 
-    static let defaultBorderColor = CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1)
+    static let defaultBorderColor = CGColor.hwpBlack
 
     func containsNestedTable(_ table: CoreHwp.HwpTable) -> Bool {
         table.cellArray.contains { cell in
@@ -178,6 +152,87 @@ private extension HwpTableLayout {
             borderColor: Self.defaultBorderColor,
             borderWidth: 1
         )
+    }
+
+    func placeCells(
+        table: CoreHwp.HwpTable,
+        rowCount: Int,
+        columnCount: Int,
+        metrics: TableMetrics,
+        index: HwpIndex
+    ) -> (cells: [PlacedCell], rowHeights: [CGFloat]) {
+        let textBuilder = HwpTextRunBuilder(index: index, fontResolver: fontResolver)
+        let paragraphLayout = HwpParagraphLayout()
+        var rowHeights = Array(repeating: CGFloat(0), count: rowCount)
+        var placedCells: [PlacedCell] = []
+        var occupied = Set<GridPosition>()
+
+        for cell in table.cellArray {
+            guard let placement = placement(
+                for: cell,
+                rowCount: rowCount,
+                columnCount: columnCount,
+                occupied: occupied
+            ) else { continue }
+
+            let columnSpan = min(placement.columnSpan, columnCount - placement.column)
+            let rowSpan = min(placement.rowSpan, rowCount - placement.row)
+            let spannedWidth = width(
+                from: placement.column,
+                span: columnSpan,
+                columnWidths: metrics.columnWidths,
+                spacing: metrics.spacing
+            )
+            let innerWidth = max(1, spannedWidth - metrics.innerWidthAdjustment)
+            let paragraphFrames = cellParagraphFrames(
+                for: cell,
+                innerWidth: innerWidth,
+                index: index,
+                textBuilder: textBuilder,
+                paragraphLayout: paragraphLayout
+            )
+            let contentHeight = paragraphFrames.reduce(CGFloat(0)) { $0 + $1.totalHeight }
+                + metrics.innerHeightAdjustment
+            rowHeights[placement.row] = max(rowHeights[placement.row], contentHeight)
+            placedCells.append(
+                PlacedCell(
+                    row: placement.row,
+                    column: placement.column,
+                    rowSpan: rowSpan,
+                    columnSpan: columnSpan,
+                    paragraphFrames: paragraphFrames
+                )
+            )
+            markOccupied(
+                row: placement.row,
+                column: placement.column,
+                rowSpan: rowSpan,
+                columnSpan: columnSpan,
+                in: &occupied
+            )
+        }
+
+        return (placedCells, rowHeights)
+    }
+
+    func cellParagraphFrames(
+        for cell: CoreHwp.HwpTableCell,
+        innerWidth: CGFloat,
+        index: HwpIndex,
+        textBuilder: HwpTextRunBuilder,
+        paragraphLayout: HwpParagraphLayout
+    ) -> [HwpParagraphFrame] {
+        cell.paragraphArray.compactMap { paragraph -> HwpParagraphFrame? in
+            let paraShapeId = UInt32(paragraph.paraHeader.paraShapeId)
+            guard let paraShape = index.paraShape(id: paraShapeId) else {
+                return nil
+            }
+            return paragraphLayout.layout(
+                attributedString: textBuilder.build(paragraph: paragraph),
+                paraShape: paraShape,
+                columnWidth: innerWidth
+            )
+        }
     }
 
     static func columnWidths(count: Int, availableWidth: CGFloat, spacing: CGFloat) -> [CGFloat] {
@@ -200,7 +255,9 @@ private extension HwpTableLayout {
         }
 
         for row in 0 ..< rowCount {
-            for column in 0 ..< columnCount where !occupied.contains(GridPosition(row: row, column: column)) {
+            for column in 0 ..< columnCount
+                where !occupied.contains(GridPosition(row: row, column: column))
+            {
                 return CellPlacement(row: row, column: column, rowSpan: 1, columnSpan: 1)
             }
         }
@@ -263,21 +320,12 @@ private extension HwpTableLayout {
                 .filter { $0.row == row }
                 .sorted { $0.column < $1.column }
                 .map { cell in
-                    HwpTableCellFrame(
-                        cellFrame: CGRect(
-                            x: xOffset(for: cell.column, columnWidths: columnWidths, spacing: spacing),
-                            y: yOffset,
-                            width: width(
-                                from: cell.column,
-                                span: cell.columnSpan,
-                                columnWidths: columnWidths,
-                                spacing: spacing
-                            ),
-                            height: height(from: cell.row, span: cell.rowSpan, rowHeights: rowHeights, spacing: spacing)
-                        ),
-                        paragraphFrames: cell.paragraphFrames,
-                        borders: HwpBorderSet(top: 1, bottom: 1, left: 1, right: 1, color: Self.defaultBorderColor),
-                        fillColor: nil
+                    cellFrame(
+                        for: cell,
+                        yOffset: yOffset,
+                        rowHeights: rowHeights,
+                        columnWidths: columnWidths,
+                        spacing: spacing
                     )
                 }
             result.append(HwpTableRowFrame(rowFrame: rowFrame, cells: cells))
@@ -285,6 +333,42 @@ private extension HwpTableLayout {
         }
 
         return result
+    }
+
+    func cellFrame(
+        for cell: PlacedCell,
+        yOffset: CGFloat,
+        rowHeights: [CGFloat],
+        columnWidths: [CGFloat],
+        spacing: CGFloat
+    ) -> HwpTableCellFrame {
+        HwpTableCellFrame(
+            cellFrame: CGRect(
+                x: xOffset(for: cell.column, columnWidths: columnWidths, spacing: spacing),
+                y: yOffset,
+                width: width(
+                    from: cell.column,
+                    span: cell.columnSpan,
+                    columnWidths: columnWidths,
+                    spacing: spacing
+                ),
+                height: height(
+                    from: cell.row,
+                    span: cell.rowSpan,
+                    rowHeights: rowHeights,
+                    spacing: spacing
+                )
+            ),
+            paragraphFrames: cell.paragraphFrames,
+            borders: HwpBorderSet(
+                top: 1,
+                bottom: 1,
+                left: 1,
+                right: 1,
+                color: Self.defaultBorderColor
+            ),
+            fillColor: nil
+        )
     }
 
     func rowWidth(columnWidths: [CGFloat], spacing: CGFloat) -> CGFloat {

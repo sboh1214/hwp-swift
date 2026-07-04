@@ -69,13 +69,17 @@ public struct HwpImageAdapter {
         if header.count >= 3, header[0] == 0xFF, header[1] == 0xD8, header[2] == 0xFF {
             return .success(.jpeg)
         }
-        if header.count >= 4, header[0] == 0x89, header[1] == 0x50, header[2] == 0x4E, header[3] == 0x47 {
+        if header.count >= 4,
+           header[0] == 0x89, header[1] == 0x50, header[2] == 0x4E, header[3] == 0x47
+        {
             return .success(.png)
         }
         if header.count >= 2, header[0] == 0x42, header[1] == 0x4D {
             return .success(.bmp)
         }
-        if header.count >= 4, header[0] == 0x47, header[1] == 0x49, header[2] == 0x46, header[3] == 0x38 {
+        if header.count >= 4,
+           header[0] == 0x47, header[1] == 0x49, header[2] == 0x46, header[3] == 0x38
+        {
             return .success(.gif)
         }
 
