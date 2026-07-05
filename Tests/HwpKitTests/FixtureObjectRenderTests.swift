@@ -117,6 +117,28 @@ final class FixtureObjectRenderTests: XCTestCase {
         expect(found).to(beTrue(), description: "각주 블록 (payload 포함)이 있어야 한다")
     }
 
+    // MARK: - header-footer (머리말/꼬리말 페이지 반복)
+
+    func testHeaderFooterRendersBandsOnEveryPage() async throws {
+        let document = try await loadFixture("header-footer")
+        expect(document.pages.count) >= 1
+
+        for (pageIndex, page) in document.pages.enumerated() {
+            let paintText = page.paintList.commands.compactMap { command -> String? in
+                if case let .drawText(attributed, _, _) = command { return attributed.string }
+                return nil
+            }.joined(separator: "\n")
+            expect(paintText).to(
+                contain("CoreHwp header fixture"),
+                description: "page \(pageIndex + 1) paint list에 머리말이 없다"
+            )
+            expect(paintText).to(
+                contain("CoreHwp footer fixture"),
+                description: "page \(pageIndex + 1) paint list에 꼬리말이 없다"
+            )
+        }
+    }
+
     // MARK: - chart (미지원 OLE/차트)
 
     func testChartReportsUnsupportedPlaceholder() async throws {

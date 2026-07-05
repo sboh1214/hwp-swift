@@ -31,6 +31,11 @@ public actor HwpPaginator {
     /// 페이지가 넘어가면 새 페이지 콘텐츠 상단으로 재설정된다.
     private var paragraphAnchorTop: CGFloat = 0
     private var footnoteCounter = 0
+    /// 구역의 활성 머리말/꼬리말 (적용 범위별, 표 141).
+    /// 컨트롤을 만난 이후의 모든 페이지에 반복 방출되며, 같은 범위의
+    /// 새 컨트롤이 나오면 교체된다.
+    private var activeHeaders: [CoreHwp.HwpHeaderFooterApplyScope: CoreHwp.HwpListControl] = [:]
+    private var activeFooters: [CoreHwp.HwpHeaderFooterApplyScope: CoreHwp.HwpListControl] = [:]
 
     var cachedPages: [Int: HwpPage] = [:]
 
@@ -343,9 +348,9 @@ private extension HwpPaginator {
                 )
                 appendNestedControlBlocks(of: ctrl, depth: depth)
             case let .header(list):
-                appendBandBlocks(list, band: currentPageGeometry.headerFrame, isHeader: true)
+                activeHeaders[list.headerFooterApplyScope] = list
             case let .footer(list):
-                appendBandBlocks(list, band: currentPageGeometry.footerFrame, isHeader: false)
+                activeFooters[list.headerFooterApplyScope] = list
             case let .footnote(list), let .endnote(list):
                 collectFootnotes(list)
             default:
@@ -547,7 +552,7 @@ private extension HwpPaginator {
 
     func appendImageBlock(
         picture: CoreHwp.HwpShapeComponentPicture,
-        component: CoreHwp.HwpShapeComponent,
+        component _: CoreHwp.HwpShapeComponent,
         commonProperty: CoreHwp.HwpCommonCtrlProperty,
         size: CGSize
     ) {
@@ -717,6 +722,28 @@ private extension HwpPaginator {
 
     // MARK: 머리말/꼬리말
 
+    /// 페이지 번호(1-based)와 적용 범위(표 141)에 맞는 활성 머리말/꼬리말을 고른다.
+    /// 짝수/홀수 전용이 양쪽보다 우선한다.
+    func resolvedBand(
+        from bands: [CoreHwp.HwpHeaderFooterApplyScope: CoreHwp.HwpListControl],
+        pageNumber: Int
+    ) -> CoreHwp.HwpListControl? {
+        let parity: CoreHwp.HwpHeaderFooterApplyScope = pageNumber.isMultiple(of: 2)
+            ? .evenPagesOnly
+            : .oddPagesOnly
+        return bands[parity] ?? bands[.bothPages]
+    }
+
+    /// 이 페이지에 적용되는 머리말/꼬리말 밴드 블록을 방출한다 (cacheCurrentPage 전용).
+    func appendActiveBandBlocks(pageNumber: Int) {
+        if let header = resolvedBand(from: activeHeaders, pageNumber: pageNumber) {
+            appendBandBlocks(header, band: currentPageGeometry.headerFrame, isHeader: true)
+        }
+        if let footer = resolvedBand(from: activeFooters, pageNumber: pageNumber) {
+            appendBandBlocks(footer, band: currentPageGeometry.footerFrame, isHeader: false)
+        }
+    }
+
     func appendBandBlocks(_ list: CoreHwp.HwpListControl, band: CGRect?, isHeader: Bool) {
         let paragraphs = list.listArray.flatMap(\.paragraphArray)
         guard !paragraphs.isEmpty else { return }
@@ -840,6 +867,7 @@ private extension HwpPaginator {
     // MARK: 페이지 확정
 
     func cacheCurrentPage() {
+        appendActiveBandBlocks(pageNumber: cachedPages.count + 1)
         appendPendingFootnotes()
         let pageIndex = cachedPages.count
         let page = HwpPage(
