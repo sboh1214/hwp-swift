@@ -2,55 +2,31 @@ import CoreGraphics
 @preconcurrency import CoreHwp
 import Foundation
 
-public struct HwpTextboxFrame: Sendable {
+public struct HwpTextboxFrame: @unchecked Sendable, Hashable {
+    /// 블록-로컬 좌표계 (origin 0,0)의 글상자 영역
     public let outerFrame: CGRect
-    public let paragraphFrames: [HwpParagraphFrame]
-    public let borderColor: CGColor?
+    /// 글상자 안 문단 (텍스트 + 지오메트리 + paraId)
+    public let paragraphs: [HwpLaidOutParagraph]
+    public let borderColor: HwpRGBColor?
     public let borderWidth: CGFloat
-    public let fillColor: CGColor?
+    public let fillColor: HwpRGBColor?
 
     public init(
         outerFrame: CGRect,
-        paragraphFrames: [HwpParagraphFrame],
-        borderColor: CGColor?,
+        paragraphs: [HwpLaidOutParagraph],
+        borderColor: HwpRGBColor?,
         borderWidth: CGFloat,
-        fillColor: CGColor?
+        fillColor: HwpRGBColor?
     ) {
         self.outerFrame = outerFrame
-        self.paragraphFrames = paragraphFrames
+        self.paragraphs = paragraphs
         self.borderColor = borderColor
         self.borderWidth = borderWidth
         self.fillColor = fillColor
     }
-}
 
-extension HwpTextboxFrame: Hashable {
-    public static func == (lhs: HwpTextboxFrame, rhs: HwpTextboxFrame) -> Bool {
-        lhs.outerFrame == rhs.outerFrame
-            && lhs.paragraphFrames == rhs.paragraphFrames
-            && lhs.borderWidth == rhs.borderWidth
-            && colorComponentsEqual(lhs.borderColor, rhs.borderColor)
-            && colorComponentsEqual(lhs.fillColor, rhs.fillColor)
-    }
-
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(outerFrame.origin.x)
-        hasher.combine(outerFrame.origin.y)
-        hasher.combine(outerFrame.size.width)
-        hasher.combine(outerFrame.size.height)
-        hasher.combine(paragraphFrames)
-        hasher.combine(borderWidth)
-        borderColor?.components?.forEach { hasher.combine($0) }
-        fillColor?.components?.forEach { hasher.combine($0) }
-    }
-
-    private static func colorComponentsEqual(_ lhs: CGColor?, _ rhs: CGColor?) -> Bool {
-        switch (lhs, rhs) {
-        case (nil, nil): true
-        case let (left?, right?): left.components == right.components
-        default: false
-        }
-    }
+    /// 하위 호환: 문단 지오메트리만 필요할 때
+    public var paragraphFrames: [HwpParagraphFrame] { paragraphs.map(\.frame) }
 }
 
 public struct HwpTextboxLayout {
@@ -60,47 +36,122 @@ public struct HwpTextboxLayout {
         self.fontResolver = fontResolver
     }
 
+    /// gso 컨트롤의 글상자를 레이아웃한다.
     public func layout(
         textbox: CoreHwp.HwpGenShapeObject,
         width: CGFloat,
         index: HwpIndex
     ) -> HwpTextboxFrame? {
-        guard let component = textbox.shapeComponentArray
-            .first(where: { !$0.textBoxListArray.isEmpty })
-        else {
-            return nil
-        }
+        layout(
+            components: textbox.shapeComponentArray,
+            commonProperty: textbox.commonCtrlProperty,
+            fallbackWidth: width,
+            index: index
+        )
+    }
 
-        let outerWidth = HwpUnits.points(fromHwpUnitU: textbox.commonCtrlProperty.width)
-        let outerHeight = HwpUnits.points(fromHwpUnitU: textbox.commonCtrlProperty.height)
-        let resolvedWidth = outerWidth > 0 ? outerWidth : width
-        let outerFrame = CGRect(x: 0, y: 0, width: resolvedWidth, height: max(0, outerHeight))
+    /// 글상자 리스트를 가진 첫 개체 요소를 찾아 레이아웃한다.
+    /// 텍스트 wrap 폭은 개체 폭에서 글상자 텍스트 여백 (표 90)을 뺀 값이다.
+    public func layout(
+        components: [CoreHwp.HwpShapeComponent],
+        commonProperty: CoreHwp.HwpCommonCtrlProperty,
+        fallbackWidth: CGFloat,
+        index: HwpIndex
+    ) -> HwpTextboxFrame? {
+        guard let component = components.first(where: { !$0.textBoxListArray.isEmpty })
+        else { return nil }
+
+        let outerWidth = HwpUnits.points(fromHwpUnitU: commonProperty.width)
+        let outerHeight = HwpUnits.points(fromHwpUnitU: commonProperty.height)
+        let resolvedWidth = outerWidth > 0 ? outerWidth : fallbackWidth
 
         let textRunBuilder = HwpTextRunBuilder(index: index, fontResolver: fontResolver)
         let paragraphLayout = HwpParagraphLayout()
-        var paragraphFrames: [HwpParagraphFrame] = []
+        var paragraphs: [HwpLaidOutParagraph] = []
 
+        let insets = textInsets(of: component)
+        let wrapWidth = max(1, resolvedWidth - insets.left - insets.right)
+
+        var contentY = insets.top
         for list in component.textBoxListArray {
             for paragraph in list.paragraphArray {
                 let attributed = textRunBuilder.build(paragraph: paragraph)
                 let paraShape = index.paraShape(id: UInt32(paragraph.paraHeader.paraShapeId))
+                    ?? index.paraShape(id: 0)
                     ?? CoreHwp.HwpParaShape()
-                paragraphFrames.append(
-                    paragraphLayout.layout(
-                        attributedString: attributed,
-                        paraShape: paraShape,
-                        columnWidth: width
-                    )
+                let frame = paragraphLayout.layout(
+                    attributedString: attributed,
+                    paraShape: paraShape,
+                    columnWidth: wrapWidth
                 )
+                paragraphs.append(HwpLaidOutParagraph(
+                    attributedString: attributed,
+                    frame: frame,
+                    rect: CGRect(
+                        x: insets.left,
+                        y: contentY,
+                        width: wrapWidth,
+                        height: frame.totalHeight
+                    ),
+                    paragraphId: paragraph.paraHeader.paraId
+                ))
+                contentY += frame.totalHeight
             }
         }
 
+        let contentHeight = contentY + insets.bottom
+        let resolvedHeight = max(outerHeight, contentHeight)
+
+        let appearance = appearance(of: component)
+
         return HwpTextboxFrame(
-            outerFrame: outerFrame,
-            paragraphFrames: paragraphFrames,
-            borderColor: nil,
-            borderWidth: 0,
-            fillColor: nil
+            outerFrame: CGRect(x: 0, y: 0, width: resolvedWidth, height: max(0, resolvedHeight)),
+            paragraphs: paragraphs,
+            borderColor: appearance.borderColor,
+            borderWidth: appearance.borderWidth,
+            fillColor: appearance.fillColor
         )
+    }
+
+    /// 글상자 텍스트 여백 (표 90). 정보가 없으면 0.
+    private struct TextInsets {
+        var left: CGFloat = 0
+        var right: CGFloat = 0
+        var top: CGFloat = 0
+        var bottom: CGFloat = 0
+    }
+
+    private func textInsets(of component: CoreHwp.HwpShapeComponent) -> TextInsets {
+        guard let info = component.textBoxListArray.first?.textBoxInfo else {
+            return TextInsets()
+        }
+        return TextInsets(
+            left: max(0, HwpUnits.points(fromHwpUnit16: info.leftMargin)),
+            right: max(0, HwpUnits.points(fromHwpUnit16: info.rightMargin)),
+            top: max(0, HwpUnits.points(fromHwpUnit16: info.topMargin)),
+            bottom: max(0, HwpUnits.points(fromHwpUnit16: info.bottomMargin))
+        )
+    }
+
+    /// 개체 요소 세부에서 해석한 테두리/채우기 외형
+    private struct Appearance {
+        var borderColor: HwpRGBColor?
+        var borderWidth: CGFloat = 0
+        var fillColor: HwpRGBColor?
+    }
+
+    private func appearance(of component: CoreHwp.HwpShapeComponent) -> Appearance {
+        var appearance = Appearance()
+        guard let detail = component.detail else { return appearance }
+        if let borderLine = detail.borderLine, borderLine.hasVisibleLine {
+            appearance.borderColor = HwpRGBColor(borderLine.color)
+            let width = HwpUnits.points(fromHwpUnit: borderLine.width)
+            appearance.borderWidth = width > 0 ? width : 1
+        }
+        if let fill = detail.fill, fill.hasSolidFill,
+           let background = fill.solidBackgroundColor {
+            appearance.fillColor = HwpRGBColor(background)
+        }
+        return appearance
     }
 }

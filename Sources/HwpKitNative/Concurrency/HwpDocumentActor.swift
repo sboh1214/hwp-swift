@@ -43,10 +43,12 @@ public actor HwpDocumentActor {
 
     private func buildDocument(from file: CoreHwp.HwpFile) async throws -> HwpDocument {
         let index = HwpIndex(from: file)
+        let imageStore = HwpImageStore(from: file)
         let paginator = HwpPaginator(
             sections: file.sectionArray,
             index: index,
-            fontResolver: fontResolver
+            fontResolver: fontResolver,
+            imageStore: imageStore
         )
         self.paginator = paginator
 
@@ -68,7 +70,8 @@ public actor HwpDocumentActor {
         return HwpDocument(
             pages: pages,
             metadata: metadata,
-            unsupportedElements: unsupported
+            unsupportedElements: unsupported,
+            imageStore: imageStore
         )
     }
 

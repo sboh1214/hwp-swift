@@ -10,13 +10,14 @@
                 guard document != oldValue else { return }
                 pageLayers.values.forEach { $0.removeFromSuperlayer() }
                 pageLayers.removeAll()
+                rebuildImageProvider()
                 needsLayout = true
                 notifyUnsupportedElements()
             }
         }
 
         public var documentActor: HwpDocumentActor?
-        public var imageCache: HwpImageCache
+        public private(set) var imageCache: HwpImageCache
         public var zoomScale: CGFloat = 1.0 {
             didSet {
                 zoomScale = max(zoomScale, 0.05)
@@ -34,6 +35,7 @@
         private let defaultPageSize = CGSize(width: 595, height: 842)
         private let pageSpacing: CGFloat = 16
         private var activeVisibleRange: Range<Int> = 0 ..< 0
+        private var imageProvider: HwpPageImageProvider?
 
         override public init(frame: NSRect = .zero) {
             imageCache = HwpImageCache()
@@ -91,6 +93,28 @@
 
         private func notifyUnsupportedElements() {
             document?.unsupportedElements.forEach { onUnsupportedElement?($0) }
+        }
+
+        private func rebuildImageProvider() {
+            guard let document, !document.imageStore.isEmpty else {
+                imageProvider = nil
+                return
+            }
+            // binItemId는 문서-로컬 키이므로 문서마다 새 캐시를 쓴다
+            // (이전 문서의 동일 키 이미지 재사용 방지).
+            imageCache = HwpImageCache()
+            let provider = HwpPageImageProvider(store: document.imageStore, cache: imageCache)
+            provider.onImageResolved = { [weak self] key in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    for layer in self.pageLayers.values
+                        where layer.containsImageReference(key)
+                    {
+                        layer.setNeedsDisplay()
+                    }
+                }
+            }
+            imageProvider = provider
         }
 
         private func setupClickGesture() {
@@ -151,11 +175,12 @@
             let pageSize = sizeForPage(at: index)
             pageLayer.pageHeight = pageSize.height
             pageLayer.bounds = CGRect(origin: .zero, size: pageSize)
-            pageLayer.backgroundColor = NSColor.white.cgColor
-            pageLayer.shadowColor = NSColor.black.cgColor
+            pageLayer.backgroundColor = PlatformColor.white.cgColor
+            pageLayer.shadowColor = PlatformColor.black.cgColor
             pageLayer.shadowOpacity = 0.12
             pageLayer.shadowRadius = 4
             pageLayer.shadowOffset = CGSize(width: 0, height: -1)
+            pageLayer.imageProvider = imageProvider
             pageLayer.paintList = paintListForPage(at: index)
             return pageLayer
         }

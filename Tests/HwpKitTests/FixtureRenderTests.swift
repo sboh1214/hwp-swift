@@ -77,7 +77,8 @@ final class FixtureRenderTests: XCTestCase {
             do {
                 let document = try await HwpDocumentLoader().load(from: fixture.documentURL)
                 for (pageIndex, page) in document.pages.enumerated() {
-                    let blocks = page.blocks
+                    // 글 앞/뒤 앵커 개체는 본문과 겹칠 수 있으므로 텍스트 블록 쌍만 검사한다.
+                    let blocks = page.blocks.filter { $0.kind == .text }
                     for lhs in 0 ..< blocks.count {
                         for rhs in (lhs + 1) ..< blocks.count {
                             let frameA = blocks[lhs].frame

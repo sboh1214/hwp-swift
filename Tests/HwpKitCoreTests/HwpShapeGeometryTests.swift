@@ -1,3 +1,4 @@
+@testable import CoreHwp
 import CoreGraphics
 import Foundation
 @testable import HwpKitCore
@@ -5,6 +6,45 @@ import Nimble
 import XCTest
 
 final class HwpShapeGeometryTests: XCTestCase {
+    func testBuildWithNoDetailRecordsFallsBackToBoundingRect() throws {
+        let geometry = HwpShapeGeometry.build(
+            component: emptyComponent(),
+            size: CGSize(width: 120, height: 60)
+        )
+        let unwrapped = try XCTUnwrap(geometry)
+        let bounds = unwrapped.path.boundingBox
+        expect(bounds.origin.x).to(beCloseTo(0, within: 0.01))
+        expect(bounds.origin.y).to(beCloseTo(0, within: 0.01))
+        expect(bounds.width).to(beCloseTo(120, within: 0.01))
+        expect(bounds.height).to(beCloseTo(60, within: 0.01))
+        expect(unwrapped.fillColor).to(beNil())
+        expect(unwrapped.strokeColor).toNot(beNil())
+        expect(unwrapped.strokeWidth) == 1
+    }
+
+    func testBuildWithNoDetailRecordsAndZeroSizeReturnsNil() {
+        let geometry = HwpShapeGeometry.build(
+            component: emptyComponent(),
+            size: CGSize(width: 0, height: 0)
+        )
+        expect(geometry).to(beNil())
+    }
+
+    private func emptyComponent() -> CoreHwp.HwpShapeComponent {
+        CoreHwp.HwpShapeComponent(
+            rawCtrlId: nil,
+            ctrlId: nil,
+            rawPayload: Data(),
+            rawTrailing: nil,
+            pictureArray: [],
+            oleArray: [],
+            oleRecords: [],
+            ctrlDataRecords: [],
+            textBoxListArray: [],
+            unknownChildren: []
+        )
+    }
+
     func testRectanglePathBounds() {
         let rect = CGRect(x: 10, y: 20, width: 100, height: 50)
         let path = HwpShapeGeometry.rectanglePath(from: rect)

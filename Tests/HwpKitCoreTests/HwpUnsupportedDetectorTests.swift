@@ -287,41 +287,6 @@ final class HwpUnsupportedDetectorTests: XCTestCase {
         expect(element?.page) == 42
     }
 
-    // MARK: - Placeholder Render Command
-
-    func testPlaceholderRenderCommandCreation() {
-        let frame = CGRect(x: 10, y: 20, width: 100, height: 50)
-        let text = "[수식]"
-        let color = CGColor(srgbRed: 0.85, green: 0.85, blue: 0.85, alpha: 1)
-
-        let command = HwpPlaceholderRenderCommand(frame: frame, text: text, color: color)
-
-        expect(command.frame) == frame
-        expect(command.text) == text
-    }
-
-    func testPlaceholderRenderCommandDefaultColor() {
-        let frame = CGRect(x: 0, y: 0, width: 50, height: 50)
-        let text = "[차트]"
-
-        let command = HwpPlaceholderRenderCommand(frame: frame, text: text)
-
-        expect(command.frame) == frame
-        expect(command.text) == text
-        // Verify default grey color is set
-        expect(command.color).notTo(beNil())
-    }
-
-    func testPlaceholderRenderCommandHashable() {
-        let frame = CGRect(x: 0, y: 0, width: 50, height: 50)
-        let command1 = HwpPlaceholderRenderCommand(frame: frame, text: "[수식]")
-        let command2 = HwpPlaceholderRenderCommand(frame: frame, text: "[수식]")
-
-        // Both should be hashable (no crash)
-        let set = Set([command1, command2])
-        expect(set.count) >= 1
-    }
-
     // MARK: - Additional Unsupported Controls
 
     func testAutoNumberControlReturnsPlaceholder() {

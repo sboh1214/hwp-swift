@@ -145,6 +145,8 @@ public struct HwpTableCellHeader {
     public var cellPropertyInfo: HwpTableCellHeaderProperty
     /** 제목 셀 여부 */
     public var isHeader: Bool
+    /** 셀 주소/병합/크기/여백/테두리 속성 (표 80). trailing이 26 byte 미만이면 nil. */
+    public var cellProperty: HwpTableCellProperty?
     public var rawTrailing: Data
     public var rawPayload: Data
     public var unknownChildren: [HwpUnknownRecord]
@@ -162,6 +164,7 @@ extension HwpTableCellHeader: HwpFromRecord {
         cellPropertyInfo = HwpTableCellHeaderProperty(rawValue: listHeaderWidthRef)
         isHeader = cellPropertyInfo.isHeader
         rawTrailing = try reader.readToEnd()
+        cellProperty = HwpTableCellProperty.decode(from: rawTrailing)
         rawPayload = try reader.consumedData(from: startOffset)
         unknownChildren = children.map(HwpUnknownRecord.init)
     }

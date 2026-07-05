@@ -77,6 +77,27 @@ extension HwpBorderFill: HwpFromData {
     }
 }
 
+public extension HwpBorderFill {
+    /** 채우기 정보 (표 28)를 해석한 값. 단색 채우기 배경색 접근용. */
+    var fill: HwpFillInfo? {
+        HwpFillInfo.decode(from: Data(fillInfo), at: 0)
+    }
+
+    /** 표 26 테두리선 굵기 index → mm 값 */
+    static let borderThicknessMillimeters: [Double] = [
+        0.1, 0.12, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5,
+        0.6, 0.7, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0,
+    ]
+
+    /// 테두리선 굵기 index를 point로 변환한다 (1 mm = 72/25.4 pt).
+    static func borderThicknessPoints(at index: UInt8) -> Double {
+        let millimeters = Int(index) < borderThicknessMillimeters.count
+            ? borderThicknessMillimeters[Int(index)]
+            : borderThicknessMillimeters[0]
+        return millimeters * 72.0 / 25.4
+    }
+}
+
 extension HwpBorderFill {
     init(fillInfo: [BYTE]) {
         rawPayload = Data()

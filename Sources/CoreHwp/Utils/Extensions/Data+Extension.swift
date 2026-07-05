@@ -29,6 +29,18 @@ extension Data {
         UInt32(littleEndian: try readFixedWidthInteger(UInt32.self, at: offset))
     }
 
+    func readLittleEndianInt16(at offset: Int) throws -> Int16 {
+        Int16(bitPattern: try readLittleEndianUInt16(at: offset))
+    }
+
+    func readLittleEndianInt32(at offset: Int) throws -> Int32 {
+        Int32(bitPattern: try readLittleEndianUInt32(at: offset))
+    }
+
+    func readLittleEndianDouble(at offset: Int) throws -> Double {
+        Double(bitPattern: UInt64(littleEndian: try readFixedWidthInteger(UInt64.self, at: offset)))
+    }
+
     func littleEndianUInt16ArrayIfAligned() -> [UInt16]? {
         guard count.isMultiple(of: MemoryLayout<UInt16>.size) else {
             return nil

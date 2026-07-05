@@ -270,39 +270,6 @@ final class ShapeControlPreservationTests: XCTestCase {
         expect(component.rawTrailing).to(beNil())
     }
 
-    func testShapeComponentOLEPreservesRawPayloadAndOptionalBinaryDataId() throws {
-        let record = HwpRecord(
-            tagId: HwpSectionTag.shapeComponentOle.rawValue,
-            level: 2,
-            payload: concatenatedData(littleEndianData(UInt32(3)), Data([0xAA, 0xBB]))
-        )
-        record.children.append(HwpRecord(tagId: 0x2FA, level: 3, payload: Data([0xCD])))
-
-        let ole = try HwpShapeComponentOLE.load(record)
-
-        expect(ole.rawPayload) == concatenatedData(littleEndianData(UInt32(3)), Data([0xAA, 0xBB]))
-        expect(ole.binaryDataId) == 3
-        expect(ole.rawTrailing) == Data([0xAA, 0xBB])
-        expect(ole.unknownChildren) == [
-            expectedTestUnknownRecord(tagId: 0x2FA, level: 3, payload: Data([0xCD])),
-        ]
-    }
-
-    func testShapeComponentOLEPreservesShortPayloadWithoutBinaryDataId() throws {
-        let rawPayload = Data([0xAA, 0xBB, 0xCC])
-        let record = HwpRecord(
-            tagId: HwpSectionTag.shapeComponentOle.rawValue,
-            level: 2,
-            payload: rawPayload
-        )
-
-        let ole = try HwpShapeComponentOLE.load(record)
-
-        expect(ole.rawPayload) == rawPayload
-        expect(ole.binaryDataId).to(beNil())
-        expect(ole.rawTrailing).to(beNil())
-    }
-
     func testParagraphPreservesShortGenShapeObjectAsNotImplemented() throws {
         let rawPayload = rawControlPayload(ctrlId: HwpCommonCtrlId.genShapeObject.rawValue)
         let record = HwpRecord(

@@ -15,17 +15,25 @@ public struct AnyHwpBlock: HwpBlock, @unchecked Sendable, Hashable {
     public let kind: HwpBlockKind
     public let attributedString: NSAttributedString?
     public let hyperlinkURL: String?
+    /// 블록 종류별 상세 레이아웃 결과 (표 셀 grid, 도형 path, 이미지 참조 등)
+    public let payload: HwpBlockPayload?
+    /// 이 블록이 유래한 CoreHwp 모델 참조 (편집 대비)
+    public let source: HwpBlockSource?
 
     public init(
         frame: CGRect,
         kind: HwpBlockKind,
         attributedString: NSAttributedString? = nil,
-        hyperlinkURL: String? = nil
+        hyperlinkURL: String? = nil,
+        payload: HwpBlockPayload? = nil,
+        source: HwpBlockSource? = nil
     ) {
         self.frame = frame
         self.kind = kind
         self.attributedString = attributedString
         self.hyperlinkURL = hyperlinkURL
+        self.payload = payload
+        self.source = source
     }
 
     public func hash(into hasher: inout Hasher) {
@@ -36,6 +44,8 @@ public struct AnyHwpBlock: HwpBlock, @unchecked Sendable, Hashable {
         hasher.combine(frame.size.height)
         hasher.combine(attributedString?.string)
         hasher.combine(hyperlinkURL)
+        hasher.combine(payload)
+        hasher.combine(source)
     }
 
     public static func == (lhs: AnyHwpBlock, rhs: AnyHwpBlock) -> Bool {
@@ -43,5 +53,7 @@ public struct AnyHwpBlock: HwpBlock, @unchecked Sendable, Hashable {
             && lhs.frame == rhs.frame
             && lhs.attributedString?.string == rhs.attributedString?.string
             && lhs.hyperlinkURL == rhs.hyperlinkURL
+            && lhs.payload == rhs.payload
+            && lhs.source == rhs.source
     }
 }

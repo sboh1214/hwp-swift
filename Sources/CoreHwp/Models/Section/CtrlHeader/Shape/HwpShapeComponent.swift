@@ -373,7 +373,8 @@ extension HwpShapeComponent: HwpFromRecord {
                 header: header,
                 headerRawPayload: child.payload,
                 headerUnknownChildren: child.children.map(HwpUnknownRecord.init),
-                paragraphArray: paragraphs
+                paragraphArray: paragraphs,
+                textBoxInfo: HwpTextBoxListInfo.decode(from: header.rawTrailing)
             ))
             consumedIndexes.formUnion(startIndex ... index)
             index += 1
@@ -417,15 +418,23 @@ extension HwpShapeComponentRectangle: HwpFromRecord {
 public struct HwpShapeComponentOLE {
     /** 원본 payload */
     public var rawPayload: Data
-    /** BinData id. 아직 전체 payload layout을 해석하지 않았으므로 없을 수 있다. */
+    /**
+     BinData id (표 118). 없을 수 있다.
+
+     실제 파일의 layout은 속성 UInt32 + extent INT32 × 2 뒤 offset 12의 UInt16이다
+     (스펙 표 118의 속성 UInt16는 오기).
+     */
     public var binaryDataId: UInt32?
-    /** BinData id 뒤의 아직 해석하지 않은 payload */
+    /** 속성 뒤의 아직 해석하지 않은 payload */
     public var rawTrailing: Data?
     /** 아직 해석하지 않은 child record */
     public var unknownChildren: [HwpUnknownRecord]
 }
 
 extension HwpShapeComponentOLE: HwpFromRecord {
+    /** BinData id의 payload 내 offset (속성 UInt32 + extent INT32 × 2 = 12) */
+    private static let binaryDataIdOffset = 12
+
     // MARK: loader contract exemption - OLE component payload is best-effort raw-backed
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
@@ -449,11 +458,11 @@ extension HwpShapeComponentOLE: HwpFromRecord {
     }
 
     private static func binaryDataId(from payload: Data) -> UInt32? {
-        guard payload.count >= MemoryLayout<UInt32>.size else {
+        guard payload.count >= binaryDataIdOffset + MemoryLayout<UInt16>.size else {
             return nil
         }
         do {
-            return try payload.readLittleEndianUInt32(at: 0)
+            return UInt32(try payload.readLittleEndianUInt16(at: binaryDataIdOffset))
         } catch {
             return nil
         }

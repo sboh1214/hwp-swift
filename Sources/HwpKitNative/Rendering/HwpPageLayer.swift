@@ -13,6 +13,14 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
 
     public var pageHeight: CGFloat = 0
 
+    /// `.drawImageReference` 명령을 해석할 이미지 공급자.
+    /// 디코딩이 끝나면 레이어를 다시 그린다.
+    public var imageProvider: HwpPageImageProvider? {
+        didSet {
+            setNeedsDisplay()
+        }
+    }
+
     override public init() {
         super.init()
         needsDisplayOnBoundsChange = true
@@ -62,7 +70,10 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
                 drawPath(path, fill: fill, stroke: stroke, strokeWidth: strokeWidth, in: ctx)
 
             case let .drawImage(image, rect):
-                ctx.draw(image, in: rect)
+                drawFlippedImage(image, in: rect, context: ctx)
+
+            case let .drawImageReference(binItemId, rect):
+                drawImageReference(binItemId, in: rect, context: ctx)
 
             case let .drawPlaceholder(rect, text):
                 drawPlaceholder(text, in: rect, context: ctx)
@@ -127,6 +138,45 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
         ctx.scaleBy(x: 1, y: -1)
         CTFrameDraw(frame, ctx)
         ctx.restoreGState()
+    }
+
+    /// paint list가 해당 BinItem 이미지를 참조하는지 (targeted redraw 판단용)
+    public func containsImageReference(_ binItemId: UInt32) -> Bool {
+        guard let paintList else { return false }
+        return paintList.commands.contains { command in
+            if case let .drawImageReference(key, _) = command {
+                return key == binItemId
+            }
+            return false
+        }
+    }
+
+    /// 컨텍스트가 top-left 기준으로 뒤집혀 있으므로 이미지는 rect 기준으로 재반전해 그린다.
+    private func drawFlippedImage(_ image: CGImage, in rect: CGRect, context ctx: CGContext) {
+        ctx.saveGState()
+        ctx.translateBy(x: 0, y: rect.minY + rect.maxY)
+        ctx.scaleBy(x: 1, y: -1)
+        ctx.draw(image, in: rect)
+        ctx.restoreGState()
+    }
+
+    private func drawImageReference(_ binItemId: UInt32, in rect: CGRect, context ctx: CGContext) {
+        guard let imageProvider else {
+            drawPlaceholder("[이미지]", in: rect, context: ctx)
+            return
+        }
+        if let image = imageProvider.cachedImage(for: binItemId) {
+            drawFlippedImage(image, in: rect, context: ctx)
+            return
+        }
+        if imageProvider.didFail(for: binItemId) {
+            drawPlaceholder("[이미지]", in: rect, context: ctx)
+            return
+        }
+        // 로딩 중 표시 후 비동기 디코딩을 트리거한다.
+        ctx.setFillColor(CGColor(gray: 0.95, alpha: 1))
+        ctx.fill(rect)
+        imageProvider.requestImage(for: binItemId)
     }
 
     private func drawPath(

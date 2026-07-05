@@ -90,6 +90,33 @@ public struct HwpTableProperty {
     }
 }
 
+public extension HwpTableProperty {
+    /** 쪽 경계에서 표를 나누는 방식 (표 76 bits 0-1) */
+    enum HwpTablePageBreakMode: Int, Sendable, Codable {
+        /** 나누지 않음 */
+        case none = 0
+        /** 셀 단위로 나눔 */
+        case byCell = 1
+        /** 나눔 (스펙 오기: 2도 나눔으로 처리하는 것이 관례) */
+        case split = 2
+    }
+
+    /** 쪽 경계 나눔 방식 */
+    var pageBreakMode: HwpTablePageBreakMode {
+        HwpTablePageBreakMode(rawValue: Int(property & 0b11)) ?? .none
+    }
+
+    /** 제목 줄 자동 반복 여부 (표 76 bit 2) */
+    var repeatsHeaderRow: Bool {
+        property & (1 << 2) != 0
+    }
+
+    /** Row Size를 행별 셀 개수 배열로 해석한 값 (행마다 LE UInt16 하나) */
+    var rowCellCounts: [UInt16] {
+        Data(rowSize).littleEndianUInt16ArrayIfAligned() ?? []
+    }
+}
+
 extension HwpTableProperty: HwpFromDataWithVersion {
     // MARK: loader contract exemption - preserves table-property trailing payload
 

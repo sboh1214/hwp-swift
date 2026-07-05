@@ -28,13 +28,33 @@ public struct HwpHitTester {
             case .shape, .textbox:
                 return .shape(blockIndex: index)
             case .table:
-                return .table(blockIndex: index, row: 0, col: 0)
+                let position = tableGridPosition(block: block, point: point)
+                return .table(blockIndex: index, row: position.row, col: position.col)
             case .footnote:
-                return .footnote(blockIndex: index, number: 0)
+                return .footnote(blockIndex: index, number: footnoteNumber(block: block))
             case .placeholder:
                 return .placeholder(blockIndex: index, kind: block.kind)
             }
         }
         return nil
+    }
+
+    private func tableGridPosition(block: AnyHwpBlock, point: CGPoint) -> (row: Int, col: Int) {
+        guard case let .table(tableFrame) = block.payload else { return (0, 0) }
+        let localPoint = CGPoint(
+            x: point.x - block.frame.minX,
+            y: point.y - block.frame.minY
+        )
+        for row in tableFrame.rows {
+            for cell in row.cells where cell.cellFrame.contains(localPoint) {
+                return (cell.row, cell.column)
+            }
+        }
+        return (0, 0)
+    }
+
+    private func footnoteNumber(block: AnyHwpBlock) -> Int {
+        guard case let .footnote(footnote) = block.payload else { return 0 }
+        return footnote.number
     }
 }

@@ -28,14 +28,46 @@ public struct HwpUnsupportedDetector: Sendable {
     ///   - page: The page number where this control appears
     /// - Returns: nil if supported, or HwpUnsupportedElement for v1 OUT types
     public func classify(ctrl: CoreHwp.HwpCtrlId, page: Int) -> HwpUnsupportedElement? {
-        guard let hint = unsupportedHint(for: ctrl) else {
-            return nil
+        if let hint = unsupportedHint(for: ctrl) {
+            return HwpUnsupportedElement(kind: .placeholder, page: page, hint: hint)
         }
-        return HwpUnsupportedElement(kind: .placeholder, page: page, hint: hint)
+        // 지원되는 컨트롤 (gso 등)이라도 개체 요소 안에 v1 OUT 세부 record
+        // (차트/동영상/글맵시/양식/OLE)가 있으면 placeholder로 보고한다.
+        if let hint = unsupportedComponentHint(for: ctrl) {
+            return HwpUnsupportedElement(kind: .placeholder, page: page, hint: hint)
+        }
+        return nil
     }
 }
 
 private extension HwpUnsupportedDetector {
+    func unsupportedComponentHint(for ctrl: CoreHwp.HwpCtrlId) -> String? {
+        let components: [CoreHwp.HwpShapeComponent] = switch ctrl {
+        case let .genShapeObject(genShape):
+            genShape.shapeComponentArray
+        case let .shape(shape),
+             let .line(shape),
+             let .rectangle(shape),
+             let .ellipse(shape),
+             let .arc(shape),
+             let .polygon(shape),
+             let .curve(shape),
+             let .picture(shape),
+             let .container(shape):
+            shape.shapeComponentArray
+        default:
+            []
+        }
+        for component in components {
+            if !component.chartDataArray.isEmpty { return "차트" }
+            if !component.videoDataArray.isEmpty { return "동영상" }
+            if !component.textartArray.isEmpty { return "글맵시" }
+            if !component.formObjectArray.isEmpty { return "양식 개체" }
+            if !component.oleArray.isEmpty { return "OLE" }
+        }
+        return nil
+    }
+
     // Exhaustive over HwpCtrlId (no `default:`) so the compiler forces every
     // new control case to be classified as supported (nil) or unsupported.
     // swiftlint:disable:next cyclomatic_complexity

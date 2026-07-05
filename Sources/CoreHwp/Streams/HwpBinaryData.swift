@@ -45,10 +45,11 @@ extension HwpBinaryData {
             return (nil, nil)
         }
 
+        // Stream 이름의 id는 16진수 4자리이다 (BIN%04X.ext).
         let digits = streamName.dropFirst(3)
         guard digits.count == 4,
-              digits.allSatisfy(\.isASCIIDigit),
-              let streamId = UInt16(digits)
+              digits.allSatisfy(\.isASCIIHexDigit),
+              let streamId = UInt16(digits, radix: 16)
         else {
             return (nil, nil)
         }
@@ -63,8 +64,10 @@ extension HwpBinaryData {
 }
 
 private extension Character {
-    var isASCIIDigit: Bool {
-        unicodeScalars.count == 1
-            && unicodeScalars.allSatisfy { (0x30 ... 0x39).contains($0.value) }
+    var isASCIIHexDigit: Bool {
+        guard unicodeScalars.count == 1, let scalar = unicodeScalars.first else { return false }
+        return (0x30 ... 0x39).contains(scalar.value)
+            || (0x41 ... 0x46).contains(scalar.value)
+            || (0x61 ... 0x66).contains(scalar.value)
     }
 }

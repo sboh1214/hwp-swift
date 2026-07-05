@@ -246,7 +246,13 @@ final class ShapeComponentRawRecordTests: XCTestCase {
     }
 
     func testOLEComponentReadsBinaryDataIdAtMinimumPayloadLengthAndPreservesTrailing() throws {
-        let rawPayload = littleEndianData(UInt32(42))
+        // 실제 layout: 속성 u32 + extent i32 x 2 + BinData id u16 @12
+        let rawPayload = concatenatedData(
+            littleEndianData(UInt32(1)),
+            littleEndianData(Int32(7200)),
+            littleEndianData(Int32(7200)),
+            littleEndianData(UInt16(42))
+        )
         let record = HwpRecord(
             tagId: HwpSectionTag.shapeComponentOle.rawValue,
             level: 2,
@@ -259,7 +265,7 @@ final class ShapeComponentRawRecordTests: XCTestCase {
             ole,
             rawPayload: rawPayload,
             binaryDataId: 42,
-            rawTrailing: Data()
+            rawTrailing: Data(rawPayload.dropFirst(4))
         )
 
         let decoded = try roundTrippedOLEComponent(ole)
@@ -269,12 +275,18 @@ final class ShapeComponentRawRecordTests: XCTestCase {
             decoded,
             rawPayload: rawPayload,
             binaryDataId: 42,
-            rawTrailing: Data()
+            rawTrailing: Data(rawPayload.dropFirst(4))
         )
     }
 
     func testOLEComponentPayloadWithNonZeroDataStartIndexDoesNotTrap() throws {
-        let rawPayload = concatenatedData(littleEndianData(UInt32(43)), Data([0xC3]))
+        let rawPayload = concatenatedData(
+            littleEndianData(UInt32(1)),
+            littleEndianData(Int32(0)),
+            littleEndianData(Int32(0)),
+            littleEndianData(UInt16(43)),
+            Data([0xC3])
+        )
         let slicedPayload = concatenatedData(Data([0xFE, 0xED]), rawPayload).dropFirst(2)
         let record = HwpRecord(
             tagId: HwpSectionTag.shapeComponentOle.rawValue,
@@ -288,7 +300,7 @@ final class ShapeComponentRawRecordTests: XCTestCase {
             ole,
             rawPayload: slicedPayload,
             binaryDataId: 43,
-            rawTrailing: Data([0xC3])
+            rawTrailing: Data(rawPayload.dropFirst(4))
         )
 
         let decoded = try roundTrippedOLEComponent(ole)
@@ -298,7 +310,7 @@ final class ShapeComponentRawRecordTests: XCTestCase {
             decoded,
             rawPayload: slicedPayload,
             binaryDataId: 43,
-            rawTrailing: Data([0xC3])
+            rawTrailing: Data(rawPayload.dropFirst(4))
         )
     }
 

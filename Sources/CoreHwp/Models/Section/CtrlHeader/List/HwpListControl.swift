@@ -48,6 +48,22 @@ public struct HwpListControlList: HwpPrimitive {
     public var headerUnknownChildren: [HwpUnknownRecord]
     /** 리스트 안의 문단 */
     public var paragraphArray: [HwpParagraph]
+    /** 글상자 리스트일 때의 텍스트 여백/최대 폭 (표 90). 글상자가 아니면 nil. */
+    public var textBoxInfo: HwpTextBoxListInfo?
+
+    public init(
+        header: HwpListHeader,
+        headerRawPayload: Data,
+        headerUnknownChildren: [HwpUnknownRecord],
+        paragraphArray: [HwpParagraph],
+        textBoxInfo: HwpTextBoxListInfo? = nil
+    ) {
+        self.header = header
+        self.headerRawPayload = headerRawPayload
+        self.headerUnknownChildren = headerUnknownChildren
+        self.paragraphArray = paragraphArray
+        self.textBoxInfo = textBoxInfo
+    }
 }
 
 private extension HwpListControl {

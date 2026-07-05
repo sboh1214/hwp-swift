@@ -31,14 +31,12 @@ final class HwpFootnoteLayoutTests: XCTestCase {
     }
 
     func testSingleBlankFootnoteReturnsOneBlock() {
-        let paragraph = CoreHwp.HwpParagraph()
-        let result = layout.layout(footnotes: [paragraph], onPage: geometry, index: index)
+        let result = layout.layout(footnotes: [input(number: 1)], onPage: geometry, index: index)
         expect(result.count) == 1
     }
 
     func testSingleBlockHasNonEmptySeparatorLine() {
-        let paragraph = CoreHwp.HwpParagraph()
-        let result = layout.layout(footnotes: [paragraph], onPage: geometry, index: index)
+        let result = layout.layout(footnotes: [input(number: 1)], onPage: geometry, index: index)
         guard let block = result.first else {
             fail("Expected at least one block")
             return
@@ -47,51 +45,54 @@ final class HwpFootnoteLayoutTests: XCTestCase {
         expect(block.separatorLine.height) > 0
     }
 
-    func testSeparatorWidthIsAtLeast30PercentOfContentWidth() {
-        let paragraph = CoreHwp.HwpParagraph()
-        let result = layout.layout(footnotes: [paragraph], onPage: geometry, index: index)
+    func testSeparatorWidthWithoutShapeIsOneThirdOfContentWidth() {
+        let result = layout.layout(footnotes: [input(number: 1)], onPage: geometry, index: index)
         guard let block = result.first else {
             fail("Expected at least one block")
             return
         }
-        let expectedMinWidth = geometry.contentFrame.width * 0.3
-        expect(block.separatorLine.width) >= expectedMinWidth
+        let expected = geometry.contentFrame.width / 3
+        expect(block.separatorLine.width).to(beCloseTo(expected, within: 0.01))
     }
 
-    func testSeparatorWidthIsExactly30PercentOfContentWidth() {
-        let paragraph = CoreHwp.HwpParagraph()
-        let result = layout.layout(footnotes: [paragraph], onPage: geometry, index: index)
-        guard let block = result.first else {
-            fail("Expected at least one block")
-            return
-        }
-        let expected = geometry.contentFrame.width * 0.3
-        expect(block.separatorLine.width) == expected
+    func testBlockNumberComesFromInput() {
+        let result = layout.layout(footnotes: [input(number: 7)], onPage: geometry, index: index)
+        expect(result.first?.number) == 7
     }
 
-    func testBlockNumberStartsAtOne() {
-        let paragraph = CoreHwp.HwpParagraph()
-        let result = layout.layout(footnotes: [paragraph], onPage: geometry, index: index)
-        expect(result.first?.number) == 1
-    }
-
-    func testMultipleFootnotesAreNumberedSequentially() {
-        let paragraphs = [CoreHwp.HwpParagraph(), CoreHwp.HwpParagraph(), CoreHwp.HwpParagraph()]
-        let result = layout.layout(footnotes: paragraphs, onPage: geometry, index: index)
+    func testMultipleFootnotesKeepInputNumbers() {
+        let footnotes = [input(number: 1), input(number: 2), input(number: 3)]
+        let result = layout.layout(footnotes: footnotes, onPage: geometry, index: index)
+        expect(result.count) == 3
         for (idx, block) in result.enumerated() {
             expect(block.number) == idx + 1
         }
     }
 
+    func testBlocksStackBelowSeparator() {
+        let footnotes = [input(number: 1), input(number: 2)]
+        let result = layout.layout(footnotes: footnotes, onPage: geometry, index: index)
+        guard result.count == 2 else {
+            fail("Expected two blocks")
+            return
+        }
+        expect(result[0].frame.minY) >= result[0].separatorLine.maxY
+        expect(result[1].frame.minY) >= result[0].frame.maxY
+    }
+
     func testBlockFrameIsWithinReservedArea() {
-        let paragraph = CoreHwp.HwpParagraph()
-        let result = layout.layout(footnotes: [paragraph], onPage: geometry, index: index)
+        let result = layout.layout(footnotes: [input(number: 1)], onPage: geometry, index: index)
         guard let block = result.first else {
             fail("Expected at least one block")
             return
         }
-        let reservedTop = geometry.contentFrame.maxY - geometry.contentFrame.height * 0.3
+        // 각주 영역은 최대 콘텐츠 높이의 절반까지만 확보된다.
+        let reservedTop = geometry.contentFrame.maxY - geometry.contentFrame.height / 2
         expect(block.frame.minY) >= reservedTop
         expect(block.frame.maxY) <= geometry.contentFrame.maxY + 1
+    }
+
+    private func input(number: Int) -> HwpFootnoteLayout.Input {
+        HwpFootnoteLayout.Input(paragraph: CoreHwp.HwpParagraph(), number: number)
     }
 }

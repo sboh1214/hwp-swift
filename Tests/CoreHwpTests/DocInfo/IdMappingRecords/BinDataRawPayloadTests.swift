@@ -356,7 +356,7 @@ final class BinDataRawPayloadTests: XCTestCase {
         let decodedBinData = try decodeRoundTrip(HwpBinData.load(binDataPayload))
 
         expect(decodedBinaryData.name) == "BIN0042.JPG"
-        expect(decodedBinaryData.streamId) == 42
+        expect(decodedBinaryData.streamId) == 0x42
         expect(decodedBinaryData.extensionName) == "JPG"
         expect(decodedBinaryData.data) == binaryPayload
         expect(decodedBinData.rawPayload) == binDataPayload

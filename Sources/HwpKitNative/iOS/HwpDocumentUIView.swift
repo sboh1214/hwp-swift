@@ -10,6 +10,7 @@
                 guard document != oldValue else { return }
                 pageLayers.values.forEach { $0.removeFromSuperlayer() }
                 pageLayers.removeAll()
+                rebuildImageProvider()
                 rebuildPageOrigins()
                 updateContentSize()
                 updateVisiblePages(range: 0 ..< min(document?.pages.count ?? 0, 3))
@@ -18,7 +19,7 @@
         }
 
         public var documentActor: HwpDocumentActor?
-        public var imageCache: HwpImageCache
+        public private(set) var imageCache: HwpImageCache
         public var zoomScale: CGFloat = 1.0 {
             didSet {
                 if scrollView.zoomScale != zoomScale {
@@ -40,6 +41,7 @@
         private let defaultPageSize = CGSize(width: 595, height: 842)
         /// Prefix sums of page Y origins so frame lookups are O(1) during scrolling.
         private var pageOriginsY: [CGFloat] = []
+        private var imageProvider: HwpPageImageProvider?
 
         override public init(frame: CGRect) {
             imageCache = HwpImageCache()
@@ -73,11 +75,12 @@
                 let layer = HwpPageLayer()
                 layer.frame = frameForPage(at: index)
                 layer.pageHeight = layer.frame.height
-                layer.backgroundColor = UIColor.white.cgColor
-                layer.shadowColor = UIColor.black.cgColor
+                layer.backgroundColor = PlatformColor.white.cgColor
+                layer.shadowColor = PlatformColor.black.cgColor
                 layer.shadowOpacity = 0.12
                 layer.shadowRadius = 4
                 layer.shadowOffset = CGSize(width: 0, height: -1)
+                layer.imageProvider = imageProvider
                 layer.paintList = paintListForPage(at: index)
                 contentView.layer.addSublayer(layer)
                 pageLayers[index] = layer
@@ -162,6 +165,28 @@
 
         private func notifyUnsupportedElements() {
             document?.unsupportedElements.forEach { onUnsupportedElement?($0) }
+        }
+
+        private func rebuildImageProvider() {
+            guard let document, !document.imageStore.isEmpty else {
+                imageProvider = nil
+                return
+            }
+            // binItemId는 문서-로컬 키이므로 문서마다 새 캐시를 쓴다
+            // (이전 문서의 동일 키 이미지 재사용 방지).
+            imageCache = HwpImageCache()
+            let provider = HwpPageImageProvider(store: document.imageStore, cache: imageCache)
+            provider.onImageResolved = { [weak self] key in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    for layer in self.pageLayers.values
+                        where layer.containsImageReference(key)
+                    {
+                        layer.setNeedsDisplay()
+                    }
+                }
+            }
+            imageProvider = provider
         }
 
         private func rebuildPageOrigins() {
