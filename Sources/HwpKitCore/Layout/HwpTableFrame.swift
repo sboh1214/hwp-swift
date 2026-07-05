@@ -41,6 +41,22 @@ public struct HwpBorderSet: Sendable, Hashable {
     }
 }
 
+/// 셀 안에 재귀 레이아웃된 중첩 표.
+public struct HwpNestedTableFrame: @unchecked Sendable, Hashable {
+    /// 바깥 표-로컬 좌표계에서 중첩 표가 차지하는 영역
+    public let rect: CGRect
+    /// 중첩 표 자체 레이아웃 (origin 0,0 좌표계)
+    public let table: HwpTableFrame
+    /// 원본 컨트롤 참조 (편집 대비)
+    public let controlInstanceId: UInt32
+
+    public init(rect: CGRect, table: HwpTableFrame, controlInstanceId: UInt32) {
+        self.rect = rect
+        self.table = table
+        self.controlInstanceId = controlInstanceId
+    }
+}
+
 public struct HwpTableCellFrame: @unchecked Sendable, Hashable {
     /// 표-로컬 좌표계 (origin 0,0 top-left, y-down)의 셀 영역
     public let cellFrame: CGRect
@@ -53,6 +69,8 @@ public struct HwpTableCellFrame: @unchecked Sendable, Hashable {
     public let paragraphs: [HwpLaidOutParagraph]
     public let borders: HwpBorderSet
     public let fillColor: HwpRGBColor?
+    /// 셀 안 중첩 표 (문단 뒤에 쌓인다)
+    public let nestedTables: [HwpNestedTableFrame]
 
     public init(
         cellFrame: CGRect,
@@ -62,7 +80,8 @@ public struct HwpTableCellFrame: @unchecked Sendable, Hashable {
         columnSpan: Int,
         paragraphs: [HwpLaidOutParagraph],
         borders: HwpBorderSet,
-        fillColor: HwpRGBColor?
+        fillColor: HwpRGBColor?,
+        nestedTables: [HwpNestedTableFrame] = []
     ) {
         self.cellFrame = cellFrame
         self.row = row
@@ -72,6 +91,7 @@ public struct HwpTableCellFrame: @unchecked Sendable, Hashable {
         self.paragraphs = paragraphs
         self.borders = borders
         self.fillColor = fillColor
+        self.nestedTables = nestedTables
     }
 }
 

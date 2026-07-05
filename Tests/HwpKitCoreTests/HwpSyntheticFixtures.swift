@@ -67,6 +67,85 @@ enum HwpSynthetic {
         return sectionDef
     }
 
+    /// 셀 하나 (주소/크기 지정, 단위: HWPUNIT)
+    static func tableCell(
+        row: Int,
+        column: Int,
+        width: UInt32,
+        height: UInt32,
+        paragraphs: [CoreHwp.HwpParagraph]
+    ) -> CoreHwp.HwpTableCell {
+        CoreHwp.HwpTableCell(
+            header: CoreHwp.HwpTableCellHeader(
+                paragraphCount: Int32(paragraphs.count),
+                property: 0,
+                propertyInfo: CoreHwp.HwpListHeaderProperty(),
+                listHeaderWidthRef: 0,
+                cellPropertyInfo: CoreHwp.HwpTableCellHeaderProperty(rawValue: 0),
+                isHeader: false,
+                cellProperty: CoreHwp.HwpTableCellProperty(
+                    columnAddress: UInt16(column),
+                    rowAddress: UInt16(row),
+                    width: width,
+                    height: height
+                ),
+                rawTrailing: Data(),
+                rawPayload: Data(),
+                unknownChildren: []
+            ),
+            paragraphArray: paragraphs
+        )
+    }
+
+    /// 표 컨트롤. cellParagraphs는 [행][열] 순서의 문단 배열.
+    /// property는 표 76 속성 u32 (bits 0-1 = 쪽 경계 나눔: 0 없음, 2 나눔).
+    static func table(
+        cellWidth: UInt32,
+        rowHeights: [UInt32],
+        property: UInt32 = 2,
+        cellParagraphs: [[[CoreHwp.HwpParagraph]]]
+    ) -> CoreHwp.HwpTable {
+        let rowCount = cellParagraphs.count
+        let columnCount = cellParagraphs.first?.count ?? 0
+        var rowSize = Data()
+        for _ in 0 ..< rowCount {
+            withUnsafeBytes(of: UInt16(columnCount).littleEndian) {
+                rowSize.append(contentsOf: $0)
+            }
+        }
+        var cells: [CoreHwp.HwpTableCell] = []
+        for (rowIndex, columns) in cellParagraphs.enumerated() {
+            for (columnIndex, paragraphs) in columns.enumerated() {
+                cells.append(tableCell(
+                    row: rowIndex,
+                    column: columnIndex,
+                    width: cellWidth,
+                    height: rowHeights[rowIndex],
+                    paragraphs: paragraphs
+                ))
+            }
+        }
+        return CoreHwp.HwpTable(
+            property: CoreHwp.HwpTableProperty(
+                property: property,
+                rowCount: UInt16(rowCount),
+                columnCount: UInt16(columnCount),
+                cellSpacing: 0,
+                leftInnerMargin: 0,
+                rightInnerMargin: 0,
+                topInnerMargin: 0,
+                bottomInnerMargin: 0,
+                rowSize: [UInt8](rowSize),
+                borderFillId: 0,
+                validZoneInfoSize: nil,
+                zonePropertyArray: nil,
+                rawPayload: Data(),
+                rawTrailing: Data()
+            ),
+            cellArray: cells
+        )
+    }
+
     /// 빈 문서의 첫 구역을 기반으로, 첫 문단 컨트롤과 본문 문단을 구성한 구역을 만든다.
     static func section(
         firstParagraphControls: [CoreHwp.HwpCtrlId],

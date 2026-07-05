@@ -4,22 +4,23 @@ import CoreText
 import Foundation
 
 public struct HwpTableLayout {
-    private let fontResolver: HwpFontResolver
+    let fontResolver: HwpFontResolver
 
     public init(fontResolver: HwpFontResolver = HwpFontResolver()) {
         self.fontResolver = fontResolver
     }
 
+    /// 재귀 중첩 표 레이아웃 깊이 상한 (바깥 표 = 0)
+    static let maximumNestingDepth = 3
+
     /// 표 하나를 레이아웃한다. 페이지 분할은 호출자(paginator)가 row 단위로 수행한다.
+    /// 셀 안 중첩 표는 depth 3까지 재귀 레이아웃한다.
     public func layout(
         table: CoreHwp.HwpTable,
         availableWidth: CGFloat,
-        index: HwpIndex
+        index: HwpIndex,
+        depth: Int = 0
     ) -> Result<HwpTableFrame, HwpUnsupportedElement> {
-        if containsNestedTable(table) {
-            return .failure(HwpUnsupportedElement(kind: .placeholder, page: 0, hint: "표: 중첩 표"))
-        }
-
         let property = table.tableProperty
         let rowCount = max(Int(property.rowCount), property.rowCellCounts.count)
         let columnCount = Int(property.columnCount)
@@ -29,7 +30,7 @@ public struct HwpTableLayout {
 
         let outerWidth = resolvedOuterWidth(table: table, availableWidth: availableWidth)
         let metrics = TableMetrics(property: property)
-        let context = LayoutContext(table: table, metrics: metrics, index: index)
+        let context = LayoutContext(table: table, metrics: metrics, index: index, depth: depth)
         let columnWidths = resolvedColumnWidths(
             table: table,
             columnCount: columnCount,
@@ -66,7 +67,7 @@ public struct HwpTableLayout {
     }
 }
 
-private extension HwpTableLayout {
+extension HwpTableLayout {
     struct TableMetrics {
         let spacing: CGFloat
         let innerLeft: CGFloat
@@ -74,8 +75,13 @@ private extension HwpTableLayout {
         let innerTop: CGFloat
         let innerBottom: CGFloat
 
-        var innerWidthAdjustment: CGFloat { innerLeft + innerRight }
-        var innerHeightAdjustment: CGFloat { innerTop + innerBottom }
+        var innerWidthAdjustment: CGFloat {
+            innerLeft + innerRight
+        }
+
+        var innerHeightAdjustment: CGFloat {
+            innerTop + innerBottom
+        }
 
         init(property: CoreHwp.HwpTableProperty) {
             spacing = max(0, HwpUnits.points(fromHwpUnit16: property.cellSpacing))
@@ -91,6 +97,8 @@ private extension HwpTableLayout {
         let table: CoreHwp.HwpTable
         let metrics: TableMetrics
         let index: HwpIndex
+        /// 현재 표의 중첩 깊이 (바깥 표 = 0)
+        let depth: Int
     }
 
     /// 셀 4방향 안쪽 여백 (pt)
@@ -106,6 +114,19 @@ private extension HwpTableLayout {
         let column: Int
     }
 
+    /// 셀 안 문단 하나의 레이아웃 결과 (문단 텍스트 + 그 문단에 붙은 중첩 표)
+    struct PlacedCellContent {
+        let paragraph: CoreHwp.HwpParagraph
+        let frame: HwpParagraphFrame
+        let nestedTables: [(instanceId: UInt32, frame: HwpTableFrame)]
+
+        var totalHeight: CGFloat {
+            frame.totalHeight + nestedTables.reduce(CGFloat(0)) {
+                $0 + $1.frame.outerFrame.height
+            }
+        }
+    }
+
     struct PlacedCell {
         let row: Int
         let column: Int
@@ -114,18 +135,7 @@ private extension HwpTableLayout {
         let contentHeight: CGFloat
         let authoredHeight: CGFloat
         let cell: CoreHwp.HwpTableCell
-        let paragraphSources: [(paragraph: CoreHwp.HwpParagraph, frame: HwpParagraphFrame)]
-    }
-
-    func containsNestedTable(_ table: CoreHwp.HwpTable) -> Bool {
-        table.cellArray.contains { cell in
-            cell.paragraphArray.contains { paragraph in
-                paragraph.ctrlHeaderArray?.contains { ctrl in
-                    if case .table = ctrl { return true }
-                    return false
-                } ?? false
-            }
-        }
+        let contents: [PlacedCellContent]
     }
 
     func emptyFrame(availableWidth: CGFloat) -> HwpTableFrame {
@@ -185,8 +195,6 @@ private extension HwpTableLayout {
         columnCount: Int,
         columnWidths: [CGFloat]
     ) -> [PlacedCell] {
-        let textBuilder = HwpTextRunBuilder(index: context.index, fontResolver: fontResolver)
-        let paragraphLayout = HwpParagraphLayout()
         var placedCells: [PlacedCell] = []
         var occupied = Set<GridPosition>()
 
@@ -197,47 +205,92 @@ private extension HwpTableLayout {
                 columnCount: columnCount,
                 occupied: &occupied
             ) else { continue }
-
-            let spannedWidth = width(
-                from: placement.column,
-                span: placement.columnSpan,
-                columnWidths: columnWidths,
-                spacing: context.metrics.spacing
-            )
-            let margins = cellMargins(for: cell, metrics: context.metrics)
-            let innerWidth = max(1, spannedWidth - margins.left - margins.right)
-
-            var paragraphSources: [(CoreHwp.HwpParagraph, HwpParagraphFrame)] = []
-            for paragraph in cell.paragraphArray {
-                let attributed = textBuilder.build(paragraph: paragraph)
-                let paraShape = context.index.paraShape(
-                    id: UInt32(paragraph.paraHeader.paraShapeId)
-                ) ?? context.index.paraShape(id: 0) ?? CoreHwp.HwpParaShape()
-                let frame = paragraphLayout.layout(
-                    attributedString: attributed,
-                    paraShape: paraShape,
-                    columnWidth: innerWidth
-                )
-                paragraphSources.append((paragraph, frame))
-            }
-            let contentHeight = paragraphSources.reduce(CGFloat(0)) { $0 + $1.1.totalHeight }
-                + margins.top + margins.bottom
-            let authoredHeight = cell.header.cellProperty.map {
-                HwpUnits.points(fromHwpUnitU: $0.height)
-            } ?? 0
-
-            placedCells.append(PlacedCell(
-                row: placement.row,
-                column: placement.column,
-                rowSpan: placement.rowSpan,
-                columnSpan: placement.columnSpan,
-                contentHeight: contentHeight,
-                authoredHeight: authoredHeight,
-                cell: cell,
-                paragraphSources: paragraphSources.map { ($0.0, $0.1) }
+            placedCells.append(placedCell(
+                for: cell,
+                at: placement,
+                context: context,
+                columnWidths: columnWidths
             ))
         }
         return placedCells
+    }
+
+    /// 셀 하나의 문단/중첩 표 콘텐츠를 레이아웃해 PlacedCell로 만든다.
+    func placedCell(
+        for cell: CoreHwp.HwpTableCell,
+        at placement: Placement,
+        context: LayoutContext,
+        columnWidths: [CGFloat]
+    ) -> PlacedCell {
+        let textBuilder = HwpTextRunBuilder(index: context.index, fontResolver: fontResolver)
+        let paragraphLayout = HwpParagraphLayout()
+        let spannedWidth = width(
+            from: placement.column,
+            span: placement.columnSpan,
+            columnWidths: columnWidths,
+            spacing: context.metrics.spacing
+        )
+        let margins = cellMargins(for: cell, metrics: context.metrics)
+        let innerWidth = max(1, spannedWidth - margins.left - margins.right)
+
+        var contents: [PlacedCellContent] = []
+        for paragraph in cell.paragraphArray {
+            let attributed = textBuilder.build(paragraph: paragraph)
+            let paraShape = context.index.paraShape(
+                id: UInt32(paragraph.paraHeader.paraShapeId)
+            ) ?? context.index.paraShape(id: 0) ?? CoreHwp.HwpParaShape()
+            let frame = paragraphLayout.layout(
+                attributedString: attributed,
+                paraShape: paraShape,
+                columnWidth: innerWidth
+            )
+            contents.append(PlacedCellContent(
+                paragraph: paragraph,
+                frame: frame,
+                nestedTables: nestedTableFrames(
+                    in: paragraph,
+                    innerWidth: innerWidth,
+                    context: context
+                )
+            ))
+        }
+        let contentHeight = contents.reduce(CGFloat(0)) { $0 + $1.totalHeight }
+            + margins.top + margins.bottom
+        let authoredHeight = cell.header.cellProperty.map {
+            HwpUnits.points(fromHwpUnitU: $0.height)
+        } ?? 0
+
+        return PlacedCell(
+            row: placement.row,
+            column: placement.column,
+            rowSpan: placement.rowSpan,
+            columnSpan: placement.columnSpan,
+            contentHeight: contentHeight,
+            authoredHeight: authoredHeight,
+            cell: cell,
+            contents: contents
+        )
+    }
+
+    /// 셀 문단에 붙은 중첩 표들을 재귀 레이아웃한다 (깊이 상한 초과분은 생략).
+    func nestedTableFrames(
+        in paragraph: CoreHwp.HwpParagraph,
+        innerWidth: CGFloat,
+        context: LayoutContext
+    ) -> [(instanceId: UInt32, frame: HwpTableFrame)] {
+        guard context.depth < Self.maximumNestingDepth,
+              let ctrls = paragraph.ctrlHeaderArray
+        else { return [] }
+        return ctrls.compactMap { ctrl in
+            guard case let .table(nested) = ctrl else { return nil }
+            guard case let .success(frame) = layout(
+                table: nested,
+                availableWidth: innerWidth,
+                index: context.index,
+                depth: context.depth + 1
+            ) else { return nil }
+            return (nested.commonCtrlProperty.instanceId, frame)
+        }
     }
 
     struct Placement {
@@ -305,166 +358,5 @@ private extension HwpTableLayout {
             top: metrics.innerTop,
             bottom: metrics.innerBottom
         )
-    }
-
-    /// 행 높이 = max(저작된 셀 높이, 콘텐츠 높이). span 셀은 마지막 행에 나머지를 반영.
-    func resolvedRowHeights(
-        placed: [PlacedCell],
-        rowCount: Int,
-        defaultHeight: CGFloat
-    ) -> [CGFloat] {
-        var heights = [CGFloat](repeating: 0, count: rowCount)
-        for cell in placed where cell.rowSpan == 1 {
-            heights[cell.row] = max(
-                heights[cell.row],
-                max(cell.contentHeight, cell.authoredHeight)
-            )
-        }
-        for cell in placed where cell.rowSpan > 1 {
-            let needed = max(cell.contentHeight, cell.authoredHeight)
-            let spanEnd = min(cell.row + cell.rowSpan, rowCount)
-            let current = heights[cell.row ..< spanEnd].reduce(CGFloat(0), +)
-            if needed > current {
-                heights[spanEnd - 1] += needed - current
-            }
-        }
-        return heights.map { $0 > 0 ? $0 : defaultHeight }
-    }
-
-    func rows(
-        placed: [PlacedCell],
-        rowHeights: [CGFloat],
-        columnWidths: [CGFloat],
-        context: LayoutContext
-    ) -> [HwpTableRowFrame] {
-        var result: [HwpTableRowFrame] = []
-        result.reserveCapacity(rowHeights.count)
-        var rowOrigins: [CGFloat] = []
-        var yOffset = context.metrics.spacing
-        for height in rowHeights {
-            rowOrigins.append(yOffset)
-            yOffset += height + context.metrics.spacing
-        }
-
-        let rowWidth = columnWidths.reduce(CGFloat(0), +)
-            + context.metrics.spacing * CGFloat(columnWidths.count + 1)
-
-        for row in rowHeights.indices {
-            let cells = placed
-                .filter { $0.row == row }
-                .sorted { $0.column < $1.column }
-                .map { cell in
-                    cellFrame(
-                        for: cell,
-                        rowOrigins: rowOrigins,
-                        rowHeights: rowHeights,
-                        columnWidths: columnWidths,
-                        context: context
-                    )
-                }
-            result.append(HwpTableRowFrame(
-                rowFrame: CGRect(
-                    x: 0,
-                    y: rowOrigins[row],
-                    width: rowWidth,
-                    height: rowHeights[row]
-                ),
-                cells: cells
-            ))
-        }
-        return result
-    }
-
-    func cellFrame(
-        for cell: PlacedCell,
-        rowOrigins: [CGFloat],
-        rowHeights: [CGFloat],
-        columnWidths: [CGFloat],
-        context: LayoutContext
-    ) -> HwpTableCellFrame {
-        let metrics = context.metrics
-        let cellRect = CGRect(
-            x: xOffset(for: cell.column, columnWidths: columnWidths, spacing: metrics.spacing),
-            y: rowOrigins[cell.row],
-            width: width(
-                from: cell.column,
-                span: cell.columnSpan,
-                columnWidths: columnWidths,
-                spacing: metrics.spacing
-            ),
-            height: height(
-                from: cell.row,
-                span: cell.rowSpan,
-                rowHeights: rowHeights,
-                spacing: metrics.spacing
-            )
-        )
-        let margins = cellMargins(for: cell.cell, metrics: metrics)
-        let paragraphs = laidOutParagraphs(
-            for: cell,
-            in: cellRect,
-            margins: margins,
-            index: context.index
-        )
-
-        let resolved = resolvedBorderFill(
-            id: cell.cell.header.cellProperty?.borderFillId
-                ?? context.table.tableProperty.borderFillId,
-            index: context.index
-        )
-        return HwpTableCellFrame(
-            cellFrame: cellRect,
-            row: cell.row,
-            column: cell.column,
-            rowSpan: cell.rowSpan,
-            columnSpan: cell.columnSpan,
-            paragraphs: paragraphs,
-            borders: borders(from: resolved),
-            fillColor: fillColor(from: resolved)
-        )
-    }
-
-    /// 셀 안 문단들을 셀 여백 안쪽에 위에서 아래로 쌓는다.
-    func laidOutParagraphs(
-        for cell: PlacedCell,
-        in cellRect: CGRect,
-        margins: CellMargins,
-        index: HwpIndex
-    ) -> [HwpLaidOutParagraph] {
-        let textBuilder = HwpTextRunBuilder(index: index, fontResolver: fontResolver)
-        var paragraphY = cellRect.minY + margins.top
-        var paragraphs: [HwpLaidOutParagraph] = []
-        for (paragraph, frame) in cell.paragraphSources {
-            let rect = CGRect(
-                x: cellRect.minX + margins.left,
-                y: paragraphY,
-                width: max(1, cellRect.width - margins.left - margins.right),
-                height: frame.totalHeight
-            )
-            paragraphs.append(HwpLaidOutParagraph(
-                attributedString: textBuilder.build(paragraph: paragraph),
-                frame: frame,
-                rect: rect,
-                paragraphId: paragraph.paraHeader.paraId
-            ))
-            paragraphY += frame.totalHeight
-        }
-        return paragraphs
-    }
-
-    func width(from column: Int, span: Int, columnWidths: [CGFloat], spacing: CGFloat) -> CGFloat {
-        let last = min(column + span, columnWidths.count)
-        let widths = columnWidths[column ..< last].reduce(CGFloat(0), +)
-        return widths + spacing * CGFloat(max(0, span - 1))
-    }
-
-    func xOffset(for column: Int, columnWidths: [CGFloat], spacing: CGFloat) -> CGFloat {
-        spacing + columnWidths.prefix(column).reduce(CGFloat(0), +) + spacing * CGFloat(column)
-    }
-
-    func height(from row: Int, span: Int, rowHeights: [CGFloat], spacing: CGFloat) -> CGFloat {
-        let last = min(row + span, rowHeights.count)
-        let heights = rowHeights[row ..< last].reduce(CGFloat(0), +)
-        return heights + spacing * CGFloat(max(0, span - 1))
     }
 }

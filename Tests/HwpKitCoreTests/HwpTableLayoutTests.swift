@@ -87,7 +87,7 @@ import XCTest
             expect(frame.outerFrame.height) > 0
         }
 
-        func testNestedTableReturnsPlaceholderFailure() {
+        func testNestedTableLaysOutInsideHostCell() {
             let nested = table()
             var host = paragraph(text: "outer")
             host.ctrlHeaderArray = [.table(nested)]
@@ -103,12 +103,59 @@ import XCTest
                 index: index()
             )
 
-            guard case let .failure(element) = result else {
-                fail("expected nested table layout failure")
+            guard case let .success(frame) = result else {
+                fail("expected nested table layout success")
                 return
             }
-            expect(element.kind) == .placeholder
-            expect(element.hint) == "표: 중첩 표"
+            let cell = frame.rows[0].cells[0]
+            expect(cell.nestedTables.count) == 1
+            guard let nestedFrame = cell.nestedTables.first else { return }
+            // 중첩 표는 호스트 문단 아래에 쌓인다.
+            expect(nestedFrame.rect.minY)
+                >= (cell.paragraphs.first?.rect.maxY ?? 0) - 0.5
+            expect(nestedFrame.table.rows.count) == 2
+            let nestedTexts = nestedFrame.table.rows
+                .flatMap(\.cells)
+                .flatMap(\.paragraphs)
+                .map(\.attributedString.string)
+            expect(nestedTexts) == ["a", "b", "c", "d"]
+            // 셀 높이는 문단 + 중첩 표 높이를 포함한다.
+            expect(cell.cellFrame.maxY) >= nestedFrame.rect.maxY - 0.5
+        }
+
+        func testNestedTablesBeyondDepthLimitAreSkipped() {
+            // 5단계 사슬: root(0) → d1 → d2 → d3 (배치) → d4의 중첩(d5 상당)은 생략
+            var innermost = table(cells: [CoreHwp.HwpTableCell(
+                header: cellHeader(row: 0, column: 0, rowSpan: 1, columnSpan: 1),
+                paragraphArray: [paragraph(text: "depth5")]
+            )])
+            for depth in stride(from: 4, through: 1, by: -1) {
+                var host = paragraph(text: "depth\(depth)")
+                host.ctrlHeaderArray = [.table(innermost)]
+                innermost = table(cells: [CoreHwp.HwpTableCell(
+                    header: cellHeader(row: 0, column: 0, rowSpan: 1, columnSpan: 1),
+                    paragraphArray: [host]
+                )])
+            }
+
+            let result = layout().layout(
+                table: innermost,
+                availableWidth: 200,
+                index: index()
+            )
+
+            guard case let .success(frame) = result else {
+                fail("expected table layout success")
+                return
+            }
+            var cell = frame.rows[0].cells[0]
+            var reachedDepth = 0
+            while let nested = cell.nestedTables.first {
+                reachedDepth += 1
+                guard let nestedCell = nested.table.rows.first?.cells.first else { break }
+                cell = nestedCell
+            }
+            expect(reachedDepth) == 3
         }
 
         func testAuthoredCellWidthsDriveColumnWidths() {

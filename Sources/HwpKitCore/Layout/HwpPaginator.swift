@@ -131,20 +131,14 @@ private extension HwpPaginator {
         let pageCountBefore = cachedPages.count
 
         while let paragraph = nextParagraph() {
-            if let sectionDef = Self.sectionDef(in: paragraph) {
-                if !currentBlocks.isEmpty || contentHeightUsed > 0 {
-                    cacheCurrentPage()
-                    return
-                }
-                currentPageGeometry = HwpPageGeometry.compute(
-                    pageDef: sectionDef.pageDef,
-                    sectionDef: sectionDef
-                )
-                currentSectionDef = sectionDef
-                if sectionDef.footNoteShape.numberingModeRawValue != 0 {
-                    footnoteCounter = Self.initialFootnoteNumber(for: sectionDef)
-                }
+            // 새 구역 정의: 진행 중인 페이지를 먼저 확정한다.
+            if Self.sectionDef(in: paragraph) != nil,
+               !currentBlocks.isEmpty || contentHeightUsed > 0
+            {
+                cacheCurrentPage()
+                return
             }
+            applySectionDef(in: paragraph)
 
             let attributedString = HwpTextRunBuilder(index: index, fontResolver: fontResolver)
                 .build(paragraph: paragraph)
@@ -185,6 +179,19 @@ private extension HwpPaginator {
             cacheCurrentPage()
         }
         didFinishPagination = true
+    }
+
+    /// 문단에 붙은 구역 정의를 현재 페이지 지오메트리에 반영한다.
+    func applySectionDef(in paragraph: CoreHwp.HwpParagraph) {
+        guard let sectionDef = Self.sectionDef(in: paragraph) else { return }
+        currentPageGeometry = HwpPageGeometry.compute(
+            pageDef: sectionDef.pageDef,
+            sectionDef: sectionDef
+        )
+        currentSectionDef = sectionDef
+        if sectionDef.footNoteShape.numberingModeRawValue != 0 {
+            footnoteCounter = Self.initialFootnoteNumber(for: sectionDef)
+        }
     }
 
     func layout(
@@ -321,12 +328,20 @@ private extension HwpPaginator {
 
     /// 문단에 붙은 컨트롤을 실제 레이아웃 엔진으로 방출한다.
     /// depth는 컨테이너 안 컨테이너 재귀 제한 (표 안 글상자 등).
-    func appendControlBlocks(from paragraph: CoreHwp.HwpParagraph, depth: Int = 0) {
+    /// inTableCell이면 중첩 표는 HwpTableLayout이 이미 셀 안에 재귀 배치했으므로
+    /// 별도 블록으로 방출하지 않는다.
+    func appendControlBlocks(
+        from paragraph: CoreHwp.HwpParagraph,
+        depth: Int = 0,
+        inTableCell: Bool = false
+    ) {
         guard let ctrls = paragraph.ctrlHeaderArray else { return }
         for ctrl in ctrls {
             switch ctrl {
             case let .table(table):
-                appendTableBlocks(table)
+                if !inTableCell {
+                    appendTableBlocks(table)
+                }
                 appendNestedControlBlocks(of: ctrl, depth: depth)
             case let .genShapeObject(genShape):
                 appendShapeObjectBlocks(
@@ -369,8 +384,9 @@ private extension HwpPaginator {
     /// 컨테이너 문단 안에 중첩된 컨트롤 (표 셀 안 글상자/이미지 등)을 재귀 방출한다.
     func appendNestedControlBlocks(of ctrl: CoreHwp.HwpCtrlId, depth: Int) {
         guard depth < 3 else { return }
+        let isTable = if case .table = ctrl { true } else { false }
         for (nested, _) in childParagraphs(of: ctrl) where nested.ctrlHeaderArray != nil {
-            appendControlBlocks(from: nested, depth: depth + 1)
+            appendControlBlocks(from: nested, depth: depth + 1, inTableCell: isTable)
         }
     }
 
@@ -394,14 +410,33 @@ private extension HwpPaginator {
         case let .success(frame):
             appendTableSegments(
                 frame,
-                instanceId: table.commonCtrlProperty.instanceId
+                instanceId: table.commonCtrlProperty.instanceId,
+                pageBreakMode: table.tableProperty.pageBreakMode
             )
         }
     }
 
     /// 표를 남은 공간에 맞춰 row 단위로 잘라 페이지에 흘린다.
-    func appendTableSegments(_ frame: HwpTableFrame, instanceId: UInt32) {
+    ///
+    /// - 쪽 경계 나눔이 없으면 (표 76 bits 0-1 == 0) 표를 통째로 두고, 남은
+    ///   공간에 안 맞으면 새 페이지로 넘긴다.
+    /// - row 하나가 빈 페이지보다 크면 남은 높이에서 잘라 아래쪽을 이월한다.
+    func appendTableSegments(
+        _ frame: HwpTableFrame,
+        instanceId: UInt32,
+        pageBreakMode: CoreHwp.HwpTableProperty.HwpTablePageBreakMode = .split
+    ) {
         guard !frame.rows.isEmpty else { return }
+
+        if pageBreakMode == .none {
+            let tableHeight = frame.rows.reduce(CGFloat(0)) { max($0, $1.rowFrame.maxY) }
+            if contentHeightUsed > 0, contentHeightUsed + tableHeight > effectiveContentHeight {
+                cacheCurrentPage()
+            }
+            appendTableSegmentBlock(rows: frame.rows, original: frame, instanceId: instanceId)
+            return
+        }
+
         var remainingRows = frame.rows
 
         while !remainingRows.isEmpty {
@@ -416,6 +451,17 @@ private extension HwpPaginator {
             while let row = remainingRows.first {
                 let rowHeight = row.rowFrame.height
                 if segmentHeight > 0, segmentHeight + rowHeight > remaining {
+                    break
+                }
+                if segmentHeight == 0, rowHeight > remaining {
+                    // 빈 페이지보다 큰 row: 남은 높이에서 잘라 나머지를 이월한다.
+                    let fragments = sliced(
+                        row: row,
+                        at: row.rowFrame.minY + max(1, remaining)
+                    )
+                    segmentRows.append(fragments.top)
+                    segmentHeight += fragments.top.rowFrame.height
+                    remainingRows[0] = fragments.bottom
                     break
                 }
                 segmentRows.append(row)
@@ -435,6 +481,61 @@ private extension HwpPaginator {
 
     func minimumRowHeight(_ rows: [HwpTableRowFrame]) -> CGFloat {
         rows.first?.rowFrame.height ?? 1
+    }
+
+    /// row를 표-로컬 y = cutY에서 위/아래 조각으로 나눈다.
+    /// 문단/중첩 표는 시작 y가 cutY 위면 위 조각에 남는다 (경계를 넘는 텍스트는 클립 전제).
+    private func sliced(
+        row: HwpTableRowFrame,
+        at cutY: CGFloat
+    ) -> (top: HwpTableRowFrame, bottom: HwpTableRowFrame) {
+        func split(_ rect: CGRect) -> (top: CGRect, bottom: CGRect) {
+            let topHeight = max(0, min(rect.height, cutY - rect.minY))
+            let top = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: topHeight)
+            let bottom = CGRect(
+                x: rect.minX,
+                y: rect.minY + topHeight,
+                width: rect.width,
+                height: max(0, rect.height - topHeight)
+            )
+            return (top, bottom)
+        }
+
+        func splitCell(_ cell: HwpTableCellFrame) -> (HwpTableCellFrame, HwpTableCellFrame) {
+            let frames = split(cell.cellFrame)
+            let topParagraphs = cell.paragraphs.filter { $0.rect.minY < cutY }
+            let bottomParagraphs = cell.paragraphs.filter { $0.rect.minY >= cutY }
+            let topNested = cell.nestedTables.filter { $0.rect.minY < cutY }
+            let bottomNested = cell.nestedTables.filter { $0.rect.minY >= cutY }
+            func fragment(
+                _ frame: CGRect,
+                _ paragraphs: [HwpLaidOutParagraph],
+                _ nested: [HwpNestedTableFrame]
+            ) -> HwpTableCellFrame {
+                HwpTableCellFrame(
+                    cellFrame: frame,
+                    row: cell.row,
+                    column: cell.column,
+                    rowSpan: cell.rowSpan,
+                    columnSpan: cell.columnSpan,
+                    paragraphs: paragraphs,
+                    borders: cell.borders,
+                    fillColor: cell.fillColor,
+                    nestedTables: nested
+                )
+            }
+            return (
+                fragment(frames.top, topParagraphs, topNested),
+                fragment(frames.bottom, bottomParagraphs, bottomNested)
+            )
+        }
+
+        let rowFrames = split(row.rowFrame)
+        let cellFragments = row.cells.map(splitCell)
+        return (
+            HwpTableRowFrame(rowFrame: rowFrames.top, cells: cellFragments.map(\.0)),
+            HwpTableRowFrame(rowFrame: rowFrames.bottom, cells: cellFragments.map(\.1))
+        )
     }
 
     func appendTableSegmentBlock(
@@ -494,7 +595,14 @@ private extension HwpPaginator {
                         )
                     },
                     borders: cell.borders,
-                    fillColor: cell.fillColor
+                    fillColor: cell.fillColor,
+                    nestedTables: cell.nestedTables.map { nested in
+                        HwpNestedTableFrame(
+                            rect: nested.rect.offsetBy(dx: 0, dy: deltaY),
+                            table: nested.table,
+                            controlInstanceId: nested.controlInstanceId
+                        )
+                    }
                 )
             }
         )

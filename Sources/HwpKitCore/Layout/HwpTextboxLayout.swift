@@ -26,7 +26,9 @@ public struct HwpTextboxFrame: @unchecked Sendable, Hashable {
     }
 
     /// 하위 호환: 문단 지오메트리만 필요할 때
-    public var paragraphFrames: [HwpParagraphFrame] { paragraphs.map(\.frame) }
+    public var paragraphFrames: [HwpParagraphFrame] {
+        paragraphs.map(\.frame)
+    }
 }
 
 public struct HwpTextboxLayout {
@@ -149,7 +151,8 @@ public struct HwpTextboxLayout {
             appearance.borderWidth = width > 0 ? width : 1
         }
         if let fill = detail.fill, fill.hasSolidFill,
-           let background = fill.solidBackgroundColor {
+           let background = fill.solidBackgroundColor
+        {
             appearance.fillColor = HwpRGBColor(background)
         }
         return appearance

@@ -103,6 +103,16 @@ public struct HwpPaintListBuilder: Sendable {
                         lineWidth: max(paragraphRect.width, 1)
                     ))
                 }
+                // 중첩 표는 셀 안 위치를 origin으로 재귀 렌더한다.
+                for nested in cell.nestedTables {
+                    commands.append(contentsOf: tableCommands(
+                        nested.table,
+                        origin: CGPoint(
+                            x: origin.x + nested.rect.minX,
+                            y: origin.y + nested.rect.minY
+                        )
+                    ))
+                }
             }
         }
         return commands
