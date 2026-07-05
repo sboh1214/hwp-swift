@@ -123,23 +123,30 @@ public struct HwpTextRunBuilder {
             chunk.text += String(decoding: [lone], as: UTF16.self)
         }
         append(chunk, paragraph: paragraph, to: output)
-
-        // 문단 스타일 (정렬/들여쓰기/줄간격)을 문자열에 실어 렌더 (drawText 재조판)가
-        // 측정 레이아웃과 같은 조판을 쓰게 한다.
-        if output.length > 0,
-           let paraShape = index.paraShape(id: UInt32(paragraph.paraHeader.paraShapeId))
-           ?? index.paraShape(id: 0)
-        {
-            output.addAttribute(
-                kCTParagraphStyleAttributeName as NSAttributedString.Key,
-                value: HwpParagraphLayout.paragraphStyle(
-                    for: paraShape,
-                    attributedString: output
-                ),
-                range: NSRange(location: 0, length: output.length)
-            )
-        }
+        attachParagraphStyle(to: output, paragraph: paragraph)
         return output
+    }
+}
+
+private extension HwpTextRunBuilder {
+    /// 문단 스타일 (정렬/들여쓰기/줄간격)을 문자열에 실어 렌더 (drawText 재조판)가
+    /// 측정 레이아웃과 같은 조판을 쓰게 한다.
+    func attachParagraphStyle(
+        to output: NSMutableAttributedString,
+        paragraph: CoreHwp.HwpParagraph
+    ) {
+        guard output.length > 0,
+              let paraShape = index.paraShape(id: UInt32(paragraph.paraHeader.paraShapeId))
+              ?? index.paraShape(id: 0)
+        else { return }
+        output.addAttribute(
+            kCTParagraphStyleAttributeName as NSAttributedString.Key,
+            value: HwpParagraphLayout.paragraphStyle(
+                for: paraShape,
+                attributedString: output
+            ),
+            range: NSRange(location: 0, length: output.length)
+        )
     }
 }
 
