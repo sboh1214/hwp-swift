@@ -48,6 +48,8 @@ public actor HwpPaginator {
     private var bandTextBlocks: [(blockIndex: Int, lines: [HwpLineFrame])] = []
     /// 밴드에 텍스트 외 블록(표/개체/placeholder)이 있으면 균형 재배치를 하지 않는다
     private var bandHasNonTextContent = false
+    /// 방금 배치한 본문 문단 텍스트 블록 (줄 중간 treatAsChar 앵커의 기준)
+    private var currentParagraphContext: (blockFrame: CGRect, lines: [HwpLineFrame])?
 
     var cachedPages: [Int: HwpPage] = [:]
 
@@ -484,6 +486,8 @@ private extension HwpPaginator {
             source: HwpBlockSource(paragraphId: paragraphId)
         ))
         bandTextBlocks.append((currentBlocks.count - 1, lines))
+        // 줄 중간 앵커 기준은 라인 정보가 온전한 (분할되지 않은) 문단 블록만.
+        currentParagraphContext = lines.isEmpty ? nil : (frame, lines)
         contentHeightUsed += height
         markBandUsage()
     }
@@ -627,7 +631,9 @@ private extension HwpPaginator {
         inTableCell: Bool = false
     ) {
         guard let ctrls = paragraph.ctrlHeaderArray else { return }
-        for ctrl in ctrls {
+        for (ctrlIndex, ctrl) in ctrls.enumerated() {
+            // 줄 중간 앵커 문맥은 본문 문단 (depth 0)에서만 유효하다.
+            let anchorIndex = depth == 0 ? ctrlIndex : nil
             switch ctrl {
             case let .table(table):
                 if !inTableCell {
@@ -637,7 +643,8 @@ private extension HwpPaginator {
             case let .genShapeObject(genShape):
                 appendShapeObjectBlocks(
                     components: genShape.shapeComponentArray,
-                    commonProperty: genShape.commonCtrlProperty
+                    commonProperty: genShape.commonCtrlProperty,
+                    controlIndex: anchorIndex
                 )
                 appendNestedControlBlocks(of: ctrl, depth: depth)
             case let .shape(shape),
@@ -655,7 +662,8 @@ private extension HwpPaginator {
                 appendShapeObjectBlocks(
                     components: shape.shapeComponentArray,
                     commonProperty: shape.commonCtrlProperty
-                        ?? CoreHwp.HwpCommonCtrlProperty()
+                        ?? CoreHwp.HwpCommonCtrlProperty(),
+                    controlIndex: anchorIndex
                 )
                 appendNestedControlBlocks(of: ctrl, depth: depth)
             case let .header(list):
@@ -904,7 +912,8 @@ private extension HwpPaginator {
 
     func appendShapeObjectBlocks(
         components: [CoreHwp.HwpShapeComponent],
-        commonProperty: CoreHwp.HwpCommonCtrlProperty
+        commonProperty: CoreHwp.HwpCommonCtrlProperty,
+        controlIndex: Int? = nil
     ) {
         let size = objectSize(commonProperty: commonProperty, components: components)
 
@@ -919,7 +928,8 @@ private extension HwpPaginator {
                 size: textboxFrame.outerFrame.size,
                 payload: .textbox(textboxFrame),
                 commonProperty: commonProperty,
-                attributedText: textboxFrame.paragraphs.map(\.attributedString)
+                attributedText: textboxFrame.paragraphs.map(\.attributedString),
+                controlIndex: controlIndex
             )
         }
 
@@ -929,7 +939,8 @@ private extension HwpPaginator {
                     picture: picture,
                     component: component,
                     commonProperty: commonProperty,
-                    size: size
+                    size: size,
+                    controlIndex: controlIndex
                 )
             } else if component.textBoxListArray.isEmpty,
                       let geometry = HwpShapeGeometry.build(component: component, size: size)
@@ -938,7 +949,8 @@ private extension HwpPaginator {
                     kind: .shape,
                     size: size,
                     payload: .shape(geometry),
-                    commonProperty: commonProperty
+                    commonProperty: commonProperty,
+                    controlIndex: controlIndex
                 )
             }
         }
@@ -961,7 +973,8 @@ private extension HwpPaginator {
         picture: CoreHwp.HwpShapeComponentPicture,
         component _: CoreHwp.HwpShapeComponent,
         commonProperty: CoreHwp.HwpCommonCtrlProperty,
-        size: CGSize
+        size: CGSize,
+        controlIndex: Int? = nil
     ) {
         let property = picture.pictureProperty
         let binItemId = property.map { UInt32($0.binItemId) }
@@ -994,13 +1007,17 @@ private extension HwpPaginator {
                 borderColor: borderColor,
                 borderWidth: borderWidth
             )),
-            commonProperty: commonProperty
+            commonProperty: commonProperty,
+            controlIndex: controlIndex
         )
     }
 
     /// 앵커 규칙 (표 70)에 따라 개체 블록을 배치한다.
     ///
-    /// - 글자처럼 취급 (treatAsChar) 또는 본문 흐름을 차지하는 wrap:
+    /// - 글자처럼 취급 (treatAsChar)이고 문단 라인에서 U+FFFC 앵커를 찾으면:
+    ///   그 라인 위치에 배치한다 (줄 높이는 run delegate가 이미 예약 —
+    ///   흐름 높이를 추가 소비하지 않는다).
+    /// - treatAsChar (앵커 없음) 또는 본문 흐름을 차지하는 wrap:
     ///   현재 흐름 위치에 배치하고 높이를 소비한다.
     /// - 나머지 (글 앞/뒤로 포함 anchored): 기준 (쪽/문단) + 오프셋 위치에 배치하고
     ///   본문 흐름을 소비하지 않는다.
@@ -1009,11 +1026,25 @@ private extension HwpPaginator {
         size: CGSize,
         payload: HwpBlockPayload,
         commonProperty: CoreHwp.HwpCommonCtrlProperty,
-        attributedText: [NSAttributedString] = []
+        attributedText: [NSAttributedString] = [],
+        controlIndex: Int? = nil
     ) {
         let info = commonProperty.propertyInfo
         let contentFrame = currentPageGeometry.contentFrame
         let combinedText = combinedAttributedString(attributedText)
+
+        if info.treatAsChar,
+           appendInlineAnchoredBlock(
+               kind: kind,
+               size: size,
+               payload: payload,
+               attributedString: combinedText,
+               instanceId: commonProperty.instanceId,
+               controlIndex: controlIndex
+           )
+        {
+            return
+        }
 
         if info.treatAsChar || consumesFlow(info) {
             appendFlowBlock(
@@ -1091,6 +1122,60 @@ private extension HwpPaginator {
         bandHasNonTextContent = true
         contentHeightUsed += size.height
         markBandUsage()
+    }
+
+    /// treatAsChar 개체를 FFFC 앵커 라인 위치에 배치한다. 앵커가 없으면 false
+    /// (호출자가 flow 배치로 폴백). 줄 높이는 run delegate가 이미 예약했으므로
+    /// 흐름 높이를 추가 소비하지 않는다.
+    private func appendInlineAnchoredBlock(
+        kind: HwpBlockKind,
+        size: CGSize,
+        payload: HwpBlockPayload,
+        attributedString: NSAttributedString?,
+        instanceId: UInt32,
+        controlIndex: Int?
+    ) -> Bool {
+        guard let position = inlineAnchorPosition(for: controlIndex) else { return false }
+        let contentFrame = currentPageGeometry.contentFrame
+        let frame = CGRect(
+            x: position.x,
+            y: position.y,
+            width: min(size.width, max(1, contentFrame.maxX - position.x)),
+            height: size.height
+        )
+        currentBlocks.append(AnyHwpBlock(
+            frame: frame,
+            kind: kind,
+            attributedString: attributedString,
+            payload: payload,
+            source: HwpBlockSource(controlInstanceId: instanceId)
+        ))
+        bandHasNonTextContent = true
+        return true
+    }
+
+    /// 방금 배치한 문단의 라인에서 controlIndex의 U+FFFC 앵커를 찾아
+    /// 개체의 페이지 좌표 (왼쪽 위)를 계산한다.
+    ///
+    /// 라인 baseline의 블록 내 y = 첫 라인 baseline(= lines[0].baseline) +
+    /// 라인 origin.y (첫 baseline 기준 delta). 개체 위 = baseline - 앵커 ascent
+    /// (run delegate가 예약한 개체 높이).
+    func inlineAnchorPosition(for controlIndex: Int?) -> CGPoint? {
+        guard let controlIndex,
+              let context = currentParagraphContext,
+              let firstBaseline = context.lines.first?.baseline
+        else { return nil }
+        for line in context.lines {
+            guard let anchor = line.inlineAnchors.first(where: {
+                $0.controlIndex == controlIndex
+            }) else { continue }
+            let baselineY = context.blockFrame.minY + firstBaseline + line.origin.y
+            return CGPoint(
+                x: context.blockFrame.minX + line.origin.x + anchor.xOffset,
+                y: baselineY - anchor.ascent
+            )
+        }
+        return nil
     }
 
     func consumesFlow(_ info: CoreHwp.HwpCommonCtrlPropertyInfo) -> Bool {

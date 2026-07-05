@@ -17,6 +17,8 @@ enum HwpSynthetic {
     static func textParagraph(_ text: String) throws -> CoreHwp.HwpParagraph {
         var paragraph = CoreHwp.HwpParagraph()
         paragraph.paraText = try CoreHwp.HwpParaText.load(utf16Data(text))
+        // 빈 문서 템플릿의 라인 캐시(10pt)가 CT 레이아웃 높이를 덮어쓰지 않게 비운다.
+        paragraph.paraLineSeg.paraLineSegInternalArray = []
         return paragraph
     }
 
@@ -65,6 +67,56 @@ enum HwpSynthetic {
         sectionDef.pageDef.width = pageWidth
         sectionDef.pageDef.height = pageHeight
         return sectionDef
+    }
+
+    /// 앞/뒤 텍스트 사이에 extended 컨트롤 문자(코드 11)가 있는 문단
+    static func paragraphWithInlineControl(
+        prefix: String,
+        suffix: String
+    ) -> CoreHwp.HwpParagraph {
+        var paragraph = CoreHwp.HwpParagraph()
+        var paraText = CoreHwp.HwpParaText()
+        paraText.charArray = prefix.utf16.map { CoreHwp.HwpChar(type: .char, value: $0) }
+            + [CoreHwp.HwpChar(type: .extended, value: 11)]
+            + suffix.utf16.map { CoreHwp.HwpChar(type: .char, value: $0) }
+        paragraph.paraText = paraText
+        paragraph.paraLineSeg.paraLineSegInternalArray = []
+        return paragraph
+    }
+
+    /// 글자처럼 취급 (treatAsChar) gso 개체.
+    /// 빈 shape component 하나 → 크기 bounding box 도형으로 렌더된다.
+    static func inlineShapeObject(
+        width: UInt32,
+        height: UInt32,
+        instanceId: UInt32 = 0
+    ) -> CoreHwp.HwpGenShapeObject {
+        var common = CoreHwp.HwpCommonCtrlProperty(commonCtrlId: .genShapeObject)
+        common.width = width
+        common.height = height
+        common.instanceId = instanceId
+        var info = CoreHwp.HwpCommonCtrlPropertyInfo()
+        info.treatAsChar = true
+        common.propertyInfo = info
+        return CoreHwp.HwpGenShapeObject(
+            commonCtrlProperty: common,
+            rawPayload: Data(),
+            rawTrailing: Data(),
+            shapeComponentArray: [CoreHwp.HwpShapeComponent(
+                rawCtrlId: nil,
+                ctrlId: nil,
+                rawPayload: Data(),
+                rawTrailing: nil,
+                pictureArray: [],
+                oleArray: [],
+                oleRecords: [],
+                ctrlDataRecords: [],
+                textBoxListArray: [],
+                unknownChildren: []
+            )],
+            ctrlDataRecords: [],
+            unknownChildren: []
+        )
     }
 
     /// 셀 하나 (주소/크기 지정, 단위: HWPUNIT)

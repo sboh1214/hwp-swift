@@ -22,7 +22,11 @@ public extension HwpListControl {
      짧으면 nil.
      */
     var headerFooterPropertyRawValue: UInt32? {
-        try? header.rawPayload.readLittleEndianUInt32(at: 4)
+        do {
+            return try header.rawPayload.readLittleEndianUInt32(at: 4)
+        } catch {
+            return nil
+        }
     }
 
     /** 머리말/꼬리말 적용 범위 (표 141 bit 0-1). 해석할 수 없으면 양쪽. */

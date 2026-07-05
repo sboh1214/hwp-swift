@@ -3,17 +3,45 @@ import CoreGraphics
 import CoreText
 import Foundation
 
+/// 라인 안 U+FFFC 컨트롤 마커의 위치 (줄 중간 treatAsChar 앵커용)
+public struct HwpInlineAnchor: Sendable, Hashable {
+    /// ctrlHeaderArray 안 컨트롤 index
+    public let controlIndex: Int
+    /// 라인 origin에서 마커 왼쪽까지의 x 오프셋
+    public let xOffset: CGFloat
+    /// 마커 run의 ascent (treatAsChar 개체면 개체 높이)
+    public let ascent: CGFloat
+    /// 마커 run의 폭
+    public let width: CGFloat
+
+    public init(controlIndex: Int, xOffset: CGFloat, ascent: CGFloat, width: CGFloat) {
+        self.controlIndex = controlIndex
+        self.xOffset = xOffset
+        self.ascent = ascent
+        self.width = width
+    }
+}
+
 public struct HwpLineFrame: Sendable, Hashable {
     public let origin: CGPoint
     public let width: CGFloat
     public let baseline: CGFloat
     public let attributedRange: NSRange
+    /// 이 라인에 있는 컨트롤 마커 앵커들
+    public let inlineAnchors: [HwpInlineAnchor]
 
-    public init(origin: CGPoint, width: CGFloat, baseline: CGFloat, attributedRange: NSRange) {
+    public init(
+        origin: CGPoint,
+        width: CGFloat,
+        baseline: CGFloat,
+        attributedRange: NSRange,
+        inlineAnchors: [HwpInlineAnchor] = []
+    ) {
         self.origin = origin
         self.width = width
         self.baseline = baseline
         self.attributedRange = attributedRange
+        self.inlineAnchors = inlineAnchors
     }
 }
 
@@ -53,7 +81,9 @@ public struct HwpParagraphLayout {
         )
 
         let framesetter = CTFramesetterCreateWithAttributedString(mutable as CFAttributedString)
-        let frameSize = CGSize(width: max(1, columnWidth), height: .greatestFiniteMagnitude)
+        // 주의: greatestFiniteMagnitude를 쓰면 line origin(y ≈ 1.8e308)의
+        // 배정도 정밀도가 무너져 라인 간 y 델타가 전부 0이 된다.
+        let frameSize = CGSize(width: max(1, columnWidth), height: 1_000_000)
         let path = CGPath(rect: CGRect(origin: .zero, size: frameSize), transform: nil)
         let frame = CTFramesetterCreateFrame(
             framesetter,
@@ -106,12 +136,42 @@ private extension HwpParagraphLayout {
                     origin: CGPoint(x: origin.x, y: referenceY - origin.y),
                     width: width,
                     baseline: ascent,
-                    attributedRange: attributedRange
+                    attributedRange: attributedRange,
+                    inlineAnchors: inlineAnchors(in: line)
                 )
             )
         }
 
         return (lineFrames, totalLineHeight)
+    }
+
+    /// 라인의 run에서 컨트롤 마커 (hwp.controlIndex attribute) 위치를 추출한다.
+    func inlineAnchors(in line: CTLine) -> [HwpInlineAnchor] {
+        guard let runs = CTLineGetGlyphRuns(line) as? [CTRun] else { return [] }
+        var anchors: [HwpInlineAnchor] = []
+        for run in runs {
+            let attributes = CTRunGetAttributes(run) as NSDictionary
+            guard let number = attributes[HwpAttributedStringKey.controlIndex] as? NSNumber
+            else { continue }
+            let range = CTRunGetStringRange(run)
+            let xOffset = CTLineGetOffsetForStringIndex(line, range.location, nil)
+            var ascent: CGFloat = 0
+            var descent: CGFloat = 0
+            let width = CGFloat(CTRunGetTypographicBounds(
+                run,
+                CFRange(location: 0, length: 0),
+                &ascent,
+                &descent,
+                nil
+            ))
+            anchors.append(HwpInlineAnchor(
+                controlIndex: number.intValue,
+                xOffset: xOffset,
+                ascent: ascent,
+                width: width
+            ))
+        }
+        return anchors
     }
 
     struct ParagraphMetrics {

@@ -40,6 +40,35 @@ final class FixtureObjectRenderTests: XCTestCase {
         expect(rendered).to(contain("한국형발사체"))
     }
 
+    func testNooriInlineImageAnchorsToItsLine() async throws {
+        let document = try await loadFixture("noori")
+        guard let page = document.pages.first else {
+            fail("첫 페이지가 없다")
+            return
+        }
+        // 첫 문단은 구역/단/gso 컨트롤 문자 3개 (U+FFFC×3)만 가진다.
+        guard let host = page.blocks.first(where: { $0.kind == .text }) else {
+            fail("첫 텍스트 블록이 없다")
+            return
+        }
+        let markers = (host.attributedString?.string ?? "").filter { $0 == "\u{FFFC}" }
+        expect(markers.count) == 3
+
+        guard let image = page.blocks.first(where: { block in
+            guard block.kind == .image, case let .image(info) = block.payload else { return false }
+            return info.binItemId == 1
+        }) else {
+            fail("binItemId 1 인라인 이미지 블록이 없다")
+            return
+        }
+        // treatAsChar 이미지는 문단 뒤 흐름 위치가 아니라 FFFC가 있는 줄에 배치된다.
+        expect(image.frame.minY).to(
+            beCloseTo(host.frame.minY, within: 2),
+            description: "인라인 이미지 y가 FFFC 줄의 y와 일치해야 한다"
+        )
+        expect(image.frame.minY) < host.frame.maxY
+    }
+
     // MARK: - BinData (그림 3장)
 
     func testBinDataRendersThreeDistinctImageReferences() async throws {

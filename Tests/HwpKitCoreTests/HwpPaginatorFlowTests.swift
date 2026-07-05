@@ -7,6 +7,54 @@ import XCTest
 #if canImport(CoreText)
     /// 표/다단 흐름 (분할·이월·배분) 페이지네이션 통합 테스트
     final class HwpPaginatorFlowTests: XCTestCase {
+        func testTreatAsCharObjectAnchorsToItsLine() async throws {
+            var host = HwpSynthetic.paragraphWithInlineControl(prefix: "앞 텍스트 ", suffix: " 뒤")
+            host.ctrlHeaderArray = [.genShapeObject(HwpSynthetic.inlineShapeObject(
+                width: 6000,
+                height: 3000,
+                instanceId: 42
+            ))]
+            let section = HwpSynthetic.section(
+                firstParagraphControls: [
+                    .section(HwpSynthetic.sectionDef()),
+                    .column(CoreHwp.HwpColumn()),
+                ],
+                bodyParagraphs: [host]
+            )
+            let paginator = HwpPaginator(
+                sections: [section],
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+
+            guard let page = try await paginator.page(at: 0) else {
+                fail("첫 페이지가 없다")
+                return
+            }
+            guard let textBlock = page.blocks.first(where: {
+                $0.kind == .text && $0.attributedString?.string.contains("앞 텍스트") == true
+            }) else {
+                fail("호스트 문단 블록이 없다")
+                return
+            }
+            guard let objectBlock = page.blocks.first(where: {
+                $0.kind == .shape && $0.source?.controlInstanceId == 42
+            }) else {
+                fail("인라인 개체 블록이 없다")
+                return
+            }
+
+            // 개체(30pt)가 줄에서 가장 크므로 개체 위 == FFFC가 있는 첫 줄 위 == 블록 위.
+            expect(objectBlock.frame.minY).to(beCloseTo(textBlock.frame.minY, within: 1))
+            // "앞 텍스트 " 글리프 뒤 (줄 중간)에 배치된다.
+            expect(objectBlock.frame.minX) > textBlock.frame.minX + 1
+            expect(objectBlock.frame.height).to(beCloseTo(30, within: 0.5))
+            expect(objectBlock.frame.width).to(beCloseTo(60, within: 0.5))
+            // 줄 높이 보정 방식: 개체가 흐름 높이를 추가 소비하지 않는다
+            // (문단 블록 높이가 이미 개체 높이를 포함).
+            expect(textBlock.frame.height) >= 30
+        }
+
         func testNestedTableCellTextAppearsInPaintList() async throws {
             let nested = HwpSynthetic.table(
                 cellWidth: 8000,
