@@ -23,13 +23,17 @@ HwpKitNative/
 4. 디코드 완료 시 `onImageResolved` → main queue에서 레이어 `setNeedsDisplay`
 5. 이미지는 flipped context 보정 (`drawFlippedImage`)으로 그린다 — 지우면 상하 반전
 
-## CRITICAL — macOS 180° flip
+## CRITICAL — macOS 좌표계 flip
 
-`CALayer.draw(in:)` 는 **macOS 에서 bottom-up (y+ 위) ctx, iOS 에서 top-down (y+ 아래) ctx** 를 전달한다. 좌표계가 반대.
+`CALayer.draw(in:)` 는 **macOS 에서 기본 bottom-up (y+ 위) ctx, iOS 에서 top-down** 을 전달한다. 단, macOS 에서 조상 계층의 geometry flip 횟수가 홀수면 (isFlipped NSView 안 등) CA 가 이미 top-down 으로 보정한다.
 
-`HwpPageLayer.init` 에서 `#if os(macOS)` 조건으로 **`isGeometryFlipped = true`** 강제 → 양쪽 플랫폼이 동일하게 top-down 이 됨. 그 다음 `drawText` 의 CT flip 로직 (`ctx.translateBy` + `ctx.scaleBy(x: 1, y: -1)`) 이 일관되게 동작.
+`HwpPageLayer.draw(in:)` 은 `#if os(macOS)` 에서 **`contentsAreFlipped()` 가 false 일 때만** 수동으로 CTM 을 뒤집어 항상 top-down 을 보장한다. 레이어 자체에 `isGeometryFlipped = true` 를 켜면 안 된다 — `HwpDocumentNSView.isFlipped == true` 와 합쳐져 **이중 flip (짝수) → 페이지가 상하 반전**된다 (실제로 겪은 버그).
 
-**이 flag 를 지우거나 조건을 반전하면 macOS 텍스트가 거꾸로 렌더된다.**
+`drawText` 의 CT flip (`translateBy` + `scaleBy(x: 1, y: -1)`) 과 `drawFlippedImage` 는 top-down 정규화 이후를 전제로 하므로 그대로 유지.
+
+## CRITICAL — contentsScale (Retina 선명도)
+
+`CALayer.contentsScale` 기본값은 1.0 — 설정하지 않으면 Retina 에서 1x 래스터를 확대해 **글씨가 흐릿해진다** (실제로 겪은 버그). 두 뷰 모두 `effectiveContentsScale` (backing/screen scale × max(1, zoom), 상한 4×) 을 레이어 생성 시와 zoom/backing 변경 시 적용한다 (macOS: `viewDidChangeBackingProperties`, iOS: `didMoveToWindow` + `scrollViewDidEndZooming`).
 
 ## HwpDocumentActor.buildDocument
 

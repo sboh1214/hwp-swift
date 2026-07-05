@@ -24,9 +24,6 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
     override public init() {
         super.init()
         needsDisplayOnBoundsChange = true
-        #if os(macOS)
-            isGeometryFlipped = true
-        #endif
     }
 
     override public init(layer: Any) {
@@ -36,9 +33,6 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
         }
         super.init(layer: layer)
         needsDisplayOnBoundsChange = true
-        #if os(macOS)
-            isGeometryFlipped = true
-        #endif
     }
 
     @available(*, unavailable)
@@ -52,37 +46,53 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
         ctx.saveGState()
         defer { ctx.restoreGState() }
 
-        for command in paintList.commands {
-            switch command {
-            case let .fillRect(rect, color):
-                ctx.setFillColor(color)
-                ctx.fill(rect)
-
-            case let .strokeRect(rect, color, width):
-                ctx.setStrokeColor(color)
-                ctx.setLineWidth(width)
-                ctx.stroke(rect)
-
-            case let .drawText(attributedString, origin, lineWidth):
-                drawText(attributedString, origin: origin, lineWidth: lineWidth, in: ctx)
-
-            case let .drawPath(path, fill, stroke, strokeWidth):
-                drawPath(path, fill: fill, stroke: stroke, strokeWidth: strokeWidth, in: ctx)
-
-            case let .drawImage(image, rect):
-                drawFlippedImage(image, in: rect, context: ctx)
-
-            case let .drawImageReference(binItemId, rect):
-                drawImageReference(binItemId, in: rect, context: ctx)
-
-            case let .drawPlaceholder(rect, text):
-                drawPlaceholder(text, in: rect, context: ctx)
-
-            case let .hyperlink(rect, _):
-                ctx.setStrokeColor(CGColor(gray: 0, alpha: 0.35))
-                ctx.setLineWidth(0.5)
-                ctx.stroke(rect)
+        #if os(macOS)
+            // macOS의 layer 컨텍스트는 기본 bottom-left(y-up)다. 조상 계층의
+            // geometry flip 횟수가 홀수면 (예: isFlipped NSView 안) CA가 이미
+            // top-down으로 보정해 준다. paint 명령은 top-left 기준이므로
+            // 보정이 없을 때만 직접 뒤집는다. 레이어 자체에 isGeometryFlipped를
+            // 켜지 않는 이유: flipped 뷰 안에서 이중 flip이 되어 상하 반전된다.
+            if !contentsAreFlipped() {
+                ctx.translateBy(x: 0, y: bounds.height)
+                ctx.scaleBy(x: 1, y: -1)
             }
+        #endif
+
+        for command in paintList.commands {
+            execute(command, in: ctx)
+        }
+    }
+
+    private func execute(_ command: HwpPaintCommand, in ctx: CGContext) {
+        switch command {
+        case let .fillRect(rect, color):
+            ctx.setFillColor(color)
+            ctx.fill(rect)
+
+        case let .strokeRect(rect, color, width):
+            ctx.setStrokeColor(color)
+            ctx.setLineWidth(width)
+            ctx.stroke(rect)
+
+        case let .drawText(attributedString, origin, lineWidth):
+            drawText(attributedString, origin: origin, lineWidth: lineWidth, in: ctx)
+
+        case let .drawPath(path, fill, stroke, strokeWidth):
+            drawPath(path, fill: fill, stroke: stroke, strokeWidth: strokeWidth, in: ctx)
+
+        case let .drawImage(image, rect):
+            drawFlippedImage(image, in: rect, context: ctx)
+
+        case let .drawImageReference(binItemId, rect):
+            drawImageReference(binItemId, in: rect, context: ctx)
+
+        case let .drawPlaceholder(rect, text):
+            drawPlaceholder(text, in: rect, context: ctx)
+
+        case let .hyperlink(rect, _):
+            ctx.setStrokeColor(CGColor(gray: 0, alpha: 0.35))
+            ctx.setLineWidth(0.5)
+            ctx.stroke(rect)
         }
     }
 

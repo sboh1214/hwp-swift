@@ -2,7 +2,7 @@ import CoreGraphics
 import CoreText
 import Foundation
 import HwpKitCore
-import HwpKitNative
+@testable import HwpKitNative
 import Nimble
 import XCTest
 
@@ -138,4 +138,64 @@ final class HwpPageLayerTests: XCTestCase {
 
         expect(image).toNot(beNil())
     }
+
+    /// 페이지 상하 반전 회귀 방지: 레이어 자체 isGeometryFlipped를 켜면
+    /// flipped NSView 안에서 이중 flip이 되어 페이지가 뒤집힌다.
+    func testPageLayerDoesNotFlipItsOwnGeometry() {
+        expect(HwpPageLayer().isGeometryFlipped) == false
+    }
+
+    /// draw(in:)는 환경과 무관하게 top-down으로 정규화되어야 한다:
+    /// 페이지 상단(y 0..10)에 그린 검은 띠가 이미지의 위쪽 행에 나타난다.
+    func testTopStripRendersAtTopOfImage() throws {
+        let layer = HwpPageLayer()
+        layer.bounds = CGRect(x: 0, y: 0, width: 100, height: 100)
+        layer.pageHeight = 100
+        layer.paintList = HwpPaintList(commands: [
+            .fillRect(
+                rect: CGRect(x: 0, y: 0, width: 100, height: 10),
+                color: CGColor(gray: 0, alpha: 1)
+            ),
+        ])
+
+        let context = try XCTUnwrap(makeBitmapContext())
+        layer.draw(in: context)
+        let image = try XCTUnwrap(context.makeImage())
+        let data = try XCTUnwrap(image.dataProvider?.data)
+        let bytes = try XCTUnwrap(CFDataGetBytePtr(data))
+
+        // CGImage의 byte row 0 = 이미지 최상단
+        func alpha(atRow row: Int) -> UInt8 {
+            bytes[row * image.bytesPerRow + 3]
+        }
+        expect(alpha(atRow: 5)) > 200 // 상단 띠는 칠해져 있고
+        expect(alpha(atRow: 95)) < 16 // 하단은 비어 있다
+    }
+
+    /// contentsScale은 뷰가 관리한다 — 기본값(1.0)이면 Retina에서 흐릿해진다.
+    /// (macOS 뷰 경로 검증)
+    #if os(macOS)
+        @MainActor
+        func testDocumentViewAppliesRetinaContentsScaleToPageLayers() {
+            let view = HwpDocumentNSView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+            view.document = HwpDocument(
+                pages: [HwpPage(
+                    size: CGSize(width: 100, height: 100),
+                    margins: HwpPageMargins(top: 10, left: 10, bottom: 10, right: 10),
+                    blocks: [],
+                    pageNumber: 1
+                )],
+                metadata: HwpDocumentMetadata(pageCount: 1),
+                unsupportedElements: []
+            )
+            view.updateVisiblePages(range: 0 ..< 1)
+
+            for layer in view.pageLayers.values {
+                expect(layer.contentsScale) >= 1
+                // 창이 없는 테스트 환경에서는 main screen backing scale로 폴백한다
+                let expected = NSScreen.main?.backingScaleFactor ?? 2
+                expect(layer.contentsScale) == expected
+            }
+        }
+    #endif
 }

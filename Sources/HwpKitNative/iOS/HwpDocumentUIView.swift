@@ -80,6 +80,7 @@
                 layer.shadowOpacity = 0.12
                 layer.shadowRadius = 4
                 layer.shadowOffset = CGSize(width: 0, height: -1)
+                layer.contentsScale = effectiveContentsScale
                 layer.imageProvider = imageProvider
                 layer.paintList = paintListForPage(at: index)
                 contentView.layer.addSublayer(layer)
@@ -131,6 +132,36 @@
         public func scrollViewDidZoom(_ scrollView: UIScrollView) {
             zoomScale = scrollView.zoomScale
             updateVisiblePages(range: visiblePageRange())
+        }
+
+        public func scrollViewDidEndZooming(
+            _ scrollView: UIScrollView,
+            with _: UIView?,
+            atScale _: CGFloat
+        ) {
+            // 핀치가 끝난 시점에 확대 배율만큼 래스터 해상도를 올려 선명하게 다시 그린다.
+            updateLayerContentsScale()
+        }
+
+        override public func didMoveToWindow() {
+            super.didMoveToWindow()
+            updateLayerContentsScale()
+        }
+
+        /// Retina 해상도 + 줌 배율에 맞춰 레이어 래스터 해상도를 갱신한다.
+        /// 기본 contentsScale(1.0)로 두면 Retina에서 흐릿하게 렌더된다.
+        private var effectiveContentsScale: CGFloat {
+            let screenScale = window?.screen.scale ?? traitCollection.displayScale
+            let base = screenScale > 0 ? screenScale : 2
+            return min(base * max(1, zoomScale), base * 4)
+        }
+
+        private func updateLayerContentsScale() {
+            let scale = effectiveContentsScale
+            for layer in pageLayers.values where layer.contentsScale != scale {
+                layer.contentsScale = scale
+                layer.setNeedsDisplay()
+            }
         }
 
         private func configureViewHierarchy() {

@@ -21,6 +21,7 @@
         public var zoomScale: CGFloat = 1.0 {
             didSet {
                 zoomScale = max(zoomScale, 0.05)
+                updateLayerContentsScale()
                 layoutPageLayers()
             }
         }
@@ -59,6 +60,29 @@
             super.viewDidMoveToWindow()
             wantsLayer = true
             layer?.masksToBounds = false
+            updateLayerContentsScale()
+        }
+
+        override public func viewDidChangeBackingProperties() {
+            super.viewDidChangeBackingProperties()
+            updateLayerContentsScale()
+        }
+
+        /// Retina 해상도 + 줌 배율에 맞춰 레이어 래스터 해상도를 갱신한다.
+        /// 기본 contentsScale(1.0)로 두면 Retina에서 흐릿하게 렌더된다.
+        private var effectiveContentsScale: CGFloat {
+            let backing = window?.backingScaleFactor
+                ?? NSScreen.main?.backingScaleFactor
+                ?? 2
+            return min(backing * max(1, zoomScale), backing * 4)
+        }
+
+        private func updateLayerContentsScale() {
+            let scale = effectiveContentsScale
+            for pageLayer in pageLayers.values where pageLayer.contentsScale != scale {
+                pageLayer.contentsScale = scale
+                pageLayer.setNeedsDisplay()
+            }
         }
 
         override public func layout() {
@@ -180,6 +204,7 @@
             pageLayer.shadowOpacity = 0.12
             pageLayer.shadowRadius = 4
             pageLayer.shadowOffset = CGSize(width: 0, height: -1)
+            pageLayer.contentsScale = effectiveContentsScale
             pageLayer.imageProvider = imageProvider
             pageLayer.paintList = paintListForPage(at: index)
             return pageLayer
