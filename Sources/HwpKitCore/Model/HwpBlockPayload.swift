@@ -44,6 +44,90 @@ extension HwpLaidOutParagraph: Hashable {
     }
 }
 
+/// 그림 효과 (표 107): REAL_PIC 외에는 네이티브 필터로 적용된다.
+public enum HwpImageEffect: UInt8, Sendable, Hashable {
+    case none = 0
+    case grayscale = 1
+    case blackWhite = 2
+
+    public init(rawEffect: UInt8) {
+        self = HwpImageEffect(rawValue: rawEffect) ?? .none
+    }
+}
+
+/// 그림 crop/밝기/명암/효과 (표 107) 렌더 스타일.
+///
+/// crop 좌표는 이미지 "원본 크기" HWPUNIT 공간의 LTRB 사각형이다.
+/// 픽스처 검증: 원본 크기 = 픽셀 × 75 (96 DPI 고정; BinData 1920×1080 →
+/// 144000×81000 정확 일치, noori/CCL은 반올림 오차 이내).
+public struct HwpImageRenderStyle: Sendable, Hashable {
+    /// 자르기 후 사각형 (HWPUNIT, 원본 크기 공간)
+    public let cropLeft: Int32
+    public let cropTop: Int32
+    public let cropRight: Int32
+    public let cropBottom: Int32
+    /// 밝기 (-100...100)
+    public let brightness: Int
+    /// 명암 (-100...100)
+    public let contrast: Int
+    /// 그림 효과
+    public let effect: HwpImageEffect
+
+    /// 96 DPI 고정 변환: 1px = 75 HWPUNIT
+    public static let hwpUnitsPerPixel: CGFloat = 75
+
+    public init(
+        cropLeft: Int32 = 0,
+        cropTop: Int32 = 0,
+        cropRight: Int32 = 0,
+        cropBottom: Int32 = 0,
+        brightness: Int = 0,
+        contrast: Int = 0,
+        effect: HwpImageEffect = .none
+    ) {
+        self.cropLeft = cropLeft
+        self.cropTop = cropTop
+        self.cropRight = cropRight
+        self.cropBottom = cropBottom
+        self.brightness = brightness
+        self.contrast = contrast
+        self.effect = effect
+    }
+
+    /// 색 보정/효과가 없는지
+    public var hasColorAdjustments: Bool {
+        brightness != 0 || contrast != 0 || effect != .none
+    }
+
+    /// 픽셀 단위 crop 사각형. 반올림 후 이미지 전체와 같으면 (crop 없음) nil.
+    ///
+    /// crop 값이 모두 0이거나 사각형이 비정상이면 nil을 반환한다.
+    public func pixelCropRect(imageWidth: Int, imageHeight: Int) -> CGRect? {
+        guard imageWidth > 0, imageHeight > 0 else { return nil }
+        guard cropRight > cropLeft, cropBottom > cropTop else { return nil }
+
+        func pixels(_ value: Int32) -> CGFloat {
+            (CGFloat(value) / Self.hwpUnitsPerPixel).rounded()
+        }
+        let minX = max(0, min(CGFloat(imageWidth), pixels(cropLeft)))
+        let minY = max(0, min(CGFloat(imageHeight), pixels(cropTop)))
+        let maxX = max(0, min(CGFloat(imageWidth), pixels(cropRight)))
+        let maxY = max(0, min(CGFloat(imageHeight), pixels(cropBottom)))
+        guard maxX > minX, maxY > minY else { return nil }
+
+        let rect = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+        let full = CGRect(x: 0, y: 0, width: CGFloat(imageWidth), height: CGFloat(imageHeight))
+        guard rect != full else { return nil }
+        return rect
+    }
+
+    /// 아무 변형도 없는 스타일인지 (이미지 크기를 몰라도 확실한 경우만 true)
+    public var isIdentity: Bool {
+        !hasColorAdjustments && cropLeft == 0 && cropTop == 0
+            && cropRight <= 0 && cropBottom <= 0
+    }
+}
+
 /// 이미지 블록의 렌더 정보. 디코딩된 비트맵 대신 BinItem 참조를 운반해
 /// 네이티브 레이어가 캐시를 통해 지연 디코딩할 수 있게 한다.
 public struct HwpImageBlockInfo: Sendable, Hashable {
@@ -53,11 +137,19 @@ public struct HwpImageBlockInfo: Sendable, Hashable {
     public let borderColor: HwpRGBColor?
     /// 테두리 두께 (pt)
     public let borderWidth: CGFloat
+    /// crop/밝기/명암/효과 (표 107). nil이면 원본 그대로.
+    public let style: HwpImageRenderStyle?
 
-    public init(binItemId: UInt32, borderColor: HwpRGBColor? = nil, borderWidth: CGFloat = 0) {
+    public init(
+        binItemId: UInt32,
+        borderColor: HwpRGBColor? = nil,
+        borderWidth: CGFloat = 0,
+        style: HwpImageRenderStyle? = nil
+    ) {
         self.binItemId = binItemId
         self.borderColor = borderColor
         self.borderWidth = borderWidth
+        self.style = style
     }
 }
 

@@ -236,7 +236,7 @@ public struct HwpPaintListBuilder: Sendable {
             return [.drawPlaceholder(rect: frame, text: "[이미지]")]
         }
         var commands: [HwpPaintCommand] = [
-            .drawImageReference(binItemId: image.binItemId, rect: frame),
+            .drawImageReference(binItemId: image.binItemId, rect: frame, style: image.style),
         ]
         if let borderColor = image.borderColor, image.borderWidth > 0 {
             commands.append(.strokeRect(

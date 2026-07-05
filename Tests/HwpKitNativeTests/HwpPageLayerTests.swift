@@ -164,7 +164,7 @@ final class HwpPageLayerTests: XCTestCase {
         let data = try XCTUnwrap(image.dataProvider?.data)
         let bytes = try XCTUnwrap(CFDataGetBytePtr(data))
 
-        // CGImage의 byte row 0 = 이미지 최상단
+        /// CGImage의 byte row 0 = 이미지 최상단
         func alpha(atRow row: Int) -> UInt8 {
             bytes[row * image.bytesPerRow + 3]
         }
@@ -172,8 +172,8 @@ final class HwpPageLayerTests: XCTestCase {
         expect(alpha(atRow: 95)) < 16 // 하단은 비어 있다
     }
 
-    /// contentsScale은 뷰가 관리한다 — 기본값(1.0)이면 Retina에서 흐릿해진다.
-    /// (macOS 뷰 경로 검증)
+    // contentsScale은 뷰가 관리한다 — 기본값(1.0)이면 Retina에서 흐릿해진다.
+    // (macOS 뷰 경로 검증)
     #if os(macOS)
         @MainActor
         func testDocumentViewAppliesRetinaContentsScaleToPageLayers() {

@@ -83,8 +83,8 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
         case let .drawImage(image, rect):
             drawFlippedImage(image, in: rect, context: ctx)
 
-        case let .drawImageReference(binItemId, rect):
-            drawImageReference(binItemId, in: rect, context: ctx)
+        case let .drawImageReference(binItemId, rect, style):
+            drawImageReference(binItemId, style: style, in: rect, context: ctx)
 
         case let .drawPlaceholder(rect, text):
             drawPlaceholder(text, in: rect, context: ctx)
@@ -154,7 +154,7 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
     public func containsImageReference(_ binItemId: UInt32) -> Bool {
         guard let paintList else { return false }
         return paintList.commands.contains { command in
-            if case let .drawImageReference(key, _) = command {
+            if case let .drawImageReference(key, _, _) = command {
                 return key == binItemId
             }
             return false
@@ -170,23 +170,28 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
         ctx.restoreGState()
     }
 
-    private func drawImageReference(_ binItemId: UInt32, in rect: CGRect, context ctx: CGContext) {
+    private func drawImageReference(
+        _ binItemId: UInt32,
+        style: HwpImageRenderStyle?,
+        in rect: CGRect,
+        context ctx: CGContext
+    ) {
         guard let imageProvider else {
             drawPlaceholder("[이미지]", in: rect, context: ctx)
             return
         }
-        if let image = imageProvider.cachedImage(for: binItemId) {
+        if let image = imageProvider.cachedImage(for: binItemId, style: style) {
             drawFlippedImage(image, in: rect, context: ctx)
             return
         }
-        if imageProvider.didFail(for: binItemId) {
+        if imageProvider.didFail(for: binItemId, style: style) {
             drawPlaceholder("[이미지]", in: rect, context: ctx)
             return
         }
         // 로딩 중 표시 후 비동기 디코딩을 트리거한다.
         ctx.setFillColor(CGColor(gray: 0.95, alpha: 1))
         ctx.fill(rect)
-        imageProvider.requestImage(for: binItemId)
+        imageProvider.requestImage(for: binItemId, style: style)
     }
 
     private func drawPath(

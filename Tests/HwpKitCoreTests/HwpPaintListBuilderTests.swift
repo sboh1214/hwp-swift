@@ -105,12 +105,13 @@ final class HwpPaintListBuilderTests: XCTestCase {
             payload: .image(HwpImageBlockInfo(binItemId: 1))
         )
         let list = storeBuilder.build(for: makePage(blocks: [block]), index: index)
-        guard case let .drawImageReference(binItemId, rect) = list.commands.first else {
+        guard case let .drawImageReference(binItemId, rect, style) = list.commands.first else {
             fail("Expected .drawImageReference")
             return
         }
         expect(binItemId) == 1
         expect(rect) == frame
+        expect(style).to(beNil())
     }
 
     func testImagePayloadWithMissingDataProducesPlaceholder() {

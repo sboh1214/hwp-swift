@@ -16,12 +16,19 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     private let cache: HwpImageCache
     private let adapter = HwpImageAdapter()
     private let lock = NSLock()
-    /// draw 경로용 동기 스냅샷. NSCache라 메모리 압박 시 자동으로 비워지고,
-    /// 비워진 항목은 requestImage가 HwpImageCache에서 다시 채운다.
-    private let resolvedImages = NSCache<NSNumber, CGImage>()
-    private var failedKeys: Set<UInt32> = []
-    private var inFlightKeys: Set<UInt32> = []
+    /// draw 경로용 동기 스냅샷 ((binItemId, style) 변형별). NSCache라 메모리
+    /// 압박 시 자동으로 비워지고, 비워진 항목은 requestImage가 다시 채운다.
+    private let resolvedImages = NSCache<NSString, CGImage>()
+    private var failedKeys: Set<String> = []
+    private var inFlightKeys: Set<String> = []
     private var imageResolvedHandler: (@Sendable (UInt32) -> Void)?
+
+    /// (binItemId, style) 변형의 결정론적 캐시 키
+    private static func variantKey(_ binItemId: UInt32, _ style: HwpImageRenderStyle?) -> String {
+        guard let style else { return "\(binItemId)" }
+        return "\(binItemId)|\(style.cropLeft),\(style.cropTop),\(style.cropRight)," +
+            "\(style.cropBottom)|\(style.brightness)|\(style.contrast)|\(style.effect.rawValue)"
+    }
 
     /// 비동기 디코딩 완료 시 호출된다 (임의 스레드).
     public var onImageResolved: (@Sendable (UInt32) -> Void)? {
@@ -44,24 +51,25 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     }
 
     /// 이미 디코딩된 이미지를 동기 반환한다 (draw 경로용).
-    public func cachedImage(for key: UInt32) -> CGImage? {
-        resolvedImages.object(forKey: NSNumber(value: key))
+    public func cachedImage(for key: UInt32, style: HwpImageRenderStyle? = nil) -> CGImage? {
+        resolvedImages.object(forKey: Self.variantKey(key, style) as NSString)
     }
 
     /// 디코딩에 실패했던 키인지 여부 (placeholder 렌더 판단용).
-    public func didFail(for key: UInt32) -> Bool {
+    public func didFail(for key: UInt32, style: HwpImageRenderStyle? = nil) -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        return failedKeys.contains(key)
+        return failedKeys.contains(Self.variantKey(key, style))
     }
 
-    /// 비동기 디코딩을 트리거한다. 이미 완료/진행 중이면 무시한다.
-    public func requestImage(for key: UInt32) {
-        guard cachedImage(for: key) == nil else { return }
+    /// 비동기 디코딩 + 스타일 적용을 트리거한다. 이미 완료/진행 중이면 무시한다.
+    public func requestImage(for key: UInt32, style: HwpImageRenderStyle? = nil) {
+        guard cachedImage(for: key, style: style) == nil else { return }
+        let variant = Self.variantKey(key, style)
         lock.lock()
-        let alreadyHandled = failedKeys.contains(key) || inFlightKeys.contains(key)
+        let alreadyHandled = failedKeys.contains(variant) || inFlightKeys.contains(variant)
         if !alreadyHandled {
-            inFlightKeys.insert(key)
+            inFlightKeys.insert(variant)
         }
         lock.unlock()
         guard !alreadyHandled else { return }
@@ -70,7 +78,9 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         let cache = cache
         let adapter = adapter
         Task { [weak self] in
-            let image = await cache.fetch(key) {
+            // 원본 디코드는 binItemId 단위로 공유 캐시하고,
+            // 스타일 변형은 변형 키로 이 provider에만 저장한다.
+            let decoded = await cache.fetch(key) {
                 guard let data = store.data(forBinItemId: key) else { return nil }
                 let binaryData = CoreHwpBinaryDataShim.binaryData(
                     named: store.extensionName(forBinItemId: key),
@@ -83,21 +93,22 @@ public final class HwpPageImageProvider: @unchecked Sendable {
                     return nil
                 }
             }
-            self?.finishRequest(key: key, image: image)
+            let styled = decoded.map { HwpImageStyleRenderer.apply(style, to: $0) }
+            self?.finishRequest(key: key, variant: variant, image: styled)
         }
     }
 
-    private func finishRequest(key: UInt32, image: CGImage?) {
+    private func finishRequest(key: UInt32, variant: String, image: CGImage?) {
         lock.lock()
-        inFlightKeys.remove(key)
+        inFlightKeys.remove(variant)
         if let image {
             resolvedImages.setObject(
                 image,
-                forKey: NSNumber(value: key),
+                forKey: variant as NSString,
                 cost: image.width * image.height * 4
             )
         } else {
-            failedKeys.insert(key)
+            failedKeys.insert(variant)
         }
         let handler = imageResolvedHandler
         lock.unlock()

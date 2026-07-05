@@ -1026,10 +1026,24 @@ private extension HwpPaginator {
             payload: .image(HwpImageBlockInfo(
                 binItemId: binItemId,
                 borderColor: borderColor,
-                borderWidth: borderWidth
+                borderWidth: borderWidth,
+                style: property.map { imageRenderStyle(from: $0) }
             )),
             commonProperty: commonProperty,
             controlIndex: controlIndex
+        )
+    }
+
+    /// 표 107 그림 속성에서 crop/밝기/명암/효과 렌더 스타일을 만든다.
+    func imageRenderStyle(from property: CoreHwp.HwpPictureProperty) -> HwpImageRenderStyle {
+        HwpImageRenderStyle(
+            cropLeft: property.cropLeft,
+            cropTop: property.cropTop,
+            cropRight: property.cropRight,
+            cropBottom: property.cropBottom,
+            brightness: Int(property.brightness),
+            contrast: Int(property.contrast),
+            effect: HwpImageEffect(rawEffect: property.effect)
         )
     }
 
