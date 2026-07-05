@@ -95,10 +95,24 @@ Inventory source: `find Tests/CoreHwpTests -name "*.hwp"` (33 files) and fixture
 
 ## Scope Reduction Recommendation
 
-(2026-07 갱신 2차) 표/글상자/각주/도형/이미지에 이어 다단(`cold`) 밴드
+(2026-07 갱신 3차) 표/글상자/각주/도형/이미지에 이어 다단(`cold`) 밴드
 레이아웃(균형 배분 포함), 줄 중간(treat-as-char) 앵커, 미주 문서/구역 끝
 배치(표 134 bits 8-9), 머리말/꼬리말 페이지 반복(표 141 적용 범위), 중첩 표
 재귀(깊이 3)와 페이지 초과 row 분할, 각주 페이지 귀속·이월, 그림
-crop/밝기/명암/효과(표 107) 렌더까지 연결되었다. 남은 자발적 축소 범위:
-수식(`eqed`) 스크립트 렌더 (placeholder 유지), TEXTART/FORM_OBJECT/
-CHART_DATA 세부 디코딩, 그림 PATTERN8x8 효과.
+crop/밝기/명암/효과(표 107) 렌더까지 연결되었다.
+
+한/글 2007 계열 실저장본(대한민국헌법주석) 대비 정합 작업으로 다음이
+추가되었다: PARA_LINE_SEG 절대 lineLocation 정규화(문단-상대 높이), 줄 간격
+종류 해석(표 44 bit 0-1/표 46 bit 0-4 — 비율%는 글자 크기 기준, 속성3 우선),
+각주/미주 참조 위 첨자 번호와 각주 문단 자동 번호(atno, 표 142/143) 치환,
+새 번호 지정(nwno, 표 144)의 쪽/각주/미주 카운터 재설정, 쪽 번호
+위치(표 147/148)와 쪽 감추기(표 145) 렌더, 문단 쪽 나누기(문단 헤더
+columnType bit 2), 한국어 서체 폴백 확장(휴먼명조·신명·한양·한컴바탕·윤고딕
+계열 + `-`/`#` 접두·공백 정규화). CoreHwp에는 `HwpOtherControl`의
+autoNumberInfo/newNumberInfo typed payload와 `HwpParaShape`의
+resolvedLineSpacingKind/Value, `HwpLineSpacingKind`가 추가되었다.
+
+남은 자발적 축소 범위: 수식(`eqed`) 스크립트 렌더 (placeholder 유지),
+TEXTART/FORM_OBJECT/CHART_DATA 세부 디코딩, 그림 PATTERN8x8 효과,
+단 나누기(columnType bit 3)/홀·짝수 조정(pageCT), 표 셀 안 각주 참조
+위 첨자, 번호 모양 0x80/0x81 사용자 문자.

@@ -11,11 +11,18 @@ CoreHwp.HwpFile
      → HwpImageStore        # binItemId(1-based) → BinData 바이트 조인
      → HwpPaginator (actor) # 페이지 lazy 생성
         ├─ per paragraph
+        │   flushPageBeforeProcessing  # 구역 시작·쪽 나누기 (columnType bit 2) 페이지 확정
         │   applySectionDef / applyColumnDef   # 구역 지오메트리 + 단 밴드 전환
+        │   applyNewNumbers   # 새 번호 지정 (nwno, 표 144) → 쪽/각주/미주 카운터 재설정
         │   HwpTextRunBuilder → NSAttributedString
         │     (extended 컨트롤 문자 → U+FFFC + controlIndex attr + run delegate:
-        │      treatAsChar 개체는 개체 크기, 그 외 extended는 폭 0 예약)
+        │      treatAsChar 개체는 개체 크기, 그 외 extended는 폭 0 예약.
+        │      controlReplacements로 마커를 번호 텍스트로 치환: 본문 각주/미주
+        │      참조 (ext17)는 위 첨자, 각주 문단 자동 번호 (ext18 atno)는 "1)" —
+        │      번호는 paginator 카운터가 단일 소스, 컨트롤당 1 증가)
         │   HwpParagraphLayout (CTFramesetter) → 라인 + 인라인 앵커
+        │     (줄 간격 종류 (표 44/46): 비율%는 글자 크기 × 값/100 강제,
+        │      고정/최소는 HWPUNIT, 여백만은 lineSpacingAdjustment)
         │   placeParagraphText   # 1단: 통 배치 / 다단: 라인 단위 단 채움
         │   collectFootnotes     # 각주(페이지 하단 몫) / 미주(문서·구역 끝 몫) 분리 수집
         ├─ appendControlBlocks     # 컨트롤 → 실제 레이아웃 엔진
@@ -25,14 +32,21 @@ CoreHwp.HwpFile
         │   gso/도형 → HwpTextboxLayout / HwpShapeGeometry / 이미지 블록
         │             (treatAsChar + FFFC 앵커 → 줄 위치 인라인 배치,
         │              이미지 crop/밝기/명암/효과 스타일 전달)
-        │   .header/.footer → 적용 범위별 활성 상태로 등록 (표 141)
+        │   .header/.footer/.pageNumberPosition/.pageHide
+        │           → 활성 상태/감춤 마스크로 등록 (표 141/147/145)
         └─ per page (cacheCurrentPage)
-            활성 머리말/꼬리말 밴드 반복 방출 (짝/홀 우선)
+            활성 머리말/꼬리말 밴드 반복 방출 (짝/홀 우선, pageHide 0x01/0x02 억제,
+              자동 쪽 번호 (atno kind 0) 밴드는 논리 쪽 번호 치환 + 캐시 제외)
+            쪽 번호 방출 (표 147/148 위치·모양·장식, pageHide 0x20 억제)
             HwpFootnoteLayout.place  # 각주 하단 배치, 넘침은 다음 페이지 이월
             HwpPaintListBuilder → HwpPaintList
         └─ 문서/구역 끝: HwpFootnoteLayout.placeFlow  # 미주 (표 134 bits 8-9)
   → HwpDocument { pages: [HwpPage(blocks, paintList)], imageStore }
 ```
+
+라인 세그먼트 캐시 (PARA_LINE_SEG)의 `lineLocation`은 저장본에 따라
+문단-상대 (0 시작) 또는 페이지 내 누적 절대 y다 (한/글 2007 계열).
+`height(for:)`는 `max(loc+h) − 첫 세그먼트 loc`으로 정규화한다.
 
 다단은 "단 밴드" 모델이다: 단 정의 (`cold`)가 나오면 진행 중 밴드를 닫고
 (본문 텍스트가 첫 단에만 있으면 라인 단위로 균형 재배치 — 한글의 단 배분)
@@ -67,7 +81,10 @@ CoreHwp.HwpFile
 ## 컨벤션
 
 - **HWPUNIT canonical**: 변환은 `Utils/HwpUnits.swift` 에서만 (1 pt = 100 HWPUNIT). `pt` / `px` / `HWPUNIT` 혼용 금지
-- **번들 폰트 금지**. `HwpFontResolver.resolve` 는 매칭 결과를 (faceName, script, size) 키로 캐시
+- **번들 폰트 금지**. `HwpFontResolver.resolve` 는 매칭 결과를 (faceName, script, size) 키로 캐시.
+  후보 조회는 `HwpFontMap.candidates(forFaceName:)` — 원문 이름 → 정규화 이름
+  (`-`/`#` 접두 제거 + 공백 제거) 순서. 명조 계열은 AppleMyungjo, 고딕 계열은
+  Apple SD Gothic Neo 를 최종 후보로 유지할 것 (시스템 기본 설치 폰트)
 - borderFill 참조는 **1-based (0 = 없음)**: `resolvedBorderFill` 은 id-1 을 먼저, 원래 id 를 다음에 시도
 - Sendable actor: `HwpPaginator`, `HwpImageCache` (HwpKitNative)
 - `HwpFontResolver.testDeterministic` — 스냅샷 테스트용 결정론적 resolver
@@ -93,6 +110,16 @@ CoreHwp.HwpFile
 - 그림 효과 중 PATTERN8x8 (효과 4)은 미지원 — 원본으로 렌더
 - 머리말/꼬리말 밴드 텍스트가 밴드 높이를 넘으면 본문과 겹칠 수 있다 (클립 없음)
 - 각주의 표 134 bits 8-9 (한 페이지 안 다단 배열 방식) 미적용 — 항상 전체 폭 하단
+- 표 셀/글상자 안 본문 문단의 각주 참조 (ext17) 위 첨자 번호는 미표시
+  (각주 텍스트와 번호 자체는 정상 — HwpTableLayout 셀 조판이 마커 치환을
+  받지 않는다). 표 134 번호 모양 0x80 (문자 반복)/0x81 (사용자 지정)과 쪽 번호
+  userSymbol은 아라비아 폴백
+- 단 나누기 (문단 헤더 columnType bit 3)와 홀/짝수 조정 (pageCT, 표 146) 미구현
+  (쪽 나누기 bit 2는 구현). 각주 numberingMode == 2 (쪽마다 새로)에서 문단이
+  페이지 경계 재시도로 밀리면 본문 위 첨자 번호가 재계산 전 값일 수 있다
+- 쪽 번호 위치 (표 148)의 상/하 밴드 프레임이 없으면 (여백 0) 콘텐츠 경계에
+  근사 배치한다. 감추기 (표 145)의 바탕쪽/테두리/배경 비트는 해당 렌더가 없어
+  무시된다
 - 단 종류 (일반/배분/평행)와 맞쪽 방향은 미세분화 — 밴드가 닫힐 때 항상 배분,
   방향은 왼쪽/오른쪽만; 다단에서 페이지에 걸쳐 분할된 문단의 각주는 마지막
   조각의 페이지에 귀속된다
