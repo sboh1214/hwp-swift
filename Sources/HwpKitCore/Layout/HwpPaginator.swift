@@ -368,25 +368,9 @@ private extension HwpPaginator {
         let pageCountBefore = cachedPages.count
 
         while let paragraph = nextParagraph() {
-            // 새 구역 정의: 이전 구역의 밴드를 닫고 (필요시 단 균형 재배치),
-            // 구역-끝 미주를 배치한 뒤 진행 중인 페이지를 확정한다.
-            if Self.sectionDef(in: paragraph) != nil {
-                closeColumnBand()
-                if currentSectionDef?.endNoteShape.placesEndnoteAtSectionEnd == true {
-                    appendPendingEndnotes()
-                }
-                if !currentBlocks.isEmpty || contentHeightUsed > 0 {
-                    cacheCurrentPage()
-                    return
-                }
-            }
-            // 쪽 나누기 (문단 헤더 columnType bit 2): 진행 중인 페이지를 확정하고
-            // 이 문단은 다음 호출에서 새 페이지 첫머리로 다시 처리한다.
-            if paragraph.paraHeader.columnType & 0b100 != 0,
-               !currentBlocks.isEmpty || contentHeightUsed > 0
-            {
-                closeColumnBand()
-                cacheCurrentPage()
+            // 구역 시작/쪽 나누기 문단: 진행 중인 페이지를 확정하고 이 문단은
+            // 다음 호출에서 새 페이지 첫머리로 다시 처리한다.
+            if flushPageBeforeProcessing(paragraph) {
                 return
             }
 
@@ -430,6 +414,31 @@ private extension HwpPaginator {
             cacheCurrentPage()
         }
         didFinishPagination = true
+    }
+
+    /// 새 구역 정의 (이전 구역의 밴드를 닫고 구역-끝 미주 배치) 또는
+    /// 쪽 나누기 (문단 헤더 columnType bit 2)를 만나면 진행 중인 페이지를
+    /// 확정한다. 페이지를 확정했으면 true (호출자가 반환하고 같은 문단을
+    /// 새 페이지에서 다시 처리한다).
+    func flushPageBeforeProcessing(_ paragraph: CoreHwp.HwpParagraph) -> Bool {
+        if Self.sectionDef(in: paragraph) != nil {
+            closeColumnBand()
+            if currentSectionDef?.endNoteShape.placesEndnoteAtSectionEnd == true {
+                appendPendingEndnotes()
+            }
+            if !currentBlocks.isEmpty || contentHeightUsed > 0 {
+                cacheCurrentPage()
+                return true
+            }
+        }
+        if paragraph.paraHeader.columnType & 0b100 != 0,
+           !currentBlocks.isEmpty || contentHeightUsed > 0
+        {
+            closeColumnBand()
+            cacheCurrentPage()
+            return true
+        }
+        return false
     }
 
     /// 문단 텍스트 블록을 흐름에 배치한다.
