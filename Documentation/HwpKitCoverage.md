@@ -27,12 +27,12 @@ Grep patterns: `notImplemented` and `\.unknown\(` in `Sources/CoreHwp/`.
 | coding key | `Sources/CoreHwp/Enums/CtrlId/HwpCtrlId.swift:57` | `case notImplemented, unknown` |
 | decode | `Sources/CoreHwp/Enums/CtrlId/HwpCtrlId.swift:184-186` | Decodes `.notImplemented(HwpCtrlHeader)` |
 | encode | `Sources/CoreHwp/Enums/CtrlId/HwpCtrlId.swift:270-271` | Encodes `.notImplemented(HwpCtrlHeader)` |
-| fallback | `Sources/CoreHwp/Models/Section/HwpParagraph.swift:250` | `genShapeObjectOrNotImplemented` raw fallback |
-| fallback | `Sources/CoreHwp/Models/Section/HwpParagraph.swift:267` | common shape control raw fallback |
-| fallback | `Sources/CoreHwp/Models/Section/HwpParagraph.swift:310` | table raw fallback |
+| fallback | `Sources/CoreHwp/Models/Section/HwpParagraph.swift:258` | `genShapeObjectOrNotImplemented` raw fallback |
+| fallback | `Sources/CoreHwp/Models/Section/HwpParagraph.swift:275` | common shape control raw fallback |
+| fallback | `Sources/CoreHwp/Models/Section/HwpParagraph.swift:318` | table raw fallback |
 | decode | `Sources/CoreHwp/Enums/CtrlId/HwpCtrlId.swift:189` | `self = .unknown(hwpCtrlHeader)` |
 | encode | `Sources/CoreHwp/Enums/CtrlId/HwpCtrlId.swift:272` | `case let .unknown(hwpCtrlHeader)` |
-| unknown control dispatch | `Sources/CoreHwp/Models/Section/HwpParagraph.swift:123` | `return .unknown(header)` for unmapped ctrl id |
+| unknown control dispatch | `Sources/CoreHwp/Models/Section/HwpParagraph.swift:131` | `return .unknown(header)` for unmapped ctrl id |
 
 Note: grep also matched explanatory `AGENTS.md` lines under `Sources/CoreHwp/`; the table above lists Swift implementation occurrences only.
 

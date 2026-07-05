@@ -125,16 +125,19 @@ enum HwpSynthetic {
         column: Int,
         width: UInt32,
         height: UInt32,
-        paragraphs: [CoreHwp.HwpParagraph]
+        paragraphs: [CoreHwp.HwpParagraph],
+        isHeader: Bool = false
     ) -> CoreHwp.HwpTableCell {
         CoreHwp.HwpTableCell(
             header: CoreHwp.HwpTableCellHeader(
                 paragraphCount: Int32(paragraphs.count),
                 property: 0,
                 propertyInfo: CoreHwp.HwpListHeaderProperty(),
-                listHeaderWidthRef: 0,
-                cellPropertyInfo: CoreHwp.HwpTableCellHeaderProperty(rawValue: 0),
-                isHeader: false,
+                listHeaderWidthRef: isHeader ? 1 << 2 : 0,
+                cellPropertyInfo: CoreHwp.HwpTableCellHeaderProperty(
+                    rawValue: isHeader ? 1 << 2 : 0
+                ),
+                isHeader: isHeader,
                 cellProperty: CoreHwp.HwpTableCellProperty(
                     columnAddress: UInt16(column),
                     rowAddress: UInt16(row),
@@ -150,11 +153,13 @@ enum HwpSynthetic {
     }
 
     /// 표 컨트롤. cellParagraphs는 [행][열] 순서의 문단 배열.
-    /// property는 표 76 속성 u32 (bits 0-1 = 쪽 경계 나눔: 0 없음, 2 나눔).
+    /// property는 표 76 속성 u32 (bits 0-1 = 쪽 경계 나눔: 0 없음, 2 나눔;
+    /// bit 2 = 제목 줄 자동 반복). headerRowCount는 앞에서부터 제목 셀로 표시할 행 수.
     static func table(
         cellWidth: UInt32,
         rowHeights: [UInt32],
         property: UInt32 = 2,
+        headerRowCount: Int = 0,
         cellParagraphs: [[[CoreHwp.HwpParagraph]]]
     ) -> CoreHwp.HwpTable {
         let rowCount = cellParagraphs.count
@@ -173,7 +178,8 @@ enum HwpSynthetic {
                     column: columnIndex,
                     width: cellWidth,
                     height: rowHeights[rowIndex],
-                    paragraphs: paragraphs
+                    paragraphs: paragraphs,
+                    isHeader: rowIndex < headerRowCount
                 ))
             }
         }

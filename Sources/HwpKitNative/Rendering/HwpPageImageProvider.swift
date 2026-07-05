@@ -21,6 +21,8 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     private let resolvedImages = NSCache<NSString, CGImage>()
     private var failedKeys: Set<String> = []
     private var inFlightKeys: Set<String> = []
+    /// binItemId별 가장 최근에 해석된 변형 키 (platformImage 폴백용)
+    private var latestVariantByBinItemId: [UInt32: String] = [:]
     private var imageResolvedHandler: (@Sendable (UInt32) -> Void)?
 
     /// (binItemId, style) 변형의 결정론적 캐시 키
@@ -114,6 +116,7 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         inFlightKeys.remove(variant)
         if let image {
             resolvedImages.setObject(image, forKey: variant as NSString, cost: cost)
+            latestVariantByBinItemId[key] = variant
         } else {
             failedKeys.insert(variant)
         }
@@ -123,8 +126,17 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     }
 
     /// PlatformImage(NSImage/UIImage) 편의 접근자 — 앱 레벨 소비용.
+    /// 원본(스타일 없는) 변형이 없으면 가장 최근에 렌더된 스타일 변형을 돌려준다.
     public func platformImage(for key: UInt32) -> PlatformImage? {
-        guard let image = cachedImage(for: key) else { return nil }
+        if let image = cachedImage(for: key) {
+            return PlatformImage(hwpCgImage: image)
+        }
+        lock.lock()
+        let latestVariant = latestVariantByBinItemId[key]
+        lock.unlock()
+        guard let latestVariant,
+              let image = resolvedImages.object(forKey: latestVariant as NSString)
+        else { return nil }
         return PlatformImage(hwpCgImage: image)
     }
 }

@@ -59,6 +59,12 @@ import XCTest
                                     beLessThanOrEqualTo(contentMaxY + 1),
                                     description: "page \(pageIndex + 1) 셀 문단이 조각 밖으로 넘친다"
                                 )
+                                // 이월 문단이 조각 상단 위로 삐져나오지 않는다
+                                // (절단선 라인 정렬 회귀 가드).
+                                expect(paragraph.rect.minY).to(
+                                    beGreaterThanOrEqualTo(-0.5),
+                                    description: "page \(pageIndex + 1) 이월 문단이 조각 위로 나간다"
+                                )
                             }
                         }
                     }

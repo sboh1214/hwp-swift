@@ -18,11 +18,11 @@ HWP 파일은 OLE compound document이며, 그 안의 stream들은 record tree �
 
 ```
 hwp-swift/
-├── Sources/CoreHwp/       # 파서 (81 .swift files)
+├── Sources/CoreHwp/       # 파서
 ├── Sources/HwpKitCore/    # 렌더 코어 — 파이프라인/모델/paint list (AGENTS.md 참조)
 ├── Sources/HwpKitNative/  # 플랫폼 브릿지 — CALayer/View (AGENTS.md 참조)
 ├── Sources/HwpKit/        # SwiftUI 공개 API (AGENTS.md 참조)
-├── Tests/{Core,HwpKitCore,HwpKitNative,HwpKit}Tests/
+├── Tests/{CoreHwp,HwpKitCore,HwpKitNative,HwpKit}Tests/
 ├── Sample/                # HwpSwiftSample.xcodeproj (xcodegen, path: ..)
 ├── Package.swift          # swift-tools-version:5.9
 ├── .github/workflows/     # ci.yml, cd.yml
@@ -49,7 +49,7 @@ hwp-swift/
 
 | 심볼 | 위치 | 역할 |
 |------|------|------|
-| `HwpFile` | [HwpFile.swift](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/HwpFile.swift) | 유일한 public 진입점: `init(fromPath:)`, `init(fromWrapper:)`, `init()` |
+| `HwpFile` | [HwpFile.swift](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/HwpFile.swift) | 유일한 public 진입점: `init(fromPath:)`, `init(fromData:)`, `init(fromWrapper:)`, `init()` |
 | `HwpError` | [HwpError.swift](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/HwpError.swift) | `CustomStringConvertible`을 채택한 public error enum |
 | `HwpStreamName` | [Enums/HwpStreamName.swift](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/Enums/HwpStreamName.swift) | OLE stream 이름 (`FileHeader`, `DocInfo`, `BodyText`, `\005HwpSummaryInformation`, `PrvText`, `PrvImage`) |
 | `parseTreeRecord` | [Utils/HwpRecord.swift](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/Utils/HwpRecord.swift) | stream에서 tag/level/size record tree를 구성 |

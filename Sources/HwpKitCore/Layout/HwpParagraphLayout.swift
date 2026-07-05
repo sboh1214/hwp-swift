@@ -58,6 +58,16 @@ public struct HwpParagraphFrame: Sendable, Hashable {
 public struct HwpParagraphLayout {
     public init() {}
 
+    /// paraShape로 측정/렌더 공용 CTParagraphStyle을 만든다.
+    /// HwpTextRunBuilder가 렌더 경로 (drawText 재조판)에도 같은 스타일을 부착해
+    /// 측정 레이아웃 (정렬/들여쓰기/줄간격, 인라인 앵커 x)과 일치시킨다.
+    public static func paragraphStyle(for paraShape: CoreHwp.HwpParaShape) -> CTParagraphStyle {
+        HwpParagraphLayout().ctParagraphStyle(
+            from: ParagraphMetrics(paraShape: paraShape),
+            property: paraShape.property1Info
+        )
+    }
+
     public func layout(
         attributedString: NSAttributedString,
         paraShape: CoreHwp.HwpParaShape,
