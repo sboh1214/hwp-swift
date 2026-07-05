@@ -58,10 +58,11 @@ import Foundation
         }
 
         /// Resolves `faceName` for `script` at `size` points.
-        /// Walks map candidates then the face name itself; falls back to script-keyed safety net.
+        /// Walks map candidates (원문 → 정규화 이름 조회) then the face name itself;
+        /// falls back to script-keyed safety net.
         public func resolve(faceName: String, script: HwpScript, size: CGFloat) -> CTFont {
             cache.font(for: CacheKey(faceName: faceName, script: script, size: size)) {
-                let candidates = (fontMap.entries[faceName] ?? []) + [faceName]
+                let candidates = fontMap.candidates(forFaceName: faceName) + [faceName]
                 for candidate in candidates {
                     if let font = Self.createIfAvailable(name: candidate, size: size) {
                         return font
