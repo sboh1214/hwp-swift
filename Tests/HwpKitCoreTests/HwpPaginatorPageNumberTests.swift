@@ -21,7 +21,7 @@ import XCTest
             for pageIndex in 0 ..< totalPages {
                 let page = try await paginator.page(at: pageIndex)
                 expect(self.pageNumberTexts(of: page)).to(
-                    contain("\(pageIndex + 1)"),
+                    contain("- \(pageIndex + 1) -"),
                     description: "page \(pageIndex + 1)에 쪽 번호가 없다"
                 )
             }
@@ -67,7 +67,7 @@ import XCTest
                 description: "감춘 페이지에 쪽 번호가 있다"
             )
             let secondPage = try await paginator.page(at: 1)
-            expect(self.pageNumberTexts(of: secondPage)).to(contain("2"))
+            expect(self.pageNumberTexts(of: secondPage)).to(contain("- 2 -"))
         }
 
         func testPageHideSuppressesHeaderAndFooterOnControlPage() async throws {
@@ -117,8 +117,8 @@ import XCTest
             let firstPage = try await paginator.page(at: 0)
             let secondPage = try await paginator.page(at: 1)
 
-            expect(self.pageNumberTexts(of: firstPage)).to(contain("9"))
-            expect(self.pageNumberTexts(of: secondPage)).to(contain("10"))
+            expect(self.pageNumberTexts(of: firstPage)).to(contain("- 9 -"))
+            expect(self.pageNumberTexts(of: secondPage)).to(contain("- 10 -"))
         }
     }
 

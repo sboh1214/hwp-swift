@@ -83,12 +83,14 @@ import XCTest
             let textBlocks = (page?.blocks ?? []).filter { $0.kind == .text }
             expect(textBlocks.count) == 11 // 첫 문단 + 본문 10
             for block in textBlocks where block.attributedString?.string.contains("절대") == true {
-                expect(block.frame.height).to(beCloseTo(15, within: 0.01))
+                // 캐시 lineHeight 1500 × 비율 160% (blank paraShape 0) = 24pt
+                expect(block.frame.height).to(beCloseTo(24, within: 0.01))
             }
         }
 
-        func testRelativeLineSegmentHeightsKeepLegacyBehavior() async throws {
-            // 문단-상대 (첫 loc == 0) 캐시는 기존과 동일하게 max(loc+h)가 높이다.
+        func testRelativeLineSegmentHeightsApplyLineSpacing() async throws {
+            // 문단-상대 (첫 loc == 0) 캐시: 높이 = max(loc + h × 비율) − 첫 loc.
+            // (실측: lineLocation 델타 = lineHeight × 줄 간격 비율 — noori 21곳 전부)
             let paragraph = try HwpSynthetic.lineSegParagraph(
                 "상대 좌표 문단",
                 segments: [(location: 0, height: 1000), (location: 1000, height: 1000)]
@@ -107,7 +109,8 @@ import XCTest
             let block = page?.blocks.first {
                 $0.attributedString?.string.contains("상대") == true
             }
-            expect(block?.frame.height).to(beCloseTo(20, within: 0.01))
+            // 1000 + 1000 × 1.6 = 2600 HWPUNIT = 26pt
+            expect(block?.frame.height).to(beCloseTo(26, within: 0.01))
         }
 
         func testParagraphPageBreakStartsNewPage() async throws {
