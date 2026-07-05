@@ -29,7 +29,9 @@ public struct HwpFootnoteBlock: @unchecked Sendable, Hashable {
     }
 
     /// 하위 호환: 문단 지오메트리만 필요할 때
-    public var paragraphFrames: [HwpParagraphFrame] { paragraphs.map(\.frame) }
+    public var paragraphFrames: [HwpParagraphFrame] {
+        paragraphs.map(\.frame)
+    }
 }
 
 /// 페이지 하단 각주 영역 레이아웃.
@@ -53,6 +55,12 @@ public struct HwpFootnoteLayout {
         }
     }
 
+    /// 배치 결과: 이 페이지에 들어간 블록과 다음 페이지로 이월할 입력.
+    public struct Placement {
+        public let blocks: [HwpFootnoteBlock]
+        public let overflow: [Input]
+    }
+
     /// 페이지 하단에 배치할 각주 블록들을 계산한다.
     ///
     /// - Parameters:
@@ -67,7 +75,23 @@ public struct HwpFootnoteLayout {
         index: HwpIndex,
         footnoteShape: CoreHwp.HwpFootnoteShape? = nil
     ) -> [HwpFootnoteBlock] {
-        guard !footnotes.isEmpty else { return [] }
+        place(
+            footnotes: footnotes,
+            onPage: geometry,
+            index: index,
+            footnoteShape: footnoteShape
+        ).blocks
+    }
+
+    /// 각주 영역(콘텐츠 절반 상한)에 들어가는 만큼 배치하고 나머지는 이월로 돌려준다.
+    /// 진행 보장을 위해 첫 각주는 영역보다 커도 항상 배치한다.
+    public func place(
+        footnotes: [Input],
+        onPage geometry: HwpPageGeometry,
+        index: HwpIndex,
+        footnoteShape: CoreHwp.HwpFootnoteShape? = nil
+    ) -> Placement {
+        guard !footnotes.isEmpty else { return Placement(blocks: [], overflow: []) }
 
         let contentFrame = geometry.contentFrame
         let divider = dividerMetrics(
@@ -95,10 +119,14 @@ public struct HwpFootnoteLayout {
         )
 
         var blocks: [HwpFootnoteBlock] = []
+        var overflow: [Input] = []
         var cursorY = separatorLine.maxY + divider.marginBottom
-        for note in measured {
+        for (noteIndex, note) in measured.enumerated() {
             let blockHeight = max(1, note.frame.totalHeight)
-            guard cursorY + blockHeight <= contentFrame.maxY + 0.5 else { break }
+            if !blocks.isEmpty, cursorY + blockHeight > contentFrame.maxY + 0.5 {
+                overflow = measured[noteIndex...].map(\.input)
+                break
+            }
             let blockFrame = CGRect(
                 x: contentFrame.minX,
                 y: cursorY,
@@ -119,7 +147,7 @@ public struct HwpFootnoteLayout {
             ))
             cursorY += blockHeight + divider.betweenNotes
         }
-        return blocks
+        return Placement(blocks: blocks, overflow: overflow)
     }
 
     /// 높이 계산이 끝난 각주 문단

@@ -167,6 +167,7 @@ private extension HwpPaginator {
                 hyperlinkURL: hyperlinkURL(in: paragraph),
                 paragraphId: paragraph.paraHeader.paraId
             )
+            collectFootnotes(from: paragraph)
             appendControlBlocks(from: paragraph)
             collectUnsupported(from: paragraph)
             advanceParagraph()
@@ -179,6 +180,10 @@ private extension HwpPaginator {
         }
 
         cacheCurrentPage()
+        // 마지막 페이지에서 넘친 각주가 있으면 빈 페이지를 이어 붙여 모두 배치한다.
+        while !pendingFootnotes.isEmpty {
+            cacheCurrentPage()
+        }
         didFinishPagination = true
     }
 
@@ -351,8 +356,10 @@ private extension HwpPaginator {
                 activeHeaders[list.headerFooterApplyScope] = list
             case let .footer(list):
                 activeFooters[list.headerFooterApplyScope] = list
-            case let .footnote(list), let .endnote(list):
-                collectFootnotes(list)
+            case .footnote, .endnote:
+                // 각주/미주는 collectFootnotes(from:depth:)가 컨트롤 블록 방출 전에
+                // 수집한다 (참조 위치 페이지 귀속).
+                continue
             default:
                 continue
             }
@@ -789,6 +796,25 @@ private extension HwpPaginator {
 
     // MARK: 각주/미주
 
+    /// 문단(과 컨테이너 안 문단)의 각주를 이 페이지 몫으로 수집한다.
+    /// 표 분할 등 다른 컨트롤 방출이 페이지를 넘기기 전에 호출해
+    /// 각주를 참조 위치의 페이지에 귀속시킨다.
+    func collectFootnotes(from paragraph: CoreHwp.HwpParagraph, depth: Int = 0) {
+        guard let ctrls = paragraph.ctrlHeaderArray else { return }
+        for ctrl in ctrls {
+            switch ctrl {
+            case let .footnote(list), let .endnote(list):
+                collectFootnotes(list)
+            default:
+                break
+            }
+            guard depth < 3 else { continue }
+            for (nested, _) in childParagraphs(of: ctrl) where nested.ctrlHeaderArray != nil {
+                collectFootnotes(from: nested, depth: depth + 1)
+            }
+        }
+    }
+
     func collectFootnotes(_ list: CoreHwp.HwpListControl) {
         let paragraphs = list.listArray.flatMap(\.paragraphArray)
         guard !paragraphs.isEmpty else { return }
@@ -804,6 +830,14 @@ private extension HwpPaginator {
         if isFirstOnPage {
             footnoteReservedHeight += 16 // 구분선 + 위/아래 여백
         }
+    }
+
+    /// 이월된 각주 입력들이 새 페이지에서 예약할 높이 (구분선 여백 포함)
+    func reservedFootnoteHeight(for inputs: [HwpFootnoteLayout.Input]) -> CGFloat {
+        guard !inputs.isEmpty else { return 0 }
+        return inputs.reduce(CGFloat(0)) {
+            $0 + measuredFootnoteHeight(of: $1.paragraph) + 4
+        } + 16 // 구분선 + 위/아래 여백
     }
 
     /// 이 문단이 페이지에 추가될 때 각주 영역이 요구할 높이 (커밋 전 예측용)
@@ -841,15 +875,17 @@ private extension HwpPaginator {
         return max(1, frame.totalHeight)
     }
 
+    /// 대기 중인 각주를 페이지 하단에 배치한다. 영역(콘텐츠 절반 상한)을
+    /// 넘는 각주는 pendingFootnotes에 남겨 다음 페이지로 이월한다.
     func appendPendingFootnotes() {
         guard !pendingFootnotes.isEmpty else { return }
-        let blocks = footnoteLayout.layout(
+        let placement = footnoteLayout.place(
             footnotes: pendingFootnotes,
             onPage: currentPageGeometry,
             index: index,
             footnoteShape: currentSectionDef?.footNoteShape
         )
-        for block in blocks {
+        for block in placement.blocks {
             currentBlocks.append(AnyHwpBlock(
                 frame: block.frame,
                 kind: .footnote,
@@ -860,7 +896,7 @@ private extension HwpPaginator {
                 source: HwpBlockSource(paragraphId: block.paragraphs.first?.paragraphId)
             ))
         }
-        pendingFootnotes = []
+        pendingFootnotes = placement.overflow
         footnoteReservedHeight = 0
     }
 
@@ -887,6 +923,8 @@ private extension HwpPaginator {
         currentBlocks = []
         contentHeightUsed = 0
         paragraphAnchorTop = currentPageGeometry.contentFrame.minY
+        // 이월된 각주가 새 페이지에서 차지할 영역을 다시 예약한다.
+        footnoteReservedHeight = reservedFootnoteHeight(for: pendingFootnotes)
         if currentSectionDef?.footNoteShape.numberingModeRawValue == 2 {
             footnoteCounter = Self.initialFootnoteNumber(for: currentSectionDef)
         }

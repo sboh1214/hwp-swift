@@ -92,6 +92,51 @@ final class HwpFootnoteLayoutTests: XCTestCase {
         expect(block.frame.maxY) <= geometry.contentFrame.maxY + 1
     }
 
+    func testPlaceReturnsOverflowWhenNotesExceedHalfPage() throws {
+        // 콘텐츠 절반(349pt)을 넘도록 긴 각주 여러 개를 만든다.
+        let longText = String(repeating: "각주 본문이 길어서 여러 줄로 감싸진다. ", count: 40)
+        let footnotes = try (1 ... 4).map { number in
+            HwpFootnoteLayout.Input(
+                paragraph: try HwpSynthetic.textParagraph("\(number)) \(longText)"),
+                number: number
+            )
+        }
+
+        let placement = layout.place(footnotes: footnotes, onPage: geometry, index: index)
+
+        expect(placement.blocks.count) >= 1
+        expect(placement.overflow.count) >= 1
+        expect(placement.blocks.count + placement.overflow.count) == footnotes.count
+        // 이월은 입력 순서의 꼬리 구간이어야 한다.
+        expect(placement.overflow.map(\.number))
+            == Array((placement.blocks.count + 1) ... footnotes.count)
+        // 배치된 블록은 콘텐츠 아래 경계를 넘지 않는다.
+        for block in placement.blocks {
+            expect(block.frame.maxY) <= geometry.contentFrame.maxY + 0.5
+        }
+    }
+
+    func testPlaceAlwaysPlacesFirstNoteForProgress() throws {
+        let hugeText = String(repeating: "한 각주가 페이지 절반보다 크다. ", count: 400)
+        let footnotes = [HwpFootnoteLayout.Input(
+            paragraph: try HwpSynthetic.textParagraph(hugeText),
+            number: 1
+        )]
+
+        let placement = layout.place(footnotes: footnotes, onPage: geometry, index: index)
+
+        expect(placement.blocks.count) == 1
+        expect(placement.overflow).to(beEmpty())
+    }
+
+    func testPlaceWithoutOverflowMatchesLayout() {
+        let footnotes = [input(number: 1), input(number: 2)]
+        let placement = layout.place(footnotes: footnotes, onPage: geometry, index: index)
+        let blocks = layout.layout(footnotes: footnotes, onPage: geometry, index: index)
+        expect(placement.overflow).to(beEmpty())
+        expect(placement.blocks) == blocks
+    }
+
     private func input(number: Int) -> HwpFootnoteLayout.Input {
         HwpFootnoteLayout.Input(paragraph: CoreHwp.HwpParagraph(), number: number)
     }

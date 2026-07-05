@@ -146,6 +146,50 @@ import XCTest
             }
         }
 
+        func testLongFootnotesCarryOverToNextPageWithoutClipping() async throws {
+            let longText = String(repeating: "긴 각주 본문 문장. ", count: 20)
+            let footnoteParagraphs = try (1 ... 4).map {
+                try HwpSynthetic.textParagraph("각주\($0) \(longText)")
+            }
+            let footnote = HwpSynthetic.listControl(
+                ctrlId: .footnote,
+                paragraphs: footnoteParagraphs
+            )
+            var host = try HwpSynthetic.textParagraph("각주가 달린 본문 문단")
+            host.ctrlHeaderArray = [.footnote(footnote)]
+            let section = HwpSynthetic.section(
+                firstParagraphControls: [
+                    .section(HwpSynthetic.sectionDef(pageHeight: 40000)),
+                    .column(CoreHwp.HwpColumn()),
+                ],
+                bodyParagraphs: [host]
+            )
+            let paginator = HwpPaginator(
+                sections: [section],
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+
+            let totalPages = await paginator.totalPages()
+            expect(totalPages) >= 2
+
+            var placedNumbers: [Int] = []
+            for pageIndex in 0 ..< totalPages {
+                guard let page = try await paginator.page(at: pageIndex) else { continue }
+                let contentMaxY = page.size.height - page.margins.bottom
+                for block in page.blocks where block.kind == .footnote {
+                    guard case let .footnote(footnoteBlock) = block.payload else { continue }
+                    placedNumbers.append(footnoteBlock.number)
+                    expect(block.frame.maxY).to(
+                        beLessThanOrEqualTo(contentMaxY + 0.5),
+                        description: "page \(pageIndex + 1) 각주가 하단 여백을 침범한다"
+                    )
+                }
+            }
+            // 각주 4개가 잘리지 않고 전부 (순서대로) 배치되어야 한다.
+            expect(placedNumbers) == [1, 2, 3, 4]
+        }
+
         func testLazyDoesNotComputeAllPagesUpFront() async throws {
             let file = CoreHwp.HwpFile()
             let paginator = HwpPaginator(
