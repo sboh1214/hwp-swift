@@ -22,6 +22,30 @@ enum HwpSynthetic {
         return paragraph
     }
 
+    /// 라인 세그먼트 캐시가 있는 문단 (단위: HWPUNIT).
+    /// 일부 저장본 (한/글 2007 계열)처럼 lineLocation을 페이지 내 절대 y로 준
+    /// 케이스와 문단-상대 (0 시작) 케이스를 모두 만들 수 있다.
+    static func lineSegParagraph(
+        _ text: String,
+        segments: [(location: Int32, height: Int32)]
+    ) throws -> CoreHwp.HwpParagraph {
+        var paragraph = try textParagraph(text)
+        var payload = Data()
+        for segment in segments {
+            withUnsafeBytes(of: UInt32(0).littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: segment.location.littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: segment.height.littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: segment.height.littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: Int32(850).littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: Int32(600).littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: Int32(0).littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: Int32(42520).littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: UInt32(393_216).littleEndian) { payload.append(contentsOf: $0) }
+        }
+        paragraph.paraLineSeg = try CoreHwp.HwpParaLineSeg.load(payload)
+        return paragraph
+    }
+
     /// 머리말/꼬리말/각주/미주 리스트 컨트롤.
     /// ctrl 헤더 payload는 ctrl id + 속성 u32 (표 140 prefix 레이아웃).
     static func listControl(

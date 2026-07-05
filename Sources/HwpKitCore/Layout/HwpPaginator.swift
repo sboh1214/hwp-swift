@@ -1821,7 +1821,11 @@ private extension HwpPaginator {
         let segments = paragraph.paraLineSeg.paraLineSegInternalArray
         guard isValidLineSegmentCache(segments) else { return fallback }
         let bottom = segments.reduce(Int32.min) { max($0, $1.lineLocation + max(0, $1.lineHeight)) }
-        return max(0, HwpUnits.points(fromHwpUnit: bottom))
+        // 일부 저장본 (한/글 2007 계열)은 lineLocation을 문단-상대 (0 시작)가 아니라
+        // 페이지 내 누적 절대 y로 기록한다. 첫 세그먼트 위치를 빼서 문단-상대 높이로
+        // 정규화한다 (첫 lineLocation == 0인 저장본에서는 기존과 동일).
+        let top = segments[0].lineLocation
+        return max(0, HwpUnits.points(fromHwpUnit: bottom - top))
     }
 
     func isValidLineSegmentCache(_ segments: [CoreHwp.HwpParaLineSegInternal]) -> Bool {

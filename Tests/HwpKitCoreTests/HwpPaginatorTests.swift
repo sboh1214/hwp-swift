@@ -55,6 +55,61 @@ import XCTest
             expect(page?.pageNumber) == 1
         }
 
+        func testAbsoluteLineSegmentLocationsAreRelativized() async throws {
+            // 한/글 2007 계열 저장본: lineLocation이 문단-상대 (0 시작)가 아니라
+            // 페이지 내 누적 절대 y로 기록된다. 문단 높이는 세그먼트 상대 높이
+            // (max(loc+h) − 첫 loc)여야 하며, 절대 y를 그대로 쓰면 문단 하나가
+            // 페이지를 통째로 차지해 페이지가 폭발한다.
+            let bodyParagraphs = try (0 ..< 10).map { index in
+                try HwpSynthetic.lineSegParagraph(
+                    "절대 좌표 문단 \(index)",
+                    segments: [(location: Int32(2720 + index * 2000), height: 1500)]
+                )
+            }
+            let section = HwpSynthetic.section(
+                firstParagraphControls: [.section(HwpSynthetic.sectionDef())],
+                bodyParagraphs: bodyParagraphs
+            )
+            let paginator = HwpPaginator(
+                sections: [section],
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+
+            let totalPages = await paginator.totalPages()
+            expect(totalPages) == 1
+
+            let page = try await paginator.page(at: 0)
+            let textBlocks = (page?.blocks ?? []).filter { $0.kind == .text }
+            expect(textBlocks.count) == 11 // 첫 문단 + 본문 10
+            for block in textBlocks where block.attributedString?.string.contains("절대") == true {
+                expect(block.frame.height).to(beCloseTo(15, within: 0.01))
+            }
+        }
+
+        func testRelativeLineSegmentHeightsKeepLegacyBehavior() async throws {
+            // 문단-상대 (첫 loc == 0) 캐시는 기존과 동일하게 max(loc+h)가 높이다.
+            let paragraph = try HwpSynthetic.lineSegParagraph(
+                "상대 좌표 문단",
+                segments: [(location: 0, height: 1000), (location: 1000, height: 1000)]
+            )
+            let section = HwpSynthetic.section(
+                firstParagraphControls: [.section(HwpSynthetic.sectionDef())],
+                bodyParagraphs: [paragraph]
+            )
+            let paginator = HwpPaginator(
+                sections: [section],
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+
+            let page = try await paginator.page(at: 0)
+            let block = page?.blocks.first {
+                $0.attributedString?.string.contains("상대") == true
+            }
+            expect(block?.frame.height).to(beCloseTo(20, within: 0.01))
+        }
+
         func testActiveHeaderFooterRepeatOnEveryPage() async throws {
             let header = HwpSynthetic.listControl(
                 ctrlId: .header,
