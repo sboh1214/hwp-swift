@@ -94,19 +94,26 @@ public final class HwpPageImageProvider: @unchecked Sendable {
                 }
             }
             let styled = decoded.map { HwpImageStyleRenderer.apply(style, to: $0) }
-            self?.finishRequest(key: key, variant: variant, image: styled)
+            // crop-only 변형은 CGImage.cropping이 원본 backing을 공유·고정하므로
+            // 캐시 비용을 원본 크기 기준으로 계상한다.
+            let pinnedPixels = max(
+                (styled?.width ?? 0) * (styled?.height ?? 0),
+                (decoded?.width ?? 0) * (decoded?.height ?? 0)
+            )
+            self?.finishRequest(
+                key: key,
+                variant: variant,
+                image: styled,
+                cost: pinnedPixels * 4
+            )
         }
     }
 
-    private func finishRequest(key: UInt32, variant: String, image: CGImage?) {
+    private func finishRequest(key: UInt32, variant: String, image: CGImage?, cost: Int) {
         lock.lock()
         inFlightKeys.remove(variant)
         if let image {
-            resolvedImages.setObject(
-                image,
-                forKey: variant as NSString,
-                cost: image.width * image.height * 4
-            )
+            resolvedImages.setObject(image, forKey: variant as NSString, cost: cost)
         } else {
             failedKeys.insert(variant)
         }

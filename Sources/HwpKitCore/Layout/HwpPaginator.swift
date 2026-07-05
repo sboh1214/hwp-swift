@@ -198,17 +198,28 @@ private extension HwpPaginator {
            !bandHasNonTextContent, !bandTextBlocks.isEmpty
         {
             rebalanceColumnBand()
+            // 재배치 후 흐름 상태를 밴드 하단과 일치시킨다
+            // (뒤따르는 markBandUsage가 stale 값으로 되돌리지 않게).
+            columnIndex = 0
+            contentHeightUsed = max(0, bandUsedBottom - currentColumnFrame.minY)
         }
         bandTextBlocks = []
         bandHasNonTextContent = false
     }
 
     /// 문단에 붙은 단 정의를 반영한다: 현재 밴드를 닫고 그 아래에서 새 밴드를 연다.
+    /// 밴드를 열 자리가 없으면 (이전 콘텐츠가 페이지를 채웠으면) 새 페이지에서 연다.
     func applyColumnDef(in paragraph: CoreHwp.HwpParagraph) {
         guard let column = Self.columnDef(in: paragraph) else { return }
         closeColumnBand()
         currentColumnDef = column
-        openColumnBand(top: bandUsedBottom)
+        if bandUsedBottom >= currentPageGeometry.contentFrame.maxY - 1,
+           !currentBlocks.isEmpty
+        {
+            cacheCurrentPage()
+        } else {
+            openColumnBand(top: bandUsedBottom)
+        }
     }
 
     /// 단이 가득 차면 다음 단으로, 마지막 단이면 새 페이지로 넘어간다.
@@ -334,8 +345,10 @@ private extension HwpPaginator {
         let pageCountBefore = cachedPages.count
 
         while let paragraph = nextParagraph() {
-            // 새 구역 정의: 이전 구역의 구역-끝 미주를 배치하고 진행 중인 페이지를 확정한다.
+            // 새 구역 정의: 이전 구역의 밴드를 닫고 (필요시 단 균형 재배치),
+            // 구역-끝 미주를 배치한 뒤 진행 중인 페이지를 확정한다.
             if Self.sectionDef(in: paragraph) != nil {
+                closeColumnBand()
                 if currentSectionDef?.endNoteShape.placesEndnoteAtSectionEnd == true {
                     appendPendingEndnotes()
                 }
@@ -400,7 +413,8 @@ private extension HwpPaginator {
                 paragraphFrame: paragraphFrame,
                 paragraphHeight: paragraphHeight,
                 hyperlinkURL: hyperlinkURL(in: paragraph),
-                paragraphId: paragraph.paraHeader.paraId
+                paragraphId: paragraph.paraHeader.paraId,
+                reservedFootnoteHeight: anticipatedFootnotes
             )
             return true
         }
@@ -515,18 +529,21 @@ private extension HwpPaginator {
 
     /// 다단 밴드에서 문단 라인을 현재 단부터 채워 넣는다.
     /// 단이 차면 다음 단으로, 마지막 단이 차면 새 페이지로 이어진다.
+    /// reservedFootnoteHeight는 이 문단이 만들 각주 예약분 (본문/각주 겹침 방지).
     func appendParagraphAcrossColumns(
         attributedString: NSAttributedString,
         paragraphFrame: HwpParagraphFrame,
         paragraphHeight: CGFloat,
         hyperlinkURL: String?,
-        paragraphId: UInt32?
+        paragraphId: UInt32?,
+        reservedFootnoteHeight: CGFloat = 0
     ) {
         let lines = paragraphFrame.lines
+        let usableHeight = max(1, effectiveContentHeight - reservedFootnoteHeight)
         paragraphAnchorTop = currentColumnFrame.minY + contentHeightUsed
         guard lines.count > 1, paragraphHeight > 0 else {
             if contentHeightUsed > 0,
-               contentHeightUsed + paragraphHeight > effectiveContentHeight
+               contentHeightUsed + paragraphHeight > usableHeight
             {
                 advanceColumn()
                 paragraphAnchorTop = currentColumnFrame.minY
@@ -544,7 +561,8 @@ private extension HwpPaginator {
         let lineHeight = paragraphHeight / CGFloat(lines.count)
         var lineIndex = 0
         while lineIndex < lines.count {
-            let available = effectiveContentHeight - contentHeightUsed
+            let available = max(1, effectiveContentHeight - reservedFootnoteHeight)
+                - contentHeightUsed
             var takeCount = lineHeight > 0 ? Int(available / lineHeight) : lines.count
             if contentHeightUsed <= 0 {
                 takeCount = max(1, takeCount)
@@ -768,11 +786,14 @@ private extension HwpPaginator {
             var segmentRows: [HwpTableRowFrame] = []
             var segmentHeight: CGFloat = 0
             while let row = remainingRows.first {
-                let rowHeight = row.rowFrame.height
-                if segmentHeight > 0, segmentHeight + rowHeight > remaining {
+                // 세그먼트 높이는 row 사이 cellSpacing까지 포함해
+                // (첫 row 상단 ~ 이 row 하단) 실제 블록 높이로 판정한다.
+                let segmentStartY = segmentRows.first?.rowFrame.minY ?? row.rowFrame.minY
+                let prospectiveHeight = row.rowFrame.maxY - segmentStartY
+                if segmentHeight > 0, prospectiveHeight > remaining {
                     break
                 }
-                if segmentHeight == 0, rowHeight > remaining {
+                if segmentHeight == 0, row.rowFrame.height > remaining {
                     // 빈 페이지보다 큰 row: 남은 높이에서 잘라 나머지를 이월한다.
                     let fragments = sliced(
                         row: row,
@@ -784,7 +805,7 @@ private extension HwpPaginator {
                     break
                 }
                 segmentRows.append(row)
-                segmentHeight += rowHeight
+                segmentHeight = prospectiveHeight
                 remainingRows.removeFirst()
                 if segmentHeight >= remaining { break }
             }
@@ -802,58 +823,143 @@ private extension HwpPaginator {
         rows.first?.rowFrame.height ?? 1
     }
 
+    /// rect를 y = cutY에서 위/아래로 나눈다 (표-로컬 좌표).
+    private func splitRect(_ rect: CGRect, at cutY: CGFloat) -> (top: CGRect, bottom: CGRect) {
+        let topHeight = max(0, min(rect.height, cutY - rect.minY))
+        let top = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: topHeight)
+        let bottom = CGRect(
+            x: rect.minX,
+            y: rect.minY + topHeight,
+            width: rect.width,
+            height: max(0, rect.height - topHeight)
+        )
+        return (top, bottom)
+    }
+
     /// row를 표-로컬 y = cutY에서 위/아래 조각으로 나눈다.
-    /// 문단/중첩 표는 시작 y가 cutY 위면 위 조각에 남는다 (경계를 넘는 텍스트는 클립 전제).
+    /// 경계에 걸친 문단은 라인 단위로 분할해 이월하고, 중첩 표는 시작 y 기준으로
+    /// 한 조각에 남는다.
     private func sliced(
         row: HwpTableRowFrame,
         at cutY: CGFloat
     ) -> (top: HwpTableRowFrame, bottom: HwpTableRowFrame) {
-        func split(_ rect: CGRect) -> (top: CGRect, bottom: CGRect) {
-            let topHeight = max(0, min(rect.height, cutY - rect.minY))
-            let top = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: topHeight)
-            let bottom = CGRect(
-                x: rect.minX,
-                y: rect.minY + topHeight,
-                width: rect.width,
-                height: max(0, rect.height - topHeight)
-            )
-            return (top, bottom)
-        }
-
-        func splitCell(_ cell: HwpTableCellFrame) -> (HwpTableCellFrame, HwpTableCellFrame) {
-            let frames = split(cell.cellFrame)
-            let topParagraphs = cell.paragraphs.filter { $0.rect.minY < cutY }
-            let bottomParagraphs = cell.paragraphs.filter { $0.rect.minY >= cutY }
-            let topNested = cell.nestedTables.filter { $0.rect.minY < cutY }
-            let bottomNested = cell.nestedTables.filter { $0.rect.minY >= cutY }
-            func fragment(
-                _ frame: CGRect,
-                _ paragraphs: [HwpLaidOutParagraph],
-                _ nested: [HwpNestedTableFrame]
-            ) -> HwpTableCellFrame {
-                HwpTableCellFrame(
-                    cellFrame: frame,
-                    row: cell.row,
-                    column: cell.column,
-                    rowSpan: cell.rowSpan,
-                    columnSpan: cell.columnSpan,
-                    paragraphs: paragraphs,
-                    borders: cell.borders,
-                    fillColor: cell.fillColor,
-                    nestedTables: nested
-                )
-            }
-            return (
-                fragment(frames.top, topParagraphs, topNested),
-                fragment(frames.bottom, bottomParagraphs, bottomNested)
-            )
-        }
-
-        let rowFrames = split(row.rowFrame)
-        let cellFragments = row.cells.map(splitCell)
+        let rowFrames = splitRect(row.rowFrame, at: cutY)
+        let cellFragments = row.cells.map { splitCell($0, at: cutY) }
         return (
             HwpTableRowFrame(rowFrame: rowFrames.top, cells: cellFragments.map(\.0)),
             HwpTableRowFrame(rowFrame: rowFrames.bottom, cells: cellFragments.map(\.1))
+        )
+    }
+
+    private func splitCell(
+        _ cell: HwpTableCellFrame,
+        at cutY: CGFloat
+    ) -> (HwpTableCellFrame, HwpTableCellFrame) {
+        let frames = splitRect(cell.cellFrame, at: cutY)
+        var topParagraphs: [HwpLaidOutParagraph] = []
+        var bottomParagraphs: [HwpLaidOutParagraph] = []
+        for paragraph in cell.paragraphs {
+            if paragraph.rect.maxY <= cutY + 0.5 {
+                topParagraphs.append(paragraph)
+            } else if paragraph.rect.minY >= cutY - 0.5 {
+                bottomParagraphs.append(paragraph)
+            } else {
+                let fragments = slicedParagraph(paragraph, at: cutY)
+                if let top = fragments.top { topParagraphs.append(top) }
+                if let bottom = fragments.bottom { bottomParagraphs.append(bottom) }
+            }
+        }
+        let topNested = cell.nestedTables.filter { $0.rect.minY < cutY }
+        let bottomNested = cell.nestedTables.filter { $0.rect.minY >= cutY }
+        func fragment(
+            _ frame: CGRect,
+            _ paragraphs: [HwpLaidOutParagraph],
+            _ nested: [HwpNestedTableFrame]
+        ) -> HwpTableCellFrame {
+            HwpTableCellFrame(
+                cellFrame: frame,
+                row: cell.row,
+                column: cell.column,
+                rowSpan: cell.rowSpan,
+                columnSpan: cell.columnSpan,
+                paragraphs: paragraphs,
+                borders: cell.borders,
+                fillColor: cell.fillColor,
+                nestedTables: nested
+            )
+        }
+        return (
+            fragment(frames.top, topParagraphs, topNested),
+            fragment(frames.bottom, bottomParagraphs, bottomNested)
+        )
+    }
+
+    /// 조각 경계에 걸친 셀 문단을 라인 단위로 위/아래 조각으로 나눠
+    /// 텍스트가 다음 페이지로 실제로 이월되게 한다.
+    /// 라인 정보가 없으면 통째로 위 조각에 남긴다.
+    private func slicedParagraph(
+        _ paragraph: HwpLaidOutParagraph,
+        at cutY: CGFloat
+    ) -> (top: HwpLaidOutParagraph?, bottom: HwpLaidOutParagraph?) {
+        let lines = paragraph.frame.lines
+        let rect = paragraph.rect
+        guard lines.count > 1, rect.height > 0 else { return (paragraph, nil) }
+        let lineHeight = rect.height / CGFloat(lines.count)
+        guard lineHeight > 0 else { return (paragraph, nil) }
+
+        let topCount = min(
+            max(Int((cutY - rect.minY) / lineHeight), 0),
+            lines.count
+        )
+        if topCount == 0 { return (nil, paragraph) }
+        if topCount == lines.count { return (paragraph, nil) }
+
+        let topHeight = lineHeight * CGFloat(topCount)
+        let top = paragraphFragment(
+            of: paragraph,
+            lines: lines[..<topCount],
+            rect: CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: topHeight)
+        )
+        let bottom = paragraphFragment(
+            of: paragraph,
+            lines: lines[topCount...],
+            rect: CGRect(
+                x: rect.minX,
+                y: rect.minY + topHeight,
+                width: rect.width,
+                height: rect.height - topHeight
+            )
+        )
+        return (top, bottom)
+    }
+
+    /// 지정한 라인들만 담은 하위 문단을 만든다. 라인 range는 하위 문자열 기준으로
+    /// 재기준화해 (다중 페이지 row에서) 이후 분할에서도 라인 정보를 쓸 수 있게 한다.
+    private func paragraphFragment(
+        of paragraph: HwpLaidOutParagraph,
+        lines: ArraySlice<HwpLineFrame>,
+        rect: CGRect
+    ) -> HwpLaidOutParagraph {
+        let range = lines.dropFirst().reduce(lines[lines.startIndex].attributedRange) {
+            NSUnionRange($0, $1.attributedRange)
+        }
+        let rebased = lines.map { line in
+            HwpLineFrame(
+                origin: line.origin,
+                width: line.width,
+                baseline: line.baseline,
+                attributedRange: NSRange(
+                    location: max(0, line.attributedRange.location - range.location),
+                    length: line.attributedRange.length
+                ),
+                inlineAnchors: line.inlineAnchors
+            )
+        }
+        return HwpLaidOutParagraph(
+            attributedString: paragraph.attributedString.attributedSubstring(from: range),
+            frame: HwpParagraphFrame(totalHeight: rect.height, lines: rebased),
+            rect: rect,
+            paragraphId: paragraph.paragraphId
         )
     }
 
@@ -1451,17 +1557,29 @@ private extension HwpPaginator {
     }
 
     /// 이 문단이 페이지에 추가될 때 각주 영역이 요구할 높이 (커밋 전 예측용).
-    /// 미주는 페이지 하단 영역을 쓰지 않으므로 계산에서 제외한다.
+    /// 컨테이너 (표 셀 등) 안 각주도 포함하며, 미주는 페이지 하단 영역을
+    /// 쓰지 않으므로 계산에서 제외한다.
     func anticipatedFootnoteHeight(for paragraph: CoreHwp.HwpParagraph) -> CGFloat {
+        let total = anticipatedFootnoteBodyHeight(for: paragraph)
+        guard total > 0 else { return 0 }
+        return pendingFootnotes.isEmpty ? total + 16 : total // 구분선 + 위/아래 여백
+    }
+
+    private func anticipatedFootnoteBodyHeight(
+        for paragraph: CoreHwp.HwpParagraph,
+        depth: Int = 0
+    ) -> CGFloat {
         guard let ctrls = paragraph.ctrlHeaderArray else { return 0 }
         var total: CGFloat = 0
         for ctrl in ctrls {
-            guard case let .footnote(list) = ctrl else { continue }
-            total += list.listArray.flatMap(\.paragraphArray)
-                .reduce(0) { $0 + measuredFootnoteHeight(of: $1) + 4 }
-        }
-        if total > 0, pendingFootnotes.isEmpty {
-            total += 16 // 구분선 + 위/아래 여백
+            if case let .footnote(list) = ctrl {
+                total += list.listArray.flatMap(\.paragraphArray)
+                    .reduce(0) { $0 + measuredFootnoteHeight(of: $1) + 4 }
+            }
+            guard depth < 3 else { continue }
+            for (nested, _) in childParagraphs(of: ctrl) where nested.ctrlHeaderArray != nil {
+                total += anticipatedFootnoteBodyHeight(for: nested, depth: depth + 1)
+            }
         }
         return total
     }
@@ -1526,6 +1644,8 @@ private extension HwpPaginator {
             paintList: paintList
         )
         currentBlocks = []
+        // 페이지가 넘어가면 이전 페이지 문단의 줄 앵커 좌표는 무효다.
+        currentParagraphContext = nil
         // 새 페이지: 현재 단 정의로 콘텐츠 상단부터 새 밴드를 연다.
         openColumnBand(top: currentPageGeometry.contentFrame.minY)
         // 이월된 각주가 새 페이지에서 차지할 영역을 다시 예약한다.
