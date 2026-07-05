@@ -92,6 +92,30 @@ extension HwpParaShape: HwpFromDataWithVersion {
     }
 }
 
+public extension HwpParaShape {
+    /**
+     실제 적용할 줄 간격 종류.
+
+     5.0.2.5 이상 저장본은 속성3 (표 46 bit 0-4)과 `lineSpacing2`가 우선하고,
+     그 미만은 속성1 (표 44 bit 0-1)과 `lineSpacing`을 사용한다
+     (noori 실측: 속성3 종류와 속성1 종류가 일치).
+     */
+    var resolvedLineSpacingKind: HwpLineSpacingKind {
+        if let property3, lineSpacing2 != nil {
+            return HwpLineSpacingKind(rawValue: property3 & 0b11111) ?? .percent
+        }
+        return property1Info.lineSpacingKind
+    }
+
+    /** 종류와 짝을 이루는 줄 간격 값 — `percent`면 %, 나머지는 HWPUNIT */
+    var resolvedLineSpacingValue: Int32 {
+        if property3 != nil, let lineSpacing2 {
+            return Int32(clamping: lineSpacing2)
+        }
+        return lineSpacing
+    }
+}
+
 extension HwpParaShape {
     public init() {
         rawPayload = Data()
