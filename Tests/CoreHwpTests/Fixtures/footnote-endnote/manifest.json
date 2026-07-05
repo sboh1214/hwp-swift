@@ -1178,9 +1178,9 @@
       }
     ],
     "visibleTextContains": [
-      "CoreHwp footnote endnote fixture bod.",
-      "CoreHwp footnote fixture",
-      "CoreHwp endnote fixture"
+      "eHwp footnote endnote fixture bod.",
+      "1) CoreHwp footnote fixture",
+      "1) CoreHwp endnote fixture"
     ],
     "fileLicense": {
       "rawValue": 0

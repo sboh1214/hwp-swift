@@ -108,6 +108,77 @@ enum HwpSynthetic {
         return paragraph
     }
 
+    /// 자동 번호 (atno, 표 142/143) 컨트롤.
+    /// kind: 0 쪽, 1 각주, 2 미주. decorationTail 예: ")".
+    static func autoNumberControl(
+        kind: UInt32,
+        number: UInt16 = 1,
+        numberShape: UInt32 = 0,
+        decorationTail: Character? = nil,
+        superscript: Bool = false
+    ) -> CoreHwp.HwpCtrlId {
+        var property = (kind & 0xF) | ((numberShape & 0xFF) << 4)
+        if superscript { property |= 1 << 12 }
+        let info = CoreHwp.HwpOtherControlAutoNumberInfo(
+            property: property,
+            number: number,
+            userSymbol: 0,
+            decorationHead: 0,
+            decorationTail: decorationTail?.utf16.first ?? 0,
+            rawTrailing: Data()
+        )
+        return .autoNumber(CoreHwp.HwpOtherControl(
+            ctrlId: .autoNumber,
+            rawTrailing: Data(),
+            rawPayload: Data(),
+            ctrlDataRecords: [],
+            unknownChildren: [],
+            autoNumberInfo: info
+        ))
+    }
+
+    /// 새 번호 지정 (nwno, 표 144) 컨트롤. kind: 표 143 번호 종류.
+    static func newNumberControl(kind: UInt32, number: UInt16) -> CoreHwp.HwpCtrlId {
+        .newNumber(CoreHwp.HwpOtherControl(
+            ctrlId: .newNumber,
+            rawTrailing: Data(),
+            rawPayload: Data(),
+            ctrlDataRecords: [],
+            unknownChildren: [],
+            newNumberInfo: CoreHwp.HwpOtherControlNewNumberInfo(
+                property: kind & 0xF,
+                number: number,
+                rawTrailing: Data()
+            )
+        ))
+    }
+
+    /// [ext18 자동 번호] 마커로 시작하는 각주/미주 문단 (한/글 저장 구조와 동일)
+    static func noteParagraph(
+        _ text: String,
+        autoNumber: CoreHwp.HwpCtrlId
+    ) -> CoreHwp.HwpParagraph {
+        var paragraph = CoreHwp.HwpParagraph()
+        var paraText = CoreHwp.HwpParaText()
+        paraText.charArray = [CoreHwp.HwpChar(type: .extended, value: 18)]
+            + text.utf16.map { CoreHwp.HwpChar(type: .char, value: $0) }
+        paragraph.paraText = paraText
+        paragraph.paraLineSeg.paraLineSegInternalArray = []
+        paragraph.ctrlHeaderArray = [autoNumber]
+        return paragraph
+    }
+
+    /// extended 컨트롤 문자 하나만 있는 문단 (nwno/pghd 등 마커 전용 컨트롤)
+    static func markerParagraph(control: CoreHwp.HwpCtrlId) -> CoreHwp.HwpParagraph {
+        var paragraph = CoreHwp.HwpParagraph()
+        var paraText = CoreHwp.HwpParaText()
+        paraText.charArray = [CoreHwp.HwpChar(type: .extended, value: 21)]
+        paragraph.paraText = paraText
+        paragraph.paraLineSeg.paraLineSegInternalArray = []
+        paragraph.ctrlHeaderArray = [control]
+        return paragraph
+    }
+
     /// 글자처럼 취급 (treatAsChar) gso 개체.
     /// 빈 shape component 하나 → 크기 bounding box 도형으로 렌더된다.
     static func inlineShapeObject(

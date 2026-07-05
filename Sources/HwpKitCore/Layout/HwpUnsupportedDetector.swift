@@ -18,6 +18,11 @@ import Foundation
 /// - WordArt, TextArt
 /// - Memo (unless treated as field variant)
 /// - Any `.notImplemented` or `.unknown` control
+///
+/// 렌더에 반영되거나 무해해서 보고하지 않는 컨트롤 (nil):
+/// - autoNumber/newNumber — 각주/미주/쪽 번호 렌더에 사용 (표 142~144)
+/// - pageHide — 쪽 번호/머리말/꼬리말 감추기에 사용 (표 145)
+/// - indexmark/hiddenComment — 화면 출력이 없는 마커
 public struct HwpUnsupportedDetector: Sendable {
     public init() {}
 
@@ -75,7 +80,8 @@ private extension HwpUnsupportedDetector {
         switch ctrl {
         case .table, .shape, .line, .rectangle, .ellipse, .arc, .polygon, .curve,
              .picture, .container, .genShapeObject, .section, .column,
-             .pageNumberPosition, .header, .footer, .footnote, .endnote, .hyperLink:
+             .pageNumberPosition, .header, .footer, .footnote, .endnote, .hyperLink,
+             .autoNumber, .newNumber, .pageHide, .indexmark, .hiddenComment:
             nil
         case .equation, .equationLegacy:
             "수식"
@@ -83,24 +89,14 @@ private extension HwpUnsupportedDetector {
             "OLE"
         case .form:
             "알 수 없음: form"
-        case .autoNumber:
-            "알 수 없음: autoNumber"
-        case .newNumber:
-            "알 수 없음: newNumber"
-        case .pageHide:
-            "알 수 없음: pageHide"
         case .pageCT:
             "알 수 없음: pageCT"
-        case .indexmark:
-            "알 수 없음: indexmark"
         case .bookmark:
             "알 수 없음: bookmark"
         case .overlapping:
             "알 수 없음: overlapping"
         case .comment:
             "알 수 없음: comment"
-        case .hiddenComment:
-            "알 수 없음: hiddenComment"
         case .other:
             "알 수 없음: other"
         case .memo:

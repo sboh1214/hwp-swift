@@ -66,6 +66,8 @@ public actor HwpPaginator {
     struct FootnoteHeightKey: Hashable {
         let paragraph: CoreHwp.HwpParagraph
         let widthCenti: Int
+        /// 자동 번호 치환 텍스트가 폭에 영향을 주므로 번호도 키에 포함한다
+        let number: Int
     }
 
     var cachedPages: [Int: HwpPage] = [:]
@@ -374,9 +376,13 @@ private extension HwpPaginator {
             }
             applySectionDef(in: paragraph)
             applyColumnDef(in: paragraph)
+            applyNewNumbers(in: paragraph)
 
             let attributedString = HwpTextRunBuilder(index: index, fontResolver: fontResolver)
-                .build(paragraph: paragraph)
+                .build(
+                    paragraph: paragraph,
+                    controlReplacements: noteReferenceReplacements(for: paragraph)
+                )
             let paragraphFrame = try await layout(paragraph, attributedString: attributedString)
             guard placeParagraphText(
                 paragraph,
@@ -618,6 +624,76 @@ private extension HwpPaginator {
             }
         }
         return nil
+    }
+
+    // MARK: - 자동 번호/새 번호 (표 142~144)
+
+    /// 새 번호 지정 (nwno)을 카운터에 반영한다. 문단 처리 전에 호출해
+    /// 같은 문단의 각주 참조/각주 번호가 재설정된 값부터 시작하게 한다.
+    /// (문단 재처리 시에도 같은 값으로 다시 설정되므로 멱등하다.)
+    func applyNewNumbers(in paragraph: CoreHwp.HwpParagraph) {
+        for ctrl in paragraph.ctrlHeaderArray ?? [] {
+            guard case let .newNumber(other) = ctrl,
+                  let info = other.newNumberInfo
+            else { continue }
+            switch info.kind {
+            case .page:
+                nextLogicalPageNumber = max(1, Int(info.number))
+            case .footnote:
+                footnoteCounter = max(1, Int(info.number))
+            case .endnote:
+                endnoteCounter = max(1, Int(info.number))
+            case .picture, .table, .equation:
+                break
+            }
+        }
+    }
+
+    /// 본문 문단의 extended 마커 치환: 각주/미주 참조 위치 (ext17)에는
+    /// 위 첨자 번호를, 자동 쪽 번호 (atno kind 0)에는 논리 쪽 번호를 넣는다.
+    /// 번호 미리보기는 collectFootnotes/collectEndnotes가 부여할 값과 같은
+    /// 순서로 계산한다 (컨트롤당 1씩 증가).
+    func noteReferenceReplacements(
+        for paragraph: CoreHwp.HwpParagraph
+    ) -> [Int: HwpControlMarkerReplacement] {
+        guard let ctrls = paragraph.ctrlHeaderArray else { return [:] }
+        var replacements: [Int: HwpControlMarkerReplacement] = [:]
+        var footnotePreview = footnoteCounter
+        var endnotePreview = endnoteCounter
+        for (ctrlIndex, ctrl) in ctrls.enumerated() {
+            switch ctrl {
+            case .footnote:
+                replacements[ctrlIndex] = HwpControlMarkerReplacement(
+                    text: HwpTextRunBuilder.noteNumberText(
+                        number: footnotePreview,
+                        footnoteShape: currentSectionDef?.footNoteShape
+                    ),
+                    isSuperscript: true
+                )
+                footnotePreview += 1
+            case .endnote:
+                replacements[ctrlIndex] = HwpControlMarkerReplacement(
+                    text: HwpTextRunBuilder.noteNumberText(
+                        number: endnotePreview,
+                        footnoteShape: currentSectionDef?.endNoteShape
+                    ),
+                    isSuperscript: true
+                )
+                endnotePreview += 1
+            case let .autoNumber(other):
+                if let info = other.autoNumberInfo, info.kind == .page {
+                    replacements[ctrlIndex] = HwpControlMarkerReplacement(
+                        text: HwpNumberFormat.string(
+                            for: nextLogicalPageNumber,
+                            shape: info.numberShapeRawValue
+                        )
+                    )
+                }
+            default:
+                continue
+            }
+        }
+        return replacements
     }
 
     // MARK: - Unsupported walk (단일 traversal 지점 유지)
@@ -1509,10 +1585,20 @@ private extension HwpPaginator {
     /// 이 페이지에 적용되는 머리말/꼬리말 밴드 블록을 방출한다 (cacheCurrentPage 전용).
     func appendActiveBandBlocks(pageNumber: Int) {
         if let header = resolvedBand(from: activeHeaders, pageNumber: pageNumber) {
-            appendBandBlocks(header, band: currentPageGeometry.headerFrame, isHeader: true)
+            appendBandBlocks(
+                header,
+                band: currentPageGeometry.headerFrame,
+                isHeader: true,
+                pageNumber: pageNumber
+            )
         }
         if let footer = resolvedBand(from: activeFooters, pageNumber: pageNumber) {
-            appendBandBlocks(footer, band: currentPageGeometry.footerFrame, isHeader: false)
+            appendBandBlocks(
+                footer,
+                band: currentPageGeometry.footerFrame,
+                isHeader: false,
+                pageNumber: pageNumber
+            )
         }
     }
 
@@ -1525,7 +1611,12 @@ private extension HwpPaginator {
         let bandWidth: Int
     }
 
-    func appendBandBlocks(_ list: CoreHwp.HwpListControl, band: CGRect?, isHeader: Bool) {
+    func appendBandBlocks(
+        _ list: CoreHwp.HwpListControl,
+        band: CGRect?,
+        isHeader: Bool,
+        pageNumber: Int
+    ) {
         let paragraphs = list.listArray.flatMap(\.paragraphArray)
         guard !paragraphs.isEmpty else { return }
         let contentFrame = currentPageGeometry.contentFrame
@@ -1536,6 +1627,16 @@ private extension HwpPaginator {
             height: 20
         )
 
+        // 자동 쪽 번호 (atno kind 0)가 있는 밴드는 페이지마다 내용이 달라
+        // 캐시하지 않는다.
+        let containsPageNumber = paragraphs.contains { paragraph in
+            (paragraph.ctrlHeaderArray ?? []).contains { ctrl in
+                if case let .autoNumber(other) = ctrl {
+                    return other.autoNumberInfo?.kind == .page
+                }
+                return false
+            }
+        }
         let cacheKey = BandBlocksKey(
             isHeader: isHeader,
             list: list,
@@ -1543,27 +1644,52 @@ private extension HwpPaginator {
             bandY: Int(bandFrame.minY * 100),
             bandWidth: Int(bandFrame.width * 100)
         )
-        if let cached = bandBlocksCache[cacheKey] {
+        if !containsPageNumber, let cached = bandBlocksCache[cacheKey] {
             currentBlocks.append(contentsOf: cached)
             return
         }
 
-        let blocks = layoutBandBlocks(paragraphs: paragraphs, bandFrame: bandFrame)
-        bandBlocksCache[cacheKey] = blocks
+        let blocks = layoutBandBlocks(
+            paragraphs: paragraphs,
+            bandFrame: bandFrame,
+            pageNumber: pageNumber
+        )
+        if !containsPageNumber {
+            bandBlocksCache[cacheKey] = blocks
+        }
         currentBlocks.append(contentsOf: blocks)
     }
 
     /// 밴드 프레임 안에 문단들을 위에서 아래로 조판한 텍스트 블록을 만든다.
+    /// 자동 쪽 번호 (atno kind 0) 마커는 논리 쪽 번호 문자열로 치환한다.
     private func layoutBandBlocks(
         paragraphs: [CoreHwp.HwpParagraph],
-        bandFrame: CGRect
+        bandFrame: CGRect,
+        pageNumber: Int
     ) -> [AnyHwpBlock] {
         let builder = HwpTextRunBuilder(index: index, fontResolver: fontResolver)
         let paragraphLayout = HwpParagraphLayout()
         var cursorY = bandFrame.minY
         var blocks: [AnyHwpBlock] = []
         for paragraph in paragraphs {
-            let attributed = builder.build(paragraph: paragraph)
+            var replacements: [Int: HwpControlMarkerReplacement] = [:]
+            for (ctrlIndex, ctrl) in (paragraph.ctrlHeaderArray ?? []).enumerated() {
+                guard case let .autoNumber(other) = ctrl,
+                      let info = other.autoNumberInfo, info.kind == .page
+                else { continue }
+                replacements[ctrlIndex] = HwpControlMarkerReplacement(
+                    text: HwpTextRunBuilder.decoratedNoteNumber(
+                        number: pageNumber,
+                        shape: info.numberShapeRawValue,
+                        decorationHead: info.decorationHead,
+                        decorationTail: info.decorationTail
+                    )
+                )
+            }
+            let attributed = builder.build(
+                paragraph: paragraph,
+                controlReplacements: replacements
+            )
             guard attributed.length > 0 else { continue }
             let paraShape = index.paraShape(id: UInt32(paragraph.paraHeader.paraShapeId))
                 ?? index.paraShape(id: 0)
@@ -1617,13 +1743,16 @@ private extension HwpPaginator {
         let paragraphs = list.listArray.flatMap(\.paragraphArray)
         guard !paragraphs.isEmpty else { return }
         let isFirstOnPage = pendingFootnotes.isEmpty
+        // 번호는 각주 컨트롤당 하나다 (한글과 동일). 여러 문단짜리 각주는
+        // 같은 번호를 공유하고 첫 문단의 ext18 마커만 번호로 치환된다.
+        let number = footnoteCounter
+        footnoteCounter += 1
         for paragraph in paragraphs {
             pendingFootnotes.append(HwpFootnoteLayout.Input(
                 paragraph: paragraph,
-                number: footnoteCounter
+                number: number
             ))
-            footnoteCounter += 1
-            footnoteReservedHeight += measuredFootnoteHeight(of: paragraph) + 4
+            footnoteReservedHeight += measuredFootnoteHeight(of: paragraph, number: number) + 4
         }
         if isFirstOnPage {
             footnoteReservedHeight += 16 // 구분선 + 위/아래 여백
@@ -1633,12 +1762,15 @@ private extension HwpPaginator {
     /// 미주는 페이지 하단이 아니라 문서/구역 끝에 모아 배치한다 (표 134 bits 8-9).
     /// 각주와 별도 카운터를 쓴다.
     func collectEndnotes(_ list: CoreHwp.HwpListControl) {
-        for paragraph in list.listArray.flatMap(\.paragraphArray) {
+        let paragraphs = list.listArray.flatMap(\.paragraphArray)
+        guard !paragraphs.isEmpty else { return }
+        let number = endnoteCounter
+        endnoteCounter += 1
+        for paragraph in paragraphs {
             pendingEndnotes.append(HwpFootnoteLayout.Input(
                 paragraph: paragraph,
-                number: endnoteCounter
+                number: number
             ))
-            endnoteCounter += 1
         }
     }
 
@@ -1656,7 +1788,8 @@ private extension HwpPaginator {
         // 구분선 + 첫 미주가 남은 공간에 안 들어가면 새 페이지에서 시작한다.
         if let first = pendingEndnotes.first,
            currentColumnFrame.minY > currentPageGeometry.contentFrame.minY,
-           measuredFootnoteHeight(of: first.paragraph) + 16 > effectiveContentHeight
+           measuredFootnoteHeight(of: first.paragraph, number: first.number) + 16
+           > effectiveContentHeight
         {
             cacheCurrentPage()
         }
@@ -1705,7 +1838,7 @@ private extension HwpPaginator {
     func reservedFootnoteHeight(for inputs: [HwpFootnoteLayout.Input]) -> CGFloat {
         guard !inputs.isEmpty else { return 0 }
         return inputs.reduce(CGFloat(0)) {
-            $0 + measuredFootnoteHeight(of: $1.paragraph) + 4
+            $0 + measuredFootnoteHeight(of: $1.paragraph, number: $1.number) + 4
         } + 16 // 구분선 + 위/아래 여백
     }
 
@@ -1713,37 +1846,61 @@ private extension HwpPaginator {
     /// 컨테이너 (표 셀 등) 안 각주도 포함하며, 미주는 페이지 하단 영역을
     /// 쓰지 않으므로 계산에서 제외한다.
     func anticipatedFootnoteHeight(for paragraph: CoreHwp.HwpParagraph) -> CGFloat {
-        let total = anticipatedFootnoteBodyHeight(for: paragraph)
+        // collectFootnotes가 부여할 번호와 같은 순서의 미리보기 카운터
+        var preview = footnoteCounter
+        let total = anticipatedFootnoteBodyHeight(for: paragraph, preview: &preview)
         guard total > 0 else { return 0 }
         return pendingFootnotes.isEmpty ? total + 16 : total // 구분선 + 위/아래 여백
     }
 
     private func anticipatedFootnoteBodyHeight(
         for paragraph: CoreHwp.HwpParagraph,
-        depth: Int = 0
+        depth: Int = 0,
+        preview: inout Int
     ) -> CGFloat {
         guard let ctrls = paragraph.ctrlHeaderArray else { return 0 }
         var total: CGFloat = 0
         for ctrl in ctrls {
             if case let .footnote(list) = ctrl {
-                total += list.listArray.flatMap(\.paragraphArray)
-                    .reduce(0) { $0 + measuredFootnoteHeight(of: $1) + 4 }
+                let paragraphs = list.listArray.flatMap(\.paragraphArray)
+                if !paragraphs.isEmpty {
+                    let number = preview
+                    preview += 1
+                    total += paragraphs.reduce(0) {
+                        $0 + measuredFootnoteHeight(of: $1, number: number) + 4
+                    }
+                }
             }
             guard depth < 3 else { continue }
             for (nested, _) in childParagraphs(of: ctrl) where nested.ctrlHeaderArray != nil {
-                total += anticipatedFootnoteBodyHeight(for: nested, depth: depth + 1)
+                total += anticipatedFootnoteBodyHeight(
+                    for: nested,
+                    depth: depth + 1,
+                    preview: &preview
+                )
             }
         }
         return total
     }
 
-    func measuredFootnoteHeight(of paragraph: CoreHwp.HwpParagraph) -> CGFloat {
+    func measuredFootnoteHeight(of paragraph: CoreHwp.HwpParagraph, number: Int) -> CGFloat {
         let width = currentPageGeometry.contentFrame.width
-        let key = FootnoteHeightKey(paragraph: paragraph, widthCenti: Int(width * 100))
+        let key = FootnoteHeightKey(
+            paragraph: paragraph,
+            widthCenti: Int(width * 100),
+            number: number
+        )
         if let cached = footnoteHeightCache[key] { return cached }
 
         let textRunBuilder = HwpTextRunBuilder(index: index, fontResolver: fontResolver)
-        let attributed = textRunBuilder.build(paragraph: paragraph)
+        let attributed = textRunBuilder.build(
+            paragraph: paragraph,
+            controlReplacements: HwpTextRunBuilder.autoNumberReplacements(
+                in: paragraph,
+                number: number,
+                footnoteShape: currentSectionDef?.footNoteShape
+            )
+        )
         let paraShape = index.paraShape(id: UInt32(paragraph.paraHeader.paraShapeId))
             ?? index.paraShape(id: 0)
             ?? CoreHwp.HwpParaShape()

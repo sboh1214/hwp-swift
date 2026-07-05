@@ -203,15 +203,15 @@ import XCTest
 
         func testLongFootnotesCarryOverToNextPageWithoutClipping() async throws {
             let longText = String(repeating: "긴 각주 본문 문장. ", count: 20)
-            let footnoteParagraphs = try (1 ... 4).map {
-                try HwpSynthetic.textParagraph("각주\($0) \(longText)")
+            // 실제 HWP 구조: 각주 하나 = 각주 컨트롤 하나 (번호도 컨트롤당 1씩)
+            let footnotes = try (1 ... 4).map { number in
+                HwpSynthetic.listControl(
+                    ctrlId: .footnote,
+                    paragraphs: [try HwpSynthetic.textParagraph("각주\(number) \(longText)")]
+                )
             }
-            let footnote = HwpSynthetic.listControl(
-                ctrlId: .footnote,
-                paragraphs: footnoteParagraphs
-            )
             var host = try HwpSynthetic.textParagraph("각주가 달린 본문 문단")
-            host.ctrlHeaderArray = [.footnote(footnote)]
+            host.ctrlHeaderArray = footnotes.map { .footnote($0) }
             let section = HwpSynthetic.section(
                 firstParagraphControls: [
                     .section(HwpSynthetic.sectionDef(pageHeight: 40000)),

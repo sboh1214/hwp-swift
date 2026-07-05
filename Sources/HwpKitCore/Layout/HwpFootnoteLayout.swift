@@ -100,7 +100,12 @@ public struct HwpFootnoteLayout {
         )
 
         // 각 블록 높이를 먼저 계산한다.
-        let measured = measure(footnotes, index: index, width: contentFrame.width)
+        let measured = measure(
+            footnotes,
+            index: index,
+            width: contentFrame.width,
+            footnoteShape: footnoteShape
+        )
 
         // 페이지 하단에서 위로 필요한 만큼 확보하되 콘텐츠 절반을 넘지 않는다.
         let notesHeight = measured.reduce(CGFloat(0)) { $0 + max(1, $1.frame.totalHeight) }
@@ -118,36 +123,14 @@ public struct HwpFootnoteLayout {
             height: max(0.5, divider.thickness)
         )
 
-        var blocks: [HwpFootnoteBlock] = []
-        var overflow: [Input] = []
-        var cursorY = separatorLine.maxY + divider.marginBottom
-        for (noteIndex, note) in measured.enumerated() {
-            let blockHeight = max(1, note.frame.totalHeight)
-            if !blocks.isEmpty, cursorY + blockHeight > contentFrame.maxY + 0.5 {
-                overflow = measured[noteIndex...].map(\.input)
-                break
-            }
-            let blockFrame = CGRect(
-                x: contentFrame.minX,
-                y: cursorY,
-                width: contentFrame.width,
-                height: blockHeight
-            )
-            blocks.append(HwpFootnoteBlock(
-                frame: blockFrame,
-                paragraphs: [HwpLaidOutParagraph(
-                    attributedString: note.attributed,
-                    frame: note.frame,
-                    rect: CGRect(x: 0, y: 0, width: contentFrame.width, height: blockHeight),
-                    paragraphId: note.input.paragraph.paraHeader.paraId
-                )],
-                number: note.input.number,
-                separatorLine: separatorLine,
-                separatorColor: divider.color
-            ))
-            cursorY += blockHeight + divider.betweenNotes
-        }
-        return Placement(blocks: blocks, overflow: overflow)
+        let stacked = stackBlocks(
+            measured: measured,
+            from: separatorLine.maxY + divider.marginBottom,
+            in: contentFrame,
+            separatorLine: separatorLine,
+            divider: divider
+        )
+        return Placement(blocks: stacked.blocks, overflow: stacked.overflow)
     }
 
     /// 흐름 배치 결과: 배치된 블록, 이월 입력, 다음 흐름 y
@@ -181,7 +164,12 @@ public struct HwpFootnoteLayout {
             from: footnoteShape?.dividerInfo,
             contentWidth: columnFrame.width
         )
-        let measured = measure(footnotes, index: index, width: columnFrame.width)
+        let measured = measure(
+            footnotes,
+            index: index,
+            width: columnFrame.width,
+            footnoteShape: footnoteShape
+        )
 
         var cursorY = startY
         var separatorLine = CGRect(x: columnFrame.minX, y: startY, width: 0, height: 0)
@@ -195,25 +183,50 @@ public struct HwpFootnoteLayout {
             cursorY = separatorLine.maxY + divider.marginBottom
         }
 
+        let stacked = stackBlocks(
+            measured: measured,
+            from: cursorY,
+            in: columnFrame,
+            separatorLine: separatorLine,
+            divider: divider
+        )
+        return FlowPlacement(
+            blocks: stacked.blocks,
+            overflow: stacked.overflow,
+            bottom: stacked.bottom
+        )
+    }
+
+    /// 측정 끝난 각주들을 frame 폭으로 위에서 아래로 쌓는다.
+    /// frame.maxY를 넘는 입력은 overflow로 돌려주되, 진행 보장을 위해
+    /// 첫 블록은 항상 배치한다.
+    private func stackBlocks(
+        measured: [MeasuredFootnote],
+        from startY: CGFloat,
+        in frame: CGRect,
+        separatorLine: CGRect,
+        divider: DividerMetrics
+    ) -> FlowPlacement {
         var blocks: [HwpFootnoteBlock] = []
         var overflow: [Input] = []
+        var cursorY = startY
         for (noteIndex, note) in measured.enumerated() {
             let blockHeight = max(1, note.frame.totalHeight)
-            if !blocks.isEmpty, cursorY + blockHeight > columnFrame.maxY + 0.5 {
+            if !blocks.isEmpty, cursorY + blockHeight > frame.maxY + 0.5 {
                 overflow = measured[noteIndex...].map(\.input)
                 break
             }
             blocks.append(HwpFootnoteBlock(
                 frame: CGRect(
-                    x: columnFrame.minX,
+                    x: frame.minX,
                     y: cursorY,
-                    width: columnFrame.width,
+                    width: frame.width,
                     height: blockHeight
                 ),
                 paragraphs: [HwpLaidOutParagraph(
                     attributedString: note.attributed,
                     frame: note.frame,
-                    rect: CGRect(x: 0, y: 0, width: columnFrame.width, height: blockHeight),
+                    rect: CGRect(x: 0, y: 0, width: frame.width, height: blockHeight),
                     paragraphId: note.input.paragraph.paraHeader.paraId
                 )],
                 number: note.input.number,
@@ -270,12 +283,22 @@ public struct HwpFootnoteLayout {
     private func measure(
         _ footnotes: [Input],
         index: HwpIndex,
-        width: CGFloat
+        width: CGFloat,
+        footnoteShape: CoreHwp.HwpFootnoteShape? = nil
     ) -> [MeasuredFootnote] {
         let textRunBuilder = HwpTextRunBuilder(index: index, fontResolver: fontResolver)
         let paragraphLayout = HwpParagraphLayout()
         return footnotes.map { input in
-            let attributed = textRunBuilder.build(paragraph: input.paragraph)
+            // 각주 첫머리의 자동 번호 (ext18) 마커를 번호 문자열로 치환한다
+            // (번호는 paginator가 부여한 문서 순서 번호 — 본문 참조와 동일 소스).
+            let attributed = textRunBuilder.build(
+                paragraph: input.paragraph,
+                controlReplacements: HwpTextRunBuilder.autoNumberReplacements(
+                    in: input.paragraph,
+                    number: input.number,
+                    footnoteShape: footnoteShape
+                )
+            )
             let paraShape = index.paraShape(id: UInt32(input.paragraph.paraHeader.paraShapeId))
                 ?? index.paraShape(id: 0)
                 ?? CoreHwp.HwpParaShape()

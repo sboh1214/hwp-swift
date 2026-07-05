@@ -43,16 +43,38 @@ private func makeInlineObjectRunDelegate(width: CGFloat, height: CGFloat) -> CTR
     return CTRunDelegateCreate(&callbacks, Unmanaged.passRetained(metrics).toOpaque())
 }
 
+/// extended 컨트롤 마커 (U+FFFC) 대신 렌더할 텍스트 (각주 참조/자동 번호 등)
+public struct HwpControlMarkerReplacement: Sendable, Hashable {
+    public let text: String
+    /// 위 첨자 (본문 각주 참조 번호, 표 143 bit 12)
+    public let isSuperscript: Bool
+
+    public init(text: String, isSuperscript: Bool = false) {
+        self.text = text
+        self.isSuperscript = isSuperscript
+    }
+}
+
 public struct HwpTextRunBuilder {
     private let index: HwpIndex
     private let fontResolver: HwpFontResolver
+
+    /// 위 첨자 번호의 글꼴 크기 배율/베이스라인 상승 배율 (기준 글자 크기 대비)
+    static let superscriptScale: CGFloat = 0.6
+    static let superscriptBaselineRatio: CGFloat = 0.33
 
     public init(index: HwpIndex, fontResolver: HwpFontResolver) {
         self.index = index
         self.fontResolver = fontResolver
     }
 
-    public func build(paragraph: CoreHwp.HwpParagraph) -> NSAttributedString {
+    /// controlReplacements: extended 컨트롤 ordinal (controlIndex) → 마커 대신
+    /// 방출할 텍스트. 각주 참조 번호 (본문)와 자동 번호 (각주 문단 첫머리) 치환에
+    /// 쓴다. 치환된 run은 폭 0 예약 대신 실제 글리프 폭을 차지한다.
+    public func build(
+        paragraph: CoreHwp.HwpParagraph,
+        controlReplacements: [Int: HwpControlMarkerReplacement] = [:]
+    ) -> NSAttributedString {
         let units = paragraph.paraText?.charArray ?? []
         guard !units.isEmpty else { return NSAttributedString(string: "") }
 
@@ -92,6 +114,7 @@ public struct HwpTextRunBuilder {
                 controlIndex: controlIndex,
                 shapeId: shapeId,
                 paragraph: paragraph,
+                replacement: controlIndex.flatMap { controlReplacements[$0] },
                 to: output
             )
         }
@@ -109,11 +132,85 @@ public struct HwpTextRunBuilder {
         {
             output.addAttribute(
                 kCTParagraphStyleAttributeName as NSAttributedString.Key,
-                value: HwpParagraphLayout.paragraphStyle(for: paraShape),
+                value: HwpParagraphLayout.paragraphStyle(
+                    for: paraShape,
+                    attributedString: output
+                ),
                 range: NSRange(location: 0, length: output.length)
             )
         }
         return output
+    }
+}
+
+public extension HwpTextRunBuilder {
+    /// 앞/뒤 장식 문자 (WCHAR, 0이면 없음)를 붙인 번호 문자열 (표 133/142)
+    static func decoratedNoteNumber(
+        number: Int,
+        shape: Int,
+        decorationHead: CoreHwp.WCHAR,
+        decorationTail: CoreHwp.WCHAR
+    ) -> String {
+        var text = HwpNumberFormat.string(for: number, shape: shape)
+        if decorationHead != 0, let scalar = Unicode.Scalar(decorationHead) {
+            text = String(Character(scalar)) + text
+        }
+        if decorationTail != 0, let scalar = Unicode.Scalar(decorationTail) {
+            text += String(Character(scalar))
+        }
+        return text
+    }
+
+    /// 구역 각주/미주 모양 (표 133: 번호 모양 bits 0-7 + 장식 문자) 기준의 번호 문자열
+    static func noteNumberText(
+        number: Int,
+        footnoteShape: CoreHwp.HwpFootnoteShape?
+    ) -> String {
+        decoratedNoteNumber(
+            number: number,
+            shape: footnoteShape.map { Int($0.property & 0xFF) } ?? 0,
+            decorationHead: footnoteShape?.decorationHeadRawValue ?? 0,
+            decorationTail: footnoteShape?.decorationTailRawValue ?? 0
+        )
+    }
+
+    /// 각주/미주 문단 첫머리의 자동 번호 (ext18 atno) 마커 치환 목록.
+    ///
+    /// 장식 문자/번호 모양은 atno 자신의 payload (표 142)를 우선하고,
+    /// 비어 있으면 구역 각주/미주 모양 (표 133)으로 폴백한다.
+    /// 위 첨자 여부는 표 143 bit 12.
+    static func autoNumberReplacements(
+        in paragraph: CoreHwp.HwpParagraph,
+        number: Int,
+        footnoteShape: CoreHwp.HwpFootnoteShape?
+    ) -> [Int: HwpControlMarkerReplacement] {
+        guard let ctrls = paragraph.ctrlHeaderArray else { return [:] }
+        var replacements: [Int: HwpControlMarkerReplacement] = [:]
+        for (ctrlIndex, ctrl) in ctrls.enumerated() {
+            guard case let .autoNumber(other) = ctrl else { continue }
+            if let info = other.autoNumberInfo {
+                guard info.kind == .footnote || info.kind == .endnote else { continue }
+                let hasOwnDecoration = info.decorationHead != 0 || info.decorationTail != 0
+                    || info.numberShapeRawValue != 0
+                let text = hasOwnDecoration
+                    ? decoratedNoteNumber(
+                        number: number,
+                        shape: info.numberShapeRawValue,
+                        decorationHead: info.decorationHead,
+                        decorationTail: info.decorationTail
+                    )
+                    : noteNumberText(number: number, footnoteShape: footnoteShape)
+                replacements[ctrlIndex] = HwpControlMarkerReplacement(
+                    text: text,
+                    isSuperscript: info.isSuperscript
+                )
+            } else {
+                replacements[ctrlIndex] = HwpControlMarkerReplacement(
+                    text: noteNumberText(number: number, footnoteShape: footnoteShape)
+                )
+            }
+        }
+        return replacements
     }
 }
 
@@ -167,14 +264,40 @@ private extension HwpTextRunBuilder {
         controlIndex: Int?,
         shapeId: UInt32,
         paragraph: CoreHwp.HwpParagraph,
+        replacement: HwpControlMarkerReplacement? = nil,
         to output: NSMutableAttributedString
     ) {
         let shape = resolvedShape(id: shapeId, paragraph: paragraph)
+
+        // 치환 텍스트가 있으면 마커 대신 실제 번호 run을 방출한다.
+        if let replacement, !replacement.text.isEmpty {
+            let script = detectScript(in: replacement.text)
+            var textAttributes = attributes(for: shape, script: script)
+            if replacement.isSuperscript {
+                applySuperscript(to: &textAttributes, shape: shape)
+            }
+            if let controlIndex {
+                textAttributes[HwpAttributedStringKey.controlIndex] = NSNumber(
+                    value: controlIndex
+                )
+            }
+            output.append(NSAttributedString(
+                string: replacement.text,
+                attributes: textAttributes
+            ))
+            return
+        }
+
         var markerAttributes = attributes(for: shape, script: .english)
         if let controlIndex {
             markerAttributes[HwpAttributedStringKey.controlIndex] = NSNumber(value: controlIndex)
             let size = inlineObjectSize(controlIndex: controlIndex, paragraph: paragraph)
                 ?? .zero
+            if size.height > 0 {
+                markerAttributes[HwpAttributedStringKey.inlineObjectHeight] = NSNumber(
+                    value: Double(size.height)
+                )
+            }
             if let delegate = makeInlineObjectRunDelegate(
                 width: size.width,
                 height: size.height
@@ -183,6 +306,29 @@ private extension HwpTextRunBuilder {
             }
         }
         output.append(NSAttributedString(string: "\u{FFFC}", attributes: markerAttributes))
+    }
+
+    /// 위 첨자 (각주 참조 번호): 글꼴 크기를 줄이고 베이스라인을 올린다.
+    func applySuperscript(
+        to attributes: inout [NSAttributedString.Key: Any],
+        shape: CoreHwp.HwpCharShape
+    ) {
+        let baseSize = HwpUnits.points(fromHwpUnit: shape.baseSize)
+        let fontKey = kCTFontAttributeName as NSAttributedString.Key
+        if let value = attributes[fontKey], CFGetTypeID(value as CFTypeRef) == CTFontGetTypeID() {
+            let font = value as! CTFont // swiftlint:disable:this force_cast
+            attributes[fontKey] = CTFontCreateCopyWithAttributes(
+                font,
+                CTFontGetSize(font) * Self.superscriptScale,
+                nil,
+                nil
+            )
+        }
+        let baselineKey = kCTBaselineOffsetAttributeName as NSAttributedString.Key
+        let existing = (attributes[baselineKey] as? NSNumber)?.doubleValue ?? 0
+        attributes[baselineKey] = NSNumber(
+            value: existing + Double(baseSize * Self.superscriptBaselineRatio)
+        )
     }
 
     /// controlIndex번째 컨트롤이 treatAsChar 개체면 예약할 크기 (pt).

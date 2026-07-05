@@ -289,15 +289,41 @@ final class HwpUnsupportedDetectorTests: XCTestCase {
 
     // MARK: - Additional Unsupported Controls
 
-    func testAutoNumberControlReturnsPlaceholder() throws {
+    func testAutoNumberControlIsSupported() throws {
+        // 자동 번호 (atno)는 각주/미주/쪽 번호 렌더에 반영되므로 보고하지 않는다.
         let otherControl = try XCTUnwrap(HwpOtherControl(
             header: HwpCtrlHeader(ctrlId: 0x6174_6E6F, rawPayload: Data()),
             rawPayload: Data()
         ))
         let element = detector.classify(ctrl: .autoNumber(otherControl), page: 7)
 
-        expect(element).notTo(beNil())
-        expect(element?.kind) == .placeholder
+        expect(element).to(beNil())
+    }
+
+    func testRenderHarmlessMarkerControlsAreSupported() throws {
+        // newNumber/pageHide/indexmark/hiddenComment는 렌더에 쓰이거나
+        // 화면 출력이 없는 마커라 placeholder로 보고하지 않는다.
+        let newNumber = try XCTUnwrap(HwpOtherControl(
+            header: HwpCtrlHeader(ctrlId: 0x6E77_6E6F, rawPayload: Data()),
+            rawPayload: Data()
+        ))
+        let pageHide = try XCTUnwrap(HwpOtherControl(
+            header: HwpCtrlHeader(ctrlId: 0x7067_6864, rawPayload: Data()),
+            rawPayload: Data()
+        ))
+        let indexmark = try XCTUnwrap(HwpOtherControl(
+            header: HwpCtrlHeader(ctrlId: 0x6964_786D, rawPayload: Data()),
+            rawPayload: Data()
+        ))
+        let hiddenComment = try XCTUnwrap(HwpOtherControl(
+            header: HwpCtrlHeader(ctrlId: 0x7463_6D74, rawPayload: Data()),
+            rawPayload: Data()
+        ))
+
+        expect(self.detector.classify(ctrl: .newNumber(newNumber), page: 1)).to(beNil())
+        expect(self.detector.classify(ctrl: .pageHide(pageHide), page: 1)).to(beNil())
+        expect(self.detector.classify(ctrl: .indexmark(indexmark), page: 1)).to(beNil())
+        expect(self.detector.classify(ctrl: .hiddenComment(hiddenComment), page: 1)).to(beNil())
     }
 
     func testMemoControlReturnsPlaceholder() {
