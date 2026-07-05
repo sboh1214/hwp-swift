@@ -46,6 +46,30 @@ final class HeaderFooterApplyScopeTests: XCTestCase {
         expect(control.headerFooterApplyScope) == HwpHeaderFooterApplyScope.bothPages
     }
 
+    func testEndnotePlacementBitsDecodeFromFixtureAndSynthetic() throws {
+        // footnote-endnote 픽스처: 미주 모양 속성 0 → 문서의 마지막
+        let hwp = try openHwp(#file, "footnote-endnote")
+        let sectionDef = hwp.sectionArray
+            .flatMap(\.paragraph)
+            .compactMap { paragraph -> HwpSectionDef? in
+                paragraph.ctrlHeaderArray?.compactMap { ctrl -> HwpSectionDef? in
+                    if case let .section(def) = ctrl { return def }
+                    return nil
+                }.first
+            }
+            .first
+        expect(sectionDef?.endNoteShape.endnotePlacementRawValue) == 0
+        expect(sectionDef?.endNoteShape.placesEndnoteAtSectionEnd) == false
+
+        // 표 134 bits 8-9 == 1 → 구역의 마지막
+        var shape = HwpFootnoteShape(
+            dividerLength: 0, dividerMarginTop: 0, dividerType: 0, dividerThickness: 0
+        )
+        shape.property = 1 << 8
+        expect(shape.endnotePlacementRawValue) == 1
+        expect(shape.placesEndnoteAtSectionEnd) == true
+    }
+
     private func listControl(property: UInt32) -> HwpListControl {
         var payload = Data()
         withUnsafeBytes(of: HwpOtherCtrlId.header.rawValue.littleEndian) {

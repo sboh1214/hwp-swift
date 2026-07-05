@@ -146,6 +146,35 @@ final class FixtureObjectRenderTests: XCTestCase {
         expect(found).to(beTrue(), description: "각주 블록 (payload 포함)이 있어야 한다")
     }
 
+    func testFootnoteEndnoteSeparateNumberingAndEndnoteOnLastPage() async throws {
+        let document = try await loadFixture("footnote-endnote")
+        guard let lastPage = document.pages.last else {
+            fail("페이지가 없다")
+            return
+        }
+
+        var footnoteNumber: Int?
+        var endnoteNumber: Int?
+        var endnoteOnLastPage = false
+        for page in document.pages {
+            for block in page.blocks where block.kind == .footnote {
+                guard case let .footnote(note) = block.payload else { continue }
+                let text = note.paragraphs.first?.attributedString.string ?? ""
+                if text.contains("footnote fixture") {
+                    footnoteNumber = note.number
+                }
+                if text.contains("endnote fixture") {
+                    endnoteNumber = note.number
+                    endnoteOnLastPage = page.pageNumber == lastPage.pageNumber
+                }
+            }
+        }
+        // 각주/미주는 별도 카운터: 둘 다 시작 번호 1이다.
+        expect(footnoteNumber) == 1
+        expect(endnoteNumber) == 1
+        expect(endnoteOnLastPage).to(beTrue(), description: "미주가 마지막 페이지에 있어야 한다")
+    }
+
     // MARK: - header-footer (머리말/꼬리말 페이지 반복)
 
     func testHeaderFooterRendersBandsOnEveryPage() async throws {

@@ -99,4 +99,18 @@ public extension HwpFootnoteShape {
     var numberingModeRawValue: Int {
         Int((property >> 10) & 0b11)
     }
+
+    /**
+     미주 배치 (표 134 bits 8-9, 미주 모양 전용):
+     0 문서의 마지막, 1 구역의 마지막.
+     (각주 모양에서는 같은 bit가 다단 배열 방식을 뜻한다.)
+     */
+    var endnotePlacementRawValue: Int {
+        Int((property >> 8) & 0b11)
+    }
+
+    /** 미주를 구역의 마지막에 배치하는지 여부 (표 134 bits 8-9 == 1) */
+    var placesEndnoteAtSectionEnd: Bool {
+        endnotePlacementRawValue == 1
+    }
 }

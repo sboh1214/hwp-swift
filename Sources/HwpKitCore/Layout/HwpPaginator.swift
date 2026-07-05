@@ -25,12 +25,16 @@ public actor HwpPaginator {
     private var collectedUnsupported: [HwpUnsupportedElement] = []
     /// 이 페이지에 배치할 각주 (문단 + 문서 순서 번호)
     private var pendingFootnotes: [HwpFootnoteLayout.Input] = []
+    /// 문서/구역 끝에 배치할 미주 (표 134 bits 8-9)
+    private var pendingEndnotes: [HwpFootnoteLayout.Input] = []
     /// 각주 영역이 차지할 높이 (본문 overflow 검사에 반영)
     private var footnoteReservedHeight: CGFloat = 0
     /// 현재 문단의 현재-페이지 상단 y (문단 기준 앵커의 기준점).
     /// 페이지가 넘어가면 새 페이지 콘텐츠 상단으로 재설정된다.
     private var paragraphAnchorTop: CGFloat = 0
     private var footnoteCounter = 0
+    /// 미주 번호 (각주와 별도 카운터, endNoteShape.startingNumber부터)
+    private var endnoteCounter = 0
     /// 구역의 활성 머리말/꼬리말 (적용 범위별, 표 141).
     /// 컨트롤을 만난 이후의 모든 페이지에 반복 방출되며, 같은 범위의
     /// 새 컨트롤이 나오면 교체된다.
@@ -69,7 +73,12 @@ public actor HwpPaginator {
         footnoteLayout = HwpFootnoteLayout(fontResolver: fontResolver)
         currentPageGeometry = Self.initialGeometry(for: sections)
         currentSectionDef = Self.firstSectionDef(for: sections)
-        footnoteCounter = Self.initialFootnoteNumber(for: currentSectionDef)
+        footnoteCounter = Self.initialNoteNumber(
+            startingNumber: currentSectionDef?.footNoteShape.startingNumber
+        )
+        endnoteCounter = Self.initialNoteNumber(
+            startingNumber: currentSectionDef?.endNoteShape.startingNumber
+        )
     }
 
     public func page(at index: Int) async throws -> HwpPage? {
@@ -113,8 +122,8 @@ private extension HwpPaginator {
         return HwpPageGeometry.compute(pageDef: sectionDef.pageDef, sectionDef: sectionDef)
     }
 
-    static func initialFootnoteNumber(for sectionDef: CoreHwp.HwpSectionDef?) -> Int {
-        let starting = Int(sectionDef?.footNoteShape.startingNumber ?? 1)
+    static func initialNoteNumber(startingNumber: UInt16?) -> Int {
+        let starting = Int(startingNumber ?? 1)
         return starting > 0 ? starting : 1
     }
 
@@ -325,12 +334,15 @@ private extension HwpPaginator {
         let pageCountBefore = cachedPages.count
 
         while let paragraph = nextParagraph() {
-            // 새 구역 정의: 진행 중인 페이지를 먼저 확정한다.
-            if Self.sectionDef(in: paragraph) != nil,
-               !currentBlocks.isEmpty || contentHeightUsed > 0
-            {
-                cacheCurrentPage()
-                return
+            // 새 구역 정의: 이전 구역의 구역-끝 미주를 배치하고 진행 중인 페이지를 확정한다.
+            if Self.sectionDef(in: paragraph) != nil {
+                if currentSectionDef?.endNoteShape.placesEndnoteAtSectionEnd == true {
+                    appendPendingEndnotes()
+                }
+                if !currentBlocks.isEmpty || contentHeightUsed > 0 {
+                    cacheCurrentPage()
+                    return
+                }
             }
             applySectionDef(in: paragraph)
             applyColumnDef(in: paragraph)
@@ -358,8 +370,10 @@ private extension HwpPaginator {
             }
         }
 
-        // 문서 끝: 밴드를 닫아 (필요시 단 균형 재배치) 마지막 페이지를 확정한다.
+        // 문서 끝: 밴드를 닫고 (필요시 단 균형 재배치) 남은 미주를 마지막
+        // (공간 부족 시 새) 페이지에 배치한 뒤 마지막 페이지를 확정한다.
         closeColumnBand()
+        appendPendingEndnotes()
         cacheCurrentPage()
         // 마지막 페이지에서 넘친 각주가 있으면 빈 페이지를 이어 붙여 모두 배치한다.
         while !pendingFootnotes.isEmpty {
@@ -420,7 +434,14 @@ private extension HwpPaginator {
         currentColumnDef = nil
         openColumnBand(top: currentPageGeometry.contentFrame.minY)
         if sectionDef.footNoteShape.numberingModeRawValue != 0 {
-            footnoteCounter = Self.initialFootnoteNumber(for: sectionDef)
+            footnoteCounter = Self.initialNoteNumber(
+                startingNumber: sectionDef.footNoteShape.startingNumber
+            )
+        }
+        if sectionDef.endNoteShape.numberingModeRawValue != 0 {
+            endnoteCounter = Self.initialNoteNumber(
+                startingNumber: sectionDef.endNoteShape.startingNumber
+            )
         }
     }
 
@@ -1021,6 +1042,15 @@ private extension HwpPaginator {
     ///   현재 흐름 위치에 배치하고 높이를 소비한다.
     /// - 나머지 (글 앞/뒤로 포함 anchored): 기준 (쪽/문단) + 오프셋 위치에 배치하고
     ///   본문 흐름을 소비하지 않는다.
+    /// 개체 블록 하나의 내용 (배치 방식과 무관한 공통 값)
+    struct ObjectBlockSpec {
+        let kind: HwpBlockKind
+        let size: CGSize
+        let payload: HwpBlockPayload
+        let attributedString: NSAttributedString?
+        let instanceId: UInt32
+    }
+
     func appendAnchoredBlock(
         kind: HwpBlockKind,
         size: CGSize,
@@ -1030,34 +1060,40 @@ private extension HwpPaginator {
         controlIndex: Int? = nil
     ) {
         let info = commonProperty.propertyInfo
-        let contentFrame = currentPageGeometry.contentFrame
-        let combinedText = combinedAttributedString(attributedText)
+        let spec = ObjectBlockSpec(
+            kind: kind,
+            size: size,
+            payload: payload,
+            attributedString: combinedAttributedString(attributedText),
+            instanceId: commonProperty.instanceId
+        )
 
-        if info.treatAsChar,
-           appendInlineAnchoredBlock(
-               kind: kind,
-               size: size,
-               payload: payload,
-               attributedString: combinedText,
-               instanceId: commonProperty.instanceId,
-               controlIndex: controlIndex
-           )
-        {
+        if info.treatAsChar, appendInlineAnchoredBlock(spec, controlIndex: controlIndex) {
             return
         }
 
         if info.treatAsChar || consumesFlow(info) {
             appendFlowBlock(
-                kind: kind,
-                size: size,
-                payload: payload,
-                attributedString: combinedText,
-                instanceId: commonProperty.instanceId
+                kind: spec.kind,
+                size: spec.size,
+                payload: spec.payload,
+                attributedString: spec.attributedString,
+                instanceId: spec.instanceId
             )
             return
         }
 
-        // anchored: 기준 + 오프셋 (음수 오프셋 허용)
+        appendFloatingBlock(spec, commonProperty: commonProperty)
+    }
+
+    /// 글 앞/뒤로 등 흐름을 소비하지 않는 개체를 기준 + 오프셋 위치에 배치한다.
+    private func appendFloatingBlock(
+        _ spec: ObjectBlockSpec,
+        commonProperty: CoreHwp.HwpCommonCtrlProperty
+    ) {
+        let info = commonProperty.propertyInfo
+        let contentFrame = currentPageGeometry.contentFrame
+        // 기준 + 오프셋 (음수 오프셋 허용)
         let offsetX = HwpUnits.points(
             fromHwpUnit: Int32(bitPattern: commonProperty.horizontalOffset)
         )
@@ -1077,15 +1113,15 @@ private extension HwpPaginator {
         let frame = CGRect(
             x: baseX + offsetX,
             y: baseY + offsetY,
-            width: size.width,
-            height: size.height
+            width: spec.size.width,
+            height: spec.size.height
         )
         currentBlocks.append(AnyHwpBlock(
             frame: frame,
-            kind: kind,
-            attributedString: combinedText,
-            payload: payload,
-            source: HwpBlockSource(controlInstanceId: commonProperty.instanceId)
+            kind: spec.kind,
+            attributedString: spec.attributedString,
+            payload: spec.payload,
+            source: HwpBlockSource(controlInstanceId: spec.instanceId)
         ))
         bandHasNonTextContent = true
     }
@@ -1128,11 +1164,7 @@ private extension HwpPaginator {
     /// (호출자가 flow 배치로 폴백). 줄 높이는 run delegate가 이미 예약했으므로
     /// 흐름 높이를 추가 소비하지 않는다.
     private func appendInlineAnchoredBlock(
-        kind: HwpBlockKind,
-        size: CGSize,
-        payload: HwpBlockPayload,
-        attributedString: NSAttributedString?,
-        instanceId: UInt32,
+        _ spec: ObjectBlockSpec,
         controlIndex: Int?
     ) -> Bool {
         guard let position = inlineAnchorPosition(for: controlIndex) else { return false }
@@ -1140,15 +1172,15 @@ private extension HwpPaginator {
         let frame = CGRect(
             x: position.x,
             y: position.y,
-            width: min(size.width, max(1, contentFrame.maxX - position.x)),
-            height: size.height
+            width: min(spec.size.width, max(1, contentFrame.maxX - position.x)),
+            height: spec.size.height
         )
         currentBlocks.append(AnyHwpBlock(
             frame: frame,
-            kind: kind,
-            attributedString: attributedString,
-            payload: payload,
-            source: HwpBlockSource(controlInstanceId: instanceId)
+            kind: spec.kind,
+            attributedString: spec.attributedString,
+            payload: spec.payload,
+            source: HwpBlockSource(controlInstanceId: spec.instanceId)
         ))
         bandHasNonTextContent = true
         return true
@@ -1294,8 +1326,10 @@ private extension HwpPaginator {
         guard let ctrls = paragraph.ctrlHeaderArray else { return }
         for ctrl in ctrls {
             switch ctrl {
-            case let .footnote(list), let .endnote(list):
+            case let .footnote(list):
                 collectFootnotes(list)
+            case let .endnote(list):
+                collectEndnotes(list)
             default:
                 break
             }
@@ -1323,6 +1357,77 @@ private extension HwpPaginator {
         }
     }
 
+    /// 미주는 페이지 하단이 아니라 문서/구역 끝에 모아 배치한다 (표 134 bits 8-9).
+    /// 각주와 별도 카운터를 쓴다.
+    func collectEndnotes(_ list: CoreHwp.HwpListControl) {
+        for paragraph in list.listArray.flatMap(\.paragraphArray) {
+            pendingEndnotes.append(HwpFootnoteLayout.Input(
+                paragraph: paragraph,
+                number: endnoteCounter
+            ))
+            endnoteCounter += 1
+        }
+    }
+
+    // MARK: 미주 (문서/구역 끝)
+
+    /// 모아 둔 미주를 현재 흐름 아래에 전체 폭 1단으로 배치한다.
+    /// 남은 공간이 부족하면 다음 페이지로 이어 붙인다.
+    func appendPendingEndnotes() {
+        guard !pendingEndnotes.isEmpty else { return }
+        // 미주 영역은 전체 폭: 진행 중인 다단 밴드를 닫고 그 아래에서 시작한다.
+        closeColumnBand()
+        currentColumnDef = nil
+        openColumnBand(top: bandUsedBottom)
+
+        // 구분선 + 첫 미주가 남은 공간에 안 들어가면 새 페이지에서 시작한다.
+        if let first = pendingEndnotes.first,
+           currentColumnFrame.minY > currentPageGeometry.contentFrame.minY,
+           measuredFootnoteHeight(of: first.paragraph) + 16 > effectiveContentHeight
+        {
+            cacheCurrentPage()
+        }
+
+        var drawSeparator = true
+        while !pendingEndnotes.isEmpty {
+            let columnFrame = currentColumnFrame
+            let available = CGRect(
+                x: columnFrame.minX,
+                y: columnFrame.minY,
+                width: columnFrame.width,
+                height: effectiveContentHeight
+            )
+            let placement = footnoteLayout.placeFlow(
+                footnotes: pendingEndnotes,
+                from: columnFrame.minY + contentHeightUsed,
+                in: available,
+                index: index,
+                footnoteShape: currentSectionDef?.endNoteShape,
+                drawSeparator: drawSeparator
+            )
+            for block in placement.blocks {
+                currentBlocks.append(AnyHwpBlock(
+                    frame: block.frame,
+                    kind: .footnote,
+                    attributedString: combinedAttributedString(
+                        block.paragraphs.map(\.attributedString)
+                    ),
+                    payload: .footnote(block),
+                    source: HwpBlockSource(paragraphId: block.paragraphs.first?.paragraphId)
+                ))
+            }
+            bandHasNonTextContent = true
+            contentHeightUsed = placement.bottom - columnFrame.minY
+            markBandUsage()
+            pendingEndnotes = placement.overflow
+            if !pendingEndnotes.isEmpty {
+                // 1단 밴드이므로 다음 단 == 새 페이지
+                cacheCurrentPage()
+                drawSeparator = false
+            }
+        }
+    }
+
     /// 이월된 각주 입력들이 새 페이지에서 예약할 높이 (구분선 여백 포함)
     func reservedFootnoteHeight(for inputs: [HwpFootnoteLayout.Input]) -> CGFloat {
         guard !inputs.isEmpty else { return 0 }
@@ -1331,18 +1436,13 @@ private extension HwpPaginator {
         } + 16 // 구분선 + 위/아래 여백
     }
 
-    /// 이 문단이 페이지에 추가될 때 각주 영역이 요구할 높이 (커밋 전 예측용)
+    /// 이 문단이 페이지에 추가될 때 각주 영역이 요구할 높이 (커밋 전 예측용).
+    /// 미주는 페이지 하단 영역을 쓰지 않으므로 계산에서 제외한다.
     func anticipatedFootnoteHeight(for paragraph: CoreHwp.HwpParagraph) -> CGFloat {
         guard let ctrls = paragraph.ctrlHeaderArray else { return 0 }
         var total: CGFloat = 0
         for ctrl in ctrls {
-            guard case let .footnote(list) = ctrl else {
-                if case let .endnote(list) = ctrl {
-                    total += list.listArray.flatMap(\.paragraphArray)
-                        .reduce(0) { $0 + measuredFootnoteHeight(of: $1) + 4 }
-                }
-                continue
-            }
+            guard case let .footnote(list) = ctrl else { continue }
             total += list.listArray.flatMap(\.paragraphArray)
                 .reduce(0) { $0 + measuredFootnoteHeight(of: $1) + 4 }
         }
@@ -1417,7 +1517,9 @@ private extension HwpPaginator {
         // 이월된 각주가 새 페이지에서 차지할 영역을 다시 예약한다.
         footnoteReservedHeight = reservedFootnoteHeight(for: pendingFootnotes)
         if currentSectionDef?.footNoteShape.numberingModeRawValue == 2 {
-            footnoteCounter = Self.initialFootnoteNumber(for: currentSectionDef)
+            footnoteCounter = Self.initialNoteNumber(
+                startingNumber: currentSectionDef?.footNoteShape.startingNumber
+            )
         }
     }
 

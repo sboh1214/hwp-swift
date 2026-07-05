@@ -150,6 +150,81 @@ public struct HwpFootnoteLayout {
         return Placement(blocks: blocks, overflow: overflow)
     }
 
+    /// 흐름 배치 결과: 배치된 블록, 이월 입력, 다음 흐름 y
+    public struct FlowPlacement {
+        public let blocks: [HwpFootnoteBlock]
+        public let overflow: [Input]
+        public let bottom: CGFloat
+    }
+
+    /// 미주처럼 흐름 위치에서 아래로 쌓는 배치 (문서/구역 끝).
+    ///
+    /// - Parameters:
+    ///   - footnotes: 배치할 미주 문단 + 번호
+    ///   - startY: 시작 y (페이지 좌표)
+    ///   - columnFrame: 배치할 단 프레임 (maxY가 하한)
+    ///   - drawSeparator: 첫 블록 위에 구분선을 둘지 (이월 연속 배치면 false)
+    /// - Returns: columnFrame 하한을 넘는 입력은 overflow로 돌려준다.
+    ///   진행 보장을 위해 첫 블록은 항상 배치한다.
+    public func placeFlow(
+        footnotes: [Input],
+        from startY: CGFloat,
+        in columnFrame: CGRect,
+        index: HwpIndex,
+        footnoteShape: CoreHwp.HwpFootnoteShape? = nil,
+        drawSeparator: Bool = true
+    ) -> FlowPlacement {
+        guard !footnotes.isEmpty else {
+            return FlowPlacement(blocks: [], overflow: [], bottom: startY)
+        }
+        let divider = dividerMetrics(
+            from: footnoteShape?.dividerInfo,
+            contentWidth: columnFrame.width
+        )
+        let measured = measure(footnotes, index: index, width: columnFrame.width)
+
+        var cursorY = startY
+        var separatorLine = CGRect(x: columnFrame.minX, y: startY, width: 0, height: 0)
+        if drawSeparator {
+            separatorLine = CGRect(
+                x: columnFrame.minX,
+                y: cursorY + divider.marginTop,
+                width: divider.length,
+                height: max(0.5, divider.thickness)
+            )
+            cursorY = separatorLine.maxY + divider.marginBottom
+        }
+
+        var blocks: [HwpFootnoteBlock] = []
+        var overflow: [Input] = []
+        for (noteIndex, note) in measured.enumerated() {
+            let blockHeight = max(1, note.frame.totalHeight)
+            if !blocks.isEmpty, cursorY + blockHeight > columnFrame.maxY + 0.5 {
+                overflow = measured[noteIndex...].map(\.input)
+                break
+            }
+            blocks.append(HwpFootnoteBlock(
+                frame: CGRect(
+                    x: columnFrame.minX,
+                    y: cursorY,
+                    width: columnFrame.width,
+                    height: blockHeight
+                ),
+                paragraphs: [HwpLaidOutParagraph(
+                    attributedString: note.attributed,
+                    frame: note.frame,
+                    rect: CGRect(x: 0, y: 0, width: columnFrame.width, height: blockHeight),
+                    paragraphId: note.input.paragraph.paraHeader.paraId
+                )],
+                number: note.input.number,
+                separatorLine: separatorLine,
+                separatorColor: divider.color
+            ))
+            cursorY += blockHeight + divider.betweenNotes
+        }
+        return FlowPlacement(blocks: blocks, overflow: overflow, bottom: cursorY)
+    }
+
     /// 높이 계산이 끝난 각주 문단
     private struct MeasuredFootnote {
         let input: Input
