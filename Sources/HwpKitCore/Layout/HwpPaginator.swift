@@ -380,6 +380,16 @@ private extension HwpPaginator {
                     return
                 }
             }
+            // 쪽 나누기 (문단 헤더 columnType bit 2): 진행 중인 페이지를 확정하고
+            // 이 문단은 다음 호출에서 새 페이지 첫머리로 다시 처리한다.
+            if paragraph.paraHeader.columnType & 0b100 != 0,
+               !currentBlocks.isEmpty || contentHeightUsed > 0
+            {
+                closeColumnBand()
+                cacheCurrentPage()
+                return
+            }
+
             applySectionDef(in: paragraph)
             applyColumnDef(in: paragraph)
             applyNewNumbers(in: paragraph)

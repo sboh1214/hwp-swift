@@ -110,6 +110,33 @@ import XCTest
             expect(block?.frame.height).to(beCloseTo(20, within: 0.01))
         }
 
+        func testParagraphPageBreakStartsNewPage() async throws {
+            // 문단 헤더 columnType bit 2 (쪽 나누기): 이 문단부터 새 페이지
+            let section = HwpSynthetic.section(
+                firstParagraphControls: [.section(HwpSynthetic.sectionDef())],
+                bodyParagraphs: [
+                    try HwpSynthetic.textParagraph("첫 페이지 문단"),
+                    try HwpSynthetic.pageBreakParagraph("둘째 페이지 문단"),
+                ]
+            )
+            let paginator = HwpPaginator(
+                sections: [section],
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+
+            let totalPages = await paginator.totalPages()
+            expect(totalPages) == 2
+
+            let firstTexts = try await paginator.page(at: 0)?.blocks
+                .compactMap(\.attributedString?.string) ?? []
+            let secondTexts = try await paginator.page(at: 1)?.blocks
+                .compactMap(\.attributedString?.string) ?? []
+            expect(firstTexts.contains { $0.contains("첫 페이지") }) == true
+            expect(firstTexts.contains { $0.contains("둘째 페이지") }) == false
+            expect(secondTexts.contains { $0.contains("둘째 페이지") }) == true
+        }
+
         func testActiveHeaderFooterRepeatOnEveryPage() async throws {
             let header = HwpSynthetic.listControl(
                 ctrlId: .header,

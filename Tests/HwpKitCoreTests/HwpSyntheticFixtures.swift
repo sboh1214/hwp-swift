@@ -108,6 +108,27 @@ enum HwpSynthetic {
         return paragraph
     }
 
+    /// 쪽 나누기 (문단 헤더 columnType bit 2)로 시작하는 문단
+    static func pageBreakParagraph(_ text: String) throws -> CoreHwp.HwpParagraph {
+        var paragraph = try textParagraph(text)
+        var payload = Data()
+        let charCount = UInt32(0x8000_0000) | UInt32(text.utf16.count)
+        withUnsafeBytes(of: charCount.littleEndian) { payload.append(contentsOf: $0) }
+        withUnsafeBytes(of: UInt32(0).littleEndian) { payload.append(contentsOf: $0) }
+        withUnsafeBytes(of: UInt16(0).littleEndian) { payload.append(contentsOf: $0) }
+        payload.append(0) // paraStyleId
+        payload.append(0b100) // columnType: 쪽 나누기
+        withUnsafeBytes(of: UInt16(1).littleEndian) { payload.append(contentsOf: $0) }
+        withUnsafeBytes(of: UInt16(0).littleEndian) { payload.append(contentsOf: $0) }
+        withUnsafeBytes(of: UInt16(1).littleEndian) { payload.append(contentsOf: $0) }
+        withUnsafeBytes(of: UInt32(0).littleEndian) { payload.append(contentsOf: $0) }
+        paragraph.paraHeader = try CoreHwp.HwpParaHeader.load(
+            payload,
+            CoreHwp.HwpVersion(5, 0, 2, 2)
+        )
+        return paragraph
+    }
+
     /// 글자처럼 취급 (treatAsChar) gso 개체.
     /// 빈 shape component 하나 → 크기 bounding box 도형으로 렌더된다.
     static func inlineShapeObject(
