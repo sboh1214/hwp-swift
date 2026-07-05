@@ -43,6 +43,12 @@ public actor HwpPaginator {
     /// 새 컨트롤이 나오면 교체된다.
     private var activeHeaders: [CoreHwp.HwpHeaderFooterApplyScope: CoreHwp.HwpListControl] = [:]
     private var activeFooters: [CoreHwp.HwpHeaderFooterApplyScope: CoreHwp.HwpListControl] = [:]
+    /// 활성 쪽 번호 위치 (pgNumPos, 표 147/148). 컨트롤을 만난 페이지부터
+    /// 모든 페이지에 쪽 번호를 방출하며, 새 컨트롤이 나오면 교체된다
+    /// (머리말처럼 구역을 넘어도 유지 — 한글의 동작).
+    private var activePageNumberPosition: CoreHwp.HwpPageNumberPosition?
+    /// 이 페이지에서 감출 대상 (pghd, 표 145 bit field). 페이지 확정 시 초기화.
+    private var pageHideMask: UInt32 = 0
     /// 현재 단 정의 (`cold` 컨트롤). nil이면 1단.
     private var currentColumnDef: CoreHwp.HwpColumn?
     /// 현재 단 밴드의 단 프레임 (페이지 좌표). 비어 있으면 contentFrame 1단.
@@ -815,10 +821,8 @@ private extension HwpPaginator {
                     controlIndex: anchorIndex
                 )
                 appendNestedControlBlocks(of: ctrl, depth: depth)
-            case let .header(list):
-                activeHeaders[list.headerFooterApplyScope] = list
-            case let .footer(list):
-                activeFooters[list.headerFooterApplyScope] = list
+            case .header, .footer, .pageNumberPosition, .pageHide:
+                registerPageChromeControl(ctrl)
             case .footnote, .endnote:
                 // 각주/미주는 collectFootnotes(from:depth:)가 컨트롤 블록 방출 전에
                 // 수집한다 (참조 위치 페이지 귀속).
@@ -826,6 +830,24 @@ private extension HwpPaginator {
             default:
                 continue
             }
+        }
+    }
+
+    /// 페이지 크롬 (머리말/꼬리말/쪽 번호 위치/쪽 감추기) 컨트롤을 활성 상태로
+    /// 등록한다. 감추기 (표 145)는 컨트롤이 놓인 문단이 확정되는 페이지에만
+    /// 적용된다.
+    func registerPageChromeControl(_ ctrl: CoreHwp.HwpCtrlId) {
+        switch ctrl {
+        case let .header(list):
+            activeHeaders[list.headerFooterApplyScope] = list
+        case let .footer(list):
+            activeFooters[list.headerFooterApplyScope] = list
+        case let .pageNumberPosition(position):
+            activePageNumberPosition = position
+        case let .pageHide(other):
+            pageHideMask |= other.pageHideInfo?.rawValue ?? 0
+        default:
+            break
         }
     }
 
@@ -1583,8 +1605,11 @@ private extension HwpPaginator {
     }
 
     /// 이 페이지에 적용되는 머리말/꼬리말 밴드 블록을 방출한다 (cacheCurrentPage 전용).
-    func appendActiveBandBlocks(pageNumber: Int) {
-        if let header = resolvedBand(from: activeHeaders, pageNumber: pageNumber) {
+    /// hideMask (표 145): 0x01이면 머리말, 0x02면 꼬리말을 이 페이지에서 감춘다.
+    func appendActiveBandBlocks(pageNumber: Int, hideMask: UInt32 = 0) {
+        if hideMask & 0x01 == 0,
+           let header = resolvedBand(from: activeHeaders, pageNumber: pageNumber)
+        {
             appendBandBlocks(
                 header,
                 band: currentPageGeometry.headerFrame,
@@ -1592,7 +1617,9 @@ private extension HwpPaginator {
                 pageNumber: pageNumber
             )
         }
-        if let footer = resolvedBand(from: activeFooters, pageNumber: pageNumber) {
+        if hideMask & 0x02 == 0,
+           let footer = resolvedBand(from: activeFooters, pageNumber: pageNumber)
+        {
             appendBandBlocks(
                 footer,
                 band: currentPageGeometry.footerFrame,
@@ -1714,6 +1741,106 @@ private extension HwpPaginator {
             cursorY += blockHeight
         }
         return blocks
+    }
+
+    // MARK: 쪽 번호 (표 147/148)
+
+    /// 활성 쪽 번호 위치에 따라 논리 쪽 번호 텍스트 블록을 방출한다.
+    /// hideMask 0x20 (쪽 번호 감추기, 표 145)이 켜진 페이지는 건너뛴다.
+    func appendPageNumberBlock(pageNumber: Int, hideMask: UInt32) {
+        guard hideMask & 0x20 == 0,
+              let position = activePageNumberPosition,
+              let placement = pageNumberPlacement(
+                  displayPosition: position.propertyInfo.displayPosition,
+                  pageNumber: pageNumber
+              )
+        else { return }
+
+        let text = HwpTextRunBuilder.decoratedNoteNumber(
+            number: pageNumber,
+            shape: position.propertyInfo.numberFormat,
+            decorationHead: position.headDecoration,
+            decorationTail: position.tailDecoration
+        )
+        let attributed = pageNumberAttributedString(text: text, alignment: placement.alignment)
+        currentBlocks.append(AnyHwpBlock(
+            frame: placement.frame,
+            kind: .text,
+            attributedString: attributed
+        ))
+    }
+
+    /// 표 148 bit 8-11 표시 위치 → 페이지 프레임/정렬.
+    /// 0 없음이면 nil. 바깥쪽/안쪽은 짝/홀 페이지에 따라 좌/우가 바뀐다.
+    private func pageNumberPlacement(
+        displayPosition: Int,
+        pageNumber: Int
+    ) -> (frame: CGRect, alignment: CTTextAlignment)? {
+        let contentFrame = currentPageGeometry.contentFrame
+        let isTop: Bool
+        switch displayPosition {
+        case 1, 2, 3, 7, 9: isTop = true
+        case 4, 5, 6, 8, 10: isTop = false
+        default: return nil
+        }
+        let isEven = pageNumber.isMultiple(of: 2)
+        let alignment: CTTextAlignment = switch displayPosition {
+        case 1, 4: .left
+        case 2, 5: .center
+        case 3, 6: .right
+        case 7, 8: isEven ? .left : .right // 바깥쪽 (홀수쪽 = 오른쪽)
+        case 9, 10: isEven ? .right : .left // 안쪽
+        default: .center
+        }
+        let blockHeight = pageNumberBlockHeight
+        let frame: CGRect = if isTop {
+            currentPageGeometry.headerFrame ?? CGRect(
+                x: contentFrame.minX,
+                y: max(0, contentFrame.minY - blockHeight),
+                width: contentFrame.width,
+                height: blockHeight
+            )
+        } else {
+            currentPageGeometry.footerFrame ?? CGRect(
+                x: contentFrame.minX,
+                y: min(currentPageGeometry.pageSize.height - blockHeight, contentFrame.maxY),
+                width: contentFrame.width,
+                height: blockHeight
+            )
+        }
+        return (frame, alignment)
+    }
+
+    private var pageNumberBlockHeight: CGFloat {
+        let shape = index.charShape(id: 0) ?? CoreHwp.HwpCharShape()
+        return max(10, HwpUnits.points(fromHwpUnit: shape.baseSize) * 1.4)
+    }
+
+    /// 기본 글자 모양 (charShape 0)의 글꼴로 쪽 번호 문자열을 만든다.
+    private func pageNumberAttributedString(
+        text: String,
+        alignment: CTTextAlignment
+    ) -> NSAttributedString {
+        let shape = index.charShape(id: 0) ?? CoreHwp.HwpCharShape()
+        let size = max(6, HwpUnits.points(fromHwpUnit: shape.baseSize))
+        let faceId = UInt32(shape.faceId.first ?? 0)
+        let faceName = index.faceName(for: faceId, script: .korean)?.faceName ?? "Helvetica"
+        let font = fontResolver.resolve(faceName: faceName, script: .korean, size: size)
+
+        var alignmentValue = alignment
+        let style = withUnsafeMutablePointer(to: &alignmentValue) { pointer in
+            var setting = CTParagraphStyleSetting(
+                spec: .alignment,
+                valueSize: MemoryLayout<CTTextAlignment>.size,
+                value: pointer
+            )
+            return CTParagraphStyleCreate(&setting, 1)
+        }
+        return NSAttributedString(string: text, attributes: [
+            kCTFontAttributeName as NSAttributedString.Key: font,
+            kCTForegroundColorAttributeName as NSAttributedString.Key: shape.faceColor.cgColor,
+            kCTParagraphStyleAttributeName as NSAttributedString.Key: style,
+        ])
     }
 
     // MARK: 각주/미주
@@ -1942,7 +2069,11 @@ private extension HwpPaginator {
     // MARK: 페이지 확정
 
     func cacheCurrentPage() {
-        appendActiveBandBlocks(pageNumber: nextLogicalPageNumber)
+        // 감추기 (표 145): 0x01 머리말, 0x02 꼬리말, 0x20 쪽 번호
+        let hideMask = pageHideMask
+        pageHideMask = 0
+        appendActiveBandBlocks(pageNumber: nextLogicalPageNumber, hideMask: hideMask)
+        appendPageNumberBlock(pageNumber: nextLogicalPageNumber, hideMask: hideMask)
         nextLogicalPageNumber += 1
         appendPendingFootnotes()
         let pageIndex = cachedPages.count
