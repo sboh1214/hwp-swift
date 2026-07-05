@@ -95,4 +95,10 @@ Inventory source: `find Tests/CoreHwpTests -name "*.hwp"` (33 files) and fixture
 
 ## Scope Reduction Recommendation
 
-(2026-07 갱신) 표/글상자/각주/도형/이미지는 CoreHwp 디코딩 + HwpKitCore 엔진 + HwpKitNative 렌더 경로가 모두 연결되었다. 남은 자발적 축소 범위: 다단(`cold`) 레이아웃, 줄 중간(treat-as-char) 앵커, 미주 문서-끝 배치, 수식 스크립트 렌더, 그림 crop/효과 적용, TEXTART/FORM/CHART 세부 디코딩.
+(2026-07 갱신 2차) 표/글상자/각주/도형/이미지에 이어 다단(`cold`) 밴드
+레이아웃(균형 배분 포함), 줄 중간(treat-as-char) 앵커, 미주 문서/구역 끝
+배치(표 134 bits 8-9), 머리말/꼬리말 페이지 반복(표 141 적용 범위), 중첩 표
+재귀(깊이 3)와 페이지 초과 row 분할, 각주 페이지 귀속·이월, 그림
+crop/밝기/명암/효과(표 107) 렌더까지 연결되었다. 남은 자발적 축소 범위:
+수식(`eqed`) 스크립트 렌더 (placeholder 유지), TEXTART/FORM_OBJECT/
+CHART_DATA 세부 디코딩, 그림 PATTERN8x8 효과.

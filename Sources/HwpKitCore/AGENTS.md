@@ -11,17 +11,33 @@ CoreHwp.HwpFile
      → HwpImageStore        # binItemId(1-based) → BinData 바이트 조인
      → HwpPaginator (actor) # 페이지 lazy 생성
         ├─ per paragraph
+        │   applySectionDef / applyColumnDef   # 구역 지오메트리 + 단 밴드 전환
         │   HwpTextRunBuilder → NSAttributedString
-        │   HwpParagraphLayout (CTFramesetter)
+        │     (extended 컨트롤 문자 → U+FFFC + controlIndex attr + run delegate:
+        │      treatAsChar 개체는 개체 크기, 그 외 extended는 폭 0 예약)
+        │   HwpParagraphLayout (CTFramesetter) → 라인 + 인라인 앵커
+        │   placeParagraphText   # 1단: 통 배치 / 다단: 라인 단위 단 채움
+        │   collectFootnotes     # 각주(페이지 하단 몫) / 미주(문서·구역 끝 몫) 분리 수집
         ├─ appendControlBlocks     # 컨트롤 → 실제 레이아웃 엔진
-        │   .table  → HwpTableLayout (row 단위 페이지 분할)
+        │   .table  → HwpTableLayout (중첩 표 재귀 depth 3,
+        │             row 단위 분할 + 페이지보다 큰 row 슬라이스,
+        │             pageBreakMode == .none이면 통째로 새 페이지)
         │   gso/도형 → HwpTextboxLayout / HwpShapeGeometry / 이미지 블록
-        │   .header/.footer → 머리말/꼬리말 밴드 텍스트 블록
-        │   .footnote/.endnote → 페이지 하단 HwpFootnoteLayout
+        │             (treatAsChar + FFFC 앵커 → 줄 위치 인라인 배치,
+        │              이미지 crop/밝기/명암/효과 스타일 전달)
+        │   .header/.footer → 적용 범위별 활성 상태로 등록 (표 141)
         └─ per page (cacheCurrentPage)
+            활성 머리말/꼬리말 밴드 반복 방출 (짝/홀 우선)
+            HwpFootnoteLayout.place  # 각주 하단 배치, 넘침은 다음 페이지 이월
             HwpPaintListBuilder → HwpPaintList
+        └─ 문서/구역 끝: HwpFootnoteLayout.placeFlow  # 미주 (표 134 bits 8-9)
   → HwpDocument { pages: [HwpPage(blocks, paintList)], imageStore }
 ```
+
+다단은 "단 밴드" 모델이다: 단 정의 (`cold`)가 나오면 진행 중 밴드를 닫고
+(본문 텍스트가 첫 단에만 있으면 라인 단위로 균형 재배치 — 한글의 단 배분)
+그 아래에서 `HwpPageGeometry.columnFrames`로 새 밴드를 연다. 단이 차면
+다음 단, 마지막 단이 차면 새 페이지 (`advanceColumn`).
 
 ## 블록 모델 gotchas
 
@@ -34,8 +50,11 @@ CoreHwp.HwpFile
 
 ## 앵커 규칙 (표 70)
 
-- treatAsChar 또는 textWrap ∈ {square, tight, through, topAndBottom}: 흐름 위치에 배치 + 높이 소비
-- textWrap ∈ {behindText, inFrontOfText}: 기준(쪽/문단) + 오프셋 위치에 배치, 흐름 소비 없음 — **text 블록과 겹칠 수 있음** (overlap 검사는 text-text 쌍만)
+- treatAsChar + 문단 라인에 U+FFFC 앵커 존재: 그 줄 위치에 인라인 배치.
+  줄 높이는 HwpTextRunBuilder의 run delegate가 이미 예약 → 흐름 높이 추가 소비 없음.
+  **개체가 자기 문단 text 블록과 겹치는 것이 정상** (overlap 검사는 text-text 쌍만)
+- treatAsChar (앵커 없음) 또는 textWrap ∈ {square, tight, through, topAndBottom}: 흐름 위치에 배치 + 높이 소비. 표는 항상 이 경로 (row 분할 유지)
+- textWrap ∈ {behindText, inFrontOfText}: 기준(쪽/단/문단) + 오프셋 위치에 배치, 흐름 소비 없음 — **text 블록과 겹칠 수 있음**
 - 오프셋은 `Int32(bitPattern:)` 으로 읽는다 (음수 허용; `points(fromHwpUnitU:)` 금지)
 
 ## Paint list
@@ -63,12 +82,13 @@ CoreHwp.HwpFile
 ## 안티 패턴 / 남은 한계
 
 - `HwpPage` 렌더 결과가 다른지 `==` 로 확인 — 안 됨 (count 만 비교). blocks 배열이나 paintList.commands 를 직접 순회할 것
-- 다단 (`cold` 컨트롤) 미연결 — `HwpPageGeometry.columnFrames` 는 항상 `[contentFrame]`
-- treatAsChar 개체는 문단 뒤 흐름 위치에 배치된다 (줄 안 FFFC 위치 아님) — 줄 중간 앵커는 미구현
-- 미주(endnote)는 호스트 페이지 하단에 각주와 동일하게 배치된다 (문서/구역 끝 배치는 미구현)
 - 수식 (`eqed`) 은 EQEDIT 스크립트 렌더 없이 placeholder + textbox 폴백 텍스트
-- 그림 crop/밝기/명암/효과 (표 107) 는 디코딩만 되고 렌더에는 미적용
-- 페이지보다 큰 표 row는 통째로 방출된다 (셀 내부 분할 미구현 — 하단 여백 침범 가능)
-- 중첩 표는 바깥 표가 placeholder가 되고 안쪽 표는 재귀 경로로 렌더된다
-- 페이지 분할 직후 수집된 각주는 다음 cacheCurrentPage의 페이지에 실린다 (참조 위치와 한 페이지 어긋날 수 있음); 반 페이지를 넘는 각주는 잘린다
-- 머리말/꼬리말은 컨트롤이 붙은 문단의 페이지에만 렌더된다 (페이지마다 반복 미구현)
+- 다단 세부: 균형 재배치·조각 높이는 라인 수 기준 근사이고, 비균등 단으로
+  이월된 텍스트 조각은 draw 시 그 단 폭으로 다시 줄바꿈된다 (블록 프레임은
+  단 경계 안, 시각적 줄 수는 달라질 수 있음)
+- 페이지보다 큰 표 row 슬라이스는 블록 지오메트리 기준 클립이다 — 조각
+  경계에 걸친 문단 텍스트는 위 조각에 남고 시각적으로 경계를 넘을 수 있다
+- treatAsChar 줄 중간 앵커는 분할되지 않은 문단 블록에서만 동작한다
+  (다단에서 라인 분할된 문단의 개체는 흐름 위치 폴백)
+- 그림 효과 중 PATTERN8x8 (효과 4)은 미지원 — 원본으로 렌더
+- 머리말/꼬리말 밴드 텍스트가 밴드 높이를 넘으면 본문과 겹칠 수 있다 (클립 없음)
