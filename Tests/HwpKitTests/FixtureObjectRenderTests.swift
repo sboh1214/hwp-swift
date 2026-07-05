@@ -139,6 +139,36 @@ final class FixtureObjectRenderTests: XCTestCase {
         }
     }
 
+    // MARK: - Column (다단)
+
+    func testColumnFixtureRendersMultiColumnTextWithinBounds() async throws {
+        let document = try await loadFixture("Column")
+        expect(document.pages.count) >= 1
+
+        var bodyOrigins = Set<CGFloat>()
+        for page in document.pages {
+            let contentMinX = page.margins.left
+            let contentMaxX = page.size.width - page.margins.right
+            for block in page.blocks where block.kind == .text {
+                // 컨트롤 문자(U+FFFC)뿐인 블록은 본문 텍스트가 아니다.
+                let visible = (block.attributedString?.string ?? "")
+                    .filter { $0 != "\u{FFFC}" && !$0.isWhitespace }
+                guard !visible.isEmpty else { continue }
+                bodyOrigins.insert(block.frame.minX)
+                expect(block.frame.minX).to(
+                    beGreaterThanOrEqualTo(contentMinX - 0.5),
+                    description: "본문 블록이 왼쪽 여백을 침범한다"
+                )
+                expect(block.frame.maxX).to(
+                    beLessThanOrEqualTo(contentMaxX + 0.5),
+                    description: "본문 블록이 오른쪽 여백을 침범한다"
+                )
+            }
+        }
+        // 2단/3단 구간이 있으므로 서로 다른 x-origin 텍스트 블록이 존재해야 한다.
+        expect(bodyOrigins.count) >= 2
+    }
+
     // MARK: - chart (미지원 OLE/차트)
 
     func testChartReportsUnsupportedPlaceholder() async throws {

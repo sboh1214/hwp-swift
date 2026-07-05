@@ -317,6 +317,101 @@ import XCTest
             expect(tableBlocks.first?.block.frame.height).to(beCloseTo(150, within: 1))
         }
 
+        func testTwoColumnFlowFillsSecondColumnBeforeNewPage() async throws {
+            var twoColumn = CoreHwp.HwpColumn()
+            twoColumn.property = CoreHwp.HwpColumnProperty(
+                rawValue: 0,
+                type: .general,
+                count: 2,
+                direction: .left,
+                isSameWidth: true
+            )
+            twoColumn.spacing = 2000
+            let section = HwpSynthetic.section(
+                firstParagraphControls: [
+                    .section(HwpSynthetic.sectionDef(pageHeight: 30000)),
+                    .column(twoColumn),
+                ],
+                bodyParagraphs: try (0 ..< 60).map {
+                    try HwpSynthetic.textParagraph("다단 본문 문단 \($0)")
+                }
+            )
+            let paginator = HwpPaginator(
+                sections: [section],
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+
+            let totalPages = await paginator.totalPages()
+            guard let page = try await paginator.page(at: 0) else {
+                fail("첫 페이지가 없다")
+                return
+            }
+            let contentMinX = page.margins.left
+            let contentMaxX = page.size.width - page.margins.right
+            let bodyBlocks = page.blocks.filter {
+                $0.kind == .text && $0.attributedString?.string.contains("다단 본문") == true
+            }
+            let origins = Set(bodyBlocks.map(\.frame.minX))
+            // 두 단이 채워졌으므로 서로 다른 x-origin이 존재한다.
+            expect(origins.count) >= 2
+
+            // 어떤 블록도 단 폭을 넘거나 콘텐츠 영역을 벗어나지 않는다.
+            let columnWidth = (contentMaxX - contentMinX - 20) / 2
+            for block in bodyBlocks {
+                expect(block.frame.width).to(beLessThanOrEqualTo(columnWidth + 0.5))
+                expect(block.frame.minX).to(beGreaterThanOrEqualTo(contentMinX - 0.5))
+                expect(block.frame.maxX).to(beLessThanOrEqualTo(contentMaxX + 0.5))
+            }
+
+            // 두 단이 모두 찬 뒤에야 두 번째 페이지가 생긴다.
+            expect(totalPages) >= 2
+        }
+
+        func testColumnBandRebalancesSoloParagraphAcrossColumns() async throws {
+            // 단 하나에만 들어간 밴드가 닫힐 때 (다음 단 정의) 라인이 배분된다.
+            var twoColumn = CoreHwp.HwpColumn()
+            twoColumn.property = CoreHwp.HwpColumnProperty(
+                rawValue: 0,
+                type: .general,
+                count: 2,
+                direction: .left,
+                isSameWidth: true
+            )
+            twoColumn.spacing = 2000
+            var oneColumn = CoreHwp.HwpColumn()
+
+            var longParagraph = try HwpSynthetic.textParagraph(
+                String(repeating: "두 단으로 배분될 본문 문장. ", count: 20)
+            )
+            longParagraph.ctrlHeaderArray = [.column(twoColumn)]
+            var closingParagraph = try HwpSynthetic.textParagraph("한 단 본문")
+            closingParagraph.ctrlHeaderArray = [.column(oneColumn)]
+            let section = HwpSynthetic.section(
+                firstParagraphControls: [
+                    .section(HwpSynthetic.sectionDef()),
+                    .column(oneColumn),
+                ],
+                bodyParagraphs: [longParagraph, closingParagraph]
+            )
+            let paginator = HwpPaginator(
+                sections: [section],
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+
+            guard let page = try await paginator.page(at: 0) else {
+                fail("첫 페이지가 없다")
+                return
+            }
+            let balanced = page.blocks.filter {
+                $0.kind == .text && $0.attributedString?.string.contains("배분될 본문") == true
+            }
+            // 라인이 두 단으로 나뉘어 서로 다른 x-origin 블록이 된다.
+            expect(balanced.count) >= 2
+            expect(Set(balanced.map(\.frame.minX)).count) >= 2
+        }
+
         func testLazyDoesNotComputeAllPagesUpFront() async throws {
             let file = CoreHwp.HwpFile()
             let paginator = HwpPaginator(

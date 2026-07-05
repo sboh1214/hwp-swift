@@ -38,17 +38,17 @@ public struct HwpPaintListBuilder: Sendable {
     private func paintCommands(for block: AnyHwpBlock) -> [HwpPaintCommand] {
         switch block.payload {
         case let .table(tableFrame):
-            return tableCommands(tableFrame, origin: block.frame.origin)
+            tableCommands(tableFrame, origin: block.frame.origin)
         case let .textbox(textboxFrame):
-            return textboxCommands(textboxFrame, origin: block.frame.origin)
+            textboxCommands(textboxFrame, origin: block.frame.origin)
         case let .footnote(footnoteBlock):
-            return footnoteCommands(footnoteBlock, blockFrame: block.frame, drawSeparator: true)
+            footnoteCommands(footnoteBlock, blockFrame: block.frame, drawSeparator: true)
         case let .shape(geometry):
-            return shapeCommands(geometry, origin: block.frame.origin)
+            shapeCommands(geometry, origin: block.frame.origin)
         case let .image(imageInfo):
-            return imageCommands(imageInfo, frame: block.frame)
+            imageCommands(imageInfo, frame: block.frame)
         case nil:
-            return plainCommands(for: block)
+            plainCommands(for: block)
         }
     }
 

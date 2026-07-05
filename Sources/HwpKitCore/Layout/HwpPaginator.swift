@@ -36,6 +36,18 @@ public actor HwpPaginator {
     /// 새 컨트롤이 나오면 교체된다.
     private var activeHeaders: [CoreHwp.HwpHeaderFooterApplyScope: CoreHwp.HwpListControl] = [:]
     private var activeFooters: [CoreHwp.HwpHeaderFooterApplyScope: CoreHwp.HwpListControl] = [:]
+    /// 현재 단 정의 (`cold` 컨트롤). nil이면 1단.
+    private var currentColumnDef: CoreHwp.HwpColumn?
+    /// 현재 단 밴드의 단 프레임 (페이지 좌표). 비어 있으면 contentFrame 1단.
+    private var columnFrames: [CGRect] = []
+    /// 현재 채우는 단 index
+    private var columnIndex = 0
+    /// 현재 밴드에서 실제 사용된 최대 하단 y — 밴드 종료 시 다음 밴드 시작점
+    private var bandUsedBottom: CGFloat = 0
+    /// 밴드에 들어간 본문 텍스트 블록 (밴드 종료 시 단 균형 재배치용)
+    private var bandTextBlocks: [(blockIndex: Int, lines: [HwpLineFrame])] = []
+    /// 밴드에 텍스트 외 블록(표/개체/placeholder)이 있으면 균형 재배치를 하지 않는다
+    private var bandHasNonTextContent = false
 
     var cachedPages: [Int: HwpPage] = [:]
 
@@ -113,10 +125,190 @@ private extension HwpPaginator {
         }.first
     }
 
-    // MARK: - Page flow
+    static func columnDef(in paragraph: CoreHwp.HwpParagraph) -> CoreHwp.HwpColumn? {
+        paragraph.ctrlHeaderArray?.compactMap { ctrl in
+            if case let .column(column) = ctrl {
+                return column
+            }
+            return nil
+        }.first
+    }
 
+    // MARK: - 단 (column band)
+
+    /// 현재 채우는 단의 프레임. 밴드가 아직 없으면 콘텐츠 전체.
+    var currentColumnFrame: CGRect {
+        columnFrames.indices.contains(columnIndex)
+            ? columnFrames[columnIndex]
+            : currentPageGeometry.contentFrame
+    }
+
+    /// 현재 단에서 본문이 쓸 수 있는 높이 (각주 예약 제외)
     var effectiveContentHeight: CGFloat {
-        max(1, currentPageGeometry.contentFrame.height - footnoteReservedHeight)
+        max(1, currentColumnFrame.height - footnoteReservedHeight)
+    }
+
+    var sectionDefaultColumnSpacing: CGFloat {
+        currentSectionDef.map { HwpUnits.points(fromHwpUnit16: $0.columnSpacing) } ?? 0
+    }
+
+    /// 현재 단의 사용량을 밴드 하단 추적에 반영한다.
+    func markBandUsage() {
+        bandUsedBottom = max(bandUsedBottom, currentColumnFrame.minY + contentHeightUsed)
+    }
+
+    /// top에서 시작하는 새 단 밴드를 연다 (밴드 추적 초기화 포함).
+    func openColumnBand(top: CGFloat) {
+        let contentFrame = currentPageGeometry.contentFrame
+        let area = CGRect(
+            x: contentFrame.minX,
+            y: top,
+            width: contentFrame.width,
+            height: max(1, contentFrame.maxY - top)
+        )
+        columnFrames = HwpPageGeometry.columnFrames(
+            in: area,
+            column: currentColumnDef,
+            defaultSpacing: sectionDefaultColumnSpacing
+        )
+        columnIndex = 0
+        contentHeightUsed = 0
+        paragraphAnchorTop = top
+        bandUsedBottom = top
+        bandTextBlocks = []
+        bandHasNonTextContent = false
+    }
+
+    /// 밴드를 닫는다. 본문 텍스트가 첫 단에만 남은 다단 밴드는
+    /// 라인 단위로 균형 재배치한다 (한글의 단 배분 동작).
+    func closeColumnBand() {
+        markBandUsage()
+        if columnFrames.count > 1, columnIndex == 0,
+           !bandHasNonTextContent, !bandTextBlocks.isEmpty
+        {
+            rebalanceColumnBand()
+        }
+        bandTextBlocks = []
+        bandHasNonTextContent = false
+    }
+
+    /// 문단에 붙은 단 정의를 반영한다: 현재 밴드를 닫고 그 아래에서 새 밴드를 연다.
+    func applyColumnDef(in paragraph: CoreHwp.HwpParagraph) {
+        guard let column = Self.columnDef(in: paragraph) else { return }
+        closeColumnBand()
+        currentColumnDef = column
+        openColumnBand(top: bandUsedBottom)
+    }
+
+    /// 단이 가득 차면 다음 단으로, 마지막 단이면 새 페이지로 넘어간다.
+    func advanceColumn() {
+        markBandUsage()
+        if columnIndex + 1 < columnFrames.count {
+            columnIndex += 1
+            contentHeightUsed = 0
+            paragraphAnchorTop = currentColumnFrame.minY
+        } else {
+            cacheCurrentPage()
+        }
+    }
+
+    /// 밴드에 라인 단위로 흩어 놓을 텍스트 조각
+    private struct BandLineUnit {
+        let blockIndex: Int
+        let range: NSRange
+        let height: CGFloat
+    }
+
+    /// 첫 단에만 쌓인 밴드 텍스트를 라인 단위로 모든 단에 균등 재배치한다.
+    func rebalanceColumnBand() {
+        let units = bandLineUnits()
+        guard units.count > 1 else { return }
+
+        let result = balancedBlocks(from: units)
+        let replaced = Set(bandTextBlocks.map(\.blockIndex))
+        currentBlocks = currentBlocks.enumerated()
+            .filter { !replaced.contains($0.offset) }
+            .map(\.element)
+        currentBlocks.append(contentsOf: result.blocks)
+        bandUsedBottom = result.maxBottom
+    }
+
+    /// 밴드 텍스트 블록들을 라인 단위 조각 목록으로 푼다.
+    private func bandLineUnits() -> [BandLineUnit] {
+        var units: [BandLineUnit] = []
+        for entry in bandTextBlocks {
+            guard currentBlocks.indices.contains(entry.blockIndex),
+                  let attributed = currentBlocks[entry.blockIndex].attributedString
+            else { continue }
+            let blockHeight = currentBlocks[entry.blockIndex].frame.height
+            if entry.lines.count > 1 {
+                let lineHeight = blockHeight / CGFloat(entry.lines.count)
+                for line in entry.lines {
+                    units.append(BandLineUnit(
+                        blockIndex: entry.blockIndex,
+                        range: line.attributedRange,
+                        height: lineHeight
+                    ))
+                }
+            } else {
+                units.append(BandLineUnit(
+                    blockIndex: entry.blockIndex,
+                    range: NSRange(location: 0, length: attributed.length),
+                    height: blockHeight
+                ))
+            }
+        }
+        return units
+    }
+
+    /// 라인 조각을 단별로 균등 분배해 새 텍스트 블록으로 조립한다.
+    private func balancedBlocks(
+        from units: [BandLineUnit]
+    ) -> (blocks: [AnyHwpBlock], maxBottom: CGFloat) {
+        let columnCount = columnFrames.count
+        let perColumn = Int((Double(units.count) / Double(columnCount)).rounded(.up))
+        var newBlocks: [AnyHwpBlock] = []
+        var maxBottom = columnFrames[0].minY
+        var unitIndex = 0
+        for column in 0 ..< columnCount {
+            var cursorY = columnFrames[column].minY
+            var taken = 0
+            while unitIndex < units.count, taken < perColumn {
+                // 같은 블록의 연속 라인은 한 조각으로 병합한다.
+                let blockIndex = units[unitIndex].blockIndex
+                var mergedRange = units[unitIndex].range
+                var mergedHeight = units[unitIndex].height
+                unitIndex += 1
+                taken += 1
+                while unitIndex < units.count, taken < perColumn,
+                      units[unitIndex].blockIndex == blockIndex
+                {
+                    mergedRange = NSUnionRange(mergedRange, units[unitIndex].range)
+                    mergedHeight += units[unitIndex].height
+                    unitIndex += 1
+                    taken += 1
+                }
+                let original = currentBlocks[blockIndex]
+                guard let attributed = original.attributedString else { continue }
+                let sub = attributed.attributedSubstring(from: mergedRange)
+                newBlocks.append(AnyHwpBlock(
+                    frame: CGRect(
+                        x: columnFrames[column].minX,
+                        y: cursorY,
+                        width: columnFrames[column].width,
+                        height: mergedHeight
+                    ),
+                    kind: .text,
+                    attributedString: NSAttributedString(attributedString: sub),
+                    hyperlinkURL: original.hyperlinkURL,
+                    source: original.source
+                ))
+                cursorY += mergedHeight
+            }
+            maxBottom = max(maxBottom, cursorY)
+            if unitIndex >= units.count { break }
+        }
+        return (newBlocks, maxBottom)
     }
 
     func computeNextPage() async throws {
@@ -139,28 +331,19 @@ private extension HwpPaginator {
                 return
             }
             applySectionDef(in: paragraph)
+            applyColumnDef(in: paragraph)
 
             let attributedString = HwpTextRunBuilder(index: index, fontResolver: fontResolver)
                 .build(paragraph: paragraph)
             let paragraphFrame = try await layout(paragraph, attributedString: attributedString)
-            let paragraphHeight = height(for: paragraph, fallback: paragraphFrame.totalHeight)
-            // 이 문단이 만들 각주 예약 높이를 미리 반영해 본문/각주 겹침을 막는다.
-            let anticipatedFootnotes = anticipatedFootnoteHeight(for: paragraph)
-            if contentHeightUsed > 0,
-               contentHeightUsed + paragraphHeight
-               > effectiveContentHeight - anticipatedFootnotes
-            {
-                cacheCurrentPage()
+            guard placeParagraphText(
+                paragraph,
+                attributedString: attributedString,
+                paragraphFrame: paragraphFrame
+            ) else {
+                // 현재 페이지가 확정됐고 문단은 다음 페이지에서 다시 처리한다.
                 return
             }
-
-            paragraphAnchorTop = currentPageGeometry.contentFrame.minY + contentHeightUsed
-            appendBlock(
-                height: paragraphHeight,
-                attributedString: attributedString,
-                hyperlinkURL: hyperlinkURL(in: paragraph),
-                paragraphId: paragraph.paraHeader.paraId
-            )
             collectFootnotes(from: paragraph)
             appendControlBlocks(from: paragraph)
             collectUnsupported(from: paragraph)
@@ -173,12 +356,54 @@ private extension HwpPaginator {
             }
         }
 
+        // 문서 끝: 밴드를 닫아 (필요시 단 균형 재배치) 마지막 페이지를 확정한다.
+        closeColumnBand()
         cacheCurrentPage()
         // 마지막 페이지에서 넘친 각주가 있으면 빈 페이지를 이어 붙여 모두 배치한다.
         while !pendingFootnotes.isEmpty {
             cacheCurrentPage()
         }
         didFinishPagination = true
+    }
+
+    /// 문단 텍스트 블록을 흐름에 배치한다.
+    /// 문단이 남은 공간에 안 맞아 페이지를 확정했으면 false (호출자가 반환하고
+    /// 같은 문단을 다음 페이지에서 다시 처리한다).
+    func placeParagraphText(
+        _ paragraph: CoreHwp.HwpParagraph,
+        attributedString: NSAttributedString,
+        paragraphFrame: HwpParagraphFrame
+    ) -> Bool {
+        let paragraphHeight = height(for: paragraph, fallback: paragraphFrame.totalHeight)
+        // 이 문단이 만들 각주 예약 높이를 미리 반영해 본문/각주 겹침을 막는다.
+        let anticipatedFootnotes = anticipatedFootnoteHeight(for: paragraph)
+        if columnFrames.count > 1 {
+            // 다단: 라인 단위로 단을 채우고 단이 차면 다음 단/페이지로 잇는다.
+            appendParagraphAcrossColumns(
+                attributedString: attributedString,
+                paragraphFrame: paragraphFrame,
+                paragraphHeight: paragraphHeight,
+                hyperlinkURL: hyperlinkURL(in: paragraph),
+                paragraphId: paragraph.paraHeader.paraId
+            )
+            return true
+        }
+        if contentHeightUsed > 0,
+           contentHeightUsed + paragraphHeight
+           > effectiveContentHeight - anticipatedFootnotes
+        {
+            cacheCurrentPage()
+            return false
+        }
+        paragraphAnchorTop = currentColumnFrame.minY + contentHeightUsed
+        appendBlock(
+            height: paragraphHeight,
+            attributedString: attributedString,
+            hyperlinkURL: hyperlinkURL(in: paragraph),
+            paragraphId: paragraph.paraHeader.paraId,
+            lines: paragraphFrame.lines
+        )
+        return true
     }
 
     /// 문단에 붙은 구역 정의를 현재 페이지 지오메트리에 반영한다.
@@ -189,6 +414,9 @@ private extension HwpPaginator {
             sectionDef: sectionDef
         )
         currentSectionDef = sectionDef
+        // 단 정의는 구역에 종속: 새 구역의 단 컨트롤이 다시 적용하기 전까지 1단.
+        currentColumnDef = nil
+        openColumnBand(top: currentPageGeometry.contentFrame.minY)
         if sectionDef.footNoteShape.numberingModeRawValue != 0 {
             footnoteCounter = Self.initialFootnoteNumber(for: sectionDef)
         }
@@ -207,7 +435,7 @@ private extension HwpPaginator {
         return HwpParagraphLayout().layout(
             attributedString: attributedString,
             paraShape: paraShape,
-            columnWidth: currentPageGeometry.contentFrame.width
+            columnWidth: currentColumnFrame.width
         )
     }
 
@@ -237,14 +465,15 @@ private extension HwpPaginator {
         height: CGFloat,
         attributedString: NSAttributedString,
         hyperlinkURL: String? = nil,
-        paragraphId: UInt32? = nil
+        paragraphId: UInt32? = nil,
+        lines: [HwpLineFrame] = []
     ) {
         let immutable = NSAttributedString(attributedString: attributedString)
-        let contentFrame = currentPageGeometry.contentFrame
+        let columnFrame = currentColumnFrame
         let frame = CGRect(
-            x: contentFrame.minX,
-            y: contentFrame.minY + contentHeightUsed,
-            width: contentFrame.width,
+            x: columnFrame.minX,
+            y: columnFrame.minY + contentHeightUsed,
+            width: columnFrame.width,
             height: height
         )
         currentBlocks.append(AnyHwpBlock(
@@ -254,7 +483,69 @@ private extension HwpPaginator {
             hyperlinkURL: hyperlinkURL,
             source: HwpBlockSource(paragraphId: paragraphId)
         ))
+        bandTextBlocks.append((currentBlocks.count - 1, lines))
         contentHeightUsed += height
+        markBandUsage()
+    }
+
+    /// 다단 밴드에서 문단 라인을 현재 단부터 채워 넣는다.
+    /// 단이 차면 다음 단으로, 마지막 단이 차면 새 페이지로 이어진다.
+    func appendParagraphAcrossColumns(
+        attributedString: NSAttributedString,
+        paragraphFrame: HwpParagraphFrame,
+        paragraphHeight: CGFloat,
+        hyperlinkURL: String?,
+        paragraphId: UInt32?
+    ) {
+        let lines = paragraphFrame.lines
+        paragraphAnchorTop = currentColumnFrame.minY + contentHeightUsed
+        guard lines.count > 1, paragraphHeight > 0 else {
+            if contentHeightUsed > 0,
+               contentHeightUsed + paragraphHeight > effectiveContentHeight
+            {
+                advanceColumn()
+                paragraphAnchorTop = currentColumnFrame.minY
+            }
+            appendBlock(
+                height: paragraphHeight,
+                attributedString: attributedString,
+                hyperlinkURL: hyperlinkURL,
+                paragraphId: paragraphId,
+                lines: lines
+            )
+            return
+        }
+
+        let lineHeight = paragraphHeight / CGFloat(lines.count)
+        var lineIndex = 0
+        while lineIndex < lines.count {
+            let available = effectiveContentHeight - contentHeightUsed
+            var takeCount = lineHeight > 0 ? Int(available / lineHeight) : lines.count
+            if contentHeightUsed <= 0 {
+                takeCount = max(1, takeCount)
+            }
+            if takeCount <= 0 {
+                advanceColumn()
+                continue
+            }
+            takeCount = min(takeCount, lines.count - lineIndex)
+            let slice = lines[lineIndex ..< lineIndex + takeCount]
+            let range = slice.dropFirst().reduce(slice[slice.startIndex].attributedRange) {
+                NSUnionRange($0, $1.attributedRange)
+            }
+            let isWholeParagraph = takeCount == lines.count
+            appendBlock(
+                height: lineHeight * CGFloat(takeCount),
+                attributedString: attributedString.attributedSubstring(from: range),
+                hyperlinkURL: hyperlinkURL,
+                paragraphId: paragraphId,
+                lines: isWholeParagraph ? lines : []
+            )
+            lineIndex += takeCount
+            if lineIndex < lines.count {
+                advanceColumn()
+            }
+        }
     }
 
     func hyperlinkURL(in paragraph: CoreHwp.HwpParagraph) -> String? {
@@ -393,10 +684,9 @@ private extension HwpPaginator {
     // MARK: 표
 
     func appendTableBlocks(_ table: CoreHwp.HwpTable) {
-        let contentFrame = currentPageGeometry.contentFrame
         let result = tableLayout.layout(
             table: table,
-            availableWidth: contentFrame.width,
+            availableWidth: currentColumnFrame.width,
             index: index
         )
         switch result {
@@ -431,7 +721,7 @@ private extension HwpPaginator {
         if pageBreakMode == .none {
             let tableHeight = frame.rows.reduce(CGFloat(0)) { max($0, $1.rowFrame.maxY) }
             if contentHeightUsed > 0, contentHeightUsed + tableHeight > effectiveContentHeight {
-                cacheCurrentPage()
+                advanceColumn()
             }
             appendTableSegmentBlock(rows: frame.rows, original: frame, instanceId: instanceId)
             return
@@ -442,7 +732,7 @@ private extension HwpPaginator {
         while !remainingRows.isEmpty {
             var remaining = effectiveContentHeight - contentHeightUsed
             if remaining < minimumRowHeight(remainingRows), contentHeightUsed > 0 {
-                cacheCurrentPage()
+                advanceColumn()
                 remaining = effectiveContentHeight
             }
 
@@ -559,10 +849,10 @@ private extension HwpPaginator {
             borderWidth: original.borderWidth
         )
 
-        let contentFrame = currentPageGeometry.contentFrame
+        let columnFrame = currentColumnFrame
         let blockFrame = CGRect(
-            x: contentFrame.minX,
-            y: contentFrame.minY + contentHeightUsed,
+            x: columnFrame.minX,
+            y: columnFrame.minY + contentHeightUsed,
             width: segmentFrame.outerFrame.width,
             height: segmentHeight
         )
@@ -572,7 +862,9 @@ private extension HwpPaginator {
             payload: .table(segmentFrame),
             source: HwpBlockSource(controlInstanceId: instanceId)
         ))
+        bandHasNonTextContent = true
         contentHeightUsed += segmentHeight
+        markBandUsage()
     }
 
     /// 행/셀/문단 지오메트리를 deltaY만큼 이동한 사본을 만든다.
@@ -743,7 +1035,8 @@ private extension HwpPaginator {
         )
         let baseX: CGFloat = switch info.horizontalRelativeTo {
         case .paper: 0
-        case .page, .column, .paragraph, nil: contentFrame.minX
+        case .page, nil: contentFrame.minX
+        case .column, .paragraph: currentColumnFrame.minX
         }
         let baseY: CGFloat = switch info.verticalRelativeTo {
         case .paper: 0
@@ -763,10 +1056,11 @@ private extension HwpPaginator {
             payload: payload,
             source: HwpBlockSource(controlInstanceId: commonProperty.instanceId)
         ))
+        bandHasNonTextContent = true
     }
 
     /// 본문 흐름을 소비하는 블록을 현재 흐름 위치에 배치한다.
-    /// 남은 공간에 안 맞으면 (블록이 한 페이지에 들어가는 크기일 때) 새 페이지로 넘긴다.
+    /// 남은 공간에 안 맞으면 (블록이 단에 들어가는 크기일 때) 다음 단/페이지로 넘긴다.
     private func appendFlowBlock(
         kind: HwpBlockKind,
         size: CGSize,
@@ -776,15 +1070,15 @@ private extension HwpPaginator {
     ) {
         if contentHeightUsed > 0,
            contentHeightUsed + size.height > effectiveContentHeight,
-           size.height <= currentPageGeometry.contentFrame.height
+           size.height <= currentColumnFrame.height
         {
-            cacheCurrentPage()
+            advanceColumn()
         }
-        let contentFrame = currentPageGeometry.contentFrame
+        let columnFrame = currentColumnFrame
         let frame = CGRect(
-            x: contentFrame.minX,
-            y: contentFrame.minY + contentHeightUsed,
-            width: min(size.width, contentFrame.width),
+            x: columnFrame.minX,
+            y: columnFrame.minY + contentHeightUsed,
+            width: min(size.width, columnFrame.width),
             height: size.height
         )
         currentBlocks.append(AnyHwpBlock(
@@ -794,7 +1088,9 @@ private extension HwpPaginator {
             payload: payload,
             source: HwpBlockSource(controlInstanceId: instanceId)
         ))
+        bandHasNonTextContent = true
         contentHeightUsed += size.height
+        markBandUsage()
     }
 
     func consumesFlow(_ info: CoreHwp.HwpCommonCtrlPropertyInfo) -> Bool {
@@ -817,22 +1113,24 @@ private extension HwpPaginator {
     }
 
     func appendPlaceholderBlock(hint: String) {
-        let contentFrame = currentPageGeometry.contentFrame
         let height: CGFloat = 20
         if contentHeightUsed > 0, contentHeightUsed + height > effectiveContentHeight {
-            cacheCurrentPage()
+            advanceColumn()
         }
+        let columnFrame = currentColumnFrame
         currentBlocks.append(AnyHwpBlock(
             frame: CGRect(
-                x: contentFrame.minX,
-                y: contentFrame.minY + contentHeightUsed,
-                width: contentFrame.width,
+                x: columnFrame.minX,
+                y: columnFrame.minY + contentHeightUsed,
+                width: columnFrame.width,
                 height: height
             ),
             kind: .placeholder,
             attributedString: NSAttributedString(string: hint)
         ))
+        bandHasNonTextContent = true
         contentHeightUsed += height
+        markBandUsage()
     }
 
     // MARK: 머리말/꼬리말
@@ -1029,8 +1327,8 @@ private extension HwpPaginator {
             paintList: paintList
         )
         currentBlocks = []
-        contentHeightUsed = 0
-        paragraphAnchorTop = currentPageGeometry.contentFrame.minY
+        // 새 페이지: 현재 단 정의로 콘텐츠 상단부터 새 밴드를 연다.
+        openColumnBand(top: currentPageGeometry.contentFrame.minY)
         // 이월된 각주가 새 페이지에서 차지할 영역을 다시 예약한다.
         footnoteReservedHeight = reservedFootnoteHeight(for: pendingFootnotes)
         if currentSectionDef?.footNoteShape.numberingModeRawValue == 2 {

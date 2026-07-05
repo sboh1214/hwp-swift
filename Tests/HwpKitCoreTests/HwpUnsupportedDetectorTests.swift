@@ -9,13 +9,13 @@ final class HwpUnsupportedDetectorTests: XCTestCase {
 
     // MARK: - Unsupported (V1 OUT) Tests
 
-    func testEquationControlReturnsPlaceholder() {
-        let shapeControl = HwpShapeControl(
+    func testEquationControlReturnsPlaceholder() throws {
+        let shapeControl = try XCTUnwrap(HwpShapeControl(
             header: HwpCtrlHeader(ctrlId: 0x6571_6564, rawPayload: Data()),
             commonProperty: HwpCommonCtrlProperty(),
             shapeComponentArray: [],
             ctrlDataArray: []
-        )!
+        ))
         let element = detector.classify(ctrl: .equation(shapeControl), page: 1)
 
         expect(element).notTo(beNil())
@@ -24,13 +24,13 @@ final class HwpUnsupportedDetectorTests: XCTestCase {
         expect(element?.hint).to(contain("수식"))
     }
 
-    func testEquationLegacyControlReturnsPlaceholder() {
-        let shapeControl = HwpShapeControl(
+    func testEquationLegacyControlReturnsPlaceholder() throws {
+        let shapeControl = try XCTUnwrap(HwpShapeControl(
             header: HwpCtrlHeader(ctrlId: 0x6571_6564, rawPayload: Data()),
             commonProperty: HwpCommonCtrlProperty(),
             shapeComponentArray: [],
             ctrlDataArray: []
-        )!
+        ))
         let element = detector.classify(ctrl: .equationLegacy(shapeControl), page: 2)
 
         expect(element).notTo(beNil())
@@ -39,13 +39,13 @@ final class HwpUnsupportedDetectorTests: XCTestCase {
         expect(element?.hint).to(contain("수식"))
     }
 
-    func testOleControlReturnsPlaceholder() {
-        let shapeControl = HwpShapeControl(
+    func testOleControlReturnsPlaceholder() throws {
+        let shapeControl = try XCTUnwrap(HwpShapeControl(
             header: HwpCtrlHeader(ctrlId: 0x246F_6C65, rawPayload: Data()),
             commonProperty: HwpCommonCtrlProperty(),
             shapeComponentArray: [],
             ctrlDataArray: []
-        )!
+        ))
         let element = detector.classify(ctrl: .ole(shapeControl), page: 3)
 
         expect(element).notTo(beNil())
@@ -54,11 +54,11 @@ final class HwpUnsupportedDetectorTests: XCTestCase {
         expect(element?.hint).to(contain("OLE"))
     }
 
-    func testFormControlReturnsPlaceholder() {
-        let otherControl = HwpOtherControl(
+    func testFormControlReturnsPlaceholder() throws {
+        let otherControl = try XCTUnwrap(HwpOtherControl(
             header: HwpCtrlHeader(ctrlId: 0x666F_726D, rawPayload: Data()),
             rawPayload: Data()
-        )!
+        ))
         let element = detector.classify(ctrl: .form(otherControl), page: 4)
 
         expect(element).notTo(beNil())
@@ -96,85 +96,85 @@ final class HwpUnsupportedDetectorTests: XCTestCase {
         expect(element).to(beNil())
     }
 
-    func testPictureControlReturnsNil() {
-        let shapeControl = HwpShapeControl(
+    func testPictureControlReturnsNil() throws {
+        let shapeControl = try XCTUnwrap(HwpShapeControl(
             header: HwpCtrlHeader(ctrlId: 0x2470_6963, rawPayload: Data()),
             commonProperty: HwpCommonCtrlProperty(),
             shapeComponentArray: [],
             ctrlDataArray: []
-        )!
+        ))
         let element = detector.classify(ctrl: .picture(shapeControl), page: 1)
 
         expect(element).to(beNil())
     }
 
-    func testLineControlReturnsNil() {
-        let shapeControl = HwpShapeControl(
+    func testLineControlReturnsNil() throws {
+        let shapeControl = try XCTUnwrap(HwpShapeControl(
             header: HwpCtrlHeader(ctrlId: 0x246C_696E, rawPayload: Data()),
             commonProperty: HwpCommonCtrlProperty(),
             shapeComponentArray: [],
             ctrlDataArray: []
-        )!
+        ))
         let element = detector.classify(ctrl: .line(shapeControl), page: 1)
 
         expect(element).to(beNil())
     }
 
-    func testRectangleControlReturnsNil() {
-        let shapeControl = HwpShapeControl(
+    func testRectangleControlReturnsNil() throws {
+        let shapeControl = try XCTUnwrap(HwpShapeControl(
             header: HwpCtrlHeader(ctrlId: 0x2472_6563, rawPayload: Data()),
             commonProperty: HwpCommonCtrlProperty(),
             shapeComponentArray: [],
             ctrlDataArray: []
-        )!
+        ))
         let element = detector.classify(ctrl: .rectangle(shapeControl), page: 1)
 
         expect(element).to(beNil())
     }
 
-    func testEllipseControlReturnsNil() {
-        let shapeControl = HwpShapeControl(
+    func testEllipseControlReturnsNil() throws {
+        let shapeControl = try XCTUnwrap(HwpShapeControl(
             header: HwpCtrlHeader(ctrlId: 0x2465_6C6C, rawPayload: Data()),
             commonProperty: HwpCommonCtrlProperty(),
             shapeComponentArray: [],
             ctrlDataArray: []
-        )!
+        ))
         let element = detector.classify(ctrl: .ellipse(shapeControl), page: 1)
 
         expect(element).to(beNil())
     }
 
-    func testArcControlReturnsNil() {
-        let shapeControl = HwpShapeControl(
+    func testArcControlReturnsNil() throws {
+        let shapeControl = try XCTUnwrap(HwpShapeControl(
             header: HwpCtrlHeader(ctrlId: 0x2461_7263, rawPayload: Data()),
             commonProperty: HwpCommonCtrlProperty(),
             shapeComponentArray: [],
             ctrlDataArray: []
-        )!
+        ))
         let element = detector.classify(ctrl: .arc(shapeControl), page: 1)
 
         expect(element).to(beNil())
     }
 
-    func testPolygonControlReturnsNil() {
-        let shapeControl = HwpShapeControl(
+    func testPolygonControlReturnsNil() throws {
+        let shapeControl = try XCTUnwrap(HwpShapeControl(
             header: HwpCtrlHeader(ctrlId: 0x2470_6F6C, rawPayload: Data()),
             commonProperty: HwpCommonCtrlProperty(),
             shapeComponentArray: [],
             ctrlDataArray: []
-        )!
+        ))
         let element = detector.classify(ctrl: .polygon(shapeControl), page: 1)
 
         expect(element).to(beNil())
     }
 
-    func testCurveControlReturnsNil() {
-        let shapeControl = HwpShapeControl(
+    func testCurveControlReturnsNil() throws {
+        let shapeControl = try XCTUnwrap(HwpShapeControl(
             header: HwpCtrlHeader(ctrlId: 0x2463_7572, rawPayload: Data()),
             commonProperty: HwpCommonCtrlProperty(),
             shapeComponentArray: [],
             ctrlDataArray: []
-        )!
+        ))
         let element = detector.classify(ctrl: .curve(shapeControl), page: 1)
 
         expect(element).to(beNil())
@@ -249,25 +249,25 @@ final class HwpUnsupportedDetectorTests: XCTestCase {
         expect(element).to(beNil())
     }
 
-    func testShapeControlReturnsNil() {
-        let shapeControl = HwpShapeControl(
+    func testShapeControlReturnsNil() throws {
+        let shapeControl = try XCTUnwrap(HwpShapeControl(
             header: HwpCtrlHeader(ctrlId: 0x246C_696E, rawPayload: Data()),
             commonProperty: HwpCommonCtrlProperty(),
             shapeComponentArray: [],
             ctrlDataArray: []
-        )!
+        ))
         let element = detector.classify(ctrl: .shape(shapeControl), page: 1)
 
         expect(element).to(beNil())
     }
 
-    func testContainerControlReturnsNil() {
-        let shapeControl = HwpShapeControl(
+    func testContainerControlReturnsNil() throws {
+        let shapeControl = try XCTUnwrap(HwpShapeControl(
             header: HwpCtrlHeader(ctrlId: 0x2463_6F6E, rawPayload: Data()),
             commonProperty: HwpCommonCtrlProperty(),
             shapeComponentArray: [],
             ctrlDataArray: []
-        )!
+        ))
         let element = detector.classify(ctrl: .container(shapeControl), page: 1)
 
         expect(element).to(beNil())
@@ -275,13 +275,13 @@ final class HwpUnsupportedDetectorTests: XCTestCase {
 
     // MARK: - Page Number Tracking
 
-    func testPageNumberIsPreserved() {
-        let shapeControl = HwpShapeControl(
+    func testPageNumberIsPreserved() throws {
+        let shapeControl = try XCTUnwrap(HwpShapeControl(
             header: HwpCtrlHeader(ctrlId: 0x6571_6564, rawPayload: Data()),
             commonProperty: HwpCommonCtrlProperty(),
             shapeComponentArray: [],
             ctrlDataArray: []
-        )!
+        ))
         let element = detector.classify(ctrl: .equation(shapeControl), page: 42)
 
         expect(element?.page) == 42
@@ -289,11 +289,11 @@ final class HwpUnsupportedDetectorTests: XCTestCase {
 
     // MARK: - Additional Unsupported Controls
 
-    func testAutoNumberControlReturnsPlaceholder() {
-        let otherControl = HwpOtherControl(
+    func testAutoNumberControlReturnsPlaceholder() throws {
+        let otherControl = try XCTUnwrap(HwpOtherControl(
             header: HwpCtrlHeader(ctrlId: 0x6174_6E6F, rawPayload: Data()),
             rawPayload: Data()
-        )!
+        ))
         let element = detector.classify(ctrl: .autoNumber(otherControl), page: 7)
 
         expect(element).notTo(beNil())
@@ -308,11 +308,11 @@ final class HwpUnsupportedDetectorTests: XCTestCase {
         expect(element?.kind) == .placeholder
     }
 
-    func testCommentControlReturnsPlaceholder() {
-        let otherControl = HwpOtherControl(
+    func testCommentControlReturnsPlaceholder() throws {
+        let otherControl = try XCTUnwrap(HwpOtherControl(
             header: HwpCtrlHeader(ctrlId: 0x7464_7574, rawPayload: Data()),
             rawPayload: Data()
-        )!
+        ))
         let element = detector.classify(ctrl: .comment(otherControl), page: 9)
 
         expect(element).notTo(beNil())

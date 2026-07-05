@@ -10,13 +10,14 @@ public struct HwpPageGeometry: Sendable, Hashable {
     public let contentFrame: CGRect
     public let headerFrame: CGRect?
     public let footerFrame: CGRect?
-    /// Always `[contentFrame]` in v1; column count requires the Column control,
-    /// not `HwpSectionDef`.
+    /// 단 정의 (`cold` 컨트롤)가 주어지면 콘텐츠 영역을 나눈 단 프레임,
+    /// 없으면 `[contentFrame]`.
     public let columnFrames: [CGRect]
 
     public static func compute(
         pageDef: CoreHwp.HwpPageDef,
-        sectionDef: CoreHwp.HwpSectionDef?
+        sectionDef: CoreHwp.HwpSectionDef?,
+        column: CoreHwp.HwpColumn? = nil
     ) -> HwpPageGeometry {
         let pageSize = HwpUnits.size(fromHwpUnitWidth: pageDef.width, height: pageDef.height)
 
@@ -51,11 +52,13 @@ public struct HwpPageGeometry: Sendable, Hashable {
             )
             : nil
 
-        // Column count lives in the Column control (CtrlHeader/Column/), not in HwpSectionDef.
-        // sectionDef is accepted for future v2 multi-column support;
-        // v1 always returns [contentFrame].
-        _ = sectionDef
-        let columnFrames: [CGRect] = [contentFrame]
+        let columnFrames = Self.columnFrames(
+            in: contentFrame,
+            column: column,
+            defaultSpacing: sectionDef.map {
+                HwpUnits.points(fromHwpUnit16: $0.columnSpacing)
+            } ?? 0
+        )
 
         return HwpPageGeometry(
             pageSize: pageSize,
@@ -65,6 +68,58 @@ public struct HwpPageGeometry: Sendable, Hashable {
             footerFrame: footerFrame,
             columnFrames: columnFrames
         )
+    }
+
+    /// 단 정의 (표 138/139)로 영역을 단 프레임으로 나눈다.
+    ///
+    /// - 등폭 단: `spacing` (없으면 구역의 `columnSpacing`)을 사이 간격으로
+    ///   폭을 균등 분할한다.
+    /// - 비등폭 단: `widthArray`/`gapArray`는 비례값 ((폭+간격) 합 기준,
+    ///   Column 픽스처에서 합계 32768 검증)이며 영역 폭에 비례 배분한다.
+    /// - 단 방향이 오른쪽부터면 프레임 순서를 뒤집는다.
+    public static func columnFrames(
+        in area: CGRect,
+        column: CoreHwp.HwpColumn?,
+        defaultSpacing: CGFloat = 0
+    ) -> [CGRect] {
+        guard let column, column.property.count > 1 else { return [area] }
+        let count = column.property.count
+
+        var frames: [CGRect] = []
+        if let widths = column.widthArray, widths.count == count {
+            let gaps = column.gapArray ?? []
+            var total = widths.reduce(CGFloat(0)) { $0 + CGFloat($1) }
+            for index in 0 ..< (count - 1) where gaps.indices.contains(index) {
+                total += CGFloat(gaps[index])
+            }
+            guard total > 0 else { return [area] }
+            let scale = area.width / total
+            var cursorX = area.minX
+            for index in 0 ..< count {
+                let width = CGFloat(widths[index]) * scale
+                frames.append(CGRect(x: cursorX, y: area.minY, width: width, height: area.height))
+                cursorX += width
+                if index < count - 1, gaps.indices.contains(index) {
+                    cursorX += CGFloat(gaps[index]) * scale
+                }
+            }
+        } else {
+            let spacing = column.spacing.map { HwpUnits.points(fromHwpUnit16: $0) }
+                ?? defaultSpacing
+            let columnWidth = max(1, (area.width - spacing * CGFloat(count - 1)) / CGFloat(count))
+            for index in 0 ..< count {
+                frames.append(CGRect(
+                    x: area.minX + (columnWidth + spacing) * CGFloat(index),
+                    y: area.minY,
+                    width: columnWidth,
+                    height: area.height
+                ))
+            }
+        }
+        if column.property.direction == .right {
+            frames.reverse()
+        }
+        return frames
     }
 
     public func hash(into hasher: inout Hasher) {
