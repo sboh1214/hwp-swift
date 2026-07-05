@@ -42,9 +42,7 @@ public struct HwpImageStore: Sendable {
         extensionByBinItemId = extensionById
     }
 
-    public var isEmpty: Bool {
-        dataByBinItemId.isEmpty
-    }
+    public var isEmpty: Bool { dataByBinItemId.isEmpty }
 
     public func data(forBinItemId id: UInt32) -> Data? {
         dataByBinItemId[id]

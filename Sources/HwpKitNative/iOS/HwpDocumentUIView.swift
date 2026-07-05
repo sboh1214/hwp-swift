@@ -135,7 +135,7 @@
         }
 
         public func scrollViewDidEndZooming(
-            _: UIScrollView,
+            _ scrollView: UIScrollView,
             with _: UIView?,
             atScale _: CGFloat
         ) {
