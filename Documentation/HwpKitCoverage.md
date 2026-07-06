@@ -124,6 +124,13 @@ resolvedLineSpacingKind/Value, `HwpLineSpacingKind`가 추가되었다.
 양쪽 정렬은 draw 시 남는 폭을 공백에만 배분하는 한글식 재조판
 (`HwpWordJustification`)으로 처리되어 좁은 단의 자간 벌어짐이 해소되었다.
 
+(2026-07-06 사용자 실측 피드백 반영) 표 셀 안 그림은 `HwpCellImage`로
+셀 콘텐츠에 배치되어 페이지 흐름을 소비하지 않는다 (noori 3쪽 정합).
+셀 문단 전부가 라인 캐시로 측정된 셀은 저작된 셀 높이 (표 80)를 신뢰한다.
+문서 끝 미주는 새 쪽에서 시작한다 (footnote-endnote 2쪽 정합).
+페이지 수 실측: noori 3·multi-section 2·footnote-endnote 2 정확 일치,
+헌법주석 계열은 1,031 (한글 1,030 대비 +1 — AGENTS.md 한계 참조).
+
 남은 자발적 축소 범위: 수식(`eqed`) 스크립트 렌더 (placeholder 유지),
 TEXTART/FORM_OBJECT/CHART_DATA 세부 디코딩, 그림 PATTERN8x8 효과,
 단 나누기(columnType bit 3)/홀·짝수 조정(pageCT), 표 셀 안 각주 참조
