@@ -97,6 +97,8 @@ let package = Package(
             name: "HwpKitTests",
             dependencies: [
                 "HwpKit",
+                "HwpKitNative",
+                "HwpKitCore",
                 "CoreHwp",
                 .product(name: "Nimble", package: "Nimble"),
             ]
