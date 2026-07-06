@@ -8,6 +8,7 @@
 HwpKitNative/
 ├── Platform/PlatformTypes.swift    # typealias (PlatformView/Color/Image/Font) — 뷰 chrome + provider가 사용
 ├── Rendering/HwpPageLayer.swift    # CALayer + paint list executor (Core Text, drawImageReference)
+├── Rendering/HwpWordJustification.swift  # 양쪽 정렬 재조판 — 남는 폭을 공백에만 배분 (한글식)
 ├── Rendering/HwpPageImageProvider.swift  # HwpImageStore + HwpImageCache + HwpImageAdapter 연결
 ├── Rendering/HwpImageStyleRenderer.swift # 표 107 crop/밝기/명암/효과 (CGImage.cropping + CoreImage)
 ├── macOS/HwpDocumentNSView.swift   # NSView + 레이어 가상화

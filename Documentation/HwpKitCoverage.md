@@ -121,11 +121,13 @@ resolvedLineSpacingKind/Value, `HwpLineSpacingKind`가 추가되었다.
 하단 줄 간격 몫 절단. 렌더 페이지 수는 manifest `expectations.pageCount`로
 잠근다 (헌법주석 계열 1,031 — 한글 인쇄본 1,030 대비 +1, AGENTS.md 한계).
 
+양쪽 정렬은 draw 시 남는 폭을 공백에만 배분하는 한글식 재조판
+(`HwpWordJustification`)으로 처리되어 좁은 단의 자간 벌어짐이 해소되었다.
+
 남은 자발적 축소 범위: 수식(`eqed`) 스크립트 렌더 (placeholder 유지),
 TEXTART/FORM_OBJECT/CHART_DATA 세부 디코딩, 그림 PATTERN8x8 효과,
 단 나누기(columnType bit 3)/홀·짝수 조정(pageCT), 표 셀 안 각주 참조
-위 첨자, 번호 모양 0x80/0x81 사용자 문자, 양쪽 정렬의 단어-간격-우선
-justification (CT 공개 API 부재 — 좁은 단 자간 차이).
+위 첨자, 번호 모양 0x80/0x81 사용자 문자.
 
 ## PrvImage Fidelity 하네스 (Tests/HwpKitTests)
 

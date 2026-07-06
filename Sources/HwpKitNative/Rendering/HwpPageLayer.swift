@@ -105,7 +105,7 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
         let framesetter = CTFramesetterCreateWithAttributedString(attributedString)
         drawFrame(
             framesetter: framesetter,
-            length: attributedString.length,
+            attributedString: attributedString,
             origin: origin,
             lineWidth: lineWidth,
             in: ctx
@@ -114,11 +114,12 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
 
     private func drawFrame(
         framesetter: CTFramesetter,
-        length: Int,
+        attributedString: NSAttributedString,
         origin: CGPoint,
         lineWidth: CGFloat,
         in ctx: CGContext
     ) {
+        let length = attributedString.length
         let suggestedSize = CTFramesetterSuggestFrameSizeWithConstraints(
             framesetter,
             CFRange(location: 0, length: length),
@@ -146,8 +147,33 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
         ctx.textMatrix = .identity
         ctx.translateBy(x: 0, y: effectivePageHeight)
         ctx.scaleBy(x: 1, y: -1)
-        CTFrameDraw(frame, ctx)
+        drawFrameLines(frame, attributedString: attributedString, textRect: textRect, in: ctx)
         ctx.restoreGState()
+    }
+
+    /// 프레임의 줄을 직접 그린다. 양쪽 정렬 줄은 한글처럼 남는 폭을 공백에만
+    /// 배분해 다시 조판하고 (`wordJustifiedLine`), 그 외에는 CT 조판 그대로.
+    private func drawFrameLines(
+        _ frame: CTFrame,
+        attributedString: NSAttributedString,
+        textRect: CGRect,
+        in ctx: CGContext
+    ) {
+        guard let lines = CTFrameGetLines(frame) as? [CTLine], !lines.isEmpty else { return }
+        var origins = [CGPoint](repeating: .zero, count: lines.count)
+        CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
+        for (index, line) in lines.enumerated() {
+            ctx.textPosition = CGPoint(
+                x: textRect.minX + origins[index].x,
+                y: textRect.minY + origins[index].y
+            )
+            let replacement = HwpWordJustification.wordJustifiedLine(
+                frameLine: line,
+                attributedString: attributedString,
+                availableWidth: textRect.width - origins[index].x
+            )
+            CTLineDraw(replacement ?? line, ctx)
+        }
     }
 
     /// paint list가 해당 BinItem 이미지를 참조하는지 (targeted redraw 판단용)
@@ -240,7 +266,7 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
         )
         drawFrame(
             framesetter: framesetter,
-            length: attributedString.length,
+            attributedString: attributedString,
             origin: origin,
             lineWidth: max(textSize.width, 1),
             in: ctx

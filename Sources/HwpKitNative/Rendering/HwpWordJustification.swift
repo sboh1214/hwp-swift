@@ -1,0 +1,113 @@
+import CoreGraphics
+import CoreText
+import Foundation
+
+/// 양쪽 정렬의 한글식 재조판: 남는 폭을 공백에만 배분한다.
+///
+/// CoreText의 기본 justification은 남는 폭을 글자 사이에도 배분해 좁은 단에서
+/// "a m e t ,"처럼 자간이 벌어진다. 한글은 단어 간격(공백) 위주로 늘린다
+/// (Column 픽스처 PrvImage 실측 — 한 칸 공백이 10배 이상 벌어짐).
+/// 공백이 없는 줄(CJK 연속 run 등)과 문단 마지막 줄은 CT 기본 조판을 유지한다.
+public enum HwpWordJustification {
+    /// frameLine이 양쪽 정렬 대상 줄이면 공백 kern으로 재조판한 CTLine을 준다.
+    /// 대상이 아니면 (마지막 줄/공백 없음/정렬 아님) nil — 호출자가 원본을 그린다.
+    public static func wordJustifiedLine(
+        frameLine: CTLine,
+        attributedString: NSAttributedString,
+        availableWidth: CGFloat
+    ) -> CTLine? {
+        let range = CTLineGetStringRange(frameLine)
+        guard range.length > 0, availableWidth > 1 else { return nil }
+        let nsRange = NSRange(location: range.location, length: range.length)
+        let string = attributedString.string as NSString
+        let lineEnd = nsRange.location + nsRange.length
+
+        // 문단 마지막 줄 (문자열 끝 또는 개행으로 끝나는 줄)은 정렬하지 않는다
+        guard lineEnd < string.length else { return nil }
+        if string.character(at: lineEnd - 1) == 0x0A { return nil }
+        guard let style = paragraphStyle(of: attributedString, at: nsRange.location),
+              alignment(of: style) == .justified
+        else { return nil }
+        // 오른쪽 여백 (tailIndent ≤ 0 = 오른쪽 끝에서의 오프셋)만큼 줄 폭을 줄인다
+        var tailIndent: CGFloat = 0
+        CTParagraphStyleGetValueForSpecifier(
+            style,
+            .tailIndent,
+            MemoryLayout<CGFloat>.size,
+            &tailIndent
+        )
+        let targetWidth = tailIndent <= 0 ? availableWidth + tailIndent : availableWidth
+        guard targetWidth > 1 else { return nil }
+
+        // 뒤쪽 공백을 제외한 본문 범위에서 늘릴 공백 위치를 모은다
+        let spaceOffsets = stretchableSpaceOffsets(in: string, range: nsRange)
+        guard !spaceOffsets.isEmpty else { return nil }
+
+        // 자연 폭 (문단 스타일 정렬은 CTLine 단독 조판에 적용되지 않는다)
+        let substring = attributedString.attributedSubstring(from: nsRange)
+        let naturalLine = CTLineCreateWithAttributedString(substring)
+        let naturalWidth = CGFloat(CTLineGetTypographicBounds(naturalLine, nil, nil, nil))
+            - CGFloat(CTLineGetTrailingWhitespaceWidth(naturalLine))
+        let extra = targetWidth - naturalWidth
+        guard extra > 0.25 else { return nil }
+
+        let kernPerSpace = extra / CGFloat(spaceOffsets.count)
+        let mutable = NSMutableAttributedString(attributedString: substring)
+        for offset in spaceOffsets {
+            mutable.addAttribute(
+                kCTKernAttributeName as NSAttributedString.Key,
+                value: NSNumber(value: Double(kernPerSpace)),
+                range: NSRange(location: offset, length: 1)
+            )
+        }
+        return CTLineCreateWithAttributedString(mutable)
+    }
+
+    private static func paragraphStyle(
+        of attributed: NSAttributedString,
+        at location: Int
+    ) -> CTParagraphStyle? {
+        guard let value = attributed.attribute(
+            kCTParagraphStyleAttributeName as NSAttributedString.Key,
+            at: location,
+            effectiveRange: nil
+        ), CFGetTypeID(value as CFTypeRef) == CTParagraphStyleGetTypeID() else { return nil }
+        return (value as! CTParagraphStyle) // swiftlint:disable:this force_cast
+    }
+
+    private static func alignment(of style: CTParagraphStyle) -> CTTextAlignment {
+        var alignment = CTTextAlignment.natural
+        CTParagraphStyleGetValueForSpecifier(
+            style,
+            .alignment,
+            MemoryLayout<CTTextAlignment>.size,
+            &alignment
+        )
+        return alignment
+    }
+
+    /// 뒤쪽 공백을 제외한 줄 본문에서 늘릴 공백의 줄-내 오프셋 목록
+    private static func stretchableSpaceOffsets(
+        in string: NSString,
+        range: NSRange
+    ) -> [Int] {
+        var contentLength = range.length
+        while contentLength > 0,
+              isStretchableSpace(string.character(at: range.location + contentLength - 1))
+        {
+            contentLength -= 1
+        }
+        var offsets: [Int] = []
+        for offset in 0 ..< contentLength
+            where isStretchableSpace(string.character(at: range.location + offset))
+        {
+            offsets.append(offset)
+        }
+        return offsets
+    }
+
+    /// 늘릴 수 있는 공백: U+0020 (한글 문서의 단어 간격)
+    private static func isStretchableSpace(_ unit: unichar) -> Bool {
+        unit == 0x20
+    }
+}
