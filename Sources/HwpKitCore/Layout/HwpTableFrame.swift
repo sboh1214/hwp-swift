@@ -57,6 +57,30 @@ public struct HwpNestedTableFrame: @unchecked Sendable, Hashable {
     }
 }
 
+/// 셀 안 그림 (표-로컬 rect + BinItem 참조).
+/// 한글은 셀 안 개체를 셀 콘텐츠로 배치한다 — 페이지 흐름 블록으로 방출하면
+/// 큰 그림이 페이지를 밀어내 페이지 수가 한글과 어긋난다 (noori 실측 3쪽).
+public struct HwpCellImage: Sendable, Hashable {
+    /// 표-로컬 좌표계의 그림 영역
+    public let rect: CGRect
+    public let binItemId: UInt32
+    public let style: HwpImageRenderStyle?
+    /// 원본 컨트롤 참조 (편집 대비)
+    public let controlInstanceId: UInt32
+
+    public init(
+        rect: CGRect,
+        binItemId: UInt32,
+        style: HwpImageRenderStyle?,
+        controlInstanceId: UInt32
+    ) {
+        self.rect = rect
+        self.binItemId = binItemId
+        self.style = style
+        self.controlInstanceId = controlInstanceId
+    }
+}
+
 public struct HwpTableCellFrame: @unchecked Sendable, Hashable {
     /// 표-로컬 좌표계 (origin 0,0 top-left, y-down)의 셀 영역
     public let cellFrame: CGRect
@@ -71,6 +95,8 @@ public struct HwpTableCellFrame: @unchecked Sendable, Hashable {
     public let fillColor: HwpRGBColor?
     /// 셀 안 중첩 표 (문단 뒤에 쌓인다)
     public let nestedTables: [HwpNestedTableFrame]
+    /// 셀 안 그림 (문단 줄 위치에 배치)
+    public let images: [HwpCellImage]
 
     public init(
         cellFrame: CGRect,
@@ -81,7 +107,8 @@ public struct HwpTableCellFrame: @unchecked Sendable, Hashable {
         paragraphs: [HwpLaidOutParagraph],
         borders: HwpBorderSet,
         fillColor: HwpRGBColor?,
-        nestedTables: [HwpNestedTableFrame] = []
+        nestedTables: [HwpNestedTableFrame] = [],
+        images: [HwpCellImage] = []
     ) {
         self.cellFrame = cellFrame
         self.row = row
@@ -92,6 +119,7 @@ public struct HwpTableCellFrame: @unchecked Sendable, Hashable {
         self.borders = borders
         self.fillColor = fillColor
         self.nestedTables = nestedTables
+        self.images = images
     }
 }
 

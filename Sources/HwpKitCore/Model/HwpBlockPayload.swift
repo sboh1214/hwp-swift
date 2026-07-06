@@ -1,4 +1,5 @@
 import CoreGraphics
+@preconcurrency import CoreHwp
 import Foundation
 
 /// 레이아웃이 끝난 문단 하나: 텍스트 + 지오메트리 + 원본 문단 참조.
@@ -92,6 +93,19 @@ public struct HwpImageRenderStyle: Sendable, Hashable {
         self.brightness = brightness
         self.contrast = contrast
         self.effect = effect
+    }
+
+    /// 표 107 그림 속성에서 crop/밝기/명암/효과 렌더 스타일을 만든다.
+    public init(pictureProperty: CoreHwp.HwpPictureProperty) {
+        self.init(
+            cropLeft: pictureProperty.cropLeft,
+            cropTop: pictureProperty.cropTop,
+            cropRight: pictureProperty.cropRight,
+            cropBottom: pictureProperty.cropBottom,
+            brightness: Int(pictureProperty.brightness),
+            contrast: Int(pictureProperty.contrast),
+            effect: HwpImageEffect(rawEffect: pictureProperty.effect)
+        )
     }
 
     /// 색 보정/효과가 없는지

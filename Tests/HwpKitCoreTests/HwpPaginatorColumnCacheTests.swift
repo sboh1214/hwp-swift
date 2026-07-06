@@ -161,5 +161,60 @@ import XCTest
             expect(hostBlock.frame.height) >= 100
             expect(followerBlock.frame.minY - hostBlock.frame.minY) < 150
         }
+
+        /// 셀 안 그림은 셀 콘텐츠 (HwpCellImage)로 배치되고 페이지 흐름 블록으로
+        /// 방출되지 않는다 — 큰 그림이 페이지를 밀어내지 않는다 (noori 실측 3쪽).
+        func testCellPictureRendersInsideCellWithoutFlowBlock() async throws {
+            var cellParagraph = HwpSynthetic.paragraphWithInlineControl(prefix: "", suffix: "")
+            cellParagraph.ctrlHeaderArray = [.genShapeObject(HwpSynthetic.inlinePictureObject(
+                width: 20000,
+                height: 5000,
+                binItemId: 5,
+                instanceId: 9
+            ))]
+            var table = HwpSynthetic.table(
+                cellWidth: 20000,
+                rowHeights: [10000],
+                cellParagraphs: [[[cellParagraph]]]
+            )
+            table.commonCtrlProperty.width = 20000
+            table.commonCtrlProperty.height = 10000
+            var host = HwpSynthetic.paragraphWithInlineControl(prefix: "표 ", suffix: "")
+            host.ctrlHeaderArray = [.table(table)]
+            let section = HwpSynthetic.section(
+                firstParagraphControls: [
+                    .section(HwpSynthetic.sectionDef()),
+                    .column(CoreHwp.HwpColumn()),
+                ],
+                bodyParagraphs: [host]
+            )
+
+            let paginator = HwpPaginator(
+                sections: [section],
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+            var pages: [HwpPage] = []
+            var pageIndex = 0
+            while let page = try await paginator.page(at: pageIndex) {
+                pages.append(page)
+                pageIndex += 1
+            }
+
+            // 그림이 흐름을 소비하지 않으므로 한 페이지로 끝난다
+            expect(pages.count) == 1
+            guard let tableBlock = pages.first?.blocks.first(where: { $0.kind == .table }),
+                  case let .table(frame) = tableBlock.payload
+            else {
+                fail("표 블록이 없다")
+                return
+            }
+            let images = frame.rows.flatMap(\.cells).flatMap(\.images)
+            expect(images.count) == 1
+            expect(images.first?.binItemId) == 5
+            // 별도 이미지 흐름 블록은 방출되지 않는다
+            let imageBlocks = pages.flatMap(\.blocks).filter { $0.kind == .image }
+            expect(imageBlocks).to(beEmpty())
+        }
     }
 #endif

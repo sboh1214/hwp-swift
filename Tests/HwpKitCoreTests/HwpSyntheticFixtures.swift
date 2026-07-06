@@ -245,6 +245,29 @@ enum HwpSynthetic {
         )
     }
 
+    /// 그림 컴포넌트 (BinData 참조)를 가진 treatAsChar gso 개체
+    static func inlinePictureObject(
+        width: UInt32,
+        height: UInt32,
+        binItemId: UInt16,
+        instanceId: UInt32 = 0
+    ) -> CoreHwp.HwpGenShapeObject {
+        var object = inlineShapeObject(width: width, height: height, instanceId: instanceId)
+        var component = object.shapeComponentArray[0]
+        component.pictureArray = [CoreHwp.HwpShapeComponentPicture(
+            rawPayload: Data(),
+            binaryDataId: binItemId,
+            rawTrailing: nil,
+            unknownChildren: []
+        )]
+        object.shapeComponentArray[0] = component
+        return object
+    }
+}
+
+// MARK: - 표/셀 빌더
+
+extension HwpSynthetic {
     /// 셀 하나 (주소/크기 지정, 단위: HWPUNIT)
     static func tableCell(
         row: Int,

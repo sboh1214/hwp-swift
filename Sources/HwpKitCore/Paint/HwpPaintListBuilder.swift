@@ -109,6 +109,14 @@ public struct HwpPaintListBuilder: Sendable {
                         lineWidth: max(paragraphRect.width, 1)
                     ))
                 }
+                // 셀 안 그림은 셀 콘텐츠로 그린다 (표-로컬 rect + 블록 origin)
+                for image in cell.images {
+                    commands.append(.drawImageReference(
+                        binItemId: image.binItemId,
+                        rect: image.rect.offsetBy(dx: origin.x, dy: origin.y),
+                        style: image.style
+                    ))
+                }
                 // 중첩 표는 셀 안 위치를 origin으로 재귀 렌더한다.
                 for nested in cell.nestedTables {
                     commands.append(contentsOf: tableCommands(
