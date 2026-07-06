@@ -732,33 +732,7 @@ private extension HwpPaginator {
             if runIndex > 0 { cacheCurrentPage() }
             guard let runFirstSegment = run.first else { continue }
             let runFirst = runFirstSegment.lineLocation
-            var runBottom = runFirst
-            var runInkBottom = runFirst
-            for segment in run {
-                runBottom = max(
-                    runBottom,
-                    segment.lineLocation + Self.lineAdvance(of: segment)
-                )
-                runInkBottom = max(
-                    runInkBottom,
-                    segment.lineLocation + max(0, segment.lineHeight)
-                )
-            }
-            var height = max(1, HwpUnits.points(fromHwpUnit: runBottom - runFirst))
-            // 한글은 마지막 줄의 '줄 간격' 몫이 본문 하단 경계를 넘는 것을
-            // 허용한다 (noori p8 실측: ink는 경계 안, advance는 7pt 초과).
-            // 블록 프레임이 꼬리말 밴드와 겹치지 않게 간격 몫만 하단에서 자른다
-            // (ink가 이미 경계를 넘으면 그대로 둔다 — 실제 넘침).
-            let blockTop = currentColumnFrame.minY
-                + max(0, HwpUnits.points(fromHwpUnit: runFirst))
-            let contentBottom = currentPageGeometry.contentFrame.maxY
-            if blockTop + height > contentBottom {
-                let inkHeight = max(
-                    1,
-                    HwpUnits.points(fromHwpUnit: runInkBottom - runFirst)
-                )
-                height = max(inkHeight, contentBottom - blockTop)
-            }
+            let height = absoluteRunBlockHeight(run: run, firstLocation: runFirst)
             let slice = runAttributedSlice(
                 runIndex: runIndex,
                 runShare: RunShare(
@@ -784,6 +758,38 @@ private extension HwpPaginator {
             lastAbsoluteCacheLoc = run.last?.lineLocation ?? runFirst
         }
         return true
+    }
+
+    /// 절대 캐시 run의 블록 높이. 기본은 줄 전진량 (h + sp) 합이지만, 한글은
+    /// 마지막 줄의 '줄 간격' 몫이 본문 하단 경계를 넘는 것을 허용한다 (noori
+    /// p8 실측: ink는 경계 안, advance는 7pt 초과). 블록 프레임이 꼬리말
+    /// 밴드와 겹치지 않게 간격 몫만 하단에서 자른다 (ink가 이미 경계를 넘으면
+    /// 그대로 둔다 — 실제 넘침).
+    private func absoluteRunBlockHeight(
+        run: [CoreHwp.HwpParaLineSegInternal],
+        firstLocation: Int32
+    ) -> CGFloat {
+        var runBottom = firstLocation
+        var runInkBottom = firstLocation
+        for segment in run {
+            runBottom = max(runBottom, segment.lineLocation + Self.lineAdvance(of: segment))
+            runInkBottom = max(
+                runInkBottom,
+                segment.lineLocation + max(0, segment.lineHeight)
+            )
+        }
+        var height = max(1, HwpUnits.points(fromHwpUnit: runBottom - firstLocation))
+        let blockTop = currentColumnFrame.minY
+            + max(0, HwpUnits.points(fromHwpUnit: firstLocation))
+        let contentBottom = currentPageGeometry.contentFrame.maxY
+        if blockTop + height > contentBottom {
+            let inkHeight = max(
+                1,
+                HwpUnits.points(fromHwpUnit: runInkBottom - firstLocation)
+            )
+            height = max(inkHeight, contentBottom - blockTop)
+        }
+        return height
     }
 
     /// run의 라인 배분 비율 (여러 페이지에 걸친 문단의 텍스트 분할용)
