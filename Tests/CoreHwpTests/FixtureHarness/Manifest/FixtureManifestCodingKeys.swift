@@ -151,5 +151,9 @@ extension FixtureExpectations {
         case visibleTextContains
         case controlTypeCounts
         case allControlTypeCounts
+        // 렌더 페이지 수 회귀 가드 (HwpKitTests/FixtureRenderTests가 검증,
+        // pageCountSource는 실측 출처 주석)
+        case pageCount
+        case pageCountSource
     }
 }
