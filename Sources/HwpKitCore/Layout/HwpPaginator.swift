@@ -61,6 +61,10 @@ public actor HwpPaginator {
     private var bandTextBlocks: [(blockIndex: Int, lines: [HwpLineFrame])] = []
     /// 밴드에 텍스트 외 블록(표/개체/placeholder)이 있으면 균형 재배치를 하지 않는다
     private var bandHasNonTextContent = false
+    /// 밴드 마지막 줄의 줄 간격 (pt). 한글은 단 정의로 밴드를 닫을 때 이만큼
+    /// 띄우고 다음 밴드를 연다 (Column PrvImage 실측: 밴드 간 첫 줄 시작 간격
+    /// = 줄 전진량 + 줄 간격, ±1pt).
+    private var bandTrailingLineSpacing: CGFloat = 0
     /// 방금 배치한 본문 문단 텍스트 블록 (줄 중간 treatAsChar 앵커의 기준)
     private var currentParagraphContext: (blockFrame: CGRect, lines: [HwpLineFrame])?
     /// (문단, 폭)별 각주 문단 높이 캐시 — anticipated/collect/이월 예약 경로가
@@ -216,6 +220,7 @@ private extension HwpPaginator {
         bandUsedBottom = top
         bandTextBlocks = []
         bandHasNonTextContent = false
+        bandTrailingLineSpacing = 0
     }
 
     /// 밴드를 닫는다. 본문 텍스트가 첫 단에만 남은 다단 밴드는
@@ -241,6 +246,7 @@ private extension HwpPaginator {
     /// 무력화해 본문이 각주 영역/페이지 밖에 강제 배치된다.
     func applyColumnDef(in paragraph: CoreHwp.HwpParagraph) {
         guard let column = Self.columnDef(in: paragraph) else { return }
+        let hadBandContent = !bandTextBlocks.isEmpty || bandHasNonTextContent
         closeColumnBand()
         currentColumnDef = column
         let minimumBandHeight: CGFloat = 12 // 대략 한 줄
@@ -248,7 +254,11 @@ private extension HwpPaginator {
         if bandUsedBottom >= usableBottom - minimumBandHeight, !currentBlocks.isEmpty {
             cacheCurrentPage()
         } else {
-            openColumnBand(top: bandUsedBottom)
+            // 한글은 단 정의로 밴드를 닫을 때 마지막 줄의 줄 간격만큼 띄우고
+            // 다음 밴드를 연다 (Column PrvImage 실측: 밴드 간 시작 간격
+            // = 줄 전진량 + 줄 간격)
+            let gap = hadBandContent ? bandTrailingLineSpacing : 0
+            openColumnBand(top: bandUsedBottom + gap)
         }
     }
 
@@ -490,14 +500,12 @@ private extension HwpPaginator {
         // 이 문단이 만들 각주 예약 높이를 미리 반영해 본문/각주 겹침을 막는다.
         let anticipatedFootnotes = anticipatedFootnoteHeight(for: paragraph)
         if columnFrames.count > 1 {
-            // 다단: 라인 단위로 단을 채우고 단이 차면 다음 단/페이지로 잇는다.
-            appendParagraphAcrossColumns(
+            placeMultiColumnParagraph(
+                paragraph,
                 attributedString: attributedString,
                 paragraphFrame: paragraphFrame,
                 paragraphHeight: paragraphHeight,
-                hyperlinkURL: hyperlinkURL(in: paragraph),
-                paragraphId: paragraph.paraHeader.paraId,
-                reservedFootnoteHeight: anticipatedFootnotes
+                anticipatedFootnotes: anticipatedFootnotes
             )
             return true
         }
@@ -521,6 +529,7 @@ private extension HwpPaginator {
                 paragraphId: paragraph.paraHeader.paraId,
                 reservedFootnoteHeight: anticipatedFootnotes
             )
+            updateBandTrailingSpacing(for: paragraph)
             return true
         }
         paragraphAnchorTop = currentColumnFrame.minY + contentHeightUsed
@@ -531,7 +540,130 @@ private extension HwpPaginator {
             paragraphId: paragraph.paraHeader.paraId,
             lines: paragraphFrame.lines
         )
+        updateBandTrailingSpacing(for: paragraph)
         return true
+    }
+
+    /// 다단 밴드 문단 배치: 한글 라인 캐시가 단별 run (loc 리셋 = 단 경계)을
+    /// 주면 한글의 단별 텍스트 배분을 그대로 재현하고 — 비등폭 단은 라인 수가
+    /// 아니라 단 폭에 맞는 글자 위치로 나뉜다 (Column 픽스처 캐시/PrvImage
+    /// 실측) — 아니면 라인 단위로 단을 채운다.
+    private func placeMultiColumnParagraph(
+        _ paragraph: CoreHwp.HwpParagraph,
+        attributedString: NSAttributedString,
+        paragraphFrame: HwpParagraphFrame,
+        paragraphHeight: CGFloat,
+        anticipatedFootnotes: CGFloat
+    ) {
+        if placeCachedColumnRuns(
+            paragraph,
+            attributedString: attributedString,
+            paragraphFrame: paragraphFrame
+        ) {
+            return
+        }
+        appendParagraphAcrossColumns(
+            attributedString: attributedString,
+            paragraphFrame: paragraphFrame,
+            paragraphHeight: paragraphHeight,
+            hyperlinkURL: hyperlinkURL(in: paragraph),
+            paragraphId: paragraph.paraHeader.paraId,
+            reservedFootnoteHeight: anticipatedFootnotes
+        )
+        updateBandTrailingSpacing(for: paragraph)
+    }
+
+    /// 밴드 마지막 줄의 줄 간격을 기록한다 (단 정의 밴드 마감 시 다음 밴드
+    /// 시작 여백으로 사용). 라인 캐시가 없으면 이전 값을 유지하지 않고 0으로 둔다.
+    private func updateBandTrailingSpacing(for paragraph: CoreHwp.HwpParagraph) {
+        if let last = paragraph.paraLineSeg.paraLineSegInternalArray.last,
+           last.lineSpacing >= 0
+        {
+            bandTrailingLineSpacing = HwpUnits.points(fromHwpUnit: last.lineSpacing)
+        } else {
+            bandTrailingLineSpacing = 0
+        }
+    }
+
+    /// 한글 라인 캐시의 단별 run을 단 프레임에 그대로 배분한다 (밴드가 비어 있고
+    /// 캐시가 단 경계 (loc 리셋 후 0에서 재시작)를 담고 있을 때만).
+    ///
+    /// run 경계의 textStartingIndex (원본 WCHAR 스트림 위치)를 attributed
+    /// 인덱스로 비례 환산한 뒤 CT 라인 시작에 스냅해 자른다 — 컨트롤 문자
+    /// (스트림 8 WCHAR ↔ 마커 1자)의 오차는 라인 스냅이 흡수한다.
+    /// 절대 캐시 모드에서는 loc 리셋이 페이지 절단점이므로 이 경로를 쓰지 않는다.
+    private func placeCachedColumnRuns(
+        _ paragraph: CoreHwp.HwpParagraph,
+        attributedString: NSAttributedString,
+        paragraphFrame: HwpParagraphFrame
+    ) -> Bool {
+        let rawTotal = paragraph.paraHeader.charCount
+        guard !absoluteCacheMode,
+              columnIndex == 0,
+              contentHeightUsed == 0,
+              rawTotal > 0,
+              attributedString.length > 0,
+              let runs = Self.cacheRuns(for: paragraph),
+              runs.count > 1,
+              runs.count <= columnFrames.count,
+              runs.allSatisfy({ $0.first?.lineLocation == 0 })
+        else { return false }
+
+        let attributedLength = attributedString.length
+        var boundaries = [0]
+        for run in runs.dropFirst() {
+            guard let first = run.first else { return false }
+            let proportional = Double(first.textStartingIndex) / Double(rawTotal)
+                * Double(attributedLength)
+            boundaries.append(snapToLineStart(
+                Int(proportional.rounded()),
+                lines: paragraphFrame.lines
+            ))
+        }
+        boundaries.append(attributedLength)
+        guard boundaries == boundaries.sorted() else { return false }
+
+        for (runIndex, run) in runs.enumerated() {
+            guard let firstSegment = run.first else { return false }
+            var runBottom = firstSegment.lineLocation
+            for segment in run {
+                runBottom = max(runBottom, segment.lineLocation + Self.lineAdvance(of: segment))
+            }
+            let start = boundaries[runIndex]
+            let length = max(0, boundaries[runIndex + 1] - start)
+            guard length > 0 else { continue }
+            columnIndex = runIndex
+            contentHeightUsed = 0
+            paragraphAnchorTop = currentColumnFrame.minY
+            appendBlock(
+                height: max(1, HwpUnits.points(
+                    fromHwpUnit: runBottom - firstSegment.lineLocation
+                )),
+                attributedString: attributedString.attributedSubstring(
+                    from: NSRange(location: start, length: length)
+                ),
+                hyperlinkURL: hyperlinkURL(in: paragraph),
+                paragraphId: paragraph.paraHeader.paraId
+            )
+        }
+        updateBandTrailingSpacing(for: paragraph)
+        return true
+    }
+
+    /// 인덱스를 가장 가까운 CT 라인 시작 위치로 스냅한다.
+    private func snapToLineStart(_ index: Int, lines: [HwpLineFrame]) -> Int {
+        guard !lines.isEmpty else { return index }
+        var best = index
+        var bestDistance = Int.max
+        for line in lines {
+            let start = line.attributedRange.location
+            let distance = abs(start - index)
+            if distance < bestDistance {
+                bestDistance = distance
+                best = start
+            }
+        }
+        return best
     }
 
     /// 절대 캐시 모드 감지: 유효한 라인 캐시의 첫 lineLocation이 0보다 큰 문단이
@@ -601,13 +733,32 @@ private extension HwpPaginator {
             guard let runFirstSegment = run.first else { continue }
             let runFirst = runFirstSegment.lineLocation
             var runBottom = runFirst
+            var runInkBottom = runFirst
             for segment in run {
                 runBottom = max(
                     runBottom,
                     segment.lineLocation + Self.lineAdvance(of: segment)
                 )
+                runInkBottom = max(
+                    runInkBottom,
+                    segment.lineLocation + max(0, segment.lineHeight)
+                )
             }
-            let height = max(1, HwpUnits.points(fromHwpUnit: runBottom - runFirst))
+            var height = max(1, HwpUnits.points(fromHwpUnit: runBottom - runFirst))
+            // 한글은 마지막 줄의 '줄 간격' 몫이 본문 하단 경계를 넘는 것을
+            // 허용한다 (noori p8 실측: ink는 경계 안, advance는 7pt 초과).
+            // 블록 프레임이 꼬리말 밴드와 겹치지 않게 간격 몫만 하단에서 자른다
+            // (ink가 이미 경계를 넘으면 그대로 둔다 — 실제 넘침).
+            let blockTop = currentColumnFrame.minY
+                + max(0, HwpUnits.points(fromHwpUnit: runFirst))
+            let contentBottom = currentPageGeometry.contentFrame.maxY
+            if blockTop + height > contentBottom {
+                let inkHeight = max(
+                    1,
+                    HwpUnits.points(fromHwpUnit: runInkBottom - runFirst)
+                )
+                height = max(inkHeight, contentBottom - blockTop)
+            }
             let slice = runAttributedSlice(
                 runIndex: runIndex,
                 runShare: RunShare(
@@ -999,7 +1150,7 @@ private extension HwpPaginator {
             switch ctrl {
             case let .table(table):
                 if !inTableCell {
-                    appendTableBlocks(table)
+                    appendTableBlocks(table, controlIndex: anchorIndex)
                 }
                 appendNestedControlBlocks(of: ctrl, depth: depth)
             case let .genShapeObject(genShape):
@@ -1069,7 +1220,7 @@ private extension HwpPaginator {
 
     // MARK: 표
 
-    func appendTableBlocks(_ table: CoreHwp.HwpTable) {
+    func appendTableBlocks(_ table: CoreHwp.HwpTable, controlIndex: Int? = nil) {
         let result = tableLayout.layout(
             table: table,
             availableWidth: currentColumnFrame.width,
@@ -1084,6 +1235,14 @@ private extension HwpPaginator {
             ))
             appendPlaceholderBlock(hint: element.hint)
         case let .success(frame):
+            // 글자처럼 취급 표 (표 70): FFFC 앵커 라인 위치에 인라인 배치.
+            // 줄 공간은 run delegate가 표 크기로 예약했으므로 흐름을 추가
+            // 소비하지 않는다 (noori 실측: 캐시 줄 높이 = 표 높이).
+            if table.commonCtrlProperty.propertyInfo.treatAsChar,
+               appendInlineAnchoredTable(frame, table: table, controlIndex: controlIndex)
+            {
+                return
+            }
             appendTableSegments(
                 frame,
                 instanceId: table.commonCtrlProperty.instanceId,
@@ -1091,6 +1250,30 @@ private extension HwpPaginator {
                 headerRowCount: Self.repeatingHeaderRowCount(of: table)
             )
         }
+    }
+
+    /// 글자처럼 취급 표를 앵커 라인 위치에 배치한다. 앵커가 없으면 false
+    /// (호출자가 flow 배치로 폴백 — 라인 분할된 문단 등).
+    private func appendInlineAnchoredTable(
+        _ frame: HwpTableFrame,
+        table: CoreHwp.HwpTable,
+        controlIndex: Int?
+    ) -> Bool {
+        guard let position = inlineAnchorPosition(for: controlIndex) else { return false }
+        let height = frame.rows.reduce(CGFloat(0)) { max($0, $1.rowFrame.maxY) }
+        currentBlocks.append(AnyHwpBlock(
+            frame: CGRect(
+                x: position.x,
+                y: position.y,
+                width: frame.outerFrame.width,
+                height: height
+            ),
+            kind: .table,
+            payload: .table(frame),
+            source: HwpBlockSource(controlInstanceId: table.commonCtrlProperty.instanceId)
+        ))
+        bandHasNonTextContent = true
+        return true
     }
 
     /// 표 76 bit 2 (제목 줄 자동 반복): 첫 행부터 연속으로 모든 셀이

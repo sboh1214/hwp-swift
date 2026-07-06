@@ -50,6 +50,31 @@ final class HwpPageGeometryTests: XCTestCase {
         expect(geo.contentFrame.size.height) == geo.pageSize.height - 144.0
     }
 
+    /// 한글의 세로 구성 (표 137): 위쪽 여백 → 머리말 영역 → 본문 → 꼬리말 영역
+    /// → 아래쪽 여백. 본문 상단 = marginTop + marginHeader (BinData/plain-text
+    /// 픽스처 PrvImage 실측: A4 기본 여백에서 본문 상단 99.2pt).
+    func testContentFrameReservesHeaderAndFooterBands() {
+        var pageDef = HwpPageDef()
+        pageDef.width = 59528
+        pageDef.height = 84186
+        pageDef.marginLeft = 8504
+        pageDef.marginRight = 8504
+        pageDef.marginTop = 5668
+        pageDef.marginBottom = 4252
+        pageDef.marginHeader = 4252
+        pageDef.marginFootnote = 4252
+
+        let geo = HwpPageGeometry.compute(pageDef: pageDef, sectionDef: nil)
+
+        expect(geo.contentFrame.minY).to(beCloseTo(99.2, within: 0.05))
+        expect(geo.headerFrame?.minY).to(beCloseTo(56.68, within: 0.05))
+        expect(geo.headerFrame?.maxY).to(beCloseTo(geo.contentFrame.minY, within: 0.01))
+        // 본문 하단 = 페이지 높이 − 아래 여백 − 꼬리말 여백
+        expect(geo.contentFrame.maxY).to(beCloseTo(841.86 - 42.52 - 42.52, within: 0.1))
+        expect(geo.footerFrame?.minY).to(beCloseTo(geo.contentFrame.maxY, within: 0.01))
+        expect(geo.footerFrame?.maxY).to(beCloseTo(841.86 - 42.52, within: 0.1))
+    }
+
     func testTwoColumn() {
         // 단 컨트롤 없이 계산하면 1단 (contentFrame) 폴백이다.
         var pageDef = HwpPageDef()

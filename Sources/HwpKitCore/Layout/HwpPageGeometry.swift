@@ -21,32 +21,46 @@ public struct HwpPageGeometry: Sendable, Hashable {
     ) -> HwpPageGeometry {
         let pageSize = HwpUnits.size(fromHwpUnitWidth: pageDef.width, height: pageDef.height)
 
+        // 한글의 세로 구성 (표 137): 위쪽 여백 → 머리말 영역 → 본문 →
+        // 꼬리말 영역 → 아래쪽 여백. 머리말/꼬리말 컨트롤이 없어도 두 영역은
+        // 본문 밖에 항상 예약된다 — 본문 시작 y = marginTop + marginHeader
+        // (BinData/plain-text 픽스처 PrvImage 실측: 본문 상단 99.2pt =
+        // 56.68 + 42.52).
+        let paperTopMargin = HwpUnits.points(fromHwpUnitU: pageDef.marginTop)
+        let paperBottomMargin = HwpUnits.points(fromHwpUnitU: pageDef.marginBottom)
+        let headerMarginPt = HwpUnits.points(fromHwpUnitU: pageDef.marginHeader)
+        let footerMarginPt = HwpUnits.points(fromHwpUnitU: pageDef.marginFootnote)
+
+        // margins는 본문 콘텐츠 인셋 (머리말/꼬리말 영역 포함) — 뷰/테스트가
+        // "본문 밖" 판정에 그대로 쓸 수 있는 값이다.
         let margins = HwpPageMargins(
-            top: HwpUnits.points(fromHwpUnitU: pageDef.marginTop),
+            top: paperTopMargin + headerMarginPt,
             left: HwpUnits.points(fromHwpUnitU: pageDef.marginLeft),
-            bottom: HwpUnits.points(fromHwpUnitU: pageDef.marginBottom),
+            bottom: paperBottomMargin + footerMarginPt,
             right: HwpUnits.points(fromHwpUnitU: pageDef.marginRight)
         )
 
         let contentWidth = pageSize.width - margins.left - margins.right
-        let contentHeight = pageSize.height - margins.top - margins.bottom
         let contentFrame = CGRect(
             x: margins.left,
             y: margins.top,
             width: contentWidth,
-            height: contentHeight
+            height: pageSize.height - margins.top - margins.bottom
         )
 
-        let headerMarginPt = HwpUnits.points(fromHwpUnitU: pageDef.marginHeader)
         let headerFrame: CGRect? = headerMarginPt > 0
-            ? CGRect(x: margins.left, y: 0, width: contentWidth, height: headerMarginPt)
+            ? CGRect(
+                x: margins.left,
+                y: paperTopMargin,
+                width: contentWidth,
+                height: headerMarginPt
+            )
             : nil
 
-        let footerMarginPt = HwpUnits.points(fromHwpUnitU: pageDef.marginFootnote)
         let footerFrame: CGRect? = footerMarginPt > 0
             ? CGRect(
                 x: margins.left,
-                y: pageSize.height - footerMarginPt,
+                y: contentFrame.maxY,
                 width: contentWidth,
                 height: footerMarginPt
             )

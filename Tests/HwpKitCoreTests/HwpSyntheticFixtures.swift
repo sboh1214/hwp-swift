@@ -46,6 +46,82 @@ enum HwpSynthetic {
         return paragraph
     }
 
+    /// columnCacheParagraph 세그먼트 사양
+    struct ColumnCacheSegment {
+        let textIndex: UInt32
+        let location: Int32
+        let height: Int32
+        let width: Int32
+
+        init(textIndex: UInt32, location: Int32, height: Int32, width: Int32) {
+            self.textIndex = textIndex
+            self.location = location
+            self.height = height
+            self.width = width
+        }
+    }
+
+    /// 라인 세그먼트 캐시 (textStartingIndex/width까지 지정): 단 경계
+    /// (loc 리셋 + width 변화)를 담은 다단 배분 캐시를 만든다.
+    /// paraHeader.charCount도 텍스트 길이로 채운다 (단 배분의 비례 환산 분모).
+    static func columnCacheParagraph(
+        _ text: String,
+        segments: [ColumnCacheSegment]
+    ) throws -> CoreHwp.HwpParagraph {
+        var paragraph = try textParagraph(text)
+        var payload = Data()
+        for segment in segments {
+            withUnsafeBytes(of: segment.textIndex.littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: segment.location.littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: segment.height.littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: segment.height.littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: Int32(850).littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: Int32(600).littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: Int32(0).littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: segment.width.littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: UInt32(393_216).littleEndian) { payload.append(contentsOf: $0) }
+        }
+        paragraph.paraLineSeg = try CoreHwp.HwpParaLineSeg.load(payload)
+        var headerPayload = Data()
+        withUnsafeBytes(of: UInt32(text.utf16.count).littleEndian) {
+            headerPayload.append(contentsOf: $0)
+        }
+        withUnsafeBytes(of: UInt32(0).littleEndian) { headerPayload.append(contentsOf: $0) }
+        withUnsafeBytes(of: UInt16(0).littleEndian) { headerPayload.append(contentsOf: $0) }
+        headerPayload.append(0) // paraStyleId
+        headerPayload.append(0) // columnType
+        withUnsafeBytes(of: UInt16(1).littleEndian) { headerPayload.append(contentsOf: $0) }
+        withUnsafeBytes(of: UInt16(0).littleEndian) { headerPayload.append(contentsOf: $0) }
+        withUnsafeBytes(of: UInt16(1).littleEndian) { headerPayload.append(contentsOf: $0) }
+        withUnsafeBytes(of: UInt32(0).littleEndian) { headerPayload.append(contentsOf: $0) }
+        paragraph.paraHeader = try CoreHwp.HwpParaHeader.load(
+            headerPayload,
+            CoreHwp.HwpVersion(5, 0, 2, 2)
+        )
+        return paragraph
+    }
+
+    /// 단 정의 컨트롤 (표 138/139 없이 모델 직접 구성)
+    static func column(
+        count: Int,
+        spacing: Int16? = nil,
+        widths: [UInt16]? = nil,
+        gaps: [UInt16]? = nil
+    ) -> CoreHwp.HwpColumn {
+        var column = CoreHwp.HwpColumn()
+        column.property = CoreHwp.HwpColumnProperty(
+            rawValue: 0,
+            type: .general,
+            count: count,
+            direction: .left,
+            isSameWidth: widths == nil
+        )
+        column.spacing = spacing
+        column.widthArray = widths
+        column.gapArray = gaps
+        return column
+    }
+
     /// 머리말/꼬리말/각주/미주 리스트 컨트롤.
     /// ctrl 헤더 payload는 ctrl id + 속성 u32 (표 140 prefix 레이아웃).
     static func listControl(
@@ -82,7 +158,10 @@ enum HwpSynthetic {
         }
     }
 
-    /// 페이지 크기를 지정한 구역 정의 (단위: HWPUNIT)
+    /// 페이지 크기를 지정한 구역 정의 (단위: HWPUNIT).
+    /// 머리말/꼬리말 여백은 본문 밖 예약 영역이라 본문 높이를 줄인다
+    /// (HwpPageGeometry, 표 137) — 합성 테스트는 본문 높이 산정이 단순하도록
+    /// 0으로 둔다 (본문 = 페이지 높이 − 위/아래 여백).
     static func sectionDef(
         pageWidth: UInt32 = 59528,
         pageHeight: UInt32 = 84188
@@ -90,6 +169,8 @@ enum HwpSynthetic {
         var sectionDef = CoreHwp.HwpSectionDef()
         sectionDef.pageDef.width = pageWidth
         sectionDef.pageDef.height = pageHeight
+        sectionDef.pageDef.marginHeader = 0
+        sectionDef.pageDef.marginFootnote = 0
         return sectionDef
     }
 

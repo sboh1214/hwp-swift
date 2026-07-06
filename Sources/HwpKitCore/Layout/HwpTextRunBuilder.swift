@@ -264,8 +264,8 @@ private extension HwpTextRunBuilder {
     /// U+FFFC 컨트롤 마커 run을 내보낸다.
     ///
     /// extended 컨트롤이면 controlIndex attribute를 달고, run delegate로 줄 공간을
-    /// 조정한다: treatAsChar 개체는 개체 크기만큼 예약 (줄 높이 보정 — 표는 flow
-    /// 배치를 유지하므로 제외), 그 밖의 extended 컨트롤(구역/단/머리말 정의 등)은
+    /// 조정한다: treatAsChar 개체 (표 포함)는 개체 크기만큼 예약 (줄 높이 보정),
+    /// 그 밖의 extended 컨트롤(구역/단/머리말 정의 등)은
     /// 한글과 같이 폭 0으로 처리해 글리프 공간을 차지하지 않게 한다.
     func appendControlMarker(
         controlIndex: Int?,
@@ -336,50 +336,6 @@ private extension HwpTextRunBuilder {
         attributes[baselineKey] = NSNumber(
             value: existing + Double(baseSize * Self.superscriptBaselineRatio)
         )
-    }
-
-    /// controlIndex번째 컨트롤이 treatAsChar 개체면 예약할 크기 (pt).
-    func inlineObjectSize(
-        controlIndex: Int,
-        paragraph: CoreHwp.HwpParagraph
-    ) -> CGSize? {
-        guard let ctrls = paragraph.ctrlHeaderArray,
-              ctrls.indices.contains(controlIndex)
-        else { return nil }
-
-        let commonProperty: CoreHwp.HwpCommonCtrlProperty?
-        let components: [CoreHwp.HwpShapeComponent]
-        switch ctrls[controlIndex] {
-        case let .genShapeObject(genShape):
-            commonProperty = genShape.commonCtrlProperty
-            components = genShape.shapeComponentArray
-        case let .shape(shape),
-             let .line(shape),
-             let .rectangle(shape),
-             let .ellipse(shape),
-             let .arc(shape),
-             let .polygon(shape),
-             let .curve(shape),
-             let .equation(shape),
-             let .equationLegacy(shape),
-             let .picture(shape),
-             let .ole(shape),
-             let .container(shape):
-            commonProperty = shape.commonCtrlProperty
-            components = shape.shapeComponentArray
-        default:
-            return nil
-        }
-        guard let commonProperty, commonProperty.propertyInfo.treatAsChar else { return nil }
-
-        var width = HwpUnits.points(fromHwpUnitU: commonProperty.width)
-        var height = HwpUnits.points(fromHwpUnitU: commonProperty.height)
-        if width <= 0 || height <= 0, let detail = components.first?.detail {
-            if width <= 0 { width = HwpUnits.points(fromHwpUnitU: detail.currentWidth) }
-            if height <= 0 { height = HwpUnits.points(fromHwpUnitU: detail.currentHeight) }
-        }
-        guard width > 0, height > 0 else { return nil }
-        return CGSize(width: width, height: height)
     }
 
     func attributes(
