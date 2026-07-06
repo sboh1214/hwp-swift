@@ -66,6 +66,12 @@ public actor HwpPaginator {
     /// (문단, 폭)별 각주 문단 높이 캐시 — anticipated/collect/이월 예약 경로가
     /// 같은 각주를 반복 CT 레이아웃하지 않게 한다.
     private var footnoteHeightCache: [FootnoteHeightKey: CGFloat] = [:]
+    /// 절대 캐시 모드: lineLocation이 페이지 내 절대 y인 저장본 (한/글 2007 계열).
+    /// 켜지면 문단을 캐시가 준 y에 그대로 배치하고, loc 리셋을 한글의 페이지
+    /// 절단점으로 사용한다 — 페이지 수/배치가 한글과 일치한다.
+    private let absoluteCacheMode: Bool
+    /// 현재 페이지에 배치한 마지막 세그먼트의 lineLocation (절대 캐시 모드 전용)
+    private var lastAbsoluteCacheLoc = Int32.min
     /// (컨트롤, 밴드 프레임)별 머리말/꼬리말 블록 캐시
     private var bandBlocksCache: [BandBlocksKey: [AnyHwpBlock]] = [:]
 
@@ -92,6 +98,7 @@ public actor HwpPaginator {
         tableLayout = HwpTableLayout(fontResolver: fontResolver)
         textboxLayout = HwpTextboxLayout(fontResolver: fontResolver)
         footnoteLayout = HwpFootnoteLayout(fontResolver: fontResolver)
+        absoluteCacheMode = Self.detectAbsoluteCacheMode(sections: sections)
         currentPageGeometry = Self.initialGeometry(for: sections)
         currentSectionDef = Self.firstSectionDef(for: sections)
         footnoteCounter = Self.initialNoteNumber(
@@ -449,6 +456,30 @@ private extension HwpPaginator {
         attributedString: NSAttributedString,
         paragraphFrame: HwpParagraphFrame
     ) -> Bool {
+        // 절대 캐시 모드 (1단): 한글이 계산한 y/페이지 절단점을 그대로 재현한다.
+        if absoluteCacheMode, columnFrames.count <= 1,
+           let runs = Self.cacheRuns(for: paragraph)
+        {
+            return placeAbsoluteCachedParagraph(
+                paragraph,
+                attributedString: attributedString,
+                paragraphFrame: paragraphFrame,
+                runs: runs
+            )
+        }
+        return placeFlowParagraph(
+            paragraph,
+            attributedString: attributedString,
+            paragraphFrame: paragraphFrame
+        )
+    }
+
+    /// 흐름 기반 문단 배치 (절대 캐시 모드가 아닌 저장본/경로)
+    private func placeFlowParagraph(
+        _ paragraph: CoreHwp.HwpParagraph,
+        attributedString: NSAttributedString,
+        paragraphFrame: HwpParagraphFrame
+    ) -> Bool {
         var paragraphHeight = height(for: paragraph, fallback: paragraphFrame.totalHeight)
         // 캐시 높이가 페이지를 넘는데 CT 라인도 하나뿐이면 (표/개체 앵커가 캐시
         // 높이를 지배하는 문단) 캐시 높이를 그대로 쓸 수 없다 — 개체는 별도
@@ -501,6 +532,142 @@ private extension HwpPaginator {
             lines: paragraphFrame.lines
         )
         return true
+    }
+
+    /// 절대 캐시 모드 감지: 유효한 라인 캐시의 첫 lineLocation이 0보다 큰 문단이
+    /// 다수면 (한/글 2007 계열 저장본) 절대 y 좌표계로 판단한다.
+    static func detectAbsoluteCacheMode(sections: [CoreHwp.HwpSection]) -> Bool {
+        var absolute = 0
+        var zero = 0
+        for section in sections {
+            for paragraph in section.paragraph {
+                guard let first = paragraph.paraLineSeg.paraLineSegInternalArray.first
+                else { continue }
+                if first.lineLocation > 0 {
+                    absolute += 1
+                } else {
+                    zero += 1
+                }
+            }
+        }
+        return absolute > zero
+    }
+
+    /// 세그먼트를 단조 (비감소) run으로 나눈다. lineLocation이 줄어드는 지점이
+    /// 한글의 페이지 절단점이다. 캐시가 없거나 음수 높이가 있으면 nil (CT 폴백).
+    static func cacheRuns(
+        for paragraph: CoreHwp.HwpParagraph
+    ) -> [[CoreHwp.HwpParaLineSegInternal]]? {
+        let segments = paragraph.paraLineSeg.paraLineSegInternalArray
+        guard !segments.isEmpty else { return nil }
+        var runs: [[CoreHwp.HwpParaLineSegInternal]] = []
+        var current: [CoreHwp.HwpParaLineSegInternal] = []
+        var previous = Int32.min
+        for segment in segments {
+            guard segment.lineHeight >= 0 else { return nil }
+            if segment.lineLocation < previous, !current.isEmpty {
+                runs.append(current)
+                current = []
+            }
+            current.append(segment)
+            previous = segment.lineLocation
+        }
+        if !current.isEmpty { runs.append(current) }
+        return runs
+    }
+
+    /// 절대 캐시 문단 배치: run들을 한글이 계산한 y에 그대로 놓고,
+    /// run 사이 (loc 리셋)마다 페이지를 확정한다. 문단 첫 loc이 현재 페이지의
+    /// 마지막 loc보다 작으면 한글이 이 문단을 새 페이지에서 시작한 것이므로
+    /// 페이지를 확정하고 false를 반환한다 (호출자가 재처리).
+    private func placeAbsoluteCachedParagraph(
+        _ paragraph: CoreHwp.HwpParagraph,
+        attributedString: NSAttributedString,
+        paragraphFrame: HwpParagraphFrame,
+        runs: [[CoreHwp.HwpParaLineSegInternal]]
+    ) -> Bool {
+        let firstLoc = runs[0][0].lineLocation
+        if firstLoc < lastAbsoluteCacheLoc, !currentBlocks.isEmpty || contentHeightUsed > 0 {
+            closeColumnBand()
+            cacheCurrentPage()
+            return false
+        }
+
+        let lines = paragraphFrame.lines
+        let totalSegments = runs.reduce(0) { $0 + $1.count }
+        var lineCursor = 0
+        for (runIndex, run) in runs.enumerated() {
+            if runIndex > 0 { cacheCurrentPage() }
+            guard let runFirstSegment = run.first else { continue }
+            let runFirst = runFirstSegment.lineLocation
+            var runBottom = runFirst
+            for segment in run {
+                runBottom = max(
+                    runBottom,
+                    segment.lineLocation + Self.lineAdvance(of: segment)
+                )
+            }
+            let height = max(1, HwpUnits.points(fromHwpUnit: runBottom - runFirst))
+            let slice = runAttributedSlice(
+                runIndex: runIndex,
+                runShare: RunShare(
+                    segments: run.count,
+                    total: totalSegments,
+                    runCount: runs.count
+                ),
+                attributedString: attributedString,
+                lines: lines,
+                lineCursor: &lineCursor
+            )
+            // appendBlock은 columnFrame.minY + contentHeightUsed에 배치하므로
+            // 한글이 준 절대 y로 커서를 옮긴다.
+            contentHeightUsed = max(0, HwpUnits.points(fromHwpUnit: runFirst))
+            paragraphAnchorTop = currentColumnFrame.minY + contentHeightUsed
+            appendBlock(
+                height: height,
+                attributedString: slice.text,
+                hyperlinkURL: hyperlinkURL(in: paragraph),
+                paragraphId: paragraph.paraHeader.paraId,
+                lines: slice.lines
+            )
+            lastAbsoluteCacheLoc = run.last?.lineLocation ?? runFirst
+        }
+        return true
+    }
+
+    /// run의 라인 배분 비율 (여러 페이지에 걸친 문단의 텍스트 분할용)
+    private struct RunShare {
+        let segments: Int
+        let total: Int
+        let runCount: Int
+    }
+
+    /// 여러 run으로 나뉜 (여러 페이지에 걸친) 문단의 run별 텍스트 조각.
+    /// CT 라인을 세그먼트 수에 비례해 배분한다 (같은 폭이라 대개 1:1).
+    private func runAttributedSlice(
+        runIndex: Int,
+        runShare: RunShare,
+        attributedString: NSAttributedString,
+        lines: [HwpLineFrame],
+        lineCursor: inout Int
+    ) -> (text: NSAttributedString, lines: [HwpLineFrame]) {
+        guard runShare.runCount > 1 else { return (attributedString, lines) }
+        let take = runIndex == runShare.runCount - 1
+            ? max(0, lines.count - lineCursor)
+            : Int((
+                Double(runShare.segments) / Double(runShare.total) * Double(lines.count)
+            ).rounded())
+        let start = min(lineCursor, lines.count)
+        let end = min(start + max(0, take), lines.count)
+        lineCursor = end
+        let slice = lines[start ..< end]
+        guard let first = slice.first else {
+            return (NSAttributedString(string: ""), [])
+        }
+        let range = slice.dropFirst().reduce(first.attributedRange) {
+            NSUnionRange($0, $1.attributedRange)
+        }
+        return (attributedString.attributedSubstring(from: range), [])
     }
 
     /// 문단에 붙은 구역 정의를 현재 페이지 지오메트리에 반영한다.
@@ -2139,6 +2306,8 @@ private extension HwpPaginator {
         currentBlocks = []
         // 페이지가 넘어가면 이전 페이지 문단의 줄 앵커 좌표는 무효다.
         currentParagraphContext = nil
+        // 새 페이지: 절대 캐시 loc 추적을 리셋한다.
+        lastAbsoluteCacheLoc = Int32.min
         // 새 페이지: 현재 단 정의로 콘텐츠 상단부터 새 밴드를 연다.
         openColumnBand(top: currentPageGeometry.contentFrame.minY)
         // 이월된 각주가 새 페이지에서 차지할 영역을 다시 예약한다.
@@ -2157,24 +2326,19 @@ private extension HwpPaginator {
         // 페이지 내 누적 절대 y로 기록한다. 첫 세그먼트 위치를 빼서 문단-상대 높이로
         // 정규화한다 (첫 lineLocation == 0인 저장본에서는 동일 규칙).
         //
-        // 캐시의 lineHeight는 글자 높이이고 실제 줄 전진량은 줄 간격 종류를 적용한
-        // 값이다 — 실측: 연속 세그먼트/문단의 lineLocation 델타가 lineHeight × 비율과
-        // 일치 (헌법주석 30,348곳 중 30,343곳, noori 21곳 전부).
-        let paraShape = index.paraShape(id: UInt32(paragraph.paraHeader.paraShapeId))
-            ?? index.paraShape(id: 0)
+        // 실제 줄 전진량은 캐시가 직접 준다: lineHeight + lineSpacing (per-line 필드).
+        // 실측: 연속 세그먼트의 lineLocation 델타와 일치 (헌법주석 30,345/30,348,
+        // noori 문단 내 전부 — 저장 세대와 무관).
         let top = segments[0].lineLocation
         var bottom = top
         for segment in segments {
-            let advance = Self.lineAdvance(
-                lineHeight: max(0, segment.lineHeight),
-                textHeight: max(0, segment.textHeight),
-                paraShape: paraShape
-            )
-            bottom = max(bottom, segment.lineLocation + advance)
+            bottom = max(bottom, segment.lineLocation + Self.lineAdvance(of: segment))
         }
         let lineHeights = max(0, HwpUnits.points(fromHwpUnit: bottom - top))
         // 문단 간격 위/아래는 캐시에 포함되지 않으므로 CT 폴백 경로
         // (paragraphSpacingBefore/After)와 동일하게 더한다.
+        let paraShape = index.paraShape(id: UInt32(paragraph.paraHeader.paraShapeId))
+            ?? index.paraShape(id: 0)
         let spacing = paraShape.map {
             max(0, HwpUnits.points(fromHwpUnit: $0.paragraphSpacingTop))
                 + max(0, HwpUnits.points(fromHwpUnit: $0.paragraphSpacingBottom))
@@ -2182,30 +2346,10 @@ private extension HwpPaginator {
         return lineHeights + spacing
     }
 
-    /// 라인 캐시 높이에 줄 간격 종류 (표 44/46)를 적용한 실제 줄 전진량 (HWPUNIT).
-    ///
-    /// 비율(%)은 텍스트 높이 기준으로 적용되고, 개체가 더 크면 줄 높이가 이긴다
-    /// (실측: 델타 = max(lineHeight, textHeight × 비율) — 개체/위첨자 혼합 줄 포함).
-    static func lineAdvance(
-        lineHeight: Int32,
-        textHeight: Int32,
-        paraShape: CoreHwp.HwpParaShape?
-    ) -> Int32 {
-        guard let paraShape else { return lineHeight }
-        let value = paraShape.resolvedLineSpacingValue
-        switch paraShape.resolvedLineSpacingKind {
-        case .percent:
-            guard value > 0 else { return lineHeight }
-            let base = textHeight > 0 ? textHeight : lineHeight
-            let scaled = Int32((Double(base) * Double(value) / 100).rounded())
-            return max(lineHeight, scaled)
-        case .fixed:
-            return max(1, value)
-        case .marginOnly:
-            return lineHeight + max(0, value)
-        case .atLeast:
-            return max(lineHeight, value)
-        }
+    /// 라인 캐시의 실제 줄 전진량 (HWPUNIT): lineHeight + lineSpacing.
+    /// 줄 간격 종류/비율이 이미 반영된 per-line 값이라 저장 세대와 무관하다.
+    static func lineAdvance(of segment: CoreHwp.HwpParaLineSegInternal) -> Int32 {
+        max(0, segment.lineHeight) + max(0, segment.lineSpacing)
     }
 
     func isValidLineSegmentCache(_ segments: [CoreHwp.HwpParaLineSegInternal]) -> Bool {

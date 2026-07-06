@@ -44,17 +44,18 @@ CoreHwp.HwpFile
   → HwpDocument { pages: [HwpPage(blocks, paintList)], imageStore }
 ```
 
-라인 세그먼트 캐시 (PARA_LINE_SEG)의 `lineLocation`은 저장본에 따라
-문단-상대 (0 시작) 또는 페이지 내 누적 절대 y다 (한/글 2007 계열).
-캐시의 `lineHeight`는 줄 (개체 포함) 높이, `textHeight`는 글자 높이이고
-**실제 줄 전진량 = max(lineHeight, textHeight × 줄 간격 비율)** (종류별 규칙은
-`HwpPaginator.lineAdvance`) — 실측: 연속 세그먼트/문단의 lineLocation 델타가
-이 값과 일치 (헌법주석 30,348곳 중 30,343곳, noori 전부).
-`height(for:)` = `max(loc + advance) − 첫 loc` + 문단 간격 위/아래.
-이 규칙으로 헌법주석 전체 페이지 수가 한글.app 실측 (1,030쪽)과 ±1% 이내로
-일치한다 (1,037 — 페이지 경계에 걸린 캐시 문단은 CT 재줄바꿈으로 분할).
-빈 페이지에도 안 들어가는 문단은 1단에서도 라인 단위로 분할되고, 캐시 높이가
-페이지를 넘는 1줄 (개체 앵커 지배) 문단은 CT 측정 높이로 폴백한다.
+라인 세그먼트 캐시 (PARA_LINE_SEG)의 `lineLocation`은 페이지 내 절대 y다.
+**실제 줄 전진량 = lineHeight + lineSpacing (per-line 캐시 필드)** — 실측:
+연속 세그먼트의 lineLocation 델타와 일치 (헌법주석 30,345/30,348, noori 전부;
+저장 세대와 무관). `height(for:)` = `max(loc + advance) − 첫 loc` + 문단 간격.
+
+**절대 캐시 모드** (`detectAbsoluteCacheMode`: 첫 loc > 0인 캐시 문단이 다수):
+1단 문단을 캐시가 준 y에 그대로 배치하고, 세그먼트 loc이 줄어드는 지점
+(`cacheRuns`)을 한글의 페이지 절단점으로 사용한다. 여러 run에 걸친 문단은
+run마다 페이지를 확정하고 CT 라인을 비례 배분해 이어 그린다. 이 모드로
+헌법주석 전체 페이지 수 (1,030)와 페이지 경계가 한/글 (인쇄본 캐시)과 일치한다.
+빈 페이지에도 안 들어가는 흐름 문단은 1단에서도 라인 단위로 분할되고, 캐시
+높이가 페이지를 넘는 1줄 (개체 앵커 지배) 문단은 CT 측정 높이로 폴백한다.
 
 다단은 "단 밴드" 모델이다: 단 정의 (`cold`)가 나오면 진행 중 밴드를 닫고
 (본문 텍스트가 첫 단에만 있으면 라인 단위로 균형 재배치 — 한글의 단 배분)

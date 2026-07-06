@@ -83,14 +83,14 @@ import XCTest
             let textBlocks = (page?.blocks ?? []).filter { $0.kind == .text }
             expect(textBlocks.count) == 11 // 첫 문단 + 본문 10
             for block in textBlocks where block.attributedString?.string.contains("절대") == true {
-                // 캐시 lineHeight 1500 × 비율 160% (blank paraShape 0) = 24pt
-                expect(block.frame.height).to(beCloseTo(24, within: 0.01))
+                // 줄 전진량 = lineHeight(1500) + lineSpacing(600) = 21pt
+                expect(block.frame.height).to(beCloseTo(21, within: 0.01))
             }
         }
 
         func testRelativeLineSegmentHeightsApplyLineSpacing() async throws {
-            // 문단-상대 (첫 loc == 0) 캐시: 높이 = max(loc + h × 비율) − 첫 loc.
-            // (실측: lineLocation 델타 = lineHeight × 줄 간격 비율 — noori 21곳 전부)
+            // 문단-상대 (첫 loc == 0) 캐시: 높이 = max(loc + lineHeight + lineSpacing)
+            // − 첫 loc (실측: lineLocation 델타 = lineHeight + lineSpacing)
             let paragraph = try HwpSynthetic.lineSegParagraph(
                 "상대 좌표 문단",
                 segments: [(location: 0, height: 1000), (location: 1000, height: 1000)]
