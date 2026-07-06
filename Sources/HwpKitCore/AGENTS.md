@@ -23,7 +23,7 @@ CoreHwp.HwpFile
         │   HwpParagraphLayout (CTFramesetter) → 라인 + 인라인 앵커
         │     (줄 간격 종류 (표 44/46): 비율%는 글자 크기 × 값/100 강제,
         │      고정/최소는 HWPUNIT, 여백만은 lineSpacingAdjustment)
-        │   placeParagraphText   # 1단: 통 배치 / 다단: 라인 단위 단 채움
+        │   placeParagraphText   # 1단: 통 배치 / 다단: 캐시 run 단 배분, 폴백 라인 채움
         │   collectFootnotes     # 각주(페이지 하단 몫) / 미주(문서·구역 끝 몫) 분리 수집
         ├─ appendControlBlocks     # 컨트롤 → 실제 레이아웃 엔진
         │   .table  → HwpTableLayout (중첩 표 재귀 depth 3,
@@ -49,17 +49,36 @@ CoreHwp.HwpFile
 연속 세그먼트의 lineLocation 델타와 일치 (헌법주석 30,345/30,348, noori 전부;
 저장 세대와 무관). `height(for:)` = `max(loc + advance) − 첫 loc` + 문단 간격.
 
+**페이지 지오메트리** (`HwpPageGeometry`): 본문 프레임은 머리말/꼬리말
+영역(표 137)을 예약한다 — 본문 상단 = 위 여백 + 머리말 여백, 하단 =
+페이지 − 아래 여백 − 꼬리말 여백 (PrvImage·헌법주석 캐시 실측). `HwpPage.margins`
+는 이 본문 콘텐츠 인셋이다 (용지 여백 아님).
+
 **절대 캐시 모드** (`detectAbsoluteCacheMode`: 첫 loc > 0인 캐시 문단이 다수):
 1단 문단을 캐시가 준 y에 그대로 배치하고, 세그먼트 loc이 줄어드는 지점
 (`cacheRuns`)을 한글의 페이지 절단점으로 사용한다. 여러 run에 걸친 문단은
-run마다 페이지를 확정하고 CT 라인을 비례 배분해 이어 그린다. 이 모드로
-헌법주석 전체 페이지 수 (1,030)와 페이지 경계가 한/글 (인쇄본 캐시)과 일치한다.
+run마다 페이지를 확정하고 CT 라인을 비례 배분해 이어 그린다. 마지막 줄의
+'줄 간격' 몫이 본문 하단을 넘으면 블록 높이에서 잘라 꼬리말 밴드와 겹치지
+않게 한다 (ink는 한글도 경계 안 — noori 실측). 이 모드로 헌법주석 본문
+페이지 경계가 한/글 (인쇄본 캐시)과 일치한다. 전체 페이지 수는 1,031로
+한글 인쇄본 (1,030) 대비 +1 — 표 분할 주변 각주 예약 근사 1건 (아래 한계).
 빈 페이지에도 안 들어가는 흐름 문단은 1단에서도 라인 단위로 분할되고, 캐시
 높이가 페이지를 넘는 1줄 (개체 앵커 지배) 문단은 CT 측정 높이로 폴백한다.
 
+**캐시 높이 우선**: 각주 스택 (`HwpFootnoteLayout.measure`/예약)과 표 셀
+문단 (`HwpTableLayout.placedCell`)의 높이는 유효한 라인 캐시가 있으면
+`HwpParagraphLayout.cachedParagraphHeight` (한글이 계산한 줄 전진량 합)를
+CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가 밀리는 것을 막는다.
+같은 각주 컨트롤의 이어지는 문단은 간격 없이 붙는다 (캐시 loc 연속 실측).
+
 다단은 "단 밴드" 모델이다: 단 정의 (`cold`)가 나오면 진행 중 밴드를 닫고
-(본문 텍스트가 첫 단에만 있으면 라인 단위로 균형 재배치 — 한글의 단 배분)
-그 아래에서 `HwpPageGeometry.columnFrames`로 새 밴드를 연다. 단이 차면
+마지막 줄의 줄 간격만큼 띄운 뒤 (`bandTrailingLineSpacing` — Column PrvImage
+실측) 그 아래에서 `HwpPageGeometry.columnFrames`로 새 밴드를 연다.
+밴드가 비어 있고 라인 캐시가 단별 run (loc 리셋 = 단 경계)을 주면
+`placeCachedColumnRuns`가 한글의 단별 텍스트 배분을 그대로 재현한다 —
+비등폭 단은 라인 수가 아니라 textStartingIndex 글자 위치 비례 (CT 라인
+스냅)로 나뉜다. 캐시가 없으면 라인 단위로 단을 채우고, 본문 텍스트가 첫
+단에만 있으면 밴드를 닫을 때 라인 단위로 균형 재배치한다. 단이 차면
 다음 단, 마지막 단이 차면 새 페이지 (`advanceColumn`).
 
 ## 블록 모델 gotchas
@@ -75,8 +94,10 @@ run마다 페이지를 확정하고 CT 라인을 비례 배분해 이어 그린�
 
 - treatAsChar + 문단 라인에 U+FFFC 앵커 존재: 그 줄 위치에 인라인 배치.
   줄 높이는 HwpTextRunBuilder의 run delegate가 이미 예약 → 흐름 높이 추가 소비 없음.
-  **개체가 자기 문단 text 블록과 겹치는 것이 정상** (overlap 검사는 text-text 쌍만)
-- treatAsChar (앵커 없음) 또는 textWrap ∈ {square, tight, through, topAndBottom}: 흐름 위치에 배치 + 높이 소비. 표는 항상 이 경로 (row 분할 유지)
+  **표도 포함** (`appendInlineAnchoredTable` — noori 보도자료 표 실측: 캐시 줄
+  높이 = 표 높이). **개체가 자기 문단 text 블록과 겹치는 것이 정상** (overlap
+  검사는 text-text 쌍만)
+- treatAsChar (앵커 없음) 또는 textWrap ∈ {square, tight, through, topAndBottom}: 흐름 위치에 배치 + 높이 소비. 앵커 없는 표는 이 경로 (row 분할 유지)
 - textWrap ∈ {behindText, inFrontOfText}: 기준(쪽/단/문단) + 오프셋 위치에 배치, 흐름 소비 없음 — **text 블록과 겹칠 수 있음**
 - 오프셋은 `Int32(bitPattern:)` 으로 읽는다 (음수 허용; `points(fromHwpUnitU:)` 금지)
 
@@ -109,9 +130,19 @@ run마다 페이지를 확정하고 CT 라인을 비례 배분해 이어 그린�
 
 - `HwpPage` 렌더 결과가 다른지 `==` 로 확인 — 안 됨 (count 만 비교). blocks 배열이나 paintList.commands 를 직접 순회할 것
 - 수식 (`eqed`) 은 EQEDIT 스크립트 렌더 없이 placeholder + textbox 폴백 텍스트
-- 다단 세부: 균형 재배치·조각 높이는 라인 수 기준 근사이고, 비균등 단으로
-  이월된 텍스트 조각은 draw 시 그 단 폭으로 다시 줄바꿈된다 (블록 프레임은
-  단 경계 안, 시각적 줄 수는 달라질 수 있음)
+- 다단 세부: 캐시 run이 없는 문단의 균형 재배치·조각 높이는 라인 수 기준
+  근사이고, 비균등 단으로 이월된 텍스트 조각은 draw 시 그 단 폭으로 다시
+  줄바꿈된다 (블록 프레임은 단 경계 안, 시각적 줄 수는 달라질 수 있음)
+- 양쪽 정렬에서 CT는 남는 폭을 글자 사이에도 배분한다 ("a m e t ," 식 자간)
+  — 한글은 단어 간격 위주로 늘린다. 좁은 단에서 시각 차이 (Column 픽스처 ④,
+  CT 공개 API로 단어-간격-우선 justification 제어 불가)
+- 절대 캐시 모드에서 각주 스택 높이가 한글보다 크면 (캐시 없는 각주의 CT
+  측정) 본문 마지막 블록과 겹칠 수 있다 — 본문 절단점이 한글 캐시로 고정되어
+  각주 예약이 본문을 밀어내지 못한다. 강제 이월은 한글에 없는 각주 전용
+  페이지를 연쇄로 만들어 두지 않는다 (헌법주석 실측 1,031 → 1,054)
+- 헌법주석 전체 페이지 수 1,031 (한글 인쇄본 1,030 대비 +1): 본문·각주·표 셀
+  높이를 캐시 기반으로 정합한 뒤에도 페이지보다 큰 표의 분할 경계에서 각주
+  예약 근사 1건이 남는다 (p484 부근 — manifest pageCount는 현재값 잠금)
 - 페이지보다 큰 표 row 슬라이스는 문단을 라인 단위로 나눠 이월하지만 (절단선은
   라인 경계로 정렬), 라인 캐시 없는 문단·조각 경계의 중첩 표는 위 조각에 통째로 남는다
 - treatAsChar 줄 중간 앵커는 분할되지 않은 문단 블록에서만 동작한다

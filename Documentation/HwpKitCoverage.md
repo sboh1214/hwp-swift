@@ -112,7 +112,42 @@ columnType bit 2), 한국어 서체 폴백 확장(휴먼명조·신명·한양·
 autoNumberInfo/newNumberInfo typed payload와 `HwpParaShape`의
 resolvedLineSpacingKind/Value, `HwpLineSpacingKind`가 추가되었다.
 
+(2026-07-06 갱신 4차 — PrvImage fidelity 작업) 픽스처 내장 PrvImage(한컴
+렌더 기준)와의 잉크 밀도 자동 대조로 다음이 정합되었다: 본문 프레임의
+머리말/꼬리말 영역 예약(본문 상단 = 위 여백+머리말 여백), 라인 캐시 run
+기반 다단 텍스트 배분(비등폭 단은 글자 위치 비례), 단 정의 밴드 간
+줄 간격, 글자처럼 취급 표의 앵커 줄 인라인 배치, 각주 스택·표 셀 높이의
+라인 캐시 우선 측정(같은 각주 컨트롤 문단은 간격 0), 절대 캐시 문단의
+하단 줄 간격 몫 절단. 렌더 페이지 수는 manifest `expectations.pageCount`로
+잠근다 (헌법주석 계열 1,031 — 한글 인쇄본 1,030 대비 +1, AGENTS.md 한계).
+
 남은 자발적 축소 범위: 수식(`eqed`) 스크립트 렌더 (placeholder 유지),
 TEXTART/FORM_OBJECT/CHART_DATA 세부 디코딩, 그림 PATTERN8x8 효과,
 단 나누기(columnType bit 3)/홀·짝수 조정(pageCT), 표 셀 안 각주 참조
-위 첨자, 번호 모양 0x80/0x81 사용자 문자.
+위 첨자, 번호 모양 0x80/0x81 사용자 문자, 양쪽 정렬의 단어-간격-우선
+justification (CT 공개 API 부재 — 좁은 단 자간 차이).
+
+## PrvImage Fidelity 하네스 (Tests/HwpKitTests)
+
+각 HWP에 내장된 PrvImage(한컴오피스가 저장 시 직접 렌더한 1페이지
+미리보기)를 한글.app 렌더의 기준 이미지로 사용하는 자동 회귀 스위트.
+
+```bash
+swift test --filter FixturePreviewFidelityTests   # 전 픽스처 fidelity 게이트
+```
+
+- `FixturePreviewSupport.swift` — 렌더/비교 유틸: `FixturePreview.firstPage`
+  (1페이지만 lazy 페이지네이션), `renderImage` (HwpPageLayer 실제 draw 경로,
+  이미지 참조 사전 디코딩, zoom 크롭 지원), `inkGrid` (그레이스케일 N×M 셀
+  평균 잉크), `scaleMatchedError` (최소제곱 스칼라 s ∈ [1/3, 3]로 폰트
+  대체/AA 강도 차를 제거한 MAE).
+- `FixturePreviewFidelityTests.swift` — 픽스처별 임계 테이블 (실측 + 여유,
+  근거 주석). 테스트 실행 시 전 픽스처의 실측 리포트(MAE/raw/ink scale)를
+  출력한다. 새 픽스처는 실측 후 임계 엔트리를 추가해야 통과한다.
+  파싱 불가 4종(암호 2·배포용·drm)과 PrvImage 없는 1종은 명시적 제외·검증.
+- BinData 픽스처의 PrvImage는 페이지 좌상단 1/4의 2× 렌더라 zoom 보정으로
+  대조한다 (`previewZoomOverrides`).
+- 진단 시 렌더/PrvImage 나란히 PNG 덤프는 `FixturePreview` 유틸로 스크래치
+  테스트를 만들어 사용한다 (커밋 금지 — repo에는 이미지 산출물을 두지 않는다).
+- 페이지 수 회귀 가드: manifest `expectations.pageCount`(+`pageCountSource`)
+  ↔ `FixtureRenderTests.testPageCountsMatchManifest`.
