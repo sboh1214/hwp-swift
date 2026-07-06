@@ -140,4 +140,43 @@ final class HwpFootnoteLayoutTests: XCTestCase {
     private func input(number: Int) -> HwpFootnoteLayout.Input {
         HwpFootnoteLayout.Input(paragraph: CoreHwp.HwpParagraph(), number: number)
     }
+
+    /// 라인 캐시가 있는 각주는 CT 재측정 대신 한글이 계산한 높이를 쓴다
+    /// (헌법주석 실측: 한자 다수 각주가 CT에서 2줄로 부풀던 회귀 가드).
+    func testFootnoteHeightPrefersLineSegCache() throws {
+        // 캐시: 1줄 h 900 + sp 600 (lineSegParagraph 헬퍼 고정값) → 15pt
+        let paragraph = try HwpSynthetic.lineSegParagraph(
+            "각주 본문 텍스트",
+            segments: [(location: 0, height: 900)]
+        )
+        let result = layout.layout(
+            footnotes: [HwpFootnoteLayout.Input(paragraph: paragraph, number: 1)],
+            onPage: geometry,
+            index: index
+        )
+        expect(result.count) == 1
+        expect(result.first?.frame.height).to(beCloseTo(15, within: 0.1))
+    }
+
+    /// 같은 각주 컨트롤 (같은 번호)의 이어지는 문단은 간격 없이 붙는다
+    /// (헌법주석 실측: 문단 캐시 loc 연속 — 내부 간격 0).
+    func testSameNumberFootnoteParagraphsStackWithoutGap() throws {
+        let first = try HwpSynthetic.lineSegParagraph(
+            "항목 1", segments: [(location: 0, height: 1000)]
+        )
+        let second = try HwpSynthetic.lineSegParagraph(
+            "항목 2", segments: [(location: 0, height: 1000)]
+        )
+        let blocks = layout.layout(
+            footnotes: [
+                HwpFootnoteLayout.Input(paragraph: first, number: 1),
+                HwpFootnoteLayout.Input(paragraph: second, number: 1),
+            ],
+            onPage: geometry,
+            index: index
+        )
+        expect(blocks.count) == 2
+        guard blocks.count == 2 else { return }
+        expect(blocks[1].frame.minY).to(beCloseTo(blocks[0].frame.maxY, within: 0.01))
+    }
 }

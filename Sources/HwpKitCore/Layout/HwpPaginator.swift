@@ -2388,9 +2388,10 @@ private extension HwpPaginator {
                 if !paragraphs.isEmpty {
                     let number = preview
                     preview += 1
+                    // 같은 컨트롤의 문단은 간격 없이 이어진다 — 간격은 컨트롤당 1회
                     total += paragraphs.reduce(0) {
-                        $0 + measuredFootnoteHeight(of: $1, number: number) + 4
-                    }
+                        $0 + measuredFootnoteHeight(of: $1, number: number)
+                    } + 4
                 }
             }
             guard depth < 3 else { continue }
@@ -2406,6 +2407,10 @@ private extension HwpPaginator {
     }
 
     func measuredFootnoteHeight(of paragraph: CoreHwp.HwpParagraph, number: Int) -> CGFloat {
+        // 예약 높이도 배치 (HwpFootnoteLayout.measure)와 같은 기준: 라인 캐시 우선
+        if let cachedHeight = HwpParagraphLayout.cachedParagraphHeight(paragraph) {
+            return cachedHeight
+        }
         let width = currentPageGeometry.contentFrame.width
         let key = FootnoteHeightKey(
             paragraph: paragraph,
@@ -2440,6 +2445,10 @@ private extension HwpPaginator {
     /// 넘는 각주는 pendingFootnotes에 남겨 다음 페이지로 이월한다.
     func appendPendingFootnotes() {
         guard !pendingFootnotes.isEmpty else { return }
+        // 절대 캐시 모드에서 본문 y는 캐시로 고정된다. 한글의 본문 절단점은
+        // 이미 그 페이지 각주 공간을 반영하므로, 각주는 페이지 하단 기준으로
+        // 그대로 쌓는다 — 하한을 강제해 이월시키면 한글에 없는 각주 전용
+        // 페이지가 연쇄로 생긴다 (헌법주석 실측 1,031 → 1,054).
         let placement = footnoteLayout.place(
             footnotes: pendingFootnotes,
             onPage: currentPageGeometry,

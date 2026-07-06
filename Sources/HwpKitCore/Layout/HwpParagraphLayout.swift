@@ -64,6 +64,31 @@ public struct HwpParagraphFrame: Sendable, Hashable {
 public struct HwpParagraphLayout {
     public init() {}
 
+    /// 저장본 라인 캐시가 유효하면 한글이 계산한 문단 높이 (첫 줄 위 ~ 마지막
+    /// 줄 전진량)를 준다. 폰트 대체로 CT 줄 수가 달라져도 각주 스택·표 셀
+    /// 높이가 한글과 일치하게 한다 (헌법주석 실측: 각주 문단 캐시 h 900 +
+    /// sp 272 = 11.72pt를 CT는 2줄 22.2pt로 부풀려 각주 이월·표 분할이 밀렸다).
+    public static func cachedParagraphHeight(
+        _ paragraph: CoreHwp.HwpParagraph
+    ) -> CGFloat? {
+        let segments = paragraph.paraLineSeg.paraLineSegInternalArray
+        guard !segments.isEmpty else { return nil }
+        var previous = Int32.min
+        var top = Int32.max
+        var bottom = Int32.min
+        for segment in segments {
+            guard segment.lineLocation > previous, segment.lineHeight >= 0 else { return nil }
+            previous = segment.lineLocation
+            top = min(top, segment.lineLocation)
+            bottom = max(
+                bottom,
+                segment.lineLocation + segment.lineHeight + max(0, segment.lineSpacing)
+            )
+        }
+        guard bottom > top else { return nil }
+        return max(1, HwpUnits.points(fromHwpUnit: bottom - top))
+    }
+
     /// paraShape로 측정/렌더 공용 CTParagraphStyle을 만든다.
     /// HwpTextRunBuilder가 렌더 경로 (drawText 재조판)에도 같은 스타일을 부착해
     /// 측정 레이아웃 (정렬/들여쓰기/줄간격, 인라인 앵커 x)과 일치시킨다.

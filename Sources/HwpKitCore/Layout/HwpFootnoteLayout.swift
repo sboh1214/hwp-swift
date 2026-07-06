@@ -108,8 +108,16 @@ public struct HwpFootnoteLayout {
         )
 
         // 페이지 하단에서 위로 필요한 만큼 확보하되 콘텐츠 절반을 넘지 않는다.
-        let notesHeight = measured.reduce(CGFloat(0)) { $0 + max(1, $1.frame.totalHeight) }
-            + divider.betweenNotes * CGFloat(max(0, measured.count - 1))
+        // 같은 각주 컨트롤의 이어지는 문단 사이에는 간격이 없다 (stackBlocks와 동일).
+        var notesHeight: CGFloat = 0
+        var previousNumber: Int?
+        for note in measured {
+            if previousNumber != nil, previousNumber != note.input.number {
+                notesHeight += divider.betweenNotes
+            }
+            notesHeight += max(1, note.frame.totalHeight)
+            previousNumber = note.input.number
+        }
         let areaHeight = min(
             contentFrame.height / 2,
             notesHeight + divider.marginTop + divider.marginBottom + divider.thickness
@@ -210,12 +218,19 @@ public struct HwpFootnoteLayout {
         var blocks: [HwpFootnoteBlock] = []
         var overflow: [Input] = []
         var cursorY = startY
+        var previousNumber: Int?
         for (noteIndex, note) in measured.enumerated() {
+            // 같은 각주 컨트롤의 이어지는 문단은 간격 없이 붙인다
+            // (헌법주석 실측: 한 각주의 문단 캐시 loc이 연속 — 내부 간격 0).
+            if let previousNumber, previousNumber == note.input.number {
+                cursorY -= divider.betweenNotes
+            }
             let blockHeight = max(1, note.frame.totalHeight)
             if !blocks.isEmpty, cursorY + blockHeight > frame.maxY + 0.5 {
                 overflow = measured[noteIndex...].map(\.input)
                 break
             }
+            previousNumber = note.input.number
             blocks.append(HwpFootnoteBlock(
                 frame: CGRect(
                     x: frame.minX,
@@ -302,11 +317,15 @@ public struct HwpFootnoteLayout {
             let paraShape = index.paraShape(id: UInt32(input.paragraph.paraHeader.paraShapeId))
                 ?? index.paraShape(id: 0)
                 ?? CoreHwp.HwpParaShape()
-            let frame = paragraphLayout.layout(
+            var frame = paragraphLayout.layout(
                 attributedString: attributed,
                 paraShape: paraShape,
                 columnWidth: width
             )
+            // 스택 높이는 한글 라인 캐시를 우선한다 (본문 절대 캐시와 동일 철학)
+            if let cachedHeight = HwpParagraphLayout.cachedParagraphHeight(input.paragraph) {
+                frame = HwpParagraphFrame(totalHeight: cachedHeight, lines: frame.lines)
+            }
             return MeasuredFootnote(input: input, attributed: attributed, frame: frame)
         }
     }

@@ -239,11 +239,16 @@ extension HwpTableLayout {
             let paraShape = context.index.paraShape(
                 id: UInt32(paragraph.paraHeader.paraShapeId)
             ) ?? context.index.paraShape(id: 0) ?? CoreHwp.HwpParaShape()
-            let frame = paragraphLayout.layout(
+            var frame = paragraphLayout.layout(
                 attributedString: attributed,
                 paraShape: paraShape,
                 columnWidth: innerWidth
             )
+            // 셀 높이는 한글 라인 캐시를 우선한다 (각주와 동일 철학) —
+            // 폰트 대체로 CT 줄 수가 부풀어 row가 한글보다 커지는 것을 막는다
+            if let cachedHeight = HwpParagraphLayout.cachedParagraphHeight(paragraph) {
+                frame = HwpParagraphFrame(totalHeight: cachedHeight, lines: frame.lines)
+            }
             contents.append(PlacedCellContent(
                 paragraph: paragraph,
                 frame: frame,
