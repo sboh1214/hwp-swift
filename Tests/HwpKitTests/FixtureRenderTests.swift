@@ -58,6 +58,34 @@ final class FixtureRenderTests: XCTestCase {
         }
     }
 
+    /// manifest expectations.pageCount (렌더 실측 잠금 — 출처는 manifest의
+    /// pageCountSource)와 실제 렌더 페이지 수가 정확히 일치해야 한다.
+    func testPageCountsMatchManifest() async throws {
+        let fixtures = try FixtureRoot.loadAllFixtures(from: #file)
+        let withPageCount = fixtures.filter { $0.expectedPageCount != nil }
+        // 파싱 가능한 29개 픽스처 전부에 pageCount 명세가 있다
+        expect(withPageCount.count) >= 29
+
+        var failures: [String] = []
+        for fixture in withPageCount {
+            guard let expected = fixture.expectedPageCount else { continue }
+            do {
+                let document = try await HwpDocumentLoader().load(from: fixture.documentURL)
+                if document.pages.count != expected {
+                    failures.append(
+                        "[\(fixture.id)] pages \(document.pages.count) != expected \(expected)"
+                    )
+                }
+            } catch {
+                failures.append("[\(fixture.id)] load threw: \(error)")
+            }
+        }
+
+        if !failures.isEmpty {
+            fail("Page count failures (\(failures.count)):\n" + failures.joined(separator: "\n"))
+        }
+    }
+
     func testFixtureCountAndCategories() throws {
         let fixtures = try FixtureRoot.loadAllFixtures(from: #file)
         expect(fixtures.count) >= 33

@@ -11,6 +11,8 @@ struct FixtureVisibleText: Decodable {
 
 struct FixtureExpectations: Decodable {
     let visibleTextContains: [String]?
+    /// 렌더 페이지 수 회귀 가드 (출처는 manifest의 pageCountSource 참조)
+    let pageCount: Int?
 }
 
 struct FixtureManifestLite: Decodable {
@@ -22,6 +24,7 @@ struct FixtureCase {
     let id: String
     let documentURL: URL
     let expectedVisibleText: [String]
+    let expectedPageCount: Int?
 }
 
 enum FixtureRoot {
@@ -59,7 +62,8 @@ enum FixtureRoot {
             return FixtureCase(
                 id: id,
                 documentURL: documentURL,
-                expectedVisibleText: manifest.expectations.visibleTextContains ?? []
+                expectedVisibleText: manifest.expectations.visibleTextContains ?? [],
+                expectedPageCount: manifest.expectations.pageCount
             )
         }
     }
