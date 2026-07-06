@@ -421,9 +421,13 @@ private extension HwpPaginator {
             }
         }
 
-        // 문서 끝: 밴드를 닫고 (필요시 단 균형 재배치) 남은 미주를 마지막
-        // (공간 부족 시 새) 페이지에 배치한 뒤 마지막 페이지를 확정한다.
+        // 문서 끝: 밴드를 닫고 마지막 본문 페이지를 확정한 뒤, 남은 미주는
+        // 새 쪽에서 시작한다 (한글.app 실측 2026-07-06 — footnote-endnote
+        // 픽스처의 미주가 2쪽에 표시됨을 사용자 확인).
         closeColumnBand()
+        if !pendingEndnotes.isEmpty, !currentBlocks.isEmpty || contentHeightUsed > 0 {
+            cacheCurrentPage()
+        }
         appendPendingEndnotes()
         cacheCurrentPage()
         // 마지막 페이지에서 넘친 각주가 있으면 빈 페이지를 이어 붙여 모두 배치한다.
@@ -1153,6 +1157,12 @@ private extension HwpPaginator {
         for (ctrlIndex, ctrl) in ctrls.enumerated() {
             // 줄 중간 앵커 문맥은 본문 문단 (depth 0)에서만 유효하다.
             let anchorIndex = depth == 0 ? ctrlIndex : nil
+            // 셀 안 그림은 HwpTableLayout이 셀 콘텐츠 (HwpCellImage)로 이미
+            // 배치했다 — 페이지 흐름 블록으로 다시 방출하면 큰 그림이 페이지를
+            // 밀어내 페이지 수가 한글과 어긋난다 (noori 실측 3쪽).
+            if inTableCell, Self.carriesPicture(ctrl) {
+                continue
+            }
             switch ctrl {
             case let .table(table):
                 if !inTableCell {
@@ -1195,6 +1205,20 @@ private extension HwpPaginator {
                 continue
             }
         }
+    }
+
+    /// 컨트롤이 그림 컴포넌트를 갖는지 (셀 안 인셀 렌더 대상 판별)
+    static func carriesPicture(_ ctrl: CoreHwp.HwpCtrlId) -> Bool {
+        let components: [CoreHwp.HwpShapeComponent]
+        switch ctrl {
+        case let .genShapeObject(genShape):
+            components = genShape.shapeComponentArray
+        case let .picture(shape):
+            components = shape.shapeComponentArray
+        default:
+            return false
+        }
+        return components.contains { !$0.pictureArray.isEmpty }
     }
 
     /// 페이지 크롬 (머리말/꼬리말/쪽 번호 위치/쪽 감추기) 컨트롤을 활성 상태로
@@ -1644,6 +1668,14 @@ private extension HwpPaginator {
                             rect: nested.rect.offsetBy(dx: 0, dy: deltaY),
                             table: nested.table,
                             controlInstanceId: nested.controlInstanceId
+                        )
+                    },
+                    images: cell.images.map { image in
+                        HwpCellImage(
+                            rect: image.rect.offsetBy(dx: 0, dy: deltaY),
+                            binItemId: image.binItemId,
+                            style: image.style,
+                            controlInstanceId: image.controlInstanceId
                         )
                     }
                 )
