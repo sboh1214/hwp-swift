@@ -169,8 +169,10 @@ extension HwpTableLayout {
         // 4방향 순서: 왼쪽/오른쪽/위쪽/아래쪽 (표 23)
         let lines = borderFill.borderLineArray
         func width(_ line: CoreHwp.HwpBorderLine) -> CGFloat {
-            // 선 종류가 없으면(문서가 none을 쓰면) 굵기 0으로 취급
-            CGFloat(CoreHwp.HwpBorderFill.borderThicknessPoints(at: line.thickness))
+            // 선 종류가 없으면 (표 25 type 0 = 선 없음) 굵기와 무관하게 안 그린다
+            // (CCL 한글.app 실측: 셀 테두리 none인데 굵기 값은 남아 있다)
+            guard line.type != CoreHwp.HwpBorderType.none else { return 0 }
+            return CGFloat(CoreHwp.HwpBorderFill.borderThicknessPoints(at: line.thickness))
         }
         func color(_ line: CoreHwp.HwpBorderLine) -> HwpRGBColor {
             HwpRGBColor(line.color)

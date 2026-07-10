@@ -10,6 +10,8 @@
                 guard document != oldValue else { return }
                 pageLayers.values.forEach { $0.removeFromSuperlayer() }
                 pageLayers.removeAll()
+                memoPanelLayers.values.forEach { $0.removeFromSuperlayer() }
+                memoPanelLayers.removeAll()
                 rebuildImageProvider()
                 rebuildPageOrigins()
                 updateContentSize()
@@ -33,6 +35,8 @@
         public var onPageChanged: ((Int) -> Void)?
 
         var pageLayers: [Int: HwpPageLayer] = [:]
+        /// 메모 (댓글) 풍선 패널 레이어 — 페이지 오른쪽 바깥 (한글.app 편집 뷰)
+        var memoPanelLayers: [Int: HwpPageLayer] = [:]
 
         private let scrollView = UIScrollView()
         private let contentView = UIView()
@@ -69,6 +73,8 @@
             for (index, layer) in pageLayers where !keepSet.contains(index) {
                 layer.removeFromSuperlayer()
                 pageLayers.removeValue(forKey: index)
+                memoPanelLayers[index]?.removeFromSuperlayer()
+                memoPanelLayers.removeValue(forKey: index)
             }
 
             for index in keepRange where pageLayers[index] == nil {
@@ -85,6 +91,10 @@
                 layer.paintList = paintListForPage(at: index)
                 contentView.layer.addSublayer(layer)
                 pageLayers[index] = layer
+                if let panelLayer = makeMemoPanelLayer(for: index, pageFrame: layer.frame) {
+                    memoPanelLayers[index] = panelLayer
+                    contentView.layer.addSublayer(panelLayer)
+                }
             }
 
             for (index, layer) in pageLayers {
@@ -96,7 +106,36 @@
                 if layer.paintList == nil {
                     layer.paintList = paintListForPage(at: index)
                 }
+                if let panelLayer = memoPanelLayers[index] {
+                    panelLayer.frame = CGRect(
+                        x: frame.maxX,
+                        y: frame.minY,
+                        width: panelLayer.frame.width,
+                        height: frame.height
+                    )
+                }
             }
+        }
+
+        /// 페이지에 메모 패널이 있으면 오른쪽 바깥에 투명 레이어로 그린다.
+        private func makeMemoPanelLayer(
+            for index: Int,
+            pageFrame: CGRect
+        ) -> HwpPageLayer? {
+            guard let document, document.pages.indices.contains(index),
+                  let panel = document.pages[index].memoPanel
+            else { return nil }
+            let panelLayer = HwpPageLayer()
+            panelLayer.frame = CGRect(
+                x: pageFrame.maxX,
+                y: pageFrame.minY,
+                width: panel.width,
+                height: pageFrame.height
+            )
+            panelLayer.pageHeight = pageFrame.height
+            panelLayer.contentsScale = effectiveContentsScale
+            panelLayer.paintList = panel.paintList
+            return panelLayer
         }
 
         /// Scrolls so the given page's top edge is at the top of the viewport.
@@ -135,7 +174,7 @@
         }
 
         public func scrollViewDidEndZooming(
-            _ scrollView: UIScrollView,
+            _: UIScrollView,
             with _: UIView?,
             atScale _: CGFloat
         ) {

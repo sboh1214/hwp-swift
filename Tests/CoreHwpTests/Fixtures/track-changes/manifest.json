@@ -969,13 +969,13 @@
       "section": 1
     },
     "visibleTextContains": [
-      "Track changes fixture: new text",
+      "Track changes fixture: old textnew text",
       "Final paragraph."
     ],
     "fileLicense": {
       "rawValue": 0
     },
     "pageCount": 1,
-    "pageCountSource": "HwpKit 렌더 실측 잠금 (2026-07-06) — 한글.app 실측 확인 대기"
+    "pageCountSource": "한글.app 실측 확인 (2026-07-10, 1쪽) — ViewText 표시본 렌더"
   }
 }

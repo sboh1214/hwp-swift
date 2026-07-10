@@ -4,13 +4,6 @@ import CoreText
 import Foundation
 import OSLog
 
-public enum HwpAttributedStringKey {
-    public static let underlineColor = NSAttributedString.Key("hwp.underlineColor")
-    /// extended 컨트롤 문자(U+FFFC)가 가리키는 ctrlHeaderArray index (NSNumber).
-    /// k번째 extended 컨트롤 문자 ↔ k번째 컨트롤 헤더 (noori/header-footer 픽스처 검증).
-    public static let controlIndex = NSAttributedString.Key("hwp.controlIndex")
-}
-
 /// treatAsChar 개체의 줄 공간 예약 값 (CTRunDelegate refCon)
 private final class HwpInlineObjectMetrics {
     let width: CGFloat
@@ -62,6 +55,8 @@ public struct HwpTextRunBuilder {
     /// 위 첨자 번호의 글꼴 크기 배율/베이스라인 상승 배율 (기준 글자 크기 대비)
     static let superscriptScale: CGFloat = 0.6
     static let superscriptBaselineRatio: CGFloat = 0.33
+    /// 아래 첨자 베이스라인 하강 배율
+    static let subscriptBaselineRatio: CGFloat = 0.15
 
     public init(index: HwpIndex, fontResolver: HwpFontResolver) {
         self.index = index
@@ -85,6 +80,7 @@ public struct HwpTextRunBuilder {
         var wcharPosition: UInt32 = 0
         var pendingHighSurrogate: UInt16?
         var extendedOrdinal = 0
+        let memoAnchorRanges = Self.memoAnchorRanges(in: paragraph)
 
         for hwpChar in units {
             let position = wcharPosition
@@ -94,8 +90,13 @@ public struct HwpTextRunBuilder {
             guard !text.isEmpty else { continue }
 
             let shapeId = activeShapeId(at: position, in: paragraph.paraCharShape)
+            let trackMark = Self.trackChangeMark(at: position, in: paragraph)
+            let memoAnchor = memoAnchorRanges.contains { $0.contains(position) }
             if hwpChar.type == .char {
-                accumulate(text, shapeId: shapeId, into: &chunk, paragraph: paragraph, to: output)
+                accumulate(
+                    text, shapeId: shapeId, trackMark: trackMark, memoAnchor: memoAnchor,
+                    into: &chunk, paragraph: paragraph, to: output
+                )
                 continue
             }
 
@@ -103,19 +104,17 @@ public struct HwpTextRunBuilder {
             // U+FFFC는 컨트롤 index attribute를 단 별도 run으로 낸다.
             let prefix = String(text.dropLast())
             if !prefix.isEmpty {
-                accumulate(prefix, shapeId: shapeId, into: &chunk, paragraph: paragraph, to: output)
+                accumulate(
+                    prefix, shapeId: shapeId, trackMark: trackMark, memoAnchor: memoAnchor,
+                    into: &chunk, paragraph: paragraph, to: output
+                )
             }
             append(chunk, paragraph: paragraph, to: output)
             chunk = Chunk(shapeId: shapeId, script: nil)
-
-            let controlIndex: Int? = hwpChar.type == .extended ? extendedOrdinal : nil
-            if hwpChar.type == .extended { extendedOrdinal += 1 }
-            appendControlMarker(
-                controlIndex: controlIndex,
-                shapeId: shapeId,
-                paragraph: paragraph,
-                replacement: controlIndex.flatMap { controlReplacements[$0] },
-                to: output
+            emitControl(
+                hwpChar, shapeId: shapeId, paragraph: paragraph,
+                controlReplacements: controlReplacements,
+                extendedOrdinal: &extendedOrdinal, to: output
             )
         }
 
@@ -129,6 +128,30 @@ public struct HwpTextRunBuilder {
 }
 
 private extension HwpTextRunBuilder {
+    // 컨트롤 문자 하나를 마커 run으로 내보낸다 (extended ordinal 전진 포함).
+    // swiftlint:disable:next function_parameter_count
+    func emitControl(
+        _ hwpChar: CoreHwp.HwpChar,
+        shapeId: UInt32,
+        paragraph: CoreHwp.HwpParagraph,
+        controlReplacements: [Int: HwpControlMarkerReplacement],
+        extendedOrdinal: inout Int,
+        to output: NSMutableAttributedString
+    ) {
+        let controlIndex: Int? = hwpChar.type == .extended ? extendedOrdinal : nil
+        if hwpChar.type == .extended {
+            extendedOrdinal += 1
+        }
+        appendControlMarker(
+            controlIndex: controlIndex,
+            shapeId: shapeId,
+            paragraph: paragraph,
+            replacement: controlIndex.flatMap { controlReplacements[$0] },
+            inlineValue: hwpChar.type == .inline ? hwpChar.value : nil,
+            to: output
+        )
+    }
+
     /// 문단 스타일 (정렬/들여쓰기/줄간격)을 문자열에 실어 렌더 (drawText 재조판)가
     /// 측정 레이아웃과 같은 조판을 쓰게 한다.
     func attachParagraphStyle(
@@ -150,88 +173,24 @@ private extension HwpTextRunBuilder {
     }
 }
 
-public extension HwpTextRunBuilder {
-    /// 앞/뒤 장식 문자 (WCHAR, 0이면 없음)를 붙인 번호 문자열 (표 133/142)
-    static func decoratedNoteNumber(
-        number: Int,
-        shape: Int,
-        decorationHead: CoreHwp.WCHAR,
-        decorationTail: CoreHwp.WCHAR
-    ) -> String {
-        var text = HwpNumberFormat.string(for: number, shape: shape)
-        if decorationHead != 0, let scalar = Unicode.Scalar(decorationHead) {
-            text = String(Character(scalar)) + text
-        }
-        if decorationTail != 0, let scalar = Unicode.Scalar(decorationTail) {
-            text += String(Character(scalar))
-        }
-        return text
-    }
-
-    /// 구역 각주/미주 모양 (표 133: 번호 모양 bits 0-7 + 장식 문자) 기준의 번호 문자열
-    static func noteNumberText(
-        number: Int,
-        footnoteShape: CoreHwp.HwpFootnoteShape?
-    ) -> String {
-        decoratedNoteNumber(
-            number: number,
-            shape: footnoteShape.map { Int($0.property & 0xFF) } ?? 0,
-            decorationHead: footnoteShape?.decorationHeadRawValue ?? 0,
-            decorationTail: footnoteShape?.decorationTailRawValue ?? 0
-        )
-    }
-
-    /// 각주/미주 문단 첫머리의 자동 번호 (ext18 atno) 마커 치환 목록.
-    ///
-    /// 장식 문자/번호 모양은 atno 자신의 payload (표 142)를 우선하고,
-    /// 비어 있으면 구역 각주/미주 모양 (표 133)으로 폴백한다.
-    /// 위 첨자 여부는 표 143 bit 12.
-    static func autoNumberReplacements(
-        in paragraph: CoreHwp.HwpParagraph,
-        number: Int,
-        footnoteShape: CoreHwp.HwpFootnoteShape?
-    ) -> [Int: HwpControlMarkerReplacement] {
-        guard let ctrls = paragraph.ctrlHeaderArray else { return [:] }
-        var replacements: [Int: HwpControlMarkerReplacement] = [:]
-        for (ctrlIndex, ctrl) in ctrls.enumerated() {
-            guard case let .autoNumber(other) = ctrl else { continue }
-            if let info = other.autoNumberInfo {
-                guard info.kind == .footnote || info.kind == .endnote else { continue }
-                let hasOwnDecoration = info.decorationHead != 0 || info.decorationTail != 0
-                    || info.numberShapeRawValue != 0
-                let text = hasOwnDecoration
-                    ? decoratedNoteNumber(
-                        number: number,
-                        shape: info.numberShapeRawValue,
-                        decorationHead: info.decorationHead,
-                        decorationTail: info.decorationTail
-                    )
-                    : noteNumberText(number: number, footnoteShape: footnoteShape)
-                replacements[ctrlIndex] = HwpControlMarkerReplacement(
-                    text: text,
-                    isSuperscript: info.isSuperscript
-                )
-            } else {
-                replacements[ctrlIndex] = HwpControlMarkerReplacement(
-                    text: noteNumberText(number: number, footnoteShape: footnoteShape)
-                )
-            }
-        }
-        return replacements
-    }
-}
-
 private extension HwpTextRunBuilder {
     struct Chunk {
         var shapeId: UInt32
         var script: HwpScript?
         var text = ""
+        /// 변경 추적 마크 (0 없음 / 16 삽입 / 17 삭제 — PARA_RANGE_TAG kind)
+        var trackMark: UInt32 = 0
+        /// 메모 (댓글) 앵커 범위 안 — 연녹색 강조 (한글.app 편집 뷰)
+        var memoAnchor = false
     }
 
-    /// 일반 문자를 현재 chunk에 합치거나, 모양/스크립트가 바뀌면 chunk를 내보낸다.
+    /// 일반 문자를 현재 chunk에 합치거나, 모양/스크립트/변경 마크가 바뀌면
+    /// chunk를 내보낸다.
     func accumulate(
         _ text: String,
         shapeId: UInt32,
+        trackMark: UInt32 = 0,
+        memoAnchor: Bool = false,
         into chunk: inout Chunk,
         paragraph: CoreHwp.HwpParagraph,
         to output: NSMutableAttributedString
@@ -240,9 +199,16 @@ private extension HwpTextRunBuilder {
         if chunk.script == nil {
             chunk.shapeId = shapeId
             chunk.script = script
-        } else if chunk.shapeId != shapeId || chunk.script != script {
+            chunk.trackMark = trackMark
+            chunk.memoAnchor = memoAnchor
+        } else if chunk.shapeId != shapeId || chunk.script != script
+            || chunk.trackMark != trackMark || chunk.memoAnchor != memoAnchor
+        {
             append(chunk, paragraph: paragraph, to: output)
-            chunk = Chunk(shapeId: shapeId, script: script)
+            chunk = Chunk(
+                shapeId: shapeId, script: script,
+                trackMark: trackMark, memoAnchor: memoAnchor
+            )
         }
         chunk.text += text
     }
@@ -254,9 +220,18 @@ private extension HwpTextRunBuilder {
     ) {
         guard !chunk.text.isEmpty, let script = chunk.script else { return }
         let shape = resolvedShape(id: chunk.shapeId, paragraph: paragraph)
+        var chunkAttributes = attributes(for: shape, script: script)
+        applyTrackChangeMark(chunk.trackMark, to: &chunkAttributes)
+        if chunk.memoAnchor,
+           chunkAttributes[HwpAttributedStringKey.shadeColor] == nil
+        {
+            // 메모 앵커: 한글.app처럼 연녹색 배경 강조 (음영과 같은 상자 그리기)
+            chunkAttributes[HwpAttributedStringKey.shadeColor] =
+                HwpMemoPanelPainter.anchorFillColor
+        }
         let attributed = NSAttributedString(
             string: chunk.text,
-            attributes: attributes(for: shape, script: script)
+            attributes: chunkAttributes
         )
         output.append(attributed)
     }
@@ -272,9 +247,19 @@ private extension HwpTextRunBuilder {
         shapeId: UInt32,
         paragraph: CoreHwp.HwpParagraph,
         replacement: HwpControlMarkerReplacement? = nil,
+        inlineValue: CoreHwp.WCHAR? = nil,
         to output: NSMutableAttributedString
     ) {
         let shape = resolvedShape(id: shapeId, paragraph: paragraph)
+
+        // 탭 (inline 코드 9)은 실제 탭으로 방출한다 (CT 탭 스톱 조판).
+        if inlineValue == 9 {
+            output.append(NSAttributedString(
+                string: "\t",
+                attributes: attributes(for: shape, script: .english)
+            ))
+            return
+        }
 
         // 치환 텍스트가 있으면 마커 대신 실제 번호 run을 방출한다.
         if let replacement, !replacement.text.isEmpty {
@@ -296,46 +281,26 @@ private extension HwpTextRunBuilder {
         }
 
         var markerAttributes = attributes(for: shape, script: .english)
+        var size = CGSize.zero
         if let controlIndex {
             markerAttributes[HwpAttributedStringKey.controlIndex] = NSNumber(value: controlIndex)
-            let size = inlineObjectSize(controlIndex: controlIndex, paragraph: paragraph)
+            size = inlineObjectSize(controlIndex: controlIndex, paragraph: paragraph)
                 ?? .zero
             if size.height > 0 {
                 markerAttributes[HwpAttributedStringKey.inlineObjectHeight] = NSNumber(
                     value: Double(size.height)
                 )
             }
-            if let delegate = makeInlineObjectRunDelegate(
-                width: size.width,
-                height: size.height
-            ) {
-                markerAttributes[kCTRunDelegateAttributeName as NSAttributedString.Key] = delegate
-            }
+        }
+        // 개체가 아닌 마커 (필드 시작/끝·메모 앵커 등)도 폭 0 delegate를 달아
+        // U+FFFC tofu 글리프가 보이지 않게 한다 (한글.app: 무형 문자)
+        if let delegate = makeInlineObjectRunDelegate(
+            width: size.width,
+            height: size.height
+        ) {
+            markerAttributes[kCTRunDelegateAttributeName as NSAttributedString.Key] = delegate
         }
         output.append(NSAttributedString(string: "\u{FFFC}", attributes: markerAttributes))
-    }
-
-    /// 위 첨자 (각주 참조 번호): 글꼴 크기를 줄이고 베이스라인을 올린다.
-    func applySuperscript(
-        to attributes: inout [NSAttributedString.Key: Any],
-        shape: CoreHwp.HwpCharShape
-    ) {
-        let baseSize = HwpUnits.points(fromHwpUnit: shape.baseSize)
-        let fontKey = kCTFontAttributeName as NSAttributedString.Key
-        if let value = attributes[fontKey], CFGetTypeID(value as CFTypeRef) == CTFontGetTypeID() {
-            let font = value as! CTFont // swiftlint:disable:this force_cast
-            attributes[fontKey] = CTFontCreateCopyWithAttributes(
-                font,
-                CTFontGetSize(font) * Self.superscriptScale,
-                nil,
-                nil
-            )
-        }
-        let baselineKey = kCTBaselineOffsetAttributeName as NSAttributedString.Key
-        let existing = (attributes[baselineKey] as? NSNumber)?.doubleValue ?? 0
-        attributes[baselineKey] = NSNumber(
-            value: existing + Double(baseSize * Self.superscriptBaselineRatio)
-        )
     }
 
     func attributes(
@@ -344,11 +309,20 @@ private extension HwpTextRunBuilder {
     ) -> [NSAttributedString.Key: Any] {
         let slot = script.slotIndex
         let baseSize = HwpUnits.points(fromHwpUnit: shape.baseSize)
-        let size = baseSize * (CGFloat(value(at: slot, in: shape.faceScaleX, default: 100)) / 100)
+        // 상대 크기 (표 33)가 실제 글자 크기 배율, 장평 (faceScaleX)은 가로 스케일
+        let relativeSize = CGFloat(value(at: slot, in: shape.faceRelativeSize, default: 100))
+        let size = baseSize * relativeSize / 100
         let faceId = UInt32(value(at: slot, in: shape.faceId, default: 0))
         let faceName = index.faceName(for: faceId, script: script)?.faceName ?? "Helvetica"
         var font = fontResolver.resolve(faceName: faceName, script: script, size: size)
         font = copy(font, adding: symbolicTraits(for: shape.property))
+        let scaleX = CGFloat(value(at: slot, in: shape.faceScaleX, default: 100)) / 100
+        if scaleX != 1 {
+            // 기울임 폴백 매트릭스와 겹칠 수 있으므로 기존 매트릭스에 합성한다
+            var matrix = CTFontGetMatrix(font)
+                .concatenating(CGAffineTransform(scaleX: scaleX, y: 1))
+            font = CTFontCreateCopyWithAttributes(font, 0, &matrix, nil)
+        }
 
         let spacing = CGFloat(value(at: slot, in: shape.faceSpacing, default: 0))
         let location = CGFloat(value(at: slot, in: shape.faceLocation, default: 0))
@@ -356,26 +330,21 @@ private extension HwpTextRunBuilder {
             kCTFontAttributeName as NSAttributedString.Key: font,
             kCTForegroundColorAttributeName as NSAttributedString.Key: shape.faceColor.cgColor,
             kCTKernAttributeName as NSAttributedString.Key: NSNumber(
-                value: Double(spacing * baseSize / 100)
+                value: Double(spacing * size / 100)
             ),
             kCTBaselineOffsetAttributeName as NSAttributedString.Key: NSNumber(
-                value: Double(location * baseSize / 100)
+                value: Double(location * size / 100)
             ),
         ]
 
-        if shape.property.underlineType != .none {
-            // NSUnderlineStyle.single = 1; no AppKit/UIKit in HwpKitCore
-            attributes[.underlineStyle] = NSNumber(value: 1)
-            attributes[HwpAttributedStringKey.underlineColor] = shape.underlineColor.cgColor
-        }
-        if shape.property.strikethrough != 0 {
-            attributes[.strikethroughStyle] = NSNumber(value: 1) // NSUnderlineStyle.single = 1
-        }
+        applyShapeDecorations(to: &attributes, shape: shape, size: size)
         return attributes
     }
 
     func resolvedShape(id: UInt32, paragraph: CoreHwp.HwpParagraph) -> CoreHwp.HwpCharShape {
-        if let shape = index.charShape(id: id) { return shape }
+        if let shape = index.charShape(id: id) {
+            return shape
+        }
         os_log(
             "HwpTextRunBuilder missing char shape: paraId=%{public}u shapeId=%{public}u",
             type: .default,
@@ -433,20 +402,42 @@ private extension HwpTextRunBuilder {
 
     func symbolicTraits(for property: CoreHwp.HwpCharShapeProperty) -> CTFontSymbolicTraits {
         var traits = CTFontSymbolicTraits()
-        if property.isBold { traits.insert(.traitBold) }
-        if property.isItalic { traits.insert(.traitItalic) }
+        if property.isBold {
+            traits.insert(.traitBold)
+        }
+        if property.isItalic {
+            traits.insert(.traitItalic)
+        }
         return traits
     }
 
     func copy(_ font: CTFont, adding traits: CTFontSymbolicTraits) -> CTFont {
-        guard !traits.isEmpty,
-              let descriptor = CTFontDescriptorCreateCopyWithSymbolicTraits(
-                  CTFontCopyFontDescriptor(font),
-                  traits,
-                  traits
-              )
-        else { return font }
-        return CTFontCreateWithFontDescriptor(descriptor, CTFontGetSize(font), nil)
+        guard !traits.isEmpty else { return font }
+        if let descriptor = CTFontDescriptorCreateCopyWithSymbolicTraits(
+            CTFontCopyFontDescriptor(font),
+            traits,
+            traits
+        ) {
+            return CTFontCreateWithFontDescriptor(descriptor, CTFontGetSize(font), nil)
+        }
+        // 요청한 조합 페이스가 없는 폰트 (한글 명조 등): 볼드만 먼저 시도하고,
+        // 이탤릭은 기울임 매트릭스로 근사한다 (한글.app 동작).
+        var result = font
+        if traits.contains(.traitBold),
+           let boldDescriptor = CTFontDescriptorCreateCopyWithSymbolicTraits(
+               CTFontCopyFontDescriptor(result),
+               .traitBold,
+               .traitBold
+           )
+        {
+            result = CTFontCreateWithFontDescriptor(boldDescriptor, CTFontGetSize(result), nil)
+        }
+        if traits.contains(.traitItalic) {
+            var matrix = CTFontGetMatrix(result)
+            matrix.c += 0.22
+            result = CTFontCreateCopyWithAttributes(result, 0, &matrix, nil)
+        }
+        return result
     }
 
     func value<T>(at index: Int, in array: [T], default fallback: T) -> T {

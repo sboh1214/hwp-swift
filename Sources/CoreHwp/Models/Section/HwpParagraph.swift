@@ -9,6 +9,9 @@ public struct HwpParagraph: HwpFromRecordWithVersion {
     public var ctrlHeaderArray: [HwpCtrlId]?
     public var paraRangeTagArray: [HwpParaRangeTag]?
     public var listHeaderArray: [HwpListHeader]?
+    /// 메모 (댓글) 본문 문단 — MEMO_LIST(93) 뒤에 오는 문단(66) 자식.
+    /// 한글.app 편집 뷰의 오른쪽 풍선에 표시되는 내용이다.
+    public var memoParagraphArray: [HwpParagraph]?
     @ExcludeEquatable
     public var unknownChildren: [HwpUnknownRecord]
 
@@ -21,6 +24,7 @@ public struct HwpParagraph: HwpFromRecordWithVersion {
         listHeaderArray = [HwpListHeader]()
         unknownChildren = []
         ctrlHeaderArray = nil
+        memoParagraphArray = nil
     }
 
     /// 새 문서의 첫 문단. 구역/단 정의 컨트롤은 구역의 첫 문단에만 붙는다는
@@ -83,7 +87,7 @@ public struct HwpParagraph: HwpFromRecordWithVersion {
 
         paraRangeTagArray = try children
             .filter { $0.tagId == HwpSectionTag.paraRangeTag.rawValue }
-            .map { try HwpParaRangeTag.load($0.payload) }
+            .flatMap { try HwpParaRangeTag.loadArray($0.payload) }
         try Self.validateParaRangeTagCount(paraHeader, paraRangeTagArray ?? [])
 
         ctrlHeaderArray = try children
@@ -136,16 +140,37 @@ public struct HwpParagraph: HwpFromRecordWithVersion {
             .filter { $0.tagId == HwpSectionTag.listHeader.rawValue }
             .map { try HwpListHeader.load($0.payload) }
 
-        unknownChildren = Self.unconsumedRecords(from: children).map(HwpUnknownRecord.init)
+        // MEMO_LIST(93)가 있으면 뒤따르는 문단(66) 자식들이 메모 본문이다
+        if children.contains(where: { $0.tagId == HwpSectionTag.memoList.rawValue }) {
+            let memoParagraphs = try children
+                .filter { $0.tagId == HwpSectionTag.paraHeader.rawValue }
+                .map { try HwpParagraph.load($0, version) }
+            memoParagraphArray = memoParagraphs.isEmpty ? nil : memoParagraphs
+        }
+
+        unknownChildren = Self.unconsumedRecords(
+            from: children,
+            consumesMemoRecords: memoParagraphArray != nil
+        ).map(HwpUnknownRecord.init)
     }
 }
 
 private extension HwpParagraph {
-    static func unconsumedRecords(from children: [HwpRecord]) -> [HwpRecord] {
+    static func unconsumedRecords(
+        from children: [HwpRecord],
+        consumesMemoRecords: Bool
+    ) -> [HwpRecord] {
         var consumedSingletons = Set<UInt32>()
 
         return children.filter { child in
             if multiRecordTags.contains(child.tagId) {
+                return false
+            }
+
+            if consumesMemoRecords,
+               child.tagId == HwpSectionTag.memoList.rawValue
+               || child.tagId == HwpSectionTag.paraHeader.rawValue
+            {
                 return false
             }
 

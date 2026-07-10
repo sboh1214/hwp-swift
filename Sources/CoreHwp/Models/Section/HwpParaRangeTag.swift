@@ -46,4 +46,18 @@ public struct HwpParaRangeTag: HwpFromData {
         paraRangeTag.rawPayload = data
         return paraRangeTag
     }
+
+    /// PARA_RANGE_TAG 레코드 하나에는 태그가 정보 수만큼 (12바이트씩) 담긴다
+    /// (ViewText 변경 추적 저장본 실측 — 한 레코드에 2개 이상).
+    public static func loadArray(_ data: Data) throws -> [Self] {
+        guard data.count.isMultiple(of: 12) else {
+            throw HwpError.bytesAreNotEOF(model: Self.self, remain: data.count % 12)
+        }
+        var reader = DataReader(data)
+        var tags: [Self] = []
+        while !reader.isEOF {
+            tags.append(try self.init(&reader))
+        }
+        return tags
+    }
 }

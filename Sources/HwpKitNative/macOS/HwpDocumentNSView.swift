@@ -10,6 +10,8 @@
                 guard document != oldValue else { return }
                 pageLayers.values.forEach { $0.removeFromSuperlayer() }
                 pageLayers.removeAll()
+                memoPanelLayers.values.forEach { $0.removeFromSuperlayer() }
+                memoPanelLayers.removeAll()
                 rebuildImageProvider()
                 needsLayout = true
                 notifyUnsupportedElements()
@@ -31,6 +33,8 @@
         public var onPageChanged: ((Int) -> Void)?
 
         var pageLayers: [Int: HwpPageLayer] = [:]
+        /// 메모 (댓글) 풍선 패널 레이어 — 페이지 오른쪽 바깥 (한글.app 편집 뷰)
+        var memoPanelLayers: [Int: HwpPageLayer] = [:]
 
         private let hitTester = HwpHitTester()
         private let defaultPageSize = CGSize(width: 595, height: 842)
@@ -96,6 +100,8 @@
             guard !range.isEmpty else {
                 pageLayers.values.forEach { $0.removeFromSuperlayer() }
                 pageLayers.removeAll()
+                memoPanelLayers.values.forEach { $0.removeFromSuperlayer() }
+                memoPanelLayers.removeAll()
                 return
             }
 
@@ -103,12 +109,18 @@
             for (index, pageLayer) in pageLayers where !retainedRange.contains(index) {
                 pageLayer.removeFromSuperlayer()
                 pageLayers[index] = nil
+                memoPanelLayers[index]?.removeFromSuperlayer()
+                memoPanelLayers[index] = nil
             }
 
             for index in range where pageLayers[index] == nil {
                 let pageLayer = makePageLayer(for: index)
                 pageLayers[index] = pageLayer
                 layer?.addSublayer(pageLayer)
+                if let panelLayer = makeMemoPanelLayer(for: index) {
+                    memoPanelLayers[index] = panelLayer
+                    layer?.addSublayer(panelLayer)
+                }
             }
 
             layoutPageLayers()
@@ -210,6 +222,24 @@
             return pageLayer
         }
 
+        /// 페이지에 메모 패널이 있으면 오른쪽 바깥에 투명 레이어로 그린다.
+        private func makeMemoPanelLayer(for index: Int) -> HwpPageLayer? {
+            guard let document, document.pages.indices.contains(index),
+                  let panel = document.pages[index].memoPanel
+            else { return nil }
+            let pageSize = sizeForPage(at: index)
+            let panelLayer = HwpPageLayer()
+            panelLayer.pageHeight = pageSize.height
+            panelLayer.bounds = CGRect(
+                origin: .zero,
+                size: CGSize(width: panel.width, height: pageSize.height)
+            )
+            panelLayer.backgroundColor = nil
+            panelLayer.contentsScale = effectiveContentsScale
+            panelLayer.paintList = panel.paintList
+            return panelLayer
+        }
+
         private func paintListForPage(at index: Int) -> HwpPaintList? {
             guard let document, document.pages.indices.contains(index) else { return nil }
             return document.pages[index].paintList
@@ -222,6 +252,17 @@
                 pageLayer.bounds = CGRect(origin: .zero, size: pageSize)
                 pageLayer.setAffineTransform(CGAffineTransform(scaleX: zoomScale, y: zoomScale))
                 pageLayer.position = pageOrigin(for: index, pageSize: pageSize)
+                if let panelLayer = memoPanelLayers[index] {
+                    panelLayer.setAffineTransform(
+                        CGAffineTransform(scaleX: zoomScale, y: zoomScale)
+                    )
+                    // 페이지 오른쪽 모서리에 이어 붙인다
+                    panelLayer.position = CGPoint(
+                        x: pageLayer.position.x
+                            + (pageSize.width + panelLayer.bounds.width) / 2 * zoomScale,
+                        y: pageLayer.position.y
+                    )
+                }
             }
         }
 

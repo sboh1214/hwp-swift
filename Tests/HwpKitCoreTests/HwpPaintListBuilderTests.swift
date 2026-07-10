@@ -86,7 +86,9 @@ final class HwpPaintListBuilderTests: XCTestCase {
         let list = builder.build(for: makePage(blocks: [block]), index: index)
         expect(list.commands.count) >= 1
         let hasPlaceholder = list.commands.contains {
-            if case .drawPlaceholder = $0 { return true }
+            if case .drawPlaceholder = $0 {
+                return true
+            }
             return false
         }
         expect(hasPlaceholder) == true
@@ -155,11 +157,15 @@ final class HwpPaintListBuilderTests: XCTestCase {
         let list = builder.build(for: makePage(blocks: [block]), index: index)
 
         let fillRects = list.commands.filter {
-            if case .fillRect = $0 { return true }
+            if case .fillRect = $0 {
+                return true
+            }
             return false
         }
         let drawTexts = list.commands.filter {
-            if case .drawText = $0 { return true }
+            if case .drawText = $0 {
+                return true
+            }
             return false
         }
         expect(fillRects.count) == 4 // 4방향 테두리 edge rect
@@ -176,8 +182,8 @@ final class HwpPaintListBuilderTests: XCTestCase {
         let textbox = HwpTextboxFrame(
             outerFrame: CGRect(x: 0, y: 0, width: 200, height: 80),
             paragraphs: [],
-            borderColor: nil,
-            borderWidth: 0,
+            borderColor: HwpRGBColor(red: 0, green: 0, blue: 0),
+            borderWidth: 1,
             fillColor: nil
         )
         let block = AnyHwpBlock(
@@ -214,9 +220,10 @@ final class HwpPaintListBuilderTests: XCTestCase {
             payload: .textbox(textbox)
         )
         let list = builder.build(for: makePage(blocks: [block]), index: index)
-        expect(list.commands.count) == 3
-        guard case let .drawText(attributed, _, _) = list.commands[2] else {
-            fail("Expected .drawText as third command")
+        // 테두리 정보가 없으면 배경 + 텍스트만 (기본 테두리 없음 — CCL 한글.app 실측)
+        expect(list.commands.count) == 2
+        guard case let .drawText(attributed, _, _) = list.commands[1] else {
+            fail("Expected .drawText as second command")
             return
         }
         expect(attributed.string) == "inside box"

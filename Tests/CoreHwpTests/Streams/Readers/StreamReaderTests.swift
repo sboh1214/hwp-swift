@@ -13,6 +13,7 @@ final class StreamReaderTests: XCTestCase {
             .previewText,
             .previewImage,
             .binData,
+            .viewText,
         ]
         expect(HwpStreamName.requiredTopLevelEntries) == [
             .fileHeader,
@@ -24,6 +25,7 @@ final class StreamReaderTests: XCTestCase {
             .previewText,
             .previewImage,
             .binData,
+            .viewText,
         ]
         expect(HwpStreamName.requiredTopLevelEntries.intersection(
             HwpStreamName.optionalTopLevelEntries

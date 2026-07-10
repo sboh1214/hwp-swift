@@ -38,7 +38,8 @@ import XCTest
         }
 
         func testSerifFacesResolveToMyungjoFamily() {
-            // 헌법주석 서체 (명조 계열): 고딕 last-resort로 떨어지면 안 된다
+            // 헌법주석 서체 (명조 계열): 고딕 last-resort로 떨어지면 안 된다.
+            // 한컴오피스가 설치된 기기에서는 원문 이름의 실폰트가 우선한다.
             let serifFaces = [
                 "휴먼명조", "한양신명조", "한양신명조V", "신명 태명조", "#태명조",
                 "명조", "신명 견명조", "신명조 간자", "신명조 약자",
@@ -47,6 +48,7 @@ import XCTest
             for face in serifFaces {
                 let font = resolver.resolve(faceName: face, script: .korean, size: 10)
                 let family = CTFontCopyFamilyName(font) as String
+                if isInstalledHancomFont(family) { continue }
                 expect(serifFamilies).to(
                     contain(family),
                     description: "'\(face)'이 명조 계열로 해석되지 않았다: \(family)"
@@ -60,6 +62,7 @@ import XCTest
             for face in gothicFaces {
                 let font = resolver.resolve(faceName: face, script: .korean, size: 10)
                 let family = CTFontCopyFamilyName(font) as String
+                if isInstalledHancomFont(family) { continue }
                 expect(gothicFamilies).to(
                     contain(family),
                     description: "'\(face)'이 고딕 계열로 해석되지 않았다: \(family)"
@@ -72,6 +75,7 @@ import XCTest
             for face in ["한컴바탕", "한컴바탕확장", "바탕체"] {
                 let font = resolver.resolve(faceName: face, script: .korean, size: 10)
                 let family = CTFontCopyFamilyName(font) as String
+                if isInstalledHancomFont(family) { continue }
                 expect(batangFamilies).to(
                     contain(family),
                     description: "'\(face)'이 바탕 계열로 해석되지 않았다: \(family)"
@@ -82,7 +86,15 @@ import XCTest
         func testCalligraphicFaceResolvesToGungSeo() {
             let font = resolver.resolve(faceName: "한양해서", script: .korean, size: 10)
             let family = CTFontCopyFamilyName(font) as String
+            if isInstalledHancomFont(family) { return }
             expect(["GungSeo", "AppleMyungjo"]).to(contain(family))
+        }
+
+        /// 해석 결과가 한컴오피스 번들 실폰트인지 (설치된 기기에서는 실폰트가
+        /// 폴백 계열보다 우선하므로 폴백 계열 검사를 건너뛴다)
+        private func isInstalledHancomFont(_ family: String) -> Bool {
+            HwpInstalledHancomFonts.index[family] != nil
+                || HwpInstalledHancomFonts.index[HwpFontMap.normalize(family)] != nil
         }
 
         func testFaceNameNormalizationStripsPrefixesAndSpaces() {

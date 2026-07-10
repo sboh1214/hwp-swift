@@ -32,7 +32,7 @@ enum FixturePreview {
         let index = HwpIndex(from: file)
         let imageStore = HwpImageStore(from: file)
         let paginator = HwpPaginator(
-            sections: file.sectionArray,
+            sections: file.displaySectionArray,
             index: index,
             fontResolver: fontResolver,
             imageStore: imageStore

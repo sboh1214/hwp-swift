@@ -6,16 +6,25 @@ public struct HwpFile: HwpPrimitive {
     public let fileHeader: HwpFileHeader
     public let docInfo: HwpDocInfo
     public let sectionArray: [HwpSection]
+    /// 표시용 본문 (`ViewText` 스토리지 — 변경 추적 저장본 등).
+    /// 있으면 한글.app은 BodyText 대신 이걸 그린다. 없으면 빈 배열.
+    public let viewSectionArray: [HwpSection]
     public let summary: HwpSummary
     public let previewText: HwpPreviewText
     public let previewImage: HwpPreviewImage
     public let binaryDataArray: [HwpBinaryData]
+
+    /// 렌더 대상 본문: ViewText가 있으면 ViewText, 없으면 BodyText (한글.app 동작)
+    public var displaySectionArray: [HwpSection] {
+        viewSectionArray.isEmpty ? sectionArray : viewSectionArray
+    }
 
     /// 비어 있는 기본 HWP 문서 모델을 생성합니다.
     public init() {
         fileHeader = HwpFileHeader()
         docInfo = HwpDocInfo()
         sectionArray = [HwpSection()]
+        viewSectionArray = []
         summary = HwpSummary()
         previewText = HwpPreviewText()
         previewImage = HwpPreviewImage()
@@ -104,6 +113,7 @@ public struct HwpFile: HwpPrimitive {
             }
             return binaryDataCompression[streamId] ?? false
         }
+        let viewTextData = try reader.getOptionalNamedDataFromStorage(.viewText, isCompressed)
 
         try self.init(
             fileHeader: fileHeader,
@@ -112,7 +122,8 @@ public struct HwpFile: HwpPrimitive {
             summaryData: summaryData,
             previewTextData: previewTextData,
             previewImageData: previewImageData,
-            binaryData: binaryData
+            binaryData: binaryData,
+            viewTextData: viewTextData
         )
     }
 
@@ -123,7 +134,8 @@ public struct HwpFile: HwpPrimitive {
         summaryData: Data? = nil,
         previewTextData: Data? = nil,
         previewImageData: Data? = nil,
-        binaryData: [(name: String, data: Data)] = []
+        binaryData: [(name: String, data: Data)] = [],
+        viewTextData: [(name: String, data: Data)] = []
     ) throws {
         if let unsupportedFeature = fileHeader.fileProperty.unsupportedFeature {
             throw HwpError.unsupportedFeature(unsupportedFeature)
@@ -137,7 +149,8 @@ public struct HwpFile: HwpPrimitive {
             summaryData: summaryData,
             previewTextData: previewTextData,
             previewImageData: previewImageData,
-            binaryData: binaryData
+            binaryData: binaryData,
+            viewTextData: viewTextData
         )
     }
 
@@ -148,7 +161,8 @@ public struct HwpFile: HwpPrimitive {
         summaryData: Data? = nil,
         previewTextData: Data? = nil,
         previewImageData: Data? = nil,
-        binaryData: [(name: String, data: Data)] = []
+        binaryData: [(name: String, data: Data)] = [],
+        viewTextData: [(name: String, data: Data)] = []
     ) throws {
         self.fileHeader = fileHeader
 
@@ -172,6 +186,18 @@ public struct HwpFile: HwpPrimitive {
             )
         }
         sectionArray = try sectionDataArray.map { try HwpSection.load($0, fileHeader.version) }
+        // 표시용 본문 (ViewText): 이름 숫자 순 정렬 후 best-effort 파싱.
+        // 파싱에 실패하면 (미지의 표시 전용 레코드 등) BodyText 렌더로 폴백한다.
+        do {
+            viewSectionArray = try viewTextData
+                .sorted { lhs, rhs in
+                    Self.sectionIndex(from: lhs.name) < Self.sectionIndex(from: rhs.name)
+                }
+                .map { try HwpSection.load($0.data, fileHeader.version) }
+        } catch {
+            // 표시 전용 스트림이 파싱 불가면 BodyText 렌더로 폴백한다
+            viewSectionArray = []
+        }
 
         if let summaryData {
             summary = try HwpSummary.load(summaryData)
@@ -192,6 +218,13 @@ public struct HwpFile: HwpPrimitive {
         }
 
         binaryDataArray = binaryData.map { HwpBinaryData(name: $0.name, data: $0.data) }
+    }
+
+    /// "Section12" → 12 (숫자 없으면 Int.max — 뒤로 보냄)
+    private static func sectionIndex(from name: String) -> Int {
+        guard name.hasPrefix("Section"), let index = Int(name.dropFirst("Section".count))
+        else { return Int.max }
+        return index
     }
 
     static func binaryDataCompressionByStreamId(

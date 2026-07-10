@@ -47,25 +47,42 @@ import Foundation
             .user: "Helvetica",
         ]
 
+        /// 한컴오피스 번들 폰트 (설치 시)를 조회 대상에 넣을지.
+        /// 결정론 테스트 resolver는 끈다 (기기 의존 결과 방지).
+        private let usesInstalledHancomFonts: Bool
+
         public init(fontMap: HwpFontMap = .default) {
             self.fontMap = fontMap
             scriptFallbacks = Self.defaultScriptFallbacks
+            usesInstalledHancomFonts = true
         }
 
-        private init(fontMap: HwpFontMap, scriptFallbacks: [HwpScript: String]) {
+        private init(
+            fontMap: HwpFontMap,
+            scriptFallbacks: [HwpScript: String],
+            usesInstalledHancomFonts: Bool = true
+        ) {
             self.fontMap = fontMap
             self.scriptFallbacks = scriptFallbacks
+            self.usesInstalledHancomFonts = usesInstalledHancomFonts
         }
 
         /// Resolves `faceName` for `script` at `size` points.
-        /// Walks map candidates (원문 → 정규화 이름 조회) then the face name itself;
-        /// falls back to script-keyed safety net.
+        /// 원문 이름의 실제 폰트 (시스템 → 한컴오피스 번들)를 먼저 찾고,
+        /// 없을 때만 map 폴백 후보 (원문 → 정규화 이름 조회) →
+        /// script-keyed safety net 순으로 내려간다.
         public func resolve(faceName: String, script: HwpScript, size: CGFloat) -> CTFont {
             cache.font(for: CacheKey(faceName: faceName, script: script, size: size)) {
-                let candidates = fontMap.candidates(forFaceName: faceName) + [faceName]
-                for candidate in candidates {
+                for candidate in [faceName] + fontMap.candidates(forFaceName: faceName) {
                     if let font = Self.createIfAvailable(name: candidate, size: size) {
                         return font
+                    }
+                    if usesInstalledHancomFonts,
+                       let descriptor = HwpInstalledHancomFonts.descriptor(
+                           forFaceName: candidate
+                       )
+                    {
+                        return CTFontCreateWithFontDescriptor(descriptor, size, nil)
                     }
                 }
                 let fallbackName = scriptFallbacks[script] ?? "Helvetica"
@@ -115,7 +132,8 @@ import Foundation
                 .etc: "Menlo",
                 .symbol: "Menlo",
                 .user: "Menlo",
-            ]
+            ],
+            usesInstalledHancomFonts: false
         )
     }
 #endif

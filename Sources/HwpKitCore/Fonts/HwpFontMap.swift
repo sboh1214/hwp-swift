@@ -21,7 +21,9 @@ public struct HwpFontMap: Sendable, Hashable {
 
     /// faceName의 폴백 후보 (원문 → 정규화 순서로 조회, 없으면 빈 배열)
     public func candidates(forFaceName faceName: String) -> [String] {
-        if let exact = entries[faceName] { return exact }
+        if let exact = entries[faceName] {
+            return exact
+        }
         return normalizedEntries[Self.normalize(faceName)] ?? []
     }
 
@@ -76,6 +78,8 @@ public struct HwpFontMap: Sendable, Hashable {
         "윤고딕120": gothic,
         "HCI Poppy": ["Apple SD Gothic Neo"],
         "Times New Roman": ["Times New Roman", "Times"],
+        // 한컴 수식 전용 폰트 — 세리프 수학체 근사
+        "HancomEQN": ["Times New Roman", "Times", "AppleMyungjo"],
         "Arial": ["Arial", "Helvetica"],
         "Courier New": ["Courier New", "Menlo"],
         "Symbol": ["Symbol", "AppleSymbols"],

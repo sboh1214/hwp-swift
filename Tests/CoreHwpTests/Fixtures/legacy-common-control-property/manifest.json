@@ -1665,7 +1665,7 @@
     "fileLicense": {
       "rawValue": 0
     },
-    "pageCount": 1031,
-    "pageCountSource": "HwpKit 렌더 실측 잠금 — 한글.app 실측은 1,030쪽 (2026-07-06 사용자 확인), 렌더 +1은 표 분할 주변 각주 예약 근사 (AGENTS.md 한계 참조)"
+    "pageCount": 1030,
+    "pageCountSource": "한글.app 실측 1,030쪽 (2026-07-06 사용자 확인) = HwpKit 렌더 실측 (2026-07-10 표 셀 각주 행 페이지 귀속 이후 일치)"
   }
 }

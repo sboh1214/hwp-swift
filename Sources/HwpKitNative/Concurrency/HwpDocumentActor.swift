@@ -45,7 +45,8 @@ public actor HwpDocumentActor {
         let index = HwpIndex(from: file)
         let imageStore = HwpImageStore(from: file)
         let paginator = HwpPaginator(
-            sections: file.sectionArray,
+            // ViewText (변경 추적 표시본)가 있으면 한글.app처럼 그걸 그린다
+            sections: file.displaySectionArray,
             index: index,
             fontResolver: fontResolver,
             imageStore: imageStore

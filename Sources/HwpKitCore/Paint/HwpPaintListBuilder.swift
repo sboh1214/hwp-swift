@@ -1,5 +1,6 @@
 @preconcurrency import CoreGraphics
 @preconcurrency import CoreHwp
+import CoreText
 import Foundation
 
 public struct HwpPaintListBuilder: Sendable {
@@ -53,6 +54,8 @@ public struct HwpPaintListBuilder: Sendable {
             shapeCommands(geometry, origin: block.frame.origin)
         case let .image(imageInfo):
             imageCommands(imageInfo, frame: block.frame)
+        case let .chart(chart):
+            HwpChartPainter.commands(chart, frame: block.frame, fontResolver: fontResolver)
         case nil:
             plainCommands(for: block)
         }
@@ -169,14 +172,14 @@ public struct HwpPaintListBuilder: Sendable {
         } else {
             commands.append(.fillRect(rect: outerRect, color: .hwpWhite))
         }
+        // 테두리 정보가 없으면 그리지 않는다 (한글.app: CCL 실측 — 선 없는
+        // 글상자는 테두리 없이 렌더)
         if let borderColor = textbox.borderColor, textbox.borderWidth > 0 {
             commands.append(.strokeRect(
                 rect: outerRect,
                 color: borderColor.cgColor,
                 width: textbox.borderWidth
             ))
-        } else {
-            commands.append(.strokeRect(rect: outerRect, color: .hwpBlack, width: 1))
         }
         for paragraph in textbox.paragraphs where paragraph.attributedString.length > 0 {
             let paragraphRect = paragraph.rect.offsetBy(dx: origin.x, dy: origin.y)

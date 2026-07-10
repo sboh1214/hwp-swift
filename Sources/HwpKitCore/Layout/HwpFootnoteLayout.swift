@@ -85,11 +85,16 @@ public struct HwpFootnoteLayout {
 
     /// 각주 영역(콘텐츠 절반 상한)에 들어가는 만큼 배치하고 나머지는 이월로 돌려준다.
     /// 진행 보장을 위해 첫 각주는 영역보다 커도 항상 배치한다.
+    /// limitsAreaToHalfContent: 흐름 조판에선 콘텐츠 절반 상한 (한글 기본 동작).
+    /// 절대 캐시 모드에선 false — 한글이 이미 확정한 페이지의 각주는 참조
+    /// 페이지에 전부 둔다 (이월하면 다음 페이지 예약이 한글에 없는 페이지
+    /// 절단을 만든다 — 헌법주석 p485 실측).
     public func place(
         footnotes: [Input],
         onPage geometry: HwpPageGeometry,
         index: HwpIndex,
-        footnoteShape: CoreHwp.HwpFootnoteShape? = nil
+        footnoteShape: CoreHwp.HwpFootnoteShape? = nil,
+        limitsAreaToHalfContent: Bool = true
     ) -> Placement {
         guard !footnotes.isEmpty else { return Placement(blocks: [], overflow: []) }
 
@@ -118,10 +123,11 @@ public struct HwpFootnoteLayout {
             notesHeight += max(1, note.frame.totalHeight)
             previousNumber = note.input.number
         }
-        let areaHeight = min(
-            contentFrame.height / 2,
-            notesHeight + divider.marginTop + divider.marginBottom + divider.thickness
-        )
+        let stackHeight = notesHeight + divider.marginTop + divider.marginBottom
+            + divider.thickness
+        let areaHeight = limitsAreaToHalfContent
+            ? min(contentFrame.height / 2, stackHeight)
+            : stackHeight
         let areaTop = contentFrame.maxY - areaHeight
 
         let separatorLine = CGRect(
@@ -131,10 +137,19 @@ public struct HwpFootnoteLayout {
             height: max(0.5, divider.thickness)
         )
 
+        // 상한 없는 배치는 이월 없이 전부 페이지 하단 영역에 쌓는다
+        let stackFrame = limitsAreaToHalfContent
+            ? contentFrame
+            : CGRect(
+                x: contentFrame.minX,
+                y: contentFrame.minY,
+                width: contentFrame.width,
+                height: max(contentFrame.height, areaTop + areaHeight - contentFrame.minY)
+            )
         let stacked = stackBlocks(
             measured: measured,
             from: separatorLine.maxY + divider.marginBottom,
-            in: contentFrame,
+            in: stackFrame,
             separatorLine: separatorLine,
             divider: divider
         )

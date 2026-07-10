@@ -25,6 +25,8 @@ public actor HwpPaginator {
     private var collectedUnsupported: [HwpUnsupportedElement] = []
     /// 이 페이지에 배치할 각주 (문단 + 문서 순서 번호)
     private var pendingFootnotes: [HwpFootnoteLayout.Input] = []
+    /// 이 페이지에 표시할 메모 (댓글) 풍선 (한글.app 편집 뷰 오른쪽 패널)
+    private var pendingMemoBalloons: [HwpMemoPanelPainter.Balloon] = []
     /// 문서/구역 끝에 배치할 미주 (표 134 bits 8-9)
     private var pendingEndnotes: [HwpFootnoteLayout.Input] = []
     /// 각주 영역이 차지할 높이 (본문 overflow 검사에 반영)
@@ -76,6 +78,10 @@ public actor HwpPaginator {
     private let absoluteCacheMode: Bool
     /// 현재 페이지에 배치한 마지막 세그먼트의 lineLocation (절대 캐시 모드 전용)
     private var lastAbsoluteCacheLoc = Int32.min
+    /// 절대 캐시 모드에서 stale 캐시 문단 (캐시 줄 높이 < 선언 글자 크기)이
+    /// 만든 아래 방향 보정 오프셋 (페이지 로컬). 한글.app도 이런 문단은 열 때
+    /// 재조판해 CT 자연 높이만큼 다음 문단을 밀어낸다 (CharShape 실측).
+    private var absoluteCacheStaleOffset: CGFloat = 0
     /// (컨트롤, 밴드 프레임)별 머리말/꼬리말 블록 캐시
     private var bandBlocksCache: [BandBlocksKey: [AnyHwpBlock]] = [:]
 
@@ -115,7 +121,9 @@ public actor HwpPaginator {
 
     public func page(at index: Int) async throws -> HwpPage? {
         guard index >= 0 else { return nil }
-        if let page = cachedPages[index] { return page }
+        if let page = cachedPages[index] {
+            return page
+        }
 
         while cachedPages[index] == nil, !didFinishPagination {
             await Task.yield()
@@ -368,7 +376,9 @@ private extension HwpPaginator {
                 cursorY += mergedHeight
             }
             maxBottom = max(maxBottom, cursorY)
-            if unitIndex >= units.count { break }
+            if unitIndex >= units.count {
+                break
+            }
         }
         return (newBlocks, maxBottom)
     }
@@ -409,7 +419,8 @@ private extension HwpPaginator {
                 // 현재 페이지가 확정됐고 문단은 다음 페이지에서 다시 처리한다.
                 return
             }
-            collectFootnotes(from: paragraph)
+            collectFootnotes(from: paragraph, includeTableCells: false)
+            collectMemos(from: paragraph)
             appendControlBlocks(from: paragraph)
             collectUnsupported(from: paragraph)
             advanceParagraph()
@@ -470,22 +481,54 @@ private extension HwpPaginator {
         attributedString: NSAttributedString,
         paragraphFrame: HwpParagraphFrame
     ) -> Bool {
-        // 절대 캐시 모드 (1단): 한글이 계산한 y/페이지 절단점을 그대로 재현한다.
-        if absoluteCacheMode, columnFrames.count <= 1,
-           let runs = Self.cacheRuns(for: paragraph)
+        let placed: Bool
+            // 절대 캐시 모드 (1단): 한글이 계산한 y/페이지 절단점을 그대로 재현한다.
+            = if absoluteCacheMode, columnFrames.count <= 1,
+            let runs = Self.cacheRuns(for: paragraph)
         {
-            return placeAbsoluteCachedParagraph(
+            placeAbsoluteCachedParagraph(
                 paragraph,
                 attributedString: attributedString,
                 paragraphFrame: paragraphFrame,
                 runs: runs
             )
+        } else {
+            placeFlowParagraph(
+                paragraph,
+                attributedString: attributedString,
+                paragraphFrame: paragraphFrame
+            )
         }
-        return placeFlowParagraph(
-            paragraph,
-            attributedString: attributedString,
-            paragraphFrame: paragraphFrame
-        )
+        if placed {
+            appendTrackChangeBarIfNeeded(for: paragraph)
+        }
+        return placed
+    }
+
+    /// 변경 추적 마크 (PARA_RANGE_TAG kind 16/17)가 있는 문단 왼쪽에
+    /// 한글.app처럼 빨간 변경 막대를 그린다.
+    private func appendTrackChangeBarIfNeeded(for paragraph: CoreHwp.HwpParagraph) {
+        let hasTrackChange = (paragraph.paraRangeTagArray ?? []).contains { tag in
+            let kind = tag.tag >> 24
+            return kind == 16 || kind == 17
+        }
+        guard hasTrackChange, let last = currentBlocks.last, last.kind == .text else { return }
+        let barRect = CGRect(x: 0, y: 0, width: 1.2, height: last.frame.height)
+        currentBlocks.append(AnyHwpBlock(
+            frame: CGRect(
+                x: currentPageGeometry.contentFrame.minX - 10,
+                y: last.frame.minY,
+                width: barRect.width,
+                height: barRect.height
+            ),
+            kind: .shape,
+            payload: .shape(HwpShapeGeometry(
+                path: CGPath(rect: barRect, transform: nil),
+                fillColor: CGColor(srgbRed: 0.87, green: 0.14, blue: 0.1, alpha: 1),
+                strokeColor: nil,
+                strokeWidth: 0
+            ))
+        ))
     }
 
     /// 흐름 기반 문단 배치 (절대 캐시 모드가 아닌 저장본/경로)
@@ -708,7 +751,9 @@ private extension HwpPaginator {
             current.append(segment)
             previous = segment.lineLocation
         }
-        if !current.isEmpty { runs.append(current) }
+        if !current.isEmpty {
+            runs.append(current)
+        }
         return runs
     }
 
@@ -733,10 +778,12 @@ private extension HwpPaginator {
         let totalSegments = runs.reduce(0) { $0 + $1.count }
         var lineCursor = 0
         for (runIndex, run) in runs.enumerated() {
-            if runIndex > 0 { cacheCurrentPage() }
+            if runIndex > 0 {
+                cacheCurrentPage()
+            }
             guard let runFirstSegment = run.first else { continue }
             let runFirst = runFirstSegment.lineLocation
-            let height = absoluteRunBlockHeight(run: run, firstLocation: runFirst)
+            var height = absoluteRunBlockHeight(run: run, firstLocation: runFirst)
             let slice = runAttributedSlice(
                 runIndex: runIndex,
                 runShare: RunShare(
@@ -749,8 +796,20 @@ private extension HwpPaginator {
                 lineCursor: &lineCursor
             )
             // appendBlock은 columnFrame.minY + contentHeightUsed에 배치하므로
-            // 한글이 준 절대 y로 커서를 옮긴다.
+            // 한글이 준 절대 y (+ stale 캐시 보정)로 커서를 옮긴다.
             contentHeightUsed = max(0, HwpUnits.points(fromHwpUnit: runFirst))
+                + absoluteCacheStaleOffset
+            // stale 캐시 (캐시 줄 높이 < 선언 글자 크기): 한글.app도 열 때
+            // 재조판해 이 줄을 CT 자연 높이로 넓힌다 — 슬롯을 CT 높이로 키우고
+            // 이후 문단을 그만큼 민다. 신선한 캐시 (h ≥ 글자 크기)는 절대 발동
+            // 안 한다 (헌법주석 페이지 절단 유지).
+            if runs.count == 1,
+               Self.cacheIsStale(run: run, attributedString: slice.text),
+               paragraphFrame.totalHeight > height
+            {
+                absoluteCacheStaleOffset += paragraphFrame.totalHeight - height
+                height = paragraphFrame.totalHeight
+            }
             paragraphAnchorTop = currentColumnFrame.minY + contentHeightUsed
             appendBlock(
                 height: height,
@@ -762,6 +821,28 @@ private extension HwpPaginator {
             lastAbsoluteCacheLoc = run.last?.lineLocation ?? runFirst
         }
         return true
+    }
+
+    /// 캐시가 stale한지 — 캐시 줄 높이 (h)보다 큰 글자 크기가 선언되어 있으면
+    /// 캐시가 현재 내용과 안 맞는 저장본이다 (신선한 캐시는 h ≥ 글자 크기).
+    /// 폰트 대체와 무관하다: CT 폰트 포인트 크기는 요청 크기를 유지한다.
+    static func cacheIsStale(
+        run: [CoreHwp.HwpParaLineSegInternal],
+        attributedString: NSAttributedString
+    ) -> Bool {
+        let maxCacheHeight = run.map { max(0, $0.lineHeight) }.max() ?? 0
+        let cacheHeightPoints = HwpUnits.points(fromHwpUnit: maxCacheHeight)
+        guard cacheHeightPoints > 0, attributedString.length > 0 else { return false }
+        var maxFontSize: CGFloat = 0
+        attributedString.enumerateAttribute(
+            kCTFontAttributeName as NSAttributedString.Key,
+            in: NSRange(location: 0, length: attributedString.length)
+        ) { value, _, _ in
+            guard let value, CFGetTypeID(value as CFTypeRef) == CTFontGetTypeID() else { return }
+            let font = value as! CTFont // swiftlint:disable:this force_cast
+            maxFontSize = max(maxFontSize, CTFontGetSize(font))
+        }
+        return maxFontSize > cacheHeightPoints + 0.5
     }
 
     /// 절대 캐시 run의 블록 높이. 기본은 줄 전진량 (h + sp) 합이지만, 한글은
@@ -1083,7 +1164,11 @@ private extension HwpPaginator {
             if let element = unsupportedDetector.classify(ctrl: ctrl, page: page) {
                 collectedUnsupported.append(element)
             }
-            let isTable = if case .table = ctrl { true } else { false }
+            let isTable = if case .table = ctrl {
+                true
+            } else {
+                false
+            }
             // 렌더 경로 (HwpTableLayout)는 중첩 depth 3까지만 재귀 배치하므로
             // 그보다 깊은 중첩 표는 조용히 생략되는 대신 unsupported로 보고한다.
             if isTable, tableDepth > HwpTableLayout.maximumNestingDepth {
@@ -1163,47 +1248,66 @@ private extension HwpPaginator {
             if inTableCell, Self.carriesPicture(ctrl) {
                 continue
             }
-            switch ctrl {
-            case let .table(table):
-                if !inTableCell {
-                    appendTableBlocks(table, controlIndex: anchorIndex)
-                }
-                appendNestedControlBlocks(of: ctrl, depth: depth)
-            case let .genShapeObject(genShape):
-                appendShapeObjectBlocks(
-                    components: genShape.shapeComponentArray,
-                    commonProperty: genShape.commonCtrlProperty,
-                    controlIndex: anchorIndex
-                )
-                appendNestedControlBlocks(of: ctrl, depth: depth)
-            case let .shape(shape),
-                 let .line(shape),
-                 let .rectangle(shape),
-                 let .ellipse(shape),
-                 let .arc(shape),
-                 let .polygon(shape),
-                 let .curve(shape),
-                 let .equation(shape),
-                 let .equationLegacy(shape),
-                 let .picture(shape),
-                 let .ole(shape),
-                 let .container(shape):
+            appendControlBlock(
+                ctrl,
+                anchorIndex: anchorIndex,
+                depth: depth,
+                inTableCell: inTableCell
+            )
+        }
+    }
+
+    /// 컨트롤 하나를 종류별 레이아웃 경로로 방출한다 (appendControlBlocks 본문).
+    private func appendControlBlock(
+        _ ctrl: CoreHwp.HwpCtrlId,
+        anchorIndex: Int?,
+        depth: Int,
+        inTableCell: Bool
+    ) {
+        switch ctrl {
+        case let .table(table):
+            if !inTableCell {
+                appendTableBlocks(table, controlIndex: anchorIndex)
+            }
+            appendNestedControlBlocks(of: ctrl, depth: depth)
+        case let .genShapeObject(genShape):
+            appendShapeObjectBlocks(
+                components: genShape.shapeComponentArray,
+                commonProperty: genShape.commonCtrlProperty,
+                controlIndex: anchorIndex
+            )
+            appendNestedControlBlocks(of: ctrl, depth: depth)
+        case let .shape(shape),
+             let .line(shape),
+             let .rectangle(shape),
+             let .ellipse(shape),
+             let .arc(shape),
+             let .polygon(shape),
+             let .curve(shape),
+             let .equation(shape),
+             let .equationLegacy(shape),
+             let .picture(shape),
+             let .ole(shape),
+             let .container(shape):
+            // 수식 (eqed)은 EQEDIT 스크립트 근사 텍스트 우선 —
+            // eqEdit이 없는 개체는 false를 돌려 기존 개체 경로로 간다
+            if !appendEquationBlock(shape, controlIndex: anchorIndex) {
                 appendShapeObjectBlocks(
                     components: shape.shapeComponentArray,
                     commonProperty: shape.commonCtrlProperty
                         ?? CoreHwp.HwpCommonCtrlProperty(),
                     controlIndex: anchorIndex
                 )
-                appendNestedControlBlocks(of: ctrl, depth: depth)
-            case .header, .footer, .pageNumberPosition, .pageHide:
-                registerPageChromeControl(ctrl)
-            case .footnote, .endnote:
-                // 각주/미주는 collectFootnotes(from:depth:)가 컨트롤 블록 방출 전에
-                // 수집한다 (참조 위치 페이지 귀속).
-                continue
-            default:
-                continue
             }
+            appendNestedControlBlocks(of: ctrl, depth: depth)
+        case .header, .footer, .pageNumberPosition, .pageHide:
+            registerPageChromeControl(ctrl)
+        case .footnote, .endnote:
+            // 각주/미주는 collectFootnotes(from:depth:)가 컨트롤 블록 방출 전에
+            // 수집한다 (참조 위치 페이지 귀속).
+            break
+        default:
+            break
         }
     }
 
@@ -1242,7 +1346,11 @@ private extension HwpPaginator {
     /// 컨테이너 문단 안에 중첩된 컨트롤 (표 셀 안 글상자/이미지 등)을 재귀 방출한다.
     func appendNestedControlBlocks(of ctrl: CoreHwp.HwpCtrlId, depth: Int) {
         guard depth < 3 else { return }
-        let isTable = if case .table = ctrl { true } else { false }
+        let isTable = if case .table = ctrl {
+            true
+        } else {
+            false
+        }
         for (nested, _) in childParagraphs(of: ctrl) where nested.ctrlHeaderArray != nil {
             appendControlBlocks(from: nested, depth: depth + 1, inTableCell: isTable)
         }
@@ -1275,6 +1383,7 @@ private extension HwpPaginator {
             }
             appendTableSegments(
                 frame,
+                table: table,
                 instanceId: table.commonCtrlProperty.instanceId,
                 pageBreakMode: table.tableProperty.pageBreakMode,
                 headerRowCount: Self.repeatingHeaderRowCount(of: table)
@@ -1331,6 +1440,7 @@ private extension HwpPaginator {
     /// - headerRowCount > 0이면 (표 76 bit 2) 이어지는 세그먼트마다 제목 행을 복제한다.
     func appendTableSegments(
         _ frame: HwpTableFrame,
+        table: CoreHwp.HwpTable? = nil,
         instanceId: UInt32,
         pageBreakMode: CoreHwp.HwpTableProperty.HwpTablePageBreakMode = .split,
         headerRowCount: Int = 0
@@ -1341,6 +1451,9 @@ private extension HwpPaginator {
             let tableHeight = frame.rows.reduce(CGFloat(0)) { max($0, $1.rowFrame.maxY) }
             if contentHeightUsed > 0, contentHeightUsed + tableHeight > effectiveContentHeight {
                 advanceColumn()
+            }
+            if let table {
+                collectTableCellFootnotes(table, rows: nil)
             }
             appendTableSegmentBlock(rows: frame.rows, original: frame, instanceId: instanceId)
             return
@@ -1370,6 +1483,13 @@ private extension HwpPaginator {
             let segmentRows = fillSegment(remainingRows: &remainingRows, remaining: remaining)
             guard !segmentRows.isEmpty else { break }
 
+            // 셀 각주는 행이 실리는 페이지 귀속 (한글 실측 — 헌법주석 p485)
+            if let table {
+                let rowIndexes = segmentRows.flatMap(\.cells).map(\.row)
+                if let minRow = rowIndexes.min(), let maxRow = rowIndexes.max() {
+                    collectTableCellFootnotes(table, rows: minRow ... maxRow)
+                }
+            }
             appendTableSegmentBlock(
                 rows: segmentRows,
                 original: frame,
@@ -1409,7 +1529,9 @@ private extension HwpPaginator {
             segmentRows.append(row)
             segmentHeight = prospectiveHeight
             remainingRows.removeFirst()
-            if segmentHeight >= remaining { break }
+            if segmentHeight >= remaining {
+                break
+            }
         }
         return segmentRows
     }
@@ -1494,8 +1616,12 @@ private extension HwpPaginator {
                 bottomParagraphs.append(paragraph)
             } else {
                 let fragments = slicedParagraph(paragraph, at: cutY)
-                if let top = fragments.top { topParagraphs.append(top) }
-                if let bottom = fragments.bottom { bottomParagraphs.append(bottom) }
+                if let top = fragments.top {
+                    topParagraphs.append(top)
+                }
+                if let bottom = fragments.bottom {
+                    bottomParagraphs.append(bottom)
+                }
             }
         }
         let topNested = cell.nestedTables.filter { $0.rect.minY < cutY }
@@ -1540,8 +1666,12 @@ private extension HwpPaginator {
             max(Int((cutY - rect.minY) / lineHeight), 0),
             lines.count
         )
-        if topCount == 0 { return (nil, paragraph) }
-        if topCount == lines.count { return (paragraph, nil) }
+        if topCount == 0 {
+            return (nil, paragraph)
+        }
+        if topCount == lines.count {
+            return (paragraph, nil)
+        }
 
         let topHeight = lineHeight * CGFloat(topCount)
         let top = paragraphFragment(
@@ -1717,6 +1847,15 @@ private extension HwpPaginator {
                     size: size,
                     controlIndex: controlIndex
                 )
+            } else if let chart = chartFrame(of: component) {
+                // OLE 내장 차트 — 데이터 근사 렌더 (빈 도형 상자 대신)
+                appendAnchoredBlock(
+                    kind: .shape,
+                    size: size,
+                    payload: .chart(chart),
+                    commonProperty: commonProperty,
+                    controlIndex: controlIndex
+                )
             } else if component.textBoxListArray.isEmpty,
                       let geometry = HwpShapeGeometry.build(component: component, size: size)
             {
@@ -1731,6 +1870,49 @@ private extension HwpPaginator {
         }
     }
 
+    /// OLE 개체 요소가 내장 차트면 BinData CFB에서 차트 데이터를 파싱한다.
+    /// 차트가 아니거나 파싱 실패면 nil (기존 도형 상자 경로로 폴백).
+    private func chartFrame(
+        of component: CoreHwp.HwpShapeComponent
+    ) -> HwpChartFrame? {
+        guard let ole = component.oleArray.first,
+              let binaryDataId = ole.binaryDataId,
+              let payload = imageStore.data(forBinItemId: binaryDataId),
+              let xml = CoreHwp.HwpEmbeddedChart.chartXML(fromOLEPayload: payload)
+        else { return nil }
+        return HwpChartParser.parse(xml: xml)
+    }
+
+    /// 수식 (eqed) 컨트롤을 EQEDIT 스크립트 근사 텍스트로 방출한다.
+    /// 스크립트가 비어 있으면 false — 호출자가 개체 경로로 폴백한다.
+    func appendEquationBlock(
+        _ shape: CoreHwp.HwpShapeControl,
+        controlIndex: Int?
+    ) -> Bool {
+        guard let edit = shape.eqEditArray.first else { return false }
+        let commonProperty = shape.commonCtrlProperty ?? CoreHwp.HwpCommonCtrlProperty()
+        let size = objectSize(
+            commonProperty: commonProperty,
+            components: shape.shapeComponentArray
+        )
+        guard let attributed = HwpEquationLayout.attributedString(
+            edit: edit,
+            fallbackSize: size.height,
+            fontResolver: fontResolver
+        ) else { return false }
+        // kind는 개체 (.textbox) — 인라인 앵커 개체는 자기 문단 text 블록과
+        // 겹치는 것이 정상이라 text-text 겹침 검사 대상이 아니어야 한다
+        appendAnchoredBlock(
+            kind: .textbox,
+            size: size,
+            payload: nil,
+            commonProperty: commonProperty,
+            attributedText: [attributed],
+            controlIndex: controlIndex
+        )
+        return true
+    }
+
     func objectSize(
         commonProperty: CoreHwp.HwpCommonCtrlProperty,
         components: [CoreHwp.HwpShapeComponent]
@@ -1738,8 +1920,12 @@ private extension HwpPaginator {
         var width = HwpUnits.points(fromHwpUnitU: commonProperty.width)
         var height = HwpUnits.points(fromHwpUnitU: commonProperty.height)
         if width <= 0 || height <= 0, let detail = components.first?.detail {
-            if width <= 0 { width = HwpUnits.points(fromHwpUnitU: detail.currentWidth) }
-            if height <= 0 { height = HwpUnits.points(fromHwpUnitU: detail.currentHeight) }
+            if width <= 0 {
+                width = HwpUnits.points(fromHwpUnitU: detail.currentWidth)
+            }
+            if height <= 0 {
+                height = HwpUnits.points(fromHwpUnitU: detail.currentHeight)
+            }
         }
         return CGSize(width: max(1, width), height: max(1, height))
     }
@@ -1814,7 +2000,8 @@ private extension HwpPaginator {
     struct ObjectBlockSpec {
         let kind: HwpBlockKind
         let size: CGSize
-        let payload: HwpBlockPayload
+        /// nil이면 payload 없는 순수 텍스트 블록 (수식 근사 등 — drawText만)
+        let payload: HwpBlockPayload?
         let attributedString: NSAttributedString?
         let instanceId: UInt32
     }
@@ -1822,7 +2009,7 @@ private extension HwpPaginator {
     func appendAnchoredBlock(
         kind: HwpBlockKind,
         size: CGSize,
-        payload: HwpBlockPayload,
+        payload: HwpBlockPayload?,
         commonProperty: CoreHwp.HwpCommonCtrlProperty,
         attributedText: [NSAttributedString] = [],
         controlIndex: Int? = nil
@@ -1899,7 +2086,7 @@ private extension HwpPaginator {
     private func appendFlowBlock(
         kind: HwpBlockKind,
         size: CGSize,
-        payload: HwpBlockPayload,
+        payload: HwpBlockPayload?,
         attributedString: NSAttributedString?,
         instanceId: UInt32
     ) {
@@ -1991,7 +2178,9 @@ private extension HwpPaginator {
         guard !strings.isEmpty else { return nil }
         let combined = NSMutableAttributedString()
         for (offset, string) in strings.enumerated() {
-            if offset > 0 { combined.append(NSAttributedString(string: "\n")) }
+            if offset > 0 {
+                combined.append(NSAttributedString(string: "\n"))
+            }
             combined.append(string)
         }
         return combined
@@ -2281,7 +2470,61 @@ private extension HwpPaginator {
     /// 문단(과 컨테이너 안 문단)의 각주를 이 페이지 몫으로 수집한다.
     /// 표 분할 등 다른 컨트롤 방출이 페이지를 넘기기 전에 호출해
     /// 각주를 참조 위치의 페이지에 귀속시킨다.
-    func collectFootnotes(from paragraph: CoreHwp.HwpParagraph, depth: Int = 0) {
+    /// 문단의 메모 (댓글) 필드를 이 페이지의 풍선 목록에 수집한다.
+    /// 앵커 y는 방금 배치한 문단 텍스트 블록의 상단 (풍선 본문 줄이 앵커
+    /// 줄과 나란— 한글.app 실측). 메모 본문은 MEMO_LIST 뒤 문단 자식.
+    func collectMemos(from paragraph: CoreHwp.HwpParagraph) {
+        guard let ctrls = paragraph.ctrlHeaderArray else { return }
+        let memoFields: [CoreHwp.HwpFieldControl] = ctrls.compactMap {
+            if case let .memo(field) = $0 {
+                field
+            } else {
+                nil
+            }
+        }
+        guard !memoFields.isEmpty else { return }
+        let anchorY = currentBlocks.last { $0.kind == .text }?.frame.minY
+            ?? currentPageGeometry.contentFrame.minY
+        let bodies = (paragraph.memoParagraphArray ?? []).map { memoParagraph in
+            HwpTextRunBuilder(index: index, fontResolver: fontResolver)
+                .build(paragraph: memoParagraph)
+                .string
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        for (fieldIndex, field) in memoFields.enumerated() {
+            pendingMemoBalloons.append(HwpMemoPanelPainter.Balloon(
+                anchorY: anchorY,
+                author: field.memoParameter?.author ?? "",
+                dateText: Self.memoDateText(field.memoParameter),
+                body: fieldIndex < bodies.count ? bodies[fieldIndex] : ""
+            ))
+        }
+    }
+
+    /// 메모 필드 파라미터의 FILETIME (100ns since 1601, low/high DWORD 순)을
+    /// 한글.app 풍선 헤더 형식 "yyyy/MM/dd HH:mm"으로 만든다.
+    static func memoDateText(_ parameter: CoreHwp.HwpMemoFieldParameter?) -> String {
+        guard let fields = parameter?.fields, fields.count >= 4,
+              let low = UInt64(fields[2]), let high = UInt64(fields[3]),
+              low <= UInt64(UInt32.max), high <= UInt64(UInt32.max)
+        else { return "" }
+        let ticks = (high << 32) | low
+        let unixSeconds = Double(ticks) / 10_000_000 - 11_644_473_600
+        guard unixSeconds > 0 else { return "" }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy/MM/dd HH:mm"
+        return formatter.string(from: Date(timeIntervalSince1970: unixSeconds))
+    }
+
+    /// includeTableCells: 표 셀 안 각주 포함 여부. 본문 top-level 걷기에서는
+    /// false — 셀 각주는 그 행이 실리는 페이지에서 수집한다 (한글: 참조 행
+    /// 페이지 귀속 — 헌법주석 p485 실측). 셀 문단 걷기 (표 배치 시)는 true.
+    func collectFootnotes(
+        from paragraph: CoreHwp.HwpParagraph,
+        depth: Int = 0,
+        includeTableCells: Bool = true
+    ) {
         guard let ctrls = paragraph.ctrlHeaderArray else { return }
         for ctrl in ctrls {
             switch ctrl {
@@ -2293,8 +2536,32 @@ private extension HwpPaginator {
                 break
             }
             guard depth < 3 else { continue }
+            if !includeTableCells, case .table = ctrl {
+                continue
+            }
             for (nested, _) in childParagraphs(of: ctrl) where nested.ctrlHeaderArray != nil {
-                collectFootnotes(from: nested, depth: depth + 1)
+                collectFootnotes(
+                    from: nested,
+                    depth: depth + 1,
+                    includeTableCells: includeTableCells
+                )
+            }
+        }
+    }
+
+    /// 표 셀 각주를 수집한다. rows가 nil이면 전체, 아니면 해당 grid 행만
+    /// (행 주소 없는 셀은 첫 세그먼트에서 수집).
+    func collectTableCellFootnotes(_ table: CoreHwp.HwpTable, rows: ClosedRange<Int>?) {
+        for cell in table.cellArray {
+            if let rows {
+                if let property = cell.header.cellProperty {
+                    guard rows.contains(Int(property.rowAddress)) else { continue }
+                } else {
+                    guard rows.lowerBound == 0 else { continue }
+                }
+            }
+            for paragraph in cell.paragraphArray {
+                collectFootnotes(from: paragraph, depth: 1)
             }
         }
     }
@@ -2433,6 +2700,10 @@ private extension HwpPaginator {
                 }
             }
             guard depth < 3 else { continue }
+            // 셀 각주는 행이 실리는 페이지에서 수집/예약되므로 예측에서도 제외
+            if case .table = ctrl {
+                continue
+            }
             for (nested, _) in childParagraphs(of: ctrl) where nested.ctrlHeaderArray != nil {
                 total += anticipatedFootnoteBodyHeight(
                     for: nested,
@@ -2455,7 +2726,9 @@ private extension HwpPaginator {
             widthCenti: Int(width * 100),
             number: number
         )
-        if let cached = footnoteHeightCache[key] { return cached }
+        if let cached = footnoteHeightCache[key] {
+            return cached
+        }
 
         let textRunBuilder = HwpTextRunBuilder(index: index, fontResolver: fontResolver)
         let attributed = textRunBuilder.build(
@@ -2487,11 +2760,15 @@ private extension HwpPaginator {
         // 이미 그 페이지 각주 공간을 반영하므로, 각주는 페이지 하단 기준으로
         // 그대로 쌓는다 — 하한을 강제해 이월시키면 한글에 없는 각주 전용
         // 페이지가 연쇄로 생긴다 (헌법주석 실측 1,031 → 1,054).
+        // 절대 캐시 모드에선 절반 상한도 두지 않는다 — 한글이 확정한 페이지의
+        // 각주는 참조 페이지에 전부 둔다 (이월 예약이 한글에 없는 페이지
+        // 절단을 만든다 — 헌법주석 p485 실측 1,031 → 1,030).
         let placement = footnoteLayout.place(
             footnotes: pendingFootnotes,
             onPage: currentPageGeometry,
             index: index,
-            footnoteShape: currentSectionDef?.footNoteShape
+            footnoteShape: currentSectionDef?.footNoteShape,
+            limitsAreaToHalfContent: !absoluteCacheMode
         )
         for block in placement.blocks {
             currentBlocks.append(AnyHwpBlock(
@@ -2526,18 +2803,29 @@ private extension HwpPaginator {
             pageNumber: pageIndex + 1
         )
         let paintList = paintListBuilder.build(for: page, index: index)
+        // 메모 풍선은 종이 밖 오른쪽 패널 (한글.app 편집 뷰) — 페이지
+        // paintList와 분리해 인쇄 뷰·PrvImage 정합에는 영향을 주지 않는다.
+        let memoPanel = pendingMemoBalloons.isEmpty
+            ? nil
+            : HwpMemoPanelPainter.panel(
+                balloons: pendingMemoBalloons,
+                pageSize: currentPageGeometry.pageSize
+            )
+        pendingMemoBalloons = []
         cachedPages[pageIndex] = HwpPage(
             size: page.size,
             margins: page.margins,
             blocks: page.blocks,
             pageNumber: page.pageNumber,
-            paintList: paintList
+            paintList: paintList,
+            memoPanel: memoPanel
         )
         currentBlocks = []
         // 페이지가 넘어가면 이전 페이지 문단의 줄 앵커 좌표는 무효다.
         currentParagraphContext = nil
-        // 새 페이지: 절대 캐시 loc 추적을 리셋한다.
+        // 새 페이지: 절대 캐시 loc 추적과 stale 캐시 보정을 리셋한다.
         lastAbsoluteCacheLoc = Int32.min
+        absoluteCacheStaleOffset = 0
         // 새 페이지: 현재 단 정의로 콘텐츠 상단부터 새 밴드를 연다.
         openColumnBand(top: currentPageGeometry.contentFrame.minY)
         // 이월된 각주가 새 페이지에서 차지할 영역을 다시 예약한다.

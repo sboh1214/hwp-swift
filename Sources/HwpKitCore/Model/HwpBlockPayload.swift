@@ -217,4 +217,51 @@ public enum HwpBlockPayload: @unchecked Sendable, Hashable {
     case footnote(HwpFootnoteBlock)
     case shape(HwpShapeGeometry)
     case image(HwpImageBlockInfo)
+    case chart(HwpChartFrame)
+}
+
+/// OLE 내장 차트 (OOXMLChartContents)에서 파싱한 렌더용 차트 데이터.
+///
+/// 한컴의 실제 차트 엔진 렌더 (3D 원근·음영)는 재현 범위 밖 — 계열/값/제목/
+/// 범례를 같은 기하 배치로 근사해 그린다 (빈 상자보다 한글.app에 가깝다).
+public struct HwpChartFrame: Sendable, Hashable {
+    public struct Series: Sendable, Hashable {
+        public let name: String
+        public let values: [Double]
+
+        public init(name: String, values: [Double]) {
+            self.name = name
+            self.values = values
+        }
+    }
+
+    /// 차트 종류 (플롯 렌더 형태 선택)
+    public enum Kind: Sendable, Hashable {
+        /// 세로 막대 (barDir=col). cone=true면 원뿔 마커 (3D 원뿔 차트 근사)
+        case bar(cone: Bool)
+    }
+
+    /// 제목 (c:title). 자동 제목이면 한컴 기본값 "차트 제목".
+    public let title: String?
+    /// 카테고리 축 라벨 (항목 1…)
+    public let categories: [String]
+    /// 계열 (이름 + 카테고리별 값)
+    public let series: [Series]
+    /// 범례 표시 여부 (c:legend)
+    public let showLegend: Bool
+    public let kind: Kind
+
+    public init(
+        title: String?,
+        categories: [String],
+        series: [Series],
+        showLegend: Bool,
+        kind: Kind
+    ) {
+        self.title = title
+        self.categories = categories
+        self.series = series
+        self.showLegend = showLegend
+        self.kind = kind
+    }
 }
