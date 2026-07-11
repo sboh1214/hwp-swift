@@ -26,10 +26,10 @@ public enum HwpAttributedStringKey {
     /// 글자 위치 (표 33 location) — 줄 안 세로 오프셋 (pt, 양수 = 위).
     /// kCTBaselineOffset은 CTFramesetter가 무시하므로 직접 그린다.
     public static let glyphBaselineOffset = NSAttributedString.Key("hwp.glyphBaselineOffset")
-    /// 외곽선 글자 — 굵은 윤곽 스트로크 + 흰 채움 2-pass로 그린다
-    public static let outlineBody = NSAttributedString.Key("hwp.outlineBody")
     /// 밑줄 여부 — CT 밑줄 대신 렌더러가 0.4pt 헤어라인으로 직접 그린다
     public static let underlineStyle = NSAttributedString.Key("hwp.underlineStyle")
+    /// 상대크기 적용 전 기본 글자 크기 (pt) — % 줄 간격의 기준
+    public static let baseFontSize = NSAttributedString.Key("hwp.baseFontSize")
     /// 연속 그림자 — 본체에서 오프셋까지 이어지는 두꺼운 그림자
     public static let shadowContinuous = NSAttributedString.Key("hwp.shadowContinuous")
     /// 변경 추적 삽입 밑줄 — 한글은 베이스라인 아래 ~0.22em에 그린다

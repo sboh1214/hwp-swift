@@ -23,7 +23,8 @@ enum HwpChartPainter {
         HwpRGBColor(red: 0.55, green: 0.74, blue: 0.42), // 초록 계열 (미실측 — 근사)
     ]
 
-    static let gridColor = HwpRGBColor(red: 0.75, green: 0.75, blue: 0.75).cgColor
+    /// 실물 격자선 코어 회색 133/255 (라운드 6 픽셀 실측)
+    static let gridColor = HwpRGBColor(red: 0.52, green: 0.52, blue: 0.52).cgColor
 
     /// 3D 상자 기하 — 차트 프레임 대비 비율은 전부 실물 캡처 실측값.
     /// 바닥 = FL(앞왼)→FR(앞오)→BR(뒤오)→BL(뒤왼) 평행사변형,
@@ -121,7 +122,7 @@ enum HwpChartPainter {
     ) -> HwpPaintCommand {
         let titleFont = fontResolver.resolve(
             faceName: "함초롬돋움", script: .korean,
-            size: max(9, frame.height * 0.063)
+            size: max(9, frame.height * 0.071)
         )
         let attributed = label(title, font: titleFont)
         let width = labelWidth(attributed)
@@ -129,7 +130,7 @@ enum HwpChartPainter {
             attributedString: attributed,
             origin: CGPoint(
                 x: frame.midX - width / 2,
-                y: frame.minY + frame.height * 0.045
+                y: frame.minY + frame.height * 0.049
             ),
             lineWidth: width + 2
         )
@@ -156,7 +157,7 @@ enum HwpChartPainter {
             commands.append(.drawText(
                 attributedString: attributed,
                 origin: CGPoint(
-                    x: box.frontAxisX - width - 4,
+                    x: box.frontAxisX - width - 12,
                     y: frontY - box.labelSize * 0.55
                 ),
                 lineWidth: width + 2
@@ -186,7 +187,8 @@ enum HwpChartPainter {
         // 실물 (2026-07-10 그룹1 픽셀 실측): 원뿔 밑면 폭 = 그룹폭의 0.30으로
         // 전 계열 동일 (깊이 감쇠 없음 — 평행 투영), 가로 위치도 그룹 안
         // 고정 지점 (0.625 그룹폭)이고 계열 분리는 깊이 이동이 전부 만든다
-        let markerWidth = box.groupWidth * 0.35
+        // 실물 (라운드 6): 밑면 폭 = 카테고리 간격의 0.42 (인접 원뿔 맞닿음)
+        let markerWidth = box.groupWidth * 0.42
         let isCone: Bool = switch chart.kind {
         case let .bar(cone): cone
         }
@@ -205,8 +207,10 @@ enum HwpChartPainter {
                 let height = CGFloat(value / box.axisMax) * box.wallHeight * 1.09
                 guard height > 0 else { continue }
                 let groupStart = box.frontAxisX + box.groupWidth * CGFloat(categoryIndex)
+                // depthStep 시작 오프셋 (+0.15)의 가로 밀림을 보상해 실물의
+                // 원뿔 x 위치를 유지한다 (라운드 6 실측: 원뿔만 +0.017W)
                 let centerX = groupStart + box.groupWidth * 0.625
-                    + box.depth.width * step
+                    + box.depth.width * (step - 0.15)
                 commands.append(.drawPath(
                     path: markerPath(
                         centerX: centerX, baseY: baseY,
@@ -237,7 +241,7 @@ enum HwpChartPainter {
                 attributedString: attributed,
                 origin: CGPoint(
                     x: centerX - width / 2,
-                    y: box.floorFrontY + box.labelSize * 1.2
+                    y: box.floorFrontY + box.labelSize * 1.55
                 ),
                 lineWidth: width + 2
             )
@@ -269,7 +273,7 @@ enum HwpChartPainter {
             .map { labelWidth(label($0.name, font: box.labelFont)) }
             .max() ?? 0
         let x = min(
-            frame.minX + frame.width * 0.917,
+            frame.minX + frame.width * 0.900,
             frame.maxX - 4 - box.labelSize * 1.1 - maxNameWidth
         )
         for (index, series) in chart.series.enumerated() {

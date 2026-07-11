@@ -119,6 +119,20 @@ extension HwpParagraphLayout {
 
         /// 문자열 run들의 최대 글꼴 크기 (비율 줄 간격의 기준 글자 크기)
         static func maxFontSize(in attributedString: NSAttributedString) -> CGFloat {
+            // % 줄 간격의 기준은 상대크기 적용 전 기본 크기다 (한글 실물:
+            // 상대크기 170% 줄도 전진량이 일반 줄과 동일 — CharShape 실측).
+            var maxBase: CGFloat = 0
+            attributedString.enumerateAttribute(
+                HwpAttributedStringKey.baseFontSize,
+                in: NSRange(location: 0, length: attributedString.length)
+            ) { value, _, _ in
+                if let number = value as? NSNumber {
+                    maxBase = max(maxBase, CGFloat(number.doubleValue))
+                }
+            }
+            if maxBase > 0 {
+                return maxBase
+            }
             var maxSize: CGFloat = 0
             attributedString.enumerateAttribute(
                 kCTFontAttributeName as NSAttributedString.Key,

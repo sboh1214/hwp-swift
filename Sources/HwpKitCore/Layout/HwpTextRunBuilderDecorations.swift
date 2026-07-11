@@ -32,7 +32,7 @@ extension HwpTextRunBuilder {
             attributes[HwpAttributedStringKey.shadeColor] = shade.cgColor
         }
         if shape.property.shadowType != .none {
-            attributes[HwpAttributedStringKey.shadowColor] = shape.shadowColor.cgColor
+            attributes[HwpAttributedStringKey.shadowColor] = shadowColor(for: shape)
             // 실측 (CharShapeProperty 실물): 한글 그림자 오프셋은 선언 %의
             // 약 1.5배 위치에 찍힌다 (10% 선언 → ~15% 실측)
             attributes[HwpAttributedStringKey.shadowOffsetX] = NSNumber(
@@ -45,12 +45,11 @@ extension HwpTextRunBuilder {
                 attributes[HwpAttributedStringKey.shadowContinuous] = NSNumber(value: true)
             }
         }
-        // 외곽선 (표 33): 렌더러가 굵은 윤곽 스트로크 + 흰 채움 2-pass로
-        // 그린다. run 자체 색이 컨텍스트 색을 덮지 않도록 from-context.
+        // 외곽선 (표 33): CT stroke 전용 (양수 %) — 실물은 가는 검은
+        // 윤곽선의 속 빈 글자 (라운드 6 실측)
         if shape.property.borderlineType != CoreHwp.HwpBorderLineType.none {
-            attributes[HwpAttributedStringKey.outlineBody] = NSNumber(value: true)
-            attributes[kCTForegroundColorFromContextAttributeName
-                as NSAttributedString.Key] = NSNumber(value: true)
+            attributes[kCTStrokeWidthAttributeName as NSAttributedString.Key] =
+                NSNumber(value: 4.0)
         }
         // 양각/음각 — 밝은/어두운 오프셋 사본 (HwpPageLayer 3-pass).
         // 글리프 색을 컨텍스트에서 바꾸도록 from-context로 전환한다.
@@ -71,5 +70,21 @@ extension HwpTextRunBuilder {
         } else if shape.property.isSubscript {
             applySubscript(to: &attributes, shape: shape)
         }
+    }
+}
+
+extension HwpTextRunBuilder {
+    /// 그림자 색: 연속 그림자는 실물에서 더 진한 회색으로 획에 밀착된다
+    /// (라운드 6 실측: 비연속 연회색 분리 vs 연속 중간회색 밀착)
+    func shadowColor(for shape: CoreHwp.HwpCharShape) -> CGColor {
+        guard shape.property.shadowType == .continuous else {
+            return shape.shadowColor.cgColor
+        }
+        let base = shape.shadowColor
+        return CoreHwp.HwpColor(
+            Int(base.red) * 55 / 100,
+            Int(base.green) * 55 / 100,
+            Int(base.blue) * 55 / 100
+        ).cgColor
     }
 }

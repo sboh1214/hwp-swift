@@ -43,7 +43,9 @@ public extension HwpColor {
             let green = CGFloat(green) / CGFloat(255)
             let blue = CGFloat(blue) / CGFloat(255)
             let alpha = CGFloat(1)
-            return CGColor(red: red, green: green, blue: blue, alpha: alpha)
+            // CGColor(red:...)는 GenericRGB를 만들어 sRGB 변환 시 순색이
+            // 시프트된다 (#0000ff→#0433ff — 실물 대조 실측). sRGB로 고정.
+            return CGColor(srgbRed: red, green: green, blue: blue, alpha: alpha)
         }
     #endif
 

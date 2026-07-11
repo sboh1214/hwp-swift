@@ -22,7 +22,6 @@ extension HwpPageLayer {
             return attributes[HwpAttributedStringKey.shadowColor] != nil
                 || attributes[HwpAttributedStringKey.reliefStyle] != nil
                 || attributes[HwpAttributedStringKey.glyphBaselineOffset] != nil
-                || attributes[HwpAttributedStringKey.outlineBody] != nil
         }
         if needsPerRunDrawing {
             for run in runs {
@@ -54,14 +53,27 @@ extension HwpPageLayer {
         ctx.setFillColor(shade as! CGColor) // swiftlint:disable:this force_cast
         ctx.fill(bounds)
         if let stroke = attributes[HwpAttributedStringKey.memoAnchorStroke] {
-            let path = CGPath(
-                roundedRect: bounds.insetBy(dx: 0.3, dy: 0.3),
-                cornerWidth: 1.5, cornerHeight: 1.5, transform: nil
+            // 실물 (라운드 6): 사방 테두리가 아니라 오른쪽 끝의 둥근 꺾쇠
+            // (범위 종료 표식)만 진하게 그려진다
+            let bracket = CGMutablePath()
+            let radius: CGFloat = 1.2
+            bracket.move(to: CGPoint(x: bounds.maxX - radius, y: bounds.minY))
+            bracket.addArc(
+                tangent1End: CGPoint(x: bounds.maxX, y: bounds.minY),
+                tangent2End: CGPoint(x: bounds.maxX, y: bounds.minY + radius),
+                radius: radius
+            )
+            bracket.addLine(to: CGPoint(x: bounds.maxX, y: bounds.maxY - radius))
+            bracket.addArc(
+                tangent1End: CGPoint(x: bounds.maxX, y: bounds.maxY),
+                tangent2End: CGPoint(x: bounds.maxX - radius, y: bounds.maxY),
+                radius: radius
             )
             ctx.saveGState()
-            ctx.addPath(path)
+            ctx.addPath(bracket)
             ctx.setStrokeColor(stroke as! CGColor) // swiftlint:disable:this force_cast
-            ctx.setLineWidth(0.6)
+            ctx.setLineWidth(0.9)
+            ctx.setLineCap(.round)
             ctx.strokePath()
             ctx.restoreGState()
         }
@@ -76,10 +88,6 @@ extension HwpPageLayer {
         if let shift = (attributes[HwpAttributedStringKey.glyphBaselineOffset] as? NSNumber) {
             // 글자 위치 (표 33): 줄 배치는 그대로, 글리프만 세로 이동
             origin.y += CGFloat(shift.doubleValue)
-        }
-        if attributes[HwpAttributedStringKey.outlineBody] != nil {
-            drawOutlineRun(run, attributes: attributes, origin: origin, in: ctx)
-            return
         }
         if let reliefStyle = (attributes[HwpAttributedStringKey.reliefStyle] as? NSNumber)?
             .intValue
@@ -129,32 +137,6 @@ extension HwpPageLayer {
         CTRunDraw(run, ctx, CFRange(location: 0, length: 0))
         let face = attributes[HwpAttributedStringKey.reliefFaceColor]
         setDecorationFillColor(face, in: ctx)
-        ctx.textPosition = origin
-        CTRunDraw(run, ctx, CFRange(location: 0, length: 0))
-    }
-
-    /// 외곽선 (표 33): 한글은 글자를 두껍게 확장한 뒤 속을 파낸다 —
-    /// 굵은 윤곽 스트로크 후 흰 채움 (CharShapeProperty 실물: 흰 속 +
-    /// 검정 컨투어. 헤어라인 글꼴에서는 CT 양수 stroke만으로 속이 안 남는다).
-    func drawOutlineRun(
-        _ run: CTRun,
-        attributes: [NSAttributedString.Key: Any],
-        origin: CGPoint,
-        in ctx: CGContext
-    ) {
-        let color = attributes[kCTForegroundColorAttributeName as NSAttributedString.Key]
-        let size = runFont(attributes).map(CTFontGetSize) ?? 10
-        ctx.setTextDrawingMode(.stroke)
-        ctx.setLineWidth(max(0.8, size * 0.1))
-        if let color, CFGetTypeID(color as CFTypeRef) == CGColor.typeID {
-            ctx.setStrokeColor(color as! CGColor) // swiftlint:disable:this force_cast
-        } else {
-            ctx.setStrokeColor(CGColor(gray: 0, alpha: 1))
-        }
-        ctx.textPosition = origin
-        CTRunDraw(run, ctx, CFRange(location: 0, length: 0))
-        ctx.setTextDrawingMode(.fill)
-        ctx.setFillColor(CGColor(gray: 1, alpha: 1))
         ctx.textPosition = origin
         CTRunDraw(run, ctx, CFRange(location: 0, length: 0))
     }

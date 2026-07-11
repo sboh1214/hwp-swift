@@ -366,6 +366,8 @@ private extension HwpTextRunBuilder {
         let location = CGFloat(value(at: slot, in: shape.faceLocation, default: 0))
         var attributes: [NSAttributedString.Key: Any] = [
             kCTFontAttributeName as NSAttributedString.Key: font,
+            // % 줄 간격 기준 = 상대크기 적용 전 기본 크기 (한글 실물)
+            HwpAttributedStringKey.baseFontSize: NSNumber(value: Double(baseSize)),
             kCTForegroundColorAttributeName as NSAttributedString.Key: shape.faceColor.cgColor,
             kCTKernAttributeName as NSAttributedString.Key: NSNumber(
                 value: Double(spacing * size / 100)
