@@ -96,7 +96,12 @@ extension HwpTextRunBuilder {
                 {
                     // swiftlint:disable:next force_cast
                     let font = fontValue as! CTFont
-                    let kern = Self.fixedSpaceKern(for: font)
+                    // 첨자 run은 폰트가 축소돼 있지만 공백 폭 목표는 원
+                    // 기준 크기의 0.5em (라운드 11 실측: 첨자 행 공백 =
+                    // 본문 공백)
+                    let base = (attrs[HwpAttributedStringKey.baseFontSize]
+                        as? NSNumber).map { CGFloat($0.doubleValue) }
+                    let kern = Self.fixedSpaceKern(for: font, targetEm: base)
                     if abs(kern) > 0.01 {
                         attributed.addAttribute(
                             kCTKernAttributeName as NSAttributedString.Key,
@@ -112,13 +117,13 @@ extension HwpTextRunBuilder {
 
     /// 공백 글리프의 고유 advance와 0.5em 목표의 차 (폰트별 캐시 없이 즉석 계산 —
     /// CTFontGetAdvancesForGlyphs는 가볍고 chunk 단위로만 불린다)
-    static func fixedSpaceKern(for font: CTFont) -> CGFloat {
+    static func fixedSpaceKern(for font: CTFont, targetEm: CGFloat? = nil) -> CGFloat {
         var character: UniChar = 0x20
         var glyph = CGGlyph()
         guard CTFontGetGlyphsForCharacters(font, &character, &glyph, 1) else { return 0 }
         var advance = CGSize.zero
         CTFontGetAdvancesForGlyphs(font, .horizontal, &glyph, &advance, 1)
-        let target = CTFontGetSize(font) * 0.5
+        let target = (targetEm ?? CTFontGetSize(font)) * 0.5
         return target - advance.width
     }
 }

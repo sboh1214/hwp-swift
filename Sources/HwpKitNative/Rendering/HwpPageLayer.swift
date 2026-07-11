@@ -233,47 +233,15 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
         }
     }
 
-    /// 한글 줄 모델의 베이스라인은 글자 크기의 ~0.85배 지점이다 (HCR 폰트의
-    /// CT ascent 1.07em보다 높음 — plain-text 실물 실측: 첫 줄 잉크가 1.1mm
-    /// 위). CT ascent와의 차이만큼 줄을 위로 올린다 (y-up 공간에서 +y).
-    static func baselineLift(of line: CTLine) -> CGFloat {
-        // 폰트 ascent만 본다 — 인라인 개체 (run delegate)의 ascent는 줄
-        // 높이 예약일 뿐이다. 키 큰 개체가 있는 줄에서 한글은 텍스트
-        // 베이스라인을 개체 하단보다 폰트 디센트만큼 위에 둔다 (CCL 실물
-        // 라운드 10: 글리프-밑줄 사이 0.5em 간격).
-        var maxSize: CGFloat = 0
-        var maxAscent: CGFloat = 0
-        var maxDescent: CGFloat = 0
-        var hasDelegate = false
-        if let runs = CTLineGetGlyphRuns(line) as? [CTRun] {
-            for run in runs {
-                let attributes = CTRunGetAttributes(run) as? [NSAttributedString.Key: Any]
-                guard attributes?[kCTRunDelegateAttributeName
-                    as NSAttributedString.Key] == nil
-                else {
-                    hasDelegate = true
-                    continue
-                }
-                guard let value = attributes?[kCTFontAttributeName as NSAttributedString.Key],
-                      CFGetTypeID(value as CFTypeRef) == CTFontGetTypeID()
-                else { continue }
-                // swiftlint:disable:next force_cast
-                let font = value as! CTFont
-                maxSize = max(maxSize, CTFontGetSize(font))
-                maxAscent = max(maxAscent, CTFontGetAscent(font))
-                maxDescent = max(maxDescent, CTFontGetDescent(font))
-            }
-        }
-        guard maxSize > 0 else { return 0 }
-        let lift = max(0, maxAscent - maxSize * 0.85)
-        return hasDelegate ? lift + maxDescent : lift
-    }
-
     /// paint list가 해당 BinItem 이미지를 참조하는지 (targeted redraw 판단용)
     public func containsImageReference(_ binItemId: UInt32) -> Bool {
         guard let paintList else { return false }
         return paintList.commands.contains {
-            if case let .drawImageReference(key, _, _) = $0 { key == binItemId } else { false }
+            if case let .drawImageReference(key, _, _) = $0 {
+                key == binItemId
+            } else {
+                false
+            }
         }
     }
 

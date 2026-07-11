@@ -31,9 +31,15 @@ extension HwpPageLayer {
             CTLineDraw(line, ctx)
         }
 
+        // 키 큰 인라인 개체 줄에서 밑줄은 올라간 베이스라인이 아니라 개체
+        // 하단 (lift 전 위치)에 남는다 (공공누리 실물)
+        let underlineOrigin = CGPoint(
+            x: origin.x,
+            y: origin.y - HwpPageLayer.underlineReturnDrop(of: line)
+        )
         for run in runs {
             // 밑줄은 CT 대신 항상 직접 (실물 헤어라인 두께 정합)
-            drawUnderlineIfNeeded(run, lineOrigin: origin, in: ctx)
+            drawUnderlineIfNeeded(run, lineOrigin: underlineOrigin, in: ctx)
             drawStrikethroughIfNeeded(run, lineOrigin: origin, in: ctx)
             drawEmphasisIfNeeded(run, lineOrigin: origin, in: ctx)
             drawTrackInsertUnderlineIfNeeded(run, lineOrigin: origin, in: ctx)
@@ -197,7 +203,9 @@ extension HwpPageLayer {
             )
             guard !bounds.isNull, bounds.width > 0.1 else { continue }
             let centerX = lineOrigin.x + positions[index].x + advance / 2
-            let dotY = lineOrigin.y + ascent + radius + 0.5
+            // 실물: 점 중심이 글리프 잉크 상단에서 ~0.26em (라운드 11 실측
+            // — CT ascent 기준 배치는 0.2em 더 높았다)
+            let dotY = lineOrigin.y + bounds.maxY + (ascent + descent) * 0.13
             ctx.fillEllipse(in: CGRect(
                 x: centerX - radius, y: dotY - radius,
                 width: radius * 2, height: radius * 2

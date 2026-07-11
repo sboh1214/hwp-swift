@@ -49,8 +49,8 @@ public struct HwpControlMarkerReplacement: Sendable, Hashable {
 }
 
 public struct HwpTextRunBuilder {
-    private let index: HwpIndex
-    private let fontResolver: HwpFontResolver
+    let index: HwpIndex
+    let fontResolver: HwpFontResolver
 
     public init(index: HwpIndex, fontResolver: HwpFontResolver) {
         self.index = index
@@ -122,7 +122,7 @@ public struct HwpTextRunBuilder {
     }
 }
 
-private extension HwpTextRunBuilder {
+extension HwpTextRunBuilder {
     // swiftlint:disable:next function_parameter_count
     func emitControl(
         _ hwpChar: CoreHwp.HwpChar,
@@ -176,31 +176,7 @@ private extension HwpTextRunBuilder {
     }
 }
 
-private extension HwpTextRunBuilder {
-    /// 글머리표 (표 44 heading 3): 문자 + 공백 전치
-    func appendBulletHeading(
-        for paragraph: CoreHwp.HwpParagraph,
-        to output: NSMutableAttributedString
-    ) {
-        guard let paraShape = index.paraShape(id: UInt32(paragraph.paraHeader.paraShapeId)),
-              paraShape.property1Info.hasBulletHeading,
-              paraShape.numberingOrBulletId > 0,
-              // 글머리표 참조는 1-based (0 = 없음)
-              let bullet = index.bullet(id: UInt32(paraShape.numberingOrBulletId) - 1),
-              !bullet.char.isEmpty
-        else { return }
-        let shapeId = activeShapeId(at: 0, in: paragraph.paraCharShape)
-        let shape = resolvedShape(id: shapeId, paragraph: paragraph)
-        let bulletAttributes = attributes(
-            for: shape,
-            script: detectScript(in: bullet.char)
-        )
-        output.append(NSAttributedString(
-            string: bullet.char + " ",
-            attributes: bulletAttributes
-        ))
-    }
-
+extension HwpTextRunBuilder {
     struct Chunk {
         var shapeId: UInt32
         var script: HwpScript?
