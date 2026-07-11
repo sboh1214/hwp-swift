@@ -94,7 +94,9 @@ extension HwpTextRunBuilder {
                 nil
             )
         }
-        let baselineKey = kCTBaselineOffsetAttributeName as NSAttributedString.Key
+        // CTFramesetter는 kCTBaselineOffset을 무시한다 — 렌더가 반영하는
+        // 커스텀 키 (drawRun 글리프 세로 이동)로 싣는다
+        let baselineKey = HwpAttributedStringKey.glyphBaselineOffset
         let existing = (attributes[baselineKey] as? NSNumber)?.doubleValue ?? 0
         attributes[baselineKey] = NSNumber(
             value: existing + Double(baseSize * Self.superscriptBaselineRatio)
@@ -117,7 +119,7 @@ extension HwpTextRunBuilder {
                 nil
             )
         }
-        let baselineKey = kCTBaselineOffsetAttributeName as NSAttributedString.Key
+        let baselineKey = HwpAttributedStringKey.glyphBaselineOffset
         let existing = (attributes[baselineKey] as? NSNumber)?.doubleValue ?? 0
         attributes[baselineKey] = NSNumber(
             value: existing - Double(baseSize * Self.subscriptBaselineRatio)

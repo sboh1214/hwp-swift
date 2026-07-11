@@ -52,12 +52,6 @@ public struct HwpTextRunBuilder {
     private let index: HwpIndex
     private let fontResolver: HwpFontResolver
 
-    /// 위 첨자 번호의 글꼴 크기 배율/베이스라인 상승 배율 (기준 글자 크기 대비)
-    static let superscriptScale: CGFloat = 0.6
-    static let superscriptBaselineRatio: CGFloat = 0.33
-    /// 아래 첨자 베이스라인 하강 배율
-    static let subscriptBaselineRatio: CGFloat = 0.15
-
     public init(index: HwpIndex, fontResolver: HwpFontResolver) {
         self.index = index
         self.fontResolver = fontResolver
@@ -183,7 +177,7 @@ private extension HwpTextRunBuilder {
 }
 
 private extension HwpTextRunBuilder {
-    /// 문단 머리 글머리표 (표 44 heading 3): 글머리표 문자 + 공백 전치
+    /// 글머리표 (표 44 heading 3): 문자 + 공백 전치
     func appendBulletHeading(
         for paragraph: CoreHwp.HwpParagraph,
         to output: NSMutableAttributedString
@@ -268,8 +262,8 @@ private extension HwpTextRunBuilder {
             string: chunk.text,
             attributes: chunkAttributes
         )
-        // 워드 호환 문서 (표 20)는 폰트 고유 공백 — 한글 문서만 0.5em 고정
         if !shape.property.doesAdjustBlank, !index.isCompatibilityDocument {
+            // 워드 호환 문서 (표 20)는 폰트 고유 공백 — 한글 문서만 0.5em
             Self.applyFixedSpaceWidth(to: attributed)
         }
         output.append(attributed)
@@ -352,7 +346,12 @@ private extension HwpTextRunBuilder {
         let relativeSize = CGFloat(value(at: slot, in: shape.faceRelativeSize, default: 100))
         let size = baseSize * relativeSize / 100
         let faceId = UInt32(value(at: slot, in: shape.faceId, default: 0))
-        let faceName = index.faceName(for: faceId, script: script)?.faceName ?? "Helvetica"
+        var faceName = index.faceName(for: faceId, script: script)?.faceName ?? "Helvetica"
+        // 한글은 명조 계열 폰트의 라틴/숫자를 Times형으로 폴백 (noori 실물;
+        // 함초롬 계열은 자체 라틴 유지)
+        if script == .english, faceName.contains("명조"), !faceName.contains("함초롬") {
+            faceName = "Times New Roman"
+        }
         var font = fontResolver.resolve(faceName: faceName, script: script, size: size)
         font = copy(font, adding: symbolicTraits(for: shape.property))
         let scaleX = CGFloat(value(at: slot, in: shape.faceScaleX, default: 100)) / 100
@@ -386,10 +385,9 @@ private extension HwpTextRunBuilder {
         if shape.property.isBold,
            !CTFontGetSymbolicTraits(font).contains(.traitBold)
         {
-            // 볼드 페이스 없는 폰트는 합성 볼드 (채움+윤곽) — 굵으면
-            // 세리프 대비가 죽는다 (noori 표 1행 실물)
+            // 볼드 페이스 없는 폰트는 합성 볼드 (채움+윤곽)
             attributes[kCTStrokeWidthAttributeName as NSAttributedString.Key] =
-                NSNumber(value: -1.6)
+                NSNumber(value: -2.2)
         }
         applyShapeDecorations(to: &attributes, shape: shape, size: size)
         return attributes

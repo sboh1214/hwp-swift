@@ -122,3 +122,12 @@ extension HwpTextRunBuilder {
         return target - advance.width
     }
 }
+
+extension HwpTextRunBuilder {
+    /// 위 첨자 글꼴 크기 배율 — 실물 실측 (CharShapeProperty): 본문의 ~67%
+    static let superscriptScale: CGFloat = 0.67
+    /// 위 첨자 베이스라인 상승 배율 (기준 글자 크기 대비)
+    static let superscriptBaselineRatio: CGFloat = 0.33
+    /// 아래 첨자 베이스라인 하강 배율 (실물: 다음 줄 방향 ~0.35줄)
+    static let subscriptBaselineRatio: CGFloat = 0.30
+}

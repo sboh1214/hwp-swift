@@ -60,7 +60,8 @@ enum HwpChartPainter {
         /// 오프셋 = 그룹 간격의 ~0.28배 — 원뿔 밑면이 서로 겹친다.
         func depthStep(seriesCount: Int, seriesIndex: Int) -> CGFloat {
             guard seriesCount > 1 else { return 0.3 }
-            return 0.55 / CGFloat(seriesCount - 1) * CGFloat(seriesIndex)
+            // 계열 1도 바닥 전면선에서 살짝 안쪽에서 시작한다 (실물)
+            return 0.15 + 0.55 / CGFloat(seriesCount - 1) * CGFloat(seriesIndex)
         }
     }
 
@@ -199,7 +200,9 @@ enum HwpChartPainter {
             for (categoryIndex, value) in series.values.enumerated()
                 where categoryIndex < box.categoryCount
             {
-                let height = CGFloat(value / box.axisMax) * box.wallHeight
+                // 실측 (라운드 4): 실물 원뿔 높이는 축 단위 대비 우리보다
+                // ~9% 크다 — 값→높이 계수 보정
+                let height = CGFloat(value / box.axisMax) * box.wallHeight * 1.09
                 guard height > 0 else { continue }
                 let groupStart = box.frontAxisX + box.groupWidth * CGFloat(categoryIndex)
                 let centerX = groupStart + box.groupWidth * 0.625

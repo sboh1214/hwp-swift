@@ -16,12 +16,10 @@ extension HwpTextRunBuilder {
         // 함께 저장되는 조합이고 한글이 밑줄을 그리지 않는다 (CharShape 실물
         // 취소선 색 행 — 시안 취소선 단선만 표시).
         if shape.property.underlineType == .under {
-            // NSUnderlineStyle.single = 1; no AppKit/UIKit in HwpKitCore
-            attributes[.underlineStyle] = NSNumber(value: 1)
+            // CT 밑줄은 두껍다 (실물 헤어라인 대비 3-4배) — 렌더러가
+            // 직접 0.4pt 헤어라인으로 그린다 (전용 키)
+            attributes[HwpAttributedStringKey.underlineStyle] = NSNumber(value: 1)
             attributes[HwpAttributedStringKey.underlineColor] = shape.underlineColor.cgColor
-            // CTLineDraw가 밑줄을 그릴 때 쓰는 색 (없으면 글자색으로 그림)
-            attributes[kCTUnderlineColorAttributeName as NSAttributedString.Key] =
-                shape.underlineColor.cgColor
         }
         if shape.property.strikethrough != 0 {
             attributes[HwpAttributedStringKey.strikethroughStyle] = NSNumber(value: 1)
@@ -47,10 +45,12 @@ extension HwpTextRunBuilder {
                 attributes[HwpAttributedStringKey.shadowContinuous] = NSNumber(value: true)
             }
         }
-        // 외곽선 — 헤어라인 글꼴에서는 CT 양수 stroke만으로 흰 속이 남지
-        // 않는다. 렌더러가 굵은 윤곽 + 흰 채움 2-pass로 그린다 (실물: 흰 속).
+        // 외곽선 (표 33): 렌더러가 굵은 윤곽 스트로크 + 흰 채움 2-pass로
+        // 그린다. run 자체 색이 컨텍스트 색을 덮지 않도록 from-context.
         if shape.property.borderlineType != CoreHwp.HwpBorderLineType.none {
             attributes[HwpAttributedStringKey.outlineBody] = NSNumber(value: true)
+            attributes[kCTForegroundColorFromContextAttributeName
+                as NSAttributedString.Key] = NSNumber(value: true)
         }
         // 양각/음각 — 밝은/어두운 오프셋 사본 (HwpPageLayer 3-pass).
         // 글리프 색을 컨텍스트에서 바꾸도록 from-context로 전환한다.

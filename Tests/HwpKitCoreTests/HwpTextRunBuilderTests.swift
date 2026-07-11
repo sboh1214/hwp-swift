@@ -50,9 +50,12 @@ import XCTest
             let paragraph = paragraph(text: "hello", runs: [(0, 0)])
             let result = builder(shapes: [0: try charShape(property: 0b100)])
                 .build(paragraph: paragraph)
-            let value = result.attribute(.underlineStyle, at: 0, effectiveRange: nil) as? NSNumber
+            // CT 밑줄 대신 렌더러 전용 키 (헤어라인 직접 드로잉)
+            let value = result.attribute(
+                HwpAttributedStringKey.underlineStyle, at: 0, effectiveRange: nil
+            ) as? NSNumber
 
-            expect(value?.intValue) == NSUnderlineStyle.single.rawValue
+            expect(value?.intValue) == 1
         }
 
         func testInlineObjectMarkerCarriesControlIndexAndRunDelegate() {

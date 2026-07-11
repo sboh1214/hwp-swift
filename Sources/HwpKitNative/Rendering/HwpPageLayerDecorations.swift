@@ -28,15 +28,13 @@ extension HwpPageLayer {
             for run in runs {
                 drawRun(run, origin: origin, in: ctx)
             }
-            // CTRunDraw는 밑줄을 그리지 않으므로 직접 보완한다
-            for run in runs {
-                drawUnderlineIfNeeded(run, lineOrigin: origin, in: ctx)
-            }
         } else {
             CTLineDraw(line, ctx)
         }
 
         for run in runs {
+            // 밑줄은 CT 대신 항상 직접 (실물 헤어라인 두께 정합)
+            drawUnderlineIfNeeded(run, lineOrigin: origin, in: ctx)
             drawStrikethroughIfNeeded(run, lineOrigin: origin, in: ctx)
             drawEmphasisIfNeeded(run, lineOrigin: origin, in: ctx)
             drawTrackInsertUnderlineIfNeeded(run, lineOrigin: origin, in: ctx)
@@ -96,29 +94,14 @@ extension HwpPageLayer {
                 .map { CGFloat($0.doubleValue) } ?? 0
             // swiftlint:disable:next force_cast
             let shadow = shadowColor as! CGColor
-            if attributes[HwpAttributedStringKey.shadowContinuous] != nil {
-                // 연속 그림자: 본체에서 오프셋까지 이어지는 두꺼운 그림자
-                // (실물: 획에 붙은 진한 연속 음영 — CharShapeProperty)
-                ctx.saveGState()
-                ctx.setFillColor(shadow)
-                // 사본이 본체와 과하게 겹치면 특굵은 덩어리로 보인다 —
-                // 절반 지점부터 두 사본만 (실물: 본체와 분리 판독)
-                for ratio in [0.55, 1.0] as [CGFloat] {
-                    ctx.textPosition = CGPoint(
-                        x: origin.x + offsetX * ratio,
-                        y: origin.y - offsetY * ratio
-                    )
-                    CTRunDraw(run, ctx, CFRange(location: 0, length: 0))
-                }
-                ctx.restoreGState()
-            } else {
-                // 텍스트 공간은 y-up으로 뒤집혀 있으므로 아래(+dy)는 -y
-                ctx.setShadow(
-                    offset: CGSize(width: offsetX, height: -offsetY),
-                    blur: 0,
-                    color: shadow
-                )
-            }
+            // 라운드 4 실측: 실물의 연속/비연속 그림자는 모두 밝은 회색
+            // 단일 분리 사본 — 사본 겹침 없이 setShadow 한 번으로 그린다.
+            // 텍스트 공간은 y-up으로 뒤집혀 있으므로 아래(+dy)는 -y
+            ctx.setShadow(
+                offset: CGSize(width: offsetX, height: -offsetY),
+                blur: 0,
+                color: shadow
+            )
         }
         ctx.textPosition = origin
         CTRunDraw(run, ctx, CFRange(location: 0, length: 0))
@@ -253,11 +236,12 @@ extension HwpPageLayer {
     /// CTRunDraw 경로에서 밑줄을 직접 그린다 (CTLineDraw만 밑줄을 지원).
     func drawUnderlineIfNeeded(_ run: CTRun, lineOrigin: CGPoint, in ctx: CGContext) {
         let attributes = runAttributes(run)
-        guard attributes[.underlineStyle] != nil else { return }
+        guard attributes[HwpAttributedStringKey.underlineStyle] != nil else { return }
         let bounds = runBounds(of: run, lineOrigin: lineOrigin)
         let font = runFont(attributes)
         let position = font.map(CTFontGetUnderlinePosition) ?? -1
-        let thickness = font.map { max(0.5, CTFontGetUnderlineThickness($0)) } ?? 0.75
+        // 실물 밑줄은 헤어라인 (줄 높이의 ~2.3% — CharShapeProperty 실측)
+        let thickness: CGFloat = 0.4
         let color = attributes[HwpAttributedStringKey.underlineColor]
             ?? attributes[kCTForegroundColorAttributeName as NSAttributedString.Key]
         setDecorationFillColor(color, in: ctx)

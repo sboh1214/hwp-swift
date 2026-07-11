@@ -171,8 +171,9 @@ import XCTest
         func hasRaisedBaselineRun(in attributedString: NSAttributedString?) -> Bool {
             guard let attributedString else { return false }
             var found = false
+            // 첨자 이동은 렌더가 반영하는 커스텀 키에 실린다
             attributedString.enumerateAttribute(
-                kCTBaselineOffsetAttributeName as NSAttributedString.Key,
+                HwpAttributedStringKey.glyphBaselineOffset,
                 in: NSRange(location: 0, length: attributedString.length)
             ) { value, _, stop in
                 if let number = value as? NSNumber, number.doubleValue > 0 {
