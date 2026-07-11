@@ -318,7 +318,8 @@ private extension HwpChartPainter {
             )
         }
         let path = CGMutablePath()
-        let baseEllipseHeight = min(halfWidth * 0.4, height * 0.18)
+        // 실물 밑면 타원은 훨씬 납작하다 (라운드 7 실측: 곡률 절반)
+        let baseEllipseHeight = min(halfWidth * 0.2, height * 0.09)
         path.move(to: CGPoint(x: centerX - halfWidth, y: baseY - baseEllipseHeight / 2))
         path.addLine(to: CGPoint(x: centerX, y: baseY - height))
         path.addLine(to: CGPoint(x: centerX + halfWidth, y: baseY - baseEllipseHeight / 2))
@@ -339,7 +340,8 @@ private extension HwpChartPainter {
         height: CGFloat
     ) -> [HwpPaintCommand] {
         let halfWidth = width / 2
-        let baseEllipseHeight = min(halfWidth * 0.4, height * 0.18)
+        // 실물 밑면 타원은 훨씬 납작하다 (라운드 7 실측: 곡률 절반)
+        let baseEllipseHeight = min(halfWidth * 0.2, height * 0.09)
         let apex = CGPoint(x: centerX, y: baseY - height)
         let baseEdgeY = baseY - baseEllipseHeight / 2
 

@@ -49,7 +49,16 @@ extension HwpPageLayer {
     func drawShadeIfNeeded(_ run: CTRun, lineOrigin: CGPoint, in ctx: CGContext) {
         let attributes = runAttributes(run)
         guard let shade = attributes[HwpAttributedStringKey.shadeColor] else { return }
-        let bounds = runBounds(of: run, lineOrigin: lineOrigin)
+        let typographic = runBounds(of: run, lineOrigin: lineOrigin)
+        // 실물 음영 상자는 정확히 1em — run의 typographic ascent가 아니라
+        // 글리프에 밀착한 em 박스다 (라운드 7 실측: 상하 각 1px 여유)
+        let size = runFont(attributes).map(CTFontGetSize) ?? typographic.height
+        let bounds = CGRect(
+            x: typographic.minX,
+            y: lineOrigin.y - size * 0.15,
+            width: typographic.width,
+            height: size
+        )
         ctx.setFillColor(shade as! CGColor) // swiftlint:disable:this force_cast
         ctx.fill(bounds)
         if let stroke = attributes[HwpAttributedStringKey.memoAnchorStroke] {
@@ -178,7 +187,8 @@ extension HwpPageLayer {
         }
     }
 
-    /// 변경 추적 삽입 밑줄 — 베이스라인 아래 0.22em (한글 실물 실측)
+    /// 변경 추적 삽입 밑줄 — 베이스라인 아래 0.35em (한글 실물: 디센더
+    /// 아래 글리프 높이의 ~39% — 라운드 7 실측)
     func drawTrackInsertUnderlineIfNeeded(
         _ run: CTRun,
         lineOrigin: CGPoint,
@@ -192,7 +202,7 @@ extension HwpPageLayer {
         setDecorationFillColor(color, in: ctx)
         ctx.fill(CGRect(
             x: bounds.minX,
-            y: lineOrigin.y - size * 0.22,
+            y: lineOrigin.y - size * 0.35,
             width: bounds.width,
             height: 0.75
         ))
@@ -220,16 +230,16 @@ extension HwpPageLayer {
         let attributes = runAttributes(run)
         guard attributes[HwpAttributedStringKey.underlineStyle] != nil else { return }
         let bounds = runBounds(of: run, lineOrigin: lineOrigin)
-        let font = runFont(attributes)
-        let position = font.map(CTFontGetUnderlinePosition) ?? -1
-        // 실물 밑줄은 헤어라인 (줄 높이의 ~2.3% — CharShapeProperty 실측)
+        let size = runFont(attributes).map(CTFontGetSize) ?? 10
+        // 실물 밑줄은 헤어라인 (줄 높이의 ~2.3%), 한글 글리프 바닥 잉크
+        // 바로 아래 — 폰트 underlinePosition은 잉크를 관통한다 (라운드 7 실측)
         let thickness: CGFloat = 0.4
         let color = attributes[HwpAttributedStringKey.underlineColor]
             ?? attributes[kCTForegroundColorAttributeName as NSAttributedString.Key]
         setDecorationFillColor(color, in: ctx)
         ctx.fill(CGRect(
             x: bounds.minX,
-            y: lineOrigin.y + position - thickness / 2,
+            y: lineOrigin.y - size * 0.20 - thickness / 2,
             width: bounds.width,
             height: thickness
         ))
