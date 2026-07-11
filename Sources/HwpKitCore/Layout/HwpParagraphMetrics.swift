@@ -78,8 +78,14 @@ extension HwpParagraphLayout {
                 headIndent = marginLeft - indent
             }
             tailIndent = -HwpUnits.points(fromHwpUnit: paraShape.marginRight) / 2
-            paragraphSpacingBefore = HwpUnits.points(fromHwpUnit: paraShape.paragraphSpacingTop)
-            paragraphSpacing = HwpUnits.points(fromHwpUnit: paraShape.paragraphSpacingBottom)
+            // 문단 간격도 표 43 여백 계열과 같은 1/2 단위 (noori 제목 3행
+            // spTop=1200 → 6pt가 실물 간격에 부합)
+            paragraphSpacingBefore = HwpUnits.points(
+                fromHwpUnit: paraShape.paragraphSpacingTop
+            ) / 2
+            paragraphSpacing = HwpUnits.points(
+                fromHwpUnit: paraShape.paragraphSpacingBottom
+            ) / 2
 
             let value = paraShape.resolvedLineSpacingValue
             switch paraShape.resolvedLineSpacingKind {

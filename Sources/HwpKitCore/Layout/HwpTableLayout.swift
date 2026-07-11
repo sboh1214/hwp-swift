@@ -286,7 +286,14 @@ extension HwpTableLayout {
                 columnWidth: innerWidth
             )
             if let cachedHeight = HwpParagraphLayout.cachedParagraphHeight(paragraph) {
-                frame = HwpParagraphFrame(totalHeight: cachedHeight, lines: frame.lines)
+                // 캐시 (줄 전진량 합)에는 문단 위 간격이 없다 — CT 경로처럼 더한다
+                let spacingBefore = HwpUnits.points(
+                    fromHwpUnit: paraShape.paragraphSpacingTop
+                ) / 2
+                frame = HwpParagraphFrame(
+                    totalHeight: cachedHeight + spacingBefore,
+                    lines: frame.lines
+                )
             } else {
                 allCached = false
             }

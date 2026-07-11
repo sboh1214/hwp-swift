@@ -140,22 +140,48 @@ public struct HwpPaintListBuilder: Sendable {
         around rect: CGRect
     ) -> [HwpPaintCommand] {
         var commands: [HwpPaintCommand] = []
-        func edge(_ width: CGFloat, _ color: HwpRGBColor, _ edgeRect: CGRect) {
+        func edge(
+            _ width: CGFloat,
+            _ color: HwpRGBColor,
+            _ edgeRect: CGRect,
+            isDouble: Bool,
+            horizontal: Bool
+        ) {
             guard width > 0 else { return }
-            commands.append(.fillRect(rect: edgeRect, color: color.cgColor))
+            guard isDouble else {
+                commands.append(.fillRect(rect: edgeRect, color: color.cgColor))
+                return
+            }
+            // 이중선 (표 25 종류 8-10): 가는 선 2개 + 사이 간격
+            // (noori 제목 상자 실물 — 1px 두 줄)
+            let thin = max(0.4, width * 0.4)
+            let gap = max(thin, width)
+            var first = edgeRect
+            var second = edgeRect
+            if horizontal {
+                first.size.height = thin
+                second.origin.y = edgeRect.minY + thin + gap
+                second.size.height = thin
+            } else {
+                first.size.width = thin
+                second.origin.x = edgeRect.minX + thin + gap
+                second.size.width = thin
+            }
+            commands.append(.fillRect(rect: first, color: color.cgColor))
+            commands.append(.fillRect(rect: second, color: color.cgColor))
         }
         edge(borders.top, borders.topColor, CGRect(
             x: rect.minX, y: rect.minY, width: rect.width, height: borders.top
-        ))
+        ), isDouble: borders.topDouble, horizontal: true)
         edge(borders.bottom, borders.bottomColor, CGRect(
             x: rect.minX, y: rect.maxY - borders.bottom, width: rect.width, height: borders.bottom
-        ))
+        ), isDouble: borders.bottomDouble, horizontal: true)
         edge(borders.left, borders.leftColor, CGRect(
             x: rect.minX, y: rect.minY, width: borders.left, height: rect.height
-        ))
+        ), isDouble: borders.leftDouble, horizontal: false)
         edge(borders.right, borders.rightColor, CGRect(
             x: rect.maxX - borders.right, y: rect.minY, width: borders.right, height: rect.height
-        ))
+        ), isDouble: borders.rightDouble, horizontal: false)
         return commands
     }
 

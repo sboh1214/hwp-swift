@@ -129,7 +129,6 @@ public struct HwpTextRunBuilder {
 }
 
 private extension HwpTextRunBuilder {
-    // 컨트롤 문자 하나를 마커 run으로 내보낸다 (extended ordinal 전진 포함).
     // swiftlint:disable:next function_parameter_count
     func emitControl(
         _ hwpChar: CoreHwp.HwpChar,
@@ -184,8 +183,7 @@ private extension HwpTextRunBuilder {
 }
 
 private extension HwpTextRunBuilder {
-    /// 문단 머리 글머리표 (표 44 heading 종류 3): 한글처럼 본문 앞에
-    /// 글머리표 문자 + 공백을 그린다 (noori 제목 박스 '- ' 실물 실측).
+    /// 문단 머리 글머리표 (표 44 heading 3): 글머리표 문자 + 공백 전치
     func appendBulletHeading(
         for paragraph: CoreHwp.HwpParagraph,
         to output: NSMutableAttributedString
@@ -260,9 +258,11 @@ private extension HwpTextRunBuilder {
         if chunk.memoAnchor,
            chunkAttributes[HwpAttributedStringKey.shadeColor] == nil
         {
-            // 메모 앵커: 한글.app처럼 연녹색 배경 강조 (음영과 같은 상자 그리기)
+            // 메모 앵커: 한글.app처럼 연녹색 배경 + 둥근 녹색 테두리 괄호
             chunkAttributes[HwpAttributedStringKey.shadeColor] =
                 HwpMemoPanelPainter.anchorFillColor
+            chunkAttributes[HwpAttributedStringKey.memoAnchorStroke] =
+                HwpMemoPanelPainter.borderColor
         }
         let attributed = NSMutableAttributedString(
             string: chunk.text,
@@ -386,9 +386,10 @@ private extension HwpTextRunBuilder {
            !CTFontGetSymbolicTraits(font).contains(.traitBold)
         {
             // 볼드 페이스가 없는 폰트 (휴먼명조·신명조 등): 한글처럼 합성
-            // 볼드 — 채움+윤곽 (음수 stroke). noori 볼드 범위 실물 실측.
+            // 볼드 — 채움+윤곽 (음수 stroke). 굵으면 세리프 대비가 죽어
+            // 고딕 인상이 된다 (noori 표 1행 실물 — 명조 세리프 유지)
             attributes[kCTStrokeWidthAttributeName as NSAttributedString.Key] =
-                NSNumber(value: -2.5)
+                NSNumber(value: -1.6)
         }
         applyShapeDecorations(to: &attributes, shape: shape, size: size)
         return attributes

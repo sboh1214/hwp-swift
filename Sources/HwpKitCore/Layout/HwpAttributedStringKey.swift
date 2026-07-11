@@ -30,6 +30,10 @@ public enum HwpAttributedStringKey {
     public static let outlineBody = NSAttributedString.Key("hwp.outlineBody")
     /// 연속 그림자 — 본체에서 오프셋까지 이어지는 두꺼운 그림자
     public static let shadowContinuous = NSAttributedString.Key("hwp.shadowContinuous")
+    /// 변경 추적 삽입 밑줄 — 한글은 베이스라인 아래 ~0.22em에 그린다
+    public static let trackInsertUnderline = NSAttributedString.Key("hwp.trackInsertUnderline")
+    /// 메모 앵커 둥근 테두리 색 (연녹 채움 위 괄호형 외곽선)
+    public static let memoAnchorStroke = NSAttributedString.Key("hwp.memoAnchorStroke")
     /// 배분/나눔 정렬 (표 44 정렬 4·5) — 마지막 줄도 단어 간격을 벌린다
     public static let distributeAlignment = NSAttributedString.Key("hwp.distributeAlignment")
 }

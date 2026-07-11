@@ -39,6 +39,7 @@ extension HwpPageLayer {
         for run in runs {
             drawStrikethroughIfNeeded(run, lineOrigin: origin, in: ctx)
             drawEmphasisIfNeeded(run, lineOrigin: origin, in: ctx)
+            drawTrackInsertUnderlineIfNeeded(run, lineOrigin: origin, in: ctx)
         }
     }
 
@@ -46,11 +47,26 @@ extension HwpPageLayer {
         CTRunGetAttributes(run) as? [NSAttributedString.Key: Any] ?? [:]
     }
 
-    /// 음영 배경 (글리프보다 먼저)
+    /// 음영 배경 (글리프보다 먼저). 메모 앵커는 둥근 녹색 테두리도 두른다
+    /// (한글.app 실물 — memo 픽스처 앵커 괄호).
     func drawShadeIfNeeded(_ run: CTRun, lineOrigin: CGPoint, in ctx: CGContext) {
-        guard let shade = runAttributes(run)[HwpAttributedStringKey.shadeColor] else { return }
+        let attributes = runAttributes(run)
+        guard let shade = attributes[HwpAttributedStringKey.shadeColor] else { return }
+        let bounds = runBounds(of: run, lineOrigin: lineOrigin)
         ctx.setFillColor(shade as! CGColor) // swiftlint:disable:this force_cast
-        ctx.fill(runBounds(of: run, lineOrigin: lineOrigin))
+        ctx.fill(bounds)
+        if let stroke = attributes[HwpAttributedStringKey.memoAnchorStroke] {
+            let path = CGPath(
+                roundedRect: bounds.insetBy(dx: 0.3, dy: 0.3),
+                cornerWidth: 1.5, cornerHeight: 1.5, transform: nil
+            )
+            ctx.saveGState()
+            ctx.addPath(path)
+            ctx.setStrokeColor(stroke as! CGColor) // swiftlint:disable:this force_cast
+            ctx.setLineWidth(0.6)
+            ctx.strokePath()
+            ctx.restoreGState()
+        }
     }
 
     /// run 하나를 그림자/양각 설정과 함께 그린다
@@ -85,9 +101,9 @@ extension HwpPageLayer {
                 // (실물: 획에 붙은 진한 연속 음영 — CharShapeProperty)
                 ctx.saveGState()
                 ctx.setFillColor(shadow)
-                let steps = 4
-                for step in 1 ... steps {
-                    let ratio = CGFloat(step) / CGFloat(steps)
+                // 사본이 본체와 과하게 겹치면 특굵은 덩어리로 보인다 —
+                // 절반 지점부터 두 사본만 (실물: 본체와 분리 판독)
+                for ratio in [0.55, 1.0] as [CGFloat] {
                     ctx.textPosition = CGPoint(
                         x: origin.x + offsetX * ratio,
                         y: origin.y - offsetY * ratio
@@ -195,6 +211,26 @@ extension HwpPageLayer {
                 width: radius * 2, height: radius * 2
             ))
         }
+    }
+
+    /// 변경 추적 삽입 밑줄 — 베이스라인 아래 0.22em (한글 실물 실측)
+    func drawTrackInsertUnderlineIfNeeded(
+        _ run: CTRun,
+        lineOrigin: CGPoint,
+        in ctx: CGContext
+    ) {
+        let attributes = runAttributes(run)
+        guard let color = attributes[HwpAttributedStringKey.trackInsertUnderline]
+        else { return }
+        let bounds = runBounds(of: run, lineOrigin: lineOrigin)
+        let size = runFont(attributes).map(CTFontGetSize) ?? 10
+        setDecorationFillColor(color, in: ctx)
+        ctx.fill(CGRect(
+            x: bounds.minX,
+            y: lineOrigin.y - size * 0.22,
+            width: bounds.width,
+            height: 0.75
+        ))
     }
 
     /// 취소선 (CT 미지원 — 항상 직접)

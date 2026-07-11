@@ -120,6 +120,14 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
         in ctx: CGContext
     ) {
         let length = attributedString.length
+        // 자연 폭이 주어진 폭을 살짝 (≤6%) 넘는 한 줄 문단은 한글처럼
+        // 줄바꿈 없이 넘치게 한 줄로 그린다 (noori 제목 3행 후행 '-' 실물:
+        // 행이 글상자 가장자리를 살짝 넘침)
+        if drawSlightOverflowSingleLine(
+            attributedString, origin: origin, lineWidth: lineWidth, in: ctx
+        ) {
+            return
+        }
         let suggestedSize = CTFramesetterSuggestFrameSizeWithConstraints(
             framesetter,
             CFRange(location: 0, length: length),
@@ -149,6 +157,54 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
         ctx.scaleBy(x: 1, y: -1)
         drawFrameLines(frame, attributedString: attributedString, textRect: textRect, in: ctx)
         ctx.restoreGState()
+    }
+
+    /// 폭을 6% 이내로 넘는 개행 없는 한 줄 문단이면 줄바꿈 없이 그린다.
+    private func drawSlightOverflowSingleLine(
+        _ attributedString: NSAttributedString,
+        origin: CGPoint,
+        lineWidth: CGFloat,
+        in ctx: CGContext
+    ) -> Bool {
+        guard attributedString.length > 0,
+              !attributedString.string.contains("\n")
+        else { return false }
+        let line = CTLineCreateWithAttributedString(attributedString)
+        let naturalWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+        guard naturalWidth > lineWidth, naturalWidth <= lineWidth * 1.06 else { return false }
+        var ascent: CGFloat = 0
+        var descent: CGFloat = 0
+        _ = CTLineGetTypographicBounds(line, &ascent, &descent, nil)
+        // 가운데 정렬이면 초과분을 좌우로 반씩 넘긴다
+        var offsetX: CGFloat = 0
+        if let style = attributedString.attribute(
+            kCTParagraphStyleAttributeName as NSAttributedString.Key,
+            at: 0, effectiveRange: nil
+        ), CFGetTypeID(style as CFTypeRef) == CTParagraphStyleGetTypeID() {
+            var alignment = CTTextAlignment.natural
+            let paragraphStyle = style as! CTParagraphStyle // swiftlint:disable:this force_cast
+            CTParagraphStyleGetValueForSpecifier(
+                paragraphStyle, .alignment,
+                MemoryLayout<CTTextAlignment>.size, &alignment
+            )
+            if alignment == .center {
+                offsetX = (lineWidth - naturalWidth) / 2
+            }
+        }
+        let effectivePageHeight = pageHeight > 0 ? pageHeight : bounds.height
+        ctx.saveGState()
+        ctx.textMatrix = .identity
+        ctx.translateBy(x: 0, y: effectivePageHeight)
+        ctx.scaleBy(x: 1, y: -1)
+        let lineOrigin = CGPoint(
+            x: origin.x + offsetX,
+            y: effectivePageHeight - origin.y - ascent - descent
+                + descent + Self.baselineLift(of: line)
+        )
+        ctx.textPosition = lineOrigin
+        drawDecoratedLine(line, origin: lineOrigin, in: ctx)
+        ctx.restoreGState()
+        return true
     }
 
     /// 프레임의 줄을 직접 그린다. 양쪽 정렬 줄은 한글처럼 남는 폭을 공백에만
@@ -181,22 +237,27 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
     /// CT ascent 1.07em보다 높음 — plain-text 실물 실측: 첫 줄 잉크가 1.1mm
     /// 위). CT ascent와의 차이만큼 줄을 위로 올린다 (y-up 공간에서 +y).
     static func baselineLift(of line: CTLine) -> CGFloat {
-        var ascent: CGFloat = 0
-        _ = CTLineGetTypographicBounds(line, &ascent, nil, nil)
+        // 폰트 ascent만 본다 — 인라인 개체 (run delegate)의 ascent는 줄
+        // 높이 예약일 뿐이며, 한글은 그 줄의 텍스트를 개체 하단 (베이스라인)에
+        // 정렬한다 (CCL·공공누리 실물: 배지 하단 정렬).
         var maxSize: CGFloat = 0
+        var maxAscent: CGFloat = 0
         if let runs = CTLineGetGlyphRuns(line) as? [CTRun] {
             for run in runs {
                 let attributes = CTRunGetAttributes(run) as? [NSAttributedString.Key: Any]
-                if let value = attributes?[kCTFontAttributeName as NSAttributedString.Key],
-                   CFGetTypeID(value as CFTypeRef) == CTFontGetTypeID()
-                {
-                    // swiftlint:disable:next force_cast
-                    maxSize = max(maxSize, CTFontGetSize(value as! CTFont))
-                }
+                guard attributes?[kCTRunDelegateAttributeName
+                    as NSAttributedString.Key] == nil,
+                    let value = attributes?[kCTFontAttributeName as NSAttributedString.Key],
+                    CFGetTypeID(value as CFTypeRef) == CTFontGetTypeID()
+                else { continue }
+                // swiftlint:disable:next force_cast
+                let font = value as! CTFont
+                maxSize = max(maxSize, CTFontGetSize(font))
+                maxAscent = max(maxAscent, CTFontGetAscent(font))
             }
         }
         guard maxSize > 0 else { return 0 }
-        return max(0, ascent - maxSize * 0.85)
+        return max(0, maxAscent - maxSize * 0.85)
     }
 
     /// paint list가 해당 BinItem 이미지를 참조하는지 (targeted redraw 판단용)

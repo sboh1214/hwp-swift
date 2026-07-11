@@ -56,10 +56,11 @@ enum HwpChartPainter {
             floorFrontY - CGFloat(tick) / CGFloat(max(1, Int(axisMax))) * wallHeight
         }
 
-        /// 계열의 깊이 진행률 (0 = 바닥 전면, 계열 3개면 0/0.4/0.8 — 실물)
+        /// 계열의 깊이 진행률 (0 = 바닥 전면). 라운드 3 실측: 스텝당 가로
+        /// 오프셋 = 그룹 간격의 ~0.28배 — 원뿔 밑면이 서로 겹친다.
         func depthStep(seriesCount: Int, seriesIndex: Int) -> CGFloat {
-            guard seriesCount > 1 else { return 0.4 }
-            return 0.8 / CGFloat(seriesCount - 1) * CGFloat(seriesIndex)
+            guard seriesCount > 1 else { return 0.3 }
+            return 0.55 / CGFloat(seriesCount - 1) * CGFloat(seriesIndex)
         }
     }
 
@@ -355,6 +356,13 @@ private extension HwpChartPainter {
         ))
         light.closeSubpath()
 
+        // 오른쪽 능선의 가는 진한 모서리 선 (실물: 면-선-면 구조)
+        let ridge = CGMutablePath()
+        ridge.move(to: apex)
+        ridge.addQuadCurve(
+            to: CGPoint(x: centerX + halfWidth * 0.72, y: baseEdgeY + baseEllipseHeight * 0.2),
+            control: CGPoint(x: centerX + halfWidth * 0.5, y: baseY - height * 0.4)
+        )
         return [
             .drawPath(
                 path: dark,
@@ -365,6 +373,12 @@ private extension HwpChartPainter {
                 path: light,
                 fill: CGColor(gray: 1, alpha: 0.10),
                 stroke: nil, strokeWidth: 0
+            ),
+            .drawPath(
+                path: ridge,
+                fill: nil,
+                stroke: CGColor(gray: 0, alpha: 0.5),
+                strokeWidth: 0.5
             ),
         ]
     }

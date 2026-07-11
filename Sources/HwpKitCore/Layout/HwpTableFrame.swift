@@ -6,6 +6,8 @@ import Foundation
 public struct HwpBorderSet: Sendable, Hashable {
     public let top, bottom, left, right: CGFloat
     public let topColor, bottomColor, leftColor, rightColor: HwpRGBColor
+    /// 이중선 여부 (표 25 종류 8-10) — 가는 선 2개로 그린다
+    public let topDouble, bottomDouble, leftDouble, rightDouble: Bool
 
     public init(
         top: CGFloat,
@@ -15,7 +17,11 @@ public struct HwpBorderSet: Sendable, Hashable {
         topColor: HwpRGBColor,
         bottomColor: HwpRGBColor,
         leftColor: HwpRGBColor,
-        rightColor: HwpRGBColor
+        rightColor: HwpRGBColor,
+        topDouble: Bool = false,
+        bottomDouble: Bool = false,
+        leftDouble: Bool = false,
+        rightDouble: Bool = false
     ) {
         self.top = top
         self.bottom = bottom
@@ -25,6 +31,10 @@ public struct HwpBorderSet: Sendable, Hashable {
         self.bottomColor = bottomColor
         self.leftColor = leftColor
         self.rightColor = rightColor
+        self.topDouble = topDouble
+        self.bottomDouble = bottomDouble
+        self.leftDouble = leftDouble
+        self.rightDouble = rightDouble
     }
 
     public static func uniform(width: CGFloat, color: HwpRGBColor) -> HwpBorderSet {
@@ -177,6 +187,14 @@ extension HwpTableLayout {
         func color(_ line: CoreHwp.HwpBorderLine) -> HwpRGBColor {
             HwpRGBColor(line.color)
         }
+        func isDouble(_ line: CoreHwp.HwpBorderLine) -> Bool {
+            switch line.type {
+            case .doubleLine, .thinThickDoubleLine, .thickThinDoubleLine:
+                true
+            default:
+                false
+            }
+        }
         return HwpBorderSet(
             top: width(lines[2]),
             bottom: width(lines[3]),
@@ -185,7 +203,11 @@ extension HwpTableLayout {
             topColor: color(lines[2]),
             bottomColor: color(lines[3]),
             leftColor: color(lines[0]),
-            rightColor: color(lines[1])
+            rightColor: color(lines[1]),
+            topDouble: isDouble(lines[2]),
+            bottomDouble: isDouble(lines[3]),
+            leftDouble: isDouble(lines[0]),
+            rightDouble: isDouble(lines[1])
         )
     }
 

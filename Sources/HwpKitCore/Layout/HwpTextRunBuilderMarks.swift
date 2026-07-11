@@ -18,9 +18,9 @@ extension HwpTextRunBuilder {
             attributes[HwpAttributedStringKey.strikethroughStyle] = NSNumber(value: 1)
             attributes[HwpAttributedStringKey.strikethroughColor] = red
         } else {
-            attributes[.underlineStyle] = NSNumber(value: 1)
-            attributes[HwpAttributedStringKey.underlineColor] = red
-            attributes[kCTUnderlineColorAttributeName as NSAttributedString.Key] = red
+            // CT 밑줄은 폰트 밑줄 위치 (얕음) — 한글 실물은 베이스라인에서
+            // 반 x-height가량 아래 (track-changes 실측). 렌더러가 직접 그린다.
+            attributes[HwpAttributedStringKey.trackInsertUnderline] = red
         }
     }
 
