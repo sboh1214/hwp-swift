@@ -1,6 +1,7 @@
 import CoreGraphics
 import CoreText
 import Foundation
+import HwpKitCore
 
 /// 양쪽 정렬의 한글식 재조판: 남는 폭을 공백에만 배분한다.
 ///
@@ -22,9 +23,19 @@ public enum HwpWordJustification {
         let string = attributedString.string as NSString
         let lineEnd = nsRange.location + nsRange.length
 
-        // 문단 마지막 줄 (문자열 끝 또는 개행으로 끝나는 줄)은 정렬하지 않는다
-        guard lineEnd < string.length else { return nil }
-        if string.character(at: lineEnd - 1) == 0x0A { return nil }
+        // 배분/나눔 정렬은 마지막 줄도 벌린다 (공공누리 실물 실측);
+        // 양쪽 정렬은 마지막 줄 (문자열 끝/개행으로 끝나는 줄)을 건너뛴다
+        let distributes = attributedString.attribute(
+            HwpAttributedStringKey.distributeAlignment,
+            at: nsRange.location,
+            effectiveRange: nil
+        ) != nil
+        if !distributes {
+            guard lineEnd < string.length else { return nil }
+            if string.character(at: lineEnd - 1) == 0x0A {
+                return nil
+            }
+        }
         guard let style = paragraphStyle(of: attributedString, at: nsRange.location),
               alignment(of: style) == .justified
         else { return nil }

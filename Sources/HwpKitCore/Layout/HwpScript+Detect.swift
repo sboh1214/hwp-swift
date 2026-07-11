@@ -16,6 +16,9 @@ public extension HwpScript {
         case 0x0370 ... 0x03FF,
              0x0400 ... 0x04FF:
             .etc
+        // 인용부호는 한글도 라틴 폭으로 조판한다 (noori 실물: '…부호'+')' 밀착)
+        case 0x2018 ... 0x201F:
+            .english
         case 0x2000 ... 0x206F,
              0x2070 ... 0x209F,
              0x2100 ... 0x214F,

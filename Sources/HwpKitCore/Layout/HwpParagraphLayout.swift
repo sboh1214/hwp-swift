@@ -154,8 +154,14 @@ public struct HwpParagraphLayout {
             origins: origins,
             metrics: paragraphMetrics
         )
+        // 줄 여분을 줄 뒤 간격으로 돌린 경우 마지막 줄 뒤 몫도 전진량에
+        // 포함한다 (한글 캐시 lineAdvance 합과 동일)
+        let trailingSpacing = paragraphMetrics.lineHeightAppliedAsSpacing && !lines.isEmpty
+            ? paragraphMetrics.lineSpacingAdjustment
+            : 0
         let totalHeight = paragraphMetrics.paragraphSpacingBefore
             + totalLineHeight
+            + trailingSpacing
             + paragraphMetrics.paragraphSpacing
         return HwpParagraphFrame(totalHeight: max(1, totalHeight), lines: lineFrames)
     }
@@ -234,92 +240,6 @@ private extension HwpParagraphLayout {
             ))
         }
         return anchors
-    }
-
-    struct ParagraphMetrics {
-        var firstLineHeadIndent: CGFloat
-        var headIndent: CGFloat
-        var tailIndent: CGFloat
-        var paragraphSpacingBefore: CGFloat
-        var paragraphSpacing: CGFloat
-        /// 여백만 지정 (표 46 종류 2): 줄 사이 추가 간격 (pt)
-        var lineSpacingAdjustment: CGFloat = 0
-        /// 비율/고정/최소 줄 간격의 강제 줄 높이 하한 (pt, 0 = 없음)
-        var minimumLineHeight: CGFloat = 0
-        /// 비율/고정 줄 간격의 강제 줄 높이 상한 (pt, 0 = 없음).
-        /// 글자처럼 취급 개체가 줄 공간을 예약한 문단은 개체가 잘리지 않게
-        /// 상한을 두지 않는다 (한글: 줄 높이 = max(글자 기준 높이, 개체 높이)).
-        var maximumLineHeight: CGFloat = 0
-
-        init(paraShape: CoreHwp.HwpParaShape, attributedString: NSAttributedString? = nil) {
-            firstLineHeadIndent = HwpUnits.points(fromHwpUnit: paraShape.indent)
-            headIndent = HwpUnits.points(fromHwpUnit: paraShape.marginLeft)
-            tailIndent = -HwpUnits.points(fromHwpUnit: paraShape.marginRight)
-            paragraphSpacingBefore = HwpUnits.points(fromHwpUnit: paraShape.paragraphSpacingTop)
-            paragraphSpacing = HwpUnits.points(fromHwpUnit: paraShape.paragraphSpacingBottom)
-
-            let value = paraShape.resolvedLineSpacingValue
-            switch paraShape.resolvedLineSpacingKind {
-            case .percent:
-                // 글자에 따라(%): 줄 높이 = 글자 크기 × 값 / 100 (표 44/46 종류 0)
-                let fontSize = attributedString.map(Self.maxFontSize(in:)) ?? 0
-                guard fontSize > 0, value > 0 else { break }
-                let lineHeight = fontSize * CGFloat(value) / 100
-                minimumLineHeight = lineHeight
-                if attributedString.map(Self.hasInlineObjects(in:)) != true {
-                    maximumLineHeight = lineHeight
-                }
-            case .fixed:
-                let lineHeight = max(1, HwpUnits.points(fromHwpUnit: value))
-                minimumLineHeight = lineHeight
-                if attributedString.map(Self.hasInlineObjects(in:)) != true {
-                    maximumLineHeight = lineHeight
-                }
-            case .marginOnly:
-                lineSpacingAdjustment = max(0, HwpUnits.points(fromHwpUnit: value))
-            case .atLeast:
-                minimumLineHeight = max(0, HwpUnits.points(fromHwpUnit: value))
-            }
-        }
-
-        /// 자연 줄 높이에 min/max 강제 줄 높이 제약을 적용한다 (0 = 제약 없음)
-        func clampedLineHeight(_ natural: CGFloat) -> CGFloat {
-            var height = natural
-            if maximumLineHeight > 0 { height = min(height, maximumLineHeight) }
-            if minimumLineHeight > 0 { height = max(height, minimumLineHeight) }
-            return height
-        }
-
-        /// 문자열 run들의 최대 글꼴 크기 (비율 줄 간격의 기준 글자 크기)
-        static func maxFontSize(in attributedString: NSAttributedString) -> CGFloat {
-            var maxSize: CGFloat = 0
-            attributedString.enumerateAttribute(
-                kCTFontAttributeName as NSAttributedString.Key,
-                in: NSRange(location: 0, length: attributedString.length)
-            ) { value, _, _ in
-                guard let value, CFGetTypeID(value as CFTypeRef) == CTFontGetTypeID() else {
-                    return
-                }
-                let font = value as! CTFont // swiftlint:disable:this force_cast
-                maxSize = max(maxSize, CTFontGetSize(font))
-            }
-            return maxSize
-        }
-
-        /// 줄 공간을 예약한 (높이 > 0) 글자처럼 취급 개체 run이 있는지
-        static func hasInlineObjects(in attributedString: NSAttributedString) -> Bool {
-            var found = false
-            attributedString.enumerateAttribute(
-                HwpAttributedStringKey.inlineObjectHeight,
-                in: NSRange(location: 0, length: attributedString.length)
-            ) { value, _, stop in
-                if let number = value as? NSNumber, number.doubleValue > 0 {
-                    found = true
-                    stop.pointee = true
-                }
-            }
-            return found
-        }
     }
 
     struct StyleValuePointers {

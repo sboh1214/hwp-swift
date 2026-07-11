@@ -90,8 +90,9 @@ enum HwpChartPainter {
             frontAxisX: frame.minX + frame.width * 0.140,
             floorFrontY: frame.minY + frame.height * 0.824,
             floorFrontRightX: frame.minX + frame.width * 0.670,
-            depth: CGSize(width: frame.width * 0.104, height: -frame.height * 0.124),
-            wallHeight: frame.height * 0.411,
+            // 라운드 2 실측: 뒷벽 상단 relY 0.243 → 깊이 (0.133W, −0.159H)
+            depth: CGSize(width: frame.width * 0.133, height: -frame.height * 0.159),
+            wallHeight: frame.height * 0.465 * 0.96,
             axisMax: max(1, ceil(maxValue)),
             labelSize: labelSize,
             labelFont: fontResolver.resolve(
@@ -183,7 +184,7 @@ enum HwpChartPainter {
         // 실물 (2026-07-10 그룹1 픽셀 실측): 원뿔 밑면 폭 = 그룹폭의 0.30으로
         // 전 계열 동일 (깊이 감쇠 없음 — 평행 투영), 가로 위치도 그룹 안
         // 고정 지점 (0.625 그룹폭)이고 계열 분리는 깊이 이동이 전부 만든다
-        let markerWidth = box.groupWidth * 0.30
+        let markerWidth = box.groupWidth * 0.35
         let isCone: Bool = switch chart.kind {
         case let .bar(cone): cone
         }
@@ -258,7 +259,15 @@ enum HwpChartPainter {
         let rowHeight = box.labelSize * 1.67
         let totalHeight = rowHeight * CGFloat(chart.series.count)
         var y = frame.minY + frame.height * 0.585 - totalHeight / 2
-        let x = frame.minX + frame.width * 0.917
+        // 스와치+텍스트가 프레임 오른쪽 테두리를 넘지 않게 오른쪽 정렬
+        // (실물: 범례 텍스트 끝이 테두리 안 — 2026-07-10 검증)
+        let maxNameWidth = chart.series
+            .map { labelWidth(label($0.name, font: box.labelFont)) }
+            .max() ?? 0
+        let x = min(
+            frame.minX + frame.width * 0.917,
+            frame.maxX - 4 - box.labelSize * 1.1 - maxNameWidth
+        )
         for (index, series) in chart.series.enumerated() {
             commands.append(.fillRect(
                 rect: CGRect(
@@ -326,12 +335,13 @@ private extension HwpChartPainter {
         let apex = CGPoint(x: centerX, y: baseY - height)
         let baseEdgeY = baseY - baseEllipseHeight / 2
 
+        // 우측 가장자리의 좁고 진한 음영 스트립 (실물: 몸통 대비 휘도 절반)
         let dark = CGMutablePath()
         dark.move(to: apex)
         dark.addLine(to: CGPoint(x: centerX + halfWidth, y: baseEdgeY))
         dark.addQuadCurve(
-            to: CGPoint(x: centerX, y: baseY + baseEllipseHeight * 0.45),
-            control: CGPoint(x: centerX + halfWidth * 0.55, y: baseY + baseEllipseHeight * 0.4)
+            to: CGPoint(x: centerX + halfWidth * 0.62, y: baseY - baseEllipseHeight * 0.1),
+            control: CGPoint(x: centerX + halfWidth * 0.9, y: baseY + baseEllipseHeight * 0.2)
         )
         dark.closeSubpath()
 
@@ -348,7 +358,7 @@ private extension HwpChartPainter {
         return [
             .drawPath(
                 path: dark,
-                fill: CGColor(gray: 0, alpha: 0.09),
+                fill: CGColor(gray: 0, alpha: 0.42),
                 stroke: nil, strokeWidth: 0
             ),
             .drawPath(

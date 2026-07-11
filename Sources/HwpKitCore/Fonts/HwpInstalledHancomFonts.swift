@@ -32,6 +32,7 @@ public enum HwpInstalledHancomFonts {
 
     private static func buildIndex() -> [String: CTFontDescriptor] {
         var result: [String: CTFontDescriptor] = [:]
+        var plainKeys = Set<String>()
         let fileManager = FileManager.default
         for root in searchRoots {
             guard let enumerator = fileManager.enumerator(
@@ -45,18 +46,34 @@ public enum HwpInstalledHancomFonts {
                     url as CFURL
                 ) as? [CTFontDescriptor] else { continue }
                 for descriptor in descriptors {
-                    register(descriptor, into: &result)
+                    register(descriptor, into: &result, plainKeys: &plainKeys)
                 }
             }
         }
         return result
     }
 
-    /// family/스타일 조합 이름과 full name을 인덱스에 넣는다 (첫 항목 우선 —
-    /// 시스템 설치 폰트가 이미 조회에서 앞서므로 여기선 파일 순서면 충분).
+    /// descriptor의 symbolic traits (Bold/Italic 판별)
+    private static func isPlainFace(_ descriptor: CTFontDescriptor) -> Bool {
+        guard let traits = CTFontDescriptorCopyAttribute(
+            descriptor, kCTFontTraitsAttribute
+        ) as? [CFString: Any],
+            let symbolic = traits[kCTFontSymbolicTrait] as? UInt32
+        else { return true }
+        let styled = CTFontSymbolicTraits.traitBold.rawValue
+            | CTFontSymbolicTraits.traitItalic.rawValue
+        return symbolic & styled == 0
+    }
+
+    /// family/스타일 조합 이름과 full name을 인덱스에 넣는다.
+    /// 같은 이름 (family/로컬라이즈 이름은 Bold 파일도 동일)에는 보통
+    /// (비볼드·비이탤릭) 페이스를 우선한다 — 파일 열거 순서에 따라
+    /// HANDotumB.ttf가 먼저 잡혀 '함초롬돋움'이 Bold로 등록되던 문제
+    /// (2026-07-10 실물 대조: 전 텍스트가 굵게 렌더).
     private static func register(
         _ descriptor: CTFontDescriptor,
-        into result: inout [String: CTFontDescriptor]
+        into result: inout [String: CTFontDescriptor],
+        plainKeys: inout Set<String>
     ) {
         var names: [String] = []
         for attribute in [
@@ -75,13 +92,19 @@ public enum HwpInstalledHancomFonts {
                 names.append(localized)
             }
         }
-        for name in names {
-            if result[name] == nil {
-                result[name] = descriptor
-            }
-            let normalized = HwpFontMap.normalize(name)
-            if result[normalized] == nil {
-                result[normalized] = descriptor
+        let plain = isPlainFace(descriptor)
+        for rawName in names {
+            for name in [rawName, HwpFontMap.normalize(rawName)] {
+                if result[name] == nil {
+                    result[name] = descriptor
+                    if plain {
+                        plainKeys.insert(name)
+                    }
+                } else if plain, !plainKeys.contains(name) {
+                    // 보통 페이스가 스타일 페이스를 대체한다
+                    result[name] = descriptor
+                    plainKeys.insert(name)
+                }
             }
         }
     }

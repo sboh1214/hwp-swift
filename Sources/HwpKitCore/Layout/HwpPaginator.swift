@@ -1900,11 +1900,16 @@ private extension HwpPaginator {
             fallbackSize: size.height,
             fontResolver: fontResolver
         ) else { return false }
+        // 근사 텍스트가 저장된 개체 폭보다 길면 폭을 늘려 한 줄을 유지한다
+        // (한글.app 수식은 줄바꿈 없이 한 줄 — equation 실물 캡처)
+        let line = CTLineCreateWithAttributedString(attributed)
+        let measuredWidth = ceil(CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))) + 2
+        let blockSize = CGSize(width: max(size.width, measuredWidth), height: size.height)
         // kind는 개체 (.textbox) — 인라인 앵커 개체는 자기 문단 text 블록과
         // 겹치는 것이 정상이라 text-text 겹침 검사 대상이 아니어야 한다
         appendAnchoredBlock(
             kind: .textbox,
-            size: size,
+            size: blockSize,
             payload: nil,
             commonProperty: commonProperty,
             attributedText: [attributed],
@@ -2028,6 +2033,15 @@ private extension HwpPaginator {
         }
 
         if info.treatAsChar || consumesFlow(info) {
+            // 세로 기준이 종이/쪽인 개체는 흐름 커서가 아니라 기준+오프셋
+            // 절대 위치에 놓이고, 본문 흐름은 개체 아래로 밀린다
+            // (한글 실측: text-box 46.2/35.6mm — 종이 기준 오프셋 그대로).
+            if !info.treatAsChar,
+               info.verticalRelativeTo == .paper || info.verticalRelativeTo == .page
+            {
+                appendAbsolutePositionedFlowBlock(spec, commonProperty: commonProperty)
+                return
+            }
             appendFlowBlock(
                 kind: spec.kind,
                 size: spec.size,
@@ -2083,6 +2097,49 @@ private extension HwpPaginator {
 
     /// 본문 흐름을 소비하는 블록을 현재 흐름 위치에 배치한다.
     /// 남은 공간에 안 맞으면 (블록이 단에 들어가는 크기일 때) 다음 단/페이지로 넘긴다.
+    /// 종이/쪽 기준 절대 위치 + 흐름 회피 (topAndBottom류) 개체:
+    /// 기준+오프셋 위치에 놓고, 개체 하단이 흐름 커서보다 아래면 본문
+    /// 흐름을 개체 아래로 내린다.
+    private func appendAbsolutePositionedFlowBlock(
+        _ spec: ObjectBlockSpec,
+        commonProperty: CoreHwp.HwpCommonCtrlProperty
+    ) {
+        let info = commonProperty.propertyInfo
+        let contentFrame = currentPageGeometry.contentFrame
+        let offsetX = HwpUnits.points(
+            fromHwpUnit: Int32(bitPattern: commonProperty.horizontalOffset)
+        )
+        let offsetY = HwpUnits.points(
+            fromHwpUnit: Int32(bitPattern: commonProperty.verticalOffset)
+        )
+        let baseX: CGFloat = switch info.horizontalRelativeTo {
+        case .paper: 0
+        case .page, nil: contentFrame.minX
+        case .column, .paragraph: currentColumnFrame.minX
+        }
+        let baseY: CGFloat = info.verticalRelativeTo == .paper ? 0 : contentFrame.minY
+        let frame = CGRect(
+            x: baseX + offsetX,
+            y: baseY + offsetY,
+            width: spec.size.width,
+            height: spec.size.height
+        )
+        currentBlocks.append(AnyHwpBlock(
+            frame: frame,
+            kind: spec.kind,
+            attributedString: spec.attributedString,
+            payload: spec.payload,
+            source: HwpBlockSource(controlInstanceId: spec.instanceId)
+        ))
+        bandHasNonTextContent = true
+        // 본문 흐름을 개체 밴드 아래로 (topAndBottom 회피)
+        let flowBottom = frame.maxY - currentColumnFrame.minY
+        if flowBottom > contentHeightUsed {
+            contentHeightUsed = flowBottom
+        }
+        markBandUsage()
+    }
+
     private func appendFlowBlock(
         kind: HwpBlockKind,
         size: CGSize,
@@ -2621,7 +2678,9 @@ private extension HwpPaginator {
             cacheCurrentPage()
         }
 
-        var drawSeparator = true
+        // 한글.app 실물 (footnote-endnote 2쪽): 미주 위에는 구분선을 그리지
+        // 않고, 텍스트가 본문 상단에서 바로 시작한다.
+        var drawSeparator = false
         while !pendingEndnotes.isEmpty {
             let columnFrame = currentColumnFrame
             let available = CGRect(

@@ -74,6 +74,7 @@ public struct HwpTextRunBuilder {
         guard !units.isEmpty else { return NSAttributedString(string: "") }
 
         let output = NSMutableAttributedString()
+        appendBulletHeading(for: paragraph, to: output)
         var chunk = Chunk(shapeId: activeShapeId(at: 0, in: paragraph.paraCharShape), script: nil)
         // startingIndex는 원본 WCHAR 스트림 위치 기준: inline/extended 컨트롤은
         // charArray에서 1개 요소지만 스트림에서는 8 WCHAR를 차지한다.
@@ -170,10 +171,44 @@ private extension HwpTextRunBuilder {
             ),
             range: NSRange(location: 0, length: output.length)
         )
+        let alignment = paraShape.property1Info.alignmentRawValue
+        if alignment == 4 || alignment == 5 {
+            // 배분/나눔 정렬: 마지막 줄도 벌린다 (공공누리 실물 실측)
+            output.addAttribute(
+                HwpAttributedStringKey.distributeAlignment,
+                value: NSNumber(value: true),
+                range: NSRange(location: 0, length: output.length)
+            )
+        }
     }
 }
 
 private extension HwpTextRunBuilder {
+    /// 문단 머리 글머리표 (표 44 heading 종류 3): 한글처럼 본문 앞에
+    /// 글머리표 문자 + 공백을 그린다 (noori 제목 박스 '- ' 실물 실측).
+    func appendBulletHeading(
+        for paragraph: CoreHwp.HwpParagraph,
+        to output: NSMutableAttributedString
+    ) {
+        guard let paraShape = index.paraShape(id: UInt32(paragraph.paraHeader.paraShapeId)),
+              paraShape.property1Info.hasBulletHeading,
+              paraShape.numberingOrBulletId > 0,
+              // 글머리표 참조는 1-based (0 = 없음)
+              let bullet = index.bullet(id: UInt32(paraShape.numberingOrBulletId) - 1),
+              !bullet.char.isEmpty
+        else { return }
+        let shapeId = activeShapeId(at: 0, in: paragraph.paraCharShape)
+        let shape = resolvedShape(id: shapeId, paragraph: paragraph)
+        let bulletAttributes = attributes(
+            for: shape,
+            script: detectScript(in: bullet.char)
+        )
+        output.append(NSAttributedString(
+            string: bullet.char + " ",
+            attributes: bulletAttributes
+        ))
+    }
+
     struct Chunk {
         var shapeId: UInt32
         var script: HwpScript?
@@ -229,10 +264,13 @@ private extension HwpTextRunBuilder {
             chunkAttributes[HwpAttributedStringKey.shadeColor] =
                 HwpMemoPanelPainter.anchorFillColor
         }
-        let attributed = NSAttributedString(
+        let attributed = NSMutableAttributedString(
             string: chunk.text,
             attributes: chunkAttributes
         )
+        if !shape.property.doesAdjustBlank {
+            Self.applyFixedSpaceWidth(to: attributed)
+        }
         output.append(attributed)
     }
 
@@ -336,7 +374,22 @@ private extension HwpTextRunBuilder {
                 value: Double(location * size / 100)
             ),
         ]
+        if location != 0 {
+            // CTFramesetter는 kCTBaselineOffset을 무시한다 — 렌더러가 직접
+            // 시프트한다 (CharShape '글자위치' 실물: 양수 값이 아래로 내려감)
+            attributes[HwpAttributedStringKey.glyphBaselineOffset] = NSNumber(
+                value: Double(-location * size / 100)
+            )
+        }
 
+        if shape.property.isBold,
+           !CTFontGetSymbolicTraits(font).contains(.traitBold)
+        {
+            // 볼드 페이스가 없는 폰트 (휴먼명조·신명조 등): 한글처럼 합성
+            // 볼드 — 채움+윤곽 (음수 stroke). noori 볼드 범위 실물 실측.
+            attributes[kCTStrokeWidthAttributeName as NSAttributedString.Key] =
+                NSNumber(value: -2.5)
+        }
         applyShapeDecorations(to: &attributes, shape: shape, size: size)
         return attributes
     }

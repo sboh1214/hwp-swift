@@ -48,13 +48,15 @@ enum HwpEquationLayout {
         }
 
         var spaced = ""
+        // 관계 연산자 양쪽은 얇은 공백 (U+2009) — 실물 'x = 1' 간격 실측
+        let thinSpace: Character = "\u{2009}"
         for character in text {
             if relationOperators.contains(character) {
-                if let last = spaced.last, last != " " {
-                    spaced.append(" ")
+                if let last = spaced.last, last != " ", last != thinSpace {
+                    spaced.append(thinSpace)
                 }
                 spaced.append(character)
-                spaced.append(" ")
+                spaced.append(thinSpace)
             } else if character == " " {
                 if spaced.last != " " {
                     spaced.append(character)
@@ -64,6 +66,7 @@ enum HwpEquationLayout {
             }
         }
         return spaced.trimmingCharacters(in: .whitespaces)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\u{2009}"))
     }
 
     /// eqEdit 정보로 CT 속성 문자열을 만든다. 라틴 문자는 수학 관례대로 이탤릭,
@@ -84,9 +87,17 @@ enum HwpEquationLayout {
             script: .english,
             size: size
         )
-        let italicFont = CTFontCreateCopyWithSymbolicTraits(
+        let italicFont: CTFont
+        if let traitCopy = CTFontCreateCopyWithSymbolicTraits(
             baseFont, 0, nil, .traitItalic, .traitItalic
-        ) ?? baseFont
+        ) {
+            italicFont = traitCopy
+        } else {
+            // 이탤릭 페이스 없는 폰트 (HancomEQN): 기울임 매트릭스 근사
+            var matrix = CTFontGetMatrix(baseFont)
+            matrix.c += 0.22
+            italicFont = CTFontCreateCopyWithAttributes(baseFont, 0, &matrix, nil)
+        }
         let color = (edit.textColor ?? CoreHwp.HwpColor(0, 0, 0)).cgColor
 
         let fontKey = kCTFontAttributeName as NSAttributedString.Key

@@ -54,6 +54,21 @@ public extension HwpParaShapeProperty1 {
     var lineSpacingKind: HwpLineSpacingKind {
         HwpLineSpacingKind(rawValue: rawValue & 0b11) ?? .percent
     }
+
+    /** 정렬 방식 (표 44 bit 2-4): 0 양쪽, 1 왼쪽, 2 오른쪽, 3 가운데, 4 배분, 5 나눔 */
+    var alignmentRawValue: UInt32 {
+        (rawValue >> 2) & 0b111
+    }
+
+    /** 문단 머리 모양 종류 (표 44 bit 23-24): 0 없음, 1 개요, 2 번호, 3 글머리표 */
+    var headingTypeRawValue: UInt32 {
+        (rawValue >> 23) & 0b11
+    }
+
+    /** 글머리표 문단 여부 */
+    var hasBulletHeading: Bool {
+        headingTypeRawValue == 3
+    }
 }
 
 /**

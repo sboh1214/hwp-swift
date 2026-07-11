@@ -175,10 +175,11 @@ public struct HwpPaintListBuilder: Sendable {
         // 테두리 정보가 없으면 그리지 않는다 (한글.app: CCL 실측 — 선 없는
         // 글상자는 테두리 없이 렌더)
         if let borderColor = textbox.borderColor, textbox.borderWidth > 0 {
+            // 한글은 0.33pt 헤어라인도 최소 1px 실선으로 그린다 (text-box 실물)
             commands.append(.strokeRect(
                 rect: outerRect,
                 color: borderColor.cgColor,
-                width: textbox.borderWidth
+                width: max(0.7, textbox.borderWidth)
             ))
         }
         for paragraph in textbox.paragraphs where paragraph.attributedString.length > 0 {

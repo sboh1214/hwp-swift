@@ -15,7 +15,7 @@ extension HwpTextRunBuilder {
         let red = CGColor(srgbRed: 0.87, green: 0.14, blue: 0.1, alpha: 1)
         attributes[kCTForegroundColorAttributeName as NSAttributedString.Key] = red
         if mark == 17 {
-            attributes[.strikethroughStyle] = NSNumber(value: 1)
+            attributes[HwpAttributedStringKey.strikethroughStyle] = NSNumber(value: 1)
             attributes[HwpAttributedStringKey.strikethroughColor] = red
         } else {
             attributes[.underlineStyle] = NSNumber(value: 1)
@@ -77,5 +77,48 @@ extension HwpTextRunBuilder {
             position += length
         }
         return ranges
+    }
+}
+
+extension HwpTextRunBuilder {
+    /// 한글의 기본 공백 폭 규칙: '글꼴에 어울리는 빈칸'(doesAdjustBlank)이
+    /// 꺼져 있으면 공백 advance를 폰트 고유 폭 대신 글자 크기의 1/2로 맞춘다.
+    /// 실측 (2026-07-10 plain-text-minimal 실물 픽셀): 한글.app 공백 advance
+    /// ≈ 0.5em, HCR Batang 고유 공백 ≈ 0.3em — 부족분을 kern으로 더한다.
+    static func applyFixedSpaceWidth(to attributed: NSMutableAttributedString) {
+        let text = attributed.string as NSString
+        var index = 0
+        while index < text.length {
+            if text.character(at: index) == 0x20 {
+                let attrs = attributed.attributes(at: index, effectiveRange: nil)
+                if let fontValue = attrs[kCTFontAttributeName as NSAttributedString.Key],
+                   CFGetTypeID(fontValue as CFTypeRef) == CTFontGetTypeID()
+                {
+                    // swiftlint:disable:next force_cast
+                    let font = fontValue as! CTFont
+                    let kern = Self.fixedSpaceKern(for: font)
+                    if abs(kern) > 0.01 {
+                        attributed.addAttribute(
+                            kCTKernAttributeName as NSAttributedString.Key,
+                            value: NSNumber(value: Double(kern)),
+                            range: NSRange(location: index, length: 1)
+                        )
+                    }
+                }
+            }
+            index += 1
+        }
+    }
+
+    /// 공백 글리프의 고유 advance와 0.5em 목표의 차 (폰트별 캐시 없이 즉석 계산 —
+    /// CTFontGetAdvancesForGlyphs는 가볍고 chunk 단위로만 불린다)
+    static func fixedSpaceKern(for font: CTFont) -> CGFloat {
+        var character: UniChar = 0x20
+        var glyph = CGGlyph()
+        guard CTFontGetGlyphsForCharacters(font, &character, &glyph, 1) else { return 0 }
+        var advance = CGSize.zero
+        CTFontGetAdvancesForGlyphs(font, .horizontal, &glyph, &advance, 1)
+        let target = CTFontGetSize(font) * 0.5
+        return target - advance.width
     }
 }
