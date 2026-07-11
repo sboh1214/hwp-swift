@@ -346,13 +346,11 @@ private extension HwpTextRunBuilder {
         let relativeSize = CGFloat(value(at: slot, in: shape.faceRelativeSize, default: 100))
         let size = baseSize * relativeSize / 100
         let faceId = UInt32(value(at: slot, in: shape.faceId, default: 0))
-        var faceName = index.faceName(for: faceId, script: script)?.faceName ?? "Helvetica"
-        // 한글은 명조 계열 폰트의 라틴/숫자를 Times형으로 폴백 (noori 실물;
-        // 함초롬 계열은 자체 라틴 유지)
-        if script == .english, faceName.contains("명조"), !faceName.contains("함초롬") {
-            faceName = "Times New Roman"
-        }
-        var font = fontResolver.resolve(faceName: faceName, script: script, size: size)
+        let faceName = index.faceName(for: faceId, script: script)?.faceName ?? "Helvetica"
+        var font = fontResolver.resolve(
+            faceName: Self.serifLatinFallback(faceName, script: script),
+            script: script, size: size
+        )
         font = copy(font, adding: symbolicTraits(for: shape.property))
         let scaleX = CGFloat(value(at: slot, in: shape.faceScaleX, default: 100)) / 100
         if scaleX != 1 {

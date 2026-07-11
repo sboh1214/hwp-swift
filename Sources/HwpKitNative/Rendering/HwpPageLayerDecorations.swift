@@ -62,27 +62,34 @@ extension HwpPageLayer {
         ctx.setFillColor(shade as! CGColor) // swiftlint:disable:this force_cast
         ctx.fill(bounds)
         if let stroke = attributes[HwpAttributedStringKey.memoAnchorStroke] {
-            // 실물 (라운드 6): 사방 테두리가 아니라 오른쪽 끝의 둥근 꺾쇠
-            // (범위 종료 표식)만 진하게 그려진다
-            let bracket = CGMutablePath()
-            let radius: CGFloat = 1.2
-            bracket.move(to: CGPoint(x: bounds.maxX - radius, y: bounds.minY))
-            bracket.addArc(
-                tangent1End: CGPoint(x: bounds.maxX, y: bounds.minY),
-                tangent2End: CGPoint(x: bounds.maxX, y: bounds.minY + radius),
-                radius: radius
-            )
-            bracket.addLine(to: CGPoint(x: bounds.maxX, y: bounds.maxY - radius))
-            bracket.addArc(
-                tangent1End: CGPoint(x: bounds.maxX, y: bounds.maxY),
-                tangent2End: CGPoint(x: bounds.maxX - radius, y: bounds.maxY),
-                radius: radius
-            )
+            // 실물: 범위 양 끝의 둥근 괄호 쌍 — 여는 쪽은 옅고 닫는 쪽이
+            // 진하다 (라운드 10 실측)
+            func bracket(atX x: CGFloat, cornerX: CGFloat) -> CGPath {
+                let path = CGMutablePath()
+                let radius: CGFloat = 1.2
+                path.move(to: CGPoint(x: cornerX, y: bounds.minY))
+                path.addArc(
+                    tangent1End: CGPoint(x: x, y: bounds.minY),
+                    tangent2End: CGPoint(x: x, y: bounds.minY + radius),
+                    radius: radius
+                )
+                path.addLine(to: CGPoint(x: x, y: bounds.maxY - radius))
+                path.addArc(
+                    tangent1End: CGPoint(x: x, y: bounds.maxY),
+                    tangent2End: CGPoint(x: cornerX, y: bounds.maxY),
+                    radius: radius
+                )
+                return path
+            }
+            let strokeColor = stroke as! CGColor // swiftlint:disable:this force_cast
             ctx.saveGState()
-            ctx.addPath(bracket)
-            ctx.setStrokeColor(stroke as! CGColor) // swiftlint:disable:this force_cast
-            ctx.setLineWidth(0.9)
             ctx.setLineCap(.round)
+            ctx.setStrokeColor(strokeColor)
+            ctx.addPath(bracket(atX: bounds.maxX, cornerX: bounds.maxX - 1.2))
+            ctx.setLineWidth(0.9)
+            ctx.strokePath()
+            ctx.addPath(bracket(atX: bounds.minX, cornerX: bounds.minX + 1.2))
+            ctx.setLineWidth(0.55)
             ctx.strokePath()
             ctx.restoreGState()
         }
