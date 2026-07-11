@@ -2033,12 +2033,11 @@ private extension HwpPaginator {
         }
 
         if info.treatAsChar || consumesFlow(info) {
-            // 세로 기준이 종이/쪽인 개체는 흐름 커서가 아니라 기준+오프셋
-            // 절대 위치에 놓이고, 본문 흐름은 개체 아래로 밀린다
-            // (한글 실측: text-box 46.2/35.6mm — 종이 기준 오프셋 그대로).
-            if !info.treatAsChar,
-               info.verticalRelativeTo == .paper || info.verticalRelativeTo == .page
-            {
+            // 세로 기준이 종이/쪽/문단인 개체는 흐름 커서가 아니라 기준+
+            // 오프셋 위치에 놓이고, 본문 흐름은 개체 아래로 밀린다
+            // (한글 실측: text-box 종이 46.2/35.6mm, chart 문단 상단 —
+            // 흐름 커서 배치는 앵커 문단 줄 높이만큼 밀린다).
+            if !info.treatAsChar, info.verticalRelativeTo != nil {
                 appendAbsolutePositionedFlowBlock(spec, commonProperty: commonProperty)
                 return
             }
@@ -2117,7 +2116,11 @@ private extension HwpPaginator {
         case .page, nil: contentFrame.minX
         case .column, .paragraph: currentColumnFrame.minX
         }
-        let baseY: CGFloat = info.verticalRelativeTo == .paper ? 0 : contentFrame.minY
+        let baseY: CGFloat = switch info.verticalRelativeTo {
+        case .paper: 0
+        case .paragraph: paragraphAnchorTop
+        default: contentFrame.minY
+        }
         let frame = CGRect(
             x: baseX + offsetX,
             y: baseY + offsetY,
