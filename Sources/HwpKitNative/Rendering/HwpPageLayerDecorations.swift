@@ -111,14 +111,25 @@ extension HwpPageLayer {
                 .map { CGFloat($0.doubleValue) } ?? 0
             // swiftlint:disable:next force_cast
             let shadow = shadowColor as! CGColor
-            // 라운드 4 실측: 실물의 연속/비연속 그림자는 모두 밝은 회색
-            // 단일 분리 사본 — 사본 겹침 없이 setShadow 한 번으로 그린다.
-            // 텍스트 공간은 y-up으로 뒤집혀 있으므로 아래(+dy)는 -y
-            ctx.setShadow(
-                offset: CGSize(width: offsetX, height: -offsetY),
-                blur: 0,
-                color: shadow
-            )
+            // setShadow는 base space 기준이라 오프셋 방향이 뒤틀린다
+            // (라운드 8 실측: 왼쪽으로 출력) — 사본을 직접 그린다.
+            // 연속 그림자는 본문~사본 사이를 스텝으로 채운 면 덩어리
+            // (실물: 획에 밀착된 연속 회색), 비연속은 분리 사본 하나.
+            // run은 kCTForegroundColorFromContext — 컨텍스트 fill 색.
+            let continuous = attributes[HwpAttributedStringKey.shadowContinuous] != nil
+            let steps: [CGFloat] = continuous ? [0.25, 0.5, 0.75, 1.0] : [1.0]
+            ctx.setFillColor(shadow)
+            for step in steps {
+                // 텍스트 공간은 y-up이므로 시각적 아래(+dy)는 -y
+                ctx.textPosition = CGPoint(
+                    x: origin.x + offsetX * step,
+                    y: origin.y - offsetY * step
+                )
+                CTRunDraw(run, ctx, CFRange(location: 0, length: 0))
+            }
+            let face = attributes[kCTForegroundColorAttributeName as NSAttributedString.Key]
+            // swiftlint:disable:next force_cast
+            ctx.setFillColor(face.map { $0 as! CGColor } ?? CGColor(gray: 0, alpha: 1))
         }
         ctx.textPosition = origin
         CTRunDraw(run, ctx, CFRange(location: 0, length: 0))
@@ -217,11 +228,12 @@ extension HwpPageLayer {
         let bounds = runBounds(of: run, lineOrigin: lineOrigin)
         let xHeight = runFont(attributes).map(CTFontGetXHeight) ?? bounds.height * 0.4
         setDecorationFillColor(color, in: ctx)
+        // 실물 취소선도 밑줄과 같은 헤어라인 (라운드 8 실측 ~0.45pt)
         ctx.fill(CGRect(
             x: bounds.minX,
             y: lineOrigin.y + xHeight / 2,
             width: bounds.width,
-            height: 0.75
+            height: 0.4
         ))
     }
 

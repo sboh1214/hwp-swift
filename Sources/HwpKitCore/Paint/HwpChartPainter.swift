@@ -12,11 +12,12 @@ import Foundation
 /// 폭 전 계열 동일. 이 페인터도 같은 평행 투영. pie/line 등 기타 차트
 /// 종류는 미재현 (전부 세로 막대 취급).
 enum HwpChartPainter {
-    /// 한컴 기본 차트 계열색 — 한글.app mac 렌더러 실측 (원뿔 몸통 픽셀).
-    /// Office accent보다 연하다.
+    /// 한컴 기본 차트 계열색 — 한글.app mac 렌더러 실측. 캡처 원시값이
+    /// 아니라 색 관리(BT.2020 태그) 변환 후 sRGB 값이 실제 색이다
+    /// (라운드 8 — 회색 계열이 양쪽 178로 불변인 것으로 확정)
     private static let seriesColors: [HwpRGBColor] = [
-        HwpRGBColor(red: 0.463, green: 0.510, blue: 0.812), // #7682CF
-        HwpRGBColor(red: 0.855, green: 0.569, blue: 0.302), // #DA914D
+        HwpRGBColor(red: 0.380, green: 0.514, blue: 0.835), // #6183D5
+        HwpRGBColor(red: 0.996, green: 0.518, blue: 0.227), // #FE843A
         HwpRGBColor(red: 0.698, green: 0.698, blue: 0.698), // #B2B2B2
         HwpRGBColor(red: 1.00, green: 0.78, blue: 0.25), // 노랑 계열 (미실측 — 근사)
         HwpRGBColor(red: 0.47, green: 0.67, blue: 0.86), // 하늘 계열 (미실측 — 근사)

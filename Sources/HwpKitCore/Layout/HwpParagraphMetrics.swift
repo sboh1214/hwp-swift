@@ -33,16 +33,21 @@ extension HwpParagraphLayout {
             _ lineHeight: CGFloat,
             attributedString: NSAttributedString?
         ) {
-            let natural = attributedString.map(Self.maxNaturalLineHeight(in:)) ?? 0
-            if natural > 0, lineHeight >= natural {
-                lineSpacingAdjustment = lineHeight - natural
-                lineHeightAppliedAsSpacing = true
+            // min=max 강제가 기본 — spacing 가산은 CT가 폴백 폰트의 부풀린
+            // leading을 더해 줄 피치가 커진다 (noori 실측 +7%: 25.5→27.3pt).
+            // 인라인 개체 줄만 spacing 방식 (개체가 줄 높이를 키울 수 있게).
+            if attributedString.map(Self.hasInlineObjects(in:)) == true {
+                let natural = attributedString.map(Self.maxNaturalLineHeight(in:)) ?? 0
+                if natural > 0, lineHeight >= natural {
+                    lineSpacingAdjustment = lineHeight - natural
+                    lineHeightAppliedAsSpacing = true
+                    return
+                }
+                minimumLineHeight = lineHeight
                 return
             }
             minimumLineHeight = lineHeight
-            if attributedString.map(Self.hasInlineObjects(in:)) != true {
-                maximumLineHeight = lineHeight
-            }
+            maximumLineHeight = lineHeight
         }
 
         /// run 폰트들의 자연 줄 높이 최대값 (ascent + descent + leading)

@@ -682,13 +682,15 @@ private extension HwpPaginator {
             columnIndex = runIndex
             contentHeightUsed = 0
             paragraphAnchorTop = currentColumnFrame.minY
+            let fragment = attributedString.attributedSubstring(
+                from: NSRange(location: start, length: length)
+            )
             appendBlock(
                 height: max(1, HwpUnits.points(
                     fromHwpUnit: runBottom - firstSegment.lineLocation
                 )),
-                attributedString: attributedString.attributedSubstring(
-                    from: NSRange(location: start, length: length)
-                ),
+                attributedString: runIndex < runs.count - 1
+                    ? Self.markedAsContinuedFragment(fragment) : fragment,
                 hyperlinkURL: hyperlinkURL(in: paragraph),
                 paragraphId: paragraph.paraHeader.paraId
             )
@@ -1692,6 +1694,20 @@ private extension HwpPaginator {
         return (top, bottom)
     }
 
+    /// 문단이 다음 단/쪽으로 이어지는 조각의 마지막 문자에 마커를 단다 —
+    /// 렌더러의 양쪽 정렬이 조각 끝 줄을 문단 마지막 줄로 오인하지 않도록
+    /// (Column 실물: 단 경계 직전 줄도 양쪽 정렬로 늘어난다)
+    static func markedAsContinuedFragment(_ attributed: NSAttributedString) -> NSAttributedString {
+        guard attributed.length > 0 else { return attributed }
+        let mutable = NSMutableAttributedString(attributedString: attributed)
+        mutable.addAttribute(
+            HwpAttributedStringKey.continuedParagraphFragment,
+            value: NSNumber(value: true),
+            range: NSRange(location: attributed.length - 1, length: 1)
+        )
+        return mutable
+    }
+
     /// 지정한 라인들만 담은 하위 문단을 만든다. 라인 range는 하위 문자열 기준으로
     /// 재기준화해 (다중 페이지 row에서) 이후 분할에서도 라인 정보를 쓸 수 있게 한다.
     private func paragraphFragment(
@@ -1714,8 +1730,10 @@ private extension HwpPaginator {
                 inlineAnchors: line.inlineAnchors
             )
         }
+        let sub = paragraph.attributedString.attributedSubstring(from: range)
+        let continued = range.location + range.length < paragraph.attributedString.length
         return HwpLaidOutParagraph(
-            attributedString: paragraph.attributedString.attributedSubstring(from: range),
+            attributedString: continued ? Self.markedAsContinuedFragment(sub) : sub,
             frame: HwpParagraphFrame(totalHeight: rect.height, lines: rebased),
             rect: rect,
             paragraphId: paragraph.paragraphId

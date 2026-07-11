@@ -250,6 +250,7 @@ private extension HwpParagraphLayout {
         let paragraphSpacingBefore: UnsafeMutablePointer<CGFloat>
         let paragraphSpacing: UnsafeMutablePointer<CGFloat>
         let lineSpacing: UnsafeMutablePointer<CGFloat>
+        let maximumLineSpacing: UnsafeMutablePointer<CGFloat>
         let minimumLineHeight: UnsafeMutablePointer<CGFloat>
         let maximumLineHeight: UnsafeMutablePointer<CGFloat>
 
@@ -261,6 +262,12 @@ private extension HwpParagraphLayout {
             paragraphSpacingBefore = Self.pointer(to: metrics.paragraphSpacingBefore)
             paragraphSpacing = Self.pointer(to: metrics.paragraphSpacing)
             lineSpacing = Self.pointer(to: metrics.lineSpacingAdjustment)
+            // 줄 높이를 min=max로 강제할 때 폰트 leading 가산도 캡 —
+            // 폴백 폰트의 leading이 줄 피치를 키운다 (noori +0.5pt 실측)
+            maximumLineSpacing = Self.pointer(
+                to: metrics.maximumLineHeight > 0
+                    ? metrics.lineSpacingAdjustment : CGFloat.greatestFiniteMagnitude
+            )
             minimumLineHeight = Self.pointer(to: metrics.minimumLineHeight)
             maximumLineHeight = Self.pointer(to: metrics.maximumLineHeight)
         }
@@ -280,6 +287,8 @@ private extension HwpParagraphLayout {
             paragraphSpacing.deallocate()
             lineSpacing.deinitialize(count: 1)
             lineSpacing.deallocate()
+            maximumLineSpacing.deinitialize(count: 1)
+            maximumLineSpacing.deallocate()
             minimumLineHeight.deinitialize(count: 1)
             minimumLineHeight.deallocate()
             maximumLineHeight.deinitialize(count: 1)
@@ -339,10 +348,20 @@ private extension HwpParagraphLayout {
                 valueSize: MemoryLayout<CGFloat>.size,
                 value: pointers.paragraphSpacing
             ),
+        ] + lineHeightSettings(from: pointers)
+    }
+
+    func lineHeightSettings(from pointers: StyleValuePointers) -> [CTParagraphStyleSetting] {
+        [
             CTParagraphStyleSetting(
                 spec: .lineSpacingAdjustment,
                 valueSize: MemoryLayout<CGFloat>.size,
                 value: pointers.lineSpacing
+            ),
+            CTParagraphStyleSetting(
+                spec: .maximumLineSpacing,
+                valueSize: MemoryLayout<CGFloat>.size,
+                value: pointers.maximumLineSpacing
             ),
             CTParagraphStyleSetting(
                 spec: .minimumLineHeight,

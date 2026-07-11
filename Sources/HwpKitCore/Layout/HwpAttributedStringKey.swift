@@ -30,6 +30,10 @@ public enum HwpAttributedStringKey {
     public static let underlineStyle = NSAttributedString.Key("hwp.underlineStyle")
     /// 상대크기 적용 전 기본 글자 크기 (pt) — % 줄 간격의 기준
     public static let baseFontSize = NSAttributedString.Key("hwp.baseFontSize")
+    /// 문단이 다음 단/쪽으로 이어지는 조각의 마지막 문자 마커 — 이 조각의
+    /// 끝 줄은 문단 마지막 줄이 아니므로 양쪽 정렬을 유지한다
+    public static let continuedParagraphFragment =
+        NSAttributedString.Key("hwp.continuedParagraphFragment")
     /// 연속 그림자 — 본체에서 오프셋까지 이어지는 두꺼운 그림자
     public static let shadowContinuous = NSAttributedString.Key("hwp.shadowContinuous")
     /// 변경 추적 삽입 밑줄 — 한글은 베이스라인 아래 ~0.22em에 그린다

@@ -366,7 +366,6 @@ private extension HwpTextRunBuilder {
         let location = CGFloat(value(at: slot, in: shape.faceLocation, default: 0))
         var attributes: [NSAttributedString.Key: Any] = [
             kCTFontAttributeName as NSAttributedString.Key: font,
-            // % 줄 간격 기준 = 상대크기 적용 전 기본 크기 (한글 실물)
             HwpAttributedStringKey.baseFontSize: NSNumber(value: Double(baseSize)),
             kCTForegroundColorAttributeName as NSAttributedString.Key: shape.faceColor.cgColor,
             kCTKernAttributeName as NSAttributedString.Key: NSNumber(
@@ -388,8 +387,9 @@ private extension HwpTextRunBuilder {
            !CTFontGetSymbolicTraits(font).contains(.traitBold)
         {
             // 볼드 페이스 없는 폰트는 합성 볼드 (채움+윤곽)
+            // 실물 명조 볼드 획 비율 1.41x (noori 실측 — -2.2%는 1.26x)
             attributes[kCTStrokeWidthAttributeName as NSAttributedString.Key] =
-                NSNumber(value: -2.2)
+                NSNumber(value: -3.5)
         }
         applyShapeDecorations(to: &attributes, shape: shape, size: size)
         return attributes

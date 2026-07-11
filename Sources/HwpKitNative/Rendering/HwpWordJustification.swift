@@ -30,11 +30,10 @@ public enum HwpWordJustification {
             at: nsRange.location,
             effectiveRange: nil
         ) != nil
-        if !distributes {
-            guard lineEnd < string.length else { return nil }
-            if string.character(at: lineEnd - 1) == 0x0A {
-                return nil
-            }
+        if !distributes, isParagraphLastLine(
+            lineEnd: lineEnd, string: string, attributedString: attributedString
+        ) {
+            return nil
         }
         guard let style = paragraphStyle(of: attributedString, at: nsRange.location),
               alignment(of: style) == .justified
@@ -72,6 +71,24 @@ public enum HwpWordJustification {
             )
         }
         return CTLineCreateWithAttributedString(mutable)
+    }
+
+    /// 문단 마지막 줄 (양쪽 정렬 제외 대상) 판정: 개행으로 끝나는 줄, 또는
+    /// 조각의 끝 줄 — 단 문단이 다음 단/쪽으로 이어지는 조각의 끝 줄은
+    /// 마지막 줄이 아니다 (Column 실물: 단 경계 직전 줄도 벌린다)
+    private static func isParagraphLastLine(
+        lineEnd: Int,
+        string: NSString,
+        attributedString: NSAttributedString
+    ) -> Bool {
+        if string.character(at: lineEnd - 1) == 0x0A { return true }
+        guard lineEnd >= string.length else { return false }
+        let continued = attributedString.attribute(
+            HwpAttributedStringKey.continuedParagraphFragment,
+            at: string.length - 1,
+            effectiveRange: nil
+        ) != nil
+        return !continued
     }
 
     private static func paragraphStyle(

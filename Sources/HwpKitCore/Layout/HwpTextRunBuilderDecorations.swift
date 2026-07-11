@@ -44,6 +44,9 @@ extension HwpTextRunBuilder {
             if shape.property.shadowType == .continuous {
                 attributes[HwpAttributedStringKey.shadowContinuous] = NSNumber(value: true)
             }
+            // 렌더러가 그림자 사본/본문을 컨텍스트 fill 색으로 2-pass 그린다
+            attributes[kCTForegroundColorFromContextAttributeName
+                as NSAttributedString.Key] = NSNumber(value: true)
         }
         // 외곽선 (표 33): CT stroke 전용 (양수 %) — 실물은 가는 검은
         // 윤곽선의 속 빈 글자 (라운드 6 실측)
