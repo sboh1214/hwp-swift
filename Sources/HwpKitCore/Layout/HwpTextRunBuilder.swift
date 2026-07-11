@@ -268,7 +268,8 @@ private extension HwpTextRunBuilder {
             string: chunk.text,
             attributes: chunkAttributes
         )
-        if !shape.property.doesAdjustBlank {
+        // 워드 호환 문서 (표 20)는 폰트 고유 공백 — 한글 문서만 0.5em 고정
+        if !shape.property.doesAdjustBlank, !index.isCompatibilityDocument {
             Self.applyFixedSpaceWidth(to: attributed)
         }
         output.append(attributed)
@@ -385,9 +386,8 @@ private extension HwpTextRunBuilder {
         if shape.property.isBold,
            !CTFontGetSymbolicTraits(font).contains(.traitBold)
         {
-            // 볼드 페이스가 없는 폰트 (휴먼명조·신명조 등): 한글처럼 합성
-            // 볼드 — 채움+윤곽 (음수 stroke). 굵으면 세리프 대비가 죽어
-            // 고딕 인상이 된다 (noori 표 1행 실물 — 명조 세리프 유지)
+            // 볼드 페이스 없는 폰트는 합성 볼드 (채움+윤곽) — 굵으면
+            // 세리프 대비가 죽는다 (noori 표 1행 실물)
             attributes[kCTStrokeWidthAttributeName as NSAttributedString.Key] =
                 NSNumber(value: -1.6)
         }

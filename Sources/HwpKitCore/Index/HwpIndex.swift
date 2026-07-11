@@ -36,8 +36,10 @@ public struct HwpIndex: Sendable {
         faceNamesJapanese: [UInt32: CoreHwp.HwpFaceName],
         faceNamesEtc: [UInt32: CoreHwp.HwpFaceName],
         faceNamesSymbol: [UInt32: CoreHwp.HwpFaceName],
-        faceNamesUser: [UInt32: CoreHwp.HwpFaceName]
+        faceNamesUser: [UInt32: CoreHwp.HwpFaceName],
+        isCompatibilityDocument: Bool = false
     ) {
+        self.isCompatibilityDocument = isCompatibilityDocument
         self.charShapes = charShapes
         self.paraShapes = paraShapes
         self.borderFills = borderFills
@@ -55,8 +57,15 @@ public struct HwpIndex: Sendable {
         self.faceNamesUser = faceNamesUser
     }
 
+    /// MS 워드 등 호환 문서 (표 20 대상 프로그램 ≠ 한글) 여부 — 워드 호환
+    /// 모드는 공백을 폰트 고유 폭으로 조판한다 (track-changes 실물 실측:
+    /// targetDocument 2 문서만 native 공백, 한글 문서는 0.5em)
+    public let isCompatibilityDocument: Bool
+
     public init(from file: CoreHwp.HwpFile) {
         let idMappings = file.docInfo.idMappings
+        isCompatibilityDocument =
+            (file.docInfo.compatibleDocument?.targetDocument ?? 0) != 0
         charShapes = Self.makeIndex(idMappings.charShapeArray)
         paraShapes = Self.makeIndex(idMappings.paraShapeArray)
         borderFills = Self.makeIndex(idMappings.borderFillArray)

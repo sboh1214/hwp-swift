@@ -104,12 +104,13 @@ extension HwpTableLayout {
             )
         )
         let margins = cellMargins(for: cell.cell, metrics: metrics)
-        let laidOut = laidOutContents(
+        var laidOut = laidOutContents(
             for: cell,
             in: cellRect,
             margins: margins,
             index: context.index
         )
+        laidOut = verticallyAligned(laidOut, cell: cell.cell, cellRect: cellRect, margins: margins)
 
         let resolved = resolvedBorderFill(
             id: cell.cell.header.cellProperty?.borderFillId
@@ -135,6 +136,48 @@ extension HwpTableLayout {
         let paragraphs: [HwpLaidOutParagraph]
         let nestedTables: [HwpNestedTableFrame]
         let images: [HwpCellImage]
+    }
+
+    /// 셀 세로 정렬 (표 89 리스트 헤더 속성): 콘텐츠가 셀보다 작으면
+    /// 가운데/아래 정렬만큼 내린다 (noori 제목 셀 실물: 위·아래 여백 균등).
+    func verticallyAligned(
+        _ contents: LaidOutCellContents,
+        cell: CoreHwp.HwpTableCell,
+        cellRect: CGRect,
+        margins: CellMargins
+    ) -> LaidOutCellContents {
+        let alignment = cell.header.propertyInfo.verticalAlignment ?? .top
+        guard alignment != .top else { return contents }
+        let bottom = contents.paragraphs.map(\.rect.maxY)
+            .max() ?? (cellRect.minY + margins.top)
+        let slack = cellRect.maxY - margins.bottom - bottom
+        guard slack > 0.5 else { return contents }
+        let offset = alignment == .center ? slack / 2 : slack
+        return LaidOutCellContents(
+            paragraphs: contents.paragraphs.map {
+                HwpLaidOutParagraph(
+                    attributedString: $0.attributedString,
+                    frame: $0.frame,
+                    rect: $0.rect.offsetBy(dx: 0, dy: offset),
+                    paragraphId: $0.paragraphId
+                )
+            },
+            nestedTables: contents.nestedTables.map {
+                HwpNestedTableFrame(
+                    rect: $0.rect.offsetBy(dx: 0, dy: offset),
+                    table: $0.table,
+                    controlInstanceId: $0.controlInstanceId
+                )
+            },
+            images: contents.images.map {
+                HwpCellImage(
+                    rect: $0.rect.offsetBy(dx: 0, dy: offset),
+                    binItemId: $0.binItemId,
+                    style: $0.style,
+                    controlInstanceId: $0.controlInstanceId
+                )
+            }
+        )
     }
 
     /// 셀 안 문단과 중첩 표를 셀 여백 안쪽에 위에서 아래로 쌓는다.
