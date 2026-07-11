@@ -197,11 +197,17 @@ extension HwpTableLayout {
         var nestedTables: [HwpNestedTableFrame] = []
         var images: [HwpCellImage] = []
         for content in cell.contents {
+            // 문단 위 간격 (프레임 높이에 포함됨)만큼 텍스트 상단을 내린다
+            let spacingBefore = HwpUnits.points(
+                fromHwpUnit: index.paraShape(
+                    id: UInt32(content.paragraph.paraHeader.paraShapeId)
+                )?.paragraphSpacingTop ?? 0
+            ) / 2
             let rect = CGRect(
                 x: innerX,
-                y: cursorY,
+                y: cursorY + spacingBefore,
                 width: innerWidth,
-                height: content.frame.totalHeight
+                height: content.frame.totalHeight - spacingBefore
             )
             paragraphs.append(HwpLaidOutParagraph(
                 attributedString: textBuilder.build(paragraph: content.paragraph),

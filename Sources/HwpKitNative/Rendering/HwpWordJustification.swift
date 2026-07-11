@@ -63,10 +63,15 @@ public enum HwpWordJustification {
 
         let kernPerSpace = extra / CGFloat(spaceOffsets.count)
         let mutable = NSMutableAttributedString(attributedString: substring)
+        let kernKey = kCTKernAttributeName as NSAttributedString.Key
         for offset in spaceOffsets {
+            // 기존 kern (고정 공백 폭 보정)에 가산 — 교체하면 배분이 기존
+            // kern 합만큼 상쇄되어 양쪽 정렬이 무효가 된다 (CCL 실측)
+            let existing = (mutable.attribute(kernKey, at: offset, effectiveRange: nil)
+                as? NSNumber)?.doubleValue ?? 0
             mutable.addAttribute(
-                kCTKernAttributeName as NSAttributedString.Key,
-                value: NSNumber(value: Double(kernPerSpace)),
+                kernKey,
+                value: NSNumber(value: existing + Double(kernPerSpace)),
                 range: NSRange(location: offset, length: 1)
             )
         }
@@ -81,7 +86,9 @@ public enum HwpWordJustification {
         string: NSString,
         attributedString: NSAttributedString
     ) -> Bool {
-        if string.character(at: lineEnd - 1) == 0x0A { return true }
+        if string.character(at: lineEnd - 1) == 0x0A {
+            return true
+        }
         guard lineEnd >= string.length else { return false }
         let continued = attributedString.attribute(
             HwpAttributedStringKey.continuedParagraphFragment,

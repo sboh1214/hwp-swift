@@ -94,8 +94,9 @@ enum HwpChartPainter {
             frontAxisX: frame.minX + frame.width * 0.140,
             floorFrontY: frame.minY + frame.height * 0.824,
             floorFrontRightX: frame.minX + frame.width * 0.670,
-            // 라운드 2 실측: 뒷벽 상단 relY 0.243 → 깊이 (0.133W, −0.159H)
-            depth: CGSize(width: frame.width * 0.133, height: -frame.height * 0.159),
+            // 라운드 9 실측: 깊이 벡터는 프레임 폭의 0.136 (방향 유지,
+            // 라운드 2 값이 19% 과대) → (0.112W, −0.133H)
+            depth: CGSize(width: frame.width * 0.112, height: -frame.height * 0.133),
             wallHeight: frame.height * 0.465 * 0.96,
             axisMax: max(1, ceil(maxValue)),
             labelSize: labelSize,
@@ -131,7 +132,7 @@ enum HwpChartPainter {
             attributedString: attributed,
             origin: CGPoint(
                 x: frame.midX - width / 2,
-                y: frame.minY + frame.height * 0.049
+                y: frame.minY + frame.height * 0.063
             ),
             lineWidth: width + 2
         )
@@ -164,6 +165,12 @@ enum HwpChartPainter {
                 lineWidth: width + 2
             ))
         }
+        // 값축 눈금 틱 (축 왼쪽 돌출 — 실물 라운드 9)
+        for tick in 0 ... tickCount {
+            let frontY = box.frontTickY(tick)
+            lines.move(to: CGPoint(x: box.frontAxisX - 3, y: frontY))
+            lines.addLine(to: CGPoint(x: box.frontAxisX, y: frontY))
+        }
         // 앞 축 세로선
         lines.move(to: CGPoint(x: box.frontAxisX, y: box.frontTickY(tickCount)))
         lines.addLine(to: CGPoint(x: box.frontAxisX, y: box.floorFrontY))
@@ -176,7 +183,8 @@ enum HwpChartPainter {
         lines.move(to: CGPoint(x: box.frontAxisX, y: box.floorFrontY))
         lines.addLine(to: CGPoint(x: box.floorFrontRightX, y: box.floorFrontY))
         lines.addLine(to: CGPoint(x: box.backRightX, y: box.floorFrontY + box.depth.height))
-        commands.append(.drawPath(path: lines, fill: nil, stroke: gridColor, strokeWidth: 0.5))
+        // 실물은 논리 1px 헤어라인 — 0.5는 AA 커버리지 ~61%로 연해 보인다
+        commands.append(.drawPath(path: lines, fill: nil, stroke: gridColor, strokeWidth: 1.0))
         return commands
     }
 
@@ -203,9 +211,10 @@ enum HwpChartPainter {
             for (categoryIndex, value) in series.values.enumerated()
                 where categoryIndex < box.categoryCount
             {
-                // 실측 (라운드 4): 실물 원뿔 높이는 축 단위 대비 우리보다
-                // ~9% 크다 — 값→높이 계수 보정
-                let height = CGFloat(value / box.axisMax) * box.wallHeight * 1.09
+                // 실물 (라운드 9 회귀 실측): 높이 = 격자 × 값 + 밑면 타원
+                // 처짐 절편 (0.13 격자 단위) — 기울기 보정 ×1.09는 과대
+                let height = CGFloat(value / box.axisMax) * box.wallHeight
+                    + 0.13 / CGFloat(box.axisMax) * box.wallHeight
                 guard height > 0 else { continue }
                 let groupStart = box.frontAxisX + box.groupWidth * CGFloat(categoryIndex)
                 // depthStep 시작 오프셋 (+0.15)의 가로 밀림을 보상해 실물의
@@ -254,7 +263,7 @@ enum HwpChartPainter {
             ticks.move(to: CGPoint(x: x, y: box.floorFrontY))
             ticks.addLine(to: CGPoint(x: x, y: box.floorFrontY + 3))
         }
-        commands.append(.drawPath(path: ticks, fill: nil, stroke: gridColor, strokeWidth: 0.5))
+        commands.append(.drawPath(path: ticks, fill: nil, stroke: gridColor, strokeWidth: 1.0))
         return commands
     }
 
@@ -274,7 +283,7 @@ enum HwpChartPainter {
             .map { labelWidth(label($0.name, font: box.labelFont)) }
             .max() ?? 0
         let x = min(
-            frame.minX + frame.width * 0.900,
+            frame.minX + frame.width * 0.883,
             frame.maxX - 4 - box.labelSize * 1.1 - maxNameWidth
         )
         for (index, series) in chart.series.enumerated() {

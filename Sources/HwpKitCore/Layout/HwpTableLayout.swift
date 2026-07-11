@@ -285,16 +285,22 @@ extension HwpTableLayout {
                 paraShape: paraShape,
                 columnWidth: innerWidth
             )
+            // 문단 위 간격: CT는 프레임 첫 문단에 paragraphSpacingBefore를
+            // 적용하지 않으므로 (셀은 문단별 개별 조판) 항상 직접 더한다.
+            // 렌더 배치에서 같은 값만큼 문단 상단을 내린다 (noori 부제 실물)
+            let spacingBefore = HwpUnits.points(
+                fromHwpUnit: paraShape.paragraphSpacingTop
+            ) / 2
             if let cachedHeight = HwpParagraphLayout.cachedParagraphHeight(paragraph) {
-                // 캐시 (줄 전진량 합)에는 문단 위 간격이 없다 — CT 경로처럼 더한다
-                let spacingBefore = HwpUnits.points(
-                    fromHwpUnit: paraShape.paragraphSpacingTop
-                ) / 2
                 frame = HwpParagraphFrame(
                     totalHeight: cachedHeight + spacingBefore,
                     lines: frame.lines
                 )
             } else {
+                frame = HwpParagraphFrame(
+                    totalHeight: frame.totalHeight + spacingBefore,
+                    lines: frame.lines
+                )
                 allCached = false
             }
             contents.append(PlacedCellContent(
