@@ -341,6 +341,7 @@ extension HwpTextRunBuilder {
         var attributes: [NSAttributedString.Key: Any] = [
             kCTFontAttributeName as NSAttributedString.Key: font,
             HwpAttributedStringKey.baseFontSize: NSNumber(value: Double(baseSize)),
+            HwpAttributedStringKey.spaceTargetSize: NSNumber(value: Double(size)),
             kCTForegroundColorAttributeName as NSAttributedString.Key: shape.faceColor.cgColor,
             kCTKernAttributeName as NSAttributedString.Key: NSNumber(
                 value: Double(spacing * size / 100)

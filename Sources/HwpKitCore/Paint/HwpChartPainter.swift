@@ -63,7 +63,8 @@ enum HwpChartPainter {
         func depthStep(seriesCount: Int, seriesIndex: Int) -> CGFloat {
             guard seriesCount > 1 else { return 0.3 }
             // 계열 1도 바닥 전면선에서 살짝 안쪽에서 시작한다 (실물)
-            return 0.15 + 0.55 / CGFloat(seriesCount - 1) * CGFloat(seriesIndex)
+            // 라운드 12 실측: 계열 간 스텝 = 깊이의 0.325 (0.65/(n-1), n=3)
+            return 0.15 + 0.65 / CGFloat(seriesCount - 1) * CGFloat(seriesIndex)
         }
     }
 
@@ -283,7 +284,7 @@ enum HwpChartPainter {
             .map { labelWidth(label($0.name, font: box.labelFont)) }
             .max() ?? 0
         let x = min(
-            frame.minX + frame.width * 0.883,
+            frame.minX + frame.width * 0.870,
             frame.maxX - 4 - box.labelSize * 1.1 - maxNameWidth
         )
         for (index, series) in chart.series.enumerated() {
@@ -356,12 +357,14 @@ private extension HwpChartPainter {
         let baseEdgeY = baseY - baseEllipseHeight / 2
 
         // 우측 가장자리의 좁고 진한 음영 스트립 (실물: 몸통 대비 휘도 절반)
+        // 실물은 넓은 그라데이션이 아니라 가는 모서리 선 (라운드 12 실측:
+        // 가시 폭의 ~5%) — 스트립을 능선 쪽 좁은 조각으로 한정
         let dark = CGMutablePath()
         dark.move(to: apex)
         dark.addLine(to: CGPoint(x: centerX + halfWidth, y: baseEdgeY))
         dark.addQuadCurve(
-            to: CGPoint(x: centerX + halfWidth * 0.62, y: baseY - baseEllipseHeight * 0.1),
-            control: CGPoint(x: centerX + halfWidth * 0.9, y: baseY + baseEllipseHeight * 0.2)
+            to: CGPoint(x: centerX + halfWidth * 0.88, y: baseY - baseEllipseHeight * 0.05),
+            control: CGPoint(x: centerX + halfWidth * 0.97, y: baseY + baseEllipseHeight * 0.1)
         )
         dark.closeSubpath()
 

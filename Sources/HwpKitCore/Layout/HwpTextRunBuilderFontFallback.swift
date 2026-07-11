@@ -11,8 +11,19 @@ extension HwpTextRunBuilder {
               faceName.contains("명조") || faceName.contains("바탕")
               || faceName.contains("Poppy") || faceName.contains("Batang")
         else { return faceName }
-        // 한글.app의 세리프 대체는 함초롬바탕 라틴 (Times풍 세리프) —
-        // 진행 폭까지 실물과 일치한다 (noori 'o' 문단 줄바꿈 실측)
+        // 한글.app의 세리프 대체: 바탕/명조 계열은 한컴 실폰트가 있으면
+        // 그쪽 (라틴 진행 폭이 좁다 — noori 표 셀 실측 8~11% 격차),
+        // 그 외 (HCI Poppy 등)는 함초롬바탕 라틴 (본문 줄바꿈 폭 정합)
+        if faceName.contains("바탕") || faceName.contains("Batang"),
+           HwpInstalledHancomFonts.descriptor(forFaceName: "한컴바탕") != nil
+        {
+            return "한컴바탕"
+        }
+        if faceName.contains("명조"),
+           HwpInstalledHancomFonts.descriptor(forFaceName: "휴먼명조") != nil
+        {
+            return "휴먼명조"
+        }
         return "함초롬바탕"
     }
 }

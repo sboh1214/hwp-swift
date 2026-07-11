@@ -30,6 +30,9 @@ public enum HwpAttributedStringKey {
     public static let underlineStyle = NSAttributedString.Key("hwp.underlineStyle")
     /// 상대크기 적용 전 기본 글자 크기 (pt) — % 줄 간격의 기준
     public static let baseFontSize = NSAttributedString.Key("hwp.baseFontSize")
+    /// 고정 공백 폭 (0.5em)의 기준 크기 — 상대크기는 반영, 첨자 축소는
+    /// 제외한 글자 크기 (라운드 12 실측: 상대크기 170 줄 공백도 1.7배)
+    public static let spaceTargetSize = NSAttributedString.Key("hwp.spaceTargetSize")
     /// 문단이 다음 단/쪽으로 이어지는 조각의 마지막 문자 마커 — 이 조각의
     /// 끝 줄은 문단 마지막 줄이 아니므로 양쪽 정렬을 유지한다
     public static let continuedParagraphFragment =

@@ -96,10 +96,10 @@ extension HwpTextRunBuilder {
                 {
                     // swiftlint:disable:next force_cast
                     let font = fontValue as! CTFont
-                    // 첨자 run은 폰트가 축소돼 있지만 공백 폭 목표는 원
-                    // 기준 크기의 0.5em (라운드 11 실측: 첨자 행 공백 =
-                    // 본문 공백)
-                    let base = (attrs[HwpAttributedStringKey.baseFontSize]
+                    // 공백 폭 목표는 첨자 축소 전·상대크기 적용 후 크기의
+                    // 0.5em (라운드 11·12 실측: 첨자 행 공백 = 본문 공백,
+                    // 상대크기 170 줄 공백 = 1.7배)
+                    let base = (attrs[HwpAttributedStringKey.spaceTargetSize]
                         as? NSNumber).map { CGFloat($0.doubleValue) }
                     let kern = Self.fixedSpaceKern(for: font, targetEm: base)
                     if abs(kern) > 0.01 {
