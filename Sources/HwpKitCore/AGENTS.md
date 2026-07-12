@@ -144,6 +144,10 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   폴백 (원문 이름 → 정규화 이름 (`-`/`#` 접두 제거 + 공백 제거) 순) → script
   폴백. 명조 계열은 AppleMyungjo, 고딕 계열은 Apple SD Gothic Neo 를 최종
   후보로 유지할 것 (시스템 기본 설치 폰트)
+- 실측 튜닝 상수는 `Tuning/HwpRenderTuning.swift` 에 근거 주석과 함께 —
+  값 변경은 fidelity 전수 + 블록 스냅샷 + 실물 대조 필수 (값 핀:
+  `HwpRenderTuningTests`). 차트 투영 기하 (`HwpChartPainter`)와 각주 예약
+  근사 (`HwpPaginator`)는 예외로 in-place
 - borderFill 참조는 **1-based (0 = 없음)**: `resolvedBorderFill` 은 id-1 을 먼저, 원래 id 를 다음에 시도
 - Sendable actor: `HwpPaginator`, `HwpImageCache` (HwpKitNative)
 - `HwpFontResolver.testDeterministic` — 스냅샷 테스트용 결정론적 resolver

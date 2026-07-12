@@ -33,13 +33,13 @@ extension HwpTextRunBuilder {
         }
         if shape.property.shadowType != .none {
             attributes[HwpAttributedStringKey.shadowColor] = shadowColor(for: shape)
-            // 실측 (CharShapeProperty 실물): 한글 그림자 오프셋은 선언 %의
-            // 약 1.5배 위치에 찍힌다 (10% 선언 → ~15% 실측)
             attributes[HwpAttributedStringKey.shadowOffsetX] = NSNumber(
-                value: Double(size) * Double(shape.shadowIntervalX) * 1.5 / 100
+                value: Double(size) * Double(shape.shadowIntervalX)
+                    * HwpRenderTuning.Text.shadowOffsetScale / 100
             )
             attributes[HwpAttributedStringKey.shadowOffsetY] = NSNumber(
-                value: Double(size) * Double(shape.shadowIntervalY) * 1.5 / 100
+                value: Double(size) * Double(shape.shadowIntervalY)
+                    * HwpRenderTuning.Text.shadowOffsetScale / 100
             )
             if shape.property.shadowType == .continuous {
                 attributes[HwpAttributedStringKey.shadowContinuous] = NSNumber(value: true)

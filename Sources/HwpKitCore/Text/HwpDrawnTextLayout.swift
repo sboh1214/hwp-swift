@@ -96,9 +96,9 @@ public enum HwpDrawnTextLayout {
         }
     }
 
-    /// 폭을 6% 이내로 넘는 개행 없는 한 줄 문단이면 줄바꿈 없이 한 줄로
-    /// 배치한다 (noori 제목 3행 후행 '-' 실물: 행이 글상자 가장자리를 살짝
-    /// 넘침). 가운데 정렬이면 초과분을 좌우로 반씩 넘긴다.
+    /// 폭을 허용 배율 (`HwpRenderTuning.Text.slightOverflowWidthRatio`)
+    /// 이내로 넘는 개행 없는 한 줄 문단이면 줄바꿈 없이 한 줄로 배치한다.
+    /// 가운데 정렬이면 초과분을 좌우로 반씩 넘긴다.
     private static func slightOverflowSingleLine(
         attributedString: NSAttributedString,
         origin: CGPoint,
@@ -109,7 +109,9 @@ public enum HwpDrawnTextLayout {
         else { return nil }
         let line = CTLineCreateWithAttributedString(attributedString)
         let naturalWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
-        guard naturalWidth > lineWidth, naturalWidth <= lineWidth * 1.06 else { return nil }
+        guard naturalWidth > lineWidth,
+              naturalWidth <= lineWidth * HwpRenderTuning.Text.slightOverflowWidthRatio
+        else { return nil }
         var ascent: CGFloat = 0
         var descent: CGFloat = 0
         _ = CTLineGetTypographicBounds(line, &ascent, &descent, nil)
@@ -140,15 +142,18 @@ public enum HwpDrawnTextLayout {
         )
     }
 
-    /// 한글 줄 모델은 텍스트든 개체든 베이스라인을 칸 높이의 ~0.85 지점에
-    /// 둔다. 키 큰 인라인 개체 (run delegate)가 있으면 개체 ascent의 0.85
-    /// 지점 (공공누리 실물 실측 0.859), 아니면 폰트 ascent 기준.
+    /// 한글 줄 모델은 텍스트든 개체든 베이스라인을 칸 높이의 앵커 비율
+    /// (`HwpRenderTuning.Text.baselineAnchorRatio`) 지점에 둔다. 키 큰
+    /// 인라인 개체 (run delegate)가 있으면 개체 ascent 기준
+    /// (`HwpRenderTuning.Text.baselineLiftRatio`), 아니면 폰트 ascent 기준.
     public static func baselineLift(of line: CTLine) -> CGFloat {
         let metrics = lineMetrics(of: line)
         guard metrics.maxSize > 0 else { return 0 }
-        let fontLift = max(0, metrics.maxAscent - metrics.maxSize * 0.85)
+        let fontLift = max(
+            0, metrics.maxAscent - metrics.maxSize * HwpRenderTuning.Text.baselineAnchorRatio
+        )
         guard metrics.delegateAscent > metrics.maxAscent else { return fontLift }
-        return max(fontLift, metrics.delegateAscent * 0.15)
+        return max(fontLift, metrics.delegateAscent * HwpRenderTuning.Text.baselineLiftRatio)
     }
 
     /// 인라인 개체 줄에서 밑줄이 되돌아갈 양 — 실물은 밑줄을 개체 하단
@@ -158,7 +163,7 @@ public enum HwpDrawnTextLayout {
         let metrics = lineMetrics(of: line)
         guard metrics.delegateAscent > metrics.maxAscent, metrics.maxSize > 0
         else { return 0 }
-        return metrics.delegateAscent * 0.15
+        return metrics.delegateAscent * HwpRenderTuning.Text.baselineLiftRatio
     }
 
     private struct LineMetrics {

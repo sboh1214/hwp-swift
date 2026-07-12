@@ -81,9 +81,10 @@ enum HwpEquationLayout {
         guard !text.isEmpty else { return nil }
 
         let letterSize = edit.letterSize.map { HwpUnits.points(fromHwpUnitU: $0) } ?? 0
-        // 한글.app은 수식 글리프를 선언 크기의 ~88.5%로 조판한다 (라운드
-        // 11 실측: 본문 대비 13% 과대 → 축소 계수)
-        let size = max(1, (letterSize > 0 ? letterSize : fallbackSize) * 0.885)
+        let size = max(
+            1,
+            (letterSize > 0 ? letterSize : fallbackSize) * HwpRenderTuning.Equation.glyphScale
+        )
         let baseFont = fontResolver.resolve(
             faceName: edit.fontName ?? "HancomEQN",
             script: .english,

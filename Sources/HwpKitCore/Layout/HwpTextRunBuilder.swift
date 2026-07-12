@@ -387,9 +387,8 @@ extension HwpTextRunBuilder {
            !CTFontGetSymbolicTraits(font).contains(.traitBold)
         {
             // 볼드 페이스 없는 폰트는 합성 볼드 (채움+윤곽)
-            // 실물 명조 볼드 획 비율 1.41x (noori 실측 — -2.2%는 1.26x)
             attributes[kCTStrokeWidthAttributeName as NSAttributedString.Key] =
-                NSNumber(value: -3.5)
+                NSNumber(value: HwpRenderTuning.Text.syntheticBoldStrokeWidth)
         }
         applyShapeDecorations(to: &attributes, shape: shape, size: size)
         return attributes

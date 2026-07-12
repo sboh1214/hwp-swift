@@ -295,12 +295,18 @@ public struct HwpFootnoteLayout {
             contentWidth / 3
         }
         return DividerMetrics(
-            marginTop: max(0, points(fromHwpUnit16: divider?.marginTop, fallback: 8.5)),
-            marginBottom: max(0, points(fromHwpUnit16: divider?.marginBottom, fallback: 5.7)),
-            betweenNotes: max(
-                0,
-                points(fromHwpUnit16: divider?.spacingBetweenNotes, fallback: 2.8)
-            ),
+            marginTop: max(0, points(
+                fromHwpUnit16: divider?.marginTop,
+                fallback: HwpRenderTuning.Footnote.dividerDefaultMarginTop
+            )),
+            marginBottom: max(0, points(
+                fromHwpUnit16: divider?.marginBottom,
+                fallback: HwpRenderTuning.Footnote.dividerDefaultMarginBottom
+            )),
+            betweenNotes: max(0, points(
+                fromHwpUnit16: divider?.spacingBetweenNotes,
+                fallback: HwpRenderTuning.Footnote.dividerDefaultSpacingBetweenNotes
+            )),
             length: length,
             color: divider.map { HwpRGBColor($0.color) }
                 ?? HwpRGBColor(red: 0, green: 0, blue: 0),
