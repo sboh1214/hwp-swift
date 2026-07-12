@@ -37,6 +37,21 @@
 
 ### Added
 
+- `HwpLoadOptions`를 추가했습니다. `preserveRawPayload`(기본 true)를 끄면
+  파싱 모델의 rawPayload/rawTrailing 보존을 생략해 압축 해제 스트림 버퍼가
+  파싱 후 즉시 해제됩니다 (`.viewer` 프리셋 — 1,030쪽급 문서 상주 수십 MB
+  절감). `HwpFile.init(fromPath/fromData/fromWrapper:options:)`가 추가됐고
+  기존 `readLimits` init은 그대로 동작합니다.
+- 프로그레시브 로딩: `HwpDocumentActor.loadDocumentUpdates(from:)`와
+  `HwpDocumentLoader.loadUpdates(from:)`가 첫 페이지 확정 즉시 스냅샷을
+  방출하는 `AsyncThrowingStream<HwpDocumentSnapshot, Error>`를 제공합니다.
+  `HwpDocumentMetadata.loadToken`으로 macOS/iOS 뷰가 스크롤 리셋 없이
+  증분 적용합니다.
+- 전 파싱 모델이 `Sendable`을 채택했습니다 (`HwpPrimitive`에 요구 추가).
+- 대형 문서 성능이 크게 개선됐습니다: DataReader 무슬라이스 읽기,
+  `HwpChar` 컨트롤 payload 박싱 (stride 80B → 16B), 절대 라인 캐시 모드의
+  CT 측정 생략. 1,030쪽 실문서 기준 전량 로드 23.8s → 16.6s, 첫 페이지
+  표시 3.2s, 파스 후 상주 메모리 약 -290MB.
 - 공식 HWP 5.0 revision 1.3 PDF와 `edwardkim/rhwp` errata를 대조한
   `Documentation/ErrataAudit.md`를 추가했습니다.
 - page number, equation edit, common object property, paragraph shape, border fill,
