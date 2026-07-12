@@ -97,10 +97,15 @@ public struct HwpParagraphLayout {
     /// 정확하다 (없으면 여백만 지정과 고정값만 반영된다).
     public static func paragraphStyle(
         for paraShape: CoreHwp.HwpParaShape,
-        attributedString: NSAttributedString? = nil
+        attributedString: NSAttributedString? = nil,
+        tabStops: [CTTextTab] = []
     ) -> CTParagraphStyle {
-        HwpParagraphLayout().ctParagraphStyle(
-            from: ParagraphMetrics(paraShape: paraShape, attributedString: attributedString),
+        var metrics = ParagraphMetrics(
+            paraShape: paraShape, attributedString: attributedString
+        )
+        metrics.tabStops = tabStops
+        return HwpParagraphLayout().ctParagraphStyle(
+            from: metrics,
             property: paraShape.property1Info
         )
     }
@@ -253,6 +258,8 @@ private extension HwpParagraphLayout {
         let maximumLineSpacing: UnsafeMutablePointer<CGFloat>
         let minimumLineHeight: UnsafeMutablePointer<CGFloat>
         let maximumLineHeight: UnsafeMutablePointer<CGFloat>
+        /// 문서 정의 탭 스톱 (비면 nil — CT 기본 탭 유지)
+        let tabStops: UnsafeMutablePointer<CFArray>?
 
         init(metrics: ParagraphMetrics, alignment: CTTextAlignment) {
             self.alignment = Self.pointer(to: alignment)
@@ -270,6 +277,9 @@ private extension HwpParagraphLayout {
             )
             minimumLineHeight = Self.pointer(to: metrics.minimumLineHeight)
             maximumLineHeight = Self.pointer(to: metrics.maximumLineHeight)
+            tabStops = metrics.tabStops.isEmpty
+                ? nil
+                : Self.pointer(to: metrics.tabStops as CFArray)
         }
 
         func deallocate() {
@@ -293,6 +303,8 @@ private extension HwpParagraphLayout {
             minimumLineHeight.deallocate()
             maximumLineHeight.deinitialize(count: 1)
             maximumLineHeight.deallocate()
+            tabStops?.deinitialize(count: 1)
+            tabStops?.deallocate()
         }
 
         static func pointer<T>(to value: T) -> UnsafeMutablePointer<T> {
@@ -317,6 +329,20 @@ private extension HwpParagraphLayout {
     }
 
     func styleSettings(from pointers: StyleValuePointers) -> [CTParagraphStyleSetting] {
+        var settings = baseStyleSettings(from: pointers)
+        if let tabStops = pointers.tabStops {
+            settings.append(CTParagraphStyleSetting(
+                spec: .tabStops,
+                valueSize: MemoryLayout<CFArray>.size,
+                value: tabStops
+            ))
+        }
+        return settings
+    }
+
+    private func baseStyleSettings(
+        from pointers: StyleValuePointers
+    ) -> [CTParagraphStyleSetting] {
         [
             CTParagraphStyleSetting(
                 spec: .alignment,

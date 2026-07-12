@@ -1,4 +1,5 @@
 @preconcurrency import CoreHwp
+import CoreText
 import Foundation
 
 /// Eager O(1) lookup index over `CoreHwp.HwpFile.docInfo.idMappings`.
@@ -93,6 +94,26 @@ public struct HwpIndex: Sendable {
 
     public func borderFill(id: UInt32) -> CoreHwp.HwpBorderFill? {
         borderFills[id]
+    }
+
+    /// 표 36 탭 정의 → CT 탭 스톱. 위치는 표 43 여백 계열과 같은 1/2 단위
+    /// (legacy 목차 실측: 85040 → 425.2pt = 콘텐츠 오른쪽 끝).
+    public func textTabs(for paraShape: CoreHwp.HwpParaShape) -> [CTTextTab] {
+        guard let tabDef = tabDef(id: UInt32(paraShape.tabDefId)),
+              !tabDef.tabInfoArray.isEmpty
+        else { return [] }
+        return tabDef.tabInfoArray.map { info in
+            let alignment: CTTextAlignment = switch info.type {
+            case 1: .right
+            case 2: .center
+            default: .left
+            }
+            return CTTextTabCreate(
+                alignment,
+                Double(HwpUnits.points(fromHwpUnitU: info.location) / 2),
+                nil
+            )
+        }
     }
 
     public func tabDef(id: UInt32) -> CoreHwp.HwpTabDef? {

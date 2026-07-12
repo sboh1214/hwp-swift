@@ -160,10 +160,12 @@ extension HwpTextRunBuilder {
             kCTParagraphStyleAttributeName as NSAttributedString.Key,
             value: HwpParagraphLayout.paragraphStyle(
                 for: paraShape,
-                attributedString: output
+                attributedString: output,
+                tabStops: index.textTabs(for: paraShape)
             ),
             range: NSRange(location: 0, length: output.length)
         )
+        attachTabLeaders(to: output, paraShape: paraShape)
         let alignment = paraShape.property1Info.alignmentRawValue
         if alignment == 4 || alignment == 5 {
             // 배분/나눔 정렬: 마지막 줄도 벌린다 (공공누리 실물 실측)
@@ -172,6 +174,29 @@ extension HwpTextRunBuilder {
                 value: NSNumber(value: true),
                 range: NSRange(location: 0, length: output.length)
             )
+        }
+    }
+
+    /// 탭 정의에 채움 (리더)이 있으면 탭 문자에 마커를 달아 렌더러가
+    /// 탭 전진 구간에 점선을 그리게 한다 (legacy 목차 실물: '……' 리더)
+    private func attachTabLeaders(
+        to output: NSMutableAttributedString,
+        paraShape: CoreHwp.HwpParaShape
+    ) {
+        guard let tabDef = index.tabDef(id: UInt32(paraShape.tabDefId)),
+              let fill = tabDef.tabInfoArray.first(where: { $0.fillType != 0 })?.fillType
+        else { return }
+        let text = output.string as NSString
+        var location = 0
+        while location < text.length {
+            if text.character(at: location) == 0x09 {
+                output.addAttribute(
+                    HwpAttributedStringKey.tabLeader,
+                    value: NSNumber(value: fill),
+                    range: NSRange(location: location, length: 1)
+                )
+            }
+            location += 1
         }
     }
 }

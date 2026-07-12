@@ -14,6 +14,8 @@ extension HwpParagraphLayout {
         var paragraphSpacing: CGFloat
         /// 여백만 지정 (표 46 종류 2): 줄 사이 추가 간격 (pt)
         var lineSpacingAdjustment: CGFloat = 0
+        /// 문서 정의 탭 스톱 (표 36 탭 정의 — 위치는 표 43 계열 1/2 단위)
+        var tabStops: [CTTextTab] = []
         /// 비율/고정/최소 줄 간격의 강제 줄 높이 하한 (pt, 0 = 없음)
         var minimumLineHeight: CGFloat = 0
         /// 비율/고정 줄 간격의 강제 줄 높이 상한 (pt, 0 = 없음).

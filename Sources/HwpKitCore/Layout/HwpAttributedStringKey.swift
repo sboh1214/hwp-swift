@@ -37,6 +37,9 @@ public enum HwpAttributedStringKey {
     /// 끝 줄은 문단 마지막 줄이 아니므로 양쪽 정렬을 유지한다
     public static let continuedParagraphFragment =
         NSAttributedString.Key("hwp.continuedParagraphFragment")
+    /// 탭 채움 종류 (HwpTabInfo.fillType != 0) — 렌더러가 탭 전진 구간에
+    /// 점선 리더를 그린다 (목차 실물)
+    public static let tabLeader = NSAttributedString.Key("hwp.tabLeader")
     /// 연속 그림자 — 본체에서 오프셋까지 이어지는 두꺼운 그림자
     public static let shadowContinuous = NSAttributedString.Key("hwp.shadowContinuous")
     /// 변경 추적 삽입 밑줄 — 한글은 베이스라인 아래 ~0.22em에 그린다

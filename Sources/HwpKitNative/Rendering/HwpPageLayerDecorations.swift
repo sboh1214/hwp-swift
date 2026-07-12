@@ -43,6 +43,31 @@ extension HwpPageLayer {
             drawStrikethroughIfNeeded(run, lineOrigin: origin, in: ctx)
             drawEmphasisIfNeeded(run, lineOrigin: origin, in: ctx)
             drawTrackInsertUnderlineIfNeeded(run, lineOrigin: origin, in: ctx)
+            drawTabLeaderIfNeeded(run, lineOrigin: origin, in: ctx)
+        }
+    }
+
+    /// 탭 전진 구간의 점선 리더 (legacy 목차 실물: 가운데점 '……' 연속)
+    func drawTabLeaderIfNeeded(_ run: CTRun, lineOrigin: CGPoint, in ctx: CGContext) {
+        let attributes = runAttributes(run)
+        guard attributes[HwpAttributedStringKey.tabLeader] != nil else { return }
+        let bounds = runBounds(of: run, lineOrigin: lineOrigin)
+        guard bounds.width > 4 else { return }
+        let size = runFont(attributes).map(CTFontGetSize) ?? 10
+        let color = attributes[kCTForegroundColorAttributeName as NSAttributedString.Key]
+        setDecorationFillColor(color, in: ctx)
+        // 실물 리더 실측 (legacy 목차): 점 지름 ~0.08em, 중심 간격 ~0.3em,
+        // x-height 중간 높이
+        let dotY = lineOrigin.y + size * 0.16
+        let radius = max(0.4, size * 0.04)
+        let spacing = max(2.5, size * 0.3)
+        var x = bounds.minX + spacing / 2
+        while x < bounds.maxX - radius {
+            ctx.fillEllipse(in: CGRect(
+                x: x - radius, y: dotY - radius,
+                width: radius * 2, height: radius * 2
+            ))
+            x += spacing
         }
     }
 
