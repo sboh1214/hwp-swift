@@ -96,145 +96,35 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
         }
     }
 
+    /// 줄 배치는 `HwpDrawnTextLayout` (렌더·텍스트 선택 공유 — slight-overflow
+    /// 단일 줄, 양쪽 정렬 재조판, baselineLift 포함)이 계산하고, 여기서는
+    /// top-down 결과를 이 레이어의 y-up 텍스트 공간으로 변환해 그리기만 한다.
     private func drawText(
         _ attributedString: NSAttributedString,
         origin: CGPoint,
         lineWidth: CGFloat,
         in ctx: CGContext
     ) {
-        let framesetter = CTFramesetterCreateWithAttributedString(attributedString)
-        drawFrame(
-            framesetter: framesetter,
+        let drawnLines = HwpDrawnTextLayout.lines(
             attributedString: attributedString,
             origin: origin,
-            lineWidth: lineWidth,
-            in: ctx
+            lineWidth: lineWidth
         )
-    }
-
-    private func drawFrame(
-        framesetter: CTFramesetter,
-        attributedString: NSAttributedString,
-        origin: CGPoint,
-        lineWidth: CGFloat,
-        in ctx: CGContext
-    ) {
-        let length = attributedString.length
-        // 자연 폭이 주어진 폭을 살짝 (≤6%) 넘는 한 줄 문단은 한글처럼
-        // 줄바꿈 없이 넘치게 한 줄로 그린다 (noori 제목 3행 후행 '-' 실물:
-        // 행이 글상자 가장자리를 살짝 넘침)
-        if drawSlightOverflowSingleLine(
-            attributedString, origin: origin, lineWidth: lineWidth, in: ctx
-        ) {
-            return
-        }
-        let suggestedSize = CTFramesetterSuggestFrameSizeWithConstraints(
-            framesetter,
-            CFRange(location: 0, length: length),
-            nil,
-            CGSize(width: lineWidth, height: .greatestFiniteMagnitude),
-            nil
-        )
-        let textHeight = max(ceil(suggestedSize.height), 1)
-        let effectivePageHeight = pageHeight > 0 ? pageHeight : bounds.height
-        let textRect = CGRect(
-            x: origin.x,
-            y: effectivePageHeight - origin.y - textHeight,
-            width: lineWidth,
-            height: textHeight
-        )
-        let path = CGPath(rect: textRect, transform: nil)
-        let frame = CTFramesetterCreateFrame(
-            framesetter,
-            CFRange(location: 0, length: length),
-            path,
-            nil
-        )
-
-        ctx.saveGState()
-        ctx.textMatrix = .identity
-        ctx.translateBy(x: 0, y: effectivePageHeight)
-        ctx.scaleBy(x: 1, y: -1)
-        drawFrameLines(frame, attributedString: attributedString, textRect: textRect, in: ctx)
-        ctx.restoreGState()
-    }
-
-    /// 폭을 6% 이내로 넘는 개행 없는 한 줄 문단이면 줄바꿈 없이 그린다.
-    private func drawSlightOverflowSingleLine(
-        _ attributedString: NSAttributedString,
-        origin: CGPoint,
-        lineWidth: CGFloat,
-        in ctx: CGContext
-    ) -> Bool {
-        guard attributedString.length > 0,
-              !attributedString.string.contains("\n")
-        else { return false }
-        let line = CTLineCreateWithAttributedString(attributedString)
-        let naturalWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
-        guard naturalWidth > lineWidth, naturalWidth <= lineWidth * 1.06 else { return false }
-        var ascent: CGFloat = 0
-        var descent: CGFloat = 0
-        _ = CTLineGetTypographicBounds(line, &ascent, &descent, nil)
-        // 가운데 정렬이면 초과분을 좌우로 반씩 넘긴다
-        var offsetX: CGFloat = 0
-        if let style = attributedString.attribute(
-            kCTParagraphStyleAttributeName as NSAttributedString.Key,
-            at: 0, effectiveRange: nil
-        ), CFGetTypeID(style as CFTypeRef) == CTParagraphStyleGetTypeID() {
-            var alignment = CTTextAlignment.natural
-            let paragraphStyle = style as! CTParagraphStyle // swiftlint:disable:this force_cast
-            CTParagraphStyleGetValueForSpecifier(
-                paragraphStyle, .alignment,
-                MemoryLayout<CTTextAlignment>.size, &alignment
-            )
-            if alignment == .center {
-                offsetX = (lineWidth - naturalWidth) / 2
-            }
-        }
+        guard !drawnLines.isEmpty else { return }
         let effectivePageHeight = pageHeight > 0 ? pageHeight : bounds.height
         ctx.saveGState()
         ctx.textMatrix = .identity
         ctx.translateBy(x: 0, y: effectivePageHeight)
         ctx.scaleBy(x: 1, y: -1)
-        let lineOrigin = CGPoint(
-            x: origin.x + offsetX,
-            y: effectivePageHeight - origin.y - ascent - descent
-                + descent + Self.baselineLift(of: line)
-        )
-        ctx.textPosition = lineOrigin
-        drawDecoratedLine(line, origin: lineOrigin, in: ctx)
-        ctx.restoreGState()
-        return true
-    }
-
-    /// 프레임의 줄을 직접 그린다. 양쪽 정렬 줄은 한글처럼 남는 폭을 공백에만
-    /// 배분해 다시 조판하고 (`wordJustifiedLine`), 그 외에는 CT 조판 그대로.
-    private func drawFrameLines(
-        _ frame: CTFrame,
-        attributedString: NSAttributedString,
-        textRect: CGRect,
-        in ctx: CGContext
-    ) {
-        guard let lines = CTFrameGetLines(frame) as? [CTLine], !lines.isEmpty else { return }
-        var origins = [CGPoint](repeating: .zero, count: lines.count)
-        CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
-        for (index, line) in lines.enumerated() {
+        for drawnLine in drawnLines {
             let lineOrigin = CGPoint(
-                x: textRect.minX + origins[index].x,
-                y: textRect.minY + origins[index].y + Self.baselineLift(of: line)
+                x: drawnLine.baselineOrigin.x,
+                y: effectivePageHeight - drawnLine.baselineOrigin.y
             )
-            let replacement = HwpWordJustification.justifiedLine(
-                frameLine: line,
-                attributedString: attributedString,
-                availableWidth: textRect.width - origins[index].x
-            )
-            let drawOrigin = CGPoint(
-                x: lineOrigin.x + (replacement?.xOffset ?? 0),
-                y: lineOrigin.y
-            )
-            ctx.textPosition = drawOrigin
-            drawDecoratedLine(replacement?.line ?? line, origin: drawOrigin, in: ctx)
+            ctx.textPosition = lineOrigin
+            drawDecoratedLine(drawnLine.line, origin: lineOrigin, in: ctx)
         }
+        ctx.restoreGState()
     }
 
     /// paint list가 해당 BinItem 이미지를 참조하는지 (targeted redraw 판단용)
@@ -326,9 +216,8 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
             x: rect.midX - textSize.width / 2,
             y: rect.midY - textSize.height / 2
         )
-        drawFrame(
-            framesetter: framesetter,
-            attributedString: attributedString,
+        drawText(
+            attributedString,
             origin: origin,
             lineWidth: max(textSize.width, 1),
             in: ctx

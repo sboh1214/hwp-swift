@@ -1,7 +1,6 @@
 import CoreGraphics
 import CoreText
 import Foundation
-import HwpKitCore
 
 /// 양쪽 정렬의 한글식 재조판: 남는 폭을 공백에만 배분한다.
 ///

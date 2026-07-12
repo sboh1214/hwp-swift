@@ -1,7 +1,7 @@
 import CoreGraphics
 import CoreText
 import Foundation
-@testable import HwpKitNative
+@testable import HwpKitCore
 import Nimble
 import XCTest
 
