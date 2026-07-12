@@ -34,6 +34,22 @@ public actor HwpPaginator {
     /// 현재 문단의 현재-페이지 상단 y (문단 기준 앵커의 기준점).
     /// 페이지가 넘어가면 새 페이지 콘텐츠 상단으로 재설정된다.
     private var paragraphAnchorTop: CGFloat = 0
+    /// 페이지 경계 재처리 메모 — placeParagraphText 실패 (페이지 확정) 후
+    /// 같은 문단을 다음 페이지에서 다시 처리할 때 build + CT 측정을
+    /// 재사용한다. 키가 빌드의 모든 입력 (문단 위치·단 폭·컨트롤 치환
+    /// 결과)을 포함하므로 키 일치 시 결과는 정의상 동일하다. 쪽 번호
+    /// 자동 치환처럼 페이지 확정으로 치환 텍스트가 달라지는 문단은
+    /// replacements 불일치로 자연히 재빌드된다.
+    private struct ParagraphMeasureMemo {
+        let sectionIndex: Int
+        let paragraphIndex: Int
+        let widthCenti: Int
+        let replacements: [Int: HwpControlMarkerReplacement]
+        let attributedString: NSAttributedString
+        let paragraphFrame: HwpParagraphFrame
+    }
+
+    private var measureMemo: ParagraphMeasureMemo?
     private var footnoteCounter = 0
     /// 미주 번호 (각주와 별도 카운터, endNoteShape.startingNumber부터)
     private var endnoteCounter = 0
@@ -405,20 +421,41 @@ private extension HwpPaginator {
             applyColumnDef(in: paragraph)
             applyNewNumbers(in: paragraph)
 
-            let attributedString = HwpTextRunBuilder(index: index, fontResolver: fontResolver)
-                .build(
-                    paragraph: paragraph,
-                    controlReplacements: noteReferenceReplacements(for: paragraph)
-                )
-            let paragraphFrame = try await layout(paragraph, attributedString: attributedString)
+            let widthCenti = Int((currentColumnFrame.width * 100).rounded())
+            let replacements = noteReferenceReplacements(for: paragraph)
+            let attributedString: NSAttributedString
+            let paragraphFrame: HwpParagraphFrame
+            if let memo = measureMemo,
+               memo.sectionIndex == nextSectionIndex,
+               memo.paragraphIndex == nextParagraphIndex,
+               memo.widthCenti == widthCenti,
+               memo.replacements == replacements
+            {
+                attributedString = memo.attributedString
+                paragraphFrame = memo.paragraphFrame
+            } else {
+                attributedString = HwpTextRunBuilder(index: index, fontResolver: fontResolver)
+                    .build(paragraph: paragraph, controlReplacements: replacements)
+                paragraphFrame = try await layout(paragraph, attributedString: attributedString)
+            }
             guard placeParagraphText(
                 paragraph,
                 attributedString: attributedString,
                 paragraphFrame: paragraphFrame
             ) else {
-                // 현재 페이지가 확정됐고 문단은 다음 페이지에서 다시 처리한다.
+                // 현재 페이지가 확정됐고 문단은 다음 페이지에서 다시 처리한다 —
+                // 빌드 입력이 그대로면 메모로 build + CT 재실행을 건너뛴다.
+                measureMemo = ParagraphMeasureMemo(
+                    sectionIndex: nextSectionIndex,
+                    paragraphIndex: nextParagraphIndex,
+                    widthCenti: widthCenti,
+                    replacements: replacements,
+                    attributedString: attributedString,
+                    paragraphFrame: paragraphFrame
+                )
                 return
             }
+            measureMemo = nil
             collectFootnotes(from: paragraph, includeTableCells: false)
             collectMemos(from: paragraph)
             appendControlBlocks(from: paragraph)
