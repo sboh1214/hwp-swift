@@ -436,7 +436,13 @@ private extension HwpPaginator {
             } else {
                 attributedString = HwpTextRunBuilder(index: index, fontResolver: fontResolver)
                     .build(paragraph: paragraph, controlReplacements: replacements)
-                paragraphFrame = try await layout(paragraph, attributedString: attributedString)
+                paragraphFrame = if canSkipMeasurement(
+                    for: paragraph, attributedString: attributedString
+                ) {
+                    HwpParagraphFrame(totalHeight: 0, lines: [])
+                } else {
+                    try await layout(paragraph, attributedString: attributedString)
+                }
             }
             guard placeParagraphText(
                 paragraph,
@@ -513,6 +519,40 @@ private extension HwpPaginator {
     /// 문단 텍스트 블록을 흐름에 배치한다.
     /// 문단이 남은 공간에 안 맞아 페이지를 확정했으면 false (호출자가 반환하고
     /// 같은 문단을 다음 페이지에서 다시 처리한다).
+    /// 절대 캐시 모드에서 CT 측정을 통째로 생략할 수 있는 문단인지 —
+    /// 배치가 CT 산출물 (lines/totalHeight)을 전혀 소비하지 않는 경우만:
+    /// 1) 단일 run (다중 run의 페이지 분할 텍스트 배분은 lines 필요),
+    /// 2) 컨트롤 마커 없음 (인라인 앵커 좌표가 lines의 inlineAnchors 필요),
+    /// 3) 신선한 캐시 (stale 보정이 totalHeight 필요 — 판정 자체는 CT 불요).
+    /// 다단 재배치의 bandTextBlocks lines 소비는 columnFrames > 1 전용이라
+    /// 게이트 (≤ 1)로 배제된다. 의심스러우면 CT 폴백 — 절단 결과 불변.
+    private func canSkipMeasurement(
+        for paragraph: CoreHwp.HwpParagraph,
+        attributedString: NSAttributedString
+    ) -> Bool {
+        guard absoluteCacheMode, columnFrames.count <= 1,
+              let runs = Self.cacheRuns(for: paragraph),
+              runs.count == 1
+        else { return false }
+        guard !hasControlIndexMarker(attributedString) else { return false }
+        return !Self.cacheIsStale(run: runs[0], attributedString: attributedString)
+    }
+
+    /// U+FFFC 개체 앵커 (hwp.controlIndex) 존재 여부 — O(속성 run 수)
+    private func hasControlIndexMarker(_ attributedString: NSAttributedString) -> Bool {
+        var found = false
+        attributedString.enumerateAttribute(
+            HwpAttributedStringKey.controlIndex,
+            in: NSRange(location: 0, length: attributedString.length)
+        ) { value, _, stop in
+            if value != nil {
+                found = true
+                stop.pointee = true
+            }
+        }
+        return found
+    }
+
     func placeParagraphText(
         _ paragraph: CoreHwp.HwpParagraph,
         attributedString: NSAttributedString,
