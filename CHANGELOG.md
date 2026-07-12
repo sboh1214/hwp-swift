@@ -29,6 +29,11 @@
   달라집니다. `HwpBorderFill`의 방향별 선 정보, 서로 다른 폭 다단의 `HwpColumn`,
   `HwpSectionDef`의 속성 이후 field order, 표 셀 `LIST_HEADER`,
   `HwpEquationEdit.rawTrailing`은 이전의 잘못 정렬된 해석값과 다를 수 있습니다.
+- `HwpDocumentNSView.documentActor`/`HwpDocumentUIView.documentActor` public
+  프로퍼티를 제거했습니다. 어디서도 할당되지 않는 죽은 배선이었고
+  (`HwpDocumentLoader`가 항상 완전 페이지네이션된 문서를 전달), 이에 의존하던
+  macOS 클릭 폴백 경로는 도달 불능 코드였습니다. 지연 페이지네이션 배선은
+  프로그레시브 로딩 설계에서 새로 도입됩니다.
 
 ### Added
 

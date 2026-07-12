@@ -21,7 +21,6 @@
             }
         }
 
-        public var documentActor: HwpDocumentActor?
         public private(set) var imageCache: HwpImageCache
         public var zoomScale: CGFloat = 1.0 {
             didSet {

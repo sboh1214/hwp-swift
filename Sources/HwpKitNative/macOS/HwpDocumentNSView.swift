@@ -23,7 +23,6 @@
             }
         }
 
-        public var documentActor: HwpDocumentActor?
         public private(set) var imageCache: HwpImageCache
 
         /// 스크롤 뷰 magnification이 단일 진실 — 별도 배율 상태를 두지 않아
@@ -274,24 +273,9 @@
             let contentPoint = gesture.location(in: documentContentView)
             guard let hit = pageHit(at: contentPoint) else { return }
 
-            if let document, document.pages.indices.contains(hit.pageIndex) {
-                let result = hitTester.hit(page: document.pages[hit.pageIndex], point: hit.point)
-                dispatchHitResult(result)
-                return
-            }
-
-            guard let documentActor else { return }
-            Task { [weak self] in
-                do {
-                    guard let page = try await documentActor.page(at: hit.pageIndex) else { return }
-                    let result = HwpHitTester().hit(page: page, point: hit.point)
-                    await MainActor.run {
-                        self?.dispatchHitResult(result)
-                    }
-                } catch {
-                    return
-                }
-            }
+            guard let document, document.pages.indices.contains(hit.pageIndex) else { return }
+            let result = hitTester.hit(page: document.pages[hit.pageIndex], point: hit.point)
+            dispatchHitResult(result)
         }
 
         private func dispatchHitResult(_ result: HwpHitResult?) {
