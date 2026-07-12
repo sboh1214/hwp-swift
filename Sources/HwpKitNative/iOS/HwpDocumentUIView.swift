@@ -49,8 +49,12 @@
         /// 텍스트 롱프레스 선택 상태 (플랫폼 중립 컨트롤러)
         public let selectionController = HwpSelectionController()
         var editMenuInteraction: UIEditMenuInteraction?
+        /// 선택 드래그 엣지 오토스크롤 (롱프레스 정지 시 .changed가 오지 않아
+        /// CADisplayLink로 밀어준다) — 상태는 Selection extension이 관리
+        var selectionAutoscrollLink: CADisplayLink?
+        var selectionAutoscrollViewportPoint: CGPoint?
 
-        private let scrollView = UIScrollView()
+        let scrollView = UIScrollView()
         let contentView = UIView()
         private let hitTester = HwpHitTester()
         private let pageGap: CGFloat = 24
@@ -199,6 +203,10 @@
         override public func didMoveToWindow() {
             super.didMoveToWindow()
             updateLayerContentsScale()
+            if window == nil {
+                // CADisplayLink는 target을 보유한다 — 창에서 빠지면 반드시 해제
+                stopSelectionAutoscroll()
+            }
         }
 
         /// Retina 해상도 + 줌 배율에 맞춰 레이어 래스터 해상도를 갱신한다.

@@ -38,6 +38,31 @@
             expect(view.pageLayers.keys.sorted()) == [0, 1, 2, 3, 4]
         }
 
+        func testAutoscrollStepZonesAndClamp() {
+            let height: CGFloat = 600
+            let step = { (y: CGFloat) in
+                HwpDocumentUIView.autoscrollStep(forLocationY: y, boundsHeight: height)
+            }
+
+            // 존 밖 (중앙) — 스크롤 없음
+            expect(step(300)) == 0
+            expect(step(44)) == 0
+            expect(step(556)) == 0
+            // 상단 존 — 음수 (위로), 침투 비례
+            expect(step(22)) == -6
+            expect(step(0)) == -12
+            // 하단 존 — 양수 (아래로), 침투 비례
+            expect(step(578)) == 6
+            expect(step(600)) == 12
+            // 존 밖 좌표 (경계 초과)도 최대 스텝으로 클램프
+            expect(step(-100)) == -12
+            expect(step(700)) == 12
+            // 뷰포트가 존 두 개보다 작으면 비활성
+            expect(HwpDocumentUIView.autoscrollStep(
+                forLocationY: 10, boundsHeight: 80
+            )) == 0
+        }
+
         func testProgrammaticZoomUpdatesLayerContentsScale() {
             // 버튼 줌 (zoomScale 프로그램 대입)은 scrollViewDidEndZooming이
             // 발화하지 않는다 — didSet이 직접 재래스터해야 흐릿해지지 않는다.
