@@ -14,7 +14,9 @@ extension HwpShapeComponentRawRecord: HwpPrimitive {
     // MARK: loader contract exemption - raw shape-component record keeps entire payload
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
-        rawPayload = try reader.readToEnd()
+        // 세부 디코딩 접근자가 load 반환 후 rawPayload를 다시 읽으므로
+        // 보존 off에서도 비우지 않고 분리 복사한다 (개체 payload는 소량).
+        rawPayload = reader.options.decoupledPayload(try reader.readToEnd())
         unknownChildren = children.map(HwpUnknownRecord.init)
     }
 }
@@ -29,8 +31,10 @@ extension HwpShapeComponentRawRecordBacked {
     // MARK: loader contract exemption - raw-backed shape records keep entire payload
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
+        // xxxDetail 디코딩 접근자가 load 반환 후 rawPayload를 다시 읽으므로
+        // 보존 off에서도 비우지 않고 분리 복사한다 (개체 payload는 소량).
         self.init(
-            rawPayload: try reader.readToEnd(),
+            rawPayload: reader.options.decoupledPayload(try reader.readToEnd()),
             unknownChildren: children.map(HwpUnknownRecord.init)
         )
     }
@@ -40,7 +44,7 @@ extension HwpShapeComponentRawRecordBacked {
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: expectedSectionTag)
 
-        var reader = DataReader(record.payload)
+        var reader = DataReader(record.payload, options: record.options)
         let rawRecord = try self.init(&reader, record.children)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
@@ -211,7 +215,8 @@ extension HwpShapeComponent: HwpFromRecord {
     // MARK: loader contract exemption - preserves common shape-component payload as raw data
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
-        rawPayload = try reader.readToEnd()
+        // detail 접근자가 load 반환 후 rawPayload를 다시 읽으므로 분리 복사한다.
+        rawPayload = reader.options.decoupledPayload(try reader.readToEnd())
         rawCtrlId = Self.rawCtrlId(from: rawPayload)
         ctrlId = rawCtrlId.flatMap(HwpCommonCtrlId.init(rawValue:))
         ctrlIdName = ctrlId.map(String.init(describing:)) ?? "unknown"
@@ -274,7 +279,7 @@ extension HwpShapeComponent: HwpFromRecord {
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .shapeComponent)
 
-        var reader = DataReader(record.payload)
+        var reader = DataReader(record.payload, options: record.options)
         let component = try self.init(&reader, record.children)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
@@ -346,7 +351,7 @@ extension HwpShapeComponent: HwpFromRecord {
                 continue
             }
 
-            let header = try HwpListHeader.load(child.payload)
+            let header = try HwpListHeader.load(child.payload, options: child.options)
             guard header.paragraphCount >= 0 else {
                 throw HwpError.invalidRecordTree(
                     reason: "text box paragraph count is negative: \(header.paragraphCount)"
@@ -371,7 +376,7 @@ extension HwpShapeComponent: HwpFromRecord {
 
             lists.append(HwpListControlList(
                 header: header,
-                headerRawPayload: child.payload,
+                headerRawPayload: child.options.decoupledPayload(child.payload),
                 headerUnknownChildren: child.children.map(HwpUnknownRecord.init),
                 paragraphArray: paragraphs,
                 textBoxInfo: HwpTextBoxListInfo.decode(from: header.rawTrailing)
@@ -396,7 +401,8 @@ extension HwpShapeComponentRectangle: HwpFromRecord {
     // MARK: loader contract exemption - rectangle component payload is raw-backed
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
-        rawPayload = try reader.readToEnd()
+        // rectangleDetail이 load 반환 후 rawPayload를 다시 읽으므로 분리 복사한다.
+        rawPayload = reader.options.decoupledPayload(try reader.readToEnd())
         unknownChildren = children.map(HwpUnknownRecord.init)
     }
 
@@ -405,7 +411,7 @@ extension HwpShapeComponentRectangle: HwpFromRecord {
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .shapeComponentRectangle)
 
-        var reader = DataReader(record.payload)
+        var reader = DataReader(record.payload, options: record.options)
         let rectangle = try self.init(&reader, record.children)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
@@ -438,7 +444,8 @@ extension HwpShapeComponentOLE: HwpFromRecord {
     // MARK: loader contract exemption - OLE component payload is best-effort raw-backed
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
-        rawPayload = try reader.readToEnd()
+        // 세부 디코딩 접근자가 load 반환 후 rawPayload를 다시 읽으므로 분리 복사한다.
+        rawPayload = reader.options.decoupledPayload(try reader.readToEnd())
         binaryDataId = Self.binaryDataId(from: rawPayload)
         rawTrailing = Self.rawTrailing(from: rawPayload)
         unknownChildren = children.map(HwpUnknownRecord.init)
@@ -449,7 +456,7 @@ extension HwpShapeComponentOLE: HwpFromRecord {
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .shapeComponentOle)
 
-        var reader = DataReader(record.payload)
+        var reader = DataReader(record.payload, options: record.options)
         let ole = try self.init(&reader, record.children)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
@@ -492,7 +499,8 @@ extension HwpShapeComponentPicture: HwpFromRecord {
     // MARK: loader contract exemption - picture component payload is best-effort raw-backed
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
-        rawPayload = try reader.readToEnd()
+        // pictureProperty가 load 반환 후 rawPayload를 다시 읽으므로 분리 복사한다.
+        rawPayload = reader.options.decoupledPayload(try reader.readToEnd())
         binaryDataId = Self.binaryDataId(from: rawPayload)
         rawTrailing = Self.rawTrailing(from: rawPayload)
         unknownChildren = children.map(HwpUnknownRecord.init)
@@ -503,7 +511,7 @@ extension HwpShapeComponentPicture: HwpFromRecord {
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .shapeComponentPicture)
 
-        var reader = DataReader(record.payload)
+        var reader = DataReader(record.payload, options: record.options)
         let picture = try self.init(&reader, record.children)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)

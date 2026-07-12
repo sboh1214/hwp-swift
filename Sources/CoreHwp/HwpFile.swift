@@ -33,7 +33,12 @@ public struct HwpFile: HwpPrimitive {
 
     /// 파일 경로의 HWP 문서를 읽습니다.
     public init(fromPath filePath: String, readLimits: HwpReadLimits = .default) throws {
-        try readLimits.validate()
+        try self.init(fromPath: filePath, options: HwpLoadOptions(readLimits: readLimits))
+    }
+
+    /// 파일 경로의 HWP 문서를 로드 옵션과 함께 읽습니다.
+    public init(fromPath filePath: String, options: HwpLoadOptions) throws {
+        try options.readLimits.validate()
 
         let ole: OLEFile
         do {
@@ -42,7 +47,7 @@ public struct HwpFile: HwpPrimitive {
             throw HwpError.invalidOLEFile(reason: String(describing: error))
         }
         do {
-            try self.init(fromOLE: ole, readLimits: readLimits)
+            try self.init(fromOLE: ole, options: options)
         } catch let error as HwpError {
             throw error
         } catch {
@@ -52,11 +57,16 @@ public struct HwpFile: HwpPrimitive {
 
     /// 메모리의 HWP 문서 데이터를 읽습니다.
     public init(fromData data: Data, readLimits: HwpReadLimits = .default) throws {
-        try readLimits.validate()
+        try self.init(fromData: data, options: HwpLoadOptions(readLimits: readLimits))
+    }
+
+    /// 메모리의 HWP 문서 데이터를 로드 옵션과 함께 읽습니다.
+    public init(fromData data: Data, options: HwpLoadOptions) throws {
+        try options.readLimits.validate()
 
         let ole = try coreHwpOLEFile(fromData: data)
         do {
-            try self.init(fromOLE: ole, readLimits: readLimits)
+            try self.init(fromOLE: ole, options: options)
         } catch let error as HwpError {
             throw error
         } catch {
@@ -69,11 +79,16 @@ public struct HwpFile: HwpPrimitive {
         fromWrapper fileWrapper: FileWrapper,
         readLimits: HwpReadLimits = .default
     ) throws {
-        try readLimits.validate()
+        try self.init(fromWrapper: fileWrapper, options: HwpLoadOptions(readLimits: readLimits))
+    }
+
+    /// `FileWrapper`로 전달된 HWP 문서를 로드 옵션과 함께 읽습니다.
+    public init(fromWrapper fileWrapper: FileWrapper, options: HwpLoadOptions) throws {
+        try options.readLimits.validate()
 
         let ole = try coreHwpOLEFile(fromWrapper: fileWrapper)
         do {
-            try self.init(fromOLE: ole, readLimits: readLimits)
+            try self.init(fromOLE: ole, options: options)
         } catch let error as HwpError {
             throw error
         } catch {
@@ -81,11 +96,11 @@ public struct HwpFile: HwpPrimitive {
         }
     }
 
-    private init(fromOLE ole: OLEFile, readLimits: HwpReadLimits = .default) throws {
-        try readLimits.validate()
+    private init(fromOLE ole: OLEFile, options: HwpLoadOptions = .default) throws {
+        try options.readLimits.validate()
 
         let streams = try StreamReader.rootStreams(from: ole.root.children)
-        let reader = StreamReader(ole, streams, readLimits: readLimits)
+        let reader = StreamReader(ole, streams, readLimits: options.readLimits)
 
         let fileHeader = try HwpFileHeader.load(reader.getDataFromStream(.fileHeader, false))
         if let unsupportedFeature = fileHeader.fileProperty.unsupportedFeature {
@@ -94,7 +109,7 @@ public struct HwpFile: HwpPrimitive {
         let isCompressed = fileHeader.fileProperty.isCompressed
 
         let docInfoData = try reader.getDataFromStream(.docInfo, isCompressed)
-        let docInfo = try HwpDocInfo.load(docInfoData, fileHeader.version)
+        let docInfo = try HwpDocInfo.load(docInfoData, fileHeader.version, options: options)
         let sectionDataArray = try reader.getDataFromStorage(
             .bodyText,
             isCompressed,
@@ -123,7 +138,8 @@ public struct HwpFile: HwpPrimitive {
             previewTextData: previewTextData,
             previewImageData: previewImageData,
             binaryData: binaryData,
-            viewTextData: viewTextData
+            viewTextData: viewTextData,
+            options: options
         )
     }
 
@@ -135,13 +151,14 @@ public struct HwpFile: HwpPrimitive {
         previewTextData: Data? = nil,
         previewImageData: Data? = nil,
         binaryData: [(name: String, data: Data)] = [],
-        viewTextData: [(name: String, data: Data)] = []
+        viewTextData: [(name: String, data: Data)] = [],
+        options: HwpLoadOptions = .default
     ) throws {
         if let unsupportedFeature = fileHeader.fileProperty.unsupportedFeature {
             throw HwpError.unsupportedFeature(unsupportedFeature)
         }
 
-        let docInfo = try HwpDocInfo.load(docInfoData, fileHeader.version)
+        let docInfo = try HwpDocInfo.load(docInfoData, fileHeader.version, options: options)
         try self.init(
             fileHeader: fileHeader,
             docInfo: docInfo,
@@ -150,7 +167,8 @@ public struct HwpFile: HwpPrimitive {
             previewTextData: previewTextData,
             previewImageData: previewImageData,
             binaryData: binaryData,
-            viewTextData: viewTextData
+            viewTextData: viewTextData,
+            options: options
         )
     }
 
@@ -162,7 +180,8 @@ public struct HwpFile: HwpPrimitive {
         previewTextData: Data? = nil,
         previewImageData: Data? = nil,
         binaryData: [(name: String, data: Data)] = [],
-        viewTextData: [(name: String, data: Data)] = []
+        viewTextData: [(name: String, data: Data)] = [],
+        options: HwpLoadOptions = .default
     ) throws {
         self.fileHeader = fileHeader
 
@@ -185,7 +204,9 @@ public struct HwpFile: HwpPrimitive {
                 reason: reason
             )
         }
-        sectionArray = try sectionDataArray.map { try HwpSection.load($0, fileHeader.version) }
+        sectionArray = try sectionDataArray.map {
+            try HwpSection.load($0, fileHeader.version, options: options)
+        }
         // 표시용 본문 (ViewText): 이름 숫자 순 정렬 후 best-effort 파싱.
         // 파싱에 실패하면 (미지의 표시 전용 레코드 등) BodyText 렌더로 폴백한다.
         do {
@@ -193,7 +214,7 @@ public struct HwpFile: HwpPrimitive {
                 .sorted { lhs, rhs in
                     Self.sectionIndex(from: lhs.name) < Self.sectionIndex(from: rhs.name)
                 }
-                .map { try HwpSection.load($0.data, fileHeader.version) }
+                .map { try HwpSection.load($0.data, fileHeader.version, options: options) }
         } catch {
             // 표시 전용 스트림이 파싱 불가면 BodyText 렌더로 폴백한다
             viewSectionArray = []

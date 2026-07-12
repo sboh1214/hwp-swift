@@ -26,12 +26,16 @@ class HwpRecord {
     let level: UInt32
     let payload: Data
     var children: [HwpRecord]
+    /// 이 레코드를 만든 파싱 트리의 로드 옵션 — record 기반 load들이
+    /// 시그니처 변경 없이 rawPayload 보존 여부를 물려받는 통로다.
+    let options: HwpLoadOptions
 
-    init(tagId: UInt32, level: UInt32, payload: Data) {
+    init(tagId: UInt32, level: UInt32, payload: Data, options: HwpLoadOptions = .default) {
         self.tagId = tagId
         self.level = level
         self.payload = payload
         children = [HwpRecord]()
+        self.options = options
     }
 }
 
@@ -53,19 +57,21 @@ public struct HwpUnknownRecord: HwpPrimitive {
         self.children = children
     }
 
+    /// 보존 off면 payload를 분리 복사해 (비우지 않음 — 진단 시맨틱 보존,
+    /// 통상 소량) 스트림 버퍼 참조만 끊는다.
     init(_ record: HwpRecord) {
         self.init(
             tagId: record.tagId,
             level: record.level,
-            payload: record.payload,
+            payload: record.options.decoupledPayload(record.payload),
             children: record.children.map(HwpUnknownRecord.init)
         )
     }
 }
 
-func parseTreeRecord(data: Data) throws -> HwpRecord {
-    var reader = DataReader(data)
-    let root = HwpRecord(tagId: 0, level: 0, payload: Data())
+func parseTreeRecord(data: Data, options: HwpLoadOptions = .default) throws -> HwpRecord {
+    var reader = DataReader(data, options: options)
+    let root = HwpRecord(tagId: 0, level: 0, payload: Data(), options: options)
     var stack = [root]
 
     while !reader.isEOF {
@@ -82,7 +88,7 @@ func parseTreeRecord(data: Data) throws -> HwpRecord {
         }
         let payload = try reader.readBytes(size)
         let parent = stack[parentIndex]
-        let record = HwpRecord(tagId: tagId, level: level, payload: payload)
+        let record = HwpRecord(tagId: tagId, level: level, payload: payload, options: options)
         parent.children.append(record)
 
         if stack.count > parentIndex + 1 {

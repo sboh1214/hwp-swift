@@ -20,8 +20,9 @@ public struct HwpDocData: HwpFromRecord {
     // MARK: loader contract exemption - DOC_DATA payload is retained for best-effort views
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
-        rawPayload = try reader.readToEnd()
-        docDataInfo = Self.docDataInfo(from: rawPayload)
+        let payload = try reader.readToEnd()
+        rawPayload = reader.options.preservedPayload(payload)
+        docDataInfo = Self.docDataInfo(from: payload)
         forbiddenCharArray = try children
             .filter { $0.tagId == HwpDocInfoTag.forbiddenChar.rawValue }
             .map(HwpForbiddenChar.load)
@@ -60,8 +61,9 @@ public struct HwpDistributeDocData: HwpFromRecord {
     // MARK: loader contract exemption - DISTRIBUTE_DOC_DATA payload is retained as raw data
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
-        rawPayload = try reader.readToEnd()
-        distributeDocDataInfo = Self.distributeDocDataInfo(from: rawPayload)
+        let payload = try reader.readToEnd()
+        rawPayload = reader.options.preservedPayload(payload)
+        distributeDocDataInfo = Self.distributeDocDataInfo(from: payload)
         unknownChildren = children.map(HwpUnknownRecord.init)
     }
 }
@@ -95,8 +97,9 @@ public struct HwpTrackChange: HwpFromRecord {
     // MARK: loader contract exemption - TRACK_CHANGE payload is retained for best-effort views
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
-        rawPayload = try reader.readToEnd()
-        trackChangeInfo = Self.trackChangeInfo(from: rawPayload)
+        let payload = try reader.readToEnd()
+        rawPayload = reader.options.preservedPayload(payload)
+        trackChangeInfo = Self.trackChangeInfo(from: payload)
         unknownChildren = children.map(HwpUnknownRecord.init)
     }
 }
@@ -130,8 +133,9 @@ public struct HwpMemoShape: HwpFromRecord {
     // MARK: loader contract exemption - MEMO_SHAPE payload is retained for best-effort views
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
-        rawPayload = try reader.readToEnd()
-        shapeInfo = Self.shapeInfo(from: rawPayload)
+        let payload = try reader.readToEnd()
+        rawPayload = reader.options.preservedPayload(payload)
+        shapeInfo = Self.shapeInfo(from: payload)
         unknownChildren = children.map(HwpUnknownRecord.init)
     }
 }
@@ -175,8 +179,9 @@ public struct HwpTrackChangeContent: HwpFromRecord {
     // MARK: loader contract exemption - TRACK_CHANGE_CONTENT payload is retained for views
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
-        rawPayload = try reader.readToEnd()
-        contentInfo = Self.contentInfo(from: rawPayload)
+        let payload = try reader.readToEnd()
+        rawPayload = reader.options.preservedPayload(payload)
+        contentInfo = Self.contentInfo(from: payload)
         unknownChildren = children.map(HwpUnknownRecord.init)
     }
 }
@@ -223,8 +228,9 @@ public struct HwpTrackChangeAuthor: HwpFromRecord {
     // MARK: loader contract exemption - TRACK_CHANGE_AUTHOR payload is retained for views
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
-        rawPayload = try reader.readToEnd()
-        authorInfo = Self.authorInfo(from: rawPayload)
+        let payload = try reader.readToEnd()
+        rawPayload = reader.options.preservedPayload(payload)
+        authorInfo = Self.authorInfo(from: payload)
         unknownChildren = children.map(HwpUnknownRecord.init)
     }
 }
@@ -248,7 +254,7 @@ func loadDocInfoRecord<T: HwpFromRecord>(
 ) throws -> T {
     try validateDocInfoRecordTag(record, expectedTag: expectedTag)
 
-    var reader = DataReader(record.payload)
+    var reader = DataReader(record.payload, options: record.options)
     let model = try type.init(&reader, record.children)
     if !reader.isEOF {
         throw HwpError.bytesAreNotEOF(model: type, remain: reader.remainBytes)
@@ -300,8 +306,9 @@ private extension HwpDistributeDocData {
 }
 
 private extension Data {
+    /// 분리 복사 — 스트림 버퍼 슬라이스를 typed view에 남기지 않는다.
     func uint32ValuesRawPayload(valueCount: Int) -> Data {
-        prefix(valueCount * MemoryLayout<UInt32>.size)
+        Data(prefix(valueCount * MemoryLayout<UInt32>.size))
     }
 }
 

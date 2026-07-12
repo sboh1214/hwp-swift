@@ -38,7 +38,7 @@ extension HwpCtrlHeader: HwpPrimitive {
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
 
-        var reader = DataReader(record.payload)
+        var reader = DataReader(record.payload, options: record.options)
         return try self.init(&reader, record.children)
     }
 }

@@ -43,14 +43,18 @@ extension HwpTable: HwpFromRecordWithVersion {
         guard commonCtrlProperty.commonCtrlId == .table else {
             throw HwpError.invalidCtrlId(ctrlId: commonCtrlProperty.commonCtrlId.rawValue)
         }
-        rawTrailing = try reader.readToEnd()
+        rawTrailing = reader.options.preservedPayload(try reader.readToEnd())
         rawPayload = try reader.consumedData(from: startOffset)
         guard let tablePropertyIndex = children.firstIndex(where: {
             $0.tagId == HwpSectionTag.table.rawValue
         }) else {
             throw HwpError.recordDoesNotExist(tag: HwpSectionTag.table.rawValue)
         }
-        tableProperty = try HwpTableProperty.load(children[tablePropertyIndex].payload, version)
+        tableProperty = try HwpTableProperty.load(
+            children[tablePropertyIndex].payload,
+            version,
+            options: reader.options
+        )
 
         let parsedChildren = try Self.parseChildren(
             children,
@@ -69,9 +73,9 @@ extension HwpTable: HwpFromRecordWithVersion {
     static func load(_ record: HwpRecord, _ version: HwpVersion) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
 
-        var reader = DataReader(record.payload)
+        var reader = DataReader(record.payload, options: record.options)
         var table = try self.init(&reader, record.children, version)
-        table.rawPayload = record.payload
+        table.rawPayload = record.options.preservedPayload(record.payload)
         return table
     }
 
@@ -163,8 +167,9 @@ extension HwpTableCellHeader: HwpFromRecord {
         listHeaderWidthRef = try reader.read(UInt16.self)
         cellPropertyInfo = HwpTableCellHeaderProperty(rawValue: listHeaderWidthRef)
         isHeader = cellPropertyInfo.isHeader
-        rawTrailing = try reader.readToEnd()
-        cellProperty = HwpTableCellProperty.decode(from: rawTrailing)
+        let trailing = try reader.readToEnd()
+        rawTrailing = reader.options.preservedPayload(trailing)
+        cellProperty = HwpTableCellProperty.decode(from: trailing)
         rawPayload = try reader.consumedData(from: startOffset)
         unknownChildren = children.map(HwpUnknownRecord.init)
     }
@@ -174,9 +179,9 @@ extension HwpTableCellHeader: HwpFromRecord {
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .listHeader)
 
-        var reader = DataReader(record.payload)
+        var reader = DataReader(record.payload, options: record.options)
         var header = try self.init(&reader, record.children)
-        header.rawPayload = record.payload
+        header.rawPayload = record.options.preservedPayload(record.payload)
         return header
     }
 }

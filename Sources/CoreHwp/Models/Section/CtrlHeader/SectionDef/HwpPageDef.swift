@@ -47,19 +47,19 @@ extension HwpPageDef: HwpFromData {
         marginFootnote = try reader.read(HWPUNIT.self)
         marginGutter = try reader.read(HWPUNIT.self)
         property = try reader.read(UInt32.self)
-        rawTrailing = try reader.readToEnd()
+        rawTrailing = reader.options.preservedPayload(try reader.readToEnd())
         rawPayload = try reader.consumedData(from: startOffset)
     }
 
     // MARK: loader contract exemption - restores complete PAGE_DEF rawPayload
 
-    static func load(_ data: Data) throws -> Self {
-        var reader = DataReader(data)
+    static func load(_ data: Data, options: HwpLoadOptions = .default) throws -> Self {
+        var reader = DataReader(data, options: options)
         var pageDef = try self.init(&reader)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
         }
-        pageDef.rawPayload = data
+        pageDef.rawPayload = options.preservedPayload(data)
         return pageDef
     }
 }

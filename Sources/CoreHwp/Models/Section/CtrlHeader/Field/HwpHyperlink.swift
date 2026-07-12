@@ -79,7 +79,7 @@ extension HwpHyperlink: HwpPrimitive {
         let urlCharacters = try reader.read(WCHAR.self, urlLength)
         urlRawPayload = try reader.consumedData(from: urlStartOffset)
         url = try urlCharacters.string
-        rawTrailing = try reader.readToEnd()
+        rawTrailing = reader.options.preservedPayload(try reader.readToEnd())
         rawPayload = try reader.consumedData(from: startOffset)
         unknownChildren = children.map(HwpUnknownRecord.init)
     }
@@ -89,9 +89,9 @@ extension HwpHyperlink: HwpPrimitive {
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
 
-        var reader = DataReader(record.payload)
+        var reader = DataReader(record.payload, options: record.options)
         var hyperlink = try self.init(&reader, record.children)
-        hyperlink.rawPayload = record.payload
+        hyperlink.rawPayload = record.options.preservedPayload(record.payload)
         return hyperlink
     }
 }

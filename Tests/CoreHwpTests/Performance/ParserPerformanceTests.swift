@@ -47,6 +47,42 @@ final class ParserPerformanceTests: XCTestCase {
         withExtendedLifetime(section) {}
     }
 
+    /// 뷰어 옵션(rawPayload 보존 off) 파스 시간·상주 메모리 —
+    /// default 모드 baseline과 같은 파라미터로 실측해 델타를 비교한다.
+    func testParseLargeSyntheticSectionViewerOptions() throws {
+        let full = ProcessInfo.processInfo.environment["HWP_PERF"] != nil
+        let paragraphCount = full ? 20000 : 1000
+        let data = SyntheticLargeDocument.sectionData(
+            paragraphCount: paragraphCount,
+            charactersPerParagraph: 80
+        )
+
+        let residentBefore = Self.residentMemoryBytes()
+        let clock = ContinuousClock()
+        let start = clock.now
+        let section = try HwpSection.load(data, SyntheticLargeDocument.version, options: .viewer)
+        let elapsed = clock.now - start
+        let residentAfter = Self.residentMemoryBytes()
+
+        expect(section.paragraph.count) == paragraphCount
+        expect(section.paragraph.last?.paraText?.charArray.isEmpty) == false
+        // 보존 off — 섹션/문단 원본 슬라이스가 비어 스트림 버퍼가 해제 가능해야 한다
+        expect(section.rawPayload.isEmpty) == true
+        expect(section.paragraph.last?.paraText?.rawPayload.isEmpty) == true
+
+        let seconds = Self.seconds(of: elapsed)
+        let residentDelta = Self.megabytes(from: residentBefore, to: residentAfter)
+        print(
+            "HWP_PERF parse(viewer): N=\(paragraphCount) stream=\(data.count / 1024)KB "
+                + "time=\(String(format: "%.3f", seconds))s"
+                + (residentDelta.map { " resident+=\(String(format: "%.1f", $0))MB" } ?? "")
+        )
+
+        // 폭주 방지 상한 — 러너 편차를 흡수하는 넉넉한 값 (타이트 게이트 아님)
+        expect(seconds) < (full ? 60.0 : 10.0)
+        withExtendedLifetime(section) {}
+    }
+
     // MARK: - 계측 헬퍼
 
     static func seconds(of duration: Duration) -> Double {

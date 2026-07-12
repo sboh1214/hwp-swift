@@ -204,13 +204,14 @@ extension HwpOtherControl: HwpFromRecord {
             throw HwpError.invalidCtrlId(ctrlId: rawCtrlId)
         }
         self.ctrlId = ctrlId
-        rawTrailing = try reader.readToEnd()
+        let trailing = try reader.readToEnd()
+        rawTrailing = reader.options.preservedPayload(trailing)
         rawPayload = try reader.consumedData(from: startOffset)
-        numberingInfo = Self.numberingInfo(ctrlId: ctrlId, rawTrailing: rawTrailing)
-        autoNumberInfo = Self.autoNumberInfo(ctrlId: ctrlId, rawTrailing: rawTrailing)
-        newNumberInfo = Self.newNumberInfo(ctrlId: ctrlId, rawTrailing: rawTrailing)
-        pageHideInfo = Self.pageHideInfo(ctrlId: ctrlId, rawTrailing: rawTrailing)
-        indexmarkInfo = Self.indexmarkInfo(ctrlId: ctrlId, rawTrailing: rawTrailing)
+        numberingInfo = Self.numberingInfo(ctrlId: ctrlId, rawTrailing: trailing)
+        autoNumberInfo = Self.autoNumberInfo(ctrlId: ctrlId, rawTrailing: trailing)
+        newNumberInfo = Self.newNumberInfo(ctrlId: ctrlId, rawTrailing: trailing)
+        pageHideInfo = Self.pageHideInfo(ctrlId: ctrlId, rawTrailing: trailing)
+        indexmarkInfo = Self.indexmarkInfo(ctrlId: ctrlId, rawTrailing: trailing)
         ctrlDataRecords = try children
             .filter { $0.tagId == HwpSectionTag.ctrlData.rawValue }
             .map { try HwpCtrlData.load($0) }
@@ -225,9 +226,9 @@ extension HwpOtherControl: HwpFromRecord {
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
 
-        var reader = DataReader(record.payload)
+        var reader = DataReader(record.payload, options: record.options)
         var control = try self.init(&reader, record.children)
-        control.rawPayload = record.payload
+        control.rawPayload = record.options.preservedPayload(record.payload)
         return control
     }
 }

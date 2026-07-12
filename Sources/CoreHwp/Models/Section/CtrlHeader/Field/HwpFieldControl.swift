@@ -163,14 +163,15 @@ extension HwpFieldControl: HwpPrimitive {
             throw HwpError.invalidCtrlId(ctrlId: rawCtrlId)
         }
         self.ctrlId = ctrlId
-        rawTrailing = try reader.readToEnd()
-        let parsedControl = Self.fieldControlPayload(from: rawTrailing)
-        let fallbackLengthInfo = Self.fieldParameterLengthInfo(from: rawTrailing)
-        let fallbackParameter = Self.fieldParameter(from: rawTrailing)
+        let trailing = try reader.readToEnd()
+        rawTrailing = reader.options.preservedPayload(trailing)
+        let parsedControl = Self.fieldControlPayload(from: trailing)
+        let fallbackLengthInfo = Self.fieldParameterLengthInfo(from: trailing)
+        let fallbackParameter = Self.fieldParameter(from: trailing)
         let parsedProperties = parsedControl?.properties
-            ?? Self.fieldParameterHeaderValue(from: rawTrailing)
+            ?? Self.fieldParameterHeaderValue(from: trailing)
         let parsedPropertiesRawPayload = parsedControl?.propertiesRawPayload
-            ?? Self.fieldParameterHeaderRawPayload(from: rawTrailing)
+            ?? Self.fieldParameterHeaderRawPayload(from: trailing)
         let parsedCommandLengthRawPayload = parsedControl?.commandLengthRawPayload
 
         properties = parsedProperties
@@ -214,9 +215,9 @@ extension HwpFieldControl: HwpPrimitive {
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
 
-        var reader = DataReader(record.payload)
+        var reader = DataReader(record.payload, options: record.options)
         var control = try self.init(&reader, record.children)
-        control.rawPayload = record.payload
+        control.rawPayload = record.options.preservedPayload(record.payload)
         return control
     }
 

@@ -76,21 +76,22 @@ extension HwpShapeControl: HwpFromRecord {
         _ children: [HwpRecord],
         _ version: HwpVersion?
     ) throws {
-        rawPayload = try reader.readToEnd()
-
-        var ctrlIdReader = DataReader(rawPayload)
+        let options = reader.options
+        let payload = try reader.readToEnd()
+        rawPayload = options.preservedPayload(payload)
+        var ctrlIdReader = DataReader(payload, options: options)
         let rawCtrlId = try ctrlIdReader.read(UInt32.self)
         guard let ctrlId = HwpCommonCtrlId(rawValue: rawCtrlId) else {
             throw HwpError.invalidCtrlId(ctrlId: rawCtrlId)
         }
         self.ctrlId = ctrlId
 
-        let parsedProperty = Self.commonCtrlProperty(from: rawPayload)
+        let parsedProperty = Self.commonCtrlProperty(from: payload, options: options)
         commonCtrlProperty = parsedProperty?.property
         if let parsedProperty {
-            rawTrailing = parsedProperty.trailing
+            rawTrailing = options.preservedPayload(parsedProperty.trailing)
         } else {
-            rawTrailing = try ctrlIdReader.readToEnd()
+            rawTrailing = options.preservedPayload(try ctrlIdReader.readToEnd())
         }
 
         shapeComponentArray = try children
@@ -124,7 +125,7 @@ extension HwpShapeControl: HwpFromRecord {
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
 
-        var reader = DataReader(record.payload)
+        var reader = DataReader(record.payload, options: record.options)
         let shapeControl = try self.init(&reader, record.children)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
@@ -137,7 +138,7 @@ extension HwpShapeControl: HwpFromRecord {
     static func load(_ record: HwpRecord, _ version: HwpVersion) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
 
-        var reader = DataReader(record.payload)
+        var reader = DataReader(record.payload, options: record.options)
         let shapeControl = try self.init(&reader, record.children, version)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
@@ -146,9 +147,10 @@ extension HwpShapeControl: HwpFromRecord {
     }
 
     private static func commonCtrlProperty(
-        from payload: Data
+        from payload: Data,
+        options: HwpLoadOptions
     ) -> (property: HwpCommonCtrlProperty, trailing: Data)? {
-        var propertyReader = DataReader(payload)
+        var propertyReader = DataReader(payload, options: options)
         do {
             let property = try HwpCommonCtrlProperty(&propertyReader)
             let trailing = try propertyReader.readToEnd()
@@ -219,8 +221,9 @@ extension HwpEquationEdit: HwpFromRecord {
     // MARK: loader contract exemption - equation edit payload is best-effort raw-backed
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
-        rawPayload = try reader.readToEnd()
-        let payloadInfo = Self.payloadInfo(from: rawPayload)
+        let payload = try reader.readToEnd()
+        rawPayload = reader.options.preservedPayload(payload)
+        let payloadInfo = Self.payloadInfo(from: payload)
         property = payloadInfo.property
         propertyRawPayload = payloadInfo.propertyRawPayload
         equationTextLength = payloadInfo.equationTextLength
@@ -253,7 +256,7 @@ extension HwpEquationEdit: HwpFromRecord {
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .eqEdit)
 
-        var reader = DataReader(record.payload)
+        var reader = DataReader(record.payload, options: record.options)
         let edit = try self.init(&reader, record.children)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)

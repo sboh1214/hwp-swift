@@ -83,17 +83,30 @@ public struct HwpSectionDef {
 
 extension HwpSectionDef: HwpFromRecordWithVersion {
     init(_ reader: inout DataReader, _ children: [HwpRecord], _ version: HwpVersion) throws {
+        let options = reader.options
         let startOffset = reader.byteOffset
-        pageDef = try HwpPageDef.load(requiredChild(.pageDef, children).payload)
+        pageDef = try HwpPageDef.load(
+            requiredChild(.pageDef, children).payload,
+            options: options
+        )
 
         let footnoteRecords = try requiredChildPair(.footnoteShape, children)
-        footNoteShape = try HwpFootnoteShape.load(footnoteRecords.first.payload)
-        endNoteShape = try HwpFootnoteShape.load(footnoteRecords.second.payload)
+        footNoteShape = try HwpFootnoteShape.load(footnoteRecords.first.payload, options: options)
+        endNoteShape = try HwpFootnoteShape.load(footnoteRecords.second.payload, options: options)
 
         let pageBorderFillRecords = try requiredChildTriple(.pageBorderFill, children)
-        pageBorderFillBoth = try HwpPageBorderFill.load(pageBorderFillRecords.first.payload)
-        pageBorderFillEven = try HwpPageBorderFill.load(pageBorderFillRecords.second.payload)
-        pageBorderFillOdd = try HwpPageBorderFill.load(pageBorderFillRecords.third.payload)
+        pageBorderFillBoth = try HwpPageBorderFill.load(
+            pageBorderFillRecords.first.payload,
+            options: options
+        )
+        pageBorderFillEven = try HwpPageBorderFill.load(
+            pageBorderFillRecords.second.payload,
+            options: options
+        )
+        pageBorderFillOdd = try HwpPageBorderFill.load(
+            pageBorderFillRecords.third.payload,
+            options: options
+        )
         unknownChildren = unconsumedSectionDefChildren(children)
 
         ctrlId = try reader.read(UInt32.self)
@@ -117,7 +130,7 @@ extension HwpSectionDef: HwpFromRecordWithVersion {
 
         // MARK: loader contract exemption - preserves SECTION_DEF version-specific tail
 
-        unknown = try reader.readToEnd()
+        unknown = options.preservedPayload(try reader.readToEnd())
         rawPayload = try reader.consumedData(from: startOffset)
     }
 
@@ -126,12 +139,12 @@ extension HwpSectionDef: HwpFromRecordWithVersion {
     static func load(_ record: HwpRecord, _ version: HwpVersion) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
 
-        var reader = DataReader(record.payload)
+        var reader = DataReader(record.payload, options: record.options)
         var sectionDef = try self.init(&reader, record.children, version)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
         }
-        sectionDef.rawPayload = record.payload
+        sectionDef.rawPayload = record.options.preservedPayload(record.payload)
         return sectionDef
     }
 }

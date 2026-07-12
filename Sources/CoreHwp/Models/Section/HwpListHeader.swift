@@ -39,17 +39,19 @@ public struct HwpListHeader: HwpFromData {
         paragraphCount = try reader.read(Int32.self)
         property = try reader.read(UInt32.self)
         propertyInfo = try HwpListHeaderProperty.load(property)
-        rawTrailing = try reader.readToEnd()
+        // 글상자 파싱이 load 반환 후 rawTrailing을 다시 읽으므로 (textBoxInfo)
+        // 보존 off에서도 비우지 않고 분리 복사한다.
+        rawTrailing = reader.options.decoupledPayload(try reader.readToEnd())
         rawTrailingWords = rawTrailing.littleEndianUInt16ArrayIfAligned()
         rawPayload = try reader.consumedData(from: startOffset)
     }
 
     // MARK: loader contract exemption - init consumes trailing bytes as rawTrailing
 
-    static func load(_ data: Data) throws -> Self {
-        var reader = DataReader(data)
+    static func load(_ data: Data, options: HwpLoadOptions = .default) throws -> Self {
+        var reader = DataReader(data, options: options)
         var listHeader = try self.init(&reader)
-        listHeader.rawPayload = data
+        listHeader.rawPayload = options.preservedPayload(data)
         return listHeader
     }
 }

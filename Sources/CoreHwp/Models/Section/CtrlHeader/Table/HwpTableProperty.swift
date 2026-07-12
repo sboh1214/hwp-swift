@@ -147,19 +147,23 @@ extension HwpTableProperty: HwpFromDataWithVersion {
                 try HwpZoneProperty(&reader)
             }
         }
-        rawTrailing = try reader.readToEnd()
+        rawTrailing = reader.options.preservedPayload(try reader.readToEnd())
         rawPayload = try reader.consumedData(from: startOffset)
     }
 
     // MARK: loader contract exemption - restores complete table-property rawPayload
 
-    static func load(_ data: Data, _ version: HwpVersion) throws -> Self {
-        var reader = DataReader(data)
+    static func load(
+        _ data: Data,
+        _ version: HwpVersion,
+        options: HwpLoadOptions = .default
+    ) throws -> Self {
+        var reader = DataReader(data, options: options)
         var tableProperty = try self.init(&reader, version)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
         }
-        tableProperty.rawPayload = data
+        tableProperty.rawPayload = options.preservedPayload(data)
         return tableProperty
     }
 }

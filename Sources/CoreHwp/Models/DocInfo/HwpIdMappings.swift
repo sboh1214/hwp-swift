@@ -67,7 +67,7 @@ extension HwpIdMappings: HwpFromRecordWithVersion {
     static func load(_ record: HwpRecord, _ version: HwpVersion) throws -> Self {
         try validateDocInfoRecordTag(record, expectedTag: .idMappings)
 
-        var reader = DataReader(record.payload)
+        var reader = DataReader(record.payload, options: record.options)
         let idMappings = try self.init(&reader, record.children, version)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
@@ -197,6 +197,7 @@ extension HwpIdMappings: HwpFromRecordWithVersion {
 
     // swiftlint:disable:next function_body_length
     init(_ reader: inout DataReader, _ children: [HwpRecord], _ version: HwpVersion) throws {
+        let options = reader.options
         let binaryDataCount = try reader.read(Int32.self)
         let faceNameKoreanCount = try reader.read(Int32.self)
         let faceNameEnglishCount = try reader.read(Int32.self)
@@ -241,40 +242,41 @@ extension HwpIdMappings: HwpFromRecordWithVersion {
         }
 
         binDataArray = try popRequired(.binData, binaryDataCount)
-            .map { try HwpBinData.load($0.payload) }
+            .map { try HwpBinData.load($0.payload, options: options) }
         faceNameKoreanArray = try popRequired(.faceName, faceNameKoreanCount, completesTag: false)
-            .map { try HwpFaceName.load($0.payload) }
+            .map { try HwpFaceName.load($0.payload, options: options) }
         faceNameEnglishArray = try popRequired(.faceName, faceNameEnglishCount, completesTag: false)
-            .map { try HwpFaceName.load($0.payload) }
+            .map { try HwpFaceName.load($0.payload, options: options) }
         faceNameChineseArray = try popRequired(.faceName, faceNameChineseCount, completesTag: false)
-            .map { try HwpFaceName.load($0.payload) }
+            .map { try HwpFaceName.load($0.payload, options: options) }
         let faceNameJapaneseRecords = try popRequired(
             .faceName,
             faceNameJapaneseCount,
             completesTag: false
         )
-        faceNameJapaneseArray = try faceNameJapaneseRecords.map { try HwpFaceName.load($0.payload) }
+        faceNameJapaneseArray = try faceNameJapaneseRecords
+            .map { try HwpFaceName.load($0.payload, options: options) }
         faceNameEtcArray = try popRequired(.faceName, faceNameEtcCount, completesTag: false)
-            .map { try HwpFaceName.load($0.payload) }
+            .map { try HwpFaceName.load($0.payload, options: options) }
         faceNameSymbolArray = try popRequired(.faceName, faceNameSymbolCount, completesTag: false)
-            .map { try HwpFaceName.load($0.payload) }
+            .map { try HwpFaceName.load($0.payload, options: options) }
         faceNameUserArray = try popRequired(.faceName, faceNameUserCount)
-            .map { try HwpFaceName.load($0.payload) }
+            .map { try HwpFaceName.load($0.payload, options: options) }
 
         borderFillArray = try popRequired(.borderFill, borderFillCount)
-            .map { try HwpBorderFill.load($0.payload) }
+            .map { try HwpBorderFill.load($0.payload, options: options) }
         charShapeArray = try popRequired(.charShape, charShapeCount)
-            .map { try HwpCharShape.load($0.payload, version) }
+            .map { try HwpCharShape.load($0.payload, version, options: options) }
         tabDefArray = try popRequired(.tabDef, tabDefCount)
-            .map { try HwpTabDef.load($0.payload) }
+            .map { try HwpTabDef.load($0.payload, options: options) }
         numberingArray = try popRequired(.numbering, numberingCount)
-            .map { try HwpNumbering.load($0.payload, version) }
+            .map { try HwpNumbering.load($0.payload, version, options: options) }
         bulletArray = try popRequired(.bullet, bulletCount)
-            .map { try HwpBullet.load($0.payload) }
+            .map { try HwpBullet.load($0.payload, options: options) }
         paraShapeArray = try popRequired(.paraShape, paraShapeCount)
-            .map { try HwpParaShape.load($0.payload, version) }
+            .map { try HwpParaShape.load($0.payload, version, options: options) }
         styleArray = try popRequired(.style, styleCount)
-            .map { try HwpStyle.load($0.payload) }
+            .map { try HwpStyle.load($0.payload, options: options) }
         memoShapeArray = try popOptionalTagged(
             .memoShape,
             memoShapeCount ?? 0,

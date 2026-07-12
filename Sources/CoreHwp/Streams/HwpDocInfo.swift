@@ -50,7 +50,10 @@ public struct HwpDocInfo: HwpFromDataWithVersion {
     init(_ reader: inout DataReader, _ version: HwpVersion) throws {
         let startOffset = reader.byteOffset
         rawPayload = Data()
-        let record = try parseTreeRecord(data: try reader.readBytes(reader.remainBytes))
+        let record = try parseTreeRecord(
+            data: try reader.readBytes(reader.remainBytes),
+            options: reader.options
+        )
         let children = record.children
 
         guard let documentProperties = children
@@ -58,7 +61,10 @@ public struct HwpDocInfo: HwpFromDataWithVersion {
         else {
             throw HwpError.recordDoesNotExist(tag: HwpDocInfoTag.documentProperties.rawValue)
         }
-        self.documentProperties = try HwpDocumentProperties.load(documentProperties.payload)
+        self.documentProperties = try HwpDocumentProperties.load(
+            documentProperties.payload,
+            options: reader.options
+        )
 
         guard let idMappings = children
             .first(where: { $0.tagId == HwpDocInfoTag.idMappings.rawValue })

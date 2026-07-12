@@ -83,7 +83,7 @@ private extension HwpListControl {
                 continue
             }
 
-            let header = try HwpListHeader.load(child.payload)
+            let header = try HwpListHeader.load(child.payload, options: child.options)
             guard header.paragraphCount >= 0 else {
                 throw HwpError.invalidRecordTree(
                     reason: "list control paragraph count is negative: \(header.paragraphCount)"
@@ -107,7 +107,7 @@ private extension HwpListControl {
 
             lists.append(HwpListControlList(
                 header: header,
-                headerRawPayload: child.payload,
+                headerRawPayload: child.options.decoupledPayload(child.payload),
                 headerUnknownChildren: child.children.map(HwpUnknownRecord.init),
                 paragraphArray: paragraphs
             ))

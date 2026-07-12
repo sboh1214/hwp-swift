@@ -81,13 +81,17 @@ extension HwpParaShape: HwpFromDataWithVersion {
         rawPayload = try reader.consumedData(from: startOffset)
     }
 
-    static func load(_ data: Data, _ version: HwpVersion) throws -> Self {
-        var reader = DataReader(data)
+    static func load(
+        _ data: Data,
+        _ version: HwpVersion,
+        options: HwpLoadOptions = .default
+    ) throws -> Self {
+        var reader = DataReader(data, options: options)
         var paraShape = try self.init(&reader, version)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
         }
-        paraShape.rawPayload = data
+        paraShape.rawPayload = options.preservedPayload(data)
         return paraShape
     }
 }

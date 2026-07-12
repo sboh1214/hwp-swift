@@ -37,23 +37,26 @@ public struct HwpParaRangeTag: HwpFromData {
         rawPayload = try reader.consumedData(from: startOffset)
     }
 
-    public static func load(_ data: Data) throws -> Self {
-        var reader = DataReader(data)
+    public static func load(_ data: Data, options: HwpLoadOptions = .default) throws -> Self {
+        var reader = DataReader(data, options: options)
         var paraRangeTag = try self.init(&reader)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
         }
-        paraRangeTag.rawPayload = data
+        paraRangeTag.rawPayload = options.preservedPayload(data)
         return paraRangeTag
     }
 
     /// PARA_RANGE_TAG 레코드 하나에는 태그가 정보 수만큼 (12바이트씩) 담긴다
     /// (ViewText 변경 추적 저장본 실측 — 한 레코드에 2개 이상).
-    public static func loadArray(_ data: Data) throws -> [Self] {
+    public static func loadArray(
+        _ data: Data,
+        options: HwpLoadOptions = .default
+    ) throws -> [Self] {
         guard data.count.isMultiple(of: 12) else {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: data.count % 12)
         }
-        var reader = DataReader(data)
+        var reader = DataReader(data, options: options)
         var tags: [Self] = []
         while !reader.isEOF {
             tags.append(try self.init(&reader))

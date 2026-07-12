@@ -91,7 +91,7 @@ extension HwpPageNumberPosition: HwpFromData {
         } else {
             unknown = 0
         }
-        rawTrailing = try reader.readToEnd()
+        rawTrailing = reader.options.preservedPayload(try reader.readToEnd())
         rawPayload = try reader.consumedData(from: startOffset)
         unknownChildren = []
     }
@@ -108,12 +108,12 @@ extension HwpPageNumberPosition: HwpFromRecord {
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
 
-        var reader = DataReader(record.payload)
+        var reader = DataReader(record.payload, options: record.options)
         var pageNumberPosition = try self.init(&reader, record.children)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
         }
-        pageNumberPosition.rawPayload = record.payload
+        pageNumberPosition.rawPayload = record.options.preservedPayload(record.payload)
         return pageNumberPosition
     }
 }

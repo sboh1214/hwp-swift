@@ -43,7 +43,7 @@ public struct HwpParagraph: HwpFromRecordWithVersion {
     static func load(_ record: HwpRecord, _ version: HwpVersion) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .paraHeader)
 
-        var reader = DataReader(record.payload)
+        var reader = DataReader(record.payload, options: record.options)
         let paragraph = try self.init(&reader, record.children, version)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
@@ -55,12 +55,13 @@ public struct HwpParagraph: HwpFromRecordWithVersion {
 
     // swiftlint:disable:next cyclomatic_complexity function_body_length
     init(_ reader: inout DataReader, _ children: [HwpRecord], _ version: HwpVersion) throws {
-        paraHeader = try HwpParaHeader.load(try reader.readToEnd(), version)
+        let options = reader.options
+        paraHeader = try HwpParaHeader.load(try reader.readToEnd(), version, options: options)
 
         if let paraText = children
             .first(where: { $0.tagId == HwpSectionTag.paraText.rawValue })
         {
-            let loadedParaText = try HwpParaText.load(paraText.payload)
+            let loadedParaText = try HwpParaText.load(paraText.payload, options: options)
             self.paraText = loadedParaText
             try Self.validateParaTextCount(paraHeader, loadedParaText)
         }
@@ -70,24 +71,24 @@ public struct HwpParagraph: HwpFromRecordWithVersion {
         else {
             throw HwpError.recordDoesNotExist(tag: HwpSectionTag.paraCharShape.rawValue)
         }
-        self.paraCharShape = try HwpParaCharShape.load(paraCharShape.payload)
+        self.paraCharShape = try HwpParaCharShape.load(paraCharShape.payload, options: options)
         try Self.validateParaCharShapeCount(paraHeader, self.paraCharShape)
 
         if let paraLineSeg = children
             .first(where: { $0.tagId == HwpSectionTag.paraLineSeg.rawValue })
         {
-            self.paraLineSeg = try HwpParaLineSeg.load(paraLineSeg.payload)
+            self.paraLineSeg = try HwpParaLineSeg.load(paraLineSeg.payload, options: options)
             if !paraLineSeg.payload.isEmpty {
                 try Self.validateParaLineSegCount(paraHeader, self.paraLineSeg)
             }
         } else {
             // Some Hancom-saved compatibility documents omit this layout cache.
-            paraLineSeg = try HwpParaLineSeg.load(Data())
+            paraLineSeg = try HwpParaLineSeg.load(Data(), options: options)
         }
 
         paraRangeTagArray = try children
             .filter { $0.tagId == HwpSectionTag.paraRangeTag.rawValue }
-            .flatMap { try HwpParaRangeTag.loadArray($0.payload) }
+            .flatMap { try HwpParaRangeTag.loadArray($0.payload, options: options) }
         try Self.validateParaRangeTagCount(paraHeader, paraRangeTagArray ?? [])
 
         ctrlHeaderArray = try children
@@ -138,7 +139,7 @@ public struct HwpParagraph: HwpFromRecordWithVersion {
 
         listHeaderArray = try children
             .filter { $0.tagId == HwpSectionTag.listHeader.rawValue }
-            .map { try HwpListHeader.load($0.payload) }
+            .map { try HwpListHeader.load($0.payload, options: options) }
 
         // MEMO_LIST(93)가 있으면 뒤따르는 문단(66) 자식들이 메모 본문이다
         if children.contains(where: { $0.tagId == HwpSectionTag.memoList.rawValue }) {
@@ -207,7 +208,9 @@ private extension HwpParagraph {
         _ text: HwpParaText
     ) throws {
         let expectedCount = Int(header.charCount)
-        let actualCount = text.rawPayload.count / MemoryLayout<WCHAR>.size
+        // rawPayload는 보존 off 모드에서 비므로 파싱된 charArray 기반
+        // 계산값을 양 모드 공통으로 쓴다 (wchar 수 == payload byte / 2).
+        let actualCount = text.wcharCount
         guard expectedCount == actualCount else {
             throw HwpError.invalidRecordTree(
                 reason:

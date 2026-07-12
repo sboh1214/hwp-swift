@@ -17,7 +17,8 @@ public actor HwpDocumentActor {
         loadTask?.cancel()
         let task = Task<HwpDocument, Error> {
             let file = try await Task.detached(priority: .userInitiated) {
-                try CoreHwp.HwpFile(fromPath: url.path)
+                // 뷰어는 원본 rawPayload 보존이 필요 없다 — 압축 해제 버퍼 즉시 해제
+                try CoreHwp.HwpFile(fromPath: url.path, options: .viewer)
             }.value
             return try await self.buildDocument(from: file)
         }
@@ -29,7 +30,8 @@ public actor HwpDocumentActor {
         loadTask?.cancel()
         let task = Task<HwpDocument, Error> {
             let file = try await Task.detached(priority: .userInitiated) {
-                try CoreHwp.HwpFile(fromData: data)
+                // 뷰어는 원본 rawPayload 보존이 필요 없다 — 압축 해제 버퍼 즉시 해제
+                try CoreHwp.HwpFile(fromData: data, options: .viewer)
             }.value
             return try await self.buildDocument(from: file)
         }

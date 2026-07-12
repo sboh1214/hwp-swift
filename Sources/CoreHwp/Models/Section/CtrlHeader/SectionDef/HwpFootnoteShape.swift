@@ -95,20 +95,22 @@ extension HwpFootnoteShape: HwpFromData {
         guard reader.remainBytes >= 2 else {
             throw HwpError.truncatedData(expected: 2, actual: reader.remainBytes)
         }
-        rawTrailing = try reader.readToEnd()
+        rawTrailing = reader.options.preservedPayload(try reader.readToEnd())
         unknown = rawTrailing
         rawPayload = try reader.consumedData(from: startOffset)
     }
 
     // MARK: loader contract exemption - restores complete FOOTNOTE_SHAPE rawPayload
 
-    static func load(_ data: Data) throws -> Self {
-        var reader = DataReader(data)
+    static func load(_ data: Data, options: HwpLoadOptions = .default) throws -> Self {
+        var reader = DataReader(data, options: options)
         var footnoteShape = try self.init(&reader)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
         }
-        footnoteShape.rawPayload = data
+        // dividerInfo가 load 반환 후 rawPayload를 다시 디코딩하므로 (각주 구분선
+        // 렌더) 보존 off에서도 비우지 않고 분리 복사한다.
+        footnoteShape.rawPayload = options.decoupledPayload(data)
         return footnoteShape
     }
 }

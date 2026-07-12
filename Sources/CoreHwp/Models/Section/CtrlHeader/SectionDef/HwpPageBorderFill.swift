@@ -35,19 +35,19 @@ extension HwpPageBorderFill: HwpFromData {
         spacingTop = try reader.read(HWPUNIT16.self)
         spacingBottom = try reader.read(HWPUNIT16.self)
         borderFillId = try reader.read(UInt16.self)
-        rawTrailing = try reader.readToEnd()
+        rawTrailing = reader.options.preservedPayload(try reader.readToEnd())
         rawPayload = try reader.consumedData(from: startOffset)
     }
 
     // MARK: loader contract exemption - restores complete PAGE_BORDER_FILL rawPayload
 
-    static func load(_ data: Data) throws -> Self {
-        var reader = DataReader(data)
+    static func load(_ data: Data, options: HwpLoadOptions = .default) throws -> Self {
+        var reader = DataReader(data, options: options)
         var pageBorderFill = try self.init(&reader)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
         }
-        pageBorderFill.rawPayload = data
+        pageBorderFill.rawPayload = options.preservedPayload(data)
         return pageBorderFill
     }
 }

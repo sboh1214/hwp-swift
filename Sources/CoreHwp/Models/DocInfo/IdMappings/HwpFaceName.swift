@@ -83,13 +83,13 @@ extension HwpFaceName: HwpFromData {
         rawPayload = try reader.consumedData(from: startOffset)
     }
 
-    static func load(_ data: Data) throws -> Self {
-        var reader = DataReader(data)
+    static func load(_ data: Data, options: HwpLoadOptions = .default) throws -> Self {
+        var reader = DataReader(data, options: options)
         var faceName = try self.init(&reader)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
         }
-        faceName.rawPayload = data
+        faceName.rawPayload = options.preservedPayload(data)
         return faceName
     }
 }

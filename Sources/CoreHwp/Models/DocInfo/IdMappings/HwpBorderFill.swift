@@ -66,13 +66,13 @@ extension HwpBorderFill: HwpFromData {
 
     // MARK: loader contract exemption - restores complete rawPayload after fillInfo preservation
 
-    static func load(_ data: Data) throws -> Self {
-        var reader = DataReader(data)
+    static func load(_ data: Data, options: HwpLoadOptions = .default) throws -> Self {
+        var reader = DataReader(data, options: options)
         var borderFill = try self.init(&reader)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
         }
-        borderFill.rawPayload = data
+        borderFill.rawPayload = options.preservedPayload(data)
         return borderFill
     }
 }

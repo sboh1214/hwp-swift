@@ -44,13 +44,22 @@ public struct HwpParaText: HwpFromData {
         rawPayload = try reader.consumedData(from: startOffset)
     }
 
-    public static func load(_ data: Data) throws -> Self {
-        var reader = DataReader(data)
+    public static func load(_ data: Data, options: HwpLoadOptions = .default) throws -> Self {
+        var reader = DataReader(data, options: options)
         var paraText = try self.init(&reader)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
         }
-        paraText.rawPayload = data
+        paraText.rawPayload = options.preservedPayload(data)
         return paraText
+    }
+}
+
+public extension HwpParaText {
+    /// 원본 payload의 WCHAR 수 — 컨트롤 문자는 wchar 1 + payload 14바이트
+    /// (= wchar 7)로 총 8 wchar를 차지한다. rawPayload 없이도 계산되므로
+    /// PARA_HEADER charCount 검증에 양 모드 공통으로 쓴다.
+    var wcharCount: Int {
+        charArray.reduce(0) { $0 + ($1.payload == nil ? 1 : 8) }
     }
 }

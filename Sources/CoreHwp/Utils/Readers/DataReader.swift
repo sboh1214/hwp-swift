@@ -3,9 +3,12 @@ import Foundation
 struct DataReader {
     private let data: Data
     private var offset: Int = 0
+    /// 로드 옵션 — rawPayload 보존 여부를 파싱 트리 전체에 전파한다.
+    let options: HwpLoadOptions
 
-    init(_ data: Data) {
+    init(_ data: Data, options: HwpLoadOptions = .default) {
         self.data = data
+        self.options = options
     }
 
     var isEOF: Bool {
@@ -20,11 +23,16 @@ struct DataReader {
         offset
     }
 
+    /// 보존용 원본 슬라이스. `preserveRawPayload == false`면 경계 검증만 하고
+    /// 빈 Data를 반환해 스트림 버퍼 참조가 남지 않게 한다.
     func consumedData(from startOffset: Int) throws -> Data {
         guard startOffset >= 0, startOffset <= offset else {
             throw HwpError.invalidDataLength(
                 length: "offset \(startOffset) for \(offset) consumed bytes"
             )
+        }
+        guard options.preserveRawPayload else {
+            return Data()
         }
         let startIndex = data.index(data.startIndex, offsetBy: startOffset)
         let endIndex = data.index(data.startIndex, offsetBy: offset)
