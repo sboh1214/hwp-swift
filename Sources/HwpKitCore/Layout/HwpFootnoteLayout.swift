@@ -322,32 +322,28 @@ public struct HwpFootnoteLayout {
         width: CGFloat,
         footnoteShape: CoreHwp.HwpFootnoteShape? = nil
     ) -> [MeasuredFootnote] {
-        let textRunBuilder = HwpTextRunBuilder(index: index, fontResolver: fontResolver)
-        let paragraphLayout = HwpParagraphLayout()
+        let measurer = HwpParagraphMeasurer(index: index, fontResolver: fontResolver)
         return footnotes.map { input in
             // 각주 첫머리의 자동 번호 (ext18) 마커를 번호 문자열로 치환한다
             // (번호는 paginator가 부여한 문서 순서 번호 — 본문 참조와 동일 소스).
-            let attributed = textRunBuilder.build(
-                paragraph: input.paragraph,
-                controlReplacements: HwpTextRunBuilder.autoNumberReplacements(
-                    in: input.paragraph,
-                    number: input.number,
-                    footnoteShape: footnoteShape
+            // 스택 높이는 한글 라인 캐시를 우선한다 (본문 절대 캐시와 동일 철학)
+            let measured = measurer.measure(
+                input.paragraph,
+                width: width,
+                options: .init(
+                    controlReplacements: HwpTextRunBuilder.autoNumberReplacements(
+                        in: input.paragraph,
+                        number: input.number,
+                        footnoteShape: footnoteShape
+                    ),
+                    preferCachedHeight: true
                 )
             )
-            let paraShape = index.paraShape(id: UInt32(input.paragraph.paraHeader.paraShapeId))
-                ?? index.paraShape(id: 0)
-                ?? CoreHwp.HwpParaShape()
-            var frame = paragraphLayout.layout(
-                attributedString: attributed,
-                paraShape: paraShape,
-                columnWidth: width
+            return MeasuredFootnote(
+                input: input,
+                attributed: measured.attributed,
+                frame: measured.frame
             )
-            // 스택 높이는 한글 라인 캐시를 우선한다 (본문 절대 캐시와 동일 철학)
-            if let cachedHeight = HwpParagraphLayout.cachedParagraphHeight(input.paragraph) {
-                frame = HwpParagraphFrame(totalHeight: cachedHeight, lines: frame.lines)
-            }
-            return MeasuredFootnote(input: input, attributed: attributed, frame: frame)
         }
     }
 

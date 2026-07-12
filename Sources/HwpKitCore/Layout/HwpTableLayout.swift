@@ -226,8 +226,7 @@ extension HwpTableLayout {
         context: LayoutContext,
         columnWidths: [CGFloat]
     ) -> PlacedCell {
-        let textBuilder = HwpTextRunBuilder(index: context.index, fontResolver: fontResolver)
-        let paragraphLayout = HwpParagraphLayout()
+        let measurer = HwpParagraphMeasurer(index: context.index, fontResolver: fontResolver)
         let spannedWidth = width(
             from: placement.column,
             span: placement.columnSpan,
@@ -240,8 +239,7 @@ extension HwpTableLayout {
         let measured = measuredCellContents(
             of: cell,
             innerWidth: innerWidth,
-            textBuilder: textBuilder,
-            paragraphLayout: paragraphLayout,
+            measurer: measurer,
             context: context
         )
         let contents = measured.contents
@@ -269,43 +267,26 @@ extension HwpTableLayout {
     private func measuredCellContents(
         of cell: CoreHwp.HwpTableCell,
         innerWidth: CGFloat,
-        textBuilder: HwpTextRunBuilder,
-        paragraphLayout: HwpParagraphLayout,
+        measurer: HwpParagraphMeasurer,
         context: LayoutContext
     ) -> (contents: [PlacedCellContent], allCached: Bool) {
         var contents: [PlacedCellContent] = []
         var allCached = !cell.paragraphArray.isEmpty
         for paragraph in cell.paragraphArray {
-            let attributed = textBuilder.build(paragraph: paragraph)
-            let paraShape = context.index.paraShape(
-                id: UInt32(paragraph.paraHeader.paraShapeId)
-            ) ?? context.index.paraShape(id: 0) ?? CoreHwp.HwpParaShape()
-            var frame = paragraphLayout.layout(
-                attributedString: attributed,
-                paraShape: paraShape,
-                columnWidth: innerWidth
-            )
-            // 문단 위 간격: CT는 프레임 첫 문단에 paragraphSpacingBefore를
+            // 문단 위 간격 절반: CT는 프레임 첫 문단에 paragraphSpacingBefore를
             // 적용하지 않으므로 (셀은 문단별 개별 조판) 항상 직접 더한다.
             // 렌더 배치에서 같은 값만큼 문단 상단을 내린다 (noori 부제 실물)
-            let spacingBefore = HwpUnits.points(
-                fromHwpUnit: paraShape.paragraphSpacingTop
-            ) / 2
-            if let cachedHeight = HwpParagraphLayout.cachedParagraphHeight(paragraph) {
-                frame = HwpParagraphFrame(
-                    totalHeight: cachedHeight + spacingBefore,
-                    lines: frame.lines
-                )
-            } else {
-                frame = HwpParagraphFrame(
-                    totalHeight: frame.totalHeight + spacingBefore,
-                    lines: frame.lines
-                )
+            let measured = measurer.measure(
+                paragraph,
+                width: innerWidth,
+                options: .init(preferCachedHeight: true, addHalfSpacingBefore: true)
+            )
+            if !measured.usedCachedHeight {
                 allCached = false
             }
             contents.append(PlacedCellContent(
                 paragraph: paragraph,
-                frame: frame,
+                frame: measured.frame,
                 nestedTables: nestedTableFrames(
                     in: paragraph,
                     innerWidth: innerWidth,

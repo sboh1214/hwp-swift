@@ -100,33 +100,25 @@ public struct HwpTextboxLayout {
         wrapWidth: CGFloat,
         index: HwpIndex
     ) -> [HwpLaidOutParagraph] {
-        let textRunBuilder = HwpTextRunBuilder(index: index, fontResolver: fontResolver)
-        let paragraphLayout = HwpParagraphLayout()
+        // 글상자는 라인 캐시 높이를 쓰지 않는다 — CT 측정 그대로 (픽셀 정합)
+        let measurer = HwpParagraphMeasurer(index: index, fontResolver: fontResolver)
         var paragraphs: [HwpLaidOutParagraph] = []
         var contentY = insets.top
         for list in component.textBoxListArray {
             for paragraph in list.paragraphArray {
-                let attributed = textRunBuilder.build(paragraph: paragraph)
-                let paraShape = index.paraShape(id: UInt32(paragraph.paraHeader.paraShapeId))
-                    ?? index.paraShape(id: 0)
-                    ?? CoreHwp.HwpParaShape()
-                let frame = paragraphLayout.layout(
-                    attributedString: attributed,
-                    paraShape: paraShape,
-                    columnWidth: wrapWidth
-                )
+                let measured = measurer.measure(paragraph, width: wrapWidth)
                 paragraphs.append(HwpLaidOutParagraph(
-                    attributedString: attributed,
-                    frame: frame,
+                    attributedString: measured.attributed,
+                    frame: measured.frame,
                     rect: CGRect(
                         x: insets.left,
                         y: contentY,
                         width: wrapWidth,
-                        height: frame.totalHeight
+                        height: measured.frame.totalHeight
                     ),
                     paragraphId: paragraph.paraHeader.paraId
                 ))
-                contentY += frame.totalHeight
+                contentY += measured.frame.totalHeight
             }
         }
         return paragraphs

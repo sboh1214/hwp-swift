@@ -1023,9 +1023,7 @@ private extension HwpPaginator {
         attributedString: NSAttributedString
     ) async throws -> HwpParagraphFrame {
         await Task.yield()
-        guard let paraShape = index.paraShape(id: UInt32(paragraph.paraHeader.paraShapeId))
-            ?? index.paraShape(id: 0)
-        else {
+        guard let paraShape = index.paraShape(for: paragraph) else {
             return HwpParagraphFrame(totalHeight: 0, lines: [])
         }
         return HwpParagraphLayout().layout(
@@ -2499,9 +2497,7 @@ private extension HwpPaginator {
                 controlReplacements: replacements
             )
             guard attributed.length > 0 else { continue }
-            let paraShape = index.paraShape(id: UInt32(paragraph.paraHeader.paraShapeId))
-                ?? index.paraShape(id: 0)
-                ?? CoreHwp.HwpParaShape()
+            let paraShape = index.paraShapeOrDefault(for: paragraph)
             let frame = paragraphLayout.layout(
                 attributedString: attributed,
                 paraShape: paraShape,
@@ -2898,24 +2894,17 @@ private extension HwpPaginator {
             return cached
         }
 
-        let textRunBuilder = HwpTextRunBuilder(index: index, fontResolver: fontResolver)
-        let attributed = textRunBuilder.build(
-            paragraph: paragraph,
-            controlReplacements: HwpTextRunBuilder.autoNumberReplacements(
-                in: paragraph,
-                number: number,
-                footnoteShape: currentSectionDef?.footNoteShape
+        let measured = HwpParagraphMeasurer(index: index, fontResolver: fontResolver)
+            .measure(
+                paragraph,
+                width: width,
+                options: .init(controlReplacements: HwpTextRunBuilder.autoNumberReplacements(
+                    in: paragraph,
+                    number: number,
+                    footnoteShape: currentSectionDef?.footNoteShape
+                ))
             )
-        )
-        let paraShape = index.paraShape(id: UInt32(paragraph.paraHeader.paraShapeId))
-            ?? index.paraShape(id: 0)
-            ?? CoreHwp.HwpParaShape()
-        let frame = HwpParagraphLayout().layout(
-            attributedString: attributed,
-            paraShape: paraShape,
-            columnWidth: width
-        )
-        let height = max(1, frame.totalHeight)
+        let height = max(1, measured.frame.totalHeight)
         footnoteHeightCache[key] = height
         return height
     }
@@ -3022,9 +3011,9 @@ private extension HwpPaginator {
         }
         let lineHeights = max(0, HwpUnits.points(fromHwpUnit: bottom - top))
         // 문단 간격 위/아래는 캐시에 포함되지 않으므로 CT 폴백 경로
-        // (paragraphSpacingBefore/After)와 동일하게 더한다.
-        let paraShape = index.paraShape(id: UInt32(paragraph.paraHeader.paraShapeId))
-            ?? index.paraShape(id: 0)
+        // (paragraphSpacingBefore/After)와 동일하게 더한다. paraShape가
+        // 없으면 간격 0 — optional helper를 쓴다.
+        let paraShape = index.paraShape(for: paragraph)
         let spacing = paraShape.map {
             max(0, HwpUnits.points(fromHwpUnit: $0.paragraphSpacingTop))
                 + max(0, HwpUnits.points(fromHwpUnit: $0.paragraphSpacingBottom))

@@ -153,8 +153,7 @@ extension HwpTextRunBuilder {
         paragraph: CoreHwp.HwpParagraph
     ) {
         guard output.length > 0,
-              let paraShape = index.paraShape(id: UInt32(paragraph.paraHeader.paraShapeId))
-              ?? index.paraShape(id: 0)
+              let paraShape = index.paraShape(for: paragraph)
         else { return }
         output.addAttribute(
             kCTParagraphStyleAttributeName as NSAttributedString.Key,
