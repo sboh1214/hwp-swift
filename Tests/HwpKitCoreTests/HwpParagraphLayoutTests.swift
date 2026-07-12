@@ -133,6 +133,51 @@ import XCTest
             expect(frame.lines.count) == 1
             expect(frame.lines[0].origin.x) > 0
         }
+
+        func testTabParagraphMeasurementMatchesDrawnLayout() {
+            // 측정 (layout)과 렌더 (HwpDrawnTextLayout)가 같은 문서 정의 탭으로
+            // 조판해야 탭 포함 문단의 줄바꿈 위치가 일치한다 — B-1a 정합 가드.
+            let tabs = [CTTextTabCreate(.left, 250, nil)]
+            let text = "이름\t값이 아주 길어서 줄바꿈 위치가 탭 스톱 위치에 좌우되는 "
+                + "문단입니다 하나 둘 셋 넷 다섯 여섯 일곱 여덟"
+            let shape = paraShape()
+            let width: CGFloat = 300
+
+            let measured = layout().layout(
+                attributedString: attributedString(text),
+                paraShape: shape,
+                columnWidth: width,
+                tabStops: tabs
+            )
+
+            // 렌더 경로: 같은 탭이 부착된 문자열을 HwpDrawnTextLayout이 재조판
+            let rendered = NSMutableAttributedString(
+                attributedString: attributedString(text)
+            )
+            rendered.addAttribute(
+                kCTParagraphStyleAttributeName as NSAttributedString.Key,
+                value: HwpParagraphLayout.paragraphStyle(
+                    for: shape, attributedString: rendered, tabStops: tabs
+                ),
+                range: NSRange(location: 0, length: rendered.length)
+            )
+            let drawn = HwpDrawnTextLayout.lines(
+                attributedString: rendered, origin: .zero, lineWidth: width
+            )
+
+            expect(measured.lines.count) > 1
+            expect(measured.lines.map(\.attributedRange)) == drawn.map(\.stringRange)
+
+            // 탭을 빼고 측정하면 (종전 동작) 줄바꿈이 어긋난다 — 이 테스트가
+            // 불일치를 실제로 감지함을 증명
+            let withoutTabs = layout().layout(
+                attributedString: attributedString(text),
+                paraShape: shape,
+                columnWidth: width
+            )
+            expect(withoutTabs.lines.map(\.attributedRange))
+                != drawn.map(\.stringRange)
+        }
     }
 
     private extension HwpParagraphLayoutTests {

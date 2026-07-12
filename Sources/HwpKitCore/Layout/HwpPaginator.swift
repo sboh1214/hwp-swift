@@ -803,7 +803,8 @@ private extension HwpPaginator {
         return HwpParagraphLayout().layout(
             attributedString: attributedString,
             paraShape: paraShape,
-            columnWidth: currentColumnFrame.width
+            columnWidth: currentColumnFrame.width,
+            tabStops: index.textTabs(for: paraShape)
         )
     }
 

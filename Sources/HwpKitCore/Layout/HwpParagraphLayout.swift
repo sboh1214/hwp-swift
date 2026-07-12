@@ -110,19 +110,24 @@ public struct HwpParagraphLayout {
         )
     }
 
+    /// tabStops: 문서 정의 탭 (HwpIndex.textTabs). 렌더 부착 경로
+    /// (HwpTextRunBuilder.attachParagraphStyle)와 같은 탭으로 측정해야
+    /// 탭 포함 문단의 줄바꿈이 측정과 렌더에서 일치한다.
     public func layout(
         attributedString: NSAttributedString,
         paraShape: CoreHwp.HwpParaShape,
-        columnWidth: CGFloat
+        columnWidth: CGFloat,
+        tabStops: [CTTextTab] = []
     ) -> HwpParagraphFrame {
         guard attributedString.length > 0 else {
             return HwpParagraphFrame(totalHeight: 0, lines: [])
         }
 
-        let paragraphMetrics = ParagraphMetrics(
+        var paragraphMetrics = ParagraphMetrics(
             paraShape: paraShape,
             attributedString: attributedString
         )
+        paragraphMetrics.tabStops = tabStops
         let paragraphStyle = ctParagraphStyle(
             from: paragraphMetrics,
             property: paraShape.property1Info

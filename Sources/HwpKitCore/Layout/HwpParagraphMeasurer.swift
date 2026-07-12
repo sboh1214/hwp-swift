@@ -54,7 +54,8 @@ struct HwpParagraphMeasurer {
         var frame = HwpParagraphLayout().layout(
             attributedString: attributed,
             paraShape: paraShape,
-            columnWidth: width
+            columnWidth: width,
+            tabStops: index.textTabs(for: paraShape)
         )
         let spacingBefore = options.addHalfSpacingBefore
             ? HwpUnits.points(fromHwpUnit: paraShape.paragraphSpacingTop) / 2
