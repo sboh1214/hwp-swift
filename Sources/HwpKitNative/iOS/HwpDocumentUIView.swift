@@ -27,6 +27,11 @@
             didSet {
                 if scrollView.zoomScale != zoomScale {
                     scrollView.zoomScale = zoomScale
+                    // 프로그램적 (버튼) 줌은 scrollViewDidEndZooming이 발화하지
+                    // 않으므로 여기서 즉시 재래스터한다. 핀치 경로는
+                    // scrollViewDidZoom이 zoomScale을 동기화해 이 분기에 들어오지
+                    // 않는다 — 라이브 핀치 중 프레임당 재드로잉 없음 (macOS 대칭).
+                    updateLayerContentsScale()
                 }
             }
         }
