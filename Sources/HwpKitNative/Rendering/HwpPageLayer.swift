@@ -56,6 +56,15 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
                 ctx.translateBy(x: 0, y: bounds.height)
                 ctx.scaleBy(x: 1, y: -1)
             }
+        #else
+            // iOS: CA가 주는 인앱 레이어 컨텍스트는 이미 top-down (CTM d < 0)
+            // 이지만, 테스트·오프스크린 렌더의 원시 bitmap 컨텍스트는 y-up
+            // (d > 0)이다. CTM 방향으로 판별해 y-up일 때만 뒤집는다 —
+            // 인앱 경로는 불변.
+            if ctx.ctm.d > 0 {
+                ctx.translateBy(x: 0, y: bounds.height)
+                ctx.scaleBy(x: 1, y: -1)
+            }
         #endif
 
         for command in paintList.commands {
