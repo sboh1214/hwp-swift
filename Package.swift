@@ -101,6 +101,9 @@ let package = Package(
                 "HwpKitCore",
                 "CoreHwp",
                 .product(name: "Nimble", package: "Nimble"),
+            ],
+            exclude: [
+                "BlockSnapshots",
             ]
         ),
     ]
