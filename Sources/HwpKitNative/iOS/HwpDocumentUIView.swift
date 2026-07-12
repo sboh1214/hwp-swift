@@ -8,6 +8,22 @@
         public var document: HwpDocument? {
             didSet {
                 guard document != oldValue else { return }
+                // 프로그레시브 스냅샷 (같은 loadToken + 페이지 증가): 기존
+                // 레이어·스크롤 위치를 유지하고 크기·가시 범위만 늘린다.
+                if let old = oldValue, let new = document,
+                   let token = new.metadata.loadToken,
+                   old.metadata.loadToken == token,
+                   new.pages.count >= old.pages.count
+                {
+                    rebuildPageOrigins()
+                    updateContentSize()
+                    selectionController.document = document
+                    updateVisiblePages(range: visiblePageRange())
+                    if new.unsupportedElements != old.unsupportedElements {
+                        notifyUnsupportedElements()
+                    }
+                    return
+                }
                 pageLayers.values.forEach { $0.removeFromSuperlayer() }
                 pageLayers.removeAll()
                 memoPanelLayers.values.forEach { $0.removeFromSuperlayer() }

@@ -139,5 +139,47 @@
 
             expect(view.documentContentView.frame.width) == 595 + 120
         }
+
+        private func makeTokenDocument(pageCount: Int, loadToken: UUID?) -> HwpDocument {
+            let pages = (0 ..< pageCount).map { index in
+                HwpPage(
+                    size: CGSize(width: 595, height: 842),
+                    margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
+                    blocks: [],
+                    pageNumber: index + 1
+                )
+            }
+            return HwpDocument(
+                pages: pages,
+                metadata: HwpDocumentMetadata(pageCount: pageCount, loadToken: loadToken),
+                unsupportedElements: []
+            )
+        }
+
+        func testProgressiveSnapshotKeepsLayersAndGrowsContent() {
+            // 같은 loadToken + 페이지 증가 = 증분 적용 (레이어 유지, 크기 확장)
+            let view = HwpDocumentNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+            let token = UUID()
+            view.document = makeTokenDocument(pageCount: 1, loadToken: token)
+            let firstLayer = view.pageLayers[0]
+            expect(firstLayer).toNot(beNil())
+
+            view.document = makeTokenDocument(pageCount: 3, loadToken: token)
+
+            expect(view.pageLayers[0]) === firstLayer
+            expect(view.documentContentView.frame.height)
+                == 842 * 3 + pageGap * 2
+        }
+
+        func testDifferentTokenResetsLayers() {
+            let view = HwpDocumentNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+            view.document = makeTokenDocument(pageCount: 2, loadToken: UUID())
+            let firstLayer = view.pageLayers[0]
+
+            view.document = makeTokenDocument(pageCount: 2, loadToken: UUID())
+
+            expect(view.pageLayers[0]).toNot(beNil())
+            expect(view.pageLayers[0]) !== firstLayer
+        }
     }
 #endif

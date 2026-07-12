@@ -1035,6 +1035,15 @@ private extension HwpPaginator {
         )
     }
 
+    /// 전체 문단 대비 처리 위치 (0...1 근사) — 프로그레시브 로딩 진행률
+    public func progressEstimate() -> Double {
+        let total = sections.reduce(0) { $0 + $1.paragraph.count }
+        guard total > 0 else { return 1 }
+        let done = sections.prefix(min(nextSectionIndex, sections.count))
+            .reduce(0) { $0 + $1.paragraph.count } + nextParagraphIndex
+        return min(1, max(0, Double(done) / Double(total)))
+    }
+
     func nextParagraph() -> CoreHwp.HwpParagraph? {
         while sections.indices.contains(nextSectionIndex) {
             let paragraphs = sections[nextSectionIndex].paragraph

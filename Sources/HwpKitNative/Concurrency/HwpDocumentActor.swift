@@ -2,6 +2,21 @@
 import Foundation
 import HwpKitCore
 
+/// 프로그레시브 로딩의 중간/최종 산출물. `document.pages`는 지금까지 확정된
+/// 페이지 전량 (뷰는 값 교체로 소비 — metadata.loadToken으로 증분 판정).
+public struct HwpDocumentSnapshot: Sendable {
+    public let document: HwpDocument
+    public let isComplete: Bool
+    /// 전체 문단 대비 진행률 근사 (0...1). 완료 스냅샷은 1.
+    public let progress: Double?
+
+    public init(document: HwpDocument, isComplete: Bool, progress: Double?) {
+        self.document = document
+        self.isComplete = isComplete
+        self.progress = progress
+    }
+}
+
 public actor HwpDocumentActor {
     private var paginator: HwpPaginator?
     private let fontResolver: HwpFontResolver
@@ -43,7 +58,54 @@ public actor HwpDocumentActor {
         try await buildDocument(from: file)
     }
 
-    private func buildDocument(from file: CoreHwp.HwpFile) async throws -> HwpDocument {
+    /// 프로그레시브 로딩 — 첫 `firstBatch`쪽 확정 즉시 1차 스냅샷을,
+    /// 이후 `batchSize`쪽마다 중간 스냅샷을, 완료 시 최종 스냅샷
+    /// (`isComplete == true`, unsupportedElements 포함)을 방출한다.
+    /// 최종 스냅샷의 문서는 `loadDocument`와 동일하다 (loadToken 제외).
+    public func loadDocumentUpdates(
+        from url: URL,
+        firstBatch: Int = 1,
+        batchSize: Int = 24
+    ) -> AsyncThrowingStream<HwpDocumentSnapshot, Error> {
+        loadTask?.cancel()
+        let (stream, continuation) = AsyncThrowingStream<HwpDocumentSnapshot, Error>
+            .makeStream()
+        let loadToken = UUID()
+        let task = Task<HwpDocument, Error> {
+            do {
+                let file = try await Task.detached(priority: .userInitiated) {
+                    try CoreHwp.HwpFile(fromPath: url.path, options: .viewer)
+                }.value
+                let document = try await self.buildDocument(
+                    from: file,
+                    loadToken: loadToken,
+                    firstBatch: firstBatch,
+                    batchSize: batchSize
+                ) { snapshot in
+                    continuation.yield(snapshot)
+                }
+                continuation.yield(HwpDocumentSnapshot(
+                    document: document, isComplete: true, progress: 1
+                ))
+                continuation.finish()
+                return document
+            } catch {
+                continuation.finish(throwing: error)
+                throw error
+            }
+        }
+        loadTask = task
+        continuation.onTermination = { @Sendable _ in task.cancel() }
+        return stream
+    }
+
+    private func buildDocument(
+        from file: CoreHwp.HwpFile,
+        loadToken: UUID? = nil,
+        firstBatch: Int = 1,
+        batchSize: Int = 24,
+        onPartial: ((HwpDocumentSnapshot) -> Void)? = nil
+    ) async throws -> HwpDocument {
         let index = HwpIndex(from: file)
         let imageStore = HwpImageStore(from: file)
         let paginator = HwpPaginator(
@@ -55,19 +117,41 @@ public actor HwpDocumentActor {
         )
         self.paginator = paginator
 
+        let previewText = file.previewText.text
+        let preview = previewText.isEmpty ? nil : String(previewText.prefix(500))
+
         var pages: [HwpPage] = []
         var pageIndex = 0
+        var nextYieldCount = max(1, firstBatch)
         while let page = try await paginator.page(at: pageIndex) {
             try Task.checkCancellation()
             pages.append(page)
             pageIndex += 1
+            if let onPartial, pages.count >= nextYieldCount {
+                nextYieldCount = pages.count + max(1, batchSize)
+                let partial = HwpDocument(
+                    pages: pages,
+                    metadata: HwpDocumentMetadata(
+                        title: nil,
+                        pageCount: pages.count,
+                        previewText: preview,
+                        loadToken: loadToken
+                    ),
+                    unsupportedElements: [],
+                    imageStore: imageStore
+                )
+                let progress = await paginator.progressEstimate()
+                onPartial(HwpDocumentSnapshot(
+                    document: partial, isComplete: false, progress: progress
+                ))
+            }
         }
 
-        let previewText = file.previewText.text
         let metadata = HwpDocumentMetadata(
             title: nil,
             pageCount: pages.count,
-            previewText: previewText.isEmpty ? nil : String(previewText.prefix(500))
+            previewText: preview,
+            loadToken: loadToken
         )
         let unsupported = await paginator.unsupportedElements()
         return HwpDocument(
