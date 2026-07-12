@@ -25,7 +25,9 @@ public final class HwpSelectionGeometry {
     // MARK: - 단위/줄 접근
 
     public func units(forPage pageIndex: Int) -> [HwpTextUnit] {
-        if let cached = unitCache[pageIndex] { return cached }
+        if let cached = unitCache[pageIndex] {
+            return cached
+        }
         guard document.pages.indices.contains(pageIndex) else { return [] }
         let units = HwpSelectableText.units(in: document.pages[pageIndex])
         unitCache[pageIndex] = units
@@ -34,7 +36,9 @@ public final class HwpSelectionGeometry {
 
     private func drawnLines(pageIndex: Int, unitOrdinal: Int) -> [HwpDrawnLine] {
         let key = UnitKey(pageIndex: pageIndex, unitOrdinal: unitOrdinal)
-        if let cached = lineCache[key] { return cached }
+        if let cached = lineCache[key] {
+            return cached
+        }
         let units = units(forPage: pageIndex)
         guard units.indices.contains(unitOrdinal) else { return [] }
         let unit = units[unitOrdinal]
@@ -112,8 +116,12 @@ public final class HwpSelectionGeometry {
     }
 
     private func distance(_ value: CGFloat, toRange range: ClosedRange<CGFloat>) -> CGFloat {
-        if value < range.lowerBound { return range.lowerBound - value }
-        if value > range.upperBound { return value - range.upperBound }
+        if value < range.lowerBound {
+            return range.lowerBound - value
+        }
+        if value > range.upperBound {
+            return value - range.upperBound
+        }
         return 0
     }
 
@@ -121,7 +129,9 @@ public final class HwpSelectionGeometry {
     /// 재조판된 CTLine에 질의하므로 화면 글리프 위치와 일치한다.
     private func characterOffset(in line: HwpDrawnLine, atX x: CGFloat) -> Int {
         let localX = x - line.baselineOrigin.x
-        if localX <= 0 { return line.stringRange.location }
+        if localX <= 0 {
+            return line.stringRange.location
+        }
         let lineWidth = CGFloat(CTLineGetTypographicBounds(line.line, nil, nil, nil))
         if localX >= lineWidth {
             return line.stringRange.location + line.stringRange.length
@@ -238,6 +248,36 @@ public final class HwpSelectionGeometry {
         text.replacingOccurrences(of: "\u{FFFC}", with: "")
     }
 
+    // MARK: - 전체 선택
+
+    /// 문서 전체 선택 범위: 첫 텍스트 단위 시작 ~ 마지막 텍스트 단위 끝.
+    /// 앞뒤에서 각각 최근접 텍스트 페이지까지만 스캔한다 — units는 페이지별
+    /// 캐시라 1,030쪽 문서에서도 빠르다. 텍스트가 전혀 없으면 nil.
+    /// (이후 `plainText(for:)`로 전체를 복사하는 비용은 당연히 O(문서)다.)
+    public func documentSelection() -> HwpTextSelection? {
+        var first: HwpTextPosition?
+        for pageIndex in document.pages.indices {
+            guard let unit = units(forPage: pageIndex).first else { continue }
+            first = HwpTextPosition(
+                pageIndex: pageIndex, blockIndex: unit.blockIndex,
+                unitIndex: unit.unitIndex, characterOffset: 0
+            )
+            break
+        }
+        var last: HwpTextPosition?
+        for pageIndex in document.pages.indices.reversed() {
+            guard let unit = units(forPage: pageIndex).last else { continue }
+            last = HwpTextPosition(
+                pageIndex: pageIndex, blockIndex: unit.blockIndex,
+                unitIndex: unit.unitIndex,
+                characterOffset: unit.attributedString.length
+            )
+            break
+        }
+        guard let first, let last, first < last else { return nil }
+        return HwpTextSelection(anchor: first, focus: last)
+    }
+
     // MARK: - 단어 선택
 
     /// 더블클릭/롱프레스용 단어 범위
@@ -257,8 +297,12 @@ public final class HwpSelectionGeometry {
             return !character.isWhitespace && character != "\u{FFFC}"
         }
         guard isWordCharacter(clamped) else { return nil }
-        while start > 0, isWordCharacter(start - 1) { start -= 1 }
-        while end < nsText.length, isWordCharacter(end) { end += 1 }
+        while start > 0, isWordCharacter(start - 1) {
+            start -= 1
+        }
+        while end < nsText.length, isWordCharacter(end) {
+            end += 1
+        }
         return HwpTextSelection(
             anchor: HwpTextPosition(
                 pageIndex: position.pageIndex, blockIndex: position.blockIndex,

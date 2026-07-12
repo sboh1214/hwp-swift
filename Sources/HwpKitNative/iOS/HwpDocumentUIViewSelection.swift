@@ -152,12 +152,20 @@
             if action == #selector(copy(_:)) {
                 return selectionController.hasSelection
             }
+            if action == #selector(selectAll(_:)) {
+                return document != nil
+            }
             return super.canPerformAction(action, withSender: sender)
         }
 
         override public func copy(_: Any?) {
             guard let text = selectionController.selectedText() else { return }
             UIPasteboard.general.string = text
+        }
+
+        /// 편집 메뉴 Select All / 하드웨어 키보드 Cmd+A
+        override public func selectAll(_: Any?) {
+            selectionController.selectAll()
         }
 
         // MARK: 하이라이트 오버레이 — 페이지 레이어의 sublayer (페이지 로컬 rect)

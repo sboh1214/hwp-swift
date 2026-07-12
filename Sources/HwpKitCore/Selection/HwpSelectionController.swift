@@ -50,6 +50,13 @@ public final class HwpSelectionController {
         onSelectionChanged?()
     }
 
+    /// 문서 전체 선택 (Cmd+A / Select All)
+    public func selectAll() {
+        guard let all = geometry?.documentSelection() else { return }
+        selection = all
+        onSelectionChanged?()
+    }
+
     public func clear() {
         guard selection != nil else { return }
         selection = nil

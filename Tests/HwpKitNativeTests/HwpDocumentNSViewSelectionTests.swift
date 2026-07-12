@@ -89,6 +89,40 @@
             expect(view.copySelectionToPasteboard()) == false
         }
 
+        func testSelectAllSelectsWholeDocumentAndOverlaysEveryPage() {
+            let font = CTFontCreateWithName("Helvetica" as CFString, 12, nil)
+            let pages = (0 ..< 2).map { index in
+                HwpPage(
+                    size: CGSize(width: 595, height: 842),
+                    margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
+                    blocks: [AnyHwpBlock(
+                        frame: CGRect(x: 50, y: 100, width: 300, height: 20),
+                        kind: .text,
+                        attributedString: NSAttributedString(
+                            string: "page \(index)",
+                            attributes: [
+                                kCTFontAttributeName as NSAttributedString.Key: font,
+                            ]
+                        )
+                    )],
+                    pageNumber: index + 1
+                )
+            }
+            let view = HwpDocumentNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+            view.layoutSubtreeIfNeeded()
+            view.document = HwpDocument(
+                pages: pages,
+                metadata: HwpDocumentMetadata(pageCount: 2),
+                unsupportedElements: []
+            )
+
+            view.selectAll(nil)
+
+            expect(view.selectionController.selectedText()) == "page 0\npage 1"
+            expect(view.selectionLayers[0]).toNot(beNil())
+            expect(view.selectionLayers[1]).toNot(beNil())
+        }
+
         func testPagePositionClampsToNearestPage() {
             let view = makeView()
 

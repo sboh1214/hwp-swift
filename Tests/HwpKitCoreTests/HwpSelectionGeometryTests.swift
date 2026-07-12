@@ -132,6 +132,46 @@ final class HwpSelectionGeometryTests: XCTestCase {
         expect(HwpSelectionGeometry.strippingControlMarkers("a\u{FFFC}b")) == "ab"
     }
 
+    func testDocumentSelectionSpansAllBodyText() throws {
+        // 첫 페이지는 크롬만 → 전체 선택은 텍스트가 있는 페이지 범위로 수렴
+        let document = makeDocument(pages: [
+            [textBlock(
+                "- 1 -",
+                frame: CGRect(x: 50, y: 800, width: 200, height: 20),
+                role: .pageChrome
+            )],
+            [textBlock("first", frame: CGRect(x: 50, y: 100, width: 200, height: 20))],
+            [
+                textBlock("second", frame: CGRect(x: 50, y: 100, width: 200, height: 20)),
+                textBlock("third", frame: CGRect(x: 50, y: 300, width: 200, height: 20)),
+            ],
+        ])
+        let geometry = HwpSelectionGeometry(document: document)
+
+        let selection = geometry.documentSelection()
+
+        expect(selection?.range.start) == HwpTextPosition(
+            pageIndex: 1, blockIndex: 0, unitIndex: 0, characterOffset: 0
+        )
+        expect(selection?.range.end) == HwpTextPosition(
+            pageIndex: 2, blockIndex: 1, unitIndex: 0, characterOffset: 5
+        )
+        expect(geometry.plainText(for: try XCTUnwrap(selection))) == "first\nsecond\nthird"
+    }
+
+    func testDocumentSelectionIsNilWithoutBodyText() {
+        let document = makeDocument(pages: [[
+            textBlock(
+                "- 1 -",
+                frame: CGRect(x: 50, y: 800, width: 200, height: 20),
+                role: .pageChrome
+            ),
+        ]])
+        let geometry = HwpSelectionGeometry(document: document)
+
+        expect(geometry.documentSelection()).to(beNil())
+    }
+
     func testWordRangeAtPosition() {
         let document = makeDocument(pages: [[
             textBlock("Hello world", frame: CGRect(x: 50, y: 100, width: 300, height: 20)),
