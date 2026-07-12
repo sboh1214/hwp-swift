@@ -90,6 +90,12 @@ final class HwpDocumentCoordinator {
         guard let currentPage, currentPage.wrappedValue != page + 1 else { return }
         currentPage.wrappedValue = page + 1
     }
+
+    func handleZoomChanged(_ scale: CGFloat) {
+        // 핀치 줌을 바인딩에 반영해 툴바 배율 라벨을 동기화한다.
+        guard let zoomScale, abs(zoomScale.wrappedValue - scale) > 0.001 else { return }
+        zoomScale.wrappedValue = scale
+    }
 }
 
 #if os(macOS)
@@ -131,14 +137,19 @@ final class HwpDocumentCoordinator {
             view.onHyperlinkTapped = context.coordinator.handleHyperlinkTapped(_:)
             view.onUnsupportedElement = context.coordinator.handleUnsupportedElement(_:)
             view.onPageChanged = context.coordinator.handlePageChanged(_:)
+            view.onZoomChanged = context.coordinator.handleZoomChanged(_:)
             if view.document != document {
                 view.document = document
             }
             if let zoomScale, view.zoomScale != zoomScale.wrappedValue {
                 view.zoomScale = zoomScale.wrappedValue
             }
-            let pageIndex = currentPage.map { max(0, $0.wrappedValue - 1) } ?? 0
-            view.updateVisiblePages(range: pageIndex ..< pageIndex + 1)
+            if let currentPage {
+                let pageIndex = max(0, currentPage.wrappedValue - 1)
+                if view.currentVisiblePage() != pageIndex {
+                    view.scrollToPage(at: pageIndex)
+                }
+            }
         }
     }
 #endif
@@ -182,6 +193,7 @@ final class HwpDocumentCoordinator {
             view.onHyperlinkTapped = context.coordinator.handleHyperlinkTapped(_:)
             view.onUnsupportedElement = context.coordinator.handleUnsupportedElement(_:)
             view.onPageChanged = context.coordinator.handlePageChanged(_:)
+            view.onZoomChanged = context.coordinator.handleZoomChanged(_:)
             if view.document != document {
                 view.document = document
             }

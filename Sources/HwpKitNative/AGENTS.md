@@ -11,7 +11,8 @@ HwpKitNative/
 ├── Rendering/HwpWordJustification.swift  # 양쪽 정렬 재조판 — 남는 폭을 공백에만 배분 (한글식)
 ├── Rendering/HwpPageImageProvider.swift  # HwpImageStore + HwpImageCache + HwpImageAdapter 연결
 ├── Rendering/HwpImageStyleRenderer.swift # 표 107 crop/밝기/명암/효과 (CGImage.cropping + CoreImage)
-├── macOS/HwpDocumentNSView.swift   # NSView + 레이어 가상화
+├── macOS/HwpDocumentNSView.swift   # NSScrollView + 레이어 가상화 (magnification pinch zoom)
+├── macOS/HwpCenteringClipView.swift # 문서가 뷰포트보다 작을 때 중앙 정렬 클립 뷰
 ├── iOS/HwpDocumentUIView.swift     # UIView + UIScrollView (pinch zoom 내장)
 ├── Cache/HwpImageCache.swift       # LRU actor (100MB cap) — 뷰가 provider에 주입
 └── Concurrency/HwpDocumentActor.swift  # parse/layout dispatch actor
@@ -29,7 +30,9 @@ HwpKitNative/
 
 `CALayer.draw(in:)` 는 **macOS 에서 기본 bottom-up (y+ 위) ctx, iOS 에서 top-down** 을 전달한다. 단, macOS 에서 조상 계층의 geometry flip 횟수가 홀수면 (isFlipped NSView 안 등) CA 가 이미 top-down 으로 보정한다.
 
-`HwpPageLayer.draw(in:)` 은 `#if os(macOS)` 에서 **`contentsAreFlipped()` 가 false 일 때만** 수동으로 CTM 을 뒤집어 항상 top-down 을 보장한다. 레이어 자체에 `isGeometryFlipped = true` 를 켜면 안 된다 — `HwpDocumentNSView.isFlipped == true` 와 합쳐져 **이중 flip (짝수) → 페이지가 상하 반전**된다 (실제로 겪은 버그).
+`HwpPageLayer.draw(in:)` 은 `#if os(macOS)` 에서 **`contentsAreFlipped()` 가 false 일 때만** 수동으로 CTM 을 뒤집어 항상 top-down 을 보장한다. 레이어 자체에 `isGeometryFlipped = true` 를 켜면 안 된다 — flipped 조상 뷰와 합쳐져 **이중 flip (짝수) → 페이지가 상하 반전**된다 (실제로 겪은 버그).
+
+macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollView documentView) 에 붙는다. NSClipView 는 documentView 의 flippedness 를 미러링하지만, `contentsAreFlipped()` 런타임 가드가 조상 flip 홀짝 변화를 동적으로 보정하므로 안전하다.
 
 `drawText` 의 CT flip (`translateBy` + `scaleBy(x: 1, y: -1)`) 과 `drawFlippedImage` 는 top-down 정규화 이후를 전제로 하므로 그대로 유지.
 
@@ -49,9 +52,10 @@ HwpKitNative/
 
 - **visible ± 2 페이지만** sublayer 로 유지
 - `updateVisiblePages(range:)` 가 diff 로 add/remove
-- 스크롤/줌 시 자동 호출
+- 스크롤/줌 시 자동 호출 (macOS: 클립 뷰 `boundsDidChangeNotification`, iOS: delegate)
 - iOS: `UIScrollView.viewForZooming` = contentView (page layers 컨테이너)
-- macOS: `NSClickGestureRecognizer` 로 hit test, iOS: `UITapGestureRecognizer`
+- macOS: `NSScrollView.allowsMagnification` (0.25–5.0) 이 핀치 줌 담당 — `zoomScale` 은 magnification 을 읽고 쓰는 계산 프로퍼티 (별도 배율 상태 없음). 라이브 핀치 종료 (`didEndLiveMagnifyNotification`) 시에만 `contentsScale` 재적용
+- macOS: `NSClickGestureRecognizer` 로 hit test (documentContentView 에 부착), iOS: `UITapGestureRecognizer`
 
 ## Callback 발화 규약
 
@@ -59,6 +63,7 @@ HwpKitNative/
 |---|---|
 | `onHyperlinkTapped(url)` | tap/click 이 `.hyperlink` 블록 프레임을 hit 했을 때 |
 | `onPageChanged(page)` | `updateVisiblePages` 가 visible range 를 갱신할 때 |
+| `onZoomChanged(scale)` | 핀치/스크롤 줌으로 배율이 변했을 때 (버튼 줌 echo 는 가드로 차단) |
 | `onUnsupportedElement(element)` | 양쪽 플랫폼: document `didSet` 시 `unsupportedElements` 순회 (콜백은 document 할당보다 먼저 배선됨) |
 
 ## 안티 패턴

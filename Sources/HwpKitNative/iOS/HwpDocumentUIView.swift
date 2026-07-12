@@ -33,6 +33,7 @@
         public var onHyperlinkTapped: ((String) -> Void)?
         public var onUnsupportedElement: ((HwpUnsupportedElement) -> Void)?
         public var onPageChanged: ((Int) -> Void)?
+        public var onZoomChanged: ((CGFloat) -> Void)?
 
         var pageLayers: [Int: HwpPageLayer] = [:]
         /// 메모 (댓글) 풍선 패널 레이어 — 페이지 오른쪽 바깥 (한글.app 편집 뷰)
@@ -171,6 +172,7 @@
         public func scrollViewDidZoom(_ scrollView: UIScrollView) {
             zoomScale = scrollView.zoomScale
             updateVisiblePages(range: visiblePageRange())
+            onZoomChanged?(scrollView.zoomScale)
         }
 
         public func scrollViewDidEndZooming(

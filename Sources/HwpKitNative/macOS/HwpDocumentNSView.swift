@@ -13,40 +13,62 @@
                 memoPanelLayers.values.forEach { $0.removeFromSuperlayer() }
                 memoPanelLayers.removeAll()
                 rebuildImageProvider()
-                needsLayout = true
+                rebuildPageOrigins()
+                updateContentSize()
+                scrollView.contentView.scroll(to: .zero)
+                scrollView.reflectScrolledClipView(scrollView.contentView)
+                updateVisiblePages(range: 0 ..< min(document?.pages.count ?? 0, 3))
                 notifyUnsupportedElements()
             }
         }
 
         public var documentActor: HwpDocumentActor?
         public private(set) var imageCache: HwpImageCache
-        public var zoomScale: CGFloat = 1.0 {
-            didSet {
-                zoomScale = max(zoomScale, 0.05)
+
+        /// 스크롤 뷰 magnification이 단일 진실 — 별도 배율 상태를 두지 않아
+        /// 핀치와 버튼 줌이 어긋날 수 없다.
+        public var zoomScale: CGFloat {
+            get { scrollView.magnification }
+            set {
+                let clamped = min(
+                    max(newValue, scrollView.minMagnification),
+                    scrollView.maxMagnification
+                )
+                guard abs(scrollView.magnification - clamped) > 0.0001 else { return }
+                let visible = scrollView.documentVisibleRect
+                scrollView.setMagnification(
+                    clamped,
+                    centeredAt: CGPoint(x: visible.midX, y: visible.midY)
+                )
                 updateLayerContentsScale()
-                layoutPageLayers()
             }
         }
 
         public var onHyperlinkTapped: ((String) -> Void)?
         public var onUnsupportedElement: ((HwpUnsupportedElement) -> Void)?
         public var onPageChanged: ((Int) -> Void)?
+        public var onZoomChanged: ((CGFloat) -> Void)?
 
         var pageLayers: [Int: HwpPageLayer] = [:]
         /// 메모 (댓글) 풍선 패널 레이어 — 페이지 오른쪽 바깥 (한글.app 편집 뷰)
         var memoPanelLayers: [Int: HwpPageLayer] = [:]
 
+        let scrollView = NSScrollView()
+        let documentContentView = HwpFlippedContentView()
+
         private let hitTester = HwpHitTester()
-        private let defaultPageSize = CGSize(width: 595, height: 842)
-        private let pageSpacing: CGFloat = 16
+        let defaultPageSize = CGSize(width: 595, height: 842)
+        let pageGap: CGFloat = 24
         private var activeVisibleRange: Range<Int> = 0 ..< 0
+        /// Prefix sums of page Y origins so frame lookups stay O(1) while scrolling.
+        var pageOriginsY: [CGFloat] = []
         private var imageProvider: HwpPageImageProvider?
+        private var lastReportedZoom: CGFloat = 1.0
 
         override public init(frame: NSRect = .zero) {
             imageCache = HwpImageCache()
             super.init(frame: frame)
-            wantsLayer = true
-            setupClickGesture()
+            configureViewHierarchy()
         }
 
         @available(*, unavailable)
@@ -54,16 +76,66 @@
             fatalError("init(coder:) has not been implemented")
         }
 
-        /// Page layers are laid out top-down; without flipping, AppKit's y-up
-        /// coordinate space would stack pages bottom-to-top.
-        override public var isFlipped: Bool {
-            true
+        deinit {
+            NotificationCenter.default.removeObserver(self)
+        }
+
+        private func configureViewHierarchy() {
+            scrollView.frame = bounds
+            scrollView.autoresizingMask = [.width, .height]
+            scrollView.hasVerticalScroller = true
+            scrollView.hasHorizontalScroller = true
+            scrollView.allowsMagnification = true
+            scrollView.minMagnification = 0.25
+            scrollView.maxMagnification = 5.0
+            // 줌 상태에서 트랙패드 대각 패닝 허용
+            scrollView.usesPredominantAxisScrolling = false
+            scrollView.drawsBackground = true
+            scrollView.backgroundColor = .windowBackgroundColor
+            scrollView.contentView = HwpCenteringClipView()
+            scrollView.documentView = documentContentView
+            addSubview(scrollView)
+
+            scrollView.contentView.postsBoundsChangedNotifications = true
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(clipViewBoundsDidChange(_:)),
+                name: NSView.boundsDidChangeNotification,
+                object: scrollView.contentView
+            )
+            // 라이브 핀치 중에는 래스터 확대만 하고 (프레임당 재드로잉 방지),
+            // 핀치가 끝난 시점에 배율만큼 해상도를 올려 선명하게 다시 그린다.
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(liveMagnifyDidEnd(_:)),
+                name: NSScrollView.didEndLiveMagnifyNotification,
+                object: scrollView
+            )
+
+            setupClickGesture()
+        }
+
+        @objc private func clipViewBoundsDidChange(_: Notification) {
+            syncZoomFromMagnification()
+            let range = visiblePageRange()
+            guard range != activeVisibleRange else { return }
+            updateVisiblePages(range: range)
+        }
+
+        @objc private func liveMagnifyDidEnd(_: Notification) {
+            updateLayerContentsScale()
+        }
+
+        /// 핀치 (magnification 변화)를 SwiftUI 바인딩으로 알린다.
+        private func syncZoomFromMagnification() {
+            let magnification = scrollView.magnification
+            guard abs(magnification - lastReportedZoom) > 0.0001 else { return }
+            lastReportedZoom = magnification
+            onZoomChanged?(magnification)
         }
 
         override public func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            wantsLayer = true
-            layer?.masksToBounds = false
             updateLayerContentsScale()
         }
 
@@ -87,11 +159,19 @@
                 pageLayer.contentsScale = scale
                 pageLayer.setNeedsDisplay()
             }
+            for panelLayer in memoPanelLayers.values where panelLayer.contentsScale != scale {
+                panelLayer.contentsScale = scale
+                panelLayer.setNeedsDisplay()
+            }
         }
 
         override public func layout() {
             super.layout()
-            layoutPageLayers()
+            // 창 리사이즈로 뷰포트가 변하면 가시 범위가 낡을 수 있다
+            let range = visiblePageRange()
+            if !range.isEmpty, range != activeVisibleRange {
+                updateVisiblePages(range: range)
+            }
         }
 
         public func updateVisiblePages(range: Range<Int>) {
@@ -116,15 +196,31 @@
             for index in range where pageLayers[index] == nil {
                 let pageLayer = makePageLayer(for: index)
                 pageLayers[index] = pageLayer
-                layer?.addSublayer(pageLayer)
+                documentContentView.layer?.addSublayer(pageLayer)
                 if let panelLayer = makeMemoPanelLayer(for: index) {
                     memoPanelLayers[index] = panelLayer
-                    layer?.addSublayer(panelLayer)
+                    documentContentView.layer?.addSublayer(panelLayer)
                 }
             }
 
             layoutPageLayers()
             onPageChanged?(range.lowerBound)
+        }
+
+        /// Scrolls so the given page's top edge is at the top of the viewport.
+        public func scrollToPage(at index: Int) {
+            guard frameCount() > 0 || document != nil else { return }
+            let target = frameForPage(at: index)
+            scrollView.contentView.scroll(
+                to: NSPoint(x: scrollView.documentVisibleRect.minX, y: target.minY)
+            )
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+            updateVisiblePages(range: index ..< (index + 1))
+        }
+
+        /// The first page currently intersecting the viewport.
+        public func currentVisiblePage() -> Int {
+            visiblePageRange().first ?? 0
         }
 
         private func notifyUnsupportedElements() {
@@ -158,13 +254,13 @@
                 target: self,
                 action: #selector(handleClick(_:))
             )
-            addGestureRecognizer(clickGesture)
+            documentContentView.addGestureRecognizer(clickGesture)
         }
 
         @objc private func handleClick(_ gesture: NSClickGestureRecognizer) {
             guard gesture.state == .ended else { return }
-            let viewPoint = gesture.location(in: self)
-            guard let hit = pageHit(at: viewPoint) else { return }
+            let contentPoint = gesture.location(in: documentContentView)
+            guard let hit = pageHit(at: contentPoint) else { return }
 
             if let document, document.pages.indices.contains(hit.pageIndex) {
                 let result = hitTester.hit(page: document.pages[hit.pageIndex], point: hit.point)
@@ -193,11 +289,13 @@
             }
         }
 
-        private func pageHit(at viewPoint: CGPoint) -> (pageIndex: Int, point: CGPoint)? {
-            for (index, pageLayer) in pageLayers {
-                let layerPoint = pageLayer.convert(viewPoint, from: layer)
-                guard pageLayer.bounds.contains(layerPoint) else { continue }
-                return (index, layerPoint)
+        private func pageHit(at contentPoint: CGPoint) -> (pageIndex: Int, point: CGPoint)? {
+            for (index, pageLayer) in pageLayers where pageLayer.frame.contains(contentPoint) {
+                let origin = pageLayer.frame.origin
+                return (index, CGPoint(
+                    x: contentPoint.x - origin.x,
+                    y: contentPoint.y - origin.y
+                ))
             }
             return nil
         }
@@ -208,9 +306,9 @@
 
         private func makePageLayer(for index: Int) -> HwpPageLayer {
             let pageLayer = HwpPageLayer()
-            let pageSize = sizeForPage(at: index)
-            pageLayer.pageHeight = pageSize.height
-            pageLayer.bounds = CGRect(origin: .zero, size: pageSize)
+            let frame = frameForPage(at: index)
+            pageLayer.frame = frame
+            pageLayer.pageHeight = frame.height
             pageLayer.backgroundColor = PlatformColor.white.cgColor
             pageLayer.shadowColor = PlatformColor.black.cgColor
             pageLayer.shadowOpacity = 0.12
@@ -227,13 +325,15 @@
             guard let document, document.pages.indices.contains(index),
                   let panel = document.pages[index].memoPanel
             else { return nil }
-            let pageSize = sizeForPage(at: index)
+            let pageFrame = frameForPage(at: index)
             let panelLayer = HwpPageLayer()
-            panelLayer.pageHeight = pageSize.height
-            panelLayer.bounds = CGRect(
-                origin: .zero,
-                size: CGSize(width: panel.width, height: pageSize.height)
+            panelLayer.frame = CGRect(
+                x: pageFrame.maxX,
+                y: pageFrame.minY,
+                width: panel.width,
+                height: pageFrame.height
             )
+            panelLayer.pageHeight = pageFrame.height
             panelLayer.backgroundColor = nil
             panelLayer.contentsScale = effectiveContentsScale
             panelLayer.paintList = panel.paintList
@@ -246,43 +346,46 @@
         }
 
         private func layoutPageLayers() {
+            // 수동 addSublayer 레이어는 프레임 대입이 기본 애니메이션된다
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
             for (index, pageLayer) in pageLayers {
-                let pageSize = sizeForPage(at: index)
-                pageLayer.pageHeight = pageSize.height
-                pageLayer.bounds = CGRect(origin: .zero, size: pageSize)
-                pageLayer.setAffineTransform(CGAffineTransform(scaleX: zoomScale, y: zoomScale))
-                pageLayer.position = pageOrigin(for: index, pageSize: pageSize)
+                let frame = frameForPage(at: index)
+                if pageLayer.frame != frame {
+                    pageLayer.frame = frame
+                    pageLayer.pageHeight = frame.height
+                }
+                if pageLayer.paintList == nil {
+                    pageLayer.paintList = paintListForPage(at: index)
+                }
                 if let panelLayer = memoPanelLayers[index] {
-                    panelLayer.setAffineTransform(
-                        CGAffineTransform(scaleX: zoomScale, y: zoomScale)
-                    )
-                    // 페이지 오른쪽 모서리에 이어 붙인다
-                    panelLayer.position = CGPoint(
-                        x: pageLayer.position.x
-                            + (pageSize.width + panelLayer.bounds.width) / 2 * zoomScale,
-                        y: pageLayer.position.y
+                    panelLayer.frame = CGRect(
+                        x: frame.maxX,
+                        y: frame.minY,
+                        width: panelLayer.frame.width,
+                        height: frame.height
                     )
                 }
             }
+            CATransaction.commit()
+        }
+    }
+
+    /// 페이지 레이어 지오메트리를 top-down으로 유지하기 위한 flipped
+    /// documentView. AppKit 기본 y-up 좌표라면 페이지가 아래에서 위로 쌓인다.
+    final class HwpFlippedContentView: NSView {
+        override var isFlipped: Bool {
+            true
         }
 
-        private func pageOrigin(for index: Int, pageSize: CGSize) -> CGPoint {
-            let scaledWidth = pageSize.width * zoomScale
-            let scaledHeight = pageSize.height * zoomScale
-            let xCenter = max((bounds.width - scaledWidth) / 2, 0) + scaledWidth / 2
-            // The view has no scroll surface, so pages are positioned relative to
-            // the requested visible range: the anchor page sits at the top and
-            // retained neighbors flow above/below it.
-            let relativeIndex = CGFloat(index - activeVisibleRange.lowerBound)
-            let yCenter = relativeIndex * (scaledHeight + pageSpacing) + scaledHeight / 2
-            return CGPoint(x: xCenter, y: yCenter)
+        override init(frame: NSRect = .zero) {
+            super.init(frame: frame)
+            wantsLayer = true
         }
 
-        private func sizeForPage(at index: Int) -> CGSize {
-            guard let document, document.pages.indices.contains(index) else {
-                return defaultPageSize
-            }
-            return document.pages[index].size
+        @available(*, unavailable)
+        required init?(coder _: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
         }
     }
 #endif
