@@ -65,14 +65,11 @@ public struct HwpPaintListBuilder: Sendable {
         let frame = block.frame
         switch block.kind {
         case .text, .table, .textbox, .footnote:
-            guard let attributed = block.attributedString, attributed.length > 0 else {
-                return []
+            var commands: [HwpPaintCommand] = []
+            HwpBlockContentWalker.walkText(block: block) { attributed, rect in
+                commands.append(drawTextCommand(attributed, in: rect))
             }
-            return [.drawText(
-                attributedString: attributed,
-                origin: frame.origin,
-                lineWidth: max(frame.width, 1)
-            )]
+            return commands
         case .image:
             return [.drawPlaceholder(rect: frame, text: "[이미지]")]
         case .shape:
@@ -90,48 +87,48 @@ public struct HwpPaintListBuilder: Sendable {
         }
     }
 
+    /// (attributed, 페이지 좌표 rect) → drawText — `HwpBlockContentWalker`가
+    /// 방문한 텍스트를 명령으로 바꾸는 단일 지점.
+    private func drawTextCommand(
+        _ attributed: NSAttributedString,
+        in rect: CGRect
+    ) -> HwpPaintCommand {
+        .drawText(
+            attributedString: attributed,
+            origin: rect.origin,
+            lineWidth: max(rect.width, 1)
+        )
+    }
+
     // MARK: - 표
 
     private func tableCommands(
         _ table: HwpTableFrame,
         origin: CGPoint
     ) -> [HwpPaintCommand] {
+        // 방출 순서 (셀마다 fill → border → 문단 텍스트 → 셀 그림 → 중첩 표
+        // 재귀)는 walker의 이벤트 순서가 정의한다.
         var commands: [HwpPaintCommand] = []
-        for row in table.rows {
-            for cell in row.cells {
-                let cellRect = cell.cellFrame.offsetBy(dx: origin.x, dy: origin.y)
+        HwpBlockContentWalker.walkTable(
+            table,
+            origin: origin,
+            onCellStart: { cell, cellRect in
                 if let fill = cell.fillColor {
                     commands.append(.fillRect(rect: cellRect, color: fill.cgColor))
                 }
                 commands.append(contentsOf: borderCommands(cell.borders, around: cellRect))
-                for paragraph in cell.paragraphs where paragraph.attributedString.length > 0 {
-                    let paragraphRect = paragraph.rect.offsetBy(dx: origin.x, dy: origin.y)
-                    commands.append(.drawText(
-                        attributedString: paragraph.attributedString,
-                        origin: paragraphRect.origin,
-                        lineWidth: max(paragraphRect.width, 1)
-                    ))
-                }
-                // 셀 안 그림은 셀 콘텐츠로 그린다 (표-로컬 rect + 블록 origin)
-                for image in cell.images {
-                    commands.append(.drawImageReference(
-                        binItemId: image.binItemId,
-                        rect: image.rect.offsetBy(dx: origin.x, dy: origin.y),
-                        style: image.style
-                    ))
-                }
-                // 중첩 표는 셀 안 위치를 origin으로 재귀 렌더한다.
-                for nested in cell.nestedTables {
-                    commands.append(contentsOf: tableCommands(
-                        nested.table,
-                        origin: CGPoint(
-                            x: origin.x + nested.rect.minX,
-                            y: origin.y + nested.rect.minY
-                        )
-                    ))
-                }
+            },
+            onParagraphText: { attributed, rect in
+                commands.append(drawTextCommand(attributed, in: rect))
+            },
+            onCellImage: { image, rect in
+                commands.append(.drawImageReference(
+                    binItemId: image.binItemId,
+                    rect: rect,
+                    style: image.style
+                ))
             }
-        }
+        )
         return commands
     }
 
@@ -208,13 +205,11 @@ public struct HwpPaintListBuilder: Sendable {
                 width: max(0.7, textbox.borderWidth)
             ))
         }
-        for paragraph in textbox.paragraphs where paragraph.attributedString.length > 0 {
-            let paragraphRect = paragraph.rect.offsetBy(dx: origin.x, dy: origin.y)
-            commands.append(.drawText(
-                attributedString: paragraph.attributedString,
-                origin: paragraphRect.origin,
-                lineWidth: max(paragraphRect.width, 1)
-            ))
+        HwpBlockContentWalker.walkParagraphs(
+            textbox.paragraphs,
+            offset: origin
+        ) { attributed, rect in
+            commands.append(drawTextCommand(attributed, in: rect))
         }
         return commands
     }
@@ -234,16 +229,11 @@ public struct HwpPaintListBuilder: Sendable {
                 color: footnote.separatorColor.cgColor
             ))
         }
-        for paragraph in footnote.paragraphs where paragraph.attributedString.length > 0 {
-            let paragraphRect = paragraph.rect.offsetBy(
-                dx: blockFrame.minX,
-                dy: blockFrame.minY
-            )
-            commands.append(.drawText(
-                attributedString: paragraph.attributedString,
-                origin: paragraphRect.origin,
-                lineWidth: max(paragraphRect.width, 1)
-            ))
+        HwpBlockContentWalker.walkParagraphs(
+            footnote.paragraphs,
+            offset: blockFrame.origin
+        ) { attributed, rect in
+            commands.append(drawTextCommand(attributed, in: rect))
         }
         return commands
     }
