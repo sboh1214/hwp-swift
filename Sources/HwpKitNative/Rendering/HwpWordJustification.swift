@@ -17,6 +17,21 @@ public enum HwpWordJustification {
         attributedString: NSAttributedString,
         availableWidth: CGFloat
     ) -> CTLine? {
+        justifiedLine(
+            frameLine: frameLine,
+            attributedString: attributedString,
+            availableWidth: availableWidth
+        )?.line
+    }
+
+    /// wordJustifiedLine + 시작 x 이동량. 배분/나눔 정렬은 여분을 (공백 수
+    /// + 1)로 나눠 양끝에도 절반씩 남긴다 (noori 글상자 실물: 배분 줄
+    /// 양끝 대시가 음영 안쪽 ~1% 지점).
+    public static func justifiedLine(
+        frameLine: CTLine,
+        attributedString: NSAttributedString,
+        availableWidth: CGFloat
+    ) -> (line: CTLine, xOffset: CGFloat)? {
         let range = CTLineGetStringRange(frameLine)
         guard range.length > 0, availableWidth > 1 else { return nil }
         let nsRange = NSRange(location: range.location, length: range.length)
@@ -38,15 +53,7 @@ public enum HwpWordJustification {
         guard let style = paragraphStyle(of: attributedString, at: nsRange.location),
               alignment(of: style) == .justified
         else { return nil }
-        // 오른쪽 여백 (tailIndent ≤ 0 = 오른쪽 끝에서의 오프셋)만큼 줄 폭을 줄인다
-        var tailIndent: CGFloat = 0
-        CTParagraphStyleGetValueForSpecifier(
-            style,
-            .tailIndent,
-            MemoryLayout<CGFloat>.size,
-            &tailIndent
-        )
-        let targetWidth = tailIndent <= 0 ? availableWidth + tailIndent : availableWidth
+        let targetWidth = targetWidth(style: style, availableWidth: availableWidth)
         guard targetWidth > 1 else { return nil }
 
         // 뒤쪽 공백을 제외한 본문 범위에서 늘릴 공백 위치를 모은다
@@ -61,7 +68,9 @@ public enum HwpWordJustification {
         let extra = targetWidth - naturalWidth
         guard extra > 0.25 else { return nil }
 
-        let kernPerSpace = extra / CGFloat(spaceOffsets.count)
+        let kernPerSpace = distributes
+            ? extra / CGFloat(spaceOffsets.count + 1)
+            : extra / CGFloat(spaceOffsets.count)
         let mutable = NSMutableAttributedString(attributedString: substring)
         let kernKey = kCTKernAttributeName as NSAttributedString.Key
         for offset in spaceOffsets {
@@ -75,7 +84,25 @@ public enum HwpWordJustification {
                 range: NSRange(location: offset, length: 1)
             )
         }
-        return CTLineCreateWithAttributedString(mutable)
+        return (
+            line: CTLineCreateWithAttributedString(mutable),
+            xOffset: distributes ? kernPerSpace / 2 : 0
+        )
+    }
+
+    /// 오른쪽 여백 (tailIndent ≤ 0 = 오른쪽 끝에서의 오프셋)만큼 줄 폭을 줄인다
+    private static func targetWidth(
+        style: CTParagraphStyle,
+        availableWidth: CGFloat
+    ) -> CGFloat {
+        var tailIndent: CGFloat = 0
+        CTParagraphStyleGetValueForSpecifier(
+            style,
+            .tailIndent,
+            MemoryLayout<CGFloat>.size,
+            &tailIndent
+        )
+        return tailIndent <= 0 ? availableWidth + tailIndent : availableWidth
     }
 
     /// 문단 마지막 줄 (양쪽 정렬 제외 대상) 판정: 개행으로 끝나는 줄, 또는

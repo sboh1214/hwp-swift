@@ -223,13 +223,17 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
                 x: textRect.minX + origins[index].x,
                 y: textRect.minY + origins[index].y + Self.baselineLift(of: line)
             )
-            ctx.textPosition = lineOrigin
-            let replacement = HwpWordJustification.wordJustifiedLine(
+            let replacement = HwpWordJustification.justifiedLine(
                 frameLine: line,
                 attributedString: attributedString,
                 availableWidth: textRect.width - origins[index].x
             )
-            drawDecoratedLine(replacement ?? line, origin: lineOrigin, in: ctx)
+            let drawOrigin = CGPoint(
+                x: lineOrigin.x + (replacement?.xOffset ?? 0),
+                y: lineOrigin.y
+            )
+            ctx.textPosition = drawOrigin
+            drawDecoratedLine(replacement?.line ?? line, origin: drawOrigin, in: ctx)
         }
     }
 
