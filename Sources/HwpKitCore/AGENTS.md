@@ -45,6 +45,22 @@ CoreHwp.HwpFile
   → HwpDocument { pages: [HwpPage(blocks, paintList)], imageStore }
 ```
 
+### Paginator/ 서브컴포넌트
+
+`HwpPaginator`는 문단 루프·페이지 확정·블록 방출만 남기고 계산·상태 뭉치를
+`Layout/Paginator/`의 컴포넌트 5개에 위임한다 — 전부 actor가 소유하는
+내부 struct/enum (별도 actor 없음), 기존 호출부는 위임 계산 프로퍼티로 유지:
+
+- `HwpPageChromeBuilder` — 머리말/꼬리말/쪽 번호 크롬 블록. 활성 컨트롤·감춤 마스크 상태 소유
+- `HwpFootnoteCoordinator` — 각주/미주 수집·측정·예약. 카운터·pending·예약 높이·측정 캐시 소유
+- `HwpTableSplitter` — 표 페이지 분할 플랜 (row 세그먼트·절단 기하). 상태 없는 순수 enum
+- `HwpAbsoluteCachePlacer` — 절대 라인 캐시 배치 산식 + 모드·마지막 loc·stale 보정 상태
+- `HwpColumnBandController` — 다단 밴드 상태 (단 정의/프레임/index/사용량/균형 재배치 입력),
+  밴드 리셋 단일화 (`open`)와 균형 재배치 플랜 산출 (`rebalancePlan` → paginator 적용)
+
+공유 흐름 상태 (`contentHeightUsed`·`paragraphAnchorTop`)와 `currentBlocks`
+재작성 적용은 paginator에 남는다.
+
 라인 세그먼트 캐시 (PARA_LINE_SEG)의 `lineLocation`은 페이지 내 절대 y다.
 **실제 줄 전진량 = lineHeight + lineSpacing (per-line 캐시 필드)** — 실측:
 연속 세그먼트의 lineLocation 델타와 일치 (헌법주석 30,345/30,348, noori 전부;
