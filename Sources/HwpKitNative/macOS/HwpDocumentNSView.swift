@@ -11,9 +11,7 @@
                 // 프로그레시브 스냅샷 (같은 loadToken + 페이지 증가): 기존
                 // 레이어·스크롤 위치를 유지하고 크기·가시 범위만 늘린다.
                 if let old = oldValue, let new = document,
-                   let token = new.metadata.loadToken,
-                   old.metadata.loadToken == token,
-                   new.pages.count >= old.pages.count
+                   HwpDocumentViewSupport.isProgressiveUpdate(from: old, to: new)
                 {
                     rebuildPageOrigins()
                     updateContentSize()
@@ -176,19 +174,16 @@
             let backing = window?.backingScaleFactor
                 ?? NSScreen.main?.backingScaleFactor
                 ?? 2
-            return min(backing * max(1, zoomScale), backing * 4)
+            return HwpDocumentViewSupport.effectiveContentsScale(
+                base: backing, zoomScale: zoomScale
+            )
         }
 
         private func updateLayerContentsScale() {
-            let scale = effectiveContentsScale
-            for pageLayer in pageLayers.values where pageLayer.contentsScale != scale {
-                pageLayer.contentsScale = scale
-                pageLayer.setNeedsDisplay()
-            }
-            for panelLayer in memoPanelLayers.values where panelLayer.contentsScale != scale {
-                panelLayer.contentsScale = scale
-                panelLayer.setNeedsDisplay()
-            }
+            HwpDocumentViewSupport.updateContentsScale(
+                of: Array(pageLayers.values), Array(memoPanelLayers.values),
+                scale: effectiveContentsScale
+            )
         }
 
         override public func layout() {
@@ -251,29 +246,23 @@
         }
 
         private func notifyUnsupportedElements() {
-            document?.unsupportedElements.forEach { onUnsupportedElement?($0) }
+            HwpDocumentViewSupport.notifyUnsupportedElements(
+                in: document, to: onUnsupportedElement
+            )
         }
 
         private func rebuildImageProvider() {
-            guard let document, !document.imageStore.isEmpty else {
+            guard let built = HwpDocumentViewSupport.makeImageProvider(
+                document: document,
+                onLayersNeedingDisplay: { [weak self] in
+                    self.map { Array($0.pageLayers.values) } ?? []
+                }
+            ) else {
                 imageProvider = nil
                 return
             }
-            // binItemId는 문서-로컬 키이므로 문서마다 새 캐시를 쓴다
-            // (이전 문서의 동일 키 이미지 재사용 방지).
-            imageCache = HwpImageCache()
-            let provider = HwpPageImageProvider(store: document.imageStore, cache: imageCache)
-            provider.onImageResolved = { [weak self] key in
-                DispatchQueue.main.async {
-                    guard let self else { return }
-                    for layer in self.pageLayers.values
-                        where layer.containsImageReference(key)
-                    {
-                        layer.setNeedsDisplay()
-                    }
-                }
-            }
-            imageProvider = provider
+            imageCache = built.cache
+            imageProvider = built.provider
         }
 
         private func setupClickGesture() {
@@ -321,12 +310,9 @@
             let frame = frameForPage(at: index)
             pageLayer.frame = frame
             pageLayer.pageHeight = frame.height
-            pageLayer.backgroundColor = PlatformColor.white.cgColor
-            pageLayer.shadowColor = PlatformColor.black.cgColor
-            pageLayer.shadowOpacity = 0.12
-            pageLayer.shadowRadius = 4
-            pageLayer.shadowOffset = CGSize(width: 0, height: -1)
-            pageLayer.contentsScale = effectiveContentsScale
+            HwpDocumentViewSupport.decoratePageLayer(
+                pageLayer, contentsScale: effectiveContentsScale
+            )
             pageLayer.imageProvider = imageProvider
             pageLayer.paintList = paintListForPage(at: index)
             return pageLayer
@@ -334,22 +320,12 @@
 
         /// 페이지에 메모 패널이 있으면 오른쪽 바깥에 투명 레이어로 그린다.
         private func makeMemoPanelLayer(for index: Int) -> HwpPageLayer? {
-            guard let document, document.pages.indices.contains(index),
-                  let panel = document.pages[index].memoPanel
-            else { return nil }
-            let pageFrame = frameForPage(at: index)
-            let panelLayer = HwpPageLayer()
-            panelLayer.frame = CGRect(
-                x: pageFrame.maxX,
-                y: pageFrame.minY,
-                width: panel.width,
-                height: pageFrame.height
+            HwpDocumentViewSupport.makeMemoPanelLayer(
+                document: document,
+                pageIndex: index,
+                pageFrame: frameForPage(at: index),
+                contentsScale: effectiveContentsScale
             )
-            panelLayer.pageHeight = pageFrame.height
-            panelLayer.backgroundColor = nil
-            panelLayer.contentsScale = effectiveContentsScale
-            panelLayer.paintList = panel.paintList
-            return panelLayer
         }
 
         private func paintListForPage(at index: Int) -> HwpPaintList? {

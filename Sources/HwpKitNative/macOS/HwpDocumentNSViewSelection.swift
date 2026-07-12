@@ -104,39 +104,13 @@
         // 조상 flip 기하를 상속한다 (top-down rect 직접 대입, 자체 flip 금지)
 
         internal func updateSelectionOverlays() {
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            for (pageIndex, pageLayer) in pageLayers {
-                let rects = selectionController.highlightRects(forPage: pageIndex)
-                if rects.isEmpty {
-                    selectionLayers[pageIndex]?.removeFromSuperlayer()
-                    selectionLayers[pageIndex] = nil
-                    continue
-                }
-                let overlay = selectionLayers[pageIndex] ?? {
-                    let layer = CAShapeLayer()
-                    layer.fillColor = NSColor.selectedTextBackgroundColor
-                        .withAlphaComponent(0.4).cgColor
-                    selectionLayers[pageIndex] = layer
-                    return layer
-                }()
-                if overlay.superlayer !== pageLayer {
-                    overlay.removeFromSuperlayer()
-                    pageLayer.addSublayer(overlay)
-                }
-                overlay.frame = pageLayer.bounds
-                let path = CGMutablePath()
-                for rect in rects {
-                    path.addRect(rect)
-                }
-                overlay.path = path
-            }
-            // 화면 밖으로 나간 페이지의 오버레이 정리
-            for (pageIndex, overlay) in selectionLayers where pageLayers[pageIndex] == nil {
-                overlay.removeFromSuperlayer()
-                selectionLayers[pageIndex] = nil
-            }
-            CATransaction.commit()
+            HwpDocumentViewSupport.updateSelectionOverlays(
+                pageLayers: pageLayers,
+                selectionLayers: &selectionLayers,
+                highlightRects: selectionController.highlightRects(forPage:),
+                fillColor: NSColor.selectedTextBackgroundColor
+                    .withAlphaComponent(0.4).cgColor
+            )
         }
     }
 #endif

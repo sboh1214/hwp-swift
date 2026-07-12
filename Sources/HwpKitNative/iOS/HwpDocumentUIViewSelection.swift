@@ -171,37 +171,12 @@
         // MARK: 하이라이트 오버레이 — 페이지 레이어의 sublayer (페이지 로컬 rect)
 
         func updateSelectionOverlays() {
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            for (pageIndex, pageLayer) in pageLayers {
-                let rects = selectionController.highlightRects(forPage: pageIndex)
-                if rects.isEmpty {
-                    selectionLayers[pageIndex]?.removeFromSuperlayer()
-                    selectionLayers[pageIndex] = nil
-                    continue
-                }
-                let overlay = selectionLayers[pageIndex] ?? {
-                    let layer = CAShapeLayer()
-                    layer.fillColor = UIColor.systemBlue.withAlphaComponent(0.3).cgColor
-                    selectionLayers[pageIndex] = layer
-                    return layer
-                }()
-                if overlay.superlayer !== pageLayer {
-                    overlay.removeFromSuperlayer()
-                    pageLayer.addSublayer(overlay)
-                }
-                overlay.frame = pageLayer.bounds
-                let path = CGMutablePath()
-                for rect in rects {
-                    path.addRect(rect)
-                }
-                overlay.path = path
-            }
-            for (pageIndex, overlay) in selectionLayers where pageLayers[pageIndex] == nil {
-                overlay.removeFromSuperlayer()
-                selectionLayers[pageIndex] = nil
-            }
-            CATransaction.commit()
+            HwpDocumentViewSupport.updateSelectionOverlays(
+                pageLayers: pageLayers,
+                selectionLayers: &selectionLayers,
+                highlightRects: selectionController.highlightRects(forPage:),
+                fillColor: UIColor.systemBlue.withAlphaComponent(0.3).cgColor
+            )
         }
     }
 #endif

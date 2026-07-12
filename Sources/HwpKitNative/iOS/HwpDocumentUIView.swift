@@ -11,9 +11,7 @@
                 // 프로그레시브 스냅샷 (같은 loadToken + 페이지 증가): 기존
                 // 레이어·스크롤 위치를 유지하고 크기·가시 범위만 늘린다.
                 if let old = oldValue, let new = document,
-                   let token = new.metadata.loadToken,
-                   old.metadata.loadToken == token,
-                   new.pages.count >= old.pages.count
+                   HwpDocumentViewSupport.isProgressiveUpdate(from: old, to: new)
                 {
                     rebuildPageOrigins()
                     updateContentSize()
@@ -113,12 +111,9 @@
                 let layer = HwpPageLayer()
                 layer.frame = frameForPage(at: index)
                 layer.pageHeight = layer.frame.height
-                layer.backgroundColor = PlatformColor.white.cgColor
-                layer.shadowColor = PlatformColor.black.cgColor
-                layer.shadowOpacity = 0.12
-                layer.shadowRadius = 4
-                layer.shadowOffset = CGSize(width: 0, height: -1)
-                layer.contentsScale = effectiveContentsScale
+                HwpDocumentViewSupport.decoratePageLayer(
+                    layer, contentsScale: effectiveContentsScale
+                )
                 layer.imageProvider = imageProvider
                 layer.paintList = paintListForPage(at: index)
                 contentView.layer.addSublayer(layer)
@@ -155,20 +150,12 @@
             for index: Int,
             pageFrame: CGRect
         ) -> HwpPageLayer? {
-            guard let document, document.pages.indices.contains(index),
-                  let panel = document.pages[index].memoPanel
-            else { return nil }
-            let panelLayer = HwpPageLayer()
-            panelLayer.frame = CGRect(
-                x: pageFrame.maxX,
-                y: pageFrame.minY,
-                width: panel.width,
-                height: pageFrame.height
+            HwpDocumentViewSupport.makeMemoPanelLayer(
+                document: document,
+                pageIndex: index,
+                pageFrame: pageFrame,
+                contentsScale: effectiveContentsScale
             )
-            panelLayer.pageHeight = pageFrame.height
-            panelLayer.contentsScale = effectiveContentsScale
-            panelLayer.paintList = panel.paintList
-            return panelLayer
         }
 
         /// Scrolls so the given page's top edge is at the top of the viewport.
@@ -230,15 +217,17 @@
         private var effectiveContentsScale: CGFloat {
             let screenScale = window?.screen.scale ?? traitCollection.displayScale
             let base = screenScale > 0 ? screenScale : 2
-            return min(base * max(1, zoomScale), base * 4)
+            return HwpDocumentViewSupport.effectiveContentsScale(
+                base: base, zoomScale: zoomScale
+            )
         }
 
         private func updateLayerContentsScale() {
-            let scale = effectiveContentsScale
-            for layer in pageLayers.values where layer.contentsScale != scale {
-                layer.contentsScale = scale
-                layer.setNeedsDisplay()
-            }
+            // 메모 패널 레이어도 함께 재래스터 (macOS와 통일)
+            HwpDocumentViewSupport.updateContentsScale(
+                of: Array(pageLayers.values), Array(memoPanelLayers.values),
+                scale: effectiveContentsScale
+            )
         }
 
         private func configureViewHierarchy() {
@@ -277,29 +266,23 @@
         }
 
         private func notifyUnsupportedElements() {
-            document?.unsupportedElements.forEach { onUnsupportedElement?($0) }
+            HwpDocumentViewSupport.notifyUnsupportedElements(
+                in: document, to: onUnsupportedElement
+            )
         }
 
         private func rebuildImageProvider() {
-            guard let document, !document.imageStore.isEmpty else {
+            guard let built = HwpDocumentViewSupport.makeImageProvider(
+                document: document,
+                onLayersNeedingDisplay: { [weak self] in
+                    self.map { Array($0.pageLayers.values) } ?? []
+                }
+            ) else {
                 imageProvider = nil
                 return
             }
-            // binItemId는 문서-로컬 키이므로 문서마다 새 캐시를 쓴다
-            // (이전 문서의 동일 키 이미지 재사용 방지).
-            imageCache = HwpImageCache()
-            let provider = HwpPageImageProvider(store: document.imageStore, cache: imageCache)
-            provider.onImageResolved = { [weak self] key in
-                DispatchQueue.main.async {
-                    guard let self else { return }
-                    for layer in self.pageLayers.values
-                        where layer.containsImageReference(key)
-                    {
-                        layer.setNeedsDisplay()
-                    }
-                }
-            }
-            imageProvider = provider
+            imageCache = built.cache
+            imageProvider = built.provider
         }
 
         private func rebuildPageOrigins() {
@@ -392,13 +375,6 @@
                 return (index, CGPoint(x: location.x - pageOrigin.x, y: location.y - pageOrigin.y))
             }
             return nil
-        }
-    }
-
-    private extension Array {
-        subscript(safe index: Int) -> Element? {
-            guard indices.contains(index) else { return nil }
-            return self[index]
         }
     }
 #endif
