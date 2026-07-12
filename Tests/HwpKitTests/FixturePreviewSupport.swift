@@ -1,5 +1,5 @@
 import CoreGraphics
-@preconcurrency import CoreHwp
+import CoreHwp
 import Foundation
 import HwpKitCore
 import HwpKitNative

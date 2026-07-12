@@ -99,11 +99,18 @@ Deflate API는 bounded streaming inflate를 노출하지 않으므로, 압축 �
 swift build                                    # 빌드
 swift test                                     # 테스트 실행
 swift test --enable-code-coverage              # 커버리지 (lcov 추출은 .github/workflows/Coverage.yml 참조)
+HWP_PERF=1 swift test --filter Performance     # 성능 실측 (N=20,000 합성 + 타이트 임계; 기본은 N=1,000 스모크)
+RECORD_BLOCK_SNAPSHOTS=1 swift test --filter FixtureBlockLayout  # 블록 좌표 스냅샷 재생성 (diff 리뷰 필수)
+xcodebuild test -scheme Hwp-Swift-Package -destination 'platform=iOS Simulator,name=iPhone 17 Pro'  # iOS 테스트 (#if os(iOS) 코드는 여기서만 실행)
 swiftformat .                                  # 포맷
 swiftformat --lint .                           # CI lint 체크
 swiftlint                                      # lint
 pre-commit install && pre-commit run --all     # hook 설치 + 전체 실행
 ```
+
+성능 게이트: CI는 스모크 파라미터만 상시 실행 (공유 러너 wall-time 하드
+게이트는 flaky). 타이트 임계는 로컬 `HWP_PERF=1`로 확인 — 성능에 닿는
+PR은 실측 수치를 커밋 메시지에 기록한다.
 
 ## 의존성 (모두 exact pinning)
 

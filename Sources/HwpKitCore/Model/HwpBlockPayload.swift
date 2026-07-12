@@ -1,5 +1,5 @@
 import CoreGraphics
-@preconcurrency import CoreHwp
+import CoreHwp
 import Foundation
 
 /// 레이아웃이 끝난 문단 하나: 텍스트 + 지오메트리 + 원본 문단 참조.

@@ -6,10 +6,6 @@ extension Data {
         [UInt8](self)
     }
 
-    var bits: [Bool] {
-        reduce([Bool]()) { $0 + $1.bits }
-    }
-
     var stringASCII: String? {
         guard allSatisfy({ $0 < 0x80 }) else {
             return nil

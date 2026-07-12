@@ -1,4 +1,4 @@
-@preconcurrency import CoreHwp
+import CoreHwp
 import Foundation
 
 /// Classifies a control ID into either "supported" (nil) or an unsupported placeholder element.

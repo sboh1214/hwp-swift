@@ -1,5 +1,5 @@
 import CoreGraphics
-@preconcurrency import CoreHwp
+import CoreHwp
 import Foundation
 
 public struct HwpTextboxFrame: @unchecked Sendable, Hashable {

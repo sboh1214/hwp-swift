@@ -1,5 +1,5 @@
 @preconcurrency import CoreGraphics
-@preconcurrency import CoreHwp
+import CoreHwp
 import Foundation
 
 /// HWP 개체 요소(SHAPE_COMPONENT)를 `CGPath`와 fill/stroke 속성으로 변환한다.

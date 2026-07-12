@@ -1,4 +1,4 @@
-@preconcurrency import CoreHwp
+import CoreHwp
 import Foundation
 import HwpKitCore
 import Nimble

@@ -1,4 +1,4 @@
-@preconcurrency import CoreHwp
+import CoreHwp
 import Foundation
 
 /// BinItem id (DocInfo HWPTAG_BIN_DATA 참조값, 1-based) → 이미지 바이트 매핑.

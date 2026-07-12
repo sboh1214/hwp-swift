@@ -42,8 +42,8 @@ final class ParserPerformanceTests: XCTestCase {
                 + (residentDelta.map { " resident+=\(String(format: "%.1f", $0))MB" } ?? "")
         )
 
-        // 폭주 방지 상한 — 러너 편차를 흡수하는 넉넉한 값 (타이트 게이트 아님)
-        expect(seconds) < (full ? 60.0 : 10.0)
+        // HWP_PERF 임계 = 개선 후 실측(~0.8s) + 여유. 스모크는 폭주 방지용.
+        expect(seconds) < (full ? 2.0 : 10.0)
         withExtendedLifetime(section) {}
     }
 
@@ -78,8 +78,8 @@ final class ParserPerformanceTests: XCTestCase {
                 + (residentDelta.map { " resident+=\(String(format: "%.1f", $0))MB" } ?? "")
         )
 
-        // 폭주 방지 상한 — 러너 편차를 흡수하는 넉넉한 값 (타이트 게이트 아님)
-        expect(seconds) < (full ? 60.0 : 10.0)
+        // HWP_PERF 임계 = 개선 후 실측(~0.8s) + 여유. 스모크는 폭주 방지용.
+        expect(seconds) < (full ? 2.0 : 10.0)
         withExtendedLifetime(section) {}
     }
 

@@ -49,8 +49,8 @@ import XCTest
                 "HWP_PERF paginate: N=\(paragraphCount) pages=\(totalPages) "
                     + "time=\(String(format: "%.3f", seconds))s"
             )
-            // 폭주 방지 상한 (타이트 게이트 아님 — 개선 커밋 후 확정)
-            expect(seconds) < (full ? 300.0 : 60.0)
+            // HWP_PERF 임계 = 개선 후 실측(~7.6s) + 여유. 스모크는 폭주 방지용.
+            expect(seconds) < (full ? 15.0 : 60.0)
         }
 
         /// 문단마다 내용이 다른 본문 텍스트 (~80 UTF-16 단위)

@@ -1,5 +1,5 @@
 import CoreGraphics
-@preconcurrency import CoreHwp
+import CoreHwp
 import Foundation
 
 public struct HwpFootnoteBlock: @unchecked Sendable, Hashable {

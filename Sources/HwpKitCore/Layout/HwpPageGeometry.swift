@@ -1,5 +1,5 @@
 import CoreGraphics
-@preconcurrency import CoreHwp
+import CoreHwp
 import Foundation
 
 /// Converts `HwpPageDef` (and optional `HwpSectionDef`) into point-based geometry

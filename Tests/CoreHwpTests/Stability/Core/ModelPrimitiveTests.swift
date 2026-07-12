@@ -306,7 +306,6 @@ final class ModelPrimitiveTests: XCTestCase {
         let data = Data([0b0000_0011, 0b1000_0000])
 
         expect(data.bytes) == [3, 128]
-        expect(data.bits.count) == 16
         expect(Data("HWP".utf8).stringASCII) == "HWP"
         expect(Data([0xFF]).stringASCII).to(beNil())
 

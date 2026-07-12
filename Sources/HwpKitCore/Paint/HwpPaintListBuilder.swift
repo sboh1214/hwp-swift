@@ -1,5 +1,5 @@
 @preconcurrency import CoreGraphics
-@preconcurrency import CoreHwp
+import CoreHwp
 import CoreText
 import Foundation
 

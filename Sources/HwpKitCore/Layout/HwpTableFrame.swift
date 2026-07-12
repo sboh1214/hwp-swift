@@ -1,5 +1,5 @@
 import CoreGraphics
-@preconcurrency import CoreHwp
+import CoreHwp
 import Foundation
 
 /// 셀 4방향 테두리 (pt 폭 + 색상). 폭 0이면 해당 변은 그리지 않는다.
