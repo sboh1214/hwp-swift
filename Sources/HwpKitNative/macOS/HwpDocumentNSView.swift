@@ -15,6 +15,7 @@
                 rebuildImageProvider()
                 rebuildPageOrigins()
                 updateContentSize()
+                selectionController.document = document
                 scrollView.contentView.scroll(to: .zero)
                 scrollView.reflectScrolledClipView(scrollView.contentView)
                 updateVisiblePages(range: 0 ..< min(document?.pages.count ?? 0, 3))
@@ -52,6 +53,13 @@
         var pageLayers: [Int: HwpPageLayer] = [:]
         /// 메모 (댓글) 풍선 패널 레이어 — 페이지 오른쪽 바깥 (한글.app 편집 뷰)
         var memoPanelLayers: [Int: HwpPageLayer] = [:]
+        /// 페이지별 텍스트 선택 하이라이트 (페이지 레이어의 sublayer)
+        var selectionLayers: [Int: CAShapeLayer] = [:]
+
+        /// 텍스트 드래그 선택 상태 (플랫폼 중립 컨트롤러)
+        public let selectionController = HwpSelectionController()
+        /// 복사 대상 페이스트보드 — 테스트 주입용
+        var pasteboard: NSPasteboard = .general
 
         let scrollView = NSScrollView()
         let documentContentView = HwpFlippedContentView()
@@ -69,6 +77,9 @@
             imageCache = HwpImageCache()
             super.init(frame: frame)
             configureViewHierarchy()
+            selectionController.onSelectionChanged = { [weak self] in
+                self?.updateSelectionOverlays()
+            }
         }
 
         @available(*, unavailable)
@@ -204,6 +215,7 @@
             }
 
             layoutPageLayers()
+            updateSelectionOverlays()
             onPageChanged?(range.lowerBound)
         }
 

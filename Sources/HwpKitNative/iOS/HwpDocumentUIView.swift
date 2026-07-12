@@ -15,6 +15,7 @@
                 rebuildImageProvider()
                 rebuildPageOrigins()
                 updateContentSize()
+                selectionController.document = document
                 updateVisiblePages(range: 0 ..< min(document?.pages.count ?? 0, 3))
                 notifyUnsupportedElements()
             }
@@ -38,9 +39,15 @@
         var pageLayers: [Int: HwpPageLayer] = [:]
         /// 메모 (댓글) 풍선 패널 레이어 — 페이지 오른쪽 바깥 (한글.app 편집 뷰)
         var memoPanelLayers: [Int: HwpPageLayer] = [:]
+        /// 페이지별 텍스트 선택 하이라이트 (페이지 레이어의 sublayer)
+        var selectionLayers: [Int: CAShapeLayer] = [:]
+
+        /// 텍스트 롱프레스 선택 상태 (플랫폼 중립 컨트롤러)
+        public let selectionController = HwpSelectionController()
+        var editMenuInteraction: UIEditMenuInteraction?
 
         private let scrollView = UIScrollView()
-        private let contentView = UIView()
+        let contentView = UIView()
         private let hitTester = HwpHitTester()
         private let pageGap: CGFloat = 24
         private let defaultPageSize = CGSize(width: 595, height: 842)
@@ -116,6 +123,7 @@
                     )
                 }
             }
+            updateSelectionOverlays()
         }
 
         /// 페이지에 메모 패널이 있으면 오른쪽 바깥에 투명 레이어로 그린다.
@@ -221,9 +229,14 @@
 
             let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
             contentView.addGestureRecognizer(tapGesture)
+            configureSelectionInteractions()
         }
 
         @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
+            if selectionController.hasSelection {
+                selectionController.clear()
+                return
+            }
             let location = gesture.location(in: contentView)
             guard let (pageIndex, point) = pagePoint(containing: location),
                   let page = document?.pages[safe: pageIndex],
@@ -325,6 +338,11 @@
             let lower = max(0, range.lowerBound - 2)
             let upper = min(pageCount, range.upperBound + 2)
             return lower ..< upper
+        }
+
+        /// 선택 확장 (좌표 클램프)용 노출 — 렌더 배치와 같은 프레임
+        func selectionPageFrame(at index: Int) -> CGRect {
+            frameForPage(at: index)
         }
 
         private func frameForPage(at index: Int) -> CGRect {

@@ -2431,7 +2431,8 @@ private extension HwpPaginator {
                 ),
                 kind: .text,
                 attributedString: NSAttributedString(attributedString: attributed),
-                source: HwpBlockSource(paragraphId: paragraph.paraHeader.paraId)
+                source: HwpBlockSource(paragraphId: paragraph.paraHeader.paraId),
+                role: .pageChrome
             ))
             cursorY += blockHeight
         }
@@ -2466,7 +2467,8 @@ private extension HwpPaginator {
         currentBlocks.append(AnyHwpBlock(
             frame: placement.frame,
             kind: .text,
-            attributedString: attributed
+            attributedString: attributed,
+            role: .pageChrome
         ))
     }
 

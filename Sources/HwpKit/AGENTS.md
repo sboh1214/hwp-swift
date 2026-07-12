@@ -28,7 +28,7 @@ SwiftUI 공개 API target. HwpKitNative 위에 `NSViewRepresentable` / `UIViewRe
 ## v1 스코프 밖 (추가 금지)
 
 - File picker / document browser — 앱 책임
-- 검색 / find / 텍스트 선택 / 복사 — v1 OUT
+- 검색 / find — v1 OUT (텍스트 선택/복사는 구현됨 — HwpKitCore/Selection)
 - 인쇄 / PDF export
 - 편집 API (v2)
 - 하이퍼링크 URL 라우팅 — 콜백만 제공, 실제 오픈은 앱 책임

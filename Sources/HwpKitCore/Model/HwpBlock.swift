@@ -10,6 +10,12 @@ public enum HwpBlockKind: String, Sendable, Hashable {
     case text, image, shape, table, textbox, footnote, placeholder
 }
 
+/// 블록이 본문 흐름인지 페이지 크롬 (머리말/꼬리말/쪽 번호)인지 —
+/// 텍스트 선택·복사는 크롬을 건너뛴다.
+public enum HwpBlockRole: String, Sendable, Hashable {
+    case body, pageChrome
+}
+
 public struct AnyHwpBlock: HwpBlock, @unchecked Sendable, Hashable {
     public let frame: CGRect
     public let kind: HwpBlockKind
@@ -19,6 +25,7 @@ public struct AnyHwpBlock: HwpBlock, @unchecked Sendable, Hashable {
     public let payload: HwpBlockPayload?
     /// 이 블록이 유래한 CoreHwp 모델 참조 (편집 대비)
     public let source: HwpBlockSource?
+    public let role: HwpBlockRole
 
     public init(
         frame: CGRect,
@@ -26,7 +33,8 @@ public struct AnyHwpBlock: HwpBlock, @unchecked Sendable, Hashable {
         attributedString: NSAttributedString? = nil,
         hyperlinkURL: String? = nil,
         payload: HwpBlockPayload? = nil,
-        source: HwpBlockSource? = nil
+        source: HwpBlockSource? = nil,
+        role: HwpBlockRole = .body
     ) {
         self.frame = frame
         self.kind = kind
@@ -34,6 +42,7 @@ public struct AnyHwpBlock: HwpBlock, @unchecked Sendable, Hashable {
         self.hyperlinkURL = hyperlinkURL
         self.payload = payload
         self.source = source
+        self.role = role
     }
 
     public func hash(into hasher: inout Hasher) {
@@ -46,6 +55,7 @@ public struct AnyHwpBlock: HwpBlock, @unchecked Sendable, Hashable {
         hasher.combine(hyperlinkURL)
         hasher.combine(payload)
         hasher.combine(source)
+        hasher.combine(role)
     }
 
     public static func == (lhs: AnyHwpBlock, rhs: AnyHwpBlock) -> Bool {
@@ -55,5 +65,6 @@ public struct AnyHwpBlock: HwpBlock, @unchecked Sendable, Hashable {
             && lhs.hyperlinkURL == rhs.hyperlinkURL
             && lhs.payload == rhs.payload
             && lhs.source == rhs.source
+            && lhs.role == rhs.role
     }
 }

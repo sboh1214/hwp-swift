@@ -1,0 +1,273 @@
+import CoreGraphics
+import CoreText
+import Foundation
+
+/// 텍스트 선택의 지오메트리 해석기 — 점↔위치, 범위→하이라이트 rect,
+/// 범위→일반 텍스트. 줄 배치는 렌더러와 같은 `HwpDrawnTextLayout`을 쓰므로
+/// 하이라이트가 화면과 일치한다. 단위 목록·줄 배치는 페이지별 지연 계산
+/// 후 캐시한다 (하이라이트는 가시 페이지에서만 질의된다).
+public final class HwpSelectionGeometry {
+    private let document: HwpDocument
+    private var unitCache: [Int: [HwpTextUnit]] = [:]
+    private var lineCache: [UnitKey: [HwpDrawnLine]] = [:]
+    private var lineCacheOrder: [UnitKey] = []
+    private let lineCacheLimit = 512
+
+    private struct UnitKey: Hashable {
+        let pageIndex: Int
+        let unitOrdinal: Int
+    }
+
+    public init(document: HwpDocument) {
+        self.document = document
+    }
+
+    // MARK: - 단위/줄 접근
+
+    public func units(forPage pageIndex: Int) -> [HwpTextUnit] {
+        if let cached = unitCache[pageIndex] { return cached }
+        guard document.pages.indices.contains(pageIndex) else { return [] }
+        let units = HwpSelectableText.units(in: document.pages[pageIndex])
+        unitCache[pageIndex] = units
+        return units
+    }
+
+    private func drawnLines(pageIndex: Int, unitOrdinal: Int) -> [HwpDrawnLine] {
+        let key = UnitKey(pageIndex: pageIndex, unitOrdinal: unitOrdinal)
+        if let cached = lineCache[key] { return cached }
+        let units = units(forPage: pageIndex)
+        guard units.indices.contains(unitOrdinal) else { return [] }
+        let unit = units[unitOrdinal]
+        let lines = HwpDrawnTextLayout.lines(
+            attributedString: unit.attributedString,
+            origin: unit.rect.origin,
+            lineWidth: max(unit.rect.width, 1)
+        )
+        lineCache[key] = lines
+        lineCacheOrder.append(key)
+        if lineCacheOrder.count > lineCacheLimit {
+            let evicted = lineCacheOrder.removeFirst()
+            lineCache[evicted] = nil
+        }
+        return lines
+    }
+
+    // MARK: - 점 → 위치
+
+    /// 페이지 로컬 점에서 가장 가까운 텍스트 위치 (PDF식 관대한 스냅):
+    /// 단위 rect 포함 → 줄 y 클램프 → 글리프 x 질의. 포함 단위가 없으면
+    /// y가 겹치는 단위 중 수평 최근접 (다단), 그것도 없으면 y 최근접 단위.
+    /// 페이지에 텍스트가 없으면 nil.
+    public func position(nearest point: CGPoint, pageIndex: Int) -> HwpTextPosition? {
+        let units = units(forPage: pageIndex)
+        guard !units.isEmpty else { return nil }
+
+        let ordinal = nearestUnitOrdinal(to: point, in: units)
+        let unit = units[ordinal]
+        let lines = drawnLines(pageIndex: pageIndex, unitOrdinal: ordinal)
+        guard !lines.isEmpty else {
+            return HwpTextPosition(
+                pageIndex: pageIndex,
+                blockIndex: unit.blockIndex,
+                unitIndex: unit.unitIndex,
+                characterOffset: 0
+            )
+        }
+
+        // 줄: y로 클램프해 선택 (줄 사이 간격은 위쪽 줄에 귀속)
+        let line = lines.min { lhs, rhs in
+            distance(point.y, toRange: lhs.selectionRect.minY ... lhs.selectionRect.maxY)
+                < distance(point.y, toRange: rhs.selectionRect.minY ... rhs.selectionRect.maxY)
+        }!
+        let offset = characterOffset(in: line, atX: point.x)
+        return HwpTextPosition(
+            pageIndex: pageIndex,
+            blockIndex: unit.blockIndex,
+            unitIndex: unit.unitIndex,
+            characterOffset: offset
+        )
+    }
+
+    private func nearestUnitOrdinal(to point: CGPoint, in units: [HwpTextUnit]) -> Int {
+        // 1) 점을 포함하는 단위
+        if let contained = units.lastIndex(where: { $0.rect.contains(point) }) {
+            return contained
+        }
+        // 2) y 구간이 겹치는 단위 중 수평 최근접 (다단 대응)
+        let overlapping = units.indices.filter {
+            let rect = units[$0].rect
+            return point.y >= rect.minY && point.y <= rect.maxY
+        }
+        if let nearest = overlapping.min(by: {
+            distance(point.x, toRange: units[$0].rect.minX ... units[$0].rect.maxX)
+                < distance(point.x, toRange: units[$1].rect.minX ... units[$1].rect.maxX)
+        }) {
+            return nearest
+        }
+        // 3) y 최근접 단위 (본문 위 = 첫 단위, 아래 = 마지막 단위로 자연 수렴)
+        return units.indices.min(by: {
+            distance(point.y, toRange: units[$0].rect.minY ... units[$0].rect.maxY)
+                < distance(point.y, toRange: units[$1].rect.minY ... units[$1].rect.maxY)
+        })!
+    }
+
+    private func distance(_ value: CGFloat, toRange range: ClosedRange<CGFloat>) -> CGFloat {
+        if value < range.lowerBound { return range.lowerBound - value }
+        if value > range.upperBound { return value - range.upperBound }
+        return 0
+    }
+
+    /// 줄 안 x → 문자 오프셋. 줄 왼쪽 밖 = 줄 시작, 오른쪽 밖 = 줄 끝.
+    /// 재조판된 CTLine에 질의하므로 화면 글리프 위치와 일치한다.
+    private func characterOffset(in line: HwpDrawnLine, atX x: CGFloat) -> Int {
+        let localX = x - line.baselineOrigin.x
+        if localX <= 0 { return line.stringRange.location }
+        let lineWidth = CGFloat(CTLineGetTypographicBounds(line.line, nil, nil, nil))
+        if localX >= lineWidth {
+            return line.stringRange.location + line.stringRange.length
+        }
+        let index = CTLineGetStringIndexForPosition(line.line, CGPoint(x: localX, y: 0))
+        guard index != kCFNotFound else { return line.stringRange.location }
+        // 재조판 라인은 substring (location 0) 기준일 수 있어 원 범위로 보정
+        let ctRange = CTLineGetStringRange(line.line)
+        return line.stringRange.location + (index - ctRange.location)
+    }
+
+    // MARK: - 범위 → 하이라이트 rect
+
+    /// 해당 페이지에 그릴 선택 하이라이트 rect들 (페이지 로컬 top-down).
+    public func highlightRects(pageIndex: Int, selection: HwpTextSelection) -> [CGRect] {
+        guard !selection.isCollapsed else { return [] }
+        let (start, end) = selection.range
+        guard pageIndex >= start.pageIndex, pageIndex <= end.pageIndex else { return [] }
+
+        var rects: [CGRect] = []
+        let units = units(forPage: pageIndex)
+        for (ordinal, unit) in units.enumerated() {
+            let unitStart = HwpTextPosition(
+                pageIndex: pageIndex, blockIndex: unit.blockIndex,
+                unitIndex: unit.unitIndex, characterOffset: 0
+            )
+            let unitEnd = HwpTextPosition(
+                pageIndex: pageIndex, blockIndex: unit.blockIndex,
+                unitIndex: unit.unitIndex,
+                characterOffset: unit.attributedString.length
+            )
+            guard unitEnd > start, unitStart < end else { continue }
+            let lower = max(start, unitStart).characterOffset
+            let upper = unitStart >= start && unitEnd <= end
+                ? unit.attributedString.length
+                : min(end, unitEnd).characterOffset
+            guard upper > lower else { continue }
+            for line in drawnLines(pageIndex: pageIndex, unitOrdinal: ordinal) {
+                if let rect = highlightRect(
+                    in: line, characterRange: NSRange(
+                        location: lower, length: upper - lower
+                    )
+                ) {
+                    rects.append(rect)
+                }
+            }
+        }
+        return rects
+    }
+
+    private func highlightRect(in line: HwpDrawnLine, characterRange: NSRange) -> CGRect? {
+        let lineRange = line.stringRange
+        let lower = max(characterRange.location, lineRange.location)
+        let upper = min(
+            characterRange.location + characterRange.length,
+            lineRange.location + lineRange.length
+        )
+        guard upper > lower else { return nil }
+        if lower == lineRange.location, upper == lineRange.location + lineRange.length {
+            return line.selectionRect
+        }
+        let ctRange = CTLineGetStringRange(line.line)
+        let startX = CTLineGetOffsetForStringIndex(
+            line.line, lower - lineRange.location + ctRange.location, nil
+        )
+        let endX = CTLineGetOffsetForStringIndex(
+            line.line, upper - lineRange.location + ctRange.location, nil
+        )
+        guard endX > startX else { return nil }
+        return CGRect(
+            x: line.baselineOrigin.x + startX,
+            y: line.baselineOrigin.y - line.ascent,
+            width: endX - startX,
+            height: line.ascent + line.descent
+        )
+    }
+
+    // MARK: - 범위 → 텍스트
+
+    /// 선택 범위의 일반 텍스트. 단위를 문서 순서로 이어붙이고 단위 경계에
+    /// 줄바꿈을 넣는다 (문단 attributedString은 후행 \n을 갖지 않는다).
+    /// 조판이 전혀 필요 없어 대용량 문서의 전체 선택도 빠르다.
+    public func plainText(for selection: HwpTextSelection) -> String {
+        guard !selection.isCollapsed else { return "" }
+        let (start, end) = selection.range
+        var pieces: [String] = []
+        for pageIndex in start.pageIndex ... end.pageIndex {
+            for unit in units(forPage: pageIndex) {
+                let unitStart = HwpTextPosition(
+                    pageIndex: pageIndex, blockIndex: unit.blockIndex,
+                    unitIndex: unit.unitIndex, characterOffset: 0
+                )
+                let unitEnd = HwpTextPosition(
+                    pageIndex: pageIndex, blockIndex: unit.blockIndex,
+                    unitIndex: unit.unitIndex,
+                    characterOffset: unit.attributedString.length
+                )
+                guard unitEnd > start, unitStart < end else { continue }
+                let lower = max(start, unitStart).characterOffset
+                let upper = unitStart >= start && unitEnd <= end
+                    ? unit.attributedString.length
+                    : min(end, unitEnd).characterOffset
+                guard upper > lower else { continue }
+                let slice = (unit.attributedString.string as NSString)
+                    .substring(with: NSRange(location: lower, length: upper - lower))
+                pieces.append(Self.strippingControlMarkers(slice))
+            }
+        }
+        return pieces.joined(separator: "\n")
+    }
+
+    /// U+FFFC 개체 자리 표시 마커 제거
+    static func strippingControlMarkers(_ text: String) -> String {
+        text.replacingOccurrences(of: "\u{FFFC}", with: "")
+    }
+
+    // MARK: - 단어 선택
+
+    /// 더블클릭/롱프레스용 단어 범위
+    public func wordRange(at position: HwpTextPosition) -> HwpTextSelection? {
+        let units = units(forPage: position.pageIndex)
+        guard let unit = units.first(where: {
+            $0.blockIndex == position.blockIndex && $0.unitIndex == position.unitIndex
+        }) else { return nil }
+        let text = unit.attributedString.string
+        guard !text.isEmpty else { return nil }
+        let nsText = text as NSString
+        let clamped = min(max(position.characterOffset, 0), nsText.length - 1)
+        var start = clamped
+        var end = clamped
+        func isWordCharacter(_ offset: Int) -> Bool {
+            let character = Character(UnicodeScalar(nsText.character(at: offset)) ?? " ")
+            return !character.isWhitespace && character != "\u{FFFC}"
+        }
+        guard isWordCharacter(clamped) else { return nil }
+        while start > 0, isWordCharacter(start - 1) { start -= 1 }
+        while end < nsText.length, isWordCharacter(end) { end += 1 }
+        return HwpTextSelection(
+            anchor: HwpTextPosition(
+                pageIndex: position.pageIndex, blockIndex: position.blockIndex,
+                unitIndex: position.unitIndex, characterOffset: start
+            ),
+            focus: HwpTextPosition(
+                pageIndex: position.pageIndex, blockIndex: position.blockIndex,
+                unitIndex: position.unitIndex, characterOffset: end
+            )
+        )
+    }
+}

@@ -59,6 +59,32 @@
             pageOriginsY.count
         }
 
+        /// 콘텐츠 좌표의 점을 가장 가까운 페이지로 클램프해 (페이지 인덱스,
+        /// 페이지 로컬 점)으로 변환한다. `pageHit`과 달리 페이지 사이
+        /// 간격·여백에서도 항상 결과를 준다 (드래그 선택용).
+        func pagePosition(nearest contentPoint: CGPoint) -> (pageIndex: Int, point: CGPoint)? {
+            guard let document, !document.pages.isEmpty else { return nil }
+            let pageCount = document.pages.count
+            // pageOriginsY 오름차순 — y가 속하거나 가장 가까운 페이지를 찾는다
+            var low = 0
+            var high = pageCount - 1
+            var candidate = pageCount - 1
+            while low <= high {
+                let mid = (low + high) / 2
+                if frameForPage(at: mid).maxY >= contentPoint.y {
+                    candidate = mid
+                    high = mid - 1
+                } else {
+                    low = mid + 1
+                }
+            }
+            let frame = frameForPage(at: candidate)
+            return (candidate, CGPoint(
+                x: contentPoint.x - frame.minX,
+                y: contentPoint.y - frame.minY
+            ))
+        }
+
         /// `documentVisibleRect`는 magnification이 반영된 문서 좌표계라
         /// 줌 상태와 무관하게 페이지 프레임과 직접 교차 검사할 수 있다.
         func visiblePageRange() -> Range<Int> {
