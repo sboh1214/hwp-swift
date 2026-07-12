@@ -198,8 +198,12 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   근사이고, 비균등 단으로 이월된 텍스트 조각은 draw 시 그 단 폭으로 다시
   줄바꿈된다 (블록 프레임은 단 경계 안, 시각적 줄 수는 달라질 수 있음)
 - 양쪽 정렬은 draw 시 한글처럼 남는 폭을 공백에만 배분해 재조판한다
-  (HwpKitNative `HwpWordJustification` — 공백 없는 줄/마지막 줄은 CT 기본).
-  측정 (HwpParagraphLayout)은 CT justified 그대로 — 줄바꿈은 동일하다
+  (`Text/HwpWordJustification` — 공백 없는 줄/마지막 줄은 CT 기본).
+  측정 (HwpParagraphLayout)은 CT justified 그대로 — 줄바꿈은 동일하다.
+  문서 정의 탭 스톱 (`HwpIndex.textTabs`)과 slight-overflow 한 줄 규칙
+  (`HwpDrawnTextLayout.slightOverflowLineMetrics` 공유 술어)은 측정·렌더가
+  같은 입력을 쓴다 — 탭 문단 줄바꿈·한 줄 문단 높이가 정의상 일치
+  (가드: HwpParagraphLayoutTests.testTabParagraphMeasurementMatchesDrawnLayout)
 - 절대 캐시 모드에서 각주 스택 높이가 한글보다 크면 (캐시 없는 각주의 CT
   측정) 본문 마지막 블록과 겹칠 수 있다 — 본문 절단점이 한글 캐시로 고정되어
   각주 예약이 본문을 밀어내지 못한다. 강제 이월은 한글에 없는 각주 전용
