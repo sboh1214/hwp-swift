@@ -771,7 +771,7 @@ private extension HwpPaginator {
                     fromHwpUnit: runBottom - firstSegment.lineLocation
                 )),
                 attributedString: runIndex < runs.count - 1
-                    ? Self.markedAsContinuedFragment(fragment) : fragment,
+                    ? HwpTableSplitter.markedAsContinuedFragment(fragment) : fragment,
                 hyperlinkURL: hyperlinkURL(in: paragraph),
                 paragraphId: paragraph.paraHeader.paraId
             )
@@ -1424,7 +1424,7 @@ private extension HwpPaginator {
                 table: table,
                 instanceId: table.commonCtrlProperty.instanceId,
                 pageBreakMode: table.tableProperty.pageBreakMode,
-                headerRowCount: Self.repeatingHeaderRowCount(of: table)
+                headerRowCount: HwpTableSplitter.repeatingHeaderRowCount(of: table)
             )
         }
     }
@@ -1453,24 +1453,9 @@ private extension HwpPaginator {
         return true
     }
 
-    /// 표 76 bit 2 (제목 줄 자동 반복): 첫 행부터 연속으로 모든 셀이
-    /// 제목 셀 (표 79 bit 2)인 행 수.
-    static func repeatingHeaderRowCount(of table: CoreHwp.HwpTable) -> Int {
-        guard table.tableProperty.repeatsHeaderRow else { return 0 }
-        var rowIsHeader: [Int: Bool] = [:]
-        for cell in table.cellArray {
-            guard let property = cell.header.cellProperty else { continue }
-            let row = Int(property.rowAddress)
-            rowIsHeader[row] = (rowIsHeader[row] ?? true) && cell.header.isHeader
-        }
-        var count = 0
-        while rowIsHeader[count] == true {
-            count += 1
-        }
-        return count
-    }
-
     /// 표를 남은 공간에 맞춰 row 단위로 잘라 페이지에 흘린다.
+    /// 분할 플랜 (세그먼트 row·절단 기하)은 HwpTableSplitter가 순수 함수로
+    /// 산출하고, 이 루프는 페이지 확정 (advanceColumn)·블록 방출만 담당한다.
     ///
     /// - 쪽 경계 나눔이 없으면 (표 76 bits 0-1 == 0) 표를 통째로 두고, 남은
     ///   공간에 안 맞으면 새 페이지로 넘긴다.
@@ -1513,12 +1498,15 @@ private extension HwpPaginator {
             // 이어지는 세그먼트는 제목 행 반복 높이를 미리 차감한다.
             let headerAllowance = isFirstSegment ? 0 : repeatedHeight
             var remaining = effectiveContentHeight - contentHeightUsed - headerAllowance
-            if remaining < minimumRowHeight(remainingRows), contentHeightUsed > 0 {
+            if remaining < HwpTableSplitter.minimumRowHeight(remainingRows), contentHeightUsed > 0 {
                 advanceColumn()
                 remaining = effectiveContentHeight - headerAllowance
             }
 
-            let segmentRows = fillSegment(remainingRows: &remainingRows, remaining: remaining)
+            let segmentRows = HwpTableSplitter.fillSegment(
+                remainingRows: &remainingRows,
+                remaining: remaining
+            )
             guard !segmentRows.isEmpty else { break }
 
             // 셀 각주는 행이 실리는 페이지 귀속 (한글 실측 — 헌법주석 p485)
@@ -1538,275 +1526,20 @@ private extension HwpPaginator {
         }
     }
 
-    /// remaining 높이에 들어가는 만큼 row를 세그먼트로 옮긴다.
-    /// 첫 row가 remaining보다 크면 잘라서 위 조각만 넣고 아래 조각을 이월한다.
-    private func fillSegment(
-        remainingRows: inout [HwpTableRowFrame],
-        remaining: CGFloat
-    ) -> [HwpTableRowFrame] {
-        var segmentRows: [HwpTableRowFrame] = []
-        var segmentHeight: CGFloat = 0
-        while let row = remainingRows.first {
-            // 세그먼트 높이는 row 사이 cellSpacing까지 포함해
-            // (첫 row 상단 ~ 이 row 하단) 실제 블록 높이로 판정한다.
-            let segmentStartY = segmentRows.first?.rowFrame.minY ?? row.rowFrame.minY
-            let prospectiveHeight = row.rowFrame.maxY - segmentStartY
-            if segmentHeight > 0, prospectiveHeight > remaining {
-                break
-            }
-            if segmentHeight == 0, row.rowFrame.height > remaining {
-                // 빈 페이지보다 큰 row: 남은 높이에서 잘라 나머지를 이월한다.
-                let fragments = sliced(
-                    row: row,
-                    at: row.rowFrame.minY + max(1, remaining)
-                )
-                segmentRows.append(fragments.top)
-                remainingRows[0] = fragments.bottom
-                break
-            }
-            segmentRows.append(row)
-            segmentHeight = prospectiveHeight
-            remainingRows.removeFirst()
-            if segmentHeight >= remaining {
-                break
-            }
-        }
-        return segmentRows
-    }
-
-    func minimumRowHeight(_ rows: [HwpTableRowFrame]) -> CGFloat {
-        rows.first?.rowFrame.height ?? 1
-    }
-
-    /// rect를 y = cutY에서 위/아래로 나눈다 (표-로컬 좌표).
-    private func splitRect(_ rect: CGRect, at cutY: CGFloat) -> (top: CGRect, bottom: CGRect) {
-        let topHeight = max(0, min(rect.height, cutY - rect.minY))
-        let top = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: topHeight)
-        let bottom = CGRect(
-            x: rect.minX,
-            y: rect.minY + topHeight,
-            width: rect.width,
-            height: max(0, rect.height - topHeight)
-        )
-        return (top, bottom)
-    }
-
-    /// row를 표-로컬 y ≈ cutY에서 위/아래 조각으로 나눈다.
-    /// 절단선은 경계에 걸친 문단들의 라인 경계로 내려 정렬해, 이월 문단이
-    /// 조각 상단 위로 삐져나오거나 분할마다 오프셋이 누적되지 않게 한다.
-    /// 경계에 걸친 문단은 라인 단위로 분할해 이월하고, 중첩 표는 시작 y 기준으로
-    /// 한 조각에 남는다.
-    private func sliced(
-        row: HwpTableRowFrame,
-        at cutY: CGFloat
-    ) -> (top: HwpTableRowFrame, bottom: HwpTableRowFrame) {
-        let alignedCut = lineAlignedCut(for: row, proposed: cutY)
-        let rowFrames = splitRect(row.rowFrame, at: alignedCut)
-        let cellFragments = row.cells.map { splitCell($0, at: alignedCut) }
-        return (
-            HwpTableRowFrame(rowFrame: rowFrames.top, cells: cellFragments.map(\.0)),
-            HwpTableRowFrame(rowFrame: rowFrames.bottom, cells: cellFragments.map(\.1))
-        )
-    }
-
-    /// 절단선을 경계에 걸친 (분할 가능한) 문단들의 라인 경계 이하로 내린다.
-    /// 진행을 보장할 수 없으면 (첫 라인도 안 들어가는 경우) 원래 값을 유지한다.
-    private func lineAlignedCut(for row: HwpTableRowFrame, proposed cutY: CGFloat) -> CGFloat {
-        var aligned = cutY
-        var changed = true
-        var iterations = 0
-        while changed, iterations < 4 {
-            changed = false
-            iterations += 1
-            for cell in row.cells {
-                for paragraph in cell.paragraphs {
-                    let rect = paragraph.rect
-                    let lineCount = paragraph.frame.lines.count
-                    guard rect.minY < aligned - 0.5, rect.maxY > aligned + 0.5,
-                          lineCount > 1, rect.height > 0
-                    else { continue }
-                    let lineHeight = rect.height / CGFloat(lineCount)
-                    guard lineHeight > 0 else { continue }
-                    let fittingLines = (aligned - rect.minY) / lineHeight
-                    let boundary = rect.minY + fittingLines.rounded(.down) * lineHeight
-                    if boundary < aligned - 0.5 {
-                        aligned = boundary
-                        changed = true
-                    }
-                }
-            }
-        }
-        // 첫 라인조차 안 들어가면 정렬을 포기하고 원래 절단선으로 진행을 보장한다.
-        return aligned > row.rowFrame.minY + 1 ? aligned : cutY
-    }
-
-    private func splitCell(
-        _ cell: HwpTableCellFrame,
-        at cutY: CGFloat
-    ) -> (HwpTableCellFrame, HwpTableCellFrame) {
-        let frames = splitRect(cell.cellFrame, at: cutY)
-        var topParagraphs: [HwpLaidOutParagraph] = []
-        var bottomParagraphs: [HwpLaidOutParagraph] = []
-        for paragraph in cell.paragraphs {
-            if paragraph.rect.maxY <= cutY + 0.5 {
-                topParagraphs.append(paragraph)
-            } else if paragraph.rect.minY >= cutY - 0.5 {
-                bottomParagraphs.append(paragraph)
-            } else {
-                let fragments = slicedParagraph(paragraph, at: cutY)
-                if let top = fragments.top {
-                    topParagraphs.append(top)
-                }
-                if let bottom = fragments.bottom {
-                    bottomParagraphs.append(bottom)
-                }
-            }
-        }
-        let topNested = cell.nestedTables.filter { $0.rect.minY < cutY }
-        let bottomNested = cell.nestedTables.filter { $0.rect.minY >= cutY }
-        func fragment(
-            _ frame: CGRect,
-            _ paragraphs: [HwpLaidOutParagraph],
-            _ nested: [HwpNestedTableFrame]
-        ) -> HwpTableCellFrame {
-            HwpTableCellFrame(
-                cellFrame: frame,
-                row: cell.row,
-                column: cell.column,
-                rowSpan: cell.rowSpan,
-                columnSpan: cell.columnSpan,
-                paragraphs: paragraphs,
-                borders: cell.borders,
-                fillColor: cell.fillColor,
-                nestedTables: nested
-            )
-        }
-        return (
-            fragment(frames.top, topParagraphs, topNested),
-            fragment(frames.bottom, bottomParagraphs, bottomNested)
-        )
-    }
-
-    /// 조각 경계에 걸친 셀 문단을 라인 단위로 위/아래 조각으로 나눠
-    /// 텍스트가 다음 페이지로 실제로 이월되게 한다.
-    /// 라인 정보가 없으면 통째로 위 조각에 남긴다.
-    private func slicedParagraph(
-        _ paragraph: HwpLaidOutParagraph,
-        at cutY: CGFloat
-    ) -> (top: HwpLaidOutParagraph?, bottom: HwpLaidOutParagraph?) {
-        let lines = paragraph.frame.lines
-        let rect = paragraph.rect
-        guard lines.count > 1, rect.height > 0 else { return (paragraph, nil) }
-        let lineHeight = rect.height / CGFloat(lines.count)
-        guard lineHeight > 0 else { return (paragraph, nil) }
-
-        let topCount = min(
-            max(Int((cutY - rect.minY) / lineHeight), 0),
-            lines.count
-        )
-        if topCount == 0 {
-            return (nil, paragraph)
-        }
-        if topCount == lines.count {
-            return (paragraph, nil)
-        }
-
-        let topHeight = lineHeight * CGFloat(topCount)
-        let top = paragraphFragment(
-            of: paragraph,
-            lines: lines[..<topCount],
-            rect: CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: topHeight)
-        )
-        let bottom = paragraphFragment(
-            of: paragraph,
-            lines: lines[topCount...],
-            rect: CGRect(
-                x: rect.minX,
-                y: rect.minY + topHeight,
-                width: rect.width,
-                height: rect.height - topHeight
-            )
-        )
-        return (top, bottom)
-    }
-
-    /// 문단이 다음 단/쪽으로 이어지는 조각의 마지막 문자에 마커를 단다 —
-    /// 렌더러의 양쪽 정렬이 조각 끝 줄을 문단 마지막 줄로 오인하지 않도록
-    /// (Column 실물: 단 경계 직전 줄도 양쪽 정렬로 늘어난다)
-    static func markedAsContinuedFragment(_ attributed: NSAttributedString) -> NSAttributedString {
-        guard attributed.length > 0 else { return attributed }
-        let mutable = NSMutableAttributedString(attributedString: attributed)
-        mutable.addAttribute(
-            HwpAttributedStringKey.continuedParagraphFragment,
-            value: NSNumber(value: true),
-            range: NSRange(location: attributed.length - 1, length: 1)
-        )
-        return mutable
-    }
-
-    /// 지정한 라인들만 담은 하위 문단을 만든다. 라인 range는 하위 문자열 기준으로
-    /// 재기준화해 (다중 페이지 row에서) 이후 분할에서도 라인 정보를 쓸 수 있게 한다.
-    private func paragraphFragment(
-        of paragraph: HwpLaidOutParagraph,
-        lines: ArraySlice<HwpLineFrame>,
-        rect: CGRect
-    ) -> HwpLaidOutParagraph {
-        let range = lines.dropFirst().reduce(lines[lines.startIndex].attributedRange) {
-            NSUnionRange($0, $1.attributedRange)
-        }
-        let rebased = lines.map { line in
-            HwpLineFrame(
-                origin: line.origin,
-                width: line.width,
-                baseline: line.baseline,
-                attributedRange: NSRange(
-                    location: max(0, line.attributedRange.location - range.location),
-                    length: line.attributedRange.length
-                ),
-                inlineAnchors: line.inlineAnchors
-            )
-        }
-        let sub = paragraph.attributedString.attributedSubstring(from: range)
-        let continued = range.location + range.length < paragraph.attributedString.length
-        return HwpLaidOutParagraph(
-            attributedString: continued ? Self.markedAsContinuedFragment(sub) : sub,
-            frame: HwpParagraphFrame(totalHeight: rect.height, lines: rebased),
-            rect: rect,
-            paragraphId: paragraph.paragraphId
-        )
-    }
-
-    /// repeatedHeaderRows가 있으면 (표 76 bit 2 제목 줄 반복) 세그먼트 위에
-    /// 제목 행 사본을 얹은 뒤 본문 행을 그 아래로 이어 붙인다.
+    /// 세그먼트 표 프레임 산출 (제목 줄 반복 포함)은 HwpTableSplitter에 위임하고,
+    /// 여기서는 페이지 좌표 블록 방출과 흐름 상태 갱신만 한다.
     func appendTableSegmentBlock(
         rows: [HwpTableRowFrame],
         original: HwpTableFrame,
         instanceId: UInt32,
         repeatedHeaderRows: [HwpTableRowFrame] = []
     ) {
-        guard let firstRow = rows.first else { return }
-        var shiftedRows: [HwpTableRowFrame] = []
-        var headerHeight: CGFloat = 0
-        if let headerFirst = repeatedHeaderRows.first {
-            let headerShift = headerFirst.rowFrame.minY
-            let shiftedHeader = repeatedHeaderRows.map { shifted(row: $0, deltaY: -headerShift) }
-            headerHeight = shiftedHeader.reduce(CGFloat(0)) { max($0, $1.rowFrame.maxY) }
-            shiftedRows.append(contentsOf: shiftedHeader)
-        }
-        let yShift = firstRow.rowFrame.minY - headerHeight
-        shiftedRows.append(contentsOf: rows.map { shifted(row: $0, deltaY: -yShift) })
-        let segmentHeight = shiftedRows.reduce(CGFloat(0)) { max($0, $1.rowFrame.maxY) }
-        let segmentFrame = HwpTableFrame(
-            outerFrame: CGRect(
-                x: 0,
-                y: 0,
-                width: original.outerFrame.width,
-                height: segmentHeight
-            ),
-            rows: shiftedRows,
-            borderColor: original.borderColor,
-            borderWidth: original.borderWidth
-        )
+        guard let segmentFrame = HwpTableSplitter.segmentFrame(
+            rows: rows,
+            original: original,
+            repeatedHeaderRows: repeatedHeaderRows
+        ) else { return }
+        let segmentHeight = segmentFrame.outerFrame.height
 
         let columnFrame = currentColumnFrame
         let blockFrame = CGRect(
@@ -1824,47 +1557,6 @@ private extension HwpPaginator {
         bandHasNonTextContent = true
         contentHeightUsed += segmentHeight
         markBandUsage()
-    }
-
-    /// 행/셀/문단 지오메트리를 deltaY만큼 이동한 사본을 만든다.
-    private func shifted(row: HwpTableRowFrame, deltaY: CGFloat) -> HwpTableRowFrame {
-        HwpTableRowFrame(
-            rowFrame: row.rowFrame.offsetBy(dx: 0, dy: deltaY),
-            cells: row.cells.map { cell in
-                HwpTableCellFrame(
-                    cellFrame: cell.cellFrame.offsetBy(dx: 0, dy: deltaY),
-                    row: cell.row,
-                    column: cell.column,
-                    rowSpan: cell.rowSpan,
-                    columnSpan: cell.columnSpan,
-                    paragraphs: cell.paragraphs.map { paragraph in
-                        HwpLaidOutParagraph(
-                            attributedString: paragraph.attributedString,
-                            frame: paragraph.frame,
-                            rect: paragraph.rect.offsetBy(dx: 0, dy: deltaY),
-                            paragraphId: paragraph.paragraphId
-                        )
-                    },
-                    borders: cell.borders,
-                    fillColor: cell.fillColor,
-                    nestedTables: cell.nestedTables.map { nested in
-                        HwpNestedTableFrame(
-                            rect: nested.rect.offsetBy(dx: 0, dy: deltaY),
-                            table: nested.table,
-                            controlInstanceId: nested.controlInstanceId
-                        )
-                    },
-                    images: cell.images.map { image in
-                        HwpCellImage(
-                            rect: image.rect.offsetBy(dx: 0, dy: deltaY),
-                            binItemId: image.binItemId,
-                            style: image.style,
-                            controlInstanceId: image.controlInstanceId
-                        )
-                    }
-                )
-            }
-        )
     }
 
     // MARK: 개체 (글상자/도형/그림)
