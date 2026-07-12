@@ -128,6 +128,31 @@ public struct HwpParagraphLayout {
             attributedString: attributedString
         )
         paragraphMetrics.tabStops = tabStops
+
+        // slight-overflow 한 줄 (렌더와 같은 술어): 렌더가 한 줄로 그리는
+        // 문단은 측정도 한 줄 높이여야 문단 높이 (= 페이지 절단)와 실제
+        // 잉크가 일치한다 (B-1b).
+        if let overflow = HwpDrawnTextLayout.slightOverflowLineMetrics(
+            attributedString: attributedString, lineWidth: max(1, columnWidth)
+        ) {
+            let lineHeight = max(1, paragraphMetrics.clampedLineHeight(
+                overflow.ascent + overflow.descent + overflow.leading
+            ))
+            let trailingSpacing = paragraphMetrics.lineHeightAppliedAsSpacing
+                ? paragraphMetrics.lineSpacingAdjustment : 0
+            let totalHeight = paragraphMetrics.paragraphSpacingBefore
+                + lineHeight
+                + trailingSpacing
+                + paragraphMetrics.paragraphSpacing
+            let lineFrame = HwpLineFrame(
+                origin: .zero,
+                width: CGFloat(CTLineGetTypographicBounds(overflow.line, nil, nil, nil)),
+                baseline: overflow.ascent,
+                attributedRange: NSRange(location: 0, length: attributedString.length),
+                inlineAnchors: inlineAnchors(in: overflow.line)
+            )
+            return HwpParagraphFrame(totalHeight: max(1, totalHeight), lines: [lineFrame])
+        }
         let paragraphStyle = ctParagraphStyle(
             from: paragraphMetrics,
             property: paraShape.property1Info

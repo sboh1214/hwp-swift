@@ -96,25 +96,44 @@ public enum HwpDrawnTextLayout {
         }
     }
 
-    /// 폭을 허용 배율 (`HwpRenderTuning.Text.slightOverflowWidthRatio`)
-    /// 이내로 넘는 개행 없는 한 줄 문단이면 줄바꿈 없이 한 줄로 배치한다.
-    /// 가운데 정렬이면 초과분을 좌우로 반씩 넘긴다.
+    /// 개행 없는 문단이 허용 배율 (`HwpRenderTuning.Text.slightOverflowWidthRatio`)
+    /// 이내로 폭을 넘는 한 줄인지 — 렌더 (slightOverflowSingleLine)와 측정
+    /// (`HwpParagraphLayout.layout`)이 이 술어를 공유해 "측정은 2줄 ↔ 렌더는
+    /// 1줄" 어긋남 (문단 높이·페이지 절단 vs 실제 잉크)을 구조적으로 막는다.
+    public static func slightOverflowLineMetrics(
+        attributedString: NSAttributedString,
+        lineWidth: CGFloat
+    ) -> (line: CTLine, ascent: CGFloat, descent: CGFloat, leading: CGFloat)? {
+        guard attributedString.length > 0,
+              !attributedString.string.contains("\n")
+        else { return nil }
+        let line = CTLineCreateWithAttributedString(attributedString)
+        var ascent: CGFloat = 0
+        var descent: CGFloat = 0
+        var leading: CGFloat = 0
+        let naturalWidth = CGFloat(
+            CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
+        )
+        guard naturalWidth > lineWidth,
+              naturalWidth <= lineWidth * HwpRenderTuning.Text.slightOverflowWidthRatio
+        else { return nil }
+        return (line, ascent, descent, leading)
+    }
+
+    /// 폭을 허용 배율 이내로 넘는 개행 없는 한 줄 문단이면 줄바꿈 없이
+    /// 한 줄로 배치한다. 가운데 정렬이면 초과분을 좌우로 반씩 넘긴다.
     private static func slightOverflowSingleLine(
         attributedString: NSAttributedString,
         origin: CGPoint,
         lineWidth: CGFloat
     ) -> HwpDrawnLine? {
-        guard attributedString.length > 0,
-              !attributedString.string.contains("\n")
-        else { return nil }
-        let line = CTLineCreateWithAttributedString(attributedString)
+        guard let overflow = slightOverflowLineMetrics(
+            attributedString: attributedString, lineWidth: lineWidth
+        ) else { return nil }
+        let line = overflow.line
         let naturalWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
-        guard naturalWidth > lineWidth,
-              naturalWidth <= lineWidth * HwpRenderTuning.Text.slightOverflowWidthRatio
-        else { return nil }
-        var ascent: CGFloat = 0
-        var descent: CGFloat = 0
-        _ = CTLineGetTypographicBounds(line, &ascent, &descent, nil)
+        let ascent = overflow.ascent
+        let descent = overflow.descent
         var offsetX: CGFloat = 0
         if let style = attributedString.attribute(
             kCTParagraphStyleAttributeName as NSAttributedString.Key,
