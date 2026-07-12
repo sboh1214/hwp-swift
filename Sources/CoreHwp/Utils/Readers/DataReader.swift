@@ -48,13 +48,19 @@ struct DataReader {
         try readBytes(data.count - offset)
     }
 
+    /// 스칼라 읽기 — 핫패스 (문자·모양 엔트리마다 호출)라 `Data` 슬라이스를
+    /// 만들지 않고 버퍼에서 직접 load한다. 경계 검증은 readBytes와 동일
+    /// (읽기 전 truncatedData).
     mutating func read<T>(_ type: T.Type) throws -> T {
         let length = try byteLength(for: type)
-        return try readBytes(length).withUnsafeBytes { rawBuffer in
-            guard let baseAddress = rawBuffer.baseAddress else {
-                throw HwpError.truncatedData(expected: length, actual: 0)
-            }
-            return baseAddress.loadUnaligned(as: T.self)
+        guard length <= remainBytes else {
+            throw HwpError.truncatedData(expected: length, actual: remainBytes)
+        }
+        defer {
+            offset += length
+        }
+        return data.withUnsafeBytes { buffer in
+            buffer.loadUnaligned(fromByteOffset: offset, as: T.self)
         }
     }
 
@@ -65,12 +71,18 @@ struct DataReader {
         guard requiredByteCount <= remainBytes else {
             throw HwpError.truncatedData(expected: requiredByteCount, actual: remainBytes)
         }
-
-        var array = [T]()
-        for _ in 0 ..< count {
-            array.append(try read(T.self))
+        defer {
+            offset += requiredByteCount
         }
-        return array
+        let start = offset
+        return data.withUnsafeBytes { buffer in
+            (0 ..< count).map { index in
+                buffer.loadUnaligned(
+                    fromByteOffset: start + index * typeByteLength,
+                    as: T.self
+                )
+            }
+        }
     }
 
     private func validatedLength(_ length: some BinaryInteger) throws -> Int {
