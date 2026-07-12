@@ -2736,16 +2736,28 @@ private extension HwpPaginator {
         // 같은 번호를 공유하고 첫 문단의 ext18 마커만 번호로 치환된다.
         let number = footnoteCounter
         footnoteCounter += 1
+        // 예약은 실제 배치 (place의 스택 산식)와 동형: 페이지 첫 노트는
+        // 구분선 오버헤드, 이후 노트는 노트 사이 간격 1회 (같은 번호의
+        // 이어지는 문단은 간격 0 — stackBlocks와 동일).
+        let metrics = footnoteReservationMetrics()
+        footnoteReservedHeight += isFirstOnPage
+            ? metrics.separatorOverhead
+            : metrics.spacingBetweenNotes
         for paragraph in paragraphs {
             pendingFootnotes.append(HwpFootnoteLayout.Input(
                 paragraph: paragraph,
                 number: number
             ))
-            footnoteReservedHeight += measuredFootnoteHeight(of: paragraph, number: number) + 4
+            footnoteReservedHeight += measuredFootnoteHeight(of: paragraph, number: number)
         }
-        if isFirstOnPage {
-            footnoteReservedHeight += 16 // 구분선 + 위/아래 여백
-        }
+    }
+
+    /// 각주 예약 기하 — 배치 (HwpFootnoteLayout.place)와 같은 divider 소스
+    private func footnoteReservationMetrics() -> HwpFootnoteLayout.ReservationMetrics {
+        footnoteLayout.reservationMetrics(
+            footnoteShape: currentSectionDef?.footNoteShape,
+            contentWidth: currentPageGeometry.contentFrame.width
+        )
     }
 
     /// 미주는 페이지 하단이 아니라 문서/구역 끝에 모아 배치한다 (표 134 bits 8-9).
@@ -2774,10 +2786,12 @@ private extension HwpPaginator {
         currentColumnDef = nil
         openColumnBand(top: bandUsedBottom)
 
-        // 구분선 + 첫 미주가 남은 공간에 안 들어가면 새 페이지에서 시작한다.
+        // 첫 미주가 남은 공간에 안 들어가면 새 페이지에서 시작한다
+        // (미주는 구분선을 그리지 않으므로 — 아래 drawSeparator = false —
+        // 구분선 오버헤드 없이 실제 배치 높이만 본다).
         if let first = pendingEndnotes.first,
            currentColumnFrame.minY > currentPageGeometry.contentFrame.minY,
-           measuredFootnoteHeight(of: first.paragraph, number: first.number) + 16
+           measuredFootnoteHeight(of: first.paragraph, number: first.number)
            > effectiveContentHeight
         {
             cacheCurrentPage()
@@ -2825,12 +2839,21 @@ private extension HwpPaginator {
         }
     }
 
-    /// 이월된 각주 입력들이 새 페이지에서 예약할 높이 (구분선 여백 포함)
+    /// 이월된 각주 입력들이 새 페이지에서 예약할 높이 — 배치 (place)와
+    /// 동형: Σ 높이 + 노트 경계마다 간격 + 구분선 오버헤드.
     func reservedFootnoteHeight(for inputs: [HwpFootnoteLayout.Input]) -> CGFloat {
         guard !inputs.isEmpty else { return 0 }
-        return inputs.reduce(CGFloat(0)) {
-            $0 + measuredFootnoteHeight(of: $1.paragraph, number: $1.number) + 4
-        } + 16 // 구분선 + 위/아래 여백
+        let metrics = footnoteReservationMetrics()
+        var total = metrics.separatorOverhead
+        var previousNumber: Int?
+        for input in inputs {
+            if let previousNumber, previousNumber != input.number {
+                total += metrics.spacingBetweenNotes
+            }
+            total += measuredFootnoteHeight(of: input.paragraph, number: input.number)
+            previousNumber = input.number
+        }
+        return total
     }
 
     /// 이 문단이 페이지에 추가될 때 각주 영역이 요구할 높이 (커밋 전 예측용).
@@ -2839,9 +2862,15 @@ private extension HwpPaginator {
     func anticipatedFootnoteHeight(for paragraph: CoreHwp.HwpParagraph) -> CGFloat {
         // collectFootnotes가 부여할 번호와 같은 순서의 미리보기 카운터
         var preview = footnoteCounter
-        let total = anticipatedFootnoteBodyHeight(for: paragraph, preview: &preview)
-        guard total > 0 else { return 0 }
-        return pendingFootnotes.isEmpty ? total + 16 : total // 구분선 + 위/아래 여백
+        let body = anticipatedFootnoteBodyHeight(for: paragraph, preview: &preview)
+        guard body > 0 else { return 0 }
+        // 배치와 동형: 새 노트 수만큼의 경계 간격 (페이지 첫 노트는 경계가
+        // 하나 적다) + 페이지 첫 각주면 구분선 오버헤드.
+        let metrics = footnoteReservationMetrics()
+        let newNotes = preview - footnoteCounter
+        let boundaries = max(0, pendingFootnotes.isEmpty ? newNotes - 1 : newNotes)
+        return body + metrics.spacingBetweenNotes * CGFloat(boundaries)
+            + (pendingFootnotes.isEmpty ? metrics.separatorOverhead : 0)
     }
 
     private func anticipatedFootnoteBodyHeight(
@@ -2857,10 +2886,11 @@ private extension HwpPaginator {
                 if !paragraphs.isEmpty {
                     let number = preview
                     preview += 1
-                    // 같은 컨트롤의 문단은 간격 없이 이어진다 — 간격은 컨트롤당 1회
+                    // 같은 컨트롤의 문단은 간격 없이 이어진다 — 노트 경계
+                    // 간격은 anticipatedFootnoteHeight가 노트 수로 계산한다
                     total += paragraphs.reduce(0) {
                         $0 + measuredFootnoteHeight(of: $1, number: number)
-                    } + 4
+                    }
                 }
             }
             guard depth < 3 else { continue }

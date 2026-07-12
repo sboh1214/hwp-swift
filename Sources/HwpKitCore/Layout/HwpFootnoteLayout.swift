@@ -89,6 +89,31 @@ public struct HwpFootnoteLayout {
     /// 절대 캐시 모드에선 false — 한글이 이미 확정한 페이지의 각주는 참조
     /// 페이지에 전부 둔다 (이월하면 다음 페이지 예약이 한글에 없는 페이지
     /// 절단을 만든다 — 헌법주석 p485 실측).
+    /// 예약 기하 — paginator가 본문 배치 전에 각주 영역 높이를 예측할 때
+    /// 실제 배치 (place의 스택 산식)와 동형이 되도록 노출한다:
+    /// 예약 = Σ 각주 높이 + spacingBetweenNotes × (노트 경계 수)
+    ///       + separatorOverhead (페이지 첫 각주만).
+    public struct ReservationMetrics {
+        /// 구분선 위 여백 + 아래 여백 + 선 두께 (place의 stackHeight와 동일)
+        public let separatorOverhead: CGFloat
+        /// 서로 다른 번호의 노트 사이 간격 (같은 번호의 이어지는 문단은 0)
+        public let spacingBetweenNotes: CGFloat
+    }
+
+    public func reservationMetrics(
+        footnoteShape: CoreHwp.HwpFootnoteShape?,
+        contentWidth: CGFloat
+    ) -> ReservationMetrics {
+        let divider = dividerMetrics(
+            from: footnoteShape?.dividerInfo,
+            contentWidth: contentWidth
+        )
+        return ReservationMetrics(
+            separatorOverhead: divider.marginTop + divider.marginBottom + divider.thickness,
+            spacingBetweenNotes: divider.betweenNotes
+        )
+    }
+
     public func place(
         footnotes: [Input],
         onPage geometry: HwpPageGeometry,
