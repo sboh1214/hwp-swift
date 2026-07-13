@@ -115,6 +115,40 @@ pre-commit install && pre-commit run --all     # hook 설치 + 전체 실행
 게이트는 flaky). 타이트 임계는 로컬 `HWP_PERF=1`로 확인 — 성능에 닿는
 PR은 실측 수치를 커밋 메시지에 기록한다.
 
+## 리뷰 대응 체크리스트 (렌더 회귀 방지)
+
+PR 리뷰를 반영하며 렌더링 코드를 수정할 때, 한글 파일 렌더 결과가 조용히
+달라지는 것을 막는 절차. 파서·문서 등 렌더 무관 변경은 3·4단계만.
+
+0. **기준선 동결** — 수정 전
+   `RECORD_RENDER_HASHES=1 swift test --filter FixtureRenderHash`로 현재
+   렌더를 `Snapshots/`에 레코딩. 기준선은 머신 종속(한컴 폰트·OS
+   래스터라이저)이라 gitignore — 작업할 이 머신에서 매번 새로 뜬다.
+1. **코멘트 분류** — 렌더 영향 여부 먼저 판정. 레이아웃·측정·폰트·색·장식
+   관련이면 렌더가 의도적으로 바뀔 수 있고(기준선 갱신 예정), 순수
+   correctness·리팩터는 렌더 불변이어야 한다(해시가 증명).
+2. **수정** — 관심사별 커밋 분리 (로직 / 기계적 포맷).
+3. **검증 (계층별)**
+   - `swift test` — 환경 의존 4종은 자동 skip, 나머지 green.
+   - `HWP_SNAPSHOT_TESTS=1 swift test --filter "FixtureRenderHash|FixtureBlockLayout|FixturePreviewFidelity"`
+     — 렌더 회귀. 실패 시 어느 픽스처의 몇 페이지가 변했는지 출력된다.
+   - **변경된 페이지만 육안 확인**:
+     `HWP_ALLPAGES=<id> HWP_ALLPAGES_DIR=<dir> swift test --filter testDumpAllPages`로
+     덤프해 한글.app 실물과 대조. 의도된 개선이면 해당 픽스처만
+     `RECORD_RENDER_HASHES=<id> …`로 재레코딩(이전 기준선은 `.json.bak`
+     백업), 회귀면 코드 수정. 안 바뀐 페이지는 해시 0건 통과로 증명됨.
+   - **수정한 파일에만** `swiftformat` (로컬·CI 버전 일치 확인 — 다르면
+     로컬 포맷이 CI에서 되레 실패) + `swiftlint` error 0.
+   - Linux는 **amd64 도커만 신뢰** (arm64는 main도 가짜 `fatalError`):
+     `docker run --rm --platform linux/amd64 -v $PWD:/src:ro swift:6.1-noble bash -c "cp -r /src /work && cd /work && rm -rf .build Snapshots && swift test"`.
+     렌더·뷰어 코드를 만졌으면 iOS 빌드도 확인.
+4. **커밋·푸시** — 논리/포맷 커밋 분리. `Snapshots/`·`Docs/`·스크래치
+   파일은 gitignore로 제외됨. push 후 CI 잡별(macOS/iOS/Linux·lint·
+   coverage) 확인 — 브랜치 첫 PR 전엔 CI가 돈 적 없으니 특히 주시.
+
+원칙: **탐지는 해시, 진단은 블록 스냅샷 diff** (상호보완). 육안 재확인은
+바뀐 페이지만. 환경 의존 테스트는 기본·CI에서 skip, 로컬 opt-in.
+
 ## 의존성 (모두 exact pinning)
 
 - `OLEKit 0.3.1` — OLE compound document 파싱
