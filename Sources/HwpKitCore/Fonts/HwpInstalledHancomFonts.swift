@@ -34,6 +34,7 @@ public enum HwpInstalledHancomFonts {
         var result: [String: CTFontDescriptor] = [:]
         var plainKeys = Set<String>()
         let fileManager = FileManager.default
+        var fontURLs: [URL] = []
         for root in searchRoots {
             guard let enumerator = fileManager.enumerator(
                 at: URL(fileURLWithPath: root),
@@ -42,12 +43,17 @@ public enum HwpInstalledHancomFonts {
             for case let url as URL in enumerator {
                 let ext = url.pathExtension.lowercased()
                 guard ext == "ttf" || ext == "otf" || ext == "ttc" else { continue }
-                guard let descriptors = CTFontManagerCreateFontDescriptorsFromURL(
-                    url as CFURL
-                ) as? [CTFontDescriptor] else { continue }
-                for descriptor in descriptors {
-                    register(descriptor, into: &result, plainKeys: &plainKeys)
-                }
+                fontURLs.append(url)
+            }
+        }
+        // 파일 열거 순서는 API 계약상 무보장 — 동명 충돌 시 승자가 열거 순서에
+        // 좌우되지 않도록 경로로 정렬해 인덱스를 디렉터리 내용만의 함수로 만든다
+        for url in fontURLs.sorted(by: { $0.path < $1.path }) {
+            guard let descriptors = CTFontManagerCreateFontDescriptorsFromURL(
+                url as CFURL
+            ) as? [CTFontDescriptor] else { continue }
+            for descriptor in descriptors {
+                register(descriptor, into: &result, plainKeys: &plainKeys)
             }
         }
         return result

@@ -18,8 +18,9 @@ public struct HwpDrawnLine {
 
     /// 줄의 선택 하이라이트 영역 (top-down 페이지 좌표)
     public var selectionRect: CGRect {
-        let width = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
-            - CGFloat(CTLineGetTrailingWhitespaceWidth(line))
+        let width =
+            CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+                - CGFloat(CTLineGetTrailingWhitespaceWidth(line))
         return CGRect(
             x: baselineOrigin.x,
             y: baselineOrigin.y - ascent,
@@ -96,6 +97,14 @@ public enum HwpDrawnTextLayout {
         }
     }
 
+    /// slight-overflow 한 줄의 CTLine과 타이포그래피 메트릭.
+    public struct SlightOverflowLine {
+        public let line: CTLine
+        public let ascent: CGFloat
+        public let descent: CGFloat
+        public let leading: CGFloat
+    }
+
     /// 개행 없는 문단이 허용 배율 (`HwpRenderTuning.Text.slightOverflowWidthRatio`)
     /// 이내로 폭을 넘는 한 줄인지 — 렌더 (slightOverflowSingleLine)와 측정
     /// (`HwpParagraphLayout.layout`)이 이 술어를 공유해 "측정은 2줄 ↔ 렌더는
@@ -103,7 +112,7 @@ public enum HwpDrawnTextLayout {
     public static func slightOverflowLineMetrics(
         attributedString: NSAttributedString,
         lineWidth: CGFloat
-    ) -> (line: CTLine, ascent: CGFloat, descent: CGFloat, leading: CGFloat)? {
+    ) -> SlightOverflowLine? {
         guard attributedString.length > 0,
               !attributedString.string.contains("\n")
         else { return nil }
@@ -117,7 +126,7 @@ public enum HwpDrawnTextLayout {
         guard naturalWidth > lineWidth,
               naturalWidth <= lineWidth * HwpRenderTuning.Text.slightOverflowWidthRatio
         else { return nil }
-        return (line, ascent, descent, leading)
+        return SlightOverflowLine(line: line, ascent: ascent, descent: descent, leading: leading)
     }
 
     /// 폭을 허용 배율 이내로 넘는 개행 없는 한 줄 문단이면 줄바꿈 없이
@@ -127,9 +136,11 @@ public enum HwpDrawnTextLayout {
         origin: CGPoint,
         lineWidth: CGFloat
     ) -> HwpDrawnLine? {
-        guard let overflow = slightOverflowLineMetrics(
-            attributedString: attributedString, lineWidth: lineWidth
-        ) else { return nil }
+        guard
+            let overflow = slightOverflowLineMetrics(
+                attributedString: attributedString, lineWidth: lineWidth
+            )
+        else { return nil }
         let line = overflow.line
         let naturalWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
         let ascent = overflow.ascent

@@ -7,7 +7,10 @@ import XCTest
 /// 회귀 가드. fidelity(PrvImage MAE)가 1페이지만 보는 사각을 메운다.
 ///
 /// 좌표는 0.1pt 단위 정수로 반올림해 부동소수 노이즈를 흡수하고, 줄 단위
-/// 이동(수 pt)은 확실히 검출한다. 스냅샷 갱신:
+/// 이동(수 pt)은 확실히 검출한다. 좌표가 설치 폰트 메트릭에 의존하는 환경
+/// 의존 테스트라 기본 `swift test`·CI에서는 skip된다. 실행:
+/// `HWP_SNAPSHOT_TESTS=1 swift test --filter FixtureBlockLayout`
+/// 스냅샷 갱신 (RECORD_* 변수는 자동 opt-in):
 /// `RECORD_BLOCK_SNAPSHOTS=1 swift test --filter FixtureBlockLayout`
 /// (레코딩 후 의도적으로 실패해 우발적 갱신을 막는다 — diff를 리뷰할 것).
 final class FixtureBlockLayoutSnapshotTests: XCTestCase {
@@ -21,7 +24,11 @@ final class FixtureBlockLayoutSnapshotTests: XCTestCase {
     ]
 
     func testBlockLayoutMatchesSnapshots() async throws {
-        let record = ProcessInfo.processInfo.environment["RECORD_BLOCK_SNAPSHOTS"] != nil
+        try EnvironmentSensitiveTests.skipUnlessOptedIn(
+            recordVariables: ["RECORD_BLOCK_SNAPSHOTS"]
+        )
+
+        let record = EnvironmentSensitiveTests.isEnabled("RECORD_BLOCK_SNAPSHOTS")
         var failures: [String] = []
         var recorded: [String] = []
 

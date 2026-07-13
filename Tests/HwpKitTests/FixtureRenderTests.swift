@@ -60,7 +60,11 @@ final class FixtureRenderTests: XCTestCase {
 
     /// manifest expectations.pageCount (렌더 실측 잠금 — 출처는 manifest의
     /// pageCountSource)와 실제 렌더 페이지 수가 정확히 일치해야 한다.
+    /// 페이지 수는 줄바꿈 누적 = 설치 폰트 메트릭의 함수이고 기대값도 이
+    /// 머신 렌더로 잠근 것이라 환경 의존 — 기본 swift test·CI에서는 skip.
     func testPageCountsMatchManifest() async throws {
+        try EnvironmentSensitiveTests.skipUnlessOptedIn()
+
         let fixtures = try FixtureRoot.loadAllFixtures(from: #file)
         let withPageCount = fixtures.filter { $0.expectedPageCount != nil }
         // 파싱 가능한 29개 픽스처 전부에 pageCount 명세가 있다

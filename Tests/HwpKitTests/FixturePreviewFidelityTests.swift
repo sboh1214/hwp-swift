@@ -9,6 +9,9 @@ import XCTest
 ///
 /// 임계는 픽스처별 실측 MAE + 소폭 여유로 잡는다 — 폰트 대체 오차는
 /// 흡수하고 레이아웃 회귀(문단 위치·간격·단 배분)는 잡을 만큼 타이트하게.
+/// 임계가 이 머신 실측 기준이라 fidelity 측정은 환경 의존 테스트다 —
+/// 기본 `swift test`·CI에서는 skip되고
+/// `HWP_SNAPSHOT_TESTS=1 swift test --filter FixturePreviewFidelity`로 실행한다.
 final class FixturePreviewFidelityTests: XCTestCase {
     /// 파싱 자체가 거부되는 픽스처 — 암호 2종·배포용·DRM (HwpError.unsupportedFeature)
     private static let unparseableFixtureIds: Set<String> = [
@@ -99,6 +102,8 @@ final class FixturePreviewFidelityTests: XCTestCase {
     }
 
     func testRenderablePreviewFidelity() async throws {
+        try EnvironmentSensitiveTests.skipUnlessOptedIn()
+
         let fixtures = try FixtureRoot.loadAllFixtures(from: #file)
         let excluded = Self.unparseableFixtureIds.union(Self.missingPreviewFixtureIds)
         // 제외 목록이 실제 픽스처와 일치하는지 (오타 가드)

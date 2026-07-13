@@ -19,6 +19,7 @@ enum FixturePreview {
         case imageCreationFailed
         case previewDecodeFailed
         case pageMissing
+        case imageResolutionTimedOut(binItemId: UInt32)
     }
 
     // MARK: - 문서 → 1페이지 렌더
@@ -118,6 +119,13 @@ enum FixturePreview {
                     break
                 }
                 try await Task.sleep(nanoseconds: 10_000_000)
+            }
+            // 타임아웃도 결정론의 일부 — 미확정인 채 그리면 회색 로딩
+            // 사각형이 렌더/해시에 섞여 조용히 틀린 결과가 통과·기록된다
+            if provider.cachedImage(for: reference.id, style: reference.style) == nil,
+               !provider.didFail(for: reference.id, style: reference.style)
+            {
+                throw RenderError.imageResolutionTimedOut(binItemId: reference.id)
             }
         }
     }

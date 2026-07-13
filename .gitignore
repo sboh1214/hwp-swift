@@ -78,9 +78,6 @@ Package.resolved
 # macOS
 .DS_Store
 
-# DocC build artifacts
-/docs/
-
 # LLVM coverage artifacts
 /default.profraw
 
@@ -94,3 +91,9 @@ __pycache__/
 # AI generated files
 /.omo/
 /.playwright-mcp/
+
+# 로컬 전용 — 한글 파일 관련 문서 (git 업로드 금지)
+/Docs/
+
+# 로컬 전용 — 렌더 해시 기준선 (레코딩 머신 전용, FixtureRenderHashSnapshotTests)
+/Snapshots/

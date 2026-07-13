@@ -2,41 +2,53 @@
 
 import PackageDescription
 
-let package = Package(
-    name: "Hwp-Swift",
-    platforms: [
-        .macOS(.v14),
-        .iOS(.v17),
-        .tvOS(.v17),
-        .watchOS(.v10),
-    ],
-    products: [
-        .library(name: "CoreHwp", targets: ["CoreHwp"]),
+// Linux는 CoreHwp(파서)와 CoreHwpTests만 지원한다
+// (HwpKitCore/HwpKitNative/HwpKit)은 CoreText·CoreGraphics 등 Apple 전용
+// 프레임워크에 의존하므로 Darwin에서만 빌드한다.
+#if canImport(Darwin)
+    let buildsViewerTargets = true
+#else
+    let buildsViewerTargets = false
+#endif
+
+var products: [Product] = [
+    .library(name: "CoreHwp", targets: ["CoreHwp"]),
+]
+
+var targets: [Target] = [
+    .target(
+        name: "CoreHwp",
+        dependencies: [
+            "OLEKit",
+            "SWCompression",
+        ],
+        exclude: [
+            "AGENTS.md",
+            "Models/Section/AGENTS.md",
+            "Utils/AGENTS.md",
+        ]
+    ),
+    .testTarget(
+        name: "CoreHwpTests",
+        dependencies: [
+            "CoreHwp",
+            "OLEKit",
+            "Nimble",
+        ],
+        exclude: [
+            "AGENTS.md",
+            "Fixtures",
+        ]
+    ),
+]
+
+if buildsViewerTargets {
+    products += [
         .library(name: "HwpKitCore", targets: ["HwpKitCore"]),
         .library(name: "HwpKitNative", targets: ["HwpKitNative"]),
         .library(name: "HwpKit", targets: ["HwpKit"]),
-    ],
-    dependencies: [
-        .package(url: "https://github.com/CoreOffice/OLEKit.git", exact: "0.3.1"),
-        .package(url: "https://github.com/tsolomko/SWCompression.git", exact: "4.9.1"),
-
-        .package(url: "https://github.com/Quick/Nimble", exact: "13.8.0"),
-
-        .package(url: "https://github.com/swiftlang/swift-docc-plugin", exact: "1.5.0"),
-    ],
-    targets: [
-        .target(
-            name: "CoreHwp",
-            dependencies: [
-                "OLEKit",
-                "SWCompression",
-            ],
-            exclude: [
-                "AGENTS.md",
-                "Models/Section/AGENTS.md",
-                "Utils/AGENTS.md",
-            ]
-        ),
+    ]
+    targets += [
         .target(
             name: "HwpKitCore",
             dependencies: [
@@ -63,18 +75,6 @@ let package = Package(
             ],
             exclude: [
                 "AGENTS.md",
-            ]
-        ),
-        .testTarget(
-            name: "CoreHwpTests",
-            dependencies: [
-                "CoreHwp",
-                "OLEKit",
-                "Nimble",
-            ],
-            exclude: [
-                "AGENTS.md",
-                "Fixtures",
             ]
         ),
         .testTarget(
@@ -107,4 +107,24 @@ let package = Package(
             ]
         ),
     ]
+}
+
+let package = Package(
+    name: "Hwp-Swift",
+    platforms: [
+        .macOS(.v14),
+        .iOS(.v17),
+        .tvOS(.v17),
+        .watchOS(.v10),
+    ],
+    products: products,
+    dependencies: [
+        .package(url: "https://github.com/CoreOffice/OLEKit.git", exact: "0.3.1"),
+        .package(url: "https://github.com/tsolomko/SWCompression.git", exact: "4.9.1"),
+
+        .package(url: "https://github.com/Quick/Nimble", exact: "13.8.0"),
+
+        .package(url: "https://github.com/swiftlang/swift-docc-plugin", exact: "1.5.0"),
+    ],
+    targets: targets
 )

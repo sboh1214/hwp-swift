@@ -4,12 +4,14 @@ import XCTest
 
 final class CommonCtrlPropertyInfoBitPatternTests: XCTestCase {
     func testLoadDecodesRelativeToAlignmentAndTextWrapBits() throws {
-        let rawValue: UInt32 = 0b1 // treat as char
-            | (2 << 3) // vertical relative to: paragraph
-            | (1 << 5) // vertical alignment: center
-            | (3 << 8) // horizontal relative to: paragraph
-            | (2 << 10) // horizontal alignment: bottom or right
-            | (5 << 21) // text wrap: in front of text
+        // 리터럴 OR 체인 한 식은 느린 머신(CI)에서 타입체크 시간 초과 —
+        // 문장 단위로 나눠 각각 독립 타입체크되게 한다
+        var rawValue: UInt32 = 0b1 // treat as char
+        rawValue |= 2 << 3 // vertical relative to: paragraph
+        rawValue |= 1 << 5 // vertical alignment: center
+        rawValue |= 3 << 8 // horizontal relative to: paragraph
+        rawValue |= 2 << 10 // horizontal alignment: bottom or right
+        rawValue |= 5 << 21 // text wrap: in front of text
 
         let info = try HwpCommonCtrlPropertyInfo.load(rawValue)
 
