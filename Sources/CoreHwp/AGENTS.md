@@ -1,8 +1,16 @@
 # CoreHwp 모듈
 
-라이브러리 target. Public 인터페이스 = `HwpFile`, `HwpError`, 그리고
-`Models/` 하위의 모든 `public` 모델 (전부 `HwpPrimitive = Hashable & Codable`
-채택).
+라이브러리 target. Public 인터페이스 = `HwpFile`, `HwpError`, `HwpLoadOptions`,
+그리고 `Models/` 하위의 모든 `public` 모델 (전부
+`HwpPrimitive = Codable & Hashable & Sendable` 채택).
+
+**로드 옵션**: `HwpFile(fromPath:options:)` 등에 `HwpLoadOptions`를 넘길 수 있다.
+`preserveRawPayload`(기본 true)를 끄면 (`.viewer` 프리셋) 모델의
+rawPayload/rawTrailing 보존을 생략해 압축 해제 스트림 버퍼가 파싱 후 즉시
+해제된다. 옵션은 `DataReader`가 보유하고 `consumedData` 중앙 관문 + `HwpRecord`를
+통해 파싱 트리 전체에 전파된다 — 새 raw-backed 모델은 `HwpLoadOptions`의
+`preservedPayload`(off면 비움)/`decoupledPayload`(load 후 재디코딩되는 필드는
+off에서도 분리 복사)를 거쳐야 뷰어 모드 메모리 이득이 유지된다.
 
 ## 구조
 
