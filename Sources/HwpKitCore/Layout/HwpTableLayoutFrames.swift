@@ -159,7 +159,8 @@ extension HwpTableLayout {
                     attributedString: $0.attributedString,
                     frame: $0.frame,
                     rect: $0.rect.offsetBy(dx: 0, dy: offset),
-                    paragraphId: $0.paragraphId
+                    paragraphId: $0.paragraphId,
+                    hyperlinkURL: $0.hyperlinkURL
                 )
             },
             nestedTables: contents.nestedTables.map {
@@ -213,7 +214,8 @@ extension HwpTableLayout {
                 attributedString: textBuilder.build(paragraph: content.paragraph),
                 frame: content.frame,
                 rect: rect,
-                paragraphId: content.paragraph.paraHeader.paraId
+                paragraphId: content.paragraph.paraHeader.paraId,
+                hyperlinkURL: content.paragraph.hyperlinkURL
             ))
             images.append(contentsOf: cellImages(in: content.paragraph, paragraphRect: rect))
             cursorY += content.frame.totalHeight

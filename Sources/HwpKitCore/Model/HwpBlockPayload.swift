@@ -13,17 +13,22 @@ public struct HwpLaidOutParagraph: @unchecked Sendable {
     public let rect: CGRect
     /// 원본 CoreHwp 문단의 paraId (편집용 모델 참조)
     public let paragraphId: UInt32
+    /// 이 문단을 감싸는 하이퍼링크(%hlk) URL — 표 셀/글상자 안 링크를 히트
+    /// 테스트가 찾을 수 있게 컨테이너 문단에 실어 나른다 (없으면 nil).
+    public let hyperlinkURL: String?
 
     public init(
         attributedString: NSAttributedString,
         frame: HwpParagraphFrame,
         rect: CGRect,
-        paragraphId: UInt32
+        paragraphId: UInt32,
+        hyperlinkURL: String? = nil
     ) {
         self.attributedString = NSAttributedString(attributedString: attributedString)
         self.frame = frame
         self.rect = rect
         self.paragraphId = paragraphId
+        self.hyperlinkURL = hyperlinkURL
     }
 }
 
@@ -32,6 +37,7 @@ extension HwpLaidOutParagraph: Hashable {
         lhs.paragraphId == rhs.paragraphId
             && lhs.rect == rhs.rect
             && lhs.frame == rhs.frame
+            && lhs.hyperlinkURL == rhs.hyperlinkURL
             && lhs.attributedString.string == rhs.attributedString.string
     }
 
@@ -41,7 +47,20 @@ extension HwpLaidOutParagraph: Hashable {
         hasher.combine(rect.origin.y)
         hasher.combine(rect.size.width)
         hasher.combine(rect.size.height)
+        hasher.combine(hyperlinkURL)
         hasher.combine(attributedString.string)
+    }
+}
+
+extension CoreHwp.HwpParagraph {
+    /// 이 문단에 붙은 하이퍼링크 컨트롤(%hlk)의 URL (비어 있으면 nil).
+    var hyperlinkURL: String? {
+        for ctrl in ctrlHeaderArray ?? [] {
+            if case let .hyperLink(link) = ctrl, !link.url.isEmpty {
+                return link.url
+            }
+        }
+        return nil
     }
 }
 

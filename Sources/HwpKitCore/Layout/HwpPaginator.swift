@@ -79,6 +79,10 @@ public actor HwpPaginator {
     /// 다음에 확정될 페이지의 논리 쪽 번호 (표 141 짝/홀 판정용).
     /// 구역의 pageStartNumber(0 = 앞 구역에 이어서)로 재설정된다.
     private var nextLogicalPageNumber = 1
+    /// 새 번호 지정(nwno, 표 144)의 쪽 번호 리셋은 문단이 실제 배치될 때까지
+    /// 보류한다 — 배치 전에 적용하면 넘침으로 확정되는 앞 페이지까지 리셋 번호를
+    /// 써 엉뚱한 쪽 번호·패리티 머리말을 갖는다.
+    private var pendingPageNumber: Int?
     /// 머리말/꼬리말/쪽 번호 (페이지 크롬) 빌더 — 활성 컨트롤 상태를 소유한다.
     private var pageChrome: HwpPageChromeBuilder
     /// 다단 밴드 상태·로직 — 단 정의/프레임/index/사용량/균형 재배치 입력을
@@ -417,6 +421,12 @@ private extension HwpPaginator {
                 return
             }
             measureMemo = nil
+            // 배치가 확정된 지금 쪽 번호 리셋을 적용한다 — 넘친 앞 페이지는 리셋
+            // 전 번호를 유지하고, 이 문단이 실린 페이지부터 새 번호가 시작된다.
+            if let reset = pendingPageNumber {
+                nextLogicalPageNumber = reset
+                pendingPageNumber = nil
+            }
             collectFootnotes(from: paragraph, includeTableCells: false)
             collectMemos(from: paragraph)
             appendControlBlocks(from: paragraph)
@@ -933,13 +943,7 @@ private extension HwpPaginator {
     }
 
     func hyperlinkURL(in paragraph: CoreHwp.HwpParagraph) -> String? {
-        guard let ctrls = paragraph.ctrlHeaderArray else { return nil }
-        for ctrl in ctrls {
-            if case let .hyperLink(link) = ctrl, !link.url.isEmpty {
-                return link.url
-            }
-        }
-        return nil
+        paragraph.hyperlinkURL
     }
 
     // MARK: - 자동 번호/새 번호 (표 142~144)
@@ -954,7 +958,7 @@ private extension HwpPaginator {
             else { continue }
             switch info.kind {
             case .page:
-                nextLogicalPageNumber = max(1, Int(info.number))
+                pendingPageNumber = max(1, Int(info.number))
             case .footnote:
                 footnoteCounter = max(1, Int(info.number))
             case .endnote:
@@ -974,7 +978,7 @@ private extension HwpPaginator {
             for: paragraph,
             footnoteShape: currentSectionDef?.footNoteShape,
             endnoteShape: currentSectionDef?.endNoteShape,
-            pageNumber: nextLogicalPageNumber
+            pageNumber: pendingPageNumber ?? nextLogicalPageNumber
         )
     }
 
@@ -1264,6 +1268,9 @@ private extension HwpPaginator {
 
         var remainingRows = frame.rows
         var isFirstSegment = true
+        // 이미 셀 각주를 수집한 최상위 행 — 분할된 행이 다음 세그먼트에서
+        // 다시 수집돼 각주가 중복되는 것을 막는다.
+        var highestCollectedRow = Int.min
 
         while !remainingRows.isEmpty {
             // 이어지는 세그먼트는 제목 행 반복 높이를 미리 차감한다.
@@ -1274,17 +1281,47 @@ private extension HwpPaginator {
                 remaining = effectiveContentHeight - headerAllowance
             }
 
+            // 후보 행의 셀 각주 예약 높이를 미리 반영해 세그먼트를 맞춘다 —
+            // 사본으로 시산해 각주 높이만큼 remaining을 줄인 뒤 실제 배치한다.
+            // 셀 각주가 없으면 0이라 기존 세그먼트 선택과 동일하다.
+            if let table {
+                var trialRows = remainingRows
+                let trial = HwpTableSplitter.fillSegment(
+                    remainingRows: &trialRows, remaining: remaining
+                )
+                let trialRows2 = trial.flatMap(\.cells).map(\.row)
+                if let maxRow = trialRows2.max() {
+                    let startRow = max(trialRows2.min() ?? maxRow, highestCollectedRow + 1)
+                    if startRow <= maxRow {
+                        let notes = anticipatedTableCellFootnoteHeight(
+                            table, rows: startRow ... maxRow
+                        )
+                        if notes > 0 {
+                            remaining = max(
+                                HwpTableSplitter.minimumRowHeight(remainingRows), remaining - notes
+                            )
+                        }
+                    }
+                }
+            }
+
             let segmentRows = HwpTableSplitter.fillSegment(
                 remainingRows: &remainingRows,
                 remaining: remaining
             )
             guard !segmentRows.isEmpty else { break }
 
-            // 셀 각주는 행이 실리는 페이지 귀속 (한글 실측 — 헌법주석 p485)
+            // 셀 각주는 행이 실리는 페이지 귀속 (한글 실측 — 헌법주석 p485).
+            // 분할된 행은 조각이 같은 rowAddress를 유지하므로, 이미 수집한 행보다
+            // 큰 행만 수집해 조각 간 중복 각주를 막는다.
             if let table {
                 let rowIndexes = segmentRows.flatMap(\.cells).map(\.row)
-                if let minRow = rowIndexes.min(), let maxRow = rowIndexes.max() {
-                    collectTableCellFootnotes(table, rows: minRow ... maxRow)
+                if let maxRow = rowIndexes.max() {
+                    let startRow = max(rowIndexes.min() ?? maxRow, highestCollectedRow + 1)
+                    if startRow <= maxRow {
+                        collectTableCellFootnotes(table, rows: startRow ... maxRow)
+                        highestCollectedRow = maxRow
+                    }
                 }
             }
             appendTableSegmentBlock(
@@ -1862,6 +1899,19 @@ private extension HwpPaginator {
     /// 표 셀 각주를 수집한다. rows가 nil이면 전체 (HwpFootnoteCoordinator 참조)
     func collectTableCellFootnotes(_ table: CoreHwp.HwpTable, rows: ClosedRange<Int>?) {
         footnoteCoordinator.collectTableCellFootnotes(
+            table,
+            rows: rows,
+            environment: noteEnvironment,
+            childParagraphs: childParagraphs(of:)
+        )
+    }
+
+    /// 표 세그먼트 크기 산정 전 후보 행의 셀 각주 예약 높이 (HwpFootnoteCoordinator 참조)
+    func anticipatedTableCellFootnoteHeight(
+        _ table: CoreHwp.HwpTable,
+        rows: ClosedRange<Int>
+    ) -> CGFloat {
+        footnoteCoordinator.anticipatedTableCellFootnoteHeight(
             table,
             rows: rows,
             environment: noteEnvironment,

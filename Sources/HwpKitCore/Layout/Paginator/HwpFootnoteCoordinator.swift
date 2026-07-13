@@ -223,6 +223,40 @@ struct HwpFootnoteCoordinator {
             + (pendingFootnotes.isEmpty ? metrics.separatorOverhead : 0)
     }
 
+    /// 주어진 grid 행 범위의 셀 각주가 예약할 높이 — pending/reserved/counter를
+    /// 바꾸지 않고 측정만 한다 (표 세그먼트 크기 산정 전 예약용, collect와 동형
+    /// 필터). 셀 각주가 없으면 0이라 표 배치가 기존과 동일하다.
+    mutating func anticipatedTableCellFootnoteHeight(
+        _ table: CoreHwp.HwpTable,
+        rows: ClosedRange<Int>,
+        environment: Environment,
+        childParagraphs: ChildParagraphs
+    ) -> CGFloat {
+        var preview = footnoteCounter
+        var body: CGFloat = 0
+        for cell in table.cellArray {
+            if let property = cell.header.cellProperty {
+                guard rows.contains(Int(property.rowAddress)) else { continue }
+            } else {
+                guard rows.lowerBound == 0 else { continue }
+            }
+            for paragraph in cell.paragraphArray {
+                body += anticipatedFootnoteBodyHeight(
+                    for: paragraph,
+                    preview: &preview,
+                    environment: environment,
+                    childParagraphs: childParagraphs
+                )
+            }
+        }
+        guard body > 0 else { return 0 }
+        let metrics = footnoteReservationMetrics(environment: environment)
+        let newNotes = preview - footnoteCounter
+        let boundaries = max(0, pendingFootnotes.isEmpty ? newNotes - 1 : newNotes)
+        return body + metrics.spacingBetweenNotes * CGFloat(boundaries)
+            + (pendingFootnotes.isEmpty ? metrics.separatorOverhead : 0)
+    }
+
     private mutating func anticipatedFootnoteBodyHeight(
         for paragraph: CoreHwp.HwpParagraph,
         depth: Int = 0,

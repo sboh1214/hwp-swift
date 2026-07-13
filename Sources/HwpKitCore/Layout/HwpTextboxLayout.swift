@@ -116,7 +116,8 @@ public struct HwpTextboxLayout {
                         width: wrapWidth,
                         height: measured.frame.totalHeight
                     ),
-                    paragraphId: paragraph.paraHeader.paraId
+                    paragraphId: paragraph.paraHeader.paraId,
+                    hyperlinkURL: paragraph.hyperlinkURL
                 ))
                 contentY += measured.frame.totalHeight
             }
@@ -143,7 +144,8 @@ public struct HwpTextboxLayout {
                 attributedString: paragraph.attributedString,
                 frame: paragraph.frame,
                 rect: paragraph.rect.offsetBy(dx: 0, dy: offset),
-                paragraphId: paragraph.paragraphId
+                paragraphId: paragraph.paragraphId,
+                hyperlinkURL: paragraph.hyperlinkURL
             )
         }
     }

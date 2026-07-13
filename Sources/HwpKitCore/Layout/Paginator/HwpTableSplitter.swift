@@ -117,7 +117,8 @@ enum HwpTableSplitter {
                             attributedString: paragraph.attributedString,
                             frame: paragraph.frame,
                             rect: paragraph.rect.offsetBy(dx: 0, dy: deltaY),
-                            paragraphId: paragraph.paragraphId
+                            paragraphId: paragraph.paragraphId,
+                            hyperlinkURL: paragraph.hyperlinkURL
                         )
                     },
                     borders: cell.borders,
@@ -236,10 +237,15 @@ enum HwpTableSplitter {
         }
         let topNested = cell.nestedTables.filter { $0.rect.minY < cutY }
         let bottomNested = cell.nestedTables.filter { $0.rect.minY >= cutY }
+        // 셀 이미지도 (중첩 표와 동일 규칙으로) 위/아래 조각에 나눠 넣는다 —
+        // 안 넣으면 초기화 기본값이 빈 배열이라 큰 행을 자를 때 그림이 사라진다.
+        let topImages = cell.images.filter { $0.rect.minY < cutY }
+        let bottomImages = cell.images.filter { $0.rect.minY >= cutY }
         func fragment(
             _ frame: CGRect,
             _ paragraphs: [HwpLaidOutParagraph],
-            _ nested: [HwpNestedTableFrame]
+            _ nested: [HwpNestedTableFrame],
+            _ images: [HwpCellImage]
         ) -> HwpTableCellFrame {
             HwpTableCellFrame(
                 cellFrame: frame,
@@ -250,12 +256,13 @@ enum HwpTableSplitter {
                 paragraphs: paragraphs,
                 borders: cell.borders,
                 fillColor: cell.fillColor,
-                nestedTables: nested
+                nestedTables: nested,
+                images: images
             )
         }
         return (
-            fragment(frames.top, topParagraphs, topNested),
-            fragment(frames.bottom, bottomParagraphs, bottomNested)
+            fragment(frames.top, topParagraphs, topNested, topImages),
+            fragment(frames.bottom, bottomParagraphs, bottomNested, bottomImages)
         )
     }
 
@@ -344,7 +351,8 @@ enum HwpTableSplitter {
             attributedString: continued ? markedAsContinuedFragment(sub) : sub,
             frame: HwpParagraphFrame(totalHeight: rect.height, lines: rebased),
             rect: rect,
-            paragraphId: paragraph.paragraphId
+            paragraphId: paragraph.paragraphId,
+            hyperlinkURL: paragraph.hyperlinkURL
         )
     }
 }
