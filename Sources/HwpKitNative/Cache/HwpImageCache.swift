@@ -57,7 +57,9 @@ public actor HwpImageCache {
         for (key, entry) in sorted {
             storage.removeValue(forKey: key)
             totalBytes -= entry.bytes
-            if totalBytes <= target { break }
+            if totalBytes <= target {
+                break
+            }
         }
     }
 

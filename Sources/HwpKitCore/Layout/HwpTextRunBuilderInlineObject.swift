@@ -45,8 +45,12 @@ extension HwpTextRunBuilder {
         var width = HwpUnits.points(fromHwpUnitU: commonProperty.width)
         var height = HwpUnits.points(fromHwpUnitU: commonProperty.height)
         if width <= 0 || height <= 0, let detail = components.first?.detail {
-            if width <= 0 { width = HwpUnits.points(fromHwpUnitU: detail.currentWidth) }
-            if height <= 0 { height = HwpUnits.points(fromHwpUnitU: detail.currentHeight) }
+            if width <= 0 {
+                width = HwpUnits.points(fromHwpUnitU: detail.currentWidth)
+            }
+            if height <= 0 {
+                height = HwpUnits.points(fromHwpUnitU: detail.currentHeight)
+            }
         }
         guard width > 0, height > 0 else { return nil }
         return CGSize(width: width, height: height)

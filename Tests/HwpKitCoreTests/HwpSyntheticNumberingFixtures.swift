@@ -14,7 +14,9 @@ extension HwpSynthetic {
         superscript: Bool = false
     ) -> CoreHwp.HwpCtrlId {
         var property = (kind & 0xF) | ((numberShape & 0xFF) << 4)
-        if superscript { property |= 1 << 12 }
+        if superscript {
+            property |= 1 << 12
+        }
         let info = CoreHwp.HwpOtherControlAutoNumberInfo(
             property: property,
             number: number,

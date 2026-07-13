@@ -68,7 +68,9 @@ import XCTest
                             }
                         }
                     }
-                    if hasText { pagesWithCellText += 1 }
+                    if hasText {
+                        pagesWithCellText += 1
+                    }
                 }
             }
             // 텍스트가 첫 조각에만 남지 않고 이월 조각에도 존재한다.

@@ -53,7 +53,9 @@ final class HeaderFooterApplyScopeTests: XCTestCase {
             .flatMap(\.paragraph)
             .compactMap { paragraph -> HwpSectionDef? in
                 paragraph.ctrlHeaderArray?.compactMap { ctrl -> HwpSectionDef? in
-                    if case let .section(def) = ctrl { return def }
+                    if case let .section(def) = ctrl {
+                        return def
+                    }
                     return nil
                 }.first
             }

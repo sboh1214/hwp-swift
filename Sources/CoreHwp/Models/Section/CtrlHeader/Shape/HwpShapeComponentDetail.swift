@@ -41,10 +41,14 @@ public struct HwpShapeBorderLine: HwpPrimitive {
     }
 
     /** 선 종류 (표 87 bits 0-5). 그리기 개체에서 0은 선 없음, 1이 실선으로 관측된다. */
-    public var lineType: Int { Int(property & 0b11_1111) }
+    public var lineType: Int {
+        Int(property & 0b111111)
+    }
 
     /** 선이 그려지는 종류인지 (0 = 선 없음) */
-    public var hasVisibleLine: Bool { lineType != 0 }
+    public var hasVisibleLine: Bool {
+        lineType != 0
+    }
 
     /// color(4) + width INT32(4) + property(4) + outline(1). 픽스처 바이트로 검증된 layout.
     static let byteCount = 13
@@ -92,7 +96,9 @@ public struct HwpFillInfo: HwpPrimitive {
         self.rawPayload = rawPayload
     }
 
-    public var hasSolidFill: Bool { type & 0x1 != 0 }
+    public var hasSolidFill: Bool {
+        type & 0x1 != 0
+    }
 
     static func decode(from data: Data, at offset: Int) -> HwpFillInfo? {
         guard data.count >= offset + 4 else { return nil }
@@ -368,7 +374,9 @@ public struct HwpShapeEllipseDetail: HwpPrimitive {
         self.secondAxis = secondAxis
     }
 
-    public var isArc: Bool { property & 0x2 != 0 }
+    public var isArc: Bool {
+        property & 0x2 != 0
+    }
 
     static func decode(from data: Data) -> HwpShapeEllipseDetail? {
         guard data.count >= 28 else { return nil }
@@ -465,7 +473,9 @@ public extension HwpShapeComponent {
 }
 
 public extension HwpShapeComponentLine {
-    var lineDetail: HwpShapeLineDetail? { HwpShapeLineDetail.decode(from: rawPayload) }
+    var lineDetail: HwpShapeLineDetail? {
+        HwpShapeLineDetail.decode(from: rawPayload)
+    }
 }
 
 public extension HwpShapeComponentRectangle {
@@ -475,18 +485,26 @@ public extension HwpShapeComponentRectangle {
 }
 
 public extension HwpShapeComponentEllipse {
-    var ellipseDetail: HwpShapeEllipseDetail? { HwpShapeEllipseDetail.decode(from: rawPayload) }
+    var ellipseDetail: HwpShapeEllipseDetail? {
+        HwpShapeEllipseDetail.decode(from: rawPayload)
+    }
 }
 
 public extension HwpShapeComponentArc {
     /** 호는 속성 + 중심/축 좌표만 갖는다 (표 101). */
-    var arcDetail: HwpShapeArcDetail? { HwpShapeArcDetail.decode(from: rawPayload) }
+    var arcDetail: HwpShapeArcDetail? {
+        HwpShapeArcDetail.decode(from: rawPayload)
+    }
 }
 
 public extension HwpShapeComponentPolygon {
-    var polygonDetail: HwpShapePolygonDetail? { HwpShapePolygonDetail.decode(from: rawPayload) }
+    var polygonDetail: HwpShapePolygonDetail? {
+        HwpShapePolygonDetail.decode(from: rawPayload)
+    }
 }
 
 public extension HwpShapeComponentCurve {
-    var curveDetail: HwpShapeCurveDetail? { HwpShapeCurveDetail.decode(from: rawPayload) }
+    var curveDetail: HwpShapeCurveDetail? {
+        HwpShapeCurveDetail.decode(from: rawPayload)
+    }
 }

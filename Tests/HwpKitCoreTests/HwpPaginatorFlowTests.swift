@@ -93,7 +93,9 @@ import XCTest
             expect(tableBlocks.count) == 1
 
             let paintText = page.paintList.commands.compactMap { command -> String? in
-                if case let .drawText(attributed, _, _) = command { return attributed.string }
+                if case let .drawText(attributed, _, _) = command {
+                    return attributed.string
+                }
                 return nil
             }.joined(separator: "\n")
             expect(paintText).to(contain("바깥 셀 텍스트"))

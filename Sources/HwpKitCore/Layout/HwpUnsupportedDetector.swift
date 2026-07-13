@@ -64,11 +64,21 @@ private extension HwpUnsupportedDetector {
             []
         }
         for component in components {
-            if !component.chartDataArray.isEmpty { return "차트" }
-            if !component.videoDataArray.isEmpty { return "동영상" }
-            if !component.textartArray.isEmpty { return "글맵시" }
-            if !component.formObjectArray.isEmpty { return "양식 개체" }
-            if !component.oleArray.isEmpty { return "OLE" }
+            if !component.chartDataArray.isEmpty {
+                return "차트"
+            }
+            if !component.videoDataArray.isEmpty {
+                return "동영상"
+            }
+            if !component.textartArray.isEmpty {
+                return "글맵시"
+            }
+            if !component.formObjectArray.isEmpty {
+                return "양식 개체"
+            }
+            if !component.oleArray.isEmpty {
+                return "OLE"
+            }
         }
         return nil
     }

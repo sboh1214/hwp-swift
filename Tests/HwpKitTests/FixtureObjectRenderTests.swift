@@ -111,8 +111,12 @@ final class FixtureObjectRenderTests: XCTestCase {
         let hasBoxRect = document.pages.contains { page in
             guard page.blocks.contains(where: { $0.kind == .textbox }) else { return false }
             return page.paintList.commands.contains { command in
-                if case .strokeRect = command { return true }
-                if case .fillRect = command { return true }
+                if case .strokeRect = command {
+                    return true
+                }
+                if case .fillRect = command {
+                    return true
+                }
                 return false
             }
         }
@@ -183,7 +187,9 @@ final class FixtureObjectRenderTests: XCTestCase {
 
         for (pageIndex, page) in document.pages.enumerated() {
             let paintText = page.paintList.commands.compactMap { command -> String? in
-                if case let .drawText(attributed, _, _) = command { return attributed.string }
+                if case let .drawText(attributed, _, _) = command {
+                    return attributed.string
+                }
                 return nil
             }.joined(separator: "\n")
             expect(paintText).to(

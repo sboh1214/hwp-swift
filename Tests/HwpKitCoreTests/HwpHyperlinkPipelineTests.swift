@@ -51,7 +51,9 @@ final class HwpHyperlinkPipelineTests: XCTestCase {
         let hit = HwpHitTester().hit(page: page, point: CGPoint(x: 50, y: 25))
 
         expect {
-            if case .text = hit { return true }
+            if case .text = hit {
+                return true
+            }
             return false
         } == true
     }
@@ -65,7 +67,9 @@ final class HwpHyperlinkPipelineTests: XCTestCase {
             .build(for: page, index: HwpIndex(from: CoreHwp.HwpFile()))
 
         let hyperlinkCommand = paintList.commands.first { command in
-            if case .hyperlink = command { return true }
+            if case .hyperlink = command {
+                return true
+            }
             return false
         }
         expect(hyperlinkCommand).notTo(beNil())
@@ -88,7 +92,9 @@ final class HwpHyperlinkPipelineTests: XCTestCase {
             .build(for: page, index: HwpIndex(from: CoreHwp.HwpFile()))
 
         let hasHyperlink = paintList.commands.contains { command in
-            if case .hyperlink = command { return true }
+            if case .hyperlink = command {
+                return true
+            }
             return false
         }
         expect(hasHyperlink) == false

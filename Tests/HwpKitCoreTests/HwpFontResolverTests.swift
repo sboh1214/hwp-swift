@@ -48,7 +48,9 @@ import XCTest
             for face in serifFaces {
                 let font = resolver.resolve(faceName: face, script: .korean, size: 10)
                 let family = CTFontCopyFamilyName(font) as String
-                if isInstalledHancomFont(family) { continue }
+                if isInstalledHancomFont(family) {
+                    continue
+                }
                 expect(serifFamilies).to(
                     contain(family),
                     description: "'\(face)'이 명조 계열로 해석되지 않았다: \(family)"
@@ -62,7 +64,9 @@ import XCTest
             for face in gothicFaces {
                 let font = resolver.resolve(faceName: face, script: .korean, size: 10)
                 let family = CTFontCopyFamilyName(font) as String
-                if isInstalledHancomFont(family) { continue }
+                if isInstalledHancomFont(family) {
+                    continue
+                }
                 expect(gothicFamilies).to(
                     contain(family),
                     description: "'\(face)'이 고딕 계열로 해석되지 않았다: \(family)"
@@ -75,7 +79,9 @@ import XCTest
             for face in ["한컴바탕", "한컴바탕확장", "바탕체"] {
                 let font = resolver.resolve(faceName: face, script: .korean, size: 10)
                 let family = CTFontCopyFamilyName(font) as String
-                if isInstalledHancomFont(family) { continue }
+                if isInstalledHancomFont(family) {
+                    continue
+                }
                 expect(batangFamilies).to(
                     contain(family),
                     description: "'\(face)'이 바탕 계열로 해석되지 않았다: \(family)"
@@ -86,7 +92,9 @@ import XCTest
         func testCalligraphicFaceResolvesToGungSeo() {
             let font = resolver.resolve(faceName: "한양해서", script: .korean, size: 10)
             let family = CTFontCopyFamilyName(font) as String
-            if isInstalledHancomFont(family) { return }
+            if isInstalledHancomFont(family) {
+                return
+            }
             expect(["GungSeo", "AppleMyungjo"]).to(contain(family))
         }
 
