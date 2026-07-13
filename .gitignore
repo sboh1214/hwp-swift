@@ -97,3 +97,6 @@ __pycache__/
 
 # 로컬 전용 — 렌더 해시 기준선 (레코딩 머신 전용, FixtureRenderHashSnapshotTests)
 /Snapshots/
+
+# 로컬 전용 — 렌더 덤프 진단 스크래치 (파일 헤더에 커밋 금지 명시)
+/Tests/HwpKitTests/FixturePreviewDumpScratch.swift
