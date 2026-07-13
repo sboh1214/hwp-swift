@@ -28,7 +28,10 @@ public struct HwpListControl: HwpPrimitive {
     static func load(_ record: HwpRecord, _ version: HwpVersion) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
 
-        let header = try HwpCtrlHeader.load(record)
+        var header = try HwpCtrlHeader.load(record)
+        // 머리말/꼬리말 적용 범위(표 141)는 로드 후 헤더 rawPayload에서 재디코드하므로
+        // 뷰어 모드에서 비워지면 안 된다 — decoupledPayload로 byte를 보존한다.
+        header.rawPayload = record.options.decoupledPayload(record.payload)
         let parsedChildren = try parseChildren(record.children, version)
         return HwpListControl(
             header: header,

@@ -84,7 +84,7 @@ public extension HwpChar {
     }
 }
 
-public enum HwpCharType: String, Codable {
+public enum HwpCharType: String, Codable, Sendable {
     case char
     case inline
     case extended
