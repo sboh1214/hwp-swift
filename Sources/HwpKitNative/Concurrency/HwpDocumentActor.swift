@@ -35,10 +35,16 @@ public actor HwpDocumentActor {
                 // 뷰어는 원본 rawPayload 보존이 필요 없다 — 압축 해제 버퍼 즉시 해제
                 try CoreHwp.HwpFile(fromPath: url.path, options: .viewer)
             }.value
+            try Task.checkCancellation()
             return try await self.buildDocument(from: file)
         }
         loadTask = task
-        return try await task.value
+        // 호출자 취소를 비구조적 task로 전파해 파싱/페이지네이션을 실제로 멈춘다.
+        return try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: {
+            task.cancel()
+        }
     }
 
     public func loadDocument(from data: Data) async throws -> HwpDocument {
@@ -48,10 +54,15 @@ public actor HwpDocumentActor {
                 // 뷰어는 원본 rawPayload 보존이 필요 없다 — 압축 해제 버퍼 즉시 해제
                 try CoreHwp.HwpFile(fromData: data, options: .viewer)
             }.value
+            try Task.checkCancellation()
             return try await self.buildDocument(from: file)
         }
         loadTask = task
-        return try await task.value
+        return try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: {
+            task.cancel()
+        }
     }
 
     public func loadDocument(from file: CoreHwp.HwpFile) async throws -> HwpDocument {
@@ -106,6 +117,10 @@ public actor HwpDocumentActor {
         batchSize: Int = 24,
         onPartial: ((HwpDocumentSnapshot) -> Void)? = nil
     ) async throws -> HwpDocument {
+        // 각 로드에 고유 토큰을 부여해 뷰 갱신 가드(document != oldValue)가 렌더
+        // 지문이 우연히 같은 다른 문서도 구분하게 한다 — 프로그레시브 스냅샷은
+        // 넘겨받은 같은 토큰을 공유해 증분 적용으로 판정된다.
+        let token = loadToken ?? UUID()
         let index = HwpIndex(from: file)
         let imageStore = HwpImageStore(from: file)
         let paginator = HwpPaginator(
@@ -135,7 +150,7 @@ public actor HwpDocumentActor {
                         title: nil,
                         pageCount: pages.count,
                         previewText: preview,
-                        loadToken: loadToken
+                        loadToken: token
                     ),
                     unsupportedElements: [],
                     imageStore: imageStore
@@ -151,7 +166,7 @@ public actor HwpDocumentActor {
             title: nil,
             pageCount: pages.count,
             previewText: preview,
-            loadToken: loadToken
+            loadToken: token
         )
         let unsupported = await paginator.unsupportedElements()
         return HwpDocument(

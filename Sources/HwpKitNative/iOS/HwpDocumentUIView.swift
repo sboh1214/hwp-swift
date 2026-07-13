@@ -298,7 +298,7 @@
         private func updateContentSize() {
             let pageCount = document?.pages.count ?? 0
             let largestWidth = (0 ..< pageCount)
-                .map { pageSize(at: $0).width }
+                .map { rowWidth(at: $0) }
                 .max() ?? defaultPageSize.width
             let totalHeight = (0 ..< pageCount).reduce(CGFloat(0)) { partial, index in
                 partial + pageSize(at: index).height + (index == pageCount - 1 ? 0 : pageGap)
@@ -363,6 +363,14 @@
 
         private func pageSize(at index: Int) -> CGSize {
             document?.pages[safe: index]?.size ?? defaultPageSize
+        }
+
+        /// 메모 패널은 페이지 오른쪽 바깥에 그려지므로 콘텐츠 폭에 패널 폭을
+        /// 포함해야 스크롤 뷰가 패널을 잘리지 않고 드러낸다 (macOS rowWidth와 대칭).
+        private func rowWidth(at index: Int) -> CGFloat {
+            let pageWidth = pageSize(at: index).width
+            guard let panel = document?.pages[safe: index]?.memoPanel else { return pageWidth }
+            return pageWidth + panel.width
         }
 
         private func paintListForPage(at index: Int) -> HwpPaintList? {

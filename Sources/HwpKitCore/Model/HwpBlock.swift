@@ -38,7 +38,10 @@ public struct AnyHwpBlock: HwpBlock, @unchecked Sendable, Hashable {
     ) {
         self.frame = frame
         self.kind = kind
-        self.attributedString = attributedString
+        // 호출자가 소유한 NSMutableAttributedString이 @unchecked Sendable & Hashable
+        // 값 안에서 뒤에 변형되면 렌더/해시가 태스크 간 어긋난다 — immutable 복사로
+        // 소유권을 끊는다 (HwpLaidOutParagraph 등 다른 레이아웃 모델과 동일).
+        self.attributedString = attributedString.map { NSAttributedString(attributedString: $0) }
         self.hyperlinkURL = hyperlinkURL
         self.payload = payload
         self.source = source
