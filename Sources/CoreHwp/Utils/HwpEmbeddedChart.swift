@@ -30,8 +30,6 @@ struct EmbeddedCompoundFile {
     private static let signature = Data([0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1])
     private static let endOfChain: UInt32 = 0xFFFF_FFFE
     private static let freeSector: UInt32 = 0xFFFF_FFFF
-    /// 체인 순회 상한 (손상 파일의 무한 루프 방지)
-    private static let maxChainLength = 1 << 20
 
     private let data: Data
     private let sectorSize: Int
@@ -140,30 +138,36 @@ struct EmbeddedCompoundFile {
         guard let entry = entries.first(where: { $0.objectType == 2 && $0.name == name })
         else { return nil }
         guard entry.streamSize > 0 else { return Data() }
+        // v4 CFB의 streamSize는 신뢰할 수 없는 UInt64 — Int.max 초과는 거부하고
+        // 실제 CFB 크기로 상한해 이후 Int 변환/prefix가 트랩하지 않게 한다.
+        guard let size = Self.boundedSize(entry.streamSize, availableBytes: data.count)
+        else { return nil }
 
         if entry.streamSize < miniStreamCutoff {
-            return miniStreamData(entry)
+            return miniStreamData(entry, streamSize: size)
         }
         return Self.chainData(
             data, fat: fat, sectorSize: sectorSize,
-            firstSector: entry.firstSector, size: entry.streamSize
+            firstSector: entry.firstSector, size: size
         )
     }
 
     /// mini 스트림: root 엔트리의 일반 체인이 컨테이너, miniFAT이 체인
-    private func miniStreamData(_ entry: DirectoryEntry) -> Data? {
+    private func miniStreamData(_ entry: DirectoryEntry, streamSize: Int) -> Data? {
         guard let root = entries.first(where: { $0.objectType == 5 }),
+              let rootSize = Self.boundedSize(root.streamSize, availableBytes: data.count),
               let container = Self.chainData(
                   data, fat: fat, sectorSize: sectorSize,
-                  firstSector: root.firstSector, size: root.streamSize
+                  firstSector: root.firstSector, size: rootSize
               )
         else { return nil }
 
         var result = Data()
         var sector = entry.firstSector
-        var hops = 0
-        while sector != Self.endOfChain, result.count < Int(entry.streamSize) {
-            guard hops < Self.maxChainLength,
+        var visited = Set<UInt32>()
+        while sector != Self.endOfChain, result.count < streamSize {
+            // 순환 miniFAT 체인 방어 — 같은 mini 섹터 재방문 즉시 중단
+            guard visited.insert(sector).inserted,
                   Int(sector) < miniFAT.count || sector != Self.freeSector
             else { return nil }
             let start = Int(sector) * miniSectorSize
@@ -172,10 +176,9 @@ struct EmbeddedCompoundFile {
             result.append(container[base ..< base + miniSectorSize])
             guard Int(sector) < miniFAT.count else { return nil }
             sector = miniFAT[Int(sector)]
-            hops += 1
         }
-        guard result.count >= Int(entry.streamSize) else { return nil }
-        return Data(result.prefix(Int(entry.streamSize)))
+        guard result.count >= streamSize else { return nil }
+        return Data(result.prefix(streamSize))
     }
 
     /// FAT 체인을 따라 스트림 데이터를 모은다. size가 nil이면 체인 끝까지.
@@ -184,26 +187,27 @@ struct EmbeddedCompoundFile {
         fat: [UInt32],
         sectorSize: Int,
         firstSector: UInt32,
-        size: UInt64?
+        size: Int?
     ) -> Data? {
         var result = Data()
         var sector = firstSector
-        var hops = 0
+        var visited = Set<UInt32>()
         while sector != endOfChain, sector != freeSector {
-            guard hops < maxChainLength,
+            // 순환 FAT 체인(자기참조 등) 방어 — 같은 섹터 재방문 즉시 중단해
+            // 손상 파일이 같은 섹터를 무한 append하며 OOM되는 것을 막는다.
+            guard visited.insert(sector).inserted,
                   let sectorData = sectorData(data, sectorSize: sectorSize, sector)
             else { return nil }
             result.append(sectorData)
-            if let size, result.count >= Int(size) {
+            if let size, result.count >= size {
                 break
             }
             guard Int(sector) < fat.count else { return nil }
             sector = fat[Int(sector)]
-            hops += 1
         }
         if let size {
-            guard result.count >= Int(size) else { return nil }
-            return Data(result.prefix(Int(size)))
+            guard result.count >= size else { return nil }
+            return Data(result.prefix(size))
         }
         return result
     }
@@ -214,11 +218,20 @@ struct EmbeddedCompoundFile {
         sectorSize: Int,
         _ sector: UInt32
     ) -> Data? {
-        let start = 512 + Int(sector) * sectorSize
+        // 섹터 n은 (n+1)*sectorSize에서 시작한다 — 헤더가 한 섹터로 패딩되기
+        // 때문 (v3 512B: 512+n*512, v4 4096B: 4096+n*4096과 동일).
+        let start = (Int(sector) + 1) * sectorSize
         guard start < data.count else { return nil }
         let end = min(start + sectorSize, data.count)
         let base = data.startIndex
         return Data(data[(base + start) ..< (base + end)])
+    }
+
+    /// 선언된 스트림 크기를 Int로 안전 변환하고 실제 CFB 크기로 상한한다.
+    /// Int.max를 넘는 (신뢰할 수 없는 v4 UInt64) 값은 nil.
+    private static func boundedSize(_ declared: UInt64, availableBytes: Int) -> Int? {
+        guard let size = Int(exactly: declared) else { return nil }
+        return min(size, availableBytes)
     }
 
     private static func uint32Array(_ data: Data) -> [UInt32] {

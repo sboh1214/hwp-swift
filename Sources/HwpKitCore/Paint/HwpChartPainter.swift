@@ -30,6 +30,13 @@ enum HwpChartPainter {
     /// 실물 격자선 코어 회색 133/255 (라운드 6 픽셀 실측)
     static let gridColor = HwpRGBColor(red: 0.52, green: 0.52, blue: 0.52).cgColor
 
+    /// 축 값 상한 — 비유한(1e309→inf/nan)·거대 값(신뢰 못 할 차트 XML)을 클램프해
+    /// axisMax의 Int 변환 트랩을 막는다 (근사 렌더).
+    private static let maxAxisValue = 1_000_000
+    /// 그리는 축 눈금 최대 개수 — 실측 차트(값 수백 이하)는 정수마다 1개(step 1)라
+    /// 기존 렌더와 동일하고, 병적으로 큰 축만 step을 키워 작업량/할당을 상한한다.
+    private static let maxDrawnTicks = 1000
+
     /// 3D 상자 기하 — 차트 프레임 대비 비율은 전부 실물 캡처 실측값.
     /// 바닥 = FL(앞왼)→FR(앞오)→BR(뒤오)→BL(뒤왼) 평행사변형,
     /// 뒷벽 = BL/BR 위 수직 벽 (그리드는 수평), 앞 축 = FL 위 수직선.
@@ -93,7 +100,12 @@ enum HwpChartPainter {
         guard categoryCount > 0, frame.width > 40, frame.height > 40 else { return commands }
 
         let labelSize = max(6, frame.height * 0.044)
-        let maxValue = chart.series.flatMap(\.values).max() ?? 1
+        // 유한 양수만 반영하고 안전 상한으로 클램프한다 — 비유한/거대 값이
+        // axisMax의 Int 변환을 트랩시키거나 눈금 루프를 폭주시키는 것을 막는다.
+        let maxValue = min(
+            chart.series.flatMap(\.values).filter { $0.isFinite && $0 > 0 }.max() ?? 1,
+            Double(maxAxisValue)
+        )
         let box = Box(
             frontAxisX: frame.minX + frame.width * 0.140,
             floorFrontY: frame.minY + frame.height * 0.824,
@@ -148,7 +160,10 @@ enum HwpChartPainter {
         var commands: [HwpPaintCommand] = []
         let lines = CGMutablePath()
         let tickCount = max(1, Int(box.axisMax))
-        for tick in 0 ... tickCount {
+        // 눈금 간격: 그리는 눈금 수를 maxDrawnTicks로 상한한다. 실측 차트는
+        // step 1로 정수마다 그려 기존 렌더와 동일하고, 병적 축만 성기게 그린다.
+        let step = max(1, (tickCount + maxDrawnTicks - 1) / maxDrawnTicks)
+        for tick in stride(from: 0, through: tickCount, by: step) {
             let frontY = box.frontTickY(tick)
             let backY = frontY + box.depth.height
             // 깊이 세그먼트 (앞 축 → 뒷벽 왼쪽)
@@ -170,7 +185,7 @@ enum HwpChartPainter {
             ))
         }
         // 값축 눈금 틱 (축 왼쪽 돌출 — 실물 라운드 9)
-        for tick in 0 ... tickCount {
+        for tick in stride(from: 0, through: tickCount, by: step) {
             let frontY = box.frontTickY(tick)
             lines.move(to: CGPoint(x: box.frontAxisX - 3, y: frontY))
             lines.addLine(to: CGPoint(x: box.frontAxisX, y: frontY))
