@@ -103,8 +103,9 @@ public actor HwpDocumentActor {
         batchSize: Int = 24
     ) -> AsyncThrowingStream<HwpDocumentSnapshot, Error> {
         loadTask?.cancel()
+        // 누적 스냅샷 무제한 버퍼링 방지 — 최신 소수만 유지 (#10)
         let (stream, continuation) = AsyncThrowingStream<HwpDocumentSnapshot, Error>
-            .makeStream()
+            .makeStream(bufferingPolicy: .bufferingNewest(8))
         let loadToken = UUID()
         let task = Task<HwpDocument, Error> {
             do {
