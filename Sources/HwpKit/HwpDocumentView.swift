@@ -141,9 +141,11 @@ final class HwpDocumentCoordinator {
             // 문서 대입이 updateVisiblePages→onPageChanged로 currentPage를 1로
             // 덮어쓰기 전에 요청된 초기 페이지를 캡처한다 (#3).
             let requestedPage = currentPage?.wrappedValue
-            // 구조 동등성으로만 재대입한다 — 같은 문서를 다시 전달할 때
-            // didSet의 스크롤 리셋이 반복돼 페이지가 1로 튀는 것을 막는다 (#2).
-            if view.document != document {
+            // loadToken이 있으면 구조 동등성으로 스킵, 없으면(직접 구성) 구조가
+            // 같아도 색/폰트만 다른 render-only 변경일 수 있어 전달한다 — 네이티브
+            // didSet이 스크롤을 유지한 채 재렌더한다 (#6). 스크롤 리셋 루프는
+            // didSet의 render-only 분기가 막는다 (#2).
+            if document.metadata.loadToken == nil || view.document != document {
                 view.document = document
             }
             if let zoomScale, view.zoomScale != zoomScale.wrappedValue {
@@ -202,9 +204,11 @@ final class HwpDocumentCoordinator {
             // 문서 대입이 updateVisiblePages→onPageChanged로 currentPage를 1로
             // 덮어쓰기 전에 요청된 초기 페이지를 캡처한다 (#3).
             let requestedPage = currentPage?.wrappedValue
-            // 구조 동등성으로만 재대입한다 — 같은 문서를 다시 전달할 때
-            // didSet의 스크롤 리셋이 반복돼 페이지가 1로 튀는 것을 막는다 (#2).
-            if view.document != document {
+            // loadToken이 있으면 구조 동등성으로 스킵, 없으면(직접 구성) 구조가
+            // 같아도 색/폰트만 다른 render-only 변경일 수 있어 전달한다 — 네이티브
+            // didSet이 스크롤을 유지한 채 재렌더한다 (#6). 스크롤 리셋 루프는
+            // didSet의 render-only 분기가 막는다 (#2).
+            if document.metadata.loadToken == nil || view.document != document {
                 view.document = document
             }
             if let zoomScale, view.zoomScale != zoomScale.wrappedValue {

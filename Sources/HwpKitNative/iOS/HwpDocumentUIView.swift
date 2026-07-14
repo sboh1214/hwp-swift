@@ -29,6 +29,20 @@
                     }
                     return
                 }
+                // nil-token 문서가 구조적으로 같으면 (같은 콘텐츠 재전달 또는
+                // 색·폰트만 다른 render-only 변경): 스크롤·이미지 provider를
+                // 유지한 채 가시 레이어만 새 문서 paintList로 현재 범위에서 다시
+                // 만든다 — setContentOffset(.zero)가 없어 페이지가 1로 튀는
+                // 루프가 안 생긴다 (#6/#2). imageStore는 == 비교에 포함돼 동일.
+                if document == oldValue {
+                    pageLayers.values.forEach { $0.removeFromSuperlayer() }
+                    pageLayers.removeAll()
+                    memoPanelLayers.values.forEach { $0.removeFromSuperlayer() }
+                    memoPanelLayers.removeAll()
+                    selectionController.setDocument(document, preservingSelection: true)
+                    updateVisiblePages(range: visiblePageRange())
+                    return
+                }
                 pageLayers.values.forEach { $0.removeFromSuperlayer() }
                 pageLayers.removeAll()
                 memoPanelLayers.values.forEach { $0.removeFromSuperlayer() }
@@ -354,7 +368,10 @@
                     low = mid + 1
                 }
             }
-            guard first < pageCount else { return 0 ..< min(pageCount, 1) }
+            // 뷰포트가 마지막 페이지보다 아래(하단 러버밴드/축소)면 마지막
+            // 페이지를 유지한다 — page 0을 반환하면 currentPage가 1로 튄다.
+            // macOS와 대칭 (#12).
+            guard first < pageCount else { return (pageCount - 1) ..< pageCount }
             var last = first
             while last + 1 < pageCount, frameForPage(at: last + 1).minY < visibleRect.maxY {
                 last += 1

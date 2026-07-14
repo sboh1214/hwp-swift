@@ -29,6 +29,20 @@
                     }
                     return
                 }
+                // nil-token 문서가 구조적으로 같으면 (같은 콘텐츠 재전달 또는
+                // 색·폰트만 다른 render-only 변경): 스크롤·이미지 provider를
+                // 유지한 채 가시 레이어만 새 문서 paintList로 현재 범위에서 다시
+                // 만든다 — 전체 리셋의 scroll(to:.zero)가 없어 페이지가 1로 튀는
+                // 루프가 안 생긴다 (#6/#2). imageStore는 == 비교에 포함돼 동일.
+                if document == oldValue {
+                    pageLayers.values.forEach { $0.removeFromSuperlayer() }
+                    pageLayers.removeAll()
+                    memoPanelLayers.values.forEach { $0.removeFromSuperlayer() }
+                    memoPanelLayers.removeAll()
+                    selectionController.setDocument(document, preservingSelection: true)
+                    updateVisiblePages(range: visiblePageRange())
+                    return
+                }
                 pageLayers.values.forEach { $0.removeFromSuperlayer() }
                 pageLayers.removeAll()
                 memoPanelLayers.values.forEach { $0.removeFromSuperlayer() }
