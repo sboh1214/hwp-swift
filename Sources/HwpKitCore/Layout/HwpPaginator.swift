@@ -23,6 +23,12 @@ public actor HwpPaginator {
     private var currentBlocks: [AnyHwpBlock] = []
     private var contentHeightUsed: CGFloat = 0
     private var didFinishPagination = false
+
+    /// 문서 전역 페이지 상한 — 쪽 나누기 문단·별개 표가 다수면 표당 세그먼트
+    /// 상한(maximumTableSegments)만으로는 총 페이지가 무제한이라, 작은 레코드
+    /// 스트림이 수십만 페이지로 증폭돼 paint-list 메모리를 고갈시킨다 (#1).
+    /// legacy 실측 최대 1,030쪽이라 이 한도를 한참 밑돈다.
+    static let maximumDocumentPages = 200_000
     private var collectedUnsupported: [HwpUnsupportedElement] = []
     /// 이 페이지에 배치할 각주 (문단 + 문서 순서 번호) — 저장은 footnoteCoordinator
     private var pendingFootnotes: [HwpFootnoteLayout.Input] {
@@ -1879,11 +1885,19 @@ private extension HwpPaginator {
         guard !memoFields.isEmpty else { return }
         let anchorY = currentBlocks.last { $0.kind == .text }?.frame.minY
             ?? currentPageGeometry.contentFrame.minY
-        let bodies = (paragraph.memoParagraphArray ?? []).map { memoParagraph in
-            HwpTextRunBuilder(index: index, fontResolver: fontResolver)
-                .build(paragraph: memoParagraph)
-                .string
-                .trimmingCharacters(in: .whitespacesAndNewlines)
+        // 메모별 문단 그룹을 join해 필드와 1:1로 짝짓는다 — 평탄 배열을 필드
+        // 인덱스로 끊으면 여러 문단 메모는 2번째+ 문단이 누락되고 다중 메모는
+        // 엉뚱한 필드에 페어링된다 (#7).
+        let bodies = (paragraph.memoParagraphGroups ?? []).map { group in
+            group
+                .map { memoParagraph in
+                    HwpTextRunBuilder(index: index, fontResolver: fontResolver)
+                        .build(paragraph: memoParagraph)
+                        .string
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                .filter { !$0.isEmpty }
+                .joined(separator: "\n")
         }
         for (fieldIndex, field) in memoFields.enumerated() {
             pendingMemoBalloons.append(HwpMemoPanelPainter.Balloon(
@@ -2097,6 +2111,12 @@ private extension HwpPaginator {
     // MARK: 페이지 확정
 
     func cacheCurrentPage() {
+        // 문서 전역 페이지 상한 초과 시 더 캐시하지 않고 페이지네이션을 종료한다 —
+        // page(at:) 루프가 nil을 관찰하고 멈춘다 (#1).
+        guard cachedPages.count < Self.maximumDocumentPages else {
+            didFinishPagination = true
+            return
+        }
         // 머리말/꼬리말/쪽 번호 크롬 블록 (감추기 마스크는 빌더가 소비한다)
         currentBlocks += pageChrome.blocks(
             forPage: nextLogicalPageNumber,

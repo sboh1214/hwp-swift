@@ -12,6 +12,11 @@ public struct HwpParagraph: HwpFromRecordWithVersion {
     /// 메모 (댓글) 본문 문단 — MEMO_LIST(93) 뒤에 오는 문단(66) 자식.
     /// 한글.app 편집 뷰의 오른쪽 풍선에 표시되는 내용이다.
     public var memoParagraphArray: [HwpParagraph]?
+    /// 메모별 문단 그룹 — 각 MEMO_LIST(93)가 여는 메모 단위로 뒤따르는 문단(66)을
+    /// 묶는다. memoParagraphArray는 이를 평탄화한 것으로, 메모 하나가 여러 문단
+    /// (Enter)이면 그룹을 join해 풍선 본문을 만든다 (평탄 배열은 경계를 잃어 다중
+    /// 문단 메모/다중 메모가 필드와 어긋난다).
+    public var memoParagraphGroups: [[HwpParagraph]]?
     @ExcludeEquatable
     public var unknownChildren: [HwpUnknownRecord]
 
@@ -25,6 +30,7 @@ public struct HwpParagraph: HwpFromRecordWithVersion {
         unknownChildren = []
         ctrlHeaderArray = nil
         memoParagraphArray = nil
+        memoParagraphGroups = nil
     }
 
     /// 새 문서의 첫 문단. 구역/단 정의 컨트롤은 구역의 첫 문단에만 붙는다는
@@ -141,12 +147,27 @@ public struct HwpParagraph: HwpFromRecordWithVersion {
             .filter { $0.tagId == HwpSectionTag.listHeader.rawValue }
             .map { try HwpListHeader.load($0.payload, options: options) }
 
-        // MEMO_LIST(93)가 있으면 뒤따르는 문단(66) 자식들이 메모 본문이다
+        // MEMO_LIST(93)가 메모 하나를 열고, 그 뒤 문단(66)들이 그 메모의 본문이다.
+        // 메모별 그룹을 보존해야 여러 문단짜리 메모/다중 메모가 필드와 어긋나지 않는다.
         if children.contains(where: { $0.tagId == HwpSectionTag.memoList.rawValue }) {
-            let memoParagraphs = try children
-                .filter { $0.tagId == HwpSectionTag.paraHeader.rawValue }
-                .map { try HwpParagraph.load($0, version) }
-            memoParagraphArray = memoParagraphs.isEmpty ? nil : memoParagraphs
+            var groups: [[HwpParagraph]] = []
+            var current: [HwpParagraph]?
+            for child in children {
+                if child.tagId == HwpSectionTag.memoList.rawValue {
+                    if let current {
+                        groups.append(current)
+                    }
+                    current = []
+                } else if child.tagId == HwpSectionTag.paraHeader.rawValue, current != nil {
+                    current?.append(try HwpParagraph.load(child, version))
+                }
+            }
+            if let current {
+                groups.append(current)
+            }
+            memoParagraphGroups = groups.isEmpty ? nil : groups
+            let flat = groups.flatMap { $0 }
+            memoParagraphArray = flat.isEmpty ? nil : flat
         }
 
         unknownChildren = Self.unconsumedRecords(
