@@ -51,13 +51,26 @@ private final class ChartXMLDelegate: NSObject, XMLParserDelegate {
     /// 폭발을 막는다 (#4). 실측 차트는 수백 포인트 이하라 렌더 불변.
     static let maxTotalPoints = 16384
 
+    /// 제목 텍스트 총 길이 상한 — <a:t> run이 수백만 개로 쪼개진 제목이 매 run마다
+    /// 누적 문자열 전체를 재복사(제곱 CPU)하고 거대 라벨로 CoreText를 고갈시키는
+    /// 것을 막는다 (#4). 누적은 조각 배열로 선형 처리하고 이 길이에서 자른다.
+    static let maxTitleChars = 4096
+
     var series: [MutableSeries] = []
     /// 전 계열 누적 포인트 수 (총량 상한 판정용)
     private var totalSeriesPoints = 0
     var categories: [String] = []
     var hasTitle = false
     var autoTitleDeleted = false
-    var titleText: String?
+    var titleText: String? {
+        titleFragments.isEmpty ? nil : titleFragments.joined()
+    }
+
+    private var titleFragments: [String] = []
+    private var titleLength = 0
+    /// 현재 <ser>가 캡(maxSeries) 안에 들어와 배열에 추가됐는지 — 초과 계열의
+    /// 이름·포인트가 마지막 계열을 덮어쓰지 않게 descendants를 건너뛴다 (#6)
+    private var currentSeriesAdmitted = false
     var hasLegend = false
     var shapeValue: String?
 
@@ -82,8 +95,13 @@ private final class ChartXMLDelegate: NSObject, XMLParserDelegate {
         currentText = ""
 
         switch name {
-        case "ser" where series.count < Self.maxSeries:
-            series.append(MutableSeries())
+        case "ser":
+            // 캡 초과 계열은 배열에 추가하지 않되, path에는 여전히 들어가므로
+            // admitted 플래그로 그 descendants(이름·포인트)를 건너뛴다 (#6).
+            currentSeriesAdmitted = series.count < Self.maxSeries
+            if currentSeriesAdmitted {
+                series.append(MutableSeries())
+            }
         case "title" where path.dropLast().last == "chart":
             hasTitle = true
         case "autoTitleDeleted":
@@ -119,7 +137,7 @@ private final class ChartXMLDelegate: NSObject, XMLParserDelegate {
         case "t":
             // 리치 텍스트 제목 (c:title > c:tx > c:rich > a:p > a:r > a:t)
             if path.dropLast().contains("title"), !text.isEmpty {
-                titleText = (titleText ?? "") + text
+                appendTitle(text)
             }
         case "v":
             consumeValue(text)
@@ -133,7 +151,9 @@ private final class ChartXMLDelegate: NSObject, XMLParserDelegate {
     ///          numCache, pt, v]
     private func consumeValue(_ text: String) {
         let context = Set(path.dropLast())
-        let inSeries = context.contains("ser")
+        // 캡 초과(비-admitted) 계열의 이름·포인트는 마지막 보존 계열을 덮어쓰므로
+        // 무시한다 (#6) — path엔 "ser"가 있어도 admitted가 아니면 계열 아님.
+        let inSeries = context.contains("ser") && currentSeriesAdmitted
 
         if inSeries, context.contains("tx") {
             // 계열 이름 (c:ser > c:tx > c:v). strCache 인코딩
@@ -155,10 +175,18 @@ private final class ChartXMLDelegate: NSObject, XMLParserDelegate {
                 Self.assign(text, at: pendingPointIndex, into: &categories)
             }
         } else if context.contains("title"), context.contains("tx") {
-            let existing = titleText ?? ""
-            let combined = existing + text
-            titleText = combined.isEmpty ? nil : combined
+            appendTitle(text)
         }
+    }
+
+    /// 제목 텍스트를 조각 배열에 선형으로 누적한다 (매 run마다 전체 재복사하는
+    /// O(n²)를 피함). 총 길이가 maxTitleChars에 닿으면 잘라 거대 라벨을 막는다 (#4).
+    private func appendTitle(_ text: String) {
+        guard titleLength < Self.maxTitleChars else { return }
+        let remaining = Self.maxTitleChars - titleLength
+        let piece = text.count <= remaining ? text : String(text.prefix(remaining))
+        titleFragments.append(piece)
+        titleLength += piece.count
     }
 
     /// 차트 포인트 배열의 최대 인덱스 — 미신뢰 idx로 인한 정수 오버플로·거대
