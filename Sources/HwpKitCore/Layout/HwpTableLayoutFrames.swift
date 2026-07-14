@@ -16,10 +16,13 @@ extension HwpTableLayout {
         defaultHeight: CGFloat
     ) -> [CGFloat] {
         func needed(_ cell: PlacedCell) -> CGFloat {
-            if cell.hasCachedContent, cell.authoredHeight > 0 {
-                return cell.authoredHeight
-            }
-            return max(cell.contentHeight, cell.authoredHeight)
+            // 저작 셀 높이(UInt32)를 상한한다 — UInt32.max 근처면 ~43M pt가 되어
+            // 작은 문서가 페이지 단위 절단으로 수만 페이지를 만든다 (#6).
+            // 실제 셀은 이 한도를 한참 밑돌아 렌더 불변.
+            let raw = cell.hasCachedContent && cell.authoredHeight > 0
+                ? cell.authoredHeight
+                : max(cell.contentHeight, cell.authoredHeight)
+            return min(raw, HwpTableLayout.maximumCellHeight)
         }
         var heights = [CGFloat](repeating: 0, count: rowCount)
         for cell in placed where cell.rowSpan == 1 {
@@ -53,9 +56,25 @@ extension HwpTableLayout {
         let rowWidth = columnWidths.reduce(CGFloat(0), +)
             + context.metrics.spacing * CGFloat(columnWidths.count + 1)
 
+        // 열 원점 prefix 합을 한 번만 계산한다 — 셀마다 prefix reduce를 다시
+        // 돌면 열 수의 제곱이 된다 (#9). columnOrigins[c] = xOffset(c)와 동일.
+        var columnOrigins: [CGFloat] = []
+        columnOrigins.reserveCapacity(columnWidths.count)
+        var columnX = context.metrics.spacing
+        for width in columnWidths {
+            columnOrigins.append(columnX)
+            columnX += width + context.metrics.spacing
+        }
+
+        // 셀을 시작 행으로 한 번만 버킷한다 — 행마다 전체 placed를 filter하면
+        // 행 수 × 셀 수가 된다 (#3).
+        var cellsByRow = [[PlacedCell]](repeating: [], count: rowHeights.count)
+        for cell in placed where cell.row >= 0 && cell.row < rowHeights.count {
+            cellsByRow[cell.row].append(cell)
+        }
+
         for row in rowHeights.indices {
-            let cells = placed
-                .filter { $0.row == row }
+            let cells = cellsByRow[row]
                 .sorted { $0.column < $1.column }
                 .map { cell in
                     cellFrame(
@@ -63,6 +82,7 @@ extension HwpTableLayout {
                         rowOrigins: rowOrigins,
                         rowHeights: rowHeights,
                         columnWidths: columnWidths,
+                        columnOrigins: columnOrigins,
                         context: context
                     )
                 }
@@ -84,11 +104,14 @@ extension HwpTableLayout {
         rowOrigins: [CGFloat],
         rowHeights: [CGFloat],
         columnWidths: [CGFloat],
+        columnOrigins: [CGFloat],
         context: LayoutContext
     ) -> HwpTableCellFrame {
         let metrics = context.metrics
         let cellRect = CGRect(
-            x: xOffset(for: cell.column, columnWidths: columnWidths, spacing: metrics.spacing),
+            x: columnOrigins.indices.contains(cell.column)
+                ? columnOrigins[cell.column]
+                : xOffset(for: cell.column, columnWidths: columnWidths, spacing: metrics.spacing),
             y: rowOrigins[cell.row],
             width: width(
                 from: cell.column,

@@ -13,6 +13,10 @@ public struct HwpTableLayout {
     /// 재귀 중첩 표 레이아웃 깊이 상한 (바깥 표 = 0)
     static let maximumNestingDepth = 3
 
+    /// 저작 셀/행 높이 상한 (pt). 미신뢰 UInt32 셀 높이가 수만 페이지를
+    /// 만드는 것을 막는다 (#6). 실제 셀은 이 값의 수백분의 1이라 렌더 불변.
+    static let maximumCellHeight: CGFloat = 200_000
+
     /// occupancy 격자 상한 (row×column). 미신뢰 rowCount/columnCount(각 UInt16)가
     /// 곱해지면 수십억 칸이 되어 OOM — 실제 문서 표는 이 한도를 한참 밑돈다.
     static let maximumGridCells = 1 << 20
@@ -209,13 +213,19 @@ extension HwpTableLayout {
     ) -> [PlacedCell] {
         var placedCells: [PlacedCell] = []
         var occupied = Set<GridPosition>()
+        // fallback 자동 배치 커서 — 매 셀마다 (0,0)부터 재스캔하지 않게 (#4)
+        var nextFallbackIndex = 0
+        // 누적 occupancy 채우기 예산 (격자 크기) — 겹침 병적 입력 방어 (#14)
+        var fillBudget = rowCount * columnCount
 
         for cell in context.table.cellArray {
             guard let placement = placement(
                 for: cell,
                 rowCount: rowCount,
                 columnCount: columnCount,
-                occupied: &occupied
+                occupied: &occupied,
+                nextFallbackIndex: &nextFallbackIndex,
+                fillBudget: &fillBudget
             ) else { continue }
             placedCells.append(placedCell(
                 for: cell,
@@ -337,7 +347,9 @@ extension HwpTableLayout {
         for cell: CoreHwp.HwpTableCell,
         rowCount: Int,
         columnCount: Int,
-        occupied: inout Set<GridPosition>
+        occupied: inout Set<GridPosition>,
+        nextFallbackIndex: inout Int,
+        fillBudget: inout Int
     ) -> Placement? {
         var resolved: Placement?
         if let property = cell.header.cellProperty,
@@ -351,22 +363,96 @@ extension HwpTableLayout {
                 columnSpan: min(Int(property.columnSpan), columnCount - Int(property.columnAddress))
             )
         } else {
-            outer: for row in 0 ..< rowCount {
-                for column in 0 ..< columnCount
-                    where !occupied.contains(GridPosition(row: row, column: column))
-                {
-                    resolved = Placement(row: row, column: column, rowSpan: 1, columnSpan: 1)
-                    break outer
+            // 이전 배치 다음 칸부터 이어서 첫 빈 칸을 찾는다 (매번 0부터 재스캔
+            // 방지 — 점유는 단조 증가라 앞칸은 다시 비지 않는다, #4).
+            let total = rowCount * columnCount
+            var index = nextFallbackIndex
+            while index < total {
+                let position = GridPosition(row: index / columnCount, column: index % columnCount)
+                if !occupied.contains(position) {
+                    resolved = Placement(row: position.row, column: position.column, rowSpan: 1, columnSpan: 1)
+                    break
                 }
+                index += 1
             }
+            nextFallbackIndex = index + 1
         }
         guard let placement = resolved else { return nil }
-        for row in placement.row ..< placement.row + placement.rowSpan {
+        // 셀은 절대 거부하지 않는다 — 겹치는 셀도 원본처럼 모두 배치한다(렌더 불변).
+        // 대신 누적 채우기 횟수를 격자 크기로 상한해, 같은 대영역을 겹쳐 채우는
+        // 병적 입력이 occupancy 삽입을 수십억 번 반복하는 것을 막는다 (#14).
+        fill: for row in placement.row ..< placement.row + placement.rowSpan {
             for column in placement.column ..< placement.column + placement.columnSpan {
+                if fillBudget <= 0 {
+                    break fill
+                }
                 occupied.insert(GridPosition(row: row, column: column))
+                fillBudget -= 1
             }
         }
         return placement
+    }
+
+    /// 셀을 placement()과 동일한 규칙(명시 좌표 / fallback 커서 / 겹침 거부)으로
+    /// 해석해 시작 행 → 셀 목록으로 묶는다. cellArray를 세그먼트마다 전수
+    /// 스캔하지 않게 하고(#15), 좌표 없는 fallback 셀도 배치가 준 실제 행에
+    /// 귀속시킨다(#23 — 예전엔 전부 행 0으로 취급). 각 셀에 원래 cellArray
+    /// 인덱스를 실어, 소비 측이 인덱스로 재정렬해 문서 순서(=각주 번호 순서)를
+    /// 정확히 복원한다 (행 우선 저장 가정에 의존하지 않음).
+    static func cellRowIndex(
+        for table: CoreHwp.HwpTable
+    ) -> [Int: [(index: Int, cell: CoreHwp.HwpTableCell)]] {
+        let property = table.tableProperty
+        let rowCount = max(Int(property.rowCount), property.rowCellCounts.count)
+        let columnCount = Int(property.columnCount)
+        guard rowCount > 0, columnCount > 0 else { return [:] }
+        var occupied = Set<Int>()
+        var nextFallbackIndex = 0
+        var fillBudget = rowCount * columnCount
+        var index: [Int: [(index: Int, cell: CoreHwp.HwpTableCell)]] = [:]
+        for (cellIndex, cell) in table.cellArray.enumerated() {
+            var row = 0
+            var column = 0
+            var rowSpan = 1
+            var columnSpan = 1
+            var placed = false
+            if let cellProperty = cell.header.cellProperty,
+               Int(cellProperty.rowAddress) < rowCount,
+               Int(cellProperty.columnAddress) < columnCount
+            {
+                row = Int(cellProperty.rowAddress)
+                column = Int(cellProperty.columnAddress)
+                rowSpan = min(Int(cellProperty.rowSpan), rowCount - row)
+                columnSpan = min(Int(cellProperty.columnSpan), columnCount - column)
+                placed = true
+            } else {
+                var slot = nextFallbackIndex
+                while slot < rowCount * columnCount {
+                    if !occupied.contains(slot) {
+                        row = slot / columnCount
+                        column = slot % columnCount
+                        placed = true
+                        break
+                    }
+                    slot += 1
+                }
+                nextFallbackIndex = slot + 1
+            }
+            guard placed else { continue }
+            // placement()과 동일: 셀을 거부하지 않고(겹쳐도 배치) 누적 채우기만
+            // 격자 크기로 상한한다 (#14) — 렌더 배치와 각주 행 귀속을 일치시킨다.
+            fillLoop: for spanRow in row ..< row + rowSpan {
+                for spanColumn in column ..< column + columnSpan {
+                    if fillBudget <= 0 {
+                        break fillLoop
+                    }
+                    occupied.insert(spanRow * columnCount + spanColumn)
+                    fillBudget -= 1
+                }
+            }
+            index[row, default: []].append((cellIndex, cell))
+        }
+        return index
     }
 
     /// 셀 고유 여백을 쓰는 셀은 셀 속성의 여백, 아니면 표 안쪽 여백.

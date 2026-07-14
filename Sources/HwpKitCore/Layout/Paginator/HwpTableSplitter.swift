@@ -26,21 +26,27 @@ enum HwpTableSplitter {
         return count
     }
 
-    /// remaining 높이에 들어가는 만큼 row를 세그먼트로 옮긴다.
-    /// 첫 row가 remaining보다 크면 잘라서 위 조각만 넣고 아래 조각을 이월한다.
+    /// remaining 높이에 들어가는 만큼 row를 세그먼트로 담는다.
+    /// 첫 row가 remaining보다 크면 잘라서 위 조각만 담고 아래 조각을 `replacement`로
+    /// 돌려준다 (호출자가 커서 위치에 제자리 치환).
+    ///
+    /// `rows`를 ArraySlice로 받고 소비 개수(`consumed`)만 돌려줘 배열 앞을
+    /// 반복 시프트하지 않는다 — 다페이지 표에서 removeFirst의 O(n²) 제거 (#5).
+    /// `consumed`는 완전 소비한 행 수 (잘린 행은 미포함).
     static func fillSegment(
-        remainingRows: inout [HwpTableRowFrame],
+        rows: ArraySlice<HwpTableRowFrame>,
         remaining: CGFloat
-    ) -> [HwpTableRowFrame] {
+    ) -> (segment: [HwpTableRowFrame], consumed: Int, replacement: HwpTableRowFrame?) {
         var segmentRows: [HwpTableRowFrame] = []
         var segmentHeight: CGFloat = 0
-        while let row = remainingRows.first {
+        var consumed = 0
+        for row in rows {
             // 세그먼트 높이는 row 사이 cellSpacing까지 포함해
             // (첫 row 상단 ~ 이 row 하단) 실제 블록 높이로 판정한다.
             let segmentStartY = segmentRows.first?.rowFrame.minY ?? row.rowFrame.minY
             // rowspan 셀은 시작 행에만 존재하고 아래 행까지 뻗으므로, 세그먼트
             // 높이 판정에 병합 셀의 실제 maxY를 반영해 병합 셀이 조각 경계를
-            // 넘어 잘리거나 이어지는 조각에서 사라지지 않게 한다 (#14).
+            // 넘어 잘리거나 이어지는 조각에서 사라지지 않게 한다.
             let rowExtent = row.cells.reduce(row.rowFrame.maxY) { partial, cell in
                 cell.rowSpan > 1 ? max(partial, cell.cellFrame.maxY) : partial
             }
@@ -55,20 +61,19 @@ enum HwpTableSplitter {
                     at: row.rowFrame.minY + max(1, remaining)
                 )
                 segmentRows.append(fragments.top)
-                remainingRows[0] = fragments.bottom
-                break
+                return (segmentRows, consumed, fragments.bottom)
             }
             segmentRows.append(row)
             segmentHeight = prospectiveHeight
-            remainingRows.removeFirst()
+            consumed += 1
             if segmentHeight >= remaining {
                 break
             }
         }
-        return segmentRows
+        return (segmentRows, consumed, nil)
     }
 
-    static func minimumRowHeight(_ rows: [HwpTableRowFrame]) -> CGFloat {
+    static func minimumRowHeight(_ rows: ArraySlice<HwpTableRowFrame>) -> CGFloat {
         rows.first?.rowFrame.height ?? 1
     }
 
@@ -92,7 +97,15 @@ enum HwpTableSplitter {
             let shiftedHeader = repeatedHeaderRows.map {
                 markedAsRepeatedHeaderClone(shifted(row: $0, deltaY: -headerShift))
             }
-            headerHeight = shiftedHeader.reduce(CGFloat(0)) { max($0, $1.rowFrame.maxY) }
+            // 제목 셀이 비-제목 행까지 rowspan하면 rowFrame.maxY만으로는
+            // 높이가 과소평가돼 본문 행이 클론 제목과 겹친다 — 병합 셀의
+            // 실제 maxY를 반영한다 (#29).
+            headerHeight = shiftedHeader.reduce(CGFloat(0)) { partial, row in
+                let rowExtent = row.cells.reduce(row.rowFrame.maxY) { extent, cell in
+                    cell.rowSpan > 1 ? max(extent, cell.cellFrame.maxY) : extent
+                }
+                return max(partial, rowExtent)
+            }
             shiftedRows.append(contentsOf: shiftedHeader)
         }
         let yShift = firstRow.rowFrame.minY - headerHeight
@@ -136,10 +149,26 @@ enum HwpTableSplitter {
                     },
                     borders: cell.borders,
                     fillColor: cell.fillColor,
-                    nestedTables: cell.nestedTables,
+                    // 중첩 표의 텍스트도 클론 표식을 재귀로 단다 — 안 그러면
+                    // 중첩 제목 텍스트가 페이지마다 복사에 중복된다 (#25).
+                    nestedTables: cell.nestedTables.map(markedNestedClone),
                     images: cell.images
                 )
             }
+        )
+    }
+
+    /// 중첩 표의 모든 행을 반복 제목 클론으로 표식한다 (재귀, 깊이 ≤ 3).
+    private static func markedNestedClone(_ nested: HwpNestedTableFrame) -> HwpNestedTableFrame {
+        HwpNestedTableFrame(
+            rect: nested.rect,
+            table: HwpTableFrame(
+                outerFrame: nested.table.outerFrame,
+                rows: nested.table.rows.map(markedAsRepeatedHeaderClone),
+                borderColor: nested.table.borderColor,
+                borderWidth: nested.table.borderWidth
+            ),
+            controlInstanceId: nested.controlInstanceId
         )
     }
 

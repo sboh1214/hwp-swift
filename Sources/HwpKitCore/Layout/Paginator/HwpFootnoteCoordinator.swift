@@ -91,19 +91,12 @@ struct HwpFootnoteCoordinator {
     /// 표 셀 각주를 수집한다. rows가 nil이면 전체, 아니면 해당 grid 행만
     /// (행 주소 없는 셀은 첫 세그먼트에서 수집).
     mutating func collectTableCellFootnotes(
-        _ table: CoreHwp.HwpTable,
+        cellsByRow: [Int: [(index: Int, cell: CoreHwp.HwpTableCell)]],
         rows: ClosedRange<Int>?,
         environment: Environment,
         childParagraphs: ChildParagraphs
     ) {
-        for cell in table.cellArray {
-            if let rows {
-                if let property = cell.header.cellProperty {
-                    guard rows.contains(Int(property.rowAddress)) else { continue }
-                } else {
-                    guard rows.lowerBound == 0 else { continue }
-                }
-            }
+        for cell in Self.cellsInRows(cellsByRow, rows: rows) {
             for paragraph in cell.paragraphArray {
                 collectFootnotes(
                     from: paragraph,
@@ -113,6 +106,21 @@ struct HwpFootnoteCoordinator {
                 )
             }
         }
+    }
+
+    /// 행 범위(nil이면 전체)의 셀을 행 오름차순 + 버킷 내 cellArray 순서로
+    /// 훑는다 — 행 우선 저장 표에서 문서 순서와 동일하다 (각주 번호 보존).
+    private static func cellsInRows(
+        _ cellsByRow: [Int: [(index: Int, cell: CoreHwp.HwpTableCell)]],
+        rows: ClosedRange<Int>?
+    ) -> [CoreHwp.HwpTableCell] {
+        let orderedRows = rows.map(Array.init) ?? cellsByRow.keys.sorted()
+        // 원래 cellArray 인덱스로 재정렬해 문서 순서(=각주 번호 순서)를 정확히
+        // 복원한다 — 행 우선 저장이 아니어도 기존 전수 스캔과 동일한 순서.
+        return orderedRows
+            .flatMap { cellsByRow[$0] ?? [] }
+            .sorted { $0.index < $1.index }
+            .map(\.cell)
     }
 
     private mutating func collectFootnotes(
@@ -227,19 +235,14 @@ struct HwpFootnoteCoordinator {
     /// 바꾸지 않고 측정만 한다 (표 세그먼트 크기 산정 전 예약용, collect와 동형
     /// 필터). 셀 각주가 없으면 0이라 표 배치가 기존과 동일하다.
     mutating func anticipatedTableCellFootnoteHeight(
-        _ table: CoreHwp.HwpTable,
+        cellsByRow: [Int: [(index: Int, cell: CoreHwp.HwpTableCell)]],
         rows: ClosedRange<Int>,
         environment: Environment,
         childParagraphs: ChildParagraphs
     ) -> CGFloat {
         var preview = footnoteCounter
         var body: CGFloat = 0
-        for cell in table.cellArray {
-            if let property = cell.header.cellProperty {
-                guard rows.contains(Int(property.rowAddress)) else { continue }
-            } else {
-                guard rows.lowerBound == 0 else { continue }
-            }
+        for cell in Self.cellsInRows(cellsByRow, rows: rows) {
             for paragraph in cell.paragraphArray {
                 body += anticipatedFootnoteBodyHeight(
                     for: paragraph,

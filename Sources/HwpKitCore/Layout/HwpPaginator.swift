@@ -135,7 +135,13 @@ public actor HwpPaginator {
     }
 
     /// 방금 배치한 본문 문단 텍스트 블록 (줄 중간 treatAsChar 앵커의 기준)
-    private var currentParagraphContext: (blockFrame: CGRect, lines: [HwpLineFrame])?
+    private var currentParagraphContext: (blockFrame: CGRect, lines: [HwpLineFrame])? {
+        didSet { inlineAnchorCache = nil }
+    }
+
+    /// controlIndex → 인라인 앵커 페이지 좌표 캐시 — 컨트롤마다 전 라인·앵커를
+    /// 처음부터 스캔하지 않도록 컨텍스트당 한 번만 만든다 (#12).
+    private var inlineAnchorCache: [Int: CGPoint]?
     /// 절대 라인 캐시 배치 — run 분해·높이·슬라이스·stale 판정 계산과
     /// 절대 캐시 전용 상태 (모드·마지막 loc·stale 보정)를 소유한다.
     /// 페이지 확정·블록 방출은 여기 (paginator)에 남는다.
@@ -659,12 +665,9 @@ private extension HwpPaginator {
 
         for (runIndex, run) in runs.enumerated() {
             guard let firstSegment = run.first else { return false }
-            var runBottom = firstSegment.lineLocation
+            var runBottom = Int(firstSegment.lineLocation)
             for segment in run {
-                runBottom = max(
-                    runBottom,
-                    segment.lineLocation + HwpAbsoluteCachePlacer.lineAdvance(of: segment)
-                )
+                runBottom = max(runBottom, HwpAbsoluteCachePlacer.lineBottom(of: segment))
             }
             let start = boundaries[runIndex]
             let length = max(0, boundaries[runIndex + 1] - start)
@@ -677,7 +680,7 @@ private extension HwpPaginator {
             )
             appendBlock(
                 height: max(1, HwpUnits.points(
-                    fromHwpUnit: runBottom - firstSegment.lineLocation
+                    fromHwpUnit: Int32(clamping: runBottom - Int(firstSegment.lineLocation))
                 )),
                 attributedString: runIndex < runs.count - 1
                     ? HwpTableSplitter.markedAsContinuedFragment(fragment) : fragment,
@@ -1247,38 +1250,51 @@ private extension HwpPaginator {
     ) {
         guard !frame.rows.isEmpty else { return }
 
+        // 셀 각주 수집용 시작 행 인덱스를 표당 한 번만 만든다 (세그먼트마다
+        // 전수 스캔 방지, #15; fallback 셀도 실제 행에 귀속, #23).
+        let cellsByRow = table.map { HwpTableLayout.cellRowIndex(for: $0) } ?? [:]
+
         if pageBreakMode == .none {
             let tableHeight = frame.rows.reduce(CGFloat(0)) { max($0, $1.rowFrame.maxY) }
             if contentHeightUsed > 0, contentHeightUsed + tableHeight > effectiveContentHeight {
                 advanceColumn()
             }
-            if let table {
-                collectTableCellFootnotes(table, rows: nil)
+            if table != nil {
+                collectTableCellFootnotes(cellsByRow: cellsByRow, rows: nil)
             }
             appendTableSegmentBlock(rows: frame.rows, original: frame, instanceId: instanceId)
             return
         }
 
         // 반복할 제목 행 (표 전체가 제목이면 반복하지 않는다)
-        let repeatedRows = headerRowCount > 0 && headerRowCount < frame.rows.count
+        let candidateHeaderRows = headerRowCount > 0 && headerRowCount < frame.rows.count
             ? Array(frame.rows.prefix(headerRowCount))
             : []
-        let repeatedHeight = repeatedRows.isEmpty
+        let candidateHeaderHeight = candidateHeaderRows.isEmpty
             ? 0
-            : repeatedRows.reduce(CGFloat(0)) { max($0, $1.rowFrame.maxY) }
-            - (repeatedRows.first?.rowFrame.minY ?? 0)
+            : candidateHeaderRows.reduce(CGFloat(0)) { max($0, $1.rowFrame.maxY) }
+            - (candidateHeaderRows.first?.rowFrame.minY ?? 0)
+        // 반복 제목이 페이지 본문보다 크거나 같으면 continuation에 본문 행 공간이
+        // 남지 않아 splitter가 0-높이 조각을 유지하며 제목만 반복해 페이지가
+        // 폭주한다 — 반복을 끈다 (#13). 실제 제목(몇 줄)은 페이지보다 훨씬 작아 불변.
+        let headerLeavesBodyRoom = candidateHeaderHeight < effectiveContentHeight
+        let repeatedRows = headerLeavesBodyRoom ? candidateHeaderRows : []
+        let repeatedHeight = headerLeavesBodyRoom ? candidateHeaderHeight : 0
 
-        var remainingRows = frame.rows
+        // 커서로 소비한다 — removeFirst의 배열 앞 반복 시프트(O(n²))를 피한다 (#5).
+        // 잘린 행의 아래 조각은 커서 위치에 제자리 치환한다.
+        var rows = frame.rows
+        var cursor = 0
         var isFirstSegment = true
         // 이미 셀 각주를 수집한 최상위 행 — 분할된 행이 다음 세그먼트에서
         // 다시 수집돼 각주가 중복되는 것을 막는다.
         var highestCollectedRow = Int.min
 
-        while !remainingRows.isEmpty {
+        while cursor < rows.count {
             // 이어지는 세그먼트는 제목 행 반복 높이를 미리 차감한다.
             let headerAllowance = isFirstSegment ? 0 : repeatedHeight
             var remaining = effectiveContentHeight - contentHeightUsed - headerAllowance
-            if remaining < HwpTableSplitter.minimumRowHeight(remainingRows), contentHeightUsed > 0 {
+            if remaining < HwpTableSplitter.minimumRowHeight(rows[cursor...]), contentHeightUsed > 0 {
                 advanceColumn()
                 remaining = effectiveContentHeight - headerAllowance
             }
@@ -1287,19 +1303,19 @@ private extension HwpPaginator {
             // 각주 예약 후 최소 행조차 안 들어가면 remaining을 되돌리지 않고
             // 새 페이지로 이월한다 — 각주가 이미 claim한 공간에 행을 밀어넣어
             // 각주 영역과 겹치지 않게 한다 (#11). 셀 각주가 없으면 no-op.
-            if let table {
+            if table != nil {
                 var notes = anticipatedNotesForNextSegment(
-                    table, remainingRows: remainingRows,
+                    cellsByRow: cellsByRow, remainingRows: rows[cursor...],
                     remaining: remaining, highestCollectedRow: highestCollectedRow
                 )
                 if notes > 0,
-                   remaining - notes < HwpTableSplitter.minimumRowHeight(remainingRows),
+                   remaining - notes < HwpTableSplitter.minimumRowHeight(rows[cursor...]),
                    contentHeightUsed > 0
                 {
                     advanceColumn()
                     remaining = effectiveContentHeight - headerAllowance
                     notes = anticipatedNotesForNextSegment(
-                        table, remainingRows: remainingRows,
+                        cellsByRow: cellsByRow, remainingRows: rows[cursor...],
                         remaining: remaining, highestCollectedRow: highestCollectedRow
                     )
                 }
@@ -1308,21 +1324,23 @@ private extension HwpPaginator {
                 }
             }
 
-            let segmentRows = HwpTableSplitter.fillSegment(
-                remainingRows: &remainingRows,
-                remaining: remaining
-            )
+            let fill = HwpTableSplitter.fillSegment(rows: rows[cursor...], remaining: remaining)
+            let segmentRows = fill.segment
             guard !segmentRows.isEmpty else { break }
+            cursor += fill.consumed
+            if let replacement = fill.replacement {
+                rows[cursor] = replacement
+            }
 
             // 셀 각주는 행이 실리는 페이지 귀속 (한글 실측 — 헌법주석 p485).
             // 분할된 행은 조각이 같은 rowAddress를 유지하므로, 이미 수집한 행보다
             // 큰 행만 수집해 조각 간 중복 각주를 막는다.
-            if let table {
+            if table != nil {
                 let rowIndexes = segmentRows.flatMap(\.cells).map(\.row)
                 if let maxRow = rowIndexes.max() {
                     let startRow = max(rowIndexes.min() ?? maxRow, highestCollectedRow + 1)
                     if startRow <= maxRow {
-                        collectTableCellFootnotes(table, rows: startRow ... maxRow)
+                        collectTableCellFootnotes(cellsByRow: cellsByRow, rows: startRow ... maxRow)
                         highestCollectedRow = maxRow
                     }
                 }
@@ -1765,21 +1783,35 @@ private extension HwpPaginator {
     /// 라인 origin.y (첫 baseline 기준 delta). 개체 위 = baseline - 앵커 ascent
     /// (run delegate가 예약한 개체 높이).
     func inlineAnchorPosition(for controlIndex: Int?) -> CGPoint? {
-        guard let controlIndex,
-              let context = currentParagraphContext,
-              let firstBaseline = context.lines.first?.baseline
-        else { return nil }
-        for line in context.lines {
-            guard let anchor = line.inlineAnchors.first(where: {
-                $0.controlIndex == controlIndex
-            }) else { continue }
-            let baselineY = context.blockFrame.minY + firstBaseline + line.origin.y
-            return CGPoint(
-                x: context.blockFrame.minX + line.origin.x + anchor.xOffset,
-                y: baselineY - anchor.ascent
-            )
+        guard let controlIndex, currentParagraphContext != nil else { return nil }
+        return inlineAnchorMap()[controlIndex]
+    }
+
+    /// controlIndex → 앵커 좌표 맵을 컨텍스트당 한 번 만들고 캐시한다 (#12).
+    /// 라인·앵커를 방출 순서로 훑어 각 controlIndex의 첫 매칭만 담는다
+    /// (기존 lines.first(where:) 순서와 동일).
+    private func inlineAnchorMap() -> [Int: CGPoint] {
+        if let cached = inlineAnchorCache {
+            return cached
         }
-        return nil
+        guard let context = currentParagraphContext,
+              let firstBaseline = context.lines.first?.baseline
+        else {
+            inlineAnchorCache = [:]
+            return [:]
+        }
+        var map: [Int: CGPoint] = [:]
+        for line in context.lines {
+            let baselineY = context.blockFrame.minY + firstBaseline + line.origin.y
+            for anchor in line.inlineAnchors where map[anchor.controlIndex] == nil {
+                map[anchor.controlIndex] = CGPoint(
+                    x: context.blockFrame.minX + line.origin.x + anchor.xOffset,
+                    y: baselineY - anchor.ascent
+                )
+            }
+        }
+        inlineAnchorCache = map
+        return map
     }
 
     func consumesFlow(_ info: CoreHwp.HwpCommonCtrlPropertyInfo) -> Bool {
@@ -1900,9 +1932,13 @@ private extension HwpPaginator {
     }
 
     /// 표 셀 각주를 수집한다. rows가 nil이면 전체 (HwpFootnoteCoordinator 참조)
-    func collectTableCellFootnotes(_ table: CoreHwp.HwpTable, rows: ClosedRange<Int>?) {
+    /// cellsByRow는 HwpTableLayout.cellRowIndex — 세그먼트마다 전수 스캔 방지 (#15)
+    func collectTableCellFootnotes(
+        cellsByRow: [Int: [(index: Int, cell: CoreHwp.HwpTableCell)]],
+        rows: ClosedRange<Int>?
+    ) {
         footnoteCoordinator.collectTableCellFootnotes(
-            table,
+            cellsByRow: cellsByRow,
             rows: rows,
             environment: noteEnvironment,
             childParagraphs: childParagraphs(of:)
@@ -1911,11 +1947,11 @@ private extension HwpPaginator {
 
     /// 표 세그먼트 크기 산정 전 후보 행의 셀 각주 예약 높이 (HwpFootnoteCoordinator 참조)
     func anticipatedTableCellFootnoteHeight(
-        _ table: CoreHwp.HwpTable,
+        cellsByRow: [Int: [(index: Int, cell: CoreHwp.HwpTableCell)]],
         rows: ClosedRange<Int>
     ) -> CGFloat {
         footnoteCoordinator.anticipatedTableCellFootnoteHeight(
-            table,
+            cellsByRow: cellsByRow,
             rows: rows,
             environment: noteEnvironment,
             childParagraphs: childParagraphs(of:)
@@ -1925,18 +1961,17 @@ private extension HwpPaginator {
     /// 다음 세그먼트에 들어갈 후보 행들의 셀 각주가 예약할 높이 — 사본으로
     /// 시산만 한다(상태 불변). 이미 수집한 행 이후분만 세고, 셀 각주가 없으면 0.
     private func anticipatedNotesForNextSegment(
-        _ table: CoreHwp.HwpTable,
-        remainingRows: [HwpTableRowFrame],
+        cellsByRow: [Int: [(index: Int, cell: CoreHwp.HwpTableCell)]],
+        remainingRows: ArraySlice<HwpTableRowFrame>,
         remaining: CGFloat,
         highestCollectedRow: Int
     ) -> CGFloat {
-        var trialRows = remainingRows
-        let trial = HwpTableSplitter.fillSegment(remainingRows: &trialRows, remaining: remaining)
-        let rows = trial.flatMap(\.cells).map(\.row)
+        let trial = HwpTableSplitter.fillSegment(rows: remainingRows, remaining: remaining)
+        let rows = trial.segment.flatMap(\.cells).map(\.row)
         guard let maxRow = rows.max() else { return 0 }
         let startRow = max(rows.min() ?? maxRow, highestCollectedRow + 1)
         guard startRow <= maxRow else { return 0 }
-        return anticipatedTableCellFootnoteHeight(table, rows: startRow ... maxRow)
+        return anticipatedTableCellFootnoteHeight(cellsByRow: cellsByRow, rows: startRow ... maxRow)
     }
 
     // MARK: 미주 (문서/구역 끝)
@@ -2118,15 +2153,12 @@ private extension HwpPaginator {
         // 실제 줄 전진량은 캐시가 직접 준다: lineHeight + lineSpacing (per-line 필드).
         // 실측: 연속 세그먼트의 lineLocation 델타와 일치 (헌법주석 30,345/30,348,
         // noori 문단 내 전부 — 저장 세대와 무관).
-        let top = segments[0].lineLocation
+        let top = Int(segments[0].lineLocation)
         var bottom = top
         for segment in segments {
-            bottom = max(
-                bottom,
-                segment.lineLocation + HwpAbsoluteCachePlacer.lineAdvance(of: segment)
-            )
+            bottom = max(bottom, HwpAbsoluteCachePlacer.lineBottom(of: segment))
         }
-        let lineHeights = max(0, HwpUnits.points(fromHwpUnit: bottom - top))
+        let lineHeights = max(0, HwpUnits.points(fromHwpUnit: Int32(clamping: bottom - top)))
         // 문단 간격 위/아래는 캐시에 포함되지 않으므로 CT 폴백 경로
         // (paragraphSpacingBefore/After)와 동일하게 더한다. paraShape가
         // 없으면 간격 0 — optional helper를 쓴다.
