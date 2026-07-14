@@ -37,6 +37,11 @@ public enum HwpAttributedStringKey {
     /// 끝 줄은 문단 마지막 줄이 아니므로 양쪽 정렬을 유지한다
     public static let continuedParagraphFragment =
         NSAttributedString.Key("hwp.continuedParagraphFragment")
+
+    /// 페이지에 걸친 표의 반복된 제목 행 클론 표식 — 렌더·선택에는 남지만
+    /// 복사 소스 텍스트에는 한 번만 포함한다 (페이지마다 중복 방지).
+    public static let repeatedTableHeaderClone =
+        NSAttributedString.Key("hwp.repeatedTableHeaderClone")
     /// 탭 채움 종류 (HwpTabInfo.fillType != 0) — 렌더러가 탭 전진 구간에
     /// 점선 리더를 그린다 (목차 실물)
     public static let tabLeader = NSAttributedString.Key("hwp.tabLeader")

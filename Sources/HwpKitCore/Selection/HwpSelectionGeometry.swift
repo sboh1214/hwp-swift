@@ -129,18 +129,31 @@ public final class HwpSelectionGeometry {
     /// 재조판된 CTLine에 질의하므로 화면 글리프 위치와 일치한다.
     private func characterOffset(in line: HwpDrawnLine, atX x: CGFloat) -> Int {
         let localX = x - line.baselineOrigin.x
+        let start = line.stringRange.location
+        let end = line.stringRange.location + line.stringRange.length
+        // RTL 줄은 논리 시작이 시각적 오른쪽, 논리 끝이 왼쪽이다 — 줄 밖 x를
+        // 스냅할 때 방향을 반영해야 아랍어 줄 너머 드래그가 반대 끝으로 튀지
+        // 않는다 (#8).
+        let rtl = Self.isRightToLeft(line.line)
         if localX <= 0 {
-            return line.stringRange.location
+            return rtl ? end : start
         }
         let lineWidth = CGFloat(CTLineGetTypographicBounds(line.line, nil, nil, nil))
         if localX >= lineWidth {
-            return line.stringRange.location + line.stringRange.length
+            return rtl ? start : end
         }
         let index = CTLineGetStringIndexForPosition(line.line, CGPoint(x: localX, y: 0))
-        guard index != kCFNotFound else { return line.stringRange.location }
+        guard index != kCFNotFound else { return start }
         // 재조판 라인은 substring (location 0) 기준일 수 있어 원 범위로 보정
         let ctRange = CTLineGetStringRange(line.line)
         return line.stringRange.location + (index - ctRange.location)
+    }
+
+    /// CTLine의 첫 글리프 run 방향이 RTL인지 (혼합 bidi 줄은 근사).
+    private static func isRightToLeft(_ line: CTLine) -> Bool {
+        guard let runs = CTLineGetGlyphRuns(line) as? [CTRun], let first = runs.first
+        else { return false }
+        return CTRunGetStatus(first).contains(.rightToLeft)
     }
 
     // MARK: - 범위 → 하이라이트 rect
@@ -200,11 +213,15 @@ public final class HwpSelectionGeometry {
         let endX = CTLineGetOffsetForStringIndex(
             line.line, upper - lineRange.location + ctRange.location, nil
         )
-        guard endX > startX else { return nil }
+        // RTL 줄은 논리 인덱스 증가에 따라 오프셋이 감소하므로 min/max로
+        // 정규화한다 — 정규화 없이 endX > startX만 보면 RTL 선택이 사라진다 (#7).
+        let minX = min(startX, endX)
+        let maxX = max(startX, endX)
+        guard maxX > minX else { return nil }
         return CGRect(
-            x: line.baselineOrigin.x + startX,
+            x: line.baselineOrigin.x + minX,
             y: line.baselineOrigin.y - line.ascent,
-            width: endX - startX,
+            width: maxX - minX,
             height: line.ascent + line.descent
         )
     }
@@ -217,9 +234,14 @@ public final class HwpSelectionGeometry {
     public func plainText(for selection: HwpTextSelection) -> String {
         guard !selection.isCollapsed else { return "" }
         let (start, end) = selection.range
-        var pieces: [String] = []
+        var contributions: [Contribution] = []
         for pageIndex in start.pageIndex ... end.pageIndex {
             for unit in units(forPage: pageIndex) {
+                // 페이지에 걸친 표의 반복 제목 행 클론은 복사에서 한 번만 넣는다 —
+                // 선택 하이라이트에는 남지만 소스 텍스트에는 원본만 포함한다 (#21).
+                if Self.isRepeatedHeaderClone(unit.attributedString) {
+                    continue
+                }
                 let unitStart = HwpTextPosition(
                     pageIndex: pageIndex, blockIndex: unit.blockIndex,
                     unitIndex: unit.unitIndex, characterOffset: 0
@@ -237,10 +259,54 @@ public final class HwpSelectionGeometry {
                 guard upper > lower else { continue }
                 let slice = (unit.attributedString.string as NSString)
                     .substring(with: NSRange(location: lower, length: upper - lower))
-                pieces.append(Self.strippingControlMarkers(slice))
+                contributions.append(Contribution(
+                    text: Self.strippingControlMarkers(slice),
+                    paragraphId: unit.paragraphId,
+                    continuesNext: upper == unit.attributedString.length
+                        && Self.isContinuedFragment(unit.attributedString)
+                ))
             }
         }
-        return pieces.joined(separator: "\n")
+        // 조각을 잇되 같은 원본 문단의 연속이면 개행을 넣지 않는다 (#9): 본문
+        // 조각은 paraId 동일성으로, 표/열에 걸친 조각은 '이어짐' 표식으로 판정.
+        var result = ""
+        for (index, piece) in contributions.enumerated() {
+            if index > 0 {
+                let previous = contributions[index - 1]
+                let sameParagraph =
+                    (previous.paragraphId != nil && previous.paragraphId == piece.paragraphId)
+                        || previous.continuesNext
+                result += sameParagraph ? "" : "\n"
+            }
+            result += piece.text
+        }
+        return result
+    }
+
+    /// 복사 텍스트 조립용 조각 하나 (문단 연속 판정 메타 포함).
+    private struct Contribution {
+        let text: String
+        let paragraphId: UInt32?
+        /// 이 조각이 '이어짐' 표식을 달아 다음 조각이 같은 문단의 연속인지
+        let continuesNext: Bool
+    }
+
+    private static func isContinuedFragment(_ attributed: NSAttributedString) -> Bool {
+        guard attributed.length > 0 else { return false }
+        return attributed.attribute(
+            HwpAttributedStringKey.continuedParagraphFragment,
+            at: attributed.length - 1,
+            effectiveRange: nil
+        ) != nil
+    }
+
+    private static func isRepeatedHeaderClone(_ attributed: NSAttributedString) -> Bool {
+        guard attributed.length > 0 else { return false }
+        return attributed.attribute(
+            HwpAttributedStringKey.repeatedTableHeaderClone,
+            at: 0,
+            effectiveRange: nil
+        ) != nil
     }
 
     /// U+FFFC 개체 자리 표시 마커 제거
@@ -293,7 +359,14 @@ public final class HwpSelectionGeometry {
         var start = clamped
         var end = clamped
         func isWordCharacter(_ offset: Int) -> Bool {
-            let character = Character(UnicodeScalar(nsText.character(at: offset)) ?? " ")
+            let unit = nsText.character(at: offset)
+            // 서로게이트(비-BMP 스칼라의 반쪽)는 유효 UnicodeScalar가 아니라
+            // 공백으로 오분류된다 — 단어 문자로 취급해 이모지·비-BMP CJK 단어가
+            // 끊기지 않게 한다 (#10).
+            if UTF16.isLeadSurrogate(unit) || UTF16.isTrailSurrogate(unit) {
+                return true
+            }
+            let character = Character(UnicodeScalar(unit) ?? " ")
             return !character.isWhitespace && character != "\u{FFFC}"
         }
         guard isWordCharacter(clamped) else { return nil }
