@@ -41,6 +41,11 @@ private final class ChartXMLDelegate: NSObject, XMLParserDelegate {
         var values: [Double] = []
     }
 
+    /// 계열 개수 상한 — <ser>≈7B라 64MB payload 안에 수백만 개가 들어갈 수
+    /// 있어, 미신뢰 차트가 계열을 무제한 보유·렌더해 메모리·CPU를 고갈시키는
+    /// 것을 막는다 (#1). 실측 차트는 수~수십 계열이라 렌더 불변.
+    static let maxSeries = 256
+
     var series: [MutableSeries] = []
     var categories: [String] = []
     var hasTitle = false
@@ -70,7 +75,7 @@ private final class ChartXMLDelegate: NSObject, XMLParserDelegate {
         currentText = ""
 
         switch name {
-        case "ser":
+        case "ser" where series.count < Self.maxSeries:
             series.append(MutableSeries())
         case "title" where path.dropLast().last == "chart":
             hasTitle = true
