@@ -170,7 +170,10 @@
 
         /// Scrolls so the given page's top edge is at the top of the viewport.
         public func scrollToPage(at index: Int) {
-            guard let document, document.pages.indices.contains(index) else { return }
+            // 범위 밖 요청(짧은 문서로 교체된 뒤 남은 큰 인덱스)을 조용히 무시하지
+            // 않고 가장 가까운 유효 페이지로 클램프한다 — macOS와 대칭 (#4).
+            guard let document, !document.pages.isEmpty else { return }
+            let index = max(0, min(index, document.pages.count - 1))
             let target = contentView.convert(frameForPage(at: index), to: scrollView)
             let maxOffsetY = max(0, scrollView.contentSize.height - scrollView.bounds.height)
             let offsetY = max(0, min(target.minY, maxOffsetY))

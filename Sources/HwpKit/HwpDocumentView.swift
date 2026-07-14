@@ -138,16 +138,19 @@ final class HwpDocumentCoordinator {
             view.onUnsupportedElement = context.coordinator.handleUnsupportedElement(_:)
             view.onPageChanged = context.coordinator.handlePageChanged(_:)
             view.onZoomChanged = context.coordinator.handleZoomChanged(_:)
-            // nil-token 문서는 구조 동등성으로 렌더 차이를 못 잡으므로 항상
-            // 전달하고, 네이티브 didSet이 갱신 여부를 판정하게 한다 (#19).
-            if document.metadata.loadToken == nil || view.document != document {
+            // 문서 대입이 updateVisiblePages→onPageChanged로 currentPage를 1로
+            // 덮어쓰기 전에 요청된 초기 페이지를 캡처한다 (#3).
+            let requestedPage = currentPage?.wrappedValue
+            // 구조 동등성으로만 재대입한다 — 같은 문서를 다시 전달할 때
+            // didSet의 스크롤 리셋이 반복돼 페이지가 1로 튀는 것을 막는다 (#2).
+            if view.document != document {
                 view.document = document
             }
             if let zoomScale, view.zoomScale != zoomScale.wrappedValue {
                 view.zoomScale = zoomScale.wrappedValue
             }
-            if let currentPage {
-                let pageIndex = max(0, currentPage.wrappedValue - 1)
+            if let currentPage, let requestedPage {
+                let pageIndex = max(0, requestedPage - 1)
                 if view.currentVisiblePage() != pageIndex {
                     view.scrollToPage(at: pageIndex)
                 }
@@ -196,16 +199,19 @@ final class HwpDocumentCoordinator {
             view.onUnsupportedElement = context.coordinator.handleUnsupportedElement(_:)
             view.onPageChanged = context.coordinator.handlePageChanged(_:)
             view.onZoomChanged = context.coordinator.handleZoomChanged(_:)
-            // nil-token 문서는 구조 동등성으로 렌더 차이를 못 잡으므로 항상
-            // 전달하고, 네이티브 didSet이 갱신 여부를 판정하게 한다 (#19).
-            if document.metadata.loadToken == nil || view.document != document {
+            // 문서 대입이 updateVisiblePages→onPageChanged로 currentPage를 1로
+            // 덮어쓰기 전에 요청된 초기 페이지를 캡처한다 (#3).
+            let requestedPage = currentPage?.wrappedValue
+            // 구조 동등성으로만 재대입한다 — 같은 문서를 다시 전달할 때
+            // didSet의 스크롤 리셋이 반복돼 페이지가 1로 튀는 것을 막는다 (#2).
+            if view.document != document {
                 view.document = document
             }
             if let zoomScale, view.zoomScale != zoomScale.wrappedValue {
                 view.zoomScale = zoomScale.wrappedValue
             }
-            if let currentPage {
-                let pageIndex = max(0, currentPage.wrappedValue - 1)
+            if let currentPage, let requestedPage {
+                let pageIndex = max(0, requestedPage - 1)
                 if view.currentVisiblePage() != pageIndex {
                     view.scrollToPage(at: pageIndex)
                 }
