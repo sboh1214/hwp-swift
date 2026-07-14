@@ -11,6 +11,8 @@ struct ContentView: View {
     /// 프로그레시브 로딩 진행률 (완료되면 nil)
     @State private var loadProgress: Double?
     @State private var loadGeneration = 0
+    /// 진행 중 로드 task — 새 로드 시작 시 이전 것을 취소한다 (#6)
+    @State private var loadTask: Task<Void, Never>?
     @State private var currentPage: Int = 1
     @State private var zoomScale: CGFloat = 1.0
 
@@ -116,6 +118,9 @@ struct ContentView: View {
     }
 
     private func loadDocument(from url: URL) {
+        // 이전 로드를 취소해 겹치는 파싱·첫 페이지 레이아웃이 동시에 자원을
+        // 소모하지 않게 한다 (#6). 스트림 취소는 actor의 파싱까지 전파된다.
+        loadTask?.cancel()
         errorMessage = nil
         document = nil
         isLoading = true
@@ -123,7 +128,7 @@ struct ContentView: View {
         loadGeneration += 1
         let generation = loadGeneration
         let didStart = url.startAccessingSecurityScopedResource()
-        Task {
+        loadTask = Task {
             defer {
                 if didStart {
                     url.stopAccessingSecurityScopedResource()
@@ -134,6 +139,7 @@ struct ContentView: View {
                 // 배치 스냅샷으로 이어 붙는다 (뷰가 loadToken으로 증분 적용).
                 let loader = HwpDocumentLoader()
                 for try await snapshot in await loader.loadUpdates(from: url) {
+                    try Task.checkCancellation()
                     await MainActor.run {
                         guard generation == loadGeneration else { return }
                         if document == nil {
@@ -148,6 +154,8 @@ struct ContentView: View {
                         break
                     }
                 }
+            } catch is CancellationError {
+                // 취소된 로드는 조용히 종료 (새 로드가 UI를 갱신한다)
             } catch {
                 await MainActor.run {
                     guard generation == loadGeneration else { return }
