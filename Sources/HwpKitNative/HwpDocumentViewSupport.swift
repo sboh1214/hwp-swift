@@ -39,6 +39,21 @@ enum HwpDocumentViewSupport {
         min(base * max(1, zoomScale), base * 4)
     }
 
+    /// 레이어 한 축의 래스터 픽셀 상한 (Metal 최대 텍스처 = 백킹 스토어 안전선).
+    private static let maximumRasterPixelsPerAxis: CGFloat = 8192
+
+    /// 페이지 크기 × scale이 백킹 스토어 상한을 넘으면 scale을 낮춘다 (#7).
+    /// 거대 페이지 (미신뢰 치수·큰 줌)가 수 GiB RGBA 백킹을 요구하는 것을 막는다.
+    /// 실제 페이지(≤ 레터/A4)는 어떤 줌에서도 상한을 밑돌아 해상도 불변.
+    nonisolated static func boundedContentsScale(_ scale: CGFloat, for size: CGSize) -> CGFloat {
+        guard size.width > 0, size.height > 0 else { return scale }
+        let axisCap = min(
+            maximumRasterPixelsPerAxis / size.width,
+            maximumRasterPixelsPerAxis / size.height
+        )
+        return max(0.1, min(scale, axisCap))
+    }
+
     /// 배율이 달라진 레이어만 재래스터한다. 메모 패널 레이어 그룹도 함께
     /// 넘겨 페이지와 같은 해상도를 유지한다 (양 플랫폼 공통).
     static func updateContentsScale(
@@ -46,8 +61,10 @@ enum HwpDocumentViewSupport {
         scale: CGFloat
     ) {
         for layers in layerGroups {
-            for layer in layers where layer.contentsScale != scale {
-                layer.contentsScale = scale
+            for layer in layers {
+                let bounded = boundedContentsScale(scale, for: layer.bounds.size)
+                guard layer.contentsScale != bounded else { continue }
+                layer.contentsScale = bounded
                 layer.setNeedsDisplay()
             }
         }
@@ -62,7 +79,7 @@ enum HwpDocumentViewSupport {
         layer.shadowOpacity = 0.12
         layer.shadowRadius = 4
         layer.shadowOffset = CGSize(width: 0, height: -1)
-        layer.contentsScale = contentsScale
+        layer.contentsScale = boundedContentsScale(contentsScale, for: layer.bounds.size)
     }
 
     /// 페이지에 메모 패널이 있으면 오른쪽 바깥에 투명 레이어로 만든다.
@@ -82,7 +99,7 @@ enum HwpDocumentViewSupport {
         )
         panelLayer.pageHeight = pageFrame.height
         panelLayer.backgroundColor = nil
-        panelLayer.contentsScale = contentsScale
+        panelLayer.contentsScale = boundedContentsScale(contentsScale, for: panelLayer.bounds.size)
         panelLayer.paintList = panel.paintList
         return panelLayer
     }

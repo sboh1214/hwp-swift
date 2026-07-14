@@ -74,19 +74,17 @@ public struct HwpParagraphLayout {
         let segments = paragraph.paraLineSeg.paraLineSegInternalArray
         guard !segments.isEmpty else { return nil }
         var previous = Int32.min
-        var top = Int32.max
-        var bottom = Int32.min
+        var top = Int.max
+        var bottom = Int.min
         for segment in segments {
             guard segment.lineLocation > previous, segment.lineHeight >= 0 else { return nil }
             previous = segment.lineLocation
-            top = min(top, segment.lineLocation)
-            bottom = max(
-                bottom,
-                segment.lineLocation + segment.lineHeight + max(0, segment.lineSpacing)
-            )
+            // 미신뢰 캐시의 Int32 덧셈 트랩 방지 — Int로 넓혀 누적한다.
+            top = min(top, Int(segment.lineLocation))
+            bottom = max(bottom, HwpAbsoluteCachePlacer.lineBottom(of: segment))
         }
         guard bottom > top else { return nil }
-        return max(1, HwpUnits.points(fromHwpUnit: bottom - top))
+        return max(1, HwpUnits.points(fromHwpUnit: Int32(clamping: bottom - top)))
     }
 
     /// paraShape로 측정/렌더 공용 CTParagraphStyle을 만든다.

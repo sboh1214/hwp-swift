@@ -10,10 +10,15 @@ import Foundation
 /// OLEKit은 miniFAT이 없는 CFB (내장 차트 실측)를 `invalidEmptyStream`으로
 /// 거부하므로 여기서는 자체 최소 CFB 리더 (`EmbeddedCompoundFile`)를 쓴다.
 public enum HwpEmbeddedChart {
+    /// 차트 payload 상한 (byte). 실측 내장 차트는 수십 KB이므로 일반 스트림
+    /// 한도보다 훨씬 작은 차트 전용 상한으로 거대 payload의 반복 복사
+    /// (dropFirst 복사 + CFB 섹터 + XML 디코드)를 막는다 (#16).
+    static let maximumPayloadBytes = 64 << 20
+
     /// BinData `.OLE` payload에서 OOXML 차트 XML 문자열을 꺼낸다.
     /// 차트 개체가 아니거나 스트림이 없으면 nil.
     public static func chartXML(fromOLEPayload payload: Data) -> String? {
-        guard payload.count > 4 else { return nil }
+        guard payload.count > 4, payload.count <= maximumPayloadBytes else { return nil }
         let cfb = Data(payload.dropFirst(4))
         guard let file = EmbeddedCompoundFile(data: cfb),
               let data = file.stream(named: "OOXMLChartContents")

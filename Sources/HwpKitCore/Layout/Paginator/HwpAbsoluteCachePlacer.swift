@@ -73,8 +73,16 @@ struct HwpAbsoluteCachePlacer {
     /// 라인 캐시의 실제 줄 전진량 (HWPUNIT): lineHeight + lineSpacing.
     /// 줄 간격 종류/비율이 이미 반영된 per-line 값이라 저장 세대와 무관하다.
     /// 절대·다단 캐시 배치와 문단 높이 (height(for:)) 공용.
-    static func lineAdvance(of segment: CoreHwp.HwpParaLineSegInternal) -> Int32 {
-        max(0, segment.lineHeight) + max(0, segment.lineSpacing)
+    static func lineAdvance(of segment: CoreHwp.HwpParaLineSegInternal) -> Int {
+        // 미신뢰 캐시의 큰 Int32 두 필드를 그대로 더하면 트랩하므로 Int로 넓힌다
+        // (Int는 64-bit라 Int32 두 개 합은 절대 넘치지 않는다).
+        Int(max(0, segment.lineHeight)) + Int(max(0, segment.lineSpacing))
+    }
+
+    /// 라인 하단의 절대 위치 (lineLocation + 전진량)를 Int로 넓혀 계산한다 —
+    /// Int32 덧셈 트랩 방지 (미신뢰 라인 캐시). 정상 캐시는 값 불변.
+    static func lineBottom(of segment: CoreHwp.HwpParaLineSegInternal) -> Int {
+        Int(segment.lineLocation) + lineAdvance(of: segment)
     }
 
     // MARK: CT 측정 생략 게이트
@@ -150,22 +158,24 @@ struct HwpAbsoluteCachePlacer {
         columnTop: CGFloat,
         contentBottom: CGFloat
     ) -> CGFloat {
-        var runBottom = firstLocation
-        var runInkBottom = firstLocation
+        var runBottom = Int(firstLocation)
+        var runInkBottom = Int(firstLocation)
         for segment in run {
-            runBottom = max(runBottom, segment.lineLocation + Self.lineAdvance(of: segment))
+            runBottom = max(runBottom, Self.lineBottom(of: segment))
             runInkBottom = max(
                 runInkBottom,
-                segment.lineLocation + max(0, segment.lineHeight)
+                Int(segment.lineLocation) + Int(max(0, segment.lineHeight))
             )
         }
-        var height = max(1, HwpUnits.points(fromHwpUnit: runBottom - firstLocation))
+        var height = max(
+            1, HwpUnits.points(fromHwpUnit: Int32(clamping: runBottom - Int(firstLocation)))
+        )
         let blockTop = columnTop
             + max(0, HwpUnits.points(fromHwpUnit: firstLocation))
         if blockTop + height > contentBottom {
             let inkHeight = max(
                 1,
-                HwpUnits.points(fromHwpUnit: runInkBottom - firstLocation)
+                HwpUnits.points(fromHwpUnit: Int32(clamping: runInkBottom - Int(firstLocation)))
             )
             height = max(inkHeight, contentBottom - blockTop)
         }

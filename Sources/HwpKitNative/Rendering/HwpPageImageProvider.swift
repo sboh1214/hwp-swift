@@ -15,6 +15,9 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     private let store: HwpImageStore
     private let cache: HwpImageCache
     private let adapter = HwpImageAdapter()
+    /// 동시 디코드 수를 제한해 다수 이미지 페이지에서 임시 비트맵 합산이
+    /// 프로세스를 고갈시키지 않게 한다 (개별 픽셀 한도만으론 합산을 못 막음, #8).
+    private let decodeThrottle = HwpDecodeThrottle(limit: 3)
     private let lock = NSLock()
     /// draw 경로용 동기 스냅샷 ((binItemId, style) 변형별). NSCache라 메모리
     /// 압박 시 자동으로 비워지고, 비워진 항목은 requestImage가 다시 채운다.
@@ -79,7 +82,11 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         let store = store
         let cache = cache
         let adapter = adapter
+        let throttle = decodeThrottle
         Task { [weak self] in
+            // 동시 디코드 예산 확보/반납 (합산 임시 메모리 상한, #8)
+            await throttle.acquire()
+            defer { Task { await throttle.release() } }
             // 원본 디코드는 binItemId 단위로 공유 캐시하고,
             // 스타일 변형은 변형 키로 이 provider에만 저장한다.
             let decoded = await cache.fetch(key) {
@@ -148,5 +155,33 @@ private enum CoreHwpBinaryDataShim {
             name: "BIN0000.\(extensionName ?? "bin")",
             data: data
         )
+    }
+}
+
+/// 동시 디코드 수를 `limit`개로 제한하는 비동기 세마포어 (#8).
+/// 다수 이미지 페이지에서 모든 디코드가 동시에 큰 비트맵을 할당하는 것을 막는다.
+actor HwpDecodeThrottle {
+    private let limit: Int
+    private var active = 0
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    init(limit: Int) {
+        self.limit = max(1, limit)
+    }
+
+    func acquire() async {
+        if active < limit {
+            active += 1
+            return
+        }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func release() {
+        if waiters.isEmpty {
+            active = max(0, active - 1)
+        } else {
+            waiters.removeFirst().resume()
+        }
     }
 }
