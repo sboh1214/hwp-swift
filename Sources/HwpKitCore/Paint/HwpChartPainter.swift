@@ -227,9 +227,13 @@ enum HwpChartPainter {
             let color = seriesColors[seriesIndex % seriesColors.count].cgColor
             let step = box.depthStep(seriesCount: seriesCount, seriesIndex: seriesIndex)
             let baseY = box.floorFrontY + box.depth.height * step
-            for (categoryIndex, value) in series.values.enumerated()
+            for (categoryIndex, rawValue) in series.values.enumerated()
                 where categoryIndex < box.categoryCount
             {
+                // axisMax는 클램프됐지만 값 자체가 +inf/거대 수면 CoreGraphics
+                // 좌표가 비유한·과대가 되므로 유한·[0, axisMax]로 소독한다.
+                guard rawValue.isFinite else { continue }
+                let value = min(max(rawValue, 0), box.axisMax)
                 // 실물 (라운드 9 회귀 실측): 높이 = 격자 × 값 + 밑면 타원
                 // 처짐 절편 (0.13 격자 단위) — 기울기 보정 ×1.09는 과대
                 let height = CGFloat(value / box.axisMax) * box.wallHeight
