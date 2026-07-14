@@ -7,7 +7,13 @@
     public final class HwpDocumentNSView: NSView {
         public var document: HwpDocument? {
             didSet {
-                guard document != oldValue else { return }
+                // 렌더 동일성 가드: loadToken이 있으면(로더 산출) 구조 동등성으로
+                // 스킵하지만, 토큰이 없으면(직접 구성) 구조가 같아도 렌더가 다를 수
+                // 있어 스킵하지 않는다 (#6). 프로그레시브는 아래에서 처리한다.
+                let hasRenderIdentity = document == nil || document?.metadata.loadToken != nil
+                if hasRenderIdentity, document == oldValue {
+                    return
+                }
                 // 프로그레시브 스냅샷 (같은 loadToken + 페이지 증가): 기존
                 // 레이어·스크롤 위치를 유지하고 크기·가시 범위만 늘린다.
                 if let old = oldValue, let new = document,
@@ -15,7 +21,8 @@
                 {
                     rebuildPageOrigins()
                     updateContentSize()
-                    selectionController.document = document
+                    // 같은 로드 스냅샷이므로 활성 선택을 지우지 않고 지오메트리만 갱신 (#5)
+                    selectionController.setDocument(document, preservingSelection: true)
                     updateVisiblePages(range: visiblePageRange())
                     if new.unsupportedElements != old.unsupportedElements {
                         notifyUnsupportedElements()

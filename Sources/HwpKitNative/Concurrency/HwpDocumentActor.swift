@@ -130,6 +130,9 @@ public actor HwpDocumentActor {
             fontResolver: fontResolver,
             imageStore: imageStore
         )
+        // 취소된 로드(다른 로드가 시작됨)가 detached 파싱을 마친 뒤 actor 상태를
+        // 덮어쓰지 않도록, paginator 설치 직전에 취소를 재확인한다 (#4).
+        try Task.checkCancellation()
         self.paginator = paginator
 
         let previewText = file.previewText.text

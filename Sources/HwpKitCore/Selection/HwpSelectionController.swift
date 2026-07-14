@@ -7,9 +7,23 @@ import Foundation
 @MainActor
 public final class HwpSelectionController {
     public var document: HwpDocument? {
-        didSet {
-            guard document != oldValue else { return }
-            geometry = document.map(HwpSelectionGeometry.init(document:))
+        get { backingDocument }
+        set { setDocument(newValue, preservingSelection: false) }
+    }
+
+    private var backingDocument: HwpDocument?
+
+    /// 문서를 교체하고 지오메트리를 새로 만든다. preservingSelection이 true면
+    /// 활성 선택을 지우지 않는다 — 프로그레시브 스냅샷(같은 로드에 페이지 추가)
+    /// 에서 사용자가 잡아 둔 선택을 유지한다 (#5). 기존 오프셋은 추가된
+    /// 페이지에서도 유효하므로 지오메트리만 새 문서로 재구성한다.
+    public func setDocument(_ newValue: HwpDocument?, preservingSelection: Bool) {
+        guard backingDocument != newValue else { return }
+        backingDocument = newValue
+        geometry = newValue.map(HwpSelectionGeometry.init(document:))
+        if preservingSelection, selection != nil {
+            onSelectionChanged?()
+        } else {
             clear()
         }
     }
