@@ -19,7 +19,12 @@ public struct HwpPageGeometry: Sendable, Hashable {
         sectionDef: CoreHwp.HwpSectionDef?,
         column: CoreHwp.HwpColumn? = nil
     ) -> HwpPageGeometry {
-        let pageSize = HwpUnits.size(fromHwpUnitWidth: pageDef.width, height: pageDef.height)
+        let rawPageSize = HwpUnits.size(fromHwpUnitWidth: pageDef.width, height: pageDef.height)
+        // 미신뢰 페이지 치수 방어: 유한·양수·상한으로 클램프해 거대 backing store를 막는다.
+        let pageSize = CGSize(
+            width: Self.sanitizedDimension(rawPageSize.width),
+            height: Self.sanitizedDimension(rawPageSize.height)
+        )
 
         // 한글의 세로 구성 (표 137): 위쪽 여백 → 머리말 영역 → 본문 →
         // 꼬리말 영역 → 아래쪽 여백. 머리말/꼬리말 컨트롤이 없어도 두 영역은
@@ -34,18 +39,23 @@ public struct HwpPageGeometry: Sendable, Hashable {
         // margins는 본문 콘텐츠 인셋 (머리말/꼬리말 영역 포함) — 뷰/테스트가
         // "본문 밖" 판정에 그대로 쓸 수 있는 값이다.
         let margins = HwpPageMargins(
-            top: paperTopMargin + headerMarginPt,
-            left: HwpUnits.points(fromHwpUnitU: pageDef.marginLeft),
-            bottom: paperBottomMargin + footerMarginPt,
-            right: HwpUnits.points(fromHwpUnitU: pageDef.marginRight)
+            top: Self.clampMargin(paperTopMargin + headerMarginPt, limit: pageSize.height),
+            left: Self.clampMargin(
+                HwpUnits.points(fromHwpUnitU: pageDef.marginLeft), limit: pageSize.width
+            ),
+            bottom: Self.clampMargin(paperBottomMargin + footerMarginPt, limit: pageSize.height),
+            right: Self.clampMargin(
+                HwpUnits.points(fromHwpUnitU: pageDef.marginRight), limit: pageSize.width
+            )
         )
 
-        let contentWidth = pageSize.width - margins.left - margins.right
+        // 여백 합이 페이지를 넘으면 콘텐츠 rect가 음수가 되므로 최소 1로 클램프한다.
+        let contentWidth = max(1, pageSize.width - margins.left - margins.right)
         let contentFrame = CGRect(
             x: margins.left,
             y: margins.top,
             width: contentWidth,
-            height: pageSize.height - margins.top - margins.bottom
+            height: max(1, pageSize.height - margins.top - margins.bottom)
         )
 
         let headerFrame: CGRect? = headerMarginPt > 0
@@ -82,6 +92,21 @@ public struct HwpPageGeometry: Sendable, Hashable {
             footerFrame: footerFrame,
             columnFrames: columnFrames
         )
+    }
+
+    /// 페이지 치수 클램프 상한 (pt, 200인치) — 실제 문서는 한참 아래다.
+    static let maximumPageDimension: CGFloat = 14400
+    /// 비유한/비양수 치수 폴백 (A4 폭)
+    static let fallbackPageDimension: CGFloat = 595
+
+    private static func sanitizedDimension(_ value: CGFloat) -> CGFloat {
+        guard value.isFinite, value > 0 else { return fallbackPageDimension }
+        return min(value, maximumPageDimension)
+    }
+
+    private static func clampMargin(_ value: CGFloat, limit: CGFloat) -> CGFloat {
+        guard value.isFinite, value > 0 else { return 0 }
+        return min(value, limit)
     }
 
     /// 단 정의 (표 138/139)로 영역을 단 프레임으로 나눈다.

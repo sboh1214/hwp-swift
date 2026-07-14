@@ -13,6 +13,10 @@ public struct HwpTableLayout {
     /// 재귀 중첩 표 레이아웃 깊이 상한 (바깥 표 = 0)
     static let maximumNestingDepth = 3
 
+    /// occupancy 격자 상한 (row×column). 미신뢰 rowCount/columnCount(각 UInt16)가
+    /// 곱해지면 수십억 칸이 되어 OOM — 실제 문서 표는 이 한도를 한참 밑돈다.
+    static let maximumGridCells = 1 << 20
+
     /// 표 하나를 레이아웃한다. 페이지 분할은 호출자(paginator)가 row 단위로 수행한다.
     /// 셀 안 중첩 표는 depth 3까지 재귀 레이아웃한다.
     public func layout(
@@ -25,6 +29,10 @@ public struct HwpTableLayout {
         let rowCount = max(Int(property.rowCount), property.rowCellCounts.count)
         let columnCount = Int(property.columnCount)
         guard rowCount > 0, columnCount > 0 else {
+            return .success(emptyFrame(availableWidth: availableWidth))
+        }
+        // 병적 격자 방어: occupancy Set이 수십억 칸으로 불어나 OOM되는 것을 막는다.
+        guard rowCount * columnCount <= Self.maximumGridCells else {
             return .success(emptyFrame(availableWidth: availableWidth))
         }
 

@@ -29,6 +29,10 @@ public struct HwpDecodedImage: Sendable {
 }
 
 public struct HwpImageAdapter {
+    /// 디코드 허용 최대 픽셀 수 (폭×높이). 실제 문서 이미지는 이 한도 아래다 —
+    /// 작은 압축본이 거대 차원을 선언하는 디코드 폭탄을 디코드 전에 거른다.
+    static let maximumPixelCount = 50_000_000
+
     public init() {}
 
     public func decode(
@@ -53,9 +57,23 @@ public struct HwpImageAdapter {
             return .failure(imageError)
         }
 
-        guard let source = CGImageSourceCreateWithData(bytes as CFData, nil),
-              let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil)
-        else {
+        guard let source = CGImageSourceCreateWithData(bytes as CFData, nil) else {
+            return .failure(.decodeFailed(underlying: "CGImageSource failed"))
+        }
+        // 디코드 폭탄 방어: 선언된 픽셀 차원을 디코드 전에 검사한다. 전체
+        // CGImage 생성은 압축 크기와 무관하게 폭×높이×4 만큼 할당하므로,
+        // 스트림 크기 한도나 캐시 한도로는 이 과대 할당을 막을 수 없다.
+        if let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil)
+            as? [CFString: Any],
+            let width = properties[kCGImagePropertyPixelWidth] as? Int,
+            let height = properties[kCGImagePropertyPixelHeight] as? Int,
+            width > 0, height > 0, width * height > Self.maximumPixelCount
+        {
+            return .failure(.decodeFailed(
+                underlying: "image dimensions \(width)x\(height) exceed limit"
+            ))
+        }
+        guard let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
             return .failure(.decodeFailed(underlying: "CGImageSource failed"))
         }
 
