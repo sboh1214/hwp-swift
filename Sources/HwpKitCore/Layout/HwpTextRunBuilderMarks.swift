@@ -24,6 +24,20 @@ extension HwpTextRunBuilder {
         }
     }
 
+    /// 변경 추적 range tag (kind 16 삽입 / 17 삭제)를 시작 위치 오름차순으로
+    /// 정렬해 돌려준다. 문자 루프에서 단조 커서로 sweep하기 위한 것으로,
+    /// 문자마다 전체 배열을 다시 스캔하는 O(문자×태그)를 없앤다 (#11).
+    static func trackChangeIntervals(
+        in paragraph: CoreHwp.HwpParagraph
+    ) -> [(start: UInt32, end: UInt32, kind: UInt32)] {
+        (paragraph.paraRangeTagArray ?? []).compactMap { tag in
+            let kind = tag.tag >> 24
+            guard kind == 16 || kind == 17 else { return nil }
+            return (start: tag.start, end: tag.end, kind: kind)
+        }
+        .sorted { $0.start < $1.start }
+    }
+
     /// position (원본 WCHAR 스트림 위치)이 속한 변경 추적 range tag의 kind.
     /// 16 (삽입)/17 (삭제) 외의 태그는 무시한다.
     static func trackChangeMark(

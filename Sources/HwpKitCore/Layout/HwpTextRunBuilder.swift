@@ -69,13 +69,24 @@ public struct HwpTextRunBuilder {
 
         let output = NSMutableAttributedString()
         appendBulletHeading(for: paragraph, to: output)
-        var chunk = Chunk(shapeId: activeShapeId(at: 0, in: paragraph.paraCharShape), script: nil)
+        // 글자 모양/변경추적/메모 앵커를 문자마다 처음부터 재스캔하면 문단당
+        // O(문자×run)이 된다 — position(wcharPosition)이 단조 증가하므로 각
+        // 커서를 앞으로만 밀어 sweep한다 (#10, #11). 결과는 전수 스캔과 동일.
+        let shapeStarts = paragraph.paraCharShape.startingIndex
+        let shapeIds = paragraph.paraCharShape.shapeId
+        var shapeSweep = 0
+        var activeShape = shapeIds.first ?? 0
+        let trackIntervals = Self.trackChangeIntervals(in: paragraph)
+        var trackCursor = 0
+        let memoAnchorRanges = Self.memoAnchorRanges(in: paragraph)
+        var memoCursor = 0
+
+        var chunk = Chunk(shapeId: activeShape, script: nil)
         // startingIndex는 원본 WCHAR 스트림 위치 기준: inline/extended 컨트롤은
         // charArray에서 1개 요소지만 스트림에서는 8 WCHAR를 차지한다.
         var wcharPosition: UInt32 = 0
         var pendingHighSurrogate: UInt16?
         var extendedOrdinal = 0
-        let memoAnchorRanges = Self.memoAnchorRanges(in: paragraph)
 
         for hwpChar in units {
             let position = wcharPosition
@@ -84,9 +95,25 @@ public struct HwpTextRunBuilder {
             let text = string(from: hwpChar, pendingHighSurrogate: &pendingHighSurrogate)
             guard !text.isEmpty else { continue }
 
-            let shapeId = activeShapeId(at: position, in: paragraph.paraCharShape)
-            let trackMark = Self.trackChangeMark(at: position, in: paragraph)
-            let memoAnchor = memoAnchorRanges.contains { $0.contains(position) }
+            while shapeSweep < shapeStarts.count, shapeStarts[shapeSweep] <= position {
+                activeShape = value(at: shapeSweep, in: shapeIds, default: activeShape)
+                shapeSweep += 1
+            }
+            let shapeId = activeShape
+            while trackCursor < trackIntervals.count, trackIntervals[trackCursor].end <= position {
+                trackCursor += 1
+            }
+            let trackMark: UInt32 = trackCursor < trackIntervals.count
+                && trackIntervals[trackCursor].start <= position
+                && position < trackIntervals[trackCursor].end
+                ? trackIntervals[trackCursor].kind : 0
+            while memoCursor < memoAnchorRanges.count,
+                  memoAnchorRanges[memoCursor].upperBound <= position
+            {
+                memoCursor += 1
+            }
+            let memoAnchor = memoCursor < memoAnchorRanges.count
+                && memoAnchorRanges[memoCursor].contains(position)
             if hwpChar.type == .char {
                 accumulate(
                     text, shapeId: shapeId, trackMark: trackMark, memoAnchor: memoAnchor,
