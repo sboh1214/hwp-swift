@@ -295,6 +295,26 @@ enum HwpTableSplitter {
         return aligned > row.rowFrame.minY + 1 ? aligned : cutY
     }
 
+    /// 이미지 rect를 [minY, maxY] 조각 경계로 클램프한다. 걸치지 않으면
+    /// 원본 그대로 반환한다 (렌더 불변). (#11)
+    private static func clampedImage(
+        _ image: HwpCellImage,
+        minY: CGFloat,
+        maxY: CGFloat
+    ) -> HwpCellImage {
+        let top = max(image.rect.minY, minY)
+        let bottom = min(image.rect.maxY, maxY)
+        guard bottom > top, top > image.rect.minY || bottom < image.rect.maxY else {
+            return image
+        }
+        return HwpCellImage(
+            rect: CGRect(x: image.rect.minX, y: top, width: image.rect.width, height: bottom - top),
+            binItemId: image.binItemId,
+            style: image.style,
+            controlInstanceId: image.controlInstanceId
+        )
+    }
+
     private static func splitCell(
         _ cell: HwpTableCellFrame,
         at cutY: CGFloat
@@ -319,11 +339,16 @@ enum HwpTableSplitter {
         }
         let topNested = cell.nestedTables.filter { $0.rect.minY < cutY }
         let bottomNested = cell.nestedTables.filter { $0.rect.minY >= cutY }
-        // 셀 이미지는 조각 경계를 걸칠 수 있다 — minY로 나누면 걸친 이미지의
-        // 아래쪽이 잘려 사라지므로, 중심(midY) 기준으로 조각 하나에 통째로
-        // 넣어 손실 없이 한 쪽에서 온전히 그려지게 한다 (#13).
-        let topImages = cell.images.filter { $0.rect.midY < cutY }
-        let bottomImages = cell.images.filter { $0.rect.midY >= cutY }
+        // 셀 이미지는 조각 경계를 걸칠 수 있다 — 중심(midY)으로 한 조각에
+        // 배정하되(손실 방지, #13), 그 조각의 셀 경계로 rect를 클램프해 조각
+        // 밖(rebase 후 음수 y·다음 콘텐츠 위)으로 그려지지 않게 한다 (#11).
+        // 걸치지 않는 이미지는 그대로 (렌더 불변).
+        let topImages = cell.images
+            .filter { $0.rect.midY < cutY }
+            .map { clampedImage($0, minY: frames.top.minY, maxY: frames.top.maxY) }
+        let bottomImages = cell.images
+            .filter { $0.rect.midY >= cutY }
+            .map { clampedImage($0, minY: frames.bottom.minY, maxY: frames.bottom.maxY) }
         func fragment(
             _ frame: CGRect,
             _ paragraphs: [HwpLaidOutParagraph],

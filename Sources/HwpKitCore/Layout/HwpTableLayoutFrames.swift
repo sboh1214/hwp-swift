@@ -171,7 +171,11 @@ extension HwpTableLayout {
     ) -> LaidOutCellContents {
         let alignment = cell.header.propertyInfo.verticalAlignment ?? .top
         guard alignment != .top else { return contents }
-        let bottom = contents.paragraphs.map(\.rect.maxY)
+        // 콘텐츠 하단은 문단뿐 아니라 중첩 표·이미지 자식의 extent도 포함해야
+        // 한다 — 문단만 보면 slack이 과대돼 자식이 셀 하단을 넘긴다 (#7).
+        let bottom = (contents.paragraphs.map(\.rect.maxY)
+            + contents.nestedTables.map(\.rect.maxY)
+            + contents.images.map(\.rect.maxY))
             .max() ?? (cellRect.minY + margins.top)
         let slack = cellRect.maxY - margins.bottom - bottom
         guard slack > 0.5 else { return contents }

@@ -168,28 +168,44 @@ public struct HwpParagraphLayout {
         // 배정도 정밀도가 무너져 라인 간 y 델타가 전부 0이 된다.
         let frameSize = CGSize(width: max(1, columnWidth), height: 1_000_000)
         let path = CGPath(rect: CGRect(origin: .zero, size: frameSize), transform: nil)
-        let frame = CTFramesetterCreateFrame(
-            framesetter,
-            CFRange(location: 0, length: 0),
-            path,
-            nil
-        )
-        let lines = (CTFrameGetLines(frame) as? [CTLine]) ?? []
-        guard !lines.isEmpty else {
+        // 1,000,000pt 한 프레임에 안 들어가는 (아주 길거나 좁은) 문단은 CT가
+        // prefix만 반환하므로, visible range가 문자열 끝에 닿을 때까지 다음
+        // 위치에서 프레임을 이어 만들어 모든 문자가 라인 프레임을 얻게 한다 (#9).
+        // 정상 문단은 한 번에 끝나 기존 출력과 동일하다.
+        let fullLength = mutable.length
+        var lineFrames: [HwpLineFrame] = []
+        var totalLineHeight: CGFloat = 0
+        var startLocation = 0
+        while startLocation < fullLength {
+            let frame = CTFramesetterCreateFrame(
+                framesetter,
+                CFRange(location: startLocation, length: 0),
+                path,
+                nil
+            )
+            let lines = (CTFrameGetLines(frame) as? [CTLine]) ?? []
+            guard !lines.isEmpty else { break }
+            var origins = Array(repeating: CGPoint.zero, count: lines.count)
+            CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
+            let (frameLines, frameHeight) = makeLineFrames(
+                lines: lines,
+                origins: origins,
+                metrics: paragraphMetrics,
+                yOffset: totalLineHeight
+            )
+            lineFrames.append(contentsOf: frameLines)
+            totalLineHeight += frameHeight
+            let visible = CTFrameGetVisibleStringRange(frame)
+            let consumed = visible.location + visible.length
+            guard consumed > startLocation else { break }
+            startLocation = consumed
+        }
+        guard !lineFrames.isEmpty else {
             return HwpParagraphFrame(totalHeight: 0, lines: [])
         }
-
-        var origins = Array(repeating: CGPoint.zero, count: lines.count)
-        CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
-
-        let (lineFrames, totalLineHeight) = makeLineFrames(
-            lines: lines,
-            origins: origins,
-            metrics: paragraphMetrics
-        )
         // 줄 여분을 줄 뒤 간격으로 돌린 경우 마지막 줄 뒤 몫도 전진량에
         // 포함한다 (한글 캐시 lineAdvance 합과 동일)
-        let trailingSpacing = paragraphMetrics.lineHeightAppliedAsSpacing && !lines.isEmpty
+        let trailingSpacing = paragraphMetrics.lineHeightAppliedAsSpacing && !lineFrames.isEmpty
             ? paragraphMetrics.lineSpacingAdjustment
             : 0
         let totalHeight = paragraphMetrics.paragraphSpacingBefore
@@ -204,7 +220,8 @@ private extension HwpParagraphLayout {
     func makeLineFrames(
         lines: [CTLine],
         origins: [CGPoint],
-        metrics: ParagraphMetrics
+        metrics: ParagraphMetrics,
+        yOffset: CGFloat = 0
     ) -> (frames: [HwpLineFrame], totalLineHeight: CGFloat) {
         let referenceY = origins[0].y
         var lineFrames: [HwpLineFrame] = []
@@ -234,7 +251,7 @@ private extension HwpParagraphLayout {
             )
             lineFrames.append(
                 HwpLineFrame(
-                    origin: CGPoint(x: origin.x, y: referenceY - origin.y),
+                    origin: CGPoint(x: origin.x, y: yOffset + referenceY - origin.y),
                     width: width,
                     baseline: ascent,
                     attributedRange: attributedRange,
