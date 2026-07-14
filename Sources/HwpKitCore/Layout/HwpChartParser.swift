@@ -146,11 +146,15 @@ private final class ChartXMLDelegate: NSObject, XMLParserDelegate {
         }
     }
 
+    /// 차트 포인트 배열의 최대 인덱스 — 미신뢰 idx로 인한 정수 오버플로·거대
+    /// sparse 할당 방어 (실측 차트는 항목 수십 개 이하).
+    private static let maximumPoints = 4096
+
     /// idx 위치에 값을 배치하고 사이 빈 칸은 0으로 채운다 (희소·역순 pt 대응).
     /// idx가 없으면 순서대로 append한다 (기존 동작과 동일).
     private static func assign(_ value: Double, at index: Int?, into array: inout [Double]) {
         let position = index ?? array.count
-        guard position >= 0 else { return }
+        guard position >= 0, position < maximumPoints else { return }
         if position >= array.count {
             array.append(contentsOf: repeatElement(0, count: position - array.count + 1))
         }
@@ -160,7 +164,7 @@ private final class ChartXMLDelegate: NSObject, XMLParserDelegate {
     /// idx 위치에 문자열을 배치하고 사이 빈 칸은 빈 문자열로 채운다.
     private static func assign(_ value: String, at index: Int?, into array: inout [String]) {
         let position = index ?? array.count
-        guard position >= 0 else { return }
+        guard position >= 0, position < maximumPoints else { return }
         if position >= array.count {
             array.append(contentsOf: repeatElement("", count: position - array.count + 1))
         }
