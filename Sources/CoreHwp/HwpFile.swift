@@ -210,16 +210,21 @@ public struct HwpFile: HwpPrimitive {
         sectionArray = try sectionDataArray.map {
             try HwpSection.load($0, fileHeader.version, options: options)
         }
-        // 표시용 본문 (ViewText): 이름 숫자 순 정렬 후 best-effort 파싱.
-        // 파싱에 실패하면 (미지의 표시 전용 레코드 등) BodyText 렌더로 폴백한다.
-        do {
-            viewSectionArray = try viewTextData
-                .sorted { lhs, rhs in
-                    Self.sectionIndex(from: lhs.name) < Self.sectionIndex(from: rhs.name)
-                }
-                .map { try HwpSection.load($0.data, fileHeader.version, options: options) }
-        } catch {
-            // 표시 전용 스트림이 파싱 불가면 BodyText 렌더로 폴백한다
+        // 표시용 본문 (ViewText): 이름이 Section0…Section{N-1}과 정확히
+        // (개수·연속·중복 없이) 일치할 때만 best-effort 파싱한다. 개수만 같고
+        // 이름이 누락/중복/비-section이면 BodyText 구역을 조용히 잘못 대체하므로
+        // 무시한다 (#17). 파싱 실패 시에도 BodyText 렌더로 폴백한다.
+        let sortedViewText = viewTextData.sorted { lhs, rhs in
+            Self.sectionIndex(from: lhs.name) < Self.sectionIndex(from: rhs.name)
+        }
+        if sortedViewText.map(\.name) == (0 ..< expectedSectionCount).map({ "Section\($0)" }) {
+            do {
+                viewSectionArray = try sortedViewText
+                    .map { try HwpSection.load($0.data, fileHeader.version, options: options) }
+            } catch {
+                viewSectionArray = []
+            }
+        } else {
             viewSectionArray = []
         }
 
