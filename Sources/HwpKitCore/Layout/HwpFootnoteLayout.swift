@@ -282,7 +282,8 @@ public struct HwpFootnoteLayout {
                     attributedString: note.attributed,
                     frame: note.frame,
                     rect: CGRect(x: 0, y: 0, width: frame.width, height: blockHeight),
-                    paragraphId: note.input.paragraph.paraHeader.paraId
+                    paragraphId: note.input.paragraph.paraHeader.paraId,
+                    hyperlinkURL: note.input.paragraph.hyperlinkURL
                 )],
                 number: note.input.number,
                 separatorLine: separatorLine,

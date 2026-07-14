@@ -60,19 +60,37 @@ public struct HwpHitTester {
         let localPoint = CGPoint(x: point.x - block.frame.minX, y: point.y - block.frame.minY)
         switch block.payload {
         case let .table(tableFrame):
-            for row in tableFrame.rows {
-                for cell in row.cells where cell.cellFrame.contains(localPoint) {
-                    if let url = hyperlinkURL(in: cell.paragraphs, at: localPoint) {
+            return tableHyperlinkURL(tableFrame, at: localPoint)
+        case let .textbox(textbox):
+            return hyperlinkURL(in: textbox.paragraphs, at: localPoint)
+        case let .footnote(footnote):
+            // 각주 문단 좌표는 블록-로컬(0,0 기준)이라 localPoint로 히트한다 (#20).
+            return hyperlinkURL(in: footnote.paragraphs, at: localPoint)
+        default:
+            return nil
+        }
+    }
+
+    /// 표(중첩 표 포함) 셀 문단의 하이퍼링크를 표-로컬 좌표로 재귀 히트한다 —
+    /// 중첩 표 안 링크도 콜백을 발화하게 한다 (#19).
+    private func tableHyperlinkURL(_ tableFrame: HwpTableFrame, at point: CGPoint) -> String? {
+        for row in tableFrame.rows {
+            for cell in row.cells where cell.cellFrame.contains(point) {
+                if let url = hyperlinkURL(in: cell.paragraphs, at: point) {
+                    return url
+                }
+                for nested in cell.nestedTables {
+                    let nestedPoint = CGPoint(
+                        x: point.x - nested.rect.minX,
+                        y: point.y - nested.rect.minY
+                    )
+                    if let url = tableHyperlinkURL(nested.table, at: nestedPoint) {
                         return url
                     }
                 }
             }
-            return nil
-        case let .textbox(textbox):
-            return hyperlinkURL(in: textbox.paragraphs, at: localPoint)
-        default:
-            return nil
         }
+        return nil
     }
 
     private func hyperlinkURL(in paragraphs: [HwpLaidOutParagraph], at point: CGPoint) -> String? {
