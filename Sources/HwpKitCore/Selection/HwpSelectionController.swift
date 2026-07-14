@@ -18,7 +18,13 @@ public final class HwpSelectionController {
     /// 에서 사용자가 잡아 둔 선택을 유지한다 (#5). 기존 오프셋은 추가된
     /// 페이지에서도 유효하므로 지오메트리만 새 문서로 재구성한다.
     public func setDocument(_ newValue: HwpDocument?, preservingSelection: Bool) {
-        guard backingDocument != newValue else { return }
+        // nil-token 문서는 얕은 구조 동등성이 렌더/내용 차이를 못 잡으므로
+        // 스킵하지 않고 지오메트리를 새로 만든다 (#20). 토큰이 있으면(로더 산출)
+        // == 로 안전하게 스킵한다.
+        let hasIdentity = newValue == nil || newValue?.metadata.loadToken != nil
+        if hasIdentity, backingDocument == newValue {
+            return
+        }
         backingDocument = newValue
         geometry = newValue.map(HwpSelectionGeometry.init(document:))
         if preservingSelection, selection != nil {

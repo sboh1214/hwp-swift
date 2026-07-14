@@ -9,11 +9,14 @@
         func rebuildPageOrigins() {
             var origins: [CGFloat] = []
             var originY: CGFloat = 0
+            var maxRowWidth = defaultPageSize.width
             for index in 0 ..< (document?.pages.count ?? 0) {
                 origins.append(originY)
                 originY += sizeForPage(at: index).height + pageGap
+                maxRowWidth = max(maxRowWidth, rowWidth(at: index))
             }
             pageOriginsY = origins
+            cachedContentWidth = maxRowWidth
         }
 
         func updateContentSize() {
@@ -29,11 +32,10 @@
         }
 
         /// 메모 패널이 페이지 오른쪽 바깥에 그려지므로 콘텐츠 폭에 패널 폭을
-        /// 포함해야 클립 뷰에 잘리지 않는다.
+        /// 포함해야 클립 뷰에 잘리지 않는다. rebuildPageOrigins에서 캐시된 값을
+        /// 돌려줘 스크롤마다 전 페이지를 다시 훑지 않는다 (#27).
         func contentWidth() -> CGFloat {
-            let pageCount = document?.pages.count ?? 0
-            guard pageCount > 0 else { return defaultPageSize.width }
-            return (0 ..< pageCount).map { rowWidth(at: $0) }.max() ?? defaultPageSize.width
+            cachedContentWidth
         }
 
         func rowWidth(at index: Int) -> CGFloat {

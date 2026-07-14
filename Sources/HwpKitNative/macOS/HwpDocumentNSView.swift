@@ -90,6 +90,9 @@
         private var activeVisibleRange: Range<Int> = 0 ..< 0
         /// Prefix sums of page Y origins so frame lookups stay O(1) while scrolling.
         var pageOriginsY: [CGFloat] = []
+        /// 최대 행(페이지+메모 패널) 폭 캐시 — frameForPage가 스크롤마다 전
+        /// 페이지 폭을 다시 훑지 않도록 지오메트리 재구성 시 한 번만 계산한다 (#27).
+        var cachedContentWidth: CGFloat = 595
         private var imageProvider: HwpPageImageProvider?
         private var lastReportedZoom: CGFloat = 1.0
 
@@ -238,13 +241,17 @@
 
         /// Scrolls so the given page's top edge is at the top of the viewport.
         public func scrollToPage(at index: Int) {
-            guard frameCount() > 0 || document != nil else { return }
-            let target = frameForPage(at: index)
+            // 문서 교체로 낡은(큰) 페이지 인덱스가 남아도 존재하지 않는 페이지를
+            // 만들지 않도록 유효 범위로 클램프한다 (#24).
+            let pageCount = document?.pages.count ?? 0
+            guard pageCount > 0 else { return }
+            let clamped = max(0, min(index, pageCount - 1))
+            let target = frameForPage(at: clamped)
             scrollView.contentView.scroll(
                 to: NSPoint(x: scrollView.documentVisibleRect.minX, y: target.minY)
             )
             scrollView.reflectScrolledClipView(scrollView.contentView)
-            updateVisiblePages(range: index ..< (index + 1))
+            updateVisiblePages(range: clamped ..< (clamped + 1))
         }
 
         /// The first page currently intersecting the viewport.

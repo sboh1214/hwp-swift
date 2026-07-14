@@ -36,6 +36,9 @@
                 rebuildImageProvider()
                 rebuildPageOrigins()
                 updateContentSize()
+                // 전체 교체는 새 문서를 맨 위에서 연다 — 이전 오프셋이 새 콘텐츠
+                // 범위 안이어도 중간에서 열리지 않게 한다 (macOS와 대칭, #21).
+                scrollView.setContentOffset(.zero, animated: false)
                 selectionController.document = document
                 updateVisiblePages(range: 0 ..< min(document?.pages.count ?? 0, 3))
                 notifyUnsupportedElements()
@@ -334,11 +337,24 @@
             let visibleRect = scrollView.bounds.isEmpty
                 ? CGRect(origin: scrollView.contentOffset, size: bounds.size)
                 : scrollView.convert(scrollView.bounds, to: contentView)
-            let visibleIndices = (0 ..< pageCount).filter {
-                frameForPage(at: $0).intersects(visibleRect)
+            // pageOriginsY는 오름차순 — 스크롤 콜백마다 전 페이지를 훑지 않도록
+            // 첫 가시 페이지를 이진 탐색한다 (macOS와 대칭, #26).
+            var low = 0
+            var high = pageCount - 1
+            var first = pageCount
+            while low <= high {
+                let mid = (low + high) / 2
+                if frameForPage(at: mid).maxY > visibleRect.minY {
+                    first = mid
+                    high = mid - 1
+                } else {
+                    low = mid + 1
+                }
             }
-            guard let first = visibleIndices.first, let last = visibleIndices.last else {
-                return 0 ..< min(pageCount, 1)
+            guard first < pageCount else { return 0 ..< min(pageCount, 1) }
+            var last = first
+            while last + 1 < pageCount, frameForPage(at: last + 1).minY < visibleRect.maxY {
+                last += 1
             }
             return first ..< (last + 1)
         }

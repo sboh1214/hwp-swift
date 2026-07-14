@@ -138,7 +138,9 @@ final class HwpDocumentCoordinator {
             view.onUnsupportedElement = context.coordinator.handleUnsupportedElement(_:)
             view.onPageChanged = context.coordinator.handlePageChanged(_:)
             view.onZoomChanged = context.coordinator.handleZoomChanged(_:)
-            if view.document != document {
+            // nil-token 문서는 구조 동등성으로 렌더 차이를 못 잡으므로 항상
+            // 전달하고, 네이티브 didSet이 갱신 여부를 판정하게 한다 (#19).
+            if document.metadata.loadToken == nil || view.document != document {
                 view.document = document
             }
             if let zoomScale, view.zoomScale != zoomScale.wrappedValue {
@@ -194,7 +196,9 @@ final class HwpDocumentCoordinator {
             view.onUnsupportedElement = context.coordinator.handleUnsupportedElement(_:)
             view.onPageChanged = context.coordinator.handlePageChanged(_:)
             view.onZoomChanged = context.coordinator.handleZoomChanged(_:)
-            if view.document != document {
+            // nil-token 문서는 구조 동등성으로 렌더 차이를 못 잡으므로 항상
+            // 전달하고, 네이티브 didSet이 갱신 여부를 판정하게 한다 (#19).
+            if document.metadata.loadToken == nil || view.document != document {
                 view.document = document
             }
             if let zoomScale, view.zoomScale != zoomScale.wrappedValue {

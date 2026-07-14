@@ -31,10 +31,7 @@ public actor HwpDocumentActor {
     public func loadDocument(from url: URL) async throws -> HwpDocument {
         loadTask?.cancel()
         let task = Task<HwpDocument, Error> {
-            let file = try await Task.detached(priority: .userInitiated) {
-                // 뷰어는 원본 rawPayload 보존이 필요 없다 — 압축 해제 버퍼 즉시 해제
-                try CoreHwp.HwpFile(fromPath: url.path, options: .viewer)
-            }.value
+            let file = try await Self.parse { try CoreHwp.HwpFile(fromPath: url.path, options: .viewer) }
             try Task.checkCancellation()
             return try await self.buildDocument(from: file)
         }
@@ -50,10 +47,7 @@ public actor HwpDocumentActor {
     public func loadDocument(from data: Data) async throws -> HwpDocument {
         loadTask?.cancel()
         let task = Task<HwpDocument, Error> {
-            let file = try await Task.detached(priority: .userInitiated) {
-                // 뷰어는 원본 rawPayload 보존이 필요 없다 — 압축 해제 버퍼 즉시 해제
-                try CoreHwp.HwpFile(fromData: data, options: .viewer)
-            }.value
+            let file = try await Self.parse { try CoreHwp.HwpFile(fromData: data, options: .viewer) }
             try Task.checkCancellation()
             return try await self.buildDocument(from: file)
         }
@@ -65,8 +59,38 @@ public actor HwpDocumentActor {
         }
     }
 
+    /// 백그라운드 파싱을 취소 전파와 함께 실행한다 — 상위 로드가 취소되면
+    /// detached 파서를 취소해, 아직 시작 안 한 파싱은 즉시 중단하고 결과를
+    /// 버린다 (빠른 문서 교체 시 파싱 stacking 완화, #18). 이미 실행 중인
+    /// 동기 파싱은 협조 지점이 없어 끝까지 가지만 결과는 폐기된다.
+    private static func parse(
+        _ work: @escaping @Sendable () throws -> CoreHwp.HwpFile
+    ) async throws -> CoreHwp.HwpFile {
+        let parseTask = Task.detached(priority: .userInitiated) {
+            try Task.checkCancellation()
+            return try work()
+        }
+        return try await withTaskCancellationHandler {
+            try await parseTask.value
+        } onCancel: {
+            parseTask.cancel()
+        }
+    }
+
     public func loadDocument(from file: CoreHwp.HwpFile) async throws -> HwpDocument {
-        try await buildDocument(from: file)
+        // 다른 로드와 같은 loadTask 슬롯으로 추적한다 — 겹치는 로드가 서로
+        // paginator/progress 상태를 덮어쓰지 않게 취소·추적한다 (#22).
+        loadTask?.cancel()
+        let task = Task<HwpDocument, Error> {
+            try Task.checkCancellation()
+            return try await self.buildDocument(from: file)
+        }
+        loadTask = task
+        return try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: {
+            task.cancel()
+        }
     }
 
     /// 프로그레시브 로딩 — 첫 `firstBatch`쪽 확정 즉시 1차 스냅샷을,
@@ -84,9 +108,9 @@ public actor HwpDocumentActor {
         let loadToken = UUID()
         let task = Task<HwpDocument, Error> {
             do {
-                let file = try await Task.detached(priority: .userInitiated) {
+                let file = try await Self.parse {
                     try CoreHwp.HwpFile(fromPath: url.path, options: .viewer)
-                }.value
+                }
                 let document = try await self.buildDocument(
                     from: file,
                     loadToken: loadToken,
