@@ -1286,11 +1286,13 @@ private extension HwpPaginator {
         var rows = frame.rows
         var cursor = 0
         var isFirstSegment = true
+        // 표 하나가 만드는 세그먼트 수를 상한한다 (병적 행 페이지 증폭 방어, #5)
+        var segmentCount = 0
         // 이미 셀 각주를 수집한 최상위 행 — 분할된 행이 다음 세그먼트에서
         // 다시 수집돼 각주가 중복되는 것을 막는다.
         var highestCollectedRow = Int.min
 
-        while cursor < rows.count {
+        while cursor < rows.count, segmentCount < HwpTableLayout.maximumTableSegments {
             // 이어지는 세그먼트는 제목 행 반복 높이를 미리 차감한다.
             let headerAllowance = isFirstSegment ? 0 : repeatedHeight
             var remaining = effectiveContentHeight - contentHeightUsed - headerAllowance
@@ -1352,6 +1354,7 @@ private extension HwpPaginator {
                 repeatedHeaderRows: isFirstSegment ? [] : repeatedRows
             )
             isFirstSegment = false
+            segmentCount += 1
         }
     }
 

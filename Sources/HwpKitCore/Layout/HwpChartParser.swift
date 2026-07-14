@@ -46,7 +46,14 @@ private final class ChartXMLDelegate: NSObject, XMLParserDelegate {
     /// 것을 막는다 (#1). 실측 차트는 수~수십 계열이라 렌더 불변.
     static let maxSeries = 256
 
+    /// 전 계열 합산 포인트 상한 — 계열 상한(256)과 계열별 포인트 상한(4096)이
+    /// 독립이면 256×4096=100만 마커가 나온다. 총량으로 묶어 페인트 커맨드
+    /// 폭발을 막는다 (#4). 실측 차트는 수백 포인트 이하라 렌더 불변.
+    static let maxTotalPoints = 16384
+
     var series: [MutableSeries] = []
+    /// 전 계열 누적 포인트 수 (총량 상한 판정용)
+    private var totalSeriesPoints = 0
     var categories: [String] = []
     var hasTitle = false
     var autoTitleDeleted = false
@@ -136,8 +143,11 @@ private final class ChartXMLDelegate: NSObject, XMLParserDelegate {
             }
         } else if inSeries, context.contains("val"), context.contains("pt") {
             // OOXML idx 위치에 배치 — 희소·역순 pt도 카테고리와 어긋나지 않게 (#15).
-            if !series.isEmpty, let value = Double(text) {
+            // 전 계열 합산 포인트 총량 상한을 넘으면 더 담지 않는다 (#4).
+            if !series.isEmpty, let value = Double(text), totalSeriesPoints < Self.maxTotalPoints {
+                let before = series[series.count - 1].values.count
                 Self.assign(value, at: pendingPointIndex, into: &series[series.count - 1].values)
+                totalSeriesPoints += series[series.count - 1].values.count - before
             }
         } else if inSeries, context.contains("cat"), context.contains("pt") {
             // 카테고리는 계열마다 반복 저장 — 첫 계열 것만 채택

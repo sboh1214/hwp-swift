@@ -33,6 +33,11 @@ public struct HwpImageAdapter {
     /// 작은 압축본이 거대 차원을 선언하는 디코드 폭탄을 디코드 전에 거른다.
     static let maximumPixelCount = 50_000_000
 
+    /// 다운샘플 축 상한 (px). 이 한도를 넘는 이미지는 줄여, 디코드 결과가
+    /// 캐시 예산(4096²·4 = 67MB)에 맞아 즉시 축출→재요청 루프가 안 생기게
+    /// 한다 (#2). 이 이하는 원본 그대로 디코드해 렌더가 불변이다.
+    static let maximumPixelsPerAxis = 4096
+
     public init() {}
 
     public func decode(
@@ -60,25 +65,54 @@ public struct HwpImageAdapter {
         guard let source = CGImageSourceCreateWithData(bytes as CFData, nil) else {
             return .failure(.decodeFailed(underlying: "CGImageSource failed"))
         }
-        // 디코드 폭탄 방어: 선언된 픽셀 차원을 디코드 전에 검사한다. 전체
-        // CGImage 생성은 압축 크기와 무관하게 폭×높이×4 만큼 할당하므로,
-        // 스트림 크기 한도나 캐시 한도로는 이 과대 할당을 막을 수 없다.
-        if let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil)
-            as? [CFString: Any],
-            let width = properties[kCGImagePropertyPixelWidth] as? Int,
-            let height = properties[kCGImagePropertyPixelHeight] as? Int,
-            width > 0, height > 0, width * height > Self.maximumPixelCount
-        {
+        // 선언된 픽셀 차원을 디코드 전에 읽어 (전체 CGImage는 압축 크기와 무관하게
+        // 폭×높이×4를 할당) 폭탄은 거부하고 큰 이미지는 다운샘플한다.
+        let dimensions = Self.pixelDimensions(of: source)
+        if let (width, height) = dimensions, width * height > Self.maximumPixelCount {
             return .failure(.decodeFailed(
                 underlying: "image dimensions \(width)x\(height) exceed limit"
             ))
         }
-        guard let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
-            return .failure(.decodeFailed(underlying: "CGImageSource failed"))
+        let cgImage: CGImage
+        if let (width, height) = dimensions,
+           width > Self.maximumPixelsPerAxis || height > Self.maximumPixelsPerAxis
+        {
+            // 축 상한을 넘으면 캐시 예산에 맞게 줄여 축출 루프를 막는다 (#2).
+            guard let downsampled = Self.downsample(source, maxPixelSize: Self.maximumPixelsPerAxis)
+            else {
+                return .failure(.decodeFailed(underlying: "downsample failed"))
+            }
+            cgImage = downsampled
+        } else {
+            // 축 상한 이하는 원본 그대로 디코드 (렌더 불변).
+            guard let full = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+                return .failure(.decodeFailed(underlying: "CGImageSource failed"))
+            }
+            cgImage = full
         }
 
         let pixelSize = CGSize(width: CGFloat(cgImage.width), height: CGFloat(cgImage.height))
         return .success(HwpDecodedImage(image: cgImage, format: format, pixelSize: pixelSize))
+    }
+
+    /// 소스의 선언된 픽셀 차원 (디코드 전). 없거나 0이면 nil.
+    private static func pixelDimensions(of source: CGImageSource) -> (Int, Int)? {
+        guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int,
+              width > 0, height > 0
+        else { return nil }
+        return (width, height)
+    }
+
+    /// 최대 축 픽셀로 다운샘플한다 — ImageIO 썸네일은 전체 디코드 없이 만든다.
+    private static func downsample(_ source: CGImageSource, maxPixelSize: Int) -> CGImage? {
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+        ]
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
     }
 
     private func detectFormat(_ bytes: Data) -> Result<HwpImageFormat, HwpImageError> {

@@ -21,6 +21,11 @@ public struct HwpTableLayout {
     /// 곱해지면 수십억 칸이 되어 OOM — 실제 문서 표는 이 한도를 한참 밑돈다.
     static let maximumGridCells = 1 << 20
 
+    /// 표 하나가 만들 수 있는 페이지 세그먼트 상한. 본문 높이가 1pt로 몰린
+    /// 병적 페이지에서 큰 행이 1pt씩 잘려 수십만 페이지가 나오는 것을 막는다
+    /// (#5). 실제 표는 문서 페이지 수 이하라 이 한도를 한참 밑돈다.
+    static let maximumTableSegments = 4096
+
     /// 표 하나를 레이아웃한다. 페이지 분할은 호출자(paginator)가 row 단위로 수행한다.
     /// 셀 안 중첩 표는 depth 3까지 재귀 레이아웃한다.
     public func layout(

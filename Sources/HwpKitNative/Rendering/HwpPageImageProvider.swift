@@ -52,7 +52,10 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     public init(store: HwpImageStore, cache: HwpImageCache) {
         self.store = store
         self.cache = cache
-        resolvedImages.totalCostLimit = 64_000_000
+        // 디코드 다운샘플 상한(4096²·4 ≈ 67MB, HwpImageAdapter)과 정합하도록
+        // 128MB로 둔다 — 개별 이미지 cost가 예산을 넘어 NSCache가 즉시 축출→
+        // 재요청 루프를 만드는 것을 막는다 (#2).
+        resolvedImages.totalCostLimit = 128_000_000
     }
 
     /// 이미 디코딩된 이미지를 동기 반환한다 (draw 경로용).

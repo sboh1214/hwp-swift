@@ -42,6 +42,11 @@ enum HwpDocumentViewSupport {
     /// 레이어 한 축의 래스터 픽셀 상한 (Metal 최대 텍스처 = 백킹 스토어 안전선).
     private static let maximumRasterPixelsPerAxis: CGFloat = 8192
 
+    /// 레이어 하나의 총 래스터 픽셀 상한 (RGBA 64MB). 축별 상한만으로는
+    /// 14400pt 페이지가 8192² = 256MB 백킹을 받아 가상화 5장이면 1GB를
+    /// 넘겨 iOS가 종료된다 — 면적 총량으로 제한한다 (#3).
+    private static let maximumRasterPixels: CGFloat = 16_000_000
+
     /// 페이지 크기 × scale이 백킹 스토어 상한을 넘으면 scale을 낮춘다 (#7).
     /// 거대 페이지 (미신뢰 치수·큰 줌)가 수 GiB RGBA 백킹을 요구하는 것을 막는다.
     /// 실제 페이지(≤ 레터/A4)는 어떤 줌에서도 상한을 밑돌아 해상도 불변.
@@ -51,7 +56,9 @@ enum HwpDocumentViewSupport {
             maximumRasterPixelsPerAxis / size.width,
             maximumRasterPixelsPerAxis / size.height
         )
-        return max(0.1, min(scale, axisCap))
+        // 총 면적 = (w·s)(h·s) = w·h·s² ≤ maximumRasterPixels → s ≤ √(max/(w·h))
+        let areaCap = (maximumRasterPixels / (size.width * size.height)).squareRoot()
+        return max(0.1, min(scale, axisCap, areaCap))
     }
 
     /// 배율이 달라진 레이어만 재래스터한다. 메모 패널 레이어 그룹도 함께
