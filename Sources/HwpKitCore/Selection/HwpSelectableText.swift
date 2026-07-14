@@ -38,18 +38,17 @@ public enum HwpSelectableText {
         for (blockIndex, block) in page.blocks.enumerated() {
             // 머리말/꼬리말/쪽 번호는 본문 선택·복사에서 제외한다
             guard block.role == .body else { continue }
-            // 본문 텍스트 블록(payload nil)은 한 문단(또는 그 조각)이 곧 한
-            // 단위라 source.paragraphId로 열/쪽에 걸친 조각을 식별한다. 컨테이너
-            // (표/글상자/각주)는 문단마다 별개 단위라 여기선 식별하지 않는다.
-            let bodyParagraphId = block.payload == nil ? block.source?.paragraphId : nil
+            // paragraphId는 워커가 문단/블록별로 준다 — 본문 조각은 열/쪽에
+            // 걸친 연속 판정에, 표/글상자/각주 셀 문단은 반복 머리행 복사
+            // dedup의 출처 식별에 쓴다 (#8). 서로 다른 셀은 서로 다른 paraId.
             var unitIndex = 0
-            HwpBlockContentWalker.walkText(block: block) { attributed, rect in
+            HwpBlockContentWalker.walkText(block: block) { attributed, rect, paragraphId in
                 units.append(HwpTextUnit(
                     blockIndex: blockIndex,
                     unitIndex: unitIndex,
                     attributedString: attributed,
                     rect: rect,
-                    paragraphId: bodyParagraphId
+                    paragraphId: paragraphId
                 ))
                 unitIndex += 1
             }

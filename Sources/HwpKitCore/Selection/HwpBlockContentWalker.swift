@@ -10,7 +10,7 @@ public enum HwpBlockContentWalker {
     /// rect는 페이지 로컬 top-down — 렌더는 origin/폭을, 선택은 rect 전체를 쓴다.
     public static func walkText(
         block: AnyHwpBlock,
-        visit: (NSAttributedString, CGRect) -> Void
+        visit: (NSAttributedString, CGRect, UInt32?) -> Void
     ) {
         switch block.payload {
         case let .table(table):
@@ -26,21 +26,22 @@ public enum HwpBlockContentWalker {
             guard [.text, .table, .textbox, .footnote].contains(block.kind),
                   let attributed = block.attributedString, attributed.length > 0
             else { return }
-            visit(attributed, block.frame)
+            visit(attributed, block.frame, block.source?.paragraphId)
         }
     }
 
     /// 문단 배열 (길이 > 0)을 블록 offset을 더한 페이지 좌표로 방문한다
-    /// (표 셀·글상자·각주 공용).
+    /// (표 셀·글상자·각주 공용). paragraphId는 복사 dedup의 출처 식별에 쓴다 (#8).
     public static func walkParagraphs(
         _ paragraphs: [HwpLaidOutParagraph],
         offset: CGPoint,
-        visit: (NSAttributedString, CGRect) -> Void
+        visit: (NSAttributedString, CGRect, UInt32?) -> Void
     ) {
         for paragraph in paragraphs where paragraph.attributedString.length > 0 {
             visit(
                 paragraph.attributedString,
-                paragraph.rect.offsetBy(dx: offset.x, dy: offset.y)
+                paragraph.rect.offsetBy(dx: offset.x, dy: offset.y),
+                paragraph.paragraphId
             )
         }
     }
@@ -53,7 +54,7 @@ public enum HwpBlockContentWalker {
         _ table: HwpTableFrame,
         origin: CGPoint,
         onCellStart: (HwpTableCellFrame, CGRect) -> Void = { _, _ in },
-        onParagraphText: (NSAttributedString, CGRect) -> Void,
+        onParagraphText: (NSAttributedString, CGRect, UInt32?) -> Void,
         onCellImage: (HwpCellImage, CGRect) -> Void = { _, _ in }
     ) {
         for row in table.rows {

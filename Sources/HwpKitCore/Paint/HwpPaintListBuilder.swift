@@ -66,7 +66,7 @@ public struct HwpPaintListBuilder: Sendable {
         switch block.kind {
         case .text, .table, .textbox, .footnote:
             var commands: [HwpPaintCommand] = []
-            HwpBlockContentWalker.walkText(block: block) { attributed, rect in
+            HwpBlockContentWalker.walkText(block: block) { attributed, rect, _ in
                 commands.append(drawTextCommand(attributed, in: rect))
             }
             return commands
@@ -118,7 +118,7 @@ public struct HwpPaintListBuilder: Sendable {
                 }
                 commands.append(contentsOf: borderCommands(cell.borders, around: cellRect))
             },
-            onParagraphText: { attributed, rect in
+            onParagraphText: { attributed, rect, _ in
                 commands.append(drawTextCommand(attributed, in: rect))
             },
             onCellImage: { image, rect in
@@ -208,7 +208,7 @@ public struct HwpPaintListBuilder: Sendable {
         HwpBlockContentWalker.walkParagraphs(
             textbox.paragraphs,
             offset: origin
-        ) { attributed, rect in
+        ) { attributed, rect, _ in
             commands.append(drawTextCommand(attributed, in: rect))
         }
         return commands
@@ -232,7 +232,7 @@ public struct HwpPaintListBuilder: Sendable {
         HwpBlockContentWalker.walkParagraphs(
             footnote.paragraphs,
             offset: blockFrame.origin
-        ) { attributed, rect in
+        ) { attributed, rect, _ in
             commands.append(drawTextCommand(attributed, in: rect))
         }
         return commands

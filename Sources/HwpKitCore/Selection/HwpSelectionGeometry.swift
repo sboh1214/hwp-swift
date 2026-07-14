@@ -235,8 +235,10 @@ public final class HwpSelectionGeometry {
         guard !selection.isCollapsed else { return "" }
         let (start, end) = selection.range
         var contributions: [Contribution] = []
-        // 이미 복사에 기여한 조각 텍스트 — 반복 제목 행 클론 중복 제거용 (#5)
-        var contributedTexts = Set<String>()
+        // 이미 복사에 기여한 문단 식별자 — 반복 제목 행 클론을 출처 identity로
+        // 중복 제거한다 (텍스트 일치가 아니라 paraId — 같은 텍스트의 데이터 셀을
+        // 오탐하지 않음, #8). 원본 헤더와 클론은 같은 paraId를 공유한다.
+        var contributedParagraphIds = Set<UInt32>()
         for pageIndex in start.pageIndex ... end.pageIndex {
             for unit in units(forPage: pageIndex) {
                 let unitStart = HwpTextPosition(
@@ -257,13 +259,18 @@ public final class HwpSelectionGeometry {
                 let slice = (unit.attributedString.string as NSString)
                     .substring(with: NSRange(location: lower, length: upper - lower))
                 let text = Self.strippingControlMarkers(slice)
-                // 반복 제목 행 클론은 동등한 머리행이 이미 기여했을 때만 제외한다 —
-                // 원본이 선택 밖(뒷페이지 클론만 선택)이면 그 클론을 넣어야
-                // 복사가 비지 않는다. 하이라이트는 항상 남는다 (#5, #21 보정).
-                if Self.isRepeatedHeaderClone(unit.attributedString), contributedTexts.contains(text) {
+                // 반복 제목 행 클론은 같은 출처(paraId)가 이미 기여했을 때만
+                // 제외한다 — 원본이 선택 밖(뒷페이지 클론만 선택)이면 그 클론을
+                // 넣어야 복사가 비지 않는다. 하이라이트는 항상 남는다 (#8, #21 보정).
+                if Self.isRepeatedHeaderClone(unit.attributedString),
+                   let paragraphId = unit.paragraphId,
+                   contributedParagraphIds.contains(paragraphId)
+                {
                     continue
                 }
-                contributedTexts.insert(text)
+                if let paragraphId = unit.paragraphId {
+                    contributedParagraphIds.insert(paragraphId)
+                }
                 contributions.append(Contribution(
                     text: text,
                     paragraphId: unit.paragraphId,
