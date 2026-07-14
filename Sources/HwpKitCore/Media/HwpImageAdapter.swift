@@ -20,11 +20,20 @@ public struct HwpDecodedImage: Sendable {
     public let image: CGImage
     public let format: HwpImageFormat
     public let pixelSize: CGSize
+    /// 다운샘플 전 선언 원본 픽셀 크기 — 원본 좌표계인 crop을 다운샘플된
+    /// 비트맵에 맞게 스케일하는 데 쓴다 (#5). 다운샘플 안 했으면 pixelSize와 같다.
+    public let originalPixelSize: CGSize
 
-    public init(image: CGImage, format: HwpImageFormat, pixelSize: CGSize) {
+    public init(
+        image: CGImage,
+        format: HwpImageFormat,
+        pixelSize: CGSize,
+        originalPixelSize: CGSize? = nil
+    ) {
         self.image = image
         self.format = format
         self.pixelSize = pixelSize
+        self.originalPixelSize = originalPixelSize ?? pixelSize
     }
 }
 
@@ -92,7 +101,13 @@ public struct HwpImageAdapter {
         }
 
         let pixelSize = CGSize(width: CGFloat(cgImage.width), height: CGFloat(cgImage.height))
-        return .success(HwpDecodedImage(image: cgImage, format: format, pixelSize: pixelSize))
+        // 다운샘플됐으면 declared dimensions가 원본, cgImage는 축소본이다 (#5).
+        let originalPixelSize = dimensions
+            .map { CGSize(width: CGFloat($0.0), height: CGFloat($0.1)) } ?? pixelSize
+        return .success(HwpDecodedImage(
+            image: cgImage, format: format,
+            pixelSize: pixelSize, originalPixelSize: originalPixelSize
+        ))
     }
 
     /// 소스의 선언된 픽셀 차원 (디코드 전). 없거나 0이면 nil.

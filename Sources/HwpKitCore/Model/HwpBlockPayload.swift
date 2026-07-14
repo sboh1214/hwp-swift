@@ -135,23 +135,39 @@ public struct HwpImageRenderStyle: Sendable, Hashable {
     /// 픽셀 단위 crop 사각형. 반올림 후 이미지 전체와 같으면 (crop 없음) nil.
     ///
     /// crop 값이 모두 0이거나 사각형이 비정상이면 nil을 반환한다.
-    public func pixelCropRect(imageWidth: Int, imageHeight: Int) -> CGRect? {
+    /// crop은 원본 크기 좌표계(HWPUNIT→px, /75)라 원본 기준으로 계산·"crop 없음"
+    /// 판정을 하고, 실제(다운샘플됐을 수 있는) 비트맵 크기에 비례 스케일한다 (#5).
+    /// 원본 크기를 안 주면 비트맵 크기와 동일 취급 → 기존 동작과 같다.
+    public func pixelCropRect(
+        imageWidth: Int,
+        imageHeight: Int,
+        originalWidth: Int? = nil,
+        originalHeight: Int? = nil
+    ) -> CGRect? {
         guard imageWidth > 0, imageHeight > 0 else { return nil }
         guard cropRight > cropLeft, cropBottom > cropTop else { return nil }
+        let origW = CGFloat(originalWidth ?? imageWidth)
+        let origH = CGFloat(originalHeight ?? imageHeight)
+        guard origW > 0, origH > 0 else { return nil }
 
         func pixels(_ value: Int32) -> CGFloat {
             (CGFloat(value) / Self.hwpUnitsPerPixel).rounded()
         }
-        let minX = max(0, min(CGFloat(imageWidth), pixels(cropLeft)))
-        let minY = max(0, min(CGFloat(imageHeight), pixels(cropTop)))
-        let maxX = max(0, min(CGFloat(imageWidth), pixels(cropRight)))
-        let maxY = max(0, min(CGFloat(imageHeight), pixels(cropBottom)))
+        let minX = max(0, min(origW, pixels(cropLeft)))
+        let minY = max(0, min(origH, pixels(cropTop)))
+        let maxX = max(0, min(origW, pixels(cropRight)))
+        let maxY = max(0, min(origH, pixels(cropBottom)))
         guard maxX > minX, maxY > minY else { return nil }
 
-        let rect = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
-        let full = CGRect(x: 0, y: 0, width: CGFloat(imageWidth), height: CGFloat(imageHeight))
-        guard rect != full else { return nil }
-        return rect
+        let origRect = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+        guard origRect != CGRect(x: 0, y: 0, width: origW, height: origH) else { return nil }
+
+        let sx = CGFloat(imageWidth) / origW
+        let sy = CGFloat(imageHeight) / origH
+        return CGRect(
+            x: origRect.minX * sx, y: origRect.minY * sy,
+            width: origRect.width * sx, height: origRect.height * sy
+        )
     }
 
     /// 아무 변형도 없는 스타일인지 (이미지 크기를 몰라도 확실한 경우만 true)

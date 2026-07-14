@@ -13,13 +13,20 @@ enum HwpImageStyleRenderer {
     private static let context = CIContext(options: [.useSoftwareRenderer: false])
 
     /// 스타일을 적용한 이미지를 반환한다. 적용할 것이 없으면 원본 그대로.
-    static func apply(_ style: HwpImageRenderStyle?, to image: CGImage) -> CGImage {
+    /// originalSize를 주면 (다운샘플된 경우) 원본 좌표계 crop을 스케일한다 (#5).
+    static func apply(
+        _ style: HwpImageRenderStyle?,
+        to image: CGImage,
+        originalSize: CGSize? = nil
+    ) -> CGImage {
         guard let style else { return image }
 
         var result = image
         if let cropRect = style.pixelCropRect(
             imageWidth: image.width,
-            imageHeight: image.height
+            imageHeight: image.height,
+            originalWidth: originalSize.map { Int($0.width.rounded()) },
+            originalHeight: originalSize.map { Int($0.height.rounded()) }
         ), let cropped = result.cropping(to: cropRect) {
             result = cropped
         }

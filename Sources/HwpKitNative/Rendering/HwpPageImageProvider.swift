@@ -19,11 +19,23 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     /// 프로세스를 고갈시키지 않게 한다 (개별 픽셀 한도만으론 합산을 못 막음, #8).
     private let decodeThrottle = HwpDecodeThrottle(limit: 3)
     private let lock = NSLock()
-    /// draw 경로용 동기 스냅샷 ((binItemId, style) 변형별). NSCache라 메모리
-    /// 압박 시 자동으로 비워지고, 비워진 항목은 requestImage가 다시 채운다.
-    private let resolvedImages = NSCache<NSString, CGImage>()
+    /// 해석된 (binItemId, style) 변형 — 바이트 예산 내 삽입순 LRU. NSCache의
+    /// 비결정 축출(예산 안이어도 즉시 축출)이 가시 이미지를 축출→재요청하는
+    /// 무한 루프를 만들던 것을 결정적 예산 축출로 대체한다 (#3).
+    private var resolved: [String: CGImage] = [:]
+    private var resolvedOrder: [String] = []
+    private var resolvedCost: [String: Int] = [:]
+    private var resolvedBytes = 0
+    /// 다운샘플 상한 이미지 서너 장이 한 페이지 작업셋에 들어가도 루프가 안
+    /// 생기게 256MB. 각 변형은 다운샘플로 ≤67MB라 메모리 총량은 유계다 (#3).
+    private static let resolvedByteLimit = 256_000_000
+    /// 동시 진행 요청 상한 — 이미지 변형이 많은 페이지가 무제한 Task·throttle
+    /// 대기를 쌓지 않게 백프레셔로 막는다. 초과분은 다음 draw에서 재요청된다 (#2).
+    private static let maximumInFlight = 12
     private var failedKeys: Set<String> = []
     private var inFlightKeys: Set<String> = []
+    /// binItemId별 다운샘플 전 원본 픽셀 크기 — crop 스케일용 (#5).
+    private var originalSizeByBinItemId: [UInt32: CGSize] = [:]
     /// binItemId별 가장 최근에 해석된 변형 키 (platformImage 폴백용)
     private var latestVariantByBinItemId: [UInt32: String] = [:]
     private var imageResolvedHandler: (@Sendable (UInt32) -> Void)?
@@ -52,15 +64,13 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     public init(store: HwpImageStore, cache: HwpImageCache) {
         self.store = store
         self.cache = cache
-        // 디코드 다운샘플 상한(4096²·4 ≈ 67MB, HwpImageAdapter)과 정합하도록
-        // 128MB로 둔다 — 개별 이미지 cost가 예산을 넘어 NSCache가 즉시 축출→
-        // 재요청 루프를 만드는 것을 막는다 (#2).
-        resolvedImages.totalCostLimit = 128_000_000
     }
 
     /// 이미 디코딩된 이미지를 동기 반환한다 (draw 경로용).
     public func cachedImage(for key: UInt32, style: HwpImageRenderStyle? = nil) -> CGImage? {
-        resolvedImages.object(forKey: Self.variantKey(key, style) as NSString)
+        lock.lock()
+        defer { lock.unlock() }
+        return resolved[Self.variantKey(key, style)]
     }
 
     /// 디코딩에 실패했던 키인지 여부 (placeholder 렌더 판단용).
@@ -75,12 +85,15 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         guard cachedImage(for: key, style: style) == nil else { return }
         let variant = Self.variantKey(key, style)
         lock.lock()
-        let alreadyHandled = failedKeys.contains(variant) || inFlightKeys.contains(variant)
-        if !alreadyHandled {
+        // 백프레셔: 이미 실패/진행 중이거나 진행 상한을 넘으면 지금은 안 띄운다.
+        // 초과분은 다음 draw에서 (진행이 빠지면) 재요청된다 (#2).
+        let skip = failedKeys.contains(variant) || inFlightKeys.contains(variant)
+            || inFlightKeys.count >= Self.maximumInFlight
+        if !skip {
             inFlightKeys.insert(variant)
         }
         lock.unlock()
-        guard !alreadyHandled else { return }
+        guard !skip else { return }
 
         let store = store
         let cache = cache
@@ -92,7 +105,7 @@ public final class HwpPageImageProvider: @unchecked Sendable {
             defer { Task { await throttle.release() } }
             // 원본 디코드는 binItemId 단위로 공유 캐시하고,
             // 스타일 변형은 변형 키로 이 provider에만 저장한다.
-            let decoded = await cache.fetch(key) {
+            let decoded = await cache.fetch(key) { [weak self] in
                 guard let data = store.data(forBinItemId: key) else { return nil }
                 let binaryData = CoreHwpBinaryDataShim.binaryData(
                     named: store.extensionName(forBinItemId: key),
@@ -100,14 +113,17 @@ public final class HwpPageImageProvider: @unchecked Sendable {
                 )
                 switch adapter.decode(binaryData: binaryData) {
                 case let .success(decoded):
+                    self?.recordOriginalSize(decoded.originalPixelSize, for: key)
                     return decoded.image
                 case .failure:
                     return nil
                 }
             }
-            let styled = decoded.map { HwpImageStyleRenderer.apply(style, to: $0) }
-            // crop-only 변형은 CGImage.cropping이 원본 backing을 공유·고정하므로
-            // 캐시 비용을 원본 크기 기준으로 계상한다.
+            // 다운샘플됐을 수 있으므로 원본 크기로 crop을 스케일한다 (#5).
+            let originalSize = self?.originalSize(for: key)
+            let styled = decoded.map {
+                HwpImageStyleRenderer.apply(style, to: $0, originalSize: originalSize)
+            }
             let pinnedPixels = max(
                 (styled?.width ?? 0) * (styled?.height ?? 0),
                 (decoded?.width ?? 0) * (decoded?.height ?? 0)
@@ -125,7 +141,7 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         lock.lock()
         inFlightKeys.remove(variant)
         if let image {
-            resolvedImages.setObject(image, forKey: variant as NSString, cost: cost)
+            insertResolved(variant, image: image, cost: max(1, cost))
             latestVariantByBinItemId[key] = variant
         } else {
             failedKeys.insert(variant)
@@ -135,6 +151,36 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         handler?(key)
     }
 
+    /// lock 보유 상태에서 호출. 삽입 후 예산 초과분을 가장 오래된 변형부터
+    /// 축출한다 (방금 넣은 변형은 남겨 진행 보장).
+    private func insertResolved(_ variant: String, image: CGImage, cost: Int) {
+        if let old = resolvedCost[variant] {
+            resolvedBytes -= old
+            resolvedOrder.removeAll { $0 == variant }
+        }
+        resolved[variant] = image
+        resolvedCost[variant] = cost
+        resolvedOrder.append(variant)
+        resolvedBytes += cost
+        while resolvedBytes > Self.resolvedByteLimit, resolvedOrder.count > 1 {
+            let oldest = resolvedOrder.removeFirst()
+            resolvedBytes -= resolvedCost.removeValue(forKey: oldest) ?? 0
+            resolved.removeValue(forKey: oldest)
+        }
+    }
+
+    private func recordOriginalSize(_ size: CGSize, for key: UInt32) {
+        lock.lock()
+        defer { lock.unlock() }
+        originalSizeByBinItemId[key] = size
+    }
+
+    private func originalSize(for key: UInt32) -> CGSize? {
+        lock.lock()
+        defer { lock.unlock() }
+        return originalSizeByBinItemId[key]
+    }
+
     /// PlatformImage(NSImage/UIImage) 편의 접근자 — 앱 레벨 소비용.
     /// 원본(스타일 없는) 변형이 없으면 가장 최근에 렌더된 스타일 변형을 돌려준다.
     public func platformImage(for key: UInt32) -> PlatformImage? {
@@ -142,11 +188,9 @@ public final class HwpPageImageProvider: @unchecked Sendable {
             return PlatformImage(hwpCgImage: image)
         }
         lock.lock()
-        let latestVariant = latestVariantByBinItemId[key]
+        let image = latestVariantByBinItemId[key].flatMap { resolved[$0] }
         lock.unlock()
-        guard let latestVariant,
-              let image = resolvedImages.object(forKey: latestVariant as NSString)
-        else { return nil }
+        guard let image else { return nil }
         return PlatformImage(hwpCgImage: image)
     }
 }

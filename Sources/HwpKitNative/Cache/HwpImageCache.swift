@@ -15,7 +15,9 @@ public actor HwpImageCache {
     /// In-flight decode tasks keyed by binaryDataIndex — coalesces concurrent fetches.
     private var inFlight: [UInt32: Task<CGImage?, Never>] = [:]
 
-    public init(maxBytes: Int = 100_000_000) {
+    /// 다운샘플 상한(4096²·4 ≈ 67MB) 이미지 두 장(≈134MB)이 한 페이지 작업셋에
+    /// 들어가도 축출→재디코드 루프가 안 생기게 256MB로 둔다 (#3).
+    public init(maxBytes: Int = 256_000_000) {
         self.maxBytes = maxBytes
     }
 
