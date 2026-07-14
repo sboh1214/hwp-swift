@@ -16,7 +16,10 @@ public struct HwpFile: HwpPrimitive {
 
     /// 렌더 대상 본문: ViewText가 있으면 ViewText, 없으면 BodyText (한글.app 동작)
     public var displaySectionArray: [HwpSection] {
-        viewSectionArray.isEmpty ? sectionArray : viewSectionArray
+        // ViewText(표시본)는 전 구역을 빠짐없이 담을 때만 렌더 본문으로 채택한다.
+        // 부분/불완전 ViewText는 BodyText 구역을 조용히 누락시키므로 무시한다.
+        !viewSectionArray.isEmpty && viewSectionArray.count == sectionArray.count
+            ? viewSectionArray : sectionArray
     }
 
     /// 비어 있는 기본 HWP 문서 모델을 생성합니다.
