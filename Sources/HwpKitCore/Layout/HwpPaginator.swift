@@ -421,12 +421,6 @@ private extension HwpPaginator {
                 return
             }
             measureMemo = nil
-            // 배치가 확정된 지금 쪽 번호 리셋을 적용한다 — 넘친 앞 페이지는 리셋
-            // 전 번호를 유지하고, 이 문단이 실린 페이지부터 새 번호가 시작된다.
-            if let reset = pendingPageNumber {
-                nextLogicalPageNumber = reset
-                pendingPageNumber = nil
-            }
             collectFootnotes(from: paragraph, includeTableCells: false)
             collectMemos(from: paragraph)
             appendControlBlocks(from: paragraph)
@@ -856,6 +850,14 @@ private extension HwpPaginator {
         paragraphId: UInt32? = nil,
         lines: [HwpLineFrame] = []
     ) {
+        // 문단의 첫 콘텐츠가 페이지에 놓이는 지금 보류된 쪽 번호 리셋을 확정한다 —
+        // 열/쪽에 걸친 조각이 캐시되기 전에 적용해야 시작 페이지가 새 번호를
+        // 갖는다 (조각 캐시 후 적용하면 시작 페이지가 옛 번호로 남는다 — #12).
+        // 미적합 재시도는 appendBlock 전에 return하므로 리셋이 보류로 남아 올바르다.
+        if let reset = pendingPageNumber {
+            nextLogicalPageNumber = reset
+            pendingPageNumber = nil
+        }
         let immutable = NSAttributedString(attributedString: attributedString)
         let columnFrame = currentColumnFrame
         let frame = CGRect(
@@ -1281,27 +1283,28 @@ private extension HwpPaginator {
                 remaining = effectiveContentHeight - headerAllowance
             }
 
-            // 후보 행의 셀 각주 예약 높이를 미리 반영해 세그먼트를 맞춘다 —
-            // 사본으로 시산해 각주 높이만큼 remaining을 줄인 뒤 실제 배치한다.
-            // 셀 각주가 없으면 0이라 기존 세그먼트 선택과 동일하다.
+            // 후보 행의 셀 각주 예약 높이를 미리 반영해 세그먼트를 맞춘다 (#6).
+            // 각주 예약 후 최소 행조차 안 들어가면 remaining을 되돌리지 않고
+            // 새 페이지로 이월한다 — 각주가 이미 claim한 공간에 행을 밀어넣어
+            // 각주 영역과 겹치지 않게 한다 (#11). 셀 각주가 없으면 no-op.
             if let table {
-                var trialRows = remainingRows
-                let trial = HwpTableSplitter.fillSegment(
-                    remainingRows: &trialRows, remaining: remaining
+                var notes = anticipatedNotesForNextSegment(
+                    table, remainingRows: remainingRows,
+                    remaining: remaining, highestCollectedRow: highestCollectedRow
                 )
-                let trialRows2 = trial.flatMap(\.cells).map(\.row)
-                if let maxRow = trialRows2.max() {
-                    let startRow = max(trialRows2.min() ?? maxRow, highestCollectedRow + 1)
-                    if startRow <= maxRow {
-                        let notes = anticipatedTableCellFootnoteHeight(
-                            table, rows: startRow ... maxRow
-                        )
-                        if notes > 0 {
-                            remaining = max(
-                                HwpTableSplitter.minimumRowHeight(remainingRows), remaining - notes
-                            )
-                        }
-                    }
+                if notes > 0,
+                   remaining - notes < HwpTableSplitter.minimumRowHeight(remainingRows),
+                   contentHeightUsed > 0
+                {
+                    advanceColumn()
+                    remaining = effectiveContentHeight - headerAllowance
+                    notes = anticipatedNotesForNextSegment(
+                        table, remainingRows: remainingRows,
+                        remaining: remaining, highestCollectedRow: highestCollectedRow
+                    )
+                }
+                if notes > 0 {
+                    remaining = max(1, remaining - notes)
                 }
             }
 
@@ -1917,6 +1920,23 @@ private extension HwpPaginator {
             environment: noteEnvironment,
             childParagraphs: childParagraphs(of:)
         )
+    }
+
+    /// 다음 세그먼트에 들어갈 후보 행들의 셀 각주가 예약할 높이 — 사본으로
+    /// 시산만 한다(상태 불변). 이미 수집한 행 이후분만 세고, 셀 각주가 없으면 0.
+    private func anticipatedNotesForNextSegment(
+        _ table: CoreHwp.HwpTable,
+        remainingRows: [HwpTableRowFrame],
+        remaining: CGFloat,
+        highestCollectedRow: Int
+    ) -> CGFloat {
+        var trialRows = remainingRows
+        let trial = HwpTableSplitter.fillSegment(remainingRows: &trialRows, remaining: remaining)
+        let rows = trial.flatMap(\.cells).map(\.row)
+        guard let maxRow = rows.max() else { return 0 }
+        let startRow = max(rows.min() ?? maxRow, highestCollectedRow + 1)
+        guard startRow <= maxRow else { return 0 }
+        return anticipatedTableCellFootnoteHeight(table, rows: startRow ... maxRow)
     }
 
     // MARK: 미주 (문서/구역 끝)

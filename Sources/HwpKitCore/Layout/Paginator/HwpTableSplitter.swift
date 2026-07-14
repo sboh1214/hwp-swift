@@ -38,11 +38,17 @@ enum HwpTableSplitter {
             // 세그먼트 높이는 row 사이 cellSpacing까지 포함해
             // (첫 row 상단 ~ 이 row 하단) 실제 블록 높이로 판정한다.
             let segmentStartY = segmentRows.first?.rowFrame.minY ?? row.rowFrame.minY
-            let prospectiveHeight = row.rowFrame.maxY - segmentStartY
+            // rowspan 셀은 시작 행에만 존재하고 아래 행까지 뻗으므로, 세그먼트
+            // 높이 판정에 병합 셀의 실제 maxY를 반영해 병합 셀이 조각 경계를
+            // 넘어 잘리거나 이어지는 조각에서 사라지지 않게 한다 (#14).
+            let rowExtent = row.cells.reduce(row.rowFrame.maxY) { partial, cell in
+                cell.rowSpan > 1 ? max(partial, cell.cellFrame.maxY) : partial
+            }
+            let prospectiveHeight = rowExtent - segmentStartY
             if segmentHeight > 0, prospectiveHeight > remaining {
                 break
             }
-            if segmentHeight == 0, row.rowFrame.height > remaining {
+            if segmentHeight == 0, rowExtent - row.rowFrame.minY > remaining {
                 // 빈 페이지보다 큰 row: 남은 높이에서 잘라 나머지를 이월한다.
                 let fragments = sliced(
                     row: row,
@@ -81,7 +87,11 @@ enum HwpTableSplitter {
         var headerHeight: CGFloat = 0
         if let headerFirst = repeatedHeaderRows.first {
             let headerShift = headerFirst.rowFrame.minY
-            let shiftedHeader = repeatedHeaderRows.map { shifted(row: $0, deltaY: -headerShift) }
+            // 클론된 제목 행에 표식을 달아 복사 소스 텍스트에서 페이지마다
+            // 중복되지 않게 한다 (원본은 첫 세그먼트 — #21).
+            let shiftedHeader = repeatedHeaderRows.map {
+                markedAsRepeatedHeaderClone(shifted(row: $0, deltaY: -headerShift))
+            }
             headerHeight = shiftedHeader.reduce(CGFloat(0)) { max($0, $1.rowFrame.maxY) }
             shiftedRows.append(contentsOf: shiftedHeader)
         }
@@ -99,6 +109,49 @@ enum HwpTableSplitter {
             borderColor: original.borderColor,
             borderWidth: original.borderWidth
         )
+    }
+
+    /// 반복 제목 행 클론의 셀 문단에 표식을 달아, 선택·렌더에는 남기되 복사
+    /// 소스 텍스트에서 한 번만 포함되게 한다 (#21).
+    private static func markedAsRepeatedHeaderClone(
+        _ row: HwpTableRowFrame
+    ) -> HwpTableRowFrame {
+        HwpTableRowFrame(
+            rowFrame: row.rowFrame,
+            cells: row.cells.map { cell in
+                HwpTableCellFrame(
+                    cellFrame: cell.cellFrame,
+                    row: cell.row,
+                    column: cell.column,
+                    rowSpan: cell.rowSpan,
+                    columnSpan: cell.columnSpan,
+                    paragraphs: cell.paragraphs.map { paragraph in
+                        HwpLaidOutParagraph(
+                            attributedString: markRepeatedHeader(paragraph.attributedString),
+                            frame: paragraph.frame,
+                            rect: paragraph.rect,
+                            paragraphId: paragraph.paragraphId,
+                            hyperlinkURL: paragraph.hyperlinkURL
+                        )
+                    },
+                    borders: cell.borders,
+                    fillColor: cell.fillColor,
+                    nestedTables: cell.nestedTables,
+                    images: cell.images
+                )
+            }
+        )
+    }
+
+    private static func markRepeatedHeader(_ attributed: NSAttributedString) -> NSAttributedString {
+        guard attributed.length > 0 else { return attributed }
+        let mutable = NSMutableAttributedString(attributedString: attributed)
+        mutable.addAttribute(
+            HwpAttributedStringKey.repeatedTableHeaderClone,
+            value: NSNumber(value: true),
+            range: NSRange(location: 0, length: attributed.length)
+        )
+        return mutable
     }
 
     /// 행/셀/문단 지오메트리를 deltaY만큼 이동한 사본을 만든다.
@@ -237,10 +290,11 @@ enum HwpTableSplitter {
         }
         let topNested = cell.nestedTables.filter { $0.rect.minY < cutY }
         let bottomNested = cell.nestedTables.filter { $0.rect.minY >= cutY }
-        // 셀 이미지도 (중첩 표와 동일 규칙으로) 위/아래 조각에 나눠 넣는다 —
-        // 안 넣으면 초기화 기본값이 빈 배열이라 큰 행을 자를 때 그림이 사라진다.
-        let topImages = cell.images.filter { $0.rect.minY < cutY }
-        let bottomImages = cell.images.filter { $0.rect.minY >= cutY }
+        // 셀 이미지는 조각 경계를 걸칠 수 있다 — minY로 나누면 걸친 이미지의
+        // 아래쪽이 잘려 사라지므로, 중심(midY) 기준으로 조각 하나에 통째로
+        // 넣어 손실 없이 한 쪽에서 온전히 그려지게 한다 (#13).
+        let topImages = cell.images.filter { $0.rect.midY < cutY }
+        let bottomImages = cell.images.filter { $0.rect.midY >= cutY }
         func fragment(
             _ frame: CGRect,
             _ paragraphs: [HwpLaidOutParagraph],
