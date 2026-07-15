@@ -164,6 +164,13 @@ private extension HwpShapeGeometry {
             )
         }
         if let rectangle = component.rectangleArray.first?.rectangleDetail {
+            // 모서리 곡률이 있으면 둥근 사각형 path, 아니면 기존 polygon (곡률 0은
+            // 렌더 불변, #7).
+            if rectangle.cornerRoundness > 0,
+               let rounded = roundedRectanglePath(rectangle, transform: transform)
+            {
+                return rounded
+            }
             return polygonPath(from: rectangle.corners.map { point($0, transform) })
         }
         if let polygon = component.polygonArray.first?.polygonDetail {
@@ -173,10 +180,13 @@ private extension HwpShapeGeometry {
             return curvePath(curve, transform: transform)
         }
         if let ellipse = component.ellipseArray.first?.ellipseDetail {
-            return ellipsePath(from: boundingRect(of: ellipse, transform: transform))
+            // 로컬 타원 path에 렌더 행렬을 적용한다 — 회전/전단 타원을 축 정렬
+            // bounding rect로 뭉개던 것 대신 정확한 affine (#5). 회전 없는 순수
+            // scale에서는 기존 결과와 동일하다.
+            return ellipsePath(of: ellipse, transform: transform)
         }
         if let arc = component.arcArray.first?.arcDetail {
-            return ellipsePath(from: boundingRect(of: arc, transform: transform))
+            return ellipsePath(of: arc, transform: transform)
         }
         guard size.width > 0 || size.height > 0 else { return nil }
         return rectanglePath(
@@ -206,21 +216,52 @@ private extension HwpShapeGeometry {
         return path
     }
 
-    /// 타원/호의 중심 + 두 축 끝점에서 bounding rect를 계산한다.
-    static func boundingRect(
+    /// 로컬(변환 전) 타원 path를 만들어 렌더 행렬을 path에 적용한다 (#5).
+    /// 반지름은 중심~두 축 끝점 거리로 잡는다 (기존 boundingRect와 동일 규칙).
+    /// 순수 scale 변환에서는 축 정렬 bounding rect 결과와 값이 같고, 회전/전단이
+    /// 있으면 path 변환이 정확한 affine 타원을 만든다.
+    static func ellipsePath(
         of ellipse: HwpShapeEllipseDetail,
         transform: CGAffineTransform
-    ) -> CGRect {
-        let center = point(ellipse.center, transform)
-        let axis1 = point(ellipse.firstAxis, transform)
-        let axis2 = point(ellipse.secondAxis, transform)
-        let radiusX = max(abs(axis1.x - center.x), abs(axis2.x - center.x))
-        let radiusY = max(abs(axis1.y - center.y), abs(axis2.y - center.y))
-        return CGRect(
-            x: center.x - radiusX,
-            y: center.y - radiusY,
-            width: max(radiusX * 2, 1),
-            height: max(radiusY * 2, 1)
+    ) -> CGPath {
+        let cx = CGFloat(ellipse.center.x)
+        let cy = CGFloat(ellipse.center.y)
+        let radiusX = max(
+            abs(CGFloat(ellipse.firstAxis.x) - cx),
+            abs(CGFloat(ellipse.secondAxis.x) - cx)
+        )
+        let radiusY = max(
+            abs(CGFloat(ellipse.firstAxis.y) - cy),
+            abs(CGFloat(ellipse.secondAxis.y) - cy)
+        )
+        let localRect = CGRect(
+            x: cx - radiusX, y: cy - radiusY,
+            width: max(radiusX * 2, 1), height: max(radiusY * 2, 1)
+        )
+        var matrix = transform
+        return CGPath(ellipseIn: localRect, transform: &matrix)
+    }
+
+    /// 모서리 곡률(표 94: 0 직각/20 둥근/50 반원)을 반영한 둥근 사각형 path (#7).
+    /// 로컬 rect + corner radius로 만들어 렌더 행렬을 path에 적용한다.
+    /// 50% = 짧은 변이 반원 → radius = 곡률/100 × 짧은 변 (짧은 변/2로 상한).
+    static func roundedRectanglePath(
+        _ rectangle: HwpShapeRectangleDetail,
+        transform: CGAffineTransform
+    ) -> CGPath? {
+        let xs = rectangle.corners.map { CGFloat($0.x) }
+        let ys = rectangle.corners.map { CGFloat($0.y) }
+        guard let minX = xs.min(), let maxX = xs.max(),
+              let minY = ys.min(), let maxY = ys.max(),
+              maxX > minX, maxY > minY
+        else { return nil }
+        let localRect = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+        let shorter = min(localRect.width, localRect.height)
+        let radius = min(CGFloat(rectangle.cornerRoundness) / 100 * shorter, shorter / 2)
+        var matrix = transform
+        return CGPath(
+            roundedRect: localRect,
+            cornerWidth: radius, cornerHeight: radius, transform: &matrix
         )
     }
 
