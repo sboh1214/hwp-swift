@@ -76,6 +76,9 @@
         public var onHyperlinkTapped: ((String) -> Void)?
         public var onUnsupportedElement: ((HwpUnsupportedElement) -> Void)?
         public var onPageChanged: ((Int) -> Void)?
+        /// 마지막으로 통지한 페이지 — 스크롤·레이아웃·줌이 같은 페이지를
+        /// 반복 통지하지 않도록 dedup한다 (#5).
+        private var lastReportedPage = -1
         public var onZoomChanged: ((CGFloat) -> Void)?
 
         var pageLayers: [Int: HwpPageLayer] = [:]
@@ -174,9 +177,10 @@
                 HwpDocumentViewSupport.imageReferences(in: document, pageRange: keepRange)
             )
             // 프로그래매틱 네비가 기존 오프셋으로 클램프돼 scrollViewDidScroll이
-            // 안 오는 경우에도 페이지 변경을 알린다 (macOS와 대칭, #5).
+            // 안 오는 경우에도 페이지 변경을 알린다. 마지막 통지와 같으면 생략해
+            // 스크롤·레이아웃·줌의 중복 통지를 없앤다 (macOS와 대칭, #5).
             if let first = validRange.first {
-                onPageChanged?(first)
+                reportPageChange(first)
             }
             updateSelectionOverlays()
         }
@@ -222,11 +226,16 @@
         }
 
         public func scrollViewDidScroll(_: UIScrollView) {
-            let range = visiblePageRange()
-            updateVisiblePages(range: range)
-            if let firstVisible = range.first {
-                onPageChanged?(firstVisible)
-            }
+            // updateVisiblePages가 페이지 변경을 (dedup으로) 통지하므로 여기서
+            // 다시 부르지 않는다 — 스크롤마다 동일 통지 2회를 없앤다 (#5).
+            updateVisiblePages(range: visiblePageRange())
+        }
+
+        /// 마지막 통지 페이지와 다를 때만 onPageChanged를 발화한다 (#5).
+        private func reportPageChange(_ page: Int) {
+            guard page != lastReportedPage else { return }
+            lastReportedPage = page
+            onPageChanged?(page)
         }
 
         public func scrollViewDidZoom(_ scrollView: UIScrollView) {
