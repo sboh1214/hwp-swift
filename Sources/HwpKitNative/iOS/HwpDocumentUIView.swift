@@ -173,6 +173,11 @@
             imageProvider?.setPinnedImages(
                 HwpDocumentViewSupport.imageReferences(in: document, pageRange: keepRange)
             )
+            // 프로그래매틱 네비가 기존 오프셋으로 클램프돼 scrollViewDidScroll이
+            // 안 오는 경우에도 페이지 변경을 알린다 (macOS와 대칭, #5).
+            if let first = validRange.first {
+                onPageChanged?(first)
+            }
             updateSelectionOverlays()
         }
 
@@ -380,7 +385,8 @@
             var first = pageCount
             while low <= high {
                 let mid = (low + high) / 2
-                if frameForPage(at: mid).maxY > visibleRect.minY {
+                // 종이 maxY가 아니라 행(종이+메모 패널) 하단으로 판정한다 (#6).
+                if frameForPage(at: mid).minY + rowHeight(at: mid) > visibleRect.minY {
                     first = mid
                     high = mid - 1
                 } else {

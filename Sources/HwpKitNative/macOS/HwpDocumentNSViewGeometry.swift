@@ -112,7 +112,9 @@
             var first = pageCount
             while low <= high {
                 let mid = (low + high) / 2
-                if frameForPage(at: mid).maxY > visible.minY {
+                // 종이 maxY가 아니라 행(종이+메모 패널) 하단으로 판정한다 —
+                // 긴 패널의 오버플로 영역에서 페이지가 조기 skip되던 것 방지 (#6).
+                if frameForPage(at: mid).minY + rowHeight(at: mid) > visible.minY {
                     first = mid
                     high = mid - 1
                 } else {

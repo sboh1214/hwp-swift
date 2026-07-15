@@ -68,6 +68,7 @@ public struct HwpPage: Sendable, Hashable {
         hasher.combine(paintList.commands.count)
         hasher.combine(memoPanel?.width ?? 0)
         hasher.combine(memoPanel?.paintList.commands.count ?? 0)
+        hasher.combine(memoPanel?.contentHeight ?? 0)
     }
 
     public static func == (lhs: HwpPage, rhs: HwpPage) -> Bool {
@@ -79,5 +80,6 @@ public struct HwpPage: Sendable, Hashable {
             && lhs.memoPanel?.width == rhs.memoPanel?.width
             && lhs.memoPanel?.paintList.commands.count
             == rhs.memoPanel?.paintList.commands.count
+            && lhs.memoPanel?.contentHeight == rhs.memoPanel?.contentHeight
     }
 }
