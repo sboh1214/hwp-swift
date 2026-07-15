@@ -380,6 +380,9 @@ private extension HwpPaginator {
         let pageCountBefore = cachedPages.count
 
         while let paragraph = nextParagraph() {
+            // 취소된 로드가 0-높이 문단을 대량 처리할 때 page(at:) 반환 전에
+            // 취소를 관찰해 옛 문서 레이아웃이 교체본과 나란히 도는 것을 막는다 (#3).
+            try Task.checkCancellation()
             // 구역 시작/쪽 나누기 문단: 진행 중인 페이지를 확정하고 이 문단은
             // 다음 호출에서 새 페이지 첫머리로 다시 처리한다.
             if flushPageBeforeProcessing(paragraph) {
