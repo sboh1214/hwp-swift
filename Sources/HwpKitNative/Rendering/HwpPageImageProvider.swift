@@ -36,6 +36,9 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     /// provider 교체 세대 — cancelOutstanding에서 증가. 스폰됐지만 등록 전인
     /// 태스크도 세대 불일치로 무효 처리해 등록 레이스를 닫는다 (#5).
     private var generation = 0
+    /// 등록 전에 완료된(캐시 히트/즉시 실패) 태스크 변형 — 등록 측이 완료된
+    /// 핸들을 activeTasks에 넣지 않도록 표시한다 (완료/등록 핸드셰이크, #7).
+    private var completedBeforeRegister: Set<String> = []
     /// 진행 상한으로 미룬 요청 — 슬롯이 나면 finishRequest가 재시도한다. 안 하면
     /// 다른 가시 레이어의 요청이 드롭된 채 회색으로 남는다 (#5).
     private var deferred: [(key: UInt32, style: HwpImageRenderStyle?)] = []
@@ -171,7 +174,10 @@ public final class HwpPageImageProvider: @unchecked Sendable {
             )
         }
         lock.lock()
-        activeTasks[variant] = task
+        // 등록 전에 이미 완료됐으면(캐시 히트/즉시 실패) 완료된 핸들을 넣지 않는다 (#7).
+        if completedBeforeRegister.remove(variant) == nil {
+            activeTasks[variant] = task
+        }
         lock.unlock()
     }
 
@@ -184,7 +190,10 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     ) {
         lock.lock()
         inFlightKeys.remove(variant)
-        activeTasks.removeValue(forKey: variant)
+        if activeTasks.removeValue(forKey: variant) == nil {
+            // 등록 전에 완료됨 — 등록 측이 완료된 핸들을 넣지 않도록 표시 (#7).
+            completedBeforeRegister.insert(variant)
+        }
         // provider가 교체됐으면(세대 불일치) 옛 문서 결과를 캐시에 넣지 않는다 (#5).
         guard gen == generation else {
             lock.unlock()
@@ -239,18 +248,14 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         evictOverBudget(keeping: variant)
     }
 
-    /// lock 보유. 예산 초과분을 축출한다 — 먼저 비고정 변형을 오래된 순으로,
-    /// 그래도 초과면 고정 변형도 오래된 순으로 (이미지가 많은 가시 페이지에서도
-    /// 256MB 하드 상한 유지 — 축출분은 다음 draw에서 재요청, #1). keep은 방금
-    /// 삽입한 변형으로, 즉시 축출→재요청 루프가 도는 것을 막는다.
+    /// lock 보유. 예산 초과분을 오래된 비고정 변형부터 축출한다 — 가시(pin)
+    /// 변형은 축출하지 않는다. 축출하면 redraw가 곧장 재요청해 pin끼리
+    /// 축출→재디코드 순환이 생긴다 (#2). pin은 스크롤마다 통째로 교체돼
+    /// (setPinnedImages) 누적되지 않고, 총량은 현재 가시 작업셋으로 유계다.
+    /// keep은 방금 삽입한 변형으로 즉시 축출을 막는다.
     private func evictOverBudget(keeping keep: String? = nil) {
         while resolvedBytes > Self.resolvedByteLimit,
               let idx = resolvedOrder.firstIndex(where: { $0 != keep && !isPinned($0) })
-        {
-            evictVariant(at: idx)
-        }
-        while resolvedBytes > Self.resolvedByteLimit,
-              let idx = resolvedOrder.firstIndex(where: { $0 != keep })
         {
             evictVariant(at: idx)
         }
@@ -279,6 +284,7 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         lock.lock()
         // 세대를 올려 스폰됐지만 등록 전인 태스크도 무효화한다 (등록 레이스, #5).
         generation &+= 1
+        completedBeforeRegister.removeAll()
         let tasks = Array(activeTasks.values)
         activeTasks.removeAll()
         inFlightKeys.removeAll()
