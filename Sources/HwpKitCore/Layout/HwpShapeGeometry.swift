@@ -186,7 +186,7 @@ private extension HwpShapeGeometry {
             return ellipsePath(of: ellipse, transform: transform)
         }
         if let arc = component.arcArray.first?.arcDetail {
-            return ellipsePath(of: arc, transform: transform)
+            return arcPath(of: arc, transform: transform)
         }
         guard size.width > 0 || size.height > 0 else { return nil }
         return rectanglePath(
@@ -240,6 +240,30 @@ private extension HwpShapeGeometry {
         )
         var matrix = transform
         return CGPath(ellipseIn: localRect, transform: &matrix)
+    }
+
+    /// 호(표 101): 두 축 점을 호의 시작/끝으로 보고 부분 타원 호 경로를 만든다 —
+    /// 완전 타원 대신 실제 호 구간만 그린다 (#4). 호 종류(pie/chord)는 열린 호로
+    /// 근사하고, 회전/전단은 렌더 행렬로 반영한다.
+    static func arcPath(of arc: HwpShapeArcDetail, transform: CGAffineTransform) -> CGPath {
+        let cx = CGFloat(arc.center.x)
+        let cy = CGFloat(arc.center.y)
+        let rx = max(max(abs(CGFloat(arc.firstAxis.x) - cx), abs(CGFloat(arc.secondAxis.x) - cx)), 0.5)
+        let ry = max(max(abs(CGFloat(arc.firstAxis.y) - cy), abs(CGFloat(arc.secondAxis.y) - cy)), 0.5)
+        func angle(_ pt: HwpShapePoint) -> CGFloat {
+            atan2((CGFloat(pt.y) - cy) / ry, (CGFloat(pt.x) - cx) / rx)
+        }
+        // 단위원 호 → 타원 스케일 → 중심 이동 → 렌더 행렬
+        let toWorld = CGAffineTransform(scaleX: rx, y: ry)
+            .concatenating(CGAffineTransform(translationX: cx, y: cy))
+            .concatenating(transform)
+        let path = CGMutablePath()
+        path.addArc(
+            center: .zero, radius: 1,
+            startAngle: angle(arc.firstAxis), endAngle: angle(arc.secondAxis),
+            clockwise: false, transform: toWorld
+        )
+        return path
     }
 
     /// 모서리 곡률(표 94: 0 직각/20 둥근/50 반원)을 반영한 둥근 사각형 path (#7).
