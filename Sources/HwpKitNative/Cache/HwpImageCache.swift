@@ -32,14 +32,26 @@ public actor HwpImageCache {
         }
 
         if let existing = inFlight[key] {
-            return await existing.value
+            // 호출자 취소를 병합된 디코드로 전파한다 (#2). provider 교체 시
+            // cancelOutstanding이 모든 대기자를 취소하므로 공유 태스크 취소가 옳다.
+            return await withTaskCancellationHandler {
+                await existing.value
+            } onCancel: {
+                existing.cancel()
+            }
         }
 
         let task = Task<CGImage?, Never> {
             await decode()
         }
         inFlight[key] = task
-        let image = await task.value
+        // 취소되면 디코드 태스크를 취소해 옛 문서의 대형 디코드가 계속 살아
+        // 있지 않게 한다 (#2). 디코드 클로저는 Task.isCancelled를 확인한다.
+        let image = await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
         inFlight.removeValue(forKey: key)
 
         if let image {

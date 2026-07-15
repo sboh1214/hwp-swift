@@ -143,6 +143,9 @@ public final class HwpPageImageProvider: @unchecked Sendable {
             // 원본 디코드는 binItemId 단위로 공유 캐시하고,
             // 스타일 변형은 변형 키로 이 provider에만 저장한다.
             let decoded = await cache.fetch(key) { [weak self] in
+                if Task.isCancelled {
+                    return nil
+                }
                 guard let data = store.data(forBinItemId: key) else { return nil }
                 let binaryData = CoreHwpBinaryDataShim.binaryData(
                     named: store.extensionName(forBinItemId: key),
@@ -248,14 +251,19 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         evictOverBudget(keeping: variant)
     }
 
-    /// lock 보유. 예산 초과분을 오래된 비고정 변형부터 축출한다 — 가시(pin)
-    /// 변형은 축출하지 않는다. 축출하면 redraw가 곧장 재요청해 pin끼리
-    /// 축출→재디코드 순환이 생긴다 (#2). pin은 스크롤마다 통째로 교체돼
-    /// (setPinnedImages) 누적되지 않고, 총량은 현재 가시 작업셋으로 유계다.
-    /// keep은 방금 삽입한 변형으로 즉시 축출을 막는다.
+    /// lock 보유. 예산 초과분을 오래된 비고정 변형부터 축출하고, 그래도 초과면
+    /// (가시 변형만으로 256MB 초과 — 한 페이지가 4장+ 대형 이미지를 참조) 가장
+    /// 오래된 고정 변형도 축출해 하드 상한을 지킨다 (#1 — pin 작업셋 무한 증가
+    /// 방지). keep(방금 삽입)은 남겨 즉시 축출→재요청 루프를 막는다. 고정 축출은
+    /// 병적 페이지에서만 발동하며, 그 경우 재디코드 회전을 감수하고 OOM을 막는다.
     private func evictOverBudget(keeping keep: String? = nil) {
         while resolvedBytes > Self.resolvedByteLimit,
               let idx = resolvedOrder.firstIndex(where: { $0 != keep && !isPinned($0) })
+        {
+            evictVariant(at: idx)
+        }
+        while resolvedBytes > Self.resolvedByteLimit,
+              let idx = resolvedOrder.firstIndex(where: { $0 != keep })
         {
             evictVariant(at: idx)
         }
