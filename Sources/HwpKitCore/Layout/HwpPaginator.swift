@@ -1280,7 +1280,15 @@ private extension HwpPaginator {
             : []
         let candidateHeaderHeight = candidateHeaderRows.isEmpty
             ? 0
-            : candidateHeaderRows.reduce(CGFloat(0)) { max($0, $1.rowFrame.maxY) }
+            : candidateHeaderRows.reduce(CGFloat(0)) { partial, row in
+                // rowspan 셀은 비-제목 행까지 뻗으므로 cellFrame.maxY를 반영해
+                // segmentFrame의 클론 머리행 높이와 일치시킨다 — continuation
+                // allowance가 과소평가돼 페이지를 넘는 것을 막는다 (#3, 라운드6 #29 정합).
+                let rowExtent = row.cells.reduce(row.rowFrame.maxY) { extent, cell in
+                    cell.rowSpan > 1 ? max(extent, cell.cellFrame.maxY) : extent
+                }
+                return max(partial, rowExtent)
+            }
             - (candidateHeaderRows.first?.rowFrame.minY ?? 0)
         // 반복 제목이 페이지 본문보다 크거나 같으면 continuation에 본문 행 공간이
         // 남지 않아 splitter가 0-높이 조각을 유지하며 제목만 반복해 페이지가
@@ -2030,7 +2038,10 @@ private extension HwpPaginator {
         // 한글.app 실물 (footnote-endnote 2쪽): 미주 위에는 구분선을 그리지
         // 않고, 텍스트가 본문 상단에서 바로 시작한다.
         var drawSeparator = false
-        while !pendingEndnotes.isEmpty {
+        // 페이지 상한에 걸려 cacheCurrentPage가 캐시를 거부하면(didFinishPagination)
+        // overflow가 안 줄어 같은 만석 페이지를 무한 재시도하므로 그때 멈춘다
+        // (각주 드레인 루프와 동일, #1).
+        while !pendingEndnotes.isEmpty, !didFinishPagination {
             let columnFrame = currentColumnFrame
             let available = CGRect(
                 x: columnFrame.minX,
