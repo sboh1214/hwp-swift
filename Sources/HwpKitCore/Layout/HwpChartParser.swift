@@ -56,6 +56,10 @@ private final class ChartXMLDelegate: NSObject, XMLParserDelegate {
     /// 것을 막는다 (#4). 누적은 조각 배열로 선형 처리하고 이 길이에서 자른다.
     static let maxTitleChars = 4096
 
+    /// SAX 텍스트 노드(<c:v>/<a:t>) 하나의 누적 길이 상한 — 계열명·카테고리·값
+    /// 모든 라벨 문맥에 원천 적용된다 (#3). 실측 라벨/값은 수십 자.
+    static let maxLabelChars = 4096
+
     var series: [MutableSeries] = []
     /// 전 계열 누적 포인트 수 (총량 상한 판정용)
     private var totalSeriesPoints = 0
@@ -118,7 +122,13 @@ private final class ChartXMLDelegate: NSObject, XMLParserDelegate {
     }
 
     func parser(_: XMLParser, foundCharacters string: String) {
-        currentText += string
+        // SAX 텍스트 누적을 원천에서 상한한다 — 거대 <c:v>/<a:t> 하나가 캡 판정
+        // (didEndElement) 전에 64MB까지 쌓이고, 계열명·카테고리는 길이 캡이 따로
+        // 없어 그대로 CoreText로 가는 것을 막는다 (#3). 4096자에 닿으면 무시하므로
+        // 누적·재복사가 유계다. 실측 라벨/값은 수십 자.
+        guard currentText.count < Self.maxLabelChars else { return }
+        let remaining = Self.maxLabelChars - currentText.count
+        currentText += string.count <= remaining ? string : String(string.prefix(remaining))
     }
 
     func parser(
