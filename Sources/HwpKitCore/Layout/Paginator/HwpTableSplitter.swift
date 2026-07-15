@@ -54,8 +54,12 @@ enum HwpTableSplitter {
             if segmentHeight > 0, prospectiveHeight > remaining {
                 break
             }
-            if segmentHeight == 0, rowExtent - row.rowFrame.minY > remaining {
-                // 빈 페이지보다 큰 row: 남은 높이에서 잘라 나머지를 이월한다.
+            // 물리 행 높이로 슬라이스 여부를 판정한다 — rowExtent(rowspan 셀 몫
+            // 포함)로 판정하면 물리 행은 들어가는데 rowspan 셀만 넘칠 때 컷이
+            // 행 아래로 내려가 height 0 continuation 행이 생겨 비진행·콘텐츠
+            // 손실이 난다 (#1). rowspan 셀 오버플로는 통째 배치로 둔다.
+            if segmentHeight == 0, row.rowFrame.height > remaining {
+                // 빈 페이지보다 큰 물리 행: 남은 높이에서 잘라 나머지를 이월한다.
                 let fragments = sliced(
                     row: row,
                     at: row.rowFrame.minY + max(1, remaining)
