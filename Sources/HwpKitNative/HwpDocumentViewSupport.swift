@@ -98,13 +98,15 @@ enum HwpDocumentViewSupport {
     ) -> HwpPageLayer? {
         guard let panel = document?.pages[safe: pageIndex]?.memoPanel else { return nil }
         let panelLayer = HwpPageLayer()
+        // 풍선 스택이 페이지보다 길면 레이어를 콘텐츠 높이로 키워 클립을 막는다 (#8).
+        let panelHeight = max(pageFrame.height, panel.contentHeight)
         panelLayer.frame = CGRect(
             x: pageFrame.maxX,
             y: pageFrame.minY,
             width: panel.width,
-            height: pageFrame.height
+            height: panelHeight
         )
-        panelLayer.pageHeight = pageFrame.height
+        panelLayer.pageHeight = panelHeight
         panelLayer.backgroundColor = nil
         panelLayer.contentsScale = boundedContentsScale(contentsScale, for: panelLayer.bounds.size)
         panelLayer.paintList = panel.paintList

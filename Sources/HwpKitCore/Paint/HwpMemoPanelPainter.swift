@@ -33,6 +33,10 @@ public enum HwpMemoPanelPainter {
     static let balloonPadding: CGFloat = 5
     static let balloonInsetX: CGFloat = 8
     static let balloonSpacing: CGFloat = 6
+    /// 풍선 하나의 본문 최대 문자 수·줄 수 — 미신뢰 긴 메모의 객체/커맨드 폭발
+    /// 방어 (#4). 실측 메모는 수십 자·몇 줄이라 이 한도를 한참 밑돈다.
+    static let maxBodyChars = 5000
+    static let maxBodyLines = 200
 
     public static func panel(balloons: [Balloon], pageSize: CGSize) -> HwpMemoPanel {
         let width = (pageSize.width * panelWidthRatio).rounded()
@@ -47,7 +51,11 @@ public enum HwpMemoPanelPainter {
             )
             nextTop = frame.maxY + balloonSpacing
         }
-        return HwpMemoPanel(width: width, paintList: HwpPaintList(commands: commands))
+        return HwpMemoPanel(
+            width: width,
+            paintList: HwpPaintList(commands: commands),
+            contentHeight: nextTop
+        )
     }
 
     /// 풍선 하나를 그리고 그 프레임을 돌려준다.
@@ -184,12 +192,16 @@ public enum HwpMemoPanelPainter {
         attributes: [NSAttributedString.Key: Any],
         width: CGFloat
     ) -> [NSAttributedString] {
-        let full = NSAttributedString(string: text, attributes: attributes)
+        // 본문 길이·줄 수를 상한한다 — 미신뢰 BodyText(최대 256MB)의 긴 메모가
+        // 줄마다 NSAttributedString + paint 커맨드로 팽창해 페이지네이션 중 메모리를
+        // 고갈시키는 것을 막는다 (#4). 실측 메모는 이 한도를 한참 밑돈다.
+        let capped = text.count > Self.maxBodyChars ? String(text.prefix(Self.maxBodyChars)) : text
+        let full = NSAttributedString(string: capped, attributes: attributes)
         guard full.length > 0 else { return [] }
         let typesetter = CTTypesetterCreateWithAttributedString(full)
         var lines: [NSAttributedString] = []
         var start = 0
-        while start < full.length {
+        while start < full.length, lines.count < Self.maxBodyLines {
             let count = CTTypesetterSuggestLineBreak(typesetter, start, Double(width))
             guard count > 0 else { break }
             lines.append(full.attributedSubstring(

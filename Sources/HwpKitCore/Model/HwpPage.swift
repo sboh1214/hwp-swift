@@ -21,10 +21,14 @@ public struct HwpPageMargins: Sendable, Hashable {
 public struct HwpMemoPanel: Sendable {
     public let width: CGFloat
     public let paintList: HwpPaintList
+    /// 풍선 스택 전체 높이 (패널 로컬) — 뷰가 레이어를 이 높이로 키워 페이지보다
+    /// 긴 메모 패널이 클립되지 않게 한다 (#8). 페이지 높이보다 작으면 페이지 높이.
+    public let contentHeight: CGFloat
 
-    public init(width: CGFloat, paintList: HwpPaintList) {
+    public init(width: CGFloat, paintList: HwpPaintList, contentHeight: CGFloat = 0) {
         self.width = width
         self.paintList = paintList
+        self.contentHeight = contentHeight
     }
 }
 

@@ -162,7 +162,9 @@
                         x: frame.maxX,
                         y: frame.minY,
                         width: panelLayer.frame.width,
-                        height: frame.height
+                        // 콘텐츠 높이로 만든 패널 레이어 높이를 유지한다 (레이아웃 갱신이
+                        // 페이지 높이로 되돌려 #8 오버플로 패널이 다시 클립되지 않게).
+                        height: panelLayer.frame.height
                     )
                 }
             }
