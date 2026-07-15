@@ -328,9 +328,17 @@
             var originY: CGFloat = 0
             for index in 0 ..< (document?.pages.count ?? 0) {
                 origins.append(originY)
-                originY += pageSize(at: index).height + pageGap
+                originY += rowHeight(at: index) + pageGap
             }
             pageOriginsY = origins
+        }
+
+        /// 메모 패널이 페이지보다 길면 그 높이로 행을 잡아 다음 행과 겹치거나
+        /// 마지막 페이지 오버플로가 스크롤 밖으로 나가지 않게 한다 (#4).
+        private func rowHeight(at index: Int) -> CGFloat {
+            let pageHeight = pageSize(at: index).height
+            guard let panel = document?.pages[safe: index]?.memoPanel else { return pageHeight }
+            return max(pageHeight, panel.contentHeight)
         }
 
         private func updateContentSize() {
@@ -339,7 +347,7 @@
                 .map { rowWidth(at: $0) }
                 .max() ?? defaultPageSize.width
             let totalHeight = (0 ..< pageCount).reduce(CGFloat(0)) { partial, index in
-                partial + pageSize(at: index).height + (index == pageCount - 1 ? 0 : pageGap)
+                partial + rowHeight(at: index) + (index == pageCount - 1 ? 0 : pageGap)
             }
             let contentSize = CGSize(width: largestWidth, height: totalHeight)
             // The content view may carry a zoom transform, so set bounds/center

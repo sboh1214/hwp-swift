@@ -12,7 +12,7 @@
             var maxRowWidth = defaultPageSize.width
             for index in 0 ..< (document?.pages.count ?? 0) {
                 origins.append(originY)
-                originY += sizeForPage(at: index).height + pageGap
+                originY += rowHeight(at: index) + pageGap
                 maxRowWidth = max(maxRowWidth, rowWidth(at: index))
             }
             pageOriginsY = origins
@@ -22,11 +22,11 @@
         func updateContentSize() {
             let pageCount = document?.pages.count ?? 0
             let totalHeight = (0 ..< pageCount).reduce(CGFloat(0)) { partial, index in
-                partial + sizeForPage(at: index).height + (index == pageCount - 1 ? 0 : pageGap)
+                partial + rowHeight(at: index) + (index == pageCount - 1 ? 0 : pageGap)
             }
             let size = CGSize(
                 width: max(contentWidth(), defaultPageSize.width),
-                height: max(totalHeight, sizeForPage(at: 0).height)
+                height: max(totalHeight, rowHeight(at: 0))
             )
             documentContentView.frame = CGRect(origin: .zero, size: size)
         }
@@ -44,6 +44,16 @@
                   let panel = document.pages[index].memoPanel
             else { return pageWidth }
             return pageWidth + panel.width
+        }
+
+        /// 메모 패널이 페이지보다 길면 그 높이로 행을 잡아 다음 행과 겹치거나
+        /// 마지막 페이지 오버플로가 스크롤 밖으로 나가지 않게 한다 (#4).
+        func rowHeight(at index: Int) -> CGFloat {
+            let pageHeight = sizeForPage(at: index).height
+            guard let document, document.pages.indices.contains(index),
+                  let panel = document.pages[index].memoPanel
+            else { return pageHeight }
+            return max(pageHeight, panel.contentHeight)
         }
 
         func frameForPage(at index: Int) -> CGRect {
