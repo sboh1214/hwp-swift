@@ -33,6 +33,9 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     /// 진행 중 디코드 task — provider 교체 시 취소해 옛 store/cache 강참조와
     /// 대형 디코드 누적을 끊는다 (#3).
     private var activeTasks: [String: Task<Void, Never>] = [:]
+    /// provider 교체 세대 — cancelOutstanding에서 증가. 스폰됐지만 등록 전인
+    /// 태스크도 세대 불일치로 무효 처리해 등록 레이스를 닫는다 (#5).
+    private var generation = 0
     /// 진행 상한으로 미룬 요청 — 슬롯이 나면 finishRequest가 재시도한다. 안 하면
     /// 다른 가시 레이어의 요청이 드롭된 채 회색으로 남는다 (#5).
     private var deferred: [(key: UInt32, style: HwpImageRenderStyle?)] = []
@@ -114,6 +117,7 @@ public final class HwpPageImageProvider: @unchecked Sendable {
             deferredVariants.insert(variant)
         }
         let shouldSpawn = !alreadyHandled && !atCapacity
+        let gen = generation
         lock.unlock()
         guard shouldSpawn else { return }
 
@@ -129,7 +133,8 @@ public final class HwpPageImageProvider: @unchecked Sendable {
             // 동시 디코드 예산 확보/반납 (합산 임시 메모리 상한, #8)
             await throttle.acquire()
             defer { Task { await throttle.release() } }
-            if Task.isCancelled {
+            // provider 교체 시(세대 불일치) 새 디코드를 시작하지 않는다 (#5).
+            if Task.isCancelled || self?.isStale(gen) == true {
                 return
             }
             // 원본 디코드는 binItemId 단위로 공유 캐시하고,
@@ -160,6 +165,7 @@ public final class HwpPageImageProvider: @unchecked Sendable {
             self?.finishRequest(
                 key: key,
                 variant: variant,
+                generation: gen,
                 image: styled,
                 cost: pinnedPixels * 4
             )
@@ -169,10 +175,21 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         lock.unlock()
     }
 
-    private func finishRequest(key: UInt32, variant: String, image: CGImage?, cost: Int) {
+    private func finishRequest(
+        key: UInt32,
+        variant: String,
+        generation gen: Int,
+        image: CGImage?,
+        cost: Int
+    ) {
         lock.lock()
         inFlightKeys.remove(variant)
         activeTasks.removeValue(forKey: variant)
+        // provider가 교체됐으면(세대 불일치) 옛 문서 결과를 캐시에 넣지 않는다 (#5).
+        guard gen == generation else {
+            lock.unlock()
+            return
+        }
         if let image {
             insertResolved(variant, image: image, cost: max(1, cost))
             latestVariantByBinItemId[key] = variant
@@ -202,9 +219,14 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         pinnedVariants.contains(variant)
     }
 
-    /// lock 보유. 예산 초과분을 가장 오래된 '비고정·비방금삽입' 변형부터
-    /// 축출한다. 남은 게 전부 가시(pin)면 축출을 멈춘다 — 작업셋은 그려야
-    /// 하므로 (그 대신 pin 집합이 가시 페이지로 유계라 총량이 유계, #2).
+    /// 세대 불일치(그 사이 provider가 교체됨) 여부 — lock을 잡고 확인한다 (#5).
+    private func isStale(_ gen: Int) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return gen != generation
+    }
+
+    /// lock 보유. 변형을 캐시에 넣고 예산 초과분을 축출한다 (#1).
     private func insertResolved(_ variant: String, image: CGImage, cost: Int) {
         if let old = resolvedCost[variant] {
             resolvedBytes -= old
@@ -214,13 +236,31 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         resolvedCost[variant] = cost
         resolvedOrder.append(variant)
         resolvedBytes += cost
-        while resolvedBytes > Self.resolvedByteLimit {
-            guard let idx = resolvedOrder.firstIndex(where: { $0 != variant && !isPinned($0) })
-            else { break }
-            let evict = resolvedOrder.remove(at: idx)
-            resolvedBytes -= resolvedCost.removeValue(forKey: evict) ?? 0
-            resolved.removeValue(forKey: evict)
+        evictOverBudget(keeping: variant)
+    }
+
+    /// lock 보유. 예산 초과분을 축출한다 — 먼저 비고정 변형을 오래된 순으로,
+    /// 그래도 초과면 고정 변형도 오래된 순으로 (이미지가 많은 가시 페이지에서도
+    /// 256MB 하드 상한 유지 — 축출분은 다음 draw에서 재요청, #1). keep은 방금
+    /// 삽입한 변형으로, 즉시 축출→재요청 루프가 도는 것을 막는다.
+    private func evictOverBudget(keeping keep: String? = nil) {
+        while resolvedBytes > Self.resolvedByteLimit,
+              let idx = resolvedOrder.firstIndex(where: { $0 != keep && !isPinned($0) })
+        {
+            evictVariant(at: idx)
         }
+        while resolvedBytes > Self.resolvedByteLimit,
+              let idx = resolvedOrder.firstIndex(where: { $0 != keep })
+        {
+            evictVariant(at: idx)
+        }
+    }
+
+    /// lock 보유. resolvedOrder[idx] 변형을 캐시에서 제거하고 바이트를 갱신한다.
+    private func evictVariant(at idx: Int) {
+        let variant = resolvedOrder.remove(at: idx)
+        resolvedBytes -= resolvedCost.removeValue(forKey: variant) ?? 0
+        resolved.removeValue(forKey: variant)
     }
 
     /// 가시 페이지가 참조하는 변형 키 집합을 갱신한다 — 이 변형은 예산 초과여도
@@ -228,6 +268,8 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     public func setPinnedImages(_ variants: Set<String>) {
         lock.lock()
         pinnedVariants = variants
+        // pin이 바뀌면 방금 unpin된 항목을 예산 내로 정리한다 (#1).
+        evictOverBudget()
         lock.unlock()
     }
 
@@ -235,6 +277,8 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     /// 시 호출해 옛 store/cache 강참조와 대형 디코드 누적을 끊는다 (#3).
     public func cancelOutstanding() {
         lock.lock()
+        // 세대를 올려 스폰됐지만 등록 전인 태스크도 무효화한다 (등록 레이스, #5).
+        generation &+= 1
         let tasks = Array(activeTasks.values)
         activeTasks.removeAll()
         inFlightKeys.removeAll()
