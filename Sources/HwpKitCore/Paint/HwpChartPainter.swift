@@ -96,7 +96,12 @@ enum HwpChartPainter {
             commands.append(titleCommand(title, frame: frame, fontResolver: fontResolver))
         }
 
-        let categoryCount = max(chart.categories.count, chart.series.first?.values.count ?? 0)
+        // 카테고리 수는 전 계열의 최대 값 수로 잡는다 — 첫 계열만 보면 뒤 계열이
+        // 더 길 때 그 초과 포인트가 markerCommands에서 버려진다 (#9).
+        let categoryCount = max(
+            chart.categories.count,
+            chart.series.map(\.values.count).max() ?? 0
+        )
         guard categoryCount > 0, frame.width > 40, frame.height > 40 else { return commands }
 
         let labelSize = max(6, frame.height * 0.044)
