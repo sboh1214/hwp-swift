@@ -62,7 +62,12 @@ struct EmbeddedCompoundFile {
               let cutoff = data.readUInt32(at: 56),
               let firstMiniFATSector = data.readUInt32(at: 60),
               let miniFATSectorCount = data.readUInt32(at: 64),
-              sectorShift >= 7, sectorShift <= 12, miniSectorShift <= sectorShift
+              // CFB 스펙 고정 상수 강제 (표준 위반 = 손상/조작 입력): v3 sectorShift=9 /
+              // v4=12, mini-sector shift=6(64B), mini-stream cutoff=4096. 이를 벗어난
+              // 값(예: miniSectorShift=0 → 1B mini-sector, cutoff=UInt32.max)이 64MB
+              // payload를 수백 MB·수백만 섹터 순회로 증폭시키는 것을 막는다 (#2).
+              sectorShift == 9 || sectorShift == 12,
+              miniSectorShift == 6, cutoff == 4096
         else { return nil }
         let sectorSize = 1 << Int(sectorShift)
         self.sectorSize = sectorSize
