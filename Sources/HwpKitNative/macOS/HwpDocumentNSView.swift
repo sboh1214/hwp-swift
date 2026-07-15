@@ -250,6 +250,11 @@
 
             layoutPageLayers()
             updateSelectionOverlays()
+            // 가시(±2) 페이지가 참조하는 이미지를 pin해 캐시 축출→재요청 사이클을
+            // 막는다 (#2).
+            imageProvider?.setPinnedImages(
+                HwpDocumentViewSupport.imageReferences(in: document, pageRange: retainedRange)
+            )
             onPageChanged?(range.lowerBound)
         }
 
@@ -265,7 +270,10 @@
                 to: NSPoint(x: scrollView.documentVisibleRect.minX, y: target.minY)
             )
             scrollView.reflectScrolledClipView(scrollView.contentView)
-            updateVisiblePages(range: clamped ..< (clamped + 1))
+            // 스크롤 후 실제 가시 범위로 갱신한다 — 한 페이지 범위로 갱신하면
+            // 25% 줌·큰 뷰포트가 5쪽 넘게 보일 때 여전히 보이는 쪽들이 ±2 유지창
+            // 밖으로 밀려 blank가 된다 (#1).
+            updateVisiblePages(range: visiblePageRange())
         }
 
         /// The first page currently intersecting the viewport.

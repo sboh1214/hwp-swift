@@ -166,6 +166,11 @@
                     )
                 }
             }
+            // 가시(±2) 페이지가 참조하는 이미지를 pin해 캐시 축출→재요청 사이클을
+            // 막는다 (macOS와 대칭, #2).
+            imageProvider?.setPinnedImages(
+                HwpDocumentViewSupport.imageReferences(in: document, pageRange: keepRange)
+            )
             updateSelectionOverlays()
         }
 
@@ -195,7 +200,9 @@
                 CGPoint(x: scrollView.contentOffset.x, y: offsetY),
                 animated: false
             )
-            updateVisiblePages(range: index ..< (index + 1))
+            // 스크롤 후 실제 가시 범위로 갱신 — 한 페이지 범위는 큰 뷰포트/저배율에서
+            // 여전히 보이는 쪽을 blank로 만든다 (macOS와 대칭, #1).
+            updateVisiblePages(range: visiblePageRange())
         }
 
         /// The first page currently intersecting the viewport.

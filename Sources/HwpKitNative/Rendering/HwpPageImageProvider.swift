@@ -25,7 +25,17 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     private var resolved: [String: CGImage] = [:]
     private var resolvedOrder: [String] = []
     private var resolvedCost: [String: Int] = [:]
+    private var resolvedBinItemId: [String: UInt32] = [:]
     private var resolvedBytes = 0
+    /// 현재 가시 페이지가 참조하는 binItemId — 이 변형은 예산 초과여도 축출하지
+    /// 않는다. 4장+ 이미지 페이지에서 가시 이미지가 축출→즉시 재요청되는 무한
+    /// 사이클을 끊는다 (#2). 뷰가 updateVisiblePages에서 갱신한다.
+    private var pinnedBinItemIds: Set<UInt32> = []
+    /// 진행 상한으로 미룬 요청 — 슬롯이 나면 finishRequest가 재시도한다. 안 하면
+    /// 다른 가시 레이어의 요청이 드롭된 채 회색으로 남는다 (#5).
+    private var deferred: [(key: UInt32, style: HwpImageRenderStyle?)] = []
+    private var deferredVariants: Set<String> = []
+    private static let maximumDeferred = 64
     /// 다운샘플 상한 이미지 서너 장이 한 페이지 작업셋에 들어가도 루프가 안
     /// 생기게 256MB. 각 변형은 다운샘플로 ≤67MB라 메모리 총량은 유계다 (#3).
     private static let resolvedByteLimit = 256_000_000
@@ -85,15 +95,21 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         guard cachedImage(for: key, style: style) == nil else { return }
         let variant = Self.variantKey(key, style)
         lock.lock()
-        // 백프레셔: 이미 실패/진행 중이거나 진행 상한을 넘으면 지금은 안 띄운다.
-        // 초과분은 다음 draw에서 (진행이 빠지면) 재요청된다 (#2).
-        let skip = failedKeys.contains(variant) || inFlightKeys.contains(variant)
-            || inFlightKeys.count >= Self.maximumInFlight
-        if !skip {
+        let alreadyHandled = failedKeys.contains(variant) || inFlightKeys.contains(variant)
+        let atCapacity = inFlightKeys.count >= Self.maximumInFlight
+        if !alreadyHandled, !atCapacity {
             inFlightKeys.insert(variant)
+        } else if !alreadyHandled, atCapacity,
+                  !deferredVariants.contains(variant), deferred.count < Self.maximumDeferred
+        {
+            // 진행 상한 초과: 드롭하지 않고 디퍼드 큐에 넣어 슬롯이 나면
+            // finishRequest가 재시도한다 (드롭하면 가시 레이어가 회색으로 남음, #5).
+            deferred.append((key, style))
+            deferredVariants.insert(variant)
         }
+        let shouldSpawn = !alreadyHandled && !atCapacity
         lock.unlock()
-        guard !skip else { return }
+        guard shouldSpawn else { return }
 
         let store = store
         let cache = cache
@@ -141,32 +157,64 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         lock.lock()
         inFlightKeys.remove(variant)
         if let image {
-            insertResolved(variant, image: image, cost: max(1, cost))
+            insertResolved(variant, binItemId: key, image: image, cost: max(1, cost))
             latestVariantByBinItemId[key] = variant
         } else {
             failedKeys.insert(variant)
         }
+        // 슬롯이 났으니 미뤄 둔 요청 하나를 꺼내 재시도한다 (#5).
+        let retry = dequeueDeferred()
         let handler = imageResolvedHandler
         lock.unlock()
         handler?(key)
+        if let retry {
+            requestImage(for: retry.key, style: retry.style)
+        }
     }
 
-    /// lock 보유 상태에서 호출. 삽입 후 예산 초과분을 가장 오래된 변형부터
-    /// 축출한다 (방금 넣은 변형은 남겨 진행 보장).
-    private func insertResolved(_ variant: String, image: CGImage, cost: Int) {
+    /// lock 보유. 슬롯이 남고 디퍼드가 있으면 하나 꺼낸다 (#5).
+    private func dequeueDeferred() -> (key: UInt32, style: HwpImageRenderStyle?)? {
+        guard inFlightKeys.count < Self.maximumInFlight, !deferred.isEmpty else { return nil }
+        let next = deferred.removeFirst()
+        deferredVariants.remove(Self.variantKey(next.key, next.style))
+        return next
+    }
+
+    /// lock 보유. 변형의 binItemId가 가시 pin 집합에 있는지 (#2).
+    private func isPinned(_ variant: String) -> Bool {
+        guard let id = resolvedBinItemId[variant] else { return false }
+        return pinnedBinItemIds.contains(id)
+    }
+
+    /// lock 보유. 예산 초과분을 가장 오래된 '비고정·비방금삽입' 변형부터
+    /// 축출한다. 남은 게 전부 가시(pin)면 축출을 멈춘다 — 작업셋은 그려야
+    /// 하므로 (그 대신 pin 집합이 가시 페이지로 유계라 총량이 유계, #2).
+    private func insertResolved(_ variant: String, binItemId: UInt32, image: CGImage, cost: Int) {
         if let old = resolvedCost[variant] {
             resolvedBytes -= old
             resolvedOrder.removeAll { $0 == variant }
         }
         resolved[variant] = image
         resolvedCost[variant] = cost
+        resolvedBinItemId[variant] = binItemId
         resolvedOrder.append(variant)
         resolvedBytes += cost
-        while resolvedBytes > Self.resolvedByteLimit, resolvedOrder.count > 1 {
-            let oldest = resolvedOrder.removeFirst()
-            resolvedBytes -= resolvedCost.removeValue(forKey: oldest) ?? 0
-            resolved.removeValue(forKey: oldest)
+        while resolvedBytes > Self.resolvedByteLimit {
+            guard let idx = resolvedOrder.firstIndex(where: { $0 != variant && !isPinned($0) })
+            else { break }
+            let evict = resolvedOrder.remove(at: idx)
+            resolvedBytes -= resolvedCost.removeValue(forKey: evict) ?? 0
+            resolved.removeValue(forKey: evict)
+            resolvedBinItemId.removeValue(forKey: evict)
         }
+    }
+
+    /// 가시 페이지가 참조하는 binItemId 집합을 갱신한다 — 이 이미지는 예산
+    /// 초과여도 축출하지 않아 축출→재요청 사이클을 막는다 (#2).
+    public func setPinnedImages(_ ids: Set<UInt32>) {
+        lock.lock()
+        pinnedBinItemIds = ids
+        lock.unlock()
     }
 
     private func recordOriginalSize(_ size: CGSize, for key: UInt32) {

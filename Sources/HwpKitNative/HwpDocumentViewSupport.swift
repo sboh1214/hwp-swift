@@ -118,6 +118,25 @@ enum HwpDocumentViewSupport {
     /// 디코딩 완료 시 main queue에서 `currentLayers()`가 돌려준 레이어 중
     /// 해당 이미지를 참조하는 것만 다시 그린다.
     /// 이미지 없는 문서는 nil — 호출부는 공급자만 비우고 캐시는 유지한다.
+    /// 주어진 페이지 범위가 참조하는 이미지 binItemId 집합 — provider의 가시
+    /// 작업셋 pin 갱신용 (#2). 이 이미지는 캐시 예산 초과여도 축출되지 않아
+    /// 4장+ 이미지 페이지의 축출→재요청 사이클을 막는다.
+    nonisolated static func imageReferences(
+        in document: HwpDocument?,
+        pageRange: Range<Int>
+    ) -> Set<UInt32> {
+        guard let document else { return [] }
+        var ids: Set<UInt32> = []
+        for index in pageRange where document.pages.indices.contains(index) {
+            for command in document.pages[index].paintList.commands {
+                if case let .drawImageReference(binItemId, _, _) = command {
+                    ids.insert(binItemId)
+                }
+            }
+        }
+        return ids
+    }
+
     static func makeImageProvider(
         document: HwpDocument?,
         onLayersNeedingDisplay currentLayers: @escaping @MainActor () -> [HwpPageLayer]
