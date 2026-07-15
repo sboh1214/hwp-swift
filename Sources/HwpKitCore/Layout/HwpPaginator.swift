@@ -1894,16 +1894,24 @@ private extension HwpPaginator {
         // 메모별 문단 그룹을 join해 필드와 1:1로 짝짓는다 — 평탄 배열을 필드
         // 인덱스로 끊으면 여러 문단 메모는 2번째+ 문단이 누락되고 다중 메모는
         // 엉뚱한 필드에 페어링된다 (#7).
-        let bodies = (paragraph.memoParagraphGroups ?? []).map { group in
-            group
-                .map { memoParagraph in
-                    HwpTextRunBuilder(index: index, fontResolver: fontResolver)
-                        .build(paragraph: memoParagraph)
-                        .string
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-                }
-                .filter { !$0.isEmpty }
-                .joined(separator: "\n")
+        // 표시 예산(HwpMemoPanelPainter.maxBodyChars)에 닿으면 추출을 멈춘다 —
+        // 거대 메모가 전체 문단을 build·join한 뒤에야 캡되던 것을 막는다 (#3).
+        let budget = HwpMemoPanelPainter.maxBodyChars
+        let bodies = (paragraph.memoParagraphGroups ?? []).map { group -> String in
+            var parts: [String] = []
+            var total = 0
+            for memoParagraph in group where total < budget {
+                let text = HwpTextRunBuilder(index: index, fontResolver: fontResolver)
+                    .build(paragraph: memoParagraph)
+                    .string
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else { continue }
+                let remaining = budget - total
+                let clipped = text.count > remaining ? String(text.prefix(remaining)) : text
+                parts.append(clipped)
+                total += clipped.count
+            }
+            return parts.joined(separator: "\n")
         }
         for (fieldIndex, field) in memoFields.enumerated() {
             pendingMemoBalloons.append(HwpMemoPanelPainter.Balloon(
