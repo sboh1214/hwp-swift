@@ -21,6 +21,9 @@ public actor HwpPaginator {
     private var currentPageGeometry: HwpPageGeometry
     private var currentSectionDef: CoreHwp.HwpSectionDef?
     private var currentBlocks: [AnyHwpBlock] = []
+    /// 글 뒤(.behindText) 개체 instanceId — 페이지 확정 시 블록 앞으로 옮겨
+    /// 텍스트 뒤(페인트 먼저·히트 나중)에 그려지게 한다 (#3).
+    private var behindTextInstanceIds: Set<UInt32> = []
     private var contentHeightUsed: CGFloat = 0
     private var didFinishPagination = false
 
@@ -531,23 +534,30 @@ private extension HwpPaginator {
             let kind = tag.tag >> 24
             return kind == 16 || kind == 17
         }
-        guard hasTrackChange, let last = currentBlocks.last, last.kind == .text else { return }
-        let barRect = CGRect(x: 0, y: 0, width: 1.2, height: last.frame.height)
-        currentBlocks.append(AnyHwpBlock(
-            frame: CGRect(
-                x: currentPageGeometry.contentFrame.minX - 10,
-                y: last.frame.minY,
-                width: barRect.width,
-                height: barRect.height
-            ),
-            kind: .shape,
-            payload: .shape(HwpShapeGeometry(
-                path: CGPath(rect: barRect, transform: nil),
-                fillColor: CGColor(srgbRed: 0.87, green: 0.14, blue: 0.1, alpha: 1),
-                strokeColor: nil,
-                strokeWidth: 0
-            ))
-        ))
+        guard hasTrackChange else { return }
+        // 이 문단이 이 페이지에 만든 각 텍스트 조각(다단/분할 포함)마다 변경 막대를
+        // 그린다 — currentBlocks.last만 보면 앞 단 조각은 막대 없이 렌더된다 (#2).
+        // 앞 페이지로 캐시된 조각은 이 페이지 범위 밖이라 여기선 못 단다.
+        let paragraphId = paragraph.paraHeader.paraId
+        let barX = currentPageGeometry.contentFrame.minX - 10
+        let barColor = CGColor(srgbRed: 0.87, green: 0.14, blue: 0.1, alpha: 1)
+        let bars: [AnyHwpBlock] = currentBlocks.compactMap { block in
+            guard block.kind == .text, block.source?.paragraphId == paragraphId else { return nil }
+            let barRect = CGRect(x: 0, y: 0, width: 1.2, height: block.frame.height)
+            return AnyHwpBlock(
+                frame: CGRect(
+                    x: barX, y: block.frame.minY, width: barRect.width, height: barRect.height
+                ),
+                kind: .shape,
+                payload: .shape(HwpShapeGeometry(
+                    path: CGPath(rect: barRect, transform: nil),
+                    fillColor: barColor,
+                    strokeColor: nil,
+                    strokeWidth: 0
+                ))
+            )
+        }
+        currentBlocks.append(contentsOf: bars)
     }
 
     /// 흐름 기반 문단 배치 (절대 캐시 모드가 아닌 저장본/경로)
@@ -1669,19 +1679,24 @@ private extension HwpPaginator {
         let offsetY = HwpUnits.points(
             fromHwpUnit: Int32(bitPattern: commonProperty.verticalOffset)
         )
-        let baseX: CGFloat = switch info.horizontalRelativeTo {
-        case .paper: 0
-        case .page, nil: contentFrame.minX
-        case .column, .paragraph: currentColumnFrame.minX
+        // 기준 프레임 (base, extent). 정렬(topOrLeft 외)이면 그 안에서 개체를
+        // 정렬한 뒤 오프셋을 더한다 — topOrLeft(기본)/nil/extent<=0은 base+offset
+        // 그대로라 오프셋 배치 개체는 렌더 불변 (#5).
+        let hRef: (base: CGFloat, extent: CGFloat) = switch info.horizontalRelativeTo {
+        case .paper: (0, currentPageGeometry.pageSize.width)
+        case .page, nil: (contentFrame.minX, contentFrame.width)
+        case .column, .paragraph: (currentColumnFrame.minX, currentColumnFrame.width)
         }
-        let baseY: CGFloat = switch info.verticalRelativeTo {
-        case .paper: 0
-        case .page, nil: contentFrame.minY
-        case .paragraph: paragraphAnchorTop
+        let vRef: (base: CGFloat, extent: CGFloat) = switch info.verticalRelativeTo {
+        case .paper: (0, currentPageGeometry.pageSize.height)
+        case .page, nil: (contentFrame.minY, contentFrame.height)
+        case .paragraph: (paragraphAnchorTop, 0)
         }
         let frame = CGRect(
-            x: baseX + offsetX,
-            y: baseY + offsetY,
+            x: alignedAnchor(hRef.base, hRef.extent, spec.size.width, info.horizontalAlignment)
+                + offsetX,
+            y: alignedAnchor(vRef.base, vRef.extent, spec.size.height, info.verticalAlignment)
+                + offsetY,
             width: spec.size.width,
             height: spec.size.height
         )
@@ -1692,7 +1707,25 @@ private extension HwpPaginator {
             payload: spec.payload,
             source: HwpBlockSource(controlInstanceId: spec.instanceId)
         ))
+        // 글 뒤 개체는 페이지 확정 시 블록 앞으로 옮겨 텍스트 뒤에 그려지게 한다 (#3).
+        if info.textWrap == .behindText, spec.instanceId != 0 {
+            behindTextInstanceIds.insert(spec.instanceId)
+        }
         bandHasNonTextContent = true
+    }
+
+    /// 기준 프레임(base, extent) 안에서 정렬을 반영한 앵커. topOrLeft(기본)·
+    /// nil·extent<=0이면 base 그대로 (오프셋 배치 개체 렌더 불변, #5).
+    private func alignedAnchor(
+        _ base: CGFloat, _ extent: CGFloat, _ size: CGFloat,
+        _ alignment: CoreHwp.HwpCommonCtrlRelativeAlignment?
+    ) -> CGFloat {
+        guard extent > 0 else { return base }
+        return switch alignment {
+        case .center: base + (extent - size) / 2
+        case .bottomOrRight, .outside: base + extent - size
+        case .topOrLeft, .inside, nil: base
+        }
     }
 
     /// 본문 흐름을 소비하는 블록을 현재 흐름 위치에 배치한다.
@@ -2145,6 +2178,14 @@ private extension HwpPaginator {
             didFinishPagination = true
             return
         }
+        // 글 뒤 개체를 본문 블록 앞으로 안정 분할해 텍스트 뒤에 그려지게 한다 (#3).
+        if !behindTextInstanceIds.isEmpty {
+            func isBehind(_ block: AnyHwpBlock) -> Bool {
+                guard let id = block.source?.controlInstanceId else { return false }
+                return behindTextInstanceIds.contains(id)
+            }
+            currentBlocks = currentBlocks.filter(isBehind) + currentBlocks.filter { !isBehind($0) }
+        }
         // 머리말/꼬리말/쪽 번호 크롬 블록 (감추기 마스크는 빌더가 소비한다)
         currentBlocks += pageChrome.blocks(
             forPage: nextLogicalPageNumber,
@@ -2178,6 +2219,7 @@ private extension HwpPaginator {
             memoPanel: memoPanel
         )
         currentBlocks = []
+        behindTextInstanceIds.removeAll()
         // 페이지가 넘어가면 이전 페이지 문단의 줄 앵커 좌표는 무효다.
         currentParagraphContext = nil
         // 새 페이지: 절대 캐시 loc 추적과 stale 캐시 보정을 리셋한다.
