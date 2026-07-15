@@ -25,12 +25,14 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     private var resolved: [String: CGImage] = [:]
     private var resolvedOrder: [String] = []
     private var resolvedCost: [String: Int] = [:]
-    private var resolvedBinItemId: [String: UInt32] = [:]
     private var resolvedBytes = 0
-    /// 현재 가시 페이지가 참조하는 binItemId — 이 변형은 예산 초과여도 축출하지
-    /// 않는다. 4장+ 이미지 페이지에서 가시 이미지가 축출→즉시 재요청되는 무한
-    /// 사이클을 끊는다 (#2). 뷰가 updateVisiblePages에서 갱신한다.
-    private var pinnedBinItemIds: Set<UInt32> = []
+    /// 현재 가시 페이지가 참조하는 변형 키 — 이 변형만 예산 초과여도 축출하지
+    /// 않는다. binItemId가 아니라 (crop/effect별) 변형 단위라, 같은 ID의 옛 style
+    /// 변형이 계속 pin돼 256MB를 넘기며 쌓이던 것을 막는다 (#1). 뷰가 updateVisiblePages에서 갱신.
+    private var pinnedVariants: Set<String> = []
+    /// 진행 중 디코드 task — provider 교체 시 취소해 옛 store/cache 강참조와
+    /// 대형 디코드 누적을 끊는다 (#3).
+    private var activeTasks: [String: Task<Void, Never>] = [:]
     /// 진행 상한으로 미룬 요청 — 슬롯이 나면 finishRequest가 재시도한다. 안 하면
     /// 다른 가시 레이어의 요청이 드롭된 채 회색으로 남는다 (#5).
     private var deferred: [(key: UInt32, style: HwpImageRenderStyle?)] = []
@@ -51,7 +53,7 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     private var imageResolvedHandler: (@Sendable (UInt32) -> Void)?
 
     /// (binItemId, style) 변형의 결정론적 캐시 키
-    private static func variantKey(_ binItemId: UInt32, _ style: HwpImageRenderStyle?) -> String {
+    static func variantKey(_ binItemId: UInt32, _ style: HwpImageRenderStyle?) -> String {
         guard let style else { return "\(binItemId)" }
         return "\(binItemId)|\(style.cropLeft),\(style.cropTop),\(style.cropRight)," +
             "\(style.cropBottom)|\(style.brightness)|\(style.contrast)|\(style.effect.rawValue)"
@@ -99,11 +101,15 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         let atCapacity = inFlightKeys.count >= Self.maximumInFlight
         if !alreadyHandled, !atCapacity {
             inFlightKeys.insert(variant)
-        } else if !alreadyHandled, atCapacity,
-                  !deferredVariants.contains(variant), deferred.count < Self.maximumDeferred
-        {
+        } else if !alreadyHandled, atCapacity, !deferredVariants.contains(variant) {
             // 진행 상한 초과: 드롭하지 않고 디퍼드 큐에 넣어 슬롯이 나면
             // finishRequest가 재시도한다 (드롭하면 가시 레이어가 회색으로 남음, #5).
+            // 디퍼드가 가득 차면 가장 오래된(대개 스크롤로 지나간) 항목을 빼고 새
+            // 가시 요청을 넣는다 — 만석이라 새 요청이 유실되던 것을 막는다 (#2).
+            if deferred.count >= Self.maximumDeferred {
+                let stale = deferred.removeFirst()
+                deferredVariants.remove(Self.variantKey(stale.key, stale.style))
+            }
             deferred.append((key, style))
             deferredVariants.insert(variant)
         }
@@ -115,10 +121,17 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         let cache = cache
         let adapter = adapter
         let throttle = decodeThrottle
-        Task { [weak self] in
+        // provider 교체 시 취소돼 새 디코드를 시작하지 않도록 진입점마다 확인한다 (#3).
+        let task = Task { [weak self] in
+            if Task.isCancelled {
+                return
+            }
             // 동시 디코드 예산 확보/반납 (합산 임시 메모리 상한, #8)
             await throttle.acquire()
             defer { Task { await throttle.release() } }
+            if Task.isCancelled {
+                return
+            }
             // 원본 디코드는 binItemId 단위로 공유 캐시하고,
             // 스타일 변형은 변형 키로 이 provider에만 저장한다.
             let decoded = await cache.fetch(key) { [weak self] in
@@ -151,13 +164,17 @@ public final class HwpPageImageProvider: @unchecked Sendable {
                 cost: pinnedPixels * 4
             )
         }
+        lock.lock()
+        activeTasks[variant] = task
+        lock.unlock()
     }
 
     private func finishRequest(key: UInt32, variant: String, image: CGImage?, cost: Int) {
         lock.lock()
         inFlightKeys.remove(variant)
+        activeTasks.removeValue(forKey: variant)
         if let image {
-            insertResolved(variant, binItemId: key, image: image, cost: max(1, cost))
+            insertResolved(variant, image: image, cost: max(1, cost))
             latestVariantByBinItemId[key] = variant
         } else {
             failedKeys.insert(variant)
@@ -180,23 +197,21 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         return next
     }
 
-    /// lock 보유. 변형의 binItemId가 가시 pin 집합에 있는지 (#2).
+    /// lock 보유. 변형이 가시 pin 집합에 있는지 (#1).
     private func isPinned(_ variant: String) -> Bool {
-        guard let id = resolvedBinItemId[variant] else { return false }
-        return pinnedBinItemIds.contains(id)
+        pinnedVariants.contains(variant)
     }
 
     /// lock 보유. 예산 초과분을 가장 오래된 '비고정·비방금삽입' 변형부터
     /// 축출한다. 남은 게 전부 가시(pin)면 축출을 멈춘다 — 작업셋은 그려야
     /// 하므로 (그 대신 pin 집합이 가시 페이지로 유계라 총량이 유계, #2).
-    private func insertResolved(_ variant: String, binItemId: UInt32, image: CGImage, cost: Int) {
+    private func insertResolved(_ variant: String, image: CGImage, cost: Int) {
         if let old = resolvedCost[variant] {
             resolvedBytes -= old
             resolvedOrder.removeAll { $0 == variant }
         }
         resolved[variant] = image
         resolvedCost[variant] = cost
-        resolvedBinItemId[variant] = binItemId
         resolvedOrder.append(variant)
         resolvedBytes += cost
         while resolvedBytes > Self.resolvedByteLimit {
@@ -205,16 +220,29 @@ public final class HwpPageImageProvider: @unchecked Sendable {
             let evict = resolvedOrder.remove(at: idx)
             resolvedBytes -= resolvedCost.removeValue(forKey: evict) ?? 0
             resolved.removeValue(forKey: evict)
-            resolvedBinItemId.removeValue(forKey: evict)
         }
     }
 
-    /// 가시 페이지가 참조하는 binItemId 집합을 갱신한다 — 이 이미지는 예산
-    /// 초과여도 축출하지 않아 축출→재요청 사이클을 막는다 (#2).
-    public func setPinnedImages(_ ids: Set<UInt32>) {
+    /// 가시 페이지가 참조하는 변형 키 집합을 갱신한다 — 이 변형은 예산 초과여도
+    /// 축출하지 않아 축출→재요청 사이클을 막는다 (#1).
+    public func setPinnedImages(_ variants: Set<String>) {
         lock.lock()
-        pinnedBinItemIds = ids
+        pinnedVariants = variants
         lock.unlock()
+    }
+
+    /// 진행 중인 모든 디코드를 취소하고 대기/pin 상태를 비운다 — provider 교체
+    /// 시 호출해 옛 store/cache 강참조와 대형 디코드 누적을 끊는다 (#3).
+    public func cancelOutstanding() {
+        lock.lock()
+        let tasks = Array(activeTasks.values)
+        activeTasks.removeAll()
+        inFlightKeys.removeAll()
+        deferred.removeAll()
+        deferredVariants.removeAll()
+        pinnedVariants.removeAll()
+        lock.unlock()
+        tasks.forEach { $0.cancel() }
     }
 
     private func recordOriginalSize(_ size: CGSize, for key: UInt32) {

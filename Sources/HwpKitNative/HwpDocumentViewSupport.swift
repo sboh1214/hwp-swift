@@ -123,20 +123,23 @@ enum HwpDocumentViewSupport {
     /// 주어진 페이지 범위가 참조하는 이미지 binItemId 집합 — provider의 가시
     /// 작업셋 pin 갱신용 (#2). 이 이미지는 캐시 예산 초과여도 축출되지 않아
     /// 4장+ 이미지 페이지의 축출→재요청 사이클을 막는다.
+    /// 주어진 페이지 범위가 참조하는 이미지 변형 키 집합 — provider의 가시 작업셋
+    /// pin 갱신용 (#1). binItemId가 아니라 (crop/effect) 변형 단위라, 같은 ID의
+    /// 옛 변형이 계속 pin되지 않는다.
     nonisolated static func imageReferences(
         in document: HwpDocument?,
         pageRange: Range<Int>
-    ) -> Set<UInt32> {
+    ) -> Set<String> {
         guard let document else { return [] }
-        var ids: Set<UInt32> = []
+        var variants: Set<String> = []
         for index in pageRange where document.pages.indices.contains(index) {
             for command in document.pages[index].paintList.commands {
-                if case let .drawImageReference(binItemId, _, _) = command {
-                    ids.insert(binItemId)
+                if case let .drawImageReference(binItemId, _, style) = command {
+                    variants.insert(HwpPageImageProvider.variantKey(binItemId, style))
                 }
             }
         }
-        return ids
+        return variants
     }
 
     static func makeImageProvider(

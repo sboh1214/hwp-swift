@@ -308,6 +308,8 @@
         }
 
         private func rebuildImageProvider() {
+            // 옛 provider의 진행 중 디코드를 취소해 강참조·대형 디코드 누적을 끊는다 (#3).
+            imageProvider?.cancelOutstanding()
             guard let built = HwpDocumentViewSupport.makeImageProvider(
                 document: document,
                 onLayersNeedingDisplay: { [weak self] in
