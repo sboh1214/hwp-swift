@@ -131,7 +131,15 @@ public struct HwpFile: HwpPrimitive {
             }
             return binaryDataCompression[streamId] ?? false
         }
-        let viewTextData = try reader.getOptionalNamedDataFromStorage(.viewText, isCompressed)
+        // ViewText는 optional·표시 전용이다 — read/압축 해제가 실패해도 (BodyText가
+        // 유효하면) 파일 전체를 못 열게 하지 않고 빈 ViewText로 폴백한다. ViewText
+        // 지원 전엔 열리던 파일이므로 (#7). 파싱 실패 폴백은 init 안에 별도로 있다.
+        let viewTextData: [(name: String, data: Data)]
+        do {
+            viewTextData = try reader.getOptionalNamedDataFromStorage(.viewText, isCompressed)
+        } catch {
+            viewTextData = []
+        }
 
         try self.init(
             fileHeader: fileHeader,

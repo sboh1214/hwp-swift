@@ -456,7 +456,9 @@ private extension HwpPaginator {
         appendPendingEndnotes()
         cacheCurrentPage()
         // 마지막 페이지에서 넘친 각주가 있으면 빈 페이지를 이어 붙여 모두 배치한다.
-        while !pendingFootnotes.isEmpty {
+        // 페이지 상한에 걸려 cacheCurrentPage가 캐시를 거부하면(didFinishPagination
+        // = true, pendingFootnotes 불변) 무한 회전하므로 그때 멈춘다 (#4).
+        while !pendingFootnotes.isEmpty, !didFinishPagination {
             cacheCurrentPage()
         }
         didFinishPagination = true
@@ -1298,7 +1300,11 @@ private extension HwpPaginator {
         // 다시 수집돼 각주가 중복되는 것을 막는다.
         var highestCollectedRow = Int.min
 
-        while cursor < rows.count, segmentCount < HwpTableLayout.maximumTableSegments {
+        // 취소된 로드가 병적 표를 분할 중이면 최대 4,096 세그먼트를 만들기 전에
+        // 빠져 옛·새 로드가 동시에 CPU/메모리를 소비하지 않게 조기 탈출한다 (#6).
+        while cursor < rows.count, segmentCount < HwpTableLayout.maximumTableSegments,
+              !Task.isCancelled
+        {
             // 이어지는 세그먼트는 제목 행 반복 높이를 미리 차감한다.
             let headerAllowance = isFirstSegment ? 0 : repeatedHeight
             var remaining = effectiveContentHeight - contentHeightUsed - headerAllowance
