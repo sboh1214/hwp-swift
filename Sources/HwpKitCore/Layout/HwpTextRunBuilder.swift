@@ -210,15 +210,29 @@ extension HwpTextRunBuilder {
         paraShape: CoreHwp.HwpParaShape
     ) {
         guard let tabDef = index.tabDef(id: UInt32(paraShape.tabDefId)),
-              let fill = tabDef.tabInfoArray.first(where: { $0.fillType != 0 })?.fillType
+              tabDef.tabInfoArray.contains(where: { $0.fillType != 0 })
         else { return }
+        // stop을 위치(pt)·채움으로 인코딩해 draw가 각 탭이 겨냥한 stop의 채움을
+        // 위치로 판정하게 한다 (#4). 위치는 CTTextTab(index.textTabs)와 같은
+        // 산식(HWPUNIT→pt, /2)이라 draw의 탭 run bounds와 정렬된다.
+        let stops = tabDef.tabInfoArray
+            .sorted { $0.location < $1.location }
+            .flatMap { info -> [NSNumber] in
+                let locPt = Double(HwpUnits.points(fromHwpUnitU: info.location) / 2)
+                return [NSNumber(value: locPt), NSNumber(value: Int(info.fillType))]
+            } as NSArray
         let text = output.string as NSString
         var location = 0
         while location < text.length {
             if text.character(at: location) == 0x09 {
                 output.addAttribute(
                     HwpAttributedStringKey.tabLeader,
-                    value: NSNumber(value: fill),
+                    value: NSNumber(value: true),
+                    range: NSRange(location: location, length: 1)
+                )
+                output.addAttribute(
+                    HwpAttributedStringKey.tabLeaderStops,
+                    value: stops,
                     range: NSRange(location: location, length: 1)
                 )
             }

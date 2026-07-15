@@ -53,6 +53,24 @@ extension HwpPageLayer {
         guard attributes[HwpAttributedStringKey.tabLeader] != nil else { return }
         let bounds = runBounds(of: run, lineOrigin: lineOrigin)
         guard bounds.width > 4 else { return }
+        // 각 탭이 겨냥한 stop(탭 끝 이후 첫 stop)의 채움을 위치로 판정한다 —
+        // 채움 없는 stop을 겨냥한 탭은 리더를 그리지 않는다 (#4). stop을 못
+        // 찾거나 목록이 없으면 기존 동작(그림)으로 폴백해 legacy 렌더를 보존한다.
+        if let stops = attributes[HwpAttributedStringKey.tabLeaderStops] as? [NSNumber],
+           stops.count >= 2
+        {
+            let tabEnd = bounds.maxX - lineOrigin.x
+            var index = 0
+            while index + 1 < stops.count {
+                if CGFloat(truncating: stops[index]) >= tabEnd - 2 {
+                    if stops[index + 1].intValue == 0 {
+                        return
+                    }
+                    break
+                }
+                index += 2
+            }
+        }
         let size = runFont(attributes).map(CTFontGetSize) ?? 10
         let color = attributes[kCTForegroundColorAttributeName as NSAttributedString.Key]
         setDecorationFillColor(color, in: ctx)

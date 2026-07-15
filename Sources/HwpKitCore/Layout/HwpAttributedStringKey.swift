@@ -45,6 +45,9 @@ public enum HwpAttributedStringKey {
     /// 탭 채움 종류 (HwpTabInfo.fillType != 0) — 렌더러가 탭 전진 구간에
     /// 점선 리더를 그린다 (목차 실물)
     public static let tabLeader = NSAttributedString.Key("hwp.tabLeader")
+    /// 탭 stop 목록 (위치pt·fillType 교대) — draw가 각 탭이 겨냥한 stop의
+    /// 채움을 위치로 판정한다 (#4)
+    public static let tabLeaderStops = NSAttributedString.Key("hwp.tabLeaderStops")
     /// 연속 그림자 — 본체에서 오프셋까지 이어지는 두꺼운 그림자
     public static let shadowContinuous = NSAttributedString.Key("hwp.shadowContinuous")
     /// 변경 추적 삽입 밑줄 — 한글은 베이스라인 아래 ~0.22em에 그린다
