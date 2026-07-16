@@ -2061,6 +2061,12 @@ private extension HwpPaginator {
             }
         }
         guard !memoFields.isEmpty else { return }
+        // crafted 문단이 메모 필드를 대량 삽입해 패널 backing layer·paint 명령을
+        // 폭발시키지 못하게 페이지당 풍선 수를 제한한다 (P1). 초과분은 body를
+        // build하기 전에 버린다.
+        let remaining = HwpMemoPanelPainter.maxBalloonsPerPage - pendingMemoBalloons.count
+        guard remaining > 0 else { return }
+        let cappedFields = Array(memoFields.prefix(remaining))
         let anchorY = currentBlocks.last { $0.kind == .text }?.frame.minY
             ?? currentPageGeometry.contentFrame.minY
         // 메모별 문단 그룹을 join해 필드와 1:1로 짝짓는다 — 평탄 배열을 필드
@@ -2069,7 +2075,8 @@ private extension HwpPaginator {
         // 표시 예산(HwpMemoPanelPainter.maxBodyChars)에 닿으면 추출을 멈춘다 —
         // 거대 메모가 전체 문단을 build·join한 뒤에야 캡되던 것을 막는다 (#3).
         let budget = HwpMemoPanelPainter.maxBodyChars
-        let bodies = (paragraph.memoParagraphGroups ?? []).map { group -> String in
+        let groups = (paragraph.memoParagraphGroups ?? []).prefix(remaining)
+        let bodies = groups.map { group -> String in
             var parts: [String] = []
             var total = 0
             for memoParagraph in group where total < budget {
@@ -2085,7 +2092,7 @@ private extension HwpPaginator {
             }
             return parts.joined(separator: "\n")
         }
-        for (fieldIndex, field) in memoFields.enumerated() {
+        for (fieldIndex, field) in cappedFields.enumerated() {
             pendingMemoBalloons.append(HwpMemoPanelPainter.Balloon(
                 anchorY: anchorY,
                 author: field.memoParameter?.author ?? "",

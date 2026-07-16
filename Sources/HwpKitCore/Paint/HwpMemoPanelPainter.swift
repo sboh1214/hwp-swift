@@ -37,12 +37,16 @@ public enum HwpMemoPanelPainter {
     /// 방어 (#4). 실측 메모는 수십 자·몇 줄이라 이 한도를 한참 밑돈다.
     static let maxBodyChars = 5000
     static let maxBodyLines = 200
+    /// 한 페이지 메모 풍선 최대 개수 — crafted 문서가 메모 필드를 대량 삽입해
+    /// 패널 backing layer와 paint 명령을 폭발시키는 것을 막는다 (P1). 실측 메모
+    /// 문서는 페이지당 몇 개라 이 한도를 한참 밑돈다.
+    static let maxBalloonsPerPage = 200
 
     public static func panel(balloons: [Balloon], pageSize: CGSize) -> HwpMemoPanel {
         let width = (pageSize.width * panelWidthRatio).rounded()
         var commands: [HwpPaintCommand] = []
         var nextTop: CGFloat = balloonSpacing
-        for balloon in balloons {
+        for balloon in balloons.prefix(maxBalloonsPerPage) {
             let frame = append(
                 balloon,
                 panelWidth: width,
