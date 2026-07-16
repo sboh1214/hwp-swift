@@ -373,9 +373,16 @@
                 x: contentSize.width * scale / 2,
                 y: contentSize.height * scale / 2
             )
-            scrollView.contentSize = CGSize(
-                width: contentSize.width * scale,
-                height: contentSize.height * scale
+            let scaledWidth = contentSize.width * scale
+            let scaledHeight = contentSize.height * scale
+            scrollView.contentSize = CGSize(width: scaledWidth, height: scaledHeight)
+            // 스케일된 콘텐츠가 뷰포트보다 작으면 중앙 정렬한다 — UIScrollView는
+            // 자동 센터링을 안 해 좌상단에 붙는다 (macOS HwpCenteringClipView와
+            // 맞춤, #2). 콘텐츠가 뷰포트보다 크면 inset 0이라 스크롤 불변.
+            let insetX = max(0, (scrollView.bounds.width - scaledWidth) / 2)
+            let insetY = max(0, (scrollView.bounds.height - scaledHeight) / 2)
+            scrollView.contentInset = UIEdgeInsets(
+                top: insetY, left: insetX, bottom: insetY, right: insetX
             )
         }
 
