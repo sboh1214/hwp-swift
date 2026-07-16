@@ -241,6 +241,9 @@
         public func scrollViewDidZoom(_ scrollView: UIScrollView) {
             zoomScale = scrollView.zoomScale
             updateVisiblePages(range: visiblePageRange())
+            // 줌으로 "콘텐츠 < 뷰포트" 여부가 바뀌면 센터링 inset도 갱신한다 —
+            // updateContentSize만으로는 이전 배율 여백이 남는다 (P2).
+            updateCenteringInset()
             onZoomChanged?(scrollView.zoomScale)
         }
 
@@ -379,11 +382,17 @@
             let scaledWidth = contentSize.width * scale
             let scaledHeight = contentSize.height * scale
             scrollView.contentSize = CGSize(width: scaledWidth, height: scaledHeight)
-            // 스케일된 콘텐츠가 뷰포트보다 작으면 중앙 정렬한다 — UIScrollView는
-            // 자동 센터링을 안 해 좌상단에 붙는다 (macOS HwpCenteringClipView와
-            // 맞춤, #2). 콘텐츠가 뷰포트보다 크면 inset 0이라 스크롤 불변.
-            let insetX = max(0, (scrollView.bounds.width - scaledWidth) / 2)
-            let insetY = max(0, (scrollView.bounds.height - scaledHeight) / 2)
+            updateCenteringInset()
+        }
+
+        /// 스케일된 콘텐츠가 뷰포트보다 작으면 contentInset으로 중앙 정렬한다 —
+        /// UIScrollView는 자동 센터링을 안 해 좌상단에 붙는다 (macOS
+        /// HwpCenteringClipView와 맞춤). 콘텐츠가 크면 inset 0이라 스크롤 불변.
+        /// 줌으로 대소 관계가 바뀔 때도 갱신하므로 헬퍼로 분리한다 (#2, P2).
+        private func updateCenteringInset() {
+            let scaled = scrollView.contentSize
+            let insetX = max(0, (scrollView.bounds.width - scaled.width) / 2)
+            let insetY = max(0, (scrollView.bounds.height - scaled.height) / 2)
             scrollView.contentInset = UIEdgeInsets(
                 top: insetY, left: insetX, bottom: insetY, right: insetX
             )
