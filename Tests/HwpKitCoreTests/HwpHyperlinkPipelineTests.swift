@@ -1,5 +1,6 @@
 import CoreGraphics
 @testable import CoreHwp
+import CoreText
 import Foundation
 @testable import HwpKitCore
 import Nimble
@@ -111,5 +112,56 @@ final class HwpHyperlinkPipelineTests: XCTestCase {
         // 플래그가 없으면 원문 그대로, URL 안의 비-플래그 세미콜론은 보존
         expect(HwpHyperlinkURL.displayURL("https://example.com")) == "https://example.com"
         expect(HwpHyperlinkURL.displayURL("http://x/a;b;1;0;1")) == "http://x/a;b"
+    }
+
+    func testHyperlinkScopedToFieldSpanNotWholeBlock() {
+        // "before link after"에서 hyperlink 속성을 "link"에만 단 블록 —
+        // 페인트/히트가 블록 전체가 아니라 "link" 글리프 rect로만 스코프해야 한다 (#2).
+        let font = CTFontCreateWithName("Helvetica" as CFString, 12, nil)
+        let attributed = NSMutableAttributedString(
+            string: "before link after",
+            attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
+        )
+        let linkRange = (attributed.string as NSString).range(of: "link")
+        attributed.addAttribute(
+            HwpAttributedStringKey.hyperlink, value: "https://example.com", range: linkRange
+        )
+        let block = AnyHwpBlock(
+            frame: CGRect(x: 0, y: 0, width: 400, height: 20),
+            kind: .text, attributedString: attributed
+        )
+        let page = makePage(with: [block])
+
+        let paintList = HwpPaintListBuilder()
+            .build(for: page, index: HwpIndex(from: CoreHwp.HwpFile()))
+        let linkRects: [CGRect] = paintList.commands.compactMap { command in
+            if case let .hyperlink(rect, url) = command, url == "https://example.com" {
+                return rect
+            }
+            return nil
+        }
+        expect(linkRects.count) == 1
+        // "before " 뒤에서 시작하고 블록 전체 폭(400)이 아니다
+        expect(linkRects[0].minX) > 0
+        expect(linkRects[0].maxX) < 400
+
+        // 히트: 링크 스팬 안 = URL, 앞쪽 평문("before") = 링크 아님
+        let linkRect = linkRects[0]
+        let onLink = HwpHitTester().hit(
+            page: page, point: CGPoint(x: linkRect.midX, y: linkRect.midY)
+        )
+        expect {
+            if case let .hyperlink(url, _) = onLink {
+                return url == "https://example.com"
+            }
+            return false
+        } == true
+        let beforeLink = HwpHitTester().hit(page: page, point: CGPoint(x: 1, y: linkRect.midY))
+        expect {
+            if case .hyperlink = beforeLink {
+                return false
+            }
+            return true
+        } == true
     }
 }

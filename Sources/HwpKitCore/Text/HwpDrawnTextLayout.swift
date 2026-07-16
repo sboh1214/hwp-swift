@@ -97,6 +97,53 @@ public enum HwpDrawnTextLayout {
         }
     }
 
+    /// attributedString 안 `hyperlink` 속성 범위마다 줄별 글리프 rect와 URL을
+    /// 돌려준다 (페이지 로컬 top-down). 블록 전체가 아니라 링크 텍스트에만
+    /// 히트/오버레이를 스코프하는 데 쓴다 (#2). 재조판된 CTLine은 자체 범위가
+    /// 0-기준 sub-copy라, attributedString index를 CTLine index로 옮겨 오프셋을 낸다.
+    public static func hyperlinkRegions(
+        attributedString: NSAttributedString,
+        origin: CGPoint,
+        lineWidth: CGFloat
+    ) -> [(rect: CGRect, url: String)] {
+        let length = attributedString.length
+        guard length > 0 else { return [] }
+        var regions: [(rect: CGRect, url: String)] = []
+        // 하이퍼링크 속성이 있는 블록만 CT 재조판한다 (블록마다 framesetting 방지)
+        var cachedLines: [HwpDrawnLine]?
+        attributedString.enumerateAttribute(
+            HwpAttributedStringKey.hyperlink, in: NSRange(location: 0, length: length)
+        ) { value, range, _ in
+            guard let url = value as? String else { return }
+            let drawnLines = cachedLines ?? lines(
+                attributedString: attributedString, origin: origin, lineWidth: lineWidth
+            )
+            cachedLines = drawnLines
+            for drawn in drawnLines {
+                let lineRange = drawn.stringRange
+                let lower = max(range.location, lineRange.location)
+                let upper = min(range.location + range.length, lineRange.location + lineRange.length)
+                guard upper > lower else { continue }
+                let ctRange = CTLineGetStringRange(drawn.line)
+                func offsetX(atAttributedIndex index: Int) -> CGFloat {
+                    let ctIndex = ctRange.location + (index - lineRange.location)
+                    return CTLineGetOffsetForStringIndex(drawn.line, ctIndex, nil)
+                }
+                let startX = drawn.baselineOrigin.x + offsetX(atAttributedIndex: lower)
+                let endX = drawn.baselineOrigin.x + offsetX(atAttributedIndex: upper)
+                guard endX > startX else { continue }
+                regions.append((
+                    rect: CGRect(
+                        x: startX, y: drawn.baselineOrigin.y - drawn.ascent,
+                        width: endX - startX, height: drawn.ascent + drawn.descent
+                    ),
+                    url: url
+                ))
+            }
+        }
+        return regions
+    }
+
     /// slight-overflow 한 줄의 CTLine과 타이포그래피 메트릭.
     public struct SlightOverflowLine {
         public let line: CTLine

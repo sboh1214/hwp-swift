@@ -19,8 +19,7 @@ public struct HwpHitTester {
         // 논리 배열 위치 그대로다 (선택 좌표와 정합).
         for (index, block) in AnyHwpBlock.paintOrdered(page.blocks).reversed() {
             guard block.frame.contains(point) else { continue }
-            // 블록 레벨 URL이 없으면 표 셀·글상자 안 문단의 하이퍼링크도 찾는다.
-            if let url = block.hyperlinkURL ?? containerHyperlinkURL(block: block, point: point) {
+            if let url = hyperlinkURL(for: block, at: point) {
                 return .hyperlink(url: url, blockIndex: index)
             }
             switch block.kind {
@@ -40,6 +39,29 @@ public struct HwpHitTester {
             }
         }
         return nil
+    }
+
+    /// 필드 스팬 하이퍼링크(%hlk)를 링크 텍스트 글리프 rect에서만 히트한다 —
+    /// 앞뒤 평문·다중 링크가 첫 URL로 뭉개지지 않는다 (#2). 필드 속성이 있는
+    /// 블록은 링크 밖에서 nil (블록/컨테이너 폴백 금지); 없으면 종전 폴백.
+    private func hyperlinkURL(for block: AnyHwpBlock, at point: CGPoint) -> String? {
+        var hasFieldSpans = false
+        var fieldURL: String?
+        HwpBlockContentWalker.walkText(block: block) { attributed, rect, _ in
+            let regions = HwpDrawnTextLayout.hyperlinkRegions(
+                attributedString: attributed, origin: rect.origin, lineWidth: rect.width
+            )
+            if !regions.isEmpty {
+                hasFieldSpans = true
+            }
+            if fieldURL == nil {
+                fieldURL = regions.first { $0.rect.contains(point) }?.url
+            }
+        }
+        if hasFieldSpans {
+            return fieldURL
+        }
+        return block.hyperlinkURL ?? containerHyperlinkURL(block: block, point: point)
     }
 
     private func tableGridPosition(block: AnyHwpBlock, point: CGPoint) -> (row: Int, col: Int) {

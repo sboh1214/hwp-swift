@@ -35,11 +35,31 @@ public struct HwpPaintListBuilder: Sendable {
             } else {
                 commands.append(contentsOf: paintCommands(for: block))
             }
-            if let url = block.hyperlinkURL {
-                commands.append(.hyperlink(rect: block.frame, url: url))
-            }
+            appendHyperlinkCommands(for: block, to: &commands)
         }
         return HwpPaintList(commands: commands)
+    }
+
+    /// 하이퍼링크(%hlk)를 필드 스팬 글리프 rect로 스코프해 방출한다 — 링크
+    /// 텍스트에만 히트/오버레이가 걸리고, 앞뒤 평문이나 다중 링크가 첫 URL로
+    /// 뭉개지지 않는다 (#2). 필드 속성이 없는 블록(직접 설정·컨테이너 폴백)만
+    /// 블록 프레임으로 방출한다.
+    private func appendHyperlinkCommands(
+        for block: AnyHwpBlock,
+        to commands: inout [HwpPaintCommand]
+    ) {
+        var emitted = false
+        HwpBlockContentWalker.walkText(block: block) { attributed, rect, _ in
+            for region in HwpDrawnTextLayout.hyperlinkRegions(
+                attributedString: attributed, origin: rect.origin, lineWidth: rect.width
+            ) {
+                commands.append(.hyperlink(rect: region.rect, url: region.url))
+                emitted = true
+            }
+        }
+        if !emitted, let url = block.hyperlinkURL {
+            commands.append(.hyperlink(rect: block.frame, url: url))
+        }
     }
 
     private func paintCommands(for block: AnyHwpBlock) -> [HwpPaintCommand] {

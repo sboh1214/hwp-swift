@@ -56,4 +56,7 @@ public enum HwpAttributedStringKey {
     public static let memoAnchorStroke = NSAttributedString.Key("hwp.memoAnchorStroke")
     /// 배분/나눔 정렬 (표 44 정렬 4·5) — 마지막 줄도 단어 간격을 벌린다
     public static let distributeAlignment = NSAttributedString.Key("hwp.distributeAlignment")
+    /// 하이퍼링크(%hlk) 필드가 감싸는 텍스트의 URL — 히트/페인트가 블록 전체가
+    /// 아니라 이 속성 범위의 글리프 rect로 링크를 스코프한다 (#2).
+    public static let hyperlink = NSAttributedString.Key("hwp.hyperlink")
 }

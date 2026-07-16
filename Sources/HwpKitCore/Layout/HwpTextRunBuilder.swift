@@ -87,6 +87,10 @@ public struct HwpTextRunBuilder {
         var wcharPosition: UInt32 = 0
         var pendingHighSurrogate: UInt16?
         var extendedOrdinal = 0
+        // 하이퍼링크(%hlk) 필드가 감싸는 attributed 범위 추적 — 시작(extended)
+        // 마커 뒤부터 끝(inline 4) 마커 전까지에 hyperlink 속성을 단다 (#2).
+        var activeHyperlinkStart: Int?
+        var activeHyperlinkURL: String?
 
         for hwpChar in units {
             let position = wcharPosition
@@ -133,11 +137,33 @@ public struct HwpTextRunBuilder {
             }
             append(chunk, paragraph: paragraph, to: output)
             chunk = Chunk(shapeId: shapeId, script: nil)
+            // 하이퍼링크 필드 끝(inline 4) 직전까지가 링크 텍스트 — 끝 마커 전에
+            // 속성을 적용한다 (#2).
+            if hwpChar.type == .inline, hwpChar.value == 4,
+               let start = activeHyperlinkStart, let url = activeHyperlinkURL,
+               output.length > start
+            {
+                output.addAttribute(
+                    HwpAttributedStringKey.hyperlink, value: url,
+                    range: NSRange(location: start, length: output.length - start)
+                )
+                activeHyperlinkStart = nil
+                activeHyperlinkURL = nil
+            }
+            let hyperlinkOrdinal = extendedOrdinal
             emitControl(
                 hwpChar, shapeId: shapeId, paragraph: paragraph,
                 controlReplacements: controlReplacements,
                 extendedOrdinal: &extendedOrdinal, to: output
             )
+            // 하이퍼링크 필드 시작(extended %hlk): 시작 마커 뒤부터 링크 범위 (#2).
+            if hwpChar.type == .extended, let ctrls = paragraph.ctrlHeaderArray,
+               hyperlinkOrdinal < ctrls.count,
+               case let .hyperLink(link) = ctrls[hyperlinkOrdinal], !link.url.isEmpty
+            {
+                activeHyperlinkStart = output.length
+                activeHyperlinkURL = HwpHyperlinkURL.displayURL(link.url)
+            }
         }
 
         if let lone = pendingHighSurrogate {
