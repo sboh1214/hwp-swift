@@ -21,9 +21,6 @@ public actor HwpPaginator {
     private var currentPageGeometry: HwpPageGeometry
     private var currentSectionDef: CoreHwp.HwpSectionDef?
     private var currentBlocks: [AnyHwpBlock] = []
-    /// 글 뒤(.behindText) 개체 instanceId — 페이지 확정 시 블록 앞으로 옮겨
-    /// 텍스트 뒤(페인트 먼저·히트 나중)에 그려지게 한다 (#3).
-    private var behindTextInstanceIds: Set<UInt32> = []
     /// 변경 추적(PARA_RANGE_TAG kind 16/17) 문단의 paraId — 페이지가 캐시될
     /// 때마다 그 페이지 조각에 변경 막대를 방출한다 (페이지 걸친 문단의 앞
     /// 조각도 막대를 받게, #7).
@@ -1286,7 +1283,8 @@ private extension HwpPaginator {
                 size: CGSize(width: frame.outerFrame.width, height: height),
                 payload: .table(frame),
                 attributedString: nil,
-                instanceId: table.commonCtrlProperty.instanceId
+                instanceId: table.commonCtrlProperty.instanceId,
+                zOrder: table.commonCtrlProperty.zOrder
             ),
             commonProperty: table.commonCtrlProperty
         )
@@ -1698,6 +1696,8 @@ private extension HwpPaginator {
         let payload: HwpBlockPayload?
         let attributedString: NSAttributedString?
         let instanceId: UInt32
+        /// 겹치는 개체 z-순서 (Send Backward/Forward) — 페인트/히트 정렬 기준 (#9).
+        let zOrder: Int32
     }
 
     func appendAnchoredBlock(
@@ -1714,7 +1714,8 @@ private extension HwpPaginator {
             size: size,
             payload: payload,
             attributedString: combinedAttributedString(attributedText),
-            instanceId: commonProperty.instanceId
+            instanceId: commonProperty.instanceId,
+            zOrder: commonProperty.zOrder
         )
 
         if info.treatAsChar, appendInlineAnchoredBlock(spec, controlIndex: controlIndex) {
@@ -1760,17 +1761,18 @@ private extension HwpPaginator {
         frame = restrictedToPageFrame(
             frame, spec: spec, info: info, offsetX: offsetX, offsetY: offsetY
         )
+        // 글 앞/뒤로 개체는 블록 배열 순서(선택/복사)를 논리대로 두고, 페인트·
+        // 히트만 평면·zOrder로 정렬한다 — behind는 텍스트 뒤, inFront는 앞 (#8/#9/#10).
+        let plane: HwpBlockPaintPlane = info.textWrap == .behindText ? .behind : .front
         currentBlocks.append(AnyHwpBlock(
             frame: frame,
             kind: spec.kind,
             attributedString: spec.attributedString,
             payload: spec.payload,
-            source: HwpBlockSource(controlInstanceId: spec.instanceId)
+            source: HwpBlockSource(controlInstanceId: spec.instanceId),
+            paintPlane: plane,
+            zOrder: spec.zOrder
         ))
-        // 글 뒤 개체는 페이지 확정 시 블록 앞으로 옮겨 텍스트 뒤에 그려지게 한다 (#3).
-        if info.textWrap == .behindText, spec.instanceId != 0 {
-            behindTextInstanceIds.insert(spec.instanceId)
-        }
         bandHasNonTextContent = true
     }
 
@@ -2276,14 +2278,6 @@ private extension HwpPaginator {
         // 변경 추적 문단의 이 페이지 조각마다 변경 막대를 방출한다 — 페이지 걸친
         // 문단의 앞 조각도 자기 페이지에서 막대를 받는다 (#7).
         emitTrackChangeBars()
-        // 글 뒤 개체를 본문 블록 앞으로 안정 분할해 텍스트 뒤에 그려지게 한다 (#3).
-        if !behindTextInstanceIds.isEmpty {
-            func isBehind(_ block: AnyHwpBlock) -> Bool {
-                guard let id = block.source?.controlInstanceId else { return false }
-                return behindTextInstanceIds.contains(id)
-            }
-            currentBlocks = currentBlocks.filter(isBehind) + currentBlocks.filter { !isBehind($0) }
-        }
         // 머리말/꼬리말/쪽 번호 크롬 블록 (감추기 마스크는 빌더가 소비한다)
         currentBlocks += pageChrome.blocks(
             forPage: nextLogicalPageNumber,
@@ -2317,7 +2311,6 @@ private extension HwpPaginator {
             memoPanel: memoPanel
         )
         currentBlocks = []
-        behindTextInstanceIds.removeAll()
         // 페이지가 넘어가면 이전 페이지 문단의 줄 앵커 좌표는 무효다.
         currentParagraphContext = nil
         // 새 페이지: 절대 캐시 loc 추적과 stale 캐시 보정을 리셋한다.

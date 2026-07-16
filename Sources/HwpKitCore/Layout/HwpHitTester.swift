@@ -15,7 +15,9 @@ public struct HwpHitTester {
     public init() {}
 
     public func hit(page: HwpPage, point: CGPoint) -> HwpHitResult? {
-        for (index, block) in page.blocks.enumerated().reversed() {
+        // 위→아래 순으로 히트: 페인트 순서를 뒤집어 훑되, 반환 blockIndex는
+        // 논리 배열 위치 그대로다 (선택 좌표와 정합).
+        for (index, block) in AnyHwpBlock.paintOrdered(page.blocks).reversed() {
             guard block.frame.contains(point) else { continue }
             // 블록 레벨 URL이 없으면 표 셀·글상자 안 문단의 하이퍼링크도 찾는다.
             if let url = block.hyperlinkURL ?? containerHyperlinkURL(block: block, point: point) {

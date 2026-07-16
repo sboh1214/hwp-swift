@@ -16,6 +16,18 @@ public enum HwpBlockRole: String, Sendable, Hashable {
     case body, pageChrome
 }
 
+/// 겹치는 개체의 페인트/히트 평면 (표 70 textWrap). 블록 배열은 문서 논리
+/// 순서로 두고, 페인트·히트만 이 평면 → zOrder → 삽입순으로 정렬한다 —
+/// behind는 텍스트 뒤, inFront는 텍스트 앞에 그려지고 히트된다 (#8/#9/#10).
+public enum HwpBlockPaintPlane: Int, Sendable, Hashable, Comparable {
+    case behind = 0
+    case normal = 1
+    case front = 2
+    public static func < (lhs: Self, rhs: Self) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
 public struct AnyHwpBlock: HwpBlock, @unchecked Sendable, Hashable {
     public let frame: CGRect
     public let kind: HwpBlockKind
@@ -26,6 +38,11 @@ public struct AnyHwpBlock: HwpBlock, @unchecked Sendable, Hashable {
     /// 이 블록이 유래한 CoreHwp 모델 참조 (편집 대비)
     public let source: HwpBlockSource?
     public let role: HwpBlockRole
+    /// 페인트/히트 평면 (behind/normal/front) — 블록 배열 순서는 논리 순서로
+    /// 두고 페인트·히트만 이 값으로 정렬한다 (#8/#10).
+    public let paintPlane: HwpBlockPaintPlane
+    /// 겹치는 개체의 z-순서 (Send Backward/Forward) — 같은 평면 안 정렬 기준 (#9).
+    public let zOrder: Int32
 
     public init(
         frame: CGRect,
@@ -34,7 +51,9 @@ public struct AnyHwpBlock: HwpBlock, @unchecked Sendable, Hashable {
         hyperlinkURL: String? = nil,
         payload: HwpBlockPayload? = nil,
         source: HwpBlockSource? = nil,
-        role: HwpBlockRole = .body
+        role: HwpBlockRole = .body,
+        paintPlane: HwpBlockPaintPlane = .normal,
+        zOrder: Int32 = 0
     ) {
         self.frame = frame
         self.kind = kind
@@ -46,6 +65,8 @@ public struct AnyHwpBlock: HwpBlock, @unchecked Sendable, Hashable {
         self.payload = payload
         self.source = source
         self.role = role
+        self.paintPlane = paintPlane
+        self.zOrder = zOrder
     }
 
     public func hash(into hasher: inout Hasher) {
@@ -59,6 +80,8 @@ public struct AnyHwpBlock: HwpBlock, @unchecked Sendable, Hashable {
         hasher.combine(payload)
         hasher.combine(source)
         hasher.combine(role)
+        hasher.combine(paintPlane)
+        hasher.combine(zOrder)
     }
 
     public static func == (lhs: AnyHwpBlock, rhs: AnyHwpBlock) -> Bool {
@@ -69,5 +92,24 @@ public struct AnyHwpBlock: HwpBlock, @unchecked Sendable, Hashable {
             && lhs.payload == rhs.payload
             && lhs.source == rhs.source
             && lhs.role == rhs.role
+            && lhs.paintPlane == rhs.paintPlane
+            && lhs.zOrder == rhs.zOrder
+    }
+
+    /// 블록 인덱스를 페인트 순서(뒤→앞)로 정렬한다: 평면(behind<normal<front)
+    /// → zOrder → 삽입순. 페인트·히트가 같은 순서를 쓰는 단일 지점이고, 블록
+    /// 배열 자체는 문서 논리 순서로 남아 선택/복사 순서를 보존한다 (#8/#9/#10).
+    public static func paintOrdered(
+        _ blocks: [AnyHwpBlock]
+    ) -> [(index: Int, block: AnyHwpBlock)] {
+        blocks.enumerated().sorted { lhs, rhs in
+            if lhs.element.paintPlane != rhs.element.paintPlane {
+                return lhs.element.paintPlane < rhs.element.paintPlane
+            }
+            if lhs.element.zOrder != rhs.element.zOrder {
+                return lhs.element.zOrder < rhs.element.zOrder
+            }
+            return lhs.offset < rhs.offset
+        }.map { (index: $0.offset, block: $0.element) }
     }
 }
