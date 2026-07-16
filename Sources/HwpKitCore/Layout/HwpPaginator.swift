@@ -1813,19 +1813,24 @@ private extension HwpPaginator {
         let offsetY = HwpUnits.points(
             fromHwpUnit: Int32(bitPattern: commonProperty.verticalOffset)
         )
-        let baseX: CGFloat = switch info.horizontalRelativeTo {
-        case .paper: 0
-        case .page, nil: contentFrame.minX
-        case .column, .paragraph: currentColumnFrame.minX
+        // 기준 프레임(base, extent) 안에서 정렬을 반영한 뒤 오프셋을 더한다 —
+        // floating 경로(appendFloatingBlock)와 동일. topOrLeft(기본)·nil·
+        // extent≤0은 base 그대로라 오프셋 배치 개체는 렌더 불변 (#5).
+        let hRef: (base: CGFloat, extent: CGFloat) = switch info.horizontalRelativeTo {
+        case .paper: (0, currentPageGeometry.pageSize.width)
+        case .page, nil: (contentFrame.minX, contentFrame.width)
+        case .column, .paragraph: (currentColumnFrame.minX, currentColumnFrame.width)
         }
-        let baseY: CGFloat = switch info.verticalRelativeTo {
-        case .paper: 0
-        case .paragraph: paragraphAnchorTop
-        default: contentFrame.minY
+        let vRef: (base: CGFloat, extent: CGFloat) = switch info.verticalRelativeTo {
+        case .paper: (0, currentPageGeometry.pageSize.height)
+        case .page, nil: (contentFrame.minY, contentFrame.height)
+        case .paragraph: (paragraphAnchorTop, 0)
         }
         let frame = CGRect(
-            x: baseX + offsetX,
-            y: baseY + offsetY,
+            x: alignedAnchor(hRef.base, hRef.extent, spec.size.width, info.horizontalAlignment)
+                + offsetX,
+            y: alignedAnchor(vRef.base, vRef.extent, spec.size.height, info.verticalAlignment)
+                + offsetY,
             width: spec.size.width,
             height: spec.size.height
         )
