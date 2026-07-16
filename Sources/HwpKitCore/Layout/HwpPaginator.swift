@@ -1220,6 +1220,11 @@ private extension HwpPaginator {
             {
                 return
             }
+            // 글 앞/뒤로 표는 흐름 소비·페이지 분할 없이 기준+오프셋에 통째로
+            // 둔다 (개체와 동일 경로) — 흐름 경로로 보내면 밀리고 잘린다 (#2).
+            if appendFloatingTableIfNeeded(frame, table: table) {
+                return
+            }
             appendTableSegments(
                 frame,
                 table: table,
@@ -1251,6 +1256,30 @@ private extension HwpPaginator {
             source: HwpBlockSource(controlInstanceId: table.commonCtrlProperty.instanceId)
         ))
         bandHasNonTextContent = true
+        return true
+    }
+
+    /// 글 앞/뒤로 표 (behindText/inFrontOfText)를 기준+오프셋 위치에 통째로
+    /// 배치한다 (흐름 소비·페이지 분할 없음 — 일반 개체 appendFloatingBlock과
+    /// 동일 경로). 흐름을 소비하는 wrap (square/topAndBottom)이거나 treatAsChar면
+    /// false를 반환해 호출자가 흐름 분할 경로 (appendTableSegments)로 폴백한다 (#2).
+    private func appendFloatingTableIfNeeded(
+        _ frame: HwpTableFrame,
+        table: CoreHwp.HwpTable
+    ) -> Bool {
+        let info = table.commonCtrlProperty.propertyInfo
+        guard !info.treatAsChar, !consumesFlow(info) else { return false }
+        let height = frame.rows.reduce(CGFloat(0)) { max($0, $1.rowFrame.maxY) }
+        appendFloatingBlock(
+            ObjectBlockSpec(
+                kind: .table,
+                size: CGSize(width: frame.outerFrame.width, height: height),
+                payload: .table(frame),
+                attributedString: nil,
+                instanceId: table.commonCtrlProperty.instanceId
+            ),
+            commonProperty: table.commonCtrlProperty
+        )
         return true
     }
 
