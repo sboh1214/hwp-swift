@@ -83,4 +83,30 @@ final class HwpImageCacheTests: XCTestCase {
         let bytes = await cache.currentBytes()
         expect(bytes) == 16
     }
+
+    func testClearDuringInFlightDecodeDoesNotRepopulate() async {
+        // clear가 fetch의 디코드 await 사이에 끼어드는 actor 재진입을 재현한다:
+        // 디코드 클로저 안에서 clear를 불러 세대를 바꾼다. 호출자는 이미지를
+        // 받지만, clear 이후 시작된 디코드라 storage엔 재삽입되지 않아야 한다 (P2).
+        let cache = HwpImageCache()
+        let image = makeImage()
+        let result = await cache.fetch(1) {
+            await cache.clear()
+            return image
+        }
+        expect(result).toNot(beNil())
+        let count = await cache.count()
+        expect(count) == 0
+    }
+
+    func testFetchAfterClearCachesNormally() async {
+        // clear로 세대가 바뀐 뒤 시작한 fetch는 정상 캐시된다 (게이트가 정상
+        // 동작을 막지 않음).
+        let cache = HwpImageCache()
+        let image = makeImage()
+        await cache.clear()
+        _ = await cache.fetch(1) { image }
+        let count = await cache.count()
+        expect(count) == 1
+    }
 }
