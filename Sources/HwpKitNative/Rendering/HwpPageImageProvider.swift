@@ -136,8 +136,11 @@ public final class HwpPageImageProvider: @unchecked Sendable {
             // 동시 디코드 예산 확보/반납 (합산 임시 메모리 상한, #8)
             await throttle.acquire()
             defer { Task { await throttle.release() } }
-            // provider 교체 시(세대 불일치) 새 디코드를 시작하지 않는다 (#5).
-            if Task.isCancelled || self?.isStale(gen) == true {
+            // provider 교체(세대 불일치) 또는 해제 시 새 디코드를 시작하지 않는다.
+            // dealloc으로 self가 nil이면 `== true`는 false라 통과했다 — nil을
+            // stale로 취급해 store/cache/adapter가 붙든 채 디코드가 이어지지
+            // 않게 한다 (self 강참조는 만들지 않는다, #5·#4).
+            if Task.isCancelled || self?.isStale(gen) != false {
                 return
             }
             // 원본 디코드는 binItemId 단위로 공유 캐시하고,
