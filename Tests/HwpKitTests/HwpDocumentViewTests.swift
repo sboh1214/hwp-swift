@@ -17,6 +17,26 @@ final class HwpDocumentViewTests: XCTestCase {
         expect(String(describing: type(of: view.body))).toNot(beEmpty())
     }
 
+    @MainActor
+    func testPageChangeWritebackSuppressedWhileApplyingBinding() {
+        var currentPage = 50
+        let coordinator = HwpDocumentCoordinator(
+            zoomScale: nil,
+            currentPage: Binding(get: { currentPage }, set: { currentPage = $0 }),
+            onHyperlinkTapped: nil,
+            onUnsupportedElement: nil
+        )
+        // 첫 프로그레시브 스냅샷(page 0)의 echo는 적용 구간이라 무시 — 요청
+        // 페이지(50)가 유지돼 이후 스냅샷에서 유실되지 않는다 (P2).
+        coordinator.applyingBinding {
+            coordinator.handlePageChanged(0)
+        }
+        expect(currentPage) == 50
+        // 구간 밖 실제 스크롤은 바인딩에 반영한다.
+        coordinator.handlePageChanged(24)
+        expect(currentPage) == 25
+    }
+
     #if os(macOS)
         @MainActor
         func testBindingsPropagateThroughNativeWrapper() {

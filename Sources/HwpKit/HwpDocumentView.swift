@@ -51,6 +51,7 @@ final class HwpDocumentCoordinator {
     private var currentPage: Binding<Int>?
     private var onHyperlinkTapped: ((String) -> Void)?
     private var onUnsupportedElement: ((HwpUnsupportedElement) -> Void)?
+    private var isApplyingBinding = false
 
     init(
         zoomScale: Binding<CGFloat>?,
@@ -85,10 +86,20 @@ final class HwpDocumentCoordinator {
     }
 
     func handlePageChanged(_ page: Int) {
-        // The equality guard keeps configure()'s echo of the binding-derived
-        // page from writing state back during a SwiftUI view update.
+        // 문서 대입·프로그래매틱 스크롤의 echo(applyingBinding 구간)는 무시하고
+        // 실제 스크롤만 반영한다 — 첫 프로그레시브 스냅샷 이후의 페이지 요청이
+        // echo로 덮어써져 유실되지 않게 한다 (P2). 동치 가드는 중복 write 방지.
+        guard !isApplyingBinding else { return }
         guard let currentPage, currentPage.wrappedValue != page + 1 else { return }
         currentPage.wrappedValue = page + 1
+    }
+
+    /// 바인딩 적용(문서 대입·줌·스크롤) 구간 동안 onPageChanged writeback을
+    /// 억제해, 프로그래매틱 변경의 echo가 바인딩을 덮어쓰지 않게 한다 (P2).
+    func applyingBinding(_ body: () -> Void) {
+        isApplyingBinding = true
+        defer { isApplyingBinding = false }
+        body()
     }
 
     func handleZoomChanged(_ scale: CGFloat) {
@@ -138,23 +149,25 @@ final class HwpDocumentCoordinator {
             view.onUnsupportedElement = context.coordinator.handleUnsupportedElement(_:)
             view.onPageChanged = context.coordinator.handlePageChanged(_:)
             view.onZoomChanged = context.coordinator.handleZoomChanged(_:)
-            // 문서 대입이 updateVisiblePages→onPageChanged로 currentPage를 1로
-            // 덮어쓰기 전에 요청된 초기 페이지를 캡처한다 (#3).
-            let requestedPage = currentPage?.wrappedValue
-            // loadToken이 있으면 구조 동등성으로 스킵, 없으면(직접 구성) 구조가
-            // 같아도 색/폰트만 다른 render-only 변경일 수 있어 전달한다 — 네이티브
-            // didSet이 스크롤을 유지한 채 재렌더한다 (#6). 스크롤 리셋 루프는
-            // didSet의 render-only 분기가 막는다 (#2).
-            if document.metadata.loadToken == nil || view.document != document {
-                view.document = document
-            }
-            if let zoomScale, view.zoomScale != zoomScale.wrappedValue {
-                view.zoomScale = zoomScale.wrappedValue
-            }
-            if let currentPage, let requestedPage {
-                let pageIndex = max(0, requestedPage - 1)
-                if view.currentVisiblePage() != pageIndex {
-                    view.scrollToPage(at: pageIndex)
+            // 문서 대입·줌·스크롤의 onPageChanged echo가 currentPage 바인딩을
+            // 덮어쓰지 않게 이 구간 동안 writeback을 억제한다 — 첫 프로그레시브
+            // 스냅샷 이후의 페이지 요청이 유실되지 않고 로드되면 도달한다 (P2).
+            context.coordinator.applyingBinding {
+                let requestedPage = currentPage?.wrappedValue
+                // loadToken이 있으면 구조 동등성으로 스킵, 없으면(직접 구성) 구조가
+                // 같아도 색/폰트만 다른 render-only 변경일 수 있어 전달한다 — 네이티브
+                // didSet이 스크롤을 유지한 채 재렌더한다 (#6).
+                if document.metadata.loadToken == nil || view.document != document {
+                    view.document = document
+                }
+                if let zoomScale, view.zoomScale != zoomScale.wrappedValue {
+                    view.zoomScale = zoomScale.wrappedValue
+                }
+                if let currentPage, let requestedPage {
+                    let pageIndex = max(0, requestedPage - 1)
+                    if view.currentVisiblePage() != pageIndex {
+                        view.scrollToPage(at: pageIndex)
+                    }
                 }
             }
         }
@@ -201,23 +214,25 @@ final class HwpDocumentCoordinator {
             view.onUnsupportedElement = context.coordinator.handleUnsupportedElement(_:)
             view.onPageChanged = context.coordinator.handlePageChanged(_:)
             view.onZoomChanged = context.coordinator.handleZoomChanged(_:)
-            // 문서 대입이 updateVisiblePages→onPageChanged로 currentPage를 1로
-            // 덮어쓰기 전에 요청된 초기 페이지를 캡처한다 (#3).
-            let requestedPage = currentPage?.wrappedValue
-            // loadToken이 있으면 구조 동등성으로 스킵, 없으면(직접 구성) 구조가
-            // 같아도 색/폰트만 다른 render-only 변경일 수 있어 전달한다 — 네이티브
-            // didSet이 스크롤을 유지한 채 재렌더한다 (#6). 스크롤 리셋 루프는
-            // didSet의 render-only 분기가 막는다 (#2).
-            if document.metadata.loadToken == nil || view.document != document {
-                view.document = document
-            }
-            if let zoomScale, view.zoomScale != zoomScale.wrappedValue {
-                view.zoomScale = zoomScale.wrappedValue
-            }
-            if let currentPage, let requestedPage {
-                let pageIndex = max(0, requestedPage - 1)
-                if view.currentVisiblePage() != pageIndex {
-                    view.scrollToPage(at: pageIndex)
+            // 문서 대입·줌·스크롤의 onPageChanged echo가 currentPage 바인딩을
+            // 덮어쓰지 않게 이 구간 동안 writeback을 억제한다 — 첫 프로그레시브
+            // 스냅샷 이후의 페이지 요청이 유실되지 않고 로드되면 도달한다 (P2).
+            context.coordinator.applyingBinding {
+                let requestedPage = currentPage?.wrappedValue
+                // loadToken이 있으면 구조 동등성으로 스킵, 없으면(직접 구성) 구조가
+                // 같아도 색/폰트만 다른 render-only 변경일 수 있어 전달한다 — 네이티브
+                // didSet이 스크롤을 유지한 채 재렌더한다 (#6).
+                if document.metadata.loadToken == nil || view.document != document {
+                    view.document = document
+                }
+                if let zoomScale, view.zoomScale != zoomScale.wrappedValue {
+                    view.zoomScale = zoomScale.wrappedValue
+                }
+                if let currentPage, let requestedPage {
+                    let pageIndex = max(0, requestedPage - 1)
+                    if view.currentVisiblePage() != pageIndex {
+                        view.scrollToPage(at: pageIndex)
+                    }
                 }
             }
         }
