@@ -87,10 +87,12 @@ public struct HwpTextRunBuilder {
         var wcharPosition: UInt32 = 0
         var pendingHighSurrogate: UInt16?
         var extendedOrdinal = 0
-        // 하이퍼링크(%hlk) 필드가 감싸는 attributed 범위 추적 — 시작(extended)
-        // 마커 뒤부터 끝(inline 4) 마커 전까지에 hyperlink 속성을 단다 (#2).
-        var activeHyperlinkStart: Int?
-        var activeHyperlinkURL: String?
+        // 하이퍼링크(%hlk) 필드가 감싸는 attributed 범위 추적. 필드는 코드 3
+        // 시작 ~ 코드 4 끝으로 LIFO 중첩되므로 필드 depth와 depth별 하이퍼링크
+        // 스택을 함께 둬, 중첩 필드의 끝 마커가 바깥 링크를 조기 종료하지
+        // 못하게 한다 — 시작 마커 뒤부터 매칭 끝 마커 전까지 속성을 단다 (#1·#2).
+        var fieldDepth = 0
+        var hyperlinkStack: [HyperlinkFrame] = []
 
         for hwpChar in units {
             let position = wcharPosition
@@ -137,18 +139,23 @@ public struct HwpTextRunBuilder {
             }
             append(chunk, paragraph: paragraph, to: output)
             chunk = Chunk(shapeId: shapeId, script: nil)
-            // 하이퍼링크 필드 끝(inline 4) 직전까지가 링크 텍스트 — 끝 마커 전에
-            // 속성을 적용한다 (#2).
-            if hwpChar.type == .inline, hwpChar.value == 4,
-               let start = activeHyperlinkStart, let url = activeHyperlinkURL,
-               output.length > start
-            {
-                output.addAttribute(
-                    HwpAttributedStringKey.hyperlink, value: url,
-                    range: NSRange(location: start, length: output.length - start)
-                )
-                activeHyperlinkStart = nil
-                activeHyperlinkURL = nil
+            // 필드 끝(inline 4): 이 depth에서 연 필드를 닫는다. 하이퍼링크가
+            // 이 depth에서 시작했을 때만 링크 속성을 확정해, 중첩 필드의 끝
+            // 마커가 바깥 하이퍼링크를 조기 종료하지 않게 한다 (#1). 끝 마커
+            // 직전까지가 링크 텍스트라 emitControl 전에 적용한다 (#2).
+            if hwpChar.type == .inline, hwpChar.value == 4 {
+                if let top = hyperlinkStack.last, top.depth == fieldDepth {
+                    if output.length > top.start {
+                        output.addAttribute(
+                            HwpAttributedStringKey.hyperlink, value: top.url,
+                            range: NSRange(location: top.start, length: output.length - top.start)
+                        )
+                    }
+                    hyperlinkStack.removeLast()
+                }
+                if fieldDepth > 0 {
+                    fieldDepth -= 1
+                }
             }
             let hyperlinkOrdinal = extendedOrdinal
             emitControl(
@@ -156,13 +163,21 @@ public struct HwpTextRunBuilder {
                 controlReplacements: controlReplacements,
                 extendedOrdinal: &extendedOrdinal, to: output
             )
-            // 하이퍼링크 필드 시작(extended %hlk): 시작 마커 뒤부터 링크 범위 (#2).
-            if hwpChar.type == .extended, let ctrls = paragraph.ctrlHeaderArray,
-               hyperlinkOrdinal < ctrls.count,
-               case let .hyperLink(link) = ctrls[hyperlinkOrdinal], !link.url.isEmpty
-            {
-                activeHyperlinkStart = output.length
-                activeHyperlinkURL = HwpHyperlinkURL.displayURL(link.url)
+            // 필드 시작(코드 3): depth++. 하이퍼링크면 그 depth로 스택에 쌓아
+            // 매칭 끝 마커에서만 닫히게 한다 (#1). 시작 마커 뒤부터 링크 범위
+            // (#2). 표/이미지 등 비-필드 extended(코드 3 아님)는 끝 짝이 없어 제외.
+            if hwpChar.type == .extended, hwpChar.value == 3 {
+                fieldDepth += 1
+                if let ctrls = paragraph.ctrlHeaderArray,
+                   hyperlinkOrdinal < ctrls.count,
+                   case let .hyperLink(link) = ctrls[hyperlinkOrdinal], !link.url.isEmpty
+                {
+                    hyperlinkStack.append(HyperlinkFrame(
+                        depth: fieldDepth,
+                        start: output.length,
+                        url: HwpHyperlinkURL.displayURL(link.url)
+                    ))
+                }
             }
         }
 
@@ -268,6 +283,12 @@ extension HwpTextRunBuilder {
 }
 
 extension HwpTextRunBuilder {
+    struct HyperlinkFrame {
+        let depth: Int
+        let start: Int
+        let url: String
+    }
+
     struct Chunk {
         var shapeId: UInt32
         var script: HwpScript?

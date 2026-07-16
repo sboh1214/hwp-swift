@@ -138,6 +138,50 @@ import XCTest
             expect(lines.first?.width).to(beCloseTo(50, within: 0.01))
             expect(lines.first?.baseline).to(beCloseTo(30, within: 0.01))
         }
+
+        func testHyperlinkSpansNestedFieldWithoutEarlyClosing() throws {
+            // 하이퍼링크(코드 3 시작 ~ 코드 4 끝) 안에 다른 필드가 중첩되면,
+            // 중첩 필드의 끝 마커(inline 4)가 바깥 링크를 조기 종료하면 안 된다 (#1).
+            // a〈hlk 3〉b〈필드 3〉c〈끝 4〉d〈hlk 끝 4〉e — 링크는 b..d 전체.
+            var paragraph = CoreHwp.HwpParagraph()
+            var paraText = CoreHwp.HwpParaText()
+            var link = CoreHwp.HwpHyperlink()
+            link.url = "http://example.com/outer"
+            paraText.charArray =
+                "a".utf16.map { CoreHwp.HwpChar(type: .char, value: $0) }
+                    + [CoreHwp.HwpChar(type: .extended, value: 3)]
+                    + "b".utf16.map { CoreHwp.HwpChar(type: .char, value: $0) }
+                    + [CoreHwp.HwpChar(type: .extended, value: 3)]
+                    + "c".utf16.map { CoreHwp.HwpChar(type: .char, value: $0) }
+                    + [CoreHwp.HwpChar(type: .inline, value: 4)]
+                    + "d".utf16.map { CoreHwp.HwpChar(type: .char, value: $0) }
+                    + [CoreHwp.HwpChar(type: .inline, value: 4)]
+                    + "e".utf16.map { CoreHwp.HwpChar(type: .char, value: $0) }
+            paragraph.paraText = paraText
+            paragraph.ctrlHeaderArray = [
+                .hyperLink(link),
+                .section(CoreHwp.HwpSectionDef()),
+            ]
+            var paraCharShape = CoreHwp.HwpParaCharShape()
+            paraCharShape.startingIndex = [0]
+            paraCharShape.shapeId = [0]
+            paragraph.paraCharShape = paraCharShape
+
+            let result = builder(shapes: [0: try charShape()]).build(paragraph: paragraph)
+            let string = result.string as NSString
+            func hyperlink(at substring: String) -> String? {
+                result.attribute(
+                    HwpAttributedStringKey.hyperlink,
+                    at: string.range(of: substring).location, effectiveRange: nil
+                ) as? String
+            }
+
+            // "d"는 중첩 필드 끝 뒤 — 조기 종료됐다면 링크가 없다 (회귀 지점).
+            expect(hyperlink(at: "d")) == "http://example.com/outer"
+            expect(hyperlink(at: "b")) == "http://example.com/outer"
+            expect(hyperlink(at: "a")).to(beNil())
+            expect(hyperlink(at: "e")).to(beNil())
+        }
     }
 
     private extension HwpTextRunBuilderTests {
