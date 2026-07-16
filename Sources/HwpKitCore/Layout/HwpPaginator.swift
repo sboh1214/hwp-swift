@@ -389,7 +389,7 @@ private extension HwpPaginator {
             try Task.checkCancellation()
             // 구역 시작/쪽 나누기 문단: 진행 중인 페이지를 확정하고 이 문단은
             // 다음 호출에서 새 페이지 첫머리로 다시 처리한다.
-            if flushPageBeforeProcessing(paragraph) {
+            if try flushPageBeforeProcessing(paragraph) {
                 return
             }
 
@@ -464,12 +464,15 @@ private extension HwpPaginator {
         if !pendingEndnotes.isEmpty, !currentBlocks.isEmpty || contentHeightUsed > 0 {
             cacheCurrentPage()
         }
-        appendPendingEndnotes()
+        try appendPendingEndnotes()
         cacheCurrentPage()
         // 마지막 페이지에서 넘친 각주가 있으면 빈 페이지를 이어 붙여 모두 배치한다.
         // 페이지 상한에 걸려 cacheCurrentPage가 캐시를 거부하면(didFinishPagination
         // = true, pendingFootnotes 불변) 무한 회전하므로 그때 멈춘다 (#4).
         while !pendingFootnotes.isEmpty, !didFinishPagination {
+            // 취소 시 각주 드레인이 페이지 상한까지 동기로 돌아 취소 관찰이
+            // 늦어지지 않게 매 페이지 확인 (문단 루프 389와 동일, P2b).
+            try Task.checkCancellation()
             cacheCurrentPage()
         }
         didFinishPagination = true
@@ -479,11 +482,11 @@ private extension HwpPaginator {
     /// 쪽 나누기 (문단 헤더 columnType bit 2)를 만나면 진행 중인 페이지를
     /// 확정한다. 페이지를 확정했으면 true (호출자가 반환하고 같은 문단을
     /// 새 페이지에서 다시 처리한다).
-    func flushPageBeforeProcessing(_ paragraph: CoreHwp.HwpParagraph) -> Bool {
+    func flushPageBeforeProcessing(_ paragraph: CoreHwp.HwpParagraph) throws -> Bool {
         if Self.sectionDef(in: paragraph) != nil {
             closeColumnBand()
             if currentSectionDef?.endNoteShape.placesEndnoteAtSectionEnd == true {
-                appendPendingEndnotes()
+                try appendPendingEndnotes()
             }
             if !currentBlocks.isEmpty || contentHeightUsed > 0 {
                 cacheCurrentPage()
@@ -2178,7 +2181,7 @@ private extension HwpPaginator {
 
     /// 모아 둔 미주를 현재 흐름 아래에 전체 폭 1단으로 배치한다.
     /// 남은 공간이 부족하면 다음 페이지로 이어 붙인다.
-    func appendPendingEndnotes() {
+    func appendPendingEndnotes() throws {
         guard !pendingEndnotes.isEmpty else { return }
         // 미주 영역은 전체 폭: 진행 중인 다단 밴드를 닫고 그 아래에서 시작한다.
         closeColumnBand()
@@ -2203,6 +2206,9 @@ private extension HwpPaginator {
         // overflow가 안 줄어 같은 만석 페이지를 무한 재시도하므로 그때 멈춘다
         // (각주 드레인 루프와 동일, #1).
         while !pendingEndnotes.isEmpty, !didFinishPagination {
+            // 취소 시 미주 드레인이 페이지 상한까지 동기로 돌아 취소 관찰이
+            // 늦어지지 않게 매 페이지 확인 (각주 드레인·389와 동일, P2b).
+            try Task.checkCancellation()
             let columnFrame = currentColumnFrame
             let available = CGRect(
                 x: columnFrame.minX,
