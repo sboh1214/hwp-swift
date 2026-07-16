@@ -147,7 +147,7 @@ extension HwpParaShape {
     init(property1: UInt32, marginLeft: Int32, indent: Int32 = 0,
          paragraphSpacingTop: Int32 = 0, paragraphSpacingBottom: Int32 = 0,
          lineSpacing: Int32 = 160, tabDefId: UInt16, lineSpacing2: UInt32 = 160,
-         unknown: UInt32 = 0)
+         numberingOrBulletId: UInt16 = 0, unknown: UInt32 = 0)
     {
         rawPayload = Data()
         self.property1 = property1
@@ -159,7 +159,7 @@ extension HwpParaShape {
         self.paragraphSpacingBottom = paragraphSpacingBottom
         self.lineSpacing = lineSpacing
         self.tabDefId = tabDefId
-        numberingOrBulletId = 0
+        self.numberingOrBulletId = numberingOrBulletId
         borderFillId = 2
         borderSpacingLeft = 0
         borderSpacingRight = 0

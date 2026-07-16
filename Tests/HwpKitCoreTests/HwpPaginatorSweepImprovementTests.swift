@@ -130,6 +130,39 @@ import XCTest
             )
         }
 
+        /// 문단 머리 종류(표 44 bit 23-24) = 1 개요 + 번호 참조 문단은 생성 라벨이
+        /// numbering 정의에 있고 PARA_TEXT에 없어 렌더러가 못 만든다 — 번호가
+        /// 조용히 사라지지 않도록 unsupported로 보고돼야 한다 (#1).
+        func testOutlineNumberingHeadingReportedAsUnsupported() async throws {
+            let headingParaShape = CoreHwp.HwpParaShape(
+                property1: 1 << 23, marginLeft: 0, tabDefId: 0, numberingOrBulletId: 1
+            )
+            let index = HwpIndex(
+                charShapes: [:], paraShapes: [0: headingParaShape], borderFills: [:],
+                tabDefs: [:], styles: [:], bullets: [:], numberings: [:], binData: [:],
+                faceNamesKorean: [:], faceNamesEnglish: [:], faceNamesChinese: [:],
+                faceNamesJapanese: [:], faceNamesEtc: [:], faceNamesSymbol: [:],
+                faceNamesUser: [:]
+            )
+            let section = HwpSynthetic.section(
+                firstParagraphControls: [
+                    .section(HwpSynthetic.sectionDef()),
+                    .column(CoreHwp.HwpColumn()),
+                ],
+                bodyParagraphs: [try HwpSynthetic.textParagraph("첫째 항목")]
+            )
+            let paginator = HwpPaginator(
+                sections: [section], index: index, fontResolver: .testDeterministic
+            )
+
+            _ = await paginator.totalPages()
+            let hints = await paginator.unsupportedElements().map(\.hint)
+            expect(hints.contains { $0.contains("개요 번호 문단 머리") }).to(
+                beTrue(),
+                description: "unsupported hints: \(hints)"
+            )
+        }
+
         /// 각주 예약으로 페이지가 사실상 찬 상태 + 이어지는 2단 정의 구역
         private func footnoteFilledSectionWithColumnDef() throws -> CoreHwp.HwpSection {
             let footnote = HwpSynthetic.listControl(

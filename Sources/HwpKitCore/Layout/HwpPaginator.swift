@@ -1018,9 +1018,32 @@ private extension HwpPaginator {
     // MARK: - Unsupported walk (단일 traversal 지점 유지)
 
     func collectUnsupported(from paragraph: CoreHwp.HwpParagraph) {
-        guard let ctrls = paragraph.ctrlHeaderArray else { return }
         let page = cachedPages.count + 1
+        collectUnsupportedNumberingHeading(from: paragraph, page: page)
+        guard let ctrls = paragraph.ctrlHeaderArray else { return }
         walkUnsupported(ctrls: ctrls, page: page)
+    }
+
+    /// 개요(머리 종류 1)/번호(2) 문단 머리의 생성 라벨은 numbering 정의에 있고
+    /// PARA_TEXT에 없다 — 렌더러가 아직 그 라벨을 만들지 않으므로, 번호가
+    /// 조용히 사라지지 않게 unsupported로 보고한다. 글머리표(3)는
+    /// appendBulletHeading이 렌더하므로 제외 (#1).
+    private func collectUnsupportedNumberingHeading(
+        from paragraph: CoreHwp.HwpParagraph,
+        page: Int
+    ) {
+        guard let paraShape = index.paraShape(
+            id: UInt32(paragraph.paraHeader.paraShapeId)
+        ) else { return }
+        let headingType = paraShape.property1Info.headingTypeRawValue
+        guard headingType == 1 || headingType == 2,
+              paraShape.numberingOrBulletId > 0
+        else { return }
+        collectedUnsupported.append(HwpUnsupportedElement(
+            kind: .placeholder,
+            page: page,
+            hint: headingType == 1 ? "개요 번호 문단 머리 (미렌더)" : "번호 매기기 문단 머리 (미렌더)"
+        ))
     }
 
     func walkUnsupported(ctrls: [CoreHwp.HwpCtrlId], page: Int, tableDepth: Int = 0) {
