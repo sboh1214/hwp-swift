@@ -11,7 +11,7 @@ final class CommonCtrlPropertyInfoBitPatternTests: XCTestCase {
         rawValue |= 1 << 5 // vertical alignment: center
         rawValue |= 3 << 8 // horizontal relative to: paragraph
         rawValue |= 2 << 10 // horizontal alignment: bottom or right
-        rawValue |= 5 << 21 // text wrap: in front of text
+        rawValue |= 3 << 21 // text wrap: in front of text
 
         let info = try HwpCommonCtrlPropertyInfo.load(rawValue)
 
@@ -23,7 +23,7 @@ final class CommonCtrlPropertyInfoBitPatternTests: XCTestCase {
         expect(info.horizontalRelativeToRawValue) == 3
         expect(info.horizontalRelativeTo) == .paragraph
         expect(info.horizontalAlignment) == .bottomOrRight
-        expect(info.textWrapRawValue) == 5
+        expect(info.textWrapRawValue) == 3
         expect(info.textWrap) == .inFrontOfText
     }
 
@@ -52,9 +52,10 @@ final class CommonCtrlPropertyInfoBitPatternTests: XCTestCase {
         expect(try HwpCommonCtrlPropertyInfo.load(7 << 10).horizontalAlignment).to(beNil())
     }
 
-    func testTextWrapMatchesSpecCorrectedOrder() throws {
+    func testTextWrapMatchesMeasuredHwp5Order() throws {
+        // ErrataAudit 26b: 바이너리 HWP5 실측 매핑 (공개 스펙 6값과 다름).
         let expectedCases: [HwpCommonCtrlTextWrap?] = [
-            .square, .tight, .through, .topAndBottom, .behindText, .inFrontOfText, nil, nil,
+            .square, .topAndBottom, .behindText, .inFrontOfText, nil, nil, nil, nil,
         ]
 
         for (rawValue, expectedCase) in expectedCases.enumerated() {

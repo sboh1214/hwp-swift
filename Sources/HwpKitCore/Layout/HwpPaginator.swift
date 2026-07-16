@@ -1875,7 +1875,7 @@ private extension HwpPaginator {
 
     func consumesFlow(_ info: CoreHwp.HwpCommonCtrlPropertyInfo) -> Bool {
         switch info.textWrap {
-        case .square, .tight, .through, .topAndBottom, nil:
+        case .square, .topAndBottom, nil:
             true
         case .behindText, .inFrontOfText:
             false

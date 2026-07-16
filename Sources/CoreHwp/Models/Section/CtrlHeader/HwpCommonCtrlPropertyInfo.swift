@@ -198,20 +198,20 @@ public enum HwpCommonCtrlRelativeAlignment: Int, HwpPrimitive {
     case outside = 4
 }
 
-/** 본문 흐름 방식 (표 70 bits 21-23) */
+/** 본문 흐름 방식 (표 70 bits 21-23).
+ 바이너리 HWP5 실측 매핑 — 공개 스펙의 6값 순서와 다르다 (ErrataAudit 26b,
+ equation/noori/text-box 실제 한컴 fixture raw 1/3 검증). 6값 순서를 쓰면
+ raw 2/3(BehindText/InFrontOfText)이 through/topAndBottom으로 오독돼 레이어링
+ 개체가 본문 흐름에 흡수된다. HWPX 등 6값 포맷은 별도 매핑을 쓸 것 (#1). */
 public enum HwpCommonCtrlTextWrap: Int, HwpPrimitive {
-    /** 어울림 (bound rect를 따라) */
+    /** 어울림 (bound rect/outline) */
     case square = 0
-    /** 어울림 (개체의 outline을 따라) */
-    case tight = 1
-    /** 개체 내부 빈 공간까지 텍스트 배치 */
-    case through = 2
     /** 자리 차지 (좌우에 텍스트 없음) */
-    case topAndBottom = 3
+    case topAndBottom = 1
     /** 글 뒤로 */
-    case behindText = 4
+    case behindText = 2
     /** 글 앞으로 */
-    case inFrontOfText = 5
+    case inFrontOfText = 3
 }
 
 public enum HwpCommonCtrlTextFlowSide: Int, HwpPrimitive {

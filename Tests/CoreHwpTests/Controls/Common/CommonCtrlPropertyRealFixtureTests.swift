@@ -12,13 +12,13 @@ final class CommonCtrlPropertyRealFixtureTests: XCTestCase {
         expect(equationProperty.propertyInfo.effectiveAllowOverlap) == false
         expect(equationProperty.propertyInfo.widthRelativeTo) == .absolute
         expect(equationProperty.propertyInfo.heightRelativeTo) == .absolute
-        expect(equationProperty.propertyInfo.textWrap) == .tight
+        expect(equationProperty.propertyInfo.textWrap) == .topAndBottom
         expect(equationProperty.propertyInfo.numberingCategory) == .equation
 
         expect(nooriTableProperty.propertyInfo.restrictInPage) == false
         expect(nooriTableProperty.propertyInfo.widthRelativeTo) == .absolute
         expect(nooriTableProperty.propertyInfo.heightRelativeTo) == .absolute
-        expect(nooriTableProperty.propertyInfo.textWrap) == .tight
+        expect(nooriTableProperty.propertyInfo.textWrap) == .topAndBottom
         expect(nooriTableProperty.propertyInfo.numberingCategory) == .table
 
         expect(textBoxProperty.propertyInfo.restrictInPage) == false
@@ -26,7 +26,7 @@ final class CommonCtrlPropertyRealFixtureTests: XCTestCase {
         expect(textBoxProperty.propertyInfo.effectiveAllowOverlap) == true
         expect(textBoxProperty.propertyInfo.widthRelativeTo) == .absolute
         expect(textBoxProperty.propertyInfo.heightRelativeTo) == .absolute
-        expect(textBoxProperty.propertyInfo.textWrap) == .topAndBottom
+        expect(textBoxProperty.propertyInfo.textWrap) == .inFrontOfText
         expect(textBoxProperty.propertyInfo.numberingCategory) == .figure
     }
 }

@@ -39,12 +39,12 @@ final class CommonCtrlPropertyStabilityTests: XCTestCase {
         expect(restrictInPageInfo.effectiveAllowOverlap) == false
         expect(restrictInPageInfo.widthRelativeTo) == .absolute
         expect(restrictInPageInfo.heightRelativeTo) == .absolute
-        expect(restrictInPageInfo.textWrap) == .tight
+        expect(restrictInPageInfo.textWrap) == .topAndBottom
 
         expect(unrestrictedInfo.restrictInPage) == false
         expect(unrestrictedInfo.widthRelativeTo) == .absolute
         expect(unrestrictedInfo.heightRelativeTo) == .absolute
-        expect(unrestrictedInfo.textWrap) == .tight
+        expect(unrestrictedInfo.textWrap) == .topAndBottom
     }
 
     func testCommonControlPropertyDecodesPropertyInfoFromPayload() throws {
@@ -62,7 +62,7 @@ final class CommonCtrlPropertyStabilityTests: XCTestCase {
         expect(property.propertyInfo.effectiveAllowOverlap) == true
         expect(property.propertyInfo.widthRelativeTo) == .absolute
         expect(property.propertyInfo.heightRelativeTo) == .absolute
-        expect(property.propertyInfo.textWrap) == .topAndBottom
+        expect(property.propertyInfo.textWrap) == .inFrontOfText
         expect(property.propertyInfo.numberingCategory) == .figure
     }
 
