@@ -237,19 +237,19 @@ public struct HwpFile: HwpPrimitive {
         }
 
         if let summaryData {
-            summary = try HwpSummary.load(summaryData)
+            summary = try HwpSummary.load(summaryData, options: options)
         } else {
             summary = HwpSummary()
         }
 
         if let previewTextData {
-            previewText = try HwpPreviewText.load(previewTextData)
+            previewText = try HwpPreviewText.load(previewTextData, options: options)
         } else {
             previewText = HwpPreviewText()
         }
 
         if let previewImageData {
-            previewImage = try HwpPreviewImage.load(previewImageData)
+            previewImage = try HwpPreviewImage.load(previewImageData, options: options)
         } else {
             previewImage = HwpPreviewImage()
         }

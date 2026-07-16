@@ -53,6 +53,18 @@ final class RawPayloadOptOutTests: XCTestCase {
                     )
                 }
             }
+            expect(viewer.summary.rawPayload.isEmpty).to(
+                beTrue(),
+                description: "\(fixtureId) viewer summary.rawPayload must be empty"
+            )
+            expect(viewer.previewImage.rawPayload.isEmpty).to(
+                beTrue(),
+                description: "\(fixtureId) viewer previewImage.rawPayload must be empty"
+            )
+            expect(viewer.previewImage.image.isEmpty).to(
+                beTrue(),
+                description: "\(fixtureId) viewer previewImage.image must be empty"
+            )
         }
     }
 
@@ -119,6 +131,14 @@ private extension RawPayloadOptOutTests {
             fixture: fixtureId
         )
         assertDocInfoCountsIdentical(viewer.docInfo, preserved.docInfo, fixture: fixtureId)
+        expect(viewer.previewText.text).to(
+            equal(preserved.previewText.text),
+            description: "\(fixtureId) previewText.text"
+        )
+        expect(viewer.previewImage.format).to(
+            equal(preserved.previewImage.format),
+            description: "\(fixtureId) previewImage.format"
+        )
     }
 
     func assertSectionsIdentical(

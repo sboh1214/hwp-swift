@@ -168,6 +168,30 @@ final class PreviewStreamPrimitiveTests: XCTestCase {
         expect(summary.rawPayload) == payload
         expect(decoded.rawPayload) == payload
     }
+
+    func testPreviewTextViewerLoadDropsRawPayloadKeepsText() throws {
+        let data = utf16LittleEndianData("Viewer\r\n")
+        let preview = try HwpPreviewText.load(data, options: .viewer)
+
+        expect(preview.text) == "Viewer\r\n"
+        expect(preview.rawPayload).to(beEmpty())
+    }
+
+    func testPreviewImageViewerLoadDropsBytesKeepsFormat() throws {
+        let data = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00])
+        let preview = try HwpPreviewImage.load(data, options: .viewer)
+
+        expect(preview.format) == .png
+        expect(preview.image).to(beEmpty())
+        expect(preview.rawPayload).to(beEmpty())
+    }
+
+    func testSummaryViewerLoadDropsRawPayload() throws {
+        let data = Data([0xFE, 0xFF, 0x00, 0x00])
+        let summary = try HwpSummary.load(data, options: .viewer)
+
+        expect(summary.rawPayload).to(beEmpty())
+    }
 }
 
 private func utf16LittleEndianData(_ string: String) -> Data {
