@@ -111,13 +111,17 @@ if buildsViewerTargets {
 
 let package = Package(
     name: "Hwp-Swift",
-    // 뷰어 타깃(HwpKitCore/Native/HwpKit)은 PlatformImage·CoreImage 등
-    // macOS/iOS 전용 API에 의존하므로 그 둘만 선언한다 — tvOS/watchOS를
-    // 선언하면 뷰어 프로덕트가 그 목적지에도 노출돼 크로스 컴파일이 실패한다
-    // (canImport(Darwin)은 매니페스트 호스트에서 평가돼 항상 참, #1).
+    // CoreHwp(파서)는 tvOS/watchOS도 지원하므로 의존성(SWCompression 등)의
+    // 최소 버전과 맞춰 선언한다. platforms 생략은 프로덕트를 숨기지 않고 기본
+    // (낮은) 배포 타깃을 부여할 뿐이라 CoreHwp를 회귀시킨다. 뷰어 타깃은
+    // buildsViewerTargets(위)와 소비자의 프로덕트 선택으로 제외된다 —
+    // tvOS/watchOS 소비자는 CoreHwp 프로덕트만 고르면 뷰어 타깃은 빌드되지
+    // 않는다 (#1).
     platforms: [
         .macOS(.v14),
         .iOS(.v17),
+        .tvOS(.v17),
+        .watchOS(.v10),
     ],
     products: products,
     dependencies: [
