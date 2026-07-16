@@ -1572,8 +1572,9 @@ private extension HwpPaginator {
         commonProperty: CoreHwp.HwpCommonCtrlProperty,
         components: [CoreHwp.HwpShapeComponent]
     ) -> CGSize {
-        var width = HwpUnits.points(fromHwpUnitU: commonProperty.width)
-        var height = HwpUnits.points(fromHwpUnitU: commonProperty.height)
+        let info = commonProperty.propertyInfo
+        var width = resolvedObjectWidth(commonProperty.width, basis: info.widthRelativeTo)
+        var height = resolvedObjectHeight(commonProperty.height, basis: info.heightRelativeTo)
         if width <= 0 || height <= 0, let detail = components.first?.detail {
             if width <= 0 {
                 width = HwpUnits.points(fromHwpUnitU: detail.currentWidth)
@@ -1583,6 +1584,34 @@ private extension HwpPaginator {
             }
         }
         return CGSize(width: max(1, width), height: max(1, height))
+    }
+
+    /// 개체 폭을 해석한다. 폭 기준이 절대값이 아니면 (종이/쪽/단/문단) 저장값은
+    /// HWPUNIT 길이가 아니라 기준 프레임 폭에 대한 퍼센트다 (10000 = 100%) —
+    /// 무조건 HWPUNIT 변환하면 100% 폭 도형이 100pt로 줄어든다 (#4).
+    private func resolvedObjectWidth(
+        _ raw: UInt32,
+        basis: CoreHwp.HwpCommonCtrlObjectWidthRelativeTo?
+    ) -> CGFloat {
+        switch basis {
+        case .paper: CGFloat(raw) / 10000 * currentPageGeometry.pageSize.width
+        case .page: CGFloat(raw) / 10000 * currentPageGeometry.contentFrame.width
+        case .column, .paragraph: CGFloat(raw) / 10000 * currentColumnFrame.width
+        case .absolute, nil: HwpUnits.points(fromHwpUnitU: raw)
+        }
+    }
+
+    /// 개체 높이를 해석한다. 높이 기준이 절대값이 아니면 (종이/쪽) 저장값은
+    /// 기준 프레임 높이에 대한 퍼센트다 (10000 = 100%) (#4).
+    private func resolvedObjectHeight(
+        _ raw: UInt32,
+        basis: CoreHwp.HwpCommonCtrlObjectHeightRelativeTo?
+    ) -> CGFloat {
+        switch basis {
+        case .paper: CGFloat(raw) / 10000 * currentPageGeometry.pageSize.height
+        case .page: CGFloat(raw) / 10000 * currentPageGeometry.contentFrame.height
+        case .absolute, nil: HwpUnits.points(fromHwpUnitU: raw)
+        }
     }
 
     func appendImageBlock(

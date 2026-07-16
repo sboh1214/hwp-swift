@@ -223,6 +223,12 @@ enum HwpSynthetic {
         common.instanceId = instanceId
         var info = CoreHwp.HwpCommonCtrlPropertyInfo()
         info.treatAsChar = true
+        // width/height는 절대 HWPUNIT 크기 — basis를 .absolute로 둔다 (기본
+        // .paper는 objectSize가 기준 프레임 퍼센트로 해석한다).
+        info.widthRelativeToRawValue = 4
+        info.widthRelativeTo = .absolute
+        info.heightRelativeToRawValue = 2
+        info.heightRelativeTo = .absolute
         common.propertyInfo = info
         return CoreHwp.HwpGenShapeObject(
             commonCtrlProperty: common,
