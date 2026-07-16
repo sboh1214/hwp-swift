@@ -24,6 +24,10 @@ public actor HwpPaginator {
     /// 글 뒤(.behindText) 개체 instanceId — 페이지 확정 시 블록 앞으로 옮겨
     /// 텍스트 뒤(페인트 먼저·히트 나중)에 그려지게 한다 (#3).
     private var behindTextInstanceIds: Set<UInt32> = []
+    /// 변경 추적(PARA_RANGE_TAG kind 16/17) 문단의 paraId — 페이지가 캐시될
+    /// 때마다 그 페이지 조각에 변경 막대를 방출한다 (페이지 걸친 문단의 앞
+    /// 조각도 막대를 받게, #7).
+    private var trackChangeParagraphIds: Set<UInt32> = []
     private var contentHeightUsed: CGFloat = 0
     private var didFinishPagination = false
 
@@ -503,10 +507,12 @@ private extension HwpPaginator {
         attributedString: NSAttributedString,
         paragraphFrame: HwpParagraphFrame
     ) -> Bool {
-        let placed: Bool
-            // 절대 캐시 모드 (1단): 한글이 계산한 y/페이지 절단점을 그대로 재현한다.
-            = if absoluteCacheMode, columnFrames.count <= 1,
-            let runs = HwpAbsoluteCachePlacer.cacheRuns(for: paragraph)
+        // 변경 추적 문단이면 배치 전에 paraId를 기록한다 — 배치 중 페이지가
+        // 캐시될 때마다 (절대 캐시 run·advanceColumn) 그 조각이 막대를 받게 (#7).
+        recordTrackChangeParagraphIfNeeded(for: paragraph)
+        // 절대 캐시 모드 (1단): 한글이 계산한 y/페이지 절단점을 그대로 재현한다.
+        return if absoluteCacheMode, columnFrames.count <= 1,
+                  let runs = HwpAbsoluteCachePlacer.cacheRuns(for: paragraph)
         {
             placeAbsoluteCachedParagraph(
                 paragraph,
@@ -521,28 +527,32 @@ private extension HwpPaginator {
                 paragraphFrame: paragraphFrame
             )
         }
-        if placed {
-            appendTrackChangeBarIfNeeded(for: paragraph)
-        }
-        return placed
     }
 
-    /// 변경 추적 마크 (PARA_RANGE_TAG kind 16/17)가 있는 문단 왼쪽에
-    /// 한글.app처럼 빨간 변경 막대를 그린다.
-    private func appendTrackChangeBarIfNeeded(for paragraph: CoreHwp.HwpParagraph) {
+    /// 변경 추적 마크(PARA_RANGE_TAG kind 16/17)가 있으면 paraId를 기록한다.
+    /// 실제 막대는 페이지 캐시 직전 emitTrackChangeBars가 조각마다 그린다 (#7).
+    private func recordTrackChangeParagraphIfNeeded(for paragraph: CoreHwp.HwpParagraph) {
         let hasTrackChange = (paragraph.paraRangeTagArray ?? []).contains { tag in
             let kind = tag.tag >> 24
             return kind == 16 || kind == 17
         }
-        guard hasTrackChange else { return }
-        // 이 문단이 이 페이지에 만든 각 텍스트 조각(다단/분할 포함)마다 변경 막대를
-        // 그린다 — currentBlocks.last만 보면 앞 단 조각은 막대 없이 렌더된다 (#2).
-        // 앞 페이지로 캐시된 조각은 이 페이지 범위 밖이라 여기선 못 단다.
-        let paragraphId = paragraph.paraHeader.paraId
+        if hasTrackChange {
+            trackChangeParagraphIds.insert(paragraph.paraHeader.paraId)
+        }
+    }
+
+    /// 변경 추적 문단이 이 페이지에 만든 각 텍스트 조각 왼쪽에 한글.app처럼
+    /// 빨간 변경 막대를 그린다. 페이지가 캐시되기 직전에 호출돼, 페이지 걸친
+    /// 문단의 앞 조각도 자기 페이지에서 막대를 받는다 — 배치 후 currentBlocks만
+    /// 보면 이미 캐시된 앞 페이지 조각이 빠진다 (#7, round13 #2 미완).
+    private func emitTrackChangeBars() {
+        guard !trackChangeParagraphIds.isEmpty else { return }
         let barX = currentPageGeometry.contentFrame.minX - 10
         let barColor = CGColor(srgbRed: 0.87, green: 0.14, blue: 0.1, alpha: 1)
         let bars: [AnyHwpBlock] = currentBlocks.compactMap { block in
-            guard block.kind == .text, block.source?.paragraphId == paragraphId else { return nil }
+            guard block.kind == .text,
+                  let paragraphId = block.source?.paragraphId,
+                  trackChangeParagraphIds.contains(paragraphId) else { return nil }
             let barRect = CGRect(x: 0, y: 0, width: 1.2, height: block.frame.height)
             return AnyHwpBlock(
                 frame: CGRect(
@@ -2263,6 +2273,9 @@ private extension HwpPaginator {
             didFinishPagination = true
             return
         }
+        // 변경 추적 문단의 이 페이지 조각마다 변경 막대를 방출한다 — 페이지 걸친
+        // 문단의 앞 조각도 자기 페이지에서 막대를 받는다 (#7).
+        emitTrackChangeBars()
         // 글 뒤 개체를 본문 블록 앞으로 안정 분할해 텍스트 뒤에 그려지게 한다 (#3).
         if !behindTextInstanceIds.isEmpty {
             func isBehind(_ block: AnyHwpBlock) -> Bool {
