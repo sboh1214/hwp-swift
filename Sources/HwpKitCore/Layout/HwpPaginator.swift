@@ -2053,13 +2053,17 @@ private extension HwpPaginator {
     /// 줄과 나란— 한글.app 실측). 메모 본문은 MEMO_LIST 뒤 문단 자식.
     func collectMemos(from paragraph: CoreHwp.HwpParagraph) {
         guard let ctrls = paragraph.ctrlHeaderArray else { return }
-        let memoFields: [CoreHwp.HwpFieldControl] = ctrls.compactMap {
-            if case let .memo(field) = $0 {
-                field
-            } else {
-                nil
+        // 메모별 필드 마커의 controlIndex(= ctrlHeaderArray 인덱스 = extended
+        // 컨트롤 순서)를 보존해, 뒤에서 각 메모의 인라인 앵커 라인 위치를 찾는다 (P2).
+        let memoFields: [(controlIndex: Int, field: CoreHwp.HwpFieldControl)] = ctrls
+            .enumerated()
+            .compactMap { index, ctrl in
+                if case let .memo(field) = ctrl {
+                    (controlIndex: index, field: field)
+                } else {
+                    nil
+                }
             }
-        }
         guard !memoFields.isEmpty else { return }
         // crafted 문단이 메모 필드를 대량 삽입해 패널 backing layer·paint 명령을
         // 폭발시키지 못하게 페이지당 풍선 수를 제한한다 (P1). 초과분은 body를
@@ -2067,7 +2071,7 @@ private extension HwpPaginator {
         let remaining = HwpMemoPanelPainter.maxBalloonsPerPage - pendingMemoBalloons.count
         guard remaining > 0 else { return }
         let cappedFields = Array(memoFields.prefix(remaining))
-        let anchorY = currentBlocks.last { $0.kind == .text }?.frame.minY
+        let fallbackAnchorY = currentBlocks.last { $0.kind == .text }?.frame.minY
             ?? currentPageGeometry.contentFrame.minY
         // 메모별 문단 그룹을 join해 필드와 1:1로 짝짓는다 — 평탄 배열을 필드
         // 인덱스로 끊으면 여러 문단 메모는 2번째+ 문단이 누락되고 다중 메모는
@@ -2092,11 +2096,15 @@ private extension HwpPaginator {
             }
             return parts.joined(separator: "\n")
         }
-        for (fieldIndex, field) in cappedFields.enumerated() {
+        for (fieldIndex, entry) in cappedFields.enumerated() {
+            // 메모마다 자기 필드 마커의 인라인 앵커 라인 y를 앵커로 삼아, 한 문단
+            // 안 서로 다른 줄의 메모가 각자 줄에 맞춘다. 분할된 문단은 라인 문맥이
+            // 없어 문단 상단으로 폴백한다 (인라인 앵커와 동일 한계, P2).
+            let anchorY = inlineAnchorPosition(for: entry.controlIndex)?.y ?? fallbackAnchorY
             pendingMemoBalloons.append(HwpMemoPanelPainter.Balloon(
                 anchorY: anchorY,
-                author: field.memoParameter?.author ?? "",
-                dateText: Self.memoDateText(field.memoParameter),
+                author: entry.field.memoParameter?.author ?? "",
+                dateText: Self.memoDateText(entry.field.memoParameter),
                 body: fieldIndex < bodies.count ? bodies[fieldIndex] : ""
             ))
         }
