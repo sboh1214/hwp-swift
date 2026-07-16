@@ -1739,7 +1739,6 @@ private extension HwpPaginator {
         commonProperty: CoreHwp.HwpCommonCtrlProperty
     ) {
         let info = commonProperty.propertyInfo
-        let contentFrame = currentPageGeometry.contentFrame
         // 기준 + 오프셋 (음수 오프셋 허용)
         let offsetX = HwpUnits.points(
             fromHwpUnit: Int32(bitPattern: commonProperty.horizontalOffset)
@@ -1747,26 +1746,9 @@ private extension HwpPaginator {
         let offsetY = HwpUnits.points(
             fromHwpUnit: Int32(bitPattern: commonProperty.verticalOffset)
         )
-        // 기준 프레임 (base, extent). 정렬(topOrLeft 외)이면 그 안에서 개체를
-        // 정렬한 뒤 오프셋을 더한다 — topOrLeft(기본)/nil/extent<=0은 base+offset
-        // 그대로라 오프셋 배치 개체는 렌더 불변 (#5).
-        let hRef: (base: CGFloat, extent: CGFloat) = switch info.horizontalRelativeTo {
-        case .paper: (0, currentPageGeometry.pageSize.width)
-        case .page, nil: (contentFrame.minX, contentFrame.width)
-        case .column, .paragraph: (currentColumnFrame.minX, currentColumnFrame.width)
-        }
-        let vRef: (base: CGFloat, extent: CGFloat) = switch info.verticalRelativeTo {
-        case .paper: (0, currentPageGeometry.pageSize.height)
-        case .page, nil: (contentFrame.minY, contentFrame.height)
-        case .paragraph: (paragraphAnchorTop, 0)
-        }
-        let frame = CGRect(
-            x: alignedAnchor(hRef.base, hRef.extent, spec.size.width, info.horizontalAlignment)
-                + offsetX,
-            y: alignedAnchor(vRef.base, vRef.extent, spec.size.height, info.verticalAlignment)
-                + offsetY,
-            width: spec.size.width,
-            height: spec.size.height
+        var frame = anchoredObjectFrame(spec, info: info, offsetX: offsetX, offsetY: offsetY)
+        frame = restrictedToPageFrame(
+            frame, spec: spec, info: info, offsetX: offsetX, offsetY: offsetY
         )
         currentBlocks.append(AnyHwpBlock(
             frame: frame,
@@ -1796,26 +1778,15 @@ private extension HwpPaginator {
         }
     }
 
-    /// 본문 흐름을 소비하는 블록을 현재 흐름 위치에 배치한다.
-    /// 남은 공간에 안 맞으면 (블록이 단에 들어가는 크기일 때) 다음 단/페이지로 넘긴다.
-    /// 종이/쪽 기준 절대 위치 + 흐름 회피 (topAndBottom류) 개체:
-    /// 기준+오프셋 위치에 놓고, 개체 하단이 흐름 커서보다 아래면 본문
-    /// 흐름을 개체 아래로 내린다.
-    private func appendAbsolutePositionedFlowBlock(
+    /// 앵커 규칙(표 70)의 기준 프레임(base, extent) + 정렬 + 오프셋으로 개체
+    /// 프레임을 만든다. floating·absolute-flow 경로가 공유한다 (#5 정렬 반영).
+    private func anchoredObjectFrame(
         _ spec: ObjectBlockSpec,
-        commonProperty: CoreHwp.HwpCommonCtrlProperty
-    ) {
-        let info = commonProperty.propertyInfo
+        info: CoreHwp.HwpCommonCtrlPropertyInfo,
+        offsetX: CGFloat,
+        offsetY: CGFloat
+    ) -> CGRect {
         let contentFrame = currentPageGeometry.contentFrame
-        let offsetX = HwpUnits.points(
-            fromHwpUnit: Int32(bitPattern: commonProperty.horizontalOffset)
-        )
-        let offsetY = HwpUnits.points(
-            fromHwpUnit: Int32(bitPattern: commonProperty.verticalOffset)
-        )
-        // 기준 프레임(base, extent) 안에서 정렬을 반영한 뒤 오프셋을 더한다 —
-        // floating 경로(appendFloatingBlock)와 동일. topOrLeft(기본)·nil·
-        // extent≤0은 base 그대로라 오프셋 배치 개체는 렌더 불변 (#5).
         let hRef: (base: CGFloat, extent: CGFloat) = switch info.horizontalRelativeTo {
         case .paper: (0, currentPageGeometry.pageSize.width)
         case .page, nil: (contentFrame.minX, contentFrame.width)
@@ -1826,13 +1797,54 @@ private extension HwpPaginator {
         case .page, nil: (contentFrame.minY, contentFrame.height)
         case .paragraph: (paragraphAnchorTop, 0)
         }
-        let frame = CGRect(
+        return CGRect(
             x: alignedAnchor(hRef.base, hRef.extent, spec.size.width, info.horizontalAlignment)
                 + offsetX,
             y: alignedAnchor(vRef.base, vRef.extent, spec.size.height, info.verticalAlignment)
                 + offsetY,
             width: spec.size.width,
             height: spec.size.height
+        )
+    }
+
+    /// 문단 기준 + restrictInPage 개체가 현재 페이지 본문 하단을 넘으면 다음
+    /// 페이지로 넘기고 새 페이지 기준으로 프레임을 재계산한다 (표 70 restrictInPage,
+    /// errata 31b — 꼬리말/페이지 밖 렌더 방지, #6). 이미 페이지 상단이면
+    /// (contentHeightUsed==0) 넘겨도 소용없어 그대로 둔다.
+    private func restrictedToPageFrame(
+        _ frame: CGRect,
+        spec: ObjectBlockSpec,
+        info: CoreHwp.HwpCommonCtrlPropertyInfo,
+        offsetX: CGFloat,
+        offsetY: CGFloat
+    ) -> CGRect {
+        guard info.verticalRelativeTo == .paragraph, info.restrictInPage,
+              contentHeightUsed > 0,
+              frame.maxY > currentPageGeometry.contentFrame.maxY
+        else { return frame }
+        advanceColumn()
+        return anchoredObjectFrame(spec, info: info, offsetX: offsetX, offsetY: offsetY)
+    }
+
+    /// 본문 흐름을 소비하는 블록을 현재 흐름 위치에 배치한다.
+    /// 남은 공간에 안 맞으면 (블록이 단에 들어가는 크기일 때) 다음 단/페이지로 넘긴다.
+    /// 종이/쪽 기준 절대 위치 + 흐름 회피 (topAndBottom류) 개체:
+    /// 기준+오프셋 위치에 놓고, 개체 하단이 흐름 커서보다 아래면 본문
+    /// 흐름을 개체 아래로 내린다.
+    private func appendAbsolutePositionedFlowBlock(
+        _ spec: ObjectBlockSpec,
+        commonProperty: CoreHwp.HwpCommonCtrlProperty
+    ) {
+        let info = commonProperty.propertyInfo
+        let offsetX = HwpUnits.points(
+            fromHwpUnit: Int32(bitPattern: commonProperty.horizontalOffset)
+        )
+        let offsetY = HwpUnits.points(
+            fromHwpUnit: Int32(bitPattern: commonProperty.verticalOffset)
+        )
+        var frame = anchoredObjectFrame(spec, info: info, offsetX: offsetX, offsetY: offsetY)
+        frame = restrictedToPageFrame(
+            frame, spec: spec, info: info, offsetX: offsetX, offsetY: offsetY
         )
         currentBlocks.append(AnyHwpBlock(
             frame: frame,
