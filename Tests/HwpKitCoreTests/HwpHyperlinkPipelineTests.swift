@@ -164,4 +164,24 @@ final class HwpHyperlinkPipelineTests: XCTestCase {
             return true
         } == true
     }
+
+    func testHyperlinkRegionNormalizedForRTLText() {
+        // RTL(히브리어) 링크 텍스트는 CT가 하위 논리 인덱스에 더 큰 x 오프셋을
+        // 준다 — min/max 정규화가 없으면 region이 폐기돼 링크가 히트되지 않는다.
+        // 정규화 후 양수 폭 region이 나와야 한다 (#1).
+        let font = CTFontCreateWithName("Helvetica" as CFString, 12, nil)
+        let attributed = NSMutableAttributedString(
+            string: "\u{05E9}\u{05DC}\u{05D5}\u{05DD}",
+            attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
+        )
+        attributed.addAttribute(
+            HwpAttributedStringKey.hyperlink, value: "https://example.com",
+            range: NSRange(location: 0, length: attributed.length)
+        )
+        let regions = HwpDrawnTextLayout.hyperlinkRegions(
+            attributedString: attributed, origin: .zero, lineWidth: 400
+        )
+        expect(regions.count) >= 1
+        expect(regions.allSatisfy { $0.rect.width > 0 }) == true
+    }
 }

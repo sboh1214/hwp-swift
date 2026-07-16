@@ -129,13 +129,17 @@ public enum HwpDrawnTextLayout {
                     let ctIndex = ctRange.location + (index - lineRange.location)
                     return CTLineGetOffsetForStringIndex(drawn.line, ctIndex, nil)
                 }
-                let startX = drawn.baselineOrigin.x + offsetX(atAttributedIndex: lower)
-                let endX = drawn.baselineOrigin.x + offsetX(atAttributedIndex: upper)
-                guard endX > startX else { continue }
+                // RTL 줄은 CT가 하위 논리 인덱스에 더 큰 x 오프셋을 줘 lower>upper가
+                // 된다 — min/max로 정규화해 링크 rect를 낸다 (#1).
+                let lowerX = drawn.baselineOrigin.x + offsetX(atAttributedIndex: lower)
+                let upperX = drawn.baselineOrigin.x + offsetX(atAttributedIndex: upper)
+                let minX = min(lowerX, upperX)
+                let maxX = max(lowerX, upperX)
+                guard maxX > minX else { continue }
                 regions.append((
                     rect: CGRect(
-                        x: startX, y: drawn.baselineOrigin.y - drawn.ascent,
-                        width: endX - startX, height: drawn.ascent + drawn.descent
+                        x: minX, y: drawn.baselineOrigin.y - drawn.ascent,
+                        width: maxX - minX, height: drawn.ascent + drawn.descent
                     ),
                     url: url
                 ))
