@@ -30,6 +30,23 @@ final class HwpDocumentViewSupportTests: XCTestCase {
         expect(scale) == 8
     }
 
+    // MARK: - boundedContentsScale (래스터 백킹 안전 캡)
+
+    func testBoundedContentsScaleKeepsNormalPageUnchanged() {
+        // 레터 크기는 어떤 배율에서도 캡을 밑돌아 해상도가 그대로다.
+        let letter = CGSize(width: 612, height: 792)
+        expect(HwpDocumentViewSupport.boundedContentsScale(3, for: letter)) == 3
+    }
+
+    func testBoundedContentsScaleCapsHugeLayerBelowAxisLimit() {
+        // 한 축이 81,920pt를 넘는 긴 메모 패널: 최소 배율(0.1)이 축 캡을 덮으면
+        // 8192px를 넘는 백킹이 생긴다 — 캡이 이겨 축 픽셀이 8192 이하여야 한다 (P1).
+        let tall = CGSize(width: 185, height: 480_000)
+        let scale = HwpDocumentViewSupport.boundedContentsScale(2, for: tall)
+        expect(scale * tall.height) <= 8192
+        expect(scale * tall.width) <= 8192
+    }
+
     // MARK: - isProgressiveUpdate (프로그레시브 스냅샷 판정)
 
     private func makeDocument(pageCount: Int, loadToken: UUID?) -> HwpDocument {

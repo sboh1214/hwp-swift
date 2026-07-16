@@ -58,7 +58,10 @@ enum HwpDocumentViewSupport {
         )
         // 총 면적 = (w·s)(h·s) = w·h·s² ≤ maximumRasterPixels → s ≤ √(max/(w·h))
         let areaCap = (maximumRasterPixels / (size.width * size.height)).squareRoot()
-        return max(0.1, min(scale, axisCap, areaCap))
+        // 최소 배율(0.1)은 원하는 scale에만 적용하고, 안전 캡(axisCap/areaCap)은
+        // 항상 이기게 한다 — 거대 레이어(예: 긴 메모 패널, axisCap<0.1)에서 바닥이
+        // 캡을 덮어 8192px 축 한계를 넘는 백킹이 생기던 것을 막는다 (P1).
+        return min(max(0.1, scale), axisCap, areaCap)
     }
 
     /// 배율이 달라진 레이어만 재래스터한다. 메모 패널 레이어 그룹도 함께
