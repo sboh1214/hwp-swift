@@ -109,6 +109,7 @@
         var cachedContentWidth: CGFloat = 595
         private var imageProvider: HwpPageImageProvider?
         private var lastReportedZoom: CGFloat = 1.0
+        private var lastReportedPage = -1
 
         override public init(frame: NSRect = .zero) {
             imageCache = HwpImageCache()
@@ -255,7 +256,17 @@
             imageProvider?.setPinnedImages(
                 HwpDocumentViewSupport.imageReferences(in: document, pageRange: retainedRange)
             )
-            onPageChanged?(range.lowerBound)
+            reportPageChange(range.lowerBound)
+        }
+
+        /// 마지막 통지 페이지와 다를 때만 onPageChanged를 발화한다 — 문서 교체·
+        /// scrollToPage(at:)가 clip-view bounds 통지 + 명시 refresh 양쪽으로
+        /// updateVisiblePages를 불러 같은 페이지를 2번 통지하는 것을 막는다
+        /// (iOS와 동일 가드, #2).
+        private func reportPageChange(_ page: Int) {
+            guard page != lastReportedPage else { return }
+            lastReportedPage = page
+            onPageChanged?(page)
         }
 
         /// Scrolls so the given page's top edge is at the top of the viewport.
