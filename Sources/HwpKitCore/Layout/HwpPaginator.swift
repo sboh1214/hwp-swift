@@ -422,6 +422,10 @@ private extension HwpPaginator {
                     try await layout(paragraph, attributedString: attributedString)
                 }
             }
+            // 번호/개요 문단 머리의 진단 페이지는 문단이 시작하는 첫 페이지다 —
+            // placeParagraphText가 다중 페이지 문단의 앞 조각 페이지를 먼저
+            // 캐시하므로 배치 전에 첫 페이지를 잡는다 (#3).
+            let paragraphFirstPage = cachedPages.count + 1
             guard placeParagraphText(
                 paragraph,
                 attributedString: attributedString,
@@ -443,7 +447,7 @@ private extension HwpPaginator {
             collectFootnotes(from: paragraph, includeTableCells: false)
             collectMemos(from: paragraph)
             appendControlBlocks(from: paragraph)
-            collectUnsupported(from: paragraph)
+            collectUnsupported(from: paragraph, firstPage: paragraphFirstPage)
             advanceParagraph()
             await Task.yield()
 
@@ -1017,11 +1021,12 @@ private extension HwpPaginator {
 
     // MARK: - Unsupported walk (단일 traversal 지점 유지)
 
-    func collectUnsupported(from paragraph: CoreHwp.HwpParagraph) {
-        let page = cachedPages.count + 1
-        collectUnsupportedNumberingHeading(from: paragraph, page: page)
+    func collectUnsupported(from paragraph: CoreHwp.HwpParagraph, firstPage: Int) {
+        // 번호/개요 마커는 문단 첫 페이지 첫 줄에 속하므로 firstPage로 보고하고,
+        // 컨트롤은 현재 배치 페이지 기준으로 보고한다 (#3).
+        collectUnsupportedNumberingHeading(from: paragraph, page: firstPage)
         guard let ctrls = paragraph.ctrlHeaderArray else { return }
-        walkUnsupported(ctrls: ctrls, page: page)
+        walkUnsupported(ctrls: ctrls, page: cachedPages.count + 1)
     }
 
     /// 개요(머리 종류 1)/번호(2) 문단 머리의 생성 라벨은 numbering 정의에 있고
