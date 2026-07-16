@@ -57,7 +57,8 @@ enum HwpTableSplitter {
             // 물리 행 높이로 슬라이스 여부를 판정한다 — rowExtent(rowspan 셀 몫
             // 포함)로 판정하면 물리 행은 들어가는데 rowspan 셀만 넘칠 때 컷이
             // 행 아래로 내려가 height 0 continuation 행이 생겨 비진행·콘텐츠
-            // 손실이 난다 (#1). rowspan 셀 오버플로는 통째 배치로 둔다.
+            // 손실이 난다 (round13 #1). rowspan 셀이 페이지를 넘는 경우는 caller
+            // (appendTableSegments)가 스팬 그룹을 통째로 다음 페이지에 유지한다 (#3).
             if segmentHeight == 0, row.rowFrame.height > remaining {
                 // 빈 페이지보다 큰 물리 행: 남은 높이에서 잘라 나머지를 이월한다.
                 let fragments = sliced(
@@ -79,6 +80,18 @@ enum HwpTableSplitter {
 
     static func minimumRowHeight(_ rows: ArraySlice<HwpTableRowFrame>) -> CGFloat {
         rows.first?.rowFrame.height ?? 1
+    }
+
+    /// 시작 행에 걸린 rowspan 셀까지 포함한 첫 행의 실제 높이 (물리 행 높이와
+    /// 병합 셀 하단 중 큰 값 − 행 상단). 이 스팬이 남은 공간을 넘는데 새 페이지엔
+    /// 들어가면 caller가 스팬 그룹을 통째로 다음 페이지에 유지해, 병합 셀 하단이
+    /// 세그먼트 밖에 그려지거나 이월에서 사라지는 것을 막는다 (#3).
+    static func firstRowSpanningHeight(_ rows: ArraySlice<HwpTableRowFrame>) -> CGFloat {
+        guard let row = rows.first else { return 1 }
+        let extent = row.cells.reduce(row.rowFrame.maxY) { partial, cell in
+            cell.rowSpan > 1 ? max(partial, cell.cellFrame.maxY) : partial
+        }
+        return max(1, extent - row.rowFrame.minY)
     }
 
     // MARK: 세그먼트 표 프레임

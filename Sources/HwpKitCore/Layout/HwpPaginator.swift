@@ -1358,9 +1358,19 @@ private extension HwpPaginator {
             // 이어지는 세그먼트는 제목 행 반복 높이를 미리 차감한다.
             let headerAllowance = isFirstSegment ? 0 : repeatedHeight
             var remaining = effectiveContentHeight - contentHeightUsed - headerAllowance
-            if remaining < HwpTableSplitter.minimumRowHeight(rows[cursor...]), contentHeightUsed > 0 {
+            let freshPage = effectiveContentHeight - headerAllowance
+            // 물리 첫 행이 안 들어가거나(기존), 시작 행 rowspan 셀 스팬이 남은
+            // 공간을 넘는데 새 페이지엔 들어가면 먼저 페이지를 넘겨 스팬 그룹을
+            // 통째로 유지한다 — 병합 셀 하단이 세그먼트 밖에 그려지거나 이월에서
+            // 사라지는 것을 막는다 (#3). 새 페이지도 넘는 스팬은 물리 행 기준
+            // 슬라이스로 폴백한다 (zero-height continuation 방지, round13 #1).
+            let spanHeight = HwpTableSplitter.firstRowSpanningHeight(rows[cursor...])
+            let deferForSpan = remaining < spanHeight && spanHeight <= freshPage
+            if contentHeightUsed > 0,
+               remaining < HwpTableSplitter.minimumRowHeight(rows[cursor...]) || deferForSpan
+            {
                 advanceColumn()
-                remaining = effectiveContentHeight - headerAllowance
+                remaining = freshPage
             }
 
             // 후보 행의 셀 각주 예약 높이를 미리 반영해 세그먼트를 맞춘다 (#6).
