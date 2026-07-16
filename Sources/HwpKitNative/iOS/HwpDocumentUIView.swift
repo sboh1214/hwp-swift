@@ -331,6 +331,9 @@
                 }
             ) else {
                 imageProvider = nil
+                // 이미지 없는 문서로 교체 시 이전 문서 디코드 이미지(최대 256MB)를
+                // 새 빈 캐시로 교체해 즉시 해제한다 (P1).
+                imageCache = HwpImageCache()
                 return
             }
             imageCache = built.cache
