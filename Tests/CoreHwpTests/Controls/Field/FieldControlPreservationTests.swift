@@ -28,6 +28,31 @@ final class FieldControlPreservationTests: XCTestCase {
         expect(reader.isEOF) == true
     }
 
+    func testViewerModeDropsFieldRawFragmentsKeepsParsed() throws {
+        let parameter = "MEMO/65535/1/239261456/31259664/sboh/\\;;"
+        var payload = littleEndianData(HwpFieldCtrlId.unknown.rawValue)
+        payload.append(fieldParameterTrailing(parameter))
+
+        var defaultReader = DataReader(payload)
+        let preserved = try HwpFieldControl(&defaultReader, [])
+        var viewerReader = DataReader(payload, options: .viewer)
+        let viewer = try HwpFieldControl(&viewerReader, [])
+
+        // typed 필드(파싱된 문자열/값)는 양 모드 동일
+        expect(viewer.fieldParameter) == parameter
+        expect(viewer.fieldParameter) == preserved.fieldParameter
+        expect(viewer.memoParameter?.rawValue) == parameter
+        expect(viewer.memoParameter?.author) == "sboh"
+
+        // default은 raw 보존, viewer는 보존 전용 raw 조각을 비운다 (P2)
+        expect(preserved.fieldParameterRawPayload?.isEmpty) == false
+        expect(viewer.fieldParameterRawPayload?.isEmpty) == true
+        expect(preserved.rawTrailing.isEmpty) == false
+        expect(viewer.rawTrailing).to(beEmpty())
+        expect(preserved.memoParameter?.rawPayload.isEmpty) == false
+        expect(viewer.memoParameter?.rawPayload.isEmpty) == true
+    }
+
     func testFieldControlsPreserveRawPayloadTrailingBytesAndChildren() throws {
         expect(allKnownFieldControlIds) == HwpFieldCtrlId.allCases
 

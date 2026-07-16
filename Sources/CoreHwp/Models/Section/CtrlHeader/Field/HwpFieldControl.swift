@@ -164,7 +164,13 @@ extension HwpFieldControl: HwpPrimitive {
         }
         self.ctrlId = ctrlId
         let trailing = try reader.readToEnd()
-        rawTrailing = reader.options.preservedPayload(trailing)
+        // typed 필드(command·fieldParameter·memoParameter 문자열/값)는 양 모드
+        // 동일하게 두고, 보존 전용 raw 조각만 뷰어 모드에서 비운다 (#3 규약, P2).
+        let options = reader.options
+        func preserved(_ data: Data?) -> Data? {
+            data.map(options.preservedPayload)
+        }
+        rawTrailing = options.preservedPayload(trailing)
         let parsedControl = Self.fieldControlPayload(from: trailing)
         let fallbackLengthInfo = Self.fieldParameterLengthInfo(from: trailing)
         let fallbackParameter = Self.fieldParameter(from: trailing)
@@ -175,35 +181,35 @@ extension HwpFieldControl: HwpPrimitive {
         let parsedCommandLengthRawPayload = parsedControl?.commandLengthRawPayload
 
         properties = parsedProperties
-        propertiesRawPayload = parsedPropertiesRawPayload
+        propertiesRawPayload = preserved(parsedPropertiesRawPayload)
         propertyInfo = try parsedProperties.map(HwpFieldControlProperty.load)
         extraProperties = parsedControl?.extraProperties
-        extraPropertiesRawPayload = parsedControl?.extraPropertiesRawPayload
+        extraPropertiesRawPayload = preserved(parsedControl?.extraPropertiesRawPayload)
         commandCharacterCount = parsedControl?.command.characterCount
-        commandLengthRawPayload = parsedCommandLengthRawPayload
+        commandLengthRawPayload = preserved(parsedCommandLengthRawPayload)
         command = parsedControl?.command.value
-        commandRawPayload = parsedControl?.command.rawPayload
-        commandRawTrailing = parsedControl?.command.rawTrailing
+        commandRawPayload = preserved(parsedControl?.command.rawPayload)
+        commandRawTrailing = preserved(parsedControl?.command.rawTrailing)
         fieldId = parsedControl?.fieldId
-        fieldIdRawPayload = parsedControl?.fieldIdRawPayload
+        fieldIdRawPayload = preserved(parsedControl?.fieldIdRawPayload)
         memoIndex = parsedControl?.memoIndex
-        memoIndexRawPayload = parsedControl?.memoIndexRawPayload
+        memoIndexRawPayload = preserved(parsedControl?.memoIndexRawPayload)
 
         fieldParameterHeaderValue = parsedProperties
-        fieldParameterHeaderRawPayload = parsedPropertiesRawPayload
+        fieldParameterHeaderRawPayload = preserved(parsedPropertiesRawPayload)
         fieldParameterCharacterCount = parsedControl?.command.characterCount
             ?? fallbackLengthInfo?.characterCount
-        fieldParameterLengthRawPayload = parsedCommandLengthRawPayload
-            ?? fallbackLengthInfo?.rawPayload
+        fieldParameterLengthRawPayload = preserved(parsedCommandLengthRawPayload
+            ?? fallbackLengthInfo?.rawPayload)
         let parsedParameter = parsedControl?.command ?? fallbackParameter
         fieldParameter = parsedParameter?.value
-        fieldParameterRawPayload = parsedParameter?.rawPayload
-        fieldParameterRawTrailing = parsedParameter?.rawTrailing
+        fieldParameterRawPayload = preserved(parsedParameter?.rawPayload)
+        fieldParameterRawTrailing = preserved(parsedParameter?.rawTrailing)
         memoParameter = parsedParameter.flatMap {
             HwpMemoFieldParameter(
                 $0.value,
-                rawPayload: $0.rawPayload,
-                rawTrailing: $0.rawTrailing
+                rawPayload: options.preservedPayload($0.rawPayload),
+                rawTrailing: options.preservedPayload($0.rawTrailing)
             )
         }
         rawPayload = try reader.consumedData(from: startOffset)
