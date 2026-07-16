@@ -99,4 +99,17 @@ final class HwpHyperlinkPipelineTests: XCTestCase {
         }
         expect(hasHyperlink) == false
     }
+
+    func testDisplayURLStripsTrailingHwpFieldFlags() {
+        // CCL·공공누리 실측: 트레일링 ;1;0;1 (HWP 필드 플래그) 제거
+        expect(HwpHyperlinkURL.displayURL(
+            "http://creativecommons.org/licenses/by/4.0/deed.ko;1;0;1"
+        )) == "http://creativecommons.org/licenses/by/4.0/deed.ko"
+        expect(HwpHyperlinkURL.displayURL(
+            "http://www.kogl.or.kr/open/info/license_info/by.do;1;0;1"
+        )) == "http://www.kogl.or.kr/open/info/license_info/by.do"
+        // 플래그가 없으면 원문 그대로, URL 안의 비-플래그 세미콜론은 보존
+        expect(HwpHyperlinkURL.displayURL("https://example.com")) == "https://example.com"
+        expect(HwpHyperlinkURL.displayURL("http://x/a;b;1;0;1")) == "http://x/a;b"
+    }
 }

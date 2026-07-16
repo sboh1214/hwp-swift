@@ -54,13 +54,29 @@ extension HwpLaidOutParagraph: Hashable {
 
 extension CoreHwp.HwpParagraph {
     /// 이 문단에 붙은 하이퍼링크 컨트롤(%hlk)의 URL (비어 있으면 nil).
+    /// HWP 필드 명령의 트레일링 플래그를 뗀 순수 URL — 원문은 CoreHwp
+    /// HwpHyperlink.url/urlRawPayload에 보존된다 (#3).
     var hyperlinkURL: String? {
         for ctrl in ctrlHeaderArray ?? [] {
             if case let .hyperLink(link) = ctrl, !link.url.isEmpty {
-                return link.url
+                return HwpHyperlinkURL.displayURL(link.url)
             }
         }
         return nil
+    }
+}
+
+/// 하이퍼링크(%hlk) 필드 명령 문자열 파싱.
+enum HwpHyperlinkURL {
+    /// HWP 하이퍼링크 필드 명령의 트레일링 플래그(`;1;0;1` — 새 창/방문 여부 등
+    /// HWP 내부 숫자 플래그 3개)를 떼어 실제 URL만 돌려준다. 콜백
+    /// (onHyperlinkTapped)이 원문을 그대로 넘기면 호스트가 잘못된 경로를 열어
+    /// 404가 난다 (CCL·공공누리 실측: `…/deed.ko;1;0;1`). 플래그가 없으면 원문 그대로.
+    static func displayURL(_ raw: String) -> String {
+        guard let flags = raw.range(
+            of: ";[0-9]+;[0-9]+;[0-9]+$", options: .regularExpression
+        ) else { return raw }
+        return String(raw[raw.startIndex ..< flags.lowerBound])
     }
 }
 
