@@ -17,6 +17,38 @@ private func makeImage(width: Int = 10, height: Int = 10) -> CGImage? {
     return ctx?.makeImage()
 }
 
+/// 디코드가 in-flight에 도달했음을 알리고 해제 신호까지 대기시키는 결정론적
+/// 게이트 — sleep 없이 clear-중-in-flight 시나리오를 재현한다.
+private actor ArrivalGate {
+    private var arrived = false
+    private var arrivalWaiter: CheckedContinuation<Void, Never>?
+    private var released = false
+    private var releaseWaiter: CheckedContinuation<Void, Never>?
+
+    func decodeArrivedAndWait() async {
+        arrived = true
+        arrivalWaiter?.resume()
+        arrivalWaiter = nil
+        if released {
+            return
+        }
+        await withCheckedContinuation { releaseWaiter = $0 }
+    }
+
+    func waitUntilArrived() async {
+        if arrived {
+            return
+        }
+        await withCheckedContinuation { arrivalWaiter = $0 }
+    }
+
+    func release() {
+        released = true
+        releaseWaiter?.resume()
+        releaseWaiter = nil
+    }
+}
+
 final class HwpImageCacheTests: XCTestCase {
     func testFetchMissInvokesDecode() async {
         let cache = HwpImageCache()
@@ -97,6 +129,27 @@ final class HwpImageCacheTests: XCTestCase {
         expect(result).toNot(beNil())
         let count = await cache.count()
         expect(count) == 0
+    }
+
+    func testPostClearFetchStartsFreshDecodeInsteadOfJoiningStale() async {
+        // clear가 in-flight 디코드를 취소·제거하지 않으면, clear 이후의 fetch가
+        // 그 stale 태스크에 join해 값만 받고 (세대 게이트로) 캐시되지 않는다.
+        // clear가 in-flight를 비우므로 post-clear fetch는 새 디코드를 열어 캐시된다 (P2).
+        let cache = HwpImageCache()
+        let gate = ArrivalGate()
+        let image = makeImage()
+        async let first: CGImage? = cache.fetch(1) {
+            await gate.decodeArrivedAndWait()
+            return image
+        }
+        await gate.waitUntilArrived()
+        await cache.clear()
+        await gate.release()
+        let second = await cache.fetch(1) { image }
+        _ = await first
+        expect(second).toNot(beNil())
+        let count = await cache.count()
+        expect(count) == 1
     }
 
     func testFetchAfterClearCachesNormally() async {

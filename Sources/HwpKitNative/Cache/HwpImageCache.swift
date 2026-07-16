@@ -91,6 +91,13 @@ public actor HwpImageCache {
         storage.removeAll()
         totalBytes = 0
         generation &+= 1
+        // in-flight 디코드도 취소·제거한다 — 그러지 않으면 clear 이후의 fetch가
+        // clear 이전 태스크에 join해 값만 받고 (세대 게이트로) 캐시되지 않아
+        // 다음 draw에서 재디코드가 강제된다 (P2). post-clear fetch는 새 디코드를 연다.
+        for task in inFlight.values {
+            task.cancel()
+        }
+        inFlight.removeAll()
     }
 
     public func count() async -> Int {
