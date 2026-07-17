@@ -209,6 +209,10 @@ public enum HwpDrawnTextLayout {
             )
             if alignment == .center {
                 offsetX = (lineWidth - naturalWidth) / 2
+            } else if alignment == .right {
+                // 우측 정렬 overflow 줄은 오른쪽 끝을 맞추기 위해 음수 오프셋 —
+                // x=0 시작이면 잉크가 왼쪽으로 밀린다 (#3).
+                offsetX = lineWidth - naturalWidth
             }
         }
         return HwpDrawnLine(
