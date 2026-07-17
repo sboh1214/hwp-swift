@@ -52,6 +52,10 @@ final class HwpDocumentCoordinator {
     private var onHyperlinkTapped: ((String) -> Void)?
     private var onUnsupportedElement: ((HwpUnsupportedElement) -> Void)?
     private var isApplyingBinding = false
+    /// 현재 적용된 문서의 loadToken — 지연 작업(클램프 등)이 예약 시점 문서가
+    /// 아직 유효한지 대조한다. 래퍼 struct는 최신 문서를 볼 수 없어 클래스인
+    /// coordinator가 보유한다 (#6).
+    var activeLoadToken: UUID?
 
     init(
         zoomScale: Binding<CGFloat>?,
@@ -149,6 +153,7 @@ final class HwpDocumentCoordinator {
             view.onUnsupportedElement = context.coordinator.handleUnsupportedElement(_:)
             view.onPageChanged = context.coordinator.handlePageChanged(_:)
             view.onZoomChanged = context.coordinator.handleZoomChanged(_:)
+            context.coordinator.activeLoadToken = document.metadata.loadToken
             // 문서 대입·줌·스크롤의 onPageChanged echo가 currentPage 바인딩을
             // 덮어쓰지 않게 이 구간 동안 writeback을 억제한다 — 첫 프로그레시브
             // 스냅샷 이후의 페이지 요청이 유실되지 않고 로드되면 도달한다 (P2).
@@ -170,25 +175,28 @@ final class HwpDocumentCoordinator {
                     }
                 }
             }
-            normalizeOutOfRangePageBinding()
+            normalizeOutOfRangePageBinding(coordinator: context.coordinator)
         }
 
         /// 최종 문서(isComplete)에 없는 페이지 요청은 실제 클램프 값으로 바인딩을
         /// 되돌린다 — 억제된 echo 탓에 무효 바인딩이 남아 매 업데이트 같은 요청을
         /// 재시도하지 않게 한다. 프로그레시브 중간 스냅샷은 "아직 로드 전"이므로
         /// 건드리지 않는다 (P2, 요청 유실 방지와의 경계).
-        private func normalizeOutOfRangePageBinding() {
+        private func normalizeOutOfRangePageBinding(coordinator: HwpDocumentCoordinator) {
             guard let currentPage, document.metadata.isComplete else { return }
             let requested = currentPage.wrappedValue
             let clamped = min(max(1, requested), max(1, document.pages.count))
             guard clamped != requested else { return }
+            let token = document.metadata.loadToken
             // updateNSView/updateUIView 동기 경로에서 상태를 쓰면 SwiftUI의
-            // state-during-update 위반 — 업데이트 밖에서 반영하되, 그새 사용자가
-            // 바인딩을 바꿨으면(stale) 덮어쓰지 않는다 (P2).
+            // state-during-update 위반 — 업데이트 밖에서 반영한다 (P2). 재개 시
+            // 사용자가 바인딩을 바꿨거나(값 불일치) 다른 문서가 적용됐으면
+            // (loadToken 불일치 — 새 문서가 그 페이지를 지원할 수 있음) 폐기한다 (#6).
             Task { @MainActor in
-                if currentPage.wrappedValue == requested {
-                    currentPage.wrappedValue = clamped
-                }
+                guard coordinator.activeLoadToken == token,
+                      currentPage.wrappedValue == requested
+                else { return }
+                currentPage.wrappedValue = clamped
             }
         }
     }
@@ -234,6 +242,7 @@ final class HwpDocumentCoordinator {
             view.onUnsupportedElement = context.coordinator.handleUnsupportedElement(_:)
             view.onPageChanged = context.coordinator.handlePageChanged(_:)
             view.onZoomChanged = context.coordinator.handleZoomChanged(_:)
+            context.coordinator.activeLoadToken = document.metadata.loadToken
             // 문서 대입·줌·스크롤의 onPageChanged echo가 currentPage 바인딩을
             // 덮어쓰지 않게 이 구간 동안 writeback을 억제한다 — 첫 프로그레시브
             // 스냅샷 이후의 페이지 요청이 유실되지 않고 로드되면 도달한다 (P2).
@@ -255,25 +264,28 @@ final class HwpDocumentCoordinator {
                     }
                 }
             }
-            normalizeOutOfRangePageBinding()
+            normalizeOutOfRangePageBinding(coordinator: context.coordinator)
         }
 
         /// 최종 문서(isComplete)에 없는 페이지 요청은 실제 클램프 값으로 바인딩을
         /// 되돌린다 — 억제된 echo 탓에 무효 바인딩이 남아 매 업데이트 같은 요청을
         /// 재시도하지 않게 한다. 프로그레시브 중간 스냅샷은 "아직 로드 전"이므로
         /// 건드리지 않는다 (P2, 요청 유실 방지와의 경계).
-        private func normalizeOutOfRangePageBinding() {
+        private func normalizeOutOfRangePageBinding(coordinator: HwpDocumentCoordinator) {
             guard let currentPage, document.metadata.isComplete else { return }
             let requested = currentPage.wrappedValue
             let clamped = min(max(1, requested), max(1, document.pages.count))
             guard clamped != requested else { return }
+            let token = document.metadata.loadToken
             // updateNSView/updateUIView 동기 경로에서 상태를 쓰면 SwiftUI의
-            // state-during-update 위반 — 업데이트 밖에서 반영하되, 그새 사용자가
-            // 바인딩을 바꿨으면(stale) 덮어쓰지 않는다 (P2).
+            // state-during-update 위반 — 업데이트 밖에서 반영한다 (P2). 재개 시
+            // 사용자가 바인딩을 바꿨거나(값 불일치) 다른 문서가 적용됐으면
+            // (loadToken 불일치 — 새 문서가 그 페이지를 지원할 수 있음) 폐기한다 (#6).
             Task { @MainActor in
-                if currentPage.wrappedValue == requested {
-                    currentPage.wrappedValue = clamped
-                }
+                guard coordinator.activeLoadToken == token,
+                      currentPage.wrappedValue == requested
+                else { return }
+                currentPage.wrappedValue = clamped
             }
         }
     }
