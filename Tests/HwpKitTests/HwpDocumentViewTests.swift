@@ -39,6 +39,36 @@ final class HwpDocumentViewTests: XCTestCase {
 
     #if os(macOS)
         @MainActor
+        func testOutOfRangePageBindingNormalizedForCompleteDocument() {
+            // 최종 문서(isComplete)에 없는 페이지 요청(3쪽 문서에 100)은 클램프
+            // 값으로 바인딩이 되돌아온다 — 억제된 echo 탓에 무효 바인딩이 남지
+            // 않게 한다 (#6). 프로그레시브 중간 스냅샷은 정규화하지 않는다.
+            var currentPage = 100
+            let pages = (0 ..< 3).map { index in
+                HwpPage(
+                    size: CGSize(width: 595, height: 842),
+                    margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
+                    blocks: [],
+                    pageNumber: index + 1
+                )
+            }
+            let document = HwpDocument(
+                pages: pages,
+                metadata: HwpDocumentMetadata(pageCount: 3, loadToken: UUID()),
+                unsupportedElements: []
+            )
+            let view = HwpDocumentView(
+                document: document,
+                currentPage: Binding(get: { currentPage }, set: { currentPage = $0 })
+            )
+            let hostingView = NSHostingView(rootView: view)
+            hostingView.frame = CGRect(x: 0, y: 0, width: 320, height: 480)
+            hostingView.layoutSubtreeIfNeeded()
+
+            expect(currentPage) == 3
+        }
+
+        @MainActor
         func testBindingsPropagateThroughNativeWrapper() {
             var zoomScale = CGFloat(1.75)
             var currentPage = 0

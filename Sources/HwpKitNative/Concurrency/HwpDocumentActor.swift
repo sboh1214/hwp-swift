@@ -178,7 +178,8 @@ public actor HwpDocumentActor {
                         title: nil,
                         pageCount: pages.count,
                         previewText: preview,
-                        loadToken: token
+                        loadToken: token,
+                        isComplete: false
                     ),
                     unsupportedElements: [],
                     imageStore: imageStore

@@ -163,12 +163,26 @@ final class HwpDocumentCoordinator {
                 if let zoomScale, view.zoomScale != zoomScale.wrappedValue {
                     view.zoomScale = zoomScale.wrappedValue
                 }
-                if let currentPage, let requestedPage {
+                if currentPage != nil, let requestedPage {
                     let pageIndex = max(0, requestedPage - 1)
                     if view.currentVisiblePage() != pageIndex {
                         view.scrollToPage(at: pageIndex)
                     }
                 }
+            }
+            normalizeOutOfRangePageBinding()
+        }
+
+        /// 최종 문서(isComplete)에 없는 페이지 요청은 실제 클램프 값으로 바인딩을
+        /// 되돌린다 — 억제된 echo 탓에 무효 바인딩이 남아 매 업데이트 같은 요청을
+        /// 재시도하지 않게 한다. 프로그레시브 중간 스냅샷은 "아직 로드 전"이므로
+        /// 건드리지 않는다 (P2, 요청 유실 방지와의 경계).
+        private func normalizeOutOfRangePageBinding() {
+            guard let currentPage, document.metadata.isComplete else { return }
+            let requested = currentPage.wrappedValue
+            let clamped = min(max(1, requested), max(1, document.pages.count))
+            if clamped != requested {
+                currentPage.wrappedValue = clamped
             }
         }
     }
@@ -228,12 +242,26 @@ final class HwpDocumentCoordinator {
                 if let zoomScale, view.zoomScale != zoomScale.wrappedValue {
                     view.zoomScale = zoomScale.wrappedValue
                 }
-                if let currentPage, let requestedPage {
+                if currentPage != nil, let requestedPage {
                     let pageIndex = max(0, requestedPage - 1)
                     if view.currentVisiblePage() != pageIndex {
                         view.scrollToPage(at: pageIndex)
                     }
                 }
+            }
+            normalizeOutOfRangePageBinding()
+        }
+
+        /// 최종 문서(isComplete)에 없는 페이지 요청은 실제 클램프 값으로 바인딩을
+        /// 되돌린다 — 억제된 echo 탓에 무효 바인딩이 남아 매 업데이트 같은 요청을
+        /// 재시도하지 않게 한다. 프로그레시브 중간 스냅샷은 "아직 로드 전"이므로
+        /// 건드리지 않는다 (P2, 요청 유실 방지와의 경계).
+        private func normalizeOutOfRangePageBinding() {
+            guard let currentPage, document.metadata.isComplete else { return }
+            let requested = currentPage.wrappedValue
+            let clamped = min(max(1, requested), max(1, document.pages.count))
+            if clamped != requested {
+                currentPage.wrappedValue = clamped
             }
         }
     }
