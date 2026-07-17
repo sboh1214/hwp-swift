@@ -65,7 +65,9 @@ final class HwpDocumentViewTests: XCTestCase {
             hostingView.frame = CGRect(x: 0, y: 0, width: 320, height: 480)
             hostingView.layoutSubtreeIfNeeded()
 
-            expect(currentPage) == 3
+            // 정규화는 state-during-update를 피해 업데이트 밖에서 반영된다 —
+            // 메인 런루프를 돌려 지연 쓰기를 기다린다 (P2).
+            expect(currentPage).toEventually(equal(3), timeout: .seconds(2))
         }
 
         @MainActor

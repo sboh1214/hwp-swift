@@ -181,8 +181,14 @@ final class HwpDocumentCoordinator {
             guard let currentPage, document.metadata.isComplete else { return }
             let requested = currentPage.wrappedValue
             let clamped = min(max(1, requested), max(1, document.pages.count))
-            if clamped != requested {
-                currentPage.wrappedValue = clamped
+            guard clamped != requested else { return }
+            // updateNSView/updateUIView 동기 경로에서 상태를 쓰면 SwiftUI의
+            // state-during-update 위반 — 업데이트 밖에서 반영하되, 그새 사용자가
+            // 바인딩을 바꿨으면(stale) 덮어쓰지 않는다 (P2).
+            Task { @MainActor in
+                if currentPage.wrappedValue == requested {
+                    currentPage.wrappedValue = clamped
+                }
             }
         }
     }
@@ -260,8 +266,14 @@ final class HwpDocumentCoordinator {
             guard let currentPage, document.metadata.isComplete else { return }
             let requested = currentPage.wrappedValue
             let clamped = min(max(1, requested), max(1, document.pages.count))
-            if clamped != requested {
-                currentPage.wrappedValue = clamped
+            guard clamped != requested else { return }
+            // updateNSView/updateUIView 동기 경로에서 상태를 쓰면 SwiftUI의
+            // state-during-update 위반 — 업데이트 밖에서 반영하되, 그새 사용자가
+            // 바인딩을 바꿨으면(stale) 덮어쓰지 않는다 (P2).
+            Task { @MainActor in
+                if currentPage.wrappedValue == requested {
+                    currentPage.wrappedValue = clamped
+                }
             }
         }
     }
