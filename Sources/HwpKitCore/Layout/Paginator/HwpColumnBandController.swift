@@ -135,12 +135,27 @@ struct HwpColumnBandController {
             else { continue }
             let blockHeight = currentBlocks[entry.blockIndex].frame.height
             if entry.lines.count > 1 {
-                let lineHeight = blockHeight / CGFloat(entry.lines.count)
-                for line in entry.lines {
+                // 라인별 실제 전진량(다음 라인 origin.y 델타 — baseline 상대라 델타가
+                // 곧 advance)으로 단위를 만든다. 평균(blockHeight/개수)은 혼합 높이
+                // 라인에서 큰 라인보다 짧은 프레임을 배정할 수 있다 (#4). 마지막
+                // 라인이 잔여(후행 간격 포함)를 흡수해 총합 = blockHeight를 보존한다.
+                // origin이 비단조(캐시 열화)면 평균으로 폴백한다.
+                let lines = entry.lines
+                let strictlyIncreasing = zip(lines, lines.dropFirst())
+                    .allSatisfy { $0.origin.y < $1.origin.y }
+                let average = blockHeight / CGFloat(lines.count)
+                for (lineIndex, line) in lines.enumerated() {
+                    let advance: CGFloat = if !strictlyIncreasing {
+                        average
+                    } else if lineIndex + 1 < lines.count {
+                        lines[lineIndex + 1].origin.y - line.origin.y
+                    } else {
+                        blockHeight - line.origin.y
+                    }
                     units.append(BandLineUnit(
                         blockIndex: entry.blockIndex,
                         range: line.attributedRange,
-                        height: lineHeight
+                        height: max(1, advance)
                     ))
                 }
             } else {
