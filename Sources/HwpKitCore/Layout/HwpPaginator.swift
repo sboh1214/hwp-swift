@@ -589,13 +589,20 @@ private extension HwpPaginator {
         }
         // 이 문단이 만들 각주 예약 높이를 미리 반영해 본문/각주 겹침을 막는다.
         let anticipatedFootnotes = anticipatedFootnoteHeight(for: paragraph)
+        // 문단-앞 간격은 paragraphHeight에 포함되지만 CoreText는 각 블록(별도
+        // 프레임의 첫 문단)에 paragraphSpacingBefore를 렌더하지 않는다 — 모든 배치
+        // 경로(다단·초과 조각·단일 블록)가 텍스트 앞에서 커서로 소비한다 (P1, #1).
+        let beforeGap = index.paraShape(for: paragraph).map {
+            max(0, HwpUnits.points(fromHwpUnit: $0.paragraphSpacingTop) / 2)
+        } ?? 0
         if columnFrames.count > 1 {
             placeMultiColumnParagraph(
                 paragraph,
                 attributedString: attributedString,
                 paragraphFrame: paragraphFrame,
                 paragraphHeight: paragraphHeight,
-                anticipatedFootnotes: anticipatedFootnotes
+                anticipatedFootnotes: anticipatedFootnotes,
+                beforeGap: beforeGap
             )
             return true
         }
@@ -617,17 +624,12 @@ private extension HwpPaginator {
                 paragraphHeight: paragraphHeight,
                 hyperlinkURL: hyperlinkURL(in: paragraph),
                 paragraphId: paragraph.paraHeader.paraId,
-                reservedFootnoteHeight: anticipatedFootnotes
+                reservedFootnoteHeight: anticipatedFootnotes,
+                beforeGap: beforeGap
             )
             updateBandTrailingSpacing(for: paragraph)
             return true
         }
-        // 문단-앞 간격은 paragraphHeight에 포함되지만 CoreText는 각 블록(별도
-        // 프레임의 첫 문단)에 paragraphSpacingBefore를 렌더하지 않는다 — 커서를 앞
-        // 간격만큼 전진시키고 블록 높이에서 빼, 텍스트가 간격 뒤에 그려지게 한다 (P1).
-        let beforeGap = index.paraShape(for: paragraph).map {
-            max(0, HwpUnits.points(fromHwpUnit: $0.paragraphSpacingTop) / 2)
-        } ?? 0
         contentHeightUsed += beforeGap
         paragraphAnchorTop = currentColumnFrame.minY + contentHeightUsed
         appendBlock(
@@ -650,8 +652,11 @@ private extension HwpPaginator {
         attributedString: NSAttributedString,
         paragraphFrame: HwpParagraphFrame,
         paragraphHeight: CGFloat,
-        anticipatedFootnotes: CGFloat
+        anticipatedFootnotes: CGFloat,
+        beforeGap: CGFloat = 0
     ) {
+        // 캐시 run 경로는 한글이 계산한 절대 위치를 그대로 재현하므로 간격 보정을
+        // 더하지 않는다 (#1).
         if placeCachedColumnRuns(
             paragraph,
             attributedString: attributedString,
@@ -665,7 +670,8 @@ private extension HwpPaginator {
             paragraphHeight: paragraphHeight,
             hyperlinkURL: hyperlinkURL(in: paragraph),
             paragraphId: paragraph.paraHeader.paraId,
-            reservedFootnoteHeight: anticipatedFootnotes
+            reservedFootnoteHeight: anticipatedFootnotes,
+            beforeGap: beforeGap
         )
         updateBandTrailingSpacing(for: paragraph)
     }
@@ -934,20 +940,40 @@ private extension HwpPaginator {
         paragraphHeight: CGFloat,
         hyperlinkURL: String?,
         paragraphId: UInt32?,
-        reservedFootnoteHeight: CGFloat = 0
+        reservedFootnoteHeight: CGFloat = 0,
+        beforeGap: CGFloat = 0
     ) {
         let lines = paragraphFrame.lines
         let usableHeight = max(1, effectiveContentHeight - reservedFootnoteHeight)
+        // 조각들은 독립 CT 프레임이라 문단-앞 간격이 렌더되지 않는다 — 첫 조각
+        // 앞에서 커서로 소비하고 이후 산술은 텍스트 몫(textHeight)만 쓴다 (#1).
+        // 넘김 판정은 (커서+gap) + text = 커서 + paragraphHeight로 종전과 동치.
+        contentHeightUsed += beforeGap
+        let textHeight = paragraphHeight - beforeGap
+        // 필드 스팬 문단(hyperlink attribute 보유)의 조각 블록엔 URL을 전파하지
+        // 않는다 — 링크는 조각 substring의 attribute region이 운반하고, block URL은
+        // region 없는 평문 조각 전체를 폴백 링크로 만든다 (#4).
+        var containsFieldSpans = false
+        attributedString.enumerateAttribute(
+            HwpAttributedStringKey.hyperlink,
+            in: NSRange(location: 0, length: attributedString.length)
+        ) { value, _, stop in
+            if value != nil {
+                containsFieldSpans = true
+                stop.pointee = true
+            }
+        }
+        let fragmentURL = containsFieldSpans ? nil : hyperlinkURL
         paragraphAnchorTop = currentColumnFrame.minY + contentHeightUsed
-        guard lines.count > 1, paragraphHeight > 0 else {
+        guard lines.count > 1, textHeight > 0 else {
             if contentHeightUsed > 0,
-               contentHeightUsed + paragraphHeight > usableHeight
+               contentHeightUsed + textHeight > usableHeight
             {
                 advanceColumn()
                 paragraphAnchorTop = currentColumnFrame.minY
             }
             appendBlock(
-                height: paragraphHeight,
+                height: textHeight,
                 attributedString: attributedString,
                 hyperlinkURL: hyperlinkURL,
                 paragraphId: paragraphId,
@@ -957,19 +983,19 @@ private extension HwpPaginator {
         }
 
         // 라인별 실제 전진량(origin.y 델타)으로 조각을 나눈다 — 평균
-        // (paragraphHeight/개수)은 문단 간격까지 라인에 배분해 혼합 높이/간격
+        // (textHeight/개수)은 문단 간격까지 라인에 배분해 혼합 높이/간격
         // 문단을 잘못된 라인에서 절단한다 (#3). 마지막 라인이 잔여(간격 포함)를
-        // 흡수해 조각 높이 총합 = paragraphHeight를 보존한다. origin이 비단조면
+        // 흡수해 조각 높이 총합 = textHeight를 보존한다. origin이 비단조면
         // 평균으로 폴백한다 (#4와 동일).
         let strictlyIncreasing = zip(lines, lines.dropFirst())
             .allSatisfy { $0.origin.y < $1.origin.y }
-        let averageLineHeight = paragraphHeight / CGFloat(lines.count)
+        let averageLineHeight = textHeight / CGFloat(lines.count)
         func lineAdvance(_ index: Int) -> CGFloat {
             guard strictlyIncreasing else { return max(1, averageLineHeight) }
             if index + 1 < lines.count {
                 return max(1, lines[index + 1].origin.y - lines[index].origin.y)
             }
-            return max(1, paragraphHeight - lines[index].origin.y)
+            return max(1, textHeight - lines[index].origin.y)
         }
         var lineIndex = 0
         while lineIndex < lines.count {
@@ -999,7 +1025,7 @@ private extension HwpPaginator {
             appendBlock(
                 height: takenHeight,
                 attributedString: attributedString.attributedSubstring(from: range),
-                hyperlinkURL: hyperlinkURL,
+                hyperlinkURL: isWholeParagraph ? hyperlinkURL : fragmentURL,
                 paragraphId: paragraphId,
                 lines: isWholeParagraph ? lines : []
             )
