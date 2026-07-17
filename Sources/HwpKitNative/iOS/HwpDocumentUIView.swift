@@ -454,7 +454,10 @@
 
         private func frameForPage(at index: Int) -> CGRect {
             let originY = pageOriginsY[safe: index] ?? 0
-            return CGRect(origin: CGPoint(x: 0, y: originY), size: pageSize(at: index))
+            // 구역별 용지 폭/메모 패널 폭이 달라 좁은 행은 콘텐츠 폭 안에서
+            // 행별로 중앙 정렬한다 — macOS frameForPage와 대칭 (#8).
+            let originX = max((contentView.bounds.width - rowWidth(at: index)) / 2, 0)
+            return CGRect(origin: CGPoint(x: originX, y: originY), size: pageSize(at: index))
         }
 
         private func pageSize(at index: Int) -> CGSize {
