@@ -176,16 +176,20 @@ struct EmbeddedCompoundFile {
         var sector = entry.firstSector
         var visited = Set<UInt32>()
         while sector != Self.endOfChain, result.count < streamSize {
-            // 순환 miniFAT 체인 방어 — 같은 mini 섹터 재방문 즉시 중단
+            // 순환 miniFAT 체인 방어 — 같은 mini 섹터 재방문 즉시 중단.
+            // 섹터 ID는 failable 변환 + 오버플로 검사를 거친다 — 32비트 Int
+            // (watchOS arm64_32)에서 Int.max 초과 ID가 트랩하지 않게 (P1).
             guard visited.insert(sector).inserted,
-                  Int(sector) < miniFAT.count || sector != Self.freeSector
+                  let index = Int(exactly: sector),
+                  index < miniFAT.count
             else { return nil }
-            let start = Int(sector) * miniSectorSize
-            guard start + miniSectorSize <= container.count else { return nil }
-            let base = container.startIndex + start
+            let start = index.multipliedReportingOverflow(by: miniSectorSize)
+            guard !start.overflow,
+                  start.partialValue <= container.count - miniSectorSize
+            else { return nil }
+            let base = container.startIndex + start.partialValue
             result.append(container[base ..< base + miniSectorSize])
-            guard Int(sector) < miniFAT.count else { return nil }
-            sector = miniFAT[Int(sector)]
+            sector = miniFAT[index]
         }
         guard result.count >= streamSize else { return nil }
         return Data(result.prefix(streamSize))
@@ -212,8 +216,8 @@ struct EmbeddedCompoundFile {
             if let size, result.count >= size {
                 break
             }
-            guard Int(sector) < fat.count else { return nil }
-            sector = fat[Int(sector)]
+            guard let index = Int(exactly: sector), index < fat.count else { return nil }
+            sector = fat[index]
         }
         if let size {
             guard result.count >= size else { return nil }
@@ -230,11 +234,18 @@ struct EmbeddedCompoundFile {
     ) -> Data? {
         // 섹터 n은 (n+1)*sectorSize에서 시작한다 — 헤더가 한 섹터로 패딩되기
         // 때문 (v3 512B: 512+n*512, v4 4096B: 4096+n*4096과 동일).
-        let start = (Int(sector) + 1) * sectorSize
-        guard start < data.count else { return nil }
-        let end = min(start + sectorSize, data.count)
+        // 32비트 Int(watchOS arm64_32)에선 Int.max 초과 섹터 ID의 변환·오프셋
+        // 곱이 트랩한다 — failable 변환 + 오버플로 검사로 nil을 돌려준다 (P1).
+        guard let index = Int(exactly: sector) else { return nil }
+        let next = index.addingReportingOverflow(1)
+        guard !next.overflow else { return nil }
+        let start = next.partialValue.multipliedReportingOverflow(by: sectorSize)
+        guard !start.overflow, start.partialValue < data.count else { return nil }
+        let end = data.count - start.partialValue < sectorSize
+            ? data.count
+            : start.partialValue + sectorSize
         let base = data.startIndex
-        return Data(data[(base + start) ..< (base + end)])
+        return Data(data[(base + start.partialValue) ..< (base + end)])
     }
 
     /// 선언된 스트림 크기를 Int로 안전 변환하고 실제 CFB 크기로 상한한다.
