@@ -956,27 +956,48 @@ private extension HwpPaginator {
             return
         }
 
-        let lineHeight = paragraphHeight / CGFloat(lines.count)
+        // 라인별 실제 전진량(origin.y 델타)으로 조각을 나눈다 — 평균
+        // (paragraphHeight/개수)은 문단 간격까지 라인에 배분해 혼합 높이/간격
+        // 문단을 잘못된 라인에서 절단한다 (#3). 마지막 라인이 잔여(간격 포함)를
+        // 흡수해 조각 높이 총합 = paragraphHeight를 보존한다. origin이 비단조면
+        // 평균으로 폴백한다 (#4와 동일).
+        let strictlyIncreasing = zip(lines, lines.dropFirst())
+            .allSatisfy { $0.origin.y < $1.origin.y }
+        let averageLineHeight = paragraphHeight / CGFloat(lines.count)
+        func lineAdvance(_ index: Int) -> CGFloat {
+            guard strictlyIncreasing else { return max(1, averageLineHeight) }
+            if index + 1 < lines.count {
+                return max(1, lines[index + 1].origin.y - lines[index].origin.y)
+            }
+            return max(1, paragraphHeight - lines[index].origin.y)
+        }
         var lineIndex = 0
         while lineIndex < lines.count {
             let available = max(1, effectiveContentHeight - reservedFootnoteHeight)
                 - contentHeightUsed
-            var takeCount = lineHeight > 0 ? Int(available / lineHeight) : lines.count
-            if contentHeightUsed <= 0 {
-                takeCount = max(1, takeCount)
+            var takeCount = 0
+            var takenHeight: CGFloat = 0
+            while lineIndex + takeCount < lines.count,
+                  takenHeight + lineAdvance(lineIndex + takeCount) <= available
+            {
+                takenHeight += lineAdvance(lineIndex + takeCount)
+                takeCount += 1
+            }
+            if contentHeightUsed <= 0, takeCount == 0 {
+                takenHeight = lineAdvance(lineIndex)
+                takeCount = 1
             }
             if takeCount <= 0 {
                 advanceColumn()
                 continue
             }
-            takeCount = min(takeCount, lines.count - lineIndex)
             let slice = lines[lineIndex ..< lineIndex + takeCount]
             let range = slice.dropFirst().reduce(slice[slice.startIndex].attributedRange) {
                 NSUnionRange($0, $1.attributedRange)
             }
             let isWholeParagraph = takeCount == lines.count
             appendBlock(
-                height: lineHeight * CGFloat(takeCount),
+                height: takenHeight,
                 attributedString: attributedString.attributedSubstring(from: range),
                 hyperlinkURL: hyperlinkURL,
                 paragraphId: paragraphId,
