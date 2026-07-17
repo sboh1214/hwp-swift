@@ -622,9 +622,16 @@ private extension HwpPaginator {
             updateBandTrailingSpacing(for: paragraph)
             return true
         }
+        // 문단-앞 간격은 paragraphHeight에 포함되지만 CoreText는 각 블록(별도
+        // 프레임의 첫 문단)에 paragraphSpacingBefore를 렌더하지 않는다 — 커서를 앞
+        // 간격만큼 전진시키고 블록 높이에서 빼, 텍스트가 간격 뒤에 그려지게 한다 (P1).
+        let beforeGap = index.paraShape(for: paragraph).map {
+            max(0, HwpUnits.points(fromHwpUnit: $0.paragraphSpacingTop) / 2)
+        } ?? 0
+        contentHeightUsed += beforeGap
         paragraphAnchorTop = currentColumnFrame.minY + contentHeightUsed
         appendBlock(
-            height: paragraphHeight,
+            height: paragraphHeight - beforeGap,
             attributedString: attributedString,
             hyperlinkURL: hyperlinkURL(in: paragraph),
             paragraphId: paragraph.paraHeader.paraId,
