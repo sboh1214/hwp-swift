@@ -61,6 +61,9 @@ struct HwpParagraphMeasurer {
             ? HwpUnits.points(fromHwpUnit: paraShape.paragraphSpacingTop) / 2
             : 0
         var usedCachedHeight = false
+        // 캐시 높이만 문단 간격을 안 담으므로 앞 간격을 더한다. 비-캐시 경로는
+        // HwpParagraphLayout.layout의 totalHeight가 이미 paragraphSpacingBefore를
+        // 포함하므로, 다시 더하면 셀 콘텐츠·행 높이가 이중 팽창한다 (P2).
         if options.preferCachedHeight,
            let cachedHeight = HwpParagraphLayout.cachedParagraphHeight(paragraph)
         {
@@ -69,11 +72,6 @@ struct HwpParagraphMeasurer {
                 lines: frame.lines
             )
             usedCachedHeight = true
-        } else if options.addHalfSpacingBefore {
-            frame = HwpParagraphFrame(
-                totalHeight: frame.totalHeight + spacingBefore,
-                lines: frame.lines
-            )
         }
         return Result(
             attributed: attributed,
