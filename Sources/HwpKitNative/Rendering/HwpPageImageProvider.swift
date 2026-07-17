@@ -17,7 +17,10 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     private let adapter = HwpImageAdapter()
     /// 동시 디코드 수를 제한해 다수 이미지 페이지에서 임시 비트맵 합산이
     /// 프로세스를 고갈시키지 않게 한다 (개별 픽셀 한도만으론 합산을 못 막음, #8).
-    private let decodeThrottle = HwpDecodeThrottle(limit: 3)
+    /// provider 간 공유(static) — cancelOutstanding은 동기 adapter.decode에 이미
+    /// 들어간 태스크를 못 끊으므로, 문서 교체마다 새 스로틀이면 낡은 provider들의
+    /// 디코드가 병행돼 피크 메모리가 교체 횟수에 비례한다 (P1).
+    private static let decodeThrottle = HwpDecodeThrottle(limit: 3)
     private let lock = NSLock()
     /// 해석된 (binItemId, style) 변형 — 바이트 예산 내 삽입순 LRU. NSCache의
     /// 비결정 축출(예산 안이어도 즉시 축출)이 가시 이미지를 축출→재요청하는
@@ -127,7 +130,7 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         let store = store
         let cache = cache
         let adapter = adapter
-        let throttle = decodeThrottle
+        let throttle = Self.decodeThrottle
         // provider 교체 시 취소돼 새 디코드를 시작하지 않도록 진입점마다 확인한다 (#3).
         let task = Task { [weak self] in
             if Task.isCancelled {
