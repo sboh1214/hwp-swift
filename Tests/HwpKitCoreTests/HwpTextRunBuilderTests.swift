@@ -182,6 +182,33 @@ import XCTest
             expect(hyperlink(at: "a")).to(beNil())
             expect(hyperlink(at: "e")).to(beNil())
         }
+
+        func testMemoAnchorRangeSpansNestedField() {
+            // memo(코드 3) 안에 하이퍼링크 필드가 중첩: 중첩 종결자(inline 4)가
+            // 바깥 memo 앵커를 닫으면 안 된다 (#2). 컨트롤은 스트림에서 8 WCHAR —
+            // memo 시작 후 위치 8, 최종 종결자 위치 27이 앵커 범위다.
+            var link = CoreHwp.HwpHyperlink()
+            link.url = "http://example.com"
+            var paragraph = CoreHwp.HwpParagraph()
+            var paraText = CoreHwp.HwpParaText()
+            paraText.charArray =
+                [CoreHwp.HwpChar(type: .extended, value: 3)]
+                    + "a".utf16.map { CoreHwp.HwpChar(type: .char, value: $0) }
+                    + [CoreHwp.HwpChar(type: .extended, value: 3)]
+                    + "b".utf16.map { CoreHwp.HwpChar(type: .char, value: $0) }
+                    + [CoreHwp.HwpChar(type: .inline, value: 4)]
+                    + "c".utf16.map { CoreHwp.HwpChar(type: .char, value: $0) }
+                    + [CoreHwp.HwpChar(type: .inline, value: 4)]
+            paragraph.paraText = paraText
+            paragraph.ctrlHeaderArray = [
+                .memo(CoreHwp.HwpFieldControl(ctrlId: .memo)),
+                .hyperLink(link),
+            ]
+
+            let ranges = HwpTextRunBuilder.memoAnchorRanges(in: paragraph)
+
+            expect(ranges) == [UInt32(8) ..< UInt32(27)]
+        }
     }
 
     private extension HwpTextRunBuilderTests {

@@ -69,28 +69,41 @@ extension HwpTextRunBuilder {
                   }
               })
         else { return [] }
+        // 필드는 코드 3 시작 ~ 코드 4 끝으로 LIFO 중첩된다 — 필드 depth와
+        // depth별 memo 스택으로 매칭 종결자에서만 닫아, memo 안 중첩 필드
+        // (하이퍼링크 등)의 끝 마커가 바깥 앵커를 조기 종료하거나 중첩 memo가
+        // 바깥 start를 덮지 않게 한다 (HwpTextRunBuilder 하이퍼링크 스택과 동일, #2).
         var ranges: [Range<UInt32>] = []
         var position: UInt32 = 0
         var ordinal = 0
-        var activeStart: UInt32?
+        var fieldDepth = 0
+        var memoStack: [(depth: Int, start: UInt32)] = []
         for hwpChar in paragraph.paraText?.charArray ?? [] {
             let length: UInt32 = hwpChar.type == .char ? 1 : 8
             if hwpChar.type == .extended {
-                if ordinal < ctrls.count, case .memo = ctrls[ordinal] {
-                    activeStart = position + length
+                if hwpChar.value == 3 {
+                    fieldDepth += 1
+                    if ordinal < ctrls.count, case .memo = ctrls[ordinal] {
+                        memoStack.append((depth: fieldDepth, start: position + length))
+                    }
                 }
                 ordinal += 1
-            } else if hwpChar.type == .inline, hwpChar.value == 4,
-                      let start = activeStart
-            {
-                if position > start {
-                    ranges.append(start ..< position)
+            } else if hwpChar.type == .inline, hwpChar.value == 4 {
+                if let top = memoStack.last, top.depth == fieldDepth {
+                    if position > top.start {
+                        ranges.append(top.start ..< position)
+                    }
+                    memoStack.removeLast()
                 }
-                activeStart = nil
+                if fieldDepth > 0 {
+                    fieldDepth -= 1
+                }
             }
             position += length
         }
-        return ranges
+        // 빌더의 단조 sweep은 lowerBound 오름차순을 전제한다 — 중첩 close 순서
+        // (안쪽 먼저)로 어긋난 정렬을 복원한다.
+        return ranges.sorted { $0.lowerBound < $1.lowerBound }
     }
 }
 
