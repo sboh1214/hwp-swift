@@ -17,6 +17,21 @@ private func makeImage(width: Int = 10, height: Int = 10) -> CGImage? {
     return ctx?.makeImage()
 }
 
+/// 16-bit RGBA(64bpp) 이미지 — 픽셀당 8바이트라 width*height*4 가정과 다르다.
+private func make16BitImage(width: Int = 8, height: Int = 8) -> CGImage? {
+    let ctx = CGContext(
+        data: nil,
+        width: width,
+        height: height,
+        bitsPerComponent: 16,
+        bytesPerRow: width * 8,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            | CGBitmapInfo.byteOrder16Little.rawValue
+    )
+    return ctx?.makeImage()
+}
+
 /// 디코드가 in-flight에 도달했음을 알리고 해제 신호까지 대기시키는 결정론적
 /// 게이트 — sleep 없이 clear-중-in-flight 시나리오를 재현한다.
 private actor ArrivalGate {
@@ -114,6 +129,53 @@ final class HwpImageCacheTests: XCTestCase {
         expect(count) == 1
         let bytes = await cache.currentBytes()
         expect(bytes) == 16
+    }
+
+    func testHighBitDepthImageChargedByActualBackingStore() async {
+        let cache = HwpImageCache()
+        guard let image = make16BitImage(width: 8, height: 8) else {
+            return fail("16-bit image 생성 실패")
+        }
+        _ = await cache.fetch(1) { image }
+        let bytes = await cache.currentBytes()
+        // 16-bit RGBA(64bpp): 실제 백킹 = bytesPerRow×height. 4바이트 고정 가정보다 크다.
+        expect(bytes) == image.bytesPerRow * image.height
+        expect(bytes) > image.width * image.height * 4
+    }
+
+    func testCompletingTaskDoesNotEvictNewerInFlightEntry() async {
+        // clear가 디코드 A를 취소·제거한 뒤 post-clear fetch B가 같은 key로
+        // 시작하면, A가 재개해 key만 보고 B의 in-flight 엔트리를 지워선 안 된다 —
+        // 그러면 이후 fetch가 B에 coalesce 못 하고 중복 디코드를 연다 (P2).
+        let cache = HwpImageCache()
+        let gateA = ArrivalGate()
+        let gateB = ArrivalGate()
+        let imageB = makeImage(width: 10, height: 10)
+        let imageC = makeImage(width: 20, height: 20)
+
+        async let firstA: CGImage? = cache.fetch(1) {
+            await gateA.decodeArrivedAndWait()
+            return imageB
+        }
+        await gateA.waitUntilArrived()
+        await cache.clear()
+
+        async let firstB: CGImage? = cache.fetch(1) {
+            await gateB.decodeArrivedAndWait()
+            return imageB
+        }
+        await gateB.waitUntilArrived()
+
+        await gateA.release()
+        _ = await firstA
+
+        // B가 아직 in-flight이므로 세 번째 fetch는 B에 coalesce (새 디코드 없음).
+        async let third: CGImage? = cache.fetch(1) { imageC }
+        await gateB.release()
+        _ = await firstB
+        let thirdResult = await third
+        // fix면 B 결과(10×10)에 coalesce. 버그면 A가 B를 지워 새 디코드(20×20).
+        expect(thirdResult?.width) == 10
     }
 
     func testClearDuringInFlightDecodeDoesNotRepopulate() async {

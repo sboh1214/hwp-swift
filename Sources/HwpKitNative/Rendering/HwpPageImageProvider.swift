@@ -167,16 +167,18 @@ public final class HwpPageImageProvider: @unchecked Sendable {
             let styled = decoded.map {
                 HwpImageStyleRenderer.apply(style, to: $0, originalSize: originalSize)
             }
-            let pinnedPixels = max(
-                (styled?.width ?? 0) * (styled?.height ?? 0),
-                (decoded?.width ?? 0) * (decoded?.height ?? 0)
+            // 실제 백킹 스토어(bytesPerRow×height)로 과금한다 — 픽셀당 4바이트
+            // 고정 가정은 16-bit 이미지(64bpp)를 절반으로 저계상해 예산을 우회한다 (P1).
+            let pinnedBytes = max(
+                (styled?.bytesPerRow ?? 0) * (styled?.height ?? 0),
+                (decoded?.bytesPerRow ?? 0) * (decoded?.height ?? 0)
             )
             self?.finishRequest(
                 key: key,
                 variant: variant,
                 generation: gen,
                 image: styled,
-                cost: pinnedPixels * 4
+                cost: pinnedBytes
             )
         }
         lock.lock()
