@@ -18,7 +18,16 @@ public struct HwpHitTester {
         // 위→아래 순으로 히트: 페인트 순서를 뒤집어 훑되, 반환 blockIndex는
         // 논리 배열 위치 그대로다 (선택 좌표와 정합).
         for (index, block) in AnyHwpBlock.paintOrdered(page.blocks).reversed() {
-            guard block.frame.contains(point) else { continue }
+            if !block.frame.contains(point) {
+                // slight-overflow 한 줄 문단은 frame 밖(허용 배율 이내)까지
+                // 그려지고 링크 rect도 함께 넘는다 — 그 가시 영역의 탭을 기각
+                // 전에 링크 rect로 확인한다 (#4).
+                guard block.kind == .text,
+                      overflowHitFrame(for: block).contains(point),
+                      let url = hyperlinkURL(for: block, at: point)
+                else { continue }
+                return .hyperlink(url: url, blockIndex: index)
+            }
             if let url = hyperlinkURL(for: block, at: point) {
                 return .hyperlink(url: url, blockIndex: index)
             }
@@ -39,6 +48,13 @@ public struct HwpHitTester {
             }
         }
         return nil
+    }
+
+    /// slight-overflow 렌더가 닿을 수 있는 히트 영역 — frame 폭의 허용 초과분
+    /// (`slightOverflowWidthRatio`)만큼 좌우로 확장한 frame.
+    private func overflowHitFrame(for block: AnyHwpBlock) -> CGRect {
+        let extra = block.frame.width * (HwpRenderTuning.Text.slightOverflowWidthRatio - 1)
+        return block.frame.insetBy(dx: -extra, dy: 0)
     }
 
     /// 필드 스팬 하이퍼링크(%hlk)를 링크 텍스트 글리프 rect에서만 히트한다 —

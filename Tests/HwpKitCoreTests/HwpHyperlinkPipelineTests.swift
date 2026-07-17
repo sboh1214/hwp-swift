@@ -165,6 +165,39 @@ final class HwpHyperlinkPipelineTests: XCTestCase {
         } == true
     }
 
+    func testOverflowSingleLineLinkEdgeIsTappable() {
+        // slight-overflow 한 줄 링크(자연 폭이 frame 폭을 허용 배율 이내로 초과)는
+        // frame 밖까지 그려진다 — frame 밖·잉크 안 지점의 탭이 링크로 히트해야
+        // 한다 (#4).
+        let font = CTFontCreateWithName("Helvetica" as CFString, 12, nil)
+        let attributed = NSMutableAttributedString(
+            string: "linklinklink",
+            attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
+        )
+        attributed.addAttribute(
+            HwpAttributedStringKey.hyperlink, value: "https://example.com",
+            range: NSRange(location: 0, length: attributed.length)
+        )
+        let line = CTLineCreateWithAttributedString(attributed)
+        let naturalWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+        let frameWidth = naturalWidth / 1.03
+        let block = AnyHwpBlock(
+            frame: CGRect(x: 0, y: 0, width: frameWidth, height: 20),
+            kind: .text, attributedString: attributed
+        )
+        let page = makePage(with: [block])
+
+        let outsideFrameInsideInk = CGPoint(x: (frameWidth + naturalWidth) / 2, y: 10)
+        let hit = HwpHitTester().hit(page: page, point: outsideFrameInsideInk)
+
+        expect {
+            if case let .hyperlink(url, _) = hit {
+                return url == "https://example.com"
+            }
+            return false
+        } == true
+    }
+
     func testHyperlinkRegionNormalizedForRTLText() {
         // RTL(히브리어) 링크 텍스트는 CT가 하위 논리 인덱스에 더 큰 x 오프셋을
         // 준다 — min/max 정규화가 없으면 region이 폐기돼 링크가 히트되지 않는다.
