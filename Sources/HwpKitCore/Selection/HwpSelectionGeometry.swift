@@ -280,14 +280,17 @@ public final class HwpSelectionGeometry {
             }
         }
         // 조각을 잇되 같은 원본 문단의 연속이면 개행을 넣지 않는다 (#9): 본문
-        // 조각은 paraId 동일성으로, 표/열에 걸친 조각은 '이어짐' 표식으로 판정.
+        // 조각은 paraId 동일성으로 판정하고, '이어짐' 표식은 identity를 확인할 수
+        // 없을 때(paraId 없음)만 폴백으로 쓴다 — 분할 표 행에선 다른 셀의 top
+        // 조각이 연달아 오므로 표식이 문단 identity를 대신할 수 없다 (#7).
         var result = ""
         for (index, piece) in contributions.enumerated() {
             if index > 0 {
                 let previous = contributions[index - 1]
                 let sameParagraph =
                     (previous.paragraphId != nil && previous.paragraphId == piece.paragraphId)
-                        || previous.continuesNext
+                        || (previous.continuesNext
+                            && (previous.paragraphId == nil || piece.paragraphId == nil))
                 result += sameParagraph ? "" : "\n"
             }
             result += piece.text

@@ -132,6 +132,37 @@ final class HwpSelectionGeometryTests: XCTestCase {
         expect(HwpSelectionGeometry.strippingControlMarkers("a\u{FFFC}b")) == "ab"
     }
 
+    func testContinuationMarkerDoesNotJoinDifferentParagraphs() {
+        // 분할 표 행은 서로 다른 셀의 top 조각이 연달아 온다 — '이어짐' 표식이
+        // 있어도 paraId가 다르면 다음 조각 앞 개행을 유지해야 한다 (#7).
+        let markedA = HwpTableSplitter.markedAsContinuedFragment(NSAttributedString(
+            string: "atop",
+            attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
+        ))
+        let cellA = AnyHwpBlock(
+            frame: CGRect(x: 50, y: 100, width: 200, height: 20),
+            kind: .text,
+            attributedString: markedA,
+            source: HwpBlockSource(paragraphId: 1)
+        )
+        let cellB = AnyHwpBlock(
+            frame: CGRect(x: 50, y: 130, width: 200, height: 20),
+            kind: .text,
+            attributedString: NSAttributedString(
+                string: "btop",
+                attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
+            ),
+            source: HwpBlockSource(paragraphId: 2)
+        )
+        let document = makeDocument(pages: [[cellA, cellB]])
+        let geometry = HwpSelectionGeometry(document: document)
+        guard let selection = geometry.documentSelection() else {
+            return fail("expected selection")
+        }
+
+        expect(geometry.plainText(for: selection)) == "atop\nbtop"
+    }
+
     func testDocumentSelectionSpansAllBodyText() throws {
         // 첫 페이지는 크롬만 → 전체 선택은 텍스트가 있는 페이지 범위로 수렴
         let document = makeDocument(pages: [
