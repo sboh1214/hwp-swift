@@ -57,18 +57,23 @@ struct HwpParagraphMeasurer {
             columnWidth: width,
             tabStops: index.textTabs(for: paraShape)
         )
+        // 표 43 여백 계열과 같은 1/2 단위 (HwpParagraphMetrics와 동일).
         let spacingBefore = options.addHalfSpacingBefore
             ? HwpUnits.points(fromHwpUnit: paraShape.paragraphSpacingTop) / 2
             : 0
+        let spacingAfter = options.addHalfSpacingBefore
+            ? HwpUnits.points(fromHwpUnit: paraShape.paragraphSpacingBottom) / 2
+            : 0
         var usedCachedHeight = false
-        // 캐시 높이만 문단 간격을 안 담으므로 앞 간격을 더한다. 비-캐시 경로는
-        // HwpParagraphLayout.layout의 totalHeight가 이미 paragraphSpacingBefore를
-        // 포함하므로, 다시 더하면 셀 콘텐츠·행 높이가 이중 팽창한다 (P2).
+        // 캐시 높이는 라인 범위만 담으므로 CT 경로(totalHeight = before + lines +
+        // after)와 같아지도록 양쪽 간격을 더한다 — 표 셀(addHalfSpacingBefore)만.
+        // 각주는 이어지는 문단이 간격 없이 붙는 실측 규약이라 캐시 높이 그대로 둔다.
+        // 비-캐시 경로는 totalHeight가 이미 간격을 포함한다 (P2).
         if options.preferCachedHeight,
            let cachedHeight = HwpParagraphLayout.cachedParagraphHeight(paragraph)
         {
             frame = HwpParagraphFrame(
-                totalHeight: cachedHeight + spacingBefore,
+                totalHeight: cachedHeight + spacingBefore + spacingAfter,
                 lines: frame.lines
             )
             usedCachedHeight = true
