@@ -401,13 +401,30 @@ enum HwpTableSplitter {
         let lines = paragraph.frame.lines
         let rect = paragraph.rect
         guard lines.count > 1, rect.height > 0 else { return (paragraph, nil) }
-        let lineHeight = rect.height / CGFloat(lines.count)
-        guard lineHeight > 0 else { return (paragraph, nil) }
-
-        let topCount = min(
-            max(Int((cutY - rect.minY) / lineHeight), 0),
-            lines.count
-        )
+        // 라인별 실제 전진량(origin.y 델타)으로 cut 위 라인을 센다 — 등분
+        // (rect.height/개수)은 혼합 높이 라인에서 cut을 넘는 라인을 "맞음"으로
+        // 오분류한다 (#5). origin.y는 재분할된 fragment에서 0-기반이 아니므로
+        // (paragraphFragment가 origin을 rebase하지 않음) 첫 라인 기준 델타로
+        // 계산한다. 마지막 라인이 잔여(간격 포함)를 흡수하고, origin 비단조
+        // (캐시 열화)면 등분으로 폴백한다.
+        let strictlyIncreasing = zip(lines, lines.dropFirst())
+            .allSatisfy { $0.origin.y < $1.origin.y }
+        let average = rect.height / CGFloat(lines.count)
+        let base = lines[0].origin.y
+        func lineAdvance(_ index: Int) -> CGFloat {
+            guard strictlyIncreasing else { return max(1, average) }
+            if index + 1 < lines.count {
+                return max(1, lines[index + 1].origin.y - lines[index].origin.y)
+            }
+            return max(1, rect.height - (lines[index].origin.y - base))
+        }
+        let cutLocal = cutY - rect.minY
+        var topCount = 0
+        var accumulated: CGFloat = 0
+        while topCount < lines.count, accumulated + lineAdvance(topCount) <= cutLocal {
+            accumulated += lineAdvance(topCount)
+            topCount += 1
+        }
         if topCount == 0 {
             return (nil, paragraph)
         }
@@ -415,7 +432,7 @@ enum HwpTableSplitter {
             return (paragraph, nil)
         }
 
-        let topHeight = lineHeight * CGFloat(topCount)
+        let topHeight = accumulated
         let top = paragraphFragment(
             of: paragraph,
             lines: lines[..<topCount],
