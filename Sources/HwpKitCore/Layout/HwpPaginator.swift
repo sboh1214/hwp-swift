@@ -2393,12 +2393,13 @@ private extension HwpPaginator {
         }
         let lineHeights = max(0, HwpUnits.points(fromHwpUnit: Int32(clamping: bottom - top)))
         // 문단 간격 위/아래는 캐시에 포함되지 않으므로 CT 폴백 경로
-        // (paragraphSpacingBefore/After)와 동일하게 더한다. paraShape가
-        // 없으면 간격 0 — optional helper를 쓴다.
+        // (HwpParagraphMetrics)와 동일하게 더한다 — 표 43 여백 계열과 같은 1/2
+        // 단위라 /2 한다. full로 더하면 캐시 문단만 2배 간격이 된다 (P1). paraShape
+        // 없으면 간격 0.
         let paraShape = index.paraShape(for: paragraph)
         let spacing = paraShape.map {
-            max(0, HwpUnits.points(fromHwpUnit: $0.paragraphSpacingTop))
-                + max(0, HwpUnits.points(fromHwpUnit: $0.paragraphSpacingBottom))
+            max(0, HwpUnits.points(fromHwpUnit: $0.paragraphSpacingTop) / 2)
+                + max(0, HwpUnits.points(fromHwpUnit: $0.paragraphSpacingBottom) / 2)
         } ?? 0
         return lineHeights + spacing
     }
