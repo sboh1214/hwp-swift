@@ -319,9 +319,15 @@
         }
 
         private func notifyUnsupportedElements() {
-            HwpDocumentViewSupport.notifyUnsupportedElements(
-                in: document, to: onUnsupportedElement
-            )
+            // document 대입은 SwiftUI representable 업데이트 중에 올 수 있다 —
+            // 콜백이 @State에 쓰면 state-during-update 위반이므로 업데이트 밖에서
+            // 발화한다 (P2). 대입 시점의 문서를 캡처해 통지 내용은 유지한다.
+            let document = document
+            DispatchQueue.main.async { [weak self] in
+                HwpDocumentViewSupport.notifyUnsupportedElements(
+                    in: document, to: self?.onUnsupportedElement
+                )
+            }
         }
 
         private func rebuildImageProvider() {
