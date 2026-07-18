@@ -136,8 +136,9 @@ public final class HwpPageImageProvider: @unchecked Sendable {
             if Task.isCancelled {
                 return
             }
-            // 동시 디코드 예산 확보/반납 (합산 임시 메모리 상한, #8)
-            await throttle.acquire()
+            // 동시 디코드 예산 확보/반납 (합산 임시 메모리 상한, #8). 취소로
+            // 슬롯을 못 얻으면 반납 없이 종료한다 (P1).
+            guard await throttle.acquire() else { return }
             defer { Task { await throttle.release() } }
             // provider 교체(세대 불일치) 또는 해제 시 새 디코드를 시작하지 않는다.
             // dealloc으로 self가 nil이면 `== true`는 false라 통과했다 — nil을
@@ -352,25 +353,56 @@ private enum CoreHwpBinaryDataShim {
 actor HwpDecodeThrottle {
     private let limit: Int
     private var active = 0
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var waiters: [(id: UInt64, continuation: CheckedContinuation<Bool, Never>)] = []
+    private var pendingCancels: Set<UInt64> = []
+    private var nextWaiterId: UInt64 = 0
 
     init(limit: Int) {
         self.limit = max(1, limit)
     }
 
-    func acquire() async {
+    /// 슬롯을 얻으면 true. 대기 중 취소되면 슬롯 없이 false — 취소된 대기자를
+    /// 즉시 큐에서 제거해, 낡은 문서의 store/cache를 캡처한 태스크가 슬롯이
+    /// 풀릴 때까지 상주하지 않게 한다 (P1). false면 release를 부르면 안 된다.
+    func acquire() async -> Bool {
+        if Task.isCancelled {
+            return false
+        }
         if active < limit {
             active += 1
-            return
+            return true
         }
-        await withCheckedContinuation { waiters.append($0) }
+        let id = nextWaiterId
+        nextWaiterId &+= 1
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                // onCancel이 등록보다 먼저 도착한 레이스: 대기하지 않고 즉시 실패
+                // (actor 직렬화로 pendingCancels 접근은 순차적이다).
+                if pendingCancels.remove(id) != nil {
+                    continuation.resume(returning: false)
+                    return
+                }
+                waiters.append((id: id, continuation: continuation))
+            }
+        } onCancel: {
+            Task { await self.cancelWaiter(id: id) }
+        }
+    }
+
+    private func cancelWaiter(id: UInt64) {
+        if let index = waiters.firstIndex(where: { $0.id == id }) {
+            waiters.remove(at: index).continuation.resume(returning: false)
+        } else {
+            pendingCancels.insert(id)
+        }
     }
 
     func release() {
         if waiters.isEmpty {
             active = max(0, active - 1)
         } else {
-            waiters.removeFirst().resume()
+            // 슬롯을 다음 대기자에게 이양 — active 불변으로 한도 유지.
+            waiters.removeFirst().continuation.resume(returning: true)
         }
     }
 }
