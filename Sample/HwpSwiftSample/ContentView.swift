@@ -36,8 +36,7 @@ struct ContentView: View {
         .fileImporter(
             isPresented: $showPicker,
             allowedContentTypes: [
-                UTType(filenameExtension: "hwp") ?? .data,
-                .data,
+                UTType(importedAs: "dev.sboh.hwp"),
             ]
         ) { result in
             switch result {

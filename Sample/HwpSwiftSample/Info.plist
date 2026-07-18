@@ -17,7 +17,7 @@
 			<string>Alternate</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>public.data</string>
+				<string>dev.sboh.hwp</string>
 			</array>
 		</dict>
 	</array>
@@ -42,5 +42,25 @@
 		<key>UIColorName</key>
 		<string></string>
 	</dict>
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>HWP Document</string>
+			<key>UTTypeIdentifier</key>
+			<string>dev.sboh.hwp</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>hwp</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
 </dict>
 </plist>

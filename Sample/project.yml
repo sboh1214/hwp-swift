@@ -36,7 +36,13 @@ targets:
           - CFBundleTypeName: HWP Document
             CFBundleTypeRole: Viewer
             LSHandlerRank: Alternate
-            LSItemContentTypes: [public.data]
+            LSItemContentTypes: [dev.sboh.hwp]
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: dev.sboh.hwp
+            UTTypeDescription: HWP Document
+            UTTypeConformsTo: [public.data]
+            UTTypeTagSpecification:
+              public.filename-extension: [hwp]
         UILaunchScreen:
           UIColorName: ""
     settings:
