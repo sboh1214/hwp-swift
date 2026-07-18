@@ -22,6 +22,7 @@ public extension HwpIndex {
 struct HwpParagraphMeasurer {
     let index: HwpIndex
     let fontResolver: HwpFontResolver
+    var sizeResolver: HwpObjectSizeResolver?
 
     /// 호출부별 차이를 보존하는 훅.
     struct Options {
@@ -48,8 +49,12 @@ struct HwpParagraphMeasurer {
         width: CGFloat,
         options: Options = Options()
     ) -> Result {
-        let attributed = HwpTextRunBuilder(index: index, fontResolver: fontResolver)
-            .build(paragraph: paragraph, controlReplacements: options.controlReplacements)
+        let attributed = HwpTextRunBuilder(
+            index: index,
+            fontResolver: fontResolver,
+            sizeResolver: sizeResolver
+        )
+        .build(paragraph: paragraph, controlReplacements: options.controlReplacements)
         let paraShape = index.paraShapeOrDefault(for: paragraph)
         var frame = HwpParagraphLayout().layout(
             attributedString: attributed,

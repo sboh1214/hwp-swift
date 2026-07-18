@@ -58,19 +58,33 @@ public struct HwpTextboxLayout {
         components: [CoreHwp.HwpShapeComponent],
         commonProperty: CoreHwp.HwpCommonCtrlProperty,
         fallbackWidth: CGFloat,
-        index: HwpIndex
+        index: HwpIndex,
+        sizeResolver: HwpObjectSizeResolver? = nil
     ) -> HwpTextboxFrame? {
         guard let component = components.first(where: { !$0.textBoxListArray.isEmpty })
         else { return nil }
 
-        let outerWidth = HwpUnits.points(fromHwpUnitU: commonProperty.width)
-        let outerHeight = HwpUnits.points(fromHwpUnitU: commonProperty.height)
+        let info = commonProperty.propertyInfo
+        let outerWidth = HwpObjectSizeResolver.width(
+            commonProperty.width,
+            basis: info.widthRelativeTo,
+            resolver: sizeResolver
+        )
+        let outerHeight = HwpObjectSizeResolver.height(
+            commonProperty.height,
+            basis: info.heightRelativeTo,
+            resolver: sizeResolver
+        )
         let resolvedWidth = outerWidth > 0 ? outerWidth : fallbackWidth
 
         let insets = textInsets(of: component)
         let wrapWidth = max(1, resolvedWidth - insets.left - insets.right)
         var paragraphs = laidOutParagraphs(
-            of: component, insets: insets, wrapWidth: wrapWidth, index: index
+            of: component,
+            insets: insets,
+            wrapWidth: wrapWidth,
+            index: index,
+            sizeResolver: sizeResolver
         )
 
         let contentHeight = (paragraphs.last.map(\.rect.maxY) ?? insets.top) + insets.bottom
@@ -98,10 +112,15 @@ public struct HwpTextboxLayout {
         of component: CoreHwp.HwpShapeComponent,
         insets: TextInsets,
         wrapWidth: CGFloat,
-        index: HwpIndex
+        index: HwpIndex,
+        sizeResolver: HwpObjectSizeResolver?
     ) -> [HwpLaidOutParagraph] {
         // 글상자는 라인 캐시 높이를 쓰지 않는다 — CT 측정 그대로 (픽셀 정합)
-        let measurer = HwpParagraphMeasurer(index: index, fontResolver: fontResolver)
+        let measurer = HwpParagraphMeasurer(
+            index: index,
+            fontResolver: fontResolver,
+            sizeResolver: sizeResolver
+        )
         var paragraphs: [HwpLaidOutParagraph] = []
         var contentY = insets.top
         for list in component.textBoxListArray {

@@ -410,7 +410,7 @@ private extension HwpPaginator {
                 attributedString = memo.attributedString
                 paragraphFrame = memo.paragraphFrame
             } else {
-                attributedString = HwpTextRunBuilder(index: index, fontResolver: fontResolver)
+                attributedString = textRunBuilder()
                     .build(paragraph: paragraph, controlReplacements: replacements)
                 paragraphFrame = if absoluteCachePlacer.canSkipMeasurement(
                     for: paragraph,
@@ -1293,7 +1293,8 @@ private extension HwpPaginator {
         let result = tableLayout.layout(
             table: table,
             availableWidth: currentColumnFrame.width,
-            index: index
+            index: index,
+            sizeResolver: objectSizeResolver
         )
         switch result {
         case let .failure(element):
@@ -1569,7 +1570,8 @@ private extension HwpPaginator {
             components: components,
             commonProperty: commonProperty,
             fallbackWidth: currentPageGeometry.contentFrame.width,
-            index: index
+            index: index,
+            sizeResolver: objectSizeResolver
         ) {
             appendAnchoredBlock(
                 kind: .textbox,
@@ -1666,8 +1668,9 @@ private extension HwpPaginator {
         components: [CoreHwp.HwpShapeComponent]
     ) -> CGSize {
         let info = commonProperty.propertyInfo
-        var width = resolvedObjectWidth(commonProperty.width, basis: info.widthRelativeTo)
-        var height = resolvedObjectHeight(commonProperty.height, basis: info.heightRelativeTo)
+        let resolver = objectSizeResolver
+        var width = resolver.width(commonProperty.width, basis: info.widthRelativeTo)
+        var height = resolver.height(commonProperty.height, basis: info.heightRelativeTo)
         if width <= 0 || height <= 0, let detail = components.first?.detail {
             if width <= 0 {
                 width = HwpUnits.points(fromHwpUnitU: detail.currentWidth)
@@ -1679,32 +1682,25 @@ private extension HwpPaginator {
         return CGSize(width: max(1, width), height: max(1, height))
     }
 
-    /// 개체 폭을 해석한다. 폭 기준이 절대값이 아니면 (종이/쪽/단/문단) 저장값은
-    /// HWPUNIT 길이가 아니라 기준 프레임 폭에 대한 퍼센트다 (10000 = 100%) —
-    /// 무조건 HWPUNIT 변환하면 100% 폭 도형이 100pt로 줄어든다 (#4).
-    private func resolvedObjectWidth(
-        _ raw: UInt32,
-        basis: CoreHwp.HwpCommonCtrlObjectWidthRelativeTo?
-    ) -> CGFloat {
-        switch basis {
-        case .paper: CGFloat(raw) / 10000 * currentPageGeometry.pageSize.width
-        case .page: CGFloat(raw) / 10000 * currentPageGeometry.contentFrame.width
-        case .column, .paragraph: CGFloat(raw) / 10000 * currentColumnFrame.width
-        case .absolute, nil: HwpUnits.points(fromHwpUnitU: raw)
-        }
+    /// 본문 텍스트 빌더 — 현재 기하의 크기 해석기를 붙여 treatAsChar 줄
+    /// 공간 예약이 paint 크기와 일치하게 한다.
+    func textRunBuilder() -> HwpTextRunBuilder {
+        HwpTextRunBuilder(
+            index: index,
+            fontResolver: fontResolver,
+            sizeResolver: objectSizeResolver
+        )
     }
 
-    /// 개체 높이를 해석한다. 높이 기준이 절대값이 아니면 (종이/쪽) 저장값은
-    /// 기준 프레임 높이에 대한 퍼센트다 (10000 = 100%) (#4).
-    private func resolvedObjectHeight(
-        _ raw: UInt32,
-        basis: CoreHwp.HwpCommonCtrlObjectHeightRelativeTo?
-    ) -> CGFloat {
-        switch basis {
-        case .paper: CGFloat(raw) / 10000 * currentPageGeometry.pageSize.height
-        case .page: CGFloat(raw) / 10000 * currentPageGeometry.contentFrame.height
-        case .absolute, nil: HwpUnits.points(fromHwpUnitU: raw)
-        }
+    /// 현재 페이지/단 기하 기준의 개체 크기 해석기 — 전용 레이아웃 경로
+    /// (표/글상자/셀 그림/줄 공간 예약)가 퍼센트 저장값을 HWPUNIT로
+    /// 오해하지 않도록 전달한다.
+    var objectSizeResolver: HwpObjectSizeResolver {
+        HwpObjectSizeResolver(
+            paperSize: currentPageGeometry.pageSize,
+            contentSize: currentPageGeometry.contentFrame.size,
+            columnWidth: currentColumnFrame.width
+        )
     }
 
     func appendImageBlock(

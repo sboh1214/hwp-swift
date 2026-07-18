@@ -147,6 +147,13 @@ public struct HwpPaintListBuilder: Sendable {
                     rect: rect,
                     style: image.style
                 ))
+                if let borderColor = image.borderColor, image.borderWidth > 0 {
+                    commands.append(.strokeRect(
+                        rect: rect,
+                        color: borderColor.cgColor,
+                        width: image.borderWidth
+                    ))
+                }
             }
         )
         return commands

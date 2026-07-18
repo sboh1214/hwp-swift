@@ -42,8 +42,9 @@ extension HwpTextRunBuilder {
         }
         guard let commonProperty, commonProperty.propertyInfo.treatAsChar else { return nil }
 
-        var width = HwpUnits.points(fromHwpUnitU: commonProperty.width)
-        var height = HwpUnits.points(fromHwpUnitU: commonProperty.height)
+        let stored = HwpObjectSizeResolver.size(of: commonProperty, resolver: sizeResolver)
+        var width = stored.width
+        var height = stored.height
         if width <= 0 || height <= 0, let detail = components.first?.detail {
             if width <= 0 {
                 width = HwpUnits.points(fromHwpUnitU: detail.currentWidth)

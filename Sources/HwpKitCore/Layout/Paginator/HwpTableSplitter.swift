@@ -230,12 +230,7 @@ enum HwpTableSplitter {
                         )
                     },
                     images: cell.images.map { image in
-                        HwpCellImage(
-                            rect: image.rect.offsetBy(dx: 0, dy: deltaY),
-                            binItemId: image.binItemId,
-                            style: image.style,
-                            controlInstanceId: image.controlInstanceId
-                        )
+                        image.withRect(image.rect.offsetBy(dx: 0, dy: deltaY))
                     }
                 )
             }
@@ -324,11 +319,8 @@ enum HwpTableSplitter {
         guard bottom > top, top > image.rect.minY || bottom < image.rect.maxY else {
             return image
         }
-        return HwpCellImage(
-            rect: CGRect(x: image.rect.minX, y: top, width: image.rect.width, height: bottom - top),
-            binItemId: image.binItemId,
-            style: image.style,
-            controlInstanceId: image.controlInstanceId
+        return image.withRect(
+            CGRect(x: image.rect.minX, y: top, width: image.rect.width, height: bottom - top)
         )
     }
 

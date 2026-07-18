@@ -32,7 +32,8 @@ public struct HwpTableLayout {
         table: CoreHwp.HwpTable,
         availableWidth: CGFloat,
         index: HwpIndex,
-        depth: Int = 0
+        depth: Int = 0,
+        sizeResolver: HwpObjectSizeResolver? = nil
     ) -> Result<HwpTableFrame, HwpUnsupportedElement> {
         let property = table.tableProperty
         let rowCount = max(Int(property.rowCount), property.rowCellCounts.count)
@@ -45,9 +46,13 @@ public struct HwpTableLayout {
             return .success(emptyFrame(availableWidth: availableWidth))
         }
 
-        let outerWidth = resolvedOuterWidth(table: table, availableWidth: availableWidth)
+        let outerWidth = resolvedOuterWidth(
+            table: table, availableWidth: availableWidth, sizeResolver: sizeResolver
+        )
         let metrics = TableMetrics(property: property)
-        let context = LayoutContext(table: table, metrics: metrics, index: index, depth: depth)
+        let context = LayoutContext(
+            table: table, metrics: metrics, index: index, depth: depth, sizeResolver: sizeResolver
+        )
         let columnWidths = resolvedColumnWidths(
             table: table,
             columnCount: columnCount,
@@ -116,6 +121,8 @@ extension HwpTableLayout {
         let index: HwpIndex
         /// 현재 표의 중첩 깊이 (바깥 표 = 0)
         let depth: Int
+        /// 상대 크기 기준 해석기 (paginator 페이지/단 기하) — 없으면 절대값 해석
+        let sizeResolver: HwpObjectSizeResolver?
     }
 
     /// 셀 4방향 안쪽 여백 (pt)
@@ -168,8 +175,13 @@ extension HwpTableLayout {
         )
     }
 
-    func resolvedOuterWidth(table: CoreHwp.HwpTable, availableWidth: CGFloat) -> CGFloat {
-        let authored = HwpUnits.points(fromHwpUnitU: table.commonCtrlProperty.width)
+    func resolvedOuterWidth(
+        table: CoreHwp.HwpTable, availableWidth: CGFloat, sizeResolver: HwpObjectSizeResolver?
+    ) -> CGFloat {
+        let property = table.commonCtrlProperty
+        let authored = HwpObjectSizeResolver.width(
+            property.width, basis: property.propertyInfo.widthRelativeTo, resolver: sizeResolver
+        )
         guard authored > 1 else { return availableWidth }
         return min(authored, availableWidth)
     }
@@ -249,7 +261,9 @@ extension HwpTableLayout {
         context: LayoutContext,
         columnWidths: [CGFloat]
     ) -> PlacedCell {
-        let measurer = HwpParagraphMeasurer(index: context.index, fontResolver: fontResolver)
+        let measurer = HwpParagraphMeasurer(
+            index: context.index, fontResolver: fontResolver, sizeResolver: context.sizeResolver
+        )
         let spannedWidth = width(
             from: placement.column,
             span: placement.columnSpan,
@@ -332,10 +346,8 @@ extension HwpTableLayout {
         return ctrls.compactMap { ctrl in
             guard case let .table(nested) = ctrl else { return nil }
             guard case let .success(frame) = layout(
-                table: nested,
-                availableWidth: innerWidth,
-                index: context.index,
-                depth: context.depth + 1
+                table: nested, availableWidth: innerWidth, index: context.index,
+                depth: context.depth + 1, sizeResolver: context.sizeResolver
             ) else { return nil }
             return (nested.commonCtrlProperty.instanceId, frame)
         }

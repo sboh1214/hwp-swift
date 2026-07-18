@@ -51,10 +51,18 @@ public struct HwpControlMarkerReplacement: Sendable, Hashable {
 public struct HwpTextRunBuilder {
     let index: HwpIndex
     let fontResolver: HwpFontResolver
+    /// 상대 크기 기준 해석기 — treatAsChar 개체의 줄 공간 예약이 paint 쪽
+    /// (HwpPaginator.objectSize)과 같은 크기를 쓰게 한다. 없으면 절대값 해석.
+    let sizeResolver: HwpObjectSizeResolver?
 
-    public init(index: HwpIndex, fontResolver: HwpFontResolver) {
+    public init(
+        index: HwpIndex,
+        fontResolver: HwpFontResolver,
+        sizeResolver: HwpObjectSizeResolver? = nil
+    ) {
         self.index = index
         self.fontResolver = fontResolver
+        self.sizeResolver = sizeResolver
     }
 
     /// controlReplacements: extended 컨트롤 ordinal (controlIndex) → 마커 대신

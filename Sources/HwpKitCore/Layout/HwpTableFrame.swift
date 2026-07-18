@@ -75,6 +75,10 @@ public struct HwpCellImage: Sendable, Hashable {
     public let rect: CGRect
     public let binItemId: UInt32
     public let style: HwpImageRenderStyle?
+    /// 테두리 색 (없으면 테두리 없음)
+    public let borderColor: HwpRGBColor?
+    /// 테두리 두께 (pt)
+    public let borderWidth: CGFloat
     /// 원본 컨트롤 참조 (편집 대비)
     public let controlInstanceId: UInt32
 
@@ -82,12 +86,28 @@ public struct HwpCellImage: Sendable, Hashable {
         rect: CGRect,
         binItemId: UInt32,
         style: HwpImageRenderStyle?,
+        borderColor: HwpRGBColor? = nil,
+        borderWidth: CGFloat = 0,
         controlInstanceId: UInt32
     ) {
         self.rect = rect
         self.binItemId = binItemId
         self.style = style
+        self.borderColor = borderColor
+        self.borderWidth = borderWidth
         self.controlInstanceId = controlInstanceId
+    }
+
+    /// rect만 바꾼 사본 — 분할/정렬 이동 시 나머지 필드 누락을 막는다.
+    public func withRect(_ rect: CGRect) -> HwpCellImage {
+        HwpCellImage(
+            rect: rect,
+            binItemId: binItemId,
+            style: style,
+            borderColor: borderColor,
+            borderWidth: borderWidth,
+            controlInstanceId: controlInstanceId
+        )
     }
 }
 

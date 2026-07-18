@@ -118,6 +118,10 @@ import XCTest
             table.commonCtrlProperty.instanceId = 7
             var info = CoreHwp.HwpCommonCtrlPropertyInfo()
             info.treatAsChar = true
+            // 한글은 고정 크기 개체에 크기 기준 '절대값'을 저장한다 — 기본값
+            // (.paper)이면 width/height가 퍼센트 (10000 = 100%)로 해석된다.
+            info.widthRelativeTo = .absolute
+            info.heightRelativeTo = .absolute
             table.commonCtrlProperty.propertyInfo = info
             host.ctrlHeaderArray = [.table(table)]
 

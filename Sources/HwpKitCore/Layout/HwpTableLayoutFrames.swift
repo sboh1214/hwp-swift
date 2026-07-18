@@ -131,7 +131,8 @@ extension HwpTableLayout {
             for: cell,
             in: cellRect,
             margins: margins,
-            index: context.index
+            index: context.index,
+            sizeResolver: context.sizeResolver
         )
         laidOut = verticallyAligned(laidOut, cell: cell.cell, cellRect: cellRect, margins: margins)
 
@@ -198,12 +199,7 @@ extension HwpTableLayout {
                 )
             },
             images: contents.images.map {
-                HwpCellImage(
-                    rect: $0.rect.offsetBy(dx: 0, dy: offset),
-                    binItemId: $0.binItemId,
-                    style: $0.style,
-                    controlInstanceId: $0.controlInstanceId
-                )
+                $0.withRect($0.rect.offsetBy(dx: 0, dy: offset))
             }
         )
     }
@@ -215,9 +211,12 @@ extension HwpTableLayout {
         for cell: PlacedCell,
         in cellRect: CGRect,
         margins: CellMargins,
-        index: HwpIndex
+        index: HwpIndex,
+        sizeResolver: HwpObjectSizeResolver?
     ) -> LaidOutCellContents {
-        let textBuilder = HwpTextRunBuilder(index: index, fontResolver: fontResolver)
+        let textBuilder = HwpTextRunBuilder(
+            index: index, fontResolver: fontResolver, sizeResolver: sizeResolver
+        )
         var cursorY = cellRect.minY + margins.top
         let innerX = cellRect.minX + margins.left
         let innerWidth = max(1, cellRect.width - margins.left - margins.right)
@@ -226,11 +225,7 @@ extension HwpTableLayout {
         var images: [HwpCellImage] = []
         for content in cell.contents {
             // 문단 위 간격 (프레임 높이에 포함됨)만큼 텍스트 상단을 내린다
-            let spacingBefore = HwpUnits.points(
-                fromHwpUnit: index.paraShape(
-                    id: UInt32(content.paragraph.paraHeader.paraShapeId)
-                )?.paragraphSpacingTop ?? 0
-            ) / 2
+            let spacingBefore = halfSpacingBefore(of: content.paragraph, index: index)
             let rect = CGRect(
                 x: innerX,
                 y: cursorY + spacingBefore,
@@ -244,7 +239,12 @@ extension HwpTableLayout {
                 paragraphId: content.paragraph.paraHeader.paraId,
                 hyperlinkURL: content.paragraph.hyperlinkURL
             ))
-            images.append(contentsOf: cellImages(in: content.paragraph, paragraphRect: rect))
+            images.append(contentsOf: cellImages(
+                in: content.paragraph,
+                frame: content.frame,
+                paragraphRect: rect,
+                sizeResolver: sizeResolver
+            ))
             cursorY += content.frame.totalHeight
             for nested in content.nestedTables {
                 nestedTables.append(HwpNestedTableFrame(
@@ -267,14 +267,29 @@ extension HwpTableLayout {
         )
     }
 
-    /// 셀 문단에 붙은 그림 컨트롤 (gso/그림)을 문단 rect 안에 왼쪽부터 배치한다.
+    /// 문단 위 간격 절반 (pt) — 셀 조판은 문단별 개별 조판이라 직접 더한다.
+    private func halfSpacingBefore(
+        of paragraph: CoreHwp.HwpParagraph,
+        index: HwpIndex
+    ) -> CGFloat {
+        HwpUnits.points(
+            fromHwpUnit: index.paraShape(
+                id: UInt32(paragraph.paraHeader.paraShapeId)
+            )?.paragraphSpacingTop ?? 0
+        ) / 2
+    }
+
+    /// 셀 문단에 붙은 그림 컨트롤 (gso/그림)을 배치한다. 줄 안 U+FFFC 앵커가
+    /// 있으면 (treatAsChar) 그 줄 위치에, 없으면 문단 rect 왼쪽부터 커서로 쌓는다.
     private func cellImages(
         in paragraph: CoreHwp.HwpParagraph,
-        paragraphRect: CGRect
+        frame: HwpParagraphFrame,
+        paragraphRect: CGRect,
+        sizeResolver: HwpObjectSizeResolver?
     ) -> [HwpCellImage] {
         var images: [HwpCellImage] = []
         var cursorX = paragraphRect.minX
-        for ctrl in paragraph.ctrlHeaderArray ?? [] {
+        for (controlIndex, ctrl) in (paragraph.ctrlHeaderArray ?? []).enumerated() {
             let commonProperty: CoreHwp.HwpCommonCtrlProperty?
             let components: [CoreHwp.HwpShapeComponent]
             switch ctrl {
@@ -287,37 +302,65 @@ extension HwpTableLayout {
             default:
                 continue
             }
+            let anchor = inlineAnchorOrigin(
+                for: controlIndex,
+                frame: frame,
+                paragraphRect: paragraphRect
+            )
             for component in components {
+                guard let size = cellImageSize(
+                    commonProperty: commonProperty, component: component, sizeResolver: sizeResolver
+                ) else { continue }
                 for picture in component.pictureArray {
                     guard let image = cellImage(
                         picture: picture,
-                        component: component,
-                        commonProperty: commonProperty,
+                        size: size,
+                        instanceId: commonProperty?.instanceId ?? 0,
                         paragraphRect: paragraphRect,
-                        cursorX: cursorX
+                        origin: anchor ?? CGPoint(x: cursorX, y: paragraphRect.minY)
                     ) else { continue }
                     images.append(image)
-                    cursorX += image.rect.width
+                    if anchor == nil {
+                        cursorX += image.rect.width
+                    }
                 }
             }
         }
         return images
     }
 
+    /// controlIndex 마커의 줄 앵커 좌표 (문단 rect 기준) —
+    /// HwpPaginator.inlineAnchorMap과 같은 산식 (baseline − ascent = 개체 상단).
+    private func inlineAnchorOrigin(
+        for controlIndex: Int,
+        frame: HwpParagraphFrame,
+        paragraphRect: CGRect
+    ) -> CGPoint? {
+        guard let firstBaseline = frame.lines.first?.baseline else { return nil }
+        for line in frame.lines {
+            for anchor in line.inlineAnchors where anchor.controlIndex == controlIndex {
+                return CGPoint(
+                    x: paragraphRect.minX + line.origin.x + anchor.xOffset,
+                    y: paragraphRect.minY + firstBaseline + line.origin.y - anchor.ascent
+                )
+            }
+        }
+        return nil
+    }
+
     /// 그림 컴포넌트 하나 → 셀 이미지 (크기/BinData 참조가 없으면 nil)
-    private func cellImage(
-        picture: CoreHwp.HwpShapeComponentPicture,
-        component: CoreHwp.HwpShapeComponent,
+    /// 그림 개체의 해석 크기 — 저장 크기가 0 이하이면 개체 요소 detail의
+    /// 현재 크기로 폴백하고, 그래도 0 이하이면 nil (그리지 않음).
+    private func cellImageSize(
         commonProperty: CoreHwp.HwpCommonCtrlProperty?,
-        paragraphRect: CGRect,
-        cursorX: CGFloat
-    ) -> HwpCellImage? {
-        let property = picture.pictureProperty
-        guard let binItemId = property.map({ UInt32($0.binItemId) })
-            ?? picture.binaryDataId.map(UInt32.init)
-        else { return nil }
-        var width = HwpUnits.points(fromHwpUnitU: commonProperty?.width ?? 0)
-        var height = HwpUnits.points(fromHwpUnitU: commonProperty?.height ?? 0)
+        component: CoreHwp.HwpShapeComponent,
+        sizeResolver: HwpObjectSizeResolver?
+    ) -> CGSize? {
+        let stored = commonProperty.map {
+            HwpObjectSizeResolver.size(of: $0, resolver: sizeResolver)
+        } ?? .zero
+        var width = stored.width
+        var height = stored.height
         if width <= 0 || height <= 0, let detail = component.detail {
             if width <= 0 {
                 width = HwpUnits.points(fromHwpUnitU: detail.currentWidth)
@@ -327,17 +370,34 @@ extension HwpTableLayout {
             }
         }
         guard width > 0, height > 0 else { return nil }
-        width = min(width, max(1, paragraphRect.maxX - cursorX))
+        return CGSize(width: width, height: height)
+    }
+
+    private func cellImage(
+        picture: CoreHwp.HwpShapeComponentPicture,
+        size: CGSize,
+        instanceId: UInt32,
+        paragraphRect: CGRect,
+        origin: CGPoint
+    ) -> HwpCellImage? {
+        let property = picture.pictureProperty
+        guard let binItemId = property.map({ UInt32($0.binItemId) })
+            ?? picture.binaryDataId.map(UInt32.init)
+        else { return nil }
+        let width = min(size.width, max(1, paragraphRect.maxX - origin.x))
+        var borderColor: HwpRGBColor?
+        var borderWidth: CGFloat = 0
+        if let property, property.borderThickness > 0 {
+            borderColor = HwpRGBColor(property.borderColor)
+            borderWidth = HwpUnits.points(fromHwpUnit: property.borderThickness)
+        }
         return HwpCellImage(
-            rect: CGRect(
-                x: cursorX,
-                y: paragraphRect.minY,
-                width: width,
-                height: height
-            ),
+            rect: CGRect(x: origin.x, y: origin.y, width: width, height: size.height),
             binItemId: binItemId,
             style: property.map { HwpImageRenderStyle(pictureProperty: $0) },
-            controlInstanceId: commonProperty?.instanceId ?? 0
+            borderColor: borderColor,
+            borderWidth: borderWidth,
+            controlInstanceId: instanceId
         )
     }
 

@@ -198,6 +198,29 @@ import XCTest
             expect(first).to(beCloseTo(100, within: 1))
             expect(second).to(beCloseTo(100, within: 1))
         }
+
+        func testColumnRelativeTableWidthResolvesAsPercent() {
+            var authored = table()
+            // 크기 기준 '단'이면 저장 폭은 퍼센트다 — 5000 = 단 폭 400pt의 50%
+            authored.commonCtrlProperty.width = 5000
+            authored.commonCtrlProperty.propertyInfo.widthRelativeTo = .column
+            let result = layout().layout(
+                table: authored,
+                availableWidth: 400,
+                index: index(),
+                sizeResolver: HwpObjectSizeResolver(
+                    paperSize: CGSize(width: 595, height: 842),
+                    contentSize: CGSize(width: 500, height: 700),
+                    columnWidth: 400
+                )
+            )
+
+            guard case let .success(frame) = result else {
+                fail("expected table layout success")
+                return
+            }
+            expect(frame.outerFrame.width).to(beCloseTo(200, within: 1))
+        }
     }
 
     private extension HwpTableLayoutTests {
