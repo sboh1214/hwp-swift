@@ -46,6 +46,25 @@ final class HwpEmbeddedChartMalformedTests: XCTestCase {
         expect(HwpEmbeddedChart.chartXML(fromOLEPayload: self.olePayload(cfb))).to(beNil())
     }
 
+    func testDecodeXMLStringHonorsBOM() {
+        // XML 스펙상 UTF-16 스트림은 BOM 필수 — BOM별 디코드가 같은 문자열을
+        // 돌려주고, BOM 없는 기본은 UTF-8이다 (P2).
+        let xml = "<c:chartSpace/>"
+        var utf16LE = Data([0xFF, 0xFE])
+        utf16LE.append(xml.data(using: .utf16LittleEndian) ?? Data())
+        expect(HwpEmbeddedChart.decodeXMLString(utf16LE)) == xml
+
+        var utf16BE = Data([0xFE, 0xFF])
+        utf16BE.append(xml.data(using: .utf16BigEndian) ?? Data())
+        expect(HwpEmbeddedChart.decodeXMLString(utf16BE)) == xml
+
+        var utf8BOM = Data([0xEF, 0xBB, 0xBF])
+        utf8BOM.append(xml.data(using: .utf8) ?? Data())
+        expect(HwpEmbeddedChart.decodeXMLString(utf8BOM)) == xml
+
+        expect(HwpEmbeddedChart.decodeXMLString(xml.data(using: .utf8) ?? Data())) == xml
+    }
+
     func testNearMaxSectorOffsetArithmeticReturnsNil() {
         // Int(exactly:)는 성공하지만 (n+1)*sectorSize 오프셋이 컨테이너를 한참
         // 넘는 ID — 오버플로 검사 경로가 nil을 돌려준다.

@@ -23,6 +23,19 @@ public enum HwpEmbeddedChart {
         guard let file = EmbeddedCompoundFile(data: cfb),
               let data = file.stream(named: "OOXMLChartContents")
         else { return nil }
+        return decodeXMLString(data)
+    }
+
+    /// XML 스트림 인코딩 판정: UTF-16은 XML 스펙상 BOM이 필수라 BOM으로
+    /// 분기하고(.utf16이 엔디안 판정·BOM 제거), 기본은 UTF-8(한컴 실측 저장
+    /// 인코딩). BOM 없이 선언만 있는 UTF-16은 스펙 위반이라 다루지 않는다 (P2).
+    static func decodeXMLString(_ data: Data) -> String? {
+        if data.starts(with: [0xFF, 0xFE]) || data.starts(with: [0xFE, 0xFF]) {
+            return String(data: data, encoding: .utf16)
+        }
+        if data.starts(with: [0xEF, 0xBB, 0xBF]) {
+            return String(data: data.dropFirst(3), encoding: .utf8)
+        }
         return String(data: data, encoding: .utf8)
     }
 }
