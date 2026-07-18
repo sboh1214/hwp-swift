@@ -171,7 +171,13 @@ public actor HwpDocumentActor {
             pages.append(page)
             pageIndex += 1
             if let onPartial, pages.count >= nextYieldCount {
-                nextYieldCount = pages.count + max(1, batchSize)
+                // 스냅샷마다 접두 배열 전체가 CoW 복사되므로 고정 주기는 총
+                // O(N²/batch)다 — 간격을 페이지 수에 비례(1/4)로 키워 총 복사량을
+                // O(N)으로 상환한다 (P1). 공개 batchSize의 극단값(.max)이 덧셈을
+                // 트랩시키지 않게 포화 처리한다 (P2).
+                let interval = max(max(1, batchSize), pages.count / 4)
+                let next = pages.count.addingReportingOverflow(interval)
+                nextYieldCount = next.overflow ? Int.max : next.partialValue
                 let partial = HwpDocument(
                     pages: pages,
                     metadata: HwpDocumentMetadata(
