@@ -323,11 +323,21 @@ private extension HwpTrackChangeAuthor {
 
         do {
             let rawCharacterCount = try payload.readLittleEndianUInt32(at: 0)
-            let characterCount = Int(rawCharacterCount)
-            let byteCount = characterCount * characterByteCount
+            // 32비트 Int(watchOS arm64_32)에선 Int.max 초과 count의 변환·길이 곱이
+            // payload 크기 가드 전에 트랩한다 — failable 변환 + 오버플로 검사로
+            // malformed 메타데이터를 nil로 돌려준다 (P1, HwpEmbeddedChart와 동일).
+            guard let characterCount = Int(exactly: rawCharacterCount) else {
+                return nil
+            }
+            let byteCountResult = characterCount
+                .multipliedReportingOverflow(by: characterByteCount)
             let nameOffset = lengthByteCount
-
-            guard payload.count >= nameOffset + byteCount else {
+            guard !byteCountResult.overflow else {
+                return nil
+            }
+            let byteCount = byteCountResult.partialValue
+            let endResult = nameOffset.addingReportingOverflow(byteCount)
+            guard !endResult.overflow, payload.count >= endResult.partialValue else {
                 return nil
             }
 
