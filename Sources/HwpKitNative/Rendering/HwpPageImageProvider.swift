@@ -102,10 +102,21 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     }
 
     /// 비동기 디코딩 + 스타일 적용을 트리거한다. 이미 완료/진행 중이면 무시한다.
-    public func requestImage(for key: UInt32, style: HwpImageRenderStyle? = nil) {
+    public func requestImage(
+        for key: UInt32,
+        style: HwpImageRenderStyle? = nil,
+        expectedGeneration: Int? = nil
+    ) {
         guard cachedImage(for: key, style: style) == nil else { return }
         let variant = Self.variantKey(key, style)
         lock.lock()
+        // expectedGeneration은 디퍼드 재시도의 디큐 시점 세대다 — 락 밖 재시도
+        // 창에서 cancelOutstanding이 세대를 올린 요청은 등록 전에 기각된다.
+        // 아니면 낡은 provider가 새 세대 태그로 디코드를 시작·보유한다 (#2).
+        if let expectedGeneration, generation != expectedGeneration {
+            lock.unlock()
+            return
+        }
         let alreadyHandled = failedKeys.contains(variant) || inFlightKeys.contains(variant)
         let atCapacity = inFlightKeys.count >= Self.maximumInFlight
         if !alreadyHandled, !atCapacity {
@@ -217,13 +228,17 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         } else {
             failedKeys.insert(variant)
         }
-        // 슬롯이 났으니 미뤄 둔 요청 하나를 꺼내 재시도한다 (#5).
+        // 슬롯이 났으니 미뤄 둔 요청 하나를 꺼내 재시도한다 (#5). 디큐 시점
+        // 세대를 함께 넘겨 락 밖 재시도 창의 provider 교체를 기각한다 (#2).
         let retry = dequeueDeferred()
+        let retryGeneration = generation
         let handler = imageResolvedHandler
         lock.unlock()
         handler?(key)
         if let retry {
-            requestImage(for: retry.key, style: retry.style)
+            requestImage(
+                for: retry.key, style: retry.style, expectedGeneration: retryGeneration
+            )
         }
     }
 
