@@ -5,8 +5,15 @@
     import UIKit
 
     public final class HwpDocumentUIView: UIView, UIScrollViewDelegate {
+        /// 문서 대입 세대 — 지연 통지가 예약 시점 문서가 아직 현재인지 대조한다.
+        /// loadToken은 직접 구성 문서에서 nil이라 교체·clear를 구분하지 못한다 (#3).
+        /// 동일 문서 재대입은 세대 불변 — 정당한 pending 통지를 폐기하지 않는다.
+        private var documentGeneration: UInt64 = 0
         public var document: HwpDocument? {
             didSet {
+                if oldValue != document {
+                    documentGeneration &+= 1
+                }
                 // 렌더 동일성 가드: loadToken이 있으면(로더 산출) 구조 동등성으로
                 // 스킵하지만, 토큰이 없으면(직접 구성) 구조가 같아도 렌더가 다를 수
                 // 있어 스킵하지 않는다 (#6). 프로그레시브는 아래에서 처리한다.
@@ -324,9 +331,9 @@
             // 발화한다 (P2). 대입 시점의 문서를 캡처하되, 발화 전 그새 다른
             // 문서로 교체됐으면(loadToken 불일치) stale 경고를 폐기한다 (#5).
             let document = document
-            let token = document?.metadata.loadToken
+            let generation = documentGeneration
             DispatchQueue.main.async { [weak self] in
-                guard let self, self.document?.metadata.loadToken == token else { return }
+                guard let self, documentGeneration == generation else { return }
                 HwpDocumentViewSupport.notifyUnsupportedElements(
                     in: document, to: onUnsupportedElement
                 )
