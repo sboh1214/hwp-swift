@@ -52,10 +52,21 @@ final class HwpDocumentCoordinator {
     private var onHyperlinkTapped: ((String) -> Void)?
     private var onUnsupportedElement: ((HwpUnsupportedElement) -> Void)?
     private var isApplyingBinding = false
-    /// 현재 적용된 문서의 loadToken — 지연 작업(클램프 등)이 예약 시점 문서가
-    /// 아직 유효한지 대조한다. 래퍼 struct는 최신 문서를 볼 수 없어 클래스인
-    /// coordinator가 보유한다 (#6).
-    var activeLoadToken: UUID?
+    /// 현재 적용된 문서 세대 — 지연 작업(클램프 등)이 예약 시점 문서가 아직
+    /// 현재인지 대조한다. 래퍼 struct는 최신 문서를 볼 수 없어 클래스인
+    /// coordinator가 보유한다 (#6). loadToken은 직접 구성 문서에서 nil이라
+    /// 교체를 구분하지 못해 문서 동등성 기반 세대를 쓴다 (#4). 같은 문서로의
+    /// 재등록은 멱등 — 정당한 pending 클램프를 폐기하지 않는다.
+    private var lastDocument: HwpDocument?
+    private(set) var activeDocumentGeneration: UInt64 = 0
+
+    func registerDocument(_ document: HwpDocument) -> UInt64 {
+        if lastDocument != document {
+            lastDocument = document
+            activeDocumentGeneration &+= 1
+        }
+        return activeDocumentGeneration
+    }
 
     init(
         zoomScale: Binding<CGFloat>?,
@@ -153,7 +164,7 @@ final class HwpDocumentCoordinator {
             view.onUnsupportedElement = context.coordinator.handleUnsupportedElement(_:)
             view.onPageChanged = context.coordinator.handlePageChanged(_:)
             view.onZoomChanged = context.coordinator.handleZoomChanged(_:)
-            context.coordinator.activeLoadToken = document.metadata.loadToken
+            _ = context.coordinator.registerDocument(document)
             // 문서 대입·줌·스크롤의 onPageChanged echo가 currentPage 바인딩을
             // 덮어쓰지 않게 이 구간 동안 writeback을 억제한다 — 첫 프로그레시브
             // 스냅샷 이후의 페이지 요청이 유실되지 않고 로드되면 도달한다 (P2).
@@ -187,13 +198,14 @@ final class HwpDocumentCoordinator {
             let requested = currentPage.wrappedValue
             let clamped = min(max(1, requested), max(1, document.pages.count))
             guard clamped != requested else { return }
-            let token = document.metadata.loadToken
+            let generation = coordinator.registerDocument(document)
             // updateNSView/updateUIView 동기 경로에서 상태를 쓰면 SwiftUI의
             // state-during-update 위반 — 업데이트 밖에서 반영한다 (P2). 재개 시
             // 사용자가 바인딩을 바꿨거나(값 불일치) 다른 문서가 적용됐으면
-            // (loadToken 불일치 — 새 문서가 그 페이지를 지원할 수 있음) 폐기한다 (#6).
+            // (세대 불일치 — nil 토큰 문서 교체 포함, 새 문서가 그 페이지를
+            // 지원할 수 있음) 폐기한다 (#6, #4).
             Task { @MainActor in
-                guard coordinator.activeLoadToken == token,
+                guard coordinator.activeDocumentGeneration == generation,
                       currentPage.wrappedValue == requested
                 else { return }
                 currentPage.wrappedValue = clamped
@@ -242,7 +254,7 @@ final class HwpDocumentCoordinator {
             view.onUnsupportedElement = context.coordinator.handleUnsupportedElement(_:)
             view.onPageChanged = context.coordinator.handlePageChanged(_:)
             view.onZoomChanged = context.coordinator.handleZoomChanged(_:)
-            context.coordinator.activeLoadToken = document.metadata.loadToken
+            _ = context.coordinator.registerDocument(document)
             // 문서 대입·줌·스크롤의 onPageChanged echo가 currentPage 바인딩을
             // 덮어쓰지 않게 이 구간 동안 writeback을 억제한다 — 첫 프로그레시브
             // 스냅샷 이후의 페이지 요청이 유실되지 않고 로드되면 도달한다 (P2).
@@ -276,13 +288,14 @@ final class HwpDocumentCoordinator {
             let requested = currentPage.wrappedValue
             let clamped = min(max(1, requested), max(1, document.pages.count))
             guard clamped != requested else { return }
-            let token = document.metadata.loadToken
+            let generation = coordinator.registerDocument(document)
             // updateNSView/updateUIView 동기 경로에서 상태를 쓰면 SwiftUI의
             // state-during-update 위반 — 업데이트 밖에서 반영한다 (P2). 재개 시
             // 사용자가 바인딩을 바꿨거나(값 불일치) 다른 문서가 적용됐으면
-            // (loadToken 불일치 — 새 문서가 그 페이지를 지원할 수 있음) 폐기한다 (#6).
+            // (세대 불일치 — nil 토큰 문서 교체 포함, 새 문서가 그 페이지를
+            // 지원할 수 있음) 폐기한다 (#6, #4).
             Task { @MainActor in
-                guard coordinator.activeLoadToken == token,
+                guard coordinator.activeDocumentGeneration == generation,
                       currentPage.wrappedValue == requested
                 else { return }
                 currentPage.wrappedValue = clamped

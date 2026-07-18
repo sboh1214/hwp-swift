@@ -18,6 +18,39 @@ final class HwpDocumentViewTests: XCTestCase {
     }
 
     @MainActor
+    func testCoordinatorDocumentGenerationTracksNilTokenReplacement() {
+        // nil loadToken(직접 구성) 문서 교체도 세대가 증가해 stale 지연 작업을
+        // 구분하고, 같은 문서 재등록은 멱등이어야 한다 (#4).
+        let coordinator = HwpDocumentCoordinator(
+            zoomScale: nil,
+            currentPage: nil,
+            onHyperlinkTapped: nil,
+            onUnsupportedElement: nil
+        )
+        func makeDocument(pageCount: Int) -> HwpDocument {
+            HwpDocument(
+                pages: (0 ..< pageCount).map { index in
+                    HwpPage(
+                        size: CGSize(width: 595, height: 842),
+                        margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
+                        blocks: [],
+                        pageNumber: index + 1
+                    )
+                },
+                metadata: HwpDocumentMetadata(pageCount: pageCount),
+                unsupportedElements: []
+            )
+        }
+        let documentA = makeDocument(pageCount: 2)
+        let documentB = makeDocument(pageCount: 10)
+
+        let generationA = coordinator.registerDocument(documentA)
+        expect(coordinator.registerDocument(documentA)) == generationA
+        let generationB = coordinator.registerDocument(documentB)
+        expect(generationB) != generationA
+    }
+
+    @MainActor
     func testPageChangeWritebackSuppressedWhileApplyingBinding() {
         var currentPage = 50
         let coordinator = HwpDocumentCoordinator(
