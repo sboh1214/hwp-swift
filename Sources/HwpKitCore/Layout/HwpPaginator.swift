@@ -1182,32 +1182,56 @@ private extension HwpPaginator {
 
     // MARK: - 컨트롤 블록 방출
 
+    /// 컨테이너 문맥 — 컨테이너 레이아웃이 셀/글상자 콘텐츠로 그린 컨트롤의
+    /// 페이지 흐름 재방출 억제에 쓴다 (R29 #1).
+    enum ContainerContext {
+        case none, tableCell, textbox
+    }
+
     /// 문단에 붙은 컨트롤을 실제 레이아웃 엔진으로 방출한다.
     /// depth는 컨테이너 안 컨테이너 재귀 제한 (표 안 글상자 등).
-    /// inTableCell이면 중첩 표는 HwpTableLayout이 이미 셀 안에 재귀 배치했으므로
+    /// 셀 안 중첩 표는 HwpTableLayout이 이미 셀 안에 재귀 배치했으므로
     /// 별도 블록으로 방출하지 않는다.
     func appendControlBlocks(
         from paragraph: CoreHwp.HwpParagraph,
         depth: Int = 0,
-        inTableCell: Bool = false
+        container: ContainerContext = .none
     ) {
         guard let ctrls = paragraph.ctrlHeaderArray else { return }
         for (ctrlIndex, ctrl) in ctrls.enumerated() {
             // 줄 중간 앵커 문맥은 본문 문단 (depth 0)에서만 유효하다.
             let anchorIndex = depth == 0 ? ctrlIndex : nil
-            // 셀 안 그림은 HwpTableLayout이 셀 콘텐츠 (HwpCellImage)로 이미
-            // 배치했다 — 페이지 흐름 블록으로 다시 방출하면 큰 그림이 페이지를
-            // 밀어내 페이지 수가 한글과 어긋난다 (noori 실측 3쪽).
-            if inTableCell, Self.carriesPicture(ctrl) {
+            // 컨테이너 안 개체 (그림/도형/글상자)는 컨테이너 레이아웃이 이미
+            // 콘텐츠로 배치했다 — 페이지 흐름 블록으로 다시 방출하면 컨테이너
+            // 밖 좌표에 그려지고 흐름을 밀어낸다 (noori 실측 3쪽).
+            if container != .none, Self.rendersInsideContainer(ctrl, container: container) {
+                // 렌더된 컨트롤이라도 자식 문단의 미수집 컨트롤 (글상자 안
+                // 글상자 등)은 흐름 폴백을 유지한다.
+                appendNestedControlBlocks(of: ctrl, depth: depth)
                 continue
             }
             appendControlBlock(
                 ctrl,
                 anchorIndex: anchorIndex,
                 depth: depth,
-                inTableCell: inTableCell
+                container: container
             )
         }
+    }
+
+    /// 컨테이너 레이아웃 (HwpTableLayout/HwpTextboxLayout)이 컨테이너
+    /// 콘텐츠로 이미 배치한 컨트롤인지 —
+    /// HwpParagraphObjectCollector.collectible과 반드시 일치 (R29 #1).
+    static func rendersInsideContainer(
+        _ ctrl: CoreHwp.HwpCtrlId,
+        container: ContainerContext
+    ) -> Bool {
+        guard let (_, components) = HwpParagraphObjectCollector.handledControl(ctrl) else {
+            return false
+        }
+        return HwpParagraphObjectCollector.collectible(
+            components, collectsTextboxes: container == .tableCell
+        )
     }
 
     /// 컨트롤 하나를 종류별 레이아웃 경로로 방출한다 (appendControlBlocks 본문).
@@ -1215,11 +1239,11 @@ private extension HwpPaginator {
         _ ctrl: CoreHwp.HwpCtrlId,
         anchorIndex: Int?,
         depth: Int,
-        inTableCell: Bool
+        container: ContainerContext
     ) {
         switch ctrl {
         case let .table(table):
-            if !inTableCell {
+            if container != .tableCell {
                 appendTableBlocks(table, controlIndex: anchorIndex)
             }
             appendNestedControlBlocks(of: ctrl, depth: depth)
@@ -1264,30 +1288,20 @@ private extension HwpPaginator {
         }
     }
 
-    /// 컨트롤이 그림 컴포넌트를 갖는지 (셀 안 인셀 렌더 대상 판별)
-    static func carriesPicture(_ ctrl: CoreHwp.HwpCtrlId) -> Bool {
-        let components: [CoreHwp.HwpShapeComponent]
-        switch ctrl {
-        case let .genShapeObject(genShape):
-            components = genShape.shapeComponentArray
-        case let .picture(shape):
-            components = shape.shapeComponentArray
-        default:
-            return false
-        }
-        return components.contains { !$0.pictureArray.isEmpty }
-    }
-
     /// 컨테이너 문단 안에 중첩된 컨트롤 (표 셀 안 글상자/이미지 등)을 재귀 방출한다.
     func appendNestedControlBlocks(of ctrl: CoreHwp.HwpCtrlId, depth: Int) {
         guard depth < 3 else { return }
-        let isTable = if case .table = ctrl {
-            true
+        let container: ContainerContext = if case .table = ctrl {
+            .tableCell
+        } else if let (_, components) = HwpParagraphObjectCollector.handledControl(ctrl),
+                  components.contains(where: { !$0.textBoxListArray.isEmpty })
+        {
+            .textbox
         } else {
-            false
+            .none
         }
         for (nested, _) in childParagraphs(of: ctrl) where nested.ctrlHeaderArray != nil {
-            appendControlBlocks(from: nested, depth: depth + 1, inTableCell: isTable)
+            appendControlBlocks(from: nested, depth: depth + 1, container: container)
         }
     }
 

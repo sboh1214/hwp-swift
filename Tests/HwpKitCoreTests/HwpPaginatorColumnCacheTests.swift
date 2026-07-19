@@ -220,5 +220,102 @@ import XCTest
             let imageBlocks = pages.flatMap(\.blocks).filter { $0.kind == .image }
             expect(imageBlocks).to(beEmpty())
         }
+
+        /// 셀 안 글상자는 셀 콘텐츠 (HwpCellTextbox)로 배치되고 페이지 흐름
+        /// 블록으로 방출되지 않는다 (R29 #1).
+        func testCellTextboxRendersInsideCellWithoutFlowBlock() async throws {
+            var cellParagraph = HwpSynthetic.paragraphWithInlineControl(prefix: "", suffix: "")
+            cellParagraph.ctrlHeaderArray = try [.genShapeObject(
+                HwpSynthetic.inlineTextboxObject(
+                    width: 15000, height: 5000, text: "상자", instanceId: 11
+                )
+            )]
+            var table = HwpSynthetic.table(
+                cellWidth: 20000,
+                rowHeights: [10000],
+                cellParagraphs: [[[cellParagraph]]]
+            )
+            table.commonCtrlProperty.width = 20000
+            table.commonCtrlProperty.height = 10000
+            var host = HwpSynthetic.paragraphWithInlineControl(prefix: "표 ", suffix: "")
+            host.ctrlHeaderArray = [.table(table)]
+            let section = HwpSynthetic.section(
+                firstParagraphControls: [
+                    .section(HwpSynthetic.sectionDef()),
+                    .column(CoreHwp.HwpColumn()),
+                ],
+                bodyParagraphs: [host]
+            )
+
+            let paginator = HwpPaginator(
+                sections: [section],
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+            guard let page = try await paginator.page(at: 0) else {
+                fail("첫 페이지가 없다")
+                return
+            }
+
+            guard let tableBlock = page.blocks.first(where: { $0.kind == .table }),
+                  case let .table(frame) = tableBlock.payload
+            else {
+                fail("표 블록이 없다")
+                return
+            }
+            let textboxes = frame.rows.flatMap(\.cells).flatMap(\.textboxes)
+            expect(textboxes.count) == 1
+            expect(textboxes.first?.controlInstanceId) == 11
+            expect(
+                textboxes.first?.textbox.paragraphs.first?.attributedString.string
+            ).to(contain("상자"))
+            // 별도 글상자 흐름 블록은 방출되지 않는다
+            let textboxBlocks = page.blocks.filter { $0.kind == .textbox }
+            expect(textboxBlocks).to(beEmpty())
+        }
+
+        /// 글상자 문단 안 그림은 글상자 콘텐츠 (frame.images)로 배치되고
+        /// 별도 흐름 블록으로 방출되지 않는다 (R29 #1).
+        func testTextboxPictureRendersInsideTextboxBlock() async throws {
+            var boxParagraph = HwpSynthetic.paragraphWithInlineControl(prefix: "", suffix: "")
+            boxParagraph.ctrlHeaderArray = [.genShapeObject(HwpSynthetic.inlinePictureObject(
+                width: 10000, height: 4000, binItemId: 7, instanceId: 12
+            ))]
+            var textbox = try HwpSynthetic.inlineTextboxObject(
+                width: 20000, height: 8000, text: "", instanceId: 13
+            )
+            textbox.shapeComponentArray[0].textBoxListArray[0].paragraphArray = [boxParagraph]
+            var host = HwpSynthetic.paragraphWithInlineControl(prefix: "글 ", suffix: "")
+            host.ctrlHeaderArray = [.genShapeObject(textbox)]
+            let section = HwpSynthetic.section(
+                firstParagraphControls: [
+                    .section(HwpSynthetic.sectionDef()),
+                    .column(CoreHwp.HwpColumn()),
+                ],
+                bodyParagraphs: [host]
+            )
+
+            let paginator = HwpPaginator(
+                sections: [section],
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+            guard let page = try await paginator.page(at: 0) else {
+                fail("첫 페이지가 없다")
+                return
+            }
+
+            guard let textboxBlock = page.blocks.first(where: { $0.kind == .textbox }),
+                  case let .textbox(frame) = textboxBlock.payload
+            else {
+                fail("글상자 블록이 없다")
+                return
+            }
+            expect(frame.images.count) == 1
+            expect(frame.images.first?.binItemId) == 7
+            // 그림이 별도 흐름 블록으로 중복 방출되지 않는다
+            let imageBlocks = page.blocks.filter { $0.kind == .image }
+            expect(imageBlocks).to(beEmpty())
+        }
     }
 #endif

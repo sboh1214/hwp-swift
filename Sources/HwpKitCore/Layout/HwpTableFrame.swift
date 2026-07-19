@@ -111,6 +111,45 @@ public struct HwpCellImage: Sendable, Hashable {
     }
 }
 
+/// 셀/글상자 안 도형 (컨테이너-로컬 rect + 지오메트리).
+/// 한글은 컨테이너 안 개체를 컨테이너 콘텐츠로 배치한다 — 페이지 흐름
+/// 블록으로 방출하면 컨테이너 밖 좌표에 그려진다 (R29 #1).
+public struct HwpCellShape: @unchecked Sendable, Hashable {
+    public let rect: CGRect
+    public let geometry: HwpShapeGeometry
+    /// 원본 컨트롤 참조 (편집 대비)
+    public let controlInstanceId: UInt32
+
+    public init(rect: CGRect, geometry: HwpShapeGeometry, controlInstanceId: UInt32) {
+        self.rect = rect
+        self.geometry = geometry
+        self.controlInstanceId = controlInstanceId
+    }
+
+    public func withRect(_ rect: CGRect) -> HwpCellShape {
+        HwpCellShape(rect: rect, geometry: geometry, controlInstanceId: controlInstanceId)
+    }
+}
+
+/// 셀 안 글상자 (표-로컬 rect + 글상자 레이아웃).
+public struct HwpCellTextbox: @unchecked Sendable, Hashable {
+    public let rect: CGRect
+    /// 글상자 자체 레이아웃 (origin 0,0 좌표계)
+    public let textbox: HwpTextboxFrame
+    /// 원본 컨트롤 참조 (편집 대비)
+    public let controlInstanceId: UInt32
+
+    public init(rect: CGRect, textbox: HwpTextboxFrame, controlInstanceId: UInt32) {
+        self.rect = rect
+        self.textbox = textbox
+        self.controlInstanceId = controlInstanceId
+    }
+
+    public func withRect(_ rect: CGRect) -> HwpCellTextbox {
+        HwpCellTextbox(rect: rect, textbox: textbox, controlInstanceId: controlInstanceId)
+    }
+}
+
 public struct HwpTableCellFrame: @unchecked Sendable, Hashable {
     /// 표-로컬 좌표계 (origin 0,0 top-left, y-down)의 셀 영역
     public let cellFrame: CGRect
@@ -127,6 +166,10 @@ public struct HwpTableCellFrame: @unchecked Sendable, Hashable {
     public let nestedTables: [HwpNestedTableFrame]
     /// 셀 안 그림 (문단 줄 위치에 배치)
     public let images: [HwpCellImage]
+    /// 셀 안 도형 (문단 줄 위치에 배치, R29 #1)
+    public let shapes: [HwpCellShape]
+    /// 셀 안 글상자 (문단 줄 위치에 배치, R29 #1)
+    public let textboxes: [HwpCellTextbox]
 
     public init(
         cellFrame: CGRect,
@@ -138,7 +181,9 @@ public struct HwpTableCellFrame: @unchecked Sendable, Hashable {
         borders: HwpBorderSet,
         fillColor: HwpRGBColor?,
         nestedTables: [HwpNestedTableFrame] = [],
-        images: [HwpCellImage] = []
+        images: [HwpCellImage] = [],
+        shapes: [HwpCellShape] = [],
+        textboxes: [HwpCellTextbox] = []
     ) {
         self.cellFrame = cellFrame
         self.row = row
@@ -150,6 +195,41 @@ public struct HwpTableCellFrame: @unchecked Sendable, Hashable {
         self.fillColor = fillColor
         self.nestedTables = nestedTables
         self.images = images
+        self.shapes = shapes
+        self.textboxes = textboxes
+    }
+
+    /// 셀과 모든 콘텐츠 지오메트리를 deltaY만큼 이동한 사본 (분할 세그먼트 이동).
+    /// 새 콘텐츠 종류가 누락되지 않게 이동 산식은 여기 한 곳에만 둔다.
+    public func offsetBy(deltaY: CGFloat) -> HwpTableCellFrame {
+        HwpTableCellFrame(
+            cellFrame: cellFrame.offsetBy(dx: 0, dy: deltaY),
+            row: row,
+            column: column,
+            rowSpan: rowSpan,
+            columnSpan: columnSpan,
+            paragraphs: paragraphs.map { paragraph in
+                HwpLaidOutParagraph(
+                    attributedString: paragraph.attributedString,
+                    frame: paragraph.frame,
+                    rect: paragraph.rect.offsetBy(dx: 0, dy: deltaY),
+                    paragraphId: paragraph.paragraphId,
+                    hyperlinkURL: paragraph.hyperlinkURL
+                )
+            },
+            borders: borders,
+            fillColor: fillColor,
+            nestedTables: nestedTables.map { nested in
+                HwpNestedTableFrame(
+                    rect: nested.rect.offsetBy(dx: 0, dy: deltaY),
+                    table: nested.table,
+                    controlInstanceId: nested.controlInstanceId
+                )
+            },
+            images: images.map { $0.withRect($0.rect.offsetBy(dx: 0, dy: deltaY)) },
+            shapes: shapes.map { $0.withRect($0.rect.offsetBy(dx: 0, dy: deltaY)) },
+            textboxes: textboxes.map { $0.withRect($0.rect.offsetBy(dx: 0, dy: deltaY)) }
+        )
     }
 }
 

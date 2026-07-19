@@ -269,6 +269,25 @@ enum HwpSynthetic {
         object.shapeComponentArray[0] = component
         return object
     }
+
+    /// 글상자 리스트 (문단 1개)를 가진 treatAsChar gso 개체
+    static func inlineTextboxObject(
+        width: UInt32,
+        height: UInt32,
+        text: String,
+        instanceId: UInt32 = 0
+    ) throws -> CoreHwp.HwpGenShapeObject {
+        var object = inlineShapeObject(width: width, height: height, instanceId: instanceId)
+        var component = object.shapeComponentArray[0]
+        component.textBoxListArray = [CoreHwp.HwpListControlList(
+            header: CoreHwp.HwpListHeader(),
+            headerRawPayload: Data(),
+            headerUnknownChildren: [],
+            paragraphArray: [try textParagraph(text)]
+        )]
+        object.shapeComponentArray[0] = component
+        return object
+    }
 }
 
 // MARK: - 표/셀 빌더

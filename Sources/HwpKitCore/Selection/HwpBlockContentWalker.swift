@@ -47,23 +47,32 @@ public enum HwpBlockContentWalker {
     }
 
     /// 표를 렌더 방출 순서로 순회한다 — 셀마다
-    /// onCellStart → onParagraphText* → onCellImage* → (중첩 표 재귀).
-    /// 렌더는 세 이벤트를 모두 (fill/border·drawText·셀 그림), 선택은
+    /// onCellStart → onParagraphText* → onCellImage* → onCellShape* →
+    /// onCellTextbox* → (중첩 표 재귀).
+    /// 렌더는 모든 이벤트를 (fill/border·drawText·셀 개체), 선택은
     /// onParagraphText만 소비한다.
     public static func walkTable(
         _ table: HwpTableFrame,
         origin: CGPoint,
         onCellStart: (HwpTableCellFrame, CGRect) -> Void = { _, _ in },
         onParagraphText: (NSAttributedString, CGRect, UInt32?) -> Void,
-        onCellImage: (HwpCellImage, CGRect) -> Void = { _, _ in }
+        onCellImage: (HwpCellImage, CGRect) -> Void = { _, _ in },
+        onCellShape: (HwpCellShape, CGRect) -> Void = { _, _ in },
+        onCellTextbox: (HwpCellTextbox, CGRect) -> Void = { _, _ in }
     ) {
         for row in table.rows {
             for cell in row.cells {
                 onCellStart(cell, cell.cellFrame.offsetBy(dx: origin.x, dy: origin.y))
                 walkParagraphs(cell.paragraphs, offset: origin, visit: onParagraphText)
-                // 셀 안 그림은 셀 콘텐츠로 순회한다 (표-로컬 rect + 블록 origin)
+                // 셀 안 개체는 셀 콘텐츠로 순회한다 (표-로컬 rect + 블록 origin)
                 for image in cell.images {
                     onCellImage(image, image.rect.offsetBy(dx: origin.x, dy: origin.y))
+                }
+                for shape in cell.shapes {
+                    onCellShape(shape, shape.rect.offsetBy(dx: origin.x, dy: origin.y))
+                }
+                for textbox in cell.textboxes {
+                    onCellTextbox(textbox, textbox.rect.offsetBy(dx: origin.x, dy: origin.y))
                 }
                 // 중첩 표는 셀 안 위치를 origin으로 재귀 순회한다 —
                 // origin 합성 산식은 여기 한 곳에만 둔다.
@@ -76,7 +85,9 @@ public enum HwpBlockContentWalker {
                         ),
                         onCellStart: onCellStart,
                         onParagraphText: onParagraphText,
-                        onCellImage: onCellImage
+                        onCellImage: onCellImage,
+                        onCellShape: onCellShape,
+                        onCellTextbox: onCellTextbox
                     )
                 }
             }

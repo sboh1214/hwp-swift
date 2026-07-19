@@ -169,7 +169,9 @@ enum HwpTableSplitter {
                     // 중첩 표의 텍스트도 클론 표식을 재귀로 단다 — 안 그러면
                     // 중첩 제목 텍스트가 페이지마다 복사에 중복된다 (#25).
                     nestedTables: cell.nestedTables.map(markedNestedClone),
-                    images: cell.images
+                    images: cell.images,
+                    shapes: cell.shapes,
+                    textboxes: cell.textboxes
                 )
             }
         )
@@ -201,39 +203,11 @@ enum HwpTableSplitter {
     }
 
     /// 행/셀/문단 지오메트리를 deltaY만큼 이동한 사본을 만든다.
+    /// 셀 콘텐츠 이동 산식은 HwpTableCellFrame.offsetBy(deltaY:)가 단일 소스다.
     private static func shifted(row: HwpTableRowFrame, deltaY: CGFloat) -> HwpTableRowFrame {
         HwpTableRowFrame(
             rowFrame: row.rowFrame.offsetBy(dx: 0, dy: deltaY),
-            cells: row.cells.map { cell in
-                HwpTableCellFrame(
-                    cellFrame: cell.cellFrame.offsetBy(dx: 0, dy: deltaY),
-                    row: cell.row,
-                    column: cell.column,
-                    rowSpan: cell.rowSpan,
-                    columnSpan: cell.columnSpan,
-                    paragraphs: cell.paragraphs.map { paragraph in
-                        HwpLaidOutParagraph(
-                            attributedString: paragraph.attributedString,
-                            frame: paragraph.frame,
-                            rect: paragraph.rect.offsetBy(dx: 0, dy: deltaY),
-                            paragraphId: paragraph.paragraphId,
-                            hyperlinkURL: paragraph.hyperlinkURL
-                        )
-                    },
-                    borders: cell.borders,
-                    fillColor: cell.fillColor,
-                    nestedTables: cell.nestedTables.map { nested in
-                        HwpNestedTableFrame(
-                            rect: nested.rect.offsetBy(dx: 0, dy: deltaY),
-                            table: nested.table,
-                            controlInstanceId: nested.controlInstanceId
-                        )
-                    },
-                    images: cell.images.map { image in
-                        image.withRect(image.rect.offsetBy(dx: 0, dy: deltaY))
-                    }
-                )
-            }
+            cells: row.cells.map { $0.offsetBy(deltaY: deltaY) }
         )
     }
 
@@ -348,21 +322,14 @@ enum HwpTableSplitter {
         }
         let topNested = cell.nestedTables.filter { $0.rect.minY < cutY }
         let bottomNested = cell.nestedTables.filter { $0.rect.minY >= cutY }
-        // 셀 이미지는 조각 경계를 걸칠 수 있다 — 중심(midY)으로 한 조각에
-        // 배정하되(손실 방지, #13), 그 조각의 셀 경계로 rect를 클램프해 조각
-        // 밖(rebase 후 음수 y·다음 콘텐츠 위)으로 그려지지 않게 한다 (#11).
-        // 걸치지 않는 이미지는 그대로 (렌더 불변).
-        let topImages = cell.images
-            .filter { $0.rect.midY < cutY }
-            .map { clampedImage($0, minY: frames.top.minY, maxY: frames.top.maxY) }
-        let bottomImages = cell.images
-            .filter { $0.rect.midY >= cutY }
-            .map { clampedImage($0, minY: frames.bottom.minY, maxY: frames.bottom.maxY) }
+        let objects = partitionedObjects(
+            of: cell, at: cutY, topFrame: frames.top, bottomFrame: frames.bottom
+        )
         func fragment(
             _ frame: CGRect,
             _ paragraphs: [HwpLaidOutParagraph],
             _ nested: [HwpNestedTableFrame],
-            _ images: [HwpCellImage]
+            _ objects: HwpParagraphObjectCollector.Objects
         ) -> HwpTableCellFrame {
             HwpTableCellFrame(
                 cellFrame: frame,
@@ -374,12 +341,42 @@ enum HwpTableSplitter {
                 borders: cell.borders,
                 fillColor: cell.fillColor,
                 nestedTables: nested,
-                images: images
+                images: objects.images,
+                shapes: objects.shapes,
+                textboxes: objects.textboxes
             )
         }
         return (
-            fragment(frames.top, topParagraphs, topNested, topImages),
-            fragment(frames.bottom, bottomParagraphs, bottomNested, bottomImages)
+            fragment(frames.top, topParagraphs, topNested, objects.top),
+            fragment(frames.bottom, bottomParagraphs, bottomNested, objects.bottom)
+        )
+    }
+
+    /// 셀 개체를 중심(midY)으로 한 조각에 배정한다 (손실 방지, #13).
+    /// 이미지는 조각 셀 경계로 rect를 클램프해 조각 밖 (rebase 후 음수 y·다음
+    /// 콘텐츠 위)으로 그려지지 않게 하고 (#11), 도형/글상자는 잘라 그릴 수
+    /// 없어 그대로 둔다. 걸치지 않는 개체는 원본 그대로 (렌더 불변).
+    private static func partitionedObjects(
+        of cell: HwpTableCellFrame,
+        at cutY: CGFloat,
+        topFrame: CGRect,
+        bottomFrame: CGRect
+    ) -> (top: HwpParagraphObjectCollector.Objects, bottom: HwpParagraphObjectCollector.Objects) {
+        (
+            HwpParagraphObjectCollector.Objects(
+                images: cell.images
+                    .filter { $0.rect.midY < cutY }
+                    .map { clampedImage($0, minY: topFrame.minY, maxY: topFrame.maxY) },
+                shapes: cell.shapes.filter { $0.rect.midY < cutY },
+                textboxes: cell.textboxes.filter { $0.rect.midY < cutY }
+            ),
+            HwpParagraphObjectCollector.Objects(
+                images: cell.images
+                    .filter { $0.rect.midY >= cutY }
+                    .map { clampedImage($0, minY: bottomFrame.minY, maxY: bottomFrame.maxY) },
+                shapes: cell.shapes.filter { $0.rect.midY >= cutY },
+                textboxes: cell.textboxes.filter { $0.rect.midY >= cutY }
+            )
         )
     }
 

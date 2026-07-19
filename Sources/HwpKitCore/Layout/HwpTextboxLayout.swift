@@ -10,19 +10,27 @@ public struct HwpTextboxFrame: @unchecked Sendable, Hashable {
     public let borderColor: HwpRGBColor?
     public let borderWidth: CGFloat
     public let fillColor: HwpRGBColor?
+    /// 글상자 안 그림 (블록-로컬 rect, R29 #1)
+    public let images: [HwpCellImage]
+    /// 글상자 안 도형 (블록-로컬 rect, R29 #1)
+    public let shapes: [HwpCellShape]
 
     public init(
         outerFrame: CGRect,
         paragraphs: [HwpLaidOutParagraph],
         borderColor: HwpRGBColor?,
         borderWidth: CGFloat,
-        fillColor: HwpRGBColor?
+        fillColor: HwpRGBColor?,
+        images: [HwpCellImage] = [],
+        shapes: [HwpCellShape] = []
     ) {
         self.outerFrame = outerFrame
         self.paragraphs = paragraphs
         self.borderColor = borderColor
         self.borderWidth = borderWidth
         self.fillColor = fillColor
+        self.images = images
+        self.shapes = shapes
     }
 
     /// 하위 호환: 문단 지오메트리만 필요할 때
@@ -79,7 +87,7 @@ public struct HwpTextboxLayout {
 
         let insets = textInsets(of: component)
         let wrapWidth = max(1, resolvedWidth - insets.left - insets.right)
-        var paragraphs = laidOutParagraphs(
+        var contents = laidOutContents(
             of: component,
             insets: insets,
             wrapWidth: wrapWidth,
@@ -87,11 +95,12 @@ public struct HwpTextboxLayout {
             sizeResolver: sizeResolver
         )
 
-        let contentHeight = (paragraphs.last.map(\.rect.maxY) ?? insets.top) + insets.bottom
+        let contentHeight = (contents.paragraphs.last.map(\.rect.maxY) ?? insets.top)
+            + insets.bottom
         let resolvedHeight = max(outerHeight, contentHeight)
 
-        paragraphs = verticallyAligned(
-            paragraphs,
+        contents = verticallyAligned(
+            contents,
             component: component,
             slack: max(0, resolvedHeight - contentHeight)
         )
@@ -100,57 +109,81 @@ public struct HwpTextboxLayout {
 
         return HwpTextboxFrame(
             outerFrame: CGRect(x: 0, y: 0, width: resolvedWidth, height: max(0, resolvedHeight)),
-            paragraphs: paragraphs,
+            paragraphs: contents.paragraphs,
             borderColor: appearance.borderColor,
             borderWidth: appearance.borderWidth,
-            fillColor: appearance.fillColor
+            fillColor: appearance.fillColor,
+            images: contents.images,
+            shapes: contents.shapes
         )
     }
 
-    /// 글상자 리스트의 문단들을 위에서 아래로 순차 배치한다 (블록-로컬 rect).
-    private func laidOutParagraphs(
+    /// laidOutContents 결과 묶음 (문단 + 문단에 붙은 그림/도형)
+    private struct LaidOutTextboxContents {
+        var paragraphs: [HwpLaidOutParagraph] = []
+        var images: [HwpCellImage] = []
+        var shapes: [HwpCellShape] = []
+    }
+
+    /// 글상자 리스트의 문단들을 위에서 아래로 순차 배치하고 (블록-로컬 rect),
+    /// 문단에 붙은 개체 컨트롤을 글상자 콘텐츠로 수집한다 (R29 #1 —
+    /// 글상자 안 글상자는 재귀를 막기 위해 수집하지 않는다).
+    private func laidOutContents(
         of component: CoreHwp.HwpShapeComponent,
         insets: TextInsets,
         wrapWidth: CGFloat,
         index: HwpIndex,
         sizeResolver: HwpObjectSizeResolver?
-    ) -> [HwpLaidOutParagraph] {
+    ) -> LaidOutTextboxContents {
         // 글상자는 라인 캐시 높이를 쓰지 않는다 — CT 측정 그대로 (픽셀 정합)
         // '문단' 기준 개체는 글상자 안에서 wrap 폭을 기준으로 해석한다 (#2)
+        let boxResolver = sizeResolver?.withParagraphWidth(wrapWidth)
         let measurer = HwpParagraphMeasurer(
             index: index,
             fontResolver: fontResolver,
-            sizeResolver: sizeResolver?.withParagraphWidth(wrapWidth)
+            sizeResolver: boxResolver
         )
-        var paragraphs: [HwpLaidOutParagraph] = []
+        let collector = HwpParagraphObjectCollector(
+            index: index,
+            fontResolver: fontResolver,
+            sizeResolver: boxResolver,
+            collectsTextboxes: false
+        )
+        var contents = LaidOutTextboxContents()
         var contentY = insets.top
         for list in component.textBoxListArray {
             for paragraph in list.paragraphArray {
                 let measured = measurer.measure(paragraph, width: wrapWidth)
-                paragraphs.append(HwpLaidOutParagraph(
+                let rect = CGRect(
+                    x: insets.left,
+                    y: contentY,
+                    width: wrapWidth,
+                    height: measured.frame.totalHeight
+                )
+                contents.paragraphs.append(HwpLaidOutParagraph(
                     attributedString: measured.attributed,
                     frame: measured.frame,
-                    rect: CGRect(
-                        x: insets.left,
-                        y: contentY,
-                        width: wrapWidth,
-                        height: measured.frame.totalHeight
-                    ),
+                    rect: rect,
                     paragraphId: paragraph.paraHeader.paraId,
                     hyperlinkURL: paragraph.hyperlinkURL
                 ))
+                let collected = collector.objects(
+                    in: paragraph, frame: measured.frame, paragraphRect: rect
+                )
+                contents.images.append(contentsOf: collected.images)
+                contents.shapes.append(contentsOf: collected.shapes)
                 contentY += measured.frame.totalHeight
             }
         }
-        return paragraphs
+        return contents
     }
 
-    /// 세로 정렬 (표 89 리스트 헤더 속성)에 따라 문단 rect를 아래로 민다.
+    /// 세로 정렬 (표 89 리스트 헤더 속성)에 따라 콘텐츠 rect를 아래로 민다.
     private func verticallyAligned(
-        _ paragraphs: [HwpLaidOutParagraph],
+        _ contents: LaidOutTextboxContents,
         component: CoreHwp.HwpShapeComponent,
         slack: CGFloat
-    ) -> [HwpLaidOutParagraph] {
+    ) -> LaidOutTextboxContents {
         let alignment = component.textBoxListArray.first?
             .header.propertyInfo.verticalAlignment ?? .top
         let offset: CGFloat = switch alignment {
@@ -158,8 +191,9 @@ public struct HwpTextboxLayout {
         case .center: slack / 2
         case .bottom: slack
         }
-        guard offset > 0 else { return paragraphs }
-        return paragraphs.map { paragraph in
+        guard offset > 0 else { return contents }
+        var shifted = LaidOutTextboxContents()
+        shifted.paragraphs = contents.paragraphs.map { paragraph in
             HwpLaidOutParagraph(
                 attributedString: paragraph.attributedString,
                 frame: paragraph.frame,
@@ -168,6 +202,9 @@ public struct HwpTextboxLayout {
                 hyperlinkURL: paragraph.hyperlinkURL
             )
         }
+        shifted.images = contents.images.map { $0.withRect($0.rect.offsetBy(dx: 0, dy: offset)) }
+        shifted.shapes = contents.shapes.map { $0.withRect($0.rect.offsetBy(dx: 0, dy: offset)) }
+        return shifted
     }
 
     /// 글상자 텍스트 여백 (표 90). 정보가 없으면 0.
