@@ -12,13 +12,33 @@ public struct HwpObjectSizeResolver: Sendable {
     let paperSize: CGSize
     /// 본문 콘텐츠 프레임 크기 (pt) — 기준 '쪽'
     let contentSize: CGSize
-    /// 현재 단 폭 (pt) — 기준 '단'/'문단'
+    /// 현재 단 폭 (pt) — 기준 '단'
     let columnWidth: CGFloat
+    /// 현재 문단 폭 (pt) — 기준 '문단'. 본문은 단 폭 − 문단 좌우 여백,
+    /// 셀/글상자 안에서는 컨테이너 안폭 (#2). 미지정이면 단 폭.
+    let paragraphWidth: CGFloat
 
-    public init(paperSize: CGSize, contentSize: CGSize, columnWidth: CGFloat) {
+    public init(
+        paperSize: CGSize,
+        contentSize: CGSize,
+        columnWidth: CGFloat,
+        paragraphWidth: CGFloat? = nil
+    ) {
         self.paperSize = paperSize
         self.contentSize = contentSize
         self.columnWidth = columnWidth
+        self.paragraphWidth = paragraphWidth ?? columnWidth
+    }
+
+    /// 문단 폭만 바꾼 사본 — 셀/글상자 레이아웃이 컨테이너 안폭으로 좁혀
+    /// 하위 문단에 전달한다.
+    public func withParagraphWidth(_ width: CGFloat) -> HwpObjectSizeResolver {
+        HwpObjectSizeResolver(
+            paperSize: paperSize,
+            contentSize: contentSize,
+            columnWidth: columnWidth,
+            paragraphWidth: max(1, width)
+        )
     }
 
     /// 개체 폭 저장값을 기준에 따라 pt로 해석한다.
@@ -29,7 +49,8 @@ public struct HwpObjectSizeResolver: Sendable {
         switch basis {
         case .paper: CGFloat(raw) / 10000 * paperSize.width
         case .page: CGFloat(raw) / 10000 * contentSize.width
-        case .column, .paragraph: CGFloat(raw) / 10000 * columnWidth
+        case .column: CGFloat(raw) / 10000 * columnWidth
+        case .paragraph: CGFloat(raw) / 10000 * paragraphWidth
         case .absolute, nil: HwpUnits.points(fromHwpUnitU: raw)
         }
     }

@@ -214,12 +214,13 @@ extension HwpTableLayout {
         index: HwpIndex,
         sizeResolver: HwpObjectSizeResolver?
     ) -> LaidOutCellContents {
-        let textBuilder = HwpTextRunBuilder(
-            index: index, fontResolver: fontResolver, sizeResolver: sizeResolver
-        )
         var cursorY = cellRect.minY + margins.top
         let innerX = cellRect.minX + margins.left
         let innerWidth = max(1, cellRect.width - margins.left - margins.right)
+        let cellResolver = sizeResolver?.withParagraphWidth(innerWidth)
+        let textBuilder = HwpTextRunBuilder(
+            index: index, fontResolver: fontResolver, sizeResolver: cellResolver
+        )
         var paragraphs: [HwpLaidOutParagraph] = []
         var nestedTables: [HwpNestedTableFrame] = []
         var images: [HwpCellImage] = []
@@ -243,7 +244,7 @@ extension HwpTableLayout {
                 in: content.paragraph,
                 frame: content.frame,
                 paragraphRect: rect,
-                sizeResolver: sizeResolver
+                sizeResolver: cellResolver
             ))
             cursorY += content.frame.totalHeight
             for nested in content.nestedTables {

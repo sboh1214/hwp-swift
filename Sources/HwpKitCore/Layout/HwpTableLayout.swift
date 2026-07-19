@@ -268,9 +268,6 @@ extension HwpTableLayout {
         context: LayoutContext,
         columnWidths: [CGFloat]
     ) -> PlacedCell {
-        let measurer = HwpParagraphMeasurer(
-            index: context.index, fontResolver: fontResolver, sizeResolver: context.sizeResolver
-        )
         let spannedWidth = width(
             from: placement.column,
             span: placement.columnSpan,
@@ -279,6 +276,11 @@ extension HwpTableLayout {
         )
         let margins = cellMargins(for: cell, metrics: context.metrics)
         let innerWidth = max(1, spannedWidth - margins.left - margins.right)
+        // '문단' 기준 개체는 셀 안에서 셀 안폭을 기준으로 해석한다 (#2)
+        let measurer = HwpParagraphMeasurer(
+            index: context.index, fontResolver: fontResolver,
+            sizeResolver: context.sizeResolver?.withParagraphWidth(innerWidth)
+        )
 
         let measured = measuredCellContents(
             of: cell,
@@ -354,7 +356,8 @@ extension HwpTableLayout {
             guard case let .table(nested) = ctrl else { return nil }
             guard case let .success(frame) = layout(
                 table: nested, availableWidth: innerWidth, index: context.index,
-                depth: context.depth + 1, sizeResolver: context.sizeResolver
+                depth: context.depth + 1,
+                sizeResolver: context.sizeResolver?.withParagraphWidth(innerWidth)
             ) else { return nil }
             return (nested.commonCtrlProperty.instanceId, frame)
         }

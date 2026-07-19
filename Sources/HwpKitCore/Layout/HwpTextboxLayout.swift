@@ -116,10 +116,11 @@ public struct HwpTextboxLayout {
         sizeResolver: HwpObjectSizeResolver?
     ) -> [HwpLaidOutParagraph] {
         // 글상자는 라인 캐시 높이를 쓰지 않는다 — CT 측정 그대로 (픽셀 정합)
+        // '문단' 기준 개체는 글상자 안에서 wrap 폭을 기준으로 해석한다 (#2)
         let measurer = HwpParagraphMeasurer(
             index: index,
             fontResolver: fontResolver,
-            sizeResolver: sizeResolver
+            sizeResolver: sizeResolver?.withParagraphWidth(wrapWidth)
         )
         var paragraphs: [HwpLaidOutParagraph] = []
         var contentY = insets.top

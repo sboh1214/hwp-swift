@@ -57,6 +57,9 @@ public actor HwpPaginator {
     /// 현재 문단의 현재-페이지 상단 y (문단 기준 앵커의 기준점).
     /// 페이지가 넘어가면 새 페이지 콘텐츠 상단으로 재설정된다.
     private var paragraphAnchorTop: CGFloat = 0
+    /// 현재 문단의 좌우 여백 (표 43, 1/2 단위 해석 후 pt) — '문단' 기준
+    /// 개체의 폭/원점 산출용 (#2). 문단 처리 시작 시 갱신된다.
+    private var currentParagraphMargins: (left: CGFloat, right: CGFloat) = (0, 0)
     /// 페이지 경계 재처리 메모 — placeParagraphText 실패 (페이지 확정) 후
     /// 같은 문단을 다음 페이지에서 다시 처리할 때 build + CT 측정을
     /// 재사용한다. 키가 빌드의 모든 입력 (문단 위치·단 폭·컨트롤 치환
@@ -396,6 +399,7 @@ private extension HwpPaginator {
             applySectionDef(in: paragraph)
             applyColumnDef(in: paragraph)
             applyNewNumbers(in: paragraph)
+            currentParagraphMargins = paragraphMargins(of: paragraph)
 
             let widthCenti = Int((currentColumnFrame.width * 100).rounded())
             let replacements = noteReferenceReplacements(for: paragraph)
@@ -1703,7 +1707,28 @@ private extension HwpPaginator {
         HwpObjectSizeResolver(
             paperSize: currentPageGeometry.pageSize,
             contentSize: currentPageGeometry.contentFrame.size,
-            columnWidth: currentColumnFrame.width
+            columnWidth: currentColumnFrame.width,
+            paragraphWidth: currentParagraphWidth
+        )
+    }
+
+    /// '문단' 기준 폭 — 단 폭 − 현재 문단 좌우 여백 (첫 줄 들여쓰기 제외 근사)
+    private var currentParagraphWidth: CGFloat {
+        max(
+            1,
+            currentColumnFrame.width
+                - currentParagraphMargins.left - currentParagraphMargins.right
+        )
+    }
+
+    /// 표 43: 문단 좌우 여백은 1/2 단위 (HWPUNIT×2)로 저장된다.
+    private func paragraphMargins(
+        of paragraph: CoreHwp.HwpParagraph
+    ) -> (left: CGFloat, right: CGFloat) {
+        guard let paraShape = index.paraShape(for: paragraph) else { return (0, 0) }
+        return (
+            HwpUnits.points(fromHwpUnit: paraShape.marginLeft) / 2,
+            HwpUnits.points(fromHwpUnit: paraShape.marginRight) / 2
         )
     }
 
@@ -1887,7 +1912,11 @@ private extension HwpPaginator {
         let hRef: (base: CGFloat, extent: CGFloat) = switch info.horizontalRelativeTo {
         case .paper: (0, currentPageGeometry.pageSize.width)
         case .page, nil: (contentFrame.minX, contentFrame.width)
-        case .column, .paragraph: (currentColumnFrame.minX, currentColumnFrame.width)
+        case .column: (currentColumnFrame.minX, currentColumnFrame.width)
+        case .paragraph: (
+                currentColumnFrame.minX + currentParagraphMargins.left,
+                currentParagraphWidth
+            )
         }
         let vRef: (base: CGFloat, extent: CGFloat) = switch info.verticalRelativeTo {
         case .paper: (0, currentPageGeometry.pageSize.height)
