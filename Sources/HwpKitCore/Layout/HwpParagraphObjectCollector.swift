@@ -199,26 +199,23 @@ struct HwpParagraphObjectCollector {
         let offsetY = HwpUnits.points(
             fromHwpUnit: Int32(bitPattern: commonProperty.verticalOffset)
         )
+        // 세로 기준 '문단'은 페이지 경로 (anchoredObjectFrame vRef extent 0)와
+        // 동일하게 정렬 무효, 종이/쪽은 컨테이너 밖 기하가 없어 문단 rect로
+        // 근사한다 (R32 #3).
+        let verticalExtent: CGFloat = switch commonProperty.propertyInfo.verticalRelativeTo {
+        case .paper, .page, nil: rect.height
+        case .paragraph: 0
+        }
         return CGPoint(
-            x: alignedX(
+            x: aligned(
                 base: rect.minX, extent: rect.width, size: size.width,
                 alignment: commonProperty.propertyInfo.horizontalAlignment
             ) + offsetX,
-            y: rect.minY + offsetY
+            y: aligned(
+                base: rect.minY, extent: verticalExtent, size: size.height,
+                alignment: commonProperty.propertyInfo.verticalAlignment
+            ) + offsetY
         )
-    }
-
-    /// 정렬 반영 x — HwpPaginator.alignedAnchor와 같은 산식.
-    private func alignedX(
-        base: CGFloat, extent: CGFloat, size: CGFloat,
-        alignment: CoreHwp.HwpCommonCtrlRelativeAlignment?
-    ) -> CGFloat {
-        guard extent > 0 else { return base }
-        return switch alignment {
-        case .center: base + (extent - size) / 2
-        case .bottomOrRight, .outside: base + extent - size
-        case .topOrLeft, .inside, nil: base
-        }
     }
 
     /// controlIndex 마커의 줄 앵커 좌표 (문단 rect 기준) —
@@ -352,5 +349,20 @@ struct HwpParagraphObjectCollector {
             sourceOrder: state.sourceOrder,
             controlInstanceId: commonProperty?.instanceId ?? 0
         )
+    }
+}
+
+private extension HwpParagraphObjectCollector {
+    /// 정렬 반영 좌표 — HwpPaginator.alignedAnchor와 같은 산식.
+    func aligned(
+        base: CGFloat, extent: CGFloat, size: CGFloat,
+        alignment: CoreHwp.HwpCommonCtrlRelativeAlignment?
+    ) -> CGFloat {
+        guard extent > 0 else { return base }
+        return switch alignment {
+        case .center: base + (extent - size) / 2
+        case .bottomOrRight, .outside: base + extent - size
+        case .topOrLeft, .inside, nil: base
+        }
     }
 }

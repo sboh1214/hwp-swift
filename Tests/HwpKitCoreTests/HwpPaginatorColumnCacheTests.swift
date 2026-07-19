@@ -310,6 +310,29 @@ import XCTest
             expect(image.rect.height).to(beCloseTo(30, within: 1))
         }
 
+        /// 떠 있는 셀 그림의 세로 정렬 (기준 종이/쪽 — 컨테이너 안은 문단
+        /// rect 근사)이 반영된다 — 아래 정렬이면 문단 rect 하단에 붙는다 (R32 #3).
+        func testFloatingCellPictureHonorsVerticalAlignment() async throws {
+            var cellParagraph = HwpSynthetic.paragraphWithInlineControl(prefix: "", suffix: "")
+            var picture = HwpSynthetic.inlinePictureObject(
+                width: 5000, height: 500, binItemId: 5, instanceId: 9
+            )
+            picture.commonCtrlProperty.propertyInfo.treatAsChar = false
+            picture.commonCtrlProperty.propertyInfo.verticalAlignment = .bottomOrRight
+            cellParagraph.ctrlHeaderArray = [.genShapeObject(picture)]
+
+            guard let (_, frame) = try await tableFrame(
+                hosting: singleCellTable(cellParagraph)
+            ), let cell = frame.rows.first?.cells.first,
+            let image = cell.images.first,
+            let paragraphRect = cell.paragraphs.first?.rect
+            else {
+                fail("셀 그림이 없다")
+                return
+            }
+            expect(image.rect.maxY).to(beCloseTo(paragraphRect.maxY, within: 1))
+        }
+
         /// commonCtrlProperty가 nil인 레거시 도형 컨트롤의 글상자도 기본
         /// property로 빌드되어 셀 콘텐츠로 렌더된다 — 억제와 수집의 일치 (R30 #4).
         func testNilPropertyCellTextboxStillRenders() async throws {
