@@ -76,6 +76,94 @@ final class HwpHyperlinkPipelineTests: XCTestCase {
         } == true
     }
 
+    /// 셀 글상자 문단에 필드 스팬이 있으면 링크 글리프 rect에서만 히트한다 —
+    /// 앞쪽 평문 탭은 링크가 아니다 (R31 #1).
+    func testCellTextboxLinkScopedToFieldSpan() {
+        let font = CTFontCreateWithName("Helvetica" as CFString, 12, nil)
+        let attributed = NSMutableAttributedString(
+            string: "before link after",
+            attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
+        )
+        let linkRange = (attributed.string as NSString).range(of: "link")
+        attributed.addAttribute(
+            HwpAttributedStringKey.hyperlink, value: "https://example.com", range: linkRange
+        )
+        let boxParagraph = HwpLaidOutParagraph(
+            attributedString: attributed,
+            frame: HwpParagraphFrame(totalHeight: 20, lines: []),
+            rect: CGRect(x: 0, y: 0, width: 200, height: 20),
+            paragraphId: 1,
+            hyperlinkURL: "https://example.com"
+        )
+        let block = cellTextboxBlock(with: boxParagraph)
+        let page = makePage(with: [block])
+        guard let region = HwpDrawnTextLayout.hyperlinkRegions(
+            attributedString: attributed, origin: .zero, lineWidth: 200
+        ).first else {
+            fail("링크 스팬이 없다")
+            return
+        }
+
+        // 글상자 원점 (10,10) + 스팬 rect 안 = URL
+        let onLink = HwpHitTester().hit(
+            page: page,
+            point: CGPoint(x: 10 + region.rect.midX, y: 10 + region.rect.midY)
+        )
+        expect {
+            if case let .hyperlink(url, _) = onLink {
+                return url == "https://example.com"
+            }
+            return false
+        } == true
+        // 스팬 앞 평문 = 링크 아님 (표 히트로 떨어진다)
+        let beforeLink = HwpHitTester().hit(page: page, point: CGPoint(x: 11, y: 20))
+        expect {
+            if case .hyperlink = beforeLink {
+                return false
+            }
+            return true
+        } == true
+    }
+
+    /// 다른 셀 문단에 필드 스팬이 있어도 (hasFieldSpans 게이트) 셀 글상자
+    /// 링크는 도달 가능하다 — walkText 스팬 스캔이 글상자를 못 보는 우회 (R31 #1).
+    func testCellTextboxLinkReachableUnderFieldSpanGate() {
+        let font = CTFontCreateWithName("Helvetica" as CFString, 12, nil)
+        let fieldAttributed = NSMutableAttributedString(
+            string: "field",
+            attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
+        )
+        fieldAttributed.addAttribute(
+            HwpAttributedStringKey.hyperlink, value: "https://field.example",
+            range: NSRange(location: 0, length: fieldAttributed.length)
+        )
+        let cellParagraph = HwpLaidOutParagraph(
+            attributedString: fieldAttributed,
+            frame: HwpParagraphFrame(totalHeight: 10, lines: []),
+            rect: CGRect(x: 0, y: 35, width: 100, height: 10),
+            paragraphId: 2,
+            hyperlinkURL: nil
+        )
+        let boxParagraph = HwpLaidOutParagraph(
+            attributedString: NSAttributedString(string: "링크"),
+            frame: HwpParagraphFrame(totalHeight: 20, lines: []),
+            rect: CGRect(x: 0, y: 0, width: 80, height: 20),
+            paragraphId: 1,
+            hyperlinkURL: "https://box.example"
+        )
+        let block = cellTextboxBlock(with: boxParagraph, cellParagraphs: [cellParagraph])
+        let page = makePage(with: [block])
+
+        let hit = HwpHitTester().hit(page: page, point: CGPoint(x: 20, y: 20))
+
+        expect {
+            if case let .hyperlink(url, _) = hit {
+                return url == "https://box.example"
+            }
+            return false
+        } == true
+    }
+
     func testHitTesterReturnsHyperlinkForBlockWithURL() {
         let frame = CGRect(x: 10, y: 20, width: 100, height: 30)
         let block = makeHyperlinkBlock(url: "https://example.com", frame: frame)
@@ -267,5 +355,44 @@ final class HwpHyperlinkPipelineTests: XCTestCase {
         )
         expect(regions.count) >= 1
         expect(regions.allSatisfy { $0.rect.width > 0 }) == true
+    }
+}
+
+private extension HwpHyperlinkPipelineTests {
+    /// (10,10)에 220×20 글상자를 담은 단일 셀 표 블록 (블록 원점 0,0)
+    func cellTextboxBlock(
+        with boxParagraph: HwpLaidOutParagraph,
+        cellParagraphs: [HwpLaidOutParagraph] = []
+    ) -> AnyHwpBlock {
+        let black = HwpRGBColor(red: 0, green: 0, blue: 0)
+        let cell = HwpTableCellFrame(
+            cellFrame: CGRect(x: 0, y: 0, width: 300, height: 50),
+            row: 0, column: 0, rowSpan: 1, columnSpan: 1,
+            paragraphs: cellParagraphs,
+            borders: HwpBorderSet.uniform(width: 0.5, color: black),
+            fillColor: nil,
+            textboxes: [HwpCellTextbox(
+                rect: CGRect(x: 10, y: 10, width: 220, height: 20),
+                textbox: HwpTextboxFrame(
+                    outerFrame: CGRect(x: 0, y: 0, width: 220, height: 20),
+                    paragraphs: [boxParagraph],
+                    borderColor: nil, borderWidth: 0, fillColor: nil
+                ),
+                controlInstanceId: 1
+            )]
+        )
+        let table = HwpTableFrame(
+            outerFrame: CGRect(x: 0, y: 0, width: 300, height: 50),
+            rows: [HwpTableRowFrame(
+                rowFrame: CGRect(x: 0, y: 0, width: 300, height: 50),
+                cells: [cell]
+            )],
+            borderColor: black, borderWidth: 1
+        )
+        return AnyHwpBlock(
+            frame: CGRect(x: 0, y: 0, width: 300, height: 50),
+            kind: .table,
+            payload: .table(table)
+        )
     }
 }
