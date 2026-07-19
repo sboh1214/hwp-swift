@@ -25,6 +25,25 @@ private func topLeftPixel(in image: CGImage) -> [UInt8] {
 }
 
 final class HwpPageLayerTests: XCTestCase {
+    /// CA presentation 사본 (init(layer:))도 imageProvider를 유지해
+    /// .drawImageReference를 플레이스홀더 없이 그린다 (R30 #5).
+    func testLayerCopyKeepsImageProvider() {
+        let layer = HwpPageLayer()
+        layer.pageHeight = 100
+        layer.paintList = HwpPaintList(commands: [])
+        let provider = HwpPageImageProvider(
+            store: HwpImageStore(),
+            cache: HwpImageCache()
+        )
+        layer.imageProvider = provider
+
+        let copy = HwpPageLayer(layer: layer)
+
+        expect(copy.imageProvider).to(beIdenticalTo(provider))
+        expect(copy.pageHeight) == 100
+        expect(copy.paintList).toNot(beNil())
+    }
+
     func testFillRectDrawsBlackPixel() throws {
         let layer = HwpPageLayer()
         layer.bounds = CGRect(x: 0, y: 0, width: 100, height: 100)

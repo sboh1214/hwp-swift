@@ -30,6 +30,7 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
         if let layer = layer as? HwpPageLayer {
             paintList = layer.paintList
             pageHeight = layer.pageHeight
+            imageProvider = layer.imageProvider
         }
         super.init(layer: layer)
         needsDisplayOnBoundsChange = true
