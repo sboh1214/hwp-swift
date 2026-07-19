@@ -168,7 +168,8 @@ public struct HwpTextboxLayout {
                     hyperlinkURL: paragraph.hyperlinkURL
                 ))
                 let collected = collector.objects(
-                    in: paragraph, frame: measured.frame, paragraphRect: rect
+                    in: paragraph, frame: measured.frame, paragraphRect: rect,
+                    firstSourceOrder: contents.images.count + contents.shapes.count
                 )
                 contents.images.append(contentsOf: collected.images)
                 contents.shapes.append(contentsOf: collected.shapes)

@@ -21,14 +21,16 @@ extension HwpPaintListBuilder {
         return commands
     }
 
-    /// 글상자 안 개체 하나의 페인트 평면 (behind/zOrder) + 명령 묶음
+    /// 글상자 안 개체 하나의 페인트 평면 (behind/zOrder/원본 순서) + 명령 묶음
     private struct TextboxObjectPlane {
         let behind: Bool
         let zOrder: Int32
+        let sourceOrder: Int
         let commands: [HwpPaintCommand]
     }
 
-    /// 글상자 안 개체의 페인트 명령 (zOrder 오름차순, 동순위는 수집 순서).
+    /// 글상자 안 개체의 페인트 명령 (zOrder 오름차순, 동순위는 원본
+    /// ctrlHeaderArray 순서 — 종류-버킷 순서가 아니다, R31 #3).
     func textboxObjectCommands(
         _ textbox: HwpTextboxFrame,
         origin: CGPoint
@@ -38,6 +40,7 @@ extension HwpPaintListBuilder {
             objects.append(TextboxObjectPlane(
                 behind: image.paintsBehindText,
                 zOrder: image.zOrder,
+                sourceOrder: image.sourceOrder,
                 commands: cellImageCommands(
                     image, rect: image.rect.offsetBy(dx: origin.x, dy: origin.y)
                 )
@@ -47,16 +50,17 @@ extension HwpPaintListBuilder {
             objects.append(TextboxObjectPlane(
                 behind: shape.paintsBehindText,
                 zOrder: shape.zOrder,
+                sourceOrder: shape.sourceOrder,
                 commands: shapeCommands(
                     shape.geometry,
                     origin: CGPoint(x: origin.x + shape.rect.minX, y: origin.y + shape.rect.minY)
                 )
             ))
         }
-        return objects.enumerated().sorted { lhs, rhs in
-            lhs.element.zOrder != rhs.element.zOrder
-                ? lhs.element.zOrder < rhs.element.zOrder
-                : lhs.offset < rhs.offset
-        }.map { (behind: $0.element.behind, commands: $0.element.commands) }
+        return objects.sorted { lhs, rhs in
+            lhs.zOrder != rhs.zOrder
+                ? lhs.zOrder < rhs.zOrder
+                : lhs.sourceOrder < rhs.sourceOrder
+        }.map { (behind: $0.behind, commands: $0.commands) }
     }
 }

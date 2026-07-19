@@ -259,7 +259,8 @@ extension HwpTableLayout {
                 hyperlinkURL: content.paragraph.hyperlinkURL
             ))
             let collected = collector.objects(
-                in: content.paragraph, frame: content.frame, paragraphRect: rect
+                in: content.paragraph, frame: content.frame,
+                paragraphRect: rect, firstSourceOrder: objects.count
             )
             objects.images.append(contentsOf: collected.images)
             objects.shapes.append(contentsOf: collected.shapes)

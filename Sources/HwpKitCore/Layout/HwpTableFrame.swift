@@ -83,6 +83,9 @@ public struct HwpCellImage: Sendable, Hashable {
     public let paintsBehindText: Bool
     /// 겹치는 개체 z-순서 (표 70) — 같은 평면 안 페인트 정렬 기준
     public let zOrder: Int32
+    /// 같은 zOrder의 이종 컨트롤 간 원본 (ctrlHeaderArray) 순서 — 동순위
+    /// tiebreak이 종류-버킷 순서로 무너지지 않게 한다 (R31 #3)
+    public let sourceOrder: Int
     /// 원본 컨트롤 참조 (편집 대비)
     public let controlInstanceId: UInt32
 
@@ -94,6 +97,7 @@ public struct HwpCellImage: Sendable, Hashable {
         borderWidth: CGFloat = 0,
         paintsBehindText: Bool = false,
         zOrder: Int32 = 0,
+        sourceOrder: Int = 0,
         controlInstanceId: UInt32
     ) {
         self.rect = rect
@@ -103,6 +107,7 @@ public struct HwpCellImage: Sendable, Hashable {
         self.borderWidth = borderWidth
         self.paintsBehindText = paintsBehindText
         self.zOrder = zOrder
+        self.sourceOrder = sourceOrder
         self.controlInstanceId = controlInstanceId
     }
 
@@ -116,6 +121,7 @@ public struct HwpCellImage: Sendable, Hashable {
             borderWidth: borderWidth,
             paintsBehindText: paintsBehindText,
             zOrder: zOrder,
+            sourceOrder: sourceOrder,
             controlInstanceId: controlInstanceId
         )
     }
@@ -131,6 +137,8 @@ public struct HwpCellShape: @unchecked Sendable, Hashable {
     public let paintsBehindText: Bool
     /// 겹치는 개체 z-순서 (표 70) — 같은 평면 안 페인트 정렬 기준
     public let zOrder: Int32
+    /// 같은 zOrder의 이종 컨트롤 간 원본 순서 (R31 #3)
+    public let sourceOrder: Int
     /// 원본 컨트롤 참조 (편집 대비)
     public let controlInstanceId: UInt32
 
@@ -139,12 +147,14 @@ public struct HwpCellShape: @unchecked Sendable, Hashable {
         geometry: HwpShapeGeometry,
         paintsBehindText: Bool = false,
         zOrder: Int32 = 0,
+        sourceOrder: Int = 0,
         controlInstanceId: UInt32
     ) {
         self.rect = rect
         self.geometry = geometry
         self.paintsBehindText = paintsBehindText
         self.zOrder = zOrder
+        self.sourceOrder = sourceOrder
         self.controlInstanceId = controlInstanceId
     }
 
@@ -154,6 +164,7 @@ public struct HwpCellShape: @unchecked Sendable, Hashable {
             geometry: geometry,
             paintsBehindText: paintsBehindText,
             zOrder: zOrder,
+            sourceOrder: sourceOrder,
             controlInstanceId: controlInstanceId
         )
     }
@@ -168,6 +179,8 @@ public struct HwpCellTextbox: @unchecked Sendable, Hashable {
     public let paintsBehindText: Bool
     /// 겹치는 개체 z-순서 (표 70) — 같은 평면 안 페인트 정렬 기준
     public let zOrder: Int32
+    /// 같은 zOrder의 이종 컨트롤 간 원본 순서 (R31 #3)
+    public let sourceOrder: Int
     /// 원본 컨트롤 참조 (편집 대비)
     public let controlInstanceId: UInt32
 
@@ -176,12 +189,14 @@ public struct HwpCellTextbox: @unchecked Sendable, Hashable {
         textbox: HwpTextboxFrame,
         paintsBehindText: Bool = false,
         zOrder: Int32 = 0,
+        sourceOrder: Int = 0,
         controlInstanceId: UInt32
     ) {
         self.rect = rect
         self.textbox = textbox
         self.paintsBehindText = paintsBehindText
         self.zOrder = zOrder
+        self.sourceOrder = sourceOrder
         self.controlInstanceId = controlInstanceId
     }
 
@@ -191,6 +206,7 @@ public struct HwpCellTextbox: @unchecked Sendable, Hashable {
             textbox: textbox,
             paintsBehindText: paintsBehindText,
             zOrder: zOrder,
+            sourceOrder: sourceOrder,
             controlInstanceId: controlInstanceId
         )
     }

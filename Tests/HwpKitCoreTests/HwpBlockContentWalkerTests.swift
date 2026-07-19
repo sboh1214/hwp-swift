@@ -80,4 +80,47 @@ final class HwpBlockContentWalkerTests: XCTestCase {
 
         expect(events) == ["image1", "text", "shape", "image2"]
     }
+
+    /// 같은 평면·같은 zOrder의 이종 컨트롤은 종류-버킷 순서가 아니라 원본
+    /// (sourceOrder) 순서로 쌓인다 (R31 #3).
+    func testWalkTableBreaksZOrderTiesBySourceOrder() {
+        let tiedShape = HwpCellShape(
+            rect: CGRect(x: 0, y: 0, width: 10, height: 10),
+            geometry: HwpShapeGeometry(
+                path: CGPath(rect: CGRect(x: 0, y: 0, width: 10, height: 10), transform: nil),
+                fillColor: nil, strokeColor: nil, strokeWidth: 1
+            ),
+            zOrder: 1,
+            sourceOrder: 0,
+            controlInstanceId: 3
+        )
+        let tiedImage = HwpCellImage(
+            rect: CGRect(x: 0, y: 0, width: 10, height: 10),
+            binItemId: 1,
+            style: nil,
+            zOrder: 1,
+            sourceOrder: 1,
+            controlInstanceId: 1
+        )
+        let cell = HwpTableCellFrame(
+            cellFrame: CGRect(x: 0, y: 0, width: 100, height: 50),
+            row: 0, column: 0, rowSpan: 1, columnSpan: 1,
+            paragraphs: [],
+            borders: HwpBorderSet.uniform(width: 0.5, color: black),
+            fillColor: nil,
+            images: [tiedImage],
+            shapes: [tiedShape]
+        )
+
+        var events: [String] = []
+        HwpBlockContentWalker.walkTable(
+            table(cells: [cell]),
+            origin: .zero,
+            onParagraphText: { _, _, _ in },
+            onCellImage: { _, _ in events.append("image") },
+            onCellShape: { _, _ in events.append("shape") }
+        )
+
+        expect(events) == ["shape", "image"]
+    }
 }

@@ -18,6 +18,11 @@ struct HwpParagraphObjectCollector {
         var images: [HwpCellImage] = []
         var shapes: [HwpCellShape] = []
         var textboxes: [HwpCellTextbox] = []
+
+        /// 수집 총량 — 다음 문단의 firstSourceOrder (원본 순서 ordinal 연속)
+        var count: Int {
+            images.count + shapes.count + textboxes.count
+        }
     }
 
     typealias HandledControl = (
@@ -65,13 +70,21 @@ struct HwpParagraphObjectCollector {
         return true
     }
 
+    /// 수집 진행 상태 — 줄 흐름 커서와 원본 순서 ordinal (zOrder 동순위
+    /// tiebreak, 컨테이너 전체에서 단조 증가해야 한다, R31 #3)
+    struct CollectState {
+        var cursorX: CGFloat
+        var sourceOrder: Int
+    }
+
     func objects(
         in paragraph: CoreHwp.HwpParagraph,
         frame: HwpParagraphFrame,
-        paragraphRect: CGRect
+        paragraphRect: CGRect,
+        firstSourceOrder: Int = 0
     ) -> Objects {
         var collected = Objects()
-        var cursorX = paragraphRect.minX
+        var state = CollectState(cursorX: paragraphRect.minX, sourceOrder: firstSourceOrder)
         for (controlIndex, ctrl) in (paragraph.ctrlHeaderArray ?? []).enumerated() {
             guard let (commonProperty, components) = Self.handledControl(ctrl),
                   Self.collectible(components, collectsTextboxes: collectsTextboxes)
@@ -87,7 +100,7 @@ struct HwpParagraphObjectCollector {
                     component: component,
                     commonProperty: commonProperty,
                     placement: placement,
-                    cursorX: &cursorX,
+                    state: &state,
                     into: &collected
                 )
             }
@@ -110,7 +123,7 @@ struct HwpParagraphObjectCollector {
         component: CoreHwp.HwpShapeComponent,
         commonProperty: CoreHwp.HwpCommonCtrlProperty?,
         placement: Placement,
-        cursorX: inout CGFloat,
+        state: inout CollectState,
         into collected: inout Objects
     ) {
         // 커서 전진은 줄 흐름 배치 (글자처럼 취급 + 앵커 없음)에만 —
@@ -126,15 +139,16 @@ struct HwpParagraphObjectCollector {
                     picture: picture,
                     size: size,
                     commonProperty: commonProperty,
-                    paragraphRect: placement.paragraphRect,
                     origin: origin(
                         commonProperty: commonProperty, size: size,
-                        placement: placement, cursorX: cursorX
-                    )
+                        placement: placement, cursorX: state.cursorX
+                    ),
+                    sourceOrder: state.sourceOrder
                 ) else { continue }
                 collected.images.append(image)
+                state.sourceOrder += 1
                 if advancesCursor {
-                    cursorX += image.rect.width
+                    state.cursorX += image.rect.width
                 }
             }
             return
@@ -144,11 +158,12 @@ struct HwpParagraphObjectCollector {
                 component: component,
                 commonProperty: commonProperty,
                 placement: placement,
-                cursorX: cursorX
+                state: state
             ) else { return }
             collected.textboxes.append(textbox)
+            state.sourceOrder += 1
             if advancesCursor {
-                cursorX += textbox.rect.width
+                state.cursorX += textbox.rect.width
             }
             return
         }
@@ -156,11 +171,12 @@ struct HwpParagraphObjectCollector {
             component: component,
             commonProperty: commonProperty,
             placement: placement,
-            cursorX: cursorX
+            state: state
         ) else { return }
         collected.shapes.append(shape)
+        state.sourceOrder += 1
         if advancesCursor {
-            cursorX += shape.rect.width
+            state.cursorX += shape.rect.width
         }
     }
 
@@ -251,28 +267,30 @@ struct HwpParagraphObjectCollector {
         picture: CoreHwp.HwpShapeComponentPicture,
         size: CGSize,
         commonProperty: CoreHwp.HwpCommonCtrlProperty?,
-        paragraphRect: CGRect,
-        origin: CGPoint
+        origin: CGPoint,
+        sourceOrder: Int
     ) -> HwpCellImage? {
         let property = picture.pictureProperty
         guard let binItemId = property.map({ UInt32($0.binItemId) })
             ?? picture.binaryDataId.map(UInt32.init)
         else { return nil }
-        let width = min(size.width, max(1, paragraphRect.maxX - origin.x))
         var borderColor: HwpRGBColor?
         var borderWidth: CGFloat = 0
         if let property, property.borderThickness > 0 {
             borderColor = HwpRGBColor(property.borderColor)
             borderWidth = HwpUnits.points(fromHwpUnit: property.borderThickness)
         }
+        // 렌더는 비트맵 전체를 rect에 스케일하므로 폭을 문단 경계로 자르면
+        // 잘림이 아니라 왜곡이 된다 — 저작 크기를 그대로 쓴다 (R31 #2).
         return HwpCellImage(
-            rect: CGRect(x: origin.x, y: origin.y, width: width, height: size.height),
+            rect: CGRect(origin: origin, size: size),
             binItemId: binItemId,
             style: property.map { HwpImageRenderStyle(pictureProperty: $0) },
             borderColor: borderColor,
             borderWidth: borderWidth,
             paintsBehindText: commonProperty?.propertyInfo.textWrap == .behindText,
             zOrder: commonProperty?.zOrder ?? 0,
+            sourceOrder: sourceOrder,
             controlInstanceId: commonProperty?.instanceId ?? 0
         )
     }
@@ -281,7 +299,7 @@ struct HwpParagraphObjectCollector {
         component: CoreHwp.HwpShapeComponent,
         commonProperty: CoreHwp.HwpCommonCtrlProperty?,
         placement: Placement,
-        cursorX: CGFloat
+        state: CollectState
     ) -> HwpCellTextbox? {
         // 흐름 경로 (appendShapeObjectBlocks 호출부)와 동일한 기본 property
         // 폴백. 억제 (collectible)는 property를 보지 않는다 — nil 수집 거부는
@@ -299,13 +317,14 @@ struct HwpParagraphObjectCollector {
             rect: CGRect(
                 origin: origin(
                     commonProperty: commonProperty, size: size,
-                    placement: placement, cursorX: cursorX
+                    placement: placement, cursorX: state.cursorX
                 ),
                 size: size
             ),
             textbox: frame,
             paintsBehindText: property.propertyInfo.textWrap == .behindText,
             zOrder: property.zOrder,
+            sourceOrder: state.sourceOrder,
             controlInstanceId: property.instanceId
         )
     }
@@ -314,7 +333,7 @@ struct HwpParagraphObjectCollector {
         component: CoreHwp.HwpShapeComponent,
         commonProperty: CoreHwp.HwpCommonCtrlProperty?,
         placement: Placement,
-        cursorX: CGFloat
+        state: CollectState
     ) -> HwpCellShape? {
         guard let size = resolvedSize(commonProperty: commonProperty, component: component),
               let geometry = HwpShapeGeometry.build(component: component, size: size)
@@ -323,13 +342,14 @@ struct HwpParagraphObjectCollector {
             rect: CGRect(
                 origin: origin(
                     commonProperty: commonProperty, size: size,
-                    placement: placement, cursorX: cursorX
+                    placement: placement, cursorX: state.cursorX
                 ),
                 size: size
             ),
             geometry: geometry,
             paintsBehindText: commonProperty?.propertyInfo.textWrap == .behindText,
             zOrder: commonProperty?.zOrder ?? 0,
+            sourceOrder: state.sourceOrder,
             controlInstanceId: commonProperty?.instanceId ?? 0
         )
     }

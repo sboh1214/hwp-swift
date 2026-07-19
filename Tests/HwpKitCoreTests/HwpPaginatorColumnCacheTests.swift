@@ -8,49 +8,6 @@ import XCTest
     /// 한글 라인 캐시 기반 단 배분 (loc 리셋 = 단 경계)과 밴드 간 줄 간격,
     /// 글자처럼 취급 표의 인라인 앵커 배치 테스트 (Column/noori PrvImage 실측 동작).
     final class HwpPaginatorColumnCacheTests: XCTestCase {
-        private func firstPage(
-            of section: CoreHwp.HwpSection
-        ) async throws -> HwpPage? {
-            let paginator = HwpPaginator(
-                sections: [section],
-                index: HwpIndex(from: CoreHwp.HwpFile()),
-                fontResolver: .testDeterministic
-            )
-            return try await paginator.page(at: 0)
-        }
-
-        /// 20000×10000 HWPUNIT 단일 셀 표 (컨테이너 개체 테스트 공용 픽스처)
-        private func singleCellTable(
-            _ cellParagraph: CoreHwp.HwpParagraph
-        ) -> CoreHwp.HwpTable {
-            var table = HwpSynthetic.table(
-                cellWidth: 20000, rowHeights: [10000], cellParagraphs: [[[cellParagraph]]]
-            )
-            table.commonCtrlProperty.width = 20000
-            table.commonCtrlProperty.height = 10000
-            return table
-        }
-
-        /// 표 하나를 본문에 실은 첫 페이지와 그 표 payload
-        private func tableFrame(
-            hosting table: CoreHwp.HwpTable
-        ) async throws -> (page: HwpPage, frame: HwpTableFrame)? {
-            var host = HwpSynthetic.paragraphWithInlineControl(prefix: "표 ", suffix: "")
-            host.ctrlHeaderArray = [.table(table)]
-            let section = HwpSynthetic.section(
-                firstParagraphControls: [
-                    .section(HwpSynthetic.sectionDef()),
-                    .column(CoreHwp.HwpColumn()),
-                ],
-                bodyParagraphs: [host]
-            )
-            guard let page = try await firstPage(of: section),
-                  let block = page.blocks.first(where: { $0.kind == .table }),
-                  case let .table(frame) = block.payload
-            else { return nil }
-            return (page, frame)
-        }
-
         /// 비등폭 2단에서 캐시 run 경계 (textStartingIndex)대로 텍스트가
         /// 좁은 단/넓은 단에 배분된다 — 라인 수 균등 분배가 아니다.
         func testCachedRunsDistributeTextByCharPosition() async throws {
@@ -330,6 +287,29 @@ import XCTest
             expect(image.rect.minY).to(beCloseTo(10, within: 1))
         }
 
+        /// 오른쪽으로 밀린 떠 있는 셀 그림도 저작 폭을 유지한다 — 문단 경계
+        /// 클램프는 비트맵 스케일 왜곡을 만든다 (R31 #2).
+        func testFloatingCellPictureKeepsAuthoredWidthNearEdge() async throws {
+            var cellParagraph = HwpSynthetic.paragraphWithInlineControl(prefix: "", suffix: "")
+            var picture = HwpSynthetic.inlinePictureObject(
+                width: 5000, height: 3000, binItemId: 5, instanceId: 9
+            )
+            picture.commonCtrlProperty.propertyInfo.treatAsChar = false
+            // 170pt 오프셋 — 저작 폭 50pt가 셀 오른쪽 경계 (200pt)를 넘어선다
+            picture.commonCtrlProperty.horizontalOffset = 17000
+            cellParagraph.ctrlHeaderArray = [.genShapeObject(picture)]
+
+            guard let (_, frame) = try await tableFrame(
+                hosting: singleCellTable(cellParagraph)
+            ), let image = frame.rows.flatMap(\.cells).flatMap(\.images).first
+            else {
+                fail("셀 그림이 없다")
+                return
+            }
+            expect(image.rect.width).to(beCloseTo(50, within: 1))
+            expect(image.rect.height).to(beCloseTo(30, within: 1))
+        }
+
         /// commonCtrlProperty가 nil인 레거시 도형 컨트롤의 글상자도 기본
         /// property로 빌드되어 셀 콘텐츠로 렌더된다 — 억제와 수집의 일치 (R30 #4).
         func testNilPropertyCellTextboxStillRenders() async throws {
@@ -361,6 +341,51 @@ import XCTest
             expect(
                 textboxes.first?.textbox.paragraphs.first?.attributedString.string
             ).to(contain("레거시"))
+        }
+    }
+
+    private extension HwpPaginatorColumnCacheTests {
+        func firstPage(
+            of section: CoreHwp.HwpSection
+        ) async throws -> HwpPage? {
+            let paginator = HwpPaginator(
+                sections: [section],
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+            return try await paginator.page(at: 0)
+        }
+
+        /// 20000×10000 HWPUNIT 단일 셀 표 (컨테이너 개체 테스트 공용 픽스처)
+        func singleCellTable(
+            _ cellParagraph: CoreHwp.HwpParagraph
+        ) -> CoreHwp.HwpTable {
+            var table = HwpSynthetic.table(
+                cellWidth: 20000, rowHeights: [10000], cellParagraphs: [[[cellParagraph]]]
+            )
+            table.commonCtrlProperty.width = 20000
+            table.commonCtrlProperty.height = 10000
+            return table
+        }
+
+        /// 표 하나를 본문에 실은 첫 페이지와 그 표 payload
+        func tableFrame(
+            hosting table: CoreHwp.HwpTable
+        ) async throws -> (page: HwpPage, frame: HwpTableFrame)? {
+            var host = HwpSynthetic.paragraphWithInlineControl(prefix: "표 ", suffix: "")
+            host.ctrlHeaderArray = [.table(table)]
+            let section = HwpSynthetic.section(
+                firstParagraphControls: [
+                    .section(HwpSynthetic.sectionDef()),
+                    .column(CoreHwp.HwpColumn()),
+                ],
+                bodyParagraphs: [host]
+            )
+            guard let page = try await firstPage(of: section),
+                  let block = page.blocks.first(where: { $0.kind == .table }),
+                  case let .table(frame) = block.payload
+            else { return nil }
+            return (page, frame)
         }
     }
 #endif

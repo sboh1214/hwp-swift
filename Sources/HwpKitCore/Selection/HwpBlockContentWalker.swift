@@ -126,17 +126,26 @@ public enum HwpBlockContentWalker {
             case let .textbox(textbox): textbox.zOrder
             }
         }
+
+        var sourceOrder: Int {
+            switch self {
+            case let .image(image): image.sourceOrder
+            case let .shape(shape): shape.sourceOrder
+            case let .textbox(textbox): textbox.sourceOrder
+            }
+        }
     }
 
-    /// 셀 개체를 zOrder 오름차순 (동순위는 수집 순서)으로 정렬한 방출 목록.
+    /// 셀 개체를 zOrder 오름차순 (동순위는 원본 ctrlHeaderArray 순서 —
+    /// 종류-버킷 순서가 아니다, R31 #3)으로 정렬한 방출 목록.
     private static func sortedCellObjects(_ cell: HwpTableCellFrame) -> [CellObject] {
         let objects = cell.images.map(CellObject.image)
             + cell.shapes.map(CellObject.shape)
             + cell.textboxes.map(CellObject.textbox)
-        return objects.enumerated().sorted { lhs, rhs in
-            lhs.element.zOrder != rhs.element.zOrder
-                ? lhs.element.zOrder < rhs.element.zOrder
-                : lhs.offset < rhs.offset
-        }.map(\.element)
+        return objects.sorted { lhs, rhs in
+            lhs.zOrder != rhs.zOrder
+                ? lhs.zOrder < rhs.zOrder
+                : lhs.sourceOrder < rhs.sourceOrder
+        }
     }
 }
