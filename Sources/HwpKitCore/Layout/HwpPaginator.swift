@@ -1290,11 +1290,15 @@ private extension HwpPaginator {
     // MARK: 표
 
     func appendTableBlocks(_ table: CoreHwp.HwpTable, controlIndex: Int? = nil) {
+        // 글 앞/뒤로 표는 appendFloatingTableIfNeeded가 흐름 밖에 통째로
+        // 배치하므로 저작 폭 (예: 종이 100%)을 단 폭으로 자르지 않는다.
+        let info = table.commonCtrlProperty.propertyInfo
         let result = tableLayout.layout(
             table: table,
             availableWidth: currentColumnFrame.width,
             index: index,
-            sizeResolver: objectSizeResolver
+            sizeResolver: objectSizeResolver,
+            clampToAvailableWidth: info.treatAsChar || consumesFlow(info)
         )
         switch result {
         case let .failure(element):

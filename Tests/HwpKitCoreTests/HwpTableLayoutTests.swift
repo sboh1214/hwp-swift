@@ -221,6 +221,29 @@ import XCTest
             }
             expect(frame.outerFrame.width).to(beCloseTo(200, within: 1))
         }
+
+        func testFloatingTableKeepsAuthoredWidthBeyondColumn() {
+            var authored = table()
+            // 종이 100% (10000) — 떠 있는 표는 단 폭 클램프를 받지 않는다 (#3)
+            authored.commonCtrlProperty.width = 10000
+            authored.commonCtrlProperty.propertyInfo.widthRelativeTo = .paper
+            let result = layout().layout(
+                table: authored,
+                availableWidth: 200,
+                index: index(),
+                sizeResolver: HwpObjectSizeResolver(
+                    paperSize: CGSize(width: 595, height: 842),
+                    contentSize: CGSize(width: 500, height: 700),
+                    columnWidth: 400
+                ),
+                clampToAvailableWidth: false
+            )
+            guard case let .success(frame) = result else {
+                fail("expected table layout success")
+                return
+            }
+            expect(frame.outerFrame.width).to(beCloseTo(595, within: 1))
+        }
     }
 
     private extension HwpTableLayoutTests {

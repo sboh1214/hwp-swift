@@ -33,7 +33,8 @@ public struct HwpTableLayout {
         availableWidth: CGFloat,
         index: HwpIndex,
         depth: Int = 0,
-        sizeResolver: HwpObjectSizeResolver? = nil
+        sizeResolver: HwpObjectSizeResolver? = nil,
+        clampToAvailableWidth: Bool = true
     ) -> Result<HwpTableFrame, HwpUnsupportedElement> {
         let property = table.tableProperty
         let rowCount = max(Int(property.rowCount), property.rowCellCounts.count)
@@ -47,7 +48,8 @@ public struct HwpTableLayout {
         }
 
         let outerWidth = resolvedOuterWidth(
-            table: table, availableWidth: availableWidth, sizeResolver: sizeResolver
+            table: table, availableWidth: availableWidth, sizeResolver: sizeResolver,
+            clampToAvailableWidth: clampToAvailableWidth
         )
         let metrics = TableMetrics(property: property)
         let context = LayoutContext(
@@ -175,15 +177,20 @@ extension HwpTableLayout {
         )
     }
 
+    /// 떠 있는 표 (글 앞/뒤로 — 흐름 밖 배치)는 저작 폭이 단 폭을 넘는 것이
+    /// 정당하므로 clampToAvailableWidth = false로 클램프를 해제한다 (#3).
     func resolvedOuterWidth(
-        table: CoreHwp.HwpTable, availableWidth: CGFloat, sizeResolver: HwpObjectSizeResolver?
+        table: CoreHwp.HwpTable,
+        availableWidth: CGFloat,
+        sizeResolver: HwpObjectSizeResolver?,
+        clampToAvailableWidth: Bool = true
     ) -> CGFloat {
         let property = table.commonCtrlProperty
         let authored = HwpObjectSizeResolver.width(
             property.width, basis: property.propertyInfo.widthRelativeTo, resolver: sizeResolver
         )
         guard authored > 1 else { return availableWidth }
-        return min(authored, availableWidth)
+        return clampToAvailableWidth ? min(authored, availableWidth) : authored
     }
 
     /// colSpan == 1 셀의 저작된 폭으로 열 폭을 복원하고, 남는 열은 균등 분배한다.
