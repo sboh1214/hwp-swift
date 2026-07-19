@@ -113,6 +113,10 @@ struct HwpParagraphObjectCollector {
         cursorX: inout CGFloat,
         into collected: inout Objects
     ) {
+        // 커서 전진은 줄 흐름 배치 (글자처럼 취급 + 앵커 없음)에만 —
+        // 떠 있는 개체는 저작 위치라 흐름을 소비하지 않는다 (R30 #1)
+        let advancesCursor = (commonProperty?.propertyInfo.treatAsChar ?? true)
+            && placement.anchor == nil
         if !component.pictureArray.isEmpty {
             guard let size = resolvedSize(
                 commonProperty: commonProperty, component: component
@@ -121,37 +125,83 @@ struct HwpParagraphObjectCollector {
                 guard let image = image(
                     picture: picture,
                     size: size,
-                    instanceId: commonProperty?.instanceId ?? 0,
+                    commonProperty: commonProperty,
                     paragraphRect: placement.paragraphRect,
-                    origin: placement.origin(cursorX: cursorX)
+                    origin: origin(
+                        commonProperty: commonProperty, size: size,
+                        placement: placement, cursorX: cursorX
+                    )
                 ) else { continue }
                 collected.images.append(image)
-                if placement.anchor == nil {
+                if advancesCursor {
                     cursorX += image.rect.width
                 }
             }
             return
         }
-        let origin = placement.origin(cursorX: cursorX)
         if !component.textBoxListArray.isEmpty {
             guard collectsTextboxes, let textbox = textbox(
                 component: component,
                 commonProperty: commonProperty,
-                paragraphRect: placement.paragraphRect,
-                origin: origin
+                placement: placement,
+                cursorX: cursorX
             ) else { return }
             collected.textboxes.append(textbox)
-            if placement.anchor == nil {
+            if advancesCursor {
                 cursorX += textbox.rect.width
             }
             return
         }
         guard let shape = shape(
-            component: component, commonProperty: commonProperty, origin: origin
+            component: component,
+            commonProperty: commonProperty,
+            placement: placement,
+            cursorX: cursorX
         ) else { return }
         collected.shapes.append(shape)
-        if placement.anchor == nil {
+        if advancesCursor {
             cursorX += shape.rect.width
+        }
+    }
+
+    /// 개체 origin — 글자처럼 취급은 줄 앵커 (없으면 커서 흐름), 떠 있는
+    /// 개체는 저작 오프셋+정렬 (흐름 경로 anchoredObjectFrame의 문단 기준
+    /// 근사 — 컨테이너 안에는 종이/쪽/단 기하가 없어 문단 rect 기준) (R30 #1).
+    private func origin(
+        commonProperty: CoreHwp.HwpCommonCtrlProperty?,
+        size: CGSize,
+        placement: Placement,
+        cursorX: CGFloat
+    ) -> CGPoint {
+        guard let commonProperty, !commonProperty.propertyInfo.treatAsChar else {
+            return placement.origin(cursorX: cursorX)
+        }
+        let rect = placement.paragraphRect
+        let offsetX = HwpUnits.points(
+            fromHwpUnit: Int32(bitPattern: commonProperty.horizontalOffset)
+        )
+        let offsetY = HwpUnits.points(
+            fromHwpUnit: Int32(bitPattern: commonProperty.verticalOffset)
+        )
+        return CGPoint(
+            x: alignedX(
+                base: rect.minX, extent: rect.width, size: size.width,
+                alignment: commonProperty.propertyInfo.horizontalAlignment
+            ) + offsetX,
+            y: rect.minY + offsetY
+        )
+    }
+
+    /// 정렬 반영 x — HwpPaginator.alignedAnchor와 같은 산식.
+    private func alignedX(
+        base: CGFloat, extent: CGFloat, size: CGFloat,
+        alignment: CoreHwp.HwpCommonCtrlRelativeAlignment?
+    ) -> CGFloat {
+        guard extent > 0 else { return base }
+        return switch alignment {
+        case .center: base + (extent - size) / 2
+        case .bottomOrRight, .outside: base + extent - size
+        case .topOrLeft, .inside, nil: base
         }
     }
 
@@ -200,7 +250,7 @@ struct HwpParagraphObjectCollector {
     private func image(
         picture: CoreHwp.HwpShapeComponentPicture,
         size: CGSize,
-        instanceId: UInt32,
+        commonProperty: CoreHwp.HwpCommonCtrlProperty?,
         paragraphRect: CGRect,
         origin: CGPoint
     ) -> HwpCellImage? {
@@ -221,41 +271,65 @@ struct HwpParagraphObjectCollector {
             style: property.map { HwpImageRenderStyle(pictureProperty: $0) },
             borderColor: borderColor,
             borderWidth: borderWidth,
-            controlInstanceId: instanceId
+            paintsBehindText: commonProperty?.propertyInfo.textWrap == .behindText,
+            zOrder: commonProperty?.zOrder ?? 0,
+            controlInstanceId: commonProperty?.instanceId ?? 0
         )
     }
 
     private func textbox(
         component: CoreHwp.HwpShapeComponent,
         commonProperty: CoreHwp.HwpCommonCtrlProperty?,
-        paragraphRect: CGRect,
-        origin: CGPoint
+        placement: Placement,
+        cursorX: CGFloat
     ) -> HwpCellTextbox? {
-        guard let commonProperty, let frame = HwpTextboxLayout(fontResolver: fontResolver).layout(
+        // 흐름 경로 (appendShapeObjectBlocks 호출부)와 동일한 기본 property
+        // 폴백. 억제 (collectible)는 property를 보지 않는다 — nil 수집 거부는
+        // 흐름·컨테이너 양쪽 모두 렌더하지 않는 소실이 된다 (R30 #4).
+        let property = commonProperty ?? CoreHwp.HwpCommonCtrlProperty()
+        guard let frame = HwpTextboxLayout(fontResolver: fontResolver).layout(
             components: [component],
-            commonProperty: commonProperty,
-            fallbackWidth: paragraphRect.width,
+            commonProperty: property,
+            fallbackWidth: placement.paragraphRect.width,
             index: index,
             sizeResolver: sizeResolver
         ) else { return nil }
+        let size = frame.outerFrame.size
         return HwpCellTextbox(
-            rect: CGRect(origin: origin, size: frame.outerFrame.size),
+            rect: CGRect(
+                origin: origin(
+                    commonProperty: commonProperty, size: size,
+                    placement: placement, cursorX: cursorX
+                ),
+                size: size
+            ),
             textbox: frame,
-            controlInstanceId: commonProperty.instanceId
+            paintsBehindText: property.propertyInfo.textWrap == .behindText,
+            zOrder: property.zOrder,
+            controlInstanceId: property.instanceId
         )
     }
 
     private func shape(
         component: CoreHwp.HwpShapeComponent,
         commonProperty: CoreHwp.HwpCommonCtrlProperty?,
-        origin: CGPoint
+        placement: Placement,
+        cursorX: CGFloat
     ) -> HwpCellShape? {
         guard let size = resolvedSize(commonProperty: commonProperty, component: component),
               let geometry = HwpShapeGeometry.build(component: component, size: size)
         else { return nil }
         return HwpCellShape(
-            rect: CGRect(origin: origin, size: size),
+            rect: CGRect(
+                origin: origin(
+                    commonProperty: commonProperty, size: size,
+                    placement: placement, cursorX: cursorX
+                ),
+                size: size
+            ),
             geometry: geometry,
+            paintsBehindText: commonProperty?.propertyInfo.textWrap == .behindText,
+            zOrder: commonProperty?.zOrder ?? 0,
             controlInstanceId: commonProperty?.instanceId ?? 0
         )
     }

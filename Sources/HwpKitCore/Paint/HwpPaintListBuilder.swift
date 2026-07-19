@@ -154,23 +154,6 @@ public struct HwpPaintListBuilder: Sendable {
         return commands
     }
 
-    private func cellImageCommands(
-        _ image: HwpCellImage,
-        rect: CGRect
-    ) -> [HwpPaintCommand] {
-        var commands: [HwpPaintCommand] = [
-            .drawImageReference(binItemId: image.binItemId, rect: rect, style: image.style),
-        ]
-        if let borderColor = image.borderColor, image.borderWidth > 0 {
-            commands.append(.strokeRect(
-                rect: rect,
-                color: borderColor.cgColor,
-                width: image.borderWidth
-            ))
-        }
-        return commands
-    }
-
     private func borderCommands(
         _ borders: HwpBorderSet,
         around rect: CGRect
@@ -244,23 +227,20 @@ public struct HwpPaintListBuilder: Sendable {
                 width: max(0.7, textbox.borderWidth)
             ))
         }
+        // 글상자 안 개체 (그림/도형)는 글상자 콘텐츠로 그린다 (R29 #1).
+        // 글 뒤로 개체는 텍스트보다 먼저 — 각 평면 안은 zOrder 정렬 (R30 #2).
+        let objects = textboxObjectCommands(textbox, origin: origin)
+        for object in objects where object.behind {
+            commands.append(contentsOf: object.commands)
+        }
         HwpBlockContentWalker.walkParagraphs(
             textbox.paragraphs,
             offset: origin
         ) { attributed, rect, _ in
             commands.append(drawTextCommand(attributed, in: rect))
         }
-        // 글상자 안 개체 (그림/도형)는 글상자 콘텐츠로 그린다 (R29 #1)
-        for image in textbox.images {
-            commands.append(contentsOf: cellImageCommands(
-                image, rect: image.rect.offsetBy(dx: origin.x, dy: origin.y)
-            ))
-        }
-        for shape in textbox.shapes {
-            commands.append(contentsOf: shapeCommands(
-                shape.geometry,
-                origin: CGPoint(x: origin.x + shape.rect.minX, y: origin.y + shape.rect.minY)
-            ))
+        for object in objects where !object.behind {
+            commands.append(contentsOf: object.commands)
         }
         return commands
     }
@@ -291,7 +271,7 @@ public struct HwpPaintListBuilder: Sendable {
 
     // MARK: - 도형
 
-    private func shapeCommands(
+    func shapeCommands(
         _ geometry: HwpShapeGeometry,
         origin: CGPoint
     ) -> [HwpPaintCommand] {

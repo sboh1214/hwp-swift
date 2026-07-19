@@ -47,8 +47,9 @@ public enum HwpBlockContentWalker {
     }
 
     /// 표를 렌더 방출 순서로 순회한다 — 셀마다
-    /// onCellStart → onParagraphText* → onCellImage* → onCellShape* →
-    /// onCellTextbox* → (중첩 표 재귀).
+    /// onCellStart → (글 뒤로 개체)* → onParagraphText* → (나머지 개체)* →
+    /// (중첩 표 재귀). 개체 이벤트는 종류별 콜백 (onCellImage/onCellShape/
+    /// onCellTextbox)으로 평면·zOrder 순서에 따라 발화한다.
     /// 렌더는 모든 이벤트를 (fill/border·drawText·셀 개체), 선택은
     /// onParagraphText만 소비한다.
     public static func walkTable(
@@ -63,16 +64,26 @@ public enum HwpBlockContentWalker {
         for row in table.rows {
             for cell in row.cells {
                 onCellStart(cell, cell.cellFrame.offsetBy(dx: origin.x, dy: origin.y))
+                // 셀 안 개체는 셀 콘텐츠로 순회한다 (표-로컬 rect + 블록 origin).
+                // 글 뒤로 개체는 텍스트보다 먼저, 나머지는 뒤에 — 각 평면 안은
+                // zOrder 정렬 (같으면 수집 순서 유지, R30 #2).
+                let objects = sortedCellObjects(cell)
+                func emit(_ object: CellObject) {
+                    switch object {
+                    case let .image(image):
+                        onCellImage(image, image.rect.offsetBy(dx: origin.x, dy: origin.y))
+                    case let .shape(shape):
+                        onCellShape(shape, shape.rect.offsetBy(dx: origin.x, dy: origin.y))
+                    case let .textbox(textbox):
+                        onCellTextbox(textbox, textbox.rect.offsetBy(dx: origin.x, dy: origin.y))
+                    }
+                }
+                for object in objects where object.paintsBehindText {
+                    emit(object)
+                }
                 walkParagraphs(cell.paragraphs, offset: origin, visit: onParagraphText)
-                // 셀 안 개체는 셀 콘텐츠로 순회한다 (표-로컬 rect + 블록 origin)
-                for image in cell.images {
-                    onCellImage(image, image.rect.offsetBy(dx: origin.x, dy: origin.y))
-                }
-                for shape in cell.shapes {
-                    onCellShape(shape, shape.rect.offsetBy(dx: origin.x, dy: origin.y))
-                }
-                for textbox in cell.textboxes {
-                    onCellTextbox(textbox, textbox.rect.offsetBy(dx: origin.x, dy: origin.y))
+                for object in objects where !object.paintsBehindText {
+                    emit(object)
                 }
                 // 중첩 표는 셀 안 위치를 origin으로 재귀 순회한다 —
                 // origin 합성 산식은 여기 한 곳에만 둔다.
@@ -92,5 +103,40 @@ public enum HwpBlockContentWalker {
                 }
             }
         }
+    }
+
+    /// 셀 개체 (종류 무관 통합 순회 단위)
+    private enum CellObject {
+        case image(HwpCellImage)
+        case shape(HwpCellShape)
+        case textbox(HwpCellTextbox)
+
+        var paintsBehindText: Bool {
+            switch self {
+            case let .image(image): image.paintsBehindText
+            case let .shape(shape): shape.paintsBehindText
+            case let .textbox(textbox): textbox.paintsBehindText
+            }
+        }
+
+        var zOrder: Int32 {
+            switch self {
+            case let .image(image): image.zOrder
+            case let .shape(shape): shape.zOrder
+            case let .textbox(textbox): textbox.zOrder
+            }
+        }
+    }
+
+    /// 셀 개체를 zOrder 오름차순 (동순위는 수집 순서)으로 정렬한 방출 목록.
+    private static func sortedCellObjects(_ cell: HwpTableCellFrame) -> [CellObject] {
+        let objects = cell.images.map(CellObject.image)
+            + cell.shapes.map(CellObject.shape)
+            + cell.textboxes.map(CellObject.textbox)
+        return objects.enumerated().sorted { lhs, rhs in
+            lhs.element.zOrder != rhs.element.zOrder
+                ? lhs.element.zOrder < rhs.element.zOrder
+                : lhs.offset < rhs.offset
+        }.map(\.element)
     }
 }

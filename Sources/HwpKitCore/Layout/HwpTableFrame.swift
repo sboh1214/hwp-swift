@@ -79,6 +79,10 @@ public struct HwpCellImage: Sendable, Hashable {
     public let borderColor: HwpRGBColor?
     /// 테두리 두께 (pt)
     public let borderWidth: CGFloat
+    /// 글 뒤로 (behindText) — 셀 텍스트보다 먼저 (아래에) 그린다 (R30 #2)
+    public let paintsBehindText: Bool
+    /// 겹치는 개체 z-순서 (표 70) — 같은 평면 안 페인트 정렬 기준
+    public let zOrder: Int32
     /// 원본 컨트롤 참조 (편집 대비)
     public let controlInstanceId: UInt32
 
@@ -88,6 +92,8 @@ public struct HwpCellImage: Sendable, Hashable {
         style: HwpImageRenderStyle?,
         borderColor: HwpRGBColor? = nil,
         borderWidth: CGFloat = 0,
+        paintsBehindText: Bool = false,
+        zOrder: Int32 = 0,
         controlInstanceId: UInt32
     ) {
         self.rect = rect
@@ -95,6 +101,8 @@ public struct HwpCellImage: Sendable, Hashable {
         self.style = style
         self.borderColor = borderColor
         self.borderWidth = borderWidth
+        self.paintsBehindText = paintsBehindText
+        self.zOrder = zOrder
         self.controlInstanceId = controlInstanceId
     }
 
@@ -106,6 +114,8 @@ public struct HwpCellImage: Sendable, Hashable {
             style: style,
             borderColor: borderColor,
             borderWidth: borderWidth,
+            paintsBehindText: paintsBehindText,
+            zOrder: zOrder,
             controlInstanceId: controlInstanceId
         )
     }
@@ -117,17 +127,35 @@ public struct HwpCellImage: Sendable, Hashable {
 public struct HwpCellShape: @unchecked Sendable, Hashable {
     public let rect: CGRect
     public let geometry: HwpShapeGeometry
+    /// 글 뒤로 (behindText) — 셀 텍스트보다 먼저 (아래에) 그린다 (R30 #2)
+    public let paintsBehindText: Bool
+    /// 겹치는 개체 z-순서 (표 70) — 같은 평면 안 페인트 정렬 기준
+    public let zOrder: Int32
     /// 원본 컨트롤 참조 (편집 대비)
     public let controlInstanceId: UInt32
 
-    public init(rect: CGRect, geometry: HwpShapeGeometry, controlInstanceId: UInt32) {
+    public init(
+        rect: CGRect,
+        geometry: HwpShapeGeometry,
+        paintsBehindText: Bool = false,
+        zOrder: Int32 = 0,
+        controlInstanceId: UInt32
+    ) {
         self.rect = rect
         self.geometry = geometry
+        self.paintsBehindText = paintsBehindText
+        self.zOrder = zOrder
         self.controlInstanceId = controlInstanceId
     }
 
     public func withRect(_ rect: CGRect) -> HwpCellShape {
-        HwpCellShape(rect: rect, geometry: geometry, controlInstanceId: controlInstanceId)
+        HwpCellShape(
+            rect: rect,
+            geometry: geometry,
+            paintsBehindText: paintsBehindText,
+            zOrder: zOrder,
+            controlInstanceId: controlInstanceId
+        )
     }
 }
 
@@ -136,17 +164,35 @@ public struct HwpCellTextbox: @unchecked Sendable, Hashable {
     public let rect: CGRect
     /// 글상자 자체 레이아웃 (origin 0,0 좌표계)
     public let textbox: HwpTextboxFrame
+    /// 글 뒤로 (behindText) — 셀 텍스트보다 먼저 (아래에) 그린다 (R30 #2)
+    public let paintsBehindText: Bool
+    /// 겹치는 개체 z-순서 (표 70) — 같은 평면 안 페인트 정렬 기준
+    public let zOrder: Int32
     /// 원본 컨트롤 참조 (편집 대비)
     public let controlInstanceId: UInt32
 
-    public init(rect: CGRect, textbox: HwpTextboxFrame, controlInstanceId: UInt32) {
+    public init(
+        rect: CGRect,
+        textbox: HwpTextboxFrame,
+        paintsBehindText: Bool = false,
+        zOrder: Int32 = 0,
+        controlInstanceId: UInt32
+    ) {
         self.rect = rect
         self.textbox = textbox
+        self.paintsBehindText = paintsBehindText
+        self.zOrder = zOrder
         self.controlInstanceId = controlInstanceId
     }
 
     public func withRect(_ rect: CGRect) -> HwpCellTextbox {
-        HwpCellTextbox(rect: rect, textbox: textbox, controlInstanceId: controlInstanceId)
+        HwpCellTextbox(
+            rect: rect,
+            textbox: textbox,
+            paintsBehindText: paintsBehindText,
+            zOrder: zOrder,
+            controlInstanceId: controlInstanceId
+        )
     }
 }
 
