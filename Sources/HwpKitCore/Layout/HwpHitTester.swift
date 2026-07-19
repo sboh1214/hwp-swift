@@ -119,6 +119,16 @@ public struct HwpHitTester {
                 if let url = hyperlinkURL(in: cell.paragraphs, at: point) {
                     return url
                 }
+                // 셀 안 글상자 문단은 글상자-로컬 (origin 0,0) 좌표다 (R30 #3)
+                for textbox in cell.textboxes where textbox.rect.contains(point) {
+                    let boxPoint = CGPoint(
+                        x: point.x - textbox.rect.minX,
+                        y: point.y - textbox.rect.minY
+                    )
+                    if let url = hyperlinkURL(in: textbox.textbox.paragraphs, at: boxPoint) {
+                        return url
+                    }
+                }
                 for nested in cell.nestedTables {
                     let nestedPoint = CGPoint(
                         x: point.x - nested.rect.minX,

@@ -25,6 +25,57 @@ final class HwpHyperlinkPipelineTests: XCTestCase {
         )
     }
 
+    /// 셀 안 글상자 문단의 하이퍼링크도 히트된다 — 글상자-로컬 좌표 변환 (R30 #3).
+    func testCellTextboxHyperlinkIsTappable() {
+        let black = HwpRGBColor(red: 0, green: 0, blue: 0)
+        let boxParagraph = HwpLaidOutParagraph(
+            attributedString: NSAttributedString(string: "링크"),
+            frame: HwpParagraphFrame(totalHeight: 20, lines: []),
+            rect: CGRect(x: 0, y: 0, width: 80, height: 20),
+            paragraphId: 1,
+            hyperlinkURL: "https://example.com"
+        )
+        let cell = HwpTableCellFrame(
+            cellFrame: CGRect(x: 0, y: 0, width: 100, height: 50),
+            row: 0, column: 0, rowSpan: 1, columnSpan: 1,
+            paragraphs: [],
+            borders: HwpBorderSet.uniform(width: 0.5, color: black),
+            fillColor: nil,
+            textboxes: [HwpCellTextbox(
+                rect: CGRect(x: 10, y: 10, width: 80, height: 20),
+                textbox: HwpTextboxFrame(
+                    outerFrame: CGRect(x: 0, y: 0, width: 80, height: 20),
+                    paragraphs: [boxParagraph],
+                    borderColor: nil, borderWidth: 0, fillColor: nil
+                ),
+                controlInstanceId: 1
+            )]
+        )
+        let table = HwpTableFrame(
+            outerFrame: CGRect(x: 0, y: 0, width: 100, height: 50),
+            rows: [HwpTableRowFrame(
+                rowFrame: CGRect(x: 0, y: 0, width: 100, height: 50),
+                cells: [cell]
+            )],
+            borderColor: black, borderWidth: 1
+        )
+        let block = AnyHwpBlock(
+            frame: CGRect(x: 0, y: 0, width: 100, height: 50),
+            kind: .table,
+            payload: .table(table)
+        )
+        let page = makePage(with: [block])
+
+        let hit = HwpHitTester().hit(page: page, point: CGPoint(x: 20, y: 20))
+
+        expect {
+            if case let .hyperlink(url, _) = hit {
+                return url == "https://example.com"
+            }
+            return false
+        } == true
+    }
+
     func testHitTesterReturnsHyperlinkForBlockWithURL() {
         let frame = CGRect(x: 10, y: 20, width: 100, height: 30)
         let block = makeHyperlinkBlock(url: "https://example.com", frame: frame)
