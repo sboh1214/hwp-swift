@@ -80,6 +80,28 @@
             expect(view.pageLayers[5]?.frame.minY) == expectedY
         }
 
+        /// 보존 창 (가시 ±2)을 미리 실체화한다 — 인접 페이지가 뷰포트 진입
+        /// 전에 생성돼 스크롤 중 플레이스홀더가 번쩍이지 않는다 (R31 #4).
+        func testUpdateVisiblePagesMaterializesRetentionWindow() {
+            let view = HwpDocumentNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 1200))
+            view.document = makeDocument(pageCount: 10)
+
+            view.updateVisiblePages(range: 5 ..< 6)
+
+            expect(view.pageLayers.keys.sorted()) == [3, 4, 5, 6, 7]
+        }
+
+        /// 보존 창은 문서 페이지 수로 클램프된다 — 끝 페이지에서 범위 밖
+        /// 레이어를 만들지 않는다.
+        func testRetentionWindowClampsToPageCount() {
+            let view = HwpDocumentNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 1200))
+            view.document = makeDocument(pageCount: 4)
+
+            view.updateVisiblePages(range: 3 ..< 4)
+
+            expect(view.pageLayers.keys.sorted()) == [1, 2, 3]
+        }
+
         func testScrollToPageMovesDocumentVisibleRect() {
             let view = HwpDocumentNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
             view.layoutSubtreeIfNeeded()

@@ -246,7 +246,15 @@
                 memoPanelLayers[index] = nil
             }
 
-            for index in range where pageLayers[index] == nil {
+            // 보존 창 (가시 ±2)을 미리 실체화한다 — 가시 범위만 만들면 인접
+            // 페이지가 뷰포트 진입 후에야 생성돼 스크롤 중 플레이스홀더가
+            // 번쩍인다 (iOS keepRange와 대칭, R31 #4). 문서가 없으면 페이지
+            // 수를 몰라 프리페치 없이 가시 범위만 만든다.
+            let pageCount = document?.pages.count ?? 0
+            let materializedRange = pageCount > 0
+                ? retainedRange.clamped(to: 0 ..< pageCount)
+                : range
+            for index in materializedRange where pageLayers[index] == nil {
                 let pageLayer = makePageLayer(for: index)
                 pageLayers[index] = pageLayer
                 documentContentView.layer?.addSublayer(pageLayer)
