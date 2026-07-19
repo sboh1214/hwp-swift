@@ -220,6 +220,14 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   (셀 위치가 아닌 흐름 위치 — 그림처럼 셀 콘텐츠로 옮기는 것은 후속 과제)
 - 페이지보다 큰 표 row 슬라이스는 문단을 라인 단위로 나눠 이월하지만 (절단선은
   라인 경계로 정렬), 라인 캐시 없는 문단·조각 경계의 중첩 표는 위 조각에 통째로 남는다
+- 페이지/단 경계로 분할된 문단의 컨트롤은 마지막 조각 처리 후 방출된다 —
+  앞 조각에 앵커된 각주/메모가 마지막 조각의 페이지에 귀속되고, treatAsChar
+  개체는 흐름 폴백된다. 근본 원인: 컨트롤 수집 (collectFootnotes/collectMemos/
+  appendControlBlocks)이 placeParagraphText 뒤에 오는데 앞 조각 페이지는
+  cacheCurrentPage에서 paintList까지 확정돼 사후 귀속이 불가능하다. 조각
+  단위 방출은 분할 경로 전반 (flow split·단 밴드·절대 캐시 run)의 수술이라
+  후속 과제 — 조각 라인 origin이 rebase되지 않아 (base-relative delta 규약)
+  inlineAnchorMap 산식도 함께 바꿔야 한다
 - treatAsChar 줄 중간 앵커는 분할되지 않은 문단 블록에서만 동작한다
   (다단에서 라인 분할된 문단의 개체는 흐름 위치 폴백)
 - 그림 효과 중 PATTERN8x8 (효과 4)은 미지원 — 원본으로 렌더
