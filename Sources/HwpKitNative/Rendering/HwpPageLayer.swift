@@ -93,8 +93,8 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
         case let .drawImage(image, rect):
             drawFlippedImage(image, in: rect, context: ctx)
 
-        case let .drawImageReference(binItemId, rect, style):
-            drawImageReference(binItemId, style: style, in: rect, context: ctx)
+        case let .drawImageReference(binItemId, rect, style, clipRect):
+            drawImageReference(binItemId, style: style, in: rect, clipTo: clipRect, context: ctx)
 
         case let .drawPlaceholder(rect, text):
             drawPlaceholder(text, in: rect, context: ctx)
@@ -141,7 +141,7 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
     public func containsImageReference(_ binItemId: UInt32) -> Bool {
         guard let paintList else { return false }
         return paintList.commands.contains {
-            if case let .drawImageReference(key, _, _) = $0 {
+            if case let .drawImageReference(key, _, _, _) = $0 {
                 key == binItemId
             } else {
                 false
@@ -162,8 +162,20 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
         _ binItemId: UInt32,
         style: HwpImageRenderStyle?,
         in rect: CGRect,
+        clipTo clipRect: CGRect?,
         context ctx: CGContext
     ) {
+        // 절단면에 걸친 분할 셀 그림 — rect (저작 기하) 그대로 그리되 가시
+        // 영역만 남긴다 (로딩 표시·플레이스홀더 포함, R32 #2)
+        if let clipRect {
+            ctx.saveGState()
+            ctx.clip(to: clipRect)
+        }
+        defer {
+            if clipRect != nil {
+                ctx.restoreGState()
+            }
+        }
         guard let imageProvider else {
             drawPlaceholder("[이미지]", in: rect, context: ctx)
             return

@@ -203,7 +203,7 @@ public struct HwpTextboxLayout {
                 hyperlinkURL: paragraph.hyperlinkURL
             )
         }
-        shifted.images = contents.images.map { $0.withRect($0.rect.offsetBy(dx: 0, dy: offset)) }
+        shifted.images = contents.images.map { $0.offsetBy(deltaX: 0, deltaY: offset) }
         shifted.shapes = contents.shapes.map { $0.withRect($0.rect.offsetBy(dx: 0, dy: offset)) }
         return shifted
     }

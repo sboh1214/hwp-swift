@@ -123,4 +123,19 @@ final class HwpBlockContentWalkerTests: XCTestCase {
 
         expect(events) == ["shape", "image"]
     }
+
+    /// offsetBy는 rect와 clipRect를 함께 옮긴다 — 분할 세그먼트 rebase에서
+    /// 클립이 제자리에 남으면 가시 영역이 어긋난다 (R32 #2).
+    func testCellImageOffsetMovesClipRect() {
+        let clipped = HwpCellImage(
+            rect: CGRect(x: 0, y: 0, width: 50, height: 80),
+            binItemId: 1,
+            style: nil,
+            clipRect: CGRect(x: 0, y: 40, width: 50, height: 40),
+            controlInstanceId: 1
+        ).offsetBy(deltaX: 0, deltaY: -40)
+
+        expect(clipped.rect) == CGRect(x: 0, y: -40, width: 50, height: 80)
+        expect(clipped.clipRect) == CGRect(x: 0, y: 0, width: 50, height: 40)
+    }
 }

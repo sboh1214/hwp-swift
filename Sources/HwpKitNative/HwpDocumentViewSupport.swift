@@ -137,7 +137,7 @@ enum HwpDocumentViewSupport {
         var variants: Set<String> = []
         for index in pageRange where document.pages.indices.contains(index) {
             for command in document.pages[index].paintList.commands {
-                if case let .drawImageReference(binItemId, _, style) = command {
+                if case let .drawImageReference(binItemId, _, style, _) = command {
                     variants.insert(HwpPageImageProvider.variantKey(binItemId, style))
                 }
             }

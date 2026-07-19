@@ -86,6 +86,9 @@ public struct HwpCellImage: Sendable, Hashable {
     /// 같은 zOrder의 이종 컨트롤 간 원본 (ctrlHeaderArray) 순서 — 동순위
     /// tiebreak이 종류-버킷 순서로 무너지지 않게 한다 (R31 #3)
     public let sourceOrder: Int
+    /// 페이지 절단면에 걸친 그림의 가시 영역 (표-로컬, nil = 전체).
+    /// rect는 저작 기하를 유지한다 — rect 축소는 스케일 왜곡 (R32 #2)
+    public let clipRect: CGRect?
     /// 원본 컨트롤 참조 (편집 대비)
     public let controlInstanceId: UInt32
 
@@ -98,6 +101,7 @@ public struct HwpCellImage: Sendable, Hashable {
         paintsBehindText: Bool = false,
         zOrder: Int32 = 0,
         sourceOrder: Int = 0,
+        clipRect: CGRect? = nil,
         controlInstanceId: UInt32
     ) {
         self.rect = rect
@@ -108,6 +112,7 @@ public struct HwpCellImage: Sendable, Hashable {
         self.paintsBehindText = paintsBehindText
         self.zOrder = zOrder
         self.sourceOrder = sourceOrder
+        self.clipRect = clipRect
         self.controlInstanceId = controlInstanceId
     }
 
@@ -122,8 +127,32 @@ public struct HwpCellImage: Sendable, Hashable {
             paintsBehindText: paintsBehindText,
             zOrder: zOrder,
             sourceOrder: sourceOrder,
+            clipRect: clipRect,
             controlInstanceId: controlInstanceId
         )
+    }
+
+    /// 가시 영역만 바꾼 사본 (분할 조각 배정)
+    public func withClip(_ clipRect: CGRect?) -> HwpCellImage {
+        HwpCellImage(
+            rect: rect,
+            binItemId: binItemId,
+            style: style,
+            borderColor: borderColor,
+            borderWidth: borderWidth,
+            paintsBehindText: paintsBehindText,
+            zOrder: zOrder,
+            sourceOrder: sourceOrder,
+            clipRect: clipRect,
+            controlInstanceId: controlInstanceId
+        )
+    }
+
+    /// rect·clipRect를 함께 이동한 사본 — 분할 세그먼트 rebase에서 클립이
+    /// 제자리에 남지 않게 한다 (R32 #2)
+    public func offsetBy(deltaX: CGFloat, deltaY: CGFloat) -> HwpCellImage {
+        withRect(rect.offsetBy(dx: deltaX, dy: deltaY))
+            .withClip(clipRect?.offsetBy(dx: deltaX, dy: deltaY))
     }
 }
 
@@ -288,7 +317,7 @@ public struct HwpTableCellFrame: @unchecked Sendable, Hashable {
                     controlInstanceId: nested.controlInstanceId
                 )
             },
-            images: images.map { $0.withRect($0.rect.offsetBy(dx: 0, dy: deltaY)) },
+            images: images.map { $0.offsetBy(deltaX: 0, deltaY: deltaY) },
             shapes: shapes.map { $0.withRect($0.rect.offsetBy(dx: 0, dy: deltaY)) },
             textboxes: textboxes.map { $0.withRect($0.rect.offsetBy(dx: 0, dy: deltaY)) }
         )

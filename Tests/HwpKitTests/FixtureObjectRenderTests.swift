@@ -265,7 +265,7 @@ final class FixtureObjectRenderTests: XCTestCase {
         var ids = Set<UInt32>()
         for page in document.pages {
             for command in page.paintList.commands {
-                if case let .drawImageReference(binItemId, _, _) = command {
+                if case let .drawImageReference(binItemId, _, _, _) = command {
                     ids.insert(binItemId)
                 }
             }

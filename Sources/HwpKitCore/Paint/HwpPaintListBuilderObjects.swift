@@ -8,12 +8,21 @@ extension HwpPaintListBuilder {
         _ image: HwpCellImage,
         rect: CGRect
     ) -> [HwpPaintCommand] {
+        // clipRect는 표-로컬 — rect가 받은 오프셋만큼 함께 옮긴다 (R32 #2)
+        let clip = image.clipRect?.offsetBy(
+            dx: rect.minX - image.rect.minX,
+            dy: rect.minY - image.rect.minY
+        )
         var commands: [HwpPaintCommand] = [
-            .drawImageReference(binItemId: image.binItemId, rect: rect, style: image.style),
+            .drawImageReference(
+                binItemId: image.binItemId, rect: rect, style: image.style, clipRect: clip
+            ),
         ]
         if let borderColor = image.borderColor, image.borderWidth > 0 {
+            // 절단면에 걸친 그림의 테두리는 가시 영역에만 (근사 — 절단선에도
+            // 선이 생기지만 조각 밖으로 새지는 않는다)
             commands.append(.strokeRect(
-                rect: rect,
+                rect: clip.map { rect.intersection($0) } ?? rect,
                 color: borderColor.cgColor,
                 width: image.borderWidth
             ))

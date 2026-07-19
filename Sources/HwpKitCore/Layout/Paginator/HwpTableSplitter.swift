@@ -281,23 +281,6 @@ enum HwpTableSplitter {
         return aligned > row.rowFrame.minY + 1 ? aligned : cutY
     }
 
-    /// 이미지 rect를 [minY, maxY] 조각 경계로 클램프한다. 걸치지 않으면
-    /// 원본 그대로 반환한다 (렌더 불변). (#11)
-    private static func clampedImage(
-        _ image: HwpCellImage,
-        minY: CGFloat,
-        maxY: CGFloat
-    ) -> HwpCellImage {
-        let top = max(image.rect.minY, minY)
-        let bottom = min(image.rect.maxY, maxY)
-        guard bottom > top, top > image.rect.minY || bottom < image.rect.maxY else {
-            return image
-        }
-        return image.withRect(
-            CGRect(x: image.rect.minX, y: top, width: image.rect.width, height: bottom - top)
-        )
-    }
-
     private static func splitCell(
         _ cell: HwpTableCellFrame,
         at cutY: CGFloat
@@ -352,10 +335,11 @@ enum HwpTableSplitter {
         )
     }
 
-    /// 셀 개체를 중심(midY)으로 한 조각에 배정한다 (손실 방지, #13).
-    /// 이미지는 조각 셀 경계로 rect를 클램프해 조각 밖 (rebase 후 음수 y·다음
-    /// 콘텐츠 위)으로 그려지지 않게 하고 (#11), 도형/글상자는 잘라 그릴 수
-    /// 없어 그대로 둔다. 걸치지 않는 개체는 원본 그대로 (렌더 불변).
+    /// 셀 개체를 조각에 배정한다. 그림은 절단면에 걸치면 양쪽 조각에 각자의
+    /// 가시 영역 클립으로 배정한다 — rect 축소는 비트맵 스케일 왜곡이라
+    /// 저작 기하를 유지하고 클립으로 자른다 (R32 #2, 한글: 절단면 클립).
+    /// 도형/글상자는 잘라 그릴 수 없어 중심(midY)으로 한 조각에 배정한다
+    /// (손실 방지, #13). 걸치지 않는 개체는 원본 그대로 (렌더 불변).
     private static func partitionedObjects(
         of cell: HwpTableCellFrame,
         at cutY: CGFloat,
@@ -364,20 +348,37 @@ enum HwpTableSplitter {
     ) -> (top: HwpParagraphObjectCollector.Objects, bottom: HwpParagraphObjectCollector.Objects) {
         (
             HwpParagraphObjectCollector.Objects(
-                images: cell.images
-                    .filter { $0.rect.midY < cutY }
-                    .map { clampedImage($0, minY: topFrame.minY, maxY: topFrame.maxY) },
+                images: cell.images.compactMap { clippedImage($0, band: topFrame) },
                 shapes: cell.shapes.filter { $0.rect.midY < cutY },
                 textboxes: cell.textboxes.filter { $0.rect.midY < cutY }
             ),
             HwpParagraphObjectCollector.Objects(
-                images: cell.images
-                    .filter { $0.rect.midY >= cutY }
-                    .map { clampedImage($0, minY: bottomFrame.minY, maxY: bottomFrame.maxY) },
+                images: cell.images.compactMap { clippedImage($0, band: bottomFrame) },
                 shapes: cell.shapes.filter { $0.rect.midY >= cutY },
                 textboxes: cell.textboxes.filter { $0.rect.midY >= cutY }
             )
         )
+    }
+
+    /// 그림의 조각 y-대역 가시 부분 — 완전히 안이면 그대로, 걸치면 저작
+    /// rect를 유지한 채 대역 교차분을 클립으로 (기존 클립과는 교집합),
+    /// 대역과 안 겹치면 (0.5pt 미만) nil.
+    private static func clippedImage(
+        _ image: HwpCellImage,
+        band: CGRect
+    ) -> HwpCellImage? {
+        let visible = image.clipRect.map { $0.intersection(band) }
+            ?? CGRect(
+                x: image.rect.minX,
+                y: max(image.rect.minY, band.minY),
+                width: image.rect.width,
+                height: min(image.rect.maxY, band.maxY) - max(image.rect.minY, band.minY)
+            )
+        guard visible.height > 0.5 else { return nil }
+        if visible.minY <= image.rect.minY + 0.5, visible.maxY >= image.rect.maxY - 0.5 {
+            return image
+        }
+        return image.withClip(visible)
     }
 
     /// 조각 경계에 걸친 셀 문단을 라인 단위로 위/아래 조각으로 나눠

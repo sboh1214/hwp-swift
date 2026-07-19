@@ -9,6 +9,50 @@ final class HwpPaintListBuilderTests: XCTestCase {
     private let builder = HwpPaintListBuilder()
     private lazy var index = HwpIndex(from: HwpFile())
 
+    /// 절단면 클립이 있는 셀 그림은 저작 rect를 유지한 채 페이지 좌표로
+    /// 오프셋된 clipRect로 방출된다 (R32 #2).
+    func testClippedCellImageEmitsOffsetClipRect() {
+        let black = HwpRGBColor(red: 0, green: 0, blue: 0)
+        let cell = HwpTableCellFrame(
+            cellFrame: CGRect(x: 0, y: 0, width: 100, height: 40),
+            row: 0, column: 0, rowSpan: 1, columnSpan: 1,
+            paragraphs: [],
+            borders: HwpBorderSet.uniform(width: 0.5, color: black),
+            fillColor: nil,
+            images: [HwpCellImage(
+                rect: CGRect(x: 0, y: -40, width: 50, height: 80),
+                binItemId: 3,
+                style: nil,
+                clipRect: CGRect(x: 0, y: 0, width: 50, height: 40),
+                controlInstanceId: 3
+            )]
+        )
+        let table = HwpTableFrame(
+            outerFrame: CGRect(x: 0, y: 0, width: 100, height: 40),
+            rows: [HwpTableRowFrame(
+                rowFrame: CGRect(x: 0, y: 0, width: 100, height: 40),
+                cells: [cell]
+            )],
+            borderColor: black, borderWidth: 1
+        )
+        let block = AnyHwpBlock(
+            frame: CGRect(x: 10, y: 100, width: 100, height: 40),
+            kind: .table,
+            payload: .table(table)
+        )
+        let list = builder.build(for: makePage(blocks: [block]), index: index)
+
+        let clips: [(CGRect, CGRect?)] = list.commands.compactMap {
+            if case let .drawImageReference(_, rect, _, clip) = $0 {
+                return (rect, clip)
+            }
+            return nil
+        }
+        expect(clips.count) == 1
+        expect(clips.first?.0) == CGRect(x: 10, y: 60, width: 50, height: 80)
+        expect(clips.first?.1) == CGRect(x: 10, y: 100, width: 50, height: 40)
+    }
+
     func testEmptyPageProducesNoCommands() {
         let list = builder.build(for: makePage(blocks: []), index: index)
         expect(list.commands.count) == 0
@@ -107,7 +151,7 @@ final class HwpPaintListBuilderTests: XCTestCase {
             payload: .image(HwpImageBlockInfo(binItemId: 1))
         )
         let list = storeBuilder.build(for: makePage(blocks: [block]), index: index)
-        guard case let .drawImageReference(binItemId, rect, style) = list.commands.first else {
+        guard case let .drawImageReference(binItemId, rect, style, _) = list.commands.first else {
             fail("Expected .drawImageReference")
             return
         }

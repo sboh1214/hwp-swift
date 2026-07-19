@@ -205,7 +205,7 @@ extension HwpTableLayout {
                 )
             },
             images: contents.images.map {
-                $0.withRect($0.rect.offsetBy(dx: 0, dy: offset))
+                $0.offsetBy(deltaX: 0, deltaY: offset)
             },
             shapes: contents.shapes.map {
                 $0.withRect($0.rect.offsetBy(dx: 0, dy: offset))

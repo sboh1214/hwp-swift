@@ -103,7 +103,7 @@ enum FixturePreview {
     ) async throws {
         var references: [(id: UInt32, style: HwpImageRenderStyle?)] = []
         for command in paintList.commands {
-            if case let .drawImageReference(binItemId, _, style) = command {
+            if case let .drawImageReference(binItemId, _, style, _) = command {
                 references.append((binItemId, style))
             }
         }
