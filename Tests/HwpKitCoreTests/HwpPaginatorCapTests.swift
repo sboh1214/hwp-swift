@@ -32,5 +32,46 @@ import XCTest
             }
             expect(pages) == 1
         }
+
+        /// 병렬 page 요청은 직렬화된다 — computeNextPage 재진입 교차 실행이
+        /// 문단 배치를 오염시키지 않아, 동시 소비 결과가 순차 소비와 동일하다
+        /// (R38 #1).
+        func testConcurrentPageRequestsMatchSequentialPagination() async throws {
+            func makePaginator() throws -> HwpPaginator {
+                let text = String(repeating: "가나다라 마바사아 자차카타 파하 ", count: 800)
+                let section = HwpSynthetic.section(
+                    firstParagraphControls: [
+                        .section(HwpSynthetic.sectionDef()),
+                        .column(CoreHwp.HwpColumn()),
+                    ],
+                    bodyParagraphs: [try HwpSynthetic.textParagraph(text)]
+                )
+                return HwpPaginator(
+                    sections: [section],
+                    index: HwpIndex(from: CoreHwp.HwpFile()),
+                    fontResolver: .testDeterministic
+                )
+            }
+            let sequential = try makePaginator()
+            var expected: [Int] = []
+            var index = 0
+            while let page = try await sequential.page(at: index) {
+                expected.append(page.blocks.count)
+                index += 1
+            }
+            expect(expected.count) >= 2
+
+            let concurrent = try makePaginator()
+            async let last = concurrent.page(at: expected.count - 1)
+            async let first = concurrent.page(at: 0)
+            _ = try await (first, last)
+            var actual: [Int] = []
+            var verifyIndex = 0
+            while let page = try await concurrent.page(at: verifyIndex) {
+                actual.append(page.blocks.count)
+                verifyIndex += 1
+            }
+            expect(actual) == expected
+        }
     }
 #endif

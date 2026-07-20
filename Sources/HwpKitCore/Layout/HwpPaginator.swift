@@ -39,6 +39,7 @@ public actor HwpPaginator {
     /// 인스턴스 상한 (기본 = 전역 상한) — 테스트가 cap 도달 경로를 작은
     /// 문서로 재현할 수 있게 재정의를 허용한다.
     var maximumPages = HwpPaginator.maximumDocumentPages
+    private var isComputingPage = false
 
     func overrideMaximumPages(_ count: Int) {
         maximumPages = count
@@ -227,7 +228,7 @@ public actor HwpPaginator {
 
         while cachedPages[index] == nil, !didFinishPagination {
             await Task.yield()
-            try await computeNextPage()
+            try await computeNextPageSerialized()
         }
         return cachedPages[index]
     }
@@ -236,12 +237,30 @@ public actor HwpPaginator {
         while !didFinishPagination {
             await Task.yield()
             do {
-                try await computeNextPage()
+                try await computeNextPageSerialized()
             } catch {
                 break
             }
         }
         return max(1, cachedPages.count)
+    }
+
+    /// computeNextPage는 내부 suspension(Task.yield 등)에서 actor 재진입이
+    /// 열리는데 병렬 실행에 안전하지 않다 (문단 커서·페이지 캐시 교차 오염) —
+    /// 진행 중이면 완료를 기다린 뒤 반환해 호출자 루프가 조건을 재평가하게
+    /// 한다. Task 체이닝 대신 플래그 대기인 이유: 문단 루프의
+    /// checkCancellation이 호출자 자신의 취소를 관찰해야 한다 (R38 #1).
+    private func computeNextPageSerialized() async throws {
+        guard !isComputingPage else {
+            while isComputingPage {
+                try Task.checkCancellation()
+                await Task.yield()
+            }
+            return
+        }
+        isComputingPage = true
+        defer { isComputingPage = false }
+        try await computeNextPage()
     }
 
     public func unsupportedElements() async -> [HwpUnsupportedElement] {
