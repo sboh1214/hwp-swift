@@ -158,6 +158,10 @@ public actor HwpDocumentActor {
         // 취소된 로드(다른 로드가 시작됨)가 detached 파싱을 마친 뒤 actor 상태를
         // 덮어쓰지 않도록, paginator 설치 직전에 취소를 재확인한다 (#4).
         try Task.checkCancellation()
+        // 캐시 키는 문서-로컬 binItemId라 문서가 바뀌면 이전 문서의 비트맵이
+        // 같은 키로 오해석된다 — 새 문서 확정 시점(취소 가드 통과 후)에 회전해
+        // stale 로드가 표시 중 문서의 캐시를 비우는 일을 막는다 (#2).
+        await cache.clear()
         self.paginator = paginator
 
         let previewText = file.previewText.text
