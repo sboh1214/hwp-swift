@@ -395,4 +395,80 @@ private extension HwpHyperlinkPipelineTests {
             payload: .table(table)
         )
     }
+
+    /// 셀 문단만 담은 200×50 단일 셀 표 블록 (블록 원점 0,0)
+    func cellParagraphTableBlock(paragraphs: [HwpLaidOutParagraph]) -> AnyHwpBlock {
+        let black = HwpRGBColor(red: 0, green: 0, blue: 0)
+        let cell = HwpTableCellFrame(
+            cellFrame: CGRect(x: 0, y: 0, width: 200, height: 50),
+            row: 0, column: 0, rowSpan: 1, columnSpan: 1,
+            paragraphs: paragraphs,
+            borders: HwpBorderSet.uniform(width: 0.5, color: black),
+            fillColor: nil,
+            textboxes: []
+        )
+        let table = HwpTableFrame(
+            outerFrame: CGRect(x: 0, y: 0, width: 200, height: 50),
+            rows: [HwpTableRowFrame(
+                rowFrame: CGRect(x: 0, y: 0, width: 200, height: 50),
+                cells: [cell]
+            )],
+            borderColor: black, borderWidth: 1
+        )
+        return AnyHwpBlock(
+            frame: CGRect(x: 0, y: 0, width: 200, height: 50),
+            kind: .table,
+            payload: .table(table)
+        )
+    }
+}
+
+extension HwpHyperlinkPipelineTests {
+    /// 같은 셀의 다른 문단이 필드 스팬을 가져도, 스팬 없는 문단의 폴백 링크는
+    /// 문단 단위로 히트된다 — 블록 전체 게이트의 과차단 해소 (R38 #4). 스팬
+    /// 문단의 글리프 밖 rect 폴백 금지(R31 계약)는 그대로다.
+    func testFallbackParagraphLinkHitAlongsideSpanParagraph() {
+        let font = CTFontCreateWithName("Helvetica" as CFString, 12, nil)
+        let spanAttributed = NSMutableAttributedString(
+            string: "before link after",
+            attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
+        )
+        let linkRange = (spanAttributed.string as NSString).range(of: "link")
+        spanAttributed.addAttribute(
+            HwpAttributedStringKey.hyperlink, value: "https://span.example", range: linkRange
+        )
+        let spanParagraph = HwpLaidOutParagraph(
+            attributedString: spanAttributed,
+            frame: HwpParagraphFrame(totalHeight: 20, lines: []),
+            rect: CGRect(x: 0, y: 0, width: 200, height: 20),
+            paragraphId: 1,
+            hyperlinkURL: "https://span.example"
+        )
+        let fallbackParagraph = HwpLaidOutParagraph(
+            attributedString: NSAttributedString(string: "폴백 링크"),
+            frame: HwpParagraphFrame(totalHeight: 20, lines: []),
+            rect: CGRect(x: 0, y: 20, width: 200, height: 20),
+            paragraphId: 2,
+            hyperlinkURL: "https://fallback.example"
+        )
+        let page = makePage(with: [cellParagraphTableBlock(
+            paragraphs: [spanParagraph, fallbackParagraph]
+        )])
+
+        let onFallback = HwpHitTester().hit(page: page, point: CGPoint(x: 30, y: 30))
+        expect {
+            if case let .hyperlink(url, _) = onFallback {
+                return url == "https://fallback.example"
+            }
+            return false
+        } == true
+
+        let outsideSpanGlyph = HwpHitTester().hit(page: page, point: CGPoint(x: 195, y: 10))
+        expect {
+            if case .hyperlink = outsideSpanGlyph {
+                return false
+            }
+            return true
+        } == true
+    }
 }

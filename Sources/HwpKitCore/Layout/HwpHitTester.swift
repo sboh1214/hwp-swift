@@ -74,10 +74,16 @@ public struct HwpHitTester {
                 fieldURL = regions.first { $0.rect.contains(point) }?.url
             }
         }
+        if let fieldURL {
+            return fieldURL
+        }
         if hasFieldSpans {
-            // 블록/컨테이너 전체-rect 폴백은 금지하되, 스팬 스캔 (walkText)이
-            // 방문하지 않는 셀 글상자 링크는 별도 통로로 히트한다 (R31 #1).
-            return fieldURL ?? containerTextboxHyperlinkURL(block: block, point: point)
+            // 블록 자체(전체-rect)의 폴백만 금지한다 — 컨테이너 문단은 문단
+            // 단위 span-aware 순회가 스팬 문단의 rect 폴백을 각자 차단하므로,
+            // 스팬 없는 이웃 문단의 폴백 링크는 여전히 히트된다 (R38 #4).
+            // 셀 글상자는 walkText가 방문하지 않아 별도 통로 유지 (R31 #1).
+            return containerHyperlinkURL(block: block, point: point)
+                ?? containerTextboxHyperlinkURL(block: block, point: point)
         }
         return block.hyperlinkURL ?? containerHyperlinkURL(block: block, point: point)
     }
@@ -104,10 +110,10 @@ public struct HwpHitTester {
         case let .table(tableFrame):
             return tableHyperlinkURL(tableFrame, at: localPoint)
         case let .textbox(textbox):
-            return hyperlinkURL(in: textbox.paragraphs, at: localPoint)
+            return spanAwareHyperlinkURL(in: textbox.paragraphs, at: localPoint)
         case let .footnote(footnote):
             // 각주 문단 좌표는 블록-로컬(0,0 기준)이라 localPoint로 히트한다 (#20).
-            return hyperlinkURL(in: footnote.paragraphs, at: localPoint)
+            return spanAwareHyperlinkURL(in: footnote.paragraphs, at: localPoint)
         default:
             return nil
         }
@@ -118,7 +124,7 @@ public struct HwpHitTester {
     private func tableHyperlinkURL(_ tableFrame: HwpTableFrame, at point: CGPoint) -> String? {
         for row in tableFrame.rows {
             for cell in row.cells where cell.cellFrame.contains(point) {
-                if let url = hyperlinkURL(in: cell.paragraphs, at: point) {
+                if let url = spanAwareHyperlinkURL(in: cell.paragraphs, at: point) {
                     return url
                 }
                 if let url = cellTextboxHyperlinkURL(cell, at: point) {
