@@ -318,7 +318,14 @@ extension HwpTextRunBuilder {
         paragraph: CoreHwp.HwpParagraph,
         to output: NSMutableAttributedString
     ) {
-        let script = detectScript(in: text)
+        // 형식 문자(Cf)·결합 마크(M*)는 단독 스크립트가 없고 앞 글자와 한
+        // 글리프로 결합하는 문자다 — 직전 스크립트를 상속해 같은 폰트 run에
+        // 남겨야 CoreText가 이모지 ZWJ 시퀀스·아랍 결합열을 형성한다 (#4).
+        let script: HwpScript = if let current = chunk.script, inheritsSurroundingScript(text) {
+            current
+        } else {
+            detectScript(in: text)
+        }
         if chunk.script == nil {
             chunk.shapeId = shapeId
             chunk.script = script
@@ -513,6 +520,20 @@ extension HwpTextRunBuilder {
 
     func detectScript(in text: String) -> HwpScript {
         text.unicodeScalars.first.map(HwpScript.detect(from:)) ?? .english
+    }
+
+    /// 문맥 의존 문자만으로 이루어졌는가 — 형식 문자(Cf: ZWJ/ZWNJ/변이
+    /// 선택자)와 결합 마크(Mn/Mc/Me)는 앞 글자에 붙어 렌더되므로 스크립트
+    /// 판정 대신 직전 chunk의 스크립트를 상속받는다 (#4).
+    func inheritsSurroundingScript(_ text: String) -> Bool {
+        !text.isEmpty && text.unicodeScalars.allSatisfy { scalar in
+            switch scalar.properties.generalCategory {
+            case .format, .nonspacingMark, .spacingMark, .enclosingMark:
+                true
+            default:
+                false
+            }
+        }
     }
 
     func wcharLength(of hwpChar: CoreHwp.HwpChar) -> UInt32 {

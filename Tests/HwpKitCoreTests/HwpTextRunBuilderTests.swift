@@ -36,6 +36,22 @@ import XCTest
             expect(rangeCount) >= 2
         }
 
+        /// ZWJ·결합 마크는 직전 스크립트를 상속해 폰트 run이 갈리지 않는다 —
+        /// run 경계가 생기면 CoreText가 결합 글리프(이모지 ZWJ 시퀀스)를 못 만든다.
+        func testJoinerAndCombiningMarkInheritSurroundingScript() throws {
+            let joined = paragraph(text: "👨\u{200D}👩", runs: [(0, 0)])
+            let symbolScaled = try charShape(faceScaleX: [100, 100, 100, 100, 100, 110, 100])
+            let joinedResult = builder(shapes: [0: symbolScaled]).build(paragraph: joined)
+            let joinedRangeCount = fontRanges(in: joinedResult).count
+            expect(joinedRangeCount) == 1
+
+            let marked = paragraph(text: "가\u{302E}", runs: [(0, 0)])
+            let englishScaled = try charShape(faceScaleX: [100, 110, 100, 100, 100, 100, 100])
+            let markedResult = builder(shapes: [0: englishScaled]).build(paragraph: marked)
+            let markedRangeCount = fontRanges(in: markedResult).count
+            expect(markedRangeCount) == 1
+        }
+
         func testBoldFlagProducesBoldCTFontTrait() throws {
             let paragraph = paragraph(text: "hello", runs: [(0, 0)])
             let result = builder(shapes: [0: try charShape(property: 0b10)])
