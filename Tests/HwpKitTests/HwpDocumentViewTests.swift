@@ -70,6 +70,24 @@ final class HwpDocumentViewTests: XCTestCase {
         expect(currentPage) == 25
     }
 
+    /// 줌 echo도 페이지와 동일하게 적용 구간에서 억제된다 — 범위 밖 값의
+    /// 네이티브 클램프 재보고가 update 중 바인딩을 쓰지 않는다 (R38 #3).
+    func testZoomWritebackSuppressedWhileApplyingBinding() {
+        var zoom: CGFloat = 9.0
+        let coordinator = HwpDocumentCoordinator(
+            zoomScale: Binding(get: { zoom }, set: { zoom = $0 }),
+            currentPage: nil,
+            onHyperlinkTapped: nil,
+            onUnsupportedElement: nil
+        )
+        coordinator.applyingBinding {
+            coordinator.handleZoomChanged(5.0)
+        }
+        expect(zoom) == 9.0
+        coordinator.handleZoomChanged(2.0)
+        expect(zoom) == 2.0
+    }
+
     #if os(macOS)
         @MainActor
         func testOutOfRangePageBindingNormalizedForCompleteDocument() {

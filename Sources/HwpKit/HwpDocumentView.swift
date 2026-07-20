@@ -119,6 +119,10 @@ final class HwpDocumentCoordinator {
 
     func handleZoomChanged(_ scale: CGFloat) {
         // 핀치 줌을 바인딩에 반영해 툴바 배율 라벨을 동기화한다.
+        // 바인딩 적용 구간의 동기 echo(범위 밖 값의 네이티브 클램프 재보고)는
+        // update 중 상태 쓰기라 억제한다 — 클램프 정규화는
+        // normalizeOutOfRangeZoomBinding이 업데이트 밖에서 수행한다 (R38 #3).
+        guard !isApplyingBinding else { return }
         guard let zoomScale, abs(zoomScale.wrappedValue - scale) > 0.001 else { return }
         zoomScale.wrappedValue = scale
     }
@@ -187,6 +191,9 @@ final class HwpDocumentCoordinator {
                 }
             }
             normalizeOutOfRangePageBinding(coordinator: context.coordinator)
+            normalizeOutOfRangeZoomBinding(
+                coordinator: context.coordinator, clampedScale: view.zoomScale
+            )
         }
 
         /// 최종 문서(isComplete)에 없는 페이지 요청은 실제 클램프 값으로 바인딩을
@@ -209,6 +216,25 @@ final class HwpDocumentCoordinator {
                       currentPage.wrappedValue == requested
                 else { return }
                 currentPage.wrappedValue = clamped
+            }
+        }
+
+        /// 네이티브 범위 밖 줌 바인딩은 실제 클램프 값으로 되돌린다 — 동기
+        /// echo는 applyingBinding 가드가 억제하므로, 업데이트 밖에서 반영하지
+        /// 않으면 무효 바인딩이 남아 매 업데이트 재클램프한다. 재개 시 값·문서
+        /// 세대가 바뀌었으면 폐기한다 (R38 #3, 페이지 정규화와 동일 계약).
+        private func normalizeOutOfRangeZoomBinding(
+            coordinator: HwpDocumentCoordinator, clampedScale: CGFloat
+        ) {
+            guard let zoomScale else { return }
+            let requested = zoomScale.wrappedValue
+            guard abs(clampedScale - requested) > 0.001 else { return }
+            let generation = coordinator.registerDocument(document)
+            Task { @MainActor in
+                guard coordinator.activeDocumentGeneration == generation,
+                      abs(zoomScale.wrappedValue - requested) < 0.001
+                else { return }
+                zoomScale.wrappedValue = clampedScale
             }
         }
     }
@@ -277,6 +303,9 @@ final class HwpDocumentCoordinator {
                 }
             }
             normalizeOutOfRangePageBinding(coordinator: context.coordinator)
+            normalizeOutOfRangeZoomBinding(
+                coordinator: context.coordinator, clampedScale: view.zoomScale
+            )
         }
 
         /// 최종 문서(isComplete)에 없는 페이지 요청은 실제 클램프 값으로 바인딩을
@@ -299,6 +328,25 @@ final class HwpDocumentCoordinator {
                       currentPage.wrappedValue == requested
                 else { return }
                 currentPage.wrappedValue = clamped
+            }
+        }
+
+        /// 네이티브 범위 밖 줌 바인딩은 실제 클램프 값으로 되돌린다 — 동기
+        /// echo는 applyingBinding 가드가 억제하므로, 업데이트 밖에서 반영하지
+        /// 않으면 무효 바인딩이 남아 매 업데이트 재클램프한다. 재개 시 값·문서
+        /// 세대가 바뀌었으면 폐기한다 (R38 #3, 페이지 정규화와 동일 계약).
+        private func normalizeOutOfRangeZoomBinding(
+            coordinator: HwpDocumentCoordinator, clampedScale: CGFloat
+        ) {
+            guard let zoomScale else { return }
+            let requested = zoomScale.wrappedValue
+            guard abs(clampedScale - requested) > 0.001 else { return }
+            let generation = coordinator.registerDocument(document)
+            Task { @MainActor in
+                guard coordinator.activeDocumentGeneration == generation,
+                      abs(zoomScale.wrappedValue - requested) < 0.001
+                else { return }
+                zoomScale.wrappedValue = clampedScale
             }
         }
     }
