@@ -22,6 +22,19 @@ import XCTest
             expect(HwpScript.detect(from: try XCTUnwrap("A".unicodeScalars.first))) == .english
         }
 
+        /// 사설 영역(보충 플레인 포함)은 사용자 슬롯, 반각 가타카나는 일문,
+        /// 기하 도형·딩뱃은 기호, 벵골~타밀은 '기타 언어' 슬롯이다 (R35 #3·#5).
+        func testScriptDetectionRoutesUserSymbolJapaneseAndIndicScripts() throws {
+            expect(HwpScript.detect(from: try XCTUnwrap(Unicode.Scalar(0xE000)))) == .user
+            expect(HwpScript.detect(from: try XCTUnwrap(Unicode.Scalar(0xF0000)))) == .user
+            expect(HwpScript.detect(from: try XCTUnwrap(Unicode.Scalar(0x100000)))) == .user
+            expect(HwpScript.detect(from: try XCTUnwrap(Unicode.Scalar(0xFF66)))) == .japanese
+            expect(HwpScript.detect(from: try XCTUnwrap(Unicode.Scalar(0x2500)))) == .symbol
+            expect(HwpScript.detect(from: try XCTUnwrap(Unicode.Scalar(0x25A1)))) == .english
+            expect(HwpScript.detect(from: try XCTUnwrap("অ".unicodeScalars.first))) == .etc
+            expect(HwpScript.detect(from: try XCTUnwrap("த".unicodeScalars.first))) == .etc
+        }
+
         func testUnknownFontFallback() {
             let font = resolver.resolve(faceName: "unknown-font-xyz", script: .korean, size: 12)
             expect(CTFontGetSize(font)) == 12.0

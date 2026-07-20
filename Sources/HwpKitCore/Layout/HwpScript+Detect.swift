@@ -18,7 +18,9 @@ public extension HwpScript {
              0x20000 ... 0x2FA1F:
             .chinese
         case 0x3040 ... 0x309F,
-             0x30A0 ... 0x30FF:
+             0x30A0 ... 0x30FF,
+             // 반각 가타카나 (R35 #5)
+             0xFF65 ... 0xFF9F:
             .japanese
         case 0x0370 ... 0x03FF,
              0x0400 ... 0x04FF,
@@ -26,7 +28,8 @@ public extension HwpScript {
              // 만다이아/시리아 보충 포함 연속 대역)는 영문이 아니라 '기타
              // 언어' 슬롯이다 (R33 #2, R34 #4 — 0x0780-0x089F 공백 봉합)
              0x0590 ... 0x08FF,
-             0x0900 ... 0x097F,
+             // 데바나가리~싱할라 연속 대역 (벵골/타밀 등, R35 #5)
+             0x0900 ... 0x0DFF,
              0x0E00 ... 0x0E7F,
              0xFB50 ... 0xFDFF,
              0xFE70 ... 0xFEFF:
@@ -39,9 +42,17 @@ public extension HwpScript {
              0x2100 ... 0x214F,
              0x2190 ... 0x21FF,
              0x2200 ... 0x22FF,
-             0x2500 ... 0x257F,
-             0xE000 ... 0xF8FF:
+             // 기하 도형(25A0-25FF) 이후로 확장하지 않는다 — noori 내장
+             // PrvImage(한글 실물 렌더) 실측에서 □(25A1)가 영문 슬롯 폭으로
+             // 조판되어, 기호 슬롯 이동은 실문서 회귀다 (R35 #5 기각 근거)
+             0x2500 ... 0x257F:
             .symbol
+        // 사설 영역(BMP·보충 플레인 15-16)은 사용자 정의 글자 슬롯이다 —
+        // 문서의 사용자 글꼴/장평/자간이 적용돼야 한다 (R35 #3)
+        case 0xE000 ... 0xF8FF,
+             0xF0000 ... 0xFFFFD,
+             0x100000 ... 0x10FFFD:
+            .user
         default:
             .english
         }
