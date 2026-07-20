@@ -15,6 +15,7 @@ import XCTest
             expect(HwpScript.detect(from: try XCTUnwrap("م".unicodeScalars.first))) == .etc
             expect(HwpScript.detect(from: try XCTUnwrap("א".unicodeScalars.first))) == .etc
             expect(HwpScript.detect(from: try XCTUnwrap("ไ".unicodeScalars.first))) == .etc
+            expect(HwpScript.detect(from: try XCTUnwrap(Unicode.Scalar(0x0870)))) == .etc
             expect(HwpScript.detect(from: try XCTUnwrap(Unicode.Scalar(0xA960)))) == .korean
             expect(HwpScript.detect(from: try XCTUnwrap(Unicode.Scalar(0xD7B0)))) == .korean
             expect(HwpScript.detect(from: try XCTUnwrap(Unicode.Scalar(0xF900)))) == .chinese

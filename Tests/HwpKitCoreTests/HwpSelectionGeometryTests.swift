@@ -243,4 +243,31 @@ final class HwpSelectionGeometryTests: XCTestCase {
         ))
         expect(comma).to(beNil())
     }
+
+    /// 비-BMP 기호 (이모지)도 단어 경계다 — 서로게이트 쌍을 결합해
+    /// 판정하므로 foo😀bar가 통째로 선택되지 않는다 (R34 #3).
+    func testWordRangeStopsAtEmoji() {
+        let document = makeDocument(pages: [[
+            textBlock("foo😀bar", frame: CGRect(x: 50, y: 100, width: 300, height: 20)),
+        ]])
+        let geometry = HwpSelectionGeometry(document: document)
+
+        // "foo" = 0-2, 😀 = 3-4 (서로게이트 2단위), "bar" = 5-7
+        let first = geometry.wordRange(at: HwpTextPosition(
+            pageIndex: 0, blockIndex: 0, unitIndex: 0, characterOffset: 1
+        ))
+        expect(first?.range.start.characterOffset) == 0
+        expect(first?.range.end.characterOffset) == 3
+
+        let second = geometry.wordRange(at: HwpTextPosition(
+            pageIndex: 0, blockIndex: 0, unitIndex: 0, characterOffset: 6
+        ))
+        expect(second?.range.start.characterOffset) == 5
+        expect(second?.range.end.characterOffset) == 8
+
+        let emoji = geometry.wordRange(at: HwpTextPosition(
+            pageIndex: 0, blockIndex: 0, unitIndex: 0, characterOffset: 3
+        ))
+        expect(emoji).to(beNil())
+    }
 }

@@ -374,20 +374,7 @@ public final class HwpSelectionGeometry {
         var start = clamped
         var end = clamped
         func isWordCharacter(_ offset: Int) -> Bool {
-            let unit = nsText.character(at: offset)
-            // 서로게이트(비-BMP 스칼라의 반쪽)는 유효 UnicodeScalar가 아니라
-            // 공백으로 오분류된다 — 단어 문자로 취급해 이모지·비-BMP CJK 단어가
-            // 끊기지 않게 한다 (#10).
-            if UTF16.isLeadSurrogate(unit) || UTF16.isTrailSurrogate(unit) {
-                return true
-            }
-            let character = Character(UnicodeScalar(unit) ?? " ")
-            // 구두점/기호는 단어 경계다 (한글.app: 더블클릭이 쉼표에서 멈춘다)
-            // — 아포스트로피 포함이라 don't는 갈라진다 (허용 근사, R33 #3)
-            if character.isPunctuation || character.isSymbol {
-                return false
-            }
-            return !character.isWhitespace && character != "\u{FFFC}"
+            Self.isWordCharacter(in: nsText, at: offset)
         }
         guard isWordCharacter(clamped) else { return nil }
         while start > 0, isWordCharacter(start - 1) {
@@ -406,5 +393,44 @@ public final class HwpSelectionGeometry {
                 unitIndex: position.unitIndex, characterOffset: end
             )
         )
+    }
+}
+
+extension HwpSelectionGeometry {
+    /// 단어 문자 판정. 비-BMP 스칼라는 서로게이트 쌍을 결합해 완전한
+    /// 스칼라로 판정한다 — 반쪽을 무조건 단어 문자로 두면 이모지가 기호
+    /// 경계 (R33 #3)를 우회한다 (R34 #3). 비-BMP CJK는 결합 후에도 단어
+    /// 문자다 (#10 의도 보존). 쌍이 깨진 고아 반쪽만 단어 문자로 관대 처리.
+    static func isWordCharacter(in text: NSString, at offset: Int) -> Bool {
+        let unit = text.character(at: offset)
+        let scalar: UnicodeScalar
+        if UTF16.isLeadSurrogate(unit), offset + 1 < text.length,
+           UTF16.isTrailSurrogate(text.character(at: offset + 1))
+        {
+            scalar = pairedScalar(lead: unit, trail: text.character(at: offset + 1))
+        } else if UTF16.isTrailSurrogate(unit), offset > 0,
+                  UTF16.isLeadSurrogate(text.character(at: offset - 1))
+        {
+            scalar = pairedScalar(lead: text.character(at: offset - 1), trail: unit)
+        } else if UTF16.isLeadSurrogate(unit) || UTF16.isTrailSurrogate(unit) {
+            return true
+        } else {
+            scalar = UnicodeScalar(unit) ?? " "
+        }
+        let character = Character(scalar)
+        // 구두점/기호는 단어 경계다 (한글.app: 더블클릭이 쉼표에서 멈춘다)
+        // — 아포스트로피 포함이라 don't는 갈라진다 (허용 근사, R33 #3)
+        if character.isPunctuation || character.isSymbol {
+            return false
+        }
+        return !character.isWhitespace && character != "\u{FFFC}"
+    }
+
+    /// UTF-16 서로게이트 쌍 → 스칼라 (0x10000 + (lead−0xD800)<<10 + (trail−0xDC00))
+    private static func pairedScalar(lead: unichar, trail: unichar) -> UnicodeScalar {
+        let value = 0x10000
+            + ((UInt32(lead) - 0xD800) << 10)
+            + (UInt32(trail) - 0xDC00)
+        return UnicodeScalar(value) ?? " "
     }
 }
