@@ -382,6 +382,11 @@ public final class HwpSelectionGeometry {
                 return true
             }
             let character = Character(UnicodeScalar(unit) ?? " ")
+            // 구두점/기호는 단어 경계다 (한글.app: 더블클릭이 쉼표에서 멈춘다)
+            // — 아포스트로피 포함이라 don't는 갈라진다 (허용 근사, R33 #3)
+            if character.isPunctuation || character.isSymbol {
+                return false
+            }
             return !character.isWhitespace && character != "\u{FFFC}"
         }
         guard isWordCharacter(clamped) else { return nil }

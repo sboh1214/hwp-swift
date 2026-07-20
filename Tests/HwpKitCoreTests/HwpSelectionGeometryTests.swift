@@ -216,4 +216,31 @@ final class HwpSelectionGeometryTests: XCTestCase {
         expect(word?.range.start.characterOffset) == 6
         expect(word?.range.end.characterOffset) == 11
     }
+
+    /// 구두점은 단어 경계다 — foo,bar 더블클릭이 두 단어를 함께 선택하지
+    /// 않는다 (한글.app 동작, R33 #3).
+    func testWordRangeStopsAtPunctuation() {
+        let document = makeDocument(pages: [[
+            textBlock("foo,bar", frame: CGRect(x: 50, y: 100, width: 300, height: 20)),
+        ]])
+        let geometry = HwpSelectionGeometry(document: document)
+
+        let first = geometry.wordRange(at: HwpTextPosition(
+            pageIndex: 0, blockIndex: 0, unitIndex: 0, characterOffset: 1
+        ))
+        expect(first?.range.start.characterOffset) == 0
+        expect(first?.range.end.characterOffset) == 3
+
+        let second = geometry.wordRange(at: HwpTextPosition(
+            pageIndex: 0, blockIndex: 0, unitIndex: 0, characterOffset: 5
+        ))
+        expect(second?.range.start.characterOffset) == 4
+        expect(second?.range.end.characterOffset) == 7
+
+        // 구두점 자체를 짚으면 단어가 아니다
+        let comma = geometry.wordRange(at: HwpTextPosition(
+            pageIndex: 0, blockIndex: 0, unitIndex: 0, characterOffset: 3
+        ))
+        expect(comma).to(beNil())
+    }
 }
