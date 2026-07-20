@@ -481,4 +481,5 @@ import XCTest
             expect(frame.outerFrame.height).to(beGreaterThanOrEqualTo(120))
         }
     }
+
 #endif

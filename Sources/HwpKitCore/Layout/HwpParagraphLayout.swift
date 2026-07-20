@@ -111,11 +111,19 @@ public struct HwpParagraphLayout {
     /// tabStops: 문서 정의 탭 (HwpIndex.textTabs). 렌더 부착 경로
     /// (HwpTextRunBuilder.attachParagraphStyle)와 같은 탭으로 측정해야
     /// 탭 포함 문단의 줄바꿈이 측정과 렌더에서 일치한다.
+    /// 문단당 줄 프레임 누적 상한 — 프레임 연장 루프(#9)는 문자열 끝까지
+    /// 줄을 전량 생성·보존하므로, 수백 MB 문단(기본 스트림 한도 안)이 1pt
+    /// 폭 단과 결합하면 줄 수가 문자 수에 접근해 페이지 상한이 걸리기 전에
+    /// 메모리/CPU를 고갈시킨다. 100,000줄은 legacy 실측(1,030쪽 문서 전체
+    /// ≈ 4만 줄)의 2.5배로, 초과분은 페이지 상한과 같은 절단 계약을 따른다.
+    public static let maximumLineFrames = 100_000
+
     public func layout(
         attributedString: NSAttributedString,
         paraShape: CoreHwp.HwpParaShape,
         columnWidth: CGFloat,
-        tabStops: [CTTextTab] = []
+        tabStops: [CTTextTab] = [],
+        maxLineFrames: Int = HwpParagraphLayout.maximumLineFrames
     ) -> HwpParagraphFrame {
         guard attributedString.length > 0 else {
             return HwpParagraphFrame(totalHeight: 0, lines: [])
@@ -176,7 +184,7 @@ public struct HwpParagraphLayout {
         var lineFrames: [HwpLineFrame] = []
         var totalLineHeight: CGFloat = 0
         var startLocation = 0
-        while startLocation < fullLength {
+        while startLocation < fullLength, lineFrames.count < maxLineFrames {
             let frame = CTFramesetterCreateFrame(
                 framesetter,
                 CFRange(location: startLocation, length: 0),
@@ -195,6 +203,10 @@ public struct HwpParagraphLayout {
             )
             lineFrames.append(contentsOf: frameLines)
             totalLineHeight += frameHeight
+            if lineFrames.count >= maxLineFrames {
+                lineFrames.removeLast(lineFrames.count - maxLineFrames)
+                break
+            }
             let visible = CTFrameGetVisibleStringRange(frame)
             let consumed = visible.location + visible.length
             guard consumed > startLocation else { break }

@@ -43,6 +43,20 @@ import XCTest
             expect(frame.lines.count) >= 2
         }
 
+        /// 줄 프레임 누적은 maxLineFrames에서 정확히 절단된다 — 거대 문단이
+        /// 페이지 상한에 닿기 전에 메모리/CPU를 고갈시키지 않는 자원 상한 (R36 #2).
+        func testLineFrameAccumulationHonorsCap() {
+            let text = String(repeating: "hello world ", count: 60)
+            let frame = layout().layout(
+                attributedString: attributedString(text),
+                paraShape: paraShape(),
+                columnWidth: 60,
+                maxLineFrames: 4
+            )
+
+            expect(frame.lines.count) == 4
+        }
+
         func testPercentLineSpacingForcesLineHeightFromFontSize() {
             // 표 46 종류 0 (글자에 따라 %): 비율 160 → 줄 높이 ≈ 글자 크기 × 1.6 (±10%)
             let text = String(repeating: "percent line spacing ", count: 12)
