@@ -35,6 +35,15 @@ import XCTest
             expect(HwpScript.detect(from: try XCTUnwrap("த".unicodeScalars.first))) == .etc
         }
 
+        /// 폴백 후보는 createIfAvailable의 정확 일치 매칭이 해석할 수 있는
+        /// 이름이어야 한다 — "AppleSDGothicNeo"는 family도 완전한 PostScript명도
+        /// 아니라 항상 스킵된다 (R37 #2).
+        func testFontMapUsesResolvableAppleSDGothicFamilyName() {
+            let candidates = HwpFontMap.default.entries.values.flatMap { $0 }
+            expect(candidates).toNot(contain("AppleSDGothicNeo"))
+            expect(candidates).to(contain("Apple SD Gothic Neo"))
+        }
+
         func testUnknownFontFallback() {
             let font = resolver.resolve(faceName: "unknown-font-xyz", script: .korean, size: 12)
             expect(CTFontGetSize(font)) == 12.0
