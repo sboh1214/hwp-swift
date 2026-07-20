@@ -411,4 +411,74 @@ import XCTest
             return (page, frame)
         }
     }
+
+    // MARK: - R34 컨테이너 개체 회귀 (본체 길이 분리)
+
+    extension HwpPaginatorColumnCacheTests {
+        /// 셀 안 묶음 개체 (.container)의 그림도 셀 콘텐츠로 배치되고
+        /// 흐름 블록으로 새지 않는다 — 억제와 수집의 일치 (R34 #1).
+        func testCellContainerPictureRendersInsideCell() async throws {
+            let source = HwpSynthetic.inlinePictureObject(
+                width: 20000, height: 5000, binItemId: 5, instanceId: 9
+            )
+            let grouped = CoreHwp.HwpShapeControl(
+                ctrlId: .container,
+                commonCtrlProperty: source.commonCtrlProperty,
+                rawPayload: Data(),
+                rawTrailing: Data(),
+                shapeComponentArray: source.shapeComponentArray,
+                eqEditArray: [],
+                eqEditRecords: [],
+                ctrlDataRecords: [],
+                unknownChildren: []
+            )
+            var cellParagraph = HwpSynthetic.paragraphWithInlineControl(prefix: "", suffix: "")
+            cellParagraph.ctrlHeaderArray = [.container(grouped)]
+
+            guard let (page, frame) = try await tableFrame(
+                hosting: singleCellTable(cellParagraph)
+            ) else {
+                fail("표 블록이 없다")
+                return
+            }
+            let images = frame.rows.flatMap(\.cells).flatMap(\.images)
+            expect(images.count) == 1
+            expect(images.first?.binItemId) == 5
+            expect(page.blocks.filter { $0.kind == .image }).to(beEmpty())
+        }
+
+        /// 글상자 콘텐츠 높이는 문단뿐 아니라 자식 그림 extent도 포함한다 —
+        /// 저작 높이 아래로 뻗은 그림이 글상자 밖으로 밀리지 않는다 (R34 #2).
+        func testTextboxHeightIncludesChildImageExtent() async throws {
+            var boxParagraph = HwpSynthetic.paragraphWithInlineControl(prefix: "", suffix: "")
+            var picture = HwpSynthetic.inlinePictureObject(
+                width: 10000, height: 12000, binItemId: 7, instanceId: 12
+            )
+            picture.commonCtrlProperty.propertyInfo.treatAsChar = false
+            boxParagraph.ctrlHeaderArray = [.genShapeObject(picture)]
+            var textbox = try HwpSynthetic.inlineTextboxObject(
+                width: 20000, height: 4000, text: "", instanceId: 13
+            )
+            textbox.shapeComponentArray[0].textBoxListArray[0].paragraphArray = [boxParagraph]
+            var host = HwpSynthetic.paragraphWithInlineControl(prefix: "글 ", suffix: "")
+            host.ctrlHeaderArray = [.genShapeObject(textbox)]
+            let section = HwpSynthetic.section(
+                firstParagraphControls: [
+                    .section(HwpSynthetic.sectionDef()),
+                    .column(CoreHwp.HwpColumn()),
+                ],
+                bodyParagraphs: [host]
+            )
+
+            guard let page = try await firstPage(of: section),
+                  let textboxBlock = page.blocks.first(where: { $0.kind == .textbox }),
+                  case let .textbox(frame) = textboxBlock.payload
+            else {
+                fail("글상자 블록이 없다")
+                return
+            }
+            // 그림 120pt > 저작 높이 40pt — 콘텐츠 하단이 그림 extent를 포함
+            expect(frame.outerFrame.height).to(beGreaterThanOrEqualTo(120))
+        }
+    }
 #endif

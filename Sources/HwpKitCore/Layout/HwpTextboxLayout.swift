@@ -95,8 +95,14 @@ public struct HwpTextboxLayout {
             sizeResolver: sizeResolver
         )
 
-        let contentHeight = (contents.paragraphs.last.map(\.rect.maxY) ?? insets.top)
-            + insets.bottom
+        // 콘텐츠 하단은 문단뿐 아니라 그림/도형 자식의 extent도 포함해야
+        // 한다 — 문단만 보면 slack이 과대돼 세로 정렬이 자식을 글상자 밖으로
+        // 민다 (표 셀 verticallyAligned와 동일 규약, R34 #2).
+        let contentBottom = (contents.paragraphs.map(\.rect.maxY)
+            + contents.images.map(\.rect.maxY)
+            + contents.shapes.map(\.rect.maxY))
+            .max() ?? insets.top
+        let contentHeight = contentBottom + insets.bottom
         let resolvedHeight = max(outerHeight, contentHeight)
 
         contents = verticallyAligned(

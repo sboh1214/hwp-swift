@@ -46,7 +46,8 @@ struct HwpParagraphObjectCollector {
              let .arc(shape),
              let .polygon(shape),
              let .curve(shape),
-             let .picture(shape):
+             let .picture(shape),
+             let .container(shape):
             (shape.commonCtrlProperty, shape.shapeComponentArray)
         default:
             nil
