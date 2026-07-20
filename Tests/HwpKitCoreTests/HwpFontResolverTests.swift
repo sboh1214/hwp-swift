@@ -9,6 +9,18 @@ import XCTest
     final class HwpFontResolverTests: XCTestCase {
         let resolver = HwpFontResolver()
 
+        /// 미분류 스크립트는 영문 슬롯이 아니라 소속 슬롯으로 (R33 #2) —
+        /// 아랍/히브리는 '기타 언어', 확장 자모는 한글, 호환 한자는 한자.
+        func testScriptDetectionRoutesNonLatinScripts() throws {
+            expect(HwpScript.detect(from: try XCTUnwrap("م".unicodeScalars.first))) == .etc
+            expect(HwpScript.detect(from: try XCTUnwrap("א".unicodeScalars.first))) == .etc
+            expect(HwpScript.detect(from: try XCTUnwrap("ไ".unicodeScalars.first))) == .etc
+            expect(HwpScript.detect(from: try XCTUnwrap(Unicode.Scalar(0xA960)))) == .korean
+            expect(HwpScript.detect(from: try XCTUnwrap(Unicode.Scalar(0xD7B0)))) == .korean
+            expect(HwpScript.detect(from: try XCTUnwrap(Unicode.Scalar(0xF900)))) == .chinese
+            expect(HwpScript.detect(from: try XCTUnwrap("A".unicodeScalars.first))) == .english
+        }
+
         func testUnknownFontFallback() {
             let font = resolver.resolve(faceName: "unknown-font-xyz", script: .korean, size: 12)
             expect(CTFontGetSize(font)) == 12.0
