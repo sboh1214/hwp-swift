@@ -36,6 +36,14 @@ public actor HwpPaginator {
     /// legacy 실측 최대 1,030쪽의 약 10배 여유로 정상 대형 문서는 통과시키고
     /// 병적 증폭은 수십 MB 수준에서 절단한다.
     static let maximumDocumentPages = 10000
+    /// 인스턴스 상한 (기본 = 전역 상한) — 테스트가 cap 도달 경로를 작은
+    /// 문서로 재현할 수 있게 재정의를 허용한다.
+    var maximumPages = HwpPaginator.maximumDocumentPages
+
+    func overrideMaximumPages(_ count: Int) {
+        maximumPages = count
+    }
+
     private var collectedUnsupported: [HwpUnsupportedElement] = []
     /// 이 페이지에 배치할 각주 (문단 + 문서 순서 번호) — 저장은 footnoteCoordinator
     private var pendingFootnotes: [HwpFootnoteLayout.Input] {
@@ -390,6 +398,11 @@ private extension HwpPaginator {
         let pageCountBefore = cachedPages.count
 
         while let paragraph = nextParagraph() {
+            // 페이지 상한 도달 후 남은 문단은 레이아웃해도 캐시되지 않는다 —
+            // 즉시 종료해 상한이 CPU 상한으로도 작동하게 한다 (#1).
+            if didFinishPagination {
+                return
+            }
             // 취소된 로드가 0-높이 문단을 대량 처리할 때 page(at:) 반환 전에
             // 취소를 관찰해 옛 문서 레이아웃이 교체본과 나란히 도는 것을 막는다 (#3).
             try Task.checkCancellation()
@@ -1022,6 +1035,12 @@ private extension HwpPaginator {
             }
             if takeCount <= 0 {
                 advanceColumn()
+                // 페이지 상한 도달: cacheCurrentPage가 밴드/커서를 리셋하지
+                // 않고 종료하므로 같은 lineIndex 재시도는 무한 루프다 —
+                // 남은 줄은 상한 절단 계약대로 버린다 (#1).
+                if didFinishPagination {
+                    return
+                }
                 continue
             }
             let slice = lines[lineIndex ..< lineIndex + takeCount]
@@ -1039,6 +1058,9 @@ private extension HwpPaginator {
             lineIndex += takeCount
             if lineIndex < lines.count {
                 advanceColumn()
+                if didFinishPagination {
+                    return
+                }
             }
         }
     }
@@ -1966,6 +1988,11 @@ private extension HwpPaginator {
               frame.maxY > currentPageGeometry.contentFrame.maxY
         else { return frame }
         advanceColumn()
+        // 페이지 상한 도달: advanceColumn이 커서를 못 옮기면 같은 frame으로
+        // 재귀가 반복된다 — 현재 frame을 그대로 쓴다 (#1).
+        if didFinishPagination {
+            return frame
+        }
         return anchoredObjectFrame(spec, info: info, offsetX: offsetX, offsetY: offsetY)
     }
 
@@ -2420,7 +2447,7 @@ private extension HwpPaginator {
     func cacheCurrentPage() {
         // 문서 전역 페이지 상한 초과 시 더 캐시하지 않고 페이지네이션을 종료한다 —
         // page(at:) 루프가 nil을 관찰하고 멈춘다 (#1).
-        guard cachedPages.count < Self.maximumDocumentPages else {
+        guard cachedPages.count < maximumPages else {
             didFinishPagination = true
             return
         }
