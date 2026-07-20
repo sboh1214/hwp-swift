@@ -14,7 +14,16 @@ public enum HwpBlockContentWalker {
     ) {
         switch block.payload {
         case let .table(table):
-            walkTable(table, origin: block.frame.origin, onParagraphText: visit)
+            // 셀 글상자 문단도 선택/복사 단위에 실어야 한다 — 렌더와 같은
+            // 평면 순서 (글 뒤로 → 셀 텍스트 → 나머지)라 paint parity 유지 (R33 #1)
+            walkTable(
+                table,
+                origin: block.frame.origin,
+                onParagraphText: visit,
+                onCellTextbox: { textbox, rect in
+                    walkParagraphs(textbox.textbox.paragraphs, offset: rect.origin, visit: visit)
+                }
+            )
         case let .textbox(textbox):
             walkParagraphs(textbox.paragraphs, offset: block.frame.origin, visit: visit)
         case let .footnote(footnote):

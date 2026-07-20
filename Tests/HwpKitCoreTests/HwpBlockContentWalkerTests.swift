@@ -124,6 +124,40 @@ final class HwpBlockContentWalkerTests: XCTestCase {
         expect(events) == ["shape", "image"]
     }
 
+    /// 셀 글상자 문단은 렌더뿐 아니라 선택/복사 순회 (walkText)에도 실린다
+    /// — 글상자 rect 원점 + 문단 rect의 페이지 좌표로 (R33 #1).
+    func testWalkTextVisitsCellTextboxParagraphs() {
+        let cell = HwpTableCellFrame(
+            cellFrame: CGRect(x: 0, y: 0, width: 100, height: 50),
+            row: 0, column: 0, rowSpan: 1, columnSpan: 1,
+            paragraphs: [paragraph("셀")],
+            borders: HwpBorderSet.uniform(width: 0.5, color: black),
+            fillColor: nil,
+            textboxes: [HwpCellTextbox(
+                rect: CGRect(x: 10, y: 12, width: 80, height: 20),
+                textbox: HwpTextboxFrame(
+                    outerFrame: CGRect(x: 0, y: 0, width: 80, height: 20),
+                    paragraphs: [paragraph("상자")],
+                    borderColor: nil, borderWidth: 0, fillColor: nil
+                ),
+                controlInstanceId: 1
+            )]
+        )
+        let block = AnyHwpBlock(
+            frame: CGRect(x: 5, y: 7, width: 100, height: 50),
+            kind: .table,
+            payload: .table(table(cells: [cell]))
+        )
+
+        var visited: [(text: String, rect: CGRect)] = []
+        HwpBlockContentWalker.walkText(block: block) { attributed, rect, _ in
+            visited.append((attributed.string, rect))
+        }
+
+        expect(visited.map(\.text)) == ["셀", "상자"]
+        expect(visited.last?.rect) == CGRect(x: 15, y: 19, width: 100, height: 10)
+    }
+
     /// offsetBy는 rect와 clipRect를 함께 옮긴다 — 분할 세그먼트 rebase에서
     /// 클립이 제자리에 남으면 가시 영역이 어긋난다 (R32 #2).
     func testCellImageOffsetMovesClipRect() {
