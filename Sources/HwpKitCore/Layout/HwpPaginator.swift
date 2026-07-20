@@ -31,8 +31,11 @@ public actor HwpPaginator {
     /// 문서 전역 페이지 상한 — 쪽 나누기 문단·별개 표가 다수면 표당 세그먼트
     /// 상한(maximumTableSegments)만으로는 총 페이지가 무제한이라, 작은 레코드
     /// 스트림이 수십만 페이지로 증폭돼 paint-list 메모리를 고갈시킨다 (#1).
-    /// legacy 실측 최대 1,030쪽이라 이 한도를 한참 밑돈다.
-    static let maximumDocumentPages = 200_000
+    /// 페이지마다 블록·attributed string·paint list를 상주 보존하므로 한도는
+    /// 모바일 프로세스가 실제로 감당 가능한 수준이어야 방어가 성립한다 —
+    /// legacy 실측 최대 1,030쪽의 약 10배 여유로 정상 대형 문서는 통과시키고
+    /// 병적 증폭은 수십 MB 수준에서 절단한다.
+    static let maximumDocumentPages = 10000
     private var collectedUnsupported: [HwpUnsupportedElement] = []
     /// 이 페이지에 배치할 각주 (문단 + 문서 순서 번호) — 저장은 footnoteCoordinator
     private var pendingFootnotes: [HwpFootnoteLayout.Input] {
