@@ -162,6 +162,10 @@ public actor HwpDocumentActor {
         // 같은 키로 오해석된다 — 새 문서 확정 시점(취소 가드 통과 후)에 회전해
         // stale 로드가 표시 중 문서의 캐시를 비우는 일을 막는다 (#2).
         await cache.clear()
+        // clear()의 suspension 동안 이 로드가 취소(교체)됐을 수 있고 actor
+        // 재개는 FIFO가 아니다 — 설치 직전 재확인 없이는 취소된 로드가 더
+        // 새로운 로드의 paginator를 덮어쓴다 (R38 #2, R24 #4 불변식 복원).
+        try Task.checkCancellation()
         self.paginator = paginator
 
         let previewText = file.previewText.text
