@@ -185,9 +185,16 @@ public struct HwpParagraphLayout {
         var totalLineHeight: CGFloat = 0
         var startLocation = 0
         while startLocation < fullLength, lineFrames.count < maxLineFrames {
+            // 프레임 입력 범위를 남은 줄 예산으로 제한한다 — 줄 하나는 최소
+            // 1 UTF-16 유닛을 소비하므로 이 프레임이 실체화하는 줄 수가 예산
+            // 이하로 유계되고 (1pt 줄 높이 문단이 1M pt 프레임에서 상한의
+            // 10배를 만들던 경로 차단), 버려질 줄이 없어 문단 높이도 보존
+            // 줄만 반영한다. 예산이 문단 길이 이상인 정상 문단은 전 범위
+            // 그대로라 기존 줄바꿈과 동일하다 (R37 #1).
+            let budget = min(fullLength - startLocation, maxLineFrames - lineFrames.count)
             let frame = CTFramesetterCreateFrame(
                 framesetter,
-                CFRange(location: startLocation, length: 0),
+                CFRange(location: startLocation, length: budget),
                 path,
                 nil
             )

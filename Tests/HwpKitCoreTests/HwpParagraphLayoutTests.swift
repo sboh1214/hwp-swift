@@ -55,6 +55,9 @@ import XCTest
             )
 
             expect(frame.lines.count) == 4
+            // 높이는 보존된 4줄만 반영한다 (줄당 10-20pt + 문단 간격 여유) —
+            // 버려진 줄이 높이에 남으면 이 상한을 크게 넘는다 (R37 #1).
+            expect(frame.totalHeight).to(beLessThanOrEqualTo(100))
         }
 
         func testPercentLineSpacingForcesLineHeightFromFontSize() {
