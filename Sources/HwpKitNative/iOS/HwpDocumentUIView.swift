@@ -57,15 +57,12 @@
                 rebuildImageProvider()
                 rebuildPageOrigins()
                 updateContentSize()
-                // 전체 교체는 새 문서를 맨 위에서 연다 — 이전 오프셋이 새 콘텐츠
-                // 범위 안이어도 중간에서 열리지 않게 한다 (macOS와 대칭, #21).
-                // 인셋 있는 스크롤뷰의 "맨 위"는 (-inset.left, -inset.top)이라
-                // .zero는 센터링 인셋을 지나쳐 작은 문서를 좌상단에 붙인다 —
-                // adjustedContentInset(안전영역+센터링) 보정 원점으로 연다 (R39 #2).
-                let inset = scrollView.adjustedContentInset
-                scrollView.setContentOffset(
-                    CGPoint(x: -inset.left, y: -inset.top), animated: false
-                )
+                // 전체 교체는 새 문서를 맨 위(센터링 원점)에서 연다. SwiftUI 경로는
+                // makeUIView가 bounds 0일 때 대입해 이 시점 인셋이 0 → 즉시 적용이
+                // no-op이므로, 첫 non-zero layoutSubviews에서 재적용하도록 예약한다
+                // (bounds가 이미 있으면 아래 호출이 즉시 적용, R39 #2·R40 #1).
+                pendingInitialCentering = true
+                applyPendingInitialCentering()
                 selectionController.document = document
                 updateVisiblePages(range: 0 ..< min(document?.pages.count ?? 0, 3))
                 notifyUnsupportedElements()
@@ -132,6 +129,7 @@
             super.layoutSubviews()
             scrollView.frame = bounds
             updateContentSize()
+            applyPendingInitialCentering()
             updateVisiblePages(range: visiblePageRange())
         }
 
@@ -218,8 +216,7 @@
             guard let document, !document.pages.isEmpty else { return }
             let index = max(0, min(index, document.pages.count - 1))
             let target = contentView.convert(frameForPage(at: index), to: scrollView)
-            let maxOffsetY = max(0, scrollView.contentSize.height - scrollView.bounds.height)
-            let offsetY = max(0, min(target.minY, maxOffsetY))
+            let offsetY = clampedContentOffsetY(target.minY)
             scrollView.setContentOffset(
                 CGPoint(x: scrollView.contentOffset.x, y: offsetY),
                 animated: false
@@ -418,6 +415,20 @@
             scrollView.contentInset = UIEdgeInsets(
                 top: insetY, left: insetX, bottom: insetY, right: insetX
             )
+        }
+
+        /// 문서 교체 후 첫 non-zero 레이아웃에서 센터링 원점을 1회 적용하기 위한
+        /// 예약 — 적용 후 해제해 이후 사용자 스크롤을 덮지 않는다 (R40 #1).
+        private var pendingInitialCentering = false
+
+        /// bounds가 실측(non-zero)일 때만 센터링 인셋 보정 원점으로 한 번 옮긴다.
+        private func applyPendingInitialCentering() {
+            guard pendingInitialCentering, !scrollView.bounds.isEmpty else { return }
+            let inset = scrollView.adjustedContentInset
+            scrollView.setContentOffset(
+                CGPoint(x: -inset.left, y: -inset.top), animated: false
+            )
+            pendingInitialCentering = false
         }
 
         private func visiblePageRange() -> Range<Int> {

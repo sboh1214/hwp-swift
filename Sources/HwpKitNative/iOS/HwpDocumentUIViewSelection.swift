@@ -89,6 +89,18 @@
             selectionAutoscrollViewportPoint = nil
         }
 
+        /// 인셋(안전영역+센터링) 반영 세로 오프셋 클램프. 유효 범위는
+        /// [-adjustedContentInset.top, contentSize.height − bounds.height + bottom] —
+        /// zero-based 클램프는 센터링된 짧은 문서를 센터 밖으로 밀거나 참 top에
+        /// 못 닿게 한다 (R40 #2).
+        func clampedContentOffsetY(_ y: CGFloat) -> CGFloat {
+            let inset = scrollView.adjustedContentInset
+            let minY = -inset.top
+            let scrollableY = scrollView.contentSize.height - scrollView.bounds.height
+            let maxY = max(minY, scrollableY + inset.bottom)
+            return min(max(minY, y), maxY)
+        }
+
         @objc private func selectionAutoscrollTick(_: CADisplayLink) {
             guard let point = selectionAutoscrollViewportPoint else {
                 stopSelectionAutoscroll()
@@ -101,8 +113,7 @@
                 stopSelectionAutoscroll()
                 return
             }
-            let maxOffsetY = max(0, scrollView.contentSize.height - scrollView.bounds.height)
-            let targetY = min(maxOffsetY, max(0, scrollView.contentOffset.y + step))
+            let targetY = clampedContentOffsetY(scrollView.contentOffset.y + step)
             guard targetY != scrollView.contentOffset.y else { return }
             scrollView.contentOffset = CGPoint(x: scrollView.contentOffset.x, y: targetY)
             // 정지한 손가락 아래의 새 콘텐츠 좌표로 선택을 계속 확장한다

@@ -92,5 +92,35 @@
             expect(view.scrollView.contentOffset.x) == -inset.left
             expect(view.scrollView.contentOffset.y) == -inset.top
         }
+
+        /// SwiftUI 경로: makeUIView가 bounds 0일 때 문서를 대입하면 인셋이 0이라
+        /// 즉시 센터링이 no-op이지만, 첫 non-zero 레이아웃에서 센터링 원점이
+        /// 적용돼 작은 문서가 좌상단에 붙지 않는다 (R40 #1).
+        func testDeferredCenteringAppliesOnFirstNonZeroLayout() {
+            let view = HwpDocumentUIView(frame: .zero)
+            view.document = makeDocument()
+
+            view.frame = CGRect(x: 0, y: 0, width: 800, height: 1000)
+            view.layoutIfNeeded()
+
+            let inset = view.scrollView.adjustedContentInset
+            expect(inset.top) > 0
+            expect(view.scrollView.contentOffset.x) == -inset.left
+            expect(view.scrollView.contentOffset.y) == -inset.top
+        }
+
+        /// scrollToPage는 인셋 반영 클램프로 짧은 문서를 센터에 유지한다 —
+        /// zero-based 클램프는 y=0(좌상단)으로 밀어냈다 (R40 #2).
+        func testScrollToPageKeepsShortDocumentCentered() {
+            let view = HwpDocumentUIView(frame: CGRect(x: 0, y: 0, width: 800, height: 1000))
+            view.layoutIfNeeded()
+            view.document = makeDocument()
+
+            view.scrollToPage(at: 0)
+
+            let inset = view.scrollView.adjustedContentInset
+            expect(inset.top) > 0
+            expect(view.scrollView.contentOffset.y) == -inset.top
+        }
     }
 #endif
