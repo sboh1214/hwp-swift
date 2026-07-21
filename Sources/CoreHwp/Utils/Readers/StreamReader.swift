@@ -55,9 +55,10 @@ struct StreamReader {
 
     func getOptionalNamedDataFromStorage(
         _ streamName: HwpStreamName,
-        _ isCompressed: Bool
+        _ isCompressed: Bool,
+        maxChildren: Int = .max
     ) throws -> [(name: String, data: Data)] {
-        try getOptionalNamedDataFromStorage(streamName) { _ in isCompressed }
+        try getOptionalNamedDataFromStorage(streamName, maxChildren: maxChildren) { _ in isCompressed }
     }
 
     private func readData(
@@ -325,6 +326,7 @@ struct StreamReader {
 extension StreamReader {
     func getOptionalNamedDataFromStorage(
         _ streamName: HwpStreamName,
+        maxChildren: Int = .max,
         compressionByChildName: (String) -> Bool
     ) throws -> [(name: String, data: Data)] {
         guard let storage = streams[streamName.rawValue] else {
@@ -336,10 +338,13 @@ extension StreamReader {
             storage.children.map { (name: $0.name, type: $0.type) },
             for: streamName
         )
+        // 아는 구역 수(maxChildren)를 넘는 자식은 압축 해제 전에 잘라 낸다 —
+        // 개별 스트림 한계만으론 집계 압축 해제량이 무제한이라, 어차피 구역 수
+        // 불일치로 버려질 초과분이 메모리를 고갈시키는 것을 막는다 (R43 #1).
         return try sortedStorageChildrenWithoutRequiredValidation(
             storage,
             for: streamName
-        ).map { entry in
+        ).prefix(maxChildren).map { entry in
             try (entry.name, readData(entry, compressionByChildName(entry.name), streamName))
         }
     }

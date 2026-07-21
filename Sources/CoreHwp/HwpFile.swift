@@ -136,7 +136,9 @@ public struct HwpFile: HwpPrimitive {
         // 지원 전엔 열리던 파일이므로 (#7). 파싱 실패 폴백은 init 안에 별도로 있다.
         let viewTextData: [(name: String, data: Data)]
         do {
-            viewTextData = try reader.getOptionalNamedDataFromStorage(.viewText, isCompressed)
+            viewTextData = try reader.getOptionalNamedDataFromStorage(
+                .viewText, isCompressed, maxChildren: sectionDataArray.count
+            )
         } catch let HwpError.streamSizeLimitExceeded(name, limit, actual) {
             // 자원 한계는 설정된 하드 한계이므로 optional ViewText라도 폴백하지
             // 않고 전파한다 — corrupt/unsupported ViewText만 아래 빈 폴백 (P1).
