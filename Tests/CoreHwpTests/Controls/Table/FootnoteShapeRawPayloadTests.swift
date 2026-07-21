@@ -60,6 +60,38 @@ final class FootnoteShapeRawPayloadTests: XCTestCase {
             expect(value) == 0xD800
         })
     }
+
+    func testDividerInfoDecodesNarrowBlackSeparatorAsNarrowNotWide() throws {
+        // 28바이트 narrow 레코드에서 구분선 종류/굵기는 offset 20·21, 검정 색상은
+        // 22-25다. 색상 0이면 wide 해석의 type/thickness(offset 22·23)도 0으로
+        // 유효해, 예전엔 크기 28로 wide를 골라 필드가 2바이트 밀렸다 (R44 #1).
+        let payload = narrowBlackSeparatorPayload(dividerType: 1, dividerThickness: 2)
+        let shape = try HwpFootnoteShape.load(payload)
+        let info = try XCTUnwrap(shape.dividerInfo)
+
+        expect(payload.count) == 28
+        expect(info.type) == 1
+        expect(info.thickness) == 2
+        expect(info.color) == HwpColor(0)
+    }
+}
+
+private func narrowBlackSeparatorPayload(dividerType: UInt8, dividerThickness: UInt8) -> Data {
+    var data = Data()
+    data.append(littleEndianData(UInt32(0)))
+    data.append(littleEndianData(WCHAR(0)))
+    data.append(littleEndianData(WCHAR(0)))
+    data.append(littleEndianData(WCHAR(0)))
+    data.append(littleEndianData(UInt16(1)))
+    data.append(littleEndianData(HWPUNIT16(0)))
+    data.append(littleEndianData(HWPUNIT16(0)))
+    data.append(littleEndianData(HWPUNIT16(0)))
+    data.append(littleEndianData(HWPUNIT16(0)))
+    data.append(littleEndianData(dividerType))
+    data.append(littleEndianData(dividerThickness))
+    data.append(littleEndianData(COLORREF(0)))
+    data.append(Data([0, 0]))
+    return data
 }
 
 private func footnoteShapePayload(

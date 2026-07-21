@@ -47,8 +47,12 @@ public struct HwpFootnoteDividerInfo: HwpPrimitive {
         let narrow = decode(from: payload, lengthByteCount: 2)
         switch (wide, narrow) {
         case let (wide?, narrow?):
-            // 둘 다 유효하면 payload 크기가 4 byte 변형(28 byte)과 맞는 쪽을 우선한다.
-            return payload.count >= 28 ? wide : narrow
+            // 유효 FOOTNOTE_SHAPE 레코드는 색상 뒤 최소 2바이트 trailing을 갖는다
+            // (HwpFootnoteShape.init 계약). wide(4바이트 길이)는 28바이트 코어 +
+            // trailing = 최소 30바이트이므로 30바이트 미만은 narrow뿐이다. 검정
+            // 구분선(색상 0)의 색상 바이트가 wide의 type/thickness(offset 22·23)로
+            // 유효하게 읽혀 둘 다 통과해도 크기로 구분한다 (R44 #1).
+            return payload.count >= 30 ? wide : narrow
         case let (wide?, nil):
             return wide
         case let (nil, narrow?):
