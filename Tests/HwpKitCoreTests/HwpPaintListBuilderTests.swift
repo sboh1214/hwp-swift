@@ -342,7 +342,9 @@ extension HwpPaintListBuilderTests {
         let list = builder.build(for: makePage(blocks: [block]), index: index)
 
         let fills: [CGRect] = list.commands.compactMap {
-            if case let .fillRect(rect, _) = $0 { return rect }
+            if case let .fillRect(rect, _) = $0 {
+                return rect
+            }
             return nil
         }
         expect(fills).toNot(beEmpty())
