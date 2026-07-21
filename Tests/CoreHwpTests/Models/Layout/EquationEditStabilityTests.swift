@@ -168,6 +168,84 @@ final class EquationEditStabilityTests: XCTestCase {
         expect(truncatedFont.versionInfo) == "Equation"
         expect(truncatedFont.fontName).to(beNil())
     }
+
+    func testViewerModeEmptiesEquationNestedRawSlicesButKeepsTypedValues() throws {
+        let payload = fullyPopulatedEquationPayload()
+        let preserved = try loadEquationEdit(payload, options: .default)
+        let viewer = try loadEquationEdit(payload, options: .viewer)
+
+        expect(viewer.property) == preserved.property
+        expect(viewer.equationTextLength) == preserved.equationTextLength
+        expect(viewer.equationText) == preserved.equationText
+        expect(viewer.letterSize) == preserved.letterSize
+        expect(viewer.textColorRawValue) == preserved.textColorRawValue
+        expect(viewer.baseline) == preserved.baseline
+        expect(viewer.unknownAfterBaseline) == preserved.unknownAfterBaseline
+        expect(viewer.versionInfoLength) == preserved.versionInfoLength
+        expect(viewer.versionInfo) == preserved.versionInfo
+        expect(viewer.fontNameLength) == preserved.fontNameLength
+        expect(viewer.fontName) == preserved.fontName
+        expect(viewer.equationText).notTo(beNil())
+        expect(viewer.fontName).notTo(beNil())
+
+        assertEquationNestedRawSlicesEmptiedByViewer(preserved: preserved, viewer: viewer)
+        expect(preserved.rawPayload).notTo(beEmpty())
+        expect(viewer.rawPayload).to(beEmpty())
+    }
+}
+
+private func loadEquationEdit(_ payload: Data, options: HwpLoadOptions) throws -> HwpEquationEdit {
+    try HwpEquationEdit.load(HwpRecord(
+        tagId: HwpSectionTag.eqEdit.rawValue,
+        level: 2,
+        payload: payload,
+        options: options
+    ))
+}
+
+private func fullyPopulatedEquationPayload() -> Data {
+    let layoutTrailing = concatenatedData(
+        littleEndianData(HWPUNIT(2400)),
+        littleEndianData(UInt32(0x00AA_BBCC)),
+        littleEndianData(UInt16(bitPattern: Int16(-12))),
+        littleEndianData(UInt16(0x2211)),
+        hwpStringPayload("Equation"),
+        hwpStringPayload("HYSMyeongJo"),
+        Data([0xCC, 0xDD])
+    )
+    return equationEditPayload(text: "y=2", layoutTrailing: layoutTrailing)
+}
+
+private func assertEquationNestedRawSlicesEmptiedByViewer(
+    preserved: HwpEquationEdit,
+    viewer: HwpEquationEdit
+) {
+    let slices: [(KeyPath<HwpEquationEdit, Data?>, String)] = [
+        (\.propertyRawPayload, "propertyRawPayload"),
+        (\.equationTextLengthRawPayload, "equationTextLengthRawPayload"),
+        (\.equationTextRawPayload, "equationTextRawPayload"),
+        (\.letterSizeRawPayload, "letterSizeRawPayload"),
+        (\.textColorRawPayload, "textColorRawPayload"),
+        (\.baselineRawPayload, "baselineRawPayload"),
+        (\.unknownAfterBaselineRawPayload, "unknownAfterBaselineRawPayload"),
+        (\.versionInfoLengthRawPayload, "versionInfoLengthRawPayload"),
+        (\.versionInfoRawPayload, "versionInfoRawPayload"),
+        (\.fontNameLengthRawPayload, "fontNameLengthRawPayload"),
+        (\.fontNameRawPayload, "fontNameRawPayload"),
+        (\.rawTrailing, "rawTrailing"),
+    ]
+    for (slice, label) in slices {
+        expectRawSliceEmptiedByViewer(
+            preserved: preserved[keyPath: slice],
+            viewer: viewer[keyPath: slice],
+            label
+        )
+    }
+}
+
+private func expectRawSliceEmptiedByViewer(preserved: Data?, viewer: Data?, _ label: String) {
+    expect(preserved ?? Data()).notTo(beEmpty(), description: "\(label): default는 원문 보존")
+    expect(viewer ?? Data()).to(beEmpty(), description: "\(label): viewer는 원문 제거")
 }
 
 private func roundTrippedEquationEdit(_ edit: HwpEquationEdit) throws -> HwpEquationEdit {

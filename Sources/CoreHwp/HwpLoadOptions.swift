@@ -30,6 +30,12 @@ extension HwpLoadOptions {
         preserveRawPayload ? data : Data()
     }
 
+    /// optional 보존 슬라이스 게이트 — nil은 그대로, 값은 위 규칙으로 비운다.
+    /// (equation·DOC_DATA 등 중첩 raw 필드가 viewer opt-out을 우회하지 않게, R43 #3)
+    func preservedPayload(_ data: Data?) -> Data? {
+        data.map(preservedPayload)
+    }
+
     /// 파싱/렌더 로직이 다시 읽는 슬라이스 게이트: off면 분리 복사해
     /// 압축 해제 스트림 버퍼 참조만 끊는다 (byte 내용은 양 모드 동일).
     func decoupledPayload(_ data: Data) -> Data {
