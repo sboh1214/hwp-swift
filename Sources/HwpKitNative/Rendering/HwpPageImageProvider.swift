@@ -60,6 +60,10 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     /// binItemId별 가장 최근에 해석된 변형 키 (platformImage 폴백용)
     private var latestVariantByBinItemId: [UInt32: String] = [:]
     private var imageResolvedHandler: (@Sendable (UInt32) -> Void)?
+    /// hard bound 초과로 요청을 드롭한 적이 있는지 — 자리가 나면 전체 가시
+    /// 레이어를 재드로우해 드롭된 요청을 재시도시킨다 (R42 #1).
+    private var didDropDeferred = false
+    private var deferredCapacityHandler: (@Sendable () -> Void)?
 
     /// (binItemId, style) 변형의 결정론적 캐시 키
     static func variantKey(_ binItemId: UInt32, _ style: HwpImageRenderStyle?) -> String {
@@ -99,6 +103,22 @@ public final class HwpPageImageProvider: @unchecked Sendable {
             lock.lock()
             defer { lock.unlock() }
             imageResolvedHandler = newValue
+        }
+    }
+
+    /// 디퍼드 큐가 만석이라 드롭했던 요청을 재시도할 자리가 났을 때 호출된다
+    /// (임의 스레드) — 뷰가 전체 가시 레이어를 재드로우해, 유일 이미지가
+    /// 드롭돼 재드로우를 못 받던 레이어도 재요청하게 한다 (R42 #1).
+    public var onDeferredCapacityAvailable: (@Sendable () -> Void)? {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return deferredCapacityHandler
+        }
+        set {
+            lock.lock()
+            defer { lock.unlock() }
+            deferredCapacityHandler = newValue
         }
     }
 
@@ -244,8 +264,16 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         let retry = dequeueDeferred()
         let retryGeneration = generation
         let handler = imageResolvedHandler
+        // 드롭이 있었고 이제 디퍼드에 자리가 났으면, 전체 가시 레이어 재드로우를
+        // 알려 드롭된 요청(특히 유일 이미지가 드롭된 레이어)을 재시도시킨다 (R42 #1).
+        let capacityHandler = didDropDeferred && deferred.count < Self.maximumDeferred
+            ? deferredCapacityHandler : nil
+        if capacityHandler != nil {
+            didDropDeferred = false
+        }
         lock.unlock()
         handler?(key)
+        capacityHandler?()
         if let retry {
             requestImage(
                 for: retry.key, style: retry.style, expectedGeneration: retryGeneration
@@ -272,6 +300,10 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         if canEnqueue {
             deferred.append((key, style))
             deferredVariants.insert(variant)
+        } else {
+            // 만석+전부-pin이라 드롭됨 — 자리가 나면 finishRequest가 전체 가시
+            // 레이어 재드로우를 알려 이 요청을 재시도시킨다 (R42 #1).
+            didDropDeferred = true
         }
     }
 
@@ -359,6 +391,7 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         deferred.removeAll()
         deferredVariants.removeAll()
         pinnedVariants.removeAll()
+        didDropDeferred = false
         lock.unlock()
         tasks.forEach { $0.cancel() }
     }

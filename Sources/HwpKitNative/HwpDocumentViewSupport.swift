@@ -161,6 +161,15 @@ enum HwpDocumentViewSupport {
                 }
             }
         }
+        // 만석 드롭 요청을 재시도시키려 전체 가시 레이어를 재드로우한다 — 유일
+        // 이미지가 드롭돼 키별 재드로우를 못 받던 레이어도 복구된다 (R42 #1).
+        provider.onDeferredCapacityAvailable = {
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    currentLayers().forEach { $0.setNeedsDisplay() }
+                }
+            }
+        }
         return (cache, provider)
     }
 
