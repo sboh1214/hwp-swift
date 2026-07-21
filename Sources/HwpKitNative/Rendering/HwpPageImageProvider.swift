@@ -68,6 +68,16 @@ public final class HwpPageImageProvider: @unchecked Sendable {
             "\(style.cropBottom)|\(style.brightness)|\(style.contrast)|\(style.effect.rawValue)"
     }
 
+    /// 만석 디퍼드 큐에서 축출할 인덱스 — pin(가시) 안 된 가장 오래된 항목.
+    /// 전부 pin이면 nil: 가시 요청을 빼면 그 페이지의 어떤 키도 완료를 못
+    /// 트리거해 placeholder가 무관한 재드로우 전까지 영구 잔존한다 (#N).
+    static func deferredEvictionIndex(
+        _ deferred: [(key: UInt32, style: HwpImageRenderStyle?)],
+        pinnedVariants: Set<String>
+    ) -> Int? {
+        deferred.firstIndex { !pinnedVariants.contains(variantKey($0.key, $0.style)) }
+    }
+
     /// 비동기 디코딩 완료 시 호출된다 (임의 스레드).
     public var onImageResolved: (@Sendable (UInt32) -> Void)? {
         get {
@@ -124,10 +134,14 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         } else if !alreadyHandled, atCapacity, !deferredVariants.contains(variant) {
             // 진행 상한 초과: 드롭하지 않고 디퍼드 큐에 넣어 슬롯이 나면
             // finishRequest가 재시도한다 (드롭하면 가시 레이어가 회색으로 남음, #5).
-            // 디퍼드가 가득 차면 가장 오래된(대개 스크롤로 지나간) 항목을 빼고 새
-            // 가시 요청을 넣는다 — 만석이라 새 요청이 유실되던 것을 막는다 (#2).
-            if deferred.count >= Self.maximumDeferred {
-                let stale = deferred.removeFirst()
+            // 만석이면 pin 안 된(스크롤로 지나간) 가장 오래된 항목만 축출한다 —
+            // 가시(pin) 요청을 빼면 그 페이지 placeholder가 영구 잔존하기 때문(#N).
+            // 전부 pin이면 축출 없이 추가한다: pin 집합은 가시 ±2로 유계라 큐도
+            // 유계고, finishRequest의 dequeueDeferred가 슬롯마다 드레인해 완료된다.
+            if deferred.count >= Self.maximumDeferred,
+               let evictIndex = Self.deferredEvictionIndex(deferred, pinnedVariants: pinnedVariants)
+            {
+                let stale = deferred.remove(at: evictIndex)
                 deferredVariants.remove(Self.variantKey(stale.key, stale.style))
             }
             deferred.append((key, style))
