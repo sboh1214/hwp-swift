@@ -315,3 +315,42 @@ final class HwpPaintListBuilderTests: XCTestCase {
         )
     }
 }
+
+extension HwpPaintListBuilderTests {
+    /// 이중 하단·우측 테두리의 둘째 선도 셀 안(maxY/maxX 이내)에 그려진다 —
+    /// 셀 밖으로 나가면 인접 셀·표 밖을 침범한다 (R42 #2).
+    func testDoubleBottomRightBordersStayInsideCell() {
+        let black = HwpRGBColor(red: 0, green: 0, blue: 0)
+        let cellRect = CGRect(x: 0, y: 0, width: 100, height: 40)
+        let cell = HwpTableCellFrame(
+            cellFrame: cellRect,
+            row: 0, column: 0, rowSpan: 1, columnSpan: 1,
+            paragraphs: [],
+            borders: HwpBorderSet(
+                top: 2, bottom: 2, left: 2, right: 2,
+                topColor: black, bottomColor: black, leftColor: black, rightColor: black,
+                topDouble: true, bottomDouble: true, leftDouble: true, rightDouble: true
+            ),
+            fillColor: nil
+        )
+        let table = HwpTableFrame(
+            outerFrame: cellRect,
+            rows: [HwpTableRowFrame(rowFrame: cellRect, cells: [cell])],
+            borderColor: black, borderWidth: 1
+        )
+        let block = AnyHwpBlock(frame: cellRect, kind: .table, payload: .table(table))
+        let list = builder.build(for: makePage(blocks: [block]), index: index)
+
+        let fills: [CGRect] = list.commands.compactMap {
+            if case let .fillRect(rect, _) = $0 { return rect }
+            return nil
+        }
+        expect(fills).toNot(beEmpty())
+        for rect in fills {
+            expect(rect.maxY).to(beLessThanOrEqualTo(cellRect.maxY + 0.01))
+            expect(rect.maxX).to(beLessThanOrEqualTo(cellRect.maxX + 0.01))
+            expect(rect.minY).to(beGreaterThanOrEqualTo(cellRect.minY - 0.01))
+            expect(rect.minX).to(beGreaterThanOrEqualTo(cellRect.minX - 0.01))
+        }
+    }
+}
