@@ -15,6 +15,17 @@ import XCTest
             expect(result.length) == 0
         }
 
+        func testBuildCapsOutputToMaxCharacters() throws {
+            let paragraph = paragraph(text: String(repeating: "가", count: 5000), runs: [(0, 0)])
+            let textBuilder = builder(shapes: [0: try charShape()])
+
+            let full = textBuilder.build(paragraph: paragraph)
+            let capped = textBuilder.build(paragraph: paragraph, maxCharacters: 100)
+
+            expect(full.string.count) == 5000
+            expect(capped.string.count) == 100
+        }
+
         func testSingleShapeParagraphProducesOneFontRange() throws {
             let paragraph = paragraph(text: "hello", runs: [(0, 0)])
             let result = builder(shapes: [0: try charShape()]).build(paragraph: paragraph)

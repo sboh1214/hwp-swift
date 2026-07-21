@@ -70,9 +70,13 @@ public struct HwpTextRunBuilder {
     /// 쓴다. 치환된 run은 폭 0 예약 대신 실제 글리프 폭을 차지한다.
     public func build(
         paragraph: CoreHwp.HwpParagraph,
-        controlReplacements: [Int: HwpControlMarkerReplacement] = [:]
+        controlReplacements: [Int: HwpControlMarkerReplacement] = [:],
+        maxCharacters: Int = .max
     ) -> NSAttributedString {
-        let units = paragraph.paraText?.charArray ?? []
+        // 입력 문자(char unit)를 상한까지만 처리해 거대 문단의 attributed string
+        // build 비용을 제한한다 (메모 표시 예산 등; 정확한 표시 클립은 호출측,
+        // R44 #3). 기본값 .max면 slice가 전체를 가리킨다.
+        let units = (paragraph.paraText?.charArray ?? []).prefix(maxCharacters)
         guard !units.isEmpty else { return NSAttributedString(string: "") }
 
         let output = NSMutableAttributedString()

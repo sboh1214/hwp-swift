@@ -2222,21 +2222,24 @@ private extension HwpPaginator {
         // 메모별 문단 그룹을 join해 필드와 1:1로 짝짓는다 — 평탄 배열을 필드
         // 인덱스로 끊으면 여러 문단 메모는 2번째+ 문단이 누락되고 다중 메모는
         // 엉뚱한 필드에 페어링된다 (#7).
-        // 표시 예산(HwpMemoPanelPainter.maxBodyChars)에 닿으면 추출을 멈춘다 —
-        // 거대 메모가 전체 문단을 build·join한 뒤에야 캡되던 것을 막는다 (#3).
+        // 표시 예산(HwpMemoPanelPainter.maxBodyChars)까지만 추출한다 — 각 문단
+        // build를 남은 예산으로 상한(maxCharacters)해, 단일 거대 문단도 전체를
+        // build한 뒤에야 캡되지 않게 한다 (R44 #3).
         let budget = HwpMemoPanelPainter.maxBodyChars
         let groups = (paragraph.memoParagraphGroups ?? []).prefix(remaining)
         let bodies = groups.map { group -> String in
             var parts: [String] = []
             var total = 0
             for memoParagraph in group where total < budget {
+                let remainingBudget = budget - total
                 let text = HwpTextRunBuilder(index: index, fontResolver: fontResolver)
-                    .build(paragraph: memoParagraph)
+                    .build(paragraph: memoParagraph, maxCharacters: remainingBudget)
                     .string
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !text.isEmpty else { continue }
-                let remaining = budget - total
-                let clipped = text.count > remaining ? String(text.prefix(remaining)) : text
+                let clipped = text.count > remainingBudget
+                    ? String(text.prefix(remainingBudget))
+                    : text
                 parts.append(clipped)
                 total += clipped.count
             }
