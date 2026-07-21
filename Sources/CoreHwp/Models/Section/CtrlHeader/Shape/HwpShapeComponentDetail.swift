@@ -386,6 +386,11 @@ public struct HwpShapeEllipseDetail: HwpPrimitive {
         property & 0x2 != 0
     }
 
+    /// 호로 바뀐 경우의 닫힘 종류 (표 97 bits 2-9). 알 수 없는 값은 open으로 폴백.
+    public var arcKind: HwpShapeArcKind {
+        HwpShapeArcKind(rawValue: (property >> 2) & 0xFF) ?? .open
+    }
+
     static func decode(from data: Data) -> HwpShapeEllipseDetail? {
         guard data.count >= 28 else { return nil }
         do {
@@ -425,6 +430,17 @@ public struct HwpShapeEllipseDetail: HwpPrimitive {
             return nil
         }
     }
+}
+
+/// 호로 바뀐 타원의 닫힘 종류 (표 97 bits 2-9). hwp-rs `ArcKind`(Normal/Pie/Chord)·
+/// hwplib `ArcType`(Arc/CircularSector/Bow) 실측 매핑.
+public enum HwpShapeArcKind: UInt32, Codable, Hashable, Sendable {
+    /// 호 — 닫지 않는 열린 호
+    case open = 0
+    /// 부채꼴 — 중심으로 두 반지름을 그어 닫음
+    case pie = 1
+    /// 활 — 양 끝점을 직선(현)으로 이어 닫음
+    case chord = 2
 }
 
 /** 호 개체 세부 (표 101, 28 byte) — 타원과 동일 필드 구성 */

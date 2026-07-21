@@ -121,6 +121,20 @@ final class ShapeComponentKindDetailDecodeTests: XCTestCase {
         expect(detail?.arcStart) == HwpShapePoint(x: 100, y: 0)
         expect(detail?.arcEnd) == HwpShapePoint(x: 0, y: 50)
     }
+
+    func testEllipseDetailDecodesArcKindFromPropertyBits() {
+        /// bits 2-9: 0 open, 1 pie, 2 chord (hwp-rs ArcKind·hwplib ArcType 실측).
+        func arcKind(property: UInt32) -> HwpShapeArcKind? {
+            var payload = littleEndianData(property)
+            payload.append(int32Payload([0, 0, 0, 0, 0, 0]))
+            return HwpShapeComponentEllipse(rawPayload: payload, unknownChildren: [])
+                .ellipseDetail?.arcKind
+        }
+
+        expect(arcKind(property: 0)) == .open
+        expect(arcKind(property: 1 << 2)) == .pie
+        expect(arcKind(property: 2 << 2)) == .chord
+    }
 }
 
 private func int32Payload(_ values: [Int32]) -> Data {

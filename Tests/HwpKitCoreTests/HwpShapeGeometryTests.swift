@@ -127,4 +127,53 @@ final class HwpShapeGeometryTests: XCTestCase {
         expect(bounds.maxX).to(beCloseTo(100, within: 0.5))
         expect(bounds.maxY).to(beCloseTo(50, within: 0.5))
     }
+
+    func testEllipseArcPathPieClosesThroughCenter() {
+        // 오른쪽 호(-45°~45°, 중심 0,0·반지름 100): 부채꼴은 중심까지 닫으므로
+        // bounds minX가 호만(70.71)이 아니라 중심(0)까지 내려온다 (R46 #2).
+        let path = arcPath(arcKind: 1)
+        expect(path.boundingBox.minX).to(beCloseTo(0, within: 0.5))
+        expect(self.isClosed(path)) == true
+    }
+
+    func testEllipseArcPathChordClosesWithoutCenter() {
+        // 활은 두 끝점을 현으로 닫되 중심은 포함하지 않는다 — 닫혀 있지만
+        // bounds minX는 호만(≈70.71) (R46 #2).
+        let path = arcPath(arcKind: 2)
+        expect(path.boundingBox.minX).to(beCloseTo(70.71, within: 1))
+        expect(self.isClosed(path)) == true
+    }
+
+    func testEllipseArcPathOpenStaysOpen() {
+        // 호는 닫지 않아 stroke가 호 구간만 그린다 (R46 #2).
+        let path = arcPath(arcKind: 0)
+        expect(path.boundingBox.minX).to(beCloseTo(70.71, within: 1))
+        expect(self.isClosed(path)) == false
+    }
+
+    private func arcPath(arcKind: UInt32) -> CGPath {
+        // property: bit1 = 호 변환, bits 2-9 = 닫힘 종류
+        let ellipse = CoreHwp.HwpShapeEllipseDetail(
+            property: 0b10 | (arcKind << 2),
+            center: CoreHwp.HwpShapePoint(x: 0, y: 0),
+            firstAxis: CoreHwp.HwpShapePoint(x: 100, y: 0),
+            secondAxis: CoreHwp.HwpShapePoint(x: 0, y: 100)
+        )
+        return HwpShapeGeometry.ellipseArcPath(
+            of: ellipse,
+            start: CoreHwp.HwpShapePoint(x: 70, y: -70),
+            end: CoreHwp.HwpShapePoint(x: 70, y: 70),
+            transform: .identity
+        )
+    }
+
+    private func isClosed(_ path: CGPath) -> Bool {
+        var closed = false
+        path.applyWithBlock { element in
+            if element.pointee.type == .closeSubpath {
+                closed = true
+            }
+        }
+        return closed
+    }
 }

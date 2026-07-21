@@ -93,10 +93,10 @@ public struct HwpShapeGeometry: @unchecked Sendable {
         return path
     }
 
-    /// 호로 바뀐 타원(표 96 property bit1): 두 축으로 타원 반지름을, 호 시작/끝점
-    /// (offset 28/36)으로 각도를 잡아 부분 타원 호를 그린다 — 완전 타원 대신 실제
-    /// 호 구간만 (R45 #2). 축을 각도로도 쓰는 arcPath(표 101)와 달리 타원은
-    /// 반지름과 호 끝점이 별도 필드다.
+    /// 호로 바뀐 타원(표 96): 두 축으로 타원 반지름을, 호 시작/끝점(offset 28/36)으로
+    /// 각도를 잡아 부분 타원 호를 그린다. 닫힘 종류(표 97 bits 2-9)에 따라 부채꼴은
+    /// 중심으로, 활은 두 끝점을 직선(현)으로 닫고, 호는 열어 둔다 (R45 #2, R46 #2).
+    /// 축을 각도로도 쓰는 arcPath(표 101)와 달리 타원은 반지름과 호 끝점이 별도 필드다.
     public static func ellipseArcPath(
         of ellipse: CoreHwp.HwpShapeEllipseDetail,
         start: CoreHwp.HwpShapePoint,
@@ -114,11 +114,21 @@ public struct HwpShapeGeometry: @unchecked Sendable {
             .concatenating(CGAffineTransform(translationX: cx, y: cy))
             .concatenating(transform)
         let path = CGMutablePath()
+        // 부채꼴은 중심에서 시작 — addArc가 현재 점(중심)에서 호 시작점까지 선을
+        // 넣으므로 close 시 중심→시작→호→끝→중심 부채꼴이 된다. 활은 호 뒤 끝점을
+        // 직선(현)으로 닫고, 호는 열어 둬 stroke가 정확해진다 (CG fill의 암묵적 현
+        // 닫힘과 무관, R46 #2).
+        if ellipse.arcKind == .pie {
+            path.move(to: CGPoint(x: cx, y: cy).applying(transform))
+        }
         path.addArc(
             center: .zero, radius: 1,
             startAngle: angle(start), endAngle: angle(end),
             clockwise: false, transform: toWorld
         )
+        if ellipse.arcKind == .pie || ellipse.arcKind == .chord {
+            path.closeSubpath()
+        }
         return path
     }
 }
