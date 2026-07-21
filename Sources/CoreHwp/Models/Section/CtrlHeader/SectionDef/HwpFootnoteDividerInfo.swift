@@ -1,11 +1,12 @@
 import Foundation
 
 /**
- 각주/미주 모양의 구분선 정보 (표 133 뒷부분)를 톨러런트하게 재해석한 값
+ 각주/미주 모양의 구분선 정보 (표 133 뒷부분)를 재해석한 값
 
- 구분선 길이 필드가 파일에 따라 2 byte 또는 4 byte로 기록되므로 (스펙 표 133은 2 byte,
- 표 5의 선언 크기는 30 byte로 4 byte 변형을 암시), 두 해석을 모두 시도해
- 구분선 종류/굵기 index가 유효한 쪽을 선택한다.
+ 구분선 길이 필드는 4 byte(UINT32)로 고정이다 — 스펙 표 133은 2 byte로 적었으나
+ 실제 저장본은 4 byte다 (hwplib·hwp-rs 실측; hwp-rs 주석 "공식 문서와 다르게 실제
+ 4바이트"). 따라서 4 byte(wide) 해석을 확정 우선하고, wide가 무효인 malformed
+ 레코드만 2 byte(narrow)로 폴백한다.
  */
 public struct HwpFootnoteDividerInfo: HwpPrimitive {
     /** 구분선 길이 (HWPUNIT). nil이면 자동 (관례상 단 폭의 1/3). */
@@ -42,24 +43,11 @@ public struct HwpFootnoteDividerInfo: HwpPrimitive {
     }
 
     /// FOOTNOTE_SHAPE record payload 전체에서 구분선 정보를 디코딩한다.
+    /// 길이 필드가 4 byte 고정이므로 wide를 확정 우선하고, wide가 무효인 malformed
+    /// 레코드(짧거나 종류/굵기 index 범위 밖)만 narrow로 폴백한다 — 임의 trailing이
+    /// 허용돼 레코드 크기로는 폭을 구분할 수 없다 (R45 #1).
     static func decode(from payload: Data) -> HwpFootnoteDividerInfo? {
-        let wide = decode(from: payload, lengthByteCount: 4)
-        let narrow = decode(from: payload, lengthByteCount: 2)
-        switch (wide, narrow) {
-        case let (wide?, narrow?):
-            // 유효 FOOTNOTE_SHAPE 레코드는 색상 뒤 최소 2바이트 trailing을 갖는다
-            // (HwpFootnoteShape.init 계약). wide(4바이트 길이)는 28바이트 코어 +
-            // trailing = 최소 30바이트이므로 30바이트 미만은 narrow뿐이다. 검정
-            // 구분선(색상 0)의 색상 바이트가 wide의 type/thickness(offset 22·23)로
-            // 유효하게 읽혀 둘 다 통과해도 크기로 구분한다 (R44 #1).
-            return payload.count >= 30 ? wide : narrow
-        case let (wide?, nil):
-            return wide
-        case let (nil, narrow?):
-            return narrow
-        case (nil, nil):
-            return nil
-        }
+        decode(from: payload, lengthByteCount: 4) ?? decode(from: payload, lengthByteCount: 2)
     }
 
     private static func decode(

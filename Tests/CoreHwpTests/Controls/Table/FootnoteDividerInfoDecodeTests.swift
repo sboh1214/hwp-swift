@@ -45,22 +45,23 @@ final class FootnoteDividerInfoDecodeTests: XCTestCase {
         expect(HwpFootnoteDividerInfo.decode(from: payload)).to(beNil())
     }
 
-    func testDecodePrefersNarrowVariantWhenBothValidBelow30Bytes() {
+    func testDecodePrefersWideVariantWhenBothValidRegardlessOfSize() {
         // spacing 3 → narrow type 후보(offset 20=3)와 wide type(offset 22=1)이 모두
-        // 유효한 모호한 28바이트 payload. 유효 레코드의 필수 2바이트 trailing까지
-        // 감안하면 wide(4바이트 길이)는 28 코어 + trailing = 최소 30바이트이므로
-        // 28바이트는 narrow로 확정한다 — struct의 정규 narrow 파싱과 일치 (R44 #1).
+        // 유효한 모호한 28바이트 payload. 길이 필드는 4 byte 고정이므로 크기와
+        // 무관하게 wide로 확정한다 — hwplib·hwp-rs 실측 (R45 #1, R44 크기 기반 정정).
         let payload = wideDividerPayload(length: 4000, spacing: 3)
         expect(payload.count) == 28
 
         let info = HwpFootnoteDividerInfo.decode(from: payload)
 
-        expect(info?.type) == 3
-        expect(info?.marginTop) == 0
+        expect(info?.type) == 1
+        expect(info?.marginTop) == 850
+        expect(info?.length) == 4000
     }
 
-    func testDecodePrefersWideVariantWhenBothValidAt30Bytes() {
-        // 30바이트면 wide(28 코어 + 2 trailing)가 성립하므로 모호할 때 wide 우선.
+    func testDecodeKeepsWidePreferenceWithExtraTrailing() {
+        // 임의 trailing이 붙어 30바이트가 돼도 wide 유지 — 레코드 크기로 폭을
+        // 추론하지 않는다 (R45 #1: narrow+trailing을 wide로 오분류하던 것 방지).
         let payload = wideDividerPayload(length: 4000, spacing: 3) + Data([0, 0])
         expect(payload.count) == 30
 
