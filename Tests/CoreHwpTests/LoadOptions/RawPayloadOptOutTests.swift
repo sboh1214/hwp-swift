@@ -9,6 +9,13 @@ import XCTest
 /// 슬라이스만 비우는지 전체 픽스처를 default/viewer 양 모드로 로드해
 /// 확인한다. on 모드의 원본 보존 자체는 기존 보존 테스트들이 커버한다.
 final class RawPayloadOptOutTests: XCTestCase {
+    /// 백그라운드 파싱의 @Sendable 클로저에 캡처되므로 Sendable이어야 한다 —
+    /// 제네릭 제약으로 컴파일 타임에 고정한다 (R39 #1).
+    func testLoadOptionsConformsToSendable() {
+        func requireSendable(_: some Sendable) {}
+        requireSendable(HwpLoadOptions.viewer)
+    }
+
     func testViewerOptionsKeepParsedStructureIdentical() throws {
         let fixtures = try FixtureLoader.loadAll()
             .filter { $0.manifest.expectedError == nil }
