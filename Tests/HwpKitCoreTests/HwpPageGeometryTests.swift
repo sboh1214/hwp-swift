@@ -50,6 +50,33 @@ final class HwpPageGeometryTests: XCTestCase {
         expect(geo.contentFrame.size.height) == geo.pageSize.height - 144.0
     }
 
+    /// 제본 여백(gutter)은 제책 방향(property bit1~2)에 따라 해당 변에 더해진다
+    /// — 한쪽(0)은 왼쪽, 위로(2)는 위쪽. 본문이 제본 스트립을 관통하지 않는다 (R42 #3).
+    func testGutterAddedToBindingSide() {
+        var oneSided = HwpPageDef()
+        oneSided.width = 61200
+        oneSided.height = 79200
+        oneSided.marginTop = 7200
+        oneSided.marginLeft = 7200
+        oneSided.marginBottom = 7200
+        oneSided.marginRight = 7200
+        oneSided.marginHeader = 0
+        oneSided.marginFootnote = 0
+        oneSided.marginGutter = 3600
+        oneSided.property = 0
+
+        let left = HwpPageGeometry.compute(pageDef: oneSided, sectionDef: nil)
+        // 왼쪽 여백 72 + gutter 36 = 108
+        expect(left.contentFrame.origin.x) == 108.0
+        expect(left.contentFrame.size.width) == left.pageSize.width - 108.0 - 72.0
+
+        var topBound = oneSided
+        topBound.property = 0b100 // makingBook = 2 (위로)
+        let top = HwpPageGeometry.compute(pageDef: topBound, sectionDef: nil)
+        expect(top.contentFrame.origin.x) == 72.0 // 왼쪽엔 gutter 없음
+        expect(top.contentFrame.origin.y) == 108.0 // 위쪽 72 + gutter 36
+    }
+
     /// 한글의 세로 구성 (표 137): 위쪽 여백 → 머리말 영역 → 본문 → 꼬리말 영역
     /// → 아래쪽 여백. 본문 상단 = marginTop + marginHeader (BinData/plain-text
     /// 픽스처 PrvImage 실측: A4 기본 여백에서 본문 상단 99.2pt).

@@ -36,17 +36,19 @@ public struct HwpPageGeometry: Sendable, Hashable {
         let headerMarginPt = HwpUnits.points(fromHwpUnitU: pageDef.marginHeader)
         let footerMarginPt = HwpUnits.points(fromHwpUnitU: pageDef.marginFootnote)
 
+        let (leftGutter, topGutter) = Self.gutterInsets(pageDef)
+
         // margins는 본문 콘텐츠 인셋 (머리말/꼬리말 영역 포함) — 뷰/테스트가
         // "본문 밖" 판정에 그대로 쓸 수 있는 값이다.
+        let topInset = paperTopMargin + headerMarginPt + topGutter
+        let leftInset = HwpUnits.points(fromHwpUnitU: pageDef.marginLeft) + leftGutter
+        let bottomInset = paperBottomMargin + footerMarginPt
+        let rightInset = HwpUnits.points(fromHwpUnitU: pageDef.marginRight)
         let margins = HwpPageMargins(
-            top: Self.clampMargin(paperTopMargin + headerMarginPt, limit: pageSize.height),
-            left: Self.clampMargin(
-                HwpUnits.points(fromHwpUnitU: pageDef.marginLeft), limit: pageSize.width
-            ),
-            bottom: Self.clampMargin(paperBottomMargin + footerMarginPt, limit: pageSize.height),
-            right: Self.clampMargin(
-                HwpUnits.points(fromHwpUnitU: pageDef.marginRight), limit: pageSize.width
-            )
+            top: Self.clampMargin(topInset, limit: pageSize.height),
+            left: Self.clampMargin(leftInset, limit: pageSize.width),
+            bottom: Self.clampMargin(bottomInset, limit: pageSize.height),
+            right: Self.clampMargin(rightInset, limit: pageSize.width)
         )
 
         // 여백 합이 페이지를 넘으면 콘텐츠 rect가 음수가 되므로 최소 1로 클램프한다.
@@ -107,6 +109,17 @@ public struct HwpPageGeometry: Sendable, Hashable {
     private static func clampMargin(_ value: CGFloat, limit: CGFloat) -> CGFloat {
         guard value.isFinite, value > 0 else { return 0 }
         return min(value, limit)
+    }
+
+    /// 제본 여백(gutter)을 제책 방향(property bit1~2: 0 한쪽·1 맞쪽·2 위로)에 따라
+    /// (왼쪽, 위쪽) 인셋으로 배분한다 — 한쪽/맞쪽은 왼쪽, 위로는 위쪽. 맞쪽은
+    /// 페이지 홀짝의 안쪽(홀=왼)인데 기하엔 페이지 번호가 없어 왼쪽 근사 (R42 #3).
+    private static func gutterInsets(
+        _ pageDef: CoreHwp.HwpPageDef
+    ) -> (left: CGFloat, top: CGFloat) {
+        let gutterPt = HwpUnits.points(fromHwpUnitU: pageDef.marginGutter)
+        let makingBook = (pageDef.property >> 1) & 0b11
+        return makingBook == 2 ? (0, gutterPt) : (gutterPt, 0)
     }
 
     /// 단 정의 (표 138/139)로 영역을 단 프레임으로 나눈다.
