@@ -236,6 +236,15 @@ import XCTest
 
             expect(ranges) == [UInt32(8) ..< UInt32(27)]
         }
+
+        func testBuildClampsNegativeMaxCharactersToEmpty() throws {
+            // 음수 상한은 prefix가 트랩하므로 0으로 클램프해 빈 결과를 낸다 (R45 #3).
+            let paragraph = paragraph(text: "hello", runs: [(0, 0)])
+            let result = builder(shapes: [0: try charShape()]).build(
+                paragraph: paragraph, maxCharacters: -5
+            )
+            expect(result.length) == 0
+        }
     }
 
     private extension HwpTextRunBuilderTests {

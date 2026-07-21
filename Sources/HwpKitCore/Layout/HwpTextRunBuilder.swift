@@ -75,8 +75,9 @@ public struct HwpTextRunBuilder {
     ) -> NSAttributedString {
         // 입력 문자(char unit)를 상한까지만 처리해 거대 문단의 attributed string
         // build 비용을 제한한다 (메모 표시 예산 등; 정확한 표시 클립은 호출측,
-        // R44 #3). 기본값 .max면 slice가 전체를 가리킨다.
-        let units = (paragraph.paraText?.charArray ?? []).prefix(maxCharacters)
+        // R44 #3). 음수 상한(예: 계산된 잔여 예산)은 prefix가 트랩하므로 0으로
+        // 클램프해 public API가 프로세스를 죽이지 않게 한다 (R45 #3). .max면 전체.
+        let units = (paragraph.paraText?.charArray ?? []).prefix(Swift.max(0, maxCharacters))
         guard !units.isEmpty else { return NSAttributedString(string: "") }
 
         let output = NSMutableAttributedString()
