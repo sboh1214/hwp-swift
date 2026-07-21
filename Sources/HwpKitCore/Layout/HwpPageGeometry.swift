@@ -60,10 +60,13 @@ public struct HwpPageGeometry: Sendable, Hashable {
             height: max(1, pageSize.height - margins.top - margins.bottom)
         )
 
+        // 위로 제책이면 topGutter가 위 여백 다음에 오므로 머리말도 그만큼 내려
+        // 위 여백 → gutter → 머리말 → 본문 순서를 만든다 (아니면 머리말이 제본
+        // 영역에 놓이고 머리말·본문 사이에 gutter 간격이 생긴다, R43 #2).
         let headerFrame: CGRect? = headerMarginPt > 0
             ? CGRect(
                 x: margins.left,
-                y: paperTopMargin,
+                y: paperTopMargin + topGutter,
                 width: contentWidth,
                 height: headerMarginPt
             )

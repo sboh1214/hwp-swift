@@ -77,6 +77,29 @@ final class HwpPageGeometryTests: XCTestCase {
         expect(top.contentFrame.origin.y) == 108.0 // 위쪽 72 + gutter 36
     }
 
+    /// 위로 제책 + 머리말: gutter가 머리말 앞에 와 머리말이 제본 영역에 놓이지
+    /// 않는다 — 위 여백 → gutter → 머리말 → 본문 (R43 #2).
+    func testTopGutterPushesHeaderBelowGutter() {
+        var pageDef = HwpPageDef()
+        pageDef.width = 61200
+        pageDef.height = 79200
+        pageDef.marginTop = 7200
+        pageDef.marginLeft = 7200
+        pageDef.marginBottom = 7200
+        pageDef.marginRight = 7200
+        pageDef.marginHeader = 2400
+        pageDef.marginFootnote = 0
+        pageDef.marginGutter = 3600
+        pageDef.property = 0b100 // 위로 제책
+
+        let geo = HwpPageGeometry.compute(pageDef: pageDef, sectionDef: nil)
+
+        // 머리말 = 위 여백 72 + gutter 36 = 108 (제본 영역 아래)
+        expect(geo.headerFrame?.minY) == 108.0
+        // 본문 = 위 여백 72 + 머리말 24 + gutter 36 = 132
+        expect(geo.contentFrame.minY) == 132.0
+    }
+
     /// 한글의 세로 구성 (표 137): 위쪽 여백 → 머리말 영역 → 본문 → 꼬리말 영역
     /// → 아래쪽 여백. 본문 상단 = marginTop + marginHeader (BinData/plain-text
     /// 픽스처 PrvImage 실측: A4 기본 여백에서 본문 상단 99.2pt).
