@@ -59,7 +59,13 @@
                 updateContentSize()
                 // 전체 교체는 새 문서를 맨 위에서 연다 — 이전 오프셋이 새 콘텐츠
                 // 범위 안이어도 중간에서 열리지 않게 한다 (macOS와 대칭, #21).
-                scrollView.setContentOffset(.zero, animated: false)
+                // 인셋 있는 스크롤뷰의 "맨 위"는 (-inset.left, -inset.top)이라
+                // .zero는 센터링 인셋을 지나쳐 작은 문서를 좌상단에 붙인다 —
+                // adjustedContentInset(안전영역+센터링) 보정 원점으로 연다 (R39 #2).
+                let inset = scrollView.adjustedContentInset
+                scrollView.setContentOffset(
+                    CGPoint(x: -inset.left, y: -inset.top), animated: false
+                )
                 selectionController.document = document
                 updateVisiblePages(range: 0 ..< min(document?.pages.count ?? 0, 3))
                 notifyUnsupportedElements()

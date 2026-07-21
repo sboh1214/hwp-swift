@@ -77,5 +77,20 @@
 
             expect(view.pageLayers[0]?.contentsScale) == baseScale * 2
         }
+
+        /// 뷰포트보다 작은 문서로 교체하면 센터링 인셋 보정 원점에서 열린다 —
+        /// .zero는 인셋을 지나쳐 작은 문서를 좌상단에 붙인다 (R39 #2).
+        func testSmallDocumentReplacementOpensAtCenteringOrigin() {
+            let view = HwpDocumentUIView(frame: CGRect(x: 0, y: 0, width: 800, height: 1000))
+            view.layoutIfNeeded()
+
+            view.document = makeDocument()
+
+            let inset = view.scrollView.adjustedContentInset
+            expect(inset.top) > 0
+            expect(inset.left) > 0
+            expect(view.scrollView.contentOffset.x) == -inset.left
+            expect(view.scrollView.contentOffset.y) == -inset.top
+        }
     }
 #endif
