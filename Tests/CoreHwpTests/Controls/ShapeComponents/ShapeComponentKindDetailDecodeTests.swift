@@ -100,9 +100,26 @@ final class ShapeComponentKindDetailDecodeTests: XCTestCase {
         expect(detail?.center) == HwpShapePoint(x: 50, y: 60)
         expect(detail?.firstAxis) == HwpShapePoint(x: 70, y: 80)
         expect(detail?.secondAxis) == HwpShapePoint(x: 90, y: 100)
+        // 28바이트 레코드에는 호 끝점 필드가 없다 (60바이트 타원에만 존재).
+        expect(detail?.arcStart).to(beNil())
+        expect(detail?.arcEnd).to(beNil())
 
         let arc = HwpShapeComponentArc(rawPayload: payload, unknownChildren: [])
         expect(arc.arcDetail) == detail
+    }
+
+    func testEllipseDetailReadsArcEndpointsFrom60BytePayload() {
+        // 60바이트 타원: property + center + axis1 + axis2 + start1 + end1 + start2 + end2.
+        // 호 변환 시 start1(offset 28)/end1(offset 36)이 호 시작/끝점이다 (R45 #2).
+        var payload = littleEndianData(UInt32(0b10)) // isArc
+        payload.append(int32Payload([0, 0, 100, 0, 0, 50, 100, 0, 0, 50, 7, 7, 8, 8]))
+        expect(payload.count) == 60
+
+        let ellipse = HwpShapeComponentEllipse(rawPayload: payload, unknownChildren: [])
+        let detail = ellipse.ellipseDetail
+
+        expect(detail?.arcStart) == HwpShapePoint(x: 100, y: 0)
+        expect(detail?.arcEnd) == HwpShapePoint(x: 0, y: 50)
     }
 }
 

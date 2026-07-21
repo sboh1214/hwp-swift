@@ -92,6 +92,35 @@ public struct HwpShapeGeometry: @unchecked Sendable {
         path.closeSubpath()
         return path
     }
+
+    /// 호로 바뀐 타원(표 96 property bit1): 두 축으로 타원 반지름을, 호 시작/끝점
+    /// (offset 28/36)으로 각도를 잡아 부분 타원 호를 그린다 — 완전 타원 대신 실제
+    /// 호 구간만 (R45 #2). 축을 각도로도 쓰는 arcPath(표 101)와 달리 타원은
+    /// 반지름과 호 끝점이 별도 필드다.
+    public static func ellipseArcPath(
+        of ellipse: CoreHwp.HwpShapeEllipseDetail,
+        start: CoreHwp.HwpShapePoint,
+        end: CoreHwp.HwpShapePoint,
+        transform: CGAffineTransform
+    ) -> CGPath {
+        let cx = CGFloat(ellipse.center.x)
+        let cy = CGFloat(ellipse.center.y)
+        let rx = max(max(abs(CGFloat(ellipse.firstAxis.x) - cx), abs(CGFloat(ellipse.secondAxis.x) - cx)), 0.5)
+        let ry = max(max(abs(CGFloat(ellipse.firstAxis.y) - cy), abs(CGFloat(ellipse.secondAxis.y) - cy)), 0.5)
+        func angle(_ pt: CoreHwp.HwpShapePoint) -> CGFloat {
+            atan2((CGFloat(pt.y) - cy) / ry, (CGFloat(pt.x) - cx) / rx)
+        }
+        let toWorld = CGAffineTransform(scaleX: rx, y: ry)
+            .concatenating(CGAffineTransform(translationX: cx, y: cy))
+            .concatenating(transform)
+        let path = CGMutablePath()
+        path.addArc(
+            center: .zero, radius: 1,
+            startAngle: angle(start), endAngle: angle(end),
+            clockwise: false, transform: toWorld
+        )
+        return path
+    }
 }
 
 extension HwpShapeGeometry: Hashable {
@@ -180,6 +209,11 @@ private extension HwpShapeGeometry {
             return curvePath(curve, transform: transform)
         }
         if let ellipse = component.ellipseArray.first?.ellipseDetail {
+            // 호로 바뀐 타원(property bit1)은 완전 타원 대신 호 시작/끝점으로 부분
+            // 호를 그린다 (R45 #2). 끝점이 없는 짧은 레코드는 완전 타원 폴백.
+            if ellipse.isArc, let start = ellipse.arcStart, let end = ellipse.arcEnd {
+                return ellipseArcPath(of: ellipse, start: start, end: end, transform: transform)
+            }
             // 로컬 타원 path에 렌더 행렬을 적용한다 — 회전/전단 타원을 축 정렬
             // bounding rect로 뭉개던 것 대신 정확한 affine (#5). 회전 없는 순수
             // scale에서는 기존 결과와 동일하다.

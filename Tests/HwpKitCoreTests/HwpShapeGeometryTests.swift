@@ -105,4 +105,26 @@ final class HwpShapeGeometryTests: XCTestCase {
         let path = HwpShapeGeometry.polygonPath(from: [])
         expect(path).to(beNil())
     }
+
+    func testEllipseArcPathDrawsPartialArcNotFullEllipse() {
+        // 중심(0,0)·반지름 100×50 타원의 (100,0)→(0,50) 1사분면 호. 완전 타원이면
+        // bounds가 (-100,-50,200,100)이지만 부분 호는 (0,0,100,50)이다 (R45 #2).
+        let ellipse = CoreHwp.HwpShapeEllipseDetail(
+            property: 0b10,
+            center: CoreHwp.HwpShapePoint(x: 0, y: 0),
+            firstAxis: CoreHwp.HwpShapePoint(x: 100, y: 0),
+            secondAxis: CoreHwp.HwpShapePoint(x: 0, y: 50)
+        )
+        let path = HwpShapeGeometry.ellipseArcPath(
+            of: ellipse,
+            start: CoreHwp.HwpShapePoint(x: 100, y: 0),
+            end: CoreHwp.HwpShapePoint(x: 0, y: 50),
+            transform: .identity
+        )
+        let bounds = path.boundingBox
+        expect(bounds.minX).to(beCloseTo(0, within: 0.5))
+        expect(bounds.minY).to(beCloseTo(0, within: 0.5))
+        expect(bounds.maxX).to(beCloseTo(100, within: 0.5))
+        expect(bounds.maxY).to(beCloseTo(50, within: 0.5))
+    }
 }

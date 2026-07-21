@@ -361,17 +361,25 @@ public struct HwpShapeEllipseDetail: HwpPrimitive {
     public var center: HwpShapePoint
     public var firstAxis: HwpShapePoint
     public var secondAxis: HwpShapePoint
+    /** 호로 바뀐 경우의 호 시작점 (표 96 offset 28, 60 byte 타원에만 존재) */
+    public var arcStart: HwpShapePoint?
+    /** 호로 바뀐 경우의 호 끝점 (표 96 offset 36) */
+    public var arcEnd: HwpShapePoint?
 
     public init(
         property: UInt32,
         center: HwpShapePoint,
         firstAxis: HwpShapePoint,
-        secondAxis: HwpShapePoint
+        secondAxis: HwpShapePoint,
+        arcStart: HwpShapePoint? = nil,
+        arcEnd: HwpShapePoint? = nil
     ) {
         self.property = property
         self.center = center
         self.firstAxis = firstAxis
         self.secondAxis = secondAxis
+        self.arcStart = arcStart
+        self.arcEnd = arcEnd
     }
 
     public var isArc: Bool {
@@ -381,6 +389,21 @@ public struct HwpShapeEllipseDetail: HwpPrimitive {
     static func decode(from data: Data) -> HwpShapeEllipseDetail? {
         guard data.count >= 28 else { return nil }
         do {
+            // 60 byte 타원은 축 뒤에 호 시작/끝점 쌍을 더 갖는다 (표 96 offset 28~59:
+            // start1/end1/start2/end2). 호 변환(bit1) 렌더에 필요한 start1/end1만
+            // typed view로 노출하고 나머지는 rawPayload에 보존한다 (R45 #2).
+            let arcStart = data.count >= 36
+                ? HwpShapePoint(
+                    x: try data.readLittleEndianInt32(at: 28),
+                    y: try data.readLittleEndianInt32(at: 32)
+                )
+                : nil
+            let arcEnd = data.count >= 44
+                ? HwpShapePoint(
+                    x: try data.readLittleEndianInt32(at: 36),
+                    y: try data.readLittleEndianInt32(at: 40)
+                )
+                : nil
             return HwpShapeEllipseDetail(
                 property: try data.readLittleEndianUInt32(at: 0),
                 center: HwpShapePoint(
@@ -394,7 +417,9 @@ public struct HwpShapeEllipseDetail: HwpPrimitive {
                 secondAxis: HwpShapePoint(
                     x: try data.readLittleEndianInt32(at: 20),
                     y: try data.readLittleEndianInt32(at: 24)
-                )
+                ),
+                arcStart: arcStart,
+                arcEnd: arcEnd
             )
         } catch {
             return nil
