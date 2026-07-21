@@ -73,11 +73,9 @@ public struct HwpTextRunBuilder {
         controlReplacements: [Int: HwpControlMarkerReplacement] = [:],
         maxCharacters: Int = .max
     ) -> NSAttributedString {
-        // 입력 문자(char unit)를 상한까지만 처리해 거대 문단의 attributed string
-        // build 비용을 제한한다 (메모 표시 예산 등; 정확한 표시 클립은 호출측,
-        // R44 #3). 음수 상한(예: 계산된 잔여 예산)은 prefix가 트랩하므로 0으로
-        // 클램프해 public API가 프로세스를 죽이지 않게 한다 (R45 #3). .max면 전체.
-        let units = (paragraph.paraText?.charArray ?? []).prefix(Swift.max(0, maxCharacters))
+        // 입력 문자를 상한까지만 처리해 거대 문단 build 비용을 제한한다 (메모 표시
+        // 예산 등). 음수 클램프와 서로게이트 경계 처리는 surrogateSafePrefix에 있다.
+        let units = surrogateSafePrefix(paragraph.paraText?.charArray ?? [], upTo: maxCharacters)
         guard !units.isEmpty else { return NSAttributedString(string: "") }
 
         let output = NSMutableAttributedString()
@@ -539,6 +537,24 @@ extension HwpTextRunBuilder {
                 false
             }
         }
+    }
+
+    /// 표시 상한까지 자르되 UTF-16 서로게이트 쌍을 쪼개지 않는다. 음수 상한은
+    /// prefix 트랩을 막으려 0으로 클램프한다 (public API, R45 #3). 상한이 실제로
+    /// 잘랐고 마지막이 lead 서로게이트면 짝(trail)이 잘려 나가 뒤에서 U+FFFD로
+    /// 손상되므로 떨군다 (R46 #1). 자르지 않은 경우는 원본 그대로 (기존 동작 보존).
+    func surrogateSafePrefix(
+        _ units: [CoreHwp.HwpChar],
+        upTo maxCharacters: Int
+    ) -> ArraySlice<CoreHwp.HwpChar> {
+        let clamped = Swift.max(0, maxCharacters)
+        let prefix = units.prefix(clamped)
+        if clamped < units.count, let last = prefix.last, last.type == .char,
+           UTF16.isLeadSurrogate(last.value)
+        {
+            return prefix.dropLast()
+        }
+        return prefix
     }
 
     func wcharLength(of hwpChar: CoreHwp.HwpChar) -> UInt32 {

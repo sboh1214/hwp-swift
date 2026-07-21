@@ -245,6 +245,21 @@ import XCTest
             )
             expect(result.length) == 0
         }
+
+        func testBuildDoesNotSplitSurrogatePairAtMaxCharacters() throws {
+            // "ab😀"의 😀는 UTF-16 2유닛(high+low). 상한이 그 사이(3)를 자르면 lead
+            // 서로게이트만 남아 예전엔 U+FFFD로 손상됐다 — 이제 온전한 "ab"만 남긴다.
+            // 상한이 이모지를 넘으면(4) 온전히 유지한다 (R46 #1).
+            let paragraph = paragraph(text: "ab😀", runs: [(0, 0)])
+            let runBuilder = builder(shapes: [0: try charShape()])
+
+            let split = runBuilder.build(paragraph: paragraph, maxCharacters: 3)
+            expect(split.string) == "ab"
+            expect(split.string.unicodeScalars.contains("\u{FFFD}")) == false
+
+            let whole = runBuilder.build(paragraph: paragraph, maxCharacters: 4)
+            expect(whole.string) == "ab😀"
+        }
     }
 
     private extension HwpTextRunBuilderTests {
