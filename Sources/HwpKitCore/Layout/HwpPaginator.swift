@@ -1060,6 +1060,13 @@ private extension HwpPaginator {
                 if didFinishPagination {
                     return
                 }
+                // 문단 첫 줄을 통째로 새 단으로 옮기면(아직 아무 줄도 안 놓음) 문단
+                // 위 간격을 새 단 top에도 유지한다 — 본문 단일 열이 새 페이지 top에서
+                // gap을 렌더하는 것(placeFlowParagraph)과 일치 (R53 #1). gap+첫 줄이
+                // 빈 단보다 크면 진행 보장을 위해 flush 배치한다.
+                if lineIndex == 0, beforeGap + lineAdvance(0) <= usableHeight {
+                    contentHeightUsed += beforeGap
+                }
                 continue
             }
             let slice = lines[lineIndex ..< lineIndex + takeCount]
