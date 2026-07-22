@@ -302,14 +302,15 @@ extension HwpTableLayout {
     }
 
     /// 문단 위 간격 절반 (pt) — 셀 조판은 문단별 개별 조판이라 직접 더한다.
+    /// paraShape(for:)로 shape 0 폴백해 측정(HwpParagraphMeasurer.paraShapeOrDefault)과
+    /// 같은 간격을 쓴다 — 누락 para-shape 참조에서 측정 높이는 shape 0 간격을 담는데
+    /// 배치가 0을 더해 문단이 어긋나던 것 방지 (R52 #2).
     private func halfSpacingBefore(
         of paragraph: CoreHwp.HwpParagraph,
         index: HwpIndex
     ) -> CGFloat {
         HwpUnits.points(
-            fromHwpUnit: index.paraShape(
-                id: UInt32(paragraph.paraHeader.paraShapeId)
-            )?.paragraphSpacingTop ?? 0
+            fromHwpUnit: index.paraShape(for: paragraph)?.paragraphSpacingTop ?? 0
         ) / 2
     }
 
