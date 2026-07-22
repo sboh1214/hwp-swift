@@ -127,6 +127,13 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         self.cache = cache
     }
 
+    /// 뷰가 다른 문서 할당 없이 제거되면 아무도 cancelOutstanding을 부르지 않아,
+    /// store/cache를 강참조한 in-flight 태스크가 살아남는다 — 핸들만 놓는 것으론
+    /// unstructured Task가 안 끊기므로 해제 시 직접 취소한다 (R47 #3).
+    deinit {
+        cancelOutstanding()
+    }
+
     /// 이미 디코딩된 이미지를 동기 반환한다 (draw 경로용).
     public func cachedImage(for key: UInt32, style: HwpImageRenderStyle? = nil) -> CGImage? {
         lock.lock()
@@ -228,11 +235,20 @@ public final class HwpPageImageProvider: @unchecked Sendable {
             )
         }
         lock.lock()
-        // 등록 전에 이미 완료됐으면(캐시 히트/즉시 실패) 완료된 핸들을 넣지 않는다 (#7).
-        if completedBeforeRegister.remove(variant) == nil {
+        // 스폰~등록 사이에 cancelOutstanding이 세대를 올렸으면(등록 레이스) 등록
+        // 대신 취소한다 — activeTasks에 없어 그 취소를 놓친 stale 태스크가 낡은
+        // store/cache를 강참조한 채 throttle 슬롯을 기다리는 것을 막는다 (R47 #2).
+        let stale = gen != generation
+        if stale {
+            completedBeforeRegister.remove(variant)
+        } else if completedBeforeRegister.remove(variant) == nil {
+            // 등록 전에 이미 완료됐으면(캐시 히트/즉시 실패) 완료된 핸들을 넣지 않는다 (#7).
             activeTasks[variant] = task
         }
         lock.unlock()
+        if stale {
+            task.cancel()
+        }
     }
 
     private func finishRequest(
