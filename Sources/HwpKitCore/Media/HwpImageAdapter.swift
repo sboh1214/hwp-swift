@@ -82,18 +82,26 @@ public struct HwpImageAdapter {
                 underlying: "image dimensions \(width)x\(height) exceed limit"
             ))
         }
+        let overAxisCap = dimensions.map {
+            $0.0 > Self.maximumPixelsPerAxis || $0.1 > Self.maximumPixelsPerAxis
+        } ?? false
+        // EXIF orientation이 기본(1)이 아니면 thumbnail transform 경로로 적용한다 —
+        // 풀사이즈 경로가 orientation을 무시해, 같은 회전 JPEG이 4096px 다운샘플
+        // 임계를 넘느냐에 따라 정상/회전으로 갈리던 것을 막는다 (R50 #5).
+        let needsOrientation = Self.orientation(of: source) != 1
         let cgImage: CGImage
-        if let (width, height) = dimensions,
-           width > Self.maximumPixelsPerAxis || height > Self.maximumPixelsPerAxis
-        {
-            // 축 상한을 넘으면 캐시 예산에 맞게 줄여 축출 루프를 막는다 (#2).
-            guard let downsampled = Self.downsample(source, maxPixelSize: Self.maximumPixelsPerAxis)
+        if overAxisCap || needsOrientation {
+            // 축 상한 초과는 캐시 예산에 맞게 줄이고(#2), 그 이하의 회전 이미지는
+            // 원본 크기 그대로 orientation만 적용한다(다운샘플 없음).
+            let maxDimension = dimensions.map { Swift.max($0.0, $0.1) } ?? Self.maximumPixelsPerAxis
+            let maxPixelSize = overAxisCap ? Self.maximumPixelsPerAxis : maxDimension
+            guard let processed = Self.orientedImage(source, maxPixelSize: maxPixelSize)
             else {
                 return .failure(.decodeFailed(underlying: "downsample failed"))
             }
-            cgImage = downsampled
+            cgImage = processed
         } else {
-            // 축 상한 이하는 원본 그대로 디코드 (렌더 불변).
+            // 축 상한 이하 + 기본 orientation은 원본 그대로 디코드 (렌더 불변).
             guard let full = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
                 return .failure(.decodeFailed(underlying: "CGImageSource failed"))
             }
@@ -120,8 +128,18 @@ public struct HwpImageAdapter {
         return (width, height)
     }
 
-    /// 최대 축 픽셀로 다운샘플한다 — ImageIO 썸네일은 전체 디코드 없이 만든다.
-    private static func downsample(_ source: CGImageSource, maxPixelSize: Int) -> CGImage? {
+    /// 소스의 EXIF orientation (표 TIFF 1-8). 없으면 기본값 1(정방향).
+    private static func orientation(of source: CGImageSource) -> Int {
+        guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let orientation = properties[kCGImagePropertyOrientation] as? Int
+        else { return 1 }
+        return orientation
+    }
+
+    /// `maxPixelSize` 이하로 만든 CGImage — EXIF orientation transform을 적용한다
+    /// (`kCGImageSourceCreateThumbnailWithTransform`). ImageIO 썸네일은 전체 디코드
+    /// 없이 만든다. maxPixelSize를 원본 최대 축으로 주면 다운샘플 없이 회전만 적용된다.
+    private static func orientedImage(_ source: CGImageSource, maxPixelSize: Int) -> CGImage? {
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
