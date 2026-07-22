@@ -262,14 +262,21 @@ enum HwpTableSplitter {
             for cell in row.cells {
                 for paragraph in cell.paragraphs {
                     let rect = paragraph.rect
-                    let lineCount = paragraph.frame.lines.count
                     guard rect.minY < aligned - 0.5, rect.maxY > aligned + 0.5,
-                          lineCount > 1, rect.height > 0
+                          paragraph.frame.lines.count > 1, rect.height > 0
                     else { continue }
-                    let lineHeight = rect.height / CGFloat(lineCount)
-                    guard lineHeight > 0 else { continue }
-                    let fittingLines = (aligned - rect.minY) / lineHeight
-                    let boundary = rect.minY + fittingLines.rounded(.down) * lineHeight
+                    // 등분(rect.height/개수)이 아니라 slicedParagraph와 같은 실제
+                    // 전진량으로 절단선 이하의 마지막 라인 경계를 찾는다 — 혼합
+                    // 높이 라인에서 절단선과 조각 경계가 어긋나지 않게 한다 (R53 #2).
+                    let advances = lineAdvances(of: paragraph)
+                    let cutLocal = aligned - rect.minY
+                    var accumulated: CGFloat = 0
+                    var boundaryLocal: CGFloat = 0
+                    for advance in advances where accumulated + advance <= cutLocal {
+                        accumulated += advance
+                        boundaryLocal = accumulated
+                    }
+                    let boundary = rect.minY + boundaryLocal
                     if boundary < aligned - 0.5 {
                         aligned = boundary
                         changed = true
@@ -279,6 +286,29 @@ enum HwpTableSplitter {
         }
         // 첫 라인조차 안 들어가면 정렬을 포기하고 원래 절단선으로 진행을 보장한다.
         return aligned > row.rowFrame.minY + 1 ? aligned : cutY
+    }
+
+    /// 문단의 라인별 실제 전진량(origin.y 델타). 마지막 라인은 잔여(간격 포함)를
+    /// 흡수한다. origin이 비단조(캐시 열화)면 등분으로 폴백한다. 절단선 정렬
+    /// (lineAlignedCut)과 조각 슬라이스(slicedParagraph)가 공유해 절단선과 실제
+    /// 조각 경계가 정의상 일치한다 (R53 #2).
+    static func lineAdvances(of paragraph: HwpLaidOutParagraph) -> [CGFloat] {
+        let lines = paragraph.frame.lines
+        let rect = paragraph.rect
+        guard lines.count > 1, rect.height > 0 else {
+            return lines.isEmpty ? [] : [max(1, rect.height)]
+        }
+        let strictlyIncreasing = zip(lines, lines.dropFirst())
+            .allSatisfy { $0.origin.y < $1.origin.y }
+        let average = rect.height / CGFloat(lines.count)
+        let base = lines[0].origin.y
+        return lines.indices.map { index in
+            guard strictlyIncreasing else { return max(1, average) }
+            if index + 1 < lines.count {
+                return max(1, lines[index + 1].origin.y - lines[index].origin.y)
+            }
+            return max(1, rect.height - (lines[index].origin.y - base))
+        }
     }
 
     private static func splitCell(
@@ -393,26 +423,16 @@ enum HwpTableSplitter {
         guard lines.count > 1, rect.height > 0 else { return (paragraph, nil) }
         // 라인별 실제 전진량(origin.y 델타)으로 cut 위 라인을 센다 — 등분
         // (rect.height/개수)은 혼합 높이 라인에서 cut을 넘는 라인을 "맞음"으로
-        // 오분류한다 (#5). origin.y는 재분할된 fragment에서 0-기반이 아니므로
-        // (paragraphFragment가 origin을 rebase하지 않음) 첫 라인 기준 델타로
-        // 계산한다. 마지막 라인이 잔여(간격 포함)를 흡수하고, origin 비단조
-        // (캐시 열화)면 등분으로 폴백한다.
-        let strictlyIncreasing = zip(lines, lines.dropFirst())
-            .allSatisfy { $0.origin.y < $1.origin.y }
-        let average = rect.height / CGFloat(lines.count)
-        let base = lines[0].origin.y
-        func lineAdvance(_ index: Int) -> CGFloat {
-            guard strictlyIncreasing else { return max(1, average) }
-            if index + 1 < lines.count {
-                return max(1, lines[index + 1].origin.y - lines[index].origin.y)
-            }
-            return max(1, rect.height - (lines[index].origin.y - base))
-        }
+        // 오분류한다 (#5). lineAlignedCut과 같은 lineAdvances를 써 절단선과 조각
+        // 경계가 일치한다 (R53 #2). origin.y는 재분할된 fragment에서 0-기반이
+        // 아니라(paragraphFragment가 origin을 rebase하지 않음) 마지막 라인이
+        // 잔여를 흡수한다.
+        let advances = lineAdvances(of: paragraph)
         let cutLocal = cutY - rect.minY
         var topCount = 0
         var accumulated: CGFloat = 0
-        while topCount < lines.count, accumulated + lineAdvance(topCount) <= cutLocal {
-            accumulated += lineAdvance(topCount)
+        while topCount < lines.count, accumulated + advances[topCount] <= cutLocal {
+            accumulated += advances[topCount]
             topCount += 1
         }
         if topCount == 0 {

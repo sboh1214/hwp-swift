@@ -244,6 +244,29 @@ import XCTest
             }
             expect(frame.outerFrame.width).to(beCloseTo(595, within: 1))
         }
+
+        /// 혼합 높이 라인(origin 델타 불균등)은 등분(height/개수)이 아니라 실제
+        /// origin.y 델타로 전진량을 낸다 — lineAlignedCut·slicedParagraph가 공유해
+        /// 절단선과 조각 경계가 일치한다 (R53 #2).
+        func testLineAdvancesUsesActualOriginDeltasNotAverage() {
+            let lines = [
+                HwpLineFrame(origin: CGPoint(x: 0, y: 0), width: 100, baseline: 10,
+                             attributedRange: NSRange(location: 0, length: 5)),
+                HwpLineFrame(origin: CGPoint(x: 0, y: 20), width: 100, baseline: 10,
+                             attributedRange: NSRange(location: 5, length: 5)),
+                HwpLineFrame(origin: CGPoint(x: 0, y: 50), width: 100, baseline: 10,
+                             attributedRange: NSRange(location: 10, length: 5)),
+            ]
+            let paragraph = HwpLaidOutParagraph(
+                attributedString: NSAttributedString(string: "abcdefghijklmno"),
+                frame: HwpParagraphFrame(totalHeight: 70, lines: lines),
+                rect: CGRect(x: 0, y: 0, width: 100, height: 70),
+                paragraphId: 0
+            )
+
+            // 실제 델타 [20, 30, 20](마지막 = 70-(50-0))은 등분(70/3≈23.3)과 다르다.
+            expect(HwpTableSplitter.lineAdvances(of: paragraph)) == [20, 30, 20]
+        }
     }
 
     private extension HwpTableLayoutTests {
