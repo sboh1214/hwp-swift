@@ -106,6 +106,73 @@ import XCTest
             expect(capped.map(\.stringRange.length)) == uncapped.map(\.stringRange.length)
         }
 
+        /// 측정(layout)과 렌더(lines)가 nextFrameChunk를 공유해 같은 청크 경계를
+        /// 쓰므로 줄 range가 일치해야 한다 — R49가 렌더만 미완 줄 drop으로 바꿔
+        /// 어긋났던 것을 교정 (R50 #4).
+        func testCappedMeasurementMatchesRenderRanges() {
+            let string = attributedString("a b c d e f g h")
+            let measured = layout().layout(
+                attributedString: string, paraShape: paraShape(), columnWidth: 20, maxLineFrames: 6
+            )
+            let drawn = HwpDrawnTextLayout.lines(
+                attributedString: string, origin: .zero, lineWidth: 20, maxLineFrames: 6
+            )
+
+            expect(measured.lines.map(\.attributedRange)) == drawn.map(\.stringRange)
+        }
+
+        /// 예산보다 긴 한 시각 줄은 쪼개지 않고 한 줄로 유지한다 — 한 시각 줄은 줄
+        /// 예산 하나만 소비한다 (R50 #2).
+        func testWideSingleLineNotSplitAcrossChunks() {
+            let string = attributedString(String(repeating: "a", count: 8))
+            let drawn = HwpDrawnTextLayout.lines(
+                attributedString: string, origin: .zero, lineWidth: 100_000, maxLineFrames: 3
+            )
+
+            expect(drawn.count) == 1
+            expect(drawn.first?.stringRange) == NSRange(location: 0, length: 8)
+        }
+
+        /// 청크 경계 이월 후에도 각 줄 baseline이 uncapped와 같아야 한다 — 재개 줄이
+        /// 아래로 밀리는 세로 간격·선택 어긋남이 없다 (R50 #3).
+        func testCappedBaselineMatchesUncapped() {
+            let string = attributedString("a b c d e f g")
+            let uncapped = HwpDrawnTextLayout.lines(
+                attributedString: string, origin: .zero, lineWidth: 20
+            )
+            let capped = HwpDrawnTextLayout.lines(
+                attributedString: string, origin: .zero, lineWidth: 20, maxLineFrames: 10
+            )
+
+            expect(capped.count) == uncapped.count
+            for (cappedLine, uncappedLine) in zip(capped, uncapped) {
+                expect(cappedLine.baselineOrigin.y).to(beCloseTo(uncappedLine.baselineOrigin.y, within: 0.5))
+            }
+        }
+
+        /// slight-overflow probe는 shaping 전에 길이로 거른다 — 같은 폭 비율에서
+        /// 짧은 문단은 slight-overflow(non-nil)지만 maximumLineFrames를 넘으면 nil이라
+        /// 큰 개행 없는 문단의 전체 shaping을 피한다 (R50 #1).
+        func testSlightOverflowProbeBoundsInputLength() {
+            let shortString = attributedString(String(repeating: "a", count: 30))
+            let shortNatural = CGFloat(CTLineGetTypographicBounds(
+                CTLineCreateWithAttributedString(shortString), nil, nil, nil
+            ))
+            expect(HwpDrawnTextLayout.slightOverflowLineMetrics(
+                attributedString: shortString, lineWidth: shortNatural * 0.98
+            )).toNot(beNil())
+
+            let longString = attributedString(
+                String(repeating: "a", count: HwpParagraphLayout.maximumLineFrames + 1)
+            )
+            let longNatural = CGFloat(CTLineGetTypographicBounds(
+                CTLineCreateWithAttributedString(longString), nil, nil, nil
+            ))
+            expect(HwpDrawnTextLayout.slightOverflowLineMetrics(
+                attributedString: longString, lineWidth: longNatural * 0.98
+            )).to(beNil())
+        }
+
         func testPercentLineSpacingForcesLineHeightFromFontSize() {
             // 표 46 종류 0 (글자에 따라 %): 비율 160 → 줄 높이 ≈ 글자 크기 × 1.6 (±10%)
             let text = String(repeating: "percent line spacing ", count: 12)

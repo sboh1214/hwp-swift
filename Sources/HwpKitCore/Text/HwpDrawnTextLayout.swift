@@ -49,69 +49,38 @@ public enum HwpDrawnTextLayout {
         }
 
         let framesetter = CTFramesetterCreateWithAttributedString(attributedString)
+        let typesetter = CTTypesetterCreateWithAttributedString(attributedString)
         let fullLength = attributedString.length
         let lineBudget = max(0, maxLineFrames)
-        // 측정(HwpParagraphLayout.layout)과 같은 줄-예산 청크 루프. 한 프레임이
-        // 입력 범위의 CTLine을 즉시 만드므로, 남은 줄 예산만큼만 잘라 좁은 스트림
-        // 한도 크기 문단의 자원 고갈을 막는다. 폭이 넓어 줄 수가 예산 미만인 긴
-        // 문단은 visible range로 이어 프레이밍해 전체를 덮는다 (R48). 청크마다
-        // 자기 텍스트 높이(SuggestFrameSize)를 상자로 써 baseline을 그 상자
-        // 기준으로 잡는다 — 단일 청크(모든 정상 블록)는 상자가 문단 전체라 불변.
+        // 측정(HwpParagraphLayout.layout)과 nextFrameChunk를 공유해 청크 경계를
+        // 실제 CTLine 시작에 맞춘다 — 미완 줄은 버려 다음 청크에서 온전히 재조판,
+        // 넓은 단일 줄은 안 쪼갠다. 단일 청크(모든 정상 블록)는 문단 전체가 한
+        // 프레임이라 렌더 불변 (R48·R50).
         var result: [HwpDrawnLine] = []
         var startLocation = 0
-        var yOffset: CGFloat = 0
+        // 이월 시 다음 청크 첫 줄이 놓일 top-down baseline. nil이면 첫 청크.
+        var resumeBaseline: CGFloat?
         while startLocation < fullLength, result.count < lineBudget {
-            let range = CFRange(
-                location: startLocation,
-                length: min(fullLength - startLocation, lineBudget - result.count)
-            )
-            let suggested = CTFramesetterSuggestFrameSizeWithConstraints(
-                framesetter, range, nil,
-                CGSize(width: lineWidth, height: .greatestFiniteMagnitude), nil
-            )
-            let chunkHeight = max(ceil(suggested.height), 1)
-            let path = CGPath(
-                rect: CGRect(x: 0, y: 0, width: lineWidth, height: chunkHeight), transform: nil
-            )
-            let frame = CTFramesetterCreateFrame(framesetter, range, path, nil)
-            guard let frameLines = CTFrameGetLines(frame) as? [CTLine], !frameLines.isEmpty
-            else { break }
-            var ctOrigins = [CGPoint](repeating: .zero, count: frameLines.count)
-            CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &ctOrigins)
-
-            // 문자 예산으로 잘린 청크(뒤에 텍스트가 더 있음)의 마지막 줄은 임의
-            // UTF-16 위치에서 끊긴다 — 그 줄을 버리고 다음 청크에서 줄 시작부터
-            // 다시 조판해 한 논리 줄이 청크 경계에서 쪼개지지 않게 한다. 줄이
-            // 하나뿐이면(그 줄이 예산보다 긺) 그대로 둔다 (R49).
-            let cutMidLine = range.length < fullLength - startLocation && frameLines.count >= 2
-            let keepCount = cutMidLine ? frameLines.count - 1 : frameLines.count
-
-            let boxTop = origin.y + yOffset + chunkHeight
-            for index in 0 ..< keepCount {
+            guard let chunk = nextFrameChunk(
+                framesetter: framesetter, typesetter: typesetter,
+                startLocation: startLocation, fullLength: fullLength,
+                remainingLineBudget: lineBudget - result.count, lineWidth: lineWidth
+            ) else { break }
+            let framePageTop = resumeBaseline.map {
+                $0 + chunk.origins[0].y + baselineLift(of: chunk.lines[0])
+            } ?? origin.y + chunk.height
+            for index in 0 ..< chunk.keepCount {
                 result.append(drawnLine(
-                    frameLine: frameLines[index],
-                    ctOrigin: ctOrigins[index],
+                    frameLine: chunk.lines[index],
+                    ctOrigin: chunk.origins[index],
                     attributedString: attributedString,
-                    origin: CGPoint(x: origin.x, y: boxTop),
+                    origin: CGPoint(x: origin.x, y: framePageTop),
                     lineWidth: lineWidth
                 ))
             }
-
-            let nextStart: Int
-            if cutMidLine {
-                // 버린 줄의 시작에서 재개하고, yOffset은 그 줄 상단까지만 전진해
-                // 재조판된 줄이 원래와 같은 y에 놓이게 한다.
-                var ascent: CGFloat = 0
-                _ = CTLineGetTypographicBounds(frameLines[keepCount], &ascent, nil, nil)
-                yOffset += chunkHeight - ctOrigins[keepCount].y - ascent
-                nextStart = CTLineGetStringRange(frameLines[keepCount]).location
-            } else {
-                let visible = CTFrameGetVisibleStringRange(frame)
-                yOffset += chunkHeight
-                nextStart = visible.location + visible.length
-            }
-            guard nextStart > startLocation else { break }
-            startLocation = nextStart
+            resumeBaseline = Self.resumeBaseline(after: chunk, framePageTop: framePageTop)
+            guard chunk.nextStart > startLocation else { break }
+            startLocation = chunk.nextStart
         }
         return result
     }
@@ -146,6 +115,107 @@ public enum HwpDrawnTextLayout {
             ascent: ascent,
             descent: descent
         )
+    }
+
+    /// 한 프레임 청크의 조판 결과 — 두 루프(lines/layout)가 공유하는 경계 결정.
+    struct FrameChunk {
+        let lines: [CTLine]
+        let origins: [CGPoint]
+        /// 이 청크의 SuggestFrameSize 박스 높이.
+        let height: CGFloat
+        /// 커밋할 줄 수 — 문자 예산으로 잘린 미완 마지막 줄은 제외한다.
+        let keepCount: Int
+        /// 다음 청크가 재개할 문자열 위치.
+        let nextStart: Int
+        /// 버려진(다음 청크로 이월되는) 줄 인덱스 — 없으면 nil.
+        var droppedLineIndex: Int? {
+            keepCount < lines.count ? keepCount : nil
+        }
+    }
+
+    /// 측정·렌더가 공유하는 다음 프레임 청크. 남은 줄 예산만큼 문자를 잘라
+    /// 조판하되, 문자열 끝 전에 잘린 청크의 마지막(미완) 줄은 커밋하지 않고 그
+    /// 줄 시작을 nextStart로 돌려 두 경로가 같은 CTLine 경계에서 재개하게 한다.
+    /// 잘린 청크가 한 줄뿐이면(예산보다 긴 한 시각 줄) CTTypesetter로 그 줄의
+    /// 실제 끝을 찾아 재프레이밍해 쪼개지 않는다 (R50 #2·#4).
+    static func nextFrameChunk(
+        framesetter: CTFramesetter,
+        typesetter: CTTypesetter,
+        startLocation: Int,
+        fullLength: Int,
+        remainingLineBudget: Int,
+        lineWidth: CGFloat
+    ) -> FrameChunk? {
+        let probeLength = min(fullLength - startLocation, remainingLineBudget)
+        guard probeLength > 0 else { return nil }
+
+        func frame(length: Int) -> (lines: [CTLine], origins: [CGPoint], height: CGFloat)? {
+            let range = CFRange(location: startLocation, length: length)
+            let suggested = CTFramesetterSuggestFrameSizeWithConstraints(
+                framesetter, range, nil,
+                CGSize(width: lineWidth, height: .greatestFiniteMagnitude), nil
+            )
+            let height = max(ceil(suggested.height), 1)
+            let path = CGPath(
+                rect: CGRect(x: 0, y: 0, width: lineWidth, height: height), transform: nil
+            )
+            let created = CTFramesetterCreateFrame(framesetter, range, path, nil)
+            guard let lines = CTFrameGetLines(created) as? [CTLine], !lines.isEmpty
+            else { return nil }
+            var origins = [CGPoint](repeating: .zero, count: lines.count)
+            CTFrameGetLineOrigins(created, CFRange(location: 0, length: 0), &origins)
+            return (lines, origins, height)
+        }
+
+        guard var chunk = frame(length: probeLength) else { return nil }
+        var length = probeLength
+
+        // 예산이 문자열 끝 전에 잘랐는데 한 시각 줄뿐이면 그 줄을 쪼개지 않게
+        // CTTypesetter로 실제 줄 끝을 찾아 확장 재프레이밍한다 — 한 시각 줄은 줄
+        // 예산 하나만 소비하므로 문자 수와 무관하게 온전히 커밋한다 (R50 #2).
+        if probeLength < fullLength - startLocation, chunk.lines.count == 1 {
+            let breakLength = CTTypesetterSuggestLineBreak(
+                typesetter, startLocation, Double(max(1, lineWidth - chunk.origins[0].x))
+            )
+            let extended = min(max(1, breakLength), fullLength - startLocation)
+            if extended > probeLength, let remade = frame(length: extended) {
+                chunk = remade
+                length = extended
+            }
+        }
+
+        let cutBeforeEnd = length < fullLength - startLocation
+        let keepCount: Int
+        let nextStart: Int
+        if cutBeforeEnd, chunk.lines.count >= 2 {
+            keepCount = chunk.lines.count - 1
+            nextStart = CTLineGetStringRange(chunk.lines[keepCount]).location
+        } else {
+            keepCount = chunk.lines.count
+            let lastRange = CTLineGetStringRange(chunk.lines[keepCount - 1])
+            nextStart = lastRange.location + lastRange.length
+        }
+        guard nextStart > startLocation else { return nil }
+        return FrameChunk(
+            lines: chunk.lines, origins: chunk.origins, height: chunk.height,
+            keepCount: keepCount, nextStart: nextStart
+        )
+    }
+
+    /// 이월 후 다음 청크 첫 줄이 놓일 top-down baseline. 미완 줄을 버렸으면 그
+    /// 줄이 원래 있을 자리(정확 정렬, R50 #3), 아니면 마지막 커밋 줄 한 칸 아래.
+    private static func resumeBaseline(after chunk: FrameChunk, framePageTop: CGFloat) -> CGFloat? {
+        if let dropped = chunk.droppedLineIndex {
+            return framePageTop - chunk.origins[dropped].y - baselineLift(of: chunk.lines[dropped])
+        }
+        let last = chunk.keepCount - 1
+        guard last >= 0 else { return nil }
+        var ascent: CGFloat = 0
+        var descent: CGFloat = 0
+        var leading: CGFloat = 0
+        _ = CTLineGetTypographicBounds(chunk.lines[last], &ascent, &descent, &leading)
+        let lastBaseline = framePageTop - chunk.origins[last].y - baselineLift(of: chunk.lines[last])
+        return lastBaseline + ascent + descent + leading
     }
 
     /// attributedString 안 `hyperlink` 속성 범위마다 줄별 글리프 rect와 URL을
@@ -215,7 +285,12 @@ public enum HwpDrawnTextLayout {
         attributedString: NSAttributedString,
         lineWidth: CGFloat
     ) -> SlightOverflowLine? {
+        // 큰 개행 없는 문단이 청크 캡보다 먼저 전체를 shaping(CTLineCreate)하지
+        // 않게 길이로 먼저 거른다 — 한 줄 slight-overflow는 한 줄 폭에 들어가므로
+        // maximumLineFrames 문자를 넘으면 단일 줄일 수 없다. 길이 체크를
+        // contains("\n")(전체 스캔) 앞에 둬 거대 문자열 materialize도 피한다 (R50 #1).
         guard attributedString.length > 0,
+              attributedString.length <= HwpParagraphLayout.maximumLineFrames,
               !attributedString.string.contains("\n")
         else { return nil }
         let line = CTLineCreateWithAttributedString(attributedString)

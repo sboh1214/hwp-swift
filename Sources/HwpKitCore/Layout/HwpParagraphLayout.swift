@@ -172,52 +172,32 @@ public struct HwpParagraphLayout {
         )
 
         let framesetter = CTFramesetterCreateWithAttributedString(mutable as CFAttributedString)
-        // 주의: greatestFiniteMagnitude를 쓰면 line origin(y ≈ 1.8e308)의
-        // 배정도 정밀도가 무너져 라인 간 y 델타가 전부 0이 된다.
-        let frameSize = CGSize(width: max(1, columnWidth), height: 1_000_000)
-        let path = CGPath(rect: CGRect(origin: .zero, size: frameSize), transform: nil)
-        // 1,000,000pt 한 프레임에 안 들어가는 (아주 길거나 좁은) 문단은 CT가
-        // prefix만 반환하므로, visible range가 문자열 끝에 닿을 때까지 다음
-        // 위치에서 프레임을 이어 만들어 모든 문자가 라인 프레임을 얻게 한다 (#9).
-        // 정상 문단은 한 번에 끝나 기존 출력과 동일하다.
         let fullLength = mutable.length
+        let typesetter = CTTypesetterCreateWithAttributedString(mutable as CFAttributedString)
+        // 렌더(HwpDrawnTextLayout.lines)와 nextFrameChunk를 공유해 청크 경계를 같은
+        // CTLine 시작에 맞춘다 — 측정 range·높이가 렌더 줄과 일치한다. 단일 청크
+        // (모든 정상 문단)는 문단 전체가 한 프레임이라 측정 불변 (R37 #1·R50 #4).
         var lineFrames: [HwpLineFrame] = []
         var totalLineHeight: CGFloat = 0
         var startLocation = 0
         while startLocation < fullLength, lineFrames.count < maxLineFrames {
-            // 프레임 입력 범위를 남은 줄 예산으로 제한한다 — 줄 하나는 최소
-            // 1 UTF-16 유닛을 소비하므로 이 프레임이 실체화하는 줄 수가 예산
-            // 이하로 유계되고 (1pt 줄 높이 문단이 1M pt 프레임에서 상한의
-            // 10배를 만들던 경로 차단), 버려질 줄이 없어 문단 높이도 보존
-            // 줄만 반영한다. 예산이 문단 길이 이상인 정상 문단은 전 범위
-            // 그대로라 기존 줄바꿈과 동일하다 (R37 #1).
-            let budget = min(fullLength - startLocation, maxLineFrames - lineFrames.count)
-            let frame = CTFramesetterCreateFrame(
-                framesetter,
-                CFRange(location: startLocation, length: budget),
-                path,
-                nil
-            )
-            let lines = (CTFrameGetLines(frame) as? [CTLine]) ?? []
-            guard !lines.isEmpty else { break }
-            var origins = Array(repeating: CGPoint.zero, count: lines.count)
-            CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
+            guard let chunk = HwpDrawnTextLayout.nextFrameChunk(
+                framesetter: framesetter, typesetter: typesetter,
+                startLocation: startLocation, fullLength: fullLength,
+                remainingLineBudget: maxLineFrames - lineFrames.count,
+                lineWidth: max(1, columnWidth)
+            ) else { break }
             let (frameLines, frameHeight) = makeLineFrames(
-                lines: lines,
-                origins: origins,
+                lines: chunk.lines,
+                origins: chunk.origins,
+                keepCount: chunk.keepCount,
                 metrics: paragraphMetrics,
                 yOffset: totalLineHeight
             )
             lineFrames.append(contentsOf: frameLines)
             totalLineHeight += frameHeight
-            if lineFrames.count >= maxLineFrames {
-                lineFrames.removeLast(lineFrames.count - maxLineFrames)
-                break
-            }
-            let visible = CTFrameGetVisibleStringRange(frame)
-            let consumed = visible.location + visible.length
-            guard consumed > startLocation else { break }
-            startLocation = consumed
+            guard chunk.nextStart > startLocation else { break }
+            startLocation = chunk.nextStart
         }
         guard !lineFrames.isEmpty else {
             return HwpParagraphFrame(totalHeight: 0, lines: [])
@@ -239,15 +219,16 @@ private extension HwpParagraphLayout {
     func makeLineFrames(
         lines: [CTLine],
         origins: [CGPoint],
+        keepCount: Int,
         metrics: ParagraphMetrics,
         yOffset: CGFloat = 0
     ) -> (frames: [HwpLineFrame], totalLineHeight: CGFloat) {
         let referenceY = origins[0].y
         var lineFrames: [HwpLineFrame] = []
-        lineFrames.reserveCapacity(lines.count)
+        lineFrames.reserveCapacity(keepCount)
         var totalLineHeight: CGFloat = 0
 
-        for index in lines.indices {
+        for index in 0 ..< keepCount {
             let line = lines[index]
             let origin = origins[index]
             let range = CTLineGetStringRange(line)
@@ -257,10 +238,12 @@ private extension HwpParagraphLayout {
             let width = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
 
             // 강제 줄 높이 (비율/고정/최소)와 줄 사이 여백이 반영된 실제 줄 전진량은
-            // 다음 라인 origin과의 y 델타다. 마지막 라인은 델타가 없으므로
-            // typographic 높이에 min/max 제약을 적용해 근사한다.
-            if index < lines.count - 1 {
-                totalLineHeight += max(1, origins[index].y - origins[index + 1].y)
+            // 다음 라인 origin과의 y 델타다. 마지막 커밋 줄은 다음 origin이 있으면
+            // (문자 예산으로 버린 줄) 그 델타를, 없으면(문단 끝) typographic 높이에
+            // min/max 제약을 적용해 근사한다.
+            let nextIndex = index + 1
+            if nextIndex < keepCount || (nextIndex == keepCount && keepCount < lines.count) {
+                totalLineHeight += max(1, origins[index].y - origins[nextIndex].y)
             } else {
                 totalLineHeight += max(1, metrics.clampedLineHeight(ascent + descent + leading))
             }
