@@ -65,7 +65,12 @@ public struct HwpFootnoteDividerInfo: HwpPrimitive {
             }
             let type = try payload.readUInt8(at: cursor + 6)
             let thickness = try payload.readUInt8(at: cursor + 7)
-            guard type <= 16, thickness <= 15 else { return nil }
+            // 유효 border type은 0~17 (표 25, single3DReverse=17까지). thickness는
+            // 표 26 0~15. 유효 style 17을 거부하면 wide 디코드가 무효화돼 narrow로
+            // 잘못 폴백, 오프셋이 어긋나 metrics·color가 오염된다 (R53 #3).
+            guard type <= HwpBorderType.single3DReverse.rawValue, thickness <= 15 else {
+                return nil
+            }
             return HwpFootnoteDividerInfo(
                 length: rawLength > 0 ? rawLength : nil,
                 marginTop: try payload.readLittleEndianInt16(at: cursor),

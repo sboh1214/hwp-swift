@@ -16,6 +16,17 @@ final class FootnoteDividerInfoDecodeTests: XCTestCase {
         expect(info?.color) == HwpColor(0x20, 0x50, 0x80)
     }
 
+    /// border type 17(single3DReverse)은 유효 — 거부하면 wide 디코드가 무효화돼
+    /// narrow로 오폴백, 오프셋이 어긋나 metrics·color가 오염된다 (R53 #3).
+    func testDecodeAcceptsSingle3DReverseBorderType() {
+        let info = HwpFootnoteDividerInfo.decode(from: wideDividerPayload(length: 4000, type: 17))
+
+        expect(info?.type) == 17
+        expect(info?.length) == 4000
+        expect(info?.marginTop) == 850
+        expect(info?.color) == HwpColor(0x20, 0x50, 0x80)
+    }
+
     func testDecodeReadsNarrowTwoByteLengthVariant() {
         let info = HwpFootnoteDividerInfo.decode(from: narrowDividerPayload(length: 2000))
 
