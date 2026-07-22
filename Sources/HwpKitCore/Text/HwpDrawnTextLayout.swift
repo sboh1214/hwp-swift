@@ -79,10 +79,17 @@ public enum HwpDrawnTextLayout {
             var ctOrigins = [CGPoint](repeating: .zero, count: frameLines.count)
             CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &ctOrigins)
 
+            // 문자 예산으로 잘린 청크(뒤에 텍스트가 더 있음)의 마지막 줄은 임의
+            // UTF-16 위치에서 끊긴다 — 그 줄을 버리고 다음 청크에서 줄 시작부터
+            // 다시 조판해 한 논리 줄이 청크 경계에서 쪼개지지 않게 한다. 줄이
+            // 하나뿐이면(그 줄이 예산보다 긺) 그대로 둔다 (R49).
+            let cutMidLine = range.length < fullLength - startLocation && frameLines.count >= 2
+            let keepCount = cutMidLine ? frameLines.count - 1 : frameLines.count
+
             let boxTop = origin.y + yOffset + chunkHeight
-            for (index, frameLine) in frameLines.enumerated() {
+            for index in 0 ..< keepCount {
                 result.append(drawnLine(
-                    frameLine: frameLine,
+                    frameLine: frameLines[index],
                     ctOrigin: ctOrigins[index],
                     attributedString: attributedString,
                     origin: CGPoint(x: origin.x, y: boxTop),
@@ -90,11 +97,21 @@ public enum HwpDrawnTextLayout {
                 ))
             }
 
-            let visible = CTFrameGetVisibleStringRange(frame)
-            let consumed = visible.location + visible.length
-            guard consumed > startLocation else { break }
-            yOffset += chunkHeight
-            startLocation = consumed
+            let nextStart: Int
+            if cutMidLine {
+                // 버린 줄의 시작에서 재개하고, yOffset은 그 줄 상단까지만 전진해
+                // 재조판된 줄이 원래와 같은 y에 놓이게 한다.
+                var ascent: CGFloat = 0
+                _ = CTLineGetTypographicBounds(frameLines[keepCount], &ascent, nil, nil)
+                yOffset += chunkHeight - ctOrigins[keepCount].y - ascent
+                nextStart = CTLineGetStringRange(frameLines[keepCount]).location
+            } else {
+                let visible = CTFrameGetVisibleStringRange(frame)
+                yOffset += chunkHeight
+                nextStart = visible.location + visible.length
+            }
+            guard nextStart > startLocation else { break }
+            startLocation = nextStart
         }
         return result
     }

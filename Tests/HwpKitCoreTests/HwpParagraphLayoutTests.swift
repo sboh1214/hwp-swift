@@ -89,6 +89,23 @@ import XCTest
             expect(covered) == string.length
         }
 
+        /// 문자 수는 cap을 넘지만 줄 수는 cap 미만인 문단: capped 결과가 uncapped와
+        /// 같은 줄 경계를 내야 한다 — 청크 경계가 논리 줄을 쪼개면 capped 줄 수·
+        /// 범위가 어긋난다 (R49).
+        func testCappedFramingPreservesLineBoundaries() {
+            let string = attributedString("a b c d e f g h i j")
+            let uncapped = HwpDrawnTextLayout.lines(
+                attributedString: string, origin: .zero, lineWidth: 20
+            )
+            let capped = HwpDrawnTextLayout.lines(
+                attributedString: string, origin: .zero, lineWidth: 20, maxLineFrames: 15
+            )
+
+            expect(capped.count).to(beGreaterThan(1))
+            expect(capped.map(\.stringRange.location)) == uncapped.map(\.stringRange.location)
+            expect(capped.map(\.stringRange.length)) == uncapped.map(\.stringRange.length)
+        }
+
         func testPercentLineSpacingForcesLineHeightFromFontSize() {
             // 표 46 종류 0 (글자에 따라 %): 비율 160 → 줄 높이 ≈ 글자 크기 × 1.6 (±10%)
             let text = String(repeating: "percent line spacing ", count: 12)
