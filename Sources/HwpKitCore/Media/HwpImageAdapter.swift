@@ -88,7 +88,8 @@ public struct HwpImageAdapter {
         // EXIF orientation이 기본(1)이 아니면 thumbnail transform 경로로 적용한다 —
         // 풀사이즈 경로가 orientation을 무시해, 같은 회전 JPEG이 4096px 다운샘플
         // 임계를 넘느냐에 따라 정상/회전으로 갈리던 것을 막는다 (R50 #5).
-        let needsOrientation = Self.orientation(of: source) != 1
+        let orientation = Self.orientation(of: source)
+        let needsOrientation = orientation != 1
         let cgImage: CGImage
         if overAxisCap || needsOrientation {
             // 축 상한 초과는 캐시 예산에 맞게 줄이고(#2), 그 이하의 회전 이미지는
@@ -109,9 +110,17 @@ public struct HwpImageAdapter {
         }
 
         let pixelSize = CGSize(width: CGFloat(cgImage.width), height: CGFloat(cgImage.height))
-        // 다운샘플됐으면 declared dimensions가 원본, cgImage는 축소본이다 (#5).
-        let originalPixelSize = dimensions
-            .map { CGSize(width: CGFloat($0.0), height: CGFloat($0.1)) } ?? pixelSize
+        // declared dimensions가 crop 좌표계의 원본 크기다(다운샘플 시 cgImage는 축소본).
+        // EXIF orientation 5-8은 축을 스왑하므로 cgImage(회전본)와 좌표계를 맞추려면
+        // 원본 크기도 스왑한다 — 안 그러면 crop이 회전 비트맵에 어긋난 비율로
+        // 스케일된다 (R51 #3). 스왑 없는 orientation(1-4)은 declared 그대로.
+        let swapsAxes = orientation >= 5
+        let originalPixelSize = dimensions.map { declared in
+            CGSize(
+                width: CGFloat(swapsAxes ? declared.1 : declared.0),
+                height: CGFloat(swapsAxes ? declared.0 : declared.1)
+            )
+        } ?? pixelSize
         return .success(HwpDecodedImage(
             image: cgImage, format: format,
             pixelSize: pixelSize, originalPixelSize: originalPixelSize

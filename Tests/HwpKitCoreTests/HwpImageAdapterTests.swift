@@ -45,6 +45,7 @@ final class HwpImageAdapterTests: XCTestCase {
 
     /// orientation 6(90° 회전)으로 태그된 작은 JPEG: 선언 4x2가 적용 후 2x4로
     /// 스왑돼야 한다 — 풀사이즈 경로가 orientation을 무시하면 4x2로 남는다 (R50 #5).
+    /// originalPixelSize(crop 좌표계)도 회전본과 맞게 스왑돼야 한다 (R51 #3).
     func testExifOrientationAppliedOnFullSizePath() throws {
         let oriented = try makeJPEG(width: 4, height: 2, orientation: 6)
         let result = adapter.decodeData(oriented)
@@ -52,6 +53,7 @@ final class HwpImageAdapterTests: XCTestCase {
         case let .success(decoded):
             expect(decoded.format) == .jpeg
             expect(decoded.pixelSize) == CGSize(width: 2, height: 4)
+            expect(decoded.originalPixelSize) == CGSize(width: 2, height: 4)
         case let .failure(error):
             fail("Expected success, got \(error)")
         }
