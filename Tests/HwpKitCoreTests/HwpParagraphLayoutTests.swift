@@ -60,6 +60,22 @@ import XCTest
             expect(frame.totalHeight).to(beLessThanOrEqualTo(100))
         }
 
+        /// 렌더/선택 경로(HwpDrawnTextLayout.lines)도 같은 줄 상한을 따른다 —
+        /// 좁은 거대 문단이 전체 CTLine을 즉시 만들어 자원을 고갈시키지 않는다.
+        /// 상한을 주면 uncapped보다 줄 수가 준다 (R47 #1).
+        func testDrawnLinesHonorMaxLineFrameCap() {
+            let string = attributedString(String(repeating: "x ", count: 40))
+            let full = HwpDrawnTextLayout.lines(
+                attributedString: string, origin: .zero, lineWidth: 20
+            )
+            let capped = HwpDrawnTextLayout.lines(
+                attributedString: string, origin: .zero, lineWidth: 20, maxLineFrames: 4
+            )
+
+            expect(full.count).to(beGreaterThan(4))
+            expect(capped.count).to(beLessThanOrEqualTo(4))
+        }
+
         func testPercentLineSpacingForcesLineHeightFromFontSize() {
             // 표 46 종류 0 (글자에 따라 %): 비율 160 → 줄 높이 ≈ 글자 크기 × 1.6 (±10%)
             let text = String(repeating: "percent line spacing ", count: 12)

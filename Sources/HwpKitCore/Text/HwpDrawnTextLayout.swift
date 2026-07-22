@@ -39,7 +39,8 @@ public enum HwpDrawnTextLayout {
     public static func lines(
         attributedString: NSAttributedString,
         origin: CGPoint,
-        lineWidth: CGFloat
+        lineWidth: CGFloat,
+        maxLineFrames: Int = HwpParagraphLayout.maximumLineFrames
     ) -> [HwpDrawnLine] {
         if let single = slightOverflowSingleLine(
             attributedString: attributedString, origin: origin, lineWidth: lineWidth
@@ -48,7 +49,12 @@ public enum HwpDrawnTextLayout {
         }
 
         let framesetter = CTFramesetterCreateWithAttributedString(attributedString)
-        let length = attributedString.length
+        // 렌더/선택 경로도 측정(HwpParagraphLayout.layout)과 같은 줄 상한을 따른다 —
+        // CTFramesetterCreateFrame이 입력 범위의 CTLine을 즉시 만들므로, 각 줄이
+        // 최소 1 UTF-16 유닛을 소비함을 이용해 길이를 상한해 스트림 한도 크기의
+        // 좁은 문단이 자원을 고갈시키지 못하게 한다. 상한 이하(모든 정상 블록)는
+        // 전 범위 그대로라 렌더가 불변이다 (R47 #1).
+        let length = min(attributedString.length, max(0, maxLineFrames))
         let suggestedSize = CTFramesetterSuggestFrameSizeWithConstraints(
             framesetter,
             CFRange(location: 0, length: length),
