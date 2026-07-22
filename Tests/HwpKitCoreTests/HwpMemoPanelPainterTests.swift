@@ -26,4 +26,27 @@ final class HwpMemoPanelPainterTests: XCTestCase {
         expect(overCap.contentHeight) == atCap.contentHeight
         expect(underCap.paintList.commands.count) < atCap.paintList.commands.count
     }
+
+    /// 긴 작성자명은 고정 1행 헤더의 남은 폭에 맞춰 한 줄로 절단된다 — wrapping해
+    /// trailing/본문과 겹치거나 풍선을 벗어나지 않는다 (R51 #4).
+    func testLongMemoAuthorTruncatedToSingleLine() {
+        let longAuthor = String(repeating: "가", count: 100)
+        let balloon = HwpMemoPanelPainter.Balloon(
+            anchorY: 100, author: longAuthor, dateText: "2026/07/16 00:00", body: "body"
+        )
+        let panel = HwpMemoPanelPainter.panel(
+            balloons: [balloon], pageSize: CGSize(width: 595, height: 842)
+        )
+
+        let authorText = panel.paintList.commands.compactMap { command -> String? in
+            if case let .drawText(attributedString, _, _) = command,
+               attributedString.string.contains("가")
+            {
+                return attributedString.string
+            }
+            return nil
+        }.first
+        expect(authorText).toNot(beNil())
+        expect(authorText?.count ?? longAuthor.count).to(beLessThan(longAuthor.count))
+    }
 }

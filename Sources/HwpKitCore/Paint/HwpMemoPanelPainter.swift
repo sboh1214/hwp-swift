@@ -109,15 +109,6 @@ public enum HwpMemoPanelPainter {
         baselineTop: CGFloat,
         to commands: inout [HwpPaintCommand]
     ) {
-        if !balloon.author.isEmpty {
-            commands.append(.drawText(
-                attributedString: NSAttributedString(
-                    string: balloon.author, attributes: headerAttributes
-                ),
-                origin: CGPoint(x: frame.minX + balloonPadding, y: baselineTop),
-                lineWidth: frame.width
-            ))
-        }
         let trailingText = NSMutableAttributedString()
         if !balloon.dateText.isEmpty {
             trailingText.append(NSAttributedString(
@@ -126,6 +117,19 @@ public enum HwpMemoPanelPainter {
         }
         trailingText.append(NSAttributedString(string: "댓글", attributes: headerAttributes))
         let trailingWidth = lineWidth(of: trailingText)
+        if !balloon.author.isEmpty {
+            // author는 trailing(시각·"댓글") 앞 남은 폭에 한 줄로 맞춘다 — 헤더는
+            // 고정 1행이라, 넘치는 author를 wrapping시키면 trailing/본문과 겹치거나
+            // 풍선을 벗어난다 (R51 #4). 넘치면 한 줄로 절단한다.
+            let authorWidth = max(1, frame.width - balloonPadding * 3 - trailingWidth)
+            commands.append(.drawText(
+                attributedString: Self.truncatedToSingleLine(
+                    balloon.author, attributes: headerAttributes, width: authorWidth
+                ),
+                origin: CGPoint(x: frame.minX + balloonPadding, y: baselineTop),
+                lineWidth: authorWidth
+            ))
+        }
         commands.append(.drawText(
             attributedString: trailingText,
             origin: CGPoint(
@@ -188,6 +192,20 @@ public enum HwpMemoPanelPainter {
     private static func lineWidth(of attributedString: NSAttributedString) -> CGFloat {
         let line = CTLineCreateWithAttributedString(attributedString)
         return CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+    }
+
+    /// 한 줄 폭에 맞게 앞에서부터 절단한 attributed string. 전부 들어가면 원본.
+    private static func truncatedToSingleLine(
+        _ text: String,
+        attributes: [NSAttributedString.Key: Any],
+        width: CGFloat
+    ) -> NSAttributedString {
+        let full = NSAttributedString(string: text, attributes: attributes)
+        guard full.length > 0 else { return full }
+        let typesetter = CTTypesetterCreateWithAttributedString(full)
+        let count = CTTypesetterSuggestLineBreak(typesetter, 0, Double(width))
+        guard count > 0, count < full.length else { return full }
+        return full.attributedSubstring(from: NSRange(location: 0, length: count))
     }
 
     /// 본문을 폭에 맞춰 줄 단위 attributed string으로 나눈다.
