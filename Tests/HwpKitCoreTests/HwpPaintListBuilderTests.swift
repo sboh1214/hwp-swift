@@ -297,6 +297,36 @@ final class HwpPaintListBuilderTests: XCTestCase {
         }
     }
 
+    /// attributed span 없이 문단-레벨 URL만 가진 컨테이너 문단(표/글상자/각주)의
+    /// 링크가 paint list에 폴백 .hyperlink로 담긴다 — hit tester만 처리하던 것을
+    /// 공개 paint list도 담는다 (R53 #4).
+    func testContainerParagraphLevelHyperlinkEmitsFallbackCommand() {
+        let paragraphRect = CGRect(x: 2, y: 3, width: 196, height: 20)
+        let textbox = HwpTextboxFrame(
+            outerFrame: CGRect(x: 0, y: 0, width: 200, height: 80),
+            paragraphs: [laidOutParagraph(
+                text: "link", rect: paragraphRect, hyperlinkURL: "http://example.com"
+            )],
+            borderColor: nil,
+            borderWidth: 0,
+            fillColor: nil
+        )
+        let blockFrame = CGRect(x: 72, y: 100, width: 200, height: 80)
+        let block = AnyHwpBlock(frame: blockFrame, kind: .textbox, payload: .textbox(textbox))
+        let list = builder.build(for: makePage(blocks: [block]), index: index)
+
+        let hyperlinks = list.commands.compactMap { command -> (rect: CGRect, url: String)? in
+            if case let .hyperlink(rect, url) = command {
+                return (rect, url)
+            }
+            return nil
+        }
+        expect(hyperlinks.count) == 1
+        expect(hyperlinks.first?.url) == "http://example.com"
+        expect(hyperlinks.first?.rect)
+            == paragraphRect.offsetBy(dx: blockFrame.minX, dy: blockFrame.minY)
+    }
+
     private func makePage(blocks: [AnyHwpBlock]) -> HwpPage {
         HwpPage(
             size: CGSize(width: 595, height: 842),
@@ -306,12 +336,15 @@ final class HwpPaintListBuilderTests: XCTestCase {
         )
     }
 
-    private func laidOutParagraph(text: String, rect: CGRect) -> HwpLaidOutParagraph {
+    private func laidOutParagraph(
+        text: String, rect: CGRect, hyperlinkURL: String? = nil
+    ) -> HwpLaidOutParagraph {
         HwpLaidOutParagraph(
             attributedString: NSAttributedString(string: text),
             frame: HwpParagraphFrame(totalHeight: rect.height, lines: []),
             rect: rect,
-            paragraphId: 0
+            paragraphId: 0,
+            hyperlinkURL: hyperlinkURL
         )
     }
 }

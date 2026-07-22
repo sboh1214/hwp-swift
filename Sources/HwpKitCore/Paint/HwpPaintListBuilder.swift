@@ -57,9 +57,63 @@ public struct HwpPaintListBuilder: Sendable {
                 emitted = true
             }
         }
+        // 컨테이너(표/글상자/각주) 문단-레벨 링크(attributed span 없는 %hlk 필드)는
+        // walkText 스팬 방출로는 안 잡히고 block.hyperlinkURL도 nil이다. 문단별
+        // 폴백 링크가 이들을 paint list에 담아 hit tester의 문단-레벨 처리와
+        // 일치한다 (R53 #4).
+        if appendContainerParagraphHyperlinks(for: block, to: &commands) {
+            emitted = true
+        }
         if !emitted, let url = block.hyperlinkURL {
             commands.append(.hyperlink(rect: block.frame, url: url))
         }
+    }
+
+    /// 컨테이너 문단의 문단-레벨 hyperlinkURL을 페이지 좌표 rect로 방출한다.
+    /// origin 합성은 HwpBlockContentWalker.walkTable과 같은 규칙(셀·셀 글상자·중첩
+    /// 표 재귀)이다. 문단-레벨 URL은 필드 스팬과 상호배타라(스팬 문단엔 URL을
+    /// 전파하지 않음) 스팬 방출과 겹치지 않는다. 하나라도 방출하면 true (R53 #4).
+    private func appendContainerParagraphHyperlinks(
+        for block: AnyHwpBlock, to commands: inout [HwpPaintCommand]
+    ) -> Bool {
+        var emitted = false
+        func emit(_ paragraphs: [HwpLaidOutParagraph], offset: CGPoint) {
+            for paragraph in paragraphs {
+                guard let url = paragraph.hyperlinkURL else { continue }
+                commands.append(.hyperlink(
+                    rect: paragraph.rect.offsetBy(dx: offset.x, dy: offset.y), url: url
+                ))
+                emitted = true
+            }
+        }
+        func emitTable(_ table: HwpTableFrame, origin: CGPoint) {
+            for row in table.rows {
+                for cell in row.cells {
+                    emit(cell.paragraphs, offset: origin)
+                    for textbox in cell.textboxes {
+                        emit(textbox.textbox.paragraphs, offset: CGPoint(
+                            x: origin.x + textbox.rect.minX, y: origin.y + textbox.rect.minY
+                        ))
+                    }
+                    for nested in cell.nestedTables {
+                        emitTable(nested.table, origin: CGPoint(
+                            x: origin.x + nested.rect.minX, y: origin.y + nested.rect.minY
+                        ))
+                    }
+                }
+            }
+        }
+        switch block.payload {
+        case let .table(table):
+            emitTable(table, origin: block.frame.origin)
+        case let .textbox(textbox):
+            emit(textbox.paragraphs, offset: block.frame.origin)
+        case let .footnote(footnote):
+            emit(footnote.paragraphs, offset: block.frame.origin)
+        default:
+            break
+        }
+        return emitted
     }
 
     private func paintCommands(for block: AnyHwpBlock) -> [HwpPaintCommand] {
