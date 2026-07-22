@@ -183,6 +183,7 @@ public struct HwpParagraphLayout {
         while startLocation < fullLength, lineFrames.count < maxLineFrames {
             guard let chunk = HwpDrawnTextLayout.nextFrameChunk(
                 framesetter: framesetter, typesetter: typesetter,
+                attributedString: mutable,
                 startLocation: startLocation, fullLength: fullLength,
                 remainingLineBudget: maxLineFrames - lineFrames.count,
                 lineWidth: max(1, columnWidth)
@@ -191,6 +192,7 @@ public struct HwpParagraphLayout {
                 lines: chunk.lines,
                 origins: chunk.origins,
                 keepCount: chunk.keepCount,
+                continuesAfterChunk: chunk.nextStart < fullLength,
                 metrics: paragraphMetrics,
                 yOffset: totalLineHeight
             )
@@ -220,6 +222,7 @@ private extension HwpParagraphLayout {
         lines: [CTLine],
         origins: [CGPoint],
         keepCount: Int,
+        continuesAfterChunk: Bool,
         metrics: ParagraphMetrics,
         yOffset: CGFloat = 0
     ) -> (frames: [HwpLineFrame], totalLineHeight: CGFloat) {
@@ -245,7 +248,14 @@ private extension HwpParagraphLayout {
             if nextIndex < keepCount || (nextIndex == keepCount && keepCount < lines.count) {
                 totalLineHeight += max(1, origins[index].y - origins[nextIndex].y)
             } else {
-                totalLineHeight += max(1, metrics.clampedLineHeight(ascent + descent + leading))
+                // 다음 origin이 없는 마지막 커밋 줄. 이어지는 청크면 다음 줄과의
+                // 간격(lineSpacingAdjustment)도 더해 렌더(resumeBaseline)와 높이가
+                // 맞는다 — 문단 끝 줄은 제외해 단일 청크 높이는 불변 (R51 #2).
+                var lineAdvance = metrics.clampedLineHeight(ascent + descent + leading)
+                if continuesAfterChunk {
+                    lineAdvance += metrics.lineSpacingAdjustment
+                }
+                totalLineHeight += max(1, lineAdvance)
             }
             let attributedRange = NSRange(
                 location: Int(range.location),

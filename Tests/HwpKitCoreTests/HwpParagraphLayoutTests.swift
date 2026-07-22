@@ -173,6 +173,34 @@ import XCTest
             )).to(beNil())
         }
 
+        /// 오른쪽 여백(tailIndent) 있는 문단에서 rescue가 실제 줄 폭을 잘못 잡아도
+        /// 커밋 줄 수는 남은 예산을 넘지 않는다 — maxLineFrames:1은 1줄 (R51 #1).
+        func testMaxLineFramesBudgetNotExceededWithTailIndent() {
+            let string = styledString(String(repeating: "a", count: 200), tailIndent: -75)
+            let drawn = HwpDrawnTextLayout.lines(
+                attributedString: string, origin: .zero, lineWidth: 100, maxLineFrames: 1
+            )
+
+            expect(drawn.count).to(beLessThanOrEqualTo(1))
+        }
+
+        /// 한 줄 rescue 뒤 이어지는 청크의 baseline이 줄 간격(lineSpacingAdjustment)을
+        /// 포함해 uncapped와 같아야 한다 — 재개 줄이 위로 밀리지 않는다 (R51 #2).
+        func testRescueContinuationBaselineIncludesLineSpacing() {
+            let string = styledString("aaaaaaaa\nbbbb", lineSpacing: 10)
+            let uncapped = HwpDrawnTextLayout.lines(
+                attributedString: string, origin: .zero, lineWidth: 100_000
+            )
+            let capped = HwpDrawnTextLayout.lines(
+                attributedString: string, origin: .zero, lineWidth: 100_000, maxLineFrames: 3
+            )
+
+            expect(capped.count) == uncapped.count
+            for (cappedLine, uncappedLine) in zip(capped, uncapped) {
+                expect(cappedLine.baselineOrigin.y).to(beCloseTo(uncappedLine.baselineOrigin.y, within: 0.5))
+            }
+        }
+
         func testPercentLineSpacingForcesLineHeightFromFontSize() {
             // 표 46 종류 0 (글자에 따라 %): 비율 160 → 줄 높이 ≈ 글자 크기 × 1.6 (±10%)
             let text = String(repeating: "percent line spacing ", count: 12)
@@ -323,6 +351,32 @@ import XCTest
                         CTFontCreateWithName("Menlo" as CFString, 12, nil),
                 ]
             )
+        }
+
+        func styledString(
+            _ string: String, tailIndent: CGFloat = 0, lineSpacing: CGFloat = 0
+        ) -> NSAttributedString {
+            var tail = tailIndent
+            var spacing = lineSpacing
+            let style: CTParagraphStyle = withUnsafeMutablePointer(to: &tail) { tailPtr in
+                withUnsafeMutablePointer(to: &spacing) { spacingPtr in
+                    CTParagraphStyleCreate([
+                        CTParagraphStyleSetting(
+                            spec: .tailIndent,
+                            valueSize: MemoryLayout<CGFloat>.size, value: tailPtr
+                        ),
+                        CTParagraphStyleSetting(
+                            spec: .lineSpacingAdjustment,
+                            valueSize: MemoryLayout<CGFloat>.size, value: spacingPtr
+                        ),
+                    ], 2)
+                }
+            }
+            return NSAttributedString(string: string, attributes: [
+                kCTFontAttributeName as NSAttributedString.Key:
+                    CTFontCreateWithName("Menlo" as CFString, 12, nil),
+                kCTParagraphStyleAttributeName as NSAttributedString.Key: style,
+            ])
         }
 
         func paraShape(
