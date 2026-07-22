@@ -76,6 +76,19 @@ import XCTest
             expect(capped.count).to(beLessThanOrEqualTo(4))
         }
 
+        /// 폭이 넓어 줄 수는 cap 미만이지만 문자 수가 cap을 넘는 문단: 줄 예산이
+        /// 남는 한 이어 프레이밍해 tail까지 전체를 덮는다 — 문자 기준으로 잘랐다면
+        /// 마지막 줄이 문자열 끝에 못 닿는다 (R48).
+        func testDrawnLinesFrameEntireWideParagraphBeyondCharCap() {
+            let string = attributedString(String(repeating: "a", count: 30))
+            let drawn = HwpDrawnTextLayout.lines(
+                attributedString: string, origin: .zero, lineWidth: 100_000, maxLineFrames: 25
+            )
+
+            let covered = drawn.map { $0.stringRange.location + $0.stringRange.length }.max() ?? 0
+            expect(covered) == string.length
+        }
+
         func testPercentLineSpacingForcesLineHeightFromFontSize() {
             // 표 46 종류 0 (글자에 따라 %): 비율 160 → 줄 높이 ≈ 글자 크기 × 1.6 (±10%)
             let text = String(repeating: "percent line spacing ", count: 12)

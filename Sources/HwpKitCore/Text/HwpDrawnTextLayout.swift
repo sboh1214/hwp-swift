@@ -49,58 +49,86 @@ public enum HwpDrawnTextLayout {
         }
 
         let framesetter = CTFramesetterCreateWithAttributedString(attributedString)
-        // 렌더/선택 경로도 측정(HwpParagraphLayout.layout)과 같은 줄 상한을 따른다 —
-        // CTFramesetterCreateFrame이 입력 범위의 CTLine을 즉시 만들므로, 각 줄이
-        // 최소 1 UTF-16 유닛을 소비함을 이용해 길이를 상한해 스트림 한도 크기의
-        // 좁은 문단이 자원을 고갈시키지 못하게 한다. 상한 이하(모든 정상 블록)는
-        // 전 범위 그대로라 렌더가 불변이다 (R47 #1).
-        let length = min(attributedString.length, max(0, maxLineFrames))
-        let suggestedSize = CTFramesetterSuggestFrameSizeWithConstraints(
-            framesetter,
-            CFRange(location: 0, length: length),
-            nil,
-            CGSize(width: lineWidth, height: .greatestFiniteMagnitude),
-            nil
-        )
-        let textHeight = max(ceil(suggestedSize.height), 1)
-        // CT 프레임은 y-up 로컬 상자에서 조판된다. top-down 페이지 좌표의
-        // 베이스라인 y = origin.y + textHeight − (상자 내 y-up 원점) —
-        // 페이지 높이는 소거되므로 필요 없다.
-        let path = CGPath(
-            rect: CGRect(x: 0, y: 0, width: lineWidth, height: textHeight),
-            transform: nil
-        )
-        let frame = CTFramesetterCreateFrame(
-            framesetter, CFRange(location: 0, length: length), path, nil
-        )
-        guard let frameLines = CTFrameGetLines(frame) as? [CTLine], !frameLines.isEmpty
-        else { return [] }
-        var ctOrigins = [CGPoint](repeating: .zero, count: frameLines.count)
-        CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &ctOrigins)
+        let fullLength = attributedString.length
+        let lineBudget = max(0, maxLineFrames)
+        // 측정(HwpParagraphLayout.layout)과 같은 줄-예산 청크 루프. 한 프레임이
+        // 입력 범위의 CTLine을 즉시 만드므로, 남은 줄 예산만큼만 잘라 좁은 스트림
+        // 한도 크기 문단의 자원 고갈을 막는다. 폭이 넓어 줄 수가 예산 미만인 긴
+        // 문단은 visible range로 이어 프레이밍해 전체를 덮는다 (R48). 청크마다
+        // 자기 텍스트 높이(SuggestFrameSize)를 상자로 써 baseline을 그 상자
+        // 기준으로 잡는다 — 단일 청크(모든 정상 블록)는 상자가 문단 전체라 불변.
+        var result: [HwpDrawnLine] = []
+        var startLocation = 0
+        var yOffset: CGFloat = 0
+        while startLocation < fullLength, result.count < lineBudget {
+            let range = CFRange(
+                location: startLocation,
+                length: min(fullLength - startLocation, lineBudget - result.count)
+            )
+            let suggested = CTFramesetterSuggestFrameSizeWithConstraints(
+                framesetter, range, nil,
+                CGSize(width: lineWidth, height: .greatestFiniteMagnitude), nil
+            )
+            let chunkHeight = max(ceil(suggested.height), 1)
+            let path = CGPath(
+                rect: CGRect(x: 0, y: 0, width: lineWidth, height: chunkHeight), transform: nil
+            )
+            let frame = CTFramesetterCreateFrame(framesetter, range, path, nil)
+            guard let frameLines = CTFrameGetLines(frame) as? [CTLine], !frameLines.isEmpty
+            else { break }
+            var ctOrigins = [CGPoint](repeating: .zero, count: frameLines.count)
+            CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &ctOrigins)
 
-        return frameLines.enumerated().map { index, frameLine in
-            let lift = baselineLift(of: frameLine)
-            let replacement = HwpWordJustification.justifiedLine(
-                frameLine: frameLine,
-                attributedString: attributedString,
-                availableWidth: lineWidth - ctOrigins[index].x
-            )
-            let range = CTLineGetStringRange(frameLine)
-            let finalLine = replacement?.line ?? frameLine
-            var ascent: CGFloat = 0
-            var descent: CGFloat = 0
-            _ = CTLineGetTypographicBounds(finalLine, &ascent, &descent, nil)
-            return HwpDrawnLine(
-                line: finalLine,
-                stringRange: NSRange(location: range.location, length: range.length),
-                baselineOrigin: CGPoint(
-                    x: origin.x + ctOrigins[index].x + (replacement?.xOffset ?? 0),
-                    y: origin.y + textHeight - ctOrigins[index].y - lift
-                ),
-                ascent: ascent,
-                descent: descent
-            )
+            let boxTop = origin.y + yOffset + chunkHeight
+            for (index, frameLine) in frameLines.enumerated() {
+                result.append(drawnLine(
+                    frameLine: frameLine,
+                    ctOrigin: ctOrigins[index],
+                    attributedString: attributedString,
+                    origin: CGPoint(x: origin.x, y: boxTop),
+                    lineWidth: lineWidth
+                ))
+            }
+
+            let visible = CTFrameGetVisibleStringRange(frame)
+            let consumed = visible.location + visible.length
+            guard consumed > startLocation else { break }
+            yOffset += chunkHeight
+            startLocation = consumed
         }
+        return result
+    }
+
+    /// `origin.y`는 이 줄이 속한 프레임 상자 상단의 top-down 페이지 y다 —
+    /// baseline = origin.y − ctOrigin.y − lift (박스 높이가 소거된 상단 침투량).
+    private static func drawnLine(
+        frameLine: CTLine,
+        ctOrigin: CGPoint,
+        attributedString: NSAttributedString,
+        origin: CGPoint,
+        lineWidth: CGFloat
+    ) -> HwpDrawnLine {
+        let lift = baselineLift(of: frameLine)
+        let replacement = HwpWordJustification.justifiedLine(
+            frameLine: frameLine,
+            attributedString: attributedString,
+            availableWidth: lineWidth - ctOrigin.x
+        )
+        let range = CTLineGetStringRange(frameLine)
+        let finalLine = replacement?.line ?? frameLine
+        var ascent: CGFloat = 0
+        var descent: CGFloat = 0
+        _ = CTLineGetTypographicBounds(finalLine, &ascent, &descent, nil)
+        return HwpDrawnLine(
+            line: finalLine,
+            stringRange: NSRange(location: range.location, length: range.length),
+            baselineOrigin: CGPoint(
+                x: origin.x + ctOrigin.x + (replacement?.xOffset ?? 0),
+                y: origin.y - ctOrigin.y - lift
+            ),
+            ascent: ascent,
+            descent: descent
+        )
     }
 
     /// attributedString 안 `hyperlink` 속성 범위마다 줄별 글리프 rect와 URL을
