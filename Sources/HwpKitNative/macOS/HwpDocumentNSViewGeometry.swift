@@ -90,6 +90,16 @@
                     low = mid + 1
                 }
             }
+            // 점이 candidate 상단보다 위면 (페이지 사이 gap) 이전 페이지가 더 가까울
+            // 수 있다 — 인접 두 페이지 거리를 비교해 가까운 쪽을 골라, gap 상단
+            // 절반에서 선택 끝점이 아래 페이지 top으로 점프하지 않게 한다 (R52 #1).
+            if candidate > 0, contentPoint.y < frameForPage(at: candidate).minY {
+                let distanceToPrevious = contentPoint.y - frameForPage(at: candidate - 1).maxY
+                let distanceToCurrent = frameForPage(at: candidate).minY - contentPoint.y
+                if distanceToPrevious < distanceToCurrent {
+                    candidate -= 1
+                }
+            }
             let frame = frameForPage(at: candidate)
             return (candidate, CGPoint(
                 x: contentPoint.x - frame.minX,

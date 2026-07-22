@@ -142,6 +142,15 @@
                 candidate = index
                 break
             }
+            // 점이 candidate 상단보다 위면 (페이지 사이 gap) 인접 두 페이지 거리를
+            // 비교해 가까운 쪽을 골라 선택 끝점 점프를 막는다 (macOS와 동일, R52 #1).
+            if candidate > 0, contentPoint.y < selectionPageFrame(at: candidate).minY {
+                let distanceToPrevious = contentPoint.y - selectionPageFrame(at: candidate - 1).maxY
+                let distanceToCurrent = selectionPageFrame(at: candidate).minY - contentPoint.y
+                if distanceToPrevious < distanceToCurrent {
+                    candidate -= 1
+                }
+            }
             let frame = selectionPageFrame(at: candidate)
             return (candidate, CGPoint(
                 x: contentPoint.x - frame.minX,

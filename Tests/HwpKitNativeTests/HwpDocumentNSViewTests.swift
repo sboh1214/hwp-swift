@@ -80,6 +80,22 @@
             expect(view.pageLayers[5]?.frame.minY) == expectedY
         }
 
+        /// 페이지 사이 gap의 상단 절반(위 페이지에 더 가까움)은 위 페이지로,
+        /// 하단 절반은 아래 페이지로 클램프한다 — 드래그 선택 끝점이 아래 페이지
+        /// top으로 점프하지 않게 인접 두 페이지 거리를 비교한다 (R52 #1).
+        func testPagePositionNearestComparesBothPagesInGap() {
+            let view = HwpDocumentNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 1200))
+            view.document = makeDocument(pageCount: 3)
+            view.rebuildPageOrigins()
+
+            // 페이지 0 [0,842], gap [842,866], 페이지 1 [866,1708].
+            expect(view.pagePosition(nearest: CGPoint(x: 100, y: 848))?.pageIndex) == 0
+            expect(view.pagePosition(nearest: CGPoint(x: 100, y: 860))?.pageIndex) == 1
+            // 페이지 내부 점은 그대로.
+            expect(view.pagePosition(nearest: CGPoint(x: 100, y: 400))?.pageIndex) == 0
+            expect(view.pagePosition(nearest: CGPoint(x: 100, y: 1000))?.pageIndex) == 1
+        }
+
         /// 보존 창 (가시 ±2)을 미리 실체화한다 — 인접 페이지가 뷰포트 진입
         /// 전에 생성돼 스크롤 중 플레이스홀더가 번쩍이지 않는다 (R31 #4).
         func testUpdateVisiblePagesMaterializesRetentionWindow() {
