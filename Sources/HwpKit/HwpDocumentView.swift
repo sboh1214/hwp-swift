@@ -2,6 +2,13 @@ import HwpKitCore
 import HwpKitNative
 import SwiftUI
 
+/// 1-기반 public 페이지 바인딩을 0-기반 스크롤 index로 바꾼다. 클램프를
+/// 뺄셈보다 먼저 해 Int.min 바인딩(상태 복원)의 오버플로 트랩을 막는다 —
+/// macOS·iOS 분기가 공유해 산식이 갈라지지 않는다 (R57 #1).
+func hwpScrollPageIndex(fromOneBased requestedPage: Int) -> Int {
+    max(1, requestedPage) - 1
+}
+
 public struct HwpDocumentView: View {
     private let document: HwpDocument
     private let zoomScale: Binding<CGFloat>?
@@ -184,7 +191,7 @@ final class HwpDocumentCoordinator {
                     view.zoomScale = zoomScale.wrappedValue
                 }
                 if currentPage != nil, let requestedPage {
-                    let pageIndex = max(0, requestedPage - 1)
+                    let pageIndex = hwpScrollPageIndex(fromOneBased: requestedPage)
                     if view.currentVisiblePage() != pageIndex {
                         view.scrollToPage(at: pageIndex)
                     }
@@ -296,7 +303,7 @@ final class HwpDocumentCoordinator {
                     view.zoomScale = zoomScale.wrappedValue
                 }
                 if currentPage != nil, let requestedPage {
-                    let pageIndex = max(0, requestedPage - 1)
+                    let pageIndex = hwpScrollPageIndex(fromOneBased: requestedPage)
                     if view.currentVisiblePage() != pageIndex {
                         view.scrollToPage(at: pageIndex)
                     }

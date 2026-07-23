@@ -17,6 +17,17 @@ final class HwpDocumentViewTests: XCTestCase {
         expect(String(describing: type(of: view.body))).toNot(beEmpty())
     }
 
+    /// Int.min 페이지 바인딩(상태 복원)은 뺄셈을 먼저 하면 오버플로 트랩 —
+    /// 클램프가 먼저여야 하고, 정상 값 산식은 종전과 동일해야 한다 (R57 #1).
+    func testScrollPageIndexClampsBeforeSubtracting() {
+        expect(hwpScrollPageIndex(fromOneBased: Int.min)) == 0
+        expect(hwpScrollPageIndex(fromOneBased: -1)) == 0
+        expect(hwpScrollPageIndex(fromOneBased: 0)) == 0
+        expect(hwpScrollPageIndex(fromOneBased: 1)) == 0
+        expect(hwpScrollPageIndex(fromOneBased: 7)) == 6
+        expect(hwpScrollPageIndex(fromOneBased: Int.max)) == Int.max - 1
+    }
+
     @MainActor
     func testCoordinatorDocumentGenerationTracksNilTokenReplacement() {
         // nil loadToken(직접 구성) 문서 교체도 세대가 증가해 stale 지연 작업을
