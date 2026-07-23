@@ -267,6 +267,44 @@ import XCTest
             // 실제 델타 [20, 30, 20](마지막 = 70-(50-0))은 등분(70/3≈23.3)과 다르다.
             expect(HwpTableSplitter.lineAdvances(of: paragraph)) == [20, 30, 20]
         }
+
+        /// 절단선 정렬은 첫 미적합 라인에서 멈춘다 — 안 맞는 중간 라인을 건너뛰고
+        /// 뒤의 짧은 라인을 누적하면 절단선이 조각 경계(slicedParagraph)와 어긋난다.
+        /// 전진량 [10, 30, 5]·절단선 25는 라인0(10)까지만 정렬하고 라인1(30)에서
+        /// 멈춰 10을 낸다 — 라인2(5)까지 세면 15가 되어 조각 경계와 어긋난다 (R54 #1).
+        func testLineAlignedCutStopsAtFirstNonFittingLine() {
+            let lines = [
+                HwpLineFrame(origin: CGPoint(x: 0, y: 0), width: 100, baseline: 10,
+                             attributedRange: NSRange(location: 0, length: 5)),
+                HwpLineFrame(origin: CGPoint(x: 0, y: 10), width: 100, baseline: 10,
+                             attributedRange: NSRange(location: 5, length: 5)),
+                HwpLineFrame(origin: CGPoint(x: 0, y: 40), width: 100, baseline: 10,
+                             attributedRange: NSRange(location: 10, length: 5)),
+            ]
+            let paragraph = HwpLaidOutParagraph(
+                attributedString: NSAttributedString(string: "abcdefghijklmno"),
+                frame: HwpParagraphFrame(totalHeight: 45, lines: lines),
+                rect: CGRect(x: 0, y: 0, width: 100, height: 45),
+                paragraphId: 0
+            )
+            let black = HwpRGBColor(red: 0, green: 0, blue: 0)
+            let cell = HwpTableCellFrame(
+                cellFrame: CGRect(x: 0, y: 0, width: 100, height: 45),
+                row: 0,
+                column: 0,
+                rowSpan: 1,
+                columnSpan: 1,
+                paragraphs: [paragraph],
+                borders: HwpBorderSet.uniform(width: 0, color: black),
+                fillColor: nil
+            )
+            let row = HwpTableRowFrame(
+                rowFrame: CGRect(x: 0, y: 0, width: 100, height: 50),
+                cells: [cell]
+            )
+
+            expect(HwpTableSplitter.lineAlignedCut(for: row, proposed: 25)) == 10
+        }
     }
 
     private extension HwpTableLayoutTests {

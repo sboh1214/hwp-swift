@@ -249,7 +249,7 @@ enum HwpTableSplitter {
 
     /// 절단선을 경계에 걸친 (분할 가능한) 문단들의 라인 경계 이하로 내린다.
     /// 진행을 보장할 수 없으면 (첫 라인도 안 들어가는 경우) 원래 값을 유지한다.
-    private static func lineAlignedCut(
+    static func lineAlignedCut(
         for row: HwpTableRowFrame,
         proposed cutY: CGFloat
     ) -> CGFloat {
@@ -272,7 +272,11 @@ enum HwpTableSplitter {
                     let cutLocal = aligned - rect.minY
                     var accumulated: CGFloat = 0
                     var boundaryLocal: CGFloat = 0
-                    for advance in advances where accumulated + advance <= cutLocal {
+                    // slicedParagraph와 같이 첫 미적합 라인에서 멈춘다 — where 필터는
+                    // 안 맞는 앞 라인을 건너뛰고 뒤의 짧은 라인을 누적해 조각 경계와
+                    // 어긋난 절단선을 낸다 (R54 #1).
+                    for advance in advances {
+                        guard accumulated + advance <= cutLocal else { break }
                         accumulated += advance
                         boundaryLocal = accumulated
                     }
