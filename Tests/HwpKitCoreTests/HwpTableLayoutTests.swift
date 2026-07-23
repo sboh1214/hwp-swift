@@ -352,6 +352,49 @@ import XCTest
 
             expect(HwpTableSplitter.lineAlignedCut(for: row, proposed: 95)) == 95
         }
+
+        /// pass 상한을 넘는 준-무한 ping-pong(조작 문서의 엇갈린 라인 그리드)은
+        /// 미정렬 cutY로 폴백한다 — 상한 없이는 O(절단 높이) pass로 로드가
+        /// 지연되고, 도중 값 반환은 셀 간 경계 불일치를 만든다 (R56 #1).
+        /// A 경계 {70,72,…,168}·B 경계 {70,71,73,…,167}·절단선 169는 pass당
+        /// 2pt씩 50 pass를 내려가 70에서 수렴 — 상한(32) 초과이므로 169 반환.
+        func testLineAlignedCutFallsBackToProposedCutWhenPassCapExceeded() {
+            func paragraph(origins: [CGFloat], height: CGFloat, x: CGFloat) -> HwpLaidOutParagraph {
+                let lines = origins.enumerated().map { index, y in
+                    HwpLineFrame(origin: CGPoint(x: 0, y: y), width: 90, baseline: 8,
+                                 attributedRange: NSRange(location: index, length: 1))
+                }
+                return HwpLaidOutParagraph(
+                    attributedString: NSAttributedString(
+                        string: String(repeating: "가", count: origins.count)
+                    ),
+                    frame: HwpParagraphFrame(totalHeight: height, lines: lines),
+                    rect: CGRect(x: x, y: 0, width: 100, height: height),
+                    paragraphId: 0
+                )
+            }
+            let black = HwpRGBColor(red: 0, green: 0, blue: 0)
+            func cell(_ paragraph: HwpLaidOutParagraph, x: CGFloat, column: Int) -> HwpTableCellFrame {
+                HwpTableCellFrame(
+                    cellFrame: CGRect(x: x, y: 0, width: 100, height: 175),
+                    row: 0, column: column, rowSpan: 1, columnSpan: 1,
+                    paragraphs: [paragraph],
+                    borders: HwpBorderSet.uniform(width: 0, color: black),
+                    fillColor: nil
+                )
+            }
+            let aOrigins = [0, 70] + stride(from: 72, through: 168, by: 2).map(CGFloat.init)
+            let bOrigins = [0, 70, 71] + stride(from: 73, through: 167, by: 2).map(CGFloat.init)
+            let row = HwpTableRowFrame(
+                rowFrame: CGRect(x: 0, y: 0, width: 200, height: 175),
+                cells: [
+                    cell(paragraph(origins: aOrigins, height: 170, x: 0), x: 0, column: 0),
+                    cell(paragraph(origins: bOrigins, height: 169, x: 100), x: 100, column: 1),
+                ]
+            )
+
+            expect(HwpTableSplitter.lineAlignedCut(for: row, proposed: 169)) == 169
+        }
     }
 
     private extension HwpTableLayoutTests {

@@ -247,75 +247,6 @@ enum HwpTableSplitter {
         )
     }
 
-    /// 절단선을 경계에 걸친 (분할 가능한) 문단들의 라인 경계 이하로 내린다.
-    /// 진행을 보장할 수 없으면 (첫 라인도 안 들어가는 경우) 원래 값을 유지한다.
-    static func lineAlignedCut(
-        for row: HwpTableRowFrame,
-        proposed cutY: CGFloat
-    ) -> CGFloat {
-        var aligned = cutY
-        var changed = true
-        // 고정점까지 반복한다 — 도중에 멈추면 반환값이 앞서 처리한 셀의 라인
-        // 경계가 아닐 수 있다 (R55 #3). 갱신 조건(boundary < aligned − 0.5)이
-        // pass마다 aligned를 0.5 이상 낮추고 하한(row top)이 있어 반드시 끝난다.
-        while changed {
-            changed = false
-            for cell in row.cells {
-                for paragraph in cell.paragraphs {
-                    let rect = paragraph.rect
-                    guard rect.minY < aligned - 0.5, rect.maxY > aligned + 0.5,
-                          paragraph.frame.lines.count > 1, rect.height > 0
-                    else { continue }
-                    // 등분(rect.height/개수)이 아니라 slicedParagraph와 같은 실제
-                    // 전진량으로 절단선 이하의 마지막 라인 경계를 찾는다 — 혼합
-                    // 높이 라인에서 절단선과 조각 경계가 어긋나지 않게 한다 (R53 #2).
-                    let advances = lineAdvances(of: paragraph)
-                    let cutLocal = aligned - rect.minY
-                    var accumulated: CGFloat = 0
-                    var boundaryLocal: CGFloat = 0
-                    // slicedParagraph와 같이 첫 미적합 라인에서 멈춘다 — where 필터는
-                    // 안 맞는 앞 라인을 건너뛰고 뒤의 짧은 라인을 누적해 조각 경계와
-                    // 어긋난 절단선을 낸다 (R54 #1).
-                    for advance in advances {
-                        guard accumulated + advance <= cutLocal else { break }
-                        accumulated += advance
-                        boundaryLocal = accumulated
-                    }
-                    let boundary = rect.minY + boundaryLocal
-                    if boundary < aligned - 0.5 {
-                        aligned = boundary
-                        changed = true
-                    }
-                }
-            }
-        }
-        // 첫 라인조차 안 들어가면 정렬을 포기하고 원래 절단선으로 진행을 보장한다.
-        return aligned > row.rowFrame.minY + 1 ? aligned : cutY
-    }
-
-    /// 문단의 라인별 실제 전진량(origin.y 델타). 마지막 라인은 잔여(간격 포함)를
-    /// 흡수한다. origin이 비단조(캐시 열화)면 등분으로 폴백한다. 절단선 정렬
-    /// (lineAlignedCut)과 조각 슬라이스(slicedParagraph)가 공유해 절단선과 실제
-    /// 조각 경계가 정의상 일치한다 (R53 #2).
-    static func lineAdvances(of paragraph: HwpLaidOutParagraph) -> [CGFloat] {
-        let lines = paragraph.frame.lines
-        let rect = paragraph.rect
-        guard lines.count > 1, rect.height > 0 else {
-            return lines.isEmpty ? [] : [max(1, rect.height)]
-        }
-        let strictlyIncreasing = zip(lines, lines.dropFirst())
-            .allSatisfy { $0.origin.y < $1.origin.y }
-        let average = rect.height / CGFloat(lines.count)
-        let base = lines[0].origin.y
-        return lines.indices.map { index in
-            guard strictlyIncreasing else { return max(1, average) }
-            if index + 1 < lines.count {
-                return max(1, lines[index + 1].origin.y - lines[index].origin.y)
-            }
-            return max(1, rect.height - (lines[index].origin.y - base))
-        }
-    }
-
     private static func splitCell(
         _ cell: HwpTableCellFrame,
         at cutY: CGFloat
@@ -511,5 +442,88 @@ enum HwpTableSplitter {
             paragraphId: paragraph.paragraphId,
             hyperlinkURL: paragraph.hyperlinkURL
         )
+    }
+}
+
+// MARK: - 절단선 라인 정렬 (row 분할과 slicedParagraph가 공유하는 경계 산식)
+
+extension HwpTableSplitter {
+    /// 미수렴 시 정렬을 포기하는 pass 상한 — 정상 문서는 셀 수 안팎에서 수렴하고,
+    /// 엇갈린 라인 그리드로 pass당 0.5pt씩만 내려가는 조작 문서는 O(절단 높이)
+    /// pass × 문단 스캔으로 로드를 지연시킨다 (R56 #1).
+    private static let maxAlignmentPasses = 32
+
+    /// 절단선을 경계에 걸친 (분할 가능한) 문단들의 라인 경계 이하로 내린다.
+    /// 진행을 보장할 수 없으면 (첫 라인도 안 들어가는 경우) 원래 값을 유지한다.
+    static func lineAlignedCut(
+        for row: HwpTableRowFrame,
+        proposed cutY: CGFloat
+    ) -> CGFloat {
+        var aligned = cutY
+        var changed = true
+        // 전진량은 pass 불변이라 1회만 계산한다 — pass마다 재구축하면 상한 안에서도
+        // 라인 수 × pass 곱으로 비용이 커진다 (R56 #1). 분할 후보(다중 라인)만 담는다.
+        let cellCandidates = row.cells.map { cell in
+            cell.paragraphs.compactMap { paragraph -> (rect: CGRect, advances: [CGFloat])? in
+                guard paragraph.frame.lines.count > 1, paragraph.rect.height > 0 else {
+                    return nil
+                }
+                return (paragraph.rect, lineAdvances(of: paragraph))
+            }
+        }
+        var passes = 0
+        // 고정점까지 반복한다 — 도중 값은 앞서 처리한 셀의 라인 경계가 아닐 수
+        // 있다 (R55 #3). pass 상한 초과는 미정렬(cutY)로 폴백해 도중 값 반환과
+        // 조작 문서의 준-무한 반복을 모두 막는다 (R56 #1).
+        while changed {
+            guard passes < Self.maxAlignmentPasses else { return cutY }
+            passes += 1
+            changed = false
+            for candidates in cellCandidates {
+                for (rect, advances) in candidates {
+                    guard rect.minY < aligned - 0.5, rect.maxY > aligned + 0.5 else { continue }
+                    // slicedParagraph와 같은 실제 전진량으로, 첫 미적합 라인에서
+                    // 멈춰 절단선 이하 마지막 라인 경계를 찾는다 (R53 #2, R54 #1).
+                    let cutLocal = aligned - rect.minY
+                    var accumulated: CGFloat = 0
+                    var boundaryLocal: CGFloat = 0
+                    for advance in advances {
+                        guard accumulated + advance <= cutLocal else { break }
+                        accumulated += advance
+                        boundaryLocal = accumulated
+                    }
+                    let boundary = rect.minY + boundaryLocal
+                    if boundary < aligned - 0.5 {
+                        aligned = boundary
+                        changed = true
+                    }
+                }
+            }
+        }
+        // 첫 라인조차 안 들어가면 정렬을 포기하고 원래 절단선으로 진행을 보장한다.
+        return aligned > row.rowFrame.minY + 1 ? aligned : cutY
+    }
+
+    /// 문단의 라인별 실제 전진량(origin.y 델타). 마지막 라인은 잔여(간격 포함)를
+    /// 흡수한다. origin이 비단조(캐시 열화)면 등분으로 폴백한다. 절단선 정렬
+    /// (lineAlignedCut)과 조각 슬라이스(slicedParagraph)가 공유해 절단선과 실제
+    /// 조각 경계가 정의상 일치한다 (R53 #2).
+    static func lineAdvances(of paragraph: HwpLaidOutParagraph) -> [CGFloat] {
+        let lines = paragraph.frame.lines
+        let rect = paragraph.rect
+        guard lines.count > 1, rect.height > 0 else {
+            return lines.isEmpty ? [] : [max(1, rect.height)]
+        }
+        let strictlyIncreasing = zip(lines, lines.dropFirst())
+            .allSatisfy { $0.origin.y < $1.origin.y }
+        let average = rect.height / CGFloat(lines.count)
+        let base = lines[0].origin.y
+        return lines.indices.map { index in
+            guard strictlyIncreasing else { return max(1, average) }
+            if index + 1 < lines.count {
+                return max(1, lines[index + 1].origin.y - lines[index].origin.y)
+            }
+            return max(1, rect.height - (lines[index].origin.y - base))
+        }
     }
 }
