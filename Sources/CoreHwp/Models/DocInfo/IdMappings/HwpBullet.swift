@@ -33,6 +33,37 @@ public struct HwpBullet {
     public let undocumentedTrailing: [BYTE]
 }
 
+extension HwpBullet {
+    private enum CodingKeys: String, CodingKey {
+        case rawPayload, info, headCharShapeId, char, charRawPayload,
+             imageId, imageProperty, checkChar, checkCharRawPayload, undocumentedTrailing
+    }
+
+    /// main 아카이브에는 headCharShapeId 키가 없다 — 표 40 기본값 −1(바탕글
+    /// 모양)로 폴백해 synthesized 디코더의 keyNotFound 실패를 막는다 (R61 #1).
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        rawPayload = try container.decode(
+            ExcludeEquatable<Data>.self, forKey: .rawPayload
+        ).wrappedValue
+        info = try container.decode([BYTE].self, forKey: .info)
+        headCharShapeId = try container.decodeIfPresent(
+            Int32.self, forKey: .headCharShapeId
+        ) ?? -1
+        char = try container.decode(String.self, forKey: .char)
+        charRawPayload = try container.decode(
+            ExcludeEquatable<Data>.self, forKey: .charRawPayload
+        ).wrappedValue
+        imageId = try container.decode(Int32.self, forKey: .imageId)
+        imageProperty = try container.decode([BYTE].self, forKey: .imageProperty)
+        checkChar = try container.decode(String.self, forKey: .checkChar)
+        checkCharRawPayload = try container.decode(
+            ExcludeEquatable<Data>.self, forKey: .checkCharRawPayload
+        ).wrappedValue
+        undocumentedTrailing = try container.decode([BYTE].self, forKey: .undocumentedTrailing)
+    }
+}
+
 extension HwpBullet: HwpFromData {
     // MARK: loader contract exemption - preserves undocumented trailing bytes after known fields
 

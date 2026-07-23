@@ -31,6 +31,27 @@ public struct HwpReadLimits: HwpPrimitive {
         self.maxAggregateStreamBytes = maxAggregateStreamBytes
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case maxCompressedStreamBytes, maxDecompressedStreamBytes, maxAggregateStreamBytes
+    }
+
+    /// main 아카이브에는 maxAggregateStreamBytes 키가 없다 — 기본 한도로 폴백해
+    /// synthesized 디코더의 keyNotFound 실패를 막는다 (R61 #1).
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            maxCompressedStreamBytes: try container.decodeIfPresent(
+                Int.self, forKey: .maxCompressedStreamBytes
+            ) ?? Self.default.maxCompressedStreamBytes,
+            maxDecompressedStreamBytes: try container.decodeIfPresent(
+                Int.self, forKey: .maxDecompressedStreamBytes
+            ) ?? Self.default.maxDecompressedStreamBytes,
+            maxAggregateStreamBytes: try container.decodeIfPresent(
+                Int.self, forKey: .maxAggregateStreamBytes
+            ) ?? Self.default.maxAggregateStreamBytes
+        )
+    }
+
     func validate() throws {
         try validatePositive(maxCompressedStreamBytes, name: "maxCompressedStreamBytes")
         try validatePositive(maxDecompressedStreamBytes, name: "maxDecompressedStreamBytes")
