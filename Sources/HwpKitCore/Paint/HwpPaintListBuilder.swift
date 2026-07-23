@@ -71,8 +71,9 @@ public struct HwpPaintListBuilder: Sendable {
 
     /// 컨테이너 문단의 문단-레벨 hyperlinkURL을 페이지 좌표 rect로 방출한다.
     /// origin 합성은 HwpBlockContentWalker.walkTable과 같은 규칙(셀·셀 글상자·중첩
-    /// 표 재귀)이다. 문단-레벨 URL은 필드 스팬과 상호배타라(스팬 문단엔 URL을
-    /// 전파하지 않음) 스팬 방출과 겹치지 않는다. 하나라도 방출하면 true (R53 #4).
+    /// 표 재귀)이다. 필드 스팬이 있는 문단은 건너뛴다 — 모델 hyperlinkURL은 스팬
+    /// 존재와 무관하게 설정되므로 전체-rect 폴백을 겹치면 앞뒤 평문이 링크로
+    /// 표시된다 (R55 #2). 하나라도 방출하면 true (R53 #4).
     private func appendContainerParagraphHyperlinks(
         for block: AnyHwpBlock, to commands: inout [HwpPaintCommand]
     ) -> Bool {
@@ -80,6 +81,11 @@ public struct HwpPaintListBuilder: Sendable {
         func emit(_ paragraphs: [HwpLaidOutParagraph], offset: CGPoint) {
             for paragraph in paragraphs {
                 guard let url = paragraph.hyperlinkURL else { continue }
+                guard HwpDrawnTextLayout.hyperlinkRegions(
+                    attributedString: paragraph.attributedString,
+                    origin: paragraph.rect.origin,
+                    lineWidth: paragraph.rect.width
+                ).isEmpty else { continue }
                 commands.append(.hyperlink(
                     rect: paragraph.rect.offsetBy(dx: offset.x, dy: offset.y), url: url
                 ))

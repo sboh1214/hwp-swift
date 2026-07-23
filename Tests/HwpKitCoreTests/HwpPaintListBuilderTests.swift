@@ -327,6 +327,47 @@ final class HwpPaintListBuilderTests: XCTestCase {
             == paragraphRect.offsetBy(dx: blockFrame.minX, dy: blockFrame.minY)
     }
 
+    /// 필드 스팬이 있는 컨테이너 문단은 전체-rect 폴백을 방출하지 않는다 —
+    /// 모델 hyperlinkURL은 스팬 존재와 무관하게 설정되고 스팬 글리프 rect는
+    /// walkText가 이미 방출하므로, 폴백이 겹치면 앞뒤 평문까지 링크로
+    /// 표시된다 (R55 #2). hit tester의 spanAwareHyperlinkURL과 같은 게이트.
+    func testContainerParagraphWithFieldSpanSkipsFallbackHyperlink() {
+        let paragraphRect = CGRect(x: 2, y: 3, width: 196, height: 20)
+        let attributed = NSMutableAttributedString(string: "plain link plain")
+        attributed.addAttribute(
+            HwpAttributedStringKey.hyperlink,
+            value: "http://example.com",
+            range: NSRange(location: 6, length: 4)
+        )
+        let paragraph = HwpLaidOutParagraph(
+            attributedString: attributed,
+            frame: HwpParagraphFrame(totalHeight: paragraphRect.height, lines: []),
+            rect: paragraphRect,
+            paragraphId: 0,
+            hyperlinkURL: "http://example.com"
+        )
+        let textbox = HwpTextboxFrame(
+            outerFrame: CGRect(x: 0, y: 0, width: 200, height: 80),
+            paragraphs: [paragraph],
+            borderColor: nil,
+            borderWidth: 0,
+            fillColor: nil
+        )
+        let blockFrame = CGRect(x: 72, y: 100, width: 200, height: 80)
+        let block = AnyHwpBlock(frame: blockFrame, kind: .textbox, payload: .textbox(textbox))
+        let list = builder.build(for: makePage(blocks: [block]), index: index)
+
+        let fallbackRect = paragraphRect.offsetBy(dx: blockFrame.minX, dy: blockFrame.minY)
+        let hyperlinkRects = list.commands.compactMap { command -> CGRect? in
+            if case let .hyperlink(rect, _) = command {
+                return rect
+            }
+            return nil
+        }
+        expect(hyperlinkRects).toNot(beEmpty())
+        expect(hyperlinkRects).toNot(contain(fallbackRect))
+    }
+
     private func makePage(blocks: [AnyHwpBlock]) -> HwpPage {
         HwpPage(
             size: CGSize(width: 595, height: 842),
