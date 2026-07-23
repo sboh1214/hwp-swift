@@ -212,6 +212,10 @@ public actor HwpDocumentActor {
             loadToken: token
         )
         let unsupported = await paginator.unsupportedElements()
+        // 마지막 page(at:)·unsupportedElements() 대기 중 도착한 취소/교체는 루프
+        // 체크를 지나친다 — 완료된 task의 .value는 throw하지 않으므로 여기서
+        // 확인하지 않으면 호출자가 superseded 문서를 받는다 (R60 #1).
+        try Task.checkCancellation()
         return HwpDocument(
             pages: pages,
             metadata: metadata,
