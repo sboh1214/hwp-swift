@@ -63,4 +63,25 @@ final class HwpToolsTests: XCTestCase {
 
         expect(zoomScale) == 1.0
     }
+
+    /// 비-finite 바인딩은 표시의 Int 변환·쓰기 경로 모두에서 트랩 없이
+    /// 리셋 기본값으로 폴백해야 한다 — min/max 클램프는 NaN을 통과시킨다 (R57 #2).
+    @MainActor
+    func testZoomControlsSanitizeNonFiniteAndExtremeValues() {
+        var zoomScale = CGFloat.nan
+        let controls = HwpZoomControls(
+            zoomScale: Binding(get: { zoomScale }, set: { zoomScale = $0 }),
+            range: 0.25 ... 5.0
+        )
+
+        expect(controls.sanitized(.nan)) == 1.0
+        expect(controls.sanitized(.infinity)) == 1.0
+        expect(controls.sanitized(-.infinity)) == 1.0
+        expect(controls.sanitized(.greatestFiniteMagnitude)) == 5.0
+        expect(controls.sanitized(-.greatestFiniteMagnitude)) == 0.25
+        expect(controls.sanitized(2.0)) == 2.0
+
+        controls.setZoomScale(.nan)
+        expect(zoomScale) == 1.0
+    }
 }

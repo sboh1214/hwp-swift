@@ -36,11 +36,18 @@ public struct HwpZoomControls: View {
     }
 
     func setZoomScale(_ newValue: CGFloat) {
-        let clamped = min(max(newValue, range.lowerBound), range.upperBound)
-        zoomScale.wrappedValue = clamped
+        zoomScale.wrappedValue = sanitized(newValue)
+    }
+
+    /// 비-finite(NaN/±inf) 값은 리셋 기본값 1.0으로 폴백 후 range로 클램프한다.
+    /// Swift min/max는 NaN 비교가 전부 false라 클램프만으로는 NaN이 통과한다 —
+    /// 표시(Int 변환 트랩)와 쓰기(NaN 전파) 모두 이 게이트를 거친다 (R57 #2).
+    func sanitized(_ value: CGFloat) -> CGFloat {
+        let finite = value.isFinite ? value : 1.0
+        return min(max(finite, range.lowerBound), range.upperBound)
     }
 
     private var zoomText: LocalizedStringKey {
-        "Zoom \(Int(zoomScale.wrappedValue * 100))%"
+        "Zoom \(Int(sanitized(zoomScale.wrappedValue) * 100))%"
     }
 }
