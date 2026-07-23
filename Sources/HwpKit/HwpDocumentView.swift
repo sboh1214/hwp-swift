@@ -9,6 +9,18 @@ func hwpScrollPageIndex(fromOneBased requestedPage: Int) -> Int {
     max(1, requestedPage) - 1
 }
 
+/// 줌 바인딩이 네이티브 값으로 writeback돼야 하는지 — 비-finite(NaN/±inf)는
+/// 톨러런스 비교(NaN 비교는 전부 false)에 앞서 무조건 복구 대상이다 (R58 #1).
+func hwpZoomNeedsWriteback(current: CGFloat, native: CGFloat) -> Bool {
+    !current.isFinite || abs(current - native) > 0.001
+}
+
+/// 지연 작업 재개 시 "사용자가 바인딩을 안 바꿨다" 판정 — NaN은 자기 자신과
+/// abs-비교가 불가하고 ±inf는 차가 NaN이라, 동일성·NaN 쌍을 먼저 본다 (R58 #1).
+func hwpZoomBindingUnchanged(_ lhs: CGFloat, _ rhs: CGFloat) -> Bool {
+    lhs == rhs || (lhs.isNaN && rhs.isNaN) || abs(lhs - rhs) < 0.001
+}
+
 public struct HwpDocumentView: View {
     private let document: HwpDocument
     private let zoomScale: Binding<CGFloat>?
@@ -130,7 +142,8 @@ final class HwpDocumentCoordinator {
         // update 중 상태 쓰기라 억제한다 — 클램프 정규화는
         // normalizeOutOfRangeZoomBinding이 업데이트 밖에서 수행한다 (R38 #3).
         guard !isApplyingBinding else { return }
-        guard let zoomScale, abs(zoomScale.wrappedValue - scale) > 0.001 else { return }
+        guard let zoomScale, hwpZoomNeedsWriteback(current: zoomScale.wrappedValue, native: scale)
+        else { return }
         zoomScale.wrappedValue = scale
     }
 }
@@ -187,7 +200,9 @@ final class HwpDocumentCoordinator {
                 if document.metadata.loadToken == nil || view.document != document {
                     view.document = document
                 }
-                if let zoomScale, view.zoomScale != zoomScale.wrappedValue {
+                if let zoomScale, zoomScale.wrappedValue.isFinite,
+                   view.zoomScale != zoomScale.wrappedValue
+                {
                     view.zoomScale = zoomScale.wrappedValue
                 }
                 if currentPage != nil, let requestedPage {
@@ -235,11 +250,11 @@ final class HwpDocumentCoordinator {
         ) {
             guard let zoomScale else { return }
             let requested = zoomScale.wrappedValue
-            guard abs(clampedScale - requested) > 0.001 else { return }
+            guard hwpZoomNeedsWriteback(current: requested, native: clampedScale) else { return }
             let generation = coordinator.registerDocument(document)
             Task { @MainActor in
                 guard coordinator.activeDocumentGeneration == generation,
-                      abs(zoomScale.wrappedValue - requested) < 0.001
+                      hwpZoomBindingUnchanged(zoomScale.wrappedValue, requested)
                 else { return }
                 zoomScale.wrappedValue = clampedScale
             }
@@ -299,7 +314,9 @@ final class HwpDocumentCoordinator {
                 if document.metadata.loadToken == nil || view.document != document {
                     view.document = document
                 }
-                if let zoomScale, view.zoomScale != zoomScale.wrappedValue {
+                if let zoomScale, zoomScale.wrappedValue.isFinite,
+                   view.zoomScale != zoomScale.wrappedValue
+                {
                     view.zoomScale = zoomScale.wrappedValue
                 }
                 if currentPage != nil, let requestedPage {
@@ -347,11 +364,11 @@ final class HwpDocumentCoordinator {
         ) {
             guard let zoomScale else { return }
             let requested = zoomScale.wrappedValue
-            guard abs(clampedScale - requested) > 0.001 else { return }
+            guard hwpZoomNeedsWriteback(current: requested, native: clampedScale) else { return }
             let generation = coordinator.registerDocument(document)
             Task { @MainActor in
                 guard coordinator.activeDocumentGeneration == generation,
-                      abs(zoomScale.wrappedValue - requested) < 0.001
+                      hwpZoomBindingUnchanged(zoomScale.wrappedValue, requested)
                 else { return }
                 zoomScale.wrappedValue = clampedScale
             }

@@ -28,6 +28,38 @@ final class HwpDocumentViewTests: XCTestCase {
         expect(hwpScrollPageIndex(fromOneBased: Int.max)) == Int.max - 1
     }
 
+    /// NaN/±inf 바인딩은 톨러런스 비교(NaN 비교 전부 false)에 앞서 writeback
+    /// 대상이어야 정규화·핀치 echo가 복구할 수 있다 (R58 #1).
+    func testZoomWritebackPredicatesRecoverNonFiniteBindings() {
+        expect(hwpZoomNeedsWriteback(current: .nan, native: 1.0)) == true
+        expect(hwpZoomNeedsWriteback(current: .infinity, native: 1.0)) == true
+        expect(hwpZoomNeedsWriteback(current: 1.0, native: 1.0005)) == false
+        expect(hwpZoomNeedsWriteback(current: 1.0, native: 1.5)) == true
+
+        expect(hwpZoomBindingUnchanged(.nan, .nan)) == true
+        expect(hwpZoomBindingUnchanged(.infinity, .infinity)) == true
+        expect(hwpZoomBindingUnchanged(1.0, 1.0005)) == true
+        expect(hwpZoomBindingUnchanged(1.0, 2.0)) == false
+        expect(hwpZoomBindingUnchanged(.nan, 1.0)) == false
+    }
+
+    /// NaN 바인딩 상태에서 finite 핀치 업데이트는 버려지지 않고 바인딩을
+    /// 복구해야 한다 (R58 #1).
+    @MainActor
+    func testZoomChangeRecoversNaNBinding() {
+        var zoom = CGFloat.nan
+        let coordinator = HwpDocumentCoordinator(
+            zoomScale: Binding(get: { zoom }, set: { zoom = $0 }),
+            currentPage: nil,
+            onHyperlinkTapped: nil,
+            onUnsupportedElement: nil
+        )
+
+        coordinator.handleZoomChanged(1.5)
+
+        expect(zoom) == 1.5
+    }
+
     @MainActor
     func testCoordinatorDocumentGenerationTracksNilTokenReplacement() {
         // nil loadToken(직접 구성) 문서 교체도 세대가 증가해 stale 지연 작업을
