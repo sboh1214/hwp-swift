@@ -67,6 +67,41 @@ public struct HwpListControlList: HwpPrimitive {
         self.paragraphArray = paragraphArray
         self.textBoxInfo = textBoxInfo
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case header, headerRawPayload, headerUnknownChildren, paragraphArray, textBoxInfo
+    }
+
+    /// main 아카이브에는 textBoxInfo 키가 없다 — header rawTrailing(표 90)에서
+    /// best-effort 재수화해 여백 0 폴백을 막는다 (R62 #4). 파스 게이트(글상자
+    /// 컴포넌트 경로)는 아카이브에서 복원 불가라, branch 인코딩은 nil을 명시적
+    /// null로 실어 재수화가 legacy(키 부재)에만 발동하게 한다 — 글상자 아닌
+    /// 리스트의 branch round-trip에 스푸리어스 값이 생기지 않는다.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        header = try container.decode(HwpListHeader.self, forKey: .header)
+        headerRawPayload = try container.decode(Data.self, forKey: .headerRawPayload)
+        headerUnknownChildren = try container.decode(
+            [HwpUnknownRecord].self, forKey: .headerUnknownChildren
+        )
+        paragraphArray = try container.decode([HwpParagraph].self, forKey: .paragraphArray)
+        if container.contains(.textBoxInfo) {
+            textBoxInfo = try container.decodeIfPresent(
+                HwpTextBoxListInfo.self, forKey: .textBoxInfo
+            )
+        } else {
+            textBoxInfo = HwpTextBoxListInfo.decode(from: header.rawTrailing)
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(header, forKey: .header)
+        try container.encode(headerRawPayload, forKey: .headerRawPayload)
+        try container.encode(headerUnknownChildren, forKey: .headerUnknownChildren)
+        try container.encode(paragraphArray, forKey: .paragraphArray)
+        try container.encode(textBoxInfo, forKey: .textBoxInfo)
+    }
 }
 
 private extension HwpListControl {

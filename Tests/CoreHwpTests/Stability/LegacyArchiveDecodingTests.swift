@@ -38,6 +38,93 @@ final class LegacyArchiveDecodingTests: XCTestCase {
         expect(decoded.maxCompressedStreamBytes) == HwpReadLimits.default.maxCompressedStreamBytes
     }
 
+    func testCommonCtrlPropertyInfoDecodesLegacyArchiveWithoutAnchorEnums() throws {
+        let original = try HwpCommonCtrlPropertyInfo.load(0)
+        let encoded = try JSONEncoder().encode(original)
+        var json = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+        )
+        for key in [
+            "verticalRelativeTo", "verticalAlignment",
+            "horizontalRelativeTo", "horizontalAlignment",
+        ] {
+            json.removeValue(forKey: key)
+        }
+        let legacyData = try JSONSerialization.data(withJSONObject: json)
+
+        let decoded = try JSONDecoder().decode(HwpCommonCtrlPropertyInfo.self, from: legacyData)
+
+        expect(decoded.verticalRelativeTo).toNot(beNil())
+        expect(decoded) == original
+    }
+
+    func testTableCellHeaderDecodesLegacyArchiveWithoutCellProperty() throws {
+        let trailing = Data(count: 26)
+        let original = HwpTableCellHeader(
+            paragraphCount: 1,
+            property: 0,
+            propertyInfo: try HwpListHeaderProperty.load(0),
+            listHeaderWidthRef: 0,
+            cellPropertyInfo: HwpTableCellHeaderProperty(rawValue: 0),
+            isHeader: false,
+            cellProperty: HwpTableCellProperty.decode(from: trailing),
+            rawTrailing: trailing,
+            rawPayload: Data(),
+            unknownChildren: []
+        )
+        expect(original.cellProperty).toNot(beNil())
+        let legacy = try legacyJSON(of: original, removingKey: "cellProperty")
+
+        let decoded = try JSONDecoder().decode(HwpTableCellHeader.self, from: legacy)
+
+        expect(decoded.cellProperty) == original.cellProperty
+    }
+
+    func testOtherControlDecodesLegacyArchiveWithoutTypedNumberPayloads() throws {
+        let trailing = Data([1, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0])
+        let original = HwpOtherControl(
+            ctrlId: .newNumber,
+            rawTrailing: trailing,
+            rawPayload: Data(),
+            ctrlDataRecords: [],
+            unknownChildren: []
+        )
+        let encoded = try JSONEncoder().encode(original)
+
+        let decoded = try JSONDecoder().decode(HwpOtherControl.self, from: encoded)
+
+        expect(decoded.newNumberInfo?.number) == 7
+        expect(decoded.numberingInfo?.number) == 7
+    }
+
+    func testListControlListDecodesLegacyArchiveWithoutTextBoxInfo() throws {
+        var headerData = Data([1, 0, 0, 0, 0, 0, 0, 0])
+        headerData += Data([1, 0, 2, 0, 3, 0, 4, 0, 100, 0, 0, 0])
+        let header = try HwpListHeader.load(headerData)
+        let original = HwpListControlList(
+            header: header,
+            headerRawPayload: headerData,
+            headerUnknownChildren: [],
+            paragraphArray: [],
+            textBoxInfo: nil
+        )
+        let legacy = try legacyJSON(of: original, removingKey: "textBoxInfo")
+
+        let decoded = try JSONDecoder().decode(HwpListControlList.self, from: legacy)
+
+        expect(decoded.textBoxInfo) == HwpTextBoxListInfo(
+            leftMargin: 1, rightMargin: 2, topMargin: 3, bottomMargin: 4, maxTextWidth: 100
+        )
+
+        // branch 인코딩(명시적 null)은 재수화 없이 nil을 보존해야 한다 —
+        // 글상자 아닌 리스트의 round-trip 스푸리어스 값 방지 (R62 #4).
+        let roundTrip = try JSONDecoder().decode(
+            HwpListControlList.self, from: JSONEncoder().encode(original)
+        )
+        expect(roundTrip.textBoxInfo).to(beNil())
+        expect(roundTrip) == original
+    }
+
     func testHwpBulletDecodesLegacyArchiveWithoutHeadCharShapeId() throws {
         let bullet = HwpBullet(
             rawPayload: Data([1]),

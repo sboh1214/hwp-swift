@@ -194,6 +194,46 @@ public struct HwpOtherControlBookmarkInfo: HwpPrimitive {
     public var rawTrailing: Data
 }
 
+extension HwpOtherControl {
+    private enum CodingKeys: String, CodingKey {
+        case ctrlId, numberingInfo, autoNumberInfo, newNumberInfo, pageHideInfo,
+             indexmarkInfo, bookmarkInfo, rawTrailing, rawPayload, ctrlDataRecords,
+             unknownChildren
+    }
+
+    /// main 아카이브에는 typed payload 키가 없다 — 파스와 같은 ctrlId-게이트
+    /// static 헬퍼로 rawTrailing/ctrlData에서 재수화해 자동/새 번호·쪽 감추기
+    /// 등이 스킵되지 않게 한다 (R62 #3).
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        ctrlId = try container.decode(HwpOtherCtrlId.self, forKey: .ctrlId)
+        rawTrailing = try container.decode(Data.self, forKey: .rawTrailing)
+        rawPayload = try container.decode(Data.self, forKey: .rawPayload)
+        ctrlDataRecords = try container.decode([HwpCtrlData].self, forKey: .ctrlDataRecords)
+        unknownChildren = try container.decode(
+            [HwpUnknownRecord].self, forKey: .unknownChildren
+        )
+        numberingInfo = try container.decodeIfPresent(
+            HwpOtherControlNumberingInfo.self, forKey: .numberingInfo
+        ) ?? Self.numberingInfo(ctrlId: ctrlId, rawTrailing: rawTrailing)
+        autoNumberInfo = try container.decodeIfPresent(
+            HwpOtherControlAutoNumberInfo.self, forKey: .autoNumberInfo
+        ) ?? Self.autoNumberInfo(ctrlId: ctrlId, rawTrailing: rawTrailing)
+        newNumberInfo = try container.decodeIfPresent(
+            HwpOtherControlNewNumberInfo.self, forKey: .newNumberInfo
+        ) ?? Self.newNumberInfo(ctrlId: ctrlId, rawTrailing: rawTrailing)
+        pageHideInfo = try container.decodeIfPresent(
+            HwpOtherControlPageHideInfo.self, forKey: .pageHideInfo
+        ) ?? Self.pageHideInfo(ctrlId: ctrlId, rawTrailing: rawTrailing)
+        indexmarkInfo = try container.decodeIfPresent(
+            HwpOtherControlIndexmarkInfo.self, forKey: .indexmarkInfo
+        ) ?? Self.indexmarkInfo(ctrlId: ctrlId, rawTrailing: rawTrailing)
+        bookmarkInfo = try container.decodeIfPresent(
+            HwpOtherControlBookmarkInfo.self, forKey: .bookmarkInfo
+        ) ?? Self.bookmarkInfo(ctrlId: ctrlId, ctrlDataRecords: ctrlDataRecords)
+    }
+}
+
 extension HwpOtherControl: HwpFromRecord {
     // MARK: loader contract exemption - preserves other-control trailing payload for typed views
 

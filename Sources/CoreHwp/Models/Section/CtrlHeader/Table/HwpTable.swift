@@ -156,6 +156,34 @@ public struct HwpTableCellHeader {
     public var unknownChildren: [HwpUnknownRecord]
 }
 
+extension HwpTableCellHeader {
+    private enum CodingKeys: String, CodingKey {
+        case paragraphCount, property, propertyInfo, listHeaderWidthRef,
+             cellPropertyInfo, isHeader, cellProperty, rawTrailing, rawPayload,
+             unknownChildren
+    }
+
+    /// main 아카이브에는 cellProperty 키가 없다 — rawTrailing(표 80 payload)에서
+    /// 파스와 같은 decode(from:)로 재수화해 1×1 순차 폴백을 막는다 (R62 #2).
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        paragraphCount = try container.decode(Int32.self, forKey: .paragraphCount)
+        property = try container.decode(UInt32.self, forKey: .property)
+        propertyInfo = try container.decode(HwpListHeaderProperty.self, forKey: .propertyInfo)
+        listHeaderWidthRef = try container.decode(UInt16.self, forKey: .listHeaderWidthRef)
+        cellPropertyInfo = try container.decode(
+            HwpTableCellHeaderProperty.self, forKey: .cellPropertyInfo
+        )
+        isHeader = try container.decode(Bool.self, forKey: .isHeader)
+        rawTrailing = try container.decode(Data.self, forKey: .rawTrailing)
+        cellProperty = try container.decodeIfPresent(
+            HwpTableCellProperty.self, forKey: .cellProperty
+        ) ?? HwpTableCellProperty.decode(from: rawTrailing)
+        rawPayload = try container.decode(Data.self, forKey: .rawPayload)
+        unknownChildren = try container.decode([HwpUnknownRecord].self, forKey: .unknownChildren)
+    }
+}
+
 extension HwpTableCellHeader: HwpFromRecord {
     // MARK: loader contract exemption - preserves table-cell header trailing payload
 
