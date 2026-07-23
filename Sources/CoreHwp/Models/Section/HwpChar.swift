@@ -72,8 +72,16 @@ public extension HwpChar {
         let payload = try container.decodeIfPresent(
             ExcludeEquatable<Data?>.self, forKey: .payload
         )?.wrappedValue
-        // inlineControl 키는 payload의 파생값이라 읽지 않는다 (재계산 동일)
-        self.init(type: type, value: value, payload: payload)
+        // payload가 있으면 inlineControl 키는 파생값이라 읽지 않는다 (재계산 동일).
+        // main 아카이브는 두 키가 독립이라 payload=nil + inlineControl=non-nil이
+        // 합법 — 그 경우만 rawPayload로 복원해 조용한 유실을 막는다 (R60 #2).
+        var legacyPayload: Data?
+        if payload == nil {
+            legacyPayload = try container.decodeIfPresent(
+                ExcludeEquatable<HwpInlineControl?>.self, forKey: .inlineControl
+            )?.wrappedValue?.rawPayload
+        }
+        self.init(type: type, value: value, payload: payload ?? legacyPayload)
     }
 
     func encode(to encoder: Encoder) throws {

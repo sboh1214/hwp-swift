@@ -322,6 +322,25 @@ final class ParagraphDataStabilityTests: XCTestCase {
         expect(char.inlineControl?.rawPayload) == Data([1, 2, 3])
     }
 
+    /// main 아카이브는 payload와 inlineControl이 독립 인코딩이라 payload 없이
+    /// inlineControl만 있는 형상이 합법 — 디코더가 rawPayload로 복원해야
+    /// 컨트롤이 조용히 유실되지 않는다 (R60 #2).
+    func testHwpCharDecodesLegacyArchiveWithControlButNoPayload() throws {
+        let encoded = try JSONEncoder().encode(
+            HwpChar(type: .inline, value: 4, payload: Data([1, 2, 3]))
+        )
+        var json = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+        )
+        json.removeValue(forKey: "payload")
+        let legacyData = try JSONSerialization.data(withJSONObject: json)
+
+        let decoded = try JSONDecoder().decode(HwpChar.self, from: legacyData)
+
+        expect(decoded.payload) == Data([1, 2, 3])
+        expect(decoded.inlineControl?.rawPayload) == Data([1, 2, 3])
+    }
+
     func testParaHeaderPreservesRawPayloadWithoutChangingEquality() throws {
         let data = paraHeaderData(charCount: 17, paraId: 99, traceChange: 3)
 
