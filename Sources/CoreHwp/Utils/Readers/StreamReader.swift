@@ -6,6 +6,12 @@ struct StreamReader {
     private let ole: OLEFile
     private let streams: [String: DirectoryEntry]
     private let readLimits: HwpReadLimits
+    /// 참조 타입: 비변이 read 호출들이 파일 한 건의 읽기 총량을 공유 누적한다.
+    private let aggregateUsage = AggregateUsage()
+
+    private final class AggregateUsage {
+        var totalBytes = 0
+    }
 
     init(
         _ ole: OLEFile,
@@ -78,10 +84,9 @@ struct StreamReader {
         }
 
         try Self.validateStreamByteCount(data.count, limit: inputLimit, for: streamName)
-        if isCompressed {
-            return try decompress(data, for: streamName)
-        }
-        return data
+        let result = isCompressed ? try decompress(data, for: streamName) : data
+        try consumeAggregateBudget(result.count, for: streamName)
+        return result
     }
 
     private static func validateEntryType(
@@ -356,6 +361,19 @@ private extension StreamReader {
             return readLimits.maxCompressedStreamBytes
         }
         return readLimits.maxDecompressedStreamBytes
+    }
+
+    func consumeAggregateBudget(_ byteCount: Int, for streamName: HwpStreamName) throws {
+        // 한도−사용량 차와 비교해 Int 오버플로 없이 판정한다 (보안 한도, R55 P1).
+        guard byteCount <= readLimits.maxAggregateStreamBytes - aggregateUsage.totalBytes else {
+            let (sum, overflow) = aggregateUsage.totalBytes.addingReportingOverflow(byteCount)
+            throw HwpError.aggregateStreamSizeLimitExceeded(
+                name: streamName,
+                limit: readLimits.maxAggregateStreamBytes,
+                actual: overflow ? Int.max : sum
+            )
+        }
+        aggregateUsage.totalBytes += byteCount
     }
 
     func decompress(_ data: Data, for streamName: HwpStreamName) throws -> Data {

@@ -143,6 +143,8 @@ public struct HwpFile: HwpPrimitive {
             // 자원 한계는 설정된 하드 한계이므로 optional ViewText라도 폴백하지
             // 않고 전파한다 — corrupt/unsupported ViewText만 아래 빈 폴백 (P1).
             throw HwpError.streamSizeLimitExceeded(name: name, limit: limit, actual: actual)
+        } catch let HwpError.aggregateStreamSizeLimitExceeded(name, limit, actual) {
+            throw HwpError.aggregateStreamSizeLimitExceeded(name: name, limit: limit, actual: actual)
         } catch {
             viewTextData = []
         }

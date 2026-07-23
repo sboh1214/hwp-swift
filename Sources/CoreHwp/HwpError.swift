@@ -15,6 +15,7 @@ public enum HwpError: Error {
     case streamDoesNotExist(name: HwpStreamName)
     case streamDecompressFailed(name: HwpStreamName)
     case streamSizeLimitExceeded(name: HwpStreamName, limit: Int, actual: Int)
+    case aggregateStreamSizeLimitExceeded(name: HwpStreamName, limit: Int, actual: Int)
     case invalidOLEFile(reason: String)
     case temporaryFileWriteFailed(reason: String)
     case invalidDataForString(data: Data, name: String)
@@ -43,6 +44,9 @@ extension HwpError: CustomStringConvertible {
             "Stream '\(name)' failed to decompress"
         case let .streamSizeLimitExceeded(name, limit, actual):
             "Stream '\(name)' exceeded size limit: \(actual) bytes > \(limit) bytes"
+        case let .aggregateStreamSizeLimitExceeded(name, limit, actual):
+            "Aggregate stream bytes exceeded limit while reading '\(name)': " +
+                "\(actual) bytes > \(limit) bytes"
         case let .invalidOLEFile(reason):
             "Invalid OLE file: \(reason)"
         case let .temporaryFileWriteFailed(reason):
