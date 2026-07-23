@@ -972,6 +972,20 @@ private extension HwpPaginator {
 
     /// 다단 밴드에서 문단 라인을 현재 단부터 채워 넣는다.
     /// 단이 차면 다음 단으로, 마지막 단이 차면 새 페이지로 이어진다.
+    func containsHyperlinkFieldSpans(_ attributedString: NSAttributedString) -> Bool {
+        var found = false
+        attributedString.enumerateAttribute(
+            HwpAttributedStringKey.hyperlink,
+            in: NSRange(location: 0, length: attributedString.length)
+        ) { value, _, stop in
+            if value != nil {
+                found = true
+                stop.pointee = true
+            }
+        }
+        return found
+    }
+
     /// reservedFootnoteHeight는 이 문단이 만들 각주 예약분 (본문/각주 겹침 방지).
     func appendParagraphAcrossColumns(
         attributedString: NSAttributedString,
@@ -995,17 +1009,7 @@ private extension HwpPaginator {
         // 필드 스팬 문단(hyperlink attribute 보유)의 조각 블록엔 URL을 전파하지
         // 않는다 — 링크는 조각 substring의 attribute region이 운반하고, block URL은
         // region 없는 평문 조각 전체를 폴백 링크로 만든다 (#4).
-        var containsFieldSpans = false
-        attributedString.enumerateAttribute(
-            HwpAttributedStringKey.hyperlink,
-            in: NSRange(location: 0, length: attributedString.length)
-        ) { value, _, stop in
-            if value != nil {
-                containsFieldSpans = true
-                stop.pointee = true
-            }
-        }
-        let fragmentURL = containsFieldSpans ? nil : hyperlinkURL
+        let fragmentURL = containsHyperlinkFieldSpans(attributedString) ? nil : hyperlinkURL
         paragraphAnchorTop = currentColumnFrame.minY + contentHeightUsed
         guard lines.count > 1, textHeight > 0 else {
             if startedEmpty {
@@ -1018,9 +1022,12 @@ private extension HwpPaginator {
             } else if contentHeightUsed + textHeight > usableHeight {
                 // 부분 채운 단에 안 맞으면 다음 단으로 옮기고 새 단 top에 gap을
                 // 재적용한다 — 다중 줄·본문 경로와 일치 (R54 #2). gap+text가 빈
-                // 단보다 크면 진행 보장을 위해 flush.
+                // 단보다 크면 진행 보장을 위해 flush. 단 이동이 페이지를 넘기면
+                // 각주 예약이 바뀌므로 usable을 재계산한다 (R55 #4).
                 advanceColumn()
-                if beforeGap + textHeight <= usableHeight {
+                if beforeGap + textHeight
+                    <= max(1, effectiveContentHeight - reservedFootnoteHeight)
+                {
                     contentHeightUsed += beforeGap
                 }
                 paragraphAnchorTop = currentColumnFrame.minY + contentHeightUsed
@@ -1085,9 +1092,13 @@ private extension HwpPaginator {
                 // 문단 첫 줄을 통째로 새 단으로 옮기면(아직 아무 줄도 안 놓음) 문단
                 // 위 간격을 새 단 top에도 유지한다 — 본문 단일 열이 새 페이지 top에서
                 // gap을 렌더하는 것(placeFlowParagraph)과 일치 (R53 #1). gap+첫 줄이
-                // 빈 단보다 크면 진행 보장을 위해 flush 배치한다.
-                if lineIndex == 0, beforeGap + lineAdvance(0) <= usableHeight {
+                // 빈 단보다 크면 진행 보장을 위해 flush 배치한다. 단 이동이 페이지를
+                // 넘기면 각주 예약이 바뀌므로 usable을 재계산하고 (R55 #4), gap을
+                // 물리면 .paragraph 기준 개체의 anchor도 함께 내린다 (R55 #5).
+                let usableAfterAdvance = max(1, effectiveContentHeight - reservedFootnoteHeight)
+                if lineIndex == 0, beforeGap + lineAdvance(0) <= usableAfterAdvance {
                     contentHeightUsed += beforeGap
+                    paragraphAnchorTop = currentColumnFrame.minY + contentHeightUsed
                 }
                 continue
             }
