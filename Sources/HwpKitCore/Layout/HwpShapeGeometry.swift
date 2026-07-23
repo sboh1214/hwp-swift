@@ -14,7 +14,9 @@ public struct HwpShapeGeometry: @unchecked Sendable {
     public let strokeWidth: CGFloat
 
     public init(path: CGPath, fillColor: CGColor?, strokeColor: CGColor?, strokeWidth: CGFloat) {
-        self.path = path
+        // CGMutablePath가 들어와도 이후 변형이 Hashable/Sendable 불변성을 깨지
+        // 않게 소유권 경계에서 immutable 복사본을 저장한다 (R61 #2).
+        self.path = path.copy() ?? path
         self.fillColor = fillColor
         self.strokeColor = strokeColor
         self.strokeWidth = strokeWidth

@@ -4,6 +4,11 @@
 /// Hashable is intentionally omitted: CGColor, CGImage, CGPath, and NSAttributedString
 /// are reference/CF types that require non-trivial manual conformance and identity-based
 /// hashing would be semantically wrong for most callers. Sendable is sufficient for T21.
+///
+/// 직접 생성 시 참조 페이로드(NSAttributedString·CGPath)는 immutable 인스턴스여야
+/// 한다 — enum case는 복사를 강제할 수 없어, mutable 서브클래스를 넣고 actor 경계
+/// 이후 변형하면 `@unchecked Sendable` 계약이 깨진다. 라이브러리 생산 경로는 소유권
+/// 경계(AnyHwpBlock·HwpLaidOutParagraph·HwpShapeGeometry init)에서 동결된다 (R61 #3).
 public enum HwpPaintCommand: @unchecked Sendable {
     case fillRect(rect: CGRect, color: CGColor)
     case strokeRect(rect: CGRect, color: CGColor, width: CGFloat)
