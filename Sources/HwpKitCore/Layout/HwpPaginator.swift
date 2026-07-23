@@ -370,13 +370,14 @@ private extension HwpPaginator {
         currentColumnDef = column
         let minimumBandHeight: CGFloat = 12 // 대략 한 줄
         let usableBottom = currentPageGeometry.contentFrame.maxY - footnoteReservedHeight
-        if bandUsedBottom >= usableBottom - minimumBandHeight, !currentBlocks.isEmpty {
+        // 한글은 단 정의로 밴드를 닫을 때 마지막 줄의 줄 간격만큼 띄우고
+        // 다음 밴드를 연다 (Column PrvImage 실측: 밴드 간 시작 간격
+        // = 줄 전진량 + 줄 간격). 새-페이지 판정도 gap을 더한 실제 시작점으로
+        // 한다 — gap 몫을 빼면 한 줄 최소에 못 미치는 퇴화 밴드가 열린다 (R56 #2).
+        let gap = hadBandContent ? bandTrailingLineSpacing : 0
+        if bandUsedBottom + gap >= usableBottom - minimumBandHeight, !currentBlocks.isEmpty {
             cacheCurrentPage()
         } else {
-            // 한글은 단 정의로 밴드를 닫을 때 마지막 줄의 줄 간격만큼 띄우고
-            // 다음 밴드를 연다 (Column PrvImage 실측: 밴드 간 시작 간격
-            // = 줄 전진량 + 줄 간격)
-            let gap = hadBandContent ? bandTrailingLineSpacing : 0
             openColumnBand(top: bandUsedBottom + gap)
         }
     }
@@ -1023,7 +1024,10 @@ private extension HwpPaginator {
                 // 부분 채운 단에 안 맞으면 다음 단으로 옮기고 새 단 top에 gap을
                 // 재적용한다 — 다중 줄·본문 경로와 일치 (R54 #2). gap+text가 빈
                 // 단보다 크면 진행 보장을 위해 flush. 단 이동이 페이지를 넘기면
-                // 각주 예약이 바뀌므로 usable을 재계산한다 (R55 #4).
+                // 각주 예약이 바뀌므로 usable을 재계산한다 (R55 #4). 이동 문단의
+                // gap은 구 단에 렌더되지 않으므로 markBandUsage 전에 무른다 —
+                // 밴드 하단이 부풀면 다음 밴드가 밀리거나 불필요한 새 페이지 (R56 #3).
+                contentHeightUsed -= beforeGap
                 advanceColumn()
                 if beforeGap + textHeight
                     <= max(1, effectiveContentHeight - reservedFootnoteHeight)
@@ -1082,6 +1086,12 @@ private extension HwpPaginator {
                 takeCount = 1
             }
             if takeCount <= 0 {
+                // 아직 아무 줄도 안 놓은 통째 이동이면 진입 시 charge한 gap을
+                // 구 단 사용량에서 무른다 — 렌더되지 않을 gap이 markBandUsage로
+                // 밴드 하단을 부풀린다 (R56 #3). 이후 단에서 재적용될 수 있다.
+                if lineIndex == 0 {
+                    contentHeightUsed = max(0, contentHeightUsed - beforeGap)
+                }
                 advanceColumn()
                 // 페이지 상한 도달: cacheCurrentPage가 밴드/커서를 리셋하지
                 // 않고 종료하므로 같은 lineIndex 재시도는 무한 루프다 —
