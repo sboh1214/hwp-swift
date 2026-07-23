@@ -255,10 +255,11 @@ enum HwpTableSplitter {
     ) -> CGFloat {
         var aligned = cutY
         var changed = true
-        var iterations = 0
-        while changed, iterations < 4 {
+        // 고정점까지 반복한다 — 도중에 멈추면 반환값이 앞서 처리한 셀의 라인
+        // 경계가 아닐 수 있다 (R55 #3). 갱신 조건(boundary < aligned − 0.5)이
+        // pass마다 aligned를 0.5 이상 낮추고 하한(row top)이 있어 반드시 끝난다.
+        while changed {
             changed = false
-            iterations += 1
             for cell in row.cells {
                 for paragraph in cell.paragraphs {
                     let rect = paragraph.rect
