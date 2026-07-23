@@ -20,9 +20,12 @@ public struct HwpChar: HwpPrimitive {
     }
 
     /// payload에서 파생한 컨트롤 해석 (controlId·trailing·ctrl enum 조회).
-    /// 소비처가 드물어 파스 시 eager 구성 대신 접근 시 계산한다.
+    /// 소비처가 드물어 파스 시 eager 구성 대신 접근 시 계산한다. setter는
+    /// rawPayload로 payload 박스를 재구성한다 — main의 public 쓰기 가능
+    /// 계약을 유지하면서 payload와 desync될 수 없다 (R58 #2).
     public var inlineControl: HwpInlineControl? {
-        controlBox.map { HwpInlineControl(rawPayload: $0.payload) }
+        get { controlBox.map { HwpInlineControl(rawPayload: $0.payload) } }
+        set { controlBox = newValue.map { ControlBox(payload: $0.rawPayload) } }
     }
 
     public init(type: HwpCharType, value: WCHAR, payload: Data? = nil) {

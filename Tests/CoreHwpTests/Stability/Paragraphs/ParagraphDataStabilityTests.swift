@@ -307,6 +307,21 @@ final class ParagraphDataStabilityTests: XCTestCase {
         expect(first) == second
     }
 
+    /// inlineControl은 main의 public 쓰기 가능 계약을 유지해야 한다 — setter가
+    /// rawPayload로 payload 박스를 재구성해 payload와 항상 일치한다 (R58 #2).
+    func testHwpCharInlineControlSetterRebuildsPayloadBox() {
+        var char = HwpChar(type: .inline, value: 4, payload: Data([1, 2, 3]))
+        let original = char.inlineControl
+
+        char.inlineControl = nil
+        expect(char.payload).to(beNil())
+        expect(char.inlineControl).to(beNil())
+
+        char.inlineControl = original
+        expect(char.payload) == Data([1, 2, 3])
+        expect(char.inlineControl?.rawPayload) == Data([1, 2, 3])
+    }
+
     func testParaHeaderPreservesRawPayloadWithoutChangingEquality() throws {
         let data = paraHeaderData(charCount: 17, paraId: 99, traceChange: 3)
 
