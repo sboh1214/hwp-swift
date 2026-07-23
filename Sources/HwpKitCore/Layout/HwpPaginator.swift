@@ -987,6 +987,9 @@ private extension HwpPaginator {
         // 조각들은 독립 CT 프레임이라 문단-앞 간격이 렌더되지 않는다 — 첫 조각
         // 앞에서 커서로 소비하고 이후 산술은 텍스트 몫(textHeight)만 쓴다 (#1).
         // 넘김 판정은 (커서+gap) + text = 커서 + paragraphHeight로 종전과 동치.
+        // 빈 단에서 gap을 먼저 더하면 단이 점유된 듯 보여 초과 문단이 빈 단을
+        // 건너뛴다 — gap 추가 전 빈 단 여부를 보존한다 (R54 #3).
+        let startedEmpty = contentHeightUsed <= 0
         contentHeightUsed += beforeGap
         let textHeight = paragraphHeight - beforeGap
         // 필드 스팬 문단(hyperlink attribute 보유)의 조각 블록엔 URL을 전파하지
@@ -1005,11 +1008,22 @@ private extension HwpPaginator {
         let fragmentURL = containsFieldSpans ? nil : hyperlinkURL
         paragraphAnchorTop = currentColumnFrame.minY + contentHeightUsed
         guard lines.count > 1, textHeight > 0 else {
-            if contentHeightUsed > 0,
-               contentHeightUsed + textHeight > usableHeight
-            {
+            if startedEmpty {
+                // 빈 단: gap+text가 안 맞는 초과 문단이면 gap을 무르고 현재 단 top에
+                // flush한다 — 빈 단을 건너뛰지 않는다 (R54 #3).
+                if beforeGap + textHeight > usableHeight {
+                    contentHeightUsed = 0
+                    paragraphAnchorTop = currentColumnFrame.minY
+                }
+            } else if contentHeightUsed + textHeight > usableHeight {
+                // 부분 채운 단에 안 맞으면 다음 단으로 옮기고 새 단 top에 gap을
+                // 재적용한다 — 다중 줄·본문 경로와 일치 (R54 #2). gap+text가 빈
+                // 단보다 크면 진행 보장을 위해 flush.
                 advanceColumn()
-                paragraphAnchorTop = currentColumnFrame.minY
+                if beforeGap + textHeight <= usableHeight {
+                    contentHeightUsed += beforeGap
+                }
+                paragraphAnchorTop = currentColumnFrame.minY + contentHeightUsed
             }
             appendBlock(
                 height: textHeight,
@@ -1048,7 +1062,15 @@ private extension HwpPaginator {
                 takenHeight += lineAdvance(lineIndex + takeCount)
                 takeCount += 1
             }
-            if contentHeightUsed <= 0, takeCount == 0 {
+            // 빈 단(gap만 charge)에서 gap+첫 줄이 안 맞는 초과 문단은 gap을 무르고
+            // 첫 줄을 현재 단 top에 flush한다 — 빈 단을 건너뛰지 않는다 (R54 #3).
+            // 단 이동 후의 빈 단은 contentHeightUsed<=0로 판정한다.
+            let onEmptyStartColumn = startedEmpty && lineIndex == 0
+            if contentHeightUsed <= 0 || onEmptyStartColumn, takeCount == 0 {
+                if onEmptyStartColumn {
+                    contentHeightUsed = 0
+                    paragraphAnchorTop = currentColumnFrame.minY
+                }
                 takenHeight = lineAdvance(lineIndex)
                 takeCount = 1
             }
