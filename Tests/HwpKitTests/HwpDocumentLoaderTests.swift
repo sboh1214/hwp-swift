@@ -34,4 +34,14 @@ final class HwpDocumentLoaderTests: XCTestCase {
                 }
             })
     }
+
+    /// localizedDescription이 NSError 브릿징 기본 문구("error N") 대신 감싼
+    /// 파서/페이지네이터 원인을 노출한다 (R65).
+    func testLoadErrorLocalizedDescriptionSurfacesWrappedReason() {
+        let wrapped = HwpDocumentLoadError.presentationBuildFailed("stream limit exceeded")
+        expect(wrapped.localizedDescription).to(contain("stream limit exceeded"))
+        expect(HwpDocumentLoadError.cancelled.localizedDescription).to(contain("cancelled"))
+        expect(HwpDocumentLoadError.invalidFileWrapper.localizedDescription)
+            .to(contain("regular file"))
+    }
 }

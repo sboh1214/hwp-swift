@@ -8,6 +8,25 @@ public enum HwpDocumentLoadError: Error, Sendable {
     case invalidFileWrapper
 }
 
+extension HwpDocumentLoadError: CustomStringConvertible {
+    public var description: String {
+        switch self {
+        case .cancelled:
+            "Document load was cancelled"
+        case let .presentationBuildFailed(reason):
+            "Presentation build failed: \(reason)"
+        case .invalidFileWrapper:
+            "File wrapper is not a regular file with contents"
+        }
+    }
+}
+
+extension HwpDocumentLoadError: LocalizedError {
+    public var errorDescription: String? {
+        description
+    }
+}
+
 public struct HwpDocumentLoader: Sendable {
     private let actor: HwpDocumentActor
 
