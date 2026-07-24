@@ -55,8 +55,6 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     private static let maximumInFlight = 12
     private var failedKeys: Set<String> = []
     private var inFlightKeys: Set<String> = []
-    /// binItemId별 다운샘플 전 원본 픽셀 크기 — crop 스케일용 (#5).
-    private var originalSizeByBinItemId: [UInt32: CGSize] = [:]
     /// binItemId별 가장 최근에 해석된 변형 키 (platformImage 폴백용)
     private var latestVariantByBinItemId: [UInt32: String] = [:]
     private var imageResolvedHandler: (@Sendable (UInt32) -> Void)?
@@ -209,22 +207,26 @@ public final class HwpPageImageProvider: @unchecked Sendable {
                 )
                 switch adapter.decode(binaryData: binaryData) {
                 case let .success(decoded):
-                    self?.recordOriginalSize(decoded.originalPixelSize, for: key)
-                    return decoded.image
+                    return HwpCachedImage(
+                        image: decoded.image, originalPixelSize: decoded.originalPixelSize
+                    )
                 case .failure:
                     return nil
                 }
             }
-            // 다운샘플됐을 수 있으므로 원본 크기로 crop을 스케일한다 (#5).
-            let originalSize = self?.originalSize(for: key)
+            // 다운샘플됐을 수 있으므로 원본 크기로 crop을 스케일한다 (#5). 원본
+            // 크기는 캐시 값이 나른다 — provider 로컬 저장이면 warm 캐시 히트
+            // (교체 provider)에서 사라진다 (R63 #2).
             let styled = decoded.map {
-                HwpImageStyleRenderer.apply(style, to: $0, originalSize: originalSize)
+                HwpImageStyleRenderer.apply(
+                    style, to: $0.image, originalSize: $0.originalPixelSize
+                )
             }
             // 실제 백킹 스토어(bytesPerRow×height)로 과금한다 — 픽셀당 4바이트
             // 고정 가정은 16-bit 이미지(64bpp)를 절반으로 저계상해 예산을 우회한다 (P1).
             let pinnedBytes = max(
                 (styled?.bytesPerRow ?? 0) * (styled?.height ?? 0),
-                (decoded?.bytesPerRow ?? 0) * (decoded?.height ?? 0)
+                (decoded?.image.bytesPerRow ?? 0) * (decoded?.image.height ?? 0)
             )
             self?.finishRequest(
                 key: key,
@@ -410,18 +412,6 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         didDropDeferred = false
         lock.unlock()
         tasks.forEach { $0.cancel() }
-    }
-
-    private func recordOriginalSize(_ size: CGSize, for key: UInt32) {
-        lock.lock()
-        defer { lock.unlock() }
-        originalSizeByBinItemId[key] = size
-    }
-
-    private func originalSize(for key: UInt32) -> CGSize? {
-        lock.lock()
-        defer { lock.unlock() }
-        return originalSizeByBinItemId[key]
     }
 
     /// PlatformImage(NSImage/UIImage) 편의 접근자 — 앱 레벨 소비용.

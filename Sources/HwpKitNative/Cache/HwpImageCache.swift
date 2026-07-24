@@ -1,9 +1,24 @@
 import CoreGraphics
 import Foundation
 
+/// 캐시 항목: 디코드된 비트맵 + 다운샘플 전 원본 픽셀 크기.
+/// crop 좌표는 원본 픽셀 기준으로 저작되므로, 크기가 이미지와 함께 캐시를
+/// 타지 않으면 warm 캐시 히트(교체 provider)에서 crop 스케일 기준이
+/// 사라진다 (R63 #2).
+public struct HwpCachedImage: @unchecked Sendable {
+    public let image: CGImage
+    public let originalPixelSize: CGSize
+
+    public init(image: CGImage, originalPixelSize: CGSize? = nil) {
+        self.image = image
+        self.originalPixelSize = originalPixelSize
+            ?? CGSize(width: image.width, height: image.height)
+    }
+}
+
 public actor HwpImageCache {
     private struct CachedEntry {
-        let image: CGImage
+        let cached: HwpCachedImage
         let bytes: Int
         var timestamp: Date
     }
@@ -15,7 +30,7 @@ public actor HwpImageCache {
     /// In-flight decode tasks keyed by binaryDataIndex — coalesces concurrent fetches.
     /// 각 엔트리에 단조 id를 달아, 완료한 fetch가 (clear가 자기 태스크를 지운 뒤
     /// 다른 fetch가 등록한) 새 태스크를 key만 보고 실수로 지우지 않게 한다 (P2).
-    private var inFlight: [UInt32: (id: UInt64, task: Task<CGImage?, Never>)] = [:]
+    private var inFlight: [UInt32: (id: UInt64, task: Task<HwpCachedImage?, Never>)] = [:]
     private var nextInFlightId: UInt64 = 0
 
     /// clear() 세대. fetch가 디코드 await 전 값을 캡처해, await 사이 clear()가
@@ -31,12 +46,12 @@ public actor HwpImageCache {
 
     public func fetch(
         _ key: UInt32,
-        decode: @escaping @Sendable () async -> CGImage?
-    ) async -> CGImage? {
+        decode: @escaping @Sendable () async -> HwpCachedImage?
+    ) async -> HwpCachedImage? {
         if var entry = storage[key] {
             entry.timestamp = Date()
             storage[key] = entry
-            return entry.image
+            return entry.cached
         }
 
         if let existing = inFlight[key] {
@@ -49,7 +64,7 @@ public actor HwpImageCache {
             }
         }
 
-        let task = Task<CGImage?, Never> {
+        let task = Task<HwpCachedImage?, Never> {
             await decode()
         }
         let taskId = nextInFlightId
@@ -58,7 +73,7 @@ public actor HwpImageCache {
         let startGeneration = generation
         // 취소되면 디코드 태스크를 취소해 옛 문서의 대형 디코드가 계속 살아
         // 있지 않게 한다 (#2). 디코드 클로저는 Task.isCancelled를 확인한다.
-        let image = await withTaskCancellationHandler {
+        let cached = await withTaskCancellationHandler {
             await task.value
         } onCancel: {
             task.cancel()
@@ -72,16 +87,16 @@ public actor HwpImageCache {
 
         // clear()가 디코드 await 중 실행됐으면(세대 변경) 캐시를 재오염하지 않는다
         // — 호출자에겐 이미지를 돌려주되 storage 재삽입은 건너뛴다 (actor 재진입, P2).
-        guard generation == startGeneration else { return image }
+        guard generation == startGeneration else { return cached }
 
-        if let image {
-            let bytes = image.bytesPerRow * image.height
-            storage[key] = CachedEntry(image: image, bytes: bytes, timestamp: Date())
+        if let cached {
+            let bytes = cached.image.bytesPerRow * cached.image.height
+            storage[key] = CachedEntry(cached: cached, bytes: bytes, timestamp: Date())
             totalBytes += bytes
             await evict(target: maxBytes)
         }
 
-        return image
+        return cached
     }
 
     public func evict(target: Int) async {

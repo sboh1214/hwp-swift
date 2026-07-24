@@ -55,7 +55,7 @@ final class HwpDocumentActorTests: XCTestCase {
     func testLoadDocumentRotatesImageCache() async throws {
         let actor = HwpDocumentActor()
         let cache = await actor.imageCache()
-        let seeded = await cache.fetch(1) { makeSolidImage() }
+        let seeded = await cache.fetch(1) { makeSolidImage().map { HwpCachedImage(image: $0) } }
         expect(seeded).notTo(beNil())
         let seededCount = await cache.count()
         expect(seededCount) == 1
