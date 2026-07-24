@@ -97,9 +97,45 @@ final class LegacyArchiveDecodingTests: XCTestCase {
         expect(decoded.numberingInfo?.number) == 7
     }
 
-    func testListControlListDecodesLegacyArchiveWithoutTextBoxInfo() throws {
+    /// 글상자 리스트의 textBoxInfo는 부모(HwpShapeComponent) 디코더가 재수화한다
+    /// — 파스가 표 90을 무조건 파생하므로 legacy 키 부재와 멱등 (R62 #4, R64 #3).
+    func testShapeComponentRehydratesTextBoxInfoFromLegacyArchive() throws {
         var headerData = Data([1, 0, 0, 0, 0, 0, 0, 0])
         headerData += Data([1, 0, 2, 0, 3, 0, 4, 0, 100, 0, 0, 0])
+        let header = try HwpListHeader.load(headerData)
+        let component = HwpShapeComponent(
+            rawCtrlId: nil,
+            ctrlId: nil,
+            rawPayload: Data(),
+            rawTrailing: nil,
+            pictureArray: [],
+            oleArray: [],
+            oleRecords: [],
+            ctrlDataRecords: [],
+            textBoxListArray: [HwpListControlList(
+                header: header,
+                headerRawPayload: headerData,
+                headerUnknownChildren: [],
+                paragraphArray: [],
+                textBoxInfo: nil
+            )],
+            unknownChildren: []
+        )
+
+        let decoded = try JSONDecoder().decode(
+            HwpShapeComponent.self, from: JSONEncoder().encode(component)
+        )
+
+        expect(decoded.textBoxListArray.first?.textBoxInfo) == HwpTextBoxListInfo(
+            leftMargin: 1, rightMargin: 2, topMargin: 3, bottomMargin: 4, maxTextWidth: 100
+        )
+    }
+
+    /// 글상자 아닌 리스트(HwpListControl 소속 머리말/꼬리말)는 단독 디코딩에서
+    /// 재수화하지 않는다 — "글상자가 아니면 nil" 계약 (R64 #3).
+    func testListControlListKeepsNilTextBoxInfoWithoutShapeComponentContext() throws {
+        var headerData = Data([1, 0, 0, 0, 0, 0, 0, 0])
+        headerData += Data(repeating: 0x11, count: 26)
         let header = try HwpListHeader.load(headerData)
         let original = HwpListControlList(
             header: header,
@@ -108,21 +144,13 @@ final class LegacyArchiveDecodingTests: XCTestCase {
             paragraphArray: [],
             textBoxInfo: nil
         )
-        let legacy = try legacyJSON(of: original, removingKey: "textBoxInfo")
 
-        let decoded = try JSONDecoder().decode(HwpListControlList.self, from: legacy)
-
-        expect(decoded.textBoxInfo) == HwpTextBoxListInfo(
-            leftMargin: 1, rightMargin: 2, topMargin: 3, bottomMargin: 4, maxTextWidth: 100
-        )
-
-        // branch 인코딩(명시적 null)은 재수화 없이 nil을 보존해야 한다 —
-        // 글상자 아닌 리스트의 round-trip 스푸리어스 값 방지 (R62 #4).
-        let roundTrip = try JSONDecoder().decode(
+        let decoded = try JSONDecoder().decode(
             HwpListControlList.self, from: JSONEncoder().encode(original)
         )
-        expect(roundTrip.textBoxInfo).to(beNil())
-        expect(roundTrip) == original
+
+        expect(decoded.textBoxInfo).to(beNil())
+        expect(decoded) == original
     }
 
     func testHwpBulletDecodesLegacyArchiveWithoutHeadCharShapeId() throws {
