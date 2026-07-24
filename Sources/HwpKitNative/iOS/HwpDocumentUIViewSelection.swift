@@ -137,10 +137,20 @@
         ) -> (pageIndex: Int, point: CGPoint)? {
             guard let document, !document.pages.isEmpty else { return nil }
             let pageCount = document.pages.count
+            // 페이지 프레임은 y 오름차순 — 첫 (maxY ≥ 점) 페이지를 이진 탐색한다.
+            // 만 단위 문서에서 롱프레스/오토스크롤 틱마다 0부터 선형 스캔하지
+            // 않는다 (visiblePageRange와 대칭, R64 #2).
             var candidate = pageCount - 1
-            for index in 0 ..< pageCount where selectionPageFrame(at: index).maxY >= contentPoint.y {
-                candidate = index
-                break
+            var low = 0
+            var high = pageCount - 1
+            while low <= high {
+                let mid = (low + high) / 2
+                if selectionPageFrame(at: mid).maxY >= contentPoint.y {
+                    candidate = mid
+                    high = mid - 1
+                } else {
+                    low = mid + 1
+                }
             }
             // 점이 candidate 상단보다 위면 (페이지 사이 gap) 인접 두 페이지 거리를
             // 비교해 가까운 쪽을 골라 선택 끝점 점프를 막는다 (macOS와 동일, R52 #1).
