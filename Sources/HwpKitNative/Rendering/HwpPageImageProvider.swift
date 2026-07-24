@@ -261,15 +261,18 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         cost: Int
     ) {
         lock.lock()
+        // stale 완료(취소를 지나쳐 완주한 구세대 태스크)는 어떤 요청 상태도
+        // 변이하지 않는다 — 구세대 몫은 cancelOutstanding이 이미 비웠으므로,
+        // 여기서 지우는 variant 키는 같은 이름으로 등록된 신세대 요청의 것일 수
+        // 있다 (중복 디코드 허용·신 태스크 미추적, #5·#7, R64 #1).
+        guard gen == generation else {
+            lock.unlock()
+            return
+        }
         inFlightKeys.remove(variant)
         if activeTasks.removeValue(forKey: variant) == nil {
             // 등록 전에 완료됨 — 등록 측이 완료된 핸들을 넣지 않도록 표시 (#7).
             completedBeforeRegister.insert(variant)
-        }
-        // provider가 교체됐으면(세대 불일치) 옛 문서 결과를 캐시에 넣지 않는다 (#5).
-        guard gen == generation else {
-            lock.unlock()
-            return
         }
         if let image {
             insertResolved(variant, image: image, cost: max(1, cost))
