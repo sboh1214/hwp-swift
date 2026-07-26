@@ -1,6 +1,6 @@
 import CoreGraphics
 import Foundation
-import HwpKitNative
+@testable import HwpKitNative
 import Nimble
 import XCTest
 
@@ -236,6 +236,69 @@ final class HwpImageCacheTests: XCTestCase {
 
         expect(missCount) == 0
         expect(hit?.originalPixelSize) == CGSize(width: 8192, height: 4096)
+    }
+
+    /// 병합된 대기자 하나가 취소돼도 공유 디코드는 살아 남은 대기자에게 이미지를
+    /// 준다 — 죽이면 남은 호출자(같은 캐시를 공유하는 다른 provider)가 nil을 받아
+    /// 영구 실패로 기록된다 (R68).
+    func testCoalescedWaiterCancellationKeepsSharedDecodeAlive() async {
+        let cache = HwpImageCache()
+        let gate = ArrivalGate()
+        let image = makeImage()
+        let registrant = Task {
+            await cache.fetch(1) {
+                await gate.decodeArrivedAndWait()
+                if Task.isCancelled {
+                    return nil
+                }
+                return image.map { HwpCachedImage(image: $0) }
+            }
+        }
+        await gate.waitUntilArrived()
+        let coalesced = Task { await cache.fetch(1) { nil } }
+        while await cache.waiterCount(1) < 2 {
+            await Task.yield()
+        }
+
+        registrant.cancel()
+        await gate.release()
+
+        let result = await coalesced.value
+        expect(result).toNot(beNil())
+    }
+
+    /// 대기자가 전원 사라지면 공유 디코드를 취소한다 — 옛 문서의 대형 디코드가
+    /// 계속 살아 있지 않게 하는 계약을 유지한다 (#2, R47 #2/#3의 회귀 가드).
+    func testAllWaitersCancelledCancelsSharedDecode() async {
+        let cache = HwpImageCache()
+        let gate = ArrivalGate()
+        let image = makeImage()
+        let registrant = Task {
+            await cache.fetch(1) {
+                await gate.decodeArrivedAndWait()
+                if Task.isCancelled {
+                    return nil
+                }
+                return image.map { HwpCachedImage(image: $0) }
+            }
+        }
+        await gate.waitUntilArrived()
+        let coalesced = Task { await cache.fetch(1) { nil } }
+        while await cache.waiterCount(1) < 2 {
+            await Task.yield()
+        }
+
+        registrant.cancel()
+        coalesced.cancel()
+        while await cache.waiterCount(1) > 0 {
+            await Task.yield()
+        }
+        await gate.release()
+
+        let registrantResult = await registrant.value
+        expect(registrantResult).to(beNil())
+        let count = await cache.count()
+        expect(count) == 0
     }
 
     /// purge 세대는 clear()마다 증가한다 — 소비자가 fetch 전후로 비교해 purge에
