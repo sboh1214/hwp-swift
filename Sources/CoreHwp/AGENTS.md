@@ -57,7 +57,13 @@ CoreHwp/
 5. 새 stream도 `HwpReadLimits` 경로를 거쳐야 한다. 압축 입력과 비압축 stream은
    OLE directory `streamSize`로 사전 제한하지만, deflate 출력 한도는
    `SWCompression`이 반환한 뒤 typed error로 후처리 거부하는 제한이며 압축 해제 중
-   메모리 할당 cap이 아니다.
+   메모리 할당 cap이 아니다. 파일 단위 집계 한도(`maxAggregateStreamBytes`)는
+   `StreamReader.readData`가 모든 경로에서 누적하므로 새 stream도 자동 적용된다 —
+   reader를 우회해 직접 `ole.stream(...)`을 읽으면 이 방어가 사라진다.
+6. storage(자식 stream 배열)를 읽을 때 아는 자식 수가 있으면
+   `expectedChildCount`로 넘긴다. 초과·부족 자식 구성은 **압축 해제 전에** typed
+   error로 거부된다 — 뒤에 정렬된 초과 자식을 조용히 잘라 내면 남은 자식이
+   개수 검증을 통과해 손상된 storage가 유효한 본문을 대체한다.
 
 ## 새 컨트롤 ID 추가하기
 
@@ -78,6 +84,13 @@ ID로 dispatch된다.
 - public struct의 default `init()`은 round-trip 비교용 빈 객체를 만든다
   (`Tests/.../Blank/Create*Tests.swift` 참조). 새 public 모델 추가 시
   이 패턴을 따를 것.
+- **파생 필드는 저장보다 재계산**을 우선한다. `HwpChar`는 문서 전체 문자 수만큼
+  존재하므로 컨트롤 payload를 클래스 박스로 분리해 stride를 16 byte로 유지하고
+  (`inlineControl`은 payload에서 지연 계산), setter는 `rawPayload`로 박스를
+  재구성해 payload와 desync될 수 없게 한다.
+- 새 저장 필드/파생 필드를 추가하면 **legacy 아카이브 디코딩**을 함께 처리한다
+  (루트 AGENTS.md "Codable 아카이브 호환" 참조). 인코딩은 synthesized를 유지하고
+  디코더만 custom으로 두는 것이 형상 변화를 막는 방법이다.
 
 ## 안티 패턴
 
@@ -103,12 +116,16 @@ stream을 읽기 전에 제한하고, 압축 해제 결과가 한도를 넘으�
 `HwpError.streamSizeLimitExceeded`로 거부합니다. 단, 현재 `SWCompression`
 Deflate API는 bounded streaming inflate를 제공하지 않으므로 압축 해제 결과 한도는
 inflate가 끝난 뒤 검사하는 후처리 거부입니다. 이 제한은 typed error 반환을 위한
-검증이지, 압축 해제 중 메모리 할당 상한을 보장하지 않습니다.
+검증이지, 압축 해제 중 메모리 할당 상한을 보장하지 않습니다. 개별 stream이 모두
+한도 안이어도 자식이 많으면 합계가 커지므로, 파일 단위
+`maxAggregateStreamBytes`(기본 1 GiB)를 초과하면
+`HwpError.aggregateStreamSizeLimitExceeded`로 거부합니다.
 
-2026-06-28 기준 `swift test --enable-code-coverage`를 실행한 뒤
-`.build/out/Products/Debug/codecov/Hwp-Swift.json`에서 `Sources/CoreHwp`만
-집계했을 때 line coverage는 98.60% (5481/5559), region coverage는
-97.56% (2483/2545)입니다.
+2026-07-23 기준 CI와 같은 방식(`swift test --enable-code-coverage` 후
+`llvm-cov export -format=lcov`에서 `Sources/CoreHwp/`만 집계)으로 측정한
+line coverage는 97.55% (7642/7834)입니다. `ci.yml`의 coverage job이 95%
+미만이면 실패시킵니다. 테스트 번들이 4개여도 모든 테스트 타깃이 CoreHwp를
+링크하므로 어떤 번들을 export해도 같은 수치가 나옵니다.
 
 | 영역 | 상태 |
 | --- | --- |
@@ -129,7 +146,7 @@ inflate가 끝난 뒤 검사하는 후처리 거부입니다. 이 제한은 type
 | header/footer/footnote/endnote controls | list header와 내부 paragraph를 typed raw model로 파싱하고 raw payload/child records 보존 |
 | list header 속성 (표 89) | 실측 이중 레이아웃: 한/글 윈도우 저장본 (noori)은 방향/줄바꿈/세로 정렬을 bits 16-22에, 한컴오피스 mac 저장본 (text-box)은 스펙 그대로 bits 0-6에 둔다. `HwpListHeaderProperty`는 상위 레이아웃 우선, 전부 0이면 하위 폴백 |
 | 내장 OLE 개체 (BinData `.OLE`) | `HwpEmbeddedChart.chartXML`이 4바이트 길이 프리픽스 + CFB에서 `OOXMLChartContents` XML을 추출. OLEKit은 miniFAT 없는 내장 CFB를 거부해 자체 최소 CFB 리더 (`EmbeddedCompoundFile`) 사용 |
-| `ViewText` 스토리지 (표시용 본문) | 변경 추적 저장본은 표시 본문 (삭제 텍스트 포함)을 ViewText에 둔다 — `viewSectionArray`로 파싱 (실패 시 빈 배열 폴백), `displaySectionArray`가 렌더 본문 선택. PARA_RANGE_TAG는 한 레코드에 태그 N개 (12바이트씩) — `HwpParaRangeTag.loadArray` |
+| `ViewText` 스토리지 (표시용 본문) | 변경 추적 저장본은 표시 본문 (삭제 텍스트 포함)을 ViewText에 둔다 — `viewSectionArray`로 파싱 (실패 시 빈 배열 폴백), `displaySectionArray`가 렌더 본문 선택. 자식 구성이 BodyText 구역 수와 다르면 압축 해제 전에 거부해 빈 폴백으로 보낸다 (초과분 절단은 손상본을 유효 본문으로 통과시킴). 단 자원 한도 error 2종은 폴백하지 않고 전파. PARA_RANGE_TAG는 한 레코드에 태그 N개 (12바이트씩) — `HwpParaRangeTag.loadArray` |
 | table control (`tbl `) | table property와 cell paragraph를 typed model로 파싱하고 cell header raw payload 보존 |
 | field hyperlink control (`%hlk`) | URL을 typed model로 파싱하고 raw payload/trailing bytes 보존 |
 | field controls | known field ctrl id를 enum으로 보존하고 raw payload/trailing bytes/child records 보존. `memo` 실제 fixture의 `MEMO/...` parameter를 가진 unknown field는 memo control로 분류하고 parameter marker/components/author 및 Codable round-trip 보존을 검증. 메모 본문은 문단의 MEMO_LIST(93) 뒤 문단(66) 자식 — `HwpParagraph.memoParagraphArray`로 파싱 (unknownChildren에서 소비) |

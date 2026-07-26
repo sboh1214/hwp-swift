@@ -18,7 +18,7 @@ HwpKitNative/
 ├── iOS/HwpDocumentUIViewSelection.swift    # 롱프레스 선택 + 엣지 오토스크롤 + 편집 메뉴
 ├── macOS/HwpCenteringClipView.swift # 문서가 뷰포트보다 작을 때 중앙 정렬 클립 뷰
 ├── iOS/HwpDocumentUIView.swift     # UIView + UIScrollView (pinch zoom 내장)
-├── Cache/HwpImageCache.swift       # LRU actor (100MB cap) — 뷰가 provider에 주입
+├── Cache/HwpImageCache.swift       # LRU actor (256MB cap) — 뷰가 provider에 주입
 └── Concurrency/HwpDocumentActor.swift  # parse/layout dispatch actor
 ```
 
@@ -31,6 +31,13 @@ HwpKitNative/
 3. `HwpPageLayer.draw` 가 `cachedImage` 동기 조회 → 없으면 로딩 표시 + `requestImage` (async 디코드: `HwpImageCache.fetch` → `HwpImageAdapter.decode`)
 4. 디코드 완료 시 `onImageResolved` → main queue에서 레이어 `setNeedsDisplay`
 5. 이미지는 flipped context 보정 (`drawFlippedImage`)으로 그린다 — 지우면 상하 반전
+
+**캐시 계약** (`HwpImageCache`, public actor라 provider보다 오래 살거나 여러 provider에 주입될 수 있다):
+
+- 캐시 값은 `HwpCachedImage` (비트맵 + **다운샘플 전 원본 픽셀 크기**). crop 좌표는 원본 픽셀 기준이라, 크기를 provider 로컬에 두면 warm 캐시 히트에서 스케일 기준이 사라져 잘못 잘린다
+- `fetch`는 같은 key를 병합(coalesce)한다. 취소는 **대기자 참조 카운트**로 전파해 마지막 대기자가 사라질 때만 디코드를 취소한다 — 한 호출자의 취소로 공유 태스크를 죽이면 남은 호출자가 nil을 받아 영구 실패로 기록된다
+- `clear()`는 in-flight 디코드를 취소하므로 그 nil은 **디코드 실패가 아니다**. provider는 fetch 전후 `purgeGeneration()`을 비교해 purge 중 취소를 `failedKeys`에 넣지 않는다 (넣으면 그 변형이 provider 수명 내내 placeholder)
+- provider의 `finishRequest`는 세대 가드를 **최상단**에 둔다. 구세대 완료가 신세대 요청의 `inFlightKeys`/`activeTasks`를 지우면 중복 디코드·미추적 태스크가 생긴다 (구세대 정리는 `cancelOutstanding` 몫)
 
 ## CRITICAL — macOS 좌표계 flip
 
@@ -53,6 +60,7 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
 - `page(at:)` 를 페이지 nil 이 나올 때까지 loop 하여 `HwpDocument.pages` 채움
 - `await paginator.unsupportedElements()` 로 `HwpDocument.unsupportedElements` 채움 — 실제 `HwpUnsupportedDetector` walk (top-level + nested ctrls) 는 HwpKitCore 의 `HwpPaginator.collectUnsupported`/`walkUnsupported` 가 pagination 중 수행
 - 반환된 `HwpDocument` 는 fully-paginated (View 는 lazy 재요청 안 함)
+- 취소 확인은 루프 안뿐 아니라 **마지막 await 뒤에도** 한다 — 완료된 task의 `.value`는 취소돼도 throw하지 않으므로, terminal 구간(마지막 `page(at:)`·`unsupportedElements()`)에서 도착한 교체를 놓치면 호출자가 superseded 문서를 받는다
 
 ### 프로그레시브 로딩 (`loadDocumentUpdates`)
 
@@ -74,6 +82,8 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
 - iOS: `UIScrollView.viewForZooming` = contentView (page layers 컨테이너)
 - macOS: `NSScrollView.allowsMagnification` (0.25–5.0) 이 핀치 줌 담당 — `zoomScale` 은 magnification 을 읽고 쓰는 계산 프로퍼티 (별도 배율 상태 없음). 라이브 핀치 종료 (`didEndLiveMagnifyNotification`) 시에만 `contentsScale` 재적용
 - macOS: `NSClickGestureRecognizer` 로 hit test (documentContentView 에 부착), iOS: `UITapGestureRecognizer`
+- iOS 초기 위치: SwiftUI `makeUIView` 는 bounds 0 에서 document 를 대입하므로 센터링을 첫 non-zero `layoutSubviews` 로 **예약**한다. 그 창에 들어온 명시 페이지 요청(`scrollToPage`)은 인덱스를 함께 예약해 센터링 대신 그 페이지로 복원하고, 문서가 **전체 교체**되면 예약 인덱스를 버린다 (옛 문서 기준 페이지에서 열리는 것 방지). 같은 문서 재전달(`document == oldValue`)은 스크롤 유지가 의도라 예약도 보존
+- 페이지 좌표 → 인덱스 변환은 macOS·iOS 모두 **이진 탐색** (`pageOriginsY` 오름차순). 선택 드래그·오토스크롤은 프레임마다 호출되므로 선형 스캔이면 만 쪽 문서에서 비용이 페이지 수에 비례한다
 
 ## Callback 발화 규약
 

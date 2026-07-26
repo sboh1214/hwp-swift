@@ -69,7 +69,12 @@ CoreHwp.HwpFile
 **페이지 지오메트리** (`HwpPageGeometry`): 본문 프레임은 머리말/꼬리말
 영역(표 137)을 예약한다 — 본문 상단 = 위 여백 + 머리말 여백, 하단 =
 페이지 − 아래 여백 − 꼬리말 여백 (PrvImage·헌법주석 캐시 실측). `HwpPage.margins`
-는 이 본문 콘텐츠 인셋이다 (용지 여백 아님).
+는 이 본문 콘텐츠 인셋이다 (용지 여백 아님). 용지 방향(표 13 bit 0)은 여백·단
+계산 **전에** `orientedPageSize`가 반영하되, 넓게 선언 + 저장 치수가 세로일
+때만 축을 바꾼다 — 저장본이 이미 회전을 반영했는지와 무관하게 같은 결과를
+내는 멱등 정규화다 (가로 픽스처가 아직 없어 무조건 교환은 이중 회전 위험).
+구역 정의(표 132)의 머리말/꼬리말/쪽 번호 감추기는 **구역 첫 쪽에서만** 표 145
+마스크와 합쳐 소비된다.
 
 **stale 캐시 보정**: 캐시 줄 높이 (h)보다 큰 글자 크기가 선언된 문단은
 캐시가 저장 당시와 안 맞는 것 — 한글.app도 열 때 재조판한다 (CharShape 실측:
@@ -102,6 +107,19 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
 다단은 "단 밴드" 모델이다: 단 정의 (`cold`)가 나오면 진행 중 밴드를 닫고
 마지막 줄의 줄 간격만큼 띄운 뒤 (`bandTrailingLineSpacing` — Column PrvImage
 실측) 그 아래에서 `HwpPageGeometry.columnFrames`로 새 밴드를 연다.
+밴드를 닫을 자리가 (trailing gap을 더한 실제 시작점 기준) 한 줄도 안 남으면
+새 페이지에서 연다 — gap을 빼고 판정하면 퇴화 밴드가 열려 본문이 하단
+여백/각주 영역을 침범한다.
+
+**문단 위 간격(beforeGap) 회계**: 조각들은 독립 CT 프레임이라 gap이 렌더되지
+않으므로 첫 조각 앞에서 커서로 소비한다. 단을 넘길 때 규칙 세 가지 —
+(1) 통째 이동이면 새 단 top에 gap을 **재적용**하고 `paragraphAnchorTop`도 함께
+내린다 (`.paragraph` 기준 개체가 stale anchor로 뜨는 것 방지), (2) 이동 전
+`markBandUsage`가 렌더되지 않을 gap을 밴드 하단으로 기록하지 않게 **차감**한다,
+(3) 빈 단인지 판정은 gap을 더하기 **전** 커서로 한다 — gap 때문에 "점유된" 것으로
+보이면 초과 문단이 빈 단을 건너뛴다. 단 이동이 페이지를 넘기면 각주 예약이
+바뀌므로 usable 높이는 이동 후 다시 계산한다.
+
 밴드가 비어 있고 라인 캐시가 단별 run (loc 리셋 = 단 경계)을 주면
 `placeCachedColumnRuns`가 한글의 단별 텍스트 배분을 그대로 재현한다 —
 비등폭 단은 라인 수가 아니라 textStartingIndex 글자 위치 비례 (CT 라인
@@ -115,6 +133,7 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
 - `AnyHwpBlock.payload` — 종류별 상세 결과: `.table(HwpTableFrame)` / `.textbox` / `.footnote` / `.shape(HwpShapeGeometry)` / `.image(HwpImageBlockInfo)`. payload 내부 좌표는 **블록-로컬** (footnote 의 separator 만 페이지 좌표)
 - `AnyHwpBlock.source` — `HwpBlockSource(controlInstanceId/paragraphId)`: 편집 기능이 렌더 결과에서 CoreHwp 모델로 돌아가는 참조
 - `AnyHwpBlock.hyperlinkURL` — block-level. `HwpPaginator.hyperlinkURL(in:)` 이 top-level 및 nested paragraph 양쪽에서 추출
+- 하이퍼링크 방출은 **스팬 우선**이다: `%hlk` 필드 스팬이 있으면 글리프 rect로만 방출하고, 스팬이 없는 컨테이너(표/글상자/각주) 문단만 문단 rect 폴백으로 담는다. 모델의 `hyperlinkURL`은 스팬 유무와 무관하게 채워지므로 폴백 측에서 `HwpDrawnTextLayout.hyperlinkRegions`로 게이트해야 앞뒤 평문이 링크로 표시되지 않는다 (hit tester의 `spanAwareHyperlinkURL`과 같은 규약)
 - **랜덤 UUID identifier 금지.** equality/hash 는 `frame + kind + text + url + payload + source` 기반. 같은 문서 두 번 로드 시 동일 블록으로 인식되어야 함
 - `HwpBlockKind`: `text` / `image` / `shape` / `table` / `textbox` / `footnote` / `placeholder`
 
@@ -131,7 +150,7 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
 
 ## Paint list
 
-- `HwpPaintCommand` = `@unchecked Sendable` enum. CF/NS 참조 타입을 담기 때문에 자동 Sendable 불가
+- `HwpPaintCommand` = `@unchecked Sendable` enum. CF/NS 참조 타입을 담기 때문에 자동 Sendable 불가. enum case는 가로챌 init이 없어 **소유권 경계에서 동결**한다 — `HwpLaidOutParagraph.init`이 `NSAttributedString`을, `HwpShapeGeometry.init`이 `CGPath`를 복사본으로 저장한다 (mutable 서브클래스를 그대로 retain하면 Hashable 불변성·actor 경계 안전성이 깨진다). 새 참조 타입 payload를 추가하면 그 생산 지점에서 같은 복사를 해야 한다
 - 케이스: `fillRect` / `strokeRect` / `drawText` / `drawPath` / `drawImage` / `drawImageReference(binItemId:rect:)` / `drawPlaceholder` / `hyperlink`
 - `drawImageReference` 는 비트맵을 운반하지 않는다 — HwpKitNative 의 `HwpPageImageProvider` 가 `HwpImageStore` + `HwpImageCache` + `HwpImageAdapter` 로 지연 디코딩
 - **`HwpPage.==` / `hash` 는 `paintList.commands.count` 만 비교** (structural fingerprint). 렌더 결과 비교용으로 쓰지 말 것
@@ -219,7 +238,12 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
 - 셀 안 글상자/도형 (그림 제외)은 여전히 페이지 흐름 블록으로 방출된다
   (셀 위치가 아닌 흐름 위치 — 그림처럼 셀 콘텐츠로 옮기는 것은 후속 과제)
 - 페이지보다 큰 표 row 슬라이스는 문단을 라인 단위로 나눠 이월하지만 (절단선은
-  라인 경계로 정렬), 라인 캐시 없는 문단·조각 경계의 중첩 표는 위 조각에 통째로 남는다
+  라인 경계로 정렬), 라인 캐시 없는 문단·조각 경계의 중첩 표는 위 조각에 통째로 남는다.
+  절단선 정렬(`lineAlignedCut`)과 조각 슬라이스(`slicedParagraph`)는 **같은
+  전진량 함수**(`lineAdvances`)를 쓰고 둘 다 첫 미적합 라인에서 멈춘다 — 등분
+  근사나 `for...where` 필터를 쓰면 절단선과 조각 경계가 어긋난다. 정렬은
+  고정점까지 반복하되 pass 상한(32)을 두고, 초과하면 미정렬 `cutY`로 폴백한다
+  (엇갈린 라인 그리드로 pass당 0.5pt씩만 내려가는 조작 문서의 로드 지연 차단)
 - 페이지/단 경계로 분할된 문단의 컨트롤은 마지막 조각 처리 후 방출된다 —
   앞 조각에 앵커된 각주/메모가 마지막 조각의 페이지에 귀속되고, treatAsChar
   개체는 흐름 폴백된다. 근본 원인: 컨트롤 수집 (collectFootnotes/collectMemos/
@@ -251,8 +275,10 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   (쪽 나누기 bit 2는 구현). 각주 numberingMode == 2 (쪽마다 새로)에서 문단이
   페이지 경계 재시도로 밀리면 본문 위 첨자 번호가 재계산 전 값일 수 있다
 - 쪽 번호 위치 (표 148)의 상/하 밴드 프레임이 없으면 (여백 0) 콘텐츠 경계에
-  근사 배치한다. 감추기 (표 145)의 바탕쪽/테두리/배경 비트는 해당 렌더가 없어
-  무시된다
+  근사 배치한다. 감추기 (표 145 pghd·표 132 구역 정의)의 머리말/꼬리말/쪽 번호
+  비트만 적용되고, 바탕쪽/테두리/배경 비트는 해당 렌더가 없어 무시된다.
+  용지 방향은 세로 저장 + 넓게 선언일 때만 축을 바꾼다 — 가로 픽스처를 확보하면
+  한글 저장 규약을 실측해 확정할 것
 - 단 종류 (일반/배분/평행)와 맞쪽 방향은 미세분화 — 밴드가 닫힐 때 항상 배분,
   방향은 왼쪽/오른쪽만; 다단에서 페이지에 걸쳐 분할된 문단의 각주는 마지막
   조각의 페이지에 귀속된다
