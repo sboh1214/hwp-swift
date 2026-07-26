@@ -215,6 +215,14 @@
             // 않고 가장 가까운 유효 페이지로 클램프한다 — macOS와 대칭 (#4).
             guard let document, !document.pages.isEmpty else { return }
             let index = max(0, min(index, document.pages.count - 1))
+            // bounds가 아직 0이면(SwiftUI makeUIView 시점) offset 계산이 무의미하고,
+            // 예약된 초기 센터링이 첫 실측 레이아웃에서 이 요청을 덮는다 — 목표
+            // 페이지를 예약해 그 레이아웃에서 복원한다 (R70 #1).
+            if scrollView.bounds.isEmpty, pendingInitialCentering {
+                pendingInitialPageIndex = index
+                return
+            }
+            pendingInitialPageIndex = nil
             let target = contentView.convert(frameForPage(at: index), to: scrollView)
             let offsetY = clampedContentOffsetY(target.minY)
             scrollView.setContentOffset(
@@ -420,15 +428,26 @@
         /// 문서 교체 후 첫 non-zero 레이아웃에서 센터링 원점을 1회 적용하기 위한
         /// 예약 — 적용 후 해제해 이후 사용자 스크롤을 덮지 않는다 (R40 #1).
         private var pendingInitialCentering = false
+        /// 예약된 초기 목표 페이지 (0-based). bounds가 0인 동안 들어온 명시
+        /// 페이지 요청을 담아 첫 실측 레이아웃에서 그 페이지로 복원한다 —
+        /// 없으면 센터링 원점으로 간다 (R70 #1).
+        private var pendingInitialPageIndex: Int?
 
-        /// bounds가 실측(non-zero)일 때만 센터링 인셋 보정 원점으로 한 번 옮긴다.
+        /// bounds가 실측(non-zero)일 때만 예약된 초기 위치로 한 번 옮긴다.
+        /// 명시 페이지 요청이 예약돼 있으면 센터링 원점 대신 그 페이지로 간다 —
+        /// 센터링이 요청을 덮으면 currentPage 바인딩까지 1로 되돌아간다 (R70 #1).
         private func applyPendingInitialCentering() {
             guard pendingInitialCentering, !scrollView.bounds.isEmpty else { return }
+            pendingInitialCentering = false
+            if let pageIndex = pendingInitialPageIndex {
+                pendingInitialPageIndex = nil
+                scrollToPage(at: pageIndex)
+                return
+            }
             let inset = scrollView.adjustedContentInset
             scrollView.setContentOffset(
                 CGPoint(x: -inset.left, y: -inset.top), animated: false
             )
-            pendingInitialCentering = false
         }
 
         private func visiblePageRange() -> Range<Int> {

@@ -109,6 +109,33 @@
             expect(view.scrollView.contentOffset.y) == -inset.top
         }
 
+        /// SwiftUI makeUIView(bounds 0)에서 들어온 초기 페이지 요청은 첫 실측
+        /// 레이아웃에서 복원된다 — 예약된 초기 센터링이 요청을 덮으면 페이지 1로
+        /// 되돌아가고 currentPage 바인딩까지 오염된다 (R70 #1).
+        func testInitialPageRequestSurvivesPendingCentering() {
+            let view = HwpDocumentUIView(frame: .zero)
+            view.document = makeDocument(pageCount: 10)
+
+            view.scrollToPage(at: 4)
+            view.frame = CGRect(x: 0, y: 0, width: 400, height: 600)
+            view.layoutIfNeeded()
+
+            expect(view.currentVisiblePage()) == 4
+        }
+
+        /// 초기 요청이 없으면 종전대로 센터링 원점에서 연다 (R40 #1 유지).
+        func testInitialCenteringStillAppliesWithoutPageRequest() {
+            let view = HwpDocumentUIView(frame: .zero)
+            view.document = makeDocument(pageCount: 10)
+
+            view.frame = CGRect(x: 0, y: 0, width: 400, height: 600)
+            view.layoutIfNeeded()
+
+            expect(view.currentVisiblePage()) == 0
+            expect(view.scrollView.contentOffset.y)
+                == -view.scrollView.adjustedContentInset.top
+        }
+
         /// scrollToPage는 인셋 반영 클램프로 짧은 문서를 센터에 유지한다 —
         /// zero-based 클램프는 y=0(좌상단)으로 밀어냈다 (R40 #2).
         func testScrollToPageKeepsShortDocumentCentered() {
