@@ -6,8 +6,8 @@ import XCTest
 
 #if canImport(CoreText)
     /// 구역 정의 (표 132)의 감추기 플래그는 pageHide 컨트롤 (표 145)과 같은
-    /// 효과로 크롬을 억제해야 한다 — 구역 내내 유지되므로 페이지가 넘어가도
-    /// 다시 나타나지 않는다 (R70 #2).
+    /// 효과로 크롬을 억제하되, 구역의 **첫 쪽**에만 적용된다
+    /// (HwpSectionDefProperty 문서) — 2쪽부터는 되살아난다 (R70 #2, R71 #1).
     final class HwpSectionChromeHidingTests: XCTestCase {
         private func paginator(hidePageNumber: Bool) throws -> HwpPaginator {
             var sectionDef = HwpSynthetic.sectionDef()
@@ -19,7 +19,10 @@ import XCTest
                     .section(sectionDef),
                     .pageNumberPosition(position),
                 ],
-                bodyParagraphs: [try HwpSynthetic.textParagraph("본문")]
+                bodyParagraphs: [
+                    try HwpSynthetic.textParagraph("첫 쪽"),
+                    try HwpSynthetic.pageBreakParagraph("둘째 쪽"),
+                ]
             )
             return HwpPaginator(
                 sections: [section],
@@ -28,22 +31,26 @@ import XCTest
             )
         }
 
-        private func pageNumberBlockCount(_ paginator: HwpPaginator) async throws -> Int {
-            var count = 0
+        /// 페이지별 크롬(쪽 번호) 블록 수
+        private func chromeCounts(_ paginator: HwpPaginator) async throws -> [Int] {
+            var counts: [Int] = []
             let totalPages = await paginator.totalPages()
             for pageIndex in 0 ..< totalPages {
                 guard let page = try await paginator.page(at: pageIndex) else { continue }
-                count += page.blocks.filter { $0.role == .pageChrome }.count
+                counts.append(page.blocks.filter { $0.role == .pageChrome }.count)
             }
-            return count
+            return counts
         }
 
-        func testSectionHideFlagSuppressesPageNumberChrome() async throws {
-            let visible = try await pageNumberBlockCount(paginator(hidePageNumber: false))
-            let hidden = try await pageNumberBlockCount(paginator(hidePageNumber: true))
+        func testSectionHideFlagSuppressesChromeOnFirstPageOnly() async throws {
+            let visible = try await chromeCounts(paginator(hidePageNumber: false))
+            let hidden = try await chromeCounts(paginator(hidePageNumber: true))
 
-            expect(visible) > 0
-            expect(hidden) == 0
+            expect(visible.count) >= 2
+            expect(visible.allSatisfy { $0 > 0 }) == true
+            // 첫 쪽만 감추고 둘째 쪽부터는 종전대로 방출한다.
+            expect(hidden.first) == 0
+            expect(hidden.dropFirst().allSatisfy { $0 > 0 }) == true
         }
     }
 #endif
