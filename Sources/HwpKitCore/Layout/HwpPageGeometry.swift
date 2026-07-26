@@ -21,10 +21,12 @@ public struct HwpPageGeometry: Sendable, Hashable {
     ) -> HwpPageGeometry {
         let rawPageSize = HwpUnits.size(fromHwpUnitWidth: pageDef.width, height: pageDef.height)
         // 미신뢰 페이지 치수 방어: 유한·양수·상한으로 클램프해 거대 backing store를 막는다.
-        let pageSize = CGSize(
+        let sanitizedSize = CGSize(
             width: Self.sanitizedDimension(rawPageSize.width),
             height: Self.sanitizedDimension(rawPageSize.height)
         )
+        // 용지 방향 (표 13 bit 0: 0 좁게 / 1 넓게)을 여백·단 계산 전에 반영한다.
+        let pageSize = Self.orientedPageSize(sanitizedSize, property: pageDef.property)
 
         // 한글의 세로 구성 (표 137): 위쪽 여백 → 머리말 영역 → 본문 →
         // 꼬리말 영역 → 아래쪽 여백. 머리말/꼬리말 컨트롤이 없어도 두 영역은
@@ -103,6 +105,17 @@ public struct HwpPageGeometry: Sendable, Hashable {
     static let maximumPageDimension: CGFloat = 14400
     /// 비유한/비양수 치수 폴백 (A4 폭)
     static let fallbackPageDimension: CGFloat = 595
+
+    /// 용지 방향 (표 13 bit 0)을 반영한 페이지 크기.
+    ///
+    /// 넓게(landscape)로 선언됐는데 저장 치수가 세로 형태(폭 < 높이)면 축을
+    /// 바꾼다. 저장 치수가 이미 가로 형태면 그대로 둔다 — 한글 저장본이 회전을
+    /// 이미 반영했는지 여부와 무관하게 같은 결과를 내고(멱등), 무조건 교환했을
+    /// 때 생기는 이중 회전을 원리적으로 막는다 (R69 #1).
+    static func orientedPageSize(_ size: CGSize, property: UInt32) -> CGSize {
+        guard property & 1 == 1, size.width < size.height else { return size }
+        return CGSize(width: size.height, height: size.width)
+    }
 
     private static func sanitizedDimension(_ value: CGFloat) -> CGFloat {
         guard value.isFinite, value > 0 else { return fallbackPageDimension }

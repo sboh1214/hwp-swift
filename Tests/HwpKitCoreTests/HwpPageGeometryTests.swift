@@ -18,6 +18,43 @@ final class HwpPageGeometryTests: XCTestCase {
         expect(geo.pageSize.height).to(beCloseTo(841.89, within: 0.5))
     }
 
+    /// 넓게(표 13 bit 0 = 1)로 선언된 구역은 축을 바꿔 배치한다 — 세로로 두면
+    /// 본문 폭·줄바꿈·페이지 분할이 전부 어긋난다 (R69 #1).
+    func testLandscapePropertySwapsAxesAndWidensContent() {
+        var pageDef = HwpPageDef()
+        pageDef.width = 59528
+        pageDef.height = 84189
+        pageDef.marginHeader = 0
+        pageDef.marginFootnote = 0
+        var landscape = pageDef
+        landscape.property = 1
+
+        let portraitGeometry = HwpPageGeometry.compute(pageDef: pageDef, sectionDef: nil)
+        let landscapeGeometry = HwpPageGeometry.compute(pageDef: landscape, sectionDef: nil)
+
+        expect(landscapeGeometry.pageSize.width).to(beCloseTo(841.89, within: 0.5))
+        expect(landscapeGeometry.pageSize.height).to(beCloseTo(595.28, within: 0.5))
+        expect(landscapeGeometry.contentFrame.width) > portraitGeometry.contentFrame.width
+        expect(landscapeGeometry.columnFrames.first?.width)
+            == landscapeGeometry.contentFrame.width
+    }
+
+    /// 저장 치수가 이미 가로 형태면 넓게 선언이어도 그대로 둔다 — 무조건 교환은
+    /// 이중 회전이 된다. 방향 정규화는 멱등해야 한다 (R69 #1).
+    func testLandscapePropertyKeepsAlreadyRotatedDimensions() {
+        var pageDef = HwpPageDef()
+        pageDef.width = 84189
+        pageDef.height = 59528
+        pageDef.property = 1
+
+        let geometry = HwpPageGeometry.compute(pageDef: pageDef, sectionDef: nil)
+
+        expect(geometry.pageSize.width).to(beCloseTo(841.89, within: 0.5))
+        expect(geometry.pageSize.height).to(beCloseTo(595.28, within: 0.5))
+        expect(HwpPageGeometry.orientedPageSize(geometry.pageSize, property: 1))
+            == geometry.pageSize
+    }
+
     func testLetterPageSize() {
         var pageDef = HwpPageDef()
         pageDef.width = 61200
