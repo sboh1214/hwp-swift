@@ -121,11 +121,16 @@ inflate가 끝난 뒤 검사하는 후처리 거부입니다. 이 제한은 type
 `maxAggregateStreamBytes`(기본 1 GiB)를 초과하면
 `HwpError.aggregateStreamSizeLimitExceeded`로 거부합니다.
 
-2026-07-23 기준 CI와 같은 방식(`swift test --enable-code-coverage` 후
-`llvm-cov export -format=lcov`에서 `Sources/CoreHwp/`만 집계)으로 측정한
-line coverage는 97.55% (7642/7834)입니다. `ci.yml`의 coverage job이 95%
-미만이면 실패시킵니다. 테스트 번들이 4개여도 모든 테스트 타깃이 CoreHwp를
-링크하므로 어떤 번들을 export해도 같은 수치가 나옵니다.
+2026-06-28 기준 `swift test --enable-code-coverage`를 실행한 뒤
+`.build/out/Products/Debug/codecov/Hwp-Swift.json`에서 `Sources/CoreHwp`만
+집계했을 때 line coverage는 98.60% (5481/5559), region coverage는
+97.56% (2483/2545)입니다.
+
+2026-07-23 기준으로 CI와 같은 방식(`llvm-cov export -format=lcov`에서
+`Sources/CoreHwp/`만 집계)으로 다시 재면 line coverage는 97.55%
+(7642/7834)입니다. `ci.yml`의 coverage job은 이 lcov 값이 95% 미만이면
+실패시킵니다. 테스트 번들이 4개여도 모든 테스트 타깃이 CoreHwp를 링크하므로
+어떤 번들을 export해도 같은 수치가 나옵니다.
 
 | 영역 | 상태 |
 | --- | --- |
