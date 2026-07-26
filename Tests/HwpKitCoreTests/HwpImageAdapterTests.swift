@@ -9,6 +9,20 @@ import XCTest
 final class HwpImageAdapterTests: XCTestCase {
     private let adapter = HwpImageAdapter()
 
+    /// 미신뢰 헤더가 선언한 차원의 곱이 Int를 넘어도 트랩 없이 거부한다 —
+    /// 곱셈이 한도 검사보다 먼저라 무검사 `*`는 파일을 여는 것만으로 크래시였다.
+    /// 46,341²은 32비트 Int에서 넘치고 64비트에서도 한도(5천만)를 초과한다 (R72 #1).
+    func testExceedsPixelLimitRejectsOverflowingDimensions() {
+        expect(HwpImageAdapter.exceedsPixelLimit(width: Int.max, height: 2)) == true
+        expect(HwpImageAdapter.exceedsPixelLimit(width: Int.max, height: Int.max)) == true
+        expect(HwpImageAdapter.exceedsPixelLimit(width: 46341, height: 46341)) == true
+    }
+
+    func testExceedsPixelLimitAcceptsDimensionsWithinBudget() {
+        expect(HwpImageAdapter.exceedsPixelLimit(width: 1000, height: 1000)) == false
+        expect(HwpImageAdapter.exceedsPixelLimit(width: 4096, height: 4096)) == false
+    }
+
     func testEmptyDataReturnsEmptyPayloadError() {
         let result = adapter.decodeData(Data())
         switch result {

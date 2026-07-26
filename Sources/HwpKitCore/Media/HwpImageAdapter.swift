@@ -77,7 +77,9 @@ public struct HwpImageAdapter {
         // 선언된 픽셀 차원을 디코드 전에 읽어 (전체 CGImage는 압축 크기와 무관하게
         // 폭×높이×4를 할당) 폭탄은 거부하고 큰 이미지는 다운샘플한다.
         let dimensions = Self.pixelDimensions(of: source)
-        if let (width, height) = dimensions, width * height > Self.maximumPixelCount {
+        if let (width, height) = dimensions,
+           Self.exceedsPixelLimit(width: width, height: height)
+        {
             return .failure(.decodeFailed(
                 underlying: "image dimensions \(width)x\(height) exceed limit"
             ))
@@ -135,6 +137,14 @@ public struct HwpImageAdapter {
               width > 0, height > 0
         else { return nil }
         return (width, height)
+    }
+
+    /// 선언 차원이 픽셀 한도를 넘는지 — 곱셈을 오버플로 보고형으로 한다.
+    /// 헤더의 차원은 미신뢰 값이라 `width * height`가 한도 검사 전에 트랩한다
+    /// (32비트 Int인 watchOS arm64_32에서는 46,341² 선언만으로도 넘친다).
+    static func exceedsPixelLimit(width: Int, height: Int) -> Bool {
+        let product = width.multipliedReportingOverflow(by: height)
+        return product.overflow || product.partialValue > maximumPixelCount
     }
 
     /// 소스의 EXIF orientation (표 TIFF 1-8). 없으면 기본값 1(정방향).
