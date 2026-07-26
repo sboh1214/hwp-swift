@@ -868,6 +868,7 @@ private extension HwpPaginator {
             sectionDef: sectionDef
         )
         currentSectionDef = sectionDef
+        pageChrome.applySectionHideFlags(sectionDef)
         // 구역은 항상 새 페이지에서 시작하므로 여기서 논리 쪽 번호를 재설정해도 안전하다.
         if sectionDef.pageStartNumber > 0 {
             nextLogicalPageNumber = Int(sectionDef.pageStartNumber)

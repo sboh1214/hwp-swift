@@ -19,6 +19,9 @@ struct HwpPageChromeBuilder {
         var activePageNumberPosition: CoreHwp.HwpPageNumberPosition?
         /// 이 페이지에서 감출 대상 (pghd, 표 145 bit field). 페이지 확정 시 초기화.
         var pageHideMask: UInt32 = 0
+        /// 구역 정의 (표 132)의 감추기 플래그를 표 145 비트로 환산한 마스크.
+        /// 구역 내내 유지되므로 페이지 확정 시 초기화하지 않는다.
+        var sectionHideMask: UInt32 = 0
         /// (컨트롤, 밴드 프레임)별 머리말/꼬리말 블록 캐시
         var bandBlocksCache: [BandBlocksKey: [AnyHwpBlock]] = [:]
     }
@@ -61,12 +64,30 @@ struct HwpPageChromeBuilder {
         }
     }
 
+    /// 구역 정의 (표 132)의 감추기 플래그를 표 145 비트 (0x01 머리말 /
+    /// 0x02 꼬리말 / 0x20 쪽 번호)로 환산해 구역 마스크로 둔다. 구역이 바뀌면
+    /// 새 플래그로 교체된다 — pageHide 컨트롤 마스크와 OR로 합쳐 소비한다.
+    mutating func applySectionHideFlags(_ sectionDef: CoreHwp.HwpSectionDef) {
+        let property = sectionDef.propertyInfo
+        var mask: UInt32 = 0
+        if property.hideHeader {
+            mask |= 0x01
+        }
+        if property.hideFooter {
+            mask |= 0x02
+        }
+        if property.hidePageNumberPosition {
+            mask |= 0x20
+        }
+        state.sectionHideMask = mask
+    }
+
     // MARK: 페이지 확정 방출
 
     /// 페이지 확정 시점: 감추기 마스크 (표 145: 0x01 머리말, 0x02 꼬리말,
     /// 0x20 쪽 번호)를 소비하고 이 페이지의 크롬 블록을 방출 순서대로 돌려준다.
     mutating func blocks(forPage pageNumber: Int, geometry: HwpPageGeometry) -> [AnyHwpBlock] {
-        let hideMask = state.pageHideMask
+        let hideMask = state.pageHideMask | state.sectionHideMask
         state.pageHideMask = 0
         var blocks = activeBandBlocks(
             pageNumber: pageNumber,
