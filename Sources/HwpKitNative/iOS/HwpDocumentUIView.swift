@@ -62,6 +62,10 @@
                 // no-op이므로, 첫 non-zero layoutSubviews에서 재적용하도록 예약한다
                 // (bounds가 이미 있으면 아래 호출이 즉시 적용, R39 #2·R40 #1).
                 pendingInitialCentering = true
+                // 옛 문서의 예약 페이지는 버린다 — 남기면 교체 문서를 그 페이지에서
+                // 열어 "맨 위에서 연다"는 계약이 깨진다. 교체 후 새 요청이 오면
+                // scrollToPage가 다시 채운다 (R71 #2).
+                pendingInitialPageIndex = nil
                 applyPendingInitialCentering()
                 selectionController.document = document
                 updateVisiblePages(range: 0 ..< min(document?.pages.count ?? 0, 3))

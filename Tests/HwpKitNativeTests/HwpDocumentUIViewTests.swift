@@ -123,6 +123,22 @@
             expect(view.currentVisiblePage()) == 4
         }
 
+        /// 첫 레이아웃 전에 문서가 교체되면 옛 문서의 예약 페이지를 버리고 맨
+        /// 위에서 연다 — 남기면 교체 문서가 엉뚱한 페이지에서 열린다 (R71 #2).
+        func testDocumentReplacementDiscardsQueuedInitialPage() {
+            let view = HwpDocumentUIView(frame: .zero)
+            view.document = makeDocument(pageCount: 10)
+            view.scrollToPage(at: 7)
+
+            // 구조가 다른 문서여야 전체 교체 경로를 탄다 (같은 문서 재전달은
+            // 스크롤 유지가 의도된 별도 경로).
+            view.document = makeDocument(pageCount: 6)
+            view.frame = CGRect(x: 0, y: 0, width: 400, height: 600)
+            view.layoutIfNeeded()
+
+            expect(view.currentVisiblePage()) == 0
+        }
+
         /// 초기 요청이 없으면 종전대로 센터링 원점에서 연다 (R40 #1 유지).
         func testInitialCenteringStillAppliesWithoutPageRequest() {
             let view = HwpDocumentUIView(frame: .zero)
