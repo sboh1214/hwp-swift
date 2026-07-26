@@ -58,4 +58,23 @@ final class HwpPageImageProviderTests: XCTestCase {
 
         expect(index) == 0
     }
+
+    /// 캐시 purge에 취소된 디코드(nil)는 실패로 기록하지 않는다 — 기록하면
+    /// failedKeys가 그 변형을 provider 수명 내내 placeholder로 묶는다. 진짜
+    /// 디코드 실패는 종전처럼 기록해 매 draw 재디코드를 막는다 (R67).
+    func testCachePurgeCancellationKeepsVariantRetryable() {
+        let provider = HwpPageImageProvider(store: HwpImageStore(), cache: HwpImageCache())
+
+        provider.finishRequest(
+            key: 1, variant: variant(1), generation: 0,
+            image: nil, cost: 0, recordsFailure: false
+        )
+        provider.finishRequest(
+            key: 2, variant: variant(2), generation: 0,
+            image: nil, cost: 0, recordsFailure: true
+        )
+
+        expect(provider.didFail(for: 1)) == false
+        expect(provider.didFail(for: 2)) == true
+    }
 }

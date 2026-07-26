@@ -125,6 +125,13 @@ public actor HwpImageCache {
         inFlight.removeAll()
     }
 
+    /// clear() 호출마다 증가하는 purge 세대. 소비자가 fetch 전후로 비교해
+    /// "내 디코드가 purge에 취소됐는지"를 판별한다 — purge는 취소일 뿐
+    /// 디코드 실패가 아니므로 재시도 가능으로 남아야 한다 (R67).
+    public func purgeGeneration() async -> UInt64 {
+        generation
+    }
+
     public func count() async -> Int {
         storage.count
     }

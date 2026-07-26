@@ -238,6 +238,21 @@ final class HwpImageCacheTests: XCTestCase {
         expect(hit?.originalPixelSize) == CGSize(width: 8192, height: 4096)
     }
 
+    /// purge 세대는 clear()마다 증가한다 — 소비자가 fetch 전후로 비교해 purge에
+    /// 취소된 디코드를 실패가 아닌 재시도 대상으로 구분한다 (R67).
+    func testClearIncrementsPurgeGeneration() async {
+        let cache = HwpImageCache()
+        let before = await cache.purgeGeneration()
+
+        await cache.clear()
+        let afterClear = await cache.purgeGeneration()
+        _ = await cache.fetch(1) { makeImage().map { HwpCachedImage(image: $0) } }
+        let afterFetch = await cache.purgeGeneration()
+
+        expect(afterClear) != before
+        expect(afterFetch) == afterClear
+    }
+
     func testFetchAfterClearCachesNormally() async {
         // clear로 세대가 바뀐 뒤 시작한 fetch는 정상 캐시된다 (게이트가 정상
         // 동작을 막지 않음).

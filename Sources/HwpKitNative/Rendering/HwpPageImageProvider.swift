@@ -196,6 +196,7 @@ public final class HwpPageImageProvider: @unchecked Sendable {
             }
             // 원본 디코드는 binItemId 단위로 공유 캐시하고,
             // 스타일 변형은 변형 키로 이 provider에만 저장한다.
+            let purgeGenerationBeforeFetch = await cache.purgeGeneration()
             let decoded = await cache.fetch(key) { [weak self] in
                 if Task.isCancelled {
                     return nil
@@ -228,12 +229,18 @@ public final class HwpPageImageProvider: @unchecked Sendable {
                 (styled?.bytesPerRow ?? 0) * (styled?.height ?? 0),
                 (decoded?.image.bytesPerRow ?? 0) * (decoded?.image.height ?? 0)
             )
+            // 캐시 purge(clear)는 in-flight 디코드 태스크를 취소해 nil을 낸다 —
+            // 디코드 실패가 아니므로 실패로 기록하면 그 변형이 provider 수명
+            // 내내 placeholder로 남는다. purge 세대가 바뀌었으면 재시도 가능
+            // 으로 남긴다 (R67).
+            let purgedDuringFetch = await cache.purgeGeneration() != purgeGenerationBeforeFetch
             self?.finishRequest(
                 key: key,
                 variant: variant,
                 generation: gen,
                 image: styled,
-                cost: pinnedBytes
+                cost: pinnedBytes,
+                recordsFailure: !purgedDuringFetch
             )
         }
         lock.lock()
@@ -253,12 +260,15 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         }
     }
 
-    private func finishRequest(
+    /// recordsFailure가 false면 nil 결과를 실패로 기록하지 않는다 — 캐시 purge에
+    /// 취소된 디코드는 재시도 가능으로 남아야 한다 (R67).
+    func finishRequest(
         key: UInt32,
         variant: String,
         generation gen: Int,
         image: CGImage?,
-        cost: Int
+        cost: Int,
+        recordsFailure: Bool = true
     ) {
         lock.lock()
         // stale 완료(취소를 지나쳐 완주한 구세대 태스크)는 어떤 요청 상태도
@@ -277,7 +287,7 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         if let image {
             insertResolved(variant, image: image, cost: max(1, cost))
             latestVariantByBinItemId[key] = variant
-        } else {
+        } else if recordsFailure {
             failedKeys.insert(variant)
         }
         // 슬롯이 났으니 미뤄 둔 요청 하나를 꺼내 재시도한다 (#5). 디큐 시점
