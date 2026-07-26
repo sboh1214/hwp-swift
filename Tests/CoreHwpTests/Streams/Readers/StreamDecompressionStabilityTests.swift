@@ -71,6 +71,17 @@ final class StreamDecompressionStabilityTests: XCTestCase {
         })
     }
 
+    /// ViewText 자식 수가 구역 수와 일치하는 정상 문서는 표시 본문으로 채택된다
+    /// — 초과/부족 자식을 압축 해제 전에 거부하는 검증(R69 #2)이 정상 파일을
+    /// 빈 ViewText로 폴백시키지 않는다.
+    func testValidViewTextStorageIsStillAdopted() throws {
+        let hwp = try HwpFile(fromPath: hwpURL(#file, "track-changes").path)
+
+        expect(hwp.viewSectionArray).toNot(beEmpty())
+        expect(hwp.viewSectionArray.count) == hwp.sectionArray.count
+        expect(hwp.displaySectionArray.count) == hwp.sectionArray.count
+    }
+
     func testReadLimitsRejectNonPositiveValuesWithTypedError() {
         let cases = [
             HwpReadLimits(maxCompressedStreamBytes: 0),

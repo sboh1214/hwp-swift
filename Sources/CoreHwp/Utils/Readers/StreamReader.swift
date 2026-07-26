@@ -62,9 +62,11 @@ struct StreamReader {
     func getOptionalNamedDataFromStorage(
         _ streamName: HwpStreamName,
         _ isCompressed: Bool,
-        maxChildren: Int = .max
+        expectedChildCount: Int? = nil
     ) throws -> [(name: String, data: Data)] {
-        try getOptionalNamedDataFromStorage(streamName, maxChildren: maxChildren) { _ in isCompressed }
+        try getOptionalNamedDataFromStorage(
+            streamName, expectedChildCount: expectedChildCount
+        ) { _ in isCompressed }
     }
 
     private func readData(
@@ -331,7 +333,7 @@ struct StreamReader {
 extension StreamReader {
     func getOptionalNamedDataFromStorage(
         _ streamName: HwpStreamName,
-        maxChildren: Int = .max,
+        expectedChildCount: Int? = nil,
         compressionByChildName: (String) -> Bool
     ) throws -> [(name: String, data: Data)] {
         guard let storage = streams[streamName.rawValue] else {
@@ -343,13 +345,19 @@ extension StreamReader {
             storage.children.map { (name: $0.name, type: $0.type) },
             for: streamName
         )
-        // 아는 구역 수(maxChildren)를 넘는 자식은 압축 해제 전에 잘라 낸다 —
-        // 개별 스트림 한계만으론 집계 압축 해제량이 무제한이라, 어차피 구역 수
-        // 불일치로 버려질 초과분이 메모리를 고갈시키는 것을 막는다 (R43 #1).
-        return try sortedStorageChildrenWithoutRequiredValidation(
-            storage,
-            for: streamName
-        ).prefix(maxChildren).map { entry in
+        let children = sortedStorageChildrenWithoutRequiredValidation(storage, for: streamName)
+        // 아는 구역 수와 다른 자식 구성은 압축 해제 전에 거부한다 — 초과분을
+        // 잘라 내면 뒤에 정렬된 자식이 조용히 사라져 남은 N개가 구역 검증을
+        // 통과하고, 손상/stale ViewText가 유효한 BodyText를 대체한다 (R69 #2).
+        // 거부는 호출부의 빈 ViewText 폴백으로 이어지고, 초과분을 읽지 않으므로
+        // 집계 압축 해제량 방어도 유지된다 (R43 #1).
+        if let expectedChildCount, children.count != expectedChildCount {
+            throw HwpError.invalidRecordTree(
+                reason: "\(streamName.rawValue) child count \(children.count) " +
+                    "!= \(expectedChildCount)"
+            )
+        }
+        return try children.map { entry in
             try (entry.name, readData(entry, compressionByChildName(entry.name), streamName))
         }
     }

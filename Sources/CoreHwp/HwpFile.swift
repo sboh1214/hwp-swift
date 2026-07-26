@@ -158,7 +158,7 @@ public struct HwpFile: HwpPrimitive {
         let viewTextData: [(name: String, data: Data)]
         do {
             viewTextData = try reader.getOptionalNamedDataFromStorage(
-                .viewText, isCompressed, maxChildren: sectionDataArray.count
+                .viewText, isCompressed, expectedChildCount: sectionDataArray.count
             )
         } catch let HwpError.streamSizeLimitExceeded(name, limit, actual) {
             // 자원 한계는 설정된 하드 한계이므로 optional ViewText라도 폴백하지
