@@ -76,8 +76,22 @@
         public private(set) var imageCache: HwpImageCache
         public var zoomScale: CGFloat = 1.0 {
             didSet {
-                if scrollView.zoomScale != zoomScale {
-                    scrollView.zoomScale = zoomScale
+                // 네이티브 한계로 클램프한 값만 보관한다 — 클램프 전 값이 남으면
+                // HwpKit의 범위 정규화가 그것을 실제 배율로 오인해 (이미 상한이라
+                // 스크롤 뷰가 안 바뀌면 echo도 없다) 바인딩과 렌더가 영구히
+                // 어긋난다. macOS는 magnification을 읽는 computed라 무관.
+                // 비-finite는 직전 값을 유지한다 (R72 #3).
+                let clamped = zoomScale.isFinite
+                    ? Swift.min(
+                        Swift.max(zoomScale, scrollView.minimumZoomScale),
+                        scrollView.maximumZoomScale
+                    )
+                    : oldValue
+                if clamped != zoomScale {
+                    zoomScale = clamped
+                }
+                if scrollView.zoomScale != clamped {
+                    scrollView.zoomScale = clamped
                     // 프로그램적 (버튼) 줌은 scrollViewDidEndZooming이 발화하지
                     // 않으므로 여기서 즉시 재래스터한다. 핀치 경로는
                     // scrollViewDidZoom이 zoomScale을 동기화해 이 분기에 들어오지

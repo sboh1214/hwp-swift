@@ -63,6 +63,42 @@
             )) == 0
         }
 
+        /// 범위 밖 배율은 스크롤 뷰가 클램프하므로 저장 값도 클램프돼야 한다 —
+        /// 클램프 전 값이 남으면 HwpKit 정규화가 그것을 실제 배율로 오인한다 (R72 #3).
+        func testZoomScaleClampsToNativeMaximum() {
+            let view = HwpDocumentUIView(frame: CGRect(x: 0, y: 0, width: 400, height: 600))
+            view.document = makeDocument()
+
+            view.zoomScale = 10
+
+            expect(view.zoomScale) == view.scrollView.maximumZoomScale
+            expect(view.scrollView.zoomScale) == view.scrollView.maximumZoomScale
+        }
+
+        /// 이미 상한이면 스크롤 뷰가 안 바뀌어 echo도 없다 — 그래도 stale 값이
+        /// 남지 않아야 정규화가 바인딩을 되돌릴 수 있다 (R72 #3의 발현 조건).
+        func testZoomScaleAtMaximumDiscardsFurtherOutOfRangeValue() {
+            let view = HwpDocumentUIView(frame: CGRect(x: 0, y: 0, width: 400, height: 600))
+            view.document = makeDocument()
+            view.zoomScale = view.scrollView.maximumZoomScale
+
+            view.zoomScale = 10
+
+            expect(view.zoomScale) == view.scrollView.maximumZoomScale
+        }
+
+        /// 비-finite 배율은 직전 값을 유지한다 — NaN을 저장하면 정규화 술어가
+        /// 무조건 writeback으로 판정해 바인딩까지 NaN으로 오염된다.
+        func testNonFiniteZoomScaleKeepsPreviousValue() {
+            let view = HwpDocumentUIView(frame: CGRect(x: 0, y: 0, width: 400, height: 600))
+            view.document = makeDocument()
+            view.zoomScale = 2
+
+            view.zoomScale = .nan
+
+            expect(view.zoomScale) == 2
+        }
+
         func testProgrammaticZoomUpdatesLayerContentsScale() {
             // 버튼 줌 (zoomScale 프로그램 대입)은 scrollViewDidEndZooming이
             // 발화하지 않는다 — didSet이 직접 재래스터해야 흐릿해지지 않는다.
