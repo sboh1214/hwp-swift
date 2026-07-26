@@ -160,7 +160,8 @@ PR 리뷰를 반영하며 렌더링 코드를 수정할 때, 한글 파일 렌�
 
 - `OLEKit 0.3.1` — OLE compound document 파싱
 - `SWCompression 4.9.1` — 압축 stream의 deflate (4.9.0에서 untrusted Deflate 입력에 대한 crash 패치 포함)
-- `Nimble 9.2.1` — 테스트 DSL (testTarget 전용)
+- `Nimble 13.8.0` — 테스트 DSL (testTarget 전용)
+- `swift-docc-plugin 1.5.0` — DocC 사이트 빌드 (`cd.yml`의 `docs` job)
 
 ## 노트
 
