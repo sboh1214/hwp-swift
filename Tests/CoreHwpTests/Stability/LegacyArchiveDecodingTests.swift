@@ -153,6 +153,35 @@ final class LegacyArchiveDecodingTests: XCTestCase {
         expect(decoded) == original
     }
 
+    /// main 파서는 표 40의 글자 모양 ID를 읽지 않아 그 뒤 필드가 전부 4바이트씩
+    /// 밀려 저장됐다 — headCharShapeId만 −1로 채우면 char 등이 쓰레기로 남으므로
+    /// rawPayload에서 전량 재파스해야 한다 (R66 #2, R72 #2).
+    func testHwpBulletReparsesShiftedLegacyFieldsFromRawPayload() throws {
+        var payload = Data([1, 2, 3, 4, 5, 6, 7, 8]) // info
+        payload += Data([7, 0, 0, 0]) // headCharShapeId = 7
+        payload += Data([0x00, 0xAC]) // char = "가"
+        payload += Data([0, 0, 0, 0]) // imageId
+        payload += Data([0, 0, 0, 0]) // imageProperty
+        payload += Data([0x13, 0x27]) // checkChar = "✓"
+        let bullet = try HwpBullet.load(payload)
+        expect(bullet.headCharShapeId) == 7
+        expect(bullet.char) == "가"
+
+        // main 아카이브 모사: 키를 지우고 char를 4바이트 밀려 읽힌 값으로 오염
+        var json = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: try JSONEncoder().encode(bullet)) as? [String: Any]
+        )
+        json.removeValue(forKey: "headCharShapeId")
+        json["char"] = "\u{0007}"
+        let legacy = try JSONSerialization.data(withJSONObject: json)
+
+        let decoded = try JSONDecoder().decode(HwpBullet.self, from: legacy)
+
+        expect(decoded.headCharShapeId) == 7
+        expect(decoded.char) == "가"
+        expect(decoded.checkChar) == "✓"
+    }
+
     func testHwpBulletDecodesLegacyArchiveWithoutHeadCharShapeId() throws {
         let bullet = HwpBullet(
             rawPayload: Data([1]),
