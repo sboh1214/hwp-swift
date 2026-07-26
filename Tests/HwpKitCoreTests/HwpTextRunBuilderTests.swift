@@ -8,6 +8,10 @@ import XCTest
     import CoreText
 
     final class HwpTextRunBuilderTests: XCTestCase {
+        static func textChars(_ text: String) -> [CoreHwp.HwpChar] {
+            text.utf16.map { CoreHwp.HwpChar(type: .char, value: $0) }
+        }
+
         func testEmptyParagraphReturnsEmptyAttributedString() throws {
             let paragraph = paragraph(text: "", runs: [(0, 0)])
             let result = builder(shapes: [0: try charShape()]).build(paragraph: paragraph)
@@ -174,16 +178,18 @@ import XCTest
             var paraText = CoreHwp.HwpParaText()
             var link = CoreHwp.HwpHyperlink()
             link.url = "http://example.com/outer"
-            paraText.charArray =
-                "a".utf16.map { CoreHwp.HwpChar(type: .char, value: $0) }
-                    + [CoreHwp.HwpChar(type: .extended, value: 3)]
-                    + "b".utf16.map { CoreHwp.HwpChar(type: .char, value: $0) }
-                    + [CoreHwp.HwpChar(type: .extended, value: 3)]
-                    + "c".utf16.map { CoreHwp.HwpChar(type: .char, value: $0) }
-                    + [CoreHwp.HwpChar(type: .inline, value: 4)]
-                    + "d".utf16.map { CoreHwp.HwpChar(type: .char, value: $0) }
-                    + [CoreHwp.HwpChar(type: .inline, value: 4)]
-                    + "e".utf16.map { CoreHwp.HwpChar(type: .char, value: $0) }
+            // 긴 `+` 체인은 타입 체커가 지수적으로 느려져 느린 머신에서 컴파일이
+            // 타임아웃된다 — 명시 타입 + 단계 구성으로 추론 부담을 없앤다.
+            var charArray: [CoreHwp.HwpChar] = Self.textChars("a")
+            charArray.append(CoreHwp.HwpChar(type: .extended, value: 3))
+            charArray += Self.textChars("b")
+            charArray.append(CoreHwp.HwpChar(type: .extended, value: 3))
+            charArray += Self.textChars("c")
+            charArray.append(CoreHwp.HwpChar(type: .inline, value: 4))
+            charArray += Self.textChars("d")
+            charArray.append(CoreHwp.HwpChar(type: .inline, value: 4))
+            charArray += Self.textChars("e")
+            paraText.charArray = charArray
             paragraph.paraText = paraText
             paragraph.ctrlHeaderArray = [
                 .hyperLink(link),
@@ -218,14 +224,14 @@ import XCTest
             link.url = "http://example.com"
             var paragraph = CoreHwp.HwpParagraph()
             var paraText = CoreHwp.HwpParaText()
-            paraText.charArray =
-                [CoreHwp.HwpChar(type: .extended, value: 3)]
-                    + "a".utf16.map { CoreHwp.HwpChar(type: .char, value: $0) }
-                    + [CoreHwp.HwpChar(type: .extended, value: 3)]
-                    + "b".utf16.map { CoreHwp.HwpChar(type: .char, value: $0) }
-                    + [CoreHwp.HwpChar(type: .inline, value: 4)]
-                    + "c".utf16.map { CoreHwp.HwpChar(type: .char, value: $0) }
-                    + [CoreHwp.HwpChar(type: .inline, value: 4)]
+            var charArray: [CoreHwp.HwpChar] = [CoreHwp.HwpChar(type: .extended, value: 3)]
+            charArray += Self.textChars("a")
+            charArray.append(CoreHwp.HwpChar(type: .extended, value: 3))
+            charArray += Self.textChars("b")
+            charArray.append(CoreHwp.HwpChar(type: .inline, value: 4))
+            charArray += Self.textChars("c")
+            charArray.append(CoreHwp.HwpChar(type: .inline, value: 4))
+            paraText.charArray = charArray
             paragraph.paraText = paraText
             paragraph.ctrlHeaderArray = [
                 .memo(CoreHwp.HwpFieldControl(ctrlId: .memo)),
