@@ -1207,7 +1207,12 @@ private extension HwpPaginator {
         ))
     }
 
-    func walkUnsupported(ctrls: [CoreHwp.HwpCtrlId], page: Int, tableDepth: Int = 0) {
+    func walkUnsupported(
+        ctrls: [CoreHwp.HwpCtrlId],
+        page: Int,
+        tableDepth: Int = 0,
+        containerDepth: Int = 0
+    ) {
         for ctrl in ctrls {
             if let element = unsupportedDetector.classify(ctrl: ctrl, page: page) {
                 collectedUnsupported.append(element)
@@ -1227,12 +1232,26 @@ private extension HwpPaginator {
                 ))
                 continue
             }
-            for nested in childParagraphs(of: ctrl).map(\.0) {
+            let children = childParagraphs(of: ctrl).map(\.0)
+            // 이 깊이에서 appendNestedControlBlocks가 자식 방출을 멈춘다 — 그 안의
+            // 그림·도형·표·글상자가 조용히 사라지므로 진단으로 보고한다 (R72 #4).
+            if containerDepth >= Self.maximumContainerDepth,
+               children.contains(where: { !($0.ctrlHeaderArray ?? []).isEmpty })
+            {
+                collectedUnsupported.append(HwpUnsupportedElement(
+                    kind: .placeholder,
+                    page: page,
+                    hint: "중첩 컨테이너 (깊이 \(Self.maximumContainerDepth) 초과)"
+                ))
+                continue
+            }
+            for nested in children {
                 guard let nestedCtrls = nested.ctrlHeaderArray else { continue }
                 walkUnsupported(
                     ctrls: nestedCtrls,
                     page: page,
-                    tableDepth: isTable ? tableDepth + 1 : tableDepth
+                    tableDepth: isTable ? tableDepth + 1 : tableDepth,
+                    containerDepth: containerDepth + 1
                 )
             }
         }
@@ -1383,9 +1402,13 @@ private extension HwpPaginator {
         }
     }
 
+    /// 컨테이너 안 컨테이너 재귀 방출 상한. 렌더(appendNestedControlBlocks)와
+    /// 진단(walkUnsupported)이 같은 값을 써야 초과분이 조용히 사라지지 않는다.
+    static let maximumContainerDepth = 3
+
     /// 컨테이너 문단 안에 중첩된 컨트롤 (표 셀 안 글상자/이미지 등)을 재귀 방출한다.
     func appendNestedControlBlocks(of ctrl: CoreHwp.HwpCtrlId, depth: Int) {
-        guard depth < 3 else { return }
+        guard depth < Self.maximumContainerDepth else { return }
         let container: ContainerContext = if case .table = ctrl {
             .tableCell
         } else if let (_, components) = HwpParagraphObjectCollector.handledControl(ctrl),

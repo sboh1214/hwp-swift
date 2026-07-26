@@ -231,5 +231,45 @@ import XCTest
             expect(balanced.count) >= 2
             expect(Set(balanced.map(\.frame.minX)).count) >= 2
         }
+
+        /// 글상자를 level단 중첩한 gso 개체 (각 단계의 문단이 다음 단계를 품는다)
+        private func nestedTextbox(level: Int) throws -> CoreHwp.HwpGenShapeObject {
+            var object = try HwpSynthetic.inlineTextboxObject(
+                width: 2000, height: 2000, text: "L\(level)"
+            )
+            guard level > 0 else { return object }
+            var inner = try HwpSynthetic.textParagraph("L\(level)")
+            inner.ctrlHeaderArray = [.genShapeObject(try nestedTextbox(level: level - 1))]
+            var component = object.shapeComponentArray[0]
+            component.textBoxListArray[0].paragraphArray = [inner]
+            object.shapeComponentArray[0] = component
+            return object
+        }
+
+        private func unsupportedHints(nesting level: Int) async throws -> [String] {
+            var host = try HwpSynthetic.textParagraph("본문")
+            host.ctrlHeaderArray = [.genShapeObject(try nestedTextbox(level: level))]
+            let paginator = paginate(HwpSynthetic.section(
+                firstParagraphControls: [.section(HwpSynthetic.sectionDef())],
+                bodyParagraphs: [host]
+            ))
+            _ = await paginator.totalPages()
+            return await paginator.unsupportedElements().map(\.hint)
+        }
+
+        /// 렌더는 컨테이너 중첩 depth 3에서 자식 컨트롤 방출을 멈춘다 — 그보다 깊은
+        /// 글상자 안 개체는 조용히 사라지므로 진단으로 보고돼야 한다 (R72 #4).
+        func testContainerNestingBeyondRenderLimitIsReported() async throws {
+            let hints = try await unsupportedHints(nesting: 4)
+
+            expect(hints.contains { $0.contains("중첩 컨테이너") }) == true
+        }
+
+        /// 한도 안의 중첩은 정상 렌더되므로 보고하지 않는다 (과잉 보고 가드).
+        func testContainerNestingWithinRenderLimitIsNotReported() async throws {
+            let hints = try await unsupportedHints(nesting: 1)
+
+            expect(hints.contains { $0.contains("중첩 컨테이너") }) == false
+        }
     }
 #endif
