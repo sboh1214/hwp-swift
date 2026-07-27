@@ -7,6 +7,9 @@ excluded:
   - Carthage
   - Pods
   - .build
+  # 로컬 전용 진단 스크래치 (.gitignore 대상이라 CI 체크아웃엔 없다).
+  # 짧은 진단 변수명·긴 print 덤프가 본질이라 프로덕션 규칙 대상이 아니다.
+  - Tests/HwpKitTests/FixturePreviewDumpScratch.swift
 
 disabled_rules:
   - todo
