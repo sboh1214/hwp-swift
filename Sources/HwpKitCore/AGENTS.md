@@ -175,17 +175,20 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   안에서 쓰라고 라이선스받은 타 파운드리 폰트가 섞여 있다 (2026-07-27 실측:
   187개 / OS/2 achVendID 18종, Monotype `arial`·`malgun`·`Calibri` 포함).
   `HWP_HANCOM_FONTS=1` 또는 `HwpFontResolver(usesInstalledHancomFonts: true)`로
-  opt-in하면 HY헤드라인M 등이 한글.app과 같은 글리프로 렌더된다. 기준선이 이
-  상태에서 실측된 스위트 (fidelity·블록 스냅샷·렌더 해시)는
-  `EnvironmentSensitiveTests.skipUnlessOptedIn(requiresHancomFonts: true)`로
-  묶여 있으니 `HWP_SNAPSHOT_TESTS=1 HWP_HANCOM_FONTS=1`을 함께 준다.
+  opt-in하면 HY헤드라인M 등이 한글.app과 같은 글리프로 렌더된다. macOS 경로만
+  보므로 iOS 기기에서는 인덱스가 항상 비고 이 스위치도 무효다.
+  **스위트를 폰트 모드로 가르지 않는다** (`skipUnlessOptedIn`에 폰트 인자 없음)
+  — 한쪽 모드에서 영영 실행되지 않는 스위트가 생긴다. 대신 렌더 해시는 모드별
+  기준선 파일 (opt-in `<id>.json` / 기본 `<id>-nohancom.json`)로 양쪽을 각각
+  잠그고, 블록 스냅샷·fidelity는 양 모드에서 성립하는 좌표·임계를 쓴다.
   전역 등록은 하지 않는다 (결정론 테스트 조회 오염 방지; `testDeterministic`은
   이 인덱스 자체를 끔). 이름 매칭은 name table 기본 + 로컬라이즈 이름 (한글) 둘 다.
-  `HwpFontResolver.resolve` 는 매칭 결과를 (faceName, script, size) 키로 캐시.
-  해석 순서: 원문 이름 (시스템 → 한컴 번들) → `HwpFontMap.candidates(forFaceName:)`
-  폴백 (원문 이름 → 정규화 이름 (`-`/`#` 접두 제거 + 공백 제거) 순) → script
-  폴백. 명조 계열은 AppleMyungjo, 고딕 계열은 Apple SD Gothic Neo 를 최종
-  후보로 유지할 것 (시스템 기본 설치 폰트)
+  `HwpFontResolver.resolve` 는 매칭 결과를 (faceName, alternatives, script, size)
+  키로 캐시. 해석 순서: 원문 이름 → `HwpFontMap.candidates(forFaceName:)` 폴백
+  (원문 이름 → 정규화 이름 (`-`/`#` 접두 제거 + 공백 제거) 순) → 문서가 선언한
+  대체/기반 글꼴 (아래 항목) → script 폴백. 각 후보는 시스템 → (opt-in 일 때만)
+  한컴 번들 순으로 조회한다. 명조 계열은 AppleMyungjo, 고딕 계열은
+  Apple SD Gothic Neo 를 최종 후보로 유지할 것 (시스템 기본 설치 폰트)
 - **한컴 인덱스를 resolver 밖에서 직접 조회 금지** — `HwpInstalledHancomFonts`
   를 보는 코드는 반드시 `HwpFontResolver.usesInstalledHancomFonts` 를 함께
   확인해야 한다 (`serifLatinFallback` 이 인자로 받는 이유). 무조건 조회하면

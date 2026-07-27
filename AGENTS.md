@@ -108,6 +108,7 @@ ViewText는 optional이라 파싱 실패엔 빈 폴백이지만, 이 두 자원 
   }
   ```
   타입을 실제로 검사하므로 `as!`보다 안전하기도 하다. CoreText 객체 (CTFont/CTLine/CTParagraphStyle)를 `Any`로 받아 오는 테스트 코드에서 재발하기 쉽다.
+- **폰트 바이너리 커밋** (`.ttf`/`.otf`/`.ttc`/`.woff`/`.woff2`) — 이 라이브러리는 폰트를 동봉하지 않는다 (README "폰트"). 세 겹으로 막혀 있다: `.gitignore` 확장자 패턴 → pre-commit 훅 `no-font-binaries` (`git add -f` 차단) → CI lint job의 `No font binaries` (훅 미설치 기여자·웹 UI 업로드 차단). 오픈 라이선스 폰트를 의도적으로 동봉하려면 `.gitignore`의 `!` 예외만으로는 안 된다 — 훅과 CI는 확장자만 보고 거부하므로 세 곳이 같은 예외 목록을 공유하도록 함께 고쳐야 한다. 한 번 커밋되면 history에 영구히 남으니 그 전에 라이선스를 확인할 것.
 
 ## 명령어
 
@@ -117,8 +118,9 @@ swift test                                     # 테스트 실행
 swift test --enable-code-coverage              # 커버리지 (lcov 추출·CoreHwp 95% 게이트는 .github/workflows/ci.yml의 coverage job)
 HWP_PERF=1 swift test --filter Performance     # 성능 실측 (N=20,000 합성 + 타이트 임계; 기본은 N=1,000 스모크)
 HWP_SNAPSHOT_TESTS=1 swift test --filter "FixtureRenderHash|FixtureBlockLayout|FixturePreviewFidelity"  # 환경 의존 스냅샷·fidelity 스위트 (기본 swift test·CI에서는 skip)
-RECORD_RENDER_HASHES=1 swift test --filter FixtureRenderHash     # 렌더 픽셀 해시 기준선 레코딩 (Snapshots/ — gitignore, 이 머신 전용)
-RECORD_BLOCK_SNAPSHOTS=1 swift test --filter FixtureBlockLayout  # 블록 좌표 스냅샷 재생성 (diff 리뷰 필수)
+HWP_HANCOM_FONTS=1 swift test                  # 한컴오피스 번들 폰트 opt-in (기본 off — README "폰트"). 렌더 해시 기준선이 이 모드용으로 따로 있다
+RECORD_RENDER_HASHES=1 swift test --filter FixtureRenderHash     # 렌더 픽셀 해시 기준선 레코딩 (Snapshots/ — gitignore, 이 머신·현재 폰트 모드 전용)
+RECORD_BLOCK_SNAPSHOTS=1 swift test --filter FixtureBlockLayout  # 블록 좌표 스냅샷 재생성 (기준선은 커밋 대상 — diff 리뷰 필수)
 xcodebuild test -scheme Hwp-Swift-Package -destination 'platform=iOS Simulator,name=iPhone 17 Pro'  # iOS 테스트 (#if os(iOS) 코드는 여기서만 실행)
 swiftformat .                                  # 포맷
 swiftformat --lint .                           # CI lint 체크
@@ -137,8 +139,11 @@ PR 리뷰를 반영하며 렌더링 코드를 수정할 때, 한글 파일 렌�
 
 0. **기준선 동결** — 수정 전
    `RECORD_RENDER_HASHES=1 swift test --filter FixtureRenderHash`로 현재
-   렌더를 `Snapshots/`에 레코딩. 기준선은 머신 종속(한컴 폰트·OS
+   렌더를 `Snapshots/`에 레코딩. 기준선은 머신 종속(설치 폰트·OS
    래스터라이저)이라 gitignore — 작업할 이 머신에서 매번 새로 뜬다.
+   **폰트 모드마다 파일이 갈린다**: 배포 기본값(한컴 폰트 off)은
+   `<id>-nohancom.json`, `HWP_HANCOM_FONTS=1`이면 `<id>.json`. 레코딩은
+   현재 모드의 기준선만 갱신하므로, 잠글 모드에서 각각 떠 둔다.
 1. **코멘트 분류** — 렌더 영향 여부 먼저 판정. 레이아웃·측정·폰트·색·장식
    관련이면 렌더가 의도적으로 바뀔 수 있고(기준선 갱신 예정), 순수
    correctness·리팩터는 렌더 불변이어야 한다(해시가 증명).
@@ -147,6 +152,9 @@ PR 리뷰를 반영하며 렌더링 코드를 수정할 때, 한글 파일 렌�
    - `swift test` — 환경 의존 4종은 자동 skip, 나머지 green.
    - `HWP_SNAPSHOT_TESTS=1 swift test --filter "FixtureRenderHash|FixtureBlockLayout|FixturePreviewFidelity"`
      — 렌더 회귀. 실패 시 어느 픽스처의 몇 페이지가 변했는지 출력된다.
+     렌더 해시는 폰트 모드별 기준선이라 `HWP_HANCOM_FONTS=1`을 덧붙인
+     실행을 한 번 더 해야 양쪽이 다 검증된다 (블록 스냅샷·fidelity는
+     양 모드 공용이라 한 번이면 된다).
    - **변경된 페이지만 육안 확인**:
      `HWP_ALLPAGES=<id> HWP_ALLPAGES_DIR=<dir> swift test --filter testDumpAllPages`로
      덤프해 한글.app 실물과 대조. 의도된 개선이면 해당 픽스처만
