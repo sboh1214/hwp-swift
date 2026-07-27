@@ -47,17 +47,24 @@
                 recordVariables: ["RECORD_RENDER_HASHES"]
             )
 
-            // 한컴 번들 폰트가 없으면: 기준선도 없는 환경은 skip이 맞지만,
-            // 기준선이 있는 레코딩 머신에서는 가드가 조용히 무력화되는 것이므로 실패
-            if HwpInstalledHancomFonts.index.isEmpty {
+            // 한컴 번들 폰트를 안 쓰는 상태 (opt-in off 또는 미설치)면: 기준선도 없는
+            // 환경은 skip이 맞지만, 기준선이 있는 레코딩 머신에서는 가드가 조용히
+            // 무력화되는 것이므로 실패시킨다. `isEnabled`를 먼저 봐서 off일 때는
+            // `index` 접근 (앱 번들 폰트 파일 열거)이 아예 일어나지 않게 한다.
+            let usesHancomFonts = HwpInstalledHancomFonts.isEnabled
+            if !usesHancomFonts || HwpInstalledHancomFonts.index.isEmpty {
                 let baselines = Self.existingBaselineNames()
                 try XCTSkipIf(
                     baselines.isEmpty,
-                    "한컴오피스 번들 폰트 없음 — 렌더 해시 기준선은 레코딩 머신 전용"
+                    "한컴오피스 번들 폰트를 쓰지 않음 — 렌더 해시 기준선은 레코딩 머신 전용"
                 )
                 XCTFail(
-                    "기준선 \(baselines.count)개가 있는데 한컴 번들 폰트를 찾지 못함 — "
+                    usesHancomFonts
+                        ? "기준선 \(baselines.count)개가 있는데 한컴 번들 폰트를 찾지 못함 — "
                         + "한컴오피스 설치/경로 확인 (skip하면 가드가 무력화된다)"
+                        : "기준선 \(baselines.count)개가 있는데 한컴 번들 폰트가 꺼져 있음 — "
+                        + "\(HwpInstalledHancomFonts.enableEnvironmentKey)=1 을 함께 지정할 것 "
+                        + "(skip하면 가드가 무력화된다)"
                 )
                 return
             }

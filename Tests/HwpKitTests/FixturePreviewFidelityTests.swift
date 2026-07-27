@@ -102,7 +102,7 @@ final class FixturePreviewFidelityTests: XCTestCase {
     }
 
     func testRenderablePreviewFidelity() async throws {
-        try EnvironmentSensitiveTests.skipUnlessOptedIn()
+        try EnvironmentSensitiveTests.skipUnlessOptedIn(requiresHancomFonts: true)
 
         let fixtures = try FixtureRoot.loadAllFixtures(from: #file)
         let excluded = Self.unparseableFixtureIds.union(Self.missingPreviewFixtureIds)

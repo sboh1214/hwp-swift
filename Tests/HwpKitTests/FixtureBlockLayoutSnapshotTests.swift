@@ -25,7 +25,8 @@ final class FixtureBlockLayoutSnapshotTests: XCTestCase {
 
     func testBlockLayoutMatchesSnapshots() async throws {
         try EnvironmentSensitiveTests.skipUnlessOptedIn(
-            recordVariables: ["RECORD_BLOCK_SNAPSHOTS"]
+            recordVariables: ["RECORD_BLOCK_SNAPSHOTS"],
+            requiresHancomFonts: true
         )
 
         let record = EnvironmentSensitiveTests.isEnabled("RECORD_BLOCK_SNAPSHOTS")

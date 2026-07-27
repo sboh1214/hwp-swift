@@ -1,6 +1,18 @@
 repos:
   - repo: local
     hooks:
+      # 폰트 바이너리는 저작권 보호 대상이라 동봉하지 않는다 (README "폰트").
+      # .gitignore가 1차 차단이지만 `git add -f`를 뚫고 들어오는 것을 막는다.
+      - id: no-font-binaries
+        name: no font binaries
+        entry: >-
+          bash -c 'files=$(git diff --cached --name-only --diff-filter=A |
+          grep -iE "\.(ttf|otf|ttc|woff2?)$"); if [ -n "$files" ]; then
+          echo "폰트 바이너리는 커밋할 수 없습니다:"; echo "$files"; exit 1; fi'
+        language: system
+        pass_filenames: false
+        always_run: true
+
       - id: swift-format
         name: swift-format
         entry: swiftformat .

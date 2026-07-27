@@ -177,6 +177,66 @@ import XCTest
                 : [koreanFallbackFamily]
         }
 
+        /// 한컴오피스 번들 폰트는 opt-in — 끈 resolver는 번들에만 있는 face를
+        /// 번들 폰트로 해석하지 않고 폴백으로 내려간다. 배포 기본값이 이쪽이라
+        /// 라이브러리 소비자가 타 파운드리 라이선스 폰트를 로드하지 않는다.
+        func testDisabledResolverDoesNotUseInstalledHancomFonts() throws {
+            let bundledOnlyFaces = ["HY헤드라인M", "HY신명조", "함초롬돋움"]
+            let available = bundledOnlyFaces.filter {
+                HwpInstalledHancomFonts.descriptor(forFaceName: $0) != nil
+            }
+            try XCTSkipIf(available.isEmpty, "한컴오피스 미설치 — 대조할 번들 폰트가 없다")
+
+            let disabled = HwpFontResolver(usesInstalledHancomFonts: false)
+            for face in available {
+                let bundled = try XCTUnwrap(HwpInstalledHancomFonts.descriptor(forFaceName: face))
+                let bundledFamily = CTFontDescriptorCopyAttribute(
+                    bundled, kCTFontFamilyNameAttribute
+                ) as? String
+                let family = CTFontCopyFamilyName(
+                    disabled.resolve(faceName: face, script: .korean, size: 10)
+                ) as String
+                // 시스템에도 같은 이름의 폰트가 설치돼 있으면 (예: 함초롬체를
+                // ~/Library/Fonts 에 정식 설치) 그쪽으로 해석되는 것이 정상이다.
+                let registered = Set(CTFontManagerCopyAvailableFontFamilyNames() as? [String] ?? [])
+                if registered.contains(family) {
+                    continue
+                }
+                expect(family).toNot(
+                    equal(bundledFamily),
+                    description: "'\(face)'이 opt-in 없이 한컴 번들 폰트로 해석됐다"
+                )
+            }
+        }
+
+        /// 기본값은 환경변수 `HWP_HANCOM_FONTS`를 따른다 (미설정이면 off).
+        func testInstalledHancomFontsOptInFollowsEnvironment() {
+            let key = HwpInstalledHancomFonts.enableEnvironmentKey
+            let original = ProcessInfo.processInfo.environment[key]
+            defer {
+                if let original {
+                    setenv(key, original, 1)
+                } else {
+                    unsetenv(key)
+                }
+            }
+
+            unsetenv(key)
+            expect(HwpInstalledHancomFonts.isEnabled) == false
+            for offValue in ["", "0", "false", " FALSE "] {
+                setenv(key, offValue, 1)
+                expect(HwpInstalledHancomFonts.isEnabled).to(
+                    beFalse(), description: "'\(offValue)'는 off여야 한다"
+                )
+            }
+            for onValue in ["1", "true", "yes"] {
+                setenv(key, onValue, 1)
+                expect(HwpInstalledHancomFonts.isEnabled).to(
+                    beTrue(), description: "'\(onValue)'은 on이어야 한다"
+                )
+            }
+        }
+
         func testFaceNameNormalizationStripsPrefixesAndSpaces() {
             expect(HwpFontMap.normalize("-윤고딕120")) == "윤고딕120"
             expect(HwpFontMap.normalize("#태명조")) == "태명조"

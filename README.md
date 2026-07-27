@@ -40,6 +40,27 @@ fixture 기준과 확보 현황은
 [Tests/CoreHwpTests/Fixtures/README.md](Tests/CoreHwpTests/Fixtures/README.md)를
 참고하세요.
 
+## 폰트
+
+본 라이브러리는 **폰트를 동봉하지 않습니다.** HWP 문서가 지정한 글꼴은 실행 기기에
+설치된 폰트로 해석하고, 없으면 명조/고딕 계열 시스템 폰트로 폴백합니다.
+
+재현도를 높이려면 한글과컴퓨터가 무료 배포하는 **함초롬체**를 사용자가 정식 경로로
+직접 설치하십시오. 시스템 폰트 디렉터리에 설치된 함초롬체는 별도 설정 없이 사용됩니다.
+
+한컴오피스 앱 번들 안의 폰트(`Contents/Resources/Hnc/Shared/TTF/`)는 **기본적으로
+사용하지 않습니다.** 그 디렉터리에는 한컴이 자사 오피스 안에서 쓰도록 라이선스받은
+타사 폰트(Monotype·한양정보통신·윤디자인 등)가 섞여 있어, 제3자 앱이 아무 선택 없이
+로드하는 것이 라이선스 범위 밖일 수 있기 때문입니다. 한글.app과의 실물 대조처럼
+필요한 경우에만 opt-in 합니다.
+
+```bash
+HWP_HANCOM_FONTS=1 swift test
+```
+
+코드에서 직접 켜려면 `HwpFontResolver(usesInstalledHancomFonts: true)`를 씁니다.
+켠 뒤 해당 폰트들의 라이선스 준수는 켠 쪽 책임입니다.
+
 ## 기여
 
 [CONTRIBUTING.md](https://github.com/sboh1214/hwp-swift/blob/main/CONTRIBUTING.md)를 방문하세요.

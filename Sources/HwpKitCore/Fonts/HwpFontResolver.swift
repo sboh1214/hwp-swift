@@ -51,10 +51,18 @@ import Foundation
         /// 결정론 테스트 resolver는 끈다 (기기 의존 결과 방지).
         private let usesInstalledHancomFonts: Bool
 
-        public init(fontMap: HwpFontMap = .default) {
+        /// - Parameter usesInstalledHancomFonts: 한컴오피스 앱 번들의 폰트를 조회
+        ///   대상에 넣을지. 기본값은 `HwpInstalledHancomFonts.isEnabled`
+        ///   (환경변수 `HWP_HANCOM_FONTS`, 미설정 시 off) — 번들에 타 파운드리
+        ///   라이선스 폰트가 섞여 있어 배포 기본값을 off로 둔다. `true`를 명시하면
+        ///   환경변수와 무관하게 켜진다.
+        public init(
+            fontMap: HwpFontMap = .default,
+            usesInstalledHancomFonts: Bool = HwpInstalledHancomFonts.isEnabled
+        ) {
             self.fontMap = fontMap
             scriptFallbacks = Self.defaultScriptFallbacks
-            usesInstalledHancomFonts = true
+            self.usesInstalledHancomFonts = usesInstalledHancomFonts
         }
 
         private init(

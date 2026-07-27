@@ -168,12 +168,19 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
 ## 컨벤션
 
 - **HWPUNIT canonical**: 변환은 `Utils/HwpUnits.swift` 에서만 (1 pt = 100 HWPUNIT). `pt` / `px` / `HWPUNIT` 혼용 금지
-- **번들 폰트 금지** (라이브러리에 폰트 동봉 금지). 단, 이 기기에 한컴오피스가
-  설치되어 있으면 그 앱 번들 TTF (`Hnc/Shared/TTF/`)를
-  `HwpInstalledHancomFonts`가 파일 descriptor로 인덱싱해 사용한다 — HY헤드라인M
-  등 한글 문서 상용 폰트가 한글.app과 같은 글리프로 렌더된다. 전역 등록은
-  하지 않는다 (결정론 테스트 조회 오염 방지; `testDeterministic`은 이 인덱스
-  자체를 끔). 이름 매칭은 name table 기본 + 로컬라이즈 이름 (한글) 둘 다.
+- **번들 폰트 금지** (라이브러리에 폰트 동봉 금지 — `.gitignore`와 pre-commit
+  훅이 폰트 확장자를 차단한다). 이 기기에 한컴오피스가 설치되어 있으면 그 앱
+  번들 TTF (`Hnc/Shared/TTF/`)를 `HwpInstalledHancomFonts`가 파일 descriptor로
+  인덱싱해 쓸 수 있지만 **기본은 off**다 — 그 디렉터리엔 한컴이 자사 오피스
+  안에서 쓰라고 라이선스받은 타 파운드리 폰트가 섞여 있다 (2026-07-27 실측:
+  187개 / OS/2 achVendID 18종, Monotype `arial`·`malgun`·`Calibri` 포함).
+  `HWP_HANCOM_FONTS=1` 또는 `HwpFontResolver(usesInstalledHancomFonts: true)`로
+  opt-in하면 HY헤드라인M 등이 한글.app과 같은 글리프로 렌더된다. 기준선이 이
+  상태에서 실측된 스위트 (fidelity·블록 스냅샷·렌더 해시)는
+  `EnvironmentSensitiveTests.skipUnlessOptedIn(requiresHancomFonts: true)`로
+  묶여 있으니 `HWP_SNAPSHOT_TESTS=1 HWP_HANCOM_FONTS=1`을 함께 준다.
+  전역 등록은 하지 않는다 (결정론 테스트 조회 오염 방지; `testDeterministic`은
+  이 인덱스 자체를 끔). 이름 매칭은 name table 기본 + 로컬라이즈 이름 (한글) 둘 다.
   `HwpFontResolver.resolve` 는 매칭 결과를 (faceName, script, size) 키로 캐시.
   해석 순서: 원문 이름 (시스템 → 한컴 번들) → `HwpFontMap.candidates(forFaceName:)`
   폴백 (원문 이름 → 정규화 이름 (`-`/`#` 접두 제거 + 공백 제거) 순) → script
