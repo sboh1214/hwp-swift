@@ -40,7 +40,10 @@ public enum HwpInstalledHancomFonts {
         return !normalized.isEmpty && normalized != "0" && normalized != "false"
     }
 
-    /// 알려진 한컴오피스 번들 폰트 디렉터리 (버전별 이름 차이는 glob으로 흡수)
+    /// 알려진 한컴오피스 번들 폰트 디렉터리 (버전별 이름 차이는 glob으로 흡수).
+    /// macOS 경로뿐이라 iOS 기기에서는 인덱스가 항상 비고 `HWP_HANCOM_FONTS`도
+    /// 무효다 — iOS는 시스템 폰트와 폴백 맵만으로 해석한다. (시뮬레이터는 호스트
+    /// 파일시스템이 보여 예외적으로 잡히지만 CoreText 렌더가 달라 대조에 못 쓴다.)
     private static let searchRoots = [
         "/Applications/한컴오피스 한글.app/Contents/Resources/Hnc/Shared/TTF",
         "/Applications/Hancom Office HWP.app/Contents/Resources/Hnc/Shared/TTF",

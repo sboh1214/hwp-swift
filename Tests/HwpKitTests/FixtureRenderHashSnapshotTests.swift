@@ -15,11 +15,15 @@
     /// 스냅샷(4개 픽스처 좌표)이 놓치는 미세 변화(색·장식·서브픽셀 이동·
     /// 2페이지 이후)를 잡는다.
     ///
-    /// 기준선은 한컴오피스 번들 폰트가 설치된 레코딩 머신 전용이므로 커밋하지
-    /// 않는다 (`Snapshots/`는 gitignore). 환경 의존 테스트라 기본
-    /// `swift test`·CI에서는 skip되고 opt-in으로만 실행된다:
+    /// 기준선은 레코딩 머신 전용이므로 커밋하지 않는다 (`Snapshots/`는 gitignore).
+    /// 환경 의존 테스트라 기본 `swift test`·CI에서는 skip되고 opt-in으로만 실행된다.
+    ///
+    /// **폰트 모드마다 기준선이 갈린다** — 한컴 번들 폰트를 켜면 `<id>.json`,
+    /// 배포 기본값(끈 상태)이면 `<id>-nohancom.json`. 사용자가 실제로 받는 구성은
+    /// 후자이므로 양쪽 다 잠가 둔다. 두 모드를 각각 돌려야 전부 검증된다:
+    /// `HWP_SNAPSHOT_TESTS=1 HWP_HANCOM_FONTS=1 swift test --filter FixtureRenderHash`
     /// `HWP_SNAPSHOT_TESTS=1 swift test --filter FixtureRenderHash`
-    /// 레코딩(RECORD_* 변수는 자동 opt-in):
+    /// 레코딩(RECORD_* 변수는 자동 opt-in, 현재 폰트 모드의 기준선만 갱신):
     /// `RECORD_RENDER_HASHES=1 swift test --filter FixtureRenderHash`
     /// 특정 픽스처만 갱신: `RECORD_RENDER_HASHES=noori,chart …`
     /// 레코딩은 의도적으로 실패해 우발적 갱신을 막고, 기존 기준선과의 diff를
@@ -47,24 +51,23 @@
                 recordVariables: ["RECORD_RENDER_HASHES"]
             )
 
-            // 한컴 번들 폰트를 안 쓰는 상태 (opt-in off 또는 미설치)면: 기준선도 없는
-            // 환경은 skip이 맞지만, 기준선이 있는 레코딩 머신에서는 가드가 조용히
-            // 무력화되는 것이므로 실패시킨다. `isEnabled`를 먼저 봐서 off일 때는
-            // `index` 접근 (앱 번들 폰트 파일 열거)이 아예 일어나지 않게 한다.
-            let usesHancomFonts = HwpInstalledHancomFonts.isEnabled
-            if !usesHancomFonts || HwpInstalledHancomFonts.index.isEmpty {
+            // 폰트 모드마다 기준선 파일이 갈린다 (`baselineSuffix`) — opt-in 모드와
+            // 배포 기본 모드를 각각 독립적으로 잠근다. 기본 모드가 사용자가 실제로
+            // 받는 구성이므로 여기에도 픽셀 가드가 있어야 한다.
+            //
+            // opt-in을 켰는데 번들 폰트를 못 찾은 경우만 실패시킨다 — 기준선이
+            // 있는 레코딩 머신에서 가드가 조용히 무력화되는 상황이기 때문이다.
+            // `isEnabled`를 먼저 봐서 off일 때는 `index` 접근 (앱 번들 폰트 파일
+            // 열거)이 아예 일어나지 않게 한다.
+            if HwpInstalledHancomFonts.isEnabled, HwpInstalledHancomFonts.index.isEmpty {
                 let baselines = Self.existingBaselineNames()
                 try XCTSkipIf(
                     baselines.isEmpty,
-                    "한컴오피스 번들 폰트를 쓰지 않음 — 렌더 해시 기준선은 레코딩 머신 전용"
+                    "한컴오피스 번들 폰트를 찾지 못함 — 렌더 해시 기준선은 레코딩 머신 전용"
                 )
                 XCTFail(
-                    usesHancomFonts
-                        ? "기준선 \(baselines.count)개가 있는데 한컴 번들 폰트를 찾지 못함 — "
+                    "기준선 \(baselines.count)개가 있는데 한컴 번들 폰트를 찾지 못함 — "
                         + "한컴오피스 설치/경로 확인 (skip하면 가드가 무력화된다)"
-                        : "기준선 \(baselines.count)개가 있는데 한컴 번들 폰트가 꺼져 있음 — "
-                        + "\(HwpInstalledHancomFonts.enableEnvironmentKey)=1 을 함께 지정할 것 "
-                        + "(skip하면 가드가 무력화된다)"
                 )
                 return
             }
@@ -329,15 +332,25 @@
             return url.deletingLastPathComponent().appendingPathComponent("Snapshots")
         }
 
+        /// 폰트 모드별 기준선 파일 접미사. 한컴 번들 폰트를 켠 렌더와 끈 렌더는
+        /// 글리프가 달라 같은 파일로 잠글 수 없다. opt-in 모드가 기존 이름
+        /// (접미사 없음)을 유지해 이미 레코딩된 기준선이 그대로 유효하다.
+        private static var baselineSuffix: String {
+            HwpInstalledHancomFonts.isEnabled ? "" : "-nohancom"
+        }
+
         private static func snapshotURL(for fixture: String) -> URL {
-            snapshotsDirectory().appendingPathComponent("\(fixture).json")
+            snapshotsDirectory().appendingPathComponent("\(fixture)\(baselineSuffix).json")
         }
 
         private static func existingBaselineNames() -> [String] {
             let names = (try? FileManager.default.contentsOfDirectory(
                 atPath: snapshotsDirectory().path
             )) ?? []
-            return names.filter { $0.hasSuffix(".json") }
+            let suffix = "\(baselineSuffix).json"
+            return names.filter { $0.hasSuffix(suffix) }
+                // 접미사 없는 모드에서는 다른 모드의 파일이 섞이지 않게 걸러낸다
+                .filter { baselineSuffix.isEmpty ? !$0.hasSuffix("-nohancom.json") : true }
         }
 
         private static func write(_ snapshot: RenderHashSnapshot, to url: URL) throws {

@@ -125,11 +125,14 @@ import XCTest
             }
         }
 
+        /// 확장 페이스(`한컴바탕확장`)는 여기서 제외한다 — 이름만 바탕이지 한자용
+        /// 송체이고, 문서가 `defaultFaceName`에 FZSong_Superfont를 적어 둔다
+        /// (`testBatangExtensionMapsToCJKSong`).
         func testHancomBatangResolvesToBatangFamily() {
             let batangFamilies = expectedFamilies(
                 preferring: ["HCR Batang", "Nanum Myeongjo", "AppleMyungjo"]
             )
-            for face in ["한컴바탕", "한컴바탕확장", "바탕체"] {
+            for face in ["한컴바탕", "바탕체"] {
                 let font = resolver.resolve(faceName: face, script: .korean, size: 10)
                 let family = CTFontCopyFamilyName(font) as String
                 if isInstalledHancomFont(family) {
@@ -175,6 +178,42 @@ import XCTest
             return candidates.contains(where: registered.contains)
                 ? candidates
                 : [koreanFallbackFamily]
+        }
+
+        /// 픽스처 corpus에 실재하지만 매핑이 없어 script 폴백 (한글 = 고딕)까지
+        /// 떨어지던 face들. 특히 명조 계열이 고딕으로 렌더되던 것이 회귀 대상이다
+        /// (한컴 폰트가 기본 off라 이 폴백이 사용자가 실제로 보는 결과다).
+        func testRomanizedAndVariantFacesKeepTheirFamily() {
+            let disabled = HwpFontResolver(usesInstalledHancomFonts: false)
+            let serifFamilies = expectedFamilies(
+                preferring: ["AppleMyungjo", "Nanum Myeongjo", "HCR Batang"]
+            )
+            for face in ["Myeongjo", "HY Sinmyeongjo"] {
+                let family = CTFontCopyFamilyName(
+                    disabled.resolve(faceName: face, script: .korean, size: 10)
+                ) as String
+                expect(serifFamilies).to(
+                    contain(family),
+                    description: "'\(face)'는 명조 계열인데 \(family)로 해석됐다"
+                )
+            }
+            for face in ["굴림체", "HY헤드라인M", "HY울릉도M", "Apple SD 산돌고딕 Neo"] {
+                expect(HwpFontMap.default.candidates(forFaceName: face)).toNot(
+                    beEmpty(), description: "'\(face)' 매핑이 비어 script 폴백으로 떨어진다"
+                )
+            }
+        }
+
+        /// 한컴바탕확장은 한글 바탕이 아니라 한자용 송체다 — 문서 자신이
+        /// `FaceName.defaultFaceName`에 "FZSong_Superfont"를 적어 둔다.
+        func testBatangExtensionMapsToCJKSong() {
+            let candidates = HwpFontMap.default.candidates(forFaceName: "한컴바탕확장")
+            expect(candidates.first) == "FZSong_Superfont"
+            expect(candidates).to(contain("Songti SC"))
+            expect(HwpFontMap.default.candidates(forFaceName: "한컴바탕")).toNot(
+                contain("Songti SC"),
+                description: "확장이 아닌 한컴바탕까지 송체로 보내면 안 된다"
+            )
         }
 
         /// 한컴오피스 번들 폰트는 opt-in — 끈 resolver는 번들에만 있는 face를

@@ -186,6 +186,14 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   폴백 (원문 이름 → 정규화 이름 (`-`/`#` 접두 제거 + 공백 제거) 순) → script
   폴백. 명조 계열은 AppleMyungjo, 고딕 계열은 Apple SD Gothic Neo 를 최종
   후보로 유지할 것 (시스템 기본 설치 폰트)
+- **매핑 없는 face 는 script 폴백 (한글 슬롯 = 고딕) 으로 떨어진다** — 명조
+  계열이 고딕으로 렌더되는 계열 오분류가 여기서 나온다. 로마자 표기 변형
+  (`Myeongjo`, `HY Sinmyeongjo`) 과 고정폭 변형 (`굴림체`) 은 `normalize` 로도
+  안 잡히니 `HwpFontMap` 에 개별 항목으로 넣을 것. 이름만 보고 계열을 단정하지
+  말고 face 이름이 실제로 무엇의 별칭인지 확인한다 — `한컴바탕확장` 은 한글
+  바탕이 아니라 한자용 송체이고 (문서의 `FaceName.defaultFaceName` 이
+  `FZSong_Superfont` 로 못박는다), `Apple SD 산돌고딕 Neo` 는 시스템 폰트의
+  한글 표시명이라 매핑이 없으면 로마자 슬롯이 Helvetica 로 대체된다
 - 실측 튜닝 상수는 `Tuning/HwpRenderTuning.swift` 에 근거 주석과 함께 —
   값 변경은 fidelity 전수 + 블록 스냅샷 + 실물 대조 필수 (값 핀:
   `HwpRenderTuningTests`). 차트 투영 기하 (`HwpChartPainter`)와 각주 예약
