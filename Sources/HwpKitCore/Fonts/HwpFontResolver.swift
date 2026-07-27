@@ -50,12 +50,16 @@ import Foundation
             .user: "Helvetica",
         ]
 
-        /// 한컴오피스 번들 폰트 (설치 시)를 조회 대상에 넣을지.
-        /// 결정론 테스트 resolver는 끈다 (기기 의존 결과 방지).
         /// 한컴 번들 폰트를 조회 대상에 넣는지. `serifLatinFallback` 처럼 resolver
         /// 밖에서 같은 판단을 해야 하는 곳이 참조한다 — 그쪽이 이 값을 무시하고
         /// 인덱스를 직접 보면 opt-in 이 뚫린다.
         public let usesInstalledHancomFonts: Bool
+
+        /// 문서가 선언한 대체/기반 글꼴 (`resolve`의 `alternatives`)을 후보로 쓸지.
+        /// 결정론 resolver (`testDeterministic`)만 끈다 — 대체명은 실제 설치된 폰트를
+        /// 가리키는 일이 많아 (기본 문서의 `함초롬바탕`이 `defaultFaceName`에
+        /// "HCR Batang"을 적어 둔다) 켜 두면 그 폰트 설치 여부로 조판이 갈린다.
+        private let usesDocumentAlternatives: Bool
 
         /// - Parameter usesInstalledHancomFonts: 한컴오피스 앱 번들의 폰트를 조회
         ///   대상에 넣을지. 기본값은 `HwpInstalledHancomFonts.isEnabled`
@@ -69,6 +73,7 @@ import Foundation
             self.fontMap = fontMap
             scriptFallbacks = Self.defaultScriptFallbacks
             self.usesInstalledHancomFonts = usesInstalledHancomFonts
+            usesDocumentAlternatives = true
         }
 
         /// 기본값을 두지 않는다 — public init의 기본값은 off (환경변수)인데 여기만
@@ -76,11 +81,13 @@ import Foundation
         private init(
             fontMap: HwpFontMap,
             scriptFallbacks: [HwpScript: String],
-            usesInstalledHancomFonts: Bool
+            usesInstalledHancomFonts: Bool,
+            usesDocumentAlternatives: Bool
         ) {
             self.fontMap = fontMap
             self.scriptFallbacks = scriptFallbacks
             self.usesInstalledHancomFonts = usesInstalledHancomFonts
+            self.usesDocumentAlternatives = usesDocumentAlternatives
         }
 
         /// Resolves `faceName` for `script` at `size` points.
@@ -106,9 +113,11 @@ import Foundation
             )
             return cache.font(for: key) {
                 var candidates = [faceName] + fontMap.candidates(forFaceName: faceName)
-                for alternative in alternatives where !alternative.isEmpty {
-                    candidates.append(alternative)
-                    candidates.append(contentsOf: fontMap.candidates(forFaceName: alternative))
+                if usesDocumentAlternatives {
+                    for alternative in alternatives where !alternative.isEmpty {
+                        candidates.append(alternative)
+                        candidates.append(contentsOf: fontMap.candidates(forFaceName: alternative))
+                    }
                 }
                 for candidate in candidates {
                     if let font = Self.createIfAvailable(name: candidate, size: size) {
@@ -216,7 +225,8 @@ import Foundation
                 .symbol: "Menlo",
                 .user: "Menlo",
             ],
-            usesInstalledHancomFonts: false
+            usesInstalledHancomFonts: false,
+            usesDocumentAlternatives: false
         )
     }
 #endif

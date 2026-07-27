@@ -82,6 +82,20 @@ import XCTest
             expect(CTFontCopyFamilyName(font) as String) == "Menlo"
         }
 
+        /// 결정론 resolver는 문서 대체 글꼴을 무시해야 한다 — 기본 문서의 `함초롬바탕`은
+        /// `defaultFaceName`이 "HCR Batang"이라, 쓰면 그 폰트 설치 여부로 조판이 갈린다.
+        /// 대체 후보는 **반드시 설치돼 있는** 이름이어야 한다. 없는 이름으로 바꾸면
+        /// 폴백이 어차피 Menlo라 테스트가 공허하게 통과한다.
+        func testDeterministicResolverIgnoresDocumentAlternatives() {
+            let font = HwpFontResolver.testDeterministic.resolve(
+                faceName: "unknown-font-xyz",
+                alternatives: ["Helvetica", "HCR Batang"],
+                script: .korean,
+                size: 12
+            )
+            expect(CTFontCopyFamilyName(font) as String) == "Menlo"
+        }
+
         func testDefaultFontMapEntryCount() {
             expect(HwpFontMap.default.entries.count) >= 15
         }
