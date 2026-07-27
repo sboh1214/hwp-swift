@@ -14,79 +14,13 @@ jobs:
   test-macos:
     name: Test (macOS)
     runs-on: macos-latest
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v5
       - name: Run tests
         run: |
           swift --version
-          swift test
-
-  test-ios:
-    name: Test (iOS Simulator)
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v5
-      - name: Select simulator
-        id: sim
-        # 러너 이미지마다 설치된 기기명이 달라 첫 iPhone을 동적으로 고른다
-        run: |
-          set -euo pipefail
-          UDID=$(xcrun simctl list devices available \
-            | grep -E '^\s+iPhone' | head -1 \
-            | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}')
-          if [ -z "$UDID" ]; then
-            echo "no available iPhone simulator" >&2
-            xcrun simctl list devices available >&2
-            exit 1
-          fi
-          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
-      - name: Run package tests on iOS Simulator
-        # #if os(iOS) 코드 (HwpDocumentUIView 계열)는 이 잡에서만 컴파일·실행된다
-        run: |
-          set -o pipefail
-          xcodebuild test \
-            -scheme Hwp-Swift-Package \
-            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
-            -quiet
-
-  test-linux:
-    name: Test (Linux, Swift ${{ matrix.swift }})
-    runs-on: ubuntu-latest
-    container: ${{ matrix.image }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - swift: "5.9"
-            image: swift:5.9-jammy
-          - swift: "6.1"
-            image: swift:6.1-noble
-    steps:
-      - uses: actions/checkout@v5
-      - name: Run tests
-        run: |
-          swift --version
-          swift test
-
-  lint:
-    name: Lint
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v5
-      - name: Install tools
-        run: brew install swiftformat swiftlint
-      - name: SwiftFormat
-        run: swiftformat --lint .
-      - name: SwiftLint
-        run: swiftlint
-
-  coverage:
-    name: Coverage
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v5
-      - name: Run tests with coverage
-        run: swift test --enable-code-coverage
+          swift test --enable-code-coverage
       - name: Export lcov
         run: |
           set -euo pipefail
@@ -142,3 +76,65 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.lcov
           fail_ci_if_error: false
+
+  test-ios:
+    name: Test (iOS Simulator)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - name: Select simulator
+        id: sim
+        # 러너 이미지마다 설치된 기기명이 달라 첫 iPhone을 동적으로 고른다
+        run: |
+          set -euo pipefail
+          UDID=$(xcrun simctl list devices available \
+            | grep -E '^\s+iPhone' | head -1 \
+            | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}')
+          if [ -z "$UDID" ]; then
+            echo "no available iPhone simulator" >&2
+            xcrun simctl list devices available >&2
+            exit 1
+          fi
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+      - name: Run package tests on iOS Simulator
+        # #if os(iOS) 코드 (HwpDocumentUIView 계열)는 이 잡에서만 컴파일·실행된다
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -scheme Hwp-Swift-Package \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
+            -quiet
+
+  test-linux:
+    name: Test (Linux, Swift ${{ matrix.swift }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - swift: "5.9"
+            image: swift:5.9-jammy
+          - swift: "6.3"
+            image: swift:6.3-noble
+    steps:
+      - uses: actions/checkout@v5
+      - name: Run tests
+        run: |
+          swift --version
+          swift test
+
+  lint:
+    name: Lint
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install tools
+        run: brew install swiftformat swiftlint
+      - name: SwiftFormat
+        run: swiftformat --lint .
+      - name: SwiftLint
+        run: swiftlint

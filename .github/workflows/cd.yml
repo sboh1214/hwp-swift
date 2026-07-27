@@ -19,6 +19,7 @@ jobs:
   release-drafter:
     name: Release Drafter
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: release-drafter/release-drafter@v6
         env:
@@ -27,6 +28,7 @@ jobs:
   docs:
     name: Build DocC
     runs-on: macos-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - uses: actions/configure-pages@v5
@@ -49,6 +51,7 @@ jobs:
     name: Deploy to GitHub Pages
     needs: docs
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

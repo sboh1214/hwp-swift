@@ -1235,7 +1235,10 @@ private extension HwpPaginator {
             let children = childParagraphs(of: ctrl).map(\.0)
             // 이 깊이에서 appendNestedControlBlocks가 자식 방출을 멈춘다 — 그 안의
             // 그림·도형·표·글상자가 조용히 사라지므로 진단으로 보고한다 (R72 #4).
-            if containerDepth >= Self.maximumContainerDepth,
+            // 표는 자체 한도 (HwpTableLayout.maximumNestingDepth)와 전용 진단을
+            // 쓰므로 제외한다 — 여기서 가로채면 위의 "중첩 표" 보고가 사라진다.
+            if !isTable,
+               containerDepth >= Self.maximumContainerDepth,
                children.contains(where: { !($0.ctrlHeaderArray ?? []).isEmpty })
             {
                 collectedUnsupported.append(HwpUnsupportedElement(

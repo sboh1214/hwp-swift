@@ -9,6 +9,20 @@ import XCTest
     final class HwpFontResolverTests: XCTestCase {
         let resolver = HwpFontResolver()
 
+        /// 시스템에 없는 이름은 비싼 CoreText 매칭을 호출하지 않는다 — 매칭 성공
+        /// 조건이 `matchedName == name`이라 등록되지 않은 이름은 반드시 nil이므로
+        /// 미리 걸러도 결과가 같다. 크기마다 다시 조회하면 폰트가 전부 부재한
+        /// 환경(CI)에서 호출이 배로 늘어난다.
+        func testAbsentFaceNameSkipsExpensiveMatching() {
+            HwpFontResolver.matchCounter.reset()
+
+            for size in [CGFloat(9), 10, 11, 12, 14] {
+                _ = resolver.resolve(faceName: "ZzNoSuchFaceXYZ", script: .korean, size: size)
+            }
+
+            expect(HwpFontResolver.matchCounter.count) == 0
+        }
+
         /// 미분류 스크립트는 영문 슬롯이 아니라 소속 슬롯으로 (R33 #2) —
         /// 아랍/히브리는 '기타 언어', 확장 자모는 한글, 호환 한자는 한자.
         func testScriptDetectionRoutesNonLatinScripts() throws {

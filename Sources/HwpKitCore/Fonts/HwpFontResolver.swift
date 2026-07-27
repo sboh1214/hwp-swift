@@ -90,7 +90,24 @@ import Foundation
             }
         }
 
+        /// 시스템에 등록된 폰트 이름 (family ∪ PostScript). 프로세스당 1회 만든다.
+        /// matchDescriptor는 `matchedName == name`일 때만 성공하므로 이 집합에
+        /// 없는 이름은 반드시 nil이다 — 먼저 걸러도 결과가 같고, 부재 이름마다
+        /// CoreText 매칭을 호출하는 비용이 사라진다. 한컴 번들 폰트는 등록하지
+        /// 않고 파일 descriptor로 따로 조회하므로 이 집합과 무관하다.
+        private static let registeredFontNames: Set<String> = {
+            var names = Set<String>()
+            if let families = CTFontManagerCopyAvailableFontFamilyNames() as? [String] {
+                names.formUnion(families)
+            }
+            if let postScriptNames = CTFontManagerCopyAvailablePostScriptNames() as? [String] {
+                names.formUnion(postScriptNames)
+            }
+            return names
+        }()
+
         private static func createIfAvailable(name: String, size: CGFloat) -> CTFont? {
+            guard registeredFontNames.contains(name) else { return nil }
             if let font = matchDescriptor(
                 name: name,
                 attribute: kCTFontFamilyNameAttribute,
@@ -101,11 +118,40 @@ import Foundation
             return matchDescriptor(name: name, attribute: kCTFontNameAttribute, size: size)
         }
 
+        /// 비싼 CoreText 매칭 호출 횟수 — 부재 이름을 걸러 내는 상한회로가
+        /// 실제로 호출을 없애는지 테스트가 관측한다 (overrideMaximumPages와 같은
+        /// 테스트 전용 관측 지점).
+        static let matchCounter = MatchCounter()
+
+        final class MatchCounter: @unchecked Sendable {
+            private var value = 0
+            private let lock = NSLock()
+
+            var count: Int {
+                lock.lock()
+                defer { lock.unlock() }
+                return value
+            }
+
+            func increment() {
+                lock.lock()
+                value += 1
+                lock.unlock()
+            }
+
+            func reset() {
+                lock.lock()
+                value = 0
+                lock.unlock()
+            }
+        }
+
         private static func matchDescriptor(
             name: String,
             attribute: CFString,
             size: CGFloat
         ) -> CTFont? {
+            matchCounter.increment()
             let attrs = [attribute: name as CFString] as CFDictionary
             let descriptor = CTFontDescriptorCreateWithAttributes(attrs)
             let requiredAttributes = Set([attribute]) as NSSet as CFSet

@@ -147,11 +147,11 @@ PR 리뷰를 반영하며 렌더링 코드를 수정할 때, 한글 파일 렌�
    - **수정한 파일에만** `swiftformat` (로컬·CI 버전 일치 확인 — 다르면
      로컬 포맷이 CI에서 되레 실패) + `swiftlint` error 0.
    - Linux는 **amd64 도커만 신뢰** (arm64는 main도 가짜 `fatalError`):
-     `docker run --rm --platform linux/amd64 -v $PWD:/src:ro swift:6.1-noble bash -c "cp -r /src /work && cd /work && rm -rf .build Snapshots && swift test"`.
+     `docker run --rm --platform linux/amd64 -v $PWD:/src:ro swift:6.3-noble bash -c "cp -r /src /work && cd /work && rm -rf .build Snapshots && swift test"`.
      렌더·뷰어 코드를 만졌으면 iOS 빌드도 확인.
 4. **커밋·푸시** — 논리/포맷 커밋 분리. `Snapshots/`·`Docs/`·스크래치
-   파일은 gitignore로 제외됨. push 후 CI 잡별(macOS/iOS/Linux·lint·
-   coverage) 확인 — 브랜치 첫 PR 전엔 CI가 돈 적 없으니 특히 주시.
+   파일은 gitignore로 제외됨. push 후 CI 잡별(macOS[커버리지 포함]/iOS/
+   Linux·lint) 확인 — 브랜치 첫 PR 전엔 CI가 돈 적 없으니 특히 주시.
 
 원칙: **탐지는 해시, 진단은 블록 스냅샷 diff** (상호보완). 육안 재확인은
 바뀐 페이지만. 환경 의존 테스트는 기본·CI에서 skip, 로컬 opt-in.
