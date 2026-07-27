@@ -37,6 +37,13 @@ final class FixturePreviewFidelityTests: XCTestCase {
     /// (2026-07-27 재조정: 렌더 개선 누적으로 chart 16.7배·text-box 15배까지
     /// 벌어져 있어 회귀 가드로서 의미가 옅어졌다.)
     /// 새 픽스처는 실측 후 반드시 여기에 추가한다 (엔트리 없으면 테스트 실패).
+    ///
+    /// **전제: 함초롬체가 정식 설치된 기기 기준이다** (README "폰트"). 미설치
+    /// 기기는 `HwpFontMap`의 뒤쪽 후보 (Nanum Myeongjo·AppleMyungjo)로 조판돼
+    /// 글리프 메트릭이 달라지므로 수치가 올라갈 수 있다 — 그 실패는 렌더 회귀가
+    /// 아니라 환경 차이다. 임계를 올려 덮지 말고 폰트를 설치하고 재확인할 것.
+    /// 한컴 번들 opt-in (`HWP_HANCOM_FONTS`)은 이와 **다른 축**이다: 그 스위치는
+    /// 양 모드가 같은 값을 낸다 (2026-07-28 Column 실측 ON/OFF 모두 0.0024).
     private static let maeThresholds: [String: Double] = [
         "2007": 0.001, // 실측 0.0000 (빈 페이지)
         "2014VP": 0.001, // 실측 0.0000 (빈 페이지)
@@ -110,8 +117,9 @@ final class FixturePreviewFidelityTests: XCTestCase {
     /// 한컴 폰트 모드 게이트를 걸지 않는다 — 임계가 양 모드에서 성립한다
     /// (2026-07-27 실측: 28개 전부 통과, OFF가 ON 이하. 특히 noori ON 0.0292 /
     /// OFF 0.0164). 이 스위트는 기준선 **파일이 없고** 임계가 소스 상수라
-    /// `Snapshots/` 같은 머신 종속 자산에 기대지 않는다 — 배포 기본 모드에
-    /// 렌더 가드를 붙일 수 있는 몇 안 되는 경로다.
+    /// `Snapshots/` 같은 머신 종속 **자산**에 기대지 않는다 — 배포 기본 모드에
+    /// 렌더 가드를 붙일 수 있는 몇 안 되는 경로다. 다만 기기와 무관하다는 뜻은
+    /// 아니다: 임계 자체가 설치 폰트에 캘리브레이션돼 있다 (`maeThresholds` 전제).
     func testRenderablePreviewFidelity() async throws {
         try EnvironmentSensitiveTests.skipUnlessOptedIn()
 
