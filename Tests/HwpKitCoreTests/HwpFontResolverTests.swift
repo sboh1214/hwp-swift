@@ -204,6 +204,47 @@ import XCTest
             }
         }
 
+        /// 맵에 없는 face는 문서가 적어 둔 대체 글꼴명으로 구제된다 — 맵은 ~50개인데
+        /// 실제 문서의 face는 그보다 훨씬 많아 손으로 다 채울 수 없다.
+        func testUnmappedFaceIsRescuedByDocumentAlternative() {
+            let resolver = HwpFontResolver(usesInstalledHancomFonts: false)
+            let unmapped = "존재하지않는서체XYZ"
+            expect(HwpFontMap.default.candidates(forFaceName: unmapped)).to(beEmpty())
+
+            // 대체명 없이는 script 폴백 (한글 = 고딕)
+            let bare = CTFontCopyFamilyName(
+                resolver.resolve(faceName: unmapped, script: .korean, size: 10)
+            ) as String
+            // 대체명이 "명조"면 맵을 거쳐 명조 계열로 간다
+            let rescued = CTFontCopyFamilyName(
+                resolver.resolve(
+                    faceName: unmapped, alternatives: ["명조"], script: .korean, size: 10
+                )
+            ) as String
+            let serifFamilies = expectedFamilies(
+                preferring: ["AppleMyungjo", "Nanum Myeongjo", "HCR Batang"]
+            )
+            expect(serifFamilies).to(
+                contain(rescued),
+                description: "대체 글꼴명이 무시됐다 (bare=\(bare) rescued=\(rescued))"
+            )
+        }
+
+        /// 큐레이션한 맵이 대체 글꼴명보다 우선한다 — 맵에 있는 face의 검증된
+        /// 해석이 문서 데이터로 뒤집히면 안 된다 (기존 렌더 기준선 보존).
+        func testCuratedMapWinsOverDocumentAlternative() {
+            let resolver = HwpFontResolver(usesInstalledHancomFonts: false)
+            let withAlternative = CTFontCopyFamilyName(
+                resolver.resolve(
+                    faceName: "명조", alternatives: ["굴림"], script: .korean, size: 10
+                )
+            ) as String
+            let withoutAlternative = CTFontCopyFamilyName(
+                resolver.resolve(faceName: "명조", script: .korean, size: 10)
+            ) as String
+            expect(withAlternative) == withoutAlternative
+        }
+
         /// 한컴바탕확장은 한글 바탕이 아니라 한자용 송체다 — 문서 자신이
         /// `FaceName.defaultFaceName`에 "FZSong_Superfont"를 적어 둔다.
         func testBatangExtensionMapsToCJKSong() {

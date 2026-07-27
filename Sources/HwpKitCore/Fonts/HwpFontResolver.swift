@@ -13,6 +13,9 @@ import Foundation
 
         private struct CacheKey: Hashable {
             let faceName: String
+            /// 문서가 선언한 대체/기반 글꼴명 — 같은 faceName이라도 문서마다 다를
+            /// 수 있어 키에 포함해야 resolver를 재사용할 때 오염되지 않는다.
+            let alternatives: [String]
             let script: HwpScript
             let size: CGFloat
         }
@@ -79,9 +82,30 @@ import Foundation
         /// 원문 이름의 실제 폰트 (시스템 → 한컴오피스 번들)를 먼저 찾고,
         /// 없을 때만 map 폴백 후보 (원문 → 정규화 이름 조회) →
         /// script-keyed safety net 순으로 내려간다.
-        public func resolve(faceName: String, script: HwpScript, size: CGFloat) -> CTFont {
-            cache.font(for: CacheKey(faceName: faceName, script: script, size: size)) {
-                for candidate in [faceName] + fontMap.candidates(forFaceName: faceName) {
+        ///
+        /// - Parameter alternatives: 문서가 `HwpFaceName`에 적어 둔 대체 글꼴
+        ///   (`alternativeFaceName`)·기반 글꼴 (`defaultFaceName`) 이름. 큐레이션한
+        ///   `fontMap`을 **다 쓴 뒤** script 폴백 직전에 시도한다 — 맵에 있는 face는
+        ///   검증된 기존 해석을 유지하고, 맵에 없는 face만 문서가 알려준 이름으로
+        ///   구제된다 (맵은 ~50개인데 실제 문서의 face는 그보다 훨씬 많다).
+        ///   각 이름은 그 자체로 다시 map을 거친다 — 대체명도 HWP face 이름이라
+        ///   ("Myeongjo"의 대체는 "명조") 시스템 폰트명이 아니기 때문이다.
+        public func resolve(
+            faceName: String,
+            alternatives: [String] = [],
+            script: HwpScript,
+            size: CGFloat
+        ) -> CTFont {
+            let key = CacheKey(
+                faceName: faceName, alternatives: alternatives, script: script, size: size
+            )
+            return cache.font(for: key) {
+                var candidates = [faceName] + fontMap.candidates(forFaceName: faceName)
+                for alternative in alternatives where !alternative.isEmpty {
+                    candidates.append(alternative)
+                    candidates.append(contentsOf: fontMap.candidates(forFaceName: alternative))
+                }
+                for candidate in candidates {
                     if let font = Self.createIfAvailable(name: candidate, size: size) {
                         return font
                     }

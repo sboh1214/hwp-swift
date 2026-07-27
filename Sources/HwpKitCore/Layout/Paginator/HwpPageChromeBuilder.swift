@@ -353,8 +353,12 @@ struct HwpPageChromeBuilder {
         let shape = index.charShape(id: 0) ?? CoreHwp.HwpCharShape()
         let size = max(6, HwpUnits.points(fromHwpUnit: shape.baseSize))
         let faceId = UInt32(shape.faceId.first ?? 0)
-        let faceName = index.faceName(for: faceId, script: .korean)?.faceName ?? "Helvetica"
-        let font = fontResolver.resolve(faceName: faceName, script: .korean, size: size)
+        let face = index.faceName(for: faceId, script: .korean)
+        let font = fontResolver.resolve(
+            faceName: face?.faceName ?? "Helvetica",
+            alternatives: [face?.alternativeFaceName, face?.defaultFaceName].compactMap { $0 },
+            script: .korean, size: size
+        )
 
         var alignmentValue = alignment
         let style = withUnsafeMutablePointer(to: &alignmentValue) { pointer in

@@ -186,6 +186,14 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   폴백 (원문 이름 → 정규화 이름 (`-`/`#` 접두 제거 + 공백 제거) 순) → script
   폴백. 명조 계열은 AppleMyungjo, 고딕 계열은 Apple SD Gothic Neo 를 최종
   후보로 유지할 것 (시스템 기본 설치 폰트)
+- **문서가 적어 둔 대체 글꼴을 후보로 쓴다** — `HwpFaceName` 의
+  `alternativeFaceName` (대체 글꼴)·`defaultFaceName` (기반 글꼴)을
+  `resolve(faceName:alternatives:script:size:)` 로 넘긴다. 큐레이션한 `fontMap`
+  을 **다 쓴 뒤** script 폴백 직전에 시도한다 — 맵에 있는 face 는 검증된 해석을
+  그대로 두고 (렌더 기준선 보존), 맵에 없는 face 만 구제한다. 맵은 ~50개인데
+  실제 문서의 face 는 그보다 훨씬 많다. 각 대체명은 그 자체로 다시 map 을
+  거친다 (대체명도 HWP face 이름이라 시스템 폰트명이 아니다 — "Myeongjo" 의
+  대체는 "명조"). 캐시 키에 대체명이 들어가야 문서 간 오염이 없다
 - **매핑 없는 face 는 script 폴백 (한글 슬롯 = 고딕) 으로 떨어진다** — 명조
   계열이 고딕으로 렌더되는 계열 오분류가 여기서 나온다. 로마자 표기 변형
   (`Myeongjo`, `HY Sinmyeongjo`) 과 고정폭 변형 (`굴림체`) 은 `normalize` 로도

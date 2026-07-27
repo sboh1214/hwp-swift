@@ -100,6 +100,14 @@ ViewText는 optional이라 파싱 실패엔 빈 폴백이지만, 이 두 자원 
 - 공백이 있는 새 파일/디렉터리명 추가 — 경로명은 PascalCase + 무공백을 유지.
 - `Package.swift`의 Darwin platform 최소 버전을 더 낮추기 — 의존성 `SWCompression 4.9.1` / `BitByteData 2.1.0`이 macOS 14+/iOS 17+를 요구한다. Linux는 CoreHwp·CoreHwpTests만 지원한다 (뷰어 타깃은 Apple 전용 프레임워크 의존 — `Package.swift`의 `canImport(Darwin)` 분기; CI matrix: macOS + ubuntu-latest).
 - `swift-tools-version` 변경 시 `.swift-version`, `.swiftformat`, **양쪽** `Test-*.yml` matrix 동시 갱신 누락 (`CONTRIBUTING.md` 참조).
+- 테스트에서 **CoreFoundation 타입에 `as!`** 쓰기 — SwiftFormat의 `noForceUnwrapInTests`가 이를 `try XCTUnwrap(... as? CFType)`으로 자동 변환하는데, CF 타입 대상 `as?`는 컴파일러가 "항상 성공한다"며 **에러**로 막는다. 즉 포매터가 컴파일 불가능한 코드를 만들어 낸다. `// swiftformat:disable:next` 주석도 듣지 않으므로, 캐스트 자체를 없애 우회한다 (컴파일러 note가 제안하는 방식):
+  ```swift
+  let ref = value as CFTypeRef
+  if CFGetTypeID(ref) == CTParagraphStyleGetTypeID() {
+      let style = unsafeBitCast(ref, to: CTParagraphStyle.self)
+  }
+  ```
+  타입을 실제로 검사하므로 `as!`보다 안전하기도 하다. CoreText 객체 (CTFont/CTLine/CTParagraphStyle)를 `Any`로 받아 오는 테스트 코드에서 재발하기 쉽다.
 
 ## 명령어
 

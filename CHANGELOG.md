@@ -23,6 +23,11 @@
   것을 실제 폰트로 보냅니다. `한컴바탕확장`은 이름과 달리 한자용 송체이므로
   (문서 자신이 `FaceName.defaultFaceName`에 `FZSong_Superfont`를 기록합니다)
   CJK 송체 계열로 보냅니다. `굴림체`·`HY헤드라인M`·`HY울릉도M` 매핑도 추가했습니다.
+- `HwpFontResolver.resolve`에 `alternatives` 인자가 추가되었습니다 (기본값이 있어
+  기존 호출부는 수정 없이 컴파일됩니다). 문서가 `HwpFaceName`에 적어 둔 대체
+  글꼴(`alternativeFaceName`)·기반 글꼴(`defaultFaceName`)을 폴백 후보로 씁니다.
+  내장 폴백 맵을 모두 시도한 **뒤** script 폴백 직전에만 쓰이므로 맵에 있는 face의
+  해석은 달라지지 않고, 맵에 없는 face만 문서가 알려준 이름으로 구제됩니다.
 
 - `Sources/CoreHwp/Enums/HwpBorderType.swift`의 `HwpBorderType.rawValue`를 실제 HWP
   binary 값에 맞춰 정정했습니다. `none = 0`이 추가되었고, 기존 `line`,
