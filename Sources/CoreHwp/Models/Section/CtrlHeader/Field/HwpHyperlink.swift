@@ -22,6 +22,43 @@ public struct HwpHyperlink {
     public var rawPayload: Data
     /** 아직 해석하지 않은 child record */
     public var unknownChildren: [HwpUnknownRecord]
+
+    public init() {
+        ctrlId = HwpFieldCtrlId.hyperLink.rawValue
+        property = 0
+        unknownPrefix = 0
+        urlLength = 0
+        urlLengthRawPayload = Data()
+        url = ""
+        urlRawPayload = Data()
+        rawTrailing = Data()
+        rawPayload = Data()
+        unknownChildren = []
+    }
+
+    public init(
+        ctrlId: UInt32,
+        property: UInt32,
+        unknownPrefix: BYTE,
+        urlLength: WORD,
+        urlLengthRawPayload: Data,
+        url: String,
+        urlRawPayload: Data,
+        rawTrailing: Data,
+        rawPayload: Data,
+        unknownChildren: [HwpUnknownRecord]
+    ) {
+        self.ctrlId = ctrlId
+        self.property = property
+        self.unknownPrefix = unknownPrefix
+        self.urlLength = urlLength
+        self.urlLengthRawPayload = urlLengthRawPayload
+        self.url = url
+        self.urlRawPayload = urlRawPayload
+        self.rawTrailing = rawTrailing
+        self.rawPayload = rawPayload
+        self.unknownChildren = unknownChildren
+    }
 }
 
 extension HwpHyperlink: HwpPrimitive {
@@ -42,7 +79,7 @@ extension HwpHyperlink: HwpPrimitive {
         let urlCharacters = try reader.read(WCHAR.self, urlLength)
         urlRawPayload = try reader.consumedData(from: urlStartOffset)
         url = try urlCharacters.string
-        rawTrailing = try reader.readToEnd()
+        rawTrailing = reader.options.preservedPayload(try reader.readToEnd())
         rawPayload = try reader.consumedData(from: startOffset)
         unknownChildren = children.map(HwpUnknownRecord.init)
     }
@@ -52,9 +89,9 @@ extension HwpHyperlink: HwpPrimitive {
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
 
-        var reader = DataReader(record.payload)
+        var reader = DataReader(record.payload, options: record.options)
         var hyperlink = try self.init(&reader, record.children)
-        hyperlink.rawPayload = record.payload
+        hyperlink.rawPayload = record.options.preservedPayload(record.payload)
         return hyperlink
     }
 }

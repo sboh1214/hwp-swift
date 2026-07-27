@@ -1,0 +1,58 @@
+{
+  "fixture" : "footnote-endnote",
+  "pageCount" : 2,
+  "pages" : [
+    {
+      "blocks" : [
+        {
+          "frame" : [
+            850,
+            992,
+            4252,
+            160
+          ],
+          "index" : 0,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 44,
+          "textPrefix" : "Cor1)eHw"
+        },
+        {
+          "frame" : [
+            850,
+            7453,
+            4252,
+            117
+          ],
+          "index" : 1,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 28,
+          "textPrefix" : "1) CoreH"
+        }
+      ],
+      "page" : 0
+    },
+    {
+      "blocks" : [
+        {
+          "frame" : [
+            850,
+            992,
+            4252,
+            117
+          ],
+          "index" : 0,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 27,
+          "textPrefix" : "1) CoreH"
+        }
+      ],
+      "page" : 1
+    }
+  ]
+}

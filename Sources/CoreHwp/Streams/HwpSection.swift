@@ -12,7 +12,7 @@ public struct HwpSection: HwpFromDataWithVersion {
 
     init() {
         rawPayload = Data()
-        paragraph = [HwpParagraph()]
+        paragraph = [HwpParagraph.blankDocumentParagraph()]
         unknownRecords = []
     }
 
@@ -21,7 +21,7 @@ public struct HwpSection: HwpFromDataWithVersion {
     init(_ reader: inout DataReader, _ version: HwpVersion) throws {
         let startOffset = reader.byteOffset
         rawPayload = Data()
-        let records = try parseTreeRecord(data: try reader.readToEnd())
+        let records = try parseTreeRecord(data: try reader.readToEnd(), options: reader.options)
         var paragraphs = [HwpParagraph]()
         var unknownRecords = [HwpUnknownRecord]()
 
@@ -44,13 +44,17 @@ public struct HwpSection: HwpFromDataWithVersion {
 
     // MARK: loader contract exemption - raw section payload is restored after record-tree parse
 
-    public static func load(_ data: Data, _ version: HwpVersion) throws -> Self {
-        var reader = DataReader(data)
+    public static func load(
+        _ data: Data,
+        _ version: HwpVersion,
+        options: HwpLoadOptions = .default
+    ) throws -> Self {
+        var reader = DataReader(data, options: options)
         var section = try self.init(&reader, version)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
         }
-        section.rawPayload = data
+        section.rawPayload = options.preservedPayload(data)
         return section
     }
 }

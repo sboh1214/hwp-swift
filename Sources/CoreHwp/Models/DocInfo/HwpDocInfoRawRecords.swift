@@ -20,8 +20,9 @@ public struct HwpDocData: HwpFromRecord {
     // MARK: loader contract exemption - DOC_DATA payload is retained for best-effort views
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
-        rawPayload = try reader.readToEnd()
-        docDataInfo = Self.docDataInfo(from: rawPayload)
+        let payload = try reader.readToEnd()
+        rawPayload = reader.options.preservedPayload(payload)
+        docDataInfo = Self.docDataInfo(from: payload, options: reader.options)
         forbiddenCharArray = try children
             .filter { $0.tagId == HwpDocInfoTag.forbiddenChar.rawValue }
             .map(HwpForbiddenChar.load)
@@ -60,8 +61,9 @@ public struct HwpDistributeDocData: HwpFromRecord {
     // MARK: loader contract exemption - DISTRIBUTE_DOC_DATA payload is retained as raw data
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
-        rawPayload = try reader.readToEnd()
-        distributeDocDataInfo = Self.distributeDocDataInfo(from: rawPayload)
+        let payload = try reader.readToEnd()
+        rawPayload = reader.options.preservedPayload(payload)
+        distributeDocDataInfo = Self.distributeDocDataInfo(from: payload, options: reader.options)
         unknownChildren = children.map(HwpUnknownRecord.init)
     }
 }
@@ -95,8 +97,9 @@ public struct HwpTrackChange: HwpFromRecord {
     // MARK: loader contract exemption - TRACK_CHANGE payload is retained for best-effort views
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
-        rawPayload = try reader.readToEnd()
-        trackChangeInfo = Self.trackChangeInfo(from: rawPayload)
+        let payload = try reader.readToEnd()
+        rawPayload = reader.options.preservedPayload(payload)
+        trackChangeInfo = Self.trackChangeInfo(from: payload, options: reader.options)
         unknownChildren = children.map(HwpUnknownRecord.init)
     }
 }
@@ -130,8 +133,9 @@ public struct HwpMemoShape: HwpFromRecord {
     // MARK: loader contract exemption - MEMO_SHAPE payload is retained for best-effort views
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
-        rawPayload = try reader.readToEnd()
-        shapeInfo = Self.shapeInfo(from: rawPayload)
+        let payload = try reader.readToEnd()
+        rawPayload = reader.options.preservedPayload(payload)
+        shapeInfo = Self.shapeInfo(from: payload, options: reader.options)
         unknownChildren = children.map(HwpUnknownRecord.init)
     }
 }
@@ -175,8 +179,9 @@ public struct HwpTrackChangeContent: HwpFromRecord {
     // MARK: loader contract exemption - TRACK_CHANGE_CONTENT payload is retained for views
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
-        rawPayload = try reader.readToEnd()
-        contentInfo = Self.contentInfo(from: rawPayload)
+        let payload = try reader.readToEnd()
+        rawPayload = reader.options.preservedPayload(payload)
+        contentInfo = Self.contentInfo(from: payload, options: reader.options)
         unknownChildren = children.map(HwpUnknownRecord.init)
     }
 }
@@ -223,8 +228,9 @@ public struct HwpTrackChangeAuthor: HwpFromRecord {
     // MARK: loader contract exemption - TRACK_CHANGE_AUTHOR payload is retained for views
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
-        rawPayload = try reader.readToEnd()
-        authorInfo = Self.authorInfo(from: rawPayload)
+        let payload = try reader.readToEnd()
+        rawPayload = reader.options.preservedPayload(payload)
+        authorInfo = Self.authorInfo(from: payload, options: reader.options)
         unknownChildren = children.map(HwpUnknownRecord.init)
     }
 }
@@ -248,7 +254,7 @@ func loadDocInfoRecord<T: HwpFromRecord>(
 ) throws -> T {
     try validateDocInfoRecordTag(record, expectedTag: expectedTag)
 
-    var reader = DataReader(record.payload)
+    var reader = DataReader(record.payload, options: record.options)
     let model = try type.init(&reader, record.children)
     if !reader.isEOF {
         throw HwpError.bytesAreNotEOF(model: type, remain: reader.remainBytes)
@@ -268,7 +274,7 @@ func validateDocInfoRecordTag(
 }
 
 private extension HwpDocData {
-    static func docDataInfo(from payload: Data) -> HwpDocDataInfo? {
+    static func docDataInfo(from payload: Data, options: HwpLoadOptions) -> HwpDocDataInfo? {
         guard let parsed = payload.littleEndianUInt32ArrayWithTrailing(
             minimumValueCount: 1
         ) else {
@@ -277,14 +283,19 @@ private extension HwpDocData {
 
         return HwpDocDataInfo(
             values: parsed.values,
-            valuesRawPayload: payload.uint32ValuesRawPayload(valueCount: parsed.values.count),
-            rawTrailing: parsed.rawTrailing
+            valuesRawPayload: options.preservedPayload(
+                payload.uint32ValuesRawPayload(valueCount: parsed.values.count)
+            ),
+            rawTrailing: options.preservedPayload(parsed.rawTrailing)
         )
     }
 }
 
 private extension HwpDistributeDocData {
-    static func distributeDocDataInfo(from payload: Data) -> HwpDistributeDocDataInfo? {
+    static func distributeDocDataInfo(
+        from payload: Data,
+        options: HwpLoadOptions
+    ) -> HwpDistributeDocDataInfo? {
         guard let parsed = payload.littleEndianUInt32ArrayWithTrailing(
             minimumValueCount: 1
         ) else {
@@ -293,21 +304,24 @@ private extension HwpDistributeDocData {
 
         return HwpDistributeDocDataInfo(
             values: parsed.values,
-            valuesRawPayload: payload.uint32ValuesRawPayload(valueCount: parsed.values.count),
-            rawTrailing: parsed.rawTrailing
+            valuesRawPayload: options.preservedPayload(
+                payload.uint32ValuesRawPayload(valueCount: parsed.values.count)
+            ),
+            rawTrailing: options.preservedPayload(parsed.rawTrailing)
         )
     }
 }
 
 private extension Data {
+    /// 분리 복사 — 스트림 버퍼 슬라이스를 typed view에 남기지 않는다.
     func uint32ValuesRawPayload(valueCount: Int) -> Data {
-        prefix(valueCount * MemoryLayout<UInt32>.size)
+        Data(prefix(valueCount * MemoryLayout<UInt32>.size))
     }
 }
 
 private extension HwpTrackChangeAuthor {
     /// Best-effort typed view: malformed author metadata leaves rawPayload intact.
-    static func authorInfo(from payload: Data) -> HwpTrackChangeAuthorInfo? {
+    static func authorInfo(from payload: Data, options: HwpLoadOptions) -> HwpTrackChangeAuthorInfo? {
         let lengthByteCount = MemoryLayout<UInt32>.size
         let characterByteCount = MemoryLayout<UInt16>.size
         guard payload.count >= lengthByteCount else {
@@ -316,11 +330,21 @@ private extension HwpTrackChangeAuthor {
 
         do {
             let rawCharacterCount = try payload.readLittleEndianUInt32(at: 0)
-            let characterCount = Int(rawCharacterCount)
-            let byteCount = characterCount * characterByteCount
+            // 32비트 Int(watchOS arm64_32)에선 Int.max 초과 count의 변환·길이 곱이
+            // payload 크기 가드 전에 트랩한다 — failable 변환 + 오버플로 검사로
+            // malformed 메타데이터를 nil로 돌려준다 (P1, HwpEmbeddedChart와 동일).
+            guard let characterCount = Int(exactly: rawCharacterCount) else {
+                return nil
+            }
+            let byteCountResult = characterCount
+                .multipliedReportingOverflow(by: characterByteCount)
             let nameOffset = lengthByteCount
-
-            guard payload.count >= nameOffset + byteCount else {
+            guard !byteCountResult.overflow else {
+                return nil
+            }
+            let byteCount = byteCountResult.partialValue
+            let endResult = nameOffset.addingReportingOverflow(byteCount)
+            guard !endResult.overflow, payload.count >= endResult.partialValue else {
                 return nil
             }
 
@@ -332,9 +356,9 @@ private extension HwpTrackChangeAuthor {
             let trailingOffset = lengthByteCount + byteCount
             return HwpTrackChangeAuthorInfo(
                 name: name,
-                nameLengthRawPayload: Data(payload.prefix(lengthByteCount)),
-                nameRawPayload: nameRawPayload,
-                rawTrailing: Data(payload.dropFirst(trailingOffset))
+                nameLengthRawPayload: options.preservedPayload(Data(payload.prefix(lengthByteCount))),
+                nameRawPayload: options.preservedPayload(nameRawPayload),
+                rawTrailing: options.preservedPayload(Data(payload.dropFirst(trailingOffset)))
             )
         } catch {
             return nil
@@ -343,7 +367,7 @@ private extension HwpTrackChangeAuthor {
 }
 
 private extension HwpTrackChange {
-    static func trackChangeInfo(from payload: Data) -> HwpTrackChangeInfo? {
+    static func trackChangeInfo(from payload: Data, options: HwpLoadOptions) -> HwpTrackChangeInfo? {
         let knownByteCount = MemoryLayout<UInt32>.size
         guard payload.count >= knownByteCount else {
             return nil
@@ -352,8 +376,8 @@ private extension HwpTrackChange {
         do {
             return HwpTrackChangeInfo(
                 headerValue: try payload.readLittleEndianUInt32(at: 0),
-                headerRawPayload: Data(payload.prefix(knownByteCount)),
-                rawTrailing: Data(payload.dropFirst(knownByteCount))
+                headerRawPayload: options.preservedPayload(Data(payload.prefix(knownByteCount))),
+                rawTrailing: options.preservedPayload(Data(payload.dropFirst(knownByteCount)))
             )
         } catch {
             return nil
@@ -362,7 +386,10 @@ private extension HwpTrackChange {
 }
 
 private extension HwpTrackChangeContent {
-    static func contentInfo(from payload: Data) -> HwpTrackChangeContentInfo? {
+    static func contentInfo(
+        from payload: Data,
+        options: HwpLoadOptions
+    ) -> HwpTrackChangeContentInfo? {
         let kindByteCount = MemoryLayout<UInt32>.size
         let timestampByteCount = MemoryLayout<UInt16>.size * 5
         let knownByteCount = kindByteCount + timestampByteCount
@@ -373,7 +400,7 @@ private extension HwpTrackChangeContent {
         do {
             return HwpTrackChangeContentInfo(
                 kind: try payload.readLittleEndianUInt32(at: 0),
-                kindRawPayload: Data(payload.prefix(kindByteCount)),
+                kindRawPayload: options.preservedPayload(Data(payload.prefix(kindByteCount))),
                 timestamp: HwpTrackChangeTimestamp(
                     year: try payload.readLittleEndianUInt16(at: 4),
                     month: try payload.readLittleEndianUInt16(at: 6),
@@ -381,10 +408,10 @@ private extension HwpTrackChangeContent {
                     hour: try payload.readLittleEndianUInt16(at: 10),
                     minute: try payload.readLittleEndianUInt16(at: 12)
                 ),
-                timestampRawPayload: Data(
+                timestampRawPayload: options.preservedPayload(Data(
                     payload.dropFirst(kindByteCount).prefix(timestampByteCount)
-                ),
-                rawTrailing: Data(payload.dropFirst(knownByteCount))
+                )),
+                rawTrailing: options.preservedPayload(Data(payload.dropFirst(knownByteCount)))
             )
         } catch {
             return nil
@@ -393,7 +420,7 @@ private extension HwpTrackChangeContent {
 }
 
 private extension HwpMemoShape {
-    static func shapeInfo(from payload: Data) -> HwpMemoShapeInfo? {
+    static func shapeInfo(from payload: Data, options: HwpLoadOptions) -> HwpMemoShapeInfo? {
         let knownByteCount = MemoryLayout<UInt32>.size
             + MemoryLayout<UInt8>.size * 2
             + MemoryLayout<COLORREF>.size * 3
@@ -409,8 +436,8 @@ private extension HwpMemoShape {
                 lineColor: HwpColor(try payload.readLittleEndianUInt32(at: 6)),
                 fillColor: HwpColor(try payload.readLittleEndianUInt32(at: 10)),
                 activeColor: HwpColor(try payload.readLittleEndianUInt32(at: 14)),
-                fixedFieldsRawPayload: Data(payload.prefix(knownByteCount)),
-                rawTrailing: Data(payload.dropFirst(knownByteCount))
+                fixedFieldsRawPayload: options.preservedPayload(Data(payload.prefix(knownByteCount))),
+                rawTrailing: options.preservedPayload(Data(payload.dropFirst(knownByteCount)))
             )
         } catch {
             return nil

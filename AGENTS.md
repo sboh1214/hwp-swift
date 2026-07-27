@@ -1,23 +1,32 @@
 # 프로젝트 지식 베이스
 
-**Commit:** ca79c1a
-**Branch:** docs@landing-page
+**Branch:** feat/hwpkit-viewer
 
 ## 개요
 
-한글과컴퓨터의 한글 문서 파일(`.hwp`)을 파싱하는 Swift package. HWP 파일은
-OLE compound document이며, 그 안의 stream들은 record tree 구조로 인코딩되어
-있다. 단일 library target `CoreHwp` (Swift 5.9+, macOS 14+/iOS 17+, LGPL).
+한글과컴퓨터의 한글 문서 파일(`.hwp`)을 파싱하고 렌더링하는 Swift package.
+HWP 파일은 OLE compound document이며, 그 안의 stream들은 record tree 구조로
+인코딩되어 있다. Swift 5.9+, macOS 14+/iOS 17+, LGPL.
+
+**4개 library target**:
+- `CoreHwp` — 파서 (read-only, binary HWP → typed model)
+- `HwpKitCore` — 렌더 코어 (platform-neutral, CoreGraphics/CoreText/Foundation only)
+- `HwpKitNative` — 플랫폼 브릿지 (AppKit + UIKit)
+- `HwpKit` — SwiftUI 공개 API
 
 ## 구조
 
 ```
 hwp-swift/
-├── Sources/CoreHwp/       # 라이브러리 (81 .swift files, ~4250 LOC)
-├── Tests/CoreHwpTests/    # XCTest + Nimble + .hwp 픽스처
+├── Sources/CoreHwp/       # 파서
+├── Sources/HwpKitCore/    # 렌더 코어 — 파이프라인/모델/paint list (AGENTS.md 참조)
+├── Sources/HwpKitNative/  # 플랫폼 브릿지 — CALayer/View (AGENTS.md 참조)
+├── Sources/HwpKit/        # SwiftUI 공개 API (AGENTS.md 참조)
+├── Tests/{CoreHwp,HwpKitCore,HwpKitNative,HwpKit}Tests/
+├── Sample/                # HwpSwiftSample.xcodeproj (xcodegen, path: ..)
 ├── Package.swift          # swift-tools-version:5.9
-├── .github/workflows/     # ci.yml (test+lint+coverage), cd.yml (DocC+release-drafter)
-└── .github/pages/         # cd.yml이 ./docs/index.html에 overlay하는 DocC 사이트 루트 랜딩 페이지
+├── .github/workflows/     # ci.yml, cd.yml
+└── .github/pages/         # DocC 사이트 루트 랜딩
 ```
 
 폴더명과 파일명은 **공백 없는 PascalCase**를 사용한다 (예:
@@ -40,8 +49,9 @@ hwp-swift/
 
 | 심볼 | 위치 | 역할 |
 |------|------|------|
-| `HwpFile` | [HwpFile.swift](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/HwpFile.swift) | 유일한 public 진입점: `init(fromPath:)`, `init(fromWrapper:)`, `init()` |
-| `HwpError` | [HwpError.swift](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/HwpError.swift) | `CustomStringConvertible`을 채택한 public error enum |
+| `HwpFile` | [HwpFile.swift](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/HwpFile.swift) | 유일한 public 진입점: `init(fromPath:)`/`init(fromData:)`/`init(fromWrapper:)` (각각 `readLimits:` 또는 `options:` 오버로드), `init()` |
+| `HwpLoadOptions` | [HwpLoadOptions.swift](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/HwpLoadOptions.swift) | `readLimits` + `preserveRawPayload`(기본 true). `.viewer` 프리셋은 rawPayload 보존을 꺼 압축 해제 버퍼를 파싱 후 즉시 해제 (뷰어 상주 메모리 대폭 절감) |
+| `HwpError` | [HwpError.swift](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/HwpError.swift) | `CustomStringConvertible` + `LocalizedError`를 채택한 public error enum |
 | `HwpStreamName` | [Enums/HwpStreamName.swift](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/Enums/HwpStreamName.swift) | OLE stream 이름 (`FileHeader`, `DocInfo`, `BodyText`, `\005HwpSummaryInformation`, `PrvText`, `PrvImage`) |
 | `parseTreeRecord` | [Utils/HwpRecord.swift](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/Utils/HwpRecord.swift) | stream에서 tag/level/size record tree를 구성 |
 | `StreamReader` | [Utils/Readers/StreamReader.swift](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/Utils/Readers/StreamReader.swift) | OLE → `Data` 변환 (SWCompression으로 deflate 처리) |
@@ -68,9 +78,16 @@ Deflate API는 bounded streaming inflate를 노출하지 않으므로, 압축 �
 한도는 메모리 할당 cap이 아니다. PR/문서에서 decompression-bomb 방어를 설명할 때
 이 한계를 명시한다.
 
+per-stream 한도만으로는 유효한 자식이 많은 파일(BodyText·ViewText·BinData)이
+집계로 메모리를 고갈시킬 수 있어 **파일 단위 집계 한도**(`maxAggregateStreamBytes`,
+기본 1 GiB)를 둔다. `StreamReader`가 모든 read 경로에서 보유 byte를 누적해
+초과 시 `HwpError.aggregateStreamSizeLimitExceeded`를 던진다 (오버플로 안전 비교).
+ViewText는 optional이라 파싱 실패엔 빈 폴백이지만, 이 두 자원 한도 error는
+폴백하지 않고 그대로 전파한다.
+
 ## 컨벤션
 
-- **`HwpPrimitive = Hashable & Codable`** — 모든 모델이 채택 (typealias는 [`HwpPrimitive.swift`](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/Utils/Protocols/HwpPrimitive.swift)).
+- **`HwpPrimitive = Codable & Hashable & Sendable`** — 모든 모델이 채택 (typealias는 [`HwpPrimitive.swift`](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/Utils/Protocols/HwpPrimitive.swift)). 전 모델이 값 타입이라 `Sendable`은 자동 충족 — 백그라운드 파싱 → UI 전달이 컴파일러 검증된다.
 - [`Utils/Protocols/`](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/Utils/Protocols/)의 **loader 프로토콜**은 `static load(...)`를 default 구현으로 제공하며 EOF를 강제한다 — reader에 잔여 byte가 있으면 `HwpError.bytesAreNotEOF`를 throw. 채택 측은 `init(_ reader: inout DataReader, ...)`만 작성.
 - public 타입의 **한국어 doc-comment**는 한컴 공개 문서의 절을 참조한다. 편집 시 보존할 것.
 - **`Tests/` 외부에서 `import XCTest` 금지.**
@@ -81,7 +98,7 @@ Deflate API는 bounded streaming inflate를 노출하지 않으므로, 압축 �
 - 테스트에서 `XCTAssert*` 사용 — SwiftLint custom rule `no_xctassert` (severity: error)로 금지. Nimble `expect(...) == ...` 사용.
 - EOF를 검사하지 않고 silent하게 byte 잔여 — loader 프로토콜의 `load`가 `bytesAreNotEOF`를 throw하도록 설계되어 있으므로, manual `init` 호출로 우회 금지.
 - 공백이 있는 새 파일/디렉터리명 추가 — 경로명은 PascalCase + 무공백을 유지.
-- `Package.swift`의 Darwin platform 최소 버전을 더 낮추기 — 의존성 `SWCompression 4.9.1` / `BitByteData 2.1.0`이 macOS 14+/iOS 17+를 요구한다. Linux는 별도로 항상 지원 (CI matrix: macOS + ubuntu-latest).
+- `Package.swift`의 Darwin platform 최소 버전을 더 낮추기 — 의존성 `SWCompression 4.9.1` / `BitByteData 2.1.0`이 macOS 14+/iOS 17+를 요구한다. Linux는 CoreHwp·CoreHwpTests만 지원한다 (뷰어 타깃은 Apple 전용 프레임워크 의존 — `Package.swift`의 `canImport(Darwin)` 분기; CI matrix: macOS + ubuntu-latest).
 - `swift-tools-version` 변경 시 `.swift-version`, `.swiftformat`, **양쪽** `Test-*.yml` matrix 동시 갱신 누락 (`CONTRIBUTING.md` 참조).
 
 ## 명령어
@@ -89,21 +106,66 @@ Deflate API는 bounded streaming inflate를 노출하지 않으므로, 압축 �
 ```bash
 swift build                                    # 빌드
 swift test                                     # 테스트 실행
-swift test --enable-code-coverage              # 커버리지 (lcov 추출은 .github/workflows/Coverage.yml 참조)
+swift test --enable-code-coverage              # 커버리지 (lcov 추출·CoreHwp 95% 게이트는 .github/workflows/ci.yml의 coverage job)
+HWP_PERF=1 swift test --filter Performance     # 성능 실측 (N=20,000 합성 + 타이트 임계; 기본은 N=1,000 스모크)
+HWP_SNAPSHOT_TESTS=1 swift test --filter "FixtureRenderHash|FixtureBlockLayout|FixturePreviewFidelity"  # 환경 의존 스냅샷·fidelity 스위트 (기본 swift test·CI에서는 skip)
+RECORD_RENDER_HASHES=1 swift test --filter FixtureRenderHash     # 렌더 픽셀 해시 기준선 레코딩 (Snapshots/ — gitignore, 이 머신 전용)
+RECORD_BLOCK_SNAPSHOTS=1 swift test --filter FixtureBlockLayout  # 블록 좌표 스냅샷 재생성 (diff 리뷰 필수)
+xcodebuild test -scheme Hwp-Swift-Package -destination 'platform=iOS Simulator,name=iPhone 17 Pro'  # iOS 테스트 (#if os(iOS) 코드는 여기서만 실행)
 swiftformat .                                  # 포맷
 swiftformat --lint .                           # CI lint 체크
 swiftlint                                      # lint
 pre-commit install && pre-commit run --all     # hook 설치 + 전체 실행
 ```
 
+성능 게이트: CI는 스모크 파라미터만 상시 실행 (공유 러너 wall-time 하드
+게이트는 flaky). 타이트 임계는 로컬 `HWP_PERF=1`로 확인 — 성능에 닿는
+PR은 실측 수치를 커밋 메시지에 기록한다.
+
+## 리뷰 대응 체크리스트 (렌더 회귀 방지)
+
+PR 리뷰를 반영하며 렌더링 코드를 수정할 때, 한글 파일 렌더 결과가 조용히
+달라지는 것을 막는 절차. 파서·문서 등 렌더 무관 변경은 3·4단계만.
+
+0. **기준선 동결** — 수정 전
+   `RECORD_RENDER_HASHES=1 swift test --filter FixtureRenderHash`로 현재
+   렌더를 `Snapshots/`에 레코딩. 기준선은 머신 종속(한컴 폰트·OS
+   래스터라이저)이라 gitignore — 작업할 이 머신에서 매번 새로 뜬다.
+1. **코멘트 분류** — 렌더 영향 여부 먼저 판정. 레이아웃·측정·폰트·색·장식
+   관련이면 렌더가 의도적으로 바뀔 수 있고(기준선 갱신 예정), 순수
+   correctness·리팩터는 렌더 불변이어야 한다(해시가 증명).
+2. **수정** — 관심사별 커밋 분리 (로직 / 기계적 포맷).
+3. **검증 (계층별)**
+   - `swift test` — 환경 의존 4종은 자동 skip, 나머지 green.
+   - `HWP_SNAPSHOT_TESTS=1 swift test --filter "FixtureRenderHash|FixtureBlockLayout|FixturePreviewFidelity"`
+     — 렌더 회귀. 실패 시 어느 픽스처의 몇 페이지가 변했는지 출력된다.
+   - **변경된 페이지만 육안 확인**:
+     `HWP_ALLPAGES=<id> HWP_ALLPAGES_DIR=<dir> swift test --filter testDumpAllPages`로
+     덤프해 한글.app 실물과 대조. 의도된 개선이면 해당 픽스처만
+     `RECORD_RENDER_HASHES=<id> …`로 재레코딩(이전 기준선은 `.json.bak`
+     백업), 회귀면 코드 수정. 안 바뀐 페이지는 해시 0건 통과로 증명됨.
+   - **수정한 파일에만** `swiftformat` (로컬·CI 버전 일치 확인 — 다르면
+     로컬 포맷이 CI에서 되레 실패) + `swiftlint` error 0.
+   - Linux는 **amd64 도커만 신뢰** (arm64는 main도 가짜 `fatalError`):
+     `docker run --rm --platform linux/amd64 -v $PWD:/src:ro swift:6.3-noble bash -c "cp -r /src /work && cd /work && rm -rf .build Snapshots && swift test"`.
+     렌더·뷰어 코드를 만졌으면 iOS 빌드도 확인.
+4. **커밋·푸시** — 논리/포맷 커밋 분리. `Snapshots/`·`Docs/`·스크래치
+   파일은 gitignore로 제외됨. push 후 CI 잡별(macOS[커버리지 포함]/iOS/
+   Linux·lint) 확인 — 브랜치 첫 PR 전엔 CI가 돈 적 없으니 특히 주시.
+
+원칙: **탐지는 해시, 진단은 블록 스냅샷 diff** (상호보완). 육안 재확인은
+바뀐 페이지만. 환경 의존 테스트는 기본·CI에서 skip, 로컬 opt-in.
+
 ## 의존성 (모두 exact pinning)
 
 - `OLEKit 0.3.1` — OLE compound document 파싱
 - `SWCompression 4.9.1` — 압축 stream의 deflate (4.9.0에서 untrusted Deflate 입력에 대한 crash 패치 포함)
-- `Nimble 9.2.1` — 테스트 DSL (testTarget 전용)
+- `Nimble 13.8.0` — 테스트 DSL (testTarget 전용)
+- `swift-docc-plugin 1.5.0` — DocC 사이트 빌드 (`cd.yml`의 `docs` job)
 
 ## 노트
 
 - `HwpFile.init()`는 완전 빈 객체가 아니라 빈 `HwpSection` 하나가 들어있는 default 객체를 만든다. `Tests/CoreHwpTests/Blank/Create*Tests.swift`에서 파싱된 픽스처와 비교할 때 이를 사용.
 - `Streams/HwpDocInfo.swift`의 여러 `// TODO: HWPTAG_*` 주석은 의도된 것으로, 아직 구현되지 않은 기능이다. 리팩토링 중에 조용히 제거하지 말 것.
 - `HwpCtrlId` enum의 `Codable`은 hand-rolled 구현이다. 이종(heterogeneous) payload를 가진 associated value enum은 Swift가 자동 합성하지 못하기 때문.
+- **Codable 아카이브 호환**: 모델에 새 저장 필드를 추가하면 이전 아카이브(키 부재)가 `keyNotFound`로 깨지거나, 더 나쁘게는 파생 필드가 nil로 조용히 유실된다. 신규 필드는 custom `init(from:)`에서 `decodeIfPresent ?? 기본값`으로 받고, **파싱에서 파생되는 typed 필드는 원본(raw payload/RawValue)에서 파스와 같은 함수로 재수화**한다 (`HwpFile.viewSectionArray`, `HwpBullet.headCharShapeId`, `HwpChar.inlineControl`, `HwpCommonCtrlPropertyInfo`의 enum 9종, `HwpTableCellHeader.cellProperty`, `HwpOtherControl`의 typed payload 6종, `HwpShapeComponent.textBoxListArray`의 `textBoxInfo`). 재수화는 **파스 게이트까지 같아야** 한다 — 예로 글상자 리스트만 표 90을 갖는 규약이라, 재수화도 부모 `HwpShapeComponent` 디코더에서만 수행한다. 회귀 가드는 `Tests/CoreHwpTests/Stability/LegacyArchiveDecodingTests.swift`.

@@ -78,13 +78,17 @@ public struct HwpParaHeader: HwpFromDataWithVersion {
         rawPayload = try reader.consumedData(from: startOffset)
     }
 
-    public static func load(_ data: Data, _ version: HwpVersion) throws -> Self {
-        var reader = DataReader(data)
+    public static func load(
+        _ data: Data,
+        _ version: HwpVersion,
+        options: HwpLoadOptions = .default
+    ) throws -> Self {
+        var reader = DataReader(data, options: options)
         var paraHeader = try self.init(&reader, version)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
         }
-        paraHeader.rawPayload = data
+        paraHeader.rawPayload = options.preservedPayload(data)
         return paraHeader
     }
 }

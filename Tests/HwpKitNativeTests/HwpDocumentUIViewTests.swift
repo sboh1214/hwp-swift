@@ -1,0 +1,223 @@
+#if os(iOS)
+    import HwpKitCore
+    @testable import HwpKitNative
+    import Nimble
+    import XCTest
+
+    @MainActor
+    final class HwpDocumentUIViewTests: XCTestCase {
+        private func makeDocument(pageCount: Int = 1) -> HwpDocument {
+            let pages = (0 ..< pageCount).map { index in
+                HwpPage(
+                    size: CGSize(width: 595, height: 842),
+                    margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
+                    blocks: [],
+                    pageNumber: index + 1
+                )
+            }
+            return HwpDocument(
+                pages: pages,
+                metadata: HwpDocumentMetadata(pageCount: pageCount),
+                unsupportedElements: []
+            )
+        }
+
+        /// 스크롤 뷰는 contentOffset을 기기 픽셀 그리드에 맞춘다 — 3× 기기에서
+        /// 102.5pt 인셋이 102.333pt(=307/3)로 스냅되므로, 센터링 원점 판정은
+        /// 정확한 일치가 아니라 1픽셀 허용오차여야 2×·3× 양쪽에서 성립한다.
+        private func devicePixel(of view: HwpDocumentUIView) -> CGFloat {
+            let scale = view.traitCollection.displayScale
+            return scale > 0 ? 1 / scale : 0.5
+        }
+
+        func testInitializesWithNoPageLayers() {
+            let view = HwpDocumentUIView(frame: .zero)
+
+            expect(view.pageLayers).to(beEmpty())
+        }
+
+        func testUpdateVisiblePagesAddsLayers() {
+            let view = HwpDocumentUIView(frame: .zero)
+            view.document = makeDocument(pageCount: 7)
+
+            view.updateVisiblePages(range: 0 ..< 3)
+
+            // 요청 범위 ±2 페이지를 미리 만든다
+            expect(view.pageLayers.keys.sorted()) == [0, 1, 2, 3, 4]
+        }
+
+        func testAutoscrollStepZonesAndClamp() {
+            let height: CGFloat = 600
+            let step = { (y: CGFloat) in
+                HwpDocumentUIView.autoscrollStep(forLocationY: y, boundsHeight: height)
+            }
+
+            // 존 밖 (중앙) — 스크롤 없음
+            expect(step(300)) == 0
+            expect(step(44)) == 0
+            expect(step(556)) == 0
+            // 상단 존 — 음수 (위로), 침투 비례
+            expect(step(22)) == -6
+            expect(step(0)) == -12
+            // 하단 존 — 양수 (아래로), 침투 비례
+            expect(step(578)) == 6
+            expect(step(600)) == 12
+            // 존 밖 좌표 (경계 초과)도 최대 스텝으로 클램프
+            expect(step(-100)) == -12
+            expect(step(700)) == 12
+            // 뷰포트가 존 두 개보다 작으면 비활성
+            expect(HwpDocumentUIView.autoscrollStep(
+                forLocationY: 10, boundsHeight: 80
+            )) == 0
+        }
+
+        /// 범위 밖 배율은 스크롤 뷰가 클램프하므로 저장 값도 클램프돼야 한다 —
+        /// 클램프 전 값이 남으면 HwpKit 정규화가 그것을 실제 배율로 오인한다 (R72 #3).
+        func testZoomScaleClampsToNativeMaximum() {
+            let view = HwpDocumentUIView(frame: CGRect(x: 0, y: 0, width: 400, height: 600))
+            view.document = makeDocument()
+
+            view.zoomScale = 10
+
+            expect(view.zoomScale) == view.scrollView.maximumZoomScale
+            expect(view.scrollView.zoomScale) == view.scrollView.maximumZoomScale
+        }
+
+        /// 이미 상한이면 스크롤 뷰가 안 바뀌어 echo도 없다 — 그래도 stale 값이
+        /// 남지 않아야 정규화가 바인딩을 되돌릴 수 있다 (R72 #3의 발현 조건).
+        func testZoomScaleAtMaximumDiscardsFurtherOutOfRangeValue() {
+            let view = HwpDocumentUIView(frame: CGRect(x: 0, y: 0, width: 400, height: 600))
+            view.document = makeDocument()
+            view.zoomScale = view.scrollView.maximumZoomScale
+
+            view.zoomScale = 10
+
+            expect(view.zoomScale) == view.scrollView.maximumZoomScale
+        }
+
+        /// 비-finite 배율은 직전 값을 유지한다 — NaN을 저장하면 정규화 술어가
+        /// 무조건 writeback으로 판정해 바인딩까지 NaN으로 오염된다.
+        func testNonFiniteZoomScaleKeepsPreviousValue() {
+            let view = HwpDocumentUIView(frame: CGRect(x: 0, y: 0, width: 400, height: 600))
+            view.document = makeDocument()
+            view.zoomScale = 2
+
+            view.zoomScale = .nan
+
+            expect(view.zoomScale) == 2
+        }
+
+        func testProgrammaticZoomUpdatesLayerContentsScale() {
+            // 버튼 줌 (zoomScale 프로그램 대입)은 scrollViewDidEndZooming이
+            // 발화하지 않는다 — didSet이 직접 재래스터해야 흐릿해지지 않는다.
+            let view = HwpDocumentUIView(frame: CGRect(x: 0, y: 0, width: 400, height: 600))
+            view.document = makeDocument()
+            guard let layer = view.pageLayers[0] else {
+                fail("페이지 레이어가 없다")
+                return
+            }
+            let baseScale = layer.contentsScale
+
+            view.zoomScale = 2.0
+
+            // 3× 기기에서는 요청 배율(base×2 = 6)이 페이지 면적 래스터 상한
+            // √(16,000,000/(595·842)) ≈ 5.651에 걸린다 — 상한을 빼고 단언하면
+            // 2× 기기에서만 통과한다.
+            let expected = HwpDocumentViewSupport.boundedContentsScale(
+                baseScale * 2, for: layer.bounds.size
+            )
+            expect(expected) > baseScale
+            expect(view.pageLayers[0]?.contentsScale) == expected
+        }
+
+        /// 뷰포트보다 작은 문서로 교체하면 센터링 인셋 보정 원점에서 열린다 —
+        /// .zero는 인셋을 지나쳐 작은 문서를 좌상단에 붙인다 (R39 #2).
+        func testSmallDocumentReplacementOpensAtCenteringOrigin() {
+            let view = HwpDocumentUIView(frame: CGRect(x: 0, y: 0, width: 800, height: 1000))
+            view.layoutIfNeeded()
+
+            view.document = makeDocument()
+
+            let inset = view.scrollView.adjustedContentInset
+            let pixel = devicePixel(of: view)
+            expect(inset.top) > 0
+            expect(inset.left) > 0
+            expect(view.scrollView.contentOffset.x).to(beCloseTo(-inset.left, within: pixel))
+            expect(view.scrollView.contentOffset.y).to(beCloseTo(-inset.top, within: pixel))
+        }
+
+        /// SwiftUI 경로: makeUIView가 bounds 0일 때 문서를 대입하면 인셋이 0이라
+        /// 즉시 센터링이 no-op이지만, 첫 non-zero 레이아웃에서 센터링 원점이
+        /// 적용돼 작은 문서가 좌상단에 붙지 않는다 (R40 #1).
+        func testDeferredCenteringAppliesOnFirstNonZeroLayout() {
+            let view = HwpDocumentUIView(frame: .zero)
+            view.document = makeDocument()
+
+            view.frame = CGRect(x: 0, y: 0, width: 800, height: 1000)
+            view.layoutIfNeeded()
+
+            let inset = view.scrollView.adjustedContentInset
+            let pixel = devicePixel(of: view)
+            expect(inset.top) > 0
+            expect(view.scrollView.contentOffset.x).to(beCloseTo(-inset.left, within: pixel))
+            expect(view.scrollView.contentOffset.y).to(beCloseTo(-inset.top, within: pixel))
+        }
+
+        /// SwiftUI makeUIView(bounds 0)에서 들어온 초기 페이지 요청은 첫 실측
+        /// 레이아웃에서 복원된다 — 예약된 초기 센터링이 요청을 덮으면 페이지 1로
+        /// 되돌아가고 currentPage 바인딩까지 오염된다 (R70 #1).
+        func testInitialPageRequestSurvivesPendingCentering() {
+            let view = HwpDocumentUIView(frame: .zero)
+            view.document = makeDocument(pageCount: 10)
+
+            view.scrollToPage(at: 4)
+            view.frame = CGRect(x: 0, y: 0, width: 400, height: 600)
+            view.layoutIfNeeded()
+
+            expect(view.currentVisiblePage()) == 4
+        }
+
+        /// 첫 레이아웃 전에 문서가 교체되면 옛 문서의 예약 페이지를 버리고 맨
+        /// 위에서 연다 — 남기면 교체 문서가 엉뚱한 페이지에서 열린다 (R71 #2).
+        func testDocumentReplacementDiscardsQueuedInitialPage() {
+            let view = HwpDocumentUIView(frame: .zero)
+            view.document = makeDocument(pageCount: 10)
+            view.scrollToPage(at: 7)
+
+            // 구조가 다른 문서여야 전체 교체 경로를 탄다 (같은 문서 재전달은
+            // 스크롤 유지가 의도된 별도 경로).
+            view.document = makeDocument(pageCount: 6)
+            view.frame = CGRect(x: 0, y: 0, width: 400, height: 600)
+            view.layoutIfNeeded()
+
+            expect(view.currentVisiblePage()) == 0
+        }
+
+        /// 초기 요청이 없으면 종전대로 센터링 원점에서 연다 (R40 #1 유지).
+        func testInitialCenteringStillAppliesWithoutPageRequest() {
+            let view = HwpDocumentUIView(frame: .zero)
+            view.document = makeDocument(pageCount: 10)
+
+            view.frame = CGRect(x: 0, y: 0, width: 400, height: 600)
+            view.layoutIfNeeded()
+
+            expect(view.currentVisiblePage()) == 0
+            expect(view.scrollView.contentOffset.y)
+                == -view.scrollView.adjustedContentInset.top
+        }
+
+        /// scrollToPage는 인셋 반영 클램프로 짧은 문서를 센터에 유지한다 —
+        /// zero-based 클램프는 y=0(좌상단)으로 밀어냈다 (R40 #2).
+        func testScrollToPageKeepsShortDocumentCentered() {
+            let view = HwpDocumentUIView(frame: CGRect(x: 0, y: 0, width: 800, height: 1000))
+            view.layoutIfNeeded()
+            view.document = makeDocument()
+
+            view.scrollToPage(at: 0)
+
+            let inset = view.scrollView.adjustedContentInset
+            expect(inset.top) > 0
+            expect(view.scrollView.contentOffset.y) == -inset.top
+        }
+    }
+#endif

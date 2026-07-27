@@ -17,6 +17,12 @@ line_length:
   warning: 100
   error: 120
 
+identifier_name:
+  excluded:
+    - id
+    - x
+    - y
+
 type_body_length:
   warning: 300
   error: 400

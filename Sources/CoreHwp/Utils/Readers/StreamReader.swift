@@ -6,6 +6,12 @@ struct StreamReader {
     private let ole: OLEFile
     private let streams: [String: DirectoryEntry]
     private let readLimits: HwpReadLimits
+    /// 참조 타입: 비변이 read 호출들이 파일 한 건의 읽기 총량을 공유 누적한다.
+    private let aggregateUsage = AggregateUsage()
+
+    private final class AggregateUsage {
+        var totalBytes = 0
+    }
 
     init(
         _ ole: OLEFile,
@@ -55,9 +61,12 @@ struct StreamReader {
 
     func getOptionalNamedDataFromStorage(
         _ streamName: HwpStreamName,
-        _ isCompressed: Bool
+        _ isCompressed: Bool,
+        expectedChildCount: Int? = nil
     ) throws -> [(name: String, data: Data)] {
-        try getOptionalNamedDataFromStorage(streamName) { _ in isCompressed }
+        try getOptionalNamedDataFromStorage(
+            streamName, expectedChildCount: expectedChildCount
+        ) { _ in isCompressed }
     }
 
     private func readData(
@@ -77,10 +86,9 @@ struct StreamReader {
         }
 
         try Self.validateStreamByteCount(data.count, limit: inputLimit, for: streamName)
-        if isCompressed {
-            return try decompress(data, for: streamName)
-        }
-        return data
+        let result = isCompressed ? try decompress(data, for: streamName) : data
+        try consumeAggregateBudget(result.count, for: streamName)
+        return result
     }
 
     private static func validateEntryType(
@@ -325,6 +333,7 @@ struct StreamReader {
 extension StreamReader {
     func getOptionalNamedDataFromStorage(
         _ streamName: HwpStreamName,
+        expectedChildCount: Int? = nil,
         compressionByChildName: (String) -> Bool
     ) throws -> [(name: String, data: Data)] {
         guard let storage = streams[streamName.rawValue] else {
@@ -336,10 +345,19 @@ extension StreamReader {
             storage.children.map { (name: $0.name, type: $0.type) },
             for: streamName
         )
-        return try sortedStorageChildrenWithoutRequiredValidation(
-            storage,
-            for: streamName
-        ).map { entry in
+        let children = sortedStorageChildrenWithoutRequiredValidation(storage, for: streamName)
+        // 아는 구역 수와 다른 자식 구성은 압축 해제 전에 거부한다 — 초과분을
+        // 잘라 내면 뒤에 정렬된 자식이 조용히 사라져 남은 N개가 구역 검증을
+        // 통과하고, 손상/stale ViewText가 유효한 BodyText를 대체한다 (R69 #2).
+        // 거부는 호출부의 빈 ViewText 폴백으로 이어지고, 초과분을 읽지 않으므로
+        // 집계 압축 해제량 방어도 유지된다 (R43 #1).
+        if let expectedChildCount, children.count != expectedChildCount {
+            throw HwpError.invalidRecordTree(
+                reason: "\(streamName.rawValue) child count \(children.count) " +
+                    "!= \(expectedChildCount)"
+            )
+        }
+        return try children.map { entry in
             try (entry.name, readData(entry, compressionByChildName(entry.name), streamName))
         }
     }
@@ -351,6 +369,19 @@ private extension StreamReader {
             return readLimits.maxCompressedStreamBytes
         }
         return readLimits.maxDecompressedStreamBytes
+    }
+
+    func consumeAggregateBudget(_ byteCount: Int, for streamName: HwpStreamName) throws {
+        // 한도−사용량 차와 비교해 Int 오버플로 없이 판정한다 (보안 한도, R55 P1).
+        guard byteCount <= readLimits.maxAggregateStreamBytes - aggregateUsage.totalBytes else {
+            let (sum, overflow) = aggregateUsage.totalBytes.addingReportingOverflow(byteCount)
+            throw HwpError.aggregateStreamSizeLimitExceeded(
+                name: streamName,
+                limit: readLimits.maxAggregateStreamBytes,
+                actual: overflow ? Int.max : sum
+            )
+        }
+        aggregateUsage.totalBytes += byteCount
     }
 
     func decompress(_ data: Data, for streamName: HwpStreamName) throws -> Data {

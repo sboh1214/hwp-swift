@@ -54,13 +54,17 @@ extension HwpNumbering: HwpFromDataWithVersion {
         rawPayload = try reader.consumedData(from: startOffset)
     }
 
-    static func load(_ data: Data, _ version: HwpVersion) throws -> Self {
-        var reader = DataReader(data)
+    static func load(
+        _ data: Data,
+        _ version: HwpVersion,
+        options: HwpLoadOptions = .default
+    ) throws -> Self {
+        var reader = DataReader(data, options: options)
         var numbering = try self.init(&reader, version)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
         }
-        numbering.rawPayload = data
+        numbering.rawPayload = options.preservedPayload(data)
         return numbering
     }
 }

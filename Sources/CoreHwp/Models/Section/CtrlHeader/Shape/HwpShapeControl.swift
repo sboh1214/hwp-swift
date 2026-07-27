@@ -20,6 +20,48 @@ public struct HwpShapeControl {
     public var ctrlDataRecords: [HwpCtrlData]
     /** 아직 해석하지 않은 child record */
     public var unknownChildren: [HwpUnknownRecord]
+
+    /// header의 ctrl id가 알려진 개체 컨트롤이 아니면 nil을 반환한다.
+    /// (파싱 경로는 `HwpError.invalidCtrlId`를 던지므로 임의 강제 변환하지 않는다.)
+    public init?(
+        header: HwpCtrlHeader,
+        commonProperty: HwpCommonCtrlProperty,
+        shapeComponentArray: [HwpShapeComponent],
+        ctrlDataArray: [HwpCtrlData]
+    ) {
+        guard let ctrlId = HwpCommonCtrlId(rawValue: header.ctrlId) else { return nil }
+        self.ctrlId = ctrlId
+        commonCtrlProperty = commonProperty
+        rawPayload = header.rawPayload
+        rawTrailing = Data()
+        self.shapeComponentArray = shapeComponentArray
+        eqEditArray = []
+        eqEditRecords = []
+        ctrlDataRecords = ctrlDataArray
+        unknownChildren = header.unknownChildren
+    }
+
+    public init(
+        ctrlId: HwpCommonCtrlId,
+        commonCtrlProperty: HwpCommonCtrlProperty?,
+        rawPayload: Data,
+        rawTrailing: Data,
+        shapeComponentArray: [HwpShapeComponent],
+        eqEditArray: [HwpEquationEdit],
+        eqEditRecords: [HwpUnknownRecord],
+        ctrlDataRecords: [HwpCtrlData],
+        unknownChildren: [HwpUnknownRecord]
+    ) {
+        self.ctrlId = ctrlId
+        self.commonCtrlProperty = commonCtrlProperty
+        self.rawPayload = rawPayload
+        self.rawTrailing = rawTrailing
+        self.shapeComponentArray = shapeComponentArray
+        self.eqEditArray = eqEditArray
+        self.eqEditRecords = eqEditRecords
+        self.ctrlDataRecords = ctrlDataRecords
+        self.unknownChildren = unknownChildren
+    }
 }
 
 extension HwpShapeControl: HwpFromRecord {
@@ -34,21 +76,22 @@ extension HwpShapeControl: HwpFromRecord {
         _ children: [HwpRecord],
         _ version: HwpVersion?
     ) throws {
-        rawPayload = try reader.readToEnd()
-
-        var ctrlIdReader = DataReader(rawPayload)
+        let options = reader.options
+        let payload = try reader.readToEnd()
+        rawPayload = options.preservedPayload(payload)
+        var ctrlIdReader = DataReader(payload, options: options)
         let rawCtrlId = try ctrlIdReader.read(UInt32.self)
         guard let ctrlId = HwpCommonCtrlId(rawValue: rawCtrlId) else {
             throw HwpError.invalidCtrlId(ctrlId: rawCtrlId)
         }
         self.ctrlId = ctrlId
 
-        let parsedProperty = Self.commonCtrlProperty(from: rawPayload)
+        let parsedProperty = Self.commonCtrlProperty(from: payload, options: options)
         commonCtrlProperty = parsedProperty?.property
         if let parsedProperty {
-            rawTrailing = parsedProperty.trailing
+            rawTrailing = options.preservedPayload(parsedProperty.trailing)
         } else {
-            rawTrailing = try ctrlIdReader.readToEnd()
+            rawTrailing = options.preservedPayload(try ctrlIdReader.readToEnd())
         }
 
         shapeComponentArray = try children
@@ -82,7 +125,7 @@ extension HwpShapeControl: HwpFromRecord {
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
 
-        var reader = DataReader(record.payload)
+        var reader = DataReader(record.payload, options: record.options)
         let shapeControl = try self.init(&reader, record.children)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
@@ -95,7 +138,7 @@ extension HwpShapeControl: HwpFromRecord {
     static func load(_ record: HwpRecord, _ version: HwpVersion) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
 
-        var reader = DataReader(record.payload)
+        var reader = DataReader(record.payload, options: record.options)
         let shapeControl = try self.init(&reader, record.children, version)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
@@ -104,9 +147,10 @@ extension HwpShapeControl: HwpFromRecord {
     }
 
     private static func commonCtrlProperty(
-        from payload: Data
+        from payload: Data,
+        options: HwpLoadOptions
     ) -> (property: HwpCommonCtrlProperty, trailing: Data)? {
-        var propertyReader = DataReader(payload)
+        var propertyReader = DataReader(payload, options: options)
         do {
             let property = try HwpCommonCtrlProperty(&propertyReader)
             let trailing = try propertyReader.readToEnd()
@@ -177,32 +221,34 @@ extension HwpEquationEdit: HwpFromRecord {
     // MARK: loader contract exemption - equation edit payload is best-effort raw-backed
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
-        rawPayload = try reader.readToEnd()
-        let payloadInfo = Self.payloadInfo(from: rawPayload)
+        let payload = try reader.readToEnd()
+        rawPayload = reader.options.preservedPayload(payload)
+        let payloadInfo = Self.payloadInfo(from: payload)
+        let opts = reader.options
         property = payloadInfo.property
-        propertyRawPayload = payloadInfo.propertyRawPayload
+        propertyRawPayload = opts.preservedPayload(payloadInfo.propertyRawPayload)
         equationTextLength = payloadInfo.equationTextLength
-        equationTextLengthRawPayload = payloadInfo.equationTextLengthRawPayload
+        equationTextLengthRawPayload = opts.preservedPayload(payloadInfo.equationTextLengthRawPayload)
         equationText = payloadInfo.equationText
-        equationTextRawPayload = payloadInfo.equationTextRawPayload
+        equationTextRawPayload = opts.preservedPayload(payloadInfo.equationTextRawPayload)
         letterSize = payloadInfo.letterSize
-        letterSizeRawPayload = payloadInfo.letterSizeRawPayload
+        letterSizeRawPayload = opts.preservedPayload(payloadInfo.letterSizeRawPayload)
         textColor = payloadInfo.textColor
         textColorRawValue = payloadInfo.textColorRawValue
-        textColorRawPayload = payloadInfo.textColorRawPayload
+        textColorRawPayload = opts.preservedPayload(payloadInfo.textColorRawPayload)
         baseline = payloadInfo.baseline
-        baselineRawPayload = payloadInfo.baselineRawPayload
+        baselineRawPayload = opts.preservedPayload(payloadInfo.baselineRawPayload)
         unknownAfterBaseline = payloadInfo.unknownAfterBaseline
-        unknownAfterBaselineRawPayload = payloadInfo.unknownAfterBaselineRawPayload
+        unknownAfterBaselineRawPayload = opts.preservedPayload(payloadInfo.unknownAfterBaselineRawPayload)
         versionInfoLength = payloadInfo.versionInfoLength
-        versionInfoLengthRawPayload = payloadInfo.versionInfoLengthRawPayload
+        versionInfoLengthRawPayload = opts.preservedPayload(payloadInfo.versionInfoLengthRawPayload)
         versionInfo = payloadInfo.versionInfo
-        versionInfoRawPayload = payloadInfo.versionInfoRawPayload
+        versionInfoRawPayload = opts.preservedPayload(payloadInfo.versionInfoRawPayload)
         fontNameLength = payloadInfo.fontNameLength
-        fontNameLengthRawPayload = payloadInfo.fontNameLengthRawPayload
+        fontNameLengthRawPayload = opts.preservedPayload(payloadInfo.fontNameLengthRawPayload)
         fontName = payloadInfo.fontName
-        fontNameRawPayload = payloadInfo.fontNameRawPayload
-        rawTrailing = payloadInfo.rawTrailing
+        fontNameRawPayload = opts.preservedPayload(payloadInfo.fontNameRawPayload)
+        rawTrailing = opts.preservedPayload(payloadInfo.rawTrailing)
         unknownChildren = children.map(HwpUnknownRecord.init)
     }
 
@@ -211,7 +257,7 @@ extension HwpEquationEdit: HwpFromRecord {
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .eqEdit)
 
-        var reader = DataReader(record.payload)
+        var reader = DataReader(record.payload, options: record.options)
         let edit = try self.init(&reader, record.children)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)

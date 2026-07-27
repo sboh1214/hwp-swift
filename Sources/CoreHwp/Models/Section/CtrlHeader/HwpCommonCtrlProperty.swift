@@ -37,6 +37,24 @@ public struct HwpCommonCtrlProperty: HwpPrimitive {
     @ExcludeEquatable
     public var objectDescriptionRawPayload: Data
 
+    public init(commonCtrlId: HwpCommonCtrlId = .equation) {
+        rawPayload = Data()
+        self.commonCtrlId = commonCtrlId
+        property = 0
+        propertyInfo = HwpCommonCtrlPropertyInfo()
+        verticalOffset = 0
+        horizontalOffset = 0
+        width = 0
+        height = 0
+        zOrder = 0
+        marginArray = [0, 0, 0, 0]
+        instanceId = 0
+        isDividablePage = false
+        objectDescriptionLength = nil
+        objectDescription = ""
+        objectDescriptionRawPayload = Data()
+    }
+
     init(_ reader: inout DataReader) throws {
         let startOffset = reader.byteOffset
         rawPayload = Data()

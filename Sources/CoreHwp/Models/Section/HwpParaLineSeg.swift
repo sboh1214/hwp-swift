@@ -26,10 +26,10 @@ public struct HwpParaLineSeg: HwpFromData {
         rawPayload = try reader.consumedData(from: startOffset)
     }
 
-    public static func load(_ data: Data) throws -> Self {
-        var reader = DataReader(data)
+    public static func load(_ data: Data, options: HwpLoadOptions = .default) throws -> Self {
+        var reader = DataReader(data, options: options)
         var paraLineSeg = try self.init(&reader)
-        paraLineSeg.rawPayload = data
+        paraLineSeg.rawPayload = options.preservedPayload(data)
         return paraLineSeg
     }
 }

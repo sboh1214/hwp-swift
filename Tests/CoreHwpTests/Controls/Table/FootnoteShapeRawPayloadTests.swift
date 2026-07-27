@@ -60,6 +60,30 @@ final class FootnoteShapeRawPayloadTests: XCTestCase {
             expect(value) == 0xD800
         })
     }
+
+    func testFootnoteEndnoteFixtureDividerDecodesAsWide() throws {
+        // 실 저장본은 길이 4 byte(wide)다 — foot 레코드를 narrow로 읽으면 종류
+        // index가 27(offset 20)로 범위를 벗어나 wide만 유효하고, wide 기준에서
+        // 종류/굵기/색이 정상값(1·1·검정)이 된다 (R45 #1).
+        let hwp = try openHwp(#file, "footnote-endnote")
+        let sectionDef = hwp.sectionArray
+            .flatMap(\.paragraph)
+            .compactMap { paragraph -> HwpSectionDef? in
+                paragraph.ctrlHeaderArray?.compactMap { ctrl -> HwpSectionDef? in
+                    if case let .section(def) = ctrl {
+                        return def
+                    }
+                    return nil
+                }.first
+            }
+            .first
+        let info = try XCTUnwrap(sectionDef?.footNoteShape.dividerInfo)
+
+        expect(info.type) == 1
+        expect(info.thickness) == 1
+        expect(info.color) == HwpColor(0)
+        expect(info.marginTop) == 850
+    }
 }
 
 private func footnoteShapePayload(

@@ -58,12 +58,12 @@ extension HwpLayoutCompatibility: HwpFromRecord {
     static func load(_ record: HwpRecord) throws -> Self {
         try validateDocInfoRecordTag(record, expectedTag: .layoutCompatibility)
 
-        var reader = DataReader(record.payload)
+        var reader = DataReader(record.payload, options: record.options)
         var layoutCompatibility = try self.init(&reader, record.children)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
         }
-        layoutCompatibility.rawPayload = record.payload
+        layoutCompatibility.rawPayload = record.options.preservedPayload(record.payload)
         return layoutCompatibility
     }
 }

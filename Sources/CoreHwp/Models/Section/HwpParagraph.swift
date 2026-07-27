@@ -1,7 +1,7 @@
 import Foundation
 
 public struct HwpParagraph: HwpFromRecordWithVersion {
-    public let paraHeader: HwpParaHeader
+    public var paraHeader: HwpParaHeader
 
     public var paraText: HwpParaText?
     public var paraCharShape: HwpParaCharShape
@@ -9,10 +9,18 @@ public struct HwpParagraph: HwpFromRecordWithVersion {
     public var ctrlHeaderArray: [HwpCtrlId]?
     public var paraRangeTagArray: [HwpParaRangeTag]?
     public var listHeaderArray: [HwpListHeader]?
+    /// 메모 (댓글) 본문 문단 — MEMO_LIST(93) 뒤에 오는 문단(66) 자식.
+    /// 한글.app 편집 뷰의 오른쪽 풍선에 표시되는 내용이다.
+    public var memoParagraphArray: [HwpParagraph]?
+    /// 메모별 문단 그룹 — 각 MEMO_LIST(93)가 여는 메모 단위로 뒤따르는 문단(66)을
+    /// 묶는다. memoParagraphArray는 이를 평탄화한 것으로, 메모 하나가 여러 문단
+    /// (Enter)이면 그룹을 join해 풍선 본문을 만든다 (평탄 배열은 경계를 잃어 다중
+    /// 문단 메모/다중 메모가 필드와 어긋난다).
+    public var memoParagraphGroups: [[HwpParagraph]]?
     @ExcludeEquatable
     public var unknownChildren: [HwpUnknownRecord]
 
-    init() {
+    public init() {
         paraHeader = HwpParaHeader()
         paraText = HwpParaText()
         paraCharShape = HwpParaCharShape()
@@ -20,10 +28,20 @@ public struct HwpParagraph: HwpFromRecordWithVersion {
         paraRangeTagArray = [HwpParaRangeTag]()
         listHeaderArray = [HwpListHeader]()
         unknownChildren = []
-        ctrlHeaderArray = [
+        ctrlHeaderArray = nil
+        memoParagraphArray = nil
+        memoParagraphGroups = nil
+    }
+
+    /// 새 문서의 첫 문단. 구역/단 정의 컨트롤은 구역의 첫 문단에만 붙는다는
+    /// 파싱 경로 불변식이 있으므로 일반 `init()`에는 포함하지 않는다.
+    public static func blankDocumentParagraph() -> HwpParagraph {
+        var paragraph = HwpParagraph()
+        paragraph.ctrlHeaderArray = [
             .section(HwpSectionDef()),
             .column(HwpColumn()),
         ]
+        return paragraph
     }
 
     // MARK: loader contract exemption - validates paragraph record tag before decoding children
@@ -31,7 +49,7 @@ public struct HwpParagraph: HwpFromRecordWithVersion {
     static func load(_ record: HwpRecord, _ version: HwpVersion) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .paraHeader)
 
-        var reader = DataReader(record.payload)
+        var reader = DataReader(record.payload, options: record.options)
         let paragraph = try self.init(&reader, record.children, version)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
@@ -43,12 +61,13 @@ public struct HwpParagraph: HwpFromRecordWithVersion {
 
     // swiftlint:disable:next cyclomatic_complexity function_body_length
     init(_ reader: inout DataReader, _ children: [HwpRecord], _ version: HwpVersion) throws {
-        paraHeader = try HwpParaHeader.load(try reader.readToEnd(), version)
+        let options = reader.options
+        paraHeader = try HwpParaHeader.load(try reader.readToEnd(), version, options: options)
 
         if let paraText = children
             .first(where: { $0.tagId == HwpSectionTag.paraText.rawValue })
         {
-            let loadedParaText = try HwpParaText.load(paraText.payload)
+            let loadedParaText = try HwpParaText.load(paraText.payload, options: options)
             self.paraText = loadedParaText
             try Self.validateParaTextCount(paraHeader, loadedParaText)
         }
@@ -58,24 +77,24 @@ public struct HwpParagraph: HwpFromRecordWithVersion {
         else {
             throw HwpError.recordDoesNotExist(tag: HwpSectionTag.paraCharShape.rawValue)
         }
-        self.paraCharShape = try HwpParaCharShape.load(paraCharShape.payload)
+        self.paraCharShape = try HwpParaCharShape.load(paraCharShape.payload, options: options)
         try Self.validateParaCharShapeCount(paraHeader, self.paraCharShape)
 
         if let paraLineSeg = children
             .first(where: { $0.tagId == HwpSectionTag.paraLineSeg.rawValue })
         {
-            self.paraLineSeg = try HwpParaLineSeg.load(paraLineSeg.payload)
+            self.paraLineSeg = try HwpParaLineSeg.load(paraLineSeg.payload, options: options)
             if !paraLineSeg.payload.isEmpty {
                 try Self.validateParaLineSegCount(paraHeader, self.paraLineSeg)
             }
         } else {
             // Some Hancom-saved compatibility documents omit this layout cache.
-            paraLineSeg = try HwpParaLineSeg.load(Data())
+            paraLineSeg = try HwpParaLineSeg.load(Data(), options: options)
         }
 
         paraRangeTagArray = try children
             .filter { $0.tagId == HwpSectionTag.paraRangeTag.rawValue }
-            .map { try HwpParaRangeTag.load($0.payload) }
+            .flatMap { try HwpParaRangeTag.loadArray($0.payload, options: options) }
         try Self.validateParaRangeTagCount(paraHeader, paraRangeTagArray ?? [])
 
         ctrlHeaderArray = try children
@@ -126,18 +145,54 @@ public struct HwpParagraph: HwpFromRecordWithVersion {
 
         listHeaderArray = try children
             .filter { $0.tagId == HwpSectionTag.listHeader.rawValue }
-            .map { try HwpListHeader.load($0.payload) }
+            .map { try HwpListHeader.load($0.payload, options: options) }
 
-        unknownChildren = Self.unconsumedRecords(from: children).map(HwpUnknownRecord.init)
+        // MEMO_LIST(93)가 메모 하나를 열고, 그 뒤 문단(66)들이 그 메모의 본문이다.
+        // 메모별 그룹을 보존해야 여러 문단짜리 메모/다중 메모가 필드와 어긋나지 않는다.
+        if children.contains(where: { $0.tagId == HwpSectionTag.memoList.rawValue }) {
+            var groups: [[HwpParagraph]] = []
+            var current: [HwpParagraph]?
+            for child in children {
+                if child.tagId == HwpSectionTag.memoList.rawValue {
+                    if let current {
+                        groups.append(current)
+                    }
+                    current = []
+                } else if child.tagId == HwpSectionTag.paraHeader.rawValue, current != nil {
+                    current?.append(try HwpParagraph.load(child, version))
+                }
+            }
+            if let current {
+                groups.append(current)
+            }
+            memoParagraphGroups = groups.isEmpty ? nil : groups
+            let flat = groups.flatMap { $0 }
+            memoParagraphArray = flat.isEmpty ? nil : flat
+        }
+
+        unknownChildren = Self.unconsumedRecords(
+            from: children,
+            consumesMemoRecords: memoParagraphArray != nil
+        ).map(HwpUnknownRecord.init)
     }
 }
 
 private extension HwpParagraph {
-    static func unconsumedRecords(from children: [HwpRecord]) -> [HwpRecord] {
+    static func unconsumedRecords(
+        from children: [HwpRecord],
+        consumesMemoRecords: Bool
+    ) -> [HwpRecord] {
         var consumedSingletons = Set<UInt32>()
 
         return children.filter { child in
             if multiRecordTags.contains(child.tagId) {
+                return false
+            }
+
+            if consumesMemoRecords,
+               child.tagId == HwpSectionTag.memoList.rawValue
+               || child.tagId == HwpSectionTag.paraHeader.rawValue
+            {
                 return false
             }
 
@@ -174,7 +229,9 @@ private extension HwpParagraph {
         _ text: HwpParaText
     ) throws {
         let expectedCount = Int(header.charCount)
-        let actualCount = text.rawPayload.count / MemoryLayout<WCHAR>.size
+        // rawPayload는 보존 off 모드에서 비므로 파싱된 charArray 기반
+        // 계산값을 양 모드 공통으로 쓴다 (wchar 수 == payload byte / 2).
+        let actualCount = text.wcharCount
         guard expectedCount == actualCount else {
             throw HwpError.invalidRecordTree(
                 reason:

@@ -7,7 +7,7 @@ protocol HwpFromRecordWithVersion: HwpPrimitive {
 
 extension HwpFromRecordWithVersion {
     static func load(_ record: HwpRecord, _ version: HwpVersion) throws -> Self {
-        var reader = DataReader(record.payload)
+        var reader = DataReader(record.payload, options: record.options)
         let hwpFromRecordWithVersion = try self.init(&reader, record.children, version)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)

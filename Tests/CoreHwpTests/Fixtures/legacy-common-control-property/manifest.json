@@ -1664,6 +1664,8 @@
     ],
     "fileLicense": {
       "rawValue": 0
-    }
+    },
+    "pageCount": 1030,
+    "pageCountSource": "한글.app 실측 1,030쪽 (2026-07-06 사용자 확인) = HwpKit 렌더 실측 (2026-07-10 표 셀 각주 행 페이지 귀속 이후 일치)"
   }
 }

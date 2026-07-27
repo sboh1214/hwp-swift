@@ -82,6 +82,51 @@ public struct HwpFieldControl {
         }
         return .field
     }
+
+    public init(ctrlId: HwpFieldCtrlId = .memo) {
+        self.ctrlId = ctrlId
+        rawTrailing = Data()
+        properties = nil
+        propertiesRawPayload = nil
+        propertyInfo = nil
+        extraProperties = nil
+        extraPropertiesRawPayload = nil
+        commandCharacterCount = nil
+        commandLengthRawPayload = nil
+        command = nil
+        commandRawPayload = nil
+        commandRawTrailing = nil
+        fieldId = nil
+        fieldIdRawPayload = nil
+        memoIndex = nil
+        memoIndexRawPayload = nil
+        fieldParameterHeaderValue = nil
+        fieldParameterHeaderRawPayload = nil
+        fieldParameterCharacterCount = nil
+        fieldParameterLengthRawPayload = nil
+        fieldParameter = nil
+        fieldParameterRawPayload = nil
+        fieldParameterRawTrailing = nil
+        memoParameter = nil
+        rawPayload = Data()
+        unknownChildren = []
+    }
+
+    public init(
+        ctrlId: HwpFieldCtrlId,
+        rawTrailing: Data,
+        fieldParameterHeaderRawPayload: Data?,
+        fieldParameter: String?,
+        rawPayload: Data,
+        unknownChildren: [HwpUnknownRecord]
+    ) {
+        self.init(ctrlId: ctrlId)
+        self.rawTrailing = rawTrailing
+        self.fieldParameterHeaderRawPayload = fieldParameterHeaderRawPayload
+        self.fieldParameter = fieldParameter
+        self.rawPayload = rawPayload
+        self.unknownChildren = unknownChildren
+    }
 }
 
 public enum HwpFieldControlKind: String, HwpPrimitive {
@@ -118,46 +163,53 @@ extension HwpFieldControl: HwpPrimitive {
             throw HwpError.invalidCtrlId(ctrlId: rawCtrlId)
         }
         self.ctrlId = ctrlId
-        rawTrailing = try reader.readToEnd()
-        let parsedControl = Self.fieldControlPayload(from: rawTrailing)
-        let fallbackLengthInfo = Self.fieldParameterLengthInfo(from: rawTrailing)
-        let fallbackParameter = Self.fieldParameter(from: rawTrailing)
+        let trailing = try reader.readToEnd()
+        // typed 필드(command·fieldParameter·memoParameter 문자열/값)는 양 모드
+        // 동일하게 두고, 보존 전용 raw 조각만 뷰어 모드에서 비운다 (#3 규약, P2).
+        let options = reader.options
+        func preserved(_ data: Data?) -> Data? {
+            data.map(options.preservedPayload)
+        }
+        rawTrailing = options.preservedPayload(trailing)
+        let parsedControl = Self.fieldControlPayload(from: trailing)
+        let fallbackLengthInfo = Self.fieldParameterLengthInfo(from: trailing)
+        let fallbackParameter = Self.fieldParameter(from: trailing)
         let parsedProperties = parsedControl?.properties
-            ?? Self.fieldParameterHeaderValue(from: rawTrailing)
+            ?? Self.fieldParameterHeaderValue(from: trailing)
         let parsedPropertiesRawPayload = parsedControl?.propertiesRawPayload
-            ?? Self.fieldParameterHeaderRawPayload(from: rawTrailing)
+            ?? Self.fieldParameterHeaderRawPayload(from: trailing)
         let parsedCommandLengthRawPayload = parsedControl?.commandLengthRawPayload
 
         properties = parsedProperties
-        propertiesRawPayload = parsedPropertiesRawPayload
+        propertiesRawPayload = preserved(parsedPropertiesRawPayload)
         propertyInfo = try parsedProperties.map(HwpFieldControlProperty.load)
         extraProperties = parsedControl?.extraProperties
-        extraPropertiesRawPayload = parsedControl?.extraPropertiesRawPayload
+        extraPropertiesRawPayload = preserved(parsedControl?.extraPropertiesRawPayload)
         commandCharacterCount = parsedControl?.command.characterCount
-        commandLengthRawPayload = parsedCommandLengthRawPayload
+        commandLengthRawPayload = preserved(parsedCommandLengthRawPayload)
         command = parsedControl?.command.value
-        commandRawPayload = parsedControl?.command.rawPayload
-        commandRawTrailing = parsedControl?.command.rawTrailing
+        commandRawPayload = preserved(parsedControl?.command.rawPayload)
+        commandRawTrailing = preserved(parsedControl?.command.rawTrailing)
         fieldId = parsedControl?.fieldId
-        fieldIdRawPayload = parsedControl?.fieldIdRawPayload
+        fieldIdRawPayload = preserved(parsedControl?.fieldIdRawPayload)
         memoIndex = parsedControl?.memoIndex
-        memoIndexRawPayload = parsedControl?.memoIndexRawPayload
+        memoIndexRawPayload = preserved(parsedControl?.memoIndexRawPayload)
 
         fieldParameterHeaderValue = parsedProperties
-        fieldParameterHeaderRawPayload = parsedPropertiesRawPayload
+        fieldParameterHeaderRawPayload = preserved(parsedPropertiesRawPayload)
         fieldParameterCharacterCount = parsedControl?.command.characterCount
             ?? fallbackLengthInfo?.characterCount
-        fieldParameterLengthRawPayload = parsedCommandLengthRawPayload
-            ?? fallbackLengthInfo?.rawPayload
+        fieldParameterLengthRawPayload = preserved(parsedCommandLengthRawPayload
+            ?? fallbackLengthInfo?.rawPayload)
         let parsedParameter = parsedControl?.command ?? fallbackParameter
         fieldParameter = parsedParameter?.value
-        fieldParameterRawPayload = parsedParameter?.rawPayload
-        fieldParameterRawTrailing = parsedParameter?.rawTrailing
+        fieldParameterRawPayload = preserved(parsedParameter?.rawPayload)
+        fieldParameterRawTrailing = preserved(parsedParameter?.rawTrailing)
         memoParameter = parsedParameter.flatMap {
             HwpMemoFieldParameter(
                 $0.value,
-                rawPayload: $0.rawPayload,
-                rawTrailing: $0.rawTrailing
+                rawPayload: options.preservedPayload($0.rawPayload),
+                rawTrailing: options.preservedPayload($0.rawTrailing)
             )
         }
         rawPayload = try reader.consumedData(from: startOffset)
@@ -169,9 +221,9 @@ extension HwpFieldControl: HwpPrimitive {
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
 
-        var reader = DataReader(record.payload)
+        var reader = DataReader(record.payload, options: record.options)
         var control = try self.init(&reader, record.children)
-        control.rawPayload = record.payload
+        control.rawPayload = record.options.preservedPayload(record.payload)
         return control
     }
 

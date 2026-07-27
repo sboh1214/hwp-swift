@@ -51,12 +51,12 @@ public struct HwpCompatibleDocument: HwpFromRecord {
     static func load(_ record: HwpRecord) throws -> Self {
         try validateDocInfoRecordTag(record, expectedTag: .compatibleDocument)
 
-        var reader = DataReader(record.payload)
+        var reader = DataReader(record.payload, options: record.options)
         var compatibleDocument = try self.init(&reader, record.children)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
         }
-        compatibleDocument.rawPayload = record.payload
+        compatibleDocument.rawPayload = record.options.preservedPayload(record.payload)
         return compatibleDocument
     }
 }

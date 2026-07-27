@@ -90,8 +90,13 @@ private struct InjectedRawShapeComponentControl {
         arcPayload = Data([0x40, 0x41])
         polygonPayload = Data([0x50, 0x51, 0x52])
         curvePayload = Data([0x60])
-        oleRawTrailing = Data([0x70, 0x71])
-        olePayload = concatenatedData(rawShapeLittleEndianData(UInt32(7)), oleRawTrailing)
+        oleRawTrailing = concatenatedData(
+            rawShapeLittleEndianData(Int32(0)),
+            rawShapeLittleEndianData(Int32(0)),
+            rawShapeLittleEndianData(UInt16(7)),
+            Data([0x70, 0x71])
+        )
+        olePayload = concatenatedData(rawShapeLittleEndianData(UInt32(1)), oleRawTrailing)
         oleUnknownPayload = Data([0x72])
         containerPayload = Data([0x80])
         chartDataPayload = Data([0x90, 0x91])

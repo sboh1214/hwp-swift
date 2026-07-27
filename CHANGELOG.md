@@ -29,9 +29,42 @@
   달라집니다. `HwpBorderFill`의 방향별 선 정보, 서로 다른 폭 다단의 `HwpColumn`,
   `HwpSectionDef`의 속성 이후 field order, 표 셀 `LIST_HEADER`,
   `HwpEquationEdit.rawTrailing`은 이전의 잘못 정렬된 해석값과 다를 수 있습니다.
+- `HwpDocumentNSView.documentActor`/`HwpDocumentUIView.documentActor` public
+  프로퍼티를 제거했습니다. 어디서도 할당되지 않는 죽은 배선이었고
+  (`HwpDocumentLoader`가 항상 완전 페이지네이션된 문서를 전달), 이에 의존하던
+  macOS 클릭 폴백 경로는 도달 불능 코드였습니다. 지연 페이지네이션 배선은
+  프로그레시브 로딩 설계에서 새로 도입됩니다.
 
 ### Added
 
+- HWP 문서를 렌더링·표시하는 뷰어 스택을 추가했습니다. 플랫폼 중립 렌더 코어
+  `HwpKitCore`, AppKit/UIKit 브릿지 `HwpKitNative`, SwiftUI 공개 API `HwpKit`
+  3개 라이브러리 타깃으로 구성되며, 표·중첩 표·글상자·각주/미주·머리말/꼬리말·
+  다단·도형/이미지·treatAsChar 인라인 앵커를 다루는 페이지네이션 렌더
+  파이프라인과 텍스트 드래그 선택·복사·전체 선택, `Sample/`의 SwiftUI 샘플 앱을
+  제공합니다. 뷰어 3개 타깃은 `canImport(Darwin)` 조건이라 Apple 플랫폼
+  전용이고, `CoreHwp` 파서는 Linux 지원을 유지합니다.
+- 렌더가 요구하는 record/control을 typed 모델로 승격했습니다. 도형 세부 레코드
+  (`HwpShapeComponentDetail`), 그림 속성(`HwpPictureProperty`), 표 셀 속성
+  (`HwpTableCellProperty`), 각주 구분선(`HwpFootnoteDividerInfo`), 글상자 텍스트
+  속성(`HwpTextBoxListInfo`), 머리말/꼬리말 적용 범위(`HwpHeaderFooterProperty`)가
+  추가되고, BinData의 내장 OLE 차트에서 `OOXMLChartContents` XML을 꺼내는 최소
+  CFB 리더(`HwpEmbeddedChart`)가 붙었습니다.
+- `HwpLoadOptions`를 추가했습니다. `preserveRawPayload`(기본 true)를 끄면
+  파싱 모델의 rawPayload/rawTrailing 보존을 생략해 압축 해제 스트림 버퍼가
+  파싱 후 즉시 해제됩니다 (`.viewer` 프리셋 — 1,030쪽급 문서 상주 수십 MB
+  절감). `HwpFile.init(fromPath/fromData/fromWrapper:options:)`가 추가됐고
+  기존 `readLimits` init은 그대로 동작합니다.
+- 프로그레시브 로딩: `HwpDocumentActor.loadDocumentUpdates(from:)`와
+  `HwpDocumentLoader.loadUpdates(from:)`가 첫 페이지 확정 즉시 스냅샷을
+  방출하는 `AsyncThrowingStream<HwpDocumentSnapshot, Error>`를 제공합니다.
+  `HwpDocumentMetadata.loadToken`으로 macOS/iOS 뷰가 스크롤 리셋 없이
+  증분 적용합니다.
+- 전 파싱 모델이 `Sendable`을 채택했습니다 (`HwpPrimitive`에 요구 추가).
+- 대형 문서 성능이 크게 개선됐습니다: DataReader 무슬라이스 읽기,
+  `HwpChar` 컨트롤 payload 박싱 (stride 80B → 16B), 절대 라인 캐시 모드의
+  CT 측정 생략. 1,030쪽 실문서 기준 전량 로드 23.8s → 16.6s, 첫 페이지
+  표시 3.2s, 파스 후 상주 메모리 약 -290MB.
 - 공식 HWP 5.0 revision 1.3 PDF와 `edwardkim/rhwp` errata를 대조한
   `Documentation/ErrataAudit.md`를 추가했습니다.
 - page number, equation edit, common object property, paragraph shape, border fill,

@@ -7,6 +7,31 @@ public struct HwpTable {
     public var rawTrailing: Data
     public var cellArray: [HwpTableCell]
     public var unknownChildren: [HwpUnknownRecord]
+
+    public init(property: HwpTableProperty, cellArray: [HwpTableCell]) {
+        commonCtrlProperty = HwpCommonCtrlProperty(commonCtrlId: .table)
+        tableProperty = property
+        rawPayload = Data()
+        rawTrailing = Data()
+        self.cellArray = cellArray
+        unknownChildren = []
+    }
+
+    public init(
+        commonCtrlProperty: HwpCommonCtrlProperty,
+        tableProperty: HwpTableProperty,
+        rawPayload: Data,
+        rawTrailing: Data,
+        cellArray: [HwpTableCell],
+        unknownChildren: [HwpUnknownRecord]
+    ) {
+        self.commonCtrlProperty = commonCtrlProperty
+        self.tableProperty = tableProperty
+        self.rawPayload = rawPayload
+        self.rawTrailing = rawTrailing
+        self.cellArray = cellArray
+        self.unknownChildren = unknownChildren
+    }
 }
 
 extension HwpTable: HwpFromRecordWithVersion {
@@ -18,14 +43,18 @@ extension HwpTable: HwpFromRecordWithVersion {
         guard commonCtrlProperty.commonCtrlId == .table else {
             throw HwpError.invalidCtrlId(ctrlId: commonCtrlProperty.commonCtrlId.rawValue)
         }
-        rawTrailing = try reader.readToEnd()
+        rawTrailing = reader.options.preservedPayload(try reader.readToEnd())
         rawPayload = try reader.consumedData(from: startOffset)
         guard let tablePropertyIndex = children.firstIndex(where: {
             $0.tagId == HwpSectionTag.table.rawValue
         }) else {
             throw HwpError.recordDoesNotExist(tag: HwpSectionTag.table.rawValue)
         }
-        tableProperty = try HwpTableProperty.load(children[tablePropertyIndex].payload, version)
+        tableProperty = try HwpTableProperty.load(
+            children[tablePropertyIndex].payload,
+            version,
+            options: reader.options
+        )
 
         let parsedChildren = try Self.parseChildren(
             children,
@@ -44,9 +73,9 @@ extension HwpTable: HwpFromRecordWithVersion {
     static func load(_ record: HwpRecord, _ version: HwpVersion) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
 
-        var reader = DataReader(record.payload)
+        var reader = DataReader(record.payload, options: record.options)
         var table = try self.init(&reader, record.children, version)
-        table.rawPayload = record.payload
+        table.rawPayload = record.options.preservedPayload(record.payload)
         return table
     }
 
@@ -120,9 +149,39 @@ public struct HwpTableCellHeader {
     public var cellPropertyInfo: HwpTableCellHeaderProperty
     /** 제목 셀 여부 */
     public var isHeader: Bool
+    /** 셀 주소/병합/크기/여백/테두리 속성 (표 80). trailing이 26 byte 미만이면 nil. */
+    public var cellProperty: HwpTableCellProperty?
     public var rawTrailing: Data
     public var rawPayload: Data
     public var unknownChildren: [HwpUnknownRecord]
+}
+
+extension HwpTableCellHeader {
+    private enum CodingKeys: String, CodingKey {
+        case paragraphCount, property, propertyInfo, listHeaderWidthRef,
+             cellPropertyInfo, isHeader, cellProperty, rawTrailing, rawPayload,
+             unknownChildren
+    }
+
+    /// main 아카이브에는 cellProperty 키가 없다 — rawTrailing(표 80 payload)에서
+    /// 파스와 같은 decode(from:)로 재수화해 1×1 순차 폴백을 막는다 (R62 #2).
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        paragraphCount = try container.decode(Int32.self, forKey: .paragraphCount)
+        property = try container.decode(UInt32.self, forKey: .property)
+        propertyInfo = try container.decode(HwpListHeaderProperty.self, forKey: .propertyInfo)
+        listHeaderWidthRef = try container.decode(UInt16.self, forKey: .listHeaderWidthRef)
+        cellPropertyInfo = try container.decode(
+            HwpTableCellHeaderProperty.self, forKey: .cellPropertyInfo
+        )
+        isHeader = try container.decode(Bool.self, forKey: .isHeader)
+        rawTrailing = try container.decode(Data.self, forKey: .rawTrailing)
+        cellProperty = try container.decodeIfPresent(
+            HwpTableCellProperty.self, forKey: .cellProperty
+        ) ?? HwpTableCellProperty.decode(from: rawTrailing)
+        rawPayload = try container.decode(Data.self, forKey: .rawPayload)
+        unknownChildren = try container.decode([HwpUnknownRecord].self, forKey: .unknownChildren)
+    }
 }
 
 extension HwpTableCellHeader: HwpFromRecord {
@@ -136,7 +195,9 @@ extension HwpTableCellHeader: HwpFromRecord {
         listHeaderWidthRef = try reader.read(UInt16.self)
         cellPropertyInfo = HwpTableCellHeaderProperty(rawValue: listHeaderWidthRef)
         isHeader = cellPropertyInfo.isHeader
-        rawTrailing = try reader.readToEnd()
+        let trailing = try reader.readToEnd()
+        rawTrailing = reader.options.preservedPayload(trailing)
+        cellProperty = HwpTableCellProperty.decode(from: trailing)
         rawPayload = try reader.consumedData(from: startOffset)
         unknownChildren = children.map(HwpUnknownRecord.init)
     }
@@ -146,9 +207,9 @@ extension HwpTableCellHeader: HwpFromRecord {
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .listHeader)
 
-        var reader = DataReader(record.payload)
+        var reader = DataReader(record.payload, options: record.options)
         var header = try self.init(&reader, record.children)
-        header.rawPayload = record.payload
+        header.rawPayload = record.options.preservedPayload(record.payload)
         return header
     }
 }

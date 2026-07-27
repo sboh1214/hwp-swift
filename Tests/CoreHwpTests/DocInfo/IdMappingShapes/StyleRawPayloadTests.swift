@@ -411,6 +411,7 @@ private func stylePayloadWithInvalidLocalName() -> Data {
 private func bulletPayload(undocumentedTrailing: [BYTE]) -> Data {
     concatenatedData(
         Data([1, 2, 3, 4, 5, 6, 7, 8]),
+        littleEndianData(Int32(-1)), // 문단 머리 글자 모양 ID (표 40)
         littleEndianData(WCHAR(0x2022)),
         littleEndianData(Int32(42)),
         Data([9, 10, 11, 12]),
@@ -422,6 +423,7 @@ private func bulletPayload(undocumentedTrailing: [BYTE]) -> Data {
 private func truncatedBulletPayloadBeforeCheckChar() -> Data {
     concatenatedData(
         Data([1, 2, 3, 4, 5, 6, 7, 8]),
+        littleEndianData(Int32(-1)),
         littleEndianData(WCHAR(0x2022)),
         littleEndianData(Int32(42)),
         Data([9, 10, 11, 12]),

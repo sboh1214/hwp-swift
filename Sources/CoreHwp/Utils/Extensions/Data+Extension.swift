@@ -6,10 +6,6 @@ extension Data {
         [UInt8](self)
     }
 
-    var bits: [Bool] {
-        reduce([Bool]()) { $0 + $1.bits }
-    }
-
     var stringASCII: String? {
         guard allSatisfy({ $0 < 0x80 }) else {
             return nil
@@ -27,6 +23,18 @@ extension Data {
 
     func readLittleEndianUInt32(at offset: Int) throws -> UInt32 {
         UInt32(littleEndian: try readFixedWidthInteger(UInt32.self, at: offset))
+    }
+
+    func readLittleEndianInt16(at offset: Int) throws -> Int16 {
+        Int16(bitPattern: try readLittleEndianUInt16(at: offset))
+    }
+
+    func readLittleEndianInt32(at offset: Int) throws -> Int32 {
+        Int32(bitPattern: try readLittleEndianUInt32(at: offset))
+    }
+
+    func readLittleEndianDouble(at offset: Int) throws -> Double {
+        Double(bitPattern: UInt64(littleEndian: try readFixedWidthInteger(UInt64.self, at: offset)))
     }
 
     func littleEndianUInt16ArrayIfAligned() -> [UInt16]? {

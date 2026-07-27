@@ -39,6 +39,82 @@ public struct HwpTableProperty {
     public var rawPayload: Data
     /** 아직 해석하지 않은 trailing payload */
     public var rawTrailing: Data
+
+    public init() {
+        property = 0
+        rowCount = 0
+        columnCount = 0
+        cellSpacing = 0
+        leftInnerMargin = 0
+        rightInnerMargin = 0
+        topInnerMargin = 0
+        bottomInnerMargin = 0
+        rowSize = []
+        borderFillId = 0
+        validZoneInfoSize = nil
+        zonePropertyArray = nil
+        rawPayload = Data()
+        rawTrailing = Data()
+    }
+
+    public init(
+        property: UInt32,
+        rowCount: UInt16,
+        columnCount: UInt16,
+        cellSpacing: HWPUNIT16,
+        leftInnerMargin: HWPUNIT16,
+        rightInnerMargin: HWPUNIT16,
+        topInnerMargin: HWPUNIT16,
+        bottomInnerMargin: HWPUNIT16,
+        rowSize: [BYTE],
+        borderFillId: UInt16,
+        validZoneInfoSize: UInt16?,
+        zonePropertyArray: [HwpZoneProperty]?,
+        rawPayload: Data,
+        rawTrailing: Data
+    ) {
+        self.property = property
+        self.rowCount = rowCount
+        self.columnCount = columnCount
+        self.cellSpacing = cellSpacing
+        self.leftInnerMargin = leftInnerMargin
+        self.rightInnerMargin = rightInnerMargin
+        self.topInnerMargin = topInnerMargin
+        self.bottomInnerMargin = bottomInnerMargin
+        self.rowSize = rowSize
+        self.borderFillId = borderFillId
+        self.validZoneInfoSize = validZoneInfoSize
+        self.zonePropertyArray = zonePropertyArray
+        self.rawPayload = rawPayload
+        self.rawTrailing = rawTrailing
+    }
+}
+
+public extension HwpTableProperty {
+    /** 쪽 경계에서 표를 나누는 방식 (표 76 bits 0-1) */
+    enum HwpTablePageBreakMode: Int, Sendable, Codable {
+        /** 나누지 않음 */
+        case none = 0
+        /** 셀 단위로 나눔 */
+        case byCell = 1
+        /** 나눔 (스펙 오기: 2도 나눔으로 처리하는 것이 관례) */
+        case split = 2
+    }
+
+    /** 쪽 경계 나눔 방식 */
+    var pageBreakMode: HwpTablePageBreakMode {
+        HwpTablePageBreakMode(rawValue: Int(property & 0b11)) ?? .none
+    }
+
+    /** 제목 줄 자동 반복 여부 (표 76 bit 2) */
+    var repeatsHeaderRow: Bool {
+        property & (1 << 2) != 0
+    }
+
+    /** Row Size를 행별 셀 개수 배열로 해석한 값 (행마다 LE UInt16 하나) */
+    var rowCellCounts: [UInt16] {
+        Data(rowSize).littleEndianUInt16ArrayIfAligned() ?? []
+    }
 }
 
 extension HwpTableProperty: HwpFromDataWithVersion {
@@ -71,19 +147,23 @@ extension HwpTableProperty: HwpFromDataWithVersion {
                 try HwpZoneProperty(&reader)
             }
         }
-        rawTrailing = try reader.readToEnd()
+        rawTrailing = reader.options.preservedPayload(try reader.readToEnd())
         rawPayload = try reader.consumedData(from: startOffset)
     }
 
     // MARK: loader contract exemption - restores complete table-property rawPayload
 
-    static func load(_ data: Data, _ version: HwpVersion) throws -> Self {
-        var reader = DataReader(data)
+    static func load(
+        _ data: Data,
+        _ version: HwpVersion,
+        options: HwpLoadOptions = .default
+    ) throws -> Self {
+        var reader = DataReader(data, options: options)
         var tableProperty = try self.init(&reader, version)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
         }
-        tableProperty.rawPayload = data
+        tableProperty.rawPayload = options.preservedPayload(data)
         return tableProperty
     }
 }

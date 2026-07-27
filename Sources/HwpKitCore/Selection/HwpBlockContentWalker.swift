@@ -1,0 +1,160 @@
+import CoreGraphics
+import Foundation
+
+/// 블록 payload의 텍스트 콘텐츠를 렌더 방출 순서 그대로 순회한다.
+/// `HwpPaintListBuilder`(drawText 방출)와 `HwpSelectableText`(선택 단위)가
+/// 이 순회를 공유한다 — 순서·오프셋 계약은 `HwpSelectableTextPaintParityTests`가
+/// 고정한다.
+public enum HwpBlockContentWalker {
+    /// 블록의 텍스트 콘텐츠 (길이 > 0)를 렌더 방출 순서로 방문한다.
+    /// rect는 페이지 로컬 top-down — 렌더는 origin/폭을, 선택은 rect 전체를 쓴다.
+    public static func walkText(
+        block: AnyHwpBlock,
+        visit: (NSAttributedString, CGRect, UInt32?) -> Void
+    ) {
+        switch block.payload {
+        case let .table(table):
+            // 셀 글상자 문단도 선택/복사 단위에 실어야 한다 — 렌더와 같은
+            // 평면 순서 (글 뒤로 → 셀 텍스트 → 나머지)라 paint parity 유지 (R33 #1)
+            walkTable(
+                table,
+                origin: block.frame.origin,
+                onParagraphText: visit,
+                onCellTextbox: { textbox, rect in
+                    walkParagraphs(textbox.textbox.paragraphs, offset: rect.origin, visit: visit)
+                }
+            )
+        case let .textbox(textbox):
+            walkParagraphs(textbox.paragraphs, offset: block.frame.origin, visit: visit)
+        case let .footnote(footnote):
+            walkParagraphs(footnote.paragraphs, offset: block.frame.origin, visit: visit)
+        case .shape, .image, .chart:
+            return
+        case nil:
+            // 본문 텍스트 (분할된 표/글상자/각주 조각 포함) — 블록 자체가 단위
+            guard [.text, .table, .textbox, .footnote].contains(block.kind),
+                  let attributed = block.attributedString, attributed.length > 0
+            else { return }
+            visit(attributed, block.frame, block.source?.paragraphId)
+        }
+    }
+
+    /// 문단 배열 (길이 > 0)을 블록 offset을 더한 페이지 좌표로 방문한다
+    /// (표 셀·글상자·각주 공용). paragraphId는 복사 dedup의 출처 식별에 쓴다 (#8).
+    public static func walkParagraphs(
+        _ paragraphs: [HwpLaidOutParagraph],
+        offset: CGPoint,
+        visit: (NSAttributedString, CGRect, UInt32?) -> Void
+    ) {
+        for paragraph in paragraphs where paragraph.attributedString.length > 0 {
+            visit(
+                paragraph.attributedString,
+                paragraph.rect.offsetBy(dx: offset.x, dy: offset.y),
+                paragraph.paragraphId
+            )
+        }
+    }
+
+    /// 표를 렌더 방출 순서로 순회한다 — 셀마다
+    /// onCellStart → (글 뒤로 개체)* → onParagraphText* → (나머지 개체)* →
+    /// (중첩 표 재귀). 개체 이벤트는 종류별 콜백 (onCellImage/onCellShape/
+    /// onCellTextbox)으로 평면·zOrder 순서에 따라 발화한다.
+    /// 렌더는 모든 이벤트를 (fill/border·drawText·셀 개체), 선택은
+    /// onParagraphText만 소비한다.
+    public static func walkTable(
+        _ table: HwpTableFrame,
+        origin: CGPoint,
+        onCellStart: (HwpTableCellFrame, CGRect) -> Void = { _, _ in },
+        onParagraphText: (NSAttributedString, CGRect, UInt32?) -> Void,
+        onCellImage: (HwpCellImage, CGRect) -> Void = { _, _ in },
+        onCellShape: (HwpCellShape, CGRect) -> Void = { _, _ in },
+        onCellTextbox: (HwpCellTextbox, CGRect) -> Void = { _, _ in }
+    ) {
+        for row in table.rows {
+            for cell in row.cells {
+                onCellStart(cell, cell.cellFrame.offsetBy(dx: origin.x, dy: origin.y))
+                // 셀 안 개체는 셀 콘텐츠로 순회한다 (표-로컬 rect + 블록 origin).
+                // 글 뒤로 개체는 텍스트보다 먼저, 나머지는 뒤에 — 각 평면 안은
+                // zOrder 정렬 (같으면 수집 순서 유지, R30 #2).
+                let objects = sortedCellObjects(cell)
+                func emit(_ object: CellObject) {
+                    switch object {
+                    case let .image(image):
+                        onCellImage(image, image.rect.offsetBy(dx: origin.x, dy: origin.y))
+                    case let .shape(shape):
+                        onCellShape(shape, shape.rect.offsetBy(dx: origin.x, dy: origin.y))
+                    case let .textbox(textbox):
+                        onCellTextbox(textbox, textbox.rect.offsetBy(dx: origin.x, dy: origin.y))
+                    }
+                }
+                for object in objects where object.paintsBehindText {
+                    emit(object)
+                }
+                walkParagraphs(cell.paragraphs, offset: origin, visit: onParagraphText)
+                for object in objects where !object.paintsBehindText {
+                    emit(object)
+                }
+                // 중첩 표는 셀 안 위치를 origin으로 재귀 순회한다 —
+                // origin 합성 산식은 여기 한 곳에만 둔다.
+                for nested in cell.nestedTables {
+                    walkTable(
+                        nested.table,
+                        origin: CGPoint(
+                            x: origin.x + nested.rect.minX,
+                            y: origin.y + nested.rect.minY
+                        ),
+                        onCellStart: onCellStart,
+                        onParagraphText: onParagraphText,
+                        onCellImage: onCellImage,
+                        onCellShape: onCellShape,
+                        onCellTextbox: onCellTextbox
+                    )
+                }
+            }
+        }
+    }
+
+    /// 셀 개체 (종류 무관 통합 순회 단위)
+    private enum CellObject {
+        case image(HwpCellImage)
+        case shape(HwpCellShape)
+        case textbox(HwpCellTextbox)
+
+        var paintsBehindText: Bool {
+            switch self {
+            case let .image(image): image.paintsBehindText
+            case let .shape(shape): shape.paintsBehindText
+            case let .textbox(textbox): textbox.paintsBehindText
+            }
+        }
+
+        var zOrder: Int32 {
+            switch self {
+            case let .image(image): image.zOrder
+            case let .shape(shape): shape.zOrder
+            case let .textbox(textbox): textbox.zOrder
+            }
+        }
+
+        var sourceOrder: Int {
+            switch self {
+            case let .image(image): image.sourceOrder
+            case let .shape(shape): shape.sourceOrder
+            case let .textbox(textbox): textbox.sourceOrder
+            }
+        }
+    }
+
+    /// 셀 개체를 zOrder 오름차순 (동순위는 원본 ctrlHeaderArray 순서 —
+    /// 종류-버킷 순서가 아니다, R31 #3)으로 정렬한 방출 목록.
+    private static func sortedCellObjects(_ cell: HwpTableCellFrame) -> [CellObject] {
+        let objects = cell.images.map(CellObject.image)
+            + cell.shapes.map(CellObject.shape)
+            + cell.textboxes.map(CellObject.textbox)
+        return objects.sorted { lhs, rhs in
+            lhs.zOrder != rhs.zOrder
+                ? lhs.zOrder < rhs.zOrder
+                : lhs.sourceOrder < rhs.sourceOrder
+        }
+    }
+}

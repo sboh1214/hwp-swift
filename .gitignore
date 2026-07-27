@@ -43,7 +43,6 @@ playground.xcworkspace
 # Packages/
 Package.pins
 Package.resolved
-*.xcodeproj
 # Xcode automatically generates this directory with a .xcworkspacedata file and xcuserdata
 # hence it is not needed unless you have added a package configuration file to your project
 .swiftpm
@@ -66,6 +65,8 @@ Package.resolved
 /*.gcno
 
 ### Xcode Patch ###
+*.xcodeproj
+!Sample/HwpSwiftSample.xcodeproj
 *.xcodeproj/*
 !*.xcodeproj/project.pbxproj
 !*.xcodeproj/xcshareddata/
@@ -76,9 +77,6 @@ Package.resolved
 
 # macOS
 .DS_Store
-
-# DocC build artifacts
-/docs/
 
 # LLVM coverage artifacts
 /default.profraw
@@ -93,3 +91,12 @@ __pycache__/
 # AI generated files
 /.omo/
 /.playwright-mcp/
+
+# 로컬 전용 — 한글 파일 관련 문서 (git 업로드 금지)
+/Docs/
+
+# 로컬 전용 — 렌더 해시 기준선 (레코딩 머신 전용, FixtureRenderHashSnapshotTests)
+/Snapshots/
+
+# 로컬 전용 — 렌더 덤프 진단 스크래치 (파일 헤더에 커밋 금지 명시)
+/Tests/HwpKitTests/FixturePreviewDumpScratch.swift

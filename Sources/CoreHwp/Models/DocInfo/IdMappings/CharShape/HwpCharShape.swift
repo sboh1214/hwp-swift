@@ -67,18 +67,31 @@ extension HwpCharShape: HwpFromDataWithVersion {
         rawPayload = try reader.consumedData(from: startOffset)
     }
 
-    static func load(_ data: Data, _ version: HwpVersion) throws -> Self {
-        var reader = DataReader(data)
+    static func load(
+        _ data: Data,
+        _ version: HwpVersion,
+        options: HwpLoadOptions = .default
+    ) throws -> Self {
+        var reader = DataReader(data, options: options)
         var charShape = try self.init(&reader, version)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
         }
-        charShape.rawPayload = data
+        charShape.rawPayload = options.preservedPayload(data)
         return charShape
     }
 }
 
 extension HwpCharShape {
+    public init() {
+        self.init(
+            faceId: [0, 0, 0, 0, 0, 0, 0],
+            faceSpacing: [0, 0, 0, 0, 0, 0, 0],
+            baseSize: 1000,
+            faceColor: HwpColor()
+        )
+    }
+
     init(faceId: [WORD], faceSpacing: [Int8], baseSize: Int32, faceColor: HwpColor) {
         rawPayload = Data()
         self.faceId = faceId

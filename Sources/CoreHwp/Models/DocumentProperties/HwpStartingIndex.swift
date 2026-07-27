@@ -32,13 +32,13 @@ public struct HwpStartingIndex: HwpFromData {
         rawPayload = try reader.consumedData(from: startOffset)
     }
 
-    static func load(_ data: Data) throws -> Self {
-        var reader = DataReader(data)
+    static func load(_ data: Data, options: HwpLoadOptions = .default) throws -> Self {
+        var reader = DataReader(data, options: options)
         var startingIndex = try self.init(&reader)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
         }
-        startingIndex.rawPayload = data
+        startingIndex.rawPayload = options.preservedPayload(data)
         return startingIndex
     }
 }

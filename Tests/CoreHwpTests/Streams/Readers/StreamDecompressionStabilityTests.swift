@@ -48,12 +48,48 @@ final class StreamDecompressionStabilityTests: XCTestCase {
         }
     }
 
+    func testAggregateStreamLimitThrowsTypedError() {
+        let limits = HwpReadLimits(
+            maxCompressedStreamBytes: .max,
+            maxDecompressedStreamBytes: .max,
+            maxAggregateStreamBytes: 16
+        )
+
+        expect {
+            _ = try HwpFile(
+                fromPath: hwpURL(#file, "plain-text-minimal").path,
+                readLimits: limits
+            )
+        }.to(throwError { error in
+            guard case let HwpError.aggregateStreamSizeLimitExceeded(name, limit, actual) = error
+            else {
+                return fail("Expected aggregateStreamSizeLimitExceeded, got \(error)")
+            }
+            expect(name) == HwpStreamName.fileHeader
+            expect(limit) == 16
+            expect(actual) > 16
+        })
+    }
+
+    /// ViewText 자식 수가 구역 수와 일치하는 정상 문서는 표시 본문으로 채택된다
+    /// — 초과/부족 자식을 압축 해제 전에 거부하는 검증(R69 #2)이 정상 파일을
+    /// 빈 ViewText로 폴백시키지 않는다.
+    func testValidViewTextStorageIsStillAdopted() throws {
+        let hwp = try HwpFile(fromPath: hwpURL(#file, "track-changes").path)
+
+        expect(hwp.viewSectionArray).toNot(beEmpty())
+        expect(hwp.viewSectionArray.count) == hwp.sectionArray.count
+        expect(hwp.displaySectionArray.count) == hwp.sectionArray.count
+    }
+
     func testReadLimitsRejectNonPositiveValuesWithTypedError() {
         let cases = [
             HwpReadLimits(maxCompressedStreamBytes: 0),
             HwpReadLimits(maxDecompressedStreamBytes: 0),
+            HwpReadLimits(maxAggregateStreamBytes: 0),
             HwpReadLimits(maxCompressedStreamBytes: -1),
             HwpReadLimits(maxDecompressedStreamBytes: -1),
+            HwpReadLimits(maxAggregateStreamBytes: -1),
         ]
 
         for limits in cases {

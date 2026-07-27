@@ -1,0 +1,60 @@
+import Foundation
+
+public extension HwpScript {
+    static func detect(from scalar: Unicode.Scalar) -> HwpScript {
+        switch scalar.value {
+        case 0xAC00 ... 0xD7AF,
+             0x1100 ... 0x11FF,
+             0x3130 ... 0x318F,
+             // 한글 자모 확장 A/B·반각 자모도 한글 슬롯이다 (R33 #2)
+             0xA960 ... 0xA97F,
+             0xD7B0 ... 0xD7FF,
+             0xFFA0 ... 0xFFDC:
+            .korean
+        case 0x4E00 ... 0x9FFF,
+             0x3400 ... 0x4DBF,
+             // CJK 호환 한자·비-BMP 확장 (R33 #2)
+             0xF900 ... 0xFAFF,
+             0x20000 ... 0x2FA1F:
+            .chinese
+        case 0x3040 ... 0x309F,
+             0x30A0 ... 0x30FF,
+             // 반각 가타카나 (R35 #5)
+             0xFF65 ... 0xFF9F:
+            .japanese
+        case 0x0370 ... 0x03FF,
+             0x0400 ... 0x04FF,
+             // RTL·복합 문자계 (히브리~아랍 확장-B: 타나/은코/사마리아/
+             // 만다이아/시리아 보충 포함 연속 대역)는 영문이 아니라 '기타
+             // 언어' 슬롯이다 (R33 #2, R34 #4 — 0x0780-0x089F 공백 봉합)
+             0x0590 ... 0x08FF,
+             // 데바나가리~싱할라 연속 대역 (벵골/타밀 등, R35 #5)
+             0x0900 ... 0x0DFF,
+             0x0E00 ... 0x0E7F,
+             0xFB50 ... 0xFDFF,
+             0xFE70 ... 0xFEFF:
+            .etc
+        // 인용부호는 한글도 라틴 폭으로 조판한다 (noori 실물: '…부호'+')' 밀착)
+        case 0x2018 ... 0x201F:
+            .english
+        case 0x2000 ... 0x206F,
+             0x2070 ... 0x209F,
+             0x2100 ... 0x214F,
+             0x2190 ... 0x21FF,
+             0x2200 ... 0x22FF,
+             // 기하 도형(25A0-25FF) 이후로 확장하지 않는다 — noori 내장
+             // PrvImage(한글 실물 렌더) 실측에서 □(25A1)가 영문 슬롯 폭으로
+             // 조판되어, 기호 슬롯 이동은 실문서 회귀다 (R35 #5 기각 근거)
+             0x2500 ... 0x257F:
+            .symbol
+        // 사설 영역(BMP·보충 플레인 15-16)은 사용자 정의 글자 슬롯이다 —
+        // 문서의 사용자 글꼴/장평/자간이 적용돼야 한다 (R35 #3)
+        case 0xE000 ... 0xF8FF,
+             0xF0000 ... 0xFFFFD,
+             0x100000 ... 0x10FFFD:
+            .user
+        default:
+            .english
+        }
+    }
+}

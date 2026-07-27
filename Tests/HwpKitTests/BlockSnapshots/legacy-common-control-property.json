@@ -1,0 +1,1147 @@
+{
+  "fixture" : "legacy-common-control-property",
+  "pageCount" : 1030,
+  "pages" : [
+    {
+      "blocks" : [
+        {
+          "frame" : [
+            935,
+            992,
+            4082,
+            272
+          ],
+          "index" : 0,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 17,
+          "textPrefix" : "학술연구용역 최"
+        },
+        {
+          "frame" : [
+            935,
+            1264,
+            4082,
+            336
+          ],
+          "index" : 1,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            1600,
+            4082,
+            384
+          ],
+          "index" : 2,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 16,
+          "textPrefix" : "주요법령에 대한"
+        },
+        {
+          "frame" : [
+            935,
+            1984,
+            4082,
+            384
+          ],
+          "index" : 3,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 17,
+          "textPrefix" : "(헌법-총강 및"
+        },
+        {
+          "frame" : [
+            935,
+            2368,
+            4082,
+            384
+          ],
+          "index" : 4,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            2752,
+            4082,
+            384
+          ],
+          "index" : 5,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 10,
+          "textPrefix" : "2007. 12"
+        },
+        {
+          "frame" : [
+            935,
+            3136,
+            4082,
+            384
+          ],
+          "index" : 6,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            3520,
+            4082,
+            384
+          ],
+          "index" : 7,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 12,
+          "textPrefix" : "사단법인 한국헌"
+        },
+        {
+          "frame" : [
+            935,
+            3904,
+            4082,
+            384
+          ],
+          "index" : 8,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            4288,
+            4082,
+            192
+          ],
+          "index" : 9,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            4480,
+            4082,
+            240
+          ],
+          "index" : 10,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 19,
+          "textPrefix" : "\t\t\t\t연구책임"
+        },
+        {
+          "frame" : [
+            935,
+            4720,
+            4082,
+            240
+          ],
+          "index" : 11,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 12,
+          "textPrefix" : "\t\t\t\t공동연구"
+        },
+        {
+          "frame" : [
+            935,
+            4960,
+            4082,
+            192
+          ],
+          "index" : 12,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 38,
+          "textPrefix" : "김대환(서울시립"
+        },
+        {
+          "frame" : [
+            935,
+            5152,
+            4082,
+            192
+          ],
+          "index" : 13,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 37,
+          "textPrefix" : "\/노기호(군산대"
+        },
+        {
+          "frame" : [
+            935,
+            5344,
+            4082,
+            192
+          ],
+          "index" : 14,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 36,
+          "textPrefix" : "\/방승주(한양대"
+        },
+        {
+          "frame" : [
+            935,
+            5536,
+            4082,
+            192
+          ],
+          "index" : 15,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 37,
+          "textPrefix" : "\/이성환(국민대"
+        },
+        {
+          "frame" : [
+            935,
+            5728,
+            4082,
+            192
+          ],
+          "index" : 16,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 37,
+          "textPrefix" : "\/장용근(단국대"
+        },
+        {
+          "frame" : [
+            935,
+            5920,
+            4082,
+            192
+          ],
+          "index" : 17,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 38,
+          "textPrefix" : "\/조재현(동아대"
+        },
+        {
+          "frame" : [
+            935,
+            6112,
+            4082,
+            192
+          ],
+          "index" : 18,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 11,
+          "textPrefix" : "\/전학선(한국외"
+        },
+        {
+          "frame" : [
+            935,
+            6304,
+            4082,
+            192
+          ],
+          "index" : 19,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            6496,
+            4082,
+            192
+          ],
+          "index" : 20,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        }
+      ],
+      "page" : 0
+    },
+    {
+      "blocks" : [
+        {
+          "frame" : [
+            935,
+            992,
+            4082,
+            320
+          ],
+          "index" : 0,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 95,
+          "textPrefix" : "Matthews"
+        },
+        {
+          "frame" : [
+            935,
+            1312,
+            4082,
+            1120
+          ],
+          "index" : 1,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 304,
+          "textPrefix" : "본 사안에 있어"
+        },
+        {
+          "frame" : [
+            935,
+            2432,
+            4082,
+            160
+          ],
+          "index" : 2,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            2592,
+            4082,
+            160
+          ],
+          "index" : 3,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 18,
+          "textPrefix" : "Yick Wo판"
+        },
+        {
+          "frame" : [
+            935,
+            2752,
+            4082,
+            160
+          ],
+          "index" : 4,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            2912,
+            4082,
+            800
+          ],
+          "index" : 5,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 228,
+          "textPrefix" : "그 법 ‘내용’"
+        },
+        {
+          "frame" : [
+            935,
+            3712,
+            4082,
+            160
+          ],
+          "index" : 6,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            3872,
+            4082,
+            160
+          ],
+          "index" : 7,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 25,
+          "textPrefix" : "Plessy판결"
+        },
+        {
+          "frame" : [
+            935,
+            4032,
+            4082,
+            160
+          ],
+          "index" : 8,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            4192,
+            4082,
+            320
+          ],
+          "index" : 9,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 72,
+          "textPrefix" : "1896년에 선"
+        },
+        {
+          "frame" : [
+            935,
+            4512,
+            4082,
+            160
+          ],
+          "index" : 10,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            4672,
+            4082,
+            160
+          ],
+          "index" : 11,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 5,
+          "textPrefix" : "사실관계"
+        },
+        {
+          "frame" : [
+            935,
+            4832,
+            4082,
+            160
+          ],
+          "index" : 12,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            4992,
+            4082,
+            1120
+          ],
+          "index" : 13,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 303,
+          "textPrefix" : "1890년에 제"
+        },
+        {
+          "frame" : [
+            935,
+            6112,
+            4082,
+            160
+          ],
+          "index" : 14,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 49,
+          "textPrefix" : "Plessy는 "
+        },
+        {
+          "frame" : [
+            935,
+            6925,
+            4082,
+            360
+          ],
+          "index" : 15,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "pageChrome",
+          "textLength" : 7,
+          "textPrefix" : "- 239 -"
+        },
+        {
+          "frame" : [
+            935,
+            6284,
+            4082,
+            352
+          ],
+          "index" : 16,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 157,
+          "textPrefix" : "5) 배심재판이"
+        },
+        {
+          "frame" : [
+            935,
+            6664,
+            4082,
+            117
+          ],
+          "index" : 17,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 42,
+          "textPrefix" : "6) Pless"
+        },
+        {
+          "frame" : [
+            935,
+            6809,
+            4082,
+            117
+          ],
+          "index" : 18,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 22,
+          "textPrefix" : "7) 163 U"
+        }
+      ],
+      "page" : 250
+    },
+    {
+      "blocks" : [
+        {
+          "frame" : [
+            935,
+            992,
+            4082,
+            160
+          ],
+          "index" : 0,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            1152,
+            4082,
+            168
+          ],
+          "index" : 1,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 5,
+          "textPrefix" : "현행헌법"
+        },
+        {
+          "frame" : [
+            935,
+            1320,
+            4082,
+            160
+          ],
+          "index" : 2,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            1480,
+            4082,
+            2560
+          ],
+          "index" : 3,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 705,
+          "textPrefix" : "현행헌법은 제2"
+        },
+        {
+          "frame" : [
+            935,
+            4040,
+            4082,
+            160
+          ],
+          "index" : 4,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            4200,
+            4082,
+            160
+          ],
+          "index" : 5,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            4360,
+            4082,
+            160
+          ],
+          "index" : 6,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 2,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            4520,
+            4025,
+            1992
+          ],
+          "index" : 7,
+          "kind" : "table",
+          "payload" : "table",
+          "role" : "body"
+        },
+        {
+          "frame" : [
+            935,
+            6925,
+            4082,
+            360
+          ],
+          "index" : 8,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "pageChrome",
+          "textLength" : 7,
+          "textPrefix" : "- 473 -"
+        }
+      ],
+      "page" : 484
+    },
+    {
+      "blocks" : [
+        {
+          "frame" : [
+            935,
+            992,
+            4025,
+            5315
+          ],
+          "index" : 0,
+          "kind" : "table",
+          "payload" : "table",
+          "role" : "body"
+        },
+        {
+          "frame" : [
+            935,
+            6042,
+            4082,
+            160
+          ],
+          "index" : 1,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            6202,
+            4082,
+            160
+          ],
+          "index" : 2,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            6362,
+            4082,
+            176
+          ],
+          "index" : 3,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 10,
+          "textPrefix" : "집회․결사의 자"
+        },
+        {
+          "frame" : [
+            935,
+            6925,
+            4082,
+            360
+          ],
+          "index" : 4,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "pageChrome",
+          "textLength" : 7,
+          "textPrefix" : "- 474 -"
+        },
+        {
+          "frame" : [
+            935,
+            6692,
+            4082,
+            234
+          ],
+          "index" : 5,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 126,
+          "textPrefix" : "102) 196"
+        }
+      ],
+      "page" : 485
+    },
+    {
+      "blocks" : [
+        {
+          "frame" : [
+            935,
+            992,
+            4082,
+            160
+          ],
+          "index" : 0,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 53,
+          "textPrefix" : "오호택, “병역"
+        },
+        {
+          "frame" : [
+            935,
+            1152,
+            4082,
+            160
+          ],
+          "index" : 1,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 23,
+          "textPrefix" : "이준일, 헌법학"
+        },
+        {
+          "frame" : [
+            935,
+            1312,
+            4082,
+            160
+          ],
+          "index" : 2,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 25,
+          "textPrefix" : "유진오, 신고 "
+        },
+        {
+          "frame" : [
+            935,
+            1472,
+            4082,
+            160
+          ],
+          "index" : 3,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 49,
+          "textPrefix" : "윤진숙, “병역"
+        },
+        {
+          "frame" : [
+            935,
+            1632,
+            4082,
+            160
+          ],
+          "index" : 4,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 21,
+          "textPrefix" : "장영수, 헌법학"
+        },
+        {
+          "frame" : [
+            935,
+            1792,
+            4082,
+            160
+          ],
+          "index" : 5,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 23,
+          "textPrefix" : "전광석, 한국헌"
+        },
+        {
+          "frame" : [
+            935,
+            1952,
+            4082,
+            160
+          ],
+          "index" : 6,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 23,
+          "textPrefix" : "정종섭, 헌법학"
+        },
+        {
+          "frame" : [
+            935,
+            2112,
+            4082,
+            160
+          ],
+          "index" : 7,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 46,
+          "textPrefix" : "정혜영, “여성"
+        },
+        {
+          "frame" : [
+            935,
+            2272,
+            4082,
+            160
+          ],
+          "index" : 8,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            2432,
+            4082,
+            176
+          ],
+          "index" : 9,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 5,
+          "textPrefix" : "외국문헌"
+        },
+        {
+          "frame" : [
+            935,
+            2608,
+            4082,
+            160
+          ],
+          "index" : 10,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            2768,
+            4082,
+            320
+          ],
+          "index" : 11,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 92,
+          "textPrefix" : "Bernsdor"
+        },
+        {
+          "frame" : [
+            935,
+            3088,
+            4082,
+            160
+          ],
+          "index" : 12,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 51,
+          "textPrefix" : "Dreier, "
+        },
+        {
+          "frame" : [
+            935,
+            3248,
+            4082,
+            160
+          ],
+          "index" : 13,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 40,
+          "textPrefix" : "Dreier(H"
+        },
+        {
+          "frame" : [
+            935,
+            3408,
+            4082,
+            160
+          ],
+          "index" : 14,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 46,
+          "textPrefix" : "Pieroth\/"
+        },
+        {
+          "frame" : [
+            935,
+            3568,
+            4082,
+            160
+          ],
+          "index" : 15,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 61,
+          "textPrefix" : "Gaitanid"
+        },
+        {
+          "frame" : [
+            935,
+            3728,
+            4082,
+            160
+          ],
+          "index" : 16,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 68,
+          "textPrefix" : "Gornig, "
+        },
+        {
+          "frame" : [
+            935,
+            3888,
+            4082,
+            160
+          ],
+          "index" : 17,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 50,
+          "textPrefix" : "Heun, in"
+        },
+        {
+          "frame" : [
+            935,
+            4048,
+            4082,
+            160
+          ],
+          "index" : 18,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 30,
+          "textPrefix" : "Jarass, "
+        },
+        {
+          "frame" : [
+            935,
+            4208,
+            4082,
+            160
+          ],
+          "index" : 19,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 45,
+          "textPrefix" : "Kokott, "
+        },
+        {
+          "frame" : [
+            935,
+            4368,
+            4082,
+            160
+          ],
+          "index" : 20,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 36,
+          "textPrefix" : "Meyer-La"
+        },
+        {
+          "frame" : [
+            935,
+            4528,
+            4082,
+            160
+          ],
+          "index" : 21,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 48,
+          "textPrefix" : "Muckel, "
+        },
+        {
+          "frame" : [
+            935,
+            4688,
+            4082,
+            160
+          ],
+          "index" : 22,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 58,
+          "textPrefix" : "Scholz, "
+        },
+        {
+          "frame" : [
+            935,
+            4848,
+            4082,
+            160
+          ],
+          "index" : 23,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            6925,
+            4082,
+            360
+          ],
+          "index" : 24,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "pageChrome",
+          "textLength" : 8,
+          "textPrefix" : "- 1018 -"
+        }
+      ],
+      "page" : 1029
+    }
+  ]
+}

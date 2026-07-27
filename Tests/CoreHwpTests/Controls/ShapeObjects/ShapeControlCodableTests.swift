@@ -94,7 +94,13 @@ private func shapeCodableFixture() throws -> ShapeCodableFixture {
         ctrlId: HwpCommonCtrlId.picture.rawValue
     )
     let picturePayload = shapeCodablePicturePayload(binaryDataId: 7)
-    let olePayload = concatenatedData(littleEndianShapeCodableData(UInt32(9)), Data([0xAB]))
+    let olePayload = concatenatedData(
+        littleEndianShapeCodableData(UInt32(1)),
+        littleEndianShapeCodableData(Int32(0)),
+        littleEndianShapeCodableData(Int32(0)),
+        littleEndianShapeCodableData(UInt16(9)),
+        Data([0xAB])
+    )
     let record = shapeCodableRecord(
         commonPayload: commonPayload,
         componentPayload: componentPayload,
@@ -141,7 +147,9 @@ private func assertDecodedShapeComponent(
     ]
     expect(decodedComponent?.oleArray.map(\.rawPayload)) == [fixture.olePayload]
     expect(decodedComponent?.oleArray.map(\.binaryDataId)) == [9]
-    expect(decodedComponent?.oleArray.map(\.rawTrailing)) == [Data([0xAB])]
+    expect(decodedComponent?.oleArray.map(\.rawTrailing)) == [
+        Data(fixture.olePayload.dropFirst(4)),
+    ]
     expect(decodedComponent?.oleArray.first?.unknownChildren) == [
         expectedTestUnknownRecord(tagId: 0x2FB, level: 4, payload: Data([0x20])),
     ]

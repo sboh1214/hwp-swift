@@ -12,12 +12,20 @@ public struct HwpCommonCtrlPropertyInfo {
     public var affectsLineSpacing: Bool
     /** 세로 위치 기준 raw 값 */
     public var verticalRelativeToRawValue: Int
+    /** 세로 위치 기준 */
+    public var verticalRelativeTo: HwpCommonCtrlVerticalRelativeTo?
     /** 세로 위치 기준에 대한 상대적인 배열 방식 raw 값 */
     public var verticalAlignmentRawValue: Int
+    /** 세로 위치 기준에 대한 상대적인 배열 방식 */
+    public var verticalAlignment: HwpCommonCtrlRelativeAlignment?
     /** 가로 위치 기준 raw 값 */
     public var horizontalRelativeToRawValue: Int
+    /** 가로 위치 기준 (스펙 표 70의 '0 page'는 종이의 오기) */
+    public var horizontalRelativeTo: HwpCommonCtrlHorizontalRelativeTo?
     /** 가로 위치 기준에 대한 상대적인 배열 방식 raw 값 */
     public var horizontalAlignmentRawValue: Int
+    /** 가로 위치 기준에 대한 상대적인 배열 방식 */
+    public var horizontalAlignment: HwpCommonCtrlRelativeAlignment?
     /** VertRelTo이 `para`일 때 오브젝트의 세로 위치를 본문 영역으로 제한할지 여부 */
     public var restrictInPage: Bool
     /** 다른 오브젝트와 겹치는 것을 허용할지 여부 */
@@ -51,6 +59,87 @@ public struct HwpCommonCtrlPropertyInfo {
     }
 }
 
+extension HwpCommonCtrlPropertyInfo {
+    private enum CodingKeys: String, CodingKey {
+        case rawValue, treatAsChar, affectsLineSpacing,
+             verticalRelativeToRawValue, verticalRelativeTo,
+             verticalAlignmentRawValue, verticalAlignment,
+             horizontalRelativeToRawValue, horizontalRelativeTo,
+             horizontalAlignmentRawValue, horizontalAlignment,
+             restrictInPage, allowOverlap,
+             widthRelativeToRawValue, widthRelativeTo,
+             heightRelativeToRawValue, heightRelativeTo,
+             protectSizeInParagraphVertRelTo,
+             textWrapRawValue, textWrap,
+             textFlowSideRawValue, textFlowSide,
+             numberingCategoryRawValue, numberingCategory
+
+        // main 아카이브에는 typed enum 키가 없거나 일부만 있다 — RawValue 필드는
+        // 항상 있으므로 파스와 같은 Enum(rawValue:)로 재수화한다. 키가 없던
+        // branch-nil(무효 raw)도 같은 파생으로 같은 nil이 나온다 (R62 #1).
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        rawValue = try container.decode(UInt32.self, forKey: .rawValue)
+        treatAsChar = try container.decode(Bool.self, forKey: .treatAsChar)
+        affectsLineSpacing = try container.decode(Bool.self, forKey: .affectsLineSpacing)
+        verticalRelativeToRawValue = try container.decode(
+            Int.self, forKey: .verticalRelativeToRawValue
+        )
+        verticalRelativeTo = try container.decodeIfPresent(
+            HwpCommonCtrlVerticalRelativeTo.self, forKey: .verticalRelativeTo
+        ) ?? HwpCommonCtrlVerticalRelativeTo(rawValue: verticalRelativeToRawValue)
+        verticalAlignmentRawValue = try container.decode(
+            Int.self, forKey: .verticalAlignmentRawValue
+        )
+        verticalAlignment = try container.decodeIfPresent(
+            HwpCommonCtrlRelativeAlignment.self, forKey: .verticalAlignment
+        ) ?? HwpCommonCtrlRelativeAlignment(rawValue: verticalAlignmentRawValue)
+        horizontalRelativeToRawValue = try container.decode(
+            Int.self, forKey: .horizontalRelativeToRawValue
+        )
+        horizontalRelativeTo = try container.decodeIfPresent(
+            HwpCommonCtrlHorizontalRelativeTo.self, forKey: .horizontalRelativeTo
+        ) ?? HwpCommonCtrlHorizontalRelativeTo(rawValue: horizontalRelativeToRawValue)
+        horizontalAlignmentRawValue = try container.decode(
+            Int.self, forKey: .horizontalAlignmentRawValue
+        )
+        horizontalAlignment = try container.decodeIfPresent(
+            HwpCommonCtrlRelativeAlignment.self, forKey: .horizontalAlignment
+        ) ?? HwpCommonCtrlRelativeAlignment(rawValue: horizontalAlignmentRawValue)
+        restrictInPage = try container.decode(Bool.self, forKey: .restrictInPage)
+        allowOverlap = try container.decode(Bool.self, forKey: .allowOverlap)
+        widthRelativeToRawValue = try container.decode(Int.self, forKey: .widthRelativeToRawValue)
+        widthRelativeTo = try container.decodeIfPresent(
+            HwpCommonCtrlObjectWidthRelativeTo.self, forKey: .widthRelativeTo
+        ) ?? HwpCommonCtrlObjectWidthRelativeTo(rawValue: widthRelativeToRawValue)
+        heightRelativeToRawValue = try container.decode(
+            Int.self, forKey: .heightRelativeToRawValue
+        )
+        heightRelativeTo = try container.decodeIfPresent(
+            HwpCommonCtrlObjectHeightRelativeTo.self, forKey: .heightRelativeTo
+        ) ?? HwpCommonCtrlObjectHeightRelativeTo(rawValue: heightRelativeToRawValue)
+        protectSizeInParagraphVertRelTo = try container.decode(
+            Bool.self, forKey: .protectSizeInParagraphVertRelTo
+        )
+        textWrapRawValue = try container.decode(Int.self, forKey: .textWrapRawValue)
+        textWrap = try container.decodeIfPresent(
+            HwpCommonCtrlTextWrap.self, forKey: .textWrap
+        ) ?? HwpCommonCtrlTextWrap(rawValue: textWrapRawValue)
+        textFlowSideRawValue = try container.decode(Int.self, forKey: .textFlowSideRawValue)
+        textFlowSide = try container.decodeIfPresent(
+            HwpCommonCtrlTextFlowSide.self, forKey: .textFlowSide
+        ) ?? HwpCommonCtrlTextFlowSide(rawValue: textFlowSideRawValue)
+        numberingCategoryRawValue = try container.decode(
+            Int.self, forKey: .numberingCategoryRawValue
+        )
+        numberingCategory = try container.decodeIfPresent(
+            HwpCommonCtrlNumberingCategory.self, forKey: .numberingCategory
+        ) ?? HwpCommonCtrlNumberingCategory(rawValue: numberingCategoryRawValue)
+    }
+}
+
 extension HwpCommonCtrlPropertyInfo: HwpFromUInt {
     typealias UIntType = UInt32
 
@@ -60,9 +149,15 @@ extension HwpCommonCtrlPropertyInfo: HwpFromUInt {
         _ = try reader.readBit()
         affectsLineSpacing = try reader.readBit()
         verticalRelativeToRawValue = try reader.readInt(2)
+        verticalRelativeTo = HwpCommonCtrlVerticalRelativeTo(rawValue: verticalRelativeToRawValue)
         verticalAlignmentRawValue = try reader.readInt(3)
+        verticalAlignment = HwpCommonCtrlRelativeAlignment(rawValue: verticalAlignmentRawValue)
         horizontalRelativeToRawValue = try reader.readInt(2)
+        horizontalRelativeTo = HwpCommonCtrlHorizontalRelativeTo(
+            rawValue: horizontalRelativeToRawValue
+        )
         horizontalAlignmentRawValue = try reader.readInt(3)
+        horizontalAlignment = HwpCommonCtrlRelativeAlignment(rawValue: horizontalAlignmentRawValue)
         restrictInPage = try reader.readBit()
         allowOverlap = try reader.readBit()
 
@@ -103,9 +198,13 @@ extension HwpCommonCtrlPropertyInfo {
         treatAsChar = false
         affectsLineSpacing = false
         verticalRelativeToRawValue = 0
+        verticalRelativeTo = .paper
         verticalAlignmentRawValue = 0
+        verticalAlignment = .topOrLeft
         horizontalRelativeToRawValue = 0
+        horizontalRelativeTo = .paper
         horizontalAlignmentRawValue = 0
+        horizontalAlignment = .topOrLeft
         restrictInPage = false
         allowOverlap = false
         widthRelativeToRawValue = 0
@@ -144,10 +243,51 @@ public enum HwpCommonCtrlObjectHeightRelativeTo: Int, HwpPrimitive {
     case absolute = 2
 }
 
+/** 세로 위치 기준 (표 70 bits 3-4) */
+public enum HwpCommonCtrlVerticalRelativeTo: Int, HwpPrimitive {
+    /** 종이 */
+    case paper = 0
+    /** 쪽 */
+    case page = 1
+    /** 문단 */
+    case paragraph = 2
+}
+
+/** 가로 위치 기준 (표 70 bits 8-9) */
+public enum HwpCommonCtrlHorizontalRelativeTo: Int, HwpPrimitive {
+    /** 종이 (스펙 표에는 page로 인쇄된 오기) */
+    case paper = 0
+    /** 쪽 */
+    case page = 1
+    /** 단 */
+    case column = 2
+    /** 문단 */
+    case paragraph = 3
+}
+
+/** 위치 기준에 대한 상대적인 배열 방식 (표 70 bits 5-7 / 10-12) */
+public enum HwpCommonCtrlRelativeAlignment: Int, HwpPrimitive {
+    /** 위 (기준이 종이/쪽) 또는 왼쪽 */
+    case topOrLeft = 0
+    /** 가운데 */
+    case center = 1
+    /** 아래 (기준이 종이/쪽) 또는 오른쪽 */
+    case bottomOrRight = 2
+    /** 안쪽 (기준이 종이/쪽일 때만) */
+    case inside = 3
+    /** 바깥쪽 (기준이 종이/쪽일 때만) */
+    case outside = 4
+}
+
+/** 본문 흐름 방식 (표 70 bits 21-23).
+ 바이너리 HWP5 실측 매핑 — 공개 스펙의 6값 순서와 다르다 (ErrataAudit 26b,
+ equation/noori/text-box 실제 한컴 fixture raw 1/3 검증). 6값 순서를 쓰면
+ raw 2/3(BehindText/InFrontOfText)이 through/topAndBottom으로 오독돼 레이어링
+ 개체가 본문 흐름에 흡수된다. HWPX 등 6값 포맷은 별도 매핑을 쓸 것 (#1). */
 public enum HwpCommonCtrlTextWrap: Int, HwpPrimitive {
-    /** 어울림 */
+    /** 어울림 (bound rect/outline) */
     case square = 0
-    /** 자리 차지 */
+    /** 자리 차지 (좌우에 텍스트 없음) */
     case topAndBottom = 1
     /** 글 뒤로 */
     case behindText = 2

@@ -6,6 +6,8 @@ public enum HwpStreamName: String, HwpPrimitive, CaseIterable {
     case previewText = "PrvText"
     case previewImage = "PrvImage"
     case binData = "BinData"
+    /// 표시용 본문 (변경 추적 저장본 등) — 있으면 한글.app은 BodyText 대신 이걸 그린다
+    case viewText = "ViewText"
 }
 
 extension HwpStreamName {

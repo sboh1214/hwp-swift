@@ -3,9 +3,12 @@ import Foundation
 struct DataReader {
     private let data: Data
     private var offset: Int = 0
+    /// 로드 옵션 — rawPayload 보존 여부를 파싱 트리 전체에 전파한다.
+    let options: HwpLoadOptions
 
-    init(_ data: Data) {
+    init(_ data: Data, options: HwpLoadOptions = .default) {
         self.data = data
+        self.options = options
     }
 
     var isEOF: Bool {
@@ -20,11 +23,16 @@ struct DataReader {
         offset
     }
 
+    /// 보존용 원본 슬라이스. `preserveRawPayload == false`면 경계 검증만 하고
+    /// 빈 Data를 반환해 스트림 버퍼 참조가 남지 않게 한다.
     func consumedData(from startOffset: Int) throws -> Data {
         guard startOffset >= 0, startOffset <= offset else {
             throw HwpError.invalidDataLength(
                 length: "offset \(startOffset) for \(offset) consumed bytes"
             )
+        }
+        guard options.preserveRawPayload else {
+            return Data()
         }
         let startIndex = data.index(data.startIndex, offsetBy: startOffset)
         let endIndex = data.index(data.startIndex, offsetBy: offset)
@@ -48,13 +56,19 @@ struct DataReader {
         try readBytes(data.count - offset)
     }
 
+    /// 스칼라 읽기 — 핫패스 (문자·모양 엔트리마다 호출)라 `Data` 슬라이스를
+    /// 만들지 않고 버퍼에서 직접 load한다. 경계 검증은 readBytes와 동일
+    /// (읽기 전 truncatedData).
     mutating func read<T>(_ type: T.Type) throws -> T {
         let length = try byteLength(for: type)
-        return try readBytes(length).withUnsafeBytes { rawBuffer in
-            guard let baseAddress = rawBuffer.baseAddress else {
-                throw HwpError.truncatedData(expected: length, actual: 0)
-            }
-            return baseAddress.loadUnaligned(as: T.self)
+        guard length <= remainBytes else {
+            throw HwpError.truncatedData(expected: length, actual: remainBytes)
+        }
+        defer {
+            offset += length
+        }
+        return data.withUnsafeBytes { buffer in
+            buffer.loadUnaligned(fromByteOffset: offset, as: T.self)
         }
     }
 
@@ -65,12 +79,18 @@ struct DataReader {
         guard requiredByteCount <= remainBytes else {
             throw HwpError.truncatedData(expected: requiredByteCount, actual: remainBytes)
         }
-
-        var array = [T]()
-        for _ in 0 ..< count {
-            array.append(try read(T.self))
+        defer {
+            offset += requiredByteCount
         }
-        return array
+        let start = offset
+        return data.withUnsafeBytes { buffer in
+            (0 ..< count).map { index in
+                buffer.loadUnaligned(
+                    fromByteOffset: start + index * typeByteLength,
+                    as: T.self
+                )
+            }
+        }
     }
 
     private func validatedLength(_ length: some BinaryInteger) throws -> Int {

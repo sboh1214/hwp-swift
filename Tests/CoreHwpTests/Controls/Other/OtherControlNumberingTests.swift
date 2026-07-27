@@ -31,6 +31,82 @@ final class OtherControlNumberingTests: XCTestCase {
         }
     }
 
+    func testAutoNumberControlExposesTypedTable142Payload() throws {
+        // 대한민국헌법주석 실측 bytes: 속성 1(각주) + 번호 5 + 사용자 기호 0 +
+        // 앞 장식 0 + 뒤 장식 ')' (0x29)
+        let rawTrailing = concatenatedData(
+            littleEndianData(UInt32(1)),
+            littleEndianData(UInt16(5)),
+            littleEndianData(UInt16(0)),
+            littleEndianData(UInt16(0)),
+            littleEndianData(UInt16(0x29))
+        )
+        var rawPayload = littleEndianData(HwpOtherCtrlId.autoNumber.rawValue)
+        rawPayload.append(rawTrailing)
+        let record = HwpRecord(
+            tagId: HwpSectionTag.ctrlHeader.rawValue,
+            level: 1,
+            payload: rawPayload
+        )
+
+        let control = try HwpOtherControl.load(record)
+        let decoded = try JSONDecoder().decode(
+            HwpCtrlId.self,
+            from: JSONEncoder().encode(HwpCtrlId.autoNumber(control))
+        )
+
+        expect(control.autoNumberInfo?.kind) == .footnote
+        expect(control.autoNumberInfo?.number) == 5
+        expect(control.autoNumberInfo?.numberShapeRawValue) == 0
+        expect(control.autoNumberInfo?.isSuperscript) == false
+        expect(control.autoNumberInfo?.decorationHead) == 0
+        expect(control.autoNumberInfo?.decorationTail) == 0x29
+        expect(control.autoNumberInfo?.rawTrailing) == Data()
+
+        guard case let .autoNumber(roundTripped) = decoded else {
+            return fail("Expected autoNumber after Codable round-trip")
+        }
+        expect(roundTripped.autoNumberInfo) == control.autoNumberInfo
+    }
+
+    func testNewNumberControlExposesTypedTable144Payload() throws {
+        // 대한민국헌법주석 실측 bytes: 속성 1(각주) + 번호 1 (6 byte —
+        // 표 144는 numberingInfo의 12 byte 해석보다 짧다)
+        let rawTrailing = concatenatedData(
+            littleEndianData(UInt32(1)),
+            littleEndianData(UInt16(1))
+        )
+        var rawPayload = littleEndianData(HwpOtherCtrlId.newNumber.rawValue)
+        rawPayload.append(rawTrailing)
+        let record = HwpRecord(
+            tagId: HwpSectionTag.ctrlHeader.rawValue,
+            level: 1,
+            payload: rawPayload
+        )
+
+        let control = try HwpOtherControl.load(record)
+
+        expect(control.newNumberInfo?.kind) == .footnote
+        expect(control.newNumberInfo?.number) == 1
+        expect(control.newNumberInfo?.rawTrailing) == Data()
+        // 6 byte payload는 기존 numberingInfo (3×u32)로는 해석 불가 — nil 유지
+        expect(control.numberingInfo).to(beNil())
+
+        // 쪽 번호 종류 (kind 0)도 구분된다
+        let pageTrailing = concatenatedData(
+            littleEndianData(UInt32(0)),
+            littleEndianData(UInt16(1))
+        )
+        var pagePayload = littleEndianData(HwpOtherCtrlId.newNumber.rawValue)
+        pagePayload.append(pageTrailing)
+        let pageControl = try HwpOtherControl.load(HwpRecord(
+            tagId: HwpSectionTag.ctrlHeader.rawValue,
+            level: 1,
+            payload: pagePayload
+        ))
+        expect(pageControl.newNumberInfo?.kind) == .page
+    }
+
     func testShortNumberingPayloadIsPreservedWithoutParsedNumberingInfo() throws {
         let rawTrailing = concatenatedData(littleEndianData(UInt32(2)), Data([0xAA, 0xBB]))
         var rawPayload = littleEndianData(HwpOtherCtrlId.autoNumber.rawValue)

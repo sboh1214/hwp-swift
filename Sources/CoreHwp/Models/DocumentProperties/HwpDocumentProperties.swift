@@ -24,18 +24,24 @@ public struct HwpDocumentProperties: HwpFromData {
     init(_ reader: inout DataReader) throws {
         let startOffset = reader.byteOffset
         sectionSize = try reader.read(UInt16.self)
-        startingIndex = try HwpStartingIndex.load(try reader.readBytes(12))
-        caratLocation = try HwpCaratLocation.load(try reader.readBytes(12))
+        startingIndex = try HwpStartingIndex.load(
+            try reader.readBytes(12),
+            options: reader.options
+        )
+        caratLocation = try HwpCaratLocation.load(
+            try reader.readBytes(12),
+            options: reader.options
+        )
         rawPayload = try reader.consumedData(from: startOffset)
     }
 
-    static func load(_ data: Data) throws -> Self {
-        var reader = DataReader(data)
+    static func load(_ data: Data, options: HwpLoadOptions = .default) throws -> Self {
+        var reader = DataReader(data, options: options)
         var documentProperties = try self.init(&reader)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
         }
-        documentProperties.rawPayload = data
+        documentProperties.rawPayload = options.preservedPayload(data)
         return documentProperties
     }
 }

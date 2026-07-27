@@ -35,20 +35,23 @@ extension HwpTabDef: HwpFromData {
         }
         tabInfoArray = [HwpTabInfo]()
         let tabInfoByteCount = tabInfoCount * 8
-        var tabInfoReader = DataReader(try reader.readBytes(tabInfoByteCount))
+        var tabInfoReader = DataReader(
+            try reader.readBytes(tabInfoByteCount),
+            options: reader.options
+        )
         for _ in 0 ..< tabInfoCount {
             tabInfoArray.append(try HwpTabInfo(&tabInfoReader))
         }
         rawPayload = try reader.consumedData(from: startOffset)
     }
 
-    static func load(_ data: Data) throws -> Self {
-        var reader = DataReader(data)
+    static func load(_ data: Data, options: HwpLoadOptions = .default) throws -> Self {
+        var reader = DataReader(data, options: options)
         var tabDef = try self.init(&reader)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
         }
-        tabDef.rawPayload = data
+        tabDef.rawPayload = options.preservedPayload(data)
         return tabDef
     }
 }

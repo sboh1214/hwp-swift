@@ -1,0 +1,44 @@
+{
+  "fixture" : "multi-section",
+  "pageCount" : 2,
+  "pages" : [
+    {
+      "blocks" : [
+        {
+          "frame" : [
+            850,
+            992,
+            4252,
+            160
+          ],
+          "index" : 0,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 5,
+          "textPrefix" : "se"
+        }
+      ],
+      "page" : 0
+    },
+    {
+      "blocks" : [
+        {
+          "frame" : [
+            850,
+            992,
+            4252,
+            160
+          ],
+          "index" : 0,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 5,
+          "textPrefix" : "tw"
+        }
+      ],
+      "page" : 1
+    }
+  ]
+}

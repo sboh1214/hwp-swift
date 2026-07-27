@@ -22,8 +22,9 @@ extension HwpForbiddenChar: HwpFromData {
     // MARK: loader contract exemption - forbidden-char payload is stored as opaque raw data
 
     init(_ reader: inout DataReader) throws {
-        data = try reader.readToEnd()
-        rawPayload = data
+        // data는 typed 값이라 양 모드 동일해야 한다 — off면 분리 복사만.
+        data = reader.options.decoupledPayload(try reader.readToEnd())
+        rawPayload = reader.options.preservedPayload(data)
         unknownChildren = []
     }
 }
@@ -38,8 +39,9 @@ extension HwpForbiddenChar: HwpFromRecord {
     // MARK: loader contract exemption - forbidden-char record payload is opaque raw data
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
-        data = try reader.readToEnd()
-        rawPayload = data
+        // data는 typed 값이라 양 모드 동일해야 한다 — off면 분리 복사만.
+        data = reader.options.decoupledPayload(try reader.readToEnd())
+        rawPayload = reader.options.preservedPayload(data)
         unknownChildren = children.map(HwpUnknownRecord.init)
     }
 }

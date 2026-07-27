@@ -9,10 +9,29 @@ public struct HwpListControl: HwpPrimitive {
     /** 아직 해석하지 않은 child record */
     public var unknownChildren: [HwpUnknownRecord]
 
+    public init() {
+        header = HwpCtrlHeader(ctrlId: HwpOtherCtrlId.header.rawValue, rawPayload: Data())
+        listArray = []
+        unknownChildren = []
+    }
+
+    public init(
+        header: HwpCtrlHeader,
+        listArray: [HwpListControlList],
+        unknownChildren: [HwpUnknownRecord]
+    ) {
+        self.header = header
+        self.listArray = listArray
+        self.unknownChildren = unknownChildren
+    }
+
     static func load(_ record: HwpRecord, _ version: HwpVersion) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
 
-        let header = try HwpCtrlHeader.load(record)
+        var header = try HwpCtrlHeader.load(record)
+        // 머리말/꼬리말 적용 범위(표 141)는 로드 후 헤더 rawPayload에서 재디코드하므로
+        // 뷰어 모드에서 비워지면 안 된다 — decoupledPayload로 byte를 보존한다.
+        header.rawPayload = record.options.decoupledPayload(record.payload)
         let parsedChildren = try parseChildren(record.children, version)
         return HwpListControl(
             header: header,
@@ -32,6 +51,22 @@ public struct HwpListControlList: HwpPrimitive {
     public var headerUnknownChildren: [HwpUnknownRecord]
     /** 리스트 안의 문단 */
     public var paragraphArray: [HwpParagraph]
+    /** 글상자 리스트일 때의 텍스트 여백/최대 폭 (표 90). 글상자가 아니면 nil. */
+    public var textBoxInfo: HwpTextBoxListInfo?
+
+    public init(
+        header: HwpListHeader,
+        headerRawPayload: Data,
+        headerUnknownChildren: [HwpUnknownRecord],
+        paragraphArray: [HwpParagraph],
+        textBoxInfo: HwpTextBoxListInfo? = nil
+    ) {
+        self.header = header
+        self.headerRawPayload = headerRawPayload
+        self.headerUnknownChildren = headerUnknownChildren
+        self.paragraphArray = paragraphArray
+        self.textBoxInfo = textBoxInfo
+    }
 }
 
 private extension HwpListControl {
@@ -51,7 +86,7 @@ private extension HwpListControl {
                 continue
             }
 
-            let header = try HwpListHeader.load(child.payload)
+            let header = try HwpListHeader.load(child.payload, options: child.options)
             guard header.paragraphCount >= 0 else {
                 throw HwpError.invalidRecordTree(
                     reason: "list control paragraph count is negative: \(header.paragraphCount)"
@@ -75,7 +110,7 @@ private extension HwpListControl {
 
             lists.append(HwpListControlList(
                 header: header,
-                headerRawPayload: child.payload,
+                headerRawPayload: child.options.decoupledPayload(child.payload),
                 headerUnknownChildren: child.children.map(HwpUnknownRecord.init),
                 paragraphArray: paragraphs
             ))

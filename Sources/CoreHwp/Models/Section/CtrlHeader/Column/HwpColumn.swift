@@ -72,9 +72,10 @@ extension HwpColumn: HwpFromData {
         dividerThickness = try reader.read(UInt8.self)
         dividerColor = HwpColor(try reader.read(COLORREF.self))
 
-        rawTrailing = try reader.readToEnd()
-        rawTrailingWords = rawTrailing.littleEndianUInt16ArrayIfAligned()
-        unknown = rawTrailing.isEmpty ? nil : rawTrailing
+        let trailing = try reader.readToEnd()
+        rawTrailing = reader.options.preservedPayload(trailing)
+        rawTrailingWords = trailing.littleEndianUInt16ArrayIfAligned()
+        unknown = trailing.isEmpty ? nil : rawTrailing
         rawPayload = try reader.consumedData(from: startOffset)
         unknownChildren = []
     }
@@ -91,12 +92,12 @@ extension HwpColumn: HwpFromRecord {
     static func load(_ record: HwpRecord) throws -> Self {
         try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
 
-        var reader = DataReader(record.payload)
+        var reader = DataReader(record.payload, options: record.options)
         var column = try self.init(&reader, record.children)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
         }
-        column.rawPayload = record.payload
+        column.rawPayload = record.options.preservedPayload(record.payload)
         return column
     }
 }

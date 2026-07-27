@@ -6545,12 +6545,12 @@
         ],
         "charRawPayloadLength": 2,
         "charRawPayloadPrefixBytes": [
-          255,
-          255
+          45,
+          0
         ],
         "charRawPayloadSuffixBytes": [
-          255,
-          255
+          45,
+          0
         ],
         "checkCharRawPayloadLength": 2,
         "checkCharRawPayloadPrefixBytes": [
@@ -6561,19 +6561,11 @@
           0,
           0
         ],
-        "undocumentedTrailingLength": 5,
+        "undocumentedTrailingLength": 1,
         "undocumentedTrailingPrefixBytes": [
-          0,
-          0,
-          0,
-          0,
           0
         ],
         "undocumentedTrailingSuffixBytes": [
-          0,
-          0,
-          0,
-          0,
           0
         ]
       }
@@ -9440,6 +9432,8 @@
     },
     "fileLicense": {
       "rawValue": 0
-    }
+    },
+    "pageCount": 3,
+    "pageCountSource": "한글.app 실측 (2026-07-06 사용자 확인: 3쪽)"
   }
 }

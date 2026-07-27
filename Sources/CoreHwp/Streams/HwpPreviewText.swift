@@ -15,10 +15,22 @@ public struct HwpPreviewText: HwpFromData {
     }
 
     public init(rawPayload: Data) throws {
+        text = try Self.decodeText(from: rawPayload)
+        self.rawPayload = rawPayload
+    }
+
+    // MARK: loader contract exemption - PrvText stream is preserved as raw UTF-16 payload
+
+    init(_ reader: inout DataReader) throws {
+        let payload = try reader.readToEnd()
+        text = try Self.decodeText(from: payload)
+        rawPayload = reader.options.preservedPayload(payload)
+    }
+
+    private static func decodeText(from rawPayload: Data) throws -> String {
         guard rawPayload.count.isMultiple(of: MemoryLayout<WCHAR>.size) else {
             throw HwpError.invalidDataForString(data: rawPayload, name: "PreviewText")
         }
-
         let characters: [WCHAR]
         do {
             characters = try rawPayload.littleEndianWCHARArray
@@ -26,17 +38,10 @@ public struct HwpPreviewText: HwpFromData {
             throw HwpError.invalidDataForString(data: rawPayload, name: "PreviewText")
         }
         do {
-            text = try characters.string
+            return try characters.string
         } catch {
             throw HwpError.invalidDataForString(data: rawPayload, name: "PreviewText")
         }
-        self.rawPayload = rawPayload
-    }
-
-    // MARK: loader contract exemption - PrvText stream is preserved as raw UTF-16 payload
-
-    init(_ reader: inout DataReader) throws {
-        try self.init(rawPayload: reader.readToEnd())
     }
 }
 

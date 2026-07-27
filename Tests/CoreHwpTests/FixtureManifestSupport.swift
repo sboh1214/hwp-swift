@@ -145,6 +145,10 @@ struct FixtureExpectations: Decodable {
     let visibleTextContains: [String]?
     let controlTypeCounts: [String: Int]?
     let allControlTypeCounts: [String: Int]?
+    /// 렌더 페이지 수 회귀 가드 (HwpKitTests/FixtureRenderTests가 검증)
+    let pageCount: Int?
+    /// pageCount 실측 출처 주석 (현재 렌더 잠금 / 한글.app 실측)
+    let pageCountSource: String?
 }
 
 struct FixtureDocumentPropertiesExpectations: Decodable {

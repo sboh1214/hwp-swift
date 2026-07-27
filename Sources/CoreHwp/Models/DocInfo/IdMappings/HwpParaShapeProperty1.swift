@@ -44,4 +44,45 @@ public extension HwpParaShapeProperty1 {
     init() {
         self.init(rawValue: 0)
     }
+
+    /**
+     줄 간격 종류 (표 44 bit 0-1). 한글 2007 이하 버전(5.0.2.5 미만)에서 사용.
+
+     5.0.2.5 이상은 속성3 (표 46)의 줄 간격 종류가 우선한다 —
+     `HwpParaShape.resolvedLineSpacingKind` 참조.
+     */
+    var lineSpacingKind: HwpLineSpacingKind {
+        HwpLineSpacingKind(rawValue: rawValue & 0b11) ?? .percent
+    }
+
+    /** 정렬 방식 (표 44 bit 2-4): 0 양쪽, 1 왼쪽, 2 오른쪽, 3 가운데, 4 배분, 5 나눔 */
+    var alignmentRawValue: UInt32 {
+        (rawValue >> 2) & 0b111
+    }
+
+    /** 문단 머리 모양 종류 (표 44 bit 23-24): 0 없음, 1 개요, 2 번호, 3 글머리표 */
+    var headingTypeRawValue: UInt32 {
+        (rawValue >> 23) & 0b11
+    }
+
+    /** 글머리표 문단 여부 */
+    var hasBulletHeading: Bool {
+        headingTypeRawValue == 3
+    }
+}
+
+/**
+ 줄 간격 종류 (표 44 bit 0-1, 표 46 bit 0-4)
+
+ `percent`의 값은 %, 나머지 종류의 값은 HWPUNIT이다.
+ */
+public enum HwpLineSpacingKind: UInt32, HwpPrimitive {
+    /** 글자에 따라(%) — 줄 높이 = 글자 크기 × 값 / 100 */
+    case percent = 0
+    /** 고정값 (HWPUNIT) */
+    case fixed = 1
+    /** 여백만 지정 (HWPUNIT) */
+    case marginOnly = 2
+    /** 최소 (HWPUNIT, 표 46 전용 — 5.0.2.5 이상) */
+    case atLeast = 3
 }

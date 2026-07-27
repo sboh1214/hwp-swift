@@ -39,13 +39,13 @@ public struct HwpParaCharShape: HwpFromData {
         rawPayload = try reader.consumedData(from: startOffset)
     }
 
-    public static func load(_ data: Data) throws -> Self {
-        var reader = DataReader(data)
+    public static func load(_ data: Data, options: HwpLoadOptions = .default) throws -> Self {
+        var reader = DataReader(data, options: options)
         var paraCharShape = try self.init(&reader)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
         }
-        paraCharShape.rawPayload = data
+        paraCharShape.rawPayload = options.preservedPayload(data)
         return paraCharShape
     }
 }

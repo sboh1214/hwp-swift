@@ -81,22 +81,73 @@ extension HwpParaShape: HwpFromDataWithVersion {
         rawPayload = try reader.consumedData(from: startOffset)
     }
 
-    static func load(_ data: Data, _ version: HwpVersion) throws -> Self {
-        var reader = DataReader(data)
+    static func load(
+        _ data: Data,
+        _ version: HwpVersion,
+        options: HwpLoadOptions = .default
+    ) throws -> Self {
+        var reader = DataReader(data, options: options)
         var paraShape = try self.init(&reader, version)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
         }
-        paraShape.rawPayload = data
+        paraShape.rawPayload = options.preservedPayload(data)
         return paraShape
     }
 }
 
+public extension HwpParaShape {
+    /**
+     실제 적용할 줄 간격 종류.
+
+     5.0.2.5 이상 저장본은 속성3 (표 46 bit 0-4)과 `lineSpacing2`가 우선하고,
+     그 미만은 속성1 (표 44 bit 0-1)과 `lineSpacing`을 사용한다
+     (noori 실측: 속성3 종류와 속성1 종류가 일치).
+     */
+    var resolvedLineSpacingKind: HwpLineSpacingKind {
+        if let property3, lineSpacing2 != nil {
+            return HwpLineSpacingKind(rawValue: property3 & 0b11111) ?? .percent
+        }
+        return property1Info.lineSpacingKind
+    }
+
+    /** 종류와 짝을 이루는 줄 간격 값 — `percent`면 %, 나머지는 HWPUNIT */
+    var resolvedLineSpacingValue: Int32 {
+        if property3 != nil, let lineSpacing2 {
+            return Int32(clamping: lineSpacing2)
+        }
+        return lineSpacing
+    }
+}
+
 extension HwpParaShape {
+    public init() {
+        rawPayload = Data()
+        property1 = 0
+        property1Info = HwpParaShapeProperty1(rawValue: 0)
+        marginLeft = 0
+        marginRight = 0
+        indent = 0
+        paragraphSpacingTop = 0
+        paragraphSpacingBottom = 0
+        lineSpacing = 160
+        tabDefId = 0
+        numberingOrBulletId = 0
+        borderFillId = 2
+        borderSpacingLeft = 0
+        borderSpacingRight = 0
+        borderSpacingTop = 0
+        borderSpacingBottom = 0
+        property2 = nil
+        property3 = nil
+        lineSpacing2 = nil
+        unknown = nil
+    }
+
     init(property1: UInt32, marginLeft: Int32, indent: Int32 = 0,
          paragraphSpacingTop: Int32 = 0, paragraphSpacingBottom: Int32 = 0,
          lineSpacing: Int32 = 160, tabDefId: UInt16, lineSpacing2: UInt32 = 160,
-         unknown: UInt32 = 0)
+         numberingOrBulletId: UInt16 = 0, unknown: UInt32 = 0)
     {
         rawPayload = Data()
         self.property1 = property1
@@ -108,7 +159,7 @@ extension HwpParaShape {
         self.paragraphSpacingBottom = paragraphSpacingBottom
         self.lineSpacing = lineSpacing
         self.tabDefId = tabDefId
-        numberingOrBulletId = 0
+        self.numberingOrBulletId = numberingOrBulletId
         borderFillId = 2
         borderSpacingLeft = 0
         borderSpacingRight = 0

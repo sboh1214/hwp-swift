@@ -7,7 +7,9 @@ enum FixtureDerivedValues {
     }
 
     static func visibleText(from hwp: HwpFile) -> String {
-        visibleText(from: allParagraphs(from: hwp))
+        // 표시 본문 기준: ViewText가 있으면 한글.app이 보여주는 텍스트
+        // (변경 추적 저장본은 삭제 텍스트 포함)
+        visibleText(from: allParagraphs(from: hwp.displaySectionArray.flatMap(\.paragraph)))
     }
 
     static func visibleTextsBySection(from hwp: HwpFile) -> [String] {

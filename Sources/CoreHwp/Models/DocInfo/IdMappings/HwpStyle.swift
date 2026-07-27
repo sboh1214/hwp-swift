@@ -73,13 +73,13 @@ extension HwpStyle: HwpFromData {
         rawPayload = try reader.consumedData(from: startOffset)
     }
 
-    static func load(_ data: Data) throws -> Self {
-        var reader = DataReader(data)
+    static func load(_ data: Data, options: HwpLoadOptions = .default) throws -> Self {
+        var reader = DataReader(data, options: options)
         var style = try self.init(&reader)
         if !reader.isEOF {
             throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
         }
-        style.rawPayload = data
+        style.rawPayload = options.preservedPayload(data)
         return style
     }
 }

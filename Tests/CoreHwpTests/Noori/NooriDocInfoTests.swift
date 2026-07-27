@@ -142,9 +142,13 @@ final class NooriDocInfoTests: XCTestCase {
 
         let bullet = try XCTUnwrap(hwp.docInfo.idMappings.bulletArray.first)
 
-        expect(bullet.charRawPayload) == Data([255, 255])
+        // 표 40 문단 머리 정보는 글자 모양 ID(INT32)까지 12바이트 —
+        // 글머리표 문자는 '-' (한글.app 실물 렌더와 일치)
+        expect(bullet.char) == "-"
+        expect(bullet.headCharShapeId) == -1
+        expect(bullet.charRawPayload) == Data([45, 0])
         expect(bullet.checkCharRawPayload) == Data([0, 0])
-        expect(bullet.undocumentedTrailing) == [0, 0, 0, 0, 0]
+        expect(bullet.undocumentedTrailing) == [0]
     }
 
     func testCompatibleDocument() throws {
