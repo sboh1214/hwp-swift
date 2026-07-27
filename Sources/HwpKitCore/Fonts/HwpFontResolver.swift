@@ -71,10 +71,12 @@ import Foundation
             self.usesInstalledHancomFonts = usesInstalledHancomFonts
         }
 
+        /// 기본값을 두지 않는다 — public init의 기본값은 off (환경변수)인데 여기만
+        /// `= true`로 남으면 읽는 쪽이 기본 동작을 반대로 이해한다.
         private init(
             fontMap: HwpFontMap,
             scriptFallbacks: [HwpScript: String],
-            usesInstalledHancomFonts: Bool = true
+            usesInstalledHancomFonts: Bool
         ) {
             self.fontMap = fontMap
             self.scriptFallbacks = scriptFallbacks

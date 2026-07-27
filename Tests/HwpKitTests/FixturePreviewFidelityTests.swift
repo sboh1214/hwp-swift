@@ -107,8 +107,13 @@ final class FixturePreviewFidelityTests: XCTestCase {
         }
     }
 
+    /// 한컴 폰트 모드 게이트를 걸지 않는다 — 임계가 양 모드에서 성립한다
+    /// (2026-07-27 실측: 28개 전부 통과, OFF가 ON 이하. 특히 noori ON 0.0292 /
+    /// OFF 0.0164). 이 스위트는 기준선 **파일이 없고** 임계가 소스 상수라
+    /// `Snapshots/` 같은 머신 종속 자산에 기대지 않는다 — 배포 기본 모드에
+    /// 렌더 가드를 붙일 수 있는 몇 안 되는 경로다.
     func testRenderablePreviewFidelity() async throws {
-        try EnvironmentSensitiveTests.skipUnlessOptedIn(requiresHancomFonts: true)
+        try EnvironmentSensitiveTests.skipUnlessOptedIn()
 
         let fixtures = try FixtureRoot.loadAllFixtures(from: #file)
         let excluded = Self.unparseableFixtureIds.union(Self.missingPreviewFixtureIds)

@@ -14,24 +14,15 @@ enum EnvironmentSensitiveTests {
         return !normalized.isEmpty && normalized != "0" && normalized != "false"
     }
 
-    /// - Parameter requiresHancomFonts: 기준선이 한컴오피스 번들 폰트를 켠 상태에서
-    ///   실측된 스위트인지. 한컴 폰트는 기본 off라 (`HwpInstalledHancomFonts.isEnabled`)
-    ///   끈 채로 돌리면 임계를 벗어나는데, 그 실패가 렌더 회귀로 오독된다 —
-    ///   임계 실패 대신 실행법을 알려주고 skip한다.
-    static func skipUnlessOptedIn(
-        recordVariables: [String] = [],
-        requiresHancomFonts: Bool = false
-    ) throws {
+    /// 한컴 폰트 모드로 스위트를 가르지 않는다 — 모드마다 기준선을 따로 두거나
+    /// (렌더 해시의 `-nohancom` 접미사) 양 모드에서 성립하는 임계를 쓰는 쪽이,
+    /// 한쪽 모드에서 영영 실행되지 않는 스위트를 만드는 것보다 낫다.
+    static func skipUnlessOptedIn(recordVariables: [String] = []) throws {
         let optedIn = isEnabled("HWP_SNAPSHOT_TESTS")
             || recordVariables.contains(where: isEnabled)
         try XCTSkipIf(
             !optedIn,
             "기기/환경 의존 테스트 — HWP_SNAPSHOT_TESTS=1로 opt-in 실행"
-        )
-        try XCTSkipIf(
-            requiresHancomFonts && !HwpInstalledHancomFonts.isEnabled,
-            "기준선이 한컴오피스 번들 폰트 기준 실측 — "
-                + "HWP_SNAPSHOT_TESTS=1 \(HwpInstalledHancomFonts.enableEnvironmentKey)=1 로 실행"
         )
     }
 }
