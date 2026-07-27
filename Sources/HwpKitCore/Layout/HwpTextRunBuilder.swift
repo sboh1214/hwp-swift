@@ -455,7 +455,11 @@ extension HwpTextRunBuilder {
         let face = index.faceName(for: faceId, script: script)
         let faceName = face?.faceName ?? "Helvetica"
         var font = fontResolver.resolve(
-            faceName: Self.serifLatinFallback(faceName, script: script),
+            faceName: Self.serifLatinFallback(
+                faceName,
+                script: script,
+                usesInstalledHancomFonts: fontResolver.usesInstalledHancomFonts
+            ),
             alternatives: [face?.alternativeFaceName, face?.defaultFaceName].compactMap { $0 },
             script: script, size: size
         )

@@ -24,9 +24,12 @@ final class FixtureBlockLayoutSnapshotTests: XCTestCase {
     ]
 
     func testBlockLayoutMatchesSnapshots() async throws {
+        // 한컴 폰트 게이트를 걸지 않는다 — 이 스위트의 기준선은 저장소에 커밋돼
+        // 있고 (렌더 해시의 gitignore `Snapshots/`와 다르다) 양 폰트 모드에서
+        // 같은 좌표가 나온다. 게이트를 걸면 한컴 미설치 환경에서 영영 실행되지
+        // 않아, 커밋된 기준선이 무용지물이 된다.
         try EnvironmentSensitiveTests.skipUnlessOptedIn(
-            recordVariables: ["RECORD_BLOCK_SNAPSHOTS"],
-            requiresHancomFonts: true
+            recordVariables: ["RECORD_BLOCK_SNAPSHOTS"]
         )
 
         let record = EnvironmentSensitiveTests.isEnabled("RECORD_BLOCK_SNAPSHOTS")

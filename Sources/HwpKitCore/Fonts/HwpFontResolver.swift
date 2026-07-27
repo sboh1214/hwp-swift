@@ -52,7 +52,10 @@ import Foundation
 
         /// 한컴오피스 번들 폰트 (설치 시)를 조회 대상에 넣을지.
         /// 결정론 테스트 resolver는 끈다 (기기 의존 결과 방지).
-        private let usesInstalledHancomFonts: Bool
+        /// 한컴 번들 폰트를 조회 대상에 넣는지. `serifLatinFallback` 처럼 resolver
+        /// 밖에서 같은 판단을 해야 하는 곳이 참조한다 — 그쪽이 이 값을 무시하고
+        /// 인덱스를 직접 보면 opt-in 이 뚫린다.
+        public let usesInstalledHancomFonts: Bool
 
         /// - Parameter usesInstalledHancomFonts: 한컴오피스 앱 번들의 폰트를 조회
         ///   대상에 넣을지. 기본값은 `HwpInstalledHancomFonts.isEnabled`

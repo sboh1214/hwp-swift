@@ -186,6 +186,11 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   폴백 (원문 이름 → 정규화 이름 (`-`/`#` 접두 제거 + 공백 제거) 순) → script
   폴백. 명조 계열은 AppleMyungjo, 고딕 계열은 Apple SD Gothic Neo 를 최종
   후보로 유지할 것 (시스템 기본 설치 폰트)
+- **한컴 인덱스를 resolver 밖에서 직접 조회 금지** — `HwpInstalledHancomFonts`
+  를 보는 코드는 반드시 `HwpFontResolver.usesInstalledHancomFonts` 를 함께
+  확인해야 한다 (`serifLatinFallback` 이 인자로 받는 이유). 무조건 조회하면
+  ① opt-in 을 껐는데도 앱 번들 폰트 파일을 열거하고 ② 결과가 한컴오피스 설치
+  여부에 좌우돼 **배포 기본 경로의 렌더가 기기 의존**이 된다
 - **문서가 적어 둔 대체 글꼴을 후보로 쓴다** — `HwpFaceName` 의
   `alternativeFaceName` (대체 글꼴)·`defaultFaceName` (기반 글꼴)을
   `resolve(faceName:alternatives:script:size:)` 로 넘긴다. 큐레이션한 `fontMap`

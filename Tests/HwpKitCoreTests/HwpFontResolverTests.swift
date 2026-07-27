@@ -204,6 +204,27 @@ import XCTest
             }
         }
 
+        /// 세리프 라틴 폴백은 resolver의 opt-in 상태를 따라야 한다. 여기서 한컴
+        /// 인덱스를 무조건 조회하면 (a) 껐는데도 앱 번들 폰트 파일을 열거하고
+        /// (b) 결과가 한컴오피스 설치 여부에 좌우돼 배포 기본 경로의 렌더가
+        /// 기기 의존이 된다.
+        func testSerifLatinFallbackHonoursOptOut() {
+            for face in ["신명 태명조", "한양신명조", "바탕", "HCI Poppy", "휴먼명조"] {
+                let rewritten = HwpTextRunBuilder.serifLatinFallback(
+                    face, script: .english, usesInstalledHancomFonts: false
+                )
+                // 한컴 번들에만 있는 이름으로 재작성하면 opt-out이 무의미해진다
+                expect(["한컴바탕", "휴먼명조"]).toNot(
+                    contain(rewritten),
+                    description: "'\(face)'가 opt-out 상태에서 한컴 face '\(rewritten)'로 재작성됐다"
+                )
+            }
+            // 기기와 무관하게 같은 결과 — 한컴 설치 여부가 결과를 바꾸지 않는다
+            expect(HwpTextRunBuilder.serifLatinFallback(
+                "신명 태명조", script: .english, usesInstalledHancomFonts: false
+            )) == "함초롬바탕"
+        }
+
         /// 맵에 없는 face는 문서가 적어 둔 대체 글꼴명으로 구제된다 — 맵은 ~50개인데
         /// 실제 문서의 face는 그보다 훨씬 많아 손으로 다 채울 수 없다.
         func testUnmappedFaceIsRescuedByDocumentAlternative() {
