@@ -22,6 +22,14 @@
             )
         }
 
+        /// 스크롤 뷰는 contentOffset을 기기 픽셀 그리드에 맞춘다 — 3× 기기에서
+        /// 102.5pt 인셋이 102.333pt(=307/3)로 스냅되므로, 센터링 원점 판정은
+        /// 정확한 일치가 아니라 1픽셀 허용오차여야 2×·3× 양쪽에서 성립한다.
+        private func devicePixel(of view: HwpDocumentUIView) -> CGFloat {
+            let scale = view.traitCollection.displayScale
+            return scale > 0 ? 1 / scale : 0.5
+        }
+
         func testInitializesWithNoPageLayers() {
             let view = HwpDocumentUIView(frame: .zero)
 
@@ -104,14 +112,22 @@
             // 발화하지 않는다 — didSet이 직접 재래스터해야 흐릿해지지 않는다.
             let view = HwpDocumentUIView(frame: CGRect(x: 0, y: 0, width: 400, height: 600))
             view.document = makeDocument()
-            guard let baseScale = view.pageLayers[0]?.contentsScale else {
+            guard let layer = view.pageLayers[0] else {
                 fail("페이지 레이어가 없다")
                 return
             }
+            let baseScale = layer.contentsScale
 
             view.zoomScale = 2.0
 
-            expect(view.pageLayers[0]?.contentsScale) == baseScale * 2
+            // 3× 기기에서는 요청 배율(base×2 = 6)이 페이지 면적 래스터 상한
+            // √(16,000,000/(595·842)) ≈ 5.651에 걸린다 — 상한을 빼고 단언하면
+            // 2× 기기에서만 통과한다.
+            let expected = HwpDocumentViewSupport.boundedContentsScale(
+                baseScale * 2, for: layer.bounds.size
+            )
+            expect(expected) > baseScale
+            expect(view.pageLayers[0]?.contentsScale) == expected
         }
 
         /// 뷰포트보다 작은 문서로 교체하면 센터링 인셋 보정 원점에서 열린다 —
@@ -123,10 +139,11 @@
             view.document = makeDocument()
 
             let inset = view.scrollView.adjustedContentInset
+            let pixel = devicePixel(of: view)
             expect(inset.top) > 0
             expect(inset.left) > 0
-            expect(view.scrollView.contentOffset.x) == -inset.left
-            expect(view.scrollView.contentOffset.y) == -inset.top
+            expect(view.scrollView.contentOffset.x).to(beCloseTo(-inset.left, within: pixel))
+            expect(view.scrollView.contentOffset.y).to(beCloseTo(-inset.top, within: pixel))
         }
 
         /// SwiftUI 경로: makeUIView가 bounds 0일 때 문서를 대입하면 인셋이 0이라
@@ -140,9 +157,10 @@
             view.layoutIfNeeded()
 
             let inset = view.scrollView.adjustedContentInset
+            let pixel = devicePixel(of: view)
             expect(inset.top) > 0
-            expect(view.scrollView.contentOffset.x) == -inset.left
-            expect(view.scrollView.contentOffset.y) == -inset.top
+            expect(view.scrollView.contentOffset.x).to(beCloseTo(-inset.left, within: pixel))
+            expect(view.scrollView.contentOffset.y).to(beCloseTo(-inset.top, within: pixel))
         }
 
         /// SwiftUI makeUIView(bounds 0)에서 들어온 초기 페이지 요청은 첫 실측

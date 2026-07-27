@@ -93,7 +93,9 @@ import XCTest
                 "휴먼명조", "한양신명조", "한양신명조V", "신명 태명조", "#태명조",
                 "명조", "신명 견명조", "신명조 간자", "신명조 약자",
             ]
-            let serifFamilies = ["AppleMyungjo", "Nanum Myeongjo", "HCR Batang"]
+            let serifFamilies = expectedFamilies(
+                preferring: ["AppleMyungjo", "Nanum Myeongjo", "HCR Batang"]
+            )
             for face in serifFaces {
                 let font = resolver.resolve(faceName: face, script: .korean, size: 10)
                 let family = CTFontCopyFamilyName(font) as String
@@ -124,7 +126,9 @@ import XCTest
         }
 
         func testHancomBatangResolvesToBatangFamily() {
-            let batangFamilies = ["HCR Batang", "Nanum Myeongjo", "AppleMyungjo"]
+            let batangFamilies = expectedFamilies(
+                preferring: ["HCR Batang", "Nanum Myeongjo", "AppleMyungjo"]
+            )
             for face in ["한컴바탕", "한컴바탕확장", "바탕체"] {
                 let font = resolver.resolve(faceName: face, script: .korean, size: 10)
                 let family = CTFontCopyFamilyName(font) as String
@@ -144,7 +148,8 @@ import XCTest
             if isInstalledHancomFont(family) {
                 return
             }
-            expect(["GungSeo", "AppleMyungjo"]).to(contain(family))
+            let calligraphicFamilies = expectedFamilies(preferring: ["GungSeo", "AppleMyungjo"])
+            expect(calligraphicFamilies).to(contain(family))
         }
 
         /// 해석 결과가 한컴오피스 번들 실폰트인지 (설치된 기기에서는 실폰트가
@@ -152,6 +157,24 @@ import XCTest
         private func isInstalledHancomFont(_ family: String) -> Bool {
             HwpInstalledHancomFonts.index[family] != nil
                 || HwpInstalledHancomFonts.index[HwpFontMap.normalize(family)] != nil
+        }
+
+        /// 이 시스템의 한글 script 폴백 family — 매핑에 없는 이름을 실제로 해석시켜
+        /// 실측한다. 설치 폰트가 플랫폼마다 달라 상수로 굳힐 수 없다.
+        private var koreanFallbackFamily: String {
+            let font = resolver.resolve(faceName: "ZzUnmappedFaceXYZ", script: .korean, size: 10)
+            return CTFontCopyFamilyName(font) as String
+        }
+
+        /// 후보 계열 중 하나라도 이 시스템에 등록돼 있으면 그 계열을, 하나도 없으면
+        /// script 폴백을 기대값으로 준다. iOS에는 AppleMyungjo·GungSeo 같은 한글
+        /// 명조 계열 시스템 폰트가 아예 없어 폴백까지 내려오는 것이 규약상 정답이다
+        /// — 계열을 무조건 요구하면 제품이 옳게 동작해도 실패한다.
+        private func expectedFamilies(preferring candidates: [String]) -> [String] {
+            let registered = Set(CTFontManagerCopyAvailableFontFamilyNames() as? [String] ?? [])
+            return candidates.contains(where: registered.contains)
+                ? candidates
+                : [koreanFallbackFamily]
         }
 
         func testFaceNameNormalizationStripsPrefixesAndSpaces() {
