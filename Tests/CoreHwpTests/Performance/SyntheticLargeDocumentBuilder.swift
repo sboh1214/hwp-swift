@@ -94,16 +94,7 @@ enum SyntheticLargeDocument {
     }
 
     private static func recordData(tagId: UInt32, level: UInt32, payload: Data) -> Data {
-        let size = UInt32(payload.count)
-        var data: Data
-        if size < 0xFFF {
-            data = littleEndianData(tagId | (level << 10) | (size << 20))
-        } else {
-            data = littleEndianData(tagId | (level << 10) | (0xFFF << 20))
-            data.append(littleEndianData(size))
-        }
-        data.append(payload)
-        return data
+        SectionRecordBuilder.record(tagId: tagId, level: level, payload: payload)
     }
 
     private static func utf16Data(_ text: String) -> Data {

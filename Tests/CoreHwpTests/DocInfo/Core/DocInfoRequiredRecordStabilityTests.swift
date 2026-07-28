@@ -88,9 +88,7 @@ private func idMappingsPayload(_ counts: [Int32] = Array(repeating: Int32(0), co
 }
 
 private func recordData(tagId: UInt32, level: UInt32, payload: Data) -> Data {
-    var data = littleEndianData(tagId | (level << 10) | (UInt32(payload.count) << 20))
-    data.append(payload)
-    return data
+    SectionRecordBuilder.record(tagId: tagId, level: level, payload: payload)
 }
 
 private func littleEndianData(_ value: some FixedWidthInteger) -> Data {
