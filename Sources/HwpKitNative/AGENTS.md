@@ -47,11 +47,21 @@ HwpKitNative/
 
 macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollView documentView) 에 붙는다. NSClipView 는 documentView 의 flippedness 를 미러링하지만, `contentsAreFlipped()` 런타임 가드가 조상 flip 홀짝 변화를 동적으로 보정하므로 안전하다.
 
-`drawText` 의 CT flip (`translateBy` + `scaleBy(x: 1, y: -1)`) 과 `drawFlippedImage` 는 top-down 정규화 이후를 전제로 하므로 그대로 유지.
+`drawTextLines` 의 CT flip (`translateBy` + `scaleBy(x: 1, y: -1)`) 과 `drawFlippedImage` 는 top-down 정규화 이후를 전제로 하므로 그대로 유지.
 
 ## CRITICAL — contentsScale (Retina 선명도)
 
 `CALayer.contentsScale` 기본값은 1.0 — 설정하지 않으면 Retina 에서 1x 래스터를 확대해 **글씨가 흐릿해진다** (실제로 겪은 버그). 두 뷰 모두 `effectiveContentsScale` (backing/screen scale × max(1, zoom), 상한 4× — 산식은 `HwpDocumentViewSupport.effectiveContentsScale`) 을 레이어 생성 시와 zoom/backing 변경 시 적용한다 (macOS: `viewDidChangeBackingProperties`, iOS: `didMoveToWindow` + `scrollViewDidEndZooming`). 일괄 갱신은 `HwpDocumentViewSupport.updateContentsScale` — 메모 패널 레이어도 페이지와 함께 재래스터한다 (macOS·iOS 통일됨).
+
+## 줄 배치 캐시 (HwpPageLayer)
+
+`.drawText` 조판 결과 (`HwpDrawnTextLayout.lines`) 를 레이어 인스턴스 안에 캐시한다 — 재드로마다 framesetter 를 다시 돌리지 않는다. 재드로는 흔하다: contentsScale 변경 (핀치 줌 종료·Retina), bounds 변경 (`needsDisplayOnBoundsChange`), 이미지 디코딩 완료·디퍼드 용량 확보 콜백. 줄 기하는 pt 단위라 이 중 **어느 것도 캐시를 무효화하지 않는다** — 그게 이 캐시의 요점이다.
+
+- **키는 `paintList.commands` 의 인덱스**다. NSAttributedString 의 `ObjectIdentifier` 를 쓰면 안 된다: `drawPlaceholder` 가 draw 마다 임시 문자열을 만들어, 해제된 주소가 재사용되면 같은 rect 의 플레이스홀더끼리 엉뚱한 히트로 **조용한 오조판**이 난다. 인덱스 키는 `drawPlaceholder` 가 커맨드 인덱스를 갖지 않으므로 캐시 우회를 코드가 아니라 구조로 강제한다.
+- **무효화는 `paintList` didSet 의 `removeAll()`**, 그리고 히트 시 페이로드 재검증 (`===` + origin/lineWidth) 이 2차 방어선이다. 후자가 필요한 이유: `init(layer:)` 의 대입은 `super.init` 이전이라 didSet 이 발화하지 않고, 프로그레시브 갱신 경로는 양쪽 뷰의 `paintList == nil` 가드 때문에 기존 레이어에 재대입하지 않는다.
+- **CA 사본 (`init(layer:)`) 은 캐시를 복사하지 않는다** — 빈 캐시로 시작해 스스로 채운다.
+- **상한 초과 시 축출이 아니라 삽입 중단**이다. draw 는 커맨드를 항상 같은 순서로 전량 훑으므로 FIFO 축출은 워킹셋이 상한보다 큰 페이지에서 히트율 0% + 매 draw 전량 재삽입이 된다. 상한은 엔트리 수가 아니라 누적 줄 수 (엔트리 하나가 `maximumLineFrames` = 100,000 줄까지 담을 수 있다).
+- 텍스트 선택의 `HwpSelectionGeometry` 도 같은 `[HwpDrawnLine]` 을 캐시하지만 **문서 스코프 + FIFO 512** 로 별개다 (그쪽은 랜덤 액세스라 FIFO 가 맞는다). 두 캐시는 서로 독립이다.
 
 ## HwpDocumentActor.buildDocument
 
