@@ -131,7 +131,10 @@ public enum HwpMemoPanelPainter {
             ))
         }
         commands.append(.drawText(
-            attributedString: trailingText,
+            // 동결 — paint 명령의 immutable 계약 (HwpPaintCommand)을 지키는 유일한
+            // 누락 지점이었다. 렌더 캐시가 문자열 신원으로 조판 결과를 재사용하므로
+            // 신원이 같으면 내용도 같아야 한다.
+            attributedString: NSAttributedString(attributedString: trailingText),
             origin: CGPoint(
                 x: frame.maxX - balloonPadding - trailingWidth,
                 y: baselineTop
