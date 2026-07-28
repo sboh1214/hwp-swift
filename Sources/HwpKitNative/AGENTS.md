@@ -55,13 +55,16 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
 
 ## 줄 배치 캐시 (HwpPageLayer)
 
-`.drawText` 조판 결과 (`HwpDrawnTextLayout.lines`) 를 레이어 인스턴스 안에 캐시한다 — 재드로마다 framesetter 를 다시 돌리지 않는다. 재드로는 흔하다: contentsScale 변경 (핀치 줌 종료·Retina), bounds 변경 (`needsDisplayOnBoundsChange`), 이미지 디코딩 완료·디퍼드 용량 확보 콜백. 줄 기하는 pt 단위라 이 중 **어느 것도 캐시를 무효화하지 않는다** — 그게 이 캐시의 요점이다.
+`.drawText` 조판 결과 (`HwpDrawnTextLayout.lines`) 를 레이어 인스턴스 안에 캐시한다 — 재드로마다 framesetter 를 다시 돌리지 않는다. 재드로는 흔하다: contentsScale 변경 (핀치 줌 종료·Retina), bounds 변경 (`needsDisplayOnBoundsChange`), 이미지 디코딩 완료·디퍼드 용량 확보 콜백. 줄 기하는 pt 단위라 이 중 **어느 것도 캐시를 무효화하지 않는다** — 그게 이 캐시의 요점이다. `drawText` 는 조회 (`cachedDrawnLines`) · 순수 조판 (`typesetLines`) · 렌더 (`drawTextLines`) 셋으로 쪼개져 있어, 배치가 `pageHeight`·`bounds`·`contentsScale` 과 무관하다는 사실이 구조로 드러난다.
 
 - **키는 `paintList.commands` 의 인덱스**다. NSAttributedString 의 `ObjectIdentifier` 를 쓰면 안 된다: `drawPlaceholder` 가 draw 마다 임시 문자열을 만들어, 해제된 주소가 재사용되면 같은 rect 의 플레이스홀더끼리 엉뚱한 히트로 **조용한 오조판**이 난다. 인덱스 키는 `drawPlaceholder` 가 커맨드 인덱스를 갖지 않으므로 캐시 우회를 코드가 아니라 구조로 강제한다.
 - **무효화는 `paintList` didSet 의 `removeAll()`**, 그리고 히트 시 페이로드 재검증 (`===` + origin/lineWidth) 이 2차 방어선이다. 후자가 필요한 이유: `init(layer:)` 의 대입은 `super.init` 이전이라 didSet 이 발화하지 않고, 프로그레시브 갱신 경로는 양쪽 뷰의 `paintList == nil` 가드 때문에 기존 레이어에 재대입하지 않는다.
 - **CA 사본 (`init(layer:)`) 은 캐시를 복사하지 않는다** — 빈 캐시로 시작해 스스로 채운다.
-- **상한 초과 시 축출이 아니라 삽입 중단**이다. draw 는 커맨드를 항상 같은 순서로 전량 훑으므로 FIFO 축출은 워킹셋이 상한보다 큰 페이지에서 히트율 0% + 매 draw 전량 재삽입이 된다. 상한은 엔트리 수가 아니라 누적 줄 수 (엔트리 하나가 `maximumLineFrames` = 100,000 줄까지 담을 수 있다).
+- **상한 초과 시 축출이 아니라 삽입 중단**이다. draw 는 커맨드를 항상 같은 순서로 전량 훑으므로 FIFO 축출은 워킹셋이 상한보다 큰 페이지에서 히트율 0% + 매 draw 전량 재삽입이 된다. 상한은 엔트리 수가 아니라 누적 줄 수 (`cachedLineBudget` 기본 8,192 — 엔트리 하나가 `maximumLineFrames` = 100,000 줄까지 담을 수 있어 엔트리 수 상한은 CTLine 보유량을 못 묶는다). 인스턴스 프로퍼티라 테스트가 값을 낮춰 초과 경로를 작은 문서로 재현한다.
+- **락 (`NSLock`) 은 딕셔너리 조회/저장 순간에만 잡는다** — CoreText 조판·CTLineDraw 중에는 보유 금지 (그 아래로 텍스트 호출이 추가돼도 재진입 데드락이 없게). `paintList` didSet 의 `setNeedsDisplay()` 도 락 밖이다. 이 락은 Dictionary 동시 변형이라는 메모리 비안전만 막을 뿐 레이어를 thread-safe 하게 만들지 않는다 (클래스가 `@unchecked Sendable`).
 - 텍스트 선택의 `HwpSelectionGeometry` 도 같은 `[HwpDrawnLine]` 을 캐시하지만 **문서 스코프 + FIFO 512** 로 별개다 (그쪽은 랜덤 액세스라 FIFO 가 맞는다). 두 캐시는 서로 독립이다.
+- 회귀 가드는 `Tests/HwpKitNativeTests/HwpPageLayerCacheTests.swift` (7종). **기존 뷰 테스트는 전부 draw 1회라 콜드 경로만 타서 캐시 버그를 잡지 못한다** — 캐시를 건드리면 draw 를 2회 이상 돌리고 `typesetCount` / `cachedDrawnLineEntryCount` (테스트 전용 관측점) 로 단언할 것.
+- 실측 (macOS, 재드로 20회, 캐시 무력화 A/B): Column 1쪽 681.0 → 368.9ms (1.85x, 조판 220 → 0회), noori 3쪽 913.9 → 596.4ms (1.53x, 1360 → 80회 — 잔여 80 = 플레이스홀더 4개 × 20회로 설계대로 우회). 남는 시간은 CTLineDraw·장식이라 캐시가 줄일 몫이 아니고, 레이어가 객체째 폐기·재생성되는 스크롤은 콜드 경로라 이득이 없다.
 
 ## HwpDocumentActor.buildDocument
 
