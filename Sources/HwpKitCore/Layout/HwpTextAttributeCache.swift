@@ -33,9 +33,27 @@ import Foundation
 /// 기존 init 그대로다.
 final class HwpTextAttributeCache: @unchecked Sendable {
     private struct AttributeKey: Hashable {
-        let shapeId: UInt32
+        /// `nil` = `index`에 없는 글자 모양 id. `HwpTextRunBuilder.resolvedShape`의
+        /// 폴백이 문단과 무관한 상수 (`HwpCharShape()`)라 미해결 id는 결과 사전이
+        /// 전부 같으므로 **한 키로 접는다**. 접지 않으면 조작 문서가 문자마다 다른
+        /// id를 흘려 내용이 같은 항목을 문서 수명 내내 쌓게 된다.
+        let shapeId: UInt32?
         let script: HwpScript
     }
+
+    /// 저장소별 항목 수 상한 — 넘으면 **축출이 아니라 삽입 중단**이다. 조판은 문서를
+    /// 순서대로 훑으므로 FIFO 축출은 워킹셋이 상한보다 클 때 히트율 0% + 매번 전량
+    /// 재삽입이 된다 (`HwpPageLayer` 줄 배치 캐시에서 겪은 함정). 미스가 `create`
+    /// 폴백이라 삽입을 멈춰도 결과는 같다 — 느려질 뿐이다.
+    ///
+    /// 정상 문서는 닿지 않는다: 미해결 id가 위에서 한 키로 접히므로 항목 수는
+    /// (문서가 실제 가진 charShape 수) × (스크립트 7) 이하이고, 상한에 닿으려면
+    /// 9,000개 넘는 글자 모양을 실제로 쓰는 문서여야 한다. 항목당 수백 바이트라
+    /// 상한 자체도 수십 MB 수준 — `HwpPaginator.maximumDocumentPages`와 같은 결의 절단.
+    static let maximumStoredEntries = 65536
+    /// 인스턴스 상한 (기본 = 전역) — 테스트가 상한 경로를 작은 입력으로 재현한다
+    /// (`HwpPageLayer.cachedLineBudget`와 같은 패턴).
+    var maximumEntries = HwpTextAttributeCache.maximumStoredEntries
 
     /// 사전과 그 값 (CTFont/CGColor/NSNumber)은 모두 불변으로 다룬다 (위 계약) —
     /// 저장소 접근만 lock으로 감싼다. `HwpFontResolver.FontCache`와 같은 패턴.
@@ -62,13 +80,19 @@ final class HwpTextAttributeCache: @unchecked Sendable {
         return misses
     }
 
+    var entryCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return attributeStorage.count
+    }
+
     /// `(shapeId, script)`의 텍스트 속성 사전. 없으면 `create`로 만들어 채운다.
     ///
     /// `create`는 lock 밖에서 부른다 — CoreText 폰트 생성이 무거워 lock을 쥔 채
     /// 부르면 병렬 조판이 직렬화된다. 경합하면 같은 키를 두 번 만들 수 있지만 순수
     /// 함수라 결과가 같다 (`FontCache`와 같은 절충).
     func attributes(
-        shapeId: UInt32,
+        shapeId: UInt32?,
         script: HwpScript,
         create: () -> [NSAttributedString.Key: Any]
     ) -> [NSAttributedString.Key: Any] {
@@ -83,7 +107,9 @@ final class HwpTextAttributeCache: @unchecked Sendable {
         lock.unlock()
         let attributes = create()
         lock.lock()
-        attributeStorage[key] = attributes
+        if attributeStorage.count < maximumEntries {
+            attributeStorage[key] = attributes
+        }
         lock.unlock()
         return attributes
     }
@@ -101,7 +127,9 @@ final class HwpTextAttributeCache: @unchecked Sendable {
         lock.unlock()
         let tabs = index.textTabs(for: paraShape)
         lock.lock()
-        tabStorage[key] = tabs
+        if tabStorage.count < maximumEntries {
+            tabStorage[key] = tabs
+        }
         lock.unlock()
         return tabs
     }

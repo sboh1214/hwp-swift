@@ -229,8 +229,16 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   호출마다 `CTTextTab` 을 새로 만드는데 문단마다 측정·렌더로 불린다). 키가
   `tabDefId` **하나뿐**이라, `HwpIndex.textTabs(for:)` 가 paraShape 의 다른
   필드를 보게 되면 조용히 틀린 탭을 준다 (실측 확인: 현재는 `tabDefId` 만
-  읽는다). 속성 쪽도 같은 성질이라 `attributes(forShapeId:shape:script:)` 의
-  `shape` 는 **그 `shapeId` 로 만든 것**이어야 한다 — 키에 shape 내용이 없다.
+  읽는다). 속성 키도 같은 성질이지만 그쪽은 타입이 막는다 — `resolvedShape` 가
+  shape 와 캐시 키를 `ResolvedShape` 한 값으로 묶어 주고 `attributes(for:script:)`
+  가 그 타입만 받아, 어긋난 짝을 넘길 길이 없다.
+  **`index` 에 없는 id 는 캐시 키가 `nil` 로 접힌다** — 폴백 (`resolvedShape`) 이
+  문단과 무관한 상수라 결과 사전이 전부 같은데, 원본 id 로 키를 잡으면 조작
+  문서가 문자마다 다른 id 를 흘려 내용이 같은 항목을 문서 수명 내내 쌓는다.
+  저장소별 항목 상한 (`maximumStoredEntries` 65,536)은 **축출이 아니라 삽입
+  중단**이다 — 조판이 문서를 순서대로 훑으므로 FIFO 축출은 워킹셋이 상한보다
+  클 때 히트율 0% 가 된다 (`HwpPageLayer` 줄 배치 캐시와 같은 이유). 미스가
+  `create` 폴백이라 삽입을 멈춰도 결과는 같다.
   주입 경로는 ②의 넷 말고 `HwpParagraphMeasurer` · `HwpParagraphObjectCollector`
   까지다 (컨테이너 안 글상자가 자체 `HwpTextboxLayout` 을 만드는 경로) —
   **새 레이아웃 컴포넌트는 캐시를 함께 실을 것**.
@@ -241,9 +249,10 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   실측 (로컬 macOS, 3회 median, 캐시 무력화 A/B): paginate N=20,000 (589쪽)
   10.95 → 6.17s (**1.78x**), legacy 1,030쪽 문서 로드 26.37 → 18.53s
   (**1.42x**). 등가성은 렌더 픽셀 해시 전 픽스처 × 전 페이지 0건 (양 폰트
-  모드). 회귀 가드는 `HwpTextRunBuilderTests` 의 캐시 5종 (캐시/무캐시 문자열
+  모드). 회귀 가드는 `HwpTextRunBuilderTests` 의 캐시 7종 (캐시/무캐시 문자열
   동치, 히트·미스 카운트, script 키 분리, 변경추적 마크 비오염, 탭 스톱
-  재사용) — 캐시를 건드리면 `hitCount`/`missCount` (테스트 전용 관측점) 로
+  재사용, 미해결 id 64개 → 항목 1개, 상한 초과 시 삽입 중단 + 결과 불변) —
+  캐시를 건드리면 `hitCount`/`missCount`/`entryCount` (테스트 전용 관측점) 로
   단언할 것
 - 실측 튜닝 상수는 `Tuning/HwpRenderTuning.swift` 에 근거 주석과 함께 —
   값 변경은 fidelity 전수 + 블록 스냅샷 + 실물 대조 필수 (값 핀:

@@ -346,6 +346,38 @@ import XCTest
             expect(first.count) == documentIndex.textTabs(for: paraShape).count
             expect(second.count) == first.count
         }
+
+        func testAttributeCacheFoldsUnresolvedShapeIdsIntoOneEntry() {
+            // index에 없는 id는 문단과 무관한 상수 폴백을 쓰므로 결과 사전이 전부
+            // 같다 — 원본 id로 키를 잡으면 조작 문서가 문자마다 다른 id를 흘려
+            // 내용이 같은 항목을 문서 수명 내내 쌓는다 (R41 P1 리뷰).
+            let cache = HwpTextAttributeCache()
+            let distinctUnresolved = (0 ..< 64).map { (UInt32($0), UInt32($0) &* 7 &+ 1) }
+            let paragraph = paragraph(
+                text: String(repeating: "가", count: 64), runs: distinctUnresolved
+            )
+
+            _ = builder(shapes: [:], cache: cache).build(paragraph: paragraph)
+
+            expect(cache.entryCount) == 1
+            expect(cache.missCount) == 1
+            expect(cache.hitCount) == 63
+        }
+
+        func testAttributeCacheStopsInsertingBeyondEntryLimit() throws {
+            // 상한 초과는 축출이 아니라 삽입 중단 — 미스가 create 폴백이라
+            // 결과는 그대로여야 한다 (느려질 뿐).
+            let shapes = try decoratedShapes()
+            let paragraph = paragraph(text: "가나다", runs: [(0, 0), (1, 1), (2, 2)])
+            let cache = HwpTextAttributeCache()
+            cache.maximumEntries = 2
+
+            let capped = builder(shapes: shapes, cache: cache).build(paragraph: paragraph)
+            let uncached = builder(shapes: shapes, cache: nil).build(paragraph: paragraph)
+
+            expect(cache.entryCount) == 2
+            expect(capped.isEqual(to: uncached)) == true
+        }
     }
 
     private extension HwpTextRunBuilderTests {
