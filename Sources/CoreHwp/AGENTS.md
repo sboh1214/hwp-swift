@@ -91,6 +91,11 @@ ID로 dispatch된다.
 - 새 저장 필드/파생 필드를 추가하면 **legacy 아카이브 디코딩**을 함께 처리한다
   (루트 AGENTS.md "Codable 아카이브 호환" 참조). 인코딩은 synthesized를 유지하고
   디코더만 custom으로 두는 것이 형상 변화를 막는 방법이다.
+- **caller가 넘긴 한도를 받는 public 파싱 진입점은 먼저
+  `options.readLimits.validate()`를 부른다.** 현재 그 지점은 `HwpFile`
+  이니셜라이저 4개와 `HwpSection.load`뿐이다. 검증을 빠뜨리면 비-양수 한도가
+  typed 진단(`invalidDataLength`) 대신 "모든 레코드가 거부됨"이라는 오해를 부르는
+  동작으로 나타난다.
 
 ## 안티 패턴
 
@@ -120,6 +125,13 @@ inflate가 끝난 뒤 검사하는 후처리 거부입니다. 이 제한은 type
 한도 안이어도 자식이 많으면 합계가 커지므로, 파일 단위
 `maxAggregateStreamBytes`(기본 1 GiB)를 초과하면
 `HwpError.aggregateStreamSizeLimitExceeded`로 거부합니다.
+
+byte 한도와 별개로 레코드 트리 깊이 한도 `maxNestingDepth`(기본 64)가 있습니다.
+typed 디코더가 트리를 재귀로 내려가므로(표 셀 문단·리스트 컨트롤·글상자 문단·메모)
+깊게 조작된 문서는 스택 오버플로로 crash할 수 있습니다. `parseTreeRecord`에서
+`record.level == 트리 깊이` 불변식을 이용해 단일 지점으로 상한하며, 초과 시
+payload를 읽기 전에 `HwpError.invalidRecordTree`로 거부합니다. 실문서 실측
+최대 level은 5입니다.
 
 2026-06-28 기준 `swift test --enable-code-coverage`를 실행한 뒤
 `.build/out/Products/Debug/codecov/Hwp-Swift.json`에서 `Sources/CoreHwp`만

@@ -178,13 +178,11 @@ final class RecordParserStabilityTests: XCTestCase {
 }
 
 private func recordData(tagId: UInt32, level: UInt32, payload: Data) -> Data {
-    var data = recordHeaderData(tagId: tagId, level: level, size: UInt32(payload.count))
-    data.append(payload)
-    return data
+    SectionRecordBuilder.record(tagId: tagId, level: level, payload: payload)
 }
 
 private func recordHeaderData(tagId: UInt32, level: UInt32, size: UInt32) -> Data {
-    littleEndianData(tagId | (level << 10) | (size << 20))
+    SectionRecordBuilder.header(tagId: tagId, level: level, size: size)
 }
 
 private func littleEndianData(_ value: some FixedWidthInteger) -> Data {

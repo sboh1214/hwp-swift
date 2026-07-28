@@ -595,10 +595,7 @@ private func trackChangeAuthorNamePayload(_ name: String) -> Data {
 }
 
 private func recordData(tagId: UInt32, level: UInt32, payload: Data) -> Data {
-    concatenatedData(
-        littleEndianData(tagId | (level << 10) | (UInt32(payload.count) << 20)),
-        payload
-    )
+    SectionRecordBuilder.record(tagId: tagId, level: level, payload: payload)
 }
 
 private func littleEndianData(_ value: some FixedWidthInteger) -> Data {

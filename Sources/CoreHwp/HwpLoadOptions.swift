@@ -3,7 +3,7 @@ import Foundation
 /// 문서 로드 옵션. 백그라운드 파싱의 @Sendable 클로저에 캡처되므로 명시
 /// Sendable — public 비-frozen 구조체는 모듈 밖 추론이 없다 (R39 #1).
 public struct HwpLoadOptions: Sendable {
-    /// HWP stream을 읽을 때 허용할 최대 byte 수.
+    /// HWP stream을 읽을 때 허용할 자원 상한 (byte 수와 레코드 트리 깊이).
     public var readLimits: HwpReadLimits
 
     /// 파싱 모델의 rawPayload/rawTrailing 원본 보존 여부. 기본 true.

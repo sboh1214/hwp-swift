@@ -49,6 +49,10 @@ public struct HwpSection: HwpFromDataWithVersion {
         _ version: HwpVersion,
         options: HwpLoadOptions = .default
     ) throws -> Self {
+        // 유일한 public 파싱 진입점이다. `HwpFile` 이니셜라이저와 달리 여기로는
+        // 검증되지 않은 한도가 그대로 들어오므로, 비-양수 한도를 "모든 레코드가
+        // 거부됨"이 아니라 typed 진단으로 돌려준다.
+        try options.readLimits.validate()
         var reader = DataReader(data, options: options)
         var section = try self.init(&reader, version)
         if !reader.isEOF {
