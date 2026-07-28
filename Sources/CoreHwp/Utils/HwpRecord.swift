@@ -83,6 +83,17 @@ func parseTreeRecord(data: Data, options: HwpLoadOptions = .default) throws -> H
         guard parentIndex < stack.count else {
             throw HwpError.invalidRecordTree(reason: "record level \(level) has no parent")
         }
+        // level == 트리 깊이 불변식(parentIndex = level + 스택 절단/append)이
+        // 성립하므로, 이 한 지점의 상한이 typed 디코더의 모든 재귀(표 셀 문단·
+        // 리스트 컨트롤·글상자 문단·메모)를 함께 상한한다. 위 level jump 가드와
+        // 같은 자리에 두어 확장 크기 4 byte를 소비하기 전에 거부한다 — 초과
+        // 입력이 truncatedData가 아니라 결정론적으로 invalidRecordTree가 된다.
+        let maxNestingDepth = options.readLimits.maxNestingDepth
+        guard parentIndex < maxNestingDepth else {
+            throw HwpError.invalidRecordTree(
+                reason: "record level \(level) exceeds max nesting depth \(maxNestingDepth)"
+            )
+        }
         if size == 0xFFF {
             size = try reader.read(UInt32.self)
         }

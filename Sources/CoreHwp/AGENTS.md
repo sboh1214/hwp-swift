@@ -121,6 +121,13 @@ inflate가 끝난 뒤 검사하는 후처리 거부입니다. 이 제한은 type
 `maxAggregateStreamBytes`(기본 1 GiB)를 초과하면
 `HwpError.aggregateStreamSizeLimitExceeded`로 거부합니다.
 
+byte 한도와 별개로 레코드 트리 깊이 한도 `maxNestingDepth`(기본 64)가 있습니다.
+typed 디코더가 트리를 재귀로 내려가므로(표 셀 문단·리스트 컨트롤·글상자 문단·메모)
+깊게 조작된 문서는 스택 오버플로로 crash할 수 있습니다. `parseTreeRecord`에서
+`record.level == 트리 깊이` 불변식을 이용해 단일 지점으로 상한하며, 초과 시
+payload를 읽기 전에 `HwpError.invalidRecordTree`로 거부합니다. 실문서 실측
+최대 level은 5입니다.
+
 2026-06-28 기준 `swift test --enable-code-coverage`를 실행한 뒤
 `.build/out/Products/Debug/codecov/Hwp-Swift.json`에서 `Sources/CoreHwp`만
 집계했을 때 line coverage는 98.60% (5481/5559), region coverage는

@@ -90,6 +90,14 @@ consumes-all `init` 근처에 남긴다. override는 default loader와 동등하
 `tagId == 0`이고 payload가 비어 있다. `root.children`을 순회하며 tag로
 dispatch.
 
+`parentIndex = Int(level)` + 스택 절단/append 방식이라 **`record.level ==
+실제 트리 깊이` 불변식**이 성립한다. typed 디코더의 재귀(표 셀 문단·리스트
+컨트롤·글상자 문단·메모)는 전부 자식 방향으로만 내려가므로, 여기 한 지점의
+`options.readLimits.maxNestingDepth`(기본 64) 가드가 그 재귀들을 모두 상한한다 —
+모델에 depth를 부착하거나 `load` 시그니처를 바꾸지 않는다. 가드는 payload와
+확장 크기를 읽기 **전**에 둔다 (기존 level jump 가드와 같은 이유: 조작 입력이
+할당을 유도하지 못하게).
+
 ## 컨벤션
 
 - `Type.swift`의 typealias (`DWORD`, `WORD`, `WCHAR`)는 의도적으로 HWP

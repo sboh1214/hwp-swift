@@ -85,6 +85,22 @@ per-stream 한도만으로는 유효한 자식이 많은 파일(BodyText·ViewTe
 ViewText는 optional이라 파싱 실패엔 빈 폴백이지만, 이 두 자원 한도 error는
 폴백하지 않고 그대로 전파한다.
 
+byte 한도와 별개로 **레코드 트리 깊이 한도**(`maxNestingDepth`, 기본 64)를 둔다.
+위 두 자원 한도와 달리 이것은 **구조 유효성 한도**다 — 이미 읽어 들인 byte를
+파싱하는 단계에서 발동하고, 인접한 level jump 가드와 같은
+`HwpError.invalidRecordTree`로 보고되며, 따라서 ViewText의 파싱 폴백에도
+동일하게 흡수된다(깊게 중첩된 ViewText는 정의상 손상·적대 입력이므로 BodyText
+렌더로 폴백하는 것이 맞다). 전파되는 "자원 한도 error 2종"에 이것을 더하지 말 것.
+레코드 헤더의 level은 10비트(≤1023)라 스펙만으로는 수백 단계 중첩이 가능한데,
+typed 디코더들이 그 트리를 재귀로 내려가므로(표 셀 문단·리스트 컨트롤·글상자
+문단·메모) 조작 문서가 catch 불가능한 스택 오버플로를 일으킬 수 있다.
+`parseTreeRecord`는 `parentIndex = Int(level)` + 스택 절단/append 방식이라
+`record.level == 실제 트리 깊이` 불변식이 성립하고 typed 재귀는 전부 자식
+방향으로만 내려가므로, **이 한 지점의 level 가드가 모든 재귀를 함께 상한한다** —
+모델에 depth를 부착하거나 `load` 시그니처를 바꿀 필요가 없다. 가드는 payload와
+확장 크기를 읽기 **전**에 있어 조작 입력이 할당을 유도하지 못한다. 전 픽스처
+실측 최대 level은 5이며, 회귀 테스트가 `maxNestingDepth: 8`로 이를 잠근다.
+
 ## 컨벤션
 
 - **`HwpPrimitive = Codable & Hashable & Sendable`** — 모든 모델이 채택 (typealias는 [`HwpPrimitive.swift`](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/Utils/Protocols/HwpPrimitive.swift)). 전 모델이 값 타입이라 `Sendable`은 자동 충족 — 백그라운드 파싱 → UI 전달이 컴파일러 검증된다.

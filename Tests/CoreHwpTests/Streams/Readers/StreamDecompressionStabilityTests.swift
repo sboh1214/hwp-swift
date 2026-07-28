@@ -90,6 +90,8 @@ final class StreamDecompressionStabilityTests: XCTestCase {
             HwpReadLimits(maxCompressedStreamBytes: -1),
             HwpReadLimits(maxDecompressedStreamBytes: -1),
             HwpReadLimits(maxAggregateStreamBytes: -1),
+            HwpReadLimits(maxNestingDepth: 0),
+            HwpReadLimits(maxNestingDepth: -1),
         ]
 
         for limits in cases {

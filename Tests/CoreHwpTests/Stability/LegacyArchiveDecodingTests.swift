@@ -38,6 +38,17 @@ final class LegacyArchiveDecodingTests: XCTestCase {
         expect(decoded.maxCompressedStreamBytes) == HwpReadLimits.default.maxCompressedStreamBytes
     }
 
+    func testHwpReadLimitsDecodeLegacyArchiveWithoutNestingDepthKey() throws {
+        let legacy = try legacyJSON(
+            of: HwpReadLimits.default, removingKey: "maxNestingDepth"
+        )
+
+        let decoded = try JSONDecoder().decode(HwpReadLimits.self, from: legacy)
+
+        expect(decoded.maxNestingDepth) == 64
+        expect(decoded.maxAggregateStreamBytes) == HwpReadLimits.default.maxAggregateStreamBytes
+    }
+
     func testCommonCtrlPropertyInfoDecodesLegacyArchiveWithoutAnchorEnums() throws {
         let original = try HwpCommonCtrlPropertyInfo.load(0)
         let encoded = try JSONEncoder().encode(original)
