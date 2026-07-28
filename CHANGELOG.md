@@ -4,6 +4,39 @@
 
 ### Breaking Changes
 
+- 한컴오피스 앱 번들 폰트(`Contents/Resources/Hnc/Shared/TTF/`) 사용이 **기본
+  비활성**으로 바뀌었습니다. 그 디렉터리에는 한컴이 자사 오피스 안에서 쓰도록
+  라이선스받은 타사 폰트(Monotype·한양정보통신·윤디자인 등)가 섞여 있어, 제3자 앱이
+  아무 선택 없이 로드하는 것이 라이선스 범위 밖일 수 있기 때문입니다. 한컴오피스가
+  설치된 기기에서 이 라이브러리를 쓰던 소비자는 이번 변경 이후 `굴림`·`맑은 고딕`·
+  `HY헤드라인M` 같은 글꼴이 시스템 폴백(Apple SD Gothic Neo·AppleMyungjo)으로
+  렌더되어 결과가 달라집니다. 종전 동작이 필요하면 환경변수 `HWP_HANCOM_FONTS=1`
+  또는 `HwpFontResolver(usesInstalledHancomFonts: true)`로 opt-in 하십시오
+  (해당 폰트들의 라이선스 준수는 켜는 쪽 책임입니다). 시스템 폰트 디렉터리에 정식
+  설치된 함초롬체는 종전과 동일하게 사용되므로 영향받지 않습니다.
+  `HwpFontResolver.init`에 `usesInstalledHancomFonts` 인자가 추가되었지만 기본값이
+  있어 기존 호출부는 수정 없이 컴파일됩니다.
+- `HwpFontMap.default`의 폴백 매핑이 보강되면서 일부 face의 해석 결과가 달라집니다.
+  `Myeongjo`·`HY Sinmyeongjo`는 매핑이 없어 script 폴백(한글 = 고딕)으로 떨어져
+  **명조가 고딕으로** 렌더되던 것을 명조 계열로 교정했고, `Apple SD 산돌고딕 Neo`는
+  시스템 폰트의 한글 표시명이라 매핑이 없으면 로마자 슬롯이 Helvetica로 대체되던
+  것을 실제 폰트로 보냅니다. `한컴바탕확장`은 이름과 달리 한자용 송체이므로
+  (문서 자신이 `FaceName.defaultFaceName`에 `FZSong_Superfont`를 기록합니다)
+  CJK 송체 계열로 보냅니다. `굴림체`·`HY헤드라인M`·`HY울릉도M` 매핑도 추가했습니다.
+- 세리프 라틴 폴백(`HwpTextRunBuilder.serifLatinFallback`)이 한컴 번들 폰트 opt-in
+  상태를 따르도록 고쳤습니다. 종전에는 opt-in과 무관하게 한컴 인덱스를 조회해,
+  꺼 둔 상태에서도 앱 번들 폰트 파일을 열거했고 결과가 한컴오피스 설치 여부에
+  좌우되어 기본 경로의 렌더가 기기마다 달라졌습니다. 이제 opt-in이 꺼져 있으면
+  설치 폰트가 없는 것으로 보고 함초롬 라틴으로 가므로 기기와 무관하게 같은
+  결과가 나옵니다. 한컴오피스가 설치된 기기의 기본 경로에서는 명조/바탕 계열의
+  라틴·숫자 글리프 렌더가 달라집니다(opt-in을 켠 경우는 종전과 동일).
+  `HwpFontResolver.usesInstalledHancomFonts`가 public으로 노출됩니다.
+- `HwpFontResolver.resolve`에 `alternatives` 인자가 추가되었습니다 (기본값이 있어
+  기존 호출부는 수정 없이 컴파일됩니다). 문서가 `HwpFaceName`에 적어 둔 대체
+  글꼴(`alternativeFaceName`)·기반 글꼴(`defaultFaceName`)을 폴백 후보로 씁니다.
+  내장 폴백 맵을 모두 시도한 **뒤** script 폴백 직전에만 쓰이므로 맵에 있는 face의
+  해석은 달라지지 않고, 맵에 없는 face만 문서가 알려준 이름으로 구제됩니다.
+
 - `Sources/CoreHwp/Enums/HwpBorderType.swift`의 `HwpBorderType.rawValue`를 실제 HWP
   binary 값에 맞춰 정정했습니다. `none = 0`이 추가되었고, 기존 `line`,
   `longDotLine`, `dotLine`의 raw value는 각각 `0`, `1`, `2`에서 `1`, `2`, `3`으로

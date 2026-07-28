@@ -100,3 +100,14 @@ __pycache__/
 
 # 로컬 전용 — 렌더 덤프 진단 스크래치 (파일 헤더에 커밋 금지 명시)
 /Tests/HwpKitTests/FixturePreviewDumpScratch.swift
+
+# 폰트 바이너리 커밋 금지 — 이 라이브러리는 폰트를 동봉하지 않는다 (README "폰트").
+# 폰트 파일은 저작권 보호 대상이고, 한 번 커밋되면 history에 영구히 남는다.
+# 오픈 라이선스 폰트를 의도적으로 동봉하려면 여기 `!` 예외만으로는 통과하지 못한다 —
+# pre-commit 훅 `no-font-binaries`와 CI lint job `No font binaries`가 확장자만 보고
+# 거부한다. 세 곳이 같은 예외 목록을 공유하도록 함께 고칠 것.
+*.ttf
+*.otf
+*.ttc
+*.woff
+*.woff2

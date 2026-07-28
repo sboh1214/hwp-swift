@@ -168,17 +168,48 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
 ## 컨벤션
 
 - **HWPUNIT canonical**: 변환은 `Utils/HwpUnits.swift` 에서만 (1 pt = 100 HWPUNIT). `pt` / `px` / `HWPUNIT` 혼용 금지
-- **번들 폰트 금지** (라이브러리에 폰트 동봉 금지). 단, 이 기기에 한컴오피스가
-  설치되어 있으면 그 앱 번들 TTF (`Hnc/Shared/TTF/`)를
-  `HwpInstalledHancomFonts`가 파일 descriptor로 인덱싱해 사용한다 — HY헤드라인M
-  등 한글 문서 상용 폰트가 한글.app과 같은 글리프로 렌더된다. 전역 등록은
-  하지 않는다 (결정론 테스트 조회 오염 방지; `testDeterministic`은 이 인덱스
-  자체를 끔). 이름 매칭은 name table 기본 + 로컬라이즈 이름 (한글) 둘 다.
-  `HwpFontResolver.resolve` 는 매칭 결과를 (faceName, script, size) 키로 캐시.
-  해석 순서: 원문 이름 (시스템 → 한컴 번들) → `HwpFontMap.candidates(forFaceName:)`
-  폴백 (원문 이름 → 정규화 이름 (`-`/`#` 접두 제거 + 공백 제거) 순) → script
-  폴백. 명조 계열은 AppleMyungjo, 고딕 계열은 Apple SD Gothic Neo 를 최종
-  후보로 유지할 것 (시스템 기본 설치 폰트)
+- **번들 폰트 금지** (라이브러리에 폰트 동봉 금지 — `.gitignore`와 pre-commit
+  훅이 폰트 확장자를 차단한다). 이 기기에 한컴오피스가 설치되어 있으면 그 앱
+  번들 TTF (`Hnc/Shared/TTF/`)를 `HwpInstalledHancomFonts`가 파일 descriptor로
+  인덱싱해 쓸 수 있지만 **기본은 off**다 — 그 디렉터리엔 한컴이 자사 오피스
+  안에서 쓰라고 라이선스받은 타 파운드리 폰트가 섞여 있다 (2026-07-27 실측:
+  187개 / OS/2 achVendID 18종, Monotype `arial`·`malgun`·`Calibri` 포함).
+  `HWP_HANCOM_FONTS=1` 또는 `HwpFontResolver(usesInstalledHancomFonts: true)`로
+  opt-in하면 HY헤드라인M 등이 한글.app과 같은 글리프로 렌더된다. macOS 경로만
+  보므로 iOS 기기에서는 인덱스가 항상 비고 이 스위치도 무효다.
+  **스위트를 폰트 모드로 가르지 않는다** (`skipUnlessOptedIn`에 폰트 인자 없음)
+  — 한쪽 모드에서 영영 실행되지 않는 스위트가 생긴다. 대신 렌더 해시는 모드별
+  기준선 파일 (opt-in `<id>.json` / 기본 `<id>-nohancom.json`)로 양쪽을 각각
+  잠그고, 블록 스냅샷·fidelity는 양 모드에서 성립하는 좌표·임계를 쓴다.
+  전역 등록은 하지 않는다 (결정론 테스트 조회 오염 방지; `testDeterministic`은
+  이 인덱스 자체를 끔). 이름 매칭은 name table 기본 + 로컬라이즈 이름 (한글) 둘 다.
+  `HwpFontResolver.resolve` 는 매칭 결과를 (faceName, alternatives, script, size)
+  키로 캐시. 해석 순서: 원문 이름 → `HwpFontMap.candidates(forFaceName:)` 폴백
+  (원문 이름 → 정규화 이름 (`-`/`#` 접두 제거 + 공백 제거) 순) → 문서가 선언한
+  대체/기반 글꼴 (아래 항목) → script 폴백. 각 후보는 시스템 → (opt-in 일 때만)
+  한컴 번들 순으로 조회한다. 명조 계열은 AppleMyungjo, 고딕 계열은
+  Apple SD Gothic Neo 를 최종 후보로 유지할 것 (시스템 기본 설치 폰트)
+- **한컴 인덱스를 resolver 밖에서 직접 조회 금지** — `HwpInstalledHancomFonts`
+  를 보는 코드는 반드시 `HwpFontResolver.usesInstalledHancomFonts` 를 함께
+  확인해야 한다 (`serifLatinFallback` 이 인자로 받는 이유). 무조건 조회하면
+  ① opt-in 을 껐는데도 앱 번들 폰트 파일을 열거하고 ② 결과가 한컴오피스 설치
+  여부에 좌우돼 **배포 기본 경로의 렌더가 기기 의존**이 된다
+- **문서가 적어 둔 대체 글꼴을 후보로 쓴다** — `HwpFaceName` 의
+  `alternativeFaceName` (대체 글꼴)·`defaultFaceName` (기반 글꼴)을
+  `resolve(faceName:alternatives:script:size:)` 로 넘긴다. 큐레이션한 `fontMap`
+  을 **다 쓴 뒤** script 폴백 직전에 시도한다 — 맵에 있는 face 는 검증된 해석을
+  그대로 두고 (렌더 기준선 보존), 맵에 없는 face 만 구제한다. 맵은 ~50개인데
+  실제 문서의 face 는 그보다 훨씬 많다. 각 대체명은 그 자체로 다시 map 을
+  거친다 (대체명도 HWP face 이름이라 시스템 폰트명이 아니다 — "Myeongjo" 의
+  대체는 "명조"). 캐시 키에 대체명이 들어가야 문서 간 오염이 없다
+- **매핑 없는 face 는 script 폴백 (한글 슬롯 = 고딕) 으로 떨어진다** — 명조
+  계열이 고딕으로 렌더되는 계열 오분류가 여기서 나온다. 로마자 표기 변형
+  (`Myeongjo`, `HY Sinmyeongjo`) 과 고정폭 변형 (`굴림체`) 은 `normalize` 로도
+  안 잡히니 `HwpFontMap` 에 개별 항목으로 넣을 것. 이름만 보고 계열을 단정하지
+  말고 face 이름이 실제로 무엇의 별칭인지 확인한다 — `한컴바탕확장` 은 한글
+  바탕이 아니라 한자용 송체이고 (문서의 `FaceName.defaultFaceName` 이
+  `FZSong_Superfont` 로 못박는다), `Apple SD 산돌고딕 Neo` 는 시스템 폰트의
+  한글 표시명이라 매핑이 없으면 로마자 슬롯이 Helvetica 로 대체된다
 - 실측 튜닝 상수는 `Tuning/HwpRenderTuning.swift` 에 근거 주석과 함께 —
   값 변경은 fidelity 전수 + 블록 스냅샷 + 실물 대조 필수 (값 핀:
   `HwpRenderTuningTests`). 차트 투영 기하 (`HwpChartPainter`)와 각주 예약

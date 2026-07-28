@@ -42,19 +42,35 @@ public struct HwpFontMap: Sendable, Hashable {
     private static let gothic = ["Apple SD Gothic Neo", "Nanum Gothic"]
     /// 한컴바탕 계열 (함초롬바탕과 동계)
     private static let hancomBatang = ["HCR Batang", "Nanum Myeongjo", "AppleMyungjo"]
+    /// CJK 송체 (명조 계열이되 한자 커버리지가 목적인 확장 페이스)
+    private static let cjkSong = ["Songti SC", "STSong", "HCR Batang", "AppleMyungjo"]
 
     public static let `default` = HwpFontMap(entries: [
         "함초롬바탕": hancomBatang,
         "함초롬돋움": ["HCR Dotum", "Nanum Gothic", "Apple SD Gothic Neo"],
         "한컴바탕": hancomBatang,
-        "한컴바탕확장": hancomBatang,
+        // 확장 페이스는 한글 바탕이 아니라 한자 커버리지용 송체다 — 문서 자신이
+        // FaceName.defaultFaceName 에 기반 폰트를 "FZSong_Superfont"로 적어 두고
+        // (legacy-common-control-property 픽스처 전 슬롯), 한컴 번들도 그 파일로
+        // 해석한다. 한컴 폰트를 끈 기본 경로에서는 시스템 송체로 내려간다.
+        "한컴바탕확장": ["FZSong_Superfont"] + cjkSong,
         "HY신명조": ["HYSMyeongJo-Medium", "AppleMyungjo"],
+        // HWP가 face 이름을 로마자로 저장한 변형 — 한글 이름과 같은 계열로 보낸다.
+        // 매핑이 없으면 script 폴백 (한글 슬롯 = 고딕)으로 떨어져 명조가 고딕이 된다.
+        "HY Sinmyeongjo": ["HYSMyeongJo-Medium", "AppleMyungjo"],
+        "Myeongjo": serif,
         "HY견고딕": ["HYGothic", "Apple SD Gothic Neo"],
+        "HY헤드라인M": ["HYHeadLine M"] + gothic,
+        "HY울릉도M": ["HYwulM"] + gothic,
         "바탕": ["Batang", "AppleMyungjo"],
         "Batang": ["Batang", "AppleMyungjo"],
         "바탕체": ["BatangChe", "Batang", "AppleMyungjo"],
         "굴림": ["Gulim", "Apple SD Gothic Neo"],
         "Gulim": ["Gulim", "Apple SD Gothic Neo"],
+        // 고정폭 페이스 — 굴림과 짝을 맞춘다 (바탕/바탕체와 같은 형태)
+        "굴림체": ["GulimChe", "Gulim", "Apple SD Gothic Neo"],
+        // 시스템 폰트의 한글 표시명 — 원문 이름 조회가 실패해도 같은 폰트로 간다
+        "Apple SD 산돌고딕 Neo": ["Apple SD Gothic Neo"],
         "돋움": ["Dotum", "Apple SD Gothic Neo"],
         "Dotum": ["Dotum", "Apple SD Gothic Neo"],
         "궁서": ["Gungsuh", "GungSeo", "AppleMyungjo"],

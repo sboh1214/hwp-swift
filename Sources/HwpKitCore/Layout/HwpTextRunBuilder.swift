@@ -452,9 +452,15 @@ extension HwpTextRunBuilder {
         let relativeSize = CGFloat(value(at: slot, in: shape.faceRelativeSize, default: 100))
         let size = baseSize * relativeSize / 100
         let faceId = UInt32(value(at: slot, in: shape.faceId, default: 0))
-        let faceName = index.faceName(for: faceId, script: script)?.faceName ?? "Helvetica"
+        let face = index.faceName(for: faceId, script: script)
+        let faceName = face?.faceName ?? "Helvetica"
         var font = fontResolver.resolve(
-            faceName: Self.serifLatinFallback(faceName, script: script),
+            faceName: Self.serifLatinFallback(
+                faceName,
+                script: script,
+                usesInstalledHancomFonts: fontResolver.usesInstalledHancomFonts
+            ),
+            alternatives: [face?.alternativeFaceName, face?.defaultFaceName].compactMap { $0 },
             script: script, size: size
         )
         font = copy(font, adding: symbolicTraits(for: shape.property))

@@ -82,6 +82,20 @@ import XCTest
             expect(CTFontCopyFamilyName(font) as String) == "Menlo"
         }
 
+        /// 결정론 resolver는 문서 대체 글꼴을 무시해야 한다 — 기본 문서의 `함초롬바탕`은
+        /// `defaultFaceName`이 "HCR Batang"이라, 쓰면 그 폰트 설치 여부로 조판이 갈린다.
+        /// 대체 후보는 **반드시 설치돼 있는** 이름이어야 한다. 없는 이름으로 바꾸면
+        /// 폴백이 어차피 Menlo라 테스트가 공허하게 통과한다.
+        func testDeterministicResolverIgnoresDocumentAlternatives() {
+            let font = HwpFontResolver.testDeterministic.resolve(
+                faceName: "unknown-font-xyz",
+                alternatives: ["Helvetica", "HCR Batang"],
+                script: .korean,
+                size: 12
+            )
+            expect(CTFontCopyFamilyName(font) as String) == "Menlo"
+        }
+
         func testDefaultFontMapEntryCount() {
             expect(HwpFontMap.default.entries.count) >= 15
         }
@@ -125,11 +139,14 @@ import XCTest
             }
         }
 
+        /// 확장 페이스(`한컴바탕확장`)는 여기서 제외한다 — 이름만 바탕이지 한자용
+        /// 송체이고, 문서가 `defaultFaceName`에 FZSong_Superfont를 적어 둔다
+        /// (`testBatangExtensionMapsToCJKSong`).
         func testHancomBatangResolvesToBatangFamily() {
             let batangFamilies = expectedFamilies(
                 preferring: ["HCR Batang", "Nanum Myeongjo", "AppleMyungjo"]
             )
-            for face in ["한컴바탕", "한컴바탕확장", "바탕체"] {
+            for face in ["한컴바탕", "바탕체"] {
                 let font = resolver.resolve(faceName: face, script: .korean, size: 10)
                 let family = CTFontCopyFamilyName(font) as String
                 if isInstalledHancomFont(family) {
@@ -175,6 +192,164 @@ import XCTest
             return candidates.contains(where: registered.contains)
                 ? candidates
                 : [koreanFallbackFamily]
+        }
+
+        /// 픽스처 corpus에 실재하지만 매핑이 없어 script 폴백 (한글 = 고딕)까지
+        /// 떨어지던 face들. 특히 명조 계열이 고딕으로 렌더되던 것이 회귀 대상이다
+        /// (한컴 폰트가 기본 off라 이 폴백이 사용자가 실제로 보는 결과다).
+        func testRomanizedAndVariantFacesKeepTheirFamily() {
+            let disabled = HwpFontResolver(usesInstalledHancomFonts: false)
+            let serifFamilies = expectedFamilies(
+                preferring: ["AppleMyungjo", "Nanum Myeongjo", "HCR Batang"]
+            )
+            for face in ["Myeongjo", "HY Sinmyeongjo"] {
+                let family = CTFontCopyFamilyName(
+                    disabled.resolve(faceName: face, script: .korean, size: 10)
+                ) as String
+                expect(serifFamilies).to(
+                    contain(family),
+                    description: "'\(face)'는 명조 계열인데 \(family)로 해석됐다"
+                )
+            }
+            for face in ["굴림체", "HY헤드라인M", "HY울릉도M", "Apple SD 산돌고딕 Neo"] {
+                expect(HwpFontMap.default.candidates(forFaceName: face)).toNot(
+                    beEmpty(), description: "'\(face)' 매핑이 비어 script 폴백으로 떨어진다"
+                )
+            }
+        }
+
+        /// 세리프 라틴 폴백은 resolver의 opt-in 상태를 따라야 한다. 여기서 한컴
+        /// 인덱스를 무조건 조회하면 (a) 껐는데도 앱 번들 폰트 파일을 열거하고
+        /// (b) 결과가 한컴오피스 설치 여부에 좌우돼 배포 기본 경로의 렌더가
+        /// 기기 의존이 된다.
+        func testSerifLatinFallbackHonoursOptOut() {
+            for face in ["신명 태명조", "한양신명조", "바탕", "HCI Poppy", "휴먼명조"] {
+                let rewritten = HwpTextRunBuilder.serifLatinFallback(
+                    face, script: .english, usesInstalledHancomFonts: false
+                )
+                // 한컴 번들에만 있는 이름으로 재작성하면 opt-out이 무의미해진다
+                expect(["한컴바탕", "휴먼명조"]).toNot(
+                    contain(rewritten),
+                    description: "'\(face)'가 opt-out 상태에서 한컴 face '\(rewritten)'로 재작성됐다"
+                )
+            }
+            // 기기와 무관하게 같은 결과 — 한컴 설치 여부가 결과를 바꾸지 않는다
+            expect(HwpTextRunBuilder.serifLatinFallback(
+                "신명 태명조", script: .english, usesInstalledHancomFonts: false
+            )) == "함초롬바탕"
+        }
+
+        /// 맵에 없는 face는 문서가 적어 둔 대체 글꼴명으로 구제된다 — 맵은 ~50개인데
+        /// 실제 문서의 face는 그보다 훨씬 많아 손으로 다 채울 수 없다.
+        func testUnmappedFaceIsRescuedByDocumentAlternative() {
+            let resolver = HwpFontResolver(usesInstalledHancomFonts: false)
+            let unmapped = "존재하지않는서체XYZ"
+            expect(HwpFontMap.default.candidates(forFaceName: unmapped)).to(beEmpty())
+
+            // 대체명 없이는 script 폴백 (한글 = 고딕)
+            let bare = CTFontCopyFamilyName(
+                resolver.resolve(faceName: unmapped, script: .korean, size: 10)
+            ) as String
+            // 대체명이 "명조"면 맵을 거쳐 명조 계열로 간다
+            let rescued = CTFontCopyFamilyName(
+                resolver.resolve(
+                    faceName: unmapped, alternatives: ["명조"], script: .korean, size: 10
+                )
+            ) as String
+            let serifFamilies = expectedFamilies(
+                preferring: ["AppleMyungjo", "Nanum Myeongjo", "HCR Batang"]
+            )
+            expect(serifFamilies).to(
+                contain(rescued),
+                description: "대체 글꼴명이 무시됐다 (bare=\(bare) rescued=\(rescued))"
+            )
+        }
+
+        /// 큐레이션한 맵이 대체 글꼴명보다 우선한다 — 맵에 있는 face의 검증된
+        /// 해석이 문서 데이터로 뒤집히면 안 된다 (기존 렌더 기준선 보존).
+        func testCuratedMapWinsOverDocumentAlternative() {
+            let resolver = HwpFontResolver(usesInstalledHancomFonts: false)
+            let withAlternative = CTFontCopyFamilyName(
+                resolver.resolve(
+                    faceName: "명조", alternatives: ["굴림"], script: .korean, size: 10
+                )
+            ) as String
+            let withoutAlternative = CTFontCopyFamilyName(
+                resolver.resolve(faceName: "명조", script: .korean, size: 10)
+            ) as String
+            expect(withAlternative) == withoutAlternative
+        }
+
+        /// 한컴바탕확장은 한글 바탕이 아니라 한자용 송체다 — 문서 자신이
+        /// `FaceName.defaultFaceName`에 "FZSong_Superfont"를 적어 둔다.
+        func testBatangExtensionMapsToCJKSong() {
+            let candidates = HwpFontMap.default.candidates(forFaceName: "한컴바탕확장")
+            expect(candidates.first) == "FZSong_Superfont"
+            expect(candidates).to(contain("Songti SC"))
+            expect(HwpFontMap.default.candidates(forFaceName: "한컴바탕")).toNot(
+                contain("Songti SC"),
+                description: "확장이 아닌 한컴바탕까지 송체로 보내면 안 된다"
+            )
+        }
+
+        /// 한컴오피스 번들 폰트는 opt-in — 끈 resolver는 번들에만 있는 face를
+        /// 번들 폰트로 해석하지 않고 폴백으로 내려간다. 배포 기본값이 이쪽이라
+        /// 라이브러리 소비자가 타 파운드리 라이선스 폰트를 로드하지 않는다.
+        func testDisabledResolverDoesNotUseInstalledHancomFonts() throws {
+            let bundledOnlyFaces = ["HY헤드라인M", "HY신명조", "함초롬돋움"]
+            let available = bundledOnlyFaces.filter {
+                HwpInstalledHancomFonts.descriptor(forFaceName: $0) != nil
+            }
+            try XCTSkipIf(available.isEmpty, "한컴오피스 미설치 — 대조할 번들 폰트가 없다")
+
+            let disabled = HwpFontResolver(usesInstalledHancomFonts: false)
+            for face in available {
+                let bundled = try XCTUnwrap(HwpInstalledHancomFonts.descriptor(forFaceName: face))
+                let bundledFamily = CTFontDescriptorCopyAttribute(
+                    bundled, kCTFontFamilyNameAttribute
+                ) as? String
+                let family = CTFontCopyFamilyName(
+                    disabled.resolve(faceName: face, script: .korean, size: 10)
+                ) as String
+                // 시스템에도 같은 이름의 폰트가 설치돼 있으면 (예: 함초롬체를
+                // ~/Library/Fonts 에 정식 설치) 그쪽으로 해석되는 것이 정상이다.
+                let registered = Set(CTFontManagerCopyAvailableFontFamilyNames() as? [String] ?? [])
+                if registered.contains(family) {
+                    continue
+                }
+                expect(family).toNot(
+                    equal(bundledFamily),
+                    description: "'\(face)'이 opt-in 없이 한컴 번들 폰트로 해석됐다"
+                )
+            }
+        }
+
+        /// 기본값은 환경변수 `HWP_HANCOM_FONTS`를 따른다 (미설정이면 off).
+        func testInstalledHancomFontsOptInFollowsEnvironment() {
+            let key = HwpInstalledHancomFonts.enableEnvironmentKey
+            let original = ProcessInfo.processInfo.environment[key]
+            defer {
+                if let original {
+                    setenv(key, original, 1)
+                } else {
+                    unsetenv(key)
+                }
+            }
+
+            unsetenv(key)
+            expect(HwpInstalledHancomFonts.isEnabled) == false
+            for offValue in ["", "0", "false", " FALSE "] {
+                setenv(key, offValue, 1)
+                expect(HwpInstalledHancomFonts.isEnabled).to(
+                    beFalse(), description: "'\(offValue)'는 off여야 한다"
+                )
+            }
+            for onValue in ["1", "true", "yes"] {
+                setenv(key, onValue, 1)
+                expect(HwpInstalledHancomFonts.isEnabled).to(
+                    beTrue(), description: "'\(onValue)'은 on이어야 한다"
+                )
+            }
         }
 
         func testFaceNameNormalizationStripsPrefixesAndSpaces() {

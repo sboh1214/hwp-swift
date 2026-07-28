@@ -132,6 +132,16 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
+      # 이 라이브러리는 폰트를 동봉하지 않는다 (README "폰트"). pre-commit 훅은
+      # 로컬 커밋만 막으므로 훅 미설치 기여자·웹 UI 업로드는 여기서 걸러낸다.
+      - name: No font binaries
+        run: |
+          files=$(git ls-files | grep -iE '\.(ttf|otf|ttc|woff2?)$' || true)
+          if [ -n "$files" ]; then
+            echo "::error::폰트 바이너리가 저장소에 포함되어 있습니다:"
+            echo "$files"
+            exit 1
+          fi
       - name: Install tools
         run: brew install swiftformat swiftlint
       - name: SwiftFormat

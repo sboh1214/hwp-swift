@@ -1,12 +1,28 @@
 repos:
   - repo: local
     hooks:
+      # 폰트 바이너리는 저작권 보호 대상이라 동봉하지 않는다 (README "폰트").
+      # .gitignore가 1차 차단이지만 `git add -f`를 뚫고 들어오는 것을 막는다.
+      - id: no-font-binaries
+        name: no font binaries
+        entry: >-
+          bash -c 'files=$(git diff --cached --name-only --diff-filter=A |
+          grep -iE "\.(ttf|otf|ttc|woff2?)$"); if [ -n "$files" ]; then
+          echo "폰트 바이너리는 커밋할 수 없습니다:"; echo "$files"; exit 1; fi'
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      # 스테이지된 파일만 포맷한다 (`pass_filenames: true`). `swiftformat .`으로
+      # 저장소 전체를 돌리면, 로컬 swiftformat 버전이 CI(brew 최신)와 다른 기여자의
+      # 커밋에 무관한 파일 리포맷이 통째로 딸려 들어온다. 설정 파일은 입력 경로에서
+      # 거슬러 올라가 찾으므로 `.swiftformat`은 그대로 적용된다.
       - id: swift-format
         name: swift-format
-        entry: swiftformat .
+        entry: swiftformat
         language: system
         files: '\.swift$'
-        pass_filenames: false
+        pass_filenames: true
 
       - id: swift-lint
         name: swift-lint
@@ -15,9 +31,8 @@ repos:
         files: '\.swift$'
         pass_filenames: false
 
-      - id: swift-test
-        name: swift-test
-        entry: swift test
-        language: system
-        files: '\.swift$'
-        pass_filenames: false
+      # 테스트는 훅에 두지 않는다 — CI `test-macos`가 같은 `swift test`를 커버리지까지
+      # 붙여 돌리고, 정작 잘 깨지는 iOS·Linux 잡은 훅이 애초에 못 잡는다. 매 커밋
+      # 5분을 물리면 `--no-verify`가 습관이 되어 위 빠른 가드들까지 같이 꺼진다
+      # (게다가 훅이 중단되면 pre-commit이 stash해 둔 unstaged 변경이 남는다).
+      # 커밋 전 전체 실행은 AGENTS.md 리뷰 체크리스트에서 사람이 한다.

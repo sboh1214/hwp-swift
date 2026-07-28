@@ -14,6 +14,9 @@ enum EnvironmentSensitiveTests {
         return !normalized.isEmpty && normalized != "0" && normalized != "false"
     }
 
+    /// 한컴 폰트 모드로 스위트를 가르지 않는다 — 모드마다 기준선을 따로 두거나
+    /// (렌더 해시의 `-nohancom` 접미사) 양 모드에서 성립하는 임계를 쓰는 쪽이,
+    /// 한쪽 모드에서 영영 실행되지 않는 스위트를 만드는 것보다 낫다.
     static func skipUnlessOptedIn(recordVariables: [String] = []) throws {
         let optedIn = isEnabled("HWP_SNAPSHOT_TESTS")
             || recordVariables.contains(where: isEnabled)
