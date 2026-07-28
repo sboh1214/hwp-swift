@@ -91,6 +91,11 @@ ID로 dispatch된다.
 - 새 저장 필드/파생 필드를 추가하면 **legacy 아카이브 디코딩**을 함께 처리한다
   (루트 AGENTS.md "Codable 아카이브 호환" 참조). 인코딩은 synthesized를 유지하고
   디코더만 custom으로 두는 것이 형상 변화를 막는 방법이다.
+- **caller가 넘긴 한도를 받는 public 파싱 진입점은 먼저
+  `options.readLimits.validate()`를 부른다.** 현재 그 지점은 `HwpFile`
+  이니셜라이저 4개와 `HwpSection.load`뿐이다. 검증을 빠뜨리면 비-양수 한도가
+  typed 진단(`invalidDataLength`) 대신 "모든 레코드가 거부됨"이라는 오해를 부르는
+  동작으로 나타난다.
 
 ## 안티 패턴
 

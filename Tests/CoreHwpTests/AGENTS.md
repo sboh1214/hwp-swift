@@ -8,6 +8,7 @@ XCTest target. **Nimble 단독 사용** — `XCTAssert*`는 SwiftLint custom rul
 ```
 CoreHwpTests/
 ├── Utils.swift              # openHwp() + createHwp() helper (아래 참조)
+├── SectionRecordBuilder.swift  # 레코드 스트림 프레이밍 단일 출처 (아래 참조)
 ├── Assembly/                # HwpFile assembly/entrypoint regression tests
 │   ├── ControlObjects/
 │   ├── ControlText/
@@ -40,9 +41,11 @@ CoreHwpTests/
 │   ├── ShapeObjects/
 │   ├── Streams/
 │   └── TableColumn/
+├── LoadOptions/             # HwpLoadOptions (rawPayload opt-out) tests
 ├── Models/                  # standalone model tests
 │   ├── Document/
 │   └── Layout/
+├── Performance/             # HWP_PERF 게이트 + 합성 대형 문서 빌더
 ├── Stability/               # parser/model malformed, unknown, stability tests
 │   ├── Core/
 │   ├── Formats/
@@ -104,6 +107,28 @@ let (this, official) = try createHwp(#file, "blank-win2020")
 `#file`은 컴파일러가 주입하는 절대 경로다. **항상 `#file`을 넘길 것** —
 경로 하드코딩이나 `Bundle.module` 사용 금지 (`Package.swift`에 SwiftPM
 resource bundle을 선언하지 않았다).
+
+## 합성 레코드 스트림
+
+손상·적대 입력 테스트가 쓰는 레코드 프레이밍은
+[`SectionRecordBuilder.swift`](file:///Users/sboh/Repos/hwp-swift/Tests/CoreHwpTests/SectionRecordBuilder.swift)가
+단일 출처다.
+
+| 함수 | 언제 |
+|------|------|
+| `record(tagId:level:payload:)` | 정상 레코드. payload ≥ 0xFFF면 확장 크기 형식을 알아서 쓴다 |
+| `header(tagId:level:size:)` | size 필드를 **그대로** 심는 적대 입력 (0xFFF sentinel만 두고 뒤 UInt32를 생략하는 등) |
+| `nestedChain(depth:)` | level 0 ..< depth 체인. 결과 스트림의 최대 level은 `depth - 1` |
+
+프레이밍을 손으로 쓰지 말 것. private 사본 대부분이 확장 크기 분기를 빠뜨려
+payload가 0xFFF 이상이면 size 비트가 level 필드로 넘쳐 헤더가 조용히 깨졌다.
+아직 사본이 남은 파일이 30여 개 있다 — 새로 만들지 말고, 만지는 김에 이관한다.
+
+깊이 한도 회귀(`Stability/Parsing/RecordDepthLimitTests.swift`)는 전 픽스처를
+`maxNestingDepth: 8`로 잠그고, `noori`가 `maxNestingDepth: 2`에서 거부되는지를
+함께 검사해 가드가 공허하지 않음을 증명한다. 새 픽스처가 8에서 실패하면
+**한도를 올려 덮지 말 것** — 실측 최대 level은 5이므로 픽스처나 파서 쪽을 먼저
+의심한다.
 
 ## 테스트 스타일
 
