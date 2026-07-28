@@ -23,6 +23,10 @@ struct HwpParagraphMeasurer {
     let index: HwpIndex
     let fontResolver: HwpFontResolver
     var sizeResolver: HwpObjectSizeResolver?
+    /// 글자 모양별 속성 사전 캐시 (소유는 `HwpPaginator`) — 표 셀·글상자·각주가
+    /// 본문과 같은 캐시를 쓰게 한다. 멤버와이즈 init의 기본값이 nil이라 캐시를
+    /// 넘기지 않는 호출부는 동작이 그대로다.
+    var attributeCache: HwpTextAttributeCache?
 
     /// 호출부별 차이를 보존하는 훅.
     struct Options {
@@ -52,7 +56,8 @@ struct HwpParagraphMeasurer {
         let attributed = HwpTextRunBuilder(
             index: index,
             fontResolver: fontResolver,
-            sizeResolver: sizeResolver
+            sizeResolver: sizeResolver,
+            attributeCache: attributeCache
         )
         .build(paragraph: paragraph, controlReplacements: options.controlReplacements)
         let paraShape = index.paraShapeOrDefault(for: paragraph)
@@ -60,7 +65,8 @@ struct HwpParagraphMeasurer {
             attributedString: attributed,
             paraShape: paraShape,
             columnWidth: width,
-            tabStops: index.textTabs(for: paraShape)
+            tabStops: attributeCache?.textTabs(for: paraShape, index: index)
+                ?? index.textTabs(for: paraShape)
         )
         // 표 43 여백 계열과 같은 1/2 단위 (HwpParagraphMetrics와 동일).
         let spacingBefore = options.addHalfSpacingBefore

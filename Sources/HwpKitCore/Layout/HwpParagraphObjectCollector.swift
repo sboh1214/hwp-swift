@@ -13,6 +13,9 @@ struct HwpParagraphObjectCollector {
     let sizeResolver: HwpObjectSizeResolver?
     /// 글상자 수집 여부 — 글상자 안 글상자 재귀를 막는다 (표 셀만 참)
     let collectsTextboxes: Bool
+    /// 글자 모양별 속성 캐시 (소유는 `HwpPaginator`) — 컨테이너 안 글상자가
+    /// 자체 `HwpTextboxLayout`을 만들 때 캐시를 잃지 않게 한다.
+    var attributeCache: HwpTextAttributeCache?
 
     struct Objects {
         var images: [HwpCellImage] = []
@@ -303,7 +306,9 @@ struct HwpParagraphObjectCollector {
         // 폴백. 억제 (collectible)는 property를 보지 않는다 — nil 수집 거부는
         // 흐름·컨테이너 양쪽 모두 렌더하지 않는 소실이 된다 (R30 #4).
         let property = commonProperty ?? CoreHwp.HwpCommonCtrlProperty()
-        guard let frame = HwpTextboxLayout(fontResolver: fontResolver).layout(
+        guard let frame = HwpTextboxLayout(
+            fontResolver: fontResolver, attributeCache: attributeCache
+        ).layout(
             components: [component],
             commonProperty: property,
             fallbackWidth: placement.paragraphRect.width,

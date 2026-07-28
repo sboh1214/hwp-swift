@@ -1,6 +1,6 @@
 # 프로젝트 지식 베이스
 
-**Branch:** perf/page-layer-drawn-line-cache
+**Branch:** perf/text-attribute-cache
 
 ## 개요
 

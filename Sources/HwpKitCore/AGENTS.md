@@ -210,6 +210,21 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   바탕이 아니라 한자용 송체이고 (문서의 `FaceName.defaultFaceName` 이
   `FZSong_Superfont` 로 못박는다), `Apple SD 산돌고딕 Neo` 는 시스템 폰트의
   한글 표시명이라 매핑이 없으면 로마자 슬롯이 Helvetica 로 대체된다
+- **글자 모양 속성 캐시** (`HwpTextAttributeCache`) — `HwpTextRunBuilder.attributes`
+  는 `index`·`fontResolver` 가 고정이면 `(shapeId, script)` 의 순수 함수라
+  (장평·이탤릭 근사 매트릭스·라틴 세리프 폴백·장식이 전부 charShape 에서만
+  나온다) 텍스트 조각마다 하던 재계산을 메모한다. 문단마다 달라지는 값
+  (변경추적 표시·메모 앵커·controlIndex·run delegate·첨자 치환)은 전부 **반환
+  뒤** 사전 사본에 붙으므로 키에서 구조적으로 빠져 있다. 지켜야 할 것 셋:
+  ① **돌려받은 사전을 제자리에서 변형 금지** — 공유 인스턴스라 값
+  (CTFont/CGColor/NSNumber)을 바꾸면 다른 호출부까지 오염된다. `var` 사본에
+  키 추가·치환만 한다. `attributes` 에 가변 NSObject (NSShadow·
+  NSMutableParagraphStyle 등)를 새로 넣으면 이 계약이 조용히 깨진다.
+  ② **소유는 문서 단위** (`HwpPaginator` 가 하나 만들어 표/글상자/각주/크롬에
+  주입) — `shapeId` 의 의미가 `HwpIndex` 마다 다르고 `usesInstalledHancomFonts`
+  는 resolver 별 값이라, 전역·resolver 소유면 문서·폰트 모드가 섞인다.
+  ③ 그 규약을 타입으로 강제할 수 없어 **캐시 타입과 캐시를 받는 init 은 전부
+  internal** 이다. public init 은 캐시 없는 기존 시그니처를 유지한다
 - 실측 튜닝 상수는 `Tuning/HwpRenderTuning.swift` 에 근거 주석과 함께 —
   값 변경은 fidelity 전수 + 블록 스냅샷 + 실물 대조 필수 (값 핀:
   `HwpRenderTuningTests`). 차트 투영 기하 (`HwpChartPainter`)와 각주 예약

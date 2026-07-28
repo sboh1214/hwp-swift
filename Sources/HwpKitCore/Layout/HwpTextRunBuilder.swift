@@ -54,15 +54,33 @@ public struct HwpTextRunBuilder {
     /// 상대 크기 기준 해석기 — treatAsChar 개체의 줄 공간 예약이 paint 쪽
     /// (HwpPaginator.objectSize)과 같은 크기를 쓰게 한다. 없으면 절대값 해석.
     let sizeResolver: HwpObjectSizeResolver?
+    /// 글자 모양별 속성 사전 캐시 — 같은 문서(`index`)·같은 `fontResolver`를 쓰는
+    /// 빌더끼리 공유한다 (소유는 `HwpPaginator`). nil이면 매번 새로 계산한다.
+    let attributeCache: HwpTextAttributeCache?
 
     public init(
         index: HwpIndex,
         fontResolver: HwpFontResolver,
         sizeResolver: HwpObjectSizeResolver? = nil
     ) {
+        self.init(
+            index: index, fontResolver: fontResolver,
+            sizeResolver: sizeResolver, attributeCache: nil
+        )
+    }
+
+    /// 캐시를 주입하는 모듈 내부용 init — 캐시는 문서 단위 소유라 모듈 밖으로
+    /// 열지 않는다 (`HwpTextAttributeCache` 참조).
+    init(
+        index: HwpIndex,
+        fontResolver: HwpFontResolver,
+        sizeResolver: HwpObjectSizeResolver? = nil,
+        attributeCache: HwpTextAttributeCache?
+    ) {
         self.index = index
         self.fontResolver = fontResolver
         self.sizeResolver = sizeResolver
+        self.attributeCache = attributeCache
     }
 
     /// controlReplacements: extended 컨트롤 ordinal (controlIndex) → 마커 대신
@@ -239,7 +257,8 @@ extension HwpTextRunBuilder {
             value: HwpParagraphLayout.paragraphStyle(
                 for: paraShape,
                 attributedString: output,
-                tabStops: index.textTabs(for: paraShape)
+                tabStops: attributeCache?.textTabs(for: paraShape, index: index)
+                    ?? index.textTabs(for: paraShape)
             ),
             range: NSRange(location: 0, length: output.length)
         )
@@ -353,7 +372,9 @@ extension HwpTextRunBuilder {
     ) {
         guard !chunk.text.isEmpty, let script = chunk.script else { return }
         let shape = resolvedShape(id: chunk.shapeId, paragraph: paragraph)
-        var chunkAttributes = attributes(for: shape, script: script)
+        var chunkAttributes = attributes(
+            forShapeId: chunk.shapeId, shape: shape, script: script
+        )
         applyTrackChangeMark(chunk.trackMark, to: &chunkAttributes)
         if chunk.memoAnchor,
            chunkAttributes[HwpAttributedStringKey.shadeColor] == nil
@@ -395,7 +416,7 @@ extension HwpTextRunBuilder {
         if inlineValue == 9 {
             output.append(NSAttributedString(
                 string: "\t",
-                attributes: attributes(for: shape, script: .english)
+                attributes: attributes(forShapeId: shapeId, shape: shape, script: .english)
             ))
             return
         }
@@ -403,7 +424,9 @@ extension HwpTextRunBuilder {
         // 치환 텍스트가 있으면 마커 대신 실제 번호 run을 방출한다.
         if let replacement, !replacement.text.isEmpty {
             let script = detectScript(in: replacement.text)
-            var textAttributes = attributes(for: shape, script: script)
+            var textAttributes = attributes(
+                forShapeId: shapeId, shape: shape, script: script
+            )
             if replacement.isSuperscript {
                 applySuperscript(to: &textAttributes, shape: shape)
             }
@@ -419,7 +442,9 @@ extension HwpTextRunBuilder {
             return
         }
 
-        var markerAttributes = attributes(for: shape, script: .english)
+        // 마커 전용 값 (controlIndex·inlineObjectHeight·run delegate)은 캐시된 사전의
+        // 사본에만 붙는다 — 개체 크기가 controlIndex마다 다르므로 캐시에 넣으면 안 된다.
+        var markerAttributes = attributes(forShapeId: shapeId, shape: shape, script: .english)
         var size = CGSize.zero
         if let controlIndex {
             markerAttributes[HwpAttributedStringKey.controlIndex] = NSNumber(value: controlIndex)
@@ -440,6 +465,22 @@ extension HwpTextRunBuilder {
             markerAttributes[kCTRunDelegateAttributeName as NSAttributedString.Key] = delegate
         }
         output.append(NSAttributedString(string: "\u{FFFC}", attributes: markerAttributes))
+    }
+
+    /// 캐시를 거친 `attributes(for:script:)`. `shape`는 `resolvedShape(id:paragraph:)`가
+    /// `shapeId`로 만든 것이어야 한다 — 키가 id뿐이라 다른 shape를 넘기면 오염된다.
+    ///
+    /// 돌려받은 사전은 **제자리에서 변형하지 말 것** (`HwpTextAttributeCache` 계약):
+    /// 호출부는 `var` 사본에 키를 추가·치환만 한다.
+    func attributes(
+        forShapeId shapeId: UInt32,
+        shape: CoreHwp.HwpCharShape,
+        script: HwpScript
+    ) -> [NSAttributedString.Key: Any] {
+        guard let attributeCache else { return attributes(for: shape, script: script) }
+        return attributeCache.attributes(shapeId: shapeId, script: script) {
+            attributes(for: shape, script: script)
+        }
     }
 
     func attributes(

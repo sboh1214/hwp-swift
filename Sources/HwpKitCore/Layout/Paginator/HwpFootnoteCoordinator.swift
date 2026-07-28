@@ -29,6 +29,8 @@ struct HwpFootnoteCoordinator {
 
     private let index: HwpIndex
     private let fontResolver: HwpFontResolver
+    /// 글자 모양별 속성 캐시 (소유는 `HwpPaginator`) — 각주 측정도 본문과 공유한다.
+    private let attributeCache: HwpTextAttributeCache?
     private let footnoteLayout: HwpFootnoteLayout
 
     /// 이 페이지에 배치할 각주 (문단 + 문서 순서 번호)
@@ -44,10 +46,17 @@ struct HwpFootnoteCoordinator {
     /// 같은 각주를 반복 CT 레이아웃하지 않게 한다.
     private var footnoteHeightCache: [FootnoteHeightKey: CGFloat] = [:]
 
-    init(index: HwpIndex, fontResolver: HwpFontResolver) {
+    init(
+        index: HwpIndex,
+        fontResolver: HwpFontResolver,
+        attributeCache: HwpTextAttributeCache? = nil
+    ) {
         self.index = index
         self.fontResolver = fontResolver
-        footnoteLayout = HwpFootnoteLayout(fontResolver: fontResolver)
+        self.attributeCache = attributeCache
+        footnoteLayout = HwpFootnoteLayout(
+            fontResolver: fontResolver, attributeCache: attributeCache
+        )
     }
 
     // MARK: 수집
@@ -323,16 +332,18 @@ struct HwpFootnoteCoordinator {
             return cached
         }
 
-        let measured = HwpParagraphMeasurer(index: index, fontResolver: fontResolver)
-            .measure(
-                paragraph,
-                width: width,
-                options: .init(controlReplacements: HwpTextRunBuilder.autoNumberReplacements(
-                    in: paragraph,
-                    number: number,
-                    footnoteShape: environment.footnoteShape
-                ))
-            )
+        let measured = HwpParagraphMeasurer(
+            index: index, fontResolver: fontResolver, attributeCache: attributeCache
+        )
+        .measure(
+            paragraph,
+            width: width,
+            options: .init(controlReplacements: HwpTextRunBuilder.autoNumberReplacements(
+                in: paragraph,
+                number: number,
+                footnoteShape: environment.footnoteShape
+            ))
+        )
         let height = max(1, measured.frame.totalHeight)
         footnoteHeightCache[key] = height
         return height

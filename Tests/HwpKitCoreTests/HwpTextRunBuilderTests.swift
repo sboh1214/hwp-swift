@@ -266,11 +266,127 @@ import XCTest
             let whole = runBuilder.build(paragraph: paragraph, maxCharacters: 4)
             expect(whole.string) == "ab😀"
         }
+
+        // MARK: 글자 모양 속성 캐시 (HwpTextAttributeCache)
+
+        func testAttributeCacheProducesIdenticalAttributedString() throws {
+            // 순수 성능 캐시 — 결과가 1비트도 달라지면 안 된다. 장평·볼드·이탤릭·
+            // 장식이 붙은 모양과 스크립트가 섞인 문단으로 파생 경로를 모두 태운다.
+            let shapes = try decoratedShapes()
+            let paragraph = paragraph(text: "가나daま?", runs: [(0, 0), (2, 1), (4, 2)])
+            let cache = HwpTextAttributeCache()
+
+            let cached = builder(shapes: shapes, cache: cache).build(paragraph: paragraph)
+            let uncached = builder(shapes: shapes, cache: nil).build(paragraph: paragraph)
+
+            expect(cached.isEqual(to: uncached)) == true
+            // 2회차도 (전부 캐시 히트) 같아야 한다.
+            let again = builder(shapes: shapes, cache: cache).build(paragraph: paragraph)
+            expect(again.isEqual(to: uncached)) == true
+        }
+
+        func testAttributeCacheReusesEntriesAcrossBuilders() throws {
+            // 같은 캐시를 공유하는 빌더끼리 (본문/표 셀/각주) 재계산이 사라진다.
+            let shapes = [UInt32(0): try charShape()]
+            let paragraph = paragraph(text: "가나", runs: [(0, 0)])
+            let cache = HwpTextAttributeCache()
+
+            _ = builder(shapes: shapes, cache: cache).build(paragraph: paragraph)
+            expect(cache.missCount) == 1
+            expect(cache.hitCount) == 0
+
+            _ = builder(shapes: shapes, cache: cache).build(paragraph: paragraph)
+            expect(cache.missCount) == 1
+            expect(cache.hitCount) == 1
+        }
+
+        func testAttributeCacheKeysOnScriptAsWellAsShape() throws {
+            // 같은 글자 모양이라도 스크립트마다 face/크기 슬롯이 다르다 — 키에
+            // script가 빠지면 한글 run이 라틴 폰트로 그려진다.
+            let shapes = [UInt32(0): try charShape()]
+            let cache = HwpTextAttributeCache()
+
+            _ = builder(shapes: shapes, cache: cache)
+                .build(paragraph: paragraph(text: "가a", runs: [(0, 0)]))
+
+            expect(cache.missCount) == 2
+            expect(cache.hitCount) == 0
+        }
+
+        func testAttributeCacheIsNotPollutedByPerRunTrackChangeMark() throws {
+            // 변경추적 표시는 반환된 사전의 사본에만 붙는다 — 캐시 항목을 제자리에서
+            // 바꾸면 같은 글자 모양의 비-추적 run까지 빨갛게 물든다.
+            var tracked = paragraph(text: "가나다라", runs: [(0, 0)])
+            tracked.paraRangeTagArray = [try rangeTag(start: 0, end: 2, kind: 16)]
+            let shapes = [UInt32(0): try charShape()]
+
+            let result = builder(shapes: shapes, cache: HwpTextAttributeCache())
+                .build(paragraph: tracked)
+
+            let colorKey = kCTForegroundColorAttributeName as NSAttributedString.Key
+            let marked = result.attributes(at: 0, effectiveRange: nil)[colorKey]
+            let plain = result.attributes(at: 2, effectiveRange: nil)[colorKey]
+            let expected = builder(shapes: shapes, cache: nil)
+                .build(paragraph: paragraph(text: "가나다라", runs: [(0, 0)]))
+                .attributes(at: 0, effectiveRange: nil)[colorKey]
+
+            expect(CFEqual(marked as CFTypeRef, plain as CFTypeRef)) == false
+            expect(CFEqual(plain as CFTypeRef, expected as CFTypeRef)) == true
+        }
+
+        func testAttributeCacheReusesTabStopsPerTabDefinition() {
+            // CTTextTab은 불변이고 tabDefId만의 함수라 문서 안에서 공유한다.
+            let cache = HwpTextAttributeCache()
+            let paraShape = CoreHwp.HwpParaShape()
+            let documentIndex = index(shapes: [:])
+
+            let first = cache.textTabs(for: paraShape, index: documentIndex)
+            let second = cache.textTabs(for: paraShape, index: documentIndex)
+
+            expect(first.count) == documentIndex.textTabs(for: paraShape).count
+            expect(second.count) == first.count
+        }
     }
 
     private extension HwpTextRunBuilderTests {
         func builder(shapes: [UInt32: CoreHwp.HwpCharShape]) -> HwpTextRunBuilder {
             HwpTextRunBuilder(index: index(shapes: shapes), fontResolver: .testDeterministic)
+        }
+
+        /// 캐시를 공유하는 빌더 — 캐시가 문서 단위 소유라는 계약대로, 같은 내용의
+        /// `index`를 쓰는 빌더끼리만 하나를 나눠 쓴다.
+        func builder(
+            shapes: [UInt32: CoreHwp.HwpCharShape],
+            cache: HwpTextAttributeCache?
+        ) -> HwpTextRunBuilder {
+            HwpTextRunBuilder(
+                index: index(shapes: shapes),
+                fontResolver: .testDeterministic,
+                attributeCache: cache
+            )
+        }
+
+        /// 장평·볼드·이탤릭·밑줄·그림자가 붙은 모양 3종 (파생 CTFont 경로 전수)
+        func decoratedShapes() throws -> [UInt32: CoreHwp.HwpCharShape] {
+            [
+                0: try charShape(),
+                // 표 33 property: bit 0 이탤릭 / bit 1 진하게 / bits 2-4 밑줄 종류
+                1: try charShape(property: 0b111, faceScaleX: Array(repeating: 90, count: 7)),
+                2: try charShape(property: 0b10, faceScaleX: Array(repeating: 120, count: 7)),
+            ]
+        }
+
+        /// 변경추적 range tag (상위 8비트 = 종류, 16 삽입 / 17 삭제)
+        func rangeTag(
+            start: UInt32,
+            end: UInt32,
+            kind: UInt32
+        ) throws -> CoreHwp.HwpParaRangeTag {
+            var data = Data()
+            append(start, to: &data)
+            append(end, to: &data)
+            append(kind << 24, to: &data)
+            return try CoreHwp.HwpParaRangeTag.load(data)
         }
 
         func index(shapes: [UInt32: CoreHwp.HwpCharShape]) -> HwpIndex {

@@ -40,9 +40,17 @@ public struct HwpFootnoteBlock: @unchecked Sendable, Hashable {
 /// 가져오고, 길이가 자동(-1)이면 단 폭의 1/3을 쓴다.
 public struct HwpFootnoteLayout {
     private let fontResolver: HwpFontResolver
+    /// 각주 문단이 본문과 같은 글자 모양 속성 캐시를 쓰게 한다 (소유는 `HwpPaginator`).
+    private let attributeCache: HwpTextAttributeCache?
 
     public init(fontResolver: HwpFontResolver = HwpFontResolver()) {
+        self.init(fontResolver: fontResolver, attributeCache: nil)
+    }
+
+    /// 캐시를 주입하는 모듈 내부용 init (`HwpTextAttributeCache` 참조).
+    init(fontResolver: HwpFontResolver, attributeCache: HwpTextAttributeCache?) {
         self.fontResolver = fontResolver
+        self.attributeCache = attributeCache
     }
 
     public struct Input {
@@ -348,7 +356,9 @@ public struct HwpFootnoteLayout {
         width: CGFloat,
         footnoteShape: CoreHwp.HwpFootnoteShape? = nil
     ) -> [MeasuredFootnote] {
-        let measurer = HwpParagraphMeasurer(index: index, fontResolver: fontResolver)
+        let measurer = HwpParagraphMeasurer(
+            index: index, fontResolver: fontResolver, attributeCache: attributeCache
+        )
         return footnotes.map { input in
             // 각주 첫머리의 자동 번호 (ext18) 마커를 번호 문자열로 치환한다
             // (번호는 paginator가 부여한 문서 순서 번호 — 본문 참조와 동일 소스).

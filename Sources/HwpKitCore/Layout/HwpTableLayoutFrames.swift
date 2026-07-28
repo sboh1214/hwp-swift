@@ -231,13 +231,15 @@ extension HwpTableLayout {
         let innerWidth = max(1, cellRect.width - margins.left - margins.right)
         let cellResolver = sizeResolver?.withParagraphWidth(innerWidth)
         let textBuilder = HwpTextRunBuilder(
-            index: index, fontResolver: fontResolver, sizeResolver: cellResolver
+            index: index, fontResolver: fontResolver, sizeResolver: cellResolver,
+            attributeCache: attributeCache
         )
         let collector = HwpParagraphObjectCollector(
             index: index,
             fontResolver: fontResolver,
             sizeResolver: cellResolver,
-            collectsTextboxes: true
+            collectsTextboxes: true,
+            attributeCache: attributeCache
         )
         var paragraphs: [HwpLaidOutParagraph] = []
         var nestedTables: [HwpNestedTableFrame] = []
