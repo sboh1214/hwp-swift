@@ -150,7 +150,7 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
 
 ## Paint list
 
-- `HwpPaintCommand` = `@unchecked Sendable` enum. CF/NS 참조 타입을 담기 때문에 자동 Sendable 불가. enum case는 가로챌 init이 없어 **소유권 경계에서 동결**한다 — `HwpLaidOutParagraph.init`이 `NSAttributedString`을, `HwpShapeGeometry.init`이 `CGPath`를 복사본으로 저장한다 (mutable 서브클래스를 그대로 retain하면 Hashable 불변성·actor 경계 안전성이 깨진다). 새 참조 타입 payload를 추가하면 그 생산 지점에서 같은 복사를 해야 한다
+- `HwpPaintCommand` = `@unchecked Sendable` enum. CF/NS 참조 타입을 담기 때문에 자동 Sendable 불가. enum case는 가로챌 init이 없어 **소유권 경계에서 동결**한다 — `HwpLaidOutParagraph.init`이 `NSAttributedString`을, `HwpShapeGeometry.init`이 `CGPath`를 복사본으로 저장한다 (mutable 서브클래스를 그대로 retain하면 Hashable 불변성·actor 경계 안전성이 깨진다). 새 참조 타입 payload를 추가하면 그 생산 지점에서 같은 복사를 해야 한다. 소유권 경계를 거치지 않고 **painter가 `.drawText`를 직접 만드는 경로도 마찬가지** — `HwpMemoPanelPainter`는 헤더를 `NSMutableAttributedString`으로 조립한 뒤 `NSAttributedString(attributedString:)`로 동결해 싣는다. 이제 actor 안전성 말고 **소비자**도 생겼다: HwpKitNative의 줄 배치 캐시가 문자열 신원 (`===`)으로 조판 결과를 재사용하므로 "신원이 같으면 내용도 같다"가 전 생산 경로에서 성립해야 한다 (깨지면 조용한 오조판)
 - 케이스: `fillRect` / `strokeRect` / `drawText` / `drawPath` / `drawImage` / `drawImageReference(binItemId:rect:)` / `drawPlaceholder` / `hyperlink`
 - `drawImageReference` 는 비트맵을 운반하지 않는다 — HwpKitNative 의 `HwpPageImageProvider` 가 `HwpImageStore` + `HwpImageCache` + `HwpImageAdapter` 로 지연 디코딩
 - **`HwpPage.==` / `hash` 는 `paintList.commands.count` 만 비교** (structural fingerprint). 렌더 결과 비교용으로 쓰지 말 것
