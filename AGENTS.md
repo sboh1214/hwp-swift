@@ -149,9 +149,13 @@ pre-commit install && pre-commit run --all     # hook 설치 + 전체 실행
 PR은 실측 수치를 커밋 메시지에 기록한다.
 
 렌더 경로 최적화(캐시 도입 등)는 **속도는 실측, 등가성은 해시**로 나눠
-증명한다: 같은 문서를 최적화 무력화 A/B로 N회 재드로해 배수를 재고, 같은
-PR에서 픽셀 해시가 **양 폰트 모드 모두 무변화**임을 함께 보인다 (예:
-`HwpPageLayer` 줄 배치 캐시 1.85x/1.53x — `Sources/HwpKitNative/AGENTS.md`).
+증명한다: 같은 문서를 최적화 무력화 A/B로 N회 재조판·재드로해 배수를 재고,
+같은 PR에서 픽셀 해시가 **양 폰트 모드 모두 무변화**임을 함께 보인다.
+캐시는 파이프라인 단계로 층이 갈린다 — 조판 **입력**은 `HwpTextAttributeCache`
+(글자 모양별 속성 사전; paginate 1.78x, 1,030쪽 문서 로드 1.42x —
+`Sources/HwpKitCore/AGENTS.md`), 조판 **결과**는 `HwpPageLayer` 줄 배치 캐시
+(재드로 1.85x/1.53x — `Sources/HwpKitNative/AGENTS.md`). 문서 빌드와 draw로
+단계가 갈려 서로 독립이다.
 
 ## 리뷰 대응 체크리스트 (렌더 회귀 방지)
 
