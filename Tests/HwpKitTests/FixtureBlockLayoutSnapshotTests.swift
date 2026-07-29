@@ -7,10 +7,11 @@ import XCTest
 /// 회귀 가드. fidelity(PrvImage MAE)가 1페이지만 보는 사각을 메운다.
 ///
 /// 좌표는 0.1pt 단위 정수로 반올림해 부동소수 노이즈를 흡수하고, 줄 단위
-/// 이동(수 pt)은 확실히 검출한다. 좌표가 설치 폰트 메트릭에 의존하는 환경
-/// 의존 테스트라 기본 `swift test`·CI에서는 skip된다. 실행:
-/// `HWP_SNAPSHOT_TESTS=1 swift test --filter FixtureBlockLayout`
-/// 스냅샷 갱신 (RECORD_* 변수는 자동 opt-in):
+/// 이동(수 pt)은 확실히 검출한다. 기준선은 **커밋 대상**이고 기본
+/// `swift test`·CI에서 **상시 실행된다** — 좌표를 기기 독립으로 만드는 것은
+/// `HwpFontResolver.testDeterministic`이다 (#69). 기본 resolver로 뜨면 좌표가
+/// 설치 폰트 메트릭의 함수가 되어 한컴오피스가 없는 CI 러너와 갈린다.
+/// 스냅샷 갱신:
 /// `RECORD_BLOCK_SNAPSHOTS=1 swift test --filter FixtureBlockLayout`
 /// (레코딩 후 의도적으로 실패해 우발적 갱신을 막는다 — diff를 리뷰할 것).
 final class FixtureBlockLayoutSnapshotTests: XCTestCase {
@@ -24,14 +25,10 @@ final class FixtureBlockLayoutSnapshotTests: XCTestCase {
     ]
 
     func testBlockLayoutMatchesSnapshots() async throws {
-        // 한컴 폰트 게이트를 걸지 않는다 — 이 스위트의 기준선은 저장소에 커밋돼
-        // 있고 (렌더 해시의 gitignore `Snapshots/`와 다르다) 양 폰트 모드에서
-        // 같은 좌표가 나온다. 게이트를 걸면 한컴 미설치 환경에서 영영 실행되지
-        // 않아, 커밋된 기준선이 무용지물이 된다.
-        try EnvironmentSensitiveTests.skipUnlessOptedIn(
-            recordVariables: ["RECORD_BLOCK_SNAPSHOTS"]
-        )
-
+        // opt-in 게이트를 걸지 않는다 — 기준선이 저장소에 커밋돼 있고 (렌더
+        // 해시의 gitignore `Snapshots/`와 다르다) 결정론 resolver 덕에 폰트 모드·
+        // 설치 폰트와 무관하게 같은 좌표가 나온다. 게이트를 걸면 CI와 다른
+        // 기여자 머신에서 영영 실행되지 않아, 커밋된 기준선이 무용지물이 된다.
         let record = EnvironmentSensitiveTests.isEnabled("RECORD_BLOCK_SNAPSHOTS")
         var failures: [String] = []
         var recorded: [String] = []
@@ -40,7 +37,10 @@ final class FixtureBlockLayoutSnapshotTests: XCTestCase {
             let documentURL = FixtureRoot.url(from: #file)
                 .appendingPathComponent(spec.fixture)
                 .appendingPathComponent("document.hwp")
-            let document = try await HwpDocumentLoader().load(from: documentURL)
+            // 기기 독립의 전부가 이 인자다 — 기본 resolver로 뜨면 좌표가 설치
+            // 폰트 메트릭(이 머신의 `HCR Batang` 등)에 묶여 CI에서 갈린다.
+            let document = try await HwpDocumentLoader(fontResolver: .testDeterministic)
+                .load(from: documentURL)
             let actual = Self.snapshot(
                 of: document,
                 fixture: spec.fixture,
