@@ -5,9 +5,17 @@ import Foundation
 
 public struct HwpTableLayout {
     let fontResolver: HwpFontResolver
+    /// 셀 문단이 본문과 같은 글자 모양 속성 캐시를 쓰게 한다 (소유는 `HwpPaginator`).
+    let attributeCache: HwpTextAttributeCache?
 
     public init(fontResolver: HwpFontResolver = HwpFontResolver()) {
+        self.init(fontResolver: fontResolver, attributeCache: nil)
+    }
+
+    /// 캐시를 주입하는 모듈 내부용 init (`HwpTextAttributeCache` 참조).
+    init(fontResolver: HwpFontResolver, attributeCache: HwpTextAttributeCache?) {
         self.fontResolver = fontResolver
+        self.attributeCache = attributeCache
     }
 
     /// 재귀 중첩 표 레이아웃 깊이 상한 (바깥 표 = 0)
@@ -279,7 +287,8 @@ extension HwpTableLayout {
         // '문단' 기준 개체는 셀 안에서 셀 안폭을 기준으로 해석한다 (#2)
         let measurer = HwpParagraphMeasurer(
             index: context.index, fontResolver: fontResolver,
-            sizeResolver: context.sizeResolver?.withParagraphWidth(innerWidth)
+            sizeResolver: context.sizeResolver?.withParagraphWidth(innerWidth),
+            attributeCache: attributeCache
         )
 
         let measured = measuredCellContents(

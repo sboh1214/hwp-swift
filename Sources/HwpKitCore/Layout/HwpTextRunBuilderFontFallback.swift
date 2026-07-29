@@ -53,11 +53,11 @@ extension HwpTextRunBuilder {
               !bullet.char.isEmpty
         else { return }
         let shapeId = activeShapeId(at: 0, in: paragraph.paraCharShape)
-        let shape = resolvedShape(id: shapeId, paragraph: paragraph)
+        let resolved = resolvedShape(id: shapeId, paragraph: paragraph)
         // 글머리표 기호 (□ 등)는 한글 폰트의 전각 글리프로 그린다 —
         // 라틴 폴백 폰트의 기호는 실물보다 작다 (noori 라운드 11 실측:
         // 실물 □ = 글자 높이의 84%, 폴백은 53%)
-        var bulletAttributes = attributes(for: shape, script: .korean)
+        var bulletAttributes = attributes(for: resolved, script: .korean)
         let isGeometricShape = bullet.char.unicodeScalars
             .allSatisfy { (0x25A0 ... 0x25FF).contains($0.value) }
         if isGeometricShape,

@@ -41,9 +41,17 @@ public struct HwpTextboxFrame: @unchecked Sendable, Hashable {
 
 public struct HwpTextboxLayout {
     private let fontResolver: HwpFontResolver
+    /// 글상자 문단이 본문과 같은 글자 모양 속성 캐시를 쓰게 한다 (소유는 `HwpPaginator`).
+    private let attributeCache: HwpTextAttributeCache?
 
     public init(fontResolver: HwpFontResolver = HwpFontResolver()) {
+        self.init(fontResolver: fontResolver, attributeCache: nil)
+    }
+
+    /// 캐시를 주입하는 모듈 내부용 init (`HwpTextAttributeCache` 참조).
+    init(fontResolver: HwpFontResolver, attributeCache: HwpTextAttributeCache?) {
         self.fontResolver = fontResolver
+        self.attributeCache = attributeCache
     }
 
     /// gso 컨트롤의 글상자를 레이아웃한다.
@@ -147,13 +155,15 @@ public struct HwpTextboxLayout {
         let measurer = HwpParagraphMeasurer(
             index: index,
             fontResolver: fontResolver,
-            sizeResolver: boxResolver
+            sizeResolver: boxResolver,
+            attributeCache: attributeCache
         )
         let collector = HwpParagraphObjectCollector(
             index: index,
             fontResolver: fontResolver,
             sizeResolver: boxResolver,
-            collectsTextboxes: false
+            collectsTextboxes: false,
+            attributeCache: attributeCache
         )
         var contents = LaidOutTextboxContents()
         var contentY = insets.top

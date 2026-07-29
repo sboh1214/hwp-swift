@@ -54,15 +54,33 @@ public struct HwpTextRunBuilder {
     /// 상대 크기 기준 해석기 — treatAsChar 개체의 줄 공간 예약이 paint 쪽
     /// (HwpPaginator.objectSize)과 같은 크기를 쓰게 한다. 없으면 절대값 해석.
     let sizeResolver: HwpObjectSizeResolver?
+    /// 글자 모양별 속성 사전 캐시 — 같은 문서(`index`)·같은 `fontResolver`를 쓰는
+    /// 빌더끼리 공유한다 (소유는 `HwpPaginator`). nil이면 매번 새로 계산한다.
+    let attributeCache: HwpTextAttributeCache?
 
     public init(
         index: HwpIndex,
         fontResolver: HwpFontResolver,
         sizeResolver: HwpObjectSizeResolver? = nil
     ) {
+        self.init(
+            index: index, fontResolver: fontResolver,
+            sizeResolver: sizeResolver, attributeCache: nil
+        )
+    }
+
+    /// 캐시를 주입하는 모듈 내부용 init — 캐시는 문서 단위 소유라 모듈 밖으로
+    /// 열지 않는다 (`HwpTextAttributeCache` 참조).
+    init(
+        index: HwpIndex,
+        fontResolver: HwpFontResolver,
+        sizeResolver: HwpObjectSizeResolver? = nil,
+        attributeCache: HwpTextAttributeCache?
+    ) {
         self.index = index
         self.fontResolver = fontResolver
         self.sizeResolver = sizeResolver
+        self.attributeCache = attributeCache
     }
 
     /// controlReplacements: extended 컨트롤 ordinal (controlIndex) → 마커 대신
@@ -239,7 +257,8 @@ extension HwpTextRunBuilder {
             value: HwpParagraphLayout.paragraphStyle(
                 for: paraShape,
                 attributedString: output,
-                tabStops: index.textTabs(for: paraShape)
+                tabStops: attributeCache?.textTabs(for: paraShape, index: index)
+                    ?? index.textTabs(for: paraShape)
             ),
             range: NSRange(location: 0, length: output.length)
         )
@@ -352,8 +371,8 @@ extension HwpTextRunBuilder {
         to output: NSMutableAttributedString
     ) {
         guard !chunk.text.isEmpty, let script = chunk.script else { return }
-        let shape = resolvedShape(id: chunk.shapeId, paragraph: paragraph)
-        var chunkAttributes = attributes(for: shape, script: script)
+        let resolved = resolvedShape(id: chunk.shapeId, paragraph: paragraph)
+        var chunkAttributes = attributes(for: resolved, script: script)
         applyTrackChangeMark(chunk.trackMark, to: &chunkAttributes)
         if chunk.memoAnchor,
            chunkAttributes[HwpAttributedStringKey.shadeColor] == nil
@@ -368,7 +387,7 @@ extension HwpTextRunBuilder {
             string: chunk.text,
             attributes: chunkAttributes
         )
-        if !shape.property.doesAdjustBlank, !index.isCompatibilityDocument {
+        if !resolved.shape.property.doesAdjustBlank, !index.isCompatibilityDocument {
             // 워드 호환 문서 (표 20)는 폰트 고유 공백 — 한글 문서만 0.5em
             Self.applyFixedSpaceWidth(to: attributed)
         }
@@ -389,13 +408,13 @@ extension HwpTextRunBuilder {
         inlineValue: CoreHwp.WCHAR? = nil,
         to output: NSMutableAttributedString
     ) {
-        let shape = resolvedShape(id: shapeId, paragraph: paragraph)
+        let resolved = resolvedShape(id: shapeId, paragraph: paragraph)
 
         // 탭 (inline 코드 9)은 실제 탭으로 방출한다 (CT 탭 스톱 조판).
         if inlineValue == 9 {
             output.append(NSAttributedString(
                 string: "\t",
-                attributes: attributes(for: shape, script: .english)
+                attributes: attributes(for: resolved, script: .english)
             ))
             return
         }
@@ -403,9 +422,9 @@ extension HwpTextRunBuilder {
         // 치환 텍스트가 있으면 마커 대신 실제 번호 run을 방출한다.
         if let replacement, !replacement.text.isEmpty {
             let script = detectScript(in: replacement.text)
-            var textAttributes = attributes(for: shape, script: script)
+            var textAttributes = attributes(for: resolved, script: script)
             if replacement.isSuperscript {
-                applySuperscript(to: &textAttributes, shape: shape)
+                applySuperscript(to: &textAttributes, shape: resolved.shape)
             }
             if let controlIndex {
                 textAttributes[HwpAttributedStringKey.controlIndex] = NSNumber(
@@ -419,7 +438,9 @@ extension HwpTextRunBuilder {
             return
         }
 
-        var markerAttributes = attributes(for: shape, script: .english)
+        // 마커 전용 값 (controlIndex·inlineObjectHeight·run delegate)은 캐시된 사전의
+        // 사본에만 붙는다 — 개체 크기가 controlIndex마다 다르므로 캐시에 넣으면 안 된다.
+        var markerAttributes = attributes(for: resolved, script: .english)
         var size = CGSize.zero
         if let controlIndex {
             markerAttributes[HwpAttributedStringKey.controlIndex] = NSNumber(value: controlIndex)
@@ -440,6 +461,23 @@ extension HwpTextRunBuilder {
             markerAttributes[kCTRunDelegateAttributeName as NSAttributedString.Key] = delegate
         }
         output.append(NSAttributedString(string: "\u{FFFC}", attributes: markerAttributes))
+    }
+
+    /// 캐시를 거친 `attributes(for:script:)`.
+    ///
+    /// `ResolvedShape`만 받으므로 캐시 키와 실제 shape가 어긋난 짝을 넘길 길이 없다
+    /// (키에 shape 내용이 없어 어긋나면 조용히 오염된다).
+    ///
+    /// 돌려받은 사전은 **제자리에서 변형하지 말 것** (`HwpTextAttributeCache` 계약):
+    /// 호출부는 `var` 사본에 키를 추가·치환만 한다.
+    func attributes(
+        for resolved: ResolvedShape,
+        script: HwpScript
+    ) -> [NSAttributedString.Key: Any] {
+        guard let attributeCache else { return attributes(for: resolved.shape, script: script) }
+        return attributeCache.attributes(shapeId: resolved.cacheKey, script: script) {
+            attributes(for: resolved.shape, script: script)
+        }
     }
 
     func attributes(
@@ -505,9 +543,19 @@ extension HwpTextRunBuilder {
         return attributes
     }
 
-    func resolvedShape(id: UInt32, paragraph: CoreHwp.HwpParagraph) -> CoreHwp.HwpCharShape {
+    /// 해석된 글자 모양과 그 캐시 키를 한 값으로 묶는다 — 짝이 어긋난 조합을
+    /// `attributes(for:script:)`에 넘길 수 없게 하기 위해서다.
+    ///
+    /// `cacheKey`가 nil이면 `index`에 없는 id라 아래 폴백 상수를 쓴 것이다. 그런
+    /// id는 결과 사전이 전부 같으므로 캐시에서 한 키로 접힌다.
+    struct ResolvedShape {
+        let shape: CoreHwp.HwpCharShape
+        let cacheKey: UInt32?
+    }
+
+    func resolvedShape(id: UInt32, paragraph: CoreHwp.HwpParagraph) -> ResolvedShape {
         if let shape = index.charShape(id: id) {
-            return shape
+            return ResolvedShape(shape: shape, cacheKey: id)
         }
         os_log(
             "HwpTextRunBuilder missing char shape: paraId=%{public}u shapeId=%{public}u",
@@ -515,7 +563,7 @@ extension HwpTextRunBuilder {
             paragraph.paraHeader.paraId,
             id
         )
-        return CoreHwp.HwpCharShape()
+        return ResolvedShape(shape: CoreHwp.HwpCharShape(), cacheKey: nil)
     }
 
     func activeShapeId(at position: UInt32, in paraCharShape: CoreHwp.HwpParaCharShape) -> UInt32 {

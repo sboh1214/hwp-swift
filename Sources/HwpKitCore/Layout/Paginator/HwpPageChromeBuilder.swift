@@ -39,11 +39,19 @@ struct HwpPageChromeBuilder {
 
     private let index: HwpIndex
     private let fontResolver: HwpFontResolver
+    /// 글자 모양별 속성 캐시 (소유는 `HwpPaginator`) — 머리말/꼬리말 문단도
+    /// 본문과 같은 캐시를 쓴다.
+    private let attributeCache: HwpTextAttributeCache?
     private var state = State()
 
-    init(index: HwpIndex, fontResolver: HwpFontResolver) {
+    init(
+        index: HwpIndex,
+        fontResolver: HwpFontResolver,
+        attributeCache: HwpTextAttributeCache? = nil
+    ) {
         self.index = index
         self.fontResolver = fontResolver
+        self.attributeCache = attributeCache
     }
 
     // MARK: 컨트롤 등록
@@ -211,7 +219,9 @@ struct HwpPageChromeBuilder {
         bandFrame: CGRect,
         pageNumber: Int
     ) -> [AnyHwpBlock] {
-        let builder = HwpTextRunBuilder(index: index, fontResolver: fontResolver)
+        let builder = HwpTextRunBuilder(
+            index: index, fontResolver: fontResolver, attributeCache: attributeCache
+        )
         let paragraphLayout = HwpParagraphLayout()
         var cursorY = bandFrame.minY
         var blocks: [AnyHwpBlock] = []
@@ -240,7 +250,8 @@ struct HwpPageChromeBuilder {
                 attributedString: attributed,
                 paraShape: paraShape,
                 columnWidth: bandFrame.width,
-                tabStops: index.textTabs(for: paraShape)
+                tabStops: attributeCache?.textTabs(for: paraShape, index: index)
+                    ?? index.textTabs(for: paraShape)
             )
             let blockHeight = max(1, frame.totalHeight)
             blocks.append(AnyHwpBlock(

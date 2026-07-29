@@ -9,6 +9,10 @@ public actor HwpPaginator {
     private let sections: [CoreHwp.HwpSection]
     private let index: HwpIndex
     private let fontResolver: HwpFontResolver
+    /// 글자 모양별 텍스트 속성 캐시 — 문서(파이프라인) 단위 소유. 본문·표 셀·
+    /// 글상자·각주·머리말/꼬리말이 전부 이 하나를 공유한다. 전역이면 안 되는
+    /// 이유는 `HwpTextAttributeCache` 참조.
+    private let attributeCache = HwpTextAttributeCache()
     private let imageStore: HwpImageStore
     private let paintListBuilder: HwpPaintListBuilder
     private let unsupportedDetector = HwpUnsupportedDetector()
@@ -204,10 +208,18 @@ public actor HwpPaginator {
         self.fontResolver = fontResolver
         self.imageStore = imageStore
         paintListBuilder = HwpPaintListBuilder(fontResolver: fontResolver, imageStore: imageStore)
-        tableLayout = HwpTableLayout(fontResolver: fontResolver)
-        textboxLayout = HwpTextboxLayout(fontResolver: fontResolver)
-        footnoteCoordinator = HwpFootnoteCoordinator(index: index, fontResolver: fontResolver)
-        pageChrome = HwpPageChromeBuilder(index: index, fontResolver: fontResolver)
+        tableLayout = HwpTableLayout(
+            fontResolver: fontResolver, attributeCache: attributeCache
+        )
+        textboxLayout = HwpTextboxLayout(
+            fontResolver: fontResolver, attributeCache: attributeCache
+        )
+        footnoteCoordinator = HwpFootnoteCoordinator(
+            index: index, fontResolver: fontResolver, attributeCache: attributeCache
+        )
+        pageChrome = HwpPageChromeBuilder(
+            index: index, fontResolver: fontResolver, attributeCache: attributeCache
+        )
         absoluteCachePlacer = HwpAbsoluteCachePlacer(sections: sections)
         currentPageGeometry = Self.initialGeometry(for: sections)
         currentSectionDef = Self.firstSectionDef(for: sections)
@@ -900,7 +912,7 @@ private extension HwpPaginator {
             attributedString: attributedString,
             paraShape: paraShape,
             columnWidth: currentColumnFrame.width,
-            tabStops: index.textTabs(for: paraShape)
+            tabStops: attributeCache.textTabs(for: paraShape, index: index)
         )
     }
 
@@ -1831,7 +1843,8 @@ private extension HwpPaginator {
         HwpTextRunBuilder(
             index: index,
             fontResolver: fontResolver,
-            sizeResolver: objectSizeResolver
+            sizeResolver: objectSizeResolver,
+            attributeCache: attributeCache
         )
     }
 
@@ -2309,10 +2322,12 @@ private extension HwpPaginator {
             var total = 0
             for memoParagraph in group where total < budget {
                 let remainingBudget = budget - total
-                let text = HwpTextRunBuilder(index: index, fontResolver: fontResolver)
-                    .build(paragraph: memoParagraph, maxCharacters: remainingBudget)
-                    .string
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let text = HwpTextRunBuilder(
+                    index: index, fontResolver: fontResolver, attributeCache: attributeCache
+                )
+                .build(paragraph: memoParagraph, maxCharacters: remainingBudget)
+                .string
+                .trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !text.isEmpty else { continue }
                 let clipped = text.count > remainingBudget
                     ? String(text.prefix(remainingBudget))

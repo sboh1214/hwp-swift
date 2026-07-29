@@ -9,7 +9,7 @@ CoreHwp.HwpFile
   → HwpDocumentActor.buildDocument (HwpKitNative)
      → HwpIndex             # docInfo.idMappings 인덱싱 (charShape/paraShape/…)
      → HwpImageStore        # binItemId(1-based) → BinData 바이트 조인
-     → HwpPaginator (actor) # 페이지 lazy 생성
+     → HwpPaginator (actor) # 페이지 lazy 생성 + 문서 단위 HwpTextAttributeCache 소유
         ├─ per paragraph
         │   flushPageBeforeProcessing  # 구역 시작·쪽 나누기 (columnType bit 2) 페이지 확정
         │   applySectionDef / applyColumnDef   # 구역 지오메트리 + 단 밴드 전환
@@ -210,6 +210,50 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   바탕이 아니라 한자용 송체이고 (문서의 `FaceName.defaultFaceName` 이
   `FZSong_Superfont` 로 못박는다), `Apple SD 산돌고딕 Neo` 는 시스템 폰트의
   한글 표시명이라 매핑이 없으면 로마자 슬롯이 Helvetica 로 대체된다
+- **글자 모양 속성 캐시** (`HwpTextAttributeCache`) — `HwpTextRunBuilder.attributes`
+  는 `index`·`fontResolver` 가 고정이면 `(shapeId, script)` 의 순수 함수라
+  (장평·이탤릭 근사 매트릭스·라틴 세리프 폴백·장식이 전부 charShape 에서만
+  나온다) 텍스트 조각마다 하던 재계산을 메모한다. 문단마다 달라지는 값
+  (변경추적 표시·메모 앵커·controlIndex·run delegate·첨자 치환)은 전부 **반환
+  뒤** 사전 사본에 붙으므로 키에서 구조적으로 빠져 있다. 지켜야 할 것 셋:
+  ① **돌려받은 사전을 제자리에서 변형 금지** — 공유 인스턴스라 값
+  (CTFont/CGColor/NSNumber)을 바꾸면 다른 호출부까지 오염된다. `var` 사본에
+  키 추가·치환만 한다. `attributes` 에 가변 NSObject (NSShadow·
+  NSMutableParagraphStyle 등)를 새로 넣으면 이 계약이 조용히 깨진다.
+  ② **소유는 문서 단위** (`HwpPaginator` 가 하나 만들어 표/글상자/각주/크롬에
+  주입) — `shapeId` 의 의미가 `HwpIndex` 마다 다르고 `usesInstalledHancomFonts`
+  는 resolver 별 값이라, 전역·resolver 소유면 문서·폰트 모드가 섞인다.
+  ③ 그 규약을 타입으로 강제할 수 없어 **캐시 타입과 캐시를 받는 init 은 전부
+  internal** 이다. public init 은 캐시 없는 기존 시그니처를 유지한다.
+  탭 스톱도 같은 캐시에 있다 (`textTabs(for:index:)` — `HwpIndex.textTabs` 는
+  호출마다 `CTTextTab` 을 새로 만드는데 문단마다 측정·렌더로 불린다). 키가
+  `tabDefId` **하나뿐**이라, `HwpIndex.textTabs(for:)` 가 paraShape 의 다른
+  필드를 보게 되면 조용히 틀린 탭을 준다 (실측 확인: 현재는 `tabDefId` 만
+  읽는다). 속성 키도 같은 성질이지만 그쪽은 타입이 막는다 — `resolvedShape` 가
+  shape 와 캐시 키를 `ResolvedShape` 한 값으로 묶어 주고 `attributes(for:script:)`
+  가 그 타입만 받아, 어긋난 짝을 넘길 길이 없다.
+  **`index` 에 없는 id 는 캐시 키가 `nil` 로 접힌다** — 폴백 (`resolvedShape`) 이
+  문단과 무관한 상수라 결과 사전이 전부 같은데, 원본 id 로 키를 잡으면 조작
+  문서가 문자마다 다른 id 를 흘려 내용이 같은 항목을 문서 수명 내내 쌓는다.
+  저장소별 항목 상한 (`maximumStoredEntries` 65,536)은 **축출이 아니라 삽입
+  중단**이다 — 조판이 문서를 순서대로 훑으므로 FIFO 축출은 워킹셋이 상한보다
+  클 때 히트율 0% 가 된다 (`HwpPageLayer` 줄 배치 캐시와 같은 이유). 미스가
+  `create` 폴백이라 삽입을 멈춰도 결과는 같다.
+  주입 경로는 ②의 넷 말고 `HwpParagraphMeasurer` · `HwpParagraphObjectCollector`
+  까지다 (컨테이너 안 글상자가 자체 `HwpTextboxLayout` 을 만드는 경로) —
+  **새 레이아웃 컴포넌트는 캐시를 함께 실을 것**.
+  안 실어도 결과는 같고 (nil 이면 매번 재계산) 조용히 느려질 뿐이라 테스트로
+  안 잡힌다. 동기화는 `NSLock` 으로 저장소 접근만 감싸고 `create` 는 lock
+  밖이다 (`HwpFontResolver.FontCache` 와 같은 절충 — 경합하면 같은 키를 두 번
+  만들 수 있지만 순수 함수라 결과가 같다).
+  실측 (로컬 macOS, 3회 median, 캐시 무력화 A/B): paginate N=20,000 (589쪽)
+  10.95 → 6.17s (**1.78x**), legacy 1,030쪽 문서 로드 26.37 → 18.53s
+  (**1.42x**). 등가성은 렌더 픽셀 해시 전 픽스처 × 전 페이지 0건 (양 폰트
+  모드). 회귀 가드는 `HwpTextRunBuilderTests` 의 캐시 7종 (캐시/무캐시 문자열
+  동치, 히트·미스 카운트, script 키 분리, 변경추적 마크 비오염, 탭 스톱
+  재사용, 미해결 id 64개 → 항목 1개, 상한 초과 시 삽입 중단 + 결과 불변) —
+  캐시를 건드리면 `hitCount`/`missCount`/`entryCount` (테스트 전용 관측점) 로
+  단언할 것
 - 실측 튜닝 상수는 `Tuning/HwpRenderTuning.swift` 에 근거 주석과 함께 —
   값 변경은 fidelity 전수 + 블록 스냅샷 + 실물 대조 필수 (값 핀:
   `HwpRenderTuningTests`). 차트 투영 기하 (`HwpChartPainter`)와 각주 예약
