@@ -10,6 +10,10 @@ extension HwpTableLayout {
     /// 셀 문단 전부가 라인 캐시로 측정된 셀은 저작된 높이 (표 80 = 한글 계산값)를
     /// 그대로 신뢰한다 — 캐시 합 + 여백 근사가 저작 높이를 살짝 넘겨 표가
     /// 부풀면 페이지 분할이 한글과 어긋난다 (헌법주석 실측).
+    ///
+    /// 단, 떠 있는 개체 (글자처럼 취급 아님)는 줄 캐시에도 저작 높이에도 없어
+    /// 그 신뢰가 성립하지 않는다 — 별도 하한으로 얹는다 (#91,
+    /// `HwpTableLayout.floatingObjectHeight`).
     func resolvedRowHeights(
         placed: [PlacedCell],
         rowCount: Int,
@@ -18,11 +22,12 @@ extension HwpTableLayout {
         func needed(_ cell: PlacedCell) -> CGFloat {
             // 저작 셀 높이(UInt32)를 상한한다 — UInt32.max 근처면 ~43M pt가 되어
             // 작은 문서가 페이지 단위 절단으로 수만 페이지를 만든다 (#6).
-            // 실제 셀은 이 한도를 한참 밑돌아 렌더 불변.
+            // 실제 셀은 이 한도를 한참 밑돌아 렌더 불변. 개체 크기도 같은
+            // UInt32라 하한을 얹은 뒤에 상한한다.
             let raw = cell.hasCachedContent && cell.authoredHeight > 0
                 ? cell.authoredHeight
                 : max(cell.contentHeight, cell.authoredHeight)
-            return min(raw, HwpTableLayout.maximumCellHeight)
+            return min(max(raw, cell.floatingObjectHeight), HwpTableLayout.maximumCellHeight)
         }
         var heights = [CGFloat](repeating: 0, count: rowCount)
         for cell in placed where cell.rowSpan == 1 {
@@ -307,7 +312,7 @@ extension HwpTableLayout {
     /// paraShape(for:)로 shape 0 폴백해 측정(HwpParagraphMeasurer.paraShapeOrDefault)과
     /// 같은 간격을 쓴다 — 누락 para-shape 참조에서 측정 높이는 shape 0 간격을 담는데
     /// 배치가 0을 더해 문단이 어긋나던 것 방지 (R52 #2).
-    private func halfSpacingBefore(
+    func halfSpacingBefore(
         of paragraph: CoreHwp.HwpParagraph,
         index: HwpIndex
     ) -> CGFloat {

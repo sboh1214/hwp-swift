@@ -17,17 +17,6 @@ struct HwpParagraphObjectCollector {
     /// 자체 `HwpTextboxLayout`을 만들 때 캐시를 잃지 않게 한다.
     var attributeCache: HwpTextAttributeCache?
 
-    struct Objects {
-        var images: [HwpCellImage] = []
-        var shapes: [HwpCellShape] = []
-        var textboxes: [HwpCellTextbox] = []
-
-        /// 수집 총량 — 다음 문단의 firstSourceOrder (원본 순서 ordinal 연속)
-        var count: Int {
-            images.count + shapes.count + textboxes.count
-        }
-    }
-
     typealias HandledControl = (
         commonProperty: CoreHwp.HwpCommonCtrlProperty?,
         components: [CoreHwp.HwpShapeComponent]
@@ -99,6 +88,7 @@ struct HwpParagraphObjectCollector {
                 ),
                 paragraphRect: paragraphRect
             )
+            let marker = collected.marker
             for component in components {
                 collect(
                     component: component,
@@ -107,6 +97,11 @@ struct HwpParagraphObjectCollector {
                     state: &state,
                     into: &collected
                 )
+            }
+            // origin()의 저작 오프셋 분기와 같은 판정 — 공통 속성이 없으면 흐름
+            // 배치라 떠 있는 개체가 아니다 (#91).
+            if let commonProperty, !commonProperty.propertyInfo.treatAsChar {
+                collected.noteFloating(since: marker)
             }
         }
         return collected
@@ -355,6 +350,64 @@ struct HwpParagraphObjectCollector {
             sourceOrder: state.sourceOrder,
             controlInstanceId: commonProperty?.instanceId ?? 0
         )
+    }
+}
+
+extension HwpParagraphObjectCollector {
+    /// 수집 결과 — 종류별 개체 목록 + 떠 있는 개체 하단.
+    struct Objects {
+        var images: [HwpCellImage] = []
+        var shapes: [HwpCellShape] = []
+        var textboxes: [HwpCellTextbox] = []
+        /// 떠 있는 개체 (글자처럼 취급 아님)의 하단 최대값 (paragraphRect 좌표계).
+        /// 한글 줄 캐시도 저작된 셀 높이 (표 80)도 이 개체를 담지 않으므로,
+        /// 컨테이너 높이를 그 둘로만 정하면 개체가 컨테이너 밖으로 흘러나간다
+        /// (#91). 배치와 같은 origin/size 산식에서 뽑아야 측정과 어긋나지 않아
+        /// 여기서 함께 낸다.
+        var floatingBottom: CGFloat?
+
+        /// 수집 총량 — 다음 문단의 firstSourceOrder (원본 순서 ordinal 연속)
+        var count: Int {
+            images.count + shapes.count + textboxes.count
+        }
+
+        /// 종류별 개수 스냅샷 — 컨트롤 하나가 새로 넣은 개체 범위를 잡는 표식.
+        var marker: ObjectMarker {
+            ObjectMarker(images: images.count, shapes: shapes.count, textboxes: textboxes.count)
+        }
+
+        /// 표식 이후 추가된 개체들의 하단 최대값을 떠 있는 개체 하단으로 기록한다.
+        /// '떠 있음'은 컴포넌트가 아니라 **컨트롤**의 속성이라 호출부가 컨트롤
+        /// 단위로 부른다.
+        mutating func noteFloating(since marker: ObjectMarker) {
+            let bottoms = images[marker.images...].map(\.rect.maxY)
+                + shapes[marker.shapes...].map(\.rect.maxY)
+                + textboxes[marker.textboxes...].map(\.rect.maxY)
+            guard let bottom = bottoms.max() else { return }
+            floatingBottom = Swift.max(floatingBottom ?? bottom, bottom)
+        }
+    }
+
+    /// `Objects.marker` 스냅샷 (중첩 depth 상한을 넘지 않게 형제로 둔다)
+    struct ObjectMarker {
+        let images: Int
+        let shapes: Int
+        let textboxes: Int
+    }
+
+    /// 문단에 떠 있는 (글자처럼 취급 아님) 수집 대상 컨트롤이 있는지.
+    /// 개체를 다시 수집해야 높이를 알 수 있는 컨테이너만 고르는 값싼 사전
+    /// 판정이다 (#91) — 컨트롤 없는 문단이 대다수라 재수집이 거의 안 돈다.
+    static func hasFloatingObject(
+        in paragraph: CoreHwp.HwpParagraph,
+        collectsTextboxes: Bool
+    ) -> Bool {
+        (paragraph.ctrlHeaderArray ?? []).contains { ctrl in
+            guard let (commonProperty, components) = handledControl(ctrl),
+                  let commonProperty, !commonProperty.propertyInfo.treatAsChar
+            else { return false }
+            return collectible(components, collectsTextboxes: collectsTextboxes)
+        }
     }
 }
 

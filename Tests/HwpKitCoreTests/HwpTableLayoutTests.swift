@@ -158,6 +158,80 @@ import XCTest
             expect(reachedDepth) == 3
         }
 
+        /// 셀 안 **떠 있는** 개체는 한글 줄 캐시에도 저작된 셀 높이 (표 80)에도
+        /// 없다 — 그 둘만 믿으면 행이 라벨 한 줄로 접히고 개체가 아래 행들을
+        /// 덮으며 표 밖으로 흘러나간다 (#91: noori 3쪽 붙임 표가 선언 627.0pt의
+        /// 29%인 181.6pt로 조판됐다. 형상 행은 저작 12.82pt·캐시 16.00pt인데
+        /// 셀 안 그림이 455.40pt다).
+        func testFloatingObjectInCellGrowsRowBeyondAuthoredHeight() throws {
+            // noori 형상 행 재현: 저작 10pt·캐시 16pt인데 떠 있는 개체는 300pt
+            var floating = try HwpSynthetic.lineSegParagraph(
+                "", segments: [(location: 0, height: 1000)]
+            )
+            floating.ctrlHeaderArray = [
+                .genShapeObject(HwpSynthetic.floatingShapeObject(width: 5000, height: 30000)),
+            ]
+            let result = layout().layout(
+                table: try shapeRowTable(shapeParagraph: floating),
+                availableWidth: 400,
+                index: index()
+            )
+
+            guard case let .success(frame) = result else {
+                fail("expected table layout success")
+                return
+            }
+            // 형상 행은 개체 높이만큼 자라고 (여백 0), 다음 행은 저작대로 남는다.
+            expect(frame.rows[0].rowFrame.height).to(beCloseTo(300, within: 0.5))
+            expect(frame.rows[1].rowFrame.height).to(beCloseTo(10, within: 0.5))
+            // 개체가 자기 셀 안에 들어온다 — 이 이슈의 증상이 바로 이 초과였다.
+            let shapeCell = frame.rows[0].cells[1]
+            expect(shapeCell.shapes.count) == 1
+            expect(shapeCell.shapes.first?.rect.maxY ?? .infinity)
+                <= shapeCell.cellFrame.maxY + 0.5
+        }
+
+        /// 반대 방향 가드: **글자처럼 취급** 개체는 줄 캐시가 담는 몫이라
+        /// 하한을 얹지 않는다. 얹으면 캐시를 신뢰하는 규약 (헌법주석 실측 —
+        /// 셀이 저작 높이보다 부풀면 페이지 분할이 한글과 어긋난다)이 깨진다.
+        func testInlineObjectInCellKeepsAuthoredRowHeight() throws {
+            var inline = try HwpSynthetic.lineSegParagraph(
+                "", segments: [(location: 0, height: 1000)]
+            )
+            inline.ctrlHeaderArray = [
+                .genShapeObject(HwpSynthetic.inlineShapeObject(width: 5000, height: 30000)),
+            ]
+            let result = layout().layout(
+                table: try shapeRowTable(shapeParagraph: inline),
+                availableWidth: 400,
+                index: index()
+            )
+
+            guard case let .success(frame) = result else {
+                fail("expected table layout success")
+                return
+            }
+            expect(frame.rows[0].rowFrame.height).to(beCloseTo(10, within: 0.5))
+        }
+
+        /// 형상 행 + 값 행 2×2 표 — 모든 셀이 라인 캐시를 갖고 저작 높이는 10pt다
+        /// (`hasCachedContent && authoredHeight > 0` 분기를 타게 한다).
+        private func shapeRowTable(
+            shapeParagraph: CoreHwp.HwpParagraph
+        ) throws -> CoreHwp.HwpTable {
+            func labelled(_ text: String) throws -> CoreHwp.HwpParagraph {
+                try HwpSynthetic.lineSegParagraph(text, segments: [(location: 0, height: 1000)])
+            }
+            return HwpSynthetic.table(
+                cellWidth: 10000,
+                rowHeights: [1000, 1000],
+                cellParagraphs: [
+                    [[try labelled("형 상")], [shapeParagraph]],
+                    [[try labelled("총 길이")], [try labelled("47.2 m")]],
+                ]
+            )
+        }
+
         func testAuthoredCellWidthsDriveColumnWidths() {
             // 150 + 50 HWPUNIT*100 = 150pt + 50pt authored → scaled to 200pt outer width
             let cells = [

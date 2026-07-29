@@ -288,6 +288,22 @@ enum HwpSynthetic {
         object.shapeComponentArray[0] = component
         return object
     }
+
+    /// 떠 있는 (글자처럼 취급 아님) gso 개체 — 세로 기준 '문단', 오프셋 0.
+    /// 한글 줄 캐시에 잡히지 않는 개체를 재현한다 (#91).
+    static func floatingShapeObject(
+        width: UInt32,
+        height: UInt32,
+        instanceId: UInt32 = 0
+    ) -> CoreHwp.HwpGenShapeObject {
+        var object = inlineShapeObject(width: width, height: height, instanceId: instanceId)
+        var info = object.commonCtrlProperty.propertyInfo
+        info.treatAsChar = false
+        info.verticalRelativeToRawValue = HwpCommonCtrlVerticalRelativeTo.paragraph.rawValue
+        info.verticalRelativeTo = .paragraph
+        object.commonCtrlProperty.propertyInfo = info
+        return object
+    }
 }
 
 // MARK: - 표/셀 빌더
