@@ -1,6 +1,6 @@
 # 프로젝트 지식 베이스
 
-**Branch:** test/ci-deterministic-render-guard
+**Branch:** fix/table-row-height-image-only-cell
 
 ## 개요
 

@@ -350,8 +350,9 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   행 700pt). 한글도 쪽에 걸린 개체를 담으려고 셀을 키우지 않는다.
   `objects()`의 기록 조건과 `hasFloatingObject` 사전 판정은 **반드시 같은
   술어**를 써야 한다 — 갈리면 걸러진 셀이 하한을 못 받는다.
-  가드: `HwpTableLayoutTests`의 floating/inline/쪽 기준 세 짝 + 문단 쌓기
-  (앞 문단·문단 위 간격·중첩 표) 담김 테스트 + noori p3 골든
+  가드: `HwpTableFloatingObjectLayoutTests` (셀 높이 전용 스위트 — 폭·분할을
+  보는 `HwpTableLayoutTests`와 분리) 의 floating/inline/쪽 기준 세 짝 + 문단
+  쌓기 (앞 문단·문단 위 간격·중첩 표) 담김 테스트 + noori p3 골든
 - 셀 안 그림·도형·글상자는 셀 콘텐츠로 배치된다 (0357d24, R29 #1). 다만 ole
   (내장 차트)를 품은 컴포넌트와 수식 컨트롤은 수집 대상이 아니라 페이지 흐름
   경로가 그린다 (`collectible`·`handledControl` — 흐름 억제 술어
