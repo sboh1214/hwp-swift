@@ -99,6 +99,36 @@ import XCTest
             expect(frame.rows[0].rowFrame.height).to(beCloseTo(10, within: 0.5))
         }
 
+        /// 글 뒤로·글 앞으로는 **겹치는 것이 설계**라 (앵커 규칙 "text 블록과
+        /// 겹칠 수 있음") 담으려고 셀을 키우지 않는다 — 셀 안 워터마크·말풍선
+        /// 하나가 행을 부풀려 표 총높이와 페이지 분할을 함께 어긋낸다.
+        /// 빠지는 것은 **높이 하한뿐**이고 셀 콘텐츠 배치는 그대로여야 한다
+        /// (하한에서 빼려다 개체를 통째로 잃으면 소실 회귀다).
+        func testOverlayWrapModesDoNotGrowRowButStayRendered() throws {
+            for wrap in [CoreHwp.HwpCommonCtrlTextWrap.behindText, .inFrontOfText] {
+                var overlay = try HwpSynthetic.lineSegParagraph(
+                    "", segments: [(location: 0, height: 1000)]
+                )
+                overlay.ctrlHeaderArray = [
+                    .genShapeObject(HwpSynthetic.floatingShapeObject(
+                        width: 5000, height: 30000, textWrap: wrap
+                    )),
+                ]
+                let result = layout().layout(
+                    table: try shapeRowTable(shapeParagraph: overlay),
+                    availableWidth: 400,
+                    index: index()
+                )
+
+                guard case let .success(frame) = result else {
+                    fail("expected table layout success (\(wrap))")
+                    return
+                }
+                expect(frame.rows[0].rowFrame.height).to(beCloseTo(10, within: 0.5))
+                expect(frame.rows[0].cells[1].shapes.count) == 1
+            }
+        }
+
         /// 측정 (`floatingObjectHeight`)과 배치 (`laidOutContents`)가 문단을 같은
         /// 순서·같은 간격으로 쌓는지 — 셀-로컬 좌표에서 손으로 복제된 유일한
         /// 산술이라 갈리면 개체가 셀을 넘긴다. 앞 문단 텍스트·문단 위 간격·

@@ -393,8 +393,23 @@ extension HwpParagraphObjectCollector {
         let textboxes: Int
     }
 
-    /// 컨테이너 높이를 키워야 하는 개체인지 — 글자처럼 취급이 **아니고**
-    /// 세로 기준이 **'문단'**인 것 (#91).
+    /// 배치 방식 (표 70 textWrap)이 흐름을 점유하는지 — 어울림·자리 차지는
+    /// 자리를 잡고, 글 뒤로·글 앞으로는 겹쳐 그리는 오버레이라 잡지 않는다.
+    ///
+    /// **이 술어의 소유자는 여기다** — 페이지 흐름 경로 (`HwpPaginator`)와 셀
+    /// 높이 하한 (`growsContainer`)이 같은 답을 써야 한다. 갈리면 흐름에서
+    /// 자리를 안 주는 개체가 컨테이너는 키우는 모순이 생긴다.
+    static func consumesFlow(_ info: CoreHwp.HwpCommonCtrlPropertyInfo) -> Bool {
+        switch info.textWrap {
+        case .square, .topAndBottom, nil:
+            true
+        case .behindText, .inFrontOfText:
+            false
+        }
+    }
+
+    /// 컨테이너 높이를 키워야 하는 개체인지 — 글자처럼 취급이 **아니고**,
+    /// 세로 기준이 **'문단'**이고, 배치 방식이 **흐름을 점유**하는 것 (#91).
     ///
     /// 공통 속성이 없으면 `origin()`이 흐름 배치를 택하므로 떠 있는 개체가
     /// 아니다. 세로 기준을 함께 보는 이유: 쪽/종이 기준 개체의 저작
@@ -405,10 +420,20 @@ extension HwpParagraphObjectCollector {
     /// 저작 10pt 셀 + 쪽 기준 오프셋 600pt 개체 → 행 700pt). 한글도 쪽/종이에
     /// 걸린 개체를 담으려고 셀을 키우지 않는다 — 그건 쪽에 놓인 개체다.
     /// #91이 실제로 측정한 noori 형상 행 개체는 세로 기준 '문단'이다.
+    ///
+    /// 배치 방식을 함께 보는 이유도 같은 꼴이다: 글 뒤로·글 앞으로는 **겹치는
+    /// 것이 설계**라 (앵커 규칙 "text 블록과 겹칠 수 있음") 담으려고 컨테이너를
+    /// 키우면 안 된다 — 셀 안 큰 워터마크·말풍선이 행을 부풀려 표 총높이와
+    /// 페이지 분할을 함께 어긋내고, `maximumCellHeight`는 이 규모를 막지 못한다.
+    /// 여기 걸리는 개체도 셀 콘텐츠로 그려지는 것은 그대로다 (`paintsBehindText`) —
+    /// 빠지는 것은 **높이 하한뿐**이다. noori 형상 행 개체는 '자리 차지'
+    /// (`.topAndBottom`) 라 #91은 그대로 성립한다 (실측).
     static func growsContainer(_ commonProperty: CoreHwp.HwpCommonCtrlProperty?) -> Bool {
         guard let commonProperty else { return false }
         let info = commonProperty.propertyInfo
-        return !info.treatAsChar && info.verticalRelativeTo == .paragraph
+        return !info.treatAsChar
+            && info.verticalRelativeTo == .paragraph
+            && consumesFlow(info)
     }
 
     /// 문단에 컨테이너를 키우는 (`growsContainer`) 수집 대상 컨트롤이 있는지.
