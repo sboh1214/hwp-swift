@@ -75,27 +75,6 @@ import XCTest
             expect(CTFontCopyFamilyName(font) as String) == "Menlo"
         }
 
-        func testDeterministicResolverReturnsMenlo() {
-            let font = HwpFontResolver.testDeterministic.resolve(
-                faceName: "unknown-font-xyz", script: .korean, size: 12
-            )
-            expect(CTFontCopyFamilyName(font) as String) == "Menlo"
-        }
-
-        /// 결정론 resolver는 문서 대체 글꼴을 무시해야 한다 — 기본 문서의 `함초롬바탕`은
-        /// `defaultFaceName`이 "HCR Batang"이라, 쓰면 그 폰트 설치 여부로 조판이 갈린다.
-        /// 대체 후보는 **반드시 설치돼 있는** 이름이어야 한다. 없는 이름으로 바꾸면
-        /// 폴백이 어차피 Menlo라 테스트가 공허하게 통과한다.
-        func testDeterministicResolverIgnoresDocumentAlternatives() {
-            let font = HwpFontResolver.testDeterministic.resolve(
-                faceName: "unknown-font-xyz",
-                alternatives: ["Helvetica", "HCR Batang"],
-                script: .korean,
-                size: 12
-            )
-            expect(CTFontCopyFamilyName(font) as String) == "Menlo"
-        }
-
         func testDefaultFontMapEntryCount() {
             expect(HwpFontMap.default.entries.count) >= 15
         }
@@ -359,6 +338,76 @@ import XCTest
             expect(HwpFontMap.default.candidates(forFaceName: "#중고딕")).notTo(beEmpty())
             expect(HwpFontMap.default.candidates(forFaceName: "신명 디나루")).notTo(beEmpty())
             expect(HwpFontMap.default.candidates(forFaceName: "미지의서체")).to(beEmpty())
+        }
+    }
+
+    /// 결정론 resolver (`testDeterministic`)가 닫아야 하는 세 축의 가드 —
+    /// 시스템 등록 폰트·한컴 번들·문서 대체 글꼴. 하나라도 열리면 같은 문서가
+    /// 기여자 머신마다 다르게 조판돼, 커밋된 렌더 골든이 일부 기기에서만 깨진다.
+    extension HwpFontResolverTests {
+        func testDeterministicResolverReturnsMenlo() {
+            let font = HwpFontResolver.testDeterministic.resolve(
+                faceName: "unknown-font-xyz", script: .korean, size: 12
+            )
+            expect(CTFontCopyFamilyName(font) as String) == "Menlo"
+        }
+
+        /// 결정론 resolver는 문서 대체 글꼴을 무시해야 한다 — 기본 문서의 `함초롬바탕`은
+        /// `defaultFaceName`이 "HCR Batang"이라, 쓰면 그 폰트 설치 여부로 조판이 갈린다.
+        /// 대체 후보는 **반드시 설치돼 있는** 이름이어야 한다. 없는 이름으로 바꾸면
+        /// 폴백이 어차피 Menlo라 테스트가 공허하게 통과한다.
+        func testDeterministicResolverIgnoresDocumentAlternatives() {
+            let font = HwpFontResolver.testDeterministic.resolve(
+                faceName: "unknown-font-xyz",
+                alternatives: ["Helvetica", "HCR Batang"],
+                script: .korean,
+                size: 12
+            )
+            expect(CTFontCopyFamilyName(font) as String) == "Menlo"
+        }
+
+        /// 결정론 resolver의 마지막 축은 **시스템 설치 폰트**다. 위 두 케이스는 둘 다
+        /// `"unknown-font-xyz"`(= 폴백 경로)만 찔러 이 구멍을 통과시켰다 — 실제로
+        /// 등록돼 있는 이름을 넣어야 시스템 조회가 닫혔는지 관측된다.
+        ///
+        /// 이 축이 열려 있으면 HWP 원문 face 이름 (`굴림`·`바탕`·`함초롬바탕`)이
+        /// 그 이름으로 등록된 기기에서만 실폰트로 해석돼, 커밋된 골든이 일부
+        /// 기여자 머신에서만 깨진다.
+        func testDeterministicResolverIgnoresInstalledSystemFonts() {
+            let registered = Set(CTFontManagerCopyAvailableFontFamilyNames() as? [String] ?? [])
+            // 이 기기에 실제로 등록된 이름만 고른다 — 없는 이름은 폴백이 어차피
+            // Menlo라 테스트가 공허하게 통과한다. 한글 이름은 있으면 함께 검사한다.
+            let candidates = ["Helvetica", "AppleMyungjo", "HCR Batang", "굴림", "함초롬바탕"]
+            let installed = candidates.filter(registered.contains)
+            expect(installed).toNot(
+                beEmpty(), description: "대조할 설치 폰트가 없다 — 후보 목록을 갱신할 것"
+            )
+            for face in installed {
+                let font = HwpFontResolver.testDeterministic.resolve(
+                    faceName: face, script: .korean, size: 12
+                )
+                expect(CTFontCopyFamilyName(font) as String).to(
+                    equal("Menlo"),
+                    description: "설치된 '\(face)'가 실폰트로 해석됐다 — 결정론 구멍"
+                )
+            }
+        }
+
+        /// 같은 이름을 두 resolver가 **다르게** 봐야 한다. 결정론 쪽만 검사하면
+        /// 플래그가 반대로 꽂혀 기본 resolver의 시스템 조회까지 꺼져도 통과한다 —
+        /// `resolve`는 모든 문서 로드의 핫패스라 기본 거동이 바뀌면 안 된다.
+        func testSystemFontLookupAxisSplitsDefaultAndDeterministicResolvers() {
+            let face = "Helvetica"
+            let byDefault = CTFontCopyFamilyName(
+                resolver.resolve(faceName: face, script: .english, size: 12)
+            ) as String
+            let deterministic = CTFontCopyFamilyName(
+                HwpFontResolver.testDeterministic.resolve(
+                    faceName: face, script: .english, size: 12
+                )
+            ) as String
+            expect(byDefault) == face
+            expect(deterministic) == "Menlo"
         }
     }
 #endif
