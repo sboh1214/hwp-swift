@@ -104,6 +104,7 @@ if buildsViewerTargets {
             ],
             exclude: [
                 "BlockSnapshots",
+                "RenderGoldens",
             ]
         ),
     ]
