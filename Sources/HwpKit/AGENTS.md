@@ -4,6 +4,7 @@ SwiftUI 공개 API target. HwpKitNative 위에 `NSViewRepresentable` / `UIViewRe
 
 ## 공개 API 표면
 
+- `HwpDocumentLoader(fontResolver:)` — 렌더에 쓸 폰트 해석기 주입 (기본 `HwpFontResolver()`). 커밋된 기준선을 쓰는 렌더 가드가 전부 이 인자 하나에 기대 기기 독립을 얻는다 (`.testDeterministic` — 루트 AGENTS.md "렌더 가드 3층"). 호스트도 재현 가능한 조판이 필요하면 같은 방식으로 고정 resolver를 넘긴다
 - `HwpDocumentLoader.load(from:)` — URL / Data / FileWrapper 오버로드. 내부적으로 `HwpDocumentActor` 사용. 에러는 `HwpDocumentLoadError` 로 매핑 (`CustomStringConvertible` + `LocalizedError` 채택 — 호스트가 `error.localizedDescription` 을 그대로 표시하면 감싼 파서/페이지네이터 원인이 나온다. 새 case 추가 시 `description` 도 함께 채울 것)
 - `HwpDocumentLoader.loadUpdates(from:)` — 프로그레시브 로딩. `AsyncThrowingStream<HwpDocumentSnapshot, Error>` 로 첫 페이지 확정 즉시 스냅샷을 방출하고 배치 단위로 이어가다 최종 스냅샷(`isComplete`)으로 끝난다. 최종 문서는 `load(from:)` 결과와 동일. 뷰는 `HwpDocumentMetadata.loadToken` 으로 증분 적용(스크롤 유지) vs 전체 리셋을 판정
 - `HwpDocumentView` — SwiftUI View. optional `zoomScale: Binding<CGFloat>?` + `currentPage: Binding<Int>?` + hyperlink/unsupported 콜백

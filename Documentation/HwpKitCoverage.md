@@ -119,7 +119,8 @@ resolvedLineSpacingKind/Value, `HwpLineSpacingKind`가 추가되었다.
 줄 간격, 글자처럼 취급 표의 앵커 줄 인라인 배치, 각주 스택·표 셀 높이의
 라인 캐시 우선 측정(같은 각주 컨트롤 문단은 간격 0), 절대 캐시 문단의
 하단 줄 간격 몫 절단. 렌더 페이지 수는 manifest `expectations.pageCount`로
-잠근다 (헌법주석 계열 1,031 — 한글 인쇄본 1,030 대비 +1, AGENTS.md 한계).
+잠근다 (이 시점 헌법주석 계열 1,031 — 한글 인쇄본 1,030 대비 +1. 2026-07-10
+표 셀 각주의 행 페이지 귀속으로 1,030에 일치했다).
 
 양쪽 정렬은 draw 시 남는 폭을 공백에만 배분하는 한글식 재조판
 (`HwpWordJustification`)으로 처리되어 좁은 단의 자간 벌어짐이 해소되었다.
@@ -129,7 +130,8 @@ resolvedLineSpacingKind/Value, `HwpLineSpacingKind`가 추가되었다.
 셀 문단 전부가 라인 캐시로 측정된 셀은 저작된 셀 높이 (표 80)를 신뢰한다.
 문서 끝 미주는 새 쪽에서 시작한다 (footnote-endnote 2쪽 정합).
 페이지 수 실측: noori 3·multi-section 2·footnote-endnote 2 정확 일치,
-헌법주석 계열은 1,031 (한글 1,030 대비 +1 — AGENTS.md 한계 참조).
+헌법주석 계열은 이 시점 1,031 (한글 1,030 대비 +1 — 2026-07-10 표 셀 각주의
+행 페이지 귀속으로 1,030에 일치했다. 출처는 manifest `pageCountSource`).
 
 남은 자발적 축소 범위: 수식(`eqed`) 스크립트 렌더 (placeholder 유지),
 TEXTART/FORM_OBJECT/CHART_DATA 세부 디코딩, 그림 PATTERN8x8 효과,
@@ -142,7 +144,8 @@ TEXTART/FORM_OBJECT/CHART_DATA 세부 디코딩, 그림 PATTERN8x8 효과,
 미리보기)를 한글.app 렌더의 기준 이미지로 사용하는 자동 회귀 스위트.
 
 ```bash
-swift test --filter FixturePreviewFidelityTests   # 전 픽스처 fidelity 게이트
+# 환경 의존 (임계가 함초롬체 설치 기기 기준 — README "폰트") — 기본 실행·CI에서는 skip
+HWP_SNAPSHOT_TESTS=1 swift test --filter FixturePreviewFidelityTests
 ```
 
 - `FixturePreviewSupport.swift` — 렌더/비교 유틸: `FixturePreview.firstPage`
@@ -158,5 +161,16 @@ swift test --filter FixturePreviewFidelityTests   # 전 픽스처 fidelity 게�
   대조한다 (`previewZoomOverrides`).
 - 진단 시 렌더/PrvImage 나란히 PNG 덤프는 `FixturePreview` 유틸로 스크래치
   테스트를 만들어 사용한다 (커밋 금지 — repo에는 이미지 산출물을 두지 않는다).
+- 같은 렌더 유틸을 쓰되 **CI에서 상시 도는** 축은 `FixtureRenderGoldenTests`다
+  (#69) — `inkGrid`를 천분율 정수로 양자화한 24×32 골든을 `RenderGoldens/`에
+  **커밋해** 두고, `HwpFontResolver.testDeterministic`으로 로드해 설치 폰트 축을
+  없앤다. 대상은 PrvImage 오라클이 닿지 않는 2쪽 이후 (1쪽은 fidelity 몫),
+  임계는 잉크량 **비율** 이중축 — 전역은 페이지 총잉크, 국소는 그 셀 자신의
+  잉크 (절대값이면 거의 백지인 페이지에서 내용이 통째로 사라져도 통과하고,
+  국소를 페이지 최대 셀에서 뽑으면 저잉크 셀의 얇은 장식 소실이 묻힌다).
+  macOS 전용 — iOS 시뮬레이터는 호스트 파일시스템의
+  폰트를 읽어 재현되지 않는다. 세 층의 역할 분담은 루트 AGENTS.md "렌더 가드
+  3층" 참조.
 - 페이지 수 회귀 가드: manifest `expectations.pageCount`(+`pageCountSource`)
-  ↔ `FixtureRenderTests.testPageCountsMatchManifest`.
+  ↔ `FixtureRenderTests.testPageCountsMatchManifest` — 결정론 resolver로 옮겨
+  CI 상시 실행 (#69).

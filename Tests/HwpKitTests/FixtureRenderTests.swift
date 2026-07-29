@@ -60,11 +60,13 @@ final class FixtureRenderTests: XCTestCase {
 
     /// manifest expectations.pageCount (렌더 실측 잠금 — 출처는 manifest의
     /// pageCountSource)와 실제 렌더 페이지 수가 정확히 일치해야 한다.
-    /// 페이지 수는 줄바꿈 누적 = 설치 폰트 메트릭의 함수이고 기대값도 이
-    /// 머신 렌더로 잠근 것이라 환경 의존 — 기본 swift test·CI에서는 skip.
+    ///
+    /// 페이지 수는 줄바꿈 누적 = 폰트 메트릭의 함수라 예전에는 환경 의존
+    /// 테스트였다. `.testDeterministic`으로 resolver를 핀 고정해 그 축을 닫고
+    /// CI 상시 가드로 올린다 (#69). 기대값은 그대로 쓴다 — 결정론 resolver로
+    /// 뜬 페이지 수가 4개 다중 페이지 픽스처의 한글.app 실측(noori 3·
+    /// footnote-endnote 2·multi-section 2·legacy 1,030)과 그대로 일치한다.
     func testPageCountsMatchManifest() async throws {
-        try EnvironmentSensitiveTests.skipUnlessOptedIn()
-
         let fixtures = try FixtureRoot.loadAllFixtures(from: #file)
         let withPageCount = fixtures.filter { $0.expectedPageCount != nil }
         // 파싱 가능한 29개 픽스처 전부에 pageCount 명세가 있다
@@ -74,7 +76,8 @@ final class FixtureRenderTests: XCTestCase {
         for fixture in withPageCount {
             guard let expected = fixture.expectedPageCount else { continue }
             do {
-                let document = try await HwpDocumentLoader().load(from: fixture.documentURL)
+                let document = try await HwpDocumentLoader(fontResolver: .testDeterministic)
+                    .load(from: fixture.documentURL)
                 if document.pages.count != expected {
                     failures.append(
                         "[\(fixture.id)] pages \(document.pages.count) != expected \(expected)"

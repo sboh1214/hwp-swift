@@ -1,6 +1,6 @@
 # 프로젝트 지식 베이스
 
-**Branch:** perf/text-attribute-cache
+**Branch:** test/ci-deterministic-render-guard
 
 ## 개요
 
@@ -133,10 +133,11 @@ swift build                                    # 빌드
 swift test                                     # 테스트 실행
 swift test --enable-code-coverage              # 커버리지 (lcov 추출·CoreHwp 95% 게이트는 .github/workflows/ci.yml의 coverage job)
 HWP_PERF=1 swift test --filter Performance     # 성능 실측 (N=20,000 합성 + 타이트 임계; 기본은 N=1,000 스모크)
-HWP_SNAPSHOT_TESTS=1 swift test --filter "FixtureRenderHash|FixtureBlockLayout|FixturePreviewFidelity"  # 환경 의존 스냅샷·fidelity 스위트 (기본 swift test·CI에서는 skip)
+HWP_SNAPSHOT_TESTS=1 swift test --filter "FixtureRenderHash|FixturePreviewFidelity"  # 환경 의존 스위트 (기본 swift test·CI에서는 skip)
 HWP_HANCOM_FONTS=1 swift test                  # 한컴오피스 번들 폰트 opt-in (기본 off — README "폰트"). 렌더 해시 기준선이 이 모드용으로 따로 있다
 RECORD_RENDER_HASHES=1 swift test --filter FixtureRenderHash     # 렌더 픽셀 해시 기준선 레코딩 (Snapshots/ — gitignore, 이 머신·현재 폰트 모드 전용)
 RECORD_BLOCK_SNAPSHOTS=1 swift test --filter FixtureBlockLayout  # 블록 좌표 스냅샷 재생성 (기준선은 커밋 대상 — diff 리뷰 필수)
+RECORD_RENDER_GOLDENS=1 swift test --filter FixtureRenderGolden  # 결정론 잉크 그리드 골든 재기록 (기준선은 커밋 대상 — diff 리뷰 필수)
 xcodebuild test -scheme Hwp-Swift-Package -destination 'platform=iOS Simulator,name=iPhone 17 Pro'  # iOS 테스트 (#if os(iOS) 코드는 여기서만 실행)
 swiftformat .                                  # 포맷
 swiftformat --lint .                           # CI lint 체크
@@ -147,6 +148,42 @@ pre-commit install && pre-commit run --all     # hook 설치 + 전체 실행
 성능 게이트: CI는 스모크 파라미터만 상시 실행 (공유 러너 wall-time 하드
 게이트는 flaky). 타이트 임계는 로컬 `HWP_PERF=1`로 확인 — 성능에 닿는
 PR은 실측 수치를 커밋 메시지에 기록한다.
+
+## 렌더 가드 3층 (#69)
+
+| 스위트 | 축 | 기준선 | CI |
+|--------|-----|--------|-----|
+| `FixtureRenderHashSnapshotTests` | 엄격·비이동 (전 픽스처 × 전 페이지 SHA-256) | `Snapshots/` **gitignore** | ✗ opt-in |
+| `FixturePreviewFidelityTests` | 정합성 (PrvImage 오라클) — **1쪽뿐** | 소스 상수 임계 | ✗ opt-in |
+| `FixtureBlockLayoutSnapshotTests`·`FixtureRenderGoldenTests`·`testPageCountsMatchManifest` | 관대·이동 가능 (좌표·잉크 그리드·페이지 수) | **커밋됨** | ✓ 상시 |
+
+아래 세 스위트가 CI에서 도는 근거는 전부 `HwpFontResolver.testDeterministic`
+하나다 — 폰트 조회 세 축(시스템 등록 폰트·한컴 번들·문서 대체 글꼴)을 모두
+닫아 설치 폰트와 무관하게 같은 CTFont가 나온다. **이 스위트들의 로더를 기본
+resolver로 되돌리면 안 된다**: 좌표가 설치 폰트 메트릭의 함수가 되어
+한컴오피스가 없는 CI 러너와 갈리고, 굴림·바탕·함초롬체가 설치된 한국인 기여자
+머신에서만 빨개진다. 결정론의 한계 하나는 남는다 — Menlo에 한글 글리프가 없어
+한글 폴백이 OS 캐스케이드에 맡겨지므로 macOS 버전 간 미세 차가 있다. 골든
+임계를 잉크량 **비율**로 잡아 그 잔차를 흡수하되, 전역은 페이지 총잉크에
+국소는 **그 셀 자신의** 잉크에 비례시킨다 — 국소를 페이지 최대 셀에서 뽑으면
+표 테두리처럼 얇은 장식이 저잉크 셀에서 통째로 사라져도 통과한다 (실측:
+noori p2에서 비영 셀의 30%까지 지워도 양쪽 통과).
+
+골든 대상은 PrvImage 오라클이 닿지 않는 2쪽 이후만 고른다 (1쪽은 fidelity가
+본다). 그래서 **골든을 새로 뜨기 전에 한글.app 실물과 육안 대조할 것** —
+골든은 "바뀌었나"에만 답하고 "맞나"에는 답하지 않아, 틀린 렌더를 커밋하면
+나중의 올바른 수정이 리뷰에서 회귀처럼 보인다.
+`HWP_ALLPAGES=<id> HWP_ALLPAGES_DIR=<dir> swift test --filter testDumpAllPages`.
+이 대조로 이미 한 장을 걸렀다 — noori p3은 표 높이가 틀리게 그려져 (선언
+627.0pt vs 렌더 181.6pt — `Sources/HwpKitCore/AGENTS.md` 한계) 대상에서 뺐다.
+골든 스위트는 macOS 전용이다: iOS 시뮬레이터는 호스트 파일시스템의 폰트를 읽어
+같은 기준선이 재현되지 않아 `#if os(macOS)`로 통째로 뺐다 (CI의 iOS 잡에서는
+이 스위트가 존재하지 않는다). 반면 **블록 스냅샷·페이지 수에는 그 가드를 두지
+않았다** — macOS에서 뜬 기준선이 시뮬레이터에서 그대로 통과함을 실측했고
+(2026-07-29, iPhone 17 Pro, `xcodebuild test`), 즉 Menlo에 없는 한글이 타는 OS
+캐스케이드가 두 OS에서 스냅샷 반올림(0.1pt) 안으로 일치한다. 러너 시뮬레이터의
+폰트 구성은 다를 수 있으니 **첫 push의 iOS 잡을 확인할 것** — 갈리면 임계를
+풀지 말고 이 둘도 macOS 전용으로 내리는 쪽이 맞다 (기준선의 의미가 흐려진다).
 
 렌더 경로 최적화(캐시 도입 등)는 **속도는 실측, 등가성은 해시**로 나눠
 증명한다: 같은 문서를 최적화 무력화 A/B로 N회 재조판·재드로해 배수를 재고,
@@ -174,12 +211,16 @@ PR 리뷰를 반영하며 렌더링 코드를 수정할 때, 한글 파일 렌�
    correctness·리팩터는 렌더 불변이어야 한다(해시가 증명).
 2. **수정** — 관심사별 커밋 분리 (로직 / 기계적 포맷).
 3. **검증 (계층별)**
-   - `swift test` — 환경 의존 4종은 자동 skip, 나머지 green.
-   - `HWP_SNAPSHOT_TESTS=1 swift test --filter "FixtureRenderHash|FixtureBlockLayout|FixturePreviewFidelity"`
+   - `swift test` — 환경 의존 2종(렌더 해시·fidelity)은 자동 skip. 커밋된
+     기준선을 쓰는 3종(블록 스냅샷·렌더 골든·페이지 수)은 **여기서 돈다** —
+     그 실패는 환경 차이가 아니라 진짜 회귀다. 의도된 변경이면
+     `RECORD_BLOCK_SNAPSHOTS=1`·`RECORD_RENDER_GOLDENS=1`로 재기록하고
+     diff를 리뷰할 것 (레코딩은 의도적으로 실패한다).
+   - `HWP_SNAPSHOT_TESTS=1 swift test --filter "FixtureRenderHash|FixturePreviewFidelity"`
      — 렌더 회귀. 실패 시 어느 픽스처의 몇 페이지가 변했는지 출력된다.
      렌더 해시는 폰트 모드별 기준선이라 `HWP_HANCOM_FONTS=1`을 덧붙인
-     실행을 한 번 더 해야 양쪽이 다 검증된다 (블록 스냅샷·fidelity는
-     양 모드 공용이라 한 번이면 된다). fidelity 임계는 **함초롬체가 설치된
+     실행을 한 번 더 해야 양쪽이 다 검증된다 (fidelity는 양 모드
+     공용이라 한 번이면 된다). fidelity 임계는 **함초롬체가 설치된
      기기** 기준이라(README "폰트") 미설치 기기의 실패는 렌더 회귀가 아니라
      환경 차이일 수 있다 — 임계를 올려 덮지 말 것.
    - **변경된 페이지만 육안 확인**:
@@ -197,7 +238,8 @@ PR 리뷰를 반영하며 렌더링 코드를 수정할 때, 한글 파일 렌�
    Linux·lint) 확인 — 브랜치 첫 PR 전엔 CI가 돈 적 없으니 특히 주시.
 
 원칙: **탐지는 해시, 진단은 블록 스냅샷 diff** (상호보완). 육안 재확인은
-바뀐 페이지만. 환경 의존 테스트는 기본·CI에서 skip, 로컬 opt-in.
+바뀐 페이지만. 기준선이 **머신 종속인** 스위트만 기본·CI에서 skip하고 로컬
+opt-in — **커밋된** 기준선을 쓰는 스위트는 CI에서 상시 돈다 (위 "렌더 가드 3층").
 
 ## 의존성 (모두 exact pinning)
 

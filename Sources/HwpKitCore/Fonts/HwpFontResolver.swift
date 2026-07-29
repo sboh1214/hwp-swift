@@ -61,6 +61,15 @@ import Foundation
         /// "HCR Batang"을 적어 둔다) 켜 두면 그 폰트 설치 여부로 조판이 갈린다.
         private let usesDocumentAlternatives: Bool
 
+        /// 시스템에 등록된 폰트를 후보 조회 대상에 넣을지. 결정론 resolver
+        /// (`testDeterministic`)만 끈다 — HWP 원문 face 이름은 그 자체가 **시스템
+        /// 폰트명일 수 있어** (`굴림`·`바탕`은 MS Office가, `함초롬바탕`은 한글
+        /// 정식 설치가 같은 한글 이름으로 등록한다) 이 축이 열려 있으면 같은 문서가
+        /// 기여자 머신마다 다른 실폰트로 조판된다. 한컴 번들·문서 대체 글꼴 축을
+        /// 닫아도 이 축 하나로 결정론이 깨지므로, 커밋 가능한 골든 기준선을 뜨려면
+        /// 셋을 모두 닫아야 한다.
+        private let usesSystemFontLookup: Bool
+
         /// - Parameter usesInstalledHancomFonts: 한컴오피스 앱 번들의 폰트를 조회
         ///   대상에 넣을지. 기본값은 `HwpInstalledHancomFonts.isEnabled`
         ///   (환경변수 `HWP_HANCOM_FONTS`, 미설정 시 off) — 번들에 타 파운드리
@@ -74,6 +83,7 @@ import Foundation
             scriptFallbacks = Self.defaultScriptFallbacks
             self.usesInstalledHancomFonts = usesInstalledHancomFonts
             usesDocumentAlternatives = true
+            usesSystemFontLookup = true
         }
 
         /// 기본값을 두지 않는다 — public init의 기본값은 off (환경변수)인데 여기만
@@ -82,12 +92,14 @@ import Foundation
             fontMap: HwpFontMap,
             scriptFallbacks: [HwpScript: String],
             usesInstalledHancomFonts: Bool,
-            usesDocumentAlternatives: Bool
+            usesDocumentAlternatives: Bool,
+            usesSystemFontLookup: Bool
         ) {
             self.fontMap = fontMap
             self.scriptFallbacks = scriptFallbacks
             self.usesInstalledHancomFonts = usesInstalledHancomFonts
             self.usesDocumentAlternatives = usesDocumentAlternatives
+            self.usesSystemFontLookup = usesSystemFontLookup
         }
 
         /// Resolves `faceName` for `script` at `size` points.
@@ -120,7 +132,9 @@ import Foundation
                     }
                 }
                 for candidate in candidates {
-                    if let font = Self.createIfAvailable(name: candidate, size: size) {
+                    if usesSystemFontLookup,
+                       let font = Self.createIfAvailable(name: candidate, size: size)
+                    {
                         return font
                     }
                     if usesInstalledHancomFonts,
@@ -212,8 +226,15 @@ import Foundation
             return CTFontCreateWithFontDescriptor(matched, size, nil)
         }
 
-        /// A resolver whose script fallbacks all resolve to "Menlo"
-        /// for deterministic snapshot tests.
+        /// 모든 face를 "Menlo"로 해석하는 기기 독립 resolver — 커밋 가능한 골든
+        /// 기준선용. 폰트 조회의 세 축 (시스템 등록 폰트·한컴 번들·문서 대체 글꼴)을
+        /// 모두 닫아, 어떤 폰트가 설치된 기기에서도 같은 CTFont가 나온다.
+        ///
+        /// 완전한 결정론은 아니다: Menlo에 한글 글리프가 없어 조판 시 한글 폴백이
+        /// OS 기본 캐스케이드에 맡겨지므로 macOS 버전 간 미세 차이가 남는다
+        /// (`kCTFontCascadeListAttribute`를 박으면 한글이 전부 .notdef로 렌더돼
+        /// 골든의 의미가 얇아지므로 채택하지 않는다). 이 resolver를 쓰는 기준선은
+        /// 임계를 여유 있게 잡거나 양자화를 거칠게 해 그 잔차를 흡수한다.
         public static let testDeterministic: HwpFontResolver = .init(
             fontMap: HwpFontMap(entries: [:]),
             scriptFallbacks: [
@@ -226,7 +247,8 @@ import Foundation
                 .user: "Menlo",
             ],
             usesInstalledHancomFonts: false,
-            usesDocumentAlternatives: false
+            usesDocumentAlternatives: false,
+            usesSystemFontLookup: false
         )
     }
 #endif
