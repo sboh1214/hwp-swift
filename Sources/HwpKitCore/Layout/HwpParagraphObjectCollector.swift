@@ -98,9 +98,7 @@ struct HwpParagraphObjectCollector {
                     into: &collected
                 )
             }
-            // origin()의 저작 오프셋 분기와 같은 판정 — 공통 속성이 없으면 흐름
-            // 배치라 떠 있는 개체가 아니다 (#91).
-            if let commonProperty, !commonProperty.propertyInfo.treatAsChar {
+            if Self.growsContainer(commonProperty) {
                 collected.noteFloating(since: marker)
             }
         }
@@ -395,16 +393,36 @@ extension HwpParagraphObjectCollector {
         let textboxes: Int
     }
 
-    /// 문단에 떠 있는 (글자처럼 취급 아님) 수집 대상 컨트롤이 있는지.
+    /// 컨테이너 높이를 키워야 하는 개체인지 — 글자처럼 취급이 **아니고**
+    /// 세로 기준이 **'문단'**인 것 (#91).
+    ///
+    /// 공통 속성이 없으면 `origin()`이 흐름 배치를 택하므로 떠 있는 개체가
+    /// 아니다. 세로 기준을 함께 보는 이유: 쪽/종이 기준 개체의 저작
+    /// `verticalOffset`은 **페이지 상단 기준 절대 좌표**라 수백 pt가 정상인데,
+    /// 컨테이너 안에는 쪽 기하가 없어 `origin()`이 그 값을 문단 rect에 그대로
+    /// 더하는 근사를 쓴다 (R32 #3). 그 근사는 개체 **위치**만 틀리는 선재 한계인데,
+    /// 높이 하한으로 승격시키면 표 총높이·페이지 분할 오차로 번진다 (실측:
+    /// 저작 10pt 셀 + 쪽 기준 오프셋 600pt 개체 → 행 700pt). 한글도 쪽/종이에
+    /// 걸린 개체를 담으려고 셀을 키우지 않는다 — 그건 쪽에 놓인 개체다.
+    /// #91이 실제로 측정한 noori 형상 행 개체는 세로 기준 '문단'이다.
+    static func growsContainer(_ commonProperty: CoreHwp.HwpCommonCtrlProperty?) -> Bool {
+        guard let commonProperty else { return false }
+        let info = commonProperty.propertyInfo
+        return !info.treatAsChar && info.verticalRelativeTo == .paragraph
+    }
+
+    /// 문단에 컨테이너를 키우는 (`growsContainer`) 수집 대상 컨트롤이 있는지.
     /// 개체를 다시 수집해야 높이를 알 수 있는 컨테이너만 고르는 값싼 사전
     /// 판정이다 (#91) — 컨트롤 없는 문단이 대다수라 재수집이 거의 안 돈다.
+    /// **`objects()`의 기록 조건과 반드시 같은 술어를 쓴다** — 갈리면 사전
+    /// 판정에서 걸러진 셀이 하한을 못 받거나 그 반대가 된다.
     static func hasFloatingObject(
         in paragraph: CoreHwp.HwpParagraph,
         collectsTextboxes: Bool
     ) -> Bool {
         (paragraph.ctrlHeaderArray ?? []).contains { ctrl in
             guard let (commonProperty, components) = handledControl(ctrl),
-                  let commonProperty, !commonProperty.propertyInfo.treatAsChar
+                  growsContainer(commonProperty)
             else { return false }
             return collectible(components, collectsTextboxes: collectsTextboxes)
         }

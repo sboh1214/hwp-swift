@@ -289,19 +289,23 @@ enum HwpSynthetic {
         return object
     }
 
-    /// 떠 있는 (글자처럼 취급 아님) gso 개체 — 세로 기준 '문단', 오프셋 0.
-    /// 한글 줄 캐시에 잡히지 않는 개체를 재현한다 (#91).
+    /// 떠 있는 (글자처럼 취급 아님) gso 개체. 기본은 세로 기준 '문단'·오프셋 0 —
+    /// 한글 줄 캐시에 잡히지 않는 개체를 재현한다 (#91). 쪽/종이 기준과 저작
+    /// 세로 오프셋은 컨테이너 높이 하한 경계를 태우기 위해 지정할 수 있다.
     static func floatingShapeObject(
         width: UInt32,
         height: UInt32,
-        instanceId: UInt32 = 0
+        instanceId: UInt32 = 0,
+        verticalRelativeTo: CoreHwp.HwpCommonCtrlVerticalRelativeTo = .paragraph,
+        verticalOffset: Int32 = 0
     ) -> CoreHwp.HwpGenShapeObject {
         var object = inlineShapeObject(width: width, height: height, instanceId: instanceId)
         var info = object.commonCtrlProperty.propertyInfo
         info.treatAsChar = false
-        info.verticalRelativeToRawValue = HwpCommonCtrlVerticalRelativeTo.paragraph.rawValue
-        info.verticalRelativeTo = .paragraph
+        info.verticalRelativeToRawValue = verticalRelativeTo.rawValue
+        info.verticalRelativeTo = verticalRelativeTo
         object.commonCtrlProperty.propertyInfo = info
+        object.commonCtrlProperty.verticalOffset = UInt32(bitPattern: verticalOffset)
         return object
     }
 }
