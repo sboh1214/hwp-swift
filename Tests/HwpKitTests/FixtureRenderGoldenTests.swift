@@ -60,23 +60,36 @@
         /// JSON을 diff 가능한 정수로 유지하고 부동소수 인코딩 차를 없앤다.
         private static let inkScale = 1000.0
 
-        /// 이중 임계 — 둘 다 **페이지의 잉크량에 비례**한다. 절대 임계로는 대상
-        /// 페이지의 밀도 차를 감당할 수 없다: `noori` p2는 셀 768개 중 369개에
-        /// 잉크 총합 45,290인데 `multi-section` p2는 "tw" 두 글자뿐이라 총합 42다.
-        /// 후자에 맞춘 절대 임계는 전자에서 무의미하고, 전자에 맞추면 후자는
-        /// **내용이 통째로 사라져도 통과한다**.
+        /// 이중 임계 — **전역**은 페이지 잉크량에, **국소**는 그 셀 자신의 잉크에
+        /// 비례한다. 절대 임계로는 대상 페이지의 밀도 차를 감당할 수 없다:
+        /// `noori` p2는 셀 768개 중 369개에 잉크 총합 45,290인데 `multi-section`
+        /// p2는 "tw" 두 글자뿐이라 총합 42다. 후자에 맞춘 절대 임계는 전자에서
+        /// 무의미하고, 전자에 맞추면 후자는 **내용이 통째로 사라져도 통과한다**.
         ///
         /// - total: 셀별 차의 합 (전역 이동·밀도 변화·색 반전)
-        /// - cell: 한 셀의 최대 차 (국소 소실·줄 단위 이동)
+        /// - cell: 한 셀의 차 (국소 소실·줄 단위 이동)
         ///
-        /// 절대 하한은 거의 백지인 페이지에서 비율이 0으로 수렴해 안티앨리어싱
-        /// 잔차에도 빨개지는 것을 막는다. 대상 4장 중 백지에 가까운 2장은 본문이
+        /// **국소 임계를 페이지 최대 셀에서 뽑으면 안 된다.** 그러면 `noori` p2의
+        /// 임계가 최대 셀 295의 35% = 103으로 전 셀에 고정돼, 잉크가 그보다 옅은
+        /// 셀은 전량 소실돼도 국소 검사를 통과한다 — 하위 비영 100셀 (합 4,174,
+        /// 최대 95)이 통째로 사라져도 전역(5,435)·국소(103)이 함께 통과했고,
+        /// 경계를 밀면 112셀 (비영 셀의 30.4%)까지 지워진다. 표 테두리처럼 얇은
+        /// 장식이 정확히 이 사각에 들어가는데 그 소실을 잡는 것이 이 스위트의
+        /// 목적이므로, 임계는 `max(expected, actual)` — 그 셀 자신의 잉크 — 에서
+        /// 뽑는다 (max는 소실과 신설을 같은 잣대로 보기 위해서다).
+        ///
+        /// 절대 하한은 거의 백지인 셀에서 비율이 0으로 수렴해 안티앨리어싱
+        /// 잔차에도 빨개지는 것을 막는다. 대상 3장 중 잉크가 옅은 2장은 본문이
         /// 라틴 문자뿐이라 Menlo로 완결되고 (한글 캐스케이드를 타지 않는다)
-        /// 실측 잔차가 거의 0이므로, 하한을 낮게 잡아도 안전하다.
+        /// 실측 잔차가 거의 0이므로, 하한을 낮게 잡아도 안전하다. 대신 잉크가
+        /// 하한 이하인 셀 (noori p2에 10개)은 전량 소실이 여전히 안 잡힌다 —
+        /// 하한을 더 낮추면 CI 잔차에 빨개지므로 남겨 둔 사각이다.
         ///
         /// **CI 미캘리브레이션 값이다** — 로컬은 같은 머신이라 차가 0이고,
         /// macos-latest 러너의 실제 잔차는 CI 왕복으로만 잴 수 있다 (#69 위험 4).
-        /// 초과하면 비율을 무한정 올리지 말고 대상 페이지를 줄이는 쪽을 택할 것.
+        /// 셀별 국소 임계는 **타이트하다** (잉크 20인 셀은 8만 흔들려도 실패) —
+        /// 위양성은 전역보다 여기서 먼저 난다. 초과하면 비율을 무한정 올리지
+        /// 말고 대상 페이지를 줄이는 쪽을 택할 것.
         private static let totalDifferenceShare = 0.12
         private static let cellDifferenceShare = 0.35
         private static let totalDifferenceFloor = 24
@@ -219,6 +232,15 @@
             return failures
         }
 
+        /// 자기 임계를 가장 크게 넘긴 셀. 임계가 셀마다 다르므로 raw 차가 가장
+        /// 큰 셀과 다를 수 있고, 위반을 판정하는 것은 초과분 쪽이다.
+        private struct WorstCell {
+            var overage = Int.min
+            var difference = 0
+            var allowance = 0
+            var index = 0
+        }
+
         /// 이중 임계 — 어느 쪽을 넘겼는지와 최악 셀 좌표를 함께 찍는다
         /// (그리드 좌표만으로도 페이지의 어느 대역이 움직였는지 짚인다).
         private static func compare(
@@ -230,12 +252,22 @@
                 return "[\(fixture)] p\(actual.page) 셀 수 불일치 — 재레코딩 필요"
             }
             var total = 0
-            var worst = (difference: 0, index: 0)
+            var worst = WorstCell()
             for (index, pair) in zip(expected.ink, actual.ink).enumerated() {
                 let difference = abs(pair.0 - pair.1)
                 total += difference
-                if difference > worst.difference {
-                    worst = (difference, index)
+                let cellAllowance = allowance(
+                    share: cellDifferenceShare,
+                    floor: cellDifferenceFloor,
+                    of: max(pair.0, pair.1)
+                )
+                if difference - cellAllowance > worst.overage {
+                    worst = WorstCell(
+                        overage: difference - cellAllowance,
+                        difference: difference,
+                        allowance: cellAllowance,
+                        index: index
+                    )
                 }
             }
             let totalAllowance = allowance(
@@ -243,20 +275,15 @@
                 floor: totalDifferenceFloor,
                 of: expected.ink.reduce(0, +)
             )
-            let cellAllowance = allowance(
-                share: cellDifferenceShare,
-                floor: cellDifferenceFloor,
-                of: expected.ink.max() ?? 0
-            )
             let withinTotal = total <= totalAllowance
-            let withinCell = worst.difference <= cellAllowance
+            let withinCell = worst.overage <= 0
             guard !withinTotal || !withinCell else { return nil }
 
             let column = worst.index % columns
             let row = worst.index / columns
             return "[\(fixture)] p\(actual.page) 잉크 총차 \(total)/\(totalAllowance)"
                 + (withinTotal ? " (통과)" : " (초과)")
-                + ", 최악 셀 (\(column),\(row)) 차 \(worst.difference)/\(cellAllowance)"
+                + ", 최악 셀 (\(column),\(row)) 차 \(worst.difference)/\(worst.allowance)"
                 + (withinCell ? " (통과)" : " (초과)")
                 + " — 천분율. HWP_ALLPAGES=\(fixture) HWP_ALLPAGES_DIR=<dir> "
                 + "swift test --filter testDumpAllPages 로 육안 확인"
