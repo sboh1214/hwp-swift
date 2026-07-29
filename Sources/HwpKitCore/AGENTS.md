@@ -178,16 +178,20 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   opt-in하면 HY헤드라인M 등이 한글.app과 같은 글리프로 렌더된다. macOS 경로만
   보므로 iOS 기기에서는 인덱스가 항상 비고 이 스위치도 무효다.
   **스위트를 폰트 모드로 가르지 않는다** (`skipUnlessOptedIn`에 폰트 인자 없음)
-  — 한쪽 모드에서 영영 실행되지 않는 스위트가 생긴다. 대신 렌더 해시는 모드별
-  기준선 파일 (opt-in `<id>.json` / 기본 `<id>-nohancom.json`)로 양쪽을 각각
-  잠그고, 블록 스냅샷·fidelity는 양 모드에서 성립하는 좌표·임계를 쓴다.
+  — 한쪽 모드에서 영영 실행되지 않는 스위트가 생긴다. 모드 축을 감당하는 방법은
+  스위트마다 다르다: 렌더 해시는 모드별 기준선 파일 (opt-in `<id>.json` / 기본
+  `<id>-nohancom.json`)로 양쪽을 각각 잠그고, fidelity는 양 모드에서 성립하는
+  임계를 쓰며, **커밋된 기준선을 쓰는 계열** (블록 스냅샷·렌더 골든·페이지 수)은
+  `testDeterministic`으로 로드해 모드 축 자체를 없앤다 (#69).
   전역 등록은 하지 않는다 (결정론 테스트 조회 오염 방지; `testDeterministic`은
   이 인덱스 자체를 끔). 이름 매칭은 name table 기본 + 로컬라이즈 이름 (한글) 둘 다.
   `HwpFontResolver.resolve` 는 매칭 결과를 (faceName, alternatives, script, size)
   키로 캐시. 해석 순서: 원문 이름 → `HwpFontMap.candidates(forFaceName:)` 폴백
   (원문 이름 → 정규화 이름 (`-`/`#` 접두 제거 + 공백 제거) 순) → 문서가 선언한
   대체/기반 글꼴 (아래 항목) → script 폴백. 각 후보는 시스템 → (opt-in 일 때만)
-  한컴 번들 순으로 조회한다. 명조 계열은 AppleMyungjo, 고딕 계열은
+  한컴 번들 순으로 조회하되, 시스템 조회도 `usesSystemFontLookup` 게이트를
+  지나므로 결정론 resolver에서는 이 단계가 통째로 빠진다 (아래 항목).
+  명조 계열은 AppleMyungjo, 고딕 계열은
   Apple SD Gothic Neo 를 최종 후보로 유지할 것 (시스템 기본 설치 폰트)
 - **한컴 인덱스를 resolver 밖에서 직접 조회 금지** — `HwpInstalledHancomFonts`
   를 보는 코드는 반드시 `HwpFontResolver.usesInstalledHancomFonts` 를 함께
@@ -260,7 +264,20 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   근사 (`HwpPaginator`)는 예외로 in-place
 - borderFill 참조는 **1-based (0 = 없음)**: `resolvedBorderFill` 은 id-1 을 먼저, 원래 id 를 다음에 시도
 - Sendable actor: `HwpPaginator`, `HwpImageCache` (HwpKitNative)
-- `HwpFontResolver.testDeterministic` — 스냅샷 테스트용 결정론적 resolver
+- **`HwpFontResolver.testDeterministic`은 폰트 조회 세 축을 모두 닫는다** —
+  시스템 등록 폰트 (`usesSystemFontLookup`)·한컴 번들 (`usesInstalledHancomFonts`)·
+  문서 대체 글꼴 (`usesDocumentAlternatives`). 모든 face가 Menlo로 떨어져 설치
+  폰트와 무관하게 같은 CTFont가 나오고, 그 덕에 **커밋된** 기준선을 쓰는 렌더
+  가드 3종이 CI와 기여자 머신에서 함께 돈다 (루트 AGENTS.md "렌더 가드 3층").
+  시스템 축이 가장 늦게 닫혔다 (#69) — HWP 원문 face 이름이 그 자체로 시스템
+  폰트명일 수 있어 (`굴림`·`바탕`은 MS Office가, `함초롬바탕`은 한글 정식 설치가
+  같은 한글 이름으로 등록한다) 나머지 두 축만 닫으면 그 폰트가 깔린 머신에서만
+  실폰트로 조판된다. 조회 축을 새로 더하면 **여기서도 함께 닫고**
+  `HwpFontResolverTests`에 축별 가드를 추가할 것 — 결정론 쪽만 단언하면 플래그가
+  반대로 꽂혀 기본 resolver의 조회까지 꺼져도 통과하므로, 두 resolver가 같은
+  이름을 다르게 본다는 것까지 단언한다 (`resolve`는 전 문서 로드의 핫패스다).
+  완전한 결정론은 아니다: Menlo에 한글 글리프가 없어 한글 폴백이 OS
+  캐스케이드에 맡겨진다 (macOS 버전 간 잔차 — 기준선 임계가 흡수할 몫)
 
 ## 새 블록 종류 추가
 
@@ -310,6 +327,12 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   해제 (`limitsAreaToHalfContent: false`) — 이 두 가지로 헌법주석 전체
   페이지 수가 한글.app 실측 1,030과 일치 (2026-07-10). 각주 영역을 본문 캐시
   하단에 강제로 맞추면 (minimumAreaTop) 각주 전용 페이지가 연쇄해 1,053쪽 — 두지 않음
+- **표의 선언 높이가 렌더 높이에 반영되지 않는 케이스가 남아 있다** — noori
+  3쪽 붙임 표는 선언 높이가 62,701 HWPUNIT (627.0pt)이고 한글 라인 캐시도 그
+  문단에 637.5pt를 잡아 뒀는데 우리 표 블록은 181.6pt로 그려져, 형상 행이 눌리고
+  셀 그림이 아래 행 위로 넘친다. 그래서 noori p3은 렌더 골든 대상에서 빼 뒀다
+  (`FixtureRenderGoldenTests`의 `specs` 주석) — 틀린 렌더를 골든으로 굳히면
+  나중의 올바른 수정이 리뷰에서 회귀처럼 보인다. 고친 뒤 목록에 합류시킬 것
 - 셀 안 글상자/도형 (그림 제외)은 여전히 페이지 흐름 블록으로 방출된다
   (셀 위치가 아닌 흐름 위치 — 그림처럼 셀 콘텐츠로 옮기는 것은 후속 과제)
 - 페이지보다 큰 표 row 슬라이스는 문단을 라인 단위로 나눠 이월하지만 (절단선은
