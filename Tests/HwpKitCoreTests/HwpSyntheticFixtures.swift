@@ -417,3 +417,37 @@ extension HwpSynthetic {
         return section
     }
 }
+
+// MARK: - 각주/미주 안 개체 빌더 (#94)
+
+extension HwpSynthetic {
+    /// 표 컨트롤의 본문 배치 속성을 지정한 사본. 각주 안 표는 한글 실측에서
+    /// **글자처럼 취급**이라 (헌법주석 883쪽 각주 29) 기본값을 그렇게 둔다.
+    /// 떠 있는 표의 컨테이너 높이 하한 경계를 태우려면 인자로 바꾼다.
+    static func placed(
+        _ table: CoreHwp.HwpTable,
+        treatAsChar: Bool = true,
+        verticalRelativeTo: CoreHwp.HwpCommonCtrlVerticalRelativeTo = .paragraph,
+        verticalOffset: Int32 = 0,
+        textWrap: CoreHwp.HwpCommonCtrlTextWrap = .topAndBottom
+    ) -> CoreHwp.HwpTable {
+        var placed = table
+        var info = placed.commonCtrlProperty.propertyInfo
+        info.treatAsChar = treatAsChar
+        info.verticalRelativeToRawValue = verticalRelativeTo.rawValue
+        info.verticalRelativeTo = verticalRelativeTo
+        info.textWrapRawValue = textWrap.rawValue
+        info.textWrap = textWrap
+        placed.commonCtrlProperty.propertyInfo = info
+        placed.commonCtrlProperty.verticalOffset = UInt32(bitPattern: verticalOffset)
+        return placed
+    }
+
+    /// 각주/미주 리스트 컨트롤 — 문단마다 컨트롤을 붙여 만든다.
+    static func noteControl(
+        _ ctrlId: CoreHwp.HwpOtherCtrlId,
+        paragraphs: [CoreHwp.HwpParagraph]
+    ) -> CoreHwp.HwpCtrlId? {
+        wrapped(listControl(ctrlId: ctrlId, paragraphs: paragraphs), as: ctrlId)
+    }
+}

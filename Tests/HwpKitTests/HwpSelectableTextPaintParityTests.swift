@@ -55,7 +55,9 @@ final class HwpSelectableTextPaintParityTests: XCTestCase {
         }
 
         // 기대 구성 확인: 본문 1 + 바깥 셀 문단 2 + 중첩 셀 문단 1 +
-        // 글상자 문단 2 + 각주 문단 1 = 7 (빈 문단·크롬·둘째 셀 빈 텍스트 제외)
+        // 글상자 문단 2 + 각주 문단 1 + 각주 글상자 1 + 각주 표 셀 1 = 9
+        // (빈 문단·크롬·둘째 셀 빈 텍스트 제외). 각주 개체 텍스트가 순서대로
+        // 각주 문단 뒤에 오는 것이 렌더 방출 순서와 같은 규약이다 (#94).
         let units = HwpSelectableText.units(in: page)
         expect(units.map(\.attributedString.string)) == [
             "본문 문단",
@@ -65,6 +67,8 @@ final class HwpSelectableTextPaintParityTests: XCTestCase {
             "글상자 첫 문단",
             "글상자 둘째 문단",
             "1) 각주 본문",
+            "각주 글상자",
+            "각주 표 셀",
         ]
     }
 
@@ -213,6 +217,9 @@ final class HwpSelectableTextPaintParityTests: XCTestCase {
         )
     }
 
+    /// 각주: 문단 1 + 각주 안 그림 + 각주 안 글상자 + 각주 안 표 (#94).
+    /// 각주 개체 방출이 늘어도 선택 단위와 drawText 순서가 어긋나지 않아야
+    /// 한다 — 각주는 표 셀·글상자와 같은 컨테이너 규약을 따른다.
     private static func makeFootnote(frame: CGRect) -> HwpFootnoteBlock {
         HwpFootnoteBlock(
             frame: frame,
@@ -221,7 +228,35 @@ final class HwpSelectableTextPaintParityTests: XCTestCase {
                 rect: CGRect(x: 0, y: 8, width: 400, height: 20)
             )],
             number: 1,
-            separatorLine: CGRect(x: 72, y: 696, width: 150, height: 1)
+            separatorLine: CGRect(x: 72, y: 696, width: 150, height: 1),
+            images: [HwpCellImage(
+                rect: CGRect(x: 300, y: 8, width: 12, height: 12),
+                binItemId: 3,
+                style: nil,
+                controlInstanceId: 21
+            )],
+            textboxes: [HwpCellTextbox(
+                rect: CGRect(x: 200, y: 8, width: 90, height: 20),
+                textbox: HwpTextboxFrame(
+                    outerFrame: CGRect(x: 0, y: 0, width: 90, height: 20),
+                    paragraphs: [paragraph(
+                        "각주 글상자",
+                        rect: CGRect(x: 2, y: 2, width: 86, height: 16)
+                    )],
+                    borderColor: nil,
+                    borderWidth: 0,
+                    fillColor: nil
+                ),
+                paintsBehindText: false,
+                zOrder: 0,
+                sourceOrder: 1,
+                controlInstanceId: 22
+            )],
+            nestedTables: [HwpNestedTableFrame(
+                rect: CGRect(x: 0, y: 30, width: 80, height: 20),
+                table: makeNestedTable(text: "각주 표 셀"),
+                controlInstanceId: 23
+            )]
         )
     }
 
@@ -292,7 +327,7 @@ final class HwpSelectableTextPaintParityTests: XCTestCase {
     }
 
     /// 중첩 표: 셀 하나 + 문단 하나
-    private static func makeNestedTable() -> HwpTableFrame {
+    private static func makeNestedTable(text: String = "중첩 셀") -> HwpTableFrame {
         let black = HwpRGBColor(red: 0, green: 0, blue: 0)
         let nestedRect = CGRect(x: 0, y: 0, width: 80, height: 30)
         return HwpTableFrame(
@@ -305,7 +340,7 @@ final class HwpSelectableTextPaintParityTests: XCTestCase {
                     rowSpan: 1,
                     columnSpan: 1,
                     paragraphs: [paragraph(
-                        "중첩 셀",
+                        text,
                         rect: CGRect(x: 4, y: 4, width: 72, height: 20)
                     )],
                     borders: .uniform(width: 0.5, color: black),
