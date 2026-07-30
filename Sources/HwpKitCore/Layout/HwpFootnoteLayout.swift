@@ -423,7 +423,7 @@ extension HwpFootnoteLayout {
         footnoteShape: CoreHwp.HwpFootnoteShape?,
         sizeResolver: HwpObjectSizeResolver?
     ) -> NoteMeasurement {
-        let noteResolver = sizeResolver?.withParagraphWidth(width)
+        let noteResolver = sizeResolver?.forFootnoteArea(width: width)
         // 각주 첫머리의 자동 번호 (ext18) 마커를 번호 문자열로 치환한다 (번호는
         // paginator가 부여한 문서 순서 번호 — 본문 참조와 동일 소스). 스택
         // 높이는 한글 라인 캐시를 우선한다 (본문 절대 캐시와 동일 철학).

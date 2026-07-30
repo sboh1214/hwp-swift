@@ -392,7 +392,7 @@ extension HwpFootnoteCoordinator {
             paragraph: paragraph,
             widthCenti: Int(width * 100),
             number: number,
-            sizeResolver: environment.sizeResolver?.withParagraphWidth(width)
+            sizeResolver: environment.sizeResolver?.forFootnoteArea(width: width)
         )
         if let cached = footnoteBlockHeightCache[key] {
             return cached
@@ -420,7 +420,7 @@ extension HwpFootnoteCoordinator {
             return cachedHeight
         }
         let width = environment.contentWidth
-        let sizeResolver = environment.sizeResolver?.withParagraphWidth(width)
+        let sizeResolver = environment.sizeResolver?.forFootnoteArea(width: width)
         let key = FootnoteHeightKey(
             paragraph: paragraph,
             widthCenti: Int(width * 100),

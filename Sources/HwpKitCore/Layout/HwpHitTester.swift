@@ -113,6 +113,16 @@ public struct HwpHitTester {
                 HwpBlockContentWalker.walkParagraphs(
                     textbox.textbox.paragraphs, offset: rect.origin
                 ) { _, inner, _ in bounds = bounds.union(inner) }
+                // 글상자 안 그림·도형도 `textboxCommands`가 클립 없이 그린다 —
+                // 글상자 rect에서 멈추면 넘친 자식 위의 탭이 `containerHit`에
+                // 닿기도 전에 기각돼 아래 블록의 링크가 열린다 (R46 #1).
+                for child in textbox.textbox.images.map(\.rect)
+                    + textbox.textbox.shapes.map(\.rect)
+                {
+                    bounds = bounds.union(
+                        child.offsetBy(dx: rect.minX, dy: rect.minY)
+                    )
+                }
             }
         )
         return bounds

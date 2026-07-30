@@ -403,6 +403,63 @@ import XCTest
                 == .hyperlink(url: "https://example.com/beneath", blockIndex: 0)
         }
 
+        /// 글상자 **자식**이 블록 frame까지 넘어가면 자격 영역도 그만큼 넓어야
+        /// 한다 (R46 #1) — `textboxCommands`가 자식을 클립 없이 그리는데
+        /// `footnoteContentFrame`이 글상자 rect에서 멈추면, 넘친 자식 위의 탭이
+        /// `containerHit`에 닿기도 전에 기각돼 아래 블록 링크가 열린다.
+        func testTextboxChildOverflowingBlockFrameStaysInHitBounds() {
+            let blockFrame = CGRect(x: 50, y: 600, width: 100, height: 40)
+            let boxRect = CGRect(x: 0, y: 0, width: 50, height: 40)
+            // 자식이 글상자(50pt)와 블록(100pt)을 함께 넘어 300pt까지 그려진다
+            let childRect = CGRect(x: 0, y: 0, width: 300, height: 40)
+            let footnote = HwpFootnoteBlock(
+                frame: blockFrame,
+                paragraphs: [],
+                number: 1,
+                separatorLine: CGRect(x: 50, y: 590, width: 130, height: 1),
+                textboxes: [HwpCellTextbox(
+                    rect: boxRect,
+                    textbox: HwpTextboxFrame(
+                        outerFrame: boxRect,
+                        paragraphs: [], borderColor: nil, borderWidth: 0, fillColor: nil,
+                        shapes: [HwpCellShape(
+                            rect: childRect,
+                            geometry: HwpShapeGeometry(
+                                path: CGPath(rect: childRect, transform: nil),
+                                fillColor: HwpRGBColor(red: 255, green: 0, blue: 0).cgColor,
+                                strokeColor: nil, strokeWidth: 0
+                            ),
+                            paintsBehindText: false,
+                            zOrder: 0, sourceOrder: 0, controlInstanceId: 17
+                        )]
+                    ),
+                    paintsBehindText: false,
+                    zOrder: 0, sourceOrder: 0, controlInstanceId: 18
+                )]
+            )
+            let underBlock = AnyHwpBlock(
+                frame: CGRect(x: 50, y: 600, width: 400, height: 40),
+                kind: .text,
+                attributedString: NSAttributedString(string: "본문 링크"),
+                hyperlinkURL: "https://example.com/beneath"
+            )
+            let page = HwpPage(
+                size: CGSize(width: 595, height: 842),
+                margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
+                blocks: [underBlock, AnyHwpBlock(
+                    frame: blockFrame, kind: .footnote, payload: .footnote(footnote)
+                )],
+                pageNumber: 1
+            )
+
+            // 블록 frame(maxX 150)·글상자(maxX 100) 둘 다 밖이지만 자식이 덮은 자리
+            expect(HwpHitTester().hit(page: page, point: CGPoint(x: 250, y: 620)))
+                == .footnote(blockIndex: 1, number: 1)
+            // 자식도 없는 자리는 아래 본문 링크가 열린다
+            expect(HwpHitTester().hit(page: page, point: CGPoint(x: 400, y: 620)))
+                == .hyperlink(url: "https://example.com/beneath", blockIndex: 0)
+        }
+
         /// 가림 테스트가 공유하는 링크 문단 (스팬 없이 문단-레벨 URL).
         private static func linkParagraph(rect: CGRect) -> HwpLaidOutParagraph {
             HwpLaidOutParagraph(

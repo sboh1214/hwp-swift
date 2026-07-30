@@ -25,9 +25,9 @@ import XCTest
     /// 글자처럼 취급이 **아닌** 개체에만 얹는다
     /// (`HwpParagraphObjectCollector.growsContainer` — 표 셀과 같은 술어).
     final class HwpFootnoteObjectLayoutTests: XCTestCase {
-        private var geometry: HwpPageGeometry!
-        private var index: HwpIndex!
-        private var layout: HwpFootnoteLayout!
+        var geometry: HwpPageGeometry!
+        var index: HwpIndex!
+        var layout: HwpFootnoteLayout!
 
         override func setUp() {
             super.setUp()
@@ -365,88 +365,6 @@ import XCTest
             let a4 = reserved(paperHeight: 842)
             let tall = reserved(paperHeight: 1684)
             expect(tall) > a4 + 1
-        }
-
-        /// 배치는 **수집 시점에 잡은** 해석기를 쓴다 (R44 #1).
-        /// `HwpPaginator.objectSizeResolver`는 현재 단·문단 폭을 읽는 계산
-        /// 프로퍼티라, 배치가 페이지 확정 시점 값을 다시 읽으면 그 사이 단이 바뀐
-        /// 문서에서 예약과 다른 크기로 재조판된다 — 예약 ≡ 배치의 시간 축이다.
-        func testPlacementUsesResolverCapturedAtCollection() throws {
-            var note = HwpSynthetic.paragraphWithInlineControl(prefix: "", suffix: "")
-            note.ctrlHeaderArray = [.genShapeObject(HwpSynthetic.paperRelativeInlineObject(
-                widthPercent: 1000, heightPercent: 2000
-            ))]
-            func resolver(paperHeight: CGFloat) -> HwpObjectSizeResolver {
-                HwpObjectSizeResolver(
-                    paperSize: CGSize(width: 595, height: paperHeight),
-                    contentSize: geometry.contentFrame.size,
-                    columnWidth: geometry.contentFrame.width
-                )
-            }
-            func height(
-                captured: HwpObjectSizeResolver, atPlacement: HwpObjectSizeResolver
-            ) throws -> CGFloat {
-                let blocks = layout.layout(
-                    footnotes: [.init(paragraph: note, number: 1, sizeResolver: captured)],
-                    onPage: geometry,
-                    index: index,
-                    sizeResolver: atPlacement
-                )
-                return try XCTUnwrap(blocks.first, "각주 블록이 없다").frame.height
-            }
-
-            let a4 = try height(captured: resolver(paperHeight: 842), atPlacement: resolver(paperHeight: 842))
-            // 배치 때 2배 종이가 넘어와도 수집 시점(A4) 결과가 유지된다
-            expect(try height(
-                captured: resolver(paperHeight: 842), atPlacement: resolver(paperHeight: 1684)
-            )).to(beCloseTo(a4, within: 0.5))
-            // 수집 시점 값이 실제로 결과를 가른다 — 아니면 위 단언이 공허하다
-            expect(try height(
-                captured: resolver(paperHeight: 1684), atPlacement: resolver(paperHeight: 842)
-            )) > a4 + 1
-        }
-
-        /// 이월 각주를 **재예약**할 때도 수집 시점 해석기를 쓴다 (R45 #1).
-        /// 배치는 `Input.sizeResolver`를 쓰므로 (R44 #1) 재예약만 현재
-        /// environment로 재면 예약 ≡ 배치가 다시 갈린다 — 수집→배치는 닫혔는데
-        /// 수집→재예약이 열려 있었다.
-        func testOverflowReReservationUsesCapturedResolver() {
-            var note = HwpSynthetic.paragraphWithInlineControl(prefix: "", suffix: "")
-            note.ctrlHeaderArray = [.genShapeObject(HwpSynthetic.paperRelativeInlineObject(
-                widthPercent: 1000, heightPercent: 2000
-            ))]
-            func resolver(paperHeight: CGFloat) -> HwpObjectSizeResolver {
-                HwpObjectSizeResolver(
-                    paperSize: CGSize(width: 595, height: paperHeight),
-                    contentSize: geometry.contentFrame.size,
-                    columnWidth: geometry.contentFrame.width
-                )
-            }
-            var coordinator = HwpFootnoteCoordinator(
-                index: index, fontResolver: .testDeterministic
-            )
-            func reserved(
-                captured: HwpObjectSizeResolver, current: HwpObjectSizeResolver
-            ) -> CGFloat {
-                coordinator.reservedFootnoteHeight(
-                    for: [.init(paragraph: note, number: 1, sizeResolver: captured)],
-                    environment: .init(
-                        contentWidth: geometry.contentFrame.width,
-                        footnoteShape: nil,
-                        sizeResolver: current
-                    )
-                )
-            }
-
-            let a4 = reserved(captured: resolver(paperHeight: 842), current: resolver(paperHeight: 842))
-            // 재예약 시점에 단·구역이 바뀌어도 수집 시점(A4) 결과가 유지된다
-            expect(reserved(
-                captured: resolver(paperHeight: 842), current: resolver(paperHeight: 1684)
-            )).to(beCloseTo(a4, within: 0.5))
-            // 수집 시점 값이 실제로 결과를 가른다 — 아니면 위 단언이 공허하다
-            expect(reserved(
-                captured: resolver(paperHeight: 1684), current: resolver(paperHeight: 842)
-            )) > a4 + 1
         }
 
         // MARK: - 흐름 방출 억제 (개체가 각주 밖 본문 자리에 그려지면 안 된다)

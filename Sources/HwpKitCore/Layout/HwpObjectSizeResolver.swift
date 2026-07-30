@@ -45,6 +45,22 @@ public struct HwpObjectSizeResolver: Sendable, Hashable {
         )
     }
 
+    /// 각주 영역 기준 사본 — '단'과 '문단' 폭을 모두 각주 영역 폭으로 맞춘다.
+    ///
+    /// 각주는 단으로 나뉘지 않으므로 (표 134 bits 8-9 미구현 — 항상 전체 폭 하단)
+    /// 각주 안 '단' 기준 개체가 참조할 단은 본문의 **현재** 단이 아니라 각주 영역
+    /// 자신이다. 이 정규화로 각주용 해석기가 페이지 기하만의 함수가 돼, 본문
+    /// 문단이 단을 옮겨도 예약·배치가 흔들리지 않는다 (R46 #2) — 드리프트를
+    /// 값 운반이 아니라 **구조**로 없앤다.
+    public func forFootnoteArea(width: CGFloat) -> HwpObjectSizeResolver {
+        HwpObjectSizeResolver(
+            paperSize: paperSize,
+            contentSize: contentSize,
+            columnWidth: max(1, width),
+            paragraphWidth: max(1, width)
+        )
+    }
+
     /// 개체 폭 저장값을 기준에 따라 pt로 해석한다.
     public func width(
         _ raw: UInt32,

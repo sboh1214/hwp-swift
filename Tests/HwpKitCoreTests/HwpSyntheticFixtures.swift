@@ -474,6 +474,26 @@ extension HwpSynthetic {
         return object
     }
 
+    /// **단** 기준 상대 크기 (10000 = 100%) 글자처럼 취급 개체. 각주 해석기가
+    /// 현재 단 폭에 흔들리지 않는지 태우는 최소 형상이다 (R46 #2).
+    static func columnRelativeInlineObject(
+        widthPercent: UInt32,
+        heightPercent: UInt32,
+        instanceId: UInt32 = 0
+    ) -> CoreHwp.HwpGenShapeObject {
+        var object = inlineShapeObject(
+            width: widthPercent, height: heightPercent, instanceId: instanceId
+        )
+        var info = object.commonCtrlProperty.propertyInfo
+        info.widthRelativeToRawValue = CoreHwp.HwpCommonCtrlObjectWidthRelativeTo.column.rawValue
+        info.widthRelativeTo = .column
+        // 높이에는 '단' 기준이 없다 (표 70) — 폭만 단 기준으로 두고 높이는 쪽 기준
+        info.heightRelativeToRawValue = CoreHwp.HwpCommonCtrlObjectHeightRelativeTo.page.rawValue
+        info.heightRelativeTo = .page
+        object.commonCtrlProperty.propertyInfo = info
+        return object
+    }
+
     /// 각주/미주 리스트 컨트롤 — 문단마다 컨트롤을 붙여 만든다.
     static func noteControl(
         _ ctrlId: CoreHwp.HwpOtherCtrlId,
