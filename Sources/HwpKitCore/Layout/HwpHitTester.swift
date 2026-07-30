@@ -120,14 +120,21 @@ public struct HwpHitTester {
                     x: point.x - textbox.rect.minX,
                     y: point.y - textbox.rect.minY
                 )
-                let hit = containerHit(
+                // 재귀 결과를 **그대로 전파**한다 — `.occluded`를 버리면 글상자
+                // rect 밖에 놓인 자식이 덮은 자리에서 (글상자 자신은 그 자리를
+                // 안 가리므로) 아래 링크가 열린다 (R44 #3).
+                switch containerHit(
                     paragraphs: textbox.textbox.paragraphs,
                     images: textbox.textbox.images,
                     shapes: textbox.textbox.shapes,
                     textboxes: [], nestedTables: [], at: inner
-                )
-                if case let .found(url) = hit {
+                ) {
+                case let .found(url):
                     return .found(url)
+                case .occluded:
+                    return .occluded
+                case .miss:
+                    break
                 }
             }
             if layer.occludes(point) {
@@ -264,15 +271,22 @@ public struct HwpHitTester {
     /// 가린다** — 페인터가 `fillRect`로 칠하므로 (R43 #5) 링크가 없다고 통과시키면
     /// 그 아래 문단 링크가 열린다.
     private func tableHit(_ table: HwpTableFrame, at point: CGPoint) -> LayerHit {
-        for row in table.rows {
-            for cell in row.cells where cell.cellFrame.contains(point) {
+        // 셀 프레임으로 **미리 거르지 않는다** — 셀 문단·자식이 자기 셀을 넘어
+        // 그려질 수 있고 (R44 #2) 자격 영역(`footnoteContentFrame`)은 그 자리를
+        // 이미 인정한다. `cellFrame`은 **셀 채움 가림 판정에만** 쓴다.
+        // 순서는 페인트 역순 (`walkTable`이 행·셀 순으로 그린다).
+        for row in table.rows.reversed() {
+            for cell in row.cells.reversed() {
                 let hit = containerHit(
                     paragraphs: cell.paragraphs,
                     images: cell.images, shapes: cell.shapes, textboxes: cell.textboxes,
                     nestedTables: cell.nestedTables, at: point
                 )
                 if case .miss = hit {
-                    return cell.fillColor != nil ? .occluded : .miss
+                    if cell.fillColor != nil, cell.cellFrame.contains(point) {
+                        return .occluded
+                    }
+                    continue
                 }
                 return hit
             }

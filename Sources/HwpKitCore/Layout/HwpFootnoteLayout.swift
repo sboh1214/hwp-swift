@@ -73,10 +73,24 @@ public struct HwpFootnoteLayout {
     public struct Input {
         public let paragraph: CoreHwp.HwpParagraph
         public let number: Int
+        /// 이 각주를 **수집한 시점**의 크기 해석기 (R44 #1).
+        ///
+        /// `HwpPaginator.objectSizeResolver`는 현재 단·문단 폭을 읽는 계산
+        /// 프로퍼티라 시점마다 값이 다르다. 예약은 수집 시점에 계산되는데 배치가
+        /// 페이지 확정 시점의 값을 다시 읽으면, 그 사이 단 밴드가 바뀌거나 비등폭
+        /// 단으로 넘어갔을 때 `.column`·`.paragraph` 기준 개체가 다른 크기로
+        /// 재조판된다 (본문 겹침·없던 페이지 절단). 예약이 쓴 값을 그대로 실어
+        /// 배치까지 들고 간다 — 예약 ≡ 배치의 **시간 축**이다.
+        public let sizeResolver: HwpObjectSizeResolver?
 
-        public init(paragraph: CoreHwp.HwpParagraph, number: Int) {
+        public init(
+            paragraph: CoreHwp.HwpParagraph,
+            number: Int,
+            sizeResolver: HwpObjectSizeResolver? = nil
+        ) {
             self.paragraph = paragraph
             self.number = number
+            self.sizeResolver = sizeResolver
         }
     }
 
@@ -517,7 +531,9 @@ private extension HwpFootnoteLayout {
                     width: width,
                     index: index,
                     footnoteShape: footnoteShape,
-                    sizeResolver: sizeResolver
+                    // 수집 시점 해석기를 우선한다 — 인자는 그것이 없는 호출
+                    // (테스트·직접 배치) 의 폴백이다 (R44 #1).
+                    sizeResolver: input.sizeResolver ?? sizeResolver
                 )
             )
         }

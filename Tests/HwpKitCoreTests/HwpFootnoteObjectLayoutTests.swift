@@ -367,6 +367,45 @@ import XCTest
             expect(tall) > a4 + 1
         }
 
+        /// 배치는 **수집 시점에 잡은** 해석기를 쓴다 (R44 #1).
+        /// `HwpPaginator.objectSizeResolver`는 현재 단·문단 폭을 읽는 계산
+        /// 프로퍼티라, 배치가 페이지 확정 시점 값을 다시 읽으면 그 사이 단이 바뀐
+        /// 문서에서 예약과 다른 크기로 재조판된다 — 예약 ≡ 배치의 시간 축이다.
+        func testPlacementUsesResolverCapturedAtCollection() throws {
+            var note = HwpSynthetic.paragraphWithInlineControl(prefix: "", suffix: "")
+            note.ctrlHeaderArray = [.genShapeObject(HwpSynthetic.paperRelativeInlineObject(
+                widthPercent: 1000, heightPercent: 2000
+            ))]
+            func resolver(paperHeight: CGFloat) -> HwpObjectSizeResolver {
+                HwpObjectSizeResolver(
+                    paperSize: CGSize(width: 595, height: paperHeight),
+                    contentSize: geometry.contentFrame.size,
+                    columnWidth: geometry.contentFrame.width
+                )
+            }
+            func height(
+                captured: HwpObjectSizeResolver, atPlacement: HwpObjectSizeResolver
+            ) throws -> CGFloat {
+                let blocks = layout.layout(
+                    footnotes: [.init(paragraph: note, number: 1, sizeResolver: captured)],
+                    onPage: geometry,
+                    index: index,
+                    sizeResolver: atPlacement
+                )
+                return try XCTUnwrap(blocks.first, "각주 블록이 없다").frame.height
+            }
+
+            let a4 = try height(captured: resolver(paperHeight: 842), atPlacement: resolver(paperHeight: 842))
+            // 배치 때 2배 종이가 넘어와도 수집 시점(A4) 결과가 유지된다
+            expect(try height(
+                captured: resolver(paperHeight: 842), atPlacement: resolver(paperHeight: 1684)
+            )).to(beCloseTo(a4, within: 0.5))
+            // 수집 시점 값이 실제로 결과를 가른다 — 아니면 위 단언이 공허하다
+            expect(try height(
+                captured: resolver(paperHeight: 1684), atPlacement: resolver(paperHeight: 842)
+            )) > a4 + 1
+        }
+
         // MARK: - 흐름 방출 억제 (개체가 각주 밖 본문 자리에 그려지면 안 된다)
 
         /// 각주 안 개체는 각주 블록 페이로드로만 나오고 페이지 흐름 블록

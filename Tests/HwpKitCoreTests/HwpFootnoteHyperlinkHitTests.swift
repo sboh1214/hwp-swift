@@ -521,6 +521,92 @@ import XCTest
                 == .hyperlink(url: "https://example.com/under", blockIndex: 0)
         }
 
+        /// 셀을 넘어 그려진 자손도 눌려야 한다 (R44 #2) — `tableHit`이 셀 프레임으로
+        /// 미리 거르면 자격 영역은 그 자리를 인정하는데 조회가 막혀 보이는 링크가
+        /// 죽는다. R41 #2에서 중첩 표 게이트를 걷어낼 때 셀 게이트가 남아 있었다.
+        func testFootnoteTableCellDescendantOutsideCellFrameIsTappable() {
+            let black = HwpRGBColor(red: 0, green: 0, blue: 0)
+            // 셀 프레임은 100pt인데 그 안 문단은 500pt로 넘쳐 그려진다
+            let cellFrame = CGRect(x: 0, y: 0, width: 100, height: 30)
+            let cell = HwpTableCellFrame(
+                cellFrame: cellFrame,
+                row: 0, column: 0, rowSpan: 1, columnSpan: 1,
+                paragraphs: [HwpLaidOutParagraph(
+                    attributedString: NSAttributedString(string: "셀 밖으로 넘친 링크"),
+                    frame: HwpParagraphFrame(totalHeight: 30, lines: []),
+                    rect: CGRect(x: 0, y: 0, width: 500, height: 30),
+                    paragraphId: 1,
+                    hyperlinkURL: "https://example.com/cell-overflow"
+                )],
+                borders: .uniform(width: 0.5, color: black),
+                fillColor: nil
+            )
+            let blockFrame = CGRect(x: 50, y: 600, width: 400, height: 80)
+            let footnote = HwpFootnoteBlock(
+                frame: blockFrame,
+                paragraphs: [],
+                number: 1,
+                separatorLine: CGRect(x: 50, y: 590, width: 130, height: 1),
+                nestedTables: [HwpNestedTableFrame(
+                    rect: cellFrame,
+                    table: HwpTableFrame(
+                        outerFrame: cellFrame,
+                        rows: [HwpTableRowFrame(rowFrame: cellFrame, cells: [cell])],
+                        borderColor: black, borderWidth: 1
+                    ),
+                    controlInstanceId: 12
+                )]
+            )
+
+            // 블록-로컬 (300,10) — 셀 프레임(100pt) 밖이지만 문단이 그려진 자리
+            expect(HwpHitTester().hit(page: Self.page(footnote), point: CGPoint(x: 350, y: 610)))
+                == .hyperlink(url: "https://example.com/cell-overflow", blockIndex: 0)
+        }
+
+        /// 글상자 **밖에** 놓인 자식의 가림도 전파돼야 한다 (R44 #3) — 재귀가
+        /// `.occluded`를 돌려주는데 `.found`만 받으면, 글상자 자신은 그 자리를
+        /// 안 가리므로 아래 문단 링크가 열린다.
+        func testOverflowingTextboxChildOcclusionPropagates() {
+            let blockFrame = CGRect(x: 50, y: 600, width: 400, height: 40)
+            let boxRect = CGRect(x: 0, y: 0, width: 50, height: 40)
+            // 자식 도형이 글상자(50pt)를 넘어 200pt까지 채워 그려진다
+            let childRect = CGRect(x: 0, y: 0, width: 200, height: 40)
+            let footnote = HwpFootnoteBlock(
+                frame: blockFrame,
+                paragraphs: [Self.linkParagraph(
+                    rect: CGRect(x: 0, y: 0, width: 400, height: 40)
+                )],
+                number: 1,
+                separatorLine: CGRect(x: 50, y: 590, width: 130, height: 1),
+                textboxes: [HwpCellTextbox(
+                    rect: boxRect,
+                    textbox: HwpTextboxFrame(
+                        outerFrame: boxRect,
+                        paragraphs: [], borderColor: nil, borderWidth: 0, fillColor: nil,
+                        shapes: [HwpCellShape(
+                            rect: childRect,
+                            geometry: HwpShapeGeometry(
+                                path: CGPath(rect: childRect, transform: nil),
+                                fillColor: HwpRGBColor(red: 0, green: 255, blue: 0).cgColor,
+                                strokeColor: nil, strokeWidth: 0
+                            ),
+                            paintsBehindText: false,
+                            zOrder: 0, sourceOrder: 0, controlInstanceId: 13
+                        )]
+                    ),
+                    paintsBehindText: false,
+                    zOrder: 0, sourceOrder: 0, controlInstanceId: 14
+                )]
+            )
+
+            // 블록-로컬 (150,10) — 글상자 rect 밖이지만 자식 도형이 덮은 자리
+            expect(HwpHitTester().hit(page: Self.page(footnote), point: CGPoint(x: 200, y: 610)))
+                == .footnote(blockIndex: 0, number: 1)
+            // 자식도 없는 자리는 아래 링크가 열린다
+            expect(HwpHitTester().hit(page: Self.page(footnote), point: CGPoint(x: 350, y: 610)))
+                == .hyperlink(url: "https://example.com/under", blockIndex: 0)
+        }
+
         /// 가림 테스트가 공유하는 링크 문단 (스팬 없이 문단-레벨 URL).
         private static func linkParagraph(rect: CGRect) -> HwpLaidOutParagraph {
             HwpLaidOutParagraph(

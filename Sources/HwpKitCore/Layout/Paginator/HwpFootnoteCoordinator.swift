@@ -173,9 +173,12 @@ struct HwpFootnoteCoordinator {
             ? metrics.separatorOverhead
             : metrics.spacingBetweenNotes
         for paragraph in paragraphs {
+            // 바로 아래 예약이 쓰는 해석기를 그대로 실어 배치까지 들고 간다 —
+            // 배치 시점에 다시 읽으면 그 사이 단이 바뀌었을 때 갈린다 (R44 #1).
             pendingFootnotes.append(HwpFootnoteLayout.Input(
                 paragraph: paragraph,
-                number: number
+                number: number,
+                sizeResolver: environment.sizeResolver
             ))
             footnoteReservedHeight += measuredFootnoteHeight(
                 of: paragraph,
