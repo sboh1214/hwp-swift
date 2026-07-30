@@ -99,29 +99,50 @@ public struct HwpHitTester {
         return bounds
     }
 
-    /// 글상자 목록을 **받은 순서대로** 훑어 첫 링크를 돌려준다 (좌표는
-    /// 컨테이너-로컬; 순서는 호출부 책임이다). 글상자 rect로 미리 거르지 않는다 —
-    /// 안쪽 문단이 상자를 넘어 그려질 수 있어 (R41 #2) 포함 판정은 문단 rect를
-    /// 아는 `spanAwareHyperlinkURL`에 맡긴다.
-    private func textboxHyperlinkURL(
-        _ textboxes: [HwpCellTextbox], at point: CGPoint
-    ) -> String? {
-        for textbox in textboxes {
-            let inner = CGPoint(
-                x: point.x - textbox.rect.minX,
-                y: point.y - textbox.rect.minY
-            )
-            if let url = spanAwareHyperlinkURL(in: textbox.textbox.paragraphs, at: inner) {
-                return url
+    /// 개체 층을 페인트 역순으로 훑은 결과.
+    private enum LayerHit {
+        case found(String)
+        /// 링크 없는 **불투명** 층이 그 지점을 덮고 있다 — 아래 층 탐색을 멈춘다.
+        /// 보이는 개체를 눌렀는데 그 밑에 숨은 링크가 열리면 안 된다 (R42 #2).
+        case occluded
+        case none
+    }
+
+    /// 개체 층을 **페인트 역순**(위→아래)으로 훑는다. 링크 조회는 층 rect로
+    /// 미리 거르지 않는다 — 안쪽 문단이 상자를 넘어 그려질 수 있어 (R41 #2)
+    /// 포함 판정은 문단 rect를 아는 `spanAwareHyperlinkURL` 몫이다. 반면 가림
+    /// 판정은 그 층이 실제로 덮은 자리여야 하므로 rect로 본다.
+    private func layerHyperlinkURL(
+        _ layers: [HwpBlockContentWalker.FootnoteLayer], at point: CGPoint
+    ) -> LayerHit {
+        for layer in layers.reversed() {
+            if case let .textbox(textbox) = layer {
+                let inner = CGPoint(
+                    x: point.x - textbox.rect.minX,
+                    y: point.y - textbox.rect.minY
+                )
+                if let url = spanAwareHyperlinkURL(in: textbox.textbox.paragraphs, at: inner) {
+                    return .found(url)
+                }
+            }
+            if layer.occludesContentBelow, layer.rect.contains(point) {
+                return .occluded
             }
         }
-        return nil
+        return .none
     }
 
     /// 필드 스팬 하이퍼링크(%hlk)를 링크 텍스트 글리프 rect에서만 히트한다 —
     /// 앞뒤 평문·다중 링크가 첫 URL로 뭉개지지 않는다 (#2). 필드 속성이 있는
     /// 블록은 링크 밖에서 nil (블록/컨테이너 폴백 금지); 없으면 종전 폴백.
     private func hyperlinkURL(for block: AnyHwpBlock, at point: CGPoint) -> String? {
+        // 각주는 층이 겹치므로 히트가 **페인트 역순**이어야 한다. 블록 전체를 훑는
+        // 아래 walkText 스캔은 페인트 **정순**이라 덮인 스팬 링크를 먼저 잡아
+        // 층 인식 조회에 닿지도 못했다 (R42 #1). 각주만 그 조회 한 곳에 맡긴다 —
+        // 안쪽 `spanAwareHyperlinkURL`이 문단마다 스팬 우선 규칙을 그대로 지킨다.
+        if case .footnote = block.payload {
+            return containerHyperlinkURL(block: block, point: point)
+        }
         var hasFieldSpans = false
         var fieldURL: String?
         HwpBlockContentWalker.walkText(block: block) { attributed, rect, _ in
@@ -178,7 +199,7 @@ public struct HwpHitTester {
             // 보이는 링크가 열린다. 페인트 순서 (글 뒤로 개체 → 문단 텍스트 →
             // 나머지 개체 → 안쪽 표) 의 소유자는 `walkFootnote`이고, 개체 정렬도
             // `footnoteTextboxesInPaintOrder`로 walker에서 받는다 (R41 #1).
-            let textboxes = HwpBlockContentWalker.footnoteTextboxesInPaintOrder(footnote)
+            let layers = HwpBlockContentWalker.footnoteLayersInPaintOrder(footnote)
             // 컨테이너 rect로 미리 거르지 않는다 — 셀·문단이 자기 표를 넘어
             // 그려질 수 있어 (R41 #2) 포함 판정은 자손 rect를 아는
             // `tableHyperlinkURL`에 맡긴다.
@@ -191,17 +212,21 @@ public struct HwpHitTester {
                     return url
                 }
             }
-            if let url = textboxHyperlinkURL(
-                Array(textboxes.inFrontOfText.reversed()), at: localPoint
-            ) {
+            switch layerHyperlinkURL(layers.inFrontOfText, at: localPoint) {
+            case let .found(url):
                 return url
+            case .occluded:
+                return nil
+            case .none:
+                break
             }
             if let url = spanAwareHyperlinkURL(in: footnote.paragraphs, at: localPoint) {
                 return url
             }
-            return textboxHyperlinkURL(
-                Array(textboxes.behindText.reversed()), at: localPoint
-            )
+            guard case let .found(url) = layerHyperlinkURL(
+                layers.behindText, at: localPoint
+            ) else { return nil }
+            return url
         default:
             return nil
         }

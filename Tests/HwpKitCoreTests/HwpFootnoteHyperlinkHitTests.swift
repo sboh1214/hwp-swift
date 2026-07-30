@@ -291,4 +291,121 @@ import XCTest
                 == .footnote(blockIndex: 0, number: 1)
         }
     }
+
+    // MARK: - 겹친 층의 스팬·가림 (R42)
+
+    extension HwpFootnoteObjectLayoutTests {
+        /// 필드 스팬(%hlk)도 층 순서를 따라야 한다 (R42 #1). 스팬 경로는 문서가
+        /// 말하는 **주 경로**인데(“하이퍼링크 방출은 스팬 우선”), 블록 전체를 훑는
+        /// walkText 스캔이 페인트 **정순**이라 덮인 문단 스팬을 먼저 잡았다.
+        func testOverlappingFootnoteSpanLinksResolveTopmostFirst() {
+            let blockFrame = CGRect(x: 50, y: 600, width: 400, height: 40)
+            let footnote = HwpFootnoteBlock(
+                frame: blockFrame,
+                paragraphs: [Self.spanParagraph(
+                    "덮인링크텍스트", url: "https://example.com/covered",
+                    rect: CGRect(x: 0, y: 0, width: 400, height: 40), paragraphId: 1
+                )],
+                number: 1,
+                separatorLine: CGRect(x: 50, y: 590, width: 130, height: 1),
+                textboxes: [HwpCellTextbox(
+                    rect: CGRect(x: 0, y: 0, width: 200, height: 40),
+                    textbox: HwpTextboxFrame(
+                        outerFrame: CGRect(x: 0, y: 0, width: 200, height: 40),
+                        paragraphs: [Self.spanParagraph(
+                            "덮는링크텍스트", url: "https://example.com/overlay",
+                            rect: CGRect(x: 0, y: 0, width: 200, height: 40), paragraphId: 2
+                        )],
+                        borderColor: nil, borderWidth: 0, fillColor: nil
+                    ),
+                    paintsBehindText: false,
+                    zOrder: 0,
+                    sourceOrder: 0,
+                    controlInstanceId: 5
+                )]
+            )
+
+            expect(HwpHitTester().hit(page: Self.page(footnote), point: CGPoint(x: 56, y: 606)))
+                == .hyperlink(url: "https://example.com/overlay", blockIndex: 0)
+        }
+
+        /// 링크 없는 **불투명** 전경 개체는 아래 링크를 가린다 (R42 #2) — 보이는
+        /// 개체를 눌렀는데 숨은 링크가 열리면 안 된다. 반대로 **채우기 없는** 도형은
+        /// 가리지 않는다: 이 리포는 오버레이가 겹치는 것을 설계로 두므로
+        /// (`앵커 규칙`), 속 빈 장식 도형까지 막으면 그 아래 링크가 통째로 죽는다.
+        func testFilledForegroundObjectOccludesFootnoteLinkButHollowOneDoesNot() {
+            let filled = HwpRGBColor(red: 255, green: 0, blue: 0).cgColor
+            for fillColor in [filled, nil] as [CGColor?] {
+                let blockFrame = CGRect(x: 50, y: 600, width: 400, height: 40)
+                let footnote = HwpFootnoteBlock(
+                    frame: blockFrame,
+                    paragraphs: [HwpLaidOutParagraph(
+                        attributedString: NSAttributedString(string: "가려진 각주 링크"),
+                        frame: HwpParagraphFrame(totalHeight: 40, lines: []),
+                        rect: CGRect(x: 0, y: 0, width: 400, height: 40),
+                        paragraphId: 1,
+                        hyperlinkURL: "https://example.com/under"
+                    )],
+                    number: 1,
+                    separatorLine: CGRect(x: 50, y: 590, width: 130, height: 1),
+                    shapes: [HwpCellShape(
+                        rect: CGRect(x: 0, y: 0, width: 100, height: 40),
+                        geometry: HwpShapeGeometry(
+                            path: CGPath(
+                                rect: CGRect(x: 0, y: 0, width: 100, height: 40), transform: nil
+                            ),
+                            fillColor: fillColor, strokeColor: nil, strokeWidth: 0
+                        ),
+                        paintsBehindText: false,
+                        zOrder: 0,
+                        sourceOrder: 0,
+                        controlInstanceId: 6
+                    )]
+                )
+                let hit = HwpHitTester().hit(
+                    page: Self.page(footnote), point: CGPoint(x: 60, y: 610)
+                )
+
+                if fillColor == nil {
+                    expect(hit) == .hyperlink(url: "https://example.com/under", blockIndex: 0)
+                } else {
+                    expect(hit) == .footnote(blockIndex: 0, number: 1)
+                }
+                // 도형 밖은 어느 경우든 아래 링크가 열린다
+                expect(HwpHitTester().hit(
+                    page: Self.page(footnote), point: CGPoint(x: 300, y: 610)
+                )) == .hyperlink(url: "https://example.com/under", blockIndex: 0)
+            }
+        }
+
+        /// 폰트를 고정해 글리프 rect가 기기에 따라 달라지지 않게 한 스팬 문단.
+        private static func spanParagraph(
+            _ text: String, url: String, rect: CGRect, paragraphId: UInt32
+        ) -> HwpLaidOutParagraph {
+            let attributed = NSMutableAttributedString(string: text)
+            let full = NSRange(location: 0, length: attributed.length)
+            attributed.addAttribute(
+                .font, value: CTFontCreateWithName("Menlo" as CFString, 12, nil), range: full
+            )
+            attributed.addAttribute(HwpAttributedStringKey.hyperlink, value: url, range: full)
+            return HwpLaidOutParagraph(
+                attributedString: attributed,
+                frame: HwpParagraphFrame(totalHeight: rect.height, lines: []),
+                rect: rect,
+                paragraphId: paragraphId,
+                hyperlinkURL: url
+            )
+        }
+
+        private static func page(_ footnote: HwpFootnoteBlock) -> HwpPage {
+            HwpPage(
+                size: CGSize(width: 595, height: 842),
+                margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
+                blocks: [AnyHwpBlock(
+                    frame: footnote.frame, kind: .footnote, payload: .footnote(footnote)
+                )],
+                pageNumber: 1
+            )
+        }
+    }
 #endif

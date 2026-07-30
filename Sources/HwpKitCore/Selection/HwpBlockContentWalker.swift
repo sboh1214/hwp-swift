@@ -177,25 +177,55 @@ public enum HwpBlockContentWalker {
         }
     }
 
-    /// 각주 블록의 글상자를 **페인트 순서**로 나눠 돌려준다 (글 뒤로 / 글 앞으로,
+    /// 각주 개체 한 층 (페인트 순서의 단위)
+    enum FootnoteLayer {
+        case image(HwpCellImage)
+        case shape(HwpCellShape)
+        case textbox(HwpCellTextbox)
+
+        var rect: CGRect {
+            switch self {
+            case let .image(image): image.rect
+            case let .shape(shape): shape.rect
+            case let .textbox(textbox): textbox.rect
+            }
+        }
+
+        /// 아래 층을 가리는가 — **채워진 층만** 가린다 (R42 #2). 이 리포는
+        /// 오버레이가 겹치는 것을 설계로 두므로 (`앵커 규칙`), rect만 보고 전부
+        /// 가린다고 하면 속 빈 장식 도형·테두리만 있는 상자 하나가 그 아래 링크를
+        /// 통째로 못 누르게 만든다. 알파는 알 수 없어 그림은 채워진 것으로 본다.
+        var occludesContentBelow: Bool {
+            switch self {
+            case .image: true
+            case let .shape(shape): shape.geometry.fillColor != nil
+            case let .textbox(textbox): textbox.textbox.fillColor != nil
+            }
+        }
+    }
+
+    /// 각주 블록의 개체를 **페인트 순서**로 나눠 돌려준다 (글 뒤로 / 글 앞으로,
     /// 각 그룹은 `sortedObjects`와 같은 zOrder → 원본 순서). 히트 테스터가 순서를
     /// 다시 구현하면 페인트와 갈려 덮인 링크가 열리므로, 정렬 소유권은 여기 남는다
     /// (R41 #1 — `walkFootnote`가 방출 순서의 단일 소유자라는 규약의 연장).
-    static func footnoteTextboxesInPaintOrder(
+    static func footnoteLayersInPaintOrder(
         _ footnote: HwpFootnoteBlock
-    ) -> (behindText: [HwpCellTextbox], inFrontOfText: [HwpCellTextbox]) {
+    ) -> (behindText: [FootnoteLayer], inFrontOfText: [FootnoteLayer]) {
         let ordered = sortedObjects(
             images: footnote.images,
             shapes: footnote.shapes,
             textboxes: footnote.textboxes
-        ).compactMap { object -> HwpCellTextbox? in
-            guard case let .textbox(textbox) = object else { return nil }
-            return textbox
-        }
-        return (
-            behindText: ordered.filter(\.paintsBehindText),
-            inFrontOfText: ordered.filter { !$0.paintsBehindText }
         )
+        func layers(behindText: Bool) -> [FootnoteLayer] {
+            ordered.filter { $0.paintsBehindText == behindText }.map { object in
+                switch object {
+                case let .image(image): FootnoteLayer.image(image)
+                case let .shape(shape): FootnoteLayer.shape(shape)
+                case let .textbox(textbox): FootnoteLayer.textbox(textbox)
+                }
+            }
+        }
+        return (behindText: layers(behindText: true), inFrontOfText: layers(behindText: false))
     }
 
     /// 셀 개체 (종류 무관 통합 순회 단위)
