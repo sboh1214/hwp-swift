@@ -13,19 +13,36 @@ public struct HwpFootnoteBlock: @unchecked Sendable, Hashable {
     public let separatorLine: CGRect
     /// 구분선 색
     public let separatorColor: HwpRGBColor
+    /// 각주 문단 안 그림 (블록-로컬 rect, #94)
+    public let images: [HwpCellImage]
+    /// 각주 문단 안 도형 (블록-로컬 rect, #94)
+    public let shapes: [HwpCellShape]
+    /// 각주 문단 안 글상자 (블록-로컬 rect, #94)
+    public let textboxes: [HwpCellTextbox]
+    /// 각주 문단 안 표 (블록-로컬 rect, #94). 한글.app 실측 (헌법주석 883쪽
+    /// 각주 29): 표가 각주 영역 안에 그려지고 그 아래로 다음 각주가 이어진다.
+    public let nestedTables: [HwpNestedTableFrame]
 
     public init(
         frame: CGRect,
         paragraphs: [HwpLaidOutParagraph],
         number: Int,
         separatorLine: CGRect,
-        separatorColor: HwpRGBColor = HwpRGBColor(red: 0, green: 0, blue: 0)
+        separatorColor: HwpRGBColor = HwpRGBColor(red: 0, green: 0, blue: 0),
+        images: [HwpCellImage] = [],
+        shapes: [HwpCellShape] = [],
+        textboxes: [HwpCellTextbox] = [],
+        nestedTables: [HwpNestedTableFrame] = []
     ) {
         self.frame = frame
         self.paragraphs = paragraphs
         self.number = number
         self.separatorLine = separatorLine
         self.separatorColor = separatorColor
+        self.images = images
+        self.shapes = shapes
+        self.textboxes = textboxes
+        self.nestedTables = nestedTables
     }
 
     /// 하위 호환: 문단 지오메트리만 필요할 때
@@ -81,13 +98,15 @@ public struct HwpFootnoteLayout {
         footnotes: [Input],
         onPage geometry: HwpPageGeometry,
         index: HwpIndex,
-        footnoteShape: CoreHwp.HwpFootnoteShape? = nil
+        footnoteShape: CoreHwp.HwpFootnoteShape? = nil,
+        sizeResolver: HwpObjectSizeResolver? = nil
     ) -> [HwpFootnoteBlock] {
         place(
             footnotes: footnotes,
             onPage: geometry,
             index: index,
-            footnoteShape: footnoteShape
+            footnoteShape: footnoteShape,
+            sizeResolver: sizeResolver
         ).blocks
     }
 
@@ -127,7 +146,8 @@ public struct HwpFootnoteLayout {
         onPage geometry: HwpPageGeometry,
         index: HwpIndex,
         footnoteShape: CoreHwp.HwpFootnoteShape? = nil,
-        limitsAreaToHalfContent: Bool = true
+        limitsAreaToHalfContent: Bool = true,
+        sizeResolver: HwpObjectSizeResolver? = nil
     ) -> Placement {
         guard !footnotes.isEmpty else { return Placement(blocks: [], overflow: []) }
 
@@ -142,7 +162,8 @@ public struct HwpFootnoteLayout {
             footnotes,
             index: index,
             width: contentFrame.width,
-            footnoteShape: footnoteShape
+            footnoteShape: footnoteShape,
+            sizeResolver: sizeResolver
         )
 
         // 페이지 하단에서 위로 필요한 만큼 확보하되 콘텐츠 절반을 넘지 않는다.
@@ -153,7 +174,7 @@ public struct HwpFootnoteLayout {
             if previousNumber != nil, previousNumber != note.input.number {
                 notesHeight += divider.betweenNotes
             }
-            notesHeight += max(1, note.frame.totalHeight)
+            notesHeight += note.blockHeight
             previousNumber = note.input.number
         }
         let stackHeight = notesHeight + divider.marginTop + divider.marginBottom
@@ -211,7 +232,8 @@ public struct HwpFootnoteLayout {
         in columnFrame: CGRect,
         index: HwpIndex,
         footnoteShape: CoreHwp.HwpFootnoteShape? = nil,
-        drawSeparator: Bool = true
+        drawSeparator: Bool = true,
+        sizeResolver: HwpObjectSizeResolver? = nil
     ) -> FlowPlacement {
         guard !footnotes.isEmpty else {
             return FlowPlacement(blocks: [], overflow: [], bottom: startY)
@@ -224,7 +246,8 @@ public struct HwpFootnoteLayout {
             footnotes,
             index: index,
             width: columnFrame.width,
-            footnoteShape: footnoteShape
+            footnoteShape: footnoteShape,
+            sizeResolver: sizeResolver
         )
 
         var cursorY = startY
@@ -273,7 +296,7 @@ public struct HwpFootnoteLayout {
             if let previousNumber, previousNumber == note.input.number {
                 cursorY -= divider.betweenNotes
             }
-            let blockHeight = max(1, note.frame.totalHeight)
+            let blockHeight = note.blockHeight
             if !blocks.isEmpty, cursorY + blockHeight > frame.maxY + 0.5 {
                 overflow = measured[noteIndex...].map(\.input)
                 break
@@ -295,18 +318,38 @@ public struct HwpFootnoteLayout {
                 )],
                 number: note.input.number,
                 separatorLine: separatorLine,
-                separatorColor: divider.color
+                separatorColor: divider.color,
+                // 개체는 measure가 문단-로컬 (0, 0) 기준으로 수집했고, 문단 rect도
+                // 블록-로컬 (0, 0)이라 그대로 블록-로컬 좌표다 (#94).
+                images: note.objects.images,
+                shapes: note.objects.shapes,
+                textboxes: note.objects.textboxes,
+                nestedTables: note.objects.nestedTables
             ))
             cursorY += blockHeight + divider.betweenNotes
         }
         return FlowPlacement(blocks: blocks, overflow: overflow, bottom: cursorY)
     }
 
-    /// 높이 계산이 끝난 각주 문단
+    /// 높이 계산이 끝난 각주 문단 (+ 그 문단에 붙은 개체, 문단-로컬 rect)
     private struct MeasuredFootnote {
         let input: Input
         let attributed: NSAttributedString
         let frame: HwpParagraphFrame
+        let objects: HwpParagraphObjectCollector.Objects
+
+        /// 블록 높이 — 텍스트 높이와 **떠 있는** 개체 하단의 최대값 (#94).
+        ///
+        /// 글자처럼 취급 개체는 라인 캐시가 이미 담는 몫이라 (헌법주석 실측:
+        /// 883쪽 각주 29의 408×62.52pt 표가 캐시 71.32pt 안에, 459쪽 각주 38의
+        /// 9.6×10.8pt 그림이 3줄 36.96pt 안에 들어간다) 하한을 얹지 않는다 —
+        /// 얹으면 캐시를 신뢰하는 규약이 깨져 페이지 절단이 한글과 어긋난다.
+        /// 떠 있는 개체는 캐시에 없으므로 (한글.app 합성 실측 2026-07-30: 각주
+        /// 문단에 떠 있는 도형을 붙이면 구분선이 위로 밀려 각주 영역이 개체를
+        /// 담는다) `HwpParagraphObjectCollector.growsContainer` 술어로 담는다.
+        var blockHeight: CGFloat {
+            max(1, Swift.max(frame.totalHeight, objects.floatingBottom ?? 0))
+        }
     }
 
     /// 각주 모양에서 해석한 구분선 지오메트리 (point 단위)
@@ -349,15 +392,36 @@ public struct HwpFootnoteLayout {
             } ?? 1
         )
     }
+}
 
+// MARK: - 문단 측정 + 개체 수집
+
+private extension HwpFootnoteLayout {
     private func measure(
         _ footnotes: [Input],
         index: HwpIndex,
         width: CGFloat,
-        footnoteShape: CoreHwp.HwpFootnoteShape? = nil
+        footnoteShape: CoreHwp.HwpFootnoteShape? = nil,
+        sizeResolver: HwpObjectSizeResolver? = nil
     ) -> [MeasuredFootnote] {
+        let noteResolver = sizeResolver?.withParagraphWidth(width)
         let measurer = HwpParagraphMeasurer(
-            index: index, fontResolver: fontResolver, attributeCache: attributeCache
+            index: index,
+            fontResolver: fontResolver,
+            sizeResolver: noteResolver,
+            attributeCache: attributeCache
+        )
+        // 각주 문단에 붙은 개체 (그림/도형/글상자/표)는 각주 영역 안 콘텐츠다 —
+        // 페이지 흐름 블록으로 방출하면 각주 밖에 그려진다 (#94). 표 셀과 같은
+        // 수집기를 쓰되 표까지 담는다: 셀은 `PlacedCellContent.nestedTables`가
+        // 따로 배치하지만 각주에는 그 경로가 없다.
+        let collector = HwpParagraphObjectCollector(
+            index: index,
+            fontResolver: fontResolver,
+            sizeResolver: noteResolver,
+            collectsTextboxes: true,
+            attributeCache: attributeCache,
+            collectsTables: true
         )
         return footnotes.map { input in
             // 각주 첫머리의 자동 번호 (ext18) 마커를 번호 문자열로 치환한다
@@ -378,12 +442,27 @@ public struct HwpFootnoteLayout {
             return MeasuredFootnote(
                 input: input,
                 attributed: measured.attributed,
-                frame: measured.frame
+                frame: measured.frame,
+                objects: collector.objects(
+                    in: input.paragraph,
+                    frame: measured.frame,
+                    paragraphRect: Self.paragraphRect(
+                        width: width, textHeight: measured.frame.totalHeight
+                    )
+                )
             )
         }
     }
 
-    private func points(fromHwpUnit16 value: Int16?, fallback: CGFloat) -> CGFloat {
+    /// 개체 수집에 쓰는 문단-로컬 rect. `stackBlocks`의 문단 rect와 원점이 같아야
+    /// 수집 좌표가 곧 블록-로컬 좌표다. 높이는 **텍스트 높이**를 쓴다 — 블록
+    /// 높이는 이 수집 결과에서 나오므로 순환을 피하고, 예약 경로
+    /// (`HwpFootnoteCoordinator`)가 같은 rect로 재수집해 값이 갈리지 않게 한다.
+    internal static func paragraphRect(width: CGFloat, textHeight: CGFloat) -> CGRect {
+        CGRect(x: 0, y: 0, width: width, height: textHeight)
+    }
+
+    func points(fromHwpUnit16 value: Int16?, fallback: CGFloat) -> CGFloat {
         guard let value else { return fallback }
         return HwpUnits.points(fromHwpUnit16: value)
     }

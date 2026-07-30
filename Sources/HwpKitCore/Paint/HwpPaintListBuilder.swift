@@ -115,7 +115,15 @@ public struct HwpPaintListBuilder: Sendable {
         case let .textbox(textbox):
             emit(textbox.paragraphs, offset: block.frame.origin)
         case let .footnote(footnote):
-            emit(footnote.paragraphs, offset: block.frame.origin)
+            // 각주 문단 + 각주 안 글상자·표 문단의 문단-레벨 링크 (#94) —
+            // 셀 경로 emitTable과 같은 origin 합성.
+            Self.footnoteParagraphGroups(footnote, origin: block.frame.origin).forEach(emit)
+            for nested in footnote.nestedTables {
+                emitTable(nested.table, origin: CGPoint(
+                    x: block.frame.minX + nested.rect.minX,
+                    y: block.frame.minY + nested.rect.minY
+                ))
+            }
         default:
             break
         }
@@ -169,7 +177,7 @@ public struct HwpPaintListBuilder: Sendable {
 
     /// (attributed, 페이지 좌표 rect) → drawText — `HwpBlockContentWalker`가
     /// 방문한 텍스트를 명령으로 바꾸는 단일 지점.
-    private func drawTextCommand(
+    func drawTextCommand(
         _ attributed: NSAttributedString,
         in rect: CGRect
     ) -> HwpPaintCommand {
@@ -264,7 +272,7 @@ public struct HwpPaintListBuilder: Sendable {
         ]
     }
 
-    private func borderCommands(
+    func borderCommands(
         _ borders: HwpBorderSet,
         around rect: CGRect
     ) -> [HwpPaintCommand] {
@@ -298,7 +306,7 @@ public struct HwpPaintListBuilder: Sendable {
 
     // MARK: - 글상자
 
-    private func textboxCommands(
+    func textboxCommands(
         _ textbox: HwpTextboxFrame,
         origin: CGPoint
     ) -> [HwpPaintCommand] {
@@ -333,30 +341,6 @@ public struct HwpPaintListBuilder: Sendable {
         }
         for object in objects where !object.behind {
             commands.append(contentsOf: object.commands)
-        }
-        return commands
-    }
-
-    // MARK: - 각주
-
-    private func footnoteCommands(
-        _ footnote: HwpFootnoteBlock,
-        blockFrame: CGRect,
-        drawSeparator: Bool
-    ) -> [HwpPaintCommand] {
-        var commands: [HwpPaintCommand] = []
-        // 구분선은 페이지의 첫 번째 각주 블록에서 한 번만 그린다.
-        if drawSeparator {
-            commands.append(.fillRect(
-                rect: footnote.separatorLine,
-                color: footnote.separatorColor.cgColor
-            ))
-        }
-        HwpBlockContentWalker.walkParagraphs(
-            footnote.paragraphs,
-            offset: blockFrame.origin
-        ) { attributed, rect, _ in
-            commands.append(drawTextCommand(attributed, in: rect))
         }
         return commands
     }

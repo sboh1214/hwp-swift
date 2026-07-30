@@ -113,7 +113,29 @@ public struct HwpHitTester {
             return spanAwareHyperlinkURL(in: textbox.paragraphs, at: localPoint)
         case let .footnote(footnote):
             // 각주 문단 좌표는 블록-로컬(0,0 기준)이라 localPoint로 히트한다 (#20).
-            return spanAwareHyperlinkURL(in: footnote.paragraphs, at: localPoint)
+            if let url = spanAwareHyperlinkURL(in: footnote.paragraphs, at: localPoint) {
+                return url
+            }
+            // 각주 안 글상자·표 문단의 링크도 히트한다 (#94) — 좌표도 블록-로컬.
+            for textbox in footnote.textboxes where textbox.rect.contains(localPoint) {
+                let inner = CGPoint(
+                    x: localPoint.x - textbox.rect.minX,
+                    y: localPoint.y - textbox.rect.minY
+                )
+                if let url = spanAwareHyperlinkURL(in: textbox.textbox.paragraphs, at: inner) {
+                    return url
+                }
+            }
+            for nested in footnote.nestedTables where nested.rect.contains(localPoint) {
+                let inner = CGPoint(
+                    x: localPoint.x - nested.rect.minX,
+                    y: localPoint.y - nested.rect.minY
+                )
+                if let url = tableHyperlinkURL(nested.table, at: inner) {
+                    return url
+                }
+            }
+            return nil
         default:
             return nil
         }

@@ -27,7 +27,16 @@ public enum HwpBlockContentWalker {
         case let .textbox(textbox):
             walkParagraphs(textbox.paragraphs, offset: block.frame.origin, visit: visit)
         case let .footnote(footnote):
-            walkParagraphs(footnote.paragraphs, offset: block.frame.origin, visit: visit)
+            // 각주 안 개체·표의 텍스트도 선택/복사 단위에 실어야 한다 —
+            // 렌더와 같은 평면 순서라 paint parity 유지 (#94, 표 셀과 같은 규약)
+            walkFootnote(
+                footnote,
+                origin: block.frame.origin,
+                onParagraphText: visit,
+                onCellTextbox: { textbox, rect in
+                    walkParagraphs(textbox.textbox.paragraphs, offset: rect.origin, visit: visit)
+                }
+            )
         case .shape, .image, .chart:
             return
         case nil:
@@ -114,6 +123,60 @@ public enum HwpBlockContentWalker {
         }
     }
 
+    /// 각주/미주 블록을 렌더 방출 순서로 순회한다 — (글 뒤로 개체)* →
+    /// onParagraphText* → (나머지 개체)* → (각주 안 표 재귀). 이벤트 종류와
+    /// 순서 규약은 `walkTable`과 같다 (#94) — 각주는 표 셀·글상자와 같은
+    /// 컨테이너라 개체 페이로드도 같은 형태다.
+    /// 구분선은 블록 사이에 공유되므로 이 순회의 이벤트가 아니다 (페인터 몫).
+    public static func walkFootnote(
+        _ footnote: HwpFootnoteBlock,
+        origin: CGPoint,
+        onParagraphText: (NSAttributedString, CGRect, UInt32?) -> Void,
+        onCellStart: (HwpTableCellFrame, CGRect) -> Void = { _, _ in },
+        onCellImage: (HwpCellImage, CGRect) -> Void = { _, _ in },
+        onCellShape: (HwpCellShape, CGRect) -> Void = { _, _ in },
+        onCellTextbox: (HwpCellTextbox, CGRect) -> Void = { _, _ in }
+    ) {
+        let objects = sortedObjects(
+            images: footnote.images,
+            shapes: footnote.shapes,
+            textboxes: footnote.textboxes
+        )
+        func emit(_ object: CellObject) {
+            switch object {
+            case let .image(image):
+                onCellImage(image, image.rect.offsetBy(dx: origin.x, dy: origin.y))
+            case let .shape(shape):
+                onCellShape(shape, shape.rect.offsetBy(dx: origin.x, dy: origin.y))
+            case let .textbox(textbox):
+                onCellTextbox(textbox, textbox.rect.offsetBy(dx: origin.x, dy: origin.y))
+            }
+        }
+        for object in objects where object.paintsBehindText {
+            emit(object)
+        }
+        walkParagraphs(footnote.paragraphs, offset: origin, visit: onParagraphText)
+        for object in objects where !object.paintsBehindText {
+            emit(object)
+        }
+        // 각주 안 표는 블록-로컬 위치를 origin으로 재귀 순회한다 (셀 경로와
+        // 같은 origin 합성 산식).
+        for nested in footnote.nestedTables {
+            walkTable(
+                nested.table,
+                origin: CGPoint(
+                    x: origin.x + nested.rect.minX,
+                    y: origin.y + nested.rect.minY
+                ),
+                onCellStart: onCellStart,
+                onParagraphText: onParagraphText,
+                onCellImage: onCellImage,
+                onCellShape: onCellShape,
+                onCellTextbox: onCellTextbox
+            )
+        }
+    }
+
     /// 셀 개체 (종류 무관 통합 순회 단위)
     private enum CellObject {
         case image(HwpCellImage)
@@ -148,9 +211,19 @@ public enum HwpBlockContentWalker {
     /// 셀 개체를 zOrder 오름차순 (동순위는 원본 ctrlHeaderArray 순서 —
     /// 종류-버킷 순서가 아니다, R31 #3)으로 정렬한 방출 목록.
     private static func sortedCellObjects(_ cell: HwpTableCellFrame) -> [CellObject] {
-        let objects = cell.images.map(CellObject.image)
-            + cell.shapes.map(CellObject.shape)
-            + cell.textboxes.map(CellObject.textbox)
+        sortedObjects(images: cell.images, shapes: cell.shapes, textboxes: cell.textboxes)
+    }
+
+    /// 컨테이너 개체 정렬의 단일 지점 (표 셀·각주 공용, #94) — 종류 버킷을
+    /// 합쳐 zOrder → 원본 순서로 정렬한다.
+    private static func sortedObjects(
+        images: [HwpCellImage],
+        shapes: [HwpCellShape],
+        textboxes: [HwpCellTextbox]
+    ) -> [CellObject] {
+        let objects = images.map(CellObject.image)
+            + shapes.map(CellObject.shape)
+            + textboxes.map(CellObject.textbox)
         return objects.sorted { lhs, rhs in
             lhs.zOrder != rhs.zOrder
                 ? lhs.zOrder < rhs.zOrder

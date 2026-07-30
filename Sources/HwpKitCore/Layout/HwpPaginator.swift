@@ -1411,6 +1411,14 @@ private extension HwpPaginator {
         case .footnote, .endnote:
             // 각주/미주는 collectFootnotes(from:depth:)가 컨트롤 블록 방출 전에
             // 수집한다 (참조 위치 페이지 귀속).
+            //
+            // 각주 문단 안 개체는 형제 케이스처럼 appendNestedControlBlocks로
+            // 흐름 방출하지 **않는다** — 각주 영역 안 콘텐츠라 흐름으로 내보내면
+            // 본문 자리에 그려지고 흐름까지 밀어낸다 (한글.app 실측: 헌법주석
+            // 883쪽 각주 29의 표는 각주 영역 안에 있다). `HwpFootnoteLayout`이
+            // `HwpParagraphObjectCollector`로 담고 (#94), 그것이 담지 못하는
+            // 컨트롤 (OLE·수식)은 walkUnsupported가 각주 문단까지 걸어
+            // (childParagraphs) 진단으로 보고하므로 손실이 조용하지 않다.
             break
         default:
             break
@@ -2370,7 +2378,8 @@ private extension HwpPaginator {
     var noteEnvironment: HwpFootnoteCoordinator.Environment {
         HwpFootnoteCoordinator.Environment(
             contentWidth: currentPageGeometry.contentFrame.width,
-            footnoteShape: currentSectionDef?.footNoteShape
+            footnoteShape: currentSectionDef?.footNoteShape,
+            sizeResolver: objectSizeResolver
         )
     }
 
@@ -2473,7 +2482,8 @@ private extension HwpPaginator {
                 from: columnFrame.minY + contentHeightUsed,
                 in: available,
                 endnoteShape: currentSectionDef?.endNoteShape,
-                drawSeparator: drawSeparator
+                drawSeparator: drawSeparator,
+                sizeResolver: objectSizeResolver
             )
             for block in placement.blocks {
                 currentBlocks.append(AnyHwpBlock(
@@ -2536,7 +2546,8 @@ private extension HwpPaginator {
         let placement = footnoteCoordinator.placePendingFootnotes(
             onPage: currentPageGeometry,
             footnoteShape: currentSectionDef?.footNoteShape,
-            limitsAreaToHalfContent: !absoluteCacheMode
+            limitsAreaToHalfContent: !absoluteCacheMode,
+            sizeResolver: objectSizeResolver
         )
         for block in placement.blocks {
             currentBlocks.append(AnyHwpBlock(

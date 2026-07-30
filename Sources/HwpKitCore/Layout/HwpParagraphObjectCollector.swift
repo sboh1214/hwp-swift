@@ -16,6 +16,12 @@ struct HwpParagraphObjectCollector {
     /// 글자 모양별 속성 캐시 (소유는 `HwpPaginator`) — 컨테이너 안 글상자가
     /// 자체 `HwpTextboxLayout`을 만들 때 캐시를 잃지 않게 한다.
     var attributeCache: HwpTextAttributeCache?
+    /// 표 수집 여부 — **각주/미주 블록만 참**이다 (#94). 표 셀은
+    /// `HwpTableLayout.PlacedCellContent.nestedTables`가 이미 셀 안에 재귀
+    /// 배치하므로 여기서 또 담으면 이중 렌더가 되고, 글상자는 안쪽 표를
+    /// 흐름 경로에 남긴다. 각주는 담을 필드도 흐름 방출도 없어 개체가
+    /// 사라졌던 쪽이라 (헌법주석 883쪽 각주 29의 4×8 표) 여기서 담는다.
+    var collectsTables: Bool = false
 
     typealias HandledControl = (
         commonProperty: CoreHwp.HwpCommonCtrlProperty?,
@@ -79,15 +85,25 @@ struct HwpParagraphObjectCollector {
         var collected = Objects()
         var state = CollectState(cursorX: paragraphRect.minX, sourceOrder: firstSourceOrder)
         for (controlIndex, ctrl) in (paragraph.ctrlHeaderArray ?? []).enumerated() {
-            guard let (commonProperty, components) = Self.handledControl(ctrl),
-                  Self.collectible(components, collectsTextboxes: collectsTextboxes)
-            else { continue }
             let placement = Placement(
                 anchor: anchorOrigin(
                     for: controlIndex, frame: frame, paragraphRect: paragraphRect
                 ),
                 paragraphRect: paragraphRect
             )
+            if collectsTables, case let .table(nested) = ctrl {
+                let marker = collected.marker
+                if let table = table(nested, placement: placement, state: &state) {
+                    collected.nestedTables.append(table)
+                }
+                if Self.growsContainer(nested.commonCtrlProperty) {
+                    collected.noteFloating(since: marker)
+                }
+                continue
+            }
+            guard let (commonProperty, components) = Self.handledControl(ctrl),
+                  Self.collectible(components, collectsTextboxes: collectsTextboxes)
+            else { continue }
             let marker = collected.marker
             for component in components {
                 collect(
@@ -103,6 +119,44 @@ struct HwpParagraphObjectCollector {
             }
         }
         return collected
+    }
+
+    /// 문단에 붙은 표를 컨테이너-로컬 rect로 재귀 레이아웃한다 (#94).
+    ///
+    /// 폭 기준은 문단 rect 폭이다 — 한글.app 실측 (헌법주석 883쪽 각주 29):
+    /// 408pt 표가 문단 들여쓰기(≈17.9pt) 위치에서 시작해 오른쪽 본문 경계를
+    /// 12.6pt 넘어가고, 한글은 그것을 자르거나 줄이지 않는다. 즉 폭은 저작대로
+    /// 두고 위치만 앵커에 맞춘다.
+    private func table(
+        _ nested: CoreHwp.HwpTable,
+        placement: Placement,
+        state: inout CollectState
+    ) -> HwpNestedTableFrame? {
+        let commonProperty = nested.commonCtrlProperty
+        guard case let .success(frame) = HwpTableLayout(
+            fontResolver: fontResolver, attributeCache: attributeCache
+        ).layout(
+            table: nested,
+            availableWidth: placement.paragraphRect.width,
+            index: index,
+            sizeResolver: sizeResolver
+        ) else { return nil }
+        let size = frame.outerFrame.size
+        let rect = CGRect(
+            origin: origin(
+                commonProperty: commonProperty, size: size,
+                placement: placement, cursorX: state.cursorX
+            ),
+            size: size
+        )
+        if commonProperty.propertyInfo.treatAsChar, placement.anchor == nil {
+            state.cursorX += size.width
+        }
+        return HwpNestedTableFrame(
+            rect: rect,
+            table: frame,
+            controlInstanceId: commonProperty.instanceId
+        )
     }
 
     /// 개체 배치 문맥 — 줄 앵커 (없으면 커서 흐름 배치)와 문단 rect
@@ -233,10 +287,17 @@ struct HwpParagraphObjectCollector {
         }
         return nil
     }
+}
 
+// MARK: - 컴포넌트 → 개체 변환
+
+/// 개체 요소 (그림/글상자/도형)와 표를 컨테이너-로컬 rect의 페이로드로 바꾸는
+/// 팩토리. 크기 해석 (`resolvedSize`)과 배치 (`origin`)는 위 본체가 소유하고,
+/// 여기서는 종류별 페이로드 조립만 한다.
+private extension HwpParagraphObjectCollector {
     /// 개체의 해석 크기 — 저장 크기가 0 이하이면 개체 요소 detail의
     /// 현재 크기로 폴백하고, 그래도 0 이하이면 nil (그리지 않음).
-    private func resolvedSize(
+    func resolvedSize(
         commonProperty: CoreHwp.HwpCommonCtrlProperty?,
         component: CoreHwp.HwpShapeComponent
     ) -> CGSize? {
@@ -257,7 +318,7 @@ struct HwpParagraphObjectCollector {
         return CGSize(width: width, height: height)
     }
 
-    private func image(
+    func image(
         picture: CoreHwp.HwpShapeComponentPicture,
         size: CGSize,
         commonProperty: CoreHwp.HwpCommonCtrlProperty?,
@@ -357,6 +418,8 @@ extension HwpParagraphObjectCollector {
         var images: [HwpCellImage] = []
         var shapes: [HwpCellShape] = []
         var textboxes: [HwpCellTextbox] = []
+        /// 문단에 붙은 표 (`collectsTables`가 참일 때만 채워진다, #94)
+        var nestedTables: [HwpNestedTableFrame] = []
         /// 떠 있는 개체 (글자처럼 취급 아님)의 하단 최대값 (paragraphRect 좌표계).
         /// 한글 줄 캐시도 저작된 셀 높이 (표 80)도 이 개체를 담지 않으므로,
         /// 컨테이너 높이를 그 둘로만 정하면 개체가 컨테이너 밖으로 흘러나간다
@@ -364,14 +427,22 @@ extension HwpParagraphObjectCollector {
         /// 여기서 함께 낸다.
         var floatingBottom: CGFloat?
 
-        /// 수집 총량 — 다음 문단의 firstSourceOrder (원본 순서 ordinal 연속)
+        /// 수집 총량 — 다음 문단의 firstSourceOrder (원본 순서 ordinal 연속).
+        /// 표는 zOrder/sourceOrder 필드가 없어 (`HwpNestedTableFrame`) 정렬
+        /// 대상이 아니므로 세지 않는다 — 페인트는 표 셀 경로(`walkTable`)와
+        /// 같이 개체 뒤에 그린다.
         var count: Int {
             images.count + shapes.count + textboxes.count
         }
 
         /// 종류별 개수 스냅샷 — 컨트롤 하나가 새로 넣은 개체 범위를 잡는 표식.
         var marker: ObjectMarker {
-            ObjectMarker(images: images.count, shapes: shapes.count, textboxes: textboxes.count)
+            ObjectMarker(
+                images: images.count,
+                shapes: shapes.count,
+                textboxes: textboxes.count,
+                nestedTables: nestedTables.count
+            )
         }
 
         /// 표식 이후 추가된 개체들의 하단 최대값을 떠 있는 개체 하단으로 기록한다.
@@ -381,6 +452,7 @@ extension HwpParagraphObjectCollector {
             let bottoms = images[marker.images...].map(\.rect.maxY)
                 + shapes[marker.shapes...].map(\.rect.maxY)
                 + textboxes[marker.textboxes...].map(\.rect.maxY)
+                + nestedTables[marker.nestedTables...].map(\.rect.maxY)
             guard let bottom = bottoms.max() else { return }
             floatingBottom = Swift.max(floatingBottom ?? bottom, bottom)
         }
@@ -391,6 +463,7 @@ extension HwpParagraphObjectCollector {
         let images: Int
         let shapes: Int
         let textboxes: Int
+        let nestedTables: Int
     }
 
     /// 배치 방식 (표 70 textWrap)이 흐름을 점유하는지 — 어울림·자리 차지는
@@ -443,9 +516,13 @@ extension HwpParagraphObjectCollector {
     /// 판정에서 걸러진 셀이 하한을 못 받거나 그 반대가 된다.
     static func hasFloatingObject(
         in paragraph: CoreHwp.HwpParagraph,
-        collectsTextboxes: Bool
+        collectsTextboxes: Bool,
+        collectsTables: Bool = false
     ) -> Bool {
         (paragraph.ctrlHeaderArray ?? []).contains { ctrl in
+            if collectsTables, case let .table(nested) = ctrl {
+                return growsContainer(nested.commonCtrlProperty)
+            }
             guard let (commonProperty, components) = handledControl(ctrl),
                   growsContainer(commonProperty)
             else { return false }

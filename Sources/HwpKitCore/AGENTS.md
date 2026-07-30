@@ -132,7 +132,7 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
 ## 블록 모델 gotchas
 
 - `AnyHwpBlock.attributedString` — CT 페이로드. **immutable copy 필수** (`NSAttributedString(attributedString:)`)
-- `AnyHwpBlock.payload` — 종류별 상세 결과: `.table(HwpTableFrame)` / `.textbox` / `.footnote` / `.shape(HwpShapeGeometry)` / `.image(HwpImageBlockInfo)`. payload 내부 좌표는 **블록-로컬** (footnote 의 separator 만 페이지 좌표)
+- `AnyHwpBlock.payload` — 종류별 상세 결과: `.table(HwpTableFrame)` / `.textbox` / `.footnote` / `.shape(HwpShapeGeometry)` / `.image(HwpImageBlockInfo)`. payload 내부 좌표는 **블록-로컬** (footnote 의 separator 만 페이지 좌표). 개체를 담는 컨테이너 payload는 셋이고 필드가 대칭이다 — `HwpTableCellFrame`(images/shapes/textboxes/nestedTables), `HwpTextboxFrame`(images/shapes), `HwpFootnoteBlock`(images/shapes/textboxes/nestedTables, #94)
 - `AnyHwpBlock.source` — `HwpBlockSource(controlInstanceId/paragraphId)`: 편집 기능이 렌더 결과에서 CoreHwp 모델로 돌아가는 참조
 - `AnyHwpBlock.hyperlinkURL` — block-level. `HwpPaginator.hyperlinkURL(in:)` 이 top-level 및 nested paragraph 양쪽에서 추출
 - 하이퍼링크 방출은 **스팬 우선**이다: `%hlk` 필드 스팬이 있으면 글리프 rect로만 방출하고, 스팬이 없는 컨테이너(표/글상자/각주) 문단만 문단 rect 폴백으로 담는다. 모델의 `hyperlinkURL`은 스팬 유무와 무관하게 채워지므로 폴백 측에서 `HwpDrawnTextLayout.hyperlinkRegions`로 게이트해야 앞뒤 평문이 링크로 표시되지 않는다 (hit tester의 `spanAwareHyperlinkURL`과 같은 규약)
@@ -317,6 +317,46 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   (`HwpDrawnTextLayout.slightOverflowLineMetrics` 공유 술어)은 측정·렌더가
   같은 입력을 쓴다 — 탭 문단 줄바꿈·한 줄 문단 높이가 정의상 일치
   (가드: HwpParagraphLayoutTests.testTabParagraphMeasurementMatchesDrawnLayout)
+- **각주/미주도 표 셀·글상자와 같은 컨테이너다** (#94). `HwpFootnoteBlock`이
+  `images`/`shapes`/`textboxes`/`nestedTables`를 블록-로컬 rect로 들고,
+  `HwpFootnoteLayout.measure`가 `HwpParagraphObjectCollector`로 수집한다
+  (`collectsTables: true` — 셀은 `PlacedCellContent.nestedTables`가 따로
+  배치하지만 각주에는 그 경로가 없다). 페인트·선택·히트는
+  `HwpBlockContentWalker.walkFootnote` 한 지점이 순서를 정의한다 (글 뒤로 개체 →
+  문단 텍스트 → 나머지 개체 → 각주 안 표 재귀 — `walkTable`과 같은 규약).
+  개체를 **페이지 흐름으로 방출하지 않는다**: 흐름으로 내보내면 각주 영역 밖
+  본문 자리에 그려지고 흐름까지 밀어낸다. 그래서 `HwpPaginator`의
+  `.footnote/.endnote` 케이스는 형제 케이스와 달리
+  `appendNestedControlBlocks`를 부르지 않고, 수집기가 담지 못하는 컨트롤
+  (OLE·수식)은 `walkUnsupported`가 각주 문단까지 걸어 (childParagraphs) 진단으로
+  보고한다.
+  한글.app 실측 (2026-07-30, 헌법주석 `legacy-common-control-property`):
+  인쇄 459쪽 (= 렌더 인덱스 470) 각주 38)의 9.6×10.8pt 그림은 "1970년의 씨▨의
+  소리사"의 **글자 자리**에 저작 크기 그대로 놓이고 각주는 3줄 그대로다;
+  인쇄 883쪽 (= 렌더 인덱스 894) 각주 29)의 4×8/22셀 408×62.52pt 표는 각주 29의
+  둘째 문단으로 **각주 영역 안**에 그려지고 그 아래로 각주 30)이 이어지며,
+  문단 들여쓰기 (≈17.9pt)에서 시작해 오른쪽 본문 경계를 ~12.6pt 넘어간다
+  (한글은 자르지도 줄이지도 않는다 — 그래서 폭 기준을 문단 rect 폭으로 두고
+  위치만 앵커에 맞춘다). **쪽 번호 대응**: 이 픽스처는 앞 로마자 12쪽 뒤 본문이
+  1로 재시작하므로 렌더 페이지 인덱스 N ↔ 한글 인쇄/상태바 쪽번호 N−12다
+  (한글 찾아가기도 인쇄 번호를 쓴다) — 실측 지점을 찾을 때 이 오프셋을 잊지 말 것.
+- **각주 블록 높이도 셀과 같은 규약이다** (#94): 글자처럼 취급 개체는 라인
+  캐시가 담는 몫이라 하한을 얹지 않고 (883쪽 표는 캐시 71.32pt, 459쪽 그림은
+  3줄 36.96pt 안에 들어간다 — 실측 일치), 떠 있는 개체만
+  `growsContainer`로 하한을 준다. 예약
+  (`HwpFootnoteCoordinator.measuredFootnoteHeight` → 본문 절단점)과 배치
+  (`MeasuredFootnote.blockHeight`)가 **같은 수집기·같은 문단 rect**
+  (`HwpFootnoteLayout.paragraphRect`)로 계산돼야 한다 — 예약이 작으면 각주
+  스택이 본문을 덮고, 크면 한글에 없는 페이지 절단이 생긴다. 코퍼스에는 떠 있는
+  각주 개체가 0건이라 (전 픽스처 스캔: gso 1 + table 1, 둘 다 글자처럼 취급)
+  이 하한은 헌법주석 페이지 수 1,030과 렌더 해시를 건드리지 않는다 —
+  #94에서 바뀐 페이지는 470·894 **두 장뿐**이다.
+  남은 차이 하나: 한글은 각주에서 **「글 앞으로」·「글 뒤로」에도** 영역을
+  키우는데 (2026-07-30 합성 실측 — 각주 문단에 떠 있는 도형을 붙이면 구분선이
+  위로 밀린다), 우리는 `growsContainer`의 오버레이 제외를 그대로 따른다.
+  술어의 소유자는 `HwpParagraphObjectCollector` 한 곳이어야 하고 (표 셀·흐름
+  경로가 같은 답을 써야 한다) 오버레이 제외는 #91이 셀 페이지 분할을 지키려
+  둔 가드다 — 바꾸려면 표 셀과 **함께** 코퍼스 전체로 검증할 것.
 - 절대 캐시 모드에서 각주 스택 높이가 한글보다 크면 (캐시 없는 각주의 CT
   측정) 본문 마지막 블록과 겹칠 수 있다 — 본문 절단점이 한글 캐시로 고정되어
   각주 예약이 본문을 밀어내지 못한다. 강제 이월은 한글에 없는 각주 전용

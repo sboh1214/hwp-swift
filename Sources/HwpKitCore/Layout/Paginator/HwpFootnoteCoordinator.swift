@@ -14,6 +14,20 @@ struct HwpFootnoteCoordinator {
         let contentWidth: CGFloat
         /// currentSectionDef?.footNoteShape
         let footnoteShape: CoreHwp.HwpFootnoteShape?
+        /// 각주 문단 안 개체의 상대 크기 기준 해석기 (paginator 페이지/단 기하).
+        /// 예약(measuredFootnoteHeight)과 배치(HwpFootnoteLayout.place)가 같은
+        /// 기준을 써야 떠 있는 개체 하한이 갈리지 않는다 (#94).
+        let sizeResolver: HwpObjectSizeResolver?
+
+        init(
+            contentWidth: CGFloat,
+            footnoteShape: CoreHwp.HwpFootnoteShape?,
+            sizeResolver: HwpObjectSizeResolver? = nil
+        ) {
+            self.contentWidth = contentWidth
+            self.footnoteShape = footnoteShape
+            self.sizeResolver = sizeResolver
+        }
     }
 
     /// paragraph-bearing 컨테이너의 단일 traversal 지점 주입
@@ -177,9 +191,16 @@ struct HwpFootnoteCoordinator {
             ))
         }
     }
+}
 
-    // MARK: 예약/측정
+// MARK: - 예약/측정
 
+//
+// 예약은 **배치와 동형**이어야 한다 (`HwpFootnoteLayout.place`의 스택 산식) —
+// 예약이 작으면 각주 스택이 본문을 덮고, 크면 한글에 없는 페이지 절단이 생긴다.
+// 그 동형성을 한 곳에서 읽을 수 있도록 확장으로 묶었다.
+
+extension HwpFootnoteCoordinator {
     /// 각주 예약 기하 — 배치 (HwpFootnoteLayout.place)와 같은 divider 소스
     private func footnoteReservationMetrics(
         environment: Environment
@@ -318,7 +339,26 @@ struct HwpFootnoteCoordinator {
         number: Int,
         environment: Environment
     ) -> CGFloat {
-        // 예약 높이도 배치 (HwpFootnoteLayout.measure)와 같은 기준: 라인 캐시 우선
+        let textHeight = measuredFootnoteTextHeight(
+            of: paragraph, number: number, environment: environment
+        )
+        // 배치 (HwpFootnoteLayout.MeasuredFootnote.blockHeight)와 동형: 떠 있는
+        // 개체는 라인 캐시에 없어 별도 하한이 필요하다 (#94).
+        return max(
+            textHeight,
+            floatingObjectBottom(
+                of: paragraph, textHeight: textHeight, environment: environment
+            )
+        )
+    }
+
+    /// 각주 문단의 **텍스트** 높이 — 배치 (HwpFootnoteLayout.measure)와 같은
+    /// 기준: 라인 캐시 우선.
+    private mutating func measuredFootnoteTextHeight(
+        of paragraph: CoreHwp.HwpParagraph,
+        number: Int,
+        environment: Environment
+    ) -> CGFloat {
         if let cachedHeight = HwpParagraphLayout.cachedParagraphHeight(paragraph) {
             return cachedHeight
         }
@@ -333,7 +373,10 @@ struct HwpFootnoteCoordinator {
         }
 
         let measured = HwpParagraphMeasurer(
-            index: index, fontResolver: fontResolver, attributeCache: attributeCache
+            index: index,
+            fontResolver: fontResolver,
+            sizeResolver: environment.sizeResolver?.withParagraphWidth(width),
+            attributeCache: attributeCache
         )
         .measure(
             paragraph,
@@ -347,6 +390,41 @@ struct HwpFootnoteCoordinator {
         let height = max(1, measured.frame.totalHeight)
         footnoteHeightCache[key] = height
         return height
+    }
+
+    /// 떠 있는 개체를 담는 데 필요한 문단-로컬 하단 (개체가 없으면 0, #94).
+    ///
+    /// 배치와 **같은 수집기·같은 문단 rect**로 재수집한다 — 산식을 복제하면
+    /// 예약과 배치가 갈린다 (`HwpTableLayout.floatingObjectHeight`와 같은 규약).
+    /// 값싼 사전 판정 (`hasFloatingObject`)으로 걸러 컨트롤 없는 각주 문단
+    /// (대다수)에서는 재수집이 돌지 않는다.
+    private func floatingObjectBottom(
+        of paragraph: CoreHwp.HwpParagraph,
+        textHeight: CGFloat,
+        environment: Environment
+    ) -> CGFloat {
+        guard HwpParagraphObjectCollector.hasFloatingObject(
+            in: paragraph, collectsTextboxes: true, collectsTables: true
+        ) else { return 0 }
+        let width = environment.contentWidth
+        let collector = HwpParagraphObjectCollector(
+            index: index,
+            fontResolver: fontResolver,
+            sizeResolver: environment.sizeResolver?.withParagraphWidth(width),
+            collectsTextboxes: true,
+            attributeCache: attributeCache,
+            collectsTables: true
+        )
+        // 떠 있는 개체의 origin은 줄 앵커를 쓰지 않으므로 (treatAsChar가 아니면
+        // `origin()`이 정렬+오프셋 경로를 탄다) 줄 없는 프레임으로 충분하다.
+        let collected = collector.objects(
+            in: paragraph,
+            frame: HwpParagraphFrame(totalHeight: textHeight, lines: []),
+            paragraphRect: HwpFootnoteLayout.paragraphRect(
+                width: width, textHeight: textHeight
+            )
+        )
+        return collected.floatingBottom ?? 0
     }
 }
 
@@ -410,14 +488,16 @@ extension HwpFootnoteCoordinator {
     func placePendingFootnotes(
         onPage geometry: HwpPageGeometry,
         footnoteShape: CoreHwp.HwpFootnoteShape?,
-        limitsAreaToHalfContent: Bool
+        limitsAreaToHalfContent: Bool,
+        sizeResolver: HwpObjectSizeResolver? = nil
     ) -> HwpFootnoteLayout.Placement {
         footnoteLayout.place(
             footnotes: pendingFootnotes,
             onPage: geometry,
             index: index,
             footnoteShape: footnoteShape,
-            limitsAreaToHalfContent: limitsAreaToHalfContent
+            limitsAreaToHalfContent: limitsAreaToHalfContent,
+            sizeResolver: sizeResolver
         )
     }
 
@@ -427,7 +507,8 @@ extension HwpFootnoteCoordinator {
         from startY: CGFloat,
         in columnFrame: CGRect,
         endnoteShape: CoreHwp.HwpFootnoteShape?,
-        drawSeparator: Bool
+        drawSeparator: Bool,
+        sizeResolver: HwpObjectSizeResolver? = nil
     ) -> HwpFootnoteLayout.FlowPlacement {
         footnoteLayout.placeFlow(
             footnotes: pendingEndnotes,
@@ -435,7 +516,8 @@ extension HwpFootnoteCoordinator {
             in: columnFrame,
             index: index,
             footnoteShape: endnoteShape,
-            drawSeparator: drawSeparator
+            drawSeparator: drawSeparator,
+            sizeResolver: sizeResolver
         )
     }
 }
