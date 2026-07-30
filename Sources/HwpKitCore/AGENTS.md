@@ -135,7 +135,7 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
 - `AnyHwpBlock.payload` — 종류별 상세 결과: `.table(HwpTableFrame)` / `.textbox` / `.footnote` / `.shape(HwpShapeGeometry)` / `.image(HwpImageBlockInfo)`. payload 내부 좌표는 **블록-로컬** (footnote 의 separator 만 페이지 좌표). 개체를 담는 컨테이너 payload는 셋이고 필드가 대칭이다 — `HwpTableCellFrame`(images/shapes/textboxes/nestedTables), `HwpTextboxFrame`(images/shapes), `HwpFootnoteBlock`(images/shapes/textboxes/nestedTables, #94)
 - `AnyHwpBlock.source` — `HwpBlockSource(controlInstanceId/paragraphId)`: 편집 기능이 렌더 결과에서 CoreHwp 모델로 돌아가는 참조
 - `AnyHwpBlock.hyperlinkURL` — block-level. `HwpPaginator.hyperlinkURL(in:)` 이 top-level 및 nested paragraph 양쪽에서 추출
-- 하이퍼링크 방출은 **스팬 우선**이다: `%hlk` 필드 스팬이 있으면 글리프 rect로만 방출하고, 스팬이 없는 컨테이너(표/글상자/각주) 문단만 문단 rect 폴백으로 담는다. 모델의 `hyperlinkURL`은 스팬 유무와 무관하게 채워지므로 폴백 측에서 `HwpDrawnTextLayout.hyperlinkRegions`로 게이트해야 앞뒤 평문이 링크로 표시되지 않는다 (hit tester의 `spanAwareHyperlinkURL`과 같은 규약)
+- 하이퍼링크 방출은 **스팬 우선**이다: `%hlk` 필드 스팬이 있으면 글리프 rect로만 방출하고, 스팬이 없는 컨테이너(표/글상자/각주) 문단만 문단 rect 폴백으로 담는다. 모델의 `hyperlinkURL`은 스팬 유무와 무관하게 채워지므로 폴백 측에서 `HwpDrawnTextLayout.hyperlinkRegions`로 게이트해야 앞뒤 평문이 링크로 표시되지 않는다 (hit tester의 `spanAwareHyperlinkURL`과 같은 규약). 컨테이너 **안쪽** 컨테이너까지 내려간다 — 각주 안 글상자·표 문단도 대상이라 방출은 `HwpPaintListBuilder.footnoteParagraphGroups` + `emitTable`이, 히트는 `HwpHitTester`의 `.footnote` 케이스가 **같은 깊이**를 걸어야 한다 (#94). 한쪽만 내려가면 밑줄은 그려지는데 탭이 안 먹거나 그 반대가 된다
 - **랜덤 UUID identifier 금지.** equality/hash 는 `frame + kind + text + url + payload + source` 기반. 같은 문서 두 번 로드 시 동일 블록으로 인식되어야 함
 - `HwpBlockKind`: `text` / `image` / `shape` / `table` / `textbox` / `footnote` / `placeholder`
 
@@ -287,6 +287,14 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
 2. `Layout/HwpPaginator.swift`: `childParagraphs(of:)` (unsupported walk) 와 `appendControlBlocks(from:depth:)` (렌더) 양쪽에 추가
 3. `Paint/HwpPaintListBuilder.swift` 의 `paintCommands(for:)` 에 payload 렌더 추가
 4. `Layout/HwpHitTester.swift` 의 `hit(page:point:)` 에 케이스 추가
+5. **문단을 품는 payload면** `Selection/HwpBlockContentWalker.swift` 에 순회를 더하고
+   3의 렌더를 그 walker로 구현한다 — walker 가 텍스트·개체 방출 **순서의 단일
+   소유자**라 페인트와 선택 (`HwpSelectableText`) 이 정의상 같은 순서를 본다.
+   3만 채우면 그려지긴 하는데 선택·복사에서 그 텍스트가 빠지고, 순서를 양쪽에
+   따로 구현하면 조용히 갈린다 (가드: `HwpSelectableTextPaintParityTests`).
+   개체까지 품는 컨테이너면 `walkTable`/`walkFootnote` 와 같은 이벤트 규약을
+   따르고 (글 뒤로 개체 → 문단 텍스트 → 나머지 개체 → 안쪽 표 재귀), 정렬은
+   공용 `sortedObjects` (zOrder → 원본 순서) 를 쓴다
 
 ## 안티 패턴 / 남은 한계
 
@@ -357,6 +365,14 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   술어의 소유자는 `HwpParagraphObjectCollector` 한 곳이어야 하고 (표 셀·흐름
   경로가 같은 답을 써야 한다) 오버레이 제외는 #91이 셀 페이지 분할을 지키려
   둔 가드다 — 바꾸려면 표 셀과 **함께** 코퍼스 전체로 검증할 것.
+  가드: `HwpFootnoteObjectLayoutTests` (합성 13종 — 종류별 수집, 캐시 높이 불변,
+  떠 있는 개체/표 하한, 쪽 기준·오버레이 제외, **예약 ≡ 배치 높이**, 흐름 비방출,
+  각주 안 개체 링크 히트) + `HwpFootnotePaintListTests` (페인트 명령·z순서 3종) +
+  `FixtureObjectRenderTests`에 #94가 더한 3종 (헌법주석 실픽스처 470·894쪽 —
+  그림/표가 각주 블록 프레임 **안**에 있고 흐름 블록으로 새지 않음) +
+  `HwpSelectableTextPaintParityTests`
+  (선택 단위 9개: 각주 문단 뒤에 각주 글상자·표 셀 텍스트) + 블록 스냅샷 표본
+  470·894쪽 (루트 AGENTS.md "렌더 가드 3층").
 - 절대 캐시 모드에서 각주 스택 높이가 한글보다 크면 (캐시 없는 각주의 CT
   측정) 본문 마지막 블록과 겹칠 수 있다 — 본문 절단점이 한글 캐시로 고정되어
   각주 예약이 본문을 밀어내지 못한다. 강제 이월은 한글에 없는 각주 전용
