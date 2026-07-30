@@ -21,9 +21,28 @@ public struct HwpHitTester {
             if !block.frame.contains(point) {
                 // frame 밖에도 그려지는 가시 영역이 있으면 기각 전에 링크 rect로
                 // 확인한다 — 페인트가 그린 링크는 눌려야 한다 (#4, #94).
-                guard hitEligibleFrame(for: block).contains(point),
-                      let url = hyperlinkURL(for: block, at: point)
-                else { continue }
+                guard hitEligibleFrame(for: block).contains(point) else { continue }
+                // 각주는 가림까지 살려 판정한다 — `.occluded`를 nil로 접어 아래
+                // 블록으로 내려가면 그 개체 밑에 숨은 링크가 열린다 (R45 #3).
+                if case let .footnote(footnote) = block.payload {
+                    switch containerHit(
+                        paragraphs: footnote.paragraphs,
+                        images: footnote.images, shapes: footnote.shapes,
+                        textboxes: footnote.textboxes,
+                        nestedTables: footnote.nestedTables,
+                        at: CGPoint(
+                            x: point.x - block.frame.minX, y: point.y - block.frame.minY
+                        )
+                    ) {
+                    case let .found(url):
+                        return .hyperlink(url: url, blockIndex: index)
+                    case .occluded:
+                        return .footnote(blockIndex: index, number: footnote.number)
+                    case .miss:
+                        continue
+                    }
+                }
+                guard let url = hyperlinkURL(for: block, at: point) else { continue }
                 return .hyperlink(url: url, blockIndex: index)
             }
             if let url = hyperlinkURL(for: block, at: point) {

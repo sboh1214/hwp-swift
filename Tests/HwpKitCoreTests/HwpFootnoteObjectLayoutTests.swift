@@ -406,6 +406,49 @@ import XCTest
             )) > a4 + 1
         }
 
+        /// 이월 각주를 **재예약**할 때도 수집 시점 해석기를 쓴다 (R45 #1).
+        /// 배치는 `Input.sizeResolver`를 쓰므로 (R44 #1) 재예약만 현재
+        /// environment로 재면 예약 ≡ 배치가 다시 갈린다 — 수집→배치는 닫혔는데
+        /// 수집→재예약이 열려 있었다.
+        func testOverflowReReservationUsesCapturedResolver() {
+            var note = HwpSynthetic.paragraphWithInlineControl(prefix: "", suffix: "")
+            note.ctrlHeaderArray = [.genShapeObject(HwpSynthetic.paperRelativeInlineObject(
+                widthPercent: 1000, heightPercent: 2000
+            ))]
+            func resolver(paperHeight: CGFloat) -> HwpObjectSizeResolver {
+                HwpObjectSizeResolver(
+                    paperSize: CGSize(width: 595, height: paperHeight),
+                    contentSize: geometry.contentFrame.size,
+                    columnWidth: geometry.contentFrame.width
+                )
+            }
+            var coordinator = HwpFootnoteCoordinator(
+                index: index, fontResolver: .testDeterministic
+            )
+            func reserved(
+                captured: HwpObjectSizeResolver, current: HwpObjectSizeResolver
+            ) -> CGFloat {
+                coordinator.reservedFootnoteHeight(
+                    for: [.init(paragraph: note, number: 1, sizeResolver: captured)],
+                    environment: .init(
+                        contentWidth: geometry.contentFrame.width,
+                        footnoteShape: nil,
+                        sizeResolver: current
+                    )
+                )
+            }
+
+            let a4 = reserved(captured: resolver(paperHeight: 842), current: resolver(paperHeight: 842))
+            // 재예약 시점에 단·구역이 바뀌어도 수집 시점(A4) 결과가 유지된다
+            expect(reserved(
+                captured: resolver(paperHeight: 842), current: resolver(paperHeight: 1684)
+            )).to(beCloseTo(a4, within: 0.5))
+            // 수집 시점 값이 실제로 결과를 가른다 — 아니면 위 단언이 공허하다
+            expect(reserved(
+                captured: resolver(paperHeight: 1684), current: resolver(paperHeight: 842)
+            )) > a4 + 1
+        }
+
         // MARK: - 흐름 방출 억제 (개체가 각주 밖 본문 자리에 그려지면 안 된다)
 
         /// 각주 안 개체는 각주 블록 페이로드로만 나오고 페이지 흐름 블록

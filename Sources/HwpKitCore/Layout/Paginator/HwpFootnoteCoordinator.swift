@@ -28,6 +28,17 @@ struct HwpFootnoteCoordinator {
             self.footnoteShape = footnoteShape
             self.sizeResolver = sizeResolver
         }
+
+        /// 해석기만 바꾼 사본 — 이월 각주를 재예약할 때 그 각주를 **수집할 때
+        /// 잡은** 해석기로 되돌린다 (R45 #1). 현재 environment로 다시 재면 배치
+        /// (`Input.sizeResolver`를 쓴다) 와 갈린다.
+        func withSizeResolver(_ resolver: HwpObjectSizeResolver?) -> Environment {
+            Environment(
+                contentWidth: contentWidth,
+                footnoteShape: footnoteShape,
+                sizeResolver: resolver
+            )
+        }
     }
 
     /// paragraph-bearing 컨테이너의 단일 traversal 지점 주입
@@ -236,10 +247,13 @@ extension HwpFootnoteCoordinator {
             if let previousNumber, previousNumber != input.number {
                 total += metrics.spacingBetweenNotes
             }
+            // 배치(`HwpFootnoteLayout.measure`)가 `input.sizeResolver`를 쓰므로
+            // 재예약도 같은 값으로 재야 한다 — 현재 environment로 재면 그 사이
+            // 단·구역 기하가 바뀐 문서에서 예약과 배치가 갈린다 (R45 #1).
             total += measuredFootnoteHeight(
                 of: input.paragraph,
                 number: input.number,
-                environment: environment
+                environment: input.sizeResolver.map(environment.withSizeResolver) ?? environment
             )
             previousNumber = input.number
         }
