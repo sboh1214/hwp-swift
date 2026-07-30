@@ -312,7 +312,12 @@ public struct HwpFootnoteLayout {
                 paragraphs: [HwpLaidOutParagraph(
                     attributedString: note.attributed,
                     frame: note.frame,
-                    rect: CGRect(x: 0, y: 0, width: frame.width, height: blockHeight),
+                    // 문단 rect는 **문단 자신의** 텍스트 높이다 — 떠 있는 개체가
+                    // 블록을 키운 몫까지 문단이 흡수하면 문단-레벨 링크 폴백
+                    // (`HwpHitTester.spanAwareHyperlinkURL`)이 개체 아래 빈
+                    // 영역까지 자기 URL로 claim한다 (R39 #2). 컨테이너가 개체를
+                    // 담는 높이는 블록 frame (blockHeight) 몫이다.
+                    rect: CGRect(x: 0, y: 0, width: frame.width, height: note.textRectHeight),
                     paragraphId: note.input.paragraph.paraHeader.paraId,
                     hyperlinkURL: note.input.paragraph.hyperlinkURL
                 )],
@@ -338,6 +343,12 @@ public struct HwpFootnoteLayout {
         let frame: HwpParagraphFrame
         let objects: HwpParagraphObjectCollector.Objects
 
+        /// 문단 rect 높이 — **문단 자신의** 텍스트 높이. 블록 높이와 달리 개체
+        /// 성장분을 포함하지 않는다 (R39 #2).
+        var textRectHeight: CGFloat {
+            max(1, frame.totalHeight)
+        }
+
         /// 블록 높이 — 텍스트 높이와 **떠 있는** 개체 하단의 최대값 (#94).
         ///
         /// 글자처럼 취급 개체는 라인 캐시가 이미 담는 몫이라 (헌법주석 실측:
@@ -348,7 +359,7 @@ public struct HwpFootnoteLayout {
         /// 문단에 떠 있는 도형을 붙이면 구분선이 위로 밀려 각주 영역이 개체를
         /// 담는다) `HwpParagraphObjectCollector.growsContainer` 술어로 담는다.
         var blockHeight: CGFloat {
-            max(1, Swift.max(frame.totalHeight, objects.floatingBottom ?? 0))
+            Swift.max(textRectHeight, objects.floatingBottom ?? 0)
         }
     }
 

@@ -7,7 +7,11 @@ import Foundation
 /// 대한 퍼센트다 (10000 = 100%) — 무조건 HWPUNIT 변환하면 100% 폭 개체가
 /// 100pt로 줄어든다. paginator가 현재 페이지/단 기하로 만들어 전용 레이아웃
 /// 경로 (표 폭·글상자·셀 그림·줄 공간 예약)에 전달한다.
-public struct HwpObjectSizeResolver: Sendable {
+///
+/// `Hashable`은 측정 캐시 키 전용이다 (`HwpFootnoteCoordinator.FootnoteHeightKey`)
+/// — **합성 구현**이라 기준 축을 새로 더해도 키가 자동으로 따라간다. 손으로
+/// 구현하면 새 축이 키에서 빠져 기하가 바뀐 재사용이 조용히 살아난다 (R39 #1).
+public struct HwpObjectSizeResolver: Sendable, Hashable {
     /// 용지 크기 (pt) — 기준 '종이'
     let paperSize: CGSize
     /// 본문 콘텐츠 프레임 크기 (pt) — 기준 '쪽'

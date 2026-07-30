@@ -246,6 +246,59 @@ import XCTest
             expect(reserved).to(beCloseTo(block.frame.height, within: 0.5))
         }
 
+        /// 떠 있는 개체가 블록을 키워도 **문단 rect는 문단 자신의 텍스트 높이**로
+        /// 남는다 (R39 #2). 문단이 성장분까지 흡수하면 문단-레벨 링크 폴백
+        /// (`HwpHitTester.spanAwareHyperlinkURL`)이 개체 아래 빈 영역까지 자기
+        /// URL로 claim한다. 전 픽스처에서 두 높이가 같아 (떠 있는 각주 개체 0건)
+        /// 되돌려도 렌더는 그대로라, 이 단언이 유일한 가드다.
+        func testFloatingObjectGrowsBlockButNotParagraphRect() throws {
+            var note = try cachedNote()
+            note.ctrlHeaderArray = [.genShapeObject(HwpSynthetic.floatingShapeObject(
+                width: 5000, height: 30000
+            ))]
+
+            let block = try firstBlock(of: note)
+            let paragraphRect = try XCTUnwrap(block.paragraphs.first).rect
+            expect(block.frame.height).to(beCloseTo(300, within: 0.5))
+            expect(paragraphRect.height).to(beCloseTo(try cachedNoteHeight(), within: 0.5))
+            expect(paragraphRect.height) < block.frame.height - 1
+        }
+
+        /// 상대 크기 개체가 든 각주는 줄 높이가 해석기 기하의 함수다 — 폭만 키에
+        /// 넣으면 종이/쪽 높이·단 폭만 바뀐 재사용이 살아나 예약이 배치와 갈린다
+        /// (R39 #1). 배치 (`HwpFootnoteLayout.measure`)는 캐시가 없어 항상 현재
+        /// 기하로 재측정하므로 어긋나는 쪽은 언제나 예약이다.
+        func testReservationIsNotReusedAcrossResolverGeometries() {
+            var note = HwpSynthetic.paragraphWithInlineControl(prefix: "", suffix: "")
+            note.ctrlHeaderArray = [.genShapeObject(HwpSynthetic.paperRelativeInlineObject(
+                widthPercent: 1000, heightPercent: 2000
+            ))]
+            let width = geometry.contentFrame.width
+            var coordinator = HwpFootnoteCoordinator(
+                index: index, fontResolver: .testDeterministic
+            )
+            func reserved(paperHeight: CGFloat) -> CGFloat {
+                coordinator.measuredFootnoteHeight(
+                    of: note,
+                    number: 1,
+                    environment: .init(
+                        contentWidth: width,
+                        footnoteShape: nil,
+                        sizeResolver: HwpObjectSizeResolver(
+                            paperSize: CGSize(width: 595, height: paperHeight),
+                            contentSize: geometry.contentFrame.size,
+                            columnWidth: width
+                        )
+                    )
+                )
+            }
+
+            // 같은 문단·같은 번호·같은 폭이지만 종이 높이가 두 배 → 20% 개체도 두 배
+            let a4 = reserved(paperHeight: 842)
+            let tall = reserved(paperHeight: 1684)
+            expect(tall) > a4 + 1
+        }
+
         // MARK: - 흐름 방출 억제 (개체가 각주 밖 본문 자리에 그려지면 안 된다)
 
         /// 각주 안 개체는 각주 블록 페이로드로만 나오고 페이지 흐름 블록
@@ -429,6 +482,106 @@ import XCTest
                 == .hyperlink(url: "https://example.com/cell", blockIndex: 0)
             // 개체 밖은 각주 히트로 남는다
             expect(tester.hit(page: page, point: CGPoint(x: 400, y: 675)))
+                == .footnote(blockIndex: 0, number: 1)
+        }
+
+        /// 각주 안 표는 블록 폭을 넘어 그려질 수 있다 — 한글도 자르지 않는다
+        /// (헌법주석 883쪽 각주 29의 표는 오른쪽 본문 경계를 ~12.6pt 넘는다).
+        /// 페인트가 클립 없이 그 띠를 그리므로 히트도 닿아야 한다 (R39 #3) —
+        /// 안 닿으면 보이는 링크가 안 눌린다.
+        func testFootnoteObjectHyperlinkOutsideBlockFrameIsTappable() {
+            let black = HwpRGBColor(red: 0, green: 0, blue: 0)
+            let cellRect = CGRect(x: 0, y: 0, width: 500, height: 30)
+            let cellParagraph = HwpLaidOutParagraph(
+                attributedString: NSAttributedString(string: "넘친 셀 링크"),
+                frame: HwpParagraphFrame(totalHeight: 30, lines: []),
+                rect: cellRect,
+                paragraphId: 1,
+                hyperlinkURL: "https://example.com/overflow"
+            )
+            let cell = HwpTableCellFrame(
+                cellFrame: cellRect,
+                row: 0, column: 0, rowSpan: 1, columnSpan: 1,
+                paragraphs: [cellParagraph],
+                borders: .uniform(width: 0.5, color: black),
+                fillColor: nil
+            )
+            // 블록 폭 400인데 표 폭은 500 — 오른쪽으로 100pt 넘어간다
+            let blockFrame = CGRect(x: 50, y: 600, width: 400, height: 80)
+            let footnote = HwpFootnoteBlock(
+                frame: blockFrame,
+                paragraphs: [],
+                number: 1,
+                separatorLine: CGRect(x: 50, y: 590, width: 130, height: 1),
+                nestedTables: [HwpNestedTableFrame(
+                    rect: cellRect,
+                    table: HwpTableFrame(
+                        outerFrame: cellRect,
+                        rows: [HwpTableRowFrame(rowFrame: cellRect, cells: [cell])],
+                        borderColor: black, borderWidth: 1
+                    ),
+                    controlInstanceId: 9
+                )]
+            )
+            let block = AnyHwpBlock(frame: blockFrame, kind: .footnote, payload: .footnote(footnote))
+            let page = HwpPage(
+                size: CGSize(width: 595, height: 842),
+                margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
+                blocks: [block],
+                pageNumber: 1
+            )
+
+            // 블록 frame 밖 (x 510 > maxX 450) 이지만 표가 그려진 자리다
+            expect(HwpHitTester().hit(page: page, point: CGPoint(x: 510, y: 610)))
+                == .hyperlink(url: "https://example.com/overflow", blockIndex: 0)
+            // 아무것도 안 그려진 frame 밖은 종전대로 기각된다
+            expect(HwpHitTester().hit(page: page, point: CGPoint(x: 510, y: 670))).to(beNil())
+        }
+
+        /// 각주 문단-레벨 링크는 **문단 rect 안**에서만 히트된다 — 떠 있는 개체가
+        /// 키운 아래 영역까지 삼키면 빈 자리·안쪽 개체가 바깥 URL을 연다 (R39 #2).
+        /// 이 단언은 rect가 옳게 주어졌을 때의 히트 의미를 잠그고, 배치가 실제로
+        /// 그 rect를 만드는지는 `testFloatingObjectGrowsBlockButNotParagraphRect`가
+        /// 잠근다 — 둘이 함께여야 가드가 닫힌다.
+        func testFootnoteParagraphLinkDoesNotClaimFloatingObjectArea() {
+            let noteParagraph = HwpLaidOutParagraph(
+                attributedString: NSAttributedString(string: "각주 본문"),
+                frame: HwpParagraphFrame(totalHeight: 20, lines: []),
+                rect: CGRect(x: 0, y: 0, width: 400, height: 20),
+                paragraphId: 1,
+                hyperlinkURL: "https://example.com/note"
+            )
+            let blockFrame = CGRect(x: 50, y: 600, width: 400, height: 120)
+            let footnote = HwpFootnoteBlock(
+                frame: blockFrame,
+                paragraphs: [noteParagraph],
+                number: 1,
+                separatorLine: CGRect(x: 50, y: 590, width: 130, height: 1),
+                shapes: [HwpCellShape(
+                    rect: CGRect(x: 0, y: 40, width: 50, height: 60),
+                    geometry: HwpShapeGeometry(
+                        path: CGPath(rect: CGRect(x: 0, y: 0, width: 50, height: 60), transform: nil),
+                        fillColor: nil, strokeColor: nil, strokeWidth: 0
+                    ),
+                    paintsBehindText: false,
+                    zOrder: 0,
+                    sourceOrder: 0,
+                    controlInstanceId: 4
+                )]
+            )
+            let block = AnyHwpBlock(frame: blockFrame, kind: .footnote, payload: .footnote(footnote))
+            let page = HwpPage(
+                size: CGSize(width: 595, height: 842),
+                margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
+                blocks: [block],
+                pageNumber: 1
+            )
+
+            // 문단 안 (블록-로컬 y 10 < 20)
+            expect(HwpHitTester().hit(page: page, point: CGPoint(x: 60, y: 610)))
+                == .hyperlink(url: "https://example.com/note", blockIndex: 0)
+            // 개체가 키운 아래 영역 (블록-로컬 y 100) — 각주 히트일 뿐 링크가 아니다
+            expect(HwpHitTester().hit(page: page, point: CGPoint(x: 60, y: 700)))
                 == .footnote(blockIndex: 0, number: 1)
         }
     }

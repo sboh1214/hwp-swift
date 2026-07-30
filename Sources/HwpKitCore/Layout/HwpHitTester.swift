@@ -19,11 +19,9 @@ public struct HwpHitTester {
         // 논리 배열 위치 그대로다 (선택 좌표와 정합).
         for (index, block) in AnyHwpBlock.paintOrdered(page.blocks).reversed() {
             if !block.frame.contains(point) {
-                // slight-overflow 한 줄 문단은 frame 밖(허용 배율 이내)까지
-                // 그려지고 링크 rect도 함께 넘는다 — 그 가시 영역의 탭을 기각
-                // 전에 링크 rect로 확인한다 (#4).
-                guard block.kind == .text,
-                      overflowHitFrame(for: block).contains(point),
+                // frame 밖에도 그려지는 가시 영역이 있으면 기각 전에 링크 rect로
+                // 확인한다 — 페인트가 그린 링크는 눌려야 한다 (#4, #94).
+                guard hitEligibleFrame(for: block).contains(point),
                       let url = hyperlinkURL(for: block, at: point)
                 else { continue }
                 return .hyperlink(url: url, blockIndex: index)
@@ -50,11 +48,40 @@ public struct HwpHitTester {
         return nil
     }
 
-    /// slight-overflow 렌더가 닿을 수 있는 히트 영역 — frame 폭의 허용 초과분
-    /// (`slightOverflowWidthRatio`)만큼 좌우로 확장한 frame.
-    private func overflowHitFrame(for block: AnyHwpBlock) -> CGRect {
-        let extra = block.frame.width * (HwpRenderTuning.Text.slightOverflowWidthRatio - 1)
-        return block.frame.insetBy(dx: -extra, dy: 0)
+    /// frame 밖 가시 영역까지 포함한 히트 자격 프레임 — 이 안이면 링크만 확인하고
+    /// 밖이면 종전처럼 기각한다. 페인트가 클립 없이 그리는 영역과 같아야
+    /// "방출 ≡ 히트"가 성립한다 (AGENTS.md "하이퍼링크 방출" 짝 규약).
+    ///
+    /// - `.text`: slight-overflow 한 줄 문단이 frame 폭의 허용 초과분
+    ///   (`slightOverflowWidthRatio`)만큼 좌우로 넘어 그려진다 (#4).
+    /// - `.footnote`: 각주 안 개체가 블록 폭을 넘어 그려질 수 있다 — 한글도
+    ///   자르지 않는다 (헌법주석 883쪽 각주 29의 표는 오른쪽 본문 경계를
+    ///   ~12.6pt 넘는다). R39 #3.
+    /// - 그 외: frame 그대로 (확장 없음 = 종전 동작).
+    private func hitEligibleFrame(for block: AnyHwpBlock) -> CGRect {
+        switch block.kind {
+        case .text:
+            let extra = block.frame.width * (HwpRenderTuning.Text.slightOverflowWidthRatio - 1)
+            return block.frame.insetBy(dx: -extra, dy: 0)
+        case .footnote:
+            guard case let .footnote(footnote) = block.payload else { return block.frame }
+            return footnoteContentFrame(footnote, in: block.frame)
+        default:
+            return block.frame
+        }
+    }
+
+    /// 각주 블록 frame ∪ 안쪽 개체 rect (블록-로컬 → 페이지 좌표).
+    private func footnoteContentFrame(
+        _ footnote: HwpFootnoteBlock, in blockFrame: CGRect
+    ) -> CGRect {
+        let localRects = footnote.images.map(\.rect)
+            + footnote.shapes.map(\.rect)
+            + footnote.textboxes.map(\.rect)
+            + footnote.nestedTables.map(\.rect)
+        return localRects.reduce(blockFrame) { bounds, rect in
+            bounds.union(rect.offsetBy(dx: blockFrame.minX, dy: blockFrame.minY))
+        }
     }
 
     /// 필드 스팬 하이퍼링크(%hlk)를 링크 텍스트 글리프 rect에서만 히트한다 —

@@ -443,6 +443,26 @@ extension HwpSynthetic {
         return placed
     }
 
+    /// 종이 기준 **상대** 크기 (10000 = 100%) 글자처럼 취급 개체.
+    /// 줄 높이가 `HwpObjectSizeResolver` 기하의 함수가 되는 최소 형상이라,
+    /// 측정 캐시가 기하를 키에 넣는지 태울 수 있다 (R39 #1).
+    static func paperRelativeInlineObject(
+        widthPercent: UInt32,
+        heightPercent: UInt32,
+        instanceId: UInt32 = 0
+    ) -> CoreHwp.HwpGenShapeObject {
+        var object = inlineShapeObject(
+            width: widthPercent, height: heightPercent, instanceId: instanceId
+        )
+        var info = object.commonCtrlProperty.propertyInfo
+        info.widthRelativeToRawValue = CoreHwp.HwpCommonCtrlObjectWidthRelativeTo.paper.rawValue
+        info.widthRelativeTo = .paper
+        info.heightRelativeToRawValue = CoreHwp.HwpCommonCtrlObjectHeightRelativeTo.paper.rawValue
+        info.heightRelativeTo = .paper
+        object.commonCtrlProperty.propertyInfo = info
+        return object
+    }
+
     /// 각주/미주 리스트 컨트롤 — 문단마다 컨트롤을 붙여 만든다.
     static func noteControl(
         _ ctrlId: CoreHwp.HwpOtherCtrlId,

@@ -39,6 +39,11 @@ struct HwpFootnoteCoordinator {
         let widthCenti: Int
         /// 자동 번호 치환 텍스트가 폭에 영향을 주므로 번호도 키에 포함한다
         let number: Int
+        /// 상대 크기 개체가 든 문단은 줄 높이가 해석기 기하의 함수다 — 폭만
+        /// 키에 넣으면 종이/쪽 높이·단 폭만 바뀐 재사용이 살아나 예약이 배치와
+        /// 갈린다 (R39 #1). 배치 (`HwpFootnoteLayout.measure`)는 캐시가 없어
+        /// 항상 현재 기하로 재측정하므로 어긋나는 쪽은 언제나 예약이다.
+        let sizeResolver: HwpObjectSizeResolver?
     }
 
     private let index: HwpIndex
@@ -363,10 +368,12 @@ extension HwpFootnoteCoordinator {
             return cachedHeight
         }
         let width = environment.contentWidth
+        let sizeResolver = environment.sizeResolver?.withParagraphWidth(width)
         let key = FootnoteHeightKey(
             paragraph: paragraph,
             widthCenti: Int(width * 100),
-            number: number
+            number: number,
+            sizeResolver: sizeResolver
         )
         if let cached = footnoteHeightCache[key] {
             return cached
@@ -375,7 +382,7 @@ extension HwpFootnoteCoordinator {
         let measured = HwpParagraphMeasurer(
             index: index,
             fontResolver: fontResolver,
-            sizeResolver: environment.sizeResolver?.withParagraphWidth(width),
+            sizeResolver: sizeResolver,
             attributeCache: attributeCache
         )
         .measure(
