@@ -1,6 +1,6 @@
 # 프로젝트 지식 베이스
 
-**Branch:** test/ci-deterministic-render-guard
+**Branch:** fix/table-row-height-image-only-cell
 
 ## 개요
 
@@ -175,7 +175,9 @@ noori p2에서 비영 셀의 30%까지 지워도 양쪽 통과).
 나중의 올바른 수정이 리뷰에서 회귀처럼 보인다.
 `HWP_ALLPAGES=<id> HWP_ALLPAGES_DIR=<dir> swift test --filter testDumpAllPages`.
 이 대조로 이미 한 장을 걸렀다 — noori p3은 표 높이가 틀리게 그려져 (선언
-627.0pt vs 렌더 181.6pt — `Sources/HwpKitCore/AGENTS.md` 한계) 대상에서 뺐다.
+627.0pt vs 렌더 181.6pt) 대상에서 뺐고, 그 렌더 버그(#91 — 셀 안 떠 있는
+개체가 셀 높이에 안 잡힘)를 고친 뒤 골든에 합류시켰다. **틀린 렌더를 골든에서
+먼저 떼어 내는 이 절차가 실제로 작동한 사례다.**
 골든 스위트는 macOS 전용이다: iOS 시뮬레이터는 호스트 파일시스템의 폰트를 읽어
 같은 기준선이 재현되지 않아 `#if os(macOS)`로 통째로 뺐다 (CI의 iOS 잡에서는
 이 스위트가 존재하지 않는다). 반면 **블록 스냅샷·페이지 수에는 그 가드를 두지

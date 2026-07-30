@@ -2237,13 +2237,10 @@ private extension HwpPaginator {
         return map
     }
 
+    /// 술어 본체는 `HwpParagraphObjectCollector.consumesFlow`가 소유한다 —
+    /// 컨테이너 높이 하한 (`growsContainer`)과 반드시 같은 답을 써야 한다 (#91).
     func consumesFlow(_ info: CoreHwp.HwpCommonCtrlPropertyInfo) -> Bool {
-        switch info.textWrap {
-        case .square, .topAndBottom, nil:
-            true
-        case .behindText, .inFrontOfText:
-            false
-        }
+        HwpParagraphObjectCollector.consumesFlow(info)
     }
 
     func combinedAttributedString(_ strings: [NSAttributedString]) -> NSAttributedString? {

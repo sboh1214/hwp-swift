@@ -168,6 +168,10 @@ extension HwpTableLayout {
         let columnSpan: Int
         let contentHeight: CGFloat
         let authoredHeight: CGFloat
+        /// 떠 있는 개체 (글자처럼 취급 아님)를 담는 데 필요한 셀 높이 (여백 포함).
+        /// 개체가 없으면 0. 줄 캐시도 저작 높이도 이 개체를 담지 않으므로 아래
+        /// 두 값과 별개의 하한으로 쓴다 (#91).
+        let floatingObjectHeight: CGFloat
         /// 셀 문단 전부가 라인 캐시 높이로 측정되었는지 — 참이면 저작된 셀
         /// 높이 (표 80 = 한글 계산값)를 그대로 신뢰한다 (헌법주석 실측:
         /// 캐시 합 + 여백이 저작 높이를 넘겨 표가 부풀면 페이지가 밀린다)
@@ -311,10 +315,68 @@ extension HwpTableLayout {
             columnSpan: placement.columnSpan,
             contentHeight: contentHeight,
             authoredHeight: authoredHeight,
+            floatingObjectHeight: floatingObjectHeight(
+                contents: contents,
+                innerWidth: innerWidth,
+                margins: margins,
+                context: context
+            ),
             hasCachedContent: measured.allCached,
             cell: cell,
             contents: contents
         )
+    }
+
+    /// 떠 있는 개체 (글자처럼 취급 아님)를 담는 데 필요한 셀 높이 (pt, 여백 포함).
+    /// 개체가 없으면 0.
+    ///
+    /// 한글 줄 캐시는 줄 상자만 담고 저작된 셀 높이 (표 80)도 이 개체를 반영하지
+    /// 않는다 — noori 붙임 표의 형상 행 실측: 저작 12.82pt·캐시 16.00pt인데
+    /// 셀 안 떠 있는 그림이 455.40pt다. 그 둘만 믿으면 행이 라벨 한 줄로 접히고
+    /// 그림이 아래 행들을 덮으며 표 밖으로 흘러나간다 (#91). 여백을 더한
+    /// 458.22pt를 이 행에 쓰면 표 총높이가 문서 선언·캐시와 같은 627.01pt가 된다.
+    ///
+    /// 배치 (`laidOutContents`)와 **같은 collector·같은 문단 쌓기**로 셀-로컬
+    /// 좌표에서 재수집한다 — 개체 위치는 문단 rect의 아핀 평행이동이라 셀 원점을
+    /// 몰라도 상대 하단이 같다. 산식을 복제하면 측정과 배치가 갈린다.
+    private func floatingObjectHeight(
+        contents: [PlacedCellContent],
+        innerWidth: CGFloat,
+        margins: CellMargins,
+        context: LayoutContext
+    ) -> CGFloat {
+        guard contents.contains(where: {
+            HwpParagraphObjectCollector.hasFloatingObject(
+                in: $0.paragraph, collectsTextboxes: true
+            )
+        }) else { return 0 }
+        let collector = HwpParagraphObjectCollector(
+            index: context.index,
+            fontResolver: fontResolver,
+            sizeResolver: context.sizeResolver?.withParagraphWidth(innerWidth),
+            collectsTextboxes: true,
+            attributeCache: attributeCache
+        )
+        var cursorY: CGFloat = 0
+        var bottom: CGFloat = 0
+        for content in contents {
+            let spacingBefore = halfSpacingBefore(of: content.paragraph, index: context.index)
+            let rect = CGRect(
+                x: 0,
+                y: cursorY + spacingBefore,
+                width: innerWidth,
+                height: content.frame.totalHeight - spacingBefore
+            )
+            let collected = collector.objects(
+                in: content.paragraph, frame: content.frame, paragraphRect: rect
+            )
+            if let floatingBottom = collected.floatingBottom {
+                bottom = max(bottom, floatingBottom)
+            }
+            cursorY += content.totalHeight
+        }
+        guard bottom > 0 else { return 0 }
+        return margins.top + bottom + margins.bottom
     }
 
     /// 셀 문단들을 측정한다. 셀 높이는 한글 라인 캐시를 우선한다 (각주와 동일
