@@ -227,6 +227,31 @@ import XCTest
             expect(block.frame.height) > baseline + 0.5
         }
 
+        /// 비흐름 오버레이 각주 표는 **저작 폭을 지킨다** (R43 #1) — 흐름 경로
+        /// (`HwpPaginator`)와 같은 술어다. 한글은 각주 표를 자르지도 줄이지도
+        /// 않는다 (883쪽 실측). 883쪽 표가 안 걸린 건 우연이다: 글자처럼 취급이라
+        /// 클램프 대상인데 저작 폭이 문단 폭보다 작아 무동작이었다.
+        func testOverlayFootnoteTableKeepsAuthoredWidth() throws {
+            var note = try cachedNote()
+            let cell = [[try HwpSynthetic.textParagraph("좌")], [try HwpSynthetic.textParagraph("우")]]
+            var wide = HwpSynthetic.table(
+                cellWidth: 30000, rowHeights: [2000], cellParagraphs: [cell]
+            )
+            // 저작 폭은 셀 폭이 아니라 컨트롤 속성에서 읽는다
+            // (`HwpTableLayout.resolvedOuterWidth`) — 0이면 availableWidth로 폴백해
+            // 클램프 여부와 무관하게 문단 폭이 나와 이 테스트가 무의미해진다.
+            wide.commonCtrlProperty.width = 60000
+            note.ctrlHeaderArray = [.table(HwpSynthetic.placed(
+                wide, treatAsChar: false, textWrap: .inFrontOfText
+            ))]
+
+            let block = try firstBlock(of: note)
+            let nested = try XCTUnwrap(block.nestedTables.first)
+            // 저작 600pt (2셀 × 300pt) 가 문단 폭 451pt로 줄지 않는다
+            expect(nested.rect.width) > geometry.contentFrame.width
+            expect(nested.rect.width).to(beCloseTo(600, within: 1))
+        }
+
         /// 쪽/종이 기준 개체는 하한에서 뺀다 — 그 저작 세로 오프셋은 페이지 상단
         /// 기준 절대 좌표인데 각주 블록 안에는 쪽 기하가 없어 `origin()`이 문단
         /// rect에 그대로 더하는 근사를 쓴다 (R32 #3). 근사를 하한으로 승격시키면

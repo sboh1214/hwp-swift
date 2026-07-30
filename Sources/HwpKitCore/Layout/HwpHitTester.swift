@@ -105,15 +105,14 @@ public struct HwpHitTester {
         /// 링크 없는 **불투명** 층이 그 지점을 덮고 있다 — 아래 층 탐색을 멈춘다.
         /// 보이는 개체를 눌렀는데 그 밑에 숨은 링크가 열리면 안 된다 (R42 #2).
         case occluded
-        case none
+        case miss
     }
 
-    /// 개체 층을 **페인트 역순**(위→아래)으로 훑는다. 링크 조회는 층 rect로
-    /// 미리 거르지 않는다 — 안쪽 문단이 상자를 넘어 그려질 수 있어 (R41 #2)
-    /// 포함 판정은 문단 rect를 아는 `spanAwareHyperlinkURL` 몫이다. 반면 가림
-    /// 판정은 그 층이 실제로 덮은 자리여야 하므로 rect로 본다.
-    private func layerHyperlinkURL(
-        _ layers: [HwpBlockContentWalker.FootnoteLayer], at point: CGPoint
+    /// 개체 층을 **페인트 역순**(위→아래)으로 훑는다. 글상자는 그 안도 같은
+    /// 컨테이너 규약으로 재귀한다 — 글상자 안 전경 그림·도형이 그 글상자 문단
+    /// **뒤에** 그려지므로 (`textboxCommands`) 안쪽 링크를 덮을 수 있다 (R43 #4).
+    private func layerHit(
+        _ layers: [HwpBlockContentWalker.ContentLayer], at point: CGPoint
     ) -> LayerHit {
         for layer in layers.reversed() {
             if case let .textbox(textbox) = layer {
@@ -121,15 +120,21 @@ public struct HwpHitTester {
                     x: point.x - textbox.rect.minX,
                     y: point.y - textbox.rect.minY
                 )
-                if let url = spanAwareHyperlinkURL(in: textbox.textbox.paragraphs, at: inner) {
+                let hit = containerHit(
+                    paragraphs: textbox.textbox.paragraphs,
+                    images: textbox.textbox.images,
+                    shapes: textbox.textbox.shapes,
+                    textboxes: [], nestedTables: [], at: inner
+                )
+                if case let .found(url) = hit {
                     return .found(url)
                 }
             }
-            if layer.occludesContentBelow, layer.rect.contains(point) {
+            if layer.occludes(point) {
                 return .occluded
             }
         }
-        return .none
+        return .miss
     }
 
     /// 필드 스팬 하이퍼링크(%hlk)를 링크 텍스트 글리프 rect에서만 히트한다 —
@@ -163,9 +168,10 @@ public struct HwpHitTester {
             // 블록 자체(전체-rect)의 폴백만 금지한다 — 컨테이너 문단은 문단
             // 단위 span-aware 순회가 스팬 문단의 rect 폴백을 각자 차단하므로,
             // 스팬 없는 이웃 문단의 폴백 링크는 여전히 히트된다 (R38 #4).
-            // 셀 글상자는 walkText가 방문하지 않아 별도 통로 유지 (R31 #1).
+            // 셀 글상자 전용 통로 (R31 #1) 는 필요 없어졌다 — containerHit이
+            // 컨테이너를 재귀로 훑는다. 되살리면 가림 (`.occluded`) 으로 nil이 된
+            // 지점에서 덮인 링크가 다시 열린다 (R43).
             return containerHyperlinkURL(block: block, point: point)
-                ?? containerTextboxHyperlinkURL(block: block, point: point)
         }
         return block.hyperlinkURL ?? containerHyperlinkURL(block: block, point: point)
     }
@@ -188,102 +194,94 @@ public struct HwpHitTester {
     /// (컨테이너 블록 자체는 URL이 없어 예전에는 표/도형 히트로 떨어졌다).
     private func containerHyperlinkURL(block: AnyHwpBlock, point: CGPoint) -> String? {
         let localPoint = CGPoint(x: point.x - block.frame.minX, y: point.y - block.frame.minY)
-        switch block.payload {
+        let hit: LayerHit = switch block.payload {
         case let .table(tableFrame):
-            return tableHyperlinkURL(tableFrame, at: localPoint)
+            tableHit(tableFrame, at: localPoint)
         case let .textbox(textbox):
-            return spanAwareHyperlinkURL(in: textbox.paragraphs, at: localPoint)
-        case let .footnote(footnote):
-            // 각주 문단·개체 좌표는 블록-로컬(0,0 기준)이라 localPoint로 히트한다
-            // (#20, #94). 순서는 **페인트 역순**이다 — 위에 그려진 것이 이겨야
-            // 보이는 링크가 열린다. 페인트 순서 (글 뒤로 개체 → 문단 텍스트 →
-            // 나머지 개체 → 안쪽 표) 의 소유자는 `walkFootnote`이고, 개체 정렬도
-            // `footnoteTextboxesInPaintOrder`로 walker에서 받는다 (R41 #1).
-            let layers = HwpBlockContentWalker.footnoteLayersInPaintOrder(footnote)
-            // 컨테이너 rect로 미리 거르지 않는다 — 셀·문단이 자기 표를 넘어
-            // 그려질 수 있어 (R41 #2) 포함 판정은 자손 rect를 아는
-            // `tableHyperlinkURL`에 맡긴다.
-            for nested in footnote.nestedTables.reversed() {
-                let inner = CGPoint(
-                    x: localPoint.x - nested.rect.minX,
-                    y: localPoint.y - nested.rect.minY
-                )
-                if let url = tableHyperlinkURL(nested.table, at: inner) {
-                    return url
-                }
-            }
-            switch layerHyperlinkURL(layers.inFrontOfText, at: localPoint) {
-            case let .found(url):
-                return url
-            case .occluded:
-                return nil
-            case .none:
-                break
-            }
-            if let url = spanAwareHyperlinkURL(in: footnote.paragraphs, at: localPoint) {
-                return url
-            }
-            guard case let .found(url) = layerHyperlinkURL(
-                layers.behindText, at: localPoint
-            ) else { return nil }
-            return url
-        default:
-            return nil
-        }
-    }
-
-    /// 표(중첩 표 포함) 셀 문단의 하이퍼링크를 표-로컬 좌표로 재귀 히트한다 —
-    /// 중첩 표 안 링크도 콜백을 발화하게 한다 (#19).
-    private func tableHyperlinkURL(_ tableFrame: HwpTableFrame, at point: CGPoint) -> String? {
-        for row in tableFrame.rows {
-            for cell in row.cells where cell.cellFrame.contains(point) {
-                if let url = spanAwareHyperlinkURL(in: cell.paragraphs, at: point) {
-                    return url
-                }
-                if let url = cellTextboxHyperlinkURL(cell, at: point) {
-                    return url
-                }
-                for nested in cell.nestedTables {
-                    let nestedPoint = CGPoint(
-                        x: point.x - nested.rect.minX,
-                        y: point.y - nested.rect.minY
-                    )
-                    if let url = tableHyperlinkURL(nested.table, at: nestedPoint) {
-                        return url
-                    }
-                }
-            }
-        }
-        return nil
-    }
-
-    private func hyperlinkURL(in paragraphs: [HwpLaidOutParagraph], at point: CGPoint) -> String? {
-        for paragraph in paragraphs
-            where paragraph.hyperlinkURL != nil && paragraph.rect.contains(point)
-        {
-            return paragraph.hyperlinkURL
-        }
-        return nil
-    }
-
-    /// 셀 안 글상자 문단의 링크 히트 (글상자-로컬 좌표, R30 #3). 필드 스팬이
-    /// 있는 문단은 링크 글리프 rect에서만 히트하고 전체-rect 폴백을 금지한다
-    /// — 앞뒤 평문·다중 링크가 첫 URL로 뭉개지지 않는다 (R31 #1).
-    private func cellTextboxHyperlinkURL(
-        _ cell: HwpTableCellFrame, at point: CGPoint
-    ) -> String? {
-        for textbox in cell.textboxes where textbox.rect.contains(point) {
-            let boxPoint = CGPoint(
-                x: point.x - textbox.rect.minX,
-                y: point.y - textbox.rect.minY
+            containerHit(
+                paragraphs: textbox.paragraphs,
+                images: textbox.images, shapes: textbox.shapes,
+                textboxes: [], nestedTables: [], at: localPoint
             )
-            if let url = spanAwareHyperlinkURL(in: textbox.textbox.paragraphs, at: boxPoint) {
-                return url
-            }
+        case let .footnote(footnote):
+            containerHit(
+                paragraphs: footnote.paragraphs,
+                images: footnote.images, shapes: footnote.shapes,
+                textboxes: footnote.textboxes,
+                nestedTables: footnote.nestedTables, at: localPoint
+            )
+        default:
+            LayerHit.miss
         }
-        return nil
+        guard case let .found(url) = hit else { return nil }
+        return url
     }
 
+    /// 컨테이너(각주·표 셀·글상자) 하나를 **페인트 역순**으로 훑는다.
+    ///
+    /// 페인트 순서는 글 뒤로 개체 → 문단 텍스트 → 나머지 개체 → 안쪽 표이므로
+    /// (`walkFootnote`/`walkTable`) 역순은 그 반대다. 컨테이너마다 이 함수 하나를
+    /// 재귀로 쓰는 이유는 R39~R43이 전부 "히트가 페인트의 어느 겹을 안 따라갔다"
+    /// 였기 때문이다 — 겹마다 따로 구현하면 다음 겹에서 또 갈린다.
+    ///
+    /// 링크 조회는 층 rect로 미리 거르지 않는다 (자손이 컨테이너를 넘어 그려질 수
+    /// 있다, R41 #2). **가림 판정만** 실제 칠한 영역을 본다 (R43).
+    private func containerHit(
+        paragraphs: [HwpLaidOutParagraph],
+        images: [HwpCellImage],
+        shapes: [HwpCellShape],
+        textboxes: [HwpCellTextbox],
+        nestedTables: [HwpNestedTableFrame],
+        at point: CGPoint
+    ) -> LayerHit {
+        for nested in nestedTables.reversed() {
+            let hit = tableHit(nested.table, at: CGPoint(
+                x: point.x - nested.rect.minX, y: point.y - nested.rect.minY
+            ))
+            if case .miss = hit {
+                continue
+            }
+            return hit
+        }
+        let layers = HwpBlockContentWalker.layersInPaintOrder(
+            images: images, shapes: shapes, textboxes: textboxes
+        )
+        switch layerHit(layers.inFrontOfText, at: point) {
+        case let .found(url):
+            return .found(url)
+        case .occluded:
+            return .occluded
+        case .miss:
+            break
+        }
+        if let url = spanAwareHyperlinkURL(in: paragraphs, at: point) {
+            return .found(url)
+        }
+        return layerHit(layers.behindText, at: point)
+    }
+
+    /// 표를 셀 단위로 훑는다. 셀 안은 같은 컨테이너 규약이고, **채운 셀은 아래를
+    /// 가린다** — 페인터가 `fillRect`로 칠하므로 (R43 #5) 링크가 없다고 통과시키면
+    /// 그 아래 문단 링크가 열린다.
+    private func tableHit(_ table: HwpTableFrame, at point: CGPoint) -> LayerHit {
+        for row in table.rows {
+            for cell in row.cells where cell.cellFrame.contains(point) {
+                let hit = containerHit(
+                    paragraphs: cell.paragraphs,
+                    images: cell.images, shapes: cell.shapes, textboxes: cell.textboxes,
+                    nestedTables: cell.nestedTables, at: point
+                )
+                if case .miss = hit {
+                    return cell.fillColor != nil ? .occluded : .miss
+                }
+                return hit
+            }
+        }
+        return .miss
+    }
+
+    /// 문단 목록에서 링크를 찾는다 — 필드 스팬이 있으면 **글리프 rect에서만**,
+    /// 없으면 문단 rect 폴백 (R38 #4, 루트 규약 "하이퍼링크 방출은 스팬 우선").
     private func spanAwareHyperlinkURL(
         in paragraphs: [HwpLaidOutParagraph], at point: CGPoint
     ) -> String? {
@@ -301,36 +299,6 @@ public struct HwpHitTester {
             }
             if let url = paragraph.hyperlinkURL, paragraph.rect.contains(point) {
                 return url
-            }
-        }
-        return nil
-    }
-
-    /// walkText가 방문하지 않는 셀 글상자 링크 전용 히트 — 필드 스팬 게이트
-    /// (hasFieldSpans) 아래에서도 도달해야 한다 (R31 #1). 중첩 표 재귀 포함.
-    private func containerTextboxHyperlinkURL(block: AnyHwpBlock, point: CGPoint) -> String? {
-        guard case let .table(tableFrame) = block.payload else { return nil }
-        let localPoint = CGPoint(x: point.x - block.frame.minX, y: point.y - block.frame.minY)
-        return tableTextboxHyperlinkURL(tableFrame, at: localPoint)
-    }
-
-    private func tableTextboxHyperlinkURL(
-        _ tableFrame: HwpTableFrame, at point: CGPoint
-    ) -> String? {
-        for row in tableFrame.rows {
-            for cell in row.cells where cell.cellFrame.contains(point) {
-                if let url = cellTextboxHyperlinkURL(cell, at: point) {
-                    return url
-                }
-                for nested in cell.nestedTables {
-                    let nestedPoint = CGPoint(
-                        x: point.x - nested.rect.minX,
-                        y: point.y - nested.rect.minY
-                    )
-                    if let url = tableTextboxHyperlinkURL(nested.table, at: nestedPoint) {
-                        return url
-                    }
-                }
             }
         }
         return nil

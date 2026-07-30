@@ -135,13 +135,18 @@ struct HwpParagraphObjectCollector {
         state: inout CollectState
     ) -> HwpNestedTableFrame? {
         let commonProperty = nested.commonCtrlProperty
+        let info = commonProperty.propertyInfo
         guard case let .success(frame) = HwpTableLayout(
             fontResolver: fontResolver, attributeCache: attributeCache
         ).layout(
             table: nested,
             availableWidth: placement.paragraphRect.width,
             index: index,
-            sizeResolver: sizeResolver
+            sizeResolver: sizeResolver,
+            // 흐름 경로 (`HwpPaginator`) 와 같은 술어다 — 비흐름 오버레이
+            // (글 뒤로·글 앞으로) 는 저작 폭을 지킨다 (R43 #1). 기본값 true를
+            // 그대로 두면 한글이 줄이지 않는 표를 우리만 줄인다.
+            clampToAvailableWidth: info.treatAsChar || Self.consumesFlow(info)
         ) else { return nil }
         let size = frame.outerFrame.size
         let rect = CGRect(

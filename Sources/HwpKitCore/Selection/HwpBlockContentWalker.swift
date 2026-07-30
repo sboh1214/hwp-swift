@@ -177,51 +177,49 @@ public enum HwpBlockContentWalker {
         }
     }
 
-    /// 각주 개체 한 층 (페인트 순서의 단위)
-    enum FootnoteLayer {
+    /// 컨테이너 안 개체 한 층 (페인트 순서의 단위)
+    enum ContentLayer {
         case image(HwpCellImage)
         case shape(HwpCellShape)
         case textbox(HwpCellTextbox)
 
-        var rect: CGRect {
+        /// 이 층이 그 자리를 **불투명하게 덮는가** — 히트가 아래 층 탐색을 멈출
+        /// 근거다. 판정 기준은 페인터가 실제로 칠하는 것과 같아야 한다 (R43):
+        /// - 그림: 항상 (알파는 알 수 없어 채워진 것으로 본다)
+        /// - 도형: 채우기가 있을 때 **경로 안쪽만**. `shapeCommands`가
+        ///   `geometry.path`만 칠하므로 바운딩 rect로 보면 타원·다각형의 투명한
+        ///   모서리까지 가림으로 잡혀 그 아래 보이는 링크가 안 눌린다 (R43 #3)
+        /// - 글상자: 항상. `textboxCommands`는 `fillColor`가 없으면
+        ///   `.hwpWhite`로 칠하므로 "채우기 없음 = 투명"이 아니다 (R43 #2)
+        func occludes(_ point: CGPoint) -> Bool {
             switch self {
-            case let .image(image): image.rect
-            case let .shape(shape): shape.rect
-            case let .textbox(textbox): textbox.rect
-            }
-        }
-
-        /// 아래 층을 가리는가 — **채워진 층만** 가린다 (R42 #2). 이 리포는
-        /// 오버레이가 겹치는 것을 설계로 두므로 (`앵커 규칙`), rect만 보고 전부
-        /// 가린다고 하면 속 빈 장식 도형·테두리만 있는 상자 하나가 그 아래 링크를
-        /// 통째로 못 누르게 만든다. 알파는 알 수 없어 그림은 채워진 것으로 본다.
-        var occludesContentBelow: Bool {
-            switch self {
-            case .image: true
-            case let .shape(shape): shape.geometry.fillColor != nil
-            case let .textbox(textbox): textbox.textbox.fillColor != nil
+            case let .image(image):
+                image.rect.contains(point)
+            case let .shape(shape):
+                shape.geometry.fillColor != nil && shape.geometry.path.contains(
+                    CGPoint(x: point.x - shape.rect.minX, y: point.y - shape.rect.minY)
+                )
+            case let .textbox(textbox):
+                textbox.rect.contains(point)
             }
         }
     }
 
-    /// 각주 블록의 개체를 **페인트 순서**로 나눠 돌려준다 (글 뒤로 / 글 앞으로,
-    /// 각 그룹은 `sortedObjects`와 같은 zOrder → 원본 순서). 히트 테스터가 순서를
-    /// 다시 구현하면 페인트와 갈려 덮인 링크가 열리므로, 정렬 소유권은 여기 남는다
-    /// (R41 #1 — `walkFootnote`가 방출 순서의 단일 소유자라는 규약의 연장).
-    static func footnoteLayersInPaintOrder(
-        _ footnote: HwpFootnoteBlock
-    ) -> (behindText: [FootnoteLayer], inFrontOfText: [FootnoteLayer]) {
-        let ordered = sortedObjects(
-            images: footnote.images,
-            shapes: footnote.shapes,
-            textboxes: footnote.textboxes
-        )
-        func layers(behindText: Bool) -> [FootnoteLayer] {
+    /// 컨테이너 개체를 **페인트 순서**로 나눠 돌려준다 (글 뒤로 / 글 앞으로,
+    /// 각 그룹은 zOrder → 원본 순서). 히트 테스터가 순서를 다시 구현하면 페인트와
+    /// 갈려 덮인 링크가 열리므로, 정렬 소유권은 여기 남는다 (R41 #1).
+    static func layersInPaintOrder(
+        images: [HwpCellImage],
+        shapes: [HwpCellShape],
+        textboxes: [HwpCellTextbox]
+    ) -> (behindText: [ContentLayer], inFrontOfText: [ContentLayer]) {
+        let ordered = sortedObjects(images: images, shapes: shapes, textboxes: textboxes)
+        func layers(behindText: Bool) -> [ContentLayer] {
             ordered.filter { $0.paintsBehindText == behindText }.map { object in
                 switch object {
-                case let .image(image): FootnoteLayer.image(image)
-                case let .shape(shape): FootnoteLayer.shape(shape)
-                case let .textbox(textbox): FootnoteLayer.textbox(textbox)
+                case let .image(image): ContentLayer.image(image)
+                case let .shape(shape): ContentLayer.shape(shape)
+                case let .textbox(textbox): ContentLayer.textbox(textbox)
                 }
             }
         }

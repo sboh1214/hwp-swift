@@ -378,6 +378,160 @@ import XCTest
             }
         }
 
+        /// 채우기 없는 글상자도 **불투명**하다 (R43 #2) — `textboxCommands`가
+        /// `fillColor`가 없으면 `.hwpWhite`로 칠하므로 "채우기 없음 = 투명"이 아니다.
+        /// 보이는 흰 상자를 눌렀는데 아래 문단 링크가 열리면 안 된다.
+        func testDefaultWhiteTextboxOccludesFootnoteLink() {
+            let blockFrame = CGRect(x: 50, y: 600, width: 400, height: 40)
+            let footnote = HwpFootnoteBlock(
+                frame: blockFrame,
+                paragraphs: [Self.linkParagraph(
+                    rect: CGRect(x: 0, y: 0, width: 400, height: 40)
+                )],
+                number: 1,
+                separatorLine: CGRect(x: 50, y: 590, width: 130, height: 1),
+                textboxes: [HwpCellTextbox(
+                    rect: CGRect(x: 0, y: 0, width: 100, height: 40),
+                    textbox: HwpTextboxFrame(
+                        outerFrame: CGRect(x: 0, y: 0, width: 100, height: 40),
+                        paragraphs: [], borderColor: nil, borderWidth: 0, fillColor: nil
+                    ),
+                    paintsBehindText: false,
+                    zOrder: 0, sourceOrder: 0, controlInstanceId: 7
+                )]
+            )
+
+            expect(HwpHitTester().hit(page: Self.page(footnote), point: CGPoint(x: 60, y: 610)))
+                == .footnote(blockIndex: 0, number: 1)
+            expect(HwpHitTester().hit(page: Self.page(footnote), point: CGPoint(x: 300, y: 610)))
+                == .hyperlink(url: "https://example.com/under", blockIndex: 0)
+        }
+
+        /// 채운 도형은 **경로 안쪽만** 가린다 (R43 #3) — `shapeCommands`가
+        /// `geometry.path`만 칠하므로 바운딩 rect로 판정하면 타원의 투명한 모서리가
+        /// 가림으로 잡혀 그 아래 보이는 링크가 안 눌린다.
+        func testFilledEllipseOccludesOnlyInsideItsPath() {
+            let blockFrame = CGRect(x: 50, y: 600, width: 400, height: 40)
+            let ellipseRect = CGRect(x: 0, y: 0, width: 100, height: 40)
+            let footnote = HwpFootnoteBlock(
+                frame: blockFrame,
+                paragraphs: [Self.linkParagraph(
+                    rect: CGRect(x: 0, y: 0, width: 400, height: 40)
+                )],
+                number: 1,
+                separatorLine: CGRect(x: 50, y: 590, width: 130, height: 1),
+                shapes: [HwpCellShape(
+                    rect: ellipseRect,
+                    geometry: HwpShapeGeometry(
+                        path: CGPath(ellipseIn: ellipseRect, transform: nil),
+                        fillColor: HwpRGBColor(red: 255, green: 0, blue: 0).cgColor,
+                        strokeColor: nil, strokeWidth: 0
+                    ),
+                    paintsBehindText: false,
+                    zOrder: 0, sourceOrder: 0, controlInstanceId: 8
+                )]
+            )
+
+            // 타원 중심 (블록-로컬 50,20) 은 가린다
+            expect(HwpHitTester().hit(page: Self.page(footnote), point: CGPoint(x: 100, y: 620)))
+                == .footnote(blockIndex: 0, number: 1)
+            // 바운딩 박스 왼쪽 위 모서리 (2,2) 는 타원 밖이라 아래 링크가 눌린다
+            expect(HwpHitTester().hit(page: Self.page(footnote), point: CGPoint(x: 52, y: 602)))
+                == .hyperlink(url: "https://example.com/under", blockIndex: 0)
+        }
+
+        /// 글상자 **안** 전경 개체도 그 글상자 문단 뒤에 그려진다 (R43 #4) —
+        /// `textboxCommands`가 글 뒤 자식 → 문단 → 글 앞 자식 순이므로, 안쪽
+        /// 문단 링크를 덮은 자식이 있으면 그 링크가 열리면 안 된다.
+        func testForegroundChildInsideFootnoteTextboxOccludesItsParagraphLink() {
+            let blockFrame = CGRect(x: 50, y: 600, width: 400, height: 40)
+            let boxRect = CGRect(x: 0, y: 0, width: 200, height: 40)
+            let footnote = HwpFootnoteBlock(
+                frame: blockFrame,
+                paragraphs: [],
+                number: 1,
+                separatorLine: CGRect(x: 50, y: 590, width: 130, height: 1),
+                textboxes: [HwpCellTextbox(
+                    rect: boxRect,
+                    textbox: HwpTextboxFrame(
+                        outerFrame: boxRect,
+                        paragraphs: [Self.linkParagraph(rect: boxRect)],
+                        borderColor: nil, borderWidth: 0, fillColor: nil,
+                        shapes: [HwpCellShape(
+                            rect: CGRect(x: 0, y: 0, width: 60, height: 40),
+                            geometry: HwpShapeGeometry(
+                                path: CGPath(
+                                    rect: CGRect(x: 0, y: 0, width: 60, height: 40),
+                                    transform: nil
+                                ),
+                                fillColor: HwpRGBColor(red: 0, green: 0, blue: 255).cgColor,
+                                strokeColor: nil, strokeWidth: 0
+                            ),
+                            paintsBehindText: false,
+                            zOrder: 0, sourceOrder: 0, controlInstanceId: 9
+                        )]
+                    ),
+                    paintsBehindText: false,
+                    zOrder: 0, sourceOrder: 0, controlInstanceId: 10
+                )]
+            )
+
+            // 자식 도형이 덮은 자리 (블록-로컬 10,10)
+            expect(HwpHitTester().hit(page: Self.page(footnote), point: CGPoint(x: 60, y: 610)))
+                == .footnote(blockIndex: 0, number: 1)
+            // 자식 밖 글상자 문단 (블록-로컬 100,10) 은 링크가 눌린다
+            expect(HwpHitTester().hit(page: Self.page(footnote), point: CGPoint(x: 150, y: 610)))
+                == .hyperlink(url: "https://example.com/under", blockIndex: 0)
+        }
+
+        /// 채운 셀도 아래를 가린다 (R43 #5) — 각주 안 표는 문단 **뒤에** 그려지므로
+        /// 링크가 없다고 통과시키면 그 아래 문단 링크가 열린다.
+        func testFilledFootnoteTableCellOccludesLowerParagraphLink() {
+            let black = HwpRGBColor(red: 0, green: 0, blue: 0)
+            let cellRect = CGRect(x: 0, y: 0, width: 100, height: 40)
+            let cell = HwpTableCellFrame(
+                cellFrame: cellRect,
+                row: 0, column: 0, rowSpan: 1, columnSpan: 1,
+                paragraphs: [],
+                borders: .uniform(width: 0.5, color: black),
+                fillColor: HwpRGBColor(red: 200, green: 200, blue: 200)
+            )
+            let blockFrame = CGRect(x: 50, y: 600, width: 400, height: 40)
+            let footnote = HwpFootnoteBlock(
+                frame: blockFrame,
+                paragraphs: [Self.linkParagraph(
+                    rect: CGRect(x: 0, y: 0, width: 400, height: 40)
+                )],
+                number: 1,
+                separatorLine: CGRect(x: 50, y: 590, width: 130, height: 1),
+                nestedTables: [HwpNestedTableFrame(
+                    rect: cellRect,
+                    table: HwpTableFrame(
+                        outerFrame: cellRect,
+                        rows: [HwpTableRowFrame(rowFrame: cellRect, cells: [cell])],
+                        borderColor: black, borderWidth: 1
+                    ),
+                    controlInstanceId: 11
+                )]
+            )
+
+            expect(HwpHitTester().hit(page: Self.page(footnote), point: CGPoint(x: 60, y: 610)))
+                == .footnote(blockIndex: 0, number: 1)
+            expect(HwpHitTester().hit(page: Self.page(footnote), point: CGPoint(x: 300, y: 610)))
+                == .hyperlink(url: "https://example.com/under", blockIndex: 0)
+        }
+
+        /// 가림 테스트가 공유하는 링크 문단 (스팬 없이 문단-레벨 URL).
+        private static func linkParagraph(rect: CGRect) -> HwpLaidOutParagraph {
+            HwpLaidOutParagraph(
+                attributedString: NSAttributedString(string: "가려질 링크 텍스트"),
+                frame: HwpParagraphFrame(totalHeight: rect.height, lines: []),
+                rect: rect,
+                paragraphId: 1,
+                hyperlinkURL: "https://example.com/under"
+            )
+        }
+
         /// 폰트를 고정해 글리프 rect가 기기에 따라 달라지지 않게 한 스팬 문단.
         private static func spanParagraph(
             _ text: String, url: String, rect: CGRect, paragraphId: UInt32
