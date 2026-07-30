@@ -96,7 +96,9 @@ struct HwpParagraphObjectCollector {
                 if let table = table(nested, placement: placement, state: &state) {
                     collected.nestedTables.append(table)
                 }
-                if Self.growsContainer(nested.commonCtrlProperty) {
+                if Self.raisesContainerFloor(
+                    nested.commonCtrlProperty, anchor: placement.anchor
+                ) {
                     collected.noteFloating(since: marker)
                 }
                 continue
@@ -114,7 +116,7 @@ struct HwpParagraphObjectCollector {
                     into: &collected
                 )
             }
-            if Self.growsContainer(commonProperty) {
+            if Self.raisesContainerFloor(commonProperty, anchor: placement.anchor) {
                 collected.noteFloating(since: marker)
             }
         }
@@ -509,11 +511,41 @@ extension HwpParagraphObjectCollector {
             && consumesFlow(info)
     }
 
-    /// 문단에 컨테이너를 키우는 (`growsContainer`) 수집 대상 컨트롤이 있는지.
+    /// 줄 상자가 자리를 예약하지 못한 개체 — 글자처럼 취급인데 줄 앵커
+    /// (U+FFFC)를 못 얻은 경우다 (R40 #1).
+    ///
+    /// 앵커가 있으면 run delegate가 개체 크기만큼 줄 높이를 잡으므로 컨테이너
+    /// 높이는 라인 캐시가 담는다 (#94 실측: 헌법주석 883쪽 표 62.52pt가 캐시
+    /// 71.32pt 안, 459쪽 그림 10.8pt가 3줄 36.96pt 안). 앵커가 없으면
+    /// `Placement.origin`이 문단 상단 커서로 폴백해 그리는데 **그 자리를 예약한
+    /// 줄이 없다** — 컨테이너가 직접 담지 않으면 개체가 다음 각주·꼬리말 위로
+    /// 흘러나간다. 앵커 없는 treatAsChar가 높이를 소비한다는 것은 루트 규약이다
+    /// (AGENTS.md "앵커 규칙").
+    static func escapesLineBox(
+        _ commonProperty: CoreHwp.HwpCommonCtrlProperty?,
+        anchor: CGPoint?
+    ) -> Bool {
+        guard anchor == nil, let commonProperty else { return false }
+        return commonProperty.propertyInfo.treatAsChar
+    }
+
+    /// 컨테이너 높이 하한을 올리는 개체인지 — 떠 있는 개체 (`growsContainer`)
+    /// 이거나 줄 상자를 벗어난 개체 (`escapesLineBox`).
+    static func raisesContainerFloor(
+        _ commonProperty: CoreHwp.HwpCommonCtrlProperty?,
+        anchor: CGPoint?
+    ) -> Bool {
+        growsContainer(commonProperty) || escapesLineBox(commonProperty, anchor: anchor)
+    }
+
+    /// 문단에 컨테이너 높이 하한을 만들 수 있는 수집 대상 컨트롤이 있는지.
     /// 개체를 다시 수집해야 높이를 알 수 있는 컨테이너만 고르는 값싼 사전
     /// 판정이다 (#91) — 컨트롤 없는 문단이 대다수라 재수집이 거의 안 돈다.
-    /// **`objects()`의 기록 조건과 반드시 같은 술어를 쓴다** — 갈리면 사전
-    /// 판정에서 걸러진 셀이 하한을 못 받거나 그 반대가 된다.
+    ///
+    /// 줄 앵커가 없는 자리라 `escapesLineBox` 축은 **상위집합**이다 (글자처럼
+    /// 취급이면 앵커 유무와 무관하게 참). 기록 여부의 판정은 앵커를 아는
+    /// `objects()`에 있다 — 좁으면 하한을 놓치고 넓으면 재수집만 한 번 더 도므로
+    /// **불일치는 이 방향으로만 안전하다** (R40 #1).
     static func hasFloatingObject(
         in paragraph: CoreHwp.HwpParagraph,
         collectsTextboxes: Bool,
@@ -521,13 +553,21 @@ extension HwpParagraphObjectCollector {
     ) -> Bool {
         (paragraph.ctrlHeaderArray ?? []).contains { ctrl in
             if collectsTables, case let .table(nested) = ctrl {
-                return growsContainer(nested.commonCtrlProperty)
+                return mayRaiseContainerFloor(nested.commonCtrlProperty)
             }
             guard let (commonProperty, components) = handledControl(ctrl),
-                  growsContainer(commonProperty)
+                  mayRaiseContainerFloor(commonProperty)
             else { return false }
             return collectible(components, collectsTextboxes: collectsTextboxes)
         }
+    }
+
+    /// 앵커를 모르는 자리의 상위집합 판정 (`hasFloatingObject` 전용).
+    private static func mayRaiseContainerFloor(
+        _ commonProperty: CoreHwp.HwpCommonCtrlProperty?
+    ) -> Bool {
+        growsContainer(commonProperty)
+            || (commonProperty?.propertyInfo.treatAsChar ?? false)
     }
 }
 

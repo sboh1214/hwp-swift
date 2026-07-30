@@ -46,6 +46,17 @@ enum HwpSynthetic {
         return paragraph
     }
 
+    /// 라인 캐시 + 줄 안 컨트롤 문자를 함께 가진 문단 — 글자처럼 취급 개체가
+    /// **실제로 줄 앵커를 얻는** 실문서 형상이다 (헌법주석 459·883쪽). 캐시만
+    /// 있고 컨트롤 문자가 없는 문단은 앵커가 없어 다른 경로를 탄다 (R40 #1).
+    static func cachedInlineControlParagraph(
+        segments: [(location: Int32, height: Int32)]
+    ) throws -> CoreHwp.HwpParagraph {
+        var paragraph = try lineSegParagraph("", segments: segments)
+        paragraph.paraText = paragraphWithInlineControl(prefix: "", suffix: "").paraText
+        return paragraph
+    }
+
     /// columnCacheParagraph 세그먼트 사양
     struct ColumnCacheSegment {
         let textIndex: UInt32

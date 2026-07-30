@@ -64,6 +64,9 @@ struct HwpFootnoteCoordinator {
     /// (문단, 폭)별 각주 문단 높이 캐시 — anticipated/collect/이월 예약 경로가
     /// 같은 각주를 반복 CT 레이아웃하지 않게 한다.
     private var footnoteHeightCache: [FootnoteHeightKey: CGFloat] = [:]
+    /// 개체를 담는 각주의 블록 높이 캐시 — 위 텍스트 높이 캐시와 값의 의미가
+    /// 달라 (개체 하한 포함) 사전을 나눈다.
+    private var footnoteBlockHeightCache: [FootnoteHeightKey: CGFloat] = [:]
 
     init(
         index: HwpIndex,
@@ -344,17 +347,49 @@ extension HwpFootnoteCoordinator {
         number: Int,
         environment: Environment
     ) -> CGFloat {
-        let textHeight = measuredFootnoteTextHeight(
+        // 개체 없는 각주 (대다수) 는 라인 캐시만으로 끝낸다 — CT 조판을 건너뛰는
+        // 이 빠른 길이 대형 문서 로드 시간을 좌우한다 (헌법주석 1,030쪽).
+        guard HwpParagraphObjectCollector.hasFloatingObject(
+            in: paragraph, collectsTextboxes: true, collectsTables: true
+        ) else {
+            return measuredFootnoteTextHeight(
+                of: paragraph, number: number, environment: environment
+            )
+        }
+        return measuredNoteBlockHeight(
             of: paragraph, number: number, environment: environment
         )
-        // 배치 (HwpFootnoteLayout.MeasuredFootnote.blockHeight)와 동형: 떠 있는
-        // 개체는 라인 캐시에 없어 별도 하한이 필요하다 (#94).
-        return max(
-            textHeight,
-            floatingObjectBottom(
-                of: paragraph, textHeight: textHeight, environment: environment
-            )
+    }
+
+    /// 개체를 담는 각주의 예약 높이 — 배치와 **같은 함수**
+    /// (`HwpFootnoteLayout.measureNote`) 로 재서 줄 앵커 판정까지 일치시킨다.
+    /// 예약이 줄 없는 프레임으로 따로 재면 앵커 있는 개체까지 하한을 받아
+    /// 배치보다 커진다 (R40 #1).
+    private mutating func measuredNoteBlockHeight(
+        of paragraph: CoreHwp.HwpParagraph,
+        number: Int,
+        environment: Environment
+    ) -> CGFloat {
+        let width = environment.contentWidth
+        let key = FootnoteHeightKey(
+            paragraph: paragraph,
+            widthCenti: Int(width * 100),
+            number: number,
+            sizeResolver: environment.sizeResolver?.withParagraphWidth(width)
         )
+        if let cached = footnoteBlockHeightCache[key] {
+            return cached
+        }
+        let height = footnoteLayout.measureNote(
+            paragraph,
+            number: number,
+            width: width,
+            index: index,
+            footnoteShape: environment.footnoteShape,
+            sizeResolver: environment.sizeResolver
+        ).blockHeight
+        footnoteBlockHeightCache[key] = height
+        return height
     }
 
     /// 각주 문단의 **텍스트** 높이 — 배치 (HwpFootnoteLayout.measure)와 같은
@@ -397,41 +432,6 @@ extension HwpFootnoteCoordinator {
         let height = max(1, measured.frame.totalHeight)
         footnoteHeightCache[key] = height
         return height
-    }
-
-    /// 떠 있는 개체를 담는 데 필요한 문단-로컬 하단 (개체가 없으면 0, #94).
-    ///
-    /// 배치와 **같은 수집기·같은 문단 rect**로 재수집한다 — 산식을 복제하면
-    /// 예약과 배치가 갈린다 (`HwpTableLayout.floatingObjectHeight`와 같은 규약).
-    /// 값싼 사전 판정 (`hasFloatingObject`)으로 걸러 컨트롤 없는 각주 문단
-    /// (대다수)에서는 재수집이 돌지 않는다.
-    private func floatingObjectBottom(
-        of paragraph: CoreHwp.HwpParagraph,
-        textHeight: CGFloat,
-        environment: Environment
-    ) -> CGFloat {
-        guard HwpParagraphObjectCollector.hasFloatingObject(
-            in: paragraph, collectsTextboxes: true, collectsTables: true
-        ) else { return 0 }
-        let width = environment.contentWidth
-        let collector = HwpParagraphObjectCollector(
-            index: index,
-            fontResolver: fontResolver,
-            sizeResolver: environment.sizeResolver?.withParagraphWidth(width),
-            collectsTextboxes: true,
-            attributeCache: attributeCache,
-            collectsTables: true
-        )
-        // 떠 있는 개체의 origin은 줄 앵커를 쓰지 않으므로 (treatAsChar가 아니면
-        // `origin()`이 정렬+오프셋 경로를 탄다) 줄 없는 프레임으로 충분하다.
-        let collected = collector.objects(
-            in: paragraph,
-            frame: HwpParagraphFrame(totalHeight: textHeight, lines: []),
-            paragraphRect: HwpFootnoteLayout.paragraphRect(
-                width: width, textHeight: textHeight
-            )
-        )
-        return collected.floatingBottom ?? 0
     }
 }
 

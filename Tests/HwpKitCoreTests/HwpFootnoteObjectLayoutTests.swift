@@ -145,13 +145,56 @@ import XCTest
         /// 883쪽 각주 29 표 문단은 캐시 71.32pt 안에 들어간다. 얹으면 캐시를
         /// 신뢰하는 규약이 깨져 본문 절단이 한글과 어긋난다.
         func testInlineObjectKeepsCachedFootnoteBlockHeight() throws {
-            var note = try cachedNote()
+            // 실문서처럼 줄 안 컨트롤 문자를 함께 둬 개체가 **앵커를 얻게** 한다 —
+            // 캐시만 있고 컨트롤 문자가 없으면 앵커가 없어 다른 규약이다 (R40 #1).
+            var note = try HwpSynthetic.cachedInlineControlParagraph(
+                segments: [(location: 0, height: 1600)]
+            )
             note.ctrlHeaderArray = [.genShapeObject(HwpSynthetic.inlineShapeObject(
                 width: 5000, height: 30000
             ))]
 
             let block = try firstBlock(of: note)
             expect(block.frame.height).to(beCloseTo(try cachedNoteHeight(), within: 0.5))
+        }
+
+        /// 줄 앵커를 못 얻은 글자처럼 취급 개체는 **어떤 줄도 자리를 잡아 주지
+        /// 않으므로** 각주 영역이 직접 담아야 한다 (R40 #1). 담지 않으면 다음
+        /// 각주·꼬리말 위로 흘러나간다 — 루트 규약 "앵커 규칙"의 "treatAsChar
+        /// (앵커 없음) → 높이 소비"를 컨테이너 높이로 옮긴 것이다.
+        func testUnanchoredInlineObjectGrowsFootnoteBlock() throws {
+            var note = try cachedNote()
+            note.ctrlHeaderArray = [.genShapeObject(HwpSynthetic.inlineShapeObject(
+                width: 5000, height: 30000
+            ))]
+
+            let block = try firstBlock(of: note)
+            expect(block.frame.height).to(beCloseTo(300, within: 0.5))
+            expectContained(objectsOf: block, in: block)
+        }
+
+        /// 무앵커 개체에서도 예약 ≡ 배치. 예약이 줄 없는 프레임으로 따로 재던
+        /// 시절엔 앵커 있는 개체까지 하한을 받아 배치보다 커졌다 — 지금은 양쪽이
+        /// `HwpFootnoteLayout.measureNote` 하나를 쓴다 (R40 #1).
+        func testReservedHeightMatchesPlacedHeightForUnanchoredInlineObject() throws {
+            var note = try cachedNote()
+            note.ctrlHeaderArray = [.genShapeObject(HwpSynthetic.inlineShapeObject(
+                width: 5000, height: 30000
+            ))]
+
+            let block = try firstBlock(of: note)
+            var coordinator = HwpFootnoteCoordinator(
+                index: index, fontResolver: .testDeterministic
+            )
+            let reserved = coordinator.measuredFootnoteHeight(
+                of: note,
+                number: 1,
+                environment: .init(
+                    contentWidth: geometry.contentFrame.width,
+                    footnoteShape: nil
+                )
+            )
+            expect(reserved).to(beCloseTo(block.frame.height, within: 0.5))
         }
 
         /// 떠 있는 개체는 라인 캐시에도 없어 각주 영역이 담지 못한다 — 한글.app

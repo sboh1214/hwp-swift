@@ -339,6 +339,35 @@ public struct HwpFootnoteLayout {
     /// 높이 계산이 끝난 각주 문단 (+ 그 문단에 붙은 개체, 문단-로컬 rect)
     private struct MeasuredFootnote {
         let input: Input
+        let measurement: NoteMeasurement
+
+        var attributed: NSAttributedString {
+            measurement.attributed
+        }
+
+        var frame: HwpParagraphFrame {
+            measurement.frame
+        }
+
+        var objects: HwpParagraphObjectCollector.Objects {
+            measurement.objects
+        }
+
+        var textRectHeight: CGFloat {
+            measurement.textRectHeight
+        }
+
+        var blockHeight: CGFloat {
+            measurement.blockHeight
+        }
+    }
+}
+
+// MARK: - 예약·배치 공유 측정
+
+extension HwpFootnoteLayout {
+    /// 각주 문단 하나의 측정 결과 — 텍스트·개체·높이.
+    struct NoteMeasurement {
         let attributed: NSAttributedString
         let frame: HwpParagraphFrame
         let objects: HwpParagraphObjectCollector.Objects
@@ -357,10 +386,74 @@ public struct HwpFootnoteLayout {
         /// 얹으면 캐시를 신뢰하는 규약이 깨져 페이지 절단이 한글과 어긋난다.
         /// 떠 있는 개체는 캐시에 없으므로 (한글.app 합성 실측 2026-07-30: 각주
         /// 문단에 떠 있는 도형을 붙이면 구분선이 위로 밀려 각주 영역이 개체를
-        /// 담는다) `HwpParagraphObjectCollector.growsContainer` 술어로 담는다.
+        /// 담는다) `HwpParagraphObjectCollector.raisesContainerFloor` 술어로
+        /// 담는다 — 떠 있는 개체와, 줄 앵커를 못 얻어 어떤 줄도 자리를 잡아
+        /// 주지 않은 글자처럼 취급 개체 (R40 #1) 둘 다.
         var blockHeight: CGFloat {
             Swift.max(textRectHeight, objects.floatingBottom ?? 0)
         }
+    }
+
+    /// 각주 문단 하나를 재고 그 문단에 붙은 개체를 문단-로컬 rect로 수집한다.
+    ///
+    /// 예약 (`HwpFootnoteCoordinator`) 과 배치 (`stackBlocks`) 가 **이 함수
+    /// 하나만** 쓴다 — 산식을 복제하면 두 경로가 갈려 각주 스택이 본문을 덮거나
+    /// 한글에 없는 페이지 절단이 생긴다 (#94, R39 #1). 특히 줄 앵커 유무가 개체
+    /// 높이 하한을 가르므로 (`escapesLineBox`) 양쪽이 **같은 프레임**을 봐야
+    /// 한다 — 예약이 줄 없는 프레임으로 따로 재던 것이 R40 #1의 원인이었다.
+    func measureNote(
+        _ paragraph: CoreHwp.HwpParagraph,
+        number: Int,
+        width: CGFloat,
+        index: HwpIndex,
+        footnoteShape: CoreHwp.HwpFootnoteShape?,
+        sizeResolver: HwpObjectSizeResolver?
+    ) -> NoteMeasurement {
+        let noteResolver = sizeResolver?.withParagraphWidth(width)
+        // 각주 첫머리의 자동 번호 (ext18) 마커를 번호 문자열로 치환한다 (번호는
+        // paginator가 부여한 문서 순서 번호 — 본문 참조와 동일 소스). 스택
+        // 높이는 한글 라인 캐시를 우선한다 (본문 절대 캐시와 동일 철학).
+        let measured = HwpParagraphMeasurer(
+            index: index,
+            fontResolver: fontResolver,
+            sizeResolver: noteResolver,
+            attributeCache: attributeCache
+        )
+        .measure(
+            paragraph,
+            width: width,
+            options: .init(
+                controlReplacements: HwpTextRunBuilder.autoNumberReplacements(
+                    in: paragraph,
+                    number: number,
+                    footnoteShape: footnoteShape
+                ),
+                preferCachedHeight: true
+            )
+        )
+        // 각주 문단에 붙은 개체 (그림/도형/글상자/표)는 각주 영역 안 콘텐츠다 —
+        // 페이지 흐름 블록으로 방출하면 각주 밖에 그려진다 (#94). 표 셀과 같은
+        // 수집기를 쓰되 표까지 담는다: 셀은 `PlacedCellContent.nestedTables`가
+        // 따로 배치하지만 각주에는 그 경로가 없다.
+        let collector = HwpParagraphObjectCollector(
+            index: index,
+            fontResolver: fontResolver,
+            sizeResolver: noteResolver,
+            collectsTextboxes: true,
+            attributeCache: attributeCache,
+            collectsTables: true
+        )
+        return NoteMeasurement(
+            attributed: measured.attributed,
+            frame: measured.frame,
+            objects: collector.objects(
+                in: paragraph,
+                frame: measured.frame,
+                paragraphRect: Self.paragraphRect(
+                    width: width, textHeight: measured.frame.totalHeight
+                )
+            )
+        )
     }
 
     /// 각주 모양에서 해석한 구분선 지오메트리 (point 단위)
@@ -415,51 +508,16 @@ private extension HwpFootnoteLayout {
         footnoteShape: CoreHwp.HwpFootnoteShape? = nil,
         sizeResolver: HwpObjectSizeResolver? = nil
     ) -> [MeasuredFootnote] {
-        let noteResolver = sizeResolver?.withParagraphWidth(width)
-        let measurer = HwpParagraphMeasurer(
-            index: index,
-            fontResolver: fontResolver,
-            sizeResolver: noteResolver,
-            attributeCache: attributeCache
-        )
-        // 각주 문단에 붙은 개체 (그림/도형/글상자/표)는 각주 영역 안 콘텐츠다 —
-        // 페이지 흐름 블록으로 방출하면 각주 밖에 그려진다 (#94). 표 셀과 같은
-        // 수집기를 쓰되 표까지 담는다: 셀은 `PlacedCellContent.nestedTables`가
-        // 따로 배치하지만 각주에는 그 경로가 없다.
-        let collector = HwpParagraphObjectCollector(
-            index: index,
-            fontResolver: fontResolver,
-            sizeResolver: noteResolver,
-            collectsTextboxes: true,
-            attributeCache: attributeCache,
-            collectsTables: true
-        )
-        return footnotes.map { input in
-            // 각주 첫머리의 자동 번호 (ext18) 마커를 번호 문자열로 치환한다
-            // (번호는 paginator가 부여한 문서 순서 번호 — 본문 참조와 동일 소스).
-            // 스택 높이는 한글 라인 캐시를 우선한다 (본문 절대 캐시와 동일 철학)
-            let measured = measurer.measure(
-                input.paragraph,
-                width: width,
-                options: .init(
-                    controlReplacements: HwpTextRunBuilder.autoNumberReplacements(
-                        in: input.paragraph,
-                        number: input.number,
-                        footnoteShape: footnoteShape
-                    ),
-                    preferCachedHeight: true
-                )
-            )
-            return MeasuredFootnote(
+        footnotes.map { input in
+            MeasuredFootnote(
                 input: input,
-                attributed: measured.attributed,
-                frame: measured.frame,
-                objects: collector.objects(
-                    in: input.paragraph,
-                    frame: measured.frame,
-                    paragraphRect: Self.paragraphRect(
-                        width: width, textHeight: measured.frame.totalHeight
-                    )
+                measurement: measureNote(
+                    input.paragraph,
+                    number: input.number,
+                    width: width,
+                    index: index,
+                    footnoteShape: footnoteShape,
+                    sizeResolver: sizeResolver
                 )
             )
         }
