@@ -135,7 +135,7 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
 - `AnyHwpBlock.payload` — 종류별 상세 결과: `.table(HwpTableFrame)` / `.textbox` / `.footnote` / `.shape(HwpShapeGeometry)` / `.image(HwpImageBlockInfo)`. payload 내부 좌표는 **블록-로컬** (footnote 의 separator 만 페이지 좌표). 개체를 담는 컨테이너 payload는 셋이고 필드가 대칭이다 — `HwpTableCellFrame`(images/shapes/textboxes/nestedTables), `HwpTextboxFrame`(images/shapes), `HwpFootnoteBlock`(images/shapes/textboxes/nestedTables, #94)
 - `AnyHwpBlock.source` — `HwpBlockSource(controlInstanceId/paragraphId)`: 편집 기능이 렌더 결과에서 CoreHwp 모델로 돌아가는 참조
 - `AnyHwpBlock.hyperlinkURL` — block-level. `HwpPaginator.hyperlinkURL(in:)` 이 top-level 및 nested paragraph 양쪽에서 추출
-- 하이퍼링크 방출은 **스팬 우선**이다: `%hlk` 필드 스팬이 있으면 글리프 rect로만 방출하고, 스팬이 없는 컨테이너(표/글상자/각주) 문단만 문단 rect 폴백으로 담는다. 모델의 `hyperlinkURL`은 스팬 유무와 무관하게 채워지므로 폴백 측에서 `HwpDrawnTextLayout.hyperlinkRegions`로 게이트해야 앞뒤 평문이 링크로 표시되지 않는다 (hit tester의 `spanAwareHyperlinkURL`과 같은 규약). 컨테이너 **안쪽** 컨테이너까지 내려간다 — 각주 안 글상자·표 문단도 대상이라 방출은 `HwpPaintListBuilder.footnoteParagraphGroups` + `emitTable`이, 히트는 `HwpHitTester`의 `.footnote` 케이스가 **같은 깊이**를 걸어야 한다 (#94). 한쪽만 내려가면 밑줄은 그려지는데 탭이 안 먹거나 그 반대가 된다. 깊이만이 아니라 **영역**도 같아야 한다 — 각주 안 표는 블록 폭을 넘어 그려지는데 (한글도 안 자른다) `hit(page:point:)`의 블록 기각이 `block.frame`만 보면 그 띠의 링크가 안 눌린다. `HwpHitTester.hitEligibleFrame`이 각주 개체 rect까지 합집합으로 넓혀 페인트가 그리는 영역과 맞춘다 (R39 #3)
+- 하이퍼링크 방출은 **스팬 우선**이다: `%hlk` 필드 스팬이 있으면 글리프 rect로만 방출하고, 스팬이 없는 컨테이너(표/글상자/각주) 문단만 문단 rect 폴백으로 담는다. 모델의 `hyperlinkURL`은 스팬 유무와 무관하게 채워지므로 폴백 측에서 `HwpDrawnTextLayout.hyperlinkRegions`로 게이트해야 앞뒤 평문이 링크로 표시되지 않는다 (hit tester의 `spanAwareHyperlinkURL`과 같은 규약). 컨테이너 **안쪽** 컨테이너까지 내려간다 — 각주 안 글상자·표 문단도 대상이라 방출은 `HwpPaintListBuilder.footnoteParagraphGroups` + `emitTable`이, 히트는 `HwpHitTester`의 `.footnote` 케이스가 **같은 깊이**를 걸어야 한다 (#94). 한쪽만 내려가면 밑줄은 그려지는데 탭이 안 먹거나 그 반대가 된다. 깊이만이 아니라 **영역**도 같아야 한다 — 각주 안 표는 블록 폭을 넘어 그려지는데 (한글도 안 자른다) `hit(page:point:)`의 블록 기각이 `block.frame`만 보면 그 띠의 링크가 안 눌린다. `HwpHitTester.hitEligibleFrame`이 각주 개체 rect까지 합집합으로 넓혀 페인트가 그리는 영역과 맞춘다 (R39 #3). 그 합집합과 순서는 **손으로 짜지 말고 walker에서 받는다** (R41): 자격 영역은 `walkFootnote` 방문 rect를 그대로 union하고 (최상위 rect만 모으면 각주 안 표의 셀·글상자 안 문단이 자기 컨테이너를 넘을 때 그 띠가 빠진다), 탐색은 **페인트 역순** — 안쪽 표 → 글 앞으로 개체 → 문단 텍스트 → 글 뒤로 개체 순이고 개체 정렬은 `footnoteTextboxesInPaintOrder`가 준다. 순서를 저장 순서로 두면 `.inFrontOfText` 글상자가 덮은 링크가 열린다. 컨테이너 rect로 미리 거르는 `where rect.contains` 게이트도 두지 않는다 — 포함 판정은 자손 rect를 아는 안쪽 함수 몫이다
 - **랜덤 UUID identifier 금지.** equality/hash 는 `frame + kind + text + url + payload + source` 기반. 같은 문서 두 번 로드 시 동일 블록으로 인식되어야 함
 - `HwpBlockKind`: `text` / `image` / `shape` / `table` / `textbox` / `footnote` / `placeholder`
 
@@ -289,7 +289,8 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
 4. `Layout/HwpHitTester.swift` 의 `hit(page:point:)` 에 케이스 추가
 5. **문단을 품는 payload면** `Selection/HwpBlockContentWalker.swift` 에 순회를 더하고
    3의 렌더를 그 walker로 구현한다 — walker 가 텍스트·개체 방출 **순서의 단일
-   소유자**라 페인트와 선택 (`HwpSelectableText`) 이 정의상 같은 순서를 본다.
+   소유자**라 페인트·선택 (`HwpSelectableText`)·**히트 (4)** 가 정의상 같은
+   순서를 본다. 히트는 그 **역순**이다 (위에 그려진 것이 이긴다).
    3만 채우면 그려지긴 하는데 선택·복사에서 그 텍스트가 빠지고, 순서를 양쪽에
    따로 구현하면 조용히 갈린다 (가드: `HwpSelectableTextPaintParityTests`).
    개체까지 품는 컨테이너면 `walkTable`/`walkFootnote` 와 같은 이벤트 규약을

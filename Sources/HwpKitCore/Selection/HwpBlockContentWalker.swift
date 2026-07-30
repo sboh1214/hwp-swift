@@ -177,6 +177,27 @@ public enum HwpBlockContentWalker {
         }
     }
 
+    /// 각주 블록의 글상자를 **페인트 순서**로 나눠 돌려준다 (글 뒤로 / 글 앞으로,
+    /// 각 그룹은 `sortedObjects`와 같은 zOrder → 원본 순서). 히트 테스터가 순서를
+    /// 다시 구현하면 페인트와 갈려 덮인 링크가 열리므로, 정렬 소유권은 여기 남는다
+    /// (R41 #1 — `walkFootnote`가 방출 순서의 단일 소유자라는 규약의 연장).
+    static func footnoteTextboxesInPaintOrder(
+        _ footnote: HwpFootnoteBlock
+    ) -> (behindText: [HwpCellTextbox], inFrontOfText: [HwpCellTextbox]) {
+        let ordered = sortedObjects(
+            images: footnote.images,
+            shapes: footnote.shapes,
+            textboxes: footnote.textboxes
+        ).compactMap { object -> HwpCellTextbox? in
+            guard case let .textbox(textbox) = object else { return nil }
+            return textbox
+        }
+        return (
+            behindText: ordered.filter(\.paintsBehindText),
+            inFrontOfText: ordered.filter { !$0.paintsBehindText }
+        )
+    }
+
     /// 셀 개체 (종류 무관 통합 순회 단위)
     private enum CellObject {
         case image(HwpCellImage)

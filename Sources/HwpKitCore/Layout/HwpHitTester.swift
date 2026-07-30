@@ -71,17 +71,51 @@ public struct HwpHitTester {
         }
     }
 
-    /// 각주 블록 frame ∪ 안쪽 개체 rect (블록-로컬 → 페이지 좌표).
+    /// 각주 블록 frame ∪ **페인트가 실제로 닿는 모든 rect**.
+    ///
+    /// 최상위 개체 rect만 모으면 자손 (각주 안 표의 셀·문단, 글상자 안 문단) 이
+    /// 자기 컨테이너를 넘어 그려질 때 그 띠가 자격 영역에서 빠져 보이는 링크가
+    /// 안 눌린다 (R41 #2). `walkFootnote`가 페인트와 같은 재귀로 방문하므로 그
+    /// 방문 rect를 그대로 합집합한다 — 영역 계산을 손으로 다시 짜면 페인트가
+    /// 깊어질 때마다 또 갈린다.
     private func footnoteContentFrame(
         _ footnote: HwpFootnoteBlock, in blockFrame: CGRect
     ) -> CGRect {
-        let localRects = footnote.images.map(\.rect)
-            + footnote.shapes.map(\.rect)
-            + footnote.textboxes.map(\.rect)
-            + footnote.nestedTables.map(\.rect)
-        return localRects.reduce(blockFrame) { bounds, rect in
-            bounds.union(rect.offsetBy(dx: blockFrame.minX, dy: blockFrame.minY))
+        var bounds = blockFrame
+        HwpBlockContentWalker.walkFootnote(
+            footnote,
+            origin: blockFrame.origin,
+            onParagraphText: { _, rect, _ in bounds = bounds.union(rect) },
+            onCellStart: { _, rect in bounds = bounds.union(rect) },
+            onCellImage: { _, rect in bounds = bounds.union(rect) },
+            onCellShape: { _, rect in bounds = bounds.union(rect) },
+            onCellTextbox: { textbox, rect in
+                bounds = bounds.union(rect)
+                HwpBlockContentWalker.walkParagraphs(
+                    textbox.textbox.paragraphs, offset: rect.origin
+                ) { _, inner, _ in bounds = bounds.union(inner) }
+            }
+        )
+        return bounds
+    }
+
+    /// 글상자 목록을 **받은 순서대로** 훑어 첫 링크를 돌려준다 (좌표는
+    /// 컨테이너-로컬; 순서는 호출부 책임이다). 글상자 rect로 미리 거르지 않는다 —
+    /// 안쪽 문단이 상자를 넘어 그려질 수 있어 (R41 #2) 포함 판정은 문단 rect를
+    /// 아는 `spanAwareHyperlinkURL`에 맡긴다.
+    private func textboxHyperlinkURL(
+        _ textboxes: [HwpCellTextbox], at point: CGPoint
+    ) -> String? {
+        for textbox in textboxes {
+            let inner = CGPoint(
+                x: point.x - textbox.rect.minX,
+                y: point.y - textbox.rect.minY
+            )
+            if let url = spanAwareHyperlinkURL(in: textbox.textbox.paragraphs, at: inner) {
+                return url
+            }
         }
+        return nil
     }
 
     /// 필드 스팬 하이퍼링크(%hlk)를 링크 텍스트 글리프 rect에서만 히트한다 —
@@ -139,21 +173,16 @@ public struct HwpHitTester {
         case let .textbox(textbox):
             return spanAwareHyperlinkURL(in: textbox.paragraphs, at: localPoint)
         case let .footnote(footnote):
-            // 각주 문단 좌표는 블록-로컬(0,0 기준)이라 localPoint로 히트한다 (#20).
-            if let url = spanAwareHyperlinkURL(in: footnote.paragraphs, at: localPoint) {
-                return url
-            }
-            // 각주 안 글상자·표 문단의 링크도 히트한다 (#94) — 좌표도 블록-로컬.
-            for textbox in footnote.textboxes where textbox.rect.contains(localPoint) {
-                let inner = CGPoint(
-                    x: localPoint.x - textbox.rect.minX,
-                    y: localPoint.y - textbox.rect.minY
-                )
-                if let url = spanAwareHyperlinkURL(in: textbox.textbox.paragraphs, at: inner) {
-                    return url
-                }
-            }
-            for nested in footnote.nestedTables where nested.rect.contains(localPoint) {
+            // 각주 문단·개체 좌표는 블록-로컬(0,0 기준)이라 localPoint로 히트한다
+            // (#20, #94). 순서는 **페인트 역순**이다 — 위에 그려진 것이 이겨야
+            // 보이는 링크가 열린다. 페인트 순서 (글 뒤로 개체 → 문단 텍스트 →
+            // 나머지 개체 → 안쪽 표) 의 소유자는 `walkFootnote`이고, 개체 정렬도
+            // `footnoteTextboxesInPaintOrder`로 walker에서 받는다 (R41 #1).
+            let textboxes = HwpBlockContentWalker.footnoteTextboxesInPaintOrder(footnote)
+            // 컨테이너 rect로 미리 거르지 않는다 — 셀·문단이 자기 표를 넘어
+            // 그려질 수 있어 (R41 #2) 포함 판정은 자손 rect를 아는
+            // `tableHyperlinkURL`에 맡긴다.
+            for nested in footnote.nestedTables.reversed() {
                 let inner = CGPoint(
                     x: localPoint.x - nested.rect.minX,
                     y: localPoint.y - nested.rect.minY
@@ -162,7 +191,17 @@ public struct HwpHitTester {
                     return url
                 }
             }
-            return nil
+            if let url = textboxHyperlinkURL(
+                Array(textboxes.inFrontOfText.reversed()), at: localPoint
+            ) {
+                return url
+            }
+            if let url = spanAwareHyperlinkURL(in: footnote.paragraphs, at: localPoint) {
+                return url
+            }
+            return textboxHyperlinkURL(
+                Array(textboxes.behindText.reversed()), at: localPoint
+            )
         default:
             return nil
         }
