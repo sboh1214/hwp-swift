@@ -141,7 +141,9 @@ public struct HwpHitTester {
     /// 컨테이너 규약으로 재귀한다 — 글상자 안 전경 그림·도형이 그 글상자 문단
     /// **뒤에** 그려지므로 (`textboxCommands`) 안쪽 링크를 덮을 수 있다 (R43 #4).
     private func layerHit(
-        _ layers: [HwpBlockContentWalker.ContentLayer], at point: CGPoint
+        _ layers: [HwpBlockContentWalker.ContentLayer],
+        wrappedBy paragraphs: [HwpLaidOutParagraph],
+        at point: CGPoint
     ) -> LayerHit {
         for layer in layers.reversed() {
             if case let .nestedTable(nested) = layer {
@@ -175,10 +177,38 @@ public struct HwpHitTester {
                 }
             }
             if layer.occludes(point) {
+                // 가림으로 접기 **전에** 이 층을 감싼 `%hlk` 스팬을 본다 (R49).
+                // `HwpTextRunBuilder`가 필드 범위를 U+FFFC run까지 포함해 닫으므로
+                // (필드 끝에서 `top.start ..< output.length`), 개체를 감싼 링크는
+                // 개체 페이로드가 아니라 **부모 문단의 스팬**에 산다. 층을 먼저
+                // 보는 규약(R42 #1) 그대로면 개체가 자기 링크를 가린다.
+                // 문단 rect 폴백은 쓰지 않는다 — 그것까지 살리면 링크 없는 불투명
+                // 개체가 아래 문단 링크를 가리는 규약(R42 #2)이 깨진다.
+                if let url = spanHyperlinkURL(in: paragraphs, at: point) {
+                    return .found(url)
+                }
                 return .occluded
             }
         }
         return .miss
+    }
+
+    /// 문단 목록에서 **필드 스팬 글리프 rect**로만 링크를 찾는다 (문단 rect 폴백
+    /// 없음) — 개체를 감싼 링크를 살리되 가림 규약은 지키는 좁은 조회 (R49).
+    private func spanHyperlinkURL(
+        in paragraphs: [HwpLaidOutParagraph], at point: CGPoint
+    ) -> String? {
+        for paragraph in paragraphs {
+            let regions = HwpDrawnTextLayout.hyperlinkRegions(
+                attributedString: paragraph.attributedString,
+                origin: paragraph.rect.origin,
+                lineWidth: paragraph.rect.width
+            )
+            if let url = regions.last(where: { $0.rect.contains(point) })?.url {
+                return url
+            }
+        }
+        return nil
     }
 
     /// 필드 스팬 하이퍼링크(%hlk)를 링크 텍스트 글리프 rect에서만 히트한다 —
@@ -283,7 +313,7 @@ public struct HwpHitTester {
         let layers = HwpBlockContentWalker.layersInPaintOrder(
             images: images, shapes: shapes, textboxes: textboxes, nestedTables: nestedTables
         )
-        switch layerHit(layers.inFrontOfText, at: point) {
+        switch layerHit(layers.inFrontOfText, wrappedBy: paragraphs, at: point) {
         case let .found(url):
             return .found(url)
         case .occluded:
@@ -294,7 +324,7 @@ public struct HwpHitTester {
         if let url = spanAwareHyperlinkURL(in: paragraphs, at: point) {
             return .found(url)
         }
-        return layerHit(layers.behindText, at: point)
+        return layerHit(layers.behindText, wrappedBy: paragraphs, at: point)
     }
 
     /// 표를 셀 단위로 훑는다. 셀 안은 같은 컨테이너 규약이고, **채운 셀은 아래를
