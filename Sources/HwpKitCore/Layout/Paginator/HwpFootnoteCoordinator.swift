@@ -55,6 +55,11 @@ struct HwpFootnoteCoordinator {
         /// 갈린다 (R39 #1). 배치 (`HwpFootnoteLayout.measure`)는 캐시가 없어
         /// 항상 현재 기하로 재측정하므로 어긋나는 쪽은 언제나 예약이다.
         let sizeResolver: HwpObjectSizeResolver?
+        /// `measureNote`가 받는 **모든** 입력이 키에 있어야 한다 (R54): 번호 모양
+        /// (표 134) 은 자동 번호 치환 텍스트를 바꿔 첫 줄 폭 → 줄바꿈 → 블록
+        /// 높이를 바꾼다. 구역이 번호를 재시작하면 (문단, 번호, 폭, 해석기) 가
+        /// 모두 같으면서 모양만 다른 재사용이 살아난다.
+        let footnoteShape: CoreHwp.HwpFootnoteShape?
     }
 
     private let index: HwpIndex
@@ -392,7 +397,8 @@ extension HwpFootnoteCoordinator {
             paragraph: paragraph,
             widthCenti: Int(width * 100),
             number: number,
-            sizeResolver: environment.sizeResolver?.forFootnoteArea(width: width)
+            sizeResolver: environment.sizeResolver?.forFootnoteArea(width: width),
+            footnoteShape: environment.footnoteShape
         )
         if let cached = footnoteBlockHeightCache[key] {
             return cached
@@ -425,7 +431,8 @@ extension HwpFootnoteCoordinator {
             paragraph: paragraph,
             widthCenti: Int(width * 100),
             number: number,
-            sizeResolver: sizeResolver
+            sizeResolver: sizeResolver,
+            footnoteShape: environment.footnoteShape
         )
         if let cached = footnoteHeightCache[key] {
             return cached

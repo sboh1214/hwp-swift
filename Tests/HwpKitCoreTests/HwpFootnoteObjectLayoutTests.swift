@@ -396,6 +396,56 @@ import XCTest
             expect(tall) > a4 + 1
         }
 
+        /// 예약 캐시 열쇠는 `measureNote`가 받는 **모든** 입력을 든다 (R54).
+        /// 번호 모양(표 134)은 자동 번호 치환 텍스트를 바꿔 줄바꿈 → 블록 높이를
+        /// 바꾸는데, 구역이 번호를 재시작하면 (문단, 번호, 폭, 해석기)가 모두
+        /// 같으면서 모양만 다른 재사용이 살아나 예약이 배치와 갈린다.
+        func testReservationIsNotReusedAcrossNoteNumberShapes() {
+            // 폭 30pt에서 8자는 줄바꿈 경계다 (실측) — 장식 2자가 붙으면 줄이
+            // 하나 늘어 예약과 배치의 차이가 드러난다
+            var note = HwpSynthetic.noteParagraph(
+                String(repeating: "가", count: 8),
+                autoNumber: HwpSynthetic.autoNumberControl(kind: 1)
+            )
+            note.ctrlHeaderArray = (note.ctrlHeaderArray ?? [])
+                + [.genShapeObject(HwpSynthetic.inlineShapeObject(width: 500, height: 500))]
+            func shape(head: Character?, tail: Character?) -> CoreHwp.HwpFootnoteShape {
+                var shape = CoreHwp.HwpFootnoteShape(
+                    dividerLength: 0, dividerMarginTop: 0, dividerType: 0, dividerThickness: 0
+                )
+                shape.decorationHeadRawValue = head?.utf16.first ?? 0
+                shape.decorationTailRawValue = tail?.utf16.first ?? 0
+                return shape
+            }
+            let width: CGFloat = 30
+            var coordinator = HwpFootnoteCoordinator(
+                index: index, fontResolver: .testDeterministic
+            )
+            func reserved(_ footnoteShape: CoreHwp.HwpFootnoteShape) -> CGFloat {
+                coordinator.measuredFootnoteHeight(
+                    of: note,
+                    number: 1,
+                    environment: .init(contentWidth: width, footnoteShape: footnoteShape)
+                )
+            }
+
+            // 장식 없는 모양으로 먼저 예약해 캐시를 채운다
+            let plainHeight = reserved(shape(head: nil, tail: nil))
+            let decorated = shape(head: "《", tail: "》")
+            // 배치는 캐시가 없어 늘 현재 모양으로 잰다 — 예약이 그것과 같아야 한다
+            let placed = layout.measureNote(
+                note,
+                number: 1,
+                width: width,
+                index: index,
+                footnoteShape: decorated,
+                sizeResolver: nil
+            ).blockHeight
+            // 두 모양이 실제로 다른 줄 수로 조판돼야 이 테스트가 공허하지 않다
+            expect(placed) != plainHeight
+            expect(reserved(decorated)).to(beCloseTo(placed, within: 0.5))
+        }
+
         // MARK: - 흐름 방출 억제 (개체가 각주 밖 본문 자리에 그려지면 안 된다)
 
         /// 각주 안 개체는 각주 블록 페이로드로만 나오고 페이지 흐름 블록
