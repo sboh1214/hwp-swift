@@ -113,5 +113,91 @@ import XCTest
             expect(HwpHitTester().hit(page: page, point: CGPoint(x: 250, y: 600.2)))
                 == .footnote(blockIndex: 1, number: 1)
         }
+
+        /// **안 채운 표도 칸막이는 칠한다** (R55). 페인터(`borderCommands`)가 셀
+        /// 안쪽에 테두리 띠 넷을 그리므로 그 선 위의 탭은 표가 가져가야 하고,
+        /// 칸 **안**(투명)만 아래 블록 몫이다.
+        func testUnfilledNestedTableBorderClaimsButInteriorFallsThrough() {
+            let page = Self.pageWithUnfilledNestedTable(wrappedByLink: false)
+            // 셀 위쪽 테두리 띠 (1pt) — 각주가 claim한다
+            expect(HwpHitTester().hit(page: page, point: CGPoint(x: 250, y: 600.5)))
+                == .footnote(blockIndex: 1, number: 1)
+            // 칸 안 — 아무것도 안 칠했으니 아래 본문 링크가 열린다
+            expect(HwpHitTester().hit(page: page, point: CGPoint(x: 250, y: 620)))
+                == .hyperlink(url: "https://example.com/beneath", blockIndex: 0)
+        }
+
+        /// 안 채운 표를 감싼 `%hlk`도 테두리 선 위에서 열린다 (R55). `tableHit`이
+        /// 칸막이를 `.miss`로 보면 `layerHit`의 구제에 닿지 못해 컨테이너 히트로
+        /// 떨어졌다 — 도형 stroke(R54)와 같은 축이다.
+        func testWrapperLinkOpensOnUnfilledNestedTableBorder() {
+            let page = Self.pageWithUnfilledNestedTable(wrappedByLink: true)
+            expect(HwpHitTester().hit(page: page, point: CGPoint(x: 250, y: 600.5)))
+                == .hyperlink(url: "https://example.com/wrapped-unfilled", blockIndex: 1)
+        }
+
+        /// 블록(100pt)을 넘어 300pt까지 뻗은 **안 채운** 중첩 표 + 그 아래 링크 블록.
+        private static func pageWithUnfilledNestedTable(wrappedByLink: Bool) -> HwpPage {
+            let blockFrame = CGRect(x: 50, y: 600, width: 100, height: 40)
+            let tableRect = CGRect(x: 0, y: 0, width: 300, height: 40)
+            let black = HwpRGBColor(red: 0, green: 0, blue: 0)
+            let attributed = NSMutableAttributedString(string: "\u{FFFC}")
+            let full = NSRange(location: 0, length: attributed.length)
+            attributed.addAttribute(
+                .font, value: CTFontCreateWithName("Menlo" as CFString, 12, nil), range: full
+            )
+            attributed.addAttribute(HwpAttributedStringKey.controlIndex, value: 0, range: full)
+            if wrappedByLink {
+                attributed.addAttribute(
+                    HwpAttributedStringKey.hyperlink,
+                    value: "https://example.com/wrapped-unfilled", range: full
+                )
+            }
+            let footnote = HwpFootnoteBlock(
+                frame: blockFrame,
+                paragraphs: [HwpLaidOutParagraph(
+                    attributedString: attributed,
+                    frame: HwpParagraphFrame(totalHeight: 40, lines: []),
+                    rect: CGRect(x: 0, y: 0, width: 100, height: 40),
+                    paragraphId: 1,
+                    hyperlinkURL: nil
+                )],
+                number: 1,
+                separatorLine: CGRect(x: 50, y: 590, width: 130, height: 1),
+                nestedTables: [HwpNestedTableFrame(
+                    rect: tableRect,
+                    table: HwpTableFrame(
+                        outerFrame: tableRect,
+                        rows: [HwpTableRowFrame(rowFrame: tableRect, cells: [HwpTableCellFrame(
+                            cellFrame: tableRect,
+                            row: 0, column: 0, rowSpan: 1, columnSpan: 1,
+                            paragraphs: [],
+                            borders: .uniform(width: 1, color: black),
+                            fillColor: nil
+                        )])],
+                        borderColor: black, borderWidth: 1
+                    ),
+                    controlInstanceId: 31,
+                    controlIndex: 0,
+                    paragraphId: 1
+                )]
+            )
+            return HwpPage(
+                size: CGSize(width: 595, height: 842),
+                margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
+                blocks: [
+                    AnyHwpBlock(
+                        frame: CGRect(x: 50, y: 600, width: 400, height: 40),
+                        kind: .text,
+                        attributedString: NSAttributedString(string: "본문 링크"),
+                        hyperlinkURL: "https://example.com/beneath"
+                    ),
+                    AnyHwpBlock(
+                        frame: blockFrame, kind: .footnote, payload: .footnote(footnote)
+                    ),
+                ],
+                pageNumber: 1
+            )
+        }
     }
 #endif

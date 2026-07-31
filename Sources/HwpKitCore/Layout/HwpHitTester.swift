@@ -172,8 +172,8 @@ public struct HwpHitTester {
             origin: origin,
             onParagraphText: { attributed, rect, _ in note(paintsText(attributed, in: rect)) },
             onCellStart: { cell, rect in
-                // 안 채운 셀은 칸막이만 그린다 — 칸 안은 아래 블록 몫이다
-                note(cell.fillColor != nil && rect.contains(point))
+                // 채움 ∪ 칸막이 — 안 채운 셀의 **칸 안**만 아래 블록 몫이다 (R55)
+                note(cell.paints(Self.payloadPoint(point, page: rect, payload: cell.cellFrame)))
             },
             onCellImage: { image, rect in
                 note(HwpBlockContentWalker.ContentLayer.image(image)
@@ -497,7 +497,9 @@ public struct HwpHitTester {
                     nestedTables: [], at: point
                 )
                 if case .miss = hit {
-                    if cell.fillColor != nil, cell.cellFrame.contains(point) {
+                    // 채움뿐 아니라 **칸막이**도 칠이다 (R55) — 안 채운 셀의 테두리
+                    // 선 위를 눌렀는데 아래 블록 링크가 열리면 안 된다
+                    if cell.paints(point) {
                         return .occluded
                     }
                     continue

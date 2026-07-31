@@ -240,10 +240,12 @@ public enum HwpBlockContentWalker {
                     shape.geometry,
                     at: CGPoint(x: point.x - shape.rect.minX, y: point.y - shape.rect.minY)
                 )
-            case .nestedTable:
-                // 표 자체는 아무것도 안 칠한다 — 칸막이·채움·내용은 `walkTable`이
-                // 셀 단위로 낸다 (`tableHit`의 재귀와 같은 분해)
-                false
+            case let .nestedTable(nested):
+                // 셀 채움과 **칸막이**가 칠이다 (R55) — 안 채운 표라도 테두리 선
+                // 위의 탭은 이 표를 가리키므로 감싼 `%hlk`가 열려야 한다
+                nested.table.paints(CGPoint(
+                    x: point.x - nested.rect.minX, y: point.y - nested.rect.minY
+                ))
             }
         }
 

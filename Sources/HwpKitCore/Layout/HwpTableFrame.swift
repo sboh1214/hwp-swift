@@ -396,6 +396,40 @@ public struct HwpTableCellFrame: @unchecked Sendable, Hashable {
         self.textboxes = textboxes
     }
 
+    /// 이 지점에 셀이 **칠했는가** — 채움 ∪ 테두리 4띠 (표-로컬 좌표).
+    ///
+    /// 안 채운 셀도 칸막이는 그리므로 그 선 위의 탭은 이 셀을 가리킨다 (R55).
+    /// 띠 산식은 페인터 (`HwpPaintListBuilder.borderCommands`) 와 **같아야** 한다 —
+    /// 갈리면 보이는 선 위의 탭이 아래 블록으로 새거나 그 반대가 된다.
+    public func paints(_ point: CGPoint) -> Bool {
+        if fillColor != nil, cellFrame.contains(point) {
+            return true
+        }
+        return borderRects.contains { $0.contains(point) }
+    }
+
+    /// 페인터가 실제로 칠하는 테두리 띠 — 폭 0인 변은 그리지 않는다
+    private var borderRects: [CGRect] {
+        [
+            CGRect(
+                x: cellFrame.minX, y: cellFrame.minY,
+                width: cellFrame.width, height: borders.top
+            ),
+            CGRect(
+                x: cellFrame.minX, y: cellFrame.maxY - borders.bottom,
+                width: cellFrame.width, height: borders.bottom
+            ),
+            CGRect(
+                x: cellFrame.minX, y: cellFrame.minY,
+                width: borders.left, height: cellFrame.height
+            ),
+            CGRect(
+                x: cellFrame.maxX - borders.right, y: cellFrame.minY,
+                width: borders.right, height: cellFrame.height
+            ),
+        ].filter { $0.width > 0 && $0.height > 0 }
+    }
+
     /// 셀과 모든 콘텐츠 지오메트리를 deltaY만큼 이동한 사본 (분할 세그먼트 이동).
     /// 새 콘텐츠 종류가 누락되지 않게 이동 산식은 여기 한 곳에만 둔다.
     public func offsetBy(deltaY: CGFloat) -> HwpTableCellFrame {
@@ -517,6 +551,22 @@ extension HwpTableLayout {
             return HwpRGBColor(red: 0, green: 0, blue: 0)
         }
         return HwpRGBColor(line.color)
+    }
+}
+
+public extension HwpTableFrame {
+    /// 표가 이 지점에 칠했는가 (표-로컬 좌표) — 셀 채움·테두리 ∪ 중첩 표 재귀.
+    /// `tableHit`의 순회와 같은 분해라 히트 결과와 갈리지 않는다 (R55).
+    func paints(_ point: CGPoint) -> Bool {
+        rows.contains { row in
+            row.cells.contains { cell in
+                cell.paints(point) || cell.nestedTables.contains { nested in
+                    nested.table.paints(CGPoint(
+                        x: point.x - nested.rect.minX, y: point.y - nested.rect.minY
+                    ))
+                }
+            }
+        }
     }
 }
 
