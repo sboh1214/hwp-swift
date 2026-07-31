@@ -528,67 +528,6 @@ import XCTest
                 == .hyperlink(url: "https://example.com/nested", blockIndex: 0)
         }
 
-        /// `%hlk`가 감싼 인라인 개체는 **자기 링크로 눌린다** (R49). run builder가
-        /// 필드 범위를 U+FFFC run까지 포함해 닫으므로 개체의 링크는 개체 페이로드가
-        /// 아니라 **부모 문단의 스팬**에 산다 — 층을 먼저 보는 규약(R42 #1) 그대로면
-        /// 개체가 자기 링크를 가린다. 링크 없는 같은 개체는 여전히 아래를 가려야
-        /// 하므로(R42 #2) 양쪽을 함께 태운다.
-        func testHyperlinkWrappingFootnoteObjectStaysTappable() throws {
-            let blockFrame = CGRect(x: 50, y: 600, width: 400, height: 40)
-            let objectRect = CGRect(x: 0, y: 0, width: 100, height: 40)
-            func footnote(wrappedByLink: Bool) -> HwpFootnoteBlock {
-                let attributed = NSMutableAttributedString(string: "\u{FFFC}")
-                let full = NSRange(location: 0, length: attributed.length)
-                attributed.addAttribute(
-                    .font, value: CTFontCreateWithName("Menlo" as CFString, 12, nil), range: full
-                )
-                if wrappedByLink {
-                    attributed.addAttribute(
-                        HwpAttributedStringKey.hyperlink,
-                        value: "https://example.com/wrapped", range: full
-                    )
-                }
-                return HwpFootnoteBlock(
-                    frame: blockFrame,
-                    paragraphs: [HwpLaidOutParagraph(
-                        attributedString: attributed,
-                        frame: HwpParagraphFrame(totalHeight: 40, lines: []),
-                        rect: CGRect(x: 0, y: 0, width: 400, height: 40),
-                        paragraphId: 1,
-                        hyperlinkURL: wrappedByLink ? "https://example.com/wrapped" : nil
-                    )],
-                    number: 1,
-                    separatorLine: CGRect(x: 50, y: 590, width: 130, height: 1),
-                    images: [HwpCellImage(
-                        rect: objectRect,
-                        binItemId: 3,
-                        style: nil,
-                        paintsBehindText: false,
-                        zOrder: 0, sourceOrder: 0,
-                        controlInstanceId: 40
-                    )]
-                )
-            }
-
-            // 스팬이 감싼 개체 — 개체 자리를 눌러도 그 링크가 나온다
-            let linkRegions = HwpDrawnTextLayout.hyperlinkRegions(
-                attributedString: try XCTUnwrap(footnote(wrappedByLink: true).paragraphs.first)
-                    .attributedString,
-                origin: .zero,
-                lineWidth: 400
-            )
-            let glyph = try XCTUnwrap(linkRegions.first, "U+FFFC run에 링크 스팬이 없다").rect
-            let inGlyph = CGPoint(
-                x: blockFrame.minX + glyph.midX, y: blockFrame.minY + glyph.midY
-            )
-            expect(HwpHitTester().hit(page: Self.page(footnote(wrappedByLink: true)), point: inGlyph))
-                == .hyperlink(url: "https://example.com/wrapped", blockIndex: 0)
-            // 링크 없는 같은 개체는 그대로 불투명하게 가린다
-            expect(HwpHitTester().hit(
-                page: Self.page(footnote(wrappedByLink: false)), point: inGlyph
-            )) == .footnote(blockIndex: 0, number: 1)
-        }
-
         /// 가림 테스트가 공유하는 링크 문단 (스팬 없이 문단-레벨 URL).
         private static func linkParagraph(rect: CGRect) -> HwpLaidOutParagraph {
             HwpLaidOutParagraph(
@@ -619,7 +558,7 @@ import XCTest
             )
         }
 
-        private static func page(_ footnote: HwpFootnoteBlock) -> HwpPage {
+        static func page(_ footnote: HwpFootnoteBlock) -> HwpPage {
             HwpPage(
                 size: CGSize(width: 595, height: 842),
                 margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),

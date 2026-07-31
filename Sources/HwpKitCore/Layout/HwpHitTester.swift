@@ -146,65 +146,77 @@ public struct HwpHitTester {
         at point: CGPoint
     ) -> LayerHit {
         for layer in layers.reversed() {
+            // 안쪽부터 본다 (위에 그려진 것이 이긴다). 자손이 가렸다고 바로
+            // 반환하지 않고 `innerOccluded`로 미뤄, 이 층을 **감싼** 링크를
+            // 먼저 확인한다 — 채운 셀을 가진 표나 자손이 가린 글상자를 `%hlk`가
+            // 감싸면 그 링크가 열려야 한다 (R50 #2).
+            var innerOccluded = false
             if case let .nestedTable(nested) = layer {
-                let hit = tableHit(nested.table, at: CGPoint(
+                switch tableHit(nested.table, at: CGPoint(
                     x: point.x - nested.rect.minX, y: point.y - nested.rect.minY
-                ))
-                if case .miss = hit {} else {
-                    return hit
-                }
-            }
-            if case let .textbox(textbox) = layer {
-                let inner = CGPoint(
-                    x: point.x - textbox.rect.minX,
-                    y: point.y - textbox.rect.minY
-                )
-                // 재귀 결과를 **그대로 전파**한다 — `.occluded`를 버리면 글상자
-                // rect 밖에 놓인 자식이 덮은 자리에서 (글상자 자신은 그 자리를
-                // 안 가리므로) 아래 링크가 열린다 (R44 #3).
-                switch containerHit(
-                    paragraphs: textbox.textbox.paragraphs,
-                    images: textbox.textbox.images,
-                    shapes: textbox.textbox.shapes,
-                    textboxes: [], nestedTables: [], at: inner
-                ) {
+                )) {
                 case let .found(url):
                     return .found(url)
                 case .occluded:
-                    return .occluded
+                    innerOccluded = true
                 case .miss:
                     break
                 }
             }
-            if layer.occludes(point) {
-                // 가림으로 접기 **전에** 이 층을 감싼 `%hlk` 스팬을 본다 (R49).
-                // `HwpTextRunBuilder`가 필드 범위를 U+FFFC run까지 포함해 닫으므로
-                // (필드 끝에서 `top.start ..< output.length`), 개체를 감싼 링크는
-                // 개체 페이로드가 아니라 **부모 문단의 스팬**에 산다. 층을 먼저
-                // 보는 규약(R42 #1) 그대로면 개체가 자기 링크를 가린다.
-                // 문단 rect 폴백은 쓰지 않는다 — 그것까지 살리면 링크 없는 불투명
-                // 개체가 아래 문단 링크를 가리는 규약(R42 #2)이 깨진다.
-                if let url = spanHyperlinkURL(in: paragraphs, at: point) {
+            if case let .textbox(textbox) = layer {
+                switch containerHit(
+                    paragraphs: textbox.textbox.paragraphs,
+                    images: textbox.textbox.images,
+                    shapes: textbox.textbox.shapes,
+                    textboxes: [], nestedTables: [],
+                    at: CGPoint(
+                        x: point.x - textbox.rect.minX,
+                        y: point.y - textbox.rect.minY
+                    )
+                ) {
+                case let .found(url):
                     return .found(url)
+                case .occluded:
+                    innerOccluded = true
+                case .miss:
+                    break
                 }
-                return .occluded
             }
+            guard innerOccluded || layer.occludes(point) else { continue }
+            // 가림으로 접기 전에 **이 층을 감싼** `%hlk` 를 본다 (R49/R50 #1).
+            // 지점 포함만으로 구제하면 옆의 다른 링크 텍스트를 덮었을 뿐인데도
+            // 그 URL이 열려 가림 규약(R42 #2)이 깨진다 — 링크가 붙은 U+FFFC run의
+            // `controlIndex` 가 이 층의 것과 같을 때만 구제한다.
+            if let url = wrapperHyperlinkURL(in: paragraphs, controlIndex: layer.controlIndex) {
+                return .found(url)
+            }
+            return .occluded
         }
         return .miss
     }
 
-    /// 문단 목록에서 **필드 스팬 글리프 rect**로만 링크를 찾는다 (문단 rect 폴백
-    /// 없음) — 개체를 감싼 링크를 살리되 가림 규약은 지키는 좁은 조회 (R49).
-    private func spanHyperlinkURL(
-        in paragraphs: [HwpLaidOutParagraph], at point: CGPoint
+    /// 이 컨트롤을 감싼 `%hlk` 의 URL — 링크가 붙은 run 중 `controlIndex` 가
+    /// 일치하는 것만 본다 (R50 #1). 개체의 링크는 개체가 아니라 부모 문단의
+    /// U+FFFC run에 살지만, 지점 포함만으로 고르면 그 개체가 **덮고 있을 뿐인**
+    /// 다른 링크까지 살아난다.
+    private func wrapperHyperlinkURL(
+        in paragraphs: [HwpLaidOutParagraph], controlIndex: Int
     ) -> String? {
+        guard controlIndex >= 0 else { return nil }
         for paragraph in paragraphs {
-            let regions = HwpDrawnTextLayout.hyperlinkRegions(
-                attributedString: paragraph.attributedString,
-                origin: paragraph.rect.origin,
-                lineWidth: paragraph.rect.width
-            )
-            if let url = regions.last(where: { $0.rect.contains(point) })?.url {
+            let attributed = paragraph.attributedString
+            var url: String?
+            attributed.enumerateAttribute(
+                HwpAttributedStringKey.controlIndex,
+                in: NSRange(location: 0, length: attributed.length)
+            ) { value, range, stop in
+                guard value as? Int == controlIndex else { return }
+                url = attributed.attribute(
+                    HwpAttributedStringKey.hyperlink, at: range.location, effectiveRange: nil
+                ) as? String
+                stop.pointee = true
+            }
+            if let url {
                 return url
             }
         }

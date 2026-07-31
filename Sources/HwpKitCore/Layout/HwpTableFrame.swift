@@ -66,6 +66,11 @@ public struct HwpNestedTableFrame: @unchecked Sendable, Hashable {
     /// 같은 평면 안 정렬 키 (zOrder → 원본 ctrlHeaderArray 순서)
     public let zOrder: Int32
     public let sourceOrder: Int
+    /// 이 개체를 낸 `ctrlHeaderArray` 서수 (`HwpAttributedStringKey.controlIndex`
+    /// 와 같은 값) — `%hlk`가 개체를 감쌌을 때 그 링크가 **이 개체의 것**인지
+    /// 판별하는 열쇠다 (R50). 링크는 개체가 아니라 부모 문단의 U+FFFC run에
+    /// 붙으므로, 지점 포함만으로 구제하면 옆의 다른 링크 텍스트까지 살아난다.
+    public let controlIndex: Int
 
     public init(
         rect: CGRect,
@@ -73,7 +78,8 @@ public struct HwpNestedTableFrame: @unchecked Sendable, Hashable {
         controlInstanceId: UInt32,
         paintsBehindText: Bool = false,
         zOrder: Int32 = 0,
-        sourceOrder: Int = 0
+        sourceOrder: Int = 0,
+        controlIndex: Int = -1
     ) {
         self.rect = rect
         self.table = table
@@ -81,6 +87,7 @@ public struct HwpNestedTableFrame: @unchecked Sendable, Hashable {
         self.paintsBehindText = paintsBehindText
         self.zOrder = zOrder
         self.sourceOrder = sourceOrder
+        self.controlIndex = controlIndex
     }
 }
 
@@ -108,6 +115,11 @@ public struct HwpCellImage: Sendable, Hashable {
     public let clipRect: CGRect?
     /// 원본 컨트롤 참조 (편집 대비)
     public let controlInstanceId: UInt32
+    /// 이 개체를 낸 `ctrlHeaderArray` 서수 (`HwpAttributedStringKey.controlIndex`
+    /// 와 같은 값) — `%hlk`가 개체를 감쌌을 때 그 링크가 **이 개체의 것**인지
+    /// 판별하는 열쇠다 (R50). 링크는 개체가 아니라 부모 문단의 U+FFFC run에
+    /// 붙으므로, 지점 포함만으로 구제하면 옆의 다른 링크 텍스트까지 살아난다.
+    public let controlIndex: Int
 
     public init(
         rect: CGRect,
@@ -119,7 +131,8 @@ public struct HwpCellImage: Sendable, Hashable {
         zOrder: Int32 = 0,
         sourceOrder: Int = 0,
         clipRect: CGRect? = nil,
-        controlInstanceId: UInt32
+        controlInstanceId: UInt32,
+        controlIndex: Int = -1
     ) {
         self.rect = rect
         self.binItemId = binItemId
@@ -131,6 +144,7 @@ public struct HwpCellImage: Sendable, Hashable {
         self.sourceOrder = sourceOrder
         self.clipRect = clipRect
         self.controlInstanceId = controlInstanceId
+        self.controlIndex = controlIndex
     }
 
     /// rect만 바꾼 사본 — 분할/정렬 이동 시 나머지 필드 누락을 막는다.
@@ -187,6 +201,11 @@ public struct HwpCellShape: @unchecked Sendable, Hashable {
     public let sourceOrder: Int
     /// 원본 컨트롤 참조 (편집 대비)
     public let controlInstanceId: UInt32
+    /// 이 개체를 낸 `ctrlHeaderArray` 서수 (`HwpAttributedStringKey.controlIndex`
+    /// 와 같은 값) — `%hlk`가 개체를 감쌌을 때 그 링크가 **이 개체의 것**인지
+    /// 판별하는 열쇠다 (R50). 링크는 개체가 아니라 부모 문단의 U+FFFC run에
+    /// 붙으므로, 지점 포함만으로 구제하면 옆의 다른 링크 텍스트까지 살아난다.
+    public let controlIndex: Int
 
     public init(
         rect: CGRect,
@@ -194,7 +213,8 @@ public struct HwpCellShape: @unchecked Sendable, Hashable {
         paintsBehindText: Bool = false,
         zOrder: Int32 = 0,
         sourceOrder: Int = 0,
-        controlInstanceId: UInt32
+        controlInstanceId: UInt32,
+        controlIndex: Int = -1
     ) {
         self.rect = rect
         self.geometry = geometry
@@ -202,6 +222,7 @@ public struct HwpCellShape: @unchecked Sendable, Hashable {
         self.zOrder = zOrder
         self.sourceOrder = sourceOrder
         self.controlInstanceId = controlInstanceId
+        self.controlIndex = controlIndex
     }
 
     public func withRect(_ rect: CGRect) -> HwpCellShape {
@@ -229,6 +250,11 @@ public struct HwpCellTextbox: @unchecked Sendable, Hashable {
     public let sourceOrder: Int
     /// 원본 컨트롤 참조 (편집 대비)
     public let controlInstanceId: UInt32
+    /// 이 개체를 낸 `ctrlHeaderArray` 서수 (`HwpAttributedStringKey.controlIndex`
+    /// 와 같은 값) — `%hlk`가 개체를 감쌌을 때 그 링크가 **이 개체의 것**인지
+    /// 판별하는 열쇠다 (R50). 링크는 개체가 아니라 부모 문단의 U+FFFC run에
+    /// 붙으므로, 지점 포함만으로 구제하면 옆의 다른 링크 텍스트까지 살아난다.
+    public let controlIndex: Int
 
     public init(
         rect: CGRect,
@@ -236,7 +262,8 @@ public struct HwpCellTextbox: @unchecked Sendable, Hashable {
         paintsBehindText: Bool = false,
         zOrder: Int32 = 0,
         sourceOrder: Int = 0,
-        controlInstanceId: UInt32
+        controlInstanceId: UInt32,
+        controlIndex: Int = -1
     ) {
         self.rect = rect
         self.textbox = textbox
@@ -244,6 +271,7 @@ public struct HwpCellTextbox: @unchecked Sendable, Hashable {
         self.zOrder = zOrder
         self.sourceOrder = sourceOrder
         self.controlInstanceId = controlInstanceId
+        self.controlIndex = controlIndex
     }
 
     public func withRect(_ rect: CGRect) -> HwpCellTextbox {

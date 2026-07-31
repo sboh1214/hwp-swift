@@ -89,7 +89,8 @@ struct HwpParagraphObjectCollector {
                 anchor: anchorOrigin(
                     for: controlIndex, frame: frame, paragraphRect: paragraphRect
                 ),
-                paragraphRect: paragraphRect
+                paragraphRect: paragraphRect,
+                controlIndex: controlIndex
             )
             if collectsTables, case let .table(nested) = ctrl {
                 let marker = collected.marker
@@ -166,7 +167,8 @@ struct HwpParagraphObjectCollector {
             controlInstanceId: commonProperty.instanceId,
             paintsBehindText: info.textWrap == .behindText,
             zOrder: commonProperty.zOrder,
-            sourceOrder: state.sourceOrder
+            sourceOrder: state.sourceOrder,
+            controlIndex: placement.controlIndex
         )
     }
 
@@ -174,6 +176,9 @@ struct HwpParagraphObjectCollector {
     private struct Placement {
         let anchor: CGPoint?
         let paragraphRect: CGRect
+        /// 이 개체를 낸 `ctrlHeaderArray` 서수 — 감싼 `%hlk` 스팬을 개체와 잇는
+        /// 열쇠라 수집 페이로드까지 실어 보낸다 (R50).
+        let controlIndex: Int
 
         func origin(cursorX: CGFloat) -> CGPoint {
             anchor ?? CGPoint(x: cursorX, y: paragraphRect.minY)
@@ -205,7 +210,8 @@ struct HwpParagraphObjectCollector {
                         commonProperty: commonProperty, size: size,
                         placement: placement, cursorX: state.cursorX
                     ),
-                    sourceOrder: state.sourceOrder
+                    sourceOrder: state.sourceOrder,
+                    controlIndex: placement.controlIndex
                 ) else { continue }
                 collected.images.append(image)
                 state.sourceOrder += 1
@@ -334,7 +340,8 @@ private extension HwpParagraphObjectCollector {
         size: CGSize,
         commonProperty: CoreHwp.HwpCommonCtrlProperty?,
         origin: CGPoint,
-        sourceOrder: Int
+        sourceOrder: Int,
+        controlIndex: Int
     ) -> HwpCellImage? {
         let property = picture.pictureProperty
         guard let binItemId = property.map({ UInt32($0.binItemId) })
@@ -357,7 +364,8 @@ private extension HwpParagraphObjectCollector {
             paintsBehindText: commonProperty?.propertyInfo.textWrap == .behindText,
             zOrder: commonProperty?.zOrder ?? 0,
             sourceOrder: sourceOrder,
-            controlInstanceId: commonProperty?.instanceId ?? 0
+            controlInstanceId: commonProperty?.instanceId ?? 0,
+            controlIndex: controlIndex
         )
     }
 
@@ -393,7 +401,8 @@ private extension HwpParagraphObjectCollector {
             paintsBehindText: property.propertyInfo.textWrap == .behindText,
             zOrder: property.zOrder,
             sourceOrder: state.sourceOrder,
-            controlInstanceId: property.instanceId
+            controlInstanceId: property.instanceId,
+            controlIndex: placement.controlIndex
         )
     }
 
@@ -418,7 +427,8 @@ private extension HwpParagraphObjectCollector {
             paintsBehindText: commonProperty?.propertyInfo.textWrap == .behindText,
             zOrder: commonProperty?.zOrder ?? 0,
             sourceOrder: state.sourceOrder,
-            controlInstanceId: commonProperty?.instanceId ?? 0
+            controlInstanceId: commonProperty?.instanceId ?? 0,
+            controlIndex: placement.controlIndex
         )
     }
 }

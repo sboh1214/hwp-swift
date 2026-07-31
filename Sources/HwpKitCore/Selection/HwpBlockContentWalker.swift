@@ -226,6 +226,16 @@ public enum HwpBlockContentWalker {
                 false
             }
         }
+
+        /// 이 층을 낸 `ctrlHeaderArray` 서수 — 감싼 `%hlk` 스팬과 잇는 열쇠 (R50)
+        var controlIndex: Int {
+            switch self {
+            case let .image(image): image.controlIndex
+            case let .shape(shape): shape.controlIndex
+            case let .textbox(textbox): textbox.controlIndex
+            case let .nestedTable(nested): nested.controlIndex
+            }
+        }
     }
 
     /// 컨테이너 개체를 **페인트 순서**로 나눠 돌려준다 (글 뒤로 / 글 앞으로,
