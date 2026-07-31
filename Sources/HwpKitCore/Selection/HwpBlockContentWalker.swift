@@ -227,6 +227,40 @@ public enum HwpBlockContentWalker {
             }
         }
 
+        /// 이 지점에 **무엇이든 칠해졌는가** — 불투명 판정 (`occludes`) 과 다른
+        /// 축이다 (R54). 속 빈 도형의 테두리는 아래를 가리지 않지만, 그 선 위의
+        /// 탭은 그 개체를 가리킨다: 감싼 링크 구제와 claim은 이쪽을 봐야 하고
+        /// 아래 층 탐색을 멈출지는 `occludes`가 정한다.
+        func paints(_ point: CGPoint) -> Bool {
+            switch self {
+            case .image, .textbox:
+                occludes(point)
+            case let .shape(shape):
+                occludes(point) || Self.strokePaints(
+                    shape.geometry,
+                    at: CGPoint(x: point.x - shape.rect.minX, y: point.y - shape.rect.minY)
+                )
+            case .nestedTable:
+                // 표 자체는 아무것도 안 칠한다 — 칸막이·채움·내용은 `walkTable`이
+                // 셀 단위로 낸다 (`tableHit`의 재귀와 같은 분해)
+                false
+            }
+        }
+
+        /// 테두리 선 위인지 — 페인터가 `strokeWidth`로 긋는 그 선이다.
+        /// 굵기 0은 hairline으로 그려지므로 탭 판정에 최소 1pt를 준다.
+        private static func strokePaints(
+            _ geometry: HwpShapeGeometry, at localPoint: CGPoint
+        ) -> Bool {
+            guard geometry.strokeColor != nil else { return false }
+            return geometry.path.copy(
+                strokingWithWidth: max(geometry.strokeWidth, 1),
+                lineCap: .butt,
+                lineJoin: .miter,
+                miterLimit: 10
+            ).contains(localPoint)
+        }
+
         /// 이 층을 낸 `ctrlHeaderArray` 서수 — 감싼 `%hlk` 스팬과 잇는 열쇠 (R50)
         var controlIndex: Int {
             switch self {

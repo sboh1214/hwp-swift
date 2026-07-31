@@ -46,9 +46,9 @@ public struct HwpHitTester {
                         // 통과시키면 보이는 각주 글자를 눌렀는데 아래 본문의 무관한
                         // 링크가 열린다 — frame **안**에서 같은 텍스트가
                         // `.footnote`가 되는 것과 답이 같아야 한다.
-                        guard paintedRects(footnote, origin: block.frame.origin)
-                            .contains(where: { $0.contains(point) })
-                        else { continue }
+                        guard paintsContent(
+                            footnote, origin: block.frame.origin, at: point
+                        ) else { continue }
                         return .footnote(blockIndex: index, number: footnote.number)
                     }
                 }
@@ -114,11 +114,13 @@ public struct HwpHitTester {
             .reduce(blockFrame) { $0.union($1) }
     }
 
-    /// 각주가 **실제로 그린** rect들 (페이지 좌표, 블록 프레임 제외).
+    /// 각주 자손들의 rect (페이지 좌표, 블록 프레임 제외) — **자격 영역 전용**.
     ///
-    /// 자격 영역 (위 union) 과 "여기가 칠해진 자리인가" (포함 판정) 가 **같은
-    /// 목록**을 봐야 한다 — 따로 짜면 자격은 인정하면서 claim은 안 하는 띠가
-    /// 생겨 그 위의 탭이 아래 블록으로 샌다 (R53).
+    /// 자격 영역은 실제 칠 영역의 **상위집합**이어야 한다: 좁으면 그 위의 탭이
+    /// `containerHit`에 닿기도 전에 기각된다 (R53). 반대로 claim은 이 rect로
+    /// 하면 안 된다 — 클립 밖 그림·속 빈 도형·안 채운 셀의 투명한 자리까지
+    /// 각주 것으로 가져가 아래 블록의 **보이는** 링크를 막는다 (R54).
+    /// claim은 `paintsContent`가 정밀 커버리지로 판정한다.
     private func paintedRects(
         _ footnote: HwpFootnoteBlock, origin: CGPoint
     ) -> [CGRect] {
@@ -146,6 +148,69 @@ public struct HwpHitTester {
             }
         )
         return rects
+    }
+
+    /// 각주가 이 지점에 **실제로 칠했는가** — 자격 영역(bounding box)의 투명한
+    /// 틈과 구분한다 (R54). 커버리지의 소유자는 둘뿐이다: 층은
+    /// `ContentLayer.paints`, 텍스트는 그려진 줄 상자
+    /// (`HwpDrawnTextLayout.textLineRegions` — 선택 하이라이트와 같은 정의).
+    private func paintsContent(
+        _ footnote: HwpFootnoteBlock, origin: CGPoint, at point: CGPoint
+    ) -> Bool {
+        var painted = false
+        func note(_ hit: @autoclosure () -> Bool) {
+            guard !painted else { return }
+            painted = hit()
+        }
+        func paintsText(_ attributed: NSAttributedString, in rect: CGRect) -> Bool {
+            HwpDrawnTextLayout.textLineRegions(
+                attributedString: attributed, origin: rect.origin, lineWidth: rect.width
+            ).contains { $0.contains(point) }
+        }
+        HwpBlockContentWalker.walkFootnote(
+            footnote,
+            origin: origin,
+            onParagraphText: { attributed, rect, _ in note(paintsText(attributed, in: rect)) },
+            onCellStart: { cell, rect in
+                // 안 채운 셀은 칸막이만 그린다 — 칸 안은 아래 블록 몫이다
+                note(cell.fillColor != nil && rect.contains(point))
+            },
+            onCellImage: { image, rect in
+                note(HwpBlockContentWalker.ContentLayer.image(image)
+                    .paints(Self.payloadPoint(point, page: rect, payload: image.rect)))
+            },
+            onCellShape: { shape, rect in
+                note(HwpBlockContentWalker.ContentLayer.shape(shape)
+                    .paints(Self.payloadPoint(point, page: rect, payload: shape.rect)))
+            },
+            onCellTextbox: { textbox, rect in
+                // 글상자는 `textboxCommands`가 늘 칠한다 (fillColor 없어도 .hwpWhite)
+                note(rect.contains(point))
+                HwpBlockContentWalker.walkParagraphs(
+                    textbox.textbox.paragraphs, offset: rect.origin
+                ) { attributed, inner, _ in note(paintsText(attributed, in: inner)) }
+                // 글상자를 넘어 그려지는 자식 (R46 #1) 도 같은 규칙으로 본다
+                let local = CGPoint(x: point.x - rect.minX, y: point.y - rect.minY)
+                for image in textbox.textbox.images {
+                    note(HwpBlockContentWalker.ContentLayer.image(image).paints(local))
+                }
+                for shape in textbox.textbox.shapes {
+                    note(HwpBlockContentWalker.ContentLayer.shape(shape).paints(local))
+                }
+            }
+        )
+        return painted
+    }
+
+    /// 페이지 좌표의 점을 페이로드 자신의 좌표계로 옮긴다 — `ContentLayer`의
+    /// 커버리지 판정이 페이로드 rect 기준이라 walker가 준 페이지 rect로 되돌린다.
+    private static func payloadPoint(
+        _ point: CGPoint, page: CGRect, payload: CGRect
+    ) -> CGPoint {
+        CGPoint(
+            x: point.x - page.minX + payload.minX,
+            y: point.y - page.minY + payload.minY
+        )
     }
 
     /// 개체 층을 페인트 역순으로 훑은 결과.
@@ -202,7 +267,10 @@ public struct HwpHitTester {
                     break
                 }
             }
-            guard innerOccluded || layer.occludes(point) else { continue }
+            // 구제와 claim은 **칠했는가**(`paints`)로 본다 — 속 빈 도형의 테두리는
+            // 아래를 가리지 않지만 그 선 위의 탭은 이 개체를 가리키므로, 감싼
+            // 링크가 열려야 한다 (R54). 자손 가림(`innerOccluded`)은 그대로다.
+            guard innerOccluded || layer.paints(point) else { continue }
             // 가림으로 접기 전에 **이 층을 감싼** `%hlk` 를 본다 (R49/R50 #1).
             // 지점 포함만으로 구제하면 옆의 다른 링크 텍스트를 덮었을 뿐인데도
             // 그 URL이 열려 가림 규약(R42 #2)이 깨진다 — 링크가 붙은 U+FFFC run의
@@ -362,7 +430,26 @@ public struct HwpHitTester {
         if let url = spanAwareHyperlinkURL(in: paragraphs, at: point) {
             return .found(url)
         }
+        // 링크 없는 전경 글자도 **칠해진 것**이다 — 그 위의 탭이 글 뒤로 개체의
+        // 링크를 열면 페인트 역순 규약이 깨진다 (R54). 줄 사이 여백·짧은 줄의 빈
+        // 오른쪽은 아무것도 안 칠하므로 그대로 뒤 층으로 내려간다.
+        if paragraphsPaint(paragraphs, at: point) {
+            return .occluded
+        }
         return layerHit(layers.behindText, wrappedBy: paragraphs, at: point)
+    }
+
+    /// 문단들이 이 지점에 글자를 칠했는지 — 그려진 줄 상자 기준.
+    private func paragraphsPaint(
+        _ paragraphs: [HwpLaidOutParagraph], at point: CGPoint
+    ) -> Bool {
+        paragraphs.contains { paragraph in
+            HwpDrawnTextLayout.textLineRegions(
+                attributedString: paragraph.attributedString,
+                origin: paragraph.rect.origin,
+                lineWidth: paragraph.rect.width
+            ).contains { $0.contains(point) }
+        }
     }
 
     /// 표를 셀 단위로 훑는다. 셀 안은 같은 컨테이너 규약이고, **채운 셀은 아래를

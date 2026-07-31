@@ -79,6 +79,64 @@ import XCTest
             )) == .footnote(blockIndex: 0, number: 1)
         }
 
+        /// 감싼 링크 구제는 **가림**이 아니라 **칠**을 본다 (R54). 속 빈 도형은
+        /// 아래를 가리지 않아 `occludes`가 거짓이지만, 그 테두리 선 위의 탭은
+        /// 그 개체를 가리키므로 감싼 `%hlk`가 열려야 한다. 링크가 없으면 같은
+        /// 자리가 각주 히트로 남는다 (칠해진 자리이므로 claim은 한다).
+        func testWrapperLinkOpensOnHollowShapeBorder() {
+            let blockFrame = CGRect(x: 50, y: 600, width: 400, height: 40)
+            let shapeRect = CGRect(x: 0, y: 0, width: 100, height: 40)
+            func footnote(wrappedByLink: Bool) -> HwpFootnoteBlock {
+                let attributed = NSMutableAttributedString(string: "\u{FFFC}")
+                let full = NSRange(location: 0, length: attributed.length)
+                attributed.addAttribute(
+                    .font, value: CTFontCreateWithName("Menlo" as CFString, 12, nil), range: full
+                )
+                attributed.addAttribute(HwpAttributedStringKey.controlIndex, value: 0, range: full)
+                if wrappedByLink {
+                    attributed.addAttribute(
+                        HwpAttributedStringKey.hyperlink,
+                        value: "https://example.com/hollow", range: full
+                    )
+                }
+                return HwpFootnoteBlock(
+                    frame: blockFrame,
+                    paragraphs: [HwpLaidOutParagraph(
+                        attributedString: attributed,
+                        frame: HwpParagraphFrame(totalHeight: 40, lines: []),
+                        rect: CGRect(x: 0, y: 0, width: 400, height: 40),
+                        paragraphId: 1,
+                        hyperlinkURL: nil
+                    )],
+                    number: 1,
+                    separatorLine: CGRect(x: 50, y: 590, width: 130, height: 1),
+                    shapes: [HwpCellShape(
+                        rect: shapeRect,
+                        geometry: HwpShapeGeometry(
+                            path: CGPath(rect: shapeRect, transform: nil),
+                            fillColor: nil,
+                            strokeColor: HwpRGBColor(red: 0, green: 0, blue: 0).cgColor,
+                            strokeWidth: 1
+                        ),
+                        paintsBehindText: false,
+                        zOrder: 0, sourceOrder: 0,
+                        controlInstanceId: 22,
+                        controlIndex: 0,
+                        paragraphId: 1
+                    )]
+                )
+            }
+
+            // 도형 오른쪽 테두리 — U+FFFC 글리프(문단 왼쪽 끝)에서 멀어 스팬
+            // 히트가 아니라 감싼 링크 구제만이 답을 낼 수 있는 자리다
+            let onBorder = CGPoint(x: 149.8, y: 620)
+            expect(HwpHitTester().hit(page: Self.page(footnote(wrappedByLink: true)), point: onBorder))
+                == .hyperlink(url: "https://example.com/hollow", blockIndex: 0)
+            expect(HwpHitTester().hit(
+                page: Self.page(footnote(wrappedByLink: false)), point: onBorder
+            )) == .footnote(blockIndex: 0, number: 1)
+        }
+
         /// 개체가 **다른** 링크 텍스트를 덮었을 뿐이면 구제하지 않는다 (R50 #1).
         /// 구제를 지점 포함만으로 하면 덮인 링크가 열려 가림 규약(R42 #2)이 깨진다 —
         /// 링크가 붙은 run의 `controlIndex`가 그 층의 것과 같을 때만 구제한다.

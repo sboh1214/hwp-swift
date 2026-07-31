@@ -411,11 +411,14 @@ import XCTest
         /// box) 안이라도 **안 칠한 틈**은 여전히 아래 블록 몫이다.
         func testPaintedFootnoteTextOutsideFrameDoesNotFallThroughToLowerLink() {
             let blockFrame = CGRect(x: 50, y: 600, width: 100, height: 40)
-            // 문단이 블록(100pt)을 넘어 300pt까지, 다만 위쪽 20pt 띠에만 그려진다
+            // 글자가 블록(100pt)을 넘어 그려진다 — 문단 rect만 넓은 것이 아니라
+            // 실제 글리프가 x 150을 넘어야 claim 대상이다 (R54)
             let footnote = HwpFootnoteBlock(
                 frame: blockFrame,
                 paragraphs: [HwpLaidOutParagraph(
-                    attributedString: NSAttributedString(string: "각주 본문"),
+                    attributedString: NSAttributedString(
+                        string: String(repeating: "각주", count: 12)
+                    ),
                     frame: HwpParagraphFrame(totalHeight: 20, lines: []),
                     rect: CGRect(x: 0, y: 0, width: 300, height: 20),
                     paragraphId: 1,
