@@ -163,9 +163,7 @@ public struct HwpHitTester {
             painted = hit()
         }
         func paintsText(_ attributed: NSAttributedString, in rect: CGRect) -> Bool {
-            HwpDrawnTextLayout.textLineRegions(
-                attributedString: attributed, origin: rect.origin, lineWidth: rect.width
-            ).contains { $0.contains(point) }
+            textPaints(attributed, in: rect, at: point)
         }
         HwpBlockContentWalker.walkFootnote(
             footnote,
@@ -443,13 +441,24 @@ public struct HwpHitTester {
     private func paragraphsPaint(
         _ paragraphs: [HwpLaidOutParagraph], at point: CGPoint
     ) -> Bool {
-        paragraphs.contains { paragraph in
-            HwpDrawnTextLayout.textLineRegions(
-                attributedString: paragraph.attributedString,
-                origin: paragraph.rect.origin,
-                lineWidth: paragraph.rect.width
-            ).contains { $0.contains(point) }
-        }
+        paragraphs.contains { textPaints($0.attributedString, in: $0.rect, at: point) }
+    }
+
+    /// 문단이 이 지점에 글자를 칠했는지 — **rect 밖이면 CT 조판을 하지 않는다**.
+    ///
+    /// 줄 상자는 문단 rect 안이다 (가로만 slight-overflow 허용치까지 넘으므로
+    /// `hitEligibleFrame`의 `.text`와 같은 여유를 준다). 이 게이트가 없으면 탭 한
+    /// 번이 셀·문단 수만큼 framesetting을 돌린다 — `tableHit`은 셀 프레임으로
+    /// 미리 거르지 않으므로 (R44 #2) 큰 표에서 동기 탭 핸들러가 멈춘다
+    /// (R55 실측: 600셀 표 탭당 29.16ms).
+    private func textPaints(
+        _ attributed: NSAttributedString, in rect: CGRect, at point: CGPoint
+    ) -> Bool {
+        let extra = rect.width * (HwpRenderTuning.Text.slightOverflowWidthRatio - 1)
+        guard rect.insetBy(dx: -extra, dy: 0).contains(point) else { return false }
+        return HwpDrawnTextLayout.textLineRegions(
+            attributedString: attributed, origin: rect.origin, lineWidth: rect.width
+        ).contains { $0.contains(point) }
     }
 
     /// 표를 셀 단위로 훑는다. 셀 안은 같은 컨테이너 규약이고, **채운 셀은 아래를
