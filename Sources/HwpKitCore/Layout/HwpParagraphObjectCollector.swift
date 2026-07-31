@@ -159,10 +159,14 @@ struct HwpParagraphObjectCollector {
         if commonProperty.propertyInfo.treatAsChar, placement.anchor == nil {
             state.cursorX += size.width
         }
+        defer { state.sourceOrder += 1 }
         return HwpNestedTableFrame(
             rect: rect,
             table: frame,
-            controlInstanceId: commonProperty.instanceId
+            controlInstanceId: commonProperty.instanceId,
+            paintsBehindText: info.textWrap == .behindText,
+            zOrder: commonProperty.zOrder,
+            sourceOrder: state.sourceOrder
         )
     }
 
@@ -435,11 +439,10 @@ extension HwpParagraphObjectCollector {
         var floatingBottom: CGFloat?
 
         /// 수집 총량 — 다음 문단의 firstSourceOrder (원본 순서 ordinal 연속).
-        /// 표는 zOrder/sourceOrder 필드가 없어 (`HwpNestedTableFrame`) 정렬
-        /// 대상이 아니므로 세지 않는다 — 페인트는 표 셀 경로(`walkTable`)와
-        /// 같이 개체 뒤에 그린다.
+        /// 표도 평면·정렬 키를 가지므로 (R47 #1) 함께 센다 — 빼면 표 뒤에 오는
+        /// 개체의 ordinal이 표와 겹쳐 같은 zOrder에서 순서가 뒤집힌다.
         var count: Int {
-            images.count + shapes.count + textboxes.count
+            images.count + shapes.count + textboxes.count + nestedTables.count
         }
 
         /// 종류별 개수 스냅샷 — 컨트롤 하나가 새로 넣은 개체 범위를 잡는 표식.

@@ -10,6 +10,77 @@ import XCTest
 /// 글자도 하나 없다"였다. 방출 순서 규약은 표 셀 경로와 같다:
 /// 글 뒤로 개체 → 문단 텍스트 → 나머지 개체 → 각주 안 표.
 final class HwpFootnotePaintListTests: XCTestCase {
+    /// 글 뒤로 각주 표는 문단 텍스트 **앞에** 그려진다 (R47 #1) — 표가 평면·
+    /// 정렬 정보를 잃고 항상 마지막에 그려지면 텍스트를 덮는다.
+    func testBehindTextFootnoteTablePaintsBeforeParagraphText() throws {
+        let black = HwpRGBColor(red: 0, green: 0, blue: 0)
+        let cellRect = CGRect(x: 0, y: 0, width: 80, height: 20)
+        func footnote(paintsBehindText: Bool) -> HwpFootnoteBlock {
+            HwpFootnoteBlock(
+                frame: CGRect(x: 50, y: 600, width: 400, height: 40),
+                paragraphs: [HwpLaidOutParagraph(
+                    attributedString: NSAttributedString(string: "각주 본문"),
+                    frame: HwpParagraphFrame(totalHeight: 20, lines: []),
+                    rect: CGRect(x: 0, y: 0, width: 400, height: 20),
+                    paragraphId: 1,
+                    hyperlinkURL: nil
+                )],
+                number: 1,
+                separatorLine: CGRect(x: 50, y: 590, width: 130, height: 1),
+                nestedTables: [HwpNestedTableFrame(
+                    rect: cellRect,
+                    table: HwpTableFrame(
+                        outerFrame: cellRect,
+                        rows: [HwpTableRowFrame(
+                            rowFrame: cellRect,
+                            cells: [HwpTableCellFrame(
+                                cellFrame: cellRect,
+                                row: 0, column: 0, rowSpan: 1, columnSpan: 1,
+                                paragraphs: [],
+                                borders: .uniform(width: 0.5, color: black),
+                                fillColor: HwpRGBColor(red: 200, green: 200, blue: 200)
+                            )]
+                        )],
+                        borderColor: black, borderWidth: 1
+                    ),
+                    controlInstanceId: 9,
+                    paintsBehindText: paintsBehindText
+                )]
+            )
+        }
+        func firstTextIndex(_ block: HwpFootnoteBlock) -> Int? {
+            HwpPaintListBuilder(fontResolver: .testDeterministic)
+                .footnoteCommands(block, blockFrame: block.frame, drawSeparator: false)
+                .firstIndex {
+                    if case .drawText = $0 {
+                        true
+                    } else {
+                        false
+                    }
+                }
+        }
+        func firstCellFillIndex(_ block: HwpFootnoteBlock) -> Int? {
+            HwpPaintListBuilder(fontResolver: .testDeterministic)
+                .footnoteCommands(block, blockFrame: block.frame, drawSeparator: false)
+                .firstIndex {
+                    if case .fillRect = $0 {
+                        true
+                    } else {
+                        false
+                    }
+                }
+        }
+
+        // 글 뒤로: 셀 채움이 텍스트보다 먼저
+        let behind = footnote(paintsBehindText: true)
+        expect(try XCTUnwrap(firstCellFillIndex(behind)))
+            < (try XCTUnwrap(firstTextIndex(behind)))
+        // 기본(글 앞으로): 텍스트가 먼저
+        let front = footnote(paintsBehindText: false)
+        expect(try XCTUnwrap(firstTextIndex(front)))
+            < (try XCTUnwrap(firstCellFillIndex(front)))
+    }
+
     private let builder = HwpPaintListBuilder()
     private lazy var index = HwpIndex(from: HwpFile())
 

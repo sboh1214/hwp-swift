@@ -255,7 +255,10 @@ final class HwpSelectableTextPaintParityTests: XCTestCase {
             nestedTables: [HwpNestedTableFrame(
                 rect: CGRect(x: 0, y: 30, width: 80, height: 20),
                 table: makeNestedTable(text: "각주 표 셀"),
-                controlInstanceId: 23
+                controlInstanceId: 23,
+                // 표도 개체와 같은 정렬 키를 쓰므로 (R47 #1) 글상자(1) 뒤에
+                // 선언된 순서를 명시한다 — 기본 0이면 글상자보다 앞서 정렬된다.
+                sourceOrder: 2
             )]
         )
     }

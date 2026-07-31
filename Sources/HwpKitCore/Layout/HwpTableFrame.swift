@@ -59,11 +59,28 @@ public struct HwpNestedTableFrame: @unchecked Sendable, Hashable {
     public let table: HwpTableFrame
     /// 원본 컨트롤 참조 (편집 대비)
     public let controlInstanceId: UInt32
+    /// 글 뒤로 배치 (표 70 textWrap) — 표도 그림·도형과 같은 페인트 평면을 갖는다
+    /// (R47 #1). 이 값이 없으면 walker가 표를 무조건 마지막에 그려 글 뒤로 표가
+    /// 텍스트 앞에 나온다.
+    public let paintsBehindText: Bool
+    /// 같은 평면 안 정렬 키 (zOrder → 원본 ctrlHeaderArray 순서)
+    public let zOrder: Int32
+    public let sourceOrder: Int
 
-    public init(rect: CGRect, table: HwpTableFrame, controlInstanceId: UInt32) {
+    public init(
+        rect: CGRect,
+        table: HwpTableFrame,
+        controlInstanceId: UInt32,
+        paintsBehindText: Bool = false,
+        zOrder: Int32 = 0,
+        sourceOrder: Int = 0
+    ) {
         self.rect = rect
         self.table = table
         self.controlInstanceId = controlInstanceId
+        self.paintsBehindText = paintsBehindText
+        self.zOrder = zOrder
+        self.sourceOrder = sourceOrder
     }
 }
 

@@ -94,6 +94,19 @@ public enum HwpBlockContentWalker {
                         onCellShape(shape, shape.rect.offsetBy(dx: origin.x, dy: origin.y))
                     case let .textbox(textbox):
                         onCellTextbox(textbox, textbox.rect.offsetBy(dx: origin.x, dy: origin.y))
+                    case let .nestedTable(nested):
+                        walkTable(
+                            nested.table,
+                            origin: CGPoint(
+                                x: origin.x + nested.rect.minX,
+                                y: origin.y + nested.rect.minY
+                            ),
+                            onCellStart: onCellStart,
+                            onParagraphText: onParagraphText,
+                            onCellImage: onCellImage,
+                            onCellShape: onCellShape,
+                            onCellTextbox: onCellTextbox
+                        )
                     }
                 }
                 for object in objects where object.paintsBehindText {
@@ -137,10 +150,13 @@ public enum HwpBlockContentWalker {
         onCellShape: (HwpCellShape, CGRect) -> Void = { _, _ in },
         onCellTextbox: (HwpCellTextbox, CGRect) -> Void = { _, _ in }
     ) {
+        // 표도 같은 평면·정렬에 합류한다 (R47 #1) — 따로 두고 마지막에 그리면
+        // 글 뒤로 표가 텍스트 앞에 나온다.
         let objects = sortedObjects(
             images: footnote.images,
             shapes: footnote.shapes,
-            textboxes: footnote.textboxes
+            textboxes: footnote.textboxes,
+            nestedTables: footnote.nestedTables
         )
         func emit(_ object: CellObject) {
             switch object {
@@ -150,6 +166,21 @@ public enum HwpBlockContentWalker {
                 onCellShape(shape, shape.rect.offsetBy(dx: origin.x, dy: origin.y))
             case let .textbox(textbox):
                 onCellTextbox(textbox, textbox.rect.offsetBy(dx: origin.x, dy: origin.y))
+            case let .nestedTable(nested):
+                // 각주 안 표는 블록-로컬 위치를 origin으로 재귀 순회한다
+                // (셀 경로와 같은 origin 합성 산식).
+                walkTable(
+                    nested.table,
+                    origin: CGPoint(
+                        x: origin.x + nested.rect.minX,
+                        y: origin.y + nested.rect.minY
+                    ),
+                    onCellStart: onCellStart,
+                    onParagraphText: onParagraphText,
+                    onCellImage: onCellImage,
+                    onCellShape: onCellShape,
+                    onCellTextbox: onCellTextbox
+                )
             }
         }
         for object in objects where object.paintsBehindText {
@@ -159,22 +190,6 @@ public enum HwpBlockContentWalker {
         for object in objects where !object.paintsBehindText {
             emit(object)
         }
-        // 각주 안 표는 블록-로컬 위치를 origin으로 재귀 순회한다 (셀 경로와
-        // 같은 origin 합성 산식).
-        for nested in footnote.nestedTables {
-            walkTable(
-                nested.table,
-                origin: CGPoint(
-                    x: origin.x + nested.rect.minX,
-                    y: origin.y + nested.rect.minY
-                ),
-                onCellStart: onCellStart,
-                onParagraphText: onParagraphText,
-                onCellImage: onCellImage,
-                onCellShape: onCellShape,
-                onCellTextbox: onCellTextbox
-            )
-        }
     }
 
     /// 컨테이너 안 개체 한 층 (페인트 순서의 단위)
@@ -182,6 +197,8 @@ public enum HwpBlockContentWalker {
         case image(HwpCellImage)
         case shape(HwpCellShape)
         case textbox(HwpCellTextbox)
+        /// 표는 스스로 가리지 않는다 — 채운 셀이 가리는지는 `tableHit`이 정한다.
+        case nestedTable(HwpNestedTableFrame)
 
         /// 이 층이 그 자리를 **불투명하게 덮는가** — 히트가 아래 층 탐색을 멈출
         /// 근거다. 판정 기준은 페인터가 실제로 칠하는 것과 같아야 한다 (R43):
@@ -205,6 +222,8 @@ public enum HwpBlockContentWalker {
                 )
             case let .textbox(textbox):
                 textbox.rect.contains(point)
+            case .nestedTable:
+                false
             }
         }
     }
@@ -215,32 +234,40 @@ public enum HwpBlockContentWalker {
     static func layersInPaintOrder(
         images: [HwpCellImage],
         shapes: [HwpCellShape],
-        textboxes: [HwpCellTextbox]
+        textboxes: [HwpCellTextbox],
+        nestedTables: [HwpNestedTableFrame] = []
     ) -> (behindText: [ContentLayer], inFrontOfText: [ContentLayer]) {
-        let ordered = sortedObjects(images: images, shapes: shapes, textboxes: textboxes)
+        let ordered = sortedObjects(
+            images: images, shapes: shapes, textboxes: textboxes, nestedTables: nestedTables
+        )
         func layers(behindText: Bool) -> [ContentLayer] {
             ordered.filter { $0.paintsBehindText == behindText }.map { object in
                 switch object {
                 case let .image(image): ContentLayer.image(image)
                 case let .shape(shape): ContentLayer.shape(shape)
                 case let .textbox(textbox): ContentLayer.textbox(textbox)
+                case let .nestedTable(nested): ContentLayer.nestedTable(nested)
                 }
             }
         }
         return (behindText: layers(behindText: true), inFrontOfText: layers(behindText: false))
     }
 
-    /// 셀 개체 (종류 무관 통합 순회 단위)
+    /// 셀 개체 (종류 무관 통합 순회 단위). 표도 그림·도형과 같은 평면·정렬 키를
+    /// 가지므로 여기 합류한다 (R47 #1) — 따로 두고 마지막에 그리면 글 뒤로 표가
+    /// 텍스트 앞에 나온다.
     private enum CellObject {
         case image(HwpCellImage)
         case shape(HwpCellShape)
         case textbox(HwpCellTextbox)
+        case nestedTable(HwpNestedTableFrame)
 
         var paintsBehindText: Bool {
             switch self {
             case let .image(image): image.paintsBehindText
             case let .shape(shape): shape.paintsBehindText
             case let .textbox(textbox): textbox.paintsBehindText
+            case let .nestedTable(nested): nested.paintsBehindText
             }
         }
 
@@ -249,6 +276,7 @@ public enum HwpBlockContentWalker {
             case let .image(image): image.zOrder
             case let .shape(shape): shape.zOrder
             case let .textbox(textbox): textbox.zOrder
+            case let .nestedTable(nested): nested.zOrder
             }
         }
 
@@ -257,6 +285,7 @@ public enum HwpBlockContentWalker {
             case let .image(image): image.sourceOrder
             case let .shape(shape): shape.sourceOrder
             case let .textbox(textbox): textbox.sourceOrder
+            case let .nestedTable(nested): nested.sourceOrder
             }
         }
     }
@@ -272,11 +301,13 @@ public enum HwpBlockContentWalker {
     private static func sortedObjects(
         images: [HwpCellImage],
         shapes: [HwpCellShape],
-        textboxes: [HwpCellTextbox]
+        textboxes: [HwpCellTextbox],
+        nestedTables: [HwpNestedTableFrame] = []
     ) -> [CellObject] {
         let objects = images.map(CellObject.image)
             + shapes.map(CellObject.shape)
             + textboxes.map(CellObject.textbox)
+            + nestedTables.map(CellObject.nestedTable)
         return objects.sorted { lhs, rhs in
             lhs.zOrder != rhs.zOrder
                 ? lhs.zOrder < rhs.zOrder

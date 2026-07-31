@@ -144,6 +144,14 @@ public struct HwpHitTester {
         _ layers: [HwpBlockContentWalker.ContentLayer], at point: CGPoint
     ) -> LayerHit {
         for layer in layers.reversed() {
+            if case let .nestedTable(nested) = layer {
+                let hit = tableHit(nested.table, at: CGPoint(
+                    x: point.x - nested.rect.minX, y: point.y - nested.rect.minY
+                ))
+                if case .miss = hit {} else {
+                    return hit
+                }
+            }
             if case let .textbox(textbox) = layer {
                 let inner = CGPoint(
                     x: point.x - textbox.rect.minX,
@@ -270,17 +278,10 @@ public struct HwpHitTester {
         nestedTables: [HwpNestedTableFrame],
         at point: CGPoint
     ) -> LayerHit {
-        for nested in nestedTables.reversed() {
-            let hit = tableHit(nested.table, at: CGPoint(
-                x: point.x - nested.rect.minX, y: point.y - nested.rect.minY
-            ))
-            if case .miss = hit {
-                continue
-            }
-            return hit
-        }
+        // 표도 같은 평면·정렬에 합류한다 (R47 #1) — 따로 앞세우면 글 뒤로 표를
+        // 최상단으로 보게 돼 페인트와 갈린다.
         let layers = HwpBlockContentWalker.layersInPaintOrder(
-            images: images, shapes: shapes, textboxes: textboxes
+            images: images, shapes: shapes, textboxes: textboxes, nestedTables: nestedTables
         )
         switch layerHit(layers.inFrontOfText, at: point) {
         case let .found(url):
