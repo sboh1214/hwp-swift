@@ -86,7 +86,7 @@ struct HwpParagraphObjectCollector {
         var state = CollectState(cursorX: paragraphRect.minX, sourceOrder: firstSourceOrder)
         for (controlIndex, ctrl) in (paragraph.ctrlHeaderArray ?? []).enumerated() {
             let placement = Placement(
-                anchor: anchorOrigin(
+                anchor: lineAnchor(
                     for: controlIndex, frame: frame, paragraphRect: paragraphRect
                 ),
                 paragraphRect: paragraphRect,
@@ -174,9 +174,26 @@ struct HwpParagraphObjectCollector {
         )
     }
 
+    /// 줄이 컨트롤 마커에 내준 자리 — 위치와 **예약 치수**.
+    ///
+    /// 예약이 0인 앵커가 실재한다: run builder는 U+FFFC + `controlIndex`를 늘 심고
+    /// tofu 글리프를 감추려 폭 0 run delegate를 달므로, 예약 크기를 못 구한 개체
+    /// (`inlineObjectSize`가 nil — 공통 속성이 없는 레거시 도형) 도 앵커를 얻는다.
+    /// 위치만 보면 "줄이 담았다"로 오해한다 (R53).
+    struct LineAnchor {
+        let origin: CGPoint
+        /// 줄이 실제로 잡아 준 상자 — run delegate의 (width, ascent)
+        let reserved: CGSize
+
+        /// 줄이 이 개체의 자리를 잡았는가. 높이가 곧 delegate ascent다.
+        var reservesSpace: Bool {
+            reserved.height > 0
+        }
+    }
+
     /// 개체 배치 문맥 — 줄 앵커 (없으면 커서 흐름 배치)와 문단 rect
     private struct Placement {
-        let anchor: CGPoint?
+        let anchor: LineAnchor?
         let paragraphRect: CGRect
         /// 이 개체를 낸 `ctrlHeaderArray` 서수 — 감싼 `%hlk` 스팬을 개체와 잇는
         /// 열쇠라 수집 페이로드까지 실어 보낸다 (R50). 서수는 문단마다 0부터
@@ -185,7 +202,7 @@ struct HwpParagraphObjectCollector {
         let paragraphId: UInt32
 
         func origin(cursorX: CGFloat) -> CGPoint {
-            anchor ?? CGPoint(x: cursorX, y: paragraphRect.minY)
+            anchor?.origin ?? CGPoint(x: cursorX, y: paragraphRect.minY)
         }
     }
 
@@ -291,19 +308,25 @@ struct HwpParagraphObjectCollector {
         )
     }
 
-    /// controlIndex 마커의 줄 앵커 좌표 (문단 rect 기준) —
-    /// HwpPaginator.inlineAnchorMap과 같은 산식 (baseline − ascent = 개체 상단).
-    private func anchorOrigin(
+    /// controlIndex 마커의 줄 앵커 (문단 rect 기준 좌표 + 줄이 예약한 치수) —
+    /// 좌표 산식은 HwpPaginator.inlineAnchorMap과 같다 (baseline − ascent = 개체 상단).
+    ///
+    /// 예약 치수를 **버리지 않는다**: 크기 0인 앵커와 실제로 자리를 잡은 앵커는
+    /// 컨테이너 높이 하한에서 갈린다 (`escapesLineBox`, R53).
+    private func lineAnchor(
         for controlIndex: Int,
         frame: HwpParagraphFrame,
         paragraphRect: CGRect
-    ) -> CGPoint? {
+    ) -> LineAnchor? {
         guard let firstBaseline = frame.lines.first?.baseline else { return nil }
         for line in frame.lines {
             for anchor in line.inlineAnchors where anchor.controlIndex == controlIndex {
-                return CGPoint(
-                    x: paragraphRect.minX + line.origin.x + anchor.xOffset,
-                    y: paragraphRect.minY + firstBaseline + line.origin.y - anchor.ascent
+                return LineAnchor(
+                    origin: CGPoint(
+                        x: paragraphRect.minX + line.origin.x + anchor.xOffset,
+                        y: paragraphRect.minY + firstBaseline + line.origin.y - anchor.ascent
+                    ),
+                    reserved: CGSize(width: anchor.width, height: anchor.ascent)
                 )
             }
         }
@@ -539,7 +562,7 @@ extension HwpParagraphObjectCollector {
     }
 
     /// 줄 상자가 자리를 예약하지 못한 개체 — 글자처럼 취급인데 줄 앵커
-    /// (U+FFFC)를 못 얻은 경우다 (R40 #1).
+    /// (U+FFFC)를 못 얻었거나, **얻었어도 예약 치수가 0인** 경우다 (R40 #1, R53).
     ///
     /// 앵커가 있으면 run delegate가 개체 크기만큼 줄 높이를 잡으므로 컨테이너
     /// 높이는 라인 캐시가 담는다 (#94 실측: 헌법주석 883쪽 표 62.52pt가 캐시
@@ -550,9 +573,11 @@ extension HwpParagraphObjectCollector {
     /// (AGENTS.md "앵커 규칙").
     static func escapesLineBox(
         _ commonProperty: CoreHwp.HwpCommonCtrlProperty?,
-        anchor: CGPoint?
+        anchor: LineAnchor?
     ) -> Bool {
-        guard anchor == nil else { return false }
+        // 앵커의 **예약 치수**를 본다 — 마커만 있고 자리를 안 잡은 앵커가 실재해
+        // (`LineAnchor`) 위치만 보면 담기지 않은 개체의 하한이 죽는다 (R53).
+        guard anchor?.reservesSpace != true else { return false }
         // 공통 속성이 없으면 배치(`collect`의 `advancesCursor`)가 글자처럼 취급으로
         // 보고 커서 흐름에 놓는데, run builder는 그 개체에 줄 공간을 예약하지
         // 않는다 — 줄도 컨테이너도 안 담으므로 여기서 기본값을 배치와 **같게**
@@ -564,7 +589,7 @@ extension HwpParagraphObjectCollector {
     /// 이거나 줄 상자를 벗어난 개체 (`escapesLineBox`).
     static func raisesContainerFloor(
         _ commonProperty: CoreHwp.HwpCommonCtrlProperty?,
-        anchor: CGPoint?
+        anchor: LineAnchor?
     ) -> Bool {
         growsContainer(commonProperty) || escapesLineBox(commonProperty, anchor: anchor)
     }

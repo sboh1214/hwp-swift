@@ -173,6 +173,35 @@ import XCTest
             expectContained(objectsOf: block, in: block)
         }
 
+        /// 마커를 얻어도 **줄이 예약한 자리가 0이면** 컨테이너가 담아야 한다 (R53).
+        /// run builder는 tofu 글리프를 감추려 폭 0 run delegate를 늘 달므로 예약
+        /// 크기를 못 구한 개체(공통 속성 없는 레거시 도형)도 앵커를 얻는다 —
+        /// 위치만 보고 "줄이 담았다"로 접으면 개체가 다음 각주 위로 샌다.
+        func testZeroReservationAnchorStillGrowsFootnoteBlock() throws {
+            let drawable = try HwpSynthetic.inlineTextboxObject(
+                width: 15000, height: 30000, text: "레거시", instanceId: 0
+            )
+            var note = HwpSynthetic.paragraphWithInlineControl(prefix: "", suffix: "")
+            note.ctrlHeaderArray = [.rectangle(CoreHwp.HwpShapeControl(
+                ctrlId: .rectangle,
+                commonCtrlProperty: nil,
+                rawPayload: Data(),
+                rawTrailing: Data(),
+                shapeComponentArray: drawable.shapeComponentArray,
+                eqEditArray: [],
+                eqEditRecords: [],
+                ctrlDataRecords: [],
+                unknownChildren: []
+            ))]
+
+            let block = try firstBlock(of: note)
+            expect(block.textboxes.count) == 1
+            // 하한이 없으면 블록이 텍스트 줄 높이에 머물러 글상자가 그 아래로 샌다
+            let box = try XCTUnwrap(block.textboxes.first)
+            expect(block.frame.height) >= box.rect.maxY
+            expectContained(objectsOf: block, in: block)
+        }
+
         /// 무앵커 개체에서도 예약 ≡ 배치. 예약이 줄 없는 프레임으로 따로 재던
         /// 시절엔 앵커 있는 개체까지 하한을 받아 배치보다 커졌다 — 지금은 양쪽이
         /// `HwpFootnoteLayout.measureNote` 하나를 쓴다 (R40 #1).

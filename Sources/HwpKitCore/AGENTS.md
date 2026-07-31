@@ -384,6 +384,13 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   `advancesCursor`가 nil을 `?? true`(글자처럼 취급)로 보고 커서 흐름에 놓는데
   run builder는 그 개체에 줄 공간을 예약하지 않으므로, 술어가 nil을 `?? false`로
   보면 줄도 컨테이너도 안 담아 다음 각주·행 위로 흘러나간다.
+  그 기본값은 **앵커가 없을 때만** 소용이 있었다 (R53): run builder는 U+FFFC +
+  `controlIndex`를 늘 심고 tofu 글리프를 감추려 폭 0 run delegate를 달므로 예약
+  크기를 못 구한 개체도 앵커를 얻어 `anchor == nil` 가드에서 먼저 걸러졌다.
+  그래서 앵커는 위치가 아니라 **예약 치수까지** 나른다 (`LineAnchor.reservesSpace`
+  — delegate의 width × ascent) — 예약 0인 앵커는 앵커가 없는 것과 같다.
+  `inlineObjectSize`가 nil이면 (공통 속성 없음 · 비 treatAsChar · 저작 치수 0)
+  예약이 0이다.
   앵커를 모르는 사전 판정 (`hasFloatingObject`)만 **상위집합**이다 — 좁으면 하한을
   놓치고 넓으면 재수집만 한 번 더 도므로 불일치는 그 방향으로만 안전하다. 예약
   (`HwpFootnoteCoordinator.measuredFootnoteHeight` → 본문 절단점)과 배치
