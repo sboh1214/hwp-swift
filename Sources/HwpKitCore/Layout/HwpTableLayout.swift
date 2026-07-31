@@ -148,11 +148,21 @@ extension HwpTableLayout {
         let column: Int
     }
 
+    /// 셀 문단에 붙은 중첩 표 하나 — 감싼 `%hlk` 열쇠 (문단 `paraId`,
+    /// `ctrlHeaderArray` 서수)까지 나른다. 열쇠가 빠지면 히트가 그 링크를
+    /// 이 표의 것으로 알아보지 못해 가림으로 죽는다 (R52).
+    struct PlacedNestedTable {
+        let instanceId: UInt32
+        let controlIndex: Int
+        let paragraphId: UInt32
+        let frame: HwpTableFrame
+    }
+
     /// 셀 안 문단 하나의 레이아웃 결과 (문단 텍스트 + 그 문단에 붙은 중첩 표)
     struct PlacedCellContent {
         let paragraph: CoreHwp.HwpParagraph
         let frame: HwpParagraphFrame
-        let nestedTables: [(instanceId: UInt32, frame: HwpTableFrame)]
+        let nestedTables: [PlacedNestedTable]
 
         var totalHeight: CGFloat {
             frame.totalHeight + nestedTables.reduce(CGFloat(0)) {
@@ -419,18 +429,23 @@ extension HwpTableLayout {
         in paragraph: CoreHwp.HwpParagraph,
         innerWidth: CGFloat,
         context: LayoutContext
-    ) -> [(instanceId: UInt32, frame: HwpTableFrame)] {
+    ) -> [PlacedNestedTable] {
         guard context.depth < Self.maximumNestingDepth,
               let ctrls = paragraph.ctrlHeaderArray
         else { return [] }
-        return ctrls.compactMap { ctrl in
+        return ctrls.enumerated().compactMap { controlIndex, ctrl in
             guard case let .table(nested) = ctrl else { return nil }
             guard case let .success(frame) = layout(
                 table: nested, availableWidth: innerWidth, index: context.index,
                 depth: context.depth + 1,
                 sizeResolver: context.sizeResolver?.withParagraphWidth(innerWidth)
             ) else { return nil }
-            return (nested.commonCtrlProperty.instanceId, frame)
+            return PlacedNestedTable(
+                instanceId: nested.commonCtrlProperty.instanceId,
+                controlIndex: controlIndex,
+                paragraphId: paragraph.paraHeader.paraId,
+                frame: frame
+            )
         }
     }
 

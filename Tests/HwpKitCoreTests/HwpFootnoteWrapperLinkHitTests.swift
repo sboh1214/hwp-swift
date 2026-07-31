@@ -178,7 +178,7 @@ import XCTest
         /// 개체를 옮기거나(`verticallyAligned`) 표 분할이 클립·이동하면 이 헬퍼를
         /// 지난다. 기본값으로 떨어진 열쇠는 U+FFFC run과 매칭되지 않아 감싼
         /// 링크가 가림으로 죽는다.
-        func testGeometryCopyHelpersPreserveWrapperKey() {
+        func testGeometryCopyHelpersPreserveWrapperKey() throws {
             let image = HwpCellImage(
                 rect: CGRect(x: 0, y: 0, width: 10, height: 10),
                 binItemId: 1, style: nil,
@@ -203,13 +203,36 @@ import XCTest
                 paintsBehindText: false, zOrder: 0, sourceOrder: 0,
                 controlInstanceId: 9, controlIndex: 4, paragraphId: 7
             )
+            let nested = HwpNestedTableFrame(
+                rect: CGRect(x: 0, y: 0, width: 10, height: 10),
+                table: HwpTableFrame(
+                    outerFrame: CGRect(x: 0, y: 0, width: 10, height: 10),
+                    rows: [], borderColor: HwpRGBColor(red: 0, green: 0, blue: 0), borderWidth: 0
+                ),
+                controlInstanceId: 9, controlIndex: 4, paragraphId: 7
+            )
             let moved = CGRect(x: 5, y: 5, width: 10, height: 10)
+            // 헬퍼만이 아니라 그것을 쓰는 셀 이동 경로까지 태운다 (R52)
+            let movedInCell = try XCTUnwrap(HwpTableCellFrame(
+                cellFrame: CGRect(x: 0, y: 0, width: 20, height: 20),
+                row: 0, column: 0, rowSpan: 1, columnSpan: 1,
+                paragraphs: [],
+                borders: .uniform(width: 0, color: HwpRGBColor(red: 0, green: 0, blue: 0)),
+                fillColor: nil,
+                nestedTables: [nested]
+            ).offsetBy(deltaY: 5).nestedTables.first)
 
             for key in [
                 (image.withRect(moved).controlIndex, image.withRect(moved).paragraphId),
                 (image.withClip(moved).controlIndex, image.withClip(moved).paragraphId),
                 (shape.withRect(moved).controlIndex, shape.withRect(moved).paragraphId),
                 (textbox.withRect(moved).controlIndex, textbox.withRect(moved).paragraphId),
+                (nested.withRect(moved).controlIndex, nested.withRect(moved).paragraphId),
+                (
+                    nested.withTable(nested.table).controlIndex,
+                    nested.withTable(nested.table).paragraphId
+                ),
+                (movedInCell.controlIndex, movedInCell.paragraphId),
             ] {
                 expect(key.0) == 4
                 expect(key.1) == 7
@@ -288,6 +311,87 @@ import XCTest
 
             // 뒤 문단(2)의 도형을 누르면 앞 문단(1)의 링크가 열리면 안 된다
             expect(HwpHitTester().hit(page: page, point: CGPoint(x: 100, y: 660)))
+                == .table(blockIndex: 0, row: 0, col: 0)
+        }
+
+        /// **셀 안** 중첩 표를 감싼 `%hlk`도 가림보다 먼저 살아난다 (R52). 셀 안
+        /// 표는 셀 페인터 순서를 따르느라 층 경로(`layerHit`) 밖에 있어 그 구제를
+        /// 못 받았다 — 채운 셀을 가진 중첩 표가 자기 링크를 가렸다.
+        func testHyperlinkWrappingNestedTableInCellStaysTappable() {
+            let black = HwpRGBColor(red: 0, green: 0, blue: 0)
+            let cellRect = CGRect(x: 0, y: 0, width: 200, height: 80)
+            let nestedRect = CGRect(x: 0, y: 0, width: 100, height: 40)
+            func cell(wrappedByLink: Bool) -> HwpTableCellFrame {
+                let attributed = NSMutableAttributedString(string: "\u{FFFC}")
+                let full = NSRange(location: 0, length: attributed.length)
+                attributed.addAttribute(
+                    .font, value: CTFontCreateWithName("Menlo" as CFString, 12, nil), range: full
+                )
+                attributed.addAttribute(HwpAttributedStringKey.controlIndex, value: 2, range: full)
+                if wrappedByLink {
+                    attributed.addAttribute(
+                        HwpAttributedStringKey.hyperlink,
+                        value: "https://example.com/wrapped-cell-table", range: full
+                    )
+                }
+                return HwpTableCellFrame(
+                    cellFrame: cellRect,
+                    row: 0, column: 0, rowSpan: 1, columnSpan: 1,
+                    // 문단은 표 **아래** 절반에 둔다 — 스팬 글리프 rect로 눌리면
+                    // 감싼 링크 구제가 아니라 평범한 스팬 히트를 재는 셈이 된다
+                    paragraphs: [HwpLaidOutParagraph(
+                        attributedString: attributed,
+                        frame: HwpParagraphFrame(totalHeight: 40, lines: []),
+                        rect: CGRect(x: 0, y: 40, width: 200, height: 40),
+                        paragraphId: 11,
+                        hyperlinkURL: nil
+                    )],
+                    borders: .uniform(width: 0.5, color: black),
+                    fillColor: nil,
+                    nestedTables: [HwpNestedTableFrame(
+                        rect: nestedRect,
+                        table: HwpTableFrame(
+                            outerFrame: nestedRect,
+                            rows: [HwpTableRowFrame(rowFrame: nestedRect, cells: [
+                                HwpTableCellFrame(
+                                    cellFrame: nestedRect,
+                                    row: 0, column: 0, rowSpan: 1, columnSpan: 1,
+                                    paragraphs: [],
+                                    borders: .uniform(width: 0.5, color: black),
+                                    // 채운 셀 — 링크가 없으면 가린다 (R43 #5)
+                                    fillColor: HwpRGBColor(red: 200, green: 200, blue: 200)
+                                ),
+                            ])],
+                            borderColor: black, borderWidth: 1
+                        ),
+                        controlInstanceId: 60,
+                        controlIndex: 2,
+                        paragraphId: 11
+                    )]
+                )
+            }
+            func page(_ cell: HwpTableCellFrame) -> HwpPage {
+                HwpPage(
+                    size: CGSize(width: 595, height: 842),
+                    margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
+                    blocks: [AnyHwpBlock(
+                        frame: CGRect(x: 50, y: 600, width: 200, height: 80),
+                        kind: .table,
+                        payload: .table(HwpTableFrame(
+                            outerFrame: cellRect,
+                            rows: [HwpTableRowFrame(rowFrame: cellRect, cells: [cell])],
+                            borderColor: black, borderWidth: 1
+                        ))
+                    )],
+                    pageNumber: 1
+                )
+            }
+
+            let inNestedFill = CGPoint(x: 100, y: 620)
+            expect(HwpHitTester().hit(page: page(cell(wrappedByLink: true)), point: inNestedFill))
+                == .hyperlink(url: "https://example.com/wrapped-cell-table", blockIndex: 0)
+            // 링크 없는 같은 표는 그대로 가린다 (R42 #2)
+            expect(HwpHitTester().hit(page: page(cell(wrappedByLink: false)), point: inNestedFill))
                 == .table(blockIndex: 0, row: 0, col: 0)
         }
     }

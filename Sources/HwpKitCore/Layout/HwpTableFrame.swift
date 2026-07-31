@@ -95,6 +95,35 @@ public struct HwpNestedTableFrame: @unchecked Sendable, Hashable {
         self.controlIndex = controlIndex
         self.paragraphId = paragraphId
     }
+
+    /// rect만 바꾼 사본 — 세로 정렬·분할 이동 시 나머지 필드 누락을 막는다.
+    /// 손으로 재구성하면 감싼 링크 열쇠와 평면·정렬 키가 기본값으로 떨어진다 (R52).
+    public func withRect(_ rect: CGRect) -> HwpNestedTableFrame {
+        HwpNestedTableFrame(
+            rect: rect,
+            table: table,
+            controlInstanceId: controlInstanceId,
+            paintsBehindText: paintsBehindText,
+            zOrder: zOrder,
+            sourceOrder: sourceOrder,
+            controlIndex: controlIndex,
+            paragraphId: paragraphId
+        )
+    }
+
+    /// 안쪽 레이아웃만 바꾼 사본 (반복 제목 클론 표식)
+    public func withTable(_ table: HwpTableFrame) -> HwpNestedTableFrame {
+        HwpNestedTableFrame(
+            rect: rect,
+            table: table,
+            controlInstanceId: controlInstanceId,
+            paintsBehindText: paintsBehindText,
+            zOrder: zOrder,
+            sourceOrder: sourceOrder,
+            controlIndex: controlIndex,
+            paragraphId: paragraphId
+        )
+    }
 }
 
 /// 셀 안 그림 (표-로컬 rect + BinItem 참조).
@@ -387,12 +416,8 @@ public struct HwpTableCellFrame: @unchecked Sendable, Hashable {
             },
             borders: borders,
             fillColor: fillColor,
-            nestedTables: nestedTables.map { nested in
-                HwpNestedTableFrame(
-                    rect: nested.rect.offsetBy(dx: 0, dy: deltaY),
-                    table: nested.table,
-                    controlInstanceId: nested.controlInstanceId
-                )
+            nestedTables: nestedTables.map {
+                $0.withRect($0.rect.offsetBy(dx: 0, dy: deltaY))
             },
             images: images.map { $0.offsetBy(deltaX: 0, deltaY: deltaY) },
             shapes: shapes.map { $0.withRect($0.rect.offsetBy(dx: 0, dy: deltaY)) },

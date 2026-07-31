@@ -363,13 +363,26 @@ public struct HwpHitTester {
                 // 모든 개체 **뒤에** 그린다 — 그 순서를 그대로 따라 최상단으로
                 // 먼저 훑는다.
                 for nested in cell.nestedTables.reversed() {
-                    let nestedHit = tableHit(nested.table, at: CGPoint(
+                    switch tableHit(nested.table, at: CGPoint(
                         x: point.x - nested.rect.minX, y: point.y - nested.rect.minY
-                    ))
-                    if case .miss = nestedHit {
+                    )) {
+                    case let .found(url):
+                        return .found(url)
+                    case .occluded:
+                        // 가림으로 접기 전에 이 표를 감싼 `%hlk`를 본다 — 층 경로
+                        // (`layerHit`) 와 같은 규약이다 (R50 #2). 셀 안 표는 R48이
+                        // 평면 정렬에서 빼면서 그 경로 밖으로 나와 구제도 잃었다.
+                        if let url = wrapperHyperlinkURL(
+                            in: cell.paragraphs,
+                            paragraphId: nested.paragraphId,
+                            controlIndex: nested.controlIndex
+                        ) {
+                            return .found(url)
+                        }
+                        return .occluded
+                    case .miss:
                         continue
                     }
-                    return nestedHit
                 }
                 let hit = containerHit(
                     paragraphs: cell.paragraphs,

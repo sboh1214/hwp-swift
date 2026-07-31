@@ -123,6 +123,44 @@ import XCTest
             expect(cell.cellFrame.maxY) >= nestedFrame.rect.maxY - 0.5
         }
 
+        /// 셀 안 중첩 표도 감싼 링크 열쇠 **(문단 `paraId`, `ctrlHeaderArray` 서수)**
+        /// 를 싣는다 (R52). 서수는 표 아닌 컨트롤까지 센 **원본 배열 위치**여야
+        /// U+FFFC run의 `controlIndex`와 이어진다 — 결과 배열 위치로 매기면 앞에
+        /// 책갈피·그림이 있는 문단에서 어긋나 감싼 링크가 가림으로 죽는다.
+        func testNestedTableInCellCarriesWrapperKey() {
+            var host = paragraph(text: "outer")
+            host.paraHeader.paraId = 77
+            host.ctrlHeaderArray = [
+                .bookmark(CoreHwp.HwpOtherControl(
+                    ctrlId: .bookmark,
+                    rawTrailing: Data(),
+                    rawPayload: Data(),
+                    ctrlDataRecords: [],
+                    unknownChildren: []
+                )),
+                .table(table()),
+            ]
+            let hostCell = CoreHwp.HwpTableCell(
+                header: cellHeader(row: 0, column: 0, rowSpan: 1, columnSpan: 1),
+                paragraphArray: [host]
+            )
+
+            let result = layout().layout(
+                table: table(cells: [hostCell]),
+                availableWidth: 200,
+                index: index()
+            )
+
+            guard case let .success(frame) = result,
+                  let nested = frame.rows.first?.cells.first?.nestedTables.first
+            else {
+                fail("expected nested table layout success")
+                return
+            }
+            expect(nested.controlIndex) == 1
+            expect(nested.paragraphId) == 77
+        }
+
         func testNestedTablesBeyondDepthLimitAreSkipped() {
             // 5단계 사슬: root(0) → d1 → d2 → d3 (배치) → d4의 중첩(d5 상당)은 생략
             var innermost = table(cells: [CoreHwp.HwpTableCell(

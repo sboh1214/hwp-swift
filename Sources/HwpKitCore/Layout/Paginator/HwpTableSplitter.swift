@@ -179,16 +179,12 @@ enum HwpTableSplitter {
 
     /// 중첩 표의 모든 행을 반복 제목 클론으로 표식한다 (재귀, 깊이 ≤ 3).
     private static func markedNestedClone(_ nested: HwpNestedTableFrame) -> HwpNestedTableFrame {
-        HwpNestedTableFrame(
-            rect: nested.rect,
-            table: HwpTableFrame(
-                outerFrame: nested.table.outerFrame,
-                rows: nested.table.rows.map(markedAsRepeatedHeaderClone),
-                borderColor: nested.table.borderColor,
-                borderWidth: nested.table.borderWidth
-            ),
-            controlInstanceId: nested.controlInstanceId
-        )
+        nested.withTable(HwpTableFrame(
+            outerFrame: nested.table.outerFrame,
+            rows: nested.table.rows.map(markedAsRepeatedHeaderClone),
+            borderColor: nested.table.borderColor,
+            borderWidth: nested.table.borderWidth
+        ))
     }
 
     private static func markRepeatedHeader(_ attributed: NSAttributedString) -> NSAttributedString {
