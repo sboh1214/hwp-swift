@@ -403,6 +403,50 @@ import XCTest
                 == .hyperlink(url: "https://example.com/beneath", blockIndex: 0)
         }
 
+        /// **링크 없는** 각주 텍스트가 블록 frame을 넘어 그려지면 그 위의 탭도
+        /// 각주가 claim한다 (R53). `containerHit`은 링크와 불투명 채움만 알아
+        /// `.miss`를 주는데 그대로 통과시키면, 보이는 각주 글자를 눌렀는데 아래
+        /// 본문의 무관한 링크가 열린다 — frame **안**에서 같은 텍스트가
+        /// `.footnote`가 되는 것과 답이 같아야 한다. 반대로 자격 영역(bounding
+        /// box) 안이라도 **안 칠한 틈**은 여전히 아래 블록 몫이다.
+        func testPaintedFootnoteTextOutsideFrameDoesNotFallThroughToLowerLink() {
+            let blockFrame = CGRect(x: 50, y: 600, width: 100, height: 40)
+            // 문단이 블록(100pt)을 넘어 300pt까지, 다만 위쪽 20pt 띠에만 그려진다
+            let footnote = HwpFootnoteBlock(
+                frame: blockFrame,
+                paragraphs: [HwpLaidOutParagraph(
+                    attributedString: NSAttributedString(string: "각주 본문"),
+                    frame: HwpParagraphFrame(totalHeight: 20, lines: []),
+                    rect: CGRect(x: 0, y: 0, width: 300, height: 20),
+                    paragraphId: 1,
+                    hyperlinkURL: nil
+                )],
+                number: 1,
+                separatorLine: CGRect(x: 50, y: 590, width: 130, height: 1)
+            )
+            let underBlock = AnyHwpBlock(
+                frame: CGRect(x: 50, y: 600, width: 400, height: 40),
+                kind: .text,
+                attributedString: NSAttributedString(string: "본문 링크"),
+                hyperlinkURL: "https://example.com/beneath"
+            )
+            let page = HwpPage(
+                size: CGSize(width: 595, height: 842),
+                margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
+                blocks: [underBlock, AnyHwpBlock(
+                    frame: blockFrame, kind: .footnote, payload: .footnote(footnote)
+                )],
+                pageNumber: 1
+            )
+
+            // 블록 frame(maxX 150) 밖이지만 각주 문단이 그려진 자리
+            expect(HwpHitTester().hit(page: page, point: CGPoint(x: 250, y: 610)))
+                == .footnote(blockIndex: 1, number: 1)
+            // 같은 x, 문단 아래 20pt — 자격 영역 안이지만 아무것도 안 칠한 틈이다
+            expect(HwpHitTester().hit(page: page, point: CGPoint(x: 250, y: 630)))
+                == .hyperlink(url: "https://example.com/beneath", blockIndex: 0)
+        }
+
         /// 글상자 **자식**이 블록 frame까지 넘어가면 자격 영역도 그만큼 넓어야
         /// 한다 (R46 #1) — `textboxCommands`가 자식을 클립 없이 그리는데
         /// `footnoteContentFrame`이 글상자 rect에서 멈추면, 넘친 자식 위의 탭이

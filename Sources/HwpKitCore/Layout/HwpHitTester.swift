@@ -39,7 +39,17 @@ public struct HwpHitTester {
                     case .occluded:
                         return .footnote(blockIndex: index, number: footnote.number)
                     case .miss:
-                        continue
+                        // 자격 영역은 bounding box라 투명한 틈까지 든다 — 그 틈은
+                        // 아래 블록 몫이지만 **칠해진 자손 위**라면 각주가 claim
+                        // 한다 (R53). `containerHit`은 링크와 불투명 채움만 알아
+                        // 링크 없는 문단·안 채운 셀에 `.miss`를 주는데, 그대로
+                        // 통과시키면 보이는 각주 글자를 눌렀는데 아래 본문의 무관한
+                        // 링크가 열린다 — frame **안**에서 같은 텍스트가
+                        // `.footnote`가 되는 것과 답이 같아야 한다.
+                        guard paintedRects(footnote, origin: block.frame.origin)
+                            .contains(where: { $0.contains(point) })
+                        else { continue }
+                        return .footnote(blockIndex: index, number: footnote.number)
                     }
                 }
                 guard let url = hyperlinkURL(for: block, at: point) else { continue }
@@ -100,32 +110,42 @@ public struct HwpHitTester {
     private func footnoteContentFrame(
         _ footnote: HwpFootnoteBlock, in blockFrame: CGRect
     ) -> CGRect {
-        var bounds = blockFrame
+        paintedRects(footnote, origin: blockFrame.origin)
+            .reduce(blockFrame) { $0.union($1) }
+    }
+
+    /// 각주가 **실제로 그린** rect들 (페이지 좌표, 블록 프레임 제외).
+    ///
+    /// 자격 영역 (위 union) 과 "여기가 칠해진 자리인가" (포함 판정) 가 **같은
+    /// 목록**을 봐야 한다 — 따로 짜면 자격은 인정하면서 claim은 안 하는 띠가
+    /// 생겨 그 위의 탭이 아래 블록으로 샌다 (R53).
+    private func paintedRects(
+        _ footnote: HwpFootnoteBlock, origin: CGPoint
+    ) -> [CGRect] {
+        var rects: [CGRect] = []
         HwpBlockContentWalker.walkFootnote(
             footnote,
-            origin: blockFrame.origin,
-            onParagraphText: { _, rect, _ in bounds = bounds.union(rect) },
-            onCellStart: { _, rect in bounds = bounds.union(rect) },
-            onCellImage: { _, rect in bounds = bounds.union(rect) },
-            onCellShape: { _, rect in bounds = bounds.union(rect) },
+            origin: origin,
+            onParagraphText: { _, rect, _ in rects.append(rect) },
+            onCellStart: { _, rect in rects.append(rect) },
+            onCellImage: { _, rect in rects.append(rect) },
+            onCellShape: { _, rect in rects.append(rect) },
             onCellTextbox: { textbox, rect in
-                bounds = bounds.union(rect)
+                rects.append(rect)
                 HwpBlockContentWalker.walkParagraphs(
                     textbox.textbox.paragraphs, offset: rect.origin
-                ) { _, inner, _ in bounds = bounds.union(inner) }
+                ) { _, inner, _ in rects.append(inner) }
                 // 글상자 안 그림·도형도 `textboxCommands`가 클립 없이 그린다 —
                 // 글상자 rect에서 멈추면 넘친 자식 위의 탭이 `containerHit`에
                 // 닿기도 전에 기각돼 아래 블록의 링크가 열린다 (R46 #1).
                 for child in textbox.textbox.images.map(\.rect)
                     + textbox.textbox.shapes.map(\.rect)
                 {
-                    bounds = bounds.union(
-                        child.offsetBy(dx: rect.minX, dy: rect.minY)
-                    )
+                    rects.append(child.offsetBy(dx: rect.minX, dy: rect.minY))
                 }
             }
         )
-        return bounds
+        return rects
     }
 
     /// 개체 층을 페인트 역순으로 훑은 결과.
