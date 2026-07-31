@@ -460,6 +460,74 @@ import XCTest
                 == .hyperlink(url: "https://example.com/beneath", blockIndex: 0)
         }
 
+        /// 셀 안 표는 페인터가 **모든 개체 뒤에** 그리므로 (walkTable) z가 더 큰
+        /// 불투명 개체가 있어도 히트에서 최상단이다 (R48). 각주 표는 생산자가
+        /// 평면·정렬 키를 채워 정렬에 합류하지만 (R47 #1) 셀 생산자는 채우지
+        /// 않는다 — 두 경로를 통일하면 셀 표 링크가 개체에 가려 안 눌린다.
+        func testCellNestedTableLinkWinsOverHigherZOpaqueObject() {
+            let black = HwpRGBColor(red: 0, green: 0, blue: 0)
+            let inner = CGRect(x: 0, y: 0, width: 80, height: 20)
+            let nested = HwpTableFrame(
+                outerFrame: inner,
+                rows: [HwpTableRowFrame(rowFrame: inner, cells: [HwpTableCellFrame(
+                    cellFrame: inner,
+                    row: 0, column: 0, rowSpan: 1, columnSpan: 1,
+                    paragraphs: [HwpLaidOutParagraph(
+                        attributedString: NSAttributedString(string: "중첩 표 링크"),
+                        frame: HwpParagraphFrame(totalHeight: 20, lines: []),
+                        rect: inner,
+                        paragraphId: 1,
+                        hyperlinkURL: "https://example.com/nested"
+                    )],
+                    borders: .uniform(width: 0.5, color: black),
+                    fillColor: nil
+                )])],
+                borderColor: black, borderWidth: 1
+            )
+            let cellRect = CGRect(x: 0, y: 0, width: 200, height: 40)
+            // 표를 덮는 z 큰 불투명 도형 — 페인터는 표를 그 **뒤에** 그린다
+            let cover = HwpCellShape(
+                rect: cellRect,
+                geometry: HwpShapeGeometry(
+                    path: CGPath(rect: cellRect, transform: nil),
+                    fillColor: HwpRGBColor(red: 255, green: 0, blue: 0).cgColor,
+                    strokeColor: nil, strokeWidth: 0
+                ),
+                paintsBehindText: false,
+                zOrder: 99, sourceOrder: 5, controlInstanceId: 30
+            )
+            let cell = HwpTableCellFrame(
+                cellFrame: cellRect,
+                row: 0, column: 0, rowSpan: 1, columnSpan: 1,
+                paragraphs: [],
+                borders: .uniform(width: 0.5, color: black),
+                fillColor: nil,
+                nestedTables: [HwpNestedTableFrame(
+                    rect: inner, table: nested, controlInstanceId: 31
+                )],
+                shapes: [cover]
+            )
+            let blockFrame = CGRect(x: 50, y: 600, width: 200, height: 40)
+            let page = HwpPage(
+                size: CGSize(width: 595, height: 842),
+                margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
+                blocks: [AnyHwpBlock(
+                    frame: blockFrame,
+                    kind: .table,
+                    payload: .table(HwpTableFrame(
+                        outerFrame: cellRect,
+                        rows: [HwpTableRowFrame(rowFrame: cellRect, cells: [cell])],
+                        borderColor: black, borderWidth: 1
+                    ))
+                )],
+                pageNumber: 1
+            )
+
+            // 표와 도형이 겹치는 자리 — 표가 위에 그려지므로 표 링크가 이긴다
+            expect(HwpHitTester().hit(page: page, point: CGPoint(x: 60, y: 610)))
+                == .hyperlink(url: "https://example.com/nested", blockIndex: 0)
+        }
+
         /// 가림 테스트가 공유하는 링크 문단 (스팬 없이 문단-레벨 URL).
         private static func linkParagraph(rect: CGRect) -> HwpLaidOutParagraph {
             HwpLaidOutParagraph(

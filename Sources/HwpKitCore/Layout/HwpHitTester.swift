@@ -307,10 +307,26 @@ public struct HwpHitTester {
         // 순서는 페인트 역순 (`walkTable`이 행·셀 순으로 그린다).
         for row in table.rows.reversed() {
             for cell in row.cells.reversed() {
+                // 셀 안 표는 **평면 정렬에 넣지 않는다** (R48). 각주와 갈리는
+                // 이유는 생산자다 — 각주 수집기는 표에 평면·정렬 키를 채우지만
+                // (R47 #1) 셀 생산자 (`HwpTableLayout`) 는 채우지 않아 전부
+                // 기본값이라, 정렬에 넣으면 `sourceOrder: 0`으로 맨 앞에 놓여
+                // 히트가 가장 나중에 본다. 반면 셀 페인터 (`walkTable`) 는 표를
+                // 모든 개체 **뒤에** 그린다 — 그 순서를 그대로 따라 최상단으로
+                // 먼저 훑는다.
+                for nested in cell.nestedTables.reversed() {
+                    let nestedHit = tableHit(nested.table, at: CGPoint(
+                        x: point.x - nested.rect.minX, y: point.y - nested.rect.minY
+                    ))
+                    if case .miss = nestedHit {
+                        continue
+                    }
+                    return nestedHit
+                }
                 let hit = containerHit(
                     paragraphs: cell.paragraphs,
                     images: cell.images, shapes: cell.shapes, textboxes: cell.textboxes,
-                    nestedTables: cell.nestedTables, at: point
+                    nestedTables: [], at: point
                 )
                 if case .miss = hit {
                     if cell.fillColor != nil, cell.cellFrame.contains(point) {
