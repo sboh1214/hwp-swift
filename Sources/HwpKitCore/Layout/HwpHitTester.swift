@@ -187,7 +187,11 @@ public struct HwpHitTester {
             // 지점 포함만으로 구제하면 옆의 다른 링크 텍스트를 덮었을 뿐인데도
             // 그 URL이 열려 가림 규약(R42 #2)이 깨진다 — 링크가 붙은 U+FFFC run의
             // `controlIndex` 가 이 층의 것과 같을 때만 구제한다.
-            if let url = wrapperHyperlinkURL(in: paragraphs, controlIndex: layer.controlIndex) {
+            if let url = wrapperHyperlinkURL(
+                in: paragraphs,
+                paragraphId: layer.paragraphId,
+                controlIndex: layer.controlIndex
+            ) {
                 return .found(url)
             }
             return .occluded
@@ -200,10 +204,12 @@ public struct HwpHitTester {
     /// U+FFFC run에 살지만, 지점 포함만으로 고르면 그 개체가 **덮고 있을 뿐인**
     /// 다른 링크까지 살아난다.
     private func wrapperHyperlinkURL(
-        in paragraphs: [HwpLaidOutParagraph], controlIndex: Int
+        in paragraphs: [HwpLaidOutParagraph], paragraphId: UInt32, controlIndex: Int
     ) -> String? {
         guard controlIndex >= 0 else { return nil }
-        for paragraph in paragraphs {
+        // 서수는 문단마다 0부터 다시 시작하므로 **그 개체를 낸 문단에서만** 찾는다
+        // (R51 #1) — 컨테이너 전체를 훑으면 앞 문단의 같은 서수 링크가 열린다.
+        for paragraph in paragraphs where paragraph.paragraphId == paragraphId {
             let attributed = paragraph.attributedString
             var url: String?
             attributed.enumerateAttribute(

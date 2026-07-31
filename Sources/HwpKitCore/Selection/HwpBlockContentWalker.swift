@@ -236,6 +236,17 @@ public enum HwpBlockContentWalker {
             case let .nestedTable(nested): nested.controlIndex
             }
         }
+
+        /// 이 층을 낸 문단의 `paraId` — 서수와 **쌍**으로만 감싼 링크를 가른다
+        /// (R51 #1). 서수는 문단마다 0부터 다시 시작한다.
+        var paragraphId: UInt32 {
+            switch self {
+            case let .image(image): image.paragraphId
+            case let .shape(shape): shape.paragraphId
+            case let .textbox(textbox): textbox.paragraphId
+            case let .nestedTable(nested): nested.paragraphId
+            }
+        }
     }
 
     /// 컨테이너 개체를 **페인트 순서**로 나눠 돌려준다 (글 뒤로 / 글 앞으로,

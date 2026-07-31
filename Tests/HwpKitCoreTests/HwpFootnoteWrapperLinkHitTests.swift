@@ -52,7 +52,10 @@ import XCTest
                         paintsBehindText: false,
                         zOrder: 0, sourceOrder: 0,
                         controlInstanceId: 40,
-                        controlIndex: 0
+                        controlIndex: 0,
+                        // 이 개체를 낸 문단 — 서수는 문단마다 0부터라 쌍이어야
+                        // 감싼 링크와 이어진다 (R51 #1)
+                        paragraphId: 1
                     )]
                 )
             }
@@ -161,13 +164,131 @@ import XCTest
                         borderColor: black, borderWidth: 1
                     ),
                     controlInstanceId: 42,
-                    controlIndex: 3
+                    controlIndex: 3,
+                    paragraphId: 1
                 )]
             )
 
             expect(HwpHitTester().hit(
                 page: Self.page(footnote), point: CGPoint(x: 100, y: 620)
             )) == .hyperlink(url: "https://example.com/wrapped-table", blockIndex: 0)
+        }
+
+        /// 기하 복사 헬퍼가 감싼 링크 열쇠를 **보존**한다 (R51 #2). 세로 정렬이
+        /// 개체를 옮기거나(`verticallyAligned`) 표 분할이 클립·이동하면 이 헬퍼를
+        /// 지난다. 기본값으로 떨어진 열쇠는 U+FFFC run과 매칭되지 않아 감싼
+        /// 링크가 가림으로 죽는다.
+        func testGeometryCopyHelpersPreserveWrapperKey() {
+            let image = HwpCellImage(
+                rect: CGRect(x: 0, y: 0, width: 10, height: 10),
+                binItemId: 1, style: nil,
+                paintsBehindText: false, zOrder: 0, sourceOrder: 0,
+                controlInstanceId: 9, controlIndex: 4, paragraphId: 7
+            )
+            let shape = HwpCellShape(
+                rect: CGRect(x: 0, y: 0, width: 10, height: 10),
+                geometry: HwpShapeGeometry(
+                    path: CGPath(rect: CGRect(x: 0, y: 0, width: 10, height: 10), transform: nil),
+                    fillColor: nil, strokeColor: nil, strokeWidth: 0
+                ),
+                paintsBehindText: false, zOrder: 0, sourceOrder: 0,
+                controlInstanceId: 9, controlIndex: 4, paragraphId: 7
+            )
+            let textbox = HwpCellTextbox(
+                rect: CGRect(x: 0, y: 0, width: 10, height: 10),
+                textbox: HwpTextboxFrame(
+                    outerFrame: CGRect(x: 0, y: 0, width: 10, height: 10),
+                    paragraphs: [], borderColor: nil, borderWidth: 0, fillColor: nil
+                ),
+                paintsBehindText: false, zOrder: 0, sourceOrder: 0,
+                controlInstanceId: 9, controlIndex: 4, paragraphId: 7
+            )
+            let moved = CGRect(x: 5, y: 5, width: 10, height: 10)
+
+            for key in [
+                (image.withRect(moved).controlIndex, image.withRect(moved).paragraphId),
+                (image.withClip(moved).controlIndex, image.withClip(moved).paragraphId),
+                (shape.withRect(moved).controlIndex, shape.withRect(moved).paragraphId),
+                (textbox.withRect(moved).controlIndex, textbox.withRect(moved).paragraphId),
+            ] {
+                expect(key.0) == 4
+                expect(key.1) == 7
+            }
+        }
+
+        /// 서수는 **문단마다 0부터** 다시 시작하므로 (`ctrlHeaderArray.enumerated()`)
+        /// 여러 문단을 가진 글상자·셀에서는 서수만으로 유일하지 않다 (R51 #1).
+        /// 앞 문단의 컨트롤 0에 감싼 링크가 있을 때 뒤 문단의 컨트롤 0을 누르면
+        /// 앞 링크가 열리면 안 된다 — 열쇠는 (문단, 서수) 쌍이다.
+        func testWrapperLookupDoesNotLeakAcrossParagraphs() {
+            let black = HwpRGBColor(red: 0, green: 0, blue: 0)
+            func paragraph(id: UInt32, linked: Bool, rect: CGRect) -> HwpLaidOutParagraph {
+                let attributed = NSMutableAttributedString(string: "\u{FFFC}")
+                let full = NSRange(location: 0, length: attributed.length)
+                attributed.addAttribute(
+                    .font, value: CTFontCreateWithName("Menlo" as CFString, 12, nil), range: full
+                )
+                attributed.addAttribute(HwpAttributedStringKey.controlIndex, value: 0, range: full)
+                if linked {
+                    attributed.addAttribute(
+                        HwpAttributedStringKey.hyperlink,
+                        value: "https://example.com/first-paragraph", range: full
+                    )
+                }
+                return HwpLaidOutParagraph(
+                    attributedString: attributed,
+                    frame: HwpParagraphFrame(totalHeight: rect.height, lines: []),
+                    rect: rect,
+                    paragraphId: id,
+                    hyperlinkURL: nil
+                )
+            }
+            // 셀에 문단 둘 — 앞(1)만 감싼 링크, 둘 다 컨트롤 서수 0
+            let cellRect = CGRect(x: 0, y: 0, width: 200, height: 80)
+            let cell = HwpTableCellFrame(
+                cellFrame: cellRect,
+                row: 0, column: 0, rowSpan: 1, columnSpan: 1,
+                paragraphs: [
+                    paragraph(id: 1, linked: true, rect: CGRect(x: 0, y: 0, width: 200, height: 40)),
+                    paragraph(id: 2, linked: false, rect: CGRect(x: 0, y: 40, width: 200, height: 40)),
+                ],
+                borders: .uniform(width: 0.5, color: black),
+                fillColor: nil,
+                shapes: [HwpCellShape(
+                    rect: CGRect(x: 0, y: 40, width: 200, height: 40),
+                    geometry: HwpShapeGeometry(
+                        path: CGPath(
+                            rect: CGRect(x: 0, y: 0, width: 200, height: 40), transform: nil
+                        ),
+                        fillColor: HwpRGBColor(red: 255, green: 0, blue: 0).cgColor,
+                        strokeColor: nil, strokeWidth: 0
+                    ),
+                    paintsBehindText: false,
+                    zOrder: 0, sourceOrder: 0,
+                    controlInstanceId: 50,
+                    controlIndex: 0,
+                    paragraphId: 2
+                )]
+            )
+            let blockFrame = CGRect(x: 50, y: 600, width: 200, height: 80)
+            let page = HwpPage(
+                size: CGSize(width: 595, height: 842),
+                margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
+                blocks: [AnyHwpBlock(
+                    frame: blockFrame,
+                    kind: .table,
+                    payload: .table(HwpTableFrame(
+                        outerFrame: cellRect,
+                        rows: [HwpTableRowFrame(rowFrame: cellRect, cells: [cell])],
+                        borderColor: black, borderWidth: 1
+                    ))
+                )],
+                pageNumber: 1
+            )
+
+            // 뒤 문단(2)의 도형을 누르면 앞 문단(1)의 링크가 열리면 안 된다
+            expect(HwpHitTester().hit(page: page, point: CGPoint(x: 100, y: 660)))
+                == .table(blockIndex: 0, row: 0, col: 0)
         }
     }
 #endif

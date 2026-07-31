@@ -71,6 +71,10 @@ public struct HwpNestedTableFrame: @unchecked Sendable, Hashable {
     /// 판별하는 열쇠다 (R50). 링크는 개체가 아니라 부모 문단의 U+FFFC run에
     /// 붙으므로, 지점 포함만으로 구제하면 옆의 다른 링크 텍스트까지 살아난다.
     public let controlIndex: Int
+    /// 이 개체를 낸 문단의 `paraId` — `controlIndex` 는 문단마다 0부터 다시
+    /// 시작하므로 (`ctrlHeaderArray.enumerated()`) 여러 문단을 가진 셀·글상자에서는
+    /// 서수만으로 유일하지 않다. 감싼 링크의 열쇠는 **(문단, 서수) 쌍**이다 (R51 #1).
+    public let paragraphId: UInt32
 
     public init(
         rect: CGRect,
@@ -79,7 +83,8 @@ public struct HwpNestedTableFrame: @unchecked Sendable, Hashable {
         paintsBehindText: Bool = false,
         zOrder: Int32 = 0,
         sourceOrder: Int = 0,
-        controlIndex: Int = -1
+        controlIndex: Int = -1,
+        paragraphId: UInt32 = 0
     ) {
         self.rect = rect
         self.table = table
@@ -88,6 +93,7 @@ public struct HwpNestedTableFrame: @unchecked Sendable, Hashable {
         self.zOrder = zOrder
         self.sourceOrder = sourceOrder
         self.controlIndex = controlIndex
+        self.paragraphId = paragraphId
     }
 }
 
@@ -120,6 +126,10 @@ public struct HwpCellImage: Sendable, Hashable {
     /// 판별하는 열쇠다 (R50). 링크는 개체가 아니라 부모 문단의 U+FFFC run에
     /// 붙으므로, 지점 포함만으로 구제하면 옆의 다른 링크 텍스트까지 살아난다.
     public let controlIndex: Int
+    /// 이 개체를 낸 문단의 `paraId` — `controlIndex` 는 문단마다 0부터 다시
+    /// 시작하므로 (`ctrlHeaderArray.enumerated()`) 여러 문단을 가진 셀·글상자에서는
+    /// 서수만으로 유일하지 않다. 감싼 링크의 열쇠는 **(문단, 서수) 쌍**이다 (R51 #1).
+    public let paragraphId: UInt32
 
     public init(
         rect: CGRect,
@@ -132,7 +142,8 @@ public struct HwpCellImage: Sendable, Hashable {
         sourceOrder: Int = 0,
         clipRect: CGRect? = nil,
         controlInstanceId: UInt32,
-        controlIndex: Int = -1
+        controlIndex: Int = -1,
+        paragraphId: UInt32 = 0
     ) {
         self.rect = rect
         self.binItemId = binItemId
@@ -145,6 +156,7 @@ public struct HwpCellImage: Sendable, Hashable {
         self.clipRect = clipRect
         self.controlInstanceId = controlInstanceId
         self.controlIndex = controlIndex
+        self.paragraphId = paragraphId
     }
 
     /// rect만 바꾼 사본 — 분할/정렬 이동 시 나머지 필드 누락을 막는다.
@@ -159,7 +171,9 @@ public struct HwpCellImage: Sendable, Hashable {
             zOrder: zOrder,
             sourceOrder: sourceOrder,
             clipRect: clipRect,
-            controlInstanceId: controlInstanceId
+            controlInstanceId: controlInstanceId,
+            controlIndex: controlIndex,
+            paragraphId: paragraphId
         )
     }
 
@@ -175,7 +189,9 @@ public struct HwpCellImage: Sendable, Hashable {
             zOrder: zOrder,
             sourceOrder: sourceOrder,
             clipRect: clipRect,
-            controlInstanceId: controlInstanceId
+            controlInstanceId: controlInstanceId,
+            controlIndex: controlIndex,
+            paragraphId: paragraphId
         )
     }
 
@@ -206,6 +222,10 @@ public struct HwpCellShape: @unchecked Sendable, Hashable {
     /// 판별하는 열쇠다 (R50). 링크는 개체가 아니라 부모 문단의 U+FFFC run에
     /// 붙으므로, 지점 포함만으로 구제하면 옆의 다른 링크 텍스트까지 살아난다.
     public let controlIndex: Int
+    /// 이 개체를 낸 문단의 `paraId` — `controlIndex` 는 문단마다 0부터 다시
+    /// 시작하므로 (`ctrlHeaderArray.enumerated()`) 여러 문단을 가진 셀·글상자에서는
+    /// 서수만으로 유일하지 않다. 감싼 링크의 열쇠는 **(문단, 서수) 쌍**이다 (R51 #1).
+    public let paragraphId: UInt32
 
     public init(
         rect: CGRect,
@@ -214,7 +234,8 @@ public struct HwpCellShape: @unchecked Sendable, Hashable {
         zOrder: Int32 = 0,
         sourceOrder: Int = 0,
         controlInstanceId: UInt32,
-        controlIndex: Int = -1
+        controlIndex: Int = -1,
+        paragraphId: UInt32 = 0
     ) {
         self.rect = rect
         self.geometry = geometry
@@ -223,6 +244,7 @@ public struct HwpCellShape: @unchecked Sendable, Hashable {
         self.sourceOrder = sourceOrder
         self.controlInstanceId = controlInstanceId
         self.controlIndex = controlIndex
+        self.paragraphId = paragraphId
     }
 
     public func withRect(_ rect: CGRect) -> HwpCellShape {
@@ -232,7 +254,9 @@ public struct HwpCellShape: @unchecked Sendable, Hashable {
             paintsBehindText: paintsBehindText,
             zOrder: zOrder,
             sourceOrder: sourceOrder,
-            controlInstanceId: controlInstanceId
+            controlInstanceId: controlInstanceId,
+            controlIndex: controlIndex,
+            paragraphId: paragraphId
         )
     }
 }
@@ -255,6 +279,10 @@ public struct HwpCellTextbox: @unchecked Sendable, Hashable {
     /// 판별하는 열쇠다 (R50). 링크는 개체가 아니라 부모 문단의 U+FFFC run에
     /// 붙으므로, 지점 포함만으로 구제하면 옆의 다른 링크 텍스트까지 살아난다.
     public let controlIndex: Int
+    /// 이 개체를 낸 문단의 `paraId` — `controlIndex` 는 문단마다 0부터 다시
+    /// 시작하므로 (`ctrlHeaderArray.enumerated()`) 여러 문단을 가진 셀·글상자에서는
+    /// 서수만으로 유일하지 않다. 감싼 링크의 열쇠는 **(문단, 서수) 쌍**이다 (R51 #1).
+    public let paragraphId: UInt32
 
     public init(
         rect: CGRect,
@@ -263,7 +291,8 @@ public struct HwpCellTextbox: @unchecked Sendable, Hashable {
         zOrder: Int32 = 0,
         sourceOrder: Int = 0,
         controlInstanceId: UInt32,
-        controlIndex: Int = -1
+        controlIndex: Int = -1,
+        paragraphId: UInt32 = 0
     ) {
         self.rect = rect
         self.textbox = textbox
@@ -272,6 +301,7 @@ public struct HwpCellTextbox: @unchecked Sendable, Hashable {
         self.sourceOrder = sourceOrder
         self.controlInstanceId = controlInstanceId
         self.controlIndex = controlIndex
+        self.paragraphId = paragraphId
     }
 
     public func withRect(_ rect: CGRect) -> HwpCellTextbox {
@@ -281,7 +311,9 @@ public struct HwpCellTextbox: @unchecked Sendable, Hashable {
             paintsBehindText: paintsBehindText,
             zOrder: zOrder,
             sourceOrder: sourceOrder,
-            controlInstanceId: controlInstanceId
+            controlInstanceId: controlInstanceId,
+            controlIndex: controlIndex,
+            paragraphId: paragraphId
         )
     }
 }

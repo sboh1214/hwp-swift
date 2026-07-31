@@ -90,7 +90,8 @@ struct HwpParagraphObjectCollector {
                     for: controlIndex, frame: frame, paragraphRect: paragraphRect
                 ),
                 paragraphRect: paragraphRect,
-                controlIndex: controlIndex
+                controlIndex: controlIndex,
+                paragraphId: paragraph.paraHeader.paraId
             )
             if collectsTables, case let .table(nested) = ctrl {
                 let marker = collected.marker
@@ -168,7 +169,8 @@ struct HwpParagraphObjectCollector {
             paintsBehindText: info.textWrap == .behindText,
             zOrder: commonProperty.zOrder,
             sourceOrder: state.sourceOrder,
-            controlIndex: placement.controlIndex
+            controlIndex: placement.controlIndex,
+            paragraphId: placement.paragraphId
         )
     }
 
@@ -177,8 +179,10 @@ struct HwpParagraphObjectCollector {
         let anchor: CGPoint?
         let paragraphRect: CGRect
         /// 이 개체를 낸 `ctrlHeaderArray` 서수 — 감싼 `%hlk` 스팬을 개체와 잇는
-        /// 열쇠라 수집 페이로드까지 실어 보낸다 (R50).
+        /// 열쇠라 수집 페이로드까지 실어 보낸다 (R50). 서수는 문단마다 0부터
+        /// 다시 시작하므로 문단 id와 **쌍**으로만 유일하다 (R51 #1).
         let controlIndex: Int
+        let paragraphId: UInt32
 
         func origin(cursorX: CGFloat) -> CGPoint {
             anchor ?? CGPoint(x: cursorX, y: paragraphRect.minY)
@@ -211,7 +215,8 @@ struct HwpParagraphObjectCollector {
                         placement: placement, cursorX: state.cursorX
                     ),
                     sourceOrder: state.sourceOrder,
-                    controlIndex: placement.controlIndex
+                    controlIndex: placement.controlIndex,
+                    paragraphId: placement.paragraphId
                 ) else { continue }
                 collected.images.append(image)
                 state.sourceOrder += 1
@@ -341,7 +346,8 @@ private extension HwpParagraphObjectCollector {
         commonProperty: CoreHwp.HwpCommonCtrlProperty?,
         origin: CGPoint,
         sourceOrder: Int,
-        controlIndex: Int
+        controlIndex: Int,
+        paragraphId: UInt32
     ) -> HwpCellImage? {
         let property = picture.pictureProperty
         guard let binItemId = property.map({ UInt32($0.binItemId) })
@@ -365,7 +371,8 @@ private extension HwpParagraphObjectCollector {
             zOrder: commonProperty?.zOrder ?? 0,
             sourceOrder: sourceOrder,
             controlInstanceId: commonProperty?.instanceId ?? 0,
-            controlIndex: controlIndex
+            controlIndex: controlIndex,
+            paragraphId: paragraphId
         )
     }
 
@@ -402,7 +409,8 @@ private extension HwpParagraphObjectCollector {
             zOrder: property.zOrder,
             sourceOrder: state.sourceOrder,
             controlInstanceId: property.instanceId,
-            controlIndex: placement.controlIndex
+            controlIndex: placement.controlIndex,
+            paragraphId: placement.paragraphId
         )
     }
 
@@ -428,7 +436,8 @@ private extension HwpParagraphObjectCollector {
             zOrder: commonProperty?.zOrder ?? 0,
             sourceOrder: state.sourceOrder,
             controlInstanceId: commonProperty?.instanceId ?? 0,
-            controlIndex: placement.controlIndex
+            controlIndex: placement.controlIndex,
+            paragraphId: placement.paragraphId
         )
     }
 }
@@ -543,8 +552,12 @@ extension HwpParagraphObjectCollector {
         _ commonProperty: CoreHwp.HwpCommonCtrlProperty?,
         anchor: CGPoint?
     ) -> Bool {
-        guard anchor == nil, let commonProperty else { return false }
-        return commonProperty.propertyInfo.treatAsChar
+        guard anchor == nil else { return false }
+        // 공통 속성이 없으면 배치(`collect`의 `advancesCursor`)가 글자처럼 취급으로
+        // 보고 커서 흐름에 놓는데, run builder는 그 개체에 줄 공간을 예약하지
+        // 않는다 — 줄도 컨테이너도 안 담으므로 여기서 기본값을 배치와 **같게**
+        // 둬야 하한이 걸린다 (R51 #3).
+        return commonProperty?.propertyInfo.treatAsChar ?? true
     }
 
     /// 컨테이너 높이 하한을 올리는 개체인지 — 떠 있는 개체 (`growsContainer`)
@@ -585,7 +598,7 @@ extension HwpParagraphObjectCollector {
         _ commonProperty: CoreHwp.HwpCommonCtrlProperty?
     ) -> Bool {
         growsContainer(commonProperty)
-            || (commonProperty?.propertyInfo.treatAsChar ?? false)
+            || (commonProperty?.propertyInfo.treatAsChar ?? true)
     }
 }
 
