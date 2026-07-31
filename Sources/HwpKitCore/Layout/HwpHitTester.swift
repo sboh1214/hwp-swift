@@ -128,7 +128,7 @@ public struct HwpHitTester {
         HwpBlockContentWalker.walkFootnote(
             footnote,
             origin: origin,
-            onParagraphText: { _, rect, _ in rects.append(rect) },
+            onParagraphText: { _, rect, _ in rects.append(Self.textBounds(rect)) },
             onCellStart: { _, rect in rects.append(rect) },
             onCellImage: { _, rect in rects.append(rect) },
             onCellShape: { _, rect in rects.append(rect) },
@@ -136,7 +136,7 @@ public struct HwpHitTester {
                 rects.append(rect)
                 HwpBlockContentWalker.walkParagraphs(
                     textbox.textbox.paragraphs, offset: rect.origin
-                ) { _, inner, _ in rects.append(inner) }
+                ) { _, inner, _ in rects.append(Self.textBounds(inner)) }
                 // 글상자 안 그림·도형도 `textboxCommands`가 클립 없이 그린다 —
                 // 글상자 rect에서 멈추면 넘친 자식 위의 탭이 `containerHit`에
                 // 닿기도 전에 기각돼 아래 블록의 링크가 열린다 (R46 #1).
@@ -273,7 +273,7 @@ public struct HwpHitTester {
             // 지점 포함만으로 구제하면 옆의 다른 링크 텍스트를 덮었을 뿐인데도
             // 그 URL이 열려 가림 규약(R42 #2)이 깨진다 — 링크가 붙은 U+FFFC run의
             // `controlIndex` 가 이 층의 것과 같을 때만 구제한다.
-            if let url = wrapperHyperlinkURL(
+            if let url = HwpDrawnTextLayout.wrapperHyperlinkURL(
                 in: paragraphs,
                 paragraphId: layer.paragraphId,
                 controlIndex: layer.controlIndex
@@ -283,36 +283,6 @@ public struct HwpHitTester {
             return .occluded
         }
         return .miss
-    }
-
-    /// 이 컨트롤을 감싼 `%hlk` 의 URL — 링크가 붙은 run 중 `controlIndex` 가
-    /// 일치하는 것만 본다 (R50 #1). 개체의 링크는 개체가 아니라 부모 문단의
-    /// U+FFFC run에 살지만, 지점 포함만으로 고르면 그 개체가 **덮고 있을 뿐인**
-    /// 다른 링크까지 살아난다.
-    private func wrapperHyperlinkURL(
-        in paragraphs: [HwpLaidOutParagraph], paragraphId: UInt32, controlIndex: Int
-    ) -> String? {
-        guard controlIndex >= 0 else { return nil }
-        // 서수는 문단마다 0부터 다시 시작하므로 **그 개체를 낸 문단에서만** 찾는다
-        // (R51 #1) — 컨테이너 전체를 훑으면 앞 문단의 같은 서수 링크가 열린다.
-        for paragraph in paragraphs where paragraph.paragraphId == paragraphId {
-            let attributed = paragraph.attributedString
-            var url: String?
-            attributed.enumerateAttribute(
-                HwpAttributedStringKey.controlIndex,
-                in: NSRange(location: 0, length: attributed.length)
-            ) { value, range, stop in
-                guard value as? Int == controlIndex else { return }
-                url = attributed.attribute(
-                    HwpAttributedStringKey.hyperlink, at: range.location, effectiveRange: nil
-                ) as? String
-                stop.pointee = true
-            }
-            if let url {
-                return url
-            }
-        }
-        return nil
     }
 
     /// 필드 스팬 하이퍼링크(%hlk)를 링크 텍스트 글리프 rect에서만 히트한다 —
@@ -454,11 +424,24 @@ public struct HwpHitTester {
     private func textPaints(
         _ attributed: NSAttributedString, in rect: CGRect, at point: CGPoint
     ) -> Bool {
-        let extra = rect.width * (HwpRenderTuning.Text.slightOverflowWidthRatio - 1)
-        guard rect.insetBy(dx: -extra, dy: 0).contains(point) else { return false }
+        guard Self.textBounds(rect).contains(point) else { return false }
         return HwpDrawnTextLayout.textLineRegions(
             attributedString: attributed, origin: rect.origin, lineWidth: rect.width
         ).contains { $0.contains(point) }
+    }
+
+    /// 문단 텍스트가 닿을 수 있는 **안전한 상위집합** — 자격 영역(`paintedRects`)과
+    /// claim 게이트(`textPaints`)가 이 하나를 공유해야 "자격 ⊇ 칠"이 구조적으로
+    /// 성립한다 (R56). 따로 두면 자격이 좁아 게이트의 여유가 도달 불가능해진다.
+    ///
+    /// 넘치는 축 둘: slight-overflow 한 줄은 rect 폭을 넘고 (`hitEligibleFrame`의
+    /// `.text`와 같은 여유), 캐시 높이가 대체 폰트 CT 줄보다 짧으면 아래로도
+    /// 넘는다. 후자는 값싸게 정확히 잴 수 없어 (walker 콜백에 `HwpParagraphFrame`이
+    /// 없다) 같은 여유를 세로에도 준다 — 상위집합을 넓히는 것은 과잉 claim이
+    /// 아니다. 실제 claim은 줄 상자로 정밀 판정한다.
+    private static func textBounds(_ rect: CGRect) -> CGRect {
+        let extra = rect.width * (HwpRenderTuning.Text.slightOverflowWidthRatio - 1)
+        return rect.insetBy(dx: -extra, dy: -extra)
     }
 
     /// 표를 셀 단위로 훑는다. 셀 안은 같은 컨테이너 규약이고, **채운 셀은 아래를
@@ -488,7 +471,7 @@ public struct HwpHitTester {
                         // 가림으로 접기 전에 이 표를 감싼 `%hlk`를 본다 — 층 경로
                         // (`layerHit`) 와 같은 규약이다 (R50 #2). 셀 안 표는 R48이
                         // 평면 정렬에서 빼면서 그 경로 밖으로 나와 구제도 잃었다.
-                        if let url = wrapperHyperlinkURL(
+                        if let url = HwpDrawnTextLayout.wrapperHyperlinkURL(
                             in: cell.paragraphs,
                             paragraphId: nested.paragraphId,
                             controlIndex: nested.controlIndex

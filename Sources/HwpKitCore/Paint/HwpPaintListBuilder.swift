@@ -74,6 +74,38 @@ public struct HwpPaintListBuilder: Sendable {
     /// 표 재귀)이다. 필드 스팬이 있는 문단은 건너뛴다 — 모델 hyperlinkURL은 스팬
     /// 존재와 무관하게 설정되므로 전체-rect 폴백을 겹치면 앞뒤 평문이 링크로
     /// 표시된다 (R55 #2). 하나라도 방출하면 true (R53 #4).
+    /// 감싼 링크 조회에 필요한 개체 참조 — 종류가 달라도 (rect, 문단, 서수) 셋만 본다
+    private struct WrappedObjectRef {
+        let rect: CGRect
+        let paragraphId: UInt32
+        let controlIndex: Int
+    }
+
+    private static func wrappedObjects(
+        images: [HwpCellImage] = [],
+        shapes: [HwpCellShape] = [],
+        textboxes: [HwpCellTextbox] = [],
+        nestedTables: [HwpNestedTableFrame] = []
+    ) -> [WrappedObjectRef] {
+        images.map {
+            WrappedObjectRef(
+                rect: $0.rect, paragraphId: $0.paragraphId, controlIndex: $0.controlIndex
+            )
+        } + shapes.map {
+            WrappedObjectRef(
+                rect: $0.rect, paragraphId: $0.paragraphId, controlIndex: $0.controlIndex
+            )
+        } + textboxes.map {
+            WrappedObjectRef(
+                rect: $0.rect, paragraphId: $0.paragraphId, controlIndex: $0.controlIndex
+            )
+        } + nestedTables.map {
+            WrappedObjectRef(
+                rect: $0.rect, paragraphId: $0.paragraphId, controlIndex: $0.controlIndex
+            )
+        }
+    }
+
     private func appendContainerParagraphHyperlinks(
         for block: AnyHwpBlock, to commands: inout [HwpPaintCommand]
     ) -> Bool {
@@ -92,14 +124,41 @@ public struct HwpPaintListBuilder: Sendable {
                 emitted = true
             }
         }
+        /// 개체를 감싼 `%hlk` — 링크가 개체가 아니라 부모 문단의 U+FFFC run에
+        /// 살고 (R49) 비 treatAsChar 개체의 마커는 폭이 0이라, 스팬 방출이 아무
+        /// rect도 못 낸다. 히트는 `wrapperHyperlinkURL`로 **개체에서** 링크를
+        /// 여니 방출도 개체 rect로 내야 밑줄과 탭이 같은 자리에 있다 (R56).
+        func emitWrapped(
+            _ paragraphs: [HwpLaidOutParagraph], _ objects: [WrappedObjectRef], offset: CGPoint
+        ) {
+            for object in objects {
+                guard let url = HwpDrawnTextLayout.wrapperHyperlinkURL(
+                    in: paragraphs,
+                    paragraphId: object.paragraphId,
+                    controlIndex: object.controlIndex
+                ) else { continue }
+                commands.append(.hyperlink(
+                    rect: object.rect.offsetBy(dx: offset.x, dy: offset.y), url: url
+                ))
+                emitted = true
+            }
+        }
         func emitTable(_ table: HwpTableFrame, origin: CGPoint) {
             for row in table.rows {
                 for cell in row.cells {
                     emit(cell.paragraphs, offset: origin)
+                    emitWrapped(cell.paragraphs, Self.wrappedObjects(
+                        images: cell.images, shapes: cell.shapes,
+                        textboxes: cell.textboxes, nestedTables: cell.nestedTables
+                    ), offset: origin)
                     for textbox in cell.textboxes {
-                        emit(textbox.textbox.paragraphs, offset: CGPoint(
+                        let inner = CGPoint(
                             x: origin.x + textbox.rect.minX, y: origin.y + textbox.rect.minY
-                        ))
+                        )
+                        emit(textbox.textbox.paragraphs, offset: inner)
+                        emitWrapped(textbox.textbox.paragraphs, Self.wrappedObjects(
+                            images: textbox.textbox.images, shapes: textbox.textbox.shapes
+                        ), offset: inner)
                     }
                     for nested in cell.nestedTables {
                         emitTable(nested.table, origin: CGPoint(
@@ -114,10 +173,17 @@ public struct HwpPaintListBuilder: Sendable {
             emitTable(table, origin: block.frame.origin)
         case let .textbox(textbox):
             emit(textbox.paragraphs, offset: block.frame.origin)
+            emitWrapped(textbox.paragraphs, Self.wrappedObjects(
+                images: textbox.images, shapes: textbox.shapes
+            ), offset: block.frame.origin)
         case let .footnote(footnote):
             // 각주 문단 + 각주 안 글상자·표 문단의 문단-레벨 링크 (#94) —
             // 셀 경로 emitTable과 같은 origin 합성.
             Self.footnoteParagraphGroups(footnote, origin: block.frame.origin).forEach(emit)
+            emitWrapped(footnote.paragraphs, Self.wrappedObjects(
+                images: footnote.images, shapes: footnote.shapes,
+                textboxes: footnote.textboxes, nestedTables: footnote.nestedTables
+            ), offset: block.frame.origin)
             for nested in footnote.nestedTables {
                 emitTable(nested.table, origin: CGPoint(
                     x: block.frame.minX + nested.rect.minX,

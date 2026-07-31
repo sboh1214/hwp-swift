@@ -136,6 +136,52 @@ import XCTest
                 == .hyperlink(url: "https://example.com/wrapped-unfilled", blockIndex: 1)
         }
 
+        /// 자격 영역은 문단 rect가 아니라 **렌더가 닿을 수 있는 상위집합**이어야
+        /// 한다 (R56). 캐시 높이가 대체 폰트 CT 줄보다 짧으면 글자가 rect 아래로
+        /// 그려지는데, rect로 자르면 그 글자 위의 탭이 `containerHit`에 닿기도
+        /// 전에 기각돼 아래 블록 링크가 열린다.
+        func testTextPaintedBelowShortParagraphRectStillClaims() {
+            let blockFrame = CGRect(x: 50, y: 600, width: 100, height: 40)
+            let text = NSMutableAttributedString(string: String(repeating: "각주", count: 12))
+            text.addAttribute(
+                .font, value: CTFontCreateWithName("Menlo" as CFString, 12, nil),
+                range: NSRange(location: 0, length: text.length)
+            )
+            // 문단 rect 높이는 5pt뿐 — CT 줄(≈14pt)이 그 아래로 넘쳐 그려진다
+            let footnote = HwpFootnoteBlock(
+                frame: blockFrame,
+                paragraphs: [HwpLaidOutParagraph(
+                    attributedString: text,
+                    frame: HwpParagraphFrame(totalHeight: 5, lines: []),
+                    rect: CGRect(x: 0, y: 0, width: 300, height: 5),
+                    paragraphId: 1,
+                    hyperlinkURL: nil
+                )],
+                number: 1,
+                separatorLine: CGRect(x: 50, y: 590, width: 130, height: 1)
+            )
+            let page = HwpPage(
+                size: CGSize(width: 595, height: 842),
+                margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
+                blocks: [
+                    AnyHwpBlock(
+                        frame: CGRect(x: 50, y: 600, width: 400, height: 40),
+                        kind: .text,
+                        attributedString: NSAttributedString(string: "본문 링크"),
+                        hyperlinkURL: "https://example.com/beneath"
+                    ),
+                    AnyHwpBlock(
+                        frame: blockFrame, kind: .footnote, payload: .footnote(footnote)
+                    ),
+                ],
+                pageNumber: 1
+            )
+
+            // 문단 rect 아래(605 밖)지만 글자가 그려진 자리 — 각주가 claim한다
+            expect(HwpHitTester().hit(page: page, point: CGPoint(x: 250, y: 608)))
+                == .footnote(blockIndex: 1, number: 1)
+        }
+
         /// 이중선의 **둘째 줄**도 칠이다 (R56). 페인터(`edgeStripes`)는 안쪽으로
         /// thin + gap 만큼 민 자리에 두 번째 가는 선을 그리는데, 원래 폭 띠만
         /// 보면 그 선 위의 탭이 아래 블록으로 샌다. 두 줄 **사이**는 안 칠한다.

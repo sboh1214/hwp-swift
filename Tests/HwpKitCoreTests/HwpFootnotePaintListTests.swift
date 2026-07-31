@@ -81,6 +81,69 @@ final class HwpFootnotePaintListTests: XCTestCase {
             < (try XCTUnwrap(firstCellFillIndex(front)))
     }
 
+    /// `%hlk`가 감싼 **비 treatAsChar** 개체는 마커 폭이 0이라 스팬 방출이 아무
+    /// rect도 못 낸다 (`hyperlinkRegions`의 `maxX > minX` 가드). 히트는
+    /// `wrapperHyperlinkURL`로 개체에서 링크를 여니, 방출도 **개체 rect**로 내야
+    /// 밑줄과 탭이 같은 자리에 있다 (R56 — AGENTS.md "방출 ≡ 히트").
+    func testWrappedFootnoteObjectEmitsHyperlinkAtObjectRect() {
+        let blockFrame = CGRect(x: 50, y: 600, width: 400, height: 40)
+        // 개체는 문단 rect(높이 20) **밖**에 저작 위치로 놓인다 — 문단 폴백
+        // 링크로는 덮이지 않는 자리다
+        let shapeRect = CGRect(x: 200, y: 25, width: 60, height: 30)
+        let attributed = NSMutableAttributedString(string: "\u{FFFC}")
+        let full = NSRange(location: 0, length: attributed.length)
+        attributed.addAttribute(HwpAttributedStringKey.controlIndex, value: 0, range: full)
+        attributed.addAttribute(
+            HwpAttributedStringKey.hyperlink,
+            value: "https://example.com/wrapped-object", range: full
+        )
+        let footnote = HwpFootnoteBlock(
+            frame: blockFrame,
+            paragraphs: [HwpLaidOutParagraph(
+                attributedString: attributed,
+                frame: HwpParagraphFrame(totalHeight: 20, lines: []),
+                rect: CGRect(x: 0, y: 0, width: 400, height: 20),
+                paragraphId: 1,
+                hyperlinkURL: nil
+            )],
+            number: 1,
+            separatorLine: CGRect(x: 50, y: 590, width: 130, height: 1),
+            shapes: [HwpCellShape(
+                rect: shapeRect,
+                geometry: HwpShapeGeometry(
+                    path: CGPath(rect: shapeRect, transform: nil),
+                    fillColor: HwpRGBColor(red: 0, green: 0, blue: 0).cgColor,
+                    strokeColor: nil, strokeWidth: 0
+                ),
+                paintsBehindText: false,
+                zOrder: 0, sourceOrder: 0,
+                controlInstanceId: 40,
+                controlIndex: 0,
+                paragraphId: 1
+            )]
+        )
+        let page = HwpPage(
+            size: CGSize(width: 595, height: 842),
+            margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
+            blocks: [AnyHwpBlock(
+                frame: blockFrame, kind: .footnote, payload: .footnote(footnote)
+            )],
+            pageNumber: 1
+        )
+
+        let commands = HwpPaintListBuilder(fontResolver: .testDeterministic)
+            .build(for: page, index: HwpIndex(from: CoreHwp.HwpFile())).commands
+        let linkRects = commands.compactMap { command -> CGRect? in
+            guard case let .hyperlink(rect, url) = command,
+                  url == "https://example.com/wrapped-object"
+            else { return nil }
+            return rect
+        }
+        expect(linkRects).to(contain(
+            shapeRect.offsetBy(dx: blockFrame.minX, dy: blockFrame.minY)
+        ))
+    }
+
     private let builder = HwpPaintListBuilder()
     private lazy var index = HwpIndex(from: HwpFile())
 
