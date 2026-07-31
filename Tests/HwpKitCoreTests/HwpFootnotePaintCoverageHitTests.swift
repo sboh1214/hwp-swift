@@ -136,6 +136,30 @@ import XCTest
                 == .hyperlink(url: "https://example.com/wrapped-unfilled", blockIndex: 1)
         }
 
+        /// 이중선의 **둘째 줄**도 칠이다 (R56). 페인터(`edgeStripes`)는 안쪽으로
+        /// thin + gap 만큼 민 자리에 두 번째 가는 선을 그리는데, 원래 폭 띠만
+        /// 보면 그 선 위의 탭이 아래 블록으로 샌다. 두 줄 **사이**는 안 칠한다.
+        func testDoubleBorderSecondStripeIsPainted() {
+            let black = HwpRGBColor(red: 0, green: 0, blue: 0)
+            let cellRect = CGRect(x: 0, y: 0, width: 100, height: 40)
+            let cell = HwpTableCellFrame(
+                cellFrame: cellRect,
+                row: 0, column: 0, rowSpan: 1, columnSpan: 1,
+                paragraphs: [],
+                borders: HwpBorderSet(
+                    top: 3, bottom: 0, left: 0, right: 0,
+                    topColor: black, bottomColor: black, leftColor: black, rightColor: black,
+                    topDouble: true
+                ),
+                fillColor: nil
+            )
+
+            // 폭 3 → thin 1.2, gap 3: 첫 줄 0~1.2, 둘째 줄 4.2~5.4 (폭 띠 **밖**)
+            expect(cell.paints(CGPoint(x: 50, y: 0.6))).to(beTrue())
+            expect(cell.paints(CGPoint(x: 50, y: 4.8))).to(beTrue())
+            expect(cell.paints(CGPoint(x: 50, y: 2.5))).to(beFalse())
+        }
+
         /// 블록(100pt)을 넘어 300pt까지 뻗은 **안 채운** 중첩 표 + 그 아래 링크 블록.
         private static func pageWithUnfilledNestedTable(wrappedByLink: Bool) -> HwpPage {
             let blockFrame = CGRect(x: 50, y: 600, width: 100, height: 40)

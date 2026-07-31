@@ -37,6 +37,72 @@ public struct HwpBorderSet: Sendable, Hashable {
         self.rightDouble = rightDouble
     }
 
+    /// rect 둘레에 **실제로 칠하는 띠 전부** (색 포함) — 페인터
+    /// (`HwpPaintListBuilder.borderCommands`) 와 히트 (`HwpTableCellFrame.paints`)
+    /// 가 이 하나를 공유한다 (R56).
+    ///
+    /// 이중선의 **둘째 줄은 원래 폭 띠 밖으로 나간다** (안쪽으로 thin + gap).
+    /// 두 곳이 따로 계산하면 보이는 선과 눌리는 선이 갈린다.
+    func stripes(around rect: CGRect) -> [(rect: CGRect, color: HwpRGBColor)] {
+        Self.edgeStripes(
+            edgeRect: CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: top),
+            width: top, isDouble: topDouble, horizontal: true, leading: true
+        ).map { ($0, topColor) }
+            + Self.edgeStripes(
+                edgeRect: CGRect(
+                    x: rect.minX, y: rect.maxY - bottom, width: rect.width, height: bottom
+                ),
+                width: bottom, isDouble: bottomDouble, horizontal: true, leading: false
+            ).map { ($0, bottomColor) }
+            + Self.edgeStripes(
+                edgeRect: CGRect(x: rect.minX, y: rect.minY, width: left, height: rect.height),
+                width: left, isDouble: leftDouble, horizontal: false, leading: true
+            ).map { ($0, leftColor) }
+            + Self.edgeStripes(
+                edgeRect: CGRect(
+                    x: rect.maxX - right, y: rect.minY, width: right, height: rect.height
+                ),
+                width: right, isDouble: rightDouble, horizontal: false, leading: false
+            ).map { ($0, rightColor) }
+    }
+
+    /// 한 변의 띠 — 이중선이면 가는 선 둘, 아니면 변 띠 그대로. 폭 0이면 없음.
+    ///
+    /// 이중선 (표 25 종류 8-10) 은 가는 선 2개 + 사이 간격 (noori 제목 상자 실물
+    /// — 1px 두 줄). 상단·좌측 (leading) 은 둘째 선을 양 (안쪽) 으로, 하단·우측
+    /// (trailing) 은 far edge에서 음 (안쪽) 으로 민다 — trailing을 양으로 밀면
+    /// maxY/maxX를 넘어 인접 셀·표 밖을 침범한다 (R42 #2).
+    private static func edgeStripes(
+        edgeRect: CGRect, width: CGFloat, isDouble: Bool, horizontal: Bool, leading: Bool
+    ) -> [CGRect] {
+        guard width > 0 else { return [] }
+        guard isDouble else { return [edgeRect] }
+        let thin = max(0.4, width * 0.4)
+        let gap = max(thin, width)
+        var first = edgeRect
+        var second = edgeRect
+        if horizontal {
+            first.size.height = thin
+            second.size.height = thin
+            if leading {
+                second.origin.y = edgeRect.minY + thin + gap
+            } else {
+                first.origin.y = edgeRect.maxY - thin
+                second.origin.y = edgeRect.maxY - 2 * thin - gap
+            }
+        } else {
+            first.size.width = thin
+            second.size.width = thin
+            if leading {
+                second.origin.x = edgeRect.minX + thin + gap
+            } else {
+                first.origin.x = edgeRect.maxX - thin
+                second.origin.x = edgeRect.maxX - 2 * thin - gap
+            }
+        }
+        return [first, second]
+    }
+
     public static func uniform(width: CGFloat, color: HwpRGBColor) -> HwpBorderSet {
         HwpBorderSet(
             top: width,
@@ -408,26 +474,9 @@ public struct HwpTableCellFrame: @unchecked Sendable, Hashable {
         return borderRects.contains { $0.contains(point) }
     }
 
-    /// 페인터가 실제로 칠하는 테두리 띠 — 폭 0인 변은 그리지 않는다
+    /// 페인터가 실제로 칠하는 테두리 띠 (이중선의 둘째 줄 포함)
     private var borderRects: [CGRect] {
-        [
-            CGRect(
-                x: cellFrame.minX, y: cellFrame.minY,
-                width: cellFrame.width, height: borders.top
-            ),
-            CGRect(
-                x: cellFrame.minX, y: cellFrame.maxY - borders.bottom,
-                width: cellFrame.width, height: borders.bottom
-            ),
-            CGRect(
-                x: cellFrame.minX, y: cellFrame.minY,
-                width: borders.left, height: cellFrame.height
-            ),
-            CGRect(
-                x: cellFrame.maxX - borders.right, y: cellFrame.minY,
-                width: borders.right, height: cellFrame.height
-            ),
-        ].filter { $0.width > 0 && $0.height > 0 }
+        borders.stripes(around: cellFrame).map(\.rect)
     }
 
     /// 셀과 모든 콘텐츠 지오메트리를 deltaY만큼 이동한 사본 (분할 세그먼트 이동).
