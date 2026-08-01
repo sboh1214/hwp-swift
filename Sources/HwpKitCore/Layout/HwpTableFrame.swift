@@ -254,6 +254,15 @@ public struct HwpCellImage: Sendable, Hashable {
         self.paragraphId = paragraphId
     }
 
+    /// **실제로 보이는 영역** — 페이지 절단면에 걸친 조각은 `clipRect` 안만 칠한다.
+    ///
+    /// 그리기는 저작 rect + CG 클립으로 한다 (rect를 줄이면 스케일 왜곡, R32 #2).
+    /// 반면 **히트와 링크 방출은 이 교집합**을 봐야 잘려 나가 안 보이는 자리가
+    /// 눌리거나 링크로 표시되지 않는다 (R57) — 두 소비자가 이 하나를 공유한다.
+    public var visibleRect: CGRect {
+        clipRect.map { rect.intersection($0) } ?? rect
+    }
+
     /// rect만 바꾼 사본 — 분할/정렬 이동 시 나머지 필드 누락을 막는다.
     public func withRect(_ rect: CGRect) -> HwpCellImage {
         HwpCellImage(

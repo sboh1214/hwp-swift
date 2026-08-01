@@ -81,25 +81,31 @@ public struct HwpPaintListBuilder: Sendable {
         let controlIndex: Int
     }
 
-    private static func wrappedObjects(
-        images: [HwpCellImage] = [],
-        shapes: [HwpCellShape] = [],
-        textboxes: [HwpCellTextbox] = [],
-        nestedTables: [HwpNestedTableFrame] = []
-    ) -> [WrappedObjectRef] {
-        images.map {
+    /// 컨테이너 하나가 담은 개체들 — 각주·표 셀·글상자가 같은 모양이라 방출도
+    /// 한 함수(`emitWrappedObjects`)가 셋을 다 처리한다 (R57).
+    private struct ContainerObjects {
+        var images: [HwpCellImage] = []
+        var shapes: [HwpCellShape] = []
+        var textboxes: [HwpCellTextbox] = []
+        var nestedTables: [HwpNestedTableFrame] = []
+    }
+
+    private static func wrappedObjects(_ objects: ContainerObjects) -> [WrappedObjectRef] {
+        // 그림은 **보이는 조각**만 링크다 — 절단면 밖은 그려지지 않으므로 저작
+        // rect로 내면 안 보이는 자리가 링크로 표시된다 (R57)
+        objects.images.map {
+            WrappedObjectRef(
+                rect: $0.visibleRect, paragraphId: $0.paragraphId, controlIndex: $0.controlIndex
+            )
+        } + objects.shapes.map {
             WrappedObjectRef(
                 rect: $0.rect, paragraphId: $0.paragraphId, controlIndex: $0.controlIndex
             )
-        } + shapes.map {
+        } + objects.textboxes.map {
             WrappedObjectRef(
                 rect: $0.rect, paragraphId: $0.paragraphId, controlIndex: $0.controlIndex
             )
-        } + textboxes.map {
-            WrappedObjectRef(
-                rect: $0.rect, paragraphId: $0.paragraphId, controlIndex: $0.controlIndex
-            )
-        } + nestedTables.map {
+        } + objects.nestedTables.map {
             WrappedObjectRef(
                 rect: $0.rect, paragraphId: $0.paragraphId, controlIndex: $0.controlIndex
             )
@@ -131,7 +137,8 @@ public struct HwpPaintListBuilder: Sendable {
         func emitWrapped(
             _ paragraphs: [HwpLaidOutParagraph], _ objects: [WrappedObjectRef], offset: CGPoint
         ) {
-            for object in objects {
+            // 절단면 밖으로 완전히 잘린 조각은 그려지지 않으므로 링크도 없다
+            for object in objects where !object.rect.isEmpty {
                 guard let url = HwpDrawnTextLayout.wrapperHyperlinkURL(
                     in: paragraphs,
                     paragraphId: object.paragraphId,
@@ -143,22 +150,37 @@ public struct HwpPaintListBuilder: Sendable {
                 emitted = true
             }
         }
+        /// 컨테이너의 감싼 개체 링크 — **글상자 자식까지 같은 규칙으로** 내려간다
+        /// (R57). 컨테이너가 셋 (각주·표 셀·글상자) 이라 호출부마다 손으로 쓰면
+        /// 한 곳을 빠뜨린다 — 실제로 각주 안 글상자가 빠져 있었다.
+        func emitWrappedObjects(
+            _ paragraphs: [HwpLaidOutParagraph], _ objects: ContainerObjects, offset: CGPoint
+        ) {
+            emitWrapped(paragraphs, Self.wrappedObjects(objects), offset: offset)
+            for textbox in objects.textboxes {
+                emitWrappedObjects(
+                    textbox.textbox.paragraphs,
+                    ContainerObjects(
+                        images: textbox.textbox.images, shapes: textbox.textbox.shapes
+                    ),
+                    offset: CGPoint(
+                        x: offset.x + textbox.rect.minX, y: offset.y + textbox.rect.minY
+                    )
+                )
+            }
+        }
         func emitTable(_ table: HwpTableFrame, origin: CGPoint) {
             for row in table.rows {
                 for cell in row.cells {
                     emit(cell.paragraphs, offset: origin)
-                    emitWrapped(cell.paragraphs, Self.wrappedObjects(
+                    emitWrappedObjects(cell.paragraphs, ContainerObjects(
                         images: cell.images, shapes: cell.shapes,
                         textboxes: cell.textboxes, nestedTables: cell.nestedTables
                     ), offset: origin)
                     for textbox in cell.textboxes {
-                        let inner = CGPoint(
+                        emit(textbox.textbox.paragraphs, offset: CGPoint(
                             x: origin.x + textbox.rect.minX, y: origin.y + textbox.rect.minY
-                        )
-                        emit(textbox.textbox.paragraphs, offset: inner)
-                        emitWrapped(textbox.textbox.paragraphs, Self.wrappedObjects(
-                            images: textbox.textbox.images, shapes: textbox.textbox.shapes
-                        ), offset: inner)
+                        ))
                     }
                     for nested in cell.nestedTables {
                         emitTable(nested.table, origin: CGPoint(
@@ -173,14 +195,14 @@ public struct HwpPaintListBuilder: Sendable {
             emitTable(table, origin: block.frame.origin)
         case let .textbox(textbox):
             emit(textbox.paragraphs, offset: block.frame.origin)
-            emitWrapped(textbox.paragraphs, Self.wrappedObjects(
+            emitWrappedObjects(textbox.paragraphs, ContainerObjects(
                 images: textbox.images, shapes: textbox.shapes
             ), offset: block.frame.origin)
         case let .footnote(footnote):
             // 각주 문단 + 각주 안 글상자·표 문단의 문단-레벨 링크 (#94) —
             // 셀 경로 emitTable과 같은 origin 합성.
             Self.footnoteParagraphGroups(footnote, origin: block.frame.origin).forEach(emit)
-            emitWrapped(footnote.paragraphs, Self.wrappedObjects(
+            emitWrappedObjects(footnote.paragraphs, ContainerObjects(
                 images: footnote.images, shapes: footnote.shapes,
                 textboxes: footnote.textboxes, nestedTables: footnote.nestedTables
             ), offset: block.frame.origin)

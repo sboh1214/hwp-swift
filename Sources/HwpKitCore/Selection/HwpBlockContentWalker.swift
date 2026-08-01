@@ -214,8 +214,7 @@ public enum HwpBlockContentWalker {
                 // 페인터는 `clipRect`(rect와 같은 표-로컬 좌표) 안만 그린다 —
                 // 페이지 절단면에 걸려 잘려 나간 부분은 아무것도 칠하지 않으므로
                 // 가리지도 않는다 (R45 #2, `cellImageCommands`와 같은 교집합).
-                (image.clipRect.map { image.rect.intersection($0) } ?? image.rect)
-                    .contains(point)
+                image.visibleRect.contains(point)
             case let .shape(shape):
                 shape.geometry.fillColor != nil && shape.geometry.path.contains(
                     CGPoint(x: point.x - shape.rect.minX, y: point.y - shape.rect.minY)

@@ -144,6 +144,137 @@ final class HwpFootnotePaintListTests: XCTestCase {
         ))
     }
 
+    /// 각주 **안 글상자**의 개체도 감싼 링크를 방출한다 (R57). 히트는
+    /// `containerHit`이 글상자 안으로 재귀해 구제하는데 방출만 각주-레벨에서
+    /// 멈추면 눌리는데 밑줄이 없다 — 셀 경로와 같은 깊이여야 한다.
+    func testWrappedObjectInsideFootnoteTextboxEmitsHyperlink() {
+        let blockFrame = CGRect(x: 50, y: 600, width: 400, height: 60)
+        let boxRect = CGRect(x: 10, y: 5, width: 200, height: 50)
+        // 글상자 안 문단(높이 12) **밖**에 놓인 도형 — 문단 폴백으로는 안 덮인다
+        let shapeRect = CGRect(x: 120, y: 20, width: 40, height: 25)
+        let inner = NSMutableAttributedString(string: "\u{FFFC}")
+        let full = NSRange(location: 0, length: inner.length)
+        inner.addAttribute(HwpAttributedStringKey.controlIndex, value: 0, range: full)
+        inner.addAttribute(
+            HwpAttributedStringKey.hyperlink,
+            value: "https://example.com/in-textbox", range: full
+        )
+        let footnote = HwpFootnoteBlock(
+            frame: blockFrame,
+            paragraphs: [],
+            number: 1,
+            separatorLine: CGRect(x: 50, y: 590, width: 130, height: 1),
+            textboxes: [HwpCellTextbox(
+                rect: boxRect,
+                textbox: HwpTextboxFrame(
+                    outerFrame: CGRect(origin: .zero, size: boxRect.size),
+                    paragraphs: [HwpLaidOutParagraph(
+                        attributedString: inner,
+                        frame: HwpParagraphFrame(totalHeight: 12, lines: []),
+                        rect: CGRect(x: 0, y: 0, width: 200, height: 12),
+                        paragraphId: 7,
+                        hyperlinkURL: nil
+                    )],
+                    borderColor: nil, borderWidth: 0, fillColor: nil,
+                    shapes: [HwpCellShape(
+                        rect: shapeRect,
+                        geometry: HwpShapeGeometry(
+                            path: CGPath(rect: shapeRect, transform: nil),
+                            fillColor: HwpRGBColor(red: 0, green: 0, blue: 0).cgColor,
+                            strokeColor: nil, strokeWidth: 0
+                        ),
+                        paintsBehindText: false,
+                        zOrder: 0, sourceOrder: 0,
+                        controlInstanceId: 51,
+                        controlIndex: 0,
+                        paragraphId: 7
+                    )]
+                ),
+                paintsBehindText: false,
+                zOrder: 0, sourceOrder: 0,
+                controlInstanceId: 50
+            )]
+        )
+
+        let rects = Self.hyperlinkRects(
+            in: footnote, blockFrame: blockFrame, url: "https://example.com/in-textbox"
+        )
+        // 블록 + 글상자 offset이 합성된 자리
+        expect(rects).to(contain(shapeRect.offsetBy(
+            dx: blockFrame.minX + boxRect.minX, dy: blockFrame.minY + boxRect.minY
+        )))
+    }
+
+    /// 절단면에 걸린 그림은 **보이는 조각**만 링크다 (R57). 저작 rect를 그대로
+    /// 내면 잘려 안 보이는 자리가 링크로 표시된다 — 페인터는 `clipRect`로 자르고
+    /// 히트도 `visibleRect` 교집합만 본다.
+    func testClippedWrappedImageEmitsVisibleRectOnly() {
+        let blockFrame = CGRect(x: 50, y: 600, width: 400, height: 40)
+        let imageRect = CGRect(x: 0, y: 0, width: 100, height: 40)
+        // 위 15pt만 남기고 잘린 조각 (표 분할이 만드는 형상)
+        let visible = CGRect(x: 0, y: 0, width: 100, height: 15)
+        let attributed = NSMutableAttributedString(string: "\u{FFFC}")
+        let full = NSRange(location: 0, length: attributed.length)
+        attributed.addAttribute(HwpAttributedStringKey.controlIndex, value: 0, range: full)
+        attributed.addAttribute(
+            HwpAttributedStringKey.hyperlink,
+            value: "https://example.com/clipped", range: full
+        )
+        let footnote = HwpFootnoteBlock(
+            frame: blockFrame,
+            paragraphs: [HwpLaidOutParagraph(
+                attributedString: attributed,
+                frame: HwpParagraphFrame(totalHeight: 12, lines: []),
+                rect: CGRect(x: 200, y: 0, width: 200, height: 12),
+                paragraphId: 1,
+                hyperlinkURL: nil
+            )],
+            number: 1,
+            separatorLine: CGRect(x: 50, y: 590, width: 130, height: 1),
+            images: [HwpCellImage(
+                rect: imageRect,
+                binItemId: 3,
+                style: nil,
+                paintsBehindText: false,
+                zOrder: 0, sourceOrder: 0,
+                clipRect: visible,
+                controlInstanceId: 52,
+                controlIndex: 0,
+                paragraphId: 1
+            )]
+        )
+
+        let rects = Self.hyperlinkRects(
+            in: footnote, blockFrame: blockFrame, url: "https://example.com/clipped"
+        )
+        expect(rects).to(contain(visible.offsetBy(dx: blockFrame.minX, dy: blockFrame.minY)))
+        // 저작 rect는 잘려 안 보이는 아래 25pt까지 링크로 표시한다 — 나오면 안 된다
+        expect(rects).notTo(contain(
+            imageRect.offsetBy(dx: blockFrame.minX, dy: blockFrame.minY)
+        ))
+    }
+
+    private static func hyperlinkRects(
+        in footnote: HwpFootnoteBlock, blockFrame: CGRect, url: String
+    ) -> [CGRect] {
+        let page = HwpPage(
+            size: CGSize(width: 595, height: 842),
+            margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
+            blocks: [AnyHwpBlock(
+                frame: blockFrame, kind: .footnote, payload: .footnote(footnote)
+            )],
+            pageNumber: 1
+        )
+        return HwpPaintListBuilder(fontResolver: .testDeterministic)
+            .build(for: page, index: HwpIndex(from: CoreHwp.HwpFile()))
+            .commands
+            .compactMap { command in
+                guard case let .hyperlink(rect, commandURL) = command, commandURL == url
+                else { return nil }
+                return rect
+            }
+    }
+
     private let builder = HwpPaintListBuilder()
     private lazy var index = HwpIndex(from: HwpFile())
 
