@@ -137,6 +137,58 @@ import XCTest
             )) == .footnote(blockIndex: 0, number: 1)
         }
 
+        /// 각주도 **블록-레벨 하이퍼링크 폴백**을 지킨다 (R59). 방출은 컨테이너
+        /// 링크가 하나도 없으면 `block.hyperlinkURL`을 frame 전체로 내므로, 히트가
+        /// 층 조회만 보고 끝내면 밑줄은 그려지는데 탭이 안 먹는다.
+        func testFootnoteBlockLevelHyperlinkStaysTappable() {
+            let page = Self.pageWithFootnote(
+                paragraphURL: nil, blockURL: "https://example.com/block-level"
+            )
+            expect(HwpHitTester().hit(page: page, point: CGPoint(x: 100, y: 620)))
+                == .hyperlink(url: "https://example.com/block-level", blockIndex: 0)
+        }
+
+        /// 폴백은 **층 조회가 실패했을 때만** 쓴다 — 각주 문단이 자기 링크를
+        /// 가지면 그것이 이긴다 (R42 #1의 순서를 그대로 지킨다).
+        func testFootnoteInnerLinkWinsOverBlockLevelFallback() {
+            let page = Self.pageWithFootnote(
+                paragraphURL: "https://example.com/inner",
+                blockURL: "https://example.com/block-level"
+            )
+            expect(HwpHitTester().hit(page: page, point: CGPoint(x: 100, y: 610)))
+                == .hyperlink(url: "https://example.com/inner", blockIndex: 0)
+        }
+
+        /// 문단-레벨 링크(선택)와 블록-레벨 링크를 가진 각주 한 장.
+        private static func pageWithFootnote(
+            paragraphURL: String?, blockURL: String
+        ) -> HwpPage {
+            let blockFrame = CGRect(x: 50, y: 600, width: 400, height: 40)
+            let footnote = HwpFootnoteBlock(
+                frame: blockFrame,
+                paragraphs: [HwpLaidOutParagraph(
+                    attributedString: NSAttributedString(string: "각주 본문"),
+                    frame: HwpParagraphFrame(totalHeight: 20, lines: []),
+                    rect: CGRect(x: 0, y: 0, width: 400, height: 20),
+                    paragraphId: 1,
+                    hyperlinkURL: paragraphURL
+                )],
+                number: 1,
+                separatorLine: CGRect(x: 50, y: 590, width: 130, height: 1)
+            )
+            return HwpPage(
+                size: CGSize(width: 595, height: 842),
+                margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
+                blocks: [AnyHwpBlock(
+                    frame: blockFrame,
+                    kind: .footnote,
+                    hyperlinkURL: blockURL,
+                    payload: .footnote(footnote)
+                )],
+                pageNumber: 1
+            )
+        }
+
         /// 개체가 **다른** 링크 텍스트를 덮었을 뿐이면 구제하지 않는다 (R50 #1).
         /// 구제를 지점 포함만으로 하면 덮인 링크가 열려 가림 규약(R42 #2)이 깨진다 —
         /// 링크가 붙은 run의 `controlIndex`가 그 층의 것과 같을 때만 구제한다.

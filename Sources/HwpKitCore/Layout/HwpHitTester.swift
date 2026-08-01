@@ -294,7 +294,10 @@ public struct HwpHitTester {
         // 층 인식 조회에 닿지도 못했다 (R42 #1). 각주만 그 조회 한 곳에 맡긴다 —
         // 안쪽 `spanAwareHyperlinkURL`이 문단마다 스팬 우선 규칙을 그대로 지킨다.
         if case .footnote = block.payload {
-            return containerHyperlinkURL(block: block, point: point)
+            // 층 조회가 **먼저** 이기고, 실패했을 때만 블록-레벨 계약으로 떨어진다
+            // (R59). 방출은 컨테이너 링크가 하나도 없으면 `block.hyperlinkURL`을
+            // frame 전체로 내므로, 이 폴백이 없으면 밑줄은 그려지는데 탭이 안 먹는다.
+            return containerHyperlinkURL(block: block, point: point) ?? block.hyperlinkURL
         }
         var hasFieldSpans = false
         var fieldURL: String?
