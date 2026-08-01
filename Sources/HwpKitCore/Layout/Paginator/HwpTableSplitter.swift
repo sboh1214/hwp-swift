@@ -247,6 +247,9 @@ enum HwpTableSplitter {
         _ cell: HwpTableCellFrame,
         at cutY: CGFloat
     ) -> (HwpTableCellFrame, HwpTableCellFrame) {
+        // 조각을 나누기 **전에** 감싼 링크를 개체에 고정한다 — 나눈 뒤에는
+        // 마커 문단이 반대 조각에 있어 (문단, 서수) 조회가 실패한다 (R58)
+        let cell = cell.resolvingWrapperURLs()
         let frames = splitRect(cell.cellFrame, at: cutY)
         var topParagraphs: [HwpLaidOutParagraph] = []
         var bottomParagraphs: [HwpLaidOutParagraph] = []

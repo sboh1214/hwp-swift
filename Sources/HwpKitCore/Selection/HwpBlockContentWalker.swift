@@ -262,6 +262,17 @@ public enum HwpBlockContentWalker {
             ).contains(localPoint)
         }
 
+        /// 분할 전에 개체에 고정된 감싼 링크 URL (R58) — 조각의 문단에 U+FFFC run이
+        /// 남지 않았을 때 (문단, 서수) 조회를 대신한다. nil이면 종전대로 조회한다.
+        var wrapperURL: String? {
+            switch self {
+            case let .image(image): image.wrapperURL
+            case let .shape(shape): shape.wrapperURL
+            case let .textbox(textbox): textbox.wrapperURL
+            case let .nestedTable(nested): nested.wrapperURL
+            }
+        }
+
         /// 이 층을 낸 `ctrlHeaderArray` 서수 — 감싼 `%hlk` 스팬과 잇는 열쇠 (R50)
         var controlIndex: Int {
             switch self {

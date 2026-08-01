@@ -273,7 +273,7 @@ public struct HwpHitTester {
             // 지점 포함만으로 구제하면 옆의 다른 링크 텍스트를 덮었을 뿐인데도
             // 그 URL이 열려 가림 규약(R42 #2)이 깨진다 — 링크가 붙은 U+FFFC run의
             // `controlIndex` 가 이 층의 것과 같을 때만 구제한다.
-            if let url = HwpDrawnTextLayout.wrapperHyperlinkURL(
+            if let url = layer.wrapperURL ?? HwpDrawnTextLayout.wrapperHyperlinkURL(
                 in: paragraphs,
                 paragraphId: layer.paragraphId,
                 controlIndex: layer.controlIndex
@@ -471,11 +471,13 @@ public struct HwpHitTester {
                         // 가림으로 접기 전에 이 표를 감싼 `%hlk`를 본다 — 층 경로
                         // (`layerHit`) 와 같은 규약이다 (R50 #2). 셀 안 표는 R48이
                         // 평면 정렬에서 빼면서 그 경로 밖으로 나와 구제도 잃었다.
-                        if let url = HwpDrawnTextLayout.wrapperHyperlinkURL(
-                            in: cell.paragraphs,
-                            paragraphId: nested.paragraphId,
-                            controlIndex: nested.controlIndex
-                        ) {
+                        if let url = nested.wrapperURL
+                            ?? HwpDrawnTextLayout.wrapperHyperlinkURL(
+                                in: cell.paragraphs,
+                                paragraphId: nested.paragraphId,
+                                controlIndex: nested.controlIndex
+                            )
+                        {
                             return .found(url)
                         }
                         return .occluded

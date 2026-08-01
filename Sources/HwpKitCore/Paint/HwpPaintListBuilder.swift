@@ -79,6 +79,8 @@ public struct HwpPaintListBuilder: Sendable {
         let rect: CGRect
         let paragraphId: UInt32
         let controlIndex: Int
+        /// 분할이 마커 문단을 떼어간 조각에서도 링크를 유지한다 (R58)
+        let wrapperURL: String?
     }
 
     /// 컨테이너 하나가 담은 개체들 — 각주·표 셀·글상자가 같은 모양이라 방출도
@@ -95,19 +97,23 @@ public struct HwpPaintListBuilder: Sendable {
         // rect로 내면 안 보이는 자리가 링크로 표시된다 (R57)
         objects.images.map {
             WrappedObjectRef(
-                rect: $0.visibleRect, paragraphId: $0.paragraphId, controlIndex: $0.controlIndex
+                rect: $0.visibleRect, paragraphId: $0.paragraphId,
+                controlIndex: $0.controlIndex, wrapperURL: $0.wrapperURL
             )
         } + objects.shapes.map {
             WrappedObjectRef(
-                rect: $0.rect, paragraphId: $0.paragraphId, controlIndex: $0.controlIndex
+                rect: $0.rect, paragraphId: $0.paragraphId,
+                controlIndex: $0.controlIndex, wrapperURL: $0.wrapperURL
             )
         } + objects.textboxes.map {
             WrappedObjectRef(
-                rect: $0.rect, paragraphId: $0.paragraphId, controlIndex: $0.controlIndex
+                rect: $0.rect, paragraphId: $0.paragraphId,
+                controlIndex: $0.controlIndex, wrapperURL: $0.wrapperURL
             )
         } + objects.nestedTables.map {
             WrappedObjectRef(
-                rect: $0.rect, paragraphId: $0.paragraphId, controlIndex: $0.controlIndex
+                rect: $0.rect, paragraphId: $0.paragraphId,
+                controlIndex: $0.controlIndex, wrapperURL: $0.wrapperURL
             )
         }
     }
@@ -139,7 +145,7 @@ public struct HwpPaintListBuilder: Sendable {
         ) {
             // 절단면 밖으로 완전히 잘린 조각은 그려지지 않으므로 링크도 없다
             for object in objects where !object.rect.isEmpty {
-                guard let url = HwpDrawnTextLayout.wrapperHyperlinkURL(
+                guard let url = object.wrapperURL ?? HwpDrawnTextLayout.wrapperHyperlinkURL(
                     in: paragraphs,
                     paragraphId: object.paragraphId,
                     controlIndex: object.controlIndex
