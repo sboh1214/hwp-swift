@@ -552,3 +552,14 @@ private extension HwpFootnoteLayout {
         return HwpUnits.points(fromHwpUnit16: value)
     }
 }
+
+public extension HwpFootnoteBlock {
+    /// 각주가 하이퍼링크를 품는지 — 블록-레벨 폴백의 게이트 (R61)
+    var hasHyperlink: Bool {
+        paragraphs.contains { $0.hasHyperlink }
+            || images.contains { $0.wrapperURL != nil }
+            || shapes.contains { $0.wrapperURL != nil }
+            || textboxes.contains { $0.wrapperURL != nil || $0.textbox.hasHyperlink }
+            || nestedTables.contains { $0.wrapperURL != nil || $0.table.hasHyperlink }
+    }
+}

@@ -316,3 +316,26 @@ public struct HwpChartFrame: Sendable, Hashable {
         self.kind = kind
     }
 }
+
+public extension HwpLaidOutParagraph {
+    /// 이 문단이 하이퍼링크를 품는지 — 문단-레벨 URL 또는 `%hlk` 스팬 속성.
+    ///
+    /// 블록-레벨 폴백의 게이트다 (R61): 방출은 안쪽 링크를 하나라도 내면 프레임
+    /// 전체 블록 링크를 내지 않으므로 히트도 그때는 폴백하면 안 된다. 탭 경로에서
+    /// 쓰이므로 **CT 조판 없이 속성만** 훑는다 (R55).
+    var hasHyperlink: Bool {
+        if hyperlinkURL != nil {
+            return true
+        }
+        var found = false
+        attributedString.enumerateAttribute(
+            HwpAttributedStringKey.hyperlink,
+            in: NSRange(location: 0, length: attributedString.length)
+        ) { value, _, stop in
+            guard value != nil else { return }
+            found = true
+            stop.pointee = true
+        }
+        return found
+    }
+}

@@ -186,6 +186,51 @@ import XCTest
                 == .footnote(blockIndex: 1, number: 1)
         }
 
+        /// 테두리 stroke의 **바깥쪽 절반**도 칠이다 (R61). CG는 경로 중앙에 그어
+        /// (`ctx.stroke(rect)`) 폭의 절반이 rect 밖에 놓이는데, 커버리지가 rect만
+        /// 보면 보이는 선 위의 탭이 아래 블록 링크로 샌다.
+        func testImageBorderStrokeOutsideRectIsPainted() {
+            let blockFrame = CGRect(x: 50, y: 600, width: 100, height: 40)
+            // 그림이 블록(100pt)을 넘어 300pt까지 — 폭 2pt 테두리는 349~351에 그려진다
+            let imageRect = CGRect(x: 0, y: 0, width: 300, height: 40)
+            let footnote = HwpFootnoteBlock(
+                frame: blockFrame,
+                paragraphs: [],
+                number: 1,
+                separatorLine: CGRect(x: 50, y: 590, width: 130, height: 1),
+                images: [HwpCellImage(
+                    rect: imageRect,
+                    binItemId: 3,
+                    style: nil,
+                    borderColor: HwpRGBColor(red: 0, green: 0, blue: 0),
+                    borderWidth: 2,
+                    paintsBehindText: false,
+                    zOrder: 0, sourceOrder: 0,
+                    controlInstanceId: 70
+                )]
+            )
+            let page = HwpPage(
+                size: CGSize(width: 595, height: 842),
+                margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
+                blocks: [
+                    AnyHwpBlock(
+                        frame: CGRect(x: 50, y: 600, width: 400, height: 40),
+                        kind: .text,
+                        attributedString: NSAttributedString(string: "본문 링크"),
+                        hyperlinkURL: "https://example.com/beneath"
+                    ),
+                    AnyHwpBlock(
+                        frame: blockFrame, kind: .footnote, payload: .footnote(footnote)
+                    ),
+                ],
+                pageNumber: 1
+            )
+
+            // 그림 rect 오른쪽 끝(350)의 **바깥쪽** 0.5pt — 선이 보이는 자리다
+            expect(HwpHitTester().hit(page: page, point: CGPoint(x: 350.5, y: 620)))
+                == .footnote(blockIndex: 1, number: 1)
+        }
+
         /// 이중선의 **둘째 줄**도 칠이다 (R56). 페인터(`edgeStripes`)는 안쪽으로
         /// thin + gap 만큼 민 자리에 두 번째 가는 선을 그리는데, 원래 폭 띠만
         /// 보면 그 선 위의 탭이 아래 블록으로 샌다. 두 줄 **사이**는 안 칠한다.

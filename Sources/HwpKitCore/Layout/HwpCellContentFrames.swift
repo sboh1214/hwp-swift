@@ -177,7 +177,15 @@ public struct HwpCellImage: Sendable, Hashable {
         clipRect.map { rect.intersection($0) } ?? rect
     }
 
-    /// rect만 바꾼 사본 — 분할/정렬 이동 시 나머지 필드 누락을 막는다.
+    /// 테두리 stroke까지 포함한 **실제 칠 영역** — CG는 경로 **중앙 정렬**로 긋는
+    /// (`ctx.stroke(rect)`) 탓에 폭의 절반이 rect 밖에 놓인다 (R61). 가림·claim·
+    /// 자격은 이 영역을 봐야 보이는 선 위의 탭이 아래로 새지 않는다. 감싼 링크의
+    /// 영역 (`ContentLayer.rect`) 은 방출과 맞춰 `visibleRect` 그대로 둔다.
+    public var paintedRect: CGRect {
+        guard borderColor != nil, borderWidth > 0 else { return visibleRect }
+        return visibleRect.insetBy(dx: -borderWidth / 2, dy: -borderWidth / 2)
+    }
+
     /// 감싼 링크 URL만 바꾼 사본 — 분할 전 해석값을 개체에 고정한다 (R58)
     public func withWrapperURL(_ wrapperURL: String?) -> HwpCellImage {
         HwpCellImage(
@@ -197,6 +205,7 @@ public struct HwpCellImage: Sendable, Hashable {
         )
     }
 
+    /// rect만 바꾼 사본 — 분할/정렬 이동 시 나머지 필드 누락을 막는다.
     public func withRect(_ rect: CGRect) -> HwpCellImage {
         HwpCellImage(
             rect: rect,
@@ -369,6 +378,12 @@ public struct HwpCellTextbox: @unchecked Sendable, Hashable {
         self.controlIndex = controlIndex
         self.paragraphId = paragraphId
         self.wrapperURL = wrapperURL
+    }
+
+    /// 테두리 stroke까지 포함한 실제 칠 영역 (R61 — `HwpCellImage.paintedRect`와 같은 규칙)
+    public var paintedRect: CGRect {
+        guard textbox.borderColor != nil, textbox.borderWidth > 0 else { return rect }
+        return rect.insetBy(dx: -textbox.borderWidth / 2, dy: -textbox.borderWidth / 2)
     }
 
     /// 감싼 링크 URL만 바꾼 사본 — 분할 전 해석값을 개체에 고정한다 (R58)

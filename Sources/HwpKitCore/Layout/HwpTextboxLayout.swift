@@ -267,3 +267,12 @@ public struct HwpTextboxLayout {
         return appearance
     }
 }
+
+public extension HwpTextboxFrame {
+    /// 글상자가 하이퍼링크를 품는지 (문단·자식 개체 재귀, R61)
+    var hasHyperlink: Bool {
+        paragraphs.contains { $0.hasHyperlink }
+            || images.contains { $0.wrapperURL != nil }
+            || shapes.contains { $0.wrapperURL != nil }
+    }
+}

@@ -369,3 +369,21 @@ public extension HwpRGBColor {
         )
     }
 }
+
+public extension HwpTableCellFrame {
+    /// 셀이 하이퍼링크를 품는지 (문단·개체·글상자·중첩 표 재귀, R61)
+    var hasHyperlink: Bool {
+        paragraphs.contains { $0.hasHyperlink }
+            || images.contains { $0.wrapperURL != nil }
+            || shapes.contains { $0.wrapperURL != nil }
+            || textboxes.contains { $0.wrapperURL != nil || $0.textbox.hasHyperlink }
+            || nestedTables.contains { $0.wrapperURL != nil || $0.table.hasHyperlink }
+    }
+}
+
+public extension HwpTableFrame {
+    /// 표가 하이퍼링크를 품는지 (셀 재귀, R61)
+    var hasHyperlink: Bool {
+        rows.contains { $0.cells.contains { $0.hasHyperlink } }
+    }
+}

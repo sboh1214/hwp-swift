@@ -130,10 +130,16 @@ public struct HwpHitTester {
             origin: origin,
             onParagraphText: { _, rect, _ in rects.append(Self.textBounds(rect)) },
             onCellStart: { _, rect in rects.append(rect) },
-            onCellImage: { _, rect in rects.append(rect) },
+            // 테두리 stroke는 rect 밖으로 폭의 절반이 나간다 (R61) — 자격 영역이
+            // 그만큼 넓어야 보이는 선 위의 탭이 `containerHit`에 닿는다
+            onCellImage: { image, rect in
+                rects.append(Self.strokeBounds(rect, borderWidth: image.borderWidth))
+            },
             onCellShape: { _, rect in rects.append(rect) },
             onCellTextbox: { textbox, rect in
-                rects.append(rect)
+                rects.append(Self.strokeBounds(
+                    rect, borderWidth: textbox.textbox.borderWidth
+                ))
                 HwpBlockContentWalker.walkParagraphs(
                     textbox.textbox.paragraphs, offset: rect.origin
                 ) { _, inner, _ in rects.append(Self.textBounds(inner)) }
@@ -294,11 +300,16 @@ public struct HwpHitTester {
         // 아래 walkText 스캔은 페인트 **정순**이라 덮인 스팬 링크를 먼저 잡아
         // 층 인식 조회에 닿지도 못했다 (R42 #1). 각주만 그 조회 한 곳에 맡긴다 —
         // 안쪽 `spanAwareHyperlinkURL`이 문단마다 스팬 우선 규칙을 그대로 지킨다.
-        if case .footnote = block.payload {
+        if case let .footnote(footnote) = block.payload {
             // 층 조회가 **먼저** 이기고, 실패했을 때만 블록-레벨 계약으로 떨어진다
             // (R59). 방출은 컨테이너 링크가 하나도 없으면 `block.hyperlinkURL`을
             // frame 전체로 내므로, 이 폴백이 없으면 밑줄은 그려지는데 탭이 안 먹는다.
-            return containerHyperlinkURL(block: block, point: point) ?? block.hyperlinkURL
+            if let url = containerHyperlinkURL(block: block, point: point) {
+                return url
+            }
+            // 다만 방출은 안쪽 링크를 하나라도 내면 블록 링크를 **내지 않는다**
+            // (`!emitted`) — 그때도 폴백하면 paint list에 없는 URL이 열린다 (R61).
+            return footnote.hasHyperlink ? nil : block.hyperlinkURL
         }
         var hasFieldSpans = false
         var fieldURL: String?
@@ -443,6 +454,13 @@ public struct HwpHitTester {
     /// 넘는다. 후자는 값싸게 정확히 잴 수 없어 (walker 콜백에 `HwpParagraphFrame`이
     /// 없다) 같은 여유를 세로에도 준다 — 상위집합을 넓히는 것은 과잉 claim이
     /// 아니다. 실제 claim은 줄 상자로 정밀 판정한다.
+    /// 테두리 stroke를 포함한 자격 상위집합 — CG가 경로 중앙에 긋는 폭의 절반이
+    /// rect 밖이다 (`HwpCellImage.paintedRect`와 같은 규칙, R61).
+    private static func strokeBounds(_ rect: CGRect, borderWidth: CGFloat) -> CGRect {
+        guard borderWidth > 0 else { return rect }
+        return rect.insetBy(dx: -borderWidth / 2, dy: -borderWidth / 2)
+    }
+
     private static func textBounds(_ rect: CGRect) -> CGRect {
         let extra = rect.width * (HwpRenderTuning.Text.slightOverflowWidthRatio - 1)
         return rect.insetBy(dx: -extra, dy: -extra)

@@ -166,6 +166,19 @@ import XCTest
                 == .hyperlink(url: "https://example.com/inner", blockIndex: 0)
         }
 
+        /// 안쪽 링크가 있으면 블록 URL로 **폴백하지 않는다** (R61). 방출은 컨테이너
+        /// 링크를 하나라도 내면 프레임 전체 블록 링크를 내지 않으므로, 안쪽 링크가
+        /// 안 걸리는 자리에서 폴백하면 **paint list에 없는 URL**이 열린다.
+        func testFootnoteBlockFallbackIsSuppressedWhenInnerLinkExists() {
+            let page = Self.pageWithFootnote(
+                paragraphURL: "https://example.com/inner",
+                blockURL: "https://example.com/block-level"
+            )
+            // 문단 rect(위 20pt) **아래** — 안쪽 링크가 claim하지 않는 자리
+            expect(HwpHitTester().hit(page: page, point: CGPoint(x: 100, y: 635)))
+                == .footnote(blockIndex: 0, number: 1)
+        }
+
         /// 문단-레벨 링크(선택)와 블록-레벨 링크를 가진 각주 한 장.
         private static func pageWithFootnote(
             paragraphURL: String?, blockURL: String
