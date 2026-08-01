@@ -134,6 +134,10 @@ import XCTest
             let page = Self.pageWithUnfilledNestedTable(wrappedByLink: true)
             expect(HwpHitTester().hit(page: page, point: CGPoint(x: 250, y: 600.5)))
                 == .hyperlink(url: "https://example.com/wrapped-unfilled", blockIndex: 1)
+            // 칸 **안**(투명)도 감싼 링크의 영역이다 — 방출이 표 rect 전체로 내므로
+            // 히트도 같아야 한다 (R60). 링크 없는 같은 표는 위 테스트대로 통과한다.
+            expect(HwpHitTester().hit(page: page, point: CGPoint(x: 250, y: 620)))
+                == .hyperlink(url: "https://example.com/wrapped-unfilled", blockIndex: 1)
         }
 
         /// 자격 영역은 문단 rect가 아니라 **렌더가 닿을 수 있는 상위집합**이어야

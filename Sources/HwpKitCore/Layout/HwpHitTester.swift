@@ -265,21 +265,22 @@ public struct HwpHitTester {
                     break
                 }
             }
-            // 구제와 claim은 **칠했는가**(`paints`)로 본다 — 속 빈 도형의 테두리는
-            // 아래를 가리지 않지만 그 선 위의 탭은 이 개체를 가리키므로, 감싼
-            // 링크가 열려야 한다 (R54). 자손 가림(`innerOccluded`)은 그대로다.
-            guard innerOccluded || layer.paints(point) else { continue }
-            // 가림으로 접기 전에 **이 층을 감싼** `%hlk` 를 본다 (R49/R50 #1).
-            // 지점 포함만으로 구제하면 옆의 다른 링크 텍스트를 덮었을 뿐인데도
-            // 그 URL이 열려 가림 규약(R42 #2)이 깨진다 — 링크가 붙은 U+FFFC run의
-            // `controlIndex` 가 이 층의 것과 같을 때만 구제한다.
-            if let url = layer.wrapperURL ?? HwpDrawnTextLayout.wrapperHyperlinkURL(
-                in: paragraphs,
-                paragraphId: layer.paragraphId,
-                controlIndex: layer.controlIndex
-            ) {
+            // **감싼 링크는 개체 rect 전체의 것**이다 (R60) — 방출이 그 rect로
+            // 내므로 속 빈 도형의 안쪽처럼 칠하지 않은 자리도 이 개체의 링크다.
+            // 구제 대상은 `controlIndex` 가 일치하는 링크뿐이라 (R49/R50 #1) 옆의
+            // 다른 링크를 덮었을 뿐인 경우는 여전히 살아나지 않는다.
+            if innerOccluded || layer.rect.contains(point),
+               let url = layer.wrapperURL ?? HwpDrawnTextLayout.wrapperHyperlinkURL(
+                   in: paragraphs,
+                   paragraphId: layer.paragraphId,
+                   controlIndex: layer.controlIndex
+               )
+            {
                 return .found(url)
             }
+            // 링크가 없으면 종전대로 **칠한 자리만** 가림으로 접는다 (R54 ①) —
+            // 투명한 안쪽은 아래 블록 몫이다.
+            guard innerOccluded || layer.paints(point) else { continue }
             return .occluded
         }
         return .miss
@@ -465,27 +466,32 @@ public struct HwpHitTester {
                 // 모든 개체 **뒤에** 그린다 — 그 순서를 그대로 따라 최상단으로
                 // 먼저 훑는다.
                 for nested in cell.nestedTables.reversed() {
+                    var innerOccluded = false
                     switch tableHit(nested.table, at: CGPoint(
                         x: point.x - nested.rect.minX, y: point.y - nested.rect.minY
                     )) {
                     case let .found(url):
                         return .found(url)
                     case .occluded:
-                        // 가림으로 접기 전에 이 표를 감싼 `%hlk`를 본다 — 층 경로
-                        // (`layerHit`) 와 같은 규약이다 (R50 #2). 셀 안 표는 R48이
-                        // 평면 정렬에서 빼면서 그 경로 밖으로 나와 구제도 잃었다.
-                        if let url = nested.wrapperURL
-                            ?? HwpDrawnTextLayout.wrapperHyperlinkURL(
-                                in: cell.paragraphs,
-                                paragraphId: nested.paragraphId,
-                                controlIndex: nested.controlIndex
-                            )
-                        {
-                            return .found(url)
-                        }
-                        return .occluded
+                        innerOccluded = true
                     case .miss:
-                        continue
+                        break
+                    }
+                    // 감싼 링크는 **표 rect 전체**의 것이다 (R60) — 층 경로
+                    // (`layerHit`) 와 같은 규약이고 (R50 #2), 셀 안 표는 R48이 평면
+                    // 정렬에서 빠져 그 경로 밖에 있으므로 여기서 되풀이한다.
+                    if innerOccluded || nested.rect.contains(point),
+                       let url = nested.wrapperURL
+                       ?? HwpDrawnTextLayout.wrapperHyperlinkURL(
+                           in: cell.paragraphs,
+                           paragraphId: nested.paragraphId,
+                           controlIndex: nested.controlIndex
+                       )
+                    {
+                        return .found(url)
+                    }
+                    if innerOccluded {
+                        return .occluded
                     }
                 }
                 let hit = containerHit(

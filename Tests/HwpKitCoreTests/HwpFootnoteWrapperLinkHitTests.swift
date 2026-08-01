@@ -135,6 +135,13 @@ import XCTest
             expect(HwpHitTester().hit(
                 page: Self.page(footnote(wrappedByLink: false)), point: onBorder
             )) == .footnote(blockIndex: 0, number: 1)
+
+            // 도형 **안쪽** (칠하지 않은 자리) — 감싼 링크는 개체 rect 전체의
+            // 것이므로 방출(전체 rect)과 같은 답이어야 한다 (R60). U+FFFC 글리프
+            // (문단 왼쪽 끝)에서 멀어 스팬 히트로는 나올 수 없는 자리다.
+            expect(HwpHitTester().hit(
+                page: Self.page(footnote(wrappedByLink: true)), point: CGPoint(x: 100, y: 620)
+            )) == .hyperlink(url: "https://example.com/hollow", blockIndex: 0)
         }
 
         /// 각주도 **블록-레벨 하이퍼링크 폴백**을 지킨다 (R59). 방출은 컨테이너

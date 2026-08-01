@@ -262,6 +262,19 @@ public enum HwpBlockContentWalker {
             ).contains(localPoint)
         }
 
+        /// 이 층이 차지하는 영역 — **감싼 링크는 이 rect의 것**이다 (R60).
+        /// 방출 (`HwpPaintListBuilder.wrappedObjects`) 이 같은 rect로 링크를 내므로
+        /// 히트도 같은 영역이어야 한다. 그림만 잘린 조각을 반영한 `visibleRect`다.
+        /// 칠 여부 (`paints`) 는 가림·claim 판정에만 쓴다.
+        var rect: CGRect {
+            switch self {
+            case let .image(image): image.visibleRect
+            case let .shape(shape): shape.rect
+            case let .textbox(textbox): textbox.rect
+            case let .nestedTable(nested): nested.rect
+            }
+        }
+
         /// 분할 전에 개체에 고정된 감싼 링크 URL (R58) — 조각의 문단에 U+FFFC run이
         /// 남지 않았을 때 (문단, 서수) 조회를 대신한다. nil이면 종전대로 조회한다.
         var wrapperURL: String? {
