@@ -98,5 +98,66 @@ import XCTest
             expect(HwpHitTester().hit(page: pages, point: CGPoint(x: 100, y: 240)))
                 == .hyperlink(url: "https://example.com/beneath", blockIndex: 0)
         }
+
+        // MARK: - R64: 컨테이너도 층 인식 경로
+
+        /// 필드 스팬(%hlk)도 층 순서를 따라야 한다 — 각주에서 고친 그 규약(R42 #1)이
+        /// 표·글상자에는 빠져 있었다. walkText 스캔은 페인트 **정순**이라 덮인 셀 문단의
+        /// 스팬을 먼저 잡아, 위에 놓인 글상자의 링크가 진다.
+        func testTableSpanLinksResolveTopmostFirst() {
+            let blockFrame = CGRect(x: 50, y: 100, width: 400, height: 40)
+            let overlay = HwpCellTextbox(
+                rect: CGRect(x: 0, y: 0, width: 40, height: 40),
+                textbox: HwpTextboxFrame(
+                    outerFrame: CGRect(x: 0, y: 0, width: 40, height: 40),
+                    paragraphs: [spanParagraph(
+                        "덮는링크", url: "https://example.com/overlay",
+                        rect: CGRect(x: 0, y: 0, width: 40, height: 40), paragraphId: 2
+                    )],
+                    borderColor: nil, borderWidth: 0, fillColor: nil
+                ),
+                paintsBehindText: false,
+                zOrder: 0, sourceOrder: 0,
+                controlInstanceId: 5
+            )
+            let block = tableBlock(
+                frame: blockFrame,
+                cell: cell(
+                    CGRect(x: 0, y: 0, width: 400, height: 40),
+                    paragraphs: [spanParagraph(
+                        "덮인링크텍스트", url: "https://example.com/covered",
+                        rect: CGRect(x: 0, y: 0, width: 400, height: 40), paragraphId: 1
+                    )],
+                    textboxes: [overlay]
+                )
+            )
+            let pages = page([block])
+
+            // 겹친 자리 — 위에 그린 글상자의 링크가 이긴다
+            expect(HwpHitTester().hit(page: pages, point: CGPoint(x: 56, y: 106)))
+                == .hyperlink(url: "https://example.com/overlay", blockIndex: 0)
+            // 글상자 밖이지만 셀 글자 위 — 덮이지 않은 스팬이 그대로 열린다
+            expect(HwpHitTester().hit(page: pages, point: CGPoint(x: 110, y: 106)))
+                == .hyperlink(url: "https://example.com/covered", blockIndex: 0)
+        }
+
+        /// 폰트를 고정해 글리프 rect가 기기에 따라 달라지지 않게 한 스팬 문단
+        private func spanParagraph(
+            _ text: String, url: String, rect: CGRect, paragraphId: UInt32
+        ) -> HwpLaidOutParagraph {
+            let attributed = NSMutableAttributedString(string: text)
+            let full = NSRange(location: 0, length: attributed.length)
+            attributed.addAttribute(
+                .font, value: CTFontCreateWithName("Menlo" as CFString, 12, nil), range: full
+            )
+            attributed.addAttribute(HwpAttributedStringKey.hyperlink, value: url, range: full)
+            return HwpLaidOutParagraph(
+                attributedString: attributed,
+                frame: HwpParagraphFrame(totalHeight: rect.height, lines: []),
+                rect: rect,
+                paragraphId: paragraphId,
+                hyperlinkURL: url
+            )
+        }
     }
 #endif

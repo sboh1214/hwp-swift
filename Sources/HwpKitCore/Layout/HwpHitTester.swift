@@ -170,14 +170,20 @@ public struct HwpHitTester {
     /// 앞뒤 평문·다중 링크가 첫 URL로 뭉개지지 않는다 (#2). 필드 속성이 있는
     /// 블록은 링크 밖에서 nil (블록/컨테이너 폴백 금지); 없으면 종전 폴백.
     private func hyperlinkURL(for block: AnyHwpBlock, at point: CGPoint) -> String? {
-        // 각주는 층이 겹치므로 히트가 **페인트 역순**이어야 한다. 블록 전체를 훑는
-        // 아래 walkText 스캔은 페인트 **정순**이라 덮인 스팬 링크를 먼저 잡아
-        // 층 인식 조회에 닿지도 못했다 (R42 #1). 각주만 그 조회 한 곳에 맡긴다 —
-        // 안쪽 `spanAwareHyperlinkURL`이 문단마다 스팬 우선 규칙을 그대로 지킨다.
-        if case .footnote = block.payload {
+        // 컨테이너는 층이 겹치므로 히트가 **페인트 역순**이어야 한다. 아래 walkText
+        // 스캔은 페인트 **정순**이라 덮인 스팬 링크를 먼저 잡아 층 인식 조회에 닿지도
+        // 못한다 (R42 #1). **각주 전용이 아니다** (R64): 표 셀·글상자도 같은 층을
+        // 가지므로 payload가 있는 컨테이너 셋을 모두 그 조회 한 곳에 맡긴다 — 안쪽
+        // `spanAwareHyperlinkURL`이 문단마다 스팬 우선 규칙을 그대로 지키고,
+        // 블록-레벨 폴백의 게이트(R61)가 스팬 있는 블록의 전체-rect 폴백도 막는다.
+        // payload가 없는 조각 블록(`.text`·분할된 표/글상자)은 그대로 스캔을 탄다.
+        switch block.payload {
+        case .footnote, .table, .textbox:
             // 층 조회가 **먼저** 이기고, 실패했을 때만 블록-레벨 계약으로 떨어진다 (R59).
             return containerHyperlinkURL(block: block, point: point)
                 ?? blockLevelURL(for: block, at: point)
+        default:
+            break
         }
         var hasFieldSpans = false
         var fieldURL: String?
