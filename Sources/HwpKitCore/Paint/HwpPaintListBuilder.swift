@@ -347,7 +347,7 @@ public struct HwpPaintListBuilder: Sendable {
             commands.append(.strokeRect(
                 rect: outerRect,
                 color: borderColor.cgColor,
-                width: max(0.7, textbox.borderWidth)
+                width: textbox.effectiveBorderWidth
             ))
         }
         // 글상자 안 개체 (그림/도형)는 글상자 콘텐츠로 그린다 (R29 #1).

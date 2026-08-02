@@ -77,138 +77,9 @@ public struct HwpHitTester {
         return nil
     }
 
-    /// frame 밖 가시 영역까지 포함한 히트 자격 프레임 — 이 안이면 링크만 확인하고
-    /// 밖이면 종전처럼 기각한다. 페인트가 클립 없이 그리는 영역과 같아야
-    /// "방출 ≡ 히트"가 성립한다 (AGENTS.md "하이퍼링크 방출" 짝 규약).
-    ///
-    /// - `.text`: slight-overflow 한 줄 문단이 frame 폭의 허용 초과분
-    ///   (`slightOverflowWidthRatio`)만큼 좌우로 넘어 그려진다 (#4).
-    /// - `.footnote`: 각주 안 개체가 블록 폭을 넘어 그려질 수 있다 — 한글도
-    ///   자르지 않는다 (헌법주석 883쪽 각주 29의 표는 오른쪽 본문 경계를
-    ///   ~12.6pt 넘는다). R39 #3.
-    /// - 그 외: frame 그대로 (확장 없음 = 종전 동작).
-    private func hitEligibleFrame(for block: AnyHwpBlock) -> CGRect {
-        switch block.kind {
-        case .text:
-            let extra = block.frame.width * (HwpRenderTuning.Text.slightOverflowWidthRatio - 1)
-            return block.frame.insetBy(dx: -extra, dy: 0)
-        case .footnote:
-            guard case let .footnote(footnote) = block.payload else { return block.frame }
-            return footnoteContentFrame(footnote, in: block.frame)
-        default:
-            return block.frame
-        }
-    }
-
-    /// 각주 블록 frame ∪ **페인트가 실제로 닿는 모든 rect**.
-    ///
-    /// 최상위 개체 rect만 모으면 자손 (각주 안 표의 셀·문단, 글상자 안 문단) 이
-    /// 자기 컨테이너를 넘어 그려질 때 그 띠가 자격 영역에서 빠져 보이는 링크가
-    /// 안 눌린다 (R41 #2). `walkFootnote`가 페인트와 같은 재귀로 방문하므로 그
-    /// 방문 rect를 그대로 합집합한다 — 영역 계산을 손으로 다시 짜면 페인트가
-    /// 깊어질 때마다 또 갈린다.
-    private func footnoteContentFrame(
-        _ footnote: HwpFootnoteBlock, in blockFrame: CGRect
-    ) -> CGRect {
-        paintedRects(footnote, origin: blockFrame.origin)
-            .reduce(blockFrame) { $0.union($1) }
-    }
-
-    /// 각주 자손들의 rect (페이지 좌표, 블록 프레임 제외) — **자격 영역 전용**.
-    ///
-    /// 자격 영역은 실제 칠 영역의 **상위집합**이어야 한다: 좁으면 그 위의 탭이
-    /// `containerHit`에 닿기도 전에 기각된다 (R53). 반대로 claim은 이 rect로
-    /// 하면 안 된다 — 클립 밖 그림·속 빈 도형·안 채운 셀의 투명한 자리까지
-    /// 각주 것으로 가져가 아래 블록의 **보이는** 링크를 막는다 (R54).
-    /// claim은 `paintsContent`가 정밀 커버리지로 판정한다.
-    private func paintedRects(
-        _ footnote: HwpFootnoteBlock, origin: CGPoint
-    ) -> [CGRect] {
-        var rects: [CGRect] = []
-        HwpBlockContentWalker.walkFootnote(
-            footnote,
-            origin: origin,
-            onParagraphText: { _, rect, _ in rects.append(Self.textBounds(rect)) },
-            onCellStart: { _, rect in rects.append(rect) },
-            // 테두리 stroke는 rect 밖으로 폭의 절반이 나간다 (R61) — 자격 영역이
-            // 그만큼 넓어야 보이는 선 위의 탭이 `containerHit`에 닿는다
-            onCellImage: { image, rect in
-                rects.append(Self.strokeBounds(rect, borderWidth: image.borderWidth))
-            },
-            onCellShape: { _, rect in rects.append(rect) },
-            onCellTextbox: { textbox, rect in
-                rects.append(Self.strokeBounds(
-                    rect, borderWidth: textbox.textbox.borderWidth
-                ))
-                HwpBlockContentWalker.walkParagraphs(
-                    textbox.textbox.paragraphs, offset: rect.origin
-                ) { _, inner, _ in rects.append(Self.textBounds(inner)) }
-                // 글상자 안 그림·도형도 `textboxCommands`가 클립 없이 그린다 —
-                // 글상자 rect에서 멈추면 넘친 자식 위의 탭이 `containerHit`에
-                // 닿기도 전에 기각돼 아래 블록의 링크가 열린다 (R46 #1).
-                for child in textbox.textbox.images.map(\.rect)
-                    + textbox.textbox.shapes.map(\.rect)
-                {
-                    rects.append(child.offsetBy(dx: rect.minX, dy: rect.minY))
-                }
-            }
-        )
-        return rects
-    }
-
-    /// 각주가 이 지점에 **실제로 칠했는가** — 자격 영역(bounding box)의 투명한
-    /// 틈과 구분한다 (R54). 커버리지의 소유자는 둘뿐이다: 층은
-    /// `ContentLayer.paints`, 텍스트는 그려진 줄 상자
-    /// (`HwpDrawnTextLayout.textLineRegions` — 선택 하이라이트와 같은 정의).
-    private func paintsContent(
-        _ footnote: HwpFootnoteBlock, origin: CGPoint, at point: CGPoint
-    ) -> Bool {
-        var painted = false
-        func note(_ hit: @autoclosure () -> Bool) {
-            guard !painted else { return }
-            painted = hit()
-        }
-        func paintsText(_ attributed: NSAttributedString, in rect: CGRect) -> Bool {
-            textPaints(attributed, in: rect, at: point)
-        }
-        HwpBlockContentWalker.walkFootnote(
-            footnote,
-            origin: origin,
-            onParagraphText: { attributed, rect, _ in note(paintsText(attributed, in: rect)) },
-            onCellStart: { cell, rect in
-                // 채움 ∪ 칸막이 — 안 채운 셀의 **칸 안**만 아래 블록 몫이다 (R55)
-                note(cell.paints(Self.payloadPoint(point, page: rect, payload: cell.cellFrame)))
-            },
-            onCellImage: { image, rect in
-                note(HwpBlockContentWalker.ContentLayer.image(image)
-                    .paints(Self.payloadPoint(point, page: rect, payload: image.rect)))
-            },
-            onCellShape: { shape, rect in
-                note(HwpBlockContentWalker.ContentLayer.shape(shape)
-                    .paints(Self.payloadPoint(point, page: rect, payload: shape.rect)))
-            },
-            onCellTextbox: { textbox, rect in
-                // 글상자는 `textboxCommands`가 늘 칠한다 (fillColor 없어도 .hwpWhite)
-                note(rect.contains(point))
-                HwpBlockContentWalker.walkParagraphs(
-                    textbox.textbox.paragraphs, offset: rect.origin
-                ) { attributed, inner, _ in note(paintsText(attributed, in: inner)) }
-                // 글상자를 넘어 그려지는 자식 (R46 #1) 도 같은 규칙으로 본다
-                let local = CGPoint(x: point.x - rect.minX, y: point.y - rect.minY)
-                for image in textbox.textbox.images {
-                    note(HwpBlockContentWalker.ContentLayer.image(image).paints(local))
-                }
-                for shape in textbox.textbox.shapes {
-                    note(HwpBlockContentWalker.ContentLayer.shape(shape).paints(local))
-                }
-            }
-        )
-        return painted
-    }
-
     /// 페이지 좌표의 점을 페이로드 자신의 좌표계로 옮긴다 — `ContentLayer`의
     /// 커버리지 판정이 페이로드 rect 기준이라 walker가 준 페이지 rect로 되돌린다.
-    private static func payloadPoint(
+    static func payloadPoint(
         _ point: CGPoint, page: CGRect, payload: CGRect
     ) -> CGPoint {
         CGPoint(
@@ -273,9 +144,12 @@ public struct HwpHitTester {
             }
             // **감싼 링크는 개체 rect 전체의 것**이다 (R60) — 방출이 그 rect로
             // 내므로 속 빈 도형의 안쪽처럼 칠하지 않은 자리도 이 개체의 링크다.
+            // 반대로 **rect 밖은 아니다** (R62): 자손이 부모를 넘어 그려 `.occluded`
+            // 를 돌려줘도 방출은 부모 rect까지만 링크를 내므로, 그 밖에서 부모
+            // URL을 열면 paint list에 없는 링크가 된다. 자손 순회는 그대로 무제한.
             // 구제 대상은 `controlIndex` 가 일치하는 링크뿐이라 (R49/R50 #1) 옆의
             // 다른 링크를 덮었을 뿐인 경우는 여전히 살아나지 않는다.
-            if innerOccluded || layer.rect.contains(point),
+            if layer.rect.contains(point),
                let url = layer.wrapperURL ?? HwpDrawnTextLayout.wrapperHyperlinkURL(
                    in: paragraphs,
                    paragraphId: layer.paragraphId,
@@ -300,16 +174,10 @@ public struct HwpHitTester {
         // 아래 walkText 스캔은 페인트 **정순**이라 덮인 스팬 링크를 먼저 잡아
         // 층 인식 조회에 닿지도 못했다 (R42 #1). 각주만 그 조회 한 곳에 맡긴다 —
         // 안쪽 `spanAwareHyperlinkURL`이 문단마다 스팬 우선 규칙을 그대로 지킨다.
-        if case let .footnote(footnote) = block.payload {
-            // 층 조회가 **먼저** 이기고, 실패했을 때만 블록-레벨 계약으로 떨어진다
-            // (R59). 방출은 컨테이너 링크가 하나도 없으면 `block.hyperlinkURL`을
-            // frame 전체로 내므로, 이 폴백이 없으면 밑줄은 그려지는데 탭이 안 먹는다.
-            if let url = containerHyperlinkURL(block: block, point: point) {
-                return url
-            }
-            // 다만 방출은 안쪽 링크를 하나라도 내면 블록 링크를 **내지 않는다**
-            // (`!emitted`) — 그때도 폴백하면 paint list에 없는 URL이 열린다 (R61).
-            return footnote.hasHyperlink ? nil : block.hyperlinkURL
+        if case .footnote = block.payload {
+            // 층 조회가 **먼저** 이기고, 실패했을 때만 블록-레벨 계약으로 떨어진다 (R59).
+            return containerHyperlinkURL(block: block, point: point)
+                ?? blockLevelURL(for: block)
         }
         var hasFieldSpans = false
         var fieldURL: String?
@@ -336,7 +204,24 @@ public struct HwpHitTester {
             // 지점에서 덮인 링크가 다시 열린다 (R43).
             return containerHyperlinkURL(block: block, point: point)
         }
-        return block.hyperlinkURL ?? containerHyperlinkURL(block: block, point: point)
+        // 컨테이너도 **안쪽이 먼저**다 (R62) — 블록 링크를 앞에 두면 셀·글상자 문단의
+        // 링크가 프레임 전체 URL에 뭉개져 방출된 적 없는 URL이 열린다.
+        return containerHyperlinkURL(block: block, point: point) ?? blockLevelURL(for: block)
+    }
+
+    /// 블록 프레임 전체에 걸리는 링크 — **방출과 같은 게이트**를 통과할 때만 (R61/R62).
+    ///
+    /// 방출은 안쪽(문단·감싼 개체) 링크를 하나라도 내면 블록 링크를 내지 않는다
+    /// (`appendHyperlinkCommands`의 `!emitted`). 히트가 그때도 폴백하면 paint list에
+    /// 없는 URL이 열린다 — 각주뿐 아니라 표·글상자도 같은 계약이다.
+    private func blockLevelURL(for block: AnyHwpBlock) -> String? {
+        let hasInnerLink: Bool = switch block.payload {
+        case let .footnote(footnote): footnote.hasHyperlink
+        case let .table(table): table.hasHyperlink
+        case let .textbox(textbox): textbox.hasHyperlink
+        default: false
+        }
+        return hasInnerLink ? nil : block.hyperlinkURL
     }
 
     private func tableGridPosition(block: AnyHwpBlock, point: CGPoint) -> (row: Int, col: Int) {
@@ -422,50 +307,6 @@ public struct HwpHitTester {
         return layerHit(layers.behindText, wrappedBy: paragraphs, at: point)
     }
 
-    /// 문단들이 이 지점에 글자를 칠했는지 — 그려진 줄 상자 기준.
-    private func paragraphsPaint(
-        _ paragraphs: [HwpLaidOutParagraph], at point: CGPoint
-    ) -> Bool {
-        paragraphs.contains { textPaints($0.attributedString, in: $0.rect, at: point) }
-    }
-
-    /// 문단이 이 지점에 글자를 칠했는지 — **rect 밖이면 CT 조판을 하지 않는다**.
-    ///
-    /// 줄 상자는 문단 rect 안이다 (가로만 slight-overflow 허용치까지 넘으므로
-    /// `hitEligibleFrame`의 `.text`와 같은 여유를 준다). 이 게이트가 없으면 탭 한
-    /// 번이 셀·문단 수만큼 framesetting을 돌린다 — `tableHit`은 셀 프레임으로
-    /// 미리 거르지 않으므로 (R44 #2) 큰 표에서 동기 탭 핸들러가 멈춘다
-    /// (R55 실측: 600셀 표 탭당 29.16ms).
-    private func textPaints(
-        _ attributed: NSAttributedString, in rect: CGRect, at point: CGPoint
-    ) -> Bool {
-        guard Self.textBounds(rect).contains(point) else { return false }
-        return HwpDrawnTextLayout.textLineRegions(
-            attributedString: attributed, origin: rect.origin, lineWidth: rect.width
-        ).contains { $0.contains(point) }
-    }
-
-    /// 문단 텍스트가 닿을 수 있는 **안전한 상위집합** — 자격 영역(`paintedRects`)과
-    /// claim 게이트(`textPaints`)가 이 하나를 공유해야 "자격 ⊇ 칠"이 구조적으로
-    /// 성립한다 (R56). 따로 두면 자격이 좁아 게이트의 여유가 도달 불가능해진다.
-    ///
-    /// 넘치는 축 둘: slight-overflow 한 줄은 rect 폭을 넘고 (`hitEligibleFrame`의
-    /// `.text`와 같은 여유), 캐시 높이가 대체 폰트 CT 줄보다 짧으면 아래로도
-    /// 넘는다. 후자는 값싸게 정확히 잴 수 없어 (walker 콜백에 `HwpParagraphFrame`이
-    /// 없다) 같은 여유를 세로에도 준다 — 상위집합을 넓히는 것은 과잉 claim이
-    /// 아니다. 실제 claim은 줄 상자로 정밀 판정한다.
-    /// 테두리 stroke를 포함한 자격 상위집합 — CG가 경로 중앙에 긋는 폭의 절반이
-    /// rect 밖이다 (`HwpCellImage.paintedRect`와 같은 규칙, R61).
-    private static func strokeBounds(_ rect: CGRect, borderWidth: CGFloat) -> CGRect {
-        guard borderWidth > 0 else { return rect }
-        return rect.insetBy(dx: -borderWidth / 2, dy: -borderWidth / 2)
-    }
-
-    private static func textBounds(_ rect: CGRect) -> CGRect {
-        let extra = rect.width * (HwpRenderTuning.Text.slightOverflowWidthRatio - 1)
-        return rect.insetBy(dx: -extra, dy: -extra)
-    }
-
     /// 표를 셀 단위로 훑는다. 셀 안은 같은 컨테이너 규약이고, **채운 셀은 아래를
     /// 가린다** — 페인터가 `fillRect`로 칠하므로 (R43 #5) 링크가 없다고 통과시키면
     /// 그 아래 문단 링크가 열린다.
@@ -498,7 +339,7 @@ public struct HwpHitTester {
                     // 감싼 링크는 **표 rect 전체**의 것이다 (R60) — 층 경로
                     // (`layerHit`) 와 같은 규약이고 (R50 #2), 셀 안 표는 R48이 평면
                     // 정렬에서 빠져 그 경로 밖에 있으므로 여기서 되풀이한다.
-                    if innerOccluded || nested.rect.contains(point),
+                    if nested.rect.contains(point),
                        let url = nested.wrapperURL
                        ?? HwpDrawnTextLayout.wrapperHyperlinkURL(
                            in: cell.paragraphs,
