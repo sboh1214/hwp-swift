@@ -77,7 +77,8 @@ public enum HwpBlockContentWalker {
         onParagraphText: (NSAttributedString, CGRect, UInt32?) -> Void,
         onCellImage: (HwpCellImage, CGRect) -> Void = { _, _ in },
         onCellShape: (HwpCellShape, CGRect) -> Void = { _, _ in },
-        onCellTextbox: (HwpCellTextbox, CGRect) -> Void = { _, _ in }
+        onCellTextbox: (HwpCellTextbox, CGRect) -> Void = { _, _ in },
+        onNestedTable: (HwpNestedTableFrame, CGRect) -> Void = { _, _ in }
     ) {
         for row in table.rows {
             for cell in row.cells {
@@ -95,6 +96,7 @@ public enum HwpBlockContentWalker {
                     case let .textbox(textbox):
                         onCellTextbox(textbox, textbox.rect.offsetBy(dx: origin.x, dy: origin.y))
                     case let .nestedTable(nested):
+                        onNestedTable(nested, nested.rect.offsetBy(dx: origin.x, dy: origin.y))
                         walkTable(
                             nested.table,
                             origin: CGPoint(
@@ -105,7 +107,8 @@ public enum HwpBlockContentWalker {
                             onParagraphText: onParagraphText,
                             onCellImage: onCellImage,
                             onCellShape: onCellShape,
-                            onCellTextbox: onCellTextbox
+                            onCellTextbox: onCellTextbox,
+                            onNestedTable: onNestedTable
                         )
                     }
                 }
@@ -119,6 +122,7 @@ public enum HwpBlockContentWalker {
                 // 중첩 표는 셀 안 위치를 origin으로 재귀 순회한다 —
                 // origin 합성 산식은 여기 한 곳에만 둔다.
                 for nested in cell.nestedTables {
+                    onNestedTable(nested, nested.rect.offsetBy(dx: origin.x, dy: origin.y))
                     walkTable(
                         nested.table,
                         origin: CGPoint(
@@ -129,7 +133,8 @@ public enum HwpBlockContentWalker {
                         onParagraphText: onParagraphText,
                         onCellImage: onCellImage,
                         onCellShape: onCellShape,
-                        onCellTextbox: onCellTextbox
+                        onCellTextbox: onCellTextbox,
+                        onNestedTable: onNestedTable
                     )
                 }
             }
@@ -148,7 +153,8 @@ public enum HwpBlockContentWalker {
         onCellStart: (HwpTableCellFrame, CGRect) -> Void = { _, _ in },
         onCellImage: (HwpCellImage, CGRect) -> Void = { _, _ in },
         onCellShape: (HwpCellShape, CGRect) -> Void = { _, _ in },
-        onCellTextbox: (HwpCellTextbox, CGRect) -> Void = { _, _ in }
+        onCellTextbox: (HwpCellTextbox, CGRect) -> Void = { _, _ in },
+        onNestedTable: (HwpNestedTableFrame, CGRect) -> Void = { _, _ in }
     ) {
         // 표도 같은 평면·정렬에 합류한다 (R47 #1) — 따로 두고 마지막에 그리면
         // 글 뒤로 표가 텍스트 앞에 나온다.
@@ -169,6 +175,7 @@ public enum HwpBlockContentWalker {
             case let .nestedTable(nested):
                 // 각주 안 표는 블록-로컬 위치를 origin으로 재귀 순회한다
                 // (셀 경로와 같은 origin 합성 산식).
+                onNestedTable(nested, nested.rect.offsetBy(dx: origin.x, dy: origin.y))
                 walkTable(
                     nested.table,
                     origin: CGPoint(
@@ -179,7 +186,8 @@ public enum HwpBlockContentWalker {
                     onParagraphText: onParagraphText,
                     onCellImage: onCellImage,
                     onCellShape: onCellShape,
-                    onCellTextbox: onCellTextbox
+                    onCellTextbox: onCellTextbox,
+                    onNestedTable: onNestedTable
                 )
             }
         }
@@ -248,18 +256,12 @@ public enum HwpBlockContentWalker {
             }
         }
 
-        /// 테두리 선 위인지 — 페인터가 `strokeWidth`로 긋는 그 선이다.
-        /// 굵기 0은 hairline으로 그려지므로 탭 판정에 최소 1pt를 준다.
+        /// 테두리 선 위인지 — 페인터가 긋는 그 선(`HwpShapeGeometry.strokedPath`)이다.
+        /// 자격 계산과 **같은 경로**를 봐야 자격이 상위집합이 된다 (R64).
         private static func strokePaints(
             _ geometry: HwpShapeGeometry, at localPoint: CGPoint
         ) -> Bool {
-            guard geometry.strokeColor != nil else { return false }
-            return geometry.path.copy(
-                strokingWithWidth: max(geometry.strokeWidth, 1),
-                lineCap: .butt,
-                lineJoin: .miter,
-                miterLimit: 10
-            ).contains(localPoint)
+            geometry.strokedPath?.contains(localPoint) ?? false
         }
 
         /// 이 층이 차지하는 영역 — **감싼 링크는 이 rect의 것**이다 (R60).

@@ -14,7 +14,7 @@ import XCTest
     /// 자격 영역은 넘쳐 그린 자손까지, 블록-레벨 폴백은 방출과 같은 게이트로,
     /// 감싼 링크는 개체 rect **안**에서만.
     final class HwpContainerBlockLinkHitTests: XCTestCase {
-        private let black = HwpRGBColor(red: 0, green: 0, blue: 0)
+        let black = HwpRGBColor(red: 0, green: 0, blue: 0)
 
         // MARK: - ① 자격 영역: 넘쳐 그린 자손
 
@@ -385,11 +385,12 @@ import XCTest
             )
         }
 
-        private func cell(
+        func cell(
             _ localFrame: CGRect,
             paragraphs: [HwpLaidOutParagraph] = [],
             shapes: [HwpCellShape] = [],
-            textboxes: [HwpCellTextbox] = []
+            textboxes: [HwpCellTextbox] = [],
+            nestedTables: [HwpNestedTableFrame] = []
         ) -> HwpTableCellFrame {
             HwpTableCellFrame(
                 cellFrame: localFrame,
@@ -397,12 +398,13 @@ import XCTest
                 paragraphs: paragraphs,
                 borders: .uniform(width: 0.5, color: black),
                 fillColor: nil,
+                nestedTables: nestedTables,
                 shapes: shapes,
                 textboxes: textboxes
             )
         }
 
-        private func tableBlock(
+        func tableBlock(
             frame: CGRect, cell: HwpTableCellFrame, hyperlinkURL: String? = nil
         ) -> AnyHwpBlock {
             AnyHwpBlock(
@@ -417,7 +419,7 @@ import XCTest
             )
         }
 
-        private func page(_ blocks: [AnyHwpBlock]) -> HwpPage {
+        func page(_ blocks: [AnyHwpBlock]) -> HwpPage {
             HwpPage(
                 size: CGSize(width: 595, height: 842),
                 margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),

@@ -301,24 +301,27 @@ public struct HwpCellShape: @unchecked Sendable, Hashable {
         self.wrapperURL = wrapperURL
     }
 
-    /// 실제 칠 영역 — **경로 bbox ∪ rect** 에 stroke 절반을 더한다.
+    /// 실제 칠 영역 — **경로 bbox ∪ rect ∪ stroke 경로 bbox**.
     ///
-    /// 경로를 `strokeWidth`로 그으면 폭의 절반이 밖으로 나가고 (R62), 탭 판정
-    /// (`ContentLayer.paints`) 이 최소 1pt로 굵히므로 자격도 같은 값을 쓴다.
-    /// **경로 자체도 rect로 클램프되지 않는다** (R63): `HwpShapeGeometry.build`는
-    /// 렌더 행렬(표 84 — 회전·확대)을 적용할 뿐이고 `shapeCommands`는 클립 없이
-    /// 그리므로 회전 도형은 축정렬 rect를 넘어 칠한다. 판정이 경로를 보는데 자격이
-    /// rect에서 멈추면 보이는 칠 위의 탭이 기각된다 — 제어점까지 무는
-    /// `boundingBox`로 union해 상위집합을 보장한다.
+    /// **경로는 rect로 클램프되지 않는다** (R63): `HwpShapeGeometry.build`는 렌더
+    /// 행렬(표 84 — 회전·확대)을 적용할 뿐이고 `shapeCommands`는 클립 없이 그리므로
+    /// 회전 도형은 축정렬 rect를 넘어 칠한다. 판정(`ContentLayer.paints`)이 경로를
+    /// 보는데 자격이 rect에서 멈추면 보이는 칠 위의 탭이 기각된다.
+    /// stroke 몫은 폭의 절반이 아니라 **`strokedPath`의 bbox**로 잡는다 (R64) —
+    /// miter 조인의 팁은 그보다 훨씬 멀리 (`miterLimit` 상한까지) 뻗고, 판정도 같은
+    /// 경로를 보므로 절반만 넓히면 자격이 상위집합이 아니다.
     public var paintedRect: CGRect {
-        var painted = rect
-        let bounds = geometry.path.boundingBox
-        if !bounds.isNull, !bounds.isInfinite {
-            painted = painted.union(bounds.offsetBy(dx: rect.minX, dy: rect.minY))
+        var painted = union(rect, geometry.path.boundingBox)
+        if let stroked = geometry.strokedPath {
+            painted = union(painted, stroked.boundingBox)
         }
-        guard geometry.strokeColor != nil else { return painted }
-        let width = max(geometry.strokeWidth, 1)
-        return painted.insetBy(dx: -width / 2, dy: -width / 2)
+        return painted
+    }
+
+    /// 도형-로컬 bbox를 rect 좌표로 옮겨 합친다 — 빈·무한 bbox는 무시한다
+    private func union(_ base: CGRect, _ bounds: CGRect) -> CGRect {
+        guard !bounds.isNull, !bounds.isInfinite else { return base }
+        return base.union(bounds.offsetBy(dx: rect.minX, dy: rect.minY))
     }
 
     /// 감싼 링크 URL만 바꾼 사본 — 분할 전 해석값을 개체에 고정한다 (R58)

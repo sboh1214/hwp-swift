@@ -53,6 +53,11 @@ extension HwpHitTester {
         func addCell(_: HwpTableCellFrame, _ rect: CGRect) {
             rects.append(rect)
         }
+        /// 중첩 표는 **자기 frame**도 자격이다 (R64) — 셀만 모으면 표 rect와 첫 셀
+        /// 사이의 여백 띠가 빠지는데, 방출은 감싼 링크를 표 rect 전체로 낸다.
+        func addNestedTable(_: HwpNestedTableFrame, _ rect: CGRect) {
+            rects.append(rect)
+        }
         /// 테두리 stroke는 rect 밖으로 폭의 절반이 나간다 (R61/R62) — 자격이 그만큼
         /// 넓어야 보이는 선 위의 탭이 `containerHit`에 닿는다
         func addImage(_ image: HwpCellImage, _ rect: CGRect) {
@@ -92,7 +97,8 @@ extension HwpHitTester {
                 onCellStart: addCell,
                 onCellImage: addImage,
                 onCellShape: addShape,
-                onCellTextbox: addTextbox
+                onCellTextbox: addTextbox,
+                onNestedTable: addNestedTable
             )
         case let .table(table):
             HwpBlockContentWalker.walkTable(
@@ -102,7 +108,8 @@ extension HwpHitTester {
                 onParagraphText: addText,
                 onCellImage: addImage,
                 onCellShape: addShape,
-                onCellTextbox: addTextbox
+                onCellTextbox: addTextbox,
+                onNestedTable: addNestedTable
             )
         case let .textbox(textbox):
             addTextboxChildren(textbox, offset: origin)

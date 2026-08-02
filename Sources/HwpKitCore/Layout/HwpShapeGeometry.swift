@@ -63,6 +63,23 @@ public struct HwpShapeGeometry: @unchecked Sendable {
         )
     }
 
+    /// 페인터가 **실제로 긋는 그 선**의 경로 — 탭 판정(`ContentLayer.paints`)과
+    /// 자격(`HwpCellShape.paintedRect`)이 이 하나를 공유한다 (R64).
+    ///
+    /// bbox를 폭의 절반만 넓히면 상위집합이 아니다: miter 조인의 팁은
+    /// `width / (2·sin(θ/2))`까지, `miterLimit`(10) 상한으로 폭의 **5배**까지 뻗는다
+    /// — 예각 다각형에서 보이는 팁 위의 탭이 자격에서 기각된다.
+    /// 굵기 0은 hairline으로 그려지므로 판정에 최소 1pt를 준다.
+    public var strokedPath: CGPath? {
+        guard strokeColor != nil else { return nil }
+        return path.copy(
+            strokingWithWidth: max(strokeWidth, 1),
+            lineCap: .butt,
+            lineJoin: .miter,
+            miterLimit: 10
+        )
+    }
+
     // MARK: - Public path helpers (testability)
 
     /// CGRect에서 사각형 CGPath를 생성한다.
