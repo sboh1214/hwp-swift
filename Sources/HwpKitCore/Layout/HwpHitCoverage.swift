@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreText
 import Foundation
 
 // MARK: - 자격 영역과 칠 커버리지
@@ -47,8 +48,8 @@ extension HwpHitTester {
     func paintedRects(for block: AnyHwpBlock) -> [CGRect] {
         var rects: [CGRect] = []
         let origin = block.frame.origin
-        func addText(_: NSAttributedString, _ rect: CGRect, _: UInt32?) {
-            rects.append(Self.textBounds(rect))
+        func addText(_ attributed: NSAttributedString, _ rect: CGRect, _: UInt32?) {
+            rects.append(Self.textBounds(rect, of: attributed))
         }
         func addCell(_: HwpTableCellFrame, _ rect: CGRect) {
             rects.append(rect)
@@ -73,7 +74,9 @@ extension HwpHitTester {
         func addTextboxChildren(_ textbox: HwpTextboxFrame, offset: CGPoint) {
             HwpBlockContentWalker.walkParagraphs(
                 textbox.paragraphs, offset: offset
-            ) { _, inner, _ in rects.append(Self.textBounds(inner)) }
+            ) { attributed, inner, _ in
+                rects.append(Self.textBounds(inner, of: attributed))
+            }
             // 글상자 안 그림·도형도 `textboxCommands`가 클립 없이 그린다 — 글상자
             // rect에서 멈추면 넘친 자식 위의 탭이 기각된다 (R46 #1).
             for child in textbox.images.map(\.paintedRect)
@@ -186,7 +189,7 @@ extension HwpHitTester {
     func textPaints(
         _ attributed: NSAttributedString, in rect: CGRect, at point: CGPoint
     ) -> Bool {
-        guard Self.textBounds(rect).contains(point) else { return false }
+        guard Self.textBounds(rect, of: attributed).contains(point) else { return false }
         return HwpDrawnTextLayout.textLineRegions(
             attributedString: attributed, origin: rect.origin, lineWidth: rect.width
         ).contains { $0.contains(point) }
@@ -208,8 +211,33 @@ extension HwpHitTester {
         return rect.insetBy(dx: -borderWidth / 2, dy: -borderWidth / 2)
     }
 
-    static func textBounds(_ rect: CGRect) -> CGRect {
-        let extra = rect.width * (HwpRenderTuning.Text.slightOverflowWidthRatio - 1)
-        return rect.insetBy(dx: -extra, dy: -extra)
+    static func textBounds(_ rect: CGRect, of attributed: NSAttributedString) -> CGRect {
+        let horizontal = rect.width * (HwpRenderTuning.Text.slightOverflowWidthRatio - 1)
+        // 세로 여유는 **폰트 메트릭**에서 온다 (R65). 폭에 비례시키면 넘침의 크기와
+        // 아무 관계가 없어, 좁은 셀(폭 40pt → 2.4pt)에서 보이는 글자가 자격 밖으로
+        // 나간다 — 그러면 전경 글자가 claim에 실패해 뒤 층의 감싼 링크가 이기고,
+        // 블록 밖으로 그려진 링크는 아예 안 눌린다. 조판 없이 **속성만** 훑어 가장
+        // 큰 줄 높이를 쓴다 (R55의 탭 지연 재발 방지 — CT 조판은 이 게이트 뒤다).
+        return rect.insetBy(dx: -horizontal, dy: -max(horizontal, maxLineHeight(of: attributed)))
+    }
+
+    /// 이 문단이 쓸 수 있는 가장 큰 CT 줄 높이 — 조판 없이 폰트 메트릭만 본다.
+    /// 캐시 높이가 대체 폰트보다 짧을 때 아래로 새는 양의 상한이다 (한 줄 기준 —
+    /// 여러 줄이 각각 조금씩 짧으면 합이 이보다 클 수 있다).
+    private static func maxLineHeight(of attributed: NSAttributedString) -> CGFloat {
+        var maxHeight: CGFloat = 0
+        attributed.enumerateAttribute(
+            .font, in: NSRange(location: 0, length: attributed.length)
+        ) { value, _, _ in
+            guard let value else { return }
+            let ref = value as CFTypeRef
+            guard CFGetTypeID(ref) == CTFontGetTypeID() else { return }
+            let font = unsafeBitCast(ref, to: CTFont.self)
+            maxHeight = max(
+                maxHeight,
+                CTFontGetAscent(font) + CTFontGetDescent(font) + CTFontGetLeading(font)
+            )
+        }
+        return maxHeight
     }
 }

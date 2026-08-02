@@ -141,6 +141,62 @@ import XCTest
                 == .hyperlink(url: "https://example.com/covered", blockIndex: 0)
         }
 
+        // MARK: - R65: 세로 자격은 폰트 메트릭
+
+        /// 캐시 문단 높이가 CT 줄보다 짧으면 글자가 rect **아래**로 그려진다.
+        /// 세로 여유를 문단 **폭**에 비례시키면 (좁은 셀은 2.4pt뿐) 그 글자가 자격
+        /// 밖이라, 전경 글자가 claim에 실패하고 뒤 층의 링크가 이긴다.
+        func testUndersizedCachedParagraphStillClaimsRenderedGlyphs() {
+            let blockFrame = CGRect(x: 50, y: 600, width: 300, height: 60)
+            let behindBox = HwpTextboxFrame(
+                outerFrame: CGRect(x: 0, y: 0, width: 300, height: 60),
+                paragraphs: [HwpLaidOutParagraph(
+                    attributedString: NSAttributedString(string: "뒤 링크"),
+                    frame: HwpParagraphFrame(totalHeight: 60, lines: []),
+                    rect: CGRect(x: 0, y: 0, width: 300, height: 60),
+                    paragraphId: 2,
+                    hyperlinkURL: "https://example.com/behind"
+                )],
+                borderColor: nil, borderWidth: 0, fillColor: nil
+            )
+            // 12pt 글자를 담은 문단인데 캐시 높이는 4pt — 폭도 40pt라 폭 비례
+            // 여유는 2.4pt뿐이다 (실제 줄은 ~14pt)
+            let foreground = NSMutableAttributedString(string: "가나다")
+            foreground.addAttribute(
+                .font, value: CTFontCreateWithName("Menlo" as CFString, 12, nil),
+                range: NSRange(location: 0, length: foreground.length)
+            )
+            let footnote = HwpFootnoteBlock(
+                frame: blockFrame,
+                paragraphs: [HwpLaidOutParagraph(
+                    attributedString: foreground,
+                    frame: HwpParagraphFrame(totalHeight: 4, lines: []),
+                    rect: CGRect(x: 0, y: 0, width: 40, height: 4),
+                    paragraphId: 1,
+                    hyperlinkURL: nil
+                )],
+                number: 1,
+                separatorLine: CGRect(x: 50, y: 590, width: 130, height: 1),
+                textboxes: [HwpCellTextbox(
+                    rect: CGRect(x: 0, y: 0, width: 300, height: 60),
+                    textbox: behindBox,
+                    paintsBehindText: true,
+                    zOrder: 0, sourceOrder: 0,
+                    controlInstanceId: 23
+                )]
+            )
+            let pages = page([AnyHwpBlock(
+                frame: blockFrame, kind: .footnote, payload: .footnote(footnote)
+            )])
+
+            // 캐시 rect 아래지만 **그려진 글자 위** — 각주가 claim한다
+            expect(HwpHitTester().hit(page: pages, point: CGPoint(x: 56, y: 610)))
+                == .footnote(blockIndex: 0, number: 1)
+            // 줄 상자보다 훨씬 아래 — 글자가 없으므로 뒤 글상자의 링크가 열린다
+            expect(HwpHitTester().hit(page: pages, point: CGPoint(x: 56, y: 640)))
+                == .hyperlink(url: "https://example.com/behind", blockIndex: 0)
+        }
+
         /// 폰트를 고정해 글리프 rect가 기기에 따라 달라지지 않게 한 스팬 문단
         private func spanParagraph(
             _ text: String, url: String, rect: CGRect, paragraphId: UInt32

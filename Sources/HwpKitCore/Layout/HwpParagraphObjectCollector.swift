@@ -98,11 +98,10 @@ struct HwpParagraphObjectCollector {
                 if let table = table(nested, placement: placement, state: &state) {
                     collected.nestedTables.append(table)
                 }
-                if Self.raisesContainerFloor(
-                    nested.commonCtrlProperty, anchor: placement.anchor
-                ) {
-                    collected.noteFloating(since: marker)
-                }
+                noteContainerFloor(
+                    nested.commonCtrlProperty,
+                    placement: placement, since: marker, into: &collected
+                )
                 continue
             }
             guard let (commonProperty, components) = Self.handledControl(ctrl),
@@ -118,11 +117,34 @@ struct HwpParagraphObjectCollector {
                     into: &collected
                 )
             }
-            if Self.raisesContainerFloor(commonProperty, anchor: placement.anchor) {
-                collected.noteFloating(since: marker)
-            }
+            noteContainerFloor(
+                commonProperty, placement: placement, since: marker, into: &collected
+            )
         }
         return collected
+    }
+
+    /// 컨테이너 높이 하한을 기록한다 — 줄이 **안 담은** 개체(`raisesContainerFloor`)는
+    /// 통째로, 담았다고 본 개체는 **예약 상자를 넘친 만큼만** (R65).
+    ///
+    /// 예약은 저작 치수다 (`inlineObjectSize` → 표 69 공통 속성). 표·글상자의 실제
+    /// 높이는 **내용**이 정하므로 예약보다 크게 조판될 수 있고, 그때 줄은 그 초과분을
+    /// 안 담는다 — `reservesSpace`(예약 > 0)만 보면 "줄이 담았다"로 접어 개체가 다음
+    /// 각주·행 위로 흘러나간다. #91이 저작 셀 높이에서 겪은 것과 같은 함정이다.
+    private func noteContainerFloor(
+        _ commonProperty: CoreHwp.HwpCommonCtrlProperty?,
+        placement: Placement,
+        since marker: ObjectMarker,
+        into collected: inout Objects
+    ) {
+        if Self.raisesContainerFloor(commonProperty, anchor: placement.anchor) {
+            collected.noteFloating(since: marker)
+            return
+        }
+        guard let anchor = placement.anchor, anchor.reservesSpace else { return }
+        collected.noteFloating(
+            since: marker, exceeding: anchor.origin.y + anchor.reserved.height
+        )
     }
 
     /// 문단에 붙은 표를 컨테이너-로컬 rect로 재귀 레이아웃한다 (#94).
@@ -500,12 +522,16 @@ extension HwpParagraphObjectCollector {
         /// 표식 이후 추가된 개체들의 하단 최대값을 떠 있는 개체 하단으로 기록한다.
         /// '떠 있음'은 컴포넌트가 아니라 **컨트롤**의 속성이라 호출부가 컨트롤
         /// 단위로 부른다.
-        mutating func noteFloating(since marker: ObjectMarker) {
+        mutating func noteFloating(since marker: ObjectMarker, exceeding reserved: CGFloat? = nil) {
             let bottoms = images[marker.images...].map(\.rect.maxY)
                 + shapes[marker.shapes...].map(\.rect.maxY)
                 + textboxes[marker.textboxes...].map(\.rect.maxY)
                 + nestedTables[marker.nestedTables...].map(\.rect.maxY)
             guard let bottom = bottoms.max() else { return }
+            // 줄이 잡아 준 상자 안이면 줄 높이가 이미 담는다 — 넘친 만큼만 하한이다
+            if let reserved, bottom <= reserved {
+                return
+            }
             floatingBottom = Swift.max(floatingBottom ?? bottom, bottom)
         }
     }
