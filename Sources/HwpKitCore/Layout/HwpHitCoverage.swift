@@ -58,11 +58,11 @@ extension HwpHitTester {
         func addImage(_ image: HwpCellImage, _ rect: CGRect) {
             rects.append(Self.strokeBounds(rect, borderWidth: image.borderWidth))
         }
+        /// 도형은 경로가 rect를 넘을 수 있어 `paintedRect` 하나가 칠 영역을 소유한다
+        /// (R63) — walker는 페이지 좌표 rect를 주므로 그 차이만큼 옮겨 받는다.
         func addShape(_ shape: HwpCellShape, _ rect: CGRect) {
-            rects.append(Self.strokeBounds(
-                rect,
-                borderWidth: shape.geometry.strokeColor == nil
-                    ? 0 : max(shape.geometry.strokeWidth, 1)
+            rects.append(shape.paintedRect.offsetBy(
+                dx: rect.minX - shape.rect.minX, dy: rect.minY - shape.rect.minY
             ))
         }
         func addTextboxChildren(_ textbox: HwpTextboxFrame, offset: CGPoint) {

@@ -144,12 +144,16 @@ public struct HwpPaintListBuilder: Sendable {
             _ paragraphs: [HwpLaidOutParagraph], _ objects: [WrappedObjectRef], offset: CGPoint
         ) {
             // 절단면 밖으로 완전히 잘린 조각은 그려지지 않으므로 링크도 없다
-            for object in objects where !object.rect.isEmpty {
-                guard let url = object.wrapperURL ?? HwpDrawnTextLayout.wrapperHyperlinkURL(
-                    in: paragraphs,
-                    paragraphId: object.paragraphId,
-                    controlIndex: object.controlIndex
-                ) else { continue }
+            let painted = objects.filter { !$0.rect.isEmpty }
+            // 조회를 개체마다 하면 O(N²)다 (R63) — 규칙이 같은 색인을 **한 번** 만들어
+            // 나눠 쓴다. 분할이 이미 고정한 `wrapperURL`뿐이면 색인도 만들지 않는다.
+            let wrapperIndex = painted.contains { $0.wrapperURL == nil }
+                ? HwpDrawnTextLayout.wrapperHyperlinkIndex(in: paragraphs)
+                : [:]
+            for object in painted {
+                guard let url = object.wrapperURL ?? wrapperIndex[HwpWrapperLinkKey(
+                    paragraphId: object.paragraphId, controlIndex: object.controlIndex
+                )] else { continue }
                 commands.append(.hyperlink(
                     rect: object.rect.offsetBy(dx: offset.x, dy: offset.y), url: url
                 ))

@@ -216,6 +216,136 @@ import XCTest
                 == .hyperlink(url: "https://example.com/beneath", blockIndex: 0)
         }
 
+        // MARK: - R63: 방출 영역 밖 폴백 금지 / 경로 칠 / 색인
+
+        /// 방출은 블록-레벨 폴백을 `block.frame`으로만 낸다 — 자격이 넘쳐 그린 자손까지
+        /// 넓어졌으므로 (R62) 그 띠에서도 폴백하면 방출된 적 없는 URL이 열린다.
+        func testTableBlockLinkStopsAtBlockFrame() {
+            let blockFrame = CGRect(x: 50, y: 100, width: 200, height: 50)
+            // 링크 **없는** 도형이 블록 아래로 40pt 넘친다 (페이지 y 130..190)
+            let overflow = filledShape(rect: CGRect(x: 0, y: 30, width: 60, height: 60))
+            let beneath = AnyHwpBlock(
+                frame: CGRect(x: 50, y: 100, width: 400, height: 150),
+                kind: .text,
+                attributedString: NSAttributedString(string: "본문 링크"),
+                hyperlinkURL: "https://example.com/beneath"
+            )
+            let block = tableBlock(
+                frame: blockFrame,
+                cell: cell(CGRect(x: 0, y: 0, width: 200, height: 50), shapes: [overflow]),
+                hyperlinkURL: "https://example.com/block"
+            )
+            let pages = page([beneath, block])
+
+            // frame 안 — 방출된 자리라 블록 링크가 열린다
+            expect(HwpHitTester().hit(page: pages, point: CGPoint(x: 60, y: 140)))
+                == .hyperlink(url: "https://example.com/block", blockIndex: 1)
+            // frame 밖 넘친 도형 위 — 그 자리엔 방출된 링크가 없다
+            expect(HwpHitTester().hit(page: pages, point: CGPoint(x: 80, y: 175)))
+                == .hyperlink(url: "https://example.com/beneath", blockIndex: 0)
+        }
+
+        /// 도형 경로는 rect로 클램프되지 않는다 (렌더 행렬 — 회전·확대). `paints`가
+        /// 경로를 보는데 자격이 rect에서 멈추면 **보이는 칠 위**의 탭이 기각돼 아래
+        /// 본문 링크가 열린다.
+        func testFootnoteShapePathOutsideRectClaimsTap() {
+            let blockFrame = CGRect(x: 50, y: 600, width: 100, height: 40)
+            // rect는 100pt인데 경로는 300pt까지 칠한다 (회전 행렬이 만드는 모양)
+            let shapeRect = CGRect(x: 0, y: 0, width: 100, height: 40)
+            let footnote = HwpFootnoteBlock(
+                frame: blockFrame,
+                paragraphs: [],
+                number: 1,
+                separatorLine: CGRect(x: 50, y: 590, width: 130, height: 1),
+                shapes: [HwpCellShape(
+                    rect: shapeRect,
+                    geometry: HwpShapeGeometry(
+                        path: CGPath(
+                            rect: CGRect(x: 0, y: 0, width: 300, height: 40), transform: nil
+                        ),
+                        fillColor: black.cgColor, strokeColor: nil, strokeWidth: 0
+                    ),
+                    paintsBehindText: false,
+                    zOrder: 0, sourceOrder: 0, controlInstanceId: 21
+                )]
+            )
+            let beneath = AnyHwpBlock(
+                frame: CGRect(x: 50, y: 590, width: 400, height: 60),
+                kind: .text,
+                attributedString: NSAttributedString(string: "본문 링크"),
+                hyperlinkURL: "https://example.com/beneath"
+            )
+            let pages = page([beneath, AnyHwpBlock(
+                frame: blockFrame, kind: .footnote, payload: .footnote(footnote)
+            )])
+
+            // rect 밖이지만 경로가 칠한 자리 — 각주가 claim한다
+            expect(HwpHitTester().hit(page: pages, point: CGPoint(x: 250, y: 620)))
+                == .footnote(blockIndex: 1, number: 1)
+            // 경로 밖 — 아무것도 안 칠했으므로 아래 본문 링크다
+            expect(HwpHitTester().hit(page: pages, point: CGPoint(x: 400, y: 620)))
+                == .hyperlink(url: "https://example.com/beneath", blockIndex: 0)
+        }
+
+        /// 색인은 `wrapperHyperlinkURL`의 **일괄 형태**여야 한다 — 규칙이 갈리면 방출과
+        /// 히트가 다른 URL을 연다. 까다로운 두 규칙을 함께 고정한다: 문단 안에서는 그
+        /// 서수의 **첫** run만 보고, 같은 `paraId` 문단이 여럿이면 **앞 문단이 이긴다**.
+        func testWrapperLinkIndexMatchesPointLookup() {
+            // paraId 7 첫 문단: 서수 0은 링크 없는 run이 먼저, 서수 1은 링크 있음
+            let first = NSMutableAttributedString(string: "\u{FFFC}\u{FFFC}")
+            first.addAttribute(
+                HwpAttributedStringKey.controlIndex, value: 0, range: NSRange(location: 0, length: 1)
+            )
+            first.addAttribute(
+                HwpAttributedStringKey.controlIndex, value: 1, range: NSRange(location: 1, length: 1)
+            )
+            first.addAttribute(
+                HwpAttributedStringKey.hyperlink, value: "https://example.com/one",
+                range: NSRange(location: 1, length: 1)
+            )
+            // paraId 7 둘째 문단: 서수 0에 링크 — 첫 문단이 nil이라 여기까지 온다
+            let second = NSMutableAttributedString(string: "\u{FFFC}")
+            let head = NSRange(location: 0, length: 1)
+            second.addAttribute(HwpAttributedStringKey.controlIndex, value: 0, range: head)
+            second.addAttribute(
+                HwpAttributedStringKey.hyperlink, value: "https://example.com/late", range: head
+            )
+            // paraId 9: 같은 서수라도 다른 문단이면 다른 링크다 (R51 #1)
+            let other = NSMutableAttributedString(string: "\u{FFFC}")
+            other.addAttribute(HwpAttributedStringKey.controlIndex, value: 0, range: head)
+            other.addAttribute(
+                HwpAttributedStringKey.hyperlink, value: "https://example.com/other", range: head
+            )
+            let paragraphs = [
+                wrapperParagraph(first, paragraphId: 7),
+                wrapperParagraph(second, paragraphId: 7),
+                wrapperParagraph(other, paragraphId: 9),
+            ]
+
+            let index = HwpDrawnTextLayout.wrapperHyperlinkIndex(in: paragraphs)
+            for (paragraphId, controlIndex) in [
+                (UInt32(7), 0), (UInt32(7), 1), (UInt32(9), 0), (UInt32(7), 2),
+            ] {
+                let key = HwpWrapperLinkKey(paragraphId: paragraphId, controlIndex: controlIndex)
+                let pointLookup = HwpDrawnTextLayout.wrapperHyperlinkURL(
+                    in: paragraphs, paragraphId: paragraphId, controlIndex: controlIndex
+                )
+                if let pointLookup {
+                    expect(index[key]) == pointLookup
+                } else {
+                    expect(index[key]).to(beNil())
+                }
+            }
+            // 규칙이 실제로 그 값인지도 못박는다 (양쪽이 함께 틀리는 것을 막는다)
+            expect(index[HwpWrapperLinkKey(paragraphId: 7, controlIndex: 0)])
+                == "https://example.com/late"
+            expect(index[HwpWrapperLinkKey(paragraphId: 7, controlIndex: 1)])
+                == "https://example.com/one"
+            expect(index[HwpWrapperLinkKey(paragraphId: 9, controlIndex: 0)])
+                == "https://example.com/other"
+            expect(index[HwpWrapperLinkKey(paragraphId: 7, controlIndex: 2)]).to(beNil())
+        }
+
         // MARK: - 헬퍼
 
         private func filledShape(rect: CGRect, wrapperURL: String? = nil) -> HwpCellShape {
@@ -231,6 +361,18 @@ import XCTest
             )
             guard let wrapperURL else { return shape }
             return shape.withWrapperURL(wrapperURL)
+        }
+
+        private func wrapperParagraph(
+            _ attributed: NSAttributedString, paragraphId: UInt32
+        ) -> HwpLaidOutParagraph {
+            HwpLaidOutParagraph(
+                attributedString: attributed,
+                frame: HwpParagraphFrame(totalHeight: 20, lines: []),
+                rect: CGRect(x: 0, y: 0, width: 200, height: 20),
+                paragraphId: paragraphId,
+                hyperlinkURL: nil
+            )
         }
 
         private func paragraph(rect: CGRect, url: String?) -> HwpLaidOutParagraph {

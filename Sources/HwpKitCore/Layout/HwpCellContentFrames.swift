@@ -301,13 +301,24 @@ public struct HwpCellShape: @unchecked Sendable, Hashable {
         self.wrapperURL = wrapperURL
     }
 
-    /// 테두리 stroke까지 포함한 실제 칠 영역 — 경로를 `strokeWidth`로 그으면
-    /// 폭의 절반이 rect 밖이다 (R62). 탭 판정 (`ContentLayer.paints`) 이 최소 1pt로
-    /// 굵히므로 자격도 같은 값을 써야 상위집합이 된다.
+    /// 실제 칠 영역 — **경로 bbox ∪ rect** 에 stroke 절반을 더한다.
+    ///
+    /// 경로를 `strokeWidth`로 그으면 폭의 절반이 밖으로 나가고 (R62), 탭 판정
+    /// (`ContentLayer.paints`) 이 최소 1pt로 굵히므로 자격도 같은 값을 쓴다.
+    /// **경로 자체도 rect로 클램프되지 않는다** (R63): `HwpShapeGeometry.build`는
+    /// 렌더 행렬(표 84 — 회전·확대)을 적용할 뿐이고 `shapeCommands`는 클립 없이
+    /// 그리므로 회전 도형은 축정렬 rect를 넘어 칠한다. 판정이 경로를 보는데 자격이
+    /// rect에서 멈추면 보이는 칠 위의 탭이 기각된다 — 제어점까지 무는
+    /// `boundingBox`로 union해 상위집합을 보장한다.
     public var paintedRect: CGRect {
-        guard geometry.strokeColor != nil else { return rect }
+        var painted = rect
+        let bounds = geometry.path.boundingBox
+        if !bounds.isNull, !bounds.isInfinite {
+            painted = painted.union(bounds.offsetBy(dx: rect.minX, dy: rect.minY))
+        }
+        guard geometry.strokeColor != nil else { return painted }
         let width = max(geometry.strokeWidth, 1)
-        return rect.insetBy(dx: -width / 2, dy: -width / 2)
+        return painted.insetBy(dx: -width / 2, dy: -width / 2)
     }
 
     /// 감싼 링크 URL만 바꾼 사본 — 분할 전 해석값을 개체에 고정한다 (R58)

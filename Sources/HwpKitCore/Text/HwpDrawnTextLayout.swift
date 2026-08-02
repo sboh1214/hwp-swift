@@ -345,36 +345,6 @@ public enum HwpDrawnTextLayout {
         return regions
     }
 
-    /// 이 컨트롤을 감싼 `%hlk` 의 URL — 링크가 붙은 run 중 `controlIndex` 가
-    /// 일치하는 것만 본다 (R50 #1). 개체의 링크는 개체가 아니라 부모 문단의
-    /// U+FFFC run에 살지만, 지점 포함만으로 고르면 그 개체가 **덮고 있을 뿐인**
-    /// 다른 링크까지 살아난다.
-    static func wrapperHyperlinkURL(
-        in paragraphs: [HwpLaidOutParagraph], paragraphId: UInt32, controlIndex: Int
-    ) -> String? {
-        guard controlIndex >= 0 else { return nil }
-        // 서수는 문단마다 0부터 다시 시작하므로 **그 개체를 낸 문단에서만** 찾는다
-        // (R51 #1) — 컨테이너 전체를 훑으면 앞 문단의 같은 서수 링크가 열린다.
-        for paragraph in paragraphs where paragraph.paragraphId == paragraphId {
-            let attributed = paragraph.attributedString
-            var url: String?
-            attributed.enumerateAttribute(
-                HwpAttributedStringKey.controlIndex,
-                in: NSRange(location: 0, length: attributed.length)
-            ) { value, range, stop in
-                guard value as? Int == controlIndex else { return }
-                url = attributed.attribute(
-                    HwpAttributedStringKey.hyperlink, at: range.location, effectiveRange: nil
-                ) as? String
-                stop.pointee = true
-            }
-            if let url {
-                return url
-            }
-        }
-        return nil
-    }
-
     /// 그려진 텍스트의 줄 상자들 — "이 지점에 글자가 칠해졌는가" 판정용 (R54).
     ///
     /// 선택 하이라이트와 **같은 정의** (`HwpDrawnLine.selectionRect`) 를 쓴다:

@@ -177,7 +177,7 @@ public struct HwpHitTester {
         if case .footnote = block.payload {
             // 층 조회가 **먼저** 이기고, 실패했을 때만 블록-레벨 계약으로 떨어진다 (R59).
             return containerHyperlinkURL(block: block, point: point)
-                ?? blockLevelURL(for: block)
+                ?? blockLevelURL(for: block, at: point)
         }
         var hasFieldSpans = false
         var fieldURL: String?
@@ -206,7 +206,7 @@ public struct HwpHitTester {
         }
         // 컨테이너도 **안쪽이 먼저**다 (R62) — 블록 링크를 앞에 두면 셀·글상자 문단의
         // 링크가 프레임 전체 URL에 뭉개져 방출된 적 없는 URL이 열린다.
-        return containerHyperlinkURL(block: block, point: point) ?? blockLevelURL(for: block)
+        return containerHyperlinkURL(block: block, point: point) ?? blockLevelURL(for: block, at: point)
     }
 
     /// 블록 프레임 전체에 걸리는 링크 — **방출과 같은 게이트**를 통과할 때만 (R61/R62).
@@ -214,13 +214,20 @@ public struct HwpHitTester {
     /// 방출은 안쪽(문단·감싼 개체) 링크를 하나라도 내면 블록 링크를 내지 않는다
     /// (`appendHyperlinkCommands`의 `!emitted`). 히트가 그때도 폴백하면 paint list에
     /// 없는 URL이 열린다 — 각주뿐 아니라 표·글상자도 같은 계약이다.
-    private func blockLevelURL(for block: AnyHwpBlock) -> String? {
-        let hasInnerLink: Bool = switch block.payload {
-        case let .footnote(footnote): footnote.hasHyperlink
-        case let .table(table): table.hasHyperlink
-        case let .textbox(textbox): textbox.hasHyperlink
-        default: false
+    ///
+    /// 게이트는 **영역이기도 하다** (R63): 방출은 이 폴백을 `block.frame`으로만 내는데
+    /// 컨테이너 자격은 넘쳐 그린 자손까지 넓으므로 (R62), 그 띠에서 폴백하면 방출된 적
+    /// 없는 URL이 열린다. `.text`의 slight-overflow 띠는 반대다 — 거기 넘친 것은 다른
+    /// 개체가 아니라 **블록 자신의 글자**라 그 링크가 열려야 한다 (#4).
+    private func blockLevelURL(for block: AnyHwpBlock, at point: CGPoint) -> String? {
+        let hasInnerLink: Bool
+        switch block.payload {
+        case let .footnote(footnote): hasInnerLink = footnote.hasHyperlink
+        case let .table(table): hasInnerLink = table.hasHyperlink
+        case let .textbox(textbox): hasInnerLink = textbox.hasHyperlink
+        default: return block.hyperlinkURL
         }
+        guard block.frame.contains(point) else { return nil }
         return hasInnerLink ? nil : block.hyperlinkURL
     }
 
