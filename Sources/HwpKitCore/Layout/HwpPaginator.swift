@@ -832,6 +832,9 @@ private extension HwpPaginator {
             slices: slices.map(\.text),
             controlCount: paragraph.ctrlHeaderArray?.count ?? 0
         )
+        // 조각에 걸쳐 그려진 마커는 조각마다 **일부**만 갖는다 — 그 일부를 완전한
+        // 번호로 바꾸면 다음 쪽에 남은 나머지와 합쳐 깨진다 (번호가 그대로여도).
+        let splitMarkers = HwpAbsoluteCachePlacer.ordinalsSpanningSlices(slices.map(\.text))
         for (runIndex, run) in runs.enumerated() {
             if runIndex > 0 {
                 cacheCurrentPage()
@@ -843,7 +846,8 @@ private extension HwpPaginator {
             let sliceText = renumberedNoteMarkers(
                 in: slice.text,
                 paragraph: paragraph,
-                ordinals: ordinalRanges?[runIndex]
+                ordinals: ordinalRanges?[runIndex],
+                skipping: splitMarkers
             )
             // appendBlock은 columnFrame.minY + contentHeightUsed에 배치하므로
             // 한글이 준 절대 y (+ stale 캐시 보정)로 커서를 옮긴다.
@@ -950,14 +954,16 @@ private extension HwpPaginator {
     private func renumberedNoteMarkers(
         in slice: NSAttributedString,
         paragraph: CoreHwp.HwpParagraph,
-        ordinals: Range<Int>?
+        ordinals: Range<Int>?,
+        skipping splitMarkers: Set<Int>
     ) -> NSAttributedString {
         guard let ordinals, !ordinals.isEmpty,
               let ctrls = paragraph.ctrlHeaderArray
         else { return slice }
         let noteReplacements = noteReferenceReplacements(for: paragraph, ordinals: ordinals)
             .filter { ordinal, _ in
-                guard ctrls.indices.contains(ordinal) else { return false }
+                guard !splitMarkers.contains(ordinal),
+                      ctrls.indices.contains(ordinal) else { return false }
                 return switch ctrls[ordinal] {
                 case .footnote, .endnote: true
                 default: false

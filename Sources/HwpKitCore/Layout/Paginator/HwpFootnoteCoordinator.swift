@@ -133,24 +133,7 @@ struct HwpFootnoteCoordinator {
                 break
             }
         }
-        // 중첩을 안 걷는 조각은 **요청된 범위만** 훑는다 — 조각마다 전수 순회하면
-        // O(run × 컨트롤)이라 조작 문서 (run·컨트롤 각 10,000, 파일은 수백 KB) 가
-        // 페이지네이션을 세운다. 마지막 조각의 전수 순회는 문단당 한 번이라
-        // 이차가 아니다.
-        if let ordinals, !collectsNested {
-            for ordinal in ordinals where ctrls.indices.contains(ordinal) {
-                collectDirectNote(ctrls[ordinal])
-            }
-            return
-        }
-        for (ordinal, ctrl) in ctrls.enumerated() {
-            if depth > 0 || (ordinals?.contains(ordinal) ?? true) {
-                collectDirectNote(ctrl)
-            }
-            guard collectsNested, depth < 3 else { continue }
-            if !includeTableCells, case .table = ctrl {
-                continue
-            }
+        func walkChildren(of ctrl: CoreHwp.HwpCtrlId) {
             for (nested, _) in childParagraphs(ctrl) where nested.ctrlHeaderArray != nil {
                 collectFootnotes(
                     from: nested,
@@ -160,6 +143,42 @@ struct HwpFootnoteCoordinator {
                     childParagraphs: childParagraphs
                 )
             }
+        }
+        /// 각주·미주는 이 조각이 곧바로 배치하므로 **안쪽 노트도 지금** 걷어야
+        /// 참조와 같은 쪽에 실리고 번호 순서도 안 밀린다. 마지막 조각으로 미루는
+        /// 것은 `appendControlBlocks`가 거기서 방출하는 컨테이너 (글상자·도형) 뿐이다.
+        func isNoteContainer(_ ctrl: CoreHwp.HwpCtrlId) -> Bool {
+            switch ctrl {
+            case .footnote, .endnote: true
+            default: false
+            }
+        }
+        // 중첩을 안 걷는 조각은 **요청된 범위만** 훑는다 — 조각마다 전수 순회하면
+        // O(run × 컨트롤)이라 조작 문서 (run·컨트롤 각 10,000, 파일은 수백 KB) 가
+        // 페이지네이션을 세운다. 마지막 조각의 전수 순회는 문단당 한 번이라
+        // 이차가 아니다.
+        if let ordinals, !collectsNested {
+            for ordinal in ordinals where ctrls.indices.contains(ordinal) {
+                let ctrl = ctrls[ordinal]
+                collectDirectNote(ctrl)
+                guard depth < 3, isNoteContainer(ctrl) else { continue }
+                walkChildren(of: ctrl)
+            }
+            return
+        }
+        for (ordinal, ctrl) in ctrls.enumerated() {
+            let inFragment = depth > 0 || (ordinals?.contains(ordinal) ?? true)
+            if inFragment {
+                collectDirectNote(ctrl)
+            }
+            guard depth < 3 else { continue }
+            if !includeTableCells, case .table = ctrl {
+                continue
+            }
+            // 노트 컨테이너의 자식은 **그 노트를 배치하는 조각**이 걷는다 —
+            // 마지막 조각이 또 걷으면 같은 각주를 두 번 센다.
+            guard isNoteContainer(ctrl) ? inFragment : collectsNested else { continue }
+            walkChildren(of: ctrl)
         }
     }
 

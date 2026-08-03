@@ -126,6 +126,32 @@ struct HwpAbsoluteCachePlacer {
         return ranges
     }
 
+    /// **두 조각 이상에 걸쳐 그려진** 마커 서수 (#95 리뷰).
+    ///
+    /// CT가 번호 문자열 중간에서 줄을 나누면 (좁은 단·긴 번호) 각 조각이 마커의
+    /// **일부**만 갖는다. 조각별 번호 재기록이 그 일부를 완전한 번호로 바꾸면 다음
+    /// 쪽에 남은 나머지와 합쳐 `10)` + `)`가 된다. 번호가 그대로여도 그렇다 —
+    /// 부분 문자열은 완전한 번호와 다르므로 "안 바뀌면 그대로 둔다" 가드를
+    /// 통과한다. 그래서 갈린 서수는 재기록에서 아예 뺀다 (최악이라도 번호가
+    /// 옛값일 뿐 문자열이 깨지지 않는다).
+    static func ordinalsSpanningSlices(_ slices: [NSAttributedString]) -> Set<Int> {
+        var seen: Set<Int> = []
+        var spanning: Set<Int> = []
+        for slice in slices {
+            var inSlice: Set<Int> = []
+            slice.enumerateAttribute(
+                HwpAttributedStringKey.controlIndex,
+                in: NSRange(location: 0, length: slice.length)
+            ) { value, _, _ in
+                guard let ordinal = (value as? NSNumber)?.intValue else { return }
+                inSlice.insert(ordinal)
+            }
+            spanning.formUnion(inSlice.intersection(seen))
+            seen.formUnion(inSlice)
+        }
+        return spanning
+    }
+
     /// 조각에 그려진 마지막 컨트롤 서수 — 마커가 없으면 nil.
     /// 번호로 치환된 참조 run도 같은 속성을 달고 있다 (`appendControlMarker`).
     private static func lastControlOrdinal(in slice: NSAttributedString) -> Int? {
