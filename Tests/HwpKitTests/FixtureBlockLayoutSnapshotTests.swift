@@ -22,8 +22,11 @@ final class FixtureBlockLayoutSnapshotTests: XCTestCase {
         ("noori", nil), // 3쪽 — 표 분할·셀 그림·다단
         // 1,030쪽 절대 캐시 — 표본만 (p484-485는 셀 각주 귀속 실측 지점,
         // p470·p894는 각주 안 개체 실측 지점 — #94의 그림/표가 있는 페이지라
-        // 개체 추가가 각주 블록 프레임을 흔들지 않음을 잠근다)
-        ("legacy-common-control-property", [0, 250, 470, 484, 485, 894, 1029]),
+        // 개체 추가가 각주 블록 프레임을 흔들지 않음을 잠근다.
+        // p721-723은 #95가 보고한 지점 — 한 문단이 세 페이지에 걸치고 그 각주가
+        // 조각마다 나뉘어 실린다. 이 셋은 아직 한글.app 실물 대조 전이라
+        // "옳다고 확인한 페이지"가 아니라 **조각 단위 귀속의 회귀 앵커**다)
+        ("legacy-common-control-property", [0, 250, 470, 484, 485, 721, 722, 723, 894, 1029]),
     ]
 
     func testBlockLayoutMatchesSnapshots() async throws {

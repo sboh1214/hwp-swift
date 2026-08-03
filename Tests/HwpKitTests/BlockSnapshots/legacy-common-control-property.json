@@ -689,7 +689,7 @@
         {
           "frame" : [
             935,
-            5797,
+            5534,
             4082,
             370
           ],
@@ -703,7 +703,7 @@
         {
           "frame" : [
             935,
-            6195,
+            5932,
             4082,
             586
           ],
@@ -717,7 +717,7 @@
         {
           "frame" : [
             935,
-            6809,
+            6547,
             4082,
             117
           ],
@@ -727,6 +727,20 @@
           "role" : "body",
           "textLength" : 30,
           "textPrefix" : "40) 헌재결 "
+        },
+        {
+          "frame" : [
+            935,
+            6692,
+            4082,
+            234
+          ],
+          "index" : 11,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 90,
+          "textPrefix" : "41) 이균용,"
         }
       ],
       "page" : 470
@@ -954,6 +968,637 @@
             935,
             992,
             4082,
+            2560
+          ],
+          "index" : 0,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 795,
+          "textPrefix" : "었다.13) 미"
+        },
+        {
+          "frame" : [
+            935,
+            6925,
+            4082,
+            360
+          ],
+          "index" : 1,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "pageChrome",
+          "textLength" : 7,
+          "textPrefix" : "- 710 -"
+        },
+        {
+          "frame" : [
+            935,
+            3156,
+            4082,
+            234
+          ],
+          "index" : 2,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 101,
+          "textPrefix" : "13) 정종섭("
+        },
+        {
+          "frame" : [
+            935,
+            3418,
+            4082,
+            352
+          ],
+          "index" : 3,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 135,
+          "textPrefix" : "14) 제정헌법"
+        },
+        {
+          "frame" : [
+            935,
+            3798,
+            4082,
+            703
+          ],
+          "index" : 4,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 321,
+          "textPrefix" : "15) 수정 제"
+        },
+        {
+          "frame" : [
+            935,
+            4530,
+            4082,
+            469
+          ],
+          "index" : 5,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 205,
+          "textPrefix" : "16) 수정 제"
+        },
+        {
+          "frame" : [
+            935,
+            5027,
+            4082,
+            352
+          ],
+          "index" : 6,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 150,
+          "textPrefix" : "17) 수정 제"
+        },
+        {
+          "frame" : [
+            935,
+            5407,
+            4082,
+            117
+          ],
+          "index" : 7,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 26,
+          "textPrefix" : "18) 김일환\/"
+        },
+        {
+          "frame" : [
+            935,
+            5552,
+            4082,
+            117
+          ],
+          "index" : 8,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 23,
+          "textPrefix" : "19) 김일환\/"
+        },
+        {
+          "frame" : [
+            935,
+            5698,
+            4082,
+            703
+          ],
+          "index" : 9,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 307,
+          "textPrefix" : "20) 노무현 "
+        },
+        {
+          "frame" : [
+            935,
+            6429,
+            4082,
+            234
+          ],
+          "index" : 10,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 82,
+          "textPrefix" : "21) 국민의 "
+        },
+        {
+          "frame" : [
+            935,
+            6692,
+            4082,
+            234
+          ],
+          "index" : 11,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 80,
+          "textPrefix" : "22) ‘국민의"
+        }
+      ],
+      "page" : 721
+    },
+    {
+      "blocks" : [
+        {
+          "frame" : [
+            935,
+            992,
+            4082,
+            480
+          ],
+          "index" : 0,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 63,
+          "textPrefix" : "성을 확보하면서"
+        },
+        {
+          "frame" : [
+            935,
+            1472,
+            4082,
+            160
+          ],
+          "index" : 1,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            1632,
+            4082,
+            176
+          ],
+          "index" : 2,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 28,
+          "textPrefix" : "헌법 제27조가"
+        },
+        {
+          "frame" : [
+            935,
+            1808,
+            4082,
+            160
+          ],
+          "index" : 3,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            1968,
+            4082,
+            1600
+          ],
+          "index" : 4,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 441,
+          "textPrefix" : "헌법 제27조와"
+        },
+        {
+          "frame" : [
+            935,
+            3568,
+            4082,
+            1120
+          ],
+          "index" : 5,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 328,
+          "textPrefix" : "헌법상 제27조"
+        },
+        {
+          "frame" : [
+            935,
+            4688,
+            4082,
+            480
+          ],
+          "index" : 6,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 156,
+          "textPrefix" : "이와 같이 형사"
+        },
+        {
+          "frame" : [
+            935,
+            6925,
+            4082,
+            360
+          ],
+          "index" : 7,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "pageChrome",
+          "textLength" : 7,
+          "textPrefix" : "- 711 -"
+        },
+        {
+          "frame" : [
+            935,
+            5085,
+            4082,
+            352
+          ],
+          "index" : 8,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 185,
+          "textPrefix" : "23) 이러한 "
+        },
+        {
+          "frame" : [
+            935,
+            5465,
+            4082,
+            469
+          ],
+          "index" : 9,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 238,
+          "textPrefix" : "24) 독일 연"
+        },
+        {
+          "frame" : [
+            935,
+            5962,
+            4082,
+            234
+          ],
+          "index" : 10,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 107,
+          "textPrefix" : "25) 권영성,"
+        },
+        {
+          "frame" : [
+            935,
+            6224,
+            4082,
+            702
+          ],
+          "index" : 11,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 346,
+          "textPrefix" : "26) 이를 헌"
+        }
+      ],
+      "page" : 722
+    },
+    {
+      "blocks" : [
+        {
+          "frame" : [
+            935,
+            992,
+            4082,
+            640
+          ],
+          "index" : 0,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 142,
+          "textPrefix" : "진다고 할 수 "
+        },
+        {
+          "frame" : [
+            935,
+            1632,
+            4082,
+            160
+          ],
+          "index" : 1,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            1792,
+            4082,
+            160
+          ],
+          "index" : 2,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            1952,
+            4082,
+            192
+          ],
+          "index" : 3,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 13,
+          "textPrefix" : "재판청구권의 법"
+        },
+        {
+          "frame" : [
+            935,
+            2144,
+            4082,
+            160
+          ],
+          "index" : 4,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            2304,
+            4082,
+            176
+          ],
+          "index" : 5,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 3,
+          "textPrefix" : "개설"
+        },
+        {
+          "frame" : [
+            935,
+            2480,
+            4082,
+            160
+          ],
+          "index" : 6,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            2640,
+            4082,
+            1120
+          ],
+          "index" : 7,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 311,
+          "textPrefix" : "국가의 공권력 "
+        },
+        {
+          "frame" : [
+            935,
+            3760,
+            4082,
+            160
+          ],
+          "index" : 8,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            3920,
+            4082,
+            176
+          ],
+          "index" : 9,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 16,
+          "textPrefix" : "주관적 공권성과"
+        },
+        {
+          "frame" : [
+            935,
+            4096,
+            4082,
+            160
+          ],
+          "index" : 10,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            4256,
+            4082,
+            168
+          ],
+          "index" : 11,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 8,
+          "textPrefix" : "주관적 공권성"
+        },
+        {
+          "frame" : [
+            935,
+            4424,
+            4082,
+            160
+          ],
+          "index" : 12,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            4584,
+            4082,
+            960
+          ],
+          "index" : 13,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 272,
+          "textPrefix" : "재판청구권의 주"
+        },
+        {
+          "frame" : [
+            935,
+            5544,
+            4082,
+            320
+          ],
+          "index" : 14,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 105,
+          "textPrefix" : "첫째, 재판청구"
+        },
+        {
+          "frame" : [
+            935,
+            6925,
+            4082,
+            360
+          ],
+          "index" : 15,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "pageChrome",
+          "textLength" : 7,
+          "textPrefix" : "- 712 -"
+        },
+        {
+          "frame" : [
+            935,
+            6246,
+            4082,
+            117
+          ],
+          "index" : 16,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 18,
+          "textPrefix" : "27) 장석조("
+        },
+        {
+          "frame" : [
+            935,
+            6391,
+            4082,
+            117
+          ],
+          "index" : 17,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 34,
+          "textPrefix" : "28) 허 영,"
+        },
+        {
+          "frame" : [
+            935,
+            6537,
+            4082,
+            117
+          ],
+          "index" : 18,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 19,
+          "textPrefix" : "29) 백윤철("
+        },
+        {
+          "frame" : [
+            935,
+            6682,
+            4082,
+            244
+          ],
+          "index" : 19,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 131,
+          "textPrefix" : "30) 정종섭("
+        }
+      ],
+      "page" : 723
+    },
+    {
+      "blocks" : [
+        {
+          "frame" : [
+            935,
+            992,
+            4082,
             640
           ],
           "index" : 0,
@@ -1078,39 +1723,11 @@
         {
           "frame" : [
             935,
-            4539,
-            4082,
-            130
-          ],
-          "index" : 9,
-          "kind" : "footnote",
-          "payload" : "footnote",
-          "role" : "body",
-          "textLength" : 25,
-          "textPrefix" : "26) 이에 관"
-        },
-        {
-          "frame" : [
-            935,
-            4697,
-            4082,
-            585
-          ],
-          "index" : 10,
-          "kind" : "footnote",
-          "payload" : "footnote",
-          "role" : "body",
-          "textLength" : 282,
-          "textPrefix" : "27) 이와 관"
-        },
-        {
-          "frame" : [
-            935,
             5311,
             4082,
             599
           ],
-          "index" : 11,
+          "index" : 9,
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
@@ -1124,7 +1741,7 @@
             4082,
             130
           ],
-          "index" : 12,
+          "index" : 10,
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
@@ -1138,7 +1755,7 @@
             4082,
             713
           ],
-          "index" : 13,
+          "index" : 11,
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
@@ -1152,7 +1769,7 @@
             4082,
             117
           ],
-          "index" : 14,
+          "index" : 12,
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",

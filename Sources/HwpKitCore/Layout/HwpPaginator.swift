@@ -92,6 +92,11 @@ public actor HwpPaginator {
     }
 
     private var measureMemo: ParagraphMeasureMemo?
+    /// 이번 배치가 각주를 **조각 단위로 이미 수집했는지** (#95). 페이지에 걸친
+    /// 절대 캐시 문단은 run마다 그 조각의 각주를 그 페이지에 담으므로, 문단 루프의
+    /// 문단 단위 수집을 건너뛰어야 이중 수집(번호 중복)이 되지 않는다.
+    /// placeParagraphText가 매 호출 초기화하고 절대 캐시 경로만 켠다.
+    private var collectedFootnotesDuringPlacement = false
     /// 각주 번호 — 저장은 footnoteCoordinator
     private var footnoteCounter: Int {
         get { footnoteCoordinator.footnoteCounter }
@@ -496,7 +501,7 @@ private extension HwpPaginator {
                 return
             }
             measureMemo = nil
-            collectFootnotes(from: paragraph, includeTableCells: false)
+            collectParagraphFootnotesUnlessPlacedPerFragment(paragraph)
             collectMemos(from: paragraph)
             appendControlBlocks(from: paragraph)
             collectUnsupported(from: paragraph, firstPage: paragraphFirstPage)
@@ -563,6 +568,9 @@ private extension HwpPaginator {
         attributedString: NSAttributedString,
         paragraphFrame: HwpParagraphFrame
     ) -> Bool {
+        // 조각 단위 각주 수집 여부는 배치 경로가 정한다 (#95) — 매 배치마다
+        // 초기화해 앞 문단의 값이 새지 않게 한다.
+        collectedFootnotesDuringPlacement = false
         // 변경 추적 문단이면 배치 전에 paraId를 기록한다 — 배치 중 페이지가
         // 캐시될 때마다 (절대 캐시 run·advanceColumn) 그 조각이 막대를 받게 (#7).
         recordTrackChangeParagraphIfNeeded(for: paragraph)
@@ -811,6 +819,14 @@ private extension HwpPaginator {
 
         let lines = paragraphFrame.lines
         let totalSegments = runs.reduce(0) { $0 + $1.count }
+        // 페이지에 걸친 문단의 각주는 참조가 놓인 **조각의 페이지**에 실린다
+        // (#95). run마다 그 조각의 컨트롤 서수 범위로 수집하면, 다음 반복 머리의
+        // cacheCurrentPage가 그 페이지를 확정하며 각주를 그 페이지에 배치한다.
+        // 경계를 못 나누면 (비단조 캐시·서수 불일치) nil이라 호출자가 문단 전체를
+        // 마지막 조각 페이지에 귀속시키는 기존 동작으로 폴백한다.
+        let ordinalRanges = HwpAbsoluteCachePlacer.controlOrdinalRanges(
+            runs: runs, paragraph: paragraph
+        )
         var lineCursor = 0
         for (runIndex, run) in runs.enumerated() {
             if runIndex > 0 {
@@ -834,17 +850,9 @@ private extension HwpPaginator {
             // 한글이 준 절대 y (+ stale 캐시 보정)로 커서를 옮긴다.
             contentHeightUsed = max(0, HwpUnits.points(fromHwpUnit: runFirst))
                 + absoluteCacheStaleOffset
-            // stale 캐시 (캐시 줄 높이 < 선언 글자 크기): 한글.app도 열 때
-            // 재조판해 이 줄을 CT 자연 높이로 넓힌다 — 슬롯을 CT 높이로 키우고
-            // 이후 문단을 그만큼 민다. 신선한 캐시 (h ≥ 글자 크기)는 절대 발동
-            // 안 한다 (헌법주석 페이지 절단 유지).
-            if runs.count == 1,
-               HwpAbsoluteCachePlacer.cacheIsStale(run: run, attributedString: slice.text),
-               paragraphFrame.totalHeight > height
-            {
-                absoluteCacheStaleOffset += paragraphFrame.totalHeight - height
-                height = paragraphFrame.totalHeight
-            }
+            height = staleAdjustedHeight(
+                height, runs: runs, run: run, slice: slice.text, frame: paragraphFrame
+            )
             paragraphAnchorTop = currentColumnFrame.minY + contentHeightUsed
             appendBlock(
                 height: height,
@@ -854,8 +862,56 @@ private extension HwpPaginator {
                 lines: slice.lines
             )
             lastAbsoluteCacheLoc = run.last?.lineLocation ?? runFirst
+            collectFragmentFootnotes(from: paragraph, ordinals: ordinalRanges?[runIndex])
         }
+        collectedFootnotesDuringPlacement = ordinalRanges != nil
         return true
+    }
+
+    /// 문단 단위 각주 수집 — 배치가 조각마다 이미 담았으면 건너뛴다 (#95).
+    /// 건너뛰지 않으면 같은 각주가 두 번 세어져 번호와 개수가 어긋난다.
+    private func collectParagraphFootnotesUnlessPlacedPerFragment(
+        _ paragraph: CoreHwp.HwpParagraph
+    ) {
+        guard !collectedFootnotesDuringPlacement else { return }
+        collectFootnotes(from: paragraph, includeTableCells: false)
+    }
+
+    /// 이 페이지 조각에 실린 각주만 지금 페이지에 담는다 (#95).
+    ///
+    /// 다음 run 머리의 `cacheCurrentPage`가 이 페이지를 확정하며 방금 담은 각주를
+    /// 배치한다 — 그 사이에 예약(`footnoteReservedHeight`)을 읽는 코드가 없어
+    /// 본문 절단점이 흔들리지 않는다. `ordinals`가 nil이면 조각 경계를 못 믿는
+    /// 문단이라 아무것도 하지 않고, 호출자가 문단 단위로 수집한다 (기존 동작).
+    /// 표 셀 각주 제외는 문단 단위 수집과 같은 필터다 (행 페이지 귀속).
+    private func collectFragmentFootnotes(
+        from paragraph: CoreHwp.HwpParagraph,
+        ordinals: Range<Int>?
+    ) {
+        guard let ordinals else { return }
+        collectFootnotes(from: paragraph, includeTableCells: false, ordinals: ordinals)
+    }
+
+    /// stale 캐시 (캐시 줄 높이 < 선언 글자 크기) 보정된 run 높이.
+    ///
+    /// 한글.app도 이런 문단은 열 때 재조판해 줄을 CT 자연 높이로 넓힌다 — 슬롯을
+    /// CT 높이로 키우고 이후 문단을 그만큼 민다 (`absoluteCacheStaleOffset`).
+    /// 신선한 캐시 (h ≥ 글자 크기)에서는 절대 발동하지 않는다 (헌법주석 페이지
+    /// 절단 유지). 여러 run으로 나뉜 문단은 대상이 아니다 — 조각마다 CT 높이를
+    /// 다시 배분할 수 없다.
+    private func staleAdjustedHeight(
+        _ height: CGFloat,
+        runs: [[CoreHwp.HwpParaLineSegInternal]],
+        run: [CoreHwp.HwpParaLineSegInternal],
+        slice: NSAttributedString,
+        frame: HwpParagraphFrame
+    ) -> CGFloat {
+        guard runs.count == 1,
+              HwpAbsoluteCachePlacer.cacheIsStale(run: run, attributedString: slice),
+              frame.totalHeight > height
+        else { return height }
+        absoluteCacheStaleOffset += frame.totalHeight - height
+        return frame.totalHeight
     }
 
     /// 절대 캐시 run의 블록 높이 — 산식은 HwpAbsoluteCachePlacer, 하단 경계
@@ -2384,13 +2440,16 @@ private extension HwpPaginator {
     }
 
     /// includeTableCells: 표 셀 안 각주 포함 여부 (HwpFootnoteCoordinator 참조)
+    /// ordinals: 이 페이지 조각에 실린 top-level 컨트롤 서수 범위 (#95, nil = 전체)
     func collectFootnotes(
         from paragraph: CoreHwp.HwpParagraph,
-        includeTableCells: Bool = true
+        includeTableCells: Bool = true,
+        ordinals: Range<Int>? = nil
     ) {
         footnoteCoordinator.collectFootnotes(
             from: paragraph,
             includeTableCells: includeTableCells,
+            ordinals: ordinals,
             environment: noteEnvironment,
             childParagraphs: childParagraphs(of:)
         )

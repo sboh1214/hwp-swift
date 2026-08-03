@@ -102,15 +102,24 @@ struct HwpFootnoteCoordinator {
     /// includeTableCells: 표 셀 안 각주 포함 여부. 본문 top-level 걷기에서는
     /// false — 셀 각주는 그 행이 실리는 페이지에서 수집한다 (한글: 참조 행
     /// 페이지 귀속 — 헌법주석 p485 실측). 셀 문단 걷기 (표 배치 시)는 true.
+    ///
+    /// ordinals: **이 조각에 실린** top-level 컨트롤 서수 범위 (#95). 페이지에
+    /// 걸친 문단은 조각마다 이 함수를 그 조각의 범위로 부르므로 각주가 참조가
+    /// 놓인 페이지에 귀속된다. nil이면 문단 전체 (기존 동작). 깊이 0에만
+    /// 적용된다 — 컨트롤 안쪽 문단은 그 컨트롤과 같은 조각에 실리기 때문이다.
     mutating func collectFootnotes(
         from paragraph: CoreHwp.HwpParagraph,
         depth: Int = 0,
         includeTableCells: Bool = true,
+        ordinals: Range<Int>? = nil,
         environment: Environment,
         childParagraphs: ChildParagraphs
     ) {
         guard let ctrls = paragraph.ctrlHeaderArray else { return }
-        for ctrl in ctrls {
+        for (ordinal, ctrl) in ctrls.enumerated() {
+            if let ordinals, depth == 0, !ordinals.contains(ordinal) {
+                continue
+            }
             switch ctrl {
             case let .footnote(list):
                 collectFootnotes(list, environment: environment)

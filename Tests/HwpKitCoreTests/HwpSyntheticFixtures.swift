@@ -46,6 +46,46 @@ enum HwpSynthetic {
         return paragraph
     }
 
+    /// 페이지에 걸친 (캐시 run 여러 개) 문단 + 줄 안 각주 참조 마커 (#95).
+    ///
+    /// `markerAfter`의 각 값만큼 평문을 넣은 뒤 extended 컨트롤 문자(ext17,
+    /// 각주 참조)를 하나 넣는다 — 컨트롤은 원본 WCHAR 스트림에서 8을 차지하므로
+    /// 마커 서수 k의 위치는 `Σ앞 평문 + 8k`다. `segments`의 `textStart`가
+    /// 그 좌표계의 run 경계이고 `location`이 줄어드는 지점이 페이지 절단점이다.
+    static func splitParagraphWithNoteMarkers(
+        markerAfter: [Int],
+        trailingCharacters: Int,
+        segments: [(location: Int32, height: Int32, textStart: UInt32)]
+    ) throws -> CoreHwp.HwpParagraph {
+        var paragraph = CoreHwp.HwpParagraph()
+        var paraText = CoreHwp.HwpParaText()
+        var chars: [CoreHwp.HwpChar] = []
+        for count in markerAfter {
+            chars += Array(repeating: CoreHwp.HwpChar(type: .char, value: 0xAC00), count: count)
+            chars.append(CoreHwp.HwpChar(type: .extended, value: 17))
+        }
+        chars += Array(
+            repeating: CoreHwp.HwpChar(type: .char, value: 0xAC00), count: trailingCharacters
+        )
+        paraText.charArray = chars
+        paragraph.paraText = paraText
+
+        var payload = Data()
+        for segment in segments {
+            withUnsafeBytes(of: segment.textStart.littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: segment.location.littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: segment.height.littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: segment.height.littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: Int32(850).littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: Int32(600).littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: Int32(0).littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: Int32(42520).littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: UInt32(393_216).littleEndian) { payload.append(contentsOf: $0) }
+        }
+        paragraph.paraLineSeg = try CoreHwp.HwpParaLineSeg.load(payload)
+        return paragraph
+    }
+
     /// 라인 캐시 + 줄 안 컨트롤 문자를 함께 가진 문단 — 글자처럼 취급 개체가
     /// **실제로 줄 앵커를 얻는** 실문서 형상이다 (헌법주석 459·883쪽). 캐시만
     /// 있고 컨트롤 문자가 없는 문단은 앵커가 없어 다른 경로를 탄다 (R40 #1).

@@ -85,6 +85,74 @@ struct HwpAbsoluteCachePlacer {
         Int(segment.lineLocation) + lineAdvance(of: segment)
     }
 
+    // MARK: run별 컨트롤 서수 (조각 단위 각주 귀속)
+
+    /// extended 컨트롤 서수 → 원본 WCHAR 스트림 위치.
+    ///
+    /// 서수는 `HwpTextRunBuilder`의 `controlIndex` (= `ctrlHeaderArray` 위치)와
+    /// 같은 값이다 — 둘 다 charArray를 순서대로 훑으며 `.extended`만 센다.
+    /// 위치는 `HwpParaLineSegInternal.textStartingIndex`·`paraCharShape
+    /// .startingIndex`와 **같은 좌표계** (컨트롤 문자는 charArray 1개 요소지만
+    /// 스트림에서 8 WCHAR)라 run 경계와 직접 비교할 수 있다. CT 조판이나
+    /// attributed string 없이 charArray만 훑는 O(문자) 순수 함수다.
+    static func extendedControlPositions(in paragraph: CoreHwp.HwpParagraph) -> [UInt32] {
+        guard let chars = paragraph.paraText?.charArray else { return [] }
+        var positions: [UInt32] = []
+        var wcharPosition: UInt32 = 0
+        for char in chars {
+            if char.type == .extended {
+                positions.append(wcharPosition)
+            }
+            // HwpTextRunBuilder.wcharLength와 같은 산식 (char 1 / inline·extended 8)
+            wcharPosition &+= char.type == .char ? 1 : 8
+        }
+        return positions
+    }
+
+    /// 페이지에 걸친 문단의 run마다 그 조각에 실린 top-level 컨트롤 서수 범위.
+    ///
+    /// 각주는 참조가 놓인 **조각의 페이지**에 실려야 한다 (한글.app 실측 —
+    /// 헌법주석 인쇄 709·710·711쪽이 같은 문단의 각주를 나눠 싣는다). 반환값은
+    /// `[0, ctrlCount)`를 run 순서로 빈틈없이 분할하므로 어떤 컨트롤도 누락되지
+    /// 않는다 — 마지막 run이 경계 뒤의 나머지를 전부 가져간다.
+    ///
+    /// run 경계 (`textStartingIndex`)가 비단조이거나 컨트롤 서수와 어긋나면 nil을
+    /// 돌려 호출자가 기존 동작 (문단 전체를 마지막 조각에 귀속)으로 폴백한다.
+    static func controlOrdinalRanges(
+        runs: [[CoreHwp.HwpParaLineSegInternal]],
+        paragraph: CoreHwp.HwpParagraph
+    ) -> [Range<Int>]? {
+        guard runs.count > 1 else { return nil }
+        let controlCount = paragraph.ctrlHeaderArray?.count ?? 0
+        guard controlCount > 0 else { return nil }
+        let positions = extendedControlPositions(in: paragraph)
+        // 서수 ↔ 컨트롤 배열이 어긋난 문단 (파스 폴백 등)은 나누지 않는다.
+        guard positions.count == controlCount else { return nil }
+
+        var starts: [UInt32] = []
+        for run in runs {
+            guard let first = run.first else { return nil }
+            if let previous = starts.last, first.textStartingIndex < previous {
+                return nil
+            }
+            starts.append(first.textStartingIndex)
+        }
+
+        var ranges: [Range<Int>] = []
+        var cursor = 0
+        for runIndex in runs.indices {
+            // 첫 run은 경계 앞의 컨트롤까지 가져가고, 마지막 run은 나머지 전부.
+            let end: Int = if runIndex == runs.count - 1 {
+                controlCount
+            } else {
+                positions[cursor...].firstIndex { $0 >= starts[runIndex + 1] } ?? controlCount
+            }
+            ranges.append(cursor ..< max(cursor, end))
+            cursor = max(cursor, end)
+        }
+        return ranges
+    }
+
     // MARK: CT 측정 생략 게이트
 
     /// 절대 캐시 모드에서 CT 측정을 통째로 생략할 수 있는 문단인지 —

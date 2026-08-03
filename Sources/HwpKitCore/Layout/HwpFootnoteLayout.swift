@@ -196,7 +196,15 @@ public struct HwpFootnoteLayout {
         let areaHeight = limitsAreaToHalfContent
             ? min(contentFrame.height / 2, stackHeight)
             : stackHeight
-        let areaTop = contentFrame.maxY - areaHeight
+        // 각주 영역 상단은 본문 상단 아래로 내려오지 못한다 (#95). 상한 없는
+        // 배치 (절대 캐시 모드)에서 스택이 콘텐츠 높이를 넘으면 maxY − 높이가
+        // contentFrame.minY보다 작아지고, 심하면 음수가 돼 각주 앞부분이 종이
+        // 밖으로 잘려 **사라진다** (헌법주석 실측: 5쪽, 최악 −217.6pt).
+        // 아래로 밀어내는 클램프라 이월이 생기지 않으므로 (stackFrame이 스택을
+        // 그대로 담는다) 한글에 없는 각주 전용 페이지가 연쇄하지 않는다 — 강제
+        // 이월이 그 페이지를 만든다 (실측 1,035쪽, `Sources/HwpKitCore/AGENTS.md`).
+        // 절반 상한 모드는 areaHeight ≤ 콘텐츠/2라 이 클램프가 무동작이다.
+        let areaTop = max(contentFrame.minY, contentFrame.maxY - areaHeight)
 
         let separatorLine = CGRect(
             x: contentFrame.minX,
