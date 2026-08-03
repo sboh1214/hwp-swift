@@ -65,9 +65,15 @@ final class FixtureFootnoteOverlapTests: XCTestCase {
     /// 잉크 판정을 표·그림·도형까지 넓히고 (`hasInk`) 중첩 각주를 마지막 조각으로
     /// 미룬 뒤에도 실측은 366쪽·7,521pt·353.0pt로 **불변**이다 — 이 코퍼스에서는
     /// 두 결함 모두 잠재였다는 뜻이고, 그래서 예산도 그대로 둔다.
+    ///
+    /// **예산은 플랫폼 최댓값으로 잡는다** (2026-08-03 최초 교정): 총 침범이
+    /// macOS 7,521pt / iOS 7,541pt로 갈린다. `testDeterministic`이 닫지 못하는
+    /// 축이 하나 남아서다 — Menlo에 한글 글리프가 없어 한글 폴백이 OS 캐스케이드에
+    /// 맡겨지고, 각주 문단의 줄 높이가 그만큼 흔들린다. 쪽수·최대 침범은 두
+    /// 플랫폼이 같다 (366쪽·353.0pt). 이 20pt 차를 못 담으면 iOS 잡이 상시 빨갛다.
     private static let budgets: [String: OverlapBudget] = [
         "legacy-common-control-property": OverlapBudget(
-            pages: 366, totalIntrusion: 7525, worstIntrusion: 354
+            pages: 366, totalIntrusion: 7545, worstIntrusion: 354
         ),
     ]
 
