@@ -479,13 +479,20 @@ extension HwpFootnoteCoordinator {
         for paragraph: CoreHwp.HwpParagraph,
         footnoteShape: CoreHwp.HwpFootnoteShape?,
         endnoteShape: CoreHwp.HwpFootnoteShape?,
-        pageNumber: Int
+        pageNumber: Int,
+        ordinals: Range<Int>? = nil
     ) -> [Int: HwpControlMarkerReplacement] {
         guard let ctrls = paragraph.ctrlHeaderArray else { return [:] }
         var replacements: [Int: HwpControlMarkerReplacement] = [:]
         var footnotePreview = footnoteCounter
         var endnotePreview = endnoteCounter
         for (ctrlIndex, ctrl) in ctrls.enumerated() {
+            // 조각 범위 밖 컨트롤은 미리보기도 **증가시키지 않는다** (#95): 앞
+            // 조각의 몫은 이미 카운터에 반영됐고 뒤 조각의 몫은 아직 아니라,
+            // 범위 안만 세어야 수집이 부여할 번호와 같아진다.
+            if let ordinals, !ordinals.contains(ctrlIndex) {
+                continue
+            }
             switch ctrl {
             case .footnote:
                 replacements[ctrlIndex] = HwpControlMarkerReplacement(

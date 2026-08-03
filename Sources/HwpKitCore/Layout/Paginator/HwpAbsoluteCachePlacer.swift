@@ -87,70 +87,57 @@ struct HwpAbsoluteCachePlacer {
 
     // MARK: run별 컨트롤 서수 (조각 단위 각주 귀속)
 
-    /// extended 컨트롤 서수 → 원본 WCHAR 스트림 위치.
-    ///
-    /// 서수는 `HwpTextRunBuilder`의 `controlIndex` (= `ctrlHeaderArray` 위치)와
-    /// 같은 값이다 — 둘 다 charArray를 순서대로 훑으며 `.extended`만 센다.
-    /// 위치는 `HwpParaLineSegInternal.textStartingIndex`·`paraCharShape
-    /// .startingIndex`와 **같은 좌표계** (컨트롤 문자는 charArray 1개 요소지만
-    /// 스트림에서 8 WCHAR)라 run 경계와 직접 비교할 수 있다. CT 조판이나
-    /// attributed string 없이 charArray만 훑는 O(문자) 순수 함수다.
-    static func extendedControlPositions(in paragraph: CoreHwp.HwpParagraph) -> [UInt32] {
-        guard let chars = paragraph.paraText?.charArray else { return [] }
-        var positions: [UInt32] = []
-        var wcharPosition: UInt32 = 0
-        for char in chars {
-            if char.type == .extended {
-                positions.append(wcharPosition)
-            }
-            // HwpTextRunBuilder.wcharLength와 같은 산식 (char 1 / inline·extended 8)
-            wcharPosition &+= char.type == .char ? 1 : 8
-        }
-        return positions
-    }
-
-    /// 페이지에 걸친 문단의 run마다 그 조각에 실린 top-level 컨트롤 서수 범위.
+    /// 조각(run)마다 그 조각에 **실제로 그려진** top-level 컨트롤 서수 범위.
     ///
     /// 각주는 참조가 놓인 **조각의 페이지**에 실려야 한다 (한글.app 실측 —
-    /// 헌법주석 인쇄 709·710·711쪽이 같은 문단의 각주를 나눠 싣는다). 반환값은
-    /// `[0, ctrlCount)`를 run 순서로 빈틈없이 분할하므로 어떤 컨트롤도 누락되지
-    /// 않는다 — 마지막 run이 경계 뒤의 나머지를 전부 가져간다.
+    /// 헌법주석 인쇄 709·710·711쪽이 같은 문단의 각주를 나눠 싣는다).
     ///
-    /// run 경계 (`textStartingIndex`)가 비단조이거나 컨트롤 서수와 어긋나면 nil을
-    /// 돌려 호출자가 기존 동작 (문단 전체를 마지막 조각에 귀속)으로 폴백한다.
+    /// 경계의 근거는 `runAttributedSlice`가 낸 **그 조각의 텍스트**다 — 마커 run에
+    /// 붙은 `controlIndex`를 그대로 읽는다. 원본 WCHAR 위치 (`textStartingIndex`)
+    /// 로 나누면 배치는 CT 라인 비례로 자르는데 귀속만 캐시 좌표로 잘라, 폰트
+    /// 대체·stale 캐시로 두 분할이 갈릴 때 각주가 참조와 **다른 페이지**에 실린다
+    /// (참조보다 앞 페이지면 그 쪽엔 참조 없는 각주가 뜬다). 자르는 곳이 하나면
+    /// 그 불일치가 원천적으로 없다.
+    ///
+    /// 반환값은 `[0, ctrlCount)`를 조각 순서로 빈틈없이 분할한다 — 어느 조각에도
+    /// 안 그려진 컨트롤 (마커 없는 컨트롤·CT가 잘라낸 라인)은 뒤 조각이 흡수하고
+    /// 마지막 조각이 나머지를 전부 가져가므로 누락이 없다.
     static func controlOrdinalRanges(
-        runs: [[CoreHwp.HwpParaLineSegInternal]],
-        paragraph: CoreHwp.HwpParagraph
+        slices: [NSAttributedString],
+        controlCount: Int
     ) -> [Range<Int>]? {
-        guard runs.count > 1 else { return nil }
-        let controlCount = paragraph.ctrlHeaderArray?.count ?? 0
-        guard controlCount > 0 else { return nil }
-        let positions = extendedControlPositions(in: paragraph)
+        guard slices.count > 1, controlCount > 0 else { return nil }
+        let lastOrdinals = slices.map(lastControlOrdinal(in:))
         // 서수 ↔ 컨트롤 배열이 어긋난 문단 (파스 폴백 등)은 나누지 않는다.
-        guard positions.count == controlCount else { return nil }
-
-        var starts: [UInt32] = []
-        for run in runs {
-            guard let first = run.first else { return nil }
-            if let previous = starts.last, first.textStartingIndex < previous {
-                return nil
-            }
-            starts.append(first.textStartingIndex)
+        guard lastOrdinals.compactMap({ $0 }).allSatisfy({ $0 < controlCount }) else {
+            return nil
         }
 
         var ranges: [Range<Int>] = []
         var cursor = 0
-        for runIndex in runs.indices {
-            // 첫 run은 경계 앞의 컨트롤까지 가져가고, 마지막 run은 나머지 전부.
-            let end: Int = if runIndex == runs.count - 1 {
-                controlCount
-            } else {
-                positions[cursor...].firstIndex { $0 >= starts[runIndex + 1] } ?? controlCount
-            }
+        for index in slices.indices {
+            // 마지막 조각은 나머지 전부, 그 앞은 자기가 그린 마지막 서수까지.
+            let end = index == slices.count - 1
+                ? controlCount
+                : lastOrdinals[index].map { $0 + 1 } ?? cursor
             ranges.append(cursor ..< max(cursor, end))
             cursor = max(cursor, end)
         }
         return ranges
+    }
+
+    /// 조각에 그려진 마지막 컨트롤 서수 — 마커가 없으면 nil.
+    /// 번호로 치환된 참조 run도 같은 속성을 달고 있다 (`appendControlMarker`).
+    private static func lastControlOrdinal(in slice: NSAttributedString) -> Int? {
+        var last: Int?
+        slice.enumerateAttribute(
+            HwpAttributedStringKey.controlIndex,
+            in: NSRange(location: 0, length: slice.length)
+        ) { value, _, _ in
+            guard let ordinal = (value as? NSNumber)?.intValue else { return }
+            last = max(last ?? ordinal, ordinal)
+        }
+        return last
     }
 
     // MARK: CT 측정 생략 게이트
