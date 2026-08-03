@@ -322,6 +322,67 @@ import XCTest
             expect(coordinator.pendingEndnotes.count) == 1
         }
 
+        /// 미주는 문서·구역 끝에서 흐름 배치되므로 (`placeFlow`) 이 조각이 그리지
+        /// 않는다 — 안쪽 각주를 지금 걷으면 참조는 문서 끝에, 각주는 본문 쪽에
+        /// 남는다. 글상자·도형과 같이 마지막 조각으로 미룬다 (#95 리뷰).
+        func testEndnoteDescendantsWaitForTheFinalFragment() {
+            var coordinator = HwpFootnoteCoordinator(
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+            var host = CoreHwp.HwpParagraph()
+            host.ctrlHeaderArray = [
+                .endnote(HwpSynthetic.listControl(
+                    ctrlId: .endnote,
+                    paragraphs: [HwpSynthetic.noteParagraph(
+                        " 미주",
+                        autoNumber: HwpSynthetic.autoNumberControl(kind: 1, decorationTail: ")")
+                    )]
+                )),
+            ]
+            var inner = CoreHwp.HwpParagraph()
+            inner.ctrlHeaderArray = [
+                .footnote(HwpSynthetic.listControl(
+                    ctrlId: .footnote,
+                    paragraphs: [HwpSynthetic.noteParagraph(
+                        " 미주 안 각주",
+                        autoNumber: HwpSynthetic.autoNumberControl(kind: 1, decorationTail: ")")
+                    )]
+                )),
+            ]
+            let children: HwpFootnoteCoordinator.ChildParagraphs = { ctrl in
+                if case .endnote = ctrl {
+                    return [(inner, .footnote)]
+                }
+                return []
+            }
+            let environment = HwpFootnoteCoordinator.Environment(
+                contentWidth: 400, footnoteShape: nil
+            )
+
+            coordinator.collectFootnotes(
+                from: host,
+                includeTableCells: false,
+                ordinals: 0 ..< 1,
+                collectsNested: false,
+                environment: environment,
+                childParagraphs: children
+            )
+            expect(coordinator.pendingEndnotes.count) == 1
+            expect(coordinator.pendingFootnotes).to(beEmpty())
+
+            coordinator.collectFootnotes(
+                from: host,
+                includeTableCells: false,
+                ordinals: 1 ..< 1,
+                collectsNested: true,
+                environment: environment,
+                childParagraphs: children
+            )
+            expect(coordinator.pendingFootnotes.count) == 1
+            expect(coordinator.pendingEndnotes.count) == 1
+        }
+
         // MARK: - 조각별 컨트롤 서수 분할
 
         /// 그 조각에 그려진 마커만 담은 텍스트 — 배치가 낸 슬라이스의 최소 형상.
