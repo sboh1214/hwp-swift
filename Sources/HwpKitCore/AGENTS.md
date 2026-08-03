@@ -54,7 +54,8 @@ CoreHwp.HwpFile
 - `HwpPageChromeBuilder` — 머리말/꼬리말/쪽 번호 크롬 블록. 활성 컨트롤·감춤 마스크 상태 소유
 - `HwpFootnoteCoordinator` — 각주/미주 수집·측정·예약. 카운터·pending·예약 높이·측정 캐시 소유
 - `HwpTableSplitter` — 표 페이지 분할 플랜 (row 세그먼트·절단 기하). 상태 없는 순수 enum
-- `HwpAbsoluteCachePlacer` — 절대 라인 캐시 배치 산식 + 모드·마지막 loc·stale 보정 상태
+- `HwpAbsoluteCachePlacer` — 절대 라인 캐시 배치 산식 + 모드·마지막 loc·stale 보정 상태.
+  run별 컨트롤 서수 범위 (`controlOrdinalRanges`) 도 여기서 나온다 — 조각 단위 각주 귀속의 입력 (#95)
 - `HwpColumnBandController` — 다단 밴드 상태 (단 정의/프레임/index/사용량/균형 재배치 입력),
   밴드 리셋 단일화 (`open`)와 균형 재배치 플랜 산출 (`rebalancePlan` → paginator 적용)
 
@@ -270,7 +271,7 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   시스템 등록 폰트 (`usesSystemFontLookup`)·한컴 번들 (`usesInstalledHancomFonts`)·
   문서 대체 글꼴 (`usesDocumentAlternatives`). 모든 face가 Menlo로 떨어져 설치
   폰트와 무관하게 같은 CTFont가 나오고, 그 덕에 **커밋된** 기준선을 쓰는 렌더
-  가드 3종이 CI와 기여자 머신에서 함께 돈다 (루트 AGENTS.md "렌더 가드 3층").
+  가드 4종이 CI와 기여자 머신에서 함께 돈다 (루트 AGENTS.md "렌더 가드 4층").
   시스템 축이 가장 늦게 닫혔다 (#69) — HWP 원문 face 이름이 그 자체로 시스템
   폰트명일 수 있어 (`굴림`·`바탕`은 MS Office가, `함초롬바탕`은 한글 정식 설치가
   같은 한글 이름으로 등록한다) 나머지 두 축만 닫으면 그 폰트가 깔린 머신에서만
@@ -436,7 +437,7 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   그림/표가 각주 블록 프레임 **안**에 있고 흐름 블록으로 새지 않음) +
   `HwpSelectableTextPaintParityTests`
   (선택 단위 9개: 각주 문단 뒤에 각주 글상자·표 셀 텍스트) + 블록 스냅샷 표본
-  470·894쪽 (루트 AGENTS.md "렌더 가드 3층").
+  470·894쪽 (루트 AGENTS.md "렌더 가드 4층").
 - **각주 컨테이너에서 갈리기 쉬운 두 값** (R39 — #94 리뷰가 잡은 것):
   ① **문단 rect ≠ 블록 높이**. 문단 rect는 `MeasuredFootnote.textRectHeight`
   (문단 자신의 텍스트 높이)를 쓴다 — 블록 높이(떠 있는 개체 성장분 포함)를
@@ -453,20 +454,36 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   `placeAbsoluteCachedParagraph`가 run을 놓을 때마다 그 조각의 **top-level 컨트롤
   서수 범위**로 `collectFootnotes(ordinals:)`를 부르고, 다음 run 머리의
   `cacheCurrentPage`가 그 페이지를 확정하며 각주를 배치한다. 범위는
-  `HwpAbsoluteCachePlacer.controlOrdinalRanges` — run의 `textStartingIndex`(원본
-  WCHAR 스트림 위치)와 `extendedControlPositions`(서수 → 같은 좌표계 위치)를 맞대
-  `[0, ctrlCount)`를 빈틈없이 분할한다. 서수는 `HwpTextRunBuilder`의
-  `controlIndex`(= `ctrlHeaderArray` 위치)와 같은 값이고 **전진량 산식이 같아야
-  한다** (평문 1 / inline·extended 8) — 갈리면 각주가 엉뚱한 페이지로 간다.
-  마지막 run이 경계 뒤 나머지를 전부 가져가고, 경계가 비단조이거나 서수 ↔ 컨트롤
-  개수가 어긋나면 nil이라 **문단 단위 수집으로 폴백**한다 (유실보다 몰림이 낫다).
+  `HwpAbsoluteCachePlacer.controlOrdinalRanges` — **그 조각으로 그린 텍스트**
+  (`runAttributedSlice` 결과)에 남은 `controlIndex` 마커를 읽어 `[0, ctrlCount)`를
+  빈틈없이 분할한다. 그래서 `placeAbsoluteCachedParagraph`는 조각을 **배치 전에
+  한 번에** 자르고 (`absoluteRunSlices`) 그 결과를 귀속·배치가 함께 쓴다.
+  **자르는 곳이 하나여야 한다**: 배치는 CT 라인을 세그먼트 수에 비례해 나누는데
+  귀속만 캐시 좌표(`textStartingIndex`)로 나누면, 폰트 대체·stale 캐시로 두 분할이
+  갈릴 때 각주가 참조와 다른 쪽에 실린다 — 참조보다 앞 쪽이면 그 쪽에 **참조 없는
+  각주**가 뜬다 (실측: 결정론 폰트 헌법주석에서 3,434개 중 43건, 실제 설치 폰트에서
+  8개 문단 분할 16쪽). 마지막 조각이 나머지를 전부 가져가므로 어느 조각에도 안
+  그려진 컨트롤(마커 없는 컨트롤·CT가 잘라낸 라인)도 유실되지 않고, 서수가 컨트롤
+  배열 밖이면 nil이라 **문단 단위 수집으로 폴백**한다 (유실보다 몰림이 낫다).
   이중 수집은 `collectedFootnotesDuringPlacement` 플래그가 막는다 —
   `placeParagraphText`가 매 호출 초기화하고 절대 캐시 경로만 켠다.
   **본문 절단점은 흔들리지 않는다**: 수집과 그 다음 `cacheCurrentPage` 사이에
   예약(`footnoteReservedHeight` → `effectiveContentHeight`)을 읽는 코드가 없고,
   절대 캐시 배치는 커서를 캐시 y로 직접 옮긴다. 실측 (2026-08-03, 헌법주석):
-  각주 블록 3,502개·번호 다중집합·페이지 수 1,030 **전부 불변**, 귀속만 438쪽에서
-  바뀜 (양 폰트 모드 동일 집합). 가드: `HwpFootnoteFragmentAttributionTests`(8종).
+  각주 블록 3,502개·번호 다중집합·페이지 수 1,030 **전부 불변**, 귀속만 바뀐다.
+  가드: `HwpFootnoteFragmentAttributionTests`(10종 — 캐시 좌표가 그려진 조각과
+  어긋나는 문단이 그중 하나다).
+- **조각의 참조 마커 번호는 배치 직전에 다시 굽는다** (#95 리뷰 반영).
+  마커 번호는 조판 전에 문단 단위로 한 번 구워지는데(`noteReferenceReplacements`),
+  "쪽마다 새로 시작"(표 134 numberingMode 2) 구역에서 문단이 페이지에 걸치면 run
+  사이 `cacheCurrentPage`가 카운터를 리셋해 뒤 조각의 참조가 2), 각주는 1)이 된다.
+  `renumberedNoteMarkers`가 배치 직전 **현재 카운터로 그 조각의 서수 범위만**
+  다시 계산해 (`noteReferenceReplacements(ordinals:)` — 범위 밖은 미리보기도
+  증가시키지 않는다) `HwpTextRunBuilder.renumberingNoteMarkers`로 마커 run 텍스트를
+  바꾼다. 수집은 이 뒤에 오므로 카운터엔 앞 조각 몫까지만 반영돼 있어 두 번호가
+  같아진다. 연속 번호 문서에서는 결과가 같아 **원본을 그대로 돌려주므로 렌더가
+  불변**이다 (코퍼스 전체가 그렇다). 쪽 번호 필드(atno kind 0)는 같은 낡음이 있지만
+  대상이 아니다 — 코퍼스 실측 없이 바꾸면 렌더가 조용히 달라진다.
 - 절대 캐시 모드에서 각주 스택 높이가 **본문이 남긴 자리**보다 크면 본문 마지막
   블록과 겹친다 — 본문 절단점이 한글 캐시로 고정되어 각주 예약이 본문을 밀어내지
   못한다. 남은 원인은 한글의 **각주 이어짐**이다: 한글은 넘치는 몫을 다음 쪽에
@@ -492,7 +509,9 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   동일하게 제외한다. 절대 캐시 모드에서는 각주 스택 면적 상한 (본문 절반)도
   해제 (`limitsAreaToHalfContent: false`) — 이 두 가지로 헌법주석 전체
   페이지 수가 한글.app 실측 1,030과 일치 (2026-07-10). 각주 영역을 본문 캐시
-  하단에 강제로 맞추면 (minimumAreaTop) 각주 전용 페이지가 연쇄해 1,053쪽 — 두지 않음
+  하단에 강제로 맞추면 (minimumAreaTop) 각주 전용 페이지가 연쇄해 1,035쪽 —
+  두지 않음 (2026-08-03 재실측; #95 이전 같은 실험은 1,053이었다. 위 각주 겹침
+  항목과 **같은 실험**이니 한쪽 수치를 고치면 다른 쪽도 함께 고칠 것)
 - **셀 높이는 라인 캐시·저작 높이 위에 "떠 있는 개체" 하한을 얹는다** (#91).
   `hasCachedContent`일 때 저작된 셀 높이 (표 80)를 신뢰하는 규약은 **글자처럼
   취급되지 않는 개체에는 성립하지 않는다** — 그런 개체는 줄 상자에 들어가지

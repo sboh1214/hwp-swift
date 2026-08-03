@@ -139,7 +139,9 @@ resolvedLineSpacingKind/Value, `HwpLineSpacingKind`가 추가되었다.
 남은 자발적 축소 범위: 수식(`eqed`) 스크립트 렌더 (placeholder 유지),
 TEXTART/FORM_OBJECT/CHART_DATA 세부 디코딩, 그림 PATTERN8x8 효과,
 단 나누기(columnType bit 3)/홀·짝수 조정(pageCT), 표 셀 안 각주 참조
-위 첨자, 번호 모양 0x80/0x81 사용자 문자.
+위 첨자, 번호 모양 0x80/0x81 사용자 문자, 한 쪽에 다 안 들어가는 각주의
+다음 쪽 이어싣기(#95 — 우리는 그 쪽에 전부 쌓아 본문과 겹친다. 진척은
+`FixtureFootnoteOverlapTests` 예산으로 잰다).
 
 ## PrvImage Fidelity 하네스 (Tests/HwpKitTests)
 
@@ -172,8 +174,12 @@ HWP_SNAPSHOT_TESTS=1 swift test --filter FixturePreviewFidelityTests
   잉크 (절대값이면 거의 백지인 페이지에서 내용이 통째로 사라져도 통과하고,
   국소를 페이지 최대 셀에서 뽑으면 저잉크 셀의 얇은 장식 소실이 묻힌다).
   macOS 전용 — iOS 시뮬레이터는 호스트 파일시스템의
-  폰트를 읽어 재현되지 않는다. 세 층의 역할 분담은 루트 AGENTS.md "렌더 가드
-  3층" 참조.
+  폰트를 읽어 재현되지 않는다. 네 층의 역할 분담은 루트 AGENTS.md "렌더 가드
+  4층" 참조.
 - 페이지 수 회귀 가드: manifest `expectations.pageCount`(+`pageCountSource`)
   ↔ `FixtureRenderTests.testPageCountsMatchManifest` — 결정론 resolver로 옮겨
   CI 상시 실행 (#69).
+- 각주 겹침 가드: `FixtureFootnoteOverlapTests` — 좌표가 아니라 **성질**을 본다
+  (각주 스택 ∩ 본문 = ∅ 은 아직 예산, 각주 영역 ⊆ 본문 프레임은 불변식 0).
+  기준선이 소스 상수라 레코딩이 없다 — 개선하면 손으로 **낮춘다**. 같은 결정론
+  resolver로 CI 상시 실행 (#95).
