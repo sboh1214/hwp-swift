@@ -260,6 +260,68 @@ import XCTest
             expect(coordinator.pendingFootnotes.count) == 1
         }
 
+        /// 각주는 **이 조각이 곧바로 배치**하므로 그 안쪽 노트도 같은 조각이 걷는다
+        /// — 미루면 참조와 갈리고 번호 순서가 밀린다 (#95 리뷰). 마지막 조각이 또
+        /// 걷어서도 안 된다 (같은 노트를 두 번 셈).
+        func testNotesInsideACollectedFootnoteAreCollectedWithIt() {
+            var coordinator = HwpFootnoteCoordinator(
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+            var host = CoreHwp.HwpParagraph()
+            host.ctrlHeaderArray = [
+                .footnote(HwpSynthetic.listControl(
+                    ctrlId: .footnote,
+                    paragraphs: [HwpSynthetic.noteParagraph(
+                        " 바깥 각주",
+                        autoNumber: HwpSynthetic.autoNumberControl(kind: 1, decorationTail: ")")
+                    )]
+                )),
+            ]
+            // 각주 문단 **안**의 노트 — 미주로 두어 스텁 재귀가 멈추게 한다
+            var inner = CoreHwp.HwpParagraph()
+            inner.ctrlHeaderArray = [
+                .endnote(HwpSynthetic.listControl(
+                    ctrlId: .endnote,
+                    paragraphs: [HwpSynthetic.noteParagraph(
+                        " 각주 안 미주",
+                        autoNumber: HwpSynthetic.autoNumberControl(kind: 1, decorationTail: ")")
+                    )]
+                )),
+            ]
+            let children: HwpFootnoteCoordinator.ChildParagraphs = { ctrl in
+                if case .footnote = ctrl {
+                    return [(inner, .footnote)]
+                }
+                return []
+            }
+            let environment = HwpFootnoteCoordinator.Environment(
+                contentWidth: 400, footnoteShape: nil
+            )
+
+            coordinator.collectFootnotes(
+                from: host,
+                includeTableCells: false,
+                ordinals: 0 ..< 1,
+                collectsNested: false,
+                environment: environment,
+                childParagraphs: children
+            )
+            expect(coordinator.pendingFootnotes.count) == 1
+            expect(coordinator.pendingEndnotes.count) == 1
+
+            coordinator.collectFootnotes(
+                from: host,
+                includeTableCells: false,
+                ordinals: 1 ..< 1,
+                collectsNested: true,
+                environment: environment,
+                childParagraphs: children
+            )
+            expect(coordinator.pendingFootnotes.count) == 1
+            expect(coordinator.pendingEndnotes.count) == 1
+        }
+
         // MARK: - 조각별 컨트롤 서수 분할
 
         /// 그 조각에 그려진 마커만 담은 텍스트 — 배치가 낸 슬라이스의 최소 형상.
@@ -298,6 +360,18 @@ import XCTest
             expect(HwpAbsoluteCachePlacer.controlOrdinalRanges(
                 slices: [self.slice(drawing: [0]), self.slice(drawing: [5])], controlCount: 2
             )).to(beNil())
+        }
+
+        /// 번호 문자열 중간에서 줄이 갈리면 두 조각이 마커의 일부씩 갖는다 —
+        /// 그 서수를 재기록에서 빼지 않으면 부분이 완전한 번호로 바뀌어 다음 쪽에
+        /// 남은 나머지와 합쳐 깨진다 (번호가 그대로여도, #95 리뷰).
+        func testOrdinalsDrawnInTwoSlicesAreReportedAsSplit() {
+            expect(HwpAbsoluteCachePlacer.ordinalsSpanningSlices([
+                self.slice(drawing: [0, 1]), self.slice(drawing: [1, 2]),
+            ])) == [1]
+            expect(HwpAbsoluteCachePlacer.ordinalsSpanningSlices([
+                self.slice(drawing: [0]), self.slice(drawing: [1]),
+            ])).to(beEmpty())
         }
 
         /// 단일 조각 (페이지에 안 걸친 문단) 은 나눌 것이 없다.
