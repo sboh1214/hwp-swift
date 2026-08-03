@@ -76,17 +76,36 @@ final class FixtureFootnoteOverlapTests: XCTestCase {
         pages: 0, totalIntrusion: 0, worstIntrusion: 0
     )
 
-    /// 두 축을 **한 순회**에서 잰다 (#95 리뷰 반영). 코퍼스를 두 번 조판하면
+    /// 각주 스택이 본문 프레임 **하단**을 넘는 양 (#95 리뷰). 상단 클램프가
+    /// 콘텐츠 높이를 넘는 스택을 아래로 밀어내면서 생긴 빚이고, 옳은 답은 각주
+    /// 이어짐이다. 실측 (2026-08-03, 결정론 폰트): 헌법주석 1쪽·총 4pt·최대
+    /// 3.5pt @p78, 종이 밖은 0쪽. 조각 단위 귀속 전에는 거대 스택이 마지막
+    /// 조각에 몰려 훨씬 컸다 — 각주가 참조 쪽으로 흩어지며 이 빚도 함께 줄었다.
+    private static let bottomBudgets: [String: OverlapBudget] = [
+        "legacy-common-control-property": OverlapBudget(
+            pages: 1, totalIntrusion: 5, worstIntrusion: 4
+        ),
+    ]
+
+    /// 세 축을 **한 순회**에서 잰다 (#95 리뷰 반영). 코퍼스를 두 번 조판하면
     /// 1,030쪽 픽스처 때문에 기본 `swift test`·CI 애플 잡마다 18초가 그대로 더
     /// 붙는다. 실패는 성격이 달라 (예산 vs 불변식) 따로 모아 각각 단언한다.
     ///
-    /// 각주 영역이 본문 상단 위로 올라가는 쪽은 **불변식**이다 — 상한 없는 배치
-    /// (절대 캐시 모드) 에서 스택이 콘텐츠 높이를 넘으면 영역 상단이 음수까지
-    /// 내려가 각주 앞부분이 종이 밖으로 잘려 사라졌다 (수정 전 실측: 헌법주석
-    /// 5쪽, 최악 렌더 인덱스 79의 −217.6pt). 어느 픽스처에서도 0이어야 한다.
-    func testFootnoteStackStaysBelowBodyAndInsideContentTop() async throws {
+    /// **불변식**은 둘이다: 각주 영역 상단이 본문 상단 위로 올라가지 않을 것,
+    /// 각주가 종이 밖으로 나가지 않을 것. 상한 없는 배치 (절대 캐시 모드) 에서
+    /// 스택이 콘텐츠 높이를 넘으면 영역 상단이 음수까지 내려가 각주 앞부분이
+    /// 종이 밖으로 잘려 사라졌다 (수정 전 실측: 헌법주석 5쪽, 최악 렌더 인덱스
+    /// 79의 −217.6pt).
+    ///
+    /// 본문 프레임 **하단**을 넘는 것은 불변식이 아니라 **빚**이다 — 위 클램프가
+    /// 초과분을 아래로 밀어내기 때문이고, 옳은 답은 각주 이어짐이다 (미구현).
+    /// 자르면 각주가 사라지고, 강제 이월은 한글에 없는 각주 전용 페이지를 만든다
+    /// (1,030 → 1,035쪽). 종이 안에 머무는 한 아래 여백을 침범할 뿐이라 예산으로
+    /// 두되, 종이를 넘는 순간 불변식 위반이다.
+    func testFootnoteStackStaysBelowBodyAndInsideThePage() async throws {
         var overlapFailures: [String] = []
-        var areaFailures: [String] = []
+        var bottomFailures: [String] = []
+        var invariantFailures: [String] = []
         for fixture in try FixtureRoot.loadAllFixtures(from: #file)
             where !Self.unparseableFixtureIds.contains(fixture.id)
         {
@@ -95,14 +114,33 @@ final class FixtureFootnoteOverlapTests: XCTestCase {
             var pages = 0
             var total: CGFloat = 0
             var worst: (page: Int, amount: CGFloat) = (0, 0)
+            var bottomPages = 0
+            var bottomTotal: CGFloat = 0
+            var bottomWorst: (page: Int, amount: CGFloat) = (0, 0)
             for (pageIndex, page) in document.pages.enumerated() {
                 guard let noteTop = Self.footnoteTop(of: page) else { continue }
                 let contentTop = page.margins.top
                 if noteTop < contentTop - Self.tolerance {
-                    areaFailures.append("[\(fixture.id)] " + String(
+                    invariantFailures.append("[\(fixture.id)] " + String(
                         format: "p%d 각주 영역 상단 %.1f < 본문 상단 %.1f",
                         pageIndex, noteTop, contentTop
                     ))
+                }
+                if let noteBottom = Self.footnoteBottom(of: page) {
+                    if noteBottom > page.size.height + Self.tolerance {
+                        invariantFailures.append("[\(fixture.id)] " + String(
+                            format: "p%d 각주 하단 %.1f > 종이 %.1f",
+                            pageIndex, noteBottom, page.size.height
+                        ))
+                    }
+                    let overflow = noteBottom - (page.size.height - page.margins.bottom)
+                    if overflow > Self.tolerance {
+                        bottomPages += 1
+                        bottomTotal += overflow
+                        if overflow > bottomWorst.amount {
+                            bottomWorst = (pageIndex, overflow)
+                        }
+                    }
                 }
                 guard let bodyBottom = Self.bodyBottom(of: page) else { continue }
                 let intrusion = bodyBottom - noteTop
@@ -124,9 +162,21 @@ final class FixtureFootnoteOverlapTests: XCTestCase {
                     worst.amount, worst.page, budget.worstIntrusion
                 ))
             }
+            let bottomBudget = Self.bottomBudgets[fixture.id] ?? Self.cleanBudget
+            if bottomPages > bottomBudget.pages || bottomTotal > bottomBudget.totalIntrusion
+                || bottomWorst.amount > bottomBudget.worstIntrusion
+            {
+                bottomFailures.append("[\(fixture.id)] " + String(
+                    format: "각주가 본문 하단을 넘음 — 쪽 %d (허용 %d), 총 %.0fpt "
+                        + "(허용 %.0f), 최대 %.1fpt @p%d (허용 %.0f)",
+                    bottomPages, bottomBudget.pages, bottomTotal, bottomBudget.totalIntrusion,
+                    bottomWorst.amount, bottomWorst.page, bottomBudget.worstIntrusion
+                ))
+            }
         }
-        expect(areaFailures.joined(separator: "\n")) == ""
+        expect(invariantFailures.joined(separator: "\n")) == ""
         expect(overlapFailures.joined(separator: "\n")) == ""
+        expect(bottomFailures.joined(separator: "\n")) == ""
     }
 
     // MARK: - 페이지 기하
@@ -142,6 +192,15 @@ final class FixtureFootnoteOverlapTests: XCTestCase {
                 return [block.frame.minY, note.separatorLine.minY]
             }
             .min()
+    }
+
+    /// 이 페이지 각주 스택의 최하단 — 각주가 없으면 nil. 구분선은 스택 위라
+    /// 하단 판정에는 블록만 본다.
+    private static func footnoteBottom(of page: HwpPage) -> CGFloat? {
+        page.blocks
+            .filter { $0.kind == .footnote && $0.role == .body }
+            .map(\.frame.maxY)
+            .max()
     }
 
     /// 이 페이지 본문의 최하단 — 잉크가 없는 블록은 세지 않는다.
