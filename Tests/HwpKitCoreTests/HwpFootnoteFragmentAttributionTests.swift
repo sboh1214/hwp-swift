@@ -57,7 +57,8 @@ import XCTest
 
         private func paginate(
             _ host: CoreHwp.HwpParagraph,
-            footnoteNumberingMode: UInt32 = 0
+            footnoteNumberingMode: UInt32 = 0,
+            footnoteStartingNumber: UInt16 = 0
         ) throws -> HwpPaginator {
             // 절대 캐시 모드 감지 (detectAbsoluteCacheMode): 첫 loc > 0인 캐시 문단이
             // **다수**여야 한다 — 빈 문서 템플릿의 첫 문단이 loc 0이라 host 하나로는
@@ -70,7 +71,8 @@ import XCTest
             }
             let section = HwpSynthetic.section(
                 firstParagraphControls: [.section(HwpSynthetic.sectionDef(
-                    footnoteNumberingMode: footnoteNumberingMode
+                    footnoteNumberingMode: footnoteNumberingMode,
+                    footnoteStartingNumber: footnoteStartingNumber
                 ))],
                 bodyParagraphs: [host] + tail
             )
@@ -179,6 +181,27 @@ import XCTest
             expect(self.noteTexts(on: second).first?.hasPrefix("1)")) == true
             expect(self.bodyText(on: second)).to(contain("1)"))
             expect(self.bodyText(on: second)).toNot(contain("2)"))
+        }
+
+        /// 번호 **폭이 바뀌는** 재기록 — 시작 번호 9면 뒤 조각 마커가 "10)"으로
+        /// 구워졌다가 리셋 뒤 "9)"가 된다. 조판·슬라이스는 옛 번호로 이미 끝난
+        /// 뒤라 조각 **안**의 줄바꿈이 달라질 수 있지만 (문서화된 근사 — 번호는
+        /// 실릴 쪽이 정해져야 알 수 있고 그 쪽은 배치가 끝나야 안다), 참조와
+        /// 각주 번호가 어긋나서는 안 된다.
+        func testRenumberingKeepsMarkerAndNoteInSyncWhenWidthChanges() async throws {
+            let paginator = try paginate(
+                splitHostParagraph(),
+                footnoteNumberingMode: 2,
+                footnoteStartingNumber: 9
+            )
+            let first = try await paginator.page(at: 0)
+            let second = try await paginator.page(at: 1)
+
+            expect(self.noteTexts(on: first).first?.hasPrefix("9)")) == true
+            expect(self.bodyText(on: first)).to(contain("9)"))
+            expect(self.noteTexts(on: second).first?.hasPrefix("9)")) == true
+            expect(self.bodyText(on: second)).to(contain("9)"))
+            expect(self.bodyText(on: second)).toNot(contain("10)"))
         }
 
         /// 컨테이너 (글상자·도형) 는 `appendControlBlocks`가 모든 조각을 놓은 **뒤**

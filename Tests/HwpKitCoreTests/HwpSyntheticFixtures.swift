@@ -220,7 +220,8 @@ enum HwpSynthetic {
     static func sectionDef(
         pageWidth: UInt32 = 59528,
         pageHeight: UInt32 = 84188,
-        footnoteNumberingMode: UInt32 = 0
+        footnoteNumberingMode: UInt32 = 0,
+        footnoteStartingNumber: UInt16 = 0
     ) -> CoreHwp.HwpSectionDef {
         var sectionDef = CoreHwp.HwpSectionDef()
         sectionDef.pageDef.width = pageWidth
@@ -229,6 +230,7 @@ enum HwpSynthetic {
         sectionDef.pageDef.marginFootnote = 0
         // 각주 번호 매김 방식은 표 134 bits 10-11 (0 이어서 / 1 구역마다 / 2 쪽마다)
         sectionDef.footNoteShape.property = footnoteNumberingMode << 10
+        sectionDef.footNoteShape.startingNumber = footnoteStartingNumber
         return sectionDef
     }
 

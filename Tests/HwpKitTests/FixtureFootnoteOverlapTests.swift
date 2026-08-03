@@ -1,6 +1,6 @@
 import CoreGraphics
 @testable import HwpKit
-import HwpKitCore
+@testable import HwpKitCore
 import Nimble
 import XCTest
 
@@ -126,14 +126,20 @@ final class FixtureFootnoteOverlapTests: XCTestCase {
                         pageIndex, noteTop, contentTop
                     ))
                 }
-                if let noteBottom = Self.footnoteBottom(of: page) {
-                    if noteBottom > page.size.height + Self.tolerance {
+                if let noteBounds = Self.footnoteBounds(of: page) {
+                    // 세로만 보면 컨테이너 폭을 넘어 그려지는 자손 (각주 안 표는
+                    // 한글도 안 자른다 — R39 #3) 이 종이 밖으로 나가도 통과한다
+                    let paper = CGRect(origin: .zero, size: page.size)
+                        .insetBy(dx: -Self.tolerance, dy: -Self.tolerance)
+                    if !paper.contains(noteBounds) {
                         invariantFailures.append("[\(fixture.id)] " + String(
-                            format: "p%d 각주 하단 %.1f > 종이 %.1f",
-                            pageIndex, noteBottom, page.size.height
+                            format: "p%d 각주 범위 x[%.1f, %.1f] y[%.1f, %.1f] ⊄ 종이 %.0f×%.0f",
+                            pageIndex, noteBounds.minX, noteBounds.maxX,
+                            noteBounds.minY, noteBounds.maxY,
+                            page.size.width, page.size.height
                         ))
                     }
-                    let overflow = noteBottom - (page.size.height - page.margins.bottom)
+                    let overflow = noteBounds.maxY - (page.size.height - page.margins.bottom)
                     if overflow > Self.tolerance {
                         bottomPages += 1
                         bottomTotal += overflow
@@ -194,59 +200,102 @@ final class FixtureFootnoteOverlapTests: XCTestCase {
             .min()
     }
 
-    /// 이 페이지 각주 스택의 최하단 — 각주가 없으면 nil. 구분선은 스택 위라
-    /// 하단 판정에는 블록만 본다.
-    private static func footnoteBottom(of page: HwpPage) -> CGFloat? {
+    /// 이 페이지 각주가 **그리는 범위**의 합집합 — 각주가 없으면 nil. 구분선은
+    /// 스택 위라 상단 판정(`footnoteTop`)에서만 본다.
+    private static func footnoteBounds(of page: HwpPage) -> CGRect? {
         page.blocks
             .filter { $0.kind == .footnote && $0.role == .body }
-            .map { paintedBounds(of: $0).maxY }
-            .max()
+            .map { paintedBounds(of: $0) }
+            .reduce(nil) { $0?.union($1) ?? $1 }
     }
 
-    /// 각주 블록이 **그리는** 범위 — 블록 프레임 ∪ 자손 개체 rect (#95 리뷰).
+    /// 블록이 **그리는** 범위 — 프레임 ∪ 자손 개체 rect (#95 리뷰).
     ///
-    /// 오버레이 개체는 블록을 **키우지 않고** 그려지므로 (`HwpFootnoteObject
-    /// LayoutTests.testOverlayWrapModesDoNotGrowFootnoteBlockButStayRendered`)
-    /// 프레임만 보면 종이를 넘는 자손을 놓친다. 순회는 페인트와 같은 walker로
-    /// 받는다 — 손으로 자손을 열거하면 다음 겹에서 갈린다 (R41).
+    /// 오버레이·쪽 기준 개체는 컨테이너를 **키우지 않고** 그려지므로
+    /// (`HwpFootnoteObjectLayoutTests
+    /// .testOverlayWrapModesDoNotGrowFootnoteBlockButStayRendered`) 프레임만 보면
+    /// 종이를 넘는 각주 자손도, 각주가 덮는 본문 자손도 놓친다. 그래서 각주뿐
+    /// 아니라 **본문 블록에도** 같은 자를 댄다.
     ///
-    /// 문단 텍스트는 뺀다: 자격 영역 (`HwpHitTester.paintedRects`의 `textBounds`)
-    /// 은 폰트 메트릭 여유를 더한 **상위집합**이라 모든 각주에서 몇 pt씩 부풀어
-    /// 이 기하 축을 무의미하게 만든다. 텍스트 스택은 블록 프레임이 담는다.
+    /// 순회는 페인트와 같은 walker로 받는다 (R41) — `HwpHitTester.paintedRects`의
+    /// 분기(각주·표·글상자)를 그대로 따르되 문단 텍스트만 뺀다: 자격 영역의
+    /// `textBounds`는 폰트 메트릭 여유를 더한 **상위집합**이라 모든 블록이 몇
+    /// pt씩 부풀어 이 기하 축을 무의미하게 만든다. 텍스트는 블록 프레임이 담는다.
     private static func paintedBounds(of block: AnyHwpBlock) -> CGRect {
-        guard case let .footnote(note) = block.payload else { return block.frame }
         var bounds = block.frame
-        HwpBlockContentWalker.walkFootnote(
-            note,
-            origin: block.frame.origin,
-            onParagraphText: { _, _, _ in },
-            onCellStart: { _, rect in bounds = bounds.union(rect) },
-            onCellImage: { _, rect in bounds = bounds.union(rect) },
-            onCellShape: { shape, rect in
-                // 도형 경로는 rect를 넘을 수 있어 paintedRect가 칠 영역을 소유한다 (R63)
-                bounds = bounds.union(shape.paintedRect.offsetBy(
-                    dx: rect.minX - shape.rect.minX, dy: rect.minY - shape.rect.minY
-                ))
-            },
-            onCellTextbox: { textbox, rect in
-                bounds = bounds.union(rect)
-                // 글상자 안 그림·도형도 클립 없이 그려진다 (R46 #1)
-                for child in textbox.textbox.images.map(\.paintedRect)
-                    + textbox.textbox.shapes.map(\.paintedRect)
-                {
-                    bounds = bounds.union(child.offsetBy(dx: rect.minX, dy: rect.minY))
-                }
-            },
-            onNestedTable: { _, rect in bounds = bounds.union(rect) }
-        )
+        let origin = block.frame.origin
+        func addRect(_ rect: CGRect) {
+            bounds = bounds.union(rect)
+        }
+        func addCell(_: HwpTableCellFrame, _ rect: CGRect) {
+            addRect(rect)
+        }
+        /// 테두리 stroke는 경로 중앙에 그어져 폭의 절반이 rect 밖이다 (R61)
+        func addImage(_ image: HwpCellImage, _ rect: CGRect) {
+            addRect(HwpHitTester.strokeBounds(rect, borderWidth: image.borderWidth))
+        }
+        /// 도형 경로는 rect를 넘을 수 있어 paintedRect가 칠 영역을 소유한다 (R63)
+        func addShape(_ shape: HwpCellShape, _ rect: CGRect) {
+            addRect(shape.paintedRect.offsetBy(
+                dx: rect.minX - shape.rect.minX, dy: rect.minY - shape.rect.minY
+            ))
+        }
+        /// 글상자 안 그림·도형도 클립 없이 그려진다 (R46 #1)
+        func addTextboxChildren(_ textbox: HwpTextboxFrame, offset: CGPoint) {
+            for child in textbox.images.map(\.paintedRect)
+                + textbox.shapes.map(\.paintedRect)
+            {
+                addRect(child.offsetBy(dx: offset.x, dy: offset.y))
+            }
+        }
+        func addTextbox(_ textbox: HwpCellTextbox, _ rect: CGRect) {
+            addRect(HwpHitTester.strokeBounds(
+                rect, borderWidth: textbox.textbox.effectiveBorderWidth
+            ))
+            addTextboxChildren(textbox.textbox, offset: rect.origin)
+        }
+        func addNestedTable(_: HwpNestedTableFrame, _ rect: CGRect) {
+            addRect(rect)
+        }
+        let ignoreText: (NSAttributedString, CGRect, UInt32?) -> Void = { _, _, _ in }
+        switch block.payload {
+        case let .footnote(footnote):
+            HwpBlockContentWalker.walkFootnote(
+                footnote,
+                origin: origin,
+                onParagraphText: ignoreText,
+                onCellStart: addCell,
+                onCellImage: addImage,
+                onCellShape: addShape,
+                onCellTextbox: addTextbox,
+                onNestedTable: addNestedTable
+            )
+        case let .table(table):
+            HwpBlockContentWalker.walkTable(
+                table,
+                origin: origin,
+                onCellStart: addCell,
+                onParagraphText: ignoreText,
+                onCellImage: addImage,
+                onCellShape: addShape,
+                onCellTextbox: addTextbox,
+                onNestedTable: addNestedTable
+            )
+        case let .textbox(textbox):
+            addTextboxChildren(textbox, offset: origin)
+        default:
+            break
+        }
         return bounds
     }
 
-    /// 이 페이지 본문의 최하단 — 잉크가 없는 블록은 세지 않는다.
+    /// 이 페이지 본문이 **그리는** 최하단 — 잉크가 없는 블록은 세지 않는다.
+    /// 표·글상자의 쪽 기준·오버레이 자식은 행을 키우지 않고 그 아래에 그려지므로
+    /// 프레임만 보면 그 위를 덮은 각주가 침범 0으로 보고된다 (#95 리뷰).
     private static func bodyBottom(of page: HwpPage) -> CGFloat? {
         page.blocks
             .filter { $0.role == .body && $0.kind != .footnote && hasInk($0) }
-            .map(\.frame.maxY)
+            .map { paintedBounds(of: $0).maxY }
             .max()
     }
 
