@@ -132,10 +132,10 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
 ## 블록 모델 gotchas
 
 - `AnyHwpBlock.attributedString` — CT 페이로드. **immutable copy 필수** (`NSAttributedString(attributedString:)`)
-- `AnyHwpBlock.payload` — 종류별 상세 결과: `.table(HwpTableFrame)` / `.textbox` / `.footnote` / `.shape(HwpShapeGeometry)` / `.image(HwpImageBlockInfo)`. payload 내부 좌표는 **블록-로컬** (footnote 의 separator 만 페이지 좌표)
+- `AnyHwpBlock.payload` — 종류별 상세 결과: `.table(HwpTableFrame)` / `.textbox` / `.footnote` / `.shape(HwpShapeGeometry)` / `.image(HwpImageBlockInfo)`. payload 내부 좌표는 **블록-로컬** (footnote 의 separator 만 페이지 좌표). 개체를 담는 컨테이너 payload는 셋이고 필드가 대칭이다 — `HwpTableCellFrame`(images/shapes/textboxes/nestedTables), `HwpTextboxFrame`(images/shapes), `HwpFootnoteBlock`(images/shapes/textboxes/nestedTables, #94)
 - `AnyHwpBlock.source` — `HwpBlockSource(controlInstanceId/paragraphId)`: 편집 기능이 렌더 결과에서 CoreHwp 모델로 돌아가는 참조
-- `AnyHwpBlock.hyperlinkURL` — block-level. `HwpPaginator.hyperlinkURL(in:)` 이 top-level 및 nested paragraph 양쪽에서 추출
-- 하이퍼링크 방출은 **스팬 우선**이다: `%hlk` 필드 스팬이 있으면 글리프 rect로만 방출하고, 스팬이 없는 컨테이너(표/글상자/각주) 문단만 문단 rect 폴백으로 담는다. 모델의 `hyperlinkURL`은 스팬 유무와 무관하게 채워지므로 폴백 측에서 `HwpDrawnTextLayout.hyperlinkRegions`로 게이트해야 앞뒤 평문이 링크로 표시되지 않는다 (hit tester의 `spanAwareHyperlinkURL`과 같은 규약)
+- `AnyHwpBlock.hyperlinkURL` — block-level. `HwpPaginator.hyperlinkURL(in:)` 이 top-level 및 nested paragraph 양쪽에서 추출. **각주도 이 계약을 지킨다** (R59): 층 인식 조회 (R42 #1) 가 **먼저** 이기고, 그것이 실패했을 때만 블록 URL로 폴백한다. 방출은 컨테이너 링크가 하나도 없으면 이 URL을 frame 전체로 내므로 히트에서 폴백을 빼면 밑줄만 그려지고 탭이 안 먹는다 — 반대로 폴백을 앞에 두면 각주 문단 자신의 링크가 블록 URL에 가려진다. **폴백에는 게이트가 있다** (R61): 방출은 안쪽 링크를 하나라도 내면 프레임 전체 블록 링크를 **내지 않으므로** (`appendHyperlinkCommands`의 `!emitted`), 히트도 안쪽 링크가 존재하면 폴백하지 않는다 — 안 그러면 paint list에 없는 URL이 열린다. 판정은 `hasHyperlink` (문단 속성·개체 `wrapperURL` 재귀) 로 **CT 조판 없이** 한다 (R55의 탭 지연 재발 방지); 방출보다 넓게 보고할 수는 있어도 좁게는 못 하므로 어긋나면 양쪽이 함께 침묵한다. **이 계약은 각주 전용이 아니다** (R62): `!emitted`는 payload 종류를 가리지 않으므로 표·글상자 블록도 안쪽 링크가 있으면 블록 링크를 내지 않는다 — 히트만 `block.hyperlinkURL`을 먼저 보면 셀 링크가 블록 URL에 뭉개지고(순서), 링크 없는 자리에서 방출된 적 없는 URL이 열린다(게이트). `blockLevelURL(for:at:)` 하나가 payload 셋의 `hasHyperlink`를 묶어 순서와 게이트를 함께 소유한다. **게이트는 영역이기도 하다** (R63): 방출은 이 폴백을 `block.frame`으로만 내는데 컨테이너 자격은 넘쳐 그린 자손까지 넓으므로(R62), 그 띠에서 폴백하면 방출된 적 없는 URL이 열린다 — 자격을 넓히면서 폴백 영역을 같이 좁히지 않아 난 회귀다. `.text`의 slight-overflow 띠는 반대로 폴백을 **유지**한다: 거기 넘친 것은 다른 개체가 아니라 블록 **자신의 글자**라 그 링크가 열려야 한다 (#4)
+- 하이퍼링크 방출은 **스팬 우선**이다: `%hlk` 필드 스팬이 있으면 글리프 rect로만 방출하고, 스팬이 없는 컨테이너(표/글상자/각주) 문단만 문단 rect 폴백으로 담는다. 모델의 `hyperlinkURL`은 스팬 유무와 무관하게 채워지므로 폴백 측에서 `HwpDrawnTextLayout.hyperlinkRegions`로 게이트해야 앞뒤 평문이 링크로 표시되지 않는다 (hit tester의 `spanAwareHyperlinkURL`과 같은 규약). 컨테이너 **안쪽** 컨테이너까지 내려간다 — 각주 안 글상자·표 문단도 대상이라 방출은 `HwpPaintListBuilder.footnoteParagraphGroups` + `emitTable`이, 히트는 `HwpHitTester`의 `.footnote` 케이스가 **같은 깊이**를 걸어야 한다 (#94). 한쪽만 내려가면 밑줄은 그려지는데 탭이 안 먹거나 그 반대가 된다. 깊이만이 아니라 **영역**도 같아야 한다 — 각주 안 표는 블록 폭을 넘어 그려지는데 (한글도 안 자른다) `hit(page:point:)`의 블록 기각이 `block.frame`만 보면 그 띠의 링크가 안 눌린다. `HwpHitTester.hitEligibleFrame`이 각주 개체 rect까지 합집합으로 넓혀 페인트가 그리는 영역과 맞춘다 (R39 #3). 이 넓힘도 **각주 전용이 아니다** (R62) — 표 셀 개체·글상자 자식도 프레임을 넘어 그려지고 방출은 그 개체 rect로 링크를 내므로, `paintedRects(for:)`가 payload 셋을 같은 walker로 훑어 자격을 준다. 그 합집합과 순서는 **손으로 짜지 말고 walker에서 받는다** (R41): 자격 영역은 `walkFootnote` 방문 rect를 그대로 union하되 **walker가 안 주는 자손까지 손으로 더한다** — 글상자 안 문단·그림·도형이 그것이다 (R46 #1). 중첩 표는 walker가 **자기 rect를 준 적이 없어** (셀만 넘긴다) `onNestedTable` 콜백을 더해 받는다 (R64) — 방출은 감싼 링크를 표 rect 전체로 내므로 그 여백 띠도 자격이어야 한다. 자격이 bounding box라 실제로 갈리는 곳은 **셀 bbox 밖으로 나가는 띠**뿐이지만, 그 한 자리가 감싼 링크의 탭을 통째로 막는다. 한 겹이라도 빠지면 그 위의 탭이 `containerHit`에 닿기도 전에 기각돼 뒤쪽 가림 로직이 통째로 무용지물이 된다, 탐색은 **페인트 역순** — 안쪽 표 → 글 앞으로 개체 → 문단 텍스트 → 글 뒤로 개체 순이고 개체 정렬은 `footnoteTextboxesInPaintOrder`가 준다. 순서를 저장 순서로 두면 `.inFrontOfText` 글상자가 덮은 링크가 열린다. 컨테이너 rect로 미리 거르는 `where rect.contains` 게이트도 두지 않는다 — 포함 판정은 자손 rect를 아는 안쪽 함수 몫이다. **각주는 블록 전체 스팬 스캔(`walkText`)을 타지 않고** 그 층 인식 조회에 통째로 위임한다 (R42 #1) — `walkText`는 페인트 정순이라 덮인 문단 스팬을 먼저 잡고, 스팬 경로가 주 경로라 그대로 두면 역순 규약이 사실상 무효가 된다 (층 안에서도 문단마다 `spanAwareHyperlinkURL`이 스팬 우선을 지키므로 규칙은 잃지 않는다). **각주 전용이 아니다** (R64): 표 셀·글상자도 같은 층을 가지므로 payload가 있는 컨테이너 **셋 모두**를 그 조회에 위임한다 — 안 그러면 셀 문단의 덮인 스팬이 위에 그린 개체의 링크를 이긴다. payload가 없는 조각 블록(`.text`·분할된 표/글상자)은 층이 없으니 그대로 스캔을 탄다. **개체를 감싼 링크는 개체 페이로드가 아니라 부모 문단의 스팬에 산다** (R49) — `HwpTextRunBuilder`가 필드 끝에서 `top.start ..< output.length`로 범위를 닫아 그 사이의 U+FFFC run까지 포함하기 때문이다. 그래서 층을 가림으로 접기 **전에** 그 층을 감싼 링크를 살려야 한다 — 안 그러면 개체가 자기 링크를 가린다. 구제는 **`controlIndex`로 한정**한다 (`wrapperHyperlinkURL`, R50 #1): 지점 포함만으로 고르면 그 개체가 **덮고 있을 뿐인** 다른 링크까지 살아나 가림 규약이 깨진다. 열쇠는 **(문단 `paraId`, `HwpAttributedStringKey.controlIndex`) 쌍**이고 수집 페이로드 4종이 둘 다 싣는다 — 서수는 `ctrlHeaderArray.enumerated()`라 **문단마다 0부터 다시** 시작해서, 여러 문단을 가진 셀·글상자에서는 서수만으로 유일하지 않다(앞 문단의 같은 서수 링크가 열린다, R51 #1). 두 값은 **기하 복사 헬퍼**(`withRect`/`withClip`)에서도 보존해야 한다 — 세로 정렬·표 분할이 그 경로를 지나므로 기본값으로 떨어지면 감싼 링크가 매칭에 실패한다 (R51 #2). 중첩 표만 그 헬퍼가 없어 세 곳(`HwpTableCellFrame.offsetBy`·세로 정렬·반복 제목 클론)이 손으로 재구성하며 값을 떨어뜨리고 있었다 — `HwpNestedTableFrame.withRect`/`withTable`을 만들어 관례가 아니라 타입으로 막았다 (R52). 컨테이너 층(표·글상자)의 자손이 `.occluded`를 돌려줘도 **바로 반환하지 말고** 감싼 링크를 먼저 본다 (R50 #2) — 채운 셀을 가진 표를 `%hlk`가 감싼 경우가 그것이다. **셀 안 표도 같은 구제를 받아야 한다** (R52): R48이 그것을 층 정렬에서 빼면서 `layerHit`의 구제 밖으로 나갔으므로 `tableHit`이 같은 규약을 되풀이한다. 각주 한정이 아니다 — `tableHit`은 페이지 표와 공유하므로 일반 표 셀에서도 같은 손실이 났다. 링크 없는 전경 층은 **불투명할 때만** 아래 탐색을 멈춘다 (`ContentLayer.occludes`, R42 #2) — 보이는 개체를 눌렀는데 숨은 링크가 열리면 안 되지만, 오버레이는 겹치는 것이 설계라 속 빈 장식 도형까지 막으면 그 아래 링크가 통째로 죽는다. **불투명 판정은 반드시 페인터를 보고 정한다** (R43): 글상자는 `fillColor`가 없어도 `textboxCommands`가 `.hwpWhite`로 칠하므로 **항상** 불투명하고("채우기 없음 = 투명"이 아니다), 도형은 `shapeCommands`가 `geometry.path`만 칠하므로 **경로 안쪽만** 가리며(바운딩 rect로 보면 타원 모서리의 링크가 죽는다), 표 셀은 `fillColor`가 있을 때 가린다. 그림은 알파를 알 수 없어 채워진 것으로 보되 **`clipRect` 안만** 가린다 (R45 #2 — `cellImageCommands`가 절단면 밖을 안 그린다). 알파 한 가지가 한글.app 실측으로 확정할 몫이다. 가림은 **블록 경계를 넘어서도** 유지된다 (R45 #3): `hit(page:point:)`가 frame 밖 각주를 `String?`로 받아 `.occluded`를 nil로 접으면 아래 블록으로 내려가 그 밑에 숨은 링크가 열린다. **링크도 가림도 없는 `.miss`도 같다** (R53) — 자격 영역은 bounding box라 투명한 틈까지 들지만, **칠해진 자손 위**라면 각주가 claim해야 한다 (`containerHit`은 링크와 불투명 채움만 알아 링크 없는 문단·안 채운 셀에 `.miss`를 준다). frame **안**에서 같은 텍스트가 `.footnote`가 되는 것과 답이 같아야 한다. 다만 **자격과 claim은 정밀도가 다르다** (R54): 자격 영역(`paintedRects` union)은 실제 칠 영역의 **상위집합**이어야 하고 (좁으면 그 위의 탭이 `containerHit`에 닿기도 전에 기각돼 뒤 로직이 통째로 무용지물), claim은 **정밀 커버리지**여야 한다 (거친 rect로 claim하면 클립 밖 그림·속 빈 도형·안 채운 셀의 투명한 자리까지 각주 것으로 가져가 아래 블록의 **보이는** 링크를 막는다). 그래서 커버리지의 소유자는 둘뿐이다 — 층은 `ContentLayer.paints`, 텍스트는 `HwpDrawnTextLayout.textLineRegions` (선택 하이라이트 `selectionRect`와 **같은 정의**). **층의 영역 축은 셋이고 쓰임이 다르다** (R60): `rect`는 **감싼 링크의 영역** — 방출 (`wrappedObjects`) 이 개체 rect로 링크를 내므로 히트도 그 rect 전체에서 열어야 한다 (속 빈 도형의 투명한 안쪽도 그 개체의 링크다). **rect 밖은 아니다** (R62): 자손이 부모를 넘어 그려 `.occluded`를 돌려줘도 방출은 부모 rect까지만 링크를 내므로, 가림을 이유로 rect 밖에서 부모 URL을 열면 paint list에 없는 링크가 된다 (자손 순회 자체는 그대로 무제한이다). `paints`는 **claim·가림** — 링크가 없으면 칠한 자리만 접고 투명한 안쪽은 아래 블록 몫이다 (R54 ①). 그 "칠한 자리"에는 **테두리 stroke의 바깥쪽 절반**도 든다 (R61): CG는 경로 중앙에 그으므로 (`ctx.stroke(rect)`) 폭의 절반이 rect 밖이다 — `HwpCellImage.paintedRect`·`HwpCellTextbox.paintedRect`가 그 몫을 더하고 자격 union도 같은 폭 (`strokeBounds`) 으로 넓힌다. **도형은 `paints`만 stroke 경로(`strokePaints`)로 보고 자격은 rect에서 멈춰 있었다** (R62) — 자격이 커버리지의 상위집합이 아니면 보이는 선 위의 탭이 `containerHit`에 닿기도 전에 기각되므로 자격도 `max(strokeWidth, 1)`로 같이 넓힌다. **경로 자체도 rect로 클램프되지 않는다** (R63): `HwpShapeGeometry.build`는 세부 레코드 좌표에 렌더 행렬(표 84 — 회전·확대)을 적용할 뿐이고 `shapeCommands`는 클립 없이 그리므로 회전 도형은 축정렬 rect를 넘어 칠한다. `HwpCellShape.paintedRect`가 **경로 bbox ∪ rect ∪ stroke 경로 bbox**를 혼자 소유하고 자격은 그것을 옮겨 쓴다 — 제어점까지 무는 `boundingBox`라 상위집합이 보장된다. **stroke 몫은 폭의 절반이 아니다** (R64): CG의 miter 조인은 팁을 `width/(2·sin(θ/2))`까지, `miterLimit`(10) 상한으로 폭의 **5배**까지 내보내므로 예각 도형에서 `insetBy(-w/2)`는 상위집합이 아니다. 판정(`strokePaints`)과 자격이 `HwpShapeGeometry.strokedPath` **하나**를 공유해야 보이는 팁과 눌리는 팁이 같다. 폭의 소유자도 하나여야 한다 (`HwpTextboxFrame.effectiveBorderWidth`): 페인터는 0.7pt로 끌어올려 긋는데 자격·커버리지가 저작 폭을 보면 0.3pt 테두리의 **보이는** 절반이 빠진다. `occludes`는 **자손 가림 전파**. 순서도 그 뜻대로다: 감싼 링크를 `rect`로 먼저 보고, 없을 때만 `paints`로 접는다. 셋을 하나로 합치면 방출과 갈리거나 (rect만) 투명한 자리를 뺏는다 (paints만). 표도 같다 — **셀의 칠은 채움 ∪ 칸막이**다 (R55): 안 채운 셀도 페인터 (`HwpPaintListBuilder.borderCommands`) 가 셀 안쪽에 테두리 띠 넷을 그리므로 그 선 위의 탭은 그 셀·표가 가져가고, 칸 **안**만 아래 블록 몫이다. 판정은 `HwpTableCellFrame.paints` **하나**가 소유하고 `paintsContent`·`ContentLayer.nestedTable`·`tableHit` 셋이 공유한다 — **띠 산식은 페인터와 같아야** 보이는 선과 눌리는 선이 일치한다. 텍스트 커버리지는 **rect 게이트 뒤에서만** CT 조판을 한다 (R55): `tableHit`은 셀 프레임으로 미리 거르지 않으므로 (R44 #2) 게이트가 없으면 탭 한 번이 셀·문단 수만큼 framesetting을 돌려 동기 탭 핸들러가 멈춘다 (600셀 합성 표 실측: 탭당 29.16 → 3.54ms, **8.2x**). 줄 상자는 문단 rect 안이고 가로만 slight-overflow 허용치까지 넘으므로 그 여유를 준 rect가 상위집합이다 — `spanAwareHyperlinkURL`이 링크 **속성이 있을 때만** 조판하는 것과 같은 이유의 게이트다. 그 여유는 **자격 영역도 같이** 받아야 한다 (R56): 자격이 rect 그대로면 게이트의 여유가 도달 불가능해지고, 캐시 높이가 대체 폰트 CT 줄보다 짧을 때 rect **아래**로 그려진 글자 위의 탭이 기각된다. `textBounds` 하나를 자격과 게이트가 공유한다. **세로 여유는 폰트 메트릭에서 온다** (R65): 폭에 비례시키면 넘침의 크기와 무관해 좁은 셀(폭 40pt → 2.4pt)에서 그려진 글자가 자격 밖으로 나가고, 그러면 전경 글자가 claim에 실패해 뒤 층의 감싼 링크가 이기거나 블록 밖 링크가 아예 안 눌린다. 조판 없이 `.font` 속성만 훑어 `ascent+descent+leading`의 최대를 상한으로 쓴다 (CT 조판은 이 게이트 **뒤**라 R55의 탭 지연이 재발하지 않는다). 한 줄 기준이라 여러 줄이 각각 조금씩 짧으면 합이 이보다 클 수 있다 — 남은 근사는 그 하나다. **방출도 같은 깊이여야 한다**: `%hlk`가 감싼 비 treatAsChar 개체는 마커 폭이 0이라 스팬이 rect를 못 내므로 (`hyperlinkRegions`의 `maxX > minX` 가드) `HwpPaintListBuilder`가 (문단, 서수) 열쇠로 **개체 rect** 링크를 따로 낸다 — 히트만 개체로 내려가면 밑줄 없는 자리가 눌리는 그 비대칭이 된다. 조회는 `HwpDrawnTextLayout.wrapperHyperlinkURL` **하나**를 방출과 히트가 공유한다. 방출 쪽은 그 **일괄 형태**(`wrapperHyperlinkIndex`)를 쓴다 (R63): 조회가 문단을 처음부터 훑어 그 서수의 run에서 멈추므로 개체마다 부르면 한 문단 N개체가 O(N²)고 링크가 하나도 없어도 전량 순회한다 (N=3,000 합성 실측: 1.741s → 0.020s, **87x**). 색인은 규칙을 그대로 옮겨야 한다 — 문단 안에서는 그 서수의 **첫** run만 보고, 같은 `paraId` 문단이 여럿이면 **앞 문단이 이긴다**. 둘이 갈리면 방출과 히트가 다른 URL을 여니 동치 테스트로 잠근다. 방출은 컨테이너 **재귀**로 내려간다 (`emitWrappedObjects`) — 각주·표 셀·글상자가 같은 모양이라 호출부마다 손으로 쓰면 한 곳을 빠뜨린다 (실제로 각주 안 글상자가 빠졌다, R57). **(문단, 서수) 열쇠는 표 분할을 못 건넌다** (R58): `splitCell`이 문단은 rect로 (걸치면 잘라서), 그림은 **양쪽 조각에 복사**, 도형·글상자는 midY, 중첩 표는 minY로 배정하므로 U+FFFC run이 남지 않은 조각이 생긴다. 그래서 `HwpTableCellFrame.resolvingWrapperURLs()`가 **쪼개기 전에** 해석해 개체의 `wrapperURL`에 고정하고, 히트·방출은 `wrapperURL ?? 키 조회` 순으로 본다. 이미 고정된 값은 덮지 않는다 (여러 페이지에 걸친 표는 조각이 다시 쪼개진다). 이 필드도 **복사 헬퍼가 보존해야** 한다 — R51 #2가 터졌던 그 표면이다. 이 결함은 paint list 환원으로 안 풀린다: 분할은 페이지네이션 중이고 paint list는 그 뒤라, 짝이 깨진 뒤에는 어떤 소비자도 복원할 수 없다. 그림은 저작 rect가 아니라 **`HwpCellImage.visibleRect`** (= rect ∩ clipRect) 로 낸다: 그리기는 저작 rect + CG 클립이지만 (rect를 줄이면 스케일 왜곡, R32 #2) 잘려 안 보이는 자리를 링크로 표시하면 안 된다 — 그 교집합은 히트 (`ContentLayer.occludes`) 와 **같은 프로퍼티**를 쓴다. **전경 문단의 글자도 칠해진 것**이라 링크가 없어도 글 뒤로 층보다 **먼저** claim한다 (`containerHit`) — 안 그러면 보이는 글자 위의 탭이 숨은 배경 링크를 열어 역순 규약이 깨진다. 줄 사이 여백과 짧은 줄의 빈 오른쪽은 안 칠했으므로 그대로 뒤 층으로 내려간다. **컨테이너 rect로 미리 거르는 게이트는 어디에도 두지 않는다** — 중첩 표 rect(R41 #2)·셀 프레임(R44 #2)·글상자 rect(R44 #3) 셋 다, 자손이 자기 컨테이너를 넘어 그려질 수 있어 자격 영역은 인정하는데 조회만 막히기 때문이다. rect는 **가림 판정에만** 쓰고, 재귀 결과(`.occluded` 포함)는 **버리지 말고 그대로 전파**한다. 히트의 컨테이너 순회는 `containerHit` **하나**가 각주·표 셀·글상자에 재귀로 쓰인다 — 겹마다 따로 구현하면 다음 겹에서 또 갈린다(R39~R43이 전부 그 사례였다). 그래서 셀 글상자 전용 우회로(R31 #1)도 없앴다: 남겨 두면 가림으로 nil이 된 지점에서 덮인 링크가 되살아난다
 - **랜덤 UUID identifier 금지.** equality/hash 는 `frame + kind + text + url + payload + source` 기반. 같은 문서 두 번 로드 시 동일 블록으로 인식되어야 함
 - `HwpBlockKind`: `text` / `image` / `shape` / `table` / `textbox` / `footnote` / `placeholder`
 
@@ -287,6 +287,15 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
 2. `Layout/HwpPaginator.swift`: `childParagraphs(of:)` (unsupported walk) 와 `appendControlBlocks(from:depth:)` (렌더) 양쪽에 추가
 3. `Paint/HwpPaintListBuilder.swift` 의 `paintCommands(for:)` 에 payload 렌더 추가
 4. `Layout/HwpHitTester.swift` 의 `hit(page:point:)` 에 케이스 추가
+5. **문단을 품는 payload면** `Selection/HwpBlockContentWalker.swift` 에 순회를 더하고
+   3의 렌더를 그 walker로 구현한다 — walker 가 텍스트·개체 방출 **순서의 단일
+   소유자**라 페인트·선택 (`HwpSelectableText`)·**히트 (4)** 가 정의상 같은
+   순서를 본다. 히트는 그 **역순**이다 (위에 그려진 것이 이긴다).
+   3만 채우면 그려지긴 하는데 선택·복사에서 그 텍스트가 빠지고, 순서를 양쪽에
+   따로 구현하면 조용히 갈린다 (가드: `HwpSelectableTextPaintParityTests`).
+   개체까지 품는 컨테이너면 `walkTable`/`walkFootnote` 와 같은 이벤트 규약을
+   따르고 (글 뒤로 개체 → 문단 텍스트 → 나머지 개체 → 안쪽 표 재귀), 정렬은
+   공용 `sortedObjects` (zOrder → 원본 순서) 를 쓴다
 
 ## 안티 패턴 / 남은 한계
 
@@ -317,6 +326,129 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   (`HwpDrawnTextLayout.slightOverflowLineMetrics` 공유 술어)은 측정·렌더가
   같은 입력을 쓴다 — 탭 문단 줄바꿈·한 줄 문단 높이가 정의상 일치
   (가드: HwpParagraphLayoutTests.testTabParagraphMeasurementMatchesDrawnLayout)
+- **각주/미주도 표 셀·글상자와 같은 컨테이너다** (#94). `HwpFootnoteBlock`이
+  `images`/`shapes`/`textboxes`/`nestedTables`를 블록-로컬 rect로 들고,
+  `HwpFootnoteLayout.measure`가 `HwpParagraphObjectCollector`로 수집한다
+  (`collectsTables: true` — 셀은 `PlacedCellContent.nestedTables`가 따로
+  배치하지만 각주에는 그 경로가 없다). 페인트·선택·히트는
+  `HwpBlockContentWalker.walkFootnote` 한 지점이 순서를 정의한다 (글 뒤로 개체 →
+  문단 텍스트 → 나머지 개체 — `walkTable`과 같은 규약). **표도 그림·도형과 같은
+  평면·정렬 키를 갖는다** (R47 #1): `HwpNestedTableFrame`이
+  `paintsBehindText`/`zOrder`/`sourceOrder`를 들고 `sortedObjects`에 합류하므로,
+  글 뒤로 각주 표는 문단 텍스트 **앞에** 그려진다. 표를 따로 떼어 마지막에 그리면
+  글 뒤로 표가 텍스트를 덮고 히트도 그 잘못된 순서를 따른다. `Objects.count`도
+  표를 세야 뒤에 오는 개체의 `sourceOrder`가 표와 겹치지 않는다.
+  **표 셀은 반대다** (R48): 셀 생산자 (`HwpTableLayout`) 가 평면·정렬 키
+  (`paintsBehindText`/`zOrder`/`sourceOrder`) 를 채우지 않아 기본값이므로, 셀
+  페인터 (`walkTable`) 는 셀 표를 정렬에서 빼고 모든 개체 **뒤에** 그린다 —
+  셀 히트도 그 순서를 따라 표를 최상단으로 먼저 본다. **감싼 링크 열쇠는
+  별개다** (R52): 그것은 페인트 순서가 아니라 링크 귀속용이라 셀 생산자도
+  채운다 (`PlacedNestedTable` — `ctrls.enumerated()` 서수 + 문단 `paraId`).
+  서수는 표 아닌 컨트롤까지 센 **원본 배열 위치**여야 U+FFFC run의
+  `controlIndex` 와 이어진다 (수집기와 같은 산식).
+  각주와 셀이 갈리는 기준은 **생산자가 키를 채우느냐**이지 컨테이너 종류가
+  아니다. 히트가 두 경로를 공유하므로 (`containerHit`) 한쪽만 바꾸면 다른 쪽이
+  페인터와 갈린다 — R47이 각주용으로 표를 정렬에 넣으면서 셀까지 딸려가 셀 표
+  링크가 z 큰 개체에 가려졌다. 셀도 정렬에 합류시키려면 **생산자·페인터를 함께**
+  고쳐야 한다.
+  개체를 **페이지 흐름으로 방출하지 않는다**: 흐름으로 내보내면 각주 영역 밖
+  본문 자리에 그려지고 흐름까지 밀어낸다. 그래서 `HwpPaginator`의
+  `.footnote/.endnote` 케이스는 형제 케이스와 달리
+  `appendNestedControlBlocks`를 부르지 않고, 수집기가 담지 못하는 컨트롤
+  (OLE·수식)은 `walkUnsupported`가 각주 문단까지 걸어 (childParagraphs) 진단으로
+  보고한다.
+  한글.app 실측 (2026-07-30, 헌법주석 `legacy-common-control-property`):
+  인쇄 459쪽 (= 렌더 인덱스 470) 각주 38)의 9.6×10.8pt 그림은 "1970년의 씨▨의
+  소리사"의 **글자 자리**에 저작 크기 그대로 놓이고 각주는 3줄 그대로다;
+  인쇄 883쪽 (= 렌더 인덱스 894) 각주 29)의 4×8/22셀 408×62.52pt 표는 각주 29의
+  둘째 문단으로 **각주 영역 안**에 그려지고 그 아래로 각주 30)이 이어지며,
+  문단 들여쓰기 (≈17.9pt)에서 시작해 오른쪽 본문 경계를 ~12.6pt 넘어간다
+  (한글은 자르지도 줄이지도 않는다 — 그래서 폭 기준을 문단 rect 폭으로 두고
+  위치만 앵커에 맞춘다). 폭 클램프는 흐름 경로(`HwpPaginator`)와 **같은 술어**를
+  쓴다 — `treatAsChar || consumesFlow`, 즉 비흐름 오버레이(글 뒤로·글 앞으로)는
+  저작 폭을 지킨다 (R43 #1). `HwpTableLayout.layout`의 기본값이 `true`(줄인다)라
+  인자를 생략하면 한글이 안 줄이는 표를 우리만 줄인다. 883쪽 표가 이 버그에 안
+  걸린 것은 우연이다 — 글자처럼 취급이라 클램프 대상인데 저작 폭(408pt)이 문단
+  폭보다 작아 무동작이었다. **쪽 번호 대응**: 이 픽스처는 앞 로마자 12쪽 뒤 본문이
+  1로 재시작하므로 렌더 페이지 인덱스 N ↔ 한글 인쇄/상태바 쪽번호 N−12다
+  (한글 찾아가기도 인쇄 번호를 쓴다) — 실측 지점을 찾을 때 이 오프셋을 잊지 말 것.
+- **각주 블록 높이도 셀과 같은 규약이다** (#94): 갈리는 축은 배치 방식이 아니라
+  **줄 앵커 유무**다 (R40 #1). 앵커를 얻은 글자처럼 취급 개체는 run delegate가
+  줄 높이로 예약하므로 라인 캐시가 담는 몫이라 하한을 얹지 않고 (883쪽 표는 캐시
+  71.32pt, 459쪽 그림은 3줄 36.96pt 안에 들어간다 — 실측 일치), **앵커를 못 얻은
+  글자처럼 취급 개체**는 어떤 줄도 자리를 잡아 주지 않아 컨테이너가 직접 담는다
+  (루트 "앵커 규칙"의 "treatAsChar (앵커 없음) → 높이 소비"를 컨테이너 높이로
+  옮긴 것). 떠 있는 개체와 합쳐 술어는 `raisesContainerFloor`
+  (= `growsContainer` ∪ `escapesLineBox`) 하나가 소유하고 표 셀·각주가 공유한다.
+  **공통 속성이 없는 개체의 기본값은 배치와 같아야 한다** (R51 #3): `collect`의
+  `advancesCursor`가 nil을 `?? true`(글자처럼 취급)로 보고 커서 흐름에 놓는데
+  run builder는 그 개체에 줄 공간을 예약하지 않으므로, 술어가 nil을 `?? false`로
+  보면 줄도 컨테이너도 안 담아 다음 각주·행 위로 흘러나간다.
+  그 기본값은 **앵커가 없을 때만** 소용이 있었다 (R53): run builder는 U+FFFC +
+  `controlIndex`를 늘 심고 tofu 글리프를 감추려 폭 0 run delegate를 달므로 예약
+  크기를 못 구한 개체도 앵커를 얻어 `anchor == nil` 가드에서 먼저 걸러졌다.
+  그래서 앵커는 위치가 아니라 **예약 치수까지** 나른다 (`LineAnchor.reservesSpace`
+  — delegate의 width × ascent) — 예약 0인 앵커는 앵커가 없는 것과 같다.
+  예약이 **충분한지**도 따로 본다 (R65): 예약은 저작 치수(`inlineObjectSize` →
+  표 69)인데 표·글상자의 실제 높이는 **내용**이 정하므로 더 크게 조판될 수 있고,
+  그때 줄은 초과분을 안 담는다. `reservesSpace`(예약 > 0)만 보고 접으면 개체가
+  다음 각주·행 위로 흘러나간다 — `noteContainerFloor`가 개체 하단을 예약 상자
+  하단과 비교해 **넘친 만큼만** 하한으로 올린다. 줄이 다 담았으면 그대로 캐시를
+  믿는다 (얹으면 셀이 저작 높이보다 부풀어 페이지 분할이 한글과 어긋난다).
+  `inlineObjectSize`가 nil이면 (공통 속성 없음 · 비 treatAsChar · 저작 치수 0)
+  예약이 0이다.
+  앵커를 모르는 사전 판정 (`hasFloatingObject`)만 **상위집합**이다 — 좁으면 하한을
+  놓치고 넓으면 재수집만 한 번 더 도므로 불일치는 그 방향으로만 안전하다. 예약
+  (`HwpFootnoteCoordinator.measuredFootnoteHeight` → 본문 절단점)과 배치
+  (`stackBlocks`)는 **같은 함수** `HwpFootnoteLayout.measureNote`를 부른다 —
+  산식을 복제하지 않고 호출을 공유해야 앵커 판정까지 일치한다. 예약이 줄 없는
+  프레임 (`HwpParagraphFrame(lines: [])`)으로 따로 재던 것이 R40 #1을 막고 있던
+  걸림돌이었다 (앵커 있는 개체까지 "앵커 없음"으로 보여 예약만 부풀었다).
+  개체 없는 각주는 `hasFloatingObject`로 걸러 라인 캐시 빠른 길을 유지한다.
+  축이 하나 더 있다 — **시간**이다 (R44 #1): `HwpPaginator.objectSizeResolver`는
+  현재 단·문단 폭을 읽는 **계산 프로퍼티**라 시점마다 값이 다르므로, 예약이 쓴
+  해석기를 `HwpFootnoteLayout.Input.sizeResolver`에 실어 배치까지 들고 간다.
+  배치 시점에 다시 읽으면 그 사이 단 밴드가 바뀐 문서에서 `.column`·`.paragraph`
+  기준 개체가 다른 크기로 재조판된다. 드리프트하는 축은 실제로 `columnWidth`
+  하나뿐이라 (`paragraphWidth`는 각주 폭으로 덮이고 종이·쪽은 페이지 안에서
+  불변), **각주용 해석기는 `forFootnoteArea(width:)`로 정규화한다** (R46 #2):
+  각주는 단으로 나뉘지 않으므로 (표 134 bits 8-9 미구현) 각주 안 '단' 기준
+  개체가 참조할 단은 각주 영역 자신이다 — 이 정규화가 드리프트를 값 운반이
+  아니라 **구조**로 없앤다. 값 운반(아래)은 구역 전환처럼 페이지 기하 자체가
+  바뀌는 축에 여전히 필요하다. **수집 시점 값을 쓰는 지점은 배치와
+  재예약 둘 다**다 (R45 #1) — 이월 각주를 새 페이지에서 다시 예약하는
+  `reservedFootnoteHeight`도 `input.sizeResolver`로 되돌려 재야 하고, 현재
+  environment로 재면 같은 각주를 배치와 다른 기하로 재게 된다 — 예약이 작으면 각주
+  스택이 본문을 덮고, 크면 한글에 없는 페이지 절단이 생긴다. 코퍼스에는 떠 있는
+  각주 개체가 0건이라 (전 픽스처 스캔: gso 1 + table 1, 둘 다 글자처럼 취급)
+  이 하한은 헌법주석 페이지 수 1,030과 렌더 해시를 건드리지 않는다 —
+  #94에서 바뀐 페이지는 470·894 **두 장뿐**이다.
+  남은 차이 하나: 한글은 각주에서 **「글 앞으로」·「글 뒤로」에도** 영역을
+  키우는데 (2026-07-30 합성 실측 — 각주 문단에 떠 있는 도형을 붙이면 구분선이
+  위로 밀린다), 우리는 `growsContainer`의 오버레이 제외를 그대로 따른다.
+  술어의 소유자는 `HwpParagraphObjectCollector` 한 곳이어야 하고 (표 셀·흐름
+  경로가 같은 답을 써야 한다) 오버레이 제외는 #91이 셀 페이지 분할을 지키려
+  둔 가드다 — 바꾸려면 표 셀과 **함께** 코퍼스 전체로 검증할 것.
+  가드: `HwpFootnoteObjectLayoutTests` (합성 13종 — 종류별 수집, 캐시 높이 불변,
+  떠 있는 개체/표 하한, 쪽 기준·오버레이 제외, **예약 ≡ 배치 높이**, 흐름 비방출,
+  각주 안 개체 링크 히트) + `HwpFootnotePaintListTests` (페인트 명령·z순서 3종) +
+  `FixtureObjectRenderTests`에 #94가 더한 3종 (헌법주석 실픽스처 470·894쪽 —
+  그림/표가 각주 블록 프레임 **안**에 있고 흐름 블록으로 새지 않음) +
+  `HwpSelectableTextPaintParityTests`
+  (선택 단위 9개: 각주 문단 뒤에 각주 글상자·표 셀 텍스트) + 블록 스냅샷 표본
+  470·894쪽 (루트 AGENTS.md "렌더 가드 3층").
+- **각주 컨테이너에서 갈리기 쉬운 두 값** (R39 — #94 리뷰가 잡은 것):
+  ① **문단 rect ≠ 블록 높이**. 문단 rect는 `MeasuredFootnote.textRectHeight`
+  (문단 자신의 텍스트 높이)를 쓴다 — 블록 높이(떠 있는 개체 성장분 포함)를
+  문단에 주면 문단-레벨 링크 폴백이 개체 아래 **빈 영역까지** 자기 URL로
+  claim한다. 코퍼스에 떠 있는 각주 개체가 0건이라 두 값이 늘 같아 되돌려도
+  렌더·해시가 무변화다 — `testFloatingObjectGrowsBlockButNotParagraphRect`만이
+  가드다. ② **예약 캐시 키는 해석기를 통째로 든다** (`FootnoteHeightKey`).
+  상대 크기 개체가 든 문단은 줄 높이가 `HwpObjectSizeResolver` 기하의 함수인데
+  폭만 키에 넣으면 종이/쪽 높이·단 폭만 바뀐 재사용이 살아나 예약이 배치와
+  갈린다 (배치는 캐시가 없어 늘 현재 기하로 재측정하므로 틀리는 쪽은 예약이다).
+  resolver의 `Hashable`이 **합성**이라 기준 축을 더해도 키가 따라간다 —
+  손으로 구현하지 말 것. 가드: `testReservationIsNotReusedAcrossResolverGeometries`.
 - 절대 캐시 모드에서 각주 스택 높이가 한글보다 크면 (캐시 없는 각주의 CT
   측정) 본문 마지막 블록과 겹칠 수 있다 — 본문 절단점이 한글 캐시로 고정되어
   각주 예약이 본문을 밀어내지 못한다. 강제 이월은 한글에 없는 각주 전용
@@ -343,7 +475,8 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   문서 선언·한글 캐시와 같은 627.01pt가 된다. 글자처럼 취급 개체에는 하한을
   얹지 않는다 — 줄 캐시가 담는 몫이고, 얹으면 캐시 신뢰 규약 (헌법주석 실측)이
   깨진다. **하한은 세로 기준이 '문단'이고 배치 방식이 흐름을 점유하는 개체만**
-  얹는다 (`growsContainer` — 축 3개). 쪽/종이 기준 개체의 저작 오프셋은 페이지
+  얹는다 (`growsContainer` — 축 3개; 앵커를 못 얻은 글자처럼 취급 개체는
+  `escapesLineBox`로 따로 더해진다, R40 #1). 쪽/종이 기준 개체의 저작 오프셋은 페이지
   상단 기준 절대 좌표(수백 pt가 정상)인데 컨테이너 안에는 쪽 기하가 없어
   `origin()`이 그 값을 문단 rect에 더하는 근사를 쓰고(R32 #3), 그 근사를 높이
   하한으로 승격시키면 개체 위치 오차가 표 총높이·페이지 분할 오차로 번진다
@@ -368,11 +501,34 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   (내장 차트)를 품은 컴포넌트와 수식 컨트롤은 수집 대상이 아니라 페이지 흐름
   경로가 그린다 (`collectible`·`handledControl` — 흐름 억제 술어
   `rendersInsideContainer`와 반드시 일치해야 한다, 불일치 = 소실 또는 이중 렌더)
+- **각주 문단의 좌우 여백이 조판·개체 폭에 반영되지 않는다** (R47 #2, 미해결).
+  본문은 '문단' 기준 폭이 `단 폭 − 문단 좌우 여백`인데 (`HwpPaginator.
+  currentParagraphWidth`), 각주는 조판(`HwpParagraphMeasurer`에 여백 적용 없음)도
+  개체 해석기(`forFootnoteArea`)도 **각주 영역 전체 폭**을 쓴다. 여백이 있는 각주
+  문단의 `.문단` 기준 개체는 그만큼 넓게 해석된다. #94가 만든 것이 아니라 각주
+  경로에 처음부터 있던 성질이고, 최소한 조판과 해석기가 **서로 일관**한다 —
+  해석기만 여백을 빼면 그 일관이 깨져 개체 기준 폭과 실제 조판 폭이 갈린다.
+  고치려면 조판·해석기를 **함께** 여백 기준으로 옮겨야 하는데 그러면 각주
+  줄바꿈이 바뀌어 헌법주석 각주 전체의 렌더가 움직인다. 착수 전 **한글.app
+  실측 필요** (각주 문단 좌우 여백이 실제로 적용되는지) — 확인 뒤 조판·해석기를
+  같은 커밋에서 옮기고 각주 골든을 새로 뜬다.
+- **컨테이너 안 글상자의 안쪽 컨테이너는 조용히 사라진다** (R40 #2, 미해결).
+  `HwpTextboxLayout`은 글상자 안 글상자·표를 수집하지 않고 (`collectsTextboxes:
+  false` + `collectsTables` 미지정 — R29 #1의 재귀 차단), 최상위 글상자는 안쪽
+  표를 **흐름 경로**가 대신 그린다. 그런데 각주는 흐름 방출이 없어 (위 각주 항목)
+  각주 → 글상자 → 표가 페이로드에도 흐름에도 없다. 표는 **지원** 컨트롤이라
+  `unsupportedDetector.classify`가 nil을 돌려 진단도 안 뜬다 — OLE·수식만 걸린다.
+  #94가 만든 회귀는 아니다 (그 전엔 바깥 글상자조차 안 그려졌다).
+  고치려면 `HwpTextboxFrame`에 `textboxes`/`nestedTables`를 셀·각주와 대칭으로
+  더하고 walker·페인트·히트를 **함께** 배선해야 한다 (한 곳만 하면 죽은
+  페이로드거나 선택↔렌더 불일치). **최상위 글상자에서는 켜면 안 된다** — 흐름
+  경로와 이중 렌더가 된다. 착수 전 **한글.app 실측 필요**: 코퍼스에 사례가 0건이라
+  해시·골든이 "안 바뀌었다"만 말할 뿐 "맞다"를 증명하지 못한다
 - **셀 안 개체는 같은 셀의 후속 문단을 아래로 밀지 않는다** — 측정
   (`floatingObjectHeight`)과 배치 (`laidOutContents`) 모두 문단 쌓기 커서를
   문단 높이만큼 전진시키므로 (`cursorY += content.totalHeight`), 개체보다 낮은
-  문단 뒤에 다른 문단·중첩 표가 오면 그 위에 겹쳐 그려진다. 선재 설계이지
-  #91 하한의 결함이 아니다 — 흐름 비소비를 정하는 지점은
+  문단 뒤에 다른 문단·중첩 표가 오면 그 위에 겹쳐 그려진다. 원래부터 있던
+  설계이지 #91 하한의 결함이 아니다 — 흐름 비소비를 정하는 지점은
   `HwpParagraphObjectCollector`의 `advancesCursor` (R30 #1: 떠 있는 개체는
   저작 위치라 흐름을 소비하지 않는다) 이고, 하한은 셀이 개체를 담는 높이만
   보장한다. 고칠 때 **`.topAndBottom` (자리 차지) 한정**일 것 — `.square`

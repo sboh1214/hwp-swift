@@ -579,6 +579,165 @@
             935,
             992,
             4082,
+            320
+          ],
+          "index" : 0,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 71,
+          "textPrefix" : "고 있어 위헌의"
+        },
+        {
+          "frame" : [
+            935,
+            1312,
+            4082,
+            160
+          ],
+          "index" : 1,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            1472,
+            4082,
+            160
+          ],
+          "index" : 2,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 17,
+          "textPrefix" : "검열금지(사전억"
+        },
+        {
+          "frame" : [
+            935,
+            1632,
+            4082,
+            160
+          ],
+          "index" : 3,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            1792,
+            4082,
+            2080
+          ],
+          "index" : 4,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 617,
+          "textPrefix" : "그리스 로마시절"
+        },
+        {
+          "frame" : [
+            935,
+            3872,
+            4082,
+            960
+          ],
+          "index" : 5,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 259,
+          "textPrefix" : "우리 헌법재판소"
+        },
+        {
+          "frame" : [
+            935,
+            4832,
+            4082,
+            640
+          ],
+          "index" : 6,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 209,
+          "textPrefix" : "다만 법률로서 "
+        },
+        {
+          "frame" : [
+            935,
+            6925,
+            4082,
+            360
+          ],
+          "index" : 7,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "pageChrome",
+          "textLength" : 7,
+          "textPrefix" : "- 459 -"
+        },
+        {
+          "frame" : [
+            935,
+            5797,
+            4082,
+            370
+          ],
+          "index" : 8,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 127,
+          "textPrefix" : "38) 역사적으"
+        },
+        {
+          "frame" : [
+            935,
+            6195,
+            4082,
+            586
+          ],
+          "index" : 9,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 289,
+          "textPrefix" : "39) 사문제도"
+        },
+        {
+          "frame" : [
+            935,
+            6809,
+            4082,
+            117
+          ],
+          "index" : 10,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 30,
+          "textPrefix" : "40) 헌재결 "
+        }
+      ],
+      "page" : 470
+    },
+    {
+      "blocks" : [
+        {
+          "frame" : [
+            935,
+            992,
+            4082,
             160
           ],
           "index" : 0,
@@ -787,6 +946,221 @@
         }
       ],
       "page" : 485
+    },
+    {
+      "blocks" : [
+        {
+          "frame" : [
+            935,
+            992,
+            4082,
+            640
+          ],
+          "index" : 0,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 128,
+          "textPrefix" : "하여 관련 사회"
+        },
+        {
+          "frame" : [
+            935,
+            1632,
+            4082,
+            1120
+          ],
+          "index" : 1,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 293,
+          "textPrefix" : "셋째, 사회적 "
+        },
+        {
+          "frame" : [
+            935,
+            2752,
+            4082,
+            960
+          ],
+          "index" : 2,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 245,
+          "textPrefix" : "넷째, 사회적 "
+        },
+        {
+          "frame" : [
+            935,
+            3712,
+            4082,
+            160
+          ],
+          "index" : 3,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            3872,
+            4082,
+            168
+          ],
+          "index" : 4,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 26,
+          "textPrefix" : "법적 효력에 따"
+        },
+        {
+          "frame" : [
+            935,
+            4040,
+            4082,
+            160
+          ],
+          "index" : 5,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 0,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            4200,
+            4082,
+            480
+          ],
+          "index" : 6,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 146,
+          "textPrefix" : "이러한 유형과 "
+        },
+        {
+          "frame" : [
+            935,
+            4680,
+            4082,
+            160
+          ],
+          "index" : 7,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "body",
+          "textLength" : 50,
+          "textPrefix" : "예컨대, 프로그"
+        },
+        {
+          "frame" : [
+            935,
+            6925,
+            4082,
+            360
+          ],
+          "index" : 8,
+          "kind" : "text",
+          "payload" : "none",
+          "role" : "pageChrome",
+          "textLength" : 7,
+          "textPrefix" : "- 883 -"
+        },
+        {
+          "frame" : [
+            935,
+            4539,
+            4082,
+            130
+          ],
+          "index" : 9,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 25,
+          "textPrefix" : "26) 이에 관"
+        },
+        {
+          "frame" : [
+            935,
+            4697,
+            4082,
+            585
+          ],
+          "index" : 10,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 282,
+          "textPrefix" : "27) 이와 관"
+        },
+        {
+          "frame" : [
+            935,
+            5311,
+            4082,
+            599
+          ],
+          "index" : 11,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 240,
+          "textPrefix" : "28) 기본권의"
+        },
+        {
+          "frame" : [
+            935,
+            5938,
+            4082,
+            130
+          ],
+          "index" : 12,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 49,
+          "textPrefix" : "29) R. A"
+        },
+        {
+          "frame" : [
+            935,
+            6068,
+            4082,
+            713
+          ],
+          "index" : 13,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 2,
+          "textPrefix" : ""
+        },
+        {
+          "frame" : [
+            935,
+            6809,
+            4082,
+            117
+          ],
+          "index" : 14,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 32,
+          "textPrefix" : "30) 상세한 "
+        }
+      ],
+      "page" : 894
     },
     {
       "blocks" : [

@@ -345,6 +345,22 @@ public enum HwpDrawnTextLayout {
         return regions
     }
 
+    /// 그려진 텍스트의 줄 상자들 — "이 지점에 글자가 칠해졌는가" 판정용 (R54).
+    ///
+    /// 선택 하이라이트와 **같은 정의** (`HwpDrawnLine.selectionRect`) 를 쓴다:
+    /// 문단 rect는 줄 사이 여백과 짧은 줄의 빈 오른쪽까지 품어, 그것으로 claim하면
+    /// 아무것도 안 그린 자리에서 아래 블록의 보이는 링크를 막는다.
+    public static func textLineRegions(
+        attributedString: NSAttributedString,
+        origin: CGPoint,
+        lineWidth: CGFloat
+    ) -> [CGRect] {
+        guard attributedString.length > 0 else { return [] }
+        return lines(
+            attributedString: attributedString, origin: origin, lineWidth: lineWidth
+        ).map(\.selectionRect)
+    }
+
     /// slight-overflow 한 줄의 CTLine과 타이포그래피 메트릭.
     public struct SlightOverflowLine {
         public let line: CTLine

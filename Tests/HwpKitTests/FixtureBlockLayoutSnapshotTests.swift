@@ -20,8 +20,10 @@ final class FixtureBlockLayoutSnapshotTests: XCTestCase {
         ("footnote-endnote", nil), // 2쪽 — 각주 이월·미주
         ("multi-section", nil), // 2쪽 — 구역 전환
         ("noori", nil), // 3쪽 — 표 분할·셀 그림·다단
-        // 1,030쪽 절대 캐시 — 표본만 (p484-485는 셀 각주 귀속 실측 지점)
-        ("legacy-common-control-property", [0, 250, 484, 485, 1029]),
+        // 1,030쪽 절대 캐시 — 표본만 (p484-485는 셀 각주 귀속 실측 지점,
+        // p470·p894는 각주 안 개체 실측 지점 — #94의 그림/표가 있는 페이지라
+        // 개체 추가가 각주 블록 프레임을 흔들지 않음을 잠근다)
+        ("legacy-common-control-property", [0, 250, 470, 484, 485, 894, 1029]),
     ]
 
     func testBlockLayoutMatchesSnapshots() async throws {

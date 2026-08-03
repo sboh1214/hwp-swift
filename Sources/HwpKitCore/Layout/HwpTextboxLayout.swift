@@ -267,3 +267,20 @@ public struct HwpTextboxLayout {
         return appearance
     }
 }
+
+public extension HwpTextboxFrame {
+    /// 페인터가 **실제로 긋는** 테두리 폭 — 0.7pt 미만은 보이지 않아 끌어올린다.
+    /// `textboxCommands`와 이 하나를 공유해야 자격·커버리지가 상위집합이 된다
+    /// (R62 — 저작 폭만 보면 0.3pt 테두리의 보이는 절반이 빠진다).
+    var effectiveBorderWidth: CGFloat {
+        guard borderColor != nil, borderWidth > 0 else { return 0 }
+        return max(0.7, borderWidth)
+    }
+
+    /// 글상자가 하이퍼링크를 품는지 (문단·자식 개체 재귀, R61)
+    var hasHyperlink: Bool {
+        paragraphs.contains { $0.hasHyperlink }
+            || images.contains { $0.wrapperURL != nil }
+            || shapes.contains { $0.wrapperURL != nil }
+    }
+}

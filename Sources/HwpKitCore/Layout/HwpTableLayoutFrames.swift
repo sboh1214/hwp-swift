@@ -203,11 +203,7 @@ extension HwpTableLayout {
                 )
             },
             nestedTables: contents.nestedTables.map {
-                HwpNestedTableFrame(
-                    rect: $0.rect.offsetBy(dx: 0, dy: offset),
-                    table: $0.table,
-                    controlInstanceId: $0.controlInstanceId
-                )
+                $0.withRect($0.rect.offsetBy(dx: 0, dy: offset))
             },
             images: contents.images.map {
                 $0.offsetBy(deltaX: 0, deltaY: offset)
@@ -301,7 +297,9 @@ extension HwpTableLayout {
                     height: nested.frame.outerFrame.height
                 ),
                 table: nested.frame,
-                controlInstanceId: nested.instanceId
+                controlInstanceId: nested.instanceId,
+                controlIndex: nested.controlIndex,
+                paragraphId: nested.paragraphId
             )
             cursorY += nested.frame.outerFrame.height
             return frame

@@ -27,7 +27,16 @@ public enum HwpBlockContentWalker {
         case let .textbox(textbox):
             walkParagraphs(textbox.paragraphs, offset: block.frame.origin, visit: visit)
         case let .footnote(footnote):
-            walkParagraphs(footnote.paragraphs, offset: block.frame.origin, visit: visit)
+            // 각주 안 개체·표의 텍스트도 선택/복사 단위에 실어야 한다 —
+            // 렌더와 같은 평면 순서라 paint parity 유지 (#94, 표 셀과 같은 규약)
+            walkFootnote(
+                footnote,
+                origin: block.frame.origin,
+                onParagraphText: visit,
+                onCellTextbox: { textbox, rect in
+                    walkParagraphs(textbox.textbox.paragraphs, offset: rect.origin, visit: visit)
+                }
+            )
         case .shape, .image, .chart:
             return
         case nil:
@@ -68,7 +77,8 @@ public enum HwpBlockContentWalker {
         onParagraphText: (NSAttributedString, CGRect, UInt32?) -> Void,
         onCellImage: (HwpCellImage, CGRect) -> Void = { _, _ in },
         onCellShape: (HwpCellShape, CGRect) -> Void = { _, _ in },
-        onCellTextbox: (HwpCellTextbox, CGRect) -> Void = { _, _ in }
+        onCellTextbox: (HwpCellTextbox, CGRect) -> Void = { _, _ in },
+        onNestedTable: (HwpNestedTableFrame, CGRect) -> Void = { _, _ in }
     ) {
         for row in table.rows {
             for cell in row.cells {
@@ -85,6 +95,21 @@ public enum HwpBlockContentWalker {
                         onCellShape(shape, shape.rect.offsetBy(dx: origin.x, dy: origin.y))
                     case let .textbox(textbox):
                         onCellTextbox(textbox, textbox.rect.offsetBy(dx: origin.x, dy: origin.y))
+                    case let .nestedTable(nested):
+                        onNestedTable(nested, nested.rect.offsetBy(dx: origin.x, dy: origin.y))
+                        walkTable(
+                            nested.table,
+                            origin: CGPoint(
+                                x: origin.x + nested.rect.minX,
+                                y: origin.y + nested.rect.minY
+                            ),
+                            onCellStart: onCellStart,
+                            onParagraphText: onParagraphText,
+                            onCellImage: onCellImage,
+                            onCellShape: onCellShape,
+                            onCellTextbox: onCellTextbox,
+                            onNestedTable: onNestedTable
+                        )
                     }
                 }
                 for object in objects where object.paintsBehindText {
@@ -97,6 +122,7 @@ public enum HwpBlockContentWalker {
                 // 중첩 표는 셀 안 위치를 origin으로 재귀 순회한다 —
                 // origin 합성 산식은 여기 한 곳에만 둔다.
                 for nested in cell.nestedTables {
+                    onNestedTable(nested, nested.rect.offsetBy(dx: origin.x, dy: origin.y))
                     walkTable(
                         nested.table,
                         origin: CGPoint(
@@ -107,24 +133,223 @@ public enum HwpBlockContentWalker {
                         onParagraphText: onParagraphText,
                         onCellImage: onCellImage,
                         onCellShape: onCellShape,
-                        onCellTextbox: onCellTextbox
+                        onCellTextbox: onCellTextbox,
+                        onNestedTable: onNestedTable
                     )
                 }
             }
         }
     }
 
-    /// 셀 개체 (종류 무관 통합 순회 단위)
+    /// 각주/미주 블록을 렌더 방출 순서로 순회한다 — (글 뒤로 개체)* →
+    /// onParagraphText* → (나머지 개체)* → (각주 안 표 재귀). 이벤트 종류와
+    /// 순서 규약은 `walkTable`과 같다 (#94) — 각주는 표 셀·글상자와 같은
+    /// 컨테이너라 개체 페이로드도 같은 형태다.
+    /// 구분선은 블록 사이에 공유되므로 이 순회의 이벤트가 아니다 (페인터 몫).
+    public static func walkFootnote(
+        _ footnote: HwpFootnoteBlock,
+        origin: CGPoint,
+        onParagraphText: (NSAttributedString, CGRect, UInt32?) -> Void,
+        onCellStart: (HwpTableCellFrame, CGRect) -> Void = { _, _ in },
+        onCellImage: (HwpCellImage, CGRect) -> Void = { _, _ in },
+        onCellShape: (HwpCellShape, CGRect) -> Void = { _, _ in },
+        onCellTextbox: (HwpCellTextbox, CGRect) -> Void = { _, _ in },
+        onNestedTable: (HwpNestedTableFrame, CGRect) -> Void = { _, _ in }
+    ) {
+        // 표도 같은 평면·정렬에 합류한다 (R47 #1) — 따로 두고 마지막에 그리면
+        // 글 뒤로 표가 텍스트 앞에 나온다.
+        let objects = sortedObjects(
+            images: footnote.images,
+            shapes: footnote.shapes,
+            textboxes: footnote.textboxes,
+            nestedTables: footnote.nestedTables
+        )
+        func emit(_ object: CellObject) {
+            switch object {
+            case let .image(image):
+                onCellImage(image, image.rect.offsetBy(dx: origin.x, dy: origin.y))
+            case let .shape(shape):
+                onCellShape(shape, shape.rect.offsetBy(dx: origin.x, dy: origin.y))
+            case let .textbox(textbox):
+                onCellTextbox(textbox, textbox.rect.offsetBy(dx: origin.x, dy: origin.y))
+            case let .nestedTable(nested):
+                // 각주 안 표는 블록-로컬 위치를 origin으로 재귀 순회한다
+                // (셀 경로와 같은 origin 합성 산식).
+                onNestedTable(nested, nested.rect.offsetBy(dx: origin.x, dy: origin.y))
+                walkTable(
+                    nested.table,
+                    origin: CGPoint(
+                        x: origin.x + nested.rect.minX,
+                        y: origin.y + nested.rect.minY
+                    ),
+                    onCellStart: onCellStart,
+                    onParagraphText: onParagraphText,
+                    onCellImage: onCellImage,
+                    onCellShape: onCellShape,
+                    onCellTextbox: onCellTextbox,
+                    onNestedTable: onNestedTable
+                )
+            }
+        }
+        for object in objects where object.paintsBehindText {
+            emit(object)
+        }
+        walkParagraphs(footnote.paragraphs, offset: origin, visit: onParagraphText)
+        for object in objects where !object.paintsBehindText {
+            emit(object)
+        }
+    }
+
+    /// 컨테이너 안 개체 한 층 (페인트 순서의 단위)
+    enum ContentLayer {
+        case image(HwpCellImage)
+        case shape(HwpCellShape)
+        case textbox(HwpCellTextbox)
+        /// 표는 스스로 가리지 않는다 — 채운 셀이 가리는지는 `tableHit`이 정한다.
+        case nestedTable(HwpNestedTableFrame)
+
+        /// 이 층이 그 자리를 **불투명하게 덮는가** — 히트가 아래 층 탐색을 멈출
+        /// 근거다. 판정 기준은 페인터가 실제로 칠하는 것과 같아야 한다 (R43):
+        /// - 그림: 항상 (알파는 알 수 없어 채워진 것으로 본다)
+        /// - 도형: 채우기가 있을 때 **경로 안쪽만**. `shapeCommands`가
+        ///   `geometry.path`만 칠하므로 바운딩 rect로 보면 타원·다각형의 투명한
+        ///   모서리까지 가림으로 잡혀 그 아래 보이는 링크가 안 눌린다 (R43 #3)
+        /// - 글상자: 항상. `textboxCommands`는 `fillColor`가 없으면
+        ///   `.hwpWhite`로 칠하므로 "채우기 없음 = 투명"이 아니다 (R43 #2)
+        func occludes(_ point: CGPoint) -> Bool {
+            switch self {
+            case let .image(image):
+                // 페인터는 `clipRect`(rect와 같은 표-로컬 좌표) 안만 그린다 —
+                // 페이지 절단면에 걸려 잘려 나간 부분은 아무것도 칠하지 않으므로
+                // 가리지도 않는다 (R45 #2, `cellImageCommands`와 같은 교집합).
+                image.paintedRect.contains(point)
+            case let .shape(shape):
+                shape.geometry.fillColor != nil && shape.geometry.path.contains(
+                    CGPoint(x: point.x - shape.rect.minX, y: point.y - shape.rect.minY)
+                )
+            case let .textbox(textbox):
+                textbox.paintedRect.contains(point)
+            case .nestedTable:
+                false
+            }
+        }
+
+        /// 이 지점에 **무엇이든 칠해졌는가** — 불투명 판정 (`occludes`) 과 다른
+        /// 축이다 (R54). 속 빈 도형의 테두리는 아래를 가리지 않지만, 그 선 위의
+        /// 탭은 그 개체를 가리킨다: 감싼 링크 구제와 claim은 이쪽을 봐야 하고
+        /// 아래 층 탐색을 멈출지는 `occludes`가 정한다.
+        func paints(_ point: CGPoint) -> Bool {
+            switch self {
+            case .image, .textbox:
+                occludes(point)
+            case let .shape(shape):
+                occludes(point) || Self.strokePaints(
+                    shape.geometry,
+                    at: CGPoint(x: point.x - shape.rect.minX, y: point.y - shape.rect.minY)
+                )
+            case let .nestedTable(nested):
+                // 셀 채움과 **칸막이**가 칠이다 (R55) — 안 채운 표라도 테두리 선
+                // 위의 탭은 이 표를 가리키므로 감싼 `%hlk`가 열려야 한다
+                nested.table.paints(CGPoint(
+                    x: point.x - nested.rect.minX, y: point.y - nested.rect.minY
+                ))
+            }
+        }
+
+        /// 테두리 선 위인지 — 페인터가 긋는 그 선(`HwpShapeGeometry.strokedPath`)이다.
+        /// 자격 계산과 **같은 경로**를 봐야 자격이 상위집합이 된다 (R64).
+        private static func strokePaints(
+            _ geometry: HwpShapeGeometry, at localPoint: CGPoint
+        ) -> Bool {
+            geometry.strokedPath?.contains(localPoint) ?? false
+        }
+
+        /// 이 층이 차지하는 영역 — **감싼 링크는 이 rect의 것**이다 (R60).
+        /// 방출 (`HwpPaintListBuilder.wrappedObjects`) 이 같은 rect로 링크를 내므로
+        /// 히트도 같은 영역이어야 한다. 그림만 잘린 조각을 반영한 `visibleRect`다.
+        /// 칠 여부 (`paints`) 는 가림·claim 판정에만 쓴다.
+        var rect: CGRect {
+            switch self {
+            case let .image(image): image.visibleRect
+            case let .shape(shape): shape.rect
+            case let .textbox(textbox): textbox.rect
+            case let .nestedTable(nested): nested.rect
+            }
+        }
+
+        /// 분할 전에 개체에 고정된 감싼 링크 URL (R58) — 조각의 문단에 U+FFFC run이
+        /// 남지 않았을 때 (문단, 서수) 조회를 대신한다. nil이면 종전대로 조회한다.
+        var wrapperURL: String? {
+            switch self {
+            case let .image(image): image.wrapperURL
+            case let .shape(shape): shape.wrapperURL
+            case let .textbox(textbox): textbox.wrapperURL
+            case let .nestedTable(nested): nested.wrapperURL
+            }
+        }
+
+        /// 이 층을 낸 `ctrlHeaderArray` 서수 — 감싼 `%hlk` 스팬과 잇는 열쇠 (R50)
+        var controlIndex: Int {
+            switch self {
+            case let .image(image): image.controlIndex
+            case let .shape(shape): shape.controlIndex
+            case let .textbox(textbox): textbox.controlIndex
+            case let .nestedTable(nested): nested.controlIndex
+            }
+        }
+
+        /// 이 층을 낸 문단의 `paraId` — 서수와 **쌍**으로만 감싼 링크를 가른다
+        /// (R51 #1). 서수는 문단마다 0부터 다시 시작한다.
+        var paragraphId: UInt32 {
+            switch self {
+            case let .image(image): image.paragraphId
+            case let .shape(shape): shape.paragraphId
+            case let .textbox(textbox): textbox.paragraphId
+            case let .nestedTable(nested): nested.paragraphId
+            }
+        }
+    }
+
+    /// 컨테이너 개체를 **페인트 순서**로 나눠 돌려준다 (글 뒤로 / 글 앞으로,
+    /// 각 그룹은 zOrder → 원본 순서). 히트 테스터가 순서를 다시 구현하면 페인트와
+    /// 갈려 덮인 링크가 열리므로, 정렬 소유권은 여기 남는다 (R41 #1).
+    static func layersInPaintOrder(
+        images: [HwpCellImage],
+        shapes: [HwpCellShape],
+        textboxes: [HwpCellTextbox],
+        nestedTables: [HwpNestedTableFrame] = []
+    ) -> (behindText: [ContentLayer], inFrontOfText: [ContentLayer]) {
+        let ordered = sortedObjects(
+            images: images, shapes: shapes, textboxes: textboxes, nestedTables: nestedTables
+        )
+        func layers(behindText: Bool) -> [ContentLayer] {
+            ordered.filter { $0.paintsBehindText == behindText }.map { object in
+                switch object {
+                case let .image(image): ContentLayer.image(image)
+                case let .shape(shape): ContentLayer.shape(shape)
+                case let .textbox(textbox): ContentLayer.textbox(textbox)
+                case let .nestedTable(nested): ContentLayer.nestedTable(nested)
+                }
+            }
+        }
+        return (behindText: layers(behindText: true), inFrontOfText: layers(behindText: false))
+    }
+
+    /// 셀 개체 (종류 무관 통합 순회 단위). 표도 그림·도형과 같은 평면·정렬 키를
+    /// 가지므로 여기 합류한다 (R47 #1) — 따로 두고 마지막에 그리면 글 뒤로 표가
+    /// 텍스트 앞에 나온다.
     private enum CellObject {
         case image(HwpCellImage)
         case shape(HwpCellShape)
         case textbox(HwpCellTextbox)
+        case nestedTable(HwpNestedTableFrame)
 
         var paintsBehindText: Bool {
             switch self {
             case let .image(image): image.paintsBehindText
             case let .shape(shape): shape.paintsBehindText
             case let .textbox(textbox): textbox.paintsBehindText
+            case let .nestedTable(nested): nested.paintsBehindText
             }
         }
 
@@ -133,6 +358,7 @@ public enum HwpBlockContentWalker {
             case let .image(image): image.zOrder
             case let .shape(shape): shape.zOrder
             case let .textbox(textbox): textbox.zOrder
+            case let .nestedTable(nested): nested.zOrder
             }
         }
 
@@ -141,6 +367,7 @@ public enum HwpBlockContentWalker {
             case let .image(image): image.sourceOrder
             case let .shape(shape): shape.sourceOrder
             case let .textbox(textbox): textbox.sourceOrder
+            case let .nestedTable(nested): nested.sourceOrder
             }
         }
     }
@@ -148,9 +375,21 @@ public enum HwpBlockContentWalker {
     /// 셀 개체를 zOrder 오름차순 (동순위는 원본 ctrlHeaderArray 순서 —
     /// 종류-버킷 순서가 아니다, R31 #3)으로 정렬한 방출 목록.
     private static func sortedCellObjects(_ cell: HwpTableCellFrame) -> [CellObject] {
-        let objects = cell.images.map(CellObject.image)
-            + cell.shapes.map(CellObject.shape)
-            + cell.textboxes.map(CellObject.textbox)
+        sortedObjects(images: cell.images, shapes: cell.shapes, textboxes: cell.textboxes)
+    }
+
+    /// 컨테이너 개체 정렬의 단일 지점 (표 셀·각주 공용, #94) — 종류 버킷을
+    /// 합쳐 zOrder → 원본 순서로 정렬한다.
+    private static func sortedObjects(
+        images: [HwpCellImage],
+        shapes: [HwpCellShape],
+        textboxes: [HwpCellTextbox],
+        nestedTables: [HwpNestedTableFrame] = []
+    ) -> [CellObject] {
+        let objects = images.map(CellObject.image)
+            + shapes.map(CellObject.shape)
+            + textboxes.map(CellObject.textbox)
+            + nestedTables.map(CellObject.nestedTable)
         return objects.sorted { lhs, rhs in
             lhs.zOrder != rhs.zOrder
                 ? lhs.zOrder < rhs.zOrder

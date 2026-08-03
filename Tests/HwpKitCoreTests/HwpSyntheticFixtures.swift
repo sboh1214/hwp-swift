@@ -46,6 +46,17 @@ enum HwpSynthetic {
         return paragraph
     }
 
+    /// 라인 캐시 + 줄 안 컨트롤 문자를 함께 가진 문단 — 글자처럼 취급 개체가
+    /// **실제로 줄 앵커를 얻는** 실문서 형상이다 (헌법주석 459·883쪽). 캐시만
+    /// 있고 컨트롤 문자가 없는 문단은 앵커가 없어 다른 경로를 탄다 (R40 #1).
+    static func cachedInlineControlParagraph(
+        segments: [(location: Int32, height: Int32)]
+    ) throws -> CoreHwp.HwpParagraph {
+        var paragraph = try lineSegParagraph("", segments: segments)
+        paragraph.paraText = paragraphWithInlineControl(prefix: "", suffix: "").paraText
+        return paragraph
+    }
+
     /// columnCacheParagraph 세그먼트 사양
     struct ColumnCacheSegment {
         let textIndex: UInt32
@@ -415,5 +426,79 @@ extension HwpSynthetic {
         section.paragraph[0] = first
         section.paragraph.append(contentsOf: bodyParagraphs)
         return section
+    }
+}
+
+// MARK: - 각주/미주 안 개체 빌더 (#94)
+
+extension HwpSynthetic {
+    /// 표 컨트롤의 본문 배치 속성을 지정한 사본. 각주 안 표는 한글 실측에서
+    /// **글자처럼 취급**이라 (헌법주석 883쪽 각주 29) 기본값을 그렇게 둔다.
+    /// 떠 있는 표의 컨테이너 높이 하한 경계를 태우려면 인자로 바꾼다.
+    static func placed(
+        _ table: CoreHwp.HwpTable,
+        treatAsChar: Bool = true,
+        verticalRelativeTo: CoreHwp.HwpCommonCtrlVerticalRelativeTo = .paragraph,
+        verticalOffset: Int32 = 0,
+        textWrap: CoreHwp.HwpCommonCtrlTextWrap = .topAndBottom
+    ) -> CoreHwp.HwpTable {
+        var placed = table
+        var info = placed.commonCtrlProperty.propertyInfo
+        info.treatAsChar = treatAsChar
+        info.verticalRelativeToRawValue = verticalRelativeTo.rawValue
+        info.verticalRelativeTo = verticalRelativeTo
+        info.textWrapRawValue = textWrap.rawValue
+        info.textWrap = textWrap
+        placed.commonCtrlProperty.propertyInfo = info
+        placed.commonCtrlProperty.verticalOffset = UInt32(bitPattern: verticalOffset)
+        return placed
+    }
+
+    /// 종이 기준 **상대** 크기 (10000 = 100%) 글자처럼 취급 개체.
+    /// 줄 높이가 `HwpObjectSizeResolver` 기하의 함수가 되는 최소 형상이라,
+    /// 측정 캐시가 기하를 키에 넣는지 태울 수 있다 (R39 #1).
+    static func paperRelativeInlineObject(
+        widthPercent: UInt32,
+        heightPercent: UInt32,
+        instanceId: UInt32 = 0
+    ) -> CoreHwp.HwpGenShapeObject {
+        var object = inlineShapeObject(
+            width: widthPercent, height: heightPercent, instanceId: instanceId
+        )
+        var info = object.commonCtrlProperty.propertyInfo
+        info.widthRelativeToRawValue = CoreHwp.HwpCommonCtrlObjectWidthRelativeTo.paper.rawValue
+        info.widthRelativeTo = .paper
+        info.heightRelativeToRawValue = CoreHwp.HwpCommonCtrlObjectHeightRelativeTo.paper.rawValue
+        info.heightRelativeTo = .paper
+        object.commonCtrlProperty.propertyInfo = info
+        return object
+    }
+
+    /// **단** 기준 상대 크기 (10000 = 100%) 글자처럼 취급 개체. 각주 해석기가
+    /// 현재 단 폭에 흔들리지 않는지 태우는 최소 형상이다 (R46 #2).
+    static func columnRelativeInlineObject(
+        widthPercent: UInt32,
+        heightPercent: UInt32,
+        instanceId: UInt32 = 0
+    ) -> CoreHwp.HwpGenShapeObject {
+        var object = inlineShapeObject(
+            width: widthPercent, height: heightPercent, instanceId: instanceId
+        )
+        var info = object.commonCtrlProperty.propertyInfo
+        info.widthRelativeToRawValue = CoreHwp.HwpCommonCtrlObjectWidthRelativeTo.column.rawValue
+        info.widthRelativeTo = .column
+        // 높이에는 '단' 기준이 없다 (표 70) — 폭만 단 기준으로 두고 높이는 쪽 기준
+        info.heightRelativeToRawValue = CoreHwp.HwpCommonCtrlObjectHeightRelativeTo.page.rawValue
+        info.heightRelativeTo = .page
+        object.commonCtrlProperty.propertyInfo = info
+        return object
+    }
+
+    /// 각주/미주 리스트 컨트롤 — 문단마다 컨트롤을 붙여 만든다.
+    static func noteControl(
+        _ ctrlId: CoreHwp.HwpOtherCtrlId,
+        paragraphs: [CoreHwp.HwpParagraph]
+    ) -> CoreHwp.HwpCtrlId? {
+        wrapped(listControl(ctrlId: ctrlId, paragraphs: paragraphs), as: ctrlId)
     }
 }

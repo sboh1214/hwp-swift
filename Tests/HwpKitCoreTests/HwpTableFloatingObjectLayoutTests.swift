@@ -52,6 +52,32 @@ import XCTest
         /// 하한을 얹지 않는다. 얹으면 캐시를 신뢰하는 규약 (헌법주석 실측 —
         /// 셀이 저작 높이보다 부풀면 페이지 분할이 한글과 어긋난다)이 깨진다.
         func testInlineObjectInCellKeepsAuthoredRowHeight() throws {
+            // 실문서처럼 줄 안 컨트롤 문자를 함께 둬 개체가 **앵커를 얻게** 한다 —
+            // 캐시만 있고 컨트롤 문자가 없으면 앵커가 없어 다른 규약이다 (R40 #1).
+            var inline = try HwpSynthetic.cachedInlineControlParagraph(
+                segments: [(location: 0, height: 1000)]
+            )
+            inline.ctrlHeaderArray = [
+                .genShapeObject(HwpSynthetic.inlineShapeObject(width: 5000, height: 30000)),
+            ]
+            let result = layout().layout(
+                table: try shapeRowTable(shapeParagraph: inline),
+                availableWidth: 400,
+                index: index()
+            )
+
+            guard case let .success(frame) = result else {
+                fail("expected table layout success")
+                return
+            }
+            expect(frame.rows[0].rowFrame.height).to(beCloseTo(10, within: 0.5))
+        }
+
+        /// 줄 앵커를 못 얻은 글자처럼 취급 개체는 줄 상자가 자리를 잡아 주지
+        /// 않으므로 셀이 직접 담아야 한다 (R40 #1) — 각주와 같은 술어
+        /// (`HwpParagraphObjectCollector.raisesContainerFloor`) 를 쓰므로 여기서
+        /// 갈리면 컨테이너별로 답이 달라진다.
+        func testUnanchoredInlineObjectInCellGrowsRow() throws {
             var inline = try HwpSynthetic.lineSegParagraph(
                 "", segments: [(location: 0, height: 1000)]
             )
@@ -68,7 +94,7 @@ import XCTest
                 fail("expected table layout success")
                 return
             }
-            expect(frame.rows[0].rowFrame.height).to(beCloseTo(10, within: 0.5))
+            expect(frame.rows[0].rowFrame.height) >= 300
         }
 
         /// 쪽/종이 기준 개체는 하한에서 뺀다. 그 저작 세로 오프셋은 **페이지 상단

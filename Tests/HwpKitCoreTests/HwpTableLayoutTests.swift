@@ -397,7 +397,7 @@ import XCTest
         }
     }
 
-    private extension HwpTableLayoutTests {
+    extension HwpTableLayoutTests {
         func layout() -> HwpTableLayout {
             HwpTableLayout(fontResolver: .testDeterministic)
         }

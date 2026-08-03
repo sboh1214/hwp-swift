@@ -74,6 +74,50 @@ public struct HwpPaintListBuilder: Sendable {
     /// 표 재귀)이다. 필드 스팬이 있는 문단은 건너뛴다 — 모델 hyperlinkURL은 스팬
     /// 존재와 무관하게 설정되므로 전체-rect 폴백을 겹치면 앞뒤 평문이 링크로
     /// 표시된다 (R55 #2). 하나라도 방출하면 true (R53 #4).
+    /// 감싼 링크 조회에 필요한 개체 참조 — 종류가 달라도 (rect, 문단, 서수) 셋만 본다
+    private struct WrappedObjectRef {
+        let rect: CGRect
+        let paragraphId: UInt32
+        let controlIndex: Int
+        /// 분할이 마커 문단을 떼어간 조각에서도 링크를 유지한다 (R58)
+        let wrapperURL: String?
+    }
+
+    /// 컨테이너 하나가 담은 개체들 — 각주·표 셀·글상자가 같은 모양이라 방출도
+    /// 한 함수(`emitWrappedObjects`)가 셋을 다 처리한다 (R57).
+    private struct ContainerObjects {
+        var images: [HwpCellImage] = []
+        var shapes: [HwpCellShape] = []
+        var textboxes: [HwpCellTextbox] = []
+        var nestedTables: [HwpNestedTableFrame] = []
+    }
+
+    private static func wrappedObjects(_ objects: ContainerObjects) -> [WrappedObjectRef] {
+        // 그림은 **보이는 조각**만 링크다 — 절단면 밖은 그려지지 않으므로 저작
+        // rect로 내면 안 보이는 자리가 링크로 표시된다 (R57)
+        objects.images.map {
+            WrappedObjectRef(
+                rect: $0.visibleRect, paragraphId: $0.paragraphId,
+                controlIndex: $0.controlIndex, wrapperURL: $0.wrapperURL
+            )
+        } + objects.shapes.map {
+            WrappedObjectRef(
+                rect: $0.rect, paragraphId: $0.paragraphId,
+                controlIndex: $0.controlIndex, wrapperURL: $0.wrapperURL
+            )
+        } + objects.textboxes.map {
+            WrappedObjectRef(
+                rect: $0.rect, paragraphId: $0.paragraphId,
+                controlIndex: $0.controlIndex, wrapperURL: $0.wrapperURL
+            )
+        } + objects.nestedTables.map {
+            WrappedObjectRef(
+                rect: $0.rect, paragraphId: $0.paragraphId,
+                controlIndex: $0.controlIndex, wrapperURL: $0.wrapperURL
+            )
+        }
+    }
+
     private func appendContainerParagraphHyperlinks(
         for block: AnyHwpBlock, to commands: inout [HwpPaintCommand]
     ) -> Bool {
@@ -92,10 +136,57 @@ public struct HwpPaintListBuilder: Sendable {
                 emitted = true
             }
         }
+        /// 개체를 감싼 `%hlk` — 링크가 개체가 아니라 부모 문단의 U+FFFC run에
+        /// 살고 (R49) 비 treatAsChar 개체의 마커는 폭이 0이라, 스팬 방출이 아무
+        /// rect도 못 낸다. 히트는 `wrapperHyperlinkURL`로 **개체에서** 링크를
+        /// 여니 방출도 개체 rect로 내야 밑줄과 탭이 같은 자리에 있다 (R56).
+        func emitWrapped(
+            _ paragraphs: [HwpLaidOutParagraph], _ objects: [WrappedObjectRef], offset: CGPoint
+        ) {
+            // 절단면 밖으로 완전히 잘린 조각은 그려지지 않으므로 링크도 없다
+            let painted = objects.filter { !$0.rect.isEmpty }
+            // 조회를 개체마다 하면 O(N²)다 (R63) — 규칙이 같은 색인을 **한 번** 만들어
+            // 나눠 쓴다. 분할이 이미 고정한 `wrapperURL`뿐이면 색인도 만들지 않는다.
+            let wrapperIndex = painted.contains { $0.wrapperURL == nil }
+                ? HwpDrawnTextLayout.wrapperHyperlinkIndex(in: paragraphs)
+                : [:]
+            for object in painted {
+                guard let url = object.wrapperURL ?? wrapperIndex[HwpWrapperLinkKey(
+                    paragraphId: object.paragraphId, controlIndex: object.controlIndex
+                )] else { continue }
+                commands.append(.hyperlink(
+                    rect: object.rect.offsetBy(dx: offset.x, dy: offset.y), url: url
+                ))
+                emitted = true
+            }
+        }
+        /// 컨테이너의 감싼 개체 링크 — **글상자 자식까지 같은 규칙으로** 내려간다
+        /// (R57). 컨테이너가 셋 (각주·표 셀·글상자) 이라 호출부마다 손으로 쓰면
+        /// 한 곳을 빠뜨린다 — 실제로 각주 안 글상자가 빠져 있었다.
+        func emitWrappedObjects(
+            _ paragraphs: [HwpLaidOutParagraph], _ objects: ContainerObjects, offset: CGPoint
+        ) {
+            emitWrapped(paragraphs, Self.wrappedObjects(objects), offset: offset)
+            for textbox in objects.textboxes {
+                emitWrappedObjects(
+                    textbox.textbox.paragraphs,
+                    ContainerObjects(
+                        images: textbox.textbox.images, shapes: textbox.textbox.shapes
+                    ),
+                    offset: CGPoint(
+                        x: offset.x + textbox.rect.minX, y: offset.y + textbox.rect.minY
+                    )
+                )
+            }
+        }
         func emitTable(_ table: HwpTableFrame, origin: CGPoint) {
             for row in table.rows {
                 for cell in row.cells {
                     emit(cell.paragraphs, offset: origin)
+                    emitWrappedObjects(cell.paragraphs, ContainerObjects(
+                        images: cell.images, shapes: cell.shapes,
+                        textboxes: cell.textboxes, nestedTables: cell.nestedTables
+                    ), offset: origin)
                     for textbox in cell.textboxes {
                         emit(textbox.textbox.paragraphs, offset: CGPoint(
                             x: origin.x + textbox.rect.minX, y: origin.y + textbox.rect.minY
@@ -114,8 +205,23 @@ public struct HwpPaintListBuilder: Sendable {
             emitTable(table, origin: block.frame.origin)
         case let .textbox(textbox):
             emit(textbox.paragraphs, offset: block.frame.origin)
+            emitWrappedObjects(textbox.paragraphs, ContainerObjects(
+                images: textbox.images, shapes: textbox.shapes
+            ), offset: block.frame.origin)
         case let .footnote(footnote):
-            emit(footnote.paragraphs, offset: block.frame.origin)
+            // 각주 문단 + 각주 안 글상자·표 문단의 문단-레벨 링크 (#94) —
+            // 셀 경로 emitTable과 같은 origin 합성.
+            Self.footnoteParagraphGroups(footnote, origin: block.frame.origin).forEach(emit)
+            emitWrappedObjects(footnote.paragraphs, ContainerObjects(
+                images: footnote.images, shapes: footnote.shapes,
+                textboxes: footnote.textboxes, nestedTables: footnote.nestedTables
+            ), offset: block.frame.origin)
+            for nested in footnote.nestedTables {
+                emitTable(nested.table, origin: CGPoint(
+                    x: block.frame.minX + nested.rect.minX,
+                    y: block.frame.minY + nested.rect.minY
+                ))
+            }
         default:
             break
         }
@@ -169,7 +275,7 @@ public struct HwpPaintListBuilder: Sendable {
 
     /// (attributed, 페이지 좌표 rect) → drawText — `HwpBlockContentWalker`가
     /// 방문한 텍스트를 명령으로 바꾸는 단일 지점.
-    private func drawTextCommand(
+    func drawTextCommand(
         _ attributed: NSAttributedString,
         in rect: CGRect
     ) -> HwpPaintCommand {
@@ -214,91 +320,20 @@ public struct HwpPaintListBuilder: Sendable {
         return commands
     }
 
-    private enum BorderSide {
-        case top, bottom, left, right
-        var horizontal: Bool {
-            self == .top || self == .bottom
-        }
-
-        /// leading(상단·좌측)은 far edge가 min쪽, trailing(하단·우측)은 max쪽.
-        var leading: Bool {
-            self == .top || self == .left
-        }
-    }
-
-    /// 한 변의 fillRect 명령. 이중선(표 25 종류 8-10)은 가는 선 2개 + 사이 간격
-    /// (noori 제목 상자 실물 — 1px 두 줄). 상단/좌측(leading)은 둘째 선을 양
-    /// (안쪽)으로, 하단/우측(trailing)은 far edge에서 음(안쪽)으로 민다 —
-    /// trailing을 양으로 밀면 maxY/maxX를 넘어 인접 셀·표 밖을 침범한다 (R42 #2).
-    private func edgeCommands(
-        width: CGFloat, color: HwpRGBColor, edgeRect: CGRect, isDouble: Bool, side: BorderSide
-    ) -> [HwpPaintCommand] {
-        guard width > 0 else { return [] }
-        guard isDouble else { return [.fillRect(rect: edgeRect, color: color.cgColor)] }
-        let thin = max(0.4, width * 0.4)
-        let gap = max(thin, width)
-        var first = edgeRect
-        var second = edgeRect
-        if side.horizontal {
-            first.size.height = thin
-            second.size.height = thin
-            if side.leading {
-                second.origin.y = edgeRect.minY + thin + gap
-            } else {
-                first.origin.y = edgeRect.maxY - thin
-                second.origin.y = edgeRect.maxY - 2 * thin - gap
-            }
-        } else {
-            first.size.width = thin
-            second.size.width = thin
-            if side.leading {
-                second.origin.x = edgeRect.minX + thin + gap
-            } else {
-                first.origin.x = edgeRect.maxX - thin
-                second.origin.x = edgeRect.maxX - 2 * thin - gap
-            }
-        }
-        return [
-            .fillRect(rect: first, color: color.cgColor),
-            .fillRect(rect: second, color: color.cgColor),
-        ]
-    }
-
-    private func borderCommands(
+    /// 셀·표 테두리의 fillRect 명령 — 기하는 `HwpBorderSet.stripes`가 소유하고
+    /// 히트 (`HwpTableCellFrame.paints`) 와 공유한다 (R56).
+    func borderCommands(
         _ borders: HwpBorderSet,
         around rect: CGRect
     ) -> [HwpPaintCommand] {
-        let topRect = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: borders.top)
-        let bottomRect = CGRect(
-            x: rect.minX, y: rect.maxY - borders.bottom, width: rect.width, height: borders.bottom
-        )
-        let leftRect = CGRect(x: rect.minX, y: rect.minY, width: borders.left, height: rect.height)
-        let rightRect = CGRect(
-            x: rect.maxX - borders.right, y: rect.minY, width: borders.right, height: rect.height
-        )
-        var commands: [HwpPaintCommand] = []
-        commands += edgeCommands(
-            width: borders.top, color: borders.topColor, edgeRect: topRect,
-            isDouble: borders.topDouble, side: .top
-        )
-        commands += edgeCommands(
-            width: borders.bottom, color: borders.bottomColor, edgeRect: bottomRect,
-            isDouble: borders.bottomDouble, side: .bottom
-        )
-        commands += edgeCommands(
-            width: borders.left, color: borders.leftColor, edgeRect: leftRect,
-            isDouble: borders.leftDouble, side: .left
-        )
-        commands += edgeCommands(
-            width: borders.right, color: borders.rightColor, edgeRect: rightRect,
-            isDouble: borders.rightDouble, side: .right
-        )
-        return commands
+        borders.stripes(around: rect).map {
+            .fillRect(rect: $0.rect, color: $0.color.cgColor)
+        }
     }
 
     // MARK: - 글상자
 
-    private func textboxCommands(
+    func textboxCommands(
         _ textbox: HwpTextboxFrame,
         origin: CGPoint
     ) -> [HwpPaintCommand] {
@@ -316,7 +351,7 @@ public struct HwpPaintListBuilder: Sendable {
             commands.append(.strokeRect(
                 rect: outerRect,
                 color: borderColor.cgColor,
-                width: max(0.7, textbox.borderWidth)
+                width: textbox.effectiveBorderWidth
             ))
         }
         // 글상자 안 개체 (그림/도형)는 글상자 콘텐츠로 그린다 (R29 #1).
@@ -333,30 +368,6 @@ public struct HwpPaintListBuilder: Sendable {
         }
         for object in objects where !object.behind {
             commands.append(contentsOf: object.commands)
-        }
-        return commands
-    }
-
-    // MARK: - 각주
-
-    private func footnoteCommands(
-        _ footnote: HwpFootnoteBlock,
-        blockFrame: CGRect,
-        drawSeparator: Bool
-    ) -> [HwpPaintCommand] {
-        var commands: [HwpPaintCommand] = []
-        // 구분선은 페이지의 첫 번째 각주 블록에서 한 번만 그린다.
-        if drawSeparator {
-            commands.append(.fillRect(
-                rect: footnote.separatorLine,
-                color: footnote.separatorColor.cgColor
-            ))
-        }
-        HwpBlockContentWalker.walkParagraphs(
-            footnote.paragraphs,
-            offset: blockFrame.origin
-        ) { attributed, rect, _ in
-            commands.append(drawTextCommand(attributed, in: rect))
         }
         return commands
     }

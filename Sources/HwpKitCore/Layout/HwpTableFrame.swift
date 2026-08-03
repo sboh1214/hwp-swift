@@ -37,6 +37,72 @@ public struct HwpBorderSet: Sendable, Hashable {
         self.rightDouble = rightDouble
     }
 
+    /// rect 둘레에 **실제로 칠하는 띠 전부** (색 포함) — 페인터
+    /// (`HwpPaintListBuilder.borderCommands`) 와 히트 (`HwpTableCellFrame.paints`)
+    /// 가 이 하나를 공유한다 (R56).
+    ///
+    /// 이중선의 **둘째 줄은 원래 폭 띠 밖으로 나간다** (안쪽으로 thin + gap).
+    /// 두 곳이 따로 계산하면 보이는 선과 눌리는 선이 갈린다.
+    func stripes(around rect: CGRect) -> [(rect: CGRect, color: HwpRGBColor)] {
+        Self.edgeStripes(
+            edgeRect: CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: top),
+            width: top, isDouble: topDouble, horizontal: true, leading: true
+        ).map { ($0, topColor) }
+            + Self.edgeStripes(
+                edgeRect: CGRect(
+                    x: rect.minX, y: rect.maxY - bottom, width: rect.width, height: bottom
+                ),
+                width: bottom, isDouble: bottomDouble, horizontal: true, leading: false
+            ).map { ($0, bottomColor) }
+            + Self.edgeStripes(
+                edgeRect: CGRect(x: rect.minX, y: rect.minY, width: left, height: rect.height),
+                width: left, isDouble: leftDouble, horizontal: false, leading: true
+            ).map { ($0, leftColor) }
+            + Self.edgeStripes(
+                edgeRect: CGRect(
+                    x: rect.maxX - right, y: rect.minY, width: right, height: rect.height
+                ),
+                width: right, isDouble: rightDouble, horizontal: false, leading: false
+            ).map { ($0, rightColor) }
+    }
+
+    /// 한 변의 띠 — 이중선이면 가는 선 둘, 아니면 변 띠 그대로. 폭 0이면 없음.
+    ///
+    /// 이중선 (표 25 종류 8-10) 은 가는 선 2개 + 사이 간격 (noori 제목 상자 실물
+    /// — 1px 두 줄). 상단·좌측 (leading) 은 둘째 선을 양 (안쪽) 으로, 하단·우측
+    /// (trailing) 은 far edge에서 음 (안쪽) 으로 민다 — trailing을 양으로 밀면
+    /// maxY/maxX를 넘어 인접 셀·표 밖을 침범한다 (R42 #2).
+    private static func edgeStripes(
+        edgeRect: CGRect, width: CGFloat, isDouble: Bool, horizontal: Bool, leading: Bool
+    ) -> [CGRect] {
+        guard width > 0 else { return [] }
+        guard isDouble else { return [edgeRect] }
+        let thin = max(0.4, width * 0.4)
+        let gap = max(thin, width)
+        var first = edgeRect
+        var second = edgeRect
+        if horizontal {
+            first.size.height = thin
+            second.size.height = thin
+            if leading {
+                second.origin.y = edgeRect.minY + thin + gap
+            } else {
+                first.origin.y = edgeRect.maxY - thin
+                second.origin.y = edgeRect.maxY - 2 * thin - gap
+            }
+        } else {
+            first.size.width = thin
+            second.size.width = thin
+            if leading {
+                second.origin.x = edgeRect.minX + thin + gap
+            } else {
+                first.origin.x = edgeRect.maxX - thin
+                second.origin.x = edgeRect.maxX - 2 * thin - gap
+            }
+        }
+        return [first, second]
+    }
+
     public static func uniform(width: CGFloat, color: HwpRGBColor) -> HwpBorderSet {
         HwpBorderSet(
             top: width,
@@ -47,196 +113,6 @@ public struct HwpBorderSet: Sendable, Hashable {
             bottomColor: color,
             leftColor: color,
             rightColor: color
-        )
-    }
-}
-
-/// 셀 안에 재귀 레이아웃된 중첩 표.
-public struct HwpNestedTableFrame: @unchecked Sendable, Hashable {
-    /// 바깥 표-로컬 좌표계에서 중첩 표가 차지하는 영역
-    public let rect: CGRect
-    /// 중첩 표 자체 레이아웃 (origin 0,0 좌표계)
-    public let table: HwpTableFrame
-    /// 원본 컨트롤 참조 (편집 대비)
-    public let controlInstanceId: UInt32
-
-    public init(rect: CGRect, table: HwpTableFrame, controlInstanceId: UInt32) {
-        self.rect = rect
-        self.table = table
-        self.controlInstanceId = controlInstanceId
-    }
-}
-
-/// 셀 안 그림 (표-로컬 rect + BinItem 참조).
-/// 한글은 셀 안 개체를 셀 콘텐츠로 배치한다 — 페이지 흐름 블록으로 방출하면
-/// 큰 그림이 페이지를 밀어내 페이지 수가 한글과 어긋난다 (noori 실측 3쪽).
-public struct HwpCellImage: Sendable, Hashable {
-    /// 표-로컬 좌표계의 그림 영역
-    public let rect: CGRect
-    public let binItemId: UInt32
-    public let style: HwpImageRenderStyle?
-    /// 테두리 색 (없으면 테두리 없음)
-    public let borderColor: HwpRGBColor?
-    /// 테두리 두께 (pt)
-    public let borderWidth: CGFloat
-    /// 글 뒤로 (behindText) — 셀 텍스트보다 먼저 (아래에) 그린다 (R30 #2)
-    public let paintsBehindText: Bool
-    /// 겹치는 개체 z-순서 (표 70) — 같은 평면 안 페인트 정렬 기준
-    public let zOrder: Int32
-    /// 같은 zOrder의 이종 컨트롤 간 원본 (ctrlHeaderArray) 순서 — 동순위
-    /// tiebreak이 종류-버킷 순서로 무너지지 않게 한다 (R31 #3)
-    public let sourceOrder: Int
-    /// 페이지 절단면에 걸친 그림의 가시 영역 (표-로컬, nil = 전체).
-    /// rect는 저작 기하를 유지한다 — rect 축소는 스케일 왜곡 (R32 #2)
-    public let clipRect: CGRect?
-    /// 원본 컨트롤 참조 (편집 대비)
-    public let controlInstanceId: UInt32
-
-    public init(
-        rect: CGRect,
-        binItemId: UInt32,
-        style: HwpImageRenderStyle?,
-        borderColor: HwpRGBColor? = nil,
-        borderWidth: CGFloat = 0,
-        paintsBehindText: Bool = false,
-        zOrder: Int32 = 0,
-        sourceOrder: Int = 0,
-        clipRect: CGRect? = nil,
-        controlInstanceId: UInt32
-    ) {
-        self.rect = rect
-        self.binItemId = binItemId
-        self.style = style
-        self.borderColor = borderColor
-        self.borderWidth = borderWidth
-        self.paintsBehindText = paintsBehindText
-        self.zOrder = zOrder
-        self.sourceOrder = sourceOrder
-        self.clipRect = clipRect
-        self.controlInstanceId = controlInstanceId
-    }
-
-    /// rect만 바꾼 사본 — 분할/정렬 이동 시 나머지 필드 누락을 막는다.
-    public func withRect(_ rect: CGRect) -> HwpCellImage {
-        HwpCellImage(
-            rect: rect,
-            binItemId: binItemId,
-            style: style,
-            borderColor: borderColor,
-            borderWidth: borderWidth,
-            paintsBehindText: paintsBehindText,
-            zOrder: zOrder,
-            sourceOrder: sourceOrder,
-            clipRect: clipRect,
-            controlInstanceId: controlInstanceId
-        )
-    }
-
-    /// 가시 영역만 바꾼 사본 (분할 조각 배정)
-    public func withClip(_ clipRect: CGRect?) -> HwpCellImage {
-        HwpCellImage(
-            rect: rect,
-            binItemId: binItemId,
-            style: style,
-            borderColor: borderColor,
-            borderWidth: borderWidth,
-            paintsBehindText: paintsBehindText,
-            zOrder: zOrder,
-            sourceOrder: sourceOrder,
-            clipRect: clipRect,
-            controlInstanceId: controlInstanceId
-        )
-    }
-
-    /// rect·clipRect를 함께 이동한 사본 — 분할 세그먼트 rebase에서 클립이
-    /// 제자리에 남지 않게 한다 (R32 #2)
-    public func offsetBy(deltaX: CGFloat, deltaY: CGFloat) -> HwpCellImage {
-        withRect(rect.offsetBy(dx: deltaX, dy: deltaY))
-            .withClip(clipRect?.offsetBy(dx: deltaX, dy: deltaY))
-    }
-}
-
-/// 셀/글상자 안 도형 (컨테이너-로컬 rect + 지오메트리).
-/// 한글은 컨테이너 안 개체를 컨테이너 콘텐츠로 배치한다 — 페이지 흐름
-/// 블록으로 방출하면 컨테이너 밖 좌표에 그려진다 (R29 #1).
-public struct HwpCellShape: @unchecked Sendable, Hashable {
-    public let rect: CGRect
-    public let geometry: HwpShapeGeometry
-    /// 글 뒤로 (behindText) — 셀 텍스트보다 먼저 (아래에) 그린다 (R30 #2)
-    public let paintsBehindText: Bool
-    /// 겹치는 개체 z-순서 (표 70) — 같은 평면 안 페인트 정렬 기준
-    public let zOrder: Int32
-    /// 같은 zOrder의 이종 컨트롤 간 원본 순서 (R31 #3)
-    public let sourceOrder: Int
-    /// 원본 컨트롤 참조 (편집 대비)
-    public let controlInstanceId: UInt32
-
-    public init(
-        rect: CGRect,
-        geometry: HwpShapeGeometry,
-        paintsBehindText: Bool = false,
-        zOrder: Int32 = 0,
-        sourceOrder: Int = 0,
-        controlInstanceId: UInt32
-    ) {
-        self.rect = rect
-        self.geometry = geometry
-        self.paintsBehindText = paintsBehindText
-        self.zOrder = zOrder
-        self.sourceOrder = sourceOrder
-        self.controlInstanceId = controlInstanceId
-    }
-
-    public func withRect(_ rect: CGRect) -> HwpCellShape {
-        HwpCellShape(
-            rect: rect,
-            geometry: geometry,
-            paintsBehindText: paintsBehindText,
-            zOrder: zOrder,
-            sourceOrder: sourceOrder,
-            controlInstanceId: controlInstanceId
-        )
-    }
-}
-
-/// 셀 안 글상자 (표-로컬 rect + 글상자 레이아웃).
-public struct HwpCellTextbox: @unchecked Sendable, Hashable {
-    public let rect: CGRect
-    /// 글상자 자체 레이아웃 (origin 0,0 좌표계)
-    public let textbox: HwpTextboxFrame
-    /// 글 뒤로 (behindText) — 셀 텍스트보다 먼저 (아래에) 그린다 (R30 #2)
-    public let paintsBehindText: Bool
-    /// 겹치는 개체 z-순서 (표 70) — 같은 평면 안 페인트 정렬 기준
-    public let zOrder: Int32
-    /// 같은 zOrder의 이종 컨트롤 간 원본 순서 (R31 #3)
-    public let sourceOrder: Int
-    /// 원본 컨트롤 참조 (편집 대비)
-    public let controlInstanceId: UInt32
-
-    public init(
-        rect: CGRect,
-        textbox: HwpTextboxFrame,
-        paintsBehindText: Bool = false,
-        zOrder: Int32 = 0,
-        sourceOrder: Int = 0,
-        controlInstanceId: UInt32
-    ) {
-        self.rect = rect
-        self.textbox = textbox
-        self.paintsBehindText = paintsBehindText
-        self.zOrder = zOrder
-        self.sourceOrder = sourceOrder
-        self.controlInstanceId = controlInstanceId
-    }
-
-    public func withRect(_ rect: CGRect) -> HwpCellTextbox {
-        HwpCellTextbox(
-            rect: rect,
-            textbox: textbox,
-            paintsBehindText: paintsBehindText,
-            zOrder: zOrder,
-            sourceOrder: sourceOrder,
-            controlInstanceId: controlInstanceId
         )
     }
 }
@@ -290,6 +166,60 @@ public struct HwpTableCellFrame: @unchecked Sendable, Hashable {
         self.textboxes = textboxes
     }
 
+    /// 이 지점에 셀이 **칠했는가** — 채움 ∪ 테두리 4띠 (표-로컬 좌표).
+    ///
+    /// 안 채운 셀도 칸막이는 그리므로 그 선 위의 탭은 이 셀을 가리킨다 (R55).
+    /// 띠 산식은 페인터 (`HwpPaintListBuilder.borderCommands`) 와 **같아야** 한다 —
+    /// 갈리면 보이는 선 위의 탭이 아래 블록으로 새거나 그 반대가 된다.
+    public func paints(_ point: CGPoint) -> Bool {
+        if fillColor != nil, cellFrame.contains(point) {
+            return true
+        }
+        return borderRects.contains { $0.contains(point) }
+    }
+
+    /// 페인터가 실제로 칠하는 테두리 띠 (이중선의 둘째 줄 포함)
+    private var borderRects: [CGRect] {
+        borders.stripes(around: cellFrame).map(\.rect)
+    }
+
+    /// 분할 **전에** 감싼 링크를 개체에 고정한 사본 (R58).
+    ///
+    /// `HwpTableSplitter.splitCell`은 문단과 개체를 각자 다른 규칙으로 조각에
+    /// 배정한다 — 그림은 절단면에 걸치면 **양쪽에 복사**되고, 도형·글상자는 midY로,
+    /// 중첩 표는 minY로 간다. U+FFFC run이 남지 않은 조각에서는 (문단, 서수) 조회가
+    /// 실패하므로 짝이 온전한 지금 해석해 실어 보낸다. 이미 고정된 값은 덮지
+    /// 않는다 — 여러 페이지에 걸친 표는 조각이 **다시** 쪼개진다.
+    public func resolvingWrapperURLs() -> HwpTableCellFrame {
+        func resolved(_ paragraphId: UInt32, _ controlIndex: Int) -> String? {
+            HwpDrawnTextLayout.wrapperHyperlinkURL(
+                in: paragraphs, paragraphId: paragraphId, controlIndex: controlIndex
+            )
+        }
+        return HwpTableCellFrame(
+            cellFrame: cellFrame,
+            row: row,
+            column: column,
+            rowSpan: rowSpan,
+            columnSpan: columnSpan,
+            paragraphs: paragraphs,
+            borders: borders,
+            fillColor: fillColor,
+            nestedTables: nestedTables.map {
+                $0.withWrapperURL($0.wrapperURL ?? resolved($0.paragraphId, $0.controlIndex))
+            },
+            images: images.map {
+                $0.withWrapperURL($0.wrapperURL ?? resolved($0.paragraphId, $0.controlIndex))
+            },
+            shapes: shapes.map {
+                $0.withWrapperURL($0.wrapperURL ?? resolved($0.paragraphId, $0.controlIndex))
+            },
+            textboxes: textboxes.map {
+                $0.withWrapperURL($0.wrapperURL ?? resolved($0.paragraphId, $0.controlIndex))
+            }
+        )
+    }
+
     /// 셀과 모든 콘텐츠 지오메트리를 deltaY만큼 이동한 사본 (분할 세그먼트 이동).
     /// 새 콘텐츠 종류가 누락되지 않게 이동 산식은 여기 한 곳에만 둔다.
     public func offsetBy(deltaY: CGFloat) -> HwpTableCellFrame {
@@ -310,12 +240,8 @@ public struct HwpTableCellFrame: @unchecked Sendable, Hashable {
             },
             borders: borders,
             fillColor: fillColor,
-            nestedTables: nestedTables.map { nested in
-                HwpNestedTableFrame(
-                    rect: nested.rect.offsetBy(dx: 0, dy: deltaY),
-                    table: nested.table,
-                    controlInstanceId: nested.controlInstanceId
-                )
+            nestedTables: nestedTables.map {
+                $0.withRect($0.rect.offsetBy(dx: 0, dy: deltaY))
             },
             images: images.map { $0.offsetBy(deltaX: 0, deltaY: deltaY) },
             shapes: shapes.map { $0.withRect($0.rect.offsetBy(dx: 0, dy: deltaY)) },
@@ -418,6 +344,22 @@ extension HwpTableLayout {
     }
 }
 
+public extension HwpTableFrame {
+    /// 표가 이 지점에 칠했는가 (표-로컬 좌표) — 셀 채움·테두리 ∪ 중첩 표 재귀.
+    /// `tableHit`의 순회와 같은 분해라 히트 결과와 갈리지 않는다 (R55).
+    func paints(_ point: CGPoint) -> Bool {
+        rows.contains { row in
+            row.cells.contains { cell in
+                cell.paints(point) || cell.nestedTables.contains { nested in
+                    nested.table.paints(CGPoint(
+                        x: point.x - nested.rect.minX, y: point.y - nested.rect.minY
+                    ))
+                }
+            }
+        }
+    }
+}
+
 public extension HwpRGBColor {
     init(_ color: CoreHwp.HwpColor) {
         self.init(
@@ -425,5 +367,23 @@ public extension HwpRGBColor {
             green: CGFloat(color.green) / 255,
             blue: CGFloat(color.blue) / 255
         )
+    }
+}
+
+public extension HwpTableCellFrame {
+    /// 셀이 하이퍼링크를 품는지 (문단·개체·글상자·중첩 표 재귀, R61)
+    var hasHyperlink: Bool {
+        paragraphs.contains { $0.hasHyperlink }
+            || images.contains { $0.wrapperURL != nil }
+            || shapes.contains { $0.wrapperURL != nil }
+            || textboxes.contains { $0.wrapperURL != nil || $0.textbox.hasHyperlink }
+            || nestedTables.contains { $0.wrapperURL != nil || $0.table.hasHyperlink }
+    }
+}
+
+public extension HwpTableFrame {
+    /// 표가 하이퍼링크를 품는지 (셀 재귀, R61)
+    var hasHyperlink: Bool {
+        rows.contains { $0.cells.contains { $0.hasHyperlink } }
     }
 }

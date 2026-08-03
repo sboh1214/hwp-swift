@@ -7,7 +7,11 @@ import Foundation
 /// 대한 퍼센트다 (10000 = 100%) — 무조건 HWPUNIT 변환하면 100% 폭 개체가
 /// 100pt로 줄어든다. paginator가 현재 페이지/단 기하로 만들어 전용 레이아웃
 /// 경로 (표 폭·글상자·셀 그림·줄 공간 예약)에 전달한다.
-public struct HwpObjectSizeResolver: Sendable {
+///
+/// `Hashable`은 측정 캐시 키 전용이다 (`HwpFootnoteCoordinator.FootnoteHeightKey`)
+/// — **합성 구현**이라 기준 축을 새로 더해도 키가 자동으로 따라간다. 손으로
+/// 구현하면 새 축이 키에서 빠져 기하가 바뀐 재사용이 조용히 살아난다 (R39 #1).
+public struct HwpObjectSizeResolver: Sendable, Hashable {
     /// 용지 크기 (pt) — 기준 '종이'
     let paperSize: CGSize
     /// 본문 콘텐츠 프레임 크기 (pt) — 기준 '쪽'
@@ -37,6 +41,22 @@ public struct HwpObjectSizeResolver: Sendable {
             paperSize: paperSize,
             contentSize: contentSize,
             columnWidth: columnWidth,
+            paragraphWidth: max(1, width)
+        )
+    }
+
+    /// 각주 영역 기준 사본 — '단'과 '문단' 폭을 모두 각주 영역 폭으로 맞춘다.
+    ///
+    /// 각주는 단으로 나뉘지 않으므로 (표 134 bits 8-9 미구현 — 항상 전체 폭 하단)
+    /// 각주 안 '단' 기준 개체가 참조할 단은 본문의 **현재** 단이 아니라 각주 영역
+    /// 자신이다. 이 정규화로 각주용 해석기가 페이지 기하만의 함수가 돼, 본문
+    /// 문단이 단을 옮겨도 예약·배치가 흔들리지 않는다 (R46 #2) — 드리프트를
+    /// 값 운반이 아니라 **구조**로 없앤다.
+    public func forFootnoteArea(width: CGFloat) -> HwpObjectSizeResolver {
+        HwpObjectSizeResolver(
+            paperSize: paperSize,
+            contentSize: contentSize,
+            columnWidth: max(1, width),
             paragraphWidth: max(1, width)
         )
     }
