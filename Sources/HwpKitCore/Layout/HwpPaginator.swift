@@ -861,7 +861,11 @@ private extension HwpPaginator {
                 lines: slice.lines
             )
             lastAbsoluteCacheLoc = run.last?.lineLocation ?? runFirst
-            collectFragmentFootnotes(from: paragraph, ordinals: ordinalRanges?[runIndex])
+            collectFragmentFootnotes(
+                from: paragraph,
+                ordinals: ordinalRanges?[runIndex],
+                collectsNested: runIndex == runs.count - 1
+            )
         }
         collectedFootnotesDuringPlacement = ordinalRanges != nil
         return true
@@ -885,10 +889,16 @@ private extension HwpPaginator {
     /// 표 셀 각주 제외는 문단 단위 수집과 같은 필터다 (행 페이지 귀속).
     private func collectFragmentFootnotes(
         from paragraph: CoreHwp.HwpParagraph,
-        ordinals: Range<Int>?
+        ordinals: Range<Int>?,
+        collectsNested: Bool
     ) {
         guard let ordinals else { return }
-        collectFootnotes(from: paragraph, includeTableCells: false, ordinals: ordinals)
+        collectFootnotes(
+            from: paragraph,
+            includeTableCells: false,
+            ordinals: ordinals,
+            collectsNested: collectsNested
+        )
     }
 
     /// run별 텍스트 조각 — 배치 **전에** 한 번에 자른다 (#95). 각주 귀속이 이
@@ -2504,12 +2514,14 @@ private extension HwpPaginator {
     func collectFootnotes(
         from paragraph: CoreHwp.HwpParagraph,
         includeTableCells: Bool = true,
-        ordinals: Range<Int>? = nil
+        ordinals: Range<Int>? = nil,
+        collectsNested: Bool = true
     ) {
         footnoteCoordinator.collectFootnotes(
             from: paragraph,
             includeTableCells: includeTableCells,
             ordinals: ordinals,
+            collectsNested: collectsNested,
             environment: noteEnvironment,
             childParagraphs: childParagraphs(of:)
         )

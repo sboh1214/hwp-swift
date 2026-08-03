@@ -105,30 +105,36 @@ struct HwpFootnoteCoordinator {
     ///
     /// ordinals: **이 조각에 실린** top-level 컨트롤 서수 범위 (#95). 페이지에
     /// 걸친 문단은 조각마다 이 함수를 그 조각의 범위로 부르므로 각주가 참조가
-    /// 놓인 페이지에 귀속된다. nil이면 문단 전체 (기존 동작). 깊이 0에만
-    /// 적용된다 — 컨트롤 안쪽 문단은 그 컨트롤과 같은 조각에 실리기 때문이다.
+    /// 놓인 페이지에 귀속된다. nil이면 문단 전체 (기존 동작). 깊이 0에만 적용된다.
+    ///
+    /// collectsNested: 컨트롤 **안쪽** 문단까지 내려갈지. 조각 단위 수집에서는
+    /// 마지막 조각만 켠다 — 글상자·도형 같은 컨테이너는 `appendControlBlocks`가
+    /// 모든 조각을 놓은 **뒤** 방출해 마지막 조각 페이지에 그려지므로, 그 안의
+    /// 각주를 앞 조각에서 걷으면 각주와 그것을 그리는 컨테이너가 갈린다. 마지막
+    /// 조각에서는 서수 범위와 **무관하게** 전체 컨트롤을 훑는다 (앞 범위의
+    /// 컨테이너도 그 페이지에 그려지므로 범위로 자르면 그 각주가 유실된다).
     mutating func collectFootnotes(
         from paragraph: CoreHwp.HwpParagraph,
         depth: Int = 0,
         includeTableCells: Bool = true,
         ordinals: Range<Int>? = nil,
+        collectsNested: Bool = true,
         environment: Environment,
         childParagraphs: ChildParagraphs
     ) {
         guard let ctrls = paragraph.ctrlHeaderArray else { return }
         for (ordinal, ctrl) in ctrls.enumerated() {
-            if let ordinals, depth == 0, !ordinals.contains(ordinal) {
-                continue
+            if depth > 0 || (ordinals?.contains(ordinal) ?? true) {
+                switch ctrl {
+                case let .footnote(list):
+                    collectFootnotes(list, environment: environment)
+                case let .endnote(list):
+                    collectEndnotes(list)
+                default:
+                    break
+                }
             }
-            switch ctrl {
-            case let .footnote(list):
-                collectFootnotes(list, environment: environment)
-            case let .endnote(list):
-                collectEndnotes(list)
-            default:
-                break
-            }
-            guard depth < 3 else { continue }
+            guard collectsNested, depth < 3 else { continue }
             if !includeTableCells, case .table = ctrl {
                 continue
             }
