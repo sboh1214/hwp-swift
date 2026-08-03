@@ -123,16 +123,29 @@ struct HwpFootnoteCoordinator {
         childParagraphs: ChildParagraphs
     ) {
         guard let ctrls = paragraph.ctrlHeaderArray else { return }
+        func collectDirectNote(_ ctrl: CoreHwp.HwpCtrlId) {
+            switch ctrl {
+            case let .footnote(list):
+                collectFootnotes(list, environment: environment)
+            case let .endnote(list):
+                collectEndnotes(list)
+            default:
+                break
+            }
+        }
+        // 중첩을 안 걷는 조각은 **요청된 범위만** 훑는다 — 조각마다 전수 순회하면
+        // O(run × 컨트롤)이라 조작 문서 (run·컨트롤 각 10,000, 파일은 수백 KB) 가
+        // 페이지네이션을 세운다. 마지막 조각의 전수 순회는 문단당 한 번이라
+        // 이차가 아니다.
+        if let ordinals, !collectsNested {
+            for ordinal in ordinals where ctrls.indices.contains(ordinal) {
+                collectDirectNote(ctrls[ordinal])
+            }
+            return
+        }
         for (ordinal, ctrl) in ctrls.enumerated() {
             if depth > 0 || (ordinals?.contains(ordinal) ?? true) {
-                switch ctrl {
-                case let .footnote(list):
-                    collectFootnotes(list, environment: environment)
-                case let .endnote(list):
-                    collectEndnotes(list)
-                default:
-                    break
-                }
+                collectDirectNote(ctrl)
             }
             guard collectsNested, depth < 3 else { continue }
             if !includeTableCells, case .table = ctrl {
@@ -492,14 +505,14 @@ extension HwpFootnoteCoordinator {
         var replacements: [Int: HwpControlMarkerReplacement] = [:]
         var footnotePreview = footnoteCounter
         var endnotePreview = endnoteCounter
-        for (ctrlIndex, ctrl) in ctrls.enumerated() {
-            // 조각 범위 밖 컨트롤은 미리보기도 **증가시키지 않는다** (#95): 앞
-            // 조각의 몫은 이미 카운터에 반영됐고 뒤 조각의 몫은 아직 아니라,
-            // 범위 안만 세어야 수집이 부여할 번호와 같아진다.
-            if let ordinals, !ordinals.contains(ctrlIndex) {
-                continue
-            }
-            switch ctrl {
+        // 조각 범위 밖 컨트롤은 미리보기도 **증가시키지 않는다** (#95): 앞 조각의
+        // 몫은 이미 카운터에 반영됐고 뒤 조각의 몫은 아직 아니라, 범위 안만 세어야
+        // 수집이 부여할 번호와 같아진다. 그래서 **범위만 훑어도 결과가 같고**,
+        // 조각마다 전수 순회하지 않으므로 O(run × 컨트롤)이 되지 않는다.
+        for ctrlIndex in ordinals ?? (0 ..< ctrls.count)
+            where ctrls.indices.contains(ctrlIndex)
+        {
+            switch ctrls[ctrlIndex] {
             case .footnote:
                 replacements[ctrlIndex] = HwpControlMarkerReplacement(
                     text: HwpTextRunBuilder.noteNumberText(
