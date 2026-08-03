@@ -507,7 +507,11 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   미는 방향뿐이라 `stackFrame`이 스택을 그대로 담아 **이월을 만들지 않는다** —
   위 항목의 페이지 연쇄 함정을 피한다. 절반 상한 모드는 `areaHeight ≤ 콘텐츠/2`라
   무동작이다. 가드: `HwpFootnoteLayoutTests`의 클램프 2종 +
-  `FixtureFootnoteOverlapTests.testFootnoteAreaStaysInsideContentTop` (불변식 0쪽)
+  `FixtureFootnoteOverlapTests` (상단·종이 밖은 불변식 0쪽).
+  **대신 초과분이 프레임 하단으로 나간다** — 클램프가 아래로 미는 방향뿐이라
+  스택이 콘텐츠 높이를 넘으면 그 몫만큼 아래 여백을 침범한다 (실측 1쪽·최대
+  3.5pt, 종이 밖 0쪽). 머리를 잘라 없애는 것보다 낫지만 정답은 아니고, 자르면
+  각주가 사라지므로 각주 이어짐 전까지 빚으로 둔다 (같은 스위트의 하단 예산)
 - 표 셀 각주는 소유 문단 페이지가 아니라 그 셀의 행이 실리는 페이지에
   수집·예약한다 (`collectTableCellFootnotes` — 세그먼트 행 범위 기준, 한글
   실측 헌법주석 p485). top-level `collectFootnotes`는 표 셀을 건너뛰고
