@@ -181,6 +181,62 @@ import XCTest
             expect(self.bodyText(on: second)).toNot(contain("2)"))
         }
 
+        /// 컨테이너 (글상자·도형) 는 `appendControlBlocks`가 모든 조각을 놓은 **뒤**
+        /// 방출해 마지막 조각 페이지에 그려진다. 그 안의 각주를 앞 조각에서 걷으면
+        /// 각주와 그것을 그리는 컨테이너가 갈린다 — 앞 조각에서는 내려가지 않고,
+        /// 마지막 조각에서는 서수 범위 **밖**이어도 내려가야 한다 (안 그러면 유실).
+        func testNestedNotesWaitForTheFragmentThatDrawsTheirContainer() {
+            var coordinator = HwpFootnoteCoordinator(
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+            var host = CoreHwp.HwpParagraph()
+            host.ctrlHeaderArray = [
+                .header(HwpSynthetic.listControl(ctrlId: .header, paragraphs: [])),
+            ]
+            var nested = CoreHwp.HwpParagraph()
+            nested.ctrlHeaderArray = [
+                .footnote(HwpSynthetic.listControl(
+                    ctrlId: .footnote,
+                    paragraphs: [HwpSynthetic.noteParagraph(
+                        " 컨테이너 안 각주",
+                        autoNumber: HwpSynthetic.autoNumberControl(kind: 1, decorationTail: ")")
+                    )]
+                )),
+            ]
+            // 컨테이너만 자식을 갖는다 — 모든 컨트롤에 돌려주면 각주 리스트가
+            // 자기 자신을 자식으로 받아 깊이 상한까지 재귀한다.
+            let children: HwpFootnoteCoordinator.ChildParagraphs = { ctrl in
+                if case .header = ctrl {
+                    return [(nested, .textbox)]
+                }
+                return []
+            }
+            let environment = HwpFootnoteCoordinator.Environment(
+                contentWidth: 400, footnoteShape: nil
+            )
+
+            coordinator.collectFootnotes(
+                from: host,
+                includeTableCells: false,
+                ordinals: 0 ..< 1,
+                collectsNested: false,
+                environment: environment,
+                childParagraphs: children
+            )
+            expect(coordinator.pendingFootnotes).to(beEmpty())
+
+            coordinator.collectFootnotes(
+                from: host,
+                includeTableCells: false,
+                ordinals: 1 ..< 1,
+                collectsNested: true,
+                environment: environment,
+                childParagraphs: children
+            )
+            expect(coordinator.pendingFootnotes.count) == 1
+        }
+
         // MARK: - 조각별 컨트롤 서수 분할
 
         /// 그 조각에 그려진 마커만 담은 텍스트 — 배치가 낸 슬라이스의 최소 형상.
