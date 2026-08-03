@@ -48,25 +48,29 @@ enum HwpSynthetic {
 
     /// 페이지에 걸친 (캐시 run 여러 개) 문단 + 줄 안 각주 참조 마커 (#95).
     ///
-    /// `markerAfter`의 각 값만큼 평문을 넣은 뒤 extended 컨트롤 문자(ext17,
-    /// 각주 참조)를 하나 넣는다 — 컨트롤은 원본 WCHAR 스트림에서 8을 차지하므로
-    /// 마커 서수 k의 위치는 `Σ앞 평문 + 8k`다. `segments`의 `textStart`가
-    /// 그 좌표계의 run 경계이고 `location`이 줄어드는 지점이 페이지 절단점이다.
+    /// `lines`는 줄마다 (평문 글자 수, 줄 끝 각주 참조 마커 유무)다. 줄 사이에
+    /// 줄바꿈 문자(10)를 넣어 **CT 줄 수를 폰트와 무관하게 고정한다** — 각주
+    /// 귀속이 그려진 조각을 근거로 나뉘므로 (`controlOrdinalRanges`) 줄 수가
+    /// 흔들리면 조각 경계도 흔들려 테스트가 기기마다 갈린다. `segments`의
+    /// `location`이 줄어드는 지점이 한글의 페이지 절단점이다.
     static func splitParagraphWithNoteMarkers(
-        markerAfter: [Int],
-        trailingCharacters: Int,
+        lines: [(characters: Int, marker: Bool)],
         segments: [(location: Int32, height: Int32, textStart: UInt32)]
     ) throws -> CoreHwp.HwpParagraph {
         var paragraph = CoreHwp.HwpParagraph()
         var paraText = CoreHwp.HwpParaText()
         var chars: [CoreHwp.HwpChar] = []
-        for count in markerAfter {
-            chars += Array(repeating: CoreHwp.HwpChar(type: .char, value: 0xAC00), count: count)
-            chars.append(CoreHwp.HwpChar(type: .extended, value: 17))
+        for (index, line) in lines.enumerated() {
+            if index > 0 {
+                chars.append(CoreHwp.HwpChar(type: .char, value: 10))
+            }
+            chars += Array(
+                repeating: CoreHwp.HwpChar(type: .char, value: 0xAC00), count: line.characters
+            )
+            if line.marker {
+                chars.append(CoreHwp.HwpChar(type: .extended, value: 17))
+            }
         }
-        chars += Array(
-            repeating: CoreHwp.HwpChar(type: .char, value: 0xAC00), count: trailingCharacters
-        )
         paraText.charArray = chars
         paragraph.paraText = paraText
 
@@ -215,13 +219,16 @@ enum HwpSynthetic {
     /// 0으로 둔다 (본문 = 페이지 높이 − 위/아래 여백).
     static func sectionDef(
         pageWidth: UInt32 = 59528,
-        pageHeight: UInt32 = 84188
+        pageHeight: UInt32 = 84188,
+        footnoteNumberingMode: UInt32 = 0
     ) -> CoreHwp.HwpSectionDef {
         var sectionDef = CoreHwp.HwpSectionDef()
         sectionDef.pageDef.width = pageWidth
         sectionDef.pageDef.height = pageHeight
         sectionDef.pageDef.marginHeader = 0
         sectionDef.pageDef.marginFootnote = 0
+        // 각주 번호 매김 방식은 표 134 bits 10-11 (0 이어서 / 1 구역마다 / 2 쪽마다)
+        sectionDef.footNoteShape.property = footnoteNumberingMode << 10
         return sectionDef
     }
 
