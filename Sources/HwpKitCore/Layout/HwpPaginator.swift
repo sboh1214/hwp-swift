@@ -939,6 +939,14 @@ private extension HwpPaginator {
     /// 번호가 그대로면 (연속 번호 문서 전부) 원본을 그대로 돌려줘 렌더가 불변이다.
     /// 쪽 번호 필드 (atno kind 0)는 대상이 아니다 — 같은 낡음이 있지만 코퍼스
     /// 실측 없이 바꾸면 렌더가 조용히 달라진다.
+    ///
+    /// **남는 근사**: 조판 (`paragraphFrame`) 과 슬라이스는 옛 번호로 이미 끝난
+    /// 뒤라, 번호 폭이 바뀌면 (9) → 10)) 그 조각 **안**의 줄바꿈이 조판 당시와
+    /// 달라질 수 있다. 조각 **소속**은 문자 범위로 고정돼 텍스트가 다른 쪽으로
+    /// 새지는 않는다. 근본 해결은 순환이다 — 번호는 실릴 쪽이 정해져야 알 수
+    /// 있고, 그 쪽은 배치가, 배치는 조판이 끝나야 안다. 고정점 반복을 새로
+    /// 들이는 값이 모드 2 문서 (코퍼스 0건) 하나에 비해 크다. 가드:
+    /// `testRenumberingKeepsMarkerAndNoteInSyncWhenWidthChanges` (번호 정합만).
     private func renumberedNoteMarkers(
         in slice: NSAttributedString,
         paragraph: CoreHwp.HwpParagraph,
