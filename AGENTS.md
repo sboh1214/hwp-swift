@@ -1,6 +1,6 @@
 # 프로젝트 지식 베이스
 
-**Branch:** fix/footnote-inline-objects
+**Branch:** fix/footnote-page-attribution
 
 ## 개요
 
@@ -156,6 +156,13 @@ PR은 실측 수치를 커밋 메시지에 기록한다.
 | `FixtureRenderHashSnapshotTests` | 엄격·비이동 (전 픽스처 × 전 페이지 SHA-256) | `Snapshots/` **gitignore** | ✗ opt-in |
 | `FixturePreviewFidelityTests` | 정합성 (PrvImage 오라클) — **1쪽뿐** | 소스 상수 임계 | ✗ opt-in |
 | `FixtureBlockLayoutSnapshotTests`·`FixtureRenderGoldenTests`·`testPageCountsMatchManifest` | 관대·이동 가능 (좌표·잉크 그리드·페이지 수) | **커밋됨** | ✓ 상시 |
+| `FixtureFootnoteOverlapTests` | 성질 (각주 스택 ∩ 본문 = ∅, 각주 영역 ⊆ 본문 프레임) | **커밋됨** (소스 상수) | ✓ 상시 |
+
+넷째 줄은 좌표를 기록하지 않고 **성질**을 검사한다 (#95) — 위 셋은 전부 "안
+바뀜"만 증명해서, 각주가 본문을 덮는 렌더가 272쪽에서 기준선으로 굳어 있어도
+아무도 빨개지지 않았다. 겹침은 아직 0이 아니라 **예산**이라 (한글 각주 이어짐
+미구현 — `Sources/HwpKitCore/AGENTS.md`) 개선하면 상한을 함께 낮춰야 한다;
+각주 영역이 본문 프레임을 벗어나지 않는 쪽은 예산이 아니라 불변식(0)이다.
 
 아래 세 스위트가 CI에서 도는 근거는 전부 `HwpFontResolver.testDeterministic`
 하나다 — 폰트 조회 세 축(시스템 등록 폰트·한컴 번들·문서 대체 글꼴)을 모두
@@ -190,6 +197,10 @@ noori p2에서 비영 셀의 30%까지 지워도 양쪽 통과).
 "한글.app 실물과 대조해 옳다고 확인한 페이지" 목록을 겸한다. 표 셀 각주
 귀속(484·485)에 이어 #94가 각주 안 그림·표 페이지(470·894)를 넣었다 — 실물
 대조를 마친 페이지를 표본에 남겨야 다음 회귀가 그 지점에서 잡힌다.
+#95가 넣은 721·722·723은 성격이 다르다: 조각 단위 각주 귀속의 **회귀 앵커**일 뿐
+아직 실물 대조 전이다 (인쇄 711쪽 = 렌더 722에서 한글은 22)–26), 우리는 23)–26)).
+표본에 실물 미대조 페이지를 넣을 때는 이렇게 주석으로 갈라 둘 것 — 안 그러면
+다음 사람이 그 좌표를 "옳다고 확인된 값"으로 읽는다.
 
 골든 스위트는 macOS 전용이다: iOS 시뮬레이터는 호스트 파일시스템의 폰트를 읽어
 같은 기준선이 재현되지 않아 `#if os(macOS)`로 통째로 뺐다 (CI의 iOS 잡에서는

@@ -449,10 +449,42 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   갈린다 (배치는 캐시가 없어 늘 현재 기하로 재측정하므로 틀리는 쪽은 예약이다).
   resolver의 `Hashable`이 **합성**이라 기준 축을 더해도 키가 따라간다 —
   손으로 구현하지 말 것. 가드: `testReservationIsNotReusedAcrossResolverGeometries`.
-- 절대 캐시 모드에서 각주 스택 높이가 한글보다 크면 (캐시 없는 각주의 CT
-  측정) 본문 마지막 블록과 겹칠 수 있다 — 본문 절단점이 한글 캐시로 고정되어
-  각주 예약이 본문을 밀어내지 못한다. 강제 이월은 한글에 없는 각주 전용
-  페이지를 연쇄로 만들어 두지 않는다 (헌법주석 실측 1,031 → 1,054)
+- **페이지에 걸친 문단의 각주는 조각(run)마다 그 페이지에 수집한다** (#95).
+  `placeAbsoluteCachedParagraph`가 run을 놓을 때마다 그 조각의 **top-level 컨트롤
+  서수 범위**로 `collectFootnotes(ordinals:)`를 부르고, 다음 run 머리의
+  `cacheCurrentPage`가 그 페이지를 확정하며 각주를 배치한다. 범위는
+  `HwpAbsoluteCachePlacer.controlOrdinalRanges` — run의 `textStartingIndex`(원본
+  WCHAR 스트림 위치)와 `extendedControlPositions`(서수 → 같은 좌표계 위치)를 맞대
+  `[0, ctrlCount)`를 빈틈없이 분할한다. 서수는 `HwpTextRunBuilder`의
+  `controlIndex`(= `ctrlHeaderArray` 위치)와 같은 값이고 **전진량 산식이 같아야
+  한다** (평문 1 / inline·extended 8) — 갈리면 각주가 엉뚱한 페이지로 간다.
+  마지막 run이 경계 뒤 나머지를 전부 가져가고, 경계가 비단조이거나 서수 ↔ 컨트롤
+  개수가 어긋나면 nil이라 **문단 단위 수집으로 폴백**한다 (유실보다 몰림이 낫다).
+  이중 수집은 `collectedFootnotesDuringPlacement` 플래그가 막는다 —
+  `placeParagraphText`가 매 호출 초기화하고 절대 캐시 경로만 켠다.
+  **본문 절단점은 흔들리지 않는다**: 수집과 그 다음 `cacheCurrentPage` 사이에
+  예약(`footnoteReservedHeight` → `effectiveContentHeight`)을 읽는 코드가 없고,
+  절대 캐시 배치는 커서를 캐시 y로 직접 옮긴다. 실측 (2026-08-03, 헌법주석):
+  각주 블록 3,502개·번호 다중집합·페이지 수 1,030 **전부 불변**, 귀속만 438쪽에서
+  바뀜 (양 폰트 모드 동일 집합). 가드: `HwpFootnoteFragmentAttributionTests`(8종).
+- 절대 캐시 모드에서 각주 스택 높이가 **본문이 남긴 자리**보다 크면 본문 마지막
+  블록과 겹친다 — 본문 절단점이 한글 캐시로 고정되어 각주 예약이 본문을 밀어내지
+  못한다. 남은 원인은 한글의 **각주 이어짐**이다: 한글은 넘치는 몫을 다음 쪽에
+  이어 싣는데 우리는 그 페이지에 전부 쌓는다 (실측 대조 — 인쇄 711쪽에 한글은
+  22)–26), 우리는 23)–26): 22)는 한글이 710쪽에서 밀어낸 것이다).
+  **강제 이월은 여전히 두지 않는다**: 각주 영역 상단을 본문 하단에 맞추고 넘침을
+  이월하면 겹침은 0쪽이 되지만 각주 전용 페이지가 생겨 1,035쪽이 된다
+  (2026-08-03 실측 — 485·486·669·1034; #95 이전 같은 실험은 1,053쪽이었다).
+  착수 전 한글.app 실측 필요: 각주가 본문 영역을 넘길 때의 이어짐 규칙.
+  진척은 `FixtureFootnoteOverlapTests`의 세 축(쪽수·총 침범·최대 침범)으로 잰다.
+- **각주 영역 상단은 본문 상단 아래로 못 내려온다** (#95). 상한 없는 배치
+  (`limitsAreaToHalfContent: false`)에서 `contentFrame.maxY − 스택 높이`가
+  `contentFrame.minY`보다 작아지면 각주 앞부분이 종이 밖으로 잘려 **사라졌다**
+  (수정 전 실측: 헌법주석 5쪽, 최악 렌더 인덱스 79의 −217.6pt). 클램프는 아래로
+  미는 방향뿐이라 `stackFrame`이 스택을 그대로 담아 **이월을 만들지 않는다** —
+  위 항목의 페이지 연쇄 함정을 피한다. 절반 상한 모드는 `areaHeight ≤ 콘텐츠/2`라
+  무동작이다. 가드: `HwpFootnoteLayoutTests`의 클램프 2종 +
+  `FixtureFootnoteOverlapTests.testFootnoteAreaStaysInsideContentTop` (불변식 0쪽)
 - 표 셀 각주는 소유 문단 페이지가 아니라 그 셀의 행이 실리는 페이지에
   수집·예약한다 (`collectTableCellFootnotes` — 세그먼트 행 범위 기준, 한글
   실측 헌법주석 p485). top-level `collectFootnotes`는 표 셀을 건너뛰고
@@ -546,13 +578,19 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   고정점까지 반복하되 pass 상한(32)을 두고, 초과하면 미정렬 `cutY`로 폴백한다
   (엇갈린 라인 그리드로 pass당 0.5pt씩만 내려가는 조작 문서의 로드 지연 차단)
 - 페이지/단 경계로 분할된 문단의 컨트롤은 마지막 조각 처리 후 방출된다 —
-  앞 조각에 앵커된 각주/메모가 마지막 조각의 페이지에 귀속되고, treatAsChar
-  개체는 흐름 폴백된다. 근본 원인: 컨트롤 수집 (collectFootnotes/collectMemos/
-  appendControlBlocks)이 placeParagraphText 뒤에 오는데 앞 조각 페이지는
-  cacheCurrentPage에서 paintList까지 확정돼 사후 귀속이 불가능하다. 조각
-  단위 방출은 분할 경로 전반 (flow split·단 밴드·절대 캐시 run)의 수술이라
-  후속 과제 — 조각 라인 origin이 rebase되지 않아 (base-relative delta 규약)
-  inlineAnchorMap 산식도 함께 바꿔야 한다
+  메모와 treatAsChar 개체가 그것이다 (개체는 흐름 폴백). **각주만 예외**로
+  조각 단위 귀속을 받는다 (#95, 위 각주 항목) — 그것도 **절대 캐시 run 경로
+  한정**이다. 근본 원인: 컨트롤 수집 (collectMemos/appendControlBlocks)이
+  placeParagraphText 뒤에 오는데 앞 조각 페이지는 cacheCurrentPage에서
+  paintList까지 확정돼 사후 귀속이 불가능하다. 각주가 먼저 풀린 것은 절대 캐시
+  run이 조각 경계를 **원본 WCHAR 위치** (`textStartingIndex`) 로 직접 주기
+  때문이다 — 흐름 분할 (`appendParagraphAcrossColumns`) 과 단 밴드는 경계가 CT
+  라인 인덱스·attributed 범위라 원본 위치로 되돌리는 환산이 필요하고
+  (`columnRunBoundaries`의 비례 환산이 그 선례인데 라인 스냅으로 오차를 흡수하는
+  근사다), 코퍼스에 그 경로 + 각주 사례가 0건이라 근사의 옳고 그름을 증명할
+  수단이 없다. 나머지 컨트롤의 조각 단위 방출은 여전히 후속 과제 — 조각 라인
+  origin이 rebase되지 않아 (base-relative delta 규약) inlineAnchorMap 산식도
+  함께 바꿔야 한다
 - treatAsChar 줄 중간 앵커는 분할되지 않은 문단 블록에서만 동작한다
   (다단에서 라인 분할된 문단의 개체는 흐름 위치 폴백)
 - 그림 효과 중 PATTERN8x8 (효과 4)은 미지원 — 원본으로 렌더
@@ -581,8 +619,9 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   용지 방향은 세로 저장 + 넓게 선언일 때만 축을 바꾼다 — 가로 픽스처를 확보하면
   한글 저장 규약을 실측해 확정할 것
 - 단 종류 (일반/배분/평행)와 맞쪽 방향은 미세분화 — 밴드가 닫힐 때 항상 배분,
-  방향은 왼쪽/오른쪽만; 다단에서 페이지에 걸쳐 분할된 문단의 각주는 마지막
-  조각의 페이지에 귀속된다
+  방향은 왼쪽/오른쪽만; 다단·흐름 분할로 페이지에 걸친 문단의 각주는 여전히
+  마지막 조각의 페이지에 귀속된다 (#95의 조각 단위 귀속은 절대 캐시 run 한정 —
+  위 "페이지/단 경계로 분할된 문단의 컨트롤" 항목의 환산 문제)
 - `HwpPaginator`는 재진입 actor다 (base부터): `page(at:)`를 병렬로 직접 부르면
   같은 문단이 중복 배치될 수 있다 — `HwpDocumentActor.buildDocument`처럼
   순차 호출을 유지할 것
