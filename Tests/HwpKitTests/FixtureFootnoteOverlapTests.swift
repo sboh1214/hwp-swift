@@ -189,7 +189,7 @@ final class FixtureFootnoteOverlapTests: XCTestCase {
             .flatMap { block -> [CGFloat] in
                 guard case let .footnote(note) = block.payload else { return [block.frame.minY] }
                 // 구분선은 블록-로컬이 아니라 페이지 좌표다 (HwpFootnoteBlock 참조).
-                return [block.frame.minY, note.separatorLine.minY]
+                return [paintedBounds(of: block).minY, note.separatorLine.minY]
             }
             .min()
     }
@@ -199,8 +199,47 @@ final class FixtureFootnoteOverlapTests: XCTestCase {
     private static func footnoteBottom(of page: HwpPage) -> CGFloat? {
         page.blocks
             .filter { $0.kind == .footnote && $0.role == .body }
-            .map(\.frame.maxY)
+            .map { paintedBounds(of: $0).maxY }
             .max()
+    }
+
+    /// 각주 블록이 **그리는** 범위 — 블록 프레임 ∪ 자손 개체 rect (#95 리뷰).
+    ///
+    /// 오버레이 개체는 블록을 **키우지 않고** 그려지므로 (`HwpFootnoteObject
+    /// LayoutTests.testOverlayWrapModesDoNotGrowFootnoteBlockButStayRendered`)
+    /// 프레임만 보면 종이를 넘는 자손을 놓친다. 순회는 페인트와 같은 walker로
+    /// 받는다 — 손으로 자손을 열거하면 다음 겹에서 갈린다 (R41).
+    ///
+    /// 문단 텍스트는 뺀다: 자격 영역 (`HwpHitTester.paintedRects`의 `textBounds`)
+    /// 은 폰트 메트릭 여유를 더한 **상위집합**이라 모든 각주에서 몇 pt씩 부풀어
+    /// 이 기하 축을 무의미하게 만든다. 텍스트 스택은 블록 프레임이 담는다.
+    private static func paintedBounds(of block: AnyHwpBlock) -> CGRect {
+        guard case let .footnote(note) = block.payload else { return block.frame }
+        var bounds = block.frame
+        HwpBlockContentWalker.walkFootnote(
+            note,
+            origin: block.frame.origin,
+            onParagraphText: { _, _, _ in },
+            onCellStart: { _, rect in bounds = bounds.union(rect) },
+            onCellImage: { _, rect in bounds = bounds.union(rect) },
+            onCellShape: { shape, rect in
+                // 도형 경로는 rect를 넘을 수 있어 paintedRect가 칠 영역을 소유한다 (R63)
+                bounds = bounds.union(shape.paintedRect.offsetBy(
+                    dx: rect.minX - shape.rect.minX, dy: rect.minY - shape.rect.minY
+                ))
+            },
+            onCellTextbox: { textbox, rect in
+                bounds = bounds.union(rect)
+                // 글상자 안 그림·도형도 클립 없이 그려진다 (R46 #1)
+                for child in textbox.textbox.images.map(\.paintedRect)
+                    + textbox.textbox.shapes.map(\.paintedRect)
+                {
+                    bounds = bounds.union(child.offsetBy(dx: rect.minX, dy: rect.minY))
+                }
+            },
+            onNestedTable: { _, rect in bounds = bounds.union(rect) }
+        )
+        return bounds
     }
 
     /// 이 페이지 본문의 최하단 — 잉크가 없는 블록은 세지 않는다.
