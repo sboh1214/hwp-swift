@@ -83,6 +83,21 @@ struct HwpFootnoteCoordinator {
     /// 개체를 담는 각주의 블록 높이 캐시 — 위 텍스트 높이 캐시와 값의 의미가
     /// 달라 (개체 하한 포함) 사전을 나눈다.
     private var footnoteBlockHeightCache: [FootnoteHeightKey: CGFloat] = [:]
+    /// 배치를 미룬 컨테이너 안 각주 — top-level 컨트롤 서수별. 번호는 앞 조각에서
+    /// 문서 순서대로 받아 두고 **배치만** 마지막 조각으로 미룬다. 열쇠(서수)가
+    /// 문단 안에서만 유일하므로 문단마다 비운다 (`resetDeferredNestedFootnotes`).
+    private var deferredNestedFootnotes: [Int: [DeferredNote]] = [:]
+    /// 지금 걷는 중인 컨테이너의 서수 — nil이 아니면 각주가 위 버퍼로 간다.
+    /// 미주는 페이지 몫이 아니라 (문서·구역 끝 `placeFlow`) 이 우회로를 타지 않는다.
+    private var deferralSink: Int?
+
+    /// 번호만 앞 조각에서 확정하고 배치를 미룬 각주 하나. 해석기를 싣지 않는 것이
+    /// 요점이다 — 예약도 배치도 **실릴 페이지**에서 일어나므로 그 시점 값을 써야
+    /// 둘이 같은 기하를 본다 (R44 #1 · R45 #1).
+    private struct DeferredNote {
+        let paragraphs: [CoreHwp.HwpParagraph]
+        let number: Int
+    }
 
     init(
         index: HwpIndex,
@@ -158,6 +173,15 @@ struct HwpFootnoteCoordinator {
             }
             return false
         }
+        /// 배치는 마지막 조각으로 미루되 **번호는 지금** 받는다 (#95 리뷰).
+        /// 번호가 수집 순서라 미루면 뒤에 오는 직접 각주가 먼저 번호를 가져가
+        /// 문서 순서와 뒤집힌다. 자손 전체가 이 서수의 버퍼로 흐른다.
+        func deferNestedNotes(of ctrl: CoreHwp.HwpCtrlId, ordinal: Int) {
+            let outer = deferralSink
+            deferralSink = ordinal
+            walkChildren(of: ctrl)
+            deferralSink = outer
+        }
         // 중첩을 안 걷는 조각은 **요청된 범위만** 훑는다 — 조각마다 전수 순회하면
         // O(run × 컨트롤)이라 조작 문서 (run·컨트롤 각 10,000, 파일은 수백 KB) 가
         // 페이지네이션을 세운다. 마지막 조각의 전수 순회는 문단당 한 번이라
@@ -166,8 +190,15 @@ struct HwpFootnoteCoordinator {
             for ordinal in ordinals where ctrls.indices.contains(ordinal) {
                 let ctrl = ctrls[ordinal]
                 collectDirectNote(ctrl)
-                guard depth < 3, isPlacedByThisFragment(ctrl) else { continue }
-                walkChildren(of: ctrl)
+                guard depth < 3 else { continue }
+                if !includeTableCells, case .table = ctrl {
+                    continue
+                }
+                if isPlacedByThisFragment(ctrl) {
+                    walkChildren(of: ctrl)
+                } else {
+                    deferNestedNotes(of: ctrl, ordinal: ordinal)
+                }
             }
             return
         }
@@ -178,6 +209,11 @@ struct HwpFootnoteCoordinator {
             }
             guard depth < 3 else { continue }
             if !includeTableCells, case .table = ctrl {
+                continue
+            }
+            // 앞 조각이 번호를 매겨 둔 컨테이너는 다시 걷지 않고 그 버퍼를 푼다 —
+            // 다시 걸으면 번호를 두 번 받아 문서 순서가 어긋난다.
+            if depth == 0, flushDeferredNestedNotes(at: ordinal, environment: environment) {
                 continue
             }
             // 이 조각이 배치하는 컨테이너(각주)의 자식은 **그 조각**이 걷는다 —
@@ -230,14 +266,31 @@ struct HwpFootnoteCoordinator {
     ) {
         let paragraphs = list.listArray.flatMap(\.paragraphArray)
         guard !paragraphs.isEmpty else { return }
-        let isFirstOnPage = pendingFootnotes.isEmpty
         // 번호는 각주 컨트롤당 하나다 (한글과 동일). 여러 문단짜리 각주는
         // 같은 번호를 공유하고 첫 문단의 ext18 마커만 번호로 치환된다.
         let number = footnoteCounter
         footnoteCounter += 1
-        // 예약은 실제 배치 (place의 스택 산식)와 동형: 페이지 첫 노트는
-        // 구분선 오버헤드, 이후 노트는 노트 사이 간격 1회 (같은 번호의
-        // 이어지는 문단은 간격 0 — stackBlocks와 동일).
+        // 카운터 증가가 sink 분기보다 **앞**이어야 한다 — 번호는 문서 순서고
+        // 미루는 것은 배치뿐이다 (예약도 배치와 함께 그 페이지에서 잡힌다).
+        if let sink = deferralSink {
+            deferredNestedFootnotes[sink, default: []].append(
+                DeferredNote(paragraphs: paragraphs, number: number)
+            )
+            return
+        }
+        appendPendingFootnote(paragraphs: paragraphs, number: number, environment: environment)
+    }
+
+    /// 각주 하나를 이 페이지 스택에 올린다 — 수집 시점과 미룬 배치가 **같은
+    /// 산식**을 쓰도록 한 곳에 둔다. 예약은 실제 배치 (place의 스택 산식)와
+    /// 동형: 페이지 첫 노트는 구분선 오버헤드, 이후 노트는 노트 사이 간격 1회
+    /// (같은 번호의 이어지는 문단은 간격 0 — stackBlocks와 동일).
+    private mutating func appendPendingFootnote(
+        paragraphs: [CoreHwp.HwpParagraph],
+        number: Int,
+        environment: Environment
+    ) {
+        let isFirstOnPage = pendingFootnotes.isEmpty
         let metrics = footnoteReservationMetrics(environment: environment)
         footnoteReservedHeight += isFirstOnPage
             ? metrics.separatorOverhead
@@ -256,6 +309,31 @@ struct HwpFootnoteCoordinator {
                 environment: environment
             )
         }
+    }
+
+    /// 미룬 각주를 이 페이지 스택에 푼다. 푼 것이 있으면 true — 호출자는 그
+    /// 컨테이너를 다시 걷지 않는다 (걸으면 번호를 두 번 받는다).
+    private mutating func flushDeferredNestedNotes(
+        at ordinal: Int,
+        environment: Environment
+    ) -> Bool {
+        guard let deferred = deferredNestedFootnotes.removeValue(forKey: ordinal) else {
+            return false
+        }
+        for note in deferred {
+            appendPendingFootnote(
+                paragraphs: note.paragraphs, number: note.number, environment: environment
+            )
+        }
+        return true
+    }
+
+    /// 미룬 각주 버퍼를 비운다 — 열쇠인 서수가 **문단 안에서만** 유일하므로
+    /// 문단마다 호출해야 앞 문단의 잔여가 다른 컨테이너로 새지 않는다.
+    /// 정상 경로에서는 마지막 조각의 전수 순회가 모든 서수를 방문해 이미
+    /// 비어 있다 (빈 run으로 그 순회를 건너뛴 문단만 잔여가 남는다).
+    mutating func resetDeferredNestedFootnotes() {
+        deferredNestedFootnotes.removeAll(keepingCapacity: true)
     }
 
     /// 미주는 페이지 하단이 아니라 문서/구역 끝에 모아 배치한다 (표 134 bits 8-9).

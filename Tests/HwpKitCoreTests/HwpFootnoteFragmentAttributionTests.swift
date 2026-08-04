@@ -248,6 +248,9 @@ import XCTest
                 childParagraphs: children
             )
             expect(coordinator.pendingFootnotes).to(beEmpty())
+            // 미룬 각주는 이 페이지 몫이 아니므로 예약도 하지 않는다 — 예약이
+            // 늘면 effectiveContentHeight가 줄어 본문 절단점이 흔들린다.
+            expect(coordinator.footnoteReservedHeight) == 0
 
             coordinator.collectFootnotes(
                 from: host,
@@ -258,6 +261,76 @@ import XCTest
                 childParagraphs: children
             )
             expect(coordinator.pendingFootnotes.count) == 1
+            expect(coordinator.footnoteReservedHeight) > 0
+            // 버퍼를 풀고 **또** 걷지 않는다 — 그러면 같은 각주가 두 번 실리고
+            // 번호도 하나 더 소비된다.
+            expect(coordinator.footnoteCounter) == 1
+        }
+
+        /// 번호는 **문서 순서**다 — 컨테이너 안 각주가 그 뒤의 직접 각주보다 앞선다.
+        /// 배치를 미루면서 번호까지 미루면 뒤의 직접 각주가 먼저 카운터를 가져가
+        /// 둘이 뒤바뀐다 (#95 리뷰 r3708636335).
+        func testDeferredContainerNotesKeepTheirDocumentOrderNumbers() {
+            var coordinator = HwpFootnoteCoordinator(
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+            var host = CoreHwp.HwpParagraph()
+            host.ctrlHeaderArray = [
+                .header(HwpSynthetic.listControl(ctrlId: .header, paragraphs: [])),
+                .footnote(HwpSynthetic.listControl(
+                    ctrlId: .footnote,
+                    paragraphs: [HwpSynthetic.noteParagraph(
+                        " 뒤따르는 직접 각주",
+                        autoNumber: HwpSynthetic.autoNumberControl(kind: 1, decorationTail: ")")
+                    )]
+                )),
+            ]
+            var nested = CoreHwp.HwpParagraph()
+            nested.ctrlHeaderArray = [
+                .footnote(HwpSynthetic.listControl(
+                    ctrlId: .footnote,
+                    paragraphs: [HwpSynthetic.noteParagraph(
+                        " 컨테이너 안 각주",
+                        autoNumber: HwpSynthetic.autoNumberControl(kind: 1, decorationTail: ")")
+                    )]
+                )),
+            ]
+            let children: HwpFootnoteCoordinator.ChildParagraphs = { ctrl in
+                if case .header = ctrl {
+                    return [(nested, .textbox)]
+                }
+                return []
+            }
+            let environment = HwpFootnoteCoordinator.Environment(
+                contentWidth: 400, footnoteShape: nil
+            )
+
+            // 앞 조각: 컨테이너(서수 0)와 직접 각주(서수 1)가 같은 조각에 있다
+            coordinator.collectFootnotes(
+                from: host,
+                includeTableCells: false,
+                ordinals: 0 ..< 2,
+                collectsNested: false,
+                environment: environment,
+                childParagraphs: children
+            )
+            expect(coordinator.pendingFootnotes.count) == 1
+            let directNumber = coordinator.pendingFootnotes[0].number
+
+            coordinator.collectFootnotes(
+                from: host,
+                includeTableCells: false,
+                ordinals: 2 ..< 2,
+                collectsNested: true,
+                environment: environment,
+                childParagraphs: children
+            )
+            expect(coordinator.pendingFootnotes.count) == 2
+            let nestedNumber = coordinator.pendingFootnotes[1].number
+
+            expect(nestedNumber) == 0
+            expect(directNumber) == 1
         }
 
         /// 각주는 **이 조각이 곧바로 배치**하므로 그 안쪽 노트도 같은 조각이 걷는다

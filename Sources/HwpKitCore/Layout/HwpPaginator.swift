@@ -569,8 +569,10 @@ private extension HwpPaginator {
         paragraphFrame: HwpParagraphFrame
     ) -> Bool {
         // 조각 단위 각주 수집 여부는 배치 경로가 정한다 (#95) — 매 배치마다
-        // 초기화해 앞 문단의 값이 새지 않게 한다.
+        // 초기화해 앞 문단의 값이 새지 않게 한다. 미룬 컨테이너 각주 버퍼도
+        // 열쇠(컨트롤 서수)가 문단 안에서만 유일해 같이 비운다.
         collectedFootnotesDuringPlacement = false
+        footnoteCoordinator.resetDeferredNestedFootnotes()
         // 변경 추적 문단이면 배치 전에 paraId를 기록한다 — 배치 중 페이지가
         // 캐시될 때마다 (절대 캐시 run·advanceColumn) 그 조각이 막대를 받게 (#7).
         recordTrackChangeParagraphIfNeeded(for: paragraph)
