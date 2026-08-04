@@ -14,6 +14,7 @@ HwpKitNative/
 ├── Rendering/HwpPageImageProvider.swift  # HwpImageStore + HwpImageCache + HwpImageAdapter 연결
 ├── Rendering/HwpDecodeThrottle.swift     # 동시 디코드 상한 3 (provider 전역 static)
 ├── Rendering/HwpImageStyleRenderer.swift # 표 107 crop/밝기/명암/효과 (CGImage.cropping + CoreImage)
+├── Rendering/HwpPDFRenderer.swift  # CGPDFContext 스트리밍 기록 (HwpKit의 HwpPDFExporter가 감싼다)
 ├── macOS/HwpDocumentNSView.swift   # NSScrollView + 레이어 가상화 (magnification pinch zoom)
 ├── macOS/HwpDocumentNSViewSelection.swift  # 마우스 드래그 선택 + Cmd+C/Cmd+A/우클릭 Copy
 ├── iOS/HwpDocumentUIViewSelection.swift    # 롱프레스 선택 + 엣지 오토스크롤 + 편집 메뉴
@@ -54,6 +55,17 @@ HwpKitNative/
 - 호출 **전에** `setPinnedImages(HwpPageImageProvider.imageVariantKeys(in:))`로 고정할 것. 안 하면 먼저 디코드된 대형 이미지가 draw 전에 바이트 예산(256MB)으로 축출된다
 - 스로틀(limit 3)은 **provider 전역 static**이라 export가 화면 뷰어와 슬롯을 공유한다. export 중 스크롤이 느려지는 것은 설계상 불가피하고, 취소는 스로틀 대기자에게 전파된다
 - 테스트 헬퍼 `FixturePreview.resolveImageReferences`의 폴링 + 2초 타임아웃이 이 API로 대체됐다. "확정까지 대기"라는 성질은 그대로다 — 미확정인 채 그리면 회색 로딩 사각형이 렌더/해시에 섞여 조용히 틀린 결과가 통과·기록된다
+
+## PDF 내보내기 (HwpPDFRenderer)
+
+`HwpPageLayer.draw(in:)`를 **그대로** 쓴다 — 화면과 같은 paint list, 같은 조판이다. 페이지마다 새 레이어를 만들고 `beginPDFPage`에 `page.size` mediaBox를 넘긴다.
+
+- flip은 **무분기**다. macOS의 독립 레이어는 `contentsAreFlipped() == false`라 스스로 뒤집고, iOS는 CGPDFContext가 y-up(`ctm.d > 0`)이라 같은 가지로 들어온다
+- mediaBox는 `CGRect`를 **값째 담은 CFData**여야 한다 (참조 전달이 아니다). 형식이 틀리면 CG가 조용히 기본 상자를 쓴다 — 구역별 용지 크기·방향이 다른 문서에서만 드러나므로 `multi-section` 픽스처가 가드
+- 메모 패널(`HwpPage.memoPanel`)은 종이 밖 편집 화면 장식이라 `page.paintList`만 그리는 이 경로에서 자연히 빠진다 (한글의 인쇄 뷰·PrvImage와 같다)
+- 이미지는 `document.imageStore`로 **문서 전용 provider**를 새로 만든다 — `binItemId`가 문서-로컬 키라 뷰어 provider를 재사용하면 다른 문서의 이미지가 섞인다. 캐시는 주입 가능(`cache:`)
+- PDF 페이지는 기본이 투명이라 흰 종이를 먼저 깐다. 안 깔면 배경을 뷰어·프린터가 정해 종이 은유가 깨진다
+- 취소·실패로 남은 부분 파일은 지운다. 열리지 않는 PDF가 사용자 디렉터리에 남으면 성공과 구분되지 않는다
 
 ## CRITICAL — macOS 좌표계 flip
 
