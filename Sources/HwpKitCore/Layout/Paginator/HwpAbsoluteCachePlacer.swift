@@ -85,6 +85,87 @@ struct HwpAbsoluteCachePlacer {
         Int(segment.lineLocation) + lineAdvance(of: segment)
     }
 
+    // MARK: run별 컨트롤 서수 (조각 단위 각주 귀속)
+
+    /// 조각(run)마다 그 조각에 **실제로 그려진** top-level 컨트롤 서수 범위.
+    ///
+    /// 각주는 참조가 놓인 **조각의 페이지**에 실려야 한다 (한글.app 실측 —
+    /// 헌법주석 인쇄 709·710·711쪽이 같은 문단의 각주를 나눠 싣는다).
+    ///
+    /// 경계의 근거는 `runAttributedSlice`가 낸 **그 조각의 텍스트**다 — 마커 run에
+    /// 붙은 `controlIndex`를 그대로 읽는다. 원본 WCHAR 위치 (`textStartingIndex`)
+    /// 로 나누면 배치는 CT 라인 비례로 자르는데 귀속만 캐시 좌표로 잘라, 폰트
+    /// 대체·stale 캐시로 두 분할이 갈릴 때 각주가 참조와 **다른 페이지**에 실린다
+    /// (참조보다 앞 페이지면 그 쪽엔 참조 없는 각주가 뜬다). 자르는 곳이 하나면
+    /// 그 불일치가 원천적으로 없다.
+    ///
+    /// 반환값은 `[0, ctrlCount)`를 조각 순서로 빈틈없이 분할한다 — 어느 조각에도
+    /// 안 그려진 컨트롤 (마커 없는 컨트롤·CT가 잘라낸 라인)은 뒤 조각이 흡수하고
+    /// 마지막 조각이 나머지를 전부 가져가므로 누락이 없다.
+    static func controlOrdinalRanges(
+        slices: [NSAttributedString],
+        controlCount: Int
+    ) -> [Range<Int>]? {
+        guard slices.count > 1, controlCount > 0 else { return nil }
+        let lastOrdinals = slices.map(lastControlOrdinal(in:))
+        // 서수 ↔ 컨트롤 배열이 어긋난 문단 (파스 폴백 등)은 나누지 않는다.
+        guard lastOrdinals.compactMap({ $0 }).allSatisfy({ $0 < controlCount }) else {
+            return nil
+        }
+
+        var ranges: [Range<Int>] = []
+        var cursor = 0
+        for index in slices.indices {
+            // 마지막 조각은 나머지 전부, 그 앞은 자기가 그린 마지막 서수까지.
+            let end = index == slices.count - 1
+                ? controlCount
+                : lastOrdinals[index].map { $0 + 1 } ?? cursor
+            ranges.append(cursor ..< max(cursor, end))
+            cursor = max(cursor, end)
+        }
+        return ranges
+    }
+
+    /// **두 조각 이상에 걸쳐 그려진** 마커 서수 (#95 리뷰).
+    ///
+    /// CT가 번호 문자열 중간에서 줄을 나누면 (좁은 단·긴 번호) 각 조각이 마커의
+    /// **일부**만 갖는다. 조각별 번호 재기록이 그 일부를 완전한 번호로 바꾸면 다음
+    /// 쪽에 남은 나머지와 합쳐 `10)` + `)`가 된다. 번호가 그대로여도 그렇다 —
+    /// 부분 문자열은 완전한 번호와 다르므로 "안 바뀌면 그대로 둔다" 가드를
+    /// 통과한다. 그래서 갈린 서수는 재기록에서 아예 뺀다 (최악이라도 번호가
+    /// 옛값일 뿐 문자열이 깨지지 않는다).
+    static func ordinalsSpanningSlices(_ slices: [NSAttributedString]) -> Set<Int> {
+        var seen: Set<Int> = []
+        var spanning: Set<Int> = []
+        for slice in slices {
+            var inSlice: Set<Int> = []
+            slice.enumerateAttribute(
+                HwpAttributedStringKey.controlIndex,
+                in: NSRange(location: 0, length: slice.length)
+            ) { value, _, _ in
+                guard let ordinal = (value as? NSNumber)?.intValue else { return }
+                inSlice.insert(ordinal)
+            }
+            spanning.formUnion(inSlice.intersection(seen))
+            seen.formUnion(inSlice)
+        }
+        return spanning
+    }
+
+    /// 조각에 그려진 마지막 컨트롤 서수 — 마커가 없으면 nil.
+    /// 번호로 치환된 참조 run도 같은 속성을 달고 있다 (`appendControlMarker`).
+    private static func lastControlOrdinal(in slice: NSAttributedString) -> Int? {
+        var last: Int?
+        slice.enumerateAttribute(
+            HwpAttributedStringKey.controlIndex,
+            in: NSRange(location: 0, length: slice.length)
+        ) { value, _, _ in
+            guard let ordinal = (value as? NSNumber)?.intValue else { return }
+            last = max(last ?? ordinal, ordinal)
+        }
+        return last
+    }
+
     // MARK: CT 측정 생략 게이트
 
     /// 절대 캐시 모드에서 CT 측정을 통째로 생략할 수 있는 문단인지 —

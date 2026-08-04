@@ -409,5 +409,30 @@ import XCTest
             expect(byDefault) == face
             expect(deterministic) == "Menlo"
         }
+
+        /// 결정론 resolver는 **대체 폰트까지** 고정한다 (#95).
+        ///
+        /// 폰트 조회 세 축을 닫아 모든 face를 Menlo로 보내도, Menlo가 못 가진
+        /// 글자는 CoreText가 **호스트에 설치된 폰트 목록**에서 고른다. 헌법주석
+        /// 코퍼스는 2,054자 중 1,929자가 Menlo 밖이라 사실상 조판 전체가 그 선택에
+        /// 달려 있었고, 로마숫자 `Ⅵ`가 이 머신에선 Helvetica-Oblique·CI 러너에선
+        /// 다른 폰트로 잡혀 커밋된 좌표 기준선이 갈렸다 (PR #97 CI 실패).
+        /// 캐스케이드를 명시하면 선택이 (base, cascade)의 함수가 된다.
+        func testDeterministicResolverPinsSubstitutionFont() {
+            let font = HwpFontResolver.testDeterministic.resolve(
+                faceName: "시스템에없는이름", script: .english, size: 9
+            )
+            let attributed = NSAttributedString(
+                string: "Ⅵ", attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
+            )
+            let line = CTLineCreateWithAttributedString(attributed)
+            let used = (CTLineGetGlyphRuns(line) as? [CTRun] ?? []).compactMap { run -> String? in
+                let attributes = CTRunGetAttributes(run) as? [String: Any] ?? [:]
+                guard let value = attributes[kCTFontAttributeName as String] else { return nil }
+                let runFont = unsafeBitCast(value as CFTypeRef, to: CTFont.self)
+                return CTFontCopyPostScriptName(runFont) as String
+            }
+            expect(used) == ["AppleSDGothicNeo-Regular"]
+        }
     }
 #endif

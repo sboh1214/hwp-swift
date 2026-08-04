@@ -92,6 +92,11 @@ public actor HwpPaginator {
     }
 
     private var measureMemo: ParagraphMeasureMemo?
+    /// 이번 배치가 각주를 **조각 단위로 이미 수집했는지** (#95). 페이지에 걸친
+    /// 절대 캐시 문단은 run마다 그 조각의 각주를 그 페이지에 담으므로, 문단 루프의
+    /// 문단 단위 수집을 건너뛰어야 이중 수집(번호 중복)이 되지 않는다.
+    /// placeParagraphText가 매 호출 초기화하고 절대 캐시 경로만 켠다.
+    private var collectedFootnotesDuringPlacement = false
     /// 각주 번호 — 저장은 footnoteCoordinator
     private var footnoteCounter: Int {
         get { footnoteCoordinator.footnoteCounter }
@@ -496,7 +501,7 @@ private extension HwpPaginator {
                 return
             }
             measureMemo = nil
-            collectFootnotes(from: paragraph, includeTableCells: false)
+            collectParagraphFootnotesUnlessPlacedPerFragment(paragraph)
             collectMemos(from: paragraph)
             appendControlBlocks(from: paragraph)
             collectUnsupported(from: paragraph, firstPage: paragraphFirstPage)
@@ -563,6 +568,11 @@ private extension HwpPaginator {
         attributedString: NSAttributedString,
         paragraphFrame: HwpParagraphFrame
     ) -> Bool {
+        // 조각 단위 각주 수집 여부는 배치 경로가 정한다 (#95) — 매 배치마다
+        // 초기화해 앞 문단의 값이 새지 않게 한다. 미룬 컨테이너 각주 버퍼도
+        // 열쇠(컨트롤 서수)가 문단 안에서만 유일해 같이 비운다.
+        collectedFootnotesDuringPlacement = false
+        footnoteCoordinator.resetDeferredNestedFootnotes()
         // 변경 추적 문단이면 배치 전에 paraId를 기록한다 — 배치 중 페이지가
         // 캐시될 때마다 (절대 캐시 run·advanceColumn) 그 조각이 막대를 받게 (#7).
         recordTrackChangeParagraphIfNeeded(for: paragraph)
@@ -809,9 +819,24 @@ private extension HwpPaginator {
             return false
         }
 
-        let lines = paragraphFrame.lines
-        let totalSegments = runs.reduce(0) { $0 + $1.count }
-        var lineCursor = 0
+        // 페이지에 걸친 문단의 각주는 참조가 놓인 **조각의 페이지**에 실린다
+        // (#95). 조각을 먼저 다 자른 뒤 그 조각에 실제로 그려진 마커 서수로
+        // 범위를 나눈다 — 배치와 귀속이 같은 경계를 쓴다. run마다 수집하면 다음
+        // 반복 머리의 cacheCurrentPage가 그 페이지를 확정하며 각주를 배치한다.
+        // 경계를 못 믿으면 (서수 불일치) nil이라 호출자가 문단 전체를 마지막
+        // 조각 페이지에 귀속시키는 기존 동작으로 폴백한다.
+        let slices = absoluteRunSlices(
+            runs: runs,
+            attributedString: attributedString,
+            lines: paragraphFrame.lines
+        )
+        let ordinalRanges = HwpAbsoluteCachePlacer.controlOrdinalRanges(
+            slices: slices.map(\.text),
+            controlCount: paragraph.ctrlHeaderArray?.count ?? 0
+        )
+        // 조각에 걸쳐 그려진 마커는 조각마다 **일부**만 갖는다 — 그 일부를 완전한
+        // 번호로 바꾸면 다음 쪽에 남은 나머지와 합쳐 깨진다 (번호가 그대로여도).
+        let splitMarkers = HwpAbsoluteCachePlacer.ordinalsSpanningSlices(slices.map(\.text))
         for (runIndex, run) in runs.enumerated() {
             if runIndex > 0 {
                 cacheCurrentPage()
@@ -819,7 +844,83 @@ private extension HwpPaginator {
             guard let runFirstSegment = run.first else { continue }
             let runFirst = runFirstSegment.lineLocation
             var height = absoluteRunBlockHeight(run: run, firstLocation: runFirst)
-            let slice = HwpAbsoluteCachePlacer.runAttributedSlice(
+            let slice = slices[runIndex]
+            let sliceText = renumberedNoteMarkers(
+                in: slice.text,
+                paragraph: paragraph,
+                ordinals: ordinalRanges?[runIndex],
+                skipping: splitMarkers
+            )
+            // appendBlock은 columnFrame.minY + contentHeightUsed에 배치하므로
+            // 한글이 준 절대 y (+ stale 캐시 보정)로 커서를 옮긴다.
+            contentHeightUsed = max(0, HwpUnits.points(fromHwpUnit: runFirst))
+                + absoluteCacheStaleOffset
+            height = staleAdjustedHeight(
+                height, runs: runs, run: run, slice: sliceText, frame: paragraphFrame
+            )
+            paragraphAnchorTop = currentColumnFrame.minY + contentHeightUsed
+            appendBlock(
+                height: height,
+                attributedString: sliceText,
+                hyperlinkURL: hyperlinkURL(in: paragraph),
+                paragraphId: paragraph.paraHeader.paraId,
+                lines: slice.lines
+            )
+            lastAbsoluteCacheLoc = run.last?.lineLocation ?? runFirst
+            collectFragmentFootnotes(
+                from: paragraph,
+                ordinals: ordinalRanges?[runIndex],
+                collectsNested: runIndex == runs.count - 1
+            )
+        }
+        collectedFootnotesDuringPlacement = ordinalRanges != nil
+        return true
+    }
+
+    /// 문단 단위 각주 수집 — 배치가 조각마다 이미 담았으면 건너뛴다 (#95).
+    /// 건너뛰지 않으면 같은 각주가 두 번 세어져 번호와 개수가 어긋난다.
+    private func collectParagraphFootnotesUnlessPlacedPerFragment(
+        _ paragraph: CoreHwp.HwpParagraph
+    ) {
+        guard !collectedFootnotesDuringPlacement else { return }
+        collectFootnotes(from: paragraph, includeTableCells: false)
+    }
+
+    /// 이 페이지 조각에 실린 각주만 지금 페이지에 담는다 (#95).
+    ///
+    /// 다음 run 머리의 `cacheCurrentPage`가 이 페이지를 확정하며 방금 담은 각주를
+    /// 배치한다 — 그 사이에 예약(`footnoteReservedHeight`)을 읽는 코드가 없어
+    /// 본문 절단점이 흔들리지 않는다. `ordinals`가 nil이면 조각 경계를 못 믿는
+    /// 문단이라 아무것도 하지 않고, 호출자가 문단 단위로 수집한다 (기존 동작).
+    /// 표 셀 각주 제외는 문단 단위 수집과 같은 필터다 (행 페이지 귀속).
+    private func collectFragmentFootnotes(
+        from paragraph: CoreHwp.HwpParagraph,
+        ordinals: Range<Int>?,
+        collectsNested: Bool
+    ) {
+        guard let ordinals else { return }
+        collectFootnotes(
+            from: paragraph,
+            includeTableCells: false,
+            ordinals: ordinals,
+            collectsNested: collectsNested
+        )
+    }
+
+    /// run별 텍스트 조각 — 배치 **전에** 한 번에 자른다 (#95). 각주 귀속이 이
+    /// 조각들을 근거로 나뉘므로 (`controlOrdinalRanges`) 자르는 곳이 한 군데여야
+    /// 배치와 귀속이 갈리지 않는다.
+    private func absoluteRunSlices(
+        runs: [[CoreHwp.HwpParaLineSegInternal]],
+        attributedString: NSAttributedString,
+        lines: [HwpLineFrame]
+    ) -> [(text: NSAttributedString, lines: [HwpLineFrame])] {
+        let totalSegments = runs.reduce(0) { $0 + $1.count }
+        var slices: [(text: NSAttributedString, lines: [HwpLineFrame])] = []
+        slices.reserveCapacity(runs.count)
+        var lineCursor = 0
+        for (runIndex, run) in runs.enumerated() {
+            slices.append(HwpAbsoluteCachePlacer.runAttributedSlice(
                 runIndex: runIndex,
                 runShare: HwpAbsoluteCachePlacer.RunShare(
                     segments: run.count,
@@ -829,33 +930,72 @@ private extension HwpPaginator {
                 attributedString: attributedString,
                 lines: lines,
                 lineCursor: &lineCursor
-            )
-            // appendBlock은 columnFrame.minY + contentHeightUsed에 배치하므로
-            // 한글이 준 절대 y (+ stale 캐시 보정)로 커서를 옮긴다.
-            contentHeightUsed = max(0, HwpUnits.points(fromHwpUnit: runFirst))
-                + absoluteCacheStaleOffset
-            // stale 캐시 (캐시 줄 높이 < 선언 글자 크기): 한글.app도 열 때
-            // 재조판해 이 줄을 CT 자연 높이로 넓힌다 — 슬롯을 CT 높이로 키우고
-            // 이후 문단을 그만큼 민다. 신선한 캐시 (h ≥ 글자 크기)는 절대 발동
-            // 안 한다 (헌법주석 페이지 절단 유지).
-            if runs.count == 1,
-               HwpAbsoluteCachePlacer.cacheIsStale(run: run, attributedString: slice.text),
-               paragraphFrame.totalHeight > height
-            {
-                absoluteCacheStaleOffset += paragraphFrame.totalHeight - height
-                height = paragraphFrame.totalHeight
-            }
-            paragraphAnchorTop = currentColumnFrame.minY + contentHeightUsed
-            appendBlock(
-                height: height,
-                attributedString: slice.text,
-                hyperlinkURL: hyperlinkURL(in: paragraph),
-                paragraphId: paragraph.paraHeader.paraId,
-                lines: slice.lines
-            )
-            lastAbsoluteCacheLoc = run.last?.lineLocation ?? runFirst
+            ))
         }
-        return true
+        return slices
+    }
+
+    /// 조각의 각주/미주 참조 마커를 **그 조각이 실릴 페이지의 번호**로 다시 쓴다.
+    ///
+    /// 마커 번호는 조판 전에 문단 단위로 한 번 구워지는데, "쪽마다 새로 시작"
+    /// (표 134 numberingMode 2) 구역에서 문단이 페이지에 걸치면 run 사이
+    /// `cacheCurrentPage`가 카운터를 리셋해 뒤 조각의 마커가 수집 번호와 어긋난다
+    /// (참조는 2), 각주는 1)). 배치 직전 현재 카운터로 다시 계산하면 둘이 같은
+    /// 번호를 쓴다 — 수집은 이 뒤에 오므로 카운터는 앞 조각 몫까지만 반영돼 있다.
+    /// 번호가 그대로면 (연속 번호 문서 전부) 원본을 그대로 돌려줘 렌더가 불변이다.
+    /// 쪽 번호 필드 (atno kind 0)는 대상이 아니다 — 같은 낡음이 있지만 코퍼스
+    /// 실측 없이 바꾸면 렌더가 조용히 달라진다.
+    ///
+    /// **남는 근사**: 조판 (`paragraphFrame`) 과 슬라이스는 옛 번호로 이미 끝난
+    /// 뒤라, 번호 폭이 바뀌면 (9) → 10)) 그 조각 **안**의 줄바꿈이 조판 당시와
+    /// 달라질 수 있다. 조각 **소속**은 문자 범위로 고정돼 텍스트가 다른 쪽으로
+    /// 새지는 않는다. 근본 해결은 순환이다 — 번호는 실릴 쪽이 정해져야 알 수
+    /// 있고, 그 쪽은 배치가, 배치는 조판이 끝나야 안다. 고정점 반복을 새로
+    /// 들이는 값이 모드 2 문서 (코퍼스 0건) 하나에 비해 크다. 가드:
+    /// `testRenumberingKeepsMarkerAndNoteInSyncWhenWidthChanges` (번호 정합만).
+    private func renumberedNoteMarkers(
+        in slice: NSAttributedString,
+        paragraph: CoreHwp.HwpParagraph,
+        ordinals: Range<Int>?,
+        skipping splitMarkers: Set<Int>
+    ) -> NSAttributedString {
+        guard let ordinals, !ordinals.isEmpty,
+              let ctrls = paragraph.ctrlHeaderArray
+        else { return slice }
+        let noteReplacements = noteReferenceReplacements(for: paragraph, ordinals: ordinals)
+            .filter { ordinal, _ in
+                guard !splitMarkers.contains(ordinal),
+                      ctrls.indices.contains(ordinal) else { return false }
+                return switch ctrls[ordinal] {
+                case .footnote, .endnote: true
+                default: false
+                }
+            }
+        return HwpTextRunBuilder.renumberingNoteMarkers(
+            in: slice, replacements: noteReplacements
+        )
+    }
+
+    /// stale 캐시 (캐시 줄 높이 < 선언 글자 크기) 보정된 run 높이.
+    ///
+    /// 한글.app도 이런 문단은 열 때 재조판해 줄을 CT 자연 높이로 넓힌다 — 슬롯을
+    /// CT 높이로 키우고 이후 문단을 그만큼 민다 (`absoluteCacheStaleOffset`).
+    /// 신선한 캐시 (h ≥ 글자 크기)에서는 절대 발동하지 않는다 (헌법주석 페이지
+    /// 절단 유지). 여러 run으로 나뉜 문단은 대상이 아니다 — 조각마다 CT 높이를
+    /// 다시 배분할 수 없다.
+    private func staleAdjustedHeight(
+        _ height: CGFloat,
+        runs: [[CoreHwp.HwpParaLineSegInternal]],
+        run: [CoreHwp.HwpParaLineSegInternal],
+        slice: NSAttributedString,
+        frame: HwpParagraphFrame
+    ) -> CGFloat {
+        guard runs.count == 1,
+              HwpAbsoluteCachePlacer.cacheIsStale(run: run, attributedString: slice),
+              frame.totalHeight > height
+        else { return height }
+        absoluteCacheStaleOffset += frame.totalHeight - height
+        return frame.totalHeight
     }
 
     /// 절대 캐시 run의 블록 높이 — 산식은 HwpAbsoluteCachePlacer, 하단 경계
@@ -1177,13 +1317,15 @@ private extension HwpPaginator {
     /// 본문 문단의 extended 마커 치환 (각주/미주 번호 미리보기 + 자동 쪽 번호)
     /// — 산식은 HwpFootnoteCoordinator.noteReferenceReplacements 참조.
     func noteReferenceReplacements(
-        for paragraph: CoreHwp.HwpParagraph
+        for paragraph: CoreHwp.HwpParagraph,
+        ordinals: Range<Int>? = nil
     ) -> [Int: HwpControlMarkerReplacement] {
         footnoteCoordinator.noteReferenceReplacements(
             for: paragraph,
             footnoteShape: currentSectionDef?.footNoteShape,
             endnoteShape: currentSectionDef?.endNoteShape,
-            pageNumber: pendingPageNumber ?? nextLogicalPageNumber
+            pageNumber: pendingPageNumber ?? nextLogicalPageNumber,
+            ordinals: ordinals
         )
     }
 
@@ -2384,13 +2526,18 @@ private extension HwpPaginator {
     }
 
     /// includeTableCells: 표 셀 안 각주 포함 여부 (HwpFootnoteCoordinator 참조)
+    /// ordinals: 이 페이지 조각에 실린 top-level 컨트롤 서수 범위 (#95, nil = 전체)
     func collectFootnotes(
         from paragraph: CoreHwp.HwpParagraph,
-        includeTableCells: Bool = true
+        includeTableCells: Bool = true,
+        ordinals: Range<Int>? = nil,
+        collectsNested: Bool = true
     ) {
         footnoteCoordinator.collectFootnotes(
             from: paragraph,
             includeTableCells: includeTableCells,
+            ordinals: ordinals,
+            collectsNested: collectsNested,
             environment: noteEnvironment,
             childParagraphs: childParagraphs(of:)
         )

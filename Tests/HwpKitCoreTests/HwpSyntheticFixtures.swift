@@ -46,6 +46,50 @@ enum HwpSynthetic {
         return paragraph
     }
 
+    /// 페이지에 걸친 (캐시 run 여러 개) 문단 + 줄 안 각주 참조 마커 (#95).
+    ///
+    /// `lines`는 줄마다 (평문 글자 수, 줄 끝 각주 참조 마커 유무)다. 줄 사이에
+    /// 줄바꿈 문자(10)를 넣어 **CT 줄 수를 폰트와 무관하게 고정한다** — 각주
+    /// 귀속이 그려진 조각을 근거로 나뉘므로 (`controlOrdinalRanges`) 줄 수가
+    /// 흔들리면 조각 경계도 흔들려 테스트가 기기마다 갈린다. `segments`의
+    /// `location`이 줄어드는 지점이 한글의 페이지 절단점이다.
+    static func splitParagraphWithNoteMarkers(
+        lines: [(characters: Int, marker: Bool)],
+        segments: [(location: Int32, height: Int32, textStart: UInt32)]
+    ) throws -> CoreHwp.HwpParagraph {
+        var paragraph = CoreHwp.HwpParagraph()
+        var paraText = CoreHwp.HwpParaText()
+        var chars: [CoreHwp.HwpChar] = []
+        for (index, line) in lines.enumerated() {
+            if index > 0 {
+                chars.append(CoreHwp.HwpChar(type: .char, value: 10))
+            }
+            chars += Array(
+                repeating: CoreHwp.HwpChar(type: .char, value: 0xAC00), count: line.characters
+            )
+            if line.marker {
+                chars.append(CoreHwp.HwpChar(type: .extended, value: 17))
+            }
+        }
+        paraText.charArray = chars
+        paragraph.paraText = paraText
+
+        var payload = Data()
+        for segment in segments {
+            withUnsafeBytes(of: segment.textStart.littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: segment.location.littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: segment.height.littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: segment.height.littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: Int32(850).littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: Int32(600).littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: Int32(0).littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: Int32(42520).littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: UInt32(393_216).littleEndian) { payload.append(contentsOf: $0) }
+        }
+        paragraph.paraLineSeg = try CoreHwp.HwpParaLineSeg.load(payload)
+        return paragraph
+    }
+
     /// 라인 캐시 + 줄 안 컨트롤 문자를 함께 가진 문단 — 글자처럼 취급 개체가
     /// **실제로 줄 앵커를 얻는** 실문서 형상이다 (헌법주석 459·883쪽). 캐시만
     /// 있고 컨트롤 문자가 없는 문단은 앵커가 없어 다른 경로를 탄다 (R40 #1).
@@ -175,13 +219,18 @@ enum HwpSynthetic {
     /// 0으로 둔다 (본문 = 페이지 높이 − 위/아래 여백).
     static func sectionDef(
         pageWidth: UInt32 = 59528,
-        pageHeight: UInt32 = 84188
+        pageHeight: UInt32 = 84188,
+        footnoteNumberingMode: UInt32 = 0,
+        footnoteStartingNumber: UInt16 = 0
     ) -> CoreHwp.HwpSectionDef {
         var sectionDef = CoreHwp.HwpSectionDef()
         sectionDef.pageDef.width = pageWidth
         sectionDef.pageDef.height = pageHeight
         sectionDef.pageDef.marginHeader = 0
         sectionDef.pageDef.marginFootnote = 0
+        // 각주 번호 매김 방식은 표 134 bits 10-11 (0 이어서 / 1 구역마다 / 2 쪽마다)
+        sectionDef.footNoteShape.property = footnoteNumberingMode << 10
+        sectionDef.footNoteShape.startingNumber = footnoteStartingNumber
         return sectionDef
     }
 

@@ -179,4 +179,49 @@ final class HwpFootnoteLayoutTests: XCTestCase {
         guard blocks.count == 2 else { return }
         expect(blocks[1].frame.minY).to(beCloseTo(blocks[0].frame.maxY, within: 0.01))
     }
+
+    /// 상한 없는 배치 (절대 캐시 모드) 에서도 각주 영역 상단은 본문 상단 아래로
+    /// 내려오지 못한다 (#95). 하한이 없으면 `maxY − 스택 높이`가 음수까지 가
+    /// 각주 앞부분이 종이 밖으로 잘려 사라진다 (헌법주석 렌더 인덱스 79: −217.6pt).
+    func testAreaTopIsClampedToContentTopWhenStackExceedsContent() throws {
+        // 콘텐츠 높이 (698pt) 를 확실히 넘는 스택
+        let hugeText = String(repeating: "각주가 콘텐츠 높이를 넘도록 길다. ", count: 600)
+        let footnotes = [HwpFootnoteLayout.Input(
+            paragraph: try HwpSynthetic.textParagraph(hugeText),
+            number: 1
+        )]
+
+        let placement = layout.place(
+            footnotes: footnotes,
+            onPage: geometry,
+            index: index,
+            limitsAreaToHalfContent: false
+        )
+
+        let block = try XCTUnwrap(placement.blocks.first)
+        expect(block.frame.height) > geometry.contentFrame.height
+        expect(block.separatorLine.minY) >= geometry.contentFrame.minY
+        expect(block.frame.minY) >= geometry.contentFrame.minY
+        // 클램프는 아래로 미는 것뿐 — 이월을 만들지 않는다 (한글에 없는 각주
+        // 전용 페이지가 연쇄하는 것을 막는다).
+        expect(placement.overflow).to(beEmpty())
+    }
+
+    /// 절반 상한 모드 (흐름 조판) 에서는 위 클램프가 무동작이다 —
+    /// areaHeight ≤ 콘텐츠/2라 상단이 애초에 본문 상단 아래로 못 간다.
+    func testAreaTopClampIsNoOpUnderHalfContentLimit() throws {
+        let hugeText = String(repeating: "각주가 페이지 절반을 넘도록 길다. ", count: 400)
+        let footnotes = [HwpFootnoteLayout.Input(
+            paragraph: try HwpSynthetic.textParagraph(hugeText),
+            number: 1
+        )]
+
+        let placement = layout.place(footnotes: footnotes, onPage: geometry, index: index)
+
+        let block = try XCTUnwrap(placement.blocks.first)
+        // 영역 상단은 절반 지점 (421pt) 에 멈춘다 — 클램프가 있는 본문 상단
+        // (72pt) 까지 내려간 적이 없으므로 클램프는 이 모드에서 무동작이다.
+        let halfTop = geometry.contentFrame.maxY - geometry.contentFrame.height / 2
+        expect(block.separatorLine.minY) >= halfTop
+    }
 }

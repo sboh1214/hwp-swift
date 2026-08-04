@@ -74,6 +74,44 @@ public extension HwpTextRunBuilder {
         }
         return replacements
     }
+
+    /// 이미 구워진 각주/미주 참조 마커 텍스트를 새 번호로 다시 쓴다 (#95).
+    ///
+    /// 조각이 실릴 페이지가 정해진 뒤에야 알 수 있는 번호가 있다 — "쪽마다 새로
+    /// 시작"(표 134) 구역에서 페이지에 걸친 문단이 그렇다. 아직 치환되지 않은
+    /// U+FFFC 마커는 건드리지 않는다: 번호가 없던 자리에 번호를 새로 만들면
+    /// 참조가 없던 곳에 참조가 생긴다.
+    static func renumberingNoteMarkers(
+        in slice: NSAttributedString,
+        replacements: [Int: HwpControlMarkerReplacement]
+    ) -> NSAttributedString {
+        guard !replacements.isEmpty, slice.length > 0 else { return slice }
+        var edits: [(range: NSRange, text: String)] = []
+        slice.enumerateAttribute(
+            HwpAttributedStringKey.controlIndex,
+            in: NSRange(location: 0, length: slice.length)
+        ) { value, range, _ in
+            guard let ordinal = (value as? NSNumber)?.intValue,
+                  let replacement = replacements[ordinal], !replacement.text.isEmpty
+            else { return }
+            let current = slice.attributedSubstring(from: range).string
+            guard current != replacement.text, current != "\u{FFFC}" else { return }
+            edits.append((range, replacement.text))
+        }
+        guard !edits.isEmpty else { return slice }
+        let output = NSMutableAttributedString(attributedString: slice)
+        // 뒤에서부터 바꿔야 앞 편집의 길이 변화가 뒤 range를 어긋내지 않는다.
+        for edit in edits.reversed() {
+            output.replaceCharacters(
+                in: edit.range,
+                with: NSAttributedString(
+                    string: edit.text,
+                    attributes: slice.attributes(at: edit.range.location, effectiveRange: nil)
+                )
+            )
+        }
+        return output
+    }
 }
 
 /// 첨자 속성 (표 33 위/아래 첨자와 각주 참조 번호가 공유)

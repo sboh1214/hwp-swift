@@ -84,6 +84,9 @@ import Foundation
             self.usesInstalledHancomFonts = usesInstalledHancomFonts
             usesDocumentAlternatives = true
             usesSystemFontLookup = true
+            // 배포 경로는 시스템 기본 대체를 그대로 쓴다 — 사용자 기기의 폰트로
+            // 최대한 그리는 것이 맞고, 고정은 결정론 테스트 전용이다.
+            fallbackCascade = []
         }
 
         /// 기본값을 두지 않는다 — public init의 기본값은 off (환경변수)인데 여기만
@@ -93,13 +96,46 @@ import Foundation
             scriptFallbacks: [HwpScript: String],
             usesInstalledHancomFonts: Bool,
             usesDocumentAlternatives: Bool,
-            usesSystemFontLookup: Bool
+            usesSystemFontLookup: Bool,
+            fallbackCascade: [String] = []
         ) {
             self.fontMap = fontMap
             self.scriptFallbacks = scriptFallbacks
             self.usesInstalledHancomFonts = usesInstalledHancomFonts
             self.usesDocumentAlternatives = usesDocumentAlternatives
             self.usesSystemFontLookup = usesSystemFontLookup
+            self.fallbackCascade = fallbackCascade
+        }
+
+        /// 폴백 폰트가 **못 가진 글자**를 CoreText가 어떤 폰트로 대체할지 고정하는
+        /// 목록. 비어 있으면 시스템 기본 대체 (배포 동작)다.
+        ///
+        /// 결정론 resolver의 마지막 구멍이 여기였다: 폰트 조회 세 축을 닫아 모든
+        /// face를 Menlo로 보내도, Menlo가 못 가진 글자마다 CoreText가 **호스트에
+        /// 설치된 폰트 목록**을 걸어가 대체한다. 헌법주석 코퍼스는 2,054자 중
+        /// 1,929자(94%)가 Menlo 밖이라 사실상 조판 전체가 호스트 종속이었다 —
+        /// 로마숫자 `Ⅵ`(U+2165)가 이 머신에선 Helvetica-Oblique로, CI 러너에선
+        /// 다른 폰트로 잡혀 각주 줄 높이가 갈렸다 (블록 스냅샷 CI 실패의 원인).
+        /// 목록을 명시하면 그 선택이 (base, cascade)의 함수가 되어 러너와 무관해진다.
+        private let fallbackCascade: [String]
+
+        /// 캐스케이드가 비면 시스템 기본 대체, 아니면 그 목록으로 **대체까지 고정**.
+        private static func createFont(
+            name: String, size: CGFloat, cascade: [String]
+        ) -> CTFont {
+            guard !cascade.isEmpty else {
+                return CTFontCreateWithName(name as CFString, size, nil)
+            }
+            let descriptors = cascade.map { fallback in
+                CTFontDescriptorCreateWithAttributes(
+                    [kCTFontNameAttribute: fallback as CFString] as CFDictionary
+                )
+            }
+            let descriptor = CTFontDescriptorCreateWithAttributes([
+                kCTFontNameAttribute: name as CFString,
+                kCTFontCascadeListAttribute: descriptors as CFArray,
+            ] as CFDictionary)
+            return CTFontCreateWithFontDescriptor(descriptor, size, nil)
         }
 
         /// Resolves `faceName` for `script` at `size` points.
@@ -146,7 +182,9 @@ import Foundation
                     }
                 }
                 let fallbackName = scriptFallbacks[script] ?? "Helvetica"
-                return CTFontCreateWithName(fallbackName as CFString, size, nil)
+                return Self.createFont(
+                    name: fallbackName, size: size, cascade: fallbackCascade
+                )
             }
         }
 
@@ -227,14 +265,18 @@ import Foundation
         }
 
         /// 모든 face를 "Menlo"로 해석하는 기기 독립 resolver — 커밋 가능한 골든
-        /// 기준선용. 폰트 조회의 세 축 (시스템 등록 폰트·한컴 번들·문서 대체 글꼴)을
-        /// 모두 닫아, 어떤 폰트가 설치된 기기에서도 같은 CTFont가 나온다.
+        /// 기준선용. 폰트 조회의 **네 축**을 모두 닫아 어떤 폰트가 설치된 기기에서도
+        /// 같은 CTFont가 나온다: 시스템 등록 폰트·한컴 번들·문서 대체 글꼴, 그리고
+        /// Menlo가 못 가진 글자의 **대체 폰트** (`fallbackCascade` →
+        /// `kCTFontCascadeListAttribute`).
         ///
-        /// 완전한 결정론은 아니다: Menlo에 한글 글리프가 없어 조판 시 한글 폴백이
-        /// OS 기본 캐스케이드에 맡겨지므로 macOS 버전 간 미세 차이가 남는다
-        /// (`kCTFontCascadeListAttribute`를 박으면 한글이 전부 .notdef로 렌더돼
-        /// 골든의 의미가 얇아지므로 채택하지 않는다). 이 resolver를 쓰는 기준선은
-        /// 임계를 여유 있게 잡거나 양자화를 거칠게 해 그 잔차를 흡수한다.
+        /// 넷째 축을 열어 두면 CoreText가 **호스트에 설치된 폰트 목록**에서 골라
+        /// 기기마다 갈린다 — 헌법주석은 2,054자 중 1,929자 (94%) 가 Menlo 밖이라
+        /// 조판 전체가 그 선택에 달려 있었다 (#95). 빈 캐스케이드는 CoreText가
+        /// 무시하므로 목록을 명시해야 닫힌다.
+        ///
+        /// 남는 잔차는 캐스케이드의 폰트들에도 없는 글자뿐이다. 이 resolver를 쓰는
+        /// 기준선은 임계를 여유 있게 잡거나 양자화를 거칠게 해 그것을 흡수한다.
         public static let testDeterministic: HwpFontResolver = .init(
             fontMap: HwpFontMap(entries: [:]),
             scriptFallbacks: [
@@ -248,7 +290,11 @@ import Foundation
             ],
             usesInstalledHancomFonts: false,
             usesDocumentAlternatives: false,
-            usesSystemFontLookup: false
+            usesSystemFontLookup: false,
+            // Menlo 밖 글자의 대체를 고정한다 — 셋 다 macOS·iOS에 기본 탑재라
+            // 러너에 무엇이 설치돼 있든 같은 폰트가 나온다. 한글·로마숫자·기호는
+            // Apple SD Gothic Neo가, 일본 신자체 한자는 Hiragino Sans가 받는다.
+            fallbackCascade: ["Apple SD Gothic Neo", "Hiragino Sans", "Apple Symbols"]
         )
     }
 #endif
