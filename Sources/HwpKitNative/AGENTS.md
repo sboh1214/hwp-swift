@@ -12,6 +12,7 @@ HwpKitNative/
 │                                   #   이미지 공급자, 프로그레시브 판정, Array[safe:] (#if 없이 양쪽 컴파일)
 ├── Rendering/HwpPageLayer.swift    # CALayer + paint list executor (Core Text, drawImageReference)
 ├── Rendering/HwpPageImageProvider.swift  # HwpImageStore + HwpImageCache + HwpImageAdapter 연결
+├── Rendering/HwpDecodeThrottle.swift     # 동시 디코드 상한 3 (provider 전역 static)
 ├── Rendering/HwpImageStyleRenderer.swift # 표 107 crop/밝기/명암/효과 (CGImage.cropping + CoreImage)
 ├── macOS/HwpDocumentNSView.swift   # NSScrollView + 레이어 가상화 (magnification pinch zoom)
 ├── macOS/HwpDocumentNSViewSelection.swift  # 마우스 드래그 선택 + Cmd+C/Cmd+A/우클릭 Copy
@@ -38,6 +39,21 @@ HwpKitNative/
 - `fetch`는 같은 key를 병합(coalesce)한다. 취소는 **대기자 참조 카운트**로 전파해 마지막 대기자가 사라질 때만 디코드를 취소한다 — 한 호출자의 취소로 공유 태스크를 죽이면 남은 호출자가 nil을 받아 영구 실패로 기록된다
 - `clear()`는 in-flight 디코드를 취소하므로 그 nil은 **디코드 실패가 아니다**. provider는 fetch 전후 `purgeGeneration()`을 비교해 purge 중 취소를 `failedKeys`에 넣지 않는다 (넣으면 그 변형이 provider 수명 내내 placeholder)
 - provider의 `finishRequest`는 세대 가드를 **최상단**에 둔다. 구세대 완료가 신세대 요청의 `inFlightKeys`/`activeTasks`를 지우면 중복 디코드·미추적 태스크가 생긴다 (구세대 정리는 `cancelOutstanding` 몫)
+
+### 화면 없는 경로 (프리디코드, #74)
+
+`requestImage`는 **draw가 다시 불릴 것을 전제로 한 fire-and-forget**이다 — 완료 통보는 `onImageResolved` → 레이어 재드로우로만 소비된다. PDF 내보내기·썸네일처럼 재드로우가 없는 경로는 그 루프를 못 쓰므로 `resolveImage(for:style:) async` / `predecodeImageReferences(in:) async`로 **확정을 직접 기다린다** (`HwpPageImageProvider`의 확장으로 갈라 둔다 — 뷰 경로와 섞이면 어느 쪽이 재드로우를 전제하는지 읽어 낼 수 없다).
+
+여기서 유일하게 어려운 것은 **영구 대기를 만들지 않는 것**이다. 백프레셔가 세 겹이라 요청이 조용히 사라질 수 있다: 진행 상한 12 초과분은 디퍼드 큐(cap 64)로 가고, 그 큐가 만석 + 전부 pin이면 **드롭**된다 (축출 대상이 없어서). 드롭된 요청은 확정 통보를 영영 못 받는다.
+
+- 그래서 대기자는 두 축으로 깬다 — 변형별 확정 통보(`settleWaiters`)와 **진행 토큰**(`progressToken`, 요청 하나가 확정될 때마다 증가). 변형이 진행·디퍼드 어디에도 없으면 드롭으로 보고 토큰이 움직일 때까지 기다렸다 다시 넣는다. 드롭은 "진행 중 요청이 12개 있다"는 뜻이므로 확정은 반드시 온다
+- 토큰 스냅샷은 `requestImage` **전에** 뜬다. 드롭 판정과 대기 등록 사이에 끼어든 확정을 놓치면 아무도 깨우지 않는다
+- continuation 재개는 **반드시 lock 밖**에서 (`takeWaiters` → `resume`). 재개가 같은 락을 다시 잡는 경로(`resolveImage` 루프)로 이어진다
+- `cancelOutstanding`은 대기자 전원을 `.untracked`로 깨운다 — 요청 상태를 비웠으니 확정 통보를 받을 주체가 없다
+- `predecodeImageReferences`는 **진행 상한 몫(12)씩 나눠** 요청한다. 한 번에 전량을 넣으면 초과분이 굳이 드롭 → 재시도 경로를 밟는다
+- 호출 **전에** `setPinnedImages(HwpPageImageProvider.imageVariantKeys(in:))`로 고정할 것. 안 하면 먼저 디코드된 대형 이미지가 draw 전에 바이트 예산(256MB)으로 축출된다
+- 스로틀(limit 3)은 **provider 전역 static**이라 export가 화면 뷰어와 슬롯을 공유한다. export 중 스크롤이 느려지는 것은 설계상 불가피하고, 취소는 스로틀 대기자에게 전파된다
+- 테스트 헬퍼 `FixturePreview.resolveImageReferences`의 폴링 + 2초 타임아웃이 이 API로 대체됐다. "확정까지 대기"라는 성질은 그대로다 — 미확정인 채 그리면 회색 로딩 사각형이 렌더/해시에 섞여 조용히 틀린 결과가 통과·기록된다
 
 ## CRITICAL — macOS 좌표계 flip
 

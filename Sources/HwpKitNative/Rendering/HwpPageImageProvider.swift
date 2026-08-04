@@ -62,33 +62,15 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     /// 레이어를 재드로우해 드롭된 요청을 재시도시킨다 (R42 #1).
     private var didDropDeferred = false
     private var deferredCapacityHandler: (@Sendable () -> Void)?
-
-    /// (binItemId, style) 변형의 결정론적 캐시 키
-    static func variantKey(_ binItemId: UInt32, _ style: HwpImageRenderStyle?) -> String {
-        guard let style else { return "\(binItemId)" }
-        return "\(binItemId)|\(style.cropLeft),\(style.cropTop),\(style.cropRight)," +
-            "\(style.cropBottom)|\(style.brightness)|\(style.contrast)|\(style.effect.rawValue)"
-    }
-
-    /// 만석 디퍼드 큐에서 축출할 인덱스 — pin(가시) 안 된 가장 오래된 항목.
-    /// 전부 pin이면 nil: 가시 요청을 빼면 그 페이지의 어떤 키도 완료를 못
-    /// 트리거해 placeholder가 무관한 재드로우 전까지 영구 잔존한다 (#N).
-    static func deferredEvictionIndex(
-        _ deferred: [(key: UInt32, style: HwpImageRenderStyle?)],
-        pinnedVariants: Set<String>
-    ) -> Int? {
-        deferred.firstIndex { !pinnedVariants.contains(variantKey($0.key, $0.style)) }
-    }
-
-    /// 비어있지 않은 디퍼드 큐에서 다음에 꺼낼 인덱스 — pin(가시)된 가장 오래된
-    /// 항목 우선, 없으면 가장 오래된 항목(0). 가시 작업을 스크롤로 지나간
-    /// stale보다 먼저 디코드해 가시 placeholder 대기를 줄인다 (R41 #3).
-    static func deferredDequeueIndex(
-        _ deferred: [(key: UInt32, style: HwpImageRenderStyle?)],
-        pinnedVariants: Set<String>
-    ) -> Int {
-        deferred.firstIndex { pinnedVariants.contains(variantKey($0.key, $0.style)) } ?? 0
-    }
+    /// 변형 확정(성공/실패)을 기다리는 `resolveImage` 대기자 (#74). 화면 없는
+    /// 경로는 레이어 재드로우가 없어 draw → requestImage 재시도 루프를 못 쓰므로
+    /// 완료를 여기서 직접 기다린다.
+    private var settleWaiters: [String: [VariantWaiter]] = [:]
+    /// 요청 하나가 확정될 때마다 증가하는 진행 토큰. 드롭된 요청은 확정 통보가
+    /// 영영 오지 않으므로(백프레셔), 대기자는 이 토큰으로 재시도 시점을 잡는다.
+    private var progressToken: UInt64 = 0
+    private var progressWaiters: [ProgressWaiter] = []
+    private var nextWaiterId: UInt64 = 0
 
     /// 비동기 디코딩 완료 시 호출된다 (임의 스레드).
     public var onImageResolved: (@Sendable (UInt32) -> Void)? {
@@ -302,7 +284,10 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         if capacityHandler != nil {
             didDropDeferred = false
         }
+        // 확정 통보 + 진행 토큰 — 화면 없는 경로의 대기자를 깨운다 (#74).
+        let waiters = takeWaiters(settledVariant: variant)
         lock.unlock()
+        Self.resume(settled: waiters.variant, progress: waiters.progress)
         handler?(key)
         capacityHandler?()
         if let retry {
@@ -423,7 +408,20 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         deferredVariants.removeAll()
         pinnedVariants.removeAll()
         didDropDeferred = false
+        // 요청 상태를 비웠으니 확정 통보를 받을 대기자가 없다 — 전원 깨워
+        // 영구 대기를 막는다 (호출부가 다시 요청하거나 취소로 빠진다, #74).
+        progressToken &+= 1
+        let orphanedVariantWaiters = settleWaiters.values.flatMap { $0 }
+        settleWaiters.removeAll()
+        let orphanedProgressWaiters = progressWaiters
+        progressWaiters.removeAll()
         lock.unlock()
+        for waiter in orphanedVariantWaiters {
+            waiter.continuation.resume(returning: .untracked)
+        }
+        for waiter in orphanedProgressWaiters {
+            waiter.continuation.resume()
+        }
         tasks.forEach { $0.cancel() }
     }
 
@@ -441,6 +439,253 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     }
 }
 
+// MARK: - 변형 키 · 디퍼드 큐 정책 (상태 없는 순수 함수)
+
+/// 인스턴스 상태를 건드리지 않는 정책 함수들 — 클래스 본문 밖에 둬 "무엇이
+/// 락 아래의 가변 상태이고 무엇이 순수 계산인지"가 구조로 보이게 한다.
+extension HwpPageImageProvider {
+    /// (binItemId, style) 변형의 결정론적 캐시 키
+    static func variantKey(_ binItemId: UInt32, _ style: HwpImageRenderStyle?) -> String {
+        guard let style else { return "\(binItemId)" }
+        return "\(binItemId)|\(style.cropLeft),\(style.cropTop),\(style.cropRight)," +
+            "\(style.cropBottom)|\(style.brightness)|\(style.contrast)|\(style.effect.rawValue)"
+    }
+
+    /// paint list가 참조하는 이미지 변형 키 집합 — `setPinnedImages` 인자를
+    /// 호출부가 만들 수 있게 공개한다. 키 산식은 provider 내부 규약이라
+    /// 밖에서 재구성할 수 없다 (#74).
+    public static func imageVariantKeys(in paintList: HwpPaintList) -> Set<String> {
+        var variants: Set<String> = []
+        for command in paintList.commands {
+            if case let .drawImageReference(binItemId, _, style, _) = command {
+                variants.insert(variantKey(binItemId, style))
+            }
+        }
+        return variants
+    }
+
+    /// 만석 디퍼드 큐에서 축출할 인덱스 — pin(가시) 안 된 가장 오래된 항목.
+    /// 전부 pin이면 nil: 가시 요청을 빼면 그 페이지의 어떤 키도 완료를 못
+    /// 트리거해 placeholder가 무관한 재드로우 전까지 영구 잔존한다 (#N).
+    static func deferredEvictionIndex(
+        _ deferred: [(key: UInt32, style: HwpImageRenderStyle?)],
+        pinnedVariants: Set<String>
+    ) -> Int? {
+        deferred.firstIndex { !pinnedVariants.contains(variantKey($0.key, $0.style)) }
+    }
+
+    /// 비어있지 않은 디퍼드 큐에서 다음에 꺼낼 인덱스 — pin(가시)된 가장 오래된
+    /// 항목 우선, 없으면 가장 오래된 항목(0). 가시 작업을 스크롤로 지나간
+    /// stale보다 먼저 디코드해 가시 placeholder 대기를 줄인다 (R41 #3).
+    static func deferredDequeueIndex(
+        _ deferred: [(key: UInt32, style: HwpImageRenderStyle?)],
+        pinnedVariants: Set<String>
+    ) -> Int {
+        deferred.firstIndex { pinnedVariants.contains(variantKey($0.key, $0.style)) } ?? 0
+    }
+}
+
+// MARK: - 프리디코드 (화면 없는 경로, #74)
+
+private extension HwpPageImageProvider {
+    typealias VariantContinuation = CheckedContinuation<VariantWait, Never>
+
+    struct VariantWaiter {
+        let id: UInt64
+        let continuation: VariantContinuation
+    }
+
+    struct ProgressWaiter {
+        let id: UInt64
+        let continuation: CheckedContinuation<Void, Never>
+    }
+
+    /// 변형 대기 결과 — `untracked`는 요청이 백프레셔로 드롭됐거나(확정 통보 없음)
+    /// provider 교체·취소로 버려졌다는 뜻이다.
+    enum VariantWait {
+        case settled
+        case untracked
+    }
+}
+
+/// 확정 통보를 기다리는 경로는 확장으로 갈라 둔다 — 뷰가 쓰는 fire-and-forget
+/// 요청 경로와 섞이면 어느 쪽이 재드로우를 전제하는지 읽어 낼 수 없다.
+extension HwpPageImageProvider {
+    /// 변형이 확정될 때까지 기다렸다가 디코딩 결과를 돌려준다 (실패·취소는 nil).
+    ///
+    /// `requestImage`는 draw가 다시 불릴 것을 전제로 한 fire-and-forget이라,
+    /// 재드로우가 없는 경로(PDF export·썸네일)에서는 완료를 알 방법이 없다.
+    /// 이 API는 확정 통보를 직접 기다린다 — 다만 **영구 대기가 되지 않는 것**이
+    /// 요점이다: 진행 상한(`maximumInFlight`) 초과 요청은 디퍼드 큐로 가고,
+    /// 그 큐가 만석 + 전부 pin이면 **드롭**되어 아무도 이 변형을 확정시키지
+    /// 않는다. 그 경우 다른 요청이 하나 확정될 때까지(진행 토큰) 기다렸다가
+    /// 다시 넣는다 — 드롭은 진행 중 요청이 12개 있다는 뜻이므로 확정은 반드시 온다.
+    public func resolveImage(for key: UInt32, style: HwpImageRenderStyle? = nil) async -> CGImage? {
+        let variant = Self.variantKey(key, style)
+        while !Task.isCancelled {
+            if let image = cachedImage(for: key, style: style) {
+                return image
+            }
+            if didFail(for: key, style: style) {
+                return nil
+            }
+            // 토큰은 요청 **전에** 뜬다 — 드롭 판정과 대기 등록 사이에 끼어든
+            // 확정을 놓치면 아무도 깨우지 않아 영구 대기가 된다.
+            let token = progressSnapshot()
+            requestImage(for: key, style: style)
+            if await awaitVariantSettled(variant) == .untracked {
+                await awaitProgress(after: token)
+            }
+        }
+        return cachedImage(for: key, style: style)
+    }
+
+    /// paint list가 참조하는 모든 이미지 변형을 미리 디코딩한다 — 이후의 동기
+    /// draw가 회색 로딩 사각형 대신 실제 이미지를 그린다.
+    ///
+    /// 호출 **전에** `setPinnedImages`로 해당 변형을 고정할 것: 고정하지 않으면
+    /// 먼저 디코드된 대형 이미지가 draw 전에 바이트 예산으로 축출된다.
+    public func predecodeImageReferences(in paintList: HwpPaintList) async {
+        var references: [(key: UInt32, style: HwpImageRenderStyle?)] = []
+        var seen: Set<String> = []
+        for command in paintList.commands {
+            guard case let .drawImageReference(binItemId, _, style, _) = command,
+                  seen.insert(Self.variantKey(binItemId, style)).inserted
+            else { continue }
+            references.append((binItemId, style))
+        }
+        // 진행 상한 몫씩 나눠 요청한다 — 한 번에 전량을 넣으면 초과분이 디퍼드
+        // 큐로 가고, 그쪽 만석 경로(드롭 → 재시도)를 굳이 밟게 된다.
+        var start = 0
+        while start < references.count, !Task.isCancelled {
+            let end = min(start + Self.maximumInFlight, references.count)
+            await withTaskGroup(of: Void.self) { group in
+                for reference in references[start ..< end] {
+                    group.addTask { [self] in
+                        _ = await resolveImage(for: reference.key, style: reference.style)
+                    }
+                }
+            }
+            start = end
+        }
+    }
+
+    /// lock 밖. 현재 진행 토큰.
+    private func progressSnapshot() -> UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
+        return progressToken
+    }
+
+    /// lock 밖. 대기자 식별자 발급 — 취소 시 자기 대기만 걷어내기 위한 것.
+    private func allocateWaiterId() -> UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
+        let id = nextWaiterId
+        nextWaiterId &+= 1
+        return id
+    }
+
+    /// 변형이 확정되거나 추적에서 사라질 때까지 기다린다.
+    private func awaitVariantSettled(_ variant: String) async -> VariantWait {
+        let id = allocateWaiterId()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: VariantContinuation) in
+                lock.lock()
+                if resolved[variant] != nil || failedKeys.contains(variant) {
+                    lock.unlock()
+                    continuation.resume(returning: .settled)
+                    return
+                }
+                // 진행·디퍼드 어디에도 없으면 드롭됐거나 세대 교체로 버려진 것 —
+                // 확정 통보가 오지 않으므로 즉시 돌려준다 (호출부가 재시도).
+                if Task.isCancelled ||
+                    (!inFlightKeys.contains(variant) && !deferredVariants.contains(variant))
+                {
+                    lock.unlock()
+                    continuation.resume(returning: .untracked)
+                    return
+                }
+                settleWaiters[variant, default: []].append(
+                    VariantWaiter(id: id, continuation: continuation)
+                )
+                lock.unlock()
+            }
+        } onCancel: {
+            cancelVariantWaiter(variant, id: id)
+        }
+    }
+
+    private func cancelVariantWaiter(_ variant: String, id: UInt64) {
+        lock.lock()
+        guard var waiters = settleWaiters[variant],
+              let index = waiters.firstIndex(where: { $0.id == id })
+        else {
+            lock.unlock()
+            return
+        }
+        let waiter = waiters.remove(at: index)
+        settleWaiters[variant] = waiters.isEmpty ? nil : waiters
+        lock.unlock()
+        waiter.continuation.resume(returning: .untracked)
+    }
+
+    /// 진행 토큰이 `token`에서 움직일 때까지 기다린다 (이미 움직였으면 즉시 반환).
+    private func awaitProgress(after token: UInt64) async {
+        let id = allocateWaiterId()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                lock.lock()
+                if progressToken != token || Task.isCancelled {
+                    lock.unlock()
+                    continuation.resume()
+                    return
+                }
+                progressWaiters.append(ProgressWaiter(id: id, continuation: continuation))
+                lock.unlock()
+            }
+        } onCancel: {
+            cancelProgressWaiter(id: id)
+        }
+    }
+
+    private func cancelProgressWaiter(id: UInt64) {
+        lock.lock()
+        guard let index = progressWaiters.firstIndex(where: { $0.id == id }) else {
+            lock.unlock()
+            return
+        }
+        let waiter = progressWaiters.remove(at: index)
+        lock.unlock()
+        waiter.continuation.resume()
+    }
+
+    /// lock 보유. 확정된 변형의 대기자와 진행 대기자 전원을 꺼내고 토큰을 올린다.
+    /// 재개는 반드시 lock 밖에서 — continuation 재개가 같은 락을 다시 잡는
+    /// 경로(`resolveImage` 루프)로 이어질 수 있다.
+    private func takeWaiters(settledVariant variant: String?)
+        -> (variant: [VariantWaiter], progress: [ProgressWaiter])
+    {
+        progressToken &+= 1
+        let woken = progressWaiters
+        progressWaiters.removeAll()
+        let settled = variant.flatMap { settleWaiters.removeValue(forKey: $0) } ?? []
+        return (settled, woken)
+    }
+
+    private static func resume(
+        settled: [VariantWaiter],
+        progress: [ProgressWaiter]
+    ) {
+        for waiter in settled {
+            waiter.continuation.resume(returning: .settled)
+        }
+        for waiter in progress {
+            waiter.continuation.resume()
+        }
+    }
+}
+
 /// HwpImageAdapter가 `CoreHwp.HwpBinaryData`를 받으므로 스토어 바이트를 감싸준다.
 private enum CoreHwpBinaryDataShim {
     static func binaryData(named extensionName: String?, data: Data) -> CoreHwp.HwpBinaryData {
@@ -448,64 +693,5 @@ private enum CoreHwpBinaryDataShim {
             name: "BIN0000.\(extensionName ?? "bin")",
             data: data
         )
-    }
-}
-
-/// 동시 디코드 수를 `limit`개로 제한하는 비동기 세마포어 (#8).
-/// 다수 이미지 페이지에서 모든 디코드가 동시에 큰 비트맵을 할당하는 것을 막는다.
-actor HwpDecodeThrottle {
-    private let limit: Int
-    private var active = 0
-    private var waiters: [(id: UInt64, continuation: CheckedContinuation<Bool, Never>)] = []
-    private var nextWaiterId: UInt64 = 0
-
-    init(limit: Int) {
-        self.limit = max(1, limit)
-    }
-
-    /// 슬롯을 얻으면 true. 대기 중 취소되면 슬롯 없이 false — 취소된 대기자를
-    /// 즉시 큐에서 제거해, 낡은 문서의 store/cache를 캡처한 태스크가 슬롯이
-    /// 풀릴 때까지 상주하지 않게 한다 (P1). false면 release를 부르면 안 된다.
-    func acquire() async -> Bool {
-        if Task.isCancelled {
-            return false
-        }
-        if active < limit {
-            active += 1
-            return true
-        }
-        let id = nextWaiterId
-        nextWaiterId &+= 1
-        return await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
-                // 등록 전 취소는 취소 플래그로 판정한다 — 플래그는 onCancel보다
-                // 먼저 동기 설정되므로 별도 대기 집합 없이 즉시 실패한다.
-                if Task.isCancelled {
-                    continuation.resume(returning: false)
-                    return
-                }
-                waiters.append((id: id, continuation: continuation))
-            }
-        } onCancel: {
-            Task { await self.cancelWaiter(id: id) }
-        }
-    }
-
-    private func cancelWaiter(id: UInt64) {
-        // release()가 이미 슬롯을 이양해 재개한 대기자의 늦은 취소는 무시한다 —
-        // id를 따로 기록하면 소비 불가능한 엔트리가 전역 스로틀에 누적된다 (P3).
-        // 슬롯을 받은 뒤의 취소는 호출부의 isCancelled 확인 + release가 처리한다.
-        if let index = waiters.firstIndex(where: { $0.id == id }) {
-            waiters.remove(at: index).continuation.resume(returning: false)
-        }
-    }
-
-    func release() {
-        if waiters.isEmpty {
-            active = max(0, active - 1)
-        } else {
-            // 슬롯을 다음 대기자에게 이양 — active 불변으로 한도 유지.
-            waiters.removeFirst().continuation.resume(returning: true)
-        }
     }
 }

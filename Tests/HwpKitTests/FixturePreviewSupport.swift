@@ -19,7 +19,6 @@ enum FixturePreview {
         case imageCreationFailed
         case previewDecodeFailed
         case pageMissing
-        case imageResolutionTimedOut(binItemId: UInt32)
     }
 
     // MARK: - 문서 → 1페이지 렌더
@@ -63,7 +62,7 @@ enum FixturePreview {
 
         let provider = HwpPageImageProvider(store: imageStore, cache: HwpImageCache())
         layer.imageProvider = provider
-        try await resolveImageReferences(in: page.paintList, provider: provider)
+        await resolveImageReferences(in: page.paintList, provider: provider)
 
         guard let context = CGContext(
             data: nil,
@@ -97,37 +96,18 @@ enum FixturePreview {
     }
 
     /// paint list의 이미지 참조를 미리 디코딩한다 (성공/실패 확정까지 대기).
+    ///
+    /// 폴링 + 2초 타임아웃이던 것을 프로덕션 API에 위임한다 (#74) — 미확정인 채
+    /// 그리면 회색 로딩 사각형이 렌더/해시에 섞여 조용히 틀린 결과가 통과·기록
+    /// 되므로 "확정까지 대기"라는 성질은 그대로다. 백프레셔로 드롭된 요청도
+    /// provider가 재시도하므로 여기서 타임아웃으로 구제할 것이 없다.
     private static func resolveImageReferences(
         in paintList: HwpPaintList,
         provider: HwpPageImageProvider
-    ) async throws {
-        var references: [(id: UInt32, style: HwpImageRenderStyle?)] = []
-        for command in paintList.commands {
-            if case let .drawImageReference(binItemId, _, style, _) = command {
-                references.append((binItemId, style))
-            }
-        }
-        for reference in references {
-            provider.requestImage(for: reference.id, style: reference.style)
-        }
-        for reference in references {
-            // 픽스처 이미지는 수 MB 이하 — 2초 안에 반드시 확정된다
-            for _ in 0 ..< 200 {
-                if provider.cachedImage(for: reference.id, style: reference.style) != nil ||
-                    provider.didFail(for: reference.id, style: reference.style)
-                {
-                    break
-                }
-                try await Task.sleep(nanoseconds: 10_000_000)
-            }
-            // 타임아웃도 결정론의 일부 — 미확정인 채 그리면 회색 로딩
-            // 사각형이 렌더/해시에 섞여 조용히 틀린 결과가 통과·기록된다
-            if provider.cachedImage(for: reference.id, style: reference.style) == nil,
-               !provider.didFail(for: reference.id, style: reference.style)
-            {
-                throw RenderError.imageResolutionTimedOut(binItemId: reference.id)
-            }
-        }
+    ) async {
+        // 디코드된 대형 이미지가 draw 전에 바이트 예산으로 축출되지 않게 고정한다.
+        provider.setPinnedImages(HwpPageImageProvider.imageVariantKeys(in: paintList))
+        await provider.predecodeImageReferences(in: paintList)
     }
 
     // MARK: - PrvImage 디코딩
