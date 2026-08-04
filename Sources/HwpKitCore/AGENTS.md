@@ -279,8 +279,16 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   `HwpFontResolverTests`에 축별 가드를 추가할 것 — 결정론 쪽만 단언하면 플래그가
   반대로 꽂혀 기본 resolver의 조회까지 꺼져도 통과하므로, 두 resolver가 같은
   이름을 다르게 본다는 것까지 단언한다 (`resolve`는 전 문서 로드의 핫패스다).
-  완전한 결정론은 아니다: Menlo에 한글 글리프가 없어 한글 폴백이 OS
-  캐스케이드에 맡겨진다 (macOS 버전 간 잔차 — 기준선 임계가 흡수할 몫)
+  **넷째 축은 대체 폰트다** (`fallbackCascade`, #95): 세 축을 닫아도 Menlo가 못
+  가진 글자는 CoreText가 **호스트에 설치된 폰트 목록**에서 고른다. 헌법주석은
+  2,054자 중 1,929자(94%)가 Menlo 밖이라 조판 전체가 그 선택에 달려 있었고,
+  로마숫자 `Ⅵ`(U+2165)가 이 머신에선 Helvetica-Oblique·CI 러너에선 다른 폰트로
+  잡혀 각주 줄 높이가 1pt 갈렸다 (PR #97의 블록 스냅샷 CI 실패). 대체 목록을
+  `["Apple SD Gothic Neo", "Hiragino Sans", "Apple Symbols"]`로 명시해 닫았다 —
+  셋 다 macOS·iOS 기본 탑재라 러너 구성과 무관하다. 닫은 뒤 두 플랫폼이 같은
+  값을 낸다 (각주 겹침 실측 macOS 7,521·iOS 7,541 → **양쪽 7,542**). 배포
+  resolver는 캐스케이드를 비워 둔다 (사용자 기기 폰트로 최대한 그리는 것이 맞다).
+  가드: `testDeterministicResolverPinsSubstitutionFont`
 
 ## 새 블록 종류 추가
 
