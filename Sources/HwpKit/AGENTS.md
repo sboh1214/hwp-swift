@@ -57,5 +57,8 @@ SwiftUI 공개 API target. HwpKitNative 위에 `NSViewRepresentable` / `UIViewRe
 
 `Sample/HwpSwiftSample.xcodeproj` 는 xcodegen 산출 (`Sample/project.yml` 이 spec). SwiftPM 로컬 참조 `packages.hwp-swift.path: ..` (repo 루트). 재생성: `cd Sample && xcodegen generate`.
 
-Sandbox ON + `com.apple.security.files.user-selected.read-only` entitlement. 시뮬레이터 QA 는 `Documents/document.hwp` 자동 로드 (`.task` 훅).
+Sandbox ON + `com.apple.security.files.user-selected.read-write` entitlement — PDF 내보내기가 저장 패널로 고른 위치에 쓰므로 read-only로는 부족하다 (#74). 시뮬레이터 QA 는 `Documents/document.hwp` 자동 로드 (`.task` 훅).
 
+내보내기는 **앱 임시 디렉터리에 먼저 쓰고** 그 파일을 `fileExporter`/인쇄로 넘긴다. 진행률·취소를 우리가 쥐어야 하고(1,030쪽이면 수 초), 사용자가 고른 위치에 직접 쓰면 취소 시 열리지 않는 부분 파일이 그 자리에 남기 때문이다. 저장 패널·인쇄는 진행 시트의 `onDismiss`에서 띄운다 — 두 모달을 같은 갱신 주기에 겹치면 두 번째 표시가 유실된다.
+
+`#if os(macOS)` 분기가 여기서 처음 들어왔다: 인쇄 API(`PDFExportSupport.swift`)와 툴바 라벨이다. **iPhone 폭에는 컨트롤이 다 안 들어간다** — `HwpDocumentToolbar`가 그냥 `HStack`이라 넘치면 글자 단위로 줄바꿈해 "Zoom 100%"가 세 줄이 된다(시뮬레이터 실측, 내보내기 버튼 추가 전에도 두 줄이었다). 샘플은 iOS에서 버튼을 아이콘만으로 바꾸고 툴바를 가로 `ScrollView`에 넣어 해결한다 — **툴바 컴포넌트 자체를 고치지 않는다** (호스트 레이아웃은 호스트 몫).

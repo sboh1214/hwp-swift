@@ -11,10 +11,15 @@
 | `HwpPageNavigator` | 페이지 이동 컨트롤 (`- / Page X of Y / +`) | 툴바 좌측 |
 | `HwpZoomControls` | 확대/축소 컨트롤 (`- / Zoom N% / + / Reset`) | 툴바 우측 |
 | `HwpDocumentLoader` | 비동기 문서 로더 | `.fileImporter` 결과를 async 로드 |
+| `HwpPDFExporter` | PDF 내보내기 (진행률·취소) | 툴바 `PDF로 내보내기` / `인쇄` |
 
-- `.hwp` 파일을 사용자에게 선택받아 (`SwiftUI.fileImporter`) 위 4개 컴포넌트로 렌더링/조작
+- `.hwp` 파일을 사용자에게 선택받아 (`SwiftUI.fileImporter`) 위 컴포넌트로 렌더링/조작
 - 하이퍼링크 탭 + 미지원 요소 콜백을 콘솔에 로그
-- App Sandbox 유지 + `User Selected File (Read Only)` entitlement 만 사용
+- PDF 내보내기·인쇄 — 라이브러리는 PDF 바이트까지만 만들고, 저장 패널
+  (`fileExporter`)·인쇄 UI(macOS `PDFDocument.printOperation`, iOS
+  `UIPrintInteractionController`)는 이 앱이 배선한다 (`PDFExportSupport.swift`)
+- App Sandbox 유지 + `User Selected File (Read/Write)` entitlement 사용 —
+  저장 패널로 고른 위치에 PDF를 쓰려면 read-only로는 부족하다
 - 서드파티 의존성 없음, 현재 저장소의 `Package.swift`를 그대로 사용
 
 ---
@@ -47,12 +52,18 @@ Xcode에서 스킴 `HwpSwiftSample` 선택 → 대상 지정:
 문서가 로드되면 화면 상단에 다음 툴바가 나타남:
 
 ```
-[Re-open]  |  [-] Page 1 of N [+]         [-] Zoom 100% [+] [Reset]
-└─────────────────────  HwpDocumentToolbar  ─────────────────────┘
+[Re-open] | [-] Page 1 of N [+] | [PDF로 내보내기] [인쇄]     [-] Zoom 100% [+] [Reset]
+└──────────────────────────  HwpDocumentToolbar  ──────────────────────────────┘
 ```
 
 - 페이지 넘김 / 확대 / 축소 / 초기화 모두 실시간 반영
 - Re-open 클릭 시 다른 `.hwp` 파일로 교체
+- `PDF로 내보내기` / `인쇄`(Cmd+P)는 진행률 시트를 띄우고 취소를 받는다. 앱
+  임시 디렉터리에 먼저 쓴 뒤 그 파일을 저장 패널·인쇄로 넘기므로, 취소해도
+  열리지 않는 부분 파일이 사용자 디렉터리에 남지 않는다
+- **iPhone에서는** 버튼이 아이콘만 되고 툴바 전체가 가로 스크롤된다.
+  `HwpDocumentToolbar`는 그냥 `HStack`이라 폭이 모자라면 **글자 단위로**
+  줄바꿈해 "Zoom 100%"가 세 줄이 된다 (시뮬레이터 실측)
 
 저장소 안의 fixture로 스모크 테스트 가능:
 
@@ -88,7 +99,8 @@ Sample/
 ├── project.yml                    # xcodegen spec (편집 후 regen)
 ├── HwpSwiftSample/
 │   ├── HwpSwiftSampleApp.swift    # @main 진입점
-│   ├── ContentView.swift          # .fileImporter + HwpDocumentView
+│   ├── ContentView.swift          # .fileImporter + HwpDocumentView + 내보내기 배선
+│   ├── PDFExportSupport.swift     # fileExporter용 FileDocument + 플랫폼 인쇄 (#if os)
 │   └── HwpSwiftSample.entitlements
 └── README.md
 ```
@@ -115,7 +127,7 @@ SwiftUI 소스 파일(`HwpSwiftSampleApp.swift`, `ContentView.swift`) 추가/삭
 | Swift | 5.9 |
 | Signing | Manual, ad-hoc identity (`-`) — "Sign to Run Locally" |
 | iOS Simulator | `CODE_SIGNING_ALLOWED=NO` |
-| Sandbox | ON (macOS) + `com.apple.security.files.user-selected.read-only` |
+| Sandbox | ON (macOS) + `com.apple.security.files.user-selected.read-write` |
 | SPM Product | `HwpKit`, `HwpKitCore` (부모 저장소 로컬 참조) |
 
 ## 문제 해결
@@ -142,4 +154,6 @@ Xcode 콘솔에 `print()`로 출력됨:
 
 이 샘플은 **`HwpKit`이 노출하는 모든 SwiftUI 컴포넌트를 실제로 조작해 볼 수 있는 최소 앱**. 실 서비스 UX (최근 파일, 검색, 사이드바, 편집 등)는 포함하지 않으며, 이는 `HwpKit` v1의 read-only 스코프와도 일치.
 
-`HwpDocumentView` / `HwpDocumentToolbar` / `HwpPageNavigator` / `HwpZoomControls` / `HwpDocumentLoader` 5개 public surface가 모두 이 앱 안에서 활성화됨.
+`HwpDocumentView` / `HwpDocumentToolbar` / `HwpPageNavigator` / `HwpZoomControls` / `HwpDocumentLoader` / `HwpPDFExporter` 6개 public surface가 모두 이 앱 안에서 활성화됨.
+
+인쇄·저장·공유 **UI는 의도적으로 라이브러리 밖**이다 — `HwpKit`은 PDF 바이트까지만 만들고 그 앞뒤는 앱이 정한다. 이 앱의 `PDFExportSupport.swift`가 그 배선의 최소 예시이고, 저장소의 유일한 `#if os(macOS)` 분기이기도 하다.

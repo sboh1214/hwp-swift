@@ -1,6 +1,6 @@
 # 프로젝트 지식 베이스
 
-**Branch:** fix/footnote-page-attribution
+**Branch:** feat/pdf-export-print
 
 ## 개요
 
