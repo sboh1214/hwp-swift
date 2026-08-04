@@ -265,14 +265,18 @@ import Foundation
         }
 
         /// 모든 face를 "Menlo"로 해석하는 기기 독립 resolver — 커밋 가능한 골든
-        /// 기준선용. 폰트 조회의 세 축 (시스템 등록 폰트·한컴 번들·문서 대체 글꼴)을
-        /// 모두 닫아, 어떤 폰트가 설치된 기기에서도 같은 CTFont가 나온다.
+        /// 기준선용. 폰트 조회의 **네 축**을 모두 닫아 어떤 폰트가 설치된 기기에서도
+        /// 같은 CTFont가 나온다: 시스템 등록 폰트·한컴 번들·문서 대체 글꼴, 그리고
+        /// Menlo가 못 가진 글자의 **대체 폰트** (`fallbackCascade` →
+        /// `kCTFontCascadeListAttribute`).
         ///
-        /// 완전한 결정론은 아니다: Menlo에 한글 글리프가 없어 조판 시 한글 폴백이
-        /// OS 기본 캐스케이드에 맡겨지므로 macOS 버전 간 미세 차이가 남는다
-        /// (`kCTFontCascadeListAttribute`를 박으면 한글이 전부 .notdef로 렌더돼
-        /// 골든의 의미가 얇아지므로 채택하지 않는다). 이 resolver를 쓰는 기준선은
-        /// 임계를 여유 있게 잡거나 양자화를 거칠게 해 그 잔차를 흡수한다.
+        /// 넷째 축을 열어 두면 CoreText가 **호스트에 설치된 폰트 목록**에서 골라
+        /// 기기마다 갈린다 — 헌법주석은 2,054자 중 1,929자 (94%) 가 Menlo 밖이라
+        /// 조판 전체가 그 선택에 달려 있었다 (#95). 빈 캐스케이드는 CoreText가
+        /// 무시하므로 목록을 명시해야 닫힌다.
+        ///
+        /// 남는 잔차는 캐스케이드의 폰트들에도 없는 글자뿐이다. 이 resolver를 쓰는
+        /// 기준선은 임계를 여유 있게 잡거나 양자화를 거칠게 해 그것을 흡수한다.
         public static let testDeterministic: HwpFontResolver = .init(
             fontMap: HwpFontMap(entries: [:]),
             scriptFallbacks: [

@@ -179,7 +179,10 @@ HWP_SNAPSHOT_TESTS=1 swift test --filter FixturePreviewFidelityTests
 - 페이지 수 회귀 가드: manifest `expectations.pageCount`(+`pageCountSource`)
   ↔ `FixtureRenderTests.testPageCountsMatchManifest` — 결정론 resolver로 옮겨
   CI 상시 실행 (#69).
-- 각주 겹침 가드: `FixtureFootnoteOverlapTests` — 좌표가 아니라 **성질**을 본다
-  (각주 스택 ∩ 본문 = ∅ 은 아직 예산, 각주 영역 ⊆ 본문 프레임은 불변식 0).
+- 각주 겹침 가드: `FixtureFootnoteOverlapTests` — 좌표가 아니라 **성질**을 본다.
+  **불변식 (0) 은 둘**이다: 각주 영역 상단이 본문 상단 위로 올라가지 않을 것,
+  그려진 범위가 **종이** 안에 있을 것. 본문과의 겹침은 아직 예산이고, 본문 프레임
+  **하단**을 넘는 것도 예산이다 — 상단 클램프가 초과분을 아래로 밀어낸 몫이라
+  각주 이어짐을 구현하기 전까지 남는 빚이다 (불변식 위반이 아니다).
   기준선이 소스 상수라 레코딩이 없다 — 개선하면 손으로 **낮춘다**. 같은 결정론
   resolver로 CI 상시 실행 (#95).
