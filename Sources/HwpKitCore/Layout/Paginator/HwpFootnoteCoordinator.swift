@@ -182,6 +182,12 @@ struct HwpFootnoteCoordinator {
             walkChildren(of: ctrl)
             deferralSink = outer
         }
+        // 쪽마다 새로 시작 (표 134 numberingMode 2) 하면 번호가 **그려질 쪽**의
+        // 함수라 앞 조각에서 미리 받을 수 없다 — run 사이 `cacheCurrentPage`가
+        // 카운터를 시작 번호로 되돌리므로 미리 받은 번호는 그 쪽 첫 각주와 겹친다.
+        // 그 모드엔 보존할 순서 관계도 없어 (쪽마다 1로 되돌아간다) 컨테이너를
+        // 마지막 조각이 걷게 두면 번호가 제 쪽 카운터에서 나온다.
+        let restartsNumberingPerPage = environment.footnoteShape?.numberingModeRawValue == 2
         // 중첩을 안 걷는 조각은 **요청된 범위만** 훑는다 — 조각마다 전수 순회하면
         // O(run × 컨트롤)이라 조작 문서 (run·컨트롤 각 10,000, 파일은 수백 KB) 가
         // 페이지네이션을 세운다. 마지막 조각의 전수 순회는 문단당 한 번이라
@@ -196,7 +202,7 @@ struct HwpFootnoteCoordinator {
                 }
                 if isPlacedByThisFragment(ctrl) {
                     walkChildren(of: ctrl)
-                } else {
+                } else if !restartsNumberingPerPage {
                     deferNestedNotes(of: ctrl, ordinal: ordinal)
                 }
             }
