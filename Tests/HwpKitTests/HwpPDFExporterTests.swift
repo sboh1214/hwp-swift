@@ -131,6 +131,35 @@ final class HwpPDFExporterTests: XCTestCase {
         expect(FileManager.default.fileExists(atPath: url.path)) == false
     }
 
+    /// 마지막 페이지에서 들어온 취소도 취소로 끝난다. 루프 안 확인만 있으면
+    /// 다음 반복이 없어 성공으로 끝나고, 호스트가 사용자의 취소 뒤에 저장
+    /// 패널·인쇄를 연다 (샘플 배선이 실제로 그렇다).
+    func testCancellationOnFinalPageDoesNotReportSuccess() async {
+        let document = makeDocument(
+            sizes: Array(repeating: CGSize(width: 200, height: 300), count: 3)
+        )
+        let lastIndex = document.pages.count - 1
+        let url = outputURL("final-page-cancel.pdf")
+        let box = CancellationBox()
+
+        let task = Task {
+            try await HwpPDFExporter().export(document: document, to: url) { progress in
+                if progress.pageIndex == lastIndex {
+                    box.requestCancellation()
+                }
+            }
+        }
+        box.attach(task)
+
+        await expect { try await task.value }
+            .to(throwError(errorType: HwpPDFExportError.self) { error in
+                if case .cancelled = error {} else {
+                    fail("Expected .cancelled, got \(error)")
+                }
+            })
+        expect(FileManager.default.fileExists(atPath: url.path)) == false
+    }
+
     func testEmptyDocumentThrows() async {
         let empty = HwpDocument.empty
         let url = outputURL()

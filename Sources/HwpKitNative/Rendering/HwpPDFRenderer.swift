@@ -42,7 +42,6 @@ public enum HwpPDFRenderer {
     public static func render(
         document: HwpDocument,
         to url: URL,
-        cache: HwpImageCache? = nil,
         onProgress: (@Sendable (HwpPDFExportProgress) -> Void)? = nil
     ) async throws {
         guard !document.pages.isEmpty else { throw HwpPDFRenderError.emptyDocument }
@@ -50,9 +49,7 @@ public enum HwpPDFRenderer {
             throw HwpPDFRenderError.fileWriteFailed(path: url.path)
         }
         do {
-            try await write(
-                document: document, consumer: consumer, cache: cache, onProgress: onProgress
-            )
+            try await write(document: document, consumer: consumer, onProgress: onProgress)
         } catch {
             // 취소·실패로 남은 부분 파일은 지운다 — 열리지 않는 PDF가 사용자
             // 디렉터리에 남으면 성공과 구분되지 않는다.
@@ -65,7 +62,6 @@ public enum HwpPDFRenderer {
     /// `render(document:to:)`의 파일 스트리밍 쪽을 쓸 것).
     public static func renderData(
         document: HwpDocument,
-        cache: HwpImageCache? = nil,
         onProgress: (@Sendable (HwpPDFExportProgress) -> Void)? = nil
     ) async throws -> Data {
         guard !document.pages.isEmpty else { throw HwpPDFRenderError.emptyDocument }
@@ -73,16 +69,13 @@ public enum HwpPDFRenderer {
         guard let consumer = CGDataConsumer(data: buffer as CFMutableData) else {
             throw HwpPDFRenderError.contextCreationFailed
         }
-        try await write(
-            document: document, consumer: consumer, cache: cache, onProgress: onProgress
-        )
+        try await write(document: document, consumer: consumer, onProgress: onProgress)
         return buffer as Data
     }
 
     private static func write(
         document: HwpDocument,
         consumer: CGDataConsumer,
-        cache: HwpImageCache?,
         onProgress: (@Sendable (HwpPDFExportProgress) -> Void)?
     ) async throws {
         // 페이지마다 mediaBox를 따로 주므로 컨텍스트 기본값은 첫 페이지 크기로
@@ -93,11 +86,19 @@ public enum HwpPDFRenderer {
         ) else {
             throw HwpPDFRenderError.contextCreationFailed
         }
-        // 이미지는 문서 전용 provider로 해석한다 — binItemId가 문서-로컬 키라
-        // 뷰어의 provider를 재사용하면 다른 문서의 이미지가 섞인다.
+        // 이미지는 문서 전용 provider와 **전용 캐시**로 해석한다 — 캐시가
+        // binItemId 하나로 키를 잡으므로, 캐시를 문서 간에 공유하면 provider를
+        // 새로 만들어도 다른 문서의 비트맵이 그대로 히트한다.
+        //
+        // 고정 변형은 예산 초과여도 축출하지 않는다: 여기는 draw가 한 번뿐이라
+        // 축출된 이미지를 되살릴 재드로우가 없고, 회색 사각형이 PDF에 박힌다.
         let provider = document.imageStore.isEmpty
             ? nil
-            : HwpPageImageProvider(store: document.imageStore, cache: cache ?? HwpImageCache())
+            : HwpPageImageProvider(
+                store: document.imageStore,
+                cache: HwpImageCache(),
+                evictsPinnedOverBudget: false
+            )
         defer { provider?.cancelOutstanding() }
 
         for (index, page) in document.pages.enumerated() {
@@ -117,6 +118,10 @@ public enum HwpPDFRenderer {
             )
         }
         context.closePDF()
+        // 마지막 페이지의 draw·진행 콜백에서 들어온 취소는 다음 반복이 없어
+        // 루프 안의 어떤 확인도 보지 못한다 — 호출부가 부분 파일을 지우도록
+        // 여기서 한 번 더 본다.
+        try Task.checkCancellation()
     }
 
     /// 페이지 크기를 mediaBox로 넘긴다. 값은 **CGRect를 값째 담은 CFData**여야
