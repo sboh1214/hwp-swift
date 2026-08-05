@@ -118,6 +118,38 @@ final class HwpPDFRendererTests: XCTestCase {
         expect(survived) == original
     }
 
+    /// 검증 도중 도착한 취소도 목적지를 지킨다. 검증은 1,030쪽이면 짧지 않은데
+    /// 그 구간에 확인이 없으면, 취소한 내보내기가 목적지를 교체하고 호스트는
+    /// 성공을 받아 저장·인쇄 UI를 연다.
+    func testInstallHonorsCancellationBeforeReplacing() async throws {
+        let destination = scratchDirectory.appendingPathComponent("cancel-keep.pdf")
+        let original = Data("이전에 내보낸 PDF".utf8)
+        try original.write(to: destination)
+        let staging = scratchDirectory.appendingPathComponent("cancel-staged.pdf")
+        try await HwpPDFRenderer.render(
+            document: try makeImageDocument(imageCount: 1), to: staging
+        )
+
+        let install = Task { () -> Error? in
+            // 취소를 관측한 뒤에만 부른다 — 잠들지 않고 결정론적으로 창을 만든다.
+            while !Task.isCancelled {
+                await Task.yield()
+            }
+            do {
+                try HwpPDFRenderer.install(staging, at: destination, expectedPages: 1)
+                return nil
+            } catch {
+                return error
+            }
+        }
+        install.cancel()
+        let failure = await install.value
+
+        expect(failure is CancellationError) == true
+        let survived = try Data(contentsOf: destination)
+        expect(survived) == original
+    }
+
     /// 온전한 산출물은 통과한다 — 위 둘이 상시 실패가 아님을 보인다.
     func testValidateAcceptsCompleteOutput() async throws {
         let url = scratchDirectory.appendingPathComponent("complete.pdf")

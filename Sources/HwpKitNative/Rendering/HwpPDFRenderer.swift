@@ -139,6 +139,9 @@ public enum HwpPDFRenderer {
     /// 통과한다 (실제로 그랬다).
     static func install(_ staging: URL, at url: URL, expectedPages: Int) throws {
         try validate(staging, expectedPages: expectedPages)
+        // 검증은 1,030쪽이면 짧지 않다 — 그 사이 도착한 취소를 여기서 안 보면
+        // 목적지가 교체되고 호출자는 성공을 받는다 (종단 취소와 같은 불변식).
+        try Task.checkCancellation()
         let manager = FileManager.default
         do {
             if manager.fileExists(atPath: url.path) {
