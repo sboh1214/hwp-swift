@@ -192,18 +192,24 @@ public enum HwpPDFRenderer {
         // binItemId 하나로 키를 잡으므로, 캐시를 문서 간에 공유하면 provider를
         // 새로 만들어도 다른 문서의 비트맵이 그대로 히트한다.
         //
+        // 캐시도 같은 예산으로 만든다 — 기본값(256MB)을 그대로 두면 provider의
+        // 변형 예산과 **독립으로** 쌓여 상한이 두 배가 된다.
         let provider: HwpPageImageProvider? = document.imageStore.isEmpty
             ? nil
-            : HwpPageImageProvider(store: document.imageStore, cache: HwpImageCache())
+            : HwpPageImageProvider(
+                store: document.imageStore,
+                cache: HwpImageCache(maxBytes: imageByteLimit)
+            )
         provider?.resolvedByteLimit = imageByteLimit
         defer { provider?.cancelOutstanding() }
 
         for (index, page) in document.pages.enumerated() {
             try Task.checkCancellation()
             if let provider {
-                // 프리디코드 결과가 draw 전에 바이트 예산으로 축출되지 않도록
-                // 이 페이지 변형만 고정한다 (다음 페이지에서 자연히 풀린다).
-                provider.setPinnedImages(HwpPageImageProvider.imageVariantKeys(in: page.paintList))
+                // 이 페이지 변형만 남긴다: 고정은 프리디코드 결과가 draw 전에
+                // 축출되지 않게 하고, 나머지 해제는 이전 페이지 래스터가 예산
+                // 한계까지 쌓이는 것을 막는다 (unpin만으로는 안 지워진다).
+                provider.retainOnlyImages(HwpPageImageProvider.imageVariantKeys(in: page.paintList))
                 await provider.predecodeImageReferences(in: page.paintList)
                 try Task.checkCancellation()
                 // 프리디코드 뒤에도 확정되지 않은 변형이 있으면 그 페이지 작업셋이

@@ -262,6 +262,27 @@ final class HwpPageImageProviderTests: XCTestCase {
             == [variant(1)]
     }
 
+    /// 페이지 단위 경로는 pin 교체만으로 이전 페이지를 해제하지 못한다 —
+    /// `setPinnedImages`가 부르는 축출은 예산을 넘었을 때만 동작하므로, 예산
+    /// 안이면 래스터가 한도 근처까지 쌓인다 (#74 리뷰 6차). `retainOnlyImages`는
+    /// 남길 것을 빼고 전부 버린다.
+    func testRetainOnlyImagesDropsPreviousPageVariants() throws {
+        let provider = HwpPageImageProvider(store: HwpImageStore(), cache: HwpImageCache())
+        let image = try makeCGImage()
+        provider.setPinnedImages([variant(1)])
+        provider.finishRequest(key: 1, variant: variant(1), generation: 0, image: image, cost: 10)
+        provider.finishRequest(key: 2, variant: variant(2), generation: 0, image: image, cost: 10)
+
+        // 예산 안이라 pin만 바꾸면 1도 2도 그대로 남는다
+        provider.setPinnedImages([variant(2)])
+        expect(provider.cachedImage(for: 1)).toNot(beNil())
+
+        provider.retainOnlyImages([variant(2)])
+
+        expect(provider.cachedImage(for: 1)).to(beNil())
+        expect(provider.cachedImage(for: 2)).toNot(beNil())
+    }
+
     /// 디코드 실패는 미확정이 아니다 — 플레이스홀더가 정답이라 export를 세우면
     /// 손상된 그림 하나로 문서 전체를 못 내보내게 된다.
     func testUnsettledVariantsExcludeDecodeFailures() {

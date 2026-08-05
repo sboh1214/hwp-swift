@@ -431,6 +431,22 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         lock.unlock()
     }
 
+    /// 이 변형만 남기고 나머지 해석 결과를 **버린다**. 페이지 단위로 그리는
+    /// 경로(PDF)가 쓴다.
+    ///
+    /// `setPinnedImages`로는 부족하다: 그것이 부르는 축출은 예산을 넘었을 때만
+    /// 동작하므로, 예산 안이면 이전 페이지 래스터가 그대로 남아 상주량이 한도
+    /// 근처까지 자란다 (**unpin은 해제가 아니다**). 고정 교체와 해제를 한 동작에
+    /// 묶어 둔 것은 호출부가 해제를 빠뜨릴 수 없게 하기 위해서다.
+    func retainOnlyImages(_ variants: Set<String>) {
+        lock.lock()
+        defer { lock.unlock() }
+        pinnedVariants = variants
+        while let index = resolvedOrder.firstIndex(where: { !isPinned($0) }) {
+            evictVariant(at: index)
+        }
+    }
+
     /// 진행 중인 모든 디코드를 취소하고 대기/pin 상태를 비운다 — provider 교체
     /// 시 호출해 옛 store/cache 강참조와 대형 디코드 누적을 끊는다 (#3).
     public func cancelOutstanding() {
