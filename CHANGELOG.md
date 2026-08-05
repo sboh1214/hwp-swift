@@ -79,8 +79,11 @@
   따로 넘겨 구역별 용지 크기·방향 차이를 보존하며, 종이 밖 편집 화면 장식인 메모
   풍선은 한글의 인쇄 뷰와 마찬가지로 빠집니다. 페이지 단위 스트리밍이라 상주
   메모리는 1페이지 몫이고, 페이지 경계마다 `Task.checkCancellation()`과
-  `HwpPDFExportProgress` 진행률 콜백이 발화합니다. 취소·실패 시 열리지 않는 부분
-  파일은 지웁니다. 에러는 `HwpPDFExportError`(`CustomStringConvertible` +
+  `HwpPDFExportProgress` 진행률 콜백이 발화합니다. **임시 파일에 완성한 뒤에만
+  목적지를 건드리므로**, 기존 PDF를 덮어쓰는 중에 취소·실패해도 이전 파일이
+  그대로 남고 열리지 않는 부분 파일도 남지 않습니다. 한 페이지가 참조하는
+  이미지가 디코드 예산(256MB)을 넘으면 이미지가 빠진 PDF를 돌려주는 대신
+  실패합니다. 에러는 `HwpPDFExportError`(`CustomStringConvertible` +
   `LocalizedError`)입니다.
   **인쇄·저장·공유 UI는 앱 책임입니다** — 라이브러리는 PDF 바이트까지만
   만듭니다. `Sample/`이 macOS `PDFDocument.printOperation`, iOS
