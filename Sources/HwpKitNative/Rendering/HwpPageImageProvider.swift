@@ -3,6 +3,11 @@ import CoreHwp
 import Foundation
 import HwpKitCore
 
+// 락 아래 가변 상태를 한 타입에 모아 두느라 길다. 쪼개면 그 상태를 internal로
+// 올려야 하고(다른 파일에서 private 접근 불가) 그 순간 "락 없이 만질 수 없다"가
+// 구조가 아니라 관례가 된다.
+// swiftlint:disable file_length
+
 /// 페이지 레이어의 `.drawImageReference` 명령을 실제 `CGImage`로 해석하는 공급자.
 ///
 /// `HwpImageStore`(문서의 BinData 바이트) → `HwpImageAdapter`(디코딩) →
@@ -46,13 +51,22 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     /// 다른 가시 레이어의 요청이 드롭된 채 회색으로 남는다 (#5).
     private var deferred: [(key: UInt32, style: HwpImageRenderStyle?)] = []
     private var deferredVariants: Set<String> = []
-    private static let maximumDeferred = 64
+    /// 백프레셔 한도 3종. 프로덕션은 이 기본값 그대로이고, **인스턴스 프로퍼티인
+    /// 것은 테스트가 값을 낮춰 초과·축출 경로를 작은 입력으로 재현하기
+    /// 위해서다** (`HwpPageLayer.cachedLineBudget`과 같은 이유).
+    var maximumDeferred = 64
     /// 다운샘플 상한 이미지 서너 장이 한 페이지 작업셋에 들어가도 루프가 안
     /// 생기게 256MB. 각 변형은 다운샘플로 ≤67MB라 메모리 총량은 유계다 (#3).
-    private static let resolvedByteLimit = 256_000_000
+    var resolvedByteLimit = 256_000_000
     /// 동시 진행 요청 상한 — 이미지 변형이 많은 페이지가 무제한 Task·throttle
     /// 대기를 쌓지 않게 백프레셔로 막는다. 초과분은 다음 draw에서 재요청된다 (#2).
-    private static let maximumInFlight = 12
+    var maximumInFlight = 12
+    /// 예산을 지키려 **고정(pin) 변형까지** 축출할지. 뷰는 true (축출된 pin은
+    /// 다음 재드로우가 되살린다), 화면 없는 경로는 false — draw가 한 번뿐이라
+    /// 축출된 이미지가 회색 사각형으로 결과물에 박힌다. false일 때 상주량은 한
+    /// 페이지 작업셋이고, 페이지가 바뀌면 `setPinnedImages`의 unpin이 예산 안으로
+    /// 되돌리므로 문서 전체로는 유계다.
+    private let evictsPinnedOverBudget: Bool
     private var failedKeys: Set<String> = []
     private var inFlightKeys: Set<String> = []
     /// binItemId별 가장 최근에 해석된 변형 키 (platformImage 폴백용)
@@ -102,9 +116,14 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         }
     }
 
-    public init(store: HwpImageStore, cache: HwpImageCache) {
+    public convenience init(store: HwpImageStore, cache: HwpImageCache) {
+        self.init(store: store, cache: cache, evictsPinnedOverBudget: true)
+    }
+
+    init(store: HwpImageStore, cache: HwpImageCache, evictsPinnedOverBudget: Bool) {
         self.store = store
         self.cache = cache
+        self.evictsPinnedOverBudget = evictsPinnedOverBudget
     }
 
     /// 뷰가 다른 문서 할당 없이 제거되면 아무도 cancelOutstanding을 부르지 않아,
@@ -145,15 +164,21 @@ public final class HwpPageImageProvider: @unchecked Sendable {
             return
         }
         let alreadyHandled = failedKeys.contains(variant) || inFlightKeys.contains(variant)
-        let atCapacity = inFlightKeys.count >= Self.maximumInFlight
+        let atCapacity = inFlightKeys.count >= maximumInFlight
+        var orphanedWaiters: [VariantWaiter] = []
         if !alreadyHandled, !atCapacity {
             inFlightKeys.insert(variant)
         } else if !alreadyHandled, atCapacity, !deferredVariants.contains(variant) {
-            enqueueDeferred(key: key, style: style, variant: variant)
+            orphanedWaiters = enqueueDeferred(key: key, style: style, variant: variant)
         }
         let shouldSpawn = !alreadyHandled && !atCapacity
         let gen = generation
         lock.unlock()
+        // 축출된 변형은 확정 통보를 받을 주체가 사라졌다 — 깨우지 않으면 영구
+        // 대기다. 재개는 lock 밖에서 (재개가 같은 락을 다시 잡는다).
+        for waiter in orphanedWaiters {
+            waiter.continuation.resume(returning: .untracked)
+        }
         guard shouldSpawn else { return }
 
         let store = store
@@ -279,7 +304,7 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         let handler = imageResolvedHandler
         // 드롭이 있었고 이제 디퍼드에 자리가 났으면, 전체 가시 레이어 재드로우를
         // 알려 드롭된 요청(특히 유일 이미지가 드롭된 레이어)을 재시도시킨다 (R42 #1).
-        let capacityHandler = didDropDeferred && deferred.count < Self.maximumDeferred
+        let capacityHandler = didDropDeferred && deferred.count < maximumDeferred
             ? deferredCapacityHandler : nil
         if capacityHandler != nil {
             didDropDeferred = false
@@ -304,13 +329,22 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     /// 않고(R40 #3), 전부 pin이라 뺄 게 없으면 새 요청을 드롭해 큐가 무한정
     /// 자라지 않게 한다(R41 #2). dequeueDeferred가 pin을 우선 비우므로(R41 #3)
     /// 만석-전부-pin은 일시적이고, 자리가 나면 레이어 재드로우가 재요청한다.
-    private func enqueueDeferred(key: UInt32, style: HwpImageRenderStyle?, variant: String) {
-        var canEnqueue = deferred.count < Self.maximumDeferred
+    private func enqueueDeferred(
+        key: UInt32,
+        style: HwpImageRenderStyle?,
+        variant: String
+    ) -> [VariantWaiter] {
+        var orphaned: [VariantWaiter] = []
+        var canEnqueue = deferred.count < maximumDeferred
         if !canEnqueue,
            let evictIndex = Self.deferredEvictionIndex(deferred, pinnedVariants: pinnedVariants)
         {
             let stale = deferred.remove(at: evictIndex)
-            deferredVariants.remove(Self.variantKey(stale.key, stale.style))
+            let staleVariant = Self.variantKey(stale.key, stale.style)
+            deferredVariants.remove(staleVariant)
+            // 축출된 변형은 in-flight도 디퍼드도 아니게 되어 finishRequest가
+            // 영영 오지 않는다 — 그 확정을 기다리던 대기자를 함께 내보낸다.
+            orphaned = settleWaiters.removeValue(forKey: staleVariant) ?? []
             canEnqueue = true
         }
         if canEnqueue {
@@ -321,13 +355,14 @@ public final class HwpPageImageProvider: @unchecked Sendable {
             // 레이어 재드로우를 알려 이 요청을 재시도시킨다 (R42 #1).
             didDropDeferred = true
         }
+        return orphaned
     }
 
     /// lock 보유. 슬롯이 남고 디퍼드가 있으면 하나 꺼낸다 (#5). pin(가시)된
     /// 항목을 먼저 꺼내 가시 placeholder가 스크롤로 지나간 이미지 뒤에서
     /// 대기하지 않게 한다 (R41 #3).
     private func dequeueDeferred() -> (key: UInt32, style: HwpImageRenderStyle?)? {
-        guard inFlightKeys.count < Self.maximumInFlight, !deferred.isEmpty else { return nil }
+        guard inFlightKeys.count < maximumInFlight, !deferred.isEmpty else { return nil }
         let index = Self.deferredDequeueIndex(deferred, pinnedVariants: pinnedVariants)
         let next = deferred.remove(at: index)
         deferredVariants.remove(Self.variantKey(next.key, next.style))
@@ -364,13 +399,16 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     /// 오래된 고정 변형도 축출해 하드 상한을 지킨다 (#1 — pin 작업셋 무한 증가
     /// 방지). keep(방금 삽입)은 남겨 즉시 축출→재요청 루프를 막는다. 고정 축출은
     /// 병적 페이지에서만 발동하며, 그 경우 재디코드 회전을 감수하고 OOM을 막는다.
+    /// 재드로우가 없는 경로는 그 회전으로 되살릴 기회가 없어 이 단계를 끈다
+    /// (`evictsPinnedOverBudget`).
     private func evictOverBudget(keeping keep: String? = nil) {
-        while resolvedBytes > Self.resolvedByteLimit,
+        while resolvedBytes > resolvedByteLimit,
               let idx = resolvedOrder.firstIndex(where: { $0 != keep && !isPinned($0) })
         {
             evictVariant(at: idx)
         }
-        while resolvedBytes > Self.resolvedByteLimit,
+        guard evictsPinnedOverBudget else { return }
+        while resolvedBytes > resolvedByteLimit,
               let idx = resolvedOrder.firstIndex(where: { $0 != keep })
         {
             evictVariant(at: idx)
@@ -520,13 +558,24 @@ extension HwpPageImageProvider {
     /// 그 큐가 만석 + 전부 pin이면 **드롭**되어 아무도 이 변형을 확정시키지
     /// 않는다. 그 경우 다른 요청이 하나 확정될 때까지(진행 토큰) 기다렸다가
     /// 다시 넣는다 — 드롭은 진행 중 요청이 12개 있다는 뜻이므로 확정은 반드시 온다.
+    /// 디퍼드 축출로 추적에서 빠진 변형도 같은 재시도 경로를 탄다.
+    ///
+    /// 확정됐다가 바이트 예산으로 축출된 변형은 **재시도하지 않고 nil**이다
+    /// (재요청하면 동시 해석자끼리 서로를 밀어내는 라이브락). 그 페이지를 온전히
+    /// 그려야 하는 경로는 `evictsPinnedOverBudget: false` provider를 쓴다.
     public func resolveImage(for key: UInt32, style: HwpImageRenderStyle? = nil) async -> CGImage? {
         let variant = Self.variantKey(key, style)
+        var didSettleOnce = false
         while !Task.isCancelled {
             if let image = cachedImage(for: key, style: style) {
                 return image
             }
             if didFail(for: key, style: style) {
+                return nil
+            }
+            // 확정 뒤 캐시에 없으면 예산 축출이다 — 재요청은 동시 해석자끼리
+            // 서로를 밀어내는 라이브락이 된다.
+            if didSettleOnce {
                 return nil
             }
             // 토큰은 요청 **전에** 뜬다 — 드롭 판정과 대기 등록 사이에 끼어든
@@ -535,6 +584,8 @@ extension HwpPageImageProvider {
             requestImage(for: key, style: style)
             if await awaitVariantSettled(variant) == .untracked {
                 await awaitProgress(after: token)
+            } else {
+                didSettleOnce = true
             }
         }
         return cachedImage(for: key, style: style)
@@ -558,7 +609,7 @@ extension HwpPageImageProvider {
         // 큐로 가고, 그쪽 만석 경로(드롭 → 재시도)를 굳이 밟게 된다.
         var start = 0
         while start < references.count, !Task.isCancelled {
-            let end = min(start + Self.maximumInFlight, references.count)
+            let end = min(start + maximumInFlight, references.count)
             await withTaskGroup(of: Void.self) { group in
                 for reference in references[start ..< end] {
                     group.addTask { [self] in
@@ -568,6 +619,13 @@ extension HwpPageImageProvider {
             }
             start = end
         }
+    }
+
+    /// 테스트 관측점 — 그 변형의 확정 대기자 수.
+    func settleWaiterCount(_ variant: String) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return settleWaiters[variant]?.count ?? 0
     }
 
     /// lock 밖. 현재 진행 토큰.
