@@ -130,6 +130,8 @@ struct ContentView: View {
             if case let .failure(error) = result {
                 exportError = error.localizedDescription
             }
+            // 저장 패널이 닫혔으면 파일 내용은 이미 목적지로 복사됐다.
+            discardExportedPDF()
         }
         .alert(
             "PDF 오류",
@@ -245,8 +247,18 @@ struct ContentView: View {
     /// 먼저 컨테이너 안에 쓰고 나중에 `fileExporter`로 내보내는 순서인 이유:
     /// 진행률·취소를 우리가 통제해야 하고 (1,030쪽이면 수 초가 걸린다),
     /// 사용자가 고른 위치에 직접 쓰면 취소 시 부분 파일을 그 자리에 남긴다.
+    /// 임시 PDF를 지우고 참조를 놓는다. 이 앱은 내보낼 때마다 새 UUID 파일을
+    /// 만들므로, 지우지 않으면 1,030쪽짜리가 세션 내내 쌓인다.
+    private func discardExportedPDF() {
+        if let exportedPDF {
+            try? FileManager.default.removeItem(at: exportedPDF)
+        }
+        exportedPDF = nil
+    }
+
     private func exportPDF(document: HwpDocument, then destination: PDFDestination) {
         exportTask?.cancel()
+        discardExportedPDF()
         exportError = nil
         exportProgress = 0
         exportedName = Self.exportFileName(for: document)
@@ -293,7 +305,14 @@ struct ContentView: View {
         case .save:
             showSavePanel = true
         case .print:
-            exportError = HwpSamplePrinter.print(pdfAt: url, jobName: exportedName)
+            if let failure = HwpSamplePrinter.print(
+                pdfAt: url,
+                jobName: exportedName,
+                onFinish: { Task { @MainActor in discardExportedPDF() } }
+            ) {
+                exportError = failure
+                discardExportedPDF()
+            }
         }
     }
 

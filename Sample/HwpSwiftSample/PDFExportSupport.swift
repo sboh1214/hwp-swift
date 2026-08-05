@@ -41,9 +41,15 @@ struct PDFFileDocument: FileDocument {
 /// 인쇄하는 쪽이 화면과 결과가 같음을 보장한다.
 enum HwpSamplePrinter {
     /// 인쇄 UI를 띄운다. 실패하면 사용자에게 보일 사유를 돌려준다.
+    /// `onFinish`는 인쇄 대화상자가 닫힌 뒤(= 파일을 더 안 읽는 시점) 불린다 —
+    /// 호출부가 임시 파일을 지울 자리다. 실패를 반환하면 발화하지 않는다.
     @discardableResult
     @MainActor
-    static func print(pdfAt url: URL, jobName: String) -> String? {
+    static func print(
+        pdfAt url: URL,
+        jobName: String,
+        onFinish: @escaping @Sendable () -> Void
+    ) -> String? {
         #if os(macOS)
             guard let pdf = PDFDocument(url: url) else {
                 return "PDF를 열 수 없습니다"
@@ -56,6 +62,7 @@ enum HwpSamplePrinter {
                 return "인쇄 작업을 만들 수 없습니다"
             }
             operation.run()
+            onFinish()
             return nil
         #else
             guard UIPrintInteractionController.isPrintingAvailable else {
@@ -70,8 +77,11 @@ enum HwpSamplePrinter {
             // UIKit 헤더가 표시를 기기별로 가른다: `presentAnimated:`는 // iPhone,
             // `presentFromRect:inView:`·`presentFromBarButtonItem:`은 // iPad.
             // 이 타깃은 iPad(device family 2)도 지원하므로 분기한다.
+            let completion: UIPrintInteractionController.CompletionHandler = { _, _, _ in
+                onFinish()
+            }
             guard UIDevice.current.userInterfaceIdiom == .pad else {
-                controller.present(animated: true, completionHandler: nil)
+                controller.present(animated: true, completionHandler: completion)
                 return nil
             }
             guard let view = keyWindowView() else {
@@ -80,7 +90,7 @@ enum HwpSamplePrinter {
             // 실서비스라면 인쇄 버튼에 앵커를 맞춘다. 이 샘플의 버튼은 SwiftUI라
             // 대응 UIView가 없어 창 중앙에서 띄운다.
             let anchor = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 1, height: 1)
-            controller.present(from: anchor, in: view, animated: true, completionHandler: nil)
+            controller.present(from: anchor, in: view, animated: true, completionHandler: completion)
             return nil
         #endif
     }
