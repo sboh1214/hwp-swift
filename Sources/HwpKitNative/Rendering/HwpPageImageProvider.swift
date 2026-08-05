@@ -610,7 +610,10 @@ extension HwpPageImageProvider {
             // 토큰은 요청 **전에** 뜬다 — 드롭 판정과 대기 등록 사이에 끼어든
             // 확정을 놓치면 아무도 깨우지 않아 영구 대기가 된다.
             let token = progressSnapshot()
-            requestImage(for: key, style: style)
+            // 세대를 함께 넘긴다: 위 확인과 이 호출 사이에 해체가 끼어들면 인자
+            // 없는 요청은 **새 세대로 등록**돼 해체가 못 끊는다. 이 검사는
+            // `cancelOutstanding`이 세대를 올리는 것과 같은 락 안이라 창이 없다.
+            requestImage(for: key, style: style, expectedGeneration: startGeneration)
             if await awaitVariantSettled(variant) == .untracked {
                 await awaitProgress(after: token)
             } else {

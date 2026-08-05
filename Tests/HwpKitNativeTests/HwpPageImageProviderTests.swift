@@ -397,6 +397,23 @@ final class HwpPageImageProviderTests: XCTestCase {
         _ = await pending.value
     }
 
+    /// 낡은 세대로 들어온 요청은 **등록 자체가 기각된다**. `resolveImage`가 이
+    /// 인자에 기대어 "세대 확인 → 요청" 사이의 창을 닫으므로(그 사이 해체가
+    /// 끼어들면 인자 없는 요청은 새 세대로 등록된다) 기각이 실제로 일어나야 한다.
+    func testRequestImageRejectsStaleGeneration() async throws {
+        let provider = HwpPageImageProvider(
+            store: try makeStore(count: 2), cache: HwpImageCache()
+        )
+
+        provider.cancelOutstanding()
+        provider.requestImage(for: 1, expectedGeneration: 0)
+        provider.requestImage(for: 2)
+
+        // 2는 디코드되고 1은 안 된다 — 기각이 실제로 일어났음을 가른다.
+        try await waitUntil { provider.cachedImage(for: 2) != nil }
+        expect(provider.cachedImage(for: 1)).to(beNil())
+    }
+
     /// 태스크 취소는 대기를 즉시 끝낸다 (디코드 완료를 기다리지 않는다).
     func testResolveImageReturnsOnCancellation() async throws {
         let provider = HwpPageImageProvider(
