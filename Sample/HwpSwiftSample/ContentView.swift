@@ -83,34 +83,10 @@ struct ContentView: View {
                 }
             }
         }
-    }
-
-    private func loadedView(document: HwpDocument) -> some View {
-        VStack(spacing: 0) {
-            #if os(macOS)
-                toolbar(document: document)
-            #else
-                // iPhone 폭에는 컨트롤이 다 안 들어간다. `HwpDocumentToolbar`는
-                // 그냥 `HStack`이라 넘치면 **글자 단위로** 줄바꿈해 "Zoom 100%"가
-                // 세 줄이 되므로(시뮬레이터 실측), 가로 스크롤로 한 줄을 지킨다.
-                ScrollView(.horizontal, showsIndicators: false) {
-                    toolbar(document: document)
-                }
-                .fixedSize(horizontal: false, vertical: true)
-            #endif
-
-            HwpDocumentView(
-                document: document,
-                zoomScale: $zoomScale,
-                currentPage: $currentPage,
-                onHyperlinkTapped: { url in
-                    print("Hyperlink tapped: \(url)")
-                },
-                onUnsupportedElement: { element in
-                    print("Unsupported: \(element)")
-                }
-            )
-        }
+        // 내보내기 모달은 **문서와 무관한 루트**에 건다. 로드된 뷰에 걸면
+        // 내보내기 중 재로드(`onOpenURL`·Re-open)가 `document = nil`로 표시자를
+        // 통째로 없애, 뒤늦게 끝난 내보내기가 시트를 닫을 곳도 저장·인쇄를 띄울
+        // 곳도 잃는다 (임시 PDF도 남는다).
         .sheet(
             isPresented: Binding(
                 get: { exportProgress != nil },
@@ -152,6 +128,34 @@ struct ContentView: View {
             Button("확인", role: .cancel) {}
         } message: {
             Text(exportError ?? "")
+        }
+    }
+
+    private func loadedView(document: HwpDocument) -> some View {
+        VStack(spacing: 0) {
+            #if os(macOS)
+                toolbar(document: document)
+            #else
+                // iPhone 폭에는 컨트롤이 다 안 들어간다. `HwpDocumentToolbar`는
+                // 그냥 `HStack`이라 넘치면 **글자 단위로** 줄바꿈해 "Zoom 100%"가
+                // 세 줄이 되므로(시뮬레이터 실측), 가로 스크롤로 한 줄을 지킨다.
+                ScrollView(.horizontal, showsIndicators: false) {
+                    toolbar(document: document)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            #endif
+
+            HwpDocumentView(
+                document: document,
+                zoomScale: $zoomScale,
+                currentPage: $currentPage,
+                onHyperlinkTapped: { url in
+                    print("Hyperlink tapped: \(url)")
+                },
+                onUnsupportedElement: { element in
+                    print("Unsupported: \(element)")
+                }
+            )
         }
     }
 
