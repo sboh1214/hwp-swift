@@ -171,15 +171,23 @@ public enum HwpPDFRenderer {
         }
     }
 
-    /// 교체 실패로 남은 백업을 제자리로 되돌린다 — 목적지가 살아 있으면 백업만
-    /// 치운다. "실패는 목적지를 보존한다"가 실제로 성립하는 자리다.
+    /// 교체 실패로 남은 백업을 제자리로 되돌린다 — "실패는 목적지를 보존한다"가
+    /// 실제로 성립하는 자리다.
+    ///
+    /// 백업이 남아 있다는 것은 교체가 원본을 옮긴 **뒤** 실패했다는 뜻이므로,
+    /// 목적지에 무엇이 있든 원본이 이긴다. 스테이징까지 설치된 뒤(메타데이터
+    /// 복사·백업 정리 단계) 실패하면 목적지에는 **새 PDF**가 있는데, 그것을 두고
+    /// 백업만 지우면 실패를 보고하면서 사용자의 이전 파일을 잃는다.
     static func restoreBackup(named name: String, at url: URL) {
         let manager = FileManager.default
         let backup = url.deletingLastPathComponent().appendingPathComponent(name)
         guard manager.fileExists(atPath: backup.path) else { return }
-        if manager.fileExists(atPath: url.path) {
-            try? manager.removeItem(at: backup)
-        } else {
+        do {
+            try manager.moveItem(at: backup, to: url)
+        } catch {
+            // 목적지가 비어 있지 않아 막힌 것 — 비우고 다시 넣는다. 이 순서라야
+            // 되돌리기가 실패해도 백업이 디스크에 남아 복구 가능하다.
+            try? manager.removeItem(at: url)
             try? manager.moveItem(at: backup, to: url)
         }
     }

@@ -164,19 +164,34 @@ final class HwpPDFRendererTests: XCTestCase {
         expect(restored) == original
     }
 
-    /// 목적지가 살아남았으면 백업만 치운다 — 되돌리면 새로 쓴 결과를 덮는다.
-    func testRestoreBackupRemovesBackupWhenDestinationSurvived() throws {
-        let destination = scratchDirectory.appendingPathComponent("survivor.pdf")
-        let current = Data("새로 쓴 PDF".utf8)
-        try current.write(to: destination)
+    /// 목적지에 **새 PDF가 이미 설치된 뒤** 실패해도 원본으로 되돌린다. 교체는
+    /// 스테이징을 옮긴 다음(메타데이터 복사·백업 정리)에도 실패할 수 있는데, 그때
+    /// 새 파일을 두고 백업만 지우면 실패를 보고하면서 이전 파일을 잃는다.
+    func testRestoreBackupOverwritesInstalledOutputWithOriginal() throws {
+        let destination = scratchDirectory.appendingPathComponent("installed.pdf")
+        try Data("새로 쓴 PDF".utf8).write(to: destination)
         let backupName = ".hwp-export-backup-probe"
         let backup = scratchDirectory.appendingPathComponent(backupName)
-        try Data("이전에 내보낸 PDF".utf8).write(to: backup)
+        let original = Data("이전에 내보낸 PDF".utf8)
+        try original.write(to: backup)
 
         HwpPDFRenderer.restoreBackup(named: backupName, at: destination)
 
-        expect(try Data(contentsOf: destination)) == current
+        let restored = try Data(contentsOf: destination)
+        expect(restored) == original
         expect(FileManager.default.fileExists(atPath: backup.path)) == false
+    }
+
+    /// 백업이 없으면 아무것도 건드리지 않는다 — 교체가 원본을 옮기기 **전에**
+    /// 실패한 경우라 목적지가 이미 원본이다.
+    func testRestoreBackupLeavesDestinationWhenNoBackupExists() throws {
+        let destination = scratchDirectory.appendingPathComponent("untouched.pdf")
+        let original = Data("이전에 내보낸 PDF".utf8)
+        try original.write(to: destination)
+
+        HwpPDFRenderer.restoreBackup(named: ".hwp-export-backup-absent", at: destination)
+
+        expect(try Data(contentsOf: destination)) == original
     }
 
     /// 온전한 산출물은 통과한다 — 위 둘이 상시 실패가 아님을 보인다.
