@@ -83,6 +83,7 @@ struct ContentView: View {
                 }
             }
         }
+        .onDisappear(perform: cancelExportOnTeardown)
         // 내보내기 모달은 **문서와 무관한 루트**에 건다. 로드된 뷰에 걸면
         // 내보내기 중 재로드(`onOpenURL`·Re-open)가 `document = nil`로 표시자를
         // 통째로 없애, 뒤늦게 끝난 내보내기가 시트를 닫을 곳도 저장·인쇄를 띄울
@@ -262,6 +263,15 @@ struct ContentView: View {
     /// 먼저 컨테이너 안에 쓰고 나중에 `fileExporter`로 내보내는 순서인 이유:
     /// 진행률·취소를 우리가 통제해야 하고 (1,030쪽이면 수 초가 걸린다),
     /// 사용자가 고른 위치에 직접 쓰면 취소 시 부분 파일을 그 자리에 남긴다.
+    /// 창·scene이 사라질 때 진행 중인 내보내기를 끊고 산출물을 치운다.
+    /// `Task {}`는 비구조적이라 뷰 수명에 묶이지 않는다 — 그대로 두면 뷰가 없는
+    /// 채로 렌더가 이어지고, 성공하면 그 PDF를 지워 줄 주체가 아무도 없다.
+    private func cancelExportOnTeardown() {
+        exportTask?.cancel()
+        exportTask = nil
+        discardExportedPDF()
+    }
+
     /// 임시 PDF를 지우고 참조를 놓는다. 이 앱은 내보낼 때마다 새 UUID 파일을
     /// 만들므로, 지우지 않으면 1,030쪽짜리가 세션 내내 쌓인다.
     private func discardExportedPDF() {
@@ -293,6 +303,13 @@ struct ContentView: View {
                             exportProgress = progress.fractionCompleted
                         }
                     }
+                }
+                // 취소된 뒤에 끝난 결과는 주인이 없다 — 뷰가 사라졌으면 저장·인쇄
+                // 콜백도, 다음 내보내기도 이 파일을 지워 주지 않는다. 렌더러의
+                // 마지막 취소 확인은 파일을 옮기기 **전**이라 이 창이 남는다.
+                guard !Task.isCancelled else {
+                    try? FileManager.default.removeItem(at: url)
+                    return
                 }
                 await MainActor.run {
                     exportedPDF = url
