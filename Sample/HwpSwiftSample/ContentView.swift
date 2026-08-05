@@ -322,9 +322,24 @@ struct ContentView: View {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-") ?? ""
-        // 저장 패널이 제안할 이름이라 파일명 성분 한도(255바이트) 안으로 자른다 —
-        // 한글은 UTF-8 3바이트라 85자면 넘는다.
-        return title.isEmpty ? "document" : String(title.prefix(80))
+        let clipped = Self.clippedToFilenameLimit(title)
+        return clipped.isEmpty ? "document" : clipped
+    }
+
+    /// 파일명 성분 한도(255바이트)에서 확장자 몫을 빼고 **UTF-8 바이트로** 자른다.
+    /// 문자 수로 자르면 한도를 못 지킨다 — 결합 이모지 하나가 25바이트라 80자가
+    /// 2,000바이트다. 자르는 단위는 Character라 자소가 쪼개지지 않는다.
+    private static func clippedToFilenameLimit(_ title: String) -> String {
+        let limit = 255 - ".pdf".utf8.count
+        var clipped = ""
+        var bytes = 0
+        for character in title {
+            let size = String(character).utf8.count
+            guard bytes + size <= limit else { break }
+            clipped.append(character)
+            bytes += size
+        }
+        return clipped
     }
 
     private func loadDocument(from url: URL) {

@@ -80,8 +80,12 @@ enum HwpSamplePrinter {
             let completion: UIPrintInteractionController.CompletionHandler = { _, _, _ in
                 onFinish()
             }
+            // 표시가 시작되지 않으면(예: 다른 모달이 떠 있음) completion도 오지
+            // 않는다 — 성공으로 돌려주면 호출부의 임시 파일 정리가 통째로 건너뛴다.
             guard UIDevice.current.userInterfaceIdiom == .pad else {
-                controller.present(animated: true, completionHandler: completion)
+                guard controller.present(animated: true, completionHandler: completion) else {
+                    return "인쇄 UI를 띄우지 못했습니다"
+                }
                 return nil
             }
             guard let view = keyWindowView() else {
@@ -90,7 +94,11 @@ enum HwpSamplePrinter {
             // 실서비스라면 인쇄 버튼에 앵커를 맞춘다. 이 샘플의 버튼은 SwiftUI라
             // 대응 UIView가 없어 창 중앙에서 띄운다.
             let anchor = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 1, height: 1)
-            controller.present(from: anchor, in: view, animated: true, completionHandler: completion)
+            guard controller.present(
+                from: anchor, in: view, animated: true, completionHandler: completion
+            ) else {
+                return "인쇄 UI를 띄우지 못했습니다"
+            }
             return nil
         #endif
     }
