@@ -19,6 +19,7 @@ enum FixturePreview {
         case imageCreationFailed
         case previewDecodeFailed
         case pageMissing
+        case imageUnresolved(binItemId: UInt32)
     }
 
     // MARK: - 문서 → 1페이지 렌더
@@ -62,7 +63,7 @@ enum FixturePreview {
 
         let provider = HwpPageImageProvider(store: imageStore, cache: HwpImageCache())
         layer.imageProvider = provider
-        await resolveImageReferences(in: page.paintList, provider: provider)
+        try await resolveImageReferences(in: page.paintList, provider: provider)
 
         guard let context = CGContext(
             data: nil,
@@ -95,19 +96,27 @@ enum FixturePreview {
         return image
     }
 
-    /// paint list의 이미지 참조를 미리 디코딩한다 (성공/실패 확정까지 대기).
+    /// paint list의 이미지 참조를 확정(성공 또는 실패)까지 디코딩한다.
     ///
-    /// 폴링 + 2초 타임아웃이던 것을 프로덕션 API에 위임한다 (#74) — 미확정인 채
-    /// 그리면 회색 로딩 사각형이 렌더/해시에 섞여 조용히 틀린 결과가 통과·기록
-    /// 되므로 "확정까지 대기"라는 성질은 그대로다. 백프레셔로 드롭된 요청도
-    /// provider가 재시도하므로 여기서 타임아웃으로 구제할 것이 없다.
+    /// 대기는 프로덕션 API에 맡기되 **확정 여부는 다시 확인한다**:
+    /// `predecodeImageReferences`는 바이트 예산으로 축출된 변형을 미해결로
+    /// 남기고, 그대로 그리면 회색 로딩 사각형이 렌더 해시·골든·fidelity
+    /// 기준선에 **정답으로 기록된다**. 디코드 실패는 제외한다 — 그건
+    /// 플레이스홀더가 정답이라 뷰·PDF 경로와 규약이 같다.
     private static func resolveImageReferences(
         in paintList: HwpPaintList,
         provider: HwpPageImageProvider
-    ) async {
+    ) async throws {
         // 디코드된 대형 이미지가 draw 전에 바이트 예산으로 축출되지 않게 고정한다.
         provider.setPinnedImages(HwpPageImageProvider.imageVariantKeys(in: paintList))
         await provider.predecodeImageReferences(in: paintList)
+        for command in paintList.commands {
+            guard case let .drawImageReference(binItemId, _, style, _) = command,
+                  provider.cachedImage(for: binItemId, style: style) == nil,
+                  !provider.didFail(for: binItemId, style: style)
+            else { continue }
+            throw RenderError.imageUnresolved(binItemId: binItemId)
+        }
     }
 
     // MARK: - PrvImage 디코딩
