@@ -73,6 +73,8 @@ Xcode에서 스킴 `HwpSwiftSample` 선택 → 대상 지정:
   저장·인쇄를 띄울 곳을 잃고 임시 PDF도 남는다
 - 실패는 진행 시트가 **닫힌 뒤** 알림으로 띄운다(저장·인쇄와 같은 규약) —
   같은 갱신 주기에 겹치면 알림이 유실돼 오류가 조용히 사라진다
+- 인쇄는 **한 번에 하나만** 받는다 — `UIPrintInteractionController.shared`가
+  프로세스 전역이라 두 창이 동시에 쓰면 뒤 요청이 앞 작업의 문서를 덮어쓴다
 - **iPad에서는** 인쇄 UI를 앵커에서 띄운다. UIKit 헤더가 `presentAnimated:`를
   `// iPhone`, `presentFromRect:inView:`를 `// iPad`로 가르기 때문이다
   (`PDFExportSupport.swift`). 이 앱의 인쇄 버튼은 SwiftUI라 대응 `UIView`가 없어

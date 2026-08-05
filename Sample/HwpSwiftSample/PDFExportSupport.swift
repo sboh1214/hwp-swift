@@ -40,6 +40,11 @@ struct PDFFileDocument: FileDocument {
 /// (레이어 가상화) 인쇄 페이지네이션과 충돌한다. PDF를 한 번 만들어 그것을
 /// 인쇄하는 쪽이 화면과 결과가 같음을 보장한다.
 enum HwpSamplePrinter {
+    #if !os(macOS)
+        /// 표시 중인 인쇄 작업이 있는지 (프로세스 전역 — 공유 컨트롤러와 같은 범위).
+        @MainActor private static var isPresenting = false
+    #endif
+
     // 인쇄 UI를 띄운다. 실패하면 사용자에게 보일 사유를 돌려준다.
     // `onFinish`는 인쇄 대화상자가 닫힌 뒤(= 파일을 더 안 읽는 시점) 불린다 —
     // 호출부가 임시 파일을 지울 자리다. 실패를 반환하면 발화하지 않는다.
@@ -81,6 +86,13 @@ enum HwpSamplePrinter {
             guard UIPrintInteractionController.isPrintingAvailable else {
                 return "이 기기에서는 인쇄를 지원하지 않습니다"
             }
+            // `UIPrintInteractionController.shared`는 프로세스 전역이다. 두 scene이
+            // 동시에 쓰면 뒤 요청이 `printInfo`·`printingItem`을 덮어 앞 작업이
+            // 엉뚱한 문서를 인쇄하거나, 실패한 뒤쪽의 정리가 앞쪽이 아직 읽는
+            // 임시 파일을 지운다. 한 번에 하나만 들여보낸다.
+            guard !isPresenting else {
+                return "인쇄가 이미 진행 중입니다"
+            }
             let info = UIPrintInfo(dictionary: nil)
             info.outputType = .general
             info.jobName = jobName
@@ -91,22 +103,27 @@ enum HwpSamplePrinter {
             // `presentFromRect:inView:`·`presentFromBarButtonItem:`은 // iPad.
             // 이 타깃은 iPad(device family 2)도 지원하므로 분기한다.
             let completion: UIPrintInteractionController.CompletionHandler = { _, _, _ in
+                isPresenting = false
                 onFinish()
             }
+            isPresenting = true
             // 표시가 시작되지 않으면(예: 다른 모달이 떠 있음) completion도 오지
             // 않는다 — 성공으로 돌려주면 호출부의 임시 파일 정리가 통째로 건너뛴다.
             guard UIDevice.current.userInterfaceIdiom == .pad else {
                 guard controller.present(animated: true, completionHandler: completion) else {
+                    isPresenting = false
                     return "인쇄 UI를 띄우지 못했습니다"
                 }
                 return nil
             }
             guard let anchor, anchor.window != nil else {
+                isPresenting = false
                 return "인쇄 UI를 띄울 창을 찾지 못했습니다"
             }
             guard controller.present(
                 from: anchor.bounds, in: anchor, animated: true, completionHandler: completion
             ) else {
+                isPresenting = false
                 return "인쇄 UI를 띄우지 못했습니다"
             }
             return nil
