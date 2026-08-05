@@ -26,6 +26,11 @@ struct ContentView: View {
     /// 진행 시트가 닫힌 **뒤에** 할 일 — 두 모달을 같은 갱신 주기에 겹치면
     /// 두 번째 표시가 유실된다 (닫는 중인 시트 위로 띄우는 꼴).
     @State private var pendingDestination: PDFDestination?
+    /// 진행 시트가 닫힌 **뒤에** 띄울 실패 사유 (같은 이유로 미룬다)
+    @State private var pendingError: String?
+    #if !os(macOS)
+        @State private var printAnchor = HwpPrintAnchor.Box()
+    #endif
     @State private var showSavePanel = false
     /// 내보내기·인쇄 실패 사유 (빈 화면의 errorMessage와 별개 — 문서를 보는
     /// 중에는 그쪽이 화면에 없다)
@@ -192,6 +197,12 @@ struct ContentView: View {
             .keyboardShortcut("p", modifiers: [.command])
             .disabled(loadProgress != nil || exportProgress != nil)
 
+            #if !os(macOS)
+                // iPad 팝오버 앵커 — 이 자리에 있어야 인쇄를 누른 창에 뜬다.
+                HwpPrintAnchor(box: printAnchor)
+                    .frame(width: 1, height: 1)
+            #endif
+
             Spacer()
 
             HwpZoomControls(zoomScale: $zoomScale)
@@ -289,8 +300,10 @@ struct ContentView: View {
                 await MainActor.run { exportProgress = nil }
             } catch {
                 await MainActor.run {
+                    // 시트를 닫는 것과 알림을 띄우는 것을 같은 갱신 주기에 겹치면
+                    // 두 번째가 유실된다 — 저장·인쇄와 같이 onDismiss로 미룬다.
+                    pendingError = error.localizedDescription
                     exportProgress = nil
-                    exportError = error.localizedDescription
                 }
             }
         }
@@ -299,17 +312,28 @@ struct ContentView: View {
     /// 진행 시트가 완전히 닫힌 뒤 저장 패널·인쇄를 띄운다. 취소로 닫힌
     /// 경우에는 `pendingDestination`이 비어 있어 아무 일도 하지 않는다.
     private func presentPendingDestination() {
+        if let failure = pendingError {
+            pendingError = nil
+            exportError = failure
+            return
+        }
         guard let destination = pendingDestination, let url = exportedPDF else { return }
         pendingDestination = nil
         switch destination {
         case .save:
             showSavePanel = true
         case .print:
-            if let failure = HwpSamplePrinter.print(
-                pdfAt: url,
-                jobName: exportedName,
-                onFinish: { Task { @MainActor in discardExportedPDF() } }
-            ) {
+            let cleanup: @Sendable () -> Void = { Task { @MainActor in discardExportedPDF() } }
+            #if os(macOS)
+                let failure = HwpSamplePrinter.print(
+                    pdfAt: url, jobName: exportedName, onFinish: cleanup
+                )
+            #else
+                let failure = HwpSamplePrinter.print(
+                    pdfAt: url, jobName: exportedName, anchor: printAnchor.view, onFinish: cleanup
+                )
+            #endif
+            if let failure {
                 exportError = failure
                 discardExportedPDF()
             }

@@ -40,17 +40,17 @@ struct PDFFileDocument: FileDocument {
 /// (레이어 가상화) 인쇄 페이지네이션과 충돌한다. PDF를 한 번 만들어 그것을
 /// 인쇄하는 쪽이 화면과 결과가 같음을 보장한다.
 enum HwpSamplePrinter {
-    /// 인쇄 UI를 띄운다. 실패하면 사용자에게 보일 사유를 돌려준다.
-    /// `onFinish`는 인쇄 대화상자가 닫힌 뒤(= 파일을 더 안 읽는 시점) 불린다 —
-    /// 호출부가 임시 파일을 지울 자리다. 실패를 반환하면 발화하지 않는다.
-    @discardableResult
-    @MainActor
-    static func print(
-        pdfAt url: URL,
-        jobName: String,
-        onFinish: @escaping @Sendable () -> Void
-    ) -> String? {
-        #if os(macOS)
+    // 인쇄 UI를 띄운다. 실패하면 사용자에게 보일 사유를 돌려준다.
+    // `onFinish`는 인쇄 대화상자가 닫힌 뒤(= 파일을 더 안 읽는 시점) 불린다 —
+    // 호출부가 임시 파일을 지울 자리다. 실패를 반환하면 발화하지 않는다.
+    #if os(macOS)
+        @discardableResult
+        @MainActor
+        static func print(
+            pdfAt url: URL,
+            jobName _: String,
+            onFinish: @escaping @Sendable () -> Void
+        ) -> String? {
             guard let pdf = PDFDocument(url: url) else {
                 return "PDF를 열 수 없습니다"
             }
@@ -64,7 +64,17 @@ enum HwpSamplePrinter {
             operation.run()
             onFinish()
             return nil
-        #else
+        }
+    #else
+        /// `anchor`는 인쇄를 누른 창의 뷰여야 한다 (iPad 팝오버 기준점).
+        @discardableResult
+        @MainActor
+        static func print(
+            pdfAt url: URL,
+            jobName: String,
+            anchor: UIView?,
+            onFinish: @escaping @Sendable () -> Void
+        ) -> String? {
             guard UIPrintInteractionController.isPrintingAvailable else {
                 return "이 기기에서는 인쇄를 지원하지 않습니다"
             }
@@ -88,28 +98,42 @@ enum HwpSamplePrinter {
                 }
                 return nil
             }
-            guard let view = keyWindowView() else {
+            guard let anchor, anchor.window != nil else {
                 return "인쇄 UI를 띄울 창을 찾지 못했습니다"
             }
-            // 실서비스라면 인쇄 버튼에 앵커를 맞춘다. 이 샘플의 버튼은 SwiftUI라
-            // 대응 UIView가 없어 창 중앙에서 띄운다.
-            let anchor = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 1, height: 1)
             guard controller.present(
-                from: anchor, in: view, animated: true, completionHandler: completion
+                from: anchor.bounds, in: anchor, animated: true, completionHandler: completion
             ) else {
                 return "인쇄 UI를 띄우지 못했습니다"
             }
             return nil
-        #endif
-    }
-
-    #if !os(macOS)
-        @MainActor
-        private static func keyWindowView() -> UIView? {
-            UIApplication.shared.connectedScenes
-                .compactMap { $0 as? UIWindowScene }
-                .flatMap(\.windows)
-                .first { $0.isKeyWindow }
         }
     #endif
 }
+
+#if !os(macOS)
+    /// iPad 인쇄 팝오버의 앵커를 SwiftUI 계층에서 받아 오는 1×1 브리지.
+    ///
+    /// 전역 `UIApplication.shared.connectedScenes` 탐색으로는 안 된다:
+    /// `connectedScenes`는 Set이라 순서 보장이 없고 다중 scene에서는 창마다
+    /// key window가 있어, 인쇄를 누른 창이 아닌 곳에 팝오버가 뜨거나 표시가
+    /// 실패한다. 이 뷰는 인쇄 버튼 옆에 놓이므로 정의상 그 창에 있다.
+    struct HwpPrintAnchor: UIViewRepresentable {
+        final class Box {
+            weak var view: UIView?
+        }
+
+        let box: Box
+
+        func makeUIView(context _: Context) -> UIView {
+            let view = UIView()
+            view.isUserInteractionEnabled = false
+            box.view = view
+            return view
+        }
+
+        func updateUIView(_ view: UIView, context _: Context) {
+            box.view = view
+        }
+    }
+#endif
