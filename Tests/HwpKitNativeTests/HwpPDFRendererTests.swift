@@ -150,6 +150,35 @@ final class HwpPDFRendererTests: XCTestCase {
         expect(survived) == original
     }
 
+    /// 교체가 원본을 옮긴 뒤 실패하면 목적지가 빈다 — 남은 백업을 되돌려야
+    /// "실패는 목적지를 보존한다"가 성립한다 (#74 리뷰 8차).
+    func testRestoreBackupReturnsOriginalWhenDestinationIsMissing() throws {
+        let destination = scratchDirectory.appendingPathComponent("gone.pdf")
+        let original = Data("이전에 내보낸 PDF".utf8)
+        let backupName = ".hwp-export-backup-probe"
+        try original.write(to: scratchDirectory.appendingPathComponent(backupName))
+
+        HwpPDFRenderer.restoreBackup(named: backupName, at: destination)
+
+        let restored = try Data(contentsOf: destination)
+        expect(restored) == original
+    }
+
+    /// 목적지가 살아남았으면 백업만 치운다 — 되돌리면 새로 쓴 결과를 덮는다.
+    func testRestoreBackupRemovesBackupWhenDestinationSurvived() throws {
+        let destination = scratchDirectory.appendingPathComponent("survivor.pdf")
+        let current = Data("새로 쓴 PDF".utf8)
+        try current.write(to: destination)
+        let backupName = ".hwp-export-backup-probe"
+        let backup = scratchDirectory.appendingPathComponent(backupName)
+        try Data("이전에 내보낸 PDF".utf8).write(to: backup)
+
+        HwpPDFRenderer.restoreBackup(named: backupName, at: destination)
+
+        expect(try Data(contentsOf: destination)) == current
+        expect(FileManager.default.fileExists(atPath: backup.path)) == false
+    }
+
     /// 온전한 산출물은 통과한다 — 위 둘이 상시 실패가 아님을 보인다.
     func testValidateAcceptsCompleteOutput() async throws {
         let url = scratchDirectory.appendingPathComponent("complete.pdf")

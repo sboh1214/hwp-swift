@@ -5,7 +5,7 @@ import HwpKitCore
 public enum HwpPDFRenderError: Error, Sendable {
     case emptyDocument
     case contextCreationFailed
-    case fileWriteFailed(path: String)
+    case fileWriteFailed(path: String, reason: String)
     case pageImagesExceedMemoryBudget(pageIndex: Int)
     case incompleteOutput(expectedPages: Int, writtenPages: Int?)
 }
@@ -17,8 +17,8 @@ extension HwpPDFRenderError: CustomStringConvertible {
             "Document has no pages to export"
         case .contextCreationFailed:
             "Could not create a PDF context"
-        case let .fileWriteFailed(path):
-            "Could not open '\(path)' for writing"
+        case let .fileWriteFailed(path, reason):
+            "Could not write '\(path)': \(reason)"
         case let .pageImagesExceedMemoryBudget(pageIndex):
             "Page \(pageIndex + 1) references more image data than the decode budget allows"
         case let .incompleteOutput(expectedPages, writtenPages):
@@ -85,7 +85,9 @@ public enum HwpPDFRenderer {
             }
         }
         guard let consumer = CGDataConsumer(url: stagingFile as CFURL) else {
-            throw HwpPDFRenderError.fileWriteFailed(path: url.path)
+            throw HwpPDFRenderError.fileWriteFailed(
+                path: url.path, reason: "could not open a staging file for writing"
+            )
         }
         try await write(
             document: document,
@@ -143,14 +145,42 @@ public enum HwpPDFRenderer {
         // 목적지가 교체되고 호출자는 성공을 받는다 (종단 취소와 같은 불변식).
         try Task.checkCancellation()
         let manager = FileManager.default
-        do {
-            if manager.fileExists(atPath: url.path) {
-                _ = try manager.replaceItemAt(url, withItemAt: staging)
-            } else {
+        guard manager.fileExists(atPath: url.path) else {
+            do {
                 try manager.moveItem(at: staging, to: url)
+            } catch {
+                throw HwpPDFRenderError.fileWriteFailed(
+                    path: url.path, reason: error.localizedDescription
+                )
             }
+            return
+        }
+        // 원본을 **우리가 정한 이름**으로 남긴다. 교체가 원본을 옮긴 뒤 실패하면
+        // 목적지가 비는데 Foundation은 그 자리를 error userInfo로만 알려 주므로,
+        // 이름을 알고 있어야 되돌릴 수 있다. 성공 시 백업은 Foundation이 지운다.
+        // 목적지 이름에서 파생하지 않는다 — 긴 파일명에 접미사를 붙이면 이름
+        // 한도(255바이트)를 넘겨 정상 경로가 깨진다.
+        let backupName = ".hwp-export-backup-\(UUID().uuidString)"
+        do {
+            _ = try manager.replaceItemAt(url, withItemAt: staging, backupItemName: backupName)
         } catch {
-            throw HwpPDFRenderError.fileWriteFailed(path: url.path)
+            restoreBackup(named: backupName, at: url)
+            throw HwpPDFRenderError.fileWriteFailed(
+                path: url.path, reason: error.localizedDescription
+            )
+        }
+    }
+
+    /// 교체 실패로 남은 백업을 제자리로 되돌린다 — 목적지가 살아 있으면 백업만
+    /// 치운다. "실패는 목적지를 보존한다"가 실제로 성립하는 자리다.
+    static func restoreBackup(named name: String, at url: URL) {
+        let manager = FileManager.default
+        let backup = url.deletingLastPathComponent().appendingPathComponent(name)
+        guard manager.fileExists(atPath: backup.path) else { return }
+        if manager.fileExists(atPath: url.path) {
+            try? manager.removeItem(at: backup)
+        } else {
+            try? manager.moveItem(at: backup, to: url)
         }
     }
 
