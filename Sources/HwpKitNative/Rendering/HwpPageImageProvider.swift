@@ -462,7 +462,8 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         pinnedVariants.removeAll()
         didDropDeferred = false
         // 요청 상태를 비웠으니 확정 통보를 받을 대기자가 없다 — 전원 깨워
-        // 영구 대기를 막는다 (호출부가 다시 요청하거나 취소로 빠진다, #74).
+        // 영구 대기를 막는다 (#74). 깨어난 `resolveImage`는 세대가 바뀐 것을
+        // 보고 **재요청 없이 끝낸다** — 여기서 놓은 작업을 되살리면 안 된다.
         progressToken &+= 1
         let orphanedVariantWaiters = settleWaiters.values.flatMap { $0 }
         settleWaiters.removeAll()
@@ -581,12 +582,19 @@ extension HwpPageImageProvider {
     /// 캐시 purge에 취소된 요청은 축출이 아니라 재시도 대상이다 (R67).
     public func resolveImage(for key: UInt32, style: HwpImageRenderStyle? = nil) async -> CGImage? {
         let variant = Self.variantKey(key, style)
+        let startGeneration = currentGeneration()
         var didSettleOnce = false
         while !Task.isCancelled {
             if let image = cachedImage(for: key, style: style) {
                 return image
             }
             if didFail(for: key, style: style) {
+                return nil
+            }
+            // provider가 해체됐다. 다시 요청하면 `cancelOutstanding`이 놓으려던
+            // store/cache 작업을 되살린다. 세대로 보는 것은 두 대기 경로(확정
+            // 통보·진행 토큰)를 함께 덮기 위해서다 — 해체는 둘 다 깨운다.
+            if currentGeneration() != startGeneration {
                 return nil
             }
             // 확정 뒤 캐시에 없으면 예산 축출이다 — 재요청은 동시 해석자끼리
@@ -660,6 +668,13 @@ extension HwpPageImageProvider {
         lock.lock()
         defer { lock.unlock() }
         return settleWaiters[variant]?.count ?? 0
+    }
+
+    /// lock 밖. 현재 세대 — `cancelOutstanding`이 올린다.
+    private func currentGeneration() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return generation
     }
 
     /// lock 밖. 현재 진행 토큰.

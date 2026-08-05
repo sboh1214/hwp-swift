@@ -7,6 +7,33 @@ import Nimble
 import UniformTypeIdentifiers
 import XCTest
 
+/// 해석 완료를 폴링으로 관측하기 위한 상자 — 태스크 완료는 await 없이 볼 수
+/// 없는데, 회귀 시 그 await가 끝나지 않아 스위트를 멈춘다.
+private final class ResolvedImageBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var resolved: CGImage?
+    private var finished = false
+
+    func finish(_ image: CGImage?) {
+        lock.lock()
+        resolved = image
+        finished = true
+        lock.unlock()
+    }
+
+    var isFinished: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return finished
+    }
+
+    var image: CGImage? {
+        lock.lock()
+        defer { lock.unlock() }
+        return resolved
+    }
+}
+
 final class HwpPageImageProviderTests: XCTestCase {
     private func variant(_ key: UInt32) -> String {
         HwpPageImageProvider.variantKey(key, nil)
@@ -315,6 +342,27 @@ final class HwpPageImageProviderTests: XCTestCase {
         let image = await pending.value
         expect(image).toNot(beNil())
         expect(provider.didFail(for: 1)) == false
+    }
+
+    /// provider 해체(`cancelOutstanding`)는 대기 중인 해석을 **끝낸다**. 깨어난
+    /// 대기자가 다시 요청하면 해체가 놓으려던 store/cache 작업이 되살아난다 —
+    /// 해체는 그것을 놓으려고 부르는 것이다.
+    func testResolveImageStopsAfterProviderTeardown() async throws {
+        let provider = HwpPageImageProvider(
+            store: try makeStore(count: 1), cache: HwpImageCache()
+        )
+        // 진행 슬롯 0 = 확정이 발생하지 않아 대기 상태가 유지된다.
+        provider.maximumInFlight = 0
+        let box = ResolvedImageBox()
+        let pending = Task { await box.finish(provider.resolveImage(for: 1)) }
+        try await waitUntil { provider.settleWaiterCount(self.variant(1)) == 1 }
+
+        provider.cancelOutstanding()
+
+        // 회귀 시 다시 대기에 들어가 끝나지 않으므로 상한을 둔다 (행 대신 실패).
+        try await waitUntil { box.isFinished }
+        expect(box.image).to(beNil())
+        pending.cancel()
     }
 
     /// 태스크 취소는 대기를 즉시 끝낸다 (디코드 완료를 기다리지 않는다).

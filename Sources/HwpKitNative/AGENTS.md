@@ -53,7 +53,7 @@ HwpKitNative/
 - 확정됐다가 바이트 예산으로 **축출된** 변형은 재시도하지 않고 nil이다. 재요청하면 동시 해석자끼리 서로를 밀어내는 라이브락이 된다 — 그 페이지를 온전히 그려야 하는 경로는 draw 전에 `unsettledImageVariants(in:)`로 확인한다 (아래 PDF 절)
 - **"확정"은 기록이 있을 때만이다** (#74 리뷰 2차). 캐시 purge에 취소된 디코드는 `resolved`에도 `failedKeys`에도 안 들어가는데(R67 — 재시도 가능으로 남겨야 한다) 그것을 `.settled`로 깨우면 위 라이브락 컷이 예산 축출로 오분류해 재시도 없이 nil을 준다. `finishRequest`는 `image != nil || recordsFailure`일 때만 `.settled`로, 아니면 `.untracked`(재시도)로 깨운다
 - continuation 재개는 **반드시 lock 밖**에서 (`takeWaiters` → `resume`). 재개가 같은 락을 다시 잡는 경로(`resolveImage` 루프)로 이어진다
-- `cancelOutstanding`은 대기자 전원을 `.untracked`로 깨운다 — 요청 상태를 비웠으니 확정 통보를 받을 주체가 없다
+- `cancelOutstanding`은 대기자 전원을 `.untracked`로 깨운다 — 요청 상태를 비웠으니 확정 통보를 받을 주체가 없다. 깨어난 `resolveImage`는 **재요청 없이 끝낸다** (#74 리뷰 7차): 해체는 store/cache 작업을 놓으려고 부르는 것인데 대기자가 다시 요청하면 그것을 되살린다. 판정은 `.untracked` 분기가 아니라 **시작 시점 세대와의 비교**여야 한다 — 해체는 확정 통보와 진행 토큰을 **둘 다** 깨우므로, 그때 `awaitProgress`에서 자던 해석자는 그 분기를 지나지 않는다
 - `predecodeImageReferences`는 **진행 상한 몫(12)씩 나눠** 요청한다. 한 번에 전량을 넣으면 초과분이 굳이 드롭 → 재시도 경로를 밟는다
 - 호출 **전에** `setPinnedImages(HwpPageImageProvider.imageVariantKeys(in:))`로 고정할 것. 안 하면 먼저 디코드된 대형 이미지가 draw 전에 바이트 예산(256MB)으로 축출된다
 - 스로틀(limit 3)은 **provider 전역 static**이라 export가 화면 뷰어와 슬롯을 공유한다. export 중 스크롤이 느려지는 것은 설계상 불가피하고, 취소는 스로틀 대기자에게 전파된다
