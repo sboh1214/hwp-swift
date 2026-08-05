@@ -7,6 +7,7 @@ public enum HwpPDFRenderError: Error, Sendable {
     case contextCreationFailed
     case fileWriteFailed(path: String)
     case pageImagesExceedMemoryBudget(pageIndex: Int)
+    case incompleteOutput(expectedPages: Int, writtenPages: Int?)
 }
 
 extension HwpPDFRenderError: CustomStringConvertible {
@@ -20,6 +21,13 @@ extension HwpPDFRenderError: CustomStringConvertible {
             "Could not open '\(path)' for writing"
         case let .pageImagesExceedMemoryBudget(pageIndex):
             "Page \(pageIndex + 1) references more image data than the decode budget allows"
+        case let .incompleteOutput(expectedPages, writtenPages):
+            if let writtenPages {
+                "PDF output is incomplete: wrote \(writtenPages) of \(expectedPages) pages"
+            } else {
+                "PDF output could not be reopened after writing "
+                    + "(\(expectedPages) pages expected) — the volume may be full"
+            }
         }
     }
 }
@@ -85,7 +93,24 @@ public enum HwpPDFRenderer {
             imageByteLimit: imageByteLimit,
             onProgress: onProgress
         )
-        try install(stagingFile, at: url)
+        try install(stagingFile, at: url, expectedPages: document.pages.count)
+    }
+
+    /// 다 쓴 PDF를 **실제로 열어 본다**. CG는 쓰기 실패를 로그로만 알린다 —
+    /// `endPDFPage`/`closePDF`가 `Void`라 디스크가 차도 `write`가 정상 종료하고
+    /// 절단 파일이 남는다 (실측: 6MB 볼륨에 11MB PDF → 열리지 않는 5.2MB 파일,
+    /// 예외 없음). 그대로 설치하면 멀쩡하던 기존 PDF가 못 여는 파일로 바뀐다.
+    static func validate(_ staging: URL, expectedPages: Int) throws {
+        guard let pdf = CGPDFDocument(staging as CFURL) else {
+            throw HwpPDFRenderError.incompleteOutput(
+                expectedPages: expectedPages, writtenPages: nil
+            )
+        }
+        guard pdf.numberOfPages == expectedPages else {
+            throw HwpPDFRenderError.incompleteOutput(
+                expectedPages: expectedPages, writtenPages: pdf.numberOfPages
+            )
+        }
     }
 
     /// 스테이징 자리는 목적지와 **같은 볼륨**이어야 한다 — `replaceItemAt`은 두
@@ -109,9 +134,11 @@ public enum HwpPDFRenderer {
         return (replacement, true)
     }
 
-    /// 완성된 임시 파일을 목적지로 옮긴다. 여기까지 왔다는 것은 PDF가 온전하다는
-    /// 뜻이므로, 이전 파일을 잃는 순간은 **성공했을 때뿐**이다.
-    private static func install(_ staging: URL, at url: URL) throws {
+    /// 완성된 임시 파일을 목적지로 옮긴다. 검증을 **여기 안에** 두는 이유는
+    /// 그것이 설치의 전제이기 때문이다 — 밖에 두면 호출을 빠뜨려도 테스트가
+    /// 통과한다 (실제로 그랬다).
+    static func install(_ staging: URL, at url: URL, expectedPages: Int) throws {
+        try validate(staging, expectedPages: expectedPages)
         let manager = FileManager.default
         do {
             if manager.fileExists(atPath: url.path) {

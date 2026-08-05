@@ -59,6 +59,73 @@ final class HwpPDFRendererTests: XCTestCase {
         expect(pdf.numberOfPages) == 1
     }
 
+    /// 다 쓴 파일이 열리지 않으면 설치하지 않는다. 디스크가 차면 CG는 로그만
+    /// 남기고 `write`가 정상 종료하므로(실측), 이 검증이 없으면 멀쩡하던 기존
+    /// PDF가 못 여는 파일로 교체되면서 호출자는 성공을 받는다.
+    func testValidateRejectsUnreadableOutput() async throws {
+        let url = scratchDirectory.appendingPathComponent("truncated.pdf")
+        try await HwpPDFRenderer.render(document: try makeImageDocument(imageCount: 1), to: url)
+        let complete = try Data(contentsOf: url)
+        try complete.prefix(complete.count / 2).write(to: url)
+
+        expect { try HwpPDFRenderer.validate(url, expectedPages: 1) }
+            .to(throwError(errorType: HwpPDFRenderError.self) { error in
+                guard case let .incompleteOutput(_, written) = error else {
+                    return fail("Expected .incompleteOutput, got \(error)")
+                }
+                expect(written).to(beNil())
+            })
+    }
+
+    /// 열리더라도 페이지가 모자라면 거부한다 — 절단이 xref 뒤에서 끝나면 파일이
+    /// 열리기도 한다.
+    func testValidateRejectsShortPageCount() async throws {
+        let url = scratchDirectory.appendingPathComponent("short.pdf")
+        try await HwpPDFRenderer.render(document: try makeImageDocument(imageCount: 1), to: url)
+
+        expect { try HwpPDFRenderer.validate(url, expectedPages: 2) }
+            .to(throwError(errorType: HwpPDFRenderError.self) { error in
+                guard case let .incompleteOutput(expected, written) = error else {
+                    return fail("Expected .incompleteOutput, got \(error)")
+                }
+                expect(expected) == 2
+                expect(written) == 1
+            })
+    }
+
+    /// 검증은 **설치의 전제**다: 불완전한 산출물이 오면 목적지를 건드리지 않는다.
+    /// `validate`만 따로 검사하면 호출을 빠뜨려도 통과하므로(실제로 그랬다) 이
+    /// 가드가 배선 자체를 잡는다.
+    func testInstallRejectsIncompleteOutputAndKeepsDestination() async throws {
+        let destination = scratchDirectory.appendingPathComponent("keep-me.pdf")
+        let original = Data("이전에 내보낸 PDF".utf8)
+        try original.write(to: destination)
+        let staging = scratchDirectory.appendingPathComponent("staged.pdf")
+        try await HwpPDFRenderer.render(
+            document: try makeImageDocument(imageCount: 1), to: staging
+        )
+        let complete = try Data(contentsOf: staging)
+        try complete.prefix(complete.count / 2).write(to: staging)
+
+        expect { try HwpPDFRenderer.install(staging, at: destination, expectedPages: 1) }
+            .to(throwError(errorType: HwpPDFRenderError.self) { error in
+                if case .incompleteOutput = error {} else {
+                    fail("Expected .incompleteOutput, got \(error)")
+                }
+            })
+
+        let survived = try Data(contentsOf: destination)
+        expect(survived) == original
+    }
+
+    /// 온전한 산출물은 통과한다 — 위 둘이 상시 실패가 아님을 보인다.
+    func testValidateAcceptsCompleteOutput() async throws {
+        let url = scratchDirectory.appendingPathComponent("complete.pdf")
+        try await HwpPDFRenderer.render(document: try makeImageDocument(imageCount: 1), to: url)
+
+        expect { try HwpPDFRenderer.validate(url, expectedPages: 1) }.toNot(throwError())
+    }
+
     // MARK: - 합성 문서
 
     private func makeImageDocument(imageCount: UInt32) throws -> HwpDocument {

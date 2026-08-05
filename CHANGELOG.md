@@ -83,7 +83,9 @@
   목적지를 건드리므로**, 기존 PDF를 덮어쓰는 중에 취소·실패해도 이전 파일이
   그대로 남고 열리지 않는 부분 파일도 남지 않습니다. 한 페이지가 참조하는
   이미지가 디코드 예산(256MB)을 넘으면 이미지가 빠진 PDF를 돌려주는 대신
-  실패합니다. 에러는 `HwpPDFExportError`(`CustomStringConvertible` +
+  실패합니다. 다 쓴 PDF는 **열어서 페이지 수를 확인한 뒤에만** 목적지로
+  옮깁니다 — Core Graphics는 쓰기 실패를 로그로만 알려서, 디스크가 차면 절단된
+  파일이 성공으로 설치될 수 있었습니다. 에러는 `HwpPDFExportError`(`CustomStringConvertible` +
   `LocalizedError`)입니다.
   **인쇄·저장·공유 UI는 앱 책임입니다** — 라이브러리는 PDF 바이트까지만
   만듭니다. `Sample/`이 macOS `PDFDocument.printOperation`, iOS
