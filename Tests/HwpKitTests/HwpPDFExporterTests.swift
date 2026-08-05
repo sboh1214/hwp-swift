@@ -160,6 +160,46 @@ final class HwpPDFExporterTests: XCTestCase {
         expect(FileManager.default.fileExists(atPath: url.path)) == false
     }
 
+    /// 실패·취소는 사용자의 **이전 PDF**를 파괴하지 않는다. `CGDataConsumer(url:)`
+    /// 는 생성 순간 대상 파일을 0바이트로 자르므로(실측), 목적지에 직접 쓰면
+    /// 덮어쓰기 도중의 취소가 복구 불가능한 손실이 된다.
+    func testCancellationLeavesExistingDestinationIntact() async throws {
+        let url = outputURL("existing.pdf")
+        let original = Data("이전에 내보낸 PDF".utf8)
+        try original.write(to: url)
+        let document = makeDocument(
+            sizes: Array(repeating: CGSize(width: 400, height: 600), count: 200)
+        )
+        let box = CancellationBox()
+
+        let task = Task {
+            try await HwpPDFExporter().export(document: document, to: url) { progress in
+                if progress.pageIndex >= 1 {
+                    box.requestCancellation()
+                }
+            }
+        }
+        box.attach(task)
+        await expect { try await task.value }
+            .to(throwError(errorType: HwpPDFExportError.self) { _ in })
+
+        let survived = try Data(contentsOf: url)
+        expect(survived) == original
+    }
+
+    /// 성공하면 실제로 교체한다 — 보존이 "덮어쓰기 실패"로 퇴화하지 않게.
+    func testSuccessfulExportReplacesExistingDestination() async throws {
+        let url = outputURL("replace.pdf")
+        try Data("이전에 내보낸 PDF".utf8).write(to: url)
+
+        try await HwpPDFExporter().export(
+            document: makeDocument(sizes: [CGSize(width: 200, height: 300)]), to: url
+        )
+
+        let pdf = try XCTUnwrap(CGPDFDocument(url as CFURL))
+        expect(pdf.numberOfPages) == 1
+    }
+
     func testEmptyDocumentThrows() async {
         let empty = HwpDocument.empty
         let url = outputURL()

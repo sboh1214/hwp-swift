@@ -244,9 +244,10 @@ final class HwpPageImageProviderTests: XCTestCase {
         _ = await pending.value
     }
 
-    /// 뷰 provider는 하드 상한을 지키려 고정 변형까지 축출한다 — 축출된 pin은
-    /// 다음 재드로우가 되살리므로 OOM을 막는 쪽이 이긴다 (#1).
-    func testViewProviderEvictsPinnedVariantsOverHardLimit() throws {
+    /// 하드 상한은 고정 변형까지 축출해 지킨다 — 상한을 끄면 한 페이지 작업셋이
+    /// 프로세스를 고갈시킨다 (#74 리뷰 2차). 그 결과 화면 없는 경로에 생기는
+    /// 구멍은 `unsettledImageVariants`로 **관측 가능**해야 한다.
+    func testPinnedVariantsAreEvictedOverHardLimitAndReportedAsUnsettled() throws {
         let provider = HwpPageImageProvider(store: HwpImageStore(), cache: HwpImageCache())
         provider.resolvedByteLimit = 1
         provider.setPinnedImages([variant(1), variant(2)])
@@ -257,23 +258,42 @@ final class HwpPageImageProviderTests: XCTestCase {
 
         expect(provider.cachedImage(for: 1)).to(beNil())
         expect(provider.cachedImage(for: 2)).toNot(beNil())
+        expect(provider.unsettledImageVariants(in: self.makePaintList(keys: 1 ... 2)))
+            == [variant(1)]
     }
 
-    /// 화면 없는 경로는 그 축출을 끈다 — draw가 한 번뿐이라 축출된 이미지를
-    /// 되살릴 재드로우가 없고, 회색 사각형이 그대로 PDF에 박힌다 (#74 리뷰).
-    func testScreenlessProviderKeepsPinnedVariantsOverHardLimit() throws {
+    /// 디코드 실패는 미확정이 아니다 — 플레이스홀더가 정답이라 export를 세우면
+    /// 손상된 그림 하나로 문서 전체를 못 내보내게 된다.
+    func testUnsettledVariantsExcludeDecodeFailures() {
+        let provider = HwpPageImageProvider(store: HwpImageStore(), cache: HwpImageCache())
+
+        provider.finishRequest(key: 1, variant: variant(1), generation: 0, image: nil, cost: 0)
+
+        expect(provider.didFail(for: 1)) == true
+        expect(provider.unsettledImageVariants(in: self.makePaintList(keys: 1 ... 1)))
+            .to(beEmpty())
+    }
+
+    /// 캐시 purge에 취소된 요청(기록 없음)은 축출이 아니라 **재시도 대상**이다
+    /// (R67). `.settled`로 깨우면 대기자가 그것을 예산 축출로 보고 포기해,
+    /// 화면 없는 경로가 회색 로딩 사각형을 그린다.
+    func testResolveImageRetriesAfterPurgeCancelledRequest() async throws {
         let provider = HwpPageImageProvider(
-            store: HwpImageStore(), cache: HwpImageCache(), evictsPinnedOverBudget: false
+            store: try makeStore(count: 1), cache: HwpImageCache()
         )
-        provider.resolvedByteLimit = 1
-        provider.setPinnedImages([variant(1), variant(2)])
-        let image = try makeCGImage()
+        provider.maximumInFlight = 0
+        let pending = Task { await provider.resolveImage(for: 1) }
+        try await waitUntil { provider.settleWaiterCount(self.variant(1)) == 1 }
 
-        provider.finishRequest(key: 1, variant: variant(1), generation: 0, image: image, cost: 10)
-        provider.finishRequest(key: 2, variant: variant(2), generation: 0, image: image, cost: 10)
+        provider.maximumInFlight = 4
+        provider.finishRequest(
+            key: 1, variant: variant(1), generation: 0,
+            image: nil, cost: 0, recordsFailure: false
+        )
 
-        expect(provider.cachedImage(for: 1)).toNot(beNil())
-        expect(provider.cachedImage(for: 2)).toNot(beNil())
+        let image = await pending.value
+        expect(image).toNot(beNil())
+        expect(provider.didFail(for: 1)) == false
     }
 
     /// 태스크 취소는 대기를 즉시 끝낸다 (디코드 완료를 기다리지 않는다).

@@ -57,16 +57,12 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     var maximumDeferred = 64
     /// 다운샘플 상한 이미지 서너 장이 한 페이지 작업셋에 들어가도 루프가 안
     /// 생기게 256MB. 각 변형은 다운샘플로 ≤67MB라 메모리 총량은 유계다 (#3).
-    var resolvedByteLimit = 256_000_000
+    static let defaultResolvedByteLimit = 256_000_000
+    var resolvedByteLimit = HwpPageImageProvider.defaultResolvedByteLimit
     /// 동시 진행 요청 상한 — 이미지 변형이 많은 페이지가 무제한 Task·throttle
     /// 대기를 쌓지 않게 백프레셔로 막는다. 초과분은 다음 draw에서 재요청된다 (#2).
     var maximumInFlight = 12
-    /// 예산을 지키려 **고정(pin) 변형까지** 축출할지. 뷰는 true (축출된 pin은
-    /// 다음 재드로우가 되살린다), 화면 없는 경로는 false — draw가 한 번뿐이라
-    /// 축출된 이미지가 회색 사각형으로 결과물에 박힌다. false일 때 상주량은 한
-    /// 페이지 작업셋이고, 페이지가 바뀌면 `setPinnedImages`의 unpin이 예산 안으로
-    /// 되돌리므로 문서 전체로는 유계다.
-    private let evictsPinnedOverBudget: Bool
+
     private var failedKeys: Set<String> = []
     private var inFlightKeys: Set<String> = []
     /// binItemId별 가장 최근에 해석된 변형 키 (platformImage 폴백용)
@@ -116,14 +112,9 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         }
     }
 
-    public convenience init(store: HwpImageStore, cache: HwpImageCache) {
-        self.init(store: store, cache: cache, evictsPinnedOverBudget: true)
-    }
-
-    init(store: HwpImageStore, cache: HwpImageCache, evictsPinnedOverBudget: Bool) {
+    public init(store: HwpImageStore, cache: HwpImageCache) {
         self.store = store
         self.cache = cache
-        self.evictsPinnedOverBudget = evictsPinnedOverBudget
     }
 
     /// 뷰가 다른 문서 할당 없이 제거되면 아무도 cancelOutstanding을 부르지 않아,
@@ -310,9 +301,17 @@ public final class HwpPageImageProvider: @unchecked Sendable {
             didDropDeferred = false
         }
         // 확정 통보 + 진행 토큰 — 화면 없는 경로의 대기자를 깨운다 (#74).
+        // **기록이 없으면 확정이 아니다**: 캐시 purge에 취소된 디코드는 resolved
+        // 에도 failedKeys에도 안 들어가므로(R67) 재시도 가능으로 깨워야 한다.
+        // .settled로 깨우면 대기자가 그것을 예산 축출로 보고 포기한다.
+        let recorded = image != nil || recordsFailure
         let waiters = takeWaiters(settledVariant: variant)
         lock.unlock()
-        Self.resume(settled: waiters.variant, progress: waiters.progress)
+        Self.resume(
+            variantWaiters: waiters.variant,
+            as: recorded ? .settled : .untracked,
+            progress: waiters.progress
+        )
         handler?(key)
         capacityHandler?()
         if let retry {
@@ -399,15 +398,15 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     /// 오래된 고정 변형도 축출해 하드 상한을 지킨다 (#1 — pin 작업셋 무한 증가
     /// 방지). keep(방금 삽입)은 남겨 즉시 축출→재요청 루프를 막는다. 고정 축출은
     /// 병적 페이지에서만 발동하며, 그 경우 재디코드 회전을 감수하고 OOM을 막는다.
-    /// 재드로우가 없는 경로는 그 회전으로 되살릴 기회가 없어 이 단계를 끈다
-    /// (`evictsPinnedOverBudget`).
+    /// 재드로우가 없는 경로는 그 회전으로 되살릴 기회가 없으므로, **상한을 끄는
+    /// 대신** draw 직전에 잔존 여부를 확인해 오류로 끝낸다 (`HwpPDFRenderer`) —
+    /// 상한을 끄면 한 페이지 작업셋이 프로세스를 고갈시킬 수 있다.
     private func evictOverBudget(keeping keep: String? = nil) {
         while resolvedBytes > resolvedByteLimit,
               let idx = resolvedOrder.firstIndex(where: { $0 != keep && !isPinned($0) })
         {
             evictVariant(at: idx)
         }
-        guard evictsPinnedOverBudget else { return }
         while resolvedBytes > resolvedByteLimit,
               let idx = resolvedOrder.firstIndex(where: { $0 != keep })
         {
@@ -562,7 +561,8 @@ extension HwpPageImageProvider {
     ///
     /// 확정됐다가 바이트 예산으로 축출된 변형은 **재시도하지 않고 nil**이다
     /// (재요청하면 동시 해석자끼리 서로를 밀어내는 라이브락). 그 페이지를 온전히
-    /// 그려야 하는 경로는 `evictsPinnedOverBudget: false` provider를 쓴다.
+    /// 그려야 하는 경로는 draw 전에 `unsettledImageVariants(in:)`로 확인한다.
+    /// 캐시 purge에 취소된 요청은 축출이 아니라 재시도 대상이다 (R67).
     public func resolveImage(for key: UInt32, style: HwpImageRenderStyle? = nil) async -> CGImage? {
         let variant = Self.variantKey(key, style)
         var didSettleOnce = false
@@ -619,6 +619,24 @@ extension HwpPageImageProvider {
             }
             start = end
         }
+    }
+
+    /// paint list가 참조하는 변형 중 아직 **확정되지 않은** 것 — 디코드 실패는
+    /// 뺀다 (그건 플레이스홀더가 정답이라 뷰와 같다). 재드로우가 없는 경로가
+    /// draw 직전에 "이 페이지를 온전히 그릴 수 있는가"를 묻는 데 쓴다: 프리디코드
+    /// 뒤에도 남아 있으면 그 페이지 작업셋이 바이트 예산을 넘겨 축출된 것이다.
+    func unsettledImageVariants(in paintList: HwpPaintList) -> Set<String> {
+        lock.lock()
+        defer { lock.unlock() }
+        var unsettled: Set<String> = []
+        for command in paintList.commands {
+            guard case let .drawImageReference(binItemId, _, style, _) = command else { continue }
+            let variant = Self.variantKey(binItemId, style)
+            if resolved[variant] == nil, !failedKeys.contains(variant) {
+                unsettled.insert(variant)
+            }
+        }
+        return unsettled
     }
 
     /// 테스트 관측점 — 그 변형의 확정 대기자 수.
@@ -732,11 +750,12 @@ extension HwpPageImageProvider {
     }
 
     private static func resume(
-        settled: [VariantWaiter],
+        variantWaiters: [VariantWaiter],
+        as wait: VariantWait,
         progress: [ProgressWaiter]
     ) {
-        for waiter in settled {
-            waiter.continuation.resume(returning: .settled)
+        for waiter in variantWaiters {
+            waiter.continuation.resume(returning: wait)
         }
         for waiter in progress {
             waiter.continuation.resume()
