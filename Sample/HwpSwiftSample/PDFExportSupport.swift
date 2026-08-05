@@ -48,7 +48,7 @@ enum HwpSamplePrinter {
         @MainActor
         static func print(
             pdfAt url: URL,
-            jobName _: String,
+            jobName: String,
             onFinish: @escaping @Sendable () -> Void
         ) -> String? {
             guard let pdf = PDFDocument(url: url) else {
@@ -61,6 +61,9 @@ enum HwpSamplePrinter {
             ) else {
                 return "인쇄 작업을 만들 수 없습니다"
             }
+            // 백킹 PDF는 UUID 파일명이라 이것을 안 주면 인쇄 대화상자·큐에
+            // 그 UUID가 그대로 보인다.
+            operation.jobTitle = jobName
             operation.run()
             onFinish()
             return nil
