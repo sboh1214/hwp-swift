@@ -365,6 +365,38 @@ final class HwpPageImageProviderTests: XCTestCase {
         pending.cancel()
     }
 
+    /// 디퍼드에서 꺼낸 재시도가 **드롭되면** 그 변형의 대기자도 함께 내보낸다.
+    /// `finishRequest`는 디큐 뒤 락을 놓고 재요청하는데, 그 사이 두 큐가 차면
+    /// 재요청이 드롭 분기로 간다 — 그 변형의 대기자는 디퍼드에 있던 동안 등록된
+    /// 것이라, 남겨 두면 확정 통보가 영영 오지 않는다 (#74 리뷰 9차).
+    func testDroppedDeferredRetryWakesItsWaiter() async throws {
+        let provider = HwpPageImageProvider(
+            store: try makeStore(count: 3), cache: HwpImageCache()
+        )
+        provider.maximumInFlight = 0
+        provider.maximumDeferred = 1
+        // 전부 고정해 축출 경로를 막는다 — 드롭 분기를 강제한다.
+        provider.setPinnedImages([variant(1), variant(2), variant(3)])
+        let pending = Task { await provider.resolveImage(for: 1) }
+        try await waitUntil { provider.settleWaiterCount(self.variant(1)) == 1 }
+
+        // finishRequest가 1을 디큐한 뒤 락을 놓는 그 틈(onImageResolved)에 슬롯과
+        // 디퍼드를 채워, 이어지는 1의 재요청이 드롭되게 만든다.
+        provider.maximumInFlight = 1
+        provider.onImageResolved = { _ in
+            provider.requestImage(for: 2)
+            provider.requestImage(for: 3)
+        }
+        provider.finishRequest(
+            key: 99, variant: variant(99), generation: 0, image: nil, cost: 0
+        )
+        provider.onImageResolved = nil
+
+        expect(provider.settleWaiterCount(self.variant(1))) == 0
+        provider.cancelOutstanding()
+        _ = await pending.value
+    }
+
     /// 태스크 취소는 대기를 즉시 끝낸다 (디코드 완료를 기다리지 않는다).
     func testResolveImageReturnsOnCancellation() async throws {
         let provider = HwpPageImageProvider(

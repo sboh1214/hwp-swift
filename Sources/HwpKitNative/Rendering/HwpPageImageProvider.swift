@@ -353,6 +353,11 @@ public final class HwpPageImageProvider: @unchecked Sendable {
             // 만석+전부-pin이라 드롭됨 — 자리가 나면 finishRequest가 전체 가시
             // 레이어 재드로우를 알려 이 요청을 재시도시킨다 (R42 #1).
             didDropDeferred = true
+            // 이 변형에 **이미 대기자가 있을 수 있다**: finishRequest가 디퍼드에서
+            // 꺼낸 재시도는 락 밖에서 다시 요청되는데, 그 사이 두 큐가 차면 여기로
+            // 온다. 그때 대기자는 디퍼드에 있던 동안 등록된 것이라, 드롭된 채
+            // 남겨 두면 확정 통보가 영영 오지 않는다 (축출 경로와 같은 이유).
+            orphaned += settleWaiters.removeValue(forKey: variant) ?? []
         }
         return orphaned
     }
