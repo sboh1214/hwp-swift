@@ -43,7 +43,7 @@ enum HwpSamplePrinter {
     /// 인쇄 UI를 띄운다. 실패하면 사용자에게 보일 사유를 돌려준다.
     @discardableResult
     @MainActor
-    static func print(pdfAt url: URL) -> String? {
+    static func print(pdfAt url: URL, jobName: String) -> String? {
         #if os(macOS)
             guard let pdf = PDFDocument(url: url) else {
                 return "PDF를 열 수 없습니다"
@@ -63,7 +63,7 @@ enum HwpSamplePrinter {
             }
             let info = UIPrintInfo(dictionary: nil)
             info.outputType = .general
-            info.jobName = url.deletingPathExtension().lastPathComponent
+            info.jobName = jobName
             let controller = UIPrintInteractionController.shared
             controller.printInfo = info
             controller.printingItem = url

@@ -20,6 +20,9 @@ struct ContentView: View {
     @State private var exportTask: Task<Void, Never>?
     /// 내보내기가 끝난 임시 PDF — 저장 패널/인쇄가 이 파일을 가리킨다
     @State private var exportedPDF: URL?
+    /// 사용자에게 보일 이름 (저장 패널 기본 파일명·인쇄 작업명). 임시 파일명은
+    /// UUID라 그대로 쓸 수 없다
+    @State private var exportedName = "document"
     /// 진행 시트가 닫힌 **뒤에** 할 일 — 두 모달을 같은 갱신 주기에 겹치면
     /// 두 번째 표시가 유실된다 (닫는 중인 시트 위로 띄우는 꼴).
     @State private var pendingDestination: PDFDestination?
@@ -122,7 +125,7 @@ struct ContentView: View {
             isPresented: $showSavePanel,
             document: exportedPDF.map(PDFFileDocument.init(url:)),
             contentType: .pdf,
-            defaultFilename: exportedPDF?.deletingPathExtension().lastPathComponent
+            defaultFilename: exportedName
         ) { result in
             if case let .failure(error) = result {
                 exportError = error.localizedDescription
@@ -246,8 +249,13 @@ struct ContentView: View {
         exportTask?.cancel()
         exportError = nil
         exportProgress = 0
+        exportedName = Self.exportFileName(for: document)
+        // 파일명은 UUID로 짓는다. 제목에서 뽑으면 `WindowGroup`의 두 창이 같은
+        // 경로를 써, 한쪽 저장 패널이 열려 있는 사이 다른 쪽 내보내기가 그 파일을
+        // 갈아 치운다 (다른 문서가 저장된다). 긴 제목의 파일명 한도(255바이트)
+        // 문제도 함께 사라진다.
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("\(Self.exportFileName(for: document)).pdf")
+            .appendingPathComponent("hwp-sample-export-\(UUID().uuidString).pdf")
         exportTask = Task {
             do {
                 try await HwpPDFExporter().export(document: document, to: url) { progress in
@@ -285,7 +293,7 @@ struct ContentView: View {
         case .save:
             showSavePanel = true
         case .print:
-            exportError = HwpSamplePrinter.print(pdfAt: url)
+            exportError = HwpSamplePrinter.print(pdfAt: url, jobName: exportedName)
         }
     }
 
@@ -295,7 +303,9 @@ struct ContentView: View {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-") ?? ""
-        return title.isEmpty ? "document" : title
+        // 저장 패널이 제안할 이름이라 파일명 성분 한도(255바이트) 안으로 자른다 —
+        // 한글은 UTF-8 3바이트라 85자면 넘는다.
+        return title.isEmpty ? "document" : String(title.prefix(80))
     }
 
     private func loadDocument(from url: URL) {
