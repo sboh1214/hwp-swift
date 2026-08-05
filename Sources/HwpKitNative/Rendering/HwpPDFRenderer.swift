@@ -67,10 +67,16 @@ public enum HwpPDFRenderer {
         // 목적지에 직접 쓰지 않는다: `CGDataConsumer(url:)`는 **생성 순간** 그
         // 파일을 0바이트로 자르므로(실측), 취소·실패가 사용자의 이전 PDF를
         // 파괴한다. 임시 파일에 완성한 뒤에만 목적지를 건드린다.
-        let staging = FileManager.default.temporaryDirectory
+        let staging = stagingDirectory(for: url)
+        let stagingFile = staging.url
             .appendingPathComponent("hwp-pdf-export-\(UUID().uuidString).pdf")
-        defer { try? FileManager.default.removeItem(at: staging) }
-        guard let consumer = CGDataConsumer(url: staging as CFURL) else {
+        defer {
+            try? FileManager.default.removeItem(at: stagingFile)
+            if staging.isOwned {
+                try? FileManager.default.removeItem(at: staging.url)
+            }
+        }
+        guard let consumer = CGDataConsumer(url: stagingFile as CFURL) else {
             throw HwpPDFRenderError.fileWriteFailed(path: url.path)
         }
         try await write(
@@ -79,7 +85,28 @@ public enum HwpPDFRenderer {
             imageByteLimit: imageByteLimit,
             onProgress: onProgress
         )
-        try install(staging, at: url)
+        try install(stagingFile, at: url)
+    }
+
+    /// 스테이징 자리는 목적지와 **같은 볼륨**이어야 한다 — `replaceItemAt`은 두
+    /// 항목이 같은 볼륨일 것을 요구해서, 앱 임시 디렉터리에 두면 외장 드라이브의
+    /// 기존 파일을 덮어쓸 때 EXDEV로 실패한다 (실측). `appropriateFor:`가 그
+    /// 볼륨의 교체용 디렉터리를 준다.
+    ///
+    /// 그 자리를 못 얻으면 앱 임시 디렉터리로 돌아간다: 크로스 디바이스를 복사로
+    /// 처리하는 `moveItem` 덕에 **새 파일 생성은 살고**, 그 볼륨의 덮어쓰기만
+    /// 실패한다 (전부 실패시키는 것보다 낫다).
+    private static func stagingDirectory(for url: URL) -> (url: URL, isOwned: Bool) {
+        let replacement = try? FileManager.default.url(
+            for: .itemReplacementDirectory,
+            in: .userDomainMask,
+            appropriateFor: url,
+            create: true
+        )
+        guard let replacement else {
+            return (FileManager.default.temporaryDirectory, false)
+        }
+        return (replacement, true)
     }
 
     /// 완성된 임시 파일을 목적지로 옮긴다. 여기까지 왔다는 것은 PDF가 온전하다는
