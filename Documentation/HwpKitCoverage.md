@@ -155,7 +155,9 @@ HWP_SNAPSHOT_TESTS=1 swift test --filter FixturePreviewFidelityTests
 
 - `FixturePreviewSupport.swift` — 렌더/비교 유틸: `FixturePreview.firstPage`
   (1페이지만 lazy 페이지네이션), `renderImage` (HwpPageLayer 실제 draw 경로,
-  이미지 참조 사전 디코딩, zoom 크롭 지원), `inkGrid` (그레이스케일 N×M 셀
+  이미지 참조 사전 디코딩, zoom 크롭 지원 — 사전 디코딩은 폴링 + 2초
+  타임아웃이던 것이 프로덕션 API `HwpPageImageProvider.predecodeImageReferences`
+  로 바뀌었다, #74), `inkGrid` (그레이스케일 N×M 셀
   평균 잉크), `scaleMatchedError` (최소제곱 스칼라 s ∈ [1/3, 3]로 폰트
   대체/AA 강도 차를 제거한 MAE).
 - `FixturePreviewFidelityTests.swift` — 픽스처별 임계 테이블 (실측 + 여유,
@@ -186,3 +188,9 @@ HWP_SNAPSHOT_TESTS=1 swift test --filter FixturePreviewFidelityTests
   각주 이어짐을 구현하기 전까지 남는 빚이다 (불변식 위반이 아니다).
   기준선이 소스 상수라 레코딩이 없다 — 개선하면 손으로 **낮춘다**. 같은 결정론
   resolver로 CI 상시 실행 (#95).
+- PDF 경로 가드: `HwpPDFExporterTests` — 같은 `inkGrid`를 쓰되 **기준선이 없다**.
+  화면과 PDF는 같은 paint list·같은 조판을 쓰므로 (루트 AGENTS.md "PDF 내보내기")
+  같은 페이지를 PDF 래스터화와 비트맵 렌더로 각각 그려 **두 경로를 맞대 본다**.
+  페이지 수·mediaBox·잉크 비영만으로는 상하 반전이 통과하므로 (flip 보정이
+  무분기) **뒤집은 그리드를 대조군**으로 함께 단언한다. 두 경로가 같은 기기의
+  같은 폰트를 쓰므로 설치 폰트와 무관 — CI 상시 실행 (#74).
