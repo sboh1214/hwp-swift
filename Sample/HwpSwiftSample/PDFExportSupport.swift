@@ -67,8 +67,31 @@ enum HwpSamplePrinter {
             let controller = UIPrintInteractionController.shared
             controller.printInfo = info
             controller.printingItem = url
-            controller.present(animated: true, completionHandler: nil)
+            // UIKit 헤더가 표시를 기기별로 가른다: `presentAnimated:`는 // iPhone,
+            // `presentFromRect:inView:`·`presentFromBarButtonItem:`은 // iPad.
+            // 이 타깃은 iPad(device family 2)도 지원하므로 분기한다.
+            guard UIDevice.current.userInterfaceIdiom == .pad else {
+                controller.present(animated: true, completionHandler: nil)
+                return nil
+            }
+            guard let view = keyWindowView() else {
+                return "인쇄 UI를 띄울 창을 찾지 못했습니다"
+            }
+            // 실서비스라면 인쇄 버튼에 앵커를 맞춘다. 이 샘플의 버튼은 SwiftUI라
+            // 대응 UIView가 없어 창 중앙에서 띄운다.
+            let anchor = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 1, height: 1)
+            controller.present(from: anchor, in: view, animated: true, completionHandler: nil)
             return nil
         #endif
     }
+
+    #if !os(macOS)
+        @MainActor
+        private static func keyWindowView() -> UIView? {
+            UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .flatMap(\.windows)
+                .first { $0.isKeyWindow }
+        }
+    #endif
 }

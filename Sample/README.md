@@ -61,6 +61,10 @@ Xcode에서 스킴 `HwpSwiftSample` 선택 → 대상 지정:
 - `PDF로 내보내기` / `인쇄`(Cmd+P)는 진행률 시트를 띄우고 취소를 받는다. 앱
   임시 디렉터리에 먼저 쓴 뒤 그 파일을 저장 패널·인쇄로 넘기므로, 취소해도
   열리지 않는 부분 파일이 사용자 디렉터리에 남지 않는다
+- **iPad에서는** 인쇄 UI를 앵커에서 띄운다. UIKit 헤더가 `presentAnimated:`를
+  `// iPhone`, `presentFromRect:inView:`를 `// iPad`로 가르기 때문이다
+  (`PDFExportSupport.swift`). 이 앱의 인쇄 버튼은 SwiftUI라 대응 `UIView`가 없어
+  창 중앙을 앵커로 쓴다 — 실서비스라면 버튼에 맞춘다
 - **iPhone에서는** 버튼이 아이콘만 되고 툴바 전체가 가로 스크롤된다.
   `HwpDocumentToolbar`는 그냥 `HStack`이라 폭이 모자라면 **글자 단위로**
   줄바꿈해 "Zoom 100%"가 세 줄이 된다 (시뮬레이터 실측)
