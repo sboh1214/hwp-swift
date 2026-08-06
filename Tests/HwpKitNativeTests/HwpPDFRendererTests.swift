@@ -202,6 +202,65 @@ final class HwpPDFRendererTests: XCTestCase {
         expect { try HwpPDFRenderer.validate(url, expectedPages: 1) }.toNot(throwError())
     }
 
+    /// 교체가 실패하면 목적지를 **그대로 두고** 사유를 전한다. `restoreBackup`을
+    /// 직접 부르는 가드 셋만으로는 이 배선이 통째로 빠져도 통과하므로, 실패에서
+    /// 복구까지 이어지는 경로를 여기서 잡는다 — "실패는 목적지를 보존한다"의
+    /// 마지막 연결 고리다.
+    func testInstallRestoresDestinationWhenReplaceFails() async throws {
+        let locked = scratchDirectory.appendingPathComponent("locked")
+        try FileManager.default.createDirectory(at: locked, withIntermediateDirectories: true)
+        let destination = locked.appendingPathComponent("existing.pdf")
+        let original = Data("이전에 내보낸 PDF".utf8)
+        try original.write(to: destination)
+        let staging = scratchDirectory.appendingPathComponent("replace-staged.pdf")
+        try await HwpPDFRenderer.render(
+            document: try makeImageDocument(imageCount: 1), to: staging
+        )
+        // 디렉터리 쓰기 권한을 뺏어 교체를 실패시킨다 (백업 생성부터 막힌다).
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o500], ofItemAtPath: locked.path
+        )
+        defer {
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o700], ofItemAtPath: locked.path
+            )
+        }
+
+        expect { try HwpPDFRenderer.install(staging, at: destination, expectedPages: 1) }
+            .to(throwError(errorType: HwpPDFRenderError.self) { error in
+                guard case let .fileWriteFailed(path, reason) = error else {
+                    return fail("Expected .fileWriteFailed, got \(error)")
+                }
+                expect(path) == destination.path
+                expect(reason).toNot(beEmpty())
+            })
+
+        expect(try Data(contentsOf: destination)) == original
+    }
+
+    /// 렌더 에러 문자열은 `HwpPDFExporter`가 `.exportFailed` 사유로 그대로 실어
+    /// 호스트에 넘긴다 — 빈 설명이 새면 사용자는 원인 없는 실패를 본다.
+    func testRenderErrorDescriptionsCoverEveryCase() {
+        let errors: [HwpPDFRenderError] = [
+            .emptyDocument,
+            .contextCreationFailed,
+            .fileWriteFailed(path: "/tmp/a.pdf", reason: "권한 없음"),
+            .pageImagesExceedMemoryBudget(pageIndex: 3),
+            .incompleteOutput(expectedPages: 5, writtenPages: 2),
+            .incompleteOutput(expectedPages: 5, writtenPages: nil),
+        ]
+
+        for error in errors {
+            expect(error.description).toNot(beEmpty())
+            expect(error.errorDescription) == error.description
+        }
+        // 페이지는 1부터 세어 보여 준다 — 인덱스가 그대로 새면 오해를 부른다
+        expect(HwpPDFRenderError.pageImagesExceedMemoryBudget(pageIndex: 3).description)
+            .to(contain("Page 4"))
+        expect(HwpPDFRenderError.fileWriteFailed(path: "/x.pdf", reason: "권한 없음").description)
+            .to(contain("권한 없음"))
+    }
+
     // MARK: - 합성 문서
 
     private func makeImageDocument(imageCount: UInt32) throws -> HwpDocument {

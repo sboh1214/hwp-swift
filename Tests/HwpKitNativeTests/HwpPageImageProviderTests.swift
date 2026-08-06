@@ -426,4 +426,66 @@ final class HwpPageImageProviderTests: XCTestCase {
         // 값이 무엇이든(취소 시점에 따라 nil 또는 이미지) 반환은 되어야 한다.
         _ = await task.value
     }
+
+    /// **등록된 뒤** 도착한 취소는 자기 대기만 걷어내고 끝낸다. 위 가드는 등록
+    /// 전에 취소해 이 경로를 밟지 않는다 — 남겨 두면 그 엔트리는 확정 통보를
+    /// 받을 주체가 없는 채로 provider 수명 내내 쌓인다.
+    func testCancellationWhileWaitingRemovesItsVariantWaiter() async throws {
+        let provider = HwpPageImageProvider(
+            store: try makeStore(count: 1), cache: HwpImageCache()
+        )
+        // 진행 슬롯 0 = 확정이 발생하지 않아 대기 상태가 유지된다.
+        provider.maximumInFlight = 0
+        let box = ResolvedImageBox()
+        let pending = Task { await box.finish(provider.resolveImage(for: 1)) }
+        try await waitUntil { provider.settleWaiterCount(self.variant(1)) == 1 }
+
+        pending.cancel()
+
+        // 회귀 시 대기가 끝나지 않으므로 상한을 둔다 (행 대신 실패).
+        try await waitUntil { box.isFinished }
+        expect(provider.settleWaiterCount(self.variant(1))) == 0
+        expect(box.image).to(beNil())
+    }
+
+    /// 드롭된 요청의 재시도를 기다리는 중(진행 토큰 대기)에 도착한 취소도 같다.
+    /// 이 경로엔 변형 대기자가 아예 없어 위 가드가 닿지 않는다 — 두 대기 축을
+    /// 따로 깨우도록 설계했으므로 취소도 축마다 확인해야 한다.
+    func testCancellationWhileAwaitingProgressRemovesItsWaiter() async throws {
+        let provider = HwpPageImageProvider(
+            store: try makeStore(count: 1), cache: HwpImageCache()
+        )
+        // 진행·디퍼드 둘 다 0 = 요청이 곧바로 드롭돼 확정 통보가 오지 않는다.
+        provider.maximumInFlight = 0
+        provider.maximumDeferred = 0
+        let box = ResolvedImageBox()
+        let pending = Task { await box.finish(provider.resolveImage(for: 1)) }
+        try await waitUntil { provider.progressWaiterCount() == 1 }
+
+        pending.cancel()
+
+        try await waitUntil { box.isFinished }
+        expect(provider.progressWaiterCount()) == 0
+        expect(box.image).to(beNil())
+    }
+
+    /// 해체는 **진행 대기자도** 깨운다. 변형 대기자만 깨우면 드롭 재시도를
+    /// 기다리던 해석자가 영구 대기한다 — 해체가 요청 상태를 비웠으므로 그
+    /// 토큰을 움직여 줄 확정이 다시는 오지 않는다.
+    func testTeardownWakesProgressWaiters() async throws {
+        let provider = HwpPageImageProvider(
+            store: try makeStore(count: 1), cache: HwpImageCache()
+        )
+        provider.maximumInFlight = 0
+        provider.maximumDeferred = 0
+        let box = ResolvedImageBox()
+        let pending = Task { await box.finish(provider.resolveImage(for: 1)) }
+        try await waitUntil { provider.progressWaiterCount() == 1 }
+
+        provider.cancelOutstanding()
+
+        try await waitUntil { box.isFinished }
+        expect(box.image).to(beNil())
+        pending.cancel()
+    }
 }

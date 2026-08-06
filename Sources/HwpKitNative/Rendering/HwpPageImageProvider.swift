@@ -678,6 +678,14 @@ extension HwpPageImageProvider {
         return settleWaiters[variant]?.count ?? 0
     }
 
+    /// 테스트 관측점 — 진행 토큰 대기자 수. 드롭 경로엔 변형 대기자가 없어
+    /// `settleWaiterCount`로는 그 대기 상태를 관측할 수 없다.
+    func progressWaiterCount() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return progressWaiters.count
+    }
+
     /// lock 밖. 현재 세대 — `cancelOutstanding`이 올린다.
     private func currentGeneration() -> Int {
         lock.lock()

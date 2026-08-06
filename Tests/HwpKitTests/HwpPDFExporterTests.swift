@@ -212,6 +212,53 @@ final class HwpPDFExporterTests: XCTestCase {
             })
     }
 
+    /// 데이터 경로도 같은 매핑을 거친다 — 파일 경로만 감싸면 호스트가 두 API에서
+    /// 서로 다른 에러 타입을 받는다 (`HwpPDFRenderError`가 그대로 샌다).
+    func testEmptyDocumentThrowsFromDataPath() async {
+        await expect { _ = try await HwpPDFExporter().exportData(document: HwpDocument.empty) }
+            .to(throwError(errorType: HwpPDFExportError.self) { error in
+                if case .emptyDocument = error {} else {
+                    fail("Expected .emptyDocument, got \(error)")
+                }
+            })
+    }
+
+    /// 취소도 빈 문서도 아닌 실패는 `.exportFailed`로 사유를 달고 나온다. 목적지의
+    /// 부모가 없으면 스테이징은 성공하고 **설치가** 실패하는데, 이 매핑이 없으면
+    /// 그 실패가 렌더러 타입 그대로 새거나 조용히 성공으로 끝난다.
+    func testUnwritableDestinationSurfacesAsExportFailed() async {
+        let url = scratchDirectory
+            .appendingPathComponent("없는-폴더")
+            .appendingPathComponent("out.pdf")
+        let document = makeDocument(sizes: [CGSize(width: 200, height: 300)])
+
+        await expect { try await HwpPDFExporter().export(document: document, to: url) }
+            .to(throwError(errorType: HwpPDFExportError.self) { error in
+                guard case let .exportFailed(reason) = error else {
+                    return fail("Expected .exportFailed, got \(error)")
+                }
+                expect(reason).toNot(beEmpty())
+            })
+        expect(FileManager.default.fileExists(atPath: url.path)) == false
+    }
+
+    /// 에러 문자열은 호스트가 **그대로 표시하는** 표면이다 (`LocalizedError` 채택
+    /// 이유). 케이스가 늘 때 빈 설명이 새지 않도록 전 케이스를 잠근다.
+    func testErrorDescriptionsCoverEveryCase() {
+        let errors: [HwpPDFExportError] = [
+            .cancelled, .emptyDocument, .exportFailed("볼륨이 가득 찼습니다"),
+        ]
+
+        for error in errors {
+            expect(error.description).toNot(beEmpty())
+            expect(error.errorDescription) == error.description
+            expect(error.localizedDescription) == error.description
+        }
+        // 사유는 유실되지 않는다 — 호스트가 원인을 보여 줄 수 있어야 한다
+        expect(HwpPDFExportError.exportFailed("볼륨이 가득 찼습니다").description)
+            .to(contain("볼륨이 가득 찼습니다"))
+    }
+
     // MARK: - 픽스처 (실문서 기하)
 
     /// 실문서 전 페이지의 mediaBox가 렌더 페이지 크기와 일치한다.

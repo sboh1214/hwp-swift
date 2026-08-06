@@ -112,6 +112,49 @@ final class HwpDocumentViewSupportTests: XCTestCase {
         expect(HwpDocumentViewSupport.isProgressiveUpdate(from: document, to: nil)) == false
     }
 
+    // MARK: - imageReferences (가시 작업셋 pin 갱신)
+
+    private func makeImageDocument(keysByPage: [[UInt32]]) -> HwpDocument {
+        let pages = keysByPage.enumerated().map { index, keys in
+            HwpPage(
+                size: CGSize(width: 595, height: 842),
+                margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
+                blocks: [],
+                pageNumber: index + 1,
+                paintList: HwpPaintList(commands: keys.map { key in
+                    .drawImageReference(
+                        binItemId: key,
+                        rect: CGRect(x: 0, y: 0, width: 10, height: 10)
+                    )
+                })
+            )
+        }
+        return HwpDocument(
+            pages: pages,
+            metadata: HwpDocumentMetadata(pageCount: pages.count),
+            unsupportedElements: []
+        )
+    }
+
+    func testImageReferencesUnionsEveryPageInRange() {
+        // 범위의 한 페이지만 pin하면 나머지 가시 페이지 이미지가 축출 대상이 된다
+        let document = makeImageDocument(keysByPage: [[1], [2, 3], [4]])
+
+        let variants = HwpDocumentViewSupport.imageReferences(in: document, pageRange: 0 ..< 3)
+
+        expect(variants) == Set([1, 2, 3, 4].map { HwpPageImageProvider.variantKey($0, nil) })
+    }
+
+    func testImageReferencesSkipsOutOfBoundsPages() {
+        // 가상화는 문서 끝을 넘긴 범위를 넘겨 온다 — 있는 페이지만 모은다
+        let document = makeImageDocument(keysByPage: [[1], [2]])
+
+        let variants = HwpDocumentViewSupport.imageReferences(in: document, pageRange: 1 ..< 9)
+
+        expect(variants) == [HwpPageImageProvider.variantKey(2, nil)]
+        expect(HwpDocumentViewSupport.imageReferences(in: nil, pageRange: 0 ..< 2)).to(beEmpty())
+    }
+
     // MARK: - updateContentsScale (메모 패널 그룹 포함 — 양 플랫폼 통일)
 
     func testUpdateContentsScaleUpdatesEveryLayerGroup() {
