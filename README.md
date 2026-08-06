@@ -40,6 +40,11 @@ fixture 기준과 확보 현황은
 [Tests/CoreHwpTests/Fixtures/README.md](Tests/CoreHwpTests/Fixtures/README.md)를
 참고하세요.
 
+뷰어 타깃(`HwpKitCore` / `HwpKitNative` / `HwpKit`)은 SwiftUI 문서 뷰와 PDF
+내보내기(`HwpPDFExporter`)를 제공합니다. PDF는 화면 렌더와 같은 조판으로
+그립니다. 저장 패널·인쇄·공유 **UI는 앱 몫**이며, 라이브러리는 PDF 바이트까지만
+만듭니다 — 배선 예시는 [Sample/README.md](Sample/README.md)에 있습니다.
+
 ## 폰트
 
 본 라이브러리는 **폰트를 동봉하지 않습니다.** HWP 문서가 지정한 글꼴은 실행 기기에

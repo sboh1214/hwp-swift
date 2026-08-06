@@ -1,6 +1,6 @@
 # 프로젝트 지식 베이스
 
-**Branch:** fix/footnote-page-attribution
+**Branch:** feat/pdf-export-print
 
 ## 개요
 
@@ -12,7 +12,7 @@ HWP 파일은 OLE compound document이며, 그 안의 stream들은 record tree �
 - `CoreHwp` — 파서 (read-only, binary HWP → typed model)
 - `HwpKitCore` — 렌더 코어 (platform-neutral, CoreGraphics/CoreText/Foundation only)
 - `HwpKitNative` — 플랫폼 브릿지 (AppKit + UIKit)
-- `HwpKit` — SwiftUI 공개 API
+- `HwpKit` — SwiftUI 공개 API + PDF 내보내기
 
 ## 구조
 
@@ -21,7 +21,7 @@ hwp-swift/
 ├── Sources/CoreHwp/       # 파서
 ├── Sources/HwpKitCore/    # 렌더 코어 — 파이프라인/모델/paint list (AGENTS.md 참조)
 ├── Sources/HwpKitNative/  # 플랫폼 브릿지 — CALayer/View (AGENTS.md 참조)
-├── Sources/HwpKit/        # SwiftUI 공개 API (AGENTS.md 참조)
+├── Sources/HwpKit/        # SwiftUI 공개 API + PDF 내보내기 (AGENTS.md 참조)
 ├── Tests/{CoreHwp,HwpKitCore,HwpKitNative,HwpKit}Tests/
 ├── Sample/                # HwpSwiftSample.xcodeproj (xcodegen, path: ..)
 ├── Package.swift          # swift-tools-version:5.9
@@ -245,6 +245,38 @@ noori p2에서 비영 셀의 30%까지 지워도 양쪽 통과).
 `Sources/HwpKitCore/AGENTS.md`), 조판 **결과**는 `HwpPageLayer` 줄 배치 캐시
 (재드로 1.85x/1.53x — `Sources/HwpKitNative/AGENTS.md`). 문서 빌드와 draw로
 단계가 갈려 서로 독립이다.
+
+## PDF 내보내기 (#74)
+
+출력 경로가 둘이 됐지만 **조판은 하나**다 — `HwpKit.HwpPDFExporter`가
+`HwpKitNative.HwpPDFRenderer`를 통해 화면과 **같은 paint list·같은 조판**을
+CGPDFContext에 쓴다. `HwpPageLayer.draw(in:)`가 뷰 계층 없이 임의 `CGContext`에
+그리는 순수 오프스크린 렌더러라 가능했다 — 레이어가 자기 뷰·화면 스케일·스크롤
+상태를 읽게 만드는 변경은 **PDF를 조용히 화면과 갈라놓는다**.
+
+경계는 **"바이트는 우리가, UI는 호스트가"**다. 저장 패널·공유 시트·인쇄
+대화상자는 라이브러리에 넣지 않고 `Sample/`이 배선 예를 보인다 (뷰를 직접
+인쇄하는 경로는 없다 — 레이어 가상화가 가시 ± 2쪽만 들고 있어 인쇄
+페이지네이션과 충돌한다). 이 경계는 이제 문장이 아니라 테스트다 —
+`Tests/HwpKitTests/HwpKitScopeGuardTests.swift`가 `Sources/HwpKit/**.swift`의
+비-주석 줄에서 호스트 UI 토큰(`fileExporter`·`NSSavePanel`·
+`UIPrintInteractionController` 등)을 스캔한다. 그전까지 HwpKit/AGENTS.md는
+"테스트로 grep 검증 있음"이라 적고 있었지만 HwpKit 소스를 훑는 테스트는 없었다
+(`SourceSafetyTests`는 `Sources/CoreHwp`만 본다).
+
+가드 축도 위 4층과 다르다 — **기준선이 없고 두 경로를 맞대 본다**
+(`HwpPDFExporterTests`, CI 상시). 페이지 수·mediaBox·잉크 비영만으로는 **상하
+반전이 통과**하므로 (flip 보정이 무분기라 조용히 깨진다), 같은 페이지를 PDF
+래스터화와 비트맵 렌더로 각각 그려 잉크 분포를 대조하고 **뒤집은 그리드를
+대조군**으로 함께 단언한다. 두 경로가 같은 기기의 같은 폰트를 쓰므로 이 비교는
+설치 폰트와 무관하다 — 텍스트 벡터 바이트를 비교하면 그 순간 기기 함수가 되어
+CI에서 깨진다.
+
+화면 없는 경로의 이미지는 **확정을 직접 기다린다** (`HwpPageImageProvider`의
+`resolveImage`/`predecodeImageReferences` — `requestImage`는 재드로우로 완료를
+소비하는 fire-and-forget이라 못 쓴다). 픽스처 렌더 하네스의 폴링 + 2초
+타임아웃도 이 API로 대체됐다 — 즉 **렌더 가드 4층이 이제 이 프로덕션 코드를
+함께 태운다**. 백프레셔 3겹과 영구 대기 회피 규약은 `Sources/HwpKitNative/AGENTS.md`.
 
 ## 리뷰 대응 체크리스트 (렌더 회귀 방지)
 

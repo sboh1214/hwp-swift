@@ -12,7 +12,9 @@ HwpKitNative/
 │                                   #   이미지 공급자, 프로그레시브 판정, Array[safe:] (#if 없이 양쪽 컴파일)
 ├── Rendering/HwpPageLayer.swift    # CALayer + paint list executor (Core Text, drawImageReference)
 ├── Rendering/HwpPageImageProvider.swift  # HwpImageStore + HwpImageCache + HwpImageAdapter 연결
+├── Rendering/HwpDecodeThrottle.swift     # 동시 디코드 상한 3 (provider 전역 static)
 ├── Rendering/HwpImageStyleRenderer.swift # 표 107 crop/밝기/명암/효과 (CGImage.cropping + CoreImage)
+├── Rendering/HwpPDFRenderer.swift  # CGPDFContext 스트리밍 기록 (HwpKit의 HwpPDFExporter가 감싼다)
 ├── macOS/HwpDocumentNSView.swift   # NSScrollView + 레이어 가상화 (magnification pinch zoom)
 ├── macOS/HwpDocumentNSViewSelection.swift  # 마우스 드래그 선택 + Cmd+C/Cmd+A/우클릭 Copy
 ├── iOS/HwpDocumentUIViewSelection.swift    # 롱프레스 선택 + 엣지 오토스크롤 + 편집 메뉴
@@ -38,6 +40,43 @@ HwpKitNative/
 - `fetch`는 같은 key를 병합(coalesce)한다. 취소는 **대기자 참조 카운트**로 전파해 마지막 대기자가 사라질 때만 디코드를 취소한다 — 한 호출자의 취소로 공유 태스크를 죽이면 남은 호출자가 nil을 받아 영구 실패로 기록된다
 - `clear()`는 in-flight 디코드를 취소하므로 그 nil은 **디코드 실패가 아니다**. provider는 fetch 전후 `purgeGeneration()`을 비교해 purge 중 취소를 `failedKeys`에 넣지 않는다 (넣으면 그 변형이 provider 수명 내내 placeholder)
 - provider의 `finishRequest`는 세대 가드를 **최상단**에 둔다. 구세대 완료가 신세대 요청의 `inFlightKeys`/`activeTasks`를 지우면 중복 디코드·미추적 태스크가 생긴다 (구세대 정리는 `cancelOutstanding` 몫)
+
+### 화면 없는 경로 (프리디코드, #74)
+
+`requestImage`는 **draw가 다시 불릴 것을 전제로 한 fire-and-forget**이다 — 완료 통보는 `onImageResolved` → 레이어 재드로우로만 소비된다. PDF 내보내기·썸네일처럼 재드로우가 없는 경로는 그 루프를 못 쓰므로 `resolveImage(for:style:) async` / `predecodeImageReferences(in:) async`로 **확정을 직접 기다린다** (`HwpPageImageProvider`의 확장으로 갈라 둔다 — 뷰 경로와 섞이면 어느 쪽이 재드로우를 전제하는지 읽어 낼 수 없다).
+
+여기서 유일하게 어려운 것은 **영구 대기를 만들지 않는 것**이다. 백프레셔가 세 겹이라 요청이 조용히 사라질 수 있다: 진행 상한 12 초과분은 디퍼드 큐(cap 64)로 가고, 그 큐가 만석 + 전부 pin이면 **드롭**된다 (축출 대상이 없어서). 드롭된 요청은 확정 통보를 영영 못 받는다.
+
+- 그래서 대기자는 두 축으로 깬다 — 변형별 확정 통보(`settleWaiters`)와 **진행 토큰**(`progressToken`, 요청 하나가 확정될 때마다 증가). 변형이 진행·디퍼드 어디에도 없으면 드롭으로 보고 토큰이 움직일 때까지 기다렸다 다시 넣는다. 드롭은 "진행 중 요청이 12개 있다"는 뜻이므로 확정은 반드시 온다
+- 토큰 스냅샷은 `requestImage` **전에** 뜬다. 드롭 판정과 대기 등록 사이에 끼어든 확정을 놓치면 아무도 깨우지 않는다
+- 드롭과 **축출**은 다르다 (#74 리뷰). 드롭은 보통 등록 **전에** 걸러지지만, 디퍼드 큐가 만석일 때의 축출은 이미 등록된 대기자의 변형을 큐에서 빼 간다 — 그 변형엔 `finishRequest`가 영영 오지 않으므로 `enqueueDeferred`가 축출 대상의 대기자를 함께 꺼내 `.untracked`로 깨운다 (락 밖에서). 진행 12 + 디퍼드 64를 넘는 동시 요청에서만 성립하지만, 그때 대기는 **영구**다
+- **드롭 경로에도 대기자가 있을 수 있다** (#74 리뷰 9차). `finishRequest`는 디퍼드에서 꺼낸 재시도를 **락 밖에서** 다시 요청하는데(`handler`·`capacityHandler`가 그 사이에 돈다), 그 틈에 다른 요청이 두 큐를 채우면 그 재요청이 드롭 분기로 간다. 그 변형의 대기자는 디퍼드에 있던 동안 등록된 것이라 축출과 같은 처리를 받아야 한다 — 드롭 분기도 대기자를 함께 내보낸다. "첫 요청엔 대기자가 없다"는 직관이 **디큐된 재시도에만 깨진다**
+- 확정됐다가 바이트 예산으로 **축출된** 변형은 재시도하지 않고 nil이다. 재요청하면 동시 해석자끼리 서로를 밀어내는 라이브락이 된다 — 그 페이지를 온전히 그려야 하는 경로는 draw 전에 `unsettledImageVariants(in:)`로 확인한다 (아래 PDF 절)
+- **"확정"은 기록이 있을 때만이다** (#74 리뷰 2차). 캐시 purge에 취소된 디코드는 `resolved`에도 `failedKeys`에도 안 들어가는데(R67 — 재시도 가능으로 남겨야 한다) 그것을 `.settled`로 깨우면 위 라이브락 컷이 예산 축출로 오분류해 재시도 없이 nil을 준다. `finishRequest`는 `image != nil || recordsFailure`일 때만 `.settled`로, 아니면 `.untracked`(재시도)로 깨운다
+- continuation 재개는 **반드시 lock 밖**에서 (`takeWaiters` → `resume`). 재개가 같은 락을 다시 잡는 경로(`resolveImage` 루프)로 이어진다
+- `cancelOutstanding`은 대기자 전원을 `.untracked`로 깨운다 — 요청 상태를 비웠으니 확정 통보를 받을 주체가 없다. 깨어난 `resolveImage`는 **재요청 없이 끝낸다** (#74 리뷰 7차): 해체는 store/cache 작업을 놓으려고 부르는 것인데 대기자가 다시 요청하면 그것을 되살린다. 판정은 `.untracked` 분기가 아니라 **시작 시점 세대와의 비교**여야 한다 — 해체는 확정 통보와 진행 토큰을 **둘 다** 깨우므로, 그때 `awaitProgress`에서 자던 해석자는 그 분기를 지나지 않는다
+- `predecodeImageReferences`는 **진행 상한 몫(12)씩 나눠** 요청한다. 한 번에 전량을 넣으면 초과분이 굳이 드롭 → 재시도 경로를 밟는다
+- 호출 **전에** `setPinnedImages(HwpPageImageProvider.imageVariantKeys(in:))`로 고정할 것. 안 하면 먼저 디코드된 대형 이미지가 draw 전에 바이트 예산(256MB)으로 축출된다
+- 스로틀(limit 3)은 **provider 전역 static**이라 export가 화면 뷰어와 슬롯을 공유한다. export 중 스크롤이 느려지는 것은 설계상 불가피하고, 취소는 스로틀 대기자에게 전파된다
+- 테스트 헬퍼 `FixturePreview.resolveImageReferences`의 폴링 + 2초 타임아웃이 이 API로 대체됐다. 다만 **대기만 위임하고 확정 여부는 하네스가 다시 본다** (#74 리뷰 5차) — 프리디코드는 예산 축출된 변형을 미해결로 남기므로, 그대로 그리면 회색 로딩 사각형이 렌더 해시·골든·fidelity 기준선에 **정답으로 기록된다**. 라이브러리 쪽 `unsettledImageVariants`와 같은 판정이고 디코드 실패를 빼는 것도 같다
+- 가드는 `Tests/HwpKitNativeTests/HwpPageImageProviderTests.swift`의 9종 — 확정 대기·페이로드 없음·취소 반환에 더해 **진행 상한(12) 초과 프리디코드**·**디퍼드 드롭 복구**·**디퍼드 축출 깨우기**·예산 축출의 관측 가능성·디코드 실패 제외·**purge 뒤 재시도**. 뒤 넷이 이 설계의 전부라 앞 셋만 있으면 스위트가 초록인 채로 영구 대기가 남는다. 축출 깨우기 테스트는 `maximumInFlight = 0`으로 확정을 **동결**해 경합 없이 그 상태를 만든다 (한도 3종이 인스턴스 프로퍼티인 이유) — 회귀 시 행(hang) 대신 실패로 끝나도록 대기는 전부 상한이 있다
+
+## PDF 내보내기 (HwpPDFRenderer)
+
+`HwpPageLayer.draw(in:)`를 **그대로** 쓴다 — 화면과 같은 paint list, 같은 조판이다. 페이지마다 새 레이어를 만들고 `beginPDFPage`에 `page.size` mediaBox를 넘긴다.
+
+- **입력 계약은 `validateInput` 하나가 소유한다** (#74 리뷰). 빈 문서(`emptyDocument`)와 프로그레시브 중간 스냅샷(`incompleteDocument`)을 함께 막는다 — 진입점이 `render`·`renderData` 둘이라 가드를 복제하면 한쪽이 조용히 뚫린다 (`emptyDocument` 가드가 실제로 그렇게 복제돼 있었다). 미완성 문서가 위험한 이유는 아래 산출물 검증을 **통과하기** 때문이다: 접두만 담긴 PDF도 열리고 그 페이지 수도 맞아 `incompleteOutput`이 잡지 못한다. 이미지 예산 초과를 실패로 끝내는 것과 같은 이유다 — 페이지가 통째로 빠진 PDF는 회색 사각형보다 나쁜 조용한 손실이다
+- flip은 **무분기**다. macOS의 독립 레이어는 `contentsAreFlipped() == false`라 스스로 뒤집고, iOS는 CGPDFContext가 y-up(`ctm.d > 0`)이라 같은 가지로 들어온다
+- mediaBox는 `CGRect`를 **값째 담은 CFData**여야 한다 (참조 전달이 아니다). 형식이 틀리면 CG가 조용히 기본 상자를 쓴다 — 구역별 용지 크기·방향이 다른 문서에서만 드러나므로 `multi-section` 픽스처가 가드
+- 메모 패널(`HwpPage.memoPanel`)은 종이 밖 편집 화면 장식이라 `page.paintList`만 그리는 이 경로에서 자연히 빠진다 (한글의 인쇄 뷰·PrvImage와 같다)
+- 이미지는 `document.imageStore`로 **문서 전용 provider와 전용 캐시**를 새로 만든다. provider만 새로 만드는 것으론 부족하다 — 비트맵을 들고 있는 것은 `HwpImageCache`이고 그 키가 **`binItemId` 하나**라, 캐시를 문서 간에 공유하면 2번 문서의 1번 이미지가 1번 문서 것으로 히트한다. 그래서 `cache:` 주입 파라미터를 두지 않는다 (#74 리뷰 — 두면 호출자가 그 오염을 만들 수 있는데 막을 방법이 없다)
+- 페이지마다 `retainOnlyImages`로 **이전 페이지 래스터를 버린다** (#74 리뷰 6차). `setPinnedImages`만 쓰면 안 된다 — 그것이 부르는 축출은 예산 초과 시에만 동작하므로 예산 안에서는 이전 페이지가 그대로 남아, 문서를 훑는 동안 상주량이 한도까지 자란다 (**unpin은 해제가 아니다**). 캐시도 같은 예산으로 만든다: 기본값을 두면 provider 변형 예산과 독립으로 쌓여 상한이 두 배가 된다. 실제 보장은 "현재 페이지 변형 + 원본 캐시(≤ 같은 예산)"이지 1페이지 몫이 아니다. 이 정리는 **한 패스**여야 한다 (#74 리뷰): 축출마다 `firstIndex` + `remove(at:)`을 부르면 스캔·이동이 각각 O(N)이라 제거 수에 대해 이차가 된다. 변형 키가 (binItemId, 자르기·밝기·명암·효과)라 한 페이지가 같은 그림의 crop 인스턴스를 수천 개 참조하면 그 크기에 닿고, 특히 **고정 변형이 앞쪽에 모이면** 매 축출이 그 접두를 다시 훑어 상수까지 커진다 (릴리스 실측, 앞 절반 고정: N=4,000 203ms · 8,000 874ms · 16,000 **3,611ms** — 배가 될 때마다 4배. 한 패스 뒤 16,000이 0.003s). `evictOverBudget`도 같은 형태라 함께 고쳤다 — 그쪽은 예산 아래로 내려가면 멈추지만 스캔은 같은 접두를 반복한다. 가드는 `Tests/HwpKitNativeTests/ImagePruningTests.swift` (바이트 해제·축출 순서 보존·선형성)
+- 바이트 예산(256MB)은 **끄지 않는다**. 뷰의 하드 상한은 축출된 pin을 다음 재드로우가 되살린다는 전제 위에 있고 여기엔 그 재드로우가 없지만, 상한을 끄면 한 페이지 작업셋(변형당 ≤67MB × 개수)이 무제한이 되어 조작 문서가 프로세스를 고갈시킨다 (#74 리뷰 2차 — 한때 껐다가 되돌렸다). 대신 프리디코드 **뒤에** `unsettledImageVariants(in:)`로 잔존을 확인하고, 비어 있지 않으면 `pageImagesExceedMemoryBudget(pageIndex:)`로 **실패한다** — 회색 로딩 사각형이 박힌 PDF를 성공으로 돌려주는 것보다 낫다. 디코드 실패는 이 판정에서 빠진다 (뷰와 같이 플레이스홀더가 정답이라, 손상된 그림 하나로 문서 전체를 못 내보내면 안 된다)
+- PDF 페이지는 기본이 투명이라 흰 종이를 먼저 깐다. 안 깔면 배경을 뷰어·프린터가 정해 종이 은유가 깨진다
+- **목적지에 직접 쓰지 않는다** (#74 리뷰 2차). `CGDataConsumer(url:)`는 **생성 순간** 대상 파일을 0바이트로 자르므로(실측), 기존 PDF를 덮어쓰는 중에 취소·실패하면 사용자의 이전 파일이 복구 불가로 사라진다. 임시 파일에 완성한 뒤 `replaceItemAt`(없으면 `moveItem`)으로 옮기고, 실패 경로는 임시 파일만 지운다 — 목적지를 건드리는 순간은 **성공했을 때뿐**이다. 교체에는 `backupItemName`을 준다 (#74 리뷰 8차): 교체가 원본을 옮긴 **뒤** 실패하면 목적지가 비는데 Foundation은 그 자리를 error userInfo로만 알려 주므로, 이름을 우리가 정해 두고 실패 시 되돌린다 (`restoreBackup`). **백업이 남아 있으면 목적지에 무엇이 있든 원본이 이긴다** (#74 리뷰 11차): 교체는 스테이징을 설치한 **뒤**(메타데이터 복사·백업 정리)에도 실패할 수 있어 그때 목적지엔 새 PDF가 있는데, 그것을 두고 백업만 지우면 실패를 보고하면서 이전 파일을 잃는다. "목적지가 살아 있으면 새 결과를 지킨다"는 직관이 **실패 경로에서는 정확히 반대**다 백업 이름은 목적지 이름에서 파생하지 않는다 — 긴 파일명에 접미사를 붙이면 255바이트를 넘겨 정상 경로가 깨진다. 실패 사유도 `fileWriteFailed(path:reason:)`로 함께 전한다 열리지 않는 PDF가 남지 않는다는 원래 성질도 그대로다. **스테이징 자리는 목적지와 같은 볼륨이어야 한다** (#74 리뷰 3차): `replaceItemAt`은 두 항목이 같은 볼륨일 것을 요구해 앱 임시 디렉터리에 두면 외장 드라이브의 기존 파일 덮어쓰기가 EXDEV로 실패한다 (실측: `NSPOSIXErrorDomain 18 "Cross-device link"`). `.itemReplacementDirectory`를 `appropriateFor:`로 잡아 해결하되, 그것도 실패하면 앱 임시로 폴백해 **신규 생성만은 살린다** (`moveItem`이 크로스 디바이스를 복사로 처리한다). CI가 두 번째 볼륨을 마운트하지 못해 **테스트가 없다** — 디스크 이미지로 손으로 잰다
+- **설치 전에 산출물을 열어 본다** (#74 리뷰 4차). CG는 쓰기 실패를 **로그로만** 알린다 — `endPDFPage`·`closePDF`가 `Void`라 디스크가 차도 `write`가 정상 종료하고 절단 파일이 남는다 (실측: 6MB 볼륨에 11MB PDF → 열리지 않는 5.2MB 파일, 예외 없음). 그대로 옮기면 멀쩡하던 기존 PDF가 못 여는 파일로 바뀌면서 호출자는 성공을 받는다. `install`이 `CGPDFDocument`로 열고 페이지 수를 대조해 `incompleteOutput`으로 실패한다. 검증은 **`install` 안에** 둔다 — 밖에 두면 호출을 빠뜨려도 단위 테스트가 통과한다 (실제로 그랬고, 무력화 실험이 그 구멍을 드러냈다)
+- 취소 확인은 **검증과 교체 사이에도** 한다 (#74 리뷰 5차) — 산출물 검증은 1,030쪽이면 짧지 않아 그 구간에 도착한 취소가 어디에서도 안 걸리면 목적지가 교체된다
+- 취소 확인은 페이지 루프 안뿐 아니라 **`closePDF()` 뒤에도** 한다 (#74 리뷰). 마지막 페이지의 draw·진행 콜백에서 들어온 취소는 다음 반복이 없어 루프 안 확인이 보지 못하고, 그대로 성공으로 끝나면 호스트가 사용자가 취소를 누른 뒤 저장 패널·인쇄를 연다
 
 ## CRITICAL — macOS 좌표계 flip
 

@@ -10,6 +10,7 @@
 		1F41DD616F0D27606E71864F /* HwpKit in Frameworks */ = {isa = PBXBuildFile; productRef = 0478F39AEB002488AA1045BD /* HwpKit */; };
 		36581416E535363B5AA47F5A /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5232A086D38B2466914CFE61 /* ContentView.swift */; };
 		68EE62E38E2242AB019D0407 /* HwpSwiftSampleApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A96B93F86DE19483CF1C608B /* HwpSwiftSampleApp.swift */; };
+		DDAD8077DFA353E890017484 /* PDFExportSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D57CA8F51A97CDEAF0FA987 /* PDFExportSupport.swift */; };
 		E821565996982AA2D138C840 /* HwpKitCore in Frameworks */ = {isa = PBXBuildFile; productRef = 7334160AD6142524FDAEE1B2 /* HwpKitCore */; };
 /* End PBXBuildFile section */
 
@@ -17,6 +18,7 @@
 		32544FDDF462496C3F2AAA62 /* HwpSwiftSample.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HwpSwiftSample.entitlements; sourceTree = "<group>"; };
 		50CC56F6743089790FD4CF8A /* hwp-swift */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "hwp-swift"; path = ..; sourceTree = SOURCE_ROOT; };
 		5232A086D38B2466914CFE61 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		6D57CA8F51A97CDEAF0FA987 /* PDFExportSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFExportSupport.swift; sourceTree = "<group>"; };
 		A96B93F86DE19483CF1C608B /* HwpSwiftSampleApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HwpSwiftSampleApp.swift; sourceTree = "<group>"; };
 		BD9CD92D4D990B61E323BA6A /* HwpSwiftSample.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HwpSwiftSample.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FBC80478862156310CB7C524 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -67,6 +69,7 @@
 				32544FDDF462496C3F2AAA62 /* HwpSwiftSample.entitlements */,
 				A96B93F86DE19483CF1C608B /* HwpSwiftSampleApp.swift */,
 				FBC80478862156310CB7C524 /* Info.plist */,
+				6D57CA8F51A97CDEAF0FA987 /* PDFExportSupport.swift */,
 			);
 			path = HwpSwiftSample;
 			sourceTree = "<group>";
@@ -138,6 +141,7 @@
 			files = (
 				36581416E535363B5AA47F5A /* ContentView.swift in Sources */,
 				68EE62E38E2242AB019D0407 /* HwpSwiftSampleApp.swift in Sources */,
+				DDAD8077DFA353E890017484 /* PDFExportSupport.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

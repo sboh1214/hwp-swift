@@ -26,7 +26,9 @@ targets:
       path: HwpSwiftSample/HwpSwiftSample.entitlements
       properties:
         com.apple.security.app-sandbox: true
-        com.apple.security.files.user-selected.read-only: true
+        # PDF 내보내기가 저장 패널로 고른 위치에 쓰므로 read-only로는 부족하다
+        # (Powerbox가 read-only 엔타이틀먼트에는 쓰기 권한을 주지 않는다).
+        com.apple.security.files.user-selected.read-write: true
     info:
       path: HwpSwiftSample/Info.plist
       properties:
