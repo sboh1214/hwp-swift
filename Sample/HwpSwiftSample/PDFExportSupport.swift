@@ -45,16 +45,18 @@ enum HwpSamplePrinter {
         @MainActor private static var isPresenting = false
     #endif
 
-    // 인쇄 UI를 띄운다. 실패하면 사용자에게 보일 사유를 돌려준다.
+    // 인쇄 UI를 띄운다. **표시 자체가** 실패하면 사용자에게 보일 사유를 돌려준다.
     // `onFinish`는 인쇄 대화상자가 닫힌 뒤(= 파일을 더 안 읽는 시점) 불린다 —
-    // 호출부가 임시 파일을 지울 자리다. 실패를 반환하면 발화하지 않는다.
+    // 호출부가 임시 파일을 지울 자리다. 사유를 반환하면 발화하지 않는다.
+    // 표시가 **된 뒤에** 오는 실패는 반환값으로 전할 수 없으므로 `onFinish`가
+    // 사유를 나른다 (iOS 한정 — macOS는 취소와 실패를 가를 수단이 없다).
     #if os(macOS)
         @discardableResult
         @MainActor
         static func print(
             pdfAt url: URL,
             jobName: String,
-            onFinish: @escaping @Sendable () -> Void
+            onFinish: @escaping @Sendable (String?) -> Void
         ) -> String? {
             guard let pdf = PDFDocument(url: url) else {
                 return "PDF를 열 수 없습니다"
@@ -69,8 +71,11 @@ enum HwpSamplePrinter {
             // 백킹 PDF는 UUID 파일명이라 이것을 안 주면 인쇄 대화상자·큐에
             // 그 UUID가 그대로 보인다.
             operation.jobTitle = jobName
+            // `run()`의 Bool은 실패와 **사용자 취소를 구분하지 않는다** — 오류로
+            // 올리면 취소할 때마다 알림이 뜬다. AppKit은 사유를 따로 주지 않아
+            // 여기서는 갈라낼 수 없다 (iOS는 UIKit이 Error를 준다).
             operation.run()
-            onFinish()
+            onFinish(nil)
             return nil
         }
     #else
@@ -81,7 +86,7 @@ enum HwpSamplePrinter {
             pdfAt url: URL,
             jobName: String,
             anchor: UIView?,
-            onFinish: @escaping @Sendable () -> Void
+            onFinish: @escaping @Sendable (String?) -> Void
         ) -> String? {
             guard UIPrintInteractionController.isPrintingAvailable else {
                 return "이 기기에서는 인쇄를 지원하지 않습니다"
@@ -102,9 +107,13 @@ enum HwpSamplePrinter {
             // UIKit 헤더가 표시를 기기별로 가른다: `presentAnimated:`는 // iPhone,
             // `presentFromRect:inView:`·`presentFromBarButtonItem:`은 // iPad.
             // 이 타깃은 iPad(device family 2)도 지원하므로 분기한다.
-            let completion: UIPrintInteractionController.CompletionHandler = { _, _, _ in
+            let completion: UIPrintInteractionController.CompletionHandler = { _, _, error in
                 isPresenting = false
-                onFinish()
+                // 표시가 된 **뒤의** 실패(프린터 도달 불가 등)는 UIKit이 여기로만
+                // 알린다 — 버리면 호출부는 이미 성공(nil)을 받은 뒤라 사용자에게
+                // 보여 줄 길이 없다. 사용자 취소는 completed == false + error == nil
+                // 로 오므로 사유가 없고, 그래서 실패로 올리지 않는다.
+                onFinish(error.map { "인쇄에 실패했습니다: \($0.localizedDescription)" })
             }
             isPresenting = true
             // 표시가 시작되지 않으면(예: 다른 모달이 떠 있음) completion도 오지

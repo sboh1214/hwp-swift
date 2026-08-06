@@ -344,7 +344,16 @@ struct ContentView: View {
         case .save:
             showSavePanel = true
         case .print:
-            let cleanup: @Sendable () -> Void = { Task { @MainActor in discardExportedPDF() } }
+            let cleanup: @Sendable (String?) -> Void = { reason in
+                Task { @MainActor in
+                    discardExportedPDF()
+                    // 인쇄 UI가 닫힌 뒤라 진행 시트와 겹치지 않는다 (모달을 같은
+                    // 갱신 주기에 겹치면 알림이 유실된다는 이 파일의 규약).
+                    if let reason {
+                        exportError = reason
+                    }
+                }
+            }
             #if os(macOS)
                 let failure = HwpSamplePrinter.print(
                     pdfAt: url, jobName: exportedName, onFinish: cleanup

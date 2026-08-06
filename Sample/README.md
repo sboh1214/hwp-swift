@@ -77,6 +77,14 @@ Xcode에서 스킴 `HwpSwiftSample` 선택 → 대상 지정:
   저장·인쇄를 띄울 곳을 잃고 임시 PDF도 남는다
 - 실패는 진행 시트가 **닫힌 뒤** 알림으로 띄운다(저장·인쇄와 같은 규약) —
   같은 갱신 주기에 겹치면 알림이 유실돼 오류가 조용히 사라진다
+- **인쇄는 실패 통로가 둘이다.** 표시 자체의 실패는 `print(...)`의 반환값으로,
+  표시가 **된 뒤의** 실패(프린터 도달 불가 등)는 `onFinish`가 나르는 사유로
+  온다. 반환값만 보면 뒤엣것을 놓친다 — 그 시점엔 이미 성공(nil)을 받은
+  뒤다. iOS는 `UIPrintInteractionController`가 completion handler로 `Error`를
+  주므로 그것을 올리고, 사용자 취소(`completed == false` + `error == nil`)는
+  실패가 아니라 사유 없이 끝낸다. macOS는 `NSPrintOperation.run()`의 Bool이
+  취소와 실패를 구분하지 않아 사유를 올리지 않는다 — 올리면 취소할 때마다
+  거짓 알림이 뜬다
 - 인쇄는 **한 번에 하나만** 받는다 — `UIPrintInteractionController.shared`가
   프로세스 전역이라 두 창이 동시에 쓰면 뒤 요청이 앞 작업의 문서를 덮어쓴다
 - **iPad에서는** 인쇄 UI를 앵커에서 띄운다. UIKit 헤더가 `presentAnimated:`를
