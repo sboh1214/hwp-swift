@@ -406,22 +406,35 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     /// 재드로우가 없는 경로는 그 회전으로 되살릴 기회가 없으므로, **상한을 끄는
     /// 대신** draw 직전에 잔존 여부를 확인해 오류로 끝낸다 (`HwpPDFRenderer`) —
     /// 상한을 끄면 한 페이지 작업셋이 프로세스를 고갈시킬 수 있다.
+    /// 순서 배열은 훑으면서 지우지 않고 **마지막에 한 번** 압축한다. 축출마다
+    /// `firstIndex` + `remove(at:)`을 부르면 스캔·이동이 각각 O(N)이라 제거 수에
+    /// 대해 이차가 된다 (`retainOnlyImages`와 같은 이유 — 실측은 그쪽 doc 참조).
     private func evictOverBudget(keeping keep: String? = nil) {
-        while resolvedBytes > resolvedByteLimit,
-              let idx = resolvedOrder.firstIndex(where: { $0 != keep && !isPinned($0) })
-        {
-            evictVariant(at: idx)
+        guard resolvedBytes > resolvedByteLimit else { return }
+        var dropped: Set<String> = []
+        for variant in resolvedOrder {
+            if resolvedBytes <= resolvedByteLimit {
+                break
+            }
+            guard variant != keep, !isPinned(variant) else { continue }
+            dropResolved(variant)
+            dropped.insert(variant)
         }
-        while resolvedBytes > resolvedByteLimit,
-              let idx = resolvedOrder.firstIndex(where: { $0 != keep })
-        {
-            evictVariant(at: idx)
+        for variant in resolvedOrder {
+            if resolvedBytes <= resolvedByteLimit {
+                break
+            }
+            guard variant != keep, !dropped.contains(variant) else { continue }
+            dropResolved(variant)
+            dropped.insert(variant)
         }
+        guard !dropped.isEmpty else { return }
+        resolvedOrder.removeAll { dropped.contains($0) }
     }
 
-    /// lock 보유. resolvedOrder[idx] 변형을 캐시에서 제거하고 바이트를 갱신한다.
-    private func evictVariant(at idx: Int) {
-        let variant = resolvedOrder.remove(at: idx)
+    /// lock 보유. 순서 배열은 그대로 두고 그 변형의 비트맵·비용만 지운다 —
+    /// 일괄 축출이 순서 압축을 한 번으로 미룰 수 있게 갈라 둔 조각이다.
+    private func dropResolved(_ variant: String) {
         resolvedBytes -= resolvedCost.removeValue(forKey: variant) ?? 0
         resolved.removeValue(forKey: variant)
     }
@@ -443,13 +456,26 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     /// 동작하므로, 예산 안이면 이전 페이지 래스터가 그대로 남아 상주량이 한도
     /// 근처까지 자란다 (**unpin은 해제가 아니다**). 고정 교체와 해제를 한 동작에
     /// 묶어 둔 것은 호출부가 해제를 빠뜨릴 수 없게 하기 위해서다.
+    ///
+    /// 순서 배열을 **한 번만** 훑는다. 축출마다 `firstIndex` + `remove(at:)`을
+    /// 부르던 이전 형태는 스캔·이동이 각각 O(N)이라 이차였다 (릴리스 실측,
+    /// 변형 N개 중 앞 절반이 고정: N=4,000 203ms · 8,000 874ms · 16,000 3,611ms —
+    /// 배가 될 때마다 4배). 변형 키가 (binItemId, 자르기·밝기·명암·효과)라
+    /// 한 페이지가 같은 그림의 crop 인스턴스를 수천 개 참조하면 닿는 크기다.
     func retainOnlyImages(_ variants: Set<String>) {
         lock.lock()
         defer { lock.unlock() }
         pinnedVariants = variants
-        while let index = resolvedOrder.firstIndex(where: { !isPinned($0) }) {
-            evictVariant(at: index)
+        var kept: [String] = []
+        kept.reserveCapacity(resolvedOrder.count)
+        for variant in resolvedOrder {
+            if isPinned(variant) {
+                kept.append(variant)
+            } else {
+                dropResolved(variant)
+            }
         }
+        resolvedOrder = kept
     }
 
     /// 진행 중인 모든 디코드를 취소하고 대기/pin 상태를 비운다 — provider 교체
