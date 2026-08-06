@@ -35,7 +35,7 @@ final class HwpPDFExporterTests: XCTestCase {
 
     /// 크기가 서로 다른 페이지들 — 용지 방향(표 13 bit 0)이 반영되면서 구역별로
     /// 실제로 생기는 형상이다. mediaBox를 페이지마다 넘기지 않으면 여기서 깨진다.
-    private func makeDocument(sizes: [CGSize]) -> HwpDocument {
+    private func makeDocument(sizes: [CGSize], isComplete: Bool = true) -> HwpDocument {
         let pages = sizes.enumerated().map { index, size in
             HwpPage(
                 size: size,
@@ -52,7 +52,9 @@ final class HwpPDFExporterTests: XCTestCase {
         }
         return HwpDocument(
             pages: pages,
-            metadata: HwpDocumentMetadata(title: "합성 문서", pageCount: pages.count),
+            metadata: HwpDocumentMetadata(
+                title: "합성 문서", pageCount: pages.count, isComplete: isComplete
+            ),
             unsupportedElements: []
         )
     }
@@ -223,6 +225,32 @@ final class HwpPDFExporterTests: XCTestCase {
             })
     }
 
+    /// `loadUpdates(from:)`의 중간 스냅샷은 확정된 페이지 접두만 들고 있어,
+    /// 통과시키면 페이지가 빠진 PDF가 성공으로 나간다. 두 API 모두 거부가
+    /// 계약이다 — 샘플의 로드 중 버튼 잠금은 호스트 UI 관례일 뿐이다. 로드가
+    /// 끝나면 성공하는 재시도 가능 상태라 `.exportFailed` 문자열이 아니라
+    /// 제 타입이어야 한다.
+    func testIncompleteDocumentIsRejectedByBothAPIs() async {
+        let document = makeDocument(
+            sizes: [CGSize(width: 200, height: 300)], isComplete: false
+        )
+        let url = outputURL("incomplete.pdf")
+
+        await expect { try await HwpPDFExporter().export(document: document, to: url) }
+            .to(throwError(errorType: HwpPDFExportError.self) { error in
+                if case .incompleteDocument = error {} else {
+                    fail("Expected .incompleteDocument, got \(error)")
+                }
+            })
+        await expect { _ = try await HwpPDFExporter().exportData(document: document) }
+            .to(throwError(errorType: HwpPDFExportError.self) { error in
+                if case .incompleteDocument = error {} else {
+                    fail("Expected .incompleteDocument, got \(error)")
+                }
+            })
+        expect(FileManager.default.fileExists(atPath: url.path)) == false
+    }
+
     /// 취소도 빈 문서도 아닌 실패는 `.exportFailed`로 사유를 달고 나온다. 목적지의
     /// 부모가 없으면 스테이징은 성공하고 **설치가** 실패하는데, 이 매핑이 없으면
     /// 그 실패가 렌더러 타입 그대로 새거나 조용히 성공으로 끝난다.
@@ -246,7 +274,8 @@ final class HwpPDFExporterTests: XCTestCase {
     /// 이유). 케이스가 늘 때 빈 설명이 새지 않도록 전 케이스를 잠근다.
     func testErrorDescriptionsCoverEveryCase() {
         let errors: [HwpPDFExportError] = [
-            .cancelled, .emptyDocument, .exportFailed("볼륨이 가득 찼습니다"),
+            .cancelled, .emptyDocument, .incompleteDocument,
+            .exportFailed("볼륨이 가득 찼습니다"),
         ]
 
         for error in errors {

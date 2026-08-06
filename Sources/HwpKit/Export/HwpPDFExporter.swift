@@ -5,6 +5,7 @@ import HwpKitNative
 public enum HwpPDFExportError: Error, Sendable {
     case cancelled
     case emptyDocument
+    case incompleteDocument
     case exportFailed(String)
 }
 
@@ -15,6 +16,8 @@ extension HwpPDFExportError: CustomStringConvertible {
             "PDF export was cancelled"
         case .emptyDocument:
             "Document has no pages to export"
+        case .incompleteDocument:
+            "Document is still loading — export after pagination finishes"
         case let .exportFailed(reason):
             "PDF export failed: \(reason)"
         }
@@ -37,6 +40,10 @@ extension HwpPDFExportError: LocalizedError {
 /// 인쇄는 이 결과 PDF를 호스트 앱이 플랫폼 인쇄 API(macOS `PDFDocument
 /// .printOperation`, iOS `UIPrintInteractionController`)에 넘겨 처리한다 —
 /// 뷰를 직접 인쇄하면 레이어 가상화(visible ± 2)와 충돌한다.
+///
+/// 페이지가 전부 확정된 문서만 받는다 — `loadUpdates(from:)`의 중간 스냅샷은
+/// `.incompleteDocument`로 거부한다 (그대로 내보내면 페이지가 빠진 PDF가
+/// 성공으로 나간다).
 public struct HwpPDFExporter: Sendable {
     public init() {}
 
@@ -71,9 +78,15 @@ public struct HwpPDFExporter: Sendable {
         if error is CancellationError {
             return .cancelled
         }
-        if let renderError = error as? HwpPDFRenderError, case .emptyDocument = renderError {
+        // 호스트가 갈라 다뤄야 하는 실패는 타입으로 살린다 — 미완성 문서는 로드가
+        // 끝나면 성공하는 재시도 가능 상태라, 문자열로 접으면 그 사실이 사라진다.
+        switch error as? HwpPDFRenderError {
+        case .emptyDocument:
             return .emptyDocument
+        case .incompleteDocument:
+            return .incompleteDocument
+        default:
+            return .exportFailed(error.localizedDescription)
         }
-        return .exportFailed(error.localizedDescription)
     }
 }

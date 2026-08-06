@@ -65,6 +65,7 @@ HwpKitNative/
 
 `HwpPageLayer.draw(in:)`를 **그대로** 쓴다 — 화면과 같은 paint list, 같은 조판이다. 페이지마다 새 레이어를 만들고 `beginPDFPage`에 `page.size` mediaBox를 넘긴다.
 
+- **입력 계약은 `validateInput` 하나가 소유한다** (#74 리뷰). 빈 문서(`emptyDocument`)와 프로그레시브 중간 스냅샷(`incompleteDocument`)을 함께 막는다 — 진입점이 `render`·`renderData` 둘이라 가드를 복제하면 한쪽이 조용히 뚫린다 (`emptyDocument` 가드가 실제로 그렇게 복제돼 있었다). 미완성 문서가 위험한 이유는 아래 산출물 검증을 **통과하기** 때문이다: 접두만 담긴 PDF도 열리고 그 페이지 수도 맞아 `incompleteOutput`이 잡지 못한다. 이미지 예산 초과를 실패로 끝내는 것과 같은 이유다 — 페이지가 통째로 빠진 PDF는 회색 사각형보다 나쁜 조용한 손실이다
 - flip은 **무분기**다. macOS의 독립 레이어는 `contentsAreFlipped() == false`라 스스로 뒤집고, iOS는 CGPDFContext가 y-up(`ctm.d > 0`)이라 같은 가지로 들어온다
 - mediaBox는 `CGRect`를 **값째 담은 CFData**여야 한다 (참조 전달이 아니다). 형식이 틀리면 CG가 조용히 기본 상자를 쓴다 — 구역별 용지 크기·방향이 다른 문서에서만 드러나므로 `multi-section` 픽스처가 가드
 - 메모 패널(`HwpPage.memoPanel`)은 종이 밖 편집 화면 장식이라 `page.paintList`만 그리는 이 경로에서 자연히 빠진다 (한글의 인쇄 뷰·PrvImage와 같다)

@@ -4,6 +4,7 @@ import HwpKitCore
 
 public enum HwpPDFRenderError: Error, Sendable {
     case emptyDocument
+    case incompleteDocument
     case contextCreationFailed
     case fileWriteFailed(path: String, reason: String)
     case pageImagesExceedMemoryBudget(pageIndex: Int)
@@ -15,6 +16,8 @@ extension HwpPDFRenderError: CustomStringConvertible {
         switch self {
         case .emptyDocument:
             "Document has no pages to export"
+        case .incompleteDocument:
+            "Document is still being paginated — export the final snapshot instead"
         case .contextCreationFailed:
             "Could not create a PDF context"
         case let .fileWriteFailed(path, reason):
@@ -63,6 +66,18 @@ public enum HwpPDFRenderer {
         )
     }
 
+    /// 두 진입점이 공유하는 입력 계약 — 한 곳에만 두면 다른 경로가 조용히
+    /// 뚫린다 (`emptyDocument` 가드가 실제로 복제돼 있었다).
+    ///
+    /// 프로그레시브 중간 스냅샷(`isComplete == false`)은 확정된 페이지 접두만
+    /// 들고 있어, 그대로 내보내면 페이지가 빠진 PDF가 성공으로 나간다 — 열리고
+    /// 페이지 수도 맞아 산출물 검증마저 통과한다. 접두를 의도적으로 내보내려면
+    /// 호출자가 그 페이지로 문서를 직접 구성한다 (`isComplete` 기본값 true).
+    static func validateInput(_ document: HwpDocument) throws {
+        guard !document.pages.isEmpty else { throw HwpPDFRenderError.emptyDocument }
+        guard document.metadata.isComplete else { throw HwpPDFRenderError.incompleteDocument }
+    }
+
     /// `imageByteLimit`는 테스트가 예산 초과 경로를 작은 이미지로 재현하기 위한
     /// internal 이음매다 — 낮추면 정상 문서도 실패하므로 공개하지 않는다.
     static func render(
@@ -71,7 +86,7 @@ public enum HwpPDFRenderer {
         imageByteLimit: Int,
         onProgress: (@Sendable (HwpPDFExportProgress) -> Void)? = nil
     ) async throws {
-        guard !document.pages.isEmpty else { throw HwpPDFRenderError.emptyDocument }
+        try validateInput(document)
         // 목적지에 직접 쓰지 않는다: `CGDataConsumer(url:)`는 **생성 순간** 그
         // 파일을 0바이트로 자르므로(실측), 취소·실패가 사용자의 이전 PDF를
         // 파괴한다. 임시 파일에 완성한 뒤에만 목적지를 건드린다.
@@ -198,7 +213,7 @@ public enum HwpPDFRenderer {
         document: HwpDocument,
         onProgress: (@Sendable (HwpPDFExportProgress) -> Void)? = nil
     ) async throws -> Data {
-        guard !document.pages.isEmpty else { throw HwpPDFRenderError.emptyDocument }
+        try validateInput(document)
         let buffer = NSMutableData()
         guard let consumer = CGDataConsumer(data: buffer as CFMutableData) else {
             throw HwpPDFRenderError.contextCreationFailed

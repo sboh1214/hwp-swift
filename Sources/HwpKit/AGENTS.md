@@ -12,6 +12,7 @@ SwiftUI 공개 API target. HwpKitNative 위에 `NSViewRepresentable` / `UIViewRe
 - `HwpPageNavigator(currentPage: Binding<Int>, totalPages: Int)` — "Page X of Y" + ± 버튼
 - `HwpZoomControls(zoomScale: Binding<CGFloat>, range: ClosedRange<CGFloat>)` — 기본 range `0.25...5.0`
 - `HwpPDFExporter` — `export(document:to:onProgress:)` / `exportData(document:onProgress:)` (둘 다 `async throws`). 화면과 **같은 paint list·같은 조판**으로 PDF를 만든다 (`HwpPageLayer.draw(in:)`가 뷰 계층 없이 임의 `CGContext`에 그리는 순수 오프스크린 렌더러라 가능하다 — 구현은 HwpKitNative의 `HwpPDFRenderer`). 페이지 단위 스트리밍이라 상주 메모리는 1페이지 몫이고, 페이지 경계마다 `Task.checkCancellation()` + `onProgress`(`HwpPDFExportProgress`) 발화. 에러는 `HwpPDFExportError`
+  - **미완성 문서는 거부한다** (#74 리뷰) — `loadUpdates(from:)`의 중간 스냅샷(`metadata.isComplete == false`)은 확정된 페이지 접두만 들고 있어, 그대로 내보내면 페이지가 빠진 PDF가 **성공으로** 나간다. 열리고 페이지 수도 맞아 산출물 검증(`incompleteOutput`)마저 통과하므로 아래 층이 잡지 못한다 — `.incompleteDocument`로 끝낸다. `.exportFailed` 문자열이 아니라 제 타입인 이유는 이것이 로드가 끝나면 성공하는 **재시도 가능** 상태라 호스트가 진짜 실패와 갈라 다뤄야 하기 때문이다. 접두를 의도적으로 내보내려면 그 페이지로 문서를 직접 구성한다 (`isComplete` 기본값이 true라 통과). 샘플이 로드 중 버튼을 잠그는 것은 호스트 UI 관례일 뿐 이 계약을 대신하지 않는다
   - **UI는 넘기지 않는다** — 저장 패널·공유 시트·인쇄 대화상자는 호스트 몫이다 (`Sample`이 `fileExporter` / `PDFDocument.printOperation` / `UIPrintInteractionController`로 배선하는 예를 보인다). 뷰를 직접 인쇄하는 경로는 없다: 레이어 가상화가 `visible ± 2`쪽만 들고 있어 인쇄 페이지네이션과 충돌한다
 
 ## 인덱싱 컨벤션

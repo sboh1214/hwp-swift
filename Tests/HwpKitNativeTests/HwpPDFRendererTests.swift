@@ -59,6 +59,28 @@ final class HwpPDFRendererTests: XCTestCase {
         expect(pdf.numberOfPages) == 1
     }
 
+    /// 프로그레시브 중간 스냅샷은 확정된 페이지 접두만 들고 있다 — 그대로
+    /// 내보내면 페이지가 빠진 PDF가 **성공으로** 나가고, 열리고 페이지 수도 맞아
+    /// 산출물 검증마저 통과한다. 진입점이 둘이라 한쪽만 막으면 뚫린다.
+    func testIncompleteDocumentIsRejectedByBothEntryPoints() async throws {
+        let document = try makeImageDocument(imageCount: 1, isComplete: false)
+        let url = scratchDirectory.appendingPathComponent("incomplete.pdf")
+
+        await expect { try await HwpPDFRenderer.render(document: document, to: url) }
+            .to(throwError(errorType: HwpPDFRenderError.self) { error in
+                if case .incompleteDocument = error {} else {
+                    fail("Expected .incompleteDocument, got \(error)")
+                }
+            })
+        await expect { _ = try await HwpPDFRenderer.renderData(document: document) }
+            .to(throwError(errorType: HwpPDFRenderError.self) { error in
+                if case .incompleteDocument = error {} else {
+                    fail("Expected .incompleteDocument, got \(error)")
+                }
+            })
+        expect(FileManager.default.fileExists(atPath: url.path)) == false
+    }
+
     /// 다 쓴 파일이 열리지 않으면 설치하지 않는다. 디스크가 차면 CG는 로그만
     /// 남기고 `write`가 정상 종료하므로(실측), 이 검증이 없으면 멀쩡하던 기존
     /// PDF가 못 여는 파일로 교체되면서 호출자는 성공을 받는다.
@@ -243,6 +265,7 @@ final class HwpPDFRendererTests: XCTestCase {
     func testRenderErrorDescriptionsCoverEveryCase() {
         let errors: [HwpPDFRenderError] = [
             .emptyDocument,
+            .incompleteDocument,
             .contextCreationFailed,
             .fileWriteFailed(path: "/tmp/a.pdf", reason: "권한 없음"),
             .pageImagesExceedMemoryBudget(pageIndex: 3),
@@ -263,7 +286,9 @@ final class HwpPDFRendererTests: XCTestCase {
 
     // MARK: - 합성 문서
 
-    private func makeImageDocument(imageCount: UInt32) throws -> HwpDocument {
+    private func makeImageDocument(
+        imageCount: UInt32, isComplete: Bool = true
+    ) throws -> HwpDocument {
         let payload = try makePNGData()
         var dataById: [UInt32: Data] = [:]
         var extensionById: [UInt32: String] = [:]
@@ -285,7 +310,9 @@ final class HwpPDFRendererTests: XCTestCase {
         )
         return HwpDocument(
             pages: [page],
-            metadata: HwpDocumentMetadata(title: "images", pageCount: 1),
+            metadata: HwpDocumentMetadata(
+                title: "images", pageCount: 1, isComplete: isComplete
+            ),
             unsupportedElements: [],
             imageStore: HwpImageStore(
                 dataByBinItemId: dataById, extensionByBinItemId: extensionById
