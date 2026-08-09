@@ -36,6 +36,10 @@ struct ContentView: View {
     #if !os(macOS)
         @State private var printAnchor = HwpPrintAnchor.Box()
     #endif
+    /// 진행 시트가 실제로 표시됐는지. 표시된 적이 없으면 `onDismiss`가 오지
+    /// 않아 저장·인쇄·오류가 `pending*`에 갇힌다 — 작은 문서는 시트가 뜨기 전에
+    /// 끝나서 `0 → nil` 전이가 한 갱신 주기로 합쳐질 수 있다.
+    @State private var exportSheetDidPresent = false
     @State private var showSavePanel = false
     /// 내보내기·인쇄 실패 사유 (빈 화면의 errorMessage와 별개 — 문서를 보는
     /// 중에는 그쪽이 화면에 없다)
@@ -247,6 +251,19 @@ struct ContentView: View {
                 .keyboardShortcut(.cancelAction)
         }
         .padding(24)
+        .onAppear { exportSheetDidPresent = true }
+    }
+
+    /// 진행 표시를 끝낸다. 시트가 떠 있었으면 `onDismiss`가 뒤를 잇고, 뜬 적이
+    /// **없으면** 그 콜백이 영영 오지 않으므로 직접 이어 간다. 다음 주기로
+    /// 넘기는 것은 "모달을 같은 갱신 주기에 겹치지 않는다"는 이 파일의 규약을
+    /// 시트가 없었을 때도 지키기 위해서다.
+    private func finishExportProgress() {
+        let wasPresented = exportSheetDidPresent
+        exportSheetDidPresent = false
+        exportProgress = nil
+        guard !wasPresented else { return }
+        Task { @MainActor in presentPendingDestination() }
     }
 
     private var emptyState: some View {
@@ -350,18 +367,19 @@ struct ContentView: View {
                 }
                 await MainActor.run {
                     exportedPDF = url
-                    // 시트를 닫고, 저장 패널·인쇄는 onDismiss가 이어받는다.
+                    // 시트를 닫고, 저장 패널·인쇄는 그 뒤가 이어받는다 (시트가
+                    // 떴으면 onDismiss가, 뜬 적이 없으면 finishExportProgress가).
                     pendingDestination = destination
-                    exportProgress = nil
+                    finishExportProgress()
                 }
             } catch HwpPDFExportError.cancelled {
-                await MainActor.run { exportProgress = nil }
+                await MainActor.run { finishExportProgress() }
             } catch {
                 await MainActor.run {
                     // 시트를 닫는 것과 알림을 띄우는 것을 같은 갱신 주기에 겹치면
                     // 두 번째가 유실된다 — 저장·인쇄와 같이 onDismiss로 미룬다.
                     pendingError = error.localizedDescription
-                    exportProgress = nil
+                    finishExportProgress()
                 }
             }
         }
