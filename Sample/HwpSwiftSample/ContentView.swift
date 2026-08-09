@@ -20,6 +20,11 @@ struct ContentView: View {
     @State private var exportTask: Task<Void, Never>?
     /// 내보내기가 끝난 임시 PDF — 저장 패널/인쇄가 이 파일을 가리킨다
     @State private var exportedPDF: URL?
+    /// 그 파일을 목적지 UI(저장 패널·인쇄)에 이미 넘겼는지. 넘긴 뒤에는 그쪽이
+    /// 다 쓸 때까지 살려 둬야 한다 — 창이 닫힐 때 지우면 사용자가 확정한
+    /// 인쇄·저장이 깨진다 (`UIPrintInteractionController`는 스풀링 동안,
+    /// `fileExporter`는 완료 핸들러까지 이 파일을 읽는다).
+    @State private var exportedPDFIsHandedOff = false
     /// 사용자에게 보일 이름 (저장 패널 기본 파일명·인쇄 작업명). 임시 파일명은
     /// UUID라 그대로 쓸 수 없다
     @State private var exportedName = "document"
@@ -41,6 +46,10 @@ struct ContentView: View {
         case save
         case print
     }
+
+    private static let exportFilePrefix = "hwp-sample-export-"
+    /// 이 프로세스가 시작된 시각 — 이보다 오래된 임시 PDF만 이전 실행의 잔해다.
+    private static let processStart = Date()
 
     var body: some View {
         Group {
@@ -76,6 +85,7 @@ struct ContentView: View {
             loadDocument(from: url)
         }
         .task {
+            Self.removeStaleExports()
             if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
                 let candidate = docs.appendingPathComponent("document.hwp")
                 if FileManager.default.fileExists(atPath: candidate.path), document == nil {
@@ -269,6 +279,10 @@ struct ContentView: View {
     private func cancelExportOnTeardown() {
         exportTask?.cancel()
         exportTask = nil
+        // 넘긴 뒤라면 지우지 않는다. 그 완료 콜백이 scene 파괴로 오지 않으면
+        // 파일이 남지만, 그건 다음 실행의 `removeStaleExports`가 거둔다 —
+        // 확정된 인쇄를 깨는 것보다 잠시 남는 편이 낫다.
+        guard !exportedPDFIsHandedOff else { return }
         discardExportedPDF()
     }
 
@@ -279,6 +293,29 @@ struct ContentView: View {
             try? FileManager.default.removeItem(at: exportedPDF)
         }
         exportedPDF = nil
+        exportedPDFIsHandedOff = false
+    }
+
+    /// 이전 실행이 남긴 임시 PDF를 거둔다. 목적지 UI에 넘긴 파일은 그 완료
+    /// 콜백이 지우지만 scene이 파괴되면 그 콜백이 오지 않으므로, 그 잔해까지
+    /// 거둬야 "넘긴 파일은 지우지 않는다"가 누수로 퇴화하지 않는다.
+    ///
+    /// **이번 실행에서 만든 것은 건드리지 않는다**: `WindowGroup`은 창마다 이
+    /// 뷰를 만들어서, 전부 지우면 나중에 연 창이 먼저 창의 내보내기를 깬다.
+    private static func removeStaleExports() {
+        let manager = FileManager.default
+        guard let entries = try? manager.contentsOfDirectory(
+            at: manager.temporaryDirectory,
+            includingPropertiesForKeys: [.contentModificationDateKey]
+        ) else { return }
+        for entry in entries
+            where entry.lastPathComponent.hasPrefix(Self.exportFilePrefix)
+        {
+            let modified = try? entry.resourceValues(forKeys: [.contentModificationDateKey])
+                .contentModificationDate
+            guard let modified, modified < Self.processStart else { continue }
+            try? manager.removeItem(at: entry)
+        }
     }
 
     private func exportPDF(document: HwpDocument, then destination: PDFDestination) {
@@ -292,7 +329,7 @@ struct ContentView: View {
         // 갈아 치운다 (다른 문서가 저장된다). 긴 제목의 파일명 한도(255바이트)
         // 문제도 함께 사라진다.
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("hwp-sample-export-\(UUID().uuidString).pdf")
+            .appendingPathComponent("\(Self.exportFilePrefix)\(UUID().uuidString).pdf")
         exportTask = Task {
             do {
                 try await HwpPDFExporter().export(document: document, to: url) { progress in
@@ -340,6 +377,9 @@ struct ContentView: View {
         }
         guard let destination = pendingDestination, let url = exportedPDF else { return }
         pendingDestination = nil
+        // 이 시점부터 파일 소유권은 목적지 UI에 있다 — 창이 닫혀도 그쪽이 다
+        // 쓸 때까지 남긴다. 표시가 곧바로 실패하면 아래에서 되돌린다.
+        exportedPDFIsHandedOff = true
         switch destination {
         case .save:
             showSavePanel = true
