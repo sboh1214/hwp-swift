@@ -79,6 +79,11 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     /// 요청 하나가 확정될 때마다 증가하는 진행 토큰. 드롭된 요청은 확정 통보가
     /// 영영 오지 않으므로(백프레셔), 대기자는 이 토큰으로 재시도 시점을 잡는다.
     private var progressToken: UInt64 = 0
+    /// 변형별 확정 횟수. 요청과 대기자 등록 **사이**에 확정이 지나가고 그 결과가
+    /// 다른 변형의 삽입에 축출되면, 등록 측은 캐시에도 추적에도 없는 상태만 보게
+    /// 돼 확정을 못 본 것으로 오인한다 — 그러면 아래 축출 라이브락 컷이 통째로
+    /// 우회된다. 요청 전 스냅샷과의 차이가 그 확정을 증언한다.
+    private var settleEpochs: [String: UInt64] = [:]
     private var progressWaiters: [ProgressWaiter] = []
     private var nextWaiterId: UInt64 = 0
 
@@ -305,6 +310,9 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         // 에도 failedKeys에도 안 들어가므로(R67) 재시도 가능으로 깨워야 한다.
         // .settled로 깨우면 대기자가 그것을 예산 축출로 보고 포기한다.
         let recorded = image != nil || recordsFailure
+        if recorded {
+            settleEpochs[variant, default: 0] &+= 1
+        }
         let waiters = takeWaiters(settledVariant: variant)
         lock.unlock()
         Self.resume(
@@ -439,6 +447,14 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         resolved.removeValue(forKey: variant)
     }
 
+    /// lock 보유. 확정 이력은 **현재 작업셋 안에서만** 값이 있다 (해석자는 고정된
+    /// 변형만 기다린다). 고정 집합이 바뀔 때 함께 줄이지 않으면, 예산 축출된
+    /// 변형은 `resolvedOrder`에서도 빠져 있어 어디에서도 정리되지 않고 문서 전체
+    /// 변형 수만큼 쌓인다 (뷰 경로는 `retainOnlyImages`를 아예 부르지 않는다).
+    private func pruneSettleEpochs() {
+        settleEpochs = settleEpochs.filter { pinnedVariants.contains($0.key) }
+    }
+
     /// 가시 페이지가 참조하는 변형 키 집합을 갱신한다 — 이 변형은 예산 초과여도
     /// 축출하지 않아 축출→재요청 사이클을 막는다 (#1).
     public func setPinnedImages(_ variants: Set<String>) {
@@ -446,6 +462,7 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         pinnedVariants = variants
         // pin이 바뀌면 방금 unpin된 항목을 예산 내로 정리한다 (#1).
         evictOverBudget()
+        pruneSettleEpochs()
         lock.unlock()
     }
 
@@ -476,6 +493,7 @@ public final class HwpPageImageProvider: @unchecked Sendable {
             }
         }
         resolvedOrder = kept
+        pruneSettleEpochs()
     }
 
     /// 진행 중인 모든 디코드를 취소하고 대기/pin 상태를 비운다 — provider 교체
@@ -491,6 +509,7 @@ public final class HwpPageImageProvider: @unchecked Sendable {
         deferred.removeAll()
         deferredVariants.removeAll()
         pinnedVariants.removeAll()
+        settleEpochs.removeAll()
         didDropDeferred = false
         // 요청 상태를 비웠으니 확정 통보를 받을 대기자가 없다 — 전원 깨워
         // 영구 대기를 막는다 (#74). 깨어난 `resolveImage`는 세대가 바뀐 것을
@@ -636,11 +655,16 @@ extension HwpPageImageProvider {
             // 토큰은 요청 **전에** 뜬다 — 드롭 판정과 대기 등록 사이에 끼어든
             // 확정을 놓치면 아무도 깨우지 않아 영구 대기가 된다.
             let token = progressSnapshot()
+            // 에포크도 요청 **전에** 뜬다. 요청과 대기자 등록 사이에 확정이
+            // 지나가고 그 결과가 축출되면 등록 측엔 아무 흔적도 없어, 이 값과의
+            // 차이만이 그 확정을 증언한다 (없으면 아래 `didSettleOnce` 컷이
+            // 우회돼 예산 초과 페이지에서 해석이 끝나지 않는다).
+            let epoch = settleEpochSnapshot(variant)
             // 세대를 함께 넘긴다: 위 확인과 이 호출 사이에 해체가 끼어들면 인자
             // 없는 요청은 **새 세대로 등록**돼 해체가 못 끊는다. 이 검사는
             // `cancelOutstanding`이 세대를 올리는 것과 같은 락 안이라 창이 없다.
             requestImage(for: key, style: style, expectedGeneration: startGeneration)
-            if await awaitVariantSettled(variant) == .untracked {
+            if await awaitVariantSettled(variant, since: epoch) == .untracked {
                 await awaitProgress(after: token)
             } else {
                 didSettleOnce = true
@@ -726,6 +750,13 @@ extension HwpPageImageProvider {
         return progressToken
     }
 
+    /// lock 밖. 이 변형의 확정 횟수 — 요청 전후 비교가 등록 경합 창을 메운다.
+    func settleEpochSnapshot(_ variant: String) -> UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
+        return settleEpochs[variant, default: 0]
+    }
+
     /// lock 밖. 대기자 식별자 발급 — 취소 시 자기 대기만 걷어내기 위한 것.
     private func allocateWaiterId() -> UInt64 {
         lock.lock()
@@ -736,12 +767,18 @@ extension HwpPageImageProvider {
     }
 
     /// 변형이 확정되거나 추적에서 사라질 때까지 기다린다.
-    private func awaitVariantSettled(_ variant: String) async -> VariantWait {
+    private func awaitVariantSettled(_ variant: String, since epoch: UInt64) async -> VariantWait {
         let id = allocateWaiterId()
         return await withTaskCancellationHandler {
             await withCheckedContinuation { (continuation: VariantContinuation) in
                 lock.lock()
-                if resolved[variant] != nil || failedKeys.contains(variant) {
+                // 에포크가 움직였으면 등록 전에 확정이 지나간 것이다 — 그 결과가
+                // 다른 변형의 삽입에 축출됐으면 캐시에도 추적에도 없어 아래
+                // `.untracked` 분기로 새고, 그러면 호출부가 축출을 못 보고
+                // 재요청해 해석자들이 서로를 밀어낸다.
+                if resolved[variant] != nil || failedKeys.contains(variant)
+                    || settleEpochs[variant, default: 0] != epoch
+                {
                     lock.unlock()
                     continuation.resume(returning: .settled)
                     return
