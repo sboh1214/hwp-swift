@@ -122,6 +122,53 @@ final class ImageSettleEpochTests: XCTestCase {
         expect(image).toNot(beNil())
     }
 
+    /// 대기자 등록은 다른 태스크에서 일어나므로 관측 시점을 맞춘다.
+    private func waitUntil(
+        timeout: TimeInterval = 2,
+        _ condition: @escaping () -> Bool
+    ) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() {
+            if Date() > deadline {
+                fail("조건이 \(timeout)초 안에 만족되지 않았다")
+                return
+            }
+            try await Task.sleep(nanoseconds: 2_000_000)
+        }
+    }
+
+    /// 해석이 도는 동안에는 고정 집합이 바뀌어도 그 변형의 확정 이력을 지우면
+    /// 안 된다. 지우면 조회 기본값이 0이라 스냅샷이 0이던 첫 해석에서 비교가
+    /// 같아져, 확정이 없던 것처럼 보이고 등록 경합 컷이 다시 뚫린다. 뷰가
+    /// 스크롤로 `setPinnedImages`를 부르는 동안 오프스크린 해석자가 도는
+    /// 상황(공유 provider)이 그 형상이다.
+    func testPruneKeepsEpochWhileResolverIsActive() async throws {
+        let provider = HwpPageImageProvider(store: try makeStore(), cache: HwpImageCache())
+        let target = HwpPageImageProvider.variantKey(1, nil)
+        let filler = try makeCGImage()
+        provider.finishRequest(key: 1, variant: target, generation: 0, image: filler, cost: 10)
+        provider.resolvedByteLimit = 10
+        provider.finishRequest(key: 1, variant: variant(9), generation: 0, image: filler, cost: 10)
+        expect(provider.cachedImage(for: 1)).to(beNil())
+        expect(provider.settleEpochSnapshot(target)) == 1
+
+        // 진행 슬롯 0 = 확정이 발생하지 않아 해석자가 대기 상태로 서 있는다
+        provider.maximumInFlight = 0
+        let pending = Task { await provider.resolveImage(for: 1) }
+        try await waitUntil { provider.settleWaiterCount(target) == 1 }
+
+        // 뷰 스크롤이 가시 집합을 바꾼 상황 — 이 변형은 고정에서 빠진다
+        provider.setPinnedImages([])
+        expect(provider.settleEpochSnapshot(target)) == 1
+
+        provider.maximumInFlight = 4
+        provider.finishRequest(key: 1, variant: target, generation: 0, image: filler, cost: 10)
+        let resolved = await pending.value
+        expect(resolved).toNot(beNil())
+        // 해석이 끝나면 보호도 끝난다 — 무기한이면 상한이 무력해진다
+        expect(provider.settleEpochSnapshot(target)) == 0
+    }
+
     /// 에포크는 고정 집합 밖에서 값이 없다 — 함께 줄이지 않으면 예산 축출된
     /// 변형이 어디에서도 정리되지 않고 문서 전체 변형 수만큼 쌓인다.
     func testEpochsArePrunedToPinnedSet() throws {

@@ -84,6 +84,11 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     /// 돼 확정을 못 본 것으로 오인한다 — 그러면 아래 축출 라이브락 컷이 통째로
     /// 우회된다. 요청 전 스냅샷과의 차이가 그 확정을 증언한다.
     private var settleEpochs: [String: UInt64] = [:]
+    /// 변형별 진행 중인 `resolveImage` 수. 해석자가 대기에 등록되기 **전** 구간이
+    /// 곧 위 에포크가 메우려는 창이라, 그 구간에 프루닝이 항목을 지우면 신호가
+    /// 통째로 사라진다 — 스냅샷이 0인 첫 해석에서 특히 그렇다 (지운 뒤 조회
+    /// 기본값도 0이라 비교가 같아져 버린다).
+    private var activeResolvers: [String: Int] = [:]
     private var progressWaiters: [ProgressWaiter] = []
     private var nextWaiterId: UInt64 = 0
 
@@ -452,7 +457,9 @@ public final class HwpPageImageProvider: @unchecked Sendable {
     /// 변형은 `resolvedOrder`에서도 빠져 있어 어디에서도 정리되지 않고 문서 전체
     /// 변형 수만큼 쌓인다 (뷰 경로는 `retainOnlyImages`를 아예 부르지 않는다).
     private func pruneSettleEpochs() {
-        settleEpochs = settleEpochs.filter { pinnedVariants.contains($0.key) }
+        settleEpochs = settleEpochs.filter {
+            pinnedVariants.contains($0.key) || activeResolvers[$0.key] != nil
+        }
     }
 
     /// 가시 페이지가 참조하는 변형 키 집합을 갱신한다 — 이 변형은 예산 초과여도
@@ -632,6 +639,8 @@ extension HwpPageImageProvider {
     /// 캐시 purge에 취소된 요청은 축출이 아니라 재시도 대상이다 (R67).
     public func resolveImage(for key: UInt32, style: HwpImageRenderStyle? = nil) async -> CGImage? {
         let variant = Self.variantKey(key, style)
+        beginResolving(variant)
+        defer { endResolving(variant) }
         let startGeneration = currentGeneration()
         var didSettleOnce = false
         while !Task.isCancelled {
@@ -755,6 +764,31 @@ extension HwpPageImageProvider {
         lock.lock()
         defer { lock.unlock() }
         return settleEpochs[variant, default: 0]
+    }
+
+    /// lock 밖. 해석이 도는 동안 그 변형을 프루닝에서 보호한다 — 고정 집합은
+    /// 뷰 스크롤로 수시로 바뀌는데, 그 사이 확정 이력이 지워지면 해석자가
+    /// 자기 요청의 확정을 못 본다.
+    private func beginResolving(_ variant: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        activeResolvers[variant, default: 0] += 1
+    }
+
+    /// lock 밖. 마지막 해석자가 떠나면 작업셋 밖 항목은 그 자리에서 거둔다 —
+    /// 보호를 무기한 두면 프루닝이 무력해져 에포크가 문서 전체만큼 쌓인다.
+    private func endResolving(_ variant: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let count = activeResolvers[variant] else { return }
+        guard count > 1 else {
+            activeResolvers.removeValue(forKey: variant)
+            if !pinnedVariants.contains(variant) {
+                settleEpochs.removeValue(forKey: variant)
+            }
+            return
+        }
+        activeResolvers[variant] = count - 1
     }
 
     /// lock 밖. 대기자 식별자 발급 — 취소 시 자기 대기만 걷어내기 위한 것.
