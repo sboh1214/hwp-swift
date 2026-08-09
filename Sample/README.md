@@ -20,6 +20,10 @@
   `UIPrintInteractionController`)는 이 앱이 배선한다 (`PDFExportSupport.swift`)
 - App Sandbox 유지 + `User Selected File (Read/Write)` entitlement 사용 —
   저장 패널로 고른 위치에 PDF를 쓰려면 read-only로는 부족하다
+- **인쇄에는 `Printing` entitlement가 따로 필요하다** (`com.apple.security.print`).
+  파일 entitlement는 파일 접근만 주므로, 없으면 샌드박스가 인쇄 서비스를 막는다 —
+  그것도 **조용히**: `NSPrintOperation.run()`의 Bool은 취소와 실패를 구분하지 않아
+  사유를 올릴 수 없다(아래 인쇄 실패 항목). 눌러도 아무 일이 없는 것처럼 보인다
 - 서드파티 의존성 없음, 현재 저장소의 `Package.swift`를 그대로 사용
 
 ---
@@ -164,7 +168,7 @@ SwiftUI 소스 파일(`HwpSwiftSampleApp.swift`, `ContentView.swift`) 추가/삭
 | Swift | 5.9 |
 | Signing | Manual, ad-hoc identity (`-`) — "Sign to Run Locally" |
 | iOS Simulator | `CODE_SIGNING_ALLOWED=NO` |
-| Sandbox | ON (macOS) + `com.apple.security.files.user-selected.read-write` |
+| Sandbox | ON (macOS) + `com.apple.security.files.user-selected.read-write` + `com.apple.security.print` |
 | SPM Product | `HwpKit`, `HwpKitCore` (부모 저장소 로컬 참조) |
 
 ## 문제 해결
