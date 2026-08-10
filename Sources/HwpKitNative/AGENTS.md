@@ -97,7 +97,7 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
 
 `CALayer.contentsScale` 기본값은 1.0 — 설정하지 않으면 Retina 에서 1x 래스터를 확대해 **글씨가 흐릿해진다** (실제로 겪은 버그). 두 뷰 모두 `effectiveContentsScale` (backing/screen scale × max(1, zoom), 상한 4× — 산식은 `HwpDocumentViewSupport.effectiveContentsScale`) 을 레이어 생성 시와 zoom/backing 변경 시 적용한다 (macOS: `viewDidChangeBackingProperties`, iOS: `didMoveToWindow` + `scrollViewDidEndZooming`). 일괄 갱신은 `HwpDocumentViewSupport.updateContentsScale` — 메모 패널 레이어도 페이지와 함께 재래스터한다 (macOS·iOS 통일됨).
 
-선택·검색 하이라이트 오버레이 (`CAShapeLayer`) 는 그 일괄 갱신 대상이 아니라 `updateHighlightOverlays` 가 **매 호출** 부모 페이지 레이어의 `contentsScale` 을 물려준다 — 벡터 path 라 페이지와 다른 배율로 래스터하면 확대에서 가장자리가 뭉개진다.
+선택·검색 하이라이트 오버레이 (`CAShapeLayer`) 는 그 일괄 갱신 대상이 아니라 `updateHighlightOverlays` 가 **매 호출** 부모 페이지 레이어의 `contentsScale` 을 물려준다 — 벡터 path 라 페이지와 다른 배율로 래스터하면 확대에서 가장자리가 뭉개진다. **물려받기만 하므로 배율 갱신이 오버레이를 다시 칠해 줘야 한다** (`updateLayerContentsScale` 이 선택·검색 갱신을 함께 부른다, #75 리뷰): 줌 종료는 페이지 레이어 배율만 바꾸고, macOS 는 가시 범위가 같으면 `clipViewBoundsDidChange` 가 조기 반환하며 iOS 는 `scrollViewDidZoom` 이 **배율 갱신보다 먼저** 오버레이를 칠하므로, 그 두 줄이 없으면 하이라이트가 옛 배율로 남아 흐려진다. 가드는 양 플랫폼의 `testOverlayScaleFollowsPageLayerAfterScaleChange`.
 
 ## 줄 배치 캐시 (HwpPageLayer)
 
@@ -135,6 +135,8 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
 - 색은 **고정 sRGB** 다 (`HwpSearchHighlightStyle.default`). appearance/trait 변경 훅이 이 타깃에 하나도 없어 동적 색은 `.cgColor` 변환 시점에 굳고 다크 모드 전환 후 낡은 색이 남는다.
 - **플랫폼 비대칭 주의**: macOS `clipViewBoundsDidChange` 는 가시 범위가 같으면 조기 반환하므로 같은 페이지 안의 매치 이동에서 오버레이가 저절로 갱신되지 않는다. `onCurrentMatchChanged` 에서 명시적으로 부른다. iOS 는 스크롤·줌마다 갱신한다.
 - 단위 캐시 축출 호출은 **이 계층이 소유**한다 — 유지 범위(가시 ±2쪽)를 아는 유일한 층이라 `HwpSearchController.retainedPageRange` 훅을 여기서 채운다.
+- **세션 해체도 이 계층이 소유한다** (#75 리뷰). `searchController = nil` 이 `detach()` 를 부르고 SwiftUI 쪽 `dismantleNSView`/`dismantleUIView` 가 그것을 부른다 — 안 떼면 호스트가 `@State` 로 붙든 컨트롤러가 이 뷰의 선택 컨트롤러를, 그것이 다시 **문서 전체**(페이지·페인트 리스트·단위 캐시)를 잡는다. 새 문서를 열면 `attach` 가 옛 것을 떼므로 남는 경로는 **문서를 닫거나 재로드가 실패했을 때**다. 떼는 대상은 `isAttached(to:)` 로 **자기 것만** 고른다 — SwiftUI 가 새 뷰를 먼저 만들고 옛 뷰를 나중에 해체할 수 있어, 무조건 떼면 이미 새 뷰에 붙은 세션이 끊긴다.
+- 하이라이트 **색 변경**은 컨트롤러가 `onMatchesChanged` 로 직접 통지한다 (#75 리뷰). 이 계층은 매치·현재 매치 콜백만 듣고 SwiftUI wrapper 는 컨트롤러 신원만 넘기므로, 색만 바뀐 순간에는 아무도 다시 칠하지 않는다.
 - **매치 노출 스크롤(`scrollToMatch`)은 두 축이다.** 세로는 목표를 페이지 범위로 클램프해 **매치 페이지가 첫 가시 페이지**가 되게 한다 — 안 그러면 `currentVisiblePage()` 가 이웃 페이지를 가리켜 SwiftUI `currentPage` 왕복이 스크롤을 되튕긴다. 가로는 `horizontalOffset(toReveal:)` 이 **이미 뷰포트 안이면 현재 오프셋을 그대로 두고** 밖일 때만 뷰포트 가운데로 가져온다 — 매치마다 재조정하면 같은 단에서 다음 매치로 넘어갈 때 화면이 좌우로 흔들린다. 세로만 맞추면 뷰포트가 페이지(595pt)보다 좁을 때(iPhone·축소 안 한 창) 잘린 오른쪽의 매치로 점프해도 **카운터만 바뀌고 화면은 그대로**다. iOS 의 클램프(`clampedContentOffsetX`)는 선택 오토스크롤의 세로판과 같은 파일에 둔다.
 - **오버레이 단언은 "보이는가"를 증명하지 못한다.** 위 결함이 있는 동안에도 부착·색·z-순서·세로 클램프 단언이 전부 초록이었다 — 그 단언들은 "레이어가 올바른가"만 본다. 발견은 **시뮬레이터 육안 확인**이었고, 게다가 오버레이 스위트가 macOS 전용이라 iOS 경로엔 단언 자체가 없었다 (`HwpDocumentUIViewSearchTests` 가 그래서 생겼다 — macOS 대응 스위트와 같은 계약을 건다). 회귀 테스트를 쓸 때 둘: 대상 rect 를 콘텐츠 **밖**에 두면 스크롤로 도달할 수 없어 계약이 성립하지 않으므로 "뷰포트보다 넓은 콘텐츠 + 콘텐츠 안의 화면 밖 rect"로 조건을 잡고, 배선을 보는 테스트는 `updateSearchOverlays()` 를 **직접 부르지 않는다** (부르면 콜백 배선 누락이 가려진다 — 초안에서 실제로 가려져 있었다).
 
