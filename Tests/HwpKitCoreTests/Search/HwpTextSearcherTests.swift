@@ -228,6 +228,17 @@ final class HwpTextSearcherTests: XCTestCase {
         expect(Self.find("mid", in: [Self.textBlock("left mid right")])[0].snippet).to(beNil())
     }
 
+    /// `snippetPadding` 은 공개 인자다 — 극단값에 트랩하면 안 된다. `min` 이
+    /// 자르기 전에 `location + length + padding` 이 먼저 터진다 (#75 리뷰 3차).
+    func testExtremeSnippetPaddingDoesNotTrap() {
+        let matches = Self.find(
+            "mid", in: [Self.textBlock("left mid right")], snippetPadding: .max
+        )
+
+        expect(matches.count) == 1
+        expect(matches[0].snippet?.text) == "left mid right"
+    }
+
     func testSnippetCarriesMatchRangeWithinItsOwnText() {
         let matches = Self.find(
             "mid", in: [Self.textBlock("aaaaa left mid right bbbbb")], snippetPadding: 5

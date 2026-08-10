@@ -199,8 +199,12 @@ public enum HwpTextSearcher {
     private static func snippet(
         for range: NSRange, in text: NSString, padding: Int
     ) -> HwpSearchSnippet {
-        let lower = max(0, range.location - padding)
-        let upper = min(text.length, range.location + range.length + padding)
+        // 클램프가 산술보다 **먼저**다. `padding` 은 공개 인자라 `Int.max` 가
+        // 들어오는데, 그러면 `min` 이 자르기 전에 덧셈이 터진다. 문자열 길이를
+        // 넘는 여백은 어차피 문자열 전체와 같다.
+        let clamped = max(0, min(padding, text.length))
+        let lower = max(0, range.location - clamped)
+        let upper = min(text.length, range.location + range.length + clamped)
         let safe = text.rangeOfComposedCharacterSequences(
             for: NSRange(location: lower, length: upper - lower)
         )
