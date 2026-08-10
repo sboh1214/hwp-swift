@@ -52,12 +52,20 @@ public final class HwpSelectionController {
         onGeometryChanged?(HwpGeometryChange(
             previousPageCount: previousPageCount,
             pageCount: pageCount,
-            // 같은 로드의 스냅샷이 페이지만 늘린 경우 — 위 doc-comment의 계약대로
-            // 기존 페이지의 조판과 오프셋이 그대로 유효하다. 소비자는 늘어난
-            // 구간만 다시 보면 된다.
+            // 같은 로드의 스냅샷이 페이지를 잃지 않은 경우 — 위 doc-comment의
+            // 계약대로 기존 페이지의 조판과 오프셋이 그대로 유효하다. 소비자는
+            // 늘어난 구간만 다시 보면 된다.
+            //
+            // 동일 개수도 증분이다. 로더는 마지막 부분 스냅샷 뒤에 최종 스냅샷을
+            // 무조건 한 번 더 내는데, 총 쪽수가 방출 지점(1·25·49…)에 정확히
+            // 떨어지면 (1쪽 문서는 항상) 토큰도 쪽수도 같고 메타데이터만 다르다.
+            // 이때 교체로 보면 전량 재스캔이 돌면서 사용자가 골라 둔 현재 매치가
+            // 첫 매치로 되돌아간다. 네이티브 `isProgressiveUpdate` 도 `>=` 다 —
+            // 같은 사건을 두 층이 다르게 판정하면 뷰는 스크롤을 지키는데 검색만
+            // 리셋된다.
             isProgressiveAppend: previousToken != nil
                 && previousToken == token
-                && pageCount > previousPageCount
+                && pageCount >= previousPageCount
         ))
         if preservingSelection, selection != nil {
             onSelectionChanged?()
