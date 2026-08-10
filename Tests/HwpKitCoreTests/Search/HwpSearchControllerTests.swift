@@ -23,7 +23,7 @@ final class HwpSearchControllerTests: XCTestCase {
     }
 
     private static func document(
-        pageTexts: [String], loadToken: UUID? = nil
+        pageTexts: [String], loadToken: UUID? = nil, isComplete: Bool = true
     ) -> HwpDocument {
         HwpDocument(
             pages: pageTexts.enumerated().map { index, text in
@@ -34,7 +34,9 @@ final class HwpSearchControllerTests: XCTestCase {
                     pageNumber: index + 1
                 )
             },
-            metadata: HwpDocumentMetadata(pageCount: pageTexts.count, loadToken: loadToken),
+            metadata: HwpDocumentMetadata(
+                pageCount: pageTexts.count, loadToken: loadToken, isComplete: isComplete
+            ),
             unsupportedElements: []
         )
     }
@@ -202,6 +204,78 @@ final class HwpSearchControllerTests: XCTestCase {
         search.style = search.style
 
         expect(repaints) == 1
+    }
+
+    /// 로더는 마지막 부분 스냅샷 뒤에 최종 스냅샷을 무조건 한 번 더 낸다.
+    /// 총 쪽수가 방출 지점에 정확히 떨어지면 (1쪽 문서는 항상) 토큰도 쪽수도
+    /// 같고 메타데이터만 다른데, 이것을 교체로 보면 전량 재스캔이 돌면서
+    /// 사용자가 골라 둔 현재 매치가 첫 매치로 되돌아간다 (#75 리뷰 2차).
+    func testEqualCountFinalSnapshotKeepsCurrentMatch() async {
+        let token = UUID()
+        let selection = HwpSelectionController()
+        selection.setDocument(
+            Self.document(
+                pageTexts: ["hit one", "hit two"], loadToken: token, isComplete: false
+            ),
+            preservingSelection: false
+        )
+        let search = HwpSearchController()
+        search.publishInterval = .zero
+        search.attach(to: selection)
+        search.search(text: "hit")
+        await expect(search.phase).toEventually(equal(.complete), timeout: .seconds(2))
+        search.next()
+        expect(search.currentMatchIndex) == 1
+
+        // 최종 스냅샷 — 토큰도 쪽수도 같고 `isComplete` 만 다르다. 두 문서가
+        // 완전히 같으면 `setDocument` 이 조기 반환해 이 경로를 아예 타지 않는다
+        // (그렇게 만든 첫 판은 수정을 되돌려도 통과하는 가짜 가드였다).
+        selection.setDocument(
+            Self.document(
+                pageTexts: ["hit one", "hit two"], loadToken: token, isComplete: true
+            ),
+            preservingSelection: true
+        )
+
+        await expect(search.phase).toEventually(equal(.complete), timeout: .seconds(2))
+        expect(search.currentMatchIndex) == 1
+        expect(search.matchCount) == 2
+    }
+
+    /// 해체는 지오메트리만 놓는 것이 아니라 결과도 되돌려야 한다 — 호스트가
+    /// 컨트롤러를 뷰보다 오래 들고 있으므로, 남기면 검색 바가 문서를 닫은 뒤에도
+    /// 카운터와 이전/다음을 그대로 보여 준다 (#75 리뷰 2차).
+    func testDetachResetsResultsAndPublishesIdle() async {
+        let (_, search) = Self.makeAttached(pageTexts: ["hit one", "hit two"])
+        search.search(text: "hit")
+        await expect(search.matchCount).toEventually(equal(2), timeout: .seconds(2))
+        var idleNotifications = 0
+        search.onCurrentMatchChanged = {
+            if $0 == nil {
+                idleNotifications += 1
+            }
+        }
+
+        search.detach()
+
+        expect(search.phase) == .idle
+        expect(search.matchCount) == 0
+        expect(search.highlightMatches).to(beEmpty())
+        expect(search.currentMatchIndex).to(beNil())
+        expect(idleNotifications) == 1
+    }
+
+    /// 스캔 도중 해체면 그것을 끝낼 유일한 태스크가 취소된다 — 단계를 그대로
+    /// 두면 검색 바가 영원히 "Searching…"에 멈춘다.
+    func testDetachDuringScanEndsInIdle() {
+        let (_, search) = Self.makeAttached(pageTexts: ["hit one", "hit two"])
+
+        search.search(text: "hit")
+        expect(search.phase) == .scanning
+
+        search.detach()
+
+        expect(search.phase) == .idle
     }
 
     /// 뷰 해체가 **자기 것만** 떼기 위한 질의 — 이미 다른 뷰에 붙었으면 false다.

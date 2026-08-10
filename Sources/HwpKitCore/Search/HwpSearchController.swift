@@ -239,6 +239,13 @@ public final class HwpSearchController {
         restartScan()
     }
 
+    /// 붙은 지오메트리를 놓고 **결과까지 되돌린 뒤** idle 을 발행한다.
+    ///
+    /// 결과를 남기면 호스트 검색 바가 문서를 닫은 뒤에도 "3 of 12" 를 보여 주고
+    /// 이전/다음 버튼도 살아 있는데, 지오메트리가 없어 하이라이트는 빈 배열이라
+    /// 카운터만 거짓말을 한다. 스캔 도중 해체면 그것을 끝낼 유일한 태스크가
+    /// 취소되므로 `.scanning` 이 영영 남는다. 질의는 지우지 않는다 — 그건 호스트
+    /// 검색 필드의 텍스트이고, 함께 비우는 것은 `clear()` 의 몫이다.
     public func detach() {
         scanTask?.cancel()
         scanTask = nil
@@ -247,6 +254,13 @@ public final class HwpSearchController {
         pageCount = 0
         scannedPageCount = 0
         publishedPageUpperBound = 0
+        matches = []
+        highlightMatches = []
+        currentMatchIndex = nil
+        phase = .idle
+        bumpRevision()
+        onMatchesChanged?()
+        onCurrentMatchChanged?(nil)
     }
 
     /// 이 세션이 그 선택 컨트롤러에 붙어 있는가.
