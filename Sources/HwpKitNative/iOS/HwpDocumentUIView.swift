@@ -165,6 +165,12 @@
             fatalError("init(coder:) has not been implemented")
         }
 
+        deinit {
+            HwpDocumentViewSupport.detachSearchSessionOnTeardown(
+                searchController, from: selectionController
+            )
+        }
+
         override public func layoutSubviews() {
             super.layoutSubviews()
             scrollView.frame = bounds

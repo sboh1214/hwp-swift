@@ -16,6 +16,27 @@ enum HwpDocumentViewSupport {
 
     /// 프로그레시브 스냅샷 (같은 loadToken + 페이지 증가) 여부.
     /// true면 뷰는 기존 레이어·스크롤 위치를 유지하고 크기·가시 범위만 늘린다.
+    /// 뷰가 죽을 때 검색 세션을 뗀다.
+    ///
+    /// SwiftUI 를 거치지 않는 직접 사용 경로에는 `dismantleNSView`/
+    /// `dismantleUIView` 가 없어 여기서만 끊을 수 있다 — 안 끊으면 호스트가
+    /// 붙든 컨트롤러가 이 뷰의 선택 컨트롤러를, 그것이 다시 문서 전체를 잡는다.
+    ///
+    /// `deinit` 은 nonisolated 이고 dealloc 이 메인에서 돈다는 보장이 없어
+    /// `@MainActor` 인 `detach()` 를 그 자리에서 부를 수 없다. 두 컨트롤러 모두
+    /// `@MainActor` 라 Sendable 이므로 참조만 넘겨 홉을 태운다. 떼는 대상은
+    /// **자기 것뿐**이다 — 그 사이 다른 뷰가 세션을 가져갔으면 건드리지 않는다.
+    nonisolated static func detachSearchSessionOnTeardown(
+        _ controller: HwpSearchController?,
+        from selection: HwpSelectionController
+    ) {
+        guard let controller else { return }
+        Task { @MainActor in
+            guard controller.isAttached(to: selection) else { return }
+            controller.detach()
+        }
+    }
+
     nonisolated static func isProgressiveUpdate(
         from old: HwpDocument?,
         to new: HwpDocument?

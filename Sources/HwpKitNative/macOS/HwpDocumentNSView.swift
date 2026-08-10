@@ -163,6 +163,9 @@
 
         deinit {
             NotificationCenter.default.removeObserver(self)
+            HwpDocumentViewSupport.detachSearchSessionOnTeardown(
+                searchController, from: selectionController
+            )
         }
 
         private func configureViewHierarchy() {

@@ -233,6 +233,26 @@
             expect(search.isAttached(to: newView.selectionController)) == true
         }
 
+        /// SwiftUI를 거치지 않는 직접 사용 경로엔 `dismantle*` 훅이 없다 —
+        /// 뷰가 해제될 때 떼지 않으면 호스트가 붙든 컨트롤러가 이 뷰의 선택
+        /// 컨트롤러를, 그것이 다시 문서 전체를 붙든다.
+        func testDeinitDetachesSessionForDirectNativeUse() async {
+            let search = HwpSearchController()
+            search.publishInterval = .zero
+            var view: HwpDocumentNSView? = Self.makeView(pageTexts: ["alpha"])
+            guard let selection = view?.selectionController else {
+                fail("Expected selection controller")
+                return
+            }
+            view?.searchController = search
+            expect(search.isAttached(to: selection)) == true
+
+            view = nil
+
+            await expect(search.isAttached(to: selection))
+                .toEventually(beFalse(), timeout: .seconds(2))
+        }
+
         /// 색만 바뀌면 매치·현재 매치 콜백이 오지 않는다 — 테스트가
         /// `updateSearchOverlays()`를 부르면 그 통지 누락이 가려진다.
         func testStyleChangeRepaintsOverlaysWithoutManualRefresh() async {

@@ -134,6 +134,24 @@
             expect(search.isAttached(to: newView.selectionController)) == true
         }
 
+        /// 직접 사용 경로엔 `dismantle*` 훅이 없어 여기서만 세션을 끊을 수 있다.
+        func testDeinitDetachesSessionForDirectNativeUse() async {
+            let search = HwpSearchController()
+            search.publishInterval = .zero
+            var view: HwpDocumentUIView? = Self.makeView(pageTexts: ["alpha"])
+            guard let selection = view?.selectionController else {
+                fail("Expected selection controller")
+                return
+            }
+            view?.searchController = search
+            expect(search.isAttached(to: selection)) == true
+
+            view = nil
+
+            await expect(search.isAttached(to: selection))
+                .toEventually(beFalse(), timeout: .seconds(2))
+        }
+
         /// `updateSearchOverlays()`를 부르지 않는다 — 부르면 통지 누락이 가려진다.
         func testStyleChangeRepaintsOverlaysWithoutManualRefresh() async {
             let view = Self.makeView(pageTexts: ["alpha"])
