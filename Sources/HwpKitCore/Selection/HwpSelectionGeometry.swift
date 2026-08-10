@@ -7,13 +7,16 @@ import Foundation
 /// 하이라이트가 화면과 일치한다. 단위 목록·줄 배치는 페이지별 지연 계산
 /// 후 캐시한다 (하이라이트는 가시 페이지에서만 질의된다).
 public final class HwpSelectionGeometry {
-    private let document: HwpDocument
-    private var unitCache: [Int: [HwpTextUnit]] = [:]
-    private var lineCache: [UnitKey: [HwpDrawnLine]] = [:]
-    private var lineCacheOrder: [UnitKey] = []
-    private let lineCacheLimit = 512
+    // 아래 다섯은 검색(#75)이 같은 캐시를 공유해야 해서 모듈 internal이다.
+    // 캐시를 이중화하면 1,030쪽 문서에서 단위 전개가 두 벌 상주한다.
+    // 공개 표면은 그대로다 — 어느 것도 public이 아니다.
+    let document: HwpDocument
+    var unitCache: [Int: [HwpTextUnit]] = [:]
+    var lineCache: [UnitKey: [HwpDrawnLine]] = [:]
+    var lineCacheOrder: [UnitKey] = []
+    let lineCacheLimit = 512
 
-    private struct UnitKey: Hashable {
+    struct UnitKey: Hashable {
         let pageIndex: Int
         let unitOrdinal: Int
     }
@@ -34,7 +37,7 @@ public final class HwpSelectionGeometry {
         return units
     }
 
-    private func drawnLines(pageIndex: Int, unitOrdinal: Int) -> [HwpDrawnLine] {
+    func drawnLines(pageIndex: Int, unitOrdinal: Int) -> [HwpDrawnLine] {
         let key = UnitKey(pageIndex: pageIndex, unitOrdinal: unitOrdinal)
         if let cached = lineCache[key] {
             return cached
@@ -195,7 +198,7 @@ public final class HwpSelectionGeometry {
         return rects
     }
 
-    private func highlightRect(in line: HwpDrawnLine, characterRange: NSRange) -> CGRect? {
+    func highlightRect(in line: HwpDrawnLine, characterRange: NSRange) -> CGRect? {
         let lineRange = line.stringRange
         let lower = max(characterRange.location, lineRange.location)
         let upper = min(
@@ -315,7 +318,9 @@ public final class HwpSelectionGeometry {
         ) != nil
     }
 
-    private static func isRepeatedHeaderClone(_ attributed: NSAttributedString) -> Bool {
+    /// 검색(#75)의 목록 dedup이 같은 판정을 재사용한다 — 각자
+    /// `HwpAttributedStringKey.repeatedTableHeaderClone`을 읽으면 정책이 갈라진다.
+    static func isRepeatedHeaderClone(_ attributed: NSAttributedString) -> Bool {
         guard attributed.length > 0 else { return false }
         return attributed.attribute(
             HwpAttributedStringKey.repeatedTableHeaderClone,
