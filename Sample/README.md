@@ -198,8 +198,8 @@ Xcode 콘솔에 `print()`로 출력됨:
 
 ## 스코프
 
-이 샘플은 **`HwpKit`이 노출하는 모든 SwiftUI 컴포넌트를 실제로 조작해 볼 수 있는 최소 앱**. 실 서비스 UX (최근 파일, 검색, 사이드바, 편집 등)는 포함하지 않으며, 이는 `HwpKit` v1의 read-only 스코프와도 일치.
+이 샘플은 **`HwpKit`이 노출하는 모든 SwiftUI 컴포넌트를 실제로 조작해 볼 수 있는 최소 앱**. 실 서비스 UX (최근 파일, 사이드바, 편집 등)는 포함하지 않으며, 이는 `HwpKit` v1의 read-only 스코프와도 일치.
 
-`HwpDocumentView` / `HwpDocumentToolbar` / `HwpPageNavigator` / `HwpZoomControls` / `HwpDocumentLoader` / `HwpPDFExporter` 6개 public surface가 모두 이 앱 안에서 활성화됨.
+`HwpDocumentView` / `HwpDocumentToolbar` / `HwpPageNavigator` / `HwpZoomControls` / `HwpSearchBar` / `HwpSearchNavigator` / `HwpSearchController` / `HwpDocumentLoader` / `HwpPDFExporter` 9개 public surface가 모두 이 앱 안에서 활성화됨.
 
 인쇄·저장·공유 **UI는 의도적으로 라이브러리 밖**이다 — `HwpKit`은 PDF 바이트까지만 만들고 그 앞뒤는 앱이 정한다. 이 앱의 `PDFExportSupport.swift`가 그 배선의 최소 예시이고, 저장소의 유일한 `#if os(macOS)` 분기이기도 하다.

@@ -121,6 +121,15 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
 - `AsyncThrowingStream<HwpDocumentSnapshot, Error>` — 첫 `firstBatch`(기본 1) 쪽 확정 즉시 1차 스냅샷, 이후 `batchSize`(기본 24) 쪽마다, 완료 시 최종 스냅샷 (`isComplete == true`, `unsupportedElements` 포함) 방출. `loadDocument` 는 이 스트림의 최종 스냅샷만 반환하는 래퍼로 동작 — 최종 결과는 동치 (loadToken 제외)
 - 스냅샷은 같은 `imageStore` 를 공유하고, `HwpDocumentMetadata.loadToken` (UUID) 으로 연속성 표시. 뷰의 `document` didSet 이 `HwpDocumentViewSupport.isProgressiveUpdate` (같은 loadToken + 페이지 증가) 로 **증분 적용** (레이어·스크롤 유지, 크기·가시 범위만 확장) vs **전체 리셋** 을 분기. 첫 페이지 표시가 전량 로드 완료를 기다리지 않는다 (1,030쪽 실문서 23.8s → 첫 페이지 ~3.2s)
 
+## 검색 하이라이트 (#75)
+
+- 오버레이 딕셔너리는 **2벌**이다 (`searchMatchLayers` / `currentSearchMatchLayers`). 헬퍼가 페이지당 오버레이 하나를 재사용하므로 한 벌로 두 번 칠하면 두 번째 호출이 첫 번째의 path 를 덮는다.
+- z-순서는 `HwpOverlayZ` 로 **명시**한다 (search 10 / current 20 / selection 30). 부착이 `addSublayer` 한 줄이고 이미 붙어 있으면 다시 붙이지 않으므로, 명시하지 않으면 첫 부착 순서가 그대로 고착돼 가상화로 재실체화한 페이지만 겹침 색이 뒤바뀐다. 선택이 최상단인 것은 사용자가 직접 만든 것이라 자동 하이라이트에 가리면 안 되기 때문이다.
+- `fillColor` 는 **매 호출** 갱신한다. 문서 교체가 딕셔너리를 비우지 않아 오버레이가 재사용되는데, 생성 분기에서만 대입하면 옛 색이 그대로 남는다 (선택만 있을 때도 있던 결함).
+- 색은 **고정 sRGB** 다 (`HwpSearchHighlightStyle.default`). appearance/trait 변경 훅이 이 타깃에 하나도 없어 동적 색은 `.cgColor` 변환 시점에 굳고 다크 모드 전환 후 낡은 색이 남는다.
+- **플랫폼 비대칭 주의**: macOS `clipViewBoundsDidChange` 는 가시 범위가 같으면 조기 반환하므로 같은 페이지 안의 매치 이동에서 오버레이가 저절로 갱신되지 않는다. `onCurrentMatchChanged` 에서 명시적으로 부른다. iOS 는 스크롤·줌마다 갱신한다.
+- 단위 캐시 축출 호출은 **이 계층이 소유**한다 — 유지 범위(가시 ±2쪽)를 아는 유일한 층이라 `HwpSearchController.retainedPageRange` 훅을 여기서 채운다.
+
 ## 텍스트 선택
 
 - 선택 상태/지오메트리는 HwpKitCore의 `HwpSelectionController`/`HwpSelectionGeometry` (플랫폼 중립). 줄 배치는 렌더러와 같은 `HwpDrawnTextLayout`을 공유해 하이라이트가 화면과 일치한다.

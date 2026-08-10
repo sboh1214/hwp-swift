@@ -246,6 +246,30 @@ noori p2에서 비영 셀의 30%까지 지워도 양쪽 통과).
 (재드로 1.85x/1.53x — `Sources/HwpKitNative/AGENTS.md`). 문서 빌드와 draw로
 단계가 갈려 서로 독립이다.
 
+## 문서 내 검색 (#75)
+
+검색은 **선택과 같은 조판을 공유**한다 — `HwpSearchController.attach(to:)` 가
+`HwpSelectionController` 의 지오메트리를 그대로 쓰므로 하이라이트 좌표가
+화면과 어긋날 수 없고 단위 캐시가 이중화되지 않는다. 별도 텍스트 인덱스를
+만들지 않는다.
+
+- 계층: 엔진·세션은 `HwpKitCore/Search/`, 오버레이·스크롤은 `HwpKitNative`,
+  공개 UI (`HwpSearchBar`/`HwpSearchNavigator`) 는 `HwpKit/Search/`.
+- 매칭은 `HwpTextUnit.attributedString.string` 의 **UTF-16 오프셋** 위에서
+  한다 (`HwpTextPosition.characterOffset` 의 정의). `plainText(for:)` 위에서
+  매칭하면 U+FFFC 제거·문단 조각 결합 때문에 하이라이트 좌표계와 어긋난다.
+- `.literal` 을 쓰지 않아 한글 NFD/NFC 가 동치로 비교된다. 대가로 **반환
+  range 의 길이가 질의의 UTF-16 길이와 다를 수 있다** — 경계·커서 전진은
+  반드시 반환된 range 를 그대로 쓴다 (`HwpSearchNormalizationTests` 가 고정).
+- 목록(`matches`)은 반복 표 머리행 클론을 **단위 단위**로 dedup 하고,
+  하이라이트(`highlightMatches`)는 클론을 남긴다 — `plainText(for:)` 의 기존
+  정책과 같은 의미다.
+- 프로그레시브 스냅샷은 `HwpGeometryChange.isProgressiveAppend` 로 **증분**
+  재스캔한다. 로더 배치가 24 라 1,030쪽이면 스냅샷이 수십 회 온다.
+- UI 경계: 검색 **컴포넌트**는 우리 몫이고 Cmd+F 같은 **전역 단축키와
+  chrome** 은 호스트 몫이다. SwiftUI `.searchable` 은 호스트 navigation
+  chrome 을 점유하므로 스코프 가드가 계속 막는다.
+
 ## PDF 내보내기 (#74)
 
 출력 경로가 둘이 됐지만 **조판은 하나**다 — `HwpKit.HwpPDFExporter`가
