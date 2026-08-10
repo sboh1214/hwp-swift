@@ -112,10 +112,18 @@
         /// 재대입은 멱등이다 — 같은 인스턴스를 다시 넣으면 아무 일도 하지 않는다.
         /// SwiftUI wrapper가 매 갱신마다 대입하므로, 이 가드가 없으면
         /// 재배선 → 재스캔 → 관찰자 통지 → 뷰 갱신 루프가 타이핑 없이도 돈다.
+        ///
+        /// 뷰 해체(`dismantleNSView`)도 nil을 넣어 이 경로로 뗀다. 안 떼면
+        /// 호스트가 `@State`로 붙든 컨트롤러가 이 뷰의 선택 컨트롤러를, 그것이
+        /// 다시 문서 전체를 잡는다. 떼는 대상은 **자기 것뿐**이다 — SwiftUI가
+        /// 새 뷰를 먼저 만들고 옛 뷰를 나중에 해체할 수 있어, 무조건 떼면 이미
+        /// 새 뷰에 붙은 세션이 끊긴다.
         public var searchController: HwpSearchController? {
             didSet {
                 guard oldValue !== searchController else { return }
-                oldValue?.detach()
+                if let oldValue, oldValue.isAttached(to: selectionController) {
+                    oldValue.detach()
+                }
                 wireSearchController()
             }
         }
@@ -232,11 +240,15 @@
             )
         }
 
-        private func updateLayerContentsScale() {
+        func updateLayerContentsScale() {
             HwpDocumentViewSupport.updateContentsScale(
                 of: Array(pageLayers.values), Array(memoPanelLayers.values),
                 scale: effectiveContentsScale
             )
+            // 오버레이는 이 일괄 갱신 대상이 아니라 부착 때 부모 배율을 물려받는다.
+            // 페이지만 새 배율로 바꾸고 끝내면 줌 뒤에도 옛 배율로 남아 흐려진다.
+            updateSelectionOverlays()
+            updateSearchOverlays()
         }
 
         override public func layout() {

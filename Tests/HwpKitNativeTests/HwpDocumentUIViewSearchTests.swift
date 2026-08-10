@@ -107,6 +107,64 @@
             expect(view.currentSearchMatchLayers).to(beEmpty())
         }
 
+        // MARK: - 해체·색·배율 (#75 리뷰, macOS와 같은 계약)
+
+        func testClearingControllerDetachesSession() async {
+            let view = Self.makeView(pageTexts: ["alpha"])
+            let search = Self.attachedSearch(view, query: "alpha")
+            await expect(search.matchCount).toEventually(equal(1), timeout: .seconds(2))
+            expect(search.isAttached(to: view.selectionController)) == true
+
+            view.searchController = nil
+
+            expect(search.isAttached(to: view.selectionController)) == false
+        }
+
+        /// 옛 뷰의 해체가 이미 새 뷰에 붙은 세션을 끊으면 안 된다.
+        func testTeardownLeavesSessionAlreadyAttachedElsewhere() async {
+            let oldView = Self.makeView(pageTexts: ["alpha"])
+            let newView = Self.makeView(pageTexts: ["alpha"])
+            let search = Self.attachedSearch(oldView, query: "alpha")
+            await expect(search.matchCount).toEventually(equal(1), timeout: .seconds(2))
+            newView.searchController = search
+            expect(search.isAttached(to: newView.selectionController)) == true
+
+            oldView.searchController = nil
+
+            expect(search.isAttached(to: newView.selectionController)) == true
+        }
+
+        /// `updateSearchOverlays()`를 부르지 않는다 — 부르면 통지 누락이 가려진다.
+        func testStyleChangeRepaintsOverlaysWithoutManualRefresh() async {
+            let view = Self.makeView(pageTexts: ["alpha"])
+            let search = Self.attachedSearch(view, query: "alpha")
+            await expect(search.matchCount).toEventually(equal(1), timeout: .seconds(2))
+            let previous = view.searchMatchLayers[0]?.fillColor
+            expect(previous).toNot(beNil())
+
+            search.style = HwpSearchHighlightStyle(
+                matchColor: HwpRGBColor(red: 0, green: 1, blue: 0, alpha: 0.5),
+                currentMatchColor: HwpRGBColor(red: 0, green: 0, blue: 1, alpha: 0.5)
+            )
+
+            expect(view.searchMatchLayers[0]?.fillColor) != previous
+        }
+
+        /// 줌이 끝나면 페이지만이 아니라 오버레이도 새 배율로 다시 칠해야 한다.
+        func testOverlayScaleFollowsPageLayerAfterScaleChange() async {
+            let view = Self.makeView(pageTexts: ["alpha"])
+            let search = Self.attachedSearch(view, query: "alpha")
+            await expect(search.matchCount).toEventually(equal(1), timeout: .seconds(2))
+            view.pageLayers[0]?.contentsScale = 1
+            view.searchMatchLayers[0]?.contentsScale = 1
+
+            view.updateLayerContentsScale()
+
+            let pageScale = view.pageLayers[0]?.contentsScale ?? 0
+            expect(pageScale) > 1
+            expect(view.searchMatchLayers[0]?.contentsScale) == pageScale
+        }
+
         // MARK: - 가로 노출 (육안 확인에서 발견한 결함)
 
         /// 페이지가 뷰포트보다 넓으면 세로만 맞춰서는 매치가 화면 밖에 남는다.

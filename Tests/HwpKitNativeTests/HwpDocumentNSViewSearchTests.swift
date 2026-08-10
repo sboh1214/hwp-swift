@@ -203,6 +203,69 @@
             expect(search.matchCount) == 1
         }
 
+        // MARK: - 해체·색·배율 (#75 리뷰)
+
+        /// 호스트가 붙든 컨트롤러는 뷰보다 오래 산다 — 해체 때 떼지 않으면
+        /// 선택 컨트롤러를, 그것이 다시 문서 전체를 붙든다.
+        func testClearingControllerDetachesSession() async {
+            let view = Self.makeView(pageTexts: ["alpha"])
+            let search = Self.attachedSearch(view, query: "alpha")
+            await expect(search.matchCount).toEventually(equal(1), timeout: .seconds(2))
+            expect(search.isAttached(to: view.selectionController)) == true
+
+            view.searchController = nil
+
+            expect(search.isAttached(to: view.selectionController)) == false
+        }
+
+        /// SwiftUI는 새 뷰를 먼저 만들고 옛 뷰를 나중에 해체할 수 있다.
+        /// 그때 옛 뷰가 무조건 떼면 이미 새 뷰에 붙은 세션이 끊긴다.
+        func testTeardownLeavesSessionAlreadyAttachedElsewhere() async {
+            let oldView = Self.makeView(pageTexts: ["alpha"])
+            let newView = Self.makeView(pageTexts: ["alpha"])
+            let search = Self.attachedSearch(oldView, query: "alpha")
+            await expect(search.matchCount).toEventually(equal(1), timeout: .seconds(2))
+            newView.searchController = search
+            expect(search.isAttached(to: newView.selectionController)) == true
+
+            oldView.searchController = nil
+
+            expect(search.isAttached(to: newView.selectionController)) == true
+        }
+
+        /// 색만 바뀌면 매치·현재 매치 콜백이 오지 않는다 — 테스트가
+        /// `updateSearchOverlays()`를 부르면 그 통지 누락이 가려진다.
+        func testStyleChangeRepaintsOverlaysWithoutManualRefresh() async {
+            let view = Self.makeView(pageTexts: ["alpha"])
+            let search = Self.attachedSearch(view, query: "alpha")
+            await expect(search.matchCount).toEventually(equal(1), timeout: .seconds(2))
+            let previous = view.searchMatchLayers[0]?.fillColor
+            expect(previous).toNot(beNil())
+
+            search.style = HwpSearchHighlightStyle(
+                matchColor: HwpRGBColor(red: 0, green: 1, blue: 0, alpha: 0.5),
+                currentMatchColor: HwpRGBColor(red: 0, green: 0, blue: 1, alpha: 0.5)
+            )
+
+            expect(view.searchMatchLayers[0]?.fillColor) != previous
+        }
+
+        /// 오버레이는 부착 때 부모 배율을 물려받을 뿐이라, 배율 갱신이 페이지만
+        /// 바꾸고 끝나면 줌 뒤에도 옛 배율로 남아 흐려진다.
+        func testOverlayScaleFollowsPageLayerAfterScaleChange() async {
+            let view = Self.makeView(pageTexts: ["alpha"])
+            let search = Self.attachedSearch(view, query: "alpha")
+            await expect(search.matchCount).toEventually(equal(1), timeout: .seconds(2))
+            view.pageLayers[0]?.contentsScale = 1
+            view.searchMatchLayers[0]?.contentsScale = 1
+
+            view.updateLayerContentsScale()
+
+            let pageScale = view.pageLayers[0]?.contentsScale ?? 0
+            expect(pageScale) > 1
+            expect(view.searchMatchLayers[0]?.contentsScale) == pageScale
+        }
+
         // MARK: - 가로 노출 (육안 확인에서 발견한 결함)
 
         /// iOS와 같은 계약 — 페이지가 뷰포트보다 넓으면 세로만 맞춰서는

@@ -124,13 +124,17 @@
         /// 텍스트 롱프레스 선택 상태 (플랫폼 중립 컨트롤러)
         public let selectionController = HwpSelectionController()
 
-        /// 문서 검색 세션 주입 (#75). macOS와 같은 계약 — 재대입은 멱등이다.
+        /// 문서 검색 세션 주입 (#75). macOS와 같은 계약 — 재대입은 멱등이고,
+        /// 뷰 해체(`dismantleUIView`)가 nil을 넣어 세션을 뗀다.
         /// SwiftUI wrapper가 매 갱신마다 대입하므로, 이 가드가 없으면
         /// 재배선 → 재스캔 → 관찰자 통지 → 뷰 갱신 루프가 타이핑 없이도 돈다.
+        /// 떼는 대상이 **자기 것뿐**인 이유도 macOS와 같다.
         public var searchController: HwpSearchController? {
             didSet {
                 guard oldValue !== searchController else { return }
-                oldValue?.detach()
+                if let oldValue, oldValue.isAttached(to: selectionController) {
+                    oldValue.detach()
+                }
                 wireSearchController()
             }
         }
@@ -330,12 +334,16 @@
             )
         }
 
-        private func updateLayerContentsScale() {
+        func updateLayerContentsScale() {
             // 메모 패널 레이어도 함께 재래스터 (macOS와 통일)
             HwpDocumentViewSupport.updateContentsScale(
                 of: Array(pageLayers.values), Array(memoPanelLayers.values),
                 scale: effectiveContentsScale
             )
+            // 오버레이는 부착 때 부모 배율을 물려받으므로 여기서 다시 칠하지
+            // 않으면 줌이 끝난 뒤에도 옛 배율로 남는다 (macOS와 같은 규약).
+            updateSelectionOverlays()
+            updateSearchOverlays()
         }
 
         private func configureViewHierarchy() {
