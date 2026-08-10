@@ -101,6 +101,17 @@
             return min(max(minY, y), maxY)
         }
 
+        /// 가로판. 넓은 페이지(줌·좁은 화면)에서 검색 매치를 화면 안으로
+        /// 들이는 데 쓴다 — 세로만 맞추면 매치가 가로로 화면 밖에 남아,
+        /// 사용자에게는 카운터만 바뀌고 아무 일도 안 일어난 것처럼 보인다.
+        func clampedContentOffsetX(_ x: CGFloat) -> CGFloat {
+            let inset = scrollView.adjustedContentInset
+            let minX = -inset.left
+            let scrollableX = scrollView.contentSize.width - scrollView.bounds.width
+            let maxX = max(minX, scrollableX + inset.right)
+            return min(max(minX, x), maxX)
+        }
+
         @objc private func selectionAutoscrollTick(_: CADisplayLink) {
             guard let point = selectionAutoscrollViewportPoint else {
                 stopSelectionAutoscroll()

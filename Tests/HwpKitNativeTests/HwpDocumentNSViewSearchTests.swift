@@ -203,6 +203,39 @@
             expect(search.matchCount) == 1
         }
 
+        // MARK: - 가로 노출 (육안 확인에서 발견한 결함)
+
+        /// iOS와 같은 계약 — 페이지가 뷰포트보다 넓으면 세로만 맞춰서는
+        /// 매치가 화면 밖에 남는다.
+        /// 페이지(595pt)보다 좁은 뷰여야 가로 스크롤 여지가 생긴다.
+        private static func makeNarrowView() -> HwpDocumentNSView {
+            let view = HwpDocumentNSView(frame: NSRect(x: 0, y: 0, width: 300, height: 600))
+            view.layoutSubtreeIfNeeded()
+            view.document = Self.document(pageTexts: ["alpha"])
+            view.layoutSubtreeIfNeeded()
+            return view
+        }
+
+        func testHorizontalOffsetRevealsMatchOutsideViewport() {
+            let view = Self.makeNarrowView()
+            let visible = view.scrollView.documentVisibleRect
+            let offScreen = CGRect(x: visible.maxX + 200, y: 10, width: 60, height: 20)
+
+            let revealed = view.horizontalOffset(toReveal: offScreen)
+
+            expect(revealed) > visible.minX
+            expect(offScreen.minX) >= revealed
+            expect(offScreen.maxX) <= revealed + visible.width
+        }
+
+        func testHorizontalOffsetLeavesVisibleMatchAlone() {
+            let view = Self.makeNarrowView()
+            let visible = view.scrollView.documentVisibleRect
+            let onScreen = CGRect(x: visible.minX + 10, y: 10, width: 40, height: 20)
+
+            expect(view.horizontalOffset(toReveal: onScreen)) == visible.minX
+        }
+
         // MARK: - 선택과의 독립
 
         /// 검색이 선택 상태를 건드리면 Cmd+C 대상이 검색 매치로 바뀐다.

@@ -85,6 +85,7 @@
                 return
             }
             let pageFrame = frameForPage(at: match.pageIndex)
+            let matchInContent = rect.offsetBy(dx: pageFrame.minX, dy: pageFrame.minY)
             let viewportHeight = scrollView.documentVisibleRect.height
             let inset = Swift.min(viewportHeight * 0.3, 120)
             let desired = pageFrame.minY + rect.minY - inset
@@ -93,10 +94,25 @@
             let targetY = Swift.min(Swift.max(desired, lowest), highest)
 
             scrollView.contentView.scroll(
-                to: NSPoint(x: scrollView.documentVisibleRect.minX, y: targetY)
+                to: NSPoint(x: horizontalOffset(toReveal: matchInContent), y: targetY)
             )
             scrollView.reflectScrolledClipView(scrollView.contentView)
             updateVisiblePages(range: visiblePageRange())
+        }
+
+        /// 매치를 가로로 화면 안에 들이는 오프셋 (iOS와 같은 규칙).
+        ///
+        /// 이미 보이면 현재 오프셋을 그대로 둔다 — 매치마다 재조정하면 같은
+        /// 단에서 다음 매치로 넘어갈 때 화면이 좌우로 흔들린다.
+        internal func horizontalOffset(toReveal rect: CGRect) -> CGFloat {
+            let visible = scrollView.documentVisibleRect
+            guard visible.width > 0 else { return visible.minX }
+            if rect.minX >= visible.minX, rect.maxX <= visible.maxX {
+                return visible.minX
+            }
+            let contentWidth = documentContentView.bounds.width
+            let highest = Swift.max(0, contentWidth - visible.width)
+            return Swift.min(Swift.max(0, rect.midX - visible.width / 2), highest)
         }
     }
 #endif

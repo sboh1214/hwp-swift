@@ -97,10 +97,26 @@
             )
 
             scrollView.setContentOffset(
-                CGPoint(x: scrollView.contentOffset.x, y: targetY),
+                CGPoint(x: horizontalOffset(toReveal: matchInScroll), y: targetY),
                 animated: false
             )
             updateVisiblePages(range: visiblePageRange())
+        }
+
+        /// 매치를 가로로 화면 안에 들이는 오프셋.
+        ///
+        /// 이미 보이면 **현재 오프셋을 그대로 둔다** — 매치마다 가로 위치를
+        /// 재조정하면 같은 단에서 다음 매치로 넘어갈 때 화면이 좌우로 흔들린다.
+        /// 보이지 않을 때만 매치를 뷰포트 가운데로 가져온다.
+        internal func horizontalOffset(toReveal rect: CGRect) -> CGFloat {
+            let current = scrollView.contentOffset.x
+            let width = scrollView.bounds.width
+            guard width > 0 else { return current }
+            let visible = current ..< (current + width)
+            if rect.minX >= visible.lowerBound, rect.maxX <= visible.upperBound {
+                return current
+            }
+            return clampedContentOffsetX(rect.midX - width / 2)
         }
     }
 #endif
