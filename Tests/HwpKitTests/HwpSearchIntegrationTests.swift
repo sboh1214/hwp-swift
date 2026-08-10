@@ -61,7 +61,10 @@
                 searchController: search
             )
 
-            guard let (_, native) = Self.host(view) else {
+            // 호스팅 뷰를 살려 둔다. 해체(`dismantleNSView`)가 세션을 떼므로
+            // (#75 리뷰 — 그러지 않으면 컨트롤러가 문서 전체를 붙든다) 호스트를
+            // 버린 채 네이티브 뷰만 들고 검색하는 것은 계약 밖이다.
+            guard let (hostingView, native) = Self.host(view) else {
                 fail("Expected HwpDocumentNSView in SwiftUI host")
                 return
             }
@@ -73,6 +76,7 @@
             // 컨트롤러에 문서가 없어 rect가 비어 있다. (레이어 부착 자체는
             // `HwpDocumentNSViewSearchTests`가 @testable로 따로 검증한다.)
             expect(search.highlightRects(forPage: 0)).toNot(beEmpty())
+            withExtendedLifetime(hostingView) {}
         }
 
         /// 적대 시나리오 4 — 매치로 점프한 뒤 `currentPage` 바인딩 왕복이

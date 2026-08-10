@@ -187,6 +187,16 @@ final class HwpDocumentCoordinator {
             )
         }
 
+        /// 검색 세션은 호스트가 소유하고 뷰보다 오래 산다 — 뷰가 사라질 때
+        /// 떼지 않으면 그 컨트롤러가 이 뷰의 선택 컨트롤러를, 그것이 다시
+        /// 문서 전체(페이지·페인트 리스트·단위 캐시)를 붙든다. 문서를 닫거나
+        /// 재로드가 실패해 새 뷰가 붙지 않으면 그대로 남는다.
+        static func dismantleNSView(
+            _ nsView: HwpDocumentNSView, coordinator _: HwpDocumentCoordinator
+        ) {
+            nsView.searchController = nil
+        }
+
         private func configure(_ view: HwpDocumentNSView, context: Context) {
             // Callbacks must be wired before the document assignment so the
             // document didSet notifications reach the coordinator.
@@ -307,6 +317,14 @@ final class HwpDocumentCoordinator {
                 onHyperlinkTapped: onHyperlinkTapped,
                 onUnsupportedElement: onUnsupportedElement
             )
+        }
+
+        /// macOS와 같은 이유 — 호스트가 붙든 검색 세션이 뷰보다 오래 살아
+        /// 문서 전체를 붙드는 것을 막는다.
+        static func dismantleUIView(
+            _ uiView: HwpDocumentUIView, coordinator _: HwpDocumentCoordinator
+        ) {
+            uiView.searchController = nil
         }
 
         private func configure(_ view: HwpDocumentUIView, context: Context) {
