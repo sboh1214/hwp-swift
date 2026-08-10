@@ -375,8 +375,8 @@ public final class HwpSearchController {
             if Task.isCancelled {
                 return
             }
-            let remaining = matchLimit > 0 ? matchLimit - collected.count : 0
-            if matchLimit > 0, remaining <= 0 {
+            let remaining = probeLimit > 0 ? probeLimit - collected.count : 0
+            if probeLimit > 0, remaining <= 0 {
                 break
             }
 
@@ -391,7 +391,11 @@ public final class HwpSearchController {
             scannedThrough = pageIndex + 1
 
             if shouldPublishNow() {
-                publish(collected, phase: .scanning, scannedThrough: scannedThrough)
+                publish(
+                    limitedForPublication(collected),
+                    phase: .scanning,
+                    scannedThrough: scannedThrough
+                )
             }
             if step % Self.yieldInterval == Self.yieldInterval - 1 {
                 evictScannedUnits()
@@ -404,8 +408,8 @@ public final class HwpSearchController {
         }
         evictScannedUnits()
         publish(
-            collected,
-            phase: matchLimit > 0 && collected.count >= matchLimit ? .truncated : .complete,
+            limitedForPublication(collected),
+            phase: matchLimit > 0 && collected.count > matchLimit ? .truncated : .complete,
             scannedThrough: scannedThrough
         )
     }
@@ -414,6 +418,25 @@ public final class HwpSearchController {
     private func evictScannedUnits() {
         guard let retainedPageRange, let geometry else { return }
         geometry.evictUnits(keeping: retainedPageRange())
+    }
+
+    /// 상한보다 하나 더 훑는 예산.
+    ///
+    /// 잘렸다고 보고하려면 **빠뜨린 매치를 실제로 하나 봐야** 한다. 상한과
+    /// 총계가 정확히 같을 때 `count >= limit` 만 보면 아무것도 안 빠졌는데도
+    /// `.truncated` 가 되어 검색 바가 "1 of 1+" 를 띄운다. `matchLimit` 은
+    /// 공개 프로퍼티라 `Int.max` 가 들어오므로 덧셈은 포화 처리한다.
+    private var probeLimit: Int {
+        guard matchLimit > 0 else { return 0 }
+        let probed = matchLimit.addingReportingOverflow(1)
+        return probed.overflow ? Int.max : probed.partialValue
+    }
+
+    /// 발행은 상한까지만 — 탐색용으로 하나 더 모은 것을 그대로 내보내면
+    /// `matchCount` 가 상한을 넘어 보인다.
+    private func limitedForPublication(_ collected: [HwpSearchMatch]) -> [HwpSearchMatch] {
+        guard matchLimit > 0, collected.count > matchLimit else { return collected }
+        return Array(collected.prefix(matchLimit))
     }
 
     private func shouldPublishNow() -> Bool {

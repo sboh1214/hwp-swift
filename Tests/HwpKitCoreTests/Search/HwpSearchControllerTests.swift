@@ -104,6 +104,29 @@ final class HwpSearchControllerTests: XCTestCase {
         expect(search.matchCount) == 6
     }
 
+    /// 상한과 총계가 정확히 같으면 빠뜨린 것이 없다 — `count >= limit` 로
+    /// 판정하면 검색 바가 "1 of 1+"를 띄운다 (#75 리뷰 3차).
+    func testExactMatchLimitReportsCompleteNotTruncated() async {
+        let (_, search) = Self.makeAttached(pageTexts: ["hit"])
+        search.matchLimit = 1
+
+        search.search(text: "hit")
+
+        await expect(search.phase).toEventually(equal(.complete), timeout: .seconds(2))
+        expect(search.matchCount) == 1
+    }
+
+    /// 상한을 하나 넘겨 훑으므로 `Int.max` 에서 덧셈이 터지지 않아야 한다.
+    func testExtremeMatchLimitDoesNotTrap() async {
+        let (_, search) = Self.makeAttached(pageTexts: ["hit hit"])
+        search.matchLimit = .max
+
+        search.search(text: "hit")
+
+        await expect(search.phase).toEventually(equal(.complete), timeout: .seconds(2))
+        expect(search.matchCount) == 2
+    }
+
     // MARK: - 증분 재스캔
 
     /// 프로그레시브 스냅샷마다 전량 재스캔하면 1,030쪽 전개가 스냅샷 수만큼
