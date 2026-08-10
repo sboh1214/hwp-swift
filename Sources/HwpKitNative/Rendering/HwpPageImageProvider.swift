@@ -233,10 +233,16 @@ public final class HwpPageImageProvider: @unchecked Sendable {
             }
             // 실제 백킹 스토어(bytesPerRow×height)로 과금한다 — 픽셀당 4바이트
             // 고정 가정은 16-bit 이미지(64bpp)를 절반으로 저계상해 예산을 우회한다 (P1).
-            let pinnedBytes = max(
-                (styled?.bytesPerRow ?? 0) * (styled?.height ?? 0),
-                (decoded?.image.bytesPerRow ?? 0) * (decoded?.image.height ?? 0)
-            )
+            //
+            // 과금 대상은 이 변형이 **자기 몫으로** 든 래스터뿐이다. 디코드 원본은
+            // `HwpImageCache`가 binItemId 하나로 한 번만 보유해 변형들이 공유한다.
+            // 그것까지 세면 같은 바이트가 변형 수만큼 중복 계상돼, 메모리에
+            // 넉넉히 들어가는 페이지가 예산 초과로 판정되고 내보내기가 실패한다
+            // (실측: 4MB 원본의 100×100 crop 4장이 8MB 예산에서 16MB로 계상돼
+            // 2장 축출 → `pageImagesExceedMemoryBudget`). 원본 쪽 상한은 캐시가
+            // 제 예산으로 따로 묶는다 — 이 층 구분이 곧 문서가 적어 둔 보장
+            // ("현재 페이지 변형 + 원본 캐시(≤ 같은 예산)")다.
+            let pinnedBytes = (styled?.bytesPerRow ?? 0) * (styled?.height ?? 0)
             // 캐시 purge(clear)는 in-flight 디코드 태스크를 취소해 nil을 낸다 —
             // 디코드 실패가 아니므로 실패로 기록하면 그 변형이 provider 수명
             // 내내 placeholder로 남는다. purge 세대가 바뀌었으면 재시도 가능
