@@ -7,7 +7,7 @@ SwiftUI 공개 API target. HwpKitNative 위에 `NSViewRepresentable` / `UIViewRe
 - `HwpDocumentLoader(fontResolver:)` — 렌더에 쓸 폰트 해석기 주입 (기본 `HwpFontResolver()`). 커밋된 기준선을 쓰는 렌더 가드가 전부 이 인자 하나에 기대 기기 독립을 얻는다 (`.testDeterministic` — 루트 AGENTS.md "렌더 가드 4층"). 호스트도 재현 가능한 조판이 필요하면 같은 방식으로 고정 resolver를 넘긴다
 - `HwpDocumentLoader.load(from:)` — URL / Data / FileWrapper 오버로드. 내부적으로 `HwpDocumentActor` 사용. 에러는 `HwpDocumentLoadError` 로 매핑 (`CustomStringConvertible` + `LocalizedError` 채택 — 호스트가 `error.localizedDescription` 을 그대로 표시하면 감싼 파서/페이지네이터 원인이 나온다. 새 case 추가 시 `description` 도 함께 채울 것)
 - `HwpDocumentLoader.loadUpdates(from:)` — 프로그레시브 로딩. `AsyncThrowingStream<HwpDocumentSnapshot, Error>` 로 첫 페이지 확정 즉시 스냅샷을 방출하고 배치 단위로 이어가다 최종 스냅샷(`isComplete`)으로 끝난다. 최종 문서는 `load(from:)` 결과와 동일. 뷰는 `HwpDocumentMetadata.loadToken` 으로 증분 적용(스크롤 유지) vs 전체 리셋을 판정
-- `HwpDocumentView` — SwiftUI View. optional `zoomScale: Binding<CGFloat>?` + `currentPage: Binding<Int>?` + hyperlink/unsupported 콜백
+- `HwpDocumentView` — SwiftUI View. optional `zoomScale: Binding<CGFloat>?` + `currentPage: Binding<Int>?` + `searchController: HwpSearchController?` + hyperlink/unsupported 콜백
 - `HwpDocumentToolbar<Content>` — trailing content 를 받는 컨테이너 (툴바 chrome)
 - `HwpPageNavigator(currentPage: Binding<Int>, totalPages: Int)` — "Page X of Y" + ± 버튼
 - `HwpZoomControls(zoomScale: Binding<CGFloat>, range: ClosedRange<CGFloat>)` — 기본 range `0.25...5.0`
@@ -40,6 +40,7 @@ SwiftUI 공개 API target. HwpKitNative 위에 `NSViewRepresentable` / `UIViewRe
 
 - `HwpDocumentView.updateNSView/UIView` 는 매번 `context.coordinator.update(...)` 로 콜백 참조를 갱신 (SwiftUI 가 뷰를 재사용해도 최신 클로저가 발화되도록)
 - `Coordinator` 클래스가 hyperlink/unsupported/pageChanged 발화를 SwiftUI 쪽 콜백으로 프록시
+- **참조 타입 프로퍼티 대입에는 동일성 가드가 필수다** (#75) — `view.searchController !== searchController` 일 때만 넣는다. 콜백과 달리 이쪽 didSet 은 배선을 다시 하므로, 무조건 대입하면 재배선 → 재스캔 → 관찰자 통지 → 호스트 body 무효화 → 다시 이 configure 로 **타이핑 없이도 도는 자기 급전 루프**가 된다 (문서 대입의 중복-대입 스킵과 같은 성격). 콜백은 값이 매번 새 클로저라 이 가드를 걸 수 없고 걸 필요도 없다 (didSet 이 일을 하지 않는다)
 
 ## v1 스코프 밖 (추가 금지)
 
@@ -55,7 +56,7 @@ SwiftUI 공개 API target. HwpKitNative 위에 `NSViewRepresentable` / `UIViewRe
 ## 안티 패턴
 
 - `HwpDocumentView` 에서 `AppKit`/`UIKit` 을 직접 import — HwpKitNative 의 `Representable` wrapper 만 사용
-- HwpKit 안에서 `openURL` / `ShareLink` / `fileExporter` / `searchable` / `NSSavePanel` / `printOperation` 류의 **호스트 UI 액션**을 직접 호출 — 스코프 크리프. `Tests/HwpKitTests/HwpKitScopeGuardTests.swift`가 `Sources/HwpKit/**.swift`의 비-주석 줄을 스캔해 막는다 (#74에서 신설 — 그전까지 이 줄은 "테스트로 grep 검증 있음"이라 적고 있었지만 HwpKit 소스를 훑는 테스트는 없었다. `SourceSafetyTests`는 `Sources/CoreHwp`만 본다). `searchable` 이 이 목록에 있는 것은 검색이 스코프 밖이라서가 **아니다** (#75 로 들어왔다) — `.searchable` 이 호스트의 navigation chrome 에 검색 필드를 설치하고 `\.isSearching` 을 환경에 심기 때문이다. 검색 UI 는 `HwpSearchBar` 가 독립 `View` 로 낸다. 가드가 부분 문자열 매칭이므로 HwpKit 안에서는 소문자 `searchable` 어근을 쓴 식별자 (`isSearchable`, `searchableUnits`) 도 금지 — 명명은 `HwpSearch*` 로 고정
+- HwpKit 안에서 `openURL` / `ShareLink` / `fileExporter` / `searchable` / `NSSavePanel` / `printOperation` 류의 **호스트 UI 액션**을 직접 호출 — 스코프 크리프. `Tests/HwpKitTests/HwpKitScopeGuardTests.swift`가 `Sources/HwpKit/**.swift`의 비-주석 줄을 스캔해 막는다 (#74에서 신설 — 그전까지 이 줄은 "테스트로 grep 검증 있음"이라 적고 있었지만 HwpKit 소스를 훑는 테스트는 없었다. `SourceSafetyTests`는 `Sources/CoreHwp`만 본다). `searchable` 이 이 목록에 있는 것은 검색이 스코프 밖이라서가 **아니다** (#75 로 들어왔다) — `.searchable` 이 호스트의 navigation chrome 에 검색 필드를 설치하고 `\.isSearching` 을 환경에 심기 때문이다. 검색 UI 는 `HwpSearchBar` 가 독립 `View` 로 낸다. 가드가 부분 문자열 매칭이므로 HwpKit 안에서는 소문자 `searchable` 어근을 쓴 식별자 (`isSearchable`, `searchableUnits`) 도 금지 — 명명은 `HwpSearch*` 로 고정. 가드 자신도 **두 단언이 서로를 지탱**한다 (`HwpSearchBar.swift` 실재 + `searchable` 토큰 생존): 누가 검색 바를 `.searchable` 로 갈아엎으면 둘 중 하나가 반드시 깨진다
 - `HwpDocumentLoader` 결과를 SwiftUI `@State` 에 담아 재로드 시 clear 를 생략 — Sample 에서 `document = nil` 초기화 패턴 유지
 
 ## Sample 앱
