@@ -97,8 +97,29 @@
         /// 페이지별 텍스트 선택 하이라이트 (페이지 레이어의 sublayer)
         var selectionLayers: [Int: CAShapeLayer] = [:]
 
+        /// 페이지별 검색 하이라이트 — 전체 매치와 현재 매치를 **각자** 딕셔너리로
+        /// 둔다. 헬퍼가 페이지당 오버레이 하나를 재사용하므로 한 벌로 두 번
+        /// 칠하면 두 번째가 첫 번째를 덮는다.
+        var searchMatchLayers: [Int: CAShapeLayer] = [:]
+        var currentSearchMatchLayers: [Int: CAShapeLayer] = [:]
+
         /// 텍스트 드래그 선택 상태 (플랫폼 중립 컨트롤러)
         public let selectionController = HwpSelectionController()
+
+        /// 문서 검색 세션 주입 (#75). 대입하면 뷰가 선택 지오메트리를 공유시키고
+        /// 하이라이트·매치 노출 스크롤을 배선한다. nil을 넣으면 전부 뗀다.
+        ///
+        /// 재대입은 멱등이다 — 같은 인스턴스를 다시 넣으면 아무 일도 하지 않는다.
+        /// SwiftUI wrapper가 매 갱신마다 대입하므로, 이 가드가 없으면
+        /// 재배선 → 재스캔 → 관찰자 통지 → 뷰 갱신 루프가 타이핑 없이도 돈다.
+        public var searchController: HwpSearchController? {
+            didSet {
+                guard oldValue !== searchController else { return }
+                oldValue?.detach()
+                wireSearchController()
+            }
+        }
+
         /// 복사 대상 페이스트보드 — 테스트 주입용
         var pasteboard: NSPasteboard = .general
 
@@ -266,6 +287,7 @@
 
             layoutPageLayers()
             updateSelectionOverlays()
+            updateSearchOverlays()
             // 가시(±2) 페이지가 참조하는 이미지를 pin해 캐시 축출→재요청 사이클을
             // 막는다 (#2).
             imageProvider?.setPinnedImages(
@@ -377,7 +399,7 @@
             return nil
         }
 
-        private func retainedPageRange(for visibleRange: Range<Int>) -> Range<Int> {
+        func retainedPageRange(for visibleRange: Range<Int>) -> Range<Int> {
             max(0, visibleRange.lowerBound - 2) ..< (visibleRange.upperBound + 2)
         }
 

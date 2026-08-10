@@ -1,0 +1,102 @@
+#if canImport(AppKit)
+    import AppKit
+    import CoreGraphics
+    import HwpKitCore
+
+    public extension HwpDocumentNSView {
+        /// 검색 하이라이트를 다시 그린다.
+        ///
+        /// 딕셔너리가 **두 벌**인 이유: 헬퍼가 오버레이를 페이지당 하나 재사용하는
+        /// 구조라, 전체 매치와 현재 매치를 같은 딕셔너리로 두 번 칠하면 두 번째
+        /// 호출이 첫 번째의 path를 덮어쓴다.
+        internal func updateSearchOverlays() {
+            let style = searchController?.style ?? .default
+            HwpDocumentViewSupport.updateHighlightOverlays(
+                pageLayers: pageLayers,
+                overlayLayers: &searchMatchLayers,
+                highlightRects: { [weak self] page in
+                    self?.searchController?.highlightRects(forPage: page) ?? []
+                },
+                fillColor: style.matchColor.cgColor,
+                zPosition: HwpOverlayZ.searchMatch
+            )
+            HwpDocumentViewSupport.updateHighlightOverlays(
+                pageLayers: pageLayers,
+                overlayLayers: &currentSearchMatchLayers,
+                highlightRects: { [weak self] page in
+                    self?.searchController?.currentMatchRects(forPage: page) ?? []
+                },
+                fillColor: style.currentMatchColor.cgColor,
+                zPosition: HwpOverlayZ.currentSearchMatch
+            )
+        }
+
+        // 검색 컨트롤러를 이 뷰에 배선한다. `searchController` 대입이 부른다.
+
+        /// 스캔이 채운 단위 캐시를 되돌릴 범위 — 페이지 레이어 보존 창과 같다.
+        internal func searchRetainedPageRange() -> Range<Int> {
+            let pageCount = document?.pages.count ?? 0
+            guard pageCount > 0 else { return 0 ..< 0 }
+            return retainedPageRange(for: visiblePageRange()).clamped(to: 0 ..< pageCount)
+        }
+
+        internal func wireSearchController() {
+            guard let searchController else {
+                searchMatchLayers.values.forEach { $0.removeFromSuperlayer() }
+                searchMatchLayers.removeAll()
+                currentSearchMatchLayers.values.forEach { $0.removeFromSuperlayer() }
+                currentSearchMatchLayers.removeAll()
+                return
+            }
+            searchController.attach(to: selectionController)
+            searchController.retainedPageRange = { [weak self] in
+                self?.searchRetainedPageRange() ?? 0 ..< 0
+            }
+            searchController.onMatchesChanged = { [weak self] in
+                self?.updateSearchOverlays()
+            }
+            searchController.onCurrentMatchChanged = { [weak self] match in
+                guard let self else { return }
+                if let match {
+                    scrollToMatch(match)
+                }
+                // 스크롤이 같은 페이지 범위 안에서 끝나면
+                // `clipViewBoundsDidChange`가 조기 반환하므로(가시 범위 무변화)
+                // 오버레이 갱신이 저절로 오지 않는다 — 명시적으로 부른다.
+                updateSearchOverlays()
+            }
+            updateSearchOverlays()
+        }
+
+        /// 매치가 **보이도록** 스크롤한다.
+        ///
+        /// 목표 오프셋을 페이지 범위로 클램프해 **매치가 놓인 페이지가 첫 가시
+        /// 페이지가 되도록** 보장한다. 그래야 `currentVisiblePage()`와 뒤이은
+        /// 페이지 바인딩 동기화가 매치 페이지를 가리켜, SwiftUI 쪽 `currentPage`
+        /// 왕복이 스크롤을 원래 자리로 되튕기지 않는다.
+        func scrollToMatch(_ match: HwpSearchMatch) {
+            let pageCount = document?.pages.count ?? 0
+            guard pageCount > 0, match.pageIndex < pageCount else { return }
+            guard let rect = searchController?
+                .currentMatchRects(forPage: match.pageIndex)
+                .min(by: { $0.minY < $1.minY })
+            else {
+                scrollToPage(at: match.pageIndex)
+                return
+            }
+            let pageFrame = frameForPage(at: match.pageIndex)
+            let viewportHeight = scrollView.documentVisibleRect.height
+            let inset = Swift.min(viewportHeight * 0.3, 120)
+            let desired = pageFrame.minY + rect.minY - inset
+            let lowest = pageFrame.minY
+            let highest = Swift.max(pageFrame.minY, pageFrame.maxY - viewportHeight)
+            let targetY = Swift.min(Swift.max(desired, lowest), highest)
+
+            scrollView.contentView.scroll(
+                to: NSPoint(x: scrollView.documentVisibleRect.minX, y: targetY)
+            )
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+            updateVisiblePages(range: visiblePageRange())
+        }
+    }
+#endif

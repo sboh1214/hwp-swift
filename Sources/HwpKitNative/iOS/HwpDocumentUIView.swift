@@ -115,8 +115,26 @@
         /// 페이지별 텍스트 선택 하이라이트 (페이지 레이어의 sublayer)
         var selectionLayers: [Int: CAShapeLayer] = [:]
 
+        /// 페이지별 검색 하이라이트 — 전체 매치와 현재 매치를 **각자** 딕셔너리로
+        /// 둔다. 헬퍼가 페이지당 오버레이 하나를 재사용하므로 한 벌로 두 번
+        /// 칠하면 두 번째가 첫 번째를 덮는다.
+        var searchMatchLayers: [Int: CAShapeLayer] = [:]
+        var currentSearchMatchLayers: [Int: CAShapeLayer] = [:]
+
         /// 텍스트 롱프레스 선택 상태 (플랫폼 중립 컨트롤러)
         public let selectionController = HwpSelectionController()
+
+        /// 문서 검색 세션 주입 (#75). macOS와 같은 계약 — 재대입은 멱등이다.
+        /// SwiftUI wrapper가 매 갱신마다 대입하므로, 이 가드가 없으면
+        /// 재배선 → 재스캔 → 관찰자 통지 → 뷰 갱신 루프가 타이핑 없이도 돈다.
+        public var searchController: HwpSearchController? {
+            didSet {
+                guard oldValue !== searchController else { return }
+                oldValue?.detach()
+                wireSearchController()
+            }
+        }
+
         var editMenuInteraction: UIEditMenuInteraction?
         /// 선택 드래그 엣지 오토스크롤 (롱프레스 정지 시 .changed가 오지 않아
         /// CADisplayLink로 밀어준다) — 상태는 Selection extension이 관리
@@ -126,10 +144,10 @@
         let scrollView = UIScrollView()
         let contentView = UIView()
         private let hitTester = HwpHitTester()
-        private let pageGap: CGFloat = 24
-        private let defaultPageSize = CGSize(width: 595, height: 842)
+        let pageGap: CGFloat = 24
+        let defaultPageSize = CGSize(width: 595, height: 842)
         /// Prefix sums of page Y origins so frame lookups are O(1) during scrolling.
-        private var pageOriginsY: [CGFloat] = []
+        var pageOriginsY: [CGFloat] = []
         private var imageProvider: HwpPageImageProvider?
 
         override public init(frame: CGRect) {
@@ -212,6 +230,7 @@
                 reportPageChange(first)
             }
             updateSelectionOverlays()
+            updateSearchOverlays()
         }
 
         /// 페이지에 메모 패널이 있으면 오른쪽 바깥에 투명 레이어로 그린다.
@@ -400,7 +419,7 @@
 
         /// 메모 패널이 페이지보다 길면 그 높이로 행을 잡아 다음 행과 겹치거나
         /// 마지막 페이지 오버플로가 스크롤 밖으로 나가지 않게 한다 (#4).
-        private func rowHeight(at index: Int) -> CGFloat {
+        func rowHeight(at index: Int) -> CGFloat {
             let pageHeight = pageSize(at: index).height
             guard let panel = document?.pages[safe: index]?.memoPanel else { return pageHeight }
             return max(pageHeight, panel.contentHeight)
@@ -468,52 +487,10 @@
             )
         }
 
-        private func visiblePageRange() -> Range<Int> {
-            let pageCount = document?.pages.count ?? 0
-            guard pageCount > 0 else { return 0 ..< 0 }
-
-            // Convert into content-view coordinates so zooming is accounted for.
-            let visibleRect = scrollView.bounds.isEmpty
-                ? CGRect(origin: scrollView.contentOffset, size: bounds.size)
-                : scrollView.convert(scrollView.bounds, to: contentView)
-            // pageOriginsY는 오름차순 — 스크롤 콜백마다 전 페이지를 훑지 않도록
-            // 첫 가시 페이지를 이진 탐색한다 (macOS와 대칭, #26).
-            var low = 0
-            var high = pageCount - 1
-            var first = pageCount
-            while low <= high {
-                let mid = (low + high) / 2
-                // 종이 maxY가 아니라 행(종이+메모 패널) 하단으로 판정한다 (#6).
-                if frameForPage(at: mid).minY + rowHeight(at: mid) > visibleRect.minY {
-                    first = mid
-                    high = mid - 1
-                } else {
-                    low = mid + 1
-                }
-            }
-            // 뷰포트가 마지막 페이지보다 아래(하단 러버밴드/축소)면 마지막
-            // 페이지를 유지한다 — page 0을 반환하면 currentPage가 1로 튄다.
-            // macOS와 대칭 (#12).
-            guard first < pageCount else { return (pageCount - 1) ..< pageCount }
-            var last = first
-            while last + 1 < pageCount, frameForPage(at: last + 1).minY < visibleRect.maxY {
-                last += 1
-            }
-            return first ..< (last + 1)
-        }
-
         private func clampedPageRange(_ range: Range<Int>) -> Range<Int> {
             let pageCount = document?.pages.count ?? 0
             let lower = max(0, min(range.lowerBound, pageCount))
             let upper = max(lower, min(range.upperBound, pageCount))
-            return lower ..< upper
-        }
-
-        private func expandedRange(_ range: Range<Int>) -> Range<Int> {
-            guard !range.isEmpty else { return range }
-            let pageCount = document?.pages.count ?? 0
-            let lower = max(0, range.lowerBound - 2)
-            let upper = min(pageCount, range.upperBound + 2)
             return lower ..< upper
         }
 
@@ -522,21 +499,13 @@
             frameForPage(at: index)
         }
 
-        private func frameForPage(at index: Int) -> CGRect {
-            let originY = pageOriginsY[safe: index] ?? 0
-            // 구역별 용지 폭/메모 패널 폭이 달라 좁은 행은 콘텐츠 폭 안에서
-            // 행별로 중앙 정렬한다 — macOS frameForPage와 대칭 (#8).
-            let originX = max((contentView.bounds.width - rowWidth(at: index)) / 2, 0)
-            return CGRect(origin: CGPoint(x: originX, y: originY), size: pageSize(at: index))
-        }
-
-        private func pageSize(at index: Int) -> CGSize {
+        func pageSize(at index: Int) -> CGSize {
             document?.pages[safe: index]?.size ?? defaultPageSize
         }
 
         /// 메모 패널은 페이지 오른쪽 바깥에 그려지므로 콘텐츠 폭에 패널 폭을
         /// 포함해야 스크롤 뷰가 패널을 잘리지 않고 드러낸다 (macOS rowWidth와 대칭).
-        private func rowWidth(at index: Int) -> CGFloat {
+        func rowWidth(at index: Int) -> CGFloat {
             let pageWidth = pageSize(at: index).width
             guard let panel = document?.pages[safe: index]?.memoPanel else { return pageWidth }
             return pageWidth + panel.width
