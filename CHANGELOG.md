@@ -70,6 +70,39 @@
 
 ### Added
 
+- HWP 문서를 PDF로 내보내는 `HwpPDFExporter`(HwpKit)를 추가했습니다.
+  `export(document:to:onProgress:)`는 파일로 스트리밍하고
+  `exportData(document:onProgress:)`는 바이트를 돌려줍니다(전량이 메모리에
+  남으므로 대형 문서는 파일 쪽을 쓰십시오). 화면 렌더와 **같은 paint list·같은
+  조판**을 씁니다 — 페이지 레이어가 뷰 계층 없이 임의 `CGContext`에 그리는 순수
+  오프스크린 렌더러라 가능합니다. 텍스트는 벡터로 들어가고, 페이지마다 mediaBox를
+  따로 넘겨 구역별 용지 크기·방향 차이를 보존하며, 종이 밖 편집 화면 장식인 메모
+  풍선은 한글의 인쇄 뷰와 마찬가지로 빠집니다. 페이지 단위 스트리밍이라 상주
+  메모리는 1페이지 몫이며(이미지는 현재 페이지 변형 + 원본 캐시가 각각 디코드
+  예산 이하), 페이지 경계마다 `Task.checkCancellation()`과
+  `HwpPDFExportProgress` 진행률 콜백이 발화합니다. **임시 파일에 완성한 뒤에만
+  목적지를 건드리므로**, 기존 PDF를 덮어쓰는 중에 취소·실패해도 이전 파일이
+  그대로 남고 열리지 않는 부분 파일도 남지 않습니다. 한 페이지가 참조하는
+  이미지가 디코드 예산(256MB)을 넘으면 이미지가 빠진 PDF를 돌려주는 대신
+  실패합니다. 같은 이유로 페이지네이션이 끝나지 않은 문서(`loadUpdates(from:)`의
+  중간 스냅샷)도 `.incompleteDocument`로 거부합니다 — 그대로 내보내면 페이지가
+  빠진 PDF가 성공으로 나가는데, 열리고 페이지 수도 맞아 산출물 검증에도
+  걸리지 않습니다. 다 쓴 PDF는 **열어서 페이지 수를 확인한 뒤에만** 목적지로
+  옮깁니다 — Core Graphics는 쓰기 실패를 로그로만 알려서, 디스크가 차면 절단된
+  파일이 성공으로 설치될 수 있었습니다. 에러는 `HwpPDFExportError`(`CustomStringConvertible` +
+  `LocalizedError`)입니다.
+  **인쇄·저장·공유 UI는 앱 책임입니다** — 라이브러리는 PDF 바이트까지만
+  만듭니다. `Sample/`이 macOS `PDFDocument.printOperation`, iOS
+  `UIPrintInteractionController`, 양 플랫폼 `fileExporter` 배선 예를 보입니다
+  (뷰를 직접 인쇄하는 경로는 없습니다 — 레이어 가상화가 가시 ± 2쪽만 들고 있어
+  인쇄 페이지네이션과 충돌합니다).
+- `HwpPageImageProvider`에 화면 없는 경로용 이미지 해석 API
+  `resolveImage(for:style:)` / `predecodeImageReferences(in:)`(둘 다 `async`)과
+  `imageVariantKeys(in:)`을 추가했습니다. 기존 `requestImage`는 레이어 재드로우로
+  완료를 소비하는 fire-and-forget이라 PDF 내보내기·썸네일처럼 화면이 없는
+  경로에서는 완료를 알 방법이 없었습니다. 새 API는 확정을 직접 기다리되
+  백프레셔로 **드롭된** 요청까지 감지해 재요청하므로 영구 대기가 없습니다.
+  뷰 경로의 시그니처와 동작은 그대로입니다.
 - `HwpReadLimits.maxNestingDepth`(기본 64)를 추가해 레코드 트리 중첩 깊이를
   제한합니다. 레코드 헤더의 level은 10비트(≤1023)라 스펙만으로는 수백 단계
   중첩이 가능한데, typed 디코더들이 그 트리를 재귀로 내려가므로(표 셀 문단·

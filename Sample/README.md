@@ -11,10 +11,19 @@
 | `HwpPageNavigator` | 페이지 이동 컨트롤 (`- / Page X of Y / +`) | 툴바 좌측 |
 | `HwpZoomControls` | 확대/축소 컨트롤 (`- / Zoom N% / + / Reset`) | 툴바 우측 |
 | `HwpDocumentLoader` | 비동기 문서 로더 | `.fileImporter` 결과를 async 로드 |
+| `HwpPDFExporter` | PDF 내보내기 (진행률·취소) | 툴바 `PDF로 내보내기` / `인쇄` |
 
-- `.hwp` 파일을 사용자에게 선택받아 (`SwiftUI.fileImporter`) 위 4개 컴포넌트로 렌더링/조작
+- `.hwp` 파일을 사용자에게 선택받아 (`SwiftUI.fileImporter`) 위 컴포넌트로 렌더링/조작
 - 하이퍼링크 탭 + 미지원 요소 콜백을 콘솔에 로그
-- App Sandbox 유지 + `User Selected File (Read Only)` entitlement 만 사용
+- PDF 내보내기·인쇄 — 라이브러리는 PDF 바이트까지만 만들고, 저장 패널
+  (`fileExporter`)·인쇄 UI(macOS `PDFDocument.printOperation`, iOS
+  `UIPrintInteractionController`)는 이 앱이 배선한다 (`PDFExportSupport.swift`)
+- App Sandbox 유지 + `User Selected File (Read/Write)` entitlement 사용 —
+  저장 패널로 고른 위치에 PDF를 쓰려면 read-only로는 부족하다
+- **인쇄에는 `Printing` entitlement가 따로 필요하다** (`com.apple.security.print`).
+  파일 entitlement는 파일 접근만 주므로, 없으면 샌드박스가 인쇄 서비스를 막는다 —
+  그것도 **조용히**: `NSPrintOperation.run()`의 Bool은 취소와 실패를 구분하지 않아
+  사유를 올릴 수 없다(아래 인쇄 실패 항목). 눌러도 아무 일이 없는 것처럼 보인다
 - 서드파티 의존성 없음, 현재 저장소의 `Package.swift`를 그대로 사용
 
 ---
@@ -47,12 +56,60 @@ Xcode에서 스킴 `HwpSwiftSample` 선택 → 대상 지정:
 문서가 로드되면 화면 상단에 다음 툴바가 나타남:
 
 ```
-[Re-open]  |  [-] Page 1 of N [+]         [-] Zoom 100% [+] [Reset]
-└─────────────────────  HwpDocumentToolbar  ─────────────────────┘
+[Re-open] | [-] Page 1 of N [+] | [PDF로 내보내기] [인쇄]     [-] Zoom 100% [+] [Reset]
+└──────────────────────────  HwpDocumentToolbar  ──────────────────────────────┘
 ```
 
 - 페이지 넘김 / 확대 / 축소 / 초기화 모두 실시간 반영
 - Re-open 클릭 시 다른 `.hwp` 파일로 교체
+- `PDF로 내보내기` / `인쇄`(Cmd+P)는 진행률 시트를 띄우고 취소를 받는다. 앱
+  임시 디렉터리에 먼저 쓴 뒤 그 파일을 저장 패널·인쇄로 넘기므로, 취소해도
+  열리지 않는 부분 파일이 사용자 디렉터리에 남지 않는다
+- 창이 닫히면 진행 중인 내보내기를 **취소한다**(`onDisappear`). 다만 저장
+  패널·인쇄에 **이미 넘긴** 파일은 지우지 않는다 — 그쪽이 다 쓸 때까지
+  살아 있어야 한다(`UIPrintInteractionController`는 스풀링 동안,
+  `fileExporter`는 완료 핸들러까지 읽는다). 사용자가 확정한 인쇄를 창을 닫았다는
+  이유로 깨뜨리지 않기 위해서다. 대신 그 완료 콜백이 scene 파괴로 오지 않으면
+  파일이 남으므로, **앱 시작 시 이전 실행의 잔해를 거둔다**(프로세스 시작보다
+  오래된 `hwp-sample-export-*.pdf`만 — 이번 실행 것을 지우면 나중에 연 창이 먼저
+  창의 내보내기를 깬다).
+  `Task {}`는 비구조적이라 뷰 수명에 묶이지 않아, 그대로 두면 뷰 없이 렌더가
+  이어지고 성공한 PDF를 지워 줄 주체가 없다. 취소가 파일 이동 뒤에 도착한
+  경우도 태스크가 직접 치운다
+- 임시 파일은 저장·인쇄가 **끝난 뒤 지운다**(새 내보내기를 시작할 때도 이전
+  것을 지운다). UUID 이름이라 덮어쓰기로 재사용되지 않아, 안 지우면 내보낼
+  때마다 쌓인다
+- 임시 파일명은 **UUID**다. 제목에서 뽑으면 `WindowGroup`의 두 창이 같은 경로를
+  써, 한쪽 저장 패널이 열려 있는 사이 다른 쪽 내보내기가 그 파일을 갈아 치운다
+  (다른 문서가 저장된다). 사용자에게 보이는 이름(저장 패널 기본 파일명·인쇄
+  작업명)만 제목에서 만들고, 파일명 한도(255바이트)를 넘지 않게 자른다
+- 내보내기 모달(진행 시트·저장 패널·오류 알림)은 문서가 아니라 **루트 뷰**에
+  건다. 로드된 뷰에 걸면 내보내기 중 재로드가 표시자를 없애, 끝난 내보내기가
+  저장·인쇄를 띄울 곳을 잃고 임시 PDF도 남는다
+- 실패는 진행 시트가 **닫힌 뒤** 알림으로 띄운다(저장·인쇄와 같은 규약) —
+  같은 갱신 주기에 겹치면 알림이 유실돼 오류가 조용히 사라진다
+- **진행 시트가 아예 안 뜰 수도 있다.** 작은 문서는 표시되기 전에 내보내기가
+  끝나 `0 → nil` 전이가 한 갱신 주기로 합쳐질 수 있고, 그러면 닫힐 시트가 없어
+  `onDismiss`가 오지 않는다 — 저장·인쇄와 오류가 `pending*`에 갇히고 임시 PDF도
+  남는다. 시트의 `onAppear`로 표시 여부를 기록하고, 뜬 적이 없으면 후속 동작을
+  직접 예약한다(다음 주기로 넘겨 위 겹침 규약은 그대로 지킨다)
+- **인쇄는 실패 통로가 둘이다.** 표시 자체의 실패는 `print(...)`의 반환값으로,
+  표시가 **된 뒤의** 실패(프린터 도달 불가 등)는 `onFinish`가 나르는 사유로
+  온다. 반환값만 보면 뒤엣것을 놓친다 — 그 시점엔 이미 성공(nil)을 받은
+  뒤다. iOS는 `UIPrintInteractionController`가 completion handler로 `Error`를
+  주므로 그것을 올리고, 사용자 취소(`completed == false` + `error == nil`)는
+  실패가 아니라 사유 없이 끝낸다. macOS는 `NSPrintOperation.run()`의 Bool이
+  취소와 실패를 구분하지 않아 사유를 올리지 않는다 — 올리면 취소할 때마다
+  거짓 알림이 뜬다
+- 인쇄는 **한 번에 하나만** 받는다 — `UIPrintInteractionController.shared`가
+  프로세스 전역이라 두 창이 동시에 쓰면 뒤 요청이 앞 작업의 문서를 덮어쓴다
+- **iPad에서는** 인쇄 UI를 앵커에서 띄운다. UIKit 헤더가 `presentAnimated:`를
+  `// iPhone`, `presentFromRect:inView:`를 `// iPad`로 가르기 때문이다
+  (`PDFExportSupport.swift`). 이 앱의 인쇄 버튼은 SwiftUI라 대응 `UIView`가 없어
+  창 중앙을 앵커로 쓴다 — 실서비스라면 버튼에 맞춘다
+- **iPhone에서는** 버튼이 아이콘만 되고 툴바 전체가 가로 스크롤된다.
+  `HwpDocumentToolbar`는 그냥 `HStack`이라 폭이 모자라면 **글자 단위로**
+  줄바꿈해 "Zoom 100%"가 세 줄이 된다 (시뮬레이터 실측)
 
 저장소 안의 fixture로 스모크 테스트 가능:
 
@@ -88,7 +145,8 @@ Sample/
 ├── project.yml                    # xcodegen spec (편집 후 regen)
 ├── HwpSwiftSample/
 │   ├── HwpSwiftSampleApp.swift    # @main 진입점
-│   ├── ContentView.swift          # .fileImporter + HwpDocumentView
+│   ├── ContentView.swift          # .fileImporter + HwpDocumentView + 내보내기 배선
+│   ├── PDFExportSupport.swift     # fileExporter용 FileDocument + 플랫폼 인쇄 (#if os)
 │   └── HwpSwiftSample.entitlements
 └── README.md
 ```
@@ -115,7 +173,7 @@ SwiftUI 소스 파일(`HwpSwiftSampleApp.swift`, `ContentView.swift`) 추가/삭
 | Swift | 5.9 |
 | Signing | Manual, ad-hoc identity (`-`) — "Sign to Run Locally" |
 | iOS Simulator | `CODE_SIGNING_ALLOWED=NO` |
-| Sandbox | ON (macOS) + `com.apple.security.files.user-selected.read-only` |
+| Sandbox | ON (macOS) + `com.apple.security.files.user-selected.read-write` + `com.apple.security.print` |
 | SPM Product | `HwpKit`, `HwpKitCore` (부모 저장소 로컬 참조) |
 
 ## 문제 해결
@@ -142,4 +200,6 @@ Xcode 콘솔에 `print()`로 출력됨:
 
 이 샘플은 **`HwpKit`이 노출하는 모든 SwiftUI 컴포넌트를 실제로 조작해 볼 수 있는 최소 앱**. 실 서비스 UX (최근 파일, 검색, 사이드바, 편집 등)는 포함하지 않으며, 이는 `HwpKit` v1의 read-only 스코프와도 일치.
 
-`HwpDocumentView` / `HwpDocumentToolbar` / `HwpPageNavigator` / `HwpZoomControls` / `HwpDocumentLoader` 5개 public surface가 모두 이 앱 안에서 활성화됨.
+`HwpDocumentView` / `HwpDocumentToolbar` / `HwpPageNavigator` / `HwpZoomControls` / `HwpDocumentLoader` / `HwpPDFExporter` 6개 public surface가 모두 이 앱 안에서 활성화됨.
+
+인쇄·저장·공유 **UI는 의도적으로 라이브러리 밖**이다 — `HwpKit`은 PDF 바이트까지만 만들고 그 앞뒤는 앱이 정한다. 이 앱의 `PDFExportSupport.swift`가 그 배선의 최소 예시이고, 저장소의 유일한 `#if os(macOS)` 분기이기도 하다.

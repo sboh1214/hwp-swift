@@ -26,7 +26,15 @@ targets:
       path: HwpSwiftSample/HwpSwiftSample.entitlements
       properties:
         com.apple.security.app-sandbox: true
-        com.apple.security.files.user-selected.read-only: true
+        # PDF 내보내기가 저장 패널로 고른 위치에 쓰므로 read-only로는 부족하다
+        # (Powerbox가 read-only 엔타이틀먼트에는 쓰기 권한을 주지 않는다).
+        com.apple.security.files.user-selected.read-write: true
+        # 샌드박스 앱이 인쇄 서비스에 접근하려면 이 캐퍼빌리티가 따로 필요하다
+        # (Xcode의 App Sandbox > Hardware > Printing). 위 파일 엔타이틀먼트는
+        # 파일 접근만 주므로, 없으면 macOS 인쇄가 **조용히** 실패한다 —
+        # `NSPrintOperation.run()`의 Bool은 취소와 실패를 구분하지 않아
+        # 사유를 올리지 않기 때문이다 (`PDFExportSupport.swift`).
+        com.apple.security.print: true
     info:
       path: HwpSwiftSample/Info.plist
       properties:
