@@ -130,6 +130,44 @@ final class HwpSearchControllerTests: XCTestCase {
         expect(search.matches.map(\.pageNumber)) == [1, 2, 3, 4]
     }
 
+    /// append는 진행 중 스캔을 취소하고 마지막으로 **발행된** 결과를 이어받는다.
+    /// 이어받는 지점을 `previousPageCount`로 잡으면 아직 안 훑었거나 스로틀에
+    /// 걸려 발행되지 않은 접두 페이지의 매치가 영구 누락된다 (#75 리뷰).
+    func testProgressiveAppendDuringScanKeepsUnpublishedPrefixMatches() async {
+        let token = UUID()
+        let prefix = Array(repeating: "hit", count: 40)
+        let selection = HwpSelectionController()
+        selection.setDocument(
+            Self.document(pageTexts: prefix, loadToken: token), preservingSelection: false
+        )
+        let search = HwpSearchController()
+        // 첫 발행 뒤로는 스캔이 끝날 때까지 발행하지 않는다 — 취소가 삼킬 수
+        // 있는 구간을 최대로 벌린다.
+        search.publishInterval = .seconds(60)
+        search.attach(to: selection)
+        // 스냅샷을 **스캔 도중** 넣는 결정론적 이음매다. 이 훅은 16쪽마다
+        // `runScan` 안에서 불린다. `Task.yield()`로 끼워 넣으면 스캔이 먼저
+        // 끝나 취소 경로를 아예 타지 않는다 — 무력화 실험에서 수정을 되돌려도
+        // 통과하는 가짜 가드였다.
+        var didAppend = false
+        search.retainedPageRange = {
+            if !didAppend {
+                didAppend = true
+                selection.setDocument(
+                    Self.document(pageTexts: prefix + ["hit", "hit"], loadToken: token),
+                    preservingSelection: true
+                )
+            }
+            return 0 ..< 0
+        }
+
+        search.search(text: "hit")
+
+        await expect(search.matchCount).toEventually(equal(42), timeout: .seconds(5))
+        expect(search.phase) == .complete
+        expect(didAppend) == true
+    }
+
     func testDocumentReplacementRescansFromScratch() async {
         let (selection, search) = Self.makeAttached(
             pageTexts: ["hit one"], loadToken: UUID()
@@ -144,6 +182,40 @@ final class HwpSearchControllerTests: XCTestCase {
 
         await expect(search.matchCount).toEventually(equal(2), timeout: .seconds(2))
         expect(search.phase) == .complete
+    }
+
+    /// 뷰는 이 프로퍼티를 관찰하지 않으므로 컨트롤러가 직접 통지해야 한다.
+    func testStyleChangeNotifiesRepaint() async {
+        let (_, search) = Self.makeAttached(pageTexts: ["hit"])
+        search.search(text: "hit")
+        await expect(search.matchCount).toEventually(equal(1), timeout: .seconds(2))
+        var repaints = 0
+        search.onMatchesChanged = { repaints += 1 }
+
+        search.style = HwpSearchHighlightStyle(
+            matchColor: HwpRGBColor(red: 0, green: 1, blue: 0, alpha: 0.5),
+            currentMatchColor: HwpRGBColor(red: 0, green: 0, blue: 1, alpha: 0.5)
+        )
+
+        expect(repaints) == 1
+
+        search.style = search.style
+
+        expect(repaints) == 1
+    }
+
+    /// 뷰 해체가 **자기 것만** 떼기 위한 질의 — 이미 다른 뷰에 붙었으면 false다.
+    func testIsAttachedOnlyReportsItsOwnSelectionController() {
+        let (selection, search) = Self.makeAttached(pageTexts: ["hit"])
+        let other = HwpSelectionController()
+
+        expect(search.isAttached(to: selection)) == true
+        expect(search.isAttached(to: other)) == false
+
+        search.attach(to: other)
+
+        expect(search.isAttached(to: selection)) == false
+        expect(search.isAttached(to: other)) == true
     }
 
     func testDetachClearsGeometryDependentState() async {

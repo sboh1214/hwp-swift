@@ -71,8 +71,18 @@ public final class HwpSearchController {
         search(HwpSearchQuery(text: text, options: storedQuery.options))
     }
 
-    /// 하이라이트 색. 뷰가 관찰해 다시 칠한다.
-    public var style: HwpSearchHighlightStyle
+    /// 하이라이트 색. 대입은 뷰에 다시 칠하라는 통지를 겸한다.
+    ///
+    /// 통지가 붙어 있어야 하는 이유: 뷰는 이 프로퍼티를 관찰하지 않는다.
+    /// 네이티브 배선은 매치 콜백 둘만 듣고, SwiftUI wrapper는 컨트롤러
+    /// **신원**만 넘기며 그 대입조차 동일성 가드가 막는다. 색만 바뀐 순간에는
+    /// 아무도 다시 칠하지 않아 다음 스크롤·검색 이벤트까지 옛 색이 남는다.
+    public var style: HwpSearchHighlightStyle {
+        didSet {
+            guard style != oldValue else { return }
+            onMatchesChanged?()
+        }
+    }
 
     // MARK: - 예산 (성능 — 결과의 의미를 바꾸지 않는다)
 
@@ -176,6 +186,7 @@ public final class HwpSearchController {
         currentMatchIndex = nil
         phase = .idle
         scannedPageCount = 0
+        publishedPageUpperBound = 0
         bumpRevision()
         onMatchesChanged?()
         onCurrentMatchChanged?(nil)
@@ -183,7 +194,7 @@ public final class HwpSearchController {
 
     // MARK: - 통지 (뷰가 소유한다)
 
-    /// 매치 목록이 바뀌었다 — 뷰는 오버레이를 다시 그린다.
+    /// 매치 목록이나 하이라이트 색이 바뀌었다 — 뷰는 오버레이를 다시 그린다.
     public var onMatchesChanged: (() -> Void)?
     /// 현재 매치가 바뀌었다 — 뷰는 그 매치가 보이도록 스크롤한다.
     public var onCurrentMatchChanged: ((HwpSearchMatch?) -> Void)?
@@ -235,6 +246,16 @@ public final class HwpSearchController {
         selection = nil
         pageCount = 0
         scannedPageCount = 0
+        publishedPageUpperBound = 0
+    }
+
+    /// 이 세션이 그 선택 컨트롤러에 붙어 있는가.
+    ///
+    /// 뷰 해체가 **자기 것만** 떼기 위한 질의다. SwiftUI 가 새 뷰를 먼저 만들고
+    /// 옛 뷰를 나중에 해체할 수 있으므로, 옛 뷰가 무조건 `detach()` 하면 이미
+    /// 새 뷰에 붙은 살아 있는 세션이 끊긴다.
+    public func isAttached(to selection: HwpSelectionController) -> Bool {
+        self.selection === selection
     }
 
     /// 전량 재스캔을 강제한다.
@@ -258,6 +279,16 @@ public final class HwpSearchController {
 
     @ObservationIgnored
     private var lastPublish: ContinuousClock.Instant?
+
+    /// publish된 결과가 담고 있는 **연속 접두**의 끝 (배타적).
+    ///
+    /// 프로그레시브 append 가 다시 훑기 시작할 지점이다. `previousPageCount`
+    /// 부터 시작하면 안 된다 — append 는 진행 중 스캔을 취소하는데 `runScan` 은
+    /// 마지막으로 **publish된** 결과를 이어받으므로, 아직 안 훑은 페이지와
+    /// 스로틀에 걸려 아직 publish되지 않은 페이지의 매치가 통째로 사라진다.
+    /// 로더 배치(24)가 양보 간격(16)보다 커서 그 창은 배치마다 열린다.
+    @ObservationIgnored
+    private var publishedPageUpperBound = 0
 
     private var geometry: HwpSelectionGeometry? {
         selection?.geometry
@@ -306,9 +337,15 @@ public final class HwpSearchController {
             highlightMatches = []
             currentMatchIndex = nil
             scannedPageCount = 0
+            publishedPageUpperBound = 0
         }
         phase = .scanning
-        let range = (pages ?? 0 ..< pageCount).clamped(to: 0 ..< pageCount)
+        let requested = pages ?? 0 ..< pageCount
+        let lowerBound = appending
+            ? min(publishedPageUpperBound, requested.lowerBound)
+            : requested.lowerBound
+        let range = (lowerBound ..< max(lowerBound, requested.upperBound))
+            .clamped(to: 0 ..< pageCount)
         scanTask = Task { [weak self] in
             await self?.runScan(pages: range, appending: appending)
         }
@@ -318,6 +355,7 @@ public final class HwpSearchController {
         guard let geometry else { return }
         var collected = appending ? highlightMatches : []
         let query = storedQuery
+        var scannedThrough = pages.lowerBound
 
         for (step, pageIndex) in pages.enumerated() {
             if Task.isCancelled {
@@ -336,9 +374,10 @@ public final class HwpSearchController {
                 snippetPadding: snippetPadding
             )
             scannedPageCount = pageIndex + 1
+            scannedThrough = pageIndex + 1
 
             if shouldPublishNow() {
-                publish(collected, phase: .scanning)
+                publish(collected, phase: .scanning, scannedThrough: scannedThrough)
             }
             if step % Self.yieldInterval == Self.yieldInterval - 1 {
                 evictScannedUnits()
@@ -352,7 +391,8 @@ public final class HwpSearchController {
         evictScannedUnits()
         publish(
             collected,
-            phase: matchLimit > 0 && collected.count >= matchLimit ? .truncated : .complete
+            phase: matchLimit > 0 && collected.count >= matchLimit ? .truncated : .complete,
+            scannedThrough: scannedThrough
         )
     }
 
@@ -367,8 +407,13 @@ public final class HwpSearchController {
         return ContinuousClock.now - lastPublish >= publishInterval
     }
 
-    private func publish(_ collected: [HwpSearchMatch], phase: HwpSearchPhase) {
+    private func publish(
+        _ collected: [HwpSearchMatch],
+        phase: HwpSearchPhase,
+        scannedThrough: Int
+    ) {
         lastPublish = ContinuousClock.now
+        publishedPageUpperBound = scannedThrough
         highlightMatches = collected
         let deduped = HwpTextSearcher.deduplicatingRepeatedTableHeaders(collected)
         let previousCurrent = currentMatch
