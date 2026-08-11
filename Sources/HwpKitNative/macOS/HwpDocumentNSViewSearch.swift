@@ -10,6 +10,7 @@
         /// 구조라, 전체 매치와 현재 매치를 같은 딕셔너리로 두 번 칠하면 두 번째
         /// 호출이 첫 번째의 path를 덮어쓴다.
         internal func updateSearchOverlays() {
+            noteSearchOverlayRebuild()
             let style = searchController?.style ?? .default
             HwpDocumentViewSupport.updateHighlightOverlays(
                 pageLayers: pageLayers,
@@ -57,13 +58,16 @@
             }
             searchController.onCurrentMatchChanged = { [weak self] match in
                 guard let self else { return }
-                if let match {
-                    scrollToMatch(match)
-                }
                 // 스크롤이 같은 페이지 범위 안에서 끝나면
                 // `clipViewBoundsDidChange`가 조기 반환하므로(가시 범위 무변화)
-                // 오버레이 갱신이 저절로 오지 않는다 — 명시적으로 부른다.
-                updateSearchOverlays()
+                // 오버레이 갱신이 저절로 오지 않는다 — 그때만 직접 부른다.
+                // `scrollToMatch`가 스스로 `updateVisiblePages`를 돌린 경우까지
+                // 부르면 페이지별 매치 전량 필터와 CGPath 재구성을 탐색마다
+                // 두 번 한다.
+                let refreshedByScroll = match.map { self.scrollToMatch($0) } ?? false
+                if !refreshedByScroll {
+                    updateSearchOverlays()
+                }
             }
             updateSearchOverlays()
         }
@@ -74,15 +78,18 @@
         /// 페이지가 되도록** 보장한다. 그래야 `currentVisiblePage()`와 뒤이은
         /// 페이지 바인딩 동기화가 매치 페이지를 가리켜, SwiftUI 쪽 `currentPage`
         /// 왕복이 스크롤을 원래 자리로 되튕기지 않는다.
-        func scrollToMatch(_ match: HwpSearchMatch) {
+        /// - Returns: `updateVisiblePages` 를 돌려 오버레이까지 다시 칠했는가.
+        ///   호출부가 중복 재구축을 건너뛰는 데 쓴다.
+        @discardableResult
+        func scrollToMatch(_ match: HwpSearchMatch) -> Bool {
             let pageCount = document?.pages.count ?? 0
-            guard pageCount > 0, match.pageIndex < pageCount else { return }
+            guard pageCount > 0, match.pageIndex < pageCount else { return false }
             guard let rect = searchController?
                 .currentMatchRects(forPage: match.pageIndex)
                 .min(by: { $0.minY < $1.minY })
             else {
                 scrollToPage(at: match.pageIndex)
-                return
+                return false
             }
             let pageFrame = frameForPage(at: match.pageIndex)
             let matchInContent = rect.offsetBy(dx: pageFrame.minX, dy: pageFrame.minY)
@@ -98,6 +105,7 @@
             )
             scrollView.reflectScrolledClipView(scrollView.contentView)
             updateVisiblePages(range: visiblePageRange())
+            return true
         }
 
         /// 매치를 가로로 화면 안에 들이는 오프셋 (iOS와 같은 규칙).

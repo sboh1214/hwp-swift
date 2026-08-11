@@ -203,6 +203,20 @@
             expect(search.matchCount) == 1
         }
 
+        /// 스크롤 경로가 `updateVisiblePages` 로 이미 다시 칠했는데 호출부가 또
+        /// 부르면 페이지별 매치 전량 필터와 CGPath 재구성을 탐색마다 두 번 문다.
+        /// 같은 쪽 안에서 이동해 가시 범위는 그대로인 상황으로 잰다.
+        func testNavigationRebuildsOverlaysOnce() async {
+            let view = Self.makeView(pageTexts: ["alpha alpha"])
+            let search = Self.attachedSearch(view, query: "alpha")
+            await expect(search.matchCount).toEventually(equal(2), timeout: .seconds(2))
+            let before = view.searchOverlayRebuildCount
+
+            search.next()
+
+            expect(view.searchOverlayRebuildCount - before) == 1
+        }
+
         // MARK: - 해체·색·배율 (#75 리뷰)
 
         /// 호스트가 붙든 컨트롤러는 뷰보다 오래 산다 — 해체 때 떼지 않으면

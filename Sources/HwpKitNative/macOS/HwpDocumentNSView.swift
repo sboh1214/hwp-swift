@@ -131,6 +131,14 @@
         /// 복사 대상 페이스트보드 — 테스트 주입용
         var pasteboard: NSPasteboard = .general
 
+        /// 검색 오버레이를 다시 만든 횟수 — 테스트 전용 관측점.
+        /// 탐색 한 번에 두 번 도는 회귀를 단언으로 잡기 위한 것이다.
+        private(set) var searchOverlayRebuildCount = 0
+
+        func noteSearchOverlayRebuild() {
+            searchOverlayRebuildCount &+= 1
+        }
+
         let scrollView = NSScrollView()
         let documentContentView = HwpFlippedContentView()
 
