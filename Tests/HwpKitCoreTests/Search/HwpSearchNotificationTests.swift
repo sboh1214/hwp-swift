@@ -136,6 +136,31 @@ final class HwpSearchNotificationTests: XCTestCase {
         await expect(owner.matchCount).toEventually(equal(2), timeout: .seconds(2))
     }
 
+    /// **직접 대입도 "나중에 붙은 쪽"이다.** 소유권을 가져가지 않으면 토큰이
+    /// 옛 소유자를 가리킨 채 남아, 그쪽의 `detach()` 가 호스트가 방금 건
+    /// 콜백을 지운다 — 토큰이 오히려 그 삭제를 보증해 준다 (#75 리뷰 14차).
+    func testDirectCallbackWriteTakesOwnershipFromAttachedController() async {
+        let selection = HwpSelectionController()
+        selection.setDocument(Self.document(pageTexts: ["hit one"]), preservingSelection: false)
+        let search = HwpSearchController()
+        search.publishInterval = .zero
+        search.attach(to: selection)
+        search.search(text: "hit")
+        await expect(search.matchCount).toEventually(equal(1), timeout: .seconds(2))
+
+        var hostNotifications = 0
+        selection.onGeometryChanged = { _ in hostNotifications += 1 }
+        search.detach()
+
+        selection.setDocument(
+            Self.document(pageTexts: ["hit one", "hit two"]),
+            preservingSelection: false
+        )
+
+        // 호스트 콜백이 살아 있어야 한다 — 지워졌으면 0이다
+        expect(hostNotifications) == 1
+    }
+
     /// 그릴 것이 없으면 동등 재전달도 통지하지 않는다 — nil-token 문서는 이
     /// 사건이 SwiftUI 업데이트마다 온다.
     func testEquivalentRefreshWithoutHighlightsIsSilent() async {

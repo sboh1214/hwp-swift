@@ -102,7 +102,15 @@ public final class HwpSelectionController {
     /// `setDocument`이 `clear()`로 가고 `clear()`는 선택이 nil이면 조기
     /// return하기 때문이다 — 그런데 '선택 없음'이 바로 검색(#75)의 정상
     /// 상태다. 낡은 지오메트리에 좌표를 물으면 죽은 조판이 나온다.
-    public var onGeometryChanged: ((HwpGeometryChange) -> Void)?
+    public var onGeometryChanged: ((HwpGeometryChange) -> Void)? {
+        didSet {
+            // 직접 대입도 **나중에 붙은 쪽**이다. 소유권을 함께 가져가지 않으면
+            // 토큰이 옛 소유자를 가리킨 채 남아, 그쪽의 `detach()` 가 방금 건
+            // 이 콜백을 지운다 — 토큰이 오히려 "내 것이 맞다"고 보증해 준다
+            // (#75 리뷰 14차).
+            geometryObserver = nil
+        }
+    }
 
     /// `onGeometryChanged` 슬롯의 현재 소유자.
     ///
@@ -111,6 +119,9 @@ public final class HwpSelectionController {
     /// 계속 true 다. 소유자를 함께 기록하지 않으면 밀려난 컨트롤러의 `detach()`
     /// 가 **현재 소유자의 콜백을 지워**, 그쪽은 붙어 있다고 보고하면서 문서
     /// 교체·프로그레시브 갱신에 영영 재스캔하지 않는다 (#75 리뷰 13차).
+    ///
+    /// "나중에 붙은 쪽"에는 **직접 대입한 호스트도 든다** — 그래서 슬롯의
+    /// `didSet` 이 이 토큰을 비운다 (#75 리뷰 14차).
     private(set) weak var geometryObserver: AnyObject?
 
     /// 소유자와 함께 지오메트리 콜백을 건다.
@@ -118,8 +129,10 @@ public final class HwpSelectionController {
         _ observer: AnyObject,
         _ handler: @escaping (HwpGeometryChange) -> Void
     ) {
-        geometryObserver = observer
+        // 슬롯을 **먼저** 대입한다 — 그 `didSet` 이 토큰을 비우므로, 순서를
+        // 뒤집으면 방금 기록한 소유자가 곧바로 지워진다.
         onGeometryChanged = handler
+        geometryObserver = observer
     }
 
     /// 슬롯이 아직 `observer` 것일 때만 비운다.
