@@ -172,3 +172,4 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
 - 페이지 스크롤 시 새 페이지 fetch 를 main thread 에서 sync — 반드시 `HwpDocumentActor.page(at:)` async 호출
 - 300 페이지 문서를 열 때 모든 페이지 layer 를 persistent 로 유지 — 메모리 폭발. `visible ± 2` 정책 유지
 - Dark mode 에서 페이지 배경/텍스트 색을 반전 — HWP 저자 의도 그대로 렌더 (whitepaper metaphor)
+- **`public extension` 안에 무수식자 멤버 두기** — 전부 public 이 된다. 뷰 확장을 파일로 쪼갤 때 뷰 본체에서 `private` 이던 가상화 세부(가시 범위·보존 창·페이지 프레임)가 그대로 공개 API 로 새어 나갔다 (#75 리뷰). 지오메트리 확장은 양 플랫폼 모두 **internal `extension`** 이고, 검색 확장처럼 일부만 공개해야 하는 파일은 멤버에 `internal` 을 명시한다 (`HwpDocumentUIViewSearch.swift` 가 그 예). SwiftFormat 의 `extensionAccessControl` 이 `on-extension` 이라 멤버가 전부 같은 수준이면 확장으로 올라가므로, internal 로 통일하면 형태가 유지된다
