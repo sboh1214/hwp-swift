@@ -186,6 +186,24 @@
             expect(view.currentVisiblePage()) == 0
         }
 
+        /// 공개 API라 현재 매치가 아닌 매치가 들어올 수 있다. 현재 매치의
+        /// 기하로 해석하면 다른 쪽 매치는 rect를 못 찾아 쪽 상단 폴백으로
+        /// 떨어진다 (반환값 false — 오버레이도 다시 안 칠한다, #75 리뷰 8차).
+        func testScrollToMatchResolvesSuppliedMatchOnAnotherPage() async {
+            let view = Self.makeView(
+                pageTexts: ["alpha here", "filler", "filler", "alpha far"]
+            )
+            let search = Self.attachedSearch(view, query: "alpha")
+            await expect(search.matchCount).toEventually(equal(2), timeout: .seconds(2))
+            expect(search.currentMatchIndex) == 0
+
+            let far = search.matches[1]
+            expect(far.pageIndex) == 3
+
+            expect(view.scrollToMatch(far)) == true
+            expect(view.currentVisiblePage()) == 3
+        }
+
         // MARK: - 재대입 멱등
 
         /// 가드가 없으면 SwiftUI wrapper의 매 갱신이 재배선 → 재스캔 →

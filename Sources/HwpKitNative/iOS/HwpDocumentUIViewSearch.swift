@@ -77,7 +77,7 @@
                   match.pageIndex < document.pages.count else { return false }
             guard !scrollView.bounds.isEmpty,
                   let rect = searchController?
-                  .currentMatchRects(forPage: match.pageIndex)
+                  .rects(for: match)
                   .min(by: { $0.minY < $1.minY })
             else {
                 scrollToPage(at: match.pageIndex)

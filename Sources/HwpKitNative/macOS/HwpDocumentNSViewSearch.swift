@@ -85,7 +85,7 @@
             let pageCount = document?.pages.count ?? 0
             guard pageCount > 0, match.pageIndex < pageCount else { return false }
             guard let rect = searchController?
-                .currentMatchRects(forPage: match.pageIndex)
+                .rects(for: match)
                 .min(by: { $0.minY < $1.minY })
             else {
                 scrollToPage(at: match.pageIndex)

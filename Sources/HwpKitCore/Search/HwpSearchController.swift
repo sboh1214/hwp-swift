@@ -211,14 +211,23 @@ public final class HwpSearchController {
         return geometry.highlightRects(pageIndex: pageIndex, selections: selections)
     }
 
+    /// **인자로 받은** 매치의 rect.
+    ///
+    /// `currentMatchRects(forPage:)` 와 갈리는 지점이다 — 네이티브 뷰의
+    /// `scrollToMatch(_:)` 는 공개 API라 현재 매치가 아닌 매치를 받을 수 있는데,
+    /// 그때 현재 매치의 기하로 해석하면 같은 쪽에서는 엉뚱한 자리로, 다른
+    /// 쪽에서는 쪽 상단으로 스크롤한다 (#75 리뷰 8차).
+    public func rects(for match: HwpSearchMatch) -> [CGRect] {
+        guard let geometry else { return [] }
+        return geometry.highlightRects(
+            pageIndex: match.pageIndex, selections: [match.selection]
+        )
+    }
+
     /// 그 페이지의 **현재 매치** rect.
     public func currentMatchRects(forPage pageIndex: Int) -> [CGRect] {
-        guard let geometry, let currentMatch, currentMatch.pageIndex == pageIndex else {
-            return []
-        }
-        return geometry.highlightRects(
-            pageIndex: pageIndex, selections: [currentMatch.selection]
-        )
+        guard let currentMatch, currentMatch.pageIndex == pageIndex else { return [] }
+        return rects(for: currentMatch)
     }
 
     // MARK: - 연결 (뷰가 부른다)
@@ -340,6 +349,17 @@ public final class HwpSearchController {
             // 다시 계산되면 된다. 여기서 다시 훑으면 현재 매치가 첫 매치로
             // 되돌아가는데, nil-token 문서는 SwiftUI 업데이트마다 이 사건이
             // 오므로 쪽을 넘는 탐색이 아예 불가능해진다 (#75 리뷰 6차).
+            //
+            // 다만 **지오메트리 객체는 새것**이라 rect 는 다시 계산돼야 한다:
+            // `==` 는 문자열만 보므로 줄 상자를 바꾸는 렌더 속성이 달라졌을 수
+            // 있고, `attach` 가 선택 컨트롤러의 단일 지오메트리 콜백을 점유해
+            // 뷰에는 이것 말고 알 통로가 없다. 재스캔 없이 재도색만 알린다
+            // (#75 리뷰 8차). 그릴 것이 없으면 통지도 없다 — nil-token 문서는
+            // 이 사건이 업데이트마다 온다.
+            if !highlightMatches.isEmpty {
+                bumpRevision()
+                onMatchesChanged?()
+            }
             return
         }
         if change.isProgressiveAppend, !storedQuery.isEmpty, phase != .idle {
@@ -375,7 +395,15 @@ public final class HwpSearchController {
         }
 
         pageCount = geometry.pageCount
+        // 교체 스캔의 리셋도 **발행**한다. 안 알리면 첫 publish 까지 오버레이가
+        // 옛 질의를 그대로 들고 있고, 새 질의에 매치가 없으면 `publish` 가 세
+        // 분기를 모두 빗나가 `onCurrentMatchChanged(nil)` 이 영영 오지 않는다
+        // (#75 리뷰 8차). 바로 위 빈 질의 가드는 처음부터 이렇게 하고 있었다.
+        var clearedResults = false
+        var clearedCurrentMatch = false
         if !appending {
+            clearedResults = !matches.isEmpty || !highlightMatches.isEmpty
+            clearedCurrentMatch = currentMatchIndex != nil
             matches = []
             highlightMatches = []
             currentMatchIndex = nil
@@ -390,6 +418,13 @@ public final class HwpSearchController {
             : requested.lowerBound
         let range = (lowerBound ..< max(lowerBound, requested.upperBound))
             .clamped(to: 0 ..< pageCount)
+        if clearedResults || clearedCurrentMatch {
+            bumpRevision()
+            onMatchesChanged?()
+            if clearedCurrentMatch {
+                onCurrentMatchChanged?(nil)
+            }
+        }
         scanTask = Task { [weak self] in
             await self?.runScan(pages: range, appending: appending)
         }

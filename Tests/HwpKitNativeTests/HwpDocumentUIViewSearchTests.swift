@@ -269,6 +269,25 @@
             expect(view.horizontalOffset(toReveal: onScreen)) == current
         }
 
+        /// macOS와 같은 계약 — 공개 API라 현재 매치가 아닌 매치가 들어올 수
+        /// 있고, 현재 매치의 기하로 해석하면 다른 쪽 매치는 rect를 못 찾아
+        /// 쪽 상단 폴백(반환값 false)으로 떨어진다 (#75 리뷰 8차).
+        func testScrollToMatchResolvesSuppliedMatchOnAnotherPage() async {
+            let view = Self.makeView(
+                pageTexts: ["alpha here", "filler", "filler", "alpha far"]
+            )
+            view.layoutIfNeeded()
+            let search = Self.attachedSearch(view, query: "alpha")
+            await expect(search.matchCount).toEventually(equal(2), timeout: .seconds(2))
+            expect(search.currentMatchIndex) == 0
+
+            let far = search.matches[1]
+            expect(far.pageIndex) == 3
+
+            expect(view.scrollToMatch(far)) == true
+            expect(view.scrollView.contentOffset.y) > 0
+        }
+
         func testSearchDoesNotTouchSelectionState() async {
             let view = Self.makeView(pageTexts: ["alpha beta"])
             let search = Self.attachedSearch(view, query: "alpha")

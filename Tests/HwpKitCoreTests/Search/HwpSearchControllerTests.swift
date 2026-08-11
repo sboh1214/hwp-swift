@@ -442,6 +442,24 @@ final class HwpSearchControllerTests: XCTestCase {
         expect(search.highlightMatches.count) == 2
     }
 
+    // MARK: - 기하 해석
+
+    /// `rects(for:)` 는 **인자** 매치의 기하를 해석한다. `currentMatchRects` 와
+    /// 갈리지 않으면 공개 `scrollToMatch(_:)` 가 엉뚱한 자리로 스크롤한다.
+    func testRectsResolveSuppliedMatchNotCurrentMatch() async {
+        let (_, search) = Self.makeAttached(pageTexts: ["hit and hit again"])
+        search.search(text: "hit")
+        await expect(search.matchCount).toEventually(equal(2), timeout: .seconds(2))
+
+        let first = search.matches[0]
+        let second = search.matches[1]
+
+        expect(search.currentMatchIndex) == 0
+        expect(search.rects(for: second)).toNot(beEmpty())
+        expect(search.rects(for: second)) != search.rects(for: first)
+        expect(search.rects(for: first)) == search.currentMatchRects(forPage: 0)
+    }
+
     // MARK: - revision
 
     func testRevisionIncreasesMonotonicallyOnPublishAndNavigation() async {
