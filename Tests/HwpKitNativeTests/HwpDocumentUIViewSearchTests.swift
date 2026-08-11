@@ -94,6 +94,23 @@
             expect(match) < current
         }
 
+        /// macOS와 같은 계약 — 뗀 컨트롤러가 옛 뷰의 클로저를 들고 있으면,
+        /// 재사용될 때 옛 뷰를 다시 칠하고 `retainedPageRange` 로 **새
+        /// 지오메트리를 옛 가시 범위로 축출**한다 (#75 리뷰 13차).
+        func testClearingControllerRemovesViewHooks() async {
+            let view = Self.makeView(pageTexts: ["alpha"])
+            let search = Self.attachedSearch(view, query: "alpha")
+            await expect(search.matchCount).toEventually(equal(1), timeout: .seconds(2))
+            expect(search.onMatchesChanged).toNot(beNil())
+            expect(search.retainedPageRange).toNot(beNil())
+
+            view.searchController = nil
+
+            expect(search.onMatchesChanged).to(beNil())
+            expect(search.onCurrentMatchChanged).to(beNil())
+            expect(search.retainedPageRange).to(beNil())
+        }
+
         func testClearingControllerRemovesOverlays() async {
             let view = Self.makeView(pageTexts: ["alpha"])
             let search = Self.attachedSearch(view, query: "alpha")
