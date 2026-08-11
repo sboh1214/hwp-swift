@@ -100,11 +100,21 @@
             let highest = Swift.max(pageFrame.minY, pageFrame.maxY - viewportHeight)
             let targetY = Swift.min(Swift.max(desired, lowest), highest)
 
+            // 스크롤 알림(`clipViewBoundsDidChange`)이 가시 범위를 이미 갱신했으면
+            // 다시 부르지 않는다 — 쪽을 넘는 탐색마다 페이지별 매치 전량 필터와
+            // CGPath 재구성을 두 번 문다 (#75 리뷰 11차, 실측 2회). 같은 쪽 안의
+            // 이동은 알림이 조기 반환하므로 이 직접 호출이 유일한 갱신이다.
+            let rangeBeforeScroll = activeVisibleRange
             scrollView.contentView.scroll(
                 to: NSPoint(x: horizontalOffset(toReveal: matchInContent), y: targetY)
             )
             scrollView.reflectScrolledClipView(scrollView.contentView)
-            updateVisiblePages(range: visiblePageRange())
+            if activeVisibleRange == rangeBeforeScroll {
+                updateVisiblePages(range: visiblePageRange())
+            }
+            // 알림이 칠했든 우리가 칠했든 오버레이는 새로 그려졌다 — 반환값은
+            // 호출부가 중복 재구축을 건너뛰는 근거라, 여기서 false 를 내면
+            // `onCurrentMatchChanged` 가 세 번째 재구축을 부른다.
             return true
         }
 

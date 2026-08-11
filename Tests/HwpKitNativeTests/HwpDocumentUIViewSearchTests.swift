@@ -288,6 +288,24 @@
             expect(view.scrollView.contentOffset.y) > 0
         }
 
+        /// macOS와 같은 계약 — 쪽을 넘으면 `setContentOffset` 이 동기로
+        /// `scrollViewDidScroll` 을 태워 이미 갱신하므로, 그 뒤 무조건 부르면
+        /// 재구축이 두 번이 된다 (#75 리뷰 11차).
+        func testCrossPageNavigationRebuildsOverlaysOnce() async {
+            let view = Self.makeView(
+                pageTexts: ["alpha here", "filler", "filler", "alpha far"]
+            )
+            view.layoutIfNeeded()
+            let search = Self.attachedSearch(view, query: "alpha")
+            await expect(search.matchCount).toEventually(equal(2), timeout: .seconds(2))
+            let before = view.searchOverlayRebuildCount
+
+            search.next()
+
+            expect(view.scrollView.contentOffset.y) > 0
+            expect(view.searchOverlayRebuildCount - before) == 1
+        }
+
         func testSearchDoesNotTouchSelectionState() async {
             let view = Self.makeView(pageTexts: ["alpha beta"])
             let search = Self.attachedSearch(view, query: "alpha")

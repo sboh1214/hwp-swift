@@ -235,6 +235,23 @@
             expect(view.searchOverlayRebuildCount - before) == 1
         }
 
+        /// 위 테스트는 **한 쪽짜리** 문서라 같은 쪽 이동만 본다. 쪽을 넘으면
+        /// `scroll(to:)` 가 동기로 `clipViewBoundsDidChange` 를 태워 이미
+        /// 갱신하므로, 그 뒤 무조건 부르면 두 번이 된다 (#75 리뷰 11차, 실측 2회).
+        func testCrossPageNavigationRebuildsOverlaysOnce() async {
+            let view = Self.makeView(
+                pageTexts: ["alpha here", "filler", "filler", "alpha far"]
+            )
+            let search = Self.attachedSearch(view, query: "alpha")
+            await expect(search.matchCount).toEventually(equal(2), timeout: .seconds(2))
+            let before = view.searchOverlayRebuildCount
+
+            search.next()
+
+            expect(view.currentVisiblePage()) == 3
+            expect(view.searchOverlayRebuildCount - before) == 1
+        }
+
         // MARK: - 해체·색·배율 (#75 리뷰)
 
         /// 호스트가 붙든 컨트롤러는 뷰보다 오래 산다 — 해체 때 떼지 않으면

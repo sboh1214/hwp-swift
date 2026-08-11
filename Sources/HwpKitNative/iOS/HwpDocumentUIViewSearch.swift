@@ -101,11 +101,20 @@
                 Swift.min(Swift.max(desired, lowest), highest)
             )
 
+            // `scrollViewDidScroll` 이 가시 범위를 이미 갱신했으면 다시 부르지
+            // 않는다 — 쪽을 넘는 탐색마다 페이지별 매치 전량 필터와 CGPath
+            // 재구성을 두 번 문다 (#75 리뷰 11차, macOS 와 같은 계약). 같은 쪽
+            // 안의 이동은 그 콜백이 조기 반환하므로 이것이 유일한 갱신이다.
+            let rangeBeforeScroll = activeVisibleRange
             scrollView.setContentOffset(
                 CGPoint(x: horizontalOffset(toReveal: matchInScroll), y: targetY),
                 animated: false
             )
-            updateVisiblePages(range: visiblePageRange())
+            if activeVisibleRange == rangeBeforeScroll {
+                updateVisiblePages(range: visiblePageRange())
+            }
+            // 콜백이 칠했든 우리가 칠했든 오버레이는 새로 그려졌다 — 반환값은
+            // 호출부가 중복 재구축을 건너뛰는 근거다.
             return true
         }
 

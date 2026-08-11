@@ -145,7 +145,9 @@
         private let hitTester = HwpHitTester()
         let defaultPageSize = CGSize(width: 595, height: 842)
         let pageGap: CGFloat = 24
-        private var activeVisibleRange: Range<Int> = 0 ..< 0
+        /// 마지막으로 적용한 가시 범위. `scrollToMatch` 가 스크롤 전후로 이 값을
+        /// 비교해 **알림이 이미 갱신했는지** 판정하므로 읽기는 internal 이다.
+        private(set) var activeVisibleRange: Range<Int> = 0 ..< 0
         /// Prefix sums of page Y origins so frame lookups stay O(1) while scrolling.
         var pageOriginsY: [CGFloat] = []
         /// 최대 행(페이지+메모 패널) 폭 캐시 — frameForPage가 스크롤마다 전

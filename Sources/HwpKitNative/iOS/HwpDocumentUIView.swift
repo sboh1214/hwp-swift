@@ -108,7 +108,9 @@
         /// 반복 통지하지 않도록 dedup한다 (#5).
         private var lastReportedPage = -1
         /// 마지막으로 적용한 가시 범위 (macOS `activeVisibleRange` 와 대칭).
-        private var activeVisibleRange: Range<Int> = 0 ..< 0
+        /// `scrollToMatch` 가 스크롤 전후로 이 값을 비교해 **스크롤 콜백이 이미
+        /// 갱신했는지** 판정하므로 읽기는 internal 이다.
+        private(set) var activeVisibleRange: Range<Int> = 0 ..< 0
 
         /// 검색 오버레이를 다시 만든 횟수 — 테스트 전용 관측점 (macOS와 대칭).
         private(set) var searchOverlayRebuildCount = 0
