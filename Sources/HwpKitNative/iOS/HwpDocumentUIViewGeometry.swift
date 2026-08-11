@@ -5,8 +5,11 @@
     import UIKit
 
     /// iOS 뷰의 페이지 지오메트리 — 가시 범위·보존 창·페이지 프레임.
-    /// macOS의 `HwpDocumentNSViewGeometry.swift`와 대칭 구조다.
-    public extension HwpDocumentUIView {
+    ///
+    /// macOS의 `HwpDocumentNSViewGeometry.swift`와 대칭으로 **internal**이다.
+    /// `public extension` 으로 두면 무수식자 멤버가 전부 public 이 되어, 뷰
+    /// 본체에서 `private` 이던 가상화 세부가 그대로 공개 API 가 된다.
+    extension HwpDocumentUIView {
         func visiblePageRange() -> Range<Int> {
             let pageCount = document?.pages.count ?? 0
             guard pageCount > 0 else { return 0 ..< 0 }
