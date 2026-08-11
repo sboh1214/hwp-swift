@@ -223,6 +223,39 @@ final class HwpSearchBudgetTests: XCTestCase {
         expect(search.highlightMatches.count) == 5
     }
 
+    /// 절단 감지용 프로브(상한+1)가 발행된 하이라이트에 남으면 **탐색할 수
+    /// 없는 자리**가 칠해진다 — 두 목록의 차이는 클론뿐이라는 계약이 깨진다
+    /// (#75 리뷰 10차).
+    func testTruncationDoesNotPaintUnreachableMatch() async {
+        let (_, search) = Self.makeAttached(pageTexts: ["hit hit"])
+        search.matchLimit = 1
+
+        search.search(text: "hit")
+
+        await expect(search.phase).toEventually(equal(.truncated), timeout: .seconds(2))
+        expect(search.matchCount) == 1
+        expect(search.highlightMatches.count) == 1
+    }
+
+    /// 빠지는 것은 프로브뿐이다 — 잘린 지점 **앞**의 클론 하이라이트는 남는다.
+    func testTruncationKeepsCloneHighlightsBeforeCut() async {
+        let (_, search) = Self.makeAttached(
+            blocks: [
+                Self.paragraphBlock("hit", y: 20, paragraphId: 7, clone: false),
+                Self.paragraphBlock("hit", y: 60, paragraphId: 7, clone: true),
+                Self.paragraphBlock("hit", y: 100, paragraphId: 9, clone: false),
+            ],
+            matchLimit: 1
+        )
+
+        search.search(text: "hit")
+
+        await expect(search.phase).toEventually(equal(.truncated), timeout: .seconds(2))
+        expect(search.matches.map(\.paragraphId)) == [7]
+        // 원본 + 클론 = 2. 초과분(paraId 9)만 빠진다
+        expect(search.highlightMatches.count) == 2
+    }
+
     // MARK: - 캐시 축출 훅
 
     /// nil이면 축출하지 않는다 — 엔진만 쓰는 배치 인덱싱은 전량 상주가 맞다.

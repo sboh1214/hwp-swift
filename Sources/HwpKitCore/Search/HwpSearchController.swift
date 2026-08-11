@@ -482,7 +482,7 @@ public final class HwpSearchController {
 
             if shouldPublishNow() {
                 publish(
-                    highlights: state.collected,
+                    highlights: limitedHighlights(state.collected, navigable: state.navigable),
                     navigable: limitedForPublication(state.navigable),
                     phase: .scanning,
                     scannedThrough: scannedThrough
@@ -499,7 +499,7 @@ public final class HwpSearchController {
         }
         evictScannedUnits()
         publish(
-            highlights: state.collected,
+            highlights: limitedHighlights(state.collected, navigable: state.navigable),
             navigable: limitedForPublication(state.navigable),
             phase: didObserveOmittedMatch ? .truncated : .complete,
             scannedThrough: scannedThrough
@@ -571,6 +571,24 @@ public final class HwpSearchController {
     private func limitedForPublication(_ collected: [HwpSearchMatch]) -> [HwpSearchMatch] {
         guard matchLimit > 0, collected.count > matchLimit else { return collected }
         return Array(collected.prefix(matchLimit))
+    }
+
+    /// 하이라이트도 같은 상한으로 자른다 — 자르는 지점은 **초과 매치**다.
+    ///
+    /// 절단을 감지하려고 상한보다 하나 더 훑는데 (`probeLimit`), 그 프로브가
+    /// 발행된 하이라이트에 남으면 **탐색할 수 없는 자리**가 칠해진다. 두 목록의
+    /// 차이는 클론뿐이라는 계약 (`highlightMatches` 선언부) 이 깨지고, append 가
+    /// 그 접두에서 이어받으므로 프로브가 다음 스냅샷까지 따라간다 (#75 리뷰 10차).
+    ///
+    /// 초과 매치 **뒤에** 클론이 올 일은 없다 — 스캔은 초과가 난 그 단위에서
+    /// 멈추고 한 단위 안의 매치는 dedup 운명이 같다. 그래서 접두 자르기 하나로
+    /// "클론은 남기고 프로브만 뺀다" 가 성립한다.
+    private func limitedHighlights(
+        _ collected: [HwpSearchMatch], navigable: [HwpSearchMatch]
+    ) -> [HwpSearchMatch] {
+        guard matchLimit > 0, navigable.count > matchLimit else { return collected }
+        guard let cut = collected.firstIndex(of: navigable[matchLimit]) else { return collected }
+        return Array(collected.prefix(cut))
     }
 
     private func shouldPublishNow() -> Bool {
