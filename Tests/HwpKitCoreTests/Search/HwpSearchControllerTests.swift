@@ -374,42 +374,40 @@ final class HwpSearchControllerTests: XCTestCase {
 
     // MARK: - 목록 vs 하이라이트
 
+    /// 같은 문단이 두 번 나오는 한 쪽짜리 문서 — 둘째 블록의 클론 표식만 갈린다.
+    private static func repeatedHeaderDocument(secondIsClone: Bool) -> HwpDocument {
+        func block(y: CGFloat, clone: Bool) -> AnyHwpBlock {
+            var attributes: [NSAttributedString.Key: Any] = [
+                kCTFontAttributeName as NSAttributedString.Key: font,
+            ]
+            if clone {
+                attributes[HwpAttributedStringKey.repeatedTableHeaderClone] = true
+            }
+            return AnyHwpBlock(
+                frame: CGRect(x: 10, y: y, width: 400, height: 20),
+                kind: .text,
+                attributedString: NSAttributedString(string: "header", attributes: attributes),
+                source: HwpBlockSource(paragraphId: 7),
+                role: .body
+            )
+        }
+        return HwpDocument(
+            pages: [HwpPage(
+                size: CGSize(width: 595, height: 842),
+                margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
+                blocks: [block(y: 20, clone: false), block(y: 60, clone: secondIsClone)],
+                pageNumber: 1
+            )],
+            metadata: HwpDocumentMetadata(pageCount: 1),
+            unsupportedElements: []
+        )
+    }
+
     /// 목록은 dedup, 하이라이트는 전량 — 기존 `plainText` 정책과 같다.
     func testHighlightListKeepsClonesThatMatchListDrops() async {
         let selection = HwpSelectionController()
-        let cloneAttributes: [NSAttributedString.Key: Any] = [
-            kCTFontAttributeName as NSAttributedString.Key: Self.font,
-            HwpAttributedStringKey.repeatedTableHeaderClone: true,
-        ]
-        let origin = AnyHwpBlock(
-            frame: CGRect(x: 10, y: 20, width: 400, height: 20),
-            kind: .text,
-            attributedString: NSAttributedString(
-                string: "header",
-                attributes: [kCTFontAttributeName as NSAttributedString.Key: Self.font]
-            ),
-            source: HwpBlockSource(paragraphId: 7),
-            role: .body
-        )
-        let clone = AnyHwpBlock(
-            frame: CGRect(x: 10, y: 60, width: 400, height: 20),
-            kind: .text,
-            attributedString: NSAttributedString(string: "header", attributes: cloneAttributes),
-            source: HwpBlockSource(paragraphId: 7),
-            role: .body
-        )
         selection.setDocument(
-            HwpDocument(
-                pages: [HwpPage(
-                    size: CGSize(width: 595, height: 842),
-                    margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
-                    blocks: [origin, clone],
-                    pageNumber: 1
-                )],
-                metadata: HwpDocumentMetadata(pageCount: 1),
-                unsupportedElements: []
-            ),
-            preservingSelection: false
+            Self.repeatedHeaderDocument(secondIsClone: true), preservingSelection: false
         )
         let search = HwpSearchController()
         search.publishInterval = .zero
@@ -419,6 +417,28 @@ final class HwpSearchControllerTests: XCTestCase {
 
         await expect(search.phase).toEventually(equal(.complete), timeout: .seconds(2))
         expect(search.matches.count) == 1
+        expect(search.highlightMatches.count) == 2
+    }
+
+    /// 클론 표식은 렌더 속성이 아니라 **검색 의미**를 바꾼다. `AnyHwpBlock.==`
+    /// 가 문자열만 비교하면 이 플래그만 뒤집힌 재전달이 "내용이 같은 재전달"로
+    /// 접혀 재스캔이 생략되고, 목록·현재 매치가 옛 분류에 머문다 (#75 리뷰 7차).
+    func testCloneFlagFlipIsNotAnEquivalentRefresh() async {
+        let selection = HwpSelectionController()
+        selection.setDocument(
+            Self.repeatedHeaderDocument(secondIsClone: false), preservingSelection: false
+        )
+        let search = HwpSearchController()
+        search.publishInterval = .zero
+        search.attach(to: selection)
+        search.search(text: "header")
+        await expect(search.matchCount).toEventually(equal(2), timeout: .seconds(2))
+
+        selection.setDocument(
+            Self.repeatedHeaderDocument(secondIsClone: true), preservingSelection: true
+        )
+
+        await expect(search.matchCount).toEventually(equal(1), timeout: .seconds(2))
         expect(search.highlightMatches.count) == 2
     }
 

@@ -69,6 +69,16 @@ public struct AnyHwpBlock: HwpBlock, @unchecked Sendable, Hashable {
         self.zOrder = zOrder
     }
 
+    /// 반복 표 머리행 클론 표식. `attributedString` 의 **속성**이라 문자열
+    /// 비교로는 안 잡히는데, 검색 목록 dedup 이 이 값으로 판정한다
+    /// (`HwpTextSearcher`). 동등성에서 빠지면 이 플래그만 뒤집힌 재전달이
+    /// "내용이 같은 재전달"로 접혀 (`HwpSearchController.geometryDidChange`)
+    /// 재스캔이 생략되고, 목록·현재 매치가 옛 분류에 머문다 (#75 리뷰 7차).
+    /// 판정은 선택·검색과 **같은 술어**를 쓴다 — 각자 속성 키를 읽으면 갈린다.
+    var isRepeatedTableHeaderClone: Bool {
+        attributedString.map(HwpSelectionGeometry.isRepeatedHeaderClone) ?? false
+    }
+
     public func hash(into hasher: inout Hasher) {
         hasher.combine(kind)
         hasher.combine(frame.origin.x)
@@ -76,6 +86,7 @@ public struct AnyHwpBlock: HwpBlock, @unchecked Sendable, Hashable {
         hasher.combine(frame.size.width)
         hasher.combine(frame.size.height)
         hasher.combine(attributedString?.string)
+        hasher.combine(isRepeatedTableHeaderClone)
         hasher.combine(hyperlinkURL)
         hasher.combine(payload)
         hasher.combine(source)
@@ -88,6 +99,7 @@ public struct AnyHwpBlock: HwpBlock, @unchecked Sendable, Hashable {
         lhs.kind == rhs.kind
             && lhs.frame == rhs.frame
             && lhs.attributedString?.string == rhs.attributedString?.string
+            && lhs.isRepeatedTableHeaderClone == rhs.isRepeatedTableHeaderClone
             && lhs.hyperlinkURL == rhs.hyperlinkURL
             && lhs.payload == rhs.payload
             && lhs.source == rhs.source
