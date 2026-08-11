@@ -146,6 +146,7 @@
                 guard oldValue !== searchController else { return }
                 if let oldValue, oldValue.isAttached(to: selectionController) {
                     oldValue.detach()
+                    HwpDocumentViewSupport.removeSearchHooks(from: oldValue)
                 }
                 wireSearchController()
             }

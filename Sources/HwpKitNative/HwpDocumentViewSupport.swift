@@ -34,7 +34,22 @@ enum HwpDocumentViewSupport {
         Task { @MainActor in
             guard controller.isAttached(to: selection) else { return }
             controller.detach()
+            removeSearchHooks(from: controller)
         }
+    }
+
+    /// 이 뷰가 설치한 검색 훅을 뗀다.
+    ///
+    /// 호출부는 `isAttached(to:)` 로 **자기 세션**임을 먼저 확인한다 — 다른 뷰가
+    /// 이미 재배선했으면 그 훅을 지우면 안 되는데 클로저는 동일성 비교가 안 되므로
+    /// 그 가드가 유일한 판별이다. 안 지우면 뗀 컨트롤러가 옛 뷰의 클로저를 들고
+    /// 있다가, 재사용될 때 옛 뷰를 다시 칠하고 `retainedPageRange` 로 **새
+    /// 지오메트리를 옛 가시 범위로 축출**한다 (#75 리뷰 13차).
+    @MainActor
+    static func removeSearchHooks(from controller: HwpSearchController) {
+        controller.onMatchesChanged = nil
+        controller.onCurrentMatchChanged = nil
+        controller.retainedPageRange = nil
     }
 
     nonisolated static func isProgressiveUpdate(
