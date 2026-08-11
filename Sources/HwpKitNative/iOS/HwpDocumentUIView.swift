@@ -107,6 +107,8 @@
         /// 마지막으로 통지한 페이지 — 스크롤·레이아웃·줌이 같은 페이지를
         /// 반복 통지하지 않도록 dedup한다 (#5).
         private var lastReportedPage = -1
+        /// 마지막으로 적용한 가시 범위 (macOS `activeVisibleRange` 와 대칭).
+        private var activeVisibleRange: Range<Int> = 0 ..< 0
         public var onZoomChanged: ((CGFloat) -> Void)?
 
         var pageLayers: [Int: HwpPageLayer] = [:]
@@ -180,6 +182,7 @@
         }
 
         public func updateVisiblePages(range: Range<Int>) {
+            activeVisibleRange = range
             let validRange = clampedPageRange(range)
             let keepRange = expandedRange(validRange)
             let keepSet = Set(keepRange)
@@ -241,6 +244,9 @@
             }
             updateSelectionOverlays()
             updateSearchOverlays()
+            // 오버레이를 그린 **뒤** 축출한다 (macOS와 대칭) — 방금 그린 페이지는
+            // 유지 범위 안이라 살아남는다.
+            searchController?.evictUnitsOutsideRetainedRange()
         }
 
         /// 페이지에 메모 패널이 있으면 오른쪽 바깥에 투명 레이어로 그린다.
@@ -293,7 +299,15 @@
         public func scrollViewDidScroll(_: UIScrollView) {
             // updateVisiblePages가 페이지 변경을 (dedup으로) 통지하므로 여기서
             // 다시 부르지 않는다 — 스크롤마다 동일 통지 2회를 없앤다 (#5).
-            updateVisiblePages(range: visiblePageRange())
+            let range = visiblePageRange()
+            // 가시 범위가 그대로면 실체화도 재도색도 할 일이 없다 — 페이지
+            // 레이어는 스크롤과 함께 움직인다. 검색 오버레이 재구축은 페이지마다
+            // 매치 전량(상한 5,000)을 훑어 CGPath를 새로 만들므로 이 가드가
+            // 없으면 그 비용을 매 틱 메인 액터에서 문다 (macOS
+            // `clipViewBoundsDidChange` 와 같은 가드). 줌은 프레임이 바뀌므로
+            // `scrollViewDidZoom` 은 가드 없이 그대로 둔다.
+            guard range != activeVisibleRange else { return }
+            updateVisiblePages(range: range)
         }
 
         /// 마지막 통지 페이지와 다를 때만 onPageChanged를 발화한다 (#5).

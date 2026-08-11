@@ -183,6 +183,30 @@
             expect(view.searchMatchLayers[0]?.contentsScale) == pageScale
         }
 
+        /// 가시 범위가 그대로인 스크롤 틱은 재구축을 건너뛴다 — 안 그러면
+        /// 페이지마다 매치 전량을 훑어 CGPath를 다시 만드는 일을 매 틱 문다.
+        /// 축출 훅 호출 수가 `updateVisiblePages` 가 돌았는지의 관측점이다.
+        func testUnchangedScrollTickSkipsOverlayRebuild() async {
+            let view = Self.makeView(pageTexts: ["alpha", "alpha", "alpha"])
+            let search = Self.attachedSearch(view, query: "alpha")
+            await expect(search.matchCount).toEventually(equal(3), timeout: .seconds(2))
+            var evictions = 0
+            search.retainedPageRange = {
+                evictions += 1
+                return 0 ..< 3
+            }
+
+            view.scrollView.contentOffset = CGPoint(x: 0, y: 900)
+            view.scrollViewDidScroll(view.scrollView)
+            let afterMove = evictions
+            // 범위가 실제로 바뀌었는지까지 이 단언이 함께 잡는다
+            expect(afterMove) >= 1
+
+            view.scrollViewDidScroll(view.scrollView)
+
+            expect(evictions) == afterMove
+        }
+
         // MARK: - 가로 노출 (육안 확인에서 발견한 결함)
 
         /// 페이지가 뷰포트보다 넓으면 세로만 맞춰서는 매치가 화면 밖에 남는다.
