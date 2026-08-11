@@ -138,38 +138,34 @@ final class HwpSearchBudgetTests: XCTestCase {
         expect(search.matchCount) == 2
     }
 
-    /// 예산은 **목록 기준**이다. 클론이 상한을 쓰면 뒤의 고유 매치가 노출되지
-    /// 않고, 빠뜨린 고유 매치가 없는데도 잘렸다고 보고한다 (#75 리뷰 6차).
-    func testMatchLimitCountsDeduplicatedResults() async {
-        let cloneAttributes: [NSAttributedString.Key: Any] = [
-            kCTFontAttributeName as NSAttributedString.Key: Self.font,
-            HwpAttributedStringKey.repeatedTableHeaderClone: true,
+    private static func paragraphBlock(
+        _ text: String, y: CGFloat, paragraphId: UInt32, clone: Bool
+    ) -> AnyHwpBlock {
+        var attributes: [NSAttributedString.Key: Any] = [
+            kCTFontAttributeName as NSAttributedString.Key: font,
         ]
-        func block(_ text: String, y: CGFloat, paragraphId: UInt32, clone: Bool) -> AnyHwpBlock {
-            AnyHwpBlock(
-                frame: CGRect(x: 10, y: y, width: 400, height: 20),
-                kind: .text,
-                attributedString: NSAttributedString(
-                    string: text,
-                    attributes: clone
-                        ? cloneAttributes
-                        : [kCTFontAttributeName as NSAttributedString.Key: Self.font]
-                ),
-                source: HwpBlockSource(paragraphId: paragraphId),
-                role: .body
-            )
+        if clone {
+            attributes[HwpAttributedStringKey.repeatedTableHeaderClone] = true
         }
+        return AnyHwpBlock(
+            frame: CGRect(x: 10, y: y, width: 400, height: 20),
+            kind: .text,
+            attributedString: NSAttributedString(string: text, attributes: attributes),
+            source: HwpBlockSource(paragraphId: paragraphId),
+            role: .body
+        )
+    }
+
+    private static func makeAttached(
+        blocks: [AnyHwpBlock], matchLimit: Int
+    ) -> (HwpSelectionController, HwpSearchController) {
         let selection = HwpSelectionController()
         selection.setDocument(
             HwpDocument(
                 pages: [HwpPage(
                     size: CGSize(width: 595, height: 842),
                     margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
-                    blocks: [
-                        block("header", y: 20, paragraphId: 7, clone: false),
-                        block("header", y: 60, paragraphId: 7, clone: true),
-                        block("header", y: 100, paragraphId: 8, clone: false),
-                    ],
+                    blocks: blocks,
                     pageNumber: 1
                 )],
                 metadata: HwpDocumentMetadata(pageCount: 1),
@@ -179,8 +175,22 @@ final class HwpSearchBudgetTests: XCTestCase {
         )
         let search = HwpSearchController()
         search.publishInterval = .zero
-        search.matchLimit = 2
+        search.matchLimit = matchLimit
         search.attach(to: selection)
+        return (selection, search)
+    }
+
+    /// 예산은 **목록 기준**이다. 클론이 상한을 쓰면 뒤의 고유 매치가 노출되지
+    /// 않고, 빠뜨린 고유 매치가 없는데도 잘렸다고 보고한다 (#75 리뷰 6차).
+    func testMatchLimitCountsDeduplicatedResults() async {
+        let (_, search) = Self.makeAttached(
+            blocks: [
+                Self.paragraphBlock("header", y: 20, paragraphId: 7, clone: false),
+                Self.paragraphBlock("header", y: 60, paragraphId: 7, clone: true),
+                Self.paragraphBlock("header", y: 100, paragraphId: 8, clone: false),
+            ],
+            matchLimit: 2
+        )
 
         search.search(text: "header")
 
@@ -190,6 +200,27 @@ final class HwpSearchBudgetTests: XCTestCase {
         expect(search.matches.map(\.paragraphId)) == [7, 8]
         // 하이라이트에는 클론이 그대로 남는다
         expect(search.highlightMatches.count) == 3
+    }
+
+    /// 한 쪽 안에서도 자르는 지점은 **단위 경계**여야 한다. 클론이 raw 예산을
+    /// 채우면 그 쪽의 뒤 단위가 통째로 안 훑기는데, dedup 이 클론을 버려 목록은
+    /// 안 늘고 절단 표시도 안 서므로 고유 매치가 조용히 빠진 채 `.complete` 로
+    /// 발행된다 (#75 리뷰 7차).
+    func testClonesDoNotStarveLaterUnitsOnSamePage() async {
+        let (_, search) = Self.makeAttached(
+            blocks: [
+                Self.paragraphBlock("hit", y: 20, paragraphId: 7, clone: false),
+                Self.paragraphBlock("hit hit hit", y: 60, paragraphId: 7, clone: true),
+                Self.paragraphBlock("hit", y: 100, paragraphId: 9, clone: false),
+            ],
+            matchLimit: 2
+        )
+
+        search.search(text: "hit")
+
+        await expect(search.phase).toEventually(equal(.complete), timeout: .seconds(2))
+        expect(search.matches.map(\.paragraphId)) == [7, 9]
+        expect(search.highlightMatches.count) == 5
     }
 
     // MARK: - 캐시 축출 훅

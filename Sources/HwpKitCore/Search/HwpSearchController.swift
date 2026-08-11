@@ -395,14 +395,33 @@ public final class HwpSearchController {
         }
     }
 
+    /// 스캔이 페이지를 넘나들며 들고 다니는 누적 상태 — 하이라이트 전량과
+    /// dedup 된 목록, 그리고 그 목록에 기여한 문단들.
+    ///
+    /// 기여 집합을 목록에서 **파생**시켜 둘이 어긋날 여지를 없앤다: dedup 은
+    /// "이 문단이 이미 목록에 기여했는가"로 판정하므로, 집합이 목록과 갈리면
+    /// 클론이 원본 행세를 하거나 원본이 클론으로 몰려 사라진다.
+    private struct ScanState {
+        var collected: [HwpSearchMatch]
+        var navigable: [HwpSearchMatch]
+        var contributedParagraphIds: Set<UInt32>
+
+        init(collected: [HwpSearchMatch], navigable: [HwpSearchMatch]) {
+            self.collected = collected
+            self.navigable = navigable
+            contributedParagraphIds = Set(navigable.compactMap(\.paragraphId))
+        }
+    }
+
     private func runScan(pages: Range<Int>, appending: Bool) async {
         guard let geometry else { return }
-        var collected = appending ? highlightMatches : []
         // 예산은 **목록 기준**이다 — 클론까지 세면 publish 가 걷어낼 항목에
         // 상한을 쓴다. 이어받는 집합은 발행된 목록에서 되살린다 (그 목록에
         // 남은 문단은 곧 그때 기여한 문단이다).
-        var navigable = appending ? matches : []
-        var contributedParagraphIds = Set(navigable.compactMap(\.paragraphId))
+        var state = ScanState(
+            collected: appending ? highlightMatches : [],
+            navigable: appending ? matches : []
+        )
         let query = storedQuery
         var scannedThrough = pages.lowerBound
 
@@ -410,27 +429,17 @@ public final class HwpSearchController {
             if Task.isCancelled {
                 return
             }
-            let remaining = probeLimit > 0 ? probeLimit - navigable.count : 0
-            if probeLimit > 0, remaining <= 0 {
+            if probeLimit > 0, state.navigable.count >= probeLimit {
                 break
             }
 
-            // 페이지 상한은 raw 기준으로 넘긴다 — raw ≥ 목록이라 상위집합이고,
-            // 한 쪽이 클론만 내놓으면 목록이 안 늘어 다음 쪽으로 계속 간다.
-            let pageMatches = HwpTextSearcher.matches(
-                in: geometry.units(forPage: pageIndex),
-                pageIndex: pageIndex,
+            scanPage(
+                pageIndex,
+                units: geometry.units(forPage: pageIndex),
                 query: query,
-                matchLimit: remaining,
-                snippetPadding: snippetPadding
+                into: &state
             )
-            collected += pageMatches
-            HwpTextSearcher.appendDeduplicating(
-                pageMatches,
-                into: &navigable,
-                contributedParagraphIds: &contributedParagraphIds
-            )
-            if matchLimit > 0, navigable.count > matchLimit {
+            if matchLimit > 0, state.navigable.count > matchLimit {
                 didObserveOmittedMatch = true
             }
             scannedPageCount = pageIndex + 1
@@ -438,8 +447,8 @@ public final class HwpSearchController {
 
             if shouldPublishNow() {
                 publish(
-                    highlights: collected,
-                    navigable: limitedForPublication(navigable),
+                    highlights: state.collected,
+                    navigable: limitedForPublication(state.navigable),
                     phase: .scanning,
                     scannedThrough: scannedThrough
                 )
@@ -455,11 +464,53 @@ public final class HwpSearchController {
         }
         evictScannedUnits()
         publish(
-            highlights: collected,
-            navigable: limitedForPublication(navigable),
+            highlights: state.collected,
+            navigable: limitedForPublication(state.navigable),
             phase: didObserveOmittedMatch ? .truncated : .complete,
             scannedThrough: scannedThrough
         )
+    }
+
+    /// 한 페이지를 **단위 단위**로 훑는다 — 그 입도가 곧 dedup 입도다.
+    ///
+    /// 페이지를 통째로 raw 상한에 걸어 자르면 안 된다: 한 쪽이 클론으로
+    /// 시작하면 클론이 raw 예산을 채워 스캔이 거기서 멈추고, **그 쪽의 뒤
+    /// 단위는 아예 안 훑긴 채** 발행 접두가 그 쪽을 넘어간다. dedup 이 클론을
+    /// 버려 목록은 안 늘고 절단 표시도 안 서므로, 고유 매치가 조용히 빠진 채
+    /// `.complete` 로 발행된다 (#75 리뷰 7차).
+    ///
+    /// 그래서 멈추는 판정은 **목록**이 하고, 자르는 지점은 단위 경계뿐이다.
+    /// 단위 안에서 자르지 않으니 dedup 이 반쪽 그룹을 보고 판정하는 일도 없다.
+    ///
+    /// 단위별 raw 상한이 남은 예산이 아니라 `probeLimit` 인 이유: 한 단위가
+    /// **혼자** 예산 전체를 넘겼을 때만 잘린다. 그 단위가 목록에 실리면 어차피
+    /// 상한을 넘겨 스캔이 끝나고, 클론이라 버려지면 목록이 안 늘어 다음 단위로
+    /// 간다 — 잘리는 것은 상한 밖 클론 하이라이트뿐이다.
+    private func scanPage(
+        _ pageIndex: Int,
+        units: [HwpTextUnit],
+        query: HwpSearchQuery,
+        into state: inout ScanState
+    ) {
+        for unit in units {
+            let unitMatches = HwpTextSearcher.matches(
+                in: [unit],
+                pageIndex: pageIndex,
+                query: query,
+                matchLimit: probeLimit,
+                snippetPadding: snippetPadding
+            )
+            guard !unitMatches.isEmpty else { continue }
+            state.collected += unitMatches
+            HwpTextSearcher.appendDeduplicating(
+                unitMatches,
+                into: &state.navigable,
+                contributedParagraphIds: &state.contributedParagraphIds
+            )
+            if probeLimit > 0, state.navigable.count >= probeLimit {
+                return
+            }
+        }
     }
 
     /// 스캔이 채운 단위 캐시를 뷰가 요구한 범위로 되돌린다.
