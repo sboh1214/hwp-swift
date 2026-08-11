@@ -5,7 +5,8 @@ import Foundation
 import Nimble
 import XCTest
 
-/// 검색 세션(#75) — 단계 전이·증분 재스캔·순환 탐색·클램프 방어·축출 훅.
+/// 검색 세션(#75) — 단계 전이·증분 재스캔·순환 탐색·클램프 방어·해체.
+/// 매치 상한과 캐시 축출은 `HwpSearchBudgetTests` 가 본다.
 @MainActor
 final class HwpSearchControllerTests: XCTestCase {
     private static let font = CTFontCreateWithName("Helvetica" as CFString, 12, nil)
@@ -88,84 +89,6 @@ final class HwpSearchControllerTests: XCTestCase {
         await expect(search.phase).toEventually(equal(.complete), timeout: .seconds(2))
         expect(search.matchCount) == 0
         expect(search.currentMatchIndex).to(beNil())
-    }
-
-    /// `.truncated`가 `.complete`와 갈리는 것이 이 상태의 존재 이유다 —
-    /// 표시된 개수가 전부가 아니라는 사실을 호스트가 알아야 한다.
-    func testTruncatesAtMatchLimit() async {
-        let (_, search) = Self.makeAttached(
-            pageTexts: (0 ..< 5).map { _ in "hit hit hit hit" }
-        )
-        search.matchLimit = 6
-
-        search.search(text: "hit")
-
-        await expect(search.phase).toEventually(equal(.truncated), timeout: .seconds(2))
-        expect(search.matchCount) == 6
-    }
-
-    /// 상한과 총계가 정확히 같으면 빠뜨린 것이 없다 — `count >= limit` 로
-    /// 판정하면 검색 바가 "1 of 1+"를 띄운다 (#75 리뷰 3차).
-    func testExactMatchLimitReportsCompleteNotTruncated() async {
-        let (_, search) = Self.makeAttached(pageTexts: ["hit"])
-        search.matchLimit = 1
-
-        search.search(text: "hit")
-
-        await expect(search.phase).toEventually(equal(.complete), timeout: .seconds(2))
-        expect(search.matchCount) == 1
-    }
-
-    /// 넘침 증거(probe 로 본 상한+1)는 발행 접두에 남지 않는다 — append 가
-    /// 거기서 이어받으므로 상태로 지속하지 않으면 뒤 페이지에 매치가 없을 때
-    /// "1 of 1+"가 "1 of 1"로 뒤집힌다 (#75 리뷰 4차).
-    func testTruncationSurvivesProgressiveAppends() async {
-        let token = UUID()
-        let selection = HwpSelectionController()
-        selection.setDocument(
-            Self.document(pageTexts: ["hit hit"], loadToken: token, isComplete: false),
-            preservingSelection: false
-        )
-        let search = HwpSearchController()
-        search.publishInterval = .zero
-        search.matchLimit = 1
-        search.attach(to: selection)
-        search.search(text: "hit")
-        await expect(search.phase).toEventually(equal(.truncated), timeout: .seconds(2))
-
-        // 매치가 없는 페이지가 붙어도 절단은 그대로다
-        selection.setDocument(
-            Self.document(
-                pageTexts: ["hit hit", "nothing here"], loadToken: token, isComplete: false
-            ),
-            preservingSelection: true
-        )
-
-        await expect(search.phase).toEventuallyNot(equal(.scanning), timeout: .seconds(2))
-        expect(search.phase) == .truncated
-
-        // 동일 개수 최종 스냅샷(빈 구간 append)도 마찬가지다
-        selection.setDocument(
-            Self.document(
-                pageTexts: ["hit hit", "nothing here"], loadToken: token, isComplete: true
-            ),
-            preservingSelection: true
-        )
-
-        await expect(search.phase).toEventuallyNot(equal(.scanning), timeout: .seconds(2))
-        expect(search.phase) == .truncated
-        expect(search.matchCount) == 1
-    }
-
-    /// 상한을 하나 넘겨 훑으므로 `Int.max` 에서 덧셈이 터지지 않아야 한다.
-    func testExtremeMatchLimitDoesNotTrap() async {
-        let (_, search) = Self.makeAttached(pageTexts: ["hit hit"])
-        search.matchLimit = .max
-
-        search.search(text: "hit")
-
-        await expect(search.phase).toEventually(equal(.complete), timeout: .seconds(2))
-        expect(search.matchCount) == 2
     }
 
     // MARK: - 증분 재스캔
@@ -489,33 +412,6 @@ final class HwpSearchControllerTests: XCTestCase {
 
         expect(afterScan) > initial
         expect(search.revision) > afterScan
-    }
-
-    // MARK: - 캐시 축출 훅
-
-    /// nil이면 축출하지 않는다 — 엔진만 쓰는 배치 인덱싱은 전량 상주가 맞다.
-    func testDoesNotEvictWhenNoRetainedRangeProvided() async {
-        let (selection, search) = Self.makeAttached(
-            pageTexts: (0 ..< 40).map { "hit page \($0)" }
-        )
-
-        search.search(text: "hit")
-        await expect(search.phase).toEventually(equal(.complete), timeout: .seconds(2))
-
-        expect(selection.geometry?.unitCache.count) == 40
-    }
-
-    func testEvictsScannedUnitsOutsideRetainedRange() async {
-        let (selection, search) = Self.makeAttached(
-            pageTexts: (0 ..< 40).map { "hit page \($0)" }
-        )
-        search.retainedPageRange = { 0 ..< 3 }
-
-        search.search(text: "hit")
-        await expect(search.phase).toEventually(equal(.complete), timeout: .seconds(2))
-
-        expect(search.matchCount) == 40
-        expect(selection.geometry?.unitCache.count) == 3
     }
 
     // MARK: - clear
