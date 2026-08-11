@@ -349,6 +349,29 @@ final class HwpSearchControllerTests: XCTestCase {
         expect(reported.last) == 4
     }
 
+    /// nil-token 문서는 `setDocument` 의 조기 반환에 걸리지 않아 SwiftUI
+    /// 업데이트마다 같은 내용으로 다시 온다. 그때 재스캔하면 현재 매치가 첫
+    /// 매치로 되돌아가, `currentPage` 바인딩을 쓰는 호스트에서는 쪽을 넘는
+    /// 탐색이 아예 불가능해진다 (#75 리뷰 6차).
+    func testEquivalentNilTokenRefreshKeepsCurrentMatch() async {
+        let (selection, search) = Self.makeAttached(pageTexts: ["hit one", "hit two"])
+        search.search(text: "hit")
+        await expect(search.phase).toEventually(equal(.complete), timeout: .seconds(2))
+        search.next()
+        expect(search.currentMatchIndex) == 1
+
+        selection.setDocument(
+            Self.document(pageTexts: ["hit one", "hit two"]),
+            preservingSelection: true
+        )
+
+        expect(search.currentMatchIndex) == 1
+        expect(search.matchCount) == 2
+        expect(search.phase) == .complete
+        // 새로 만들어진 지오메트리로도 좌표가 나온다
+        expect(search.currentMatchRects(forPage: 1)).toNot(beEmpty())
+    }
+
     // MARK: - 목록 vs 하이라이트
 
     /// 목록은 dedup, 하이라이트는 전량 — 기존 `plainText` 정책과 같다.

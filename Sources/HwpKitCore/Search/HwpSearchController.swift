@@ -335,6 +335,13 @@ public final class HwpSearchController {
     private static let yieldInterval = 16
 
     private func geometryDidChange(_ change: HwpGeometryChange) {
+        if change.isEquivalentRefresh {
+            // 좌표계가 그대로라 기존 매치가 전부 유효하다 — rect 만 새 지오메트리로
+            // 다시 계산되면 된다. 여기서 다시 훑으면 현재 매치가 첫 매치로
+            // 되돌아가는데, nil-token 문서는 SwiftUI 업데이트마다 이 사건이
+            // 오므로 쪽을 넘는 탐색이 아예 불가능해진다 (#75 리뷰 6차).
+            return
+        }
         if change.isProgressiveAppend, !storedQuery.isEmpty, phase != .idle {
             // 기존 페이지의 조판·오프셋은 그대로 유효하다 — 늘어난 구간만 본다.
             // 프로그레시브 로딩은 스냅샷이 수십 회 오므로, 여기서 전량
@@ -391,6 +398,11 @@ public final class HwpSearchController {
     private func runScan(pages: Range<Int>, appending: Bool) async {
         guard let geometry else { return }
         var collected = appending ? highlightMatches : []
+        // 예산은 **목록 기준**이다 — 클론까지 세면 publish 가 걷어낼 항목에
+        // 상한을 쓴다. 이어받는 집합은 발행된 목록에서 되살린다 (그 목록에
+        // 남은 문단은 곧 그때 기여한 문단이다).
+        var navigable = appending ? matches : []
+        var contributedParagraphIds = Set(navigable.compactMap(\.paragraphId))
         let query = storedQuery
         var scannedThrough = pages.lowerBound
 
@@ -398,19 +410,27 @@ public final class HwpSearchController {
             if Task.isCancelled {
                 return
             }
-            let remaining = probeLimit > 0 ? probeLimit - collected.count : 0
+            let remaining = probeLimit > 0 ? probeLimit - navigable.count : 0
             if probeLimit > 0, remaining <= 0 {
                 break
             }
 
-            collected += HwpTextSearcher.matches(
+            // 페이지 상한은 raw 기준으로 넘긴다 — raw ≥ 목록이라 상위집합이고,
+            // 한 쪽이 클론만 내놓으면 목록이 안 늘어 다음 쪽으로 계속 간다.
+            let pageMatches = HwpTextSearcher.matches(
                 in: geometry.units(forPage: pageIndex),
                 pageIndex: pageIndex,
                 query: query,
                 matchLimit: remaining,
                 snippetPadding: snippetPadding
             )
-            if matchLimit > 0, collected.count > matchLimit {
+            collected += pageMatches
+            HwpTextSearcher.appendDeduplicating(
+                pageMatches,
+                into: &navigable,
+                contributedParagraphIds: &contributedParagraphIds
+            )
+            if matchLimit > 0, navigable.count > matchLimit {
                 didObserveOmittedMatch = true
             }
             scannedPageCount = pageIndex + 1
@@ -418,7 +438,8 @@ public final class HwpSearchController {
 
             if shouldPublishNow() {
                 publish(
-                    limitedForPublication(collected),
+                    highlights: collected,
+                    navigable: limitedForPublication(navigable),
                     phase: .scanning,
                     scannedThrough: scannedThrough
                 )
@@ -434,7 +455,8 @@ public final class HwpSearchController {
         }
         evictScannedUnits()
         publish(
-            limitedForPublication(collected),
+            highlights: collected,
+            navigable: limitedForPublication(navigable),
             phase: didObserveOmittedMatch ? .truncated : .complete,
             scannedThrough: scannedThrough
         )
@@ -471,26 +493,26 @@ public final class HwpSearchController {
     }
 
     private func publish(
-        _ collected: [HwpSearchMatch],
+        highlights: [HwpSearchMatch],
+        navigable: [HwpSearchMatch],
         phase: HwpSearchPhase,
         scannedThrough: Int
     ) {
         lastPublish = ContinuousClock.now
         publishedPageUpperBound = scannedThrough
-        highlightMatches = collected
-        let deduped = HwpTextSearcher.deduplicatingRepeatedTableHeaders(collected)
+        highlightMatches = highlights
         let previousCurrent = currentMatch
-        matches = deduped
+        matches = navigable
         self.phase = phase
 
         // 스캔 중에는 현재 매치를 **재배치하지 않는다** — 앞 페이지 결과가
         // 뒤에 붙는 구조라 인덱스가 흔들리지 않고, 사용자가 이미 골라 둔
         // 매치를 스캔 진행이 빼앗지 않는다.
-        if let previousCurrent, let index = deduped.firstIndex(of: previousCurrent) {
+        if let previousCurrent, let index = navigable.firstIndex(of: previousCurrent) {
             currentMatchIndex = index
-        } else if currentMatchIndex != nil, deduped.isEmpty {
+        } else if currentMatchIndex != nil, navigable.isEmpty {
             currentMatchIndex = nil
-        } else if currentMatchIndex == nil, !deduped.isEmpty {
+        } else if currentMatchIndex == nil, !navigable.isEmpty {
             currentMatchIndex = 0
             bumpRevision()
             onMatchesChanged?()

@@ -96,6 +96,23 @@ public enum HwpTextSearcher {
     ) -> [HwpSearchMatch] {
         var contributedParagraphIds = Set<UInt32>()
         var results: [HwpSearchMatch] = []
+        appendDeduplicating(
+            matches, into: &results, contributedParagraphIds: &contributedParagraphIds
+        )
+        return results
+    }
+
+    /// 위 dedup 의 증분판 — 스캔이 페이지마다 부른다.
+    ///
+    /// 단위는 쪽 경계를 넘지 않으므로 (`unitKey` 에 pageIndex 가 들어 있다)
+    /// 페이지 단위로 나눠 먹여도 한 번에 훑은 것과 결과가 같다. 매치 상한을
+    /// **목록 기준**으로 세려면 스캔이 이 결과를 손에 들고 있어야 한다 —
+    /// 클론까지 세면 나중에 버려질 항목에 예산을 쓴다.
+    static func appendDeduplicating(
+        _ matches: [HwpSearchMatch],
+        into results: inout [HwpSearchMatch],
+        contributedParagraphIds: inout Set<UInt32>
+    ) {
         var index = matches.startIndex
         while index < matches.endIndex {
             let key = matches[index].unitKey
@@ -116,7 +133,6 @@ public enum HwpTextSearcher {
             }
             results.append(contentsOf: group)
         }
-        return results
     }
 
     // MARK: - 단위 스캔

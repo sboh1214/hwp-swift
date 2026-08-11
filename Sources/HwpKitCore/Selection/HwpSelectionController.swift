@@ -12,10 +12,25 @@ public struct HwpGeometryChange: Sendable, Hashable {
     /// 교체·nil-token 문서·페이지 감소는 전부 false다.
     public let isProgressiveAppend: Bool
 
-    public init(previousPageCount: Int, pageCount: Int, isProgressiveAppend: Bool) {
+    /// 내용이 같은 문서로 지오메트리만 새로 만든 것인가.
+    ///
+    /// `==` 는 블록의 텍스트·payload·역할까지 비교하므로 참이면 검색 좌표계
+    /// (쪽·블록·단위·오프셋)가 **그대로**다 — 다를 수 있는 것은 색·폰트 같은
+    /// 렌더 속성뿐이고 그것은 rect 재계산으로 흡수된다. nil-token 문서는
+    /// 위 `setDocument` 의 조기 반환에 걸리지 않아 SwiftUI 업데이트마다 이
+    /// 사건이 온다.
+    public let isEquivalentRefresh: Bool
+
+    public init(
+        previousPageCount: Int,
+        pageCount: Int,
+        isProgressiveAppend: Bool,
+        isEquivalentRefresh: Bool = false
+    ) {
         self.previousPageCount = previousPageCount
         self.pageCount = pageCount
         self.isProgressiveAppend = isProgressiveAppend
+        self.isEquivalentRefresh = isEquivalentRefresh
     }
 }
 
@@ -45,6 +60,7 @@ public final class HwpSelectionController {
         }
         let previousPageCount = backingDocument?.pages.count ?? 0
         let previousToken = backingDocument?.metadata.loadToken
+        let previousDocument = backingDocument
         backingDocument = newValue
         geometry = newValue.map(HwpSelectionGeometry.init(document:))
         let pageCount = newValue?.pages.count ?? 0
@@ -65,7 +81,8 @@ public final class HwpSelectionController {
             // 리셋된다.
             isProgressiveAppend: previousToken != nil
                 && previousToken == token
-                && pageCount >= previousPageCount
+                && pageCount >= previousPageCount,
+            isEquivalentRefresh: newValue != nil && previousDocument == newValue
         ))
         if preservingSelection, selection != nil {
             onSelectionChanged?()

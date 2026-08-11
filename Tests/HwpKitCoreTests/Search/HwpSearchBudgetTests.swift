@@ -138,6 +138,60 @@ final class HwpSearchBudgetTests: XCTestCase {
         expect(search.matchCount) == 2
     }
 
+    /// 예산은 **목록 기준**이다. 클론이 상한을 쓰면 뒤의 고유 매치가 노출되지
+    /// 않고, 빠뜨린 고유 매치가 없는데도 잘렸다고 보고한다 (#75 리뷰 6차).
+    func testMatchLimitCountsDeduplicatedResults() async {
+        let cloneAttributes: [NSAttributedString.Key: Any] = [
+            kCTFontAttributeName as NSAttributedString.Key: Self.font,
+            HwpAttributedStringKey.repeatedTableHeaderClone: true,
+        ]
+        func block(_ text: String, y: CGFloat, paragraphId: UInt32, clone: Bool) -> AnyHwpBlock {
+            AnyHwpBlock(
+                frame: CGRect(x: 10, y: y, width: 400, height: 20),
+                kind: .text,
+                attributedString: NSAttributedString(
+                    string: text,
+                    attributes: clone
+                        ? cloneAttributes
+                        : [kCTFontAttributeName as NSAttributedString.Key: Self.font]
+                ),
+                source: HwpBlockSource(paragraphId: paragraphId),
+                role: .body
+            )
+        }
+        let selection = HwpSelectionController()
+        selection.setDocument(
+            HwpDocument(
+                pages: [HwpPage(
+                    size: CGSize(width: 595, height: 842),
+                    margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
+                    blocks: [
+                        block("header", y: 20, paragraphId: 7, clone: false),
+                        block("header", y: 60, paragraphId: 7, clone: true),
+                        block("header", y: 100, paragraphId: 8, clone: false),
+                    ],
+                    pageNumber: 1
+                )],
+                metadata: HwpDocumentMetadata(pageCount: 1),
+                unsupportedElements: []
+            ),
+            preservingSelection: false
+        )
+        let search = HwpSearchController()
+        search.publishInterval = .zero
+        search.matchLimit = 2
+        search.attach(to: selection)
+
+        search.search(text: "header")
+
+        await expect(search.phase).toEventually(equal(.complete), timeout: .seconds(2))
+        // 고유 매치 둘이 상한에 들어간다 — 클론이 자리를 차지하지 않는다
+        expect(search.matchCount) == 2
+        expect(search.matches.map(\.paragraphId)) == [7, 8]
+        // 하이라이트에는 클론이 그대로 남는다
+        expect(search.highlightMatches.count) == 3
+    }
+
     // MARK: - 캐시 축출 훅
 
     /// nil이면 축출하지 않는다 — 엔진만 쓰는 배치 인덱싱은 전량 상주가 맞다.
