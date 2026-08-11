@@ -23,7 +23,15 @@ public struct HwpSearchSnippet: Sendable, Hashable {
 /// 매치는 **하나의 `HwpTextUnit` 안에서만** 성립한다 — anchor/focus의
 /// (pageIndex, blockIndex, unitIndex)가 같다. 단·쪽 분할로 갈라진 문단이나
 /// 표 셀 경계를 가로지르는 질의는 잡히지 않는다 (v1 한계).
-public struct HwpSearchMatch: Sendable, Hashable, Comparable, Identifiable {
+/// **`Comparable` 은 채택하지 않는다.** 자연스러운 순서는 `start` 하나뿐인데
+/// 동등성은 네 축(선택·paraId·클론 표식·스니펫)을 보므로, `<` 를 start 로만
+/// 정의하면 "둘 다 작지 않은데 같지도 않은" 쌍이 생겨 `Comparable` 이 요구하는
+/// **전순서**가 깨진다 (#75 리뷰 12차). 나머지 축까지 tie-break 하면 스니펫
+/// 문자열에 의미 없는 순서를 새기고, `==` 에 필드가 늘 때마다 `<` 도 함께
+/// 고쳐야 하는 함정이 남는다. 문서 순서가 필요하면 `start` 로 비교할 것 —
+/// `HwpTextPosition` 은 네 필드를 모두 보는 온전한 전순서다
+/// (`sorted { $0.start < $1.start }`).
+public struct HwpSearchMatch: Sendable, Hashable, Identifiable {
     public let selection: HwpTextSelection
     /// 출처 문단 식별자 — 반복 표 머리행 dedup의 판정 키.
     public let paragraphId: UInt32?
@@ -66,10 +74,6 @@ public struct HwpSearchMatch: Sendable, Hashable, Comparable, Identifiable {
     /// 호스트가 결과 목록에 "p. 12"를 찍을 때 +1을 직접 하지 않아도 된다.
     public var pageNumber: Int {
         pageIndex + 1
-    }
-
-    public static func < (lhs: HwpSearchMatch, rhs: HwpSearchMatch) -> Bool {
-        lhs.selection.range.start < rhs.selection.range.start
     }
 
     /// 이 매치가 속한 텍스트 단위. 반복 머리행 dedup이 **단위 단위**로

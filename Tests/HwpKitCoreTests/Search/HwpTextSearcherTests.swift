@@ -98,7 +98,9 @@ final class HwpTextSearcherTests: XCTestCase {
         ])
 
         expect(matches.count) == 3
-        expect(matches) == matches.sorted()
+        // 매치 자체는 정렬하지 않는다 — `Comparable` 을 안 채택하고, 문서 순서는
+        // `start` 로 본다 (`HwpSearchMatch` 선언부, #75 리뷰 12차).
+        expect(matches.map(\.start)) == matches.map(\.start).sorted()
     }
 
     // MARK: - 스코프
