@@ -33,6 +33,21 @@ public struct HwpTextboxFrame: @unchecked Sendable, Hashable {
         self.shapes = shapes
     }
 
+    /// 문단만 바꾼 사본 — 반복 머리행 클론 표식을 다는 경로가 쓴다 (#75 리뷰 8차).
+    /// 손으로 재구성하면 테두리·채움·개체 필드를 떨어뜨린다 (R52와 같은 이유로
+    /// 관례가 아니라 타입으로 막는다).
+    public func withParagraphs(_ paragraphs: [HwpLaidOutParagraph]) -> HwpTextboxFrame {
+        HwpTextboxFrame(
+            outerFrame: outerFrame,
+            paragraphs: paragraphs,
+            borderColor: borderColor,
+            borderWidth: borderWidth,
+            fillColor: fillColor,
+            images: images,
+            shapes: shapes
+        )
+    }
+
     /// 하위 호환: 문단 지오메트리만 필요할 때
     public var paragraphFrames: [HwpParagraphFrame] {
         paragraphs.map(\.frame)

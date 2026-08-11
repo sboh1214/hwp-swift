@@ -33,12 +33,27 @@ public struct HwpLaidOutParagraph: @unchecked Sendable {
 }
 
 extension HwpLaidOutParagraph: Hashable {
+    /// 반복 표 머리행 클론 표식. `attributedString` 의 **속성**이라 문자열
+    /// 비교로는 안 잡히는데, 검색 목록 dedup 과 복사(`plainText`)가 이 값으로
+    /// 판정한다.
+    ///
+    /// **동등성이 이 층에 있어야 하는 이유**: 실제 반복 머리행 블록은
+    /// top-level `attributedString` 이 nil 인 `.table` 이고 표식은 여기,
+    /// 셀 문단에 붙는다 (`HwpTableSplitter.markRepeatedHeader`). 그래서
+    /// `AnyHwpBlock` 쪽만 보면 프로덕션 문서에서는 늘 false 라, 표식만 뒤집힌
+    /// 재전달이 "같은 내용"으로 접혀 목록이 옛 분류에 머문다 (#75 리뷰 8차).
+    /// 판정은 선택·검색과 **같은 술어**를 쓴다.
+    var isRepeatedTableHeaderClone: Bool {
+        HwpSelectionGeometry.isRepeatedHeaderClone(attributedString)
+    }
+
     public static func == (lhs: HwpLaidOutParagraph, rhs: HwpLaidOutParagraph) -> Bool {
         lhs.paragraphId == rhs.paragraphId
             && lhs.rect == rhs.rect
             && lhs.frame == rhs.frame
             && lhs.hyperlinkURL == rhs.hyperlinkURL
             && lhs.attributedString.string == rhs.attributedString.string
+            && lhs.isRepeatedTableHeaderClone == rhs.isRepeatedTableHeaderClone
     }
 
     public func hash(into hasher: inout Hasher) {
@@ -49,6 +64,7 @@ extension HwpLaidOutParagraph: Hashable {
         hasher.combine(rect.size.height)
         hasher.combine(hyperlinkURL)
         hasher.combine(attributedString.string)
+        hasher.combine(isRepeatedTableHeaderClone)
     }
 }
 
