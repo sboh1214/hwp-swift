@@ -283,6 +283,30 @@ final class HwpSearchBudgetTests: XCTestCase {
         expect(observed).to(beNil())
     }
 
+    /// `detach()` 뒤에는 진행 중이던 스캔이 결과를 **되살리지 못한다**. 배치
+    /// 분할이 만들 수 있는 구멍이 이것이다 — 취소를 배치 경계에서만 보면 뗀
+    /// 뒤에도 남은 쪽을 계속 훑다가 발행해, idle 로 되돌린 결과·단계가 다시
+    /// 채워진다 (#75 리뷰 11차).
+    func testDetachDuringScanDoesNotRepublish() async {
+        let (_, search) = Self.makeAttached(
+            pageTexts: (0 ..< 400).map { "hit page \($0)" }
+        )
+        search.search(text: "hit")
+        // 스캔이 진행 중인 지점에서 뗀다
+        await Task.yield()
+        search.detach()
+        expect(search.phase) == .idle
+
+        // 취소된 스캔이 계속 돌 기회를 넉넉히 준다
+        for _ in 0 ..< 20 {
+            await Task.yield()
+        }
+
+        expect(search.phase) == .idle
+        expect(search.matchCount) == 0
+        expect(search.highlightMatches).to(beEmpty())
+    }
+
     // MARK: - 캐시 축출 훅
 
     /// nil이면 축출하지 않는다 — 엔진만 쓰는 배치 인덱싱은 전량 상주가 맞다.
