@@ -116,6 +116,47 @@ final class HwpSearchControllerTests: XCTestCase {
         expect(search.matchCount) == 1
     }
 
+    /// 넘침 증거(probe 로 본 상한+1)는 발행 접두에 남지 않는다 — append 가
+    /// 거기서 이어받으므로 상태로 지속하지 않으면 뒤 페이지에 매치가 없을 때
+    /// "1 of 1+"가 "1 of 1"로 뒤집힌다 (#75 리뷰 4차).
+    func testTruncationSurvivesProgressiveAppends() async {
+        let token = UUID()
+        let selection = HwpSelectionController()
+        selection.setDocument(
+            Self.document(pageTexts: ["hit hit"], loadToken: token, isComplete: false),
+            preservingSelection: false
+        )
+        let search = HwpSearchController()
+        search.publishInterval = .zero
+        search.matchLimit = 1
+        search.attach(to: selection)
+        search.search(text: "hit")
+        await expect(search.phase).toEventually(equal(.truncated), timeout: .seconds(2))
+
+        // 매치가 없는 페이지가 붙어도 절단은 그대로다
+        selection.setDocument(
+            Self.document(
+                pageTexts: ["hit hit", "nothing here"], loadToken: token, isComplete: false
+            ),
+            preservingSelection: true
+        )
+
+        await expect(search.phase).toEventuallyNot(equal(.scanning), timeout: .seconds(2))
+        expect(search.phase) == .truncated
+
+        // 동일 개수 최종 스냅샷(빈 구간 append)도 마찬가지다
+        selection.setDocument(
+            Self.document(
+                pageTexts: ["hit hit", "nothing here"], loadToken: token, isComplete: true
+            ),
+            preservingSelection: true
+        )
+
+        await expect(search.phase).toEventuallyNot(equal(.scanning), timeout: .seconds(2))
+        expect(search.phase) == .truncated
+        expect(search.matchCount) == 1
+    }
+
     /// 상한을 하나 넘겨 훑으므로 `Int.max` 에서 덧셈이 터지지 않아야 한다.
     func testExtremeMatchLimitDoesNotTrap() async {
         let (_, search) = Self.makeAttached(pageTexts: ["hit hit"])

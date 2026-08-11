@@ -187,6 +187,7 @@ public final class HwpSearchController {
         phase = .idle
         scannedPageCount = 0
         publishedPageUpperBound = 0
+        didObserveOmittedMatch = false
         bumpRevision()
         onMatchesChanged?()
         onCurrentMatchChanged?(nil)
@@ -254,6 +255,7 @@ public final class HwpSearchController {
         pageCount = 0
         scannedPageCount = 0
         publishedPageUpperBound = 0
+        didObserveOmittedMatch = false
         matches = []
         highlightMatches = []
         currentMatchIndex = nil
@@ -304,6 +306,16 @@ public final class HwpSearchController {
     @ObservationIgnored
     private var publishedPageUpperBound = 0
 
+    /// 상한을 넘긴 매치를 **실제로 본 적이 있는가**.
+    ///
+    /// 발행은 상한까지만 자르므로 `highlightMatches` 에는 그 증거가 남지 않는데,
+    /// append 스캔은 바로 그 배열에서 이어받는다. 상태로 들고 있지 않으면 뒤
+    /// 페이지에 매치가 더 없을 때 (동일 개수 최종 스냅샷 포함) `.truncated` 가
+    /// `.complete` 로 뒤집혀, 빠뜨린 매치가 있는데 다 찾았다고 보고한다.
+    /// 전량 재스캔·해체에서만 내려간다.
+    @ObservationIgnored
+    private var didObserveOmittedMatch = false
+
     private var geometry: HwpSelectionGeometry? {
         selection?.geometry
     }
@@ -352,6 +364,7 @@ public final class HwpSearchController {
             currentMatchIndex = nil
             scannedPageCount = 0
             publishedPageUpperBound = 0
+            didObserveOmittedMatch = false
         }
         phase = .scanning
         let requested = pages ?? 0 ..< pageCount
@@ -387,6 +400,9 @@ public final class HwpSearchController {
                 matchLimit: remaining,
                 snippetPadding: snippetPadding
             )
+            if matchLimit > 0, collected.count > matchLimit {
+                didObserveOmittedMatch = true
+            }
             scannedPageCount = pageIndex + 1
             scannedThrough = pageIndex + 1
 
@@ -409,7 +425,7 @@ public final class HwpSearchController {
         evictScannedUnits()
         publish(
             limitedForPublication(collected),
-            phase: matchLimit > 0 && collected.count > matchLimit ? .truncated : .complete,
+            phase: didObserveOmittedMatch ? .truncated : .complete,
             scannedThrough: scannedThrough
         )
     }
