@@ -15,24 +15,36 @@ import XCTest
 final class HwpSearchNormalizationTests: XCTestCase {
     private static let font = CTFontCreateWithName("Helvetica" as CFString, 12, nil)
 
-    private static func matches(in text: String, for query: String) -> [HwpSearchMatch] {
-        let block = AnyHwpBlock(
-            frame: CGRect(x: 10, y: 20, width: 400, height: 20),
-            kind: .text,
-            attributedString: NSAttributedString(
-                string: text,
-                attributes: [kCTFontAttributeName as NSAttributedString.Key: Self.font]
-            ),
-            role: .body
-        )
-        let page = HwpPage(
+    private static func page(text: String) -> HwpPage {
+        HwpPage(
             size: CGSize(width: 595, height: 842),
             margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
-            blocks: [block],
+            blocks: [AnyHwpBlock(
+                frame: CGRect(x: 10, y: 20, width: 400, height: 20),
+                kind: .text,
+                attributedString: NSAttributedString(
+                    string: text,
+                    attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
+                ),
+                role: .body
+            )],
             pageNumber: 1
         )
-        return HwpTextSearcher.matches(
-            in: page, pageIndex: 0, query: HwpSearchQuery(text: query)
+    }
+
+    /// loadToken 이 nil 이라 `setDocument` 의 조기 반환에 걸리지 않는다 —
+    /// 재전달마다 지오메트리가 새로 만들어지는 그 경로다.
+    private static func document(text: String) -> HwpDocument {
+        HwpDocument(
+            pages: [page(text: text)],
+            metadata: HwpDocumentMetadata(pageCount: 1),
+            unsupportedElements: []
+        )
+    }
+
+    private static func matches(in text: String, for query: String) -> [HwpSearchMatch] {
+        HwpTextSearcher.matches(
+            in: page(text: text), pageIndex: 0, query: HwpSearchQuery(text: query)
         )
     }
 
@@ -113,5 +125,39 @@ final class HwpSearchNormalizationTests: XCTestCase {
 
         expect(found.count) == 1
         expect(found[0].selection.range.start.characterOffset) == 5
+    }
+
+    // MARK: - 재전달 (동등성)
+
+    /// 정규화 형태만 다른 재전달은 **같은 내용이 아니다**. 매칭은 NFD/NFC를
+    /// 일부러 동치로 보지만(위 절), 그 동치성을 **동등성**까지 끌고 가면
+    /// `isEquivalentRefresh` 가 재스캔을 건너뛰고 낡은 UTF-16 오프셋이 새
+    /// 문자열에 그대로 남아 하이라이트가 어긋난다 (#75 리뷰 9차).
+    @MainActor
+    func testNormalizationOnlyRedeliveryRescansOffsets() async {
+        let precomposed = "가나다 hit"
+        let decomposed = precomposed.decomposedStringWithCanonicalMapping
+        // 전제: Swift 문자열로는 같은데 UTF-16 오프셋은 밀린다
+        expect(precomposed) == decomposed
+        expect(precomposed.utf16.count) == 7
+        expect(decomposed.utf16.count) == 10
+
+        let selection = HwpSelectionController()
+        selection.setDocument(
+            Self.document(text: precomposed), preservingSelection: false
+        )
+        let search = HwpSearchController()
+        search.publishInterval = .zero
+        search.attach(to: selection)
+        search.search(text: "hit")
+        await expect(search.matchCount).toEventually(equal(1), timeout: .seconds(2))
+        expect(search.matches[0].start.characterOffset) == 4
+
+        selection.setDocument(
+            Self.document(text: decomposed), preservingSelection: true
+        )
+
+        await expect(search.matches.first?.start.characterOffset)
+            .toEventually(equal(7), timeout: .seconds(2))
     }
 }

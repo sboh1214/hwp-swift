@@ -52,7 +52,9 @@ extension HwpLaidOutParagraph: Hashable {
             && lhs.rect == rhs.rect
             && lhs.frame == rhs.frame
             && lhs.hyperlinkURL == rhs.hyperlinkURL
-            && lhs.attributedString.string == rhs.attributedString.string
+            && HwpTextIdentity.isIdentical(
+                lhs.attributedString.string, rhs.attributedString.string
+            )
             && lhs.isRepeatedTableHeaderClone == rhs.isRepeatedTableHeaderClone
     }
 

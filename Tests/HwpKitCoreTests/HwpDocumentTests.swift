@@ -38,4 +38,26 @@ final class HwpDocumentTests: XCTestCase {
         expect(block(clone: false)) != block(clone: true)
         expect(block(clone: true)) == block(clone: true)
     }
+
+    /// 동등성은 정규 동치가 아니라 **UTF-16 동일성**이다. Swift `String ==` 로
+    /// 비교하면 NFC/NFD 가 같다고 나오는데, `characterOffset` 은 UTF-16
+    /// 오프셋이라 그 둘 사이에서 밀린다 (#75 리뷰 9차).
+    func testNormalizationDifferenceBreaksBlockEquality() {
+        func block(_ text: String) -> AnyHwpBlock {
+            AnyHwpBlock(
+                frame: .zero,
+                kind: .text,
+                attributedString: NSAttributedString(string: text)
+            )
+        }
+        let precomposed = "가나다"
+        let decomposed = precomposed.decomposedStringWithCanonicalMapping
+        expect(precomposed) == decomposed
+        expect(precomposed.utf16.count) != decomposed.utf16.count
+
+        expect(block(precomposed)) != block(decomposed)
+        // hash 는 정규 해시 그대로 둔다 — == 가 더 엄격하므로
+        // (동일 ⟹ 정규 동치 ⟹ 같은 해시) Hashable 계약은 유지된다
+        expect(block(precomposed).hashValue) == block(decomposed).hashValue
+    }
 }

@@ -28,6 +28,24 @@ public enum HwpBlockPaintPlane: Int, Sendable, Hashable, Comparable {
     }
 }
 
+/// 렌더 모델 동등성이 쓰는 **문자열 동일성** 판정.
+///
+/// Swift `String ==` 는 정규 동치라 NFC "가"(UTF-16 1 단위)와 NFD "가"(2 단위)를
+/// 같다고 본다. 그런데 `HwpTextPosition.characterOffset` 은 UTF-16 오프셋이라
+/// 그 둘 사이에서 뒤 오프셋이 전부 밀린다 — 두 문서를 "같은 내용"으로 접으면
+/// (`HwpGeometryChange.isEquivalentRefresh`) 재스캔이 생략된 채 낡은 오프셋이
+/// 새 문자열에 적용돼 하이라이트·스크롤이 어긋난다 (#75 리뷰 9차).
+/// `NSString` 동등성이 그 코드 단위 비교다.
+///
+/// `hash` 는 그대로 Swift 문자열 해시를 쓴다 — 이쪽이 더 **엄격**하므로
+/// (동일 ⟹ 정규 동치 ⟹ 같은 해시) Hashable 계약이 유지된다.
+enum HwpTextIdentity {
+    static func isIdentical(_ lhs: String?, _ rhs: String?) -> Bool {
+        guard let lhs, let rhs else { return lhs == nil && rhs == nil }
+        return (lhs as NSString).isEqual(to: rhs)
+    }
+}
+
 public struct AnyHwpBlock: HwpBlock, @unchecked Sendable, Hashable {
     public let frame: CGRect
     public let kind: HwpBlockKind
@@ -98,7 +116,9 @@ public struct AnyHwpBlock: HwpBlock, @unchecked Sendable, Hashable {
     public static func == (lhs: AnyHwpBlock, rhs: AnyHwpBlock) -> Bool {
         lhs.kind == rhs.kind
             && lhs.frame == rhs.frame
-            && lhs.attributedString?.string == rhs.attributedString?.string
+            && HwpTextIdentity.isIdentical(
+                lhs.attributedString?.string, rhs.attributedString?.string
+            )
             && lhs.isRepeatedTableHeaderClone == rhs.isRepeatedTableHeaderClone
             && lhs.hyperlinkURL == rhs.hyperlinkURL
             && lhs.payload == rhs.payload
