@@ -279,6 +279,16 @@ public final class HwpSearchController {
         restartScan()
     }
 
+    /// 가시 범위가 바뀐 뒤 단위 캐시를 유지 범위로 되돌린다 — 뷰가 부른다.
+    ///
+    /// 스캔 중 축출(`runScan`)만으로는 상한이 서지 않는다. 스캔이 끝난 뒤에도
+    /// 하이라이트 조회가 페이지마다 단위를 다시 전개해 캐시에 넣으므로,
+    /// 1,030쪽을 훑으면 **매치가 있는 페이지 전부**가 남는다 (매치 없는
+    /// 페이지는 `highlightRects` 의 빈 선택 가드에서 먼저 걸러진다).
+    public func evictUnitsOutsideRetainedRange() {
+        evictScannedUnits()
+    }
+
     // MARK: - 내부
 
     /// 붙은 선택 컨트롤러를 **강하게** 잡는다.

@@ -303,6 +303,9 @@
             layoutPageLayers()
             updateSelectionOverlays()
             updateSearchOverlays()
+            // 오버레이를 그린 **뒤** 축출한다 — 방금 그린 페이지는 유지 범위
+            // 안이라 살아남고, 읽기 직전에 버리는 일도 없다.
+            searchController?.evictUnitsOutsideRetainedRange()
             // 가시(±2) 페이지가 참조하는 이미지를 pin해 캐시 축출→재요청 사이클을
             // 막는다 (#2).
             imageProvider?.setPinnedImages(

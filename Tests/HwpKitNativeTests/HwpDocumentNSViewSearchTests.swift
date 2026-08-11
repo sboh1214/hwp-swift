@@ -286,6 +286,23 @@
             expect(view.searchMatchLayers[0]?.contentsScale) == pageScale
         }
 
+        /// 축출은 이 계층이 소유한다 — 가시 범위가 바뀔 때마다 불러야
+        /// 스캔이 끝난 뒤의 하이라이트 조회가 캐시를 무한정 채우지 않는다.
+        func testVisibleRangeChangeEvictsUnits() async {
+            let view = Self.makeView(pageTexts: ["alpha", "alpha", "alpha"])
+            let search = Self.attachedSearch(view, query: "alpha")
+            await expect(search.matchCount).toEventually(equal(3), timeout: .seconds(2))
+            var evictions = 0
+            search.retainedPageRange = {
+                evictions += 1
+                return 0 ..< 3
+            }
+
+            view.updateVisiblePages(range: 1 ..< 2)
+
+            expect(evictions) >= 1
+        }
+
         // MARK: - 가로 노출 (육안 확인에서 발견한 결함)
 
         /// iOS와 같은 계약 — 페이지가 뷰포트보다 넓으면 세로만 맞춰서는
