@@ -60,4 +60,32 @@ final class HwpDocumentTests: XCTestCase {
         // (동일 ⟹ 정규 동치 ⟹ 같은 해시) Hashable 계약은 유지된다
         expect(block(precomposed).hashValue) == block(decomposed).hashValue
     }
+
+    /// 같은 계약이 **페이로드 안 문단**에도 서야 한다. 프로덕션에서 표·글상자
+    /// 텍스트는 top-level `attributedString` 이 아니라 여기 산다 — 위 층만
+    /// 잠그면 존재하지 않는 경로를 지킨다 (#75 리뷰 8차의 교훈).
+    func testNormalizationDifferenceBreaksPayloadEquality() {
+        func block(_ text: String) -> AnyHwpBlock {
+            AnyHwpBlock(
+                frame: .zero,
+                kind: .textbox,
+                payload: .textbox(HwpTextboxFrame(
+                    outerFrame: .zero,
+                    paragraphs: [HwpLaidOutParagraph(
+                        attributedString: NSAttributedString(string: text),
+                        frame: HwpParagraphFrame(totalHeight: 14, lines: []),
+                        rect: .zero,
+                        paragraphId: 7
+                    )],
+                    borderColor: nil,
+                    borderWidth: 0,
+                    fillColor: nil
+                ))
+            )
+        }
+        let precomposed = "가나다"
+        let decomposed = precomposed.decomposedStringWithCanonicalMapping
+
+        expect(block(precomposed)) != block(decomposed)
+    }
 }
