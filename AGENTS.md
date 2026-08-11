@@ -261,6 +261,16 @@ noori p2에서 비영 셀의 30%까지 지워도 양쪽 통과).
 - `.literal` 을 쓰지 않아 한글 NFD/NFC 가 동치로 비교된다. 대가로 **반환
   range 의 길이가 질의의 UTF-16 길이와 다를 수 있다** — 경계·커서 전진은
   반드시 반환된 range 를 그대로 쓴다 (`HwpSearchNormalizationTests` 가 고정).
+- **동등성은 그 반대 축이다.** 렌더 모델의 `==` 는 정규 동치가 아니라 **UTF-16
+  동일성**이어야 한다 (`HwpTextIdentity` — `AnyHwpBlock` 과
+  `HwpLaidOutParagraph` 가 공유). Swift `String ==` 로 두면 정규화 형태만 다른
+  재전달이 "같은 내용"으로 접혀 (`isEquivalentRefresh`) 재스캔이 생략되고, 낡은
+  오프셋이 **밀린** 새 문자열에 그대로 적용돼 하이라이트가 어긋난다 (실측:
+  "가나다" 7 → 분해형 10 UTF-16 단위). `hash` 는 정규 해시 그대로 둔다 —
+  동일 ⟹ 정규 동치 ⟹ 같은 해시라 Hashable 계약이 유지된다. 이 결함은
+  `setDocument` 의 nil-token 주석과 정면으로 어긋나 있었다: 거기서는 "얕은
+  구조 동등성이 내용 차이를 못 잡는다"며 조기 반환을 포기해 놓고, 바로 그
+  동등성으로 재스캔 생략을 결정하고 있었다.
 - 목록(`matches`)은 반복 표 머리행 클론을 **단위 단위**로 dedup 하고,
   하이라이트(`highlightMatches`)는 클론을 남긴다 — `plainText(for:)` 의 기존
   정책과 같은 의미다.
