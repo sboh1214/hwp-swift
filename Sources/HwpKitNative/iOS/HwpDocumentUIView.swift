@@ -109,6 +109,14 @@
         private var lastReportedPage = -1
         /// 마지막으로 적용한 가시 범위 (macOS `activeVisibleRange` 와 대칭).
         private var activeVisibleRange: Range<Int> = 0 ..< 0
+
+        /// 검색 오버레이를 다시 만든 횟수 — 테스트 전용 관측점 (macOS와 대칭).
+        private(set) var searchOverlayRebuildCount = 0
+
+        func noteSearchOverlayRebuild() {
+            searchOverlayRebuildCount &+= 1
+        }
+
         public var onZoomChanged: ((CGFloat) -> Void)?
 
         var pageLayers: [Int: HwpPageLayer] = [:]
@@ -486,8 +494,24 @@
             let insetX = max(0, (scrollView.bounds.width - scaled.width) / 2)
             let insetY = max(0, (scrollView.bounds.height - scaled.height) / 2)
             scrollView.contentInset = UIEdgeInsets(
-                top: insetY, left: insetX, bottom: insetY, right: insetX
+                top: insetY, left: insetX,
+                bottom: max(insetY, trailingScrollExtent(contentHeight: scaled.height)),
+                right: insetX
             )
+        }
+
+        /// 마지막 쪽도 **첫 가시 쪽**이 될 수 있게 남기는 아래 여유.
+        ///
+        /// 없으면 문서 전체 최대 오프셋이 마지막 쪽 minY 보다 작아, 매치로
+        /// 점프해도 앞 쪽이 첫 가시가 되고 그 쪽이 `currentPage` 로 보고된다
+        /// (#75 리뷰). 마지막 쪽이 뷰포트보다 낮을 때만 — 축소했거나 짧은
+        /// 쪽일 때다 — 생기고, 모자란 만큼만 준다. 콘텐츠가 뷰포트보다 작으면
+        /// 센터링 인셋이 이미 그 역할을 하므로 0이다.
+        private func trailingScrollExtent(contentHeight: CGFloat) -> CGFloat {
+            let pageCount = document?.pages.count ?? 0
+            guard pageCount > 0, contentHeight > scrollView.bounds.height else { return 0 }
+            let lastRow = rowHeight(at: pageCount - 1) * scrollView.zoomScale
+            return max(0, scrollView.bounds.height - lastRow)
         }
 
         /// 문서 교체 후 첫 non-zero 레이아웃에서 센터링 원점을 1회 적용하기 위한

@@ -6,6 +6,7 @@
     public extension HwpDocumentUIView {
         /// 검색 하이라이트를 다시 그린다 (macOS와 대칭).
         internal func updateSearchOverlays() {
+            noteSearchOverlayRebuild()
             let style = searchController?.style ?? .default
             HwpDocumentViewSupport.updateHighlightOverlays(
                 pageLayers: pageLayers,
@@ -50,10 +51,11 @@
             }
             searchController.onCurrentMatchChanged = { [weak self] match in
                 guard let self else { return }
-                if let match {
-                    scrollToMatch(match)
+                // 스크롤 경로가 이미 다시 칠했으면 건너뛴다 (macOS와 같은 규약).
+                let refreshedByScroll = match.map { self.scrollToMatch($0) } ?? false
+                if !refreshedByScroll {
+                    updateSearchOverlays()
                 }
-                updateSearchOverlays()
             }
             updateSearchOverlays()
         }
@@ -67,16 +69,19 @@
         /// 첫 레이아웃 전(`bounds`가 비고 초기 센터링이 예약된 상태)에는
         /// `scrollToPage(at:)`가 목표 페이지를 예약만 하고 돌아간다 — 그 경로를
         /// 그대로 태운다.
-        func scrollToMatch(_ match: HwpSearchMatch) {
+        /// - Returns: `updateVisiblePages` 를 돌려 오버레이까지 다시 칠했는가
+        ///   (macOS와 같은 계약 — 호출부가 중복 재구축을 건너뛴다).
+        @discardableResult
+        func scrollToMatch(_ match: HwpSearchMatch) -> Bool {
             guard let document, !document.pages.isEmpty,
-                  match.pageIndex < document.pages.count else { return }
+                  match.pageIndex < document.pages.count else { return false }
             guard !scrollView.bounds.isEmpty,
                   let rect = searchController?
                   .currentMatchRects(forPage: match.pageIndex)
                   .min(by: { $0.minY < $1.minY })
             else {
                 scrollToPage(at: match.pageIndex)
-                return
+                return false
             }
             let pageFrame = frameForPage(at: match.pageIndex)
             let matchInContent = CGRect(
@@ -101,6 +106,7 @@
                 animated: false
             )
             updateVisiblePages(range: visiblePageRange())
+            return true
         }
 
         /// 매치를 가로로 화면 안에 들이는 오프셋.

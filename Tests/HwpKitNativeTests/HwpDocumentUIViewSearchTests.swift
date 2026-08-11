@@ -107,6 +107,33 @@
             expect(view.currentSearchMatchLayers).to(beEmpty())
         }
 
+        /// macOS와 같은 계약 — 스크롤 경로가 이미 칠했으면 다시 만들지 않는다.
+        func testNavigationRebuildsOverlaysOnce() async {
+            let view = Self.makeView(pageTexts: ["alpha alpha"])
+            let search = Self.attachedSearch(view, query: "alpha")
+            await expect(search.matchCount).toEventually(equal(2), timeout: .seconds(2))
+            let before = view.searchOverlayRebuildCount
+
+            search.next()
+
+            expect(view.searchOverlayRebuildCount - before) == 1
+        }
+
+        /// 문서 끝 매치도 **첫 가시 쪽**이 돼야 한다. 마지막 쪽이 뷰포트보다
+        /// 낮으면(축소·짧은 쪽) 문서 전체 클램프가 페이지-로컬 목표를 끌어내려
+        /// 앞 쪽이 첫 가시가 되고 그 쪽이 `currentPage` 로 보고된다 (#75 리뷰 6차).
+        func testScrollToMatchOnLastPageKeepsItFirstVisibleWhenZoomedOut() async {
+            let view = Self.makeView(pageTexts: ["alpha", "alpha", "alpha"])
+            view.zoomScale = 0.5
+            view.layoutIfNeeded()
+            let search = Self.attachedSearch(view, query: "alpha")
+            await expect(search.matchCount).toEventually(equal(3), timeout: .seconds(2))
+
+            search.select(matchIndex: 2)
+
+            expect(view.visiblePageRange().lowerBound) == 2
+        }
+
         // MARK: - 해체·색·배율 (#75 리뷰, macOS와 같은 계약)
 
         func testClearingControllerDetachesSession() async {
