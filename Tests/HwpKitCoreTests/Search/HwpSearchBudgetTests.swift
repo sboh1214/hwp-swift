@@ -256,6 +256,33 @@ final class HwpSearchBudgetTests: XCTestCase {
         expect(search.highlightMatches.count) == 2
     }
 
+    // MARK: - 스캔 중 상주
+
+    /// 스캔이 도는 동안 소유자가 컨트롤러를 놓으면 **그 자리에서** 풀려야 한다.
+    /// `await self?.runScan(...)` 처럼 async 메서드를 통째로 부르면 옵셔널
+    /// 체이닝이 호출 전 구간 강한 참조를 잡아, 스캔이 끝날 때까지 컨트롤러가
+    /// 선택 컨트롤러를, 그것이 다시 문서 전체를 붙든다 (#75 리뷰 11차).
+    func testDroppingControllerMidScanReleasesIt() async {
+        weak var observed: HwpSearchController?
+        do {
+            let selection = HwpSelectionController()
+            selection.setDocument(
+                Self.document(pageTexts: (0 ..< 400).map { "hit page \($0)" }),
+                preservingSelection: false
+            )
+            let search = HwpSearchController()
+            search.publishInterval = .zero
+            search.attach(to: selection)
+            search.search(text: "hit")
+            observed = search
+            // 첫 배치를 돌고 양보하게 둔다 — 이 시점에 스캔은 진행 중이다
+            await Task.yield()
+            expect(observed).toNot(beNil())
+        }
+
+        expect(observed).to(beNil())
+    }
+
     // MARK: - 캐시 축출 훅
 
     /// nil이면 축출하지 않는다 — 엔진만 쓰는 배치 인덱싱은 전량 상주가 맞다.

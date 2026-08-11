@@ -426,84 +426,98 @@ public final class HwpSearchController {
             }
         }
         scanTask = Task { [weak self] in
-            await self?.runScan(pages: range, appending: appending)
+            // 배치는 **동기**라 `self` 를 배치 동안만 잡는다. `self?.runScan(...)`
+            // 처럼 async 메서드를 통째로 부르면 옵셔널 체이닝이 **호출 전 구간**
+            // 강한 참조를 잡아, 소유자가 놓아 버린 뒤에도 스캔이 끝날 때까지
+            // 컨트롤러·선택 컨트롤러·문서 전체가 살아 있다 (#75 리뷰 11차).
+            // `[weak self]` 는 태스크가 시작하기 전까지만 돕는다.
+            guard var progress = self?.beginScan(pages: range, appending: appending) else {
+                return
+            }
+            while true {
+                guard let outcome = self?.scanBatch(&progress, pages: range) else { return }
+                guard outcome == .needsYield else { return }
+                await Task.yield()
+            }
         }
     }
 
-    /// 스캔이 페이지를 넘나들며 들고 다니는 누적 상태 — 하이라이트 전량과
-    /// dedup 된 목록, 그리고 그 목록에 기여한 문단들.
-    ///
-    /// 기여 집합을 목록에서 **파생**시켜 둘이 어긋날 여지를 없앤다: dedup 은
-    /// "이 문단이 이미 목록에 기여했는가"로 판정하므로, 집합이 목록과 갈리면
-    /// 클론이 원본 행세를 하거나 원본이 클론으로 몰려 사라진다.
-    private struct ScanState {
-        var collected: [HwpSearchMatch]
-        var navigable: [HwpSearchMatch]
-        var contributedParagraphIds: Set<UInt32>
-
-        init(collected: [HwpSearchMatch], navigable: [HwpSearchMatch]) {
-            self.collected = collected
-            self.navigable = navigable
-            contributedParagraphIds = Set(navigable.compactMap(\.paragraphId))
-        }
-    }
-
-    private func runScan(pages: Range<Int>, appending: Bool) async {
-        guard let geometry else { return }
+    private func beginScan(pages: Range<Int>, appending: Bool) -> ScanProgress? {
+        guard geometry != nil else { return nil }
         // 예산은 **목록 기준**이다 — 클론까지 세면 publish 가 걷어낼 항목에
         // 상한을 쓴다. 이어받는 집합은 발행된 목록에서 되살린다 (그 목록에
         // 남은 문단은 곧 그때 기여한 문단이다).
-        var state = ScanState(
-            collected: appending ? highlightMatches : [],
-            navigable: appending ? matches : []
+        return ScanProgress(
+            query: storedQuery,
+            state: ScanState(
+                collected: appending ? highlightMatches : [],
+                navigable: appending ? matches : []
+            ),
+            scannedThrough: pages.lowerBound,
+            nextPage: pages.lowerBound
         )
-        let query = storedQuery
-        var scannedThrough = pages.lowerBound
+    }
 
-        for (step, pageIndex) in pages.enumerated() {
+    /// 한 배치(≤ `yieldInterval` 쪽)를 **동기로** 훑는다.
+    ///
+    /// 취소는 **페이지마다** 확인한다 — 배치 경계에서만 보면 `detach()` 응답이
+    /// 한 배치만큼 늦어져, 이 분할이 없애려던 상주가 그 시간만큼 그대로 남는다.
+    private func scanBatch(_ progress: inout ScanProgress, pages: Range<Int>) -> ScanOutcome {
+        guard let geometry else { return .cancelled }
+        var scannedInBatch = 0
+
+        while progress.nextPage < pages.upperBound {
             if Task.isCancelled {
-                return
+                return .cancelled
             }
-            if probeLimit > 0, state.navigable.count >= probeLimit {
+            if probeLimit > 0, progress.state.navigable.count >= probeLimit {
                 break
             }
+            if scannedInBatch == Self.yieldInterval {
+                evictScannedUnits()
+                return .needsYield
+            }
 
+            let pageIndex = progress.nextPage
             scanPage(
                 pageIndex,
                 units: geometry.units(forPage: pageIndex),
-                query: query,
-                into: &state
+                query: progress.query,
+                into: &progress.state
             )
-            if matchLimit > 0, state.navigable.count > matchLimit {
+            if matchLimit > 0, progress.state.navigable.count > matchLimit {
                 didObserveOmittedMatch = true
             }
             scannedPageCount = pageIndex + 1
-            scannedThrough = pageIndex + 1
+            progress.scannedThrough = pageIndex + 1
+            progress.nextPage = pageIndex + 1
+            scannedInBatch += 1
 
             if shouldPublishNow() {
                 publish(
-                    highlights: limitedHighlights(state.collected, navigable: state.navigable),
-                    navigable: limitedForPublication(state.navigable),
+                    highlights: limitedHighlights(
+                        progress.state.collected, navigable: progress.state.navigable
+                    ),
+                    navigable: limitedForPublication(progress.state.navigable),
                     phase: .scanning,
-                    scannedThrough: scannedThrough
+                    scannedThrough: progress.scannedThrough
                 )
-            }
-            if step % Self.yieldInterval == Self.yieldInterval - 1 {
-                evictScannedUnits()
-                await Task.yield()
             }
         }
 
         if Task.isCancelled {
-            return
+            return .cancelled
         }
         evictScannedUnits()
         publish(
-            highlights: limitedHighlights(state.collected, navigable: state.navigable),
-            navigable: limitedForPublication(state.navigable),
+            highlights: limitedHighlights(
+                progress.state.collected, navigable: progress.state.navigable
+            ),
+            navigable: limitedForPublication(progress.state.navigable),
             phase: didObserveOmittedMatch ? .truncated : .complete,
-            scannedThrough: scannedThrough
+            scannedThrough: progress.scannedThrough
         )
+        return .finished
     }
 
     /// 한 페이지를 **단위 단위**로 훑는다 — 그 입도가 곧 dedup 입도다.
