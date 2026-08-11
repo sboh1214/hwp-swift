@@ -77,9 +77,14 @@ public final class HwpSearchController {
     /// 네이티브 배선은 매치 콜백 둘만 듣고, SwiftUI wrapper는 컨트롤러
     /// **신원**만 넘기며 그 대입조차 동일성 가드가 막는다. 색만 바뀐 순간에는
     /// 아무도 다시 칠하지 않아 다음 스크롤·검색 이벤트까지 옛 색이 남는다.
+    /// `revision` 도 함께 올린다 — 그 토큰은 "같은 발행인가"를 O(1) 로 판정해
+    /// 중복 오버레이 작업을 건너뛰라고 공개해 둔 것이라, 올리지 않으면 규약대로
+    /// 구현한 커스텀 뷰가 이 통지를 **같은 발행으로 보고 무시**한다. 그러면 위
+    /// 문단이 막으려던 증상(다음 이벤트까지 옛 색)이 그대로 남는다 (#75 리뷰 12차).
     public var style: HwpSearchHighlightStyle {
         didSet {
             guard style != oldValue else { return }
+            bumpRevision()
             onMatchesChanged?()
         }
     }

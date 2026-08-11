@@ -180,6 +180,7 @@ final class HwpSearchControllerTests: XCTestCase {
         await expect(search.matchCount).toEventually(equal(1), timeout: .seconds(2))
         var repaints = 0
         search.onMatchesChanged = { repaints += 1 }
+        let revisionBefore = search.revision
 
         search.style = HwpSearchHighlightStyle(
             matchColor: HwpRGBColor(red: 0, green: 1, blue: 0, alpha: 0.5),
@@ -187,6 +188,9 @@ final class HwpSearchControllerTests: XCTestCase {
         )
 
         expect(repaints) == 1
+        // revision 은 "같은 발행인가"를 O(1) 로 판정하라고 공개한 토큰이라,
+        // 안 올리면 규약대로 구현한 뷰가 이 통지를 무시한다 (#75 리뷰 12차)
+        expect(search.revision) > revisionBefore
 
         search.style = search.style
 
