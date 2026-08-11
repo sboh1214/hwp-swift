@@ -108,6 +108,34 @@ final class HwpSearchNotificationTests: XCTestCase {
         expect(search.phase) == .complete
     }
 
+    // MARK: - 부착 소유권
+
+    /// 슬롯이 하나뿐이라 나중에 붙은 쪽이 이기는데, **밀려난 쪽은 그 사실을
+    /// 모른다**. 그 상태에서 밀려난 컨트롤러를 떼면 현재 소유자의 콜백이
+    /// 지워져, 그쪽은 붙어 있다고 보고하면서 영영 재스캔하지 않는다
+    /// (#75 리뷰 13차).
+    func testDetachingDisplacedControllerKeepsCurrentOwnerWired() async {
+        let selection = HwpSelectionController()
+        selection.setDocument(Self.document(pageTexts: ["hit one"]), preservingSelection: false)
+        let displaced = HwpSearchController()
+        displaced.publishInterval = .zero
+        displaced.attach(to: selection)
+        let owner = HwpSearchController()
+        owner.publishInterval = .zero
+        owner.attach(to: selection)
+        owner.search(text: "hit")
+        await expect(owner.matchCount).toEventually(equal(1), timeout: .seconds(2))
+
+        displaced.detach()
+
+        // 현재 소유자는 문서 교체에 여전히 반응한다
+        selection.setDocument(
+            Self.document(pageTexts: ["hit one", "hit two"]),
+            preservingSelection: false
+        )
+        await expect(owner.matchCount).toEventually(equal(2), timeout: .seconds(2))
+    }
+
     /// 그릴 것이 없으면 동등 재전달도 통지하지 않는다 — nil-token 문서는 이
     /// 사건이 SwiftUI 업데이트마다 온다.
     func testEquivalentRefreshWithoutHighlightsIsSilent() async {

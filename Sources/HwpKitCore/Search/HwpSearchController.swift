@@ -248,7 +248,7 @@ public final class HwpSearchController {
         guard self.selection !== selection else { return }
         detach()
         self.selection = selection
-        selection.onGeometryChanged = { [weak self] change in
+        selection.setGeometryObserver(self) { [weak self] change in
             self?.geometryDidChange(change)
         }
         restartScan()
@@ -264,7 +264,10 @@ public final class HwpSearchController {
     public func detach() {
         scanTask?.cancel()
         scanTask = nil
-        selection?.onGeometryChanged = nil
+        // 콜백 슬롯은 아직 **내 것일 때만** 비운다. 밀려난 뒤(다른 컨트롤러가
+        // 같은 선택 컨트롤러에 붙은 뒤) 떼면 현재 소유자의 콜백을 지워, 그쪽이
+        // 문서 교체·프로그레시브 갱신에 영영 재스캔하지 않는다 (#75 리뷰 13차).
+        selection?.clearGeometryObserver(self)
         selection = nil
         pageCount = 0
         scannedPageCount = 0
@@ -493,7 +496,6 @@ public final class HwpSearchController {
             if matchLimit > 0, progress.state.navigable.count > matchLimit {
                 didObserveOmittedMatch = true
             }
-            scannedPageCount = pageIndex + 1
             progress.scannedThrough = pageIndex + 1
             progress.nextPage = pageIndex + 1
             scannedInBatch += 1
@@ -623,6 +625,10 @@ public final class HwpSearchController {
     ) {
         lastPublish = ContinuousClock.now
         publishedPageUpperBound = scannedThrough
+        // 진행률도 **발행 시점에만** 옮긴다. `@Observable` 프로퍼티라 쪽마다
+        // 대입하면 관찰하는 호스트가 1,030쪽 문서에서 쪽마다 무효화를 받아,
+        // 매치 발행을 `publishInterval` 로 묶어 둔 의미가 사라진다 (#75 리뷰 13차).
+        scannedPageCount = scannedThrough
         highlightMatches = highlights
         let previousCurrent = currentMatch
         matches = navigable

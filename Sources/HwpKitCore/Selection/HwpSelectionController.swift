@@ -104,6 +104,31 @@ public final class HwpSelectionController {
     /// 상태다. 낡은 지오메트리에 좌표를 물으면 죽은 조판이 나온다.
     public var onGeometryChanged: ((HwpGeometryChange) -> Void)?
 
+    /// `onGeometryChanged` 슬롯의 현재 소유자.
+    ///
+    /// 슬롯이 하나뿐이라 나중에 붙은 쪽이 이기는데, **밀려난 쪽은 그 사실을
+    /// 모른다** — 자기 `selection` 참조를 그대로 들고 있어 `isAttached(to:)` 도
+    /// 계속 true 다. 소유자를 함께 기록하지 않으면 밀려난 컨트롤러의 `detach()`
+    /// 가 **현재 소유자의 콜백을 지워**, 그쪽은 붙어 있다고 보고하면서 문서
+    /// 교체·프로그레시브 갱신에 영영 재스캔하지 않는다 (#75 리뷰 13차).
+    private(set) weak var geometryObserver: AnyObject?
+
+    /// 소유자와 함께 지오메트리 콜백을 건다.
+    func setGeometryObserver(
+        _ observer: AnyObject,
+        _ handler: @escaping (HwpGeometryChange) -> Void
+    ) {
+        geometryObserver = observer
+        onGeometryChanged = handler
+    }
+
+    /// 슬롯이 아직 `observer` 것일 때만 비운다.
+    func clearGeometryObserver(_ observer: AnyObject) {
+        guard geometryObserver === observer else { return }
+        geometryObserver = nil
+        onGeometryChanged = nil
+    }
+
     public init() {}
 
     public var hasSelection: Bool {

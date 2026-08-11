@@ -307,6 +307,26 @@ final class HwpSearchBudgetTests: XCTestCase {
         expect(search.highlightMatches).to(beEmpty())
     }
 
+    // MARK: - 진행률 스로틀
+
+    /// `scannedPageCount` 는 `@Observable` 프로퍼티라 쪽마다 대입하면 관찰하는
+    /// 호스트가 1,030쪽 문서에서 쪽마다 무효화를 받는다 — 매치 발행을
+    /// `publishInterval` 로 묶어 둔 의미가 사라진다 (#75 리뷰 13차).
+    func testScannedPageCountFollowsPublishThrottle() async {
+        let (_, search) = Self.makeAttached(
+            pageTexts: (0 ..< 400).map { "hit page \($0)" }
+        )
+        search.publishInterval = .seconds(10)
+
+        search.search(text: "hit")
+        // 첫 배치(16쪽)를 돌고 양보한다
+        await Task.yield()
+
+        // 첫 쪽 발행 뒤로는 스로틀이 막으므로 진행률도 거기서 멈춰 있다 —
+        // 쪽마다 대입하면 16이 된다
+        expect(search.scannedPageCount) == 1
+    }
+
     // MARK: - 캐시 축출 훅
 
     /// nil이면 축출하지 않는다 — 엔진만 쓰는 배치 인덱싱은 전량 상주가 맞다.
