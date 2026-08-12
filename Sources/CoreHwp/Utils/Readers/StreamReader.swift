@@ -1,6 +1,5 @@
 import Foundation
 import OLEKit
-import SWCompression
 
 struct StreamReader {
     private let ole: OLEFile
@@ -384,20 +383,35 @@ private extension StreamReader {
         aggregateUsage.totalBytes += byteCount
     }
 
+    /// 압축 해제 **도중** 상한을 걸어 bomb이 상한을 넘는 순간 중단시킨다.
+    /// 상한은 두 한도의 min이지만 보고하는 error와 `limit`은 실제로 걸린 쪽의
+    /// 원래 한도를 유지하고, 같으면 개별 stream 한도를 우선한다 (후처리 거부
+    /// 시절의 검사 순서와 동일). 규칙 전문은 `Sources/CoreHwp/AGENTS.md` 참조.
     func decompress(_ data: Data, for streamName: HwpStreamName) throws -> Data {
-        let decompressed: Data
-        do {
-            decompressed = try Deflate.decompress(data: data)
-        } catch {
-            throw HwpError.streamDecompressFailed(name: streamName)
-        }
-
-        try Self.validateStreamByteCount(
-            decompressed.count,
-            limit: readLimits.maxDecompressedStreamBytes,
-            for: streamName
+        let streamLimit = readLimits.maxDecompressedStreamBytes
+        let remainingAggregate = max(
+            0, readLimits.maxAggregateStreamBytes - aggregateUsage.totalBytes
         )
-        return decompressed
+        let limit = min(streamLimit, remainingAggregate)
+
+        do {
+            return try HwpInflate.decompress(data, limit: limit)
+        } catch HwpInflate.Failure.corrupted {
+            throw HwpError.streamDecompressFailed(name: streamName)
+        } catch let HwpInflate.Failure.limitExceeded(produced) {
+            guard limit == streamLimit else {
+                let (sum, overflow) = aggregateUsage.totalBytes
+                    .addingReportingOverflow(produced)
+                throw HwpError.aggregateStreamSizeLimitExceeded(
+                    name: streamName,
+                    limit: readLimits.maxAggregateStreamBytes,
+                    actual: overflow ? Int.max : sum
+                )
+            }
+            throw HwpError.streamSizeLimitExceeded(
+                name: streamName, limit: streamLimit, actual: produced
+            )
+        }
     }
 
     static func validateStreamByteCount(
