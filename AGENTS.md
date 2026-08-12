@@ -62,7 +62,7 @@ hwp-swift/
 ```
 .hwp 파일
   → OLEFile (OLEKit)              # OLE compound document
-  → StreamReader                   # 이름 있는 stream → Data (필요시 deflate)
+  → StreamReader                   # 이름 있는 stream → Data (압축이면 HwpInflate)
   → DataReader / BitsReader        # Data 위의 cursor
   → parseTreeRecord (Utils)        # 10-bit tag / 10-bit level / 12-bit size 헤더로 record tree 구성
   → Hwp* 모델 (Models/)            # Hwp{FromData,FromRecord,...} 프로토콜을 통해 디코딩

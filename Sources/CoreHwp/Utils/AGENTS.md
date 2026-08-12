@@ -13,7 +13,7 @@ Utils/
 ├── ExcludeEquatable.swift # == 비교에서 특정 필드를 제외하는 property wrapper
 ├── Extensions/           # Data, Character, StringProtocol, BinaryInteger, Array, WCHAR
 ├── Protocols/            # 5개 loader 프로토콜 + HwpPrimitive typealias
-└── Readers/              # StreamReader (OLE), DataReader (byte), BitsReader (bit)
+└── Readers/              # StreamReader (OLE), HwpInflate (deflate), DataReader (byte), BitsReader (bit)
 ```
 
 ## Loader 프로토콜 계약
@@ -78,6 +78,12 @@ consumes-all `init` 근처에 남긴다. override는 default loader와 동등하
   그 외 플랫폼은 `SWCompression` 폴백이라 후처리 검사다. 폴백은 코드 경로만이며
   SWCompression 의존성은 전 플랫폼에 남는다. `COMPRESSION_STATUS_END` 도달을
   별도로 강제한다 — 빼면 절단된 stream이 부분 출력으로 조용히 성공한다.
+  유효한 stream의 출력 바이트는 두 경로가 같지만 **손상 판정은 갈릴 수 있다** —
+  Apple 디코더는 stored block의 `NLEN`이 `LEN`의 1의 보수인지 검증하지 않아
+  zlib·SWCompression이 거부하는 바이트열을 받아들인다. 닿는 입력은 압축으로
+  표시됐지만 실제로는 deflate가 아닌 손상 stream뿐이고 그 출력은 레코드 트리
+  파서가 다시 거르므로, 이 차이는 테스트로 고정만 해 둔다
+  (`HwpInflateTests.testAppleDecoderAcceptsStoredBlockWithInvalidComplement`).
 - **`DataReader`** — `Data` 위의 cursor. `read(T.Type)`은 정수 폭(1/2/4
   byte)으로 분기하며, 미지원 타입은 `HwpError.unsupportedDataReadType`을
   throw한다. `readBytes`/array read는 음수·overflow·범위 초과를
