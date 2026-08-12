@@ -1,6 +1,6 @@
 # HwpKitCore
 
-Platform-neutral 렌더 코어. **AppKit / UIKit / SwiftUI / CoreAnimation import 금지.** CoreGraphics / CoreText / Foundation / CoreHwp 만 허용.
+Platform-neutral 렌더 코어. **AppKit / UIKit / SwiftUI / CoreAnimation import 금지.** CoreGraphics / CoreText / Foundation / CoreHwp 가 기본이고, 필요에 따라 플랫폼 UI 가 아닌 시스템 모듈을 더 쓴다 (`ImageIO`, `OSLog`, `Observation`). 기준은 "UI 프레임워크인가"이지 목록 자체가 아니다 — `Observation` 은 `HwpSearchController` (#75) 가 호스트 UI 배선 없이 관찰되게 하려고 들어왔다.
 
 ## 파이프라인 (canonical)
 

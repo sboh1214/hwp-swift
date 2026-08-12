@@ -25,6 +25,7 @@ public struct HwpDocumentView: View {
     private let document: HwpDocument
     private let zoomScale: Binding<CGFloat>?
     private let currentPage: Binding<Int>?
+    private let searchController: HwpSearchController?
     private let onHyperlinkTapped: ((String) -> Void)?
     private let onUnsupportedElement: ((HwpUnsupportedElement) -> Void)?
 
@@ -32,12 +33,14 @@ public struct HwpDocumentView: View {
         document: HwpDocument,
         zoomScale: Binding<CGFloat>? = nil,
         currentPage: Binding<Int>? = nil,
+        searchController: HwpSearchController? = nil,
         onHyperlinkTapped: ((String) -> Void)? = nil,
         onUnsupportedElement: ((HwpUnsupportedElement) -> Void)? = nil
     ) {
         self.document = document
         self.zoomScale = zoomScale
         self.currentPage = currentPage
+        self.searchController = searchController
         self.onHyperlinkTapped = onHyperlinkTapped
         self.onUnsupportedElement = onUnsupportedElement
     }
@@ -48,6 +51,7 @@ public struct HwpDocumentView: View {
                 document: document,
                 zoomScale: zoomScale,
                 currentPage: currentPage,
+                searchController: searchController,
                 onHyperlinkTapped: onHyperlinkTapped,
                 onUnsupportedElement: onUnsupportedElement
             )
@@ -56,6 +60,7 @@ public struct HwpDocumentView: View {
                 document: document,
                 zoomScale: zoomScale,
                 currentPage: currentPage,
+                searchController: searchController,
                 onHyperlinkTapped: onHyperlinkTapped,
                 onUnsupportedElement: onUnsupportedElement
             )
@@ -153,6 +158,7 @@ final class HwpDocumentCoordinator {
         let document: HwpDocument
         let zoomScale: Binding<CGFloat>?
         let currentPage: Binding<Int>?
+        let searchController: HwpSearchController?
         let onHyperlinkTapped: ((String) -> Void)?
         let onUnsupportedElement: ((HwpUnsupportedElement) -> Void)?
 
@@ -181,6 +187,16 @@ final class HwpDocumentCoordinator {
             )
         }
 
+        /// 검색 세션은 호스트가 소유하고 뷰보다 오래 산다 — 뷰가 사라질 때
+        /// 떼지 않으면 그 컨트롤러가 이 뷰의 선택 컨트롤러를, 그것이 다시
+        /// 문서 전체(페이지·페인트 리스트·단위 캐시)를 붙든다. 문서를 닫거나
+        /// 재로드가 실패해 새 뷰가 붙지 않으면 그대로 남는다.
+        static func dismantleNSView(
+            _ nsView: HwpDocumentNSView, coordinator _: HwpDocumentCoordinator
+        ) {
+            nsView.searchController = nil
+        }
+
         private func configure(_ view: HwpDocumentNSView, context: Context) {
             // Callbacks must be wired before the document assignment so the
             // document didSet notifications reach the coordinator.
@@ -188,6 +204,13 @@ final class HwpDocumentCoordinator {
             view.onUnsupportedElement = context.coordinator.handleUnsupportedElement(_:)
             view.onPageChanged = context.coordinator.handlePageChanged(_:)
             view.onZoomChanged = context.coordinator.handleZoomChanged(_:)
+            // 동일성 가드가 **필수**다. 클래스 옵셔널 var의 didSet은 대입할
+            // 때마다 발화하는데, 그 안에서 재배선 → 재스캔 → 관찰자 통지 →
+            // 호스트 body 무효화 → 다시 이 configure … 자기 급전 루프가
+            // 타이핑 없이도 돈다. 문서 대입의 중복-대입 스킵과 같은 성격이다.
+            if view.searchController !== searchController {
+                view.searchController = searchController
+            }
             _ = context.coordinator.registerDocument(document)
             // 문서 대입·줌·스크롤의 onPageChanged echo가 currentPage 바인딩을
             // 덮어쓰지 않게 이 구간 동안 writeback을 억제한다 — 첫 프로그레시브
@@ -267,6 +290,7 @@ final class HwpDocumentCoordinator {
         let document: HwpDocument
         let zoomScale: Binding<CGFloat>?
         let currentPage: Binding<Int>?
+        let searchController: HwpSearchController?
         let onHyperlinkTapped: ((String) -> Void)?
         let onUnsupportedElement: ((HwpUnsupportedElement) -> Void)?
 
@@ -295,6 +319,14 @@ final class HwpDocumentCoordinator {
             )
         }
 
+        /// macOS와 같은 이유 — 호스트가 붙든 검색 세션이 뷰보다 오래 살아
+        /// 문서 전체를 붙드는 것을 막는다.
+        static func dismantleUIView(
+            _ uiView: HwpDocumentUIView, coordinator _: HwpDocumentCoordinator
+        ) {
+            uiView.searchController = nil
+        }
+
         private func configure(_ view: HwpDocumentUIView, context: Context) {
             // Callbacks must be wired before the document assignment so the
             // document didSet notifications reach the coordinator.
@@ -302,6 +334,13 @@ final class HwpDocumentCoordinator {
             view.onUnsupportedElement = context.coordinator.handleUnsupportedElement(_:)
             view.onPageChanged = context.coordinator.handlePageChanged(_:)
             view.onZoomChanged = context.coordinator.handleZoomChanged(_:)
+            // 동일성 가드가 **필수**다. 클래스 옵셔널 var의 didSet은 대입할
+            // 때마다 발화하는데, 그 안에서 재배선 → 재스캔 → 관찰자 통지 →
+            // 호스트 body 무효화 → 다시 이 configure … 자기 급전 루프가
+            // 타이핑 없이도 돈다. 문서 대입의 중복-대입 스킵과 같은 성격이다.
+            if view.searchController !== searchController {
+                view.searchController = searchController
+            }
             _ = context.coordinator.registerDocument(document)
             // 문서 대입·줌·스크롤의 onPageChanged echo가 currentPage 바인딩을
             // 덮어쓰지 않게 이 구간 동안 writeback을 억제한다 — 첫 프로그레시브

@@ -155,15 +155,7 @@ enum HwpTableSplitter {
                     column: cell.column,
                     rowSpan: cell.rowSpan,
                     columnSpan: cell.columnSpan,
-                    paragraphs: cell.paragraphs.map { paragraph in
-                        HwpLaidOutParagraph(
-                            attributedString: markRepeatedHeader(paragraph.attributedString),
-                            frame: paragraph.frame,
-                            rect: paragraph.rect,
-                            paragraphId: paragraph.paragraphId,
-                            hyperlinkURL: paragraph.hyperlinkURL
-                        )
-                    },
+                    paragraphs: cell.paragraphs.map(markedCloneParagraph),
                     borders: cell.borders,
                     fillColor: cell.fillColor,
                     // 중첩 표의 텍스트도 클론 표식을 재귀로 단다 — 안 그러면
@@ -171,7 +163,10 @@ enum HwpTableSplitter {
                     nestedTables: cell.nestedTables.map(markedNestedClone),
                     images: cell.images,
                     shapes: cell.shapes,
-                    textboxes: cell.textboxes
+                    // 셀 글상자 문단도 같은 표식을 받는다 — `HwpSelectableText` 가
+                    // 그 문단을 선택·검색 단위로 내므로, 빼면 반복 머리행 안
+                    // 글상자 텍스트만 페이지마다 중복으로 남는다 (#75 리뷰 8차).
+                    textboxes: cell.textboxes.map(markedTextboxClone)
                 )
             }
         )
@@ -185,6 +180,29 @@ enum HwpTableSplitter {
             borderColor: nested.table.borderColor,
             borderWidth: nested.table.borderWidth
         ))
+    }
+
+    private static func markedCloneParagraph(
+        _ paragraph: HwpLaidOutParagraph
+    ) -> HwpLaidOutParagraph {
+        HwpLaidOutParagraph(
+            attributedString: markRepeatedHeader(paragraph.attributedString),
+            frame: paragraph.frame,
+            rect: paragraph.rect,
+            paragraphId: paragraph.paragraphId,
+            hyperlinkURL: paragraph.hyperlinkURL
+        )
+    }
+
+    /// 셀 글상자 안 문단에 클론 표식을 단다. 글상자 안 그림·도형은 텍스트가
+    /// 없어 대상이 아니고, 글상자 안 글상자·표는 `HwpTextboxLayout` 이 수집하지
+    /// 않으므로 (R40 #2) 재귀도 없다.
+    private static func markedTextboxClone(_ textbox: HwpCellTextbox) -> HwpCellTextbox {
+        textbox.withTextbox(
+            textbox.textbox.withParagraphs(
+                textbox.textbox.paragraphs.map(markedCloneParagraph)
+            )
+        )
     }
 
     private static func markRepeatedHeader(_ attributed: NSAttributedString) -> NSAttributedString {

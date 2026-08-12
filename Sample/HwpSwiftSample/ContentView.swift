@@ -15,6 +15,12 @@ struct ContentView: View {
     @State private var loadTask: Task<Void, Never>?
     @State private var currentPage: Int = 1
     @State private var zoomScale: CGFloat = 1.0
+    /// 문서 검색 세션 (#75). 호스트가 소유해 뷰와 검색 바에 **같은 인스턴스**를
+    /// 넘긴다 — 라이브러리가 하이라이트·매치 노출 스크롤을 알아서 배선한다.
+    @State private var search = HwpSearchController()
+    /// Cmd+F가 검색 필드로 포커스를 옮기는 훅. 라이브러리는 전역 단축키를
+    /// 소유하지 않으므로 호스트가 잡아서 넘긴다.
+    @FocusState private var searchFieldFocused: Bool
     /// PDF 내보내기 진행률 (진행 중일 때만 non-nil — 시트 표시 조건을 겸한다)
     @State private var exportProgress: Double?
     @State private var exportTask: Task<Void, Never>?
@@ -160,10 +166,18 @@ struct ContentView: View {
                 .fixedSize(horizontal: false, vertical: true)
             #endif
 
+            // 툴바 **밖** 별도 행이다. `HwpDocumentToolbar`는 순수 `HStack`이라
+            // 가변 폭 필드를 그 안에 넣으면 iPhone 폭에서 레이아웃이 무너지고,
+            // 툴바 컴포넌트 자체는 고치지 않는 것이 이 저장소 규약이다.
+            HwpSearchBar(controller: search, isFocused: $searchFieldFocused)
+                .padding(.horizontal)
+                .padding(.vertical, 6)
+
             HwpDocumentView(
                 document: document,
                 zoomScale: $zoomScale,
                 currentPage: $currentPage,
+                searchController: search,
                 onHyperlinkTapped: { url in
                     print("Hyperlink tapped: \(url)")
                 },
@@ -221,6 +235,18 @@ struct ContentView: View {
                 HwpPrintAnchor(box: printAnchor)
                     .frame(width: 1, height: 1)
             #endif
+
+            // Cmd+F는 **호스트가** 소유한다 — 라이브러리(`HwpSearchBar`)는
+            // 전역 단축키를 선점하지 않고 포커스 훅만 받는다. Cmd+O·Cmd+P와
+            // 같은 관례다. 툴바가 `loadedView` 안에만 있으므로 이 단축키도
+            // 문서가 열려 있는 동안에만 산다 (인쇄와 같은 성질).
+            Button {
+                searchFieldFocused = true
+            } label: {
+                toolbarLabel("찾기", systemImage: "magnifyingglass")
+            }
+            .buttonStyle(.bordered)
+            .keyboardShortcut("f", modifiers: [.command])
 
             Spacer()
 

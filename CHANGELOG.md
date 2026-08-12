@@ -70,6 +70,20 @@
 
 ### Added
 
+- 문서 내 검색을 **공개 API**로 추가했습니다. 엔진(`HwpTextSearcher`)·세션
+  (`HwpSearchController`)은 HwpKitCore, 하이라이트와 매치 노출 스크롤은
+  HwpKitNative, SwiftUI 컴포넌트(`HwpSearchBar` / `HwpSearchNavigator`)는
+  HwpKit에 있습니다. 호스트는 컨트롤러 하나를 `@State`로 소유해
+  `HwpDocumentView(searchController:)`와 `HwpSearchBar(controller:)`에 같은
+  인스턴스를 넘기면 되고, UI를 직접 만들고 싶으면 컨트롤러만 물려도
+  하이라이트·스크롤·프로그레시브 재스캔이 그대로 동작합니다. 검색은 텍스트
+  선택과 **같은 조판을 공유**하므로 하이라이트가 화면과 어긋나지 않고 단위
+  캐시가 이중화되지 않습니다. 한글은 조합형/완성형이 동치로 비교되고,
+  대소문자·발음 구별 부호 무시와 단어 단위 검색을 `HwpSearchOptions`로
+  고릅니다. 검색 대상은 본문이며 머리말·꼬리말·쪽 번호와 메모 풍선은 빠지고
+  각주·표 셀·글상자·중첩 표는 포함됩니다. 매치가 수만 건이 되는 짧은 질의는
+  `matchLimit`(기본 5,000)에서 잘리고 `phase == .truncated`로 알립니다.
+  Cmd+F 같은 전역 단축키는 호스트 몫입니다 — 라이브러리는 포커스 훅만 받습니다.
 - HWP 문서를 PDF로 내보내는 `HwpPDFExporter`(HwpKit)를 추가했습니다.
   `export(document:to:onProgress:)`는 파일로 스트리밍하고
   `exportData(document:onProgress:)`는 바이트를 돌려줍니다(전량이 메모리에

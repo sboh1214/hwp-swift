@@ -10,11 +10,18 @@
 | `HwpDocumentToolbar` | 툴바 컨테이너 (재질 배경 + 분리선) | 상단 툴바로 사용 |
 | `HwpPageNavigator` | 페이지 이동 컨트롤 (`- / Page X of Y / +`) | 툴바 좌측 |
 | `HwpZoomControls` | 확대/축소 컨트롤 (`- / Zoom N% / + / Reset`) | 툴바 우측 |
+| `HwpSearchController` | 문서 검색 세션 (엔진은 HwpKitCore) | `@State`로 소유해 뷰와 검색 바에 **같은 인스턴스** |
+| `HwpSearchBar` | 검색 필드 + 카운터 + 이전/다음 + 지우기 | 툴바 **아래 별도 행** |
+| `HwpSearchNavigator` | 매치 카운터 + 이전/다음 | `HwpSearchBar`가 내부에서 조립 |
 | `HwpDocumentLoader` | 비동기 문서 로더 | `.fileImporter` 결과를 async 로드 |
 | `HwpPDFExporter` | PDF 내보내기 (진행률·취소) | 툴바 `PDF로 내보내기` / `인쇄` |
 
 - `.hwp` 파일을 사용자에게 선택받아 (`SwiftUI.fileImporter`) 위 컴포넌트로 렌더링/조작
 - 하이퍼링크 탭 + 미지원 요소 콜백을 콘솔에 로그
+- 문서 내 검색 — 컨트롤러 하나를 `HwpDocumentView(searchController:)`와
+  `HwpSearchBar(controller:)`에 넘기면 하이라이트·매치 노출 스크롤·프로그레시브
+  재스캔이 자동 배선된다. **Cmd+F는 이 앱이 잡는다** — 라이브러리는 전역
+  단축키를 소유하지 않고 `@FocusState` 훅만 받는다 (Cmd+O·Cmd+P와 같은 관례)
 - PDF 내보내기·인쇄 — 라이브러리는 PDF 바이트까지만 만들고, 저장 패널
   (`fileExporter`)·인쇄 UI(macOS `PDFDocument.printOperation`, iOS
   `UIPrintInteractionController`)는 이 앱이 배선한다 (`PDFExportSupport.swift`)
@@ -56,12 +63,19 @@ Xcode에서 스킴 `HwpSwiftSample` 선택 → 대상 지정:
 문서가 로드되면 화면 상단에 다음 툴바가 나타남:
 
 ```
-[Re-open] | [-] Page 1 of N [+] | [PDF로 내보내기] [인쇄]     [-] Zoom 100% [+] [Reset]
+[Re-open] | [-] Page 1 of N [+] | [PDF로 내보내기] [인쇄] [찾기]  [-] Zoom 100% [+] [Reset]
 └──────────────────────────  HwpDocumentToolbar  ──────────────────────────────┘
+[ Find in document          ] 1 of 19 ‹ › [Clear]
+└────────────  HwpSearchBar (툴바 밖 별도 행)  ────────────┘
 ```
 
 - 페이지 넘김 / 확대 / 축소 / 초기화 모두 실시간 반영
 - Re-open 클릭 시 다른 `.hwp` 파일로 교체
+- `찾기`(Cmd+F)는 검색 필드로 **포커스만** 옮긴다. 검색 바를 툴바 **안**에 넣지
+  않은 이유는 `HwpDocumentToolbar`가 순수 `HStack`이라 가변 폭 필드가 iPhone
+  폭에서 레이아웃을 무너뜨리기 때문 — 툴바 컴포넌트 자체는 고치지 않는다
+  (호스트 레이아웃은 호스트 몫). 툴바가 `loadedView` 안에만 있으므로 이
+  단축키도 문서가 열려 있는 동안에만 산다 (인쇄와 같은 성질)
 - `PDF로 내보내기` / `인쇄`(Cmd+P)는 진행률 시트를 띄우고 취소를 받는다. 앱
   임시 디렉터리에 먼저 쓴 뒤 그 파일을 저장 패널·인쇄로 넘기므로, 취소해도
   열리지 않는 부분 파일이 사용자 디렉터리에 남지 않는다
@@ -145,7 +159,7 @@ Sample/
 ├── project.yml                    # xcodegen spec (편집 후 regen)
 ├── HwpSwiftSample/
 │   ├── HwpSwiftSampleApp.swift    # @main 진입점
-│   ├── ContentView.swift          # .fileImporter + HwpDocumentView + 내보내기 배선
+│   ├── ContentView.swift          # .fileImporter + HwpDocumentView + 검색·내보내기 배선
 │   ├── PDFExportSupport.swift     # fileExporter용 FileDocument + 플랫폼 인쇄 (#if os)
 │   └── HwpSwiftSample.entitlements
 └── README.md
@@ -198,8 +212,8 @@ Xcode 콘솔에 `print()`로 출력됨:
 
 ## 스코프
 
-이 샘플은 **`HwpKit`이 노출하는 모든 SwiftUI 컴포넌트를 실제로 조작해 볼 수 있는 최소 앱**. 실 서비스 UX (최근 파일, 검색, 사이드바, 편집 등)는 포함하지 않으며, 이는 `HwpKit` v1의 read-only 스코프와도 일치.
+이 샘플은 **`HwpKit`이 노출하는 모든 SwiftUI 컴포넌트를 실제로 조작해 볼 수 있는 최소 앱**. 실 서비스 UX (최근 파일, 사이드바, 편집 등)는 포함하지 않으며, 이는 `HwpKit` v1의 read-only 스코프와도 일치.
 
-`HwpDocumentView` / `HwpDocumentToolbar` / `HwpPageNavigator` / `HwpZoomControls` / `HwpDocumentLoader` / `HwpPDFExporter` 6개 public surface가 모두 이 앱 안에서 활성화됨.
+`HwpDocumentView` / `HwpDocumentToolbar` / `HwpPageNavigator` / `HwpZoomControls` / `HwpSearchBar` / `HwpSearchNavigator` / `HwpSearchController` / `HwpDocumentLoader` / `HwpPDFExporter` 9개 public surface가 모두 이 앱 안에서 활성화됨.
 
 인쇄·저장·공유 **UI는 의도적으로 라이브러리 밖**이다 — `HwpKit`은 PDF 바이트까지만 만들고 그 앞뒤는 앱이 정한다. 이 앱의 `PDFExportSupport.swift`가 그 배선의 최소 예시이고, 저장소의 유일한 `#if os(macOS)` 분기이기도 하다.

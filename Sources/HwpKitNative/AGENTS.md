@@ -16,8 +16,12 @@ HwpKitNative/
 ├── Rendering/HwpImageStyleRenderer.swift # 표 107 crop/밝기/명암/효과 (CGImage.cropping + CoreImage)
 ├── Rendering/HwpPDFRenderer.swift  # CGPDFContext 스트리밍 기록 (HwpKit의 HwpPDFExporter가 감싼다)
 ├── macOS/HwpDocumentNSView.swift   # NSScrollView + 레이어 가상화 (magnification pinch zoom)
+├── macOS/HwpDocumentNSViewGeometry.swift   # 가시 범위·보존 창·페이지 프레임
 ├── macOS/HwpDocumentNSViewSelection.swift  # 마우스 드래그 선택 + Cmd+C/Cmd+A/우클릭 Copy
+├── macOS/HwpDocumentNSViewSearch.swift     # 검색 오버레이 2벌 + 매치 노출 스크롤 (#75)
+├── iOS/HwpDocumentUIViewGeometry.swift     # 위와 대칭 (#75에서 UIView 본체에서 분리)
 ├── iOS/HwpDocumentUIViewSelection.swift    # 롱프레스 선택 + 엣지 오토스크롤 + 편집 메뉴
+├── iOS/HwpDocumentUIViewSearch.swift       # 위와 대칭 (#75)
 ├── macOS/HwpCenteringClipView.swift # 문서가 뷰포트보다 작을 때 중앙 정렬 클립 뷰
 ├── iOS/HwpDocumentUIView.swift     # UIView + UIScrollView (pinch zoom 내장)
 ├── Cache/HwpImageCache.swift       # LRU actor (256MB cap) — 뷰가 provider에 주입
@@ -93,6 +97,8 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
 
 `CALayer.contentsScale` 기본값은 1.0 — 설정하지 않으면 Retina 에서 1x 래스터를 확대해 **글씨가 흐릿해진다** (실제로 겪은 버그). 두 뷰 모두 `effectiveContentsScale` (backing/screen scale × max(1, zoom), 상한 4× — 산식은 `HwpDocumentViewSupport.effectiveContentsScale`) 을 레이어 생성 시와 zoom/backing 변경 시 적용한다 (macOS: `viewDidChangeBackingProperties`, iOS: `didMoveToWindow` + `scrollViewDidEndZooming`). 일괄 갱신은 `HwpDocumentViewSupport.updateContentsScale` — 메모 패널 레이어도 페이지와 함께 재래스터한다 (macOS·iOS 통일됨).
 
+선택·검색 하이라이트 오버레이 (`CAShapeLayer`) 는 그 일괄 갱신 대상이 아니라 `updateHighlightOverlays` 가 **매 호출** 부모 페이지 레이어의 `contentsScale` 을 물려준다 — 벡터 path 라 페이지와 다른 배율로 래스터하면 확대에서 가장자리가 뭉개진다. **물려받기만 하므로 배율 갱신이 오버레이를 다시 칠해 줘야 한다** (`updateLayerContentsScale` 이 선택·검색 갱신을 함께 부른다, #75 리뷰): 줌 종료는 페이지 레이어 배율만 바꾸고, macOS 는 가시 범위가 같으면 `clipViewBoundsDidChange` 가 조기 반환하며 iOS 는 `scrollViewDidZoom` 이 **배율 갱신보다 먼저** 오버레이를 칠하므로, 그 두 줄이 없으면 하이라이트가 옛 배율로 남아 흐려진다. 가드는 양 플랫폼의 `testOverlayScaleFollowsPageLayerAfterScaleChange`.
+
 ## 줄 배치 캐시 (HwpPageLayer)
 
 `.drawText` 조판 결과 (`HwpDrawnTextLayout.lines`) 를 레이어 인스턴스 안에 캐시한다 — 재드로마다 framesetter 를 다시 돌리지 않는다. 재드로는 흔하다: contentsScale 변경 (핀치 줌 종료·Retina), bounds 변경 (`needsDisplayOnBoundsChange`), 이미지 디코딩 완료·디퍼드 용량 확보 콜백. 줄 기하는 pt 단위라 이 중 **어느 것도 캐시를 무효화하지 않는다** — 그게 이 캐시의 요점이다. `drawText` 는 조회 (`cachedDrawnLines`) · 순수 조판 (`typesetLines`) · 렌더 (`drawTextLines`) 셋으로 쪼개져 있어, 배치가 `pageHeight`·`bounds`·`contentsScale` 과 무관하다는 사실이 구조로 드러난다.
@@ -120,6 +126,21 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
 
 - `AsyncThrowingStream<HwpDocumentSnapshot, Error>` — 첫 `firstBatch`(기본 1) 쪽 확정 즉시 1차 스냅샷, 이후 `batchSize`(기본 24) 쪽마다, 완료 시 최종 스냅샷 (`isComplete == true`, `unsupportedElements` 포함) 방출. `loadDocument` 는 이 스트림의 최종 스냅샷만 반환하는 래퍼로 동작 — 최종 결과는 동치 (loadToken 제외)
 - 스냅샷은 같은 `imageStore` 를 공유하고, `HwpDocumentMetadata.loadToken` (UUID) 으로 연속성 표시. 뷰의 `document` didSet 이 `HwpDocumentViewSupport.isProgressiveUpdate` (같은 loadToken + 페이지 증가) 로 **증분 적용** (레이어·스크롤 유지, 크기·가시 범위만 확장) vs **전체 리셋** 을 분기. 첫 페이지 표시가 전량 로드 완료를 기다리지 않는다 (1,030쪽 실문서 23.8s → 첫 페이지 ~3.2s)
+
+## 검색 하이라이트 (#75)
+
+- 오버레이 딕셔너리는 **2벌**이다 (`searchMatchLayers` / `currentSearchMatchLayers`). 헬퍼가 페이지당 오버레이 하나를 재사용하므로 한 벌로 두 번 칠하면 두 번째 호출이 첫 번째의 path 를 덮는다.
+- z-순서는 `HwpOverlayZ` 로 **명시**한다 (search 10 / current 20 / selection 30). 부착이 `addSublayer` 한 줄이고 이미 붙어 있으면 다시 붙이지 않으므로, 명시하지 않으면 첫 부착 순서가 그대로 고착돼 가상화로 재실체화한 페이지만 겹침 색이 뒤바뀐다. 선택이 최상단인 것은 사용자가 직접 만든 것이라 자동 하이라이트에 가리면 안 되기 때문이다.
+- `fillColor` 는 **매 호출** 갱신한다. 문서 교체가 딕셔너리를 비우지 않아 오버레이가 재사용되는데, 생성 분기에서만 대입하면 옛 색이 그대로 남는다 (선택만 있을 때도 있던 결함).
+- 색은 **고정 sRGB** 다 (`HwpSearchHighlightStyle.default`). appearance/trait 변경 훅이 이 타깃에 하나도 없어 동적 색은 `.cgColor` 변환 시점에 굳고 다크 모드 전환 후 낡은 색이 남는다.
+- **가시 범위가 같은 스크롤 틱은 건너뛴다** — 양 플랫폼 모두 (macOS `clipViewBoundsDidChange`, iOS `scrollViewDidScroll` 의 `activeVisibleRange` 가드, #75 리뷰). 오버레이 재구축은 페이지마다 매치 전량(상한 5,000)을 훑어 rect·CGPath 를 새로 만드는데 페이지 레이어는 스크롤과 함께 움직이므로 대부분 같은 결과를 다시 만드는 일이다. **줌은 가드하지 않는다** — 프레임이 바뀐다. 대가로 같은 페이지 안의 매치 이동은 저절로 갱신되지 않으므로 `onCurrentMatchChanged` 에서 명시적으로 부른다.
+- 탐색(`onCurrentMatchChanged`)은 오버레이를 **한 번만** 다시 만든다 — `scrollToMatch` 가 끝에서 `updateVisiblePages` 를 돌려 이미 칠했으면 (반환값 `true`) 호출부가 건너뛴다 (#75 리뷰). 무조건 부르면 페이지별 매치 전량 필터와 CGPath 재구성을 탐색마다 두 번 문다. 스크롤이 없었던 경우(매치 없음·범위 밖·iOS 첫 레이아웃 전)에만 직접 부른다. **`scrollToMatch` 안에서도 두 번이었다** (#75 리뷰 11차, 실측 2회): 쪽을 넘는 스크롤은 `scroll(to:)`·`setContentOffset` 이 **동기로** 스크롤 콜백(`clipViewBoundsDidChange`·`scrollViewDidScroll`)을 태워 이미 갱신하므로, 그 뒤 무조건 부르면 재구축이 2회다. 스크롤 **전** `activeVisibleRange` 를 잡아 두고 바뀌었으면 건너뛴다 — 같은 쪽 안의 이동은 그 콜백이 조기 반환하므로 그때만 직접 부른다 (그래서 이 두 경우를 "가시 범위가 바뀌었나" 하나로 가른다). 반환값은 **두 경우 모두 `true`** 다: 그 값은 "내가 칠했나"가 아니라 호출부가 중복을 건너뛰는 근거라, 콜백이 칠한 경우에 `false` 를 내면 `onCurrentMatchChanged` 가 세 번째 재구축을 붙인다. 기존 가드(`testNavigationRebuildsOverlaysOnce`)가 이걸 못 잡은 이유는 픽스처가 **한 쪽짜리** 문서라 같은 쪽 이동만 봤기 때문이다.
+- **iOS 는 마지막 쪽도 첫 가시 쪽이 되도록 아래 여유를 둔다** (`trailingScrollExtent`, #75 리뷰). 없으면 문서 전체 오프셋 클램프가 페이지-로컬 목표를 끌어내려, 매치로 점프해도 앞 쪽이 첫 가시가 되고 그 쪽이 `currentPage` 로 보고된다 (마지막 쪽이 뷰포트보다 낮을 때 — 축소했거나 짧은 쪽). 모자란 만큼만, 콘텐츠가 뷰포트보다 클 때만 준다. **macOS 에는 아직 같은 보장이 없다** — `HwpCenteringClipView.constrainBoundsRect` 를 함께 고쳐야 해서 남겨 둔 비대칭이다.
+- 단위 캐시 축출은 **이 계층이 소유**한다 — 유지 범위(가시 ±2쪽)를 아는 유일한 층이라 `HwpSearchController.retainedPageRange` 훅을 여기서 채우고, **가시 범위가 바뀔 때마다 `evictUnitsOutsideRetainedRange()` 를 직접 부른다** (오버레이를 그린 뒤에 — 먼저 버리면 곧 읽을 것을 버린다). 스캔 중 축출만으로는 상한이 서지 않는다 (#75 리뷰): 스캔이 끝난 뒤에도 하이라이트 조회가 페이지마다 단위를 다시 전개해 캐시에 넣으므로 1,030쪽을 훑으면 **매치가 있는 페이지 전부**가 남는다 (매치 없는 페이지는 `highlightRects` 의 빈 선택 가드에서 먼저 걸러진다).
+- **세션 해체도 이 계층이 소유한다** (#75 리뷰). `searchController = nil` 이 `detach()` 를 부르고 SwiftUI 쪽 `dismantleNSView`/`dismantleUIView` 가 그것을 부른다 — 안 떼면 호스트가 `@State` 로 붙든 컨트롤러가 이 뷰의 선택 컨트롤러를, 그것이 다시 **문서 전체**(페이지·페인트 리스트·단위 캐시)를 잡는다. 새 문서를 열면 `attach` 가 옛 것을 떼므로 남는 경로는 **문서를 닫거나 재로드가 실패했을 때**다. 떼는 대상은 `isAttached(to:)` 로 **자기 것만** 고른다 — SwiftUI 가 새 뷰를 먼저 만들고 옛 뷰를 나중에 해체할 수 있어, 무조건 떼면 이미 새 뷰에 붙은 세션이 끊긴다. SwiftUI 를 거치지 않는 **직접 사용 경로**엔 `dismantle*` 이 아예 없으므로 양 뷰의 `deinit` 이 같은 일을 한다 (`HwpDocumentViewSupport.detachSearchSessionOnTeardown`) — `deinit` 은 nonisolated 이고 dealloc 이 메인에서 돈다는 보장도 없어 `@MainActor` 인 `detach()` 를 그 자리에서 못 부르니 참조만 넘겨 홉을 태우고, 거기서도 같은 동일성 가드를 지난다. **뗄 때는 이 뷰가 설치한 훅 셋(`onMatchesChanged`·`onCurrentMatchChanged`·`retainedPageRange`)도 함께 지운다** (`HwpDocumentViewSupport.removeSearchHooks`, #75 리뷰 13차) — 안 지우면 뗀 컨트롤러가 옛 뷰의 클로저를 들고 있다가, 재사용될 때 옛 뷰를 다시 칠하고 `retainedPageRange` 로 **새 지오메트리를 옛 가시 범위로 축출**한다 (곧 읽을 단위를 버려 성능이 조용히 나빠진다). 클로저는 동일성 비교가 안 되므로 "다른 뷰가 이미 재배선했는가"는 `isAttached(to:)` 가드로만 가른다 — 그래서 detach 와 훅 제거가 **같은 가드 안**에 있어야 한다.
+- 하이라이트 **색 변경**은 컨트롤러가 `onMatchesChanged` 로 직접 통지한다 (#75 리뷰). 이 계층은 매치·현재 매치 콜백만 듣고 SwiftUI wrapper 는 컨트롤러 신원만 넘기므로, 색만 바뀐 순간에는 아무도 다시 칠하지 않는다.
+- **매치 노출 스크롤(`scrollToMatch`)은 두 축이다.** 세로는 목표를 페이지 범위로 클램프해 **매치 페이지가 첫 가시 페이지**가 되게 한다 — 안 그러면 `currentVisiblePage()` 가 이웃 페이지를 가리켜 SwiftUI `currentPage` 왕복이 스크롤을 되튕긴다. 가로는 `horizontalOffset(toReveal:)` 이 **이미 뷰포트 안이면 현재 오프셋을 그대로 두고** 밖일 때만 뷰포트 가운데로 가져온다 — 매치마다 재조정하면 같은 단에서 다음 매치로 넘어갈 때 화면이 좌우로 흔들린다. 세로만 맞추면 뷰포트가 페이지(595pt)보다 좁을 때(iPhone·축소 안 한 창) 잘린 오른쪽의 매치로 점프해도 **카운터만 바뀌고 화면은 그대로**다. iOS 의 클램프(`clampedContentOffsetX`)는 선택 오토스크롤의 세로판과 같은 파일에 둔다.
+- **오버레이 단언은 "보이는가"를 증명하지 못한다.** 위 결함이 있는 동안에도 부착·색·z-순서·세로 클램프 단언이 전부 초록이었다 — 그 단언들은 "레이어가 올바른가"만 본다. 발견은 **시뮬레이터 육안 확인**이었고, 게다가 오버레이 스위트가 macOS 전용이라 iOS 경로엔 단언 자체가 없었다 (`HwpDocumentUIViewSearchTests` 가 그래서 생겼다 — macOS 대응 스위트와 같은 계약을 건다). 회귀 테스트를 쓸 때 둘: 대상 rect 를 콘텐츠 **밖**에 두면 스크롤로 도달할 수 없어 계약이 성립하지 않으므로 "뷰포트보다 넓은 콘텐츠 + 콘텐츠 안의 화면 밖 rect"로 조건을 잡고, 배선을 보는 테스트는 `updateSearchOverlays()` 를 **직접 부르지 않는다** (부르면 콜백 배선 누락이 가려진다 — 초안에서 실제로 가려져 있었다).
 
 ## 텍스트 선택
 
@@ -153,3 +174,4 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
 - 페이지 스크롤 시 새 페이지 fetch 를 main thread 에서 sync — 반드시 `HwpDocumentActor.page(at:)` async 호출
 - 300 페이지 문서를 열 때 모든 페이지 layer 를 persistent 로 유지 — 메모리 폭발. `visible ± 2` 정책 유지
 - Dark mode 에서 페이지 배경/텍스트 색을 반전 — HWP 저자 의도 그대로 렌더 (whitepaper metaphor)
+- **`public extension` 안에 무수식자 멤버 두기** — 전부 public 이 된다. 뷰 확장을 파일로 쪼갤 때 뷰 본체에서 `private` 이던 가상화 세부(가시 범위·보존 창·페이지 프레임)가 그대로 공개 API 로 새어 나갔다 (#75 리뷰). 지오메트리 확장은 양 플랫폼 모두 **internal `extension`** 이고, 검색 확장처럼 일부만 공개해야 하는 파일은 멤버에 `internal` 을 명시한다 (`HwpDocumentUIViewSearch.swift` 가 그 예). SwiftFormat 의 `extensionAccessControl` 이 `on-extension` 이라 멤버가 전부 같은 수준이면 확장으로 올라가므로, internal 로 통일하면 형태가 유지된다

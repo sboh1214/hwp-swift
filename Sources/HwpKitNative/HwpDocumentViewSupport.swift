@@ -16,6 +16,42 @@ enum HwpDocumentViewSupport {
 
     /// 프로그레시브 스냅샷 (같은 loadToken + 페이지 증가) 여부.
     /// true면 뷰는 기존 레이어·스크롤 위치를 유지하고 크기·가시 범위만 늘린다.
+    /// 뷰가 죽을 때 검색 세션을 뗀다.
+    ///
+    /// SwiftUI 를 거치지 않는 직접 사용 경로에는 `dismantleNSView`/
+    /// `dismantleUIView` 가 없어 여기서만 끊을 수 있다 — 안 끊으면 호스트가
+    /// 붙든 컨트롤러가 이 뷰의 선택 컨트롤러를, 그것이 다시 문서 전체를 잡는다.
+    ///
+    /// `deinit` 은 nonisolated 이고 dealloc 이 메인에서 돈다는 보장이 없어
+    /// `@MainActor` 인 `detach()` 를 그 자리에서 부를 수 없다. 두 컨트롤러 모두
+    /// `@MainActor` 라 Sendable 이므로 참조만 넘겨 홉을 태운다. 떼는 대상은
+    /// **자기 것뿐**이다 — 그 사이 다른 뷰가 세션을 가져갔으면 건드리지 않는다.
+    nonisolated static func detachSearchSessionOnTeardown(
+        _ controller: HwpSearchController?,
+        from selection: HwpSelectionController
+    ) {
+        guard let controller else { return }
+        Task { @MainActor in
+            guard controller.isAttached(to: selection) else { return }
+            controller.detach()
+            removeSearchHooks(from: controller)
+        }
+    }
+
+    /// 이 뷰가 설치한 검색 훅을 뗀다.
+    ///
+    /// 호출부는 `isAttached(to:)` 로 **자기 세션**임을 먼저 확인한다 — 다른 뷰가
+    /// 이미 재배선했으면 그 훅을 지우면 안 되는데 클로저는 동일성 비교가 안 되므로
+    /// 그 가드가 유일한 판별이다. 안 지우면 뗀 컨트롤러가 옛 뷰의 클로저를 들고
+    /// 있다가, 재사용될 때 옛 뷰를 다시 칠하고 `retainedPageRange` 로 **새
+    /// 지오메트리를 옛 가시 범위로 축출**한다 (#75 리뷰 13차).
+    @MainActor
+    static func removeSearchHooks(from controller: HwpSearchController) {
+        controller.onMatchesChanged = nil
+        controller.onCurrentMatchChanged = nil
+        controller.retainedPageRange = nil
+    }
+
     nonisolated static func isProgressiveUpdate(
         from old: HwpDocument?,
         to new: HwpDocument?
@@ -191,21 +227,52 @@ enum HwpDocumentViewSupport {
         highlightRects: (Int) -> [CGRect],
         fillColor: CGColor
     ) {
+        updateHighlightOverlays(
+            pageLayers: pageLayers,
+            overlayLayers: &selectionLayers,
+            highlightRects: highlightRects,
+            fillColor: fillColor,
+            zPosition: HwpOverlayZ.selection
+        )
+    }
+
+    /// 하이라이트 오버레이 갱신의 일반형 — 선택(#5)과 검색(#75)이 공유한다.
+    ///
+    /// `zPosition`이 인자인 이유: 부착은 `addSublayer` 한 줄뿐이고 이미 붙어
+    /// 있으면 다시 붙이지 않으므로, 명시하지 않으면 **첫 부착 순서가 그대로
+    /// z-순서로 고착된다**. 가상화로 축출→재실체화한 페이지만 순서가 다시
+    /// 정해져 같은 화면에서 페이지마다 겹침 색이 뒤바뀐다.
+    ///
+    /// `fillColor`를 **매 호출** 갱신하는 이유: 문서를 교체해도 딕셔너리가
+    /// 비워지지 않아 오버레이가 재사용되는데, 생성 분기에서만 색을 대입하면
+    /// 재사용된 오버레이가 옛 색을 그대로 들고 다시 붙는다. 색이 공개
+    /// 설정(`HwpSearchHighlightStyle`)이 된 이상 이 경로가 실제로 밟힌다.
+    static func updateHighlightOverlays(
+        pageLayers: [Int: HwpPageLayer],
+        overlayLayers: inout [Int: CAShapeLayer],
+        highlightRects: (Int) -> [CGRect],
+        fillColor: CGColor,
+        zPosition: CGFloat
+    ) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         for (pageIndex, pageLayer) in pageLayers {
             let rects = highlightRects(pageIndex)
             if rects.isEmpty {
-                selectionLayers[pageIndex]?.removeFromSuperlayer()
-                selectionLayers[pageIndex] = nil
+                overlayLayers[pageIndex]?.removeFromSuperlayer()
+                overlayLayers[pageIndex] = nil
                 continue
             }
-            let overlay = selectionLayers[pageIndex] ?? {
+            let overlay = overlayLayers[pageIndex] ?? {
                 let layer = CAShapeLayer()
-                layer.fillColor = fillColor
-                selectionLayers[pageIndex] = layer
+                overlayLayers[pageIndex] = layer
                 return layer
             }()
+            overlay.fillColor = fillColor
+            overlay.zPosition = zPosition
+            // 오버레이는 벡터 path라 페이지 레이어와 같은 배율로 래스터해야
+            // Retina·확대에서 가장자리가 뭉개지지 않는다.
+            overlay.contentsScale = pageLayer.contentsScale
             if overlay.superlayer !== pageLayer {
                 overlay.removeFromSuperlayer()
                 pageLayer.addSublayer(overlay)
@@ -218,12 +285,22 @@ enum HwpDocumentViewSupport {
             overlay.path = path
         }
         // 화면 밖으로 나간 페이지의 오버레이 정리
-        for (pageIndex, overlay) in selectionLayers where pageLayers[pageIndex] == nil {
+        for (pageIndex, overlay) in overlayLayers where pageLayers[pageIndex] == nil {
             overlay.removeFromSuperlayer()
-            selectionLayers[pageIndex] = nil
+            overlayLayers[pageIndex] = nil
         }
         CATransaction.commit()
     }
+}
+
+/// 페이지 레이어 sublayer의 겹침 순서.
+///
+/// 선택이 가장 위인 이유: 사용자가 직접 드래그해 만든 것이라 검색이 칠한
+/// 자동 하이라이트에 가려지면 안 된다.
+enum HwpOverlayZ {
+    static let searchMatch: CGFloat = 10
+    static let currentSearchMatch: CGFloat = 20
+    static let selection: CGFloat = 30
 }
 
 /// 인덱스가 범위 밖이면 nil — iOS 뷰의 로컬 재정의를 모듈 공용으로 승격.

@@ -1,0 +1,497 @@
+import CoreGraphics
+import CoreText
+import Foundation
+@testable import HwpKitCore
+import Nimble
+import XCTest
+
+/// 검색 세션(#75) — 단계 전이·증분 재스캔·순환 탐색·클램프 방어·해체.
+/// 매치 상한과 캐시 축출은 `HwpSearchBudgetTests` 가 본다.
+@MainActor
+final class HwpSearchControllerTests: XCTestCase {
+    private static let font = CTFontCreateWithName("Helvetica" as CFString, 12, nil)
+
+    private static func textBlock(_ text: String) -> AnyHwpBlock {
+        AnyHwpBlock(
+            frame: CGRect(x: 10, y: 20, width: 400, height: 20),
+            kind: .text,
+            attributedString: NSAttributedString(
+                string: text,
+                attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
+            ),
+            role: .body
+        )
+    }
+
+    private static func document(
+        pageTexts: [String], loadToken: UUID? = nil, isComplete: Bool = true
+    ) -> HwpDocument {
+        HwpDocument(
+            pages: pageTexts.enumerated().map { index, text in
+                HwpPage(
+                    size: CGSize(width: 595, height: 842),
+                    margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
+                    blocks: [Self.textBlock(text)],
+                    pageNumber: index + 1
+                )
+            },
+            metadata: HwpDocumentMetadata(
+                pageCount: pageTexts.count, loadToken: loadToken, isComplete: isComplete
+            ),
+            unsupportedElements: []
+        )
+    }
+
+    /// 스캔은 Task로 돌므로 완료를 기다린다. 발행 코얼레싱을 끄고
+    /// (`publishInterval = .zero`) 결정론적으로 만든다.
+    private static func makeAttached(
+        pageTexts: [String], loadToken: UUID? = nil
+    ) -> (HwpSelectionController, HwpSearchController) {
+        let selection = HwpSelectionController()
+        selection.setDocument(
+            Self.document(pageTexts: pageTexts, loadToken: loadToken),
+            preservingSelection: false
+        )
+        let search = HwpSearchController()
+        search.publishInterval = .zero
+        search.attach(to: selection)
+        return (selection, search)
+    }
+
+    // MARK: - 단계 전이
+
+    func testIdleWhileQueryIsEmpty() {
+        let (_, search) = Self.makeAttached(pageTexts: ["alpha"])
+
+        expect(search.phase) == .idle
+        expect(search.matchCount) == 0
+        expect(search.currentMatchIndex).to(beNil())
+    }
+
+    func testCompletesScanAndSelectsFirstMatch() async {
+        let (_, search) = Self.makeAttached(pageTexts: ["alpha beta", "beta gamma"])
+
+        search.search(text: "beta")
+
+        await expect(search.phase).toEventually(equal(.complete), timeout: .seconds(2))
+        expect(search.matchCount) == 2
+        expect(search.currentMatchIndex) == 0
+        expect(search.currentMatch?.pageNumber) == 1
+        expect(search.scannedPageCount) == 2
+        expect(search.pageCount) == 2
+    }
+
+    func testCompletesWithZeroMatches() async {
+        let (_, search) = Self.makeAttached(pageTexts: ["alpha"])
+
+        search.search(text: "nothing")
+
+        await expect(search.phase).toEventually(equal(.complete), timeout: .seconds(2))
+        expect(search.matchCount) == 0
+        expect(search.currentMatchIndex).to(beNil())
+    }
+
+    // MARK: - 증분 재스캔
+
+    /// 프로그레시브 스냅샷마다 전량 재스캔하면 1,030쪽 전개가 스냅샷 수만큼
+    /// 반복된다. append면 늘어난 구간만 본다.
+    func testProgressiveAppendScansOnlyNewPages() async {
+        let token = UUID()
+        let (selection, search) = Self.makeAttached(
+            pageTexts: ["hit one", "hit two"], loadToken: token
+        )
+        search.search(text: "hit")
+        await expect(search.phase).toEventually(equal(.complete), timeout: .seconds(2))
+        expect(search.matchCount) == 2
+
+        selection.setDocument(
+            Self.document(
+                pageTexts: ["hit one", "hit two", "hit three", "hit four"],
+                loadToken: token
+            ),
+            preservingSelection: true
+        )
+
+        await expect(search.matchCount).toEventually(equal(4), timeout: .seconds(2))
+        expect(search.phase) == .complete
+        // 앞 두 페이지를 다시 훑지 않았다 — scannedPageCount는 새 구간의 끝이다
+        expect(search.scannedPageCount) == 4
+        expect(search.matches.map(\.pageNumber)) == [1, 2, 3, 4]
+    }
+
+    /// append는 진행 중 스캔을 취소하고 마지막으로 **발행된** 결과를 이어받는다.
+    /// 이어받는 지점을 `previousPageCount`로 잡으면 아직 안 훑었거나 스로틀에
+    /// 걸려 발행되지 않은 접두 페이지의 매치가 영구 누락된다 (#75 리뷰).
+    func testProgressiveAppendDuringScanKeepsUnpublishedPrefixMatches() async {
+        let token = UUID()
+        let prefix = Array(repeating: "hit", count: 40)
+        let selection = HwpSelectionController()
+        selection.setDocument(
+            Self.document(pageTexts: prefix, loadToken: token), preservingSelection: false
+        )
+        let search = HwpSearchController()
+        // 첫 발행 뒤로는 스캔이 끝날 때까지 발행하지 않는다 — 취소가 삼킬 수
+        // 있는 구간을 최대로 벌린다.
+        search.publishInterval = .seconds(60)
+        search.attach(to: selection)
+        // 스냅샷을 **스캔 도중** 넣는 결정론적 이음매다. 이 훅은 16쪽마다
+        // `runScan` 안에서 불린다. `Task.yield()`로 끼워 넣으면 스캔이 먼저
+        // 끝나 취소 경로를 아예 타지 않는다 — 무력화 실험에서 수정을 되돌려도
+        // 통과하는 가짜 가드였다.
+        var didAppend = false
+        search.retainedPageRange = {
+            if !didAppend {
+                didAppend = true
+                selection.setDocument(
+                    Self.document(pageTexts: prefix + ["hit", "hit"], loadToken: token),
+                    preservingSelection: true
+                )
+            }
+            return 0 ..< 0
+        }
+
+        search.search(text: "hit")
+
+        await expect(search.matchCount).toEventually(equal(42), timeout: .seconds(5))
+        expect(search.phase) == .complete
+        expect(didAppend) == true
+    }
+
+    func testDocumentReplacementRescansFromScratch() async {
+        let (selection, search) = Self.makeAttached(
+            pageTexts: ["hit one"], loadToken: UUID()
+        )
+        search.search(text: "hit")
+        await expect(search.matchCount).toEventually(equal(1), timeout: .seconds(2))
+
+        selection.setDocument(
+            Self.document(pageTexts: ["hit a", "hit b"], loadToken: UUID()),
+            preservingSelection: false
+        )
+
+        await expect(search.matchCount).toEventually(equal(2), timeout: .seconds(2))
+        expect(search.phase) == .complete
+    }
+
+    /// 뷰는 이 프로퍼티를 관찰하지 않으므로 컨트롤러가 직접 통지해야 한다.
+    func testStyleChangeNotifiesRepaint() async {
+        let (_, search) = Self.makeAttached(pageTexts: ["hit"])
+        search.search(text: "hit")
+        await expect(search.matchCount).toEventually(equal(1), timeout: .seconds(2))
+        var repaints = 0
+        search.onMatchesChanged = { repaints += 1 }
+        let revisionBefore = search.revision
+
+        search.style = HwpSearchHighlightStyle(
+            matchColor: HwpRGBColor(red: 0, green: 1, blue: 0, alpha: 0.5),
+            currentMatchColor: HwpRGBColor(red: 0, green: 0, blue: 1, alpha: 0.5)
+        )
+
+        expect(repaints) == 1
+        // revision 은 "같은 발행인가"를 O(1) 로 판정하라고 공개한 토큰이라,
+        // 안 올리면 규약대로 구현한 뷰가 이 통지를 무시한다 (#75 리뷰 12차)
+        expect(search.revision) > revisionBefore
+
+        search.style = search.style
+
+        expect(repaints) == 1
+    }
+
+    /// 로더는 마지막 부분 스냅샷 뒤에 최종 스냅샷을 무조건 한 번 더 낸다.
+    /// 총 쪽수가 방출 지점에 정확히 떨어지면 (1쪽 문서는 항상) 토큰도 쪽수도
+    /// 같고 메타데이터만 다른데, 이것을 교체로 보면 전량 재스캔이 돌면서
+    /// 사용자가 골라 둔 현재 매치가 첫 매치로 되돌아간다 (#75 리뷰 2차).
+    func testEqualCountFinalSnapshotKeepsCurrentMatch() async {
+        let token = UUID()
+        let selection = HwpSelectionController()
+        selection.setDocument(
+            Self.document(
+                pageTexts: ["hit one", "hit two"], loadToken: token, isComplete: false
+            ),
+            preservingSelection: false
+        )
+        let search = HwpSearchController()
+        search.publishInterval = .zero
+        search.attach(to: selection)
+        search.search(text: "hit")
+        await expect(search.phase).toEventually(equal(.complete), timeout: .seconds(2))
+        search.next()
+        expect(search.currentMatchIndex) == 1
+
+        // 최종 스냅샷 — 토큰도 쪽수도 같고 `isComplete` 만 다르다. 두 문서가
+        // 완전히 같으면 `setDocument` 이 조기 반환해 이 경로를 아예 타지 않는다
+        // (그렇게 만든 첫 판은 수정을 되돌려도 통과하는 가짜 가드였다).
+        selection.setDocument(
+            Self.document(
+                pageTexts: ["hit one", "hit two"], loadToken: token, isComplete: true
+            ),
+            preservingSelection: true
+        )
+
+        await expect(search.phase).toEventually(equal(.complete), timeout: .seconds(2))
+        expect(search.currentMatchIndex) == 1
+        expect(search.matchCount) == 2
+    }
+
+    /// 해체는 지오메트리만 놓는 것이 아니라 결과도 되돌려야 한다 — 호스트가
+    /// 컨트롤러를 뷰보다 오래 들고 있으므로, 남기면 검색 바가 문서를 닫은 뒤에도
+    /// 카운터와 이전/다음을 그대로 보여 준다 (#75 리뷰 2차).
+    func testDetachResetsResultsAndPublishesIdle() async {
+        let (_, search) = Self.makeAttached(pageTexts: ["hit one", "hit two"])
+        search.search(text: "hit")
+        await expect(search.matchCount).toEventually(equal(2), timeout: .seconds(2))
+        var idleNotifications = 0
+        search.onCurrentMatchChanged = {
+            if $0 == nil {
+                idleNotifications += 1
+            }
+        }
+
+        search.detach()
+
+        expect(search.phase) == .idle
+        expect(search.matchCount) == 0
+        expect(search.highlightMatches).to(beEmpty())
+        expect(search.currentMatchIndex).to(beNil())
+        expect(idleNotifications) == 1
+    }
+
+    /// 스캔 도중 해체면 그것을 끝낼 유일한 태스크가 취소된다 — 단계를 그대로
+    /// 두면 검색 바가 영원히 "Searching…"에 멈춘다.
+    func testDetachDuringScanEndsInIdle() {
+        let (_, search) = Self.makeAttached(pageTexts: ["hit one", "hit two"])
+
+        search.search(text: "hit")
+        expect(search.phase) == .scanning
+
+        search.detach()
+
+        expect(search.phase) == .idle
+    }
+
+    /// 뷰 해체가 **자기 것만** 떼기 위한 질의 — 이미 다른 뷰에 붙었으면 false다.
+    func testIsAttachedOnlyReportsItsOwnSelectionController() {
+        let (selection, search) = Self.makeAttached(pageTexts: ["hit"])
+        let other = HwpSelectionController()
+
+        expect(search.isAttached(to: selection)) == true
+        expect(search.isAttached(to: other)) == false
+
+        search.attach(to: other)
+
+        expect(search.isAttached(to: selection)) == false
+        expect(search.isAttached(to: other)) == true
+    }
+
+    func testDetachClearsGeometryDependentState() async {
+        let (_, search) = Self.makeAttached(pageTexts: ["hit"])
+        search.search(text: "hit")
+        await expect(search.matchCount).toEventually(equal(1), timeout: .seconds(2))
+
+        search.detach()
+
+        expect(search.pageCount) == 0
+        expect(search.scannedPageCount) == 0
+    }
+
+    // MARK: - 탐색
+
+    func testNextAndPreviousWrapAround() async {
+        let (_, search) = Self.makeAttached(pageTexts: ["hit hit", "hit"])
+        search.search(text: "hit")
+        await expect(search.matchCount).toEventually(equal(3), timeout: .seconds(2))
+
+        expect(search.currentMatchIndex) == 0
+        search.next()
+        expect(search.currentMatchIndex) == 1
+        search.next()
+        expect(search.currentMatchIndex) == 2
+        search.next()
+        expect(search.currentMatchIndex) == 0
+        search.previous()
+        expect(search.currentMatchIndex) == 2
+    }
+
+    func testNavigationIsNoOpWithoutMatches() {
+        let (_, search) = Self.makeAttached(pageTexts: ["alpha"])
+
+        search.next()
+        search.previous()
+        search.select(matchIndex: 3)
+
+        expect(search.currentMatchIndex).to(beNil())
+    }
+
+    /// 공개 진입점이라 임의 값이 들어온다 — 클램프를 산술보다 먼저 해야
+    /// `Int.min`이 트랩하지 않는다.
+    func testSelectClampsExtremeIndicesWithoutTrapping() async {
+        let (_, search) = Self.makeAttached(pageTexts: ["hit hit hit"])
+        search.search(text: "hit")
+        await expect(search.matchCount).toEventually(equal(3), timeout: .seconds(2))
+
+        search.select(matchIndex: Int.min)
+        expect(search.currentMatchIndex) == 0
+        search.select(matchIndex: Int.max)
+        expect(search.currentMatchIndex) == 2
+        search.select(matchIndex: -1)
+        expect(search.currentMatchIndex) == 0
+        search.select(matchIndex: 999)
+        expect(search.currentMatchIndex) == 2
+    }
+
+    func testCurrentMatchChangedFiresOnNavigation() async {
+        let (_, search) = Self.makeAttached(pageTexts: ["hit hit"])
+        var reported: [Int] = []
+        search.onCurrentMatchChanged = { match in
+            reported.append(match?.selection.range.start.characterOffset ?? -1)
+        }
+        search.search(text: "hit")
+        await expect(search.matchCount).toEventually(equal(2), timeout: .seconds(2))
+
+        search.next()
+
+        expect(reported.last) == 4
+    }
+
+    /// nil-token 문서는 `setDocument` 의 조기 반환에 걸리지 않아 SwiftUI
+    /// 업데이트마다 같은 내용으로 다시 온다. 그때 재스캔하면 현재 매치가 첫
+    /// 매치로 되돌아가, `currentPage` 바인딩을 쓰는 호스트에서는 쪽을 넘는
+    /// 탐색이 아예 불가능해진다 (#75 리뷰 6차).
+    func testEquivalentNilTokenRefreshKeepsCurrentMatch() async {
+        let (selection, search) = Self.makeAttached(pageTexts: ["hit one", "hit two"])
+        search.search(text: "hit")
+        await expect(search.phase).toEventually(equal(.complete), timeout: .seconds(2))
+        search.next()
+        expect(search.currentMatchIndex) == 1
+
+        selection.setDocument(
+            Self.document(pageTexts: ["hit one", "hit two"]),
+            preservingSelection: true
+        )
+
+        expect(search.currentMatchIndex) == 1
+        expect(search.matchCount) == 2
+        expect(search.phase) == .complete
+        // 새로 만들어진 지오메트리로도 좌표가 나온다
+        expect(search.currentMatchRects(forPage: 1)).toNot(beEmpty())
+    }
+
+    // MARK: - 목록 vs 하이라이트
+
+    /// 같은 문단이 두 번 나오는 한 쪽짜리 문서 — 둘째 블록의 클론 표식만 갈린다.
+    private static func repeatedHeaderDocument(secondIsClone: Bool) -> HwpDocument {
+        func block(y: CGFloat, clone: Bool) -> AnyHwpBlock {
+            var attributes: [NSAttributedString.Key: Any] = [
+                kCTFontAttributeName as NSAttributedString.Key: font,
+            ]
+            if clone {
+                attributes[HwpAttributedStringKey.repeatedTableHeaderClone] = true
+            }
+            return AnyHwpBlock(
+                frame: CGRect(x: 10, y: y, width: 400, height: 20),
+                kind: .text,
+                attributedString: NSAttributedString(string: "header", attributes: attributes),
+                source: HwpBlockSource(paragraphId: 7),
+                role: .body
+            )
+        }
+        return HwpDocument(
+            pages: [HwpPage(
+                size: CGSize(width: 595, height: 842),
+                margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
+                blocks: [block(y: 20, clone: false), block(y: 60, clone: secondIsClone)],
+                pageNumber: 1
+            )],
+            metadata: HwpDocumentMetadata(pageCount: 1),
+            unsupportedElements: []
+        )
+    }
+
+    /// 목록은 dedup, 하이라이트는 전량 — 기존 `plainText` 정책과 같다.
+    func testHighlightListKeepsClonesThatMatchListDrops() async {
+        let selection = HwpSelectionController()
+        selection.setDocument(
+            Self.repeatedHeaderDocument(secondIsClone: true), preservingSelection: false
+        )
+        let search = HwpSearchController()
+        search.publishInterval = .zero
+        search.attach(to: selection)
+
+        search.search(text: "header")
+
+        await expect(search.phase).toEventually(equal(.complete), timeout: .seconds(2))
+        expect(search.matches.count) == 1
+        expect(search.highlightMatches.count) == 2
+    }
+
+    /// 클론 표식은 렌더 속성이 아니라 **검색 의미**를 바꾼다. `AnyHwpBlock.==`
+    /// 가 문자열만 비교하면 이 플래그만 뒤집힌 재전달이 "내용이 같은 재전달"로
+    /// 접혀 재스캔이 생략되고, 목록·현재 매치가 옛 분류에 머문다 (#75 리뷰 7차).
+    func testCloneFlagFlipIsNotAnEquivalentRefresh() async {
+        let selection = HwpSelectionController()
+        selection.setDocument(
+            Self.repeatedHeaderDocument(secondIsClone: false), preservingSelection: false
+        )
+        let search = HwpSearchController()
+        search.publishInterval = .zero
+        search.attach(to: selection)
+        search.search(text: "header")
+        await expect(search.matchCount).toEventually(equal(2), timeout: .seconds(2))
+
+        selection.setDocument(
+            Self.repeatedHeaderDocument(secondIsClone: true), preservingSelection: true
+        )
+
+        await expect(search.matchCount).toEventually(equal(1), timeout: .seconds(2))
+        expect(search.highlightMatches.count) == 2
+    }
+
+    // MARK: - 기하 해석
+
+    /// `rects(for:)` 는 **인자** 매치의 기하를 해석한다. `currentMatchRects` 와
+    /// 갈리지 않으면 공개 `scrollToMatch(_:)` 가 엉뚱한 자리로 스크롤한다.
+    func testRectsResolveSuppliedMatchNotCurrentMatch() async {
+        let (_, search) = Self.makeAttached(pageTexts: ["hit and hit again"])
+        search.search(text: "hit")
+        await expect(search.matchCount).toEventually(equal(2), timeout: .seconds(2))
+
+        let first = search.matches[0]
+        let second = search.matches[1]
+
+        expect(search.currentMatchIndex) == 0
+        expect(search.rects(for: second)).toNot(beEmpty())
+        expect(search.rects(for: second)) != search.rects(for: first)
+        expect(search.rects(for: first)) == search.currentMatchRects(forPage: 0)
+    }
+
+    // MARK: - revision
+
+    func testRevisionIncreasesMonotonicallyOnPublishAndNavigation() async {
+        let (_, search) = Self.makeAttached(pageTexts: ["hit hit"])
+        let initial = search.revision
+
+        search.search(text: "hit")
+        await expect(search.matchCount).toEventually(equal(2), timeout: .seconds(2))
+        let afterScan = search.revision
+        search.next()
+
+        expect(afterScan) > initial
+        expect(search.revision) > afterScan
+    }
+
+    // MARK: - clear
+
+    func testClearResetsEverything() async {
+        let (_, search) = Self.makeAttached(pageTexts: ["hit"])
+        search.search(text: "hit")
+        await expect(search.matchCount).toEventually(equal(1), timeout: .seconds(2))
+
+        search.clear()
+
+        expect(search.matchCount) == 0
+        expect(search.highlightMatches).to(beEmpty())
+        expect(search.currentMatchIndex).to(beNil())
+        expect(search.phase) == .idle
+        expect(search.query.isEmpty) == true
+    }
+}

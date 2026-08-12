@@ -425,6 +425,22 @@ public struct HwpCellTextbox: @unchecked Sendable, Hashable {
         )
     }
 
+    /// 글상자 레이아웃만 바꾼 사본 (`HwpNestedTableFrame.withTable`과 같은 규칙) —
+    /// 반복 머리행 클론 표식을 안쪽 문단까지 내리는 경로가 쓴다 (#75 리뷰 8차).
+    public func withTextbox(_ textbox: HwpTextboxFrame) -> HwpCellTextbox {
+        HwpCellTextbox(
+            rect: rect,
+            textbox: textbox,
+            paintsBehindText: paintsBehindText,
+            zOrder: zOrder,
+            sourceOrder: sourceOrder,
+            controlInstanceId: controlInstanceId,
+            controlIndex: controlIndex,
+            paragraphId: paragraphId,
+            wrapperURL: wrapperURL
+        )
+    }
+
     public func withRect(_ rect: CGRect) -> HwpCellTextbox {
         HwpCellTextbox(
             rect: rect,
