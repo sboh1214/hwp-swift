@@ -170,7 +170,9 @@ final class HwpInflateTests: XCTestCase {
 
     /// 남은 집계 예산이 개별 stream 한도보다 작아 도중 상한을 결정하더라도,
     /// 보고되는 error는 `aggregateStreamSizeLimitExceeded`이고 `limit`은 원래
-    /// 집계 한도여야 한다 — 도중 상한 도입으로 error 분류가 바뀌면 안 된다.
+    /// 집계 한도여야 한다. 개별 한도가 `.max`인 이 조합은 집계만 위반이라 종전
+    /// 분류와 같다 — 둘 다 위반이면 갈리며, 그 칸은
+    /// `testDualLimitViolationReportsAggregateWhenAggregateBindsFirst`가 잠근다.
     func testAggregateBudgetBindingReportsAggregateError() throws {
         let url = hwpURL(#file, "plain-text-minimal")
         let fileHeaderSize = try rootStreamData(.fileHeader, in: url).count
@@ -184,6 +186,45 @@ final class HwpInflateTests: XCTestCase {
                 readLimits: HwpReadLimits(
                     maxCompressedStreamBytes: .max,
                     maxDecompressedStreamBytes: .max,
+                    maxAggregateStreamBytes: aggregate
+                )
+            )
+        }.to(throwError { error in
+            guard case let HwpError.aggregateStreamSizeLimitExceeded(name, limit, actual) = error
+            else {
+                return fail("Expected aggregateStreamSizeLimitExceeded, got \(error)")
+            }
+            expect(name) == HwpStreamName.docInfo
+            expect(limit) == aggregate
+            expect(actual) > aggregate
+        })
+    }
+
+    /// 두 한도를 **동시에** 넘고 남은 집계 예산이 개별 stream 한도보다 작으면
+    /// 집계 error로 보고한다. 후처리 거부 시절에는 개별 stream 검사가 집계
+    /// 소비보다 먼저라 같은 입력이 `streamSizeLimitExceeded`였다 — 도중 상한이
+    /// 종전 분류를 바꾸는 **유일한** 칸이다 (역방향은 없다).
+    ///
+    /// 복원할 수 없다. min에서 멈추므로 개별 한도 초과는 **증명되지 않았고**,
+    /// 확인하려면 남은 집계 예산을 넘겨 풀어야 하는데 그것이 이 상한이 막으려는
+    /// 할당이다. 증명 없이 개별 error를 고르면 실제로는 개별 한도 안이었던
+    /// 입력(`남은 예산 < 크기 ≤ 개별 한도`)에 거짓 분류를 주므로, 분기를 없애는
+    /// 것이 아니라 옮기는 셈이 된다.
+    func testDualLimitViolationReportsAggregateWhenAggregateBindsFirst() throws {
+        let url = hwpURL(#file, "plain-text-minimal")
+        let fileHeaderSize = try rootStreamData(.fileHeader, in: url).count
+        let docInfoSize = try decompressedSize(ofRootStream: .docInfo, in: url)
+        // 개별 stream 한도를 넘기되(-1), 남은 집계 예산이 그보다 1 byte 더 작게(-2)
+        // 잡아 min이 집계 쪽으로 결정되게 한다. 즉 둘 다 위반이고 집계가 먼저 건다.
+        let streamLimit = docInfoSize - 1
+        let aggregate = fileHeaderSize + docInfoSize - 2
+
+        expect {
+            _ = try HwpFile(
+                fromPath: url.path,
+                readLimits: HwpReadLimits(
+                    maxCompressedStreamBytes: .max,
+                    maxDecompressedStreamBytes: streamLimit,
                     maxAggregateStreamBytes: aggregate
                 )
             )
