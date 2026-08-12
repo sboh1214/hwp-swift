@@ -17,6 +17,16 @@ final class HwpDocumentViewSupportTests: XCTestCase {
         expect(zoomed) == 6
     }
 
+    /// **비-Retina 호스트(base 1)도 지원 대상이다.** 창에 붙지 않은 뷰는
+    /// `NSScreen` 으로 폴백하는데 GitHub macOS 러너가 1x 를 보고하므로, zoom 이
+    /// 1 이면 갱신 결과도 1 이다 — "배율이 1 을 넘는다"를 전제한 뷰 테스트가
+    /// 거기서 깨진다 (#99 첫 CI 의 실제 실패). zoom 을 주면 base 와 무관하게
+    /// 1 을 넘으므로, 그것이 그 테스트들이 zoom 을 먼저 거는 근거다.
+    func testEffectiveContentsScaleOnNonRetinaBase() {
+        expect(HwpDocumentViewSupport.effectiveContentsScale(base: 1, zoomScale: 1)) == 1
+        expect(HwpDocumentViewSupport.effectiveContentsScale(base: 1, zoomScale: 2)) == 2
+    }
+
     func testEffectiveContentsScaleKeepsBaseWhenZoomedOut() {
         // 축소 상태에서 해상도를 낮추지 않는다 (재확대 시 흐릿함 방지)
         let scale = HwpDocumentViewSupport.effectiveContentsScale(base: 2, zoomScale: 0.25)

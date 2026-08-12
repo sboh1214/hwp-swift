@@ -217,6 +217,10 @@
             let view = Self.makeView(pageTexts: ["alpha"])
             let search = Self.attachedSearch(view, query: "alpha")
             await expect(search.matchCount).toEventually(equal(1), timeout: .seconds(2))
+            // macOS 와 같은 이유로 배율 조건을 테스트가 만든다 — 호스트 화면
+            // 배율에 기대면 1x 환경에서 갱신 결과가 그대로 1 이라 아래 단언이
+            // 무의미해진다 (#99 첫 CI 의 macOS 실패가 그 사례다).
+            view.zoomScale = 2
             view.pageLayers[0]?.contentsScale = 1
             view.searchMatchLayers[0]?.contentsScale = 1
 

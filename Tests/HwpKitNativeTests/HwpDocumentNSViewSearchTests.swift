@@ -342,6 +342,12 @@
             let view = Self.makeView(pageTexts: ["alpha"])
             let search = Self.attachedSearch(view, query: "alpha")
             await expect(search.matchCount).toEventually(equal(1), timeout: .seconds(2))
+            // 배율이 1을 넘는 조건을 **테스트가 만든다**. 호스트 화면의
+            // `backingScaleFactor` 에 기대면 (`makeView` 는 창에 안 붙어 `NSScreen`
+            // 으로 폴백한다) 비-Retina CI 러너(1x)에서 갱신 결과가 그대로 1 이라
+            // 아래 단언이 무의미해지고 실제로 빨개진다. zoom 2 면 산식이
+            // `2 × base` 라 base 가 1 이든 2 든 항상 1 을 넘는다.
+            view.zoomScale = 2
             view.pageLayers[0]?.contentsScale = 1
             view.searchMatchLayers[0]?.contentsScale = 1
 
