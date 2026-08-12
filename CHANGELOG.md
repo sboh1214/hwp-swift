@@ -80,8 +80,14 @@
   할당 자체를 막지 못했지만, 이제 개별 stream 한도와 남은 집계 예산의 min을
   압축 해제 도중에 적용해 상한을 넘는 순간 중단합니다. 던지는 error
   (`streamSizeLimitExceeded` / `aggregateStreamSizeLimitExceeded`)와 `limit`
-  payload는 종전과 같지만, `actual`은 정확한 압축 해제 크기가 아니라 중단 시점까지의
-  **하한**이 됩니다 — 전체 크기를 알려면 끝까지 풀어야 하기 때문입니다.
+  payload는 대체로 종전과 같지만 두 가지가 달라집니다. 첫째, `actual`은 정확한 압축
+  해제 크기가 아니라 중단 시점까지의 **하한**이 됩니다 — 전체 크기를 알려면 끝까지
+  풀어야 하기 때문입니다. 둘째, **두 한도를 동시에 넘고 남은 집계 예산이 개별 stream
+  한도보다 작으면** 종전의 `streamSizeLimitExceeded` 대신
+  `aggregateStreamSizeLimitExceeded`를 던집니다 — min에서 멈추므로 개별 한도 초과가
+  증명되지 않았고, 확인하려면 집계 예산을 넘겨 풀어야 해서 이 상한의 목적과
+  충돌하기 때문입니다. 두 error를 구분해 처리하는 코드는 이 조합에서 경로가
+  달라집니다.
 
 ### Added
 
