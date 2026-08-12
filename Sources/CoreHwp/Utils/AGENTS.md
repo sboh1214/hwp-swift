@@ -68,11 +68,16 @@ consumes-all `init` 근처에 남긴다. override는 default loader와 동등하
 ## Reader
 
 - **`StreamReader`** — `(OLEFile, [String: DirectoryEntry])`를 보관. 이름 있는
-  stream 또는 storage를 가져와 필요시 `SWCompression`으로 deflate.
+  stream 또는 storage를 가져와 필요시 `HwpInflate`로 deflate.
   `HwpFile.init(fromOLE:)`에서만 사용. `HwpReadLimits`는 OLE directory의
-  `streamSize`로 압축 입력과 비압축 stream을 읽기 전에 제한하지만, deflate 출력
-  한도는 `SWCompression.Deflate.decompress(data:)`가 반환한 뒤 검사하는 후처리
-  거부다. 현재 구현은 압축 해제 중 메모리 할당 cap을 보장하지 않는다.
+  `streamSize`로 압축 입력과 비압축 stream을 읽기 전에 제한하고, deflate 출력
+  한도는 개별 stream 한도와 남은 집계 예산의 min으로 `HwpInflate`에 넘긴다.
+  초과 시 던지는 error와 `limit`은 실제로 걸린 쪽의 원래 한도를 유지한다.
+- **`HwpInflate`** — raw DEFLATE 압축 해제. Apple 플랫폼은 `Compression`의
+  `compression_stream` 스트리밍 루프라 상한이 압축 해제 **도중**에 걸리고,
+  그 외 플랫폼은 `SWCompression` 폴백이라 후처리 검사다. 폴백은 코드 경로만이며
+  SWCompression 의존성은 전 플랫폼에 남는다. `COMPRESSION_STATUS_END` 도달을
+  별도로 강제한다 — 빼면 절단된 stream이 부분 출력으로 조용히 성공한다.
 - **`DataReader`** — `Data` 위의 cursor. `read(T.Type)`은 정수 폭(1/2/4
   byte)으로 분기하며, 미지원 타입은 `HwpError.unsupportedDataReadType`을
   throw한다. `readBytes`/array read는 음수·overflow·범위 초과를

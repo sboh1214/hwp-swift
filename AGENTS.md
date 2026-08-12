@@ -54,7 +54,8 @@ hwp-swift/
 | `HwpError` | [HwpError.swift](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/HwpError.swift) | `CustomStringConvertible` + `LocalizedError`를 채택한 public error enum |
 | `HwpStreamName` | [Enums/HwpStreamName.swift](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/Enums/HwpStreamName.swift) | OLE stream 이름 (`FileHeader`, `DocInfo`, `BodyText`, `\005HwpSummaryInformation`, `PrvText`, `PrvImage`) |
 | `parseTreeRecord` | [Utils/HwpRecord.swift](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/Utils/HwpRecord.swift) | stream에서 tag/level/size record tree를 구성 |
-| `StreamReader` | [Utils/Readers/StreamReader.swift](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/Utils/Readers/StreamReader.swift) | OLE → `Data` 변환 (SWCompression으로 deflate 처리) |
+| `StreamReader` | [Utils/Readers/StreamReader.swift](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/Utils/Readers/StreamReader.swift) | OLE → `Data` 변환 (압축 stream은 `HwpInflate`에 위임) |
+| `HwpInflate` | [Utils/Readers/HwpInflate.swift](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/Utils/Readers/HwpInflate.swift) | raw DEFLATE 압축 해제. Apple `Compression` 스트리밍 / 그 외 SWCompression 폴백 |
 
 ## 파싱 파이프라인
 
@@ -73,10 +74,12 @@ hwp-swift/
 
 `HwpReadLimits`는 OLE directory의 `streamSize`를 이용해 압축 입력과 비압축
 stream을 읽기 전에 제한하고, 압축 해제 결과가 한도를 넘으면 typed
-`HwpError.streamSizeLimitExceeded`로 후처리 거부한다. 현재 `SWCompression`
-Deflate API는 bounded streaming inflate를 노출하지 않으므로, 압축 해제 결과
-한도는 메모리 할당 cap이 아니다. PR/문서에서 decompression-bomb 방어를 설명할 때
-이 한계를 명시한다.
+`HwpError.streamSizeLimitExceeded`로 거부한다. Apple 플랫폼에서는 `HwpInflate`가
+`compression_stream` 스트리밍 루프를 돌며 이 한도를 압축 해제 **도중**에
+적용하므로 실제 메모리 할당 cap이다. 그 외 플랫폼은 SWCompression 폴백이
+bounded streaming inflate를 노출하지 않아 여전히 후처리 거부이며, 그쪽에서는
+typed error 반환만 보장된다 — PR/문서에서 decompression-bomb 방어를 설명할 때
+이 플랫폼 차이를 명시한다.
 
 per-stream 한도만으로는 유효한 자식이 많은 파일(BodyText·ViewText·BinData)이
 집계로 메모리를 고갈시킬 수 있어 **파일 단위 집계 한도**(`maxAggregateStreamBytes`,
@@ -115,7 +118,7 @@ typed 디코더들이 그 트리를 재귀로 내려가므로(표 셀 문단·�
 - EOF를 검사하지 않고 silent하게 byte 잔여 — loader 프로토콜의 `load`가 `bytesAreNotEOF`를 throw하도록 설계되어 있으므로, manual `init` 호출로 우회 금지.
 - 공백이 있는 새 파일/디렉터리명 추가 — 경로명은 PascalCase + 무공백을 유지.
 - `Package.swift`의 Darwin platform 최소 버전을 더 낮추기 — 의존성 `SWCompression 4.9.1` / `BitByteData 2.1.0`이 macOS 14+/iOS 17+를 요구한다. Linux는 CoreHwp·CoreHwpTests만 지원한다 (뷰어 타깃은 Apple 전용 프레임워크 의존 — `Package.swift`의 `canImport(Darwin)` 분기; CI matrix: macOS + ubuntu-latest).
-- `swift-tools-version` 변경 시 `.swift-version`, `.swiftformat`, **양쪽** `Test-*.yml` matrix 동시 갱신 누락 (`CONTRIBUTING.md` 참조).
+- `swift-tools-version` 변경 시 `.swift-version`, `.swiftformat`, `.github/workflows/ci.yml`의 `test-linux` matrix 동시 갱신 누락 (`CONTRIBUTING.md` 참조).
 - 테스트에서 **CoreFoundation 타입에 `as!`** 쓰기 — SwiftFormat의 `noForceUnwrapInTests`가 이를 `try XCTUnwrap(... as? CFType)`으로 자동 변환하는데, CF 타입 대상 `as?`는 컴파일러가 "항상 성공한다"며 **에러**로 막는다. 즉 포매터가 컴파일 불가능한 코드를 만들어 낸다. `// swiftformat:disable:next` 주석도 듣지 않으므로, 캐스트 자체를 없애 우회한다 (컴파일러 note가 제안하는 방식):
   ```swift
   let ref = value as CFTypeRef
@@ -484,7 +487,7 @@ opt-in — **커밋된** 기준선을 쓰는 스위트는 CI에서 상시 돈다
 ## 의존성 (모두 exact pinning)
 
 - `OLEKit 0.3.1` — OLE compound document 파싱
-- `SWCompression 4.9.1` — 압축 stream의 deflate (4.9.0에서 untrusted Deflate 입력에 대한 crash 패치 포함)
+- `SWCompression 4.9.1` — 비-Apple 플랫폼의 deflate 폴백 (4.9.0에서 untrusted Deflate 입력에 대한 crash 패치 포함. 그럼에도 deflate가 아닌 입력에서 여전히 throw 대신 프로세스를 중단시키는 경우가 있다 — Apple 플랫폼은 `HwpInflate`가 `Compression`을 쓰므로 이 경로를 타지 않는다). 테스트가 `Deflate.compress`로 입력을 합성하므로 의존성 자체는 전 플랫폼에 남는다
 - `Nimble 13.8.0` — 테스트 DSL (testTarget 전용)
 - `swift-docc-plugin 1.5.0` — DocC 사이트 빌드 (`cd.yml`의 `docs` job)
 
