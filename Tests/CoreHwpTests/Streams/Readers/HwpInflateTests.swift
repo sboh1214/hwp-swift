@@ -260,6 +260,41 @@ final class HwpInflateTests: XCTestCase {
         expect { try HwpInflate.decompress(input, limit: .max) }
             .to(throwError(HwpInflate.Failure.corrupted))
     }
+
+    /// stored block 헤더가 `LEN`·`NLEN` 4 byte를 채우기 전에 끝나면 거부한다.
+    func testStoredBlockHeaderTruncatedBeforeLengthIsRejected() {
+        // BFINAL=1 · BTYPE=00 뒤에 LEN 2 byte 중 1 byte 만 남아 있다.
+        let input = Data([0x01, 0x0A, 0x00])
+
+        expect { try HwpInflate.decompress(input, limit: .max) }
+            .to(throwError(HwpInflate.Failure.corrupted))
+    }
+
+    /// stored block 이 선언한 `LEN` 이 남은 입력을 넘으면 거부한다.
+    func testStoredBlockLengthBeyondInputIsRejected() {
+        // LEN=10 이라고 선언하고 payload 는 3 byte 만 준다 (NLEN 은 정상).
+        var input = Data([0x01, 0x0A, 0x00, 0xF5, 0xFF])
+        input.append(Data([0x41, 0x42, 0x43]))
+
+        expect { try HwpInflate.decompress(input, limit: .max) }
+            .to(throwError(HwpInflate.Failure.corrupted))
+    }
+
+    #if canImport(Compression)
+
+        /// 마지막 블록이 `BFINAL` 없이 입력 끝에 닿으면 stream 이 끊긴 것이다.
+        ///
+        /// 검사기는 연쇄를 다 따라가고도 최종 블록을 못 만나 그냥 반환하고,
+        /// 거부는 디코더의 "진전 없음 + `END` 미도달" 판정이 맡는다. 두 층이
+        /// 이어져야 절단이 부분 출력으로 새지 않는다.
+        func testNonFinalStoredBlockEndingAtInputEndIsRejected() {
+            let input = storedBlock(Data("가나".utf8), isFinal: false)
+
+            expect { try HwpInflate.decompress(input, limit: .max) }
+                .to(throwError(HwpInflate.Failure.corrupted))
+        }
+
+    #endif
 }
 
 /// raw DEFLATE stored block 한 개. `complement`를 주면 `NLEN`을 그 값으로 심어
