@@ -74,28 +74,6 @@ final class HwpInflateTests: XCTestCase {
             expect(corruptedCases).to(beGreaterThanOrEqualTo(100))
         }
 
-        /// **알려진 차이 고정.** Apple 디코더는 stored block의 `NLEN`이 `LEN`의
-        /// 1의 보수인지 검증하지 않는다. zlib·SWCompression은 검증해 거부한다.
-        ///
-        /// 그래서 "deflate가 아닌 바이트열"에 대한 두 경로의 판정은 갈릴 수 있다.
-        /// 프로덕션에서 이 차이에 닿는 입력은 **압축으로 표시됐지만 실제로는
-        /// deflate가 아닌 손상 stream**뿐이고, 그 경우 출력은 레코드 트리
-        /// 파서가 다시 검증해 typed error로 거른다. 유효한 HWP stream의 출력
-        /// 바이트에는 영향이 없다.
-        ///
-        /// 이 테스트가 깨지면 Apple 디코더 동작이 바뀐 것이므로, 통과시킬 게
-        /// 아니라 위 서술과 `HwpInflate` 주석을 다시 판단할 사건이다.
-        func testAppleDecoderAcceptsStoredBlockWithInvalidComplement() {
-            // PNG 매직 `89 50 4E 47`을 raw DEFLATE로 읽으면
-            // BFINAL=1 · BTYPE=00(stored) · LEN=0x4E50 · NLEN=0x0D47 이고,
-            // NLEN은 LEN의 보수(0xB1AF)가 아니다.
-            var input = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
-            input.append(Data(repeating: 0x00, count: 0x4E50))
-
-            expect(try Deflate.decompress(data: input)).to(throwError())
-            expect(try HwpInflate.decompress(input, limit: .max)).to(haveCount(0x4E50))
-        }
-
         /// 상한은 압축 해제가 끝난 뒤가 아니라 도중에 걸려야 한다.
         func testLimitStopsInflateBeforeProducingFullOutput() throws {
             let stream = try largestDeflateStream()
@@ -238,6 +216,68 @@ final class HwpInflateTests: XCTestCase {
             expect(actual) > aggregate
         })
     }
+
+    /// stored block의 `NLEN`이 `LEN`의 1의 보수가 아니면 거부한다.
+    ///
+    /// Apple 디코더는 이 검사를 생략하므로 `HwpInflate`가 앞단에서 직접 본다.
+    /// 이런 입력이 닿는 곳이 레코드 트리로 다시 걸러지는 경로뿐이라면 굳이
+    /// 볼 필요가 없지만, BinData 는 압축 해제 결과를 검증 없이 그대로 보관한다
+    /// (`HwpFile.init(fromOLE:)`).
+    func testStoredBlockWithInvalidComplementIsRejected() {
+        // PNG 매직 `89 50 4E 47`을 raw DEFLATE로 읽으면
+        // BFINAL=1 · BTYPE=00(stored) · LEN=0x4E50 · NLEN=0x0D47 이고,
+        // NLEN은 LEN의 보수(0xB1AF)가 아니다.
+        var input = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+        input.append(Data(repeating: 0x00, count: 0x4E50))
+
+        expect(try Deflate.decompress(data: input)).to(throwError())
+        expect { try HwpInflate.decompress(input, limit: .max) }
+            .to(throwError(HwpInflate.Failure.corrupted))
+    }
+
+    /// 유효한 stored block 연쇄는 통과시키고 폴백과 같은 바이트를 낸다 —
+    /// 검사가 정상 입력을 막지 않는지 확인한다.
+    func testValidStoredBlockChainMatchesFallback() {
+        let input = storedBlock(Data("가나".utf8), isFinal: false)
+            + storedBlock(Data("다라".utf8), isFinal: true)
+        let expected = Data("가나다라".utf8)
+
+        expect(try Deflate.decompress(data: input)) == expected
+        expect(try HwpInflate.decompress(input, limit: .max)) == expected
+    }
+
+    /// 첫 블록만 보는 것이 아니라 stored 연쇄를 따라간다 — 두 번째 블록의
+    /// `NLEN`만 틀려도 거부해야 검사가 공허하지 않다.
+    ///
+    /// **폴백은 이 입력을 받아들인다** (실측). 즉 이 거부는 어느 디코더와도
+    /// 같지 않은 우리 쪽 엄격성이다. 가드가 Apple 분기 안이 아니라 공유
+    /// 진입점에 있는 이유가 이것이다 — 그래야 두 플랫폼이 같은 판정을 낸다.
+    func testInvalidComplementInLaterStoredBlockIsRejected() {
+        let input = storedBlock(Data("가나".utf8), isFinal: false)
+            + storedBlock(Data("다라".utf8), isFinal: true, complement: 0)
+
+        expect(try Deflate.decompress(data: input)) == Data("가나다라".utf8)
+        expect { try HwpInflate.decompress(input, limit: .max) }
+            .to(throwError(HwpInflate.Failure.corrupted))
+    }
+}
+
+/// raw DEFLATE stored block 한 개. `complement`를 주면 `NLEN`을 그 값으로 심어
+/// 규격 위반 입력을 만든다.
+private func storedBlock(
+    _ payload: Data,
+    isFinal: Bool,
+    complement: UInt16? = nil
+) -> Data {
+    let length = UInt16(payload.count)
+    let storedLengthComplement = complement ?? ~length
+    var block = Data([isFinal ? 0x01 : 0x00])
+    block.append(UInt8(length & 0xFF))
+    block.append(UInt8(length >> 8))
+    block.append(UInt8(storedLengthComplement & 0xFF))
+    block.append(UInt8(storedLengthComplement >> 8))
+    block.append(payload)
+    return block
 }
 
 private struct DeflateStreamSample {

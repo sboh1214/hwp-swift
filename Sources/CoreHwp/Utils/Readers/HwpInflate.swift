@@ -16,6 +16,10 @@ import Foundation
 /// 스트리밍 경로의 목적은 속도만이 아니다. `limit`을 압축 해제 **도중**에
 /// 적용해 decompression bomb이 상한을 넘는 순간 중단시킨다 — 다 풀고 나서
 /// 크기를 보는 후처리 거부와 달리 실제 메모리 할당 상한이다.
+///
+/// Apple 디코더는 stored block의 `NLEN` 검증을 생략해 zlib·SWCompression이
+/// 거부하는 바이트열을 받아들이므로, 두 경로의 **판정**을 맞추기 위해
+/// `validateLeadingStoredBlocks`를 앞단에 둔다 (부분 방어 — 그 함수 주석 참조).
 enum HwpInflate {
     enum Failure: Error, Equatable {
         /// 입력이 유효한 raw DEFLATE stream이 아니거나 도중에 끊겼다.
@@ -36,7 +40,53 @@ enum HwpInflate {
         guard !data.isEmpty else {
             throw Failure.corrupted
         }
+        try validateLeadingStoredBlocks(data)
         return try inflate(data, limit: max(0, limit))
+    }
+
+    /// 선행 stored block들의 `NLEN`이 `LEN`의 1의 보수인지 검사한다.
+    ///
+    /// Apple 디코더는 이 검사를 생략해 zlib·SWCompression이 거부하는 바이트열을
+    /// 받아들인다. 압축으로 표시됐지만 실제로는 deflate가 아닌 입력이 대개 여기
+    /// 걸린다 — 임의 바이트의 첫 3비트가 stored block으로 읽히는 경우다. 그
+    /// 출력은 BinData처럼 레코드 트리 검증을 거치지 않는 경로로도 흘러가므로
+    /// (`HwpFile.init(fromOLE:)`), 판정을 디코더에만 맡기지 않는다.
+    ///
+    /// **부분 방어다.** stored block은 byte 경계에서 끝나 연속한 stored block은
+    /// 디코딩 없이 따라갈 수 있지만, huffman block을 만나면 거기서 멈춘다 —
+    /// 다음 블록 경계를 알려면 그 블록을 끝까지 디코딩해야 하고, 그것은 이
+    /// 파일이 걷어낸 순수 Swift 디코더를 되살리는 일이다. 즉 huffman block 뒤에
+    /// 오는 stored block의 `NLEN`은 여전히 검사되지 않는다.
+    private static func validateLeadingStoredBlocks(_ data: Data) throws {
+        var offset = data.startIndex
+        while offset < data.endIndex {
+            // 블록 헤더 (LSB first): bit 0 = BFINAL, bits 1-2 = BTYPE.
+            let header = data[offset]
+            guard (header >> 1) & 0b11 == 0 else {
+                return
+            }
+
+            // stored block은 헤더 byte의 남은 5비트를 버리고 byte 경계에서
+            // LEN·NLEN (각 2 byte LE) 을 읽는다.
+            let lengthOffset = offset + 1
+            guard lengthOffset + 4 <= data.endIndex else {
+                throw Failure.corrupted
+            }
+            let length = UInt16(data[lengthOffset]) | (UInt16(data[lengthOffset + 1]) << 8)
+            let complement = UInt16(data[lengthOffset + 2]) | (UInt16(data[lengthOffset + 3]) << 8)
+            guard complement == ~length else {
+                throw Failure.corrupted
+            }
+
+            let payloadEnd = lengthOffset + 4 + Int(length)
+            guard payloadEnd <= data.endIndex else {
+                throw Failure.corrupted
+            }
+            guard header & 0b1 == 0 else {
+                return
+            }
+            offset = payloadEnd
+        }
     }
 }
 
