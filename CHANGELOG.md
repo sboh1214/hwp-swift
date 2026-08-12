@@ -75,6 +75,10 @@
   공개 API 표면은 그대로이고 압축 해제 결과 바이트도 동일합니다 — 코퍼스의 모든
   deflate stream에서 양 경로 바이트 동등성을 테스트로 고정했습니다. 실문서
   (1,030쪽) 로드가 debug 3.281s → 0.914s, release 0.252s → 0.090s로 줄었습니다.
+  손상 판정은 디코더에 맡기지 않습니다 — 선행 stored block의 `NLEN`이 `LEN`의
+  1의 보수인지 라이브러리가 직접 검사해, 규격을 어긴 stream을 두 플랫폼 모두
+  `streamDecompressFailed`로 거부합니다 (huffman block 뒤의 stored block은 블록
+  경계를 알 수 없어 검사 범위 밖입니다).
 - `HwpReadLimits`의 압축 해제 한도가 Apple 플랫폼에서 **실제 메모리 할당 상한**이
   되었습니다. 종전에는 다 풀고 나서 크기를 재는 후처리 거부라 decompression bomb의
   할당 자체를 막지 못했지만, 이제 개별 stream 한도와 남은 집계 예산의 min을

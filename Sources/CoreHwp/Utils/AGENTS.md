@@ -78,12 +78,27 @@ consumes-all `init` 근처에 남긴다. override는 default loader와 동등하
   그 외 플랫폼은 `SWCompression` 폴백이라 후처리 검사다. 폴백은 코드 경로만이며
   SWCompression 의존성은 전 플랫폼에 남는다. `COMPRESSION_STATUS_END` 도달을
   별도로 강제한다 — 빼면 절단된 stream이 부분 출력으로 조용히 성공한다.
-  유효한 stream의 출력 바이트는 두 경로가 같지만 **손상 판정은 갈릴 수 있다** —
-  Apple 디코더는 stored block의 `NLEN`이 `LEN`의 1의 보수인지 검증하지 않아
-  zlib·SWCompression이 거부하는 바이트열을 받아들인다. 닿는 입력은 압축으로
-  표시됐지만 실제로는 deflate가 아닌 손상 stream뿐이고 그 출력은 레코드 트리
-  파서가 다시 거르므로, 이 차이는 테스트로 고정만 해 둔다
-  (`HwpInflateTests.testAppleDecoderAcceptsStoredBlockWithInvalidComplement`).
+
+  유효한 stream의 출력 바이트는 두 경로가 같지만 **손상 판정은 디코더마다
+  다르다** — Apple 디코더는 stored block의 `NLEN`이 `LEN`의 1의 보수인지 보지
+  않고, SWCompression도 첫 블록 뒤의 stored block에서는 통과시킨다 (실측). 그래서
+  판정을 디코더에 맡기지 않고 `validateLeadingStoredBlocks`가 **공유 진입점**에서
+  선행 stored block의 `NLEN`을 직접 본다. Apple 분기 안에 두면 반대 방향
+  플랫폼 차이가 생긴다.
+
+  그 검사가 필요한 이유는 **"출력은 어차피 레코드 트리 파서가 다시 거른다"가
+  참이 아니기** 때문이다. `BinData`는 압축 해제 결과를 검증 없이
+  `HwpBinaryData.data`에 그대로 보관한다 (`HwpFile.init(fromOLE:)`) — 압축
+  경로 중 레코드 트리를 거치지 않는 유일한 stream이다 (summary·PrvText·
+  PrvImage는 애초에 비압축으로 읽는다). 손상 판정을 라이브러리가 직접 쥐지
+  않으면 그 바이트가 그대로 공개 모델에 실린다.
+
+  **부분 방어다.** stored block은 byte 경계에서 끝나 연속한 stored block은
+  디코딩 없이 따라갈 수 있지만, huffman block을 만나면 멈춘다 — 다음 경계를
+  알려면 그 블록을 끝까지 디코딩해야 하고 그것은 이 브랜치가 걷어낸 순수 Swift
+  디코더를 되살리는 일이다. 즉 huffman block 뒤 stored block의 `NLEN`은 여전히
+  보지 않는다. 실무상 닿는 입력("압축이라 표시됐지만 deflate가 아닌 바이트열")은
+  첫 블록에서 걸린다.
 - **`DataReader`** — `Data` 위의 cursor. `read(T.Type)`은 정수 폭(1/2/4
   byte)으로 분기하며, 미지원 타입은 `HwpError.unsupportedDataReadType`을
   throw한다. `readBytes`/array read는 음수·overflow·범위 초과를
