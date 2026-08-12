@@ -240,12 +240,19 @@ public final class HwpSearchController {
     /// 선택 컨트롤러에 붙어 지오메트리를 공유한다 (단위 캐시 이중화 금지).
     ///
     /// 붙는 즉시 `onGeometryChanged`를 걸어 문서 교체·프로그레시브 스냅샷에서
-    /// 자동 재스캔한다. 같은 컨트롤러 재-attach는 멱등이다.
+    /// 자동 재스캔한다. 같은 컨트롤러가 **아직 소유자인 채** 다시 붙는 것은
+    /// 멱등이다 (SwiftUI 업데이트마다 재배선 → 재스캔 → 통지 루프를 막는다).
     ///
     /// 한 선택 컨트롤러에는 검색 컨트롤러 하나만 붙는다 — `onGeometryChanged`가
     /// 단일 콜백 슬롯이라 나중에 붙은 쪽이 이긴다.
     public func attach(to selection: HwpSelectionController) {
-        guard self.selection !== selection else { return }
+        // 멱등은 **아직 소유자일 때만**이다. 밀려난 뒤(다른 컨트롤러나 호스트가
+        // 슬롯을 가져간 뒤) 다시 붙는 것도 "나중에 붙는" 행위라 슬롯을 되찾아야
+        // 한다 — 신원만 보면 조용히 무동작이 되는데, `isAttached` 는 계속 true 라
+        // 끊긴 것을 알 방법이 없다 (#75 리뷰 15차).
+        if self.selection === selection, selection.geometryObserver === self {
+            return
+        }
         detach()
         self.selection = selection
         selection.setGeometryObserver(self) { [weak self] change in

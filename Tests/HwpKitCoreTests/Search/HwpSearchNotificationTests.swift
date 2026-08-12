@@ -136,6 +136,33 @@ final class HwpSearchNotificationTests: XCTestCase {
         await expect(owner.matchCount).toEventually(equal(2), timeout: .seconds(2))
     }
 
+    /// **밀려난 컨트롤러의 재-attach 도 "나중에 붙는" 행위다.** 신원만 보고
+    /// 조기 반환하면 슬롯을 못 되찾는데, `isAttached` 는 계속 true 라 끊긴 것을
+    /// 알 방법이 없다 (#75 리뷰 15차).
+    func testReattachingDisplacedControllerReclaimsObserver() async {
+        let selection = HwpSelectionController()
+        selection.setDocument(Self.document(pageTexts: ["hit one"]), preservingSelection: false)
+        let displaced = HwpSearchController()
+        displaced.publishInterval = .zero
+        displaced.attach(to: selection)
+        displaced.search(text: "hit")
+        await expect(displaced.matchCount).toEventually(equal(1), timeout: .seconds(2))
+        let other = HwpSearchController()
+        other.publishInterval = .zero
+        other.attach(to: selection)
+
+        displaced.attach(to: selection)
+        await expect(displaced.matchCount).toEventually(equal(1), timeout: .seconds(2))
+
+        selection.setDocument(
+            Self.document(pageTexts: ["hit one", "hit two"]),
+            preservingSelection: false
+        )
+
+        // 슬롯을 되찾았으면 문서 교체가 이쪽으로 온다 — 못 되찾았으면 1에 멈춘다
+        await expect(displaced.matchCount).toEventually(equal(2), timeout: .seconds(2))
+    }
+
     /// **직접 대입도 "나중에 붙은 쪽"이다.** 소유권을 가져가지 않으면 토큰이
     /// 옛 소유자를 가리킨 채 남아, 그쪽의 `detach()` 가 호스트가 방금 건
     /// 콜백을 지운다 — 토큰이 오히려 그 삭제를 보증해 준다 (#75 리뷰 14차).
