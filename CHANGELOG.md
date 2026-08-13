@@ -68,6 +68,31 @@
   macOS 클릭 폴백 경로는 도달 불능 코드였습니다. 지연 페이지네이션 배선은
   프로그레시브 로딩 설계에서 새로 도입됩니다.
 
+### Changed
+
+- 압축 stream 해제를 Apple `Compression`의 스트리밍 inflate로 전환했습니다
+  (`HwpInflate`). 비-Apple 플랫폼은 종전 `SWCompression` 폴백을 그대로 씁니다.
+  공개 API 표면은 그대로이고 압축 해제 결과 바이트도 동일합니다 — 코퍼스의 모든
+  deflate stream에서 양 경로 바이트 동등성을 테스트로 고정했습니다. 실문서
+  (1,030쪽) 로드가 debug 3.281s → 0.914s, release 0.252s → 0.090s로 줄었습니다.
+  손상 판정은 디코더에 맡기지 않습니다 — 선행 stored block의 `NLEN`이 `LEN`의
+  1의 보수인지 라이브러리가 직접 검사해, 규격을 어긴 stream을 두 플랫폼 모두
+  `streamDecompressFailed`로 거부합니다 (huffman block 뒤의 stored block은 블록
+  경계를 알 수 없어 검사 범위 밖입니다).
+- `HwpReadLimits`의 압축 해제 한도가 Apple 플랫폼에서 **실제 메모리 할당 상한**이
+  되었습니다. 종전에는 다 풀고 나서 크기를 재는 후처리 거부라 decompression bomb의
+  할당 자체를 막지 못했지만, 이제 개별 stream 한도와 남은 집계 예산의 min을
+  압축 해제 도중에 적용해 상한을 넘는 순간 중단합니다. 던지는 error
+  (`streamSizeLimitExceeded` / `aggregateStreamSizeLimitExceeded`)와 `limit`
+  payload는 대체로 종전과 같지만 두 가지가 달라집니다. 첫째, `actual`은 정확한 압축
+  해제 크기가 아니라 중단 시점까지의 **하한**이 됩니다 — 전체 크기를 알려면 끝까지
+  풀어야 하기 때문입니다. 둘째, **두 한도를 동시에 넘고 남은 집계 예산이 개별 stream
+  한도보다 작으면** 종전의 `streamSizeLimitExceeded` 대신
+  `aggregateStreamSizeLimitExceeded`를 던집니다 — min에서 멈추므로 개별 한도 초과가
+  증명되지 않았고, 확인하려면 집계 예산을 넘겨 풀어야 해서 이 상한의 목적과
+  충돌하기 때문입니다. 두 error를 구분해 처리하는 코드는 이 조합에서 경로가
+  달라집니다.
+
 ### Added
 
 - 문서 내 검색을 **공개 API**로 추가했습니다. 엔진(`HwpTextSearcher`)·세션

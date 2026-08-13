@@ -33,6 +33,7 @@ var targets: [Target] = [
         dependencies: [
             "CoreHwp",
             "OLEKit",
+            "SWCompression",
             "Nimble",
         ],
         exclude: [

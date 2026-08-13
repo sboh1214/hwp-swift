@@ -13,7 +13,7 @@ Utils/
 ├── ExcludeEquatable.swift # == 비교에서 특정 필드를 제외하는 property wrapper
 ├── Extensions/           # Data, Character, StringProtocol, BinaryInteger, Array, WCHAR
 ├── Protocols/            # 5개 loader 프로토콜 + HwpPrimitive typealias
-└── Readers/              # StreamReader (OLE), DataReader (byte), BitsReader (bit)
+└── Readers/              # StreamReader (OLE), HwpInflate (deflate), DataReader (byte), BitsReader (bit)
 ```
 
 ## Loader 프로토콜 계약
@@ -68,11 +68,37 @@ consumes-all `init` 근처에 남긴다. override는 default loader와 동등하
 ## Reader
 
 - **`StreamReader`** — `(OLEFile, [String: DirectoryEntry])`를 보관. 이름 있는
-  stream 또는 storage를 가져와 필요시 `SWCompression`으로 deflate.
+  stream 또는 storage를 가져와 필요시 `HwpInflate`로 deflate.
   `HwpFile.init(fromOLE:)`에서만 사용. `HwpReadLimits`는 OLE directory의
-  `streamSize`로 압축 입력과 비압축 stream을 읽기 전에 제한하지만, deflate 출력
-  한도는 `SWCompression.Deflate.decompress(data:)`가 반환한 뒤 검사하는 후처리
-  거부다. 현재 구현은 압축 해제 중 메모리 할당 cap을 보장하지 않는다.
+  `streamSize`로 압축 입력과 비압축 stream을 읽기 전에 제한하고, deflate 출력
+  한도는 개별 stream 한도와 남은 집계 예산의 min으로 `HwpInflate`에 넘긴다.
+  초과 시 던지는 error와 `limit`은 실제로 걸린 쪽의 원래 한도를 유지한다.
+- **`HwpInflate`** — raw DEFLATE 압축 해제. Apple 플랫폼은 `Compression`의
+  `compression_stream` 스트리밍 루프라 상한이 압축 해제 **도중**에 걸리고,
+  그 외 플랫폼은 `SWCompression` 폴백이라 후처리 검사다. 폴백은 코드 경로만이며
+  SWCompression 의존성은 전 플랫폼에 남는다. `COMPRESSION_STATUS_END` 도달을
+  별도로 강제한다 — 빼면 절단된 stream이 부분 출력으로 조용히 성공한다.
+
+  유효한 stream의 출력 바이트는 두 경로가 같지만 **손상 판정은 디코더마다
+  다르다** — Apple 디코더는 stored block의 `NLEN`이 `LEN`의 1의 보수인지 보지
+  않고, SWCompression도 첫 블록 뒤의 stored block에서는 통과시킨다 (실측). 그래서
+  판정을 디코더에 맡기지 않고 `validateLeadingStoredBlocks`가 **공유 진입점**에서
+  선행 stored block의 `NLEN`을 직접 본다. Apple 분기 안에 두면 반대 방향
+  플랫폼 차이가 생긴다.
+
+  그 검사가 필요한 이유는 **"출력은 어차피 레코드 트리 파서가 다시 거른다"가
+  참이 아니기** 때문이다. `BinData`는 압축 해제 결과를 검증 없이
+  `HwpBinaryData.data`에 그대로 보관한다 (`HwpFile.init(fromOLE:)`) — 압축
+  경로 중 레코드 트리를 거치지 않는 유일한 stream이다 (summary·PrvText·
+  PrvImage는 애초에 비압축으로 읽는다). 손상 판정을 라이브러리가 직접 쥐지
+  않으면 그 바이트가 그대로 공개 모델에 실린다.
+
+  **부분 방어다.** stored block은 byte 경계에서 끝나 연속한 stored block은
+  디코딩 없이 따라갈 수 있지만, huffman block을 만나면 멈춘다 — 다음 경계를
+  알려면 그 블록을 끝까지 디코딩해야 하고 그것은 이 브랜치가 걷어낸 순수 Swift
+  디코더를 되살리는 일이다. 즉 huffman block 뒤 stored block의 `NLEN`은 여전히
+  보지 않는다. 실무상 닿는 입력("압축이라 표시됐지만 deflate가 아닌 바이트열")은
+  첫 블록에서 걸린다.
 - **`DataReader`** — `Data` 위의 cursor. `read(T.Type)`은 정수 폭(1/2/4
   byte)으로 분기하며, 미지원 타입은 `HwpError.unsupportedDataReadType`을
   throw한다. `readBytes`/array read는 음수·overflow·범위 초과를

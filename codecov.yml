@@ -1,0 +1,14 @@
+# 커버리지 게이트. CoreHwp 95% 하드 게이트는 .github/workflows/ci.yml 이 따로 강제한다.
+coverage:
+  status:
+    # project 는 저장소 전체 비율이라, 도달 불가한 방어 분기가 섞인 파일이 들어오면
+    # 테스트로 되돌릴 수 없는 하락이 생긴다 (#68 의 스트리밍 inflate: compression_stream_init
+    # 실패·baseAddress nil 처럼 구조적으로 못 밟는 9줄이 -0.02%p). 설정이 없으면 threshold 가
+    # 0% 라 그 노이즈가 전부 빨간불이 되므로 흡수 폭을 준다. 진짜 붕괴는 그대로 잡힌다.
+    project:
+      default:
+        threshold: 0.5%
+    # 새 코드에 대한 압력은 유지한다 — auto 는 base 의 project 커버리지를 목표로 삼는다.
+    patch:
+      default:
+        target: auto
