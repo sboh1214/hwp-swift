@@ -1,0 +1,5 @@
+module CHwpZlib [system] {
+    header "Shim.h"
+    link "z"
+    export *
+}

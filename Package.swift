@@ -5,23 +5,32 @@ import PackageDescription
 // Linux는 CoreHwp(파서)와 CoreHwpTests만 지원한다
 // (HwpKitCore/HwpKitNative/HwpKit)은 CoreText·CoreGraphics 등 Apple 전용
 // 프레임워크에 의존하므로 Darwin에서만 빌드한다.
+//
+// 같은 분기가 raw DEFLATE 해제의 백엔드도 가른다. Apple은 SDK 내장
+// `Compression`을 쓰고, 그 외 플랫폼은 system zlib 을 `CHwpZlib` system
+// library 타깃으로 링크한다 — 그쪽 소비자는 빌드에 zlib 개발 헤더가,
+// 실행에 zlib 런타임이 필요하다 (README "설치").
 #if canImport(Darwin)
-    let buildsViewerTargets = true
+    let buildsForApplePlatforms = true
 #else
-    let buildsViewerTargets = false
+    let buildsForApplePlatforms = false
 #endif
 
 var products: [Product] = [
     .library(name: "CoreHwp", targets: ["CoreHwp"]),
 ]
 
+/// `SWCompression`은 프로덕션 의존성이 아니다 — 테스트가 입력 합성
+/// (`Deflate.compress`)과 압축 해제 기준선으로만 쓴다 (#101).
+var coreHwpDependencies: [Target.Dependency] = ["OLEKit"]
+if !buildsForApplePlatforms {
+    coreHwpDependencies.append("CHwpZlib")
+}
+
 var targets: [Target] = [
     .target(
         name: "CoreHwp",
-        dependencies: [
-            "OLEKit",
-            "SWCompression",
-        ],
+        dependencies: coreHwpDependencies,
         exclude: [
             "AGENTS.md",
             "Models/Section/AGENTS.md",
@@ -43,7 +52,17 @@ var targets: [Target] = [
     ),
 ]
 
-if buildsViewerTargets {
+if !buildsForApplePlatforms {
+    targets.append(
+        .systemLibrary(
+            name: "CHwpZlib",
+            path: "Sources/CHwpZlib",
+            providers: [.apt(["zlib1g-dev"]), .yum(["zlib-devel"])]
+        )
+    )
+}
+
+if buildsForApplePlatforms {
     products += [
         .library(name: "HwpKitCore", targets: ["HwpKitCore"]),
         .library(name: "HwpKitNative", targets: ["HwpKitNative"]),
@@ -116,9 +135,10 @@ let package = Package(
     // CoreHwp(파서)는 tvOS/watchOS도 지원하므로 의존성(SWCompression 등)의
     // 최소 버전과 맞춰 선언한다. platforms 생략은 프로덕트를 숨기지 않고 기본
     // (낮은) 배포 타깃을 부여할 뿐이라 CoreHwp를 회귀시킨다. 뷰어 타깃은
-    // buildsViewerTargets(위)와 소비자의 프로덕트 선택으로 제외된다 —
+    // buildsForApplePlatforms(위)와 소비자의 프로덕트 선택으로 제외된다 —
     // tvOS/watchOS 소비자는 CoreHwp 프로덕트만 고르면 뷰어 타깃은 빌드되지
-    // 않는다 (#1).
+    // 않는다 (#1). SWCompression 은 이제 testTarget 전용이지만 platforms 는
+    // 패키지 단위라 이 하한을 그대로 유지해야 한다.
     platforms: [
         .macOS(.v14),
         .iOS(.v17),

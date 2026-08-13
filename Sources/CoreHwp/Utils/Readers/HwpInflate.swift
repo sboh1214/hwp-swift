@@ -2,23 +2,24 @@ import Foundation
 #if canImport(Compression)
     import Compression
 #else
-    import SWCompression
+    import CHwpZlib
 #endif
 
 /// HWP OLE stream의 raw DEFLATE(zlib header 없음) 압축을 해제한다.
 ///
 /// Apple 플랫폼에서는 `Compression.framework`의 `COMPRESSION_ZLIB` 스트리밍
 /// 디코더를 쓴다 — 이 상수는 이름과 달리 zlib wrapper가 아니라 raw DEFLATE라
-/// HWP stream과 형식이 일치한다. 그 외 플랫폼은 `SWCompression`으로 폴백한다.
-/// 폴백은 **코드 경로만**이며 SWCompression 의존성 자체는 전 플랫폼에 남는다
-/// (테스트가 `Deflate.compress`로 입력을 합성한다).
+/// HWP stream과 형식이 일치한다. 그 외 플랫폼은 system zlib을 `CHwpZlib`
+/// system library 타깃으로 링크해 `inflateInit2(-MAX_WBITS)`로 같은 형식을
+/// 읽는다. 두 백엔드 모두 **스트리밍**이며 순수 Swift 디코더는 쓰지 않는다.
 ///
 /// 스트리밍 경로의 목적은 속도만이 아니다. `limit`을 압축 해제 **도중**에
 /// 적용해 decompression bomb이 상한을 넘는 순간 중단시킨다 — 다 풀고 나서
-/// 크기를 보는 후처리 거부와 달리 실제 메모리 할당 상한이다.
+/// 크기를 보는 후처리 거부와 달리 실제 메모리 할당 상한이다. 두 플랫폼이
+/// 같은 구조라 이 보장에 플랫폼 차이가 없다.
 ///
-/// Apple 디코더는 stored block의 `NLEN` 검증을 생략해 zlib·SWCompression이
-/// 거부하는 바이트열을 받아들이므로, 두 경로의 **판정**을 맞추기 위해
+/// Apple 디코더는 stored block의 `NLEN` 검증을 생략해 zlib이 거부하는
+/// 바이트열을 받아들이므로, 두 경로의 **판정**을 맞추기 위해
 /// `validateLeadingStoredBlocks`를 앞단에 둔다 (부분 방어 — 그 함수 주석 참조).
 enum HwpInflate {
     enum Failure: Error, Equatable {
@@ -35,8 +36,8 @@ enum HwpInflate {
 
     /// `data`를 압축 해제하되 출력이 `limit` byte를 넘으면 중단한다.
     static func decompress(_ data: Data, limit: Int) throws -> Data {
-        // 빈 입력은 유효한 raw DEFLATE stream이 아니다. SWCompression 폴백이
-        // 이미 throw하므로, 두 경로의 판정을 맞추기 위해 앞단에서 통일한다.
+        // 빈 입력은 유효한 raw DEFLATE stream이 아니다. 두 디코더 모두 이를
+        // 거부하지만, 판정을 디코더에 맡기지 않고 앞단에서 통일한다.
         guard !data.isEmpty else {
             throw Failure.corrupted
         }
@@ -46,17 +47,18 @@ enum HwpInflate {
 
     /// 선행 stored block들의 `NLEN`이 `LEN`의 1의 보수인지 검사한다.
     ///
-    /// Apple 디코더는 이 검사를 생략해 zlib·SWCompression이 거부하는 바이트열을
-    /// 받아들인다. 압축으로 표시됐지만 실제로는 deflate가 아닌 입력이 대개 여기
-    /// 걸린다 — 임의 바이트의 첫 3비트가 stored block으로 읽히는 경우다. 그
-    /// 출력은 BinData처럼 레코드 트리 검증을 거치지 않는 경로로도 흘러가므로
+    /// Apple 디코더는 이 검사를 생략해 zlib이 거부하는 바이트열을 받아들인다.
+    /// 압축으로 표시됐지만 실제로는 deflate가 아닌 입력이 대개 여기 걸린다 —
+    /// 임의 바이트의 첫 3비트가 stored block으로 읽히는 경우다. 그 출력은
+    /// BinData처럼 레코드 트리 검증을 거치지 않는 경로로도 흘러가므로
     /// (`HwpFile.init(fromOLE:)`), 판정을 디코더에만 맡기지 않는다.
     ///
     /// **부분 방어다.** stored block은 byte 경계에서 끝나 연속한 stored block은
     /// 디코딩 없이 따라갈 수 있지만, huffman block을 만나면 거기서 멈춘다 —
     /// 다음 블록 경계를 알려면 그 블록을 끝까지 디코딩해야 하고, 그것은 이
     /// 파일이 걷어낸 순수 Swift 디코더를 되살리는 일이다. 즉 huffman block 뒤에
-    /// 오는 stored block의 `NLEN`은 여전히 검사되지 않는다.
+    /// 오는 stored block의 `NLEN`은 여전히 검사되지 않는다 (zlib은 거기서도
+    /// 거부하므로 남는 차이는 Apple 경로 한쪽이다).
     private static func validateLeadingStoredBlocks(_ data: Data) throws {
         var offset = data.startIndex
         while offset < data.endIndex {
@@ -90,11 +92,20 @@ enum HwpInflate {
     }
 }
 
+private extension HwpInflate {
+    /// 출력 버퍼 한 덩어리 크기. 디코더 한 번의 호출이 채우는 상한이다.
+    static let chunkSize = 64 * 1024
+
+    /// 할당 재조정 횟수를 줄이기 위한 초기 용량. deflate 평균 압축률을
+    /// 감안해 입력의 4배를 잡되 `limit`과 overflow를 넘지 않는다.
+    static func initialCapacity(inputCount: Int, limit: Int) -> Int {
+        let (guess, overflow) = inputCount.multipliedReportingOverflow(by: 4)
+        return min(overflow ? limit : guess, limit)
+    }
+}
+
 #if canImport(Compression)
     private extension HwpInflate {
-        /// 출력 버퍼 한 덩어리 크기. 한 번의 `process` 호출이 채우는 상한이다.
-        static let chunkSize = 64 * 1024
-
         static func inflate(_ data: Data, limit: Int) throws -> Data {
             let stream = UnsafeMutablePointer<compression_stream>.allocate(capacity: 1)
             defer { stream.deallocate() }
@@ -156,33 +167,88 @@ enum HwpInflate {
                 return output
             }
         }
-
-        /// 할당 재조정 횟수를 줄이기 위한 초기 용량. deflate 평균 압축률을
-        /// 감안해 입력의 4배를 잡되 `limit`과 overflow를 넘지 않는다.
-        static func initialCapacity(inputCount: Int, limit: Int) -> Int {
-            let (guess, overflow) = inputCount.multipliedReportingOverflow(by: 4)
-            return min(overflow ? limit : guess, limit)
-        }
     }
 
 #else
     private extension HwpInflate {
-        /// 비-Apple 플랫폼 폴백. `SWCompression`은 bounded streaming inflate를
-        /// 제공하지 않으므로 `limit` 판정은 압축 해제가 끝난 뒤에 이뤄진다 —
-        /// 이 경로에서는 typed error 반환만 보장되고 메모리 할당 상한은
-        /// 보장되지 않는다.
+        /// 비-Apple 플랫폼은 system zlib으로 raw DEFLATE를 스트리밍 해제한다.
+        ///
+        /// Apple 경로와 구조가 같다 — 출력 한 덩어리마다 `limit`을 확인해
+        /// 상한을 넘는 순간 중단하고, 판정도 같은 두 `Failure`로 좁힌다.
+        /// 순수 Swift 디코더 폴백은 손상 입력에서 typed error 대신 배열 범위
+        /// 초과 트랩으로 프로세스를 중단시켜 걷어냈다 (#101).
         static func inflate(_ data: Data, limit: Int) throws -> Data {
-            let output: Data
-            do {
-                output = try Deflate.decompress(data: data)
-            } catch {
+            var stream = z_stream()
+            // `inflateInit2`는 C 매크로라 Swift로 들어오지 않으므로, 그 매크로가
+            // 채우던 ABI 인자(버전 문자열·구조체 크기)를 직접 넘긴다.
+            // windowBits가 음수면 zlib/gzip wrapper 없이 raw DEFLATE로 읽는다 —
+            // Apple 쪽 `COMPRESSION_ZLIB`과 같은 해석이다.
+            guard inflateInit2_(
+                &stream,
+                -MAX_WBITS,
+                ZLIB_VERSION,
+                Int32(MemoryLayout<z_stream>.size)
+            ) == Z_OK else {
                 throw Failure.corrupted
             }
+            defer { inflateEnd(&stream) }
 
-            guard output.count <= limit else {
-                throw Failure.limitExceeded(produced: output.count)
+            let destination = UnsafeMutablePointer<UInt8>.allocate(capacity: chunkSize)
+            defer { destination.deallocate() }
+
+            var output = Data()
+            output.reserveCapacity(initialCapacity(inputCount: data.count, limit: limit))
+
+            return try data.withUnsafeBytes { raw -> Data in
+                guard let source = raw.bindMemory(to: UInt8.self).baseAddress else {
+                    throw Failure.corrupted
+                }
+
+                // `avail_in`이 32비트라 입력을 한 번에 다 넘긴다고 가정할 수
+                // 없다. 남은 입력이 없을 때만 다음 덩어리를 물리고, 마지막
+                // 덩어리를 물린 뒤에야 `Z_FINISH`를 세운다.
+                var fed = 0
+
+                while true {
+                    if stream.avail_in == 0, fed < raw.count {
+                        let count = min(raw.count - fed, Int(Int32.max))
+                        stream.next_in = UnsafeMutablePointer(mutating: source + fed)
+                        stream.avail_in = uInt(count)
+                        fed += count
+                    }
+                    stream.next_out = destination
+                    stream.avail_out = uInt(chunkSize)
+
+                    let status = CHwpZlib.inflate(
+                        &stream, fed == raw.count ? Z_FINISH : Z_NO_FLUSH
+                    )
+                    // 출력 공간은 매 호출 새로 주므로 `Z_BUF_ERROR`는 "더
+                    // 진전할 수 없음", 즉 절단된 입력이다 — 아래 진전 검사가
+                    // 받는다. 나머지 음수 status는 손상이다.
+                    guard status == Z_OK || status == Z_STREAM_END || status == Z_BUF_ERROR
+                    else {
+                        throw Failure.corrupted
+                    }
+
+                    let produced = chunkSize - Int(stream.avail_out)
+                    guard output.count + produced <= limit else {
+                        throw Failure.limitExceeded(produced: output.count + produced)
+                    }
+                    if produced > 0 {
+                        output.append(destination, count: produced)
+                    }
+
+                    if status == Z_STREAM_END {
+                        return output
+                    }
+                    // 진전이 없는데 END도 아니면 입력이 끊긴 것이다. 이 검사를
+                    // 빼면 절단된 stream이 부분 출력으로 조용히 "성공"한다 —
+                    // 성능 회귀가 아니라 무성 데이터 손상이므로 반드시 남긴다.
+                    if produced == 0 {
+                        throw Failure.corrupted
+                    }
+                }
             }
-            return output
         }
     }
 #endif
