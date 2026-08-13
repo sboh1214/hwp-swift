@@ -5,119 +5,121 @@ import OLEKit
 import SWCompression
 import XCTest
 
-/// `HwpInflate`의 Apple `Compression` 경로가 `SWCompression` 폴백과 같은 결과를
-/// 내는지 고정한다.
+/// `HwpInflate`의 두 프로덕션 경로 — Apple `Compression`과 비-Apple system
+/// zlib — 이 순수 Swift 기준선(`SWCompression`)과 같은 결과를 내는지 고정한다.
 ///
-/// Apple 경로가 컴파일되지 않는 플랫폼에서는 두 경로가 같은 구현이 되어 비교가
-/// 항등식이 되므로 동등성 스위트 전체를 `canImport(Compression)`으로 막는다.
-/// 즉 이 파일의 실효 검증은 macOS·iOS 잡에서만 일어난다.
+/// #101 전에는 비-Apple 경로가 `SWCompression` 자신이라 비교가 항등식이었고,
+/// 그래서 동등성·절단·손상 단언을 `canImport(Compression)`으로 막았다. 지금은
+/// 양쪽이 서로 독립된 디코더라 그 가드가 없고, 이 파일의 단언은 macOS·iOS와
+/// Linux 잡에서 모두 실효다.
+///
+/// **기준선에 임의 바이트를 먹이지 말 것.** `Deflate.decompress`는 deflate가
+/// 아닌 입력에서 throw가 아니라 프로세스를 중단시킨다 (`allDeflateStreams`
+/// 주석 참조). 손상 입력은 `HwpInflate`에만 넣는다.
 final class HwpInflateTests: XCTestCase {
-    #if canImport(Compression)
+    /// **수용 기준.** 코퍼스의 모든 실제 deflate stream에서 프로덕션 경로와
+    /// 기준선의 출력이 바이트 단위로 같아야 한다.
+    func testInflateMatchesOracleOnEveryDeflateStream() throws {
+        var compared = 0
 
-        /// **수용 기준.** 코퍼스의 모든 실제 deflate stream에서 두 경로의 출력이
-        /// 바이트 단위로 같아야 한다.
-        func testInflateMatchesFallbackOnEveryDeflateStream() throws {
-            var compared = 0
-
-            for stream in try allDeflateStreams() {
-                let actual = try HwpInflate.decompress(stream.input, limit: .max)
-                expect(actual).to(equal(stream.output), description: stream.label)
-                compared += 1
-            }
-
-            // 코퍼스가 비거나 경로가 어긋나 아무것도 비교하지 않은 채 초록이
-            // 되는 것을 막는다. 현재 코퍼스는 정확히 100개이고, 픽스처가
-            // 늘어나는 방향으로만 움직인다.
-            expect(compared).to(beGreaterThanOrEqualTo(100))
+        for stream in try allDeflateStreams() {
+            let actual = try HwpInflate.decompress(stream.input, limit: .max)
+            expect(actual).to(equal(stream.output), description: stream.label)
+            compared += 1
         }
 
-        /// 절단된 stream은 부분 출력으로 성공해서는 안 된다.
-        ///
-        /// 스트리밍 루프가 "진전 없음 + `COMPRESSION_STATUS_END` 미도달"을 손상으로
-        /// 판정하지 않으면 잘린 본문이 조용히 파싱되는 무성 데이터 손상이 된다.
-        /// 성능 회귀가 아니라 정확성 회귀이므로 별도로 고정한다.
-        func testTruncatedDeflateStreamIsRejectedInsteadOfReturningPartialOutput() throws {
-            var truncatedCases = 0
+        // 코퍼스가 비거나 경로가 어긋나 아무것도 비교하지 않은 채 초록이
+        // 되는 것을 막는다. 현재 코퍼스는 정확히 100개이고, 픽스처가
+        // 늘어나는 방향으로만 움직인다.
+        expect(compared).to(beGreaterThanOrEqualTo(100))
+    }
 
-            for stream in try allDeflateStreams() {
-                let half = Data(stream.input.prefix(stream.input.count / 2))
-                guard !half.isEmpty else {
-                    continue
+    /// 절단된 stream은 부분 출력으로 성공해서는 안 된다.
+    ///
+    /// 스트리밍 루프가 "진전 없음 + 종료 미도달"(`COMPRESSION_STATUS_END` /
+    /// `Z_STREAM_END`)을 손상으로 판정하지 않으면 잘린 본문이 조용히 파싱되는
+    /// 무성 데이터 손상이 된다. 성능 회귀가 아니라 정확성 회귀이므로 별도로
+    /// 고정한다.
+    func testTruncatedDeflateStreamIsRejectedInsteadOfReturningPartialOutput() throws {
+        var truncatedCases = 0
+
+        for stream in try allDeflateStreams() {
+            let half = Data(stream.input.prefix(stream.input.count / 2))
+            guard !half.isEmpty else {
+                continue
+            }
+
+            expect { try HwpInflate.decompress(half, limit: .max) }
+                .to(throwError(HwpInflate.Failure.corrupted), description: stream.label)
+            truncatedCases += 1
+        }
+
+        expect(truncatedCases).to(beGreaterThanOrEqualTo(100))
+    }
+
+    /// deflate stream의 첫 byte를 예약 `BTYPE`으로 바꾸면 거부해야 한다 —
+    /// 기존 손상 픽스처 합성(`temporaryHwp(corrupting…)`)이 쓰는 바로 그
+    /// 변조이며, 문서 레벨 판정은 `StreamDecompressionStabilityTests`가
+    /// 이미 양 경로에서 고정하고 있다.
+    func testFirstByteCorruptionIsRejected() throws {
+        var corruptedCases = 0
+
+        for stream in try allDeflateStreams() {
+            var corrupted = stream.input
+            corrupted[corrupted.startIndex] = corrupted[corrupted.startIndex] == 0x06
+                ? 0x07
+                : 0x06
+
+            expect { try HwpInflate.decompress(corrupted, limit: .max) }
+                .to(throwError(HwpInflate.Failure.corrupted), description: stream.label)
+            corruptedCases += 1
+        }
+
+        expect(corruptedCases).to(beGreaterThanOrEqualTo(100))
+    }
+
+    /// 상한은 압축 해제가 끝난 뒤가 아니라 도중에 걸려야 한다.
+    func testLimitStopsInflateBeforeProducingFullOutput() throws {
+        let stream = try largestDeflateStream()
+        let limit = stream.output.count / 2
+
+        expect { try HwpInflate.decompress(stream.input, limit: limit) }
+            .to(throwError { error in
+                guard case let HwpInflate.Failure.limitExceeded(produced) = error else {
+                    return fail("Expected limitExceeded, got \(error)")
                 }
+                // 하한이므로 limit은 넘되, 전체를 다 푼 뒤 재는 것이
+                // 아님을 전체 크기에 못 미친다는 것으로 확인한다.
+                expect(produced) > limit
+                expect(produced) < stream.output.count
+            })
+        // 상한 초과가 손상으로 뭉개지지 않는지 — 즉 `throwError(_:)`가
+        // 두 케이스를 실제로 구별하는지 확인한다. 구별하지 못하면 위
+        // 절단·손상 테스트가 아무것도 증명하지 못한다.
+        expect { try HwpInflate.decompress(stream.input, limit: limit) }
+            .toNot(throwError(HwpInflate.Failure.corrupted))
+    }
 
-                expect { try HwpInflate.decompress(half, limit: .max) }
-                    .to(throwError(HwpInflate.Failure.corrupted), description: stream.label)
-                truncatedCases += 1
-            }
+    /// 정확히 결과 크기만큼의 상한은 성공해야 한다 (off-by-one 방지).
+    func testLimitEqualToDecompressedSizeSucceeds() throws {
+        let stream = try largestDeflateStream()
 
-            expect(truncatedCases).to(beGreaterThanOrEqualTo(100))
-        }
+        expect(try HwpInflate.decompress(stream.input, limit: stream.output.count))
+            == stream.output
+        expect { try HwpInflate.decompress(stream.input, limit: stream.output.count - 1) }
+            .to(throwError { error in
+                guard case HwpInflate.Failure.limitExceeded = error else {
+                    return fail("Expected limitExceeded, got \(error)")
+                }
+            })
+    }
 
-        /// deflate stream의 첫 byte를 예약 `BTYPE`으로 바꾸면 거부해야 한다 —
-        /// 기존 손상 픽스처 합성(`temporaryHwp(corrupting…)`)이 쓰는 바로 그
-        /// 변조이며, 문서 레벨 판정은 `StreamDecompressionStabilityTests`가
-        /// 이미 양 경로에서 고정하고 있다.
-        func testFirstByteCorruptionIsRejected() throws {
-            var corruptedCases = 0
-
-            for stream in try allDeflateStreams() {
-                var corrupted = stream.input
-                corrupted[corrupted.startIndex] = corrupted[corrupted.startIndex] == 0x06
-                    ? 0x07
-                    : 0x06
-
-                expect { try HwpInflate.decompress(corrupted, limit: .max) }
-                    .to(throwError(HwpInflate.Failure.corrupted), description: stream.label)
-                corruptedCases += 1
-            }
-
-            expect(corruptedCases).to(beGreaterThanOrEqualTo(100))
-        }
-
-        /// 상한은 압축 해제가 끝난 뒤가 아니라 도중에 걸려야 한다.
-        func testLimitStopsInflateBeforeProducingFullOutput() throws {
-            let stream = try largestDeflateStream()
-            let limit = stream.output.count / 2
-
-            expect { try HwpInflate.decompress(stream.input, limit: limit) }
-                .to(throwError { error in
-                    guard case let HwpInflate.Failure.limitExceeded(produced) = error else {
-                        return fail("Expected limitExceeded, got \(error)")
-                    }
-                    // 하한이므로 limit은 넘되, 전체를 다 푼 뒤 재는 것이
-                    // 아님을 전체 크기에 못 미친다는 것으로 확인한다.
-                    expect(produced) > limit
-                    expect(produced) < stream.output.count
-                })
-            // 상한 초과가 손상으로 뭉개지지 않는지 — 즉 `throwError(_:)`가
-            // 두 케이스를 실제로 구별하는지 확인한다. 구별하지 못하면 위
-            // 절단·손상 테스트가 아무것도 증명하지 못한다.
-            expect { try HwpInflate.decompress(stream.input, limit: limit) }
-                .toNot(throwError(HwpInflate.Failure.corrupted))
-        }
-
-        /// 정확히 결과 크기만큼의 상한은 성공해야 한다 (off-by-one 방지).
-        func testLimitEqualToDecompressedSizeSucceeds() throws {
-            let stream = try largestDeflateStream()
-
-            expect(try HwpInflate.decompress(stream.input, limit: stream.output.count))
-                == stream.output
-            expect { try HwpInflate.decompress(stream.input, limit: stream.output.count - 1) }
-                .to(throwError { error in
-                    guard case HwpInflate.Failure.limitExceeded = error else {
-                        return fail("Expected limitExceeded, got \(error)")
-                    }
-                })
-        }
-
-        /// 빈 입력은 유효한 raw DEFLATE stream이 아니다 — 폴백과 판정을 맞춘다.
-        func testEmptyInputIsRejectedLikeFallback() {
-            expect(try Deflate.decompress(data: Data())).to(throwError())
-            expect { try HwpInflate.decompress(Data(), limit: .max) }
-                .to(throwError(HwpInflate.Failure.corrupted))
-        }
-
-    #endif
+    /// 빈 입력은 유효한 raw DEFLATE stream이 아니다 — 기준선과 판정을 맞춘다.
+    func testEmptyInputIsRejected() {
+        expect(try Deflate.decompress(data: Data())).to(throwError())
+        expect { try HwpInflate.decompress(Data(), limit: .max) }
+            .to(throwError(HwpInflate.Failure.corrupted))
+    }
 
     /// 도중 상한이 개별 stream 한도에 걸리면 `streamSizeLimitExceeded`를 던지고,
     /// `limit` payload로는 **파생된 min이 아니라 원래 개별 stream 한도**를
@@ -235,9 +237,9 @@ final class HwpInflateTests: XCTestCase {
             .to(throwError(HwpInflate.Failure.corrupted))
     }
 
-    /// 유효한 stored block 연쇄는 통과시키고 폴백과 같은 바이트를 낸다 —
+    /// 유효한 stored block 연쇄는 통과시키고 기준선과 같은 바이트를 낸다 —
     /// 검사가 정상 입력을 막지 않는지 확인한다.
-    func testValidStoredBlockChainMatchesFallback() {
+    func testValidStoredBlockChainMatchesOracle() {
         let input = storedBlock(Data("가나".utf8), isFinal: false)
             + storedBlock(Data("다라".utf8), isFinal: true)
         let expected = Data("가나다라".utf8)
@@ -249,9 +251,10 @@ final class HwpInflateTests: XCTestCase {
     /// 첫 블록만 보는 것이 아니라 stored 연쇄를 따라간다 — 두 번째 블록의
     /// `NLEN`만 틀려도 거부해야 검사가 공허하지 않다.
     ///
-    /// **폴백은 이 입력을 받아들인다** (실측). 즉 이 거부는 어느 디코더와도
-    /// 같지 않은 우리 쪽 엄격성이다. 가드가 Apple 분기 안이 아니라 공유
-    /// 진입점에 있는 이유가 이것이다 — 그래야 두 플랫폼이 같은 판정을 낸다.
+    /// **기준선과 Apple 디코더는 이 입력을 받아들이고 zlib은 거부한다** (실측).
+    /// 즉 이 거부는 디코더 합의가 아니라 우리 쪽 판정이다. 가드가 Apple 분기
+    /// 안이 아니라 공유 진입점에 있는 이유가 이것이다 — 그래야 두 플랫폼이
+    /// 같은 판정을 낸다.
     func testInvalidComplementInLaterStoredBlockIsRejected() {
         let input = storedBlock(Data("가나".utf8), isFinal: false)
             + storedBlock(Data("다라".utf8), isFinal: true, complement: 0)
@@ -280,21 +283,51 @@ final class HwpInflateTests: XCTestCase {
             .to(throwError(HwpInflate.Failure.corrupted))
     }
 
-    #if canImport(Compression)
+    /// 압축으로 표시됐지만 실제로는 평문인 stream 을 typed error 로 거부한다.
+    ///
+    /// 이 64 byte 는 `bookmark` 픽스처 `PrvText` 의 UTF-16LE 평문
+    /// ("CoreHwp bookmark fixture text.\r\n") 이다. 첫 byte `0x43` 을
+    /// LSB-first 로 읽으면 `BFINAL=1`·`BTYPE=01`(fixed huffman) 이라 선행
+    /// stored block 검사를 그냥 지나가고, 판정은 온전히 디코더 몫이다.
+    ///
+    /// 걷어낸 순수 Swift 폴백은 바로 이 입력을 유효하지 않은 backward distance
+    /// 로 해석한 뒤 검증하지 않아 **배열 범위 초과 트랩으로 프로세스를 중단**
+    /// 시켰다 (#101). catch 할 수 없는 트랩이라 "파싱 실패는 crash 가 아니라
+    /// `HwpError`" 계약이 그 경로에서 깨졌다. 그래서 단언을 플랫폼으로 가르지
+    /// 않는다 — 계약은 공통이고, 실효 판정은 Linux 잡이 한다.
+    ///
+    /// **이 바이트열을 `Deflate.decompress` 에 넣지 말 것** — 위 트랩이 그대로
+    /// 재현된다.
+    func testNonDeflatePlainTextStreamIsRejectedInsteadOfTrapping() {
+        let input = Data([
+            0x43, 0x00, 0x6F, 0x00, 0x72, 0x00, 0x65, 0x00,
+            0x48, 0x00, 0x77, 0x00, 0x70, 0x00, 0x20, 0x00,
+            0x62, 0x00, 0x6F, 0x00, 0x6F, 0x00, 0x6B, 0x00,
+            0x6D, 0x00, 0x61, 0x00, 0x72, 0x00, 0x6B, 0x00,
+            0x20, 0x00, 0x66, 0x00, 0x69, 0x00, 0x78, 0x00,
+            0x74, 0x00, 0x75, 0x00, 0x72, 0x00, 0x65, 0x00,
+            0x20, 0x00, 0x74, 0x00, 0x65, 0x00, 0x78, 0x00,
+            0x74, 0x00, 0x2E, 0x00, 0x0D, 0x00, 0x0A, 0x00,
+        ])
 
-        /// 마지막 블록이 `BFINAL` 없이 입력 끝에 닿으면 stream 이 끊긴 것이다.
-        ///
-        /// 검사기는 연쇄를 다 따라가고도 최종 블록을 못 만나 그냥 반환하고,
-        /// 거부는 디코더의 "진전 없음 + `END` 미도달" 판정이 맡는다. 두 층이
-        /// 이어져야 절단이 부분 출력으로 새지 않는다.
-        func testNonFinalStoredBlockEndingAtInputEndIsRejected() {
-            let input = storedBlock(Data("가나".utf8), isFinal: false)
+        expect { try HwpInflate.decompress(input, limit: .max) }
+            .to(throwError(HwpInflate.Failure.corrupted))
+    }
 
-            expect { try HwpInflate.decompress(input, limit: .max) }
-                .to(throwError(HwpInflate.Failure.corrupted))
-        }
+    /// 마지막 블록이 `BFINAL` 없이 입력 끝에 닿으면 stream 이 끊긴 것이다.
+    ///
+    /// 검사기는 연쇄를 다 따라가고도 최종 블록을 못 만나 그냥 반환하고,
+    /// 거부는 스트리밍 루프의 "진전 없음 + 종료 미도달" 판정이 맡는다. 두 층이
+    /// 이어져야 절단이 부분 출력으로 새지 않는다. **어느 디코더도 이것을 손상
+    /// 으로 분류하지 않는다** — zlib 은 부분 출력 뒤 `Z_BUF_ERROR`(진전 불가),
+    /// Apple 디코더는 진전 없는 `OK` 만 낸다 (실측). 즉 이 단언이 지키는 것은
+    /// 디코더가 아니라 루프의 종료 판정이다.
+    func testNonFinalStoredBlockEndingAtInputEndIsRejected() {
+        let input = storedBlock(Data("가나".utf8), isFinal: false)
 
-    #endif
+        expect { try HwpInflate.decompress(input, limit: .max) }
+            .to(throwError(HwpInflate.Failure.corrupted))
+    }
 }
 
 /// raw DEFLATE stored block 한 개. `complement`를 주면 `NLEN`을 그 값으로 심어
@@ -331,9 +364,12 @@ private struct DeflateStreamSample {
 ///
 /// **`SWCompression`에 임의 바이트를 먹이지 않는다.** `Deflate.decompress`는
 /// deflate가 아닌 입력에서 throw가 아니라 프로세스를 중단시킨다(실측:
-/// `bookmark`의 `PrvText` 64 byte). 그래서 코퍼스를 "SWCompression이 푸는가"로
-/// 정의할 수 없고, 손상 입력 테스트도 Apple 경로만 단언한다. 문서 레벨의
-/// 양 경로 손상 판정은 `StreamDecompressionStabilityTests`가 담당한다.
+/// `bookmark`의 `PrvText` 64 byte —
+/// `testNonDeflatePlainTextStreamIsRejectedInsteadOfTrapping`). 그래서 코퍼스를
+/// "SWCompression이 푸는가"로 정의할 수 없다. 대신 이 헬퍼가 넘기는 입력은
+/// 전부 유효한 stream이고, 절단·손상 변조는 `HwpInflate`에만 넣는다 — 그쪽은
+/// 양 플랫폼 모두 typed error를 보장하므로 단언을 가르지 않는다. 문서 레벨의
+/// 손상 판정은 `StreamDecompressionStabilityTests`가 담당한다.
 private func allDeflateStreams() throws -> [DeflateStreamSample] {
     var samples: [DeflateStreamSample] = []
     for fixture in try FixtureLoader.loadAll() where fixture.manifest.expectedError == nil {
