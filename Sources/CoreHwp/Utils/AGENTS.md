@@ -73,18 +73,22 @@ consumes-all `init` 근처에 남긴다. override는 default loader와 동등하
   `streamSize`로 압축 입력과 비압축 stream을 읽기 전에 제한하고, deflate 출력
   한도는 개별 stream 한도와 남은 집계 예산의 min으로 `HwpInflate`에 넘긴다.
   초과 시 던지는 error와 `limit`은 실제로 걸린 쪽의 원래 한도를 유지한다.
-- **`HwpInflate`** — raw DEFLATE 압축 해제. Apple 플랫폼은 `Compression`의
-  `compression_stream` 스트리밍 루프라 상한이 압축 해제 **도중**에 걸리고,
-  그 외 플랫폼은 `SWCompression` 폴백이라 후처리 검사다. 폴백은 코드 경로만이며
-  SWCompression 의존성은 전 플랫폼에 남는다. `COMPRESSION_STATUS_END` 도달을
-  별도로 강제한다 — 빼면 절단된 stream이 부분 출력으로 조용히 성공한다.
+- **`HwpInflate`** — raw DEFLATE 압축 해제. 두 백엔드 모두 스트리밍 루프라
+  상한이 압축 해제 **도중**에 걸린다 — Apple은 `Compression`의
+  `compression_stream`, 그 외 플랫폼은 system zlib의
+  `inflateInit2_(-MAX_WBITS)` + `inflate`다 (`Sources/CHwpZlib` systemLibrary
+  타깃). 순수 Swift 폴백(`SWCompression`)은 손상 입력에서 typed error 대신
+  프로세스를 중단시켜 #101에서 걷어냈고, 지금은 테스트 기준선으로만 남는다.
+  **종료 도달**(`COMPRESSION_STATUS_END`/`Z_STREAM_END`)을 양쪽 다 별도로
+  강제한다 — 빼면 절단된 stream이 부분 출력으로 조용히 성공한다. 어느 디코더도
+  이것을 손상으로 분류하지 않으므로(실측: zlib은 부분 출력 뒤 `Z_BUF_ERROR`,
+  Apple은 진전 없는 `OK`) 이 판정은 루프가 쥔다.
 
   유효한 stream의 출력 바이트는 두 경로가 같지만 **손상 판정은 디코더마다
   다르다** — Apple 디코더는 stored block의 `NLEN`이 `LEN`의 1의 보수인지 보지
-  않고, SWCompression도 첫 블록 뒤의 stored block에서는 통과시킨다 (실측). 그래서
-  판정을 디코더에 맡기지 않고 `validateLeadingStoredBlocks`가 **공유 진입점**에서
-  선행 stored block의 `NLEN`을 직접 본다. Apple 분기 안에 두면 반대 방향
-  플랫폼 차이가 생긴다.
+  않고, zlib은 본다 (실측). 그래서 판정을 디코더에 맡기지 않고
+  `validateLeadingStoredBlocks`가 **공유 진입점**에서 선행 stored block의
+  `NLEN`을 직접 본다. Apple 분기 안에 두면 반대 방향 플랫폼 차이가 생긴다.
 
   그 검사가 필요한 이유는 **"출력은 어차피 레코드 트리 파서가 다시 거른다"가
   참이 아니기** 때문이다. `BinData`는 압축 해제 결과를 검증 없이
@@ -95,9 +99,10 @@ consumes-all `init` 근처에 남긴다. override는 default loader와 동등하
 
   **부분 방어다.** stored block은 byte 경계에서 끝나 연속한 stored block은
   디코딩 없이 따라갈 수 있지만, huffman block을 만나면 멈춘다 — 다음 경계를
-  알려면 그 블록을 끝까지 디코딩해야 하고 그것은 이 브랜치가 걷어낸 순수 Swift
-  디코더를 되살리는 일이다. 즉 huffman block 뒤 stored block의 `NLEN`은 여전히
-  보지 않는다. 실무상 닿는 입력("압축이라 표시됐지만 deflate가 아닌 바이트열")은
+  알려면 그 블록을 끝까지 디코딩해야 하고 그것은 프로덕션에서 걷어낸 순수
+  Swift 디코더를 되살리는 일이다. 즉 huffman block 뒤 stored block의 `NLEN`은
+  검사기가 여전히 보지 않는다 (zlib은 거기서도 거부하므로 남는 차이는 Apple
+  경로 한쪽이다). 실무상 닿는 입력("압축이라 표시됐지만 deflate가 아닌 바이트열")은
   첫 블록에서 걸린다.
 - **`DataReader`** — `Data` 위의 cursor. `read(T.Type)`은 정수 폭(1/2/4
   byte)으로 분기하며, 미지원 타입은 `HwpError.unsupportedDataReadType`을
@@ -137,6 +142,9 @@ dispatch.
 
 - extension에서 `Foundation` 전용 API에 의존 — `Sources/`는 Linux 빌드 가능해야
   한다 (`NSString`, `CoreFoundation` 금지).
+- `import CHwpZlib`를 `HwpInflate` 밖으로 퍼뜨리기 — zlib 호출은 그 파일의
+  `#else` 분기에 가둔다. 퍼지면 Linux 빌드의 C 의존이 파서 전역으로 번지고
+  Apple 빌드와의 대칭이 깨진다.
 - reader/record tree 경계 검증에 `precondition`, force unwrap, `fatalError`를
   사용 — malformed HWP 입력은 모두 typed `HwpError`로 반환해야 한다.
 - 여섯 번째 loader 프로토콜 추가 — (Data|Record) × (Version|noVersion) + UInt의

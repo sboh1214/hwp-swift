@@ -55,7 +55,7 @@ hwp-swift/
 | `HwpStreamName` | [Enums/HwpStreamName.swift](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/Enums/HwpStreamName.swift) | OLE stream 이름 (`FileHeader`, `DocInfo`, `BodyText`, `\005HwpSummaryInformation`, `PrvText`, `PrvImage`) |
 | `parseTreeRecord` | [Utils/HwpRecord.swift](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/Utils/HwpRecord.swift) | stream에서 tag/level/size record tree를 구성 |
 | `StreamReader` | [Utils/Readers/StreamReader.swift](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/Utils/Readers/StreamReader.swift) | OLE → `Data` 변환 (압축 stream은 `HwpInflate`에 위임) |
-| `HwpInflate` | [Utils/Readers/HwpInflate.swift](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/Utils/Readers/HwpInflate.swift) | raw DEFLATE 압축 해제. Apple `Compression` 스트리밍 / 그 외 SWCompression 폴백 |
+| `HwpInflate` | [Utils/Readers/HwpInflate.swift](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/Utils/Readers/HwpInflate.swift) | raw DEFLATE 압축 해제. Apple `Compression` / 그 외 system zlib(`CHwpZlib`) — 둘 다 스트리밍 |
 
 ## 파싱 파이프라인
 
@@ -74,12 +74,11 @@ hwp-swift/
 
 `HwpReadLimits`는 OLE directory의 `streamSize`를 이용해 압축 입력과 비압축
 stream을 읽기 전에 제한하고, 압축 해제 결과가 한도를 넘으면 typed
-`HwpError.streamSizeLimitExceeded`로 거부한다. Apple 플랫폼에서는 `HwpInflate`가
-`compression_stream` 스트리밍 루프를 돌며 이 한도를 압축 해제 **도중**에
-적용하므로 실제 메모리 할당 cap이다. 그 외 플랫폼은 SWCompression 폴백이
-bounded streaming inflate를 노출하지 않아 여전히 후처리 거부이며, 그쪽에서는
-typed error 반환만 보장된다 — PR/문서에서 decompression-bomb 방어를 설명할 때
-이 플랫폼 차이를 명시한다.
+`HwpError.streamSizeLimitExceeded`로 거부한다. `HwpInflate`는 **전 플랫폼에서**
+스트리밍 루프를 돌며 이 한도를 압축 해제 **도중**에 적용한다 (Apple은
+`compression_stream`, 그 외는 system zlib `inflate`) — 다 풀고 나서 크기를 재는
+후처리 거부가 아니라 실제 메모리 할당 cap이다. #101 전에는 비-Apple 폴백만
+후처리 거부였으나 그 플랫폼 차이는 사라졌다.
 
 per-stream 한도만으로는 유효한 자식이 많은 파일(BodyText·ViewText·BinData)이
 집계로 메모리를 고갈시킬 수 있어 **파일 단위 집계 한도**(`maxAggregateStreamBytes`,
@@ -117,7 +116,7 @@ typed 디코더들이 그 트리를 재귀로 내려가므로(표 셀 문단·�
 - 테스트에서 `XCTAssert*` 사용 — SwiftLint custom rule `no_xctassert` (severity: error)로 금지. Nimble `expect(...) == ...` 사용.
 - EOF를 검사하지 않고 silent하게 byte 잔여 — loader 프로토콜의 `load`가 `bytesAreNotEOF`를 throw하도록 설계되어 있으므로, manual `init` 호출로 우회 금지.
 - 공백이 있는 새 파일/디렉터리명 추가 — 경로명은 PascalCase + 무공백을 유지.
-- `Package.swift`의 Darwin platform 최소 버전을 더 낮추기 — 의존성 `SWCompression 4.9.1` / `BitByteData 2.1.0`이 macOS 14+/iOS 17+를 요구한다. Linux는 CoreHwp·CoreHwpTests만 지원한다 (뷰어 타깃은 Apple 전용 프레임워크 의존 — `Package.swift`의 `canImport(Darwin)` 분기; CI matrix: macOS + ubuntu-latest).
+- `Package.swift`의 Darwin platform 최소 버전을 더 낮추기 — `SWCompression 4.9.1` / `BitByteData 2.1.0`이 macOS 14+/iOS 17+를 요구한다. #101 이후 이 둘은 테스트 타깃 전용 의존이지만 `platforms:`는 패키지 단위라 하한은 그대로다 (내리려면 압축 해제 기준선부터 갈아야 한다). Linux는 CoreHwp·CoreHwpTests만 지원하며 빌드에 zlib 개발 헤더가 필요하다 (뷰어 타깃은 Apple 전용 프레임워크 의존 — `Package.swift`의 `canImport(Darwin)` 분기; CI matrix: macOS + ubuntu-latest).
 - `swift-tools-version` 변경 시 `.swift-version`, `.swiftformat`, `.github/workflows/ci.yml`의 `test-linux` matrix 동시 갱신 누락 (`CONTRIBUTING.md` 참조).
 - 테스트에서 **CoreFoundation 타입에 `as!`** 쓰기 — SwiftFormat의 `noForceUnwrapInTests`가 이를 `try XCTUnwrap(... as? CFType)`으로 자동 변환하는데, CF 타입 대상 `as?`는 컴파일러가 "항상 성공한다"며 **에러**로 막는다. 즉 포매터가 컴파일 불가능한 코드를 만들어 낸다. `// swiftformat:disable:next` 주석도 듣지 않으므로, 캐스트 자체를 없애 우회한다 (컴파일러 note가 제안하는 방식):
   ```swift
@@ -474,7 +473,11 @@ PR 리뷰를 반영하며 렌더링 코드를 수정할 때, 한글 파일 렌�
    - **수정한 파일에만** `swiftformat` (로컬·CI 버전 일치 확인 — 다르면
      로컬 포맷이 CI에서 되레 실패) + `swiftlint` error 0.
    - Linux는 **amd64 도커만 신뢰** (arm64는 main도 가짜 `fatalError`):
-     `docker run --rm --platform linux/amd64 -v $PWD:/src:ro swift:6.3-noble bash -c "cp -r /src /work && cd /work && rm -rf .build Snapshots && swift test"`.
+     `docker run --rm --platform linux/amd64 -v $PWD:/src:ro swift:6.3-noble bash -c "cp -r /src /work && cd /work && rm -rf .build Snapshots && swift test -j 1"`.
+     `-j 1`을 뺀 기본 병렬도는 Nimble 빌드에서 가짜 `fatalError`를 낸다. 이
+     실행은 zlib 압축 해제 경로의 **유일한** 실효 검증이기도 하다 — CI 이미지
+     (`swift:5.9-jammy`·`swift:6.3-noble`)에는 `zlib1g-dev`가 이미 들어 있고,
+     없는 이미지라면 `apt-get install -y zlib1g-dev`를 선행한다.
      렌더·뷰어 코드를 만졌으면 iOS 빌드도 확인.
 4. **커밋·푸시** — 논리/포맷 커밋 분리. `Snapshots/`·`Docs/`·스크래치
    파일은 gitignore로 제외됨. push 후 CI 잡별(macOS[커버리지 포함]/iOS/
@@ -487,7 +490,8 @@ opt-in — **커밋된** 기준선을 쓰는 스위트는 CI에서 상시 돈다
 ## 의존성 (모두 exact pinning)
 
 - `OLEKit 0.3.1` — OLE compound document 파싱
-- `SWCompression 4.9.1` — 비-Apple 플랫폼의 deflate 폴백 (4.9.0에서 untrusted Deflate 입력에 대한 crash 패치 포함. 그럼에도 deflate가 아닌 입력에서 여전히 throw 대신 프로세스를 중단시키는 경우가 있다 — Apple 플랫폼은 `HwpInflate`가 `Compression`을 쓰므로 이 경로를 타지 않는다). 테스트가 `Deflate.compress`로 입력을 합성하므로 의존성 자체는 전 플랫폼에 남는다
+- `SWCompression 4.9.1` — **테스트 전용**. 압축 해제 바이트 동등성의 기준선(oracle)과 `Deflate.compress` 입력 합성에만 쓴다. 프로덕션(`CoreHwp`)은 #101에서 의존을 끊었다 — 4.9.0의 crash 패치 이후에도 deflate가 아닌 입력에서 throw 대신 프로세스를 중단시키는 경우가 있어(실측: `bookmark`의 `PrvText` 64 byte) 신뢰할 수 없는 문서를 여는 경로에 둘 수 없다. 테스트에서도 임의 바이트를 먹이지 말 것
+- **system zlib** — 비-Apple 플랫폼의 raw DEFLATE 해제. `Sources/CHwpZlib`의 SwiftPM `systemLibrary` 타깃(module map + shim 헤더)으로 링크하며, 호스트가 제공하므로 이 항목만 exact pinning 대상이 아니다. Linux 소비자는 빌드에 `zlib1g-dev`(rpm 계열은 `zlib-devel`), 실행에 zlib 런타임이 필요하다. Apple 플랫폼은 `Compression`을 쓰므로 이 타깃을 선언조차 하지 않는다 (`Package.swift`의 `canImport(Darwin)` 분기)
 - `Nimble 13.8.0` — 테스트 DSL (testTarget 전용)
 - `swift-docc-plugin 1.5.0` — DocC 사이트 빌드 (`cd.yml`의 `docs` job)
 

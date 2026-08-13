@@ -11,6 +11,15 @@
 
 ## 설치
 
+### 요구 사항
+
+Apple 플랫폼(macOS 14+ / iOS 17+ / tvOS 17+ / watchOS 10+)은 추가 설치가
+필요 없습니다 — 압축 해제에 SDK 내장 `Compression`을 씁니다.
+
+Linux 등 그 외 플랫폼에서는 **zlib**이 필요합니다. 빌드에는 개발 헤더
+(`apt install zlib1g-dev`, rpm 계열은 `dnf install zlib-devel`), 실행에는 zlib
+런타임이 있어야 합니다. 공식 Swift 도커 이미지에는 이미 포함되어 있습니다.
+
 ### 스위프트 패키지 관리자
 
 Xcode에서 ```File``` > ```Swift Packages``` > ```Add Package Dependency...``` 메뉴를 선택하세요.
