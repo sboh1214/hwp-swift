@@ -19,6 +19,7 @@ HWP 파일은 OLE compound document이며, 그 안의 stream들은 record tree �
 ```
 hwp-swift/
 ├── Sources/CoreHwp/       # 파서
+├── Sources/CHwpZlib/      # 비-Apple deflate 해제용 system zlib module map
 ├── Sources/HwpKitCore/    # 렌더 코어 — 파이프라인/모델/paint list (AGENTS.md 참조)
 ├── Sources/HwpKitNative/  # 플랫폼 브릿지 — CALayer/View (AGENTS.md 참조)
 ├── Sources/HwpKit/        # SwiftUI 공개 API + PDF 내보내기 (AGENTS.md 참조)
@@ -491,7 +492,7 @@ opt-in — **커밋된** 기준선을 쓰는 스위트는 CI에서 상시 돈다
 
 - `OLEKit 0.3.1` — OLE compound document 파싱
 - `SWCompression 4.9.1` — **테스트 전용**. 압축 해제 바이트 동등성의 기준선(oracle)과 `Deflate.compress` 입력 합성에만 쓴다. 프로덕션(`CoreHwp`)은 #101에서 의존을 끊었다 — 4.9.0의 crash 패치 이후에도 deflate가 아닌 입력에서 throw 대신 프로세스를 중단시키는 경우가 있어(실측: `bookmark`의 `PrvText` 64 byte) 신뢰할 수 없는 문서를 여는 경로에 둘 수 없다. 테스트에서도 임의 바이트를 먹이지 말 것
-- **system zlib** — 비-Apple 플랫폼의 raw DEFLATE 해제. `Sources/CHwpZlib`의 SwiftPM `systemLibrary` 타깃(module map + shim 헤더)으로 링크하며, 호스트가 제공하므로 이 항목만 exact pinning 대상이 아니다. Linux 소비자는 빌드에 `zlib1g-dev`(rpm 계열은 `zlib-devel`), 실행에 zlib 런타임이 필요하다. Apple 플랫폼은 `Compression`을 쓰므로 이 타깃을 선언조차 하지 않는다 (`Package.swift`의 `canImport(Darwin)` 분기)
+- **system zlib** — 비-Apple 플랫폼의 raw DEFLATE 해제. `Sources/CHwpZlib`의 SwiftPM `systemLibrary` 타깃(module map + shim 헤더)으로 링크하며, 호스트가 제공하므로 이 항목만 exact pinning 대상이 아니다. Linux 소비자는 빌드에 `zlib1g-dev`(rpm 계열은 `zlib-devel`), 실행에 zlib 런타임이 필요하다. Apple 플랫폼은 `Compression`을 쓰므로 이 타깃에 의존하지 않는다 — 의존 간선을 `.when(platforms:)`로 걸어 **타깃** 기준으로 가른다. 매니페스트의 `#if`는 호스트에서 평가되므로 그쪽으로 가르면 macOS 호스트의 Linux 크로스 컴파일(`--swift-sdk`)에서 모듈이 사라진다
 - `Nimble 13.8.0` — 테스트 DSL (testTarget 전용)
 - `swift-docc-plugin 1.5.0` — DocC 사이트 빌드 (`cd.yml`의 `docs` job)
 

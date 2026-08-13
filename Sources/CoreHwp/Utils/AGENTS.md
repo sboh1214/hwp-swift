@@ -86,7 +86,11 @@ consumes-all `init` 근처에 남긴다. override는 default loader와 동등하
 
   유효한 stream의 출력 바이트는 두 경로가 같지만 **손상 판정은 디코더마다
   다르다** — Apple 디코더는 stored block의 `NLEN`이 `LEN`의 1의 보수인지 보지
-  않고, zlib은 본다 (실측). 그래서 판정을 디코더에 맡기지 않고
+  않고, zlib은 본다 (실측). 손상과 상한 초과를 **동시에** 만족하는 입력이
+  어느 `Failure`로 가는지도 디코더가 출력을 내놓는 덩어리 경계에 달려 있어
+  갈릴 수 있다 — 둘 다 참인 입력이라 계약 위반은 아니고, 교체 전 폴백은
+  후처리 거부라 이 구간이 훨씬 넓었다 (상한 이하 전 구간이 `corrupted`).
+  그래서 판정을 디코더에 맡기지 않고
   `validateLeadingStoredBlocks`가 **공유 진입점**에서 선행 stored block의
   `NLEN`을 직접 본다. Apple 분기 안에 두면 반대 방향 플랫폼 차이가 생긴다.
 

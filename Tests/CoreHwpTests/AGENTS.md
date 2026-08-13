@@ -142,9 +142,12 @@ payload가 0xFFF 이상이면 size 비트가 level 필드로 넘쳐 헤더가 �
   `bookmark`의 `PrvText` 64 byte —
   `testNonDeflatePlainTextStreamIsRejectedInsteadOfTrapping`이 그 바이트열을
   `HwpInflate`에만 넣어 고정한다). 그래서 코퍼스를 "SWCompression이 푸는가"로
-  정의할 수 없다. 절단·손상 단언은 `HwpInflate`에만 하고, 그쪽은 양 플랫폼이
-  같은 typed error를 보장하므로 플랫폼으로 가르지 않는다. 문서 레벨의 손상
-  판정은 `StreamDecompressionStabilityTests`가 계속 맡는다.
+  정의할 수 없다. 절단·손상 단언은 `HwpInflate`에만 하고, 이 파일이 다는
+  단언은 두 백엔드가 같은 판정을 내는 입력만 다루므로 플랫폼으로 가르지
+  않는다 — 판정이 갈리는 구간(huffman block 뒤 stored block의 `NLEN`, 손상과
+  상한 초과 동시 입력)은 `Sources/CoreHwp/Utils/AGENTS.md`에 적어 두었으니
+  거기에 가드 없는 단언을 새로 달지 말 것. 문서 레벨의 손상 판정은
+  `StreamDecompressionStabilityTests`가 계속 맡는다.
 - 코퍼스는 프로덕션이 실제로 푸는 stream만 모은다 (`DocInfo` +
   `BodyText`/`ViewText` 자식). 암호·DRM·배포용 4종은 압축 해제 **전에**
   `unsupportedFeature`로 거부되어 압축 경로에 닿지 못하므로 `expectedError`
