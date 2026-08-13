@@ -96,11 +96,23 @@ private extension HwpInflate {
     /// 출력 버퍼 한 덩어리 크기. 디코더 한 번의 호출이 채우는 상한이다.
     static let chunkSize = 64 * 1024
 
+    /// 초기 예약의 절대 상한. 이 위로는 `Data`의 기하급수 증가에 맡긴다.
+    ///
+    /// 추측이 **압축** 크기에서 나오므로 저팽창 입력(이미 압축된 BinData 등)은
+    /// 쓰지 않는 여분을 붙인 채 모델에 남는다 — `Data`는 용량을 줄이지 않고,
+    /// 집계 예산(`StreamReader.consumeAggregateBudget`)은 실제 byte만 센다.
+    /// 상한이 없으면 그 여분이 입력 크기에 비례해 커져 **공격자가 정하게**
+    /// 된다 (기본 한도에서 64 MiB 입력 → 256 MiB 예약). 상주 메모리는 쓴
+    /// 만큼이라 집계 상한 안에 남지만, 예약을 상수로 끊어 두면 그 논증에
+    /// 기대지 않아도 된다.
+    static let maxInitialCapacity = 8 * 1024 * 1024
+
     /// 할당 재조정 횟수를 줄이기 위한 초기 용량. deflate 평균 압축률을
-    /// 감안해 입력의 4배를 잡되 `limit`과 overflow를 넘지 않는다.
+    /// 감안해 입력의 4배를 잡되 `limit`·`maxInitialCapacity`와 overflow를
+    /// 넘지 않는다.
     static func initialCapacity(inputCount: Int, limit: Int) -> Int {
         let (guess, overflow) = inputCount.multipliedReportingOverflow(by: 4)
-        return min(overflow ? limit : guess, limit)
+        return min(overflow ? limit : guess, limit, maxInitialCapacity)
     }
 }
 
@@ -204,21 +216,14 @@ private extension HwpInflate {
                     throw Failure.corrupted
                 }
 
-                // `avail_in`이 32비트라 입력을 한 번에 다 넘긴다고 가정할 수
-                // 없다. 남은 입력이 없을 때만 다음 덩어리를 물리고, 마지막
-                // 덩어리를 물린 뒤에야 `Z_FINISH`를 세운다.
                 var fed = 0
 
                 while true {
-                    if stream.avail_in == 0, fed < raw.count {
-                        let count = min(raw.count - fed, Int(Int32.max))
-                        stream.next_in = UnsafeMutablePointer(mutating: source + fed)
-                        stream.avail_in = uInt(count)
-                        fed += count
-                    }
+                    feedNextSlab(&stream, from: source, count: raw.count, fed: &fed)
                     stream.next_out = destination
                     stream.avail_out = uInt(chunkSize)
 
+                    let consumedBefore = stream.total_in
                     let status = CHwpZlib.inflate(
                         &stream, fed == raw.count ? Z_FINISH : Z_NO_FLUSH
                     )
@@ -238,17 +243,44 @@ private extension HwpInflate {
                         output.append(destination, count: produced)
                     }
 
+                    // 완결된 stream 뒤에 남은 입력은 보지 않는다. Apple 디코더가
+                    // 종료 후 `src_size`를 0으로 보고해(실측: 코퍼스 100개 전부)
+                    // 잉여 바이트를 알아낼 방법이 없으므로, zlib에서만 거부하면
+                    // macOS에서 열리는 문서가 Linux에서 거부된다.
                     if status == Z_STREAM_END {
                         return output
                     }
                     // 진전이 없는데 END도 아니면 입력이 끊긴 것이다. 이 검사를
                     // 빼면 절단된 stream이 부분 출력으로 조용히 "성공"한다 —
                     // 성능 회귀가 아니라 무성 데이터 손상이므로 반드시 남긴다.
-                    if produced == 0 {
+                    // **출력만으로 판정하면 안 된다**: 입력이 `Int32.max`를 넘어
+                    // 여러 덩어리로 물릴 때, 한 덩어리를 다 소비하고도 출력이
+                    // 0인 호출(빈 non-final block 연쇄)은 진전한 것이고 다음
+                    // 덩어리는 아직 물리지도 않았다.
+                    if produced == 0, stream.total_in == consumedBefore {
                         throw Failure.corrupted
                     }
                 }
             }
+        }
+
+        /// 남은 입력이 없을 때만 다음 덩어리를 물린다.
+        ///
+        /// `avail_in`이 32비트라 입력을 한 번에 다 넘긴다고 가정할 수 없다.
+        /// 마지막 덩어리를 물린 뒤에야 호출부가 `Z_FINISH`를 세운다.
+        static func feedNextSlab(
+            _ stream: inout z_stream,
+            from source: UnsafePointer<UInt8>,
+            count: Int,
+            fed: inout Int
+        ) {
+            guard stream.avail_in == 0, fed < count else {
+                return
+            }
+            let slab = min(count - fed, Int(Int32.max))
+            stream.next_in = UnsafeMutablePointer(mutating: source + fed)
+            stream.avail_in = uInt(slab)
+            fed += slab
         }
     }
 #endif
