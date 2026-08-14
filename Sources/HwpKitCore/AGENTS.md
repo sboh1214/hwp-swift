@@ -25,6 +25,9 @@ CoreHwp.HwpFile
         │      고정/최소는 HWPUNIT, 여백만은 lineSpacingAdjustment)
         │   placeParagraphText   # 1단: 통 배치 / 다단: 캐시 run 단 배분, 폴백 라인 채움
         │   collectFootnotes     # 각주(페이지 하단 몫) / 미주(문서·구역 끝 몫) 분리 수집
+        │   collectUnsupported / collectOutline
+        │                        # 진단(미지원 요소) + 탐색 목록(개요·책갈피, #77)
+        │                        # 둘 다 문단 머리는 firstPage, 컨트롤은 배치 후 쪽
         ├─ appendControlBlocks     # 컨트롤 → 실제 레이아웃 엔진
         │   .table  → HwpTableLayout (중첩 표 재귀 depth 3,
         │             row 단위 분할 + 페이지보다 큰 row 슬라이스,
@@ -48,7 +51,7 @@ CoreHwp.HwpFile
 ### Paginator/ 서브컴포넌트
 
 `HwpPaginator`는 문단 루프·페이지 확정·블록 방출만 남기고 계산·상태 뭉치를
-`Layout/Paginator/`의 컴포넌트 5개에 위임한다 — 전부 actor가 소유하는
+`Layout/Paginator/`의 컴포넌트 6개에 위임한다 — 전부 actor가 소유하는
 내부 struct/enum (별도 actor 없음), 기존 호출부는 위임 계산 프로퍼티로 유지:
 
 - `HwpPageChromeBuilder` — 머리말/꼬리말/쪽 번호 크롬 블록. 활성 컨트롤·감춤 마스크 상태 소유
@@ -56,6 +59,9 @@ CoreHwp.HwpFile
 - `HwpTableSplitter` — 표 페이지 분할 플랜 (row 세그먼트·절단 기하). 상태 없는 순수 enum
 - `HwpAbsoluteCachePlacer` — 절대 라인 캐시 배치 산식 + 모드·마지막 loc·stale 보정 상태.
   run별 컨트롤 서수 범위 (`controlOrdinalRanges`) 도 여기서 나온다 — 조각 단위 각주 귀속의 입력 (#95)
+- `HwpOutlineCollector` — 개요·책갈피 탐색 목록 수집 (#77). 문단 수준 비트 →
+  스타일 이름 폴백 2단, 제목 정규화, 본문 한정 책갈피 순회. 근거와 함정은 루트
+  `AGENTS.md`의 "개요·책갈피 탐색 (#77)"
 - `HwpColumnBandController` — 다단 밴드 상태 (단 정의/프레임/index/사용량/균형 재배치 입력),
   밴드 리셋 단일화 (`open`)와 균형 재배치 플랜 산출 (`rebalancePlan` → paginator 적용)
 
