@@ -216,6 +216,19 @@ private extension HwpOutlineCollector {
         ))
     }
 
+    /// 제목 수집의 **안전판** (UTF-16 단위). 상한(`titleCharacterLimit`)은
+    /// Character(grapheme) 단위라 UTF-16 배수로 **근사할 수 없다** — ZWJ 시퀀스는
+    /// grapheme당 4단위를 훌쩍 넘어서 (가족 이모지 11단위) 종전의 4배 컷은 상한에
+    /// 한참 못 미치는 자리에서 끊었다 (이모지 100자 제목이 72자로). 그래서 이
+    /// 값은 상한이 아니라 **병적으로 긴 문단에서 O(문단 길이) 문자열을 만들지
+    /// 않기 위한 것뿐**이고, 실제 상한은 `collapsedWhitespace`의 Character
+    /// prefix가 건다.
+    ///
+    /// 어떤 값을 골라도 grapheme 하나가 이보다 길면 (결합 문자를 무한히 붙일 수
+    /// 있다) 제목이 상한보다 짧아진다 — O(1) 경계와 양립 불가한 한계이고, 그때도
+    /// 결과는 평문의 접두다.
+    static let titleUnitCeiling = HwpOutlineItem.titleCharacterLimit * 32
+
     /// 문단 → 목록에 보일 한 줄 평문.
     ///
     /// `HwpSelectionGeometry.strippingControlMarkers`를 쓸 수 없다 — 그쪽 입력은
@@ -237,9 +250,12 @@ private extension HwpOutlineCollector {
                 guard character.type == .char, character.value >= 32 else { continue }
                 units.append(character.value)
             }
-            // 상한의 4배까지만 모은다 — 정규화가 공백을 접어 줄이므로 여유를
-            // 두되, 병적으로 긴 문단에서 O(문단 길이) 문자열을 만들지 않는다.
-            if units.count >= HwpOutlineItem.titleCharacterLimit * 4 {
+            // 안전판에 걸려도 **대리 쌍 중간에서는 끊지 않는다** — 끊으면
+            // `String(decoding:)`이 U+FFFD로 복구해 "평문의 접두" 계약이 깨진다.
+            // 짝을 채우고 다음 회차에 끊는다.
+            if units.count >= Self.titleUnitCeiling,
+               !UTF16.isLeadSurrogate(units[units.count - 1])
+            {
                 break
             }
         }

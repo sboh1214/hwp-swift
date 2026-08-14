@@ -114,4 +114,9 @@ public extension Collection<HwpOutlineItem> {
     var bookmarks: [HwpOutlineItem] {
         filter { $0.kind == .bookmark }
     }
+
+    /// 그 쪽(**1-기반** — `pageNumber`와 같은 규약)의 항목만 (문서 순서 유지).
+    func items(onPage pageNumber: Int) -> [HwpOutlineItem] {
+        filter { $0.pageNumber == pageNumber }
+    }
 }

@@ -250,5 +250,59 @@ import XCTest
             expect(title.count) == HwpOutlineItem.titleCharacterLimit
             expect(long.hasPrefix(title)) == true
         }
+
+        /// 상한은 **Character(grapheme) 단위**다 — UTF-16 배수로 근사하면 ZWJ
+        /// 시퀀스(가족 이모지는 grapheme당 11단위)에서 상한에 한참 못 미치는 자리를
+        /// 끊는다 (종전 4배 컷은 아래 100자 제목을 72자로 줄였다).
+        func testEmojiTitleIsCappedByCharactersNotUtf16Units() async throws {
+            let family = "👨‍👩‍👧‍👦"
+            let short = String(repeating: family, count: 100)
+            let long = String(repeating: family, count: HwpOutlineItem.titleCharacterLimit + 50)
+            let paginator = HwpSynthetic.outlinePaginator(
+                bodyParagraphs: [
+                    try HwpSynthetic.styledParagraph(short, paraShapeId: 1),
+                    try HwpSynthetic.styledParagraph(long, paraShapeId: 1),
+                ],
+                index: HwpSynthetic.outlineIndex(
+                    paraShapes: [1: HwpSynthetic.outlineParaShape(levelRawValue: 0)]
+                )
+            )
+
+            _ = await paginator.totalPages()
+            let titles = await paginator.outline().map(\.title)
+
+            // 상한 아래 제목(1,100 UTF-16 단위)은 온전히 남는다.
+            expect(titles.first) == short
+            expect(titles.last?.count) == HwpOutlineItem.titleCharacterLimit
+        }
+
+        /// 안전판에 걸려도 **대리 쌍 중간에서는 끊지 않는다** — 끊으면
+        /// `String(decoding:)`이 U+FFFD로 복구해 "평문의 접두" 계약이 깨진다.
+        ///
+        /// 입력이 기괴한 데는 이유가 있다. U+FFFD가 **관측되려면** 두 조건이 함께
+        /// 서야 한다: ① 절단 지점이 상위 대리여야 하고, ② 그 지점이 상한(200자)
+        /// **안**이어야 한다 — 뒤쪽이면 `collapsedWhitespace`의 prefix가 버려서
+        /// 단언이 공허해진다 (초안이 그랬다: 2단위 문자로는 절단이 3,200번째
+        /// 문자라 무력화 실험에서도 통과했다). grapheme을 79단위(SMP 기반 +
+        /// 결합 문자 77)로 잡으면 `6,399 = 79 × 81`이라 천장(6,400)이 82번째
+        /// grapheme의 상위 대리에 정확히 떨어지고, 82자는 상한 안이라 남는다.
+        func testCeilingDoesNotSplitSurrogatePairs() async throws {
+            let cluster = "𝄞" + String(repeating: "\u{0301}", count: 77)
+            let text = String(repeating: cluster, count: 82)
+            let paginator = HwpSynthetic.outlinePaginator(
+                bodyParagraphs: [try HwpSynthetic.styledParagraph(text, paraShapeId: 1)],
+                index: HwpSynthetic.outlineIndex(
+                    paraShapes: [1: HwpSynthetic.outlineParaShape(levelRawValue: 0)]
+                )
+            )
+
+            _ = await paginator.totalPages()
+            let outline = await paginator.outline()
+            let title = try XCTUnwrap(outline.first?.title)
+
+            expect(title.unicodeScalars.contains("\u{FFFD}")) == false
+            // 81개 온전한 cluster + 마지막 기반 문자 하나 = 82자.
+            expect(title.count) == 82
+        }
     }
 #endif

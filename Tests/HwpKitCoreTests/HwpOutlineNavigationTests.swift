@@ -309,6 +309,9 @@ import XCTest
 
             expect(items.headings.map(\.title)) == ["가", "다"]
             expect(items.bookmarks.map(\.title)) == ["나"]
+            // 쪽 필터는 갈래를 가리지 않고 1-기반이다 (`pageNumber`와 같은 규약).
+            expect(items.items(onPage: 2).map(\.title)) == ["나", "다"]
+            expect(items.items(onPage: 3)).to(beEmpty())
             // 0-기반 인덱스는 1-기반 쪽 번호에서 파생된다 (네이티브 뷰 좌표계).
             expect(items.headings.map(\.pageIndex)) == [0, 1]
         }
