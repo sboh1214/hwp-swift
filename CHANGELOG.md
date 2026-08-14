@@ -67,19 +67,31 @@
   (`HwpDocumentLoader`가 항상 완전 페이지네이션된 문서를 전달), 이에 의존하던
   macOS 클릭 폴백 경로는 도달 불능 코드였습니다. 지연 페이지네이션 배선은
   프로그레시브 로딩 설계에서 새로 도입됩니다.
+- **비-Apple 플랫폼(Linux 등)의 빌드·실행에 zlib이 필요합니다.** 압축 해제
+  폴백을 `SWCompression`에서 시스템 zlib으로 옮겼기 때문입니다 — 빌드에는 개발
+  헤더(`zlib1g-dev`, rpm 계열은 `zlib-devel`)가, 실행에는 zlib 런타임이 있어야
+  합니다. Debian/Ubuntu 계열 공식 Swift 도커 이미지에는 이미 포함되어 있습니다.
+  Apple 플랫폼은 SDK 내장 `Compression`을 쓰므로 영향이 없습니다. 같은 변경으로
+  `CoreHwp`의 `SWCompression` 의존이 사라졌습니다 (테스트 타깃에만 남습니다) —
+  이 라이브러리를 통해 `SWCompression`을 전이 의존으로 받아 쓰던 코드는 직접
+  의존을 선언해야 합니다.
 
 ### Changed
 
-- 압축 stream 해제를 Apple `Compression`의 스트리밍 inflate로 전환했습니다
-  (`HwpInflate`). 비-Apple 플랫폼은 종전 `SWCompression` 폴백을 그대로 씁니다.
-  공개 API 표면은 그대로이고 압축 해제 결과 바이트도 동일합니다 — 코퍼스의 모든
-  deflate stream에서 양 경로 바이트 동등성을 테스트로 고정했습니다. 실문서
+- 압축 stream 해제를 스트리밍 inflate로 전환했습니다 (`HwpInflate`). Apple
+  플랫폼은 `Compression`, 그 외 플랫폼은 시스템 zlib
+  (`inflateInit2(..., -MAX_WBITS)`)입니다. 공개 API 표면은 그대로이고 압축 해제
+  결과 바이트도 동일합니다 — 코퍼스의 모든 deflate stream에서 두 프로덕션
+  경로와 순수 Swift 기준선의 바이트 동등성을 테스트로 고정했습니다. 실문서
   (1,030쪽) 로드가 debug 3.281s → 0.914s, release 0.252s → 0.090s로 줄었습니다.
   손상 판정은 디코더에 맡기지 않습니다 — 선행 stored block의 `NLEN`이 `LEN`의
   1의 보수인지 라이브러리가 직접 검사해, 규격을 어긴 stream을 두 플랫폼 모두
   `streamDecompressFailed`로 거부합니다 (huffman block 뒤의 stored block은 블록
-  경계를 알 수 없어 검사 범위 밖입니다).
-- `HwpReadLimits`의 압축 해제 한도가 Apple 플랫폼에서 **실제 메모리 할당 상한**이
+  경계를 알 수 없어 검사 범위 밖입니다). 손상 입력에서 파싱 실패를 crash가 아닌
+  `HwpError`로 보고한다는 계약도 이제 전 플랫폼에서 성립합니다 — 종전 비-Apple
+  폴백은 특정 손상 입력에서 catch할 수 없는 런타임 트랩으로 프로세스를
+  중단시켰습니다.
+- `HwpReadLimits`의 압축 해제 한도가 전 플랫폼에서 **실제 메모리 할당 상한**이
   되었습니다. 종전에는 다 풀고 나서 크기를 재는 후처리 거부라 decompression bomb의
   할당 자체를 막지 못했지만, 이제 개별 stream 한도와 남은 집계 예산의 min을
   압축 해제 도중에 적용해 상한을 넘는 순간 중단합니다. 던지는 error
@@ -91,7 +103,9 @@
   `aggregateStreamSizeLimitExceeded`를 던집니다 — min에서 멈추므로 개별 한도 초과가
   증명되지 않았고, 확인하려면 집계 예산을 넘겨 풀어야 해서 이 상한의 목적과
   충돌하기 때문입니다. 두 error를 구분해 처리하는 코드는 이 조합에서 경로가
-  달라집니다.
+  달라집니다. 비-Apple 플랫폼에서는 이 두 변화가 폴백 교체와 함께 적용됩니다 —
+  종전 폴백은 후처리 거부라 `actual`이 정확한 크기였고 이중 위반 시 분류도
+  달랐습니다.
 
 ### Added
 

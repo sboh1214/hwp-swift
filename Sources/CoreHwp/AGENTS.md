@@ -55,9 +55,8 @@ CoreHwp/
 4. version 처리: 기존 호출과 동일하게 `fileHeader.version`과
    `isCompressed`를 그대로 전달할 것. 둘 다 version 별 디코딩에 필요.
 5. 새 stream도 `HwpReadLimits` 경로를 거쳐야 한다. 압축 입력과 비압축 stream은
-   OLE directory `streamSize`로 사전 제한하고, deflate 출력 한도는 Apple
-   플랫폼에서 `HwpInflate`가 압축 해제 도중에 적용한다(그 외 플랫폼은 폴백이라
-   후처리 거부). 파일 단위 집계 한도(`maxAggregateStreamBytes`)는
+   OLE directory `streamSize`로 사전 제한하고, deflate 출력 한도는 `HwpInflate`가
+   전 플랫폼에서 압축 해제 도중에 적용한다. 파일 단위 집계 한도(`maxAggregateStreamBytes`)는
    `StreamReader.readData`가 모든 경로에서 누적하므로 새 stream도 자동 적용된다 —
    reader를 우회해 직접 `ole.stream(...)`을 읽으면 이 방어가 사라진다.
 6. storage(자식 stream 배열)를 읽을 때 아는 자식 수가 있으면
@@ -118,11 +117,10 @@ ID로 dispatch된다.
 
 `HwpReadLimits`는 OLE directory의 stream size를 기준으로 압축 입력과 비압축
 stream을 읽기 전에 제한하고, 압축 해제 결과가 한도를 넘으면
-`HwpError.streamSizeLimitExceeded`로 거부합니다. Apple 플랫폼에서는 `HwpInflate`가
-`Compression` 스트리밍 루프로 이 한도를 압축 해제 **도중**에 적용하므로 실제
-메모리 할당 상한입니다. 비-Apple 플랫폼은 SWCompression 폴백이 bounded streaming
-inflate를 제공하지 않아 inflate가 끝난 뒤 검사하는 후처리 거부이고, 그쪽에서는
-typed error 반환만 보장됩니다. 개별 stream이 모두 한도 안이어도 자식이 많으면
+`HwpError.streamSizeLimitExceeded`로 거부합니다. `HwpInflate`는 전 플랫폼에서
+스트리밍 루프로 이 한도를 압축 해제 **도중**에 적용하므로 실제 메모리 할당
+상한입니다 (Apple은 `Compression`, 그 외는 시스템 zlib). 아래 도중 상한의 error
+분류 규칙도 플랫폼 구분 없이 같습니다. 개별 stream이 모두 한도 안이어도 자식이 많으면
 합계가 커지므로, 파일 단위 `maxAggregateStreamBytes`(기본 1 GiB)를 초과하면
 `HwpError.aggregateStreamSizeLimitExceeded`로 거부합니다.
 

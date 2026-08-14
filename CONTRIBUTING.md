@@ -1,5 +1,14 @@
 # 기여
 
+## 빌드 요구 사항
+
+Apple 플랫폼은 Xcode(Swift 5.9+)만 있으면 됩니다. Linux에서 작업한다면 압축
+해제가 시스템 zlib에 링크하므로 개발 헤더가 필요합니다 — 공식 Swift 도커
+이미지에는 이미 들어 있고, 그 외 환경에서는 `zlib1g-dev`(rpm 계열은
+`zlib-devel`)를 설치하십시오. 바인딩은 `Sources/CHwpZlib`의 module map으로만
+들어오므로, 링크 대상을 바꿀 일이 생기면 그 디렉터리와 `Package.swift`를
+함께 고칩니다.
+
 ## 코딩 스타일
 
 이 프로젝트는 코드 포맷과 스타일을 강제하기 위해 [SwiftLint](https://github.com/realm/SwiftLint),

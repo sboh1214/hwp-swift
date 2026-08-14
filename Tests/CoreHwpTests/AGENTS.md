@@ -130,28 +130,33 @@ payload가 0xFFF 이상이면 size 비트가 level 필드로 넘쳐 헤더가 �
 **한도를 올려 덮지 말 것** — 실측 최대 level은 5이므로 픽스처나 파서 쪽을 먼저
 의심한다.
 
-## 압축 해제 기준선 (#68)
+## 압축 해제 기준선 (#68, #101)
 
-`Streams/Readers/HwpInflateTests.swift`는 Apple `Compression` 경로가
-`SWCompression` 폴백과 **바이트 단위로 같은 출력**을 내는지 고정한다. 폴백이
-여기서는 기준선(oracle)이라 `Package.swift`의 CoreHwpTests가 SWCompression을
-직접 의존한다 — transitive 의존에 기대지 않는다.
+`Streams/Readers/HwpInflateTests.swift`는 두 프로덕션 경로(Apple `Compression`,
+비-Apple system zlib)가 순수 Swift 기준선(oracle)인 `SWCompression`과 **바이트
+단위로 같은 출력**을 내는지 고정한다. #101에서 프로덕션이 SWCompression 의존을
+끊었으므로 `Package.swift`의 CoreHwpTests가 **유일한** 의존 지점이다.
 
 - **`SWCompression`에 임의 바이트를 먹이지 말 것.** `Deflate.decompress`는
   deflate가 아닌 입력에서 throw가 아니라 **프로세스를 중단**시킨다 (실측:
-  `bookmark`의 `PrvText` 64 byte). 그래서 코퍼스를 "SWCompression이 푸는가"로
-  정의할 수 없고, 절단·손상 입력 단언도 Apple 경로만 한다. 문서 레벨의 양 경로
-  손상 판정은 `StreamDecompressionStabilityTests`가 계속 맡는다.
+  `bookmark`의 `PrvText` 64 byte —
+  `testNonDeflatePlainTextStreamIsRejectedInsteadOfTrapping`이 그 바이트열을
+  `HwpInflate`에만 넣어 고정한다). 그래서 코퍼스를 "SWCompression이 푸는가"로
+  정의할 수 없다. 절단·손상 단언은 `HwpInflate`에만 하고, 이 파일이 다는
+  단언은 두 백엔드가 같은 판정을 내는 입력만 다루므로 플랫폼으로 가르지
+  않는다 — 판정이 갈리는 구간(huffman block 뒤 stored block의 `NLEN`, 손상과
+  상한 초과 동시 입력)은 `Sources/CoreHwp/Utils/AGENTS.md`에 적어 두었으니
+  거기에 가드 없는 단언을 새로 달지 말 것. 문서 레벨의 손상 판정은
+  `StreamDecompressionStabilityTests`가 계속 맡는다.
 - 코퍼스는 프로덕션이 실제로 푸는 stream만 모은다 (`DocInfo` +
   `BodyText`/`ViewText` 자식). 암호·DRM·배포용 4종은 압축 해제 **전에**
   `unsupportedFeature`로 거부되어 압축 경로에 닿지 못하므로 `expectedError`
   매니페스트로 거른다 — 그 문서들의 stream은 deflate가 아니다.
-- 동등성·절단·손상 판정은 `canImport(Compression)` 안에 둔다. 비-Apple에서는
-  두 경로가 같은 구현이 되어 비교가 항등식이므로, 그쪽의 실효 검증은
-  macOS·iOS 잡뿐이다. 반면 **도중 상한의 error 분류 2종은 가드 밖**이다
-  (`testPerStreamLimitReportsOriginalStreamLimit`,
-  `testAggregateBudgetBindingReportsAggregateError`) — 어느 경로든 호출자가
-  보는 error와 `limit` payload는 같아야 한다는 계약이라 Linux에서도 돈다.
+- **이 파일에는 디코더 가드(`#if canImport(Compression)`)가 없다.** #101 전에는
+  비-Apple 경로가 기준선 자신이라 동등성 비교가 항등식이었지만, 지금은 zlib과
+  SWCompression이 서로 독립이라 Linux 잡이 그 비교의 실효 검증이다. 도중 상한과
+  error 분류 계약도 마찬가지로 전 플랫폼 공통이다. 되살리지 말 것 — 가드를
+  다시 넣으면 zlib 경로가 CI에서 한 번도 판정되지 않는다.
 - 코퍼스를 **전수로 도는** 3종의 `beGreaterThanOrEqualTo(100)`은 코퍼스가
   비거나 경로가 어긋나 **아무것도 비교하지 않은 채 초록**이 되는 것을 막는다.
   픽스처는 늘어나는 방향으로만 움직이므로 내려서 통과시키지 말 것.
