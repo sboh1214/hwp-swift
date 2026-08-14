@@ -326,6 +326,20 @@ final class HwpUnsupportedDetectorTests: XCTestCase {
         expect(self.detector.classify(ctrl: .hiddenComment(hiddenComment), page: 1)).to(beNil())
     }
 
+    /// 책갈피는 화면 출력이 없는 **앵커**이고, #77부터 탐색 목록
+    /// (`HwpDocumentMetadata.outline`)의 재료로 소비되므로 미지원이 아니다.
+    /// 그전에는 "알 수 없음: bookmark"로 신고했고 그것을 고정한 테스트는 없었다
+    /// (`testRenderHarmlessMarkerControlsAreSupported`가 다루던 것은
+    /// newNumber/pageHide/indexmark/hiddenComment 4종뿐).
+    func testBookmarkControlIsSupportedBecauseOutlineConsumesIt() throws {
+        let bookmark = try XCTUnwrap(HwpOtherControl(
+            header: HwpCtrlHeader(ctrlId: 0x626F_6B6D, rawPayload: Data()),
+            rawPayload: Data()
+        ))
+
+        expect(self.detector.classify(ctrl: .bookmark(bookmark), page: 1)).to(beNil())
+    }
+
     func testMemoControlReturnsPlaceholder() {
         let fieldControl = HwpFieldControl()
         let element = detector.classify(ctrl: .memo(fieldControl), page: 8)

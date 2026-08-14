@@ -12,18 +12,33 @@ public struct HwpDocumentMetadata: Sendable, Hashable {
     /// 뷰가 범위 밖 페이지 요청을 "아직 로드 전"(대기)과 "최종 문서에 없음"
     /// (클램프 반영)으로 구분하는 데 쓴다.
     public let isComplete: Bool
+    /// 개요·책갈피 탐색 목록 (문서 순서). 조판이 확정한 쪽을 들고 있어
+    /// 호스트가 사이드바·목차에서 그 쪽으로 바로 이동할 수 있다 (#77).
+    ///
+    /// **프로그레시브 중간 스냅샷도 지금까지 확정된 접두를 담는다** —
+    /// `unsupportedElements`가 최종 스냅샷에만 오는 것과 다르다. 사이드바는
+    /// 로딩 중에 쓰라고 있는 물건이라 1,030쪽이 다 배치될 때까지 비워 두면
+    /// 쓸모가 없고, 수집이 append-only라 항목의 `ordinal`이 스냅샷 사이에서
+    /// 움직이지 않아 목록 신원이 흔들리지도 않는다.
+    ///
+    /// 이 필드는 프로그레시브 증분 판정
+    /// (`HwpDocumentViewSupport.isProgressiveUpdate`)에 영향을 주지 않는다 —
+    /// 그 판정은 `loadToken`과 페이지 수만 본다.
+    public let outline: [HwpOutlineItem]
 
     public init(
         title: String? = nil,
         pageCount: Int,
         previewText: String? = nil,
         loadToken: UUID? = nil,
-        isComplete: Bool = true
+        isComplete: Bool = true,
+        outline: [HwpOutlineItem] = []
     ) {
         self.title = title
         self.pageCount = pageCount
         self.previewText = previewText
         self.loadToken = loadToken
         self.isComplete = isComplete
+        self.outline = outline
     }
 }

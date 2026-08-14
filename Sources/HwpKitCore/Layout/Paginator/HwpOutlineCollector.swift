@@ -1,0 +1,257 @@
+import CoreHwp
+import Foundation
+
+/// 조판 중에 개요(제목) 문단과 책갈피를 모아 `HwpDocumentMetadata.outline`을
+/// 만드는 수집기 (#77).
+///
+/// `HwpPaginator`가 문단 배치를 확정할 때마다 불린다 — 쪽 귀속이 조판의
+/// 함수이므로 파서 단독으로는 만들 수 없고, 렌더 결과에서 사후 복원할 수도
+/// 없다 (`HwpParaHeader.paraId`는 "unique ID"라는 doc-comment와 달리 실측이
+/// 정반대다: 헌법주석 문단 14,660개의 distinct `paraId`가 2,020개뿐이고
+/// `0x80000000` 한 값이 12,580회 나온다. `noori`는 문단 65개에 distinct
+/// `paraId`가 2개다).
+///
+/// 본체(2,800줄)가 아니라 별도 파일에 두는 것은 관례이자 필수다 — swiftlint
+/// `file_length` error가 700이라 기존 `Paginator/` 파일에 얹으면 Lint가
+/// 떨어진다.
+///
+/// **중복 수집을 막는 것은 페이지네이션이 일회성이라는 기존 불변식이다** —
+/// `HwpPaginator`는 `didFinishPagination`을 되돌리지 않고 재조판(줌·리사이즈·
+/// 문서 교체)은 새 paginator를 만든다 (`HwpDocumentActor.buildDocument`가
+/// 유일한 생성 지점). `collectedUnsupported`가 리셋 없이 성립하는 것과 같은
+/// 근거이므로, 나중에 같은 인스턴스를 다시 조판하게 만든다면 그 둘을 **함께**
+/// 비워야 한다 (가드: `HwpOutlineCollectorTests`의 반복 조판 테스트).
+struct HwpOutlineCollector {
+    /// paragraph-bearing 컨테이너의 단일 traversal 지점 주입
+    /// (`HwpPaginator.childParagraphs(of:)` — unsupported walk/렌더 경로와 공유).
+    typealias ChildParagraphs = (CoreHwp.HwpCtrlId) -> [(CoreHwp.HwpParagraph, HwpBlockKind)]
+
+    /// 컨테이너 안 컨테이너 재귀 상한 — 렌더·진단 walk와 같은 값을 쓴다.
+    static let maximumContainerDepth = HwpPaginator.maximumContainerDepth
+
+    /// 목록 항목 수 상한. 페이지 상한(`HwpPaginator.maximumDocumentPages`)과 같은
+    /// 성격의 방어다 — 항목마다 최대 `titleCharacterLimit`짜리 문자열이 metadata에
+    /// 상주하므로, 병적 입력이 목록만으로 메모리를 고갈시키지 못하게 자른다.
+    /// **페이지 상한이 이것을 대신하지 못한다**: 0-높이 문단은 쪽을 늘리지 않고도
+    /// 무한히 이어질 수 있다. 실측 최대는 헌법주석의 1,944개이므로 10배 여유를
+    /// 두고 자른다 (최악 ~20,000 × 200자 ≈ 8 MB).
+    static let maximumItems = 20000
+
+    private let index: HwpIndex
+
+    /// 수집 결과 (문서 순서). `ordinal`은 이 배열의 인덱스와 같다.
+    private(set) var items: [HwpOutlineItem] = []
+
+    init(index: HwpIndex) {
+        self.index = index
+    }
+
+    /// 문단 하나를 수집한다.
+    ///
+    /// - Parameters:
+    ///   - paragraph: 방금 배치를 마친 본문 문단.
+    ///   - headingPage: 개요 항목에 쓸 **1-기반** 쪽 — 문단이 **시작한** 쪽이다.
+    ///     배치 후 값을 쓰면 쪽 경계를 걸친 제목이 뒷쪽으로 밀린다.
+    ///   - bookmarkPage: 책갈피 항목에 쓸 **1-기반** 쪽 — 앵커가 **놓인** 쪽이다
+    ///     (진단 `walkUnsupported`와 같은 기준).
+    ///   - childParagraphs: 컨테이너 순회 주입.
+    mutating func collect(
+        from paragraph: CoreHwp.HwpParagraph,
+        headingPage: Int,
+        bookmarkPage: Int,
+        childParagraphs: ChildParagraphs
+    ) {
+        collectHeading(from: paragraph, page: headingPage)
+        guard let ctrls = paragraph.ctrlHeaderArray else { return }
+        collectBookmarks(
+            ctrls: ctrls, page: bookmarkPage, depth: 0, childParagraphs: childParagraphs
+        )
+    }
+}
+
+// MARK: - 개요 문단
+
+private extension HwpOutlineCollector {
+    /// 개요 문단을 수집한다. 수준을 얻는 경로는 **둘이고 상시 병행**이다.
+    ///
+    /// ① 문단 머리 모양 종류가 개요(1)면 문단 수준 비트(표 44 bit 25-27).
+    /// ② 아니면 스타일 이름 `개요 N` / `Outline N`.
+    ///
+    /// ②가 대안이 아니라 병행 경로인 이유는 비트 폭이 아니다 — `개요 8` 이상
+    /// 스타일은 문단 머리 모양이 개요로 설정돼 있지 않아 (`headingType == 0`)
+    /// **①로는 원리적으로 잡히지 않는다** (헌법주석 실측: 스타일 `개요 8`·
+    /// `개요 9`가 둘 다 paraShape #24를 가리키고 그 raw는 `0x180`이다).
+    ///
+    /// 여기서 수집하는 문단이 `collectUnsupportedNumberingHeading`의 미지원
+    /// 신고와 **동시에** 잡히는 것은 의도다. 그쪽은 "개요 번호 라벨을 렌더러가
+    /// 만들지 않는다"를 알리는 진단이고, 탐색 대상으로 승격시켜도 라벨을
+    /// 렌더하게 되는 것은 아니므로 그 신고는 유지되어야 한다.
+    ///
+    /// **옆에 있는 그 진단의 가드를 복사하면 안 된다** — 거기는
+    /// `paraShape.numberingOrBulletId > 0`을 요구하는데 실문서 개요 paraShape의
+    /// 그 값은 전 픽스처에서 0이다 (헌법주석의 개요 문단 1,944개가 쓰는 shape
+    /// 전부 0). 그대로 베끼면 1,944개 중 0개가 수집되고 사이드바가 조용히 빈다.
+    ///
+    /// **대상은 최상위 본문 문단뿐이다** — 표 셀·글상자·각주 **안**의 개요
+    /// 문단은 목록에 넣지 않는다 (호출자가 그 문단으로 이 함수를 부르지 않는다).
+    /// 문서의 목차는 본문 흐름의 제목 계층이지 개체 안 텍스트가 아니고, 실측도
+    /// 그쪽을 가리킨다: 헌법주석의 개요 문단 1,944개는 전부 최상위 본문 문단이고,
+    /// `noori`의 개요 문단 4개는 전부 표/글상자 안이라 목차 항목이 아니다.
+    /// 책갈피는 반대다 — 앵커라 어디에 놓이든 목적지이므로 본문 컨테이너를
+    /// 재귀한다 (`collectBookmarks`).
+    mutating func collectHeading(from paragraph: CoreHwp.HwpParagraph, page: Int) {
+        guard items.count < Self.maximumItems else { return }
+        guard let level = headingLevel(of: paragraph) else { return }
+        let title = Self.normalizedTitle(of: paragraph)
+        guard !title.isEmpty else { return }
+        append(kind: .heading, title: title, level: level, page: page)
+    }
+
+    /// 1-기반 개요 수준 (해당 없으면 nil).
+    func headingLevel(of paragraph: CoreHwp.HwpParagraph) -> Int? {
+        let paraShape = index.paraShape(id: UInt32(paragraph.paraHeader.paraShapeId))
+        if let paraShape, paraShape.property1Info.headingTypeRawValue == 1 {
+            // 저장값이 0-기반이므로 사람이 읽는 수준은 +1이다.
+            return Int(paraShape.property1Info.headingLevelRawValue) + 1
+        }
+        return styleOutlineLevel(of: paragraph)
+    }
+
+    /// 스타일 이름 폴백 — `개요 N` / `Outline N`의 N (1-기반).
+    func styleOutlineLevel(of paragraph: CoreHwp.HwpParagraph) -> Int? {
+        guard let style = index.style(id: UInt32(paragraph.paraHeader.paraStyleId)) else {
+            return nil
+        }
+        return Self.outlineLevel(inStyleName: style.styleLocalName)
+            // 영문 이름 프로퍼티는 저장소의 오타를 그대로 쓴다 (public API라 유지).
+            ?? Self.outlineLevel(inStyleName: style.styelEnglishName)
+    }
+
+    /// `개요 3` · `Outline 3` · `개요3` → 3. 그 외에는 nil.
+    ///
+    /// 이름 규약의 근거는 `HwpIdMappings`의 빈 문서 기본 스타일 배열
+    /// (`개요 1`~`개요 10` / `Outline 1`~`Outline 10`)이고, 실제 픽스처들도
+    /// 자기 STYLE 레코드에 같은 이름을 갖는다.
+    static func outlineLevel(inStyleName name: String) -> Int? {
+        // 접두 판정과 자릿수 추출을 **같은 문자열**(소문자화본) 위에서 한다 —
+        // 원본에서 자르면 대소문자 변환이 길이를 바꾸는 문자에서 어긋난다.
+        let normalized = name.trimmingCharacters(in: .whitespaces).lowercased()
+        let prefixes = ["개요", "outline"]
+        guard let prefix = prefixes.first(where: { normalized.hasPrefix($0) }) else {
+            return nil
+        }
+        let digits = normalized
+            .dropFirst(prefix.count)
+            .trimmingCharacters(in: .whitespaces)
+        // 자릿수가 많아 `Int`에 안 들어가면 nil이라 트랩하지 않는다.
+        guard !digits.isEmpty, digits.allSatisfy(\.isASCII), digits.allSatisfy(\.isNumber),
+              let level = Int(digits), level >= 1
+        else { return nil }
+        return level
+    }
+}
+
+// MARK: - 책갈피
+
+private extension HwpOutlineCollector {
+    /// 본문에 놓인 책갈피 컨트롤을 수집한다.
+    ///
+    /// **머리말/꼬리말은 뺀다** — 검색(`role == .body`)과 같은 스코프 규약이다.
+    /// 쪽마다 다시 그려지는 크롬의 앵커는 "그 쪽으로 간다"의 목적지가 될 수
+    /// 없고, 목록에 한 번만 실려도 어느 쪽을 가리키는지 정의되지 않는다.
+    /// 각주·표 셀·글상자·중첩 표는 포함한다 (모델을 걷는 것이라 여러 쪽에
+    /// 걸친 표에서도 셀은 한 번만 순회된다 — 중복 수집이 생기지 않는다).
+    mutating func collectBookmarks(
+        ctrls: [CoreHwp.HwpCtrlId],
+        page: Int,
+        depth: Int,
+        childParagraphs: ChildParagraphs
+    ) {
+        for ctrl in ctrls {
+            if case let .bookmark(control) = ctrl {
+                appendBookmark(control, page: page)
+            }
+            guard depth < Self.maximumContainerDepth, !Self.isPageChrome(ctrl) else { continue }
+            for (nested, _) in childParagraphs(ctrl) {
+                guard let nestedCtrls = nested.ctrlHeaderArray else { continue }
+                collectBookmarks(
+                    ctrls: nestedCtrls,
+                    page: page,
+                    depth: depth + 1,
+                    childParagraphs: childParagraphs
+                )
+            }
+        }
+    }
+
+    static func isPageChrome(_ ctrl: CoreHwp.HwpCtrlId) -> Bool {
+        switch ctrl {
+        case .header, .footer:
+            true
+        default:
+            false
+        }
+    }
+
+    mutating func appendBookmark(_ control: CoreHwp.HwpOtherControl, page: Int) {
+        guard items.count < Self.maximumItems else { return }
+        let name = Self.collapsedWhitespace(control.bookmarkInfo?.name ?? "")
+        guard !name.isEmpty else { return }
+        append(kind: .bookmark, title: name, level: nil, page: page)
+    }
+}
+
+// MARK: - 공통
+
+private extension HwpOutlineCollector {
+    mutating func append(kind: HwpOutlineItem.Kind, title: String, level: Int?, page: Int) {
+        items.append(HwpOutlineItem(
+            kind: kind,
+            title: title,
+            level: level,
+            // 조판 카운터가 0을 낼 일은 없지만 공개 값이라 하한을 고정한다.
+            pageNumber: max(1, page),
+            ordinal: items.count
+        ))
+    }
+
+    /// 문단 → 목록에 보일 한 줄 평문.
+    ///
+    /// `HwpSelectionGeometry.strippingControlMarkers`를 쓸 수 없다 — 그쪽 입력은
+    /// **이미 조판된 `NSAttributedString`의 부분 문자열**이라 `U+FFFC` 하나만
+    /// 지우면 되지만, 수집 시점 입력은 `CoreHwp.HwpParagraph`다. Selection 타입에
+    /// 얹힌 유틸을 Layout이 끌어 쓰는 모양도 곤란하다.
+    ///
+    /// 규칙: 탭(9)·줄바꿈(10)·문단 끝(13)·묶음 빈칸(30)·고정폭 빈칸(31)은 공백,
+    /// 그 밖의 컨트롤 문자(inline/extended payload를 가진 개체·필드 마커)는 제거,
+    /// 나머지 텍스트는 그대로. UTF-16 코드 단위로 모아 한 번에 문자열을 만들어
+    /// 서로게이트 쌍이 쪼개지지 않게 한다.
+    static func normalizedTitle(of paragraph: CoreHwp.HwpParagraph) -> String {
+        var units: [UInt16] = []
+        for character in paragraph.paraText?.charArray ?? [] {
+            switch character.value {
+            case 9, 10, 13, 30, 31:
+                units.append(32)
+            default:
+                guard character.type == .char, character.value >= 32 else { continue }
+                units.append(character.value)
+            }
+            // 상한의 4배까지만 모은다 — 정규화가 공백을 접어 줄이므로 여유를
+            // 두되, 병적으로 긴 문단에서 O(문단 길이) 문자열을 만들지 않는다.
+            if units.count >= HwpOutlineItem.titleCharacterLimit * 4 {
+                break
+            }
+        }
+        return collapsedWhitespace(String(decoding: units, as: UTF16.self))
+    }
+
+    /// 연속 공백을 하나로 접고 양끝을 다듬은 뒤 상한으로 자른다.
+    /// 자른 결과가 평문의 **접두**로 남도록 말줄임표를 붙이지 않는다.
+    static func collapsedWhitespace(_ text: String) -> String {
+        let collapsed = text
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+        guard collapsed.count > HwpOutlineItem.titleCharacterLimit else { return collapsed }
+        return String(collapsed.prefix(HwpOutlineItem.titleCharacterLimit))
+    }
+}

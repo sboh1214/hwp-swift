@@ -23,6 +23,10 @@ import Foundation
 /// - autoNumber/newNumber — 각주/미주/쪽 번호 렌더에 사용 (표 142~144)
 /// - pageHide — 쪽 번호/머리말/꼬리말 감추기에 사용 (표 145)
 /// - indexmark/hiddenComment — 화면 출력이 없는 마커
+/// - bookmark — 화면 출력이 없는 앵커. #77에서 탐색 목록
+///   (`HwpDocumentMetadata.outline`)의 재료로 **소비되므로** 더는 "알 수 없음"이
+///   아니다. 이름은 `HwpOtherControlBookmarkInfo.name`으로 읽히고 뷰어 로드
+///   (`.viewer` 옵션)에서도 살아 있다
 public struct HwpUnsupportedDetector: Sendable {
     public init() {}
 
@@ -91,7 +95,8 @@ private extension HwpUnsupportedDetector {
         case .table, .shape, .line, .rectangle, .ellipse, .arc, .polygon, .curve,
              .picture, .container, .genShapeObject, .section, .column,
              .pageNumberPosition, .header, .footer, .footnote, .endnote, .hyperLink,
-             .autoNumber, .newNumber, .pageHide, .indexmark, .hiddenComment:
+             .autoNumber, .newNumber, .pageHide, .indexmark, .hiddenComment,
+             .bookmark:
             nil
         case .equation, .equationLegacy:
             "수식"
@@ -101,8 +106,6 @@ private extension HwpUnsupportedDetector {
             "알 수 없음: form"
         case .pageCT:
             "알 수 없음: pageCT"
-        case .bookmark:
-            "알 수 없음: bookmark"
         case .overlapping:
             "알 수 없음: overlapping"
         case .comment:

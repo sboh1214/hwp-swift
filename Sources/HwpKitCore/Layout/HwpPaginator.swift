@@ -40,6 +40,10 @@ public actor HwpPaginator {
     /// legacy 실측 최대 1,030쪽의 약 10배 여유로 정상 대형 문서는 통과시키고
     /// 병적 증폭은 수십 MB 수준에서 절단한다.
     static let maximumDocumentPages = 10000
+    /// 컨테이너 안 컨테이너 재귀 방출 상한. 렌더(appendNestedControlBlocks)와
+    /// 진단(walkUnsupported), 탐색 목록 수집(`HwpOutlineCollector`)이 같은 값을
+    /// 써야 초과분이 조용히 사라지지 않는다.
+    static let maximumContainerDepth = 3
     /// 인스턴스 상한 (기본 = 전역 상한) — 테스트가 cap 도달 경로를 작은
     /// 문서로 재현할 수 있게 재정의를 허용한다.
     var maximumPages = HwpPaginator.maximumDocumentPages
@@ -50,6 +54,8 @@ public actor HwpPaginator {
     }
 
     private var collectedUnsupported: [HwpUnsupportedElement] = []
+    /// 개요·책갈피 탐색 목록 수집기 (#77) — 쪽 귀속이 조판의 함수라 여기 산다.
+    private var outlineCollector: HwpOutlineCollector
     /// 이 페이지에 배치할 각주 (문단 + 문서 순서 번호) — 저장은 footnoteCoordinator
     private var pendingFootnotes: [HwpFootnoteLayout.Input] {
         get { footnoteCoordinator.pendingFootnotes }
@@ -226,6 +232,7 @@ public actor HwpPaginator {
             index: index, fontResolver: fontResolver, attributeCache: attributeCache
         )
         absoluteCachePlacer = HwpAbsoluteCachePlacer(sections: sections)
+        outlineCollector = HwpOutlineCollector(index: index)
         currentPageGeometry = Self.initialGeometry(for: sections)
         currentSectionDef = Self.firstSectionDef(for: sections)
         // init에서는 계산 프로퍼티 (actor-isolated) 대신 저장소에 직접 쓴다.
@@ -282,6 +289,15 @@ public actor HwpPaginator {
 
     public func unsupportedElements() async -> [HwpUnsupportedElement] {
         collectedUnsupported
+    }
+
+    /// 지금까지 조판이 확정한 개요·책갈피 탐색 목록 (문서 순서, #77).
+    ///
+    /// `unsupportedElements()`와 달리 **조판 도중에 물어도 의미가 있다** —
+    /// 확정된 쪽까지의 접두를 돌려주므로 프로그레시브 로딩의 중간 스냅샷이
+    /// 그대로 실어 보낸다 (`HwpDocumentMetadata.outline`).
+    public func outline() async -> [HwpOutlineItem] {
+        outlineCollector.items
     }
 }
 
@@ -505,6 +521,7 @@ private extension HwpPaginator {
             collectMemos(from: paragraph)
             appendControlBlocks(from: paragraph)
             collectUnsupported(from: paragraph, firstPage: paragraphFirstPage)
+            collectOutline(from: paragraph, firstPage: paragraphFirstPage)
             advanceParagraph()
             await Task.yield()
 
@@ -1361,6 +1378,20 @@ private extension HwpPaginator {
         ))
     }
 
+    /// 개요·책갈피 탐색 목록 수집 (#77). `collectUnsupported`와 같은 자리에서
+    /// 같은 두 페이지 값을 쓴다 — 문단 머리는 문단이 **시작한** 쪽(`firstPage`),
+    /// 컨트롤은 배치가 **끝난** 쪽. 같은 개요 문단이 미지원 목록(생성 라벨
+    /// 미렌더 진단)과 탐색 목록에 동시에 뜨는 것은 의도다
+    /// (`HwpOutlineCollector.collectHeading` doc-comment 참조).
+    func collectOutline(from paragraph: CoreHwp.HwpParagraph, firstPage: Int) {
+        outlineCollector.collect(
+            from: paragraph,
+            headingPage: firstPage,
+            bookmarkPage: cachedPages.count + 1,
+            childParagraphs: childParagraphs(of:)
+        )
+    }
+
     func walkUnsupported(
         ctrls: [CoreHwp.HwpCtrlId],
         page: Int,
@@ -1566,10 +1597,6 @@ private extension HwpPaginator {
             break
         }
     }
-
-    /// 컨테이너 안 컨테이너 재귀 방출 상한. 렌더(appendNestedControlBlocks)와
-    /// 진단(walkUnsupported)이 같은 값을 써야 초과분이 조용히 사라지지 않는다.
-    static let maximumContainerDepth = 3
 
     /// 컨테이너 문단 안에 중첩된 컨트롤 (표 셀 안 글상자/이미지 등)을 재귀 방출한다.
     func appendNestedControlBlocks(of ctrl: CoreHwp.HwpCtrlId, depth: Int) {

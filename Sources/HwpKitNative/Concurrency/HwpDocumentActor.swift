@@ -186,14 +186,20 @@ public actor HwpDocumentActor {
                 let interval = max(max(1, batchSize), pages.count / 4)
                 let next = pages.count.addingReportingOverflow(interval)
                 nextYieldCount = next.overflow ? Int.max : next.partialValue
-                let partial = HwpDocument(
+                // 개요·책갈피는 중간 스냅샷에도 싣는다 (#77) —
+                // `unsupportedElements`와 다른 정책인 이유는
+                // `HwpDocumentMetadata.outline` doc-comment 참조 (사이드바는
+                // 로딩 중에 쓰라고 있고, 수집이 append-only라 목록 신원이
+                // 흔들리지 않는다).
+                let partial = await HwpDocument(
                     pages: pages,
                     metadata: HwpDocumentMetadata(
                         title: nil,
                         pageCount: pages.count,
                         previewText: preview,
                         loadToken: token,
-                        isComplete: false
+                        isComplete: false,
+                        outline: paginator.outline()
                     ),
                     unsupportedElements: [],
                     imageStore: imageStore
@@ -205,11 +211,12 @@ public actor HwpDocumentActor {
             }
         }
 
-        let metadata = HwpDocumentMetadata(
+        let metadata = await HwpDocumentMetadata(
             title: nil,
             pageCount: pages.count,
             previewText: preview,
-            loadToken: token
+            loadToken: token,
+            outline: paginator.outline()
         )
         let unsupported = await paginator.unsupportedElements()
         // 마지막 page(at:)·unsupportedElements() 대기 중 도착한 취소/교체는 루프
