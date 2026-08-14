@@ -121,6 +121,32 @@ import XCTest
             expect(outline.map(\.level)) == [8, 9, 10, 4]
         }
 
+        /// 상한을 넘는 스타일 이름은 **버리지 않고** 클램프한다 — 거부하면 사용자가
+        /// 만든 깊은 개요 스타일의 제목이 목록에서 조용히 사라진다. 수준은 들여쓰기
+        /// 힌트일 뿐이고 쪽 번호는 그대로라 탐색은 성립한다.
+        func testStyleLevelBeyondTheMaximumIsClampedNotDropped() async throws {
+            let paginator = HwpSynthetic.outlinePaginator(
+                bodyParagraphs: [
+                    try HwpSynthetic.styledParagraph("열두째 수준", paraShapeId: 1, paraStyleId: 30),
+                    try HwpSynthetic.styledParagraph("조작된 수준", paraShapeId: 1, paraStyleId: 31),
+                ],
+                index: HwpSynthetic.outlineIndex(
+                    paraShapes: [1: HwpSynthetic.plainParaShape()],
+                    styles: [
+                        30: HwpSynthetic.outlineStyle("개요 12"),
+                        31: HwpSynthetic.outlineStyle("본문", english: "Outline 999"),
+                    ]
+                )
+            )
+
+            _ = await paginator.totalPages()
+            let outline = await paginator.outline()
+
+            let clamped: [Int?] = [HwpOutlineItem.maximumLevel, HwpOutlineItem.maximumLevel]
+            expect(outline.map(\.title)) == ["열두째 수준", "조작된 수준"]
+            expect(outline.map(\.level)) == clamped
+        }
+
         /// 비트 경로가 있으면 그쪽이 이긴다 — 두 경로가 갈릴 때의 우선순위를 고정한다.
         func testHeadingBitsWinOverStyleName() async throws {
             let paginator = HwpSynthetic.outlinePaginator(

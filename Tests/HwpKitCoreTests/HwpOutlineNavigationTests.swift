@@ -198,6 +198,50 @@ import XCTest
             expect(try XCTUnwrap(outline.last?.pageNumber)) >= 2
         }
 
+        /// 페이지 상한에 걸린 쪽은 끝내 캐시되지 않는데 문단 배치는 **한 쪽 더**
+        /// 진행된다 — 그 쪽 항목을 수집하면 `pageCount`보다 큰 `pageNumber`를 들고
+        /// 나가 누를 수 없는 행이 된다. 개요·책갈피 둘 다 같은 가드를 받는다.
+        func testItemsBeyondThePageCapAreNotCollected() async throws {
+            var first = try HwpSynthetic.styledParagraph("1쪽 제목", paraShapeId: 1)
+            first.ctrlHeaderArray = [HwpSynthetic.bookmarkControl("1쪽 앵커")]
+            let filler = try (0 ..< 4).map { offset in
+                try HwpSynthetic.lineSegParagraph(
+                    "채움 \(offset)", segments: [(location: 0, height: 4000)]
+                )
+            }
+            var beyond = try HwpSynthetic.styledParagraph("상한 밖 제목", paraShapeId: 1)
+            beyond.ctrlHeaderArray = [HwpSynthetic.bookmarkControl("상한 밖 앵커")]
+            let bodyParagraphs = [first] + filler + [beyond]
+            let index = HwpSynthetic.outlineIndex(
+                paraShapes: [1: HwpSynthetic.outlineParaShape(levelRawValue: 0)]
+            )
+
+            // 대조군: 상한이 없으면 그 문단은 3쪽에서 수집된다. 이 단언이 없으면
+            // 본 단언이 "그 문단에 애초에 닿지 않아서" 공허하게 통과할 수 있다
+            // (초안이 실제로 그랬다 — 배치가 상한 밖 쪽에 닿기 전에 멈췄다).
+            // 그래서 상한은 이 쪽 번호에서 역산한다 (3쪽이 상한 밖이 되게 2).
+            let uncapped = HwpSynthetic.outlinePaginator(
+                bodyParagraphs: bodyParagraphs, index: index, pageHeight: 20000
+            )
+            _ = await uncapped.totalPages()
+            let uncappedOutline = await uncapped.outline()
+            expect(uncappedOutline.map(\.title))
+                == ["1쪽 제목", "1쪽 앵커", "상한 밖 제목", "상한 밖 앵커"]
+            expect(Array(uncappedOutline.suffix(2).map(\.pageNumber))) == [3, 3]
+
+            let capped = HwpSynthetic.outlinePaginator(
+                bodyParagraphs: bodyParagraphs, index: index, pageHeight: 20000
+            )
+            await capped.overrideMaximumPages(2)
+
+            let totalPages = await capped.totalPages()
+            let outline = await capped.outline()
+
+            expect(totalPages) == 2
+            expect(outline.map(\.title)) == ["1쪽 제목", "1쪽 앵커"]
+            expect(try XCTUnwrap(outline.map(\.pageNumber).max())) <= totalPages
+        }
+
         // MARK: - 멱등
 
         /// 재조판 중복 수집을 막는 것은 "페이지네이션이 일회성"이라는 기존

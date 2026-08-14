@@ -128,6 +128,7 @@ private extension HwpOutlineCollector {
     }
 
     /// `개요 3` · `Outline 3` · `개요3` → 3. 그 외에는 nil.
+    /// 결과는 `HwpOutlineItem.maximumLevel`로 클램프된다 (아래 이유).
     ///
     /// 이름 규약의 근거는 `HwpIdMappings`의 빈 문서 기본 스타일 배열
     /// (`개요 1`~`개요 10` / `Outline 1`~`Outline 10`)이고, 실제 픽스처들도
@@ -147,7 +148,7 @@ private extension HwpOutlineCollector {
         guard !digits.isEmpty, digits.allSatisfy(\.isASCII), digits.allSatisfy(\.isNumber),
               let level = Int(digits), level >= 1
         else { return nil }
-        return level
+        return min(level, HwpOutlineItem.maximumLevel)
     }
 }
 

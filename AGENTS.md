@@ -448,6 +448,24 @@ noori p2에서 비영 셀의 30%까지 지워도 양쪽 통과).
 - `HwpParaHeader.paraId`로 사후 복원하는 대안은 성립하지 않는다 —
   doc-comment의 "unique ID"와 달리 헌법주석 문단 14,660개의 distinct `paraId`는
   2,020개뿐이고 `0x80000000` 한 값이 12,580회 나온다.
+- **페이지 상한(`maximumPages`) 밖 쪽은 수집하지 않는다.** 상한에 걸린 쪽은
+  `cacheCurrentPage`가 거부해 끝내 캐시되지 않는데 문단 배치는 **한 쪽 더**
+  진행되므로 (그 시점까지 `page(at:)`의 while 조건이 참이다), 안 막으면
+  `pageCount`보다 큰 `pageNumber`를 들고 나가 **누를 수 없는 행**이 된다.
+  `collectOutline`이 `cacheCurrentPage`와 **같은 술어**를 쓴다 — 갈리면 다시 샌다.
+  마지막 쪽으로 **클램프하지 않는** 이유는 그 쪽에 없는 내용을 가리키게 되어
+  목록이 거짓말을 하기 때문이다 (`maximumItems`·빈 제목을 버리는 정책과 같다).
+  같은 산식을 쓰는 진단(`collectUnsupported`)에는 이 가드가 없다 — 그쪽은 탐색
+  대상이 아니라 보고 문자열이라 유령 쪽이 무해하다. 가드에는 **대조군이
+  필수**다: 상한 없이 조판해 그 문단이 실제로 그 쪽에서 수집됨을 먼저 보이지
+  않으면 배치가 그 문단에 닿기도 전에 멈춰 **공허하게 통과한다** (초안이
+  그랬다 — 무력화 실험에서 드러났다). 그래서 상한 값은 대조군의 쪽 번호에서
+  역산한다 (`testItemsBeyondThePageCapAreNotCollected`).
+- **스타일 이름 수준은 상한을 넘으면 거부가 아니라 클램프다**
+  (`HwpOutlineItem.maximumLevel` = 10). `개요 12` 같은 사용자 스타일을 거부하면
+  그 제목이 목록에서 조용히 사라지는데, 수준은 들여쓰기 힌트일 뿐이고 쪽 번호는
+  그대로라 탐색은 성립한다. 덕분에 `level`이 언제나 `1...10`이라 호스트가
+  들여쓰기 배수로 곱해도 행이 화면 밖으로 밀려나지 않는다.
 - 목록 **UI는 라이브러리 밖**이다 (검색 결과 목록과 같은 기준 —
   `Sources/HwpKit/AGENTS.md`의 "v1 스코프 밖"). `Sample/HwpSwiftSample/
   OutlineSidebar.swift`가 배선 예다.

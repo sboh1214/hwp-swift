@@ -1384,6 +1384,11 @@ private extension HwpPaginator {
     /// 미렌더 진단)과 탐색 목록에 동시에 뜨는 것은 의도다
     /// (`HwpOutlineCollector.collectHeading` doc-comment 참조).
     func collectOutline(from paragraph: CoreHwp.HwpParagraph, firstPage: Int) {
+        // 상한에 걸린 쪽은 끝내 캐시되지 않는데 문단 배치는 한 쪽 더 진행되므로,
+        // 안 막으면 **문서에 없는 쪽**을 가리키는 항목이 남는다. `cacheCurrentPage`와
+        // **같은 술어**여야 하고 클램프가 아니라 버려야 한다 — 근거는 루트
+        // `AGENTS.md`의 "개요·책갈피 탐색 (#77)".
+        guard cachedPages.count < maximumPages else { return }
         outlineCollector.collect(
             from: paragraph,
             headingPage: firstPage,

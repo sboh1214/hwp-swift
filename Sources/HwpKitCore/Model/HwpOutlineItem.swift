@@ -37,6 +37,15 @@ public struct HwpOutlineItem: Sendable, Hashable, Identifiable {
     /// `title`은 언제나 문단 평문의 **접두**다 (표시용 말줄임은 호스트 몫).
     public static let titleCharacterLimit = 200
 
+    /// 개요 수준의 상한 (1-기반). 비트 경로(표 44 bit 25-27)는 3비트라 1...8이고
+    /// 한글 기본 스타일이 `개요 1`~`개요 10`이므로 이 값이 두 경로를 모두 덮는다.
+    ///
+    /// 상한을 넘는 이름의 사용자 스타일(`개요 12`)은 **거부가 아니라 클램프**다 —
+    /// 거부하면 그 제목이 목록에서 조용히 사라지는데, 수준은 들여쓰기 힌트일 뿐이고
+    /// 쪽 번호는 그대로라 탐색은 성립한다. 호스트가 수준을 들여쓰기 배수로 쓸 때의
+    /// 상한이기도 하다.
+    public static let maximumLevel = 10
+
     public let kind: Kind
     /// 화면에 보일 이름 — 개요는 문단 평문(컨트롤 문자 제거·공백 정규화),
     /// 책갈피는 `HwpOtherControlBookmarkInfo.name`. 언제나 비어 있지 않다
@@ -47,7 +56,8 @@ public struct HwpOutlineItem: Sendable, Hashable, Identifiable {
     /// CoreHwp의 `HwpParaShapeProperty1.headingLevelRawValue`는 저장값 그대로
     /// **0-기반**이다. 두 기점을 한 필드에 섞지 않으려고 여기서 `+ 1` 해 둔다 —
     /// 스타일 이름 폴백(`개요 3` → 3)이 자연히 1-기반이라 그쪽에 맞췄다.
-    /// 비트 경로는 1...8, 스타일 이름 폴백은 1...10이 나올 수 있다.
+    /// 값은 언제나 `1...maximumLevel` 안이다 — 비트 경로가 1...8이고 스타일 이름
+    /// 폴백은 그 상한으로 클램프된다. 호스트가 들여쓰기 배수로 써도 안전하다.
     public let level: Int?
     /// **1-기반** 쪽 번호 — `HwpPageNavigator.currentPage`·
     /// `HwpUnsupportedElement.page`와 같은 규약.
