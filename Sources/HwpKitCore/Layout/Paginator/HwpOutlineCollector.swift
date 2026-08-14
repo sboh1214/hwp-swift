@@ -27,6 +27,9 @@ struct HwpOutlineCollector {
     typealias ChildParagraphs = (CoreHwp.HwpCtrlId) -> [(CoreHwp.HwpParagraph, HwpBlockKind)]
 
     /// 컨테이너 안 컨테이너 재귀 상한 — 렌더·진단 walk와 같은 값을 쓴다.
+    /// **표는 이 한도를 타지 않는다** — `HwpTableLayout.maximumNestingDepth`가
+    /// 따로 있고 렌더·진단이 그것을 쓰므로 수집기도 같이 가른다
+    /// (`collectBookmarks`).
     static let maximumContainerDepth = HwpPaginator.maximumContainerDepth
 
     /// 목록 항목 수 상한. 페이지 상한(`HwpPaginator.maximumDocumentPages`)과 같은
@@ -100,7 +103,11 @@ struct HwpOutlineCollector {
         }
         guard bookmarkPage <= maximumPage, let ctrls = paragraph.ctrlHeaderArray else { return }
         collectBookmarks(
-            ctrls: ctrls, page: bookmarkPage, depth: 0, childParagraphs: childParagraphs
+            ctrls: ctrls,
+            page: bookmarkPage,
+            depth: 0,
+            tableDepth: 0,
+            childParagraphs: childParagraphs
         )
     }
 }
@@ -209,19 +216,32 @@ private extension HwpOutlineCollector {
         ctrls: [CoreHwp.HwpCtrlId],
         page: Int,
         depth: Int,
+        tableDepth: Int,
         childParagraphs: ChildParagraphs
     ) {
         for ctrl in ctrls {
             if case let .bookmark(control) = ctrl {
                 appendBookmark(control, page: page)
             }
-            guard depth < Self.maximumContainerDepth, !Self.isPageChrome(ctrl) else { continue }
+            guard !Self.isPageChrome(ctrl) else { continue }
+            // 표는 컨테이너 카운터가 아니라 **자체 한도**를 탄다 — 진단
+            // (`walkUnsupported`)이 표를 컨테이너 가드에서 빼는 것과 같은
+            // 술어여야 한다. 균일한 컨테이너 한도로 막으면 `HwpTableLayout`이
+            // 자기 카운터로 조판한 depth 3 표의 셀 앵커가 **조용히** 빠진다
+            // (렌더에서 빠진 것이 없으니 진단도 안 뜬다).
+            let isTable = Self.isTable(ctrl)
+            if isTable {
+                guard tableDepth <= HwpTableLayout.maximumNestingDepth else { continue }
+            } else {
+                guard depth < Self.maximumContainerDepth else { continue }
+            }
             for (nested, _) in childParagraphs(ctrl) {
                 guard let nestedCtrls = nested.ctrlHeaderArray else { continue }
                 collectBookmarks(
                     ctrls: nestedCtrls,
                     page: page,
                     depth: depth + 1,
+                    tableDepth: isTable ? tableDepth + 1 : tableDepth,
                     childParagraphs: childParagraphs
                 )
             }
@@ -233,6 +253,14 @@ private extension HwpOutlineCollector {
         case .header, .footer:
             true
         default:
+            false
+        }
+    }
+
+    static func isTable(_ ctrl: CoreHwp.HwpCtrlId) -> Bool {
+        if case .table = ctrl {
+            true
+        } else {
             false
         }
     }

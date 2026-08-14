@@ -98,6 +98,45 @@ import XCTest
             expect(outline.map(\.title)) == ["셀 앵커", "각주 앵커"]
         }
 
+        /// 중첩 표는 **컨테이너 카운터가 아니라 자체 한도**를 탄다 —
+        /// `HwpTableLayout`이 depth 3 표까지 조판하고 진단(`walkUnsupported`)도
+        /// 표를 컨테이너 가드에서 빼 그 층까지 걷는데, 수집기만 균일한
+        /// `maximumContainerDepth`로 막으면 **그려진 셀의 앵커가 조용히 빠진다**
+        /// (렌더에서 빠진 것이 없으니 진단도 안 뜬다).
+        ///
+        /// 경계 반대쪽을 함께 고정한다: 표5는 조판되지 않으므로(`3 < 3` 실패)
+        /// 그 셀의 앵커는 계속 빠져야 한다 — 없으면 "가드를 지우면 통과"가 된다.
+        func testBookmarksInsideTheDeepestRenderedTableAreCollected() async throws {
+            func cell(_ text: String, _ ctrls: [CoreHwp.HwpCtrlId]) throws -> CoreHwp.HwpParagraph {
+                var paragraph = try HwpSynthetic.styledParagraph(text)
+                paragraph.ctrlHeaderArray = ctrls
+                return paragraph
+            }
+            func wrap(_ paragraph: CoreHwp.HwpParagraph) -> CoreHwp.HwpCtrlId {
+                .table(HwpSynthetic.table(
+                    cellWidth: 20000, rowHeights: [2000], cellParagraphs: [[[paragraph]]]
+                ))
+            }
+
+            // 표1(depth 0) → 표2 → 표3 → 표4(depth 3, 조판됨) → 표5(depth 4, 조판 안 됨)
+            let cell5 = try cell("표5 셀", [HwpSynthetic.bookmarkControl("표5 셀 앵커")])
+            let cell4 = try cell("표4 셀", [
+                HwpSynthetic.bookmarkControl("표4 셀 앵커"), wrap(cell5),
+            ])
+            let cell3 = try cell("표3 셀", [wrap(cell4)])
+            let cell2 = try cell("표2 셀", [wrap(cell3)])
+            let cell1 = try cell("표1 셀", [wrap(cell2)])
+            let host = try cell("본문", [wrap(cell1)])
+
+            let paginator = HwpSynthetic.outlinePaginator(
+                bodyParagraphs: [host], index: HwpSynthetic.outlineIndex()
+            )
+
+            _ = await paginator.totalPages()
+            let outline = await paginator.outline()
+            expect(outline.map(\.title)) == ["표4 셀 앵커"]
+        }
+
         /// 개요는 **최상위 본문 문단만** 대상이다 — 표 셀 안 개요 문단은 문서
         /// 목차의 항목이 아니다 (`noori`의 개요 문단 4개가 전부 이 모양이라
         /// 그 픽스처는 개요 예시로 부적절하다). 책갈피는 반대로 셀 안까지 모은다.
