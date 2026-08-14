@@ -126,7 +126,7 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
 ### 프로그레시브 로딩 (`loadDocumentUpdates`)
 
 - `AsyncThrowingStream<HwpDocumentSnapshot, Error>` — 첫 `firstBatch`(기본 1) 쪽 확정 즉시 1차 스냅샷, 이후 `batchSize`(기본 24) 쪽마다, 완료 시 최종 스냅샷 (`isComplete == true`, `unsupportedElements` 포함) 방출. `loadDocument` 는 이 스트림의 최종 스냅샷만 반환하는 래퍼로 동작 — 최종 결과는 동치 (loadToken 제외)
-- **중간 스냅샷의 두 목록은 정책이 갈린다** (#77): `unsupportedElements` 는 최종 스냅샷에만 오지만 `metadata.outline` 은 지금까지 확정된 **접두**를 싣는다 — 사이드바는 로딩 중에 쓰라고 있는 물건이라 1,030쪽이 다 배치될 때까지 비워 두면 쓸모가 없고, 수집이 append-only 라 `ordinal` 이 스냅샷 사이에서 움직이지 않아 `List` 신원이 흔들리지 않는다 (근거는 루트 `AGENTS.md` 의 "개요·책갈피 탐색 (#77)"). 가드는 `HwpDocumentLoaderProgressiveTests` 의 **짝 지은 두 테스트** — 한쪽만 두면 "정책이 갈린다"는 사실 자체가 안 잠긴다. outline 은 증분 판정에 관여하지 않는다 (`isProgressiveUpdate` 는 loadToken 과 페이지 수만 본다)
+- **중간 스냅샷의 두 목록은 정책이 갈린다** (#77): `unsupportedElements` 는 최종 스냅샷에만 오지만 `metadata.outline` 은 **이 스냅샷이 담은 쪽까지의 접두**를 싣는다 (조판이 배치 도중에도 쪽을 확정할 수 있어 수집기가 `pages` 보다 앞설 여지가 있으므로 `prefix` 로 자른다 — **방어**다: 실제 위반은 재현하지 못했다, 근거는 루트 `AGENTS.md`. `filter` 가 아닌 이유는 발행분이 접두여야 `ordinal` 이 흔들리지 않기 때문이다) — 사이드바는 로딩 중에 쓰라고 있는 물건이라 1,030쪽이 다 배치될 때까지 비워 두면 쓸모가 없고, 수집이 append-only 라 `ordinal` 이 스냅샷 사이에서 움직이지 않아 `List` 신원이 흔들리지 않는다 (근거는 루트 `AGENTS.md` 의 "개요·책갈피 탐색 (#77)"). 가드는 `HwpDocumentLoaderProgressiveTests` 의 **짝 지은 두 테스트** — 한쪽만 두면 "정책이 갈린다"는 사실 자체가 안 잠긴다. outline 은 증분 판정에 관여하지 않는다 (`isProgressiveUpdate` 는 loadToken 과 페이지 수만 본다)
 - 스냅샷은 같은 `imageStore` 를 공유하고, `HwpDocumentMetadata.loadToken` (UUID) 으로 연속성 표시. 뷰의 `document` didSet 이 `HwpDocumentViewSupport.isProgressiveUpdate` (같은 loadToken + 페이지 증가) 로 **증분 적용** (레이어·스크롤 유지, 크기·가시 범위만 확장) vs **전체 리셋** 을 분기. 첫 페이지 표시가 전량 로드 완료를 기다리지 않는다 (1,030쪽 실문서 23.8s → 첫 페이지 ~3.2s)
 
 ## 검색 하이라이트 (#75)

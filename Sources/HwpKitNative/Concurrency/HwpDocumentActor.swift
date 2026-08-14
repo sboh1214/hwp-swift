@@ -191,7 +191,16 @@ public actor HwpDocumentActor {
                 // `HwpDocumentMetadata.outline` doc-comment 참조 (사이드바는
                 // 로딩 중에 쓰라고 있고, 수집이 append-only라 목록 신원이
                 // 흔들리지 않는다).
-                let partial = await HwpDocument(
+                //
+                // 단 **이 스냅샷이 담은 쪽까지만**이다. 조판은 배치 도중에도 쪽을
+                // 확정하므로 (`placeAbsoluteCachedParagraph`의 run 머리) 수집기가
+                // `pages`보다 앞선 쪽 항목을 이미 들고 있을 수 있고, 그대로 실으면
+                // `pageCount`보다 큰 `pageNumber`가 나간다. `filter`가 아니라
+                // `prefix`인 이유는 발행분이 최종 목록의 **접두**여야 `ordinal`이
+                // 흔들리지 않기 때문이다.
+                let confirmedOutline = await paginator.outline()
+                    .prefix { $0.pageNumber <= pages.count }
+                let partial = HwpDocument(
                     pages: pages,
                     metadata: HwpDocumentMetadata(
                         title: nil,
@@ -199,7 +208,7 @@ public actor HwpDocumentActor {
                         previewText: preview,
                         loadToken: token,
                         isComplete: false,
-                        outline: paginator.outline()
+                        outline: Array(confirmedOutline)
                     ),
                     unsupportedElements: [],
                     imageStore: imageStore
@@ -211,12 +220,17 @@ public actor HwpDocumentActor {
             }
         }
 
-        let metadata = await HwpDocumentMetadata(
+        // 최종 스냅샷도 같은 술어로 자른다 — 여기서는 `collectOutline`의 상한
+        // 가드 덕에 무동작이지만, 두 구성 지점이 같은 불변식을 쓰게 두어야
+        // 한쪽만 고쳐 갈리는 일이 없다.
+        let finalOutline = await paginator.outline()
+            .prefix { $0.pageNumber <= pages.count }
+        let metadata = HwpDocumentMetadata(
             title: nil,
             pageCount: pages.count,
             previewText: preview,
             loadToken: token,
-            outline: paginator.outline()
+            outline: Array(finalOutline)
         )
         let unsupported = await paginator.unsupportedElements()
         // 마지막 page(at:)·unsupportedElements() 대기 중 도착한 취소/교체는 루프

@@ -77,6 +77,10 @@ final class HwpDocumentLoaderProgressiveTests: XCTestCase {
             let outline = partial.document.metadata.outline
             expect(outline.count) >= previousCount
             expect(Array(finalOutline.prefix(outline.count))) == outline
+            // 그 스냅샷이 담은 쪽 밖을 가리키는 항목은 없다 — 조판은 배치 도중에도
+            // 쪽을 확정하므로 수집기가 액터의 `pages`보다 앞선 항목을 이미 들고 있을
+            // 수 있고, 그대로 실으면 호스트가 "2 of 1"을 보게 된다.
+            expect(outline.map(\.pageNumber).max() ?? 0) <= partial.document.metadata.pageCount
             previousCount = outline.count
         }
         // 중간 스냅샷이 실제로 항목을 들고 왔는지 (전부 비어 있으면 위 접두
