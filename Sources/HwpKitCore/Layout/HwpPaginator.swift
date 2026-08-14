@@ -1385,14 +1385,15 @@ private extension HwpPaginator {
     /// (`HwpOutlineCollector.collectHeading` doc-comment 참조).
     func collectOutline(from paragraph: CoreHwp.HwpParagraph, firstPage: Int) {
         // 상한에 걸린 쪽은 끝내 캐시되지 않는데 문단 배치는 한 쪽 더 진행되므로,
-        // 안 막으면 **문서에 없는 쪽**을 가리키는 항목이 남는다. `cacheCurrentPage`와
-        // **같은 술어**여야 하고 클램프가 아니라 버려야 한다 — 근거는 루트
-        // `AGENTS.md`의 "개요·책갈피 탐색 (#77)".
-        guard cachedPages.count < maximumPages else { return }
+        // 안 막으면 **문서에 없는 쪽**을 가리키는 항목이 남는다. 다만 자르는 것은
+        // **쪽 값마다 따로**다 (`collect`의 `maximumPage`) — 하나로 묶으면 상한
+        // 쪽에서 시작해 걸치는 제목까지 버린다. 클램프가 아니라 버리는 근거는
+        // 루트 `AGENTS.md`의 "개요·책갈피 탐색 (#77)".
         outlineCollector.collect(
             from: paragraph,
             headingPage: firstPage,
             bookmarkPage: cachedPages.count + 1,
+            maximumPage: maximumPages,
             childParagraphs: childParagraphs(of:)
         )
     }

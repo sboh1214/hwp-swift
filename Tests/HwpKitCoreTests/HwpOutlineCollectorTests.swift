@@ -304,5 +304,61 @@ import XCTest
             // 81개 온전한 cluster + 마지막 기반 문자 하나 = 82자.
             expect(title.count) == 82
         }
+
+        /// 스타일 이름 폴백은 `paraStyleId`로 메모한다 — **nil도 캐시한다**.
+        /// 이름은 최대 65,535 UTF-16 단위인데 개요가 아닌 문단은 두 이름을 모두
+        /// 훑으므로(문단당 4벌), 그 nil을 안 담으면 가장 흔한 경로가 그대로 남아
+        /// 작은 파일이 이름 길이 × 문단 수로 증폭한다.
+        func testStyleLevelIsMemoizedPerStyleIdIncludingNil() throws {
+            let index = HwpSynthetic.outlineIndex(
+                paraShapes: [1: HwpSynthetic.plainParaShape()],
+                styles: [
+                    7: HwpSynthetic.outlineStyle("바탕글", english: "Normal"),
+                    8: HwpSynthetic.outlineStyle("개요 3", english: "Outline 3"),
+                ]
+            )
+            let plain = try HwpSynthetic.styledParagraph("본문", paraShapeId: 1, paraStyleId: 7)
+            let heading = try HwpSynthetic.styledParagraph("제목", paraShapeId: 1, paraStyleId: 8)
+            var collector = HwpOutlineCollector(index: index)
+
+            for _ in 0 ..< 5 {
+                for paragraph in [plain, heading] {
+                    collector.collect(
+                        from: paragraph,
+                        headingPage: 1,
+                        bookmarkPage: 1,
+                        maximumPage: 1,
+                        childParagraphs: { _ in [] }
+                    )
+                }
+            }
+
+            // 스타일 2종을 10번 통과했지만 이름을 훑은 것은 2회뿐이다.
+            expect(collector.styleParseCount) == 2
+            expect(collector.items.compactMap(\.level)) == [3, 3, 3, 3, 3]
+        }
+
+        /// 책갈피 이름도 제목과 **같은 UTF-16 천장**을 지난다 — `collapsedWhitespace`의
+        /// 상한은 Character 수라, 기반 문자 하나에 결합 문자가 수만 개 붙은 이름은
+        /// grapheme 하나(= 1자)로 세어져 상한을 그냥 통과하고 128KB가 그대로
+        /// `metadata.outline`에 상주한다 (항목 상한 20,000개와 곱해진다).
+        func testBookmarkNameIsCappedByTheUnitCeiling() async throws {
+            let name = "가" + String(repeating: "\u{0301}", count: 20000)
+            var host = try HwpSynthetic.styledParagraph("본문", paraShapeId: 1)
+            host.ctrlHeaderArray = [HwpSynthetic.bookmarkControl(name)]
+            let paginator = HwpSynthetic.outlinePaginator(
+                bodyParagraphs: [host],
+                index: HwpSynthetic.outlineIndex(paraShapes: [1: HwpSynthetic.plainParaShape()])
+            )
+
+            _ = await paginator.totalPages()
+            let outline = await paginator.outline()
+            let title = try XCTUnwrap(outline.first?.title)
+
+            expect(title.utf16.count) == HwpOutlineCollector.titleUnitCeiling
+            // 잘린 결과는 UTF-16 단위로 원본의 접두다 — `hasPrefix`는 grapheme
+            // 기준이라 잘린 cluster에는 쓸 수 없다.
+            expect(Array(title.utf16)) == Array(name.utf16.prefix(title.utf16.count))
+        }
     }
 #endif

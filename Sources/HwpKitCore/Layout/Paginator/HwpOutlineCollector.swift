@@ -34,13 +34,41 @@ struct HwpOutlineCollector {
     /// 상주하므로, 병적 입력이 목록만으로 메모리를 고갈시키지 못하게 자른다.
     /// **페이지 상한이 이것을 대신하지 못한다**: 0-높이 문단은 쪽을 늘리지 않고도
     /// 무한히 이어질 수 있다. 실측 최대는 헌법주석의 1,944개이므로 10배 여유를
-    /// 두고 자른다 (최악 ~20,000 × 200자 ≈ 8 MB).
+    /// 두고 자른다. 항목 하나의 상한은 `titleCharacterLimit`(200자)이 아니라
+    /// `titleUnitCeiling`이다 — grapheme 하나가 임의로 길 수 있어 200자가
+    /// byte 상한이 되지 못한다 (최악 20,000 × 6,400 단위).
     static let maximumItems = 20000
+
+    /// 제목·책갈피 이름 수집의 **안전판** (UTF-16 단위). 상한
+    /// (`titleCharacterLimit`)은 Character(grapheme) 단위라 UTF-16 배수로
+    /// **근사할 수 없다** — ZWJ 시퀀스는 grapheme당 4단위를 훌쩍 넘어서
+    /// (가족 이모지 11단위) 종전의 4배 컷은 상한에 한참 못 미치는 자리에서
+    /// 끊었다 (이모지 100자 제목이 72자로). 그래서 이 값은 상한이 아니라
+    /// **병적으로 긴 입력에서 O(입력 길이) 문자열을 만들지 않기 위한 것**이고,
+    /// 표시 상한은 `collapsedWhitespace`의 Character prefix가 건다.
+    ///
+    /// **두 경로가 모두 이 천장을 지나야 한다.** 책갈피 이름은 Character 상한이
+    /// 못 묶는다 — 기반 문자 하나에 결합 문자를 붙이면 128KB가 1자로 세어진다.
+    ///
+    /// 어떤 값을 골라도 grapheme 하나가 이보다 길면 (결합 문자를 무한히 붙일 수
+    /// 있다) 결과가 상한보다 짧아진다 — O(1) 경계와 양립 불가한 한계이고, 그때도
+    /// 결과는 원문의 접두다.
+    static let titleUnitCeiling = HwpOutlineItem.titleCharacterLimit * 32
 
     private let index: HwpIndex
 
     /// 수집 결과 (문서 순서). `ordinal`은 이 배열의 인덱스와 같다.
     private(set) var items: [HwpOutlineItem] = []
+
+    /// 스타일 이름 → 수준 메모 (`paraStyleId` 키, **nil도 캐시**). 스타일 이름은
+    /// 최대 65,535 UTF-16 단위(STYLE 레코드의 길이 필드가 WORD)라 문단마다
+    /// trim + 소문자 사본을 뜨면 이름 길이 × 문단 수로 증폭한다 — 개요가 아닌
+    /// 문단은 두 이름을 **모두** 훑으므로 (`??`가 왼쪽 nil에서 오른쪽을 평가한다)
+    /// 문단당 4벌이고, 그 nil이 가장 흔한 경로라 nil을 캐시하지 않으면 방어가
+    /// 성립하지 않는다. 키가 `UInt8`이라 항목은 최대 256개다.
+    private var styleLevelCache: [UInt8: Int?] = [:]
+    /// 캐시 미스로 실제 이름을 훑은 횟수 — 테스트 전용 관측점.
+    private(set) var styleParseCount = 0
 
     init(index: HwpIndex) {
         self.index = index
@@ -54,15 +82,23 @@ struct HwpOutlineCollector {
     ///     배치 후 값을 쓰면 쪽 경계를 걸친 제목이 뒷쪽으로 밀린다.
     ///   - bookmarkPage: 책갈피 항목에 쓸 **1-기반** 쪽 — 앵커가 **놓인** 쪽이다
     ///     (진단 `walkUnsupported`와 같은 기준).
+    ///   - maximumPage: 문서에 남을 수 있는 마지막 쪽 (`HwpPaginator.maximumPages`).
+    ///     **두 쪽 값을 각자 검사한다** — 하나로 묶으면 상한 쪽에서 시작해 다음
+    ///     쪽으로 걸치는 제목이 버려진다: 배치 도중 `cacheCurrentPage`가 이미
+    ///     상한을 채워 `bookmarkPage`는 밀려나지만 `headingPage`는 그대로
+    ///     유효하다 (그 쪽은 캐시됐다).
     ///   - childParagraphs: 컨테이너 순회 주입.
     mutating func collect(
         from paragraph: CoreHwp.HwpParagraph,
         headingPage: Int,
         bookmarkPage: Int,
+        maximumPage: Int,
         childParagraphs: ChildParagraphs
     ) {
-        collectHeading(from: paragraph, page: headingPage)
-        guard let ctrls = paragraph.ctrlHeaderArray else { return }
+        if headingPage <= maximumPage {
+            collectHeading(from: paragraph, page: headingPage)
+        }
+        guard bookmarkPage <= maximumPage, let ctrls = paragraph.ctrlHeaderArray else { return }
         collectBookmarks(
             ctrls: ctrls, page: bookmarkPage, depth: 0, childParagraphs: childParagraphs
         )
@@ -108,7 +144,7 @@ private extension HwpOutlineCollector {
     }
 
     /// 1-기반 개요 수준 (해당 없으면 nil).
-    func headingLevel(of paragraph: CoreHwp.HwpParagraph) -> Int? {
+    mutating func headingLevel(of paragraph: CoreHwp.HwpParagraph) -> Int? {
         let paraShape = index.paraShape(id: UInt32(paragraph.paraHeader.paraShapeId))
         if let paraShape, paraShape.property1Info.headingTypeRawValue == 1 {
             // 저장값이 0-기반이므로 사람이 읽는 수준은 +1이다.
@@ -118,13 +154,20 @@ private extension HwpOutlineCollector {
     }
 
     /// 스타일 이름 폴백 — `개요 N` / `Outline N`의 N (1-기반).
-    func styleOutlineLevel(of paragraph: CoreHwp.HwpParagraph) -> Int? {
-        guard let style = index.style(id: UInt32(paragraph.paraHeader.paraStyleId)) else {
-            return nil
+    /// 결과는 `styleLevelCache`에 메모한다 (nil 포함 — 근거는 그 선언부).
+    mutating func styleOutlineLevel(of paragraph: CoreHwp.HwpParagraph) -> Int? {
+        let styleId = paragraph.paraHeader.paraStyleId
+        if let cached = styleLevelCache[styleId] {
+            return cached
         }
-        return Self.outlineLevel(inStyleName: style.styleLocalName)
-            // 영문 이름 프로퍼티는 저장소의 오타를 그대로 쓴다 (public API라 유지).
-            ?? Self.outlineLevel(inStyleName: style.styelEnglishName)
+        styleParseCount += 1
+        let level = index.style(id: UInt32(styleId)).flatMap { style in
+            Self.outlineLevel(inStyleName: style.styleLocalName)
+                // 영문 이름 프로퍼티는 저장소의 오타를 그대로 쓴다 (public API라 유지).
+                ?? Self.outlineLevel(inStyleName: style.styelEnglishName)
+        }
+        styleLevelCache[styleId] = level
+        return level
     }
 
     /// `개요 3` · `Outline 3` · `개요3` → 3. 그 외에는 nil.
@@ -196,7 +239,10 @@ private extension HwpOutlineCollector {
 
     mutating func appendBookmark(_ control: CoreHwp.HwpOtherControl, page: Int) {
         guard items.count < Self.maximumItems else { return }
-        let name = Self.collapsedWhitespace(control.bookmarkInfo?.name ?? "")
+        // 책갈피 이름도 제목과 **같은 천장**을 지난다 — `collapsedWhitespace`의
+        // 상한은 Character 수라, 기반 문자 하나에 결합 문자가 수만 개 붙은 이름은
+        // grapheme 하나로 세어져 128KB가 통째로 metadata에 상주한다.
+        let name = Self.collapsedWhitespace(Self.ceilinged(control.bookmarkInfo?.name ?? ""))
         guard !name.isEmpty else { return }
         append(kind: .bookmark, title: name, level: nil, page: page)
     }
@@ -215,19 +261,6 @@ private extension HwpOutlineCollector {
             ordinal: items.count
         ))
     }
-
-    /// 제목 수집의 **안전판** (UTF-16 단위). 상한(`titleCharacterLimit`)은
-    /// Character(grapheme) 단위라 UTF-16 배수로 **근사할 수 없다** — ZWJ 시퀀스는
-    /// grapheme당 4단위를 훌쩍 넘어서 (가족 이모지 11단위) 종전의 4배 컷은 상한에
-    /// 한참 못 미치는 자리에서 끊었다 (이모지 100자 제목이 72자로). 그래서 이
-    /// 값은 상한이 아니라 **병적으로 긴 문단에서 O(문단 길이) 문자열을 만들지
-    /// 않기 위한 것뿐**이고, 실제 상한은 `collapsedWhitespace`의 Character
-    /// prefix가 건다.
-    ///
-    /// 어떤 값을 골라도 grapheme 하나가 이보다 길면 (결합 문자를 무한히 붙일 수
-    /// 있다) 제목이 상한보다 짧아진다 — O(1) 경계와 양립 불가한 한계이고, 그때도
-    /// 결과는 평문의 접두다.
-    static let titleUnitCeiling = HwpOutlineItem.titleCharacterLimit * 32
 
     /// 문단 → 목록에 보일 한 줄 평문.
     ///
@@ -260,6 +293,21 @@ private extension HwpOutlineCollector {
             }
         }
         return collapsedWhitespace(String(decoding: units, as: UTF16.self))
+    }
+
+    /// UTF-16 천장으로 자른다 — `unicodeScalars`로 모으므로 대리 쌍이 쪼개지지
+    /// 않는다 (제목 수집이 `titleUnitCeiling`에서 하는 보장과 같다).
+    static func ceilinged(_ text: String) -> String {
+        guard text.utf16.count > titleUnitCeiling else { return text }
+        var units = 0
+        var scalars = String.UnicodeScalarView()
+        for scalar in text.unicodeScalars {
+            let width = UTF16.width(scalar)
+            guard units + width <= titleUnitCeiling else { break }
+            units += width
+            scalars.append(scalar)
+        }
+        return String(scalars)
     }
 
     /// 연속 공백을 하나로 접고 양끝을 다듬은 뒤 상한으로 자른다.

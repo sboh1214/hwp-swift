@@ -298,6 +298,33 @@ import XCTest
             expect(complete.map(\.ordinal)) == Array(0 ..< complete.count)
         }
 
+        /// 상한 쪽에서 **시작해** 다음 쪽으로 걸치는 제목은 남는다 — 그 쪽은
+        /// 실제로 캐시됐고 `firstPage`도 유효하다. 배치 **도중** `cacheCurrentPage`가
+        /// 상한을 채우므로 배치 후 값 하나로 게이트하면 밀려난 것은 책갈피 쪽뿐인데
+        /// 개요까지 함께 버려진다.
+        func testHeadingStartingOnTheLastAllowedPageIsKept() async throws {
+            // 한 쪽에 안 들어가는 제목 문단 — 구역 정의 문단이 1쪽을 물고 있어
+            // 이 문단은 2쪽으로 밀린 뒤(`firstPage == 2`) 라인 단위로 쪼개지며
+            // 2쪽을 확정하고 3쪽으로 넘어간다. 상한을 2로 두면 배치가 끝난 시점의
+            // `cachedPages.count`가 이미 2라, 그 값 하나로 게이트하던 종전 가드는
+            // 2쪽에서 시작한 이 제목을 버렸다.
+            let long = String(repeating: "제목 ", count: 400)
+            let paginator = HwpSynthetic.outlinePaginator(
+                bodyParagraphs: [try HwpSynthetic.styledParagraph(long, paraShapeId: 1)],
+                index: HwpSynthetic.outlineIndex(
+                    paraShapes: [1: HwpSynthetic.outlineParaShape(levelRawValue: 0)]
+                ),
+                pageHeight: 20000
+            )
+            await paginator.overrideMaximumPages(2)
+
+            let totalPages = await paginator.totalPages()
+            let outline = await paginator.outline()
+
+            expect(totalPages) == 2
+            expect(outline.map(\.pageNumber)) == [2]
+        }
+
         // MARK: - 컬렉션 편의 API
 
         func testCollectionHelpersSplitKinds() {
