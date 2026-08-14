@@ -15,6 +15,16 @@ struct ContentView: View {
     @State private var loadTask: Task<Void, Never>?
     @State private var currentPage: Int = 1
     @State private var zoomScale: CGFloat = 1.0
+    // 개요·책갈피 사이드바 표시 여부 (#77). 목록이 비어 있으면 이 값과 무관하게
+    // 감춘다 — 대부분의 문서에는 개요도 책갈피도 없다.
+    //
+    // **기본값이 플랫폼마다 다르다**: macOS는 인라인 열이라 켜 두고, iOS는
+    // 시트라 꺼 둔다 (켜 두면 문서를 열자마자 모달이 뜬다).
+    #if os(macOS)
+        @State private var showsOutline = true
+    #else
+        @State private var showsOutline = false
+    #endif
     /// 문서 검색 세션 (#75). 호스트가 소유해 뷰와 검색 바에 **같은 인스턴스**를
     /// 넘긴다 — 라이브러리가 하이라이트·매치 노출 스크롤을 알아서 배선한다.
     @State private var search = HwpSearchController()
@@ -173,6 +183,42 @@ struct ContentView: View {
                 .padding(.horizontal)
                 .padding(.vertical, 6)
 
+            documentArea(document: document)
+        }
+        #if !os(macOS)
+        // iPhone 폭에는 사이드바 열이 들어가지 않는다 — iOS는 시트로 낸다
+        // (툴바를 가로 스크롤에 넣은 것과 같은 이유: 호스트 레이아웃은
+        // 호스트 몫이고, 라이브러리 컴포넌트는 고치지 않는다).
+        .sheet(isPresented: $showsOutline) {
+            NavigationStack {
+                OutlineSidebar(
+                    outline: document.metadata.outline,
+                    currentPage: $currentPage,
+                    onSelect: { showsOutline = false }
+                )
+                .navigationTitle("개요")
+                .toolbar {
+                    Button("닫기") { showsOutline = false }
+                }
+            }
+        }
+        #endif
+    }
+
+    /// 사이드바(macOS) + 문서 뷰. 목록이 비어 있으면 열 자체가 없다.
+    private func documentArea(document: HwpDocument) -> some View {
+        HStack(spacing: 0) {
+            #if os(macOS)
+                if showsOutline, !document.metadata.outline.isEmpty {
+                    OutlineSidebar(
+                        outline: document.metadata.outline,
+                        currentPage: $currentPage
+                    )
+                    .frame(width: 260)
+                    Divider()
+                }
+            #endif
+
             HwpDocumentView(
                 document: document,
                 zoomScale: $zoomScale,
@@ -196,6 +242,17 @@ struct ContentView: View {
                 toolbarLabel("Re-open", systemImage: "folder")
             }
             .buttonStyle(.bordered)
+
+            // 목록이 비어 있으면 누를 것이 없으므로 버튼 자체를 내지 않는다.
+            if !document.metadata.outline.isEmpty {
+                Button {
+                    showsOutline.toggle()
+                } label: {
+                    toolbarLabel("개요", systemImage: "list.bullet.indent")
+                }
+                .buttonStyle(.bordered)
+                .help("개요·책갈피 \(document.metadata.outline.count)개")
+            }
 
             Divider().frame(height: 20)
 
@@ -487,6 +544,10 @@ struct ContentView: View {
         errorMessage = nil
         document = nil
         isLoading = true
+        #if !os(macOS)
+            // 시트는 사용자가 열 때만 뜬다 — 새 문서를 열면 닫힌 상태로 돌아간다.
+            showsOutline = false
+        #endif
         loadProgress = nil
         loadGeneration += 1
         let generation = loadGeneration
