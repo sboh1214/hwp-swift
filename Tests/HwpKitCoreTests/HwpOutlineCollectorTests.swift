@@ -328,7 +328,7 @@ import XCTest
                         headingPage: 1,
                         bookmarkPage: 1,
                         maximumPage: 1,
-                        childParagraphs: { _ in [] }
+                        childParagraphs: { _, _ in [] }
                     )
                 }
             }

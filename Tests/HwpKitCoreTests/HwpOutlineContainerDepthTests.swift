@@ -108,6 +108,60 @@ import XCTest
             let outline = await paginator.outline()
             expect(outline.map(\.title)) == ["첫 컴포넌트 앵커"]
         }
+
+        /// **컨테이너 안에서는 반대다** — 표 셀·각주 안 개체는
+        /// `HwpParagraphObjectCollector`가 컴포넌트마다 글상자를 그리므로 전
+        /// 컴포넌트가 렌더된다 (실측: 셀 안 컴포넌트 2개가 둘 다 그려진다).
+        /// 위 흐름 테스트와 범위가 갈리므로 순회가 문맥을 봐야 한다 — 한쪽으로
+        /// 통일하면 반드시 다른 쪽이 틀린다.
+        func testBookmarksInEveryComponentInsideATableCellAreCollected() async throws {
+            var first = try HwpSynthetic.styledParagraph("컴포넌트 1")
+            first.ctrlHeaderArray = [HwpSynthetic.bookmarkControl("셀 첫 컴포넌트 앵커")]
+            var second = try HwpSynthetic.styledParagraph("컴포넌트 2")
+            second.ctrlHeaderArray = [HwpSynthetic.bookmarkControl("셀 둘째 컴포넌트 앵커")]
+            var object = try textbox(containing: first)
+            object.shapeComponentArray.append(try textbox(containing: second).shapeComponentArray[0])
+            var cellParagraph = try HwpSynthetic.styledParagraph("셀")
+            cellParagraph.ctrlHeaderArray = [.genShapeObject(object)]
+            var host = try HwpSynthetic.styledParagraph("본문")
+            host.ctrlHeaderArray = [.table(HwpSynthetic.table(
+                cellWidth: 30000, rowHeights: [12000], cellParagraphs: [[[cellParagraph]]]
+            ))]
+
+            let paginator = HwpSynthetic.outlinePaginator(
+                bodyParagraphs: [host], index: HwpSynthetic.outlineIndex()
+            )
+
+            _ = await paginator.totalPages()
+            let outline = await paginator.outline()
+            expect(outline.map(\.title)) == ["셀 첫 컴포넌트 앵커", "셀 둘째 컴포넌트 앵커"]
+        }
+
+        /// 배치가 **거부한 셀**의 앵커는 내지 않는다 — 선언 격자(1×1) 밖 주소의
+        /// 셀은 `HwpTableLayout.placement`가 nil을 돌려줘 그려지지 않는다
+        /// (실측: 렌더 텍스트에 "여분 셀"이 없는데 목록엔 그 앵커가 있었다).
+        func testBookmarksInCellsRejectedByLayoutAreNotCollected() async throws {
+            var declared = try HwpSynthetic.styledParagraph("선언 셀")
+            declared.ctrlHeaderArray = [HwpSynthetic.bookmarkControl("선언 셀 앵커")]
+            var extra = try HwpSynthetic.styledParagraph("여분 셀")
+            extra.ctrlHeaderArray = [HwpSynthetic.bookmarkControl("여분 셀 앵커")]
+            var table = HwpSynthetic.table(
+                cellWidth: 30000, rowHeights: [6000], cellParagraphs: [[[declared]]]
+            )
+            table.cellArray.append(HwpSynthetic.tableCell(
+                row: 5, column: 5, width: 30000, height: 6000, paragraphs: [extra]
+            ))
+            var host = try HwpSynthetic.styledParagraph("본문")
+            host.ctrlHeaderArray = [.table(table)]
+
+            let paginator = HwpSynthetic.outlinePaginator(
+                bodyParagraphs: [host], index: HwpSynthetic.outlineIndex()
+            )
+
+            _ = await paginator.totalPages()
+            let outline = await paginator.outline()
+            expect(outline.map(\.title)) == ["선언 셀 앵커"]
+        }
     }
 
     private extension HwpOutlineContainerDepthTests {

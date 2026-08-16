@@ -24,7 +24,11 @@ import Foundation
 struct HwpOutlineCollector {
     /// paragraph-bearing 컨테이너의 단일 traversal 지점 주입
     /// (`HwpPaginator.childParagraphs(of:)` — unsupported walk/렌더 경로와 공유).
-    typealias ChildParagraphs = (CoreHwp.HwpCtrlId) -> [(CoreHwp.HwpParagraph, HwpBlockKind)]
+    /// `(컨트롤, 이 컨트롤이 컨테이너 콘텐츠로 그려지는가) -> 자식 문단`.
+    /// 둘째 인자가 필요한 이유는 `HwpPaginator.outlineChildParagraphs` doc 참조 —
+    /// 개체의 렌더 범위가 흐름/컨테이너 문맥에 따라 다르다.
+    typealias ChildParagraphs = (CoreHwp.HwpCtrlId, Bool)
+        -> [(CoreHwp.HwpParagraph, HwpBlockKind)]
 
     /// 컨테이너 안 컨테이너 재귀 상한 — 렌더·진단 walk와 같은 값을 쓴다.
     /// **표는 이 한도를 타지 않는다** — `HwpTableLayout.maximumNestingDepth`가
@@ -107,6 +111,7 @@ struct HwpOutlineCollector {
             page: bookmarkPage,
             depth: 0,
             tableDepth: 0,
+            containerRendered: false,
             childParagraphs: childParagraphs
         )
     }
@@ -217,6 +222,7 @@ private extension HwpOutlineCollector {
         page: Int,
         depth: Int,
         tableDepth: Int,
+        containerRendered: Bool,
         childParagraphs: ChildParagraphs
     ) {
         for ctrl in ctrls {
@@ -241,7 +247,10 @@ private extension HwpOutlineCollector {
                 // (실측: 4겹 글상자의 가장 안쪽 텍스트는 렌더되는데 목록은 비었다).
                 guard depth <= Self.maximumContainerDepth else { continue }
             }
-            for (nested, _) in childParagraphs(ctrl) {
+            // 표 셀·각주 안 개체는 `HwpParagraphObjectCollector`가 전 컴포넌트를
+            // 그린다 — 그 문맥을 자식에게 알려야 순회 범위가 렌더와 같아진다.
+            let nestedContainerRendered = Self.rendersContainedObjects(ctrl)
+            for (nested, _) in childParagraphs(ctrl, containerRendered) {
                 guard let nestedCtrls = nested.ctrlHeaderArray else { continue }
                 // 표는 **컨테이너 카운터를 올리지 않는다**. 셀 안 개체는 흐름
                 // 방출(`appendNestedControlBlocks`)이 아니라 `HwpTableLayout`이
@@ -254,6 +263,7 @@ private extension HwpOutlineCollector {
                     page: page,
                     depth: isTable ? depth : depth + 1,
                     tableDepth: isTable ? tableDepth + 1 : tableDepth,
+                    containerRendered: nestedContainerRendered,
                     childParagraphs: childParagraphs
                 )
             }
@@ -263,6 +273,19 @@ private extension HwpOutlineCollector {
     static func isPageChrome(_ ctrl: CoreHwp.HwpCtrlId) -> Bool {
         switch ctrl {
         case .header, .footer:
+            true
+        default:
+            false
+        }
+    }
+
+    /// 이 컨테이너가 자기 안 개체를 **콘텐츠로 직접 그리는가**
+    /// (`HwpParagraphObjectCollector` 경로). 표 셀·각주가 그렇고, 그 안 개체는
+    /// 전 컴포넌트가 렌더된다. 글상자는 아니다 — 안쪽 개체는 흐름 경로가 그리고
+    /// `HwpTextboxLayout`은 첫 컴포넌트만 본다.
+    static func rendersContainedObjects(_ ctrl: CoreHwp.HwpCtrlId) -> Bool {
+        switch ctrl {
+        case .table, .footnote, .endnote:
             true
         default:
             false

@@ -1415,7 +1415,7 @@ private extension HwpPaginator {
             headingPage: currentParagraphFirstPlacedPage ?? firstPage,
             bookmarkPage: cachedPages.count + 1,
             maximumPage: maximumPages,
-            childParagraphs: outlineChildParagraphs(of:)
+            childParagraphs: outlineChildParagraphs(of:containerRendered:)
         )
     }
 
@@ -1517,9 +1517,15 @@ private extension HwpPaginator {
     /// 렌더되는데 목록엔 둘 다). 진단·흐름 경로는 `childParagraphs`를 그대로
     /// 쓴다 — 그쪽은 "그려지지 않는 것"을 보고하는 것이 일이다.
     func outlineChildParagraphs(
-        of ctrl: CoreHwp.HwpCtrlId
+        of ctrl: CoreHwp.HwpCtrlId,
+        containerRendered: Bool
     ) -> [(CoreHwp.HwpParagraph, HwpBlockKind)] {
         switch ctrl {
+        case let .table(table):
+            // 배치가 거부한 셀(선언 격자 밖·occupancy 충돌)은 그려지지 않는다.
+            tableLayout.renderedCells(of: table)
+                .flatMap(\.paragraphArray)
+                .map { ($0, HwpBlockKind.table) }
         case let .shape(shape),
              let .line(shape),
              let .rectangle(shape),
@@ -1532,21 +1538,39 @@ private extension HwpPaginator {
              let .picture(shape),
              let .ole(shape),
              let .container(shape):
-            renderedTextboxParagraphs(of: shape.shapeComponentArray)
+            renderedTextboxParagraphs(
+                of: shape.shapeComponentArray, allComponents: containerRendered
+            )
         case let .genShapeObject(genShape):
-            renderedTextboxParagraphs(of: genShape.shapeComponentArray)
+            renderedTextboxParagraphs(
+                of: genShape.shapeComponentArray, allComponents: containerRendered
+            )
         default:
             childParagraphs(of: ctrl)
         }
     }
 
+    /// 개체의 글상자 문단 — **그려지는 컴포넌트만**.
+    ///
+    /// 그 범위가 문맥마다 다르다: 흐름에 놓인 개체는 `HwpTextboxLayout`이 텍스트를
+    /// 가진 **첫** 컴포넌트만 그리지만, 표 셀·각주 안 개체는
+    /// `HwpParagraphObjectCollector`가 **전 컴포넌트**를 그린다 (실측: 셀 안
+    /// 컴포넌트 2개가 둘 다 렌더된다). 한쪽으로 통일하면 반드시 한 문맥이 틀린다 —
+    /// 흐름 기준으로 좁히면 셀 안 뒤 컴포넌트의 앵커가 조용히 빠지고, 컨테이너
+    /// 기준으로 넓히면 흐름 개체가 없는 자리를 가리킨다.
     private func renderedTextboxParagraphs(
-        of components: [CoreHwp.HwpShapeComponent]
+        of components: [CoreHwp.HwpShapeComponent],
+        allComponents: Bool
     ) -> [(CoreHwp.HwpParagraph, HwpBlockKind)] {
-        guard let component = HwpTextboxLayout.renderedTextboxComponent(of: components) else {
-            return []
+        let rendered: [CoreHwp.HwpShapeComponent] = if allComponents {
+            components
+        } else if let component = HwpTextboxLayout.renderedTextboxComponent(of: components) {
+            [component]
+        } else {
+            []
         }
-        return component.textBoxListArray
+        return rendered
+            .flatMap(\.textBoxListArray)
             .flatMap(\.paragraphArray)
             .map { ($0, HwpBlockKind.textbox) }
     }

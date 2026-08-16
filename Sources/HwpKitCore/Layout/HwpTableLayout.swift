@@ -45,15 +45,11 @@ public struct HwpTableLayout {
         clampToAvailableWidth: Bool = true
     ) -> Result<HwpTableFrame, HwpUnsupportedElement> {
         let property = table.tableProperty
-        let rowCount = max(Int(property.rowCount), property.rowCellCounts.count)
-        let columnCount = Int(property.columnCount)
-        guard rowCount > 0, columnCount > 0 else {
+        guard let grid = Self.grid(of: table) else {
             return .success(emptyFrame(availableWidth: availableWidth))
         }
-        // 병적 격자 방어: occupancy Set이 수십억 칸으로 불어나 OOM되는 것을 막는다.
-        guard rowCount * columnCount <= Self.maximumGridCells else {
-            return .success(emptyFrame(availableWidth: availableWidth))
-        }
+        let rowCount = grid.rows
+        let columnCount = grid.columns
 
         let outerWidth = resolvedOuterWidth(
             table: table, availableWidth: availableWidth, sizeResolver: sizeResolver,
@@ -257,14 +253,45 @@ extension HwpTableLayout {
         columnCount: Int,
         columnWidths: [CGFloat]
     ) -> [PlacedCell] {
-        var placedCells: [PlacedCell] = []
+        acceptedCells(
+            of: context.table, rowCount: rowCount, columnCount: columnCount
+        ).map { accepted in
+            placedCell(
+                for: accepted.cell,
+                at: accepted.placement,
+                context: context,
+                columnWidths: columnWidths
+            )
+        }
+    }
+
+    /// 선언 격자 — 없거나 병적이면 nil이고 그때 표는 빈 프레임으로 렌더된다.
+    static func grid(of table: CoreHwp.HwpTable) -> (rows: Int, columns: Int)? {
+        let property = table.tableProperty
+        let rows = max(Int(property.rowCount), property.rowCellCounts.count)
+        let columns = Int(property.columnCount)
+        // 병적 격자 방어: occupancy Set이 수십억 칸으로 불어나 OOM되는 것을 막는다.
+        guard rows > 0, columns > 0, rows * columns <= maximumGridCells else { return nil }
+        return (rows, columns)
+    }
+
+    /// 배치 규칙(주소·occupancy·예산)이 **실제로 받아들이는 셀만** 원본 순서대로.
+    /// 프레임을 만들지 않으므로 탐색 목록 순회도 같은 술어를 쓸 수 있다 —
+    /// `cellArray`를 그대로 걸으면 배치되지 못한 셀의 앵커가 목록에 올라 누르면
+    /// 아무것도 없는 자리로 간다.
+    func acceptedCells(
+        of table: CoreHwp.HwpTable,
+        rowCount: Int,
+        columnCount: Int
+    ) -> [(cell: CoreHwp.HwpTableCell, placement: Placement)] {
+        var accepted: [(cell: CoreHwp.HwpTableCell, placement: Placement)] = []
         var occupied = Set<GridPosition>()
         // fallback 자동 배치 커서 — 매 셀마다 (0,0)부터 재스캔하지 않게 (#4)
         var nextFallbackIndex = 0
         // 누적 occupancy 채우기 예산 (격자 크기) — 겹침 병적 입력 방어 (#14)
         var fillBudget = rowCount * columnCount
 
-        for cell in context.table.cellArray {
+        for cell in table.cellArray {
             guard let placement = placement(
                 for: cell,
                 rowCount: rowCount,
@@ -273,14 +300,17 @@ extension HwpTableLayout {
                 nextFallbackIndex: &nextFallbackIndex,
                 fillBudget: &fillBudget
             ) else { continue }
-            placedCells.append(placedCell(
-                for: cell,
-                at: placement,
-                context: context,
-                columnWidths: columnWidths
-            ))
+            accepted.append((cell, placement))
         }
-        return placedCells
+        return accepted
+    }
+
+    /// 레이아웃이 실제로 그리는 셀 (탐색 목록 순회용).
+    func renderedCells(of table: CoreHwp.HwpTable) -> [CoreHwp.HwpTableCell] {
+        guard let grid = Self.grid(of: table) else { return [] }
+        return acceptedCells(
+            of: table, rowCount: grid.rows, columnCount: grid.columns
+        ).map(\.cell)
     }
 
     /// 셀 하나의 문단/중첩 표 콘텐츠를 레이아웃해 PlacedCell로 만든다.
