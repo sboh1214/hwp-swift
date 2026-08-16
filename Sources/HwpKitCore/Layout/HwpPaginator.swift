@@ -1546,7 +1546,12 @@ private extension HwpPaginator {
         of ctrl: CoreHwp.HwpCtrlId,
         context: HwpOutlineCollector.RenderContext
     ) -> [HwpOutlineCollector.ChildParagraph] {
-        switch ctrl {
+        // 각주 안에서 개체를 한 겹 지난 자리 — 그 아래는 컨테이너 수집기도 흐름도
+        // 그리지 않으므로 더 내려가지 않는다.
+        if case .noteDescendant = context {
+            return []
+        }
+        return switch ctrl {
         case let .table(table):
             // 배치가 거부한 셀(선언 격자 밖·occupancy 충돌)은 그려지지 않는다.
             // 세그먼트 상한에 걸려 방출되지 않은 행도 같다 — 배치는 받아들였지만
@@ -1628,7 +1633,7 @@ private extension HwpPaginator {
             if case .note = context {
                 return []
             }
-        case .flow:
+        case .flow, .noteDescendant:
             break
         }
         let renderedIndex = HwpTextboxLayout.renderedTextboxComponentIndex(of: components)

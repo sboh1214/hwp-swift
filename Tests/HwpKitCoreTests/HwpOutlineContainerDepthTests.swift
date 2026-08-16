@@ -201,6 +201,46 @@ import XCTest
             expect(outline).to(beEmpty())
         }
 
+        /// **각주의 no-fallback은 자손에게 상속된다.** 각주 안 글상자의 문단에 또
+        /// 글상자가 있으면 `HwpTextboxLayout`이 안쪽을 수집하지 않고
+        /// (`collectsTextboxes: false`) 각주엔 흐름 폴백도 없어 **아무도 그리지
+        /// 않는다** (실측: 안쪽 텍스트가 렌더에 없는데 앵커는 목록에 있었다).
+        /// 문맥을 컨트롤 종류만으로 계산하면 `.note`가 `.flow`로 리셋돼 샌다.
+        func testBookmarksNestedTwiceInsideANoteAreNotCollected() async throws {
+            var host = try HwpSynthetic.styledParagraph("본문")
+            host.ctrlHeaderArray = [.footnote(HwpSynthetic.listControl(
+                ctrlId: .footnote, paragraphs: [try noteHostParagraph()]
+            ))]
+
+            let paginator = HwpSynthetic.outlinePaginator(
+                bodyParagraphs: [host], index: HwpSynthetic.outlineIndex()
+            )
+
+            _ = await paginator.totalPages()
+            let outline = await paginator.outline()
+            expect(outline.map(\.title)) == ["바깥 앵커"]
+        }
+
+        /// 대조군 — **같은 중첩을 표 셀에 두면** 흐름이 안쪽 글상자까지 그리므로
+        /// 그 앵커는 수집이 옳다 (실측: 안쪽 텍스트가 렌더에 있다). 이 짝이 없으면
+        /// 위 테스트는 "중첩을 통째로 막는다"로도 통과해 계약이 흐려진다.
+        func testSameNestingInsideATableCellKeepsTheInnerBookmark() async throws {
+            var host = try HwpSynthetic.styledParagraph("본문")
+            host.ctrlHeaderArray = [.table(HwpSynthetic.table(
+                cellWidth: 30000,
+                rowHeights: [12000],
+                cellParagraphs: [[[try noteHostParagraph()]]]
+            ))]
+
+            let paginator = HwpSynthetic.outlinePaginator(
+                bodyParagraphs: [host], index: HwpSynthetic.outlineIndex()
+            )
+
+            _ = await paginator.totalPages()
+            let outline = await paginator.outline()
+            expect(outline.map(\.title)) == ["바깥 앵커", "안쪽 앵커"]
+        }
+
         /// 흐름 개체의 **둘째 이후 컴포넌트**는 텍스트가 안 그려지지만 그 안
         /// 중첩 컨트롤은 `appendNestedControlBlocks`가 방출해 **그려진다**
         /// (실측: 둘째 컴포넌트 안 표의 셀 텍스트가 렌더에 있다). 그래서 직접
@@ -339,6 +379,21 @@ import XCTest
             var paragraph = try HwpSynthetic.styledParagraph(text)
             paragraph.ctrlHeaderArray = ctrls
             return paragraph
+        }
+
+        /// 글상자 **안** 글상자를 품은 문단 — 바깥·안쪽에 앵커가 하나씩이다.
+        /// 각주에 넣으면 안쪽이 안 그려지고, 표 셀에 넣으면 그려진다.
+        func noteHostParagraph() throws -> CoreHwp.HwpParagraph {
+            var innerParagraph = try HwpSynthetic.styledParagraph("안쪽 글상자")
+            innerParagraph.ctrlHeaderArray = [HwpSynthetic.bookmarkControl("안쪽 앵커")]
+            var outerParagraph = try HwpSynthetic.styledParagraph("바깥 글상자")
+            outerParagraph.ctrlHeaderArray = [
+                HwpSynthetic.bookmarkControl("바깥 앵커"),
+                .genShapeObject(try textbox(containing: innerParagraph)),
+            ]
+            var host = try HwpSynthetic.styledParagraph("담는 문단")
+            host.ctrlHeaderArray = [.genShapeObject(try textbox(containing: outerParagraph))]
+            return host
         }
 
         /// `equation` 픽스처의 첫 EQEDIT 레코드 — 합성 생성자가 없어 실물을 쓴다.

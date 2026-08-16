@@ -36,6 +36,13 @@ struct HwpOutlineCollector {
         /// (`.footnote` 케이스는 `appendNestedControlBlocks`를 부르지 않는다).
         /// 그래서 수집기가 건너뛴 개체는 **아무도 그리지 않는다**.
         case note
+        /// 각주 안에서 **컨테이너 수집기의 직접 사정권을 벗어난** 자리 — 각주 안
+        /// 글상자의 문단이 그렇다. `HwpTextboxLayout`은 안쪽 컨테이너를 수집하지
+        /// 않고(`collectsTextboxes: false`) 각주엔 흐름 폴백도 없어 **이 아래로는
+        /// 아무것도 그려지지 않는다** (실측: 각주 안 글상자 속 글상자 텍스트가
+        /// 렌더에 없는데 앵커는 목록에 있었다). 표 셀에서는 흐름이 그 안쪽까지
+        /// 그리므로 이 상태가 아니다.
+        case noteDescendant
     }
 
     /// 자식 문단 하나.
@@ -284,7 +291,7 @@ private extension HwpOutlineCollector {
             }
             // 표 셀·각주 안 개체는 `HwpParagraphObjectCollector`가 전 컴포넌트를
             // 그린다 — 그 문맥을 자식에게 알려야 순회 범위가 렌더와 같아진다.
-            let nestedContext = Self.childContext(of: ctrl)
+            let nestedContext = Self.childContext(of: ctrl, in: context)
             for child in childParagraphs(ctrl, context) {
                 guard let nestedCtrls = child.paragraph.ctrlHeaderArray else { continue }
                 // 표는 **컨테이너 카운터를 올리지 않는다**. 셀 안 개체는 흐름
@@ -319,14 +326,26 @@ private extension HwpOutlineCollector {
     /// 콘텐츠를 그리지만 **흐름 폴백 유무가 다르다** — 각주는
     /// `appendNestedControlBlocks`를 부르지 않아 수집기가 건너뛴 개체를 아무도
     /// 그리지 않는다. 글상자·도형은 흐름이다.
-    static func childContext(of ctrl: CoreHwp.HwpCtrlId) -> RenderContext {
+    static func childContext(
+        of ctrl: CoreHwp.HwpCtrlId,
+        in current: RenderContext
+    ) -> RenderContext {
         switch ctrl {
-        case .table:
-            .tableCell
         case .footnote, .endnote:
-            .note
+            return .note
+        case .table:
+            // 각주 안 표는 실제로 그려진다 (`collectsTables: true`, #94) —
+            // 셀 안쪽은 표 레이아웃이 자기 수집기로 그리므로 셀 문맥이다.
+            return .tableCell
         default:
-            .flow
+            break
+        }
+        // 각주 안에서 개체를 한 겹 지나면 그 아래는 아무도 그리지 않는다.
+        switch current {
+        case .note, .noteDescendant:
+            return .noteDescendant
+        case .flow, .tableCell:
+            return .flow
         }
     }
 
