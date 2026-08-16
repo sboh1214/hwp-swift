@@ -445,9 +445,18 @@ noori p2에서 비영 셀의 30%까지 지워도 양쪽 통과).
   목적지이므로 **검색과 같은 스코프**(`role == .body`)로 모은다: 머리말/꼬리말은
   빠지고 각주·표 셀·글상자·중첩 표는 들어온다. 모델을 걷는 것이라 여러 쪽에
   걸친 표에서도 셀은 한 번만 순회된다.
-- **깊이 한도는 컨테이너와 표가 따로다.** 수집기는 진단(`walkUnsupported`)과
-  같은 술어를 쓴다 — 비표 컨테이너는 `maximumContainerDepth`, 표는
-  `HwpTableLayout.maximumNestingDepth`를 **각각** 센다. 하나로 묶으면 조판된
+- **깊이 한도는 컨테이너와 표가 따로다.** 비표 컨테이너는
+  `maximumContainerDepth`, 표는 `HwpTableLayout.maximumNestingDepth`를 **각각**
+  센다 — 표를 지날 때 컨테이너 카운터는 **오르지 않는다**. 셀 안 개체는 흐름
+  방출(`appendNestedControlBlocks`)이 아니라 `HwpTableLayout`이 셀 콘텐츠로
+  그리므로 컨테이너 한도의 적용 대상이 아니다: 함께 올리면 표 3겹 안 글상자가
+  `depth == 3`에 걸려, **그려진 글상자의 책갈피가 조용히 빠진다** (실측 —
+  3겹째 셀 페이로드에 textbox가 있는데 목록은 비었다;
+  `HwpOutlineContainerDepthTests`). **여기서 진단(`walkUnsupported`)과 갈린다** —
+  그쪽은 표에서도 `containerDepth`를 올려 이 글상자를 "중첩 컨테이너 (깊이 초과)"로
+  **오탐**한다. 보고 문자열이라 무해하지만 `unsupportedElements`는 공개 출력이라
+  픽스처 기대값에 걸리므로 별건으로 둔다. 표 자체의 경계는 두 술어가 그대로
+  같다. 하나로 묶으면 조판된
   depth 3 표의 셀 앵커가 **조용히** 빠진다: 중첩 표는 `appendNestedControlBlocks`가
   아니라 `HwpTableLayout`의 자체 재귀가 그리므로 렌더에서 빠진 것이 없고, 그래서
   "중첩 컨테이너 (깊이 초과)" 진단도 뜨지 않는다 (진단이 표를 컨테이너 가드에서

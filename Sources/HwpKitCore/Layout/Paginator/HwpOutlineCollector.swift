@@ -237,10 +237,16 @@ private extension HwpOutlineCollector {
             }
             for (nested, _) in childParagraphs(ctrl) {
                 guard let nestedCtrls = nested.ctrlHeaderArray else { continue }
+                // 표는 **컨테이너 카운터를 올리지 않는다**. 셀 안 개체는 흐름
+                // 방출(`appendNestedControlBlocks`)이 아니라 `HwpTableLayout`이
+                // 셀 콘텐츠로 그리므로 그 한도의 적용 대상이 아니다 — 함께
+                // 올리면 표 3겹 안 글상자가 `depth == 3`에 걸려, 그려진 글상자의
+                // 책갈피가 조용히 빠진다 (실측: 셀 페이로드에 textbox가 있는데
+                // 목록은 비었다).
                 collectBookmarks(
                     ctrls: nestedCtrls,
                     page: page,
-                    depth: depth + 1,
+                    depth: isTable ? depth : depth + 1,
                     tableDepth: isTable ? tableDepth + 1 : tableDepth,
                     childParagraphs: childParagraphs
                 )
