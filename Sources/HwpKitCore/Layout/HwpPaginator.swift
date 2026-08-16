@@ -297,7 +297,12 @@ public actor HwpPaginator {
     /// 확정된 쪽까지의 접두를 돌려주므로 프로그레시브 로딩의 중간 스냅샷이
     /// 그대로 실어 보낸다 (`HwpDocumentMetadata.outline`).
     public func outline() async -> [HwpOutlineItem] {
-        outlineCollector.items
+        // **확정된 쪽까지만** 낸다. 배치 도중 수집된 항목은 `cachedPages.count + 1`
+        // 을 가리키는데 그 쪽은 아직 캐시되지 않았고, 취소되면 끝내 만들어지지
+        // 않는다 — 그대로 내보내면 공개 API가 없는 쪽으로 안내한다.
+        // `filter`가 아니라 `prefix`인 것은 발행분이 최종 목록의 접두여야
+        // `ordinal`이 흔들리지 않기 때문이다 (`HwpDocumentActor`와 같은 술어).
+        Array(outlineCollector.items.prefix { $0.pageNumber <= cachedPages.count })
     }
 }
 

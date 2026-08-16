@@ -308,25 +308,7 @@ private extension HwpOutlineCollector {
     /// 나머지 텍스트는 그대로. UTF-16 코드 단위로 모아 한 번에 문자열을 만들어
     /// 서로게이트 쌍이 쪼개지지 않게 한다.
     static func normalizedTitle(of paragraph: CoreHwp.HwpParagraph) -> String {
-        var units: [UInt16] = []
-        for character in paragraph.paraText?.charArray ?? [] {
-            switch character.value {
-            case 9, 10, 13, 30, 31:
-                units.append(32)
-            default:
-                guard character.type == .char, character.value >= 32 else { continue }
-                units.append(character.value)
-            }
-            // 안전판에 걸려도 **대리 쌍 중간에서는 끊지 않는다** — 끊으면
-            // `String(decoding:)`이 U+FFFD로 복구해 "평문의 접두" 계약이 깨진다.
-            // 짝을 채우고 다음 회차에 끊는다.
-            if units.count >= Self.titleUnitCeiling,
-               !UTF16.isLeadSurrogate(units[units.count - 1])
-            {
-                break
-            }
-        }
-        return collapsedWhitespace(String(decoding: units, as: UTF16.self))
+        collapsedWhitespace(String(decoding: titleUnits(of: paragraph), as: UTF16.self))
     }
 
     /// UTF-16 천장으로 자른다 — `unicodeScalars`로 모으므로 대리 쌍이 쪼개지지
@@ -352,5 +334,40 @@ private extension HwpOutlineCollector {
             .joined(separator: " ")
         guard collapsed.count > HwpOutlineItem.titleCharacterLimit else { return collapsed }
         return String(collapsed.prefix(HwpOutlineItem.titleCharacterLimit))
+    }
+}
+
+extension HwpOutlineCollector {
+    /// 문단 → 제목으로 쓸 UTF-16 코드 단위 (천장까지). 결과 길이는 언제나
+    /// `titleUnitCeiling + 1` 이하다 — 테스트가 그 경계를 직접 재도록
+    /// `normalizedTitle`에서 갈라 두었다 (반환값은 이미 200자로 접혀 있어
+    /// 밖에서는 이 상한을 관측할 수 없다).
+    static func titleUnits(of paragraph: CoreHwp.HwpParagraph) -> [UInt16] {
+        var units: [UInt16] = []
+        for character in paragraph.paraText?.charArray ?? [] {
+            let unit: UInt16
+            switch character.value {
+            case 9, 10, 13, 30, 31:
+                unit = 32
+            default:
+                guard character.type == .char, character.value >= 32 else { continue }
+                unit = character.value
+            }
+            guard units.count < titleUnitCeiling else {
+                // 천장에서 끊되 **대리 쌍 중간은 피한다** — 끊으면
+                // `String(decoding:)`이 U+FFFD로 복구해 "원문의 접두" 계약이
+                // 깨진다. 짝이 되는 하위 대리일 때만 하나 더 받는다:
+                // "상위 대리가 아닐 때까지 미룬다"로 두면 상위 대리만 이어지는
+                // 조작 입력에서 조건이 영영 참이 되지 않아 천장이 무력해진다.
+                if UTF16.isLeadSurrogate(units[units.count - 1]),
+                   UTF16.isTrailSurrogate(unit)
+                {
+                    units.append(unit)
+                }
+                break
+            }
+            units.append(unit)
+        }
+        return units
     }
 }
