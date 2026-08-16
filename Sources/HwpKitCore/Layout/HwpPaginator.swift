@@ -54,6 +54,11 @@ public actor HwpPaginator {
     }
 
     private var collectedUnsupported: [HwpUnsupportedElement] = []
+    /// 이 문단의 **첫 조각이 실제로 놓인** 쪽 (1-기반, 문단마다 리셋).
+    /// 배치 **전**에 잡은 값은 다단에서 낡는다 — `placeMultiColumnParagraph`는
+    /// 미루기(`false` 반환)가 없어 마지막 단이 모자라면 스스로 쪽을 넘긴 뒤
+    /// 첫 줄을 놓는다 (1단 경로는 미뤄서 재계산되므로 안전하다).
+    private var currentParagraphFirstPlacedPage: Int?
     /// 개요·책갈피 탐색 목록 수집기 (#77) — 쪽 귀속이 조판의 함수라 여기 산다.
     private var outlineCollector: HwpOutlineCollector
     /// 이 페이지에 배치할 각주 (문단 + 문서 순서 번호) — 저장은 footnoteCoordinator
@@ -504,6 +509,7 @@ private extension HwpPaginator {
             // placeParagraphText가 다중 페이지 문단의 앞 조각 페이지를 먼저
             // 캐시하므로 배치 전에 첫 페이지를 잡는다 (#3).
             let paragraphFirstPage = cachedPages.count + 1
+            currentParagraphFirstPlacedPage = nil
             guard placeParagraphText(
                 paragraph,
                 attributedString: attributedString,
@@ -1124,6 +1130,11 @@ private extension HwpPaginator {
             nextLogicalPageNumber = reset
             pendingPageNumber = nil
         }
+        // 여기가 문단의 첫 콘텐츠가 쪽에 놓이는 지점이라 개요의 시작 쪽도 여기서
+        // 확정된다 (위 쪽 번호 리셋과 같은 순간이다).
+        if currentParagraphFirstPlacedPage == nil {
+            currentParagraphFirstPlacedPage = cachedPages.count + 1
+        }
         let immutable = NSAttributedString(attributedString: attributedString)
         let columnFrame = currentColumnFrame
         let frame = CGRect(
@@ -1396,7 +1407,12 @@ private extension HwpPaginator {
         // 루트 `AGENTS.md`의 "개요·책갈피 탐색 (#77)".
         outlineCollector.collect(
             from: paragraph,
-            headingPage: firstPage,
+            // 개요 쪽은 문단의 **첫 조각이 놓인** 쪽이다 — 인자로 받은 사전
+            // 포착값은 다단에서 낡는다 (`currentParagraphFirstPlacedPage` 참조).
+            // 텍스트 블록이 하나도 없는 문단(개체만 있는 문단)은 기록이 없으므로
+            // 그때만 사전 포착값으로 폴백한다. 진단(`collectUnsupported`)은 종전
+            // 값을 그대로 쓴다 — 보고 문자열이고 공개 출력이라 별건이다.
+            headingPage: currentParagraphFirstPlacedPage ?? firstPage,
             bookmarkPage: cachedPages.count + 1,
             maximumPage: maximumPages,
             childParagraphs: childParagraphs(of:)
