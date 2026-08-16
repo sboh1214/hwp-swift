@@ -233,7 +233,13 @@ private extension HwpOutlineCollector {
             if isTable {
                 guard tableDepth <= HwpTableLayout.maximumNestingDepth else { continue }
             } else {
-                guard depth < Self.maximumContainerDepth else { continue }
+                // 경계는 "이 컨트롤이 렌더되는가"다. depth d 컨트롤은 d ≤ 상한일 때
+                // 레이아웃되고 (`appendNestedControlBlocks`가 `depth < 상한`에서
+                // 자식 방출을 멈추므로 상한 depth 컨트롤까지는 도달한다) 그
+                // **자기 문단**은 `HwpTextboxLayout`이 그린다. `<`로 두면 그려진
+                // 최심 글상자의 문단을 방문하지 않아 그 안 앵커가 조용히 빠진다
+                // (실측: 4겹 글상자의 가장 안쪽 텍스트는 렌더되는데 목록은 비었다).
+                guard depth <= Self.maximumContainerDepth else { continue }
             }
             for (nested, _) in childParagraphs(ctrl) {
                 guard let nestedCtrls = nested.ctrlHeaderArray else { continue }

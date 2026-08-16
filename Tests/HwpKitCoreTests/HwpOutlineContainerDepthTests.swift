@@ -48,13 +48,14 @@ import XCTest
             expect(outline.map(\.title)) == ["글상자 앵커"]
         }
 
-        /// 비표 컨테이너는 여전히 자기 한도를 지킨다 — 글상자를 네 겹 쌓으면
-        /// 마지막 겹의 안쪽은 렌더도 되지 않으므로(`appendNestedControlBlocks`가
-        /// `depth < 3`에서 멈춘다) 그 책갈피는 계속 빠져야 한다. 이 단언이 없으면
-        /// 비표 가드를 통째로 지워도 위 테스트가 통과한다.
-        func testBookmarkBeyondTheContainerDepthLimitIsStillDropped() async throws {
+        /// **최심 글상자의 자기 문단은 렌더되므로 수집한다.** 글상자 네 겹이면
+        /// 가장 안쪽 글상자가 상한 depth에 놓이는데, 거기까지는 레이아웃이 도달해
+        /// (`appendNestedControlBlocks`는 `depth < 3`에서 **자식 방출**만 멈춘다)
+        /// 그 글상자의 텍스트가 `HwpTextboxLayout`으로 그려진다 — 실측으로 확인했다
+        /// (렌더 텍스트에 "가장 안쪽"이 있는데 목록은 비어 있었다).
+        func testBookmarkInsideTheDeepestRenderedTextboxIsCollected() async throws {
             var innermost = try HwpSynthetic.styledParagraph("가장 안쪽")
-            innermost.ctrlHeaderArray = [HwpSynthetic.bookmarkControl("과다 깊이 앵커")]
+            innermost.ctrlHeaderArray = [HwpSynthetic.bookmarkControl("최심 앵커")]
             var host = try HwpSynthetic.styledParagraph("본문")
             host.ctrlHeaderArray = [.genShapeObject(try nestedTextboxes(depth: 4, innermost))]
 
@@ -64,7 +65,48 @@ import XCTest
 
             _ = await paginator.totalPages()
             let outline = await paginator.outline()
+            expect(outline.map(\.title)) == ["최심 앵커"]
+        }
+
+        /// 경계 반대쪽: 글상자 **다섯** 겹이면 가장 안쪽 글상자가 상한을 넘어
+        /// 레이아웃 자체가 없으므로 그 안 책갈피는 계속 빠진다. 이 단언이 없으면
+        /// 비표 가드를 통째로 지워도 위 테스트들이 통과한다.
+        func testBookmarkBeyondTheContainerDepthLimitIsStillDropped() async throws {
+            var innermost = try HwpSynthetic.styledParagraph("가장 안쪽")
+            innermost.ctrlHeaderArray = [HwpSynthetic.bookmarkControl("과다 깊이 앵커")]
+            var host = try HwpSynthetic.styledParagraph("본문")
+            host.ctrlHeaderArray = [.genShapeObject(try nestedTextboxes(depth: 5, innermost))]
+
+            let paginator = HwpSynthetic.outlinePaginator(
+                bodyParagraphs: [host], index: HwpSynthetic.outlineIndex()
+            )
+
+            _ = await paginator.totalPages()
+            let outline = await paginator.outline()
             expect(outline).to(beEmpty())
+        }
+
+        /// 개체 순회는 **렌더되는 컴포넌트**만 본다 — `HwpTextboxLayout`이 텍스트를
+        /// 가진 첫 컴포넌트 하나만 그리므로(묶음 개체의 나머지는 안 그려진다),
+        /// 전 컴포넌트를 돌면 그려지지 않은 텍스트의 앵커가 목록에 올라 누르면
+        /// 아무것도 없는 자리로 간다 (실측: 렌더는 "컴포넌트1"뿐인데 목록엔 둘 다).
+        func testBookmarksInUnrenderedShapeComponentsAreNotCollected() async throws {
+            var first = try HwpSynthetic.styledParagraph("컴포넌트 1")
+            first.ctrlHeaderArray = [HwpSynthetic.bookmarkControl("첫 컴포넌트 앵커")]
+            var second = try HwpSynthetic.styledParagraph("컴포넌트 2")
+            second.ctrlHeaderArray = [HwpSynthetic.bookmarkControl("둘째 컴포넌트 앵커")]
+            var object = try textbox(containing: first)
+            object.shapeComponentArray.append(try textbox(containing: second).shapeComponentArray[0])
+            var host = try HwpSynthetic.styledParagraph("본문")
+            host.ctrlHeaderArray = [.genShapeObject(object)]
+
+            let paginator = HwpSynthetic.outlinePaginator(
+                bodyParagraphs: [host], index: HwpSynthetic.outlineIndex()
+            )
+
+            _ = await paginator.totalPages()
+            let outline = await paginator.outline()
+            expect(outline.map(\.title)) == ["첫 컴포넌트 앵커"]
         }
     }
 

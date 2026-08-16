@@ -1415,7 +1415,7 @@ private extension HwpPaginator {
             headingPage: currentParagraphFirstPlacedPage ?? firstPage,
             bookmarkPage: cachedPages.count + 1,
             maximumPage: maximumPages,
-            childParagraphs: childParagraphs(of:)
+            childParagraphs: outlineChildParagraphs(of:)
         )
     }
 
@@ -1507,6 +1507,48 @@ private extension HwpPaginator {
         default:
             []
         }
+    }
+
+    /// 탐색 목록 전용 순회 — 개체(gso 계열)는 **렌더되는 컴포넌트만** 본다.
+    ///
+    /// `childParagraphs`는 전 컴포넌트를 도는데 `HwpTextboxLayout`은 텍스트를 가진
+    /// **첫** 컴포넌트만 그리므로, 그대로 쓰면 그려지지 않은 텍스트의 앵커가
+    /// 목록에 올라 누르면 아무것도 없는 자리로 간다 (실측: 컴포넌트 2개 중 첫째만
+    /// 렌더되는데 목록엔 둘 다). 진단·흐름 경로는 `childParagraphs`를 그대로
+    /// 쓴다 — 그쪽은 "그려지지 않는 것"을 보고하는 것이 일이다.
+    func outlineChildParagraphs(
+        of ctrl: CoreHwp.HwpCtrlId
+    ) -> [(CoreHwp.HwpParagraph, HwpBlockKind)] {
+        switch ctrl {
+        case let .shape(shape),
+             let .line(shape),
+             let .rectangle(shape),
+             let .ellipse(shape),
+             let .arc(shape),
+             let .polygon(shape),
+             let .curve(shape),
+             let .equation(shape),
+             let .equationLegacy(shape),
+             let .picture(shape),
+             let .ole(shape),
+             let .container(shape):
+            renderedTextboxParagraphs(of: shape.shapeComponentArray)
+        case let .genShapeObject(genShape):
+            renderedTextboxParagraphs(of: genShape.shapeComponentArray)
+        default:
+            childParagraphs(of: ctrl)
+        }
+    }
+
+    private func renderedTextboxParagraphs(
+        of components: [CoreHwp.HwpShapeComponent]
+    ) -> [(CoreHwp.HwpParagraph, HwpBlockKind)] {
+        guard let component = HwpTextboxLayout.renderedTextboxComponent(of: components) else {
+            return []
+        }
+        return component.textBoxListArray
+            .flatMap(\.paragraphArray)
+            .map { ($0, HwpBlockKind.textbox) }
     }
 
     // MARK: - 컨트롤 블록 방출
