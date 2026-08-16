@@ -305,6 +305,31 @@ import XCTest
             expect(title.count) == 82
         }
 
+        /// 자릿수가 `Int`를 넘어도 **클램프**다. nil로 두면 제목이 목록에서
+        /// 조용히 사라져 "상한을 넘으면 거부가 아니라 클램프"라는 정책과 어긋난다.
+        /// 앞자리 0은 `Int`가 흡수하므로(실측 `Int("0…01") == 1`) 대상이 아니다.
+        func testOversizedStyleLevelDigitsAreClampedNotDropped() async throws {
+            let paginator = HwpSynthetic.outlinePaginator(
+                bodyParagraphs: [
+                    try HwpSynthetic.styledParagraph("거대 수준", paraShapeId: 1, paraStyleId: 9),
+                    try HwpSynthetic.styledParagraph("앞자리 0", paraShapeId: 1, paraStyleId: 10),
+                ],
+                index: HwpSynthetic.outlineIndex(
+                    paraShapes: [1: HwpSynthetic.plainParaShape()],
+                    styles: [
+                        9: HwpSynthetic.outlineStyle("개요 99999999999999999999999"),
+                        10: HwpSynthetic.outlineStyle("개요 0000000000000000000000003"),
+                    ]
+                )
+            )
+
+            _ = await paginator.totalPages()
+            let outline = await paginator.outline()
+
+            expect(outline.map(\.title)) == ["거대 수준", "앞자리 0"]
+            expect(outline.map(\.level)) == [HwpOutlineItem.maximumLevel, 3]
+        }
+
         /// 스타일 이름 폴백은 `paraStyleId`로 메모한다 — **nil도 캐시한다**.
         /// 이름은 최대 65,535 UTF-16 단위인데 개요가 아닌 문단은 두 이름을 모두
         /// 훑으므로(문단당 4벌), 그 nil을 안 담으면 가장 흔한 경로가 그대로 남아

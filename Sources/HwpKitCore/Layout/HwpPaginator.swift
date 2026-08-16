@@ -47,6 +47,9 @@ public actor HwpPaginator {
     /// 인스턴스 상한 (기본 = 전역 상한) — 테스트가 cap 도달 경로를 작은
     /// 문서로 재현할 수 있게 재정의를 허용한다.
     var maximumPages = HwpPaginator.maximumDocumentPages
+    /// 표 하나가 만들 수 있는 세그먼트 상한 (기본 = 전역 상한) — 위와 같은 이유로
+    /// 인스턴스 값이다.
+    var maximumTableSegments = HwpTableLayout.maximumTableSegments
     private var isComputingPage = false
 
     func overrideMaximumPages(_ count: Int) {
@@ -58,6 +61,11 @@ public actor HwpPaginator {
         outlineCollector.maximumItems = count
     }
 
+    /// 표 세그먼트 상한 재정의 (테스트가 행 절단 경로를 작은 표로 재현한다).
+    func overrideMaximumTableSegments(_ count: Int) {
+        maximumTableSegments = count
+    }
+
     private var collectedUnsupported: [HwpUnsupportedElement] = []
     /// 이 문단의 **첫 조각이 실제로 놓인** 쪽 (1-기반, 문단마다 리셋).
     /// 배치 **전**에 잡은 값은 다단에서 낡는다 — `placeMultiColumnParagraph`는
@@ -66,6 +74,9 @@ public actor HwpPaginator {
     private var currentParagraphFirstPlacedPage: Int?
     /// 개요·책갈피 탐색 목록 수집기 (#77) — 쪽 귀속이 조판의 함수라 여기 산다.
     private var outlineCollector: HwpOutlineCollector
+    /// 세그먼트 상한에 걸려 **일부 행만 방출된** 표: 인스턴스 id → 방출된 행 수.
+    /// 탐색 목록이 그려지지 않은 행의 앵커를 내지 않게 하는 입력이다.
+    private var truncatedTableRowCounts: [UInt32: Int] = [:]
     /// 이 페이지에 배치할 각주 (문단 + 문서 순서 번호) — 저장은 footnoteCoordinator
     private var pendingFootnotes: [HwpFootnoteLayout.Input] {
         get { footnoteCoordinator.pendingFootnotes }
@@ -1538,9 +1549,14 @@ private extension HwpPaginator {
         switch ctrl {
         case let .table(table):
             // 배치가 거부한 셀(선언 격자 밖·occupancy 충돌)은 그려지지 않는다.
-            tableLayout.renderedCells(of: table)
-                .flatMap(\.paragraphArray)
-                .map { ($0, HwpBlockKind.table) }
+            // 세그먼트 상한에 걸려 방출되지 않은 행도 같다 — 배치는 받아들였지만
+            // 페이지에 그려진 적이 없다.
+            tableLayout.renderedCells(
+                of: table,
+                rowLimit: truncatedTableRowCounts[table.commonCtrlProperty.instanceId]
+            )
+            .flatMap(\.paragraphArray)
+            .map { ($0, HwpBlockKind.table) }
         case let .shape(shape),
              let .line(shape),
              let .rectangle(shape),
@@ -1553,7 +1569,9 @@ private extension HwpPaginator {
              let .picture(shape),
              let .ole(shape),
              let .container(shape):
-            renderedTextboxParagraphs(
+            // 수식 근사 텍스트로 그려지는 개체는 글상자 경로를 타지 않는다 —
+            // 렌더 분기(`appendControlBlocks`)와 같은 판정을 공유한다.
+            equationAttributedString(shape) != nil ? [] : renderedTextboxParagraphs(
                 of: shape.shapeComponentArray,
                 allComponents: rendersEveryComponent(ctrl, inContainer: containerRendered)
             )
@@ -1904,10 +1922,13 @@ private extension HwpPaginator {
         // 이미 셀 각주를 수집한 최상위 행 — 분할된 행이 다음 세그먼트에서
         // 다시 수집돼 각주가 중복되는 것을 막는다.
         var highestCollectedRow = Int.min
+        // 실제로 방출된 최대 행 — 세그먼트가 행을 **슬라이스**하면 `cursor`는
+        // 그 행을 넘지 않으므로 커서만으로는 "그려진 행"을 셀 수 없다.
+        var highestEmittedRow = -1
 
         // 취소된 로드가 병적 표를 분할 중이면 최대 4,096 세그먼트를 만들기 전에
         // 빠져 옛·새 로드가 동시에 CPU/메모리를 소비하지 않게 조기 탈출한다 (#6).
-        while cursor < rows.count, segmentCount < HwpTableLayout.maximumTableSegments,
+        while cursor < rows.count, segmentCount < maximumTableSegments,
               !Task.isCancelled
         {
             // 이어지는 세그먼트는 제목 행 반복 높이를 미리 차감한다.
@@ -1964,8 +1985,11 @@ private extension HwpPaginator {
             // 셀 각주는 행이 실리는 페이지 귀속 (한글 실측 — 헌법주석 p485).
             // 분할된 행은 조각이 같은 rowAddress를 유지하므로, 이미 수집한 행보다
             // 큰 행만 수집해 조각 간 중복 각주를 막는다.
+            let rowIndexes = segmentRows.flatMap(\.cells).map(\.row)
+            if let maxRow = rowIndexes.max() {
+                highestEmittedRow = max(highestEmittedRow, maxRow)
+            }
             if table != nil {
-                let rowIndexes = segmentRows.flatMap(\.cells).map(\.row)
                 if let maxRow = rowIndexes.max() {
                     let startRow = max(rowIndexes.min() ?? maxRow, highestCollectedRow + 1)
                     if startRow <= maxRow {
@@ -1982,6 +2006,13 @@ private extension HwpPaginator {
             )
             isFirstSegment = false
             segmentCount += 1
+        }
+        // 세그먼트 상한(또는 취소)에 걸려 **방출되지 않은 행**이 남았다면 기록해
+        // 둔다 — 탐색 목록이 그 행의 앵커를 내면 그려진 적 없는 자리를 가리킨다.
+        // 잘린 표만 담으므로 항목은 사실상 없고(정상 문서는 0개), 인스턴스 id가
+        // 겹칠 수 있는 것은 그때도 잘린 표끼리뿐이다.
+        if cursor < rows.count {
+            truncatedTableRowCounts[instanceId] = highestEmittedRow + 1
         }
     }
 
@@ -2089,23 +2120,39 @@ private extension HwpPaginator {
         return HwpChartParser.parse(xml: xml)
     }
 
+    /// 수식 근사 텍스트 — nil이면 개체(글상자·도형) 경로로 폴백한다.
+    ///
+    /// 렌더 분기와 **탐색 목록 순회가 같은 판정을 공유**하도록 이 함수 하나가
+    /// 소유한다: 수식으로 그려지는 개체는 `appendShapeObjectBlocks`를 건너뛰므로
+    /// 그 글상자 텍스트가 렌더되지 않고, 따라서 그 안 앵커도 목록에 없어야 한다.
+    func equationAttributedString(
+        _ shape: CoreHwp.HwpShapeControl
+    ) -> NSAttributedString? {
+        guard let edit = shape.eqEditArray.first else { return nil }
+        let commonProperty = shape.commonCtrlProperty ?? CoreHwp.HwpCommonCtrlProperty()
+        let size = objectSize(
+            commonProperty: commonProperty,
+            components: shape.shapeComponentArray
+        )
+        return HwpEquationLayout.attributedString(
+            edit: edit,
+            fallbackSize: size.height,
+            fontResolver: fontResolver
+        )
+    }
+
     /// 수식 (eqed) 컨트롤을 EQEDIT 스크립트 근사 텍스트로 방출한다.
     /// 스크립트가 비어 있으면 false — 호출자가 개체 경로로 폴백한다.
     func appendEquationBlock(
         _ shape: CoreHwp.HwpShapeControl,
         controlIndex: Int?
     ) -> Bool {
-        guard let edit = shape.eqEditArray.first else { return false }
+        guard let attributed = equationAttributedString(shape) else { return false }
         let commonProperty = shape.commonCtrlProperty ?? CoreHwp.HwpCommonCtrlProperty()
         let size = objectSize(
             commonProperty: commonProperty,
             components: shape.shapeComponentArray
         )
-        guard let attributed = HwpEquationLayout.attributedString(
-            edit: edit,
-            fallbackSize: size.height,
-            fontResolver: fontResolver
-        ) else { return false }
         // 근사 텍스트가 저장된 개체 폭보다 길면 폭을 늘려 한 줄을 유지한다
         // (한글.app 수식은 줄바꿈 없이 한 줄 — equation 실물 캡처)
         let line = CTLineCreateWithAttributedString(attributed)

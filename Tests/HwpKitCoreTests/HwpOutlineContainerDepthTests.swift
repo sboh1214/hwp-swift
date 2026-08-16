@@ -170,6 +170,76 @@ import XCTest
             expect(outline.map(\.title)) == ["첫 컴포넌트 앵커"]
         }
 
+        /// 수식으로 그려지는 개체의 글상자 앵커는 내지 않는다 — EQEDIT 스크립트가
+        /// 있으면 `appendEquationBlock`이 성공해 `appendShapeObjectBlocks`(글상자
+        /// 렌더)를 **건너뛰기** 때문이다. 렌더 분기와 순회가 같은 판정
+        /// (`equationAttributedString`)을 공유해야 어긋나지 않는다.
+        func testBookmarksInEquationTextboxAreNotCollected() async throws {
+            var textboxParagraph = try HwpSynthetic.styledParagraph("수식 글상자")
+            textboxParagraph.ctrlHeaderArray = [HwpSynthetic.bookmarkControl("수식 글상자 앵커")]
+            let component = try textbox(containing: textboxParagraph).shapeComponentArray[0]
+            // EQEDIT 레코드는 합성 생성자가 없어 실제 픽스처에서 가져온다 —
+            // 스크립트가 실물이라 `HwpEquationLayout`이 근사 텍스트를 실제로 만든다.
+            let edit = try XCTUnwrap(equationEditFromFixture())
+            let equation = CoreHwp.HwpShapeControl(
+                ctrlId: .equation,
+                commonCtrlProperty: CoreHwp.HwpCommonCtrlProperty(),
+                rawPayload: Data(),
+                rawTrailing: Data(),
+                shapeComponentArray: [component],
+                eqEditArray: [edit],
+                eqEditRecords: [],
+                ctrlDataRecords: [],
+                unknownChildren: []
+            )
+            var host = try HwpSynthetic.styledParagraph("본문")
+            host.ctrlHeaderArray = [.equation(equation)]
+
+            let paginator = HwpSynthetic.outlinePaginator(
+                bodyParagraphs: [host], index: HwpSynthetic.outlineIndex()
+            )
+
+            _ = await paginator.totalPages()
+            let outline = await paginator.outline()
+            expect(outline).to(beEmpty())
+        }
+
+        /// 세그먼트 상한에 걸려 **방출되지 않은 행**의 앵커도 내지 않는다.
+        /// 배치(occupancy)는 그 셀을 받아들였지만 페이지에 그려진 적이 없다 —
+        /// 두 한도가 서로 다른 지점이라 `renderedCells`만으로는 걸러지지 않는다.
+        /// 상한을 1로 낮춰 작은 표로 그 경로를 탄다 (실문서 상한은 4,096).
+        func testBookmarksInRowsBeyondTheSegmentCapAreNotCollected() async throws {
+            func row(_ text: String, _ anchor: String) throws -> [CoreHwp.HwpParagraph] {
+                var paragraph = try HwpSynthetic.styledParagraph(text)
+                paragraph.ctrlHeaderArray = [HwpSynthetic.bookmarkControl(anchor)]
+                return [paragraph]
+            }
+            // 한 쪽에 한 행씩만 들어가게 행을 크게 잡아 세그먼트를 강제로 나눈다.
+            var host = try HwpSynthetic.styledParagraph("본문")
+            host.ctrlHeaderArray = [.table(HwpSynthetic.table(
+                cellWidth: 30000,
+                rowHeights: [16000, 16000, 16000],
+                cellParagraphs: [
+                    try [row("1행", "1행 앵커")],
+                    try [row("2행", "2행 앵커")],
+                    try [row("3행", "3행 앵커")],
+                ]
+            ))]
+
+            let paginator = HwpSynthetic.outlinePaginator(
+                bodyParagraphs: [host],
+                index: HwpSynthetic.outlineIndex(),
+                pageHeight: 20000
+            )
+            await paginator.overrideMaximumTableSegments(1)
+
+            _ = await paginator.totalPages()
+            let outline = await paginator.outline()
+
+            // 첫 세그먼트에 실린 행만 남는다 — 뒤 행은 그려지지 않았다.
+            expect(outline.map(\.title)) == ["1행 앵커"]
+        }
+
         /// 배치가 **거부한 셀**의 앵커는 내지 않는다 — 선언 격자(1×1) 밖 주소의
         /// 셀은 `HwpTableLayout.placement`가 nil을 돌려줘 그려지지 않는다
         /// (실측: 렌더 텍스트에 "여분 셀"이 없는데 목록엔 그 앵커가 있었다).
@@ -202,6 +272,25 @@ import XCTest
             var paragraph = try HwpSynthetic.styledParagraph(text)
             paragraph.ctrlHeaderArray = ctrls
             return paragraph
+        }
+
+        /// `equation` 픽스처의 첫 EQEDIT 레코드 — 합성 생성자가 없어 실물을 쓴다.
+        func equationEditFromFixture() throws -> CoreHwp.HwpEquationEdit? {
+            let url = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("CoreHwpTests/Fixtures/equation/document.hwp")
+            let file = try CoreHwp.HwpFile(fromPath: url.path)
+            for section in file.displaySectionArray {
+                for paragraph in section.paragraph {
+                    for ctrl in paragraph.ctrlHeaderArray ?? [] {
+                        if case let .equation(shape) = ctrl, let edit = shape.eqEditArray.first {
+                            return edit
+                        }
+                    }
+                }
+            }
+            return nil
         }
 
         func wrap(_ paragraph: CoreHwp.HwpParagraph) -> CoreHwp.HwpCtrlId {

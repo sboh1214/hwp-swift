@@ -306,11 +306,21 @@ extension HwpTableLayout {
     }
 
     /// 레이아웃이 실제로 그리는 셀 (탐색 목록 순회용).
-    func renderedCells(of table: CoreHwp.HwpTable) -> [CoreHwp.HwpTableCell] {
+    ///
+    /// `rowLimit`은 세그먼트 상한(`maximumTableSegments`)에 걸려 **방출되지 않은
+    /// 행**을 잘라 내는 몫이다 — 배치가 받아들였어도 페이지에 그려지지 않은 행이
+    /// 있으면 그 셀의 앵커는 목록에 없어야 한다.
+    func renderedCells(
+        of table: CoreHwp.HwpTable,
+        rowLimit: Int? = nil
+    ) -> [CoreHwp.HwpTableCell] {
         guard let grid = Self.grid(of: table) else { return [] }
-        return acceptedCells(
-            of: table, rowCount: grid.rows, columnCount: grid.columns
-        ).map(\.cell)
+        return acceptedCells(of: table, rowCount: grid.rows, columnCount: grid.columns)
+            .filter { accepted in
+                guard let rowLimit else { return true }
+                return accepted.placement.row < rowLimit
+            }
+            .map(\.cell)
     }
 
     /// 셀 하나의 문단/중첩 표 콘텐츠를 레이아웃해 PlacedCell로 만든다.

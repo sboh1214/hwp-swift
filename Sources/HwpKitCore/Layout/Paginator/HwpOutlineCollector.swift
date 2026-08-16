@@ -208,10 +208,13 @@ private extension HwpOutlineCollector {
         let digits = normalized
             .dropFirst(prefix.count)
             .trimmingCharacters(in: .whitespaces)
-        // 자릿수가 많아 `Int`에 안 들어가면 nil이라 트랩하지 않는다.
-        guard !digits.isEmpty, digits.allSatisfy(\.isASCII), digits.allSatisfy(\.isNumber),
-              let level = Int(digits), level >= 1
+        guard !digits.isEmpty, digits.allSatisfy(\.isASCII), digits.allSatisfy(\.isNumber)
         else { return nil }
+        // `Int`를 넘는 자릿수는 **클램프**다 — nil로 두면 제목이 목록에서 조용히
+        // 사라져 "상한을 넘으면 거부가 아니라 클램프"라는 정책과 어긋난다.
+        // (앞자리 0은 `Int`가 알아서 흡수한다 — 실측: "0…01" → 1.)
+        guard let level = Int(digits) else { return HwpOutlineItem.maximumLevel }
+        guard level >= 1 else { return nil }
         return min(level, HwpOutlineItem.maximumLevel)
     }
 }
