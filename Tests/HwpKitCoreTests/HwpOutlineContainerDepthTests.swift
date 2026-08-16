@@ -221,6 +221,100 @@ import XCTest
             expect(outline.map(\.title)) == ["바깥 앵커"]
         }
 
+        /// **각주 안 표의 셀에도 흐름 폴백은 없다.** 표는 각주 안에서도 그려지므로
+        /// 셀 문맥으로 내려가지만, 수집기가 건너뛴 개체(OLE 포함)를 받아 줄 흐름이
+        /// 없다 — 문맥을 케이스로만 나열하면 이 조합(컨테이너가 그림 + 폴백 없음)이
+        /// 빠져 팬텀이 난다 (실측: 셀 글상자가 렌더에 없는데 앵커는 있었다).
+        func testBookmarksInUncollectibleObjectInsideANoteTableAreNotCollected() async throws {
+            var textboxParagraph = try HwpSynthetic.styledParagraph("셀 글상자")
+            textboxParagraph.ctrlHeaderArray = [HwpSynthetic.bookmarkControl("셀 글상자 앵커")]
+            var object = try textbox(containing: textboxParagraph)
+            var ole = object.shapeComponentArray[0]
+            ole.textBoxListArray = []
+            ole.oleArray = [CoreHwp.HwpShapeComponentOLE(
+                rawPayload: Data(), binaryDataId: 1, rawTrailing: nil, unknownChildren: []
+            )]
+            object.shapeComponentArray.append(ole)
+            var cellParagraph = try HwpSynthetic.styledParagraph("셀 본문")
+            cellParagraph.ctrlHeaderArray = [.genShapeObject(object)]
+            var noteParagraph = try HwpSynthetic.styledParagraph("각주 본문")
+            noteParagraph.ctrlHeaderArray = [.table(HwpSynthetic.table(
+                cellWidth: 20000, rowHeights: [6000], cellParagraphs: [[[cellParagraph]]]
+            ))]
+            var host = try HwpSynthetic.styledParagraph("본문")
+            host.ctrlHeaderArray = [.footnote(HwpSynthetic.listControl(
+                ctrlId: .footnote, paragraphs: [noteParagraph]
+            ))]
+
+            let paginator = HwpSynthetic.outlinePaginator(
+                bodyParagraphs: [host], index: HwpSynthetic.outlineIndex()
+            )
+
+            _ = await paginator.totalPages()
+            let outline = await paginator.outline()
+            expect(outline).to(beEmpty())
+        }
+
+        /// **각주는 어디에 있든 그려진다.** 각주 안 글상자에 또 각주가 있으면
+        /// `HwpFootnoteCoordinator`가 그것을 걷어 자기 블록으로 그리므로(실측:
+        /// 안쪽 각주 텍스트가 렌더에 있다) 앵커도 목록에 있어야 한다 — 안 그려지는
+        /// 자리라고 통째로 막으면 이 칸이 빠진다.
+        func testBookmarksInNoteNestedInsideANoteObjectAreCollected() async throws {
+            var innerNoteParagraph = try HwpSynthetic.styledParagraph("안쪽 각주")
+            innerNoteParagraph.ctrlHeaderArray = [HwpSynthetic.bookmarkControl("안쪽 각주 앵커")]
+            var textboxParagraph = try HwpSynthetic.styledParagraph("각주 글상자")
+            textboxParagraph.ctrlHeaderArray = [.footnote(HwpSynthetic.listControl(
+                ctrlId: .footnote, paragraphs: [innerNoteParagraph]
+            ))]
+            var noteParagraph = try HwpSynthetic.styledParagraph("바깥 각주")
+            noteParagraph.ctrlHeaderArray = [
+                .genShapeObject(try textbox(containing: textboxParagraph)),
+            ]
+            var host = try HwpSynthetic.styledParagraph("본문")
+            host.ctrlHeaderArray = [.footnote(HwpSynthetic.listControl(
+                ctrlId: .footnote, paragraphs: [noteParagraph]
+            ))]
+
+            let paginator = HwpSynthetic.outlinePaginator(
+                bodyParagraphs: [host], index: HwpSynthetic.outlineIndex()
+            )
+
+            _ = await paginator.totalPages()
+            let outline = await paginator.outline()
+            expect(outline.map(\.title)) == ["안쪽 각주 앵커"]
+        }
+
+        /// **그림이 글상자보다 앞선다.** `collect(component:)`는 그림이 있으면 그림만
+        /// 그리고 반환하므로, 그림과 글상자를 함께 가진 컴포넌트의 글상자 텍스트는
+        /// 컨테이너에서 렌더되지 않는다 — 순회가 같은 우선순위를 써야 한다.
+        func testBookmarksInPictureBearingComponentTextboxAreNotCollected() async throws {
+            var textboxParagraph = try HwpSynthetic.styledParagraph("그림 글상자")
+            textboxParagraph.ctrlHeaderArray = [HwpSynthetic.bookmarkControl("그림 글상자 앵커")]
+            var object = HwpSynthetic.inlinePictureObject(width: 6000, height: 4000, binItemId: 1)
+            var component = object.shapeComponentArray[0]
+            component.textBoxListArray = [CoreHwp.HwpListControlList(
+                header: CoreHwp.HwpListHeader(),
+                headerRawPayload: Data(),
+                headerUnknownChildren: [],
+                paragraphArray: [textboxParagraph]
+            )]
+            object.shapeComponentArray[0] = component
+            var cellParagraph = try HwpSynthetic.styledParagraph("셀 본문")
+            cellParagraph.ctrlHeaderArray = [.genShapeObject(object)]
+            var host = try HwpSynthetic.styledParagraph("본문")
+            host.ctrlHeaderArray = [.table(HwpSynthetic.table(
+                cellWidth: 20000, rowHeights: [6000], cellParagraphs: [[[cellParagraph]]]
+            ))]
+
+            let paginator = HwpSynthetic.outlinePaginator(
+                bodyParagraphs: [host], index: HwpSynthetic.outlineIndex()
+            )
+
+            _ = await paginator.totalPages()
+            let outline = await paginator.outline()
+            expect(outline).to(beEmpty())
+        }
+
         /// 대조군 — **같은 중첩을 표 셀에 두면** 흐름이 안쪽 글상자까지 그리므로
         /// 그 앵커는 수집이 옳다 (실측: 안쪽 텍스트가 렌더에 있다). 이 짝이 없으면
         /// 위 테스트는 "중첩을 통째로 막는다"로도 통과해 계약이 흐려진다.

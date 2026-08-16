@@ -25,24 +25,31 @@ struct HwpOutlineCollector {
     /// paragraph-bearing 컨테이너의 단일 traversal 지점 주입
     /// (`HwpPaginator.childParagraphs(of:)` — unsupported walk/렌더 경로와 공유).
     /// 자식 문단이 **어떻게 그려지는가**의 문맥. 개체의 렌더 범위가 여기 달렸다.
-    enum RenderContext {
-        /// 흐름 경로가 그린다 — 개체는 **첫** 글상자 컴포넌트의 텍스트만 그려지지만
-        /// 중첩 컨트롤은 `appendNestedControlBlocks`가 **전 컴포넌트**에서 방출한다.
-        case flow
-        /// 표 셀 — `HwpParagraphObjectCollector`가 전 컴포넌트를 그리고, 수집
-        /// 대상이 아닌 컨트롤은 흐름 경로가 받는다.
-        case tableCell
-        /// 각주·미주 — 수집기가 전 컴포넌트를 그리지만 **흐름 폴백이 없다**
-        /// (`.footnote` 케이스는 `appendNestedControlBlocks`를 부르지 않는다).
-        /// 그래서 수집기가 건너뛴 개체는 **아무도 그리지 않는다**.
-        case note
-        /// 각주 안에서 **컨테이너 수집기의 직접 사정권을 벗어난** 자리 — 각주 안
-        /// 글상자의 문단이 그렇다. `HwpTextboxLayout`은 안쪽 컨테이너를 수집하지
-        /// 않고(`collectsTextboxes: false`) 각주엔 흐름 폴백도 없어 **이 아래로는
-        /// 아무것도 그려지지 않는다** (실측: 각주 안 글상자 속 글상자 텍스트가
-        /// 렌더에 없는데 앵커는 목록에 있었다). 표 셀에서는 흐름이 그 안쪽까지
-        /// 그리므로 이 상태가 아니다.
-        case noteDescendant
+    /// 축이 **둘**이다 — 케이스로 나열하면 조합이 빠진다 (각주 안 표 셀이 그
+    /// 예다: 컨테이너가 그리지만 폴백은 없다).
+    struct RenderContext {
+        /// `HwpParagraphObjectCollector`가 이 자리의 개체를 콘텐츠로 그리는가.
+        let containerDraws: Bool
+        /// 그 수집기가 건너뛴 것을 **흐름 경로가 받는가**. 각주는 아니다 —
+        /// `.footnote` 케이스가 `appendNestedControlBlocks`를 부르지 않는다.
+        let hasFlowFallback: Bool
+
+        /// 둘 다 아니면 이 아래로는 아무것도 그려지지 않는다.
+        var drawsAnything: Bool {
+            containerDraws || hasFlowFallback
+        }
+
+        /// 본문 흐름 — 개체는 첫 글상자 컴포넌트의 텍스트만 그려지고, 중첩
+        /// 컨트롤은 `appendNestedControlBlocks`가 전 컴포넌트에서 방출한다.
+        static let flow = RenderContext(containerDraws: false, hasFlowFallback: true)
+        /// 표 셀 — 수집기가 그리고, 건너뛴 것은 흐름이 받는다.
+        static let tableCell = RenderContext(containerDraws: true, hasFlowFallback: true)
+        /// 각주·미주 — 수집기가 그리지만 건너뛴 것은 아무도 안 그린다.
+        static let note = RenderContext(containerDraws: true, hasFlowFallback: false)
+        /// 각주 안에서 컨테이너 수집기의 사정권을 벗어난 자리 (각주 안 글상자의
+        /// 문단) — `HwpTextboxLayout`이 안쪽 컨테이너를 수집하지 않아 아무것도
+        /// 그려지지 않는다.
+        static let undrawn = RenderContext(containerDraws: false, hasFlowFallback: false)
     }
 
     /// 자식 문단 하나.
@@ -330,23 +337,23 @@ private extension HwpOutlineCollector {
         of ctrl: CoreHwp.HwpCtrlId,
         in current: RenderContext
     ) -> RenderContext {
-        switch ctrl {
-        case .footnote, .endnote:
+        // 각주는 **어디에 있든** `HwpFootnoteCoordinator`가 따로 걷어 그린다 —
+        // 안 그려지는 자리 안에 있어도 그 각주 자체는 렌더된다 (실측: 각주 안
+        // 글상자 속 각주 텍스트가 렌더에 있다).
+        if case .footnote = ctrl {
             return .note
-        case .table:
-            // 각주 안 표는 실제로 그려진다 (`collectsTables: true`, #94) —
-            // 셀 안쪽은 표 레이아웃이 자기 수집기로 그리므로 셀 문맥이다.
-            return .tableCell
-        default:
-            break
         }
-        // 각주 안에서 개체를 한 겹 지나면 그 아래는 아무도 그리지 않는다.
-        switch current {
-        case .note, .noteDescendant:
-            return .noteDescendant
-        case .flow, .tableCell:
-            return .flow
+        if case .endnote = ctrl {
+            return .note
         }
+        // 아무것도 안 그려지는 자리의 자손은 계속 안 그려진다.
+        guard current.drawsAnything else { return .undrawn }
+        // 각주 안 표는 실제로 그려지지만(`collectsTables: true`, #94) 그 셀에도
+        // **흐름 폴백은 없다** — 폴백 축을 그대로 물려준다.
+        if case .table = ctrl {
+            return RenderContext(containerDraws: true, hasFlowFallback: current.hasFlowFallback)
+        }
+        return RenderContext(containerDraws: false, hasFlowFallback: current.hasFlowFallback)
     }
 
     static func isTable(_ ctrl: CoreHwp.HwpCtrlId) -> Bool {

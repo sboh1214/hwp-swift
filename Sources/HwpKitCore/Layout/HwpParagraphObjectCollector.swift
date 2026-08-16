@@ -56,6 +56,19 @@ struct HwpParagraphObjectCollector {
     /// (rendersInsideContainer)와 반드시 일치해야 한다 (불일치 = 소실 또는
     /// 이중 렌더). ole (내장 차트) 또는 미수집 글상자를 품은 컨트롤은
     /// 통째로 흐름 경로에 남긴다.
+    /// 이 컴포넌트의 **글상자가 그려지는가**. `collect(component:)`는 그림이 있으면
+    /// 그림만 그리고 반환하므로, 그림과 글상자를 함께 가진 컴포넌트의 글상자
+    /// 텍스트는 렌더되지 않는다 — 탐색 목록 순회가 같은 우선순위를 써야 없는
+    /// 자리를 가리키지 않는다.
+    static func drawsTextbox(
+        _ component: CoreHwp.HwpShapeComponent,
+        collectsTextboxes: Bool
+    ) -> Bool {
+        component.pictureArray.isEmpty
+            && collectsTextboxes
+            && !component.textBoxListArray.isEmpty
+    }
+
     static func collectible(
         _ components: [CoreHwp.HwpShapeComponent],
         collectsTextboxes: Bool

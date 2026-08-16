@@ -1546,11 +1546,19 @@ private extension HwpPaginator {
         of ctrl: CoreHwp.HwpCtrlId,
         context: HwpOutlineCollector.RenderContext
     ) -> [HwpOutlineCollector.ChildParagraph] {
-        // 각주 안에서 개체를 한 겹 지난 자리 — 그 아래는 컨테이너 수집기도 흐름도
-        // 그리지 않으므로 더 내려가지 않는다.
-        if case .noteDescendant = context {
-            return []
+        // 각주는 **어디에 있든** `HwpFootnoteCoordinator`가 걷어 그리므로, 안
+        // 그려지는 자리 안이라도 그 각주는 순회한다 (실측: 각주 안 글상자 속
+        // 각주 텍스트가 렌더에 있는데 목록은 비어 있었다).
+        switch ctrl {
+        case .footnote, .endnote:
+            return childParagraphs(of: ctrl).map {
+                HwpOutlineCollector.ChildParagraph(paragraph: $0.0, rendersText: true)
+            }
+        default:
+            break
         }
+        // 그 밖에는 아무것도 그려지지 않는 자리에서 더 내려가지 않는다.
+        guard context.drawsAnything else { return [] }
         return switch ctrl {
         case let .table(table):
             // 배치가 거부한 셀(선언 격자 밖·occupancy 충돌)은 그려지지 않는다.
@@ -1620,22 +1628,25 @@ private extension HwpPaginator {
         components: [CoreHwp.HwpShapeComponent],
         context: HwpOutlineCollector.RenderContext
     ) -> [HwpOutlineCollector.ChildParagraph] {
-        let drawnByContainer = containerDrawsEveryComponent(ctrl)
-        switch context {
-        case .tableCell, .note:
-            if drawnByContainer {
-                return components
-                    .flatMap(\.textBoxListArray)
-                    .flatMap(\.paragraphArray)
-                    .map { HwpOutlineCollector.ChildParagraph(paragraph: $0, rendersText: true) }
+        if context.containerDraws, containerDrawsEveryComponent(ctrl) {
+            // 수집기가 그리지만 **컴포넌트마다 다르다** — 그림이 있는 컴포넌트는
+            // 그림만 그리고 반환하므로 그 글상자는 그려지지 않는다
+            // (`HwpParagraphObjectCollector.collect(component:)`).
+            return components.flatMap { component in
+                let draws = HwpParagraphObjectCollector.drawsTextbox(
+                    component, collectsTextboxes: true
+                )
+                // 안 그려지는 글상자도 흐름 폴백이 있으면 **자식만** 따라간다.
+                guard draws || context.hasFlowFallback else {
+                    return [HwpOutlineCollector.ChildParagraph]()
+                }
+                return component.textBoxListArray.flatMap(\.paragraphArray).map {
+                    HwpOutlineCollector.ChildParagraph(paragraph: $0, rendersText: draws)
+                }
             }
-            // 각주엔 흐름 폴백이 없다 — 아래 흐름 범위로 내려가면 안 된다.
-            if case .note = context {
-                return []
-            }
-        case .flow, .noteDescendant:
-            break
         }
+        // 수집기가 안 그리는 컨트롤은 흐름이 받는다 — 각주엔 그 폴백이 없다.
+        guard context.hasFlowFallback else { return [] }
         let renderedIndex = HwpTextboxLayout.renderedTextboxComponentIndex(of: components)
         return components.enumerated().flatMap { index, component in
             component.textBoxListArray.flatMap(\.paragraphArray).map {
