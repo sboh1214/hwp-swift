@@ -170,6 +170,73 @@ import XCTest
             expect(outline.map(\.title)) == ["첫 컴포넌트 앵커"]
         }
 
+        /// **각주에는 흐름 폴백이 없다.** 표 셀은 수집기가 건너뛴 개체를 흐름
+        /// 경로가 받아 첫 컴포넌트라도 그리지만, 각주는 `appendNestedControlBlocks`를
+        /// 부르지 않아 **아무도 그리지 않는다** (실측: 각주 안 OLE 포함 개체의
+        /// 글상자 텍스트가 렌더에 없는데 목록엔 앵커가 있었다). 표 셀과 각주를
+        /// 한 문맥으로 묶으면 이 칸이 틀린다.
+        func testBookmarksInUncollectibleFootnoteObjectAreNotCollected() async throws {
+            var textboxParagraph = try HwpSynthetic.styledParagraph("각주 글상자")
+            textboxParagraph.ctrlHeaderArray = [HwpSynthetic.bookmarkControl("각주 글상자 앵커")]
+            var object = try textbox(containing: textboxParagraph)
+            var ole = object.shapeComponentArray[0]
+            ole.textBoxListArray = []
+            ole.oleArray = [CoreHwp.HwpShapeComponentOLE(
+                rawPayload: Data(), binaryDataId: 1, rawTrailing: nil, unknownChildren: []
+            )]
+            object.shapeComponentArray.append(ole)
+            var noteParagraph = try HwpSynthetic.styledParagraph("각주 본문")
+            noteParagraph.ctrlHeaderArray = [.genShapeObject(object)]
+            var host = try HwpSynthetic.styledParagraph("본문")
+            host.ctrlHeaderArray = [.footnote(HwpSynthetic.listControl(
+                ctrlId: .footnote, paragraphs: [noteParagraph]
+            ))]
+
+            let paginator = HwpSynthetic.outlinePaginator(
+                bodyParagraphs: [host], index: HwpSynthetic.outlineIndex()
+            )
+
+            _ = await paginator.totalPages()
+            let outline = await paginator.outline()
+            expect(outline).to(beEmpty())
+        }
+
+        /// 흐름 개체의 **둘째 이후 컴포넌트**는 텍스트가 안 그려지지만 그 안
+        /// 중첩 컨트롤은 `appendNestedControlBlocks`가 방출해 **그려진다**
+        /// (실측: 둘째 컴포넌트 안 표의 셀 텍스트가 렌더에 있다). 그래서 직접
+        /// 앵커만 빼고 자식 순회는 이어 가야 한다 — 서브트리를 통째로 자르면
+        /// 그려진 셀의 앵커가 빠지고, 통째로 두면 안 그려진 텍스트의 앵커가 샌다.
+        func testNestedControlsInLaterComponentsAreStillTraversed() async throws {
+            var cellParagraph = try HwpSynthetic.styledParagraph("중첩 셀")
+            cellParagraph.ctrlHeaderArray = [HwpSynthetic.bookmarkControl("중첩 셀 앵커")]
+            var secondParagraph = try HwpSynthetic.styledParagraph("둘째 컴포넌트")
+            secondParagraph.ctrlHeaderArray = [
+                HwpSynthetic.bookmarkControl("둘째 컴포넌트 앵커"),
+                .table(HwpSynthetic.table(
+                    cellWidth: 20000, rowHeights: [4000], cellParagraphs: [[[cellParagraph]]]
+                )),
+            ]
+            var firstParagraph = try HwpSynthetic.styledParagraph("첫 컴포넌트")
+            firstParagraph.ctrlHeaderArray = [HwpSynthetic.bookmarkControl("첫 컴포넌트 앵커")]
+            var object = try textbox(containing: firstParagraph)
+            object.shapeComponentArray.append(
+                try textbox(containing: secondParagraph).shapeComponentArray[0]
+            )
+            var host = try HwpSynthetic.styledParagraph("본문")
+            host.ctrlHeaderArray = [.genShapeObject(object)]
+
+            let paginator = HwpSynthetic.outlinePaginator(
+                bodyParagraphs: [host], index: HwpSynthetic.outlineIndex()
+            )
+
+            _ = await paginator.totalPages()
+            let outline = await paginator.outline()
+
+            // 첫 컴포넌트 텍스트의 앵커와 **그려진 중첩 셀**의 앵커만 남는다 —
+            // 둘째 컴포넌트 텍스트의 직접 앵커는 그려지지 않으므로 빠진다.
+            expect(outline.map(\.title)) == ["첫 컴포넌트 앵커", "중첩 셀 앵커"]
+        }
+
         /// 수식으로 그려지는 개체의 글상자 앵커는 내지 않는다 — EQEDIT 스크립트가
         /// 있으면 `appendEquationBlock`이 성공해 `appendShapeObjectBlocks`(글상자
         /// 렌더)를 **건너뛰기** 때문이다. 렌더 분기와 순회가 같은 판정

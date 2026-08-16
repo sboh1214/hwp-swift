@@ -24,11 +24,30 @@ import Foundation
 struct HwpOutlineCollector {
     /// paragraph-bearing 컨테이너의 단일 traversal 지점 주입
     /// (`HwpPaginator.childParagraphs(of:)` — unsupported walk/렌더 경로와 공유).
-    /// `(컨트롤, 이 컨트롤이 컨테이너 콘텐츠로 그려지는가) -> 자식 문단`.
-    /// 둘째 인자가 필요한 이유는 `HwpPaginator.outlineChildParagraphs` doc 참조 —
-    /// 개체의 렌더 범위가 흐름/컨테이너 문맥에 따라 다르다.
-    typealias ChildParagraphs = (CoreHwp.HwpCtrlId, Bool)
-        -> [(CoreHwp.HwpParagraph, HwpBlockKind)]
+    /// 자식 문단이 **어떻게 그려지는가**의 문맥. 개체의 렌더 범위가 여기 달렸다.
+    enum RenderContext {
+        /// 흐름 경로가 그린다 — 개체는 **첫** 글상자 컴포넌트의 텍스트만 그려지지만
+        /// 중첩 컨트롤은 `appendNestedControlBlocks`가 **전 컴포넌트**에서 방출한다.
+        case flow
+        /// 표 셀 — `HwpParagraphObjectCollector`가 전 컴포넌트를 그리고, 수집
+        /// 대상이 아닌 컨트롤은 흐름 경로가 받는다.
+        case tableCell
+        /// 각주·미주 — 수집기가 전 컴포넌트를 그리지만 **흐름 폴백이 없다**
+        /// (`.footnote` 케이스는 `appendNestedControlBlocks`를 부르지 않는다).
+        /// 그래서 수집기가 건너뛴 개체는 **아무도 그리지 않는다**.
+        case note
+    }
+
+    /// 자식 문단 하나.
+    struct ChildParagraph {
+        let paragraph: CoreHwp.HwpParagraph
+        /// 이 문단의 **텍스트가 그려지는가**. false면 직접 앵커는 내지 않고
+        /// 자식 컨트롤만 따라 내려간다 — 흐름 개체의 둘째 이후 컴포넌트가 그렇다
+        /// (텍스트는 안 그려지는데 그 안 중첩 표·글상자는 방출된다).
+        let rendersText: Bool
+    }
+
+    typealias ChildParagraphs = (CoreHwp.HwpCtrlId, RenderContext) -> [ChildParagraph]
 
     /// 컨테이너 안 컨테이너 재귀 상한 — 렌더·진단 walk와 같은 값을 쓴다.
     /// **표는 이 한도를 타지 않는다** — `HwpTableLayout.maximumNestingDepth`가
@@ -121,7 +140,8 @@ struct HwpOutlineCollector {
             page: bookmarkPage,
             depth: 0,
             tableDepth: 0,
-            containerRendered: false,
+            context: .flow,
+            rendersText: true,
             childParagraphs: childParagraphs
         )
     }
@@ -234,11 +254,14 @@ private extension HwpOutlineCollector {
         page: Int,
         depth: Int,
         tableDepth: Int,
-        containerRendered: Bool,
+        context: RenderContext,
+        rendersText: Bool,
         childParagraphs: ChildParagraphs
     ) {
         for ctrl in ctrls {
-            if case let .bookmark(control) = ctrl {
+            // 텍스트가 안 그려지는 문단의 앵커는 누를 자리가 없다 — 그래도 자식
+            // 컨트롤 순회는 이어 간다 (그쪽은 따로 방출될 수 있다).
+            if rendersText, case let .bookmark(control) = ctrl {
                 appendBookmark(control, page: page)
             }
             guard !Self.isPageChrome(ctrl) else { continue }
@@ -261,9 +284,9 @@ private extension HwpOutlineCollector {
             }
             // 표 셀·각주 안 개체는 `HwpParagraphObjectCollector`가 전 컴포넌트를
             // 그린다 — 그 문맥을 자식에게 알려야 순회 범위가 렌더와 같아진다.
-            let nestedContainerRendered = Self.rendersContainedObjects(ctrl)
-            for (nested, _) in childParagraphs(ctrl, containerRendered) {
-                guard let nestedCtrls = nested.ctrlHeaderArray else { continue }
+            let nestedContext = Self.childContext(of: ctrl)
+            for child in childParagraphs(ctrl, context) {
+                guard let nestedCtrls = child.paragraph.ctrlHeaderArray else { continue }
                 // 표는 **컨테이너 카운터를 올리지 않는다**. 셀 안 개체는 흐름
                 // 방출(`appendNestedControlBlocks`)이 아니라 `HwpTableLayout`이
                 // 셀 콘텐츠로 그리므로 그 한도의 적용 대상이 아니다 — 함께
@@ -275,7 +298,8 @@ private extension HwpOutlineCollector {
                     page: page,
                     depth: isTable ? depth : depth + 1,
                     tableDepth: isTable ? tableDepth + 1 : tableDepth,
-                    containerRendered: nestedContainerRendered,
+                    context: nestedContext,
+                    rendersText: child.rendersText,
                     childParagraphs: childParagraphs
                 )
             }
@@ -291,16 +315,18 @@ private extension HwpOutlineCollector {
         }
     }
 
-    /// 이 컨테이너가 자기 안 개체를 **콘텐츠로 직접 그리는가**
-    /// (`HwpParagraphObjectCollector` 경로). 표 셀·각주가 그렇고, 그 안 개체는
-    /// 전 컴포넌트가 렌더된다. 글상자는 아니다 — 안쪽 개체는 흐름 경로가 그리고
-    /// `HwpTextboxLayout`은 첫 컴포넌트만 본다.
-    static func rendersContainedObjects(_ ctrl: CoreHwp.HwpCtrlId) -> Bool {
+    /// 이 컨트롤의 **자식 문단이 놓이는 문맥**. 표 셀과 각주는 둘 다 수집기가
+    /// 콘텐츠를 그리지만 **흐름 폴백 유무가 다르다** — 각주는
+    /// `appendNestedControlBlocks`를 부르지 않아 수집기가 건너뛴 개체를 아무도
+    /// 그리지 않는다. 글상자·도형은 흐름이다.
+    static func childContext(of ctrl: CoreHwp.HwpCtrlId) -> RenderContext {
         switch ctrl {
-        case .table, .footnote, .endnote:
-            true
+        case .table:
+            .tableCell
+        case .footnote, .endnote:
+            .note
         default:
-            false
+            .flow
         }
     }
 

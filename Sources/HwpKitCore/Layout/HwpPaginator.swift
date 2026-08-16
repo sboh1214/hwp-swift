@@ -1441,7 +1441,7 @@ private extension HwpPaginator {
             headingPage: currentParagraphFirstPlacedPage ?? firstPage,
             bookmarkPage: cachedPages.count + 1,
             maximumPage: maximumPages,
-            childParagraphs: outlineChildParagraphs(of:containerRendered:)
+            childParagraphs: outlineChildParagraphs(of:context:)
         )
     }
 
@@ -1544,8 +1544,8 @@ private extension HwpPaginator {
     /// 쓴다 — 그쪽은 "그려지지 않는 것"을 보고하는 것이 일이다.
     func outlineChildParagraphs(
         of ctrl: CoreHwp.HwpCtrlId,
-        containerRendered: Bool
-    ) -> [(CoreHwp.HwpParagraph, HwpBlockKind)] {
+        context: HwpOutlineCollector.RenderContext
+    ) -> [HwpOutlineCollector.ChildParagraph] {
         switch ctrl {
         case let .table(table):
             // 배치가 거부한 셀(선언 격자 밖·occupancy 충돌)은 그려지지 않는다.
@@ -1556,7 +1556,7 @@ private extension HwpPaginator {
                 rowLimit: truncatedTableRowCounts[table.commonCtrlProperty.instanceId]
             )
             .flatMap(\.paragraphArray)
-            .map { ($0, HwpBlockKind.table) }
+            .map { HwpOutlineCollector.ChildParagraph(paragraph: $0, rendersText: true) }
         case let .shape(shape),
              let .line(shape),
              let .rectangle(shape),
@@ -1571,17 +1571,17 @@ private extension HwpPaginator {
              let .container(shape):
             // 수식 근사 텍스트로 그려지는 개체는 글상자 경로를 타지 않는다 —
             // 렌더 분기(`appendControlBlocks`)와 같은 판정을 공유한다.
-            equationAttributedString(shape) != nil ? [] : renderedTextboxParagraphs(
-                of: shape.shapeComponentArray,
-                allComponents: rendersEveryComponent(ctrl, inContainer: containerRendered)
+            equationAttributedString(shape) != nil ? [] : objectChildParagraphs(
+                of: ctrl, components: shape.shapeComponentArray, context: context
             )
         case let .genShapeObject(genShape):
-            renderedTextboxParagraphs(
-                of: genShape.shapeComponentArray,
-                allComponents: rendersEveryComponent(ctrl, inContainer: containerRendered)
+            objectChildParagraphs(
+                of: ctrl, components: genShape.shapeComponentArray, context: context
             )
         default:
-            childParagraphs(of: ctrl)
+            childParagraphs(of: ctrl).map {
+                HwpOutlineCollector.ChildParagraph(paragraph: $0.0, rendersText: true)
+            }
         }
     }
 
@@ -1594,14 +1594,51 @@ private extension HwpPaginator {
     /// 갈리지 않는다 (실측: OLE를 품은 개체를 셀에 넣으면 렌더는 첫 컴포넌트뿐인데
     /// 목록엔 둘 다 올랐다). 셀·각주 수집기는 `collectsTextboxes: true`로 부른다
     /// (`HwpTableLayout`·`HwpFootnoteLayout`).
-    private func rendersEveryComponent(
-        _ ctrl: CoreHwp.HwpCtrlId,
-        inContainer: Bool
-    ) -> Bool {
-        guard inContainer,
-              let (_, components) = HwpParagraphObjectCollector.handledControl(ctrl)
+    private func containerDrawsEveryComponent(_ ctrl: CoreHwp.HwpCtrlId) -> Bool {
+        guard let (_, components) = HwpParagraphObjectCollector.handledControl(ctrl)
         else { return false }
         return HwpParagraphObjectCollector.collectible(components, collectsTextboxes: true)
+    }
+
+    /// 개체의 글상자 문단 — **문맥별 렌더 범위**를 그대로 따른다.
+    ///
+    /// - 컨테이너(표 셀·각주)가 그리는 개체: 전 컴포넌트의 텍스트가 그려진다.
+    /// - **각주에서 수집기가 건너뛴 개체: 아무도 그리지 않는다** — 각주는
+    ///   `appendNestedControlBlocks`를 부르지 않아 흐름 폴백이 없다 (실측: 각주 안
+    ///   OLE 포함 개체의 글상자 텍스트가 렌더에 없는데 목록엔 앵커가 있었다).
+    /// - 그 밖(흐름·표 셀의 폴백): 첫 글상자 컴포넌트의 **텍스트만** 그려지지만
+    ///   중첩 컨트롤은 `appendNestedControlBlocks`가 전 컴포넌트에서 방출하므로,
+    ///   나머지 컴포넌트도 **자식만** 따라가도록 남긴다 (실측: 둘째 컴포넌트 안
+    ///   중첩 표는 그려지는데 그 셀 앵커가 빠졌다).
+    private func objectChildParagraphs(
+        of ctrl: CoreHwp.HwpCtrlId,
+        components: [CoreHwp.HwpShapeComponent],
+        context: HwpOutlineCollector.RenderContext
+    ) -> [HwpOutlineCollector.ChildParagraph] {
+        let drawnByContainer = containerDrawsEveryComponent(ctrl)
+        switch context {
+        case .tableCell, .note:
+            if drawnByContainer {
+                return components
+                    .flatMap(\.textBoxListArray)
+                    .flatMap(\.paragraphArray)
+                    .map { HwpOutlineCollector.ChildParagraph(paragraph: $0, rendersText: true) }
+            }
+            // 각주엔 흐름 폴백이 없다 — 아래 흐름 범위로 내려가면 안 된다.
+            if case .note = context {
+                return []
+            }
+        case .flow:
+            break
+        }
+        let renderedIndex = HwpTextboxLayout.renderedTextboxComponentIndex(of: components)
+        return components.enumerated().flatMap { index, component in
+            component.textBoxListArray.flatMap(\.paragraphArray).map {
+                HwpOutlineCollector.ChildParagraph(
+                    paragraph: $0, rendersText: index == renderedIndex
+                )
+            }
+        }
     }
 
     /// 개체의 글상자 문단 — **그려지는 컴포넌트만**.

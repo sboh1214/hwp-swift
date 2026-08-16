@@ -92,7 +92,15 @@ public struct HwpTextboxLayout {
     static func renderedTextboxComponent(
         of components: [CoreHwp.HwpShapeComponent]
     ) -> CoreHwp.HwpShapeComponent? {
-        components.first(where: { !$0.textBoxListArray.isEmpty })
+        renderedTextboxComponentIndex(of: components).map { components[$0] }
+    }
+
+    /// 위와 같은 술어의 **인덱스** 형태 — 순회가 "몇 번째가 그려지는가"를
+    /// 알아야 나머지 컴포넌트를 자식만 따라가는 대상으로 가를 수 있다.
+    static func renderedTextboxComponentIndex(
+        of components: [CoreHwp.HwpShapeComponent]
+    ) -> Int? {
+        components.firstIndex(where: { !$0.textBoxListArray.isEmpty })
     }
 
     public func layout(
