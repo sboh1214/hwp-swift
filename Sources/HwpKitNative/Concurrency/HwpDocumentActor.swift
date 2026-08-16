@@ -200,7 +200,7 @@ public actor HwpDocumentActor {
                 // 흔들리지 않기 때문이다.
                 let confirmedOutline = await paginator.outline()
                     .prefix { $0.pageNumber <= pages.count }
-                let partial = HwpDocument(
+                let partial = await HwpDocument(
                     pages: pages,
                     metadata: HwpDocumentMetadata(
                         title: nil,
@@ -208,7 +208,8 @@ public actor HwpDocumentActor {
                         previewText: preview,
                         loadToken: token,
                         isComplete: false,
-                        outline: Array(confirmedOutline)
+                        outline: Array(confirmedOutline),
+                        isOutlineTruncated: paginator.outlineIsTruncated()
                     ),
                     unsupportedElements: [],
                     imageStore: imageStore
@@ -225,12 +226,13 @@ public actor HwpDocumentActor {
         // 한쪽만 고쳐 갈리는 일이 없다.
         let finalOutline = await paginator.outline()
             .prefix { $0.pageNumber <= pages.count }
-        let metadata = HwpDocumentMetadata(
+        let metadata = await HwpDocumentMetadata(
             title: nil,
             pageCount: pages.count,
             previewText: preview,
             loadToken: token,
-            outline: Array(finalOutline)
+            outline: Array(finalOutline),
+            isOutlineTruncated: paginator.outlineIsTruncated()
         )
         let unsupported = await paginator.unsupportedElements()
         // 마지막 page(at:)·unsupportedElements() 대기 중 도착한 취소/교체는 루프

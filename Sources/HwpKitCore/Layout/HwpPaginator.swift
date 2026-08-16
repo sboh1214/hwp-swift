@@ -53,6 +53,11 @@ public actor HwpPaginator {
         maximumPages = count
     }
 
+    /// 탐색 목록 항목 상한 재정의 (테스트가 절단 경로를 작은 문서로 재현한다).
+    func overrideMaximumOutlineItems(_ count: Int) {
+        outlineCollector.maximumItems = count
+    }
+
     private var collectedUnsupported: [HwpUnsupportedElement] = []
     /// 이 문단의 **첫 조각이 실제로 놓인** 쪽 (1-기반, 문단마다 리셋).
     /// 배치 **전**에 잡은 값은 다단에서 낡는다 — `placeMultiColumnParagraph`는
@@ -301,6 +306,16 @@ public actor HwpPaginator {
     /// `unsupportedElements()`와 달리 **조판 도중에 물어도 의미가 있다** —
     /// 확정된 쪽까지의 접두를 돌려주므로 프로그레시브 로딩의 중간 스냅샷이
     /// 그대로 실어 보낸다 (`HwpDocumentMetadata.outline`).
+    /// 탐색 목록이 **항목 상한에 걸려 잘렸는가** (#77).
+    ///
+    /// 목록만으로는 완전한 것과 구별되지 않아 호스트가 온전한 탐색 수단으로
+    /// 오인한다 — 책갈피는 미지원 목록에도 뜨지 않으므로 이 신호가 유일한 흔적이다.
+    /// 확정 쪽 접두로 잘린 것(`outline()`)은 여기 해당하지 않는다: 그쪽은 조판이
+    /// 끝나면 나온다.
+    public func outlineIsTruncated() async -> Bool {
+        outlineCollector.didReachItemLimit
+    }
+
     public func outline() async -> [HwpOutlineItem] {
         // **확정된 쪽까지만** 낸다. 배치 도중 수집된 항목은 `cachedPages.count + 1`
         // 을 가리키는데 그 쪽은 아직 캐시되지 않았고, 취소되면 끝내 만들어지지
@@ -1539,15 +1554,36 @@ private extension HwpPaginator {
              let .ole(shape),
              let .container(shape):
             renderedTextboxParagraphs(
-                of: shape.shapeComponentArray, allComponents: containerRendered
+                of: shape.shapeComponentArray,
+                allComponents: rendersEveryComponent(ctrl, inContainer: containerRendered)
             )
         case let .genShapeObject(genShape):
             renderedTextboxParagraphs(
-                of: genShape.shapeComponentArray, allComponents: containerRendered
+                of: genShape.shapeComponentArray,
+                allComponents: rendersEveryComponent(ctrl, inContainer: containerRendered)
             )
         default:
             childParagraphs(of: ctrl)
         }
+    }
+
+    /// 이 컨트롤의 **전 컴포넌트가** 그려지는가.
+    ///
+    /// 부모가 표 셀·각주라는 것만으로는 모자란다 — `HwpParagraphObjectCollector`가
+    /// 건너뛰는 컨트롤(수집 대상이 아닌 종류, OLE를 품은 컴포넌트)은 컨테이너
+    /// 안에서도 **흐름 경로**가 그리고, 그쪽은 첫 컴포넌트만 본다. 판정을 그
+    /// 수집기의 술어(`handledControl`·`collectible`)에서 그대로 파생시켜야
+    /// 갈리지 않는다 (실측: OLE를 품은 개체를 셀에 넣으면 렌더는 첫 컴포넌트뿐인데
+    /// 목록엔 둘 다 올랐다). 셀·각주 수집기는 `collectsTextboxes: true`로 부른다
+    /// (`HwpTableLayout`·`HwpFootnoteLayout`).
+    private func rendersEveryComponent(
+        _ ctrl: CoreHwp.HwpCtrlId,
+        inContainer: Bool
+    ) -> Bool {
+        guard inContainer,
+              let (_, components) = HwpParagraphObjectCollector.handledControl(ctrl)
+        else { return false }
+        return HwpParagraphObjectCollector.collectible(components, collectsTextboxes: true)
     }
 
     /// 개체의 글상자 문단 — **그려지는 컴포넌트만**.

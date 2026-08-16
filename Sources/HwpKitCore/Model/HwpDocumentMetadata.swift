@@ -25,6 +25,13 @@ public struct HwpDocumentMetadata: Sendable, Hashable {
     /// (`HwpDocumentViewSupport.isProgressiveUpdate`)에 영향을 주지 않는다 —
     /// 그 판정은 `loadToken`과 페이지 수만 본다.
     public let outline: [HwpOutlineItem]
+    /// `outline`이 자원 상한에 걸려 **잘렸는가** (#77). true면 목록에 없는
+    /// 목적지가 있다 — 호스트가 완전한 탐색 수단으로 오인하지 않게 표시할 수 있다.
+    /// 책갈피는 `unsupportedElements`에도 뜨지 않으므로 이 값이 유일한 흔적이다.
+    ///
+    /// 프로그레시브 중간 스냅샷의 접두 자르기는 여기 해당하지 않는다 — 그쪽은
+    /// 조판이 끝나면 나온다.
+    public let isOutlineTruncated: Bool
 
     public init(
         title: String? = nil,
@@ -32,7 +39,8 @@ public struct HwpDocumentMetadata: Sendable, Hashable {
         previewText: String? = nil,
         loadToken: UUID? = nil,
         isComplete: Bool = true,
-        outline: [HwpOutlineItem] = []
+        outline: [HwpOutlineItem] = [],
+        isOutlineTruncated: Bool = false
     ) {
         self.title = title
         self.pageCount = pageCount
@@ -40,5 +48,6 @@ public struct HwpDocumentMetadata: Sendable, Hashable {
         self.loadToken = loadToken
         self.isComplete = isComplete
         self.outline = outline
+        self.isOutlineTruncated = isOutlineTruncated
     }
 }

@@ -26,6 +26,50 @@ import XCTest
             expect(units.count) <= HwpOutlineCollector.titleUnitCeiling + 1
         }
 
+        /// 항목 상한에 걸리면 **잘렸다고 알린다**. 목록만으로는 완전한 것과
+        /// 구별되지 않는데, 책갈피는 이제 `unsupportedElements`에도 뜨지 않아
+        /// 이 신호가 없으면 유실이 어디에도 남지 않는다.
+        func testOutlineReportsTruncationWhenTheItemCapIsReached() async throws {
+            var host = try HwpSynthetic.styledParagraph("본문")
+            host.ctrlHeaderArray = [
+                HwpSynthetic.bookmarkControl("앵커 1"),
+                HwpSynthetic.bookmarkControl("앵커 2"),
+            ]
+            let paginator = HwpSynthetic.outlinePaginator(
+                bodyParagraphs: [host], index: HwpSynthetic.outlineIndex()
+            )
+            await paginator.overrideMaximumOutlineItems(1)
+
+            _ = await paginator.totalPages()
+            let outline = await paginator.outline()
+            let truncated = await paginator.outlineIsTruncated()
+
+            expect(outline.map(\.title)) == ["앵커 1"]
+            expect(truncated) == true
+        }
+
+        /// 상한 **안**이면 서지 않는다 — 늘 true면 신호가 아니다. 담을 것이 없던
+        /// 문단(개요 아님·빈 이름)까지 절단으로 세지 않는지도 함께 본다.
+        func testOutlineIsNotTruncatedWithinTheItemCap() async throws {
+            var host = try HwpSynthetic.styledParagraph("본문")
+            host.ctrlHeaderArray = [
+                HwpSynthetic.bookmarkControl("앵커 1"),
+                HwpSynthetic.bookmarkControl(nil),
+                HwpSynthetic.bookmarkControl("앵커 2"),
+            ]
+            let paginator = HwpSynthetic.outlinePaginator(
+                bodyParagraphs: [host], index: HwpSynthetic.outlineIndex()
+            )
+            await paginator.overrideMaximumOutlineItems(2)
+
+            _ = await paginator.totalPages()
+            let outline = await paginator.outline()
+            let truncated = await paginator.outlineIsTruncated()
+
+            expect(outline.map(\.title)) == ["앵커 1", "앵커 2"]
+            expect(truncated) == false
+        }
+
         /// `outline()`은 **확정된 쪽까지만** 낸다. 배치 도중 수집된 책갈피는
         /// `cachedPages.count + 1`에 귀속되는데, 그 쪽은 아직 캐시되지 않았고
         /// 취소되면 끝내 만들어지지 않는다 — 공개 API가 없는 쪽으로 안내하면

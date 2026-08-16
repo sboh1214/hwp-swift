@@ -130,6 +130,9 @@
   라이브러리는 목록 UI를 내지 않고 `Sample`이 사이드바 배선 예를 보입니다.
   프로그레시브 로딩의 **중간 스냅샷에도** 지금까지 확정된 접두가 실립니다
   (`unsupportedElements`는 종전대로 최종 스냅샷에만 옵니다).
+  목록이 자원 상한에 걸려 잘리면 `HwpDocumentMetadata.isOutlineTruncated`가
+  `true`입니다 — 책갈피는 미지원 요소로도 보고되지 않으므로 이 값이 유실의
+  유일한 신호입니다.
 - `HwpParaShapeProperty1.headingLevelRawValue`(CoreHwp)를 추가했습니다 —
   문단 수준(표 44 bit 25-27)의 **0-기반 저장값**입니다(사람이 읽는 수준은 +1).
   계산 프로퍼티라 `Codable` 형상은 그대로입니다.

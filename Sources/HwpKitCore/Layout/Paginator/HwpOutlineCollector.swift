@@ -44,7 +44,17 @@ struct HwpOutlineCollector {
     /// 두고 자른다. 항목 하나의 상한은 `titleCharacterLimit`(200자)이 아니라
     /// `titleUnitCeiling`이다 — grapheme 하나가 임의로 길 수 있어 200자가
     /// byte 상한이 되지 못한다 (최악 20,000 × 6,400 단위).
-    static let maximumItems = 20000
+    static let maximumDocumentItems = 20000
+
+    /// 인스턴스 상한 (기본 = 전역 상한) — 테스트가 초과 경로를 작은 문서로
+    /// 재현할 수 있게 재정의를 허용한다 (`HwpPaginator.maximumPages`와 같은 관례).
+    var maximumItems = HwpOutlineCollector.maximumDocumentItems
+
+    /// 상한에 걸려 **버린 항목이 있는가**. 목록만 보면 완전한 것과 구별되지
+    /// 않으므로 공개한다 (`HwpDocumentMetadata.isOutlineTruncated`) — 검색이
+    /// `.truncated`를 내는 것과 같은 이유다. 책갈피는 이제 미지원 목록에도
+    /// 안 뜨므로 이 신호가 없으면 유실이 어디에도 안 남는다.
+    private(set) var didReachItemLimit = false
 
     /// 제목·책갈피 이름 수집의 **안전판** (UTF-16 단위). 상한
     /// (`titleCharacterLimit`)은 Character(grapheme) 단위라 UTF-16 배수로
@@ -148,7 +158,6 @@ private extension HwpOutlineCollector {
     /// 책갈피는 반대다 — 앵커라 어디에 놓이든 목적지이므로 본문 컨테이너를
     /// 재귀한다 (`collectBookmarks`).
     mutating func collectHeading(from paragraph: CoreHwp.HwpParagraph, page: Int) {
-        guard items.count < Self.maximumItems else { return }
         guard let level = headingLevel(of: paragraph) else { return }
         let title = Self.normalizedTitle(of: paragraph)
         guard !title.isEmpty else { return }
@@ -301,7 +310,6 @@ private extension HwpOutlineCollector {
     }
 
     mutating func appendBookmark(_ control: CoreHwp.HwpOtherControl, page: Int) {
-        guard items.count < Self.maximumItems else { return }
         // 책갈피 이름도 제목과 **같은 천장**을 지난다 — `collapsedWhitespace`의
         // 상한은 Character 수라, 기반 문자 하나에 결합 문자가 수만 개 붙은 이름은
         // grapheme 하나로 세어져 128KB가 통째로 metadata에 상주한다.
@@ -315,6 +323,13 @@ private extension HwpOutlineCollector {
 
 private extension HwpOutlineCollector {
     mutating func append(kind: HwpOutlineItem.Kind, title: String, level: Int?, page: Int) {
+        // 상한 검사는 **여기**여야 한다 — 항목을 실제로 담는 지점이라야 플래그가
+        // "버린 것이 있다"를 뜻한다. 앞단(개요 아님·빈 제목)에서 검사하면 담을
+        // 것이 없던 문단까지 절단으로 신고한다.
+        guard items.count < maximumItems else {
+            didReachItemLimit = true
+            return
+        }
         items.append(HwpOutlineItem(
             kind: kind,
             title: title,
