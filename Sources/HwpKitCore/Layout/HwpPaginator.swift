@@ -74,9 +74,10 @@ public actor HwpPaginator {
     private var currentParagraphFirstPlacedPage: Int?
     /// 개요·책갈피 탐색 목록 수집기 (#77) — 쪽 귀속이 조판의 함수라 여기 산다.
     private var outlineCollector: HwpOutlineCollector
-    /// 세그먼트 상한에 걸려 **일부 행만 방출된** 표: 인스턴스 id → 방출된 행 수.
+    /// 세그먼트 상한에 걸려 **일부 행만 방출된** 표: 인스턴스 id → (표, 방출 행 수).
     /// 탐색 목록이 그려지지 않은 행의 앵커를 내지 않게 하는 입력이다.
-    private var truncatedTableRowCounts: [UInt32: Int] = [:]
+    /// id로 버킷만 좁히고 표 값으로 확정하는 근거는 `truncatedRowLimit(of:)`.
+    private var truncatedTableRowLimits: [UInt32: [(table: CoreHwp.HwpTable, rowLimit: Int)]] = [:]
     /// 이 페이지에 배치할 각주 (문단 + 문서 순서 번호) — 저장은 footnoteCoordinator
     private var pendingFootnotes: [HwpFootnoteLayout.Input] {
         get { footnoteCoordinator.pendingFootnotes }
@@ -1535,6 +1536,19 @@ private extension HwpPaginator {
         }
     }
 
+    /// 이 표가 세그먼트 상한에 걸려 **일부 행만 방출**됐다면 그 행 수.
+    ///
+    /// **인스턴스 id만으로 찾으면 안 된다.** "문서 내 각 개체에 대한 고유 아이디"라는
+    /// 모델 doc과 달리 파서는 중복을 거부하지 않고 공개 기본값이 0이라, 잘린 표가
+    /// 남긴 상한이 뒤의 **온전히 렌더된** 표에 적용돼 실제로 그려진 행의 책갈피가
+    /// 조용히 사라진다 (실측: 잘린 3행 표 뒤 2행 표에서 2행 앵커가 목록에만 없다).
+    /// id는 버킷을 좁히는 데만 쓰고 표 값으로 확정한다 — 잘린 표가 없는 정상
+    /// 문서는 miss 한 번이라 깊은 비교를 하지 않는다.
+    private func truncatedRowLimit(of table: CoreHwp.HwpTable) -> Int? {
+        truncatedTableRowLimits[table.commonCtrlProperty.instanceId]?
+            .first { $0.table == table }?.rowLimit
+    }
+
     /// 탐색 목록 전용 순회 — 개체(gso 계열)는 **렌더되는 컴포넌트만** 본다.
     ///
     /// `childParagraphs`는 전 컴포넌트를 도는데 `HwpTextboxLayout`은 텍스트를 가진
@@ -1564,12 +1578,9 @@ private extension HwpPaginator {
             // 배치가 거부한 셀(선언 격자 밖·occupancy 충돌)은 그려지지 않는다.
             // 세그먼트 상한에 걸려 방출되지 않은 행도 같다 — 배치는 받아들였지만
             // 페이지에 그려진 적이 없다.
-            tableLayout.renderedCells(
-                of: table,
-                rowLimit: truncatedTableRowCounts[table.commonCtrlProperty.instanceId]
-            )
-            .flatMap(\.paragraphArray)
-            .map { HwpOutlineCollector.ChildParagraph(paragraph: $0, rendersText: true) }
+            tableLayout.renderedCells(of: table, rowLimit: truncatedRowLimit(of: table))
+                .flatMap(\.paragraphArray)
+                .map { HwpOutlineCollector.ChildParagraph(paragraph: $0, rendersText: true) }
         case let .shape(shape),
              let .line(shape),
              let .rectangle(shape),
@@ -2062,10 +2073,10 @@ private extension HwpPaginator {
         }
         // 세그먼트 상한(또는 취소)에 걸려 **방출되지 않은 행**이 남았다면 기록해
         // 둔다 — 탐색 목록이 그 행의 앵커를 내면 그려진 적 없는 자리를 가리킨다.
-        // 잘린 표만 담으므로 항목은 사실상 없고(정상 문서는 0개), 인스턴스 id가
-        // 겹칠 수 있는 것은 그때도 잘린 표끼리뿐이다.
-        if cursor < rows.count {
-            truncatedTableRowCounts[instanceId] = highestEmittedRow + 1
+        // 잘린 표만 담으므로 항목은 사실상 없고(정상 문서는 0개), 조회는
+        // `truncatedRowLimit(of:)`가 표 값으로 확정한다 (id는 유일하지 않다).
+        if cursor < rows.count, let table {
+            truncatedTableRowLimits[instanceId, default: []].append((table, highestEmittedRow + 1))
         }
     }
 
