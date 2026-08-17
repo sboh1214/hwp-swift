@@ -198,13 +198,16 @@ import XCTest
         func testTitleStripsControlMarkersAndCollapsesWhitespace() async throws {
             var heading = try HwpSynthetic.styledParagraph("", paraShapeId: 1)
             var paraText = CoreHwp.HwpParaText()
-            paraText.charArray =
-                "가".utf16.map { CoreHwp.HwpChar(type: .char, value: $0) }
-                    + [CoreHwp.HwpChar(type: .char, value: 9)] // 탭 → 공백
-                    + [CoreHwp.HwpChar(type: .extended, value: 11)] // 개체 마커 → 제거
-                    + [CoreHwp.HwpChar(type: .char, value: 32)]
-                    + "나".utf16.map { CoreHwp.HwpChar(type: .char, value: $0) }
-                    + [CoreHwp.HwpChar(type: .char, value: 13)] // 문단 끝 → 공백 → trim
+            // 한 식으로 이으면 CI 러너의 타입 체커가 시간 초과한다 (로컬은 통과).
+            var chars: [CoreHwp.HwpChar] = "가".utf16
+                .map { CoreHwp.HwpChar(type: .char, value: $0) }
+            chars.append(CoreHwp.HwpChar(type: .char, value: 9)) // 탭 → 공백
+            chars.append(CoreHwp.HwpChar(type: .extended, value: 11)) // 개체 마커 → 제거
+            chars.append(CoreHwp.HwpChar(type: .char, value: 32))
+            chars.append(contentsOf: "나".utf16
+                .map { CoreHwp.HwpChar(type: .char, value: $0) })
+            chars.append(CoreHwp.HwpChar(type: .char, value: 13)) // 문단 끝 → 공백 → trim
+            paraText.charArray = chars
             heading.paraText = paraText
             heading.paraLineSeg.paraLineSegInternalArray = []
             let paginator = HwpSynthetic.outlinePaginator(
