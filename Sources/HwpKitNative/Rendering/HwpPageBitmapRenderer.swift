@@ -197,7 +197,9 @@ public enum HwpPageBitmapRenderer {
             )
         }
         let source = sourceRect ?? CGRect(origin: .zero, size: page.size)
-        guard source.width > 0, source.height > 0 else {
+        guard let transform = SourceTransform(
+            page: page, source: source, pixelWidth: pixelWidth, pixelHeight: pixelHeight
+        ) else {
             throw HwpPageBitmapRenderError.invalidSourceRect(source)
         }
         guard let context = CGContext(
@@ -216,13 +218,7 @@ public enum HwpPageBitmapRenderer {
         // 투명(=0)으로 남아, 알파를 무시하고 읽는 소비자에게 검정이 된다.
         context.setFillColor(CGColor(gray: 1, alpha: 1))
         context.fill(CGRect(x: 0, y: 0, width: CGFloat(pixelWidth), height: CGFloat(pixelHeight)))
-        applySourceTransform(
-            to: context,
-            page: page,
-            source: source,
-            pixelWidth: pixelWidth,
-            pixelHeight: pixelHeight
-        )
+        transform.apply(to: context)
         draw(page: page, in: context, provider: provider)
         guard let image = context.makeImage() else {
             throw HwpPageBitmapRenderError.imageCreationFailed
@@ -250,7 +246,7 @@ public enum HwpPageBitmapRenderer {
         layer.draw(in: context)
     }
 
-    /// `source`(top-down 페이지 좌표)가 캔버스를 채우도록 CTM을 잡는다.
+    /// `source`(top-down 페이지 좌표)가 캔버스를 채우도록 만드는 CTM 성분.
     ///
     /// 이 변환은 `HwpPageLayer.draw`가 자기 bounds 높이로 CTM을 뒤집기 **전에**
     /// 걸리므로, 아래 이동량은 그 flip 뒤의 좌표계(y-up 페이지) 기준이다.
@@ -259,17 +255,35 @@ public enum HwpPageBitmapRenderer {
     /// 페이지 전체(`source == 페이지`)일 때 이동량이 부동소수 오차 없이 정확히
     /// (0, 0)이 된다. 장치 단위로 이동하면 `pageH × (pxH / pageH) ≠ pxH`라
     /// 1e-13pt짜리 이동이 남아 픽셀 해시 기준선이 흔들린다.
-    private static func applySourceTransform(
-        to context: CGContext,
-        page: HwpPage,
-        source: CGRect,
-        pixelWidth: Int,
-        pixelHeight: Int
-    ) {
-        context.scaleBy(
-            x: CGFloat(pixelWidth) / source.width,
-            y: CGFloat(pixelHeight) / source.height
-        )
-        context.translateBy(x: -source.minX, y: source.maxY - page.size.height)
+    private struct SourceTransform {
+        let scaleX: CGFloat
+        let scaleY: CGFloat
+        let translateX: CGFloat
+        let translateY: CGFloat
+
+        /// 성분이 하나라도 유한하지 않으면 `nil` — 호출부가 `.invalidSourceRect`로
+        /// 끝내라는 뜻이다.
+        ///
+        /// `width/height > 0` 하나로는 **모자란다**: NaN 원점은 크기를 건드리지
+        /// 않아 통과하고, 무한 크기는 스케일을 0으로, 비정규 크기는 스케일을
+        /// 무한으로 만든다. 그런 CTM에서 CG는 실패하지 않고 **아무것도 그리지 않은
+        /// 흰 비트맵을 성공으로** 돌려주므로 (실측: 세 입력 모두 `makeImage()`
+        /// 성공 + 잉크 0), 검사가 없으면 빈 그림이 `.fail` 정책 경로의 기준선에
+        /// 정답으로 굳는다.
+        init?(page: HwpPage, source: CGRect, pixelWidth: Int, pixelHeight: Int) {
+            guard source.width > 0, source.height > 0 else { return nil }
+            scaleX = CGFloat(pixelWidth) / source.width
+            scaleY = CGFloat(pixelHeight) / source.height
+            translateX = -source.minX
+            translateY = source.maxY - page.size.height
+            guard scaleX.isFinite, scaleX > 0, scaleY.isFinite, scaleY > 0,
+                  translateX.isFinite, translateY.isFinite
+            else { return nil }
+        }
+
+        func apply(to context: CGContext) {
+            context.scaleBy(x: scaleX, y: scaleY)
+            context.translateBy(x: translateX, y: translateY)
+        }
     }
 }

@@ -75,11 +75,11 @@ HwpKitNative/
 
 - **확정 계약도 한 구현이다** — `resolveImages(in:provider:policy:)`가 `retainOnlyImages` → `predecodeImageReferences` → (`.fail`이면) `unsettledImageVariants` 순서를 소유하고, PDF는 그 `.unresolvedImages`를 `pageImagesExceedMemoryBudget(pageIndex:)`로 옮겨 담는다. 예산 둘을 함께 거는 자리도 `makeProvider(for:imageByteLimit:)` 하나다 (한쪽만 낮추면 상한이 두 배가 되는 실수를 구조로 막는다)
 - **미확정 정책만 호출자마다 갈린다** (`HwpUnresolvedImagePolicy`). PDF·픽스처 하네스는 `.fail` — 산출물이 사용자 파일이거나 커밋된 기준선이라 회색 로딩 사각형이 정답으로 굳으면 안 된다. 축소판은 `.drawPlaceholder` — 보조 표시라 그림 하나 때문에 쪽 전체를 잃는 것이 더 나쁘다
-- **`sourceRect`는 캔버스를 채울 페이지 영역**(top-down 페이지 좌표)이다. 기본값(페이지 전체)일 때 CTM이 **순수 스케일**이어야 커밋된 골든·픽셀 해시가 안 흔들린다 — 그래서 이동을 스케일 **뒤에** 걸어 페이지 단위로 해석시킨다. 장치 단위로 걸면 `pageH × (pxH / pageH) ≠ pxH`라 1e-13pt 이동이 남는다. 이 인자가 있는 이유는 하나뿐이다: 일부 저장본의 PrvImage가 확대·크롭 렌더라 `FixturePreview`의 `zoom`이 그 대조에 필요하다 (zoom배 = 좌상단 1/zoom 영역을 채우기)
+- **`sourceRect`는 캔버스를 채울 페이지 영역**(top-down 페이지 좌표)이다. 기본값(페이지 전체)일 때 CTM이 **순수 스케일**이어야 커밋된 골든·픽셀 해시가 안 흔들린다 — 그래서 이동을 스케일 **뒤에** 걸어 페이지 단위로 해석시킨다. 장치 단위로 걸면 `pageH × (pxH / pageH) ≠ pxH`라 1e-13pt 이동이 남는다. 이 인자가 있는 이유는 하나뿐이다: 일부 저장본의 PrvImage가 확대·크롭 렌더라 `FixturePreview`의 `zoom`이 그 대조에 필요하다 (zoom배 = 좌상단 1/zoom 영역을 채우기). **유한성 검사는 `> 0`으로 부족하다**: NaN 원점은 크기를 건드리지 않아 통과하고, 무한 크기는 스케일을 0으로, 비정규 크기는 스케일을 무한으로 만든다. 그런 CTM에서 CG는 실패하지 않고 **아무것도 그리지 않은 흰 비트맵을 성공으로** 돌려주므로(실측: 세 입력 모두 `makeImage()` 성공 + 잉크 0), `SourceTransform`이 스케일·이동 성분까지 유한한지 본 뒤에야 그린다 — 아니면 빈 그림이 `.fail` 정책 경로의 기준선에 정답으로 굳는다
 - 캔버스 전체를 먼저 흰색으로 깐 **뒤** 종이를 다시 깐다. `sourceRect`가 종이 밖으로 나가면 그 여백이 투명(0)으로 남아, 알파를 무시하고 읽는 소비자에게 검정이 된다
 - **출력 픽셀에는 축별 상한이 있다** (`maximumPixelDimension` = 16,384, #76 리뷰) — 여기가 **픽셀 수를 문서가 정하는** 경로라서다. 근거와 층 구분(크기 헬퍼는 클램프·렌더러는 거부)은 루트 `AGENTS.md`의 "쪽 축소판". 클램프는 `Int(_:)` 변환 **전에** 한다: 그 변환이 범위 밖에서 트랩하므로 조작 문서의 종횡비와 `Int.max` 픽셀 폭이 둘 다 그리로 온다. 상한 안에서만 `pixelWidth * 4`가 안전하므로 그 가드는 `CGContext` 생성보다 **앞**이어야 한다
 - **`FixturePreview.renderImage`가 이 API에 위임한다** — 그래야 렌더 가드 4층이 테스트 전용 사본이 아니라 출하되는 코드를 검사한다. 하네스에 남는 것은 `zoom`과 `.fail` 정책 선택뿐이다
-- 가드는 `Tests/HwpKitNativeTests/HwpPageBitmapRendererTests.swift` — 골든이 **못 보는 것**만 잰다: 픽셀 크기 계약·상하 방향(잉크 비영은 반전을 통과시킨다)·`sourceRect` 기하·정책 두 갈래·**종횡비 폭주와 `Int.max` 픽셀 폭**(0.01pt 폭 페이지가 상한에서 접히고, 상한 밖 요청은 트랩이 아니라 `.invalidPixelSize`). 픽스처 렌더 회귀는 커밋된 골든이 본다
+- 가드는 둘로 갈린다. `HwpPageBitmapRendererTests`가 **렌더 계약**(픽셀 크기·상하 방향[잉크 비영은 반전을 통과시킨다]·`sourceRect` 기하·정책 두 갈래)을, `HwpPageBitmapRendererBoundsTests`가 **자원·정의역 경계**(종횡비 폭주·`Int.max` 픽셀 폭·비유한 `sourceRect`)를 본다 — 뒤엣것은 정상 경로에서 보이지 않아 골든·해시가 영영 못 잡는 축이다. 둘 다 골든이 **못 보는 것**만 재고, 픽스처 렌더 회귀는 커밋된 골든이 본다
 
 ## 쪽 축소판 (HwpPageThumbnailRenderer, #76)
 

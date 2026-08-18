@@ -33,7 +33,13 @@ struct ThumbnailSidebar: View {
                     ForEach(Array(document.pages.enumerated()), id: \.offset) { index, page in
                         ThumbnailCell(
                             pageIndex: index,
-                            pageSize: page.size,
+                            // 셀 자리는 **라이브러리의 클램프된 헬퍼**에서 파생한다.
+                            // 비율을 손으로 계산하면 렌더는 상한에서 접히는데 셀만
+                            // 그대로 남아 둘이 갈린다 — 0.01×14,400pt 페이지에서
+                            // 149,760,000pt 셀이 되어 그리드·스크롤이 무너진다.
+                            pixelHeight: HwpPageThumbnails.pixelHeight(
+                                for: page, pixelWidth: ThumbnailMetrics.pixelWidth
+                            ),
                             isCurrent: index + 1 == currentPage,
                             thumbnails: thumbnails
                         ) {
@@ -91,7 +97,9 @@ private enum ThumbnailMetrics {
 /// 슬롯(전역 3개)을 가시 페이지와 나눠 쓰는 구조라 이 취소가 중요하다.
 private struct ThumbnailCell: View {
     let pageIndex: Int
-    let pageSize: CGSize
+    /// 요청할 픽셀 높이 — 부모가 `HwpPageThumbnails.pixelHeight`로 뽑는다.
+    /// 이미 상한에서 클램프된 값이라 셀 자리도 그 비율을 그대로 따른다.
+    let pixelHeight: Int
     let isCurrent: Bool
     let thumbnails: HwpPageThumbnails
     let onSelect: () -> Void
@@ -102,9 +110,8 @@ private struct ThumbnailCell: View {
     /// 자리를 **미리** 잡는다. 비어 있는 동안 높이가 0이면 그리드가 재배치되면서
     /// 셀이 화면 안팎을 오가 요청·취소가 반복된다.
     private var cellHeight: CGFloat {
-        let width = ThumbnailMetrics.cellWidth
-        guard pageSize.width > 0, pageSize.height > 0 else { return width }
-        return (width * pageSize.height / pageSize.width).rounded()
+        let ratio = CGFloat(pixelHeight) / CGFloat(ThumbnailMetrics.pixelWidth)
+        return (ThumbnailMetrics.cellWidth * ratio).rounded()
     }
 
     var body: some View {

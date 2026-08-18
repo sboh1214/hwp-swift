@@ -713,6 +713,12 @@ API**로 승격했다 — `HwpKitNative.HwpPageBitmapRenderer`가 종이 배경�
 나간다). 같은 상한이 `pixelWidth * 4`와 `Int(CGFloat)`의 오버플로 트랩도 함께
 닫는다 — 공개 인자에 `Int.max`가 들어오는 바로 그 경로다.
 
+**호스트도 그 헬퍼에서 셀 자리를 파생시켜야 한다.** 비율을 손으로 계산하면
+렌더만 상한에서 접히고 셀은 그대로라 둘이 갈린다 — 0.01×14,400pt 페이지에서
+104pt 폭 셀이 149,760,000pt로 예약돼 그리드·스크롤이 무너진다. 클램프를
+렌더러에만 넣고 참조 배선을 그대로 두었다가 리뷰에서 잡힌 자리다
+(`Sample/HwpSwiftSample/ThumbnailSidebar.swift`).
+
 가드는 두 구멍을 메운다. (1) 커밋된 골든이 **1쪽을 한 번도 그리지 않는다**
 (`FixtureRenderGoldenTests.specs`가 2쪽 이후만 고르고, 1쪽 오라클인 fidelity는
 opt-in이다) — 축소판이 가장 먼저 그리는 쪽이 정확히 그 1쪽이라

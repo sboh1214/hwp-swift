@@ -141,7 +141,10 @@
   (승격 리팩터는 기준선 재기록 없이 통과합니다). 출력 픽셀에는 축별 상한
   (`maximumPixelDimension`)이 있습니다 — 종횡비는 문서가 정하는 값이라 병적인
   페이지 하나가 수백 GB 비트맵을 요구할 수 있어, 크기 헬퍼는 클램프하고
-  렌더러는 `.invalidPixelSize`로 거부합니다.
+  렌더러는 `.invalidPixelSize`로 거부합니다. `sourceRect`도 크기가 양수인지만이
+  아니라 **파생되는 변환이 유한한지**까지 봅니다 — NaN 원점·무한/비정규 크기에서
+  CoreGraphics는 실패하지 않고 빈 비트맵을 성공으로 돌려주므로
+  `.invalidSourceRect`로 끝냅니다.
 - 개요·책갈피 **탐색 목록**을 공개 API로 추가했습니다
   (`HwpDocumentMetadata.outline: [HwpOutlineItem]`). 조판이 확정한 쪽을 들고
   있어 사이드바·목차에서 항목을 눌러 그 쪽으로 바로 이동할 수 있습니다.
