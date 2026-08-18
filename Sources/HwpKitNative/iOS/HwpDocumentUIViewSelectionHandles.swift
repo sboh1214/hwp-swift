@@ -22,6 +22,9 @@
     /// 계층 배치로 푼다.
     final class HwpSelectionHandleView: UIView {
         let edge: HwpSelectionEdge
+        /// 반대쪽 핸들 — 겹친 그랩 영역의 승자를 가르는 데만 쓴다
+        /// (아래 `point(inside:)`). 서로를 가리키므로 `weak`다.
+        weak var sibling: HwpSelectionHandleView?
         /// 색은 `UIView.backgroundColor`에 **동적 UIColor**로 둔다 — `CALayer`의
         /// `backgroundColor`(CGColor)는 해석 시점 트레잇에 고정돼 다크 모드
         /// 전환에서 옛 색이 남는다.
@@ -54,8 +57,27 @@
         }
 
         /// 손가락은 그립보다 크다 — 그리는 크기보다 넓게 잡는다.
+        ///
+        /// 그 여유 때문에 두 끝점이 16.5pt(그립 반지름 + 여유) 안으로 가까워지면
+        /// 끝 핸들의 그랩 영역이 시작 그립을 **통째로** 덮는다. UIKit `hitTest`는
+        /// subview 역순이라 나중에 붙은 끝 핸들이 늘 이기고, 그러면 그 배율에서
+        /// 시작 끝점을 잡을 길이 사라진다 — 그래서 겹칠 때는 순서가 아니라
+        /// **그립이 가까운 쪽**이 가져간다.
         override func point(inside point: CGPoint, with _: UIEvent?) -> Bool {
-            HwpSelectionHandleGeometry.isWithinGrabArea(point, bounds: bounds)
+            guard HwpSelectionHandleGeometry.isWithinGrabArea(point, bounds: bounds)
+            else { return false }
+            guard let sibling, sibling.alpha > 0, let superview else { return true }
+            let inSibling = sibling.convert(point, from: self)
+            guard HwpSelectionHandleGeometry.isWithinGrabArea(
+                inSibling, bounds: sibling.bounds
+            ) else { return true }
+            return HwpSelectionHandleGeometry.winsGrabContest(
+                at: convert(point, to: superview),
+                ownFrame: frame,
+                ownEdge: edge,
+                otherFrame: sibling.frame,
+                otherEdge: sibling.edge
+            )
         }
     }
 
@@ -82,8 +104,14 @@
 
     extension HwpDocumentUIView {
         func configureSelectionHandles() {
-            selectionInteraction.startHandle = makeSelectionHandle(edge: .start)
-            selectionInteraction.endHandle = makeSelectionHandle(edge: .end)
+            let start = makeSelectionHandle(edge: .start)
+            let end = makeSelectionHandle(edge: .end)
+            // 서로를 알아야 겹친 그랩 영역을 가른다 — 안 이으면 `point(inside:)`가
+            // 조기 반환해 판정이 통째로 무동작이 된다.
+            start.sibling = end
+            end.sibling = start
+            selectionInteraction.startHandle = start
+            selectionInteraction.endHandle = end
         }
 
         private func makeSelectionHandle(edge: HwpSelectionEdge) -> HwpSelectionHandleView {

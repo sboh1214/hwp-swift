@@ -77,9 +77,61 @@ enum HwpSelectionHandleGeometry {
         CGPoint(x: touchPoint.x + grabOffset.x, y: touchPoint.y + grabOffset.y)
     }
 
+    /// 핸들 프레임의 **그립 중심** (프레임과 같은 좌표계).
+    ///
+    /// 겹친 그랩 영역의 승자를 가르는 기준점이다 — 사용자가 겨냥하는 것은
+    /// 보이는 그립이지 캐럿 중심이 아니다. 두 그립은 캐럿 위·아래로 갈라져
+    /// 있어 (`handleFrame`) 끝점이 완전히 겹쳐도 `줄 높이 + 지름`만큼 떨어진다.
+    static func knobCenter(handleFrame: CGRect, edge: HwpSelectionEdge) -> CGPoint {
+        let caretHeight = max(0, handleFrame.height - handleFrame.width)
+        let radius = handleFrame.width / 2
+        return CGPoint(
+            x: handleFrame.midX,
+            y: edge == .start
+                ? handleFrame.minY + radius
+                : handleFrame.minY + caretHeight + radius
+        )
+    }
+
     /// 핸들 로컬 점이 그랩 영역(프레임 + `grabMargin`) 안인가.
     static func isWithinGrabArea(_ point: CGPoint, bounds: CGRect) -> Bool {
         bounds.insetBy(dx: -grabMargin, dy: -grabMargin).contains(point)
+    }
+
+    /// 두 핸들의 그랩 영역이 **겹쳤을 때** `own`이 그 터치를 가져가는가.
+    /// 좌표계는 두 프레임과 같아야 한다 (= 공통 superview).
+    ///
+    /// **반드시 반대칭이어야 한다** — 인자를 맞바꾼 호출이 반대 값을 내야 한다.
+    /// 둘 다 true면 subview 순서로 되돌아가 나중에 붙은 끝 핸들이 늘 이기고
+    /// (그것이 이 함수가 생긴 이유다), 둘 다 false면 터치가 스크롤 뷰로 새어
+    /// 탭 핸들러의 `hasSelection → clear()`가 선택을 통째로 지운다.
+    /// 그래서 두 끝점(`ownEdge != otherEdge`)에만 쓴다 — 같은 끝점 둘을 넘기면
+    /// 동점 갈림이 양쪽에서 같은 답을 내 그 계약이 깨진다.
+    static func winsGrabContest(
+        at point: CGPoint,
+        ownFrame: CGRect,
+        ownEdge: HwpSelectionEdge,
+        otherFrame: CGRect,
+        otherEdge: HwpSelectionEdge
+    ) -> Bool {
+        let own = squaredDistance(
+            point, knobCenter(handleFrame: ownFrame, edge: ownEdge)
+        )
+        let other = squaredDistance(
+            point, knobCenter(handleFrame: otherFrame, edge: otherEdge)
+        )
+        if own != other {
+            return own < other
+        }
+        // 완전 동점 — 좌우로 가르면 양쪽이 같은 답을 내므로 **끝점 종류**로
+        // 가른다 (그래야 반대칭이다).
+        return ownEdge == .start
+    }
+
+    private static func squaredDistance(_ lhs: CGPoint, _ rhs: CGPoint) -> CGFloat {
+        let deltaX = lhs.x - rhs.x
+        let deltaY = lhs.y - rhs.y
+        return deltaX * deltaX + deltaY * deltaY
     }
 
     /// 뷰포트 안에 캐럿이 걸쳐 있는가.

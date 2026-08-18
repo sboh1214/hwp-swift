@@ -169,6 +169,86 @@ final class HwpSelectionHandleGeometryTests: XCTestCase {
         )) == true
     }
 
+    // MARK: - knobCenter / winsGrabContest
+
+    /// 겹침 판정의 기준점은 캐럿 중심이 아니라 **보이는 그립**이다 —
+    /// 사용자가 겨냥하는 것이 그것이다.
+    func testKnobCenterSitsOnTheDrawnKnob() {
+        for edge in [HwpSelectionEdge.start, .end] {
+            let frame = HwpSelectionHandleGeometry.handleFrame(
+                caretRect: caret, edge: edge
+            )
+            let knob = HwpSelectionHandleGeometry.handleParts(
+                in: CGRect(origin: .zero, size: frame.size), edge: edge
+            ).knob
+
+            let center = HwpSelectionHandleGeometry.knobCenter(
+                handleFrame: frame, edge: edge
+            )
+
+            expect(center.x).to(beCloseTo(frame.midX, within: 0.001))
+            expect(center.y - frame.minY).to(beCloseTo(knob.midY, within: 0.001))
+        }
+    }
+
+    /// 승패는 **반대칭**이어야 한다. 둘 다 true면 subview 순서로 되돌아가
+    /// 나중에 붙은 끝 핸들이 늘 이기고(고치려던 그 결함이다), 둘 다 false면
+    /// 터치가 스크롤 뷰로 새어 탭 핸들러가 선택을 통째로 지운다.
+    func testGrabContestIsAntisymmetric() {
+        let start = HwpSelectionHandleGeometry.handleFrame(caretRect: caret, edge: .start)
+
+        for offsetX in stride(from: CGFloat(-24), through: 24, by: 3) {
+            let end = HwpSelectionHandleGeometry.handleFrame(
+                caretRect: caret.offsetBy(dx: offsetX, dy: 0), edge: .end
+            )
+            for offsetY in stride(from: CGFloat(-16), through: 32, by: 4) {
+                let point = CGPoint(x: caret.midX + offsetX / 2, y: caret.midY + offsetY)
+
+                let startWins = HwpSelectionHandleGeometry.winsGrabContest(
+                    at: point,
+                    ownFrame: start, ownEdge: .start, otherFrame: end, otherEdge: .end
+                )
+                let endWins = HwpSelectionHandleGeometry.winsGrabContest(
+                    at: point,
+                    ownFrame: end, ownEdge: .end, otherFrame: start, otherEdge: .start
+                )
+
+                expect(startWins) == !endWins
+            }
+        }
+    }
+
+    /// 끝점이 겹칠 만큼 가까워도 두 그립은 캐럿 위·아래로 갈라져 있어
+    /// (`줄 높이 + 지름`) 각 그립 위의 터치는 제 핸들이 가져간다.
+    func testNearestKnobWinsWhenGrabAreasOverlap() {
+        let start = HwpSelectionHandleGeometry.handleFrame(caretRect: caret, edge: .start)
+        // 한 글자 폭 — 끝 핸들 그랩 영역이 시작 그립을 통째로 덮는 거리다
+        let end = HwpSelectionHandleGeometry.handleFrame(
+            caretRect: caret.offsetBy(dx: 8, dy: 0), edge: .end
+        )
+        let startKnob = HwpSelectionHandleGeometry.knobCenter(
+            handleFrame: start, edge: .start
+        )
+        let endKnob = HwpSelectionHandleGeometry.knobCenter(handleFrame: end, edge: .end)
+
+        // 겹침이 실제로 일어나는 상황임을 먼저 고정한다 (안 겹치면 공허하게 통과)
+        expect(HwpSelectionHandleGeometry.isWithinGrabArea(
+            CGPoint(x: startKnob.x - end.minX, y: startKnob.y - end.minY),
+            bounds: CGRect(origin: .zero, size: end.size)
+        )) == true
+
+        expect(HwpSelectionHandleGeometry.winsGrabContest(
+            at: startKnob,
+            ownFrame: start, ownEdge: .start, otherFrame: end, otherEdge: .end
+        )) == true
+        expect(HwpSelectionHandleGeometry.winsGrabContest(
+            at: endKnob,
+            ownFrame: end, ownEdge: .end, otherFrame: start, otherEdge: .start
+        )) == true
+    }
+
+    // MARK: - isCaretVisible (이어서)
+
     func testCaretOutsideTheViewportIsHidden() {
         let viewport = CGRect(x: 0, y: 0, width: 390, height: 800)
 

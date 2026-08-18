@@ -775,10 +775,13 @@ anchor 로 **한 번만** 바꾸고, 그 뒤 이동은 이미 있던 `extend(to:
 히트 테스트가 거기서 끝나 스크롤 pan·핀치·롱프레스·탭이 그 터치를 아예 보지
 못한다 — 특히 탭 핸들러의 첫 분기가 `hasSelection → clear()` 라, 같은 계층에
 뒀다면 핸들을 톡 치는 순간 선택이 통째로 사라진다. 덤으로 줌 transform 도 안
-물려받아 배율 역보정 산식이 없다. 대가는 하나: 스크롤을 따라 움직이지 않으므로
-`scrollViewDidScroll` 이 `range != activeVisibleRange` 가드 **앞에서** 위치를
-다시 잡아야 한다. 자세한 계약은 `Sources/HwpKitNative/AGENTS.md` 의 "선택 끝점
-핸들" 절.
+물려받아 배율 역보정 산식이 없다. 대가는 둘이다 — ① 스크롤을 따라 움직이지
+않으므로 `scrollViewDidScroll` 이 `range != activeVisibleRange` 가드 **앞에서**
+위치를 다시 잡아야 하고, ② 두 핸들의 그랩 영역이 겹칠 때 UIKit 이 subview
+역순으로만 고르므로 (나중에 붙은 끝 핸들이 늘 이긴다) **그립 거리로 직접
+갈라야** 한다 — 안 그러면 끝점이 16.5pt 안으로 가까워지는 짧은 선택에서 시작
+끝점을 잡을 수 없다. 자세한 계약은 `Sources/HwpKitNative/AGENTS.md` 의 "선택
+끝점 핸들" 절.
 
 **산식은 `#if os(iOS)` 밖에 둔다** (`HwpSelectionHandleGeometry`). iOS CI 잡은
 `xcodebuild test` 만 돌고 커버리지를 수집하지 않아 (`--enable-code-coverage`·

@@ -162,6 +162,32 @@
             expect(view.hitTest(onKnob, with: nil)) !== start
         }
 
+        /// 두 끝점이 가까우면 (1x의 한 글자·0.25x의 짧은 선택) 끝 핸들의 그랩
+        /// 영역이 시작 그립을 **통째로** 덮는다. UIKit `hitTest`는 subview
+        /// 역순이라 나중에 붙은 끝 핸들이 늘 이겨, 순서에 맡기면 그 배율에서
+        /// 시작 끝점을 잡을 길이 사라진다 (#84 리뷰).
+        func testOverlappingHandlesRouteEachTouchToItsOwnKnob() throws {
+            let view = makeView()
+            select(view, from: 0, to: 1)
+            let start = try XCTUnwrap(view.selectionInteraction.startHandle)
+            let end = try XCTUnwrap(view.selectionInteraction.endHandle)
+            let startKnob = HwpSelectionHandleGeometry.knobCenter(
+                handleFrame: start.frame, edge: .start
+            )
+            let endKnob = HwpSelectionHandleGeometry.knobCenter(
+                handleFrame: end.frame, edge: .end
+            )
+
+            // 겹침이 실제로 일어나는 상황임을 먼저 고정한다 — 두 그랩 영역이
+            // 안 겹치면 아래 단언이 순서 문제를 재지 못하고 공허하게 통과한다
+            expect(HwpSelectionHandleGeometry.isWithinGrabArea(
+                end.convert(startKnob, from: view), bounds: end.bounds
+            )) == true
+
+            expect(view.hitTest(startKnob, with: nil)) === start
+            expect(view.hitTest(endKnob, with: nil)) === end
+        }
+
         // MARK: - 핸들 배치
 
         func testHandlesSitOnTheSelectionEndpoints() throws {
