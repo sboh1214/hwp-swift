@@ -766,7 +766,8 @@ anchor 로 **한 번만** 바꾸고, 그 뒤 이동은 이미 있던 `extend(to:
 `lineCache` 를 우회해 **드래그 프레임마다** 재조판한다. `HwpCaretAffinity` 는
 줄 끝 오프셋과 다음 줄 첫 오프셋이 **같은 값**인 자리에서 어느 줄에 그릴지만
 고르는 질의 인자다 — `HwpTextPosition` 에 넣으면 `Comparable` 정규화 규약까지
-바뀐다.
+바뀐다. 캐럿 산식 자체의 계약(하이라이트 폭 클램프·줄 스냅·부분 결과)은
+`Sources/HwpKitCore/AGENTS.md` 의 "선택 끝점 캐럿" 절.
 
 **iOS 핸들은 제스처 중재가 아니라 계층 배치로 푼다.** 이 저장소에는 중재
 코드가 한 건도 없었다 (`require(toFail:)`·`UIGestureRecognizerDelegate` 0건).

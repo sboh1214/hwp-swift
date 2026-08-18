@@ -171,8 +171,49 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   `HwpMemoPanelPainter` (연녹색 풍선 + 작성자·시각·"댓글" 헤더 + 본문 + 점선
   연결선 — 한글.app 편집 뷰 실측). 앵커 텍스트는 run builder가
   `memoAnchorRanges` (필드 시작 extended ~ 필드 끝 inline 4)로 연녹색 음영
-  (`HwpAttributedStringKey.shadeColor`). 네이티브 뷰가 페이지 오른쪽에 투명
+  (  `HwpAttributedStringKey.shadeColor`). 네이티브 뷰가 페이지 오른쪽에 투명
   `HwpPageLayer`로 그린다 (`memoPanelLayers`)
+
+## 선택 끝점 캐럿 (#84)
+
+핸들이 왜 이 계층을 쓰는지(캐시)와 `HwpCaretAffinity`를 `HwpTextPosition`에
+넣지 않는 이유는 루트 `AGENTS.md`의 "텍스트 선택 끝점 핸들 (#84)"에 있다.
+여기 적는 것은 코어가 **혼자 소유하는** 산식뿐이다.
+
+- **캐럿 x는 줄의 `selectionRect`로 클램프한다** (`caretRect(in:offset:)`).
+  줄바꿈으로 끊긴 줄은 후행 공백이 CT 타이포그래픽 폭에 남아 있고
+  `selectionRect`는 그것을 빼므로, 클램프 없이 `CTLineGetOffsetForStringIndex`
+  값을 그대로 쓰면 **끝 핸들만 하이라이트 오른쪽 끝 밖에 떠 있다**. 캐럿과
+  하이라이트가 같은 폭 정의를 공유해야 한다는 뜻이다 — `selectionRect`를
+  바꾸면 두 곳이 함께 움직인다.
+- **어느 줄 범위에도 없는 오프셋은 가장 가까운 줄로 스냅한다**
+  (`caretLine`의 `lineDistance` 폴백). 조판이 잘린 단위에서 nil로 떨어뜨리면
+  그 끝점의 핸들이 통째로 사라져 선택을 다시 못 잡는다. 줄 경계에서 후보가
+  둘인 것만 affinity가 가른다 (`downstream` = 뒷줄 첫 줄, `upstream` = 앞줄 끝).
+  **이 폴백만 전용 가드가 없다** — 진입하려면 줄이 오프셋을 안 덮는 단위가
+  필요한데 `caretRect(at:)`가 오프셋을 단위 길이로 먼저 클램프하므로 합성
+  입력으로는 닿지 않는다.
+- **`selectionCarets()`는 부분 결과를 낸다** — 한쪽 끝점의 캐럿을 못 구해도
+  나머지 하나는 그대로 내보낸다. affinity 짝은 고정이다 (`.start` →
+  `downstream`, `.end` → `upstream`).
+- **`beginAdjusting(edge:)`는 이미 그 방향이면 통지하지 않는다** — 범위가
+  그대로인 재도색을 아낀다. 선택이 없거나 collapsed면 `false`를 돌려주므로
+  호출부가 "조정할 것이 있었나"를 그 값으로 판정한다.
+- `HwpSelectionEdge`는 **문서 순서**(`start`/`end`)이지 `anchor`/`focus`가
+  아니다. 역방향 드래그도 `HwpTextSelection.range`가 정규화하므로 화면의 두
+  핸들은 언제나 이 둘이다.
+- 캐럿·검색 질의는 **확장 파일로 나눈다** (`+Caret`/`+Search`). 본체
+  `HwpSelectionGeometry` 클래스 본문이 SwiftLint `type_body_length` **경고**
+  구간이라 (2026-08-18 실측 315줄 / 경고 300·에러 400) 새 질의를 본체에 넣으면
+  에러 임계로 걸어간다. 같은 임계의 **에러** 쪽에 닿아 있는 것은
+  `HwpDocumentUIView`(399)이고 그쪽은 상태를 값 타입으로 접어 대응했다
+  (`Sources/HwpKitNative/AGENTS.md`).
+- 가드: `HwpSelectionCaretTests`(7종 — 폭 0·줄 높이, 하이라이트 경계 일치와
+  폭 클램프, 줄바꿈 경계에서 affinity가 갈리고 줄 안에서는 무관, 단위 밖
+  오프셋 클램프, 단위를 못 찾으면 nil) + `HwpSelectionControllerTests`(10종 —
+  collapsed 거부, 끝점 교환이 범위를 안 바꾸는 것·역방향 정규화·같은 끝점
+  재호출 시 무통지·반대쪽 너머 역할 뒤바뀜, 캐럿의 문서 순서·쪽 인덱스·
+  부분 결과·`selectAll` 추종).
 
 ## 컨벤션
 
