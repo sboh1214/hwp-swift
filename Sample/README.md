@@ -15,6 +15,7 @@
 | `HwpSearchNavigator` | 매치 카운터 + 이전/다음 | `HwpSearchBar`가 내부에서 조립 |
 | `HwpDocumentLoader` | 비동기 문서 로더 | `.fileImporter` 결과를 async 로드 |
 | `HwpDocumentMetadata.outline` | 개요·책갈피 탐색 목록 (HwpKitCore) | 사이드바(`OutlineSidebar.swift`)가 이 배열 하나로 만들어진다 |
+| `HwpPageThumbnails` | 쪽 축소판 렌더러 (진행·취소·캐시) | 축소판 사이드바(`ThumbnailSidebar.swift`)가 이 하나로 만들어진다 |
 | `HwpPDFExporter` | PDF 내보내기 (진행률·취소) | 툴바 `PDF로 내보내기` / `인쇄` |
 
 - `.hwp` 파일을 사용자에게 선택받아 (`SwiftUI.fileImporter`) 위 컴포넌트로 렌더링/조작
@@ -28,7 +29,15 @@
   1-기반 `pageNumber` + 1-기반 `level`이라 `List` 하나로 끝나고, 누르면
   `currentPage`에 그대로 쓴다. macOS는 인라인 열, iOS는 시트 — `HwpDocumentToolbar`가
   순수 `HStack`인 것과 같은 이유로 **호스트 레이아웃은 호스트 몫**이다.
-  개요도 책갈피도 없는 문서에서는 툴바 버튼과 열이 통째로 사라진다
+  개요도 책갈피도 없는 문서에서는 **개요 버튼**이 사라진다 — 그 자리를 축소판이
+  받는다(아래)
+- 쪽 축소판 사이드바 — `HwpPageThumbnails`만으로 만든다. 라이브러리는 여기서도
+  **그리드 UI를 내지 않는다**. 이 앱이 더하는 것은 셋이다: `LazyVGrid` 셀별
+  **지연 요청·취소**(`.task` — 전역 디코드 슬롯 3개를 가시 페이지와 나눠 쓴다),
+  비어 있는 동안의 **자리 예약**(높이가 0이면 셀이 화면 안팎을 오가며 요청·취소가
+  반복된다), 현재 쪽 **자동 스크롤**(1,030쪽 목록에서는 이것이 없으면 현재 위치를
+  못 찾는다). 사이드바 상태는 불리언이 아니라 `SidebarMode?` 하나다 — 축마다
+  불리언을 두면 "둘 다 켜짐"이라는 없는 상태가 생긴다
 - PDF 내보내기·인쇄 — 라이브러리는 PDF 바이트까지만 만들고, 저장 패널
   (`fileExporter`)·인쇄 UI(macOS `PDFDocument.printOperation`, iOS
   `UIPrintInteractionController`)는 이 앱이 배선한다 (`PDFExportSupport.swift`)
@@ -70,7 +79,7 @@ Xcode에서 스킴 `HwpSwiftSample` 선택 → 대상 지정:
 문서가 로드되면 화면 상단에 다음 툴바가 나타남:
 
 ```
-[Re-open] [개요] | [-] Page 1 of N [+] | [PDF로 내보내기] [인쇄] [찾기]  [-] Zoom 100% [+] [Reset]
+[Re-open] [개요] [축소판] | [-] Page 1 of N [+] | [PDF로 내보내기] [인쇄] [찾기]  [-] Zoom 100% [+] [Reset]
 └──────────────────────────  HwpDocumentToolbar  ──────────────────────────────┘
 [ Find in document          ] 1 of 19 ‹ › [Clear]
 └────────────  HwpSearchBar (툴바 밖 별도 행)  ────────────┘
@@ -84,6 +93,12 @@ Xcode에서 스킴 `HwpSwiftSample` 선택 → 대상 지정:
   `Tests/CoreHwpTests/Fixtures/legacy-common-control-property/document.hwp`
   (1,030쪽·개요 1,944개), 책갈피는
   `Tests/CoreHwpTests/Fixtures/bookmark/document.hwp`다
+- `축소판` 버튼은 **언제나** 있다 — 쪽은 언제나 있기 때문이다. 개요가 없는
+  문서(`Tests/CoreHwpTests/Fixtures/noori/document.hwp`)에서는 이것이 유일한
+  시각적 탐색 수단이고, macOS 기본값이 개요라도 그 문서에서는 축소판이 대신
+  열린다(사용자 선택 자체는 덮어쓰지 않는다). 스크롤해서 화면 밖으로 나간 셀은
+  요청을 **취소한다** — 디코드 슬롯이 문서 뷰와 공유되는 전역 3개라 그러지 않으면
+  1,030쪽 문서에서 본문 스크롤이 눈에 띄게 느려진다
 - Re-open 클릭 시 다른 `.hwp` 파일로 교체
 - `찾기`(Cmd+F)는 검색 필드로 **포커스만** 옮긴다. 검색 바를 툴바 **안**에 넣지
   않은 이유는 `HwpDocumentToolbar`가 순수 `HStack`이라 가변 폭 필드가 iPhone
@@ -175,6 +190,7 @@ Sample/
 │   ├── HwpSwiftSampleApp.swift    # @main 진입점
 │   ├── ContentView.swift          # .fileImporter + HwpDocumentView + 검색·내보내기·사이드바 배선
 │   ├── OutlineSidebar.swift       # metadata.outline만으로 만든 개요·책갈피 목록 (#77)
+│   ├── ThumbnailSidebar.swift     # HwpPageThumbnails만으로 만든 쪽 축소판 그리드 (#76)
 │   ├── PDFExportSupport.swift     # fileExporter용 FileDocument + 플랫폼 인쇄 (#if os)
 │   └── HwpSwiftSample.entitlements
 └── README.md
@@ -191,7 +207,7 @@ cd Sample
 xcodegen generate
 ```
 
-SwiftUI 소스 파일(`HwpSwiftSampleApp.swift`, `ContentView.swift`, `OutlineSidebar.swift`) 추가/삭제는 xcodegen이 디렉터리를 자동 스캔하므로 별도 편집 없이 `xcodegen generate`만 다시 돌리면 됨.
+SwiftUI 소스 파일(`HwpSwiftSampleApp.swift`, `ContentView.swift`, `OutlineSidebar.swift`, `ThumbnailSidebar.swift`) 추가/삭제는 xcodegen이 디렉터리를 자동 스캔하므로 별도 편집 없이 `xcodegen generate`만 다시 돌리면 됨. **다만 생성된 `.xcodeproj`는 파일을 명시 참조하므로 재생성 결과를 같은 커밋에 넣어야 한다** — CI는 샘플을 빌드하지 않아 이 누락이 초록으로 지나간다.
 
 ## 설정 요약
 
@@ -229,10 +245,11 @@ Xcode 콘솔에 `print()`로 출력됨:
 
 이 샘플은 **`HwpKit`이 노출하는 모든 SwiftUI 컴포넌트를 실제로 조작해 볼 수 있는 최소 앱**. 실 서비스 UX (최근 파일, 편집 등)는 포함하지 않으며, 이는 `HwpKit` v1의 read-only 스코프와도 일치.
 
-개요·책갈피 사이드바는 예외처럼 보이지만 같은 규칙의 결과다 — **라이브러리가
-목록 UI를 내지 않기로** 했으므로(검색 결과 목록과 같은 기준) 그 자리를 샘플이
-채워, `HwpDocumentMetadata.outline`만으로 사이드바가 만들어짐을 보인다.
+개요·책갈피 사이드바와 쪽 축소판 사이드바는 예외처럼 보이지만 같은 규칙의
+결과다 — **라이브러리가 목록·그리드 UI를 내지 않기로** 했으므로(검색 결과
+목록과 같은 기준) 그 자리를 샘플이 채워, `HwpDocumentMetadata.outline` 하나로
+개요 사이드바가, `HwpPageThumbnails` 하나로 축소판 사이드바가 만들어짐을 보인다.
 
-`HwpDocumentView` / `HwpDocumentToolbar` / `HwpPageNavigator` / `HwpZoomControls` / `HwpSearchBar` / `HwpSearchNavigator` / `HwpSearchController` / `HwpDocumentLoader` / `HwpPDFExporter` 9개 public surface가 모두 이 앱 안에서 활성화됨. 여기에 데이터 표면 `HwpDocumentMetadata.outline`(#77)이 사이드바로 소비됨.
+`HwpDocumentView` / `HwpDocumentToolbar` / `HwpPageNavigator` / `HwpZoomControls` / `HwpSearchBar` / `HwpSearchNavigator` / `HwpSearchController` / `HwpDocumentLoader` / `HwpPDFExporter` / `HwpPageThumbnails` 10개 public surface가 모두 이 앱 안에서 활성화됨. 여기에 데이터 표면 `HwpDocumentMetadata.outline`(#77)이 사이드바로 소비됨.
 
 인쇄·저장·공유 **UI는 의도적으로 라이브러리 밖**이다 — `HwpKit`은 PDF 바이트까지만 만들고 그 앞뒤는 앱이 정한다. 이 앱의 `PDFExportSupport.swift`가 그 배선의 최소 예시이고, 저장소의 유일한 `#if os(macOS)` 분기이기도 하다.

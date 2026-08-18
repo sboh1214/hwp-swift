@@ -246,36 +246,36 @@ public enum HwpPDFRenderer {
         // 새로 만들어도 다른 문서의 비트맵이 그대로 히트한다.
         //
         // 캐시도 같은 예산으로 만든다 — 기본값(256MB)을 그대로 두면 provider의
-        // 변형 예산과 **독립으로** 쌓여 상한이 두 배가 된다.
-        let provider: HwpPageImageProvider? = document.imageStore.isEmpty
-            ? nil
-            : HwpPageImageProvider(
-                store: document.imageStore,
-                cache: HwpImageCache(maxBytes: imageByteLimit)
-            )
-        provider?.resolvedByteLimit = imageByteLimit
+        // 변형 예산과 **독립으로** 쌓여 상한이 두 배가 된다. 그 두 예산을 함께
+        // 거는 자리는 비트맵 렌더러와 공유한다 (한쪽만 낮추는 실수를 구조로 막는다).
+        let provider = HwpPageBitmapRenderer.makeProvider(
+            for: document.imageStore, imageByteLimit: imageByteLimit
+        )
         defer { provider?.cancelOutstanding() }
 
         for (index, page) in document.pages.enumerated() {
             try Task.checkCancellation()
             if let provider {
-                // 이 페이지 변형만 남긴다: 고정은 프리디코드 결과가 draw 전에
-                // 축출되지 않게 하고, 나머지 해제는 이전 페이지 래스터가 예산
-                // 한계까지 쌓이는 것을 막는다 (unpin만으로는 안 지워진다).
-                provider.retainOnlyImages(HwpPageImageProvider.imageVariantKeys(in: page.paintList))
-                await provider.predecodeImageReferences(in: page.paintList)
-                try Task.checkCancellation()
-                // 프리디코드 뒤에도 확정되지 않은 변형이 있으면 그 페이지 작업셋이
-                // 바이트 예산을 넘겨 축출된 것이다. 뷰는 다음 재드로우가 되살리지만
-                // 여기는 draw가 한 번뿐이라, 회색 로딩 사각형을 PDF에 박아 넣는
-                // 대신 오류로 끝낸다 (디코드 실패는 제외 — 그건 뷰와 같이
-                // 플레이스홀더가 정답이다).
-                guard provider.unsettledImageVariants(in: page.paintList).isEmpty else {
+                // 이 페이지 변형만 남기고(고정 교체 + 이전 페이지 해제) 확정까지
+                // 기다린 뒤, 남은 미확정을 오류로 끝내는 순서 — 비트맵 렌더러와
+                // 같은 구현이다. 뷰는 다음 재드로우가 되살리지만 여기는 draw가
+                // 한 번뿐이라, 회색 로딩 사각형을 PDF에 박아 넣는 대신 실패한다
+                // (디코드 실패는 제외 — 그건 뷰와 같이 플레이스홀더가 정답이다).
+                do {
+                    try await HwpPageBitmapRenderer.resolveImages(
+                        in: page, provider: provider, policy: .fail
+                    )
+                } catch let error as HwpPageBitmapRenderError {
+                    guard case .unresolvedImages = error else { throw error }
+                    // 미확정이 남았다 = 이 페이지 작업셋이 바이트 예산을 넘겨
+                    // 축출된 것이다. PDF는 쪽 번호를 실어 알린다.
                     throw HwpPDFRenderError.pageImagesExceedMemoryBudget(pageIndex: index)
                 }
             }
             context.beginPDFPage(pageInfo(for: page))
-            draw(page: page, in: context, provider: provider)
+            // 종이 배경 + 레이어 구성 + draw는 비트맵 렌더러와 한 자리를 쓴다 —
+            // 갈라 두면 flip·배경·레이어 필드 중 하나가 한쪽에서만 바뀐다.
+            HwpPageBitmapRenderer.draw(page: page, in: context, provider: provider)
             context.endPDFPage()
             onProgress?(
                 HwpPDFExportProgress(pageIndex: index, pageCount: document.pages.count)
@@ -302,25 +302,5 @@ public enum HwpPDFRenderer {
             info[kCGPDFContextTitle] = title
         }
         return info as CFDictionary
-    }
-
-    private static func draw(
-        page: HwpPage,
-        in context: CGContext,
-        provider: HwpPageImageProvider?
-    ) {
-        // PDF 페이지는 기본이 투명이라 배경을 뷰어·프린터가 정하게 두면 종이
-        // 은유가 깨진다 — 화면의 페이지 레이어 배경과 같은 흰 종이를 깐다.
-        context.saveGState()
-        context.setFillColor(CGColor(gray: 1, alpha: 1))
-        context.fill(CGRect(origin: .zero, size: page.size))
-        context.restoreGState()
-
-        let layer = HwpPageLayer()
-        layer.bounds = CGRect(origin: .zero, size: page.size)
-        layer.pageHeight = page.size.height
-        layer.imageProvider = provider
-        layer.paintList = page.paintList
-        layer.draw(in: context)
     }
 }

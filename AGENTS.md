@@ -676,6 +676,43 @@ CI에서 깨진다.
 타임아웃도 이 API로 대체됐다 — 즉 **렌더 가드 4층이 이제 이 프로덕션 코드를
 함께 태운다**. 백프레셔 3겹과 영구 대기 회피 규약은 `Sources/HwpKitNative/AGENTS.md`.
 
+## 쪽 축소판 (#76)
+
+출력 경로가 셋이 됐지만 **조판은 여전히 하나**다. #74가 "레이어를 임의
+`CGContext`에 그린다"를 PDF로 보였다면, #76은 그 자리를 **이름 있는 프로덕션
+API**로 승격했다 — `HwpKitNative.HwpPageBitmapRenderer`가 종이 배경·레이어
+구성·draw와 이미지 확정 계약(`retainOnlyImages` → `predecodeImageReferences` →
+`unsettledImageVariants`)을 소유하고, PDF와 축소판이 그것을 함께 쓴다. 갈라
+두면 배경·flip·예산 중 하나가 한쪽에서만 바뀐다.
+
+**승격의 진짜 이득은 가드 쪽이다.** 이 자리의 원본은 테스트 유틸
+(`FixturePreview.renderImage`)이었고, 이제 그 유틸이 승격본에 위임한다 — 즉
+커밋된 렌더 골든이 **테스트 전용 사본이 아니라 출하되는 코드**를 검사한다.
+그래서 승격 리팩터는 기준선을 재기록하지 않고 통과해야 했고(통과했다), 그
+조건이 설계를 하나 정했다: `sourceRect` 기본값에서 CTM이 **순수 스케일**이어야
+해서 이동을 스케일 뒤에 걸어 페이지 단위로 해석시킨다 (장치 단위로 걸면
+`pageH × (pxH / pageH) ≠ pxH`라 1e-13pt 이동이 남아 픽셀 해시가 흔들린다).
+
+**호출자마다 갈리는 것은 미확정 이미지 정책 하나뿐이다**
+(`HwpUnresolvedImagePolicy`). PDF와 픽스처 하네스는 `.fail` — 산출물이 사용자
+파일이거나 커밋된 기준선이라 회색 로딩 사각형이 정답으로 굳으면 안 된다.
+축소판은 `.drawPlaceholder` — 보조 표시라 그림 하나 때문에 쪽 전체를 잃는 것이
+더 나쁘다. **경계는 PDF와 같다**: 비트맵까지가 우리 몫이고 그리드·목록 UI는
+호스트가 만든다 (`Sample/HwpSwiftSample/ThumbnailSidebar.swift`).
+
+가드는 두 구멍을 메운다. (1) 커밋된 골든이 **1쪽을 한 번도 그리지 않는다**
+(`FixtureRenderGoldenTests.specs`가 2쪽 이후만 고르고, 1쪽 오라클인 fidelity는
+opt-in이다) — 축소판이 가장 먼저 그리는 쪽이 정확히 그 1쪽이라
+`HwpPageThumbnailsTests`가 상시 CI에서 그것을 그려 본다. (2) 잉크 비영은
+**상하 반전을 통과시키므로** 위·아래 잉크 분포를 함께 단언한다 (PDF 가드가
+뒤집은 그리드를 대조군으로 쓰는 것과 같은 이유).
+
+**샘플은 CI가 빌드하지 않는다** — 잡이 `test-macos`·`test-ios`·`test-linux`·
+`lint` 넷뿐이라 배선 회귀는 초록으로 지나간다. `Sample/`을 건드리면 macOS·iOS
+양쪽 `xcodebuild`를 로컬에서 돌리고, 파일을 추가했으면
+`cd Sample && xcodegen generate` 결과를 같은 커밋에 넣는다 (프로젝트가 파일을
+명시 참조한다).
+
 ## 리뷰 대응 체크리스트 (렌더 회귀 방지)
 
 PR 리뷰를 반영하며 렌더링 코드를 수정할 때, 한글 파일 렌더 결과가 조용히

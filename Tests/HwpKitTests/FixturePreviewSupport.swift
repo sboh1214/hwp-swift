@@ -19,7 +19,6 @@ enum FixturePreview {
         case imageCreationFailed
         case previewDecodeFailed
         case pageMissing
-        case imageUnresolved(binItemId: UInt32)
     }
 
     // MARK: - 문서 → 1페이지 렌더
@@ -45,10 +44,17 @@ enum FixturePreview {
     }
 
     /// HwpPage를 지정한 픽셀 크기의 CGImage로 렌더한다.
-    /// 뷰와 동일한 HwpPageLayer draw 경로를 사용하고, `.drawImageReference`는
-    /// 미리 디코딩해 동기 draw에서 실제 이미지가 그려지게 한다.
-    /// zoom > 1이면 페이지 좌상단 1/zoom 영역을 확대해 캔버스에 채운다
-    /// (일부 저장본의 PrvImage가 확대·크롭 렌더인 경우의 대조용).
+    ///
+    /// **프로덕션 렌더러(`HwpPageBitmapRenderer.render`)에 그대로 위임한다** —
+    /// 그래야 렌더 가드(골든·해시·fidelity)가 테스트 전용 사본이 아니라 실제로
+    /// 출하되는 코드를 검사한다. 하네스에만 남는 것은 두 가지다:
+    ///
+    /// - `zoom`: 일부 저장본의 PrvImage가 확대·크롭 렌더라 그 대조에만 쓴다.
+    ///   승격본의 `sourceRect`(캔버스를 채울 페이지 영역)로 표현된다 — zoom배
+    ///   확대는 좌상단 1/zoom 영역을 채우는 것과 같다.
+    /// - `.fail` 정책: 미확정 변형이 남으면 던진다. 회색 로딩 사각형이 커밋된
+    ///   기준선에 **정답으로 기록되는** 것을 막아야 하는 쪽은 하네스뿐이고,
+    ///   축소판은 플레이스홀더가 정답이다.
     static func renderImage(
         page: HwpPage,
         imageStore: HwpImageStore,
@@ -56,67 +62,20 @@ enum FixturePreview {
         pixelHeight: Int,
         zoom: CGFloat = 1
     ) async throws -> CGImage {
-        let layer = HwpPageLayer()
-        layer.bounds = CGRect(origin: .zero, size: page.size)
-        layer.pageHeight = page.size.height
-        layer.paintList = page.paintList
-
-        let provider = HwpPageImageProvider(store: imageStore, cache: HwpImageCache())
-        layer.imageProvider = provider
-        try await resolveImageReferences(in: page.paintList, provider: provider)
-
-        guard let context = CGContext(
-            data: nil,
-            width: pixelWidth,
-            height: pixelHeight,
-            bitsPerComponent: 8,
-            bytesPerRow: pixelWidth * 4,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else {
-            throw RenderError.contextCreationFailed
-        }
-        // PrvImage와 같은 흰 종이 배경에서 시작한다
-        context.setFillColor(CGColor(gray: 1, alpha: 1))
-        context.fill(CGRect(x: 0, y: 0, width: CGFloat(pixelWidth), height: CGFloat(pixelHeight)))
-        // HwpPageLayer.draw는 (macOS 독립 레이어에서) bounds 높이 기준으로 CTM을
-        // 뒤집는다. zoom 확대 시 그대로 두면 페이지 '아래쪽' 1/zoom이 캔버스에
-        // 남으므로, 좌상단 영역이 보이도록 장치 좌표를 내려 보정한다.
-        if zoom != 1 {
-            context.translateBy(x: 0, y: CGFloat(pixelHeight) * (1 - zoom))
-        }
-        context.scaleBy(
-            x: CGFloat(pixelWidth) / page.size.width * zoom,
-            y: CGFloat(pixelHeight) / page.size.height * zoom
+        try await HwpPageBitmapRenderer.render(
+            page: page,
+            imageStore: imageStore,
+            pixelWidth: pixelWidth,
+            pixelHeight: pixelHeight,
+            sourceRect: zoom == 1 ? nil : CGRect(
+                origin: .zero,
+                size: CGSize(
+                    width: page.size.width / zoom,
+                    height: page.size.height / zoom
+                )
+            ),
+            unresolvedImages: .fail
         )
-        layer.draw(in: context)
-        guard let image = context.makeImage() else {
-            throw RenderError.imageCreationFailed
-        }
-        return image
-    }
-
-    /// paint list의 이미지 참조를 확정(성공 또는 실패)까지 디코딩한다.
-    ///
-    /// 대기는 프로덕션 API에 맡기되 **확정 여부는 다시 확인한다**:
-    /// `predecodeImageReferences`는 바이트 예산으로 축출된 변형을 미해결로
-    /// 남기고, 그대로 그리면 회색 로딩 사각형이 렌더 해시·골든·fidelity
-    /// 기준선에 **정답으로 기록된다**. 디코드 실패는 제외한다 — 그건
-    /// 플레이스홀더가 정답이라 뷰·PDF 경로와 규약이 같다.
-    private static func resolveImageReferences(
-        in paintList: HwpPaintList,
-        provider: HwpPageImageProvider
-    ) async throws {
-        // 디코드된 대형 이미지가 draw 전에 바이트 예산으로 축출되지 않게 고정한다.
-        provider.setPinnedImages(HwpPageImageProvider.imageVariantKeys(in: paintList))
-        await provider.predecodeImageReferences(in: paintList)
-        for command in paintList.commands {
-            guard case let .drawImageReference(binItemId, _, style, _) = command,
-                  provider.cachedImage(for: binItemId, style: style) == nil,
-                  !provider.didFail(for: binItemId, style: style)
-            else { continue }
-            throw RenderError.imageUnresolved(binItemId: binItemId)
-        }
     }
 
     // MARK: - PrvImage 디코딩

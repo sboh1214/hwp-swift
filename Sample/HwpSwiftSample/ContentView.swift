@@ -15,16 +15,23 @@ struct ContentView: View {
     @State private var loadTask: Task<Void, Never>?
     @State private var currentPage: Int = 1
     @State private var zoomScale: CGFloat = 1.0
-    // 개요·책갈피 사이드바 표시 여부 (#77). 목록이 비어 있으면 이 값과 무관하게
-    // 감춘다 — 대부분의 문서에는 개요도 책갈피도 없다.
-    //
+    // 사이드바 상태는 **직교하는 두 값**이다 (#77 개요·책갈피 → #76에서 축소판
+    // 축 추가): 어느 축을 고르고 있는가(`sidebarMode`)와 지금 보이는가
+    // (`sidebarVisible`). 축마다 불리언을 두면 "둘 다 켜짐"이라는 없는 상태가
+    // 생기지만, 이 둘은 조합이 전부 유효하다. 하나로 접어 `SidebarMode?`를 쓰면
+    // **감출 때 고른 축이 사라져** 다시 열 때 다른 축이 되는 문제가 있다.
+    @State private var sidebarMode: SidebarMode = .outline
     // **기본값이 플랫폼마다 다르다**: macOS는 인라인 열이라 켜 두고, iOS는
     // 시트라 꺼 둔다 (켜 두면 문서를 열자마자 모달이 뜬다).
     #if os(macOS)
-        @State private var showsOutline = true
+        @State private var sidebarVisible = true
     #else
-        @State private var showsOutline = false
+        @State private var sidebarVisible = false
     #endif
+    /// 축소판 렌더러는 **호스트가** 소유한다 — 사이드바 뷰가 소유하면 모드를
+    /// 토글하거나 iPhone 시트를 닫을 때마다 뷰가 사라지면서 그때까지 그린
+    /// 축소판을 통째로 버린다.
+    @State private var thumbnails = HwpPageThumbnails()
     /// 문서 검색 세션 (#75). 호스트가 소유해 뷰와 검색 바에 **같은 인스턴스**를
     /// 넘긴다 — 라이브러리가 하이라이트·매치 노출 스크롤을 알아서 배선한다.
     @State private var search = HwpSearchController()
@@ -65,6 +72,31 @@ struct ContentView: View {
     private enum PDFDestination {
         case save
         case print
+    }
+
+    /// 사이드바가 보이는 내용. `Identifiable`인 것은 iOS `.sheet(item:)`이
+    /// 요구해서다 (표시 여부와 내용이 한 값이라 둘이 어긋날 수 없다).
+    private enum SidebarMode: Identifiable {
+        case outline
+        case thumbnails
+
+        var id: Self {
+            self
+        }
+
+        var title: String {
+            switch self {
+            case .outline: "개요"
+            case .thumbnails: "축소판"
+            }
+        }
+
+        var systemImage: String {
+            switch self {
+            case .outline: "list.bullet.indent"
+            case .thumbnails: "square.grid.2x2"
+            }
+        }
     }
 
     private static let exportFilePrefix = "hwp-sample-export-"
@@ -189,32 +221,84 @@ struct ContentView: View {
         // iPhone 폭에는 사이드바 열이 들어가지 않는다 — iOS는 시트로 낸다
         // (툴바를 가로 스크롤에 넣은 것과 같은 이유: 호스트 레이아웃은
         // 호스트 몫이고, 라이브러리 컴포넌트는 고치지 않는다).
-        .sheet(isPresented: $showsOutline) {
+        .sheet(
+            item: Binding(
+                get: { visibleSidebar(for: document) },
+                set: { sidebarVisible = $0 != nil }
+            )
+        ) { mode in
             NavigationStack {
-                OutlineSidebar(
-                    outline: document.metadata.outline,
-                    currentPage: $currentPage,
-                    onSelect: { showsOutline = false }
-                )
-                .navigationTitle("개요")
-                .toolbar {
-                    Button("닫기") { showsOutline = false }
-                }
+                sidebarContent(mode, document: document, onSelect: { sidebarVisible = false })
+                    .navigationTitle(mode.title)
+                    .toolbar {
+                        Button("닫기") { sidebarVisible = false }
+                    }
             }
         }
         #endif
     }
 
-    /// 사이드바(macOS) + 문서 뷰. 목록이 비어 있으면 열 자체가 없다.
+    /// 이 문서에서 **실제로 그려질 축** (표시 여부와 무관).
+    ///
+    /// 개요를 골랐는데 그 문서에 개요가 없으면 축소판으로 대신한다 — 개요가 없는
+    /// 문서에서 사이드바가 통째로 사라지던 것이 이 축을 추가한 이유다 (#76).
+    /// 대체는 **그리기에서만** 일어나고 `sidebarMode`를 덮어쓰지 않으므로, 개요가
+    /// 있는 문서를 다음에 열면 다시 개요가 나온다.
+    ///
+    /// `isComplete`를 함께 보는 것이 중요하다. 개요는 프로그레시브라 1쪽에 제목이
+    /// 없는 문서(표지·서식)는 **첫 스냅샷에서 빈 목록**으로 오는데, 그때 대체하면
+    /// 축소판 그리드가 마운트돼 쪽을 그리기 시작했다가 다음 스냅샷에서 헐린다
+    /// (그 작업은 세대 가드에 막혀 캐시되지도 않는다).
+    private func resolvedSidebarMode(for document: HwpDocument) -> SidebarMode {
+        guard sidebarMode == .outline,
+              document.metadata.isComplete,
+              document.metadata.outline.isEmpty
+        else { return sidebarMode }
+        return .thumbnails
+    }
+
+    /// 지금 화면에 낼 사이드바 (없으면 nil).
+    private func visibleSidebar(for document: HwpDocument) -> SidebarMode? {
+        guard sidebarVisible else { return nil }
+        let mode = resolvedSidebarMode(for: document)
+        // 배치가 끝나기 전의 빈 개요는 "개요가 없는 문서"가 아니라 "아직 안 온
+        // 문서"다 — 빈 목록을 내느니 열 자체를 접는다 (종전 동작과 같다).
+        if mode == .outline, document.metadata.outline.isEmpty {
+            return nil
+        }
+        return mode
+    }
+
+    @ViewBuilder
+    private func sidebarContent(
+        _ mode: SidebarMode,
+        document: HwpDocument,
+        onSelect: (() -> Void)? = nil
+    ) -> some View {
+        switch mode {
+        case .outline:
+            OutlineSidebar(
+                outline: document.metadata.outline,
+                currentPage: $currentPage,
+                onSelect: onSelect
+            )
+        case .thumbnails:
+            ThumbnailSidebar(
+                document: document,
+                currentPage: $currentPage,
+                thumbnails: thumbnails,
+                onSelect: onSelect
+            )
+        }
+    }
+
+    /// 사이드바(macOS) + 문서 뷰.
     private func documentArea(document: HwpDocument) -> some View {
         HStack(spacing: 0) {
             #if os(macOS)
-                if showsOutline, !document.metadata.outline.isEmpty {
-                    OutlineSidebar(
-                        outline: document.metadata.outline,
-                        currentPage: $currentPage
-                    )
-                    .frame(width: 260)
+                if let mode = visibleSidebar(for: document) {
+                    sidebarContent(mode, document: document)
+                        .frame(width: 260)
                     Divider()
                 }
             #endif
@@ -244,15 +328,13 @@ struct ContentView: View {
             .buttonStyle(.bordered)
 
             // 목록이 비어 있으면 누를 것이 없으므로 버튼 자체를 내지 않는다.
+            // 축소판 버튼에는 그런 조건이 없다 — 쪽은 언제나 있다.
             if !document.metadata.outline.isEmpty {
-                Button {
-                    showsOutline.toggle()
-                } label: {
-                    toolbarLabel("개요", systemImage: "list.bullet.indent")
-                }
-                .buttonStyle(.bordered)
-                .help("개요·책갈피 \(document.metadata.outline.count)개")
+                sidebarButton(.outline, document: document)
+                    .help("개요·책갈피 \(document.metadata.outline.count)개")
             }
+            sidebarButton(.thumbnails, document: document)
+                .help("쪽 축소판 \(document.pages.count)개")
 
             Divider().frame(height: 20)
 
@@ -309,6 +391,32 @@ struct ContentView: View {
 
             HwpZoomControls(zoomScale: $zoomScale)
         }
+    }
+
+    /// 사이드바 모드 토글. 이미 그 모드가 보이는 중이면 눌러서 감춘다.
+    ///
+    /// 활성 표시는 **실제로 그려질** 축을 따른다: 개요가 없는 문서에서 `.outline`
+    /// 선택이 축소판으로 대체되면 그 사실이 버튼에 보여야 한다. 그리고 그 버튼을
+    /// 눌러 여닫아도 `sidebarMode`는 건드리지 않는다 — 대체된 축을 그대로 써
+    /// 넣으면 한 번의 감췄다 열기로 사용자의 개요 선택이 조용히 사라진다.
+    @ViewBuilder
+    private func sidebarButton(_ mode: SidebarMode, document: HwpDocument) -> some View {
+        let draws = resolvedSidebarMode(for: document) == mode
+        let isActive = sidebarVisible && draws
+        Button {
+            if isActive {
+                sidebarVisible = false
+            } else if draws {
+                sidebarVisible = true
+            } else {
+                sidebarMode = mode
+                sidebarVisible = true
+            }
+        } label: {
+            toolbarLabel(mode.title, systemImage: mode.systemImage)
+        }
+        .buttonStyle(.bordered)
+        .tint(isActive ? Color.accentColor : nil)
     }
 
     /// 좁은 화면(iPhone)에서는 아이콘만 쓴다 — 툴바는 그냥 `HStack`이라 한 줄에
@@ -379,6 +487,9 @@ struct ContentView: View {
     private func cancelExportOnTeardown() {
         exportTask?.cancel()
         exportTask = nil
+        // 창이 사라지면 축소판 디코드도 놓는다 — 그러지 않으면 옛 문서의
+        // store/cache를 붙든 태스크가 남는다 (PDF 내보내기와 같은 이유).
+        thumbnails.cancelOutstanding()
         // 넘긴 뒤라면 지우지 않는다. 그 완료 콜백이 scene 파괴로 오지 않으면
         // 파일이 남지만, 그건 다음 실행의 `removeStaleExports`가 거둔다 —
         // 확정된 인쇄를 깨는 것보다 잠시 남는 편이 낫다.
@@ -546,7 +657,7 @@ struct ContentView: View {
         isLoading = true
         #if !os(macOS)
             // 시트는 사용자가 열 때만 뜬다 — 새 문서를 열면 닫힌 상태로 돌아간다.
-            showsOutline = false
+            sidebarVisible = false
         #endif
         loadProgress = nil
         loadGeneration += 1
@@ -571,6 +682,11 @@ struct ContentView: View {
                             zoomScale = 1.0
                         }
                         document = snapshot.document
+                        // 스냅샷마다 넘겨도 프로그레시브 증분이면 라이브러리가
+                        // 알아보고 이미 그린 축소판을 유지한다 (같은 loadToken +
+                        // 쪽 수 비감소). 사이드바가 닫혀 있어도 갱신해 둬야
+                        // 나중에 여는 순간 최신 쪽 수로 열린다.
+                        thumbnails.update(document: snapshot.document)
                         loadProgress = snapshot.isComplete ? nil : snapshot.progress
                         isLoading = false
                     }
