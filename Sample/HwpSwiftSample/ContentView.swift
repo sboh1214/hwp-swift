@@ -654,6 +654,10 @@ struct ContentView: View {
         loadTask?.cancel()
         errorMessage = nil
         document = nil
+        // 새 로드가 첫 스냅샷을 내기 전에 실패하면 이 렌더러를 갱신할 주체가 없어
+        // 옛 문서(쪽·공급자·디코드 이미지·축소판)가 오류 화면 내내 상주한다.
+        // `cancelOutstanding()`은 요청만 끊고 보유는 유지하므로 폐기는 교체로 한다.
+        thumbnails.update(document: .empty)
         isLoading = true
         #if !os(macOS)
             // 시트는 사용자가 열 때만 뜬다 — 새 문서를 열면 닫힌 상태로 돌아간다.

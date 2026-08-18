@@ -157,6 +157,34 @@ final class HwpPageThumbnailRendererTests: XCTestCase {
         expect(renderer.thumbnailCache.count) == 0
     }
 
+    /// 취소 검사는 **첫 캐시 조회보다 앞**에 서야 한다. 그 조회는 게이트보다
+    /// 앞이라, 검사가 뒤에 있으면 이미 그린 쪽을 요청한 취소된 셀은 취소 경로를
+    /// 아예 지나지 않고 성공한다 — 위 `testCancelledRequestFailsWithoutCaching`은
+    /// 캐시가 빈 상태라 이 창을 보지 못한다.
+    func testCancelledRequestDoesNotReturnAnAlreadyRenderedThumbnail() async throws {
+        let renderer = HwpPageThumbnailRenderer()
+        renderer.update(document: try Self.makeDocument(pageCount: 1))
+        _ = try await renderer.image(forPageAt: 0, pixelWidth: 90)
+        expect(renderer.thumbnailCache.count) == 1
+
+        let task = Task { () -> Result<CGImage, Error> in
+            while !Task.isCancelled {
+                await Task.yield()
+            }
+            do {
+                return await .success(try renderer.image(forPageAt: 0, pixelWidth: 90))
+            } catch {
+                return .failure(error)
+            }
+        }
+        task.cancel()
+
+        guard case let .failure(error) = await task.value else {
+            return fail("취소된 요청이 캐시된 축소판을 돌려줬다")
+        }
+        expect(error is CancellationError) == true
+    }
+
     /// **세대 가드의 단독 가드.** `cancelOutstanding()`은 호출자 태스크에 전파되지
     /// 않으므로 그 렌더는 끝까지 돌아 회색 플레이스홀더가 섞인 비트맵을 낸다
     /// (`.drawPlaceholder` 정책은 그것을 오류로 보지 않는다). 삽입을 막는 것은

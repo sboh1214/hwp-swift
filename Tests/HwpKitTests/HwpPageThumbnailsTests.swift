@@ -124,6 +124,10 @@ final class HwpPageThumbnailsTests: XCTestCase {
         }
         expect(HwpThumbnailError.pageOutOfRange(index: 3, pageCount: 2).description)
             .to(contain("Page 4"))
+        // 쪽 인덱스는 공개 인자다 — 1-기반 표시가 여기서 트랩하면 "재시도 가능"을
+        // 알리려고 만든 타입이 그것을 **표시하는 순간** 프로세스를 죽인다
+        expect(HwpThumbnailError.pageOutOfRange(index: .max, pageCount: 2).description)
+            .toNot(beEmpty())
         expect(HwpThumbnailError.renderFailed("컨텍스트 생성 실패").description)
             .to(contain("컨텍스트 생성 실패"))
     }

@@ -51,12 +51,15 @@ fixture 기준과 확보 현황은
 
 뷰어 타깃(`HwpKitCore` / `HwpKitNative` / `HwpKit`)은 SwiftUI 문서 뷰, 문서 내
 검색(`HwpSearchController` + `HwpSearchBar`), 개요·책갈피 탐색 목록
-(`HwpDocumentMetadata.outline`), PDF 내보내기(`HwpPDFExporter`)를 제공합니다.
-PDF와 검색 하이라이트 모두 화면 렌더와 같은 조판을 씁니다.
+(`HwpDocumentMetadata.outline`), PDF 내보내기(`HwpPDFExporter`), 쪽 축소판
+(`HwpPageThumbnails`)을 제공합니다. PDF·축소판·검색 하이라이트 모두 화면 렌더와
+같은 조판을 씁니다.
 
 경계는 **바이트와 컴포넌트는 라이브러리, 호스트 chrome과 정책은 앱**입니다 —
 검색 바처럼 호스트가 놓은 자리만 차지하는 컴포넌트는 제공하지만, 저장 패널·
-인쇄·공유 UI와 Cmd+F 같은 전역 단축키는 앱이 정합니다. 배선 예시는
+인쇄·공유 UI와 Cmd+F 같은 전역 단축키는 앱이 정합니다. 개요 목록·축소판
+그리드처럼 행 레이아웃과 플랫폼 chrome 분기가 붙는 목록 UI도 앱 몫입니다 —
+재료(탐색 목록·비트맵)까지가 라이브러리입니다. 배선 예시는
 [Sample/README.md](Sample/README.md)에 있습니다.
 
 ## 폰트

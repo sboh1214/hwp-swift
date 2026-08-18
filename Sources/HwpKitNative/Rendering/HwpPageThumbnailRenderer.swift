@@ -120,18 +120,25 @@ public final class HwpPageThumbnailRenderer: @unchecked Sendable {
     /// 않는다 — 취소는 이미지 확정을 중간에 끊으므로 그 결과를 굳히면 회색
     /// 사각형이 그 쪽의 답으로 남는다.
     public func image(forPageAt index: Int, pixelWidth: Int) async throws -> CGImage {
+        // 캐시 히트도 취소를 이기지 못한다. 이 조회가 게이트보다 **앞**이라,
+        // 검사가 없으면 이미 그린 쪽을 요청한 취소된 셀은 취소 경로를 아예 지나지
+        // 않고 성공한다.
+        try Task.checkCancellation()
         let key = HwpThumbnailCache.Key(pageIndex: index, pixelWidth: pixelWidth)
         if let cached = cache.image(for: key) {
             return cached
         }
         guard await gate.acquire() else { throw CancellationError() }
         defer { Task { await gate.release() } }
+        // 슬롯을 **넘겨받은 뒤**의 취소는 스로틀이 무시하고 호출부에 맡긴다
+        // (`HwpDecodeThrottle.cancelWaiter` 주석) — release가 이양한 대기자의 늦은
+        // 취소가 그 창이고, 아래 캐시 조회보다 먼저 서야 닫힌다.
+        try Task.checkCancellation()
         // 게이트를 기다리는 사이 같은 쪽이 그려졌을 수 있다 (그리드 셀이 스크롤로
         // 두 번 나타나는 흔한 형상). 진입 시 조회만 하면 그대로 재렌더한다.
         if let cached = cache.image(for: key) {
             return cached
         }
-        try Task.checkCancellation()
 
         let snapshot = try snapshot(at: index)
         if let pageProvider = snapshot.provider {
@@ -149,6 +156,11 @@ public final class HwpPageThumbnailRenderer: @unchecked Sendable {
             sourceRect: nil,
             provider: snapshot.provider
         )
+        // 래스터화는 동기라 그 사이 도착한 취소는 여기서만 잡힌다. 결과 자체는
+        // 온전하지만(이미지 확정은 위에서 이미 끝났다) "취소는 아무것도 캐시하지
+        // 않는다"를 문자 그대로 지키는 자리가 여기다 — 옛 문서 비트맵을 막는 것은
+        // 아래 세대 가드의 몫으로 갈라 둔다.
+        try Task.checkCancellation()
         // 그리는 동안 문서가 바뀌었으면 이 비트맵은 옛 문서의 쪽이다 — 새 캐시에
         // 넣으면 다른 문서의 쪽이 그 자리에 굳는다 (`HwpImageCache`가 `binItemId`
         // 하나로 키를 잡아 문서 간 오염을 만드는 것과 같은 성격의 실수다).

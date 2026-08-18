@@ -1,6 +1,6 @@
 # 프로젝트 지식 베이스
 
-**Branch:** feat/pdf-export-print
+**Branch:** feat/page-bitmap-render-thumbnails
 
 ## 개요
 
@@ -12,7 +12,7 @@ HWP 파일은 OLE compound document이며, 그 안의 stream들은 record tree �
 - `CoreHwp` — 파서 (read-only, binary HWP → typed model)
 - `HwpKitCore` — 렌더 코어 (platform-neutral, CoreGraphics/CoreText/Foundation only)
 - `HwpKitNative` — 플랫폼 브릿지 (AppKit + UIKit)
-- `HwpKit` — SwiftUI 공개 API + PDF 내보내기
+- `HwpKit` — SwiftUI 공개 API + PDF 내보내기·쪽 축소판
 
 ## 구조
 
@@ -22,7 +22,7 @@ hwp-swift/
 ├── Sources/CHwpZlib/      # 비-Apple deflate 해제용 system zlib module map
 ├── Sources/HwpKitCore/    # 렌더 코어 — 파이프라인/모델/paint list (AGENTS.md 참조)
 ├── Sources/HwpKitNative/  # 플랫폼 브릿지 — CALayer/View (AGENTS.md 참조)
-├── Sources/HwpKit/        # SwiftUI 공개 API + PDF 내보내기 (AGENTS.md 참조)
+├── Sources/HwpKit/        # SwiftUI 공개 API + PDF 내보내기·쪽 축소판 (AGENTS.md 참조)
 ├── Tests/{CoreHwp,HwpKitCore,HwpKitNative,HwpKit}Tests/
 ├── Sample/                # HwpSwiftSample.xcodeproj (xcodegen, path: ..)
 ├── Package.swift          # swift-tools-version:5.9
@@ -699,6 +699,19 @@ API**로 승격했다 — `HwpKitNative.HwpPageBitmapRenderer`가 종이 배경�
 축소판은 `.drawPlaceholder` — 보조 표시라 그림 하나 때문에 쪽 전체를 잃는 것이
 더 나쁘다. **경계는 PDF와 같다**: 비트맵까지가 우리 몫이고 그리드·목록 UI는
 호스트가 만든다 (`Sample/HwpSwiftSample/ThumbnailSidebar.swift`).
+
+**픽셀 수를 문서가 정하는 유일한 경로이기도 하다** (#76 리뷰). 페이지 치수는
+`HwpPageGeometry`가 200인치로 **상한만** 막고 하한은 `> 0`이라 1 HWPUNIT =
+0.01pt 폭이 통과하는데, 화면 뷰는 그 페이지를 자연 크기로 그려 무사한 반면
+축소판은 폭을 208px로 **끌어올려** 높이를 20,800배 증폭한다 (종횡비 상한
+1,440,000 → 299,520,000행 ≈ 249GB). 캐시 예산은 이것을 못 막는다 — 할당이
+먼저이고 `HwpThumbnailCache`는 방금 넣은 항목이 예산을 넘어도 의도적으로
+남긴다. `HwpPageBitmapRenderer.maximumPixelDimension`이 그 축을 묶되 **층마다
+답이 다르다**: 크기 헬퍼(`pixelHeight`)는 **클램프**하고(실패하면 그 쪽이
+호스트 목록에서 통째로 사라진다 — `HwpOutlineItem` 수준 클램프와 같은 기준)
+렌더러(`rasterize`)는 **거부**한다(조용히 줄이면 호출자가 요청하지 않은 크기가
+나간다). 같은 상한이 `pixelWidth * 4`와 `Int(CGFloat)`의 오버플로 트랩도 함께
+닫는다 — 공개 인자에 `Int.max`가 들어오는 바로 그 경로다.
 
 가드는 두 구멍을 메운다. (1) 커밋된 골든이 **1쪽을 한 번도 그리지 않는다**
 (`FixtureRenderGoldenTests.specs`가 2쪽 이후만 고르고, 1쪽 오라클인 fidelity는

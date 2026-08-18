@@ -52,6 +52,49 @@ final class HwpPageBitmapRendererTests: XCTestCase {
         })
     }
 
+    /// **문서가 픽셀 수를 정하는 경로의 가드.** 페이지 치수는 상한(14,400pt)만
+    /// 클램프되고 하한은 `> 0`이라 1 HWPUNIT = 0.01pt 폭이 통과한다 — 그
+    /// 종횡비(1,440,000)에 208px를 곱하면 299,520,000행 ≈ 249GB다. 화면 뷰는
+    /// 페이지를 자연 크기로 그려 무사하므로 이 증폭은 폭을 끌어올리는 이 경로에만
+    /// 있다.
+    func testExtremePageAspectRatioIsBoundedInsteadOfExploding() async throws {
+        let sliver = Self.makePage(commands: [], size: CGSize(width: 0.01, height: 14400))
+
+        let height = HwpPageBitmapRenderer.pixelHeight(for: sliver, pixelWidth: 208)
+        expect(height) == HwpPageBitmapRenderer.maximumPixelDimension
+
+        // 상한 안이므로 **거부가 아니라 렌더**다 — 축소판은 보조 표시라 눌린
+        // 그림이 쪽을 통째로 잃는 것보다 낫다.
+        let image = try await HwpPageBitmapRenderer.render(
+            page: sliver, imageStore: HwpImageStore(), pixelWidth: 208, pixelHeight: height
+        )
+        expect(image.width) == 208
+        expect(image.height) == HwpPageBitmapRenderer.maximumPixelDimension
+    }
+
+    /// 픽셀 폭은 공개 인자라 `Int.max`가 들어온다. 크기 헬퍼는 **클램프**해
+    /// 호스트가 셀 자리를 잡게 하고 렌더러는 **거부**하되, 어느 쪽도
+    /// `Int(CGFloat)`·`pixelWidth * 4`에서 트랩하면 안 된다.
+    func testExtremePixelWidthIsRejectedInsteadOfTrapping() async {
+        let page = Self.makePage(commands: [])
+        let degenerate = Self.makePage(commands: [], size: .zero)
+
+        expect(HwpPageBitmapRenderer.pixelHeight(for: page, pixelWidth: .max))
+            == HwpPageBitmapRenderer.maximumPixelDimension
+        expect(HwpPageBitmapRenderer.pixelHeight(for: degenerate, pixelWidth: .max))
+            == HwpPageBitmapRenderer.maximumPixelDimension
+
+        await expect {
+            try await HwpPageBitmapRenderer.render(
+                page: page, imageStore: HwpImageStore(), pixelWidth: .max, pixelHeight: 10
+            )
+        }.to(throwError(errorType: HwpPageBitmapRenderError.self) { error in
+            guard case .invalidPixelSize = error else {
+                return fail("Expected .invalidPixelSize, got \(error)")
+            }
+        })
+    }
+
     // MARK: - 방향 · 기하
 
     /// **상하 반전을 실제로 잡는다.** 잉크 비영만으로는 뒤집혀도 통과하므로

@@ -77,8 +77,9 @@ HwpKitNative/
 - **미확정 정책만 호출자마다 갈린다** (`HwpUnresolvedImagePolicy`). PDF·픽스처 하네스는 `.fail` — 산출물이 사용자 파일이거나 커밋된 기준선이라 회색 로딩 사각형이 정답으로 굳으면 안 된다. 축소판은 `.drawPlaceholder` — 보조 표시라 그림 하나 때문에 쪽 전체를 잃는 것이 더 나쁘다
 - **`sourceRect`는 캔버스를 채울 페이지 영역**(top-down 페이지 좌표)이다. 기본값(페이지 전체)일 때 CTM이 **순수 스케일**이어야 커밋된 골든·픽셀 해시가 안 흔들린다 — 그래서 이동을 스케일 **뒤에** 걸어 페이지 단위로 해석시킨다. 장치 단위로 걸면 `pageH × (pxH / pageH) ≠ pxH`라 1e-13pt 이동이 남는다. 이 인자가 있는 이유는 하나뿐이다: 일부 저장본의 PrvImage가 확대·크롭 렌더라 `FixturePreview`의 `zoom`이 그 대조에 필요하다 (zoom배 = 좌상단 1/zoom 영역을 채우기)
 - 캔버스 전체를 먼저 흰색으로 깐 **뒤** 종이를 다시 깐다. `sourceRect`가 종이 밖으로 나가면 그 여백이 투명(0)으로 남아, 알파를 무시하고 읽는 소비자에게 검정이 된다
+- **출력 픽셀에는 축별 상한이 있다** (`maximumPixelDimension` = 16,384, #76 리뷰) — 여기가 **픽셀 수를 문서가 정하는** 경로라서다. 근거와 층 구분(크기 헬퍼는 클램프·렌더러는 거부)은 루트 `AGENTS.md`의 "쪽 축소판". 클램프는 `Int(_:)` 변환 **전에** 한다: 그 변환이 범위 밖에서 트랩하므로 조작 문서의 종횡비와 `Int.max` 픽셀 폭이 둘 다 그리로 온다. 상한 안에서만 `pixelWidth * 4`가 안전하므로 그 가드는 `CGContext` 생성보다 **앞**이어야 한다
 - **`FixturePreview.renderImage`가 이 API에 위임한다** — 그래야 렌더 가드 4층이 테스트 전용 사본이 아니라 출하되는 코드를 검사한다. 하네스에 남는 것은 `zoom`과 `.fail` 정책 선택뿐이다
-- 가드는 `Tests/HwpKitNativeTests/HwpPageBitmapRendererTests.swift` — 골든이 **못 보는 것**만 잰다: 픽셀 크기 계약·상하 방향(잉크 비영은 반전을 통과시킨다)·`sourceRect` 기하·정책 두 갈래. 픽스처 렌더 회귀는 커밋된 골든이 본다
+- 가드는 `Tests/HwpKitNativeTests/HwpPageBitmapRendererTests.swift` — 골든이 **못 보는 것**만 잰다: 픽셀 크기 계약·상하 방향(잉크 비영은 반전을 통과시킨다)·`sourceRect` 기하·정책 두 갈래·**종횡비 폭주와 `Int.max` 픽셀 폭**(0.01pt 폭 페이지가 상한에서 접히고, 상한 밖 요청은 트랩이 아니라 `.invalidPixelSize`). 픽스처 렌더 회귀는 커밋된 골든이 본다
 
 ## 쪽 축소판 (HwpPageThumbnailRenderer, #76)
 
@@ -88,10 +89,10 @@ HwpKitNative/
 - **요청은 직렬화한다** (`HwpDecodeThrottle(limit: 1)` 재사용 — 취소 시 슬롯 없이 false를 주는 계약이 그대로 필요하다). `retainOnlyImages`가 공급자 전역이라 두 쪽을 동시에 그리면 한쪽이 다른 쪽의 확정된 변형을 draw 직전에 버린다. 게이트를 잡은 **뒤에** 캐시를 다시 보는 것도 그래서다 — 기다리는 사이 같은 쪽이 그려졌을 수 있다 (그리드 셀이 스크롤로 두 번 나타나는 흔한 형상)
 - **문서 교체 판정은 뷰와 같은 함수**(`HwpDocumentViewSupport.isProgressiveUpdate`)를 쓴다. 갈리면 뷰는 증분인데 축소판만 전부 버려 1,030쪽이 배치마다 다시 그려진다. 전체 교체에서만 공급자·캐시를 새로 만든다 — `cancelOutstanding`은 요청 상태만 비우고 디코드 결과·실패 키를 지우지 않으므로, `binItemId` 캐시 오염 방지는 **교체**가 담당한다
 - **세대 가드가 캐시 삽입을 막는다**: 그리는 동안 문서가 바뀌면 그 비트맵은 옛 문서의 쪽이다. 넣으면 다른 문서의 쪽이 그 자리에 굳는다 (`HwpImageCache`가 `binItemId` 하나로 키를 잡는 것과 같은 성격의 오염)
-- 취소는 아무것도 캐시하지 않는다 — 확정이 중간에 끊긴 결과를 굳히면 회색 사각형이 그 쪽의 답으로 남는다
+- **취소 검사는 네 자리다** — ③만 원래 있었고 #76 리뷰가 ①②④를 더했다. ① 진입 — 첫 캐시 조회가 게이트보다 **앞**이라, 검사를 뒤에 두면 이미 그린 쪽을 요청한 취소된 셀은 취소 경로를 아예 지나지 않고 성공한다. ② 게이트 획득 직후 — 슬롯을 **넘겨받은 뒤**의 취소를 스로틀은 무시하고 호출부에 맡긴다 (`HwpDecodeThrottle.cancelWaiter` 주석: release가 이양한 대기자의 늦은 취소). ③ 이미지 확정 직후 — `resolveImages`의 await에서 돌아온 자리다. ④ 래스터화 직후 — 동기 구간이라 그 사이 도착한 취소는 여기서만 잡힌다. **④의 결과는 온전한 이미지다**: ③을 이미 지났으므로 회색 사각형이 굳는 것을 막는 것은 취소가 아니라 **세대 가드**이고, ④는 "취소는 아무것도 캐시하지 않는다"를 문자 그대로 지킬 뿐이다. 결정적으로 재현되는 것은 ①뿐이다 (②는 이음매 없는 경합, ④는 동기 구간)
 - **스로틀(limit 3)은 전역이다** — 축소판이 가시 페이지와 슬롯을 나눠 쓴다. 그래서 셀별 취소가 성능 장치가 아니라 계약이다 (`Sample`의 `.task`가 셀이 사라질 때 끊는다). 이것을 재는 테스트는 없다
 - 축소판 캐시(`Cache/HwpThumbnailCache.swift`)는 **삽입순 + 바이트 예산 결정적 축출**이다. NSCache를 쓰지 않는 이유는 provider와 같다 (예산 안이어도 즉시 축출 → 재요청 루프, #3). 키에 픽셀 폭이 들어가는 것은 작은 축소판이 큰 요청에 히트해 흐릿하게 남는 것을 막기 위해서고, 정리는 **한 패스**다 (`retainOnlyImages`와 같은 이차 함정)
-- 가드는 `HwpPageThumbnailRendererTests`(순회 규율·캐시 동일 인스턴스·프로그레시브 유지 vs 전체 교체 폐기)와 `HwpThumbnailCacheTests`(축출 순서·재삽입 바이트·선형성). 공개 표면 골든은 `Tests/HwpKitTests/HwpPageThumbnailsTests.swift` — 커밋된 렌더 골든이 **1쪽을 한 번도 그리지 않으므로**(`specs`가 2쪽 이후만 고른다) 그 구멍을 여기서 메운다
+- 가드는 `HwpPageThumbnailRendererTests`(순회 규율·캐시 동일 인스턴스·프로그레시브 유지 vs 전체 교체 폐기, 그리고 **위 두 줄을 각각 잠그는** 취소 2종(`testCancelledRequestFailsWithoutCaching`은 캐시가 빈 경로, `testCancelledRequestDoesNotReturnAnAlreadyRenderedThumbnail`은 **캐시 히트** 경로 — 후자가 없으면 ① 검사를 지워도 스위트가 초록이다)·세대 가드 2종 `testSupersededRenderResultIsNotCached`/`testRenderStartedBeforeADocumentSwapIsNotCached`)와 `HwpThumbnailCacheTests`(축출 순서·재삽입 바이트·선형성·**혼자 예산을 넘는 항목은 삽입 즉시 축출하지 않기** — provider의 `evictOverBudget(keeping:)`와 같은 이유로, 축출하면 그 쪽이 매 요청마다 재렌더다). 공개 표면 골든은 `Tests/HwpKitTests/HwpPageThumbnailsTests.swift` — 커밋된 렌더 골든이 **1쪽을 한 번도 그리지 않으므로**(`specs`가 2쪽 이후만 고른다) 그 구멍을 여기서 메운다
 
 ## PDF 내보내기 (HwpPDFRenderer)
 

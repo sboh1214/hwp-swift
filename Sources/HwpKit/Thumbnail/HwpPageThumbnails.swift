@@ -15,10 +15,18 @@ extension HwpThumbnailError: CustomStringConvertible {
         case .cancelled:
             "Thumbnail rendering was cancelled"
         case let .pageOutOfRange(index, pageCount):
-            "Page \(index + 1) is outside the document (\(pageCount) page(s))"
+            "Page \(Self.oneBased(index)) is outside the document (\(pageCount) page(s))"
         case let .renderFailed(reason):
             "Thumbnail rendering failed: \(reason)"
         }
+    }
+
+    /// 1-기반 쪽 번호 표시는 **클램프가 산술보다 먼저**다. 이 경로는 호스트가
+    /// `Int.max`를 넘겨도 범위 밖으로 안전하게 분류해 주는데, 그 결과를
+    /// `localizedDescription`으로 표시하는 순간 `index + 1`이 트랩한다 —
+    /// 재시도 가능 상태를 알려 주려고 만든 타입이 프로세스를 죽이게 된다.
+    private static func oneBased(_ index: Int) -> Int {
+        index < .max ? index + 1 : .max
     }
 }
 

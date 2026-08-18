@@ -15,9 +15,12 @@ extension HwpPageBitmapRenderError: CustomStringConvertible {
     public var description: String {
         switch self {
         case let .pageOutOfRange(index, pageCount):
-            "Page \(index + 1) is outside the document (\(pageCount) page(s))"
+            "Page \(Self.oneBased(index)) is outside the document (\(pageCount) page(s))"
         case let .invalidPixelSize(width, height):
-            "Bitmap size must be positive (got \(width)×\(height))"
+            """
+            Bitmap size must be within \
+            1...\(HwpPageBitmapRenderer.maximumPixelDimension) (got \(width)×\(height))
+            """
         case let .invalidSourceRect(rect):
             "Source rect must have a positive size (got \(rect.width)×\(rect.height))"
         case .contextCreationFailed:
@@ -27,6 +30,14 @@ extension HwpPageBitmapRenderError: CustomStringConvertible {
         case let .unresolvedImages(variants):
             "\(variants.count) image variant(s) stayed unresolved after predecoding"
         }
+    }
+
+    /// 1-기반 쪽 번호 표시는 **클램프가 산술보다 먼저**다. 쪽 인덱스는 공개
+    /// 인자라 `Int.max`가 들어올 수 있는데, 그 값은 범위 밖으로 안전하게 분류돼
+    /// 이 오류가 되고 나서 `index + 1`에서 트랩한다 — 타입 있는 오류를 주기로 한
+    /// 계약이 그 오류를 **표시하는 순간** 프로세스를 죽인다.
+    private static func oneBased(_ index: Int) -> Int {
+        index < .max ? index + 1 : .max
     }
 }
 
@@ -66,10 +77,39 @@ public enum HwpPageBitmapRenderer {
     /// (`HwpPDFRenderer`가 같은 이유로 둘을 함께 설정한다).
     public static let defaultImageByteLimit = HwpPageImageProvider.defaultResolvedByteLimit
 
-    /// 페이지 종횡비를 유지하는 픽셀 높이.
+    /// 출력 비트맵의 축별 상한 (px).
+    ///
+    /// **픽셀 수를 문서가 정하기 때문에** 필요하다: `HwpPageGeometry`는 페이지
+    /// 치수를 200인치(14,400pt)로 **상한만** 막고 하한은 `> 0`이라 1 HWPUNIT =
+    /// 0.01pt 폭이 그대로 통과한다. 종횡비 상한이 1,440,000이라 208px 축소판
+    /// 하나가 299,520,000행 ≈ 249GB를 요구한다. 캐시 예산은 이것을 못 막는다 —
+    /// 할당이 먼저이고 `HwpThumbnailCache`는 방금 넣은 항목이 예산을 넘어도
+    /// 의도적으로 남긴다. 화면 뷰는 페이지를 자연 크기로 그려 무사하고, 폭을
+    /// 끌어올리는 축소판·PrvImage 대조에서만 이 증폭이 생긴다.
+    ///
+    /// 값은 실사용의 한참 위다 — 렌더 골든 850px, 픽셀 해시 1x(A4 595px),
+    /// fidelity 724px, 샘플 축소판 ~200px.
+    public static let maximumPixelDimension = 16384
+
+    /// 페이지 종횡비를 유지하는 픽셀 높이 — 상한에서 **클램프**한다.
+    ///
+    /// 거부가 아니라 클램프인 이유는 이것이 호스트가 셀 자리를 미리 잡는 **크기
+    /// 헬퍼**라서다: 실패하면 그 쪽이 목록에서 통째로 사라진다
+    /// (`HwpOutlineItem`의 수준 클램프와 같은 기준). 그리는 쪽(`rasterize`)은
+    /// 반대로 **거부**한다 — 거기서 조용히 줄이면 호출자가 요청하지 않은 크기의
+    /// 비트맵이 나간다.
     public static func pixelHeight(for page: HwpPage, pixelWidth: Int) -> Int {
-        guard page.size.width > 0, page.size.height > 0 else { return max(1, pixelWidth) }
-        return max(1, Int((CGFloat(pixelWidth) * page.size.height / page.size.width).rounded()))
+        let width = clampedDimension(CGFloat(pixelWidth))
+        guard page.size.width > 0, page.size.height > 0 else { return width }
+        return clampedDimension((CGFloat(width) * page.size.height / page.size.width).rounded())
+    }
+
+    /// `Int(_:)` 변환은 범위 밖 값에서 **트랩**하므로 클램프가 변환보다 먼저다.
+    /// 조작 문서의 종횡비와 `Int.max` 픽셀 폭이 둘 다 이 경로로 온다.
+    private static func clampedDimension(_ value: CGFloat) -> Int {
+        guard value.isFinite, value >= 1 else { return 1 }
+        guard value < CGFloat(maximumPixelDimension) else { return maximumPixelDimension }
+        return Int(value)
     }
 
     /// 페이지 하나를 비트맵으로 렌더한다. 공급자와 캐시를 **이 호출 안에서만**
@@ -149,7 +189,9 @@ public enum HwpPageBitmapRenderer {
         sourceRect: CGRect?,
         provider: HwpPageImageProvider?
     ) throws -> CGImage {
-        guard pixelWidth > 0, pixelHeight > 0 else {
+        guard pixelWidth >= 1, pixelWidth <= maximumPixelDimension,
+              pixelHeight >= 1, pixelHeight <= maximumPixelDimension
+        else {
             throw HwpPageBitmapRenderError.invalidPixelSize(
                 width: pixelWidth, height: pixelHeight
             )
