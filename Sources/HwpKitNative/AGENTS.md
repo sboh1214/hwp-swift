@@ -193,6 +193,8 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
 - **뷰포트 밖 끝점의 핸들은 숨긴다** (가장자리 클램프 금지). 클램프하면 손가락이 엉뚱한 자리의 핸들을 잡아 선택이 튄다. 페이지 레이어가 축출돼도 캐럿 좌표는 지오메트리에서 나오므로 계산 자체는 살아 있다.
 - **산식은 `#if os(iOS)` 밖에 둔다** (`HwpSelectionHandleGeometry`). iOS 잡은 `xcodebuild test` 만 돌고 커버리지를 수집하지 않으므로 (`--enable-code-coverage`·codecov 업로드는 macOS 잡 소속), 가드 안에만 사는 산식은 codecov patch 에 아예 안 잡힌다. `HwpDocumentViewSupport.effectiveContentsScale`·`autoscrollStep` 과 같은 틀이다.
 - 상태는 값 타입 하나(`HwpSelectionInteractionState`)로 묶는다 — `HwpDocumentUIView` 타입 본문이 SwiftLint `type_body_length` **error** 임계(400)에 닿아 있어 저장 프로퍼티를 한 줄만 늘려도 Lint 잡이 종료 코드 2로 끝난다. 신규 상태만 묶는 게 아니라 기존 오토스크롤·편집 메뉴 상태까지 접어 본문을 **순감**시켰다 (400 → 399).
+- **가시 판정에 `CGRect.intersects` 를 쓰면 안 된다** (`isCaretVisible`). 캐럿은 폭 0이라 `CGRect.isEmpty` 가 참이고 CG 의 교차 판정은 빈 사각형에 **항상 false** 를 준다 — 그대로 쓰면 뷰포트 한가운데 있는 캐럿의 핸들까지 전부 숨는다. 그래서 축별 비교를 손으로 쓰고, 가로는 경계에 정확히 걸친 캐럿을 살리려 `>=`/`<=` 다 (실측: 폭 0 캐럿이 뷰포트 오른쪽 끝에 있을 때 `intersects` 는 false, 이 술어는 true). 위 "뷰포트 밖은 숨긴다" 규칙이 실제로 작동하려면 이 한 줄이 필요하다.
+- 가드: `HwpSelectionHandleGeometryTests`(11종 — 프레임·부품 배치, `handleFrame` ↔ `caretCenter` 왕복, 그랩 오프셋·여유, 그리고 위 빈 사각형 함정을 잠그는 `testCaretVisibilityDoesNotRideOnEmptyRectSemantics`) + `HwpDocumentUIViewSelectionTests`(13종 — 뷰 배선).
 
 ## 레이어 가상화
 
