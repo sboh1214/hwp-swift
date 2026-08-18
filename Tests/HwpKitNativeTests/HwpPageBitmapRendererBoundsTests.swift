@@ -57,6 +57,77 @@ final class HwpPageBitmapRendererBoundsTests: XCTestCase {
         })
     }
 
+    /// **축별 상한만으로는 모자란다.** 두 축을 다 요구하는 극단이 아니라 **폭
+    /// 하나짜리 요청**이 1 GiB로 간다 — 세로 페이지에서는 높이가 상한까지
+    /// 클램프되기 때문이고, `maximumPixelDimension`이 공개 상수라 그 값을 그대로
+    /// 넘기는 것이 자연스러운 사용이다.
+    func testTotalPixelAreaIsCappedBelowThePerAxisSquare() async {
+        let portrait = HwpPageBitmapRendererTests.makePage(
+            commands: [], size: CGSize(width: 595, height: 842)
+        )
+        let cap = HwpPageBitmapRenderer.maximumPixelDimension
+
+        // 폭만 상한으로 줘도 높이가 상한까지 올라온다 (자연 높이 23,185 → 클램프)
+        expect(HwpPageBitmapRenderer.pixelHeight(for: portrait, pixelWidth: cap)) == cap
+
+        await expect {
+            try await HwpPageBitmapRenderer.render(
+                page: portrait, imageStore: HwpImageStore(),
+                pixelWidth: cap, pixelHeight: cap
+            )
+        }.to(throwError(errorType: HwpPageBitmapRenderError.self) { error in
+            guard case .invalidPixelSize = error else {
+                return fail("Expected .invalidPixelSize, got \(error)")
+            }
+        })
+
+        // 경계 대조군 — 상한과 **정확히 같은** 면적은 통과한다. 검증만 부르므로
+        // 64 MiB를 실제로 할당하지는 않는다.
+        let side = 4096
+        expect(side * side) == HwpPageBitmapRenderer.maximumPixelCount
+        expect {
+            try HwpPageBitmapRenderer.validatedGeometry(
+                page: portrait, pixelWidth: side, pixelHeight: side, sourceRect: nil
+            )
+        }.toNot(throwError())
+    }
+
+    /// 값싼 검증이 **디코드보다 먼저**여야 한다. 예산이 빠듯한 `.fail` 경로에서
+    /// 순서가 뒤집히면 `.unresolvedImages`가 먼저 나와, 잘못된 입력을 알려 주려고
+    /// 만든 오류가 엉뚱한 것으로 바뀐다 — 그것도 예산을 다 쓴 뒤에.
+    func testInvalidRequestFailsBeforeDecodingPageImages() async throws {
+        let document = try HwpPageBitmapRendererTests.makeImageDocument(imageCount: 3)
+        let page = try XCTUnwrap(document.pages.first)
+
+        // 같은 문서·같은 예산이 **유효한** 크기에서는 `.unresolvedImages`를 낸다
+        // (`testUnresolvedPolicyDecidesBetweenPlaceholderAndFailure`). 그러므로
+        // 아래가 입력 오류라는 것은 디코드 전에 끝났다는 뜻이다.
+        await expect {
+            try await HwpPageBitmapRenderer.render(
+                page: page, imageStore: document.imageStore,
+                pixelWidth: .max, pixelHeight: 80,
+                unresolvedImages: .fail, imageByteLimit: 1
+            )
+        }.to(throwError(errorType: HwpPageBitmapRenderError.self) { error in
+            guard case .invalidPixelSize = error else {
+                return fail("Expected .invalidPixelSize, got \(error)")
+            }
+        })
+
+        await expect {
+            try await HwpPageBitmapRenderer.render(
+                page: page, imageStore: document.imageStore,
+                pixelWidth: 60, pixelHeight: 80,
+                sourceRect: CGRect(x: CGFloat.nan, y: 0, width: 100, height: 100),
+                unresolvedImages: .fail, imageByteLimit: 1
+            )
+        }.to(throwError(errorType: HwpPageBitmapRenderError.self) { error in
+            guard case .invalidSourceRect = error else {
+                return fail("Expected .invalidSourceRect, got \(error)")
+            }
+        })
+    }
+
     /// **CG는 이 입력들에서 실패하지 않는다** — NaN 원점·무한 크기·비정규 크기
     /// 모두 `makeImage()`가 성공하고 아무것도 그려지지 않은 흰 비트맵이 나온다
     /// (실측). `width/height > 0` 하나로는 셋 다 통과하므로, 검사가 없으면 빈

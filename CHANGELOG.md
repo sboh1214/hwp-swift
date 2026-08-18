@@ -144,7 +144,11 @@
   렌더러는 `.invalidPixelSize`로 거부합니다. `sourceRect`도 크기가 양수인지만이
   아니라 **파생되는 변환이 유한한지**까지 봅니다 — NaN 원점·무한/비정규 크기에서
   CoreGraphics는 실패하지 않고 빈 비트맵을 성공으로 돌려주므로
-  `.invalidSourceRect`로 끝냅니다.
+  `.invalidSourceRect`로 끝냅니다. 축별 상한과 별개로 **총 면적 상한**
+  (`maximumPixelCount`, 64 MiB)이 있습니다 — 세로 페이지에서는 폭 하나만 상한으로
+  줘도 높이가 상한까지 클램프돼 1 GiB가 되기 때문입니다. 이 검증은 모두 그림
+  디코드 **전에** 끝나므로, 잘못된 요청이 예산을 쓰거나 원인이 아닌 오류로
+  보고되지 않습니다.
 - 개요·책갈피 **탐색 목록**을 공개 API로 추가했습니다
   (`HwpDocumentMetadata.outline: [HwpOutlineItem]`). 조판이 확정한 쪽을 들고
   있어 사이드바·목차에서 항목을 눌러 그 쪽으로 바로 이동할 수 있습니다.

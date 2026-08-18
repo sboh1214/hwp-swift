@@ -141,6 +141,16 @@ public final class HwpPageThumbnailRenderer: @unchecked Sendable {
         }
 
         let snapshot = try snapshot(at: index)
+        // 값싼 기하 검증이 **디코드보다 먼저**다 (`validatedGeometry` 주석) —
+        // 상한 밖 폭이 페이지 그림을 전부 디코드한 뒤에야 거절되면 안 된다.
+        let geometry = try HwpPageBitmapRenderer.validatedGeometry(
+            page: snapshot.page,
+            pixelWidth: pixelWidth,
+            pixelHeight: HwpPageBitmapRenderer.pixelHeight(
+                for: snapshot.page, pixelWidth: pixelWidth
+            ),
+            sourceRect: nil
+        )
         if let pageProvider = snapshot.provider {
             try await HwpPageBitmapRenderer.resolveImages(
                 in: snapshot.page, provider: pageProvider, policy: .drawPlaceholder
@@ -148,13 +158,7 @@ public final class HwpPageThumbnailRenderer: @unchecked Sendable {
         }
         try Task.checkCancellation()
         let image = try HwpPageBitmapRenderer.rasterize(
-            page: snapshot.page,
-            pixelWidth: pixelWidth,
-            pixelHeight: HwpPageBitmapRenderer.pixelHeight(
-                for: snapshot.page, pixelWidth: pixelWidth
-            ),
-            sourceRect: nil,
-            provider: snapshot.provider
+            page: snapshot.page, geometry: geometry, provider: snapshot.provider
         )
         // 래스터화는 동기라 그 사이 도착한 취소는 여기서만 잡힌다. 결과 자체는
         // 온전하지만(이미지 확정은 위에서 이미 끝났다) "취소는 아무것도 캐시하지

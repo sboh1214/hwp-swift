@@ -719,6 +719,20 @@ API**로 승격했다 — `HwpKitNative.HwpPageBitmapRenderer`가 종이 배경�
 렌더러에만 넣고 참조 배선을 그대로 두었다가 리뷰에서 잡힌 자리다
 (`Sample/HwpSwiftSample/ThumbnailSidebar.swift`).
 
+**축별 상한만으로는 그 축이 안 닫힌다.** 두 축을 다 크게 요구하는 극단이
+아니라 **폭 하나짜리 요청**이 1 GiB로 간다 — 세로 페이지는 높이가 상한까지
+클램프되므로 폭 16,384 하나면 16,384²가 되고 (A4 실측: 자연 높이 23,185 →
+클램프 16,384), `maximumPixelDimension`이 공개 상수라 그 값을 그대로 넘기는
+것이 자연스러운 사용이다. `maximumPixelCount`(64 MiB)가 면적을 따로 묶되
+축별 상한을 **먼저** 통과시켜 그 곱이 오버플로할 수 없게 한다.
+
+**값싼 검증은 디코드보다 먼저다.** `render`가 공급자를 만들기 전에
+`validatedGeometry`로 크기·기하를 확정한다 — 뒤에 두면 확정적으로 실패할
+요청이 페이지 그림을 전부 디코드한 뒤에야 거절되고, 더 나쁘게는 `.fail`
+정책에서 그 예산 압박이 `.unresolvedImages`를 먼저 던져 **진짜 원인을 가린다**
+(`.pageOutOfRange`를 문자열로 접지 않기로 한 것과 같은 기준이다). `rasterize`가
+원시 정수가 아니라 검증된 `BitmapGeometry`를 받아 순서를 구조로 강제한다.
+
 가드는 두 구멍을 메운다. (1) 커밋된 골든이 **1쪽을 한 번도 그리지 않는다**
 (`FixtureRenderGoldenTests.specs`가 2쪽 이후만 고르고, 1쪽 오라클인 fidelity는
 opt-in이다) — 축소판이 가장 먼저 그리는 쪽이 정확히 그 1쪽이라

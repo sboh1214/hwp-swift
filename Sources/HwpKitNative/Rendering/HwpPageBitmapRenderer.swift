@@ -19,7 +19,9 @@ extension HwpPageBitmapRenderError: CustomStringConvertible {
         case let .invalidPixelSize(width, height):
             """
             Bitmap size must be within \
-            1...\(HwpPageBitmapRenderer.maximumPixelDimension) (got \(width)×\(height))
+            1...\(HwpPageBitmapRenderer.maximumPixelDimension) per axis and \
+            \(HwpPageBitmapRenderer.maximumPixelCount) pixels total \
+            (got \(width)×\(height))
             """
         case let .invalidSourceRect(rect):
             "Source rect must have a positive size (got \(rect.width)×\(rect.height))"
@@ -91,6 +93,20 @@ public enum HwpPageBitmapRenderer {
     /// fidelity 724px, 샘플 축소판 ~200px.
     public static let maximumPixelDimension = 16384
 
+    /// 출력 비트맵의 **총 픽셀 수** 상한 (RGBA 4바이트/px → 64 MiB).
+    ///
+    /// 축별 상한만으로는 모자란다: 호출자가 **폭 하나만** 상한으로 줘도 세로
+    /// 페이지에서는 `pixelHeight`가 상한까지 클램프돼 16,384² = **1 GiB**가 된다
+    /// (A4 세로 실측: 자연 높이 23,185 → 클램프 16,384). 게다가
+    /// `maximumPixelDimension`이 공개 상수라 그 값을 그대로 넘기는 것이 자연스러운
+    /// 사용이고, 그렇게 만들어진 비트맵은 `HwpThumbnailCache`가 예산을 넘어도
+    /// 남긴다.
+    ///
+    /// 값은 실사용의 16배 위다 — 현재 최대인 렌더 골든이 850×1,203 ≈ 1.02M px,
+    /// 300 DPI A4 전면 래스터(2,480×3,508 ≈ 8.7M px)도 들어온다. 인쇄 해상도
+    /// 산출물은 래스터가 아니라 PDF 경로의 몫이다.
+    public static let maximumPixelCount = 16_777_216
+
     /// 페이지 종횡비를 유지하는 픽셀 높이 — 상한에서 **클램프**한다.
     ///
     /// 거부가 아니라 클램프인 이유는 이것이 호스트가 셀 자리를 미리 잡는 **크기
@@ -133,18 +149,18 @@ public enum HwpPageBitmapRenderer {
         unresolvedImages policy: HwpUnresolvedImagePolicy = .drawPlaceholder,
         imageByteLimit: Int = defaultImageByteLimit
     ) async throws -> CGImage {
+        let geometry = try validatedGeometry(
+            page: page,
+            pixelWidth: pixelWidth,
+            pixelHeight: pixelHeight,
+            sourceRect: sourceRect
+        )
         let provider = makeProvider(for: imageStore, imageByteLimit: imageByteLimit)
         defer { provider?.cancelOutstanding() }
         if let provider {
             try await resolveImages(in: page, provider: provider, policy: policy)
         }
-        return try rasterize(
-            page: page,
-            pixelWidth: pixelWidth,
-            pixelHeight: pixelHeight,
-            sourceRect: sourceRect,
-            provider: provider
-        )
+        return try rasterize(page: page, geometry: geometry, provider: provider)
     }
 
     /// 문서 전용 공급자 + 전용 캐시. 두 예산을 **함께** 준다 — 캐시 기본값을
@@ -181,16 +197,31 @@ public enum HwpPageBitmapRenderer {
         }
     }
 
-    /// 확정된 공급자를 받아 동기 래스터화만 한다 (이미지 대기는 호출부 몫).
-    static func rasterize(
+    /// 그리기 전에 확정되는 출력 기하 — 검증된 픽셀 크기와 CTM 성분.
+    struct BitmapGeometry {
+        let pixelWidth: Int
+        let pixelHeight: Int
+        let transform: SourceTransform
+    }
+
+    /// 크기·기하를 검증한다.
+    ///
+    /// **순수 계산이라 공급자보다 먼저 부른다.** 확정적으로 실패할 요청이 페이지
+    /// 이미지를 전부 디코드한 뒤에 거절되면 디코드·캐시 예산을 헛되이 쓰고, 더
+    /// 나쁘게는 `.fail` 정책에서 그 예산 압박이 `.unresolvedImages`를 먼저 던져
+    /// **진짜 원인을 가린다** (잘못된 크기·기하를 알려 주려고 만든 타입이 엉뚱한
+    /// 오류가 된다).
+    static func validatedGeometry(
         page: HwpPage,
         pixelWidth: Int,
         pixelHeight: Int,
-        sourceRect: CGRect?,
-        provider: HwpPageImageProvider?
-    ) throws -> CGImage {
+        sourceRect: CGRect?
+    ) throws -> BitmapGeometry {
+        // 축별 상한을 **먼저** 통과시킨다 — 그래야 아래 곱과 `pixelWidth * 4`가
+        // 오버플로할 수 없다 (둘 다 상한² 안이다).
         guard pixelWidth >= 1, pixelWidth <= maximumPixelDimension,
-              pixelHeight >= 1, pixelHeight <= maximumPixelDimension
+              pixelHeight >= 1, pixelHeight <= maximumPixelDimension,
+              pixelWidth * pixelHeight <= maximumPixelCount
         else {
             throw HwpPageBitmapRenderError.invalidPixelSize(
                 width: pixelWidth, height: pixelHeight
@@ -202,6 +233,20 @@ public enum HwpPageBitmapRenderer {
         ) else {
             throw HwpPageBitmapRenderError.invalidSourceRect(source)
         }
+        return BitmapGeometry(
+            pixelWidth: pixelWidth, pixelHeight: pixelHeight, transform: transform
+        )
+    }
+
+    /// 확정된 공급자와 **검증된 기하**를 받아 동기 래스터화만 한다 (이미지 대기는
+    /// 호출부 몫). 검증이 인자 타입으로 올라가 있어 순서를 어길 수 없다.
+    static func rasterize(
+        page: HwpPage,
+        geometry: BitmapGeometry,
+        provider: HwpPageImageProvider?
+    ) throws -> CGImage {
+        let pixelWidth = geometry.pixelWidth
+        let pixelHeight = geometry.pixelHeight
         guard let context = CGContext(
             data: nil,
             width: pixelWidth,
@@ -218,7 +263,7 @@ public enum HwpPageBitmapRenderer {
         // 투명(=0)으로 남아, 알파를 무시하고 읽는 소비자에게 검정이 된다.
         context.setFillColor(CGColor(gray: 1, alpha: 1))
         context.fill(CGRect(x: 0, y: 0, width: CGFloat(pixelWidth), height: CGFloat(pixelHeight)))
-        transform.apply(to: context)
+        geometry.transform.apply(to: context)
         draw(page: page, in: context, provider: provider)
         guard let image = context.makeImage() else {
             throw HwpPageBitmapRenderError.imageCreationFailed
@@ -255,7 +300,7 @@ public enum HwpPageBitmapRenderer {
     /// 페이지 전체(`source == 페이지`)일 때 이동량이 부동소수 오차 없이 정확히
     /// (0, 0)이 된다. 장치 단위로 이동하면 `pageH × (pxH / pageH) ≠ pxH`라
     /// 1e-13pt짜리 이동이 남아 픽셀 해시 기준선이 흔들린다.
-    private struct SourceTransform {
+    struct SourceTransform {
         let scaleX: CGFloat
         let scaleY: CGFloat
         let translateX: CGFloat
