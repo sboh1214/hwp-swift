@@ -14,6 +14,7 @@
 | `HwpSearchBar` | 검색 필드 + 카운터 + 이전/다음 + 지우기 | 툴바 **아래 별도 행** |
 | `HwpSearchNavigator` | 매치 카운터 + 이전/다음 | `HwpSearchBar`가 내부에서 조립 |
 | `HwpDocumentLoader` | 비동기 문서 로더 | `.fileImporter` 결과를 async 로드 |
+| `HwpDocumentMetadata.outline` | 개요·책갈피 탐색 목록 (HwpKitCore) | 사이드바(`OutlineSidebar.swift`)가 이 배열 하나로 만들어진다 |
 | `HwpPDFExporter` | PDF 내보내기 (진행률·취소) | 툴바 `PDF로 내보내기` / `인쇄` |
 
 - `.hwp` 파일을 사용자에게 선택받아 (`SwiftUI.fileImporter`) 위 컴포넌트로 렌더링/조작
@@ -22,6 +23,12 @@
   `HwpSearchBar(controller:)`에 넘기면 하이라이트·매치 노출 스크롤·프로그레시브
   재스캔이 자동 배선된다. **Cmd+F는 이 앱이 잡는다** — 라이브러리는 전역
   단축키를 소유하지 않고 `@FocusState` 훅만 받는다 (Cmd+O·Cmd+P와 같은 관례)
+- 개요·책갈피 사이드바 — `document.metadata.outline`만으로 만든다. 라이브러리는
+  **목록 UI를 내지 않는다**(검색 결과 목록과 같은 기준). 항목이 `Identifiable` +
+  1-기반 `pageNumber` + 1-기반 `level`이라 `List` 하나로 끝나고, 누르면
+  `currentPage`에 그대로 쓴다. macOS는 인라인 열, iOS는 시트 — `HwpDocumentToolbar`가
+  순수 `HStack`인 것과 같은 이유로 **호스트 레이아웃은 호스트 몫**이다.
+  개요도 책갈피도 없는 문서에서는 툴바 버튼과 열이 통째로 사라진다
 - PDF 내보내기·인쇄 — 라이브러리는 PDF 바이트까지만 만들고, 저장 패널
   (`fileExporter`)·인쇄 UI(macOS `PDFDocument.printOperation`, iOS
   `UIPrintInteractionController`)는 이 앱이 배선한다 (`PDFExportSupport.swift`)
@@ -63,13 +70,20 @@ Xcode에서 스킴 `HwpSwiftSample` 선택 → 대상 지정:
 문서가 로드되면 화면 상단에 다음 툴바가 나타남:
 
 ```
-[Re-open] | [-] Page 1 of N [+] | [PDF로 내보내기] [인쇄] [찾기]  [-] Zoom 100% [+] [Reset]
+[Re-open] [개요] | [-] Page 1 of N [+] | [PDF로 내보내기] [인쇄] [찾기]  [-] Zoom 100% [+] [Reset]
 └──────────────────────────  HwpDocumentToolbar  ──────────────────────────────┘
 [ Find in document          ] 1 of 19 ‹ › [Clear]
 └────────────  HwpSearchBar (툴바 밖 별도 행)  ────────────┘
 ```
 
 - 페이지 넘김 / 확대 / 축소 / 초기화 모두 실시간 반영
+- `개요` 버튼은 개요·책갈피가 **있는 문서에서만** 나타난다. 눌러 사이드바를
+  여닫고, 항목을 누르면 그 쪽으로 이동한다. 개요는 수준만큼 들여쓰고 지금
+  보고 있는 쪽을 여는 항목(현재 쪽 이하의 마지막 개요)을 강조한다.
+  개요가 실제로 쌓여 있는 문서는
+  `Tests/CoreHwpTests/Fixtures/legacy-common-control-property/document.hwp`
+  (1,030쪽·개요 1,944개), 책갈피는
+  `Tests/CoreHwpTests/Fixtures/bookmark/document.hwp`다
 - Re-open 클릭 시 다른 `.hwp` 파일로 교체
 - `찾기`(Cmd+F)는 검색 필드로 **포커스만** 옮긴다. 검색 바를 툴바 **안**에 넣지
   않은 이유는 `HwpDocumentToolbar`가 순수 `HStack`이라 가변 폭 필드가 iPhone
@@ -159,7 +173,8 @@ Sample/
 ├── project.yml                    # xcodegen spec (편집 후 regen)
 ├── HwpSwiftSample/
 │   ├── HwpSwiftSampleApp.swift    # @main 진입점
-│   ├── ContentView.swift          # .fileImporter + HwpDocumentView + 검색·내보내기 배선
+│   ├── ContentView.swift          # .fileImporter + HwpDocumentView + 검색·내보내기·사이드바 배선
+│   ├── OutlineSidebar.swift       # metadata.outline만으로 만든 개요·책갈피 목록 (#77)
 │   ├── PDFExportSupport.swift     # fileExporter용 FileDocument + 플랫폼 인쇄 (#if os)
 │   └── HwpSwiftSample.entitlements
 └── README.md
@@ -176,7 +191,7 @@ cd Sample
 xcodegen generate
 ```
 
-SwiftUI 소스 파일(`HwpSwiftSampleApp.swift`, `ContentView.swift`) 추가/삭제는 xcodegen이 디렉터리를 자동 스캔하므로 별도 편집 없이 `xcodegen generate`만 다시 돌리면 됨.
+SwiftUI 소스 파일(`HwpSwiftSampleApp.swift`, `ContentView.swift`, `OutlineSidebar.swift`) 추가/삭제는 xcodegen이 디렉터리를 자동 스캔하므로 별도 편집 없이 `xcodegen generate`만 다시 돌리면 됨.
 
 ## 설정 요약
 
@@ -212,8 +227,12 @@ Xcode 콘솔에 `print()`로 출력됨:
 
 ## 스코프
 
-이 샘플은 **`HwpKit`이 노출하는 모든 SwiftUI 컴포넌트를 실제로 조작해 볼 수 있는 최소 앱**. 실 서비스 UX (최근 파일, 사이드바, 편집 등)는 포함하지 않으며, 이는 `HwpKit` v1의 read-only 스코프와도 일치.
+이 샘플은 **`HwpKit`이 노출하는 모든 SwiftUI 컴포넌트를 실제로 조작해 볼 수 있는 최소 앱**. 실 서비스 UX (최근 파일, 편집 등)는 포함하지 않으며, 이는 `HwpKit` v1의 read-only 스코프와도 일치.
 
-`HwpDocumentView` / `HwpDocumentToolbar` / `HwpPageNavigator` / `HwpZoomControls` / `HwpSearchBar` / `HwpSearchNavigator` / `HwpSearchController` / `HwpDocumentLoader` / `HwpPDFExporter` 9개 public surface가 모두 이 앱 안에서 활성화됨.
+개요·책갈피 사이드바는 예외처럼 보이지만 같은 규칙의 결과다 — **라이브러리가
+목록 UI를 내지 않기로** 했으므로(검색 결과 목록과 같은 기준) 그 자리를 샘플이
+채워, `HwpDocumentMetadata.outline`만으로 사이드바가 만들어짐을 보인다.
+
+`HwpDocumentView` / `HwpDocumentToolbar` / `HwpPageNavigator` / `HwpZoomControls` / `HwpSearchBar` / `HwpSearchNavigator` / `HwpSearchController` / `HwpDocumentLoader` / `HwpPDFExporter` 9개 public surface가 모두 이 앱 안에서 활성화됨. 여기에 데이터 표면 `HwpDocumentMetadata.outline`(#77)이 사이드바로 소비됨.
 
 인쇄·저장·공유 **UI는 의도적으로 라이브러리 밖**이다 — `HwpKit`은 PDF 바이트까지만 만들고 그 앞뒤는 앱이 정한다. 이 앱의 `PDFExportSupport.swift`가 그 배선의 최소 예시이고, 저장소의 유일한 `#if os(macOS)` 분기이기도 하다.

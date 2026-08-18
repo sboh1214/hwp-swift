@@ -78,6 +78,11 @@
 
 ### Changed
 
+- 책갈피 컨트롤(`bokm`)이 더 이상 **미지원 요소로 보고되지 않습니다**
+  (`HwpUnsupportedDetector` → nil). 화면 출력이 없는 앵커이고, 이제 탐색 목록
+  (`HwpDocumentMetadata.outline`)의 재료로 소비되기 때문입니다. 책갈피가 있는
+  문서에서 `HwpDocument.unsupportedElements`의 `"알 수 없음: bookmark"` 항목이
+  사라지므로, 그 문자열을 세거나 비교하던 코드는 갱신해야 합니다.
 - 압축 stream 해제를 스트리밍 inflate로 전환했습니다 (`HwpInflate`). Apple
   플랫폼은 `Compression`, 그 외 플랫폼은 시스템 zlib
   (`inflateInit2(..., -MAX_WBITS)`)입니다. 공개 API 표면은 그대로이고 압축 해제
@@ -109,6 +114,28 @@
 
 ### Added
 
+- 개요·책갈피 **탐색 목록**을 공개 API로 추가했습니다
+  (`HwpDocumentMetadata.outline: [HwpOutlineItem]`). 조판이 확정한 쪽을 들고
+  있어 사이드바·목차에서 항목을 눌러 그 쪽으로 바로 이동할 수 있습니다.
+  개요 수준은 문단 모양 속성1의 문단 수준 비트(표 44 bit 25-27)에서 읽고,
+  그 비트가 개요로 설정돼 있지 않은 문단(`개요 8` 이상 스타일이 그렇습니다)은
+  스타일 이름(`개요 N` / `Outline N`)으로 보완합니다. 수준은
+  `HwpOutlineItem.maximumLevel`(10)로 클램프되고(상한을 넘는 사용자 스타일도
+  버리지 않습니다), 페이지 상한에 걸려 문서에 실리지 못한 쪽의 항목은 목록에
+  담기지 않으므로 `pageNumber`는 언제나 `pageCount` 이하입니다(프로그레시브
+  중간 스냅샷에서도 그렇습니다 — 그 스냅샷이 담은 쪽까지만 실립니다). 책갈피는 본문만
+  대상이며 머리말·꼬리말은 빠집니다(검색과 같은 스코프 규약). 항목은
+  `Identifiable` + 1-기반 `pageNumber`(0-기반 `pageIndex`도 함께) + 1-기반
+  `level`이라 호스트가 `List`로 열 줄 안에 목록을 만듭니다 —
+  라이브러리는 목록 UI를 내지 않고 `Sample`이 사이드바 배선 예를 보입니다.
+  프로그레시브 로딩의 **중간 스냅샷에도** 지금까지 확정된 접두가 실립니다
+  (`unsupportedElements`는 종전대로 최종 스냅샷에만 옵니다).
+  목록이 자원 상한에 걸려 잘리면 `HwpDocumentMetadata.isOutlineTruncated`가
+  `true`입니다 — 책갈피는 미지원 요소로도 보고되지 않으므로 이 값이 유실의
+  유일한 신호입니다.
+- `HwpParaShapeProperty1.headingLevelRawValue`(CoreHwp)를 추가했습니다 —
+  문단 수준(표 44 bit 25-27)의 **0-기반 저장값**입니다(사람이 읽는 수준은 +1).
+  계산 프로퍼티라 `Codable` 형상은 그대로입니다.
 - 문서 내 검색을 **공개 API**로 추가했습니다. 엔진(`HwpTextSearcher`)·세션
   (`HwpSearchController`)은 HwpKitCore, 하이라이트와 매치 노출 스크롤은
   HwpKitNative, SwiftUI 컴포넌트(`HwpSearchBar` / `HwpSearchNavigator`)는

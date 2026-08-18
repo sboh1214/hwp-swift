@@ -40,16 +40,44 @@ public actor HwpPaginator {
     /// legacy 실측 최대 1,030쪽의 약 10배 여유로 정상 대형 문서는 통과시키고
     /// 병적 증폭은 수십 MB 수준에서 절단한다.
     static let maximumDocumentPages = 10000
+    /// 컨테이너 안 컨테이너 재귀 방출 상한. 렌더(appendNestedControlBlocks)와
+    /// 진단(walkUnsupported), 탐색 목록 수집(`HwpOutlineCollector`)이 같은 값을
+    /// 써야 초과분이 조용히 사라지지 않는다.
+    static let maximumContainerDepth = 3
     /// 인스턴스 상한 (기본 = 전역 상한) — 테스트가 cap 도달 경로를 작은
     /// 문서로 재현할 수 있게 재정의를 허용한다.
     var maximumPages = HwpPaginator.maximumDocumentPages
+    /// 표 하나가 만들 수 있는 세그먼트 상한 (기본 = 전역 상한) — 위와 같은 이유로
+    /// 인스턴스 값이다.
+    var maximumTableSegments = HwpTableLayout.maximumTableSegments
     private var isComputingPage = false
 
     func overrideMaximumPages(_ count: Int) {
         maximumPages = count
     }
 
+    /// 탐색 목록 항목 상한 재정의 (테스트가 절단 경로를 작은 문서로 재현한다).
+    func overrideMaximumOutlineItems(_ count: Int) {
+        outlineCollector.maximumItems = count
+    }
+
+    /// 표 세그먼트 상한 재정의 (테스트가 행 절단 경로를 작은 표로 재현한다).
+    func overrideMaximumTableSegments(_ count: Int) {
+        maximumTableSegments = count
+    }
+
     private var collectedUnsupported: [HwpUnsupportedElement] = []
+    /// 이 문단의 **첫 조각이 실제로 놓인** 쪽 (1-기반, 문단마다 리셋).
+    /// 배치 **전**에 잡은 값은 다단에서 낡는다 — `placeMultiColumnParagraph`는
+    /// 미루기(`false` 반환)가 없어 마지막 단이 모자라면 스스로 쪽을 넘긴 뒤
+    /// 첫 줄을 놓는다 (1단 경로는 미뤄서 재계산되므로 안전하다).
+    private var currentParagraphFirstPlacedPage: Int?
+    /// 개요·책갈피 탐색 목록 수집기 (#77) — 쪽 귀속이 조판의 함수라 여기 산다.
+    private var outlineCollector: HwpOutlineCollector
+    /// 세그먼트 상한에 걸려 **일부 행만 방출된** 표: 인스턴스 id → (표, 방출 행 수).
+    /// 탐색 목록이 그려지지 않은 행의 앵커를 내지 않게 하는 입력이다.
+    /// id로 버킷만 좁히고 표 값으로 확정하는 근거는 `truncatedRowLimit(of:)`.
+    private var truncatedTableRowLimits: [UInt32: [(table: CoreHwp.HwpTable, rowLimit: Int)]] = [:]
     /// 이 페이지에 배치할 각주 (문단 + 문서 순서 번호) — 저장은 footnoteCoordinator
     private var pendingFootnotes: [HwpFootnoteLayout.Input] {
         get { footnoteCoordinator.pendingFootnotes }
@@ -226,6 +254,7 @@ public actor HwpPaginator {
             index: index, fontResolver: fontResolver, attributeCache: attributeCache
         )
         absoluteCachePlacer = HwpAbsoluteCachePlacer(sections: sections)
+        outlineCollector = HwpOutlineCollector(index: index)
         currentPageGeometry = Self.initialGeometry(for: sections)
         currentSectionDef = Self.firstSectionDef(for: sections)
         // init에서는 계산 프로퍼티 (actor-isolated) 대신 저장소에 직접 쓴다.
@@ -282,6 +311,30 @@ public actor HwpPaginator {
 
     public func unsupportedElements() async -> [HwpUnsupportedElement] {
         collectedUnsupported
+    }
+
+    /// 지금까지 조판이 확정한 개요·책갈피 탐색 목록 (문서 순서, #77).
+    ///
+    /// `unsupportedElements()`와 달리 **조판 도중에 물어도 의미가 있다** —
+    /// 확정된 쪽까지의 접두를 돌려주므로 프로그레시브 로딩의 중간 스냅샷이
+    /// 그대로 실어 보낸다 (`HwpDocumentMetadata.outline`).
+    /// 탐색 목록이 **항목 상한에 걸려 잘렸는가** (#77).
+    ///
+    /// 목록만으로는 완전한 것과 구별되지 않아 호스트가 온전한 탐색 수단으로
+    /// 오인한다 — 책갈피는 미지원 목록에도 뜨지 않으므로 이 신호가 유일한 흔적이다.
+    /// 확정 쪽 접두로 잘린 것(`outline()`)은 여기 해당하지 않는다: 그쪽은 조판이
+    /// 끝나면 나온다.
+    public func outlineIsTruncated() async -> Bool {
+        outlineCollector.didReachItemLimit
+    }
+
+    public func outline() async -> [HwpOutlineItem] {
+        // **확정된 쪽까지만** 낸다. 배치 도중 수집된 항목은 `cachedPages.count + 1`
+        // 을 가리키는데 그 쪽은 아직 캐시되지 않았고, 취소되면 끝내 만들어지지
+        // 않는다 — 그대로 내보내면 공개 API가 없는 쪽으로 안내한다.
+        // `filter`가 아니라 `prefix`인 것은 발행분이 최종 목록의 접두여야
+        // `ordinal`이 흔들리지 않기 때문이다 (`HwpDocumentActor`와 같은 술어).
+        Array(outlineCollector.items.prefix { $0.pageNumber <= cachedPages.count })
     }
 }
 
@@ -483,6 +536,7 @@ private extension HwpPaginator {
             // placeParagraphText가 다중 페이지 문단의 앞 조각 페이지를 먼저
             // 캐시하므로 배치 전에 첫 페이지를 잡는다 (#3).
             let paragraphFirstPage = cachedPages.count + 1
+            currentParagraphFirstPlacedPage = nil
             guard placeParagraphText(
                 paragraph,
                 attributedString: attributedString,
@@ -505,6 +559,7 @@ private extension HwpPaginator {
             collectMemos(from: paragraph)
             appendControlBlocks(from: paragraph)
             collectUnsupported(from: paragraph, firstPage: paragraphFirstPage)
+            collectOutline(from: paragraph, firstPage: paragraphFirstPage)
             advanceParagraph()
             await Task.yield()
 
@@ -1102,6 +1157,11 @@ private extension HwpPaginator {
             nextLogicalPageNumber = reset
             pendingPageNumber = nil
         }
+        // 여기가 문단의 첫 콘텐츠가 쪽에 놓이는 지점이라 개요의 시작 쪽도 여기서
+        // 확정된다 (위 쪽 번호 리셋과 같은 순간이다).
+        if currentParagraphFirstPlacedPage == nil {
+            currentParagraphFirstPlacedPage = cachedPages.count + 1
+        }
         let immutable = NSAttributedString(attributedString: attributedString)
         let columnFrame = currentColumnFrame
         let frame = CGRect(
@@ -1361,6 +1421,31 @@ private extension HwpPaginator {
         ))
     }
 
+    /// 개요·책갈피 탐색 목록 수집 (#77). `collectUnsupported`와 같은 자리에서
+    /// 같은 두 페이지 값을 쓴다 — 문단 머리는 문단이 **시작한** 쪽(`firstPage`),
+    /// 컨트롤은 배치가 **끝난** 쪽. 같은 개요 문단이 미지원 목록(생성 라벨
+    /// 미렌더 진단)과 탐색 목록에 동시에 뜨는 것은 의도다
+    /// (`HwpOutlineCollector.collectHeading` doc-comment 참조).
+    func collectOutline(from paragraph: CoreHwp.HwpParagraph, firstPage: Int) {
+        // 상한에 걸린 쪽은 끝내 캐시되지 않는데 문단 배치는 한 쪽 더 진행되므로,
+        // 안 막으면 **문서에 없는 쪽**을 가리키는 항목이 남는다. 다만 자르는 것은
+        // **쪽 값마다 따로**다 (`collect`의 `maximumPage`) — 하나로 묶으면 상한
+        // 쪽에서 시작해 걸치는 제목까지 버린다. 클램프가 아니라 버리는 근거는
+        // 루트 `AGENTS.md`의 "개요·책갈피 탐색 (#77)".
+        outlineCollector.collect(
+            from: paragraph,
+            // 개요 쪽은 문단의 **첫 조각이 놓인** 쪽이다 — 인자로 받은 사전
+            // 포착값은 다단에서 낡는다 (`currentParagraphFirstPlacedPage` 참조).
+            // 텍스트 블록이 하나도 없는 문단(개체만 있는 문단)은 기록이 없으므로
+            // 그때만 사전 포착값으로 폴백한다. 진단(`collectUnsupported`)은 종전
+            // 값을 그대로 쓴다 — 보고 문자열이고 공개 출력이라 별건이다.
+            headingPage: currentParagraphFirstPlacedPage ?? firstPage,
+            bookmarkPage: cachedPages.count + 1,
+            maximumPage: maximumPages,
+            childParagraphs: outlineChildParagraphs(of:context:)
+        )
+    }
+
     func walkUnsupported(
         ctrls: [CoreHwp.HwpCtrlId],
         page: Int,
@@ -1449,6 +1534,163 @@ private extension HwpPaginator {
         default:
             []
         }
+    }
+
+    /// 이 표가 세그먼트 상한에 걸려 **일부 행만 방출**됐다면 그 행 수.
+    ///
+    /// **인스턴스 id만으로 찾으면 안 된다.** "문서 내 각 개체에 대한 고유 아이디"라는
+    /// 모델 doc과 달리 파서는 중복을 거부하지 않고 공개 기본값이 0이라, 잘린 표가
+    /// 남긴 상한이 뒤의 **온전히 렌더된** 표에 적용돼 실제로 그려진 행의 책갈피가
+    /// 조용히 사라진다 (실측: 잘린 3행 표 뒤 2행 표에서 2행 앵커가 목록에만 없다).
+    /// id는 버킷을 좁히는 데만 쓰고 표 값으로 확정한다 — 잘린 표가 없는 정상
+    /// 문서는 miss 한 번이라 깊은 비교를 하지 않는다.
+    private func truncatedRowLimit(of table: CoreHwp.HwpTable) -> Int? {
+        truncatedTableRowLimits[table.commonCtrlProperty.instanceId]?
+            .first { $0.table == table }?.rowLimit
+    }
+
+    /// 탐색 목록 전용 순회 — 개체(gso 계열)는 **렌더되는 컴포넌트만** 본다.
+    ///
+    /// `childParagraphs`는 전 컴포넌트를 도는데 `HwpTextboxLayout`은 텍스트를 가진
+    /// **첫** 컴포넌트만 그리므로, 그대로 쓰면 그려지지 않은 텍스트의 앵커가
+    /// 목록에 올라 누르면 아무것도 없는 자리로 간다 (실측: 컴포넌트 2개 중 첫째만
+    /// 렌더되는데 목록엔 둘 다). 진단·흐름 경로는 `childParagraphs`를 그대로
+    /// 쓴다 — 그쪽은 "그려지지 않는 것"을 보고하는 것이 일이다.
+    func outlineChildParagraphs(
+        of ctrl: CoreHwp.HwpCtrlId,
+        context: HwpOutlineCollector.RenderContext
+    ) -> [HwpOutlineCollector.ChildParagraph] {
+        // 각주는 **어디에 있든** `HwpFootnoteCoordinator`가 걷어 그리므로, 안
+        // 그려지는 자리 안이라도 그 각주는 순회한다 (실측: 각주 안 글상자 속
+        // 각주 텍스트가 렌더에 있는데 목록은 비어 있었다).
+        switch ctrl {
+        case .footnote, .endnote:
+            return childParagraphs(of: ctrl).map {
+                HwpOutlineCollector.ChildParagraph(paragraph: $0.0, rendersText: true)
+            }
+        default:
+            break
+        }
+        // 그 밖에는 아무것도 그려지지 않는 자리에서 더 내려가지 않는다.
+        guard context.drawsAnything else { return [] }
+        return switch ctrl {
+        case let .table(table):
+            // 배치가 거부한 셀(선언 격자 밖·occupancy 충돌)은 그려지지 않는다.
+            // 세그먼트 상한에 걸려 방출되지 않은 행도 같다 — 배치는 받아들였지만
+            // 페이지에 그려진 적이 없다.
+            tableLayout.renderedCells(of: table, rowLimit: truncatedRowLimit(of: table))
+                .flatMap(\.paragraphArray)
+                .map { HwpOutlineCollector.ChildParagraph(paragraph: $0, rendersText: true) }
+        case let .shape(shape),
+             let .line(shape),
+             let .rectangle(shape),
+             let .ellipse(shape),
+             let .arc(shape),
+             let .polygon(shape),
+             let .curve(shape),
+             let .equation(shape),
+             let .equationLegacy(shape),
+             let .picture(shape),
+             let .ole(shape),
+             let .container(shape):
+            // 수식 근사 텍스트로 그려지는 개체는 글상자 경로를 타지 않는다 —
+            // 렌더 분기(`appendControlBlocks`)와 같은 판정을 공유한다.
+            equationAttributedString(shape) != nil ? [] : objectChildParagraphs(
+                of: ctrl, components: shape.shapeComponentArray, context: context
+            )
+        case let .genShapeObject(genShape):
+            objectChildParagraphs(
+                of: ctrl, components: genShape.shapeComponentArray, context: context
+            )
+        default:
+            childParagraphs(of: ctrl).map {
+                HwpOutlineCollector.ChildParagraph(paragraph: $0.0, rendersText: true)
+            }
+        }
+    }
+
+    /// 이 컨트롤의 **전 컴포넌트가** 그려지는가.
+    ///
+    /// 부모가 표 셀·각주라는 것만으로는 모자란다 — `HwpParagraphObjectCollector`가
+    /// 건너뛰는 컨트롤(수집 대상이 아닌 종류, OLE를 품은 컴포넌트)은 컨테이너
+    /// 안에서도 **흐름 경로**가 그리고, 그쪽은 첫 컴포넌트만 본다. 판정을 그
+    /// 수집기의 술어(`handledControl`·`collectible`)에서 그대로 파생시켜야
+    /// 갈리지 않는다 (실측: OLE를 품은 개체를 셀에 넣으면 렌더는 첫 컴포넌트뿐인데
+    /// 목록엔 둘 다 올랐다). 셀·각주 수집기는 `collectsTextboxes: true`로 부른다
+    /// (`HwpTableLayout`·`HwpFootnoteLayout`).
+    private func containerDrawsEveryComponent(_ ctrl: CoreHwp.HwpCtrlId) -> Bool {
+        guard let (_, components) = HwpParagraphObjectCollector.handledControl(ctrl)
+        else { return false }
+        return HwpParagraphObjectCollector.collectible(components, collectsTextboxes: true)
+    }
+
+    /// 개체의 글상자 문단 — **문맥별 렌더 범위**를 그대로 따른다.
+    ///
+    /// - 컨테이너(표 셀·각주)가 그리는 개체: 전 컴포넌트의 텍스트가 그려진다.
+    /// - **각주에서 수집기가 건너뛴 개체: 아무도 그리지 않는다** — 각주는
+    ///   `appendNestedControlBlocks`를 부르지 않아 흐름 폴백이 없다 (실측: 각주 안
+    ///   OLE 포함 개체의 글상자 텍스트가 렌더에 없는데 목록엔 앵커가 있었다).
+    /// - 그 밖(흐름·표 셀의 폴백): 첫 글상자 컴포넌트의 **텍스트만** 그려지지만
+    ///   중첩 컨트롤은 `appendNestedControlBlocks`가 전 컴포넌트에서 방출하므로,
+    ///   나머지 컴포넌트도 **자식만** 따라가도록 남긴다 (실측: 둘째 컴포넌트 안
+    ///   중첩 표는 그려지는데 그 셀 앵커가 빠졌다).
+    private func objectChildParagraphs(
+        of ctrl: CoreHwp.HwpCtrlId,
+        components: [CoreHwp.HwpShapeComponent],
+        context: HwpOutlineCollector.RenderContext
+    ) -> [HwpOutlineCollector.ChildParagraph] {
+        if context.containerDraws, containerDrawsEveryComponent(ctrl) {
+            // 수집기가 그리지만 **컴포넌트마다 다르다** — 그림이 있는 컴포넌트는
+            // 그림만 그리고 반환하므로 그 글상자는 그려지지 않는다
+            // (`HwpParagraphObjectCollector.collect(component:)`).
+            return components.flatMap { component in
+                let draws = HwpParagraphObjectCollector.drawsTextbox(
+                    component, collectsTextboxes: true
+                )
+                // 안 그려지는 글상자도 흐름 폴백이 있으면 **자식만** 따라간다.
+                guard draws || context.hasFlowFallback else {
+                    return [HwpOutlineCollector.ChildParagraph]()
+                }
+                return component.textBoxListArray.flatMap(\.paragraphArray).map {
+                    HwpOutlineCollector.ChildParagraph(paragraph: $0, rendersText: draws)
+                }
+            }
+        }
+        // 수집기가 안 그리는 컨트롤은 흐름이 받는다 — 각주엔 그 폴백이 없다.
+        guard context.hasFlowFallback else { return [] }
+        let renderedIndex = HwpTextboxLayout.renderedTextboxComponentIndex(of: components)
+        return components.enumerated().flatMap { index, component in
+            component.textBoxListArray.flatMap(\.paragraphArray).map {
+                HwpOutlineCollector.ChildParagraph(
+                    paragraph: $0, rendersText: index == renderedIndex
+                )
+            }
+        }
+    }
+
+    /// 개체의 글상자 문단 — **그려지는 컴포넌트만**.
+    ///
+    /// 그 범위가 문맥마다 다르다: 흐름에 놓인 개체는 `HwpTextboxLayout`이 텍스트를
+    /// 가진 **첫** 컴포넌트만 그리지만, 표 셀·각주 안 개체는
+    /// `HwpParagraphObjectCollector`가 **전 컴포넌트**를 그린다 (실측: 셀 안
+    /// 컴포넌트 2개가 둘 다 렌더된다). 한쪽으로 통일하면 반드시 한 문맥이 틀린다 —
+    /// 흐름 기준으로 좁히면 셀 안 뒤 컴포넌트의 앵커가 조용히 빠지고, 컨테이너
+    /// 기준으로 넓히면 흐름 개체가 없는 자리를 가리킨다.
+    private func renderedTextboxParagraphs(
+        of components: [CoreHwp.HwpShapeComponent],
+        allComponents: Bool
+    ) -> [(CoreHwp.HwpParagraph, HwpBlockKind)] {
+        let rendered: [CoreHwp.HwpShapeComponent] = if allComponents {
+            components
+        } else if let component = HwpTextboxLayout.renderedTextboxComponent(of: components) {
+            [component]
+        } else {
+            []
+        }
+        return rendered
+            .flatMap(\.textBoxListArray)
+            .flatMap(\.paragraphArray)
+            .map { ($0, HwpBlockKind.textbox) }
     }
 
     // MARK: - 컨트롤 블록 방출
@@ -1566,10 +1808,6 @@ private extension HwpPaginator {
             break
         }
     }
-
-    /// 컨테이너 안 컨테이너 재귀 방출 상한. 렌더(appendNestedControlBlocks)와
-    /// 진단(walkUnsupported)이 같은 값을 써야 초과분이 조용히 사라지지 않는다.
-    static let maximumContainerDepth = 3
 
     /// 컨테이너 문단 안에 중첩된 컨트롤 (표 셀 안 글상자/이미지 등)을 재귀 방출한다.
     func appendNestedControlBlocks(of ctrl: CoreHwp.HwpCtrlId, depth: Int) {
@@ -1748,10 +1986,13 @@ private extension HwpPaginator {
         // 이미 셀 각주를 수집한 최상위 행 — 분할된 행이 다음 세그먼트에서
         // 다시 수집돼 각주가 중복되는 것을 막는다.
         var highestCollectedRow = Int.min
+        // 실제로 방출된 최대 행 — 세그먼트가 행을 **슬라이스**하면 `cursor`는
+        // 그 행을 넘지 않으므로 커서만으로는 "그려진 행"을 셀 수 없다.
+        var highestEmittedRow = -1
 
         // 취소된 로드가 병적 표를 분할 중이면 최대 4,096 세그먼트를 만들기 전에
         // 빠져 옛·새 로드가 동시에 CPU/메모리를 소비하지 않게 조기 탈출한다 (#6).
-        while cursor < rows.count, segmentCount < HwpTableLayout.maximumTableSegments,
+        while cursor < rows.count, segmentCount < maximumTableSegments,
               !Task.isCancelled
         {
             // 이어지는 세그먼트는 제목 행 반복 높이를 미리 차감한다.
@@ -1808,8 +2049,11 @@ private extension HwpPaginator {
             // 셀 각주는 행이 실리는 페이지 귀속 (한글 실측 — 헌법주석 p485).
             // 분할된 행은 조각이 같은 rowAddress를 유지하므로, 이미 수집한 행보다
             // 큰 행만 수집해 조각 간 중복 각주를 막는다.
+            let rowIndexes = segmentRows.flatMap(\.cells).map(\.row)
+            if let maxRow = rowIndexes.max() {
+                highestEmittedRow = max(highestEmittedRow, maxRow)
+            }
             if table != nil {
-                let rowIndexes = segmentRows.flatMap(\.cells).map(\.row)
                 if let maxRow = rowIndexes.max() {
                     let startRow = max(rowIndexes.min() ?? maxRow, highestCollectedRow + 1)
                     if startRow <= maxRow {
@@ -1826,6 +2070,13 @@ private extension HwpPaginator {
             )
             isFirstSegment = false
             segmentCount += 1
+        }
+        // 세그먼트 상한(또는 취소)에 걸려 **방출되지 않은 행**이 남았다면 기록해
+        // 둔다 — 탐색 목록이 그 행의 앵커를 내면 그려진 적 없는 자리를 가리킨다.
+        // 잘린 표만 담으므로 항목은 사실상 없고(정상 문서는 0개), 조회는
+        // `truncatedRowLimit(of:)`가 표 값으로 확정한다 (id는 유일하지 않다).
+        if cursor < rows.count, let table {
+            truncatedTableRowLimits[instanceId, default: []].append((table, highestEmittedRow + 1))
         }
     }
 
@@ -1933,23 +2184,39 @@ private extension HwpPaginator {
         return HwpChartParser.parse(xml: xml)
     }
 
+    /// 수식 근사 텍스트 — nil이면 개체(글상자·도형) 경로로 폴백한다.
+    ///
+    /// 렌더 분기와 **탐색 목록 순회가 같은 판정을 공유**하도록 이 함수 하나가
+    /// 소유한다: 수식으로 그려지는 개체는 `appendShapeObjectBlocks`를 건너뛰므로
+    /// 그 글상자 텍스트가 렌더되지 않고, 따라서 그 안 앵커도 목록에 없어야 한다.
+    func equationAttributedString(
+        _ shape: CoreHwp.HwpShapeControl
+    ) -> NSAttributedString? {
+        guard let edit = shape.eqEditArray.first else { return nil }
+        let commonProperty = shape.commonCtrlProperty ?? CoreHwp.HwpCommonCtrlProperty()
+        let size = objectSize(
+            commonProperty: commonProperty,
+            components: shape.shapeComponentArray
+        )
+        return HwpEquationLayout.attributedString(
+            edit: edit,
+            fallbackSize: size.height,
+            fontResolver: fontResolver
+        )
+    }
+
     /// 수식 (eqed) 컨트롤을 EQEDIT 스크립트 근사 텍스트로 방출한다.
     /// 스크립트가 비어 있으면 false — 호출자가 개체 경로로 폴백한다.
     func appendEquationBlock(
         _ shape: CoreHwp.HwpShapeControl,
         controlIndex: Int?
     ) -> Bool {
-        guard let edit = shape.eqEditArray.first else { return false }
+        guard let attributed = equationAttributedString(shape) else { return false }
         let commonProperty = shape.commonCtrlProperty ?? CoreHwp.HwpCommonCtrlProperty()
         let size = objectSize(
             commonProperty: commonProperty,
             components: shape.shapeComponentArray
         )
-        guard let attributed = HwpEquationLayout.attributedString(
-            edit: edit,
-            fallbackSize: size.height,
-            fontResolver: fontResolver
-        ) else { return false }
         // 근사 텍스트가 저장된 개체 폭보다 길면 폭을 늘려 한 줄을 유지한다
         // (한글.app 수식은 줄바꿈 없이 한 줄 — equation 실물 캡처)
         let line = CTLineCreateWithAttributedString(attributed)

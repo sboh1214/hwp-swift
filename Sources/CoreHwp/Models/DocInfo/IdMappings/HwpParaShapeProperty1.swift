@@ -65,6 +65,30 @@ public extension HwpParaShapeProperty1 {
         (rawValue >> 23) & 0b11
     }
 
+    /**
+     문단 수준 (표 44 bit 25-27)
+
+     **저장값은 0-기반이다** — 사람이 읽는 수준은 `headingLevelRawValue + 1`이다.
+     스펙이 적은 "1수준~7수준"은 의미 범위 표기일 뿐 저장 기점이 아니고, 스펙은
+     기점을 명시하지 않는다. 기점은 실측으로 확정했다 (#77):
+     `legacy-common-control-property`(헌법주석)에서 `headingTypeRawValue == 1`인
+     문단 1,944개의 이 값 분포가 `0: 280, 1: 512, 2: 486, 3: 301, 4: 244, 5: 100,
+     6: 21`이고, **같은 문단들의 스타일 이름 분포가 개수까지 정확히 일치한다**
+     (`개요 1`: 280 … `개요 7`: 21). 즉 `개요 N` ↔ 이 값 `N - 1`이다.
+
+     3비트이므로 담을 수 있는 범위는 0...7, 즉 1수준~**8**수준이다 ("3비트라
+     7수준까지"가 아니다). 표현 불가한 것은 9·10수준뿐이며, 애초에 `개요 8` 이상
+     스타일은 문단 머리 모양이 개요로 설정돼 있지 않아
+     (`headingTypeRawValue == 0`) 이 비트 경로로는 잡히지 않는다 — 그런 문단의
+     수준은 스타일 이름(`개요 N` / `Outline N`)에서 읽는다.
+
+     `headingTypeRawValue != 1`인 문단에서도 비트 자체는 읽히지만 의미가 없다 —
+     개요 수준으로 해석하기 전에 머리 모양 종류를 먼저 확인할 것.
+     */
+    var headingLevelRawValue: UInt32 {
+        (rawValue >> 25) & 0b111
+    }
+
     /** 글머리표 문단 여부 */
     var hasBulletHeading: Bool {
         headingTypeRawValue == 3

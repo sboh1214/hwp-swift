@@ -14,6 +14,16 @@ SwiftUI 공개 API target. HwpKitNative 위에 `NSViewRepresentable` / `UIViewRe
 - `HwpSearchController` — 문서 검색 세션 (HwpKitCore). 호스트가 `@State` 로 소유해 `HwpDocumentView(searchController:)` 와 `HwpSearchBar(controller:)` 에 **같은 인스턴스**를 넘긴다. 뷰가 붙는 순간 `HwpSelectionController` 의 지오메트리를 공유해 (단위 캐시 이중화 금지) 하이라이트·매치 노출 스크롤·프로그레시브 증분 재스캔이 자동 배선된다. 검색 대상은 본문 (`role == .body`) 뿐 — 머리말/꼬리말/쪽 번호와 메모 풍선은 빠지고 각주·표 셀·글상자·중첩 표는 포함된다. 매치는 텍스트 단위 (`HwpTextUnit`) 안에서만 성립한다 (단/쪽·셀 경계를 넘지 않는다)
 - `HwpTextSearcher` — 상태 없는 순수 스캐너. nonisolated + 입출력 Sendable 이라 오프메인·CLI 에서도 쓴다 (대가: 뷰의 unit 캐시를 공유하지 못해 전개 이중화)
 - `HwpSearchBar` / `HwpSearchNavigator` — 검색 UI. **순수 서브트리**다: navigation 컨테이너를 요구하지 않고, 호스트 chrome 을 점유하지 않으며, 환경에 아무것도 심지 않고, Cmd+F 같은 전역 단축키를 소유하지 않는다 (호스트가 `.keyboardShortcut` 로 잡아 `isFocused` 를 넘긴다). SwiftUI `.searchable` 을 쓰지 않는 이유가 정확히 이 네 가지다 — 안티 패턴 절 참조
+- `HwpDocumentMetadata.outline: [HwpOutlineItem]` (HwpKitCore) — 개요·책갈피
+  탐색 목록 (#77). 조판이 확정한 쪽을 들고 오므로 호스트는 `item.pageNumber`
+  (1-기반, `HwpPageNavigator.currentPage`와 같은 규약)를 그대로 쓰거나
+  `item.pageIndex`(0-기반)를 네이티브 뷰에 넘긴다. `HwpOutlineItem`은
+  `Identifiable`(문서 순서 `ordinal`) + 1-기반 `level`(책갈피는 nil) +
+  `kind`(.heading/.bookmark)이고, 컬렉션 확장 `headings`/`bookmarks`/
+  `items(onPage:)`가 갈래를 나눈다. 책갈피 스코프는 검색과 같다 —
+  본문만이고 머리말/꼬리말은 빠진다. 프로그레시브 **중간 스냅샷에도** 접두가
+  실린다 (`unsupportedElements`와 갈리는 지점 — 근거는 루트 `AGENTS.md`의
+  "개요·책갈피 탐색 (#77)")
 - `HwpPDFExporter` — `export(document:to:onProgress:)` / `exportData(document:onProgress:)` (둘 다 `async throws`). 화면과 **같은 paint list·같은 조판**으로 PDF를 만든다 (`HwpPageLayer.draw(in:)`가 뷰 계층 없이 임의 `CGContext`에 그리는 순수 오프스크린 렌더러라 가능하다 — 구현은 HwpKitNative의 `HwpPDFRenderer`). 페이지 단위 스트리밍이라 상주 메모리는 1페이지 몫이고, 페이지 경계마다 `Task.checkCancellation()` + `onProgress`(`HwpPDFExportProgress`) 발화. 에러는 `HwpPDFExportError`
   - **미완성 문서는 거부한다** (#74 리뷰) — `loadUpdates(from:)`의 중간 스냅샷(`metadata.isComplete == false`)은 확정된 페이지 접두만 들고 있어, 그대로 내보내면 페이지가 빠진 PDF가 **성공으로** 나간다. 열리고 페이지 수도 맞아 산출물 검증(`incompleteOutput`)마저 통과하므로 아래 층이 잡지 못한다 — `.incompleteDocument`로 끝낸다. `.exportFailed` 문자열이 아니라 제 타입인 이유는 이것이 로드가 끝나면 성공하는 **재시도 가능** 상태라 호스트가 진짜 실패와 갈라 다뤄야 하기 때문이다. 접두를 의도적으로 내보내려면 그 페이지로 문서를 직접 구성한다 (`isComplete` 기본값이 true라 통과). 샘플이 로드 중 버튼을 잠그는 것은 호스트 UI 관례일 뿐 이 계약을 대신하지 않는다
   - **UI는 넘기지 않는다** — 저장 패널·공유 시트·인쇄 대화상자는 호스트 몫이다 (`Sample`이 `fileExporter` / `PDFDocument.printOperation` / `UIPrintInteractionController`로 배선하는 예를 보인다). 뷰를 직접 인쇄하는 경로는 없다: 레이어 가상화가 `visible ± 2`쪽만 들고 있어 인쇄 페이지네이션과 충돌한다
@@ -46,6 +56,12 @@ SwiftUI 공개 API target. HwpKitNative 위에 `NSViewRepresentable` / `UIViewRe
 ## v1 스코프 밖 (추가 금지)
 
 - File picker / document browser — 앱 책임
+- 개요·책갈피 **목록 UI** (`HwpOutlineSidebar`) — v1 OUT, 검색 결과 목록과 **같은
+  기준**이다: `List` 행 레이아웃·수준 들여쓰기·현재 위치 강조·접근성 라벨·
+  플랫폼 chrome 분기(macOS 인라인 열 / iPhone 시트)가 붙어 현행 Tools
+  (21~53줄 순수 `HStack`) 관례를 넘는다. 재료는 `HwpDocumentMetadata.outline`이
+  `Identifiable` + 1-기반 쪽 번호 + 수준까지 채워 내므로 호스트가 열 줄로
+  만든다 — 배선 예는 `Sample/HwpSwiftSample/OutlineSidebar.swift`
 - 검색 **결과 목록 UI** (`HwpSearchResultsList`) — v1 OUT. 엔진·검색 바·탐색기는 제공한다 (#75). 목록은 `List` 행 레이아웃·선택 강조·스니펫 truncation·접근성·플랫폼 chrome 분기가 붙어 현행 Tools (21~53줄 순수 `HStack`) 관례를 넘고 검증 형판도 없다. `HwpSearchMatch: Identifiable` + `HwpSearchSnippet.matchRange` + `pageNumber` 를 공개했으므로 호스트가 10줄로 만든다
 - 정규식 검색 / 바꾸기 (replace) / 필드 한정 검색 — v1 OUT
 - 편집 API (v2)

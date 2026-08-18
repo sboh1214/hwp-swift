@@ -85,6 +85,24 @@ public struct HwpTextboxLayout {
 
     /// 글상자 리스트를 가진 첫 개체 요소를 찾아 레이아웃한다.
     /// 텍스트 wrap 폭은 개체 폭에서 글상자 텍스트 여백 (표 90)을 뺀 값이다.
+    /// 실제로 그려지는 글상자 컴포넌트 — 텍스트를 가진 **첫** 컴포넌트 하나뿐이다
+    /// (묶음 개체의 둘째 이후 컴포넌트 텍스트는 렌더되지 않는다 — 남은 한계다).
+    /// 탐색 목록 순회(`HwpPaginator.outlineChildParagraphs`)가 **같은 술어**를
+    /// 써야 목록이 그려지지 않은 텍스트의 앵커로 안내하지 않는다.
+    static func renderedTextboxComponent(
+        of components: [CoreHwp.HwpShapeComponent]
+    ) -> CoreHwp.HwpShapeComponent? {
+        renderedTextboxComponentIndex(of: components).map { components[$0] }
+    }
+
+    /// 위와 같은 술어의 **인덱스** 형태 — 순회가 "몇 번째가 그려지는가"를
+    /// 알아야 나머지 컴포넌트를 자식만 따라가는 대상으로 가를 수 있다.
+    static func renderedTextboxComponentIndex(
+        of components: [CoreHwp.HwpShapeComponent]
+    ) -> Int? {
+        components.firstIndex(where: { !$0.textBoxListArray.isEmpty })
+    }
+
     public func layout(
         components: [CoreHwp.HwpShapeComponent],
         commonProperty: CoreHwp.HwpCommonCtrlProperty,
@@ -92,7 +110,7 @@ public struct HwpTextboxLayout {
         index: HwpIndex,
         sizeResolver: HwpObjectSizeResolver? = nil
     ) -> HwpTextboxFrame? {
-        guard let component = components.first(where: { !$0.textBoxListArray.isEmpty })
+        guard let component = Self.renderedTextboxComponent(of: components)
         else { return nil }
 
         let info = commonProperty.propertyInfo
