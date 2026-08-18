@@ -1,6 +1,6 @@
 # 프로젝트 지식 베이스
 
-**Branch:** feat/pdf-export-print
+**Branch:** feat/page-bitmap-render-thumbnails
 
 ## 개요
 
@@ -12,7 +12,7 @@ HWP 파일은 OLE compound document이며, 그 안의 stream들은 record tree �
 - `CoreHwp` — 파서 (read-only, binary HWP → typed model)
 - `HwpKitCore` — 렌더 코어 (platform-neutral, CoreGraphics/CoreText/Foundation only)
 - `HwpKitNative` — 플랫폼 브릿지 (AppKit + UIKit)
-- `HwpKit` — SwiftUI 공개 API + PDF 내보내기
+- `HwpKit` — SwiftUI 공개 API + PDF 내보내기·쪽 축소판
 
 ## 구조
 
@@ -22,7 +22,7 @@ hwp-swift/
 ├── Sources/CHwpZlib/      # 비-Apple deflate 해제용 system zlib module map
 ├── Sources/HwpKitCore/    # 렌더 코어 — 파이프라인/모델/paint list (AGENTS.md 참조)
 ├── Sources/HwpKitNative/  # 플랫폼 브릿지 — CALayer/View (AGENTS.md 참조)
-├── Sources/HwpKit/        # SwiftUI 공개 API + PDF 내보내기 (AGENTS.md 참조)
+├── Sources/HwpKit/        # SwiftUI 공개 API + PDF 내보내기·쪽 축소판 (AGENTS.md 참조)
 ├── Tests/{CoreHwp,HwpKitCore,HwpKitNative,HwpKit}Tests/
 ├── Sample/                # HwpSwiftSample.xcodeproj (xcodegen, path: ..)
 ├── Package.swift          # swift-tools-version:5.9
@@ -675,6 +675,76 @@ CI에서 깨진다.
 소비하는 fire-and-forget이라 못 쓴다). 픽스처 렌더 하네스의 폴링 + 2초
 타임아웃도 이 API로 대체됐다 — 즉 **렌더 가드 4층이 이제 이 프로덕션 코드를
 함께 태운다**. 백프레셔 3겹과 영구 대기 회피 규약은 `Sources/HwpKitNative/AGENTS.md`.
+
+## 쪽 축소판 (#76)
+
+출력 경로가 셋이 됐지만 **조판은 여전히 하나**다. #74가 "레이어를 임의
+`CGContext`에 그린다"를 PDF로 보였다면, #76은 그 자리를 **이름 있는 프로덕션
+API**로 승격했다 — `HwpKitNative.HwpPageBitmapRenderer`가 종이 배경·레이어
+구성·draw와 이미지 확정 계약(`retainOnlyImages` → `predecodeImageReferences` →
+`unsettledImageVariants`)을 소유하고, PDF와 축소판이 그것을 함께 쓴다. 갈라
+두면 배경·flip·예산 중 하나가 한쪽에서만 바뀐다.
+
+**승격의 진짜 이득은 가드 쪽이다.** 이 자리의 원본은 테스트 유틸
+(`FixturePreview.renderImage`)이었고, 이제 그 유틸이 승격본에 위임한다 — 즉
+커밋된 렌더 골든이 **테스트 전용 사본이 아니라 출하되는 코드**를 검사한다.
+그래서 승격 리팩터는 기준선을 재기록하지 않고 통과해야 했고(통과했다), 그
+조건이 설계를 하나 정했다: `sourceRect` 기본값에서 CTM이 **순수 스케일**이어야
+해서 이동을 스케일 뒤에 걸어 페이지 단위로 해석시킨다 (장치 단위로 걸면
+`pageH × (pxH / pageH) ≠ pxH`라 1e-13pt 이동이 남아 픽셀 해시가 흔들린다).
+
+**호출자마다 갈리는 것은 미확정 이미지 정책 하나뿐이다**
+(`HwpUnresolvedImagePolicy`). PDF와 픽스처 하네스는 `.fail` — 산출물이 사용자
+파일이거나 커밋된 기준선이라 회색 로딩 사각형이 정답으로 굳으면 안 된다.
+축소판은 `.drawPlaceholder` — 보조 표시라 그림 하나 때문에 쪽 전체를 잃는 것이
+더 나쁘다. **경계는 PDF와 같다**: 비트맵까지가 우리 몫이고 그리드·목록 UI는
+호스트가 만든다 (`Sample/HwpSwiftSample/ThumbnailSidebar.swift`).
+
+**픽셀 수를 문서가 정하는 유일한 경로이기도 하다** (#76 리뷰). 페이지 치수는
+`HwpPageGeometry`가 200인치로 **상한만** 막고 하한은 `> 0`이라 1 HWPUNIT =
+0.01pt 폭이 통과하는데, 화면 뷰는 그 페이지를 자연 크기로 그려 무사한 반면
+축소판은 폭을 208px로 **끌어올려** 높이를 20,800배 증폭한다 (종횡비 상한
+1,440,000 → 299,520,000행 ≈ 249GB). 캐시 예산은 이것을 못 막는다 — 할당이
+먼저이고 `HwpThumbnailCache`는 방금 넣은 항목이 예산을 넘어도 의도적으로
+남긴다. `HwpPageBitmapRenderer.maximumPixelDimension`이 그 축을 묶되 **층마다
+답이 다르다**: 크기 헬퍼(`pixelHeight`)는 **클램프**하고(실패하면 그 쪽이
+호스트 목록에서 통째로 사라진다 — `HwpOutlineItem` 수준 클램프와 같은 기준)
+렌더러(`rasterize`)는 **거부**한다(조용히 줄이면 호출자가 요청하지 않은 크기가
+나간다). 같은 상한이 `pixelWidth * 4`와 `Int(CGFloat)`의 오버플로 트랩도 함께
+닫는다 — 공개 인자에 `Int.max`가 들어오는 바로 그 경로다.
+
+**호스트도 그 헬퍼에서 셀 자리를 파생시켜야 한다.** 비율을 손으로 계산하면
+렌더만 상한에서 접히고 셀은 그대로라 둘이 갈린다 — 0.01×14,400pt 페이지에서
+104pt 폭 셀이 149,760,000pt로 예약돼 그리드·스크롤이 무너진다. 클램프를
+렌더러에만 넣고 참조 배선을 그대로 두었다가 리뷰에서 잡힌 자리다
+(`Sample/HwpSwiftSample/ThumbnailSidebar.swift`).
+
+**축별 상한만으로는 그 축이 안 닫힌다.** 두 축을 다 크게 요구하는 극단이
+아니라 **폭 하나짜리 요청**이 1 GiB로 간다 — 세로 페이지는 높이가 상한까지
+클램프되므로 폭 16,384 하나면 16,384²가 되고 (A4 실측: 자연 높이 23,185 →
+클램프 16,384), `maximumPixelDimension`이 공개 상수라 그 값을 그대로 넘기는
+것이 자연스러운 사용이다. `maximumPixelCount`(64 MiB)가 면적을 따로 묶되
+축별 상한을 **먼저** 통과시켜 그 곱이 오버플로할 수 없게 한다.
+
+**값싼 검증은 디코드보다 먼저다.** `render`가 공급자를 만들기 전에
+`validatedGeometry`로 크기·기하를 확정한다 — 뒤에 두면 확정적으로 실패할
+요청이 페이지 그림을 전부 디코드한 뒤에야 거절되고, 더 나쁘게는 `.fail`
+정책에서 그 예산 압박이 `.unresolvedImages`를 먼저 던져 **진짜 원인을 가린다**
+(`.pageOutOfRange`를 문자열로 접지 않기로 한 것과 같은 기준이다). `rasterize`가
+원시 정수가 아니라 검증된 `BitmapGeometry`를 받아 순서를 구조로 강제한다.
+
+가드는 두 구멍을 메운다. (1) 커밋된 골든이 **1쪽을 한 번도 그리지 않는다**
+(`FixtureRenderGoldenTests.specs`가 2쪽 이후만 고르고, 1쪽 오라클인 fidelity는
+opt-in이다) — 축소판이 가장 먼저 그리는 쪽이 정확히 그 1쪽이라
+`HwpPageThumbnailsTests`가 상시 CI에서 그것을 그려 본다. (2) 잉크 비영은
+**상하 반전을 통과시키므로** 위·아래 잉크 분포를 함께 단언한다 (PDF 가드가
+뒤집은 그리드를 대조군으로 쓰는 것과 같은 이유).
+
+**샘플은 CI가 빌드하지 않는다** — 잡이 `test-macos`·`test-ios`·`test-linux`·
+`lint` 넷뿐이라 배선 회귀는 초록으로 지나간다. `Sample/`을 건드리면 macOS·iOS
+양쪽 `xcodebuild`를 로컬에서 돌리고, 파일을 추가했으면
+`cd Sample && xcodegen generate` 결과를 같은 커밋에 넣는다 (프로젝트가 파일을
+명시 참조한다).
 
 ## 리뷰 대응 체크리스트 (렌더 회귀 방지)
 

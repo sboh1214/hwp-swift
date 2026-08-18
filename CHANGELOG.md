@@ -114,6 +114,41 @@
 
 ### Added
 
+- **쪽 축소판 API**를 추가했습니다 (`HwpKit.HwpPageThumbnails`). `update(document:)`로
+  대상 문서를 걸고 `image(forPageAt:pixelWidth:)`로 0-기반 쪽의 `CGImage`를 받습니다
+  (`HwpPageNavigator`·`HwpOutlineItem.pageNumber`는 1-기반이므로 그쪽 값은 `- 1`을
+  하거나 `HwpOutlineItem.pageIndex`를 씁니다). 화면·PDF와 **같은 paint list·같은
+  조판**이며, 종횡비는 `HwpPageThumbnails.pixelHeight(for:pixelWidth:)`가 줍니다.
+  요청은 직렬화되고 이미 그린 쪽은 같은 인스턴스로 즉시 돌아옵니다. 호출 태스크를
+  취소하면 대기가 끊기고 남은 디코드는 시작되지 않습니다(이미 스폰된 디코드까지
+  놓으려면 `cancelOutstanding()`입니다) — 디코드 스로틀이 화면 뷰와 공유되는 전역
+  3슬롯이라, 스크롤로 사라진 셀이 요청을 취소하는 것이 성능 장치가 아니라 계약입니다.
+  PDF 내보내기와 두 군데서 갈립니다: 프로그레시브 **중간 스냅샷을 거부하지 않고**
+  (증분이면 이미 그린 축소판을 유지합니다), 바이트 예산에 걸린 그림을 실패로 보지 않고
+  회색 플레이스홀더로 남깁니다(그림 하나 때문에 쪽 전체를 잃는 것이 더 나쁩니다).
+  에러는 `HwpThumbnailError`입니다. 그리드·목록 UI는 종전대로 라이브러리 밖이며
+  (`Sample/HwpSwiftSample/ThumbnailSidebar.swift`가 배선 예입니다) 샘플 앱에 축소판
+  사이드바가 함께 들어왔습니다 — 개요가 없는 문서에서는 사이드바가 통째로 사라져
+  이동 수단이 쪽 이동 버튼과 검색뿐이었습니다.
+- 페이지 → 비트맵 렌더러 `HwpKitNative.HwpPageBitmapRenderer`를 추가했습니다.
+  `HwpPage`를 뷰와 같은 draw 경로로 `CGImage`에 그리며, PDF 내보내기와 **그리기
+  몸통과 이미지 확정 계약을 공유합니다**(`retainOnlyImages` →
+  `predecodeImageReferences` → `unsettledImageVariants`, 그리고 변형 예산과 원본
+  캐시 예산을 함께 거는 자리). 미확정 이미지 처리만 `HwpUnresolvedImagePolicy`로
+  갈립니다 — PDF는 실패, 축소판은 플레이스홀더입니다. 이 코드의 원본은 테스트
+  유틸(`FixturePreview.renderImage`)이었고 이제 그 유틸이 승격본에 위임하므로,
+  커밋된 렌더 골든이 테스트 전용 사본이 아니라 **출하되는 코드**를 검사합니다
+  (승격 리팩터는 기준선 재기록 없이 통과합니다). 출력 픽셀에는 축별 상한
+  (`maximumPixelDimension`)이 있습니다 — 종횡비는 문서가 정하는 값이라 병적인
+  페이지 하나가 수백 GB 비트맵을 요구할 수 있어, 크기 헬퍼는 클램프하고
+  렌더러는 `.invalidPixelSize`로 거부합니다. `sourceRect`도 크기가 양수인지만이
+  아니라 **파생되는 변환이 유한한지**까지 봅니다 — NaN 원점·무한/비정규 크기에서
+  CoreGraphics는 실패하지 않고 빈 비트맵을 성공으로 돌려주므로
+  `.invalidSourceRect`로 끝냅니다. 축별 상한과 별개로 **총 면적 상한**
+  (`maximumPixelCount`, 64 MiB)이 있습니다 — 세로 페이지에서는 폭 하나만 상한으로
+  줘도 높이가 상한까지 클램프돼 1 GiB가 되기 때문입니다. 이 검증은 모두 그림
+  디코드 **전에** 끝나므로, 잘못된 요청이 예산을 쓰거나 원인이 아닌 오류로
+  보고되지 않습니다.
 - 개요·책갈피 **탐색 목록**을 공개 API로 추가했습니다
   (`HwpDocumentMetadata.outline: [HwpOutlineItem]`). 조판이 확정한 쪽을 들고
   있어 사이드바·목차에서 항목을 눌러 그 쪽으로 바로 이동할 수 있습니다.

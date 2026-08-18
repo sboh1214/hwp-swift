@@ -10,6 +10,7 @@
 		1F41DD616F0D27606E71864F /* HwpKit in Frameworks */ = {isa = PBXBuildFile; productRef = 0478F39AEB002488AA1045BD /* HwpKit */; };
 		36581416E535363B5AA47F5A /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5232A086D38B2466914CFE61 /* ContentView.swift */; };
 		68EE62E38E2242AB019D0407 /* HwpSwiftSampleApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A96B93F86DE19483CF1C608B /* HwpSwiftSampleApp.swift */; };
+		A7B2E2F0FBE61B9626B83301 /* ThumbnailSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE1C1462191E1C084D8F65B4 /* ThumbnailSidebar.swift */; };
 		C49D96BFAC81290CC7614F4E /* OutlineSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AC08C621EF8D9AEC075CE35 /* OutlineSidebar.swift */; };
 		DDAD8077DFA353E890017484 /* PDFExportSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D57CA8F51A97CDEAF0FA987 /* PDFExportSupport.swift */; };
 		E821565996982AA2D138C840 /* HwpKitCore in Frameworks */ = {isa = PBXBuildFile; productRef = 7334160AD6142524FDAEE1B2 /* HwpKitCore */; };
@@ -24,6 +25,7 @@
 		A96B93F86DE19483CF1C608B /* HwpSwiftSampleApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HwpSwiftSampleApp.swift; sourceTree = "<group>"; };
 		BD9CD92D4D990B61E323BA6A /* HwpSwiftSample.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HwpSwiftSample.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FBC80478862156310CB7C524 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		FE1C1462191E1C084D8F65B4 /* ThumbnailSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailSidebar.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -73,6 +75,7 @@
 				FBC80478862156310CB7C524 /* Info.plist */,
 				5AC08C621EF8D9AEC075CE35 /* OutlineSidebar.swift */,
 				6D57CA8F51A97CDEAF0FA987 /* PDFExportSupport.swift */,
+				FE1C1462191E1C084D8F65B4 /* ThumbnailSidebar.swift */,
 			);
 			path = HwpSwiftSample;
 			sourceTree = "<group>";
@@ -146,6 +149,7 @@
 				68EE62E38E2242AB019D0407 /* HwpSwiftSampleApp.swift in Sources */,
 				C49D96BFAC81290CC7614F4E /* OutlineSidebar.swift in Sources */,
 				DDAD8077DFA353E890017484 /* PDFExportSupport.swift in Sources */,
+				A7B2E2F0FBE61B9626B83301 /* ThumbnailSidebar.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
