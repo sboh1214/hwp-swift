@@ -176,4 +176,90 @@ final class HwpSelectionCaretTests: XCTestCase {
 
         expect(caret.minX).to(beCloseTo(lines[0].selectionRect.maxX, within: 0.01))
     }
+
+    // MARK: - 스냅 폴백 (caretLine / lineDistance)
+
+    /// 어느 줄도 덮지 않는 오프셋은 nil이 아니라 **가장 가까운 줄**로 떨어진다.
+    /// 폴백이 nil을 내면 그 끝점의 핸들이 통째로 사라져 선택을 다시 못 잡는다.
+    ///
+    /// `caretRect(at:affinity:)`는 오프셋을 단위 길이로 먼저 클램프하므로 이
+    /// 경로는 그쪽으로 도달할 수 없다 — 조판이 잘린 단위에서만 성립하고,
+    /// 그래서 산식을 직접 부른다.
+    func testCaretLineFallsBackWhenNoLineContainsTheOffset() throws {
+        let geometry = makeGeometry([
+            textBlock("Hello world", frame: CGRect(x: 50, y: 100, width: 300, height: 20)),
+        ])
+        let lines = geometry.drawnLines(pageIndex: 0, unitOrdinal: 0)
+        let only = try XCTUnwrap(lines.first)
+        let beyond = only.stringRange.location + only.stringRange.length + 1000
+        let before = only.stringRange.location - 1000
+
+        // 폴백이 실제로 발동하는 상황인지 먼저 고정한다 — 한 줄이라도 덮으면
+        // affinity 분기에서 끝나 아래 단언이 폴백을 재지 못한다.
+        expect(Self.lineCovering(lines, offset: beyond)) == false
+        expect(Self.lineCovering(lines, offset: before)) == false
+
+        let forward = HwpSelectionGeometry.caretLine(
+            in: lines, offset: beyond, affinity: .downstream
+        )
+        let backward = HwpSelectionGeometry.caretLine(
+            in: lines, offset: before, affinity: .upstream
+        )
+
+        expect(forward.stringRange) == only.stringRange
+        expect(backward.stringRange) == only.stringRange
+    }
+
+    /// 후보가 여럿이면 **거리**가 고른다 — 뒤로 벗어난 오프셋은 마지막 줄,
+    /// 앞으로 벗어난 오프셋은 첫 줄이다. 부호가 뒤집히면 반대로 스냅한다.
+    func testCaretLineSnapsToTheNearestOfSeveralLines() throws {
+        let geometry = makeGeometry([
+            textBlock(
+                "Hello wrapped world", frame: CGRect(x: 50, y: 100, width: 40, height: 200)
+            ),
+        ])
+        let lines = geometry.drawnLines(pageIndex: 0, unitOrdinal: 0)
+        try XCTSkipIf(lines.count < 2, "조판이 줄바꿈을 만들지 않았다")
+        let first = try XCTUnwrap(lines.first)
+        let last = try XCTUnwrap(lines.last)
+        let beyond = last.stringRange.location + last.stringRange.length + 1000
+        let before = first.stringRange.location - 1000
+
+        expect(Self.lineCovering(lines, offset: beyond)) == false
+        expect(Self.lineCovering(lines, offset: before)) == false
+
+        let forward = HwpSelectionGeometry.caretLine(
+            in: lines, offset: beyond, affinity: .downstream
+        )
+        let backward = HwpSelectionGeometry.caretLine(
+            in: lines, offset: before, affinity: .upstream
+        )
+
+        expect(forward.stringRange) == last.stringRange
+        expect(backward.stringRange) == first.stringRange
+    }
+
+    /// 스냅 기준 거리. 세 갈래(앞·뒤·안쪽)가 모두 `caretLine`의 비교에 쓰이므로
+    /// 한 갈래라도 틀리면 엉뚱한 줄로 떨어진다. 안쪽 0은 이 함수를 직접 부를
+    /// 때만 성립한다 — `caretLine`은 덮는 줄이 없을 때만 여기 오기 때문이다.
+    func testLineDistanceMeasuresBothDirectionsAndZeroInside() throws {
+        let geometry = makeGeometry([
+            textBlock("Hello world", frame: CGRect(x: 50, y: 100, width: 300, height: 20)),
+        ])
+        let line = try XCTUnwrap(geometry.drawnLines(pageIndex: 0, unitOrdinal: 0).first)
+        let start = line.stringRange.location
+        let end = start + line.stringRange.length
+
+        expect(HwpSelectionGeometry.lineDistance(line, offset: start - 7)) == 7
+        expect(HwpSelectionGeometry.lineDistance(line, offset: end + 5)) == 5
+        expect(HwpSelectionGeometry.lineDistance(line, offset: start)) == 0
+        expect(HwpSelectionGeometry.lineDistance(line, offset: end)) == 0
+    }
+
+    private static func lineCovering(_ lines: [HwpDrawnLine], offset: Int) -> Bool {
+        lines.contains {
+            offset >= $0.stringRange.location
+                && offset <= $0.stringRange.location + $0.stringRange.length
+        }
+    }
 }
