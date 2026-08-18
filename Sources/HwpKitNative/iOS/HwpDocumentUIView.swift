@@ -152,11 +152,12 @@
             }
         }
 
-        var editMenuInteraction: UIEditMenuInteraction?
-        /// 선택 드래그 엣지 오토스크롤 (롱프레스 정지 시 .changed가 오지 않아
-        /// CADisplayLink로 밀어준다) — 상태는 Selection extension이 관리
-        var selectionAutoscrollLink: CADisplayLink?
-        var selectionAutoscrollViewportPoint: CGPoint?
+        /// 선택 제스처의 일시 상태 — 편집 메뉴, 엣지 오토스크롤(롱프레스 정지
+        /// 시 .changed가 오지 않아 CADisplayLink로 밀어준다), 끝점 핸들과 그랩
+        /// 오프셋. 값 타입 하나로 **묶어야만** 하는 이유는
+        /// `HwpSelectionInteractionState`의 주석에 있다 (SwiftLint
+        /// `type_body_length` error 임계). 다루는 곳은 Selection extension 둘이다.
+        var selectionInteraction = HwpSelectionInteractionState()
 
         let scrollView = UIScrollView()
         let contentView = UIView()
@@ -311,6 +312,9 @@
             // updateVisiblePages가 페이지 변경을 (dedup으로) 통지하므로 여기서
             // 다시 부르지 않는다 — 스크롤마다 동일 통지 2회를 없앤다 (#5).
             let range = visiblePageRange()
+            // 핸들은 줌 대상 밖(스크롤 뷰의 형제)에 살아 스크롤을 따라 움직이지
+            // 않는다 — 아래 가시 범위 가드 **앞에서** 다시 잡아야 한다 (#84).
+            updateSelectionHandles()
             // 가시 범위가 그대로면 실체화도 재도색도 할 일이 없다 — 페이지
             // 레이어는 스크롤과 함께 움직인다. 검색 오버레이 재구축은 페이지마다
             // 매치 전량(상한 5,000)을 훑어 CGPath를 새로 만들므로 이 가드가

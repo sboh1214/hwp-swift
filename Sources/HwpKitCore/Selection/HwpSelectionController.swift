@@ -174,6 +174,31 @@ public final class HwpSelectionController {
         onSelectionChanged?()
     }
 
+    /// 확정된 선택의 **끝점을 다시 잡는다** — 잡은 쪽을 `focus`로, 반대쪽을
+    /// `anchor`로 한 번만 바꾼다. 이후 그 끝점을 미는 것은 기존
+    /// `extend(to:)` 하나로 끝난다 (`range`가 정규화하므로 교환은
+    /// 선택 범위를 바꾸지 않는다). 조정할 선택이 없으면 false.
+    ///
+    /// **제스처 `.began`에서 딱 한 번** 불러야 한다. `.changed`나 오토스크롤
+    /// 틱마다 부르면 매 프레임 anchor/focus가 뒤집혀 끌던 끝점이 제자리를 맴돈다.
+    ///
+    /// 시작 핸들을 끝 핸들 **너머로** 끌면 `anchor <= focus`가 뒤집혀 잡고
+    /// 있던 것이 '끝 핸들'이 된다 (UITextView와 같은 동작). 그래도 손가락을
+    /// 따라오는 것은 계속 `focus`라 뷰는 아무 상태도 뒤집지 않는다.
+    @discardableResult
+    public func beginAdjusting(edge: HwpSelectionEdge) -> Bool {
+        guard let current = selection, !current.isCollapsed else { return false }
+        let (start, end) = current.range
+        let adjusted = edge == .start
+            ? HwpTextSelection(anchor: end, focus: start)
+            : HwpTextSelection(anchor: start, focus: end)
+        // 이미 그 방향이면 통지하지 않는다 — 범위가 그대로인 재도색을 아낀다.
+        guard adjusted != current else { return true }
+        selection = adjusted
+        onSelectionChanged?()
+        return true
+    }
+
     /// 문서 전체 선택 (Cmd+A / Select All)
     public func selectAll() {
         guard let all = geometry?.documentSelection() else { return }
@@ -196,5 +221,28 @@ public final class HwpSelectionController {
     public func highlightRects(forPage pageIndex: Int) -> [CGRect] {
         guard let selection, hasSelection else { return [] }
         return geometry?.highlightRects(pageIndex: pageIndex, selection: selection) ?? []
+    }
+
+    /// 선택 양 끝점의 캐럿 — 끌 수 있는 핸들을 그릴 자리다. 선택이 없거나
+    /// collapsed면 빈 배열이고, 캐럿을 못 구한 끝점은 그냥 빠진다(부분 결과).
+    ///
+    /// 문서 순서로 앞이 `.start`, 뒤가 `.end`이며 affinity도 그에 맞춘다 —
+    /// 시작은 뒷줄의 처음(downstream), 끝은 앞줄의 마지막(upstream)이라
+    /// 줄바꿈 자리에서 핸들이 하이라이트 밖으로 떨어지지 않는다.
+    public func selectionCarets() -> [HwpSelectionCaret] {
+        guard let selection, hasSelection, let geometry else { return [] }
+        let (start, end) = selection.range
+        var carets: [HwpSelectionCaret] = []
+        if let rect = geometry.caretRect(at: start, affinity: .downstream) {
+            carets.append(HwpSelectionCaret(
+                edge: .start, pageIndex: start.pageIndex, rect: rect
+            ))
+        }
+        if let rect = geometry.caretRect(at: end, affinity: .upstream) {
+            carets.append(HwpSelectionCaret(
+                edge: .end, pageIndex: end.pageIndex, rect: rect
+            ))
+        }
+        return carets
     }
 }

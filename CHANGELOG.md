@@ -114,6 +114,28 @@
 
 ### Added
 
+- **선택 끝점 조정 API**를 추가했습니다 (`HwpKitCore`). `HwpSelectionController.beginAdjusting(edge:)`가
+  확정된 선택의 한쪽 끝점을 잡아 `focus`로 만들고(반대쪽이 `anchor`가 됩니다), 그 뒤
+  이동은 기존 `extend(to:)`가 그대로 합니다 — 제스처 시작에서 **한 번만** 부르는 것이
+  계약입니다(`.changed`마다 부르면 매 프레임 anchor/focus가 뒤집힙니다). 시작 끝점을
+  반대쪽 너머로 밀면 `range` 정규화로 역할이 뒤바뀌지만 손가락을 따라오는 것은 계속
+  `focus`라, 호출부는 아무 상태도 뒤집지 않습니다. 끝점 캐럿은
+  `HwpSelectionController.selectionCarets()`(양 끝, `HwpSelectionCaret`)와
+  `HwpSelectionGeometry.caretRect(at:affinity:)`(임의 위치)로 받습니다 — 기존 하이라이트
+  경로는 폭 0을 두 번 버리므로(collapsed 가드·폭 가드) 재사용할 수 없었습니다.
+  `HwpCaretAffinity`는 줄 끝 오프셋과 다음 줄 첫 오프셋이 **같은 값**인 자리에서 캐럿을
+  어느 줄에 그릴지만 고르는 질의 인자이며, `HwpTextPosition`의 비교·정규화 규약은
+  그대로입니다.
+- **iOS 텍스트 선택 핸들**이 붙었습니다. 롱프레스로 만든 선택의 양 끝에 그립 달린
+  핸들이 서고, 끌어서 선택 범위를 나중에 다시 조정할 수 있습니다 — 종전에는 롱프레스
+  제스처가 끝나면 끝점을 다시 잡을 방법이 없어 처음부터 다시 그어야 했습니다. 시작
+  핸들을 끝 핸들 너머로 끌면 역할이 뒤바뀌고(UITextView와 같은 동작), 뷰포트 엣지에서는
+  기존 44pt 존 오토스크롤이 그대로 이어지며, 드래그를 놓으면 편집 메뉴가 다시 뜹니다.
+  핸들은 줌 대상 밖(스크롤 뷰의 형제)에 살아 0.25x~5x 어디서도 크기가 일정하고, 본문
+  탭·롱프레스·스크롤 pan과 터치를 두고 경합하지 않습니다. 반대 핸들 위에 정확히
+  겹쳐 범위가 비면 선택을 지웁니다(macOS `mouseUp`과 같은 정리 — iOS에는 이 정리가
+  없었습니다). macOS는 끝점 재조정이 여전히 없습니다(shift-click 확장 경로도 없습니다)
+  — 이번 변경에서 남겨 둔 비대칭입니다.
 - **쪽 축소판 API**를 추가했습니다 (`HwpKit.HwpPageThumbnails`). `update(document:)`로
   대상 문서를 걸고 `image(forPageAt:pixelWidth:)`로 0-기반 쪽의 `CGImage`를 받습니다
   (`HwpPageNavigator`·`HwpOutlineItem.pageNumber`는 1-기반이므로 그쪽 값은 `- 1`을

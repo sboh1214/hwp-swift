@@ -7,6 +7,7 @@
 ```
 HwpKitNative/
 ├── Platform/PlatformTypes.swift    # typealias (PlatformView/Color/Image/Font) — 뷰 chrome + provider가 사용
+├── HwpSelectionHandleGeometry.swift # 선택 핸들 순수 기하 (#if 밖 — iOS 잡은 커버리지 미수집, #84)
 ├── HwpDocumentViewSupport.swift    # macOS/iOS 뷰 공통 @MainActor 정적 헬퍼 — 선택 오버레이,
 │                                   #   contentsScale 산식/일괄 갱신, 페이지 chrome, 메모 패널 레이어,
 │                                   #   이미지 공급자, 프로그레시브 판정, Array[safe:] (#if 없이 양쪽 컴파일)
@@ -22,7 +23,8 @@ HwpKitNative/
 ├── macOS/HwpDocumentNSViewSelection.swift  # 마우스 드래그 선택 + Cmd+C/Cmd+A/우클릭 Copy
 ├── macOS/HwpDocumentNSViewSearch.swift     # 검색 오버레이 2벌 + 매치 노출 스크롤 (#75)
 ├── iOS/HwpDocumentUIViewGeometry.swift     # 위와 대칭 (#75에서 UIView 본체에서 분리)
-├── iOS/HwpDocumentUIViewSelection.swift    # 롱프레스 선택 + 엣지 오토스크롤 + 편집 메뉴
+├── iOS/HwpDocumentUIViewSelection.swift    # 롱프레스 선택 + 엣지 오토스크롤 + 편집 메뉴 + collapsed 정리
+├── iOS/HwpDocumentUIViewSelectionHandles.swift # 선택 끝점 핸들 뷰·배치·드래그 (#84)
 ├── iOS/HwpDocumentUIViewSearch.swift       # 위와 대칭 (#75)
 ├── macOS/HwpCenteringClipView.swift # 문서가 뷰포트보다 작을 때 중앙 정렬 클립 뷰
 ├── iOS/HwpDocumentUIView.swift     # UIView + UIScrollView (pinch zoom 내장)
@@ -161,7 +163,7 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
 ## 검색 하이라이트 (#75)
 
 - 오버레이 딕셔너리는 **2벌**이다 (`searchMatchLayers` / `currentSearchMatchLayers`). 헬퍼가 페이지당 오버레이 하나를 재사용하므로 한 벌로 두 번 칠하면 두 번째 호출이 첫 번째의 path 를 덮는다.
-- z-순서는 `HwpOverlayZ` 로 **명시**한다 (search 10 / current 20 / selection 30). 부착이 `addSublayer` 한 줄이고 이미 붙어 있으면 다시 붙이지 않으므로, 명시하지 않으면 첫 부착 순서가 그대로 고착돼 가상화로 재실체화한 페이지만 겹침 색이 뒤바뀐다. 선택이 최상단인 것은 사용자가 직접 만든 것이라 자동 하이라이트에 가리면 안 되기 때문이다.
+- z-순서는 `HwpOverlayZ` 로 **명시**한다 (search 10 / current 20 / selection 30). 부착이 `addSublayer` 한 줄이고 이미 붙어 있으면 다시 붙이지 않으므로, 명시하지 않으면 첫 부착 순서가 그대로 고착돼 가상화로 재실체화한 페이지만 겹침 색이 뒤바뀐다. 선택이 최상단인 것은 사용자가 직접 만든 것이라 자동 하이라이트에 가리면 안 되기 때문이다. 선택 **끝점 핸들**(#84)은 이 표에 없다 — 페이지 레이어의 sublayer 가 아니라 스크롤 뷰의 형제 UIView 라 겹침 순서가 뷰 계층으로 정해진다.
 - `fillColor` 는 **매 호출** 갱신한다. 문서 교체가 딕셔너리를 비우지 않아 오버레이가 재사용되는데, 생성 분기에서만 대입하면 옛 색이 그대로 남는다 (선택만 있을 때도 있던 결함).
 - 색은 **고정 sRGB** 다 (`HwpSearchHighlightStyle.default`). appearance/trait 변경 훅이 이 타깃에 하나도 없어 동적 색은 `.cgColor` 변환 시점에 굳고 다크 모드 전환 후 낡은 색이 남는다.
 - **가시 범위가 같은 스크롤 틱은 건너뛴다** — 양 플랫폼 모두 (macOS `clipViewBoundsDidChange`, iOS `scrollViewDidScroll` 의 `activeVisibleRange` 가드, #75 리뷰). 오버레이 재구축은 페이지마다 매치 전량(상한 5,000)을 훑어 rect·CGPath 를 새로 만드는데 페이지 레이어는 스크롤과 함께 움직이므로 대부분 같은 결과를 다시 만드는 일이다. **줌은 가드하지 않는다** — 프레임이 바뀐다. 대가로 같은 페이지 안의 매치 이동은 저절로 갱신되지 않으므로 `onCurrentMatchChanged` 에서 명시적으로 부른다.
@@ -178,7 +180,19 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
 - 선택 상태/지오메트리는 HwpKitCore의 `HwpSelectionController`/`HwpSelectionGeometry` (플랫폼 중립). 줄 배치는 렌더러와 같은 `HwpDrawnTextLayout`을 공유해 하이라이트가 화면과 일치한다.
 - 하이라이트는 `CAShapeLayer`를 **HwpPageLayer의 sublayer**로 부착 — 조상 flip 기하를 상속하므로 top-down rect를 그대로 쓴다 (자체 flip 금지).
 - 머리말/꼬리말/쪽 번호는 `AnyHwpBlock.role == .pageChrome`으로 선택·복사에서 제외.
-- macOS: mouseDown/Dragged/Up 드래그 (하이퍼링크 click recognizer는 무이동 클릭만 발화라 공존), Cmd+C·우클릭 Copy, Cmd+A/`selectAll(_:)` 전체 선택. iOS: 롱프레스 단어 선택 → 드래그 확장 (뷰포트 엣지 44pt 존에서 CADisplayLink 오토스크롤) → UIEditMenuInteraction Copy/Select All.
+- macOS: mouseDown/Dragged/Up 드래그 (하이퍼링크 click recognizer는 무이동 클릭만 발화라 공존), Cmd+C·우클릭 Copy, Cmd+A/`selectAll(_:)` 전체 선택. iOS: 롱프레스 단어 선택 → 드래그 확장 (뷰포트 엣지 44pt 존에서 CADisplayLink 오토스크롤) → **끝점 핸들 드래그로 재조정** (#84) → UIEditMenuInteraction Copy/Select All.
+- collapsed 선택(양 끝점이 겹친 상태)은 제스처 끝에서 지운다 — 양 플랫폼 모두 (macOS `mouseUp`, iOS `clearCollapsedSelection()`). 안 지우면 `hasSelection` 이 false 인데 선택 객체만 남아 오버레이 갱신이 계속 돈다.
+
+### 선택 끝점 핸들 (iOS, #84)
+
+- **끌 수 있는 끝점은 언제나 `focus` 하나다.** 핸들을 잡는 순간 `HwpSelectionController.beginAdjusting(edge:)` 가 잡은 쪽을 focus 로, 반대쪽을 anchor 로 **한 번만** 바꾸고, 그 뒤 이동은 기존 `extend(to:)` 가 그대로 한다. 그래서 오토스크롤 틱에 "어느 끝점" 상태를 넣을 필요가 없다 (틱은 늘 focus 를 민다). 교환을 `.changed` 나 틱마다 부르면 매 프레임 anchor/focus 가 뒤집혀 끌던 끝점이 제자리를 맴돈다.
+- **핸들 역할 뒤바뀜은 상태가 아니라 정규화의 결과다.** 시작 핸들을 끝 핸들 너머로 끌면 `range` 가 뒤집혀 잡고 있던 것이 '끝 핸들'이 된다 (UITextView 와 같은 동작). 두 핸들 뷰는 각각 `range.start`/`range.end` 에 고정 바인딩이므로, 뒤바뀐 뒤에는 **드래그를 소유한 뷰가 고정단으로 옮겨 간다** — 진행 중인 제스처는 뷰가 움직여도 계속 추적되므로 동작은 그대로다. 다만 그 뷰가 화면 밖으로 스크롤될 수 있어 숨김에 `isHidden` 이 아니라 `alpha` 를 쓴다 (alpha 0 은 히트 테스트에서 빠지면서 진행 중인 인식에는 영향이 없다).
+- **핸들은 `contentView` 가 아니라 뷰 본체의 서브뷰다** (스크롤 뷰의 형제). 이 저장소에는 제스처 중재 코드가 한 건도 없어 (`require(toFail:)`·`UIGestureRecognizerDelegate` 0건) 중재 계층을 새로 세우는 대신 계층 배치로 푼다 — 히트 테스트가 핸들에서 끝나므로 스크롤 pan·핀치·롱프레스·탭이 그 터치를 아예 못 본다. 특히 탭 핸들러의 첫 분기가 `hasSelection → clear()` 라, 같은 계층에 뒀다면 **핸들을 톡 치는 순간 선택이 통째로 사라진다**. 덤으로 줌 transform 도 안 물려받아 배율 역보정 산식이 없다 (`contentView.convert(_:to:)` 가 배율과 오프셋을 함께 반영한다).
+- 그래서 `HwpOverlayZ` 에 핸들 상수가 **없다** — 핸들은 페이지 레이어의 sublayer 가 아니라 UIView 라 z-순서 계약의 대상이 아니다.
+- **갱신 진입점은 넷이고 하나가 예외다.** 선택 변경(`onSelectionChanged`)·가시 페이지 갱신(`updateVisiblePages`)·줌 종료 배율 재적용(`updateLayerContentsScale`) 셋은 `updateSelectionOverlays()` 를 지나므로 그 안에서 부른다. 스크롤만 `scrollViewDidScroll` 이 **`range != activeVisibleRange` 가드 앞에서** 직접 부른다 — 핸들은 줌 대상 밖에 살아 스크롤을 따라 움직이지 않는데, 가시 범위가 같은 스크롤은 그 가드에 걸려 아래로 못 내려간다.
+- **뷰포트 밖 끝점의 핸들은 숨긴다** (가장자리 클램프 금지). 클램프하면 손가락이 엉뚱한 자리의 핸들을 잡아 선택이 튄다. 페이지 레이어가 축출돼도 캐럿 좌표는 지오메트리에서 나오므로 계산 자체는 살아 있다.
+- **산식은 `#if os(iOS)` 밖에 둔다** (`HwpSelectionHandleGeometry`). iOS 잡은 `xcodebuild test` 만 돌고 커버리지를 수집하지 않으므로 (`--enable-code-coverage`·codecov 업로드는 macOS 잡 소속), 가드 안에만 사는 산식은 codecov patch 에 아예 안 잡힌다. `HwpDocumentViewSupport.effectiveContentsScale`·`autoscrollStep` 과 같은 틀이다.
+- 상태는 값 타입 하나(`HwpSelectionInteractionState`)로 묶는다 — `HwpDocumentUIView` 타입 본문이 SwiftLint `type_body_length` **error** 임계(400)에 닿아 있어 저장 프로퍼티를 한 줄만 늘려도 Lint 잡이 종료 코드 2로 끝난다. 신규 상태만 묶는 게 아니라 기존 오토스크롤·편집 메뉴 상태까지 접어 본문을 **순감**시켰다 (400 → 399).
 
 ## 레이어 가상화
 
