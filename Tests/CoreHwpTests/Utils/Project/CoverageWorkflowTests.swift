@@ -39,14 +39,24 @@ final class CoverageWorkflowTests: XCTestCase {
         ]
 
         guard let coreHwp = targets.first(where: { $0.path == "Sources/CoreHwp/" }),
-              let threshold = coreHwp.threshold
+              let coreHwpThreshold = coreHwp.threshold
         else {
             return fail(
                 "Expected CI workflow to declare a numeric Sources/CoreHwp/ coverage threshold"
             )
         }
 
-        expect(threshold).to(beGreaterThanOrEqualTo(95.0))
+        expect(coreHwpThreshold).to(beGreaterThanOrEqualTo(95.0))
+
+        guard let hwpKitCore = targets.first(where: { $0.path == "Sources/HwpKitCore/" }),
+              let hwpKitCoreThreshold = hwpKitCore.threshold
+        else {
+            return fail(
+                "Expected CI workflow to declare a numeric Sources/HwpKitCore/ coverage threshold"
+            )
+        }
+
+        expect(hwpKitCoreThreshold).to(beGreaterThanOrEqualTo(91.0))
     }
 }
 

@@ -70,10 +70,10 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          # 임계가 None인 경로는 값만 기록하고 실패시키지 않는다 (#106 관측 단계)
+          # 임계가 None인 경로는 값만 기록하고 실패시키지 않는다 (#106)
           targets = [
               ("Sources/CoreHwp/", 95.0),
-              ("Sources/HwpKitCore/", None),
+              ("Sources/HwpKitCore/", 91.0),
               ("Sources/HwpKitNative/", None),
               ("Sources/HwpKit/", None),
           ]
