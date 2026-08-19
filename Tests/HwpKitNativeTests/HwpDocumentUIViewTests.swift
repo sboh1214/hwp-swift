@@ -1,4 +1,5 @@
 #if os(iOS)
+    import Foundation
     import HwpKitCore
     @testable import HwpKitNative
     import Nimble
@@ -6,13 +7,19 @@
 
     @MainActor
     final class HwpDocumentUIViewTests: XCTestCase {
-        private func makeDocument(pageCount: Int = 1) -> HwpDocument {
+        private func makeDocument(
+            pageCount: Int = 1,
+            memoPanelWidth: CGFloat? = nil
+        ) -> HwpDocument {
             let pages = (0 ..< pageCount).map { index in
                 HwpPage(
                     size: CGSize(width: 595, height: 842),
                     margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
                     blocks: [],
-                    pageNumber: index + 1
+                    pageNumber: index + 1,
+                    memoPanel: memoPanelWidth.map {
+                        HwpMemoPanel(width: $0, paintList: HwpPaintList(commands: []))
+                    }
                 )
             }
             return HwpDocument(
@@ -20,6 +27,186 @@
                 metadata: HwpDocumentMetadata(pageCount: pageCount),
                 unsupportedElements: []
             )
+        }
+
+        // MARK: - fit 배율 (#78)
+
+        /// SwiftUI `makeUIView` 는 bounds 0 에서 배선하므로 뷰포트는 첫
+        /// `layoutSubviews` 에서야 선다 — fit 테스트는 전부 그 뒤를 본다.
+        private func makeMeasuredView(
+            width: CGFloat = 800,
+            height: CGFloat = 600,
+            pageCount: Int = 3,
+            memoPanelWidth: CGFloat? = nil
+        ) -> HwpDocumentUIView {
+            let view = HwpDocumentUIView(
+                frame: CGRect(x: 0, y: 0, width: width, height: height)
+            )
+            view.document = makeDocument(pageCount: pageCount, memoPanelWidth: memoPanelWidth)
+            view.layoutIfNeeded()
+            return view
+        }
+
+        /// 폭 맞춤의 계약은 "가로 스크롤이 사라진다"이므로 기준은 쪽 폭이 아니라
+        /// **실제로 스크롤되는 캔버스**다 (macOS 와 같은 규약).
+        func testFitWidthScalesCanvasToViewportWidth() {
+            let view = makeMeasuredView()
+
+            expect(view.applyFitZoom(.width)) == true
+
+            expect(view.contentView.bounds.width * view.zoomScale)
+                .to(beCloseTo(view.bounds.width, within: 0.5))
+        }
+
+        /// 메모 패널은 쪽 바깥 오른쪽에 그려져 캔버스 폭에 들어 있다.
+        func testFitWidthIncludesMemoPanelWidth() {
+            let bare = makeMeasuredView(pageCount: 1)
+            bare.applyFitZoom(.width)
+
+            let withPanel = makeMeasuredView(pageCount: 1, memoPanelWidth: 120)
+            withPanel.applyFitZoom(.width)
+
+            expect(withPanel.zoomScale) < bare.zoomScale
+            expect(withPanel.contentView.bounds.width * withPanel.zoomScale)
+                .to(beCloseTo(withPanel.bounds.width, within: 0.5))
+        }
+
+        /// 쪽 맞춤은 두 축을 **모두** 담는다 — 800×600 뷰포트 / A4 는 세로가 이긴다.
+        func testFitPageFitsBothAxes() {
+            let view = makeMeasuredView()
+
+            expect(view.applyFitZoom(.page)) == true
+
+            let viewport = view.bounds.size
+            expect(view.contentView.bounds.width * view.zoomScale) <= viewport.width + 0.5
+            expect(view.rowHeight(at: 0) * view.zoomScale) <= viewport.height + 0.5
+            expect(view.rowHeight(at: 0) * view.zoomScale)
+                .to(beCloseTo(viewport.height, within: 0.5))
+        }
+
+        /// 뷰포트 측정이 **현재 배율과 무관**해야 한다 — 맞춤을 두 번 눌러도 같은
+        /// 배율이다 (macOS 와 같은 계약, 거기서는 클립 뷰 bounds 함정이 근거다).
+        func testFitZoomIsIndependentOfCurrentZoomScale() {
+            let view = makeMeasuredView()
+
+            view.applyFitZoom(.width)
+            let fromIdentity = view.zoomScale
+
+            view.zoomScale = 3.0
+            view.applyFitZoom(.width)
+            let fromZoomedIn = view.zoomScale
+
+            view.zoomScale = 0.3
+            view.applyFitZoom(.width)
+            let fromZoomedOut = view.zoomScale
+
+            expect(fromZoomedIn).to(beCloseTo(fromIdentity, within: 0.0001))
+            expect(fromZoomedOut).to(beCloseTo(fromIdentity, within: 0.0001))
+        }
+
+        /// SwiftUI `makeUIView` 가 bounds 0 에서 배선하므로 이 경로는 실제로
+        /// 밟힌다 — 버리면 호스트가 "문서를 열자마자 폭 맞춤"을 걸 수 없다.
+        func testFitZoomDefersUntilViewportIsMeasured() {
+            let view = HwpDocumentUIView(frame: .zero)
+            view.document = makeDocument(pageCount: 2)
+
+            expect(view.applyFitZoom(.width)) == false
+            expect(view.pendingFitZoom) == HwpZoomFit.width
+            expect(view.zoomScale) == 1.0
+
+            view.frame = CGRect(x: 0, y: 0, width: 800, height: 600)
+            view.layoutIfNeeded()
+
+            expect(view.pendingFitZoom).to(beNil())
+            expect(view.contentView.bounds.width * view.zoomScale)
+                .to(beCloseTo(view.bounds.width, within: 0.5))
+        }
+
+        /// 쪽 맞춤은 그 쪽이 통째로 보인다는 약속이라 쪽 위로 옮긴다.
+        func testFitPageScrollsToThatPage() {
+            let view = makeMeasuredView(pageCount: 5)
+            view.scrollToPage(at: 2)
+            let before = view.currentVisiblePage()
+
+            view.applyFitZoom(.page)
+
+            expect(before) == 2
+            expect(view.currentVisiblePage()) == 2
+        }
+
+        private func makeTokenDocument(pageCount: Int, loadToken: UUID) -> HwpDocument {
+            HwpDocument(
+                pages: (0 ..< pageCount).map { index in
+                    HwpPage(
+                        size: CGSize(width: 595, height: 842),
+                        margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
+                        blocks: [],
+                        pageNumber: index + 1
+                    )
+                },
+                metadata: HwpDocumentMetadata(pageCount: pageCount, loadToken: loadToken),
+                unsupportedElements: []
+            )
+        }
+
+        /// 쪽이 없는 문서는 캔버스에 `defaultPageSize` 하한만 서 있어, 가드가 없으면
+        /// 산식이 **유령 A4** 에 맞춘 배율을 성공으로 돌려준다 (macOS 와 같은 가드).
+        func testFitZoomDefersWhileDocumentHasNoPages() {
+            let view = HwpDocumentUIView(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+            view.layoutIfNeeded()
+
+            expect(view.applyFitZoom(.width)) == false
+            expect(view.pendingFitZoom) == HwpZoomFit.width
+            expect(view.zoomScale) == 1.0
+        }
+
+        /// "문서를 열자마자 폭 맞춤" — 문서 대입 끝에서 예약을 직접 소비한다.
+        func testQueuedFitAppliesWhenTheDocumentArrives() {
+            let view = HwpDocumentUIView(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+            view.layoutIfNeeded()
+            view.applyFitZoom(.width)
+
+            view.document = makeDocument(pageCount: 3)
+
+            expect(view.pendingFitZoom).to(beNil())
+            expect(view.contentView.bounds.width * view.zoomScale)
+                .to(beCloseTo(view.bounds.width, within: 0.5))
+        }
+
+        /// 옛 문서를 향한 예약이 새 문서의 배율을 뺏으면 안 된다 (R71 #2와 같은 판단).
+        func testPendingFitIsDiscardedWhenAnotherDocumentReplacesIt() {
+            let view = HwpDocumentUIView(frame: .zero)
+            view.document = makeDocument(pageCount: 2)
+            expect(view.applyFitZoom(.width)) == false
+            expect(view.pendingFitZoom) == HwpZoomFit.width
+
+            view.document = makeDocument(pageCount: 5)
+            view.frame = CGRect(x: 0, y: 0, width: 800, height: 600)
+            view.layoutIfNeeded()
+
+            expect(view.pendingFitZoom).to(beNil())
+            expect(view.zoomScale) == 1.0
+        }
+
+        /// 같은 문서의 프로그레시브 스냅샷은 교체가 아니다 — 예약이 살아남는다.
+        func testPendingFitSurvivesProgressiveSnapshot() {
+            let token = UUID()
+            let view = HwpDocumentUIView(frame: .zero)
+            view.document = makeTokenDocument(pageCount: 1, loadToken: token)
+            view.applyFitZoom(.width)
+
+            view.document = makeTokenDocument(pageCount: 3, loadToken: token)
+
+            expect(view.pendingFitZoom) == HwpZoomFit.width
+        }
+
+        /// 맞출 수 없는 조합에서도 실패가 아니라 **범위 안에서 최선**이다.
+        func testFitZoomClampsToNativeZoomLimits() {
+            let view = makeMeasuredView(width: 100, height: 100, pageCount: 1)
+
+            expect(view.applyFitZoom(.width)) == true
+
+            expect(view.zoomScale) == view.scrollView.minimumZoomScale
         }
 
         /// 스크롤 뷰는 contentOffset을 기기 픽셀 그리드에 맞춘다 — 3× 기기에서

@@ -164,6 +164,54 @@ final class HwpDocumentViewTests: XCTestCase {
             expect(currentPage).toEventually(equal(3), timeout: .seconds(2))
         }
 
+        /// fit 명령의 왕복 계약 (#78): 호스트가 값을 넣으면 (1) 뷰가 배율을
+        /// 맞추고 (2) 그 배율이 `zoomScale` 바인딩으로 돌아오며 (3) 명령
+        /// 바인딩은 idle(nil)로 되돌아간다.
+        ///
+        /// 이 경로가 **지연 적용**까지 함께 증명한다 — `makeNSView` 는 frame 0
+        /// 에서 배선되므로 그 시점에는 뷰포트가 없고, 뷰가 예약해 뒀다가 첫
+        /// 실측 `layout()` 에서 맞춘다. 세 단언 모두 업데이트 밖에서 반영되므로
+        /// 메인 런루프를 돌려 기다린다 (페이지 정규화 테스트와 같은 형태).
+        @MainActor
+        func testFitZoomCommandAppliesAndReturnsToIdle() {
+            var zoomScale = CGFloat(1.0)
+            var fitZoom: HwpZoomFit? = .width
+            let pages = (0 ..< 3).map { index in
+                HwpPage(
+                    size: CGSize(width: 595, height: 842),
+                    margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
+                    blocks: [],
+                    pageNumber: index + 1
+                )
+            }
+            let document = HwpDocument(
+                pages: pages,
+                metadata: HwpDocumentMetadata(pageCount: 3, loadToken: UUID()),
+                unsupportedElements: []
+            )
+            let view = HwpDocumentView(
+                document: document,
+                zoomScale: Binding(get: { zoomScale }, set: { zoomScale = $0 }),
+                fitZoom: Binding(get: { fitZoom }, set: { fitZoom = $0 })
+            )
+            let hostingView = NSHostingView(rootView: view)
+            hostingView.frame = CGRect(x: 0, y: 0, width: 320, height: 480)
+            hostingView.layoutSubtreeIfNeeded()
+
+            guard let nativeView = hostingView.firstSubview(of: HwpDocumentNSView.self) else {
+                fail("Expected HwpDocumentNSView in SwiftUI host")
+                return
+            }
+
+            expect(fitZoom).toEventually(beNil(), timeout: .seconds(2))
+            expect(nativeView.zoomScale).toEventuallyNot(beCloseTo(1.0), timeout: .seconds(2))
+            expect(zoomScale).toEventually(
+                beCloseTo(nativeView.zoomScale, within: 0.001), timeout: .seconds(2)
+            )
+            // 320pt 창에 595pt 캔버스 — 폭 맞춤은 축소여야 한다.
+            expect(nativeView.zoomScale) < 1.0
+        }
+
         @MainActor
         func testBindingsPropagateThroughNativeWrapper() {
             var zoomScale = CGFloat(1.75)
