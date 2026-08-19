@@ -746,6 +746,47 @@ opt-in이다) — 축소판이 가장 먼저 그리는 쪽이 정확히 그 1쪽
 `cd Sample && xcodegen generate` 결과를 같은 커밋에 넣는다 (프로젝트가 파일을
 명시 참조한다).
 
+## 텍스트 선택 끝점 핸들 (#84)
+
+**끌 수 있는 끝점은 언제나 `focus` 하나다.** 핸들을 잡는 순간
+`HwpSelectionController.beginAdjusting(edge:)` 가 잡은 쪽을 focus 로, 반대쪽을
+anchor 로 **한 번만** 바꾸고, 그 뒤 이동은 이미 있던 `extend(to:)` 가 그대로
+한다. 이 한 줄이 이 기능의 나머지를 거의 다 없앤다 — 뷰에 "지금 어느 끝점을
+끄는가" 상태가 필요 없고, 엣지 오토스크롤 틱(늘 focus 를 민다)도 손댈 곳이
+없다. 교환을 `.changed` 나 틱마다 부르면 매 프레임 anchor/focus 가 뒤집혀
+끌던 끝점이 제자리를 맴돈다. 시작 핸들을 끝 핸들 **너머로** 끌었을 때의 역할
+뒤바뀜도 상태가 아니라 `range` 정규화의 결과다.
+
+**끝점 캐럿은 하이라이트 경로의 재사용이 아니다.** 그쪽은 폭 0 을 두 번
+버린다 — `highlightRects(pageIndex:selection:)` 의 collapsed 가드와
+`highlightRect(in:characterRange:)` 의 빈 범위·폭 가드다. 그래서
+`HwpSelectionGeometry.caretRect(at:affinity:)` 가 따로 있고, HwpKitCore 안에
+있어야 한다: 캐시된 `drawnLines(pageIndex:unitOrdinal:)` 가 모듈 internal 이라
+뷰가 `units(forPage:)` + `HwpDrawnTextLayout.lines` 로 직접 조판하면 FIFO 512
+`lineCache` 를 우회해 **드래그 프레임마다** 재조판한다. `HwpCaretAffinity` 는
+줄 끝 오프셋과 다음 줄 첫 오프셋이 **같은 값**인 자리에서 어느 줄에 그릴지만
+고르는 질의 인자다 — `HwpTextPosition` 에 넣으면 `Comparable` 정규화 규약까지
+바뀐다. 캐럿 산식 자체의 계약(하이라이트 폭 클램프·줄 스냅·부분 결과)은
+`Sources/HwpKitCore/AGENTS.md` 의 "선택 끝점 캐럿" 절.
+
+**iOS 핸들은 제스처 중재가 아니라 계층 배치로 푼다.** 이 저장소에는 중재
+코드가 한 건도 없었다 (`require(toFail:)`·`UIGestureRecognizerDelegate` 0건).
+핸들을 `contentView` 가 아니라 **뷰 본체의 서브뷰**(스크롤 뷰의 형제)로 두면
+히트 테스트가 거기서 끝나 스크롤 pan·핀치·롱프레스·탭이 그 터치를 아예 보지
+못한다 — 특히 탭 핸들러의 첫 분기가 `hasSelection → clear()` 라, 같은 계층에
+뒀다면 핸들을 톡 치는 순간 선택이 통째로 사라진다. 덤으로 줌 transform 도 안
+물려받아 배율 역보정 산식이 없다. 대가는 둘이다 — ① 스크롤을 따라 움직이지
+않으므로 `scrollViewDidScroll` 이 `range != activeVisibleRange` 가드 **앞에서**
+위치를 다시 잡아야 하고, ② 두 핸들의 그랩 영역이 겹칠 때 UIKit 이 subview
+역순으로만 고르므로 (나중에 붙은 끝 핸들이 늘 이긴다) **그립 거리로 직접
+갈라야** 한다 — 안 그러면 끝점이 16.5pt 안으로 가까워지는 짧은 선택에서 시작
+끝점을 잡을 수 없다. 자세한 계약은 `Sources/HwpKitNative/AGENTS.md` 의 "선택
+끝점 핸들" 절.
+
+**산식은 `#if os(iOS)` 밖에 둔다** (`HwpSelectionHandleGeometry`). iOS CI 잡은
+`xcodebuild test` 만 돌고 커버리지를 수집하지 않아 (`--enable-code-coverage`·
+codecov 업로드는 macOS 잡 소속) 가드 안의 산식은 codecov patch 에 안 잡힌다.
+
 ## 리뷰 대응 체크리스트 (렌더 회귀 방지)
 
 PR 리뷰를 반영하며 렌더링 코드를 수정할 때, 한글 파일 렌더 결과가 조용히

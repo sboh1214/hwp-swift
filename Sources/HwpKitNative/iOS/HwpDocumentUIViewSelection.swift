@@ -16,7 +16,8 @@
             contentView.addGestureRecognizer(longPress)
             let editMenu = UIEditMenuInteraction(delegate: nil)
             contentView.addInteraction(editMenu)
-            editMenuInteraction = editMenu
+            selectionInteraction.editMenuInteraction = editMenu
+            configureSelectionHandles()
             selectionController.onSelectionChanged = { [weak self] in
                 self?.updateSelectionOverlays()
             }
@@ -33,12 +34,13 @@
             case .changed:
                 // 손가락이 뷰포트 엣지 존에 머물면 정지 상태에서도 스크롤이
                 // 이어지도록 뷰포트 좌표를 기억하고 링크를 돌린다
-                selectionAutoscrollViewportPoint = gesture.location(in: self)
+                selectionInteraction.autoscrollViewportPoint = gesture.location(in: self)
                 updateSelectionAutoscroll()
                 guard let position = selectionPosition(at: location) else { return }
                 selectionController.extend(to: position)
             case .ended, .cancelled:
                 stopSelectionAutoscroll()
+                guard !clearCollapsedSelection() else { return }
                 presentEditMenuIfNeeded(at: location)
             default:
                 break
@@ -65,8 +67,8 @@
             return 0
         }
 
-        private func updateSelectionAutoscroll() {
-            guard let point = selectionAutoscrollViewportPoint,
+        func updateSelectionAutoscroll() {
+            guard let point = selectionInteraction.autoscrollViewportPoint,
                   Self.autoscrollStep(
                       forLocationY: point.y, boundsHeight: bounds.height
                   ) != 0
@@ -74,19 +76,30 @@
                 stopSelectionAutoscroll()
                 return
             }
-            guard selectionAutoscrollLink == nil else { return }
+            guard selectionInteraction.autoscrollLink == nil else { return }
             let link = CADisplayLink(
                 target: self,
                 selector: #selector(selectionAutoscrollTick(_:))
             )
             link.add(to: .main, forMode: .common)
-            selectionAutoscrollLink = link
+            selectionInteraction.autoscrollLink = link
         }
 
         func stopSelectionAutoscroll() {
-            selectionAutoscrollLink?.invalidate()
-            selectionAutoscrollLink = nil
-            selectionAutoscrollViewportPoint = nil
+            selectionInteraction.autoscrollLink?.invalidate()
+            selectionInteraction.autoscrollLink = nil
+            selectionInteraction.autoscrollViewportPoint = nil
+        }
+
+        /// 끝점이 반대 끝점 위에 정확히 겹치면 범위가 비어 `hasSelection`이
+        /// false인데 선택 객체만 남아 오버레이 갱신이 계속 돈다 — macOS
+        /// `mouseUp`(`HwpDocumentNSViewSelection.swift`)과 같은 정리다.
+        /// 실제로 지웠으면 true.
+        @discardableResult
+        func clearCollapsedSelection() -> Bool {
+            guard selectionController.selection?.isCollapsed == true else { return false }
+            selectionController.clear()
+            return true
         }
 
         /// 인셋(안전영역+센터링) 반영 세로 오프셋 클램프. 유효 범위는
@@ -113,7 +126,7 @@
         }
 
         @objc private func selectionAutoscrollTick(_: CADisplayLink) {
-            guard let point = selectionAutoscrollViewportPoint else {
+            guard let point = selectionInteraction.autoscrollViewportPoint else {
                 stopSelectionAutoscroll()
                 return
             }
@@ -135,7 +148,10 @@
             }
         }
 
-        private func selectionPosition(at contentPoint: CGPoint) -> HwpTextPosition? {
+        /// 핸들 드래그(`HwpDocumentUIViewSelectionHandles.swift`)도 부르므로
+        /// internal이다 — 직접 다시 구현하면 아래 페이지 이진 탐색·gap 최근접
+        /// 판정이 갈라져 macOS와 좌표 규약이 어긋난다.
+        func selectionPosition(at contentPoint: CGPoint) -> HwpTextPosition? {
             guard let (pageIndex, pagePoint) = pagePositionNearest(contentPoint)
             else { return nil }
             return selectionController.geometry?
@@ -179,10 +195,11 @@
             ))
         }
 
-        private func presentEditMenuIfNeeded(at point: CGPoint) {
+        /// 핸들 드래그 `.ended`도 부르므로 internal이다.
+        func presentEditMenuIfNeeded(at point: CGPoint) {
             guard selectionController.hasSelection else { return }
             let configuration = UIEditMenuConfiguration(identifier: nil, sourcePoint: point)
-            editMenuInteraction?.presentEditMenu(with: configuration)
+            selectionInteraction.editMenuInteraction?.presentEditMenu(with: configuration)
         }
 
         // MARK: 복사
@@ -218,6 +235,9 @@
                 highlightRects: selectionController.highlightRects(forPage:),
                 fillColor: UIColor.systemBlue.withAlphaComponent(0.3).cgColor
             )
+            // 끝점 핸들은 페이지 레이어가 아니라 뷰 본체에 붙지만, 갱신 시점은
+            // 하이라이트와 정확히 같아야 한다 (#84).
+            updateSelectionHandles()
         }
     }
 #endif
