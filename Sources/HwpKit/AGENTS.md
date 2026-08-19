@@ -59,6 +59,7 @@ SwiftUI 공개 API target. HwpKitNative 위에 `NSViewRepresentable` / `UIViewRe
 - `Coordinator` 클래스가 hyperlink/unsupported/pageChanged 발화를 SwiftUI 쪽 콜백으로 프록시
 - **해체 훅을 반드시 구현한다** (#75 리뷰) — `dismantleNSView`/`dismantleUIView` 가 `searchController = nil` 로 세션을 뗀다. 호스트가 `@State` 로 소유한 컨트롤러는 뷰보다 오래 살고 선택 컨트롤러를 **강참조**하므로, 안 떼면 문서 전체가 상주한다 (문서를 닫거나 재로드가 실패해 새 뷰가 안 붙는 경로). 참조 타입을 뷰에 주입하는 API 를 새로 낼 때마다 같은 훅이 필요하다
 - **참조 타입 프로퍼티 대입에는 동일성 가드가 필수다** (#75) — `view.searchController !== searchController` 일 때만 넣는다. 콜백과 달리 이쪽 didSet 은 배선을 다시 하므로, 무조건 대입하면 재배선 → 재스캔 → 관찰자 통지 → 호스트 body 무효화 → 다시 이 configure 로 **타이핑 없이도 도는 자기 급전 루프**가 된다 (문서 대입의 중복-대입 스킵과 같은 성격). 콜백은 값이 매번 새 클로저라 이 가드를 걸 수 없고 걸 필요도 없다 (didSet 이 일을 하지 않는다)
+- **같은 갱신에 명시 배율과 fit 이 함께 오면 fit 이 이긴다** (#78) — `configure` 가 문서 대입·배율·페이지 요청을 처리한 **뒤** `applyFitZoom` 을 부른다. 페이지 다음인 것은 쪽 맞춤이 그 요청이 가리키는 쪽을 기준으로 삼게 하려는 것이고, 배율 다음인 것은 명시 배율보다 fit 이 나중에 온 뜻이기 때문이다. 순서를 뒤집으면 맞춤이 같은 프레임에서 옛 쪽·옛 배율 위에 얹힌다
 
 ## v1 스코프 밖 (추가 금지)
 
