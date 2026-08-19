@@ -234,8 +234,10 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
   `contentView.accessibilityElements` 에 매 갱신 대입한다 — 재생성이 없어도
   prune 만 돈 호출에서 목록이 줄어야 한다.
 - **iOS 만 헤딩 트레이트가 있다** (`.header`, 개요 #77 제목 — VoiceOver 로터
-  "제목" 탐색은 실체화된 가시 ±2 페이지 안에서만 동작한다). AppKit 에는 헤딩
-  role 이 없어 macOS 는 staticText 로만 낸다.
+  "제목" 탐색은 실체화된 가시 ±2 페이지 안에서만 동작한다). macOS 는
+  staticText 로만 낸다 — AppKit 의 `NSAccessibilityHeadingRole` 은 macOS 26
+  에야 생겨 (SDK 실측: `API_AVAILABLE(macos(26.0))`) 지원 하한 macOS 14+
+  아래에서는 못 쓴다. 하한이 오르면 승격을 검토한다.
 - 가드는 `HwpDocumentAccessibilityStoreTests` (수명·anchor·평탄화 순서 +
   `HwpDocumentAccessibility.units` 의 쪽별 제목 선별) 와 양 플랫폼
   `HwpDocument{NS,UI}ViewAccessibilityTests` (생성·좌표 합성·가상화 청소·교체

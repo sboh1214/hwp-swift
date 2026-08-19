@@ -121,8 +121,9 @@
   크롬)와 메모 풍선 패널 텍스트까지 낭독됩니다. 요소는 레이어 가상화와 함께
   생기고 사라지며, 문서 교체·프로그레시브 스냅샷마다 무효화되어 낡은 라벨이
   남지 않습니다. iOS에서는 개요(#77) 제목 문단에 헤딩 트레이트가 붙어
-  VoiceOver 로터 "제목" 탐색이 가시 페이지 안에서 동작합니다(AppKit에는 헤딩
-  role이 없어 macOS는 staticText로만 냅니다). 합성 모델은 공개 API입니다 —
+  VoiceOver 로터 "제목" 탐색이 가시 페이지 안에서 동작합니다(macOS는
+  staticText로만 냅니다 — AppKit의 헤딩 role은 macOS 26에야 생겨 지원 하한
+  macOS 14+에서는 쓸 수 없습니다). 합성 모델은 공개 API입니다 —
   `HwpAccessibilityContent.pageUnits(page:bodyUnits:headingTitles:)`/
   `memoPanelUnits(panel:)`가 (라벨, 페이지·패널 로컬 top-down rect) 목록을
   주므로 커스텀 뷰도 같은 재료로 AX 트리를 만들 수 있습니다. 렌더 경로는

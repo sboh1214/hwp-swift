@@ -76,8 +76,10 @@
         ) -> HwpTextAccessibilityElement {
             let element = HwpTextAccessibilityElement()
             element.setAccessibilityElement(true)
-            // AppKit 에는 헤딩 role 이 없어 (iOS `.header` trait 대응 부재)
-            // 개요 제목도 staticText 로 낸다 — 낭독 대상은 value 다.
+            // 개요 제목도 staticText 로 낸다 — 낭독 대상은 value 다. AppKit 의
+            // 헤딩 role (`NSAccessibilityHeadingRole`) 은 macOS 26 에야 생겨
+            // 지원 하한 (macOS 14+) 아래에서는 쓸 수 없다 — 하한이 오르면
+            // iOS `.header` trait 대응으로 승격을 검토한다.
             element.setAccessibilityRole(.staticText)
             element.setAccessibilityValue(unit.label)
             element.setAccessibilityParent(documentContentView)
