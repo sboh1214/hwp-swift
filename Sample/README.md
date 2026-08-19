@@ -252,6 +252,6 @@ Xcode 콘솔에 `print()`로 출력됨:
 목록과 같은 기준) 그 자리를 샘플이 채워, `HwpDocumentMetadata.outline` 하나로
 개요 사이드바가, `HwpPageThumbnails` 하나로 축소판 사이드바가 만들어짐을 보인다.
 
-`HwpDocumentView` / `HwpDocumentToolbar` / `HwpPageNavigator` / `HwpZoomControls` / `HwpSearchBar` / `HwpSearchNavigator` / `HwpSearchController` / `HwpDocumentLoader` / `HwpPDFExporter` / `HwpPageThumbnails` 10개 public surface가 모두 이 앱 안에서 활성화됨. 여기에 데이터 표면 `HwpDocumentMetadata.outline`(#77)이 사이드바로 소비됨.
+`HwpDocumentView` / `HwpDocumentToolbar` / `HwpPageNavigator` / `HwpZoomControls` / `HwpSearchBar` / `HwpSearchNavigator` / `HwpSearchController` / `HwpDocumentLoader` / `HwpPDFExporter` / `HwpPageThumbnails` 10개 public surface가 모두 이 앱 안에서 활성화됨. 여기에 데이터 표면 `HwpDocumentMetadata.outline`(#77)이 사이드바로, 명령 표면 `HwpZoomFit`(#78)이 툴바 → 문서 뷰로 소비됨 — 후자는 **같은 바인딩을 둘에 함께 넘기는 것**이 사용법의 전부다 (배율 산식은 뷰포트를 아는 뷰가 쥔다).
 
 인쇄·저장·공유 **UI는 의도적으로 라이브러리 밖**이다 — `HwpKit`은 PDF 바이트까지만 만들고 그 앞뒤는 앱이 정한다. 이 앱의 `PDFExportSupport.swift`가 그 배선의 최소 예시이고, 저장소의 유일한 `#if os(macOS)` 분기이기도 하다.
