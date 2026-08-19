@@ -15,6 +15,10 @@ struct ContentView: View {
     @State private var loadTask: Task<Void, Never>?
     @State private var currentPage: Int = 1
     @State private var zoomScale: CGFloat = 1.0
+    /// 배율 맞춤 **원샷 명령** — 툴바가 값을 넣으면 문서 뷰가 한 번 적용하고
+    /// nil로 되돌린다. 뷰포트를 아는 것은 뷰뿐이라 배율 계산은 그쪽 몫이고,
+    /// 호스트는 같은 바인딩을 뷰와 툴바에 함께 넘기기만 한다.
+    @State private var fitZoom: HwpZoomFit?
     // 사이드바 상태는 **직교하는 두 값**이다 (#77 개요·책갈피 → #76에서 축소판
     // 축 추가): 어느 축을 고르고 있는가(`sidebarMode`)와 지금 보이는가
     // (`sidebarVisible`). 축마다 불리언을 두면 "둘 다 켜짐"이라는 없는 상태가
@@ -306,6 +310,7 @@ struct ContentView: View {
             HwpDocumentView(
                 document: document,
                 zoomScale: $zoomScale,
+                fitZoom: $fitZoom,
                 currentPage: $currentPage,
                 searchController: search,
                 onHyperlinkTapped: { url in
@@ -389,7 +394,7 @@ struct ContentView: View {
 
             Spacer()
 
-            HwpZoomControls(zoomScale: $zoomScale)
+            HwpZoomControls(zoomScale: $zoomScale, fitZoom: $fitZoom)
         }
     }
 
@@ -684,6 +689,9 @@ struct ContentView: View {
                         if document == nil {
                             currentPage = 1
                             zoomScale = 1.0
+                            // 옛 문서를 향한 맞춤 요청이 새 문서에 적용되지 않게
+                            // 함께 비운다 (뷰는 문서 세대로 한 번 더 거른다).
+                            fitZoom = nil
                         }
                         document = snapshot.document
                         // 스냅샷마다 넘겨도 프로그레시브 증분이면 라이브러리가

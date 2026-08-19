@@ -7,10 +7,12 @@ SwiftUI 공개 API target. HwpKitNative 위에 `NSViewRepresentable` / `UIViewRe
 - `HwpDocumentLoader(fontResolver:)` — 렌더에 쓸 폰트 해석기 주입 (기본 `HwpFontResolver()`). 커밋된 기준선을 쓰는 렌더 가드가 전부 이 인자 하나에 기대 기기 독립을 얻는다 (`.testDeterministic` — 루트 AGENTS.md "렌더 가드 4층"). 호스트도 재현 가능한 조판이 필요하면 같은 방식으로 고정 resolver를 넘긴다
 - `HwpDocumentLoader.load(from:)` — URL / Data / FileWrapper 오버로드. 내부적으로 `HwpDocumentActor` 사용. 에러는 `HwpDocumentLoadError` 로 매핑 (`CustomStringConvertible` + `LocalizedError` 채택 — 호스트가 `error.localizedDescription` 을 그대로 표시하면 감싼 파서/페이지네이터 원인이 나온다. 새 case 추가 시 `description` 도 함께 채울 것)
 - `HwpDocumentLoader.loadUpdates(from:)` — 프로그레시브 로딩. `AsyncThrowingStream<HwpDocumentSnapshot, Error>` 로 첫 페이지 확정 즉시 스냅샷을 방출하고 배치 단위로 이어가다 최종 스냅샷(`isComplete`)으로 끝난다. 최종 문서는 `load(from:)` 결과와 동일. 뷰는 `HwpDocumentMetadata.loadToken` 으로 증분 적용(스크롤 유지) vs 전체 리셋을 판정
-- `HwpDocumentView` — SwiftUI View. optional `zoomScale: Binding<CGFloat>?` + `currentPage: Binding<Int>?` + `searchController: HwpSearchController?` + hyperlink/unsupported 콜백
+- `HwpDocumentView` — SwiftUI View. optional `zoomScale: Binding<CGFloat>?` + `fitZoom: Binding<HwpZoomFit?>?` + `currentPage: Binding<Int>?` + `searchController: HwpSearchController?` + hyperlink/unsupported 콜백
+  - **`fitZoom` 은 원샷 명령이다** (#78). 값을 넣으면 뷰가 한 번 맞추고 바인딩을 `nil` 로 되돌린다 (되돌리기는 `normalizeOutOfRange*Binding` 과 같은 계약 — 업데이트 **밖**에서, 문서 세대·값 불변 가드를 지나). 지속 모드가 아닌 이유는 창 리사이즈마다 다시 맞추면 그 사이 사용자가 핀치로 바꾼 배율을 조용히 덮기 때문이다. 결과 배율은 `zoomScale` 바인딩으로 돌아오므로 툴바 라벨이 저절로 맞는다
+  - **뷰포트 크기는 공개하지 않는다.** 그것이 이 API 가 명령 바인딩인 이유다 — 산식을 호스트에 내주려면 뷰포트를 넘길 통로를 새로 뚫어야 하는데, 지오메트리 계층은 가상화 세부가 공개 표면이 되지 않도록 **의도적으로** internal 이다. 산식(`HwpDocumentViewSupport.fitZoomScale`)은 HwpKitNative 에 internal 로 남고 뷰가 자기 캔버스·뷰포트를 넣어 부른다
 - `HwpDocumentToolbar<Content>` — trailing content 를 받는 컨테이너 (툴바 chrome)
 - `HwpPageNavigator(currentPage: Binding<Int>, totalPages: Int)` — "Page X of Y" + ± 버튼
-- `HwpZoomControls(zoomScale: Binding<CGFloat>, range: ClosedRange<CGFloat>)` — 기본 range `0.25...5.0`
+- `HwpZoomControls(zoomScale: Binding<CGFloat>, fitZoom: Binding<HwpZoomFit?>?, range: ClosedRange<CGFloat>)` — 기본 range `0.25...5.0`. `fitZoom` 을 넘기면 폭 맞춤·쪽 맞춤 버튼이 함께 나온다 (안 넘기면 안 그린다 — 뷰에 연결되지 않은 버튼을 내지 않기 위해서다). 이 컴포넌트는 **명령만 세운다**: 배율 산식은 뷰포트를 아는 문서 뷰가 쥐고 있다
 - `HwpSearchController` — 문서 검색 세션 (HwpKitCore). 호스트가 `@State` 로 소유해 `HwpDocumentView(searchController:)` 와 `HwpSearchBar(controller:)` 에 **같은 인스턴스**를 넘긴다. 뷰가 붙는 순간 `HwpSelectionController` 의 지오메트리를 공유해 (단위 캐시 이중화 금지) 하이라이트·매치 노출 스크롤·프로그레시브 증분 재스캔이 자동 배선된다. 검색 대상은 본문 (`role == .body`) 뿐 — 머리말/꼬리말/쪽 번호와 메모 풍선은 빠지고 각주·표 셀·글상자·중첩 표는 포함된다. 매치는 텍스트 단위 (`HwpTextUnit`) 안에서만 성립한다 (단/쪽·셀 경계를 넘지 않는다)
 - `HwpTextSearcher` — 상태 없는 순수 스캐너. nonisolated + 입출력 Sendable 이라 오프메인·CLI 에서도 쓴다 (대가: 뷰의 unit 캐시를 공유하지 못해 전개 이중화)
 - `HwpSearchBar` / `HwpSearchNavigator` — 검색 UI. **순수 서브트리**다: navigation 컨테이너를 요구하지 않고, 호스트 chrome 을 점유하지 않으며, 환경에 아무것도 심지 않고, Cmd+F 같은 전역 단축키를 소유하지 않는다 (호스트가 `.keyboardShortcut` 로 잡아 `isFocused` 를 넘긴다). SwiftUI `.searchable` 을 쓰지 않는 이유가 정확히 이 네 가지다 — 안티 패턴 절 참조
@@ -48,7 +50,7 @@ SwiftUI 공개 API target. HwpKitNative 위에 `NSViewRepresentable` / `UIViewRe
 호스트 앱의 상태 복원/버그로 극단값이 들어와도 트랩하지 않아야 한다.
 
 - 페이지: `hwpScrollPageIndex(fromOneBased:)` 가 **클램프를 뺄셈보다 먼저** 한다 (`max(1, page) - 1`). `page - 1` 을 먼저 하면 `Int.min` 에서 오버플로 트랩. macOS·iOS 분기가 이 헬퍼를 공유해 산식이 갈라지지 않는다
-- 줌: `HwpZoomControls` 는 표시·쓰기 **양쪽**에서 `sanitized` 를 거친다 — 비-finite 는 1.0 폴백 후 range 클램프 (`Int(nan * 100)` 은 트랩, `min`/`max` 만으로는 NaN 이 통과)
+- 줌: 표시와 쓰기가 **다른 게이트**를 쓴다 (#107 리뷰). 쓰기는 `sanitized` — 비-finite 는 1.0 폴백 후 `range` 클램프 (`Int(nan * 100)` 은 트랩, `min`/`max` 만으로는 NaN 이 통과). 표시는 `displayScale` — 같은 비-finite 폴백에 `Int` 변환 트랩만 막는 넓은 한계를 걸고 **`range` 로는 클램프하지 않는다**. `range` 는 `±` 버튼의 이동 경계일 뿐 문서 뷰의 실제 배율 한계(`0.25...5.0`)를 구속할 통로가 없어, 표시까지 클램프하면 좁은 `range` 를 넘긴 호스트에서 라벨이 거짓말을 한다 (실측: `range` 0.5...2.0 에 배율 0.25 → "50%" 표시). 배율이 핀치로 들어왔든 맞춤으로 들어왔든 같은 바인딩 하나를 지나므로 표시는 출처를 구분할 수 없다 — 맞춤이 만든 결함이 아니라 그 전부터 있던 것이고, 그래서 고치는 자리도 맞춤이 아니라 표시다. 라벨이 실제로 내보내는 값은 `displayPercent` 이고 가드가 그것을 잡는다 (`zoomText` 가 private 이라 표시를 다시 `sanitized` 로 돌리는 변경은 이 값에서만 걸린다)
 - 줌 writeback 판정은 톨러런스 비교 **전에** 비-finite 를 처리한다 (`hwpZoomNeedsWriteback` / `hwpZoomBindingUnchanged`). NaN 은 abs 비교가 전부 false 라, 그냥 두면 핀치 echo·정규화가 모두 막혀 바인딩이 영구 NaN 으로 고착된다
 
 ## Wrapper 재사용 규약
@@ -57,6 +59,11 @@ SwiftUI 공개 API target. HwpKitNative 위에 `NSViewRepresentable` / `UIViewRe
 - `Coordinator` 클래스가 hyperlink/unsupported/pageChanged 발화를 SwiftUI 쪽 콜백으로 프록시
 - **해체 훅을 반드시 구현한다** (#75 리뷰) — `dismantleNSView`/`dismantleUIView` 가 `searchController = nil` 로 세션을 뗀다. 호스트가 `@State` 로 소유한 컨트롤러는 뷰보다 오래 살고 선택 컨트롤러를 **강참조**하므로, 안 떼면 문서 전체가 상주한다 (문서를 닫거나 재로드가 실패해 새 뷰가 안 붙는 경로). 참조 타입을 뷰에 주입하는 API 를 새로 낼 때마다 같은 훅이 필요하다
 - **참조 타입 프로퍼티 대입에는 동일성 가드가 필수다** (#75) — `view.searchController !== searchController` 일 때만 넣는다. 콜백과 달리 이쪽 didSet 은 배선을 다시 하므로, 무조건 대입하면 재배선 → 재스캔 → 관찰자 통지 → 호스트 body 무효화 → 다시 이 configure 로 **타이핑 없이도 도는 자기 급전 루프**가 된다 (문서 대입의 중복-대입 스킵과 같은 성격). 콜백은 값이 매번 새 클로저라 이 가드를 걸 수 없고 걸 필요도 없다 (didSet 이 일을 하지 않는다)
+- **같은 갱신에 명시 배율과 fit 이 함께 오면 fit 이 이긴다** (#78) — `configure` 가 문서 대입·배율·페이지 요청을 처리한 **뒤** `applyFitZoom` 을 부른다. 배율 다음인 것은 명시 배율보다 fit 이 나중에 온 뜻이기 때문이고, 페이지 다음인 것은 쪽 맞춤이 **그 요청이 실제로 안착한 쪽**을 기준으로 삼게 하려는 것이다. 순서를 뒤집으면 맞춤이 같은 프레임에서 옛 쪽·옛 배율 위에 얹힌다
+  - **"안착한 쪽"이지 "요청한 쪽"이 아니다** (#78 리뷰). 프로그레시브 중간 스냅샷에 아직 없는 쪽을 요청하면 `scrollToPage` 가 마지막 로드 쪽으로 클램프하므로 `.page` 는 그 클램프된 쪽에 맞춰지고, 원샷이라 그대로 소비된다. `.page` 의 정의가 "현재 쪽을 통째로" 이고 그 시점의 현재 쪽이 클램프된 쪽이므로 동작 자체는 정의와 일치하지만, **요청 인덱스와는 갈린다**. 실측: 2쪽 스냅샷 + `currentPage = 5` 에서 배율이 0.7126(842pt 쪽의 맞춤)으로 정해지고, 나중에 호스트가 쪽을 다시 걸어 2000pt 쪽으로 이동해도 그 배율이 남는다 (그 쪽의 맞춤은 0.3 — 2.4배 크게 그려져 맞춤이 성립하지 않는다)
+  - **그래도 연기하지 않는 것이 의도다.** 명령을 스냅샷 사이에 살려 두면 1,030쪽 로딩 내내 대기하다가 그 사이 사용자가 핀치로 바꾼 배율을 조용히 덮어, 원샷으로 만든 이유(`HwpZoomFit` doc)가 그대로 사라진다. 구제책은 다른 모든 로딩 중 맞춤과 같다 — 쪽이 도착한 뒤 다시 누른다. 연기를 정말 넣는다면 `consumeFitZoomCommand` 도 함께 막아야 한다: 그것은 적용 여부와 무관하게 바인딩을 비우므로 "적용만 건너뛰기" 는 연기가 아니라 명령 **소실**이다
+  - **명령에는 문서 세대 소유권이 있다** (#107 리뷰). `configure` 는 명령을 **적용하기 전에** `HwpDocumentCoordinator.fitToApply` 를 지난다 — 같은 값이 nil 을 거치지 않고 세대를 넘으면 옛 문서를 향한 것이라 적용하지 않는다. 소비 Task 가 돌기 전에 문서가 바뀌면 `configure` 가 같은 non-nil 바인딩을 다시 보는데, 세대 비교가 명령을 **지우는** 쪽에만 있어 A 의 `.page` 가 B 에 적용됐다 (실측: 배율이 B 의 쪽 맞춤 0.3 으로, `.page` 라 스크롤도 B 의 쪽 머리로). 네이티브 뷰가 예약을 교체에서 버리는 가드를 래퍼가 명령을 다시 건네 **우회**하던 것이다. `HwpZoomFit?` 에는 신원이 없어 "호스트가 같은 값을 새로 넣은 경우"와 구분되지 않으므로 그때도 적용하지 않는다 — 대가는 버튼을 다시 누르는 것이고 반대 방향의 대가는 확인된 오적용이다. 값이 **다르면** 새 요청이므로 적용한다: 그 갈래가 없으면 "모든 교체를 거부"하는 구현도 가드 테스트를 통과해 "새 문서를 열자마자 맞춤"이 조용히 죽는다
+  - 덧붙여 그 페이지 요청 자체도 살아남지 않는다 — 레이아웃 패스의 `onPageChanged` 가 `applyingBinding` **밖**이라 클램프된 쪽을 바인딩에 되쓴다 (실측 `5 → 2`). `handlePageChanged` 주석이 약속한 "첫 프로그레시브 스냅샷 이후의 페이지 요청이 echo 로 덮어써져 유실되지 않게" 와 어긋나는 **선행 별건**이고 #78 이 만든 것이 아니다
 
 ## v1 스코프 밖 (추가 금지)
 

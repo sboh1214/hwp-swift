@@ -24,14 +24,20 @@ func hwpZoomBindingUnchanged(_ lhs: CGFloat, _ rhs: CGFloat) -> Bool {
 public struct HwpDocumentView: View {
     private let document: HwpDocument
     private let zoomScale: Binding<CGFloat>?
+    private let fitZoom: Binding<HwpZoomFit?>?
     private let currentPage: Binding<Int>?
     private let searchController: HwpSearchController?
     private let onHyperlinkTapped: ((String) -> Void)?
     private let onUnsupportedElement: ((HwpUnsupportedElement) -> Void)?
 
+    /// - Parameter fitZoom: 배율을 뷰포트에 맞추는 **원샷 명령** (#78). 값을 넣으면
+    ///   뷰가 한 번 적용하고 nil로 되돌린다. 지속 모드가 아니라 창을 리사이즈해도
+    ///   다시 맞추지 않는다 — 그 사이 사용자가 핀치로 바꾼 배율을 덮지 않기 위해서다.
+    ///   적용 결과 배율은 `zoomScale` 바인딩으로 되돌아온다.
     public init(
         document: HwpDocument,
         zoomScale: Binding<CGFloat>? = nil,
+        fitZoom: Binding<HwpZoomFit?>? = nil,
         currentPage: Binding<Int>? = nil,
         searchController: HwpSearchController? = nil,
         onHyperlinkTapped: ((String) -> Void)? = nil,
@@ -39,6 +45,7 @@ public struct HwpDocumentView: View {
     ) {
         self.document = document
         self.zoomScale = zoomScale
+        self.fitZoom = fitZoom
         self.currentPage = currentPage
         self.searchController = searchController
         self.onHyperlinkTapped = onHyperlinkTapped
@@ -50,6 +57,7 @@ public struct HwpDocumentView: View {
             NSViewWrapper(
                 document: document,
                 zoomScale: zoomScale,
+                fitZoom: fitZoom,
                 currentPage: currentPage,
                 searchController: searchController,
                 onHyperlinkTapped: onHyperlinkTapped,
@@ -59,6 +67,7 @@ public struct HwpDocumentView: View {
             UIViewWrapper(
                 document: document,
                 zoomScale: zoomScale,
+                fitZoom: fitZoom,
                 currentPage: currentPage,
                 searchController: searchController,
                 onHyperlinkTapped: onHyperlinkTapped,
@@ -90,6 +99,35 @@ final class HwpDocumentCoordinator {
             activeDocumentGeneration &+= 1
         }
         return activeDocumentGeneration
+    }
+
+    private var appliedFit: HwpZoomFit?
+    private var appliedFitGeneration: UInt64 = 0
+
+    /// 옛 문서를 향한 fit 명령을 교체본이 적용하지 못하게 거른다.
+    ///
+    /// 네이티브 뷰는 예약(`pendingFitZoom`)을 문서 교체에서 버리지만, 래퍼가 같은
+    /// 명령을 새 문서용으로 다시 건네면 그 가드는 우회된다 — 세대 비교가 명령을
+    /// **지우는** 쪽에만 있고 **적용하는** 쪽에 없었다 (실측: 소비 Task 가 돌기
+    /// 전에 문서가 바뀌면 A 의 `.page` 가 B 에 적용돼 배율이 B 의 쪽 맞춤 0.3 으로
+    /// 가고 스크롤도 B 의 쪽 머리로 간다).
+    ///
+    /// 명령이 nil 로 돌아온 것을 관측하면 기록을 지운다 — 그래야 호스트가 같은 값을
+    /// 새로 넣은 경우와 옛 명령이 남은 경우가 갈린다. `HwpZoomFit?` 에는 신원이
+    /// 없어 **같은 값이 nil 을 거치지 않고 세대를 넘는** 경우는 여전히 구분할 수
+    /// 없고, 그때는 적용하지 않는 쪽을 고른다: 옛 문서에 걸린 명령이 새 문서에
+    /// 적용되는 것은 확인된 결함이고, 반대 방향의 대가는 버튼을 다시 누르는 것뿐이다.
+    func fitToApply(_ command: HwpZoomFit?) -> HwpZoomFit? {
+        guard let command else {
+            appliedFit = nil
+            return nil
+        }
+        if appliedFit == command, appliedFitGeneration != activeDocumentGeneration {
+            return nil
+        }
+        appliedFit = command
+        appliedFitGeneration = activeDocumentGeneration
+        return command
     }
 
     init(
@@ -157,6 +195,7 @@ final class HwpDocumentCoordinator {
     private struct NSViewWrapper: NSViewRepresentable {
         let document: HwpDocument
         let zoomScale: Binding<CGFloat>?
+        let fitZoom: Binding<HwpZoomFit?>?
         let currentPage: Binding<Int>?
         let searchController: HwpSearchController?
         let onHyperlinkTapped: ((String) -> Void)?
@@ -234,11 +273,18 @@ final class HwpDocumentCoordinator {
                         view.scrollToPage(at: pageIndex)
                     }
                 }
+                // 페이지 요청을 처리한 **뒤**라야 쪽 맞춤이 그 페이지를 기준으로
+                // 삼는다. 배율 대입 다음인 것도 같은 이유다 — 명시 배율과 fit이
+                // 같은 갱신에 오면 나중에 온 뜻인 fit이 이긴다 (#78).
+                if let fit = context.coordinator.fitToApply(fitZoom?.wrappedValue) {
+                    view.applyFitZoom(fit)
+                }
             }
             normalizeOutOfRangePageBinding(coordinator: context.coordinator)
             normalizeOutOfRangeZoomBinding(
                 coordinator: context.coordinator, clampedScale: view.zoomScale
             )
+            consumeFitZoomCommand(coordinator: context.coordinator)
         }
 
         /// 최종 문서(isComplete)에 없는 페이지 요청은 실제 클램프 값으로 바인딩을
@@ -282,6 +328,29 @@ final class HwpDocumentCoordinator {
                 zoomScale.wrappedValue = clampedScale
             }
         }
+
+        /// 원샷 fit 명령을 소비한다 — 적용은 위 동기 경로가 이미 했고 여기서는
+        /// 바인딩만 idle(nil)로 되돌린다. 업데이트 중 상태 쓰기는 SwiftUI 위반이라
+        /// 밖에서 하고, 재개 시 사용자가 다른 fit을 넣었거나 다른 문서가 적용됐으면
+        /// 폐기한다 (페이지·줌 정규화와 동일 계약).
+        ///
+        /// **되돌리기와 재적용의 경주는 열리지 않는다.** 이 Task 는 위 두 정규화와
+        /// 같은 동기 `configure` 에서 메인 액터 큐에 실리고, 바인딩 쓰기가 부르는
+        /// 재렌더는 그 드레인 **뒤**의 갱신 패스라 그때 명령은 이미 nil 이다
+        /// (실측: 배율 라이트백 Task → 이 Task 순으로 같은 턴에 돈다). 그래도
+        /// 순서에 기대는 코드가 아니라는 점은 적어 둘 값이 있다 — 만약 되돌리기
+        /// 전에 `configure` 가 한 번 더 돌면 `.width` 는 같은 배율이라 무해하지만
+        /// `.page` 는 스크롤을 다시 쪽 머리로 당긴다.
+        private func consumeFitZoomCommand(coordinator: HwpDocumentCoordinator) {
+            guard let fitZoom, let requested = fitZoom.wrappedValue else { return }
+            let generation = coordinator.registerDocument(document)
+            Task { @MainActor in
+                guard coordinator.activeDocumentGeneration == generation,
+                      fitZoom.wrappedValue == requested
+                else { return }
+                fitZoom.wrappedValue = nil
+            }
+        }
     }
 #endif
 
@@ -289,6 +358,7 @@ final class HwpDocumentCoordinator {
     private struct UIViewWrapper: UIViewRepresentable {
         let document: HwpDocument
         let zoomScale: Binding<CGFloat>?
+        let fitZoom: Binding<HwpZoomFit?>?
         let currentPage: Binding<Int>?
         let searchController: HwpSearchController?
         let onHyperlinkTapped: ((String) -> Void)?
@@ -364,11 +434,18 @@ final class HwpDocumentCoordinator {
                         view.scrollToPage(at: pageIndex)
                     }
                 }
+                // 페이지 요청을 처리한 **뒤**라야 쪽 맞춤이 그 페이지를 기준으로
+                // 삼는다. 배율 대입 다음인 것도 같은 이유다 — 명시 배율과 fit이
+                // 같은 갱신에 오면 나중에 온 뜻인 fit이 이긴다 (#78).
+                if let fit = context.coordinator.fitToApply(fitZoom?.wrappedValue) {
+                    view.applyFitZoom(fit)
+                }
             }
             normalizeOutOfRangePageBinding(coordinator: context.coordinator)
             normalizeOutOfRangeZoomBinding(
                 coordinator: context.coordinator, clampedScale: view.zoomScale
             )
+            consumeFitZoomCommand(coordinator: context.coordinator)
         }
 
         /// 최종 문서(isComplete)에 없는 페이지 요청은 실제 클램프 값으로 바인딩을
@@ -410,6 +487,29 @@ final class HwpDocumentCoordinator {
                       hwpZoomBindingUnchanged(zoomScale.wrappedValue, requested)
                 else { return }
                 zoomScale.wrappedValue = clampedScale
+            }
+        }
+
+        /// 원샷 fit 명령을 소비한다 — 적용은 위 동기 경로가 이미 했고 여기서는
+        /// 바인딩만 idle(nil)로 되돌린다. 업데이트 중 상태 쓰기는 SwiftUI 위반이라
+        /// 밖에서 하고, 재개 시 사용자가 다른 fit을 넣었거나 다른 문서가 적용됐으면
+        /// 폐기한다 (페이지·줌 정규화와 동일 계약).
+        ///
+        /// **되돌리기와 재적용의 경주는 열리지 않는다.** 이 Task 는 위 두 정규화와
+        /// 같은 동기 `configure` 에서 메인 액터 큐에 실리고, 바인딩 쓰기가 부르는
+        /// 재렌더는 그 드레인 **뒤**의 갱신 패스라 그때 명령은 이미 nil 이다
+        /// (실측: 배율 라이트백 Task → 이 Task 순으로 같은 턴에 돈다). 그래도
+        /// 순서에 기대는 코드가 아니라는 점은 적어 둘 값이 있다 — 만약 되돌리기
+        /// 전에 `configure` 가 한 번 더 돌면 `.width` 는 같은 배율이라 무해하지만
+        /// `.page` 는 스크롤을 다시 쪽 머리로 당긴다.
+        private func consumeFitZoomCommand(coordinator: HwpDocumentCoordinator) {
+            guard let fitZoom, let requested = fitZoom.wrappedValue else { return }
+            let generation = coordinator.registerDocument(document)
+            Task { @MainActor in
+                guard coordinator.activeDocumentGeneration == generation,
+                      fitZoom.wrappedValue == requested
+                else { return }
+                fitZoom.wrappedValue = nil
             }
         }
     }

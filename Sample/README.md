@@ -9,7 +9,7 @@
 | `HwpDocumentView` | HWP 문서 렌더러 | 문서 로드 후 메인 영역에 렌더 |
 | `HwpDocumentToolbar` | 툴바 컨테이너 (재질 배경 + 분리선) | 상단 툴바로 사용 |
 | `HwpPageNavigator` | 페이지 이동 컨트롤 (`- / Page X of Y / +`) | 툴바 좌측 |
-| `HwpZoomControls` | 확대/축소 컨트롤 (`- / Zoom N% / + / Reset`) | 툴바 우측 |
+| `HwpZoomControls` | 확대/축소 컨트롤 (`- / Zoom N% / + / Reset / Fit Width / Fit Page`) | 툴바 우측 |
 | `HwpSearchController` | 문서 검색 세션 (엔진은 HwpKitCore) | `@State`로 소유해 뷰와 검색 바에 **같은 인스턴스** |
 | `HwpSearchBar` | 검색 필드 + 카운터 + 이전/다음 + 지우기 | 툴바 **아래 별도 행** |
 | `HwpSearchNavigator` | 매치 카운터 + 이전/다음 | `HwpSearchBar`가 내부에서 조립 |
@@ -252,6 +252,6 @@ Xcode 콘솔에 `print()`로 출력됨:
 목록과 같은 기준) 그 자리를 샘플이 채워, `HwpDocumentMetadata.outline` 하나로
 개요 사이드바가, `HwpPageThumbnails` 하나로 축소판 사이드바가 만들어짐을 보인다.
 
-`HwpDocumentView` / `HwpDocumentToolbar` / `HwpPageNavigator` / `HwpZoomControls` / `HwpSearchBar` / `HwpSearchNavigator` / `HwpSearchController` / `HwpDocumentLoader` / `HwpPDFExporter` / `HwpPageThumbnails` 10개 public surface가 모두 이 앱 안에서 활성화됨. 여기에 데이터 표면 `HwpDocumentMetadata.outline`(#77)이 사이드바로 소비됨.
+`HwpDocumentView` / `HwpDocumentToolbar` / `HwpPageNavigator` / `HwpZoomControls` / `HwpSearchBar` / `HwpSearchNavigator` / `HwpSearchController` / `HwpDocumentLoader` / `HwpPDFExporter` / `HwpPageThumbnails` 10개 public surface가 모두 이 앱 안에서 활성화됨. 여기에 데이터 표면 `HwpDocumentMetadata.outline`(#77)이 사이드바로, 명령 표면 `HwpZoomFit`(#78)이 툴바 → 문서 뷰로 소비됨 — 후자는 **같은 바인딩을 둘에 함께 넘기는 것**이 사용법의 전부다 (배율 산식은 뷰포트를 아는 뷰가 쥔다).
 
 인쇄·저장·공유 **UI는 의도적으로 라이브러리 밖**이다 — `HwpKit`은 PDF 바이트까지만 만들고 그 앞뒤는 앱이 정한다. 이 앱의 `PDFExportSupport.swift`가 그 배선의 최소 예시이고, 저장소의 유일한 `#if os(macOS)` 분기이기도 하다.

@@ -4,6 +4,11 @@ import Nimble
 import QuartzCore
 import XCTest
 
+/// 프로덕션 기본 배율 한계 — `fitZoomScale` 은 이 값을 **인자로** 받으므로
+/// 테스트도 같은 자리에서 한 번만 적는다 (Nimble `expect` 가 autoclosure 라
+/// 인스턴스 프로퍼티로 두면 호출마다 `self.` 가 붙는다).
+private let zoomRange: ClosedRange<CGFloat> = 0.25 ... 5.0
+
 /// macOS/iOS 문서 뷰 공통 헬퍼 (플랫폼 중립 — 양쪽 테스트 번들에서 컴파일).
 @MainActor
 final class HwpDocumentViewSupportTests: XCTestCase {
@@ -38,6 +43,139 @@ final class HwpDocumentViewSupportTests: XCTestCase {
         let scale = HwpDocumentViewSupport.effectiveContentsScale(base: 2, zoomScale: 10)
 
         expect(scale) == 8
+    }
+
+    // MARK: - fitZoomScale (#78)
+
+    /// 폭 맞춤은 캔버스 폭만 본다 — 캔버스 폭 × 배율 = 뷰포트 폭.
+    func testFitWidthScalesCanvasToViewportWidth() {
+        let scale = HwpDocumentViewSupport.fitZoomScale(
+            content: CGSize(width: 1190, height: 842),
+            viewport: CGSize(width: 595, height: 800),
+            fit: .width,
+            range: zoomRange
+        )
+
+        expect(scale) == 0.5
+    }
+
+    /// 쪽 맞춤은 두 축 중 **더 빡빡한** 쪽을 고른다. 같은 입력에서 폭 맞춤과
+    /// 결과가 갈리는 것이 두 모드가 실제로 다르다는 증거다.
+    func testFitPageTakesTheTighterAxis() {
+        let content = CGSize(width: 595, height: 842)
+        let viewport = CGSize(width: 595, height: 421)
+
+        let page = HwpDocumentViewSupport.fitZoomScale(
+            content: content, viewport: viewport, fit: .page, range: zoomRange
+        )
+        let width = HwpDocumentViewSupport.fitZoomScale(
+            content: content, viewport: viewport, fit: .width, range: zoomRange
+        )
+
+        expect(page) == 0.5
+        expect(width) == 1.0
+    }
+
+    func testFitPageTakesWidthWhenWidthIsTighter() {
+        let scale = HwpDocumentViewSupport.fitZoomScale(
+            content: CGSize(width: 1190, height: 842),
+            viewport: CGSize(width: 595, height: 8420),
+            fit: .page,
+            range: zoomRange
+        )
+
+        expect(scale) == 0.5
+    }
+
+    /// 폭 맞춤은 높이를 **읽지 않는다** — 높이가 퇴화해도 결과가 나온다.
+    /// 쪽 맞춤만 높이 가드를 탄다.
+    func testFitWidthIgnoresDegenerateHeight() {
+        let content = CGSize(width: 595, height: 0)
+        let viewport = CGSize(width: 1190, height: 0)
+
+        expect(
+            HwpDocumentViewSupport.fitZoomScale(
+                content: content, viewport: viewport, fit: .width, range: zoomRange
+            )
+        ) == 2.0
+        expect(
+            HwpDocumentViewSupport.fitZoomScale(
+                content: content, viewport: viewport, fit: .page, range: zoomRange
+            )
+        ).to(beNil())
+    }
+
+    /// 배율 한계는 **인자로 받은 것**을 쓴다 — 0.25...5.0의 네 번째 사본을
+    /// 만들지 않으려는 설계라, 호출부가 다른 범위를 주면 그 범위로 클램프된다.
+    func testFitZoomClampsToGivenRange() {
+        let tiny = HwpDocumentViewSupport.fitZoomScale(
+            content: CGSize(width: 1, height: 1),
+            viewport: CGSize(width: 800, height: 600),
+            fit: .page,
+            range: zoomRange
+        )
+        let huge = HwpDocumentViewSupport.fitZoomScale(
+            content: CGSize(width: 100_000, height: 100_000),
+            viewport: CGSize(width: 800, height: 600),
+            fit: .page,
+            range: zoomRange
+        )
+        let narrowRange = HwpDocumentViewSupport.fitZoomScale(
+            content: CGSize(width: 1, height: 1),
+            viewport: CGSize(width: 800, height: 600),
+            fit: .page,
+            range: 1.0 ... 2.0
+        )
+
+        expect(tiny) == 5.0
+        expect(huge) == 0.25
+        expect(narrowRange) == 2.0
+    }
+
+    /// 퇴화 입력은 **nil** 이다. 0을 그대로 흘리면 하류가 잡아 주지 않는다 —
+    /// `HwpZoomControls.sanitized`는 0을 finite로 보아 1.0 폴백이 아니라
+    /// 하한 0.25로 클램프하고, NaN은 macOS 배율 setter를 통과한 뒤 조용히
+    /// no-op이 된다. 둘 다 사용자에게는 원인 없는 오작동으로 보인다.
+    func testFitZoomRejectsDegenerateExtents() {
+        let ok = CGSize(width: 595, height: 842)
+        func scale(_ content: CGSize, _ viewport: CGSize, _ fit: HwpZoomFit) -> CGFloat? {
+            HwpDocumentViewSupport.fitZoomScale(
+                content: content, viewport: viewport, fit: fit, range: zoomRange
+            )
+        }
+
+        for fit in HwpZoomFit.allCases {
+            // 아직 실측되지 않은 뷰포트 (SwiftUI makeUIView / 창에 붙기 전)
+            expect(scale(ok, .zero, fit)).to(beNil())
+            // 문서가 없어 캔버스가 서지 않은 상태
+            expect(scale(.zero, ok, fit)).to(beNil())
+            // 조작 문서·상태 복원이 흘려 넣는 비-finite
+            expect(scale(CGSize(width: CGFloat.nan, height: 842), ok, fit)).to(beNil())
+            expect(scale(CGSize(width: CGFloat.infinity, height: 842), ok, fit)).to(beNil())
+            expect(scale(ok, CGSize(width: -CGFloat.infinity, height: 600), fit)).to(beNil())
+            // 음수 치수도 배율을 뒤집으므로 막는다
+            expect(scale(CGSize(width: -595, height: 842), ok, fit)).to(beNil())
+        }
+        // 쪽 맞춤만 높이를 읽으므로 높이 퇴화는 그쪽에서만 nil 이고, 폭 맞춤은
+        // 같은 입력에서 배율을 낸다 — 두 모드의 가드 범위가 다르다는 증거다.
+        expect(scale(CGSize(width: 595, height: CGFloat.nan), ok, .page)).to(beNil())
+        expect(scale(ok, CGSize(width: 800, height: 0), .page)).to(beNil())
+        expect(scale(ok, CGSize(width: 800, height: -600), .page)).to(beNil())
+        expect(scale(ok, CGSize(width: 800, height: -600), .width)).toNot(beNil())
+    }
+
+    /// 유한한 두 양수의 나눗셈도 **언더플로로 0** 이 될 수 있다. 0을 배율로
+    /// 내보내면 클램프가 하한 0.25로 살려 내 "아무 안내 없는 축소"가 되므로
+    /// 몫에도 같은 가드를 건다.
+    func testFitZoomRejectsUnderflowedQuotient() {
+        let scale = HwpDocumentViewSupport.fitZoomScale(
+            content: CGSize(width: CGFloat.greatestFiniteMagnitude, height: 842),
+            viewport: CGSize(width: CGFloat.leastNonzeroMagnitude, height: 600),
+            fit: .width,
+            range: zoomRange
+        )
+
+        expect(scale).to(beNil())
     }
 
     // MARK: - boundedContentsScale (래스터 백킹 안전 캡)

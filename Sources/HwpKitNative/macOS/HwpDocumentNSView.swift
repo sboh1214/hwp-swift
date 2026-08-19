@@ -30,6 +30,10 @@
                     updateContentSize()
                     // 같은 로드 스냅샷이므로 활성 선택을 지우지 않고 지오메트리만 갱신 (#5)
                     selectionController.setDocument(document, preservingSelection: true)
+                    // 조기 반환하는 분기이고 문서 대입은 자기 자신에게 레이아웃을 걸지
+                    // 않으므로, 이 호출이 빠지면 예약된 맞춤이 무관한 리사이즈까지
+                    // 잠든다 (교체 didSet 끝의 같은 호출과 한 쌍이다).
+                    applyPendingFitZoom()
                     updateVisiblePages(range: visiblePageRange())
                     if new.unsupportedElements != old.unsupportedElements {
                         notifyUnsupportedElements()
@@ -61,6 +65,22 @@
                 scrollView.contentView.scroll(to: .zero)
                 scrollView.reflectScrolledClipView(scrollView.contentView)
                 updateVisiblePages(range: 0 ..< min(document?.pages.count ?? 0, 3))
+                // 옛 문서를 향한 fit 예약은 버린다 — 남기면 A 에서 건 맞춤이
+                // 나중에 B 의 배율을 뺏는다 (iOS `pendingInitialPageIndex` 가 같은
+                // 이유로 교체 때 버려진다, R71 #2). 살려 두는 것은 문서가 **아예
+                // 없던** 상태에서 온 요청뿐이다 — 그것만이 지금 도착하는 이 문서를
+                // 향한 "열자마자 맞춤"이다. 쪽이 0인 문서도 엄연히 다른 문서라 거기
+                // 건 예약은 교체본에 실리면 안 된다. 프로그레시브 스냅샷은 위에서
+                // 조기 반환해 이 줄에 닿지 않으므로 그쪽 예약은 저절로 살아남는다.
+                //
+                // 그리고 그 자리에서 바로 적용한다: 문서 대입은 자기 자신에게
+                // 레이아웃을 걸지 않으므로(자식 프레임만 바뀐다) 그냥 두면 예약이
+                // 다음 리사이즈까지 잠든다. 캔버스는 위 `updateContentSize()` 로
+                // 이미 확정됐다.
+                if oldValue != nil {
+                    pendingFitZoom = nil
+                }
+                applyPendingFitZoom()
                 notifyUnsupportedElements()
             }
         }
@@ -155,6 +175,10 @@
         /// 페이지 폭을 다시 훑지 않도록 지오메트리 재구성 시 한 번만 계산한다 (#27).
         var cachedContentWidth: CGFloat = 595
         private var imageProvider: HwpPageImageProvider?
+        /// 아직 못 맞춘 fit 명령 (#78). 뷰포트가 실측되기 전이거나 문서에 쪽이 아직
+        /// 없을 때 온 요청을 담아, 첫 실측 `layout()` 또는 문서 대입에서 적용한다 —
+        /// iOS 초기 센터링 예약과 같은 형태다.
+        var pendingFitZoom: HwpZoomFit?
         private var lastReportedZoom: CGFloat = 1.0
         private var lastReportedPage = -1
 
@@ -267,6 +291,8 @@
 
         override public func layout() {
             super.layout()
+            // 뷰포트가 실측된 뒤라야 fit 배율을 낼 수 있다 (#78)
+            applyPendingFitZoom()
             // 창 리사이즈로 뷰포트가 변하면 가시 범위가 낡을 수 있다
             let range = visiblePageRange()
             if !range.isEmpty, range != activeVisibleRange {

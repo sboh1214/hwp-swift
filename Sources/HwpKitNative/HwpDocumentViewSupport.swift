@@ -116,6 +116,52 @@ enum HwpDocumentViewSupport {
         }
     }
 
+    // MARK: - fit 배율 (#78)
+
+    /// 스크롤 캔버스를 뷰포트에 맞추는 배율 — 퇴화 입력이면 nil이다.
+    ///
+    /// **퇴화 입력을 여기서 직접 거른다.** 하류의 비-finite 게이트가 이 경우를
+    /// 잡아 주지 않기 때문이다: `HwpZoomControls.sanitized`는 0을 finite로 보아
+    /// 1.0 폴백을 태우지 않고 하한 0.25로 클램프하므로, 폭 0 뷰포트가 사용자에게는
+    /// "안내 없는 25% 축소"로 보인다. NaN을 내보내도 마찬가지다 — iOS는 직전 값을
+    /// 유지하고 macOS는 클램프를 통과시킨 뒤 조용히 no-op이라, 두 플랫폼 모두
+    /// "버튼이 안 먹는" 증상만 남고 원인은 어디에도 남지 않는다. nil은 호출부가
+    /// "아직 맞출 수 없다"를 구분해 예약할 수 있게 하는 신호이기도 하다.
+    /// 선례는 `HwpPageBitmapRenderer.pixelHeight`의 `page.size` 양수 가드다.
+    ///
+    /// `range`를 **인자로 받는** 이유: 배율 한계 `0.25...5.0`은 이미 프로덕션 세
+    /// 곳(`HwpZoomControls` 기본 range·`NSScrollView` magnification·`UIScrollView`
+    /// zoomScale)에 사본이 있다. 여기서 또 적으면 넷이 되어 향후 범위 변경이 조용히
+    /// 갈리므로, 호출부가 자기 스크롤 뷰의 실제 한계를 넘긴다.
+    ///
+    /// - Parameters:
+    ///   - content: 스크롤 캔버스 크기 (문서 좌표계). 폭은 문서 전체 최대 행 폭이고
+    ///     높이는 맞출 대상 행의 높이다 — 둘 다 메모 패널을 포함한다.
+    ///   - viewport: 배율과 무관한 뷰포트 크기 (macOS `NSScrollView.contentSize`
+    ///     = 클립 뷰 frame, iOS 는 문서 뷰 본체의 `bounds`).
+    nonisolated static func fitZoomScale(
+        content: CGSize,
+        viewport: CGSize,
+        fit: HwpZoomFit,
+        range: ClosedRange<CGFloat>
+    ) -> CGFloat? {
+        guard isUsableExtent(content.width), isUsableExtent(viewport.width) else { return nil }
+        var scale = viewport.width / content.width
+        if fit == .page {
+            guard isUsableExtent(content.height), isUsableExtent(viewport.height) else {
+                return nil
+            }
+            scale = min(scale, viewport.height / content.height)
+        }
+        // 유한한 두 양수의 나눗셈도 언더플로로 0이 될 수 있다 (거대 캔버스).
+        guard isUsableExtent(scale) else { return nil }
+        return min(max(scale, range.lowerBound), range.upperBound)
+    }
+
+    private nonisolated static func isUsableExtent(_ value: CGFloat) -> Bool {
+        value.isFinite && value > 0
+    }
+
     // MARK: - 페이지 레이어 chrome
 
     /// 페이지 종이 배경 + 그림자 + 래스터 해상도 (양 플랫폼 동일 스펙).
