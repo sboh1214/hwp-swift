@@ -24,19 +24,51 @@ public struct HwpZoomControls: View {
         HStack {
             Button(LocalizedStringKey("-"), action: zoomOut)
                 .disabled(zoomScale.wrappedValue <= range.lowerBound)
+                .accessibilityLabel(zoomOutAccessibilityLabel)
 
             Text(zoomText)
 
             Button(LocalizedStringKey("+"), action: zoomIn)
                 .disabled(zoomScale.wrappedValue >= range.upperBound)
+                .accessibilityLabel(zoomInAccessibilityLabel)
 
             Button(LocalizedStringKey("Reset"), action: resetZoom)
+                .accessibilityLabel(resetZoomAccessibilityLabel)
 
             if fitZoom != nil {
                 Button(LocalizedStringKey("Fit Width")) { requestFit(.width) }
+                    .accessibilityLabel(fitWidthAccessibilityLabel)
                 Button(LocalizedStringKey("Fit Page")) { requestFit(.page) }
+                    .accessibilityLabel(fitPageAccessibilityLabel)
             }
         }
+    }
+
+    // MARK: - VoiceOver 라벨 (#79)
+
+    // `-`·`+` 는 문장부호라 VoiceOver 가 문맥 없이 읽는다. `LocalizedStringKey`
+    // 는 키 문자열을 꺼낼 공개 경로가 없어 문구를 테스트로 고정할 수 없으므로
+    // `String` 계산 프로퍼티로 낸다 — 문구는 한국어다 (#78 1번 에러 한국어화와
+    // 같은 정책: 로컬라이제이션 인프라가 없어 하드코딩이 유일한 경로다).
+
+    var zoomOutAccessibilityLabel: String {
+        "축소"
+    }
+
+    var zoomInAccessibilityLabel: String {
+        "확대"
+    }
+
+    var resetZoomAccessibilityLabel: String {
+        "배율 초기화"
+    }
+
+    var fitWidthAccessibilityLabel: String {
+        "폭 맞춤"
+    }
+
+    var fitPageAccessibilityLabel: String {
+        "쪽 맞춤"
     }
 
     /// 명령만 세우고 끝낸다 — 실제 배율은 뷰가 정해 `zoomScale` 로 되돌려주므로
