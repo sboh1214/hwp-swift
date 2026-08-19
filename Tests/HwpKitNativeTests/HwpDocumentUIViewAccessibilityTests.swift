@@ -97,7 +97,7 @@
 
         func testOutlineHeadingGetsHeaderTrait() throws {
             let heading = HwpOutlineItem(
-                kind: .heading, title: "제1장", level: 1, pageNumber: 1, ordinal: 0
+                kind: .heading, title: "제1장 총칙", level: 1, pageNumber: 1, ordinal: 0
             )
             let view = Self.makeView(
                 document: Self.document(pageTexts: ["제1장 총칙"], outline: [heading])
@@ -153,6 +153,25 @@
             let exposed = (view.contentView.accessibilityElements ?? [])
                 .compactMap { ($0 as? UIAccessibilityElement)?.accessibilityLabel }
             expect(exposed) == ["beta"]
+        }
+
+        /// 스크롤된 상태의 교체 — applyPendingInitialCentering의 setContentOffset이
+        /// scrollViewDidScroll → updateVisiblePages를 **동기 재진입**시키는데,
+        /// 그 시점 선택 지오메트리가 아직 옛 문서면 새 페이지 frame을 anchor로
+        /// 옛 문서 라벨이 store에 굳어 VoiceOver가 이전 문서를 읽는다 (교체
+        /// didSet의 selectionController 대입이 지오메트리 재구성보다 앞이어야
+        /// 하는 이유).
+        func testDocumentSwapWhileScrolledDoesNotKeepOldLabels() {
+            let view = Self.makeView(
+                document: Self.document(pageTexts: (1 ... 10).map { "A쪽 \($0)" })
+            )
+            view.scrollToPage(at: 8)
+            view.layoutIfNeeded()
+
+            view.document = Self.document(pageTexts: ["B쪽 1"])
+            view.layoutIfNeeded()
+
+            expect(Self.labels(of: view, page: 0)) == ["B쪽 1"]
         }
 
         func testClearingDocumentClearsElements() {

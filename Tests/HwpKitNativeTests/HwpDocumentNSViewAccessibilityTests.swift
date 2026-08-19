@@ -179,6 +179,22 @@
             expect(labels) == ["beta"]
         }
 
+        /// 스크롤된 상태의 교체 — updateContentSize의 frame 축소가 클립 뷰
+        /// 클램프 → bounds 통지로 updateVisiblePages를 **동기 재진입**시키는데,
+        /// 그 시점 선택 지오메트리가 아직 옛 문서면 새 페이지 frame을 anchor로
+        /// 옛 문서 라벨이 store에 굳는다 (교체 didSet의 selectionController
+        /// 대입이 지오메트리 재구성보다 앞이어야 하는 이유).
+        func testDocumentSwapWhileScrolledDoesNotKeepOldLabels() {
+            let view = Self.makeView(
+                document: Self.document(pageTexts: (1 ... 10).map { "A쪽 \($0)" })
+            )
+            view.scrollToPage(at: 8)
+
+            view.document = Self.document(pageTexts: ["B쪽 1"])
+
+            expect(Self.labels(of: view, page: 0)) == ["B쪽 1"]
+        }
+
         func testClearingDocumentClearsElements() {
             let view = Self.makeView(document: Self.document(pageTexts: ["alpha"]))
 

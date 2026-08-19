@@ -63,6 +63,13 @@
                 memoPanelLayers.values.forEach { $0.removeFromSuperlayer() }
                 memoPanelLayers.removeAll()
                 rebuildImageProvider()
+                // 선택 지오메트리를 **지오메트리 재구성보다 먼저** 새 문서로
+                // 바꾼다 — 아래 applyPendingInitialCentering의 setContentOffset
+                // (그리고 updateContentSize의 오프셋 이동)이 scrollViewDidScroll로
+                // updateVisiblePages를 동기 재진입시켜 AX 합성이 도는데, 이
+                // 대입이 늦으면 옛 문서의 단위로 만든 라벨이 새 페이지 frame을
+                // anchor로 store에 굳어 VoiceOver가 이전 문서를 읽는다 (#79).
+                selectionController.document = document
                 rebuildPageOrigins()
                 updateContentSize()
                 // 전체 교체는 새 문서를 맨 위(센터링 원점)에서 연다. SwiftUI 경로는
@@ -75,7 +82,6 @@
                 // scrollToPage가 다시 채운다 (R71 #2).
                 pendingInitialPageIndex = nil
                 applyPendingInitialCentering()
-                selectionController.document = document
                 updateVisiblePages(range: 0 ..< min(document?.pages.count ?? 0, 3))
                 // 옛 문서를 향한 fit 예약은 버린다 — 남기면 A 에서 건 맞춤이
                 // 나중에 B 의 배율을 뺏는다 (iOS `pendingInitialPageIndex` 가 같은

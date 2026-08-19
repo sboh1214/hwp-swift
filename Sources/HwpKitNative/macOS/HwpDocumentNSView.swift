@@ -63,9 +63,14 @@
                 memoPanelLayers.values.forEach { $0.removeFromSuperlayer() }
                 memoPanelLayers.removeAll()
                 rebuildImageProvider()
+                // 선택 지오메트리를 **지오메트리 재구성보다 먼저** 새 문서로
+                // 바꾼다 — 아래 updateContentSize가 콘텐츠 frame을 줄이면 클립
+                // 뷰 클램프가 bounds 통지로 updateVisiblePages를 동기 재진입시켜
+                // AX 합성이 도는데, 이 대입이 늦으면 옛 문서의 단위로 만든
+                // 라벨이 새 페이지 frame을 anchor로 store에 굳는다 (#79).
+                selectionController.document = document
                 rebuildPageOrigins()
                 updateContentSize()
-                selectionController.document = document
                 scrollView.contentView.scroll(to: .zero)
                 scrollView.reflectScrolledClipView(scrollView.contentView)
                 updateVisiblePages(range: 0 ..< min(document?.pages.count ?? 0, 3))
