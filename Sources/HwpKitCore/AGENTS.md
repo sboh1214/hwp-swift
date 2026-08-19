@@ -241,11 +241,17 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   `HwpMemoPanel` 모델이 paintList 만 보유하므로 `.drawText` 를 걷고, rect
   높이는 렌더·선택과 같은 `HwpDrawnTextLayout` 줄 상자 합집합으로 잡는다 —
   좌표는 패널 로컬이라 뷰가 패널 레이어 frame 으로 옮긴다.
-- **헤딩 판정은 개요 제목의 접두 대조다.** `HwpOutlineItem.title` 은 컨트롤
-  제거·공백 접힘 (`HwpOutlineCollector.collapsedWhitespace`) 을 지난 문단
-  평문의 **접두**이므로 (200자 상한에서 잘려도), 라벨을 같은 접힘에 통과시켜
-  `hasPrefix` 로 판정한다. 대상은 그 쪽의 `.heading` 항목뿐이다 — 다른 쪽
-  제목이 새면 접두가 겹치는 문단이 전부 헤딩이 된다.
+- **헤딩 판정은 개요 제목과의 세 갈래 대조다** (`isHeading`). 라벨을 제목
+  수집 (`HwpOutlineCollector.titleUnits` + `collapsedWhitespace`) 과 같은
+  정규화에 통과시킨 뒤 ① 동등 (안 잘린 제목 = 문단 평문 전체) ② 200자
+  상한에 닿은 제목만 접두 대조 ③ 분할 제목의 첫 조각만 역방향 접두 대조.
+  무조건 `hasPrefix` 로 두면 같은 쪽에서 접두가 겹치는 일반 문단("요약하면…"
+  vs 제목 "요약")이 전부 헤딩으로 오탐되고, 동등만 두면 쪽/단 경계로 쪼개진
+  제목 조각이 로터에서 통째로 빠진다. **정규화 재현에 접힘만으로는 부족하다** —
+  조판 문자열은 묶음 빈칸(30)·고정폭 빈칸(31)을 원문 코드로 담는데 이 둘은
+  유니코드 공백이 아니라 `isWhitespace` 접힘에 안 걸린다. `collapsedForTitleMatch`
+  가 수집처럼 30/31 → 공백, 그 밖의 <32 비공백 코드는 제거로 맞춘다.
+  대상은 그 쪽의 `.heading` 항목뿐이다 — 다른 쪽 제목이 새면 오탐이 는다.
 - 라벨은 U+FFFC 마커를 지운 평문 (`strippingControlMarkers` 재사용) 이고,
   지운 뒤 공백만 남는 단위는 버린다 — 읽을 것이 없는 요소는 VoiceOver 탐색만
   늘린다.

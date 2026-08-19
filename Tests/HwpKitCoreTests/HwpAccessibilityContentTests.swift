@@ -126,17 +126,61 @@ final class HwpAccessibilityContentTests: XCTestCase {
 
     // MARK: - 헤딩 판정
 
-    /// 개요 제목은 컨트롤 제거·공백 접힘 정규화를 지난 문단 평문의 **접두**다
-    /// (`HwpOutlineCollector.collapsedWhitespace`) — 같은 정규화 뒤 접두 대조.
-    func testHeadingMatchesByCollapsedPrefix() {
+    /// 안 잘린 제목은 문단 평문 전체다 — 공백 접힘 정규화 뒤 **동등** 대조.
+    func testHeadingMatchesWholeParagraphTitle() {
         let page = page(blocks: [
             textBlock("제1장  총칙과 부칙", frame: CGRect(x: 50, y: 100, width: 400, height: 20)),
             textBlock("일반 본문", frame: CGRect(x: 50, y: 140, width: 400, height: 20)),
         ])
 
-        let units = pageUnits(page, headingTitles: ["제1장 총칙과"])
+        let units = pageUnits(page, headingTitles: ["제1장 총칙과 부칙"])
 
         expect(units.map(\.isHeading)) == [true, false]
+    }
+
+    /// 안 잘린 제목에 접두 대조를 쓰면 같은 쪽에서 접두가 겹치는 일반 문단이
+    /// 전부 헤딩으로 오탐된다 — 로터 "제목" 탐색이 엉뚱한 자리에 선다.
+    func testBodyParagraphSharingTitlePrefixIsNotHeading() {
+        let page = page(blocks: [
+            textBlock("요약", frame: CGRect(x: 50, y: 100, width: 400, height: 20)),
+            textBlock("요약하면 다음과 같다", frame: CGRect(x: 50, y: 140, width: 400, height: 20)),
+        ])
+
+        let units = pageUnits(page, headingTitles: ["요약"])
+
+        expect(units.map(\.isHeading)) == [true, false]
+    }
+
+    /// 200자 상한에 닿은 제목만 문단 평문의 접두일 수 있다 — 그때는 접두 대조.
+    func testTruncatedTitleMatchesByPrefix() {
+        let truncated = String(repeating: "가", count: HwpOutlineItem.titleCharacterLimit)
+
+        expect(HwpAccessibilityContent.isHeading(
+            label: truncated + " 이어지는 본문", titles: [truncated]
+        )) == true
+    }
+
+    /// 쪽/단 경계로 쪼개진 제목 문단은 첫 조각 라벨이 제목보다 짧다 — 역방향
+    /// 접두 대조로 첫 조각을 로터 정지점으로 남긴다 (뒤 조각은 접두가 아니라
+    /// 표시되지 않는다).
+    func testSplitHeadingFirstFragmentIsMarked() {
+        expect(HwpAccessibilityContent.isHeading(
+            label: "제1장 총칙과", titles: ["제1장 총칙과 부칙"]
+        )) == true
+        expect(HwpAccessibilityContent.isHeading(
+            label: "부칙", titles: ["제1장 총칙과 부칙"]
+        )) == false
+    }
+
+    /// 조판 문자열의 묶음 빈칸(30)·고정폭 빈칸(31)은 유니코드 공백이 아니라
+    /// isWhitespace 접힘에 안 걸린다 — 제목 수집(`titleUnits`)처럼 공백으로
+    /// 매핑해야 대조가 성립한다.
+    func testControlCharacterSpacesMatchTitleNormalization() {
+        expect(HwpAccessibilityContent.isHeading(
+            label: "제1장\u{1E}총칙", titles: ["제1장 총칙"]
+        )) == true
+        expect(HwpAccessibilityContent.collapsedForTitleMatch("제1장\u{1F}총칙"))
+            == "제1장 총칙"
     }
 
     /// 헤딩은 본문 단위에만 붙는다 — 개요 스코프가 최상위 본문 문단이라

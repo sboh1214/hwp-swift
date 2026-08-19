@@ -840,7 +840,7 @@ API — 커스텀 뷰도 같은 재료를 쓴다), 보관·수명·좌표 변환
   내용이 바뀌는 모든 didSet 분기가 요소를 전량 무효화한다. stale 라벨이
   남으면 VoiceOver 가 화면에 없는 텍스트를 읽는다.
 - 세부 계약(좌표 전략 플랫폼 차이·낭독 순서·헤딩 트레이트)은
-  `Sources/HwpKitNative/AGENTS.md`, 합성 규칙(크롬 분할·헤딩 접두 대조·메모
+  `Sources/HwpKitNative/AGENTS.md`, 합성 규칙(크롬 분할·헤딩 세 갈래 대조·메모
   전개)은 `Sources/HwpKitCore/AGENTS.md`, 라벨 정책은 `Sources/HwpKit/AGENTS.md`.
 - **자동화 밖은 낭독 순서와 로터다** — 요소 라벨/rect 합성·가상화 청소·교체
   무효화는 유닛으로 잠겼지만, 실제 낭독은 macOS Accessibility Inspector /

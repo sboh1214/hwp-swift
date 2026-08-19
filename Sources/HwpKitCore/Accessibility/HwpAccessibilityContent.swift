@@ -47,8 +47,8 @@ public enum HwpAccessibilityContent {
     ///     캐시를 그대로 넘겨 단위 전개를 이중화하지 않는다 (검색 #75 와 같은
     ///     이유 — 1,030쪽 문서에서 단위 전개 두 벌 상주 금지).
     ///   - headingTitles: 이 쪽의 개요 제목 목록 (`HwpDocumentMetadata.outline`).
-    ///     제목은 컨트롤 제거·공백 접힘 정규화를 지난 문단 평문의 **접두**이므로
-    ///     같은 정규화를 거쳐 접두 대조로 헤딩을 표시한다.
+    ///     제목은 컨트롤 제거·공백 접힘 정규화를 지난 문단 평문이므로 같은
+    ///     정규화 뒤 대조해 헤딩을 표시한다 (세 갈래 규칙은 `isHeading` doc).
     ///
     /// 낭독 순서: 페이지 상반부 크롬 (머리말) → 본문 (문서 순서) → 하반부
     /// 크롬 (꼬리말/쪽 번호). 크롬은 블록 좌표만으로 머리말/꼬리말을 구분할
@@ -119,15 +119,53 @@ public enum HwpAccessibilityContent {
         return stripped
     }
 
-    /// 개요 제목 판정 — 제목 수집 (`HwpOutlineCollector.collapsedWhitespace`) 과
-    /// 같은 공백 접힘을 거친 라벨의 **접두**가 제목이면 헤딩이다. 제목은 200자
-    /// 상한에서 잘려도 언제나 문단 평문의 접두라 접두 대조가 성립한다.
+    /// 개요 제목 판정 — 라벨을 제목 수집과 같은 정규화에 통과시킨 뒤 세 갈래로
+    /// 대조한다:
+    ///
+    /// 1. **동등** — 안 잘린 제목은 문단 평문 전체라 온전한 제목 문단과 일치한다.
+    ///    무조건 접두 대조를 쓰면 같은 쪽에서 접두가 겹치는 일반 문단("요약하면
+    ///    다음과 같다" vs 제목 "요약")이 전부 헤딩으로 오탐된다.
+    /// 2. **잘린 제목의 접두** — 200자 상한 (`titleCharacterLimit`) 에 닿은
+    ///    제목만 문단 평문의 접두일 수 있다.
+    /// 3. **분할 제목의 첫 조각** — 쪽/단 경계로 쪼개진 제목 문단은 첫 조각
+    ///    라벨이 제목보다 짧은 접두다 (역방향 대조). 뒤 조각은 접두가 아니라
+    ///    표시되지 않는다 — 로터 정지점은 첫 조각 하나면 된다. 남는 근사는
+    ///    "제목의 접두와 정확히 일치하는 더 짧은 본문 문단"의 오탐뿐이다.
     static func isHeading(label: String, titles: [String]) -> Bool {
         guard !titles.isEmpty else { return false }
-        let collapsed = label
+        let collapsed = collapsedForTitleMatch(label)
+        guard !collapsed.isEmpty else { return false }
+        return titles.contains { title in
+            guard !title.isEmpty else { return false }
+            if collapsed == title {
+                return true
+            }
+            if title.count == HwpOutlineItem.titleCharacterLimit, collapsed.hasPrefix(title) {
+                return true
+            }
+            return collapsed.count < title.count && title.hasPrefix(collapsed)
+        }
+    }
+
+    /// 제목 수집 (`HwpOutlineCollector.titleUnits` + `collapsedWhitespace`) 과
+    /// 같은 정규화. 조판 문자열은 묶음 빈칸 (30)·고정폭 빈칸 (31) 을 원문
+    /// 코드로 담는데 이 둘은 유니코드 공백이 아니라 `isWhitespace` 접힘에
+    /// 걸리지 않는다 — 수집처럼 공백으로 매핑하고, 수집이 버리는 그 밖의
+    /// 컨트롤 코드 (<32, 비공백) 는 지운 뒤 공백을 접는다.
+    static func collapsedForTitleMatch(_ text: String) -> String {
+        var scalars = String.UnicodeScalarView()
+        for scalar in text.unicodeScalars {
+            if scalar.value == 30 || scalar.value == 31 {
+                scalars.append(" ")
+            } else if scalar.value < 32, !Character(scalar).isWhitespace {
+                continue
+            } else {
+                scalars.append(scalar)
+            }
+        }
+        return String(scalars)
             .split(whereSeparator: \.isWhitespace)
             .joined(separator: " ")
-        return titles.contains { !$0.isEmpty && collapsed.hasPrefix($0) }
     }
 
     /// 크롬 그룹 안 낭독 순서 — 위에서 아래, 같은 줄이면 왼쪽에서 오른쪽.
