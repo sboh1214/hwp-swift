@@ -221,6 +221,37 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   재호출 시 무통지·반대쪽 너머 역할 뒤바뀜, 캐럿의 문서 순서·쪽 인덱스·
   부분 결과·`selectAll` 추종).
 
+## 접근성 요소 합성 (#79)
+
+문서 본문은 뷰가 아니라 CALayer 라 AX 트리가 없다 — 뷰가 노출할 (라벨, rect)
+모델을 `Accessibility/HwpAccessibilityContent.swift` 가 합성한다. 순수 함수라
+플랫폼 뷰 없이 검증되고, 플랫폼 요소로 감싸는 일은 HwpKitNative 몫이다.
+
+- **본문 단위는 인자로 받는다** (`pageUnits(page:bodyUnits:headingTitles:)`) —
+  뷰는 `HwpSelectionGeometry.units(forPage:)` 캐시를 그대로 넘긴다. 합성이
+  스스로 전개하면 1,030쪽 문서에서 단위 전개가 두 벌 상주한다 (검색 #75 가
+  캐시를 공유하는 것과 같은 이유).
+- **쪽 크롬은 별도 순회다.** `HwpSelectableText.units` 는 `role == .body` 만
+  걷으므로 (선택·복사·검색 스코프), 그대로 쓰면 머리말/꼬리말/쪽 번호가
+  VoiceOver 에서 통째로 사라진다. 크롬 블록을 같은
+  `HwpBlockContentWalker.walkText` 로 걷되 페이지 세로 중앙을 경계로 상단
+  (머리말) / 하단 (꼬리말·쪽 번호) 을 갈라 낭독 순서를
+  상단 크롬 → 본문 (문서 순서) → 하단 크롬으로 둔다.
+- **메모 패널은 paint list 를 전개한다** (`memoPanelUnits(panel:)`).
+  `HwpMemoPanel` 모델이 paintList 만 보유하므로 `.drawText` 를 걷고, rect
+  높이는 렌더·선택과 같은 `HwpDrawnTextLayout` 줄 상자 합집합으로 잡는다 —
+  좌표는 패널 로컬이라 뷰가 패널 레이어 frame 으로 옮긴다.
+- **헤딩 판정은 개요 제목의 접두 대조다.** `HwpOutlineItem.title` 은 컨트롤
+  제거·공백 접힘 (`HwpOutlineCollector.collapsedWhitespace`) 을 지난 문단
+  평문의 **접두**이므로 (200자 상한에서 잘려도), 라벨을 같은 접힘에 통과시켜
+  `hasPrefix` 로 판정한다. 대상은 그 쪽의 `.heading` 항목뿐이다 — 다른 쪽
+  제목이 새면 접두가 겹치는 문단이 전부 헤딩이 된다.
+- 라벨은 U+FFFC 마커를 지운 평문 (`strippingControlMarkers` 재사용) 이고,
+  지운 뒤 공백만 남는 단위는 버린다 — 읽을 것이 없는 요소는 VoiceOver 탐색만
+  늘린다.
+- 가드는 `Tests/HwpKitCoreTests/HwpAccessibilityContentTests.swift` (11종 —
+  라벨·순서·크롬 분할·헤딩 접두·메모 전개).
+
 ## 컨벤션
 
 - **HwpKitNative와 HwpKit이 함께 쓰는 순수 값 타입은 여기에 둔다** — 구현이 브릿지에 있어도 공개 API가 SwiftUI 쪽이면 타입은 코어 몫이다. `Model/HwpPDFExportProgress.swift`가 그 예: 렌더러는 `HwpKitNative.HwpPDFRenderer`, 공개 표면은 `HwpKit.HwpPDFExporter`인데, 진행률 콜백을 쓰려고 호스트 앱이 `import HwpKitNative`를 하게 만들 이유가 없다. `Model/HwpZoomFit.swift`(#78)가 두 번째 사례이고 기준을 한 겹 더 분명히 한다 — HwpKitNative도 프로덕트로 선언돼 있어 호스트가 그 타입의 이름을 부를 수는 **있다**. 실질 경계는 접근 가능성이 아니라 **호스트가 링크하는 것은 `HwpKit`·`HwpKitCore` 둘뿐이라는 관례**다 (`Sample/project.yml`). 그 관례 밖 모듈의 타입이 공개 시그니처에 나타나면 호스트는 직접 쓰지도 않는 모듈을 링크해야 한다

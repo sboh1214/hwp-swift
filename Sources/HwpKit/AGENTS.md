@@ -29,6 +29,20 @@ SwiftUI 공개 API target. HwpKitNative 위에 `NSViewRepresentable` / `UIViewRe
 - `HwpPDFExporter` — `export(document:to:onProgress:)` / `exportData(document:onProgress:)` (둘 다 `async throws`). 화면과 **같은 paint list·같은 조판**으로 PDF를 만든다 (`HwpPageLayer.draw(in:)`가 뷰 계층 없이 임의 `CGContext`에 그리는 순수 오프스크린 렌더러라 가능하다 — 구현은 HwpKitNative의 `HwpPDFRenderer`). 페이지 단위 스트리밍이라 상주 메모리는 1페이지 몫이고, 페이지 경계마다 `Task.checkCancellation()` + `onProgress`(`HwpPDFExportProgress`) 발화. 에러는 `HwpPDFExportError`
   - **미완성 문서는 거부한다** (#74 리뷰) — `loadUpdates(from:)`의 중간 스냅샷(`metadata.isComplete == false`)은 확정된 페이지 접두만 들고 있어, 그대로 내보내면 페이지가 빠진 PDF가 **성공으로** 나간다. 열리고 페이지 수도 맞아 산출물 검증(`incompleteOutput`)마저 통과하므로 아래 층이 잡지 못한다 — `.incompleteDocument`로 끝낸다. `.exportFailed` 문자열이 아니라 제 타입인 이유는 이것이 로드가 끝나면 성공하는 **재시도 가능** 상태라 호스트가 진짜 실패와 갈라 다뤄야 하기 때문이다. 접두를 의도적으로 내보내려면 그 페이지로 문서를 직접 구성한다 (`isComplete` 기본값이 true라 통과). 샘플이 로드 중 버튼을 잠그는 것은 호스트 UI 관례일 뿐 이 계약을 대신하지 않는다
   - **UI는 넘기지 않는다** — 저장 패널·공유 시트·인쇄 대화상자는 호스트 몫이다 (`Sample`이 `fileExporter` / `PDFDocument.printOperation` / `UIPrintInteractionController`로 배선하는 예를 보인다). 뷰를 직접 인쇄하는 경로는 없다: 레이어 가상화가 `visible ± 2`쪽만 들고 있어 인쇄 페이지네이션과 충돌한다
+- `HwpAccessibilityContent` (HwpKitCore) — 문서 접근성 요소 합성 (#79).
+  `pageUnits(page:bodyUnits:headingTitles:)`/`memoPanelUnits(panel:)`가
+  (라벨, 페이지·패널 로컬 top-down rect) 목록을 준다. 번들 뷰는 이것을 가시
+  (±2) 페이지에서 플랫폼 AX 요소로 감싸 자동 노출하므로 호스트가 할 일은
+  없고, 커스텀 뷰를 만드는 호스트만 같은 재료로 AX 트리를 만든다. 낭독
+  순서·수명 규약은 `Sources/HwpKitNative/AGENTS.md`의 "문서 접근성 요소 합성"
+- **툴바 VoiceOver 라벨 정책** (#79) — `HwpZoomControls`·`HwpPageNavigator`·
+  `HwpSearchNavigator`·`HwpSearchBar`의 버튼 11개가 한국어 String 라벨을
+  단다 (`-`·`+`·`‹`·`›`는 문장부호라 VoiceOver가 문맥 없이 읽는다). 라벨이
+  `LocalizedStringKey`가 아니라 **`String` 계산 프로퍼티**인 이유: 키 문자열을
+  꺼낼 공개 경로가 없어 문구를 테스트로 고정할 수 없다
+  (`HwpAccessibilityLabelTests`가 문구와 11개 상호 구별을 단언한다). 한국어
+  하드코딩은 #78 1번(에러 한국어화)과 같은 정책이다 — 로컬라이제이션 인프라가
+  없어 유일한 경로. 새 버튼을 더하면 라벨도 함께 달고 구별 단언에 넣을 것
 - `HwpPageThumbnails` — 쪽 축소판 (#76). `update(document:)`로 대상을 걸고 `image(forPageAt:pixelWidth:) async throws -> CGImage`로 **0-기반** 쪽을 받는다 (`HwpPageNavigator`·`HwpOutlineItem.pageNumber`가 1-기반이므로 그쪽 값은 `- 1`을 하거나 `HwpOutlineItem.pageIndex`를 쓴다). 화면·PDF와 **같은 paint list·같은 조판**이다 — 구현은 HwpKitNative의 `HwpPageThumbnailRenderer`이고 `HwpPDFExporter` ↔ `HwpPDFRenderer`와 같은 관계다. 종횡비는 `HwpPageThumbnails.pixelHeight(for:pixelWidth:)`가 준다 (셀 자리를 미리 잡을 때 쓴다). 에러는 `HwpThumbnailError`
   - **공개 수치 인자는 `Int.max`가 들어와도 트랩하지 않는다** (#76 리뷰, 위 "바인딩 방어"와 같은 기준). 범위 밖 쪽은 안전하게 `.pageOutOfRange`로 분류되는데 그 오류를 `localizedDescription`으로 **표시하는 순간** 1-기반 변환이 트랩하던 자리가 있었다 — 재시도 가능 상태를 알리려고 만든 타입이 프로세스를 죽이면 안 되므로 변환을 포화시킨다. 픽셀 크기에도 축별 상한이 있다 (`HwpPageBitmapRenderer.maximumPixelDimension`): 종횡비가 병적인 문서에서 높이는 **클램프**되고(축소판이 눌려 나온다 — 쪽을 통째로 잃는 것보다 낫다), 상한을 넘는 폭을 직접 넘기면 `.renderFailed`다
   - **PDF와 두 군데서 갈린다.** (1) 미완성 문서를 거부하지 않는다 — 중간 스냅샷도 받아 지금까지 확정된 쪽을 그린다. 축소판은 사용자가 보관하는 산출물이 아니라 진행 중인 문서를 훑는 수단이라 쪽이 늘면 목록이 함께 자라는 것이 맞고, `update(document:)`가 그 증분을 알아봐 이미 그린 축소판을 유지한다 (스냅샷마다 불러도 1,030쪽이 다시 그려지지 않는다). (2) 바이트 예산에 걸린 그림을 실패로 보지 않고 회색 플레이스홀더로 남긴다 — 그림 하나 때문에 쪽 전체를 잃는 것이 더 나쁘다. (1)의 대가로 **범위 밖 쪽이 정상 경로에 들어온다**: 아직 안 온 쪽을 그리드가 요청하는 일이 로딩 중에는 흔하다. 그래서 `.pageOutOfRange(index:pageCount:)`가 `.renderFailed` 문자열로 접히지 않는 제 case다 — PDF의 `.incompleteDocument`와 같은 이유로, 호스트가 **다음 스냅샷에서 성공할 상태**와 진짜 실패를 갈라야 한다
