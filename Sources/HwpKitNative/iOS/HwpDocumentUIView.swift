@@ -69,6 +69,19 @@
                 applyPendingInitialCentering()
                 selectionController.document = document
                 updateVisiblePages(range: 0 ..< min(document?.pages.count ?? 0, 3))
+                // 옛 문서를 향한 fit 예약은 버린다 — 남기면 A 에서 건 맞춤이
+                // 나중에 B 의 배율을 뺏는다 (iOS `pendingInitialPageIndex` 가 같은
+                // 이유로 교체 때 버려진다, R71 #2). 다만 **쪽이 하나도 없던 상태**에서
+                // 온 요청은 이 문서를 향한 "열자마자 맞춤"이라 살려 둔다.
+                //
+                // 그리고 그 자리에서 바로 적용한다: 문서 대입은 자기 자신에게
+                // 레이아웃을 걸지 않으므로(자식 프레임만 바뀐다) 그냥 두면 예약이
+                // 다음 리사이즈까지 잠든다. 캔버스는 위 `updateContentSize()` 로
+                // 이미 확정됐다.
+                if oldValue?.pages.isEmpty == false {
+                    pendingFitZoom = nil
+                }
+                applyPendingFitZoom()
                 notifyUnsupportedElements()
             }
         }
@@ -190,6 +203,9 @@
             scrollView.frame = bounds
             updateContentSize()
             applyPendingInitialCentering()
+            // 뷰포트·캔버스가 확정된 **뒤**라야 fit 배율을 낼 수 있고, 초기 센터링
+            // 다음이어야 쪽 맞춤의 스크롤이 센터링에 덮이지 않는다 (#78).
+            applyPendingFitZoom()
             updateVisiblePages(range: visiblePageRange())
         }
 
@@ -492,35 +508,11 @@
             updateCenteringInset()
         }
 
-        /// 스케일된 콘텐츠가 뷰포트보다 작으면 contentInset으로 중앙 정렬한다 —
-        /// UIScrollView는 자동 센터링을 안 해 좌상단에 붙는다 (macOS
-        /// HwpCenteringClipView와 맞춤). 콘텐츠가 크면 inset 0이라 스크롤 불변.
-        /// 줌으로 대소 관계가 바뀔 때도 갱신하므로 헬퍼로 분리한다 (#2, P2).
-        private func updateCenteringInset() {
-            let scaled = scrollView.contentSize
-            let insetX = max(0, (scrollView.bounds.width - scaled.width) / 2)
-            let insetY = max(0, (scrollView.bounds.height - scaled.height) / 2)
-            scrollView.contentInset = UIEdgeInsets(
-                top: insetY, left: insetX,
-                bottom: max(insetY, trailingScrollExtent(contentHeight: scaled.height)),
-                right: insetX
-            )
-        }
-
-        /// 마지막 쪽도 **첫 가시 쪽**이 될 수 있게 남기는 아래 여유.
-        ///
-        /// 없으면 문서 전체 최대 오프셋이 마지막 쪽 minY 보다 작아, 매치로
-        /// 점프해도 앞 쪽이 첫 가시가 되고 그 쪽이 `currentPage` 로 보고된다
-        /// (#75 리뷰). 마지막 쪽이 뷰포트보다 낮을 때만 — 축소했거나 짧은
-        /// 쪽일 때다 — 생기고, 모자란 만큼만 준다. 콘텐츠가 뷰포트보다 작으면
-        /// 센터링 인셋이 이미 그 역할을 하므로 0이다.
-        private func trailingScrollExtent(contentHeight: CGFloat) -> CGFloat {
-            let pageCount = document?.pages.count ?? 0
-            guard pageCount > 0, contentHeight > scrollView.bounds.height else { return 0 }
-            let lastRow = rowHeight(at: pageCount - 1) * scrollView.zoomScale
-            return max(0, scrollView.bounds.height - lastRow)
-        }
-
+        /// 아직 못 맞춘 fit 명령 (#78). 뷰포트가 실측되기 전(SwiftUI `makeUIView`)
+        /// 이거나 문서에 쪽이 아직 없을 때 온 요청을 담아, 첫 실측 레이아웃 또는
+        /// 문서 대입에서 적용한다 — 아래 초기 센터링 예약과 같은 형태다. 조용히
+        /// 버리면 호스트가 "열자마자 폭 맞춤"을 걸 수 없다.
+        var pendingFitZoom: HwpZoomFit?
         /// 문서 교체 후 첫 non-zero 레이아웃에서 센터링 원점을 1회 적용하기 위한
         /// 예약 — 적용 후 해제해 이후 사용자 스크롤을 덮지 않는다 (R40 #1).
         private var pendingInitialCentering = false

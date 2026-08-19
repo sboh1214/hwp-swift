@@ -52,6 +52,35 @@
             return lower ..< upper
         }
 
+        /// 스케일된 콘텐츠가 뷰포트보다 작으면 contentInset으로 중앙 정렬한다 —
+        /// UIScrollView는 자동 센터링을 안 해 좌상단에 붙는다 (macOS
+        /// HwpCenteringClipView와 맞춤). 콘텐츠가 크면 inset 0이라 스크롤 불변.
+        /// 줌으로 대소 관계가 바뀔 때도 갱신하므로 헬퍼로 분리한다 (#2, P2).
+        func updateCenteringInset() {
+            let scaled = scrollView.contentSize
+            let insetX = max(0, (scrollView.bounds.width - scaled.width) / 2)
+            let insetY = max(0, (scrollView.bounds.height - scaled.height) / 2)
+            scrollView.contentInset = UIEdgeInsets(
+                top: insetY, left: insetX,
+                bottom: max(insetY, trailingScrollExtent(contentHeight: scaled.height)),
+                right: insetX
+            )
+        }
+
+        /// 마지막 쪽도 **첫 가시 쪽**이 될 수 있게 남기는 아래 여유.
+        ///
+        /// 없으면 문서 전체 최대 오프셋이 마지막 쪽 minY 보다 작아, 매치로
+        /// 점프해도 앞 쪽이 첫 가시가 되고 그 쪽이 `currentPage` 로 보고된다
+        /// (#75 리뷰). 마지막 쪽이 뷰포트보다 낮을 때만 — 축소했거나 짧은
+        /// 쪽일 때다 — 생기고, 모자란 만큼만 준다. 콘텐츠가 뷰포트보다 작으면
+        /// 센터링 인셋이 이미 그 역할을 하므로 0이다.
+        private func trailingScrollExtent(contentHeight: CGFloat) -> CGFloat {
+            let pageCount = document?.pages.count ?? 0
+            guard pageCount > 0, contentHeight > scrollView.bounds.height else { return 0 }
+            let lastRow = rowHeight(at: pageCount - 1) * scrollView.zoomScale
+            return max(0, scrollView.bounds.height - lastRow)
+        }
+
         func frameForPage(at index: Int) -> CGRect {
             let originY = pageOriginsY[safe: index] ?? 0
             // 구역별 용지 폭/메모 패널 폭이 달라 좁은 행은 콘텐츠 폭 안에서
