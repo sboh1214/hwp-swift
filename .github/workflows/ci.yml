@@ -22,54 +22,88 @@ jobs:
           swift --version
           swift test --enable-code-coverage
       - name: Export lcov
+        # Release 번들은 커버리지 매핑이 없고 Debug-iphonesimulator 번들은 바이너리가
+        # 번들 루트에 있어 어느 쪽을 고르든 export가 실패한다. macOS Debug 산출물만
+        # 후보로 남긴 뒤 SF 레코드가 가장 많은 번들 하나를 골라 단독 export한다 —
+        # 공유 경로의 수치는 어느 번들로 뽑아도 같고, 번들마다 다른 것은 레코드의 유무다.
         run: |
           set -euo pipefail
           PROF_DATA=$(find .build -name 'default.profdata' -type f | head -1)
-          XCTEST_BUNDLE=$(find .build -name '*.xctest' -type d | head -1)
-          if [ -z "$XCTEST_BUNDLE" ]; then
-            echo "No XCTest bundle found" >&2
+          CANDIDATES=$(find .build -name '*.xctest' -type d | grep -E '/(Debug|debug)/' || true)
+          if [ -z "$CANDIDATES" ]; then
+            echo "No Debug XCTest bundle found" >&2
             exit 1
           fi
-          BIN_NAME=$(basename "$XCTEST_BUNDLE" .xctest)
-          BINARY="$XCTEST_BUNDLE/Contents/MacOS/$BIN_NAME"
-          if [ ! -x "$BINARY" ]; then
-            echo "No executable test binary found at $BINARY" >&2
+          CANDIDATE_LCOV=$(mktemp)
+          BEST_BUNDLE=""
+          BEST_COUNT=0
+          while IFS= read -r BUNDLE; do
+            BIN_NAME=$(basename "$BUNDLE" .xctest)
+            BINARY="$BUNDLE/Contents/MacOS/$BIN_NAME"
+            if [ ! -x "$BINARY" ]; then
+              echo "Skipping $BUNDLE: no executable test binary" >&2
+              continue
+            fi
+            if ! xcrun llvm-cov export -format=lcov "$BINARY" \
+              -instr-profile="$PROF_DATA" \
+              -ignore-filename-regex='(\.build|Tests/)' \
+              > "$CANDIDATE_LCOV"; then
+              echo "Skipping $BUNDLE: no coverage data" >&2
+              continue
+            fi
+            COUNT=$(grep -c '^SF:' "$CANDIDATE_LCOV" || true)
+            echo "$BUNDLE: $COUNT source files"
+            if [ "$COUNT" -gt "$BEST_COUNT" ]; then
+              BEST_COUNT=$COUNT
+              BEST_BUNDLE=$BUNDLE
+              cp "$CANDIDATE_LCOV" coverage.lcov
+            fi
+          done <<< "$CANDIDATES"
+          if [ -z "$BEST_BUNDLE" ]; then
+            echo "No coverage-instrumented test bundle found" >&2
             exit 1
           fi
-          xcrun llvm-cov export -format=lcov "$BINARY" \
-            -instr-profile="$PROF_DATA" \
-            -ignore-filename-regex='(\.build|Tests/)' \
-            > coverage.lcov
-      - name: Enforce CoreHwp coverage
+          echo "Selected $BEST_BUNDLE ($BEST_COUNT source files)"
+      - name: Enforce coverage thresholds
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
 
-          threshold = 95.0
-          total_lines = 0
-          hit_lines = 0
-          include_file = False
+          # 임계가 None인 경로는 값만 기록하고 실패시키지 않는다 (#106)
+          targets = [
+              ("Sources/CoreHwp/", 95.0),
+              ("Sources/HwpKitCore/", 91.0),
+              ("Sources/HwpKitNative/", None),
+              ("Sources/HwpKit/", None),
+          ]
+
+          totals = {path: [0, 0] for path, _ in targets}
+          current = None
 
           for line in Path("coverage.lcov").read_text(encoding="utf-8").splitlines():
               if line.startswith("SF:"):
-                  include_file = "Sources/CoreHwp/" in line
-              elif include_file and line.startswith("LF:"):
-                  total_lines += int(line.removeprefix("LF:"))
-              elif include_file and line.startswith("LH:"):
-                  hit_lines += int(line.removeprefix("LH:"))
+                  current = next((path for path, _ in targets if path in line), None)
+              elif current and line.startswith("LF:"):
+                  totals[current][0] += int(line.removeprefix("LF:"))
+              elif current and line.startswith("LH:"):
+                  totals[current][1] += int(line.removeprefix("LH:"))
               elif line == "end_of_record":
-                  include_file = False
+                  current = None
 
-          if total_lines == 0:
-              raise SystemExit("No Sources/CoreHwp coverage records found in coverage.lcov")
+          failures = []
+          for path, threshold in targets:
+              total_lines, hit_lines = totals[path]
+              if total_lines == 0:
+                  failures.append(f"No {path} coverage records found in coverage.lcov")
+                  continue
+              coverage = hit_lines * 100 / total_lines
+              print(f"{path} line coverage: {coverage:.2f}% ({hit_lines}/{total_lines})")
+              if threshold is not None and coverage < threshold:
+                  failures.append(f"{path} line coverage {coverage:.2f}% is below {threshold:.2f}%")
 
-          coverage = hit_lines * 100 / total_lines
-          print(f"CoreHwp line coverage: {coverage:.2f}% ({hit_lines}/{total_lines})")
-          if coverage < threshold:
-              raise SystemExit(
-                  f"CoreHwp line coverage {coverage:.2f}% is below {threshold:.2f}%"
-              )
+          if failures:
+              raise SystemExit("\n".join(failures))
           PY
       - uses: codecov/codecov-action@v5
         with:
