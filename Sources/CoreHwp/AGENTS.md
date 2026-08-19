@@ -154,11 +154,14 @@ payload를 읽기 전에 `HwpError.invalidRecordTree`로 거부합니다. 실문
 집계했을 때 line coverage는 98.60% (5481/5559), region coverage는
 97.56% (2483/2545)입니다.
 
-2026-07-23 기준으로 CI와 같은 방식(`llvm-cov export -format=lcov`에서
-`Sources/CoreHwp/`만 집계)으로 다시 재면 line coverage는 97.55%
-(7642/7834)입니다. `ci.yml`의 coverage job은 이 lcov 값이 95% 미만이면
-실패시킵니다. 테스트 번들이 4개여도 모든 테스트 타깃이 CoreHwp를 링크하므로
-어떤 번들을 export해도 같은 수치가 나옵니다.
+2026-08-19 기준으로 CI와 같은 방식(`llvm-cov export -format=lcov`에서
+`Sources/CoreHwp/`만 집계)으로 다시 재면 line coverage는 97.45%
+(8078/8289)입니다. `ci.yml` `Test (macOS)` 잡의 `Enforce coverage thresholds`
+스텝은 경로별 lcov line coverage를 재서 `Sources/CoreHwp/`가 95% 미만이면
+실패시키고, 나머지 세 경로(HwpKitCore·HwpKitNative·HwpKit)는 값만
+기록합니다. Export lcov 스텝은 macOS Debug 산출물 중 SF 레코드가 가장 많은
+테스트 번들 하나를 골라 export합니다 — 공유 경로의 수치는 어느 번들로 뽑아도
+같지만, 번들마다 담는 경로의 집합이 다르기 때문입니다.
 
 | 영역 | 상태 |
 | --- | --- |
