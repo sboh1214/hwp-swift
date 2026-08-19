@@ -223,7 +223,7 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
 
 ## 컨벤션
 
-- **HwpKitNative와 HwpKit이 함께 쓰는 순수 값 타입은 여기에 둔다** — 구현이 브릿지에 있어도 공개 API가 SwiftUI 쪽이면 타입은 코어 몫이다. `Model/HwpPDFExportProgress.swift`가 그 예: 렌더러는 `HwpKitNative.HwpPDFRenderer`, 공개 표면은 `HwpKit.HwpPDFExporter`인데, 진행률 콜백을 쓰려고 호스트 앱이 `import HwpKitNative`를 하게 만들 이유가 없다
+- **HwpKitNative와 HwpKit이 함께 쓰는 순수 값 타입은 여기에 둔다** — 구현이 브릿지에 있어도 공개 API가 SwiftUI 쪽이면 타입은 코어 몫이다. `Model/HwpPDFExportProgress.swift`가 그 예: 렌더러는 `HwpKitNative.HwpPDFRenderer`, 공개 표면은 `HwpKit.HwpPDFExporter`인데, 진행률 콜백을 쓰려고 호스트 앱이 `import HwpKitNative`를 하게 만들 이유가 없다. `Model/HwpZoomFit.swift`(#78)가 두 번째 사례이고 기준을 한 겹 더 분명히 한다 — HwpKitNative도 프로덕트로 선언돼 있어 호스트가 그 타입의 이름을 부를 수는 **있다**. 실질 경계는 접근 가능성이 아니라 **호스트가 링크하는 것은 `HwpKit`·`HwpKitCore` 둘뿐이라는 관례**다 (`Sample/project.yml`). 그 관례 밖 모듈의 타입이 공개 시그니처에 나타나면 호스트는 직접 쓰지도 않는 모듈을 링크해야 한다
 - **HWPUNIT canonical**: 변환은 `Utils/HwpUnits.swift` 에서만 (1 pt = 100 HWPUNIT). `pt` / `px` / `HWPUNIT` 혼용 금지
 - **번들 폰트 금지** (라이브러리에 폰트 동봉 금지 — `.gitignore`와 pre-commit
   훅이 폰트 확장자를 차단한다). 이 기기에 한컴오피스가 설치되어 있으면 그 앱
