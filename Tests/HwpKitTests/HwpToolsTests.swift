@@ -101,8 +101,9 @@ final class HwpToolsTests: XCTestCase {
         expect(String(describing: type(of: controls.body))).toNot(beEmpty())
     }
 
-    /// 비-finite 바인딩은 표시의 Int 변환·쓰기 경로 모두에서 트랩 없이
-    /// 리셋 기본값으로 폴백해야 한다 — min/max 클램프는 NaN을 통과시킨다 (R57 #2).
+    /// 비-finite 바인딩은 쓰기 경로에서 트랩 없이 리셋 기본값으로 폴백해야 한다 —
+    /// min/max 클램프는 NaN을 통과시킨다 (R57 #2). 표시 경로의 같은 방어는
+    /// `testDisplayScaleGuardsAgainstConversionTraps`가 본다.
     @MainActor
     func testZoomControlsSanitizeNonFiniteAndExtremeValues() {
         var zoomScale = CGFloat.nan
@@ -117,6 +118,43 @@ final class HwpToolsTests: XCTestCase {
         expect(controls.sanitized(.greatestFiniteMagnitude)) == 5.0
         expect(controls.sanitized(-.greatestFiniteMagnitude)) == 0.25
         expect(controls.sanitized(2.0)) == 2.0
+    }
+
+    /// 표시는 `range`로 클램프하지 않는다 — `range`는 `±` 버튼의 이동 경계일 뿐
+    /// 문서 뷰의 실제 배율 한계(`0.25...5.0`)를 구속할 통로가 없어, 표시까지
+    /// 클램프하면 좁은 `range`를 넘긴 호스트에서 라벨이 실제와 다른 값을 말한다.
+    /// 쓰기는 반대로 계속 클램프해야 `±` 버튼이 그 경계를 지킨다.
+    @MainActor
+    func testNarrowRangeDoesNotDistortDisplayedScale() {
+        var zoomScale = CGFloat(0.25)
+        let controls = HwpZoomControls(
+            zoomScale: Binding(get: { zoomScale }, set: { zoomScale = $0 }),
+            range: 0.5 ... 2.0
+        )
+
+        expect(controls.displayScale(0.25)) == 0.25
+        expect(controls.displayScale(5.0)) == 5.0
+        expect(controls.displayPercent) == 25
+        expect(controls.sanitized(0.25)) == 0.5
+        controls.setZoomScale(0.25)
+        expect(zoomScale) == 0.5
+    }
+
+    /// 표시 경로도 `Int(_ * 100)` 트랩을 막아야 한다 — 클램프를 뺀 자리에
+    /// 비-finite 폴백과 표시 한계가 남는다.
+    @MainActor
+    func testDisplayScaleGuardsAgainstConversionTraps() {
+        var zoomScale = CGFloat(1.0)
+        let controls = HwpZoomControls(
+            zoomScale: Binding(get: { zoomScale }, set: { zoomScale = $0 })
+        )
+
+        expect(controls.displayScale(.nan)) == 1.0
+        expect(controls.displayScale(.infinity)) == 1.0
+        expect(controls.displayScale(-.infinity)) == 1.0
+        expect(controls.displayScale(.greatestFiniteMagnitude)) == 10000
+        expect(controls.displayScale(-.greatestFiniteMagnitude)) == -10000
+        expect(controls.displayScale(2.0)) == 2.0
 
         controls.setZoomScale(.nan)
         expect(zoomScale) == 1.0
