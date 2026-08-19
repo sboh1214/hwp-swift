@@ -344,6 +344,25 @@
             expect(view.pendingFitZoom) == HwpZoomFit.width
         }
 
+        /// 쪽이 없어 예약된 맞춤은 **프로그레시브 전이에서** 적용돼야 한다.
+        /// `isProgressiveUpdate` 가 `pages.count >=` 라 0 → N 이 그 분기로 오는데,
+        /// 그 분기는 조기 반환하고 문서 대입은 레이아웃을 걸지 않으므로 소비하지
+        /// 않으면 무관한 리사이즈까지 잠든다 (#78 리뷰).
+        func testQueuedFitAppliesOnProgressiveSnapshotFromZeroPages() {
+            let token = UUID()
+            let view = makeMeasuredView()
+            view.document = makeTokenDocument(pageCount: 0, loadToken: token)
+            expect(view.applyFitZoom(.width)) == false
+            expect(view.pendingFitZoom) == HwpZoomFit.width
+            expect(view.zoomScale) == 1.0
+
+            view.document = makeTokenDocument(pageCount: 3, loadToken: token)
+
+            expect(view.pendingFitZoom).to(beNil())
+            expect(view.documentContentView.frame.width * view.zoomScale)
+                .to(beCloseTo(view.scrollView.contentSize.width, within: 0.5))
+        }
+
         /// 맞출 수 없는 조합(거대 쪽 · 좁은 창)에서도 실패가 아니라 **범위 안에서
         /// 최선**이다 — 네이티브 한계를 넘겨 계산하므로 `0.25...5.0`의 네 번째
         /// 사본이 생기지 않는다.

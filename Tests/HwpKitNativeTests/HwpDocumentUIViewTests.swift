@@ -200,6 +200,26 @@
             expect(view.pendingFitZoom) == HwpZoomFit.width
         }
 
+        /// 쪽이 없어 예약된 맞춤은 **프로그레시브 전이에서** 적용돼야 한다.
+        /// `isProgressiveUpdate` 가 `pages.count >=` 라 0 → N 이 그 분기로 오는데,
+        /// 그 분기는 조기 반환하고 문서 대입은 레이아웃을 걸지 않으므로 소비하지
+        /// 않으면 무관한 리사이즈까지 잠든다 (#78 리뷰, macOS 와 같은 계약).
+        func testQueuedFitAppliesOnProgressiveSnapshotFromZeroPages() {
+            let token = UUID()
+            let view = HwpDocumentUIView(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+            view.layoutIfNeeded()
+            view.document = makeTokenDocument(pageCount: 0, loadToken: token)
+            expect(view.applyFitZoom(.width)) == false
+            expect(view.pendingFitZoom) == HwpZoomFit.width
+            expect(view.zoomScale) == 1.0
+
+            view.document = makeTokenDocument(pageCount: 3, loadToken: token)
+
+            expect(view.pendingFitZoom).to(beNil())
+            expect(view.contentView.bounds.width * view.zoomScale)
+                .to(beCloseTo(view.bounds.width, within: 0.5))
+        }
+
         /// 맞출 수 없는 조합에서도 실패가 아니라 **범위 안에서 최선**이다.
         func testFitZoomClampsToNativeZoomLimits() {
             let view = makeMeasuredView(width: 100, height: 100, pageCount: 1)

@@ -30,6 +30,10 @@
                     updateContentSize()
                     // 같은 로드 스냅샷이므로 활성 선택을 지우지 않고 지오메트리만 갱신 (#5)
                     selectionController.setDocument(document, preservingSelection: true)
+                    // 조기 반환하는 분기이고 문서 대입은 자기 자신에게 레이아웃을 걸지
+                    // 않으므로, 이 호출이 빠지면 예약된 맞춤이 무관한 리사이즈까지
+                    // 잠든다 (교체 didSet 끝의 같은 호출과 한 쌍이다).
+                    applyPendingFitZoom()
                     updateVisiblePages(range: visiblePageRange())
                     if new.unsupportedElements != old.unsupportedElements {
                         notifyUnsupportedElements()
