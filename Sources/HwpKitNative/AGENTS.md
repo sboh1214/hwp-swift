@@ -222,6 +222,7 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
 - **쪽이 없는 문서에는 맞추지 않는다.** 0쪽에서도 캔버스에 `defaultPageSize` 하한이 서므로 가드가 없으면 산식이 "유령 A4" 배율을 성공으로 돌려주고, 원샷이라 진짜 문서가 도착해도 그대로 남는다.
 - **예약 소비는 `applyPendingInitialCentering` 과 같은 노출을 진다** — 레이아웃 패스에서 `onZoomChanged` 가 발화해 호스트 바인딩이 그 자리에서 써진다. 새로 생긴 성질이 아니라 바로 옆 줄이 `onPageChanged` 로 이미 하고 있는 것과 같은 모양이다.
 - **퇴화 입력은 산식이 nil 로 거른다.** 뷰포트가 아직 실측되지 않은 창(SwiftUI `makeUIView`/창에 붙기 전)이 이 경로로 오므로 뷰는 nil 을 "아직"으로 읽어 `pendingFitZoom` 에 예약하고 첫 실측 레이아웃에서 다시 시도한다 (iOS 초기 센터링 예약과 같은 형태, 적용 순서는 센터링 **다음**이어야 쪽 맞춤의 스크롤이 덮이지 않는다). 0 을 그대로 흘리면 하류가 못 잡는다 — `HwpZoomControls.sanitized` 는 0 을 finite 로 보아 하한 0.25 로 클램프하고, NaN 은 iOS 가 직전 값 유지·macOS 가 조용한 no-op 이라 원인이 어디에도 안 남는다.
+- **가드 범위가 두 모드에서 다르다** — 폭 맞춤은 높이를 **읽지 않으므로** 높이가 퇴화(0·NaN·음수)해도 배율을 낸다. 산식을 정리하며 두 축 가드를 앞단 한 곳으로 모으면 이 비대칭이 사라져 폭 맞춤이 쪽 맞춤과 같은 조건에서만 성립하게 되므로, `testFitWidthIgnoresDegenerateHeight` 가 **같은 입력에 두 모드를 맞대어** 잠근다. 몫에도 별도 가드가 있다: 유한한 두 양수의 나눗셈도 거대 캔버스에서 **언더플로로 0** 이 되는데, 그 0 은 바로 아래 클램프가 하한 0.25 로 살려 내 "안내 없는 축소"가 된다 (`testFitZoomRejectsUnderflowedQuotient`).
 - **배율 한계는 인자로 받는다** — `0.25...5.0` 은 이미 프로덕션 세 곳에 사본이 있어 산식이 네 번째를 만들면 안 된다. 호출부가 스크롤 뷰의 실제 한계를 정렬해 (`ClosedRange` 생성 트랩 방지) 넘긴다.
 - **`HwpDocumentUIView` 본문에 새 저장 프로퍼티를 넣기 전에 lint 예산을 본다.** `type_body_length` error 임계가 400 이고 이 타입이 거기 붙어 있다 — `pendingFitZoom` 을 넣으며 `updateCenteringInset`·`trailingScrollExtent` 를 `HwpDocumentUIViewGeometry.swift` 확장으로 옮겨 본문을 **순감**시켰다 (399 → 385). #84 의 상태 묶기와 같은 처방이다.
 
