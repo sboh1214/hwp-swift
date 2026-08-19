@@ -21,6 +21,10 @@
                 if hasRenderIdentity, document == oldValue {
                     return
                 }
+                // 여기부터는 내용이 바뀌는 모든 경로다 — 합성 AX 요소를 전량
+                // 비워 stale 라벨을 막는다. 아래 각 분기의 updateVisiblePages 가
+                // 가시 페이지 몫만 다시 만든다 (#79).
+                accessibilityStore.removeAll()
                 // 프로그레시브 스냅샷 (같은 loadToken + 페이지 증가): 기존
                 // 레이어·스크롤 위치를 유지하고 크기·가시 범위만 늘린다.
                 if let old = oldValue, let new = document,
@@ -156,6 +160,9 @@
         /// 텍스트 롱프레스 선택 상태 (플랫폼 중립 컨트롤러)
         public let selectionController = HwpSelectionController()
 
+        /// 가시 페이지의 합성 접근성 요소 (#79) — 레이어 가상화와 동기로 관리
+        let accessibilityStore = HwpDocumentAccessibilityStore<UIAccessibilityElement>()
+
         /// 문서 검색 세션 주입 (#75). macOS와 같은 계약 — 재대입은 멱등이고,
         /// 뷰 해체(`dismantleUIView`)가 nil을 넣어 세션을 뗀다.
         /// SwiftUI wrapper가 매 갱신마다 대입하므로, 이 가드가 없으면
@@ -279,6 +286,7 @@
             }
             updateSelectionOverlays()
             updateSearchOverlays()
+            updateAccessibilityElements()
             // 오버레이를 그린 **뒤** 축출한다 (macOS와 대칭) — 방금 그린 페이지는
             // 유지 범위 안이라 살아남는다.
             searchController?.evictUnitsOutsideRetainedRange()

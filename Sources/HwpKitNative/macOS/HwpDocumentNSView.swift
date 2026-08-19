@@ -21,6 +21,10 @@
                 if hasRenderIdentity, document == oldValue {
                     return
                 }
+                // 여기부터는 내용이 바뀌는 모든 경로다 — 합성 AX 요소를 전량
+                // 비워 stale 라벨을 막는다. 아래 각 분기의 updateVisiblePages 가
+                // 가시 페이지 몫만 다시 만든다 (#79).
+                accessibilityStore.removeAll()
                 // 프로그레시브 스냅샷 (같은 loadToken + 페이지 증가): 기존
                 // 레이어·스크롤 위치를 유지하고 크기·가시 범위만 늘린다.
                 if let old = oldValue, let new = document,
@@ -125,6 +129,9 @@
 
         /// 텍스트 드래그 선택 상태 (플랫폼 중립 컨트롤러)
         public let selectionController = HwpSelectionController()
+
+        /// 가시 페이지의 합성 접근성 요소 (#79) — 레이어 가상화와 동기로 관리
+        let accessibilityStore = HwpDocumentAccessibilityStore<HwpTextAccessibilityElement>()
 
         /// 문서 검색 세션 주입 (#75). 대입하면 뷰가 선택 지오메트리를 공유시키고
         /// 하이라이트·매치 노출 스크롤을 배선한다. nil을 넣으면 전부 뗀다.
@@ -308,6 +315,7 @@
                 pageLayers.removeAll()
                 memoPanelLayers.values.forEach { $0.removeFromSuperlayer() }
                 memoPanelLayers.removeAll()
+                updateAccessibilityElements()
                 return
             }
 
@@ -340,6 +348,7 @@
             layoutPageLayers()
             updateSelectionOverlays()
             updateSearchOverlays()
+            updateAccessibilityElements()
             // 오버레이를 그린 **뒤** 축출한다 — 방금 그린 페이지는 유지 범위
             // 안이라 살아남고, 읽기 직전에 버리는 일도 없다.
             searchController?.evictUnitsOutsideRetainedRange()
