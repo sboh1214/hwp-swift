@@ -344,6 +344,40 @@
             expect(view.pendingFitZoom) == HwpZoomFit.width
         }
 
+        /// 0쪽 문서에 건 예약도 **다른 문서로 교체되면** 버린다 (#107 리뷰).
+        ///
+        /// 예약을 살리는 조건이 `oldValue?.pages.isEmpty == false` 였을 때는
+        /// `oldValue == nil`(열자마자 맞춤)과 **0쪽 실제 문서**가 뭉개져, A 에 건
+        /// `.page` 가 B 에 그대로 실렸다 (실측: 배율이 B 의 쪽 맞춤 0.3 으로,
+        /// 스크롤도 B 의 쪽 머리로). 코디네이터의 세대 가드는 이것을 막지 못한다 —
+        /// 문서 대입이 fit 블록보다 먼저라 그 didSet 안에서 이미 적용된다.
+        func testPendingFitFromAnEmptyDocumentIsDiscardedOnReplacement() {
+            let view = makeMeasuredView()
+            view.document = makeTokenDocument(pageCount: 0, loadToken: UUID())
+            expect(view.applyFitZoom(.page)) == false
+            expect(view.pendingFitZoom) == HwpZoomFit.page
+
+            view.document = makeTokenDocument(pageCount: 3, loadToken: UUID())
+
+            expect(view.pendingFitZoom).to(beNil())
+            expect(view.zoomScale) == 1.0
+        }
+
+        /// 그 가드가 진짜 "열자마자 맞춤"까지 죽이면 안 된다 — 문서가 **아예 없던**
+        /// 상태에서 온 예약은 첫 문서에 적용된다. 위 테스트만 두면 예약을 통째로
+        /// 버리는 구현도 통과한다.
+        func testPendingFitFromNoDocumentStillAppliesToTheFirstDocument() {
+            let view = makeMeasuredView()
+            expect(view.applyFitZoom(.width)) == false
+            expect(view.pendingFitZoom) == HwpZoomFit.width
+
+            view.document = makeTokenDocument(pageCount: 3, loadToken: UUID())
+
+            expect(view.pendingFitZoom).to(beNil())
+            expect(view.documentContentView.frame.width * view.zoomScale)
+                .to(beCloseTo(view.scrollView.contentSize.width, within: 0.5))
+        }
+
         /// 쪽이 없어 예약된 맞춤은 **프로그레시브 전이에서** 적용돼야 한다.
         /// `isProgressiveUpdate` 가 `pages.count >=` 라 0 → N 이 그 분기로 오는데,
         /// 그 분기는 조기 반환하고 문서 대입은 레이아웃을 걸지 않으므로 소비하지

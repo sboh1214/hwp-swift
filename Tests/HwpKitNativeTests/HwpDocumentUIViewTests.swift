@@ -200,6 +200,38 @@
             expect(view.pendingFitZoom) == HwpZoomFit.width
         }
 
+        /// 0쪽 문서에 건 예약도 **다른 문서로 교체되면** 버린다 (#107 리뷰,
+        /// macOS 와 같은 계약). 살리는 조건이 `oldValue?.pages.isEmpty == false`
+        /// 였을 때는 `oldValue == nil`(열자마자 맞춤)과 0쪽 실제 문서가 뭉개져
+        /// A 에 건 맞춤이 B 에 실렸다.
+        func testPendingFitFromAnEmptyDocumentIsDiscardedOnReplacement() {
+            let view = HwpDocumentUIView(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+            view.layoutIfNeeded()
+            view.document = makeTokenDocument(pageCount: 0, loadToken: UUID())
+            expect(view.applyFitZoom(.page)) == false
+            expect(view.pendingFitZoom) == HwpZoomFit.page
+
+            view.document = makeTokenDocument(pageCount: 3, loadToken: UUID())
+
+            expect(view.pendingFitZoom).to(beNil())
+            expect(view.zoomScale) == 1.0
+        }
+
+        /// 그 가드가 진짜 "열자마자 맞춤"까지 죽이면 안 된다 — 문서가 **아예 없던**
+        /// 상태에서 온 예약은 첫 문서에 적용된다.
+        func testPendingFitFromNoDocumentStillAppliesToTheFirstDocument() {
+            let view = HwpDocumentUIView(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+            view.layoutIfNeeded()
+            expect(view.applyFitZoom(.width)) == false
+            expect(view.pendingFitZoom) == HwpZoomFit.width
+
+            view.document = makeTokenDocument(pageCount: 3, loadToken: UUID())
+
+            expect(view.pendingFitZoom).to(beNil())
+            expect(view.contentView.bounds.width * view.zoomScale)
+                .to(beCloseTo(view.bounds.width, within: 0.5))
+        }
+
         /// 쪽이 없어 예약된 맞춤은 **프로그레시브 전이에서** 적용돼야 한다.
         /// `isProgressiveUpdate` 가 `pages.count >=` 라 0 → N 이 그 분기로 오는데,
         /// 그 분기는 조기 반환하고 문서 대입은 레이아웃을 걸지 않으므로 소비하지
