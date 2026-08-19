@@ -209,6 +209,22 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
 - iOS 초기 위치: SwiftUI `makeUIView` 는 bounds 0 에서 document 를 대입하므로 센터링을 첫 non-zero `layoutSubviews` 로 **예약**한다. 그 창에 들어온 명시 페이지 요청(`scrollToPage`)은 인덱스를 함께 예약해 센터링 대신 그 페이지로 복원하고, 문서가 **전체 교체**되면 예약 인덱스를 버린다 (옛 문서 기준 페이지에서 열리는 것 방지). 같은 문서 재전달(`document == oldValue`)은 스크롤 유지가 의도라 예약도 보존
 - 페이지 좌표 → 인덱스 변환은 macOS·iOS 모두 **이진 탐색** (`pageOriginsY` 오름차순). 선택 드래그·오토스크롤은 프레임마다 호출되므로 선형 스캔이면 만 쪽 문서에서 비용이 페이지 수에 비례한다
 
+## fit 배율 (#78)
+
+- **산식은 한 벌이다** — `HwpDocumentViewSupport.fitZoomScale(content:viewport:fit:range:)` 가 `#if` 밖 `nonisolated static` 으로 있고 두 뷰의 `applyFitZoom(_:)` 이 자기 캔버스·뷰포트를 넣어 부른다. `HwpSelectionHandleGeometry`·`effectiveContentsScale` 과 같은 틀이다: iOS 잡은 커버리지를 수집하지 않으므로 가드 안에만 사는 산식은 codecov patch 에 안 잡힌다.
+- **뷰포트는 배율과 무관한 것을 재야 한다.** macOS 는 `NSScrollView.contentSize`(= 클립 뷰 **frame**), iOS 는 문서 뷰 **본체의 `bounds`** 다 (스크롤 뷰는 제약도 오토리사이즈 마스크도 없이 `layoutSubviews` 에서만 프레임을 받으므로, 크기가 바뀐 직후 레이아웃 전에는 그 프레임이 낡아 있다 — 본체 bounds 는 프레임 대입과 동시에 갱신되고 스크롤 뷰가 언제나 그것을 가득 채운다). macOS 확대는 클립 뷰 **bounds** 를 줄여 구현되므로 (`documentVisibleRect` 도 그것이다) 그쪽을 재면 맞춤을 누를 때마다 배율이 흘러간다 — 실측: magnification 1/2/0.5 에서 `contentView.frame` 은 800×600 불변이고 `bounds` 는 800/400/1600 으로 변한다. 가드는 `testFitZoomIsIndependentOfCurrentMagnification`(양 플랫폼).
+- **기준은 쪽이 아니라 스크롤 캔버스다** (macOS `documentContentView.frame.width`, iOS `contentView.bounds.width`). 쪽은 캔버스 안에서 가운데 정렬되므로 현재 쪽 폭에 맞추면 더 넓은 구역이 하나라도 있을 때 가로 스크롤이 남는다. 캔버스 폭은 메모 패널을 이미 포함한다 (`rowWidth`).
+- **595pt 하한이 플랫폼 비대칭을 만든다.** macOS 는 `rebuildPageOrigins`·`updateContentSize` 가 캔버스 폭에 `defaultPageSize.width` 하한을 두 겹으로 걸지만 iOS 에는 없다. 맞춤이 그 하한을 **그대로 물려받는** 것이 의도다 — 맞춤의 계약은 "가로 스크롤이 사라진다"이고 실제로 스크롤되는 것은 캔버스다. 대가로 폭 595pt 미만 문서에서 macOS 배율이 iOS 보다 작다.
+- **높이는 현재 쪽의 `rowHeight`** (쪽 높이와 메모 패널 콘텐츠 높이의 max). 문서 전체 최댓값을 쓰면 거대한 쪽 하나가 1,030쪽 문서 전체를 읽을 수 없게 만든다.
+- **쪽 맞춤은 스크롤까지가 계약이다** — 배율만 바꾸면 쪽 경계가 뷰포트 밖으로 밀려 "쪽 전체가 보인다"가 성립하지 않는다. 폭 맞춤은 반대로 스크롤을 **건드리지 않는다** (macOS 배율 setter 가 뷰포트 중심을 유지한다). 다만 호스트가 `currentPage` 를 함께 바인딩했으면 그 왕복이 쪽 머리로 되돌릴 수 있다 — 배율을 바꾸는 다른 경로(`-`/`+` 버튼)와 같은 성질이지 맞춤이 만든 것이 아니다.
+- **캔버스는 프로그레시브 스냅샷마다 다시 선다** — 두 뷰의 `document` didSet 프로그레시브 분기가 `rebuildPageOrigins`·`updateContentSize` 를 다시 돌린다. 뒤에 오는 쪽이 더 넓으면(메모 패널 행은 쪽 폭의 1.312배) 캔버스가 커지므로 **로딩 중에 맞춘 결과는 잠정적**이고 가로 스크롤이 되살아날 수 있다. 자동 재적용을 넣지 않는 이유: 원샷 결정을 뒤집는 데다 "그 사이 사용자가 배율을 바꿨는가"를 `zoomScale` 바인딩 echo 와 구분할 수 없다 (`hwpZoomNeedsWriteback` 이 그 모호함을 덮으려고 있는 술어다). 다시 누르면 최종 폭에 맞는다.
+- **예약은 문서 전체 교체에서 버리고, 쪽이 없던 상태에서 온 것만 살린다.** 남기면 문서 A 에서 건 맞춤이 나중에 B 의 배율을 뺏는다 (`pendingInitialPageIndex` 를 교체에서 버리는 R71 #2 와 같은 판단). 프로그레시브 스냅샷은 교체가 아니라 유지한다. 그리고 교체 didSet 끝에서 `applyPendingFitZoom()` 을 **직접** 부른다 — 문서 대입은 자식 프레임만 바꿔 자기 자신에게 레이아웃을 걸지 않으므로, 안 부르면 "열자마자 맞춤"이 다음 리사이즈까지 잠든다.
+- **쪽이 없는 문서에는 맞추지 않는다.** 0쪽에서도 캔버스에 `defaultPageSize` 하한이 서므로 가드가 없으면 산식이 "유령 A4" 배율을 성공으로 돌려주고, 원샷이라 진짜 문서가 도착해도 그대로 남는다.
+- **예약 소비는 `applyPendingInitialCentering` 과 같은 노출을 진다** — 레이아웃 패스에서 `onZoomChanged` 가 발화해 호스트 바인딩이 그 자리에서 써진다. 새로 생긴 성질이 아니라 바로 옆 줄이 `onPageChanged` 로 이미 하고 있는 것과 같은 모양이다.
+- **퇴화 입력은 산식이 nil 로 거른다.** 뷰포트가 아직 실측되지 않은 창(SwiftUI `makeUIView`/창에 붙기 전)이 이 경로로 오므로 뷰는 nil 을 "아직"으로 읽어 `pendingFitZoom` 에 예약하고 첫 실측 레이아웃에서 다시 시도한다 (iOS 초기 센터링 예약과 같은 형태, 적용 순서는 센터링 **다음**이어야 쪽 맞춤의 스크롤이 덮이지 않는다). 0 을 그대로 흘리면 하류가 못 잡는다 — `HwpZoomControls.sanitized` 는 0 을 finite 로 보아 하한 0.25 로 클램프하고, NaN 은 iOS 가 직전 값 유지·macOS 가 조용한 no-op 이라 원인이 어디에도 안 남는다.
+- **배율 한계는 인자로 받는다** — `0.25...5.0` 은 이미 프로덕션 세 곳에 사본이 있어 산식이 네 번째를 만들면 안 된다. 호출부가 스크롤 뷰의 실제 한계를 정렬해 (`ClosedRange` 생성 트랩 방지) 넘긴다.
+- **`HwpDocumentUIView` 본문에 새 저장 프로퍼티를 넣기 전에 lint 예산을 본다.** `type_body_length` error 임계가 400 이고 이 타입이 거기 붙어 있다 — `pendingFitZoom` 을 넣으며 `updateCenteringInset`·`trailingScrollExtent` 를 `HwpDocumentUIViewGeometry.swift` 확장으로 옮겨 본문을 **순감**시켰다 (399 → 385). #84 의 상태 묶기와 같은 처방이다.
+
 ## Callback 발화 규약
 
 | Callback | 발화 시점 |

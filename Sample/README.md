@@ -9,7 +9,7 @@
 | `HwpDocumentView` | HWP 문서 렌더러 | 문서 로드 후 메인 영역에 렌더 |
 | `HwpDocumentToolbar` | 툴바 컨테이너 (재질 배경 + 분리선) | 상단 툴바로 사용 |
 | `HwpPageNavigator` | 페이지 이동 컨트롤 (`- / Page X of Y / +`) | 툴바 좌측 |
-| `HwpZoomControls` | 확대/축소 컨트롤 (`- / Zoom N% / + / Reset`) | 툴바 우측 |
+| `HwpZoomControls` | 확대/축소 컨트롤 (`- / Zoom N% / + / Reset / Fit Width / Fit Page`) | 툴바 우측 |
 | `HwpSearchController` | 문서 검색 세션 (엔진은 HwpKitCore) | `@State`로 소유해 뷰와 검색 바에 **같은 인스턴스** |
 | `HwpSearchBar` | 검색 필드 + 카운터 + 이전/다음 + 지우기 | 툴바 **아래 별도 행** |
 | `HwpSearchNavigator` | 매치 카운터 + 이전/다음 | `HwpSearchBar`가 내부에서 조립 |
