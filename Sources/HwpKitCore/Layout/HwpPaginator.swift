@@ -1425,6 +1425,30 @@ private extension HwpPaginator {
                 hint: "손상 문단 복구 (파싱 실패: \(paragraphFailure))"
             ))
         }
+        collectMemoParseFailures(in: paragraph, page: page)
+    }
+
+    /// 메모 복구 placeholder는 호스트 문단이 정상 파싱되므로 호스트
+    /// `parseFailure`로는 드러나지 않는다 — 메모 그룹과, 컨트롤 안 중첩 문단
+    /// (표 셀·리스트·글상자)이 가진 메모 그룹까지 재귀로 보고한다. 렌더는
+    /// placeholder 메모의 빈 텍스트를 `collectMemos`가 건너뛰므로 이 보고가
+    /// 유일한 흔적이다 (#65). 재귀는 파스 시점 `maxNestingDepth`로 유한하다.
+    private func collectMemoParseFailures(in paragraph: CoreHwp.HwpParagraph, page: Int) {
+        for memoParagraph in (paragraph.memoParagraphGroups ?? []).flatMap({ $0 }) {
+            if let failure = memoParagraph.parseFailure {
+                collectedUnsupported.append(HwpUnsupportedElement(
+                    kind: .placeholder,
+                    page: page,
+                    hint: "손상 메모 문단 복구 (파싱 실패: \(failure))"
+                ))
+            }
+            collectMemoParseFailures(in: memoParagraph, page: page)
+        }
+        for ctrl in paragraph.ctrlHeaderArray ?? [] {
+            for (nested, _) in childParagraphs(of: ctrl) {
+                collectMemoParseFailures(in: nested, page: page)
+            }
+        }
     }
 
     /// 개요(머리 종류 1)/번호(2) 문단 머리의 생성 라벨은 numbering 정의에 있고

@@ -253,7 +253,10 @@ public struct HwpFile: HwpPrimitive {
             } catch let error as HwpError
                 where options.recoverPartialContent && !error.isRecoveryExempt
             {
-                return HwpSection.parseFailurePlaceholder(error: error)
+                return HwpSection.parseFailurePlaceholder(
+                    error: error,
+                    rawPayload: options.preservedPayload($0)
+                )
             }
         }
         viewSectionArray = Self.parseViewSections(

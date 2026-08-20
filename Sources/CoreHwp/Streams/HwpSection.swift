@@ -24,8 +24,15 @@ public struct HwpSection: HwpFromDataWithVersion {
     /// 복구 모드에서 파싱에 실패한 구역을 대신하는 placeholder — 빈 문서
     /// 템플릿 문단(sectionDef + column 컨트롤 포함)을 채워 조판 전제를
     /// 지키고, 구역 수를 보존해 뒤 구역의 자리가 밀리지 않게 한다 (#65).
-    static func parseFailurePlaceholder(error: HwpError) -> HwpSection {
+    /// `rawPayload`에는 실패한 구역 스트림 원본을 실어(보존 모드 한정 —
+    /// caller가 `preservedPayload`로 게이트) 문단 placeholder의
+    /// `unknownChildren` 보존과 대칭인 진단·재파싱 근거를 남긴다.
+    static func parseFailurePlaceholder(
+        error: HwpError,
+        rawPayload: Data = Data()
+    ) -> HwpSection {
         var section = HwpSection()
+        section.rawPayload = rawPayload
         section.parseFailure = String(describing: error)
         return section
     }

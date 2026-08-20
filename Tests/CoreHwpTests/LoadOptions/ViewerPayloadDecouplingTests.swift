@@ -40,6 +40,37 @@ final class ViewerPayloadDecouplingTests: XCTestCase {
         // 막는다. 픽스처는 늘어나는 방향으로만 움직인다.
         expect(inspectedLeafCount).to(beGreaterThanOrEqualTo(100))
     }
+
+    /// DocInfo 스트림 모델도 같은 walker로 덮는다 — 손 목록
+    /// (`RawPayloadOptOutTests`의 docInfo 최상위 필드 +
+    /// `DocInfoRawRecordViewerOptOutTests`의 raw record 6종)이 못 보는
+    /// DocInfo 하위 모델의 새 `Data` 필드가 게이트를 빠뜨리면 여기서 잡힌다.
+    func testViewerDocInfoModelsDoNotAliasSourceStreamBuffer() throws {
+        let fixtures = try FixtureLoader.loadAll()
+            .filter { $0.manifest.expectedError == nil }
+
+        expect(fixtures).notTo(beEmpty())
+        var inspectedLeafCount = 0
+        for fixture in fixtures {
+            let preserved = try HwpFile(fromPath: fixture.documentURL.path)
+            let source = preserved.docInfo.rawPayload
+            guard !source.isEmpty else { continue }
+            let viewerDocInfo = try HwpDocInfo.load(
+                source,
+                preserved.fileHeader.version,
+                options: .viewer
+            )
+
+            inspectedLeafCount += assertNoDataLeafAliases(
+                source: source,
+                in: viewerDocInfo,
+                path: "\(fixture.manifest.id).docInfo"
+            )
+        }
+        // DocInfo는 구역보다 비어 있지 않은 Data leaf가 적다 (뷰어 모드가
+        // 보존 슬라이스를 비우므로) — 현 픽스처 실측 58, 여유를 두고 40.
+        expect(inspectedLeafCount).to(beGreaterThanOrEqualTo(40))
+    }
 }
 
 /// `value` 안의 모든 비어 있지 않은 `Data` leaf를 재귀 방문해 `source`

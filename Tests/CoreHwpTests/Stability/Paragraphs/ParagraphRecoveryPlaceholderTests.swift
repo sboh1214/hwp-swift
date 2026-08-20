@@ -136,7 +136,19 @@ final class ParagraphRecoveryPlaceholderTests: XCTestCase {
             return fail("Expected placeholder section template to carry column")
         }
         expect(placeholder.paragraph[0].parseFailure).to(beNil())
+        // 보존 모드에서는 실패한 구역 스트림 원본이 placeholder에 남는다 —
+        // 문단 placeholder의 unknownChildren 보존과 대칭인 진단·재파싱 근거.
+        expect(placeholder.rawPayload) == corruptSection
         expect(recovered.displaySectionArray.count) == 2
+
+        let viewerRecovered = try HwpFile(
+            fileHeader: HwpFileHeader(),
+            docInfoData: recoveryAssemblyDocInfoData(sectionSize: 2),
+            sectionDataArray: sectionDataArray,
+            options: .viewer
+        )
+        expect(viewerRecovered.sectionArray[1].parseFailure).notTo(beNil())
+        expect(viewerRecovered.sectionArray[1].rawPayload).to(beEmpty())
     }
 
     // MARK: - ViewText 정책: recover 모드에서도 전량 폐기 → BodyText 강등
@@ -214,6 +226,9 @@ final class ParagraphRecoveryPlaceholderTests: XCTestCase {
             .filter { $0.manifest.expectedError == nil }
 
         expect(fixtures).notTo(beEmpty())
+        // Mirror 재귀로 전수 방문한다 — 최상위·메모뿐 아니라 표 셀·리스트·
+        // 글상자 안 중첩 문단의 메모 placeholder까지 스윕 범위에 넣는다.
+        var visitedParagraphCount = 0
         for fixture in fixtures {
             let recovered = try HwpFile(
                 fromPath: fixture.documentURL.path,
@@ -224,21 +239,36 @@ final class ParagraphRecoveryPlaceholderTests: XCTestCase {
                     beNil(),
                     description: "\(fixture.manifest.id) section placeholder must not fire"
                 )
-                for paragraph in section.paragraph {
-                    expect(paragraph.parseFailure).to(
-                        beNil(),
-                        description: "\(fixture.manifest.id) paragraph placeholder must not fire"
-                    )
-                    for memoParagraph in paragraph.memoParagraphArray ?? [] {
-                        expect(memoParagraph.parseFailure).to(
-                            beNil(),
-                            description: "\(fixture.manifest.id) memo placeholder must not fire"
-                        )
-                    }
-                }
+                visitedParagraphCount += assertNoParseFailure(
+                    in: section, fixture: fixture.manifest.id
+                )
             }
         }
+        // 공허 gate — 중첩 문단이 실제로 방문됐음을 고정한다 (전 픽스처 합계).
+        expect(visitedParagraphCount).to(beGreaterThanOrEqualTo(1000))
     }
+}
+
+/// `value` 안의 모든 `HwpParagraph`(임의 깊이 — 컨트롤·메모 그룹 포함)를
+/// Mirror로 재귀 방문해 parseFailure 부재를 단언하고, 방문 수를 돌려준다.
+private func assertNoParseFailure(in value: Any, fixture fixtureId: String) -> Int {
+    var visited = 0
+    // charArray는 문서 전체 문자 수만큼 있다 — 문단이 나올 수 없으니 걷지 않는다.
+    if value is Data || value is HwpChar || value is [HwpChar] {
+        return 0
+    }
+    if let paragraph = value as? HwpParagraph {
+        visited += 1
+        expect(paragraph.parseFailure).to(
+            beNil(),
+            description: "\(fixtureId) paragraph placeholder must not fire"
+        )
+    }
+    let mirror = Mirror(reflecting: value)
+    for child in mirror.children {
+        visited += assertNoParseFailure(in: child.value, fixture: fixtureId)
+    }
+    return visited
 }
 
 // MARK: - 공통 단언

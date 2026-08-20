@@ -92,6 +92,42 @@ final class ControlFallbackErrorSetSpecTests: XCTestCase {
         }
     }
 
+    func testColumnUnknownEnumInvalidRawValueForEnumIsInFallbackSet() throws {
+        // invalidRawValueForEnum ∈ canFallbackToRawControl → other 보존 (단 컨트롤).
+        let record = fallbackSpecCtrlRecord(
+            payload: fallbackSpecColumnUnknownTypePayload(),
+            children: []
+        )
+
+        let paragraph = try HwpParagraph.load(
+            fallbackSpecHostParagraphRecord(control: record),
+            version
+        )
+
+        guard case let .other(other) = paragraph.ctrlHeaderArray?.first else {
+            return fail("Expected unknown-enum column control to fall back to other")
+        }
+        expect(other.ctrlId) == .column
+    }
+
+    func testHyperlinkInvalidUnicodeScalarIsInFallbackSet() throws {
+        // invalidUnicodeScalar ∈ canFallbackToRawControl → field 보존 (하이퍼링크).
+        let record = fallbackSpecCtrlRecord(
+            payload: fallbackSpecInvalidUnicodeHyperlinkPayload(),
+            children: []
+        )
+
+        let paragraph = try HwpParagraph.load(
+            fallbackSpecHostParagraphRecord(control: record),
+            version
+        )
+
+        guard case let .field(field) = paragraph.ctrlHeaderArray?.first else {
+            return fail("Expected invalid-unicode hyperlink to fall back to field")
+        }
+        expect(field.ctrlId) == .hyperLink
+    }
+
     // MARK: - canFallbackToRawListControl (머리말 계열)
 
     func testListControlNegativeCountInvalidRecordTreeIsInFallbackSet() throws {
@@ -252,6 +288,51 @@ final class ControlFallbackErrorSetSpecTests: XCTestCase {
             )
         }
     }
+
+    // MARK: - recover 모드 병행 (#65 상호작용, 이슈 #67 양 모드 병행 채택)
+
+    func testInSetFallbackStaysControlGranularInRecoverMode() throws {
+        // recover 모드에서도 in-set 폴백은 컨트롤 granular로 유지된다 —
+        // 문단 placeholder로 승격되지 않고 호스트 parseFailure도 nil이다.
+        let recoverOptions = HwpLoadOptions(recoverPartialContent: true)
+        let record = fallbackSpecCtrlRecord(
+            payload: fallbackSpecLittleEndianData(HwpCommonCtrlId.table.rawValue),
+            children: [],
+            options: recoverOptions
+        )
+
+        let paragraph = try HwpParagraph.load(
+            fallbackSpecHostParagraphRecord(control: record, options: recoverOptions),
+            version
+        )
+
+        expect(paragraph.parseFailure).to(beNil())
+        guard case .notImplemented = paragraph.ctrlHeaderArray?.first else {
+            return fail("Expected recover-mode truncated table to stay notImplemented")
+        }
+    }
+
+    func testOutOfSetControlErrorBecomesParagraphPlaceholderThroughSectionRecovery() throws {
+        // out-of-set 오류(bytesAreNotEOF)는 recover 모드의 HwpSection 경유에서
+        // 호스트 문단 placeholder로 전환된다 — 컨트롤 손상 → 문단 placeholder
+        // 전환 경로의 스펙 고정. default 모드는 종전대로 typed throw.
+        let data = fallbackSpecSectionStreamWithCorruptListControl()
+
+        expectFallbackSpecRangeTagBytesAreNotEOF {
+            _ = try HwpSection.load(data, self.version)
+        }
+
+        let section = try HwpSection.load(
+            data, version, options: HwpLoadOptions(recoverPartialContent: true)
+        )
+
+        expect(section.paragraph.count) == 1
+        let placeholder = section.paragraph[0]
+        expect(placeholder.parseFailure).to(contain("HwpParaRangeTag"))
+        expect(placeholder.paraText).to(beNil())
+        expect(placeholder.unknownChildren.count) == 1
+        expect(placeholder.unknownChildren.first?.tagId) == HwpSectionTag.paraHeader.rawValue
+    }
 }
 
 // MARK: - 공통 빌더/단언
@@ -270,11 +351,16 @@ private func expectFallbackSpecRangeTagBytesAreNotEOF(
     })
 }
 
-private func fallbackSpecCtrlRecord(payload: Data, children: [HwpRecord]) -> HwpRecord {
+private func fallbackSpecCtrlRecord(
+    payload: Data,
+    children: [HwpRecord],
+    options: HwpLoadOptions = .default
+) -> HwpRecord {
     let record = HwpRecord(
         tagId: HwpSectionTag.ctrlHeader.rawValue,
         level: 1,
-        payload: payload
+        payload: payload,
+        options: options
     )
     record.children = children
     return record
@@ -290,18 +376,105 @@ private func fallbackSpecShapeComponentRecord(children: [HwpRecord]) -> HwpRecor
     return record
 }
 
-private func fallbackSpecHostParagraphRecord(control: HwpRecord) -> HwpRecord {
+private func fallbackSpecHostParagraphRecord(
+    control: HwpRecord,
+    options: HwpLoadOptions = .default
+) -> HwpRecord {
     let record = HwpRecord(
+        tagId: HwpSectionTag.paraHeader.rawValue,
+        level: 0,
+        payload: fallbackSpecParagraphHeaderPayload(),
+        options: options
+    )
+    record.children = [
+        HwpRecord(
+            tagId: HwpSectionTag.paraCharShape.rawValue,
+            level: 1,
+            payload: Data(),
+            options: options
+        ),
+        HwpRecord(
+            tagId: HwpSectionTag.paraLineSeg.rawValue,
+            level: 1,
+            payload: Data(),
+            options: options
+        ),
+        control,
+    ]
+    return record
+}
+
+/// 단 컨트롤 payload의 columnType enum에 정의 밖 값(3)을 심는다 —
+/// `HwpColumn.load`가 invalidRawValueForEnum(HwpColumnType)을 던진다.
+private func fallbackSpecColumnUnknownTypePayload() -> Data {
+    var data = Data()
+    data.append(fallbackSpecLittleEndianData(HwpOtherCtrlId.column.rawValue))
+    data.append(fallbackSpecLittleEndianData(UInt16(3)))
+    data.append(fallbackSpecLittleEndianData(HWPUNIT16(0)))
+    data.append(fallbackSpecLittleEndianData(UInt16(0)))
+    data.append(fallbackSpecLittleEndianData(UInt8(0)))
+    data.append(fallbackSpecLittleEndianData(UInt8(0)))
+    data.append(fallbackSpecLittleEndianData(COLORREF(0)))
+    return data
+}
+
+/// URL 문자열에 unpaired high surrogate(0xD800)를 심은 하이퍼링크 payload —
+/// `HwpHyperlink.load`가 invalidUnicodeScalar를 던진다.
+private func fallbackSpecInvalidUnicodeHyperlinkPayload() -> Data {
+    var data = Data()
+    data.append(fallbackSpecLittleEndianData(HwpFieldCtrlId.hyperLink.rawValue))
+    data.append(fallbackSpecLittleEndianData(UInt32(0)))
+    data.append(fallbackSpecLittleEndianData(BYTE(0xFF)))
+    data.append(fallbackSpecLittleEndianData(WORD(2)))
+    data.append(fallbackSpecLittleEndianData(WCHAR(0x0041)))
+    data.append(fallbackSpecLittleEndianData(WCHAR(0xD800)))
+    return data
+}
+
+/// 리스트 컨트롤(머리말) 안의 문단이 손상된 PARA_RANGE_TAG(12+1 byte)를 가진
+/// 구역 byte 스트림 — 컨트롤 깊이의 bytesAreNotEOF가 호스트 문단까지
+/// 전파되는 out-of-set 경로를 `HwpSection.load`로 밟는다.
+private func fallbackSpecSectionStreamWithCorruptListControl() -> Data {
+    var data = SectionRecordBuilder.record(
         tagId: HwpSectionTag.paraHeader.rawValue,
         level: 0,
         payload: fallbackSpecParagraphHeaderPayload()
     )
-    record.children = [
-        HwpRecord(tagId: HwpSectionTag.paraCharShape.rawValue, level: 1, payload: Data()),
-        HwpRecord(tagId: HwpSectionTag.paraLineSeg.rawValue, level: 1, payload: Data()),
-        control,
-    ]
-    return record
+    data.append(SectionRecordBuilder.record(
+        tagId: HwpSectionTag.paraCharShape.rawValue, level: 1, payload: Data()
+    ))
+    data.append(SectionRecordBuilder.record(
+        tagId: HwpSectionTag.paraLineSeg.rawValue, level: 1, payload: Data()
+    ))
+    data.append(SectionRecordBuilder.record(
+        tagId: HwpSectionTag.ctrlHeader.rawValue,
+        level: 1,
+        payload: fallbackSpecLittleEndianData(HwpOtherCtrlId.header.rawValue)
+    ))
+    data.append(SectionRecordBuilder.record(
+        tagId: HwpSectionTag.listHeader.rawValue,
+        level: 2,
+        payload: fallbackSpecListHeaderPayload(paragraphCount: 1)
+    ))
+    data.append(SectionRecordBuilder.record(
+        tagId: HwpSectionTag.paraHeader.rawValue,
+        level: 2,
+        payload: fallbackSpecParagraphHeaderPayload()
+    ))
+    data.append(SectionRecordBuilder.record(
+        tagId: HwpSectionTag.paraCharShape.rawValue, level: 3, payload: Data()
+    ))
+    data.append(SectionRecordBuilder.record(
+        tagId: HwpSectionTag.paraRangeTag.rawValue,
+        level: 3,
+        payload: concatenatedData(
+            fallbackSpecLittleEndianData(UInt32(1)),
+            fallbackSpecLittleEndianData(UInt32(9)),
+            fallbackSpecLittleEndianData(UInt32(0xABCD)),
+            Data([0xFF])
+        )
+    ))
+    return data
 }
 
 /// PARA_RANGE_TAG 12 byte 엔트리 뒤 1 byte 꼬리 → `HwpParaRangeTag.loadArray`가
