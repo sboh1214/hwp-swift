@@ -51,10 +51,17 @@ public struct HwpSection: HwpFromDataWithVersion {
                 // 복구 모드에서는 손상 문단 하나가 구역 전체(→ 문서 전체)를
                 // 실패시키지 않도록 placeholder로 대체한다. 자원 한도 등
                 // recovery-exempt 오류는 계속 전파한다 (#65).
+                //
+                // 단 구역의 첫 문단은 예외다 — sectionDef는 첫 문단에만 붙으므로
+                // (blankDocumentParagraph 참조) 이를 sectionDef 없는 문단
+                // placeholder로 삼키면 paginator가 구역 경계를 인식하지 못해 그
+                // 구역이 앞 구역의 지오메트리로 조판된다. 첫 문단 손상은 전파해
+                // HwpFile이 구역 단위 placeholder(sectionDef 보존)로 승격시킨다 (#110).
                 do {
                     paragraphs.append(try HwpParagraph.load(record, version))
                 } catch let error as HwpError
-                    where reader.options.recoverPartialContent && !error.isRecoveryExempt
+                    where !paragraphs.isEmpty
+                    && reader.options.recoverPartialContent && !error.isRecoveryExempt
                 {
                     paragraphs.append(.parseFailurePlaceholder(record: record, error: error))
                 }

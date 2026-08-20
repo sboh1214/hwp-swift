@@ -76,6 +76,11 @@ placeholder 생성이 이 폴더에 있으므로 그 형태 계약을 여기 남
 - 손상 **메모 문단**도 `HwpParagraph.load`의 메모 수집 루프에서 개별
   placeholder로 대체한다 — 전파시키면 호스트 문단 전체가 placeholder가 되어
   본문·메모 그룹 경계까지 잃는다.
+- **구역의 첫 문단은 복구 대상이 아니다** (#110). sectionDef가 첫 문단에만
+  붙으므로 이를 문단 placeholder로 삼키면 paginator가 구역 경계를 놓쳐 그
+  구역이 앞 구역 지오메트리로 조판된다. `HwpSection.load`가 `paragraphs.isEmpty`
+  일 때 전파해 `HwpFile`이 구역 단위 placeholder로 승격시킨다 — 그 가드를
+  지우면 경계 유실이 재발한다 (루트 "부분 복구").
 
 ## `HwpParaText.wcharCount` (#67)
 

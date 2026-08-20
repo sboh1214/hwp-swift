@@ -120,6 +120,15 @@ typed 디코더들이 그 트리를 재귀로 내려가므로(표 셀 문단·�
   (sectionDef+column 컨트롤)을 채워 조판 전제를 지키고 **구역 수를 보존**해 뒤
   구역 자리가 밀리지 않게 한다. 원본 구역 스트림은 보존 모드 한정으로
   (`preservedPayload` 게이트) `rawPayload`에 실어 재파싱 근거를 남긴다.
+- **구역의 첫 문단 손상은 문단이 아니라 구역 단위로 승격된다** (#110).
+  `sectionDef`는 구역의 첫 문단에만 붙는데 (`blankDocumentParagraph`),
+  paginator는 `sectionDef(in:)` **하나로만** 구역 경계를 인식한다
+  (`flushPageBeforeProcessing`·`applySectionDef` — `nextSectionIndex` 전진은
+  지오메트리에 아무 영향이 없다). 첫 문단을 sectionDef 없는 문단 placeholder로
+  삼키면 그 구역이 **앞 구역의 종이·여백·단·번호로 조판된다**. 그래서
+  `HwpSection.load`의 문단 루프는 `paragraphs.isEmpty`일 때 복구를 건너뛰고
+  전파해, `HwpFile`이 구역 단위 placeholder로 승격시킨다. 중간·뒤 문단 손상은
+  종전대로 문단 placeholder다 (그 자리엔 sectionDef가 없으므로 경계가 안전).
 - **진단은 `parseFailure: String?` 필드다** — `HwpParagraph.parseFailure` /
   `HwpSection.parseFailure`. 정상 파싱은 nil. **Equatable/Hashable에 참여한다**:
   placeholder와 진짜 빈 문단/구역이 같다고 판정되면 복구 흔적이 비교에서

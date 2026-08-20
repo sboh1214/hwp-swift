@@ -326,8 +326,9 @@ final class ControlFallbackErrorSetSpecTests: XCTestCase {
             data, version, options: HwpLoadOptions(recoverPartialContent: true)
         )
 
-        expect(section.paragraph.count) == 1
-        let placeholder = section.paragraph[0]
+        expect(section.paragraph.count) == 2
+        expect(section.paragraph[0].parseFailure).to(beNil())
+        let placeholder = section.paragraph[1]
         expect(placeholder.parseFailure).to(contain("HwpParaRangeTag"))
         expect(placeholder.paraText).to(beNil())
         expect(placeholder.unknownChildren.count) == 1
@@ -434,12 +435,31 @@ private func fallbackSpecInvalidUnicodeHyperlinkPayload() -> Data {
 /// 리스트 컨트롤(머리말) 안의 문단이 손상된 PARA_RANGE_TAG(12+1 byte)를 가진
 /// 구역 byte 스트림 — 컨트롤 깊이의 bytesAreNotEOF가 호스트 문단까지
 /// 전파되는 out-of-set 경로를 `HwpSection.load`로 밟는다.
-private func fallbackSpecSectionStreamWithCorruptListControl() -> Data {
+private func fallbackSpecValidParagraphData() -> Data {
     var data = SectionRecordBuilder.record(
         tagId: HwpSectionTag.paraHeader.rawValue,
         level: 0,
         payload: fallbackSpecParagraphHeaderPayload()
     )
+    data.append(SectionRecordBuilder.record(
+        tagId: HwpSectionTag.paraCharShape.rawValue, level: 1, payload: Data()
+    ))
+    data.append(SectionRecordBuilder.record(
+        tagId: HwpSectionTag.paraLineSeg.rawValue, level: 1, payload: Data()
+    ))
+    return data
+}
+
+private func fallbackSpecSectionStreamWithCorruptListControl() -> Data {
+    // 손상 문단 앞에 정상 문단을 둔다 — 구역의 첫 문단이 손상되면 문단
+    // placeholder가 아니라 구역 단위 placeholder로 승격돼 전파되므로(#110),
+    // "컨트롤 오류 → 문단 placeholder" 경로를 고정하려면 첫 자리를 비워야 한다.
+    var data = fallbackSpecValidParagraphData()
+    data.append(SectionRecordBuilder.record(
+        tagId: HwpSectionTag.paraHeader.rawValue,
+        level: 0,
+        payload: fallbackSpecParagraphHeaderPayload()
+    ))
     data.append(SectionRecordBuilder.record(
         tagId: HwpSectionTag.paraCharShape.rawValue, level: 1, payload: Data()
     ))

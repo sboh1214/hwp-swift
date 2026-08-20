@@ -151,6 +151,80 @@ final class ParagraphRecoveryPlaceholderTests: XCTestCase {
         expect(viewerRecovered.sectionArray[1].rawPayload).to(beEmpty())
     }
 
+    // MARK: - 첫 문단 손상은 구역 단위 placeholder로 승격 (경계 보존)
+
+    func testCorruptFirstParagraphPropagatesInsteadOfPlaceholder() {
+        // 구역의 sectionDef는 첫 문단에만 붙는다. 첫 문단을 문단 placeholder
+        // (sectionDef 없음)로 삼키면 paginator가 구역 경계를 인식하지 못해 그
+        // 구역이 앞 구역의 지오메트리로 조판된다 (#110 P1). 그래서 같은 손상이
+        // 중간 문단이면 삼키지만(assertMiddleParagraphRecovery) 첫 문단이면
+        // recover 모드에서도 전파해, HwpFile이 구역 단위 placeholder로 승격할
+        // 근거를 남긴다.
+        var data = recoveryParagraphData(
+            headerPayload: recoveryParaHeaderPayload(charShapeInfoCount: 2),
+            charShapePayload: recoveryCharShapePairPayload()
+        )
+        data.append(recoveryValidParagraphData(text: 0xB098))
+
+        for options in [HwpLoadOptions.default, recoverOptions] {
+            expect {
+                _ = try HwpSection.load(data, self.version, options: options)
+            }.to(throwError { error in
+                guard case let HwpError.invalidRecordTree(reason) = error else {
+                    return fail("Expected invalidRecordTree, got \(error)")
+                }
+                expect(reason).to(contain("paragraph char shape count mismatch"))
+            })
+        }
+    }
+
+    func testCorruptFirstParagraphEscalatesToSectionPlaceholder() throws {
+        // 조립 경로(HwpFileHeader() = 5.1.0.1, 24바이트 PARA_HEADER)에서 첫 문단이
+        // 손상된 구역은 문단 placeholder가 아니라 구역 단위 placeholder로 승격돼야
+        // 한다 — 빈 문서 템플릿 문단이 sectionDef+column을 담아 구역 경계를 지킨다.
+        var corruptHeader = recoveryParaHeaderPayload(charShapeInfoCount: 2)
+        corruptHeader.append(recoveryLittleEndianData(UInt16(0)))
+        let corruptSection = recoveryParagraphData(
+            headerPayload: corruptHeader,
+            charShapePayload: recoveryCharShapePairPayload()
+        )
+        let sectionDataArray = [recoveryAssemblySectionData(), corruptSection]
+
+        expect {
+            _ = try HwpFile(
+                fileHeader: HwpFileHeader(),
+                docInfoData: recoveryAssemblyDocInfoData(sectionSize: 2),
+                sectionDataArray: sectionDataArray
+            )
+        }.to(throwError { error in
+            guard case let HwpError.invalidRecordTree(reason) = error else {
+                return fail("Expected invalidRecordTree, got \(error)")
+            }
+            expect(reason).to(contain("paragraph char shape count mismatch"))
+        })
+
+        let recovered = try HwpFile(
+            fileHeader: HwpFileHeader(),
+            docInfoData: recoveryAssemblyDocInfoData(sectionSize: 2),
+            sectionDataArray: sectionDataArray,
+            options: recoverOptions
+        )
+
+        expect(recovered.sectionArray.count) == 2
+        let placeholder = recovered.sectionArray[1]
+        expect(placeholder.parseFailure).to(contain("paragraph char shape count mismatch"))
+        expect(placeholder.paragraph.count) == 1
+        let templateControls = placeholder.paragraph[0].ctrlHeaderArray
+        expect(templateControls?.count) == 2
+        guard case .section = templateControls?.first else {
+            return fail("Expected escalated section placeholder to carry sectionDef")
+        }
+        guard case .column = templateControls?.last else {
+            return fail("Expected escalated section placeholder to carry column")
+        }
+        expect(placeholder.rawPayload) == corruptSection
+    }
+
     // MARK: - ViewText 정책: recover 모드에서도 전량 폐기 → BodyText 강등
 
     func testCorruptViewTextIsDiscardedEntirelyEvenInRecoverMode() throws {
@@ -159,10 +233,14 @@ final class ParagraphRecoveryPlaceholderTests: XCTestCase {
         // ViewText 경로는 복구 없이 기존 전량 폐기를 유지해야 한다 (#65).
         var corruptHeaderPayload = recoveryParaHeaderPayload(charShapeInfoCount: 2)
         corruptHeaderPayload.append(recoveryLittleEndianData(UInt16(0)))
-        let corruptParagraphSection = recoveryParagraphData(
+        // 손상을 둘째 문단에 둔다 — 첫 문단 손상은 구역 단위 placeholder로
+        // 승격돼 전파되므로(#110), "placeholder로 성공 파싱되는데도 ViewText는
+        // 폐기한다"는 이 테스트의 전제를 만족하지 못한다.
+        var corruptParagraphSection = recoveryAssemblySectionData()
+        corruptParagraphSection.append(recoveryParagraphData(
             headerPayload: corruptHeaderPayload,
             charShapePayload: recoveryCharShapePairPayload()
-        )
+        ))
         expect {
             _ = try HwpSection.load(
                 corruptParagraphSection, HwpVersion(), options: self.recoverOptions

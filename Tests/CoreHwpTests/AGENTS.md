@@ -149,7 +149,13 @@ payload가 0xFFF 이상이면 size 비트가 level 필드로 넘쳐 헤더가 �
 - `Stability/Paragraphs/ParagraphRecoveryPlaceholderTests.swift` — 문단·구역·
   메모 placeholder 생성과 `parseFailure` 진단. 복구가 켜져야만 대체되고 꺼진
   기본 모드는 계속 throw함을 대조군으로 함께 단언한다 (깊이 한도의 "공허하지
-  않음" 증명과 같은 규율).
+  않음" 증명과 같은 규율). **첫 문단 손상의 구역 단위 승격**(#110)도 여기서
+  잠그되, 중간 문단 손상이 종전대로 문단 placeholder로 남는 대조군을 짝으로
+  둔다 — 한쪽만 있으면 승격을 전 문단으로 넓힌 구현도 통과한다.
+  **손상 문단을 첫 자리에 두는 합성 스트림은 이제 의미가 다르다**: 문단
+  placeholder 경로를 검증하려면 앞에 정상 문단을 둬야 한다 (이 규칙을 어겨
+  `ControlFallbackErrorSetSpecTests`·ViewText 폐기 테스트가 한 번씩
+  잘못된 이유로 통과할 뻔했다).
 - `Stability/Paragraphs/ParaTextWcharCountTests.swift` — didSet 재동기화와
   round-trip 동등성(wcharCount 비교 제외)을 고정.
 - `Stability/Parsing/SectionNestedAdversarialTests.swift`,
