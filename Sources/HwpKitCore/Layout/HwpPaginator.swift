@@ -1395,8 +1395,36 @@ private extension HwpPaginator {
         // 번호/개요 마커는 문단 첫 페이지 첫 줄에 속하므로 firstPage로 보고하고,
         // 컨트롤은 현재 배치 페이지 기준으로 보고한다 (#3).
         collectUnsupportedNumberingHeading(from: paragraph, page: firstPage)
+        collectRecoveredParseFailures(from: paragraph, page: firstPage)
         guard let ctrls = paragraph.ctrlHeaderArray else { return }
         walkUnsupported(ctrls: ctrls, page: cachedPages.count + 1)
+    }
+
+    /// recover 모드(`HwpLoadOptions.recoverPartialContent`)가 남긴 placeholder를
+    /// 사용자에게 보이게 한다 — 복구가 내용을 조용히 숨기지 않도록 하는
+    /// 진단 채널이다 (#65). 구역 placeholder는 템플릿 문단만 가지므로 구역의
+    /// 첫 문단 시점에 구역 단위로 한 번 보고한다.
+    private func collectRecoveredParseFailures(
+        from paragraph: CoreHwp.HwpParagraph,
+        page: Int
+    ) {
+        if sections.indices.contains(nextSectionIndex),
+           nextParagraphIndex == 0,
+           let sectionFailure = sections[nextSectionIndex].parseFailure
+        {
+            collectedUnsupported.append(HwpUnsupportedElement(
+                kind: .placeholder,
+                page: page,
+                hint: "손상 구역 복구 (파싱 실패: \(sectionFailure))"
+            ))
+        }
+        if let paragraphFailure = paragraph.parseFailure {
+            collectedUnsupported.append(HwpUnsupportedElement(
+                kind: .placeholder,
+                page: page,
+                hint: "손상 문단 복구 (파싱 실패: \(paragraphFailure))"
+            ))
+        }
     }
 
     /// 개요(머리 종류 1)/번호(2) 문단 머리의 생성 라벨은 numbering 정의에 있고
