@@ -67,11 +67,25 @@ public struct HwpSearchBar: View {
             }
             if !controller.query.text.isEmpty {
                 Button(LocalizedStringKey("Clear"), action: clearQuery)
+                    .accessibilityLabel(clearAccessibilityLabel)
             }
             if onDismiss != nil {
                 Button(LocalizedStringKey("Done"), action: dismiss)
+                    .accessibilityLabel(dismissAccessibilityLabel)
             }
         }
+    }
+
+    // MARK: - VoiceOver 라벨 (#79)
+
+    // `String` 인 이유와 한국어 정책은 `HwpZoomControls` 의 같은 절 주석 참조.
+
+    var clearAccessibilityLabel: String {
+        "검색어 지우기"
+    }
+
+    var dismissAccessibilityLabel: String {
+        "검색 닫기"
     }
 
     @ViewBuilder

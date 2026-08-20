@@ -25,9 +25,24 @@ public struct HwpSearchNavigator: View {
                 .monospacedDigit()
             Button(LocalizedStringKey("‹"), action: goToPrevious)
                 .disabled(isNavigationDisabled)
+                .accessibilityLabel(previousMatchAccessibilityLabel)
             Button(LocalizedStringKey("›"), action: goToNext)
                 .disabled(isNavigationDisabled)
+                .accessibilityLabel(nextMatchAccessibilityLabel)
         }
+    }
+
+    // MARK: - VoiceOver 라벨 (#79)
+
+    // `‹`/`›` 는 문장부호라 VoiceOver 가 문맥 없이 읽거나 건너뛴다. `String`
+    // 인 이유와 한국어 정책은 `HwpZoomControls` 의 같은 절 주석 참조.
+
+    var previousMatchAccessibilityLabel: String {
+        "이전 검색 결과"
+    }
+
+    var nextMatchAccessibilityLabel: String {
+        "다음 검색 결과"
     }
 
     // MARK: - body 밖 (이 계층의 테스트 접점)

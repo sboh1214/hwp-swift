@@ -21,6 +21,10 @@
                 if hasRenderIdentity, document == oldValue {
                     return
                 }
+                // 여기부터는 내용이 바뀌는 모든 경로다 — 합성 AX 요소를 전량
+                // 비워 stale 라벨을 막는다. 아래 각 분기의 updateVisiblePages 가
+                // 가시 페이지 몫만 다시 만든다 (#79).
+                accessibilityStore.removeAll()
                 // 프로그레시브 스냅샷 (같은 loadToken + 페이지 증가): 기존
                 // 레이어·스크롤 위치를 유지하고 크기·가시 범위만 늘린다.
                 if let old = oldValue, let new = document,
@@ -59,6 +63,13 @@
                 memoPanelLayers.values.forEach { $0.removeFromSuperlayer() }
                 memoPanelLayers.removeAll()
                 rebuildImageProvider()
+                // 선택 지오메트리를 **지오메트리 재구성보다 먼저** 새 문서로
+                // 바꾼다 — 아래 applyPendingInitialCentering의 setContentOffset
+                // (그리고 updateContentSize의 오프셋 이동)이 scrollViewDidScroll로
+                // updateVisiblePages를 동기 재진입시켜 AX 합성이 도는데, 이
+                // 대입이 늦으면 옛 문서의 단위로 만든 라벨이 새 페이지 frame을
+                // anchor로 store에 굳어 VoiceOver가 이전 문서를 읽는다 (#79).
+                selectionController.document = document
                 rebuildPageOrigins()
                 updateContentSize()
                 // 전체 교체는 새 문서를 맨 위(센터링 원점)에서 연다. SwiftUI 경로는
@@ -71,7 +82,6 @@
                 // scrollToPage가 다시 채운다 (R71 #2).
                 pendingInitialPageIndex = nil
                 applyPendingInitialCentering()
-                selectionController.document = document
                 updateVisiblePages(range: 0 ..< min(document?.pages.count ?? 0, 3))
                 // 옛 문서를 향한 fit 예약은 버린다 — 남기면 A 에서 건 맞춤이
                 // 나중에 B 의 배율을 뺏는다 (iOS `pendingInitialPageIndex` 가 같은
@@ -155,6 +165,9 @@
 
         /// 텍스트 롱프레스 선택 상태 (플랫폼 중립 컨트롤러)
         public let selectionController = HwpSelectionController()
+
+        /// 가시 페이지의 합성 접근성 요소 (#79) — 레이어 가상화와 동기로 관리
+        let accessibilityStore = HwpDocumentAccessibilityStore<UIAccessibilityElement>()
 
         /// 문서 검색 세션 주입 (#75). macOS와 같은 계약 — 재대입은 멱등이고,
         /// 뷰 해체(`dismantleUIView`)가 nil을 넣어 세션을 뗀다.
@@ -279,6 +292,7 @@
             }
             updateSelectionOverlays()
             updateSearchOverlays()
+            updateAccessibilityElements()
             // 오버레이를 그린 **뒤** 축출한다 (macOS와 대칭) — 방금 그린 페이지는
             // 유지 범위 안이라 살아남는다.
             searchController?.evictUnitsOutsideRetainedRange()

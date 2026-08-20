@@ -114,6 +114,26 @@
 
 ### Added
 
+- **문서 뷰 VoiceOver 지원**이 들어왔습니다 (#79). 문서 본문은 뷰가 아니라
+  `CALayer`로 그려져 지금까지 AX 트리가 없었는데, 이제 두 네이티브 뷰가 가시
+  (±2) 페이지의 텍스트를 접근성 요소로 합성합니다 — 본문 단위(선택과 같은
+  조판·같은 캐시)에 더해 머리말/꼬리말/쪽 번호(선택·검색에서는 빠지는 쪽
+  크롬)와 메모 풍선 패널 텍스트까지 낭독됩니다. 요소는 레이어 가상화와 함께
+  생기고 사라지며, 문서 교체·프로그레시브 스냅샷마다 무효화되어 낡은 라벨이
+  남지 않습니다. iOS에서는 개요(#77) 제목 문단에 헤딩 트레이트가 붙어
+  VoiceOver 로터 "제목" 탐색이 가시 페이지 안에서 동작합니다(macOS는
+  staticText로만 냅니다 — AppKit의 헤딩 role은 macOS 26에야 생겨 지원 하한
+  macOS 14+에서는 쓸 수 없습니다). 합성 모델은 공개 API입니다 —
+  `HwpAccessibilityContent.pageUnits(page:bodyUnits:headingTitles:)`/
+  `memoPanelUnits(panel:)`가 (라벨, 페이지·패널 로컬 top-down rect) 목록을
+  주므로 커스텀 뷰도 같은 재료로 AX 트리를 만들 수 있습니다. 렌더 경로는
+  건드리지 않았습니다 — 페인트·조판·좌표 기준선은 그대로입니다.
+- **툴바 컴포넌트에 VoiceOver 라벨**이 붙었습니다 (#79).
+  `HwpZoomControls`(축소/확대/배율 초기화/폭 맞춤/쪽 맞춤),
+  `HwpPageNavigator`(이전 쪽/다음 쪽), `HwpSearchNavigator`(이전·다음 검색
+  결과), `HwpSearchBar`(검색어 지우기/검색 닫기) — `-`·`+`·`‹`·`›` 같은
+  문장부호 버튼을 VoiceOver가 문맥 없이 읽던 것이 사라집니다. 문구는
+  한국어입니다(#78 1번 에러 한국어화와 같은 정책).
 - **폭 맞춤 · 쪽 맞춤 줌**이 들어왔습니다 (`HwpZoomFit`, `HwpKitCore`).
   `HwpDocumentView(fitZoom:)`에 `.width`/`.page`를 넣으면 뷰가 배율을 한 번
   맞추고 바인딩을 `nil`로 되돌리는 **원샷 명령**이며, `HwpZoomControls(fitZoom:)`에

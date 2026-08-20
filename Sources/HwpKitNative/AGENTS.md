@@ -11,6 +11,7 @@ HwpKitNative/
 ├── HwpDocumentViewSupport.swift    # macOS/iOS 뷰 공통 @MainActor 정적 헬퍼 — 선택 오버레이,
 │                                   #   contentsScale 산식/일괄 갱신, 페이지 chrome, 메모 패널 레이어,
 │                                   #   이미지 공급자, 프로그레시브 판정, Array[safe:] (#if 없이 양쪽 컴파일)
+├── HwpDocumentAccessibility.swift  # 페이지별 합성 AX 요소 보관함(제네릭) + 모델 합성 진입점 (#79, #if 밖)
 ├── Rendering/HwpPageLayer.swift    # CALayer + paint list executor (Core Text, drawImageReference)
 ├── Rendering/HwpPageImageProvider.swift  # HwpImageStore + HwpImageCache + HwpImageAdapter 연결
 ├── Rendering/HwpDecodeThrottle.swift     # 동시 디코드 상한 3 (provider 전역 static)
@@ -22,6 +23,8 @@ HwpKitNative/
 ├── macOS/HwpDocumentNSViewGeometry.swift   # 가시 범위·보존 창·페이지 프레임
 ├── macOS/HwpDocumentNSViewSelection.swift  # 마우스 드래그 선택 + Cmd+C/Cmd+A/우클릭 Copy
 ├── macOS/HwpDocumentNSViewSearch.swift     # 검색 오버레이 2벌 + 매치 노출 스크롤 (#75)
+├── macOS/HwpDocumentNSViewAccessibility.swift  # NSAccessibilityElement 합성 (#79)
+├── iOS/HwpDocumentUIViewAccessibility.swift    # UIAccessibilityElement 합성 (#79)
 ├── iOS/HwpDocumentUIViewGeometry.swift     # 위와 대칭 (#75에서 UIView 본체에서 분리)
 ├── iOS/HwpDocumentUIViewSelection.swift    # 롱프레스 선택 + 엣지 오토스크롤 + 편집 메뉴 + collapsed 정리
 ├── iOS/HwpDocumentUIViewSelectionHandles.swift # 선택 끝점 핸들 뷰·배치·드래그 (#84)
@@ -197,6 +200,50 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
 - 상태는 값 타입 하나(`HwpSelectionInteractionState`)로 묶는다 — `HwpDocumentUIView` 타입 본문이 SwiftLint `type_body_length` **error** 임계(400)에 닿아 있어 저장 프로퍼티를 한 줄만 늘려도 Lint 잡이 종료 코드 2로 끝난다. 신규 상태만 묶는 게 아니라 기존 오토스크롤·편집 메뉴 상태까지 접어 본문을 **순감**시켰다 (400 → 399).
 - **가시 판정에 `CGRect.intersects` 를 쓰면 안 된다** (`isCaretVisible`). 캐럿은 폭 0이라 `CGRect.isEmpty` 가 참이고 CG 의 교차 판정은 빈 사각형에 **항상 false** 를 준다 — 그대로 쓰면 뷰포트 한가운데 있는 캐럿의 핸들까지 전부 숨는다. 그래서 축별 비교를 손으로 쓰고, 가로는 경계에 정확히 걸친 캐럿을 살리려 `>=`/`<=` 다 (실측: 폭 0 캐럿이 뷰포트 오른쪽 끝에 있을 때 `intersects` 는 false, 이 술어는 true). 위 "뷰포트 밖은 숨긴다" 규칙이 실제로 작동하려면 이 한 줄이 필요하다.
 - 가드: `HwpSelectionHandleGeometryTests`(14종 — 프레임·부품 배치, `handleFrame` ↔ `caretCenter` 왕복, 그랩 오프셋·여유, 빈 사각형 함정을 잠그는 `testCaretVisibilityDoesNotRideOnEmptyRectSemantics`, 겹침 판정 3종[그립 중심·**반대칭**·가까운 그립 승리]) + `HwpDocumentUIViewSelectionTests`(14종 — 뷰 배선, 그중 `testOverlappingHandlesRouteEachTouchToItsOwnKnob` 이 실제 히트 테스트로 위 규약을 잠근다). 겹침 테스트는 **겹침이 실제로 일어나는지 먼저 단언한다** — 안 그러면 두 그랩 영역이 떨어진 배치에서 순서 문제를 재지 못하고 공허하게 통과한다.
+
+## 문서 접근성 요소 합성 (#79)
+
+문서 본문이 CALayer 라 AX 트리가 없어, 두 뷰가 가시 (±2) 페이지의 텍스트를
+합성 접근성 요소로 노출한다. 모델 (라벨·rect) 은 HwpKitCore 의
+`HwpAccessibilityContent` 가 만들고 (`Sources/HwpKitCore/AGENTS.md`), 이
+계층은 보관·수명·좌표 변환만 한다.
+
+- **보관함 (`HwpDocumentAccessibilityStore`) 은 `#if` 밖 제네릭이다** — 요소
+  타입만 플랫폼이 정하고 (`NSAccessibilityElement`/`UIAccessibilityElement`)
+  수명 로직은 한 벌이라 macOS swift test 가 커버한다
+  (`HwpSelectionHandleGeometry`·`fitZoomScale` 과 같은 틀).
+- **수명은 레이어 가상화와 동기다.** `updateVisiblePages` 끝
+  (오버레이 갱신 다음, 단위 캐시 축출 **앞**) 에서 `updateAccessibilityElements`
+  가 실체화 페이지 밖 요소를 prune 하고 없는 페이지 몫을 만든다 — 축출 앞인
+  것은 합성이 `HwpSelectionGeometry.units(forPage:)` 캐시를 읽기 때문이다.
+  **문서 didSet 은 내용이 바뀌는 모든 분기 앞에서 store 를 전량 비운다**
+  (프로그레시브·nil-token 동등 재전달·전체 교체) — stale 라벨의 1차 방어선이고,
+  요소가 만들 때의 페이지 레이어 frame 을 anchor 로 기억해 frame 이 움직인
+  페이지를 재생성하는 대조가 2차 방어선이다 (프로그레시브 로딩이 콘텐츠 폭을
+  키우면 가운데 정렬 x 가 밀린다).
+- **좌표 전략이 두 플랫폼에서 다르다.** macOS 는 요소가 콘텐츠 뷰 로컬 rect
+  (`contentRect`) 만 저장하고 `accessibilityFrame()` 재정의가 **질의 시점**에
+  `convert` + `convertToScreen` 으로 화면 좌표를 낸다 — 스크롤·magnification 이
+  요소를 다시 만들지 않아도 항상 현재 값이다 (창이 없으면 .zero). iOS 는
+  `accessibilityFrameInContainerSpace` (컨테이너 = `contentView`) 라 줌
+  transform·스크롤 반영을 UIKit 이 질의 시점에 한다 — zoomScale 역보정 산식이
+  없는 이유다.
+- **낭독 순서는 store 평탄화가 정한다** (페이지 오름차순, 페이지 안은 모델
+  순서: 상단 크롬 → 본문 → 하단 크롬 → 메모 패널). macOS 는
+  `documentContentView.setAccessibilityChildren`, iOS 는
+  `contentView.accessibilityElements` 에 매 갱신 대입한다 — 재생성이 없어도
+  prune 만 돈 호출에서 목록이 줄어야 한다.
+- **iOS 만 헤딩 트레이트가 있다** (`.header`, 개요 #77 제목 — VoiceOver 로터
+  "제목" 탐색은 실체화된 가시 ±2 페이지 안에서만 동작한다). macOS 는
+  staticText 로만 낸다 — AppKit 의 `NSAccessibilityHeadingRole` 은 macOS 26
+  에야 생겨 (SDK 실측: `API_AVAILABLE(macos(26.0))`) 지원 하한 macOS 14+
+  아래에서는 못 쓴다. 하한이 오르면 승격을 검토한다.
+- 가드는 `HwpDocumentAccessibilityStoreTests` (수명·anchor·평탄화 순서 +
+  `HwpDocumentAccessibility.units` 의 쪽별 제목 선별) 와 양 플랫폼
+  `HwpDocument{NS,UI}ViewAccessibilityTests` (생성·좌표 합성·가상화 청소·교체
+  무효화·메모 패널 오프셋, iOS 는 헤딩 트레이트까지). 화면 좌표 변환 자체와
+  낭독 순서·로터는 자동화 밖이다 — macOS Accessibility Inspector / iOS
+  시뮬레이터 VoiceOver 로 육안 확인한다.
 
 ## 레이어 가상화
 
