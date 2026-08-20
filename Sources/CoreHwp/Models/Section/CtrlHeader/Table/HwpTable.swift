@@ -101,12 +101,11 @@ extension HwpTable: HwpFromRecordWithVersion {
                 continue
             }
 
+            // 파싱 경로의 paragraphCount는 UInt16을 Int32로 승격해 읽으므로
+            // (아래 `HwpTableCellHeader.init(_:_:)`) 항상 비음수다 — 리스트/글상자와
+            // 달리 표 셀 헤더는 bytes 6-7이 셀 확장 속성(listHeaderWidthRef)이라
+            // Int32로 넓혀 읽을 수 없고, 음수 가드도 도달 불가라 두지 않는다 (#67).
             let cellHeader = try HwpTableCellHeader.load(child)
-            guard cellHeader.paragraphCount >= 0 else {
-                throw HwpError.invalidRecordTree(
-                    reason: "table cell paragraph count is negative: \(cellHeader.paragraphCount)"
-                )
-            }
 
             var paragraphs = [HwpParagraph]()
             for _ in 0 ..< Int(cellHeader.paragraphCount) {
