@@ -99,7 +99,12 @@ ID로 dispatch된다.
 ## 안티 패턴
 
 - 모델 안에서 `HwpError`를 catch해서 default 값을 반환 — `HwpFile.init`까지
-  전파시킬 것.
+  전파시킬 것. **명시 예외 (#65)**: `HwpLoadOptions.recoverPartialContent`가
+  켜진 경우의 문단·구역·메모 문단 placeholder 대체
+  (`HwpParagraph.parseFailurePlaceholder`/`HwpSection.parseFailurePlaceholder`,
+  게이트는 `error.isRecoveryExempt`). 이때도 default 값이 아니라 `parseFailure`
+  진단과 원본 레코드(`unknownChildren`)를 남기는 placeholder여야 하고, 기본
+  모드는 계속 fail-fast다. 이 예외를 다른 모델·다른 error로 넓히지 말 것.
 - 이유 없는 `load(...)` override 또는 `reader.readToEnd()` 호출 — EOF 검사를
   우회한다. raw 보존, record-tree 파싱, tag 검증 같은 예외 목적이 명확해야 한다.
 - `Sources/`에 `import XCTest`, `@testable`, Nimble 추가 — 모두 금지.

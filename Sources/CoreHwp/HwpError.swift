@@ -90,6 +90,21 @@ extension HwpError: CustomStringConvertible {
 }
 
 extension HwpError {
+    /// `HwpLoadOptions.recoverPartialContent`가 켜져도 placeholder로 삼키지
+    /// 않고 전파하는 오류 — 자원 한도 2종은 설정된 하드 한계이고,
+    /// `unsupportedFeature`는 뷰어가 그릴 수 있는 최소 전제다
+    /// (`HwpFile`의 ViewText read 폴백과 같은 분류, P1).
+    var isRecoveryExempt: Bool {
+        switch self {
+        case .streamSizeLimitExceeded, .aggregateStreamSizeLimitExceeded, .unsupportedFeature:
+            true
+        default:
+            false
+        }
+    }
+}
+
+extension HwpError {
     static func bytesAreNotEOF(model: Any, remain: Int) -> HwpError {
         .bytesAreNotEOF(modelName: hwpErrorModelName(model), remain: remain)
     }

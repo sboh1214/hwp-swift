@@ -65,7 +65,7 @@ CoreHwpTests/
 ├── Blank/
 ├── Noori/
 ├── Versions/
-├── DocInfo/{BinData,CharShape}/
+├── DocInfo/{BinData,CharShape,Core,IdMappingRecords,IdMappingShapes,RawRecords,TrackChanges}/
 └── Section/Column/
 ```
 
@@ -129,6 +129,39 @@ payload가 0xFFF 이상이면 size 비트가 level 필드로 넘쳐 헤더가 �
 함께 검사해 가드가 공허하지 않음을 증명한다. 새 픽스처가 8에서 실패하면
 **한도를 올려 덮지 말 것** — 실측 최대 level은 5이므로 픽스처나 파서 쪽을 먼저
 의심한다.
+
+## 부분 복구 스위트 (#65·#67)
+
+`recoverPartialContent` 복구는 손상 입력이 대상이라 합성 레코드 스트림
+(`SectionRecordBuilder`)으로 검증한다. 계약과 함정은 루트 `AGENTS.md` "부분
+복구"에 있고, 여기 스위트는:
+
+- `Utils/Core/HwpErrorTests.swift`의
+  `testRecoveryExemptSetCoversResourceLimitsAndUnsupportedFeature` — recovery-exempt
+  집합(`isRecoveryExempt`: 자원 한도 2종 + `unsupportedFeature`)을 `HwpError`
+  **케이스 단위로** 고정한다. 새 error 케이스를 추가하면 이 스펙이 분류를
+  강제한다 — **`invalidRecordTree`가 exempt로 새어 들면 여기서 빨개진다**
+  (그 케이스를 비-exempt로 명시 단언).
+- `Stability/Parsing/ControlFallbackErrorSetSpecTests.swift` — 별개 축이다.
+  복구 exempt가 아니라 문단의 `canFallbackToRaw*` 세 판정(표/리스트/도형 컨트롤을
+  `.notImplemented`·other로 raw 보존할지 vs 전파할지)을 error 케이스 단위로
+  잠근다. 이름이 비슷하나 `isRecoveryExempt`와 혼동하지 말 것.
+- `Stability/Paragraphs/ParagraphRecoveryPlaceholderTests.swift` — 문단·구역·
+  메모 placeholder 생성과 `parseFailure` 진단. 복구가 켜져야만 대체되고 꺼진
+  기본 모드는 계속 throw함을 대조군으로 함께 단언한다 (깊이 한도의 "공허하지
+  않음" 증명과 같은 규율). **첫 문단 손상의 구역 단위 승격**(#110)도 여기서
+  잠그되, 중간 문단 손상이 종전대로 문단 placeholder로 남는 대조군을 짝으로
+  둔다 — 한쪽만 있으면 승격을 전 문단으로 넓힌 구현도 통과한다.
+  **손상 문단을 첫 자리에 두는 합성 스트림은 이제 의미가 다르다**: 문단
+  placeholder 경로를 검증하려면 앞에 정상 문단을 둬야 한다 (이 규칙을 어겨
+  `ControlFallbackErrorSetSpecTests`·ViewText 폐기 테스트가 한 번씩
+  잘못된 이유로 통과할 뻔했다).
+- `Stability/Paragraphs/ParaTextWcharCountTests.swift` — didSet 재동기화와
+  round-trip 동등성(wcharCount 비교 제외)을 고정.
+- `Stability/Parsing/SectionNestedAdversarialTests.swift`,
+  `Stability/Paragraphs/ParagraphMemoRecursionTests.swift` — 중첩·메모 복구의
+  적대 입력. 뷰어 진단 노출(`kind: .placeholder`)은 `HwpKitCoreTests`의
+  `HwpPaginatorRecoveryPlaceholderTests`가 본다.
 
 ## 압축 해제 기준선 (#68, #101)
 

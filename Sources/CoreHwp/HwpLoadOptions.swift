@@ -11,16 +11,32 @@ public struct HwpLoadOptions: Sendable {
     /// 파싱 후 해제되게 한다. 파싱된 typed 필드는 양 모드 동일.
     public var preserveRawPayload: Bool
 
-    public init(readLimits: HwpReadLimits = .default, preserveRawPayload: Bool = true) {
+    /// 손상 문단·구역을 fail-fast 대신 placeholder로 대체해 나머지 본문을
+    /// 살리는 best-effort 복구 여부. 기본 false (기존 fail-fast 시맨틱).
+    /// 복구는 BodyText 한정이다 — ViewText는 구역 하나라도 실패하면 전량
+    /// 폐기해 BodyText로 강등하는 기존 채택 규칙을 유지한다 (#65).
+    /// FileHeader `unsupportedFeature`·자원 한도 2종은 켜져 있어도 전파된다.
+    public var recoverPartialContent: Bool
+
+    public init(
+        readLimits: HwpReadLimits = .default,
+        preserveRawPayload: Bool = true,
+        recoverPartialContent: Bool = false
+    ) {
         self.readLimits = readLimits
         self.preserveRawPayload = preserveRawPayload
+        self.recoverPartialContent = recoverPartialContent
     }
 
     /// 기본 옵션 — 원본 payload를 전부 보존한다 (기존 동작).
     public static let `default` = HwpLoadOptions()
 
-    /// 뷰어 옵션 — 보존용 원본 슬라이스를 비워 상주 메모리를 줄인다.
-    public static let viewer = HwpLoadOptions(preserveRawPayload: false)
+    /// 뷰어 옵션 — 보존용 원본 슬라이스를 비워 상주 메모리를 줄이고,
+    /// 손상 문단·구역은 placeholder로 복구해 나머지 본문을 그린다.
+    public static let viewer = HwpLoadOptions(
+        preserveRawPayload: false,
+        recoverPartialContent: true
+    )
 }
 
 extension HwpLoadOptions {

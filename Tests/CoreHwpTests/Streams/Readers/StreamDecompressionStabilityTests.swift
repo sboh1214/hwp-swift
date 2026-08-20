@@ -82,6 +82,42 @@ final class StreamDecompressionStabilityTests: XCTestCase {
         expect(hwp.displaySectionArray.count) == hwp.sectionArray.count
     }
 
+    /// 거부 측 경계 (#67): 실제 OLE의 ViewText storage에 기대 자식 수가
+    /// 어긋나면 **압축 해제 전에** typed invalidRecordTree로 거부된다 —
+    /// 초과분을 잘라 내면 손상/stale ViewText가 유효한 BodyText를 대체하므로
+    /// (`StreamReader.getOptionalNamedDataFromStorage`의 R69 #2 검증). 일치
+    /// 기대치는 통과해 경계 검증이 공허하지 않음을 함께 고정한다.
+    func testViewTextStorageChildCountMismatchIsRejectedBeforeDecompression() throws {
+        let url = hwpURL(#file, "track-changes")
+        let hwp = try HwpFile(fromPath: url.path)
+        let sectionCount = hwp.sectionArray.count
+        let isCompressed = hwp.fileHeader.fileProperty.isCompressed
+        let ole = try OLEFile(url.path)
+        let reader = StreamReader(
+            ole,
+            try StreamReader.rootStreams(from: ole.root.children)
+        )
+
+        for wrongCount in [sectionCount - 1, sectionCount + 1] {
+            expect {
+                _ = try reader.getOptionalNamedDataFromStorage(
+                    .viewText, isCompressed, expectedChildCount: wrongCount
+                )
+            }.to(throwError { error in
+                guard case let HwpError.invalidRecordTree(reason) = error else {
+                    return fail("Expected invalidRecordTree, got \(error)")
+                }
+                expect(reason).to(contain("ViewText child count"))
+                expect(reason).to(contain("!= \(wrongCount)"))
+            })
+        }
+
+        let adopted = try reader.getOptionalNamedDataFromStorage(
+            .viewText, isCompressed, expectedChildCount: sectionCount
+        )
+        expect(adopted.count) == sectionCount
+    }
+
     func testReadLimitsRejectNonPositiveValuesWithTypedError() {
         let cases = [
             HwpReadLimits(maxCompressedStreamBytes: 0),

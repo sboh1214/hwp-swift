@@ -68,6 +68,16 @@ CoreHwp.HwpFile
 공유 흐름 상태 (`contentHeightUsed`·`paragraphAnchorTop`)와 `currentBlocks`
 재작성 적용은 paginator에 남는다.
 
+**부분 복구 placeholder 진단** (#65): `recoverPartialContent`가 남긴 손상
+문단·구역 placeholder를 `unsupportedElements()`에 `kind: .placeholder`로 내보내
+복구가 내용을 조용히 숨기지 않게 한다 (렌더는 placeholder의 빈 텍스트를 그리지
+않으므로 이 보고가 유일한 흔적). 문단·구역 placeholder는 `parseFailure` 필드로
+바로 잡히지만 **메모 placeholder는 호스트 문단이 정상 파싱돼 `parseFailure`로
+안 드러나므로** `collectMemoParseFailures`가 메모 그룹과 컨트롤 안 중첩 문단
+(표 셀·리스트·글상자)까지 재귀로 훑는다 (재귀는 파스 시점 `maxNestingDepth`로
+유한). 복구 자체는 `CoreHwp` 파서에 있다 (루트 `AGENTS.md` "부분 복구") — 여기는
+그 진단 노출만 담당한다.
+
 라인 세그먼트 캐시 (PARA_LINE_SEG)의 `lineLocation`은 페이지 내 절대 y다.
 **실제 줄 전진량 = lineHeight + lineSpacing (per-line 캐시 필드)** — 실측:
 연속 세그먼트의 lineLocation 델타와 일치 (헌법주석 30,345/30,348, noori 전부;

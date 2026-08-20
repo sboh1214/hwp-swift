@@ -1,6 +1,6 @@
 # 프로젝트 지식 베이스
 
-**Branch:** feat/page-bitmap-render-thumbnails
+**Branch:** feat/partial-content-recovery
 
 ## 개요
 
@@ -51,7 +51,7 @@ hwp-swift/
 | 심볼 | 위치 | 역할 |
 |------|------|------|
 | `HwpFile` | [HwpFile.swift](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/HwpFile.swift) | 유일한 public 진입점: `init(fromPath:)`/`init(fromData:)`/`init(fromWrapper:)` (각각 `readLimits:` 또는 `options:` 오버로드), `init()` |
-| `HwpLoadOptions` | [HwpLoadOptions.swift](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/HwpLoadOptions.swift) | `readLimits` + `preserveRawPayload`(기본 true). `.viewer` 프리셋은 rawPayload 보존을 꺼 압축 해제 버퍼를 파싱 후 즉시 해제 (뷰어 상주 메모리 대폭 절감) |
+| `HwpLoadOptions` | [HwpLoadOptions.swift](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/HwpLoadOptions.swift) | `readLimits` + `preserveRawPayload`(기본 true) + `recoverPartialContent`(기본 false — 아래 "부분 복구"). `.viewer` 프리셋은 rawPayload 보존을 끄고 (압축 해제 버퍼를 파싱 후 즉시 해제 — 뷰어 상주 메모리 대폭 절감) 부분 복구를 켠다 |
 | `HwpError` | [HwpError.swift](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/HwpError.swift) | `CustomStringConvertible` + `LocalizedError`를 채택한 public error enum |
 | `HwpStreamName` | [Enums/HwpStreamName.swift](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/Enums/HwpStreamName.swift) | OLE stream 이름 (`FileHeader`, `DocInfo`, `BodyText`, `\005HwpSummaryInformation`, `PrvText`, `PrvImage`) |
 | `parseTreeRecord` | [Utils/HwpRecord.swift](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/Utils/HwpRecord.swift) | stream에서 tag/level/size record tree를 구성 |
@@ -103,6 +103,69 @@ typed 디코더들이 그 트리를 재귀로 내려가므로(표 셀 문단·�
 모델에 depth를 부착하거나 `load` 시그니처를 바꿀 필요가 없다. 가드는 payload와
 확장 크기를 읽기 **전**에 있어 조작 입력이 할당을 유도하지 못한다. 전 픽스처
 실측 최대 level은 5이며, 회귀 테스트가 `maxNestingDepth: 8`로 이를 잠근다.
+
+## 부분 복구 (#65·#67)
+
+`HwpLoadOptions.recoverPartialContent`(기본 **false**)가 켜지면 손상 문단·구역이
+문서 전체를 실패시키는 대신 **placeholder로 대체**되고 나머지 본문이 살아난다.
+기본 모드는 종전 그대로 fail-fast다. `.viewer` 프리셋은 이 옵션을 켠다 — 한
+문단 손상으로 뷰어가 백지가 되는 대신 나머지를 그리는 쪽이 낫다. **복구는
+`CoreHwp` 파서에만 있다 — `HwpKit`/뷰어에 새 공개 API는 없다** (진단 노출은
+아래 `HwpPaginator` 경유).
+
+- **placeholder의 형태가 층마다 다르다.** 문단 placeholder
+  (`HwpParagraph.parseFailurePlaceholder`)는 `paraText == nil`(하류 run builder가
+  빈 문단으로 처리)에 원본 레코드를 `unknownChildren`에 통째로 보존한다. 구역
+  placeholder(`HwpSection.parseFailurePlaceholder`)는 빈 문서 템플릿 문단
+  (sectionDef+column 컨트롤)을 채워 조판 전제를 지키고 **구역 수를 보존**해 뒤
+  구역 자리가 밀리지 않게 한다. 원본 구역 스트림은 보존 모드 한정으로
+  (`preservedPayload` 게이트) `rawPayload`에 실어 재파싱 근거를 남긴다.
+- **구역의 첫 문단 손상은 문단이 아니라 구역 단위로 승격된다** (#110).
+  `sectionDef`는 구역의 첫 문단에만 붙는데 (`blankDocumentParagraph`),
+  paginator는 `sectionDef(in:)` **하나로만** 구역 경계를 인식한다
+  (`flushPageBeforeProcessing`·`applySectionDef` — `nextSectionIndex` 전진은
+  지오메트리에 아무 영향이 없다). 첫 문단을 sectionDef 없는 문단 placeholder로
+  삼키면 그 구역이 **앞 구역의 종이·여백·단·번호로 조판된다**. 그래서
+  `HwpSection.load`의 문단 루프는 `paragraphs.isEmpty`일 때 복구를 건너뛰고
+  전파해, `HwpFile`이 구역 단위 placeholder로 승격시킨다. 중간·뒤 문단 손상은
+  종전대로 문단 placeholder다 (그 자리엔 sectionDef가 없으므로 경계가 안전).
+- **진단은 `parseFailure: String?` 필드다** — `HwpParagraph.parseFailure` /
+  `HwpSection.parseFailure`. 정상 파싱은 nil. **Equatable/Hashable에 참여한다**:
+  placeholder와 진짜 빈 문단/구역이 같다고 판정되면 복구 흔적이 비교에서
+  지워지기 때문이다. 별도 `HwpRecoveryDiagnostic` 타입은 없다.
+- **recovery-exempt는 3종이다** (`HwpError.isRecoveryExempt`):
+  자원 한도 2종(`streamSizeLimitExceeded`·`aggregateStreamSizeLimitExceeded`)에
+  더해 **`unsupportedFeature`**(암호·배포용·DRM — 뷰어가 그릴 수 있는 최소
+  전제). 이 3종은 복구 모드에서도 placeholder로 삼키지 않고 그대로 throw한다.
+  집합 멤버십은 `HwpErrorTests.testRecoveryExemptSetCoversResourceLimitsAndUnsupportedFeature`
+  가 `HwpError` 케이스 단위로 고정한다 (exempt 3종 + `invalidRecordTree`는
+  **비-exempt**로 명시) — **구조 손상은 복구 대상**이다.
+- **메모 문단도 복구된다.** 손상 메모 문단을 그대로 전파시키면 호스트 문단
+  전체가 placeholder가 되어 본문 텍스트까지 잃고 메모 그룹 경계도 사라진다.
+  그래서 `HwpParagraph.load`의 메모 수집 루프가 메모 문단을 개별 placeholder로
+  대체한다.
+- **ViewText에는 복구를 켜지 않는다** (`HwpFile.parseViewSections`가
+  `recoverPartialContent = false`로 강제). 표시본은 구역 하나라도 실패하면
+  **전량 폐기해 BodyText로 강등**하는 기존 채택 규칙을 유지한다 — placeholder로
+  개수를 보존하면 불완전 표시본이 채택 규칙(`displaySectionArray`)을 통과해 그
+  구역을 백지로 만든다. `ViewText`의 "실패 시 빈 배열 폴백"은 종전 그대로다.
+- **뷰어 진단 노출**: placeholder는 `HwpPaginator.unsupportedElements()`에
+  `kind: .placeholder`로 나온다 — "손상 문단/구역/메모 문단 복구 (파싱 실패:
+  …)". 복구가 내용을 조용히 숨기지 않게 하는 채널이다 (렌더는 placeholder의 빈
+  텍스트를 그리지 않으므로 이 보고가 유일한 흔적). 메모 placeholder는 호스트
+  문단이 정상 파싱돼 `parseFailure`로는 안 드러나므로 paginator가 메모 그룹과
+  컨트롤 안 중첩 문단(표 셀·리스트·글상자)까지 재귀로 훑는다. 배너 UI는
+  호스트 몫이다.
+
+**#67이 같은 브랜치에 있는 이유는 복구의 인접 정리라서다** —
+`HwpParaText.wcharCount`가 문단당 `reduce` 재계산에서 **파스 루프 누적 저장값**
+으로 바뀌었다 (값·공개 API 동일, `charArray` 변경 시 didSet 재동기화). 파생값
+이라 custom Codable로 인코딩 형상은 그대로(`rawPayload`/`charArray` 두 키)이고,
+Equatable/Hashable에서도 제외된다 (payload **유무** 파생이라 `HwpChar` 동등성과
+어긋날 수 있음 — 빈 템플릿 vs 파싱본 round-trip 동등성이 이에 기댄다). 표 셀
+헤더의 **도달 불가능한** 음수 `paragraphCount` 가드도 제거됐다 — 표 셀은
+`UInt16`을 `Int32`로 승격해 읽어 항상 비음수다 (리스트/글상자와 달리 bytes 6-7이
+셀 확장 속성이라 읽기 폭을 넓힐 수 없다는 근거를 주석으로 못박음). 되살리지 말 것.
 
 ## 컨벤션
 
@@ -914,4 +977,4 @@ opt-in — **커밋된** 기준선을 쓰는 스위트는 CI에서 상시 돈다
 - `HwpFile.init()`는 완전 빈 객체가 아니라 빈 `HwpSection` 하나가 들어있는 default 객체를 만든다. `Tests/CoreHwpTests/Blank/Create*Tests.swift`에서 파싱된 픽스처와 비교할 때 이를 사용.
 - `Streams/HwpDocInfo.swift`의 여러 `// TODO: HWPTAG_*` 주석은 의도된 것으로, 아직 구현되지 않은 기능이다. 리팩토링 중에 조용히 제거하지 말 것.
 - `HwpCtrlId` enum의 `Codable`은 hand-rolled 구현이다. 이종(heterogeneous) payload를 가진 associated value enum은 Swift가 자동 합성하지 못하기 때문.
-- **Codable 아카이브 호환**: 모델에 새 저장 필드를 추가하면 이전 아카이브(키 부재)가 `keyNotFound`로 깨지거나, 더 나쁘게는 파생 필드가 nil로 조용히 유실된다. 신규 필드는 custom `init(from:)`에서 `decodeIfPresent ?? 기본값`으로 받고, **파싱에서 파생되는 typed 필드는 원본(raw payload/RawValue)에서 파스와 같은 함수로 재수화**한다 (`HwpFile.viewSectionArray`, `HwpBullet.headCharShapeId`, `HwpChar.inlineControl`, `HwpCommonCtrlPropertyInfo`의 enum 9종, `HwpTableCellHeader.cellProperty`, `HwpOtherControl`의 typed payload 6종, `HwpShapeComponent.textBoxListArray`의 `textBoxInfo`). 재수화는 **파스 게이트까지 같아야** 한다 — 예로 글상자 리스트만 표 90을 갖는 규약이라, 재수화도 부모 `HwpShapeComponent` 디코더에서만 수행한다. 회귀 가드는 `Tests/CoreHwpTests/Stability/LegacyArchiveDecodingTests.swift`.
+- **Codable 아카이브 호환**: 모델에 새 저장 필드를 추가하면 이전 아카이브(키 부재)가 `keyNotFound`로 깨지거나, 더 나쁘게는 파생 필드가 nil로 조용히 유실된다. 신규 필드는 custom `init(from:)`에서 `decodeIfPresent ?? 기본값`으로 받고, **파싱에서 파생되는 typed 필드는 원본(raw payload/RawValue)에서 파스와 같은 함수로 재수화**한다 (`HwpFile.viewSectionArray`, `HwpBullet.headCharShapeId`, `HwpChar.inlineControl`, `HwpCommonCtrlPropertyInfo`의 enum 9종, `HwpTableCellHeader.cellProperty`, `HwpOtherControl`의 typed payload 6종, `HwpShapeComponent.textBoxListArray`의 `textBoxInfo`). 재수화는 **파스 게이트까지 같아야** 한다 — 예로 글상자 리스트만 표 90을 갖는 규약이라, 재수화도 부모 `HwpShapeComponent` 디코더에서만 수행한다. 회귀 가드는 `Tests/CoreHwpTests/Stability/LegacyArchiveDecodingTests.swift`. 두 부류의 신규 필드는 이 재수화 규칙에서 갈린다 (#65·#67): ① `HwpSection.parseFailure`/`HwpParagraph.parseFailure`는 raw payload의 파생이 아니라 **로드 사건의 기록**이라 재수화하지 않고 아카이브 값 그대로가 진실이다 (`decodeIfPresent ?? nil`). ② `HwpParaText.wcharCount`는 `charArray`에서 파생되지만 **인코딩하지 않고**(custom `CodingKeys`가 `rawPayload`/`charArray` 두 키만) 디코더의 `init(rawPayload:charArray:)`가 재계산한다 — 파생값을 아카이브에 싣지 않는 반대 방향의 처리다.

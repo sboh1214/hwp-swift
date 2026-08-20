@@ -1395,8 +1395,60 @@ private extension HwpPaginator {
         // 번호/개요 마커는 문단 첫 페이지 첫 줄에 속하므로 firstPage로 보고하고,
         // 컨트롤은 현재 배치 페이지 기준으로 보고한다 (#3).
         collectUnsupportedNumberingHeading(from: paragraph, page: firstPage)
+        collectRecoveredParseFailures(from: paragraph, page: firstPage)
         guard let ctrls = paragraph.ctrlHeaderArray else { return }
         walkUnsupported(ctrls: ctrls, page: cachedPages.count + 1)
+    }
+
+    /// recover 모드(`HwpLoadOptions.recoverPartialContent`)가 남긴 placeholder를
+    /// 사용자에게 보이게 한다 — 복구가 내용을 조용히 숨기지 않도록 하는
+    /// 진단 채널이다 (#65). 구역 placeholder는 템플릿 문단만 가지므로 구역의
+    /// 첫 문단 시점에 구역 단위로 한 번 보고한다.
+    private func collectRecoveredParseFailures(
+        from paragraph: CoreHwp.HwpParagraph,
+        page: Int
+    ) {
+        if sections.indices.contains(nextSectionIndex),
+           nextParagraphIndex == 0,
+           let sectionFailure = sections[nextSectionIndex].parseFailure
+        {
+            collectedUnsupported.append(HwpUnsupportedElement(
+                kind: .placeholder,
+                page: page,
+                hint: "손상 구역 복구 (파싱 실패: \(sectionFailure))"
+            ))
+        }
+        if let paragraphFailure = paragraph.parseFailure {
+            collectedUnsupported.append(HwpUnsupportedElement(
+                kind: .placeholder,
+                page: page,
+                hint: "손상 문단 복구 (파싱 실패: \(paragraphFailure))"
+            ))
+        }
+        collectMemoParseFailures(in: paragraph, page: page)
+    }
+
+    /// 메모 복구 placeholder는 호스트 문단이 정상 파싱되므로 호스트
+    /// `parseFailure`로는 드러나지 않는다 — 메모 그룹과, 컨트롤 안 중첩 문단
+    /// (표 셀·리스트·글상자)이 가진 메모 그룹까지 재귀로 보고한다. 렌더는
+    /// placeholder 메모의 빈 텍스트를 `collectMemos`가 건너뛰므로 이 보고가
+    /// 유일한 흔적이다 (#65). 재귀는 파스 시점 `maxNestingDepth`로 유한하다.
+    private func collectMemoParseFailures(in paragraph: CoreHwp.HwpParagraph, page: Int) {
+        for memoParagraph in (paragraph.memoParagraphGroups ?? []).flatMap({ $0 }) {
+            if let failure = memoParagraph.parseFailure {
+                collectedUnsupported.append(HwpUnsupportedElement(
+                    kind: .placeholder,
+                    page: page,
+                    hint: "손상 메모 문단 복구 (파싱 실패: \(failure))"
+                ))
+            }
+            collectMemoParseFailures(in: memoParagraph, page: page)
+        }
+        for ctrl in paragraph.ctrlHeaderArray ?? [] {
+            for (nested, _) in childParagraphs(of: ctrl) {
+                collectMemoParseFailures(in: nested, page: page)
+            }
+        }
     }
 
     /// 개요(머리 종류 1)/번호(2) 문단 머리의 생성 라벨은 numbering 정의에 있고

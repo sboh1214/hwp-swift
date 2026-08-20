@@ -19,6 +19,11 @@ public struct HwpParagraph: HwpFromRecordWithVersion {
     public var memoParagraphGroups: [[HwpParagraph]]?
     @ExcludeEquatable
     public var unknownChildren: [HwpUnknownRecord]
+    /// `HwpLoadOptions.recoverPartialContent` 복구 모드에서 이 문단이 파싱
+    /// 실패를 placeholder로 대체한 것이면 그 원인 설명. 정상 파싱은 nil.
+    /// 진단 표면이므로 Equatable/Hashable에 참여한다 — placeholder와 진짜
+    /// 빈 문단이 같다고 판정되면 복구 흔적이 비교에서 지워진다.
+    public var parseFailure: String?
 
     public init() {
         paraHeader = HwpParaHeader()
@@ -31,6 +36,7 @@ public struct HwpParagraph: HwpFromRecordWithVersion {
         ctrlHeaderArray = nil
         memoParagraphArray = nil
         memoParagraphGroups = nil
+        parseFailure = nil
     }
 
     /// 새 문서의 첫 문단. 구역/단 정의 컨트롤은 구역의 첫 문단에만 붙는다는
@@ -41,6 +47,19 @@ public struct HwpParagraph: HwpFromRecordWithVersion {
             .section(HwpSectionDef()),
             .column(HwpColumn()),
         ]
+        return paragraph
+    }
+
+    /// 복구 모드에서 파싱에 실패한 문단을 대신하는 placeholder.
+    /// `paraText = nil`인 이유: 기본 문단은 extended char 2개를 갖는데
+    /// ctrlHeaderArray가 없으면 컨트롤 매칭이 어긋난다 — paraText 부재
+    /// 문단은 하류 run builder가 이미 빈 문단으로 처리한다. 원본 레코드는
+    /// `unknownChildren`에 통째로 보존해 진단·재파싱 근거를 남긴다 (#65).
+    static func parseFailurePlaceholder(record: HwpRecord, error: HwpError) -> HwpParagraph {
+        var paragraph = HwpParagraph()
+        paragraph.paraText = nil
+        paragraph.unknownChildren = [HwpUnknownRecord(record)]
+        paragraph.parseFailure = String(describing: error)
         return paragraph
     }
 
@@ -159,7 +178,16 @@ public struct HwpParagraph: HwpFromRecordWithVersion {
                     }
                     current = []
                 } else if child.tagId == HwpSectionTag.paraHeader.rawValue, current != nil {
-                    current?.append(try HwpParagraph.load(child, version))
+                    // 복구 모드에서는 손상 메모 문단도 placeholder로 대체한다 —
+                    // 그대로 전파시키면 호스트 문단 전체가 placeholder가 되어
+                    // 본문 텍스트까지 잃고, 메모별 그룹 경계도 함께 사라진다 (#65).
+                    do {
+                        current?.append(try HwpParagraph.load(child, version))
+                    } catch let error as HwpError
+                        where options.recoverPartialContent && !error.isRecoveryExempt
+                    {
+                        current?.append(.parseFailurePlaceholder(record: child, error: error))
+                    }
                 }
             }
             if let current {
