@@ -58,6 +58,28 @@ import XCTest
             )
         }
 
+        func testPlaceholderOnlySectionWithoutSectionDefUsesDefaultGeometry() async throws {
+            // 구역의 유일한 문단이 placeholder면 sectionDef/column 컨트롤이
+            // 없다 — 조판은 기본 지오메트리 폴백(`?? HwpSectionDef()`)으로
+            // 페이지를 만들어야 한다 (#65 하류 안전).
+            var section = CoreHwp.HwpFile().sectionArray[0]
+            section.paragraph = [CoreHwp.HwpParagraph.parseFailurePlaceholder(
+                record: HwpRecord(tagId: 66, level: 0, payload: Data()),
+                error: .recordDoesNotExist(tag: 68)
+            )]
+            let paginator = HwpPaginator(
+                sections: [section],
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+
+            let page = try await paginator.page(at: 0)
+            let unsupported = await paginator.unsupportedElements()
+
+            expect(page).notTo(beNil())
+            expect(unsupported.filter { $0.hint.contains("손상 문단 복구") }.count) == 1
+        }
+
         func testHealthySectionsReportNoRecoveryPlaceholders() async throws {
             let file = CoreHwp.HwpFile()
             let paginator = HwpPaginator(
