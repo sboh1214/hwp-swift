@@ -27,6 +27,40 @@ final class LegacyArchiveDecodingTests: XCTestCase {
         expect(decoded.displaySectionArray.count) == 1
     }
 
+    func testHwpParagraphDecodesLegacyArchiveWithoutParseFailure() throws {
+        let legacy = try legacyJSON(of: HwpParagraph(), removingKey: "parseFailure")
+
+        let decoded = try JSONDecoder().decode(HwpParagraph.self, from: legacy)
+
+        expect(decoded.parseFailure).to(beNil())
+        expect(decoded) == HwpParagraph()
+    }
+
+    func testHwpSectionDecodesLegacyArchiveWithoutParseFailure() throws {
+        let legacy = try legacyJSON(of: HwpSection(), removingKey: "parseFailure")
+
+        let decoded = try JSONDecoder().decode(HwpSection.self, from: legacy)
+
+        expect(decoded.parseFailure).to(beNil())
+        expect(decoded.paragraph.count) == 1
+    }
+
+    func testParseFailurePlaceholderRoundTripsThroughCodable() throws {
+        let placeholder = HwpParagraph.parseFailurePlaceholder(
+            record: HwpRecord(tagId: 66, level: 0, payload: Data([0xAA])),
+            error: .invalidRecordTree(reason: "spec")
+        )
+
+        let decoded = try JSONDecoder().decode(
+            HwpParagraph.self,
+            from: JSONEncoder().encode(placeholder)
+        )
+
+        expect(decoded.parseFailure) == placeholder.parseFailure
+        expect(decoded.paraText).to(beNil())
+        expect(decoded) == placeholder
+    }
+
     func testHwpReadLimitsDecodeLegacyArchiveWithoutAggregateKey() throws {
         let legacy = try legacyJSON(
             of: HwpReadLimits.default, removingKey: "maxAggregateStreamBytes"

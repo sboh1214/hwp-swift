@@ -245,25 +245,23 @@ public struct HwpFile: HwpPrimitive {
             )
         }
         sectionArray = try sectionDataArray.map {
-            try HwpSection.load($0, fileHeader.version, options: options)
-        }
-        // 표시용 본문 (ViewText): 이름이 Section0…Section{N-1}과 정확히
-        // (개수·연속·중복 없이) 일치할 때만 best-effort 파싱한다. 개수만 같고
-        // 이름이 누락/중복/비-section이면 BodyText 구역을 조용히 잘못 대체하므로
-        // 무시한다 (#17). 파싱 실패 시에도 BodyText 렌더로 폴백한다.
-        let sortedViewText = viewTextData.sorted { lhs, rhs in
-            Self.sectionIndex(from: lhs.name) < Self.sectionIndex(from: rhs.name)
-        }
-        if sortedViewText.map(\.name) == (0 ..< expectedSectionCount).map({ "Section\($0)" }) {
+            // 복구 모드에서는 구역 하나의 파싱 실패가 문서 전체를 실패시키지
+            // 않도록 placeholder 구역으로 대체한다. 자원 한도 등
+            // recovery-exempt 오류는 계속 전파한다 (#65).
             do {
-                viewSectionArray = try sortedViewText
-                    .map { try HwpSection.load($0.data, fileHeader.version, options: options) }
-            } catch {
-                viewSectionArray = []
+                return try HwpSection.load($0, fileHeader.version, options: options)
+            } catch let error as HwpError
+                where options.recoverPartialContent && !error.isRecoveryExempt
+            {
+                return HwpSection.parseFailurePlaceholder(error: error)
             }
-        } else {
-            viewSectionArray = []
         }
+        viewSectionArray = Self.parseViewSections(
+            viewTextData,
+            expectedSectionCount: expectedSectionCount,
+            version: fileHeader.version,
+            options: options
+        )
 
         if let summaryData {
             summary = try HwpSummary.load(summaryData, options: options)
@@ -284,6 +282,40 @@ public struct HwpFile: HwpPrimitive {
         }
 
         binaryDataArray = binaryData.map { HwpBinaryData(name: $0.name, data: $0.data) }
+    }
+
+    /// 표시용 본문 (ViewText): 이름이 Section0…Section{N-1}과 정확히
+    /// (개수·연속·중복 없이) 일치할 때만 best-effort 파싱한다. 개수만 같고
+    /// 이름이 누락/중복/비-section이면 BodyText 구역을 조용히 잘못 대체하므로
+    /// 무시한다 (#17). 파싱 실패 시에도 BodyText 렌더로 폴백한다.
+    ///
+    /// ViewText에는 복구를 켜지 않는다 — 실패 구역·문단을 placeholder로
+    /// 채우면 개수 보존 탓에 채택 규칙(`displaySectionArray`)을 통과한
+    /// 불완전 표시본이 그 구역을 백지로 만든다. BodyText 복구본으로
+    /// 강등하는 기존 전량 폐기가 안전하다 (#65).
+    private static func parseViewSections(
+        _ viewTextData: [(name: String, data: Data)],
+        expectedSectionCount: Int,
+        version: HwpVersion,
+        options: HwpLoadOptions
+    ) -> [HwpSection] {
+        var viewTextOptions = options
+        viewTextOptions.recoverPartialContent = false
+        let sortedViewText = viewTextData.sorted { lhs, rhs in
+            sectionIndex(from: lhs.name) < sectionIndex(from: rhs.name)
+        }
+        guard sortedViewText.map(\.name)
+            == (0 ..< expectedSectionCount).map({ "Section\($0)" })
+        else {
+            return []
+        }
+        do {
+            return try sortedViewText.map {
+                try HwpSection.load($0.data, version, options: viewTextOptions)
+            }
+        } catch {
+            return []
+        }
     }
 
     /// "Section12" → 12 (숫자 없으면 Int.max — 뒤로 보냄)

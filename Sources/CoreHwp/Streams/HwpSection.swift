@@ -9,11 +9,25 @@ public struct HwpSection: HwpFromDataWithVersion {
     public var rawPayload: Data
     public var paragraph: [HwpParagraph]
     public var unknownRecords: [HwpUnknownRecord]
+    /// `HwpLoadOptions.recoverPartialContent` 복구 모드에서 이 구역이 파싱
+    /// 실패를 placeholder(빈 문서 템플릿 문단)로 대체한 것이면 그 원인 설명.
+    /// 정상 파싱은 nil. 진단 표면이므로 Equatable/Hashable에 참여한다.
+    public var parseFailure: String?
 
     init() {
         rawPayload = Data()
         paragraph = [HwpParagraph.blankDocumentParagraph()]
         unknownRecords = []
+        parseFailure = nil
+    }
+
+    /// 복구 모드에서 파싱에 실패한 구역을 대신하는 placeholder — 빈 문서
+    /// 템플릿 문단(sectionDef + column 컨트롤 포함)을 채워 조판 전제를
+    /// 지키고, 구역 수를 보존해 뒤 구역의 자리가 밀리지 않게 한다 (#65).
+    static func parseFailurePlaceholder(error: HwpError) -> HwpSection {
+        var section = HwpSection()
+        section.parseFailure = String(describing: error)
+        return section
     }
 
     // MARK: loader contract exemption - BodyText section stream must be parsed as one record tree
@@ -27,7 +41,16 @@ public struct HwpSection: HwpFromDataWithVersion {
 
         for record in records.children {
             if record.tagId == HwpSectionTag.paraHeader.rawValue {
-                paragraphs.append(try HwpParagraph.load(record, version))
+                // 복구 모드에서는 손상 문단 하나가 구역 전체(→ 문서 전체)를
+                // 실패시키지 않도록 placeholder로 대체한다. 자원 한도 등
+                // recovery-exempt 오류는 계속 전파한다 (#65).
+                do {
+                    paragraphs.append(try HwpParagraph.load(record, version))
+                } catch let error as HwpError
+                    where reader.options.recoverPartialContent && !error.isRecoveryExempt
+                {
+                    paragraphs.append(.parseFailurePlaceholder(record: record, error: error))
+                }
             } else {
                 unknownRecords.append(HwpUnknownRecord(record))
             }
