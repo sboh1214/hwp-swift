@@ -173,6 +173,33 @@ class HwpErrorTests: XCTestCase {
 
         expect(error.localizedDescription) == error.description
     }
+
+    func testRecoveryExemptSetCoversResourceLimitsAndUnsupportedFeature() {
+        // recover 모드(#65)에서도 전파되어야 하는 오류 집합 — placeholder로
+        // 삼키면 자원 한도가 무력화되거나 미지원 문서가 빈 문서로 열린다.
+        let exempt: [HwpError] = [
+            .streamSizeLimitExceeded(name: .bodyText, limit: 1, actual: 2),
+            .aggregateStreamSizeLimitExceeded(name: .bodyText, limit: 1, actual: 2),
+            .unsupportedFeature(.encryptedDocument),
+        ]
+        for error in exempt {
+            expect(error.isRecoveryExempt).to(
+                beTrue(), description: "\(error) must stay recovery-exempt"
+            )
+        }
+
+        let recoverable: [HwpError] = [
+            .invalidRecordTree(reason: "spec"),
+            .recordDoesNotExist(tag: 68),
+            .truncatedData(expected: 4, actual: 1),
+            .bytesAreNotEOF(modelName: "HwpParaRangeTag", remain: 1),
+        ]
+        for error in recoverable {
+            expect(error.isRecoveryExempt).to(
+                beFalse(), description: "\(error) must be recoverable"
+            )
+        }
+    }
 }
 
 private func assertHwpError(_ error: Error) {
