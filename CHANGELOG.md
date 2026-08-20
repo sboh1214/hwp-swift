@@ -78,6 +78,14 @@
 
 ### Changed
 
+- `HwpParaText.wcharCount`가 문단당 reduce 재계산에서 **파스 루프 누적 저장값**
+  으로 바뀌었습니다 (#67). 값·공개 API는 동일하고(`charArray` 변경 시 didSet
+  재동기화), 파생값이므로 custom Codable로 인코딩 형상(`rawPayload`/`charArray`
+  두 키)은 그대로입니다.
+- 표 셀 헤더의 도달 불가능한 음수 `paragraphCount` 가드를 제거했습니다 (#67).
+  표 셀 파싱은 `UInt16`을 `Int32`로 승격해 읽어 항상 비음수입니다 — 리스트/
+  글상자와 달리 표 셀 헤더는 bytes 6-7이 셀 확장 속성이라 읽기 폭을 `Int32`로
+  넓힐 수 없다는 근거를 주석으로 못박았습니다. 동작 변화는 없습니다.
 - 책갈피 컨트롤(`bokm`)이 더 이상 **미지원 요소로 보고되지 않습니다**
   (`HwpUnsupportedDetector` → nil). 화면 출력이 없는 앵커이고, 이제 탐색 목록
   (`HwpDocumentMetadata.outline`)의 재료로 소비되기 때문입니다. 책갈피가 있는
@@ -114,6 +122,23 @@
 
 ### Added
 
+- **손상 문단·구역 best-effort 복구**가 들어왔습니다 (#65).
+  `HwpLoadOptions.recoverPartialContent`(기본 `false`)를 켜면 문단 카운트
+  불일치·필수 레코드 누락 같은 문단 파싱 실패, 그리고 구역 스트림 파싱 실패가
+  문서 전체를 실패시키는 대신 placeholder(문단은 `paraText == nil` + 원본
+  레코드 `unknownChildren` 보존, 구역은 빈 문서 템플릿 문단)로 대체되고, 새
+  public 필드 `HwpParagraph.parseFailure`/`HwpSection.parseFailure`에 원인이
+  남습니다. 손상 메모 문단도 같은 방식으로 복구되어 메모 그룹 경계가
+  보존됩니다. `.viewer` 프리셋은 이 옵션을 켜므로 뷰어는 한 문단 손상으로
+  백지가 되는 대신 나머지 본문을 그리고, placeholder는
+  `HwpPaginator.unsupportedElements()`에 "손상 문단/구역 복구" 진단으로
+  노출됩니다. 기본 모드는 종전 그대로 fail-fast입니다. FileHeader
+  `unsupportedFeature`(암호·배포용·DRM)와 자원 한도
+  2종(`streamSizeLimitExceeded`·`aggregateStreamSizeLimitExceeded`)은 복구
+  모드에서도 계속 throw되며, ViewText(표시본)는 복구를 적용하지 않고 구역
+  하나라도 실패하면 전량 폐기해 BodyText로 강등하는 기존 채택 규칙을
+  유지합니다 — placeholder로 개수를 보존하면 불완전 표시본이 채택되어 해당
+  구역이 백지가 되기 때문입니다.
 - **문서 뷰 VoiceOver 지원**이 들어왔습니다 (#79). 문서 본문은 뷰가 아니라
   `CALayer`로 그려져 지금까지 AX 트리가 없었는데, 이제 두 네이티브 뷰가 가시
   (±2) 페이지의 텍스트를 접근성 요소로 합성합니다 — 본문 단위(선택과 같은
