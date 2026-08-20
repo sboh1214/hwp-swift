@@ -65,7 +65,7 @@ CoreHwpTests/
 ├── Blank/
 ├── Noori/
 ├── Versions/
-├── DocInfo/{BinData,CharShape}/
+├── DocInfo/{BinData,CharShape,Core,IdMappingRecords,IdMappingShapes,RawRecords,TrackChanges}/
 └── Section/Column/
 ```
 

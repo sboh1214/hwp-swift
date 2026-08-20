@@ -72,13 +72,12 @@ private func sectionParagraphHeaderPayload() -> Data {
     return data
 }
 
+/// 레코드 프레이밍은 SectionRecordBuilder가 단일 출처다 — private 사본을
+/// 두지 않는다 (#67, Tests/CoreHwpTests/AGENTS.md "합성 레코드 스트림").
 private func sectionRecordData(tagId: UInt32, level: UInt32, payload: Data) -> Data {
-    var data = sectionLittleEndianData(tagId | (level << 10) | (UInt32(payload.count) << 20))
-    data.append(payload)
-    return data
+    SectionRecordBuilder.record(tagId: tagId, level: level, payload: payload)
 }
 
 private func sectionLittleEndianData(_ value: some FixedWidthInteger) -> Data {
-    var littleEndian = value.littleEndian
-    return withUnsafeBytes(of: &littleEndian) { Data($0) }
+    SectionRecordBuilder.littleEndian(value)
 }
