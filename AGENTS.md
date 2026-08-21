@@ -181,9 +181,24 @@ Equatable/Hashable에서도 제외된다 (payload **유무** 파생이라 `HwpCh
   메모·중첩 문단 포함)를 다룬다. 이 문장은 Detector doc-comment에도 있다.
 - **kind 6종**: `unknownRecord`(모든 `unknownRecords`/`unknownChildren` +
   `HwpUnknownRecord.children` 재귀 — `.child[i]` 세그먼트),
-  `unknownControl`/`notImplementedControl`(`HwpCtrlId` 두 raw case — 이때
-  `ctrlId` 채움), `recoveredSection`/`recoveredParagraph`/`recoveredMemoParagraph`
+  `unknownControl`/`notImplementedControl`(컨트롤 단위 — 이때 `ctrlId` 채움),
+  `recoveredSection`/`recoveredParagraph`/`recoveredMemoParagraph`
   (복구 placeholder — `detail`에 `parseFailure` 사유).
+- **`notImplementedControl`은 `HwpCtrlId.notImplemented`만이 아니다.** typed 승격
+  실패 시 표·도형은 `.notImplemented`로 떨어지지만 other/field 계열은 **제네릭
+  래퍼**로 보존된다 (`columnOrOther`·`sectionDefOrOther`·
+  `pageNumberPositionOrOther`·`listControlOrOther` → `.other`,
+  `hyperLinkOrField` → `.field`). 그 래퍼도 같은 kind로 보고한다 — **자식이 없는
+  폴백은 보고하지 않으면 진단이 통째로 비어** QA·텔레메트리가 완전한 파스로
+  오인한다. 판별은 **비대칭**이다: `.other`는 `HwpOtherCtrlId` 17종이 전용 파서
+  7종 아니면 `otherControl`이 이름 붙인 case 10종으로 남김없이 라우팅되므로
+  **도달 자체가 폴백의 증거**지만, `.field`는 대부분의 field id에게 제자리라
+  `ctrlId == .hyperLink`일 때만 폴백이다. "래퍼면 무조건 보고"로 넓히면 정상
+  `.field` 컨트롤이 전부 오탐되므로 음성 대조군이 짝으로 있다
+  (`ParseDiagnosticsFallbackTests`). 폴백 자체가 `HwpError` 3종
+  (`canFallbackToRawControl`)에만 열려 있어 `recordDoesNotExist`처럼 그 밖의
+  오류는 전파된다 — 합성 입력으로 이 경로를 재현하려면 그 집합 안의 오류를
+  유도해야 한다.
 - **순회 범위**: DocInfo(최상위 `unknownRecords` + idMappings/docData/
   distributeDocData/compatibleDocument/layoutCompatibility/raw record 계열의
   `unknownChildren`) → `sectionArray`·`viewSectionArray`(path 접두사

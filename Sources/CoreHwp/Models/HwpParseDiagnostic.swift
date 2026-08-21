@@ -15,8 +15,9 @@ public struct HwpParseDiagnostic: HwpPrimitive {
         case unknownRecord
         /// ctrl id 자체를 알지 못하는 컨트롤 (`HwpCtrlId.unknown`)
         case unknownControl
-        /// ctrl id는 알지만 typed 파싱이 없거나 raw 폴백으로 보존한 컨트롤
-        /// (`HwpCtrlId.notImplemented`)
+        /// ctrl id는 알지만 typed 파싱이 없거나 raw 폴백으로 보존한 컨트롤.
+        /// `HwpCtrlId.notImplemented`(표·도형)와, 전용 파서가 승격에 실패해
+        /// 제네릭 `.other`/`.field` 래퍼로 떨어진 컨트롤이 모두 포함된다.
         case notImplementedControl
         /// 복구 모드(#65)에서 구역 전체가 placeholder로 대체됨
         case recoveredSection
@@ -336,24 +337,44 @@ private extension HwpParseDiagnosticCollector {
         case let .form(control), let .autoNumber(control), let .newNumber(control),
              let .pageHide(control), let .pageCT(control), let .indexmark(control),
              let .bookmark(control), let .overlapping(control), let .comment(control),
-             let .hiddenComment(control), let .other(control):
+             let .hiddenComment(control):
+            collectUnknownChildren(control.unknownChildren, under: path)
+            collect(ctrlDataRecords: control.ctrlDataRecords, under: path)
+        // `.other`에 남았다는 것 자체가 typed 승격 실패의 증거다 —
+        // `HwpOtherCtrlId` 17종은 전용 파서 7종(section·column·header·footer·
+        // footnote·endnote·pageNumberPosition) 아니면 `otherControl`이 이름 붙인
+        // case 10종으로 남김없이 라우팅되므로, 제네릭 래퍼에 도달하는 경로는
+        // 폴백뿐이다 (`HwpParagraph`의 컨트롤 dispatch).
+        case let .other(control):
+            appendControl(.notImplementedControl, ctrlId: control.ctrlId.rawValue, path: path)
             collectUnknownChildren(control.unknownChildren, under: path)
             collect(ctrlDataRecords: control.ctrlDataRecords, under: path)
         case let .hyperLink(hyperlink):
             collectUnknownChildren(hyperlink.unknownChildren, under: path)
-        case let .memo(control), let .revision(control), let .field(control):
+        case let .memo(control), let .revision(control):
+            collectUnknownChildren(control.unknownChildren, under: path)
+        // `.field`는 반대다 — 대부분의 field ctrl id에게 제자리이고, 전용 파서가
+        // 있는 hyperLink만 여기 남았을 때 승격 실패다 (`hyperLinkOrField`).
+        case let .field(control):
+            if control.ctrlId == .hyperLink {
+                appendControl(.notImplementedControl, ctrlId: control.ctrlId.rawValue, path: path)
+            }
             collectUnknownChildren(control.unknownChildren, under: path)
         case let .notImplemented(header):
-            diagnostics.append(
-                HwpParseDiagnostic(kind: .notImplementedControl, ctrlId: header.ctrlId, path: path)
-            )
+            appendControl(.notImplementedControl, ctrlId: header.ctrlId, path: path)
             collectUnknownChildren(header.unknownChildren, under: path)
         case let .unknown(header):
-            diagnostics.append(
-                HwpParseDiagnostic(kind: .unknownControl, ctrlId: header.ctrlId, path: path)
-            )
+            appendControl(.unknownControl, ctrlId: header.ctrlId, path: path)
             collectUnknownChildren(header.unknownChildren, under: path)
         }
+    }
+
+    mutating func appendControl(
+        _ kind: HwpParseDiagnostic.Kind,
+        ctrlId: UInt32,
+        path: String
+    ) {
+        diagnostics.append(HwpParseDiagnostic(kind: kind, ctrlId: ctrlId, path: path))
     }
 
     mutating func collect(table: HwpTable, path: String) {

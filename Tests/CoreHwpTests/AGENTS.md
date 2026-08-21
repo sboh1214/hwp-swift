@@ -165,7 +165,7 @@ payload가 0xFFF 이상이면 size 비트가 level 필드로 넘쳐 헤더가 �
 
 ## 미해석 요소 집계 스위트 (#66)
 
-`HwpFile.parseDiagnostics()`의 kind·path 계약은 세 파일이 잠근다 (합성 빌더는
+`HwpFile.parseDiagnostics()`의 kind·path 계약은 네 파일이 잠근다 (합성 빌더는
 `Models/Document/ParseDiagnosticsTestSupport.swift` 공용, 프레이밍은
 `SectionRecordBuilder` 위임).
 
@@ -175,6 +175,13 @@ payload가 0xFFF 이상이면 size 비트가 level 필드로 넘쳐 헤더가 �
 - `Models/Document/ParseDiagnosticsRecoveryTests.swift` — 복구 placeholder
   3층(구역/문단/메모)의 kind·detail·placeholder 원본 record의 unknownChild
   동반 방출·메모 그룹 path 인덱스를 고정한다.
+- `Models/Document/ParseDiagnosticsFallbackTests.swift` — 제네릭 raw 래퍼로
+  떨어진 승격 실패(`.other` 4종 경로·`.field` 하이퍼링크)가 보고되는지, 그리고
+  **같은 래퍼가 제자리인** 컨트롤(`.bookmark`·정상 `.field`)에는 붙지 않는지를
+  짝으로 고정한다 — 음성 대조군이 없으면 "래퍼면 무조건 보고"라는 오탐 구현도
+  통과한다. 각 테스트가 정말 그 폴백 경로에 떨어졌는지 전제 단언으로 확인하며,
+  구역 정의만 자식을 절단해 넣는다 (자식 부재는 `recordDoesNotExist`라 폴백
+  집합 밖이라 전파된다).
 - `FixtureHarness/FixtureRegression/FixtureParseDiagnosticsTests.swift` —
   픽스처 전수 무크래시·결정성·두 모드 동일성·복구 kind 부재 + manifest의
   `sectionUnknownRecordCount`/`docInfoUnknownRecordCount` 계열 대조 (실제
