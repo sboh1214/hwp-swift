@@ -69,6 +69,33 @@ final class ParagraphMemoRecursionTests: XCTestCase {
         expect(paragraph.memoParagraphGroups?.count) == 1
         expect(paragraph.memoParagraphGroups?.first).to(beEmpty())
         expect(paragraph.memoParagraphArray).to(beNil())
+        // MEMO_LIST는 빈 그룹으로 typed 소비됐으므로 unknownChildren에
+        // 중복 보존되지 않는다 (#66 — 소비 인덱스 기반 제외).
+        expect(paragraph.unknownChildren).to(beEmpty())
+    }
+
+    func testStrayParagraphBeforeFirstMemoListIsPreservedAsUnknownChild() throws {
+        // 첫 MEMO_LIST 앞의 문단(66) child는 그룹 빌더가 소비하지 않는다
+        // (current == nil). 태그 blanket 제외 시절에는 이 record가 typed 소비도
+        // raw 보존도 없이 모델에서 사라져 미해석 집계(#66)가 볼 수 없었다 —
+        // 소비 인덱스 기반 제외로 unknownChildren에 남는지 고정한다.
+        let host = memoHostParagraphRecord(children: [
+            HwpRecord(tagId: HwpSectionTag.paraCharShape.rawValue, level: 1, payload: Data()),
+            HwpRecord(tagId: HwpSectionTag.paraLineSeg.rawValue, level: 1, payload: Data()),
+            memoParagraphRecord(text: 0xAC00),
+            HwpRecord(tagId: HwpSectionTag.memoList.rawValue, level: 1, payload: Data()),
+            memoParagraphRecord(text: 0xB098),
+        ])
+
+        let paragraph = try HwpParagraph.load(host, version)
+
+        expect(paragraph.memoParagraphGroups?.count) == 1
+        expect(
+            paragraph.memoParagraphGroups?.first?
+                .map { $0.paraText?.charArray.map(\.value) ?? [] }
+        ) == [[0xB098]]
+        expect(paragraph.unknownChildren.count) == 1
+        expect(paragraph.unknownChildren.first?.tagId) == HwpSectionTag.paraHeader.rawValue
     }
 
     func testCorruptMemoParagraphThrowsTypedErrorInDefaultMode() {
