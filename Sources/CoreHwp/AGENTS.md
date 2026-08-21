@@ -74,6 +74,12 @@ ID로 dispatch된다.
 3. `Enums/CtrlId/HwpCtrlId.swift`의 enum에 case 추가하고, manual
    `Codable` 구현 (`CodingKeys`, `init(from:)`, `encode(to:)`)도 갱신할 것.
    이종 associated value 때문에 자동 합성되지 않는다.
+4. `Models/HwpParseDiagnostic.swift`의 `collect(ctrl:)`에 진단 순회 case를
+   추가한다. `default:` 없는 exhaustive switch라 컴파일러가 누락을 잡아 준다 —
+   **`default:`를 넣어 통과시키지 말 것** (그 순간 새 컨트롤의 미해석 자식이
+   집계에서 조용히 빠진다). 렌더 스택의
+   `HwpUnsupportedDetector.unsupportedHint`와 같은 컨벤션이고, 현재 `HwpCtrlId`
+   전수 switch는 이 둘뿐이다 (`unsupportedComponentHint`는 `default:`가 있다).
 
 ## 컨벤션
 

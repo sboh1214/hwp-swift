@@ -47,6 +47,9 @@ record는 4-byte 컨트롤 ID로 시작하며,
    subdirectory).
 3. `HwpCtrlId`에 case 추가, manual `Codable` 구현 갱신.
 4. 단락 dispatch에서 `.notImplemented(HwpCtrlHeader)`로부터 분리.
+5. `Models/HwpParseDiagnostic.swift`의 `collect(ctrl:)`에 진단 순회 case 추가
+   (`default:` 없는 exhaustive switch라 컴파일러가 강제한다 — 근거는 상위
+   `CoreHwp/AGENTS.md` 같은 절).
 
 ## 컨벤션
 
