@@ -85,6 +85,18 @@ placeholder 생성이 이 폴더에 있으므로 그 형태 계약을 여기 남
   일 때 전파해 `HwpFile`이 구역 단위 placeholder로 승격시킨다 — 그 가드를
   지우면 경계 유실이 재발한다 (루트 "부분 복구").
 
+## 메모 계열 child 소비 (#66)
+
+`unconsumedRecords`는 메모 계열(MEMO_LIST 93·메모 문단 66)을 태그가 아니라
+**그룹 빌더가 실제 소비한 child 인덱스**로 제외한다. 태그 blanket 제외는 양쪽으로
+틀렸다 — 첫 MEMO_LIST **앞**의 stray 문단(66)은 그룹 빌더가 소비하지 않는데
+(`current == nil`) 함께 삼켜져 typed 소비도 raw 보존도 없이 모델에서 사라졌고,
+문단 없는 MEMO_LIST는 빈 그룹으로 typed 소비됐는데도 `unknownChildren`에 중복
+보존됐다. 전자는 미해석 요소 집계(`parseDiagnostics`)가 **구조적으로 볼 수 없는**
+유실이라 #66에서 고쳤다 — 이 폴더가 그 유실의 발생 지점이었다. 가드는
+`ParagraphMemoRecursionTests`의 stray/빈 그룹 테스트이고, 집계 쪽 계약은 루트
+`AGENTS.md` "미해석 요소 집계"에 있다.
+
 ## `HwpParaText.wcharCount` (#67)
 
 파스 루프가 실제로 소비한 wchar의 **누적 저장값**이다 (컨트롤 문자 = 8 wchar).
@@ -112,3 +124,6 @@ Codable은 `rawPayload`/`charArray` 두 키만 인코딩하고 디코더가 재�
 - `parseFailure` placeholder 로직을 다른 모델·다른 error로 넓히기 — 복구는
   문단·구역·메모 문단 한정이고 게이트는 `error.isRecoveryExempt`다 (루트
   "부분 복구").
+- 메모 계열 child를 **태그로** blanket 제외 — 소비 인덱스 기반이어야 한다
+  (위 "메모 계열 child 소비"). 되돌리면 stray 문단(66)이 typed 소비도 raw
+  보존도 없이 모델에서 사라진다.
