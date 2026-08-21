@@ -197,5 +197,6 @@ payload를 읽기 전에 `HwpError.invalidRecordTree`로 거부합니다. 실문
 | 미구현/알 수 없는 control | `.notImplemented` 또는 `.unknown`으로 raw payload 보존. 실제 fixture section stream 기반 주입 테스트로 unknown control payload/child 보존을 확인 |
 | 암호 문서 | `HwpError.unsupportedFeature(.encryptedDocument)`. 공인 인증서 암호화 bit도 같은 unsupported로 처리 |
 | 배포용 문서 | `HwpError.unsupportedFeature(.deploymentDocument)` |
+| 미해석 요소 집계 | `HwpFile.parseDiagnostics()`가 unknown record/control·복구 placeholder를 kind+path로 집계 (`Models/HwpParseDiagnostic.swift`). BodyText·ViewText·DocInfo·메모·중첩 컨트롤 전부 순회, `.default`/`.viewer` 진단 동일. 이중 보고 방지 별칭 규칙은 루트 AGENTS.md "미해석 요소 집계 (#66)" |
 | DRM 문서 | `HwpError.unsupportedFeature(.drmDocument)`. 일반 DRM 및 공인 인증서 DRM bit 모두 차단 |
 | 쓰기/저장 | 미지원 |

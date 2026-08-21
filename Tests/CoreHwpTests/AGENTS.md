@@ -163,6 +163,28 @@ payload가 0xFFF 이상이면 size 비트가 level 필드로 넘쳐 헤더가 �
   적대 입력. 뷰어 진단 노출(`kind: .placeholder`)은 `HwpKitCoreTests`의
   `HwpPaginatorRecoveryPlaceholderTests`가 본다.
 
+## 미해석 요소 집계 스위트 (#66)
+
+`HwpFile.parseDiagnostics()`의 kind·path 계약은 세 파일이 잠근다 (합성 빌더는
+`Models/Document/ParseDiagnosticsTestSupport.swift` 공용, 프레이밍은
+`SectionRecordBuilder` 위임).
+
+- `Models/Document/ParseDiagnosticsTests.swift` — 합성 스트림으로 unknown
+  record/control·`.child[i]` 재귀·표 셀 중첩 path·raw 폴백(.notImplemented)
+  컨트롤·ViewText path 분리·`.default`/`.viewer` 동일성을 고정한다.
+- `Models/Document/ParseDiagnosticsRecoveryTests.swift` — 복구 placeholder
+  3층(구역/문단/메모)의 kind·detail·placeholder 원본 record의 unknownChild
+  동반 방출·메모 그룹 path 인덱스를 고정한다.
+- `FixtureHarness/FixtureRegression/FixtureParseDiagnosticsTests.swift` —
+  픽스처 전수 무크래시·결정성·두 모드 동일성·복구 kind 부재 + manifest의
+  `sectionUnknownRecordCount`/`docInfoUnknownRecordCount` 계열 대조 (실제
+  manifest 기대값이 전부 0이라, 합성 manifest + 합성 문서 **양성 대조군**이
+  필터 정규식의 공허화를 막는다). 실저장본 비-공허 앵커는
+  `legacy-common-control-property`의 hiddenComment unknown child 3건이고,
+  track-changes는 실제 BodyText/ViewText stream에 unknown record를 **주입**해
+  두 본문의 진단이 path 접두사로 갈림을 고정한다 (원본 저장본 자체는 진단
+  0건 — 여기서 진단이 생기면 typed 파싱 회귀 신호).
+
 ## 압축 해제 기준선 (#68, #101)
 
 `Streams/Readers/HwpInflateTests.swift`는 두 프로덕션 경로(Apple `Compression`,
