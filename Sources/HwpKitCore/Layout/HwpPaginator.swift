@@ -1143,17 +1143,20 @@ private extension HwpPaginator {
         }
     }
 
+    /// shape 해석은 `paraShapeOrDefault`다 — 스타일 부착
+    /// (`HwpTextRunBuilder.attachParagraphStyle`)과 **같은 폴백**이어야 측정이
+    /// 부착본을 그대로 framesetting할 수 있다 (#80 조각 3의 측정 입력 계약).
+    /// 종전에는 `paraShape(for:)`가 nil이면 빈 프레임으로 조기 반환했는데,
+    /// paraShape 표가 통째로 빈 문서에서 그 문단은 높이 0으로 잡힌 채 텍스트만
+    /// 그려졌다 (뒤 문단과 겹친다). 이제 부착과 같은 기본 shape로 조판한다.
     func layout(
         _ paragraph: CoreHwp.HwpParagraph,
         attributedString: NSAttributedString
     ) async throws -> HwpParagraphFrame {
         await Task.yield()
-        guard let paraShape = index.paraShape(for: paragraph) else {
-            return HwpParagraphFrame(totalHeight: 0, lines: [])
-        }
         return HwpParagraphLayout().layout(
             attributedString: attributedString,
-            paraShape: paraShape,
+            paraShape: index.paraShapeOrDefault(for: paragraph),
             columnWidth: currentColumnFrame.width
         )
     }

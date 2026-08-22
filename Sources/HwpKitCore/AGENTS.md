@@ -433,16 +433,31 @@ height는 잉크 모델이다.
 4. **재프레이밍 결과가 여러 줄이 돼도 `keepCount`는 남은 예산이 상한이다.** 3번의
    구제가 `maximumLineFrames`를 우회하는 뒷문이 되지 않게 하는 하드 불변이다.
 
-가드는 두 층이다. **합성 단위**는 `HwpParagraphLayoutTests`의 청크 경계 계열
-(`testCappedMeasurementMatchesRenderRanges`·`testWideSingleLineNotSplitAcrossChunks`·
-`testMaxLineFramesBudgetNotExceededWithTailIndent`·`testCappedBaselineMatchesUncapped`)
-이 계약 넷을 하나씩 겨냥한다. **픽스처 스케일**은
-`HwpLayoutRenderParitySweepTests`가 실픽스처의 모든 문단을 (컨테이너 문단까지
-프로덕션 `HwpPaginator.childParagraphs(of:)`로 재귀해) 측정·렌더·공유 코어
-3-way로 대조한다 — 상시 CI에서는 legacy를 stride 31로 표본하고,
-`HWP_PARITY_SWEEP=1`이 전수다 (실측 2026-08-22: 대조 21,436건 위반 0, 127초).
-**렌더 쪽과는 줄 범위만 대조한다** — 폭·ascent는 양쪽 정렬 재조판이 갈라 놓으므로
-재조판 전 프레임 줄인 공유 코어와 맞춘다.
+가드는 두 층이다.
+
+**합성 단위** — `HwpParagraphLayoutTests`가 계약별로 겨냥한다:
+
+| 계약 | 가드 |
+|---|---|
+| 1 줄 예산 절단 | `testLineFrameAccumulationHonorsCap`(측정) · `testDrawnLinesHonorMaxLineFrameCap`(렌더) |
+| 2 미완 줄 이월 | `testCappedFramingPreservesLineBoundaries` · `testCappedMeasurementMatchesRenderRanges` · `testCappedBaselineMatchesUncapped`(재개 baseline) |
+| 3 한 시각 줄 재프레이밍 | `testWideSingleLineNotSplitAcrossChunks` · `testDrawnLinesFrameEntireWideParagraphBeyondCharCap` |
+| 4 `keepCount` 하드 상한 | `testMaxLineFramesBudgetNotExceededWithTailIndent` |
+
+**픽스처 스케일** — `HwpLayoutRenderParitySweepTests`가 실픽스처의 모든 문단을
+(컨테이너 문단까지 프로덕션 `HwpPaginator.childParagraphs(of:)`로 재귀해)
+측정·렌더·공유 코어 3-way로 대조한다. 상시 CI에서는 legacy를 stride 31로
+표본하고, `HWP_PARITY_SWEEP=1`이 전수다 (실측 2026-08-22: 대조 21,436건 위반 0,
+127초). **렌더 쪽과는 줄 범위만 대조한다** — 폭·ascent는 양쪽 정렬 재조판이
+갈라 놓으므로 재조판 전 프레임 줄인 공유 코어와 맞춘다.
+
+**이 스윕이 무엇인지 오해하지 말 것 — 발견용이 아니라 잠금용이다.** 세 경로가
+지금은 같은 코어를 쓰므로 대조는 대체로 항등식이고, 그래서 이 가드가 하는 일은
+"계속 같은 코어를 쓴다"를 못박는 것이다. 빨개지는 날은 넷 중 하나다: ① `layout`이
+입력을 다시 변형하거나(#80 조각 3 이전 상태로의 회귀), ② 한쪽만 slight-overflow
+술어·폭 클램프를 바꾸거나, ③ 네 번째 줄바꿈 구현이 끼어들거나
+(`HwpMemoPanelPainter.wrappedLines`가 그 예다 — 메모 본문은 이 스윕 밖이다),
+④ 새 컨테이너가 `childParagraphs`에 추가되며 문단 수 핀이 어긋나거나.
 
 **public 승격은 하지 않는다.** internal 유지가 기본값이고, 승격한다면 그 표면은
 `breakLines(attributedString:width:)` 같은 폭·문자열 API로 표현할 수 없다 —
@@ -462,13 +477,20 @@ paraShape와 같은 값**이어야 한다.
   `HwpParagraphLayout.paragraphStyle(for:attributedString:tabStops:)`로 같은 부착을
   해야 한다. 안 하면 CT 기본값(natural 정렬·자연 줄 높이)으로 조판돼 렌더와
   어긋난다 — 조용히.
-- **shape 해석은 조판 경로 전부가 `paraShapeOrDefault`다.** 부착이
-  `paraShape(for:)`(nil 가능)를 쓰던 시절에는 paraShape 표가 통째로 빈 문서에서
-  부착만 생략되고 측정은 기본 shape로 조판해 둘이 갈렸다. 종전에는 `layout`이
-  스타일을 재생성했으므로 그 갈림이 이론이었지만, 지금은 **측정 결과 자체**가
-  달라진다. 픽스처 33종 중 이 경로를 타는 것이 0개라 합성 가드로만 잡힌다:
+- **`layout`에 닿는 경로는 전부 `paraShapeOrDefault`로 shape를 푼다** — 부착
+  (`attachParagraphStyle`) · `HwpParagraphMeasurer` · `HwpPageChromeBuilder` ·
+  `HwpPaginator.layout` 넷. 부착이 `paraShape(for:)`(nil 가능)를 쓰던 시절에는
+  paraShape 표가 통째로 빈 문서에서 부착만 생략되고 측정은 기본 shape로 조판해
+  둘이 갈렸다. 종전에는 `layout`이 스타일을 재생성했으므로 그 갈림이 이론이었지만,
+  지금은 **측정 결과 자체**가 달라진다.
+  **`paraShape(for:)`의 nil은 표가 통째로 빌 때만 나온다** — id는
+  `HwpIndex.makeIndex`가 배열 오프셋으로 매긴 조밀한 값이라 (`paraShapeArray`에
+  id 필드가 없다) 표가 비어 있지 않으면 id 0이 반드시 있고 뒤 폴백이 항상 걸린다.
+  즉 이 축은 정상 문서가 아니라 **손상·조작 DocInfo**다. 픽스처 33종 중 0개라
+  합성 가드로만 잡힌다:
   `HwpMeasurementInputContractTests.testEmptyParaShapeTableStillAppliesDefaultParagraphStyle`
-  (부착을 되돌리면 줄 피치가 16.0 → 12.44pt로 떨어져 빨개진다).
+  (부착을 되돌리면 줄 피치가 16.0 → 12.44pt로 떨어져 빨개진다). `HwpPaginator.layout`도
+  그 문서에서 종전에는 높이 0으로 조기 반환해 본문 전체가 같은 y에 겹쳐 그려졌다.
 - 없앤 것이 사본만은 아니다 — **스타일 출처가 한 함수 안에서 둘로 갈려 있었다.**
   `layout`은 사본을 뜨기 전에 `slightOverflowLineMetrics`를 부르는데 그 술어는
   **부착본** 스타일을 읽고 그 분기에서 바로 반환했고, 그 아래 일반 분기만
@@ -519,7 +541,7 @@ paraShape와 같은 값**이어야 한다.
   측정 (HwpParagraphLayout)은 CT justified 그대로 — 줄바꿈은 동일하다.
   **측정·렌더가 갈리는 지점은 이 재조판 하나뿐이다** (줄바꿈 코어 자체는
   위 "측정·렌더 공유 줄바꿈 코어" 참조). 그래서 두 경로의 줄 **범위**는
-  등가지만 **폭·ascent**는 재조판을 받은 줄에서만 갈린다 — 실측: legacy 최대
+  등가지만 **폭·ascent**는 재조판을 받은 줄에서만 갈린다 — #80 실측: legacy 최대
   10.000pt·noori 최대 7.500pt의 폭 델타가 붙은 7,760줄은 **전부** 재조판
   줄이고, 재조판을 받지 않은 줄의 델타는 정확히 0이다 (ascent는 재조판 줄
   321개에서만 최대 1.78955pt). **정렬 종류로 거르면 안 된다** —

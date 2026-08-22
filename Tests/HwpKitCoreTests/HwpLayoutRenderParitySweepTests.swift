@@ -16,8 +16,12 @@ import XCTest
     /// 변경(#80 조각 3 — 측정이 부착본을 그대로 framesetting)은 **모든** 문단에
     /// 번지므로, 가드의 규모가 위험에 비해 턱없이 작았다.
     ///
-    /// **이 가드는 발견용이 아니라 잠금용이다** — 등가는 이미 성립한다. 실패하면
-    /// 그것은 새 회귀다.
+    /// **이 가드는 발견용이 아니라 잠금용이다** — 등가는 이미 성립한다. 세 경로가
+    /// 지금은 같은 코어를 쓰므로 대조는 대체로 항등식이고, 그래서 이 스위트가 하는
+    /// 일은 "계속 같은 코어를 쓴다"를 못박는 것이다. 빨개지는 날은 넷 중 하나다 —
+    /// ① `layout`이 입력을 다시 변형하거나(#80 조각 3 이전으로의 회귀), ② 한쪽만
+    /// slight-overflow 술어·폭 클램프를 바꾸거나, ③ 네 번째 줄바꿈 구현이 끼어들거나,
+    /// ④ 새 컨테이너가 `childParagraphs`에 추가되며 문단 수 핀이 어긋나거나.
     ///
     /// 대조는 세 갈래다. 같은 attributedString·같은 폭에서
     /// 1. 측정 줄 범위 == 렌더 줄 범위,
@@ -37,9 +41,9 @@ import XCTest
     ///
     /// `displaySectionArray[].paragraph` 최상위만 훑으면 전체 문단의 상당수를
     /// **구조적으로** 못 본다 — 표 셀·글상자·각주 문단은 `paragraph.ctrlHeaderArray`
-    /// 안에 있고, 하필 그 문단들이 조각 3의 위험 구간이다 (legacy 1,030쪽
-    /// 페이지네이션 1회의 `layout()` 호출 5,773건 중 3,689건 = 64%가 컨테이너
-    /// 문단). 그래서 프로덕션 `HwpPaginator.childParagraphs(of:)`를 **그대로 불러**
+    /// 안에 있고, 하필 그 문단들이 조각 3의 위험 구간이다 (#80 실측: legacy
+    /// 1,030쪽 페이지네이션 1회의 `layout()` 호출 5,773건 중 3,689건 = 64%가
+    /// 컨테이너 문단). 그래서 프로덕션 `HwpPaginator.childParagraphs(of:)`를 **그대로 불러**
     /// 재귀한다 — 분기를 복제하면 새 컨테이너가 추가될 때 이 가드만 조용히 그것을
     /// 못 본다.
     ///
@@ -47,10 +51,16 @@ import XCTest
     /// `HwpMemoPanelPainter`가 `CTTypesetterSuggestLineBreak`로 직접 쪼개는
     /// 세 번째 줄바꿈 구현을 타므로, 여기서 대조하면 의미가 없다.
     ///
+    /// **알고 있는 범위 한계 둘.** ① `sizeResolver`를 안 실어 글자처럼 취급 개체
+    /// 마커가 폭 0으로 예약된다 (프로덕션은 개체 크기). 등가는 두 경로가 **같은**
+    /// 문자열을 보는 성질이라 이 축과 무관하지만, 인라인 개체 줄의 실제 줄바꿈
+    /// 지점은 여기서 안 태워진다. ② 각주 자동 번호 등
+    /// `controlReplacements`도 비어 있어 마커가 번호 텍스트로 치환되지 않는다.
+    ///
     /// ## CI 비용
     ///
     /// 상시 스위트다 — opt-in으로 두면 CI에서 한 줄도 안 돌아 #69가 없앤 죽은
-    /// 가드가 되살아난다. 대신 legacy를 **표본화**한다: 문단 14,659개 중 14,522개
+    /// 가드가 되살아난다. 대신 legacy를 **표본화**한다: 문단 14,796개 중 14,659개
     /// (99.1%)가 그 픽스처 하나에서 나와, 전수 스윕은 이 스위트만 127초다
     /// (`HwpKitCoreTests` 번들 5.5초의 23배). stride 31 표본이면 4.6초로 떨어지고
     /// 표본은 결정론적이라 실행마다 같은 문단을 본다.
@@ -112,9 +122,13 @@ import XCTest
             // 여러 줄 문단 수는 조판 결과라 하한만 둔다 (결정론 resolver로 기기
             // 독립이지만 CT 버전까지 잠그지는 않는다). 공허한 통과 방지가 목적.
             expect(stats.multiLine).to(beGreaterThanOrEqualTo(Self.minimumFixtureMultiLine))
+            // 3-way 축이 조용히 비지 않았다 — 공유 코어 대조를 건너뛴 문단은
+            // slight-overflow 한 줄뿐이어야 한다 (실측 1 / 260).
+            expect(stats.measured - stats.sharedCoreCompared)
+                .to(beLessThanOrEqualTo(Self.maximumFixtureSharedCoreSkips))
         }
 
-        /// 문단의 98%가 여기서 나온다 — 표본만 상시로 돈다.
+        /// 문단의 99%가 여기서 나온다 — 표본만 상시로 돈다.
         func testLegacyFixtureMeasurementMatchesRender() throws {
             let file = try Self.fixture(Self.legacyFixtureId)
             let stride = Self.isExhaustive ? 1 : Self.legacySampleStride
@@ -131,6 +145,9 @@ import XCTest
                 .to(beGreaterThanOrEqualTo(exhaustive ? 3500 : 100))
             expect(stats.multiLine)
                 .to(beGreaterThanOrEqualTo(exhaustive ? 12000 : 360))
+            // 위와 같은 이유 (실측: 표본 17 / 652, 전수 320 / 21,436).
+            expect(stats.measured - stats.sharedCoreCompared)
+                .to(beLessThanOrEqualTo(exhaustive ? 500 : 40))
         }
 
         // MARK: - 실측 핀
@@ -139,6 +156,7 @@ import XCTest
         private static let expectedFixtureMeasured = 260
         private static let expectedFixtureContainers = 50
         private static let minimumFixtureMultiLine = 60
+        private static let maximumFixtureSharedCoreSkips = 5
         private static let expectedLegacyVisited = 14659
 
         // MARK: - 본체
@@ -148,6 +166,9 @@ import XCTest
             var measured = 0
             var multiLine = 0
             var containerParagraphs = 0
+            /// 공유 코어 3-way 대조까지 간 문단 수 — 아래 조기 반환 둘이 넓어지면
+            /// 그 축이 조용히 비어도 나머지 단언은 초록이다. 세어서 못박는다.
+            var sharedCoreCompared = 0
             var failures: [String] = []
         }
 
@@ -223,7 +244,7 @@ import XCTest
             }
             compareAgainstSharedCore(
                 attributed: attributed, width: width, frame: result.frame,
-                label: label, failures: &stats.failures
+                label: label, stats: &stats
             )
         }
 
@@ -233,16 +254,18 @@ import XCTest
             width: CGFloat,
             frame: HwpParagraphFrame,
             label: String,
-            failures: inout [String]
+            stats: inout SweepStats
         ) {
             // slight-overflow 한 줄은 두 경로가 공유 코어를 아예 타지 않는다
             // (양쪽이 같은 술어로 조기 반환) — 위 범위 대조로 충분하다.
             guard HwpDrawnTextLayout.slightOverflowLineMetrics(
                 attributedString: attributed, lineWidth: width
             ) == nil else { return }
-            // 문단이 줄 예산보다 짧으면 공유 코어 호출 한 번이 문단 전체를 덮는다
-            // (probeLength == fullLength → cutBeforeEnd == false). 그보다 길면
-            // 다중 청크라 여기서 루프를 재현해야 해 3-way 대조에서 뺀다.
+            // 공유 코어 호출 **한 번**이 문단 전체를 덮는 조건은
+            // `probeLength == fullLength`, 즉 `nextFrameChunk`가 문자 수를 남은 **줄**
+            // 예산과 직접 비교하므로 (`min(fullLength - start, remainingLineBudget)`)
+            // 문자 수가 maximumLineFrames 이하일 때다. 그보다 길면 다중 청크라
+            // 여기서 루프를 재현해야 해 3-way 대조에서 뺀다.
             guard attributed.length <= HwpParagraphLayout.maximumLineFrames else { return }
             guard let chunk = HwpLineBreaker.nextFrameChunk(
                 framesetter: CTFramesetterCreateWithAttributedString(attributed),
@@ -253,11 +276,12 @@ import XCTest
                 remainingLineBudget: HwpParagraphLayout.maximumLineFrames,
                 lineWidth: width
             ) else {
-                failures.append("\(label) 공유 코어가 청크를 못 냈다")
+                stats.failures.append("\(label) 공유 코어가 청크를 못 냈다")
                 return
             }
+            stats.sharedCoreCompared += 1
             guard chunk.keepCount == frame.lines.count else {
-                failures.append(
+                stats.failures.append(
                     "\(label) 줄 수: 측정 \(frame.lines.count) ≠ 공유 코어 \(chunk.keepCount)"
                 )
                 return
@@ -268,14 +292,14 @@ import XCTest
                 let coreWidth = CGFloat(CTLineGetTypographicBounds(frameLine, &ascent, nil, nil))
                 let coreRange = NSRange(location: range.location, length: range.length)
                 if line.attributedRange != coreRange {
-                    failures.append(
+                    stats.failures.append(
                         "\(label) 측정 줄 범위가 공유 코어와 다르다: "
                             + "\(line.attributedRange) ≠ \(coreRange)"
                     )
                     break
                 }
                 if abs(line.width - coreWidth) > 0.0001 || abs(line.baseline - ascent) > 0.0001 {
-                    failures.append(
+                    stats.failures.append(
                         "\(label) 측정 줄 메트릭이 공유 코어와 다르다: 폭 \(line.width) vs "
                             + "\(coreWidth), ascent \(line.baseline) vs \(ascent)"
                     )
