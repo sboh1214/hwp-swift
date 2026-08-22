@@ -3,6 +3,15 @@ import Foundation
 
 /// Classifies a control ID into either "supported" (nil) or an unsupported placeholder element.
 ///
+/// 역할 경계 (#66): Detector가 보는 것은 파스 완전성이 아니라 **조판 결과**다 —
+/// "미지원 요소가 화면에서 placeholder로 보이는가"(뷰어 UI)를 다루고, 실제 수집은
+/// 조판을 구동하는 `HwpPaginator.walkUnsupported`가 하므로 대상은 조판된 쪽에
+/// 실린 컨트롤로 한정된다. 복구 placeholder(`collectRecoveredParseFailures`)와
+/// 컨테이너 깊이 초과도 같은 `.placeholder` 채널로 나간다. 반면 "파서가 무엇을
+/// 해석하지 못했는가"(QA·텔레메트리·버그 리포트·픽스처 회귀 신호)는 조판과
+/// 무관하게 문서 전체 — ViewText·메모·중첩 문단 포함 — 를 집계하는
+/// `CoreHwp.HwpFile.parseDiagnostics()`가 맡는다.
+///
 /// V1 IN (supported, returns nil):
 /// - Text runs (paragraph controls)
 /// - Table, image (picture), footnote, endnote

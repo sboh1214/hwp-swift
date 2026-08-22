@@ -1,6 +1,6 @@
 # 프로젝트 지식 베이스
 
-**Branch:** feat/partial-content-recovery
+**Branch:** feat/parse-diagnostics
 
 ## 개요
 
@@ -41,7 +41,7 @@ hwp-swift/
 |------|------|
 | 새 stream 파서 추가 | `Sources/CoreHwp/Streams/` + `HwpFile.init(fromOLE:)`에 등록 |
 | 새 record 태그 추가 | `Sources/CoreHwp/Enums/Hwp{DocInfo,Section}Tag.swift` |
-| 새 컨트롤 ID 추가 | `Sources/CoreHwp/Enums/CtrlId/` + `Models/Section/CtrlHeader/` + `HwpCtrlId` enum |
+| 새 컨트롤 ID 추가 | `Sources/CoreHwp/Enums/CtrlId/` + `Models/Section/CtrlHeader/` + `HwpCtrlId` enum + `Models/HwpParseDiagnostic.swift`의 진단 순회 |
 | 새 모델 추가 | `Sources/CoreHwp/Models/...` 하위에 `Utils/Protocols/`의 프로토콜을 채택하여 작성 |
 | 기본 타입 확장 | `Sources/CoreHwp/Utils/Extensions/` |
 | 테스트 픽스처 추가 | 테스트 파일과 같은 폴더에 `.hwp` 배치 (`openHwp(#file, "name")` 사용) |
@@ -166,6 +166,75 @@ Equatable/Hashable에서도 제외된다 (payload **유무** 파생이라 `HwpCh
 헤더의 **도달 불가능한** 음수 `paragraphCount` 가드도 제거됐다 — 표 셀은
 `UInt16`을 `Int32`로 승격해 읽어 항상 비음수다 (리스트/글상자와 달리 bytes 6-7이
 셀 확장 속성이라 읽기 폭을 넓힐 수 없다는 근거를 주석으로 못박음). 되살리지 말 것.
+
+## 미해석 요소 집계 (#66)
+
+`HwpFile.parseDiagnostics()`가 문서 전체를 순회해 파서가 해석하지 못한 요소를
+`[HwpParseDiagnostic]`(kind + tagId/ctrlId + path + detail)로 집계한다 —
+`HwpFile`의 첫 `extension`이고, 타입은
+[`Models/HwpParseDiagnostic.swift`](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/Models/HwpParseDiagnostic.swift)에
+있다. 용도는 QA·텔레메트리·버그 리포트·픽스처 회귀 신호다.
+
+- **역할 경계**: `HwpUnsupportedDetector`/`unsupportedElements()`는 "미지원
+  요소가 **화면에서** placeholder로 보이는가"(조판된 쪽에 실린 컨트롤 한정)를,
+  `parseDiagnostics()`는 "파서가 무엇을 해석하지 못했는가"(조판 무관, ViewText·
+  메모·중첩 문단 포함)를 다룬다. 이 문장은 Detector doc-comment에도 있다.
+- **kind 6종**: `unknownRecord`(모든 `unknownRecords`/`unknownChildren` +
+  `HwpUnknownRecord.children` 재귀 — `.child[i]` 세그먼트),
+  `unknownControl`/`notImplementedControl`(컨트롤 단위 — 이때 `ctrlId` 채움),
+  `recoveredSection`/`recoveredParagraph`/`recoveredMemoParagraph`
+  (복구 placeholder — `detail`에 `parseFailure` 사유).
+- **`notImplementedControl`은 `HwpCtrlId.notImplemented`만이 아니다.** typed 승격
+  실패 시 표·도형은 `.notImplemented`로 떨어지지만 other/field 계열은 **제네릭
+  래퍼**로 보존된다 (`columnOrOther`·`sectionDefOrOther`·
+  `pageNumberPositionOrOther`·`listControlOrOther` → `.other`,
+  `hyperLinkOrField` → `.field`). 그 래퍼도 같은 kind로 보고한다 — **자식이 없는
+  폴백은 보고하지 않으면 진단이 통째로 비어** QA·텔레메트리가 완전한 파스로
+  오인한다. 판별은 **비대칭**이다: `.other`는 `HwpOtherCtrlId` 17종이 전용 파서
+  7종 아니면 `otherControl`이 이름 붙인 case 10종으로 남김없이 라우팅되므로
+  **도달 자체가 폴백의 증거**지만, `.field`는 대부분의 field id에게 제자리라
+  `ctrlId == .hyperLink`일 때만 폴백이다. "래퍼면 무조건 보고"로 넓히면 정상
+  `.field` 컨트롤이 전부 오탐되므로 음성 대조군이 짝으로 있다
+  (`ParseDiagnosticsFallbackTests`). 폴백 자체가 `HwpError` 3종
+  (`canFallbackToRawControl`)에만 열려 있어 `recordDoesNotExist`처럼 그 밖의
+  오류는 전파된다 — 합성 입력으로 이 경로를 재현하려면 그 집합 안의 오류를
+  유도해야 한다.
+- **순회 범위**: DocInfo(최상위 `unknownRecords` + idMappings/docData/
+  distributeDocData/compatibleDocument/layoutCompatibility/raw record 계열의
+  `unknownChildren`) → `sectionArray`·`viewSectionArray`(path 접두사
+  `section[i]`/`viewSection[i]`로 갈림) → 문단 → 컨트롤 재귀(표 셀·리스트
+  4종·글상자·shape component detail 16종·ctrlData) → 메모 그룹
+  (`memo[g].paragraph[m]` — 그룹 인덱스가 메모 하나를 특정).
+- **이중 보고 방지 별칭 규칙** — 걷지 않는 필드가 넷 있다:
+  `HwpShapeControl.eqEditRecords`/`HwpShapeComponent.oleRecords`(typed 배열의
+  raw 사본), `HwpListControl.header.unknownChildren`(`HwpCtrlHeader.load`가
+  typed 소비된 리스트·문단까지 **전체** child를 raw로 담음),
+  DocInfo **결합 배열의 소유 구간**(`memoShape`/`trackChange`/
+  `trackChangeContent`/`trackChangeAuthor`는 idMappings 소유 구간,
+  `forbiddenChar`는 idMappings **+ docData** 소유 구간 — 각각
+  `docInfo.idMappings.…`/`docInfo.docData.forbiddenChar[i]` 경로에서 이미
+  보고되므로 최상위 구간만 결합 인덱스로 걷는다). 최상위
+  `docInfo.layoutCompatibility`는 compatibleDocument child의 **폴백 별칭**일 수
+  있어 값이 같으면 건너뛴다. `.unknown`/`.notImplemented` 컨트롤의
+  `header.unknownChildren`는 반대로 **걷는다** — 그 컨트롤은 아무것도 typed
+  소비하지 않았다.
+- **인접 정정**: 문단의 메모 계열 소비(`HwpParagraph.unconsumedRecords`)가 태그
+  blanket 제외에서 **실제 소비 인덱스** 기반으로 바뀌었다. 종전에는 첫
+  MEMO_LIST 앞의 stray 문단(66) child가 typed 소비도 raw 보존도 없이 모델에서
+  사라졌고(집계가 구조적으로 볼 수 없는 유실), 문단 없는 MEMO_LIST는 빈 그룹
+  으로 typed 소비됐는데도 unknownChildren에 중복 보존됐다. 둘 다 #66 리뷰에서
+  발견·수정 — 가드는 `ParagraphMemoRecursionTests`의 stray/빈 그룹 테스트.
+- **계약**: 결정적 순서 — 컨테이너(구역·문단·컨트롤) 순회는 문서 순서,
+  컨테이너 **안**은 종류별 그룹 순서다(unknown record → 문단/컨트롤 재귀 —
+  파스가 두 배열로 분리하며 원 스트림의 interleaving 위치를 버리므로 walker
+  층에서 복원 불가). `.default`와 `.viewer`의 진단 동일
+  (`HwpUnknownRecord`가 보존 off에서도 payload를 분리 복사로 유지하는 이유).
+  walker 자체 깊이 상한 없음 — 파스 시점 `maxNestingDepth`(#64)가 이미 유계.
+  정상 픽스처 전수(전 33종 중 expectedError 4종 제외 29종)에서 복구 kind 0건, 실저장본 진단은
+  `legacy-common-control-property`의 hiddenComment 계열 3건이 비-공허 앵커다.
+  스위트: `Models/Document/ParseDiagnosticsTests.swift`(합성) +
+  `FixtureHarness/FixtureRegression/FixtureParseDiagnosticsTests.swift`(픽스처
+  전수·manifest 대조·track-changes 주입 분리).
 
 ## 컨벤션
 

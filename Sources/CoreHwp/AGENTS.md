@@ -74,6 +74,12 @@ ID로 dispatch된다.
 3. `Enums/CtrlId/HwpCtrlId.swift`의 enum에 case 추가하고, manual
    `Codable` 구현 (`CodingKeys`, `init(from:)`, `encode(to:)`)도 갱신할 것.
    이종 associated value 때문에 자동 합성되지 않는다.
+4. `Models/HwpParseDiagnostic.swift`의 `collect(ctrl:)`에 진단 순회 case를
+   추가한다. `default:` 없는 exhaustive switch라 컴파일러가 누락을 잡아 준다 —
+   **`default:`를 넣어 통과시키지 말 것** (그 순간 새 컨트롤의 미해석 자식이
+   집계에서 조용히 빠진다). 렌더 스택의
+   `HwpUnsupportedDetector.unsupportedHint`와 같은 컨벤션이고, 현재 `HwpCtrlId`
+   전수 switch는 이 둘뿐이다 (`unsupportedComponentHint`는 `default:`가 있다).
 
 ## 컨벤션
 
@@ -197,5 +203,6 @@ payload를 읽기 전에 `HwpError.invalidRecordTree`로 거부합니다. 실문
 | 미구현/알 수 없는 control | `.notImplemented` 또는 `.unknown`으로 raw payload 보존. 실제 fixture section stream 기반 주입 테스트로 unknown control payload/child 보존을 확인 |
 | 암호 문서 | `HwpError.unsupportedFeature(.encryptedDocument)`. 공인 인증서 암호화 bit도 같은 unsupported로 처리 |
 | 배포용 문서 | `HwpError.unsupportedFeature(.deploymentDocument)` |
+| 미해석 요소 집계 | `HwpFile.parseDiagnostics()`가 unknown record/control·복구 placeholder를 kind+path로 집계 (`Models/HwpParseDiagnostic.swift`). BodyText·ViewText·DocInfo·메모·중첩 컨트롤 전부 순회, `.default`/`.viewer` 진단 동일. 이중 보고 방지 별칭 규칙은 루트 AGENTS.md "미해석 요소 집계 (#66)" |
 | DRM 문서 | `HwpError.unsupportedFeature(.drmDocument)`. 일반 DRM 및 공인 인증서 DRM bit 모두 차단 |
 | 쓰기/저장 | 미지원 |

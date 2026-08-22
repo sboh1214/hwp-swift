@@ -168,15 +168,17 @@ public struct HwpParagraph: HwpFromRecordWithVersion {
 
         // MEMO_LIST(93)가 메모 하나를 열고, 그 뒤 문단(66)들이 그 메모의 본문이다.
         // 메모별 그룹을 보존해야 여러 문단짜리 메모/다중 메모가 필드와 어긋나지 않는다.
+        var consumedMemoChildIndexes = Set<Int>()
         if children.contains(where: { $0.tagId == HwpSectionTag.memoList.rawValue }) {
             var groups: [[HwpParagraph]] = []
             var current: [HwpParagraph]?
-            for child in children {
+            for (index, child) in children.enumerated() {
                 if child.tagId == HwpSectionTag.memoList.rawValue {
                     if let current {
                         groups.append(current)
                     }
                     current = []
+                    consumedMemoChildIndexes.insert(index)
                 } else if child.tagId == HwpSectionTag.paraHeader.rawValue, current != nil {
                     // 복구 모드에서는 손상 메모 문단도 placeholder로 대체한다 —
                     // 그대로 전파시키면 호스트 문단 전체가 placeholder가 되어
@@ -188,6 +190,7 @@ public struct HwpParagraph: HwpFromRecordWithVersion {
                     {
                         current?.append(.parseFailurePlaceholder(record: child, error: error))
                     }
+                    consumedMemoChildIndexes.insert(index)
                 }
             }
             if let current {
@@ -200,27 +203,29 @@ public struct HwpParagraph: HwpFromRecordWithVersion {
 
         unknownChildren = Self.unconsumedRecords(
             from: children,
-            consumesMemoRecords: memoParagraphArray != nil
+            consumedMemoChildIndexes: consumedMemoChildIndexes
         ).map(HwpUnknownRecord.init)
     }
 }
 
 private extension HwpParagraph {
+    /// 메모 계열(MEMO_LIST·메모 문단)은 태그가 아니라 **실제 소비한 child
+    /// 인덱스**로 제외한다. 태그 blanket 제외는 첫 MEMO_LIST 앞의 stray
+    /// 문단(66) record처럼 그룹 빌더가 소비하지 않은 record까지 삼켜, typed
+    /// 소비도 raw 보존도 없이 모델에서 사라지게 했다 — 미해석 요소 집계
+    /// (`parseDiagnostics`)가 구조적으로 볼 수 없는 유실이라 #66에서 고쳤다.
     static func unconsumedRecords(
         from children: [HwpRecord],
-        consumesMemoRecords: Bool
+        consumedMemoChildIndexes: Set<Int>
     ) -> [HwpRecord] {
         var consumedSingletons = Set<UInt32>()
 
-        return children.filter { child in
+        return children.enumerated().filter { index, child in
             if multiRecordTags.contains(child.tagId) {
                 return false
             }
 
-            if consumesMemoRecords,
-               child.tagId == HwpSectionTag.memoList.rawValue
-               || child.tagId == HwpSectionTag.paraHeader.rawValue
-            {
+            if consumedMemoChildIndexes.contains(index) {
                 return false
             }
 
@@ -233,7 +238,7 @@ private extension HwpParagraph {
             }
 
             return true
-        }
+        }.map(\.element)
     }
 
     static var singletonRecordTags: Set<UInt32> {

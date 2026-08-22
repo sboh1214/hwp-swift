@@ -78,6 +78,13 @@ CoreHwp.HwpFile
 유한). 복구 자체는 `CoreHwp` 파서에 있다 (루트 `AGENTS.md` "부분 복구") — 여기는
 그 진단 노출만 담당한다.
 
+**역할 경계 (#66)**: 이 채널(`HwpUnsupportedDetector`·`unsupportedElements()`)은
+"미지원/복구 요소가 **화면에서** placeholder로 보이는가"다 — 대상이 조판된 쪽에
+실린 요소로 한정된다. "파서가 무엇을 해석하지 못했는가"(조판 무관, ViewText·
+메모·중첩 문단 포함)는 `CoreHwp.HwpFile.parseDiagnostics()`가 맡는다 (루트
+`AGENTS.md` "미해석 요소 집계"). 렌더 스택은 그 API를 소비하지 않는다 — 새
+뷰어 노출을 붙일 때 두 채널을 합치지 말 것.
+
 라인 세그먼트 캐시 (PARA_LINE_SEG)의 `lineLocation`은 페이지 내 절대 y다.
 **실제 줄 전진량 = lineHeight + lineSpacing (per-line 캐시 필드)** — 실측:
 연속 세그먼트의 lineLocation 델타와 일치 (헌법주석 30,345/30,348, noori 전부;

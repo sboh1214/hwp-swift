@@ -122,6 +122,22 @@
 
 ### Added
 
+- **미해석 요소 집계 API**가 들어왔습니다 (#66). 새 public 메서드
+  `HwpFile.parseDiagnostics()`가 문서 전체 — DocInfo·BodyText·ViewText(표시본)·
+  메모·표 셀/리스트/글상자 안 중첩 문단 — 를 순회해 파서가 해석하지 못한
+  요소를 `[HwpParseDiagnostic]`로 돌려줍니다. 진단은
+  kind(`unknownRecord`/`unknownControl`/`notImplementedControl`/
+  `recoveredSection`/`recoveredParagraph`/`recoveredMemoParagraph`) +
+  tagId/ctrlId + 위치 path(`"section[0].paragraph[12].ctrl[1].cell[0]…"`) +
+  detail(복구 placeholder의 `parseFailure` 사유)로 구성되며, 결과는 결정적이고
+  `.default`/`.viewer` 두 로드 모드에서 같습니다. 렌더 스택의
+  `HwpUnsupportedDetector`("미지원 요소가 화면에서 placeholder로 보이는가")와
+  달리 조판과 무관하게 "파서가 무엇을 해석하지 못했는가"를 다루는 QA·
+  텔레메트리·버그 리포트·픽스처 회귀용 표면입니다. 인접 정정으로, 문단의
+  메모 계열 소비가 태그 blanket 제외에서 실제 소비 인덱스 기반으로 바뀌어
+  첫 MEMO_LIST 앞의 stray 문단 record가 `unknownChildren`에 보존되고(종전에는
+  모델에서 소리 없이 사라짐), 문단 없는 MEMO_LIST가 빈 그룹으로 typed 소비
+  됐는데도 `unknownChildren`에 중복 보존되던 것이 제거됐습니다.
 - **손상 문단·구역 best-effort 복구**가 들어왔습니다 (#65).
   `HwpLoadOptions.recoverPartialContent`(기본 `false`)를 켜면 문단 카운트
   불일치·필수 레코드 누락 같은 문단 파싱 실패, 그리고 구역 스트림 파싱 실패가
