@@ -398,6 +398,50 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   resolver는 캐스케이드를 비워 둔다 (사용자 기기 폰트로 최대한 그리는 것이 맞다).
   가드: `testDeterministicResolverPinsSubstitutionFont`
 
+## 측정·렌더 공유 줄바꿈 코어 (`HwpLineBreaker`, #80)
+
+측정 (`HwpParagraphLayout.layout`)과 렌더 (`HwpDrawnTextLayout.lines`)는
+**줄바꿈 결정을 공유한다** — 양쪽이 `Text/HwpLineBreaker.swift`의
+`nextFrameChunk`를 불러 같은 `CTFramesetterSuggestFrameSizeWithConstraints`
+상자에서 같은 `CTLine` 경계를 얻는다. 공유하는 것은 **줄바꿈 사실**(문자
+분할·origin)까지고, 그 뒤 높이 후처리는 목적이 달라 양쪽이 각자 유지한다:
+측정의 `trailingSpacing`·`clampedLineHeight`는 전진량·절단 모델, 렌더의 raw
+height는 잉크 모델이다.
+
+**코어의 이름이 곧 계약이다.** 공유 멤버 5개(`FrameChunk`·`nextFrameChunk`·
+`paragraphStyle(in:at:)`·`paragraphCGFloat`·`availableLineWidth`)만 여기 있고,
+`HwpDrawnTextLayout.resumeBaseline`·`fallbackLineAdvance`는 호출자가 `lines()`
+뿐이라 렌더 쪽에 남겼다 (측정은 같은 일을 `makeLineFrames`가 origin 델타로
+자체 처리한다). 한쪽만 쓰는 멤버를 넣으면 이름이 다시 거짓말을 한다 — 이
+분리 전 코어의 이름은 `HwpDrawnTextLayout`이었고, 측정 경로를 따라온 사람에게
+그 코어가 왜 거기 있는지 드러나지 않았다.
+
+계약 네 가지 (여러 라운드가 쌓았는데 문서에 한 글자도 없던 것들):
+
+1. **줄 예산 절단.** 문단당 줄 프레임 상한은 `HwpParagraphLayout.maximumLineFrames`
+   (100,000) — 좁은 단과 거대 문단의 곱이 페이지 상한 전에 메모리·CPU를 고갈시키는
+   것을 막는다. 초과분은 페이지 상한과 같은 **절단** 계약이다 (조용한 손실이 아니라
+   상한).
+2. **미완 마지막 줄은 커밋하지 않는다.** 문자열 끝 전에 잘린 청크의 마지막 줄은
+   `keepCount`에서 빼고 그 줄 **시작**을 `nextStart`로 돌려, 두 경로가 같은 `CTLine`
+   경계에서 재개한다. 미완 줄을 커밋하면 다음 청크가 같은 문자를 다시 조판해 측정
+   줄 수가 렌더보다 많아진다.
+3. **잘린 청크가 한 줄뿐이면 쪼개지 않는다.** 예산보다 긴 한 시각 줄은
+   `CTTypesetterSuggestLineBreak`로 실제 끝을 찾아 확장 재프레이밍한다. break 폭은
+   `tailIndent`(문단 오른쪽 여백)까지 반영해야 재프레이밍이 여러 줄로 벌어지지
+   않는다.
+4. **재프레이밍 결과가 여러 줄이 돼도 `keepCount`는 남은 예산이 상한이다.** 3번의
+   구제가 `maximumLineFrames`를 우회하는 뒷문이 되지 않게 하는 하드 불변이다.
+
+가드: `HwpParagraphLayoutTests`의 청크 경계 계열
+(`testCappedMeasurementMatchesRenderRanges`·`testWideSingleLineNotSplitAcrossChunks`·
+`testMaxLineFramesBudgetNotExceededWithTailIndent`·`testCappedBaselineMatchesUncapped`)
+과 픽스처 스케일 등가 스윕 `HwpLayoutRenderParitySweepTests`.
+
+**public 승격은 하지 않는다.** internal 유지가 기본값이고, 승격한다면 그 표면은
+`breakLines(attributedString:width:)` 같은 폭·문자열 API로 표현할 수 없다 —
+7인자와 `keepCount`/`nextStart` 재개 계약이 시그니처에 있어야 한다.
+
 ## 새 블록 종류 추가
 
 1. `Model/HwpBlock.swift` 의 `HwpBlockKind` + `Model/HwpBlockPayload.swift` 에 payload case 추가
@@ -439,10 +483,20 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
 - 양쪽 정렬은 draw 시 한글처럼 남는 폭을 공백에만 배분해 재조판한다
   (`Text/HwpWordJustification` — 공백 없는 줄/마지막 줄은 CT 기본).
   측정 (HwpParagraphLayout)은 CT justified 그대로 — 줄바꿈은 동일하다.
+  **측정·렌더가 갈리는 지점은 이 재조판 하나뿐이다** (줄바꿈 코어 자체는
+  위 "측정·렌더 공유 줄바꿈 코어" 참조). 그래서 두 경로의 줄 **범위**는
+  등가지만 **폭·ascent**는 재조판을 받은 줄에서만 갈린다 — 실측: legacy 최대
+  10.000pt·noori 최대 7.500pt의 폭 델타가 붙은 7,760줄은 **전부** 재조판
+  줄이고, 재조판을 받지 않은 줄의 델타는 정확히 0이다 (ascent는 재조판 줄
+  321개에서만 최대 1.78955pt). **정렬 종류로 거르면 안 된다** —
+  `HwpParagraphLayout.textAlignment`가 `alignmentRawValue` 0·4·5를 모두
+  `.justified`로 접으므로 배분·나눔뿐 아니라 평범한 양쪽 정렬 문단도 재조판을
+  받는다.
   문서 정의 탭 스톱 (`HwpIndex.textTabs`)과 slight-overflow 한 줄 규칙
   (`HwpDrawnTextLayout.slightOverflowLineMetrics` 공유 술어)은 측정·렌더가
   같은 입력을 쓴다 — 탭 문단 줄바꿈·한 줄 문단 높이가 정의상 일치
-  (가드: HwpParagraphLayoutTests.testTabParagraphMeasurementMatchesDrawnLayout)
+  (가드: HwpParagraphLayoutTests.testTabParagraphMeasurementMatchesDrawnLayout,
+  픽스처 스케일은 `HwpLayoutRenderParitySweepTests`)
 - **각주/미주도 표 셀·글상자와 같은 컨테이너다** (#94). `HwpFootnoteBlock`이
   `images`/`shapes`/`textboxes`/`nestedTables`를 블록-로컬 rect로 들고,
   `HwpFootnoteLayout.measure`가 `HwpParagraphObjectCollector`로 수집한다

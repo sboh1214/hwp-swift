@@ -174,14 +174,14 @@ public struct HwpParagraphLayout {
         let framesetter = CTFramesetterCreateWithAttributedString(mutable as CFAttributedString)
         let fullLength = mutable.length
         let typesetter = CTTypesetterCreateWithAttributedString(mutable as CFAttributedString)
-        // 렌더(HwpDrawnTextLayout.lines)와 nextFrameChunk를 공유해 청크 경계를 같은
-        // CTLine 시작에 맞춘다 — 측정 range·높이가 렌더 줄과 일치한다. 단일 청크
-        // (모든 정상 문단)는 문단 전체가 한 프레임이라 측정 불변 (R37 #1·R50 #4).
+        // 렌더(HwpDrawnTextLayout.lines)와 HwpLineBreaker.nextFrameChunk를 공유해 청크
+        // 경계를 같은 CTLine 시작에 맞춘다 — 측정 range·높이가 렌더 줄과 일치한다. 단일
+        // 청크(모든 정상 문단)는 문단 전체가 한 프레임이라 측정 불변 (R37 #1·R50 #4).
         var lineFrames: [HwpLineFrame] = []
         var totalLineHeight: CGFloat = 0
         var startLocation = 0
         while startLocation < fullLength, lineFrames.count < maxLineFrames {
-            guard let chunk = HwpDrawnTextLayout.nextFrameChunk(
+            guard let chunk = HwpLineBreaker.nextFrameChunk(
                 framesetter: framesetter, typesetter: typesetter,
                 attributedString: mutable,
                 startLocation: startLocation, fullLength: fullLength,

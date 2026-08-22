@@ -1,6 +1,6 @@
 # 프로젝트 지식 베이스
 
-**Branch:** feat/parse-diagnostics
+**Branch:** refactor/shared-line-breaker
 
 ## 개요
 
