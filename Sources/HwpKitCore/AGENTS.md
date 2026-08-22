@@ -501,7 +501,16 @@ paraShape와 같은 값**이어야 한다.
 ## 새 블록 종류 추가
 
 1. `Model/HwpBlock.swift` 의 `HwpBlockKind` + `Model/HwpBlockPayload.swift` 에 payload case 추가
-2. `Layout/HwpPaginator.swift`: `childParagraphs(of:)` (unsupported walk) 와 `appendControlBlocks(from:depth:)` (렌더) 양쪽에 추가
+2. `Layout/HwpPaginator.swift`: `childParagraphs(of:)` (모델 문단 순회) 와
+   `appendControlBlocks(from:depth:)` (렌더) 양쪽에 추가. 전자는 진단 walk 전용이
+   아니다 — 탐색 목록 수집 (#77)·메모 복구 진단·중첩 블록 방출·각주 코디네이터가
+   모두 그 하나를 쓴다. **`nonisolated static`인 이유는 actor 밖 소비자 때문이다**:
+   등가 스윕 가드 (`HwpLayoutRenderParitySweepTests`, #80) 가 조판 없이 문단 트리만
+   훑으려고 직접 부른다 (분기를 복제하면 새 컨테이너가 추가될 때 그 가드만 조용히
+   그것을 못 본다). 그래서 여기에 컨테이너를 더하면 그 스윕의 **구조 핀**
+   (`expectedFixtureVisited`·`expectedFixtureMeasured`·`expectedFixtureContainers`·
+   `expectedLegacyVisited`) 이 함께 어긋나 빨개진다 — 새 문단이 실제로 순회에
+   들어왔다는 신호이므로 재측정해 갱신한다
 3. `Paint/HwpPaintListBuilder.swift` 의 `paintCommands(for:)` 에 payload 렌더 추가
 4. `Layout/HwpHitTester.swift` 의 `hit(page:point:)` 에 케이스 추가
 5. **문단을 품는 payload면** `Selection/HwpBlockContentWalker.swift` 에 순회를 더하고
