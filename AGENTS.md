@@ -269,6 +269,7 @@ swift test                                     # 테스트 실행
 swift test --enable-code-coverage              # 커버리지 (lcov 추출·경로별 게이트는 .github/workflows/ci.yml Test (macOS) 잡의 스텝 — CoreHwp 95%·HwpKitCore 91% 하드 게이트)
 HWP_PERF=1 swift test --filter Performance     # 성능 실측 (N=20,000 합성 + 타이트 임계; 기본은 N=1,000 스모크)
 HWP_SNAPSHOT_TESTS=1 swift test --filter "FixtureRenderHash|FixturePreviewFidelity"  # 환경 의존 스위트 (기본 swift test·CI에서는 skip)
+HWP_PARITY_SWEEP=1 swift test --filter HwpLayoutRenderParitySweep  # 측정·렌더 등가 전수 스윕 (기본은 legacy를 stride 31로 표본; 전수는 ~127s)
 HWP_HANCOM_FONTS=1 swift test                  # 한컴오피스 번들 폰트 opt-in (기본 off — README "폰트"). 렌더 해시 기준선이 이 모드용으로 따로 있다
 RECORD_RENDER_HASHES=1 swift test --filter FixtureRenderHash     # 렌더 픽셀 해시 기준선 레코딩 (Snapshots/ — gitignore, 이 머신·현재 폰트 모드 전용)
 RECORD_BLOCK_SNAPSHOTS=1 swift test --filter FixtureBlockLayout  # 블록 좌표 스냅샷 재생성 (기준선은 커밋 대상 — diff 리뷰 필수)

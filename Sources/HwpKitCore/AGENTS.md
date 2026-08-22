@@ -433,10 +433,16 @@ height는 잉크 모델이다.
 4. **재프레이밍 결과가 여러 줄이 돼도 `keepCount`는 남은 예산이 상한이다.** 3번의
    구제가 `maximumLineFrames`를 우회하는 뒷문이 되지 않게 하는 하드 불변이다.
 
-가드: `HwpParagraphLayoutTests`의 청크 경계 계열
+가드는 두 층이다. **합성 단위**는 `HwpParagraphLayoutTests`의 청크 경계 계열
 (`testCappedMeasurementMatchesRenderRanges`·`testWideSingleLineNotSplitAcrossChunks`·
 `testMaxLineFramesBudgetNotExceededWithTailIndent`·`testCappedBaselineMatchesUncapped`)
-과 픽스처 스케일 등가 스윕 `HwpLayoutRenderParitySweepTests`.
+이 계약 넷을 하나씩 겨냥한다. **픽스처 스케일**은
+`HwpLayoutRenderParitySweepTests`가 실픽스처의 모든 문단을 (컨테이너 문단까지
+프로덕션 `HwpPaginator.childParagraphs(of:)`로 재귀해) 측정·렌더·공유 코어
+3-way로 대조한다 — 상시 CI에서는 legacy를 stride 31로 표본하고,
+`HWP_PARITY_SWEEP=1`이 전수다 (실측 2026-08-22: 대조 21,436건 위반 0, 127초).
+**렌더 쪽과는 줄 범위만 대조한다** — 폭·ascent는 양쪽 정렬 재조판이 갈라 놓으므로
+재조판 전 프레임 줄인 공유 코어와 맞춘다.
 
 **public 승격은 하지 않는다.** internal 유지가 기본값이고, 승격한다면 그 표면은
 `breakLines(attributedString:width:)` 같은 폭·문자열 API로 표현할 수 없다 —
