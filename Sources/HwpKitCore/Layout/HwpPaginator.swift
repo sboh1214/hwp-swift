@@ -120,6 +120,17 @@ public actor HwpPaginator {
     }
 
     private var measureMemo: ParagraphMeasureMemo?
+    /// 문단 단위 `Task.yield()` 배칭 카운터 (#73 조각 3).
+    ///
+    /// 문단마다 최대 두 번(배치 뒤·측정 진입) 양보하던 것을 `yieldBatchSize`
+    /// 문단마다 한 번으로 줄인다 — 20,000 문단이면 최대 40,000회가 2,500회가 된다.
+    /// 취소 **관찰**은 이 배칭과 독립이다: `processParagraph`가 문단마다
+    /// `Task.checkCancellation()`을 그대로 부른다. 배칭이 늦추는 것은 다른
+    /// Task에게 실행을 넘기는 시점뿐이다.
+    private var yieldCounter = 0
+    /// 양보 주기 (문단 수). 16은 취소 응답 지연(문단 16개 처리 시간)과
+    /// 스케줄러 왕복 절감의 절충이다.
+    static let yieldBatchSize = 16
     /// 이번 배치가 각주를 **조각 단위로 이미 수집했는지** (#95). 페이지에 걸친
     /// 절대 캐시 문단은 run마다 그 조각의 각주를 그 페이지에 담으므로, 문단 루프의
     /// 문단 단위 수집을 건너뛰어야 이중 수집(번호 중복)이 되지 않는다.
@@ -524,6 +535,16 @@ private extension HwpPaginator {
         bandUsedBottom = plan.maxBottom
     }
 
+    /// `processParagraph` 한 번의 결과 — 문단 루프를 계속할지, `computeNextPage`가
+    /// 호출자에게 돌아갈지를 가른다.
+    enum ParagraphOutcome {
+        /// 다음 문단으로 진행한다.
+        case advance
+        /// 이 호출을 여기서 끝낸다 — 페이지 상한 도달, 쪽 나누기로 페이지 확정,
+        /// 배치 실패(문단을 다음 페이지에서 재처리), 또는 새 페이지 생성.
+        case yieldToCaller
+    }
+
     func computeNextPage() async throws {
         await Task.yield()
 
@@ -536,90 +557,118 @@ private extension HwpPaginator {
         let pageCountBefore = cachedPages.count
 
         while let paragraph = nextParagraph() {
-            // 페이지 상한 도달 후 남은 문단은 레이아웃해도 캐시되지 않는다 —
-            // 즉시 종료해 상한이 CPU 상한으로도 작동하게 한다 (#1).
-            if didFinishPagination {
-                return
-            }
-            // 취소된 로드가 0-높이 문단을 대량 처리할 때 page(at:) 반환 전에
-            // 취소를 관찰해 옛 문서 레이아웃이 교체본과 나란히 도는 것을 막는다 (#3).
-            try Task.checkCancellation()
-            // 구역 시작/쪽 나누기 문단: 진행 중인 페이지를 확정하고 이 문단은
-            // 다음 호출에서 새 페이지 첫머리로 다시 처리한다.
-            if try flushPageBeforeProcessing(paragraph) {
-                return
-            }
-
-            applySectionDef(in: paragraph)
-            applyColumnDef(in: paragraph)
-            applyNewNumbers(in: paragraph)
-            currentParagraphMargins = paragraphMargins(of: paragraph)
-
-            let widthCenti = Int((currentColumnFrame.width * 100).rounded())
-            let replacements = noteReferenceReplacements(for: paragraph)
-            let attributedString: NSAttributedString
-            let paragraphFrame: HwpParagraphFrame
-            if let memo = measureMemo,
-               memo.sectionIndex == nextSectionIndex,
-               memo.paragraphIndex == nextParagraphIndex,
-               memo.widthCenti == widthCenti,
-               memo.replacements == replacements
-            {
-                attributedString = memo.attributedString
-                paragraphFrame = memo.paragraphFrame
-            } else {
-                attributedString = textRunBuilder()
-                    .build(paragraph: paragraph, controlReplacements: replacements)
-                paragraphFrame = if absoluteCachePlacer.canSkipMeasurement(
-                    for: paragraph,
-                    attributedString: attributedString,
-                    columnCount: columnFrames.count
-                ) {
-                    HwpParagraphFrame(totalHeight: 0, lines: [])
-                } else {
-                    try await layout(paragraph, attributedString: attributedString)
-                }
-            }
-            // 번호/개요 문단 머리의 진단 페이지는 문단이 시작하는 첫 페이지다 —
-            // placeParagraphText가 다중 페이지 문단의 앞 조각 페이지를 먼저
-            // 캐시하므로 배치 전에 첫 페이지를 잡는다 (#3).
-            let paragraphFirstPage = cachedPages.count + 1
-            currentParagraphFirstPlacedPage = nil
-            guard placeParagraphText(
-                paragraph,
-                attributedString: attributedString,
-                paragraphFrame: paragraphFrame
-            ) else {
-                // 현재 페이지가 확정됐고 문단은 다음 페이지에서 다시 처리한다 —
-                // 빌드 입력이 그대로면 메모로 build + CT 재실행을 건너뛴다.
-                measureMemo = ParagraphMeasureMemo(
-                    sectionIndex: nextSectionIndex,
-                    paragraphIndex: nextParagraphIndex,
-                    widthCenti: widthCenti,
-                    replacements: replacements,
-                    attributedString: attributedString,
-                    paragraphFrame: paragraphFrame
-                )
-                return
-            }
-            measureMemo = nil
-            collectParagraphFootnotesUnlessPlacedPerFragment(paragraph)
-            collectMemos(from: paragraph)
-            appendControlBlocks(from: paragraph)
-            collectUnsupported(from: paragraph, firstPage: paragraphFirstPage)
-            collectOutline(from: paragraph, firstPage: paragraphFirstPage)
-            advanceParagraph()
-            await Task.yield()
-
-            // 이 호출에서 이미 페이지가 생겼으면 반환해 호출자가 진행을 관찰하게 한다.
-            if cachedPages.count > pageCountBefore {
+            let outcome = try await processParagraph(paragraph, pageCountBefore: pageCountBefore)
+            if outcome == .yieldToCaller {
                 return
             }
         }
 
-        // 문서 끝: 밴드를 닫고 마지막 본문 페이지를 확정한 뒤, 남은 미주는
-        // 새 쪽에서 시작한다 (한글.app 실측 2026-07-06 — footnote-endnote
-        // 픽스처의 미주가 2쪽에 표시됨을 사용자 확인).
+        try finishPagination()
+    }
+
+    /// 문단 하나를 처리한다 — 페이지 확정 판정, 구역·단 정의 적용, 측정, 배치,
+    /// 부수 수집(각주·메모·컨트롤·미지원·개요)까지.
+    ///
+    /// `pageCountBefore`는 이 `computeNextPage` 호출 진입 시점의 캐시 페이지 수다 —
+    /// 이 호출에서 페이지가 하나라도 생기면 호출자가 진행을 관찰하도록 돌아간다.
+    func processParagraph(
+        _ paragraph: CoreHwp.HwpParagraph,
+        pageCountBefore: Int
+    ) async throws -> ParagraphOutcome {
+        // 페이지 상한 도달 후 남은 문단은 레이아웃해도 캐시되지 않는다 —
+        // 즉시 종료해 상한이 CPU 상한으로도 작동하게 한다 (#1).
+        if didFinishPagination {
+            return .yieldToCaller
+        }
+        // 취소된 로드가 0-높이 문단을 대량 처리할 때 page(at:) 반환 전에
+        // 취소를 관찰해 옛 문서 레이아웃이 교체본과 나란히 도는 것을 막는다 (#3).
+        try Task.checkCancellation()
+        // 구역 시작/쪽 나누기 문단: 진행 중인 페이지를 확정하고 이 문단은
+        // 다음 호출에서 새 페이지 첫머리로 다시 처리한다.
+        if try flushPageBeforeProcessing(paragraph) {
+            return .yieldToCaller
+        }
+
+        applySectionDef(in: paragraph)
+        applyColumnDef(in: paragraph)
+        applyNewNumbers(in: paragraph)
+        currentParagraphMargins = paragraphMargins(of: paragraph)
+
+        let widthCenti = Int((currentColumnFrame.width * 100).rounded())
+        let replacements = noteReferenceReplacements(for: paragraph)
+        let measured = try await measuredParagraph(
+            paragraph,
+            widthCenti: widthCenti,
+            replacements: replacements
+        )
+        // 번호/개요 문단 머리의 진단 페이지는 문단이 시작하는 첫 페이지다 —
+        // placeParagraphText가 다중 페이지 문단의 앞 조각 페이지를 먼저
+        // 캐시하므로 배치 전에 첫 페이지를 잡는다 (#3).
+        let paragraphFirstPage = cachedPages.count + 1
+        currentParagraphFirstPlacedPage = nil
+        guard placeParagraphText(
+            paragraph,
+            attributedString: measured.attributedString,
+            paragraphFrame: measured.paragraphFrame
+        ) else {
+            // 현재 페이지가 확정됐고 문단은 다음 페이지에서 다시 처리한다 —
+            // 빌드 입력이 그대로면 메모로 build + CT 재실행을 건너뛴다.
+            measureMemo = ParagraphMeasureMemo(
+                sectionIndex: nextSectionIndex,
+                paragraphIndex: nextParagraphIndex,
+                widthCenti: widthCenti,
+                replacements: replacements,
+                attributedString: measured.attributedString,
+                paragraphFrame: measured.paragraphFrame
+            )
+            return .yieldToCaller
+        }
+        measureMemo = nil
+        collectParagraphFootnotesUnlessPlacedPerFragment(paragraph)
+        collectMemos(from: paragraph)
+        appendControlBlocks(from: paragraph)
+        collectUnsupported(from: paragraph, firstPage: paragraphFirstPage)
+        collectOutline(from: paragraph, firstPage: paragraphFirstPage)
+        advanceParagraph()
+        await yieldPeriodically()
+
+        // 이 호출에서 이미 페이지가 생겼으면 반환해 호출자가 진행을 관찰하게 한다.
+        return cachedPages.count > pageCountBefore ? .yieldToCaller : .advance
+    }
+
+    /// 문단의 텍스트 런과 조판 프레임을 만든다 — 직전 호출이 배치에 실패해 남긴
+    /// 측정 메모가 같은 입력이면 재사용해 build + CoreText 재실행을 건너뛴다.
+    func measuredParagraph(
+        _ paragraph: CoreHwp.HwpParagraph,
+        widthCenti: Int,
+        replacements: [Int: HwpControlMarkerReplacement]
+    ) async throws -> (attributedString: NSAttributedString, paragraphFrame: HwpParagraphFrame) {
+        if let memo = measureMemo,
+           memo.sectionIndex == nextSectionIndex,
+           memo.paragraphIndex == nextParagraphIndex,
+           memo.widthCenti == widthCenti,
+           memo.replacements == replacements
+        {
+            return (memo.attributedString, memo.paragraphFrame)
+        }
+        let attributedString = textRunBuilder()
+            .build(paragraph: paragraph, controlReplacements: replacements)
+        let paragraphFrame: HwpParagraphFrame = if absoluteCachePlacer.canSkipMeasurement(
+            for: paragraph,
+            attributedString: attributedString,
+            columnCount: columnFrames.count
+        ) {
+            HwpParagraphFrame(totalHeight: 0, lines: [])
+        } else {
+            try await layout(paragraph, attributedString: attributedString)
+        }
+        return (attributedString, paragraphFrame)
+    }
+
+    /// 문서 끝 처리 — 밴드를 닫고 마지막 본문 페이지를 확정한 뒤, 남은 미주는
+    /// 새 쪽에서 시작한다 (한글.app 실측 2026-07-06 — footnote-endnote
+    /// 픽스처의 미주가 2쪽에 표시됨을 사용자 확인).
+    func finishPagination() throws {
         closeColumnBand()
         if !pendingEndnotes.isEmpty, !currentBlocks.isEmpty || contentHeightUsed > 0 {
             cacheCurrentPage()
@@ -631,11 +680,25 @@ private extension HwpPaginator {
         // = true, pendingFootnotes 불변) 무한 회전하므로 그때 멈춘다 (#4).
         while !pendingFootnotes.isEmpty, !didFinishPagination {
             // 취소 시 각주 드레인이 페이지 상한까지 동기로 돌아 취소 관찰이
-            // 늦어지지 않게 매 페이지 확인 (문단 루프 389와 동일, P2b).
+            // 늦어지지 않게 매 페이지 확인 (`processParagraph`의 문단 루프와
+            // 같은 이유, P2b).
             try Task.checkCancellation()
             cacheCurrentPage()
         }
         didFinishPagination = true
+    }
+
+    /// `yieldBatchSize` 문단마다 한 번만 양보한다.
+    ///
+    /// 문단마다 양보하면 20,000 문단 문서에서 최대 40,000번의 스케줄러 왕복이
+    /// 생기는데, 그 대부분은 다른 Task가 없어 즉시 되돌아온다. 취소 관찰은
+    /// `Task.checkCancellation()`이 문단마다 따로 하므로 이 배칭에 영향받지 않는다.
+    func yieldPeriodically() async {
+        yieldCounter += 1
+        if yieldCounter >= Self.yieldBatchSize {
+            yieldCounter = 0
+            await Task.yield()
+        }
     }
 
     /// 새 구역 정의 (이전 구역의 밴드를 닫고 구역-끝 미주 배치) 또는
@@ -717,7 +780,7 @@ private extension HwpPaginator {
     private func emitTrackChangeBars() {
         guard !trackChangeParagraphIds.isEmpty else { return }
         let barX = currentPageGeometry.contentFrame.minX - 10
-        let barColor = CGColor(srgbRed: 0.87, green: 0.14, blue: 0.1, alpha: 1)
+        let barColor = CGColor.hwpTrackChange
         let bars: [AnyHwpBlock] = currentBlocks.compactMap { block in
             guard block.kind == .text,
                   let paragraphId = block.source?.paragraphId,
@@ -1153,7 +1216,7 @@ private extension HwpPaginator {
         _ paragraph: CoreHwp.HwpParagraph,
         attributedString: NSAttributedString
     ) async throws -> HwpParagraphFrame {
-        await Task.yield()
+        await yieldPeriodically()
         return HwpParagraphLayout().layout(
             attributedString: attributedString,
             paraShape: index.paraShapeOrDefault(for: paragraph),
@@ -1902,7 +1965,8 @@ private extension HwpPaginator {
             availableWidth: currentColumnFrame.width,
             index: index,
             sizeResolver: objectSizeResolver,
-            clampToAvailableWidth: info.treatAsChar || consumesFlow(info)
+            clampToAvailableWidth: info.treatAsChar
+                || HwpParagraphObjectCollector.consumesFlow(info)
         )
         switch result {
         case let .failure(element):
@@ -1969,7 +2033,8 @@ private extension HwpPaginator {
         table: CoreHwp.HwpTable
     ) -> Bool {
         let info = table.commonCtrlProperty.propertyInfo
-        guard !info.treatAsChar, !consumesFlow(info) else { return false }
+        guard !info.treatAsChar,
+              !HwpParagraphObjectCollector.consumesFlow(info) else { return false }
         let height = frame.rows.reduce(CGFloat(0)) { max($0, $1.rowFrame.maxY) }
         appendFloatingBlock(
             ObjectBlockSpec(
@@ -2462,7 +2527,7 @@ private extension HwpPaginator {
             return
         }
 
-        if info.treatAsChar || consumesFlow(info) {
+        if info.treatAsChar || HwpParagraphObjectCollector.consumesFlow(info) {
             // 세로 기준이 종이/쪽/문단인 개체는 흐름 커서가 아니라 기준+
             // 오프셋 위치에 놓이고, 본문 흐름은 개체 아래로 밀린다
             // (한글 실측: text-box 종이 46.2/35.6mm, chart 문단 상단 —
@@ -2516,20 +2581,6 @@ private extension HwpPaginator {
         bandHasNonTextContent = true
     }
 
-    /// 기준 프레임(base, extent) 안에서 정렬을 반영한 앵커. topOrLeft(기본)·
-    /// nil·extent<=0이면 base 그대로 (오프셋 배치 개체 렌더 불변, #5).
-    private func alignedAnchor(
-        _ base: CGFloat, _ extent: CGFloat, _ size: CGFloat,
-        _ alignment: CoreHwp.HwpCommonCtrlRelativeAlignment?
-    ) -> CGFloat {
-        guard extent > 0 else { return base }
-        return switch alignment {
-        case .center: base + (extent - size) / 2
-        case .bottomOrRight, .outside: base + extent - size
-        case .topOrLeft, .inside, nil: base
-        }
-    }
-
     /// 앵커 규칙(표 70)의 기준 프레임(base, extent) + 정렬 + 오프셋으로 개체
     /// 프레임을 만든다. floating·absolute-flow 경로가 공유한다 (#5 정렬 반영).
     private func anchoredObjectFrame(
@@ -2554,10 +2605,14 @@ private extension HwpPaginator {
         case .paragraph: (paragraphAnchorTop, 0)
         }
         return CGRect(
-            x: alignedAnchor(hRef.base, hRef.extent, spec.size.width, info.horizontalAlignment)
-                + offsetX,
-            y: alignedAnchor(vRef.base, vRef.extent, spec.size.height, info.verticalAlignment)
-                + offsetY,
+            x: HwpObjectAnchorGeometry.aligned(
+                base: hRef.base, extent: hRef.extent,
+                size: spec.size.width, alignment: info.horizontalAlignment
+            ) + offsetX,
+            y: HwpObjectAnchorGeometry.aligned(
+                base: vRef.base, extent: vRef.extent,
+                size: spec.size.height, alignment: info.verticalAlignment
+            ) + offsetY,
             width: spec.size.width,
             height: spec.size.height
         )
@@ -2579,8 +2634,9 @@ private extension HwpPaginator {
               frame.maxY > currentPageGeometry.contentFrame.maxY
         else { return frame }
         advanceColumn()
-        // 페이지 상한 도달: advanceColumn이 커서를 못 옮기면 같은 frame으로
-        // 재귀가 반복된다 — 현재 frame을 그대로 쓴다 (#1).
+        // 페이지 상한 도달: advanceColumn이 커서를 못 옮기면 anchoredObjectFrame이
+        // 같은 frame을 돌려주고 이 함수가 다시 불려 제자리를 돈다 — 현재 frame을
+        // 그대로 쓴다 (#1). 이 함수가 자기를 재귀 호출하지는 않는다.
         if didFinishPagination {
             return frame
         }
@@ -2707,22 +2763,18 @@ private extension HwpPaginator {
         }
         var map: [Int: CGPoint] = [:]
         for line in context.lines {
-            let baselineY = context.blockFrame.minY + firstBaseline + line.origin.y
             for anchor in line.inlineAnchors where map[anchor.controlIndex] == nil {
-                map[anchor.controlIndex] = CGPoint(
-                    x: context.blockFrame.minX + line.origin.x + anchor.xOffset,
-                    y: baselineY - anchor.ascent
+                map[anchor.controlIndex] = HwpObjectAnchorGeometry.inlineAnchorOrigin(
+                    paragraphOrigin: context.blockFrame.origin,
+                    firstBaseline: firstBaseline,
+                    lineOrigin: line.origin,
+                    xOffset: anchor.xOffset,
+                    ascent: anchor.ascent
                 )
             }
         }
         inlineAnchorCache = map
         return map
-    }
-
-    /// 술어 본체는 `HwpParagraphObjectCollector.consumesFlow`가 소유한다 —
-    /// 컨테이너 높이 하한 (`growsContainer`)과 반드시 같은 답을 써야 한다 (#91).
-    func consumesFlow(_ info: CoreHwp.HwpCommonCtrlPropertyInfo) -> Bool {
-        HwpParagraphObjectCollector.consumesFlow(info)
     }
 
     func combinedAttributedString(_ strings: [NSAttributedString]) -> NSAttributedString? {
@@ -2948,7 +3000,8 @@ private extension HwpPaginator {
         // (각주 드레인 루프와 동일, #1).
         while !pendingEndnotes.isEmpty, !didFinishPagination {
             // 취소 시 미주 드레인이 페이지 상한까지 동기로 돌아 취소 관찰이
-            // 늦어지지 않게 매 페이지 확인 (각주 드레인·389와 동일, P2b).
+            // 늦어지지 않게 매 페이지 확인 (`finishPagination`의 각주 드레인·
+            // `processParagraph`와 같은 이유, P2b).
             try Task.checkCancellation()
             let columnFrame = currentColumnFrame
             let available = CGRect(
@@ -3069,7 +3122,7 @@ private extension HwpPaginator {
             blocks: currentBlocks,
             pageNumber: pageIndex + 1
         )
-        let paintList = paintListBuilder.build(for: page, index: index)
+        let paintList = paintListBuilder.build(for: page)
         // 메모 풍선은 종이 밖 오른쪽 패널 (한글.app 편집 뷰) — 페이지
         // paintList와 분리해 인쇄 뷰·PrvImage 정합에는 영향을 주지 않는다.
         let memoPanel = pendingMemoBalloons.isEmpty

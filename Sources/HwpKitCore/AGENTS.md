@@ -68,6 +68,15 @@ CoreHwp.HwpFile
 공유 흐름 상태 (`contentHeightUsed`·`paragraphAnchorTop`)와 `currentBlocks`
 재작성 적용은 paginator에 남는다.
 
+**개체 앵커 산식은 `Layout/HwpObjectAnchorGeometry.swift`가 단일 소유한다** (#73).
+페이지 흐름 경로(`HwpPaginator`)와 컨테이너 안 수집 경로
+(`HwpParagraphObjectCollector`)가 같은 식을 각자 구현하고 "같은 산식"이라는
+주석으로만 묶여 있던 것을 합쳤다 — 정렬 반영 좌표(`aligned`)와 글자처럼 취급
+개체의 줄 앵커 좌표(`inlineAnchorOrigin`) 둘이다. 한쪽만 고치면 조용히 갈라지던
+자리이므로 **새 개체 배치 산식도 두 경로가 공유하면 여기 둔다.**
+반면 컨테이너 경로의 `origin(commonProperty:size:placement:cursorX:)`은 페이지
+경로 `anchoredObjectFrame`의 **문단 rect 근사**라 같은 함수가 아니다 — 합치지 말 것.
+
 **부분 복구 placeholder 진단** (#65): `recoverPartialContent`가 남긴 손상
 문단·구역 placeholder를 `unsupportedElements()`에 `kind: .placeholder`로 내보내
 복구가 내용을 조용히 숨기지 않게 한다 (렌더는 placeholder의 빈 텍스트를 그리지
@@ -179,7 +188,7 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
 - `HwpPaintCommand` = `@unchecked Sendable` enum. CF/NS 참조 타입을 담기 때문에 자동 Sendable 불가. enum case는 가로챌 init이 없어 **소유권 경계에서 동결**한다 — `HwpLaidOutParagraph.init`이 `NSAttributedString`을, `HwpShapeGeometry.init`이 `CGPath`를 복사본으로 저장한다 (mutable 서브클래스를 그대로 retain하면 Hashable 불변성·actor 경계 안전성이 깨진다). 새 참조 타입 payload를 추가하면 그 생산 지점에서 같은 복사를 해야 한다. 소유권 경계를 거치지 않고 **painter가 `.drawText`를 직접 만드는 경로도 마찬가지** — `HwpMemoPanelPainter`는 헤더를 `NSMutableAttributedString`으로 조립한 뒤 `NSAttributedString(attributedString:)`로 동결해 싣는다. 이제 actor 안전성 말고 **소비자**도 생겼다: HwpKitNative의 줄 배치 캐시가 문자열 신원 (`===`)으로 조판 결과를 재사용하므로 "신원이 같으면 내용도 같다"가 전 생산 경로에서 성립해야 한다 (깨지면 조용한 오조판)
 - 케이스: `fillRect` / `strokeRect` / `drawText` / `drawPath` / `drawImage` / `drawImageReference(binItemId:rect:)` / `drawPlaceholder` / `hyperlink`
 - `drawImageReference` 는 비트맵을 운반하지 않는다 — HwpKitNative 의 `HwpPageImageProvider` 가 `HwpImageStore` + `HwpImageCache` + `HwpImageAdapter` 로 지연 디코딩
-- **`HwpPage.==` / `hash` 는 `paintList.commands.count` 만 비교** (structural fingerprint). 렌더 결과 비교용으로 쓰지 말 것
+- **`HwpPage.==` / `hash` 에 `paintList` 는 들어가지 않는다** (#72) — size·margins·blocks·pageNumber 와 메모 패널 기하 (width·contentHeight) 로만 판정한다. 본문 paint 커맨드는 blocks 의 파생값이고, CF payload 는 Equatable 이 아니라 개수 말고는 비교할 수단도 없었다. 렌더 결과 비교용으로 쓰지 말 것 — 여기서 같다는 것은 조판 구조가 같다는 뜻이다. 이 동등성은 렌더 갱신뿐 아니라 **선택 지오메트리 재생성과 검색 재스캔 생략** (`HwpSelectionController` → `HwpSearchController.isEquivalentRefresh`) 의 입력이기도 하다
 - **메모 (댓글) 풍선**: `HwpPage.memoPanel` (`HwpMemoPanel` — 폭 + 패널 로컬
   paintList)에 분리 저장 — 종이 밖 오른쪽 패널이라 페이지 paintList/PrvImage
   정합에 영향 없음. 내용은 CoreHwp `HwpParagraph.memoParagraphArray` (MEMO_LIST
@@ -371,8 +380,7 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   단언할 것
 - 실측 튜닝 상수는 `Tuning/HwpRenderTuning.swift` 에 근거 주석과 함께 —
   값 변경은 fidelity 전수 + 블록 스냅샷 + 실물 대조 필수 (값 핀:
-  `HwpRenderTuningTests`). 차트 투영 기하 (`HwpChartPainter`)와 각주 예약
-  근사 (`HwpPaginator`)는 예외로 in-place
+  `HwpRenderTuningTests`). 차트 투영 기하 (`HwpChartPainter`)는 예외로 in-place
 - borderFill 참조는 **1-based (0 = 없음)**: `resolvedBorderFill` 은 id-1 을 먼저, 원래 id 를 다음에 시도
 - Sendable actor: `HwpPaginator`, `HwpImageCache` (HwpKitNative)
 - **`HwpFontResolver.testDeterministic`은 폰트 조회 세 축을 모두 닫는다** —
@@ -525,7 +533,7 @@ paraShape와 같은 값**이어야 한다.
 
 ## 안티 패턴 / 남은 한계
 
-- `HwpPage` 렌더 결과가 다른지 `==` 로 확인 — 안 됨 (count 만 비교). blocks 배열이나 paintList.commands 를 직접 순회할 것
+- `HwpPage` 렌더 결과가 다른지 `==` 로 확인 — 안 됨 (`paintList` 가 아예 항에 없다). blocks 배열이나 paintList.commands 를 직접 순회할 것
 - 수식 (`eqed`) 은 EQEDIT 스크립트를 한 줄 텍스트로 근사 (`HwpEquationLayout`
   — 기호 토큰 치환 + 관계 연산자 공백, 라틴 문자 이탤릭). 분수/근호 같은
   구조 조판은 없음 — 스크립트 원문이 노출된다
@@ -821,8 +829,9 @@ paraShape와 같은 값**이어야 한다.
   그 배치 방식은 겹치는 것이 설계라(위 "앵커 규칙") 담으려고 컨테이너를 키우면
   셀 안 워터마크·말풍선 하나가 행을 부풀린다. 술어는
   `HwpParagraphObjectCollector.consumesFlow`가 **단일 소유**하고 페이지 흐름
-  경로(`HwpPaginator.consumesFlow`)가 그것을 부른다 — 갈리면 흐름에서 자리를
-  안 주는 개체가 컨테이너만 키우는 모순이 된다. 여기서 빠져도 셀 콘텐츠로
+  경로(`HwpPaginator`)가 그 static 메서드를 직접 부른다 (#73 — 종전의 동명
+  위임 래퍼는 제거했다) — 갈리면 흐름에서 자리를 안 주는 개체가 컨테이너만
+  키우는 모순이 된다. 여기서 빠져도 셀 콘텐츠로
   그려지는 것은 그대로다 (`paintsBehindText`) — 빠지는 것은 **높이 하한뿐**이고,
   수집에서 빼면 개체 소실 회귀다.
   `objects()`의 기록 조건과 `hasFloatingObject` 사전 판정도 **반드시 같은

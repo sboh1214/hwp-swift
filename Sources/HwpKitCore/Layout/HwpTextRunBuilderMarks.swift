@@ -12,7 +12,7 @@ extension HwpTextRunBuilder {
         to attributes: inout [NSAttributedString.Key: Any]
     ) {
         guard mark == 16 || mark == 17 else { return }
-        let red = CGColor(srgbRed: 0.87, green: 0.14, blue: 0.1, alpha: 1)
+        let red = CGColor.hwpTrackChange
         attributes[kCTForegroundColorAttributeName as NSAttributedString.Key] = red
         if mark == 17 {
             attributes[HwpAttributedStringKey.strikethroughStyle] = NSNumber(value: 1)

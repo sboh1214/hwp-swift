@@ -332,11 +332,11 @@ struct HwpParagraphObjectCollector {
         case .paragraph: 0
         }
         return CGPoint(
-            x: aligned(
+            x: HwpObjectAnchorGeometry.aligned(
                 base: rect.minX, extent: rect.width, size: size.width,
                 alignment: commonProperty.propertyInfo.horizontalAlignment
             ) + offsetX,
-            y: aligned(
+            y: HwpObjectAnchorGeometry.aligned(
                 base: rect.minY, extent: verticalExtent, size: size.height,
                 alignment: commonProperty.propertyInfo.verticalAlignment
             ) + offsetY
@@ -357,9 +357,12 @@ struct HwpParagraphObjectCollector {
         for line in frame.lines {
             for anchor in line.inlineAnchors where anchor.controlIndex == controlIndex {
                 return LineAnchor(
-                    origin: CGPoint(
-                        x: paragraphRect.minX + line.origin.x + anchor.xOffset,
-                        y: paragraphRect.minY + firstBaseline + line.origin.y - anchor.ascent
+                    origin: HwpObjectAnchorGeometry.inlineAnchorOrigin(
+                        paragraphOrigin: paragraphRect.origin,
+                        firstBaseline: firstBaseline,
+                        lineOrigin: line.origin,
+                        xOffset: anchor.xOffset,
+                        ascent: anchor.ascent
                     ),
                     reserved: CGSize(width: anchor.width, height: anchor.ascent)
                 )
@@ -663,20 +666,5 @@ extension HwpParagraphObjectCollector {
     ) -> Bool {
         growsContainer(commonProperty)
             || (commonProperty?.propertyInfo.treatAsChar ?? true)
-    }
-}
-
-private extension HwpParagraphObjectCollector {
-    /// 정렬 반영 좌표 — HwpPaginator.alignedAnchor와 같은 산식.
-    func aligned(
-        base: CGFloat, extent: CGFloat, size: CGFloat,
-        alignment: CoreHwp.HwpCommonCtrlRelativeAlignment?
-    ) -> CGFloat {
-        guard extent > 0 else { return base }
-        return switch alignment {
-        case .center: base + (extent - size) / 2
-        case .bottomOrRight, .outside: base + extent - size
-        case .topOrLeft, .inside, nil: base
-        }
     }
 }

@@ -131,7 +131,6 @@ final class HwpSelectableTextPaintParityTests: XCTestCase {
     /// (HwpSelectableText와 같은 계약).
     private static func bodyDrawTextEmissions(in page: HwpPage) -> [TextEmission] {
         let builder = HwpPaintListBuilder()
-        let index = HwpIndex(from: HwpFile())
         var emissions: [TextEmission] = []
         for block in page.blocks where block.role == .body {
             if case .chart = block.payload {
@@ -143,7 +142,7 @@ final class HwpSelectableTextPaintParityTests: XCTestCase {
                 blocks: [block],
                 pageNumber: page.pageNumber
             )
-            for command in builder.build(for: singleBlockPage, index: index).commands {
+            for command in builder.build(for: singleBlockPage).commands {
                 if case let .drawText(attributed, origin, lineWidth) = command {
                     emissions.append(TextEmission(
                         string: attributed.string,

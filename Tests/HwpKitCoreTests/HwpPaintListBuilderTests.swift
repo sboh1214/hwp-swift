@@ -7,7 +7,6 @@ import XCTest
 
 final class HwpPaintListBuilderTests: XCTestCase {
     private let builder = HwpPaintListBuilder()
-    private lazy var index = HwpIndex(from: HwpFile())
 
     /// 절단면 클립이 있는 셀 그림은 저작 rect를 유지한 채 페이지 좌표로
     /// 오프셋된 clipRect로 방출된다 (R32 #2).
@@ -40,7 +39,7 @@ final class HwpPaintListBuilderTests: XCTestCase {
             kind: .table,
             payload: .table(table)
         )
-        let list = builder.build(for: makePage(blocks: [block]), index: index)
+        let list = builder.build(for: makePage(blocks: [block]))
 
         let clips: [(CGRect, CGRect?)] = list.commands.compactMap {
             if case let .drawImageReference(_, rect, _, clip) = $0 {
@@ -54,7 +53,7 @@ final class HwpPaintListBuilderTests: XCTestCase {
     }
 
     func testEmptyPageProducesNoCommands() {
-        let list = builder.build(for: makePage(blocks: []), index: index)
+        let list = builder.build(for: makePage(blocks: []))
         expect(list.commands.count) == 0
     }
 
@@ -64,7 +63,7 @@ final class HwpPaintListBuilderTests: XCTestCase {
             kind: .text,
             attributedString: NSAttributedString(string: "hello")
         )
-        let list = builder.build(for: makePage(blocks: [block]), index: index)
+        let list = builder.build(for: makePage(blocks: [block]))
         expect(list.commands.count) >= 1
         guard case .drawText = list.commands[0] else {
             fail("Expected .drawText as first command")
@@ -74,7 +73,7 @@ final class HwpPaintListBuilderTests: XCTestCase {
 
     func testTextBlockWithoutTextProducesNoCommands() {
         let block = AnyHwpBlock(frame: CGRect(x: 72, y: 72, width: 400, height: 20), kind: .text)
-        let list = builder.build(for: makePage(blocks: [block]), index: index)
+        let list = builder.build(for: makePage(blocks: [block]))
         expect(list.commands.count) == 0
     }
 
@@ -83,7 +82,7 @@ final class HwpPaintListBuilderTests: XCTestCase {
             frame: CGRect(x: 72, y: 100, width: 200, height: 100),
             kind: .placeholder
         )
-        let list = builder.build(for: makePage(blocks: [block]), index: index)
+        let list = builder.build(for: makePage(blocks: [block]))
         expect(list.commands.count) == 1
         guard case .drawPlaceholder = list.commands[0] else {
             fail("Expected .drawPlaceholder")
@@ -93,7 +92,7 @@ final class HwpPaintListBuilderTests: XCTestCase {
 
     func testShapeBlockWithoutPayloadProducesDrawPath() {
         let block = AnyHwpBlock(frame: CGRect(x: 72, y: 200, width: 100, height: 100), kind: .shape)
-        let list = builder.build(for: makePage(blocks: [block]), index: index)
+        let list = builder.build(for: makePage(blocks: [block]))
         expect(list.commands.count) >= 1
         guard case .drawPath = list.commands[0] else {
             fail("Expected .drawPath")
@@ -113,7 +112,7 @@ final class HwpPaintListBuilderTests: XCTestCase {
             kind: .shape,
             payload: .shape(geometry)
         )
-        let list = builder.build(for: makePage(blocks: [block]), index: index)
+        let list = builder.build(for: makePage(blocks: [block]))
         expect(list.commands.count) == 1
         guard case let .drawPath(path, _, _, strokeWidth) = list.commands[0] else {
             fail("Expected .drawPath")
@@ -127,7 +126,7 @@ final class HwpPaintListBuilderTests: XCTestCase {
 
     func testImageBlockWithoutPayloadProducesPlaceholder() {
         let block = AnyHwpBlock(frame: CGRect(x: 72, y: 300, width: 200, height: 150), kind: .image)
-        let list = builder.build(for: makePage(blocks: [block]), index: index)
+        let list = builder.build(for: makePage(blocks: [block]))
         expect(list.commands.count) >= 1
         let hasPlaceholder = list.commands.contains {
             if case .drawPlaceholder = $0 {
@@ -150,7 +149,7 @@ final class HwpPaintListBuilderTests: XCTestCase {
             kind: .image,
             payload: .image(HwpImageBlockInfo(binItemId: 1))
         )
-        let list = storeBuilder.build(for: makePage(blocks: [block]), index: index)
+        let list = storeBuilder.build(for: makePage(blocks: [block]))
         guard case let .drawImageReference(binItemId, rect, style, _) = list.commands.first else {
             fail("Expected .drawImageReference")
             return
@@ -166,7 +165,7 @@ final class HwpPaintListBuilderTests: XCTestCase {
             kind: .image,
             payload: .image(HwpImageBlockInfo(binItemId: 9))
         )
-        let list = builder.build(for: makePage(blocks: [block]), index: index)
+        let list = builder.build(for: makePage(blocks: [block]))
         guard case let .drawPlaceholder(_, text) = list.commands.first else {
             fail("Expected .drawPlaceholder for missing image data")
             return
@@ -198,7 +197,7 @@ final class HwpPaintListBuilderTests: XCTestCase {
             kind: .table,
             payload: .table(table)
         )
-        let list = builder.build(for: makePage(blocks: [block]), index: index)
+        let list = builder.build(for: makePage(blocks: [block]))
 
         let fillRects = list.commands.filter {
             if case .fillRect = $0 {
@@ -218,7 +217,7 @@ final class HwpPaintListBuilderTests: XCTestCase {
 
     func testTableBlockWithoutPayloadOrTextProducesNoCommands() {
         let block = AnyHwpBlock(frame: CGRect(x: 72, y: 400, width: 300, height: 200), kind: .table)
-        let list = builder.build(for: makePage(blocks: [block]), index: index)
+        let list = builder.build(for: makePage(blocks: [block]))
         expect(list.commands.count) == 0
     }
 
@@ -235,7 +234,7 @@ final class HwpPaintListBuilderTests: XCTestCase {
             kind: .textbox,
             payload: .textbox(textbox)
         )
-        let list = builder.build(for: makePage(blocks: [block]), index: index)
+        let list = builder.build(for: makePage(blocks: [block]))
         expect(list.commands.count) == 2
         guard case .fillRect = list.commands[0] else {
             fail("Expected .fillRect as first command")
@@ -263,7 +262,7 @@ final class HwpPaintListBuilderTests: XCTestCase {
             kind: .textbox,
             payload: .textbox(textbox)
         )
-        let list = builder.build(for: makePage(blocks: [block]), index: index)
+        let list = builder.build(for: makePage(blocks: [block]))
         // 테두리 정보가 없으면 배경 + 텍스트만 (기본 테두리 없음 — CCL 한글.app 실측)
         expect(list.commands.count) == 2
         guard case let .drawText(attributed, _, _) = list.commands[1] else {
@@ -285,7 +284,7 @@ final class HwpPaintListBuilderTests: XCTestCase {
             separatorLine: CGRect(x: 72, y: 690, width: 150, height: 1)
         )
         let block = AnyHwpBlock(frame: blockFrame, kind: .footnote, payload: .footnote(footnote))
-        let list = builder.build(for: makePage(blocks: [block]), index: index)
+        let list = builder.build(for: makePage(blocks: [block]))
         expect(list.commands.count) == 2
         guard case .fillRect = list.commands[0] else {
             fail("Expected .fillRect separator as first command")
@@ -313,7 +312,7 @@ final class HwpPaintListBuilderTests: XCTestCase {
         )
         let blockFrame = CGRect(x: 72, y: 100, width: 200, height: 80)
         let block = AnyHwpBlock(frame: blockFrame, kind: .textbox, payload: .textbox(textbox))
-        let list = builder.build(for: makePage(blocks: [block]), index: index)
+        let list = builder.build(for: makePage(blocks: [block]))
 
         let hyperlinks = list.commands.compactMap { command -> (rect: CGRect, url: String)? in
             if case let .hyperlink(rect, url) = command {
@@ -355,7 +354,7 @@ final class HwpPaintListBuilderTests: XCTestCase {
         )
         let blockFrame = CGRect(x: 72, y: 100, width: 200, height: 80)
         let block = AnyHwpBlock(frame: blockFrame, kind: .textbox, payload: .textbox(textbox))
-        let list = builder.build(for: makePage(blocks: [block]), index: index)
+        let list = builder.build(for: makePage(blocks: [block]))
 
         let fallbackRect = paragraphRect.offsetBy(dx: blockFrame.minX, dy: blockFrame.minY)
         let hyperlinkRects = list.commands.compactMap { command -> CGRect? in
@@ -413,7 +412,7 @@ extension HwpPaintListBuilderTests {
             borderColor: black, borderWidth: 1
         )
         let block = AnyHwpBlock(frame: cellRect, kind: .table, payload: .table(table))
-        let list = builder.build(for: makePage(blocks: [block]), index: index)
+        let list = builder.build(for: makePage(blocks: [block]))
 
         let fills: [CGRect] = list.commands.compactMap {
             if case let .fillRect(rect, _) = $0 {

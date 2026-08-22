@@ -25,9 +25,7 @@ import XCTest
 
             let clock = ContinuousClock()
             let start = clock.now
-            let paintList = HwpPaintListBuilder().build(
-                for: page, index: HwpIndex(from: CoreHwp.HwpFile())
-            )
+            let paintList = HwpPaintListBuilder().build(for: page)
             let elapsed = clock.now - start
 
             expect(paintList.commands.isEmpty) == false
