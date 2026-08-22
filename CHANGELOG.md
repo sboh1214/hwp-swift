@@ -4,6 +4,27 @@
 
 ### Breaking Changes
 
+- `HwpParagraphLayout.layout(attributedString:paraShape:columnWidth:tabStops:maxLineFrames:)`
+  에서 **`tabStops:` 인자가 제거되었습니다.** 이 함수는 이제 입력
+  `attributedString`에 **문단 스타일이 이미 부착돼 있다고 전제하고** 그것을 그대로
+  framesetting합니다 (종전에는 문단마다 전체 사본을 떠 `paraShape`로
+  `CTParagraphStyle`을 재생성해 부착했습니다). 정렬·들여쓰기·줄 간격·문서 정의 탭은
+  전부 부착본이 나르므로 `tabStops:`가 CoreText에 닿을 경로가 없어졌습니다.
+  `paraShape:`는 부착본이 나르지 못하는 값(문단 위/아래 간격, 강제 줄 높이 클램프)에만
+  쓰이므로 **스타일을 부착한 paraShape와 같은 값**이어야 합니다.
+  `HwpTextRunBuilder.build`를 거친 문자열은 자동으로 부착되어 있어 호출부 수정이
+  필요 없고, 문자열을 직접 만들어 넘기던 호출부는
+  `HwpParagraphLayout.paragraphStyle(for:attributedString:tabStops:)`로 만든 스타일을
+  `kCTParagraphStyleAttributeName`에 달아야 합니다. 달지 않으면 CoreText 기본값
+  (natural 정렬·자연 줄 높이)으로 조판됩니다.
+- `HwpTextRunBuilder.build`가 붙이는 문단 스타일의 shape 해석이
+  `HwpIndex.paraShape(for:)`(nil 가능)에서 `paraShapeOrDefault(for:)`로 바뀌었습니다.
+  DocInfo에 문단 모양이 **하나도 없는** 문서에서 종전에는 스타일이 통째로 생략되어
+  측정(기본 shape)과 렌더(스타일 없음)가 갈렸는데, 이제 양쪽이 같은 기본 shape를
+  씁니다. 그런 문서의 렌더 결과(정렬·줄 간격)가 달라집니다. 문단 모양이 하나라도
+  있는 정상 문서는 영향이 없습니다(저장소 픽스처 33종 전부 해당 — 렌더 픽셀 해시
+  전 픽스처 × 전 페이지 무변화, 양 폰트 모드).
+
 - 한컴오피스 앱 번들 폰트(`Contents/Resources/Hnc/Shared/TTF/`) 사용이 **기본
   비활성**으로 바뀌었습니다. 그 디렉터리에는 한컴이 자사 오피스 안에서 쓰도록
   라이선스받은 타사 폰트(Monotype·한양정보통신·윤디자인 등)가 섞여 있어, 제3자 앱이

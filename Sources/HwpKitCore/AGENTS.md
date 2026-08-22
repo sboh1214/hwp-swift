@@ -448,6 +448,34 @@ height는 잉크 모델이다.
 `breakLines(attributedString:width:)` 같은 폭·문자열 API로 표현할 수 없다 —
 7인자와 `keepCount`/`nextStart` 재개 계약이 시그니처에 있어야 한다.
 
+### 측정 입력 계약 (#80 조각 3)
+
+**`HwpParagraphLayout.layout`은 문단 스타일이 이미 부착된 문자열을 받는다.**
+정렬·들여쓰기·줄 간격·문서 정의 탭은 전부 그 부착본이 나르고, `layout`은 사본을
+뜨지 않고 **그대로** framesetting한다. `paraShape` 인자는 부착본이 나르지 못하는
+것에만 쓴다 — 문단 위/아래 간격, 강제 줄 높이 클램프,
+`lineHeightAppliedAsSpacing` (`ParagraphMetrics`). 그래서 **스타일을 부착한
+paraShape와 같은 값**이어야 한다.
+
+- 부착은 `HwpTextRunBuilder.build` 꼬리의 `attachParagraphStyle`이 한다. 문자열을
+  직접 만들어 넘기는 호출부(테스트 포함)는
+  `HwpParagraphLayout.paragraphStyle(for:attributedString:tabStops:)`로 같은 부착을
+  해야 한다. 안 하면 CT 기본값(natural 정렬·자연 줄 높이)으로 조판돼 렌더와
+  어긋난다 — 조용히.
+- **shape 해석은 조판 경로 전부가 `paraShapeOrDefault`다.** 부착이
+  `paraShape(for:)`(nil 가능)를 쓰던 시절에는 paraShape 표가 통째로 빈 문서에서
+  부착만 생략되고 측정은 기본 shape로 조판해 둘이 갈렸다. 종전에는 `layout`이
+  스타일을 재생성했으므로 그 갈림이 이론이었지만, 지금은 **측정 결과 자체**가
+  달라진다. 픽스처 33종 중 이 경로를 타는 것이 0개라 합성 가드로만 잡힌다:
+  `HwpMeasurementInputContractTests.testEmptyParaShapeTableStillAppliesDefaultParagraphStyle`
+  (부착을 되돌리면 줄 피치가 16.0 → 12.44pt로 떨어져 빨개진다).
+- 없앤 것이 사본만은 아니다 — **스타일 출처가 한 함수 안에서 둘로 갈려 있었다.**
+  `layout`은 사본을 뜨기 전에 `slightOverflowLineMetrics`를 부르는데 그 술어는
+  **부착본** 스타일을 읽고 그 분기에서 바로 반환했고, 그 아래 일반 분기만
+  **재생성** 스타일을 읽었다.
+- `layout`의 `tabStops:` 인자는 이 계약과 함께 **없앴다**. 탭이 조판에 닿는
+  경로가 부착본 하나로 좁혀져, 남겨 두면 조용히 무시되는 인자가 된다.
+
 ## 새 블록 종류 추가
 
 1. `Model/HwpBlock.swift` 의 `HwpBlockKind` + `Model/HwpBlockPayload.swift` 에 payload case 추가

@@ -245,13 +245,10 @@ struct HwpPageChromeBuilder {
                 controlReplacements: replacements
             )
             guard attributed.length > 0 else { continue }
-            let paraShape = index.paraShapeOrDefault(for: paragraph)
             let frame = paragraphLayout.layout(
                 attributedString: attributed,
-                paraShape: paraShape,
-                columnWidth: bandFrame.width,
-                tabStops: attributeCache?.textTabs(for: paraShape, index: index)
-                    ?? index.textTabs(for: paraShape)
+                paraShape: index.paraShapeOrDefault(for: paragraph),
+                columnWidth: bandFrame.width
             )
             let blockHeight = max(1, frame.totalHeight)
             blocks.append(AnyHwpBlock(

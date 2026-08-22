@@ -1154,8 +1154,7 @@ private extension HwpPaginator {
         return HwpParagraphLayout().layout(
             attributedString: attributedString,
             paraShape: paraShape,
-            columnWidth: currentColumnFrame.width,
-            tabStops: attributeCache.textTabs(for: paraShape, index: index)
+            columnWidth: currentColumnFrame.width
         )
     }
 

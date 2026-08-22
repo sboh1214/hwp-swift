@@ -108,9 +108,6 @@ public struct HwpParagraphLayout {
         )
     }
 
-    /// tabStops: 문서 정의 탭 (HwpIndex.textTabs). 렌더 부착 경로
-    /// (HwpTextRunBuilder.attachParagraphStyle)와 같은 탭으로 측정해야
-    /// 탭 포함 문단의 줄바꿈이 측정과 렌더에서 일치한다.
     /// 문단당 줄 프레임 누적 상한 — 프레임 연장 루프(#9)는 문자열 끝까지
     /// 줄을 전량 생성·보존하므로, 수백 MB 문단(기본 스트림 한도 안)이 1pt
     /// 폭 단과 결합하면 줄 수가 문자 수에 접근해 페이지 상한이 걸리기 전에
@@ -118,22 +115,37 @@ public struct HwpParagraphLayout {
     /// ≈ 4만 줄)의 2.5배로, 초과분은 페이지 상한과 같은 절단 계약을 따른다.
     public static let maximumLineFrames = 100_000
 
+    /// **입력 계약: `attributedString`에 문단 스타일이 이미 부착돼 있어야 한다.**
+    /// 정렬·들여쓰기·줄 간격·문서 정의 탭은 전부 그 부착본이 나르고, 이 함수는
+    /// 그것을 **그대로** framesetting한다 (#80 조각 3 — 종전에는 문단마다 전체
+    /// 사본을 떠 스타일을 재생성했다. 같은 paraShape에서 나오므로 값은 같았지만,
+    /// slight-overflow 분기는 부착본을 읽고 일반 분기는 재생성본을 읽어 한 함수
+    /// 안에서 스타일 출처가 둘로 갈려 있었다).
+    ///
+    /// 부착은 `HwpTextRunBuilder.build`가 `attachParagraphStyle`로 자동으로 한다.
+    /// 직접 문자열을 만들어 넘기는 호출부는
+    /// `HwpParagraphLayout.paragraphStyle(for:attributedString:tabStops:)`를 **같은
+    /// paraShape로** 만들어 `kCTParagraphStyleAttributeName`에 달아야 한다. 안 달면
+    /// CT 기본값(natural 정렬, 자연 줄 높이)으로 조판돼 렌더와 어긋난다.
+    ///
+    /// `paraShape`는 부착본이 나르지 **못하는** 것에만 쓴다 — 문단 위/아래 간격,
+    /// 강제 줄 높이 클램프, 줄 여분을 줄 뒤 간격으로 돌렸는지 여부
+    /// (`ParagraphMetrics`). 그래서 스타일을 부착한 paraShape와 **같은 값**이어야
+    /// 한다.
     public func layout(
         attributedString: NSAttributedString,
         paraShape: CoreHwp.HwpParaShape,
         columnWidth: CGFloat,
-        tabStops: [CTTextTab] = [],
         maxLineFrames: Int = HwpParagraphLayout.maximumLineFrames
     ) -> HwpParagraphFrame {
         guard attributedString.length > 0 else {
             return HwpParagraphFrame(totalHeight: 0, lines: [])
         }
 
-        var paragraphMetrics = ParagraphMetrics(
+        let paragraphMetrics = ParagraphMetrics(
             paraShape: paraShape,
             attributedString: attributedString
         )
-        paragraphMetrics.tabStops = tabStops
 
         // slight-overflow 한 줄 (렌더와 같은 술어): 렌더가 한 줄로 그리는
         // 문단은 측정도 한 줄 높이여야 문단 높이 (= 페이지 절단)와 실제
@@ -159,21 +171,13 @@ public struct HwpParagraphLayout {
             )
             return HwpParagraphFrame(totalHeight: max(1, totalHeight), lines: [lineFrame])
         }
-        let paragraphStyle = ctParagraphStyle(
-            from: paragraphMetrics,
-            property: paraShape.property1Info
+        let framesetter = CTFramesetterCreateWithAttributedString(
+            attributedString as CFAttributedString
         )
-
-        let mutable = NSMutableAttributedString(attributedString: attributedString)
-        mutable.addAttribute(
-            kCTParagraphStyleAttributeName as NSAttributedString.Key,
-            value: paragraphStyle,
-            range: NSRange(location: 0, length: mutable.length)
+        let typesetter = CTTypesetterCreateWithAttributedString(
+            attributedString as CFAttributedString
         )
-
-        let framesetter = CTFramesetterCreateWithAttributedString(mutable as CFAttributedString)
-        let fullLength = mutable.length
-        let typesetter = CTTypesetterCreateWithAttributedString(mutable as CFAttributedString)
+        let fullLength = attributedString.length
         // 렌더(HwpDrawnTextLayout.lines)와 HwpLineBreaker.nextFrameChunk를 공유해 청크
         // 경계를 같은 CTLine 시작에 맞춘다 — 측정 range·높이가 렌더 줄과 일치한다. 단일
         // 청크(모든 정상 문단)는 문단 전체가 한 프레임이라 측정 불변 (R37 #1·R50 #4).
@@ -183,7 +187,7 @@ public struct HwpParagraphLayout {
         while startLocation < fullLength, lineFrames.count < maxLineFrames {
             guard let chunk = HwpLineBreaker.nextFrameChunk(
                 framesetter: framesetter, typesetter: typesetter,
-                attributedString: mutable,
+                attributedString: attributedString,
                 startLocation: startLocation, fullLength: fullLength,
                 remainingLineBudget: maxLineFrames - lineFrames.count,
                 lineWidth: max(1, columnWidth)
