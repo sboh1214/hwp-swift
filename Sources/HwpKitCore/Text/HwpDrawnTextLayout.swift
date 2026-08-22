@@ -52,16 +52,16 @@ public enum HwpDrawnTextLayout {
         let typesetter = CTTypesetterCreateWithAttributedString(attributedString)
         let fullLength = attributedString.length
         let lineBudget = max(0, maxLineFrames)
-        // 측정(HwpParagraphLayout.layout)과 nextFrameChunk를 공유해 청크 경계를
-        // 실제 CTLine 시작에 맞춘다 — 미완 줄은 버려 다음 청크에서 온전히 재조판,
-        // 넓은 단일 줄은 안 쪼갠다. 단일 청크(모든 정상 블록)는 문단 전체가 한
-        // 프레임이라 렌더 불변 (R48·R50).
+        // 측정(HwpParagraphLayout.layout)과 HwpLineBreaker.nextFrameChunk를 공유해
+        // 청크 경계를 실제 CTLine 시작에 맞춘다 — 미완 줄은 버려 다음 청크에서 온전히
+        // 재조판, 넓은 단일 줄은 안 쪼갠다. 단일 청크(모든 정상 블록)는 문단 전체가
+        // 한 프레임이라 렌더 불변 (R48·R50).
         var result: [HwpDrawnLine] = []
         var startLocation = 0
         // 이월 시 다음 청크 첫 줄이 놓일 top-down baseline. nil이면 첫 청크.
         var resumeBaseline: CGFloat?
         while startLocation < fullLength, result.count < lineBudget {
-            guard let chunk = nextFrameChunk(
+            guard let chunk = HwpLineBreaker.nextFrameChunk(
                 framesetter: framesetter, typesetter: typesetter,
                 attributedString: attributedString,
                 startLocation: startLocation, fullLength: fullLength,
@@ -122,101 +122,11 @@ public enum HwpDrawnTextLayout {
         )
     }
 
-    /// 한 프레임 청크의 조판 결과 — 두 루프(lines/layout)가 공유하는 경계 결정.
-    struct FrameChunk {
-        let lines: [CTLine]
-        let origins: [CGPoint]
-        /// 이 청크의 SuggestFrameSize 박스 높이.
-        let height: CGFloat
-        /// 커밋할 줄 수 — 문자 예산으로 잘린 미완 마지막 줄은 제외한다.
-        let keepCount: Int
-        /// 다음 청크가 재개할 문자열 위치.
-        let nextStart: Int
-        /// 버려진(다음 청크로 이월되는) 줄 인덱스 — 없으면 nil.
-        var droppedLineIndex: Int? {
-            keepCount < lines.count ? keepCount : nil
-        }
-    }
-
-    /// 측정·렌더가 공유하는 다음 프레임 청크. 남은 줄 예산만큼 문자를 잘라
-    /// 조판하되, 문자열 끝 전에 잘린 청크의 마지막(미완) 줄은 커밋하지 않고 그
-    /// 줄 시작을 nextStart로 돌려 두 경로가 같은 CTLine 경계에서 재개하게 한다.
-    /// 잘린 청크가 한 줄뿐이면(예산보다 긴 한 시각 줄) CTTypesetter로 그 줄의
-    /// 실제 끝을 찾아 재프레이밍해 쪼개지 않는다 (R50 #2·#4).
-    static func nextFrameChunk(
-        framesetter: CTFramesetter,
-        typesetter: CTTypesetter,
-        attributedString: NSAttributedString,
-        startLocation: Int,
-        fullLength: Int,
-        remainingLineBudget: Int,
-        lineWidth: CGFloat
-    ) -> FrameChunk? {
-        let probeLength = min(fullLength - startLocation, remainingLineBudget)
-        guard probeLength > 0 else { return nil }
-
-        func frame(length: Int) -> (lines: [CTLine], origins: [CGPoint], height: CGFloat)? {
-            let range = CFRange(location: startLocation, length: length)
-            let suggested = CTFramesetterSuggestFrameSizeWithConstraints(
-                framesetter, range, nil,
-                CGSize(width: lineWidth, height: .greatestFiniteMagnitude), nil
-            )
-            let height = max(ceil(suggested.height), 1)
-            let path = CGPath(
-                rect: CGRect(x: 0, y: 0, width: lineWidth, height: height), transform: nil
-            )
-            let created = CTFramesetterCreateFrame(framesetter, range, path, nil)
-            guard let lines = CTFrameGetLines(created) as? [CTLine], !lines.isEmpty
-            else { return nil }
-            var origins = [CGPoint](repeating: .zero, count: lines.count)
-            CTFrameGetLineOrigins(created, CFRange(location: 0, length: 0), &origins)
-            return (lines, origins, height)
-        }
-
-        guard var chunk = frame(length: probeLength) else { return nil }
-        var length = probeLength
-
-        // 예산이 문자열 끝 전에 잘랐는데 한 시각 줄뿐이면 그 줄을 쪼개지 않게
-        // CTTypesetter로 실제 줄 끝을 찾아 확장 재프레이밍한다. break 폭은 문단
-        // 오른쪽 여백(tailIndent)까지 반영해야 여러 줄로 벌어지지 않는다 (R50 #2·R51 #1).
-        if probeLength < fullLength - startLocation, chunk.lines.count == 1 {
-            let style = paragraphStyle(in: attributedString, at: startLocation)
-            let breakWidth = availableLineWidth(
-                containerWidth: lineWidth, lineOriginX: chunk.origins[0].x, paragraphStyle: style
-            )
-            let breakLength = CTTypesetterSuggestLineBreak(
-                typesetter, startLocation, Double(breakWidth)
-            )
-            let extended = min(max(1, breakLength), fullLength - startLocation)
-            if extended > probeLength, let remade = frame(length: extended) {
-                chunk = remade
-                length = extended
-            }
-        }
-
-        // 하드 예산 불변: rescue remade가 tailIndent 등으로 여러 줄이 돼도 남은 줄
-        // 예산을 넘겨 커밋하지 않는다 — maxLineFrames 우회 방지 (R51 #1). nextStart는
-        // 마지막 커밋 줄 끝(잘린 경우 버린 줄 시작과 동일한 CTLine 경계).
-        let cutBeforeEnd = length < fullLength - startLocation
-        let proposedKeepCount = cutBeforeEnd && chunk.lines.count >= 2
-            ? chunk.lines.count - 1
-            : chunk.lines.count
-        let keepCount = min(proposedKeepCount, remainingLineBudget)
-        guard keepCount > 0 else { return nil }
-        let lastRange = CTLineGetStringRange(chunk.lines[keepCount - 1])
-        let nextStart = lastRange.location + lastRange.length
-        guard nextStart > startLocation else { return nil }
-        return FrameChunk(
-            lines: chunk.lines, origins: chunk.origins, height: chunk.height,
-            keepCount: keepCount, nextStart: nextStart
-        )
-    }
-
     /// 이월 후 다음 청크 첫 줄이 놓일 top-down baseline. 미완 줄을 버렸으면 CT가
     /// 준 그 줄 origin으로 정확 정렬(R50 #3), 없으면(한 줄 rescue 등) 문단 스타일의
     /// 줄 간격까지 포함한 advance만큼 내린다 (R51 #2).
     private static func resumeBaseline(
-        after chunk: FrameChunk,
+        after chunk: HwpLineBreaker.FrameChunk,
         framePageTop: CGFloat,
         attributedString: NSAttributedString,
         continuesAfterChunk: Bool
@@ -234,40 +144,6 @@ public enum HwpDrawnTextLayout {
         )
     }
 
-    /// startLocation의 CTParagraphStyle. 없으면 nil.
-    static func paragraphStyle(in attributedString: NSAttributedString, at location: Int) -> CTParagraphStyle? {
-        guard attributedString.length > 0 else { return nil }
-        let index = min(max(location, 0), attributedString.length - 1)
-        guard let value = attributedString.attribute(
-            kCTParagraphStyleAttributeName as NSAttributedString.Key, at: index, effectiveRange: nil
-        ), CFGetTypeID(value as CFTypeRef) == CTParagraphStyleGetTypeID()
-        else { return nil }
-        // swiftlint:disable:next force_cast
-        return (value as! CTParagraphStyle)
-    }
-
-    /// CTParagraphStyle의 CGFloat spec 값. 없으면 nil.
-    static func paragraphCGFloat(_ spec: CTParagraphStyleSpecifier, in style: CTParagraphStyle?) -> CGFloat? {
-        guard let style else { return nil }
-        var value: CGFloat = 0
-        guard CTParagraphStyleGetValueForSpecifier(style, spec, MemoryLayout<CGFloat>.size, &value)
-        else { return nil }
-        return value
-    }
-
-    /// rescue 단일 줄의 실제 가용 폭 — CT의 tailIndent 규약(≤0이면 컨테이너 trailing
-    /// 기준, >0이면 leading 기준 절대 위치)을 반영해 오른쪽 여백을 뺀다. lineOriginX는
-    /// CT가 이미 고른 leading origin(첫 줄/이어지는 줄 들여쓰기 포함).
-    private static func availableLineWidth(
-        containerWidth lineWidth: CGFloat,
-        lineOriginX: CGFloat,
-        paragraphStyle: CTParagraphStyle?
-    ) -> CGFloat {
-        let tailIndent = paragraphCGFloat(.tailIndent, in: paragraphStyle) ?? 0
-        let trailingEdge = tailIndent > 0 ? tailIndent : lineWidth + tailIndent
-        return max(1, trailingEdge - lineOriginX)
-    }
-
     /// 다음 청크에 조사할 origin이 없을 때 세로 advance — typographic 높이에 문단
     /// 스타일의 min/max 줄 높이를 적용하고, 이어지는 청크면 lineSpacingAdjustment도
     /// 더해 uncapped 조판과 같은 줄 간격을 낸다 (R51 #2).
@@ -281,15 +157,19 @@ public enum HwpDrawnTextLayout {
         var leading: CGFloat = 0
         _ = CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
         var advance = ascent + descent + leading
-        let style = paragraphStyle(in: attributedString, at: CTLineGetStringRange(line).location)
-        if let maximum = paragraphCGFloat(.maximumLineHeight, in: style), maximum > 0 {
+        let style = HwpLineBreaker.paragraphStyle(
+            in: attributedString, at: CTLineGetStringRange(line).location
+        )
+        let maximum = HwpLineBreaker.paragraphCGFloat(.maximumLineHeight, in: style)
+        if let maximum, maximum > 0 {
             advance = min(advance, maximum)
         }
-        if let minimum = paragraphCGFloat(.minimumLineHeight, in: style), minimum > 0 {
+        let minimum = HwpLineBreaker.paragraphCGFloat(.minimumLineHeight, in: style)
+        if let minimum, minimum > 0 {
             advance = max(advance, minimum)
         }
         if continuesAfterChunk {
-            advance += paragraphCGFloat(.lineSpacingAdjustment, in: style) ?? 0
+            advance += HwpLineBreaker.paragraphCGFloat(.lineSpacingAdjustment, in: style) ?? 0
         }
         return max(1, advance)
     }

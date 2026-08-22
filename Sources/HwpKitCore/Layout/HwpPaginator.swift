@@ -338,6 +338,54 @@ public actor HwpPaginator {
     }
 }
 
+/// paragraph-bearing 컨테이너의 **단일 traversal 지점**.
+///
+/// 진단 walk (`walkUnsupported`)·탐색 목록 수집·중첩 블록 방출이 전부 이 하나를
+/// 쓰고, 새 컨테이너는 여기 추가하면 렌더 경로 (`appendControlBlocks`)와 함께
+/// 관리된다 (`Sources/HwpKitCore/AGENTS.md` "새 블록 종류 추가").
+///
+/// actor 상태를 하나도 읽지 않는 순수 함수라 `nonisolated static`이다 — 그래야
+/// 조판 없이 문단 트리만 훑는 쪽 (등가 스윕 가드 `HwpLayoutRenderParitySweepTests`)이
+/// 분기를 복제하지 않고 같은 정의를 쓴다. 복제하면 새 컨테이너가 추가될 때
+/// 가드만 조용히 그 컨테이너를 못 보게 된다.
+extension HwpPaginator {
+    nonisolated static func childParagraphs(
+        of ctrl: CoreHwp.HwpCtrlId
+    ) -> [(CoreHwp.HwpParagraph, HwpBlockKind)] {
+        switch ctrl {
+        case let .header(list), let .footer(list):
+            list.listArray.flatMap(\.paragraphArray).map { ($0, HwpBlockKind.text) }
+        case let .footnote(list), let .endnote(list):
+            list.listArray.flatMap(\.paragraphArray).map { ($0, HwpBlockKind.footnote) }
+        case let .table(table):
+            table.cellArray.flatMap(\.paragraphArray).map { ($0, HwpBlockKind.table) }
+        case let .shape(shape),
+             let .line(shape),
+             let .rectangle(shape),
+             let .ellipse(shape),
+             let .arc(shape),
+             let .polygon(shape),
+             let .curve(shape),
+             let .equation(shape),
+             let .equationLegacy(shape),
+             let .picture(shape),
+             let .ole(shape),
+             let .container(shape):
+            shape.shapeComponentArray
+                .flatMap(\.textBoxListArray)
+                .flatMap(\.paragraphArray)
+                .map { ($0, HwpBlockKind.textbox) }
+        case let .genShapeObject(genShape):
+            genShape.shapeComponentArray
+                .flatMap(\.textBoxListArray)
+                .flatMap(\.paragraphArray)
+                .map { ($0, HwpBlockKind.textbox) }
+        default:
+            []
+        }
+    }
+}
+
 private extension HwpPaginator {
     static func firstSectionDef(for sections: [CoreHwp.HwpSection]) -> CoreHwp.HwpSectionDef? {
         sections.lazy
@@ -1095,19 +1143,21 @@ private extension HwpPaginator {
         }
     }
 
+    /// shape 해석은 `paraShapeOrDefault`다 — 스타일 부착
+    /// (`HwpTextRunBuilder.attachParagraphStyle`)과 **같은 폴백**이어야 측정이
+    /// 부착본을 그대로 framesetting할 수 있다 (#80 조각 3의 측정 입력 계약).
+    /// 종전에는 `paraShape(for:)`가 nil이면 빈 프레임으로 조기 반환했는데,
+    /// paraShape 표가 통째로 빈 문서에서 그 문단은 높이 0으로 잡힌 채 텍스트만
+    /// 그려졌다 (뒤 문단과 겹친다). 이제 부착과 같은 기본 shape로 조판한다.
     func layout(
         _ paragraph: CoreHwp.HwpParagraph,
         attributedString: NSAttributedString
     ) async throws -> HwpParagraphFrame {
         await Task.yield()
-        guard let paraShape = index.paraShape(for: paragraph) else {
-            return HwpParagraphFrame(totalHeight: 0, lines: [])
-        }
         return HwpParagraphLayout().layout(
             attributedString: attributedString,
-            paraShape: paraShape,
-            columnWidth: currentColumnFrame.width,
-            tabStops: attributeCache.textTabs(for: paraShape, index: index)
+            paraShape: index.paraShapeOrDefault(for: paragraph),
+            columnWidth: currentColumnFrame.width
         )
     }
 
@@ -1445,7 +1495,7 @@ private extension HwpPaginator {
             collectMemoParseFailures(in: memoParagraph, page: page)
         }
         for ctrl in paragraph.ctrlHeaderArray ?? [] {
-            for (nested, _) in childParagraphs(of: ctrl) {
+            for (nested, _) in Self.childParagraphs(of: ctrl) {
                 collectMemoParseFailures(in: nested, page: page)
             }
         }
@@ -1523,7 +1573,7 @@ private extension HwpPaginator {
                 ))
                 continue
             }
-            let children = childParagraphs(of: ctrl).map(\.0)
+            let children = Self.childParagraphs(of: ctrl).map(\.0)
             // 이 깊이에서 appendNestedControlBlocks가 자식 방출을 멈춘다 — 그 안의
             // 그림·도형·표·글상자가 조용히 사라지므로 진단으로 보고한다 (R72 #4).
             // 표는 자체 한도 (HwpTableLayout.maximumNestingDepth)와 전용 진단을
@@ -1548,43 +1598,6 @@ private extension HwpPaginator {
                     containerDepth: containerDepth + 1
                 )
             }
-        }
-    }
-
-    /// paragraph-bearing 컨테이너의 단일 traversal 지점.
-    /// unsupported walk가 사용하며, 새 컨테이너는 여기 추가하면
-    /// 렌더 경로 (appendControlBlocks)와 함께 관리된다.
-    func childParagraphs(of ctrl: CoreHwp.HwpCtrlId) -> [(CoreHwp.HwpParagraph, HwpBlockKind)] {
-        switch ctrl {
-        case let .header(list), let .footer(list):
-            list.listArray.flatMap(\.paragraphArray).map { ($0, HwpBlockKind.text) }
-        case let .footnote(list), let .endnote(list):
-            list.listArray.flatMap(\.paragraphArray).map { ($0, HwpBlockKind.footnote) }
-        case let .table(table):
-            table.cellArray.flatMap(\.paragraphArray).map { ($0, HwpBlockKind.table) }
-        case let .shape(shape),
-             let .line(shape),
-             let .rectangle(shape),
-             let .ellipse(shape),
-             let .arc(shape),
-             let .polygon(shape),
-             let .curve(shape),
-             let .equation(shape),
-             let .equationLegacy(shape),
-             let .picture(shape),
-             let .ole(shape),
-             let .container(shape):
-            shape.shapeComponentArray
-                .flatMap(\.textBoxListArray)
-                .flatMap(\.paragraphArray)
-                .map { ($0, HwpBlockKind.textbox) }
-        case let .genShapeObject(genShape):
-            genShape.shapeComponentArray
-                .flatMap(\.textBoxListArray)
-                .flatMap(\.paragraphArray)
-                .map { ($0, HwpBlockKind.textbox) }
-        default:
-            []
         }
     }
 
@@ -1617,7 +1630,7 @@ private extension HwpPaginator {
         // 각주 텍스트가 렌더에 있는데 목록은 비어 있었다).
         switch ctrl {
         case .footnote, .endnote:
-            return childParagraphs(of: ctrl).map {
+            return Self.childParagraphs(of: ctrl).map {
                 HwpOutlineCollector.ChildParagraph(paragraph: $0.0, rendersText: true)
             }
         default:
@@ -1655,7 +1668,7 @@ private extension HwpPaginator {
                 of: ctrl, components: genShape.shapeComponentArray, context: context
             )
         default:
-            childParagraphs(of: ctrl).map {
+            Self.childParagraphs(of: ctrl).map {
                 HwpOutlineCollector.ChildParagraph(paragraph: $0.0, rendersText: true)
             }
         }
@@ -1873,7 +1886,7 @@ private extension HwpPaginator {
         } else {
             .none
         }
-        for (nested, _) in childParagraphs(of: ctrl) where nested.ctrlHeaderArray != nil {
+        for (nested, _) in Self.childParagraphs(of: ctrl) where nested.ctrlHeaderArray != nil {
             appendControlBlocks(from: nested, depth: depth + 1, container: container)
         }
     }
@@ -2858,7 +2871,7 @@ private extension HwpPaginator {
             ordinals: ordinals,
             collectsNested: collectsNested,
             environment: noteEnvironment,
-            childParagraphs: childParagraphs(of:)
+            childParagraphs: Self.childParagraphs(of:)
         )
     }
 
@@ -2872,7 +2885,7 @@ private extension HwpPaginator {
             cellsByRow: cellsByRow,
             rows: rows,
             environment: noteEnvironment,
-            childParagraphs: childParagraphs(of:)
+            childParagraphs: Self.childParagraphs(of:)
         )
     }
 
@@ -2885,7 +2898,7 @@ private extension HwpPaginator {
             cellsByRow: cellsByRow,
             rows: rows,
             environment: noteEnvironment,
-            childParagraphs: childParagraphs(of:)
+            childParagraphs: Self.childParagraphs(of:)
         )
     }
 
@@ -2985,7 +2998,7 @@ private extension HwpPaginator {
         footnoteCoordinator.anticipatedFootnoteHeight(
             for: paragraph,
             environment: noteEnvironment,
-            childParagraphs: childParagraphs(of:)
+            childParagraphs: Self.childParagraphs(of:)
         )
     }
 

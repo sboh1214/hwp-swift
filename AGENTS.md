@@ -1,6 +1,6 @@
 # 프로젝트 지식 베이스
 
-**Branch:** feat/parse-diagnostics
+**Branch:** refactor/shared-line-breaker
 
 ## 개요
 
@@ -44,7 +44,7 @@ hwp-swift/
 | 새 컨트롤 ID 추가 | `Sources/CoreHwp/Enums/CtrlId/` + `Models/Section/CtrlHeader/` + `HwpCtrlId` enum + `Models/HwpParseDiagnostic.swift`의 진단 순회 |
 | 새 모델 추가 | `Sources/CoreHwp/Models/...` 하위에 `Utils/Protocols/`의 프로토콜을 채택하여 작성 |
 | 기본 타입 확장 | `Sources/CoreHwp/Utils/Extensions/` |
-| 테스트 픽스처 추가 | 테스트 파일과 같은 폴더에 `.hwp` 배치 (`openHwp(#file, "name")` 사용) |
+| 테스트 픽스처 추가 | 테스트 파일과 같은 폴더에 `.hwp` 배치 (`openHwp(#file, "name")` 사용). `Tests/CoreHwpTests/Fixtures/`에 넣으면 `HwpLayoutRenderParitySweepTests`가 자동으로 훑으므로 그쪽 실측 핀(문단 수·측정 수·컨테이너 수)을 함께 갱신한다 |
 
 ## 코드 맵
 
@@ -269,6 +269,7 @@ swift test                                     # 테스트 실행
 swift test --enable-code-coverage              # 커버리지 (lcov 추출·경로별 게이트는 .github/workflows/ci.yml Test (macOS) 잡의 스텝 — CoreHwp 95%·HwpKitCore 91% 하드 게이트)
 HWP_PERF=1 swift test --filter Performance     # 성능 실측 (N=20,000 합성 + 타이트 임계; 기본은 N=1,000 스모크)
 HWP_SNAPSHOT_TESTS=1 swift test --filter "FixtureRenderHash|FixturePreviewFidelity"  # 환경 의존 스위트 (기본 swift test·CI에서는 skip)
+HWP_PARITY_SWEEP=1 swift test --filter HwpLayoutRenderParitySweep  # 측정·렌더 등가 전수 스윕 (기본은 legacy를 stride 31로 표본; 전수는 ~127s)
 HWP_HANCOM_FONTS=1 swift test                  # 한컴오피스 번들 폰트 opt-in (기본 off — README "폰트"). 렌더 해시 기준선이 이 모드용으로 따로 있다
 RECORD_RENDER_HASHES=1 swift test --filter FixtureRenderHash     # 렌더 픽셀 해시 기준선 레코딩 (Snapshots/ — gitignore, 이 머신·현재 폰트 모드 전용)
 RECORD_BLOCK_SNAPSHOTS=1 swift test --filter FixtureBlockLayout  # 블록 좌표 스냅샷 재생성 (기준선은 커밋 대상 — diff 리뷰 필수)
@@ -1004,6 +1005,16 @@ PR 리뷰를 반영하며 렌더링 코드를 수정할 때, 한글 파일 렌�
      없다 — 예산이 소스 상수라 손으로 고치고 **낮추는 방향만**이다 (올려서
      통과시키면 그 스위트가 존재할 이유가 사라진다). 유일한 예외는 위 "렌더
      가드 4층"의 정합성 수정 사례다.
+   - 같은 `swift test`에 **측정·렌더 등가 스윕**(`HwpLayoutRenderParitySweep`,
+     #80)도 들어 있다 — 위 4종과 축이 다르다. 렌더 산출물을 기준선과 대는 것이
+     아니라 **두 조판 경로가 같은 줄바꿈 코어를 쓰는지**를 픽스처 전체에서
+     대조한다 (계약은 `Sources/HwpKitCore/AGENTS.md` "측정·렌더 공유 줄바꿈
+     코어"). 그래서 실패의 뜻이 둘로 갈린다: 등가 위반 메시지가 뜨면 조판
+     회귀이고, **구조 핀**(문단 수·측정 수·컨테이너 수)만 어긋났으면 순회 대상이
+     바뀐 것이다 — 픽스처를 더했거나 `HwpPaginator.childParagraphs`에 컨테이너가
+     붙은 경우로, 의도한 변경이면 재측정해 소스 상수를 갱신한다 (각주 겹침과
+     달리 방향 제약은 없다). 상시 실행은 legacy를 stride 31로 표본하므로,
+     측정 입력 계약을 건드렸으면 `HWP_PARITY_SWEEP=1`로 전수를 한 번 돌린다.
    - `HWP_SNAPSHOT_TESTS=1 swift test --filter "FixtureRenderHash|FixturePreviewFidelity"`
      — 렌더 회귀. 실패 시 어느 픽스처의 몇 페이지가 변했는지 출력된다.
      렌더 해시는 폰트 모드별 기준선이라 `HWP_HANCOM_FONTS=1`을 덧붙인

@@ -10,7 +10,7 @@ import XCTest
     final class HwpParagraphLayoutTests: XCTestCase {
         func testEmptyAttributedStringReturnsEmptyFrame() {
             let frame = layout().layout(
-                attributedString: attributedString(""),
+                attributedString: styled("", paraShape: paraShape()),
                 paraShape: paraShape(),
                 columnWidth: 300
             )
@@ -21,7 +21,7 @@ import XCTest
 
         func testSingleLineHasReasonableHeight() {
             let frame = layout().layout(
-                attributedString: attributedString("hello"),
+                attributedString: styled("hello", paraShape: paraShape()),
                 paraShape: paraShape(),
                 columnWidth: 300
             )
@@ -35,7 +35,7 @@ import XCTest
         func testLongTextWrapsInNarrowColumn() {
             let text = String(repeating: "hello world ", count: 18)
             let frame = layout().layout(
-                attributedString: attributedString(text),
+                attributedString: styled(text, paraShape: paraShape()),
                 paraShape: paraShape(),
                 columnWidth: 100
             )
@@ -48,7 +48,7 @@ import XCTest
         func testLineFrameAccumulationHonorsCap() {
             let text = String(repeating: "hello world ", count: 60)
             let frame = layout().layout(
-                attributedString: attributedString(text),
+                attributedString: styled(text, paraShape: paraShape()),
                 paraShape: paraShape(),
                 columnWidth: 60,
                 maxLineFrames: 4
@@ -110,7 +110,8 @@ import XCTest
         /// 쓰므로 줄 range가 일치해야 한다 — R49가 렌더만 미완 줄 drop으로 바꿔
         /// 어긋났던 것을 교정 (R50 #4).
         func testCappedMeasurementMatchesRenderRanges() {
-            let string = attributedString("a b c d e f g h")
+            // 프로덕션과 같은 모양: 부착본 **하나**를 두 경로가 나눠 쓴다.
+            let string = styled("a b c d e f g h", paraShape: paraShape())
             let measured = layout().layout(
                 attributedString: string, paraShape: paraShape(), columnWidth: 20, maxLineFrames: 6
             )
@@ -205,7 +206,7 @@ import XCTest
             // 표 46 종류 0 (글자에 따라 %): 비율 160 → 줄 높이 ≈ 글자 크기 × 1.6 (±10%)
             let text = String(repeating: "percent line spacing ", count: 12)
             let frame = layout().layout(
-                attributedString: attributedString(text),
+                attributedString: styled(text, paraShape: paraShape()),
                 paraShape: paraShape(), // property3 = 0 (비율), lineSpacing2 = 160
                 columnWidth: 120
             )
@@ -223,7 +224,7 @@ import XCTest
             shape.lineSpacing2 = 3600
             let text = String(repeating: "fixed line spacing ", count: 12)
             let frame = layout().layout(
-                attributedString: attributedString(text),
+                attributedString: styled(text, paraShape: shape),
                 paraShape: shape,
                 columnWidth: 120
             )
@@ -244,12 +245,12 @@ import XCTest
             let text = String(repeating: "margin only spacing ", count: 12)
 
             let plainFrame = layout().layout(
-                attributedString: attributedString(text),
+                attributedString: styled(text, paraShape: plain),
                 paraShape: plain,
                 columnWidth: 120
             )
             let spacedFrame = layout().layout(
-                attributedString: attributedString(text),
+                attributedString: styled(text, paraShape: spaced),
                 paraShape: spaced,
                 columnWidth: 120
             )
@@ -269,7 +270,7 @@ import XCTest
             shape.lineSpacing2 = nil
             let text = String(repeating: "legacy percent spacing ", count: 12)
             let frame = layout().layout(
-                attributedString: attributedString(text),
+                attributedString: styled(text, paraShape: shape),
                 paraShape: shape,
                 columnWidth: 120
             )
@@ -283,7 +284,7 @@ import XCTest
         func testCenterAlignmentOffsetsLineFromLeftEdge() {
             // 정렬 방식은 property1 bits 2-4: 3(가운데) << 2
             let frame = layout().layout(
-                attributedString: attributedString("hi"),
+                attributedString: styled("hi", paraShape: paraShape(property1: 3 << 2)),
                 paraShape: paraShape(property1: 3 << 2),
                 columnWidth: 300
             )
@@ -295,41 +296,32 @@ import XCTest
         func testTabParagraphMeasurementMatchesDrawnLayout() {
             // 측정 (layout)과 렌더 (HwpDrawnTextLayout)가 같은 문서 정의 탭으로
             // 조판해야 탭 포함 문단의 줄바꿈 위치가 일치한다 — B-1a 정합 가드.
+            // 탭이 조판에 닿는 경로는 **부착본 하나뿐**이다 (#80 조각 3): 측정도
+            // 그 부착본을 그대로 framesetting하므로 두 경로가 구조적으로 같은 탭을
+            // 본다.
             let tabs = [CTTextTabCreate(.left, 250, nil)]
             let text = "이름\t값이 아주 길어서 줄바꿈 위치가 탭 스톱 위치에 좌우되는 "
                 + "문단입니다 하나 둘 셋 넷 다섯 여섯 일곱 여덟"
             let shape = paraShape()
             let width: CGFloat = 300
 
+            let attached = styled(text, paraShape: shape, tabStops: tabs)
             let measured = layout().layout(
-                attributedString: attributedString(text),
+                attributedString: attached,
                 paraShape: shape,
-                columnWidth: width,
-                tabStops: tabs
-            )
-
-            // 렌더 경로: 같은 탭이 부착된 문자열을 HwpDrawnTextLayout이 재조판
-            let rendered = NSMutableAttributedString(
-                attributedString: attributedString(text)
-            )
-            rendered.addAttribute(
-                kCTParagraphStyleAttributeName as NSAttributedString.Key,
-                value: HwpParagraphLayout.paragraphStyle(
-                    for: shape, attributedString: rendered, tabStops: tabs
-                ),
-                range: NSRange(location: 0, length: rendered.length)
+                columnWidth: width
             )
             let drawn = HwpDrawnTextLayout.lines(
-                attributedString: rendered, origin: .zero, lineWidth: width
+                attributedString: attached, origin: .zero, lineWidth: width
             )
 
             expect(measured.lines.count) > 1
             expect(measured.lines.map(\.attributedRange)) == drawn.map(\.stringRange)
 
-            // 탭을 빼고 측정하면 (종전 동작) 줄바꿈이 어긋난다 — 이 테스트가
+            // 탭이 빠진 부착본으로 측정하면 줄바꿈이 어긋난다 — 이 테스트가
             // 불일치를 실제로 감지함을 증명
             let withoutTabs = layout().layout(
-                attributedString: attributedString(text),
+                attributedString: styled(text, paraShape: shape),
                 paraShape: shape,
                 columnWidth: width
             )
@@ -341,6 +333,28 @@ import XCTest
     private extension HwpParagraphLayoutTests {
         func layout() -> HwpParagraphLayout {
             HwpParagraphLayout()
+        }
+
+        /// 측정 입력 계약을 지킨 문자열 — `layout`은 문단 스타일이 **부착된**
+        /// 입력을 그대로 framesetting한다 (#80 조각 3). 프로덕션에서는
+        /// `HwpTextRunBuilder.attachParagraphStyle`이 이 일을 하므로, 문자열을 직접
+        /// 만드는 테스트는 여기서 같은 부착을 해야 paraShape 기반 단언이 의미를
+        /// 갖는다 (안 하면 CT 기본값으로 조판된다).
+        func styled(
+            _ string: String,
+            paraShape shape: CoreHwp.HwpParaShape,
+            tabStops: [CTTextTab] = []
+        ) -> NSAttributedString {
+            let output = NSMutableAttributedString(attributedString: attributedString(string))
+            guard output.length > 0 else { return output }
+            output.addAttribute(
+                kCTParagraphStyleAttributeName as NSAttributedString.Key,
+                value: HwpParagraphLayout.paragraphStyle(
+                    for: shape, attributedString: output, tabStops: tabStops
+                ),
+                range: NSRange(location: 0, length: output.length)
+            )
+            return output
         }
 
         func attributedString(_ string: String) -> NSAttributedString {

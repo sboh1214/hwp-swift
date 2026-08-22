@@ -93,6 +93,16 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
 harness에 추가하고, 단순히 "열린다"가 아니라 manifest 값과 실제 파싱 결과를
 비교한다. 저수준 corrupt/malformed regression만 synthetic data를 사용한다.
 
+**픽스처 추가는 이 타깃 밖으로도 번진다** (#80). `HwpKitCoreTests`의
+`HwpLayoutRenderParitySweepTests`가 `Fixtures/*/document.hwp`를 **디렉터리에서
+직접 훑어** 측정·렌더 등가를 대조하므로, 새 픽스처는 harness 등록 없이 자동으로
+그 스윕에 들어오고 실측 핀(`expectedFixtureVisited`·`expectedFixtureMeasured`·
+`expectedFixtureContainers`)이 어긋나 빨개진다 — 재측정해 갱신한다. FileHeader
+단계에서 거부되는 픽스처(암호·배포용·DRM)를 더했다면 그쪽 `unreadableFixtureIds`
+집합에도 넣어야 한다: 스윕은 읽기 실패를 `try?`로 조용히 넘기지 않고 **집합
+자체를 단언**해, 파서 회귀로 멀쩡한 픽스처가 순회에서 빠져도 초록이 되는 것을
+막는다.
+
 ## Fixture 로딩
 
 [`Utils.swift`](file:///Users/sboh/Repos/hwp-swift/Tests/CoreHwpTests/Utils.swift)의

@@ -4,13 +4,24 @@ import Foundation
 
 public extension HwpIndex {
     /// 문단의 paraShape — 문단 id로 찾고, 없으면 id 0으로 폴백한다.
-    /// 둘 다 없을 때의 의미는 호출부마다 다르므로 (빈 프레임 반환/간격 0/
-    /// 스타일 생략) optional을 그대로 돌려준다.
+    ///
+    /// **nil은 paraShape 표가 통째로 빌 때만 나온다.** id는 `HwpIndex.makeIndex`가
+    /// 배열 오프셋으로 매긴 조밀한 값이라 (`idMappings.paraShapeArray`에 id 필드가
+    /// 없다) 표가 비어 있지 않으면 id 0이 반드시 있고, 그래서 뒤 폴백이 항상
+    /// 걸린다. 즉 nil은 정상 문서가 아니라 손상·조작 DocInfo다.
+    ///
+    /// 남은 호출부는 전부 간격·여백 조회다 (없으면 0). **조판은 여기가 아니라
+    /// `paraShapeOrDefault`를 쓴다** — 아래 참조.
     func paraShape(for paragraph: CoreHwp.HwpParagraph) -> CoreHwp.HwpParaShape? {
         paraShape(id: UInt32(paragraph.paraHeader.paraShapeId)) ?? paraShape(id: 0)
     }
 
-    /// 문단의 paraShape — 둘 다 없으면 기본값으로 조판한다 (측정 경로용).
+    /// 문단의 paraShape — 둘 다 없으면 기본값으로 조판한다.
+    ///
+    /// **`HwpParagraphLayout.layout`에 닿는 경로는 전부 이쪽이다** — 스타일 부착
+    /// (`HwpTextRunBuilder.attachParagraphStyle`)과 측정 (`HwpParagraphMeasurer` ·
+    /// `HwpPageChromeBuilder` · `HwpPaginator.layout`)이 같은 폴백을 써야 측정이
+    /// 부착본을 그대로 framesetting할 수 있다 (#80 조각 3).
     func paraShapeOrDefault(for paragraph: CoreHwp.HwpParagraph) -> CoreHwp.HwpParaShape {
         paraShape(for: paragraph) ?? CoreHwp.HwpParaShape()
     }
@@ -61,12 +72,13 @@ struct HwpParagraphMeasurer {
         )
         .build(paragraph: paragraph, controlReplacements: options.controlReplacements)
         let paraShape = index.paraShapeOrDefault(for: paragraph)
+        // 탭 스톱은 인자로 넘기지 않는다 — `build`의 `attachParagraphStyle`이
+        // 같은 paraShape·같은 탭으로 만든 스타일을 이미 문자열에 실었고,
+        // `layout`은 그 부착본을 그대로 framesetting한다 (#80 조각 3).
         var frame = HwpParagraphLayout().layout(
             attributedString: attributed,
             paraShape: paraShape,
-            columnWidth: width,
-            tabStops: attributeCache?.textTabs(for: paraShape, index: index)
-                ?? index.textTabs(for: paraShape)
+            columnWidth: width
         )
         // 표 43 여백 계열과 같은 1/2 단위 (HwpParagraphMetrics와 동일).
         let spacingBefore = options.addHalfSpacingBefore

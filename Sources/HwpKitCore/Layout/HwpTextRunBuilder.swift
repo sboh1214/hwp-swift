@@ -243,15 +243,21 @@ extension HwpTextRunBuilder {
         )
     }
 
-    /// 문단 스타일 (정렬/들여쓰기/줄간격)을 문자열에 실어 렌더 (drawText 재조판)가
-    /// 측정 레이아웃과 같은 조판을 쓰게 한다.
+    /// 문단 스타일 (정렬/들여쓰기/줄간격)을 문자열에 실어 렌더 (drawText 재조판)와
+    /// 측정 (`HwpParagraphLayout.layout`)이 같은 조판을 쓰게 한다.
+    ///
+    /// **shape 해석은 `paraShapeOrDefault`다** — 측정 경로
+    /// (`HwpParagraphMeasurer`·`HwpPageChromeBuilder`)와 같은 폴백이어야 한다.
+    /// `paraShape(for:)`(nil 가능)를 쓰던 시절에는 paraShape 표가 통째로 빈 문서에서
+    /// 부착은 통째로 생략되는데 측정만 기본 shape로 조판해, 측정·렌더가 갈렸다.
+    /// 측정이 부착본을 그대로 framesetting하게 된 뒤(#80 조각 3)로는 그 비대칭이
+    /// 이론이 아니라 **측정 결과 자체**를 바꾸므로 여기서 닫는다.
     func attachParagraphStyle(
         to output: NSMutableAttributedString,
         paragraph: CoreHwp.HwpParagraph
     ) {
-        guard output.length > 0,
-              let paraShape = index.paraShape(for: paragraph)
-        else { return }
+        guard output.length > 0 else { return }
+        let paraShape = index.paraShapeOrDefault(for: paragraph)
         output.addAttribute(
             kCTParagraphStyleAttributeName as NSAttributedString.Key,
             value: HwpParagraphLayout.paragraphStyle(
