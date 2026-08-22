@@ -204,7 +204,7 @@ final class HwpHyperlinkPipelineTests: XCTestCase {
         let page = makePage(with: [block])
 
         let paintList = HwpPaintListBuilder()
-            .build(for: page, index: HwpIndex(from: CoreHwp.HwpFile()))
+            .build(for: page)
 
         let hyperlinkCommand = paintList.commands.first { command in
             if case .hyperlink = command {
@@ -229,7 +229,7 @@ final class HwpHyperlinkPipelineTests: XCTestCase {
         let page = makePage(with: [plain])
 
         let paintList = HwpPaintListBuilder()
-            .build(for: page, index: HwpIndex(from: CoreHwp.HwpFile()))
+            .build(for: page)
 
         let hasHyperlink = paintList.commands.contains { command in
             if case .hyperlink = command {
@@ -272,7 +272,7 @@ final class HwpHyperlinkPipelineTests: XCTestCase {
         let page = makePage(with: [block])
 
         let paintList = HwpPaintListBuilder()
-            .build(for: page, index: HwpIndex(from: CoreHwp.HwpFile()))
+            .build(for: page)
         let linkRects: [CGRect] = paintList.commands.compactMap { command in
             if case let .hyperlink(rect, url) = command, url == "https://example.com" {
                 return rect

@@ -11,7 +11,7 @@ import Foundation
 /// `0x80000000` 한 값이 12,580회 나온다. `noori`는 문단 65개에 distinct
 /// `paraId`가 2개다).
 ///
-/// 본체(2,800줄)가 아니라 별도 파일에 두는 것은 관례이자 필수다 — swiftlint
+/// 본체(`HwpPaginator`)가 아니라 별도 파일에 두는 것은 관례이자 필수다 — swiftlint
 /// `file_length` error가 700이라 기존 `Paginator/` 파일에 얹으면 Lint가
 /// 떨어진다.
 ///

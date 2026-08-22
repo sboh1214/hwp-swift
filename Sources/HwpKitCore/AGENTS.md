@@ -68,6 +68,35 @@ CoreHwp.HwpFile
 공유 흐름 상태 (`contentHeightUsed`·`paragraphAnchorTop`)와 `currentBlocks`
 재작성 적용은 paginator에 남는다.
 
+**문단 루프는 넷으로 갈린다** (#73): `computeNextPage`는 `nextParagraph()` 순회와
+`ParagraphOutcome`(`.advance` / `.yieldToCaller`) 분기만 들고, 문단 하나의 처리는
+`processParagraph`, 측정 메모 재사용은 `measuredParagraph`, 문서 끝 밴드 닫기와
+각주·미주 드레인은 `finishPagination`이 맡는다. 동작은 종전과 같다.
+
+**양보와 취소 관찰은 별개 축이다** (#73). `Task.yield()`는 문단마다가 아니라
+`yieldBatchSize`(16) 문단마다 한 번이다 — 문단 단위 양보 두 자리(문단 배치 뒤·
+측정 진입)가 `yieldPeriodically`를 지난다 (`computeNextPage` 진입의 양보는 호출당
+한 번이라 배칭 대상이 아니다). 20,000문단이면 최대 40,000회이던 스케줄러 왕복이
+2,500회가 된다. **취소 응답은 이 배칭에 영향받지 않는다** — `processParagraph`가
+문단마다 `Task.checkCancellation()`을 그대로 부르고, 각주·미주 드레인 루프는
+페이지마다 부른다. 배칭이 늦추는 것은 다른 Task에게 실행을 넘기는 시점뿐이다.
+취소 검사를 배칭에 합치거나 배치 크기를 키우면 그만큼 취소 응답이 늦어진다.
+가드는 `HwpPaginatorCancellationTests` — paginator 자체의 취소 관찰을 재는 저장소
+최초의 스위트다 (종전에는 HwpKitNative의 액터 스모크뿐이라, 배칭이 취소를 문서
+끝까지 밀어 버려도 아무것도 빨개지지 않았다).
+
+**개체 앵커 산식은 `Layout/HwpObjectAnchorGeometry.swift`가 단일 소유한다** (#73).
+페이지 흐름 경로(`HwpPaginator`)와 컨테이너 안 수집 경로
+(`HwpParagraphObjectCollector`)가 같은 식을 각자 구현하고 "같은 산식"이라는
+주석으로만 묶여 있던 것을 합쳤다 — 정렬 반영 좌표(`aligned`)와 글자처럼 취급
+개체의 줄 앵커 좌표(`inlineAnchorOrigin`) 둘이다. 한쪽만 고치면 조용히 갈라지던
+자리이므로 **새 개체 배치 산식도 두 경로가 공유하면 여기 둔다.**
+반면 컨테이너 경로의 `origin(commonProperty:size:placement:cursorX:)`은 페이지
+경로 `anchoredObjectFrame`의 **문단 rect 근사**라 같은 함수가 아니다 — 합치지 말 것.
+가드는 `HwpObjectAnchorGeometryTests`의 정렬 분기 전수다. 픽스처가 닿는 분기는
+`topOrLeft`/nil뿐이라 나머지는 어느 게이트도 잡지 못했다 — `.center`를 1pt 틀어도
+블록 스냅샷과 렌더 해시가 모두 초록이었다. 합치는 김에 그 구멍을 닫았다.
+
 **부분 복구 placeholder 진단** (#65): `recoverPartialContent`가 남긴 손상
 문단·구역 placeholder를 `unsupportedElements()`에 `kind: .placeholder`로 내보내
 복구가 내용을 조용히 숨기지 않게 한다 (렌더는 placeholder의 빈 텍스트를 그리지
@@ -179,7 +208,7 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
 - `HwpPaintCommand` = `@unchecked Sendable` enum. CF/NS 참조 타입을 담기 때문에 자동 Sendable 불가. enum case는 가로챌 init이 없어 **소유권 경계에서 동결**한다 — `HwpLaidOutParagraph.init`이 `NSAttributedString`을, `HwpShapeGeometry.init`이 `CGPath`를 복사본으로 저장한다 (mutable 서브클래스를 그대로 retain하면 Hashable 불변성·actor 경계 안전성이 깨진다). 새 참조 타입 payload를 추가하면 그 생산 지점에서 같은 복사를 해야 한다. 소유권 경계를 거치지 않고 **painter가 `.drawText`를 직접 만드는 경로도 마찬가지** — `HwpMemoPanelPainter`는 헤더를 `NSMutableAttributedString`으로 조립한 뒤 `NSAttributedString(attributedString:)`로 동결해 싣는다. 이제 actor 안전성 말고 **소비자**도 생겼다: HwpKitNative의 줄 배치 캐시가 문자열 신원 (`===`)으로 조판 결과를 재사용하므로 "신원이 같으면 내용도 같다"가 전 생산 경로에서 성립해야 한다 (깨지면 조용한 오조판)
 - 케이스: `fillRect` / `strokeRect` / `drawText` / `drawPath` / `drawImage` / `drawImageReference(binItemId:rect:)` / `drawPlaceholder` / `hyperlink`
 - `drawImageReference` 는 비트맵을 운반하지 않는다 — HwpKitNative 의 `HwpPageImageProvider` 가 `HwpImageStore` + `HwpImageCache` + `HwpImageAdapter` 로 지연 디코딩
-- **`HwpPage.==` / `hash` 는 `paintList.commands.count` 만 비교** (structural fingerprint). 렌더 결과 비교용으로 쓰지 말 것
+- **`HwpPage.==` / `hash` 에 `paintList` 는 들어가지 않는다** (#72) — size·margins·blocks·pageNumber 와 메모 패널 기하 (width·contentHeight) 로만 판정한다. 본문 paint 커맨드는 blocks 의 파생값이고, CF payload 는 Equatable 이 아니라 개수 말고는 비교할 수단도 없었다. 렌더 결과 비교용으로 쓰지 말 것 — 여기서 같다는 것은 조판 구조가 같다는 뜻이다. 이 동등성은 렌더 갱신뿐 아니라 **선택 지오메트리 재생성과 검색 재스캔 생략** (`HwpSelectionController` → `HwpSearchController.isEquivalentRefresh`) 의 입력이기도 하다. 가드는 `HwpPageEqualityContractTests` — paint 항이 빠졌다는 것뿐 아니라 **남은 항이 여전히 판별한다**는 것 (blocks·pageNumber·메모 패널 기하) 과 위 두 소비자에 닿는 것까지 함께 잠근다. 종전 `paintList.commands.count` 항을 잠그는 테스트는 저장소 전체에 0건이라 그 항은 빼도 넣어도 아무것도 빨개지지 않았다
 - **메모 (댓글) 풍선**: `HwpPage.memoPanel` (`HwpMemoPanel` — 폭 + 패널 로컬
   paintList)에 분리 저장 — 종이 밖 오른쪽 패널이라 페이지 paintList/PrvImage
   정합에 영향 없음. 내용은 CoreHwp `HwpParagraph.memoParagraphArray` (MEMO_LIST
@@ -371,8 +400,14 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   단언할 것
 - 실측 튜닝 상수는 `Tuning/HwpRenderTuning.swift` 에 근거 주석과 함께 —
   값 변경은 fidelity 전수 + 블록 스냅샷 + 실물 대조 필수 (값 핀:
-  `HwpRenderTuningTests`). 차트 투영 기하 (`HwpChartPainter`)와 각주 예약
-  근사 (`HwpPaginator`)는 예외로 in-place
+  `HwpRenderTuningTests`). 차트 투영 기하 (`HwpChartPainter`)는 예외로 in-place
+- **UI 색 리터럴은 실측 튜닝 상수가 아니다** — `Utils/HwpColor+CGColor.swift` 의
+  `CGColor` 확장에 둔다 (`hwpBlack`·`hwpWhite`·`hwpTrackChange`). 한글 실물과
+  맞춘 수치가 아니라 우리가 고른 색이라 fidelity 게이트의 대상이 아니고, 그래서
+  `HwpRenderTuning` 에 넣으면 값 핀·실물 대조 절차가 헛돈다. 변경 추적 표시색은
+  `HwpTextRunBuilderMarks` (삽입·삭제 글자) 와 `HwpPaginator.emitTrackChangeBars`
+  (문단 왼쪽 변경 막대) 두 곳에 각각 하드코딩돼 있던 것을 #73이 `hwpTrackChange`
+  하나로 합쳤다 — 갈리면 같은 변경의 글자와 막대가 다른 빨강으로 그려진다
 - borderFill 참조는 **1-based (0 = 없음)**: `resolvedBorderFill` 은 id-1 을 먼저, 원래 id 를 다음에 시도
 - Sendable actor: `HwpPaginator`, `HwpImageCache` (HwpKitNative)
 - **`HwpFontResolver.testDeterministic`은 폰트 조회 세 축을 모두 닫는다** —
@@ -525,7 +560,7 @@ paraShape와 같은 값**이어야 한다.
 
 ## 안티 패턴 / 남은 한계
 
-- `HwpPage` 렌더 결과가 다른지 `==` 로 확인 — 안 됨 (count 만 비교). blocks 배열이나 paintList.commands 를 직접 순회할 것
+- `HwpPage` 렌더 결과가 다른지 `==` 로 확인 — 안 됨 (`paintList` 가 아예 항에 없다). blocks 배열이나 paintList.commands 를 직접 순회할 것
 - 수식 (`eqed`) 은 EQEDIT 스크립트를 한 줄 텍스트로 근사 (`HwpEquationLayout`
   — 기호 토큰 치환 + 관계 연산자 공백, 라틴 문자 이탤릭). 분수/근호 같은
   구조 조판은 없음 — 스크립트 원문이 노출된다
@@ -821,8 +856,9 @@ paraShape와 같은 값**이어야 한다.
   그 배치 방식은 겹치는 것이 설계라(위 "앵커 규칙") 담으려고 컨테이너를 키우면
   셀 안 워터마크·말풍선 하나가 행을 부풀린다. 술어는
   `HwpParagraphObjectCollector.consumesFlow`가 **단일 소유**하고 페이지 흐름
-  경로(`HwpPaginator.consumesFlow`)가 그것을 부른다 — 갈리면 흐름에서 자리를
-  안 주는 개체가 컨테이너만 키우는 모순이 된다. 여기서 빠져도 셀 콘텐츠로
+  경로(`HwpPaginator`)가 그 static 메서드를 직접 부른다 (#73 — 종전의 동명
+  위임 래퍼는 제거했다) — 갈리면 흐름에서 자리를 안 주는 개체가 컨테이너만
+  키우는 모순이 된다. 여기서 빠져도 셀 콘텐츠로
   그려지는 것은 그대로다 (`paintsBehindText`) — 빠지는 것은 **높이 하한뿐**이고,
   수집에서 빼면 개체 소실 회귀다.
   `objects()`의 기록 조건과 `hasFloatingObject` 사전 판정도 **반드시 같은
@@ -906,8 +942,9 @@ paraShape와 같은 값**이어야 한다.
   (표시용 본문)에 있다 — `HwpFile.displaySectionArray`가 ViewText 우선으로
   렌더 본문을 고른다 (한글.app 동작). 표식은 PARA_RANGE_TAG (kind 16 삽입 /
   17 삭제)로 오고 `HwpTextRunBuilder`가 빨강 밑줄/취소선으로, 문단 왼쪽 변경
-  막대는 `appendTrackChangeBarIfNeeded`가 그린다. 작성자별 색 구분은 없음
-  (항상 빨강)
+  막대는 `emitTrackChangeBars`가 페이지 캐시 직전에 조각마다 그린다. 두 경로가
+  쓰는 빨강은 `CGColor.hwpTrackChange` 하나다 (위 "컨벤션"). 작성자별 색 구분은
+  없음 (항상 빨강)
 - 머리말/꼬리말 밴드 텍스트가 밴드 높이를 넘으면 본문과 겹칠 수 있다 (클립 없음)
 - 각주의 표 134 bits 8-9 (한 페이지 안 다단 배열 방식) 미적용 — 항상 전체 폭 하단
 - 표 셀/글상자 안 본문 문단의 각주 참조 (ext17) 위 첨자 번호는 미표시
