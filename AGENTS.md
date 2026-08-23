@@ -1,7 +1,5 @@
 # 프로젝트 지식 베이스
 
-**Branch:** refactor/shared-line-breaker
-
 ## 개요
 
 한글과컴퓨터의 한글 문서 파일(`.hwp`)을 파싱하고 렌더링하는 Swift package.
@@ -27,7 +25,8 @@ hwp-swift/
 ├── Sample/                # HwpSwiftSample.xcodeproj (xcodegen, path: ..)
 ├── Package.swift          # swift-tools-version:5.9
 ├── .github/workflows/     # ci.yml, cd.yml
-└── .github/pages/         # DocC 사이트 루트 랜딩
+├── .github/pages/         # DocC 사이트 루트 랜딩 (README 설치 안내의 사본)
+└── .github/release-drafter.yml  # 릴리스 노트 분류 + 라벨 → 다음 버전 산정
 ```
 
 폴더명과 파일명은 **공백 없는 PascalCase**를 사용한다 (예:
@@ -251,6 +250,9 @@ Equatable/Hashable에서도 제외된다 (payload **유무** 파생이라 `HwpCh
 - 공백이 있는 새 파일/디렉터리명 추가 — 경로명은 PascalCase + 무공백을 유지.
 - `Package.swift`의 Darwin platform 최소 버전을 더 낮추기 — `SWCompression 4.9.1` / `BitByteData 2.1.0`이 macOS 14+/iOS 17+를 요구한다. #101 이후 이 둘은 테스트 타깃 전용 의존이지만 `platforms:`는 패키지 단위라 하한은 그대로다 (내리려면 압축 해제 기준선부터 갈아야 한다). Linux는 CoreHwp·CoreHwpTests만 지원하며 빌드에 zlib 개발 헤더가 필요하다 (뷰어 타깃은 Apple 전용 프레임워크 의존 — `Package.swift`의 `canImport(Darwin)` 분기; CI matrix: macOS + ubuntu-latest).
 - `swift-tools-version` 변경 시 `.swift-version`, `.swiftformat`, `.github/workflows/ci.yml`의 `test-linux` matrix 동시 갱신 누락 (`CONTRIBUTING.md` 참조).
+- **설치 안내를 한 곳만 고치기** — 같은 스니펫이 `README.md`와 `.github/pages/index.html` 두 곳에 있고, 후자는 `cd.yml`의 `docs` 잡이 DocC 산출물 위에 덮어 배포하는 사이트 랜딩이다 (`cp .github/pages/index.html ./docs/index.html`). README만 고치면 `hwp-swift.sboh.dev`가 낡은 안내를 계속 내보낸다 — 0.16.0 준비에서 실제로 갈렸다 (README는 `.upToNextMinor(from: "0.16.0")`로 옮겼는데 사이트는 `branch: "main"`에 남아 있었다).
+- **PR 라벨 누락·오분류** — 라벨은 릴리스 노트 분류만이 아니라 **다음 버전 번호**를 정한다 (`.github/release-drafter.yml`의 `version-resolver`, 기본 `patch`). 공개 API가 깨지면 `api-breaking`을 달아야 minor로 올라간다 — 1.0 전까지 파괴 변경은 major가 아니라 **minor**에 싣는 규약이므로, 이 라벨이 빠지면 브레이킹 릴리스가 patch 번호로 나간다. 규칙 전문은 `CONTRIBUTING.md`의 "Pull Request 라벨".
+- **모듈별 `version` 상수 재도입** — `HwpKit.version` 같은 상수는 git 태그·`CHANGELOG.md`와 갈리는 두 번째 진실 원본이 된다. 타깃을 처음 만들 때 두었던 스텁 3종(`HwpKit.swift`·`HwpKitCore.swift`·`HwpKitNative.swift`, 각각 `version = "0.1.0-dev"`)은 참조 0건인 채 실제 버전과 어긋난 상태로 남아 있다가 0.16.0 준비에서 제거됐다.
 - 테스트에서 **CoreFoundation 타입에 `as!`** 쓰기 — SwiftFormat의 `noForceUnwrapInTests`가 이를 `try XCTUnwrap(... as? CFType)`으로 자동 변환하는데, CF 타입 대상 `as?`는 컴파일러가 "항상 성공한다"며 **에러**로 막는다. 즉 포매터가 컴파일 불가능한 코드를 만들어 낸다. `// swiftformat:disable:next` 주석도 듣지 않으므로, 캐스트 자체를 없애 우회한다 (컴파일러 note가 제안하는 방식):
   ```swift
   let ref = value as CFTypeRef

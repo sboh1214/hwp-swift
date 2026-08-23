@@ -98,6 +98,22 @@ python3 -m http.server 8000 --directory /tmp/hwp-preview
 
 ## 배포
 
+### 릴리스
+
+`main`에 푸시될 때마다 release-drafter(`cd.yml`의 `release-drafter` 잡)가 드래프트
+릴리스를 갱신합니다. 다음 버전 번호는 그 구간에 머지된 PR의 라벨에서 산정되므로
+(위 "Pull Request 라벨"), 라벨이 맞아야 번호가 맞습니다.
+
+릴리스할 때 아래를 함께 갱신합니다.
+
+- `CHANGELOG.md` — `## Unreleased` 아래 내용을 `## X.Y.Z (YYYY-MM-DD)`로 확정하고,
+  비어 있는 `## Unreleased`를 맨 위에 남깁니다.
+- `README.md`와 `.github/pages/index.html` — 설치 스니펫의 고정 버전. **두 곳은
+  같은 안내의 사본**이고 후자는 `docs` 잡이 DocC 산출물 위에 덮어 사이트로
+  배포하므로, 하나만 고치면 hwp-swift.sboh.dev가 낡은 안내를 계속 내보냅니다.
+
+드래프트 릴리스를 게시하면 그 시점의 `main`에 태그가 생성됩니다.
+
 ### Swift 버전이 새로 출시된 경우
 
 아래 파일의 Swift matrix를 업데이트합니다.
