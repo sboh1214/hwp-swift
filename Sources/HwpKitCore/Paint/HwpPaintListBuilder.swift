@@ -15,7 +15,7 @@ public struct HwpPaintListBuilder: Sendable {
         self.imageStore = imageStore
     }
 
-    public func build(for page: HwpPage, index _: HwpIndex) -> HwpPaintList {
+    public func build(for page: HwpPage) -> HwpPaintList {
         var commands: [HwpPaintCommand] = []
         // 같은 구분선을 공유하는 각주 블록들에서 한 번만 그린다.
         // (미주 블록은 자기 위치의 구분선을 따로 가진다.)

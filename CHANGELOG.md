@@ -4,6 +4,29 @@
 
 ### Breaking Changes
 
+- `HwpPaintListBuilder.build(for:index:)` **에서 `index:` 인자가 제거되었습니다.**
+  이 인자는 도입 이래 한 번도 읽히지 않았습니다 — 412줄 구현 전체에서 `index`가
+  등장하는 곳이 시그니처 한 줄뿐이었습니다.
+  - *이행*: 호출부에서 `index:` 인자만 지우면 됩니다
+    (`builder.build(for: page, index: someIndex)` → `builder.build(for: page)`).
+    넘기던 `HwpIndex`를 다른 데 쓰지 않았다면 그 값도 함께 죽습니다.
+
+- **`HwpPage`의 `==`/`hash`가 더 이상 `paintList`를 보지 않습니다.** 종전에는
+  본문과 메모 패널의 `paintList.commands.count`를 항으로 들고 있었습니다. 이제
+  `size`·`margins`·`blocks`·`pageNumber`와 메모 패널 기하(`width`·`contentHeight`)
+  로만 판정합니다. 소스 브레이킹은 아니지만 **동작이 바뀝니다.**
+  - 본문 paint 커맨드는 `blocks`의 파생값이라 판별력을 더하지 못했고, CF
+    페이로드(`NSAttributedString`/`CGImage`/`CGPath`/`CGColor`)는 Equatable이
+    아니라 애초에 개수 말고는 비교할 수단도 없었습니다.
+  - *영향*: 커맨드 수만 다른 두 페이지가 이제 **같다고** 판정됩니다. 이 동등성은
+    렌더 갱신 스킵뿐 아니라 선택 지오메트리 재생성과 검색 재스캔 생략
+    (`HwpGeometryChange.isEquivalentRefresh`)의 입력이므로, 그런 재전달에서
+    재스캔이 생략되고 지오메트리 재생성이 건너뛰어집니다. 조판 구조가 같으면
+    지오메트리도 같으므로 의도된 개선입니다.
+  - 렌더 결과가 다른지 확인하는 데 `HwpPage.==`를 쓰던 코드는 `blocks`나
+    `paintList.commands`를 직접 순회해야 합니다 — 종전에도 커맨드 **개수**만
+    맞으면 통과했으므로 신뢰할 수 없는 방법이었습니다.
+
 - `HwpParagraphLayout.layout(attributedString:paraShape:columnWidth:tabStops:maxLineFrames:)`
   에서 **`tabStops:` 인자가 제거되었습니다.** 이 함수는 이제 입력
   `attributedString`에 **문단 스타일이 이미 부착돼 있다고 전제하고** 그것을 그대로
@@ -103,6 +126,24 @@
   의존을 선언해야 합니다.
 
 ### Changed
+
+- **개체 앵커 산식의 소유자를 일원화했습니다** (#73). 페이지 흐름 경로
+  (`HwpPaginator`)와 컨테이너 안 수집 경로(`HwpParagraphObjectCollector`)가
+  정렬 반영 좌표와 글자처럼 취급 개체의 줄 앵커 좌표를 각자 구현하고 "같은
+  산식"이라는 주석으로만 묶여 있던 것을 `HwpObjectAnchorGeometry`(internal)로
+  합쳤습니다. 산식은 한 글자도 바뀌지 않았고 렌더 픽셀도 무변화입니다.
+  컨테이너 경로의 `origin(...)`은 페이지 경로의 **문단 rect 근사**라 같은
+  함수가 아니므로 합치지 않았습니다.
+- `HwpPaginator.computeNextPage`를 `processParagraph` / `measuredParagraph` /
+  `finishPagination` 셋으로 나눴습니다 (#73). 동작은 같고, 이 파일의
+  `function_body_length` 위반이 5건에서 4건으로 줄었습니다.
+- **문단마다 최대 두 번 돌던 `Task.yield()`를 16문단마다 한 번으로 배칭했습니다**
+  (#73). 20,000문단 문서 기준 최대 40,000회이던 스케줄러 왕복이 2,500회가
+  됩니다. 취소 **관찰**은 이 배칭과 독립입니다 — `processParagraph`가 문단마다
+  `Task.checkCancellation()`을 그대로 부르며, 신설
+  `HwpPaginatorCancellationTests`가 그 분리를 잠급니다.
+- 변경 추적 표시색이 두 곳(`HwpTextRunBuilderMarks`·`HwpPaginator`)에
+  하드코딩돼 있던 것을 `CGColor.hwpTrackChange` 하나로 모았습니다 (#73).
 
 - `HwpParaText.wcharCount`가 문단당 reduce 재계산에서 **파스 루프 누적 저장값**
   으로 바뀌었습니다 (#67). 값·공개 API는 동일하고(`charArray` 변경 시 didSet

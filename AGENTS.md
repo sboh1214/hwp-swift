@@ -539,8 +539,9 @@ noori p2에서 비영 셀의 30%까지 지워도 양쪽 통과).
 
 사이드바·목차가 "그 자리로 간다"를 하려면 **쪽**을 알아야 하고 쪽은 조판의
 함수다 — 그래서 수집기가 파서가 아니라 `HwpPaginator` 옆에 산다
-(`Sources/HwpKitCore/Layout/Paginator/HwpOutlineCollector.swift`, 본체는
-2,800줄이고 swiftlint `file_length` error가 700이라 새 파일이 필수다).
+(`Sources/HwpKitCore/Layout/Paginator/HwpOutlineCollector.swift`, 본체
+`HwpPaginator`가 swiftlint `file_length` error 상한(700)을 훨씬 넘겨 새 파일이
+필수다).
 결과는 `HwpDocumentMetadata.outline: [HwpOutlineItem]`이다.
 
 - **문단 수준은 0-기반 저장값이다** (표 44 bit 25-27,

@@ -132,7 +132,7 @@ final class HwpFootnotePaintListTests: XCTestCase {
         )
 
         let commands = HwpPaintListBuilder(fontResolver: .testDeterministic)
-            .build(for: page, index: HwpIndex(from: CoreHwp.HwpFile())).commands
+            .build(for: page).commands
         let linkRects = commands.compactMap { command -> CGRect? in
             guard case let .hyperlink(rect, url) = command,
                   url == "https://example.com/wrapped-object"
@@ -266,7 +266,7 @@ final class HwpFootnotePaintListTests: XCTestCase {
             pageNumber: 1
         )
         return HwpPaintListBuilder(fontResolver: .testDeterministic)
-            .build(for: page, index: HwpIndex(from: CoreHwp.HwpFile()))
+            .build(for: page)
             .commands
             .compactMap { command in
                 guard case let .hyperlink(rect, commandURL) = command, commandURL == url
@@ -276,7 +276,6 @@ final class HwpFootnotePaintListTests: XCTestCase {
     }
 
     private let builder = HwpPaintListBuilder()
-    private lazy var index = HwpIndex(from: HwpFile())
 
     func testFootnoteImagePayloadEmitsImageReference() {
         let blockFrame = CGRect(x: 72, y: 700, width: 400, height: 60)
@@ -418,7 +417,7 @@ final class HwpFootnotePaintListTests: XCTestCase {
         _ footnote: HwpFootnoteBlock, frame: CGRect
     ) -> [HwpPaintCommand] {
         let block = AnyHwpBlock(frame: frame, kind: .footnote, payload: .footnote(footnote))
-        return builder.build(for: makePage(blocks: [block]), index: index).commands
+        return builder.build(for: makePage(blocks: [block])).commands
     }
 
     private func makePage(blocks: [AnyHwpBlock]) -> HwpPage {

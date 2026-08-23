@@ -8,8 +8,7 @@ import Foundation
 /// 대조가 필수이고, `HwpRenderTuningTests`의 값 핀도 함께 갱신해야 한다.
 ///
 /// 여기 없는 실측 상수: `HwpChartPainter`의 차트 투영 기하 (상호 결합
-/// 실측 모델이라 in-place 유지), `HwpPaginator`의 각주 예약 근사 (산식
-/// 교체 예정).
+/// 실측 모델이라 in-place 유지).
 public enum HwpRenderTuning {
     /// 본문 텍스트 조판·장식
     public enum Text {
