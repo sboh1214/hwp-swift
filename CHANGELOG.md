@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.16.0 (2026-08-23)
+
 ### Breaking Changes
 
 - `HwpPaintListBuilder.build(for:index:)` **에서 `index:` 인자가 제거되었습니다.**

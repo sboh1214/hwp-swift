@@ -28,11 +28,13 @@ Xcode에서 ```File``` > ```Swift Packages``` > ```Add Package Dependency...``` 
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/sboh1214/hwp-swift.git", branch: "main"),
+    .package(url: "https://github.com/sboh1214/hwp-swift.git", .upToNextMinor(from: "0.16.0")),
 ],
 ```
 
-> 안정 릴리스가 태깅되면 `branch: "main"` 대신 `from: "x.y.z"`로 고정하는 것을 권장합니다.
+> 이 저장소는 1.0 전까지 파괴 변경을 minor 버전에 싣습니다. `from:`은 다음 minor의 파괴 변경을
+> 자동 수용하므로(`0.16.0..<1.0.0`), `.upToNextMinor`로 고정하고 minor 업데이트는
+> [릴리스 노트](https://github.com/sboh1214/hwp-swift/releases)를 확인한 뒤 올리는 것을 권장합니다.
 
 ## 라이브러리 구조
 
