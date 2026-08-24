@@ -1,22 +1,66 @@
+import CoreHwp
 import Foundation
 import HwpKitCore
 import HwpKitNative
+
+/// 로더가 지원하지 않는 문서의 종류. CoreHwp의 `HwpUnsupportedFeature`에
+/// 대응하는 HwpKit 공개 타입으로, 호스트는 CoreHwp를 import하지 않고도 문서
+/// 종류에 따라 분기할 수 있다.
+public enum HwpUnsupportedDocumentKind: Sendable, Hashable {
+    /// 암호로 보호된 문서(공인 인증서 암호화 포함)
+    case encryptedDocument
+    /// 배포용 문서
+    case deploymentDocument
+    /// 일반 DRM이나 공인 인증서 DRM이 적용된 문서
+    case drmDocument
+
+    /// CoreHwp에서 지원하지 않는 문서 종류가 추가되면 이 `switch` 문에서
+    /// 컴파일 오류가 발생한다. 새 종류가 누락되지 않도록 `default`는 추가하지
+    /// 않는다.
+    init(_ feature: HwpUnsupportedFeature) {
+        switch feature {
+        case .encryptedDocument:
+            self = .encryptedDocument
+        case .deploymentDocument:
+            self = .deploymentDocument
+        case .drmDocument:
+            self = .drmDocument
+        }
+    }
+}
 
 public enum HwpDocumentLoadError: Error, Sendable {
     case cancelled
     case presentationBuildFailed(String)
     case invalidFileWrapper
+    /// 파서가 지원하지 않는 암호로 보호된 문서·배포용 문서·DRM 문서. 일반
+    /// 오류 문자열로 변환하지 않고 문서 종류를 보존하므로 호스트가 알맞은 안내를
+    /// 표시하거나 종류별로 분기할 수 있다 (#117).
+    case unsupportedDocument(HwpUnsupportedDocumentKind)
 }
 
 extension HwpDocumentLoadError: CustomStringConvertible {
+    /// 사용자에게 그대로 표시할 수 있는 한국어 오류 설명 (#117).
+    /// `presentationBuildFailed`는 하위 계층의 오류 설명을 원문 그대로 덧붙이므로
+    /// 영어가 포함될 수 있다. `HwpError`의 설명을 한국어로 바꾸는 작업은 이 변경의
+    /// 범위에 포함하지 않는다 (#117의 A안).
     public var description: String {
         switch self {
         case .cancelled:
-            "Document load was cancelled"
+            "문서 불러오기가 취소되었습니다"
         case let .presentationBuildFailed(reason):
-            "Presentation build failed: \(reason)"
+            "문서를 여는 데 실패했습니다: \(reason)"
         case .invalidFileWrapper:
-            "File wrapper is not a regular file with contents"
+            "파일 래퍼가 내용을 포함한 일반 파일을 나타내지 않습니다"
+        case let .unsupportedDocument(kind):
+            switch kind {
+            case .encryptedDocument:
+                "암호로 보호된 문서는 열 수 없습니다"
+            case .deploymentDocument:
+                "배포용 문서는 열 수 없습니다"
+            case .drmDocument:
+                "DRM으로 보호된 문서는 열 수 없습니다"
+            }
         }
     }
 }
@@ -34,13 +78,29 @@ public struct HwpDocumentLoader: Sendable {
         actor = HwpDocumentActor(fontResolver: fontResolver)
     }
 
+    /// 하위 계층의 오류를 `HwpDocumentLoadError`로 변환하는 단일 지점 (#117).
+    /// `HwpError.unsupportedFeature`는 일반 오류 문자열로 바꾸기 전에 따로
+    /// 처리하여 문서 종류를 보존한다. `CancellationError`는 각 호출부에서 별도의
+    /// `catch` 절로 먼저 처리한다. `HwpDocumentLoadError`를 그대로 반환하는
+    /// 분기는 공개 API만으로 재현하기 어려우므로 이 메서드는 `internal`로 두고
+    /// 테스트에서 세 분기를 직접 검증한다.
+    static func mapLoadFailure(_ error: Error) -> HwpDocumentLoadError {
+        if let error = error as? HwpDocumentLoadError {
+            return error
+        }
+        if case let HwpError.unsupportedFeature(feature) = error {
+            return .unsupportedDocument(HwpUnsupportedDocumentKind(feature))
+        }
+        return .presentationBuildFailed(error.localizedDescription)
+    }
+
     public func load(from url: URL) async throws -> HwpDocument {
         do {
             return try await actor.loadDocument(from: url)
         } catch is CancellationError {
             throw HwpDocumentLoadError.cancelled
         } catch {
-            throw HwpDocumentLoadError.presentationBuildFailed(error.localizedDescription)
+            throw Self.mapLoadFailure(error)
         }
     }
 
@@ -50,7 +110,7 @@ public struct HwpDocumentLoader: Sendable {
         } catch is CancellationError {
             throw HwpDocumentLoadError.cancelled
         } catch {
-            throw HwpDocumentLoadError.presentationBuildFailed(error.localizedDescription)
+            throw Self.mapLoadFailure(error)
         }
     }
 
@@ -82,12 +142,8 @@ public struct HwpDocumentLoader: Sendable {
                 continuation.finish()
             } catch is CancellationError {
                 continuation.finish(throwing: HwpDocumentLoadError.cancelled)
-            } catch let error as HwpDocumentLoadError {
-                continuation.finish(throwing: error)
             } catch {
-                continuation.finish(throwing: HwpDocumentLoadError.presentationBuildFailed(
-                    error.localizedDescription
-                ))
+                continuation.finish(throwing: Self.mapLoadFailure(error))
             }
         }
         continuation.onTermination = { @Sendable _ in task.cancel() }
