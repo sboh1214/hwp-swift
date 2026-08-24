@@ -19,8 +19,7 @@ public struct HwpParaText: HwpFromData {
     /// 원본 payload의 WCHAR 수 — 컨트롤 문자는 wchar 1 + payload 14바이트
     /// (= wchar 7)로 총 8 wchar를 차지한다. rawPayload 없이도 계산되므로
     /// PARA_HEADER charCount 검증에 양 모드 공통으로 쓴다. 파스 루프에서
-    /// 누적하고 charArray 변경 시 didSet으로 재동기화하는 파생 저장값이라
-    /// 아카이브에는 싣지 않는다 (아래 custom Codable).
+    /// 누적하고 charArray 변경 시 didSet으로 재동기화하는 파생 저장값이다.
     public private(set) var wcharCount: Int
 
     init() {
@@ -83,10 +82,10 @@ public struct HwpParaText: HwpFromData {
 
 // MARK: - Equatable/Hashable — 종전 synthesized 시맨틱 유지 (charArray만)
 
-// rawPayload는 @ExcludeEquatable였고, wcharCount는 payload **유무**에서
-// 파생되어 HwpChar 동등성(type/value만 비교)과 어긋날 수 있는 파생값이라
-// 비교에서 제외한다 — 빈 문서 템플릿(payload 없는 extended char)과 파싱본
-// (payload 14 byte)의 round-trip 동등성이 이 시맨틱에 기댄다.
+// rawPayload는 종전 @ExcludeEquatable 시맨틱대로 비교에서 빼고, wcharCount는
+// payload **유무**에서 파생되어 HwpChar 동등성(type/value만 비교)과 어긋날 수
+// 있는 파생값이라 함께 제외한다 — 빈 문서 템플릿(payload 없는 extended char)과
+// 파싱본(payload 14 byte)이 같다고 판정되는 동등성 계약이 이 제외에 기댄다.
 
 public extension HwpParaText {
     static func == (lhs: HwpParaText, rhs: HwpParaText) -> Bool {

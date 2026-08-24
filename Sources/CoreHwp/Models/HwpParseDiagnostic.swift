@@ -290,8 +290,8 @@ private extension HwpParseDiagnosticCollector {
         for (index, ctrl) in (paragraph.ctrlHeaderArray ?? []).enumerated() {
             collect(ctrl: ctrl, path: "\(path).ctrl[\(index)]")
         }
-        // 메모별 그룹이 경계의 단일 출처다. 그룹 키가 없는 legacy 아카이브만
-        // 평탄 배열을 그룹 하나로 간주해 폴백한다 (파스는 둘을 함께 채운다).
+        // 메모별 그룹이 경계의 단일 출처다. 파스는 그룹과 평탄 배열을 함께
+        // 채우므로, 폴백은 public 쓰기 경로로 평탄 배열만 채운 모델 방어다.
         let memoGroups = paragraph.memoParagraphGroups
             ?? paragraph.memoParagraphArray.map { [$0] }
             ?? []

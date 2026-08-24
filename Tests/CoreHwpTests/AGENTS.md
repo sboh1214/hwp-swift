@@ -166,8 +166,8 @@ payload가 0xFFF 이상이면 size 비트가 level 필드로 넘쳐 헤더가 �
   placeholder 경로를 검증하려면 앞에 정상 문단을 둬야 한다 (이 규칙을 어겨
   `ControlFallbackErrorSetSpecTests`·ViewText 폐기 테스트가 한 번씩
   잘못된 이유로 통과할 뻔했다).
-- `Stability/Paragraphs/ParaTextWcharCountTests.swift` — didSet 재동기화와
-  round-trip 동등성(wcharCount 비교 제외)을 고정.
+- `Stability/Paragraphs/ParaTextWcharCountTests.swift` — 파스 루프 누적값과
+  didSet 재동기화를 고정 (wcharCount는 동등성 비교에서 제외).
 - `Stability/Parsing/SectionNestedAdversarialTests.swift`,
   `Stability/Paragraphs/ParagraphMemoRecursionTests.swift` — 중첩·메모 복구의
   적대 입력. 뷰어 진단 노출(`kind: .placeholder`)은 `HwpKitCoreTests`의
