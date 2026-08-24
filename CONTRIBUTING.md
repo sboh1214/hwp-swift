@@ -37,7 +37,7 @@ SwiftFormat과 SwiftLint는 모든 PR에서 CI(`ci.yml`의 `lint` 잡)으로 확
 버전 산정에 사용하므로, PR 성격대로 답니다.
 
 - 기능 PR → `enhancement` (릴리스 노트의 🚀 Features로 분류됩니다)
-- 성능 개선 PR → `performance` (⚡️ Performances로 분류됩니다)
+- 성능 개선 PR → `performance` (⚡️ Performance로 분류됩니다)
 - 버그 수정 PR → `bug` (🐛 Bug Fixes로 분류됩니다). 성능 회귀 수정도
   `performance`가 아니라 `bug`를 답니다. 버그 수정에는 `enhancement`를
   달지 않습니다.
