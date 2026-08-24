@@ -160,9 +160,8 @@ typed 디코더들이 그 트리를 재귀로 내려가므로(표 셀 문단·�
 **#67이 같은 브랜치에 있는 이유는 복구의 인접 정리라서다** —
 `HwpParaText.wcharCount`가 문단당 `reduce` 재계산에서 **파스 루프 누적 저장값**
 으로 바뀌었다 (값·공개 API 동일, `charArray` 변경 시 didSet 재동기화). 파생값
-이라 custom Codable로 인코딩 형상은 그대로(`rawPayload`/`charArray` 두 키)이고,
-Equatable/Hashable에서도 제외된다 (payload **유무** 파생이라 `HwpChar` 동등성과
-어긋날 수 있음 — 빈 템플릿 vs 파싱본 round-trip 동등성이 이에 기댄다). 표 셀
+이라 Equatable/Hashable에서 제외된다 (payload **유무** 파생이라 `HwpChar`
+동등성과 어긋날 수 있음). 표 셀
 헤더의 **도달 불가능한** 음수 `paragraphCount` 가드도 제거됐다 — 표 셀은
 `UInt16`을 `Int32`로 승격해 읽어 항상 비음수다 (리스트/글상자와 달리 bytes 6-7이
 셀 확장 속성이라 읽기 폭을 넓힐 수 없다는 근거를 주석으로 못박음). 되살리지 말 것.
@@ -238,7 +237,7 @@ Equatable/Hashable에서도 제외된다 (payload **유무** 파생이라 `HwpCh
 
 ## 컨벤션
 
-- **`HwpPrimitive = Codable & Hashable & Sendable`** — 모든 모델이 채택 (typealias는 [`HwpPrimitive.swift`](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/Utils/Protocols/HwpPrimitive.swift)). 전 모델이 값 타입이라 `Sendable`은 자동 충족 — 백그라운드 파싱 → UI 전달이 컴파일러 검증된다.
+- **`HwpPrimitive = Hashable & Sendable`** — 모든 모델이 채택 (typealias는 [`HwpPrimitive.swift`](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/Utils/Protocols/HwpPrimitive.swift)). 전 모델이 값 타입이라 `Sendable`은 자동 충족 — 백그라운드 파싱 → UI 전달이 컴파일러 검증된다.
 - [`Utils/Protocols/`](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/Utils/Protocols/)의 **loader 프로토콜**은 `static load(...)`를 default 구현으로 제공하며 EOF를 강제한다 — reader에 잔여 byte가 있으면 `HwpError.bytesAreNotEOF`를 throw. 채택 측은 `init(_ reader: inout DataReader, ...)`만 작성. record 갈래는 **tag 검증까지 default가 흡수한다** — `HwpTagValidatedRecord`(`WithVersion`)를 채택하고 `static let expectedTag`만 선언하면 `load` override가 필요 없다 (#83).
 - public 타입의 **한국어 doc-comment**는 한컴 공개 문서의 절을 참조한다. 편집 시 보존할 것.
 - **`Tests/` 외부에서 `import XCTest` 금지.**
@@ -1060,5 +1059,4 @@ opt-in — **커밋된** 기준선을 쓰는 스위트는 CI에서 상시 돈다
 
 - `HwpFile.init()`는 완전 빈 객체가 아니라 빈 `HwpSection` 하나가 들어있는 default 객체를 만든다. `Tests/CoreHwpTests/Blank/Create*Tests.swift`에서 파싱된 픽스처와 비교할 때 이를 사용.
 - `Streams/HwpDocInfo.swift`의 여러 `// TODO: HWPTAG_*` 주석은 의도된 것으로, 아직 구현되지 않은 기능이다. 리팩토링 중에 조용히 제거하지 말 것.
-- `HwpCtrlId` enum의 `Codable`은 hand-rolled 구현이다. 이종(heterogeneous) payload를 가진 associated value enum은 Swift가 자동 합성하지 못하기 때문.
-- **Codable 아카이브 호환**: 모델에 새 저장 필드를 추가하면 이전 아카이브(키 부재)가 `keyNotFound`로 깨지거나, 더 나쁘게는 파생 필드가 nil로 조용히 유실된다. 신규 필드는 custom `init(from:)`에서 `decodeIfPresent ?? 기본값`으로 받고, **파싱에서 파생되는 typed 필드는 원본(raw payload/RawValue)에서 파스와 같은 함수로 재수화**한다 (`HwpFile.viewSectionArray`, `HwpBullet.headCharShapeId`, `HwpChar.inlineControl`, `HwpCommonCtrlPropertyInfo`의 enum 9종, `HwpTableCellHeader.cellProperty`, `HwpOtherControl`의 typed payload 6종, `HwpShapeComponent.textBoxListArray`의 `textBoxInfo`). 재수화는 **파스 게이트까지 같아야** 한다 — 예로 글상자 리스트만 표 90을 갖는 규약이라, 재수화도 부모 `HwpShapeComponent` 디코더에서만 수행한다. 회귀 가드는 `Tests/CoreHwpTests/Stability/LegacyArchiveDecodingTests.swift`. 두 부류의 신규 필드는 이 재수화 규칙에서 갈린다 (#65·#67): ① `HwpSection.parseFailure`/`HwpParagraph.parseFailure`는 raw payload의 파생이 아니라 **로드 사건의 기록**이라 재수화하지 않고 아카이브 값 그대로가 진실이다 (`decodeIfPresent ?? nil`). ② `HwpParaText.wcharCount`는 `charArray`에서 파생되지만 **인코딩하지 않고**(custom `CodingKeys`가 `rawPayload`/`charArray` 두 키만) 디코더의 `init(rawPayload:charArray:)`가 재계산한다 — 파생값을 아카이브에 싣지 않는 반대 방향의 처리다.
+- CoreHwp 모델은 `Codable`을 채택하지 않는다 (#81) — 프로덕션 직렬화 소비처가 없어 테스트 전용이던 표면을 제거했다. 모델에 직렬화가 필요하면 소비자 측 투영 타입으로 해결한다 (선례: `Tests/HwpKitTests`의 블록 스냅샷/렌더 골든 투영 구조체).

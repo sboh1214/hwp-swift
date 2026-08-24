@@ -2,7 +2,7 @@
 
 라이브러리 target. Public 인터페이스 = `HwpFile`, `HwpError`, `HwpLoadOptions`,
 그리고 `Models/` 하위의 모든 `public` 모델 (전부
-`HwpPrimitive = Codable & Hashable & Sendable` 채택).
+`HwpPrimitive = Hashable & Sendable` 채택).
 
 **로드 옵션**: `HwpFile(fromPath:options:)` 등에 `HwpLoadOptions`를 넘길 수 있다.
 `preserveRawPayload`(기본 true)를 끄면 (`.viewer` 프리셋) 모델의
@@ -82,9 +82,7 @@ ID로 dispatch된다.
 
 1. 4-byte ID를 `Enums/CtrlId/` 아래 알맞은 파일(Common, Other, Field)에 추가.
 2. `Models/Section/CtrlHeader/`에 payload struct 추가.
-3. `Enums/CtrlId/HwpCtrlId.swift`의 enum에 case 추가하고, manual
-   `Codable` 구현 (`CodingKeys`, `init(from:)`, `encode(to:)`)도 갱신할 것.
-   이종 associated value 때문에 자동 합성되지 않는다.
+3. `Enums/CtrlId/HwpCtrlId.swift`의 enum에 case 추가.
 4. `Models/HwpParseDiagnostic.swift`의 `collect(ctrl:)`에 진단 순회 case를
    추가한다. `default:` 없는 exhaustive switch라 컴파일러가 누락을 잡아 준다 —
    **`default:`를 넣어 통과시키지 말 것** (그 순간 새 컨트롤의 미해석 자식이
@@ -104,9 +102,6 @@ ID로 dispatch된다.
   존재하므로 컨트롤 payload를 클래스 박스로 분리해 stride를 16 byte로 유지하고
   (`inlineControl`은 payload에서 지연 계산), setter는 `rawPayload`로 박스를
   재구성해 payload와 desync될 수 없게 한다.
-- 새 저장 필드/파생 필드를 추가하면 **legacy 아카이브 디코딩**을 함께 처리한다
-  (루트 AGENTS.md "Codable 아카이브 호환" 참조). 인코딩은 synthesized를 유지하고
-  디코더만 custom으로 두는 것이 형상 변화를 막는 방법이다.
 - **caller가 넘긴 한도를 받는 public 파싱 진입점은 먼저
   `options.readLimits.validate()`를 부른다.** 현재 그 지점은 `HwpFile`
   이니셜라이저 4개와 `HwpSection.load`뿐이다. 검증을 빠뜨리면 비-양수 한도가
@@ -185,12 +180,16 @@ payload를 읽기 전에 `HwpError.invalidRecordTree`로 거부합니다. 실문
 테스트 번들 하나를 골라 export합니다 — 공유 경로의 수치는 어느 번들로 뽑아도
 같지만, 번들마다 담는 경로의 집합이 다르기 때문입니다.
 
+2026-08-25 기준(#81 Codable 제거 직후) 같은 방식으로 재면 line coverage는
+97.39% (7831/8041)입니다 — 잘 커버되던 수기 Codable 라인이 분모와 함께
+빠져 게이트 마진은 거의 그대로입니다.
+
 | 영역 | 상태 |
 | --- | --- |
 | OLE compound document 열기 | 지원 |
 | `FileHeader`, `DocInfo`, `BodyText/Section*` | 부분 지원. DocInfo/section stream raw payload는 fixture manifest에서 byte 검증하고, 실제 fixture stream 기반 주입 테스트로 unknown section record와 corrupt record 처리를 확인 |
-| `U+0005 HwpSummaryInformation` | raw payload 보존. fixture manifest에서 summary length/prefix/suffix bytes를 검증하고, `missing-summary-derived` fixture와 directory-entry mutation/Codable round-trip 테스트로 stream 부재 시 빈 summary로 처리되는지 검증 |
-| `PrvText` | UTF-16LE text와 raw payload 보존. `missing-preview-text-derived` fixture와 directory-entry mutation/Codable round-trip 테스트로 stream 부재 시 기본 preview text raw payload(`[0x0D, 0x00, 0x0A, 0x00]`)를 반환하는지 검증 |
+| `U+0005 HwpSummaryInformation` | raw payload 보존. fixture manifest에서 summary length/prefix/suffix bytes를 검증하고, `missing-summary-derived` fixture와 directory-entry mutation 테스트로 stream 부재 시 빈 summary로 처리되는지 검증 |
+| `PrvText` | UTF-16LE text와 raw payload 보존. `missing-preview-text-derived` fixture와 directory-entry mutation 테스트로 stream 부재 시 기본 preview text raw payload(`[0x0D, 0x00, 0x0A, 0x00]`)를 반환하는지 검증 |
 | `PrvImage` | raw payload와 image format signature 보존, fixture manifest에서 prefix/suffix bytes 검증, 없으면 빈 preview image로 처리 |
 | `BinData` storage | stream 이름, stream id, 확장자, raw payload 보존. fixture manifest에서 storage metadata와 payload prefix/suffix bytes 검증하고, `chart` 실제 fixture의 OLE object가 참조하는 `BIN0001.OLE` stream 연결과 payload sample을 별도 회귀 테스트로 확인. 없으면 빈 배열로 처리 |
 | `BodyText/Section*` 정렬 | `Section0`, `Section1` 숫자 순 정렬 |
@@ -207,10 +206,10 @@ payload를 읽기 전에 `HwpError.invalidRecordTree`로 거부합니다. 실문
 | `ViewText` 스토리지 (표시용 본문) | 변경 추적 저장본은 표시 본문 (삭제 텍스트 포함)을 ViewText에 둔다 — `viewSectionArray`로 파싱 (실패 시 빈 배열 폴백), `displaySectionArray`가 렌더 본문 선택. 자식 구성이 BodyText 구역 수와 다르면 압축 해제 전에 거부해 빈 폴백으로 보낸다 (초과분 절단은 손상본을 유효 본문으로 통과시킴). 단 자원 한도 error 2종은 폴백하지 않고 전파. PARA_RANGE_TAG는 한 레코드에 태그 N개 (12바이트씩) — `HwpParaRangeTag.loadArray` |
 | table control (`tbl `) | table property와 cell paragraph를 typed model로 파싱하고 cell header raw payload 보존 |
 | field hyperlink control (`%hlk`) | URL을 typed model로 파싱하고 raw payload/trailing bytes 보존 |
-| field controls | known field ctrl id를 enum으로 보존하고 raw payload/trailing bytes/child records 보존. `memo` 실제 fixture의 `MEMO/...` parameter를 가진 unknown field는 memo control로 분류하고 parameter marker/components/author 및 Codable round-trip 보존을 검증. 메모 본문은 문단의 MEMO_LIST(93) 뒤 문단(66) 자식 — `HwpParagraph.memoParagraphArray`로 파싱 (unknownChildren에서 소비) |
-| 일반 개체 controls (`$pic`, `$lin`, `eqed`/`equd`, `$ole`, 글상자 등) | typed raw model로 분리하고 common property/shape component/raw payload 보존. `ctrlData` child record는 `HwpCtrlData` typed raw model로 보존. 수식 `eqed`는 `eqEdit` raw record와 수식 문자열을 별도 보존. 글상자는 `genShapeObject` + `rectangle` shape component 및 내부 list/paragraph records를 typed model로 노출하고 미해석 rectangle detail record를 raw payload로 보존. `legacy-common-control-property`의 legacy 44바이트 common property와 polygon component raw payload는 실제 fixture와 Codable round-trip으로 검증 |
-| gen shape object control (`gso `) | 공통 속성, shape component ctrl id, picture/OLE BinData id를 typed model로 파싱하고 raw payload 보존. `chart` 실제 fixture의 OLE shape component는 raw payload/BinData id를 `HwpCtrlId` Codable round-trip 후에도 보존하는지 검증 |
-| 기타 known controls (`bokm`, `atno`, `nwno`, `pghd`, `idxm`, `tdut` 등) | typed raw model로 분리하고 raw payload/trailing bytes/child records 보존. `bokm`은 `ctrlData`의 책갈피 이름, `pghd`는 쪽 감추기 raw bit field, `idxm`은 찾아보기 표식 문자열, `atno`는 표 142 전체 필드 (속성/번호/사용자 기호/앞·뒤 장식 문자 — `autoNumberInfo`), `nwno`는 표 144 (속성/번호 — `newNumberInfo`)를 typed model로 노출 (실저장본 byte로 검증). `legacy-common-control-property`의 `hiddenComment` unknown child/grandchild raw payload를 실제 fixture와 Codable round-trip으로 검증 |
+| field controls | known field ctrl id를 enum으로 보존하고 raw payload/trailing bytes/child records 보존. `memo` 실제 fixture의 `MEMO/...` parameter를 가진 unknown field는 memo control로 분류하고 parameter marker/components/author 보존을 검증. 메모 본문은 문단의 MEMO_LIST(93) 뒤 문단(66) 자식 — `HwpParagraph.memoParagraphArray`로 파싱 (unknownChildren에서 소비) |
+| 일반 개체 controls (`$pic`, `$lin`, `eqed`/`equd`, `$ole`, 글상자 등) | typed raw model로 분리하고 common property/shape component/raw payload 보존. `ctrlData` child record는 `HwpCtrlData` typed raw model로 보존. 수식 `eqed`는 `eqEdit` raw record와 수식 문자열을 별도 보존. 글상자는 `genShapeObject` + `rectangle` shape component 및 내부 list/paragraph records를 typed model로 노출하고 미해석 rectangle detail record를 raw payload로 보존. `legacy-common-control-property`의 legacy 44바이트 common property와 polygon component raw payload는 실제 fixture로 검증 |
+| gen shape object control (`gso `) | 공통 속성, shape component ctrl id, picture/OLE BinData id를 typed model로 파싱하고 raw payload 보존. `chart` 실제 fixture의 OLE shape component는 raw payload/BinData id를 보존하는지 검증 |
+| 기타 known controls (`bokm`, `atno`, `nwno`, `pghd`, `idxm`, `tdut` 등) | typed raw model로 분리하고 raw payload/trailing bytes/child records 보존. `bokm`은 `ctrlData`의 책갈피 이름, `pghd`는 쪽 감추기 raw bit field, `idxm`은 찾아보기 표식 문자열, `atno`는 표 142 전체 필드 (속성/번호/사용자 기호/앞·뒤 장식 문자 — `autoNumberInfo`), `nwno`는 표 144 (속성/번호 — `newNumberInfo`)를 typed model로 노출 (실저장본 byte로 검증). `legacy-common-control-property`의 `hiddenComment` unknown child/grandchild raw payload를 실제 fixture로 검증 |
 | 미구현/알 수 없는 control | `.notImplemented` 또는 `.unknown`으로 raw payload 보존. 실제 fixture section stream 기반 주입 테스트로 unknown control payload/child 보존을 확인 |
 | 암호 문서 | `HwpError.unsupportedFeature(.encryptedDocument)`. 공인 인증서 암호화 bit도 같은 unsupported로 처리 |
 | 배포용 문서 | `HwpError.unsupportedFeature(.deploymentDocument)` |

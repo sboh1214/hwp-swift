@@ -4,6 +4,14 @@
 
 ### Breaking Changes
 
+- **CoreHwp 모델에서 `Codable` 채택을 제거했습니다** (#81).
+  `HwpPrimitive`가 `Hashable & Sendable`로 줄어 `HwpFile` 등 모든 CoreHwp
+  모델을 `JSONEncoder`/`JSONDecoder`로 직렬화하던 코드는 더 이상 컴파일되지
+  않습니다. 라이브러리가 모델 직렬화 형식을 계약한 적은 없으며(테스트 전용
+  표면), 직렬화가 필요한 소비자는 필요한 필드만 담는 자체 투영 타입을
+  정의하십시오. `HwpCharType`·`HwpShapeArcKind`·`HwpTablePageBreakMode`처럼
+  `RawRepresentable`인 enum은 `extension X: Codable {}` 한 줄로 다시 채택할
+  수 있습니다.
 - **`HwpDocumentLoadError`에 `unsupportedDocument(HwpUnsupportedDocumentKind)`
   케이스를 추가했습니다** (#117). 암호로 보호된 문서·배포용 문서·DRM 문서를
   읽을 때 발생하는 오류는
