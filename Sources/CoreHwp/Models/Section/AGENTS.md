@@ -113,8 +113,41 @@ Codable은 `rawPayload`/`charArray` 두 키만 인코딩하고 디코더가 재�
 달리 bytes 6-7이 셀 확장 속성이라 읽기 폭을 넓힐 수 없다는 근거가
 `HwpTable.swift` 주석). 되살리지 말 것.
 
+## tag 검증 load 채택 (#83)
+
+`HwpTagValidatedRecord` 계열 채택 41종 중 **31종이 이 폴더**다 (나머지 10종은
+DocInfo). 프로토콜 계약 자체는 `Utils/AGENTS.md`에 있고, 여기 남기는 것은 이
+폴더에서만 성립하는 세 가지다.
+
+- **`expectedTag`는 컨트롤을 식별하지 않는다.** 10종이 `.ctrlHeader` 하나를
+  공유하고(`HwpColumn`·`HwpFieldControl`·`HwpHyperlink`·`HwpGenShapeObject`·
+  `HwpPageNumberPosition`·`HwpOtherControl`·`HwpSectionDef`·`HwpShapeControl`·
+  `HwpTable`·`HwpCtrlHeader`), 실제 분기는 payload 선두 4-byte 컨트롤 ID다
+  (위 "컨트롤 Dispatch"). 새 컨트롤을 `expectedTag`로 가르려 하지 말 것 —
+  그 자리는 record tag이지 컨트롤 ID가 아니다.
+- **`enforcesEOF = false` 8곳이 전부 이 폴더다** (`HwpCtrlHeader`·`HwpCtrlData`·
+  `HwpFieldControl`·`HwpHyperlink`·`HwpGenShapeObject`·`HwpOtherControl`·
+  `HwpTable`·`HwpTableCellHeader`). 컨트롤 payload가 init이 통째로 소비하는
+  trailing으로 끝나기 때문이고, 커스텀 load 시절의 **현행 동작 동결**이지
+  설계가 아니다.
+- **version 유/무 양쪽을 채택하는 2종**(`HwpGenShapeObject`·`HwpShapeControl`)은
+  optional-version init에 다리를 놓는 비-optional `init(_:_:_ version:)`이
+  필요하다. `enforcesEOF` default가 `HwpTagValidatedRecordCore` 한 곳에만 있는
+  이유도 이 2종의 witness 모호성이다.
+
+`HwpShapeComponentRawRecordBacked`는 `HwpTagValidatedRecord where ExpectedTag ==
+HwpSectionTag`로 refine되어 자체 `expectedSectionTag`와 `load`를 버렸다 —
+raw-backed 세부 record 13종이 그 default를 공유한다.
+
+이 폴더에 남은 record `load` override는 둘뿐이고 둘 다 합성 load다:
+`HwpListControl.load`(헤더 load에 위임한 뒤 `decoupledPayload`로 덮어 뷰어
+모드에서도 표 141 재디코드용 byte를 남긴다)와 `HwpShapeComponent.load(_:_:)`
+(비-version load 재사용 + 글상자 후처리).
+
 ## 안티 패턴
 
+- 새 컨트롤 모델에서 `enforcesEOF = false` — 그 스위치는 #83 이전 8종의 현행
+  동작 동결이다 (위 "tag 검증 load 채택"). 새 타입은 default(`true`)를 쓴다.
 - 모르는 컨트롤에 대해 `invalidCtrlId`를 throw — `.unknown` 또는
   `.notImplemented`로 떨어뜨릴 것. throw 하면 미모델 컨트롤이 포함된 모든
   픽스처가 깨진다.
