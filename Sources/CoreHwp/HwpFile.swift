@@ -22,27 +22,6 @@ public struct HwpFile: HwpPrimitive {
             ? viewSectionArray : sectionArray
     }
 
-    private enum CodingKeys: String, CodingKey {
-        case fileHeader, docInfo, sectionArray, viewSectionArray,
-             summary, previewText, previewImage, binaryDataArray
-    }
-
-    /// main 아카이브에는 viewSectionArray 키가 없다 — 빈 표시본으로 폴백해
-    /// synthesized 디코더의 keyNotFound 실패를 막는다 (R61 #1).
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        fileHeader = try container.decode(HwpFileHeader.self, forKey: .fileHeader)
-        docInfo = try container.decode(HwpDocInfo.self, forKey: .docInfo)
-        sectionArray = try container.decode([HwpSection].self, forKey: .sectionArray)
-        viewSectionArray = try container.decodeIfPresent(
-            [HwpSection].self, forKey: .viewSectionArray
-        ) ?? []
-        summary = try container.decode(HwpSummary.self, forKey: .summary)
-        previewText = try container.decode(HwpPreviewText.self, forKey: .previewText)
-        previewImage = try container.decode(HwpPreviewImage.self, forKey: .previewImage)
-        binaryDataArray = try container.decode([HwpBinaryData].self, forKey: .binaryDataArray)
-    }
-
     /// 비어 있는 기본 HWP 문서 모델을 생성합니다.
     public init() {
         fileHeader = HwpFileHeader()

@@ -1,1 +1,1 @@
-public typealias HwpPrimitive = Codable & Hashable & Sendable
+public typealias HwpPrimitive = Hashable & Sendable

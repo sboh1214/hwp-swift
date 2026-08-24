@@ -97,29 +97,3 @@ public extension HwpParaText {
         hasher.combine(charArray)
     }
 }
-
-// MARK: - Codable — 종전 synthesized 형상 보존 (wcharCount 파생값 제외)
-
-// (rawPayload 키는 ExcludeEquatable 래퍼 {"wrappedValue": …}로 인코딩)
-
-public extension HwpParaText {
-    private enum CodingKeys: String, CodingKey {
-        case rawPayload, charArray
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.init(
-            rawPayload: try container.decode(
-                ExcludeEquatable<Data>.self, forKey: .rawPayload
-            ).wrappedValue,
-            charArray: try container.decode([HwpChar].self, forKey: .charArray)
-        )
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(ExcludeEquatable(wrappedValue: rawPayload), forKey: .rawPayload)
-        try container.encode(charArray, forKey: .charArray)
-    }
-}
