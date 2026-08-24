@@ -2,11 +2,15 @@
 
 SwiftUI 공개 API target. HwpKitNative 위에 `NSViewRepresentable` / `UIViewRepresentable` 로 래핑. **AppKit/UIKit direct import 금지** (플랫폼 뷰는 HwpKitNative 통해).
 
+**CoreHwp 는 직접 의존하되 공개 표면으로 새지 않는다** (#117 에서 `Package.swift` 에 간선이 생겼다). 사용처는 `HwpDocumentLoader` 하나이고 (`import CoreHwp` 가 이 타깃 전체에서 그 파일 한 곳) 하는 일도 하나다 — `HwpError.unsupportedFeature` 를 문자열로 뭉개기 전에 가로채는 것. **CoreHwp 타입을 public 시그니처에 넣지 말 것** (현재 노출 0건): 호스트가 분기하려고 CoreHwp 를 import 해야 하는 순간 `HwpUnsupportedDocumentKind` 를 대응물로 따로 둔 이유가 통째로 사라진다. AppKit/UIKit 금지와 달리 이 규약에는 코드 가드가 없다 — `HwpKitScopeGuardTests` 의 import 스캔은 `AppKit`/`UIKit`/`PDFKit` 만 본다.
+
 ## 공개 API 표면
 
 - `HwpDocumentLoader(fontResolver:)` — 렌더에 쓸 폰트 해석기 주입 (기본 `HwpFontResolver()`). 커밋된 기준선을 쓰는 렌더 가드가 전부 이 인자 하나에 기대 기기 독립을 얻는다 (`.testDeterministic` — 루트 AGENTS.md "렌더 가드 4층"). 호스트도 재현 가능한 조판이 필요하면 같은 방식으로 고정 resolver를 넘긴다
 - `HwpDocumentLoader.load(from:)` — URL / Data / FileWrapper 오버로드. 내부적으로 `HwpDocumentActor` 사용. 에러는 `HwpDocumentLoadError` 로 매핑 (`CustomStringConvertible` + `LocalizedError` 채택 — 서술은 한국어이고 호스트가 `error.localizedDescription` 을 그대로 표시하면 된다. `presentationBuildFailed` 는 감싼 파서/페이지네이터 원인을 reason 으로 보존한다. 새 case 추가 시 `description` 도 함께 채우고 `HwpDocumentLoaderTests.testErrorDescriptionsCoverEveryCase` 의 배열에 넣을 것) (#117)
   - **미지원 문서는 문자열로 접지 않는다** — 암호·배포용·DRM 은 `CoreHwp.HwpError.unsupportedFeature` 가 `presentationBuildFailed` 문자열로 뭉개지기 전에 `unsupportedDocument(HwpUnsupportedDocumentKind)` 로 가로챈다 (매핑 관문은 `mapLoadFailure`, 세 로드 경로가 공유). `HwpUnsupportedDocumentKind` 는 CoreHwp `HwpUnsupportedFeature` 의 공개 대응물이라 호스트가 CoreHwp import 없이 분기한다 — CoreHwp 에 종류가 늘면 매핑 switch 가 exhaustive 라 컴파일 에러로 잡힌다
+  - **한국어화는 로더에서 멈춘다** (#117 (A)안) — `CoreHwp.HwpError` 의 서술은 영문 그대로다. 번역하면 미지원 픽스처 manifest 4종의 `expectedError.description` 이 함께 깨지고 (`문서암호설정-보안수준높음`·`문서암호설정-보안수준보통`·`배포용문서`·`drm-unsupported-derived`), 나머지 `HwpError` 케이스 전체로 번역이 번진다. 타입을 보존하니 로더가 그 문자열을 쓸 일도 없다 — 하위 원문을 그대로 싣는 것은 `presentationBuildFailed` 의 reason 뿐이다
+  - 회귀 그물은 같은 픽스처 4종이다 — URL 경로가 넷을 다 돌아 세 종류를 고정하고 (`testUnsupportedFixturesThrowTypedUnsupportedDocument`), Data·프로그레시브는 한 종류씩만 확인한다 (`testUnsupportedDataThrowsTypedUnsupportedDocument`·`testLoadUpdatesSurfacesTypedUnsupportedDocument` — 세 경로가 `mapLoadFailure` 하나를 공유하므로 종류 전수는 한 경로면 족하다). `mapLoadFailure` 가 internal 인 것은 passthrough 갈래를 공개 표면에서 재현하기 어렵기 때문이고, 그래서 세 갈래를 `testMapLoadFailureBranches` 가 직접 부른다
 - `HwpDocumentLoader.loadUpdates(from:)` — 프로그레시브 로딩. `AsyncThrowingStream<HwpDocumentSnapshot, Error>` 로 첫 페이지 확정 즉시 스냅샷을 방출하고 배치 단위로 이어가다 최종 스냅샷(`isComplete`)으로 끝난다. 최종 문서는 `load(from:)` 결과와 동일. 뷰는 `HwpDocumentMetadata.loadToken` 으로 증분 적용(스크롤 유지) vs 전체 리셋을 판정
 - `HwpDocumentView` — SwiftUI View. optional `zoomScale: Binding<CGFloat>?` + `fitZoom: Binding<HwpZoomFit?>?` + `currentPage: Binding<Int>?` + `searchController: HwpSearchController?` + hyperlink/unsupported 콜백
   - **`fitZoom` 은 원샷 명령이다** (#78). 값을 넣으면 뷰가 한 번 맞추고 바인딩을 `nil` 로 되돌린다 (되돌리기는 `normalizeOutOfRange*Binding` 과 같은 계약 — 업데이트 **밖**에서, 문서 세대·값 불변 가드를 지나). 지속 모드가 아닌 이유는 창 리사이즈마다 다시 맞추면 그 사이 사용자가 핀치로 바꾼 배율을 조용히 덮기 때문이다. 결과 배율은 `zoomScale` 바인딩으로 돌아오므로 툴바 라벨이 저절로 맞는다
