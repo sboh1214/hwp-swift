@@ -15,24 +15,12 @@ final class OtherControlPageHideTests: XCTestCase {
         )
 
         let control = try HwpOtherControl.load(record)
-        let decoded = try JSONDecoder().decode(
-            HwpCtrlId.self,
-            from: JSONEncoder().encode(HwpCtrlId.pageHide(control))
-        )
 
         expect(control.ctrlId) == .pageHide
         expect(control.pageHideInfo?.rawValue) == 0x20
         expect(control.pageHideInfo?.rawTrailing) == extraTrailing
         expect(control.rawPayload) == rawPayload
         expect(control.rawTrailing) == rawTrailing
-
-        guard case let .pageHide(roundTripped) = decoded else {
-            return fail("Expected pageHide after Codable round-trip")
-        }
-        expect(roundTripped.pageHideInfo?.rawValue) == 0x20
-        expect(roundTripped.pageHideInfo?.rawTrailing) == extraTrailing
-        expect(roundTripped.rawPayload) == rawPayload
-        expect(roundTripped.rawTrailing) == rawTrailing
     }
 
     func testShortPageHidePayloadIsPreservedWithoutParsedInfo() throws {
@@ -45,22 +33,11 @@ final class OtherControlPageHideTests: XCTestCase {
         )
 
         let control = try HwpOtherControl.load(record)
-        let decoded = try JSONDecoder().decode(
-            HwpCtrlId.self,
-            from: JSONEncoder().encode(HwpCtrlId.pageHide(control))
-        )
 
         expect(control.ctrlId) == .pageHide
         expect(control.pageHideInfo).to(beNil())
         expect(control.rawPayload) == rawPayload
         expect(control.rawTrailing) == rawTrailing
-
-        guard case let .pageHide(roundTripped) = decoded else {
-            return fail("Expected pageHide after Codable round-trip")
-        }
-        expect(roundTripped.pageHideInfo).to(beNil())
-        expect(roundTripped.rawPayload) == rawPayload
-        expect(roundTripped.rawTrailing) == rawTrailing
     }
 
     func testLegacyFixturePageHideSampleExposesRawBitField() throws {

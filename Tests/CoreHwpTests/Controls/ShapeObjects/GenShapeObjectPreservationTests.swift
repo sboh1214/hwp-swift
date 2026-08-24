@@ -3,7 +3,7 @@ import Foundation
 import Nimble
 import XCTest
 
-final class GenShapeObjectCodableTests: XCTestCase {
+final class GenShapeObjectPreservationTests: XCTestCase {
     func testGenShapeObjectInitializerPreservesRawPayloadWithNonZeroDataStartIndex() throws {
         let commonPayload = genShapeCommonPropertyPayload()
         let rawTrailing = Data([0xCA, 0xFE])
@@ -29,46 +29,39 @@ final class GenShapeObjectCodableTests: XCTestCase {
         expect(reader.isEOF) == true
     }
 
-    func testGenShapeObjectPreservesRawPayloadsThroughCtrlIdCodableRoundTrip() throws {
-        let fixture = try genShapeCodableFixture()
-        let encoded = try JSONEncoder().encode(fixture.control)
-        let decoded = try JSONDecoder().decode(HwpCtrlId.self, from: encoded)
+    func testGenShapeObjectLoadPreservesRawPayloadsAndNestedChildren() throws {
+        let fixture = try genShapeFixture()
+        let object = fixture.object
 
-        expect(decoded) == fixture.control
-
-        guard case let .genShapeObject(decodedObject) = decoded else {
-            return fail("Expected genShapeObject after Codable round trip")
-        }
-
-        expect(decodedObject.commonCtrlProperty.rawPayload) == fixture.commonPayload
-        expect(decodedObject.rawPayload) == fixture.rawPayload
-        expect(decodedObject.rawTrailing) == fixture.rawTrailing
-        expect(decodedObject.shapeComponentArray.map(\.rawPayload)) == [
+        expect(object.commonCtrlProperty.rawPayload) == fixture.commonPayload
+        expect(object.rawPayload) == fixture.rawPayload
+        expect(object.rawTrailing) == fixture.rawTrailing
+        expect(object.shapeComponentArray.map(\.rawPayload)) == [
             fixture.componentPayload,
         ]
-        expect(decodedObject.shapeComponentArray.map(\.ctrlId)) == [.rectangle]
-        expect(decodedObject.ctrlDataRecords.map(\.rawPayload)) == [Data([0xEE])]
-        expect(decodedObject.ctrlDataRecords.first?.unknownChildren) == [
+        expect(object.shapeComponentArray.map(\.ctrlId)) == [.rectangle]
+        expect(object.ctrlDataRecords.map(\.rawPayload)) == [Data([0xEE])]
+        expect(object.ctrlDataRecords.first?.unknownChildren) == [
             expectedTestUnknownRecord(tagId: 0x2FC, level: 3, payload: Data([0x50])),
         ]
-        expect(decodedObject.unknownChildren) == [
+        expect(object.unknownChildren) == [
             expectedTestUnknownRecord(tagId: 0x2FE, level: 2, payload: Data([0xFF])),
         ]
 
-        assertDecodedGenShapeComponent(decodedObject.shapeComponentArray.first, fixture: fixture)
+        assertGenShapeComponent(object.shapeComponentArray.first, fixture: fixture)
     }
 }
 
-private struct GenShapeCodableFixture {
+private struct GenShapeFixture {
     let commonPayload: Data
     let rawPayload: Data
     let rawTrailing: Data
     let componentPayload: Data
     let rectanglePayload: Data
-    let control: HwpCtrlId
+    let object: HwpGenShapeObject
 }
 
-private func genShapeCodableFixture() throws -> GenShapeCodableFixture {
+private func genShapeFixture() throws -> GenShapeFixture {
     let commonPayload = genShapeCommonPropertyPayload()
     let rawTrailing = Data([0xDE, 0xAD])
     let componentPayload = concatenatedData(
@@ -84,29 +77,29 @@ private func genShapeCodableFixture() throws -> GenShapeCodableFixture {
     )
     let object = try HwpGenShapeObject.load(record, HwpVersion(5, 0, 1, 1))
 
-    return GenShapeCodableFixture(
+    return GenShapeFixture(
         commonPayload: commonPayload,
         rawPayload: concatenatedData(commonPayload, rawTrailing),
         rawTrailing: rawTrailing,
         componentPayload: componentPayload,
         rectanglePayload: rectanglePayload,
-        control: HwpCtrlId.genShapeObject(object)
+        object: object
     )
 }
 
-private func assertDecodedGenShapeComponent(
-    _ decodedComponent: HwpShapeComponent?,
-    fixture: GenShapeCodableFixture
+private func assertGenShapeComponent(
+    _ component: HwpShapeComponent?,
+    fixture: GenShapeFixture
 ) {
-    expect(decodedComponent?.rectangleArray.map(\.rawPayload)) == [fixture.rectanglePayload]
-    expect(decodedComponent?.rectangleArray.first?.unknownChildren) == [
+    expect(component?.rectangleArray.map(\.rawPayload)) == [fixture.rectanglePayload]
+    expect(component?.rectangleArray.first?.unknownChildren) == [
         expectedTestUnknownRecord(tagId: 0x2FA, level: 4, payload: Data([0x20])),
     ]
-    expect(decodedComponent?.ctrlDataRecords.map(\.rawPayload)) == [Data([0xCC])]
-    expect(decodedComponent?.ctrlDataRecords.first?.unknownChildren) == [
+    expect(component?.ctrlDataRecords.map(\.rawPayload)) == [Data([0xCC])]
+    expect(component?.ctrlDataRecords.first?.unknownChildren) == [
         expectedTestUnknownRecord(tagId: 0x2FC, level: 4, payload: Data([0x30])),
     ]
-    expect(decodedComponent?.unknownChildren) == [
+    expect(component?.unknownChildren) == [
         expectedTestUnknownRecord(tagId: 0x2FD, level: 3, payload: Data([0xDD])),
     ]
 }

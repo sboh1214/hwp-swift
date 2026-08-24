@@ -4,54 +4,44 @@ import Nimble
 import XCTest
 
 final class HwpFileBinaryDataAssemblyTests: XCTestCase {
-    func testActualBinaryDataStreamsSurviveCodableRoundTrip() throws {
+    func testActualBinaryDataStreamsLoadNamesIdsExtensionsAndPayloads() throws {
         let hwp = try HwpFile(fromPath: hwpURL(#file, "BinData").path)
 
-        let encoded = try JSONEncoder().encode(hwp)
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: encoded)
-
-        expect(decoded.binaryDataArray.count) == 3
-        expect(decoded.binaryDataArray.map(\.name)) == [
+        expect(hwp.binaryDataArray.count) == 3
+        expect(hwp.binaryDataArray.map(\.name)) == [
             "BIN0001.png",
             "BIN0002.jpeg",
             "BIN0003.gif",
         ]
-        expect(decoded.binaryDataArray.map(\.streamId)) == [1, 2, 3]
-        expect(decoded.binaryDataArray.map(\.extensionName)) == ["png", "jpeg", "gif"]
-        expect(decoded.binaryDataArray.map(\.data)) == hwp.binaryDataArray.map(\.data)
-        expect(decoded.binaryDataArray.map(\.data.count)) == [62875, 51551, 20462]
-        expect(decoded.docInfo.idMappings.binDataArray.map(\.streamId)) == [1, 2, 3]
-        expect(decoded.docInfo.idMappings.binDataArray.map(\.extensionName)) == [
+        expect(hwp.binaryDataArray.map(\.streamId)) == [1, 2, 3]
+        expect(hwp.binaryDataArray.map(\.extensionName)) == ["png", "jpeg", "gif"]
+        expect(hwp.binaryDataArray.map(\.data.count)) == [62875, 51551, 20462]
+        expect(hwp.docInfo.idMappings.binDataArray.map(\.streamId)) == [1, 2, 3]
+        expect(hwp.docInfo.idMappings.binDataArray.map(\.extensionName)) == [
             "png",
             "jpeg",
             "gif",
         ]
     }
 
-    func testActualImageBinaryDataReferencesSurviveCodableRoundTrip() throws {
+    func testActualImageBinaryDataReferencesMatchDocInfoAndPictures() throws {
         let hwp = try HwpFile(fromPath: hwpURL(#file, "BinData").path)
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
 
-        let actualStreamIds = Set(decoded.binaryDataArray.compactMap(\.streamId))
-        let docInfoStreamIds = Set(decoded.docInfo.idMappings.binDataArray.compactMap(\.streamId))
-        let pictureBinaryDataIds = decodedPictureBinaryDataIds(from: decoded)
+        let actualStreamIds = Set(hwp.binaryDataArray.compactMap(\.streamId))
+        let docInfoStreamIds = Set(hwp.docInfo.idMappings.binDataArray.compactMap(\.streamId))
+        let pictureIds = pictureBinaryDataIds(from: hwp)
 
         expect(actualStreamIds) == Set([1, 2, 3])
         expect(docInfoStreamIds) == actualStreamIds
-        expect(Set(pictureBinaryDataIds)) == actualStreamIds
-        expect(pictureBinaryDataIds) == [1, 2, 3]
-        expect(decoded.binaryDataArray.map(\.data)) == hwp.binaryDataArray.map(\.data)
-        expect(decoded.sectionArray.map(\.rawPayload)) == hwp.sectionArray.map(\.rawPayload)
+        expect(Set(pictureIds)) == actualStreamIds
+        expect(pictureIds) == [1, 2, 3]
     }
 
     func testBinaryDataCompressionMapSkipsUnnumberedStreamsAndHonorsAlwaysCompress() throws {
-        let unnumberedLink = try HwpBinData.load(linkBinDataPayload())
-        let alwaysCompressedStorage = try HwpBinData.load(storageBinDataPayload(
-            streamId: 7,
-            compressType: .always,
-            extensionName: "ole"
-        ))
-        let docInfo = try docInfoWithBinData([unnumberedLink, alwaysCompressedStorage])
+        let docInfo = try docInfoWithBinData([
+            linkBinDataPayload(),
+            storageBinDataPayload(streamId: 7, compressType: .always, extensionName: "ole"),
+        ])
 
         let compressionByStreamId = HwpFile.binaryDataCompressionByStreamId(
             docInfo: docInfo,
@@ -73,7 +63,7 @@ final class HwpFileBinaryDataAssemblyTests: XCTestCase {
         }
     #endif
 
-    func testUnrecognizedBinaryDataStreamNameSurvivesCodableRoundTrip() throws {
+    func testUnrecognizedBinaryDataStreamNameIsPreservedOnLoad() throws {
         let originalHwp = try HwpFile(fromPath: hwpURL(#file, "BinData").path)
         guard let originalPayload = originalHwp.binaryDataArray
             .first(where: { $0.name == "BIN0002.jpeg" })?.data
@@ -89,18 +79,15 @@ final class HwpFileBinaryDataAssemblyTests: XCTestCase {
         defer { removeTemporaryDirectoryEntryFile(url) }
         let hwp = try HwpFile(fromPath: url.path)
 
-        let encoded = try JSONEncoder().encode(hwp)
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: encoded)
-
-        expect(decoded.binaryDataArray.map(\.name)) == [
+        expect(hwp.binaryDataArray.map(\.name)) == [
             "BIN0001.png",
             "BIN0003.gif",
             "bin0002.jpeg",
         ]
-        guard let renamed = decoded.binaryDataArray.first(
+        guard let renamed = hwp.binaryDataArray.first(
             where: { $0.name == "bin0002.jpeg" }
         ) else {
-            return fail("Expected renamed BinData stream to survive Codable round-trip")
+            return fail("Expected renamed BinData stream to be preserved on load")
         }
         expect(renamed.streamId).to(beNil())
         expect(renamed.extensionName).to(beNil())
@@ -128,38 +115,61 @@ private func assertBinaryDataEntrypointMatches(_ expected: HwpFile, _ actual: Hw
         expected.docInfo.idMappings.binDataArray.map(\.streamId)
     expect(actual.docInfo.idMappings.binDataArray.map(\.extensionName)) ==
         expected.docInfo.idMappings.binDataArray.map(\.extensionName)
-    expect(Set(decodedPictureBinaryDataIds(from: actual))) ==
+    expect(Set(pictureBinaryDataIds(from: actual))) ==
         Set(actual.binaryDataArray.compactMap(\.streamId))
-    expect(decodedPictureBinaryDataIds(from: actual)) ==
-        decodedPictureBinaryDataIds(from: expected)
+    expect(pictureBinaryDataIds(from: actual)) ==
+        pictureBinaryDataIds(from: expected)
 }
 
-private func decodedPictureBinaryDataIds(from hwp: HwpFile) -> [UInt16] {
+private func pictureBinaryDataIds(from hwp: HwpFile) -> [UInt16] {
     FixtureDerivedValues.allGenShapeObjects(from: hwp)
         .flatMap(\.shapeComponentArray)
         .flatMap(\.pictureArray)
         .compactMap(\.binaryDataId)
 }
 
-private func docInfoWithBinData(_ binDataArray: [HwpBinData]) throws -> HwpDocInfo {
-    let encoder = JSONEncoder()
-    guard var root = try JSONSerialization.jsonObject(
-        with: encoder.encode(HwpDocInfo())
-    ) as? [String: Any],
-        var idMappings = root["idMappings"] as? [String: Any]
-    else {
-        throw BinaryDataAssemblyTestError.invalidDocInfoJSON
+private func docInfoWithBinData(_ binDataPayloadArray: [Data]) throws -> HwpDocInfo {
+    var docInfoData = concatenatedData(
+        binaryDataAssemblyRecordData(
+            tagId: HwpDocInfoTag.documentProperties.rawValue,
+            level: 0,
+            payload: concatenatedData(
+                binaryDataAssemblyLittleEndianData(UInt16(1)),
+                Data(repeating: 0, count: 24)
+            )
+        ),
+        binaryDataAssemblyRecordData(
+            tagId: HwpDocInfoTag.idMappings.rawValue,
+            level: 0,
+            payload: binaryDataAssemblyIdMappingsPayload(
+                binaryDataCount: Int32(binDataPayloadArray.count)
+            )
+        )
+    )
+    for payload in binDataPayloadArray {
+        docInfoData.append(binaryDataAssemblyRecordData(
+            tagId: HwpDocInfoTag.binData.rawValue,
+            level: 1,
+            payload: payload
+        ))
     }
+    return try HwpDocInfo.load(docInfoData, HwpFileHeader().version)
+}
 
-    idMappings["binDataArray"] = try JSONSerialization.jsonObject(
-        with: encoder.encode(binDataArray)
-    )
-    root["idMappings"] = idMappings
+private func binaryDataAssemblyIdMappingsPayload(binaryDataCount: Int32) -> Data {
+    var counts = [Int32](repeating: 0, count: 18)
+    counts[0] = binaryDataCount
+    return counts.reduce(into: Data()) { data, count in
+        data.append(binaryDataAssemblyLittleEndianData(count))
+    }
+}
 
-    return try JSONDecoder().decode(
-        HwpDocInfo.self,
-        from: JSONSerialization.data(withJSONObject: root)
+private func binaryDataAssemblyRecordData(tagId: UInt32, level: UInt32, payload: Data) -> Data {
+    var data = binaryDataAssemblyLittleEndianData(
+        tagId | (level << 10) | (UInt32(payload.count) << 20)
     )
+    data.append(payload)
+    return data
 }
 
 private func linkBinDataPayload() -> Data {
@@ -196,8 +206,4 @@ private func binaryDataAssemblyUTF16LengthPrefixedString(_ string: String) -> Da
 private func binaryDataAssemblyLittleEndianData(_ value: some FixedWidthInteger) -> Data {
     var littleEndian = value.littleEndian
     return withUnsafeBytes(of: &littleEndian) { Data($0) }
-}
-
-private enum BinaryDataAssemblyTestError: Error {
-    case invalidDocInfoJSON
 }

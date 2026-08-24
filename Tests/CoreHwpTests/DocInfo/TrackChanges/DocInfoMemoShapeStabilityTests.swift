@@ -14,13 +14,8 @@ final class DocInfoMemoShapeStabilityTests: XCTestCase {
         )
 
         let memoShape = try HwpMemoShape.load(record)
-        let decoded = try JSONDecoder().decode(
-            HwpMemoShape.self,
-            from: JSONEncoder().encode(memoShape)
-        )
 
         assertMemoShape(memoShape, rawPayload: payload, rawTrailing: rawTrailing)
-        assertMemoShape(decoded, rawPayload: payload, rawTrailing: rawTrailing)
     }
 
     func testMalformedMemoShapePayloadIsPreservedWithoutParsedInfo() throws {
@@ -32,15 +27,9 @@ final class DocInfoMemoShapeStabilityTests: XCTestCase {
         )
 
         let memoShape = try HwpMemoShape.load(record)
-        let decoded = try JSONDecoder().decode(
-            HwpMemoShape.self,
-            from: JSONEncoder().encode(memoShape)
-        )
 
         expect(memoShape.shapeInfo).to(beNil())
         expect(memoShape.rawPayload) == payload
-        expect(decoded.shapeInfo).to(beNil())
-        expect(decoded.rawPayload) == payload
     }
 
     func testMemoShapePayloadWithNonZeroDataStartIndexDoesNotTrap() throws {
@@ -75,22 +64,6 @@ final class DocInfoMemoShapeStabilityTests: XCTestCase {
         expect(memoShape.shapeInfo?.fixedFieldsRawPayload) ==
             Data(memoShape.rawPayload.prefix(18))
         expect(memoShape.shapeInfo?.rawTrailing) == Data([0, 0, 0, 0])
-    }
-
-    func testTrackChangesFixtureMemoShapeSurvivesHwpFileCodableRoundTrip() throws {
-        let hwp = try openHwp(#file, "track-changes")
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
-        let originalMemoShape = try XCTUnwrap(hwp.docInfo.memoShapeArray.first)
-        let memoShape = try XCTUnwrap(decoded.docInfo.memoShapeArray.first)
-
-        assertMemoShape(
-            memoShape,
-            rawPayload: originalMemoShape.rawPayload,
-            rawTrailing: Data([0, 0, 0, 0])
-        )
-        expect(decoded.docInfo.memoShapeArray.map(\.rawPayload)) ==
-            hwp.docInfo.memoShapeArray.map(\.rawPayload)
-        expect(decoded.sectionArray.map(\.rawPayload)) == hwp.sectionArray.map(\.rawPayload)
     }
 }
 

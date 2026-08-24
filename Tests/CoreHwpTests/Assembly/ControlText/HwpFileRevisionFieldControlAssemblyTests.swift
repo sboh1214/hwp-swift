@@ -5,9 +5,7 @@ import OLEKit
 import XCTest
 
 final class HwpFileRevisionFieldControlAssemblyTests: XCTestCase {
-    func testActualFixtureAssemblyClassifiesRevisionFieldThroughCodableRoundTrip()
-        throws
-    {
+    func testActualFixtureAssemblyClassifiesRevisionField() throws {
         let streams = try revisionFieldAssemblyStreams(fromFixture: "plain-text-minimal")
         let injected = InjectedRevisionFieldControl(
             baseSectionData: try XCTUnwrap(streams.sectionDataArray.first)
@@ -20,15 +18,8 @@ final class HwpFileRevisionFieldControlAssemblyTests: XCTestCase {
             docInfoData: streams.docInfoData,
             sectionDataArray: sectionDataArray
         )
-        let decoded = try JSONDecoder().decode(
-            HwpFile.self,
-            from: JSONEncoder().encode(hwp)
-        )
 
         expectRevisionFieldControl(in: hwp, match: injected)
-        expectRevisionFieldControl(in: decoded, match: injected)
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == sectionDataArray
     }
 }
 

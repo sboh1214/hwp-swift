@@ -12,15 +12,4 @@ final class ExcludeEquatableTests: XCTestCase {
         expect(first.hashValue) == second.hashValue
         expect(Set([first, second]).count) == 1
     }
-
-    func testWrappedValueSurvivesCodableRoundTrip() throws {
-        let payload = Data([0xCA, 0xFE, 0xBA, 0xBE])
-        let wrapped = ExcludeEquatable(wrappedValue: payload)
-
-        let encoded = try JSONEncoder().encode(wrapped)
-        let decoded = try JSONDecoder().decode(ExcludeEquatable<Data>.self, from: encoded)
-
-        expect(decoded.wrappedValue) == payload
-        expect(decoded) == wrapped
-    }
 }

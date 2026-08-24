@@ -4,9 +4,7 @@ import Nimble
 import XCTest
 
 final class HwpFileParagraphDuplicateAssemblyTests: XCTestCase {
-    func testParagraphDuplicateTextAndLineSegSingletonsSurviveAsUnknownChildrenThroughCodable()
-        throws
-    {
+    func testParagraphDuplicateTextAndLineSegSingletonsSurviveAsUnknownChildren() throws {
         let base = try openHwp(#file, "plain-text-minimal")
         let baseSection = try XCTUnwrap(base.sectionArray.first)
         let baseParagraph = try XCTUnwrap(baseSection.paragraph.last)
@@ -32,7 +30,6 @@ final class HwpFileParagraphDuplicateAssemblyTests: XCTestCase {
             docInfo: base.docInfo,
             sectionDataArray: [sectionData]
         )
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
 
         assertDuplicateTextAndLineSegRecordsPreserved(
             in: hwp,
@@ -40,15 +37,9 @@ final class HwpFileParagraphDuplicateAssemblyTests: XCTestCase {
             sectionData: sectionData,
             duplicate: duplicate
         )
-        assertDuplicateTextAndLineSegRecordsPreserved(
-            in: decoded,
-            baseParagraph: baseParagraph,
-            sectionData: sectionData,
-            duplicate: duplicate
-        )
     }
 
-    func testParagraphDuplicateSingletonSurvivesAsUnknownChildThroughCodable() throws {
+    func testParagraphDuplicateSingletonSurvivesAsUnknownChild() throws {
         let base = try openHwp(#file, "plain-text-minimal")
         let baseSection = try XCTUnwrap(base.sectionArray.first)
         let baseParagraph = try XCTUnwrap(baseSection.paragraph.last)
@@ -69,17 +60,9 @@ final class HwpFileParagraphDuplicateAssemblyTests: XCTestCase {
             docInfo: base.docInfo,
             sectionDataArray: [sectionData]
         )
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
 
         assertDuplicateParagraphRecordPreserved(
             in: hwp,
-            baseParagraph: baseParagraph,
-            sectionData: sectionData,
-            duplicatePayload: duplicatePayload,
-            duplicateChildPayload: duplicateChildPayload
-        )
-        assertDuplicateParagraphRecordPreserved(
-            in: decoded,
             baseParagraph: baseParagraph,
             sectionData: sectionData,
             duplicatePayload: duplicatePayload,

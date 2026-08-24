@@ -90,23 +90,6 @@ final class LayoutCompatibilityStabilityTests: XCTestCase {
             ),
         ]
     }
-
-    func testLayoutCompatibilityCodableRoundTripPreservesFixedFieldPayload() throws {
-        let payload = layoutCompatibilityPayload(1, 2, 3, 4, 5)
-        let child = HwpRecord(tagId: 0x2F1, level: 1, payload: Data([0xAA]))
-        let layoutCompatibility = try HwpLayoutCompatibility.load(layoutCompatibilityRecord(
-            payload: payload,
-            children: [child]
-        ))
-        let decoded = try JSONDecoder().decode(
-            HwpLayoutCompatibility.self,
-            from: JSONEncoder().encode(layoutCompatibility)
-        )
-
-        expect(decoded.rawPayload) == payload
-        expect(decoded.fixedFieldsRawPayload) == payload
-        expect(decoded.unknownChildren) == [HwpUnknownRecord(child)]
-    }
 }
 
 private func layoutCompatibilityRecord(payload: Data, children: [HwpRecord]) -> HwpRecord {

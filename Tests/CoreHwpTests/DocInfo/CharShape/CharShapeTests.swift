@@ -75,25 +75,6 @@ final class CharShapeTests: XCTestCase {
         expect(reader.isEOF) == true
     }
 
-    func testCharShapePropertyRawValueSurvivesCodableRoundTrip() throws {
-        let rawValue = UInt32(1 << 0)
-            | UInt32(1 << 1)
-            | UInt32(HwpUnderlineType.under.rawValue << 2)
-            | UInt32(HwpBorderLineType.line.rawValue << 8)
-            | UInt32(HwpShadowType.continuous.rawValue << 11)
-            | UInt32(HwpEmphasisType.filledCircle.rawValue << 21)
-            | UInt32(1 << 31)
-        let property = try HwpCharShapeProperty.load(rawValue)
-
-        let decoded = try JSONDecoder().decode(
-            HwpCharShapeProperty.self,
-            from: JSONEncoder().encode(property)
-        )
-
-        expect(decoded.rawValue) == rawValue
-        expect(decoded) == property
-    }
-
     func testCharShapeRejectsTrailingBytesWithTypedError() {
         let payload = concatenatedData(charShapePayload(), Data([0xFF]))
 

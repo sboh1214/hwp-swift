@@ -24,11 +24,6 @@ final class EquationEditStabilityTests: XCTestCase {
             rawTrailing: Data([0xCC, 0xDD])
         )
         assertEquationEdit(edit, matches: expected)
-
-        let decoded = try roundTrippedEquationEdit(edit)
-
-        expect(decoded) == edit
-        assertEquationEdit(decoded, matches: expected)
     }
 
     func testEquationEditPreservesInvalidTextAsRawPayload() throws {
@@ -56,11 +51,6 @@ final class EquationEditStabilityTests: XCTestCase {
             rawTrailing: rawTrailing
         )
         assertEquationEdit(edit, matches: expected)
-
-        let decoded = try roundTrippedEquationEdit(edit)
-
-        expect(decoded) == edit
-        assertEquationEdit(decoded, matches: expected)
     }
 
     func testEquationEditTruncatedTextHasNoRawTrailing() throws {
@@ -86,11 +76,6 @@ final class EquationEditStabilityTests: XCTestCase {
             rawTrailing: nil
         )
         assertEquationEdit(edit, matches: expected)
-
-        let decoded = try roundTrippedEquationEdit(edit)
-
-        expect(decoded) == edit
-        assertEquationEdit(decoded, matches: expected)
     }
 
     func testEquationEditMissingTextLengthPreservesOnlyProperty() throws {
@@ -246,11 +231,6 @@ private func assertEquationNestedRawSlicesEmptiedByViewer(
 private func expectRawSliceEmptiedByViewer(preserved: Data?, viewer: Data?, _ label: String) {
     expect(preserved ?? Data()).notTo(beEmpty(), description: "\(label): default는 원문 보존")
     expect(viewer ?? Data()).to(beEmpty(), description: "\(label): viewer는 원문 제거")
-}
-
-private func roundTrippedEquationEdit(_ edit: HwpEquationEdit) throws -> HwpEquationEdit {
-    let encoded = try JSONEncoder().encode(edit)
-    return try JSONDecoder().decode(HwpEquationEdit.self, from: encoded)
 }
 
 private struct ExpectedEquationEdit {

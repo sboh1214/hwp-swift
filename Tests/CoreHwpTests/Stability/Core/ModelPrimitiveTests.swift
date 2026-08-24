@@ -326,22 +326,6 @@ final class ModelPrimitiveTests: XCTestCase {
             expect(reason).to(contain("exceeds available child records"))
         })
     }
-
-    func testCharacterCodableRoundTrip() throws {
-        let data = try JSONEncoder().encode(Character("한"))
-        let decoded = try JSONDecoder().decode(Character.self, from: data)
-
-        expect(decoded) == "한"
-    }
-
-    func testCharacterDecodeRejectsEmptyAndLongStrings() {
-        expect {
-            _ = try JSONDecoder().decode(Character.self, from: Data("[\"\"]".utf8))
-        }.to(throwError())
-        expect {
-            _ = try JSONDecoder().decode(Character.self, from: Data("[\"ab\"]".utf8))
-        }.to(throwError())
-    }
 }
 
 private func littleEndianData(_ value: some FixedWidthInteger) -> Data {

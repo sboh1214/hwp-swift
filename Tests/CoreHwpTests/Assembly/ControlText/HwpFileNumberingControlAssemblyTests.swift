@@ -5,9 +5,7 @@ import OLEKit
 import XCTest
 
 final class HwpFileNumberingControlAssemblyTests: XCTestCase {
-    func testActualFixtureAssemblyPreservesAutoAndNewNumberThroughCodableRoundTrip()
-        throws
-    {
+    func testActualFixtureAssemblyPreservesAutoAndNewNumber() throws {
         let streams = try numberingAssemblyStreams(fromFixture: "plain-text-minimal")
         let injected = InjectedNumberingControls(
             baseSectionData: try XCTUnwrap(streams.sectionDataArray.first)
@@ -20,14 +18,9 @@ final class HwpFileNumberingControlAssemblyTests: XCTestCase {
             docInfoData: streams.docInfoData,
             sectionDataArray: sectionDataArray
         )
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
 
         expectAutoNumberControl(in: hwp, match: injected)
-        expectAutoNumberControl(in: decoded, match: injected)
         expectNewNumberControl(in: hwp, match: injected)
-        expectNewNumberControl(in: decoded, match: injected)
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == sectionDataArray
     }
 }
 

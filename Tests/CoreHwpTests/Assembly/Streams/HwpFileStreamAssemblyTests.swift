@@ -113,46 +113,6 @@ final class HwpFileStreamAssemblyTests: XCTestCase {
         expect(hwp.binaryDataArray.map(\.streamId)) == expectedStreamIds
         expect(hwp.binaryDataArray.map(\.extensionName)) == expectedExtensionNames
         expect(hwp.binaryDataArray.map(\.data)) == binaryData.map(\.1)
-
-        let decoded = try JSONDecoder().decode(
-            HwpFile.self,
-            from: JSONEncoder().encode(hwp)
-        )
-
-        expect(decoded.binaryDataArray.map(\.name)) == binaryData.map(\.0)
-        expect(decoded.binaryDataArray.map(\.streamId)) == expectedStreamIds
-        expect(decoded.binaryDataArray.map(\.extensionName)) == expectedExtensionNames
-        expect(decoded.binaryDataArray.map(\.data)) == binaryData.map(\.1)
-    }
-
-    func testDecodedFilePreservesRawPayloadsThroughCodableRoundTrip() throws {
-        let docInfoData = minimalDocInfoData(sectionSize: 1)
-        let sectionData = minimalSectionData()
-        let summaryData = Data([0xAA, 0xBB])
-        let previewTextData = Data([0x41, 0x00, 0x0D, 0x00, 0x0A, 0x00])
-        let previewImageData = Data([0x47, 0x49, 0x46, 0x38, 0x01])
-        let binaryPayload = Data([0xCA, 0xFE])
-        let hwp = try HwpFile(
-            fileHeader: HwpFileHeader(),
-            docInfoData: docInfoData,
-            sectionDataArray: [sectionData],
-            summaryData: summaryData,
-            previewTextData: previewTextData,
-            previewImageData: previewImageData,
-            binaryData: [("BIN0007.gif", binaryPayload)]
-        )
-
-        let encoded = try JSONEncoder().encode(hwp)
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: encoded)
-
-        expect(decoded.docInfo.rawPayload) == docInfoData
-        expect(decoded.sectionArray.map(\.rawPayload)) == [sectionData]
-        expect(decoded.summary.rawPayload) == summaryData
-        expect(decoded.previewText.rawPayload) == previewTextData
-        expect(decoded.previewImage.rawPayload) == previewImageData
-        expect(decoded.previewImage.image) == previewImageData
-        expect(decoded.binaryDataArray.map(\.name)) == ["BIN0007.gif"]
-        expect(decoded.binaryDataArray.map(\.data)) == [binaryPayload]
     }
 
     func testDecodedStreamsRejectInvalidPreviewTextWithTypedError() {

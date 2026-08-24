@@ -2,6 +2,14 @@
 import CoreHwp
 import Foundation
 
+// 매니페스트 JSON이 문자열로 싣는 CoreHwp enum — 모델의 Codable이 제거되어
+// (#81) 테스트 지원 계층에서 디코딩만 되살린다 (RawRepresentable 기본 구현).
+#if compiler(>=6.0)
+    extension HwpPreviewImageFormat: @retroactive Decodable {}
+#else
+    extension HwpPreviewImageFormat: Decodable {}
+#endif
+
 struct FixtureManifest: Decodable {
     let id: String
     let generationTool: String

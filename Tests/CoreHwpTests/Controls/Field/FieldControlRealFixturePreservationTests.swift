@@ -10,36 +10,6 @@ final class FieldControlRealFixturePreservationTests: XCTestCase {
 
         assertMemoFixtureFieldControl(memo)
     }
-
-    func testMemoFixtureUnknownFieldParameterSurvivesCodableRoundTrip() throws {
-        let hwp = try openHwp(#file, "memo")
-        let memo = try memoFieldControl(in: hwp)
-        let encoded = try JSONEncoder().encode(HwpCtrlId.memo(memo))
-        let decoded = try JSONDecoder().decode(HwpCtrlId.self, from: encoded)
-
-        guard case let .memo(roundTripped) = decoded else {
-            return fail("Expected memo control after Codable round-trip")
-        }
-
-        assertMemoFixtureFieldControl(roundTripped)
-    }
-
-    func testMemoFixtureFieldControlSurvivesHwpFileCodableRoundTrip() throws {
-        let fixture = try FixtureLoader.load(id: "memo")
-        let hwp = try HwpFile(fromPath: fixture.documentURL.path)
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
-        let originalMemo = try memoFieldControl(in: hwp)
-        let memo = try memoFieldControl(in: decoded)
-
-        FixtureAssertions.assertFieldControls(
-            fixture.manifest.expectations.fieldControls ?? [],
-            decoded
-        )
-        assertMemoFixtureFieldControl(memo)
-        assertMemoFieldPayloadsMatch(memo, originalMemo)
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == hwp.sectionArray.map(\.rawPayload)
-    }
 }
 
 private func memoFieldControl(in hwp: HwpFile) throws -> HwpFieldControl {
@@ -122,34 +92,4 @@ private func assertMemoFixtureTypedFieldHeader(
     expect(memo.fieldIdRawPayload) == Data([140, 64, 121, 66])
     expect(memo.memoIndex) == 1
     expect(memo.memoIndexRawPayload) == Data([1, 0, 0, 0])
-}
-
-private func assertMemoFieldPayloadsMatch(_ decoded: HwpFieldControl, _ original: HwpFieldControl) {
-    expect(decoded.ctrlId) == original.ctrlId
-    expect(decoded.semanticKind) == original.semanticKind
-    expect(decoded.properties) == original.properties
-    expect(decoded.propertiesRawPayload) == original.propertiesRawPayload
-    expect(decoded.propertyInfo) == original.propertyInfo
-    expect(decoded.extraProperties) == original.extraProperties
-    expect(decoded.extraPropertiesRawPayload) == original.extraPropertiesRawPayload
-    expect(decoded.commandCharacterCount) == original.commandCharacterCount
-    expect(decoded.commandLengthRawPayload) == original.commandLengthRawPayload
-    expect(decoded.command) == original.command
-    expect(decoded.commandRawPayload) == original.commandRawPayload
-    expect(decoded.commandRawTrailing) == original.commandRawTrailing
-    expect(decoded.fieldId) == original.fieldId
-    expect(decoded.fieldIdRawPayload) == original.fieldIdRawPayload
-    expect(decoded.memoIndex) == original.memoIndex
-    expect(decoded.memoIndexRawPayload) == original.memoIndexRawPayload
-    expect(decoded.fieldParameterHeaderValue) == original.fieldParameterHeaderValue
-    expect(decoded.fieldParameterHeaderRawPayload) == original.fieldParameterHeaderRawPayload
-    expect(decoded.fieldParameterCharacterCount) == original.fieldParameterCharacterCount
-    expect(decoded.fieldParameterLengthRawPayload) == original.fieldParameterLengthRawPayload
-    expect(decoded.fieldParameter) == original.fieldParameter
-    expect(decoded.fieldParameterRawPayload) == original.fieldParameterRawPayload
-    expect(decoded.fieldParameterRawTrailing) == original.fieldParameterRawTrailing
-    expect(decoded.memoParameter) == original.memoParameter
-    expect(decoded.rawPayload) == original.rawPayload
-    expect(decoded.rawTrailing) == original.rawTrailing
-    expect(decoded.unknownChildren) == original.unknownChildren
 }

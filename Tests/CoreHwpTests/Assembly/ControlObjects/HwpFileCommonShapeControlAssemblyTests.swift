@@ -18,14 +18,9 @@ final class HwpFileCommonShapeControlAssemblyTests: XCTestCase {
             docInfoData: streams.docInfoData,
             sectionDataArray: sectionDataArray
         )
-        let decoded = try JSONDecoder().decode(
-            HwpFile.self,
-            from: JSONEncoder().encode(hwp)
-        )
 
         expectCommonShapeControls(in: hwp, match: injected)
-        expectCommonShapeControls(in: decoded, match: injected)
-        expect(decoded.sectionArray.map(\.rawPayload)) == sectionDataArray
+        expect(hwp.sectionArray.map(\.rawPayload)) == sectionDataArray
     }
 }
 

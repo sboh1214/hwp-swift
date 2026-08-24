@@ -61,15 +61,6 @@ final class TabDefRawPayloadTests: XCTestCase {
         expect(reader.isEOF) == true
     }
 
-    func testTabDefAndTabInfoRawPayloadsSurviveCodableRoundTrip() throws {
-        let payload = tabDefPayload()
-
-        let decoded = try decodeRoundTrip(HwpTabDef.load(payload))
-
-        expect(decoded.rawPayload) == payload
-        expect(decoded.tabInfoArray.map(\.rawPayload)) == [tabInfoPayload()]
-    }
-
     func testTabDefRejectsNegativeCountWithTypedError() {
         var payload = Data()
         payload.append(littleEndianData(UInt32(0)))
@@ -190,10 +181,6 @@ private func tabInfoPayload() -> Data {
     data.append(Data([2, 3]))
     data.append(littleEndianData(UInt16(0x0405)))
     return data
-}
-
-private func decodeRoundTrip<T: HwpPrimitive>(_ value: T) throws -> T {
-    try JSONDecoder().decode(T.self, from: JSONEncoder().encode(value))
 }
 
 private func littleEndianData(_ value: some FixedWidthInteger) -> Data {

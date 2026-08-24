@@ -3,8 +3,8 @@ import Foundation
 import Nimble
 import XCTest
 
-final class TableControlFallbackCodableTests: XCTestCase {
-    func testTruncatedTableFallbackPreservesNestedChildrenThroughParagraphCodable() throws {
+final class TableControlFallbackTests: XCTestCase {
+    func testTruncatedTableFallbackPreservesNestedChildren() throws {
         let rawPayload = tableFallbackLittleEndianData(HwpCommonCtrlId.table.rawValue)
         let tableRecord = tableFallbackNestedChildRecord(
             tagId: HwpSectionTag.table.rawValue,
@@ -35,13 +35,8 @@ final class TableControlFallbackCodableTests: XCTestCase {
             ]),
             HwpVersion(5, 0, 1, 1)
         )
-        let decoded = try JSONDecoder().decode(
-            HwpParagraph.self,
-            from: JSONEncoder().encode(paragraph)
-        )
 
         assertTableFallbackControl(paragraph.ctrlHeaderArray?.first, rawPayload: rawPayload)
-        assertTableFallbackControl(decoded.ctrlHeaderArray?.first, rawPayload: rawPayload)
     }
 }
 

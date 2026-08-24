@@ -114,26 +114,13 @@ final class HyperlinkStabilityTests: XCTestCase {
         })
     }
 
-    func testCCLFixtureHyperlinksSurviveHwpFileCodableRoundTrip() throws {
+    func testCCLFixtureHyperlinksMatchManifestExpectations() throws {
         let fixture = try FixtureLoader.load(id: "CCL")
         let hwp = try HwpFile(fromPath: fixture.documentURL.path)
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
         let expectedHyperlinks = try cclHyperlinkExpectations(fixture)
-        let originalHyperlinks = FixtureDerivedValues.hyperlinks(from: hwp)
-        let decodedHyperlinks = FixtureDerivedValues.hyperlinks(from: decoded)
 
-        FixtureAssertions.assertHyperlinks(expectedHyperlinks, decoded)
-        assertHyperlinkPayloadsMatch(decodedHyperlinks, originalHyperlinks)
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == hwp.sectionArray.map(\.rawPayload)
+        FixtureAssertions.assertHyperlinks(expectedHyperlinks, hwp)
     }
-}
-
-private struct HyperlinkUnknownFingerprint: Equatable {
-    let tagId: UInt32
-    let level: UInt32
-    let payload: Data
-    let children: [HyperlinkUnknownFingerprint]
 }
 
 private func cclHyperlinkExpectations(
@@ -145,33 +132,6 @@ private func cclHyperlinkExpectations(
     }
 
     return hyperlinks
-}
-
-private func assertHyperlinkPayloadsMatch(
-    _ decoded: [HwpHyperlink],
-    _ original: [HwpHyperlink]
-) {
-    expect(decoded.map(\.ctrlId)) == original.map(\.ctrlId)
-    expect(decoded.map(\.url)) == original.map(\.url)
-    expect(decoded.map(\.urlLengthRawPayload)) == original.map(\.urlLengthRawPayload)
-    expect(decoded.map(\.urlRawPayload)) == original.map(\.urlRawPayload)
-    expect(decoded.map(\.rawPayload)) == original.map(\.rawPayload)
-    expect(decoded.map(\.rawTrailing)) == original.map(\.rawTrailing)
-    expect(decoded.map { hyperlinkUnknownFingerprints($0.unknownChildren) }) ==
-        original.map { hyperlinkUnknownFingerprints($0.unknownChildren) }
-}
-
-private func hyperlinkUnknownFingerprints(
-    _ records: [HwpUnknownRecord]
-) -> [HyperlinkUnknownFingerprint] {
-    records.map { record in
-        HyperlinkUnknownFingerprint(
-            tagId: record.tagId,
-            level: record.level,
-            payload: record.payload,
-            children: hyperlinkUnknownFingerprints(record.children)
-        )
-    }
 }
 
 private func hyperlinkPayload(url: String, rawTrailing: Data) -> Data {

@@ -16,19 +16,11 @@ final class DocInfoTrackChangeStabilityTests: XCTestCase {
         )
 
         let trackChange = try HwpTrackChange.load(record)
-        let decoded = try JSONDecoder().decode(
-            HwpTrackChange.self,
-            from: JSONEncoder().encode(trackChange)
-        )
 
         expect(trackChange.trackChangeInfo?.headerValue) == 56
         expect(trackChange.trackChangeInfo?.headerRawPayload) == littleEndianData(UInt32(56))
         expect(trackChange.trackChangeInfo?.rawTrailing) == rawTrailing
         expect(trackChange.rawPayload) == payload
-        expect(decoded.trackChangeInfo?.headerValue) == 56
-        expect(decoded.trackChangeInfo?.headerRawPayload) == littleEndianData(UInt32(56))
-        expect(decoded.trackChangeInfo?.rawTrailing) == rawTrailing
-        expect(decoded.rawPayload) == payload
     }
 
     func testMalformedTrackChangePayloadIsPreservedWithoutParsedInfo() throws {
@@ -40,15 +32,9 @@ final class DocInfoTrackChangeStabilityTests: XCTestCase {
         )
 
         let trackChange = try HwpTrackChange.load(record)
-        let decoded = try JSONDecoder().decode(
-            HwpTrackChange.self,
-            from: JSONEncoder().encode(trackChange)
-        )
 
         expect(trackChange.trackChangeInfo).to(beNil())
         expect(trackChange.rawPayload) == payload
-        expect(decoded.trackChangeInfo).to(beNil())
-        expect(decoded.rawPayload) == payload
     }
 
     func testTrackChangePayloadWithNonZeroDataStartIndexDoesNotTrap() throws {
@@ -84,20 +70,9 @@ final class DocInfoTrackChangeStabilityTests: XCTestCase {
         )
 
         let content = try HwpTrackChangeContent.load(record)
-        let decoded = try JSONDecoder().decode(
-            HwpTrackChangeContent.self,
-            from: JSONEncoder().encode(content)
-        )
 
         assertTrackChangeContent(
             content,
-            kind: 17,
-            timestamp: TrackChangeContentTimestamp(2026, 6, 15, 4, 30),
-            rawTrailing: rawTrailing,
-            rawPayload: payload
-        )
-        assertTrackChangeContent(
-            decoded,
             kind: 17,
             timestamp: TrackChangeContentTimestamp(2026, 6, 15, 4, 30),
             rawTrailing: rawTrailing,
@@ -117,15 +92,9 @@ final class DocInfoTrackChangeStabilityTests: XCTestCase {
         )
 
         let content = try HwpTrackChangeContent.load(record)
-        let decoded = try JSONDecoder().decode(
-            HwpTrackChangeContent.self,
-            from: JSONEncoder().encode(content)
-        )
 
         expect(content.contentInfo).to(beNil())
         expect(content.rawPayload) == payload
-        expect(decoded.contentInfo).to(beNil())
-        expect(decoded.rawPayload) == payload
     }
 
     func testMalformedTrackChangeRawRecordsPreserveUnknownChildren() throws {
@@ -200,10 +169,6 @@ final class DocInfoTrackChangeStabilityTests: XCTestCase {
         )
 
         let author = try HwpTrackChangeAuthor.load(record)
-        let decoded = try JSONDecoder().decode(
-            HwpTrackChangeAuthor.self,
-            from: JSONEncoder().encode(author)
-        )
 
         expect(author.authorInfo?.name) == "CoreHwp Fixture"
         expect(author.authorInfo?.nameLengthRawPayload) == littleEndianData(UInt32(15))
@@ -212,13 +177,6 @@ final class DocInfoTrackChangeStabilityTests: XCTestCase {
         )
         expect(author.authorInfo?.rawTrailing) == rawTrailing
         expect(author.rawPayload) == payload
-        expect(decoded.authorInfo?.name) == "CoreHwp Fixture"
-        expect(decoded.authorInfo?.nameLengthRawPayload) == littleEndianData(UInt32(15))
-        expect(decoded.authorInfo?.nameRawPayload) == trackChangeAuthorNamePayload(
-            "CoreHwp Fixture"
-        )
-        expect(decoded.authorInfo?.rawTrailing) == rawTrailing
-        expect(decoded.rawPayload) == payload
     }
 
     func testTrackChangeAuthorDecodesUtf16SurrogatePairs() throws {
@@ -270,15 +228,9 @@ final class DocInfoTrackChangeStabilityTests: XCTestCase {
         )
 
         let author = try HwpTrackChangeAuthor.load(record)
-        let decoded = try JSONDecoder().decode(
-            HwpTrackChangeAuthor.self,
-            from: JSONEncoder().encode(author)
-        )
 
         expect(author.authorInfo).to(beNil())
         expect(author.rawPayload) == payload
-        expect(decoded.authorInfo).to(beNil())
-        expect(decoded.rawPayload) == payload
     }
 
     func testMalformedTrackChangeAuthorPayloadIsPreservedWithoutParsedInfo() throws {
@@ -290,15 +242,9 @@ final class DocInfoTrackChangeStabilityTests: XCTestCase {
         )
 
         let author = try HwpTrackChangeAuthor.load(record)
-        let decoded = try JSONDecoder().decode(
-            HwpTrackChangeAuthor.self,
-            from: JSONEncoder().encode(author)
-        )
 
         expect(author.authorInfo).to(beNil())
         expect(author.rawPayload) == payload
-        expect(decoded.authorInfo).to(beNil())
-        expect(decoded.rawPayload) == payload
     }
 
     func testTrackChangeAuthorWithOversizedLengthIsPreservedWithoutParsedInfo() throws {
@@ -314,15 +260,9 @@ final class DocInfoTrackChangeStabilityTests: XCTestCase {
         )
 
         let author = try HwpTrackChangeAuthor.load(record)
-        let decoded = try JSONDecoder().decode(
-            HwpTrackChangeAuthor.self,
-            from: JSONEncoder().encode(author)
-        )
 
         expect(author.authorInfo).to(beNil())
         expect(author.rawPayload) == payload
-        expect(decoded.authorInfo).to(beNil())
-        expect(decoded.rawPayload) == payload
     }
 
     func testTrackChangeAuthorPayloadWithNonZeroDataStartIndexDoesNotTrap() throws {
@@ -349,19 +289,6 @@ final class DocInfoTrackChangeStabilityTests: XCTestCase {
         let hwp = try openHwp(#file, "track-changes")
 
         assertTrackChangesFixtureKnownFields(hwp)
-    }
-
-    func testTrackChangesFixtureKnownFieldsSurviveHwpFileCodableRoundTrip() throws {
-        let hwp = try openHwp(#file, "track-changes")
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
-
-        assertTrackChangesFixtureKnownFields(decoded)
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.docInfo.trackChangeContentArray.map(\.rawPayload)) ==
-            hwp.docInfo.trackChangeContentArray.map(\.rawPayload)
-        expect(decoded.docInfo.trackChangeAuthorArray.map(\.rawPayload)) ==
-            hwp.docInfo.trackChangeAuthorArray.map(\.rawPayload)
-        expect(decoded.sectionArray.map(\.rawPayload)) == hwp.sectionArray.map(\.rawPayload)
     }
 
     func testDocInfoMergesIdMappingsAndTopLevelTrackChangeContentAndAuthors() throws {

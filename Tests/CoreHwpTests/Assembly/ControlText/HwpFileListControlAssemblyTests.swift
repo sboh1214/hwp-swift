@@ -5,7 +5,7 @@ import OLEKit
 import XCTest
 
 final class HwpFileListControlAssemblyTests: XCTestCase {
-    func testActualFixtureAssemblyPreservesListControlsThroughCodableRoundTrip() throws {
+    func testActualFixtureAssemblyPreservesListControls() throws {
         let streams = try listAssemblyStreams(fromFixture: "plain-text-minimal")
         let injected = InjectedListControls(
             baseSectionData: try XCTUnwrap(streams.sectionDataArray.first)
@@ -18,14 +18,10 @@ final class HwpFileListControlAssemblyTests: XCTestCase {
             docInfoData: streams.docInfoData,
             sectionDataArray: sectionDataArray
         )
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
 
         for spec in injected.specs {
             expectListControl(in: hwp, match: spec)
-            expectListControl(in: decoded, match: spec)
         }
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == sectionDataArray
     }
 
     func testActualFixtureAssemblyPreservesMalformedListControlAsOtherControl() throws {
@@ -41,12 +37,8 @@ final class HwpFileListControlAssemblyTests: XCTestCase {
             docInfoData: streams.docInfoData,
             sectionDataArray: sectionDataArray
         )
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
 
         expectMalformedListControl(in: hwp, match: injected)
-        expectMalformedListControl(in: decoded, match: injected)
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == sectionDataArray
     }
 }
 

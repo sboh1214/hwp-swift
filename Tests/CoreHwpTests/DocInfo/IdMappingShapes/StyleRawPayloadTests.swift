@@ -322,44 +322,6 @@ final class StyleRawPayloadTests: XCTestCase {
             expect(actual) == 1
         })
     }
-
-    func testStyleBulletAndNumberingRawPayloadsSurviveCodableRoundTrip() throws {
-        let stylePayload = stylePayload(
-            localName: "Local",
-            englishName: "English",
-            nextId: 1,
-            paraShapeId: 2,
-            charShapeId: 3
-        )
-        let bulletPayload = bulletPayload(
-            undocumentedTrailing: [0xAA, 0xBB, 0xCC, 0xDD, 0xEE]
-        )
-        let numberingPayload = numberingPayload()
-
-        let decodedStyle = try decodeRoundTrip(HwpStyle.load(stylePayload))
-        let decodedBullet = try decodeRoundTrip(HwpBullet.load(bulletPayload))
-        let decodedNumbering = try decodeRoundTrip(
-            HwpNumbering.load(numberingPayload, HwpVersion())
-        )
-
-        expect(decodedStyle.rawPayload) == stylePayload
-        expect(decodedStyle.styleLocalNameRawPayload) == wcharPayload("Local")
-        expect(decodedStyle.styleEnglishNameRawPayload) == wcharPayload("English")
-        expect(decodedStyle.unknown) == [0, 0]
-        expect(decodedStyle.undocumentedTrailing) == [0, 0]
-        expect(decodedBullet.rawPayload) == bulletPayload
-        expect(decodedBullet.charRawPayload) == wcharPayload("\u{2022}")
-        expect(decodedBullet.checkCharRawPayload) == wcharPayload("\u{2611}")
-        expect(decodedBullet.undocumentedTrailing) == [0xAA, 0xBB, 0xCC, 0xDD, 0xEE]
-        expect(decodedNumbering.rawPayload) == numberingPayload
-        expect(decodedNumbering.formatArray[0].formatRawPayload) == wcharPayload("^1")
-        expect(decodedNumbering.extendedFormatArray?[0].formatRawPayload) == wcharPayload("^8")
-        expect(decodedNumbering.extendedStartingIndexArray) == [8, 9, 10]
-    }
-}
-
-private func decodeRoundTrip<T: HwpPrimitive>(_ value: T) throws -> T {
-    try JSONDecoder().decode(T.self, from: JSONEncoder().encode(value))
 }
 
 private func stylePayload(

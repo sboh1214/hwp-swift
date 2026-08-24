@@ -1,5 +1,4 @@
 import CoreHwp
-import Foundation
 import Nimble
 import XCTest
 
@@ -42,29 +41,8 @@ final class ColumnTests: XCTestCase {
         expect(columnArray[3].rawTrailing).to(beEmpty())
         expect(columnArray[4].rawTrailing).to(beEmpty())
     }
-
-    func testColumnFixtureSurvivesHwpFileCodableRoundTrip() throws {
-        let hwp = try openHwp(#file, "Column")
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
-        let expectedColumns = try columnManifestExpectations()
-
-        FixtureAssertions.assertColumns(expectedColumns, columns(in: decoded))
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == hwp.sectionArray.map(\.rawPayload)
-        expect(decoded.previewText.rawPayload) == hwp.previewText.rawPayload
-        expect(decoded.previewImage.rawPayload) == hwp.previewImage.rawPayload
-    }
 }
 
 private func columns(in hwp: HwpFile) -> [HwpColumn] {
     FixtureDerivedValues.columns(from: hwp)
-}
-
-private func columnManifestExpectations() throws -> [FixtureColumnExpectations] {
-    guard let columns = try FixtureLoader.load(id: "Column").manifest.expectations.columns else {
-        fail("Expected Column fixture manifest to declare column expectations")
-        return []
-    }
-
-    return columns
 }

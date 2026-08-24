@@ -5,9 +5,7 @@ import OLEKit
 import XCTest
 
 final class HwpFileHyperlinkControlAssemblyTests: XCTestCase {
-    func testActualFixtureAssemblyPreservesHyperlinkThroughCodableRoundTrip()
-        throws
-    {
+    func testActualFixtureAssemblyPreservesHyperlink() throws {
         let streams = try hyperlinkAssemblyStreams(fromFixture: "plain-text-minimal")
         let injected = InjectedHyperlinkControl(
             baseSectionData: try XCTUnwrap(streams.sectionDataArray.first)
@@ -20,15 +18,8 @@ final class HwpFileHyperlinkControlAssemblyTests: XCTestCase {
             docInfoData: streams.docInfoData,
             sectionDataArray: sectionDataArray
         )
-        let decoded = try JSONDecoder().decode(
-            HwpFile.self,
-            from: JSONEncoder().encode(hwp)
-        )
 
         expectHyperlink(in: hwp, match: injected)
-        expectHyperlink(in: decoded, match: injected)
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == sectionDataArray
     }
 }
 

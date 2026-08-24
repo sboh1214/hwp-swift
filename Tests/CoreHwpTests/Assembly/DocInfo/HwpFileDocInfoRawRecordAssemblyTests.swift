@@ -47,23 +47,7 @@ final class HwpFileDocInfoRawRecordAssemblyTests: XCTestCase {
         expect(hwp.sectionArray.count) == Int(baseDocInfo.documentProperties.sectionSize)
     }
 
-    func testActualFixtureBasedTopLevelRawDocInfoRecordsSurviveCodableRoundTrip() throws {
-        let streams = try actualReadableHwpStreams(fromFixture: "plain-text-minimal")
-        let injected = InjectedTopLevelRawDocInfoRecords(baseDocInfoData: streams.docInfoData)
-        let hwp = try HwpFile(
-            fileHeader: streams.fileHeader,
-            docInfoData: injected.docInfoData,
-            sectionDataArray: streams.sectionDataArray
-        )
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
-
-        expectTopLevelRawDocInfoRecords(in: decoded.docInfo, match: injected)
-        expect(decoded.sectionArray.map(\.rawPayload)) == streams.sectionDataArray
-    }
-
-    func testActualFixtureBasedMemoShapeAndForbiddenCharSurviveCodableRoundTrip()
-        throws
-    {
+    func testActualFixtureBasedAssemblyPreservesInjectedMemoShapeAndForbiddenChar() throws {
         let streams = try actualReadableHwpStreams(fromFixture: "plain-text-minimal")
         let baseDocInfo = try HwpDocInfo.load(streams.docInfoData, streams.fileHeader.version)
         expect(baseDocInfo.memoShapeArray).to(beEmpty())
@@ -77,15 +61,10 @@ final class HwpFileDocInfoRawRecordAssemblyTests: XCTestCase {
             docInfoData: injected.docInfoData,
             sectionDataArray: streams.sectionDataArray
         )
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
 
         expectMemoShapeAndForbiddenCharRecords(in: hwp.docInfo, match: injected)
-        expectMemoShapeAndForbiddenCharRecords(in: decoded.docInfo, match: injected)
         expectIdMappingRawRecords(in: hwp.docInfo, match: baseDocInfo)
-        expectIdMappingRawRecords(in: decoded.docInfo, match: baseDocInfo)
         expect(hwp.docInfo.unknownRecords) == baseDocInfo.unknownRecords
-        expect(decoded.docInfo.rawPayload) == injected.docInfoData
-        expect(decoded.sectionArray.map(\.rawPayload)) == streams.sectionDataArray
     }
 
     func testActualFixtureBasedAssemblyPreservesInjectedUnknownDocInfoRecordTree() throws {
@@ -300,41 +279,12 @@ final class HwpFileDocInfoRawRecordAssemblyTests: XCTestCase {
             docInfoData: streams.docInfoData,
             sectionDataArray: [sectionData]
         )
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
 
         expectLastUnknownControl(
             in: hwp,
             payload: controlPayload,
             childPayload: controlChildPayload
         )
-        expectLastUnknownControl(
-            in: decoded,
-            payload: controlPayload,
-            childPayload: controlChildPayload
-        )
-        expect(decoded.sectionArray.map(\.rawPayload)) == [sectionData]
-    }
-
-    func testActualFixtureBasedRawRecordsSurviveCodableRoundTrip() throws {
-        let streams = try actualReadableHwpStreams(fromFixture: "plain-text-minimal")
-        guard let firstSectionData = streams.sectionDataArray.first else {
-            return fail("Expected actual fixture to include Section0")
-        }
-
-        let injected = InjectedCodableRawRecords(
-            baseDocInfoData: streams.docInfoData,
-            baseSectionData: firstSectionData
-        )
-        let hwp = try HwpFile(
-            fileHeader: streams.fileHeader,
-            docInfoData: injected.docInfoData,
-            sectionDataArray: [injected.sectionData]
-        )
-
-        let encoded = try JSONEncoder().encode(hwp)
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: encoded)
-
-        try expectDecodedRawRecords(decoded, match: injected)
     }
 
     func testActualFixtureBasedAssemblyPreservesInjectedMalformedKnownControl() throws {
@@ -355,28 +305,6 @@ final class HwpFileDocInfoRawRecordAssemblyTests: XCTestCase {
         }
 
         expectMalformedTableControl(header, match: injected)
-    }
-
-    func testActualFixtureBasedMalformedKnownControlSurvivesCodableRoundTrip() throws {
-        let streams = try actualReadableHwpStreams(fromFixture: "plain-text-minimal")
-        guard let firstSectionData = streams.sectionDataArray.first else {
-            return fail("Expected actual fixture to include Section0")
-        }
-
-        let injected = InjectedMalformedTableControl(baseSectionData: firstSectionData)
-        let hwp = try HwpFile(
-            fileHeader: streams.fileHeader,
-            docInfoData: streams.docInfoData,
-            sectionDataArray: [injected.sectionData]
-        )
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
-
-        guard let header = lastNotImplementedHeader(in: decoded) else {
-            return fail("Expected decoded malformed table control to be raw-preserved")
-        }
-
-        expectMalformedTableControl(header, match: injected)
-        expect(decoded.sectionArray.map(\.rawPayload)) == [injected.sectionData]
     }
 }
 
@@ -431,44 +359,6 @@ private struct InjectedMemoForbiddenRecords {
             rawRecordData(.forbiddenChar, payload: forbiddenCharPayload),
             rawRecordData(tagId: 0x326, level: 1, payload: forbiddenCharChildPayload),
             rawRecordData(tagId: 0x327, level: 2, payload: forbiddenCharGrandchildPayload)
-        )
-    }
-}
-
-private struct InjectedCodableRawRecords {
-    let docInfoData: Data
-    let sectionData: Data
-    let ctrlId: UInt32
-    let docInfoPayload: Data
-    let docInfoChildPayload: Data
-    let controlPayload: Data
-    let controlChildPayload: Data
-    let sectionUnknownPayload: Data
-    let sectionUnknownChildPayload: Data
-
-    init(baseDocInfoData: Data, baseSectionData: Data) {
-        docInfoPayload = Data([0xA1, 0xA2, 0xA3])
-        docInfoChildPayload = Data([0xB1, 0xB2])
-        docInfoData = concatenatedData(
-            baseDocInfoData,
-            rawRecordData(tagId: 0x2EE, level: 0, payload: docInfoPayload),
-            rawRecordData(tagId: 0x2EF, level: 1, payload: docInfoChildPayload)
-        )
-        ctrlId = 0x1234_5678
-        controlPayload = concatenatedData(littleEndianRecordHeader(ctrlId), Data([0xC1, 0xC2]))
-        controlChildPayload = Data([0xD1])
-        sectionUnknownPayload = Data([0xE1, 0xE2])
-        sectionUnknownChildPayload = Data([0xE3])
-        sectionData = concatenatedData(
-            baseSectionData,
-            rawRecordData(
-                tagId: HwpSectionTag.ctrlHeader.rawValue,
-                level: 1,
-                payload: controlPayload
-            ),
-            rawRecordData(tagId: 0x2FC, level: 2, payload: controlChildPayload),
-            rawRecordData(tagId: 0x2FD, level: 0, payload: sectionUnknownPayload),
-            rawRecordData(tagId: 0x2FE, level: 1, payload: sectionUnknownChildPayload)
         )
     }
 }
@@ -577,53 +467,6 @@ private func expectForbiddenCharRecord(
                 ]
             ),
         ],
-    ]
-}
-
-private func expectDecodedRawRecords(
-    _ decoded: HwpFile,
-    match injected: InjectedCodableRawRecords
-) throws {
-    expect(decoded.docInfo.rawPayload) == injected.docInfoData
-    let docInfoUnknownRecord = try XCTUnwrap(decoded.docInfo.unknownRecords.last)
-    expect(docInfoUnknownRecord) == assemblyExpectedUnknownRecord(
-        tagId: 0x2EE,
-        level: 0,
-        payload: injected.docInfoPayload,
-        children: [
-            assemblyExpectedRecord(tagId: 0x2EF, level: 1, payload: injected.docInfoChildPayload),
-        ]
-    )
-    expect(decoded.sectionArray.map(\.rawPayload)) == [injected.sectionData]
-    let section = try XCTUnwrap(decoded.sectionArray.first)
-    let sectionUnknownRecord = try XCTUnwrap(section.unknownRecords.last)
-    expect(sectionUnknownRecord) == assemblyExpectedUnknownRecord(
-        tagId: 0x2FD,
-        level: 0,
-        payload: injected.sectionUnknownPayload,
-        children: [
-            assemblyExpectedRecord(
-                tagId: 0x2FE,
-                level: 1,
-                payload: injected.sectionUnknownChildPayload
-            ),
-        ]
-    )
-    let controls = decoded.sectionArray.flatMap(\.paragraph).flatMap { paragraph in
-        paragraph.ctrlHeaderArray ?? []
-    }
-    guard case let .unknown(header) = controls.last else {
-        return fail("Expected decoded unknown control to be preserved")
-    }
-
-    expect(header.ctrlId) == injected.ctrlId
-    expect(header.rawPayload) == injected.controlPayload
-    expect(header.unknownChildren) == [
-        assemblyExpectedUnknownRecord(
-            tagId: 0x2FC,
-            level: 2,
-            payload: injected.controlChildPayload
-        ),
     ]
 }
 

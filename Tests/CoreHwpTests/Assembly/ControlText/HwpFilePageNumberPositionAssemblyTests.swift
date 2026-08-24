@@ -5,9 +5,7 @@ import OLEKit
 import XCTest
 
 final class HwpFilePageNumberPositionAssemblyTests: XCTestCase {
-    func testActualFixtureAssemblyPreservesPageNumberPositionThroughCodableRoundTrip()
-        throws
-    {
+    func testActualFixtureAssemblyPreservesPageNumberPosition() throws {
         let streams = try pageNumberPositionAssemblyStreams(fromFixture: "plain-text-minimal")
         let injected = InjectedPageNumberPosition(
             baseSectionData: try XCTUnwrap(streams.sectionDataArray.first)
@@ -20,12 +18,8 @@ final class HwpFilePageNumberPositionAssemblyTests: XCTestCase {
             docInfoData: streams.docInfoData,
             sectionDataArray: sectionDataArray
         )
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
 
         expectPageNumberPosition(in: hwp, match: injected)
-        expectPageNumberPosition(in: decoded, match: injected)
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == sectionDataArray
     }
 
     func testActualFixtureAssemblyPreservesMalformedPageNumberPositionAsOtherControl()
@@ -43,12 +37,8 @@ final class HwpFilePageNumberPositionAssemblyTests: XCTestCase {
             docInfoData: streams.docInfoData,
             sectionDataArray: sectionDataArray
         )
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
 
         expectMalformedPageNumberPosition(in: hwp, match: injected)
-        expectMalformedPageNumberPosition(in: decoded, match: injected)
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == sectionDataArray
     }
 }
 

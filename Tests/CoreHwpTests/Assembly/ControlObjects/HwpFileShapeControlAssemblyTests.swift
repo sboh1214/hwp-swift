@@ -5,7 +5,7 @@ import OLEKit
 import XCTest
 
 final class HwpFileShapeControlAssemblyTests: XCTestCase {
-    func testActualFixtureAssemblyPreservesPictureAndEquationThroughCodableRoundTrip()
+    func testActualFixtureAssemblyPreservesPictureAndEquation()
         throws
     {
         let streams = try shapeAssemblyStreams(fromFixture: "plain-text-minimal")
@@ -20,17 +20,10 @@ final class HwpFileShapeControlAssemblyTests: XCTestCase {
             docInfoData: streams.docInfoData,
             sectionDataArray: sectionDataArray
         )
-        let decoded = try JSONDecoder().decode(
-            HwpFile.self,
-            from: JSONEncoder().encode(hwp)
-        )
 
         expectPictureControl(in: hwp, match: injected.picture)
-        expectPictureControl(in: decoded, match: injected.picture)
         expectEquationControl(in: hwp, match: injected.equation)
-        expectEquationControl(in: decoded, match: injected.equation)
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == sectionDataArray
+        expect(hwp.sectionArray.map(\.rawPayload)) == sectionDataArray
     }
 }
 

@@ -37,19 +37,6 @@ final class VersionTests: XCTestCase {
         expect(version.rawValue) == 0x0504_0302
     }
 
-    func testVersionRawPayloadSurvivesCodableRoundTrip() throws {
-        let version = try HwpVersion.load(Data([0x01, 0x02, 0x03, 0x04]))
-
-        let decoded = try JSONDecoder().decode(
-            HwpVersion.self,
-            from: JSONEncoder().encode(version)
-        )
-
-        expect(decoded) == version
-        expect(decoded.rawPayload) == version.rawPayload
-        expect(decoded.rawValue) == version.rawValue
-    }
-
     func testVersionComparisonOrdersEveryComponent() {
         let orderedVersions = [
             HwpVersion(4, 255, 255, 255),

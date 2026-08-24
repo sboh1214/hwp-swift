@@ -3,8 +3,8 @@ import Foundation
 import Nimble
 import XCTest
 
-final class FieldControlFallbackCodableTests: XCTestCase {
-    func testTruncatedHyperlinkFallbackPreservesNestedChildrenThroughParagraphCodable() throws {
+final class FieldControlFallbackTests: XCTestCase {
+    func testTruncatedHyperlinkFallbackPreservesNestedChildren() throws {
         let rawPayload = fieldFallbackTruncatedHyperlinkPayload()
         let controlRecord = fieldFallbackControlRecord(rawPayload: rawPayload)
 
@@ -19,18 +19,11 @@ final class FieldControlFallbackCodableTests: XCTestCase {
         })
 
         let paragraph = try fieldFallbackParagraph(controlRecord: controlRecord)
-        let decoded = try JSONDecoder().decode(
-            HwpParagraph.self,
-            from: JSONEncoder().encode(paragraph)
-        )
 
         assertFieldFallbackControl(paragraph.ctrlHeaderArray?.first, rawPayload: rawPayload)
-        assertFieldFallbackControl(decoded.ctrlHeaderArray?.first, rawPayload: rawPayload)
     }
 
-    func testInvalidUnicodeHyperlinkFallbackPreservesNestedChildrenThroughParagraphCodable()
-        throws
-    {
+    func testInvalidUnicodeHyperlinkFallbackPreservesNestedChildren() throws {
         let rawPayload = fieldFallbackInvalidUnicodeHyperlinkPayload()
         let controlRecord = fieldFallbackControlRecord(rawPayload: rawPayload)
 
@@ -44,13 +37,8 @@ final class FieldControlFallbackCodableTests: XCTestCase {
         })
 
         let paragraph = try fieldFallbackParagraph(controlRecord: controlRecord)
-        let decoded = try JSONDecoder().decode(
-            HwpParagraph.self,
-            from: JSONEncoder().encode(paragraph)
-        )
 
         assertFieldFallbackControl(paragraph.ctrlHeaderArray?.first, rawPayload: rawPayload)
-        assertFieldFallbackControl(decoded.ctrlHeaderArray?.first, rawPayload: rawPayload)
     }
 }
 

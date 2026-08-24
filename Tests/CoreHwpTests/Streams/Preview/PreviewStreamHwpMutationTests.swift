@@ -79,31 +79,6 @@ final class PreviewStreamHwpMutationTests: XCTestCase {
             expect(wrapperHwp.previewImage.image) == mutation.mutatedStreamData
         #endif
     }
-
-    func testUnknownPreviewImageFormatInHwpSurvivesCodableRoundTrip() throws {
-        let mutation = try temporaryHwp(
-            basedOnFixture: "plain-text-minimal",
-            mutatingRootStream: .previewImage
-        ) { streamData in
-            guard !streamData.isEmpty else {
-                throw HwpError.invalidDataLength(length: "PrvImage stream is empty")
-            }
-
-            var mutated = streamData
-            mutated[mutated.startIndex] = 0x00
-            return mutated
-        }
-        defer { removeTemporaryPreviewStreamFile(mutation.url) }
-        let hwp = try HwpFile(fromPath: mutation.url.path)
-
-        let encoded = try JSONEncoder().encode(hwp)
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: encoded)
-
-        expect(decoded.previewImage.format) == HwpPreviewImageFormat.unknown
-        expect(decoded.previewImage.rawPayload) == mutation.mutatedStreamData
-        expect(decoded.previewImage.image) == mutation.mutatedStreamData
-        expect(decoded.previewImage.rawPayload.count) == mutation.originalStreamData.count
-    }
 }
 
 private func assertInvalidPreviewTextError(_ error: Error, _ expectedData: Data) {

@@ -3,8 +3,8 @@ import Foundation
 import Nimble
 import XCTest
 
-final class PageNumberPositionFallbackCodableTests: XCTestCase {
-    func testTruncatedPageNumberPositionFallbackPreservesNestedChildrenThroughParagraphCodable()
+final class PageNumberPositionFallbackTests: XCTestCase {
+    func testTruncatedPageNumberPositionFallbackPreservesNestedChildrenThroughParagraphLoad()
         throws
     {
         let rawPayload = pageNumberPositionFallbackTruncatedPayload()
@@ -40,17 +40,9 @@ final class PageNumberPositionFallbackCodableTests: XCTestCase {
             ]),
             HwpVersion(5, 0, 1, 1)
         )
-        let decoded = try JSONDecoder().decode(
-            HwpParagraph.self,
-            from: JSONEncoder().encode(paragraph)
-        )
 
         assertPageNumberPositionFallbackControl(
             paragraph.ctrlHeaderArray?.first,
-            rawPayload: rawPayload
-        )
-        assertPageNumberPositionFallbackControl(
-            decoded.ctrlHeaderArray?.first,
             rawPayload: rawPayload
         )
     }

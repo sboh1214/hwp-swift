@@ -16,10 +16,6 @@ final class OtherControlIndexmarkTests: XCTestCase {
         )
 
         let control = try HwpOtherControl.load(record)
-        let decoded = try JSONDecoder().decode(
-            HwpCtrlId.self,
-            from: JSONEncoder().encode(HwpCtrlId.indexmark(control))
-        )
 
         expect(control.ctrlId) == .indexmark
         expect(control.indexmarkInfo?.textCharacterCount) == text.utf16.count
@@ -30,18 +26,6 @@ final class OtherControlIndexmarkTests: XCTestCase {
         expect(control.indexmarkInfo?.rawTrailing) == extraTrailing
         expect(control.rawPayload) == rawPayload
         expect(control.rawTrailing) == rawTrailing
-
-        guard case let .indexmark(roundTripped) = decoded else {
-            return fail("Expected indexmark after Codable round-trip")
-        }
-        expect(roundTripped.indexmarkInfo?.textCharacterCount) == text.utf16.count
-        expect(roundTripped.indexmarkInfo?.textLengthRawPayload) ==
-            littleEndianData(UInt16(text.utf16.count))
-        expect(roundTripped.indexmarkInfo?.text) == text
-        expect(roundTripped.indexmarkInfo?.textRawPayload) == utf16LittleEndianData(text)
-        expect(roundTripped.indexmarkInfo?.rawTrailing) == extraTrailing
-        expect(roundTripped.rawPayload) == rawPayload
-        expect(roundTripped.rawTrailing) == rawTrailing
     }
 
     func testMalformedIndexmarkPayloadIsPreservedWithoutParsedInfo() throws {
@@ -54,22 +38,11 @@ final class OtherControlIndexmarkTests: XCTestCase {
         )
 
         let control = try HwpOtherControl.load(record)
-        let decoded = try JSONDecoder().decode(
-            HwpCtrlId.self,
-            from: JSONEncoder().encode(HwpCtrlId.indexmark(control))
-        )
 
         expect(control.ctrlId) == .indexmark
         expect(control.indexmarkInfo).to(beNil())
         expect(control.rawPayload) == rawPayload
         expect(control.rawTrailing) == rawTrailing
-
-        guard case let .indexmark(roundTripped) = decoded else {
-            return fail("Expected indexmark after Codable round-trip")
-        }
-        expect(roundTripped.indexmarkInfo).to(beNil())
-        expect(roundTripped.rawPayload) == rawPayload
-        expect(roundTripped.rawTrailing) == rawTrailing
     }
 
     func testInvalidIndexmarkUtf16IsPreservedWithoutParsedInfo() throws {
@@ -82,22 +55,11 @@ final class OtherControlIndexmarkTests: XCTestCase {
         )
 
         let control = try HwpOtherControl.load(record)
-        let decoded = try JSONDecoder().decode(
-            HwpCtrlId.self,
-            from: JSONEncoder().encode(HwpCtrlId.indexmark(control))
-        )
 
         expect(control.ctrlId) == .indexmark
         expect(control.indexmarkInfo).to(beNil())
         expect(control.rawPayload) == rawPayload
         expect(control.rawTrailing) == rawTrailing
-
-        guard case let .indexmark(roundTripped) = decoded else {
-            return fail("Expected indexmark after Codable round-trip")
-        }
-        expect(roundTripped.indexmarkInfo).to(beNil())
-        expect(roundTripped.rawPayload) == rawPayload
-        expect(roundTripped.rawTrailing) == rawTrailing
     }
 
     func testLegacyFixtureIndexmarkSampleExposesTextAndRawTrailing() throws {

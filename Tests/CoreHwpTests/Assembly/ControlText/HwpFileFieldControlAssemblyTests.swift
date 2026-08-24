@@ -5,9 +5,7 @@ import OLEKit
 import XCTest
 
 final class HwpFileFieldControlAssemblyTests: XCTestCase {
-    func testActualFixtureAssemblyClassifiesGenericFieldThroughCodableRoundTrip()
-        throws
-    {
+    func testActualFixtureAssemblyClassifiesGenericField() throws {
         let streams = try fieldControlAssemblyStreams(fromFixture: "plain-text-minimal")
         let injected = InjectedGenericFieldControl(
             baseSectionData: try XCTUnwrap(streams.sectionDataArray.first)
@@ -20,20 +18,11 @@ final class HwpFileFieldControlAssemblyTests: XCTestCase {
             docInfoData: streams.docInfoData,
             sectionDataArray: sectionDataArray
         )
-        let decoded = try JSONDecoder().decode(
-            HwpFile.self,
-            from: JSONEncoder().encode(hwp)
-        )
 
         expectGenericFieldControl(in: hwp, match: injected)
-        expectGenericFieldControl(in: decoded, match: injected)
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == sectionDataArray
     }
 
-    func testActualFixtureAssemblyClassifiesMemoFieldThroughCodableRoundTrip()
-        throws
-    {
+    func testActualFixtureAssemblyClassifiesMemoField() throws {
         let streams = try fieldControlAssemblyStreams(fromFixture: "plain-text-minimal")
         let injected = InjectedMemoFieldControl(
             baseSectionData: try XCTUnwrap(streams.sectionDataArray.first)
@@ -46,15 +35,8 @@ final class HwpFileFieldControlAssemblyTests: XCTestCase {
             docInfoData: streams.docInfoData,
             sectionDataArray: sectionDataArray
         )
-        let decoded = try JSONDecoder().decode(
-            HwpFile.self,
-            from: JSONEncoder().encode(hwp)
-        )
 
         expectMemoFieldControl(in: hwp, match: injected)
-        expectMemoFieldControl(in: decoded, match: injected)
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == sectionDataArray
     }
 }
 

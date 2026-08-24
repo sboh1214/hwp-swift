@@ -17,10 +17,6 @@ final class DocInfoDistributeDocDataStabilityTests: XCTestCase {
         )
 
         let distributeDocData = try HwpDistributeDocData.load(record)
-        let decoded = try JSONDecoder().decode(
-            HwpDistributeDocData.self,
-            from: JSONEncoder().encode(distributeDocData)
-        )
 
         expect(distributeDocData.distributeDocDataInfo?.values) == [
             0x0100_57D1,
@@ -30,14 +26,6 @@ final class DocInfoDistributeDocDataStabilityTests: XCTestCase {
             Data(payload.dropLast(rawTrailing.count))
         expect(distributeDocData.distributeDocDataInfo?.rawTrailing) == rawTrailing
         expect(distributeDocData.rawPayload) == payload
-        expect(decoded.distributeDocDataInfo?.values) == [
-            0x0100_57D1,
-            0x0203_0405,
-        ]
-        expect(decoded.distributeDocDataInfo?.valuesRawPayload) ==
-            Data(payload.dropLast(rawTrailing.count))
-        expect(decoded.distributeDocDataInfo?.rawTrailing) == rawTrailing
-        expect(decoded.rawPayload) == payload
     }
 
     func testDistributeDocDataPayloadWithNonZeroDataStartIndexDoesNotTrap() throws {
@@ -72,15 +60,9 @@ final class DocInfoDistributeDocDataStabilityTests: XCTestCase {
         )
 
         let distributeDocData = try HwpDistributeDocData.load(record)
-        let decoded = try JSONDecoder().decode(
-            HwpDistributeDocData.self,
-            from: JSONEncoder().encode(distributeDocData)
-        )
 
         expect(distributeDocData.distributeDocDataInfo).to(beNil())
         expect(distributeDocData.rawPayload) == payload
-        expect(decoded.distributeDocDataInfo).to(beNil())
-        expect(decoded.rawPayload) == payload
     }
 }
 

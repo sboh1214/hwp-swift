@@ -228,34 +228,6 @@ final class FieldControlPreservationTests: XCTestCase {
         expect(control.rawPayload) == rawPayload
     }
 
-    func testMemoParameterSurvivesCtrlIdCodableRoundTrip() throws {
-        let parameter = "MEMO/65535/1/239261456/31259664/sboh/\\;;"
-        var rawPayload = littleEndianData(HwpFieldCtrlId.unknown.rawValue)
-        rawPayload.append(fieldParameterTrailing(parameter))
-        let record = HwpRecord(
-            tagId: HwpSectionTag.ctrlHeader.rawValue,
-            level: 1,
-            payload: rawPayload
-        )
-        let control = try HwpCtrlId.memo(HwpFieldControl.load(record))
-
-        let data = try JSONEncoder().encode(control)
-        let decoded = try JSONDecoder().decode(HwpCtrlId.self, from: data)
-
-        guard case let .memo(decodedControl) = decoded else {
-            return fail("Expected memo control after Codable round-trip")
-        }
-        expect(decoded) == control
-        expect(decodedControl.fieldParameterHeaderValue) == 0x8001
-        expect(decodedControl.memoParameter?.rawValue) == parameter
-        expect(decodedControl.memoParameter?.components) == [
-            "MEMO", "65535", "1", "239261456", "31259664", "sboh", "\\;;",
-        ]
-        expect(decodedControl.memoParameter?.author) == "sboh"
-        expect(decodedControl.memoParameter?.rawTrailing) == Data()
-        expect(decodedControl.rawPayload) == rawPayload
-    }
-
     func testParagraphPreservesTruncatedHyperlinkAsGenericFieldControl() throws {
         let rawPayload = truncatedHyperlinkPayload()
         let record = HwpRecord(

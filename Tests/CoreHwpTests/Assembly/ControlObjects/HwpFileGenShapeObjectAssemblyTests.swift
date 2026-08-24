@@ -5,7 +5,7 @@ import OLEKit
 import XCTest
 
 final class HwpFileGenShapeObjectAssemblyTests: XCTestCase {
-    func testActualFixtureAssemblyPreservesGenShapeObjectThroughCodableRoundTrip()
+    func testActualFixtureAssemblyPreservesGenShapeObject()
         throws
     {
         let streams = try genShapeAssemblyStreams(fromFixture: "plain-text-minimal")
@@ -20,15 +20,9 @@ final class HwpFileGenShapeObjectAssemblyTests: XCTestCase {
             docInfoData: streams.docInfoData,
             sectionDataArray: sectionDataArray
         )
-        let decoded = try JSONDecoder().decode(
-            HwpFile.self,
-            from: JSONEncoder().encode(hwp)
-        )
 
         expectGenShapeObject(in: hwp, match: injected)
-        expectGenShapeObject(in: decoded, match: injected)
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == sectionDataArray
+        expect(hwp.sectionArray.map(\.rawPayload)) == sectionDataArray
     }
 }
 

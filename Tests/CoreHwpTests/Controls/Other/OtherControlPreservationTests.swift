@@ -3,7 +3,7 @@ import Foundation
 import Nimble
 import XCTest
 
-final class OtherControlCodablePreservationTests: XCTestCase {
+final class OtherControlPreservationTests: XCTestCase {
     func testOtherControlInitializerPreservesRawPayloadWithNonZeroDataStartIndex() throws {
         let rawTrailing = Data([0xCA, 0xFE])
         var payload = littleEndianData(HwpOtherCtrlId.bookmark.rawValue)
@@ -33,7 +33,7 @@ final class OtherControlCodablePreservationTests: XCTestCase {
         expect(reader.isEOF) == true
     }
 
-    func testCtrlDataChildrenSurviveCtrlIdCodableRoundTrip() throws {
+    func testCtrlDataChildrenArePreservedThroughParagraphLoad() throws {
         let rawTrailing = Data([0xCA, 0xFE])
         var rawPayload = littleEndianData(HwpOtherCtrlId.bookmark.rawValue)
         rawPayload.append(rawTrailing)
@@ -65,15 +65,13 @@ final class OtherControlCodablePreservationTests: XCTestCase {
             return fail("Expected bookmark control")
         }
 
-        let roundTripped = try roundTrippedBookmarkControl(control)
-
-        expect(roundTripped.rawPayload) == rawPayload
-        expect(roundTripped.rawTrailing) == rawTrailing
-        expect(roundTripped.ctrlDataRecords.map(\.rawPayload)) == [Data([0xAA, 0xBB])]
-        expect(roundTripped.ctrlDataRecords.first?.unknownChildren) == [
+        expect(control.rawPayload) == rawPayload
+        expect(control.rawTrailing) == rawTrailing
+        expect(control.ctrlDataRecords.map(\.rawPayload)) == [Data([0xAA, 0xBB])]
+        expect(control.ctrlDataRecords.first?.unknownChildren) == [
             expectedTestUnknownRecord(tagId: 0x2FE, level: 3, payload: Data([0xCC])),
         ]
-        expect(roundTripped.unknownChildren) == [
+        expect(control.unknownChildren) == [
             expectedTestUnknownRecord(
                 tagId: 0x2FF,
                 level: 2,
@@ -84,17 +82,6 @@ final class OtherControlCodablePreservationTests: XCTestCase {
             ),
         ]
     }
-}
-
-private func roundTrippedBookmarkControl(_ control: HwpOtherControl) throws -> HwpOtherControl {
-    let decoded = try JSONDecoder().decode(
-        HwpCtrlId.self,
-        from: JSONEncoder().encode(HwpCtrlId.bookmark(control))
-    )
-    guard case let .bookmark(roundTripped) = decoded else {
-        throw HwpError.invalidCtrlId(ctrlId: control.ctrlId.rawValue)
-    }
-    return roundTripped
 }
 
 private func paragraphRecord(children: [HwpRecord]) -> HwpRecord {

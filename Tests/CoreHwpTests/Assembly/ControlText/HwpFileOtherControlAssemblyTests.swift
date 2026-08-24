@@ -5,9 +5,7 @@ import OLEKit
 import XCTest
 
 final class HwpFileOtherControlAssemblyTests: XCTestCase {
-    func testActualFixtureAssemblyPreservesBookmarkCtrlDataThroughCodableRoundTrip()
-        throws
-    {
+    func testActualFixtureAssemblyPreservesBookmarkCtrlData() throws {
         let streams = try otherControlAssemblyStreams(fromFixture: "plain-text-minimal")
         let injected = InjectedBookmarkControl(
             baseSectionData: try XCTUnwrap(streams.sectionDataArray.first)
@@ -20,20 +18,11 @@ final class HwpFileOtherControlAssemblyTests: XCTestCase {
             docInfoData: streams.docInfoData,
             sectionDataArray: sectionDataArray
         )
-        let decoded = try JSONDecoder().decode(
-            HwpFile.self,
-            from: JSONEncoder().encode(hwp)
-        )
 
         expectBookmarkControl(in: hwp, match: injected)
-        expectBookmarkControl(in: decoded, match: injected)
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == sectionDataArray
     }
 
-    func testActualFixtureAssemblyPreservesPageHideAndIndexmarkThroughCodableRoundTrip()
-        throws
-    {
+    func testActualFixtureAssemblyPreservesPageHideAndIndexmark() throws {
         let streams = try otherControlAssemblyStreams(fromFixture: "plain-text-minimal")
         let injected = InjectedPageHideIndexmark(
             baseSectionData: try XCTUnwrap(streams.sectionDataArray.first)
@@ -46,17 +35,9 @@ final class HwpFileOtherControlAssemblyTests: XCTestCase {
             docInfoData: streams.docInfoData,
             sectionDataArray: sectionDataArray
         )
-        let decoded = try JSONDecoder().decode(
-            HwpFile.self,
-            from: JSONEncoder().encode(hwp)
-        )
 
         expectPageHideControl(in: hwp, match: injected)
-        expectPageHideControl(in: decoded, match: injected)
         expectIndexmarkControl(in: hwp, match: injected)
-        expectIndexmarkControl(in: decoded, match: injected)
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == sectionDataArray
     }
 }
 

@@ -3,20 +3,20 @@ import Foundation
 import Nimble
 import XCTest
 
-final class RevisionFieldControlCodableTests: XCTestCase {
-    func testRevisionFieldControlsPreserveRawPayloadsThroughParagraphCodable() throws {
-        for (index, ctrlId) in revisionFieldCodableControlIds.enumerated() {
+final class RevisionFieldControlPreservationTests: XCTestCase {
+    func testRevisionFieldControlsPreserveRawPayloadsThroughParagraph() throws {
+        for (index, ctrlId) in revisionFieldControlIds.enumerated() {
             let rawTrailing = Data([UInt8(index), 0xCA, 0xFE])
             let rawPayload = concatenatedData(
-                revisionFieldCodableLittleEndianData(ctrlId.rawValue),
+                revisionFieldLittleEndianData(ctrlId.rawValue),
                 rawTrailing
             )
-            let record = revisionFieldCodableControlRecord(
+            let record = revisionFieldControlRecord(
                 rawPayload: rawPayload,
                 childPayload: Data([UInt8(index), 0xDD])
             )
             let paragraph = try HwpParagraph.load(
-                revisionFieldCodableParagraphRecord(children: [
+                revisionFieldParagraphRecord(children: [
                     HwpRecord(
                         tagId: HwpSectionTag.paraCharShape.rawValue,
                         level: 1,
@@ -31,20 +31,9 @@ final class RevisionFieldControlCodableTests: XCTestCase {
                 ]),
                 HwpVersion(5, 0, 1, 1)
             )
-            let decoded = try JSONDecoder().decode(
-                HwpParagraph.self,
-                from: JSONEncoder().encode(paragraph)
-            )
 
             assertRevisionFieldControl(
                 paragraph.ctrlHeaderArray?.first,
-                ctrlId: ctrlId,
-                rawPayload: rawPayload,
-                rawTrailing: rawTrailing,
-                childPayload: Data([UInt8(index), 0xDD])
-            )
-            assertRevisionFieldControl(
-                decoded.ctrlHeaderArray?.first,
                 ctrlId: ctrlId,
                 rawPayload: rawPayload,
                 rawTrailing: rawTrailing,
@@ -54,7 +43,7 @@ final class RevisionFieldControlCodableTests: XCTestCase {
     }
 }
 
-private let revisionFieldCodableControlIds: [HwpFieldCtrlId] = [
+private let revisionFieldControlIds: [HwpFieldCtrlId] = [
     .revisionSign,
     .revisionDelete,
     .revisionAttach,
@@ -109,7 +98,7 @@ private func assertRevisionFieldControl(
     ]
 }
 
-private func revisionFieldCodableControlRecord(
+private func revisionFieldControlRecord(
     rawPayload: Data,
     childPayload: Data
 ) -> HwpRecord {
@@ -119,7 +108,7 @@ private func revisionFieldCodableControlRecord(
         payload: rawPayload
     )
     record.children = [
-        revisionFieldCodableNestedChildRecord(
+        revisionFieldNestedChildRecord(
             tagId: 0x2FA,
             level: 2,
             payload: childPayload,
@@ -130,7 +119,7 @@ private func revisionFieldCodableControlRecord(
     return record
 }
 
-private func revisionFieldCodableNestedChildRecord(
+private func revisionFieldNestedChildRecord(
     tagId: UInt32,
     level: UInt32,
     payload: Data,
@@ -144,31 +133,31 @@ private func revisionFieldCodableNestedChildRecord(
     return record
 }
 
-private func revisionFieldCodableParagraphRecord(children: [HwpRecord]) -> HwpRecord {
+private func revisionFieldParagraphRecord(children: [HwpRecord]) -> HwpRecord {
     let record = HwpRecord(
         tagId: HwpSectionTag.paraHeader.rawValue,
         level: 0,
-        payload: revisionFieldCodableParagraphHeaderPayload()
+        payload: revisionFieldParagraphHeaderPayload()
     )
     record.children = children
     return record
 }
 
-private func revisionFieldCodableParagraphHeaderPayload() -> Data {
+private func revisionFieldParagraphHeaderPayload() -> Data {
     var data = Data()
-    data.append(revisionFieldCodableLittleEndianData(UInt32(0x8000_0000)))
-    data.append(revisionFieldCodableLittleEndianData(UInt32(0)))
-    data.append(revisionFieldCodableLittleEndianData(UInt16(0)))
-    data.append(revisionFieldCodableLittleEndianData(UInt8(0)))
-    data.append(revisionFieldCodableLittleEndianData(UInt8(0)))
-    data.append(revisionFieldCodableLittleEndianData(UInt16(0)))
-    data.append(revisionFieldCodableLittleEndianData(UInt16(0)))
-    data.append(revisionFieldCodableLittleEndianData(UInt16(0)))
-    data.append(revisionFieldCodableLittleEndianData(UInt32(1)))
+    data.append(revisionFieldLittleEndianData(UInt32(0x8000_0000)))
+    data.append(revisionFieldLittleEndianData(UInt32(0)))
+    data.append(revisionFieldLittleEndianData(UInt16(0)))
+    data.append(revisionFieldLittleEndianData(UInt8(0)))
+    data.append(revisionFieldLittleEndianData(UInt8(0)))
+    data.append(revisionFieldLittleEndianData(UInt16(0)))
+    data.append(revisionFieldLittleEndianData(UInt16(0)))
+    data.append(revisionFieldLittleEndianData(UInt16(0)))
+    data.append(revisionFieldLittleEndianData(UInt32(1)))
     return data
 }
 
-private func revisionFieldCodableLittleEndianData(_ value: some FixedWidthInteger) -> Data {
+private func revisionFieldLittleEndianData(_ value: some FixedWidthInteger) -> Data {
     var littleEndian = value.littleEndian
     return withUnsafeBytes(of: &littleEndian) { Data($0) }
 }

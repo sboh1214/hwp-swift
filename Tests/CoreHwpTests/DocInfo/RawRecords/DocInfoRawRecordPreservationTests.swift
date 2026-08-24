@@ -4,7 +4,7 @@ import Nimble
 import XCTest
 
 final class DocInfoRawRecordPreservationTests: XCTestCase {
-    func testDistributeDocDataPreservesUnknownRecordTreeThroughCodable() throws {
+    func testDistributeDocDataPreservesUnknownRecordTree() throws {
         let payload = Data([0xD1, 0x57, 0x00, 0x01])
         let childPayload = Data([0xC1, 0xC2])
         let grandchildPayload = Data([0xC3])
@@ -19,10 +19,6 @@ final class DocInfoRawRecordPreservationTests: XCTestCase {
             payload: payload,
             children: [child]
         ))
-        let decoded = try JSONDecoder().decode(
-            HwpDistributeDocData.self,
-            from: JSONEncoder().encode(distributeDocData)
-        )
 
         assertUnknownRecordTree(
             distributeDocData.unknownChildren,
@@ -35,17 +31,6 @@ final class DocInfoRawRecordPreservationTests: XCTestCase {
         expect(distributeDocData.distributeDocDataInfo?.values) == [0x0100_57D1]
         expect(distributeDocData.distributeDocDataInfo?.valuesRawPayload) == payload
         expect(distributeDocData.distributeDocDataInfo?.rawTrailing).to(beEmpty())
-        assertUnknownRecordTree(
-            decoded.unknownChildren,
-            childTagId: 0x315,
-            childPayload: childPayload,
-            grandchildTagId: 0x316,
-            grandchildPayload: grandchildPayload
-        )
-        expect(decoded.rawPayload) == payload
-        expect(decoded.distributeDocDataInfo?.values) == [0x0100_57D1]
-        expect(decoded.distributeDocDataInfo?.valuesRawPayload) == payload
-        expect(decoded.distributeDocDataInfo?.rawTrailing).to(beEmpty())
     }
 
     func testMalformedDistributeDocDataPayloadIsPreservedWithoutParsedInfo() throws {
@@ -86,10 +71,6 @@ final class DocInfoRawRecordPreservationTests: XCTestCase {
             payload: payload,
             children: [forbiddenChild, unknownChild]
         ))
-        let decoded = try JSONDecoder().decode(
-            HwpDocData.self,
-            from: JSONEncoder().encode(docData)
-        )
         let expectedForbiddenUnknownChildren = expectedForbiddenCharUnknownChildren(
             forbiddenGrandchildPayload
         )
@@ -104,14 +85,9 @@ final class DocInfoRawRecordPreservationTests: XCTestCase {
         expect(docData.forbiddenCharArray.first?.unknownChildren ?? []) ==
             expectedForbiddenUnknownChildren
         expect(docData.unknownChildren) == expectedUnknownChildren
-        expect(decoded.rawPayload) == payload
-        expect(decoded.forbiddenCharArray.map(\.rawPayload)) == [forbiddenPayload]
-        expect(decoded.forbiddenCharArray.first?.unknownChildren ?? []) ==
-            expectedForbiddenUnknownChildren
-        expect(decoded.unknownChildren) == expectedUnknownChildren
     }
 
-    func testMemoShapePreservesUnknownRecordTreeThroughCodable() throws {
+    func testMemoShapePreservesUnknownRecordTree() throws {
         let payload = Data([0xAA, 0xBB])
         let childPayload = Data([0xB1, 0xB2])
         let grandchildPayload = Data([0xB3])
@@ -126,10 +102,6 @@ final class DocInfoRawRecordPreservationTests: XCTestCase {
             payload: payload,
             children: [child]
         ))
-        let decoded = try JSONDecoder().decode(
-            HwpMemoShape.self,
-            from: JSONEncoder().encode(memoShape)
-        )
 
         expect(memoShape.rawPayload) == payload
         expect(memoShape.shapeInfo).to(beNil())
@@ -140,18 +112,9 @@ final class DocInfoRawRecordPreservationTests: XCTestCase {
             grandchildTagId: 0x319,
             grandchildPayload: grandchildPayload
         )
-        expect(decoded.rawPayload) == payload
-        expect(decoded.shapeInfo).to(beNil())
-        assertUnknownRecordTree(
-            decoded.unknownChildren,
-            childTagId: 0x318,
-            childPayload: childPayload,
-            grandchildTagId: 0x319,
-            grandchildPayload: grandchildPayload
-        )
     }
 
-    func testTrackChangePreservesUnknownRecordTreeThroughCodable() throws {
+    func testTrackChangePreservesUnknownRecordTree() throws {
         let payload = Data([0x71, 0x72, 0x73])
         let childPayload = Data([0x7A, 0x7B])
         let grandchildPayload = Data([0x7C])
@@ -166,10 +129,6 @@ final class DocInfoRawRecordPreservationTests: XCTestCase {
             payload: payload,
             children: [child]
         ))
-        let decoded = try JSONDecoder().decode(
-            HwpTrackChange.self,
-            from: JSONEncoder().encode(trackChange)
-        )
 
         assertUnknownRecordTree(
             trackChange.unknownChildren,
@@ -179,17 +138,9 @@ final class DocInfoRawRecordPreservationTests: XCTestCase {
             grandchildPayload: grandchildPayload
         )
         expect(trackChange.rawPayload) == payload
-        assertUnknownRecordTree(
-            decoded.unknownChildren,
-            childTagId: 0x316,
-            childPayload: childPayload,
-            grandchildTagId: 0x317,
-            grandchildPayload: grandchildPayload
-        )
-        expect(decoded.rawPayload) == payload
     }
 
-    func testTrackChangeContentPreservesUnknownRecordTreeThroughCodable() throws {
+    func testTrackChangeContentPreservesUnknownRecordTree() throws {
         let payload = Data([0x11, 0x22])
         let childPayload = Data([0xC0, 0xC1])
         let grandchildPayload = Data([0xC2])
@@ -204,10 +155,6 @@ final class DocInfoRawRecordPreservationTests: XCTestCase {
             payload: payload,
             children: [child]
         ))
-        let decoded = try JSONDecoder().decode(
-            HwpTrackChangeContent.self,
-            from: JSONEncoder().encode(content)
-        )
 
         expect(content.rawPayload) == payload
         expect(content.contentInfo).to(beNil())
@@ -218,18 +165,9 @@ final class DocInfoRawRecordPreservationTests: XCTestCase {
             grandchildTagId: 0x302,
             grandchildPayload: grandchildPayload
         )
-        expect(decoded.rawPayload) == payload
-        expect(decoded.contentInfo).to(beNil())
-        assertUnknownRecordTree(
-            decoded.unknownChildren,
-            childTagId: 0x301,
-            childPayload: childPayload,
-            grandchildTagId: 0x302,
-            grandchildPayload: grandchildPayload
-        )
     }
 
-    func testTrackChangeAuthorPreservesUnknownRecordTreeThroughCodable() throws {
+    func testTrackChangeAuthorPreservesUnknownRecordTree() throws {
         let payload = Data([0x33, 0x44, 0x55])
         let childPayload = Data([0xA0, 0xA1, 0xA2])
         let grandchildPayload = Data([0xA3])
@@ -244,10 +182,6 @@ final class DocInfoRawRecordPreservationTests: XCTestCase {
             payload: payload,
             children: [child]
         ))
-        let decoded = try JSONDecoder().decode(
-            HwpTrackChangeAuthor.self,
-            from: JSONEncoder().encode(author)
-        )
 
         expect(author.rawPayload) == payload
         expect(author.authorInfo).to(beNil())
@@ -258,18 +192,9 @@ final class DocInfoRawRecordPreservationTests: XCTestCase {
             grandchildTagId: 0x304,
             grandchildPayload: grandchildPayload
         )
-        expect(decoded.rawPayload) == payload
-        expect(decoded.authorInfo).to(beNil())
-        assertUnknownRecordTree(
-            decoded.unknownChildren,
-            childTagId: 0x303,
-            childPayload: childPayload,
-            grandchildTagId: 0x304,
-            grandchildPayload: grandchildPayload
-        )
     }
 
-    func testForbiddenCharPreservesUnknownRecordTreeThroughCodable() throws {
+    func testForbiddenCharPreservesUnknownRecordTree() throws {
         let payload = Data([0x45, 0x46, 0x47])
         let childPayload = Data([0x48, 0x49])
         let grandchildPayload = Data([0x4A])
@@ -284,24 +209,11 @@ final class DocInfoRawRecordPreservationTests: XCTestCase {
             payload: payload,
             children: [child]
         ))
-        let decoded = try JSONDecoder().decode(
-            HwpForbiddenChar.self,
-            from: JSONEncoder().encode(forbiddenChar)
-        )
 
         expect(forbiddenChar.rawPayload) == payload
         expect(forbiddenChar.data) == payload
         assertUnknownRecordTree(
             forbiddenChar.unknownChildren,
-            childTagId: 0x305,
-            childPayload: childPayload,
-            grandchildTagId: 0x306,
-            grandchildPayload: grandchildPayload
-        )
-        expect(decoded.rawPayload) == payload
-        expect(decoded.data) == payload
-        assertUnknownRecordTree(
-            decoded.unknownChildren,
             childTagId: 0x305,
             childPayload: childPayload,
             grandchildTagId: 0x306,

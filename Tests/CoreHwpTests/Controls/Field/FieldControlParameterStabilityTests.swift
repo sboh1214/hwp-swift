@@ -264,34 +264,6 @@ final class FieldControlParameterStabilityTests: XCTestCase {
         expect(control.rawPayload) == rawPayload
         expect(control.rawTrailing) == rawTrailing
     }
-
-    func testMemoParameterRawPayloadSurvivesCodableRoundTrip() throws {
-        let parameter = "MEMO/1/2/3/4/writer/body"
-        let rawTrailing = concatenatedData(fieldParameterTrailing(parameter), Data([0xAA, 0xBB]))
-        var rawPayload = littleEndianData(HwpFieldCtrlId.unknown.rawValue)
-        rawPayload.append(rawTrailing)
-        let record = HwpRecord(
-            tagId: HwpSectionTag.ctrlHeader.rawValue,
-            level: 1,
-            payload: rawPayload
-        )
-
-        let decoded = try decodeRoundTrip(HwpFieldControl.load(record))
-
-        expect(decoded.fieldParameter) == parameter
-        expect(decoded.fieldParameterHeaderValue) == 0x8001
-        expect(decoded.fieldParameterHeaderRawPayload) == Data([1, 128, 0, 0])
-        expect(decoded.fieldParameterCharacterCount) == parameter.utf16.count
-        expect(decoded.fieldParameterLengthRawPayload) ==
-            littleEndianData(WORD(parameter.utf16.count))
-        expect(decoded.fieldParameterRawPayload) == utf16Payload(parameter)
-        expect(decoded.fieldParameterRawTrailing) == Data([0xAA, 0xBB])
-        expect(decoded.memoParameter?.rawValue) == parameter
-        expect(decoded.memoParameter?.rawPayload) == utf16Payload(parameter)
-        expect(decoded.memoParameter?.rawTrailing) == Data([0xAA, 0xBB])
-        expect(decoded.rawPayload) == rawPayload
-        expect(decoded.rawTrailing) == rawTrailing
-    }
 }
 
 private struct InvalidFieldParameterFixture {
@@ -371,8 +343,4 @@ private func fieldParameterTrailing(_ parameter: String) -> Data {
         data.append(littleEndianData(WCHAR(codeUnit)))
     }
     return data
-}
-
-private func decodeRoundTrip<T: HwpPrimitive>(_ value: T) throws -> T {
-    try JSONDecoder().decode(T.self, from: JSONEncoder().encode(value))
 }

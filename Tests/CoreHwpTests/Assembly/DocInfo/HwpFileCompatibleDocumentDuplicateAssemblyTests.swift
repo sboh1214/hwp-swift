@@ -5,9 +5,7 @@ import OLEKit
 import XCTest
 
 final class CompatibleDocDuplicateAssemblyTests: XCTestCase {
-    func testActualFixtureBasedDuplicateCompatibleDocumentSurvivesAsUnknownThroughCodable()
-        throws
-    {
+    func testActualFixtureBasedDuplicateCompatibleDocumentSurvivesAsUnknown() throws {
         let streams = try compatibleDocumentStreams(fromFixture: "plain-text-minimal")
         let baseDocInfo = try HwpDocInfo.load(streams.docInfoData, streams.fileHeader.version)
         expect(baseDocInfo.compatibleDocument).notTo(beNil())
@@ -18,20 +16,14 @@ final class CompatibleDocDuplicateAssemblyTests: XCTestCase {
             docInfoData: injected.docInfoData,
             sectionDataArray: streams.sectionDataArray
         )
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
 
         expectCompatibleDocumentDuplicate(
             in: hwp.docInfo,
             baseDocInfo: baseDocInfo,
             matches: injected
         )
-        expectCompatibleDocumentDuplicate(
-            in: decoded.docInfo,
-            baseDocInfo: baseDocInfo,
-            matches: injected
-        )
-        expect(decoded.docInfo.rawPayload) == injected.docInfoData
-        expect(decoded.sectionArray.map(\.rawPayload)) == streams.sectionDataArray
+        expect(hwp.docInfo.rawPayload) == injected.docInfoData
+        expect(hwp.sectionArray.map(\.rawPayload)) == streams.sectionDataArray
     }
 }
 

@@ -3,7 +3,7 @@ import Foundation
 import Nimble
 import XCTest
 
-final class UnknownControlCodableTests: XCTestCase {
+final class UnknownControlPreservationTests: XCTestCase {
     func testParagraphPreservesUnknownControlRawPayloadAndChildren() throws {
         let record = unknownControlRecord()
 
@@ -80,23 +80,7 @@ final class UnknownControlCodableTests: XCTestCase {
         expect(paragraph.unknownChildren).to(beEmpty())
     }
 
-    func testUnknownAndNotImplementedControlsPreserveRawPayloadAndChildrenThroughCodable() throws {
-        let header = try HwpCtrlHeader.load(unknownControlRecord())
-        let controls: [HwpCtrlId] = [
-            .unknown(header),
-            .notImplemented(header),
-        ]
-
-        for control in controls {
-            let data = try JSONEncoder().encode(control)
-            let decoded = try JSONDecoder().decode(HwpCtrlId.self, from: data)
-
-            expect(decoded) == control
-            assertPreservedHeader(decoded, expected: header)
-        }
-    }
-
-    func testTruncatedUnknownControlHeaderSurvivesCodableRoundTrip() throws {
+    func testTruncatedUnknownControlHeaderIsPreservedAsUnknown() throws {
         let childPayload = Data([0xA1, 0xA2])
         let child = HwpRecord(tagId: 0x2FE, level: 2, payload: childPayload)
         child.children = [
@@ -116,14 +100,10 @@ final class UnknownControlCodableTests: XCTestCase {
             ]),
             HwpVersion(5, 0, 1, 1)
         )
-        let decoded = try JSONDecoder().decode(
-            HwpParagraph.self,
-            from: JSONEncoder().encode(paragraph)
-        )
 
-        let control = try XCTUnwrap(decoded.ctrlHeaderArray?.first)
+        let control = try XCTUnwrap(paragraph.ctrlHeaderArray?.first)
         guard case let .unknown(header) = control else {
-            return fail("Expected truncated control header to stay unknown after Codable")
+            return fail("Expected truncated control header to stay unknown")
         }
         expect(header.ctrlId) == 0
         expect(header.rawPayload) == record.payload

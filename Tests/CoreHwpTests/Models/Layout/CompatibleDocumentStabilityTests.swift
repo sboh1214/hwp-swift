@@ -113,23 +113,10 @@ final class CompatibleDocumentStabilityTests: XCTestCase {
         expect(compatibleDocument.unknownChildren) == [HwpUnknownRecord(duplicateLayout)]
     }
 
-    func testNooriCompatibleDocumentSurvivesHwpFileCodableRoundTrip() throws {
+    func testNooriCompatibleDocumentExposesKnownFields() throws {
         let hwp = try openHwp(#file, "noori")
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
 
-        assertNooriCompatibleDocument(decoded.docInfo.compatibleDocument)
-        expect(decoded.docInfo.compatibleDocument?.rawPayload) ==
-            hwp.docInfo.compatibleDocument?.rawPayload
-        expect(decoded.docInfo.compatibleDocument?.targetDocumentRawPayload) ==
-            hwp.docInfo.compatibleDocument?.targetDocumentRawPayload
-        expect(decoded.docInfo.compatibleDocument?.layoutCompatibility?.rawPayload) ==
-            hwp.docInfo.compatibleDocument?.layoutCompatibility?.rawPayload
-        expect(decoded.docInfo.compatibleDocument?.layoutCompatibility?.fixedFieldsRawPayload) ==
-            hwp.docInfo.compatibleDocument?.layoutCompatibility?.fixedFieldsRawPayload
-        expect(decoded.docInfo.compatibleDocument?.trackChangeArray.map(\.rawPayload)) ==
-            hwp.docInfo.compatibleDocument?.trackChangeArray.map(\.rawPayload)
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == hwp.sectionArray.map(\.rawPayload)
+        assertNooriCompatibleDocument(hwp.docInfo.compatibleDocument)
     }
 }
 

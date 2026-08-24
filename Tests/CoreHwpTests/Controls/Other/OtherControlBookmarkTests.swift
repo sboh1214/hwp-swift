@@ -18,10 +18,6 @@ final class OtherControlBookmarkTests: XCTestCase {
         ]
 
         let control = try HwpOtherControl.load(record)
-        let decoded = try JSONDecoder().decode(
-            HwpCtrlId.self,
-            from: JSONEncoder().encode(HwpCtrlId.bookmark(control))
-        )
 
         expect(control.ctrlId) == .bookmark
         expect(control.bookmarkInfo?.nameCharacterCount) == name.utf16.count
@@ -35,23 +31,6 @@ final class OtherControlBookmarkTests: XCTestCase {
         expect(control.ctrlDataRecords.map(\.rawPayload)) == [ctrlDataPayload]
         assertBookmarkCtrlDataParameterSet(
             control.ctrlDataRecords.first,
-            name: name,
-            rawTrailing: Data()
-        )
-
-        guard case let .bookmark(roundTripped) = decoded else {
-            return fail("Expected bookmark after Codable round-trip")
-        }
-        expect(roundTripped.bookmarkInfo?.nameCharacterCount) == name.utf16.count
-        expect(roundTripped.bookmarkInfo?.nameLengthRawPayload) ==
-            littleEndianData(UInt16(name.utf16.count))
-        expect(roundTripped.bookmarkInfo?.name) == name
-        expect(roundTripped.bookmarkInfo?.nameRawPayload) == utf16LittleEndianData(name)
-        expect(roundTripped.bookmarkInfo?.rawTrailing) == Data()
-        expect(roundTripped.rawPayload) == rawPayload
-        expect(roundTripped.ctrlDataRecords.map(\.rawPayload)) == [ctrlDataPayload]
-        assertBookmarkCtrlDataParameterSet(
-            roundTripped.ctrlDataRecords.first,
             name: name,
             rawTrailing: Data()
         )
@@ -72,10 +51,6 @@ final class OtherControlBookmarkTests: XCTestCase {
         ]
 
         let control = try HwpOtherControl.load(record)
-        let decoded = try JSONDecoder().decode(
-            HwpCtrlId.self,
-            from: JSONEncoder().encode(HwpCtrlId.bookmark(control))
-        )
 
         expect(control.bookmarkInfo?.nameCharacterCount) == name.utf16.count
         expect(control.bookmarkInfo?.nameLengthRawPayload) ==
@@ -86,21 +61,6 @@ final class OtherControlBookmarkTests: XCTestCase {
         expect(control.ctrlDataRecords.map(\.rawPayload)) == [ctrlDataPayload]
         assertBookmarkCtrlDataParameterSet(
             control.ctrlDataRecords.first,
-            name: name,
-            rawTrailing: rawTrailing
-        )
-
-        guard case let .bookmark(roundTripped) = decoded else {
-            return fail("Expected bookmark after Codable round-trip")
-        }
-        expect(roundTripped.bookmarkInfo?.nameCharacterCount) == name.utf16.count
-        expect(roundTripped.bookmarkInfo?.nameLengthRawPayload) ==
-            littleEndianData(UInt16(name.utf16.count))
-        expect(roundTripped.bookmarkInfo?.name) == name
-        expect(roundTripped.bookmarkInfo?.nameRawPayload) == utf16LittleEndianData(name)
-        expect(roundTripped.bookmarkInfo?.rawTrailing) == rawTrailing
-        assertBookmarkCtrlDataParameterSet(
-            roundTripped.ctrlDataRecords.first,
             name: name,
             rawTrailing: rawTrailing
         )
@@ -148,22 +108,11 @@ final class OtherControlBookmarkTests: XCTestCase {
         ]
 
         let control = try HwpOtherControl.load(record)
-        let decoded = try JSONDecoder().decode(
-            HwpCtrlId.self,
-            from: JSONEncoder().encode(HwpCtrlId.bookmark(control))
-        )
 
         expect(control.bookmarkInfo).to(beNil())
         expect(control.rawPayload) == rawPayload
         expect(control.ctrlDataRecords.map(\.rawPayload)) == [ctrlDataPayload]
         expect(control.ctrlDataRecords.first?.parameterSet).to(beNil())
-
-        guard case let .bookmark(roundTripped) = decoded else {
-            return fail("Expected bookmark after Codable round-trip")
-        }
-        expect(roundTripped.bookmarkInfo).to(beNil())
-        expect(roundTripped.rawPayload) == rawPayload
-        expect(roundTripped.ctrlDataRecords.map(\.rawPayload)) == [ctrlDataPayload]
     }
 
     func testBookmarkControlSkipsMalformedCtrlDataAndPreservesAllCtrlDataRecords() throws {
@@ -218,20 +167,10 @@ final class OtherControlBookmarkTests: XCTestCase {
         ]
 
         let control = try HwpOtherControl.load(record)
-        let decoded = try JSONDecoder().decode(
-            HwpCtrlId.self,
-            from: JSONEncoder().encode(HwpCtrlId.bookmark(control))
-        )
 
         expect(control.bookmarkInfo).to(beNil())
         expect(control.ctrlDataRecords.map(\.rawPayload)) == [ctrlDataPayload]
         expect(control.ctrlDataRecords.first?.parameterSet).to(beNil())
-
-        guard case let .bookmark(roundTripped) = decoded else {
-            return fail("Expected bookmark after Codable round-trip")
-        }
-        expect(roundTripped.bookmarkInfo).to(beNil())
-        expect(roundTripped.ctrlDataRecords.map(\.rawPayload)) == [ctrlDataPayload]
     }
 
     func testBookmarkCtrlDataWithNonZeroDataStartIndexDoesNotTrap() throws {

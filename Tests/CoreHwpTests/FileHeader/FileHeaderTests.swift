@@ -9,28 +9,11 @@ final class FileHeaderTests: XCTestCase {
         expect(hwp.fileHeader.fileProperty.doesHaveDocumentHistory) == true
     }
 
-    func testDocumentHistoryFixtureSurvivesHwpFileCodableRoundTrip() throws {
-        let roundTrip = try LegacyHeaderFixtureRoundTrip(id: "문서이력관리")
-
-        try FixtureAssertions.assertReadableFixture(roundTrip.fixture, roundTrip.decoded)
-        expect(roundTrip.decoded.fileHeader.fileProperty.doesHaveDocumentHistory) == true
-        assertTopLevelRawPayloadsMatch(roundTrip.decoded, roundTrip.original)
-    }
-
     func testLegacyTrackChangesFlagFixtureKeepsFileHeaderTracingBitFalse() throws {
         let hwp = try openHwp(#file, "변경내용추적")
         expect(hwp.fileHeader.fileProperty.rawValue) == 1
         expect(hwp.fileHeader.fileProperty.isCompressed) == true
         expect(hwp.fileHeader.fileProperty.isTracingChange) == false
-    }
-
-    func testLegacyTrackChangesFlagFixtureSurvivesHwpFileCodableRoundTrip() throws {
-        let roundTrip = try LegacyHeaderFixtureRoundTrip(id: "변경내용추적")
-
-        try FixtureAssertions.assertReadableFixture(roundTrip.fixture, roundTrip.decoded)
-        expect(roundTrip.decoded.fileHeader.fileProperty.rawValue) == 1
-        expect(roundTrip.decoded.fileHeader.fileProperty.isTracingChange) == false
-        assertTopLevelRawPayloadsMatch(roundTrip.decoded, roundTrip.original)
     }
 
     func testIsKOGLDocument() throws {
@@ -300,24 +283,6 @@ final class FileHeaderTests: XCTestCase {
         expect(license.doesHavePermission) == false
     }
 
-    func testFilePropertyAndLicenseRawValuesSurviveCodableRoundTrip() throws {
-        let property = UInt32(1 << 0) | UInt32(1 << 6) | UInt32(1 << 15)
-        let license = UInt32(0b101)
-        let fileHeader = try HwpFileHeader.load(fileHeaderPayload(
-            fileProperty: property,
-            fileLicense: license
-        ))
-
-        let decoded = try JSONDecoder().decode(
-            HwpFileHeader.self,
-            from: JSONEncoder().encode(fileHeader)
-        )
-
-        expect(decoded.fileProperty.rawValue) == property
-        expect(decoded.fileLicense.rawValue) == license
-        expect(decoded) == fileHeader
-    }
-
     func testReservedBytesArePreserved() throws {
         let reserved = Data((0 ..< 207).map { UInt8($0 % 256) })
         let payload = fileHeaderPayload(reserved: reserved)
@@ -342,20 +307,6 @@ final class FileHeaderTests: XCTestCase {
         })
     }
 
-    func testReservedBytesSurviveCodableRoundTrip() throws {
-        let reserved = Data((0 ..< 207).map { UInt8(($0 * 3) % 256) })
-        let fileHeader = try HwpFileHeader.load(fileHeaderPayload(reserved: reserved))
-
-        let decoded = try JSONDecoder().decode(
-            HwpFileHeader.self,
-            from: JSONEncoder().encode(fileHeader)
-        )
-
-        expect(decoded.rawPayload) == fileHeader.rawPayload
-        expect(decoded.reserved) == reserved
-        expect(decoded) == fileHeader
-    }
-
     func testTruncatedReservedBytesThrowsTypedError() {
         expect {
             _ = try HwpFileHeader.load(fileHeaderPayload(reserved: Data([0xAA, 0xBB, 0xCC])))
@@ -374,44 +325,6 @@ private struct FileHeaderTruncationScenario {
     let payload: Data
     let expected: Int
     let actual: Int
-}
-
-private struct LegacyHeaderFixtureRoundTrip {
-    let fixture: LoadedFixture
-    let original: HwpFile
-    let decoded: HwpFile
-
-    init(id: String) throws {
-        fixture = try FixtureLoader.load(id: id)
-        original = try HwpFile(fromPath: fixture.documentURL.path)
-        decoded = try JSONDecoder().decode(
-            HwpFile.self,
-            from: JSONEncoder().encode(original)
-        )
-    }
-}
-
-private func assertTopLevelRawPayloadsMatch(_ decoded: HwpFile, _ original: HwpFile) {
-    expect(decoded.fileHeader.rawPayload) == original.fileHeader.rawPayload
-    expect(decoded.fileHeader.version.rawPayload) == original.fileHeader.version.rawPayload
-    expect(decoded.fileHeader.reserved) == original.fileHeader.reserved
-    expect(decoded.fileHeader.fileProperty.rawValue) == original.fileHeader.fileProperty.rawValue
-    expect(decoded.fileHeader.fileLicense.rawValue) == original.fileHeader.fileLicense.rawValue
-    expect(decoded.summary.rawPayload) == original.summary.rawPayload
-    expect(decoded.previewText.rawPayload) == original.previewText.rawPayload
-    expect(decoded.previewText.text) == original.previewText.text
-    expect(decoded.previewImage.rawPayload) == original.previewImage.rawPayload
-    expect(decoded.previewImage.image) == original.previewImage.image
-    expect(decoded.previewImage.format) == original.previewImage.format
-    expect(decoded.docInfo.rawPayload) == original.docInfo.rawPayload
-    expect(decoded.docInfo.documentProperties.rawPayload) ==
-        original.docInfo.documentProperties.rawPayload
-    expect(decoded.docInfo.documentProperties.startingIndex.rawPayload) ==
-        original.docInfo.documentProperties.startingIndex.rawPayload
-    expect(decoded.docInfo.documentProperties.caratLocation.rawPayload) ==
-        original.docInfo.documentProperties.caratLocation.rawPayload
-    expect(decoded.sectionArray.map(\.rawPayload)) == original.sectionArray.map(\.rawPayload)
-    expect(decoded.binaryDataArray.map(\.data)) == original.binaryDataArray.map(\.data)
 }
 
 private func fileHeaderPayload(

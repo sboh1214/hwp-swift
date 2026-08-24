@@ -21,21 +21,10 @@ final class FieldControlInvalidParameterTests: XCTestCase {
             from: paragraph.ctrlHeaderArray?.first,
             message: "Expected invalid parameter field to stay generic field"
         )
-        let roundTripped = try roundTrippedGenericField(
-            from: paragraph.ctrlHeaderArray?.first,
-            message: "Expected invalid parameter field after Codable round-trip"
-        )
 
         assertInvalidParameterField(control, rawPayload: rawPayload, rawTrailing: rawTrailing)
         assertInvalidParameterField(
             field,
-            rawPayload: rawPayload,
-            rawTrailing: rawTrailing,
-            childTagId: 0x2FA,
-            childPayload: Data([0xCC])
-        )
-        assertInvalidParameterField(
-            roundTripped,
             rawPayload: rawPayload,
             rawTrailing: rawTrailing,
             childTagId: 0x2FA,
@@ -60,21 +49,10 @@ final class FieldControlInvalidParameterTests: XCTestCase {
             from: paragraph.ctrlHeaderArray?.first,
             message: "Expected overflowing parameter field to stay generic field"
         )
-        let roundTripped = try roundTrippedGenericField(
-            from: paragraph.ctrlHeaderArray?.first,
-            message: "Expected overflowing parameter field after Codable round-trip"
-        )
 
         assertInvalidParameterField(control, rawPayload: rawPayload, rawTrailing: rawTrailing)
         assertInvalidParameterField(
             field,
-            rawPayload: rawPayload,
-            rawTrailing: rawTrailing,
-            childTagId: 0x2FB,
-            childPayload: Data([0xDD])
-        )
-        assertInvalidParameterField(
-            roundTripped,
             rawPayload: rawPayload,
             rawTrailing: rawTrailing,
             childTagId: 0x2FB,
@@ -103,17 +81,6 @@ private func genericFieldControl(
         throw HwpError.invalidCtrlId(ctrlId: HwpFieldCtrlId.unknown.rawValue)
     }
     return field
-}
-
-private func roundTrippedGenericField(
-    from ctrlId: HwpCtrlId?,
-    message: String
-) throws -> HwpFieldControl {
-    let decoded = try JSONDecoder().decode(
-        HwpCtrlId.self,
-        from: JSONEncoder().encode(ctrlId)
-    )
-    return try genericFieldControl(from: decoded, message: message)
 }
 
 private func assertInvalidParameterField(

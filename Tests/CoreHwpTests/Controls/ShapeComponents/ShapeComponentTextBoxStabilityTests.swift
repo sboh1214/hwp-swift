@@ -107,6 +107,71 @@ final class ShapeComponentTextBoxStabilityTests: XCTestCase {
             expectedTestUnknownRecord(tagId: 0x2FE, level: 3, payload: Data([0xDD])),
         ]
     }
+
+    func testTextBoxConsumesTwoListsAndPreservesPerHeaderUnknownChildren() throws {
+        let firstHeaderUnknownChild = HwpRecord(tagId: 0x2FD, level: 4, payload: Data([0xD1]))
+        firstHeaderUnknownChild.children = [
+            HwpRecord(tagId: 0x2FC, level: 5, payload: Data([0xD2])),
+        ]
+        let firstHeader = HwpRecord(
+            tagId: HwpSectionTag.listHeader.rawValue,
+            level: 3,
+            payload: textBoxListHeaderPayload(paragraphCount: 1, rawTrailing: Data([0xC1]))
+        )
+        firstHeader.children = [firstHeaderUnknownChild]
+        let secondHeader = HwpRecord(
+            tagId: HwpSectionTag.listHeader.rawValue,
+            level: 3,
+            payload: textBoxListHeaderPayload(paragraphCount: 1, rawTrailing: Data([0xC2, 0xC3]))
+        )
+        secondHeader.children = [
+            HwpRecord(tagId: 0x2FB, level: 4, payload: Data([0xD3])),
+        ]
+        let record = textBoxShapeComponentRecord(children: [
+            firstHeader,
+            textBoxParagraphRecord(
+                unknownChild: HwpRecord(tagId: 0x2FA, level: 4, payload: Data([0xE1]))
+            ),
+            secondHeader,
+            textBoxParagraphRecord(
+                unknownChild: HwpRecord(tagId: 0x2F9, level: 4, payload: Data([0xE2]))
+            ),
+        ])
+
+        let component = try HwpShapeComponent.load(record, HwpVersion(5, 0, 1, 1))
+
+        expect(component.textBoxListArray.count) == 2
+        expect(component.textBoxListArray.map(\.header.paragraphCount)) == [1, 1]
+        expect(component.textBoxListArray.map(\.headerRawPayload)) == [
+            firstHeader.payload,
+            secondHeader.payload,
+        ]
+        expect(component.textBoxListArray.map(\.header.rawTrailing)) == [
+            Data([0xC1]),
+            Data([0xC2, 0xC3]),
+        ]
+        expect(component.textBoxListArray.first?.headerUnknownChildren) == [
+            expectedTestUnknownRecord(
+                tagId: 0x2FD,
+                level: 4,
+                payload: Data([0xD1]),
+                children: [
+                    expectedTestRecord(tagId: 0x2FC, level: 5, payload: Data([0xD2])),
+                ]
+            ),
+        ]
+        expect(component.textBoxListArray.last?.headerUnknownChildren) == [
+            expectedTestUnknownRecord(tagId: 0x2FB, level: 4, payload: Data([0xD3])),
+        ]
+        expect(component.textBoxListArray.flatMap(\.paragraphArray).map(\.unknownChildren)) == [
+            [
+                expectedTestUnknownRecord(tagId: 0x2FA, level: 4, payload: Data([0xE1])),
+            ],
+            [
+                expectedTestUnknownRecord(tagId: 0x2F9, level: 4, payload: Data([0xE2])),
+            ],
+        ]
+    }
 }
 
 private func textBoxShapeComponentRecord(children: [HwpRecord]) -> HwpRecord {
@@ -130,15 +195,19 @@ private func textBoxListHeaderPayload(
     return data
 }
 
-private func textBoxParagraphRecord() -> HwpRecord {
+private func textBoxParagraphRecord(unknownChild: HwpRecord? = nil) -> HwpRecord {
     let record = HwpRecord(
         tagId: HwpSectionTag.paraHeader.rawValue,
         level: 3,
         payload: textBoxParagraphHeaderPayload()
     )
-    record.children = [
+    var children = [
         HwpRecord(tagId: HwpSectionTag.paraCharShape.rawValue, level: 4, payload: Data()),
     ]
+    if let unknownChild {
+        children.append(unknownChild)
+    }
+    record.children = children
     return record
 }
 
