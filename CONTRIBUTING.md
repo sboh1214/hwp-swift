@@ -31,6 +31,22 @@ SwiftFormat과 SwiftLint는 모든 PR에서 CI(`ci.yml`의 `lint` 잡)으로 확
 
 커버리지는 [Codecov](https://codecov.io/gh/sboh1214/hwp-swift)에서 추적합니다.
 
+## Pull Request 라벨
+
+라벨은 release-drafter(`.github/release-drafter.yml`)가 릴리스 노트 분류와
+버전 산정에 사용하므로, PR 성격대로 답니다.
+
+- 기능·성능 PR → `enhancement` (릴리스 노트의 🚀 Features로 분류됩니다)
+- 버그 수정 PR → `bug` (성능 관련이면 `performance`를 함께). 버그 수정에는
+  `enhancement`를 달지 않습니다.
+- 문서·CI·테스트·리팩터링 PR → `maintenance`
+- 공개 API의 소스 브레이킹 또는 동작 변경이 있으면 `api-breaking`을 추가로
+  답니다. 이 라벨이 하나라도 든 구간은 다음 릴리스 버전이 minor로 올라갑니다
+  — 1.0 전까지 파괴 변경은 minor 버전에 싣습니다.
+
+라벨이 없는 PR은 릴리스 노트에서 카테고리 밖으로 떨어지므로, 머지 전에
+반드시 하나 이상 답니다.
+
 ## 문서
 
 문서는 [Swift-DocC](https://www.swift.org/documentation/docc/)로 빌드되며,
@@ -81,6 +97,22 @@ python3 -m http.server 8000 --directory /tmp/hwp-preview
 확인할 수 있습니다.
 
 ## 배포
+
+### 릴리스
+
+`main`에 푸시될 때마다 release-drafter(`cd.yml`의 `release-drafter` 잡)가 드래프트
+릴리스를 갱신합니다. 다음 버전 번호는 그 구간에 머지된 PR의 라벨에서 산정되므로
+(위 "Pull Request 라벨"), 라벨이 맞아야 번호가 맞습니다.
+
+릴리스할 때 아래를 함께 갱신합니다.
+
+- `CHANGELOG.md` — `## Unreleased` 아래 내용을 `## X.Y.Z (YYYY-MM-DD)`로 확정하고,
+  비어 있는 `## Unreleased`를 맨 위에 남깁니다.
+- `README.md`와 `.github/pages/index.html` — 설치 스니펫의 고정 버전. **두 곳은
+  같은 안내의 사본**이고 후자는 `docs` 잡이 DocC 산출물 위에 덮어 사이트로
+  배포하므로, 하나만 고치면 hwp-swift.sboh.dev가 낡은 안내를 계속 내보냅니다.
+
+드래프트 릴리스를 게시하면 그 시점의 `main`에 태그가 생성됩니다.
 
 ### Swift 버전이 새로 출시된 경우
 

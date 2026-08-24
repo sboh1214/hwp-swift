@@ -18,6 +18,7 @@ version-resolver:
   minor:
     labels:
       - 'minor'
+      - 'api-breaking'
   patch:
     labels:
       - 'patch'

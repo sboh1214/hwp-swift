@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="ko">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -252,6 +253,7 @@
     }
   </style>
 </head>
+
 <body>
   <div class="page">
     <header class="hero">
@@ -273,13 +275,19 @@
 
       <section aria-labelledby="install-title">
         <h2 id="install-title">설치</h2>
-        <p>Apple 플랫폼(macOS 14+ / iOS 17+ / tvOS 17+ / watchOS 10+)은 추가 설치가 필요 없습니다 — 압축 해제에 SDK 내장 <code>Compression</code>을 씁니다. Linux 등 그 외 플랫폼에서는 <strong>zlib</strong>이 필요합니다. 빌드에는 개발 헤더(<code>apt install zlib1g-dev</code>, rpm 계열은 <code>dnf install zlib-devel</code>), 실행에는 zlib 런타임이 있어야 합니다.</p>
-        <p>Xcode에서 <code>File</code> &gt; <code>Swift Packages</code> &gt; <code>Add Package Dependency...</code> 메뉴를 선택하세요.</p>
+        <p>Apple 플랫폼(macOS 14+ / iOS 17+ / tvOS 17+ / watchOS 10+)은 추가 설치가 필요 없습니다 — 압축 해제에 SDK 내장
+          <code>Compression</code>을 씁니다. Linux 등 그 외 플랫폼에서는 <strong>zlib</strong>이 필요합니다. 빌드에는 개발
+          헤더(<code>apt install zlib1g-dev</code>, rpm 계열은 <code>dnf install zlib-devel</code>), 실행에는 zlib 런타임이 있어야 합니다.
+        </p>
+        <p>Xcode에서 <code>File</code> &gt; <code>Swift Packages</code> &gt; <code>Add Package Dependency...</code> 메뉴를
+          선택하세요.</p>
         <p>또는 의존성을 아래와 같이 수동으로 추가합니다.</p>
         <pre><code>dependencies: [
-    .package(url: "https://github.com/sboh1214/hwp-swift.git", branch: "main"),
+    .package(url: "https://github.com/sboh1214/hwp-swift.git", .upToNextMinor(from: "0.16.0")),
 ],</code></pre>
-        <p class="note">안정 릴리스가 태깅되면 <code>branch: "main"</code> 대신 <code>from: "x.y.z"</code>로 고정하는 것을 권장합니다.</p>
+        <p class="note">이 저장소는 1.0 전까지 파괴 변경을 minor 버전에 싣습니다.
+          <code>.upToNextMinor(from: "0.16.0")</code>은 <code>0.16.0..&lt;0.17.0</code>만 허용하므로, minor 버전은 <a
+            href="https://github.com/sboh1214/hwp-swift/releases">릴리스 노트</a>를 확인한 뒤 올리는 것을 권장합니다.</p>
       </section>
 
       <section aria-labelledby="contributing-title">
@@ -298,4 +306,5 @@
     </footer>
   </div>
 </body>
+
 </html>
