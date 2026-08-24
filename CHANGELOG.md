@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Breaking Changes
+
+- **`HwpDocumentLoadError`에 `unsupportedDocument(HwpUnsupportedDocumentKind)`
+  케이스를 추가했습니다** (#117). 암호·배포용·DRM 문서가
+  `presentationBuildFailed("… Unsupported HWP feature: …")` 문자열로 뭉개지지
+  않고 종류가 보존된 케이스로 올라와, 호스트가 CoreHwp를 import하지 않고
+  안내·분기할 수 있습니다. enum이 비-frozen이므로 `default` 없이 exhaustive
+  switch로 다루던 소비자는 새 케이스 분기를 추가해야 합니다.
+- **`HwpDocumentLoadError` 서술을 한국어로 바꿨습니다** (#117).
+  `localizedDescription`/`description`을 그대로 표시하면 "암호로 보호된 문서라
+  열 수 없습니다" 같은 한국어 안내가 나옵니다. `presentationBuildFailed`의
+  reason(하위 파서/페이지네이터 원인)은 원문 그대로 보존되므로 영문일 수
+  있습니다. 영문 문구를 부분 문자열로 매칭하던 소비자는 깨집니다 — 케이스로
+  분기하십시오.
+
 ### Changed
 
 - **record tag 검증 보일러플레이트를 loader 프로토콜 default로 흡수했습니다**

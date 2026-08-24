@@ -91,6 +91,7 @@ if buildsForApplePlatforms {
             name: "HwpKit",
             dependencies: [
                 "HwpKitNative",
+                "CoreHwp",
             ],
             exclude: [
                 "AGENTS.md",
