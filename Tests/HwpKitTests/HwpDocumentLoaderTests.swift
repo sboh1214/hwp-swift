@@ -35,10 +35,10 @@ final class HwpDocumentLoaderTests: XCTestCase {
             })
     }
 
-    /// 전 케이스가 사용자 표시용 서술을 갖고, localizedDescription이 NSError
-    /// 브릿징 기본 문구("error N")로 퇴화하지 않는다 (R65, #117).
-    /// 특정 문구를 못 박지 않는다 — 문구는 바뀔 수 있고 계약은
-    /// "비지 않음 + 케이스 간 구별 + reason 유실 없음"이다.
+    /// 모든 오류 케이스에는 사용자에게 표시할 설명이 있으며, `NSError` 브리징 후에도
+    /// `localizedDescription`이 기본 문구("error N")로 바뀌지 않는다 (R65, #117).
+    /// 문구 자체는 바뀔 수 있으므로 고정하지 않는다. "비어 있지 않음,
+    /// 케이스 간 구분, `reason` 보존"만 계약으로 삼는다.
     func testErrorDescriptionsCoverEveryCase() {
         let errors: [HwpDocumentLoadError] = [
             .cancelled,
@@ -54,14 +54,16 @@ final class HwpDocumentLoaderTests: XCTestCase {
             expect(error.errorDescription) == error.description
             expect(error.localizedDescription) == error.description
         }
-        // 케이스(미지원 종류 포함)마다 서술이 서로 달라야 안내가 갈린다
+        // 미지원 문서 종류별 설명을 포함해 모든 오류 설명이 서로 달라야 각각 구분해 안내할 수 있다
         expect(Set(errors.map(\.description)).count) == errors.count
-        // 사유는 유실되지 않는다 — 호스트가 원인을 보여 줄 수 있어야 한다
+        // 원인 문자열을 보존해야 호스트가 사용자에게 보여 줄 수 있다
         expect(HwpDocumentLoadError.presentationBuildFailed("stream limit exceeded").description)
             .to(contain("stream limit exceeded"))
     }
 
-    /// 매핑 관문 세 갈래 — passthrough(이중 래핑 금지)·타입 보존·문자열 래핑 (#117).
+    /// 오류 매핑의 세 분기를 검증한다. 기존 `HwpDocumentLoadError`는 이중으로 감싸지 않고
+    /// 그대로 전달하며, 미지원 문서는 종류를 보존하고, 그 밖의 오류는 원인 문자열로
+    /// 감싼다 (#117).
     func testMapLoadFailureBranches() {
         struct DummyError: Error {}
 
@@ -80,8 +82,8 @@ final class HwpDocumentLoaderTests: XCTestCase {
         expect(reason) == DummyError().localizedDescription
     }
 
-    /// 암호·배포용·DRM 픽스처가 문자열로 뭉개지지 않고 종류가 보존된
-    /// `.unsupportedDocument`로 올라온다 (#117).
+    /// 암호로 보호된 문서, 배포용 문서, DRM 문서에 해당하는 픽스처를 읽을 때 오류가
+    /// 단순 문자열로 변환되지 않고, 문서 종류를 보존한 `.unsupportedDocument`로 전달된다 (#117).
     func testUnsupportedFixturesThrowTypedUnsupportedDocument() async {
         let cases: [(id: String, kind: HwpUnsupportedDocumentKind)] = [
             ("문서암호설정-보안수준높음", .encryptedDocument),
@@ -103,7 +105,7 @@ final class HwpDocumentLoaderTests: XCTestCase {
         }
     }
 
-    /// Data 오버로드도 같은 타입 보존 매핑을 지난다 (#117).
+    /// `Data` 오버로드에서도 미지원 문서의 종류를 보존한다 (#117).
     func testUnsupportedDataThrowsTypedUnsupportedDocument() async throws {
         let url = FixtureRoot.url(from: #filePath)
             .appendingPathComponent("문서암호설정-보안수준높음")
@@ -118,7 +120,8 @@ final class HwpDocumentLoaderTests: XCTestCase {
             })
     }
 
-    /// 프로그레시브 스트림도 미지원 문서를 타입 보존해 종료한다 (#117).
+    /// `loadUpdates`의 프로그레시브 스트림도 미지원 문서의 종류를 보존한 오류를 던지고
+    /// 종료된다 (#117).
     func testLoadUpdatesSurfacesTypedUnsupportedDocument() async {
         let url = FixtureRoot.url(from: #filePath)
             .appendingPathComponent("배포용문서")

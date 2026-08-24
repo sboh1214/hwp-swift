@@ -3,18 +3,20 @@ import Foundation
 import HwpKitCore
 import HwpKitNative
 
-/// 로더가 열 수 없는 미지원 문서 종류. CoreHwp `HwpUnsupportedFeature`의
-/// HwpKit 공개 대응물 — 호스트가 CoreHwp를 import하지 않고 분기한다.
+/// 로더가 지원하지 않는 문서의 종류. CoreHwp의 `HwpUnsupportedFeature`에
+/// 대응하는 HwpKit 공개 타입으로, 호스트는 CoreHwp를 import하지 않고도 문서
+/// 종류에 따라 분기할 수 있다.
 public enum HwpUnsupportedDocumentKind: Sendable, Hashable {
-    /// 암호로 보호된 문서 (공인 인증서 암호화 포함)
+    /// 암호로 보호된 문서(공인 인증서 암호화 포함)
     case encryptedDocument
     /// 배포용 문서
     case deploymentDocument
-    /// DRM 또는 공인 인증서 DRM이 적용된 문서
+    /// 일반 DRM이나 공인 인증서 DRM이 적용된 문서
     case drmDocument
 
-    /// CoreHwp에 미지원 종류가 늘면 여기서 컴파일 에러로 잡힌다 —
-    /// default를 넣어 새 종류를 조용히 뭉개지 말 것.
+    /// CoreHwp에서 지원하지 않는 문서 종류가 추가되면 이 `switch` 문에서
+    /// 컴파일 오류가 발생한다. 새 종류가 누락되지 않도록 `default`는 추가하지
+    /// 않는다.
     init(_ feature: HwpUnsupportedFeature) {
         switch feature {
         case .encryptedDocument:
@@ -31,31 +33,33 @@ public enum HwpDocumentLoadError: Error, Sendable {
     case cancelled
     case presentationBuildFailed(String)
     case invalidFileWrapper
-    /// 파서가 지원하지 않는 문서 (암호·배포용·DRM). 문자열로 접지 않고
-    /// 종류를 보존해 호스트가 안내·분기할 수 있게 한다 (#117).
+    /// 파서가 지원하지 않는 암호로 보호된 문서·배포용 문서·DRM 문서. 일반
+    /// 오류 문자열로 변환하지 않고 문서 종류를 보존하므로 호스트가 알맞은 안내를
+    /// 표시하거나 종류별로 분기할 수 있다 (#117).
     case unsupportedDocument(HwpUnsupportedDocumentKind)
 }
 
 extension HwpDocumentLoadError: CustomStringConvertible {
-    /// 사용자에게 그대로 보여줄 수 있는 한국어 서술 (#117).
-    /// `presentationBuildFailed`의 reason은 하위 계층이 넘긴 원문이라 영문일 수
-    /// 있다 — `HwpError` 서술까지 한국어로 바꾸는 것은 범위 밖이다 (#117 (A)안).
+    /// 사용자에게 그대로 표시할 수 있는 한국어 오류 설명 (#117).
+    /// `presentationBuildFailed`는 하위 계층의 오류 설명을 원문 그대로 덧붙이므로
+    /// 영어가 포함될 수 있다. `HwpError`의 설명을 한국어로 바꾸는 작업은 이 변경의
+    /// 범위에 포함하지 않는다 (#117의 A안).
     public var description: String {
         switch self {
         case .cancelled:
-            "문서 로드가 취소되었습니다"
+            "문서 불러오기가 취소되었습니다"
         case let .presentationBuildFailed(reason):
             "문서를 여는 데 실패했습니다: \(reason)"
         case .invalidFileWrapper:
-            "파일 래퍼가 내용이 있는 일반 파일이 아닙니다"
+            "파일 래퍼가 내용을 포함한 일반 파일을 나타내지 않습니다"
         case let .unsupportedDocument(kind):
             switch kind {
             case .encryptedDocument:
-                "암호로 보호된 문서라 열 수 없습니다"
+                "암호로 보호된 문서는 열 수 없습니다"
             case .deploymentDocument:
-                "배포용 문서라 열 수 없습니다"
+                "배포용 문서는 열 수 없습니다"
             case .drmDocument:
-                "DRM으로 보호된 문서라 열 수 없습니다"
+                "DRM으로 보호된 문서는 열 수 없습니다"
             }
         }
     }
@@ -74,11 +78,12 @@ public struct HwpDocumentLoader: Sendable {
         actor = HwpDocumentActor(fontResolver: fontResolver)
     }
 
-    /// 하위 계층 에러를 `HwpDocumentLoadError`로 접는 단일 관문 (#117).
-    /// 미지원 문서는 `HwpError.unsupportedFeature`가 문자열로 뭉개지기 전에
-    /// 가로채 종류를 보존한다. `CancellationError`는 각 호출부의 별도 catch가
-    /// 먼저 처리한다. internal인 이유: passthrough 갈래가 공개 표면에서는
-    /// 재현하기 어려워 세 갈래를 테스트가 직접 고정한다.
+    /// 하위 계층의 오류를 `HwpDocumentLoadError`로 변환하는 단일 지점 (#117).
+    /// `HwpError.unsupportedFeature`는 일반 오류 문자열로 바꾸기 전에 따로
+    /// 처리하여 문서 종류를 보존한다. `CancellationError`는 각 호출부에서 별도의
+    /// `catch` 절로 먼저 처리한다. `HwpDocumentLoadError`를 그대로 반환하는
+    /// 분기는 공개 API만으로 재현하기 어려우므로 이 메서드는 `internal`로 두고
+    /// 테스트에서 세 분기를 직접 검증한다.
     static func mapLoadFailure(_ error: Error) -> HwpDocumentLoadError {
         if let error = error as? HwpDocumentLoadError {
             return error

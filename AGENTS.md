@@ -43,7 +43,7 @@ hwp-swift/
 | 새 컨트롤 ID 추가 | `Sources/CoreHwp/Enums/CtrlId/` + `Models/Section/CtrlHeader/` + `HwpCtrlId` enum + `Models/HwpParseDiagnostic.swift`의 진단 순회 |
 | 새 모델 추가 | `Sources/CoreHwp/Models/...` 하위에 `Utils/Protocols/`의 프로토콜을 채택하여 작성 |
 | 기본 타입 확장 | `Sources/CoreHwp/Utils/Extensions/` |
-| 새 미지원 문서 종류 추가 | `Models/FileHeader/HwpFileProperty.swift`의 `unsupportedFeature`(비트 → 종류) + `HwpError`의 `HwpUnsupportedFeature` → HwpKit `HwpUnsupportedDocumentKind` 매핑·`description`(매핑 switch가 exhaustive라 컴파일 에러가 잡아 준다) + `HwpDocumentLoaderTests.testErrorDescriptionsCoverEveryCase` 배열 + 픽스처 manifest `expectedError` (#117) |
+| 새 미지원 문서 종류 추가 | `Models/FileHeader/HwpFileProperty.swift`의 `unsupportedFeature`(비트 → 종류) + `HwpError.swift`의 `HwpUnsupportedFeature` → HwpKit의 `HwpUnsupportedDocumentKind` 매핑(`switch`가 모든 케이스를 나열하므로 새 종류가 누락되면 컴파일 오류가 발생한다) + `HwpDocumentLoadError.description` + `HwpDocumentLoaderTests.testErrorDescriptionsCoverEveryCase` 배열 + 픽스처 manifest `expectedError` (#117) |
 | 테스트 픽스처 추가 | 테스트 파일과 같은 폴더에 `.hwp` 배치 (`openHwp(#file, "name")` 사용). `Tests/CoreHwpTests/Fixtures/`에 넣으면 `HwpLayoutRenderParitySweepTests`가 자동으로 훑으므로 그쪽 실측 핀(문단 수·측정 수·컨테이너 수)을 함께 갱신한다 |
 
 ## 코드 맵
