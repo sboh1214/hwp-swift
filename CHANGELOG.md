@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## 0.16.0 (2026-08-23)
+## 0.16.0
 
 ### Breaking Changes
 
