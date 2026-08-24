@@ -238,7 +238,7 @@ Equatable/Hashable에서도 제외된다 (payload **유무** 파생이라 `HwpCh
 ## 컨벤션
 
 - **`HwpPrimitive = Codable & Hashable & Sendable`** — 모든 모델이 채택 (typealias는 [`HwpPrimitive.swift`](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/Utils/Protocols/HwpPrimitive.swift)). 전 모델이 값 타입이라 `Sendable`은 자동 충족 — 백그라운드 파싱 → UI 전달이 컴파일러 검증된다.
-- [`Utils/Protocols/`](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/Utils/Protocols/)의 **loader 프로토콜**은 `static load(...)`를 default 구현으로 제공하며 EOF를 강제한다 — reader에 잔여 byte가 있으면 `HwpError.bytesAreNotEOF`를 throw. 채택 측은 `init(_ reader: inout DataReader, ...)`만 작성.
+- [`Utils/Protocols/`](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/Utils/Protocols/)의 **loader 프로토콜**은 `static load(...)`를 default 구현으로 제공하며 EOF를 강제한다 — reader에 잔여 byte가 있으면 `HwpError.bytesAreNotEOF`를 throw. 채택 측은 `init(_ reader: inout DataReader, ...)`만 작성. record 갈래는 **tag 검증까지 default가 흡수한다** — `HwpTagValidatedRecord`(`WithVersion`)를 채택하고 `static let expectedTag`만 선언하면 `load` override가 필요 없다 (#83).
 - public 타입의 **한국어 doc-comment**는 한컴 공개 문서의 절을 참조한다. 편집 시 보존할 것.
 - **`Tests/` 외부에서 `import XCTest` 금지.**
 - **SwiftFormat** (`--swiftversion 5.9 --disable hoistTry`)과 **SwiftLint**가 CI 및 `pre-commit`에서 강제됨.
@@ -246,7 +246,7 @@ Equatable/Hashable에서도 제외된다 (payload **유무** 파생이라 `HwpCh
 ## 안티 패턴 (이 프로젝트 한정)
 
 - 테스트에서 `XCTAssert*` 사용 — SwiftLint custom rule `no_xctassert` (severity: error)로 금지. Nimble `expect(...) == ...` 사용.
-- EOF를 검사하지 않고 silent하게 byte 잔여 — loader 프로토콜의 `load`가 `bytesAreNotEOF`를 throw하도록 설계되어 있으므로, manual `init` 호출로 우회 금지.
+- EOF를 검사하지 않고 silent하게 byte 잔여 — loader 프로토콜의 `load`가 `bytesAreNotEOF`를 throw하도록 설계되어 있으므로, manual `init` 호출로 우회 금지. 승인된 opt-out은 tag-검증 모델의 `enforcesEOF = false` 하나뿐이고, 그것도 #83 이전 커스텀 load가 EOF를 보지 않던 **8종의 현행 동작 동결**이지 설계가 아니다 — 새 타입에서 끄지 말 것 (일괄 강제 전환은 실문서 확인과 함께 후속 이슈).
 - 공백이 있는 새 파일/디렉터리명 추가 — 경로명은 PascalCase + 무공백을 유지.
 - `Package.swift`의 Darwin platform 최소 버전을 더 낮추기 — `SWCompression 4.9.1` / `BitByteData 2.1.0`이 macOS 14+/iOS 17+를 요구한다. #101 이후 이 둘은 테스트 타깃 전용 의존이지만 `platforms:`는 패키지 단위라 하한은 그대로다 (내리려면 압축 해제 기준선부터 갈아야 한다). Linux는 CoreHwp·CoreHwpTests만 지원하며 빌드에 zlib 개발 헤더가 필요하다 (뷰어 타깃은 Apple 전용 프레임워크 의존 — `Package.swift`의 `canImport(Darwin)` 분기; CI matrix: macOS + ubuntu-latest).
 - `swift-tools-version` 변경 시 `.swift-version`, `.swiftformat`, `.github/workflows/ci.yml`의 `test-linux` matrix 동시 갱신 누락 (`CONTRIBUTING.md` 참조).

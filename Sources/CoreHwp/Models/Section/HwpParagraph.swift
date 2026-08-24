@@ -1,6 +1,8 @@
 import Foundation
 
-public struct HwpParagraph: HwpFromRecordWithVersion {
+public struct HwpParagraph: HwpTagValidatedRecordWithVersion {
+    static let expectedTag: HwpSectionTag = .paraHeader
+
     public var paraHeader: HwpParaHeader
 
     public var paraText: HwpParaText?
@@ -60,19 +62,6 @@ public struct HwpParagraph: HwpFromRecordWithVersion {
         paragraph.paraText = nil
         paragraph.unknownChildren = [HwpUnknownRecord(record)]
         paragraph.parseFailure = String(describing: error)
-        return paragraph
-    }
-
-    // MARK: loader contract exemption - validates paragraph record tag before decoding children
-
-    static func load(_ record: HwpRecord, _ version: HwpVersion) throws -> Self {
-        try validateSectionRecordTag(record, expectedTag: .paraHeader)
-
-        var reader = DataReader(record.payload, options: record.options)
-        let paragraph = try self.init(&reader, record.children, version)
-        if !reader.isEOF {
-            throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
-        }
         return paragraph
     }
 

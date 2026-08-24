@@ -64,9 +64,15 @@ public struct HwpShapeControl {
     }
 }
 
-extension HwpShapeControl: HwpFromRecord {
+extension HwpShapeControl: HwpTagValidatedRecord, HwpTagValidatedRecordWithVersion {
+    static let expectedTag: HwpSectionTag = .ctrlHeader
+
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
         try self.init(&reader, children, nil)
+    }
+
+    init(_ reader: inout DataReader, _ children: [HwpRecord], _ version: HwpVersion) throws {
+        try self.init(&reader, children, version as HwpVersion?)
     }
 
     // MARK: loader contract exemption - shape control preserves raw payload for fallback parsing
@@ -118,32 +124,6 @@ extension HwpShapeControl: HwpFromRecord {
                     && $0.tagId != HwpSectionTag.ctrlData.rawValue
             }
             .map(HwpUnknownRecord.init)
-    }
-
-    // MARK: loader contract exemption - validates shape control tag before raw preservation
-
-    static func load(_ record: HwpRecord) throws -> Self {
-        try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
-
-        var reader = DataReader(record.payload, options: record.options)
-        let shapeControl = try self.init(&reader, record.children)
-        if !reader.isEOF {
-            throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
-        }
-        return shapeControl
-    }
-
-    // MARK: loader contract exemption - validates shape control tag before versioned decode
-
-    static func load(_ record: HwpRecord, _ version: HwpVersion) throws -> Self {
-        try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
-
-        var reader = DataReader(record.payload, options: record.options)
-        let shapeControl = try self.init(&reader, record.children, version)
-        if !reader.isEOF {
-            throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
-        }
-        return shapeControl
     }
 
     private static func commonCtrlProperty(
@@ -217,7 +197,9 @@ public struct HwpEquationEdit {
     public var unknownChildren: [HwpUnknownRecord]
 }
 
-extension HwpEquationEdit: HwpFromRecord {
+extension HwpEquationEdit: HwpTagValidatedRecord {
+    static let expectedTag: HwpSectionTag = .eqEdit
+
     // MARK: loader contract exemption - equation edit payload is best-effort raw-backed
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
@@ -250,19 +232,6 @@ extension HwpEquationEdit: HwpFromRecord {
         fontNameRawPayload = opts.preservedPayload(payloadInfo.fontNameRawPayload)
         rawTrailing = opts.preservedPayload(payloadInfo.rawTrailing)
         unknownChildren = children.map(HwpUnknownRecord.init)
-    }
-
-    // MARK: loader contract exemption - validates equation edit tag before raw preservation
-
-    static func load(_ record: HwpRecord) throws -> Self {
-        try validateSectionRecordTag(record, expectedTag: .eqEdit)
-
-        var reader = DataReader(record.payload, options: record.options)
-        let edit = try self.init(&reader, record.children)
-        if !reader.isEOF {
-            throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
-        }
-        return edit
     }
 
     private static func payloadInfo(from payload: Data) -> HwpEquationEditPayloadInfo {

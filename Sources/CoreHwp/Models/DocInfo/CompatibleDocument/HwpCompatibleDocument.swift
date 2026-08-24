@@ -5,7 +5,9 @@ import Foundation
 
  Tag ID : HWPTAG_COMPATIBLE_DOCUMENT
  */
-public struct HwpCompatibleDocument: HwpFromRecord {
+public struct HwpCompatibleDocument: HwpTagValidatedRecord, HwpRawPayloadRestoringRecord {
+    static let expectedTag: HwpDocInfoTag = .compatibleDocument
+
     /** 대상 프로그램 */
     public let targetDocument: UInt32
     /** 대상 프로그램 필드의 원문 payload */
@@ -46,18 +48,6 @@ public struct HwpCompatibleDocument: HwpFromRecord {
             .map(HwpTrackChange.load)
         rawPayload = targetPayload
         unknownChildren = Self.unconsumedRecords(from: children).map(HwpUnknownRecord.init)
-    }
-
-    static func load(_ record: HwpRecord) throws -> Self {
-        try validateDocInfoRecordTag(record, expectedTag: .compatibleDocument)
-
-        var reader = DataReader(record.payload, options: record.options)
-        var compatibleDocument = try self.init(&reader, record.children)
-        if !reader.isEOF {
-            throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
-        }
-        compatibleDocument.rawPayload = record.options.preservedPayload(record.payload)
-        return compatibleDocument
     }
 }
 

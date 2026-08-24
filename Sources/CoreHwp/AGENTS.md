@@ -31,12 +31,23 @@ CoreHwp/
    - `HwpFromDataWithVersion` — `Data` payload + `HwpVersion`
    - `HwpFromRecord` — child record가 있는 record
    - `HwpFromRecordWithVersion` — child record + version
+   - `HwpTagValidatedRecord`(`WithVersion`) — record tag 검증이 선행되는
+     record. `static let expectedTag`(`HwpSectionTag` 또는 `HwpDocInfoTag`)만
+     선언하면 default `load`가 tag 검증 + init + EOF 강제를 제공한다 (#83)
    - `HwpFromUInt` — bit packing된 `DWORD`/`UInt32` 속성 struct
 2. 기본은 `init(_ reader: inout DataReader, ...)`만 구현한다. `load(...)`는
    프로토콜의 default 구현이 제공하며 EOF를 강제한다.
-3. 예외: record tag 검증, stream 전체 record-tree 파싱, unknown/raw payload
-   보존처럼 default loader로 표현할 수 없는 경우에는 `load(...)`를 override할 수
-   있다. 새 예외를 추가하거나 기존 예외를 수정할 때는
+   - load 후 record 전체 payload를 `rawPayload`로 복원하는 tag-검증 모델은
+     `HwpRawPayloadRestoringRecord`를 함께 채택한다 — 복원 default가 보존
+     off(`.viewer`)에서 rawPayload를 비우므로, load 후 rawPayload를 다시 읽는
+     모델(`HwpListControl` 참조)에는 쓰지 말 것.
+   - `enforcesEOF`는 커스텀 load 시절 EOF를 검사하지 않던 기존 타입의 현행
+     동작 보존 스위치다 — 새 타입에서 끄지 말 것. 일괄 강제 전환은 후속
+     이슈로 분리한다 (#83).
+3. 예외: stream 전체 record-tree 파싱, unknown/raw payload 보존처럼 default
+   loader로 표현할 수 없는 경우에는 `load(...)`를 override할 수 있다
+   (단순 tag 검증은 예외가 아니다 — `HwpTagValidatedRecord`를 채택한다).
+   새 예외를 추가하거나 기존 예외를 수정할 때는
    `// MARK: loader contract exemption - <reason>` 주석으로 이유를 남기고,
    override 안에서 동일한 EOF/typed-error 보장을 직접 유지한다.
 4. 기본 모델 `init`은 해석한 byte만 소비한다. unknown payload, raw trailing,

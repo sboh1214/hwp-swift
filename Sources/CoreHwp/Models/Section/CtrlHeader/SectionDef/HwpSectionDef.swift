@@ -81,7 +81,9 @@ public struct HwpSectionDef {
     public var unknown: Data
 }
 
-extension HwpSectionDef: HwpFromRecordWithVersion {
+extension HwpSectionDef: HwpTagValidatedRecordWithVersion, HwpRawPayloadRestoringRecord {
+    static let expectedTag: HwpSectionTag = .ctrlHeader
+
     init(_ reader: inout DataReader, _ children: [HwpRecord], _ version: HwpVersion) throws {
         let options = reader.options
         let startOffset = reader.byteOffset
@@ -132,20 +134,6 @@ extension HwpSectionDef: HwpFromRecordWithVersion {
 
         unknown = options.preservedPayload(try reader.readToEnd())
         rawPayload = try reader.consumedData(from: startOffset)
-    }
-
-    // MARK: loader contract exemption - validates section control tag before versioned decode
-
-    static func load(_ record: HwpRecord, _ version: HwpVersion) throws -> Self {
-        try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
-
-        var reader = DataReader(record.payload, options: record.options)
-        var sectionDef = try self.init(&reader, record.children, version)
-        if !reader.isEOF {
-            throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
-        }
-        sectionDef.rawPayload = record.options.preservedPayload(record.payload)
-        return sectionDef
     }
 }
 

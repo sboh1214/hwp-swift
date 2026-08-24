@@ -21,9 +21,9 @@ extension HwpShapeComponentRawRecord: HwpPrimitive {
     }
 }
 
-protocol HwpShapeComponentRawRecordBacked: HwpFromRecord {
-    static var expectedSectionTag: HwpSectionTag { get }
-
+protocol HwpShapeComponentRawRecordBacked: HwpTagValidatedRecord
+    where ExpectedTag == HwpSectionTag
+{
     init(rawPayload: Data, unknownChildren: [HwpUnknownRecord])
 }
 
@@ -38,19 +38,6 @@ extension HwpShapeComponentRawRecordBacked {
             unknownChildren: children.map(HwpUnknownRecord.init)
         )
     }
-
-    // MARK: loader contract exemption - validates shape record tag before raw preservation
-
-    static func load(_ record: HwpRecord) throws -> Self {
-        try validateSectionRecordTag(record, expectedTag: expectedSectionTag)
-
-        var reader = DataReader(record.payload, options: record.options)
-        let rawRecord = try self.init(&reader, record.children)
-        if !reader.isEOF {
-            throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
-        }
-        return rawRecord
-    }
 }
 
 /** 선 개체 요소 세부 record */
@@ -58,7 +45,7 @@ public struct HwpShapeComponentLine: HwpShapeComponentRawRecordBacked {
     public var rawPayload: Data
     public var unknownChildren: [HwpUnknownRecord]
 
-    static let expectedSectionTag: HwpSectionTag = .shapeComponentLine
+    static let expectedTag: HwpSectionTag = .shapeComponentLine
 }
 
 /** 타원 개체 요소 세부 record */
@@ -66,7 +53,7 @@ public struct HwpShapeComponentEllipse: HwpShapeComponentRawRecordBacked {
     public var rawPayload: Data
     public var unknownChildren: [HwpUnknownRecord]
 
-    static let expectedSectionTag: HwpSectionTag = .shapeComponentEllipse
+    static let expectedTag: HwpSectionTag = .shapeComponentEllipse
 }
 
 /** 호 개체 요소 세부 record */
@@ -74,7 +61,7 @@ public struct HwpShapeComponentArc: HwpShapeComponentRawRecordBacked {
     public var rawPayload: Data
     public var unknownChildren: [HwpUnknownRecord]
 
-    static let expectedSectionTag: HwpSectionTag = .shapeComponentArc
+    static let expectedTag: HwpSectionTag = .shapeComponentArc
 }
 
 /** 다각형 개체 요소 세부 record */
@@ -82,7 +69,7 @@ public struct HwpShapeComponentPolygon: HwpShapeComponentRawRecordBacked {
     public var rawPayload: Data
     public var unknownChildren: [HwpUnknownRecord]
 
-    static let expectedSectionTag: HwpSectionTag = .shapeComponentPolygon
+    static let expectedTag: HwpSectionTag = .shapeComponentPolygon
 }
 
 /** 곡선 개체 요소 세부 record */
@@ -90,7 +77,7 @@ public struct HwpShapeComponentCurve: HwpShapeComponentRawRecordBacked {
     public var rawPayload: Data
     public var unknownChildren: [HwpUnknownRecord]
 
-    static let expectedSectionTag: HwpSectionTag = .shapeComponentCurve
+    static let expectedTag: HwpSectionTag = .shapeComponentCurve
 }
 
 /** 컨테이너 개체 요소 세부 record */
@@ -98,7 +85,7 @@ public struct HwpShapeComponentContainer: HwpShapeComponentRawRecordBacked {
     public var rawPayload: Data
     public var unknownChildren: [HwpUnknownRecord]
 
-    static let expectedSectionTag: HwpSectionTag = .shapeComponentContainer
+    static let expectedTag: HwpSectionTag = .shapeComponentContainer
 }
 
 /** 차트 데이터 record */
@@ -106,7 +93,7 @@ public struct HwpShapeComponentChartData: HwpShapeComponentRawRecordBacked {
     public var rawPayload: Data
     public var unknownChildren: [HwpUnknownRecord]
 
-    static let expectedSectionTag: HwpSectionTag = .chartData
+    static let expectedTag: HwpSectionTag = .chartData
 }
 
 /** 글맵시 개체 요소 세부 record */
@@ -114,7 +101,7 @@ public struct HwpShapeComponentTextart: HwpShapeComponentRawRecordBacked {
     public var rawPayload: Data
     public var unknownChildren: [HwpUnknownRecord]
 
-    static let expectedSectionTag: HwpSectionTag = .shapeComponentTextart
+    static let expectedTag: HwpSectionTag = .shapeComponentTextart
 }
 
 /** 양식 개체 record */
@@ -122,7 +109,7 @@ public struct HwpShapeComponentFormObject: HwpShapeComponentRawRecordBacked {
     public var rawPayload: Data
     public var unknownChildren: [HwpUnknownRecord]
 
-    static let expectedSectionTag: HwpSectionTag = .formObject
+    static let expectedTag: HwpSectionTag = .formObject
 }
 
 /** 메모 모양 record */
@@ -130,7 +117,7 @@ public struct HwpShapeComponentMemoShape: HwpShapeComponentRawRecordBacked {
     public var rawPayload: Data
     public var unknownChildren: [HwpUnknownRecord]
 
-    static let expectedSectionTag: HwpSectionTag = .memoShape
+    static let expectedTag: HwpSectionTag = .memoShape
 }
 
 /** 메모 목록 record */
@@ -138,7 +125,7 @@ public struct HwpShapeComponentMemoList: HwpShapeComponentRawRecordBacked {
     public var rawPayload: Data
     public var unknownChildren: [HwpUnknownRecord]
 
-    static let expectedSectionTag: HwpSectionTag = .memoList
+    static let expectedTag: HwpSectionTag = .memoList
 }
 
 /** 동영상 데이터 record */
@@ -146,7 +133,7 @@ public struct HwpShapeComponentVideoData: HwpShapeComponentRawRecordBacked {
     public var rawPayload: Data
     public var unknownChildren: [HwpUnknownRecord]
 
-    static let expectedSectionTag: HwpSectionTag = .videoData
+    static let expectedTag: HwpSectionTag = .videoData
 }
 
 /** 아직 세부 타입이 확정되지 않은 개체 요소 세부 record */
@@ -154,7 +141,7 @@ public struct HwpShapeComponentUnknown: HwpShapeComponentRawRecordBacked {
     public var rawPayload: Data
     public var unknownChildren: [HwpUnknownRecord]
 
-    static let expectedSectionTag: HwpSectionTag = .shapeComponentUnknown
+    static let expectedTag: HwpSectionTag = .shapeComponentUnknown
 }
 
 /** 개체 요소 공통 레코드 */
@@ -286,7 +273,9 @@ extension HwpShapeComponent {
     }
 }
 
-extension HwpShapeComponent: HwpFromRecord {
+extension HwpShapeComponent: HwpTagValidatedRecord {
+    static let expectedTag: HwpSectionTag = .shapeComponent
+
     // MARK: loader contract exemption - preserves common shape-component payload as raw data
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
@@ -346,19 +335,6 @@ extension HwpShapeComponent: HwpFromRecord {
                     && !Self.consumedChildTagIds.contains(child.tagId)
             }
             .map { HwpUnknownRecord($0.element) }
-        return component
-    }
-
-    // MARK: loader contract exemption - validates shape-component tag before raw preservation
-
-    static func load(_ record: HwpRecord) throws -> Self {
-        try validateSectionRecordTag(record, expectedTag: .shapeComponent)
-
-        var reader = DataReader(record.payload, options: record.options)
-        let component = try self.init(&reader, record.children)
-        if !reader.isEOF {
-            throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
-        }
         return component
     }
 
@@ -472,26 +448,15 @@ public struct HwpShapeComponentRectangle {
     public var unknownChildren: [HwpUnknownRecord]
 }
 
-extension HwpShapeComponentRectangle: HwpFromRecord {
+extension HwpShapeComponentRectangle: HwpTagValidatedRecord {
+    static let expectedTag: HwpSectionTag = .shapeComponentRectangle
+
     // MARK: loader contract exemption - rectangle component payload is raw-backed
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
         // rectangleDetail이 load 반환 후 rawPayload를 다시 읽으므로 분리 복사한다.
         rawPayload = reader.options.decoupledPayload(try reader.readToEnd())
         unknownChildren = children.map(HwpUnknownRecord.init)
-    }
-
-    // MARK: loader contract exemption - validates rectangle component tag before raw preservation
-
-    static func load(_ record: HwpRecord) throws -> Self {
-        try validateSectionRecordTag(record, expectedTag: .shapeComponentRectangle)
-
-        var reader = DataReader(record.payload, options: record.options)
-        let rectangle = try self.init(&reader, record.children)
-        if !reader.isEOF {
-            throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
-        }
-        return rectangle
     }
 }
 
@@ -512,7 +477,9 @@ public struct HwpShapeComponentOLE {
     public var unknownChildren: [HwpUnknownRecord]
 }
 
-extension HwpShapeComponentOLE: HwpFromRecord {
+extension HwpShapeComponentOLE: HwpTagValidatedRecord {
+    static let expectedTag: HwpSectionTag = .shapeComponentOle
+
     /** BinData id의 payload 내 offset (속성 UInt32 + extent INT32 × 2 = 12) */
     private static let binaryDataIdOffset = 12
 
@@ -524,19 +491,6 @@ extension HwpShapeComponentOLE: HwpFromRecord {
         binaryDataId = Self.binaryDataId(from: rawPayload)
         rawTrailing = Self.rawTrailing(from: rawPayload)
         unknownChildren = children.map(HwpUnknownRecord.init)
-    }
-
-    // MARK: loader contract exemption - validates OLE component tag before raw preservation
-
-    static func load(_ record: HwpRecord) throws -> Self {
-        try validateSectionRecordTag(record, expectedTag: .shapeComponentOle)
-
-        var reader = DataReader(record.payload, options: record.options)
-        let ole = try self.init(&reader, record.children)
-        if !reader.isEOF {
-            throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
-        }
-        return ole
     }
 
     private static func binaryDataId(from payload: Data) -> UInt32? {
@@ -570,7 +524,9 @@ public struct HwpShapeComponentPicture {
     public var unknownChildren: [HwpUnknownRecord]
 }
 
-extension HwpShapeComponentPicture: HwpFromRecord {
+extension HwpShapeComponentPicture: HwpTagValidatedRecord {
+    static let expectedTag: HwpSectionTag = .shapeComponentPicture
+
     // MARK: loader contract exemption - picture component payload is best-effort raw-backed
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
@@ -579,19 +535,6 @@ extension HwpShapeComponentPicture: HwpFromRecord {
         binaryDataId = Self.binaryDataId(from: rawPayload)
         rawTrailing = Self.rawTrailing(from: rawPayload)
         unknownChildren = children.map(HwpUnknownRecord.init)
-    }
-
-    // MARK: loader contract exemption - validates picture component tag before raw preservation
-
-    static func load(_ record: HwpRecord) throws -> Self {
-        try validateSectionRecordTag(record, expectedTag: .shapeComponentPicture)
-
-        var reader = DataReader(record.payload, options: record.options)
-        let picture = try self.init(&reader, record.children)
-        if !reader.isEOF {
-            throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
-        }
-        return picture
     }
 
     private static func binaryDataId(from payload: Data) -> UInt16? {

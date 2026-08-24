@@ -34,7 +34,12 @@ public struct HwpTable {
     }
 }
 
-extension HwpTable: HwpFromRecordWithVersion {
+extension HwpTable: HwpTagValidatedRecordWithVersion, HwpRawPayloadRestoringRecord {
+    static let expectedTag: HwpSectionTag = .ctrlHeader
+    /// 커스텀 load 시절 EOF를 검사하지 않던 현행 동작 보존 (#83) —
+    /// init이 trailing까지 전부 소비하므로 강제 전환은 후속 이슈에서 켠다.
+    static let enforcesEOF = false
+
     // MARK: loader contract exemption - preserves table control trailing payload
 
     init(_ reader: inout DataReader, _ children: [HwpRecord], _ version: HwpVersion) throws {
@@ -66,17 +71,6 @@ extension HwpTable: HwpFromRecordWithVersion {
         }
         cellArray = parsedChildren.cells
         unknownChildren = parsedChildren.unknownChildren
-    }
-
-    // MARK: loader contract exemption - validates table control tag before child parsing
-
-    static func load(_ record: HwpRecord, _ version: HwpVersion) throws -> Self {
-        try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
-
-        var reader = DataReader(record.payload, options: record.options)
-        var table = try self.init(&reader, record.children, version)
-        table.rawPayload = record.options.preservedPayload(record.payload)
-        return table
     }
 
     private static func parseChildren(
@@ -183,7 +177,12 @@ extension HwpTableCellHeader {
     }
 }
 
-extension HwpTableCellHeader: HwpFromRecord {
+extension HwpTableCellHeader: HwpTagValidatedRecord, HwpRawPayloadRestoringRecord {
+    static let expectedTag: HwpSectionTag = .listHeader
+    /// 커스텀 load 시절 EOF를 검사하지 않던 현행 동작 보존 (#83) —
+    /// init이 trailing까지 전부 소비하므로 강제 전환은 후속 이슈에서 켠다.
+    static let enforcesEOF = false
+
     // MARK: loader contract exemption - preserves table-cell header trailing payload
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
@@ -199,16 +198,5 @@ extension HwpTableCellHeader: HwpFromRecord {
         cellProperty = HwpTableCellProperty.decode(from: trailing)
         rawPayload = try reader.consumedData(from: startOffset)
         unknownChildren = children.map(HwpUnknownRecord.init)
-    }
-
-    // MARK: loader contract exemption - validates LIST_HEADER tag before cell header decode
-
-    static func load(_ record: HwpRecord) throws -> Self {
-        try validateSectionRecordTag(record, expectedTag: .listHeader)
-
-        var reader = DataReader(record.payload, options: record.options)
-        var header = try self.init(&reader, record.children)
-        header.rawPayload = record.options.preservedPayload(record.payload)
-        return header
     }
 }

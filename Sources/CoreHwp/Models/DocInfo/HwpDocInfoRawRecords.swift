@@ -5,17 +5,13 @@ import Foundation
 
  Tag ID : HWPTAG_DOC_DATA
  */
-public struct HwpDocData: HwpFromRecord {
+public struct HwpDocData: HwpTagValidatedRecord {
+    static let expectedTag: HwpDocInfoTag = .docData
+
     public let rawPayload: Data
     public let docDataInfo: HwpDocDataInfo?
     public let forbiddenCharArray: [HwpForbiddenChar]
     public let unknownChildren: [HwpUnknownRecord]
-
-    // MARK: loader contract exemption - validates DocInfo tag before preserving raw payload
-
-    static func load(_ record: HwpRecord) throws -> Self {
-        try loadDocInfoRecord(record, expectedTag: .docData, as: Self.self)
-    }
 
     // MARK: loader contract exemption - DOC_DATA payload is retained for best-effort views
 
@@ -47,16 +43,12 @@ public struct HwpDocDataInfo: HwpPrimitive {
 
  Tag ID : HWPTAG_DISTRIBUTE_DOC_DATA
  */
-public struct HwpDistributeDocData: HwpFromRecord {
+public struct HwpDistributeDocData: HwpTagValidatedRecord {
+    static let expectedTag: HwpDocInfoTag = .distributeDocData
+
     public let rawPayload: Data
     public let distributeDocDataInfo: HwpDistributeDocDataInfo?
     public let unknownChildren: [HwpUnknownRecord]
-
-    // MARK: loader contract exemption - validates DocInfo tag before preserving raw payload
-
-    static func load(_ record: HwpRecord) throws -> Self {
-        try loadDocInfoRecord(record, expectedTag: .distributeDocData, as: Self.self)
-    }
 
     // MARK: loader contract exemption - DISTRIBUTE_DOC_DATA payload is retained as raw data
 
@@ -83,16 +75,12 @@ public struct HwpDistributeDocDataInfo: HwpPrimitive {
 
  Tag ID : HWPTAG_TRACK_CHANGE
  */
-public struct HwpTrackChange: HwpFromRecord {
+public struct HwpTrackChange: HwpTagValidatedRecord {
+    static let expectedTag: HwpDocInfoTag = .trackChange
+
     public let rawPayload: Data
     public let trackChangeInfo: HwpTrackChangeInfo?
     public let unknownChildren: [HwpUnknownRecord]
-
-    // MARK: loader contract exemption - validates DocInfo tag before preserving raw payload
-
-    static func load(_ record: HwpRecord) throws -> Self {
-        try loadDocInfoRecord(record, expectedTag: .trackChange, as: Self.self)
-    }
 
     // MARK: loader contract exemption - TRACK_CHANGE payload is retained for best-effort views
 
@@ -119,16 +107,12 @@ public struct HwpTrackChangeInfo: HwpPrimitive {
 
  Tag ID : HWPTAG_MEMO_SHAPE
  */
-public struct HwpMemoShape: HwpFromRecord {
+public struct HwpMemoShape: HwpTagValidatedRecord {
+    static let expectedTag: HwpDocInfoTag = .memoShape
+
     public let rawPayload: Data
     public let shapeInfo: HwpMemoShapeInfo?
     public let unknownChildren: [HwpUnknownRecord]
-
-    // MARK: loader contract exemption - validates DocInfo tag before preserving raw payload
-
-    static func load(_ record: HwpRecord) throws -> Self {
-        try loadDocInfoRecord(record, expectedTag: .memoShape, as: Self.self)
-    }
 
     // MARK: loader contract exemption - MEMO_SHAPE payload is retained for best-effort views
 
@@ -165,16 +149,12 @@ public struct HwpMemoShapeInfo: HwpPrimitive {
 
  Tag ID : HWPTAG_TRACK_CHANGE_CONTENT
  */
-public struct HwpTrackChangeContent: HwpFromRecord {
+public struct HwpTrackChangeContent: HwpTagValidatedRecord {
+    static let expectedTag: HwpDocInfoTag = .trackChangeContent
+
     public let rawPayload: Data
     public let contentInfo: HwpTrackChangeContentInfo?
     public let unknownChildren: [HwpUnknownRecord]
-
-    // MARK: loader contract exemption - validates DocInfo tag before preserving raw payload
-
-    static func load(_ record: HwpRecord) throws -> Self {
-        try loadDocInfoRecord(record, expectedTag: .trackChangeContent, as: Self.self)
-    }
 
     // MARK: loader contract exemption - TRACK_CHANGE_CONTENT payload is retained for views
 
@@ -214,16 +194,12 @@ public struct HwpTrackChangeTimestamp: HwpPrimitive {
 
  Tag ID : HWPTAG_TRACK_CHANGE_AUTHOR
  */
-public struct HwpTrackChangeAuthor: HwpFromRecord {
+public struct HwpTrackChangeAuthor: HwpTagValidatedRecord {
+    static let expectedTag: HwpDocInfoTag = .trackChangeAuthor
+
     public let rawPayload: Data
     public let authorInfo: HwpTrackChangeAuthorInfo?
     public let unknownChildren: [HwpUnknownRecord]
-
-    // MARK: loader contract exemption - validates DocInfo tag before preserving raw payload
-
-    static func load(_ record: HwpRecord) throws -> Self {
-        try loadDocInfoRecord(record, expectedTag: .trackChangeAuthor, as: Self.self)
-    }
 
     // MARK: loader contract exemption - TRACK_CHANGE_AUTHOR payload is retained for views
 
@@ -247,19 +223,18 @@ public struct HwpTrackChangeAuthorInfo: HwpPrimitive {
     public let rawTrailing: Data
 }
 
+/// `HwpTagValidatedRecord` 도입(#83)으로 프로덕션 호출부는 모두 프로토콜
+/// default `load`로 옮겨졌다 — 임의 `HwpFromRecord` 타입에 DocInfo tag 검증을
+/// 조합하는 이 진입점은 tag-검증 typed-error 계약 테스트가 사용한다.
+/// 검증 후에는 `T`의 `load` 의미론을 그대로 따르므로 tag-검증 채택 타입을
+/// 넘기면 타입 고유 `expectedTag`로 한 번 더 검증된다.
 func loadDocInfoRecord<T: HwpFromRecord>(
     _ record: HwpRecord,
     expectedTag: HwpDocInfoTag,
     as type: T.Type
 ) throws -> T {
     try validateDocInfoRecordTag(record, expectedTag: expectedTag)
-
-    var reader = DataReader(record.payload, options: record.options)
-    let model = try type.init(&reader, record.children)
-    if !reader.isEOF {
-        throw HwpError.bytesAreNotEOF(model: type, remain: reader.remainBytes)
-    }
-    return model
+    return try type.load(record)
 }
 
 func validateDocInfoRecordTag(

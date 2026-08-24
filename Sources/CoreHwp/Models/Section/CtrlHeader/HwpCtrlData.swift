@@ -15,15 +15,11 @@ public struct HwpCtrlData {
     }
 }
 
-extension HwpCtrlData: HwpFromRecord {
-    // MARK: loader contract exemption - validates CTRL_DATA tag before raw preservation
-
-    static func load(_ record: HwpRecord) throws -> Self {
-        try validateSectionRecordTag(record, expectedTag: .ctrlData)
-
-        var reader = DataReader(record.payload, options: record.options)
-        return try self.init(&reader, record.children)
-    }
+extension HwpCtrlData: HwpTagValidatedRecord {
+    static let expectedTag: HwpSectionTag = .ctrlData
+    /// 커스텀 load 시절 EOF를 검사하지 않던 현행 동작 보존 (#83) —
+    /// init이 payload를 전부 소비하므로 강제 전환은 후속 이슈에서 켠다.
+    static let enforcesEOF = false
 
     // MARK: loader contract exemption - CTRL_DATA payload is currently opaque raw data
 

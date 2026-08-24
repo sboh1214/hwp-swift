@@ -233,6 +233,23 @@ payload가 0xFFF 이상이면 size 비트가 level 필드로 넘쳐 헤더가 �
   비거나 경로가 어긋나 **아무것도 비교하지 않은 채 초록**이 되는 것을 막는다.
   픽스처는 늘어나는 방향으로만 움직이므로 내려서 통과시키지 말 것.
 
+## tag 검증 load 스위트 (#83)
+
+`DocInfo/RawRecords/DocInfoRawRecordTagValidationTests.swift`가
+**`loadDocInfoRecord`의 유일한 소비자**다 — 프로덕션 호출부는 전부 프로토콜
+default `load`로 옮겨졌다. 프로덕션 미참조라고 지우지 말 것: 임의
+`HwpFromRecord` 타입에 DocInfo tag 검증을 조합했을 때의 typed-error 계약은 그
+진입점에서만 검사할 수 있다 (채택 타입은 자기 `expectedTag`가 이미 박혀 있다).
+
+- **그 헬퍼에 tag-검증 채택 타입을 넘기면 두 번 검증된다** (헬퍼 인자 tag +
+  타입 고유 `expectedTag`). 그래서 이 파일의 tag 불일치 단언은 헬퍼가 아니라
+  모델의 `load`를 직접 부른다 — 감싸면 어느 쪽 검증이 던졌는지 구별되지 않는다.
+- **`enforcesEOF` default(`true`)를 잠그는 것은 `Models/Layout/`의 두 파일이다** —
+  `CompatibleDocumentStabilityTests`·`LayoutCompatibilityStabilityTests`가
+  tag-검증 모델의 `load`에서 `bytesAreNotEOF`를 단언하므로 default가 뒤집히면
+  여기서 빨개진다. `Stability/Core/LoaderProtocolStabilityTests.swift`는 base
+  프로토콜 5종의 EOF만 보므로 이 갈래를 대신 증명하지 않는다.
+
 ## 테스트 스타일
 
 | 패턴 | 예시 | 언제 |

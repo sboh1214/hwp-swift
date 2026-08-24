@@ -81,24 +81,12 @@ extension HwpColumn: HwpFromData {
     }
 }
 
-extension HwpColumn: HwpFromRecord {
+extension HwpColumn: HwpTagValidatedRecord, HwpRawPayloadRestoringRecord {
+    static let expectedTag: HwpSectionTag = .ctrlHeader
+
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
         try self.init(&reader)
         unknownChildren = children.map(HwpUnknownRecord.init)
-    }
-
-    // MARK: loader contract exemption - validates column control tag before decoding
-
-    static func load(_ record: HwpRecord) throws -> Self {
-        try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
-
-        var reader = DataReader(record.payload, options: record.options)
-        var column = try self.init(&reader, record.children)
-        if !reader.isEOF {
-            throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
-        }
-        column.rawPayload = record.options.preservedPayload(record.payload)
-        return column
     }
 }
 

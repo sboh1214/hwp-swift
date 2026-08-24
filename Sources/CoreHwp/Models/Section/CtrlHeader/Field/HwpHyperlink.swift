@@ -61,7 +61,12 @@ public struct HwpHyperlink {
     }
 }
 
-extension HwpHyperlink: HwpPrimitive {
+extension HwpHyperlink: HwpTagValidatedRecord, HwpRawPayloadRestoringRecord {
+    static let expectedTag: HwpSectionTag = .ctrlHeader
+    /// 커스텀 load 시절 EOF를 검사하지 않던 현행 동작 보존 (#83) —
+    /// init이 trailing까지 전부 소비하므로 강제 전환은 후속 이슈에서 켠다.
+    static let enforcesEOF = false
+
     // MARK: loader contract exemption - preserves hyperlink trailing payload
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
@@ -82,16 +87,5 @@ extension HwpHyperlink: HwpPrimitive {
         rawTrailing = reader.options.preservedPayload(try reader.readToEnd())
         rawPayload = try reader.consumedData(from: startOffset)
         unknownChildren = children.map(HwpUnknownRecord.init)
-    }
-
-    // MARK: loader contract exemption - validates hyperlink control tag before decoding
-
-    static func load(_ record: HwpRecord) throws -> Self {
-        try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
-
-        var reader = DataReader(record.payload, options: record.options)
-        var hyperlink = try self.init(&reader, record.children)
-        hyperlink.rawPayload = record.options.preservedPayload(record.payload)
-        return hyperlink
     }
 }
