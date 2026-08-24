@@ -36,16 +36,22 @@ SwiftFormat과 SwiftLint는 모든 PR에서 CI(`ci.yml`의 `lint` 잡)으로 확
 라벨은 release-drafter(`.github/release-drafter.yml`)가 릴리스 노트 분류와
 버전 산정에 사용하므로, PR 성격대로 답니다.
 
-- 기능·성능 PR → `enhancement` (릴리스 노트의 🚀 Features로 분류됩니다)
-- 버그 수정 PR → `bug` (성능 관련이면 `performance`를 함께). 버그 수정에는
-  `enhancement`를 달지 않습니다.
-- 문서·CI·테스트·리팩터링 PR → `maintenance`
+- 기능 PR → `enhancement` (릴리스 노트의 🚀 Features로 분류됩니다)
+- 성능 개선 PR → `performance` (⚡️ Performance로 분류됩니다)
+- 버그 수정 PR → `bug` (🐛 Bug Fixes로 분류됩니다). 성능 회귀 수정도
+  `performance`가 아니라 `bug`를 답니다. 버그 수정에는 `enhancement`를
+  달지 않습니다.
+- 문서·CI·테스트·리팩터링 PR → `maintenance` (🧰 Maintenance로 분류됩니다)
 - 공개 API의 소스 브레이킹 또는 동작 변경이 있으면 `api-breaking`을 추가로
   답니다. 이 라벨이 하나라도 든 구간은 다음 릴리스 버전이 minor로 올라갑니다
   — 1.0 전까지 파괴 변경은 minor 버전에 싣습니다.
 
+분류 라벨(`enhancement`·`performance`·`bug`·`maintenance`)은 PR당 하나만
+답니다 — release-drafter는 여러 카테고리에 걸치는 PR을 카테고리마다 중복
+기재합니다. `api-breaking`은 분류 라벨이 아니므로 함께 달아도 됩니다.
+
 라벨이 없는 PR은 릴리스 노트에서 카테고리 밖으로 떨어지므로, 머지 전에
-반드시 하나 이상 답니다.
+반드시 분류 라벨 하나를 답니다.
 
 ## 문서
 
