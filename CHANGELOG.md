@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Changed
+
+- **record tag 검증 보일러플레이트를 loader 프로토콜 default로 흡수했습니다**
+  (#83). `HwpTagValidatedRecord` / `HwpTagValidatedRecordWithVersion`(둘 다
+  internal)을 채택하고 `static let expectedTag`(`HwpSectionTag` 또는
+  `HwpDocInfoTag`)만 선언하면 tag 검증 + reader 생성 + init + EOF 강제를
+  default `load`가 제공합니다. 모델 18개 파일에 흩어져 있던 커스텀 `load` 구현
+  31개와 `// MARK: loader contract exemption` 주석 28개가 사라지고 신설 프로토콜
+  파일(118줄)의 default 구현 6개가 그 자리를 대신해, 파서 소스가 순 126줄
+  줄었습니다. 공개 API·파싱 동작·렌더 산출물은 무변화입니다.
+  - load 반환 직전 `rawPayload`를 record 전체 payload로 복원하던 반복은
+    `HwpRawPayloadRestoringRecord` 표식으로 옮겼습니다. 복원이
+    `preservedPayload` 게이트를 그대로 지나므로 `.viewer` 프리셋의 메모리
+    이득도 유지됩니다 — load 후 `rawPayload`를 다시 읽는 `HwpListControl`은
+    이 표식 대신 커스텀 `load`에서 `decoupledPayload`를 유지합니다.
+  - `enforcesEOF = false`는 커스텀 load 시절 EOF를 검사하지 않던 8종의 **현행
+    동작을 동결**하는 스위치입니다. 새 타입에서 끄지 마십시오 — 일괄 강제
+    전환은 실문서 확인과 함께 후속 이슈로 분리했습니다.
+
 ## 0.16.0 (2026-08-24)
 
 ### Breaking Changes
