@@ -63,17 +63,8 @@ public struct HwpIdMappings {
     public var unknownChildren: [HwpUnknownRecord]
 }
 
-extension HwpIdMappings: HwpFromRecordWithVersion {
-    static func load(_ record: HwpRecord, _ version: HwpVersion) throws -> Self {
-        try validateDocInfoRecordTag(record, expectedTag: .idMappings)
-
-        var reader = DataReader(record.payload, options: record.options)
-        let idMappings = try self.init(&reader, record.children, version)
-        if !reader.isEOF {
-            throw HwpError.bytesAreNotEOF(model: Self.self, remain: reader.remainBytes)
-        }
-        return idMappings
-    }
+extension HwpIdMappings: HwpTagValidatedRecordWithVersion {
+    static let expectedTag: HwpDocInfoTag = .idMappings
 
     // swiftlint:disable:next function_body_length
     init() {

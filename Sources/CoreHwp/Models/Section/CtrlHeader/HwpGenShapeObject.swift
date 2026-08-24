@@ -46,9 +46,20 @@ public struct HwpGenShapeObject {
     }
 }
 
-extension HwpGenShapeObject: HwpFromRecord {
+extension HwpGenShapeObject: HwpTagValidatedRecord, HwpTagValidatedRecordWithVersion,
+    HwpRawPayloadRestoringRecord
+{
+    static let expectedTag: HwpSectionTag = .ctrlHeader
+    /// 커스텀 load 시절 EOF를 검사하지 않던 현행 동작 보존 (#83) —
+    /// init이 trailing까지 전부 소비하므로 강제 전환은 후속 이슈에서 켠다.
+    static let enforcesEOF = false
+
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
         try self.init(&reader, children, nil)
+    }
+
+    init(_ reader: inout DataReader, _ children: [HwpRecord], _ version: HwpVersion) throws {
+        try self.init(&reader, children, version as HwpVersion?)
     }
 
     // MARK: loader contract exemption - preserves common object trailing payload
@@ -82,29 +93,5 @@ extension HwpGenShapeObject: HwpFromRecord {
                     && $0.tagId != HwpSectionTag.ctrlData.rawValue
             }
             .map(HwpUnknownRecord.init)
-    }
-
-    // MARK: loader contract exemption - validates control-header tag before object decode
-
-    static func load(_ record: HwpRecord) throws -> Self {
-        try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
-
-        // The protocol default cannot validate the section record tag.
-        var reader = DataReader(record.payload, options: record.options)
-        var object = try self.init(&reader, record.children)
-        object.rawPayload = record.options.preservedPayload(record.payload)
-        return object
-    }
-
-    // MARK: loader contract exemption - validates control-header tag before versioned decode
-
-    static func load(_ record: HwpRecord, _ version: HwpVersion) throws -> Self {
-        try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
-
-        // The protocol default cannot validate the section record tag.
-        var reader = DataReader(record.payload, options: record.options)
-        var object = try self.init(&reader, record.children, version)
-        object.rawPayload = record.options.preservedPayload(record.payload)
-        return object
     }
 }

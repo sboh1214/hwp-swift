@@ -18,7 +18,12 @@ public struct HwpCtrlHeader {
     }
 }
 
-extension HwpCtrlHeader: HwpPrimitive {
+extension HwpCtrlHeader: HwpTagValidatedRecord {
+    static let expectedTag: HwpSectionTag = .ctrlHeader
+    /// 커스텀 load 시절 EOF를 검사하지 않던 현행 동작 보존 (#83) —
+    /// init이 payload를 전부 소비하므로 강제 전환은 후속 이슈에서 켠다.
+    static let enforcesEOF = false
+
     // MARK: loader contract exemption - malformed ctrl header still preserves raw payload
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
@@ -31,14 +36,5 @@ extension HwpCtrlHeader: HwpPrimitive {
         _ = try reader.readToEnd()
         rawPayload = try reader.consumedData(from: startOffset)
         unknownChildren = children.map(HwpUnknownRecord.init)
-    }
-
-    // MARK: loader contract exemption - validates control-header tag before raw preservation
-
-    static func load(_ record: HwpRecord) throws -> Self {
-        try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
-
-        var reader = DataReader(record.payload, options: record.options)
-        return try self.init(&reader, record.children)
     }
 }

@@ -12,7 +12,7 @@ Utils/
 ├── Type.swift            # DWORD / WORD / WCHAR typealias (HWP 스펙 이름)
 ├── ExcludeEquatable.swift # == 비교에서 특정 필드를 제외하는 property wrapper
 ├── Extensions/           # Data, Character, StringProtocol, BinaryInteger, Array, WCHAR
-├── Protocols/            # 5개 loader 프로토콜 + HwpPrimitive typealias
+├── Protocols/            # 5개 loader 프로토콜 + tag-검증 refinement + HwpPrimitive typealias
 └── Readers/              # StreamReader (OLE), HwpInflate (deflate), DataReader (byte), BitsReader (bit)
 ```
 
@@ -42,13 +42,27 @@ extension HwpFromX {
 EOF 체크는 load-bearing 규약이다 — 스펙 오독뿐 아니라 silent하게 truncate된
 payload도 잡아낸다.
 
-예외는 다음 경우에만 허용한다.
+record tag 검증이 default `load`보다 먼저 필요한 record는 override 대신
+`HwpTagValidatedRecord`/`HwpTagValidatedRecordWithVersion`을 채택한다 (#83) —
+`static let expectedTag`(`HwpSectionTag`/`HwpDocInfoTag` 양쪽 지원)만 선언하면
+default `load`가 tag 검증 + init + EOF 강제를 제공한다. 두 가지 변형 축이 있다.
 
-- record tag 검증이 default `load`보다 먼저 필요하다.
+- `HwpRawPayloadRestoringRecord` 채택: load 반환 직전 record 전체 payload를
+  `rawPayload`로 복원한다 (`preservedPayload` 게이트를 거치므로 보존
+  off에서는 비운다 — load 후 rawPayload를 다시 읽는 모델에는 쓰지 말 것).
+- `static let enforcesEOF = false`: 커스텀 load 시절 EOF를 검사하지 않던
+  기존 타입의 현행 동작 보존 스위치. 새 타입에서 끄지 말 것 — 기존 미검사
+  타입의 일괄 강제 전환은 실문서 fixture 확인과 함께 후속 이슈로 다룬다.
+
+`load` override 예외는 다음 경우에만 허용한다.
+
 - stream payload 전체를 `parseTreeRecord(data:)`에 넘겨야 한다.
 - unknown record/control 또는 아직 해석하지 않는 trailing bytes를
   `rawPayload`/`rawTrailing`/`unknown`으로 보존해야 한다.
 - public convenience loader가 OLE/FileWrapper 같은 다른 입력 형태를 다룬다.
+- tag-검증 default로 표현되지 않는 합성 load다 — 현재
+  `HwpListControl.load`(헤더 load에 위임 후 `decoupledPayload`로 덮음)와
+  `HwpShapeComponent.load(_:_:)`(비-version load 재사용 + 글상자 후처리)뿐.
 
 새 예외를 추가하거나 기존 예외를 수정할 때는
 `// MARK: loader contract exemption - <reason>` 주석을 `load` override 또는
@@ -63,6 +77,8 @@ consumes-all `init` 근처에 남긴다. override는 default loader와 동등하
 | `HwpFromDataWithVersion` | 평탄한 `Data` payload, `HwpVersion`에 따라 분기 |
 | `HwpFromRecord` | child record가 있는 record; `init(_:_ children:)` |
 | `HwpFromRecordWithVersion` | child record + version |
+| `HwpTagValidatedRecord` | `HwpFromRecord` + 선행 record tag 검증 (`expectedTag`) |
+| `HwpTagValidatedRecordWithVersion` | `HwpFromRecordWithVersion` + 선행 tag 검증 |
 | `HwpFromUInt` | bit packing된 속성을 `DWORD`/`UInt32`에서 디코딩 |
 
 ## Reader
@@ -172,8 +188,10 @@ dispatch.
   Apple 빌드와의 대칭이 깨진다.
 - reader/record tree 경계 검증에 `precondition`, force unwrap, `fatalError`를
   사용 — malformed HWP 입력은 모두 typed `HwpError`로 반환해야 한다.
-- 여섯 번째 loader 프로토콜 추가 — (Data|Record) × (Version|noVersion) + UInt의
-  matrix로 이미 충분하다. 기존 것을 확장할 것.
+- 새 입력 형태의 loader 프로토콜 추가 — (Data|Record) × (Version|noVersion) +
+  UInt의 matrix로 이미 충분하다. Record 갈래의 tag-검증 refinement
+  (`HwpTagValidatedRecord` 계열, #83)까지가 허용 범위이고, 그 밖은 기존 것을
+  확장할 것.
 - 프로토콜 `init`에서 이유 없이 모든 byte를 소진하지 않거나, 반대로
   `readToEnd()`로 잔여 byte를 숨긴다. 기본 모델은 해석한 byte만 소비하고 default
   loader가 EOF를 검증하게 둔다. raw 보존/record-tree 파싱 예외는 위 계약에 맞춰

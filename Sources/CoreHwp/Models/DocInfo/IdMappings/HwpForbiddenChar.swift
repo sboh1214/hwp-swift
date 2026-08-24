@@ -29,12 +29,8 @@ extension HwpForbiddenChar: HwpFromData {
     }
 }
 
-extension HwpForbiddenChar: HwpFromRecord {
-    // MARK: loader contract exemption - validates DocInfo tag before preserving raw payload
-
-    static func load(_ record: HwpRecord) throws -> Self {
-        try loadDocInfoRecord(record, expectedTag: .forbiddenChar, as: Self.self)
-    }
+extension HwpForbiddenChar: HwpTagValidatedRecord {
+    static let expectedTag: HwpDocInfoTag = .forbiddenChar
 
     // MARK: loader contract exemption - forbidden-char record payload is opaque raw data
 

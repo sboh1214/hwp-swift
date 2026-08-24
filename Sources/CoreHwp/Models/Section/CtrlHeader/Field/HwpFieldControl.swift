@@ -153,7 +153,12 @@ public struct HwpMemoFieldParameter: HwpPrimitive {
     public let rawTrailing: Data
 }
 
-extension HwpFieldControl: HwpPrimitive {
+extension HwpFieldControl: HwpTagValidatedRecord, HwpRawPayloadRestoringRecord {
+    static let expectedTag: HwpSectionTag = .ctrlHeader
+    /// 커스텀 load 시절 EOF를 검사하지 않던 현행 동작 보존 (#83) —
+    /// init이 trailing까지 전부 소비하므로 강제 전환은 후속 이슈에서 켠다.
+    static let enforcesEOF = false
+
     // MARK: loader contract exemption - preserves field rawTrailing for best-effort parameters
 
     init(_ reader: inout DataReader, _ children: [HwpRecord]) throws {
@@ -214,17 +219,6 @@ extension HwpFieldControl: HwpPrimitive {
         }
         rawPayload = try reader.consumedData(from: startOffset)
         unknownChildren = children.map(HwpUnknownRecord.init)
-    }
-
-    // MARK: loader contract exemption - validates field control tag before raw preservation
-
-    static func load(_ record: HwpRecord) throws -> Self {
-        try validateSectionRecordTag(record, expectedTag: .ctrlHeader)
-
-        var reader = DataReader(record.payload, options: record.options)
-        var control = try self.init(&reader, record.children)
-        control.rawPayload = record.options.preservedPayload(record.payload)
-        return control
     }
 
     private static func fieldParameter(from data: Data) -> HwpFieldParameterParseResult? {
