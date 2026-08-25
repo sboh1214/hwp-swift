@@ -128,26 +128,26 @@ enum HwpSelectionRTF {
     /// `HwpParagraphLayout.ctParagraphStyle`이 싣는 지정자만 옮긴다 —
     /// 정렬·들여쓰기 3종·문단 간격 2종·행간 3종·탭 정지.
     /// (CT `maximumLineSpacing`은 NSParagraphStyle에 대응이 없어 버린다.)
-    private static func nsParagraphStyle(from ct: CTParagraphStyle) -> NSParagraphStyle {
+    private static func nsParagraphStyle(from ctStyle: CTParagraphStyle) -> NSParagraphStyle {
         let style = NSMutableParagraphStyle()
         var alignment = CTTextAlignment.natural
         if CTParagraphStyleGetValueForSpecifier(
-            ct, .alignment, MemoryLayout<CTTextAlignment>.size, &alignment
+            ctStyle, .alignment, MemoryLayout<CTTextAlignment>.size, &alignment
         ) {
             style.alignment = nsTextAlignment(from: alignment)
         }
-        copyFloat(ct, .firstLineHeadIndent) { style.firstLineHeadIndent = $0 }
-        copyFloat(ct, .headIndent) { style.headIndent = $0 }
-        copyFloat(ct, .tailIndent) { style.tailIndent = $0 }
-        copyFloat(ct, .paragraphSpacingBefore) { style.paragraphSpacingBefore = $0 }
-        copyFloat(ct, .paragraphSpacing) { style.paragraphSpacing = $0 }
-        copyFloat(ct, .lineSpacingAdjustment) { style.lineSpacing = $0 }
-        copyFloat(ct, .minimumLineHeight) { style.minimumLineHeight = $0 }
-        copyFloat(ct, .maximumLineHeight) { style.maximumLineHeight = $0 }
+        copyFloat(ctStyle, .firstLineHeadIndent) { style.firstLineHeadIndent = $0 }
+        copyFloat(ctStyle, .headIndent) { style.headIndent = $0 }
+        copyFloat(ctStyle, .tailIndent) { style.tailIndent = $0 }
+        copyFloat(ctStyle, .paragraphSpacingBefore) { style.paragraphSpacingBefore = $0 }
+        copyFloat(ctStyle, .paragraphSpacing) { style.paragraphSpacing = $0 }
+        copyFloat(ctStyle, .lineSpacingAdjustment) { style.lineSpacing = $0 }
+        copyFloat(ctStyle, .minimumLineHeight) { style.minimumLineHeight = $0 }
+        copyFloat(ctStyle, .maximumLineHeight) { style.maximumLineHeight = $0 }
         // 탭 정지: CFArray를 +0 참조로 받는다 (버퍼에 담기는 것은 포인터)
         var tabsPointer: UnsafeMutableRawPointer?
         if CTParagraphStyleGetValueForSpecifier(
-            ct, .tabStops, MemoryLayout<UnsafeMutableRawPointer?>.size, &tabsPointer
+            ctStyle, .tabStops, MemoryLayout<UnsafeMutableRawPointer?>.size, &tabsPointer
         ), let tabsPointer {
             let tabs = Unmanaged<CFArray>.fromOpaque(tabsPointer).takeUnretainedValue()
             style.tabStops = ((tabs as? [CTTextTab]) ?? []).map { tab in
@@ -161,13 +161,13 @@ enum HwpSelectionRTF {
     }
 
     private static func copyFloat(
-        _ ct: CTParagraphStyle,
+        _ ctStyle: CTParagraphStyle,
         _ specifier: CTParagraphStyleSpecifier,
         into assign: (CGFloat) -> Void
     ) {
         var value: CGFloat = 0
         if CTParagraphStyleGetValueForSpecifier(
-            ct, specifier, MemoryLayout<CGFloat>.size, &value
+            ctStyle, specifier, MemoryLayout<CGFloat>.size, &value
         ) {
             assign(value)
         }
