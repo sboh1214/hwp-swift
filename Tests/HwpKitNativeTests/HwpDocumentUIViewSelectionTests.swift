@@ -6,6 +6,7 @@
     @testable import HwpKitNative
     import Nimble
     import UIKit
+    import UniformTypeIdentifiers
     import XCTest
 
     /// iOS 선택 — 하이라이트 오버레이와 **끝점 핸들**(#84).
@@ -106,6 +107,30 @@
             expect(view.canPerformAction(#selector(UIResponder.copy(_:)), withSender: nil))
                 == true
             expect(view.selectionController.selectedText()) == "Hello world"
+        }
+
+        func testCopyWritesPlainAndRTFRepresentationsToPasteboard() throws {
+            // 한 항목에 평문·RTF 두 표현형을 싣는다 (#118). 주입 지점은 macOS
+            // `HwpDocumentNSView.pasteboard`의 iOS 짝이다.
+            let view = makeView()
+            let pasteboard = try XCTUnwrap(UIPasteboard(
+                name: UIPasteboard.Name(rawValue: UUID().uuidString), create: true
+            ))
+            view.pasteboard = pasteboard
+            view.selectAll(nil)
+
+            view.copy(nil)
+
+            expect(pasteboard.string) == "Hello world"
+            let data = try XCTUnwrap(
+                pasteboard.data(forPasteboardType: UTType.rtf.identifier)
+            )
+            let parsed = try NSAttributedString(
+                data: data,
+                options: [.documentType: NSAttributedString.DocumentType.rtf],
+                documentAttributes: nil
+            )
+            expect(parsed.string) == "Hello world"
         }
 
         // MARK: - 핸들 계층 (제스처 경합을 계층 배치로 푼 계약)

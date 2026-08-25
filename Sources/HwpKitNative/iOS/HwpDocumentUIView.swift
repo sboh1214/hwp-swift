@@ -171,6 +171,9 @@
         /// 텍스트 롱프레스 선택 상태 (플랫폼 중립 컨트롤러)
         public let selectionController = HwpSelectionController()
 
+        /// 복사 대상 페이스트보드 — 테스트 주입용 (macOS 짝은 HwpDocumentNSView)
+        var pasteboard: UIPasteboard = .general
+
         /// 가시 페이지의 합성 접근성 요소 (#79) — 레이어 가상화와 동기로 관리
         let accessibilityStore = HwpDocumentAccessibilityStore<UIAccessibilityElement>()
 

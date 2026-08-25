@@ -81,6 +81,26 @@
             expect(pasteboard.string(forType: .string)) == "Hello"
         }
 
+        func testCopyAddsRTFRepresentationAlongsidePlainText() throws {
+            // RTF는 평문과 같은 항목의 병기 표현형이다 (#118) — 평문 소비자와
+            // 서식 소비자가 같은 복사에서 각자 원하는 쪽을 집는다.
+            let view = makeView()
+            let pasteboard = NSPasteboard(name: NSPasteboard.Name(rawValue: UUID().uuidString))
+            view.pasteboard = pasteboard
+            select(view, from: 0, to: 5)
+
+            expect(view.copySelectionToPasteboard()) == true
+
+            expect(pasteboard.string(forType: .string)) == "Hello"
+            let data = try XCTUnwrap(pasteboard.data(forType: .rtf))
+            let parsed = try XCTUnwrap(
+                NSAttributedString(rtf: data, documentAttributes: nil)
+            )
+            expect(parsed.string) == "Hello"
+            let font = parsed.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
+            expect(font?.fontName) == "Helvetica"
+        }
+
         func testCopyWithoutSelectionDoesNothing() {
             let view = makeView()
             let pasteboard = NSPasteboard(name: NSPasteboard.Name(rawValue: UUID().uuidString))

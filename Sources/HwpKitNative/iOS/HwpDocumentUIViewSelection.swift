@@ -1,6 +1,7 @@
 #if os(iOS)
     import HwpKitCore
     import UIKit
+    import UniformTypeIdentifiers
 
     // MARK: - 텍스트 롱프레스 선택 + 복사
 
@@ -218,7 +219,15 @@
 
         override public func copy(_: Any?) {
             guard let text = selectionController.selectedText() else { return }
-            UIPasteboard.general.string = text
+            // 평문과 RTF를 한 항목의 두 표현형으로 싣는다 (#118). RTF 직렬화가
+            // 실패해도 평문 복사는 살아야 하므로 RTF는 조건 추가다.
+            var item: [String: Any] = [UTType.utf8PlainText.identifier: text]
+            if let attributed = selectionController.selectedAttributedText(),
+               let rtf = HwpSelectionRTF.rtfData(from: attributed)
+            {
+                item[UTType.rtf.identifier] = rtf
+            }
+            pasteboard.items = [item]
         }
 
         /// 편집 메뉴 Select All / 하드웨어 키보드 Cmd+A
