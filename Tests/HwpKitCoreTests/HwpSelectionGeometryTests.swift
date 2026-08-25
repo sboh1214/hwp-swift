@@ -163,6 +163,165 @@ final class HwpSelectionGeometryTests: XCTestCase {
         expect(geometry.plainText(for: selection)) == "atop\nbtop"
     }
 
+    // MARK: - 반복 제목 행 클론 dedup (#8) — 공통 순회 추출(#118)의 회귀 그물.
+
+    // 클론 판정·조립 정책이 attributedText 경로와 갈라지면 여기가 빨개진다.
+
+    /// 분할 표 클론과 같은 표식을 단 사본 (`HwpTableSplitter.markRepeatedHeader`와
+    /// 동일 산식 — private라 테스트가 직접 단다).
+    private func markedAsRepeatedHeaderClone(
+        _ attributed: NSAttributedString
+    ) -> NSAttributedString {
+        let mutable = NSMutableAttributedString(attributedString: attributed)
+        mutable.addAttribute(
+            HwpAttributedStringKey.repeatedTableHeaderClone,
+            value: NSNumber(value: true),
+            range: NSRange(location: 0, length: mutable.length)
+        )
+        return mutable
+    }
+
+    private func sourcedBlock(
+        _ attributed: NSAttributedString,
+        frame: CGRect,
+        paragraphId: UInt32
+    ) -> AnyHwpBlock {
+        AnyHwpBlock(
+            frame: frame,
+            kind: .text,
+            attributedString: attributed,
+            source: HwpBlockSource(paragraphId: paragraphId)
+        )
+    }
+
+    func testPlainTextSkipsRepeatedHeaderCloneWhenOriginalContributed() {
+        // 원본 머리행(paraId 7)이 이미 기여했으면 뒷페이지의 클론은 빠진다 (#8).
+        let header = NSAttributedString(
+            string: "헤더",
+            attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
+        )
+        let bodyA = NSAttributedString(
+            string: "본문A",
+            attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
+        )
+        let bodyB = NSAttributedString(
+            string: "본문B",
+            attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
+        )
+        let row = CGRect(x: 50, y: 100, width: 200, height: 20)
+        let below = CGRect(x: 50, y: 130, width: 200, height: 20)
+        let document = makeDocument(pages: [
+            [
+                sourcedBlock(header, frame: row, paragraphId: 7),
+                sourcedBlock(bodyA, frame: below, paragraphId: 8),
+            ],
+            [
+                sourcedBlock(
+                    markedAsRepeatedHeaderClone(header), frame: row, paragraphId: 7
+                ),
+                sourcedBlock(bodyB, frame: below, paragraphId: 9),
+            ],
+        ])
+        let geometry = HwpSelectionGeometry(document: document)
+        guard let selection = geometry.documentSelection() else {
+            return fail("expected selection")
+        }
+
+        expect(geometry.plainText(for: selection)) == "헤더\n본문A\n본문B"
+    }
+
+    func testPlainTextKeepsCloneWhenOriginalOutsideSelection() {
+        // 원본이 선택 밖(뒷페이지 클론만 선택)이면 클론이 기여해야 복사가
+        // 비지 않는다 (#8, #21 보정).
+        let header = NSAttributedString(
+            string: "헤더",
+            attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
+        )
+        let bodyB = NSAttributedString(
+            string: "본문B",
+            attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
+        )
+        let row = CGRect(x: 50, y: 100, width: 200, height: 20)
+        let below = CGRect(x: 50, y: 130, width: 200, height: 20)
+        let document = makeDocument(pages: [
+            [sourcedBlock(header, frame: row, paragraphId: 7)],
+            [
+                sourcedBlock(
+                    markedAsRepeatedHeaderClone(header), frame: row, paragraphId: 7
+                ),
+                sourcedBlock(bodyB, frame: below, paragraphId: 9),
+            ],
+        ])
+        let geometry = HwpSelectionGeometry(document: document)
+        let selection = HwpTextSelection(
+            anchor: HwpTextPosition(
+                pageIndex: 1, blockIndex: 0, unitIndex: 0, characterOffset: 0
+            ),
+            focus: HwpTextPosition(
+                pageIndex: 1, blockIndex: 1, unitIndex: 0, characterOffset: 3
+            )
+        )
+
+        expect(geometry.plainText(for: selection)) == "헤더\n본문B"
+    }
+
+    func testPlainTextJoinsSameParagraphAcrossPagesWithoutNewline() {
+        // 같은 paraId의 조각은 쪽 경계를 건너도 개행 없이 이어진다 (#9).
+        let first = NSAttributedString(
+            string: "이어지는",
+            attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
+        )
+        let second = NSAttributedString(
+            string: "문단",
+            attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
+        )
+        let row = CGRect(x: 50, y: 100, width: 200, height: 20)
+        let document = makeDocument(pages: [
+            [sourcedBlock(first, frame: row, paragraphId: 5)],
+            [sourcedBlock(second, frame: row, paragraphId: 5)],
+        ])
+        let geometry = HwpSelectionGeometry(document: document)
+        guard let selection = geometry.documentSelection() else {
+            return fail("expected selection")
+        }
+
+        expect(geometry.plainText(for: selection)) == "이어지는문단"
+    }
+
+    func testContinuationMarkerJoinsWhenParagraphIdentityUnknown() {
+        // paraId를 모르는 조각은 '이어짐' 표식이 폴백으로 개행을 막는다 (#7, #9).
+        let marked = HwpTableSplitter.markedAsContinuedFragment(NSAttributedString(
+            string: "seg",
+            attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
+        ))
+        let row = CGRect(x: 50, y: 100, width: 200, height: 20)
+        let document = makeDocument(pages: [
+            [
+                AnyHwpBlock(
+                    frame: row, kind: .text, attributedString: marked
+                ),
+            ],
+            [
+                AnyHwpBlock(
+                    frame: row,
+                    kind: .text,
+                    attributedString: NSAttributedString(
+                        string: "ment",
+                        attributes: [
+                            kCTFontAttributeName as NSAttributedString.Key: font,
+                        ]
+                    )
+                ),
+            ],
+        ])
+        let geometry = HwpSelectionGeometry(document: document)
+        guard let selection = geometry.documentSelection() else {
+            return fail("expected selection")
+        }
+
+        expect(geometry.plainText(for: selection)) == "segment"
+    }
+
     func testDocumentSelectionSpansAllBodyText() throws {
         // 첫 페이지는 크롬만 → 전체 선택은 텍스트가 있는 페이지 범위로 수렴
         let document = makeDocument(pages: [
