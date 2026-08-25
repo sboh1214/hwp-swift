@@ -218,6 +218,16 @@ public final class HwpSelectionController {
         return (text?.isEmpty ?? true) ? nil : text
     }
 
+    /// `selectedText()`의 속성 문자열 짝 (#118) — 같은 빈-선택 접기 규약으로
+    /// nil을 돌려준다. 속성 계약은 `HwpSelectionGeometry.attributedText(for:)`
+    /// 문서 참조 (조판 그대로 — RTF 정규화는 HwpKitNative 몫).
+    public func selectedAttributedText() -> NSAttributedString? {
+        guard let selection, hasSelection else { return nil }
+        guard let text = geometry?.attributedText(for: selection), text.length > 0
+        else { return nil }
+        return text
+    }
+
     public func highlightRects(forPage pageIndex: Int) -> [CGRect] {
         guard let selection, hasSelection else { return [] }
         return geometry?.highlightRects(pageIndex: pageIndex, selection: selection) ?? []
