@@ -4,6 +4,13 @@
 
 ### Added
 
+- **복사가 서식을 함께 싣습니다** (#118). 선택 영역을 복사하면 평문 옆에
+  RTF 표현형이 같은 페이스트보드 항목으로 실려, 서식을 이해하는 앱에
+  붙여넣으면 폰트·색·밑줄·취소선·하이퍼링크·문단 정렬이 유지됩니다.
+  평문만 읽는 앱은 이전과 같은 결과를 받습니다. 공개 API로는
+  `HwpSelectionController.selectedAttributedText()`와
+  `HwpSelectionGeometry.attributedText(for:)`가 추가됩니다 — 반환
+  문자열은 평문 복사(`selectedText()`)와 항상 같습니다.
 - **키보드로 페이지를 이동할 수 있습니다** (#120). 문서 뷰가 포커스(첫
   응답자)를 가진 동안 PageUp/PageDown은 한 쪽씩, Home/End는 문서 처음과
   끝으로 이동합니다. macOS는 `pageUp(_:)`·`scrollToBeginningOfDocument(_:)` 등

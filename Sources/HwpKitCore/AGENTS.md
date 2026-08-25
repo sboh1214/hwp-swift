@@ -267,6 +267,23 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   재호출 시 무통지·반대쪽 너머 역할 뒤바뀜, 캐럿의 문서 순서·쪽 인덱스·
   부분 결과·`selectAll` 추종).
 
+## 선택 복사 속성 문자열 (#118)
+
+- `attributedText(for:)`는 `plainText(for:)`와 **같은 조각**(`fragments(for:)`)·
+  **같은 개행 술어**(`joinsWithPrevious`)로 조립한다 — `.string` 파리티가
+  계약이고 `HwpSelectionGeometryAttributedTests`가 잠근다. 조각 수집을
+  복제하면 반복 제목 행 dedup(#8)·문단 연속(#7·#9) 정책이 조용히 갈라진다.
+- 속성은 조판 그대로다 (CT 키 + `hwp.*`). 표준 키 정규화·RTF 직렬화는
+  HwpKitNative `HwpSelectionRTF` 몫이다 — `data(from:documentAttributes:)`와
+  색·문단 스타일 값 타입(NSColor/UIColor·NSParagraphStyle)이 Foundation이
+  아니라 AppKit/UIKit 소속이라 이 모듈의 첫머리 규약(UI 프레임워크 import
+  금지)에 막힌다.
+- U+FFFC 마커 run만 여기서 지운다 (`strippingControlMarkerRuns`) —
+  `deleteCharacters`가 남은 속성 범위(감싼 하이퍼링크 포함)를 자동으로
+  당기므로 범위 재계산이 없다. 개행은 직전 글자의 속성을 입는다 — Cocoa
+  텍스트 시스템이 문단 스타일을 종결 개행까지 적용하므로, 속성 없는 개행은
+  RTF에서 앞 문단의 스타일을 잃는다.
+
 ## 접근성 요소 합성 (#79)
 
 문서 본문은 뷰가 아니라 CALayer 라 AX 트리가 없다 — 뷰가 노출할 (라벨, rect)

@@ -882,6 +882,27 @@ opt-in이다) — 축소판이 가장 먼저 그리는 쪽이 정확히 그 1쪽
 `cd Sample && xcodegen generate` 결과를 같은 커밋에 넣는다 (프로젝트가 파일을
 명시 참조한다).
 
+## 선택 영역 서식 복사 (#118)
+
+복사는 평문 옆에 RTF 표현형을 같은 페이스트보드 항목으로 병기한다. 핵심
+계약은 **층 분리**다 — 조립은 HwpKitCore
+(`HwpSelectionGeometry.attributedText(for:)` +
+`HwpSelectionController.selectedAttributedText()`, 평문과 같은 조각·같은
+개행 규칙이라 `.string` 파리티 보장), 정규화·직렬화는 HwpKitNative
+(`HwpSelectionRTF`). RTF 직렬화(`data(from:documentAttributes:)`)와 색·문단
+스타일 값 타입이 AppKit/UIKit 소속이라 HwpKitCore의 UI 프레임워크 금지
+규약에 막히기 때문이고, 변환 표를 한 파일이 소유해야 25종 커스텀 키 중
+하나를 놓치는 사고가 구조적으로 안 난다.
+
+변환 표의 요지: 키 이름이 표준과 같은 CT 키(NSFont·NSKern·NSStrokeWidth)는
+그대로 두고, CTForegroundColor·CTBaselineOffset은 키 개명,
+kCTParagraphStyle은 **값 재구성**(CTParagraphStyle은 NSParagraphStyle과
+toll-free 브리지가 아니다), 밑줄·취소선은 색과 함께 명시 변환,
+`hwp.hyperlink`(String)는 `.link`(URL) 승격에 실패하면 링크만 버리고,
+나머지 `hwp.*`는 **접두사 일괄 제거**로 미래 키까지 방어한다. 전경색은 모든
+run에 이미 실려 있으므로(그림자·양각의 from-context run 포함) 장식 키
+제거로 잃는 정보가 없다. RTF 직렬화 실패는 평문 복사를 막지 않는다.
+
 ## 텍스트 선택 끝점 핸들 (#84)
 
 **끌 수 있는 끝점은 언제나 `focus` 하나다.** 핸들을 잡는 순간
