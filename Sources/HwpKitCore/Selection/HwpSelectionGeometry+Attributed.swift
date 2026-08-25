@@ -1,3 +1,4 @@
+import CoreText
 import Foundation
 
 // MARK: - 범위 → 속성 문자열 (#118)
@@ -20,19 +21,34 @@ extension HwpSelectionGeometry {
         let result = NSMutableAttributedString()
         for (index, piece) in pieces.enumerated() {
             if index > 0, !Self.joinsWithPrevious(pieces[index - 1], piece) {
-                // 개행은 직전 글자의 속성을 입는다 — Cocoa 텍스트 시스템은
-                // 문단 스타일을 종결 개행까지 적용하므로, 속성 없는 개행은
-                // RTF에서 앞 문단의 스타일을 잃는다.
                 result.append(NSAttributedString(
-                    string: "\n",
-                    attributes: result.length > 0
-                        ? result.attributes(at: result.length - 1, effectiveRange: nil)
-                        : [:]
+                    string: "\n", attributes: Self.newlineAttributes(endingAt: result)
                 ))
             }
             result.append(Self.strippingControlMarkerRuns(piece.attributedText))
         }
         return result
+    }
+
+    /// 조각 사이 개행이 입는 속성 — 직전 글자에서 **문단 스타일과 폰트만**
+    /// 옮긴다. Cocoa 텍스트 시스템은 문단 스타일을 종결 개행까지 적용하므로
+    /// 속성 없는 개행은 RTF에서 앞 문단의 스타일을 잃고, 반대로 전체를
+    /// 상속하면 하이퍼링크·밑줄 같은 글자 속성이 원문에 없던 개행까지 번진다
+    /// (RTF에서 HYPERLINK 필드가 문단 나눔 문자를 덮는다).
+    private static func newlineAttributes(
+        endingAt result: NSAttributedString
+    ) -> [NSAttributedString.Key: Any] {
+        guard result.length > 0 else { return [:] }
+        let previous = result.attributes(at: result.length - 1, effectiveRange: nil)
+        let inherited = [
+            kCTParagraphStyleAttributeName as NSAttributedString.Key,
+            kCTFontAttributeName as NSAttributedString.Key,
+        ]
+        var attributes: [NSAttributedString.Key: Any] = [:]
+        for key in inherited {
+            attributes[key] = previous[key]
+        }
+        return attributes
     }
 
     /// `strippingControlMarkers`의 attributed 판 — 뒤에서 앞으로 지워

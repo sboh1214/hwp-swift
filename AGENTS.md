@@ -895,9 +895,12 @@ opt-in이다) — 축소판이 가장 먼저 그리는 쪽이 정확히 그 1쪽
 하나를 놓치는 사고가 구조적으로 안 난다.
 
 변환 표의 요지: 키 이름이 표준과 같은 CT 키(NSFont·NSKern·NSStrokeWidth)는
-그대로 두고, CTForegroundColor·CTBaselineOffset은 키 개명,
-kCTParagraphStyle은 **값 재구성**(CTParagraphStyle은 NSParagraphStyle과
-toll-free 브리지가 아니다), 밑줄·취소선은 색과 함께 명시 변환,
+그대로 두고, CTForegroundColor는 키 개명, 기준선은
+`hwp.glyphBaselineOffset`(양수=위 — 글자위치·첨자 합산, NS 규약 일치)만
+공급원으로 옮기며 **반대 부호(HWP 원시: 양수=아래)의 CTBaselineOffset은
+버린다**, kCTParagraphStyle은 **값 재구성**(CTParagraphStyle은
+NSParagraphStyle과 toll-free 브리지가 아니다), 밑줄·취소선은 색과 함께
+명시 변환,
 `hwp.hyperlink`(String)는 `.link`(URL) 승격에 실패하면 링크만 버리고,
 나머지 `hwp.*`는 **접두사 일괄 제거**로 미래 키까지 방어한다. 전경색은 모든
 run에 이미 실려 있으므로(그림자·양각의 from-context run 포함) 장식 키

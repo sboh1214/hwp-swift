@@ -207,6 +207,38 @@ final class HwpSelectionGeometryAttributedTests: XCTestCase {
 
     // MARK: - 조판 속성 보존과 개행 속성 상속
 
+    func testNewlineDoesNotInheritHyperlink() {
+        // 링크로 끝나는 문단 + 다음 문단 — 개행이 hwp.hyperlink를 상속하면
+        // RTF의 HYPERLINK 필드가 원문에 없던 문단 나눔 문자까지 덮는다.
+        let row = CGRect(x: 50, y: 100, width: 200, height: 20)
+        let below = CGRect(x: 50, y: 130, width: 200, height: 20)
+        let document = makeDocument(pages: [[
+            block(
+                attributed("링크", extra: [
+                    HwpAttributedStringKey.hyperlink: "https://example.com",
+                ]),
+                frame: row, paragraphId: 1
+            ),
+            block(attributed("본문"), frame: below, paragraphId: 2),
+        ]])
+        let geometry = HwpSelectionGeometry(document: document)
+        guard let selection = geometry.documentSelection() else {
+            return fail("expected selection")
+        }
+
+        let attributedText = geometry.attributedText(for: selection)
+
+        expect(attributedText.string) == "링크\n본문"
+        expect(
+            attributedText.attribute(
+                HwpAttributedStringKey.hyperlink, at: 1, effectiveRange: nil
+            ) as? String
+        ) == "https://example.com"
+        expect(attributedText.attribute(
+            HwpAttributedStringKey.hyperlink, at: 2, effectiveRange: nil
+        )).to(beNil())
+    }
+
     func testRunAttributesSurviveAssembly() throws {
         let row = CGRect(x: 50, y: 100, width: 200, height: 20)
         let below = CGRect(x: 50, y: 130, width: 200, height: 20)
@@ -237,13 +269,14 @@ final class HwpSelectionGeometryAttributedTests: XCTestCase {
                 HwpAttributedStringKey.underlineStyle, at: 0, effectiveRange: nil
             ) as? NSNumber
         ) == NSNumber(value: 1)
-        // 개행(오프셋 2)은 앞 문단 마지막 글자의 속성을 입는다 — 문단 스타일이
-        // 종결 개행까지 적용되는 Cocoa 규약 대비.
-        expect(
-            attributedText.attribute(
-                HwpAttributedStringKey.underlineStyle, at: 2, effectiveRange: nil
-            ) as? NSNumber
-        ) == NSNumber(value: 1)
+        // 개행(오프셋 2)은 앞 문단 마지막 글자에서 문단 스타일·폰트만 입는다 —
+        // 밑줄 같은 글자 장식이 상속되면 원문에 없던 개행까지 서식이 번진다.
+        expect(attributedText.attribute(
+            HwpAttributedStringKey.underlineStyle, at: 2, effectiveRange: nil
+        )).to(beNil())
+        expect(attributedText.attribute(
+            kCTFontAttributeName as NSAttributedString.Key, at: 2, effectiveRange: nil
+        )).toNot(beNil())
         // CF 타입은 as? 다운캐스트가 항상 성공한다는 컴파일 에러를 내므로
         // 캐스트 없이 CFEqual로 폰트 값 자체를 비교한다.
         let fontAt3 = try XCTUnwrap(attributedText.attribute(

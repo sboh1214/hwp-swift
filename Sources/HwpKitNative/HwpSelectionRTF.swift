@@ -29,8 +29,11 @@ enum HwpSelectionRTF {
     /// - 그대로 두는 CT 키 — 이름이 표준 키와 같다: `kCTFont`("NSFont",
     ///   CTFont는 NSFont/UIFont와 toll-free 브리지)·`kCTKern`("NSKern")·
     ///   `kCTStrokeWidth`("NSStrokeWidth").
-    /// - 키 개명: "CTForegroundColor"(CGColor) → `.foregroundColor`(플랫폼 색),
-    ///   "CTBaselineOffset" → `.baselineOffset`.
+    /// - 키 개명: "CTForegroundColor"(CGColor) → `.foregroundColor`(플랫폼 색).
+    /// - 기준선: 공급원은 `hwp.glyphBaselineOffset`(양수 = 위, NS 규약 일치 —
+    ///   글자위치·첨자 이동 합산) 하나다 → `.baselineOffset`. 같은 정보를
+    ///   HWP 원시 부호(양수 = 아래)로 이중 보유한 "CTBaselineOffset"은
+    ///   버린다.
     /// - 값 변환: `kCTParagraphStyle`은 키 이름이 "NSParagraphStyle"로 같지만
     ///   값이 `CTParagraphStyle`(toll-free 아님)이라 `NSParagraphStyle`로
     ///   다시 만든다 — 안 바꾸면 RTF 작성기가 CF 타입에 ObjC 메시지를 보낸다.
@@ -90,7 +93,16 @@ enum HwpSelectionRTF {
         if let color = cgColor(normalized.removeValue(forKey: ctForegroundColorKey)) {
             normalized[.foregroundColor] = platformColor(from: color)
         }
-        if let offset = normalized.removeValue(forKey: ctBaselineOffsetKey) as? NSNumber {
+        // 기준선 공급원은 hwp.glyphBaselineOffset 하나다 — 렌더러 규약
+        // (양수 = 위)가 NS와 일치하고 글자위치·첨자 이동이 합산돼 있다.
+        // "CTBaselineOffset"은 같은 글자위치 정보를 HWP 원시 부호(양수 =
+        // 아래)로 이중 보유하므로 제거만 한다 — 부호 그대로 옮기면 복사한
+        // 글자가 앱 렌더와 반대 방향으로 붙는다. 글자위치 0이면 glyph 키가
+        // 없고 오프셋 없음이 올바른 결과다.
+        normalized.removeValue(forKey: ctBaselineOffsetKey)
+        if let offset =
+            attributes[HwpAttributedStringKey.glyphBaselineOffset] as? NSNumber
+        {
             normalized[.baselineOffset] = offset
         }
         // 값 변환: CTParagraphStyle → NSParagraphStyle (키 이름은 같다)
@@ -149,9 +161,14 @@ enum HwpSelectionRTF {
         if CTParagraphStyleGetValueForSpecifier(
             ctStyle, .tabStops, MemoryLayout<UnsafeMutableRawPointer?>.size, &tabsPointer
         ), let tabsPointer {
-            let tabs = Unmanaged<CFArray>.fromOpaque(tabsPointer).takeUnretainedValue()
-            style.tabStops = ((tabs as? [CTTextTab]) ?? []).map { tab in
-                NSTextTab(
+            let tabs = Unmanaged<CFArray>.fromOpaque(tabsPointer)
+                .takeUnretainedValue() as [AnyObject]
+            // CF 타입 조건 캐스트는 원소를 검사하지 않아 안전망이 못 된다 —
+            // cgColor와 같은 CFGetTypeID 검사로 이물 원소를 건너뛴다.
+            style.tabStops = tabs.compactMap { element in
+                guard CFGetTypeID(element) == CTTextTabGetTypeID() else { return nil }
+                let tab = element as! CTTextTab // swiftlint:disable:this force_cast
+                return NSTextTab(
                     textAlignment: nsTextAlignment(from: CTTextTabGetAlignment(tab)),
                     location: CTTextTabGetLocation(tab)
                 )
