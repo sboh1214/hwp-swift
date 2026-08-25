@@ -1,7 +1,5 @@
 import Foundation
 
-// swiftlint:disable file_length
-
 /** 개체 요소 세부 raw record */
 public struct HwpShapeComponentRawRecord {
     /** 원본 payload */

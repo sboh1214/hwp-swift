@@ -5,7 +5,6 @@ import Nimble
 import OLEKit
 import XCTest
 
-// swiftlint:disable:next type_body_length
 final class HwpFileDocInfoRawRecordAssemblyTests: XCTestCase {
     func testActualFixtureBasedAssemblyMatchesEntrypointForReadableStreams() throws {
         for fixtureId in ["plain-text-minimal", "multi-section", "BinData"] {

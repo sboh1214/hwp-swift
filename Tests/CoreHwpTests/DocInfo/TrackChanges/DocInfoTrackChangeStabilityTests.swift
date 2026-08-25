@@ -4,7 +4,6 @@ import Foundation
 import Nimble
 import XCTest
 
-// swiftlint:disable:next type_body_length
 final class DocInfoTrackChangeStabilityTests: XCTestCase {
     func testTrackChangeExposesHeaderAndPreservesTrailingBytes() throws {
         let rawTrailing = Data([0x01, 0x00, 0xAA, 0xBB])
