@@ -44,6 +44,16 @@
             return first ..< (last + 1)
         }
 
+        /// 뷰 본체에서 옮겨 왔다 (#120) — 본체가 `type_body_length` error
+        /// 임계(400)에 붙어 있어 저장 프로퍼티를 더할 때 헬퍼를 확장으로 빼
+        /// 순감시키는 관례다 (`Sources/HwpKitNative/AGENTS.md`).
+        func clampedPageRange(_ range: Range<Int>) -> Range<Int> {
+            let pageCount = document?.pages.count ?? 0
+            let lower = max(0, min(range.lowerBound, pageCount))
+            let upper = max(lower, min(range.upperBound, pageCount))
+            return lower ..< upper
+        }
+
         func expandedRange(_ range: Range<Int>) -> Range<Int> {
             guard !range.isEmpty else { return range }
             let pageCount = document?.pages.count ?? 0

@@ -41,6 +41,128 @@ final class HwpToolsTests: XCTestCase {
     }
 
     @MainActor
+    func testPageNavigatorDecrementsCurrentPage() {
+        var page = 2
+        let navigator = HwpPageNavigator(
+            currentPage: Binding(get: { page }, set: { page = $0 }),
+            totalPages: 3
+        )
+
+        navigator.decrementPage()
+
+        expect(page) == 1
+    }
+
+    @MainActor
+    func testPageNavigatorDoesNotDecrementBelowOne() {
+        var page = 1
+        let navigator = HwpPageNavigator(
+            currentPage: Binding(get: { page }, set: { page = $0 }),
+            totalPages: 3
+        )
+
+        navigator.decrementPage()
+
+        expect(page) == 1
+    }
+
+    // MARK: - 페이지 번호 입력 확정 (#120)
+
+    /// 커밋은 `1...totalPages` 클램프를 지나 바인딩에 쓴다. 사용자가 흘린
+    /// 앞뒤 공백은 무효가 아니라 입력의 일부로 받는다.
+    @MainActor
+    func testPageEntryCommitWritesClampedPage() {
+        var page = 1
+        let navigator = HwpPageNavigator(
+            currentPage: Binding(get: { page }, set: { page = $0 }),
+            totalPages: 5
+        )
+
+        navigator.commitPageEntry("3")
+        expect(page) == 3
+
+        navigator.commitPageEntry(" 4 ")
+        expect(page) == 4
+
+        navigator.commitPageEntry("999")
+        expect(page) == 5
+
+        navigator.commitPageEntry("0")
+        expect(page) == 1
+
+        navigator.commitPageEntry("-7")
+        expect(page) == 1
+    }
+
+    /// 숫자가 아닌 입력·오버플로 입력은 바인딩을 건드리지 않는다 — 되돌림은
+    /// 뷰의 초안 동기화 몫이고, 이 계층은 쓰지 않는 것으로 답한다.
+    @MainActor
+    func testPageEntryCommitIgnoresNonNumericInput() {
+        var page = 3
+        var writeCount = 0
+        let navigator = HwpPageNavigator(
+            currentPage: Binding(
+                get: { page },
+                set: { newValue in
+                    page = newValue
+                    writeCount += 1
+                }
+            ),
+            totalPages: 5
+        )
+
+        navigator.commitPageEntry("abc")
+        navigator.commitPageEntry("")
+        navigator.commitPageEntry("12쪽")
+        // Int 표현 범위를 넘는 자릿수도 트랩 없이 무효 처리된다.
+        navigator.commitPageEntry("99999999999999999999")
+
+        expect(page) == 3
+        expect(writeCount) == 0
+    }
+
+    /// 현재 쪽과 같은 값으로의 커밋은 재쓰기를 생략한다 — SwiftUI 갱신 루프에
+    /// 무의미한 상태 쓰기를 넣지 않는다 (`handlePageChanged`의 동치 가드와
+    /// 같은 성격).
+    @MainActor
+    func testPageEntryCommitSkipsWritingAnUnchangedPage() {
+        var page = 5
+        var writeCount = 0
+        let navigator = HwpPageNavigator(
+            currentPage: Binding(
+                get: { page },
+                set: { newValue in
+                    page = newValue
+                    writeCount += 1
+                }
+            ),
+            totalPages: 5
+        )
+
+        navigator.commitPageEntry("5")
+        // 클램프 결과가 현재 쪽과 같아도 마찬가지다.
+        navigator.commitPageEntry("999")
+
+        expect(page) == 5
+        expect(writeCount) == 0
+    }
+
+    /// `totalPages`가 0인 호스트(빈 문서를 그대로 넘긴 경우)에서도 하한 1이
+    /// 선다 — 상한 `max(1, totalPages)` 계약.
+    @MainActor
+    func testPageEntryCommitClampsToOneWhenTotalPagesIsZero() {
+        var page = 7
+        let navigator = HwpPageNavigator(
+            currentPage: Binding(get: { page }, set: { page = $0 }),
+            totalPages: 0
+        )
+
+        navigator.commitPageEntry("3")
+
+        expect(page) == 1
+    }
+
+    @MainActor
     func testZoomControlsClampToUpperBound() {
         var zoomScale = CGFloat(1.0)
         let controls = HwpZoomControls(

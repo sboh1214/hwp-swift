@@ -85,6 +85,12 @@
                 selectAll(nil)
                 return
             }
+            // Cmd 분기 **뒤**다 — 페이지 이동은 무수식 키만 받으므로 순서가
+            // 동작을 바꾸지는 않지만, 위 두 분기의 안전망 성격(주석 참조)을
+            // 유지하려고 배치를 고정한다 (#120, 구현은 Keyboard 확장).
+            if handlePageNavigationKey(with: event) {
+                return
+            }
             super.keyDown(with: event)
         }
 

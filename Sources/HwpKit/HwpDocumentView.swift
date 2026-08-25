@@ -27,19 +27,26 @@ public struct HwpDocumentView: View {
     private let fitZoom: Binding<HwpZoomFit?>?
     private let currentPage: Binding<Int>?
     private let searchController: HwpSearchController?
+    private let isKeyboardPageNavigationEnabled: Bool
     private let onHyperlinkTapped: ((String) -> Void)?
     private let onUnsupportedElement: ((HwpUnsupportedElement) -> Void)?
 
-    /// - Parameter fitZoom: 배율을 뷰포트에 맞추는 **원샷 명령** (#78). 값을 넣으면
-    ///   뷰가 한 번 적용하고 nil로 되돌린다. 지속 모드가 아니라 창을 리사이즈해도
-    ///   다시 맞추지 않는다 — 그 사이 사용자가 핀치로 바꾼 배율을 덮지 않기 위해서다.
-    ///   적용 결과 배율은 `zoomScale` 바인딩으로 되돌아온다.
+    /// - Parameters:
+    ///   - fitZoom: 배율을 뷰포트에 맞추는 **원샷 명령** (#78). 값을 넣으면
+    ///     뷰가 한 번 적용하고 nil로 되돌린다. 지속 모드가 아니라 창을 리사이즈해도
+    ///     다시 맞추지 않는다 — 그 사이 사용자가 핀치로 바꾼 배율을 덮지 않기 위해서다.
+    ///     적용 결과 배율은 `zoomScale` 바인딩으로 되돌아온다.
+    ///   - isKeyboardPageNavigationEnabled: PageUp/Down·Home/End 페이지 이동 (#120).
+    ///     라이브러리는 전역 단축키를 소유하지 않으므로 문서 뷰가 first responder일
+    ///     때만 반응한다 (클릭/탭으로 포커스가 잡힌다). 호스트가 이 키들을 직접
+    ///     쓰려면 false로 끈다.
     public init(
         document: HwpDocument,
         zoomScale: Binding<CGFloat>? = nil,
         fitZoom: Binding<HwpZoomFit?>? = nil,
         currentPage: Binding<Int>? = nil,
         searchController: HwpSearchController? = nil,
+        isKeyboardPageNavigationEnabled: Bool = true,
         onHyperlinkTapped: ((String) -> Void)? = nil,
         onUnsupportedElement: ((HwpUnsupportedElement) -> Void)? = nil
     ) {
@@ -48,6 +55,7 @@ public struct HwpDocumentView: View {
         self.fitZoom = fitZoom
         self.currentPage = currentPage
         self.searchController = searchController
+        self.isKeyboardPageNavigationEnabled = isKeyboardPageNavigationEnabled
         self.onHyperlinkTapped = onHyperlinkTapped
         self.onUnsupportedElement = onUnsupportedElement
     }
@@ -60,6 +68,7 @@ public struct HwpDocumentView: View {
                 fitZoom: fitZoom,
                 currentPage: currentPage,
                 searchController: searchController,
+                isKeyboardPageNavigationEnabled: isKeyboardPageNavigationEnabled,
                 onHyperlinkTapped: onHyperlinkTapped,
                 onUnsupportedElement: onUnsupportedElement
             )
@@ -70,6 +79,7 @@ public struct HwpDocumentView: View {
                 fitZoom: fitZoom,
                 currentPage: currentPage,
                 searchController: searchController,
+                isKeyboardPageNavigationEnabled: isKeyboardPageNavigationEnabled,
                 onHyperlinkTapped: onHyperlinkTapped,
                 onUnsupportedElement: onUnsupportedElement
             )
@@ -198,6 +208,7 @@ final class HwpDocumentCoordinator {
         let fitZoom: Binding<HwpZoomFit?>?
         let currentPage: Binding<Int>?
         let searchController: HwpSearchController?
+        let isKeyboardPageNavigationEnabled: Bool
         let onHyperlinkTapped: ((String) -> Void)?
         let onUnsupportedElement: ((HwpUnsupportedElement) -> Void)?
 
@@ -250,6 +261,8 @@ final class HwpDocumentCoordinator {
             if view.searchController !== searchController {
                 view.searchController = searchController
             }
+            // 값 타입 대입이라 didSet 재배선이 없어 동일성 가드가 필요 없다 (#120).
+            view.isKeyboardPageNavigationEnabled = isKeyboardPageNavigationEnabled
             _ = context.coordinator.registerDocument(document)
             // 문서 대입·줌·스크롤의 onPageChanged echo가 currentPage 바인딩을
             // 덮어쓰지 않게 이 구간 동안 writeback을 억제한다 — 첫 프로그레시브
@@ -361,6 +374,7 @@ final class HwpDocumentCoordinator {
         let fitZoom: Binding<HwpZoomFit?>?
         let currentPage: Binding<Int>?
         let searchController: HwpSearchController?
+        let isKeyboardPageNavigationEnabled: Bool
         let onHyperlinkTapped: ((String) -> Void)?
         let onUnsupportedElement: ((HwpUnsupportedElement) -> Void)?
 
@@ -411,6 +425,8 @@ final class HwpDocumentCoordinator {
             if view.searchController !== searchController {
                 view.searchController = searchController
             }
+            // 값 타입 대입이라 didSet 재배선이 없어 동일성 가드가 필요 없다 (#120).
+            view.isKeyboardPageNavigationEnabled = isKeyboardPageNavigationEnabled
             _ = context.coordinator.registerDocument(document)
             // 문서 대입·줌·스크롤의 onPageChanged echo가 currentPage 바인딩을
             // 덮어쓰지 않게 이 구간 동안 writeback을 억제한다 — 첫 프로그레시브

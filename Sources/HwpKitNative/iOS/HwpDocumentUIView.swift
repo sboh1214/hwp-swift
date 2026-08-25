@@ -151,6 +151,11 @@
 
         public var onZoomChanged: ((CGFloat) -> Void)?
 
+        /// PageUp/Down·Home/End 하드웨어 키보드 페이지 이동 (#120). first
+        /// responder일 때만 `keyCommands`가 노출되는 것에 더해, 탭 포커스 획득과
+        /// 명령 목록을 함께 잠근다 — 호스트가 이 키들을 직접 쓰면 끈다.
+        public var isKeyboardPageNavigationEnabled = true
+
         var pageLayers: [Int: HwpPageLayer] = [:]
         /// 메모 (댓글) 풍선 패널 레이어 — 페이지 오른쪽 바깥 (한글.app 편집 뷰)
         var memoPanelLayers: [Int: HwpPageLayer] = [:]
@@ -438,6 +443,7 @@
         }
 
         @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
+            grabKeyboardFocusOnUserTap()
             if selectionController.hasSelection {
                 selectionController.clear()
                 return
@@ -557,13 +563,6 @@
             scrollView.setContentOffset(
                 CGPoint(x: -inset.left, y: -inset.top), animated: false
             )
-        }
-
-        private func clampedPageRange(_ range: Range<Int>) -> Range<Int> {
-            let pageCount = document?.pages.count ?? 0
-            let lower = max(0, min(range.lowerBound, pageCount))
-            let upper = max(lower, min(range.upperBound, pageCount))
-            return lower ..< upper
         }
 
         /// 선택 확장 (좌표 클램프)용 노출 — 렌더 배치와 같은 프레임

@@ -39,6 +39,7 @@ final class HwpAccessibilityLabelTests: XCTestCase {
         expect(String(describing: navigator.body)).toNot(beEmpty())
         expect(navigator.previousPageAccessibilityLabel) == "이전 쪽"
         expect(navigator.nextPageAccessibilityLabel) == "다음 쪽"
+        expect(navigator.pageFieldAccessibilityLabel) == "쪽 번호 입력"
     }
 
     @MainActor
@@ -62,9 +63,9 @@ final class HwpAccessibilityLabelTests: XCTestCase {
         expect(bar.dismissAccessibilityLabel) == "검색 닫기"
     }
 
-    /// 11개 버튼 라벨은 상호 구별되어야 한다 — 두 컴포넌트의 `-`/`+` 처럼
-    /// 같은 표시 문구가 다른 뜻으로 쓰이는 자리가 라벨에서 겹치면 VoiceOver
-    /// 사용자는 어느 버튼인지 구분할 수 없다.
+    /// 12개 컨트롤 라벨(버튼 11 + 쪽 번호 입력 필드)은 상호 구별되어야 한다 —
+    /// 두 컴포넌트의 `-`/`+` 처럼 같은 표시 문구가 다른 뜻으로 쓰이는 자리가
+    /// 라벨에서 겹치면 VoiceOver 사용자는 어느 컨트롤인지 구분할 수 없다.
     @MainActor
     func testAccessibilityLabelsAreMutuallyDistinct() {
         var zoomScale = CGFloat(1.0)
@@ -90,6 +91,7 @@ final class HwpAccessibilityLabelTests: XCTestCase {
             zoom.fitPageAccessibilityLabel,
             navigator.previousPageAccessibilityLabel,
             navigator.nextPageAccessibilityLabel,
+            navigator.pageFieldAccessibilityLabel,
             searchNavigator.previousMatchAccessibilityLabel,
             searchNavigator.nextMatchAccessibilityLabel,
             searchBar.clearAccessibilityLabel,
