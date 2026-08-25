@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Added
+
+- **키보드로 페이지를 이동할 수 있습니다** (#120). 문서 뷰가 포커스(첫
+  응답자)를 가진 동안 PageUp/PageDown은 한 쪽씩, Home/End는 문서 처음과
+  끝으로 이동합니다. macOS는 `pageUp(_:)`·`scrollToBeginningOfDocument(_:)` 등
+  NSResponder 표준 액션으로도 같은 동작에 닿고, iOS는 하드웨어 키보드의
+  `UIKeyCommand`로 동작하며 문서를 탭하면 포커스가 잡힙니다. 라이브러리는
+  전역 단축키를 소유하지 않는다는 규약 그대로 — 호스트 검색 필드가 포커스를
+  가진 동안에는 반응하지 않고, `HwpDocumentView(isKeyboardPageNavigationEnabled:)`
+  또는 네이티브 뷰의 같은 이름 프로퍼티로 끌 수 있습니다 (기본 켜짐).
+- **`HwpPageNavigator`에 페이지 번호 입력 필드가 생겼습니다** (#120).
+  "Page N of M" 라벨 자리에 번호를 직접 입력하고 Enter로 확정하면
+  `1...totalPages`로 클램프해 이동합니다. 숫자가 아닌 입력은 무시하고 현재
+  쪽으로 되돌리며, 포커스를 잃으면 커밋하지 않고 되돌립니다. 새 API 없이
+  기존 `currentPage` 바인딩을 그대로 사용합니다.
+
 ### Breaking Changes
 
 - **CoreHwp 모델에서 `Codable` 채택을 제거했습니다** (#81).
