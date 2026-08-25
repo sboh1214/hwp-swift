@@ -166,6 +166,26 @@ final class HwpSelectionGeometryAttributedTests: XCTestCase {
         expect(linkRange) == NSRange(location: 1, length: 2)
     }
 
+    func testLeadingMarkerOnlyFragmentDoesNotCrashNewlineAttributes() {
+        // 첫 조각이 마커뿐이라 빈 문자열로 남으면, 다음 조각 앞 개행이
+        // attributes(at: -1)을 묻지 않아야 한다 — result.length 가드의 회귀 그물.
+        let row = CGRect(x: 50, y: 100, width: 200, height: 20)
+        let below = CGRect(x: 50, y: 130, width: 200, height: 20)
+        let document = makeDocument(pages: [[
+            block(attributed("\u{FFFC}"), frame: row, paragraphId: 1),
+            block(attributed("본문"), frame: below, paragraphId: 2),
+        ]])
+        let geometry = HwpSelectionGeometry(document: document)
+        guard let selection = geometry.documentSelection() else {
+            return fail("expected selection")
+        }
+
+        let attributedText = geometry.attributedText(for: selection)
+
+        expect(attributedText.string) == geometry.plainText(for: selection)
+        expect(attributedText.string) == "\n본문"
+    }
+
     func testMarkerOnlyFragmentContributesEmptyText() {
         // 마커뿐인 조각은 평문처럼 빈 기여로 남는다 — 파리티 유지.
         let row = CGRect(x: 50, y: 100, width: 200, height: 20)
