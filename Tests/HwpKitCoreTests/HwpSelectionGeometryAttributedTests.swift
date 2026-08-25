@@ -285,4 +285,41 @@ final class HwpSelectionGeometryAttributedTests: XCTestCase {
         let expected = boldFont
         expect(CFEqual(fontAt3 as CFTypeRef, expected)) == true
     }
+
+    // MARK: - 마커 제거 선형성
+
+    /// 이전 형태는 마커마다 `deleteCharacters`를 불러 남은 접미를 매번 밀었다
+    /// (2026-08-26 로컬 릴리스, 마커당 텍스트 4자: 2,500개 0.36초 · 5,000개
+    /// 1.48초 · 10,000개 5.90초 · 20,000개 23.49초 — 배가 될 때마다 4배).
+    /// 복사가 `@MainActor`에서 도는 만큼 그대로 화면이 멈춘다.
+    ///
+    /// `mutableString.replaceOccurrences`로는 못 고친다 — 상수만 215배 작을 뿐
+    /// 여전히 제자리 삭제라 4배씩 는다 (10,000개 0.027초 → 80,000개 1.82초).
+    /// 비마커 구간 append만 2.0배/배로 선형이다 (10,000개 0.017초 → 80,000개
+    /// 0.129초).
+    func testMarkerStrippingStaysLinear() {
+        let full = ProcessInfo.processInfo.environment["HWP_PERF"] != nil
+        let markers = full ? 40000 : 5000
+        let source = NSMutableAttributedString()
+        for index in 0 ..< markers {
+            source.append(attributed("본문\(index % 10) "))
+            source.append(attributed("\u{FFFC}", extra: [
+                HwpAttributedStringKey.controlIndex: NSNumber(value: index),
+            ]))
+        }
+
+        let clock = ContinuousClock()
+        let start = clock.now
+        let stripped = HwpSelectionGeometry.strippingControlMarkerRuns(source)
+        let elapsed = clock.now - start
+
+        expect(stripped.length) == markers * 4
+        expect(stripped.string.contains("\u{FFFC}")) == false
+        let seconds = Double(elapsed.components.seconds)
+            + Double(elapsed.components.attoseconds) / 1e18
+        print("HWP_PERF marker-strip: N=\(markers) time=\(String(format: "%.3f", seconds))s")
+        // 임계 = 선형 실측 + 넉넉한 여유. 이차로 되돌아가면 넘는다 —
+        // 이전 형태는 기본 N=5,000에서 이미 1.48초다.
+        expect(seconds) < (full ? 2.0 : 0.5)
+    }
 }

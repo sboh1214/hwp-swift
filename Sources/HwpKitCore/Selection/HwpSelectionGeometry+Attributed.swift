@@ -14,8 +14,8 @@ extension HwpSelectionGeometry {
     /// RTF 직렬화는 플랫폼 색·문단 스타일 타입(AppKit/UIKit)이 필요해
     /// HwpKitNative(`HwpSelectionRTF`)가 맡는다. U+FFFC 개체 자리 표시
     /// run만 여기서 지운다 — 마커 전용 속성(run delegate·`controlIndex`·
-    /// `inlineObjectHeight`)이 문자와 함께 사라지고, 남은 속성 범위
-    /// (하이퍼링크 포함)는 `deleteCharacters`가 자동으로 당긴다.
+    /// `inlineObjectHeight`)이 문자와 함께 사라지고, 마커를 가로지르던 속성
+    /// 범위(하이퍼링크 포함)는 남은 글자에 이어 붙는다.
     public func attributedText(for selection: HwpTextSelection) -> NSAttributedString {
         let pieces = fragments(for: selection)
         let result = NSMutableAttributedString()
@@ -51,20 +51,39 @@ extension HwpSelectionGeometry {
         return attributes
     }
 
-    /// `strippingControlMarkers`의 attributed 판 — 뒤에서 앞으로 지워
-    /// 앞쪽 탐색 범위가 밀리지 않는다.
+    /// `strippingControlMarkers`의 attributed 판. 마커를 가로지르는 속성 범위
+    /// (개체를 감싼 하이퍼링크)는 양옆 구간이 같은 값으로 이어 붙어
+    /// `longestEffectiveRange`에서 하나로 보인다.
+    ///
+    /// **제자리 삭제로 되돌리지 말 것** — `deleteCharacters`도
+    /// `mutableString.replaceOccurrences`도 마커마다 접미를 밀어 이차가 되고,
+    /// 복사는 `@MainActor`에서 돈다 (`testMarkerStrippingStaysLinear`).
     static func strippingControlMarkerRuns(
         _ attributed: NSAttributedString
     ) -> NSAttributedString {
-        guard attributed.string.contains("\u{FFFC}") else { return attributed }
-        let mutable = NSMutableAttributedString(attributedString: attributed)
-        var range = (mutable.string as NSString)
-            .range(of: "\u{FFFC}", options: .backwards)
-        while range.location != NSNotFound {
-            mutable.deleteCharacters(in: range)
-            range = (mutable.string as NSString)
-                .range(of: "\u{FFFC}", options: .backwards)
+        let text = attributed.string as NSString
+        var marker = text.range(of: "\u{FFFC}")
+        guard marker.location != NSNotFound else { return attributed }
+        let result = NSMutableAttributedString()
+        var cursor = 0
+        while marker.location != NSNotFound {
+            if marker.location > cursor {
+                result.append(attributed.attributedSubstring(
+                    from: NSRange(location: cursor, length: marker.location - cursor)
+                ))
+            }
+            cursor = marker.location + marker.length
+            marker = text.range(
+                of: "\u{FFFC}",
+                options: [],
+                range: NSRange(location: cursor, length: text.length - cursor)
+            )
         }
-        return mutable
+        if cursor < text.length {
+            result.append(attributed.attributedSubstring(
+                from: NSRange(location: cursor, length: text.length - cursor)
+            ))
+        }
+        return result
     }
 }
