@@ -250,13 +250,35 @@ default `load`로 옮겨졌다. 프로덕션 미참조라고 지우지 말 것: 
   여기서 빨개진다. `Stability/Core/LoaderProtocolStabilityTests.swift`는 base
   프로토콜 5종의 EOF만 보므로 이 갈래를 대신 증명하지 않는다.
 
+## Codable 제거 이후 (#81)
+
+CoreHwp 모델이 `Codable`을 채택하지 않으므로 이 타깃에 직렬화 왕복 스위트는
+없다 (근거는 루트 `AGENTS.md` 노트). 남은 자리 둘만 기억할 것.
+
+- **매니페스트가 CoreHwp enum을 문자열로 싣는 필드**는
+  [`FixtureManifestSupport.swift`](file:///Users/sboh/Repos/hwp-swift/Tests/CoreHwpTests/FixtureManifestSupport.swift)가
+  **디코딩만** 되살린다 — 현재 `previewImageFormat`(`HwpPreviewImageFormat`)
+  하나이고, `RawRepresentable`이라 `extension …: Decodable {}` 한 줄이면 된다.
+  다른 모듈의 타입이라 Swift 6에서는 `@retroactive`가 필요하고 5.9에는 그
+  속성 자체가 없어 `#if compiler(>=6.0)`으로 가른다. 새 매니페스트 필드에
+  CoreHwp enum을 쓰면 여기에 한 줄을 더하고, **모델 쪽 Codable을 되살려
+  해결하지 말 것.**
+- **왕복 스위트가 유일한 커버리지였던 파스 단언**이 있었다. 삭제 과정에서
+  드러난 실례: 표 40 문단 머리 글자 모양 ID의 **양수** 파싱을 단언하던 곳은
+  `…SurviveCodableRoundTrip` 하나뿐이었고, 남는 테스트는 기본값 `-1`만 봐서
+  **슬롯을 소비만 하고 상수를 저장하는 회귀와 구별되지 않았다**
+  (`DocInfo/IdMappingShapes/StyleRawPayloadTests.swift`의
+  `testBulletParsesPositiveHeadCharShapeIdFromTable40Layout`으로 직접 로드
+  단언을 복원). 스위트를 통째로 지우기 전에 그 파일이 직렬화가 아니라
+  **파싱**에 대해 유일하게 단언하던 것이 없는지 확인한다.
+
 ## 테스트 스타일
 
 | 패턴 | 예시 | 언제 |
 |------|------|------|
 | 속성 단순 비교 | `expect(hwp.fileHeader.version) == HwpVersion(5, 0, 2, 2)` | 단일 값 검증 |
 | 패턴 매칭 | `switch ctrl { case let .table(t): ... }` | 컨트롤 enum dispatch 검증 |
-| Round-trip diff | `expect(this.fileHeader) == official.fileHeader` | `Create*Tests.swift` — `HwpFile()`가 파싱된 빈 파일과 일치함을 증명 |
+| 빈 템플릿 대조 | `expect(this.fileHeader) == official.fileHeader` | `Create*Tests.swift` — `HwpFile()`가 파싱된 빈 파일과 일치함을 증명 (직렬화 왕복이 아니다) |
 | Negative TODO | `expect(...) != true`와 `// TODO: Investigate why false` | 알려진 파서 미구현 영역 (삭제 금지) |
 
 ## 컨벤션

@@ -95,9 +95,10 @@ ID로 dispatch된다.
 - public 타입의 doc-comment는 한컴 공개 문서를 참조하는 한국어로 유지.
 - `Streams/Hwp*.swift`는 최상위 오케스트레이터다 — `parseTreeRecord`로 record를
   꺼내 모델로 dispatch만 수행. 파싱 로직은 stream이 아니라 모델 쪽에 두기.
-- public struct의 default `init()`은 round-trip 비교용 빈 객체를 만든다
-  (`Tests/.../Blank/Create*Tests.swift` 참조). 새 public 모델 추가 시
-  이 패턴을 따를 것.
+- public struct의 default `init()`은 **빈 템플릿 대조용** 객체를 만든다 —
+  파싱된 빈 문서와 필드 단위로 비교한다 (`Tests/.../Blank/Create*Tests.swift`
+  참조. 직렬화 왕복이 아니다 — 모델은 `Codable`을 채택하지 않는다). 새 public
+  모델 추가 시 이 패턴을 따를 것.
 - **파생 필드는 저장보다 재계산**을 우선한다. `HwpChar`는 문서 전체 문자 수만큼
   존재하므로 컨트롤 payload를 클래스 박스로 분리해 stride를 16 byte로 유지하고
   (`inlineControl`은 payload에서 지연 계산), setter는 `rawPayload`로 박스를
