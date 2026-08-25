@@ -322,7 +322,7 @@ PageUp/Down은 한 쪽씩, Home/End는 문서 처음·끝으로 — 두 플랫�
 - **퇴화 입력은 산식이 nil 로 거른다.** 뷰포트가 아직 실측되지 않은 창(SwiftUI `makeUIView`/창에 붙기 전)이 이 경로로 오므로 뷰는 nil 을 "아직"으로 읽어 `pendingFitZoom` 에 예약하고 첫 실측 레이아웃에서 다시 시도한다 (iOS 초기 센터링 예약과 같은 형태, 적용 순서는 센터링 **다음**이어야 쪽 맞춤의 스크롤이 덮이지 않는다). 0 을 그대로 흘리면 하류가 못 잡는다 — `HwpZoomControls.sanitized` 는 0 을 finite 로 보아 하한 0.25 로 클램프하고, NaN 은 iOS 가 직전 값 유지·macOS 가 조용한 no-op 이라 원인이 어디에도 안 남는다.
 - **가드 범위가 두 모드에서 다르다** — 폭 맞춤은 높이를 **읽지 않으므로** 높이가 퇴화(0·NaN·음수)해도 배율을 낸다. 산식을 정리하며 두 축 가드를 앞단 한 곳으로 모으면 이 비대칭이 사라져 폭 맞춤이 쪽 맞춤과 같은 조건에서만 성립하게 되므로, `testFitWidthIgnoresDegenerateHeight` 가 **같은 입력에 두 모드를 맞대어** 잠근다. 몫에도 별도 가드가 있다: 유한한 두 양수의 나눗셈도 거대 캔버스에서 **언더플로로 0** 이 되는데, 그 0 은 바로 아래 클램프가 하한 0.25 로 살려 내 "안내 없는 축소"가 된다 (`testFitZoomRejectsUnderflowedQuotient`).
 - **배율 한계는 인자로 받는다** — `0.25...5.0` 은 이미 프로덕션 세 곳에 사본이 있어 산식이 네 번째를 만들면 안 된다. 호출부가 스크롤 뷰의 실제 한계를 정렬해 (`ClosedRange` 생성 트랩 방지) 넘긴다.
-- **`HwpDocumentUIView` 본문에 새 저장 프로퍼티를 넣기 전에 lint 예산을 본다.** `type_body_length` error 임계가 400 이고 이 타입이 거기 붙어 있다 — `pendingFitZoom` 을 넣으며 `updateCenteringInset`·`trailingScrollExtent` 를 `HwpDocumentUIViewGeometry.swift` 확장으로 옮겨 본문을 **순감**시켰다 (399 → 385). #84 의 상태 묶기와 같은 처방이고, #120 도 키보드 토글 프로퍼티를 넣으며 `clampedPageRange` 를 같은 확장으로 옮겼다 (393 → 389, 현재값).
+- **`HwpDocumentUIView` 본문에 새 저장 프로퍼티를 넣기 전에 lint 예산을 본다.** `type_body_length` error 임계가 400 이고 이 타입이 거기 붙어 있다 — `pendingFitZoom` 을 넣으며 `updateCenteringInset`·`trailingScrollExtent` 를 `HwpDocumentUIViewGeometry.swift` 확장으로 옮겨 본문을 **순감**시켰다 (399 → 385). #84 의 상태 묶기와 같은 처방이고, #120 도 키보드 토글 프로퍼티를 넣으며 `clampedPageRange` 를 같은 확장으로 옮겼다 (393 → 389). #118 의 `pasteboard` 주입 프로퍼티가 한 줄을 더해 **현재값은 390** 이다 (2026-08-26 실측) — 상쇄할 몫을 찾지 않고 넣은 만큼, 다음에 이 본문을 늘리는 변경은 다시 옮길 곳을 함께 고를 것.
 
 ## Callback 발화 규약
 

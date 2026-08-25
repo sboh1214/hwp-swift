@@ -253,12 +253,16 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
 - `HwpSelectionEdge`는 **문서 순서**(`start`/`end`)이지 `anchor`/`focus`가
   아니다. 역방향 드래그도 `HwpTextSelection.range`가 정규화하므로 화면의 두
   핸들은 언제나 이 둘이다.
-- 캐럿·검색 질의는 **확장 파일로 나눈다** (`+Caret`/`+Search`). 본체
-  `HwpSelectionGeometry` 클래스 본문이 SwiftLint `type_body_length` **경고**
-  구간이라 (2026-08-18 실측 315줄 / 경고 300·에러 400) 새 질의를 본체에 넣으면
-  에러 임계로 걸어간다. 같은 임계의 **에러** 쪽에 닿아 있는 것은
-  `HwpDocumentUIView`(399)이고 그쪽은 상태를 값 타입으로 접어 대응했다
-  (`Sources/HwpKitNative/AGENTS.md`).
+- 캐럿·검색·복사 질의는 **확장 파일로 나눈다**
+  (`+Caret`/`+Search`/`+Attributed`). 본체 `HwpSelectionGeometry` 클래스 본문이
+  SwiftLint `type_body_length` **경고** 구간이라 (2026-08-26 실측 318줄 /
+  경고 300·에러 400) 새 질의를 본체에 넣으면 에러 임계로 걸어간다. #118은
+  조립(`attributedText`)만 확장으로 냈고 **공유 조각 수집**(`fragments`·
+  `joinsWithPrevious`)은 본체에 남겼다 — 두 조립 경로가 같은 것을 봐야 하기
+  때문이고, 그래서 본문이 315 → 318로 늘었다. 같은 임계의 **에러** 쪽에 닿아
+  있는 것은 `HwpDocumentUIView`이고 그쪽은 상태를 값 타입으로 접어 대응했다 —
+  **그 실측값은 저쪽 문서만 든다** (`Sources/HwpKitNative/AGENTS.md`). 여기에
+  사본을 두었더니 399 대 389로 갈려 있었다 (#118 정리에서 확인).
 - 가드: `HwpSelectionCaretTests`(10종 — 폭 0·줄 높이, 하이라이트 경계 일치와
   폭 클램프, 줄바꿈 경계에서 affinity가 갈리고 줄 안에서는 무관, 단위 밖
   오프셋 클램프, 단위를 못 찾으면 nil, 그리고 위 스냅 폴백 3종[폴백 발동·
