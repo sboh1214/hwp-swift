@@ -120,6 +120,12 @@
         public var onPageChanged: ((Int) -> Void)?
         public var onZoomChanged: ((CGFloat) -> Void)?
 
+        /// PageUp/Down·Home/End 키보드 페이지 이동 (#120). 뷰가 first responder일
+        /// 때만 반응하므로 전역 단축키가 아니고, 호스트가 이 키들을 직접 쓰면
+        /// 끈다. `keyDown`의 진입 게이트만 잠근다 — `pageUp(_:)` 등 responder
+        /// 표준 액션은 프로그래매틱 호출 통로로 남는다.
+        public var isKeyboardPageNavigationEnabled = true
+
         var pageLayers: [Int: HwpPageLayer] = [:]
         /// 메모 (댓글) 풍선 패널 레이어 — 페이지 오른쪽 바깥 (한글.app 편집 뷰)
         var memoPanelLayers: [Int: HwpPageLayer] = [:]

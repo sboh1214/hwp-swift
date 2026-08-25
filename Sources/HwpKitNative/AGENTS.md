@@ -22,6 +22,8 @@ HwpKitNative/
 ├── macOS/HwpDocumentNSView.swift   # NSScrollView + 레이어 가상화 (magnification pinch zoom)
 ├── macOS/HwpDocumentNSViewGeometry.swift   # 가시 범위·보존 창·페이지 프레임
 ├── macOS/HwpDocumentNSViewSelection.swift  # 마우스 드래그 선택 + Cmd+C/Cmd+A/우클릭 Copy
+├── macOS/HwpDocumentNSViewKeyboard.swift   # PageUp/Down·Home/End 쪽 이동 + responder 표준 액션 (#120)
+├── iOS/HwpDocumentUIViewKeyboard.swift     # UIKeyCommand 쪽 이동 + 탭 포커스 획득 (#120)
 ├── macOS/HwpDocumentNSViewSearch.swift     # 검색 오버레이 2벌 + 매치 노출 스크롤 (#75)
 ├── macOS/HwpDocumentNSViewAccessibility.swift  # NSAccessibilityElement 합성 (#79)
 ├── iOS/HwpDocumentUIViewAccessibility.swift    # UIAccessibilityElement 합성 (#79)
@@ -201,6 +203,50 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
 - **가시 판정에 `CGRect.intersects` 를 쓰면 안 된다** (`isCaretVisible`). 캐럿은 폭 0이라 `CGRect.isEmpty` 가 참이고 CG 의 교차 판정은 빈 사각형에 **항상 false** 를 준다 — 그대로 쓰면 뷰포트 한가운데 있는 캐럿의 핸들까지 전부 숨는다. 그래서 축별 비교를 손으로 쓰고, 가로는 경계에 정확히 걸친 캐럿을 살리려 `>=`/`<=` 다 (실측: 폭 0 캐럿이 뷰포트 오른쪽 끝에 있을 때 `intersects` 는 false, 이 술어는 true). 위 "뷰포트 밖은 숨긴다" 규칙이 실제로 작동하려면 이 한 줄이 필요하다.
 - 가드: `HwpSelectionHandleGeometryTests`(14종 — 프레임·부품 배치, `handleFrame` ↔ `caretCenter` 왕복, 그랩 오프셋·여유, 빈 사각형 함정을 잠그는 `testCaretVisibilityDoesNotRideOnEmptyRectSemantics`, 겹침 판정 3종[그립 중심·**반대칭**·가까운 그립 승리]) + `HwpDocumentUIViewSelectionTests`(14종 — 뷰 배선, 그중 `testOverlappingHandlesRouteEachTouchToItsOwnKnob` 이 실제 히트 테스트로 위 규약을 잠근다). 겹침 테스트는 **겹침이 실제로 일어나는지 먼저 단언한다** — 안 그러면 두 그랩 영역이 떨어진 배치에서 순서 문제를 재지 못하고 공허하게 통과한다.
 
+## 키보드 페이지 이동 (#120)
+
+PageUp/Down은 한 쪽씩, Home/End는 문서 처음·끝으로 — 두 플랫폼 모두 쪽 단위
+이동이고 클램프·빈 문서 가드는 `scrollToPage`가 소유한다 (별도 가드 금지).
+
+- **첫 응답자 한정이 규약이다.** 라이브러리는 전역 단축키를 소유하지 않는다
+  (#75 `HwpSearchBar`와 같은 경계) — 이 규약에는 코드 가드가 없어
+  (`HwpKitScopeGuardTests`는 호스트 UI 액션·플랫폼 import만 본다) 문서와
+  리뷰로만 지켜진다. 포커스는 사용자 제스처로만 잡는다: macOS는 `mouseDown`,
+  iOS는 탭(`grabKeyboardFocusOnUserTap`)·롱프레스. 문서 대입·창 부착에서
+  스스로 잡으면 호스트 검색 필드의 포커스를 뺏는 전역 동작이 된다 — 호스트
+  필드가 포커스를 가진 동안 이 키들이 죽는 것은 결함이 아니라 규약의 값이다.
+- **macOS 진입은 두 갈래다.** `keyDown`(Selection 파일 — Cmd+C·Cmd+A 분기
+  **뒤**, 배치 고정)이 `handlePageNavigationKey`로 함수 키를 가르고,
+  NSResponder 표준 액션(`pageUp(_:)`·`scrollPage{Up,Down}(_:)`·
+  `scrollTo{Beginning,End}OfDocument(_:)`) 오버라이드가 호스트 메뉴·
+  `doCommand(by:)` 라우팅을 같은 동작에 닿게 한다. 분기는 처리하지 못한
+  이벤트를 삼키지 않는다 — 토글 꺼짐·수식키 조합·쪽 없는 문서는 false를 줘
+  responder 체인(호스트)으로 흘린다.
+- **iOS는 `keyCommands`다** (`inputPageUp/Down/Home/End`, 수식키 없음).
+  `wantsPriorityOverSystemBehavior = true`로 스크롤 뷰의 뷰포트 단위 키보드
+  스크롤 대신 쪽 단위 해석이 이긴다. 토글이 꺼졌거나 쪽이 없으면 명령 목록
+  자체를 내지 않는다 (`super.keyCommands`만 반환).
+- **그 토글은 발행뿐 아니라 실행 시점에도 선다** — 액션(`pageUpKeyPressed` 등)이
+  `isKeyboardPageNavigationEnabled`를 다시 본다. 발행만 게이트하면 동작이
+  "UIKit이 명령을 언제 다시 묻는가"에 의존하는데, `keyCommands`에는 짝이 되는
+  무효화 API가 **없다** (SDK 실측: 실존 `setNeedsUpdateOf*` 6종에 KeyCommands
+  변종이 없고, `setNeedsUpdateOfKeyCommands()`는 타입 체크가 `cannot find in
+  scope`로 거부하는 **없는 이름**이다 — #123의 봇 리뷰가 그것을 처방했으니
+  따르지 말 것. 실존 무효화는 메뉴 시스템용 `UIMenuSystem.setNeedsRebuild()`·
+  `setNeedsRevalidate()`뿐이고 키 이벤트 라우팅과 다른 층이다). 그래서 재질의
+  시점은 계약이 아니고, macOS가 이벤트마다 검사하는 것과 대칭으로 두어야 UIKit
+  내부 동작과 무관하게 성립한다. **빈 문서·클램프는 복제하지 않는다** —
+  위 규칙대로 `scrollToPage` 소유다. 가드는
+  `testDisabledToggleAlsoStopsDirectlyDeliveredActions` (발행만 보는
+  `testDisabledToggleRemovesKeyCommands`가 이 축을 대신하지 못한다).
+- **토글은 `isKeyboardPageNavigationEnabled`** (양 뷰 public, 기본 true) —
+  SwiftUI 래퍼가 `HwpDocumentView(isKeyboardPageNavigationEnabled:)`를 매
+  업데이트 대입한다 (값 타입이라 didSet 재배선이 없어 동일성 가드 불요).
+- 가드는 `HwpDocumentNSViewKeyboardTests`(keyDown 라우팅·경계 클램프·
+  비삼킴 3종·표준 액션)와 `HwpDocumentUIViewKeyboardTests`(명령 노출 조건·
+  우선순위·액션 이동·무문서 안전). iOS의 실제 first responder 라우팅은
+  UIKit 몫이라 자동화 밖이다 — 시뮬레이터 QA로 확인한다.
+
 ## 문서 접근성 요소 합성 (#79)
 
 문서 본문이 CALayer 라 AX 트리가 없어, 두 뷰가 가시 (±2) 페이지의 텍스트를
@@ -273,7 +319,7 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
 - **퇴화 입력은 산식이 nil 로 거른다.** 뷰포트가 아직 실측되지 않은 창(SwiftUI `makeUIView`/창에 붙기 전)이 이 경로로 오므로 뷰는 nil 을 "아직"으로 읽어 `pendingFitZoom` 에 예약하고 첫 실측 레이아웃에서 다시 시도한다 (iOS 초기 센터링 예약과 같은 형태, 적용 순서는 센터링 **다음**이어야 쪽 맞춤의 스크롤이 덮이지 않는다). 0 을 그대로 흘리면 하류가 못 잡는다 — `HwpZoomControls.sanitized` 는 0 을 finite 로 보아 하한 0.25 로 클램프하고, NaN 은 iOS 가 직전 값 유지·macOS 가 조용한 no-op 이라 원인이 어디에도 안 남는다.
 - **가드 범위가 두 모드에서 다르다** — 폭 맞춤은 높이를 **읽지 않으므로** 높이가 퇴화(0·NaN·음수)해도 배율을 낸다. 산식을 정리하며 두 축 가드를 앞단 한 곳으로 모으면 이 비대칭이 사라져 폭 맞춤이 쪽 맞춤과 같은 조건에서만 성립하게 되므로, `testFitWidthIgnoresDegenerateHeight` 가 **같은 입력에 두 모드를 맞대어** 잠근다. 몫에도 별도 가드가 있다: 유한한 두 양수의 나눗셈도 거대 캔버스에서 **언더플로로 0** 이 되는데, 그 0 은 바로 아래 클램프가 하한 0.25 로 살려 내 "안내 없는 축소"가 된다 (`testFitZoomRejectsUnderflowedQuotient`).
 - **배율 한계는 인자로 받는다** — `0.25...5.0` 은 이미 프로덕션 세 곳에 사본이 있어 산식이 네 번째를 만들면 안 된다. 호출부가 스크롤 뷰의 실제 한계를 정렬해 (`ClosedRange` 생성 트랩 방지) 넘긴다.
-- **`HwpDocumentUIView` 본문에 새 저장 프로퍼티를 넣기 전에 lint 예산을 본다.** `type_body_length` error 임계가 400 이고 이 타입이 거기 붙어 있다 — `pendingFitZoom` 을 넣으며 `updateCenteringInset`·`trailingScrollExtent` 를 `HwpDocumentUIViewGeometry.swift` 확장으로 옮겨 본문을 **순감**시켰다 (399 → 385, 위 프로그레시브 호출을 더한 현재 390). #84 의 상태 묶기와 같은 처방이다.
+- **`HwpDocumentUIView` 본문에 새 저장 프로퍼티를 넣기 전에 lint 예산을 본다.** `type_body_length` error 임계가 400 이고 이 타입이 거기 붙어 있다 — `pendingFitZoom` 을 넣으며 `updateCenteringInset`·`trailingScrollExtent` 를 `HwpDocumentUIViewGeometry.swift` 확장으로 옮겨 본문을 **순감**시켰다 (399 → 385). #84 의 상태 묶기와 같은 처방이고, #120 도 키보드 토글 프로퍼티를 넣으며 `clampedPageRange` 를 같은 확장으로 옮겼다 (393 → 389, 현재값).
 
 ## Callback 발화 규약
 

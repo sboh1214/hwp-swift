@@ -12,11 +12,12 @@ SwiftUI 공개 API target. HwpKitNative 위에 `NSViewRepresentable` / `UIViewRe
   - **오류 설명의 한국어화는 로더에만 적용한다** (#117의 A안) — `CoreHwp.HwpError`의 오류 설명은 영문을 유지한다. 이를 번역하면 manifest에서 미지원 픽스처 4종에 지정한 `expectedError.description` 값이 모두 달라질 뿐 아니라 (`문서암호설정-보안수준높음`·`문서암호설정-보안수준보통`·`배포용문서`·`drm-unsupported-derived`), 번역 범위도 `HwpError`의 나머지 케이스 전체로 넓어진다. 미지원 오류는 타입으로 매핑되므로 로더가 `CoreHwp`의 영문 설명을 사용할 일도 없다 — 하위 오류의 원문을 그대로 보존하는 경우는 `presentationBuildFailed`의 `reason`뿐이다
   - 회귀 검증에는 같은 픽스처 4종을 쓴다 — URL 로드 경로에서는 네 픽스처를 모두 순회해 세 문서 종류를 검증하고 (`testUnsupportedFixturesThrowTypedUnsupportedDocument`), `Data`와 프로그레시브 로드 경로에서는 한 종류씩만 확인한다 (`testUnsupportedDataThrowsTypedUnsupportedDocument`·`testLoadUpdatesSurfacesTypedUnsupportedDocument` — 세 경로가 `mapLoadFailure` 하나를 공유하므로 세 종류를 모두 검증하는 경로는 하나면 충분하다). `mapLoadFailure`가 `internal`인 이유는 오류를 그대로 통과시키는 분기를 공개 API만으로 재현하기 어렵기 때문이다. 따라서 `testMapLoadFailureBranches`가 이 함수를 직접 호출해 세 분기를 검증한다
 - `HwpDocumentLoader.loadUpdates(from:)` — 프로그레시브 로딩. `AsyncThrowingStream<HwpDocumentSnapshot, Error>` 로 첫 페이지 확정 즉시 스냅샷을 방출하고 배치 단위로 이어가다 최종 스냅샷(`isComplete`)으로 끝난다. 최종 문서는 `load(from:)` 결과와 동일. 뷰는 `HwpDocumentMetadata.loadToken` 으로 증분 적용(스크롤 유지) vs 전체 리셋을 판정
-- `HwpDocumentView` — SwiftUI View. optional `zoomScale: Binding<CGFloat>?` + `fitZoom: Binding<HwpZoomFit?>?` + `currentPage: Binding<Int>?` + `searchController: HwpSearchController?` + hyperlink/unsupported 콜백
+- `HwpDocumentView` — SwiftUI View. optional `zoomScale: Binding<CGFloat>?` + `fitZoom: Binding<HwpZoomFit?>?` + `currentPage: Binding<Int>?` + `searchController: HwpSearchController?` + `isKeyboardPageNavigationEnabled: Bool = true` + hyperlink/unsupported 콜백
+  - **키보드 페이지 이동은 첫 응답자 한정이다** (#120). PageUp/Down·Home/End를 네이티브 뷰가 쪽 단위로 해석하되, 뷰가 first responder일 때만 이벤트가 온다 (macOS는 클릭, iOS는 탭·롱프레스로 잡는다 — 문서 대입·창 부착에서 스스로 잡는 경로는 없다). 전역 단축키를 소유하지 않는 규약(`HwpSearchBar` 참조)은 코드 가드가 없어 문서와 리뷰로만 지켜진다 — 새 키 처리를 더할 때 이 경계를 넘지 말 것. 호스트가 이 키들을 직접 쓰면 `isKeyboardPageNavigationEnabled: false`로 끈다 (네이티브 뷰의 같은 이름 프로퍼티에 배선되는 값 타입이라 동일성 가드 없이 매 업데이트 대입한다). 구현과 가드 테스트는 `Sources/HwpKitNative/AGENTS.md`의 "키보드 페이지 이동"
   - **`fitZoom` 은 원샷 명령이다** (#78). 값을 넣으면 뷰가 한 번 맞추고 바인딩을 `nil` 로 되돌린다 (되돌리기는 `normalizeOutOfRange*Binding` 과 같은 계약 — 업데이트 **밖**에서, 문서 세대·값 불변 가드를 지나). 지속 모드가 아닌 이유는 창 리사이즈마다 다시 맞추면 그 사이 사용자가 핀치로 바꾼 배율을 조용히 덮기 때문이다. 결과 배율은 `zoomScale` 바인딩으로 돌아오므로 툴바 라벨이 저절로 맞는다
   - **뷰포트 크기는 공개하지 않는다.** 그것이 이 API 가 명령 바인딩인 이유다 — 산식을 호스트에 내주려면 뷰포트를 넘길 통로를 새로 뚫어야 하는데, 지오메트리 계층은 가상화 세부가 공개 표면이 되지 않도록 **의도적으로** internal 이다. 산식(`HwpDocumentViewSupport.fitZoomScale`)은 HwpKitNative 에 internal 로 남고 뷰가 자기 캔버스·뷰포트를 넣어 부른다
 - `HwpDocumentToolbar<Content>` — trailing content 를 받는 컨테이너 (툴바 chrome)
-- `HwpPageNavigator(currentPage: Binding<Int>, totalPages: Int)` — "Page X of Y" + ± 버튼
+- `HwpPageNavigator(currentPage: Binding<Int>, totalPages: Int)` — "Page [N] of Y" (번호 입력 필드) + ± 버튼. 필드는 Enter로만 커밋하고 (`1...totalPages` 클램프, 숫자 아님·오버플로는 무시) 포커스를 잃으면 되돌린다 — 커밋 전 중간 값("1"을 거쳐 "12")이 바인딩에 새면 타이핑마다 문서가 스크롤되므로 초안은 `@State`다 (#120). 파사드에서 유일한 `@State` 예외이고, 판정 로직은 초안을 인자로 받는 `commitPageEntry(_:)`라 `HwpToolsTests` 관례로 검증된다
 - `HwpZoomControls(zoomScale: Binding<CGFloat>, fitZoom: Binding<HwpZoomFit?>?, range: ClosedRange<CGFloat>)` — 기본 range `0.25...5.0`. `fitZoom` 을 넘기면 폭 맞춤·쪽 맞춤 버튼이 함께 나온다 (안 넘기면 안 그린다 — 뷰에 연결되지 않은 버튼을 내지 않기 위해서다). 이 컴포넌트는 **명령만 세운다**: 배율 산식은 뷰포트를 아는 문서 뷰가 쥐고 있다
 - `HwpSearchController` — 문서 검색 세션 (HwpKitCore). 호스트가 `@State` 로 소유해 `HwpDocumentView(searchController:)` 와 `HwpSearchBar(controller:)` 에 **같은 인스턴스**를 넘긴다. 뷰가 붙는 순간 `HwpSelectionController` 의 지오메트리를 공유해 (단위 캐시 이중화 금지) 하이라이트·매치 노출 스크롤·프로그레시브 증분 재스캔이 자동 배선된다. 검색 대상은 본문 (`role == .body`) 뿐 — 머리말/꼬리말/쪽 번호와 메모 풍선은 빠지고 각주·표 셀·글상자·중첩 표는 포함된다. 매치는 텍스트 단위 (`HwpTextUnit`) 안에서만 성립한다 (단/쪽·셀 경계를 넘지 않는다)
 - `HwpTextSearcher` — 상태 없는 순수 스캐너. nonisolated + 입출력 Sendable 이라 오프메인·CLI 에서도 쓴다 (대가: 뷰의 unit 캐시를 공유하지 못해 전개 이중화)
@@ -41,11 +42,12 @@ SwiftUI 공개 API target. HwpKitNative 위에 `NSViewRepresentable` / `UIViewRe
   없고, 커스텀 뷰를 만드는 호스트만 같은 재료로 AX 트리를 만든다. 낭독
   순서·수명 규약은 `Sources/HwpKitNative/AGENTS.md`의 "문서 접근성 요소 합성"
 - **툴바 VoiceOver 라벨 정책** (#79) — `HwpZoomControls`·`HwpPageNavigator`·
-  `HwpSearchNavigator`·`HwpSearchBar`의 버튼 11개가 한국어 String 라벨을
+  `HwpSearchNavigator`·`HwpSearchBar`의 컨트롤 12개(버튼 11 + 쪽 번호 입력
+  필드)가 한국어 String 라벨을
   단다 (`-`·`+`·`‹`·`›`는 문장부호라 VoiceOver가 문맥 없이 읽는다). 라벨이
   `LocalizedStringKey`가 아니라 **`String` 계산 프로퍼티**인 이유: 키 문자열을
   꺼낼 공개 경로가 없어 문구를 테스트로 고정할 수 없다
-  (`HwpAccessibilityLabelTests`가 문구와 11개 상호 구별을 단언한다). 한국어
+  (`HwpAccessibilityLabelTests`가 문구와 12개 상호 구별을 단언한다). 한국어
   하드코딩은 #78 1번(에러 한국어화)과 같은 정책이다 — 로컬라이제이션 인프라가
   없어 유일한 경로. 새 버튼을 더하면 라벨도 함께 달고 구별 단언에 넣을 것
 - `HwpPageThumbnails` — 쪽 축소판 (#76). `update(document:)`로 대상을 걸고 `image(forPageAt:pixelWidth:) async throws -> CGImage`로 **0-기반** 쪽을 받는다 (`HwpPageNavigator`·`HwpOutlineItem.pageNumber`가 1-기반이므로 그쪽 값은 `- 1`을 하거나 `HwpOutlineItem.pageIndex`를 쓴다). 화면·PDF와 **같은 paint list·같은 조판**이다 — 구현은 HwpKitNative의 `HwpPageThumbnailRenderer`이고 `HwpPDFExporter` ↔ `HwpPDFRenderer`와 같은 관계다. 종횡비는 `HwpPageThumbnails.pixelHeight(for:pixelWidth:)`가 준다 (셀 자리를 미리 잡을 때 쓴다). 에러는 `HwpThumbnailError`

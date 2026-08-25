@@ -8,7 +8,7 @@
 |---|---|---|
 | `HwpDocumentView` | HWP 문서 렌더러 | 문서 로드 후 메인 영역에 렌더 |
 | `HwpDocumentToolbar` | 툴바 컨테이너 (재질 배경 + 분리선) | 상단 툴바로 사용 |
-| `HwpPageNavigator` | 페이지 이동 컨트롤 (`- / Page X of Y / +`) | 툴바 좌측 |
+| `HwpPageNavigator` | 페이지 이동 컨트롤 (`- / Page [N] of Y / +`, 번호 직접 입력) | 툴바 좌측 |
 | `HwpZoomControls` | 확대/축소 컨트롤 (`- / Zoom N% / + / Reset / Fit Width / Fit Page`) | 툴바 우측 |
 | `HwpSearchController` | 문서 검색 세션 (엔진은 HwpKitCore) | `@State`로 소유해 뷰와 검색 바에 **같은 인스턴스** |
 | `HwpSearchBar` | 검색 필드 + 카운터 + 이전/다음 + 지우기 | 툴바 **아래 별도 행** |
@@ -24,6 +24,11 @@
   `HwpSearchBar(controller:)`에 넘기면 하이라이트·매치 노출 스크롤·프로그레시브
   재스캔이 자동 배선된다. **Cmd+F는 이 앱이 잡는다** — 라이브러리는 전역
   단축키를 소유하지 않고 `@FocusState` 훅만 받는다 (Cmd+O·Cmd+P와 같은 관례)
+- 키보드 쪽 이동 — PageUp/Down·Home/End는 **라이브러리가** 해석한다. 위 Cmd+F
+  관례와 어긋나지 않는다: 문서 뷰가 first responder일 때만 오는 키라 전역
+  단축키가 아니고, 포커스는 문서를 클릭·탭해야 잡힌다. 이 앱은
+  `isKeyboardPageNavigationEnabled`를 넘기지 않아 기본값(켜짐)을 쓴다 — 호스트가
+  이 키들을 직접 쓰려면 그 인자를 `false`로 넘긴다
 - 개요·책갈피 사이드바 — `document.metadata.outline`만으로 만든다. 라이브러리는
   **목록 UI를 내지 않는다**(검색 결과 목록과 같은 기준). 항목이 `Identifiable` +
   1-기반 `pageNumber` + 1-기반 `level`이라 `List` 하나로 끝나고, 누르면
@@ -81,13 +86,15 @@ Xcode에서 스킴 `HwpSwiftSample` 선택 → 대상 지정:
 문서가 로드되면 화면 상단에 다음 툴바가 나타남:
 
 ```
-[Re-open] [개요] [축소판] | [-] Page 1 of N [+] | [PDF로 내보내기] [인쇄] [찾기]  [-] Zoom 100% [+] [Reset]
+[Re-open] [개요] [축소판] | [-] Page [1] of N [+] | [PDF로 내보내기] [인쇄] [찾기]  [-] Zoom 100% [+] [Reset]
 └──────────────────────────  HwpDocumentToolbar  ──────────────────────────────┘
 [ Find in document          ] 1 of 19 ‹ › [Clear]
 └────────────  HwpSearchBar (툴바 밖 별도 행)  ────────────┘
 ```
 
-- 페이지 넘김 / 확대 / 축소 / 초기화 모두 실시간 반영
+- 페이지 넘김 / 확대 / 축소 / 초기화 모두 실시간 반영 — 쪽은 `-`/`+` 외에
+  번호 필드에 직접 입력하고 Enter로도 옮긴다 (숫자가 아니거나 범위를 벗어난
+  입력은 현재 쪽·경계 쪽으로 되돌아온다)
 - `개요` 버튼은 개요·책갈피가 **있는 문서에서만** 나타난다. 눌러 사이드바를
   여닫고, 항목을 누르면 그 쪽으로 이동한다. 개요는 수준만큼 들여쓰고 지금
   보고 있는 쪽을 여는 항목(현재 쪽 이하의 마지막 개요)을 강조한다.
