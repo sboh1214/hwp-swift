@@ -226,6 +226,19 @@ PageUp/Down은 한 쪽씩, Home/End는 문서 처음·끝으로 — 두 플랫�
   `wantsPriorityOverSystemBehavior = true`로 스크롤 뷰의 뷰포트 단위 키보드
   스크롤 대신 쪽 단위 해석이 이긴다. 토글이 꺼졌거나 쪽이 없으면 명령 목록
   자체를 내지 않는다 (`super.keyCommands`만 반환).
+- **그 토글은 발행뿐 아니라 실행 시점에도 선다** — 액션(`pageUpKeyPressed` 등)이
+  `isKeyboardPageNavigationEnabled`를 다시 본다. 발행만 게이트하면 동작이
+  "UIKit이 명령을 언제 다시 묻는가"에 의존하는데, `keyCommands`에는 짝이 되는
+  무효화 API가 **없다** (SDK 실측: 실존 `setNeedsUpdateOf*` 6종에 KeyCommands
+  변종이 없고, `setNeedsUpdateOfKeyCommands()`는 타입 체크가 `cannot find in
+  scope`로 거부하는 **없는 이름**이다 — #123의 봇 리뷰가 그것을 처방했으니
+  따르지 말 것. 실존 무효화는 메뉴 시스템용 `UIMenuSystem.setNeedsRebuild()`·
+  `setNeedsRevalidate()`뿐이고 키 이벤트 라우팅과 다른 층이다). 그래서 재질의
+  시점은 계약이 아니고, macOS가 이벤트마다 검사하는 것과 대칭으로 두어야 UIKit
+  내부 동작과 무관하게 성립한다. **빈 문서·클램프는 복제하지 않는다** —
+  위 규칙대로 `scrollToPage` 소유다. 가드는
+  `testDisabledToggleAlsoStopsDirectlyDeliveredActions` (발행만 보는
+  `testDisabledToggleRemovesKeyCommands`가 이 축을 대신하지 못한다).
 - **토글은 `isKeyboardPageNavigationEnabled`** (양 뷰 public, 기본 true) —
   SwiftUI 래퍼가 `HwpDocumentView(isKeyboardPageNavigationEnabled:)`를 매
   업데이트 대입한다 (값 타입이라 didSet 재배선이 없어 동일성 가드 불요).
