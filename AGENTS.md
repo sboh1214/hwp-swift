@@ -261,6 +261,7 @@ typed 디코더들이 그 트리를 재귀로 내려가므로(표 셀 문단·�
   }
   ```
   타입을 실제로 검사하므로 `as!`보다 안전하기도 하다. CoreText 객체 (CTFont/CTLine/CTParagraphStyle)를 `Any`로 받아 오는 테스트 코드에서 재발하기 쉽다.
+- **CF 컬렉션의 조건 캐스트를 안전망으로 쓰기** — `CFArray`를 `as? [CTTextTab]`처럼 받으면 원소 타입을 **검사하지 않고 성공한다** (실측 2026-08-26: CTTextTab 하나 + CFString 하나를 담은 CFArray가 `as? [CTTextTab]`에 count 2로 통과). 그래서 그 캐스트 실패에 기댄 폴백은 **도달 불능**이고 이물 원소는 뒤에서 터진다. 원소마다 `CFGetTypeID`로 거를 것 — `HwpSelectionRTF`의 탭 정지 변환이 그 형태이고, #118 리뷰가 도달 불능 폴백을 거기서 잡았다. 위 `as!` 항목과 같은 계열이지만 방향이 반대다: 그쪽은 컴파일이 막히고 이쪽은 **조용히 통과**한다.
 - **폰트 바이너리 커밋** (`.ttf`/`.otf`/`.ttc`/`.woff`/`.woff2`) — 이 라이브러리는 폰트를 동봉하지 않는다 (README "폰트"). 세 겹으로 막혀 있다: `.gitignore` 확장자 패턴 → pre-commit 훅 `no-font-binaries` (`git add -f` 차단) → CI lint job의 `No font binaries` (훅 미설치 기여자·웹 UI 업로드 차단). 오픈 라이선스 폰트를 의도적으로 동봉하려면 `.gitignore`의 `!` 예외만으로는 안 된다 — 훅과 CI는 확장자만 보고 거부하므로 세 곳이 같은 예외 목록을 공유하도록 함께 고쳐야 한다. 한 번 커밋되면 history에 영구히 남으니 그 전에 라이선스를 확인할 것.
 
 ## 명령어
