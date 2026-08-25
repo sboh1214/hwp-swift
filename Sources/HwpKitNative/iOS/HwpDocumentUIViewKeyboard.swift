@@ -31,6 +31,11 @@
             return commands + inherited
         }
 
+        // 토글은 발행(`keyCommands`)뿐 아니라 **실행 시점에도** 선다. 발행만
+        // 게이트하면 동작이 "UIKit이 명령을 언제 다시 묻는가"에 의존하는데,
+        // `keyCommands`에는 짝이 되는 무효화 API가 없어 그 시점이 계약이 아니다.
+        // macOS가 이벤트마다 토글을 보는 것(`handlePageNavigationKey`)과 같다.
+
         @objc func pageUpKeyPressed() {
             movePage(by: -1)
         }
@@ -40,16 +45,19 @@
         }
 
         @objc func homeKeyPressed() {
+            guard isKeyboardPageNavigationEnabled else { return }
             scrollToPage(at: 0)
         }
 
         @objc func endKeyPressed() {
+            guard isKeyboardPageNavigationEnabled else { return }
             scrollToPage(at: (document?.pages.count ?? 0) - 1)
         }
 
         /// 목표 인덱스의 유효 범위 클램프·빈 문서 가드는 `scrollToPage`가
         /// 이미 소유한다 (#4) — macOS `movePage(by:)`와 같은 계약.
         private func movePage(by delta: Int) {
+            guard isKeyboardPageNavigationEnabled else { return }
             scrollToPage(at: currentVisiblePage() + delta)
         }
 

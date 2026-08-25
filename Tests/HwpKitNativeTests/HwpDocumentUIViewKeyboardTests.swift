@@ -128,5 +128,24 @@
 
             expect(view.currentVisiblePage()) == 0
         }
+
+        /// 토글을 끄면 명령 목록에서 빠지는 것으로 끝이 아니다 — UIKit이 낡은
+        /// 명령을 한 번이라도 전달하면 그대로 실행되므로 액션이 다시 검사한다
+        /// (`testDisabledToggleRemovesKeyCommands`는 발행만 보므로 이 축을
+        /// 대신하지 못한다). 3쪽에서 시작해 네 액션이 **전부** 움직일 자리를
+        /// 잡는다 — 0쪽에서 재면 pageUp·home이 원래 무동작이라 공허하게 통과한다.
+        func testDisabledToggleAlsoStopsDirectlyDeliveredActions() {
+            let view = makeView()
+            view.scrollToPage(at: 2)
+            expect(view.currentVisiblePage()) == 2
+            view.isKeyboardPageNavigationEnabled = false
+
+            view.pageUpKeyPressed()
+            view.pageDownKeyPressed()
+            view.homeKeyPressed()
+            view.endKeyPressed()
+
+            expect(view.currentVisiblePage()) == 2
+        }
     }
 #endif
