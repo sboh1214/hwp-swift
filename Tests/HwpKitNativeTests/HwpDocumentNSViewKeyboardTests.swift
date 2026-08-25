@@ -125,6 +125,19 @@
             expect(view.currentVisiblePage()) == 0
         }
 
+        /// 페이지 키가 아닌 무수식 키는 `switch`의 `default`가 false를 준다 —
+        /// 문자 입력이나 호스트의 다른 키 처리를 삼키면 안 된다. 위 세 가드는
+        /// 전부 `switch` **앞**에서 걸러지므로 이 테스트만 그 분기를 지난다.
+        func testUnhandledPlainKeyIsLeftToTheHost() throws {
+            let view = makeView()
+            let plainLetterA = 0x61
+
+            let event = try keyEvent(plainLetterA)
+
+            expect(view.handlePageNavigationKey(with: event)) == false
+            expect(view.currentVisiblePage()) == 0
+        }
+
         /// 쪽이 없는 문서에서는 아무것도 안 할 키를 "처리했다"고 삼키지 않는다.
         func testEmptyDocumentDoesNotSwallowPageKeys() throws {
             let view = HwpDocumentNSView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
