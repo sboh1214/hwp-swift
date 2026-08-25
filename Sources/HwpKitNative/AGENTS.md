@@ -8,6 +8,8 @@
 HwpKitNative/
 ├── Platform/PlatformTypes.swift    # typealias (PlatformView/Color/Image/Font) — 뷰 chrome + provider가 사용
 ├── HwpSelectionHandleGeometry.swift # 선택 핸들 순수 기하 (#if 밖 — iOS 잡은 커버리지 미수집, #84)
+├── HwpSelectionRTF.swift           # 복사 RTF 정규화·직렬화 — CT·hwp.* → 표준 키 변환 표
+│                                   #   (#if 밖: 색 생성만 플랫폼 분기라 macOS 잡이 표 전체를 커버, #118)
 ├── HwpDocumentViewSupport.swift    # macOS/iOS 뷰 공통 @MainActor 정적 헬퍼 — 선택 오버레이,
 │                                   #   contentsScale 산식/일괄 갱신, 페이지 chrome, 메모 패널 레이어,
 │                                   #   이미지 공급자, 프로그레시브 판정, Array[safe:] (#if 없이 양쪽 컴파일)
@@ -22,7 +24,6 @@ HwpKitNative/
 ├── macOS/HwpDocumentNSView.swift   # NSScrollView + 레이어 가상화 (magnification pinch zoom)
 ├── macOS/HwpDocumentNSViewGeometry.swift   # 가시 범위·보존 창·페이지 프레임
 ├── macOS/HwpDocumentNSViewSelection.swift  # 마우스 드래그 선택 + Cmd+C/Cmd+A/우클릭 Copy
-├── HwpSelectionRTF.swift           # 복사 RTF 정규화·직렬화 — CT·hwp.* → 표준 키 변환 표 (#118)
 ├── macOS/HwpDocumentNSViewKeyboard.swift   # PageUp/Down·Home/End 쪽 이동 + responder 표준 액션 (#120)
 ├── iOS/HwpDocumentUIViewKeyboard.swift     # UIKeyCommand 쪽 이동 + 탭 포커스 획득 (#120)
 ├── macOS/HwpDocumentNSViewSearch.swift     # 검색 오버레이 2벌 + 매치 노출 스크롤 (#75)
