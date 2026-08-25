@@ -59,7 +59,10 @@ fixture 기준과 확보 현황은
 
 경계는 **바이트와 컴포넌트는 라이브러리, 호스트 chrome과 정책은 앱**입니다 —
 검색 바처럼 호스트가 놓은 자리만 차지하는 컴포넌트는 제공하지만, 저장 패널·
-인쇄·공유 UI와 Cmd+F 같은 전역 단축키는 앱이 정합니다. 개요 목록·축소판
+인쇄·공유 UI와 Cmd+F 같은 전역 단축키는 앱이 정합니다. 문서 뷰가 포커스를 가진
+동안의 PageUp/Down·Home/End 쪽 이동은 뷰가 직접 해석하지만, 전역 단축키가 아니라
+first responder 한정이라 같은 경계 안입니다
+(`HwpDocumentView(isKeyboardPageNavigationEnabled:)`로 끕니다). 개요 목록·축소판
 그리드처럼 행 레이아웃과 플랫폼 chrome 분기가 붙는 목록 UI도 앱 몫입니다 —
 재료(탐색 목록·비트맵)까지가 라이브러리입니다. 배선 예시는
 [Sample/README.md](Sample/README.md)에 있습니다.
