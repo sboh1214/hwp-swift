@@ -4,7 +4,7 @@ import Nimble
 import XCTest
 
 final class OtherControlRealFixturePreservationTests: XCTestCase {
-    func testFootnoteEndnoteFixtureAutoNumberControlsSurviveCodableRoundTrip() throws {
+    func testFootnoteEndnoteFixtureExposesParsedAutoNumberControls() throws {
         let hwp = try openHwp(#file, "footnote-endnote")
         let autoNumbers = FixtureDerivedValues
             .otherControls(from: hwp)
@@ -17,11 +17,9 @@ final class OtherControlRealFixturePreservationTests: XCTestCase {
 
         assertFootnoteAutoNumberControl(autoNumbers[0], kind: 2)
         assertFootnoteAutoNumberControl(autoNumbers[1], kind: 1)
-        assertFootnoteAutoNumberControl(try roundTrippedAutoNumber(autoNumbers[0]), kind: 2)
-        assertFootnoteAutoNumberControl(try roundTrippedAutoNumber(autoNumbers[1]), kind: 1)
     }
 
-    func testLegacyFixtureNumberingAndPageHideControlsSurviveCodableRoundTrip() throws {
+    func testLegacyFixtureExposesParsedNumberingAndPageHideControls() throws {
         let hwp = try openHwp(#file, "legacy-common-control-property")
         let autoNumber = try otherControl(.autoNumber, in: hwp)
         let newNumber = try otherControl(.newNumber, in: hwp)
@@ -30,50 +28,20 @@ final class OtherControlRealFixturePreservationTests: XCTestCase {
         assertLegacyAutoNumberControl(autoNumber)
         assertLegacyNewNumberControl(newNumber)
         assertLegacyPageHideControl(pageHide)
-
-        assertLegacyAutoNumberControl(try roundTrippedAutoNumber(autoNumber))
-        assertLegacyNewNumberControl(try roundTrippedNewNumber(newNumber))
-        assertLegacyPageHideControl(try roundTrippedPageHide(pageHide))
     }
 
-    func testLegacyFixtureIndexmarkControlSurvivesCodableRoundTrip() throws {
+    func testLegacyFixtureExposesParsedIndexmarkControl() throws {
         let hwp = try openHwp(#file, "legacy-common-control-property")
         let indexmark = try otherControl(.indexmark, in: hwp)
 
         assertLegacyIndexmarkControl(indexmark)
-        assertLegacyIndexmarkControl(try roundTrippedIndexmark(indexmark))
     }
 
-    func testBookmarkFixtureCtrlDataNameSurvivesCodableRoundTrip() throws {
+    func testBookmarkFixtureExposesParsedCtrlDataName() throws {
         let hwp = try openHwp(#file, "bookmark")
         let bookmark = try bookmarkControl(in: hwp)
-        let encoded = try JSONEncoder().encode(HwpCtrlId.bookmark(bookmark))
-        let decoded = try JSONDecoder().decode(HwpCtrlId.self, from: encoded)
 
         assertBookmarkFixtureControl(bookmark)
-
-        guard case let .bookmark(roundTripped) = decoded else {
-            return fail("Expected bookmark after Codable round-trip")
-        }
-
-        assertBookmarkFixtureControl(roundTripped)
-    }
-
-    func testBookmarkFixtureControlSurvivesHwpFileCodableRoundTrip() throws {
-        let fixture = try FixtureLoader.load(id: "bookmark")
-        let hwp = try HwpFile(fromPath: fixture.documentURL.path)
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
-        let originalBookmark = try bookmarkControl(in: hwp)
-        let decodedBookmark = try bookmarkControl(in: decoded)
-
-        FixtureAssertions.assertOtherControls(
-            fixture.manifest.expectations.otherControls ?? [],
-            decoded
-        )
-        assertBookmarkFixtureControl(decodedBookmark)
-        assertBookmarkPayloadsMatch(decodedBookmark, originalBookmark)
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == hwp.sectionArray.map(\.rawPayload)
     }
 
     func testLegacyFixtureHiddenCommentPreservesUnknownChildrenAndGrandchildren() throws {
@@ -81,36 +49,6 @@ final class OtherControlRealFixturePreservationTests: XCTestCase {
         let hiddenComment = try hiddenCommentControl(in: hwp)
 
         assertLegacyHiddenCommentUnknownChildren(hiddenComment)
-    }
-
-    func testLegacyFixtureHiddenCommentUnknownChildrenSurviveCodableRoundTrip() throws {
-        let hwp = try openHwp(#file, "legacy-common-control-property")
-        let hiddenComment = try hiddenCommentControl(in: hwp)
-        let encoded = try JSONEncoder().encode(HwpCtrlId.hiddenComment(hiddenComment))
-        let decoded = try JSONDecoder().decode(HwpCtrlId.self, from: encoded)
-
-        guard case let .hiddenComment(roundTripped) = decoded else {
-            return fail("Expected hiddenComment after Codable round-trip")
-        }
-
-        assertLegacyHiddenCommentUnknownChildren(roundTripped)
-    }
-
-    func testLegacyFixtureOtherControlsSurviveHwpFileCodableRoundTrip() throws {
-        let fixture = try FixtureLoader.load(id: "legacy-common-control-property")
-        let hwp = try HwpFile(fromPath: fixture.documentURL.path)
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
-        let originalControls = FixtureDerivedValues.otherControls(from: hwp)
-        let decodedControls = FixtureDerivedValues.otherControls(from: decoded)
-
-        FixtureAssertions.assertOtherControlSamples(
-            fixture.manifest.expectations.otherControlSamples ?? [],
-            decoded
-        )
-        assertLegacyHiddenCommentUnknownChildren(try hiddenCommentControl(in: decoded))
-        assertOtherControlPayloadsMatch(decodedControls, originalControls)
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == hwp.sectionArray.map(\.rawPayload)
     }
 }
 
@@ -132,62 +70,6 @@ private func otherControl(_ ctrlId: HwpOtherCtrlId, in hwp: HwpFile) throws -> H
     }
 
     return control
-}
-
-private func roundTrippedAutoNumber(_ control: HwpOtherControl) throws -> HwpOtherControl {
-    let decoded = try JSONDecoder().decode(
-        HwpCtrlId.self,
-        from: JSONEncoder().encode(HwpCtrlId.autoNumber(control))
-    )
-
-    guard case let .autoNumber(roundTripped) = decoded else {
-        fail("Expected autoNumber after Codable round-trip")
-        throw HwpError.invalidCtrlId(ctrlId: HwpOtherCtrlId.autoNumber.rawValue)
-    }
-
-    return roundTripped
-}
-
-private func roundTrippedNewNumber(_ control: HwpOtherControl) throws -> HwpOtherControl {
-    let decoded = try JSONDecoder().decode(
-        HwpCtrlId.self,
-        from: JSONEncoder().encode(HwpCtrlId.newNumber(control))
-    )
-
-    guard case let .newNumber(roundTripped) = decoded else {
-        fail("Expected newNumber after Codable round-trip")
-        throw HwpError.invalidCtrlId(ctrlId: HwpOtherCtrlId.newNumber.rawValue)
-    }
-
-    return roundTripped
-}
-
-private func roundTrippedPageHide(_ control: HwpOtherControl) throws -> HwpOtherControl {
-    let decoded = try JSONDecoder().decode(
-        HwpCtrlId.self,
-        from: JSONEncoder().encode(HwpCtrlId.pageHide(control))
-    )
-
-    guard case let .pageHide(roundTripped) = decoded else {
-        fail("Expected pageHide after Codable round-trip")
-        throw HwpError.invalidCtrlId(ctrlId: HwpOtherCtrlId.pageHide.rawValue)
-    }
-
-    return roundTripped
-}
-
-private func roundTrippedIndexmark(_ control: HwpOtherControl) throws -> HwpOtherControl {
-    let decoded = try JSONDecoder().decode(
-        HwpCtrlId.self,
-        from: JSONEncoder().encode(HwpCtrlId.indexmark(control))
-    )
-
-    guard case let .indexmark(roundTripped) = decoded else {
-        fail("Expected indexmark after Codable round-trip")
-        throw HwpError.invalidCtrlId(ctrlId: HwpOtherCtrlId.indexmark.rawValue)
-    }
-
-    return roundTripped
 }
 
 private func assertFootnoteAutoNumberControl(_ control: HwpOtherControl, kind: UInt32) {
@@ -253,37 +135,6 @@ private func assertLegacyIndexmarkControl(_ control: HwpOtherControl) {
     expect(control.rawTrailing) == rawTrailing
     expect(control.ctrlDataRecords).to(beEmpty())
     expect(control.unknownChildren).to(beEmpty())
-}
-
-private func assertOtherControlPayloadsMatch(
-    _ decoded: [HwpOtherControl],
-    _ original: [HwpOtherControl]
-) {
-    expect(decoded.map(\.ctrlId)) == original.map(\.ctrlId)
-    expect(decoded.map(\.rawPayload)) == original.map(\.rawPayload)
-    expect(decoded.map(\.rawTrailing)) == original.map(\.rawTrailing)
-    expect(decoded.map { $0.ctrlDataRecords.map(\.rawPayload) }) ==
-        original.map { $0.ctrlDataRecords.map(\.rawPayload) }
-    expect(decoded.map(\.unknownChildren)) == original.map(\.unknownChildren)
-}
-
-private func assertBookmarkPayloadsMatch(
-    _ decoded: HwpOtherControl,
-    _ original: HwpOtherControl
-) {
-    expect(decoded.rawPayload) == original.rawPayload
-    expect(decoded.rawTrailing) == original.rawTrailing
-    expect(decoded.ctrlDataRecords.map(\.rawPayload)) ==
-        original.ctrlDataRecords.map(\.rawPayload)
-    expect(decoded.ctrlDataRecords.map(\.parameterSet)) ==
-        original.ctrlDataRecords.map(\.parameterSet)
-    expect(decoded.bookmarkInfo?.nameCharacterCount) ==
-        original.bookmarkInfo?.nameCharacterCount
-    expect(decoded.bookmarkInfo?.nameLengthRawPayload) ==
-        original.bookmarkInfo?.nameLengthRawPayload
-    expect(decoded.bookmarkInfo?.name) == original.bookmarkInfo?.name
-    expect(decoded.bookmarkInfo?.rawTrailing) == original.bookmarkInfo?.rawTrailing
-    expect(decoded.unknownChildren) == original.unknownChildren
 }
 
 private func assertBookmarkFixtureControl(_ bookmark: HwpOtherControl) {

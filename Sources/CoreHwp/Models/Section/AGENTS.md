@@ -45,7 +45,7 @@ record는 4-byte 컨트롤 ID로 시작하며,
 1. 4-byte ID를 `Enums/CtrlId/`의 알맞은 파일에 추가.
 2. `CtrlHeader/` 하위에 payload struct 추가 (하위 record가 있으면 전용
    subdirectory).
-3. `HwpCtrlId`에 case 추가, manual `Codable` 구현 갱신.
+3. `HwpCtrlId`에 case 추가.
 4. 단락 dispatch에서 `.notImplemented(HwpCtrlHeader)`로부터 분리.
 5. `Models/HwpParseDiagnostic.swift`의 `collect(ctrl:)`에 진단 순회 case 추가
    (`default:` 없는 exhaustive switch라 컴파일러가 강제한다 — 근거는 상위
@@ -73,9 +73,8 @@ placeholder 생성이 이 폴더에 있으므로 그 형태 계약을 여기 남
 - `HwpSection.parseFailurePlaceholder(error:rawPayload:)`는 빈 문서 템플릿 문단
   (sectionDef+column)을 채워 조판 전제를 지키고 구역 수를 보존한다.
 - **`parseFailure`는 Equatable/Hashable에 참여한다** — placeholder와 진짜 빈
-  문단/구역이 같다고 판정되면 복구 흔적이 비교에서 지워진다. 새 저장 필드지만
-  raw payload 파생이 아니라 로드 사건의 기록이라 legacy 아카이브에서
-  재수화하지 않는다 (`decodeIfPresent ?? nil` — 루트 "Codable 아카이브 호환").
+  문단/구역이 같다고 판정되면 복구 흔적이 비교에서 지워진다. raw payload
+  파생이 아니라 로드 사건의 기록이다.
 - 손상 **메모 문단**도 `HwpParagraph.load`의 메모 수집 루프에서 개별
   placeholder로 대체한다 — 전파시키면 호스트 문단 전체가 placeholder가 되어
   본문·메모 그룹 경계까지 잃는다.
@@ -101,10 +100,8 @@ placeholder 생성이 이 폴더에 있으므로 그 형태 계약을 여기 남
 
 파스 루프가 실제로 소비한 wchar의 **누적 저장값**이다 (컨트롤 문자 = 8 wchar).
 문단당 `reduce` 재계산에서 바뀌었지만 값·공개 API는 동일하다 — `charArray`
-변경 시 `didSet`이 재동기화한다. 파생값이라 **Equatable/Hashable·인코딩 모두에서
-제외**: payload **유무** 파생이라 `HwpChar` 동등성(type/value만)과 어긋날 수
-있고, 빈 템플릿 vs 파싱본의 round-trip 동등성이 이 제외에 기댄다. custom
-Codable은 `rawPayload`/`charArray` 두 키만 인코딩하고 디코더가 재계산한다.
+변경 시 `didSet`이 재동기화한다. 파생값이라 **Equatable/Hashable에서 제외**:
+payload **유무** 파생이라 `HwpChar` 동등성(type/value만)과 어긋날 수 있다.
 "파생 필드는 저장보다 재계산" 컨벤션의 예외이므로 되돌리지 말 것 — `HwpChar`가
 문서 전체 문자 수만큼 존재해 문단당 reduce가 반복 비용이라 저장으로 옮겼다.
 

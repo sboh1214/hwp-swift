@@ -5,7 +5,7 @@ import OLEKit
 import XCTest
 
 final class HwpFileSectionDefAssemblyTests: XCTestCase {
-    func testActualFixtureAssemblyPreservesSectionDefThroughCodableRoundTrip() throws {
+    func testActualFixtureAssemblyPreservesSectionDef() throws {
         let streams = try sectionDefAssemblyStreams(fromFixture: "plain-text-minimal")
         let injected = InjectedSectionDef(
             baseSectionData: try XCTUnwrap(streams.sectionDataArray.first)
@@ -18,12 +18,9 @@ final class HwpFileSectionDefAssemblyTests: XCTestCase {
             docInfoData: streams.docInfoData,
             sectionDataArray: sectionDataArray
         )
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
 
         expectSectionDef(in: hwp, match: injected)
-        expectSectionDef(in: decoded, match: injected)
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == sectionDataArray
+        expect(hwp.sectionArray.map(\.rawPayload)) == sectionDataArray
     }
 
     func testActualFixtureAssemblyPreservesMalformedSectionDefAsOtherControl() throws {
@@ -39,12 +36,9 @@ final class HwpFileSectionDefAssemblyTests: XCTestCase {
             docInfoData: streams.docInfoData,
             sectionDataArray: sectionDataArray
         )
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
 
         expectMalformedSectionDef(in: hwp, match: injected)
-        expectMalformedSectionDef(in: decoded, match: injected)
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == sectionDataArray
+        expect(hwp.sectionArray.map(\.rawPayload)) == sectionDataArray
     }
 }
 

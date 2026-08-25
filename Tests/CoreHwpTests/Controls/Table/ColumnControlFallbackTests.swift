@@ -3,8 +3,8 @@ import Foundation
 import Nimble
 import XCTest
 
-final class ColumnControlFallbackCodableTests: XCTestCase {
-    func testTruncatedColumnFallbackPreservesNestedChildrenThroughParagraphCodable() throws {
+final class ColumnControlFallbackTests: XCTestCase {
+    func testTruncatedColumnFallbackPreservesNestedChildren() throws {
         let rawPayload = concatenatedData(
             columnFallbackLittleEndianData(HwpOtherCtrlId.column.rawValue),
             Data([0xAA])
@@ -31,13 +31,8 @@ final class ColumnControlFallbackCodableTests: XCTestCase {
             ]),
             HwpVersion(5, 0, 1, 1)
         )
-        let decoded = try JSONDecoder().decode(
-            HwpParagraph.self,
-            from: JSONEncoder().encode(paragraph)
-        )
 
         assertColumnFallbackControl(paragraph.ctrlHeaderArray?.first, rawPayload: rawPayload)
-        assertColumnFallbackControl(decoded.ctrlHeaderArray?.first, rawPayload: rawPayload)
     }
 }
 

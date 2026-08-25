@@ -18,15 +18,9 @@ final class HwpFileShapeComponentRawAssemblyTests: XCTestCase {
             docInfoData: streams.docInfoData,
             sectionDataArray: sectionDataArray
         )
-        let decoded = try JSONDecoder().decode(
-            HwpFile.self,
-            from: JSONEncoder().encode(hwp)
-        )
 
         expectRawShapeComponent(in: hwp, match: injected)
-        expectRawShapeComponent(in: decoded, match: injected)
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == sectionDataArray
+        expect(hwp.sectionArray.map(\.rawPayload)) == sectionDataArray
     }
 }
 

@@ -3,8 +3,8 @@ import Foundation
 import Nimble
 import XCTest
 
-final class ListControlFallbackCodableTests: XCTestCase {
-    func testTruncatedListHeaderFallbackPreservesNestedChildrenThroughParagraphCodable() throws {
+final class ListControlFallbackTests: XCTestCase {
+    func testTruncatedListHeaderFallbackPreservesNestedChildrenThroughParagraph() throws {
         let rawPayload = listFallbackLittleEndianData(HwpOtherCtrlId.header.rawValue)
         let listHeader = listFallbackNestedChildRecord(
             tagId: HwpSectionTag.listHeader.rawValue,
@@ -35,13 +35,8 @@ final class ListControlFallbackCodableTests: XCTestCase {
             ]),
             HwpVersion(5, 0, 1, 1)
         )
-        let decoded = try JSONDecoder().decode(
-            HwpParagraph.self,
-            from: JSONEncoder().encode(paragraph)
-        )
 
         assertListFallbackControl(paragraph.ctrlHeaderArray?.first, rawPayload: rawPayload)
-        assertListFallbackControl(decoded.ctrlHeaderArray?.first, rawPayload: rawPayload)
     }
 }
 

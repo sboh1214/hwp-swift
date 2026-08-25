@@ -56,46 +56,7 @@ public extension HwpChar {
     }
 }
 
-// MARK: - Codable — 종전 synthesized 형상 보존
-
-// (payload/inlineControl 키를 ExcludeEquatable 래퍼 {"wrappedValue": …}로 인코딩)
-
-public extension HwpChar {
-    private enum CodingKeys: String, CodingKey {
-        case type, value, payload, inlineControl
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let type = try container.decode(HwpCharType.self, forKey: .type)
-        let value = try container.decode(WCHAR.self, forKey: .value)
-        let payload = try container.decodeIfPresent(
-            ExcludeEquatable<Data?>.self, forKey: .payload
-        )?.wrappedValue
-        // payload가 있으면 inlineControl 키는 파생값이라 읽지 않는다 (재계산 동일).
-        // main 아카이브는 두 키가 독립이라 payload=nil + inlineControl=non-nil이
-        // 합법 — 그 경우만 rawPayload로 복원해 조용한 유실을 막는다 (R60 #2).
-        var legacyPayload: Data?
-        if payload == nil {
-            legacyPayload = try container.decodeIfPresent(
-                ExcludeEquatable<HwpInlineControl?>.self, forKey: .inlineControl
-            )?.wrappedValue?.rawPayload
-        }
-        self.init(type: type, value: value, payload: payload ?? legacyPayload)
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(type, forKey: .type)
-        try container.encode(value, forKey: .value)
-        try container.encode(ExcludeEquatable(wrappedValue: payload), forKey: .payload)
-        try container.encode(
-            ExcludeEquatable(wrappedValue: inlineControl), forKey: .inlineControl
-        )
-    }
-}
-
-public enum HwpCharType: String, Codable, Sendable {
+public enum HwpCharType: String, Sendable {
     case char
     case inline
     case extended

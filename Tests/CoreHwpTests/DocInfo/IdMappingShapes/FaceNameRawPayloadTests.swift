@@ -116,21 +116,6 @@ final class FaceNameRawPayloadTests: XCTestCase {
         expect(faceName.defaultFaceName).to(beNil())
         expect(faceName.defaultFaceNameRawPayload).to(beNil())
     }
-
-    func testFaceNameRawPayloadsSurviveCodableRoundTrip() throws {
-        let payload = faceNamePayload()
-
-        let decodedFaceName = try decodeRoundTrip(HwpFaceName.load(payload))
-
-        expect(decodedFaceName.rawPayload) == payload
-        expect(decodedFaceName.faceNameRawPayload) == utf16Data("Base")
-        expect(decodedFaceName.alternativeFaceNameRawPayload) == utf16Data("Alt")
-        expect(decodedFaceName.defaultFaceNameRawPayload) == utf16Data("Default")
-    }
-}
-
-private func decodeRoundTrip<T: HwpPrimitive>(_ value: T) throws -> T {
-    try JSONDecoder().decode(T.self, from: JSONEncoder().encode(value))
 }
 
 private func faceNamePayload() -> Data {

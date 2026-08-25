@@ -4,7 +4,7 @@ import Nimble
 import XCTest
 
 final class ControlPreservationTests: XCTestCase {
-    func testCtrlDataPreservesRawPayloadChildrenAndCodableRoundTrip() throws {
+    func testCtrlDataPreservesRawPayloadAndChildren() throws {
         let record = HwpRecord(
             tagId: HwpSectionTag.ctrlData.rawValue,
             level: 2,
@@ -21,10 +21,6 @@ final class ControlPreservationTests: XCTestCase {
         expect(ctrlData.unknownChildren) == [
             expectedTestUnknownRecord(tagId: 0x2FF, level: 3, payload: Data([0xCC])),
         ]
-
-        let encoded = try JSONEncoder().encode(ctrlData)
-        let decoded = try JSONDecoder().decode(HwpCtrlData.self, from: encoded)
-        expect(decoded) == ctrlData
     }
 
     func testOtherAndBookmarkControlsPreserveRawPayloadTrailingBytesAndChildren() throws {

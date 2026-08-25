@@ -79,25 +79,6 @@ final class DocumentPropertiesRawPayloadTests: XCTestCase {
         expect(properties.caratLocation.charIndex) == 9
     }
 
-    func testDocumentPropertiesRawPayloadsSurviveCodableRoundTrip() throws {
-        let payload = documentPropertiesPayload(
-            sectionSize: 1,
-            startingIndex: [10, 11, 12, 13, 14, 15],
-            caratLocation: [16, 17, 18]
-        )
-        let properties = try HwpDocumentProperties.load(payload)
-
-        let decoded = try JSONDecoder().decode(
-            HwpDocumentProperties.self,
-            from: JSONEncoder().encode(properties)
-        )
-
-        expect(decoded.rawPayload) == payload
-        expect(decoded.startingIndex.rawPayload) == properties.startingIndex.rawPayload
-        expect(decoded.caratLocation.rawPayload) == properties.caratLocation.rawPayload
-        expect(decoded) == properties
-    }
-
     func testDocumentPropertiesRejectTruncatedFixedFieldsWithTypedError() {
         let sectionSize = documentPropertiesLittleEndianData(UInt16(1))
         let startingIndex = Data(repeating: 0, count: 12)
@@ -204,17 +185,6 @@ final class DocumentPropertiesRawPayloadTests: XCTestCase {
             Data(properties.rawPayload.dropFirst(2).prefix(12))
         expect(properties.caratLocation.rawPayload) ==
             Data(properties.rawPayload.dropFirst(14).prefix(12))
-
-        let decoded = try JSONDecoder().decode(
-            HwpFile.self,
-            from: JSONEncoder().encode(hwp)
-        )
-
-        expect(decoded.docInfo.documentProperties.rawPayload) == properties.rawPayload
-        expect(decoded.docInfo.documentProperties.startingIndex.rawPayload) ==
-            properties.startingIndex.rawPayload
-        expect(decoded.docInfo.documentProperties.caratLocation.rawPayload) ==
-            properties.caratLocation.rawPayload
     }
 }
 

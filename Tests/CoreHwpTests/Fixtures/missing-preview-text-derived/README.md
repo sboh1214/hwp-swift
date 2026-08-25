@@ -8,7 +8,7 @@
   반환하는지 manifest 기반으로 검증한다.
 - 이 fixture는 실제 한컴오피스 저장본의 optional stream 누락 동작을 완전히 대체하지
   않는다. 다만 현재 reader 계약은 optional `PrvText` 부재를 기본 preview text로
-  처리하는 것이며, 이 파생 fixture와 directory-entry mutation/Codable round-trip
+  처리하는 것이며, 이 파생 fixture와 directory-entry mutation
   테스트가 같은 경로를 고정한다. 무수정 한컴 저장본 중 `PrvText`가 없는 readable HWP가
   발견되면 별도 fixture로 추가할 수 있다.
 

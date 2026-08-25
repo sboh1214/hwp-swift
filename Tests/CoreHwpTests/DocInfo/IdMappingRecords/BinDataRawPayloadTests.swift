@@ -173,22 +173,6 @@ final class BinDataRawPayloadTests: XCTestCase {
         }
     }
 
-    func testBinDataPropertyRawValueSurvivesCodableRoundTrip() throws {
-        let raw = UInt16(HwpBinDataType.storage.rawValue)
-            | UInt16(HwpBinDataCompressType.always.rawValue << 4)
-            | UInt16(HwpBinDataState.ignored.rawValue << 6)
-            | UInt16(0xAB00)
-        let property = try HwpBinDataProperty.load(raw)
-
-        let decoded = try JSONDecoder().decode(
-            HwpBinDataProperty.self,
-            from: JSONEncoder().encode(property)
-        )
-
-        expect(decoded.rawValue) == raw
-        expect(decoded) == property
-    }
-
     func testBinDataRejectsInvalidPropertyEnumValuesWithTypedError() {
         expectInvalidRawValue(model: HwpBinDataType.self, rawValue: 3) {
             _ = try HwpBinData.load(littleEndianData(UInt16(3)))
@@ -346,27 +330,6 @@ final class BinDataRawPayloadTests: XCTestCase {
             _ = try HwpBinData.load(payload)
         }
     }
-
-    func testBinaryDataAndDocInfoBinDataSurviveCodableRoundTrip() throws {
-        let binaryPayload = Data([0xCA, 0xFE])
-        let binaryData = HwpBinaryData(name: "BIN0042.JPG", data: binaryPayload)
-        let binDataPayload = embeddedBinDataPayload()
-
-        let decodedBinaryData = try decodeRoundTrip(binaryData)
-        let decodedBinData = try decodeRoundTrip(HwpBinData.load(binDataPayload))
-
-        expect(decodedBinaryData.name) == "BIN0042.JPG"
-        expect(decodedBinaryData.streamId) == 0x42
-        expect(decodedBinaryData.extensionName) == "JPG"
-        expect(decodedBinaryData.data) == binaryPayload
-        expect(decodedBinData.rawPayload) == binDataPayload
-        expect(decodedBinData.property.type) == .embedding
-        expect(decodedBinData.property.compressType) == .never
-        expect(decodedBinData.property.state) == .successed
-        expect(decodedBinData.streamId) == 42
-        expect(decodedBinData.extensionName) == "jpg"
-        expect(decodedBinData.extensionNameRawPayload) == utf16StringPayload("jpg")
-    }
 }
 
 private struct BinDataTruncationScenario {
@@ -374,10 +337,6 @@ private struct BinDataTruncationScenario {
     let payload: Data
     let expected: Int
     let actual: Int
-}
-
-private func decodeRoundTrip<T: HwpPrimitive>(_ value: T) throws -> T {
-    try JSONDecoder().decode(T.self, from: JSONEncoder().encode(value))
 }
 
 private func embeddedBinDataPayload() -> Data {

@@ -92,7 +92,7 @@ public struct HwpTableProperty {
 
 public extension HwpTableProperty {
     /** 쪽 경계에서 표를 나누는 방식 (표 76 bits 0-1) */
-    enum HwpTablePageBreakMode: Int, Sendable, Codable {
+    enum HwpTablePageBreakMode: Int, Sendable {
         /** 나누지 않음 */
         case none = 0
         /** 셀 단위로 나눔 */

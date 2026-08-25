@@ -158,6 +158,18 @@ final class StyleRawPayloadTests: XCTestCase {
         expect(sameBullet) == bullet
     }
 
+    /// 표 40의 글자 모양 ID(INT32) 슬롯을 실제로 읽는지 잠근다 — 기본값 -1만
+    /// 단언하면 슬롯을 소비만 하고 상수를 저장하는 회귀와 구별되지 않는다.
+    func testBulletParsesPositiveHeadCharShapeIdFromTable40Layout() throws {
+        let payload = bulletPayload(headCharShapeId: 7, undocumentedTrailing: [0xAA])
+
+        let bullet = try HwpBullet.load(payload)
+
+        expect(bullet.headCharShapeId) == 7
+        expect(bullet.char) == "\u{2022}"
+        expect(bullet.checkChar) == "\u{2611}"
+    }
+
     func testBulletPreservesShortUndocumentedTrailingBytes() throws {
         let payload = bulletPayload(undocumentedTrailing: [0xAA, 0xBB, 0xCC, 0xDD])
 
@@ -322,44 +334,6 @@ final class StyleRawPayloadTests: XCTestCase {
             expect(actual) == 1
         })
     }
-
-    func testStyleBulletAndNumberingRawPayloadsSurviveCodableRoundTrip() throws {
-        let stylePayload = stylePayload(
-            localName: "Local",
-            englishName: "English",
-            nextId: 1,
-            paraShapeId: 2,
-            charShapeId: 3
-        )
-        let bulletPayload = bulletPayload(
-            undocumentedTrailing: [0xAA, 0xBB, 0xCC, 0xDD, 0xEE]
-        )
-        let numberingPayload = numberingPayload()
-
-        let decodedStyle = try decodeRoundTrip(HwpStyle.load(stylePayload))
-        let decodedBullet = try decodeRoundTrip(HwpBullet.load(bulletPayload))
-        let decodedNumbering = try decodeRoundTrip(
-            HwpNumbering.load(numberingPayload, HwpVersion())
-        )
-
-        expect(decodedStyle.rawPayload) == stylePayload
-        expect(decodedStyle.styleLocalNameRawPayload) == wcharPayload("Local")
-        expect(decodedStyle.styleEnglishNameRawPayload) == wcharPayload("English")
-        expect(decodedStyle.unknown) == [0, 0]
-        expect(decodedStyle.undocumentedTrailing) == [0, 0]
-        expect(decodedBullet.rawPayload) == bulletPayload
-        expect(decodedBullet.charRawPayload) == wcharPayload("\u{2022}")
-        expect(decodedBullet.checkCharRawPayload) == wcharPayload("\u{2611}")
-        expect(decodedBullet.undocumentedTrailing) == [0xAA, 0xBB, 0xCC, 0xDD, 0xEE]
-        expect(decodedNumbering.rawPayload) == numberingPayload
-        expect(decodedNumbering.formatArray[0].formatRawPayload) == wcharPayload("^1")
-        expect(decodedNumbering.extendedFormatArray?[0].formatRawPayload) == wcharPayload("^8")
-        expect(decodedNumbering.extendedStartingIndexArray) == [8, 9, 10]
-    }
-}
-
-private func decodeRoundTrip<T: HwpPrimitive>(_ value: T) throws -> T {
-    try JSONDecoder().decode(T.self, from: JSONEncoder().encode(value))
 }
 
 private func stylePayload(
@@ -408,10 +382,13 @@ private func stylePayloadWithInvalidLocalName() -> Data {
     return data
 }
 
-private func bulletPayload(undocumentedTrailing: [BYTE]) -> Data {
+private func bulletPayload(
+    headCharShapeId: Int32 = -1,
+    undocumentedTrailing: [BYTE]
+) -> Data {
     concatenatedData(
         Data([1, 2, 3, 4, 5, 6, 7, 8]),
-        littleEndianData(Int32(-1)), // 문단 머리 글자 모양 ID (표 40)
+        littleEndianData(headCharShapeId), // 문단 머리 글자 모양 ID (표 40)
         littleEndianData(WCHAR(0x2022)),
         littleEndianData(Int32(42)),
         Data([9, 10, 11, 12]),

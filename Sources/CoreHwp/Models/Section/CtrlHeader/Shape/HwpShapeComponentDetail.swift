@@ -434,7 +434,7 @@ public struct HwpShapeEllipseDetail: HwpPrimitive {
 
 /// 호로 바뀐 타원의 닫힘 종류 (표 97 bits 2-9). hwp-rs `ArcKind`(Normal/Pie/Chord)·
 /// hwplib `ArcType`(Arc/CircularSector/Bow) 실측 매핑.
-public enum HwpShapeArcKind: UInt32, Codable, Hashable, Sendable {
+public enum HwpShapeArcKind: UInt32, Hashable, Sendable {
     /// 호 — 닫지 않는 열린 호
     case open = 0
     /// 부채꼴 — 중심으로 두 반지름을 그어 닫음

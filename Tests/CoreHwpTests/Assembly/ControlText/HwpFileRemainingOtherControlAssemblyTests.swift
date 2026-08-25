@@ -5,9 +5,7 @@ import OLEKit
 import XCTest
 
 final class HwpFileRawOtherAssemblyTests: XCTestCase {
-    func testActualFixtureAssemblyPreservesRawOtherControlsThroughCodableRoundTrip()
-        throws
-    {
+    func testActualFixtureAssemblyPreservesRawOtherControls() throws {
         let streams = try rawOtherAssemblyStreams(fromFixture: "plain-text-minimal")
         let injected = InjectedRawOtherControls(
             baseSectionData: try XCTUnwrap(streams.sectionDataArray.first)
@@ -20,17 +18,10 @@ final class HwpFileRawOtherAssemblyTests: XCTestCase {
             docInfoData: streams.docInfoData,
             sectionDataArray: sectionDataArray
         )
-        let decoded = try JSONDecoder().decode(
-            HwpFile.self,
-            from: JSONEncoder().encode(hwp)
-        )
 
         for spec in injected.specs {
             expectRawOtherControl(in: hwp, match: spec)
-            expectRawOtherControl(in: decoded, match: spec)
         }
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == sectionDataArray
     }
 }
 

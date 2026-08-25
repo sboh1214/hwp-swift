@@ -160,13 +160,8 @@ final class PreviewStreamPrimitiveTests: XCTestCase {
         let data = concatenatedData(Data([0xAA, 0xBB]), payload).dropFirst(2)
 
         let summary = try HwpSummary.load(data)
-        let decoded = try JSONDecoder().decode(
-            HwpSummary.self,
-            from: JSONEncoder().encode(summary)
-        )
 
         expect(summary.rawPayload) == payload
-        expect(decoded.rawPayload) == payload
     }
 
     func testPreviewTextViewerLoadDropsRawPayloadKeepsText() throws {

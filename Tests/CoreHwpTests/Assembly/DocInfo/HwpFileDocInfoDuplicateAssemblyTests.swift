@@ -5,9 +5,7 @@ import OLEKit
 import XCTest
 
 final class HwpFileDocInfoDuplicateAssemblyTests: XCTestCase {
-    func testActualFixtureBasedDuplicateSingletonDocInfoRecordSurvivesAsUnknownThroughCodable()
-        throws
-    {
+    func testActualFixtureBasedDuplicateSingletonDocInfoRecordSurvivesAsUnknown() throws {
         let streams = try duplicateDocInfoActualStreams(fromFixture: "plain-text-minimal")
         let baseDocInfo = try HwpDocInfo.load(streams.docInfoData, streams.fileHeader.version)
         expect(baseDocInfo.docData).to(beNil())
@@ -18,17 +16,11 @@ final class HwpFileDocInfoDuplicateAssemblyTests: XCTestCase {
             docInfoData: injected.docInfoData,
             sectionDataArray: streams.sectionDataArray
         )
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
 
         expectDuplicateDocDataRecords(in: hwp.docInfo, match: injected)
-        expectDuplicateDocDataRecords(in: decoded.docInfo, match: injected)
-        expect(decoded.docInfo.rawPayload) == injected.docInfoData
-        expect(decoded.sectionArray.map(\.rawPayload)) == streams.sectionDataArray
     }
 
-    func testActualFixtureBasedDuplicateDistributeDocDataSurvivesAsUnknownThroughCodable()
-        throws
-    {
+    func testActualFixtureBasedDuplicateDistributeDocDataSurvivesAsUnknown() throws {
         let streams = try duplicateDocInfoActualStreams(fromFixture: "plain-text-minimal")
         let baseDocInfo = try HwpDocInfo.load(streams.docInfoData, streams.fileHeader.version)
         expect(baseDocInfo.distributeDocData).to(beNil())
@@ -39,17 +31,11 @@ final class HwpFileDocInfoDuplicateAssemblyTests: XCTestCase {
             docInfoData: injected.docInfoData,
             sectionDataArray: streams.sectionDataArray
         )
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
 
         expectDuplicateDistributeDocDataRecords(in: hwp.docInfo, match: injected)
-        expectDuplicateDistributeDocDataRecords(in: decoded.docInfo, match: injected)
-        expect(decoded.docInfo.rawPayload) == injected.docInfoData
-        expect(decoded.sectionArray.map(\.rawPayload)) == streams.sectionDataArray
     }
 
-    func testActualFixtureBasedDuplicateLayoutCompatibilitySurvivesAsUnknownThroughCodable()
-        throws
-    {
+    func testActualFixtureBasedDuplicateLayoutCompatibilitySurvivesAsUnknown() throws {
         let streams = try duplicateDocInfoActualStreams(fromFixture: "plain-text-minimal")
 
         let injected = DuplicateLayoutCompatibilityInjection(baseDocInfoData: streams.docInfoData)
@@ -58,17 +44,11 @@ final class HwpFileDocInfoDuplicateAssemblyTests: XCTestCase {
             docInfoData: injected.docInfoData,
             sectionDataArray: streams.sectionDataArray
         )
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
 
         expectDuplicateLayoutCompatibilityRecords(in: hwp.docInfo, match: injected)
-        expectDuplicateLayoutCompatibilityRecords(in: decoded.docInfo, match: injected)
-        expect(decoded.docInfo.rawPayload) == injected.docInfoData
-        expect(decoded.sectionArray.map(\.rawPayload)) == streams.sectionDataArray
     }
 
-    func testActualFixtureBasedDuplicateRequiredSingletonRecordsSurviveAsUnknownThroughCodable()
-        throws
-    {
+    func testActualFixtureBasedDuplicateRequiredSingletonRecordsSurviveAsUnknown() throws {
         let streams = try duplicateDocInfoActualStreams(fromFixture: "plain-text-minimal")
         let baseDocInfo = try HwpDocInfo.load(streams.docInfoData, streams.fileHeader.version)
         let injected = DuplicateRequiredDocInfoInjection(
@@ -80,20 +60,12 @@ final class HwpFileDocInfoDuplicateAssemblyTests: XCTestCase {
             docInfoData: injected.docInfoData,
             sectionDataArray: streams.sectionDataArray
         )
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
 
         expectDuplicateRequiredDocInfoRecords(
             in: hwp.docInfo,
             baseDocInfo: baseDocInfo,
             match: injected
         )
-        expectDuplicateRequiredDocInfoRecords(
-            in: decoded.docInfo,
-            baseDocInfo: baseDocInfo,
-            match: injected
-        )
-        expect(decoded.docInfo.rawPayload) == injected.docInfoData
-        expect(decoded.sectionArray.map(\.rawPayload)) == streams.sectionDataArray
     }
 }
 

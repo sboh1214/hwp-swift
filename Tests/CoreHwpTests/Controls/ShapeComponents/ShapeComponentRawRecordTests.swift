@@ -16,14 +16,6 @@ final class ShapeComponentRawRecordTests: XCTestCase {
             expectedTestUnknownRecord(tagId: 0x2FA, level: 3, payload: Data([0xCA, 0xFE])),
         ]
         expect(reader.isEOF) == true
-
-        let decoded = try roundTrippedRawShapeComponentRecord(rawRecord)
-
-        expect(decoded) == rawRecord
-        expect(decoded.rawPayload) == payload
-        expect(decoded.unknownChildren) == [
-            expectedTestUnknownRecord(tagId: 0x2FA, level: 3, payload: Data([0xCA, 0xFE])),
-        ]
     }
 
     func testKnownRawChildRecordsPreservePayloadsAndChildren() throws {
@@ -52,11 +44,6 @@ final class ShapeComponentRawRecordTests: XCTestCase {
         let component = try HwpShapeComponent.load(record)
 
         assertKnownRawShapeComponentChildren(component)
-
-        let decoded = try roundTrippedShapeComponent(component)
-
-        expect(decoded) == component
-        assertKnownRawShapeComponentChildren(decoded)
     }
 
     func testShapeComponentPreservesShortPayloadWithoutControlId() throws {
@@ -77,18 +64,6 @@ final class ShapeComponentRawRecordTests: XCTestCase {
         expect(component.ctrlIdName) == "unknown"
         expect(component.rawTrailing).to(beNil())
         expect(component.unknownChildren) == [
-            expectedTestUnknownRecord(tagId: 0x2FA, level: 3, payload: Data([0xDD])),
-        ]
-
-        let decoded = try roundTrippedShapeComponent(component)
-
-        expect(decoded) == component
-        expect(decoded.rawPayload) == rawPayload
-        expect(decoded.rawCtrlId).to(beNil())
-        expect(decoded.ctrlId).to(beNil())
-        expect(decoded.ctrlIdName) == "unknown"
-        expect(decoded.rawTrailing).to(beNil())
-        expect(decoded.unknownChildren) == [
             expectedTestUnknownRecord(tagId: 0x2FA, level: 3, payload: Data([0xDD])),
         ]
     }
@@ -112,15 +87,6 @@ final class ShapeComponentRawRecordTests: XCTestCase {
         expect(component.ctrlId) == .ole
         expect(component.ctrlIdName) == "ole"
         expect(component.rawTrailing) == Data([0xAA, 0xBB])
-
-        let decoded = try roundTrippedShapeComponent(component)
-
-        expect(decoded) == component
-        expect(decoded.rawPayload) == slicedPayload
-        expect(decoded.rawCtrlId) == HwpCommonCtrlId.ole.rawValue
-        expect(decoded.ctrlId) == .ole
-        expect(decoded.ctrlIdName) == "ole"
-        expect(decoded.rawTrailing) == Data([0xAA, 0xBB])
     }
 
     func testReservedShapeComponentChildIsPreservedAsUnknownRecord() throws {
@@ -170,16 +136,6 @@ final class ShapeComponentRawRecordTests: XCTestCase {
             binaryDataId: 42,
             rawTrailing: Data()
         )
-
-        let decoded = try roundTrippedPictureComponent(picture)
-
-        expect(decoded) == picture
-        assertPictureComponent(
-            decoded,
-            rawPayload: rawPayload,
-            binaryDataId: 42,
-            rawTrailing: Data()
-        )
     }
 
     func testPictureComponentPayloadWithNonZeroDataStartIndexDoesNotTrap() throws {
@@ -203,16 +159,6 @@ final class ShapeComponentRawRecordTests: XCTestCase {
             binaryDataId: 43,
             rawTrailing: Data([0xC1, 0xC2])
         )
-
-        let decoded = try roundTrippedPictureComponent(picture)
-
-        expect(decoded) == picture
-        assertPictureComponent(
-            decoded,
-            rawPayload: slicedPayload,
-            binaryDataId: 43,
-            rawTrailing: Data([0xC1, 0xC2])
-        )
     }
 
     func testPictureComponentPreservesShortPayloadWithoutBinaryDataId() throws {
@@ -228,16 +174,6 @@ final class ShapeComponentRawRecordTests: XCTestCase {
 
             assertPictureComponent(
                 picture,
-                rawPayload: rawPayload,
-                binaryDataId: nil,
-                rawTrailing: nil
-            )
-
-            let decoded = try roundTrippedPictureComponent(picture)
-
-            expect(decoded) == picture
-            assertPictureComponent(
-                decoded,
                 rawPayload: rawPayload,
                 binaryDataId: nil,
                 rawTrailing: nil
@@ -267,16 +203,6 @@ final class ShapeComponentRawRecordTests: XCTestCase {
             binaryDataId: 42,
             rawTrailing: Data(rawPayload.dropFirst(4))
         )
-
-        let decoded = try roundTrippedOLEComponent(ole)
-
-        expect(decoded) == ole
-        assertOLEComponent(
-            decoded,
-            rawPayload: rawPayload,
-            binaryDataId: 42,
-            rawTrailing: Data(rawPayload.dropFirst(4))
-        )
     }
 
     func testOLEComponentPayloadWithNonZeroDataStartIndexDoesNotTrap() throws {
@@ -302,16 +228,6 @@ final class ShapeComponentRawRecordTests: XCTestCase {
             binaryDataId: 43,
             rawTrailing: Data(rawPayload.dropFirst(4))
         )
-
-        let decoded = try roundTrippedOLEComponent(ole)
-
-        expect(decoded) == ole
-        assertOLEComponent(
-            decoded,
-            rawPayload: slicedPayload,
-            binaryDataId: 43,
-            rawTrailing: Data(rawPayload.dropFirst(4))
-        )
     }
 
     func testOLEComponentPreservesShortPayloadWithoutBinaryDataId() throws {
@@ -331,46 +247,8 @@ final class ShapeComponentRawRecordTests: XCTestCase {
                 binaryDataId: nil,
                 rawTrailing: nil
             )
-
-            let decoded = try roundTrippedOLEComponent(ole)
-
-            expect(decoded) == ole
-            assertOLEComponent(
-                decoded,
-                rawPayload: rawPayload,
-                binaryDataId: nil,
-                rawTrailing: nil
-            )
         }
     }
-}
-
-private func roundTrippedRawShapeComponentRecord(
-    _ record: HwpShapeComponentRawRecord
-) throws -> HwpShapeComponentRawRecord {
-    let encoded = try JSONEncoder().encode(record)
-    return try JSONDecoder().decode(HwpShapeComponentRawRecord.self, from: encoded)
-}
-
-private func roundTrippedShapeComponent(
-    _ component: HwpShapeComponent
-) throws -> HwpShapeComponent {
-    let encoded = try JSONEncoder().encode(component)
-    return try JSONDecoder().decode(HwpShapeComponent.self, from: encoded)
-}
-
-private func roundTrippedPictureComponent(
-    _ picture: HwpShapeComponentPicture
-) throws -> HwpShapeComponentPicture {
-    let encoded = try JSONEncoder().encode(picture)
-    return try JSONDecoder().decode(HwpShapeComponentPicture.self, from: encoded)
-}
-
-private func roundTrippedOLEComponent(
-    _ ole: HwpShapeComponentOLE
-) throws -> HwpShapeComponentOLE {
-    let encoded = try JSONEncoder().encode(ole)
-    return try JSONDecoder().decode(HwpShapeComponentOLE.self, from: encoded)
 }
 
 private func assertKnownRawShapeComponentChildren(_ component: HwpShapeComponent) {

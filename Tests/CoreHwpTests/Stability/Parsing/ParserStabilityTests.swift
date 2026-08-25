@@ -98,19 +98,7 @@ final class ParserStabilityTests: XCTestCase {
     func testSectionPreservesUnknownTopLevelRecords() throws {
         var data = recordData(tagId: 0x2FE, level: 0, payload: Data([0xCA, 0xFE]))
         data.append(recordData(tagId: 0x2FD, level: 1, payload: Data([0xAA])))
-        data.append(
-            recordData(
-                tagId: HwpSectionTag.paraHeader.rawValue,
-                level: 0,
-                payload: paragraphHeaderPayload()
-            )
-        )
-        data.append(
-            recordData(tagId: HwpSectionTag.paraCharShape.rawValue, level: 1, payload: Data())
-        )
-        data.append(
-            recordData(tagId: HwpSectionTag.paraLineSeg.rawValue, level: 1, payload: Data())
-        )
+        data.append(paragraphRecordData())
 
         let section = try HwpSection.load(data, HwpVersion(5, 0, 1, 1))
         var sameSection = section
@@ -122,6 +110,25 @@ final class ParserStabilityTests: XCTestCase {
             expectedTopLevelSectionUnknownRecord(),
         ]
         expect(sameSection) == section
+    }
+
+    /// 위 테스트와 **순서만** 다르다 — unknown 레코드가 문단 사이에 낀다.
+    /// 이 배치에서만 "앞 문단을 닫고 unknown 트리를 소비한 뒤 다음 문단을 연다"가
+    /// 검사되므로 둘은 서로를 대신하지 못한다 (실픽스처는 전부
+    /// `sectionUnknownRecordCount == 0`이라 합성 입력이 유일한 경로다).
+    func testSectionPreservesUnknownTopLevelRecordsBetweenParagraphs() throws {
+        var data = paragraphRecordData()
+        data.append(recordData(tagId: 0x2FE, level: 0, payload: Data([0xCA, 0xFE])))
+        data.append(recordData(tagId: 0x2FD, level: 1, payload: Data([0xAA])))
+        data.append(paragraphRecordData())
+
+        let section = try HwpSection.load(data, HwpVersion(5, 0, 1, 1))
+
+        expect(section.rawPayload) == data
+        expect(section.paragraph.count) == 2
+        expect(section.unknownRecords) == [
+            expectedTopLevelSectionUnknownRecord(),
+        ]
     }
 
     func testSectionMissingParagraphHeaderThrowsTypedError() {
@@ -472,6 +479,17 @@ private func paragraphHeaderPayload() -> Data {
     data.append(littleEndianData(UInt16(0)))
     data.append(littleEndianData(UInt16(0)))
     data.append(littleEndianData(UInt32(1)))
+    return data
+}
+
+private func paragraphRecordData() -> Data {
+    var data = recordData(
+        tagId: HwpSectionTag.paraHeader.rawValue,
+        level: 0,
+        payload: paragraphHeaderPayload()
+    )
+    data.append(recordData(tagId: HwpSectionTag.paraCharShape.rawValue, level: 1, payload: Data()))
+    data.append(recordData(tagId: HwpSectionTag.paraLineSeg.rawValue, level: 1, payload: Data()))
     return data
 }
 

@@ -5,9 +5,7 @@ import OLEKit
 import XCTest
 
 final class HwpFileOptionalStreamAssemblyTests: XCTestCase {
-    func testActualFixtureAssemblyPreservesUnknownPreviewImageThroughCodableRoundTrip()
-        throws
-    {
+    func testActualFixtureAssemblyPreservesUnknownPreviewImage() throws {
         let streams = try optionalStreamAssemblyStreams(fromFixture: "chart")
         let unknownPreviewImageData = Data([0x00, 0x01, 0x02, 0x03, 0x04])
 
@@ -20,23 +18,10 @@ final class HwpFileOptionalStreamAssemblyTests: XCTestCase {
             previewImageData: unknownPreviewImageData,
             binaryData: streams.binaryData
         )
-        let decoded = try JSONDecoder().decode(
-            HwpFile.self,
-            from: JSONEncoder().encode(hwp)
-        )
 
         expect(hwp.previewImage.rawPayload) == unknownPreviewImageData
         expect(hwp.previewImage.image) == unknownPreviewImageData
         expect(hwp.previewImage.format) == .unknown
-        expect(decoded.previewImage.rawPayload) == unknownPreviewImageData
-        expect(decoded.previewImage.image) == unknownPreviewImageData
-        expect(decoded.previewImage.format) == .unknown
-        expect(decoded.docInfo.rawPayload) == streams.docInfoData
-        expect(decoded.sectionArray.map(\.rawPayload)) == streams.sectionDataArray
-        expect(decoded.summary.rawPayload) == hwp.summary.rawPayload
-        expect(decoded.previewText.rawPayload) == hwp.previewText.rawPayload
-        expect(decoded.binaryDataArray.map(\.name)) == streams.binaryData.map(\.name)
-        expect(decoded.binaryDataArray.map(\.data)) == streams.binaryData.map(\.data)
     }
 
     func testActualFixtureAssemblyRejectsMalformedPreviewTextWithTypedError() throws {

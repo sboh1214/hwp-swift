@@ -13,32 +13,6 @@ final class ObjectFixturePreservationTests: XCTestCase {
         assertChartOleObject(object)
     }
 
-    func testChartFixtureOleComponentSurvivesCodableRoundTrip() throws {
-        let hwp = try openHwp(#file, "chart")
-        let object = try chartObject(in: hwp)
-        let encoded = try JSONEncoder().encode(HwpCtrlId.genShapeObject(object))
-        let decoded = try JSONDecoder().decode(HwpCtrlId.self, from: encoded)
-
-        guard case let .genShapeObject(roundTripped) = decoded else {
-            return fail("Expected genShapeObject after Codable round-trip")
-        }
-
-        assertChartOleObject(roundTripped)
-    }
-
-    func testChartFixtureOleComponentSurvivesHwpFileCodableRoundTrip() throws {
-        let hwp = try openHwp(#file, "chart")
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
-        let object = try chartObject(in: decoded)
-
-        assertChartBinaryDataStorage(decoded)
-        assertChartDocInfoBinDataMapping(decoded)
-        assertChartOleObject(object)
-        expect(decoded.binaryDataArray.map(\.data)) == hwp.binaryDataArray.map(\.data)
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == hwp.sectionArray.map(\.rawPayload)
-    }
-
     func testImageFixturePictureComponentsPreserveBinaryDataReferencesAndPayloads() throws {
         let hwp = try openHwp(#file, "BinData")
         let pictures = FixtureDerivedValues
@@ -48,37 +22,6 @@ final class ObjectFixturePreservationTests: XCTestCase {
 
         assertBinDataPictureStorage(hwp)
         assertBinDataPictureComponents(pictures)
-    }
-
-    func testImageFixturePictureComponentsSurviveHwpFileCodableRoundTrip() throws {
-        let hwp = try openHwp(#file, "BinData")
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
-        let pictures = FixtureDerivedValues
-            .allGenShapeObjects(from: decoded)
-            .flatMap(\.shapeComponentArray)
-            .flatMap(\.pictureArray)
-
-        assertBinDataPictureStorage(decoded)
-        assertBinDataPictureComponents(pictures)
-        expect(decoded.binaryDataArray.map(\.data)) == hwp.binaryDataArray.map(\.data)
-        expect(decoded.docInfo.idMappings.binDataArray.map(\.rawPayload)) ==
-            hwp.docInfo.idMappings.binDataArray.map(\.rawPayload)
-        expect(decoded.sectionArray.map(\.rawPayload)) == hwp.sectionArray.map(\.rawPayload)
-    }
-
-    func testEquationFixtureShapeControlSurvivesHwpFileCodableRoundTrip() throws {
-        let fixture = try FixtureLoader.load(id: "equation")
-        let hwp = try HwpFile(fromPath: fixture.documentURL.path)
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
-        let shapeControls = try equationShapeControlExpectations(fixture)
-
-        FixtureAssertions.assertShapeControls(shapeControls, decoded)
-        assertShapeControlPayloadsMatch(
-            FixtureDerivedValues.shapeControls(from: decoded),
-            FixtureDerivedValues.shapeControls(from: hwp)
-        )
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == hwp.sectionArray.map(\.rawPayload)
     }
 
     func testEquationFixtureEqEditParsesVersionInfoAfterUnknownBaselineField() throws {
@@ -97,26 +40,6 @@ final class ObjectFixturePreservationTests: XCTestCase {
         expect(edit.fontNameLength) == 9
         expect(edit.fontName) == "HancomEQN"
         expect(edit.rawTrailing) == Data()
-
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
-        let decodedEdit = try equationEdit(in: decoded)
-
-        expect(decodedEdit) == edit
-    }
-
-    func testTextBoxFixtureGenShapeObjectSurvivesHwpFileCodableRoundTrip() throws {
-        let fixture = try FixtureLoader.load(id: "text-box")
-        let hwp = try HwpFile(fromPath: fixture.documentURL.path)
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
-        let genShapeObjects = try textBoxGenShapeObjectExpectations(fixture)
-
-        FixtureAssertions.assertGenShapeObjects(genShapeObjects, decoded)
-        assertGenShapeObjectPayloadsMatch(
-            FixtureDerivedValues.genShapeObjects(from: decoded),
-            FixtureDerivedValues.genShapeObjects(from: hwp)
-        )
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == hwp.sectionArray.map(\.rawPayload)
     }
 
     func testLegacyFixturePolygonObjectPreservesLegacyCommonPropertyAndPayloads() throws {
@@ -124,19 +47,6 @@ final class ObjectFixturePreservationTests: XCTestCase {
         let object = try legacyPolygonObject(in: hwp)
 
         assertLegacyPolygonObject(object)
-    }
-
-    func testLegacyFixturePolygonObjectSurvivesCodableRoundTrip() throws {
-        let hwp = try openHwp(#file, "legacy-common-control-property")
-        let object = try legacyPolygonObject(in: hwp)
-        let encoded = try JSONEncoder().encode(HwpCtrlId.genShapeObject(object))
-        let decoded = try JSONDecoder().decode(HwpCtrlId.self, from: encoded)
-
-        guard case let .genShapeObject(roundTripped) = decoded else {
-            return fail("Expected genShapeObject after Codable round-trip")
-        }
-
-        assertLegacyPolygonObject(roundTripped)
     }
 }
 
@@ -171,17 +81,6 @@ private func legacyPolygonObject(in hwp: HwpFile) throws -> HwpGenShapeObject {
     return object
 }
 
-private func equationShapeControlExpectations(
-    _ fixture: LoadedFixture
-) throws -> [FixtureShapeControlExpectations] {
-    guard let controls = fixture.manifest.expectations.shapeControls else {
-        fail("Expected equation fixture manifest to declare shape controls")
-        return []
-    }
-
-    return controls
-}
-
 private func equationEdit(in hwp: HwpFile) throws -> HwpEquationEdit {
     let edits = FixtureDerivedValues.shapeControls(from: hwp).flatMap(\.eqEditArray)
     guard let edit = edits.first else {
@@ -191,17 +90,6 @@ private func equationEdit(in hwp: HwpFile) throws -> HwpEquationEdit {
 
     expect(edits.count) == 1
     return edit
-}
-
-private func textBoxGenShapeObjectExpectations(
-    _ fixture: LoadedFixture
-) throws -> [FixtureGenShapeObjectExpectations] {
-    guard let objects = fixture.manifest.expectations.genShapeObjects else {
-        fail("Expected text-box fixture manifest to declare gen shape objects")
-        return []
-    }
-
-    return objects
 }
 
 private func assertChartBinaryDataStorage(_ hwp: HwpFile) {
@@ -295,165 +183,6 @@ private func assertChartOleObject(_ object: HwpGenShapeObject) {
     ]
     expect(ole?.unknownChildren).to(beEmpty())
     expect(component?.oleRecords.map(\.payload)) == [ole?.rawPayload].compactMap { $0 }
-}
-
-private func assertShapeControlPayloadsMatch(
-    _ decoded: [HwpShapeControl],
-    _ original: [HwpShapeControl]
-) {
-    expect(decoded.map(\.ctrlId)) == original.map(\.ctrlId)
-    expect(decoded.map(\.rawPayload)) == original.map(\.rawPayload)
-    expect(decoded.map(\.rawTrailing)) == original.map(\.rawTrailing)
-    expect(decoded.map { $0.commonCtrlProperty?.rawPayload }) ==
-        original.map { $0.commonCtrlProperty?.rawPayload }
-    expect(decoded.map { $0.eqEditArray.map(\.rawPayload) }) ==
-        original.map { $0.eqEditArray.map(\.rawPayload) }
-    expect(decoded.map { $0.eqEditRecords.map(\.payload) }) ==
-        original.map { $0.eqEditRecords.map(\.payload) }
-    expect(decoded.map { $0.ctrlDataRecords.map(\.rawPayload) }) ==
-        original.map { $0.ctrlDataRecords.map(\.rawPayload) }
-    expect(decoded.map(\.unknownChildren)) == original.map(\.unknownChildren)
-    assertShapeComponentPayloadsMatch(
-        decoded.flatMap(\.shapeComponentArray),
-        original.flatMap(\.shapeComponentArray)
-    )
-}
-
-private func assertGenShapeObjectPayloadsMatch(
-    _ decoded: [HwpGenShapeObject],
-    _ original: [HwpGenShapeObject]
-) {
-    expect(decoded.map(\.rawPayload)) == original.map(\.rawPayload)
-    expect(decoded.map(\.rawTrailing)) == original.map(\.rawTrailing)
-    expect(decoded.map(\.commonCtrlProperty.rawPayload)) ==
-        original.map(\.commonCtrlProperty.rawPayload)
-    expect(decoded.map { $0.ctrlDataRecords.map(\.rawPayload) }) ==
-        original.map { $0.ctrlDataRecords.map(\.rawPayload) }
-    assertShapeComponentPayloadsMatch(
-        decoded.flatMap(\.shapeComponentArray),
-        original.flatMap(\.shapeComponentArray)
-    )
-}
-
-private func assertShapeComponentPayloadsMatch(
-    _ decoded: [HwpShapeComponent],
-    _ original: [HwpShapeComponent]
-) {
-    expect(decoded.map(\.rawPayload)) == original.map(\.rawPayload)
-    expect(decoded.map(\.rawCtrlId)) == original.map(\.rawCtrlId)
-    expect(decoded.map(\.rawTrailing)) == original.map(\.rawTrailing)
-    expect(decoded.map { $0.ctrlDataRecords.map(\.rawPayload) }) ==
-        original.map { $0.ctrlDataRecords.map(\.rawPayload) }
-    expect(decoded.map { $0.rectangleArray.map(\.rawPayload) }) ==
-        original.map { $0.rectangleArray.map(\.rawPayload) }
-    expect(decoded.map { $0.pictureArray.map(\.rawPayload) }) ==
-        original.map { $0.pictureArray.map(\.rawPayload) }
-    expect(decoded.map { $0.pictureArray.compactMap(\.binaryDataId) }) ==
-        original.map { $0.pictureArray.compactMap(\.binaryDataId) }
-    expect(decoded.map { $0.pictureArray.compactMap(\.rawTrailing) }) ==
-        original.map { $0.pictureArray.compactMap(\.rawTrailing) }
-    expect(decoded.map { $0.oleArray.map(\.rawPayload) }) ==
-        original.map { $0.oleArray.map(\.rawPayload) }
-    expect(decoded.map { $0.oleArray.compactMap(\.binaryDataId) }) ==
-        original.map { $0.oleArray.compactMap(\.binaryDataId) }
-    expect(decoded.map { $0.oleArray.compactMap(\.rawTrailing) }) ==
-        original.map { $0.oleArray.compactMap(\.rawTrailing) }
-    expect(decoded.map { $0.oleRecords.map(\.payload) }) ==
-        original.map { $0.oleRecords.map(\.payload) }
-    assertRawBackedShapeComponentPayloadsMatch(decoded, original)
-    expect(decoded.map(\.unknownChildren)) == original.map(\.unknownChildren)
-    assertTextBoxListPayloadsMatch(
-        decoded.flatMap(\.textBoxListArray),
-        original.flatMap(\.textBoxListArray)
-    )
-}
-
-private func assertRawBackedShapeComponentPayloadsMatch(
-    _ decoded: [HwpShapeComponent],
-    _ original: [HwpShapeComponent]
-) {
-    assertRawBackedShapeComponentRawPayloadsMatch(decoded, original)
-    assertRawBackedShapeComponentUnknownChildrenMatch(decoded, original)
-}
-
-private func assertRawBackedShapeComponentRawPayloadsMatch(
-    _ decoded: [HwpShapeComponent],
-    _ original: [HwpShapeComponent]
-) {
-    expect(decoded.map { $0.lineArray.map(\.rawPayload) }) ==
-        original.map { $0.lineArray.map(\.rawPayload) }
-    expect(decoded.map { $0.ellipseArray.map(\.rawPayload) }) ==
-        original.map { $0.ellipseArray.map(\.rawPayload) }
-    expect(decoded.map { $0.arcArray.map(\.rawPayload) }) ==
-        original.map { $0.arcArray.map(\.rawPayload) }
-    expect(decoded.map { $0.polygonArray.map(\.rawPayload) }) ==
-        original.map { $0.polygonArray.map(\.rawPayload) }
-    expect(decoded.map { $0.curveArray.map(\.rawPayload) }) ==
-        original.map { $0.curveArray.map(\.rawPayload) }
-    expect(decoded.map { $0.containerArray.map(\.rawPayload) }) ==
-        original.map { $0.containerArray.map(\.rawPayload) }
-    expect(decoded.map { $0.chartDataArray.map(\.rawPayload) }) ==
-        original.map { $0.chartDataArray.map(\.rawPayload) }
-    expect(decoded.map { $0.textartArray.map(\.rawPayload) }) ==
-        original.map { $0.textartArray.map(\.rawPayload) }
-    expect(decoded.map { $0.formObjectArray.map(\.rawPayload) }) ==
-        original.map { $0.formObjectArray.map(\.rawPayload) }
-    expect(decoded.map { $0.memoShapeArray.map(\.rawPayload) }) ==
-        original.map { $0.memoShapeArray.map(\.rawPayload) }
-    expect(decoded.map { $0.memoListArray.map(\.rawPayload) }) ==
-        original.map { $0.memoListArray.map(\.rawPayload) }
-    expect(decoded.map { $0.videoDataArray.map(\.rawPayload) }) ==
-        original.map { $0.videoDataArray.map(\.rawPayload) }
-    expect(decoded.map { $0.shapeComponentUnknownArray.map(\.rawPayload) }) ==
-        original.map { $0.shapeComponentUnknownArray.map(\.rawPayload) }
-}
-
-private func assertRawBackedShapeComponentUnknownChildrenMatch(
-    _ decoded: [HwpShapeComponent],
-    _ original: [HwpShapeComponent]
-) {
-    expect(decoded.map { $0.lineArray.map(\.unknownChildren) }) ==
-        original.map { $0.lineArray.map(\.unknownChildren) }
-    expect(decoded.map { $0.ellipseArray.map(\.unknownChildren) }) ==
-        original.map { $0.ellipseArray.map(\.unknownChildren) }
-    expect(decoded.map { $0.arcArray.map(\.unknownChildren) }) ==
-        original.map { $0.arcArray.map(\.unknownChildren) }
-    expect(decoded.map { $0.polygonArray.map(\.unknownChildren) }) ==
-        original.map { $0.polygonArray.map(\.unknownChildren) }
-    expect(decoded.map { $0.curveArray.map(\.unknownChildren) }) ==
-        original.map { $0.curveArray.map(\.unknownChildren) }
-    expect(decoded.map { $0.containerArray.map(\.unknownChildren) }) ==
-        original.map { $0.containerArray.map(\.unknownChildren) }
-    expect(decoded.map { $0.chartDataArray.map(\.unknownChildren) }) ==
-        original.map { $0.chartDataArray.map(\.unknownChildren) }
-    expect(decoded.map { $0.textartArray.map(\.unknownChildren) }) ==
-        original.map { $0.textartArray.map(\.unknownChildren) }
-    expect(decoded.map { $0.formObjectArray.map(\.unknownChildren) }) ==
-        original.map { $0.formObjectArray.map(\.unknownChildren) }
-    expect(decoded.map { $0.memoShapeArray.map(\.unknownChildren) }) ==
-        original.map { $0.memoShapeArray.map(\.unknownChildren) }
-    expect(decoded.map { $0.memoListArray.map(\.unknownChildren) }) ==
-        original.map { $0.memoListArray.map(\.unknownChildren) }
-    expect(decoded.map { $0.videoDataArray.map(\.unknownChildren) }) ==
-        original.map { $0.videoDataArray.map(\.unknownChildren) }
-    expect(decoded.map { $0.shapeComponentUnknownArray.map(\.unknownChildren) }) ==
-        original.map { $0.shapeComponentUnknownArray.map(\.unknownChildren) }
-}
-
-private func assertTextBoxListPayloadsMatch(
-    _ decoded: [HwpListControlList],
-    _ original: [HwpListControlList]
-) {
-    expect(decoded.map(\.headerRawPayload)) == original.map(\.headerRawPayload)
-    expect(decoded.map(\.header.rawPayload)) == original.map(\.header.rawPayload)
-    expect(decoded.map { $0.paragraphArray.map(\.paraHeader.rawPayload) }) ==
-        original.map { $0.paragraphArray.map(\.paraHeader.rawPayload) }
-    expect(decoded.map { $0.paragraphArray.map { $0.paraText?.rawPayload } }) ==
-        original.map { $0.paragraphArray.map { $0.paraText?.rawPayload } }
-    expect(decoded.map { $0.paragraphArray.map(\.paraCharShape.rawPayload) }) ==
-        original.map { $0.paragraphArray.map(\.paraCharShape.rawPayload) }
-    expect(decoded.map { $0.paragraphArray.map(\.paraLineSeg.rawPayload) }) ==
-        original.map { $0.paragraphArray.map(\.paraLineSeg.rawPayload) }
 }
 
 private func assertLegacyPolygonObject(_ object: HwpGenShapeObject) {

@@ -5,7 +5,7 @@ import OLEKit
 import XCTest
 
 final class HwpFileDocInfoTrackChangeAssemblyTests: XCTestCase {
-    func testActualFixtureBasedTopLevelTrackChangeContentAndAuthorSurviveCodableRoundTrip()
+    func testActualFixtureBasedTopLevelTrackChangeContentAndAuthorArePreserved()
         throws
     {
         let streams = try trackChangeDocInfoAssemblyStreams(fromFixture: "plain-text-minimal")
@@ -21,12 +21,10 @@ final class HwpFileDocInfoTrackChangeAssemblyTests: XCTestCase {
             docInfoData: injected.docInfoData,
             sectionDataArray: streams.sectionDataArray
         )
-        let decoded = try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
 
         expectTopLevelTrackChangeDocInfoRecords(in: hwp.docInfo, match: injected)
-        expectTopLevelTrackChangeDocInfoRecords(in: decoded.docInfo, match: injected)
-        expect(decoded.docInfo.rawPayload) == injected.docInfoData
-        expect(decoded.sectionArray.map(\.rawPayload)) == streams.sectionDataArray
+        expect(hwp.docInfo.rawPayload) == injected.docInfoData
+        expect(hwp.sectionArray.map(\.rawPayload)) == streams.sectionDataArray
     }
 }
 

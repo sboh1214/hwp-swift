@@ -1,4 +1,3 @@
-// swiftlint:disable file_length
 @testable import CoreHwp
 import Foundation
 import Nimble
@@ -152,16 +151,8 @@ final class TableControlStabilityTests: XCTestCase {
         guard case let .notImplemented(header) = paragraph.ctrlHeaderArray?.first else {
             return fail("Expected truncated table control to be preserved as notImplemented")
         }
-        let decoded = try JSONDecoder().decode(
-            HwpParagraph.self,
-            from: JSONEncoder().encode(paragraph)
-        )
-        guard case let .notImplemented(decodedHeader) = decoded.ctrlHeaderArray?.first else {
-            return fail("Expected decoded truncated table control to stay notImplemented")
-        }
 
         assertTruncatedTableControlHeader(header, rawPayload: rawPayload)
-        expect(decodedHeader) == header
     }
 
     func testTableControlOversizedCellParagraphCountThrowsTypedError() {

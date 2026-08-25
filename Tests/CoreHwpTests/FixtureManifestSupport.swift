@@ -2,6 +2,13 @@
 import CoreHwp
 import Foundation
 
+/// 매니페스트 JSON이 문자열로 싣는 CoreHwp enum — 모델의 Codable이 제거되어
+/// (#81) 테스트 지원 계층에서 디코딩만 되살린다 (RawRepresentable 기본 구현).
+/// `@retroactive`를 붙이지 말 것: CoreHwp는 다른 모듈이지만 **같은 패키지**라
+/// SwiftPM이 넘기는 -package-name 덕에 소급 채택 진단 대상이 아니고, 붙이면
+/// Swift 5 모드에서 경고·Swift 6 모드에서 에러다 (실측: swift 6.4).
+extension HwpPreviewImageFormat: Decodable {}
+
 struct FixtureManifest: Decodable {
     let id: String
     let generationTool: String

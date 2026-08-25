@@ -6,7 +6,7 @@ import OLEKit
 import XCTest
 
 final class HwpFilePreservedControlAssemblyTests: XCTestCase {
-    func testActualFixtureAssemblyExtractsInjectedPreservedControlsThroughCodableRoundTrip()
+    func testActualFixtureAssemblyExtractsInjectedPreservedControls()
         throws
     {
         let streams = try preservedControlAssemblyStreams(fromFixture: "plain-text-minimal")
@@ -21,18 +21,12 @@ final class HwpFilePreservedControlAssemblyTests: XCTestCase {
             docInfoData: streams.docInfoData,
             sectionDataArray: sectionDataArray
         )
-        let decoded = try JSONDecoder().decode(
-            HwpFile.self,
-            from: JSONEncoder().encode(hwp)
-        )
 
         expectInjectedPreservedControls(in: hwp, match: injected)
-        expectInjectedPreservedControls(in: decoded, match: injected)
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == sectionDataArray
+        expect(hwp.sectionArray.map(\.rawPayload)) == sectionDataArray
     }
 
-    func testActualFixtureAssemblyPreservesOtherControlFallbacksThroughCodableRoundTrip()
+    func testActualFixtureAssemblyPreservesOtherControlFallbacks()
         throws
     {
         let streams = try preservedControlAssemblyStreams(fromFixture: "plain-text-minimal")
@@ -47,18 +41,12 @@ final class HwpFilePreservedControlAssemblyTests: XCTestCase {
             docInfoData: streams.docInfoData,
             sectionDataArray: sectionDataArray
         )
-        let decoded = try JSONDecoder().decode(
-            HwpFile.self,
-            from: JSONEncoder().encode(hwp)
-        )
 
         expectOtherControlFallbacks(in: hwp, match: injected)
-        expectOtherControlFallbacks(in: decoded, match: injected)
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == sectionDataArray
+        expect(hwp.sectionArray.map(\.rawPayload)) == sectionDataArray
     }
 
-    func testActualFixtureAssemblyPreservesTruncatedUnknownControlThroughCodableRoundTrip()
+    func testActualFixtureAssemblyPreservesTruncatedUnknownControl()
         throws
     {
         let streams = try preservedControlAssemblyStreams(fromFixture: "plain-text-minimal")
@@ -73,18 +61,12 @@ final class HwpFilePreservedControlAssemblyTests: XCTestCase {
             docInfoData: streams.docInfoData,
             sectionDataArray: sectionDataArray
         )
-        let decoded = try JSONDecoder().decode(
-            HwpFile.self,
-            from: JSONEncoder().encode(hwp)
-        )
 
         expectTruncatedUnknownControl(in: hwp, match: injected)
-        expectTruncatedUnknownControl(in: decoded, match: injected)
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == sectionDataArray
+        expect(hwp.sectionArray.map(\.rawPayload)) == sectionDataArray
     }
 
-    func testActualFixtureAssemblyPreservesMalformedHyperlinkAsFieldThroughCodableRoundTrip()
+    func testActualFixtureAssemblyPreservesMalformedHyperlinkAsField()
         throws
     {
         let streams = try preservedControlAssemblyStreams(fromFixture: "plain-text-minimal")
@@ -99,15 +81,9 @@ final class HwpFilePreservedControlAssemblyTests: XCTestCase {
             docInfoData: streams.docInfoData,
             sectionDataArray: sectionDataArray
         )
-        let decoded = try JSONDecoder().decode(
-            HwpFile.self,
-            from: JSONEncoder().encode(hwp)
-        )
 
         expectFieldControlFallback(in: hwp, match: injected)
-        expectFieldControlFallback(in: decoded, match: injected)
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == sectionDataArray
+        expect(hwp.sectionArray.map(\.rawPayload)) == sectionDataArray
     }
 }
 

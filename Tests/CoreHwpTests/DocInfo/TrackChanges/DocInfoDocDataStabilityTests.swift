@@ -14,20 +14,11 @@ final class DocInfoDocDataStabilityTests: XCTestCase {
         )
 
         let docData = try HwpDocData.load(record)
-        let decoded = try JSONDecoder().decode(
-            HwpDocData.self,
-            from: JSONEncoder().encode(docData)
-        )
 
         expect(docData.docDataInfo?.values) == [0x0102_0304, 0xAABB_CCDD]
         expect(docData.docDataInfo?.valuesRawPayload) == Data(payload.dropLast(rawTrailing.count))
         expect(docData.docDataInfo?.rawTrailing) == rawTrailing
         expect(docData.rawPayload) == payload
-        expect(decoded.docDataInfo?.values) == [0x0102_0304, 0xAABB_CCDD]
-        expect(decoded.docDataInfo?.valuesRawPayload) ==
-            Data(payload.dropLast(rawTrailing.count))
-        expect(decoded.docDataInfo?.rawTrailing) == rawTrailing
-        expect(decoded.rawPayload) == payload
     }
 
     func testMalformedDocDataPayloadIsPreservedWithoutParsedInfo() throws {
@@ -39,15 +30,9 @@ final class DocInfoDocDataStabilityTests: XCTestCase {
         )
 
         let docData = try HwpDocData.load(record)
-        let decoded = try JSONDecoder().decode(
-            HwpDocData.self,
-            from: JSONEncoder().encode(docData)
-        )
 
         expect(docData.docDataInfo).to(beNil())
         expect(docData.rawPayload) == payload
-        expect(decoded.docDataInfo).to(beNil())
-        expect(decoded.rawPayload) == payload
     }
 
     func testNooriFixtureExposesActualDocDataWords() throws {

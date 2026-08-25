@@ -119,22 +119,6 @@ final class CommonCtrlPropertyStabilityTests: XCTestCase {
         expect(reader.isEOF) == true
     }
 
-    func testCommonControlPropertyObjectDescriptionRawPayloadSurvivesCodableRoundTrip() throws {
-        let description = "설명😀"
-        let payload = commonCtrlPropertyPayload(
-            ctrlId: HwpCommonCtrlId.genShapeObject.rawValue,
-            objectDescription: description
-        )
-        var reader = DataReader(payload)
-
-        let decoded = try decodeRoundTrip(HwpCommonCtrlProperty(&reader))
-
-        expect(decoded.rawPayload) == payload
-        expect(decoded.objectDescriptionLength) == WORD(description.utf16.count)
-        expect(decoded.objectDescription) == description
-        expect(decoded.objectDescriptionRawPayload) == wcharPayload(description)
-    }
-
     func testCommonControlPropertyPreservesEmptyObjectDescriptionLength() throws {
         let payload = commonCtrlPropertyPayload(ctrlId: HwpCommonCtrlId.genShapeObject.rawValue)
         var reader = DataReader(payload)
@@ -284,10 +268,6 @@ private func commonCtrlPropertyPayload(
     data.append(littleEndianData(WORD(objectDescriptionPayload.count / MemoryLayout<WCHAR>.size)))
     data.append(objectDescriptionPayload)
     return data
-}
-
-private func decodeRoundTrip<T: HwpPrimitive>(_ value: T) throws -> T {
-    try JSONDecoder().decode(T.self, from: JSONEncoder().encode(value))
 }
 
 private func wcharPayload(_ string: String) -> Data {

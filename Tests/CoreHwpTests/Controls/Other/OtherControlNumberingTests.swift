@@ -50,10 +50,6 @@ final class OtherControlNumberingTests: XCTestCase {
         )
 
         let control = try HwpOtherControl.load(record)
-        let decoded = try JSONDecoder().decode(
-            HwpCtrlId.self,
-            from: JSONEncoder().encode(HwpCtrlId.autoNumber(control))
-        )
 
         expect(control.autoNumberInfo?.kind) == .footnote
         expect(control.autoNumberInfo?.number) == 5
@@ -62,11 +58,6 @@ final class OtherControlNumberingTests: XCTestCase {
         expect(control.autoNumberInfo?.decorationHead) == 0
         expect(control.autoNumberInfo?.decorationTail) == 0x29
         expect(control.autoNumberInfo?.rawTrailing) == Data()
-
-        guard case let .autoNumber(roundTripped) = decoded else {
-            return fail("Expected autoNumber after Codable round-trip")
-        }
-        expect(roundTripped.autoNumberInfo) == control.autoNumberInfo
     }
 
     func testNewNumberControlExposesTypedTable144Payload() throws {
@@ -120,26 +111,12 @@ final class OtherControlNumberingTests: XCTestCase {
         record.children = [unknownChild]
 
         let control = try HwpOtherControl.load(record)
-        let decoded = try JSONDecoder().decode(
-            HwpCtrlId.self,
-            from: JSONEncoder().encode(HwpCtrlId.autoNumber(control))
-        )
 
         expect(control.ctrlId) == .autoNumber
         expect(control.numberingInfo).to(beNil())
         expect(control.rawPayload) == rawPayload
         expect(control.rawTrailing) == rawTrailing
         expect(control.unknownChildren) == [
-            expectedTestUnknownRecord(tagId: 0x2FD, level: 2, payload: Data([0xCC])),
-        ]
-
-        guard case let .autoNumber(roundTripped) = decoded else {
-            return fail("Expected autoNumber after Codable round-trip")
-        }
-        expect(roundTripped.numberingInfo).to(beNil())
-        expect(roundTripped.rawPayload) == rawPayload
-        expect(roundTripped.rawTrailing) == rawTrailing
-        expect(roundTripped.unknownChildren) == [
             expectedTestUnknownRecord(tagId: 0x2FD, level: 2, payload: Data([0xCC])),
         ]
     }
@@ -243,7 +220,7 @@ final class OtherControlNumberingTests: XCTestCase {
         }
     }
 
-    func testParagraphDispatchAndCodablePreserveParsedNumberingInfo() throws {
+    func testParagraphDispatchPreservesParsedNumberingInfo() throws {
         for ctrlId in [HwpOtherCtrlId.autoNumber, .newNumber] {
             let extraTrailing = Data([0xAA, 0xBB, 0xCC])
             let rawTrailing = concatenatedData(
@@ -252,18 +229,13 @@ final class OtherControlNumberingTests: XCTestCase {
                 littleEndianData(UInt32(0x0031_0000)),
                 extraTrailing
             )
-            let roundTrip = try parsedAndRoundTrippedNumberingControl(
+            let parsed = try parsedNumberingControl(
                 ctrlId: ctrlId,
                 rawTrailing: rawTrailing
             )
             expectParsedNumberingInfo(
-                roundTrip.control,
-                rawPayload: roundTrip.rawPayload,
-                rawTrailing: rawTrailing
-            )
-            expectParsedNumberingInfo(
-                roundTrip.roundTripped,
-                rawPayload: roundTrip.rawPayload,
+                parsed.control,
+                rawPayload: parsed.rawPayload,
                 rawTrailing: rawTrailing
             )
         }
@@ -289,16 +261,15 @@ private func extractedNumberingControl(
     }
 }
 
-private struct NumberingRoundTrip {
+private struct ParsedNumberingControl {
     let control: HwpOtherControl
-    let roundTripped: HwpOtherControl
     let rawPayload: Data
 }
 
-private func parsedAndRoundTrippedNumberingControl(
+private func parsedNumberingControl(
     ctrlId: HwpOtherCtrlId,
     rawTrailing: Data
-) throws -> NumberingRoundTrip {
+) throws -> ParsedNumberingControl {
     var rawPayload = littleEndianData(ctrlId.rawValue)
     rawPayload.append(rawTrailing)
     let controlRecord = HwpRecord(
@@ -314,15 +285,12 @@ private func parsedAndRoundTrippedNumberingControl(
         paragraphRecord(children: paragraphChildRecords(with: controlRecord)),
         HwpVersion(5, 0, 1, 1)
     )
-    let encoded = try JSONEncoder().encode(paragraph.ctrlHeaderArray?.first)
-    let decoded = try JSONDecoder().decode(HwpCtrlId.self, from: encoded)
 
-    return try NumberingRoundTrip(
+    return try ParsedNumberingControl(
         control: extractedNumberingControl(
             from: paragraph.ctrlHeaderArray?.first,
             expected: ctrlId
         ),
-        roundTripped: extractedNumberingControl(from: decoded, expected: ctrlId),
         rawPayload: rawPayload
     )
 }

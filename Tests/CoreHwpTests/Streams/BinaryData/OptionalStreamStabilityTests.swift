@@ -3,38 +3,28 @@ import Foundation
 import Nimble
 import XCTest
 
-final class OptionalStreamCodableStabilityTests: XCTestCase {
-    func testMissingOptionalPreviewTextSurvivesHwpFileCodableRoundTrip() throws {
+final class OptionalStreamStabilityTests: XCTestCase {
+    func testMissingOptionalPreviewTextFallsBackToDefault() throws {
         let hwp = try hwpWithRenamedRootEntry(
             HwpStreamName.previewText.rawValue,
             to: "XrvText",
             entryType: directoryEntryOleStreamType
         )
-        let decoded = try codableRoundTrip(hwp)
 
         assertDefaultPreviewText(hwp.previewText)
-        assertDefaultPreviewText(decoded.previewText)
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == hwp.sectionArray.map(\.rawPayload)
     }
 
-    func testMissingOptionalPreviewImageSurvivesHwpFileCodableRoundTrip() throws {
+    func testMissingOptionalPreviewImageFallsBackToDefault() throws {
         let hwp = try hwpWithRenamedRootEntry(
             HwpStreamName.previewImage.rawValue,
             to: "XrvImage",
             entryType: directoryEntryOleStreamType
         )
-        let decoded = try codableRoundTrip(hwp)
 
         assertDefaultPreviewImage(hwp.previewImage)
-        assertDefaultPreviewImage(decoded.previewImage)
-        expect(decoded.previewImage.rawPayload) == hwp.previewImage.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == hwp.sectionArray.map(\.rawPayload)
     }
 
-    func testMissingOptionalPreviewTextAndImageSurviveHwpFileCodableRoundTrip()
-        throws
-    {
+    func testMissingOptionalPreviewTextAndImageFallBackToDefaults() throws {
         let hwp = try hwpWithRenamedRootEntries([
             DirectoryEntryRename(
                 entryName: HwpStreamName.previewText.rawValue,
@@ -47,43 +37,30 @@ final class OptionalStreamCodableStabilityTests: XCTestCase {
                 entryType: directoryEntryOleStreamType
             ),
         ])
-        let decoded = try codableRoundTrip(hwp)
 
         assertDefaultPreviewText(hwp.previewText)
-        assertDefaultPreviewText(decoded.previewText)
         assertDefaultPreviewImage(hwp.previewImage)
-        assertDefaultPreviewImage(decoded.previewImage)
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == hwp.sectionArray.map(\.rawPayload)
     }
 
-    func testMissingOptionalSummarySurvivesHwpFileCodableRoundTrip() throws {
+    func testMissingOptionalSummaryFallsBackToEmptyPayload() throws {
         let hwp = try hwpWithRenamedRootEntry(
             HwpStreamName.summary.rawValue,
             to: "\u{5}XwpSummaryInformation",
             entryType: directoryEntryOleStreamType
         )
-        let decoded = try codableRoundTrip(hwp)
 
         expect(hwp.summary.rawPayload).to(beEmpty())
-        expect(decoded.summary.rawPayload).to(beEmpty())
-        expect(decoded.previewText.rawPayload) == hwp.previewText.rawPayload
-        expect(decoded.previewImage.rawPayload) == hwp.previewImage.rawPayload
     }
 
-    func testMissingOptionalBinDataSurvivesHwpFileCodableRoundTrip() throws {
+    func testMissingOptionalBinDataFallsBackToEmptyArray() throws {
         let hwp = try hwpWithRenamedRootEntry(
             HwpStreamName.binData.rawValue,
             to: "XinData",
             entryType: directoryEntryOleStorageType,
             fixture: "chart"
         )
-        let decoded = try codableRoundTrip(hwp)
 
         expect(hwp.binaryDataArray).to(beEmpty())
-        expect(decoded.binaryDataArray).to(beEmpty())
-        expect(decoded.docInfo.rawPayload) == hwp.docInfo.rawPayload
-        expect(decoded.sectionArray.map(\.rawPayload)) == hwp.sectionArray.map(\.rawPayload)
     }
 }
 
@@ -115,10 +92,6 @@ private func hwpWithRenamedRootEntries(
     defer { removeTemporaryDirectoryEntryFile(url) }
 
     return try HwpFile(fromPath: url.path)
-}
-
-private func codableRoundTrip(_ hwp: HwpFile) throws -> HwpFile {
-    try JSONDecoder().decode(HwpFile.self, from: JSONEncoder().encode(hwp))
 }
 
 private func assertDefaultPreviewText(_ previewText: HwpPreviewText) {

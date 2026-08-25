@@ -11,7 +11,7 @@ Utils/
 ├── HwpColor.swift        # 색상 helper
 ├── Type.swift            # DWORD / WORD / WCHAR typealias (HWP 스펙 이름)
 ├── ExcludeEquatable.swift # == 비교에서 특정 필드를 제외하는 property wrapper
-├── Extensions/           # Data, Character, StringProtocol, BinaryInteger, Array, WCHAR
+├── Extensions/           # Data, StringProtocol, BinaryInteger, Array, WCHAR
 ├── Protocols/            # 5개 loader 프로토콜 + tag-검증 refinement + HwpPrimitive typealias
 └── Readers/              # StreamReader (OLE), HwpInflate (deflate), DataReader (byte), BitsReader (bit)
 ```
