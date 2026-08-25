@@ -259,10 +259,13 @@ CoreHwp 모델이 `Codable`을 채택하지 않으므로 이 타깃에 직렬화
   [`FixtureManifestSupport.swift`](file:///Users/sboh/Repos/hwp-swift/Tests/CoreHwpTests/FixtureManifestSupport.swift)가
   **디코딩만** 되살린다 — 현재 `previewImageFormat`(`HwpPreviewImageFormat`)
   하나이고, `RawRepresentable`이라 `extension …: Decodable {}` 한 줄이면 된다.
-  다른 모듈의 타입이라 Swift 6에서는 `@retroactive`가 필요하고 5.9에는 그
-  속성 자체가 없어 `#if compiler(>=6.0)`으로 가른다. 새 매니페스트 필드에
-  CoreHwp enum을 쓰면 여기에 한 줄을 더하고, **모델 쪽 Codable을 되살려
-  해결하지 말 것.**
+  **`@retroactive`를 붙이지 말 것**: CoreHwp는 다른 모듈이지만 같은
+  **패키지**라 SwiftPM이 넘기는 `-package-name` 덕에 소급 채택 진단 대상이
+  아니고, 붙이면 Swift 5 모드에서 경고(`'retroactive' attribute does not
+  apply; … is declared in the same package`)·Swift 6 language mode에서
+  **에러**다 (실측: swift 6.4). 컴파일러 버전 분기도 필요 없다 — plain 채택이
+  5.9와 6.x 양쪽에서 진단 0건이다. 새 매니페스트 필드에 CoreHwp enum을 쓰면
+  여기에 한 줄을 더하고, **모델 쪽 Codable을 되살려 해결하지 말 것.**
 - **왕복 스위트가 유일한 커버리지였던 파스 단언**이 있었다. 삭제 과정에서
   드러난 실례: 표 40 문단 머리 글자 모양 ID의 **양수** 파싱을 단언하던 곳은
   `…SurviveCodableRoundTrip` 하나뿐이었고, 남는 테스트는 기본값 `-1`만 봐서

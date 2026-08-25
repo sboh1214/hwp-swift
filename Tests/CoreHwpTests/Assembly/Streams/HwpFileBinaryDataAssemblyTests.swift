@@ -130,7 +130,7 @@ private func pictureBinaryDataIds(from hwp: HwpFile) -> [UInt16] {
 
 private func docInfoWithBinData(_ binDataPayloadArray: [Data]) throws -> HwpDocInfo {
     var docInfoData = concatenatedData(
-        binaryDataAssemblyRecordData(
+        SectionRecordBuilder.record(
             tagId: HwpDocInfoTag.documentProperties.rawValue,
             level: 0,
             payload: concatenatedData(
@@ -138,7 +138,7 @@ private func docInfoWithBinData(_ binDataPayloadArray: [Data]) throws -> HwpDocI
                 Data(repeating: 0, count: 24)
             )
         ),
-        binaryDataAssemblyRecordData(
+        SectionRecordBuilder.record(
             tagId: HwpDocInfoTag.idMappings.rawValue,
             level: 0,
             payload: binaryDataAssemblyIdMappingsPayload(
@@ -147,7 +147,7 @@ private func docInfoWithBinData(_ binDataPayloadArray: [Data]) throws -> HwpDocI
         )
     )
     for payload in binDataPayloadArray {
-        docInfoData.append(binaryDataAssemblyRecordData(
+        docInfoData.append(SectionRecordBuilder.record(
             tagId: HwpDocInfoTag.binData.rawValue,
             level: 1,
             payload: payload
@@ -162,14 +162,6 @@ private func binaryDataAssemblyIdMappingsPayload(binaryDataCount: Int32) -> Data
     return counts.reduce(into: Data()) { data, count in
         data.append(binaryDataAssemblyLittleEndianData(count))
     }
-}
-
-private func binaryDataAssemblyRecordData(tagId: UInt32, level: UInt32, payload: Data) -> Data {
-    var data = binaryDataAssemblyLittleEndianData(
-        tagId | (level << 10) | (UInt32(payload.count) << 20)
-    )
-    data.append(payload)
-    return data
 }
 
 private func linkBinDataPayload() -> Data {
