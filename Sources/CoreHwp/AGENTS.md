@@ -95,6 +95,17 @@ ID로 dispatch된다.
 - public 타입의 doc-comment는 한컴 공개 문서를 참조하는 한국어로 유지.
 - `Streams/Hwp*.swift`는 최상위 오케스트레이터다 — `parseTreeRecord`로 record를
   꺼내 모델로 dispatch만 수행. 파싱 로직은 stream이 아니라 모델 쪽에 두기.
+- **DocInfo children은 단일 분류 패스로 소비한다** (`HwpDocInfo.classify`, #125).
+  태그마다 `.first(where:)`/`.filter`를 새로 돌면 최상위 레코드를 태그 수만큼
+  훑는다 (종전 12회). keypath 사전 둘(singleton 6종 / multi-record 5종)이
+  children을 **한 번** 훑어 슬롯에 담고 나머지는 `unconsumed`로 간다.
+  **소비 계약은 그대로 지켜야 한다** — 그 결과가 곧 `unknownRecords`이고
+  `parseDiagnostics()`의 입력이다: singleton은 **첫 레코드만** 이기고 중복은
+  unknown으로, 미지 태그도 unknown으로, 둘 다 **children 원래 순서**를 보존한다
+  (#66의 결정적 순서 계약). `layoutCompatibility`의 `compatibleDocument` 폴백은
+  분류가 아니라 **로드 순서**가 지킨다 — 분류는 두 레코드를 나란히 담을 뿐이라
+  폴백이 성립하려면 compatibleDocument를 먼저 확정해야 한다. 가드는
+  `Tests/CoreHwpTests/Streams/HwpDocInfoClassificationTests.swift`.
 - public struct의 default `init()`은 **빈 템플릿 대조용** 객체를 만든다 —
   파싱된 빈 문서와 필드 단위로 비교한다 (`Tests/.../Blank/Create*Tests.swift`
   참조. 직렬화 왕복이 아니다 — 모델은 `Codable`을 채택하지 않는다). 새 public

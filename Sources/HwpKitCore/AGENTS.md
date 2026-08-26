@@ -404,6 +404,17 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   바탕이 아니라 한자용 송체이고 (문서의 `FaceName.defaultFaceName` 이
   `FZSong_Superfont` 로 못박는다), `Apple SD 산돌고딕 Neo` 는 시스템 폰트의
   한글 표시명이라 매핑이 없으면 로마자 슬롯이 Helvetica 로 대체된다
+- **face 이름이 없는 텍스트는 `fallbackFont(for:size:)` 로 script 안전망을 직접
+  얻는다** (#125) — 이미지 플레이스홀더 라벨처럼 문서 글꼴과 무관한 UI 텍스트가
+  그것이다. 그 자리에 `CTFontCreateWithName("Helvetica")` 같은 리터럴을 두면
+  한국어 라벨 ("[이미지]") 이 **한글 글리프가 없는 폰트**로 잡혀 CoreText
+  캐스케이드 폴백에만 기대는데, 배포 resolver 는 `fallbackCascade` 가 비어 있어
+  (위 항목) 그 선택이 통째로 기기 몫이 된다. 이 API 는 `resolve` 가 후보를 다
+  소진했을 때 내려가는 것과 **같은 `scriptFallbacks` 테이블·같은 캐스케이드**라
+  새 분기가 아니다 — 두 경로가 갈리면 라벨만 다른 폰트로 그려진다. 소비자는
+  `HwpPageLayer.placeholderFont` (`Sources/HwpKitNative/AGENTS.md`). 가드는
+  `testKoreanFallbackFontCoversHangulGlyphsDirectly` — 글리프 커버리지를 직접
+  재므로 캐스케이드 의존으로 되돌리면 잡힌다
 - **글자 모양 속성 캐시** (`HwpTextAttributeCache`) — `HwpTextRunBuilder.attributes`
   는 `index`·`fontResolver` 가 고정이면 `(shapeId, script)` 의 순수 함수라
   (장평·이탤릭 근사 매트릭스·라틴 세리프 폴백·장식이 전부 charShape 에서만

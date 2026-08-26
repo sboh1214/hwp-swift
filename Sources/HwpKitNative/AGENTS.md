@@ -50,6 +50,8 @@ HwpKitNative/
 4. 디코드 완료 시 `onImageResolved` → main queue에서 레이어 `setNeedsDisplay`
 5. 이미지는 flipped context 보정 (`drawFlippedImage`)으로 그린다 — 지우면 상하 반전
 
+로딩·실패 표시의 라벨 ("[이미지]") 은 **한국어**라 폰트를 리터럴로 잡으면 안 된다 (#125). `HwpPageLayer.placeholderFont` 는 `HwpFontResolver().fallbackFont(for: .korean, size: 12)` 로 script 안전망을 거친다 — 종전 `"Helvetica"` 하드코딩은 한글 글리프가 아예 없어 CoreText 캐스케이드 폴백에 **전적으로** 의존했고, 배포 resolver 는 캐스케이드를 비워 두므로 그 선택이 통째로 기기 몫이었다 (`Sources/HwpKitCore/AGENTS.md`). `private` 이 아니라 `internal` 인 것은 글리프 커버리지 가드 (`testPlaceholderFontCoversHangulGlyphsDirectly`) 의 관측 지점이기 때문이다. 픽스처 렌더 기준선은 이 변경에 **불변**이다 — 픽스처의 그림은 전부 해석되는 경로라 플레이스홀더가 그려지지 않는다 (즉 이 자리는 렌더 해시·골든이 영영 못 보는 축이라 위 가드가 유일한 방어다).
+
 **캐시 계약** (`HwpImageCache`, public actor라 provider보다 오래 살거나 여러 provider에 주입될 수 있다):
 
 - 캐시 값은 `HwpCachedImage` (비트맵 + **다운샘플 전 원본 픽셀 크기**). crop 좌표는 원본 픽셀 기준이라, 크기를 provider 로컬에 두면 warm 캐시 히트에서 스케일 기준이 사라져 잘못 잘린다
@@ -130,6 +132,8 @@ HwpKitNative/
 macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollView documentView) 에 붙는다. NSClipView 는 documentView 의 flippedness 를 미러링하지만, `contentsAreFlipped()` 런타임 가드가 조상 flip 홀짝 변화를 동적으로 보정하므로 안전하다.
 
 `drawTextLines` 의 CT flip (`translateBy` + `scaleBy(x: 1, y: -1)`) 과 `drawFlippedImage` 는 top-down 정규화 이후를 전제로 하므로 그대로 유지.
+
+**그 flip 은 대합(자기 역변환)이라 `saveGState` 없이 되돌린다** (#125). 같은 `translate`·`scale` 을 한 번 더 걸면 CTM 이 부동소수 오차 없이 **정확히** 복원되므로 (`d = (-1)·(-1)`, `ty = H + (-1)·H` — 둘 다 정확), 명령마다 그래픽 상태 **전체**를 복사·복원하지 않는다. 대신 두 계약이 받친다: ① **텍스트 매트릭스는 GState 스택에 들어가지 않으므로** `draw(in:)` 이 패스당 한 번 `.identity` 로 정규화하고 그 뒤 그리기는 `textPosition`(이동 성분)만 움직인다 — 예전처럼 `.drawText` 마다 리셋할 필요가 없다. ② 장식이 바꾸는 fill/stroke 색은 복원되지 않으므로 **모든 명령이 자기 색을 먼저 설정하고 그린다**. 앞 명령의 색을 물려받는 그리기를 새로 넣으면 그 순간 조용히 깨진다 — 장식 색이 번지면 여기부터 의심할 것.
 
 ## CRITICAL — contentsScale (Retina 선명도)
 
@@ -304,6 +308,14 @@ PageUp/Down은 한 쪽씩, Home/End는 문서 처음·끝으로 — 두 플랫�
 - macOS: `NSClickGestureRecognizer` 로 hit test (documentContentView 에 부착), iOS: `UITapGestureRecognizer`
 - iOS 초기 위치: SwiftUI `makeUIView` 는 bounds 0 에서 document 를 대입하므로 센터링을 첫 non-zero `layoutSubviews` 로 **예약**한다. 그 창에 들어온 명시 페이지 요청(`scrollToPage`)은 인덱스를 함께 예약해 센터링 대신 그 페이지로 복원하고, 문서가 **전체 교체**되면 예약 인덱스를 버린다 (옛 문서 기준 페이지에서 열리는 것 방지). 같은 문서 재전달(`document == oldValue`)은 스크롤 유지가 의도라 예약도 보존
 - 페이지 좌표 → 인덱스 변환은 macOS·iOS 모두 **이진 탐색** (`pageOriginsY` 오름차순). 선택 드래그·오토스크롤은 프레임마다 호출되므로 선형 스캔이면 만 쪽 문서에서 비용이 페이지 수에 비례한다
+
+### 레이어 트리 회귀 스냅샷 (#125)
+
+- 시나리오 문서와 **기대 트리 문자열 하나**를 `Tests/HwpKitNativeTests/HwpLayerTreeSnapshotSupport.swift` 가 소유하고 양 플랫폼 테스트 (`HwpDocument{NS,UI}ViewLayerTreeTests`) 가 그것을 단언한다 — 이 문서가 반복해 적는 "macOS 와 대칭" 규약이 산문이 아니라 **같은 기대값**으로 검증된다. 커밋된 기준선이고 CI 상시다 (렌더 픽셀 해시처럼 기기 종속이 아니다).
+- 잠그는 축은 자식 **순서·타입·frame·zPosition·contentsScale** 조합이다. 오버레이 부착·재사용·z-순서 단언은 각자 있지만, 검색 하이라이트 (#75)·선택 (#5)·메모 패널 (#8) 이 **겹친 상태 전체**를 한 장으로 보는 것은 이것뿐이다.
+- **contentsScale 은 절대값이 아니라 기준 배율의 배수로 적는다** — 절대값은 러너 스크린 (macOS `backingScaleFactor`)·시뮬레이터 트레잇 (iOS `displayScale`) 에 갈려 스냅샷이 머신 종속이 된다. 기대 트리가 두 플랫폼 공용인 근거가 이 정규화다.
+- **root 레이어 자체는 적지 않는다** — 뷰 backing layer 의 구체 타입이 OS 버전 종속이라 그것을 담으면 같은 이유로 기준선이 흔들린다.
+- 세 쪽 시나리오는 각각 다른 행 형상을 태운다: 0쪽 기본 메모 패널, 1쪽 페이지보다 긴 패널 (#8 오버플로 행), 2쪽 패널 없음 (좁은 행 → 중앙 정렬 x=60). 선택 끝점 핸들 (#84) 이 이 트리에 **없는 것**까지가 계약이다 — `contentView` 밖 UIView 라서다 (위 `HwpOverlayZ` 항목과 같은 근거).
 
 ## fit 배율 (#78)
 

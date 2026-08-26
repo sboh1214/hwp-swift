@@ -122,6 +122,12 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
         ctx.saveGState()
         defer { ctx.restoreGState() }
 
+        // 텍스트 매트릭스는 GState 스택에 들어가지 않아 호출자의 값이 무엇이든
+        // 여기서 한 번 정규화한다. 이후 그리기는 textPosition(= 이동 성분)만
+        // 움직이므로 스케일 성분은 패스 내내 identity로 유지된다 — 예전처럼
+        // .drawText 명령마다 리셋할 필요가 없다.
+        ctx.textMatrix = .identity
+
         #if os(macOS)
             // macOS의 layer 컨텍스트는 기본 bottom-left(y-up)다. 조상 계층의
             // geometry flip 횟수가 홀수면 (예: isFlipped NSView 안) CA가 이미
@@ -261,8 +267,12 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
     private func drawTextLines(_ drawnLines: [HwpDrawnLine], in ctx: CGContext) {
         guard !drawnLines.isEmpty else { return }
         let effectivePageHeight = pageHeight > 0 ? pageHeight : bounds.height
-        ctx.saveGState()
-        ctx.textMatrix = .identity
+        // y-flip(translate(0,H)·scale(1,-1))은 자기 자신이 역변환인 대합이라
+        // 같은 두 호출을 다시 하면 CTM이 부동소수 오차 없이 정확히 복원된다
+        // (d = (-1)·(-1), ty = H + (-1)·H — 둘 다 정확). 그래서 saveGState의
+        // 그래픽 상태 전체 복사를 .drawText 명령마다 물지 않는다. 장식이
+        // 바꾸는 fill/stroke 색은 복원하지 않지만, 모든 명령이 자기 색을 먼저
+        // 설정하고 그린다 — 이 계약이 깨지면 여기부터 의심할 것.
         ctx.translateBy(x: 0, y: effectivePageHeight)
         ctx.scaleBy(x: 1, y: -1)
         for drawnLine in drawnLines {
@@ -273,7 +283,8 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
             ctx.textPosition = lineOrigin
             drawDecoratedLine(drawnLine.line, origin: lineOrigin, in: ctx)
         }
-        ctx.restoreGState()
+        ctx.translateBy(x: 0, y: effectivePageHeight)
+        ctx.scaleBy(x: 1, y: -1)
     }
 
     /// paint list가 해당 BinItem 이미지를 참조하는지 (targeted redraw 판단용)
@@ -354,7 +365,11 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
         }
     }
 
-    private static let placeholderFont = CTFontCreateWithName("Helvetica" as CFString, 12, nil)
+    /// 플레이스홀더 라벨은 한국어 ("[이미지]")인데 "Helvetica" 리터럴은 한글
+    /// 글리프가 없어 CoreText 캐스케이드 폴백에 전적으로 의존했다 — resolver의
+    /// 한국어 안전망 (Apple SD Gothic Neo)을 경유해 커버리지를 보장한다 (#125).
+    /// internal인 이유: 글리프 커버리지 회귀 테스트의 관측 지점.
+    static let placeholderFont = HwpFontResolver().fallbackFont(for: .korean, size: 12)
 
     private func drawPlaceholder(_ text: String, in rect: CGRect, context ctx: CGContext) {
         ctx.setFillColor(CGColor(gray: 0.9, alpha: 1))

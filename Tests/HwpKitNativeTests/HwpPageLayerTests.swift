@@ -132,6 +132,20 @@ final class HwpPageLayerTests: XCTestCase {
         expect(pixel[2]) < 64
     }
 
+    /// 플레이스홀더 라벨 "[이미지]"의 폰트는 한글 글리프를 직접 가진다 —
+    /// "Helvetica" 하드코딩 회귀 방지 (#125). Helvetica는 한글이 없어 CoreText
+    /// 캐스케이드 폴백에 전적으로 의존했다.
+    func testPlaceholderFontCoversHangulGlyphsDirectly() {
+        let characters = Array("이미지".utf16)
+        var glyphs = [CGGlyph](repeating: 0, count: characters.count)
+
+        let covered = CTFontGetGlyphsForCharacters(
+            HwpPageLayer.placeholderFont, characters, &glyphs, characters.count
+        )
+
+        expect(covered) == true
+    }
+
     func testDrawTextExecutesWithoutCrash() throws {
         let layer = HwpPageLayer()
         layer.bounds = CGRect(x: 0, y: 0, width: 200, height: 120)
