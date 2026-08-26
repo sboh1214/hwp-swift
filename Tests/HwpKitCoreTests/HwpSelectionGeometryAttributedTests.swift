@@ -207,6 +207,85 @@ final class HwpSelectionGeometryAttributedTests: XCTestCase {
 
     // MARK: - 조판 속성 보존과 개행 속성 상속
 
+    private func paragraphStyle(_ alignment: CTTextAlignment) -> CTParagraphStyle {
+        var value = alignment
+        return withUnsafeMutablePointer(to: &value) { pointer in
+            let settings = [CTParagraphStyleSetting(
+                spec: .alignment,
+                valueSize: MemoryLayout<CTTextAlignment>.size,
+                value: pointer
+            )]
+            return CTParagraphStyleCreate(settings, settings.count)
+        }
+    }
+
+    private func alignment(
+        of attributed: NSAttributedString, at index: Int
+    ) -> CTTextAlignment.RawValue? {
+        guard let raw = attributed.attribute(
+            kCTParagraphStyleAttributeName as NSAttributedString.Key,
+            at: index, effectiveRange: nil
+        ) else { return nil }
+        let reference = raw as CFTypeRef
+        guard CFGetTypeID(reference) == CTParagraphStyleGetTypeID() else { return nil }
+        var value = CTTextAlignment.natural
+        CTParagraphStyleGetValueForSpecifier(
+            unsafeBitCast(reference, to: CTParagraphStyle.self),
+            .alignment, MemoryLayout<CTTextAlignment>.size, &value
+        )
+        return value.rawValue
+    }
+
+    /// 개체만 있는 문단은 마커를 지우면 기여가 비는데, 그 문단을 종결하는 개행이
+    /// 스타일을 잃으면 RTF에서 그 빈 문단의 정렬·들여쓰기·폰트가 통째로 사라진다
+    /// (선두면 무속성, 중간이면 **앞 문단**의 스타일 — #124 리뷰).
+    func testNewlineAfterMarkerOnlyParagraphCarriesThatParagraphStyle() {
+        let markerOnly = attributed("\u{FFFC}", extra: [
+            kCTParagraphStyleAttributeName as NSAttributedString.Key:
+                paragraphStyle(.center),
+            kCTFontAttributeName as NSAttributedString.Key: boldFont,
+        ])
+        let leading = attributed("가", extra: [
+            kCTParagraphStyleAttributeName as NSAttributedString.Key:
+                paragraphStyle(.right),
+        ])
+        let rows = (0 ..< 3).map {
+            CGRect(x: 50, y: 100 + CGFloat($0) * 30, width: 200, height: 20)
+        }
+
+        let first = HwpSelectionGeometry(document: makeDocument(pages: [[
+            block(markerOnly, frame: rows[0], paragraphId: 1),
+            block(attributed("본문"), frame: rows[1], paragraphId: 2),
+        ]]))
+        guard let firstSelection = first.documentSelection() else {
+            return fail("expected selection")
+        }
+        let firstText = first.attributedText(for: firstSelection)
+
+        let firstNewlineAlignment = alignment(of: firstText, at: 0)
+        expect(firstText.string) == "\n본문"
+        expect(firstNewlineAlignment) == CTTextAlignment.center.rawValue
+        expect(firstText.attribute(
+            kCTFontAttributeName as NSAttributedString.Key, at: 0, effectiveRange: nil
+        )).toNot(beNil())
+
+        let middle = HwpSelectionGeometry(document: makeDocument(pages: [[
+            block(leading, frame: rows[0], paragraphId: 1),
+            block(markerOnly, frame: rows[1], paragraphId: 2),
+            block(attributed("나"), frame: rows[2], paragraphId: 3),
+        ]]))
+        guard let middleSelection = middle.documentSelection() else {
+            return fail("expected selection")
+        }
+        let middleText = middle.attributedText(for: middleSelection)
+
+        let leadingParagraphTerminator = alignment(of: middleText, at: 1)
+        let markerParagraphTerminator = alignment(of: middleText, at: 2)
+        expect(middleText.string) == "가\n\n나"
+        expect(leadingParagraphTerminator) == CTTextAlignment.right.rawValue
+        expect(markerParagraphTerminator) == CTTextAlignment.center.rawValue
+    }
+
     func testNewlineDoesNotInheritHyperlink() {
         // 링크로 끝나는 문단 + 다음 문단 — 개행이 hwp.hyperlink를 상속하면
         // RTF의 HYPERLINK 필드가 원문에 없던 문단 나눔 문자까지 덮는다.

@@ -19,27 +19,37 @@ extension HwpSelectionGeometry {
     public func attributedText(for selection: HwpTextSelection) -> NSAttributedString {
         let pieces = fragments(for: selection)
         let result = NSMutableAttributedString()
+        var previousParagraphTail = NSAttributedString()
         for (index, piece) in pieces.enumerated() {
+            let contribution = Self.strippingControlMarkerRuns(piece.attributedText)
             if index > 0, !Self.joinsWithPrevious(pieces[index - 1], piece) {
                 result.append(NSAttributedString(
-                    string: "\n", attributes: Self.newlineAttributes(endingAt: result)
+                    string: "\n",
+                    attributes: Self.newlineAttributes(terminating: previousParagraphTail)
                 ))
             }
-            result.append(Self.strippingControlMarkerRuns(piece.attributedText))
+            result.append(contribution)
+            previousParagraphTail = contribution.length > 0 ? contribution : piece.attributedText
         }
         return result
     }
 
-    /// 조각 사이 개행이 입는 속성 — 직전 글자에서 **문단 스타일과 폰트만**
-    /// 옮긴다. Cocoa 텍스트 시스템은 문단 스타일을 종결 개행까지 적용하므로
-    /// 속성 없는 개행은 RTF에서 앞 문단의 스타일을 잃고, 반대로 전체를
-    /// 상속하면 하이퍼링크·밑줄 같은 글자 속성이 원문에 없던 개행까지 번진다
-    /// (RTF에서 HYPERLINK 필드가 문단 나눔 문자를 덮는다).
+    /// 조각 사이 개행이 입는 속성 — 그 개행은 **앞 문단의 종결자**라 앞 조각
+    /// 끝에서 **문단 스타일과 폰트만** 옮긴다. Cocoa 텍스트 시스템은 문단
+    /// 스타일을 종결 개행까지 적용하므로 속성 없는 개행은 RTF에서 그 문단의
+    /// 정렬·들여쓰기·폰트를 통째로 잃고, 반대로 전체를 상속하면 하이퍼링크·
+    /// 밑줄 같은 글자 속성이 원문에 없던 개행까지 번진다 (HYPERLINK 필드가
+    /// 문단 나눔 문자를 덮는다).
+    ///
+    /// **누적 결과에서 읽으면 안 된다** (#124 리뷰) — 개체만 있는 문단은 마커를
+    /// 지운 기여가 비어, 선두면 아무 속성도 못 얻고 중간이면 **그 앞 문단**의
+    /// 스타일을 가져간다. 호출부가 그때 원본 조각(마커 run이 문단 스타일·폰트를
+    /// 그대로 들고 있다)을 꼬리로 넘긴다.
     private static func newlineAttributes(
-        endingAt result: NSAttributedString
+        terminating tail: NSAttributedString
     ) -> [NSAttributedString.Key: Any] {
-        guard result.length > 0 else { return [:] }
-        let previous = result.attributes(at: result.length - 1, effectiveRange: nil)
+        guard tail.length > 0 else { return [:] }
+        let previous = tail.attributes(at: tail.length - 1, effectiveRange: nil)
         let inherited = [
             kCTParagraphStyleAttributeName as NSAttributedString.Key,
             kCTFontAttributeName as NSAttributedString.Key,
