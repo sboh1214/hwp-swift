@@ -23,6 +23,13 @@
   빈 상태에 목록으로 보인다 (경로 문자열로는 안 된다 — `fileImporter`가 준
   샌드박스 접근 권한이 프로세스와 함께 사라진다). 파싱에 실패한 파일은
   기록하지 않고, 지워진 파일의 항목은 누르는 순간 목록에서 거둔다
+- 드래그앤드롭으로 열기 (#126) — 빈 상태·문서 화면 어디에 놓아도 그 파일로
+  교체한다. macOS(Finder)는 드래그가 파일 URL + 샌드박스 접근 확장을 실어
+  원본을 그대로 열고, iOS(Files 등)는 URL 대신 파일 표현이 와 **앱 임시
+  디렉터리로 복사한 사본**을 연다 — 그 파일은 완료 핸들러가 반환되면
+  시스템이 지우기 때문이다 (`DropOpenSupport.swift`). 사본은 임시 경로라
+  최근 문서에는 기록되지 않고, 다음 실행의 시작 시 잔해 청소가 거둔다
+  (내보내기 임시 PDF와 같은 정책)
 - 하이퍼링크 탭 + 미지원 요소 콜백을 콘솔에 로그
 - 문서 내 검색 — 컨트롤러 하나를 `HwpDocumentView(searchController:)`와
   `HwpSearchBar(controller:)`에 넘기면 하이라이트·매치 노출 스크롤·프로그레시브
@@ -88,6 +95,7 @@ Xcode에서 스킴 `HwpSwiftSample` 선택 → 대상 지정:
 - 우상단 툴바의 **"Open"** 버튼 (또는 Cmd+O)
 - 빈 상태의 **최근 문서** 목록에서 항목 클릭 (한 번이라도 성공적으로 연 파일이
   있을 때만 나타난다)
+- `.hwp` 파일을 창으로 **끌어다 놓기** (문서를 보는 중이면 그 파일로 교체)
 
 문서가 로드되면 화면 상단에 다음 툴바가 나타남:
 
@@ -205,6 +213,7 @@ Sample/
 │   ├── HwpSwiftSampleApp.swift    # @main 진입점
 │   ├── ContentView.swift          # .fileImporter + HwpDocumentView + 검색·내보내기·사이드바 배선
 │   ├── RecentDocuments.swift      # 보안 범위 북마크 기반 최근 문서 저장소 (#126)
+│   ├── DropOpenSupport.swift      # 드롭 provider → .hwp URL (플랫폼별 경로) (#126)
 │   ├── OutlineSidebar.swift       # metadata.outline만으로 만든 개요·책갈피 목록 (#77)
 │   ├── ThumbnailSidebar.swift     # HwpPageThumbnails만으로 만든 쪽 축소판 그리드 (#76)
 │   ├── PDFExportSupport.swift     # fileExporter용 FileDocument + 플랫폼 인쇄 (#if os)

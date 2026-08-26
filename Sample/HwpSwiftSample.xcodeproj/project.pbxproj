@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		1F41DD616F0D27606E71864F /* HwpKit in Frameworks */ = {isa = PBXBuildFile; productRef = 0478F39AEB002488AA1045BD /* HwpKit */; };
+		2B82FEE62B8C779B84837EE9 /* DropOpenSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEE9FCF1B8FF7505152C81CA /* DropOpenSupport.swift */; };
 		36581416E535363B5AA47F5A /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5232A086D38B2466914CFE61 /* ContentView.swift */; };
 		3C6BCDF1F76F7DC170B00A10 /* RecentDocuments.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A8DC5D8A8684D4C048B5040 /* RecentDocuments.swift */; };
 		68EE62E38E2242AB019D0407 /* HwpSwiftSampleApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A96B93F86DE19483CF1C608B /* HwpSwiftSampleApp.swift */; };
@@ -28,6 +29,7 @@
 		BD9CD92D4D990B61E323BA6A /* HwpSwiftSample.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HwpSwiftSample.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FBC80478862156310CB7C524 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		FE1C1462191E1C084D8F65B4 /* ThumbnailSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailSidebar.swift; sourceTree = "<group>"; };
+		FEE9FCF1B8FF7505152C81CA /* DropOpenSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DropOpenSupport.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -72,6 +74,7 @@
 			isa = PBXGroup;
 			children = (
 				5232A086D38B2466914CFE61 /* ContentView.swift */,
+				FEE9FCF1B8FF7505152C81CA /* DropOpenSupport.swift */,
 				32544FDDF462496C3F2AAA62 /* HwpSwiftSample.entitlements */,
 				A96B93F86DE19483CF1C608B /* HwpSwiftSampleApp.swift */,
 				FBC80478862156310CB7C524 /* Info.plist */,
@@ -149,6 +152,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				36581416E535363B5AA47F5A /* ContentView.swift in Sources */,
+				2B82FEE62B8C779B84837EE9 /* DropOpenSupport.swift in Sources */,
 				68EE62E38E2242AB019D0407 /* HwpSwiftSampleApp.swift in Sources */,
 				C49D96BFAC81290CC7614F4E /* OutlineSidebar.swift in Sources */,
 				DDAD8077DFA353E890017484 /* PDFExportSupport.swift in Sources */,

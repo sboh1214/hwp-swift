@@ -74,6 +74,8 @@ struct ContentView: View {
     /// 최근 문서 목록 (#126) — 진실 원본은 `RecentDocumentsStore`(defaults)이고
     /// 이 상태는 그 거울이다. 기록·제거 helper가 돌려주는 목록으로 맞춘다.
     @State private var recents = RecentDocumentsStore.load()
+    /// 드래그가 창 위에 있는 동안 true — 드롭 가능 시각 피드백 (#126).
+    @State private var isDropTargeted = false
 
     /// 내보내기를 마친 뒤 할 일 — 저장 대화상자냐 인쇄냐.
     private enum PDFDestination {
@@ -107,7 +109,8 @@ struct ContentView: View {
     }
 
     private static let exportFilePrefix = "hwp-sample-export-"
-    /// 이 프로세스가 시작된 시각 — 이보다 오래된 임시 PDF만 이전 실행의 잔해다.
+    /// 이 프로세스가 시작된 시각 — 이보다 오래된 임시 파일(내보내기 PDF·드롭
+    /// 사본)만 이전 실행의 잔해다.
     private static let processStart = Date()
 
     var body: some View {
@@ -130,7 +133,7 @@ struct ContentView: View {
         .fileImporter(
             isPresented: $showPicker,
             allowedContentTypes: [
-                UTType(importedAs: "dev.sboh.hwp"),
+                DropOpenSupport.hwpType,
             ]
         ) { result in
             switch result {
@@ -143,8 +146,24 @@ struct ContentView: View {
         .onOpenURL { url in
             loadDocument(from: url)
         }
+        // 드롭 대상은 **루트**다 — 빈 상태에는 열기, 문서를 보는 중에는
+        // Re-open과 같은 교체로 동작한다 (#126).
+        .onDrop(of: DropOpenSupport.acceptedTypes, isTargeted: $isDropTargeted) { providers in
+            handleDrop(providers)
+        }
+        .overlay {
+            // 드래그가 창 위에 있는 동안의 시각 피드백. 히트 테스트를 끄지
+            // 않으면 이 오버레이가 드롭 대상(아래 Group)을 가린다.
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(Color.accentColor, lineWidth: 3)
+                    .padding(4)
+                    .allowsHitTesting(false)
+            }
+        }
         .task {
             Self.removeStaleExports()
+            DropOpenSupport.removeStaleDropCopies(olderThan: Self.processStart)
             if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
                 let candidate = docs.appendingPathComponent("document.hwp")
                 if FileManager.default.fileExists(atPath: candidate.path), document == nil {
@@ -475,6 +494,9 @@ struct ContentView: View {
             Button("Open .hwp") { showPicker = true }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
+            Text("또는 .hwp 파일을 여기로 끌어다 놓기")
+                .font(.caption)
+                .foregroundStyle(.secondary)
             if let errorMessage {
                 Text(errorMessage)
                     .foregroundStyle(.red)
@@ -523,6 +545,20 @@ struct ContentView: View {
         }
         .frame(maxWidth: 420)
         .padding(.top, 8)
+    }
+
+    /// 드롭된 provider에서 URL을 뽑아 연다 (#126). 확장자 검증 실패 등의
+    /// 사유는 `errorMessage`로 올린다 — 문서를 보는 중에는 그 라벨이 화면에
+    /// 없지만, 그때는 열려 있는 문서가 그대로라 조용히 무시되는 것이 맞다.
+    private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
+        DropOpenSupport.open(providers: providers) { result in
+            switch result {
+            case let .success(url):
+                loadDocument(from: url)
+            case let .failure(failure):
+                errorMessage = failure.message
+            }
+        }
     }
 
     /// 최근 항목을 연다. 북마크가 죽었으면(파일 삭제 등) 그 자리에서 항목을
