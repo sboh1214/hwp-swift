@@ -343,7 +343,18 @@ PageUp/Down은 한 쪽씩, Home/End는 문서 처음·끝으로 — 두 플랫�
 | `onHyperlinkTapped(url)` | tap/click 이 `.hyperlink` 블록 프레임을 hit 했을 때 |
 | `onPageChanged(page)` | `updateVisiblePages` 가 visible range 를 갱신할 때 |
 | `onZoomChanged(scale)` | 핀치/스크롤 줌으로 배율이 변했을 때 (버튼 줌 echo 는 가드로 차단) |
-| `onUnsupportedElement(element)` | 양쪽 플랫폼: document `didSet` 시 `unsupportedElements` 순회 (콜백은 document 할당보다 먼저 배선됨) |
+| `onUnsupportedElement(element)` | 양쪽 플랫폼: document `didSet` 시 `unsupportedElements` **전량** 순회 (콜백은 document 할당보다 먼저 배선됨) |
+
+**`onUnsupportedElement` 은 델타가 아니다** (#126) — `notifyUnsupportedElements`
+가 `document?.unsupportedElements.forEach` 라 문서 대입마다 배열을 **통째로**
+재방출하고, `HwpUnsupportedElement` 은 `kind`·`page`·`hint` 세 필드뿐이라
+**신원이 없다**. 두 성질이 겹쳐 호스트의 콜백 집계는 어느 쪽으로도 틀린다:
+append 는 재방출을 중복 계수하고, `Set` 은 같은 쪽의 동종 요소(값이 완전히 같다)를
+실제로 접는다. 재방출이 실재하는 경로는 `loadToken == nil` 문서다 — 래퍼의 대입
+가드(`HwpDocumentView.configure`)가 그 문서만 SwiftUI 갱신마다 다시 넣는다.
+정확한 다중도가 필요하면 `document.unsupportedElements` 배열을 직접 읽고 콜백은
+"떴다"는 신호로만 쓴다 (배선 예는
+`Sample/HwpSwiftSample/UnsupportedElementsList.swift`).
 
 ## 안티 패턴
 
