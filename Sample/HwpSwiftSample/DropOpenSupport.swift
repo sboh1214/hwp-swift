@@ -19,53 +19,98 @@ enum DropOpenSupport {
     /// 찾아 거둔다 (내보내기 임시 PDF와 같은 정책).
     static let dropCopyPrefix = "hwp-sample-drop-"
 
-    /// `.fileURL`을 함께 받는 이유: Finder 드래그는 파일 URL 타입으로 오고
-    /// 콘텐츠 타입 적합성은 보장되지 않는다. 대신 아무 파일이나 드롭이
+    /// `.fileURL`·`.data`를 함께 받는 이유: Finder 드래그는 파일 URL 타입으로
+    /// 오고 콘텐츠 타입 적합성은 보장되지 않으며, iOS에서는 `.hwp` 확장자에
+    /// 자체 UTI를 export하는 앱이 설치된 기기에서 Files 드래그 항목의 타입이
+    /// 그쪽 식별자가 되어 `hwpType`에 적합하지 않다. 대신 아무 파일이나 드롭이
     /// 활성화되므로, 확장자 검증은 `open(providers:)`가 맡는다.
     static var acceptedTypes: [UTType] {
-        [hwpType, .fileURL]
+        [hwpType, .fileURL, .data]
     }
 
-    /// providers에서 열 수 있는 첫 항목의 URL을 만들어 main으로 돌려준다.
+    /// providers에서 열 수 있는 항목의 URL을 만들어 main으로 돌려준다.
     /// 반환 false는 처리할 provider가 없다는 뜻이다 (드롭 거절).
     static func open(
         providers: [NSItemProvider],
         completion: @escaping @MainActor (Result<URL, DropOpenFailure>) -> Void
     ) -> Bool {
         // 파일 URL 경로를 먼저 본다 — 원본 위치를 알아야 최근 문서에 남는다.
-        if let provider = providers.first(where: {
+        // 여러 파일을 함께 드롭하면 앞에서부터 순회해 첫 `.hwp`를 연다 —
+        // 하나만 보고 판정하면 비-hwp가 섞인 드롭에서 hwp를 놓친다.
+        let urlProviders = providers.filter {
             $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
-        }) {
-            _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                let result: Result<URL, DropOpenFailure> =
-                    if let url, url.pathExtension.lowercased() == "hwp" {
-                        .success(url)
-                    } else if url != nil {
-                        .failure(.notHwp)
-                    } else {
-                        .failure(.unreadable)
-                    }
-                Task { @MainActor in completion(result) }
-            }
+        }
+        if !urlProviders.isEmpty {
+            openNextFileURL(urlProviders, at: 0, lastFailure: .unreadable, completion: completion)
             return true
         }
         if let provider = providers.first(where: {
             $0.hasItemConformingToTypeIdentifier(hwpType.identifier)
         }) {
-            provider.loadFileRepresentation(forTypeIdentifier: hwpType.identifier) { url, _ in
-                // 이 URL의 파일은 핸들러가 반환되면 사라진다 — 복사는 여기서
-                // **동기로** 끝내야 한다.
-                let result: Result<URL, DropOpenFailure> =
-                    if let url, let copy = try? copyToTemporary(url) {
-                        .success(copy)
-                    } else {
-                        .failure(.unreadable)
-                    }
-                Task { @MainActor in completion(result) }
-            }
+            openFileRepresentation(
+                of: provider, typeIdentifier: hwpType.identifier, completion: completion
+            )
+            return true
+        }
+        // 외래 UTI 폴백 — 파일 표현이 원본 파일명을 보존하므로 확장자 검증이
+        // 그대로 성립한다 (macOS `.fileURL` 경로와 같은 "넓게 받고 검증" 정책).
+        if let provider = providers.first(where: {
+            $0.hasItemConformingToTypeIdentifier(UTType.data.identifier)
+        }) {
+            openFileRepresentation(
+                of: provider, typeIdentifier: UTType.data.identifier, completion: completion
+            )
             return true
         }
         return false
+    }
+
+    /// fileURL 적합 provider들을 앞에서부터 시도해 첫 `.hwp`를 연다. 실패
+    /// 사유는 마지막까지 하나도 못 열었을 때만 전달한다 — URL을 읽긴 했는데
+    /// 확장자가 아니었으면 `.notHwp`가 `.unreadable`보다 정확한 사유다.
+    private static func openNextFileURL(
+        _ providers: [NSItemProvider],
+        at index: Int,
+        lastFailure: DropOpenFailure,
+        completion: @escaping @MainActor (Result<URL, DropOpenFailure>) -> Void
+    ) {
+        guard index < providers.count else {
+            Task { @MainActor in completion(.failure(lastFailure)) }
+            return
+        }
+        _ = providers[index].loadObject(ofClass: URL.self) { url, _ in
+            if let url, url.pathExtension.lowercased() == "hwp" {
+                Task { @MainActor in completion(.success(url)) }
+            } else {
+                openNextFileURL(
+                    providers,
+                    at: index + 1,
+                    lastFailure: url != nil ? .notHwp : lastFailure,
+                    completion: completion
+                )
+            }
+        }
+    }
+
+    /// 파일 표현을 받아 임시 사본을 만들어 연다 (iOS 경로).
+    private static func openFileRepresentation(
+        of provider: NSItemProvider,
+        typeIdentifier: String,
+        completion: @escaping @MainActor (Result<URL, DropOpenFailure>) -> Void
+    ) {
+        provider.loadFileRepresentation(forTypeIdentifier: typeIdentifier) { url, _ in
+            // 이 URL의 파일은 핸들러가 반환되면 사라진다 — 복사는 여기서
+            // **동기로** 끝내야 한다.
+            let result: Result<URL, DropOpenFailure> =
+                if let url, url.pathExtension.lowercased() != "hwp" {
+                    .failure(.notHwp)
+                } else if let url, let copy = try? copyToTemporary(url) {
+                    .success(copy)
+                } else {
+                    .failure(.unreadable)
+                }
+            Task { @MainActor in completion(result) }
+        }
     }
 
     /// 이전 실행이 남긴 드롭 사본을 거둔다. 항목 판별이 접두사뿐인 것은
