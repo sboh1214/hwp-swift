@@ -58,14 +58,14 @@
 
         @discardableResult
         internal func copySelectionToPasteboard() -> Bool {
-            guard let text = selectionController.selectedText() else { return false }
+            guard let attributed = selectionController.selectedAttributedText()
+            else { return false }
             pasteboard.clearContents()
-            // 평문 표현형은 그대로 두고 같은 항목에 RTF를 병기한다 (#118).
+            // 평문은 attributed의 `.string`에서 얻는다 (#118) — `selectedText()`를
+            // 따로 부르면 같은 값을 얻으려고 선택 전체를 한 번 더 순회한다.
             // 직렬화가 실패해도 평문 복사는 살아야 하므로 RTF는 조건 추가다.
-            pasteboard.setString(text, forType: .string)
-            if let attributed = selectionController.selectedAttributedText(),
-               let rtf = HwpSelectionRTF.rtfData(from: attributed)
-            {
+            pasteboard.setString(attributed.string, forType: .string)
+            if let rtf = HwpSelectionRTF.rtfData(from: attributed) {
                 pasteboard.setData(rtf, forType: .rtf)
             }
             return true

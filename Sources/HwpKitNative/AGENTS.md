@@ -188,7 +188,7 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
 - 하이라이트는 `CAShapeLayer`를 **HwpPageLayer의 sublayer**로 부착 — 조상 flip 기하를 상속하므로 top-down rect를 그대로 쓴다 (자체 flip 금지).
 - 머리말/꼬리말/쪽 번호는 `AnyHwpBlock.role == .pageChrome`으로 선택·복사에서 제외.
 - macOS: mouseDown/Dragged/Up 드래그 (하이퍼링크 click recognizer는 무이동 클릭만 발화라 공존), Cmd+C·우클릭 Copy, Cmd+A/`selectAll(_:)` 전체 선택. iOS: 롱프레스 단어 선택 → 드래그 확장 (뷰포트 엣지 44pt 존에서 CADisplayLink 오토스크롤) → **끝점 핸들 드래그로 재조정** (#84) → UIEditMenuInteraction Copy/Select All.
-- **복사는 평문 + RTF 두 표현형을 한 항목에 싣는다** (#118). 조립은 HwpKitCore(`HwpSelectionController.selectedAttributedText()` — 평문과 `.string` 파리티), 정규화·직렬화는 `HwpSelectionRTF` — CT·`hwp.*` 키를 표준 키로 바꾸는 변환 표가 그 파일 하나에 있고, 변환 뒤 남은 `hwp.*`는 접두사 일괄 제거라 미래 키도 새지 않는다. RTF 직렬화 실패는 평문 복사를 막지 않는다 (조건 추가). 페이스트보드 주입 지점은 양 플랫폼 대칭이다 — macOS `HwpDocumentNSView.pasteboard`, iOS `HwpDocumentUIView.pasteboard` (둘 다 테스트 주입용, 왕복 테스트가 실제 기록을 단언한다).
+- **복사는 평문 + RTF 두 표현형을 한 항목에 싣는다** (#118). 조립은 HwpKitCore(`HwpSelectionController.selectedAttributedText()` — 평문과 `.string` 파리티). **평문도 그 `.string`에서 얻는다** — `selectedText()`를 따로 부르면 같은 값을 얻으려고 선택 전체(페이지 순회·dedup·조각 substring·마커 제거)를 한 번 더 돌고, 복사는 `@MainActor`에서 돈다 (합성 40,000문단 전체 선택 실측: 0.345 → 0.249초). 정규화·직렬화는 `HwpSelectionRTF` — CT·`hwp.*` 키를 표준 키로 바꾸는 변환 표가 그 파일 하나에 있고, 변환 뒤 남은 `hwp.*`는 접두사 일괄 제거라 미래 키도 새지 않는다. RTF 직렬화 실패는 평문 복사를 막지 않는다 (조건 추가). 페이스트보드 주입 지점은 양 플랫폼 대칭이다 — macOS `HwpDocumentNSView.pasteboard`, iOS `HwpDocumentUIView.pasteboard` (둘 다 테스트 주입용, 왕복 테스트가 실제 기록을 단언한다).
 - collapsed 선택(양 끝점이 겹친 상태)은 제스처 끝에서 지운다 — 양 플랫폼 모두 (macOS `mouseUp`, iOS `clearCollapsedSelection()`). 안 지우면 `hasSelection` 이 false 인데 선택 객체만 남아 오버레이 갱신이 계속 돈다.
 
 ### 선택 끝점 핸들 (iOS, #84)
