@@ -1121,5 +1121,4 @@ opt-in — **커밋된** 기준선을 쓰는 스위트는 CI에서 상시 돈다
 ## 노트
 
 - `HwpFile.init()`는 완전 빈 객체가 아니라 빈 `HwpSection` 하나가 들어있는 default 객체를 만든다. `Tests/CoreHwpTests/Blank/Create*Tests.swift`에서 파싱된 픽스처와 비교할 때 이를 사용.
-- `Streams/HwpDocInfo.swift`의 여러 `// TODO: HWPTAG_*` 주석은 의도된 것으로, 아직 구현되지 않은 기능이다. 리팩토링 중에 조용히 제거하지 말 것.
 - CoreHwp 모델은 `Codable`을 채택하지 않는다 (#81) — 프로덕션 직렬화 소비처가 없어 테스트 전용이던 표면을 제거했다. 모델에 직렬화가 필요하면 소비자 측 투영 타입으로 해결한다 (선례: `Tests/HwpKitTests`의 블록 스냅샷/렌더 골든 투영 구조체).
