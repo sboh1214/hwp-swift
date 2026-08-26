@@ -22,16 +22,35 @@ struct RecentDocument: Codable, Hashable, Identifiable {
     var folderDisplayName: String {
         let folder = (path as NSString).deletingLastPathComponent
         #if os(macOS)
-            return (folder as NSString).abbreviatingWithTildeInPath
+            // `abbreviatingWithTildeInPath`를 쓰지 않는 이유: 샌드박스에서
+            // `NSHomeDirectory()`는 컨테이너 경로라 실사용자 경로는 줄지 않고,
+            // 반대로 컨테이너 안 경로가 실제 홈처럼 `~`로 위장된다. 실제
+            // 홈(getpwuid)으로 직접 줄인다.
+            if let home = Self.realHomeDirectory,
+               folder == home || folder.hasPrefix(home + "/")
+            {
+                return "~\(folder.dropFirst(home.count))"
+            }
+            return folder
         #else
             return (folder as NSString).lastPathComponent
         #endif
     }
+
+    #if os(macOS)
+        private static let realHomeDirectory: String? = {
+            guard let passwd = getpwuid(getuid()), let home = passwd.pointee.pw_dir else {
+                return nil
+            }
+            return String(cString: home)
+        }()
+    #endif
 }
 
 /// `UserDefaults` 기반 최근 문서 저장소. 진실 원본은 defaults이고 각 창의
 /// `@State`는 거울이다 — 기록·제거가 갱신된 목록을 돌려주므로 호출한 창이
-/// 그 값으로 거울을 맞춘다 (`WindowGroup`의 다른 창은 다음 기록 때 따라온다).
+/// 그 값으로 거울을 맞추고, `WindowGroup`의 다른 창은 defaults 변경 알림으로
+/// 따라온다 (`ContentView`의 `onReceive`).
 enum RecentDocumentsStore {
     static let maxCount = 10
     private static let defaultsKey = "recentDocuments"

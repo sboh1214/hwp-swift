@@ -1,3 +1,4 @@
+import Combine
 import HwpKit
 import HwpKitCore
 import SwiftUI
@@ -169,6 +170,18 @@ struct ContentView: View {
                     .padding(4)
                     .allowsHitTesting(false)
             }
+        }
+        // WindowGroup의 다른 창이 기록·제거한 최근 문서를 이 창의 거울에도
+        // 반영한다 — 같은 프로세스의 defaults 변경마다 발화하고, 목록이 최대
+        // 10개라 재적재 비용은 무시된다. 이것이 없으면 빈 상태로 남아 있는
+        // 창이 낡은 목록을 계속 보이고, 다른 창에서 제거한 항목을 그 창에서
+        // 눌러 부활시킬 수 있다.
+        .onReceive(
+            NotificationCenter.default
+                .publisher(for: UserDefaults.didChangeNotification)
+                .receive(on: RunLoop.main)
+        ) { _ in
+            recents = RecentDocumentsStore.load()
         }
         .task {
             Self.removeStaleExports()
@@ -562,29 +575,37 @@ struct ContentView: View {
         Task { @MainActor in presentPendingDestination() }
     }
 
+    /// 스크롤로 감싸는 이유: 최근 문서가 10개까지 쌓이면 내용이 낮은 뷰포트
+    /// (iPhone 가로 모드)를 넘는데, 스크롤이 없으면 넘친 행을 눌러서 열 방법이
+    /// 없다. 내용이 짧을 때는 `minHeight`가 뷰포트를 채워 종전처럼 중앙 정렬된다.
     private var emptyState: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "doc.text")
-                .font(.system(size: 64))
-                .foregroundStyle(.secondary)
-            Text("Open a .hwp file to preview")
-                .foregroundStyle(.secondary)
-            Button("Open .hwp") { showPicker = true }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
-            Text("또는 .hwp 파일을 여기로 끌어다 놓기")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            if let errorMessage {
-                Text(errorMessage)
-                    .foregroundStyle(.red)
-                    .font(.caption)
-            }
-            if !recents.isEmpty {
-                recentDocumentsList
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(spacing: 16) {
+                    Image(systemName: "doc.text")
+                        .font(.system(size: 64))
+                        .foregroundStyle(.secondary)
+                    Text("Open a .hwp file to preview")
+                        .foregroundStyle(.secondary)
+                    Button("Open .hwp") { showPicker = true }
+                        .buttonStyle(.borderedProminent)
+                        .keyboardShortcut(.defaultAction)
+                    Text("또는 .hwp 파일을 여기로 끌어다 놓기")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if let errorMessage {
+                        Text(errorMessage)
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                    }
+                    if !recents.isEmpty {
+                        recentDocumentsList
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: proxy.size.height)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     /// 빈 상태 아래에 붙는 최근 문서 목록 (#126). 픽스처가 전부 `document.hwp`라
@@ -622,6 +643,7 @@ struct ContentView: View {
             }
         }
         .frame(maxWidth: 420)
+        .padding(.horizontal, 24)
         .padding(.top, 8)
     }
 
