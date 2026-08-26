@@ -253,12 +253,16 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
 - `HwpSelectionEdge`는 **문서 순서**(`start`/`end`)이지 `anchor`/`focus`가
   아니다. 역방향 드래그도 `HwpTextSelection.range`가 정규화하므로 화면의 두
   핸들은 언제나 이 둘이다.
-- 캐럿·검색 질의는 **확장 파일로 나눈다** (`+Caret`/`+Search`). 본체
-  `HwpSelectionGeometry` 클래스 본문이 SwiftLint `type_body_length` **경고**
-  구간이라 (2026-08-18 실측 315줄 / 경고 300·에러 400) 새 질의를 본체에 넣으면
-  에러 임계로 걸어간다. 같은 임계의 **에러** 쪽에 닿아 있는 것은
-  `HwpDocumentUIView`(399)이고 그쪽은 상태를 값 타입으로 접어 대응했다
-  (`Sources/HwpKitNative/AGENTS.md`).
+- 캐럿·검색·복사 질의는 **확장 파일로 나눈다**
+  (`+Caret`/`+Search`/`+Attributed`). 본체 `HwpSelectionGeometry` 클래스 본문이
+  SwiftLint `type_body_length` **경고** 구간이라 (2026-08-26 실측 318줄 /
+  경고 300·에러 400) 새 질의를 본체에 넣으면 에러 임계로 걸어간다. #118은
+  조립(`attributedText`)만 확장으로 냈고 **공유 조각 수집**(`fragments`·
+  `joinsWithPrevious`)은 본체에 남겼다 — 두 조립 경로가 같은 것을 봐야 하기
+  때문이고, 그래서 본문이 315 → 318로 늘었다. 같은 임계의 **에러** 쪽에 닿아
+  있는 것은 `HwpDocumentUIView`이고 그쪽은 상태를 값 타입으로 접어 대응했다 —
+  **그 실측값은 저쪽 문서만 든다** (`Sources/HwpKitNative/AGENTS.md`). 여기에
+  사본을 두었더니 399 대 389로 갈려 있었다 (#118 정리에서 확인).
 - 가드: `HwpSelectionCaretTests`(10종 — 폭 0·줄 높이, 하이라이트 경계 일치와
   폭 클램프, 줄바꿈 경계에서 affinity가 갈리고 줄 안에서는 무관, 단위 밖
   오프셋 클램프, 단위를 못 찾으면 nil, 그리고 위 스냅 폴백 3종[폴백 발동·
@@ -266,6 +270,52 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   collapsed 거부, 끝점 교환이 범위를 안 바꾸는 것·역방향 정규화·같은 끝점
   재호출 시 무통지·반대쪽 너머 역할 뒤바뀜, 캐럿의 문서 순서·쪽 인덱스·
   부분 결과·`selectAll` 추종).
+
+## 선택 복사 속성 문자열 (#118)
+
+- `attributedText(for:)`는 `plainText(for:)`와 **같은 조각**(`fragments(for:)`)·
+  **같은 개행 술어**(`joinsWithPrevious`)로 조립한다 — `.string` 파리티가
+  계약이고 `HwpSelectionGeometryAttributedTests`가 잠근다. 조각 수집을
+  복제하면 반복 제목 행 dedup(#8)·문단 연속(#7·#9) 정책이 조용히 갈라진다.
+- 속성은 조판 그대로다 (CT 키 + `hwp.*`). 표준 키 정규화·RTF 직렬화는
+  HwpKitNative `HwpSelectionRTF` 몫이다 — `data(from:documentAttributes:)`와
+  색·문단 스타일 값 타입(NSColor/UIColor·NSParagraphStyle)이 Foundation이
+  아니라 AppKit/UIKit 소속이라 이 모듈의 첫머리 규약(UI 프레임워크 import
+  금지)에 막힌다.
+- U+FFFC 마커 run만 여기서 지운다 (`strippingControlMarkerRuns`) — 마커
+  **사이** 구간을 새 버퍼에 옮겨 담아 글자마다 한 번만 복사한다. 마커를
+  가로지르던 속성 범위(감싼 하이퍼링크)는 양옆이 같은 값으로 이어 붙어
+  `longestEffectiveRange`에서 하나로 보이므로 범위 재계산이 없다.
+- **제자리 삭제로 되돌리면 이차가 된다** (#118 리뷰). 마커마다
+  `deleteCharacters`를 부르면 남은 접미가 매번 밀려 마커 수의 제곱이고, 복사는
+  `@MainActor`에서 도므로 그대로 화면이 멈춘다 (실측: 한 문단 5,000개 1.48초 ·
+  10,000개 5.90초 — 배가 될 때마다 4배). `mutableString.replaceOccurrences`도
+  같은 제자리 삭제라 상수만 215배 작을 뿐 4배씩 는다. 평문 판
+  (`replacingOccurrences`)은 처음부터 선형이었으니, **`.string` 파리티 계약은
+  복잡도까지 함께 지켜야 한다**. 비용이 조각마다 드는 Σ(마커ᵢ²)이라 한 문단에
+  수천 개가 몰려야 닿는다 — #95가 고친 "컨트롤 10,000개 조작 문서"와 같은
+  계급이다. 가드는 `testMarkerStrippingStaysLinear`.
+- 조각 사이 개행은 직전 글자에서 **문단 스타일과 폰트만** 상속한다 — 속성 없는
+  개행은 RTF에서 앞 문단의 스타일을 잃고, 전체를 상속하면 하이퍼링크·밑줄 같은
+  글자 속성이 원문에 없던 개행까지 번진다.
+- **개행이 상속하는 출처는 누적 결과가 아니라 직전 조각이다** (#124 리뷰).
+  개체만 있는 문단은 마커를 지운 기여가 비어, 누적 결과에서 읽으면 선두는 아무
+  속성도 못 얻고 중간은 **그 앞 문단**의 정렬·들여쓰기·폰트를 가져간다 — 그
+  개행은 마커 전용 문단의 종결자이므로 RTF에서 그 빈 문단이 `\qc`·`\li`·`\fs`를
+  통째로 잃는다 (실측: 28pt 문단이 12pt로 나가 줄 높이까지 달라진다). 기여가
+  비면 원본 조각을 꼬리로 넘긴다 — 마커 run이 문단 스타일·폰트를 그대로 들고
+  있다. 가드 `testNewlineAfterMarkerOnlyParagraphCarriesThatParagraphStyle`은
+  폴백을 지우면 3건이 빨개진다 (무력화 실험 확인).
+- `newlineAttributes`의 `tail.length > 0` 가드는 **방어로만 남는다** —
+  `fragments(for:)`가 빈 조각을 내지 않으므로(`upper > lower`) 공개 경로로는
+  도달하지 않는다. 그 자리를 겨냥한 테스트를 새로 쓰지 말 것.
+- **평문 쪽 회귀 그물은 #118이 새로 깔았다.** 공통 순회로 접기 전 main에는
+  복사 경로의 반복 제목 행 dedup(#8) 테스트가 **한 건도 없었고**
+  (`repeatedTableHeaderClone`을 보는 스위트가 검색·블록 동등성뿐이었다)
+  `joinsWithPrevious`의 **참** 갈래도 마찬가지였다 (기존 두 테스트가 모두 개행을
+  기대하는 거짓 갈래다). 즉 두 조립을 한 순회로 접는 리팩터가 그 분기를 조용히
+  뒤집어도 아무것도 빨개지지 않았다 — 위 파리티 계약은 **두 경로가 서로 같다**만
+  보므로 둘이 **함께** 틀리면 침묵한다. 그 축은 평문 쪽 단독 가드가 진다.
 
 ## 접근성 요소 합성 (#79)
 

@@ -8,6 +8,8 @@
 HwpKitNative/
 ├── Platform/PlatformTypes.swift    # typealias (PlatformView/Color/Image/Font) — 뷰 chrome + provider가 사용
 ├── HwpSelectionHandleGeometry.swift # 선택 핸들 순수 기하 (#if 밖 — iOS 잡은 커버리지 미수집, #84)
+├── HwpSelectionRTF.swift           # 복사 RTF 정규화·직렬화 — CT·hwp.* → 표준 키 변환 표
+│                                   #   (#if 밖: 색 생성만 플랫폼 분기라 macOS 잡이 표 전체를 커버, #118)
 ├── HwpDocumentViewSupport.swift    # macOS/iOS 뷰 공통 @MainActor 정적 헬퍼 — 선택 오버레이,
 │                                   #   contentsScale 산식/일괄 갱신, 페이지 chrome, 메모 패널 레이어,
 │                                   #   이미지 공급자, 프로그레시브 판정, Array[safe:] (#if 없이 양쪽 컴파일)
@@ -186,6 +188,7 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
 - 하이라이트는 `CAShapeLayer`를 **HwpPageLayer의 sublayer**로 부착 — 조상 flip 기하를 상속하므로 top-down rect를 그대로 쓴다 (자체 flip 금지).
 - 머리말/꼬리말/쪽 번호는 `AnyHwpBlock.role == .pageChrome`으로 선택·복사에서 제외.
 - macOS: mouseDown/Dragged/Up 드래그 (하이퍼링크 click recognizer는 무이동 클릭만 발화라 공존), Cmd+C·우클릭 Copy, Cmd+A/`selectAll(_:)` 전체 선택. iOS: 롱프레스 단어 선택 → 드래그 확장 (뷰포트 엣지 44pt 존에서 CADisplayLink 오토스크롤) → **끝점 핸들 드래그로 재조정** (#84) → UIEditMenuInteraction Copy/Select All.
+- **복사는 평문 + RTF 두 표현형을 한 항목에 싣는다** (#118). 조립은 HwpKitCore(`HwpSelectionController.selectedAttributedText()` — 평문과 `.string` 파리티). **평문도 그 `.string`에서 얻는다** — `selectedText()`를 따로 부르면 같은 값을 얻으려고 선택 전체(페이지 순회·dedup·조각 substring·마커 제거)를 한 번 더 돌고, 복사는 `@MainActor`에서 돈다 (합성 40,000문단 전체 선택 실측: 0.345 → 0.249초). 정규화·직렬화는 `HwpSelectionRTF` — CT·`hwp.*` 키를 표준 키로 바꾸는 변환 표가 그 파일 하나에 있고, 변환 뒤 남은 `hwp.*`는 접두사 일괄 제거라 미래 키도 새지 않는다. RTF 직렬화 실패는 평문 복사를 막지 않는다 (조건 추가). 페이스트보드 주입 지점은 양 플랫폼 대칭이다 — macOS `HwpDocumentNSView.pasteboard`, iOS `HwpDocumentUIView.pasteboard` (둘 다 테스트 주입용, 왕복 테스트가 실제 기록을 단언한다).
 - collapsed 선택(양 끝점이 겹친 상태)은 제스처 끝에서 지운다 — 양 플랫폼 모두 (macOS `mouseUp`, iOS `clearCollapsedSelection()`). 안 지우면 `hasSelection` 이 false 인데 선택 객체만 남아 오버레이 갱신이 계속 돈다.
 
 ### 선택 끝점 핸들 (iOS, #84)
@@ -319,7 +322,7 @@ PageUp/Down은 한 쪽씩, Home/End는 문서 처음·끝으로 — 두 플랫�
 - **퇴화 입력은 산식이 nil 로 거른다.** 뷰포트가 아직 실측되지 않은 창(SwiftUI `makeUIView`/창에 붙기 전)이 이 경로로 오므로 뷰는 nil 을 "아직"으로 읽어 `pendingFitZoom` 에 예약하고 첫 실측 레이아웃에서 다시 시도한다 (iOS 초기 센터링 예약과 같은 형태, 적용 순서는 센터링 **다음**이어야 쪽 맞춤의 스크롤이 덮이지 않는다). 0 을 그대로 흘리면 하류가 못 잡는다 — `HwpZoomControls.sanitized` 는 0 을 finite 로 보아 하한 0.25 로 클램프하고, NaN 은 iOS 가 직전 값 유지·macOS 가 조용한 no-op 이라 원인이 어디에도 안 남는다.
 - **가드 범위가 두 모드에서 다르다** — 폭 맞춤은 높이를 **읽지 않으므로** 높이가 퇴화(0·NaN·음수)해도 배율을 낸다. 산식을 정리하며 두 축 가드를 앞단 한 곳으로 모으면 이 비대칭이 사라져 폭 맞춤이 쪽 맞춤과 같은 조건에서만 성립하게 되므로, `testFitWidthIgnoresDegenerateHeight` 가 **같은 입력에 두 모드를 맞대어** 잠근다. 몫에도 별도 가드가 있다: 유한한 두 양수의 나눗셈도 거대 캔버스에서 **언더플로로 0** 이 되는데, 그 0 은 바로 아래 클램프가 하한 0.25 로 살려 내 "안내 없는 축소"가 된다 (`testFitZoomRejectsUnderflowedQuotient`).
 - **배율 한계는 인자로 받는다** — `0.25...5.0` 은 이미 프로덕션 세 곳에 사본이 있어 산식이 네 번째를 만들면 안 된다. 호출부가 스크롤 뷰의 실제 한계를 정렬해 (`ClosedRange` 생성 트랩 방지) 넘긴다.
-- **`HwpDocumentUIView` 본문에 새 저장 프로퍼티를 넣기 전에 lint 예산을 본다.** `type_body_length` error 임계가 400 이고 이 타입이 거기 붙어 있다 — `pendingFitZoom` 을 넣으며 `updateCenteringInset`·`trailingScrollExtent` 를 `HwpDocumentUIViewGeometry.swift` 확장으로 옮겨 본문을 **순감**시켰다 (399 → 385). #84 의 상태 묶기와 같은 처방이고, #120 도 키보드 토글 프로퍼티를 넣으며 `clampedPageRange` 를 같은 확장으로 옮겼다 (393 → 389, 현재값).
+- **`HwpDocumentUIView` 본문에 새 저장 프로퍼티를 넣기 전에 lint 예산을 본다.** `type_body_length` error 임계가 400 이고 이 타입이 거기 붙어 있다 — `pendingFitZoom` 을 넣으며 `updateCenteringInset`·`trailingScrollExtent` 를 `HwpDocumentUIViewGeometry.swift` 확장으로 옮겨 본문을 **순감**시켰다 (399 → 385). #84 의 상태 묶기와 같은 처방이고, #120 도 키보드 토글 프로퍼티를 넣으며 `clampedPageRange` 를 같은 확장으로 옮겼다 (393 → 389). #118 의 `pasteboard` 주입 프로퍼티가 한 줄을 더해 **현재값은 390** 이다 (2026-08-26 실측) — 상쇄할 몫을 찾지 않고 넣은 만큼, 다음에 이 본문을 늘리는 변경은 다시 옮길 곳을 함께 고를 것.
 
 ## Callback 발화 규약
 

@@ -235,9 +235,34 @@ public final class HwpSelectionGeometry {
     /// 줄바꿈을 넣는다 (문단 attributedString은 후행 \n을 갖지 않는다).
     /// 조판이 전혀 필요 없어 대용량 문서의 전체 선택도 빠르다.
     public func plainText(for selection: HwpTextSelection) -> String {
-        guard !selection.isCollapsed else { return "" }
+        let pieces = fragments(for: selection)
+        var result = ""
+        for (index, piece) in pieces.enumerated() {
+            if index > 0 {
+                result += Self.joinsWithPrevious(pieces[index - 1], piece) ? "" : "\n"
+            }
+            result += Self.strippingControlMarkers(piece.attributedText.string)
+        }
+        return result
+    }
+
+    /// 복사 조립용 조각 하나 (문단 연속 판정 메타 포함). 조각은 마커(U+FFFC)를
+    /// 아직 품고 있다 — 제거는 각 조립 경로 몫이다.
+    struct Fragment {
+        /// 선택 구간으로 자른 attributed 부분열 (조판 속성 그대로)
+        let attributedText: NSAttributedString
+        let paragraphId: UInt32?
+        /// 이 조각이 '이어짐' 표식을 달아 다음 조각이 같은 문단의 연속인지
+        let continuesNext: Bool
+    }
+
+    /// 선택 범위의 기여 조각 수집 — 평문(`plainText`)·속성(`attributedText`) 두
+    /// 조립 경로가 같은 배열을 받는다. 각자 수집하면 dedup·연속 정책이 조용히
+    /// 갈라진다 (#118).
+    func fragments(for selection: HwpTextSelection) -> [Fragment] {
+        guard !selection.isCollapsed else { return [] }
         let (start, end) = selection.range
-        var contributions: [Contribution] = []
+        var fragments: [Fragment] = []
         // 이미 복사에 기여한 문단 식별자 — 반복 제목 행 클론을 출처 identity로
         // 중복 제거한다 (텍스트 일치가 아니라 paraId — 같은 텍스트의 데이터 셀을
         // 오탐하지 않음, #8). 원본 헤더와 클론은 같은 paraId를 공유한다.
@@ -259,9 +284,6 @@ public final class HwpSelectionGeometry {
                     ? unit.attributedString.length
                     : min(end, unitEnd).characterOffset
                 guard upper > lower else { continue }
-                let slice = (unit.attributedString.string as NSString)
-                    .substring(with: NSRange(location: lower, length: upper - lower))
-                let text = Self.strippingControlMarkers(slice)
                 // 반복 제목 행 클론은 같은 출처(paraId)가 이미 기여했을 때만
                 // 제외한다 — 원본이 선택 밖(뒷페이지 클론만 선택)이면 그 클론을
                 // 넣어야 복사가 비지 않는다. 하이라이트는 항상 남는다 (#8, #21 보정).
@@ -274,39 +296,27 @@ public final class HwpSelectionGeometry {
                 if let paragraphId = unit.paragraphId {
                     contributedParagraphIds.insert(paragraphId)
                 }
-                contributions.append(Contribution(
-                    text: text,
+                fragments.append(Fragment(
+                    attributedText: unit.attributedString.attributedSubstring(
+                        from: NSRange(location: lower, length: upper - lower)
+                    ),
                     paragraphId: unit.paragraphId,
                     continuesNext: upper == unit.attributedString.length
                         && Self.isContinuedFragment(unit.attributedString)
                 ))
             }
         }
-        // 조각을 잇되 같은 원본 문단의 연속이면 개행을 넣지 않는다 (#9): 본문
-        // 조각은 paraId 동일성으로 판정하고, '이어짐' 표식은 identity를 확인할 수
-        // 없을 때(paraId 없음)만 폴백으로 쓴다 — 분할 표 행에선 다른 셀의 top
-        // 조각이 연달아 오므로 표식이 문단 identity를 대신할 수 없다 (#7).
-        var result = ""
-        for (index, piece) in contributions.enumerated() {
-            if index > 0 {
-                let previous = contributions[index - 1]
-                let sameParagraph =
-                    (previous.paragraphId != nil && previous.paragraphId == piece.paragraphId)
-                        || (previous.continuesNext
-                            && (previous.paragraphId == nil || piece.paragraphId == nil))
-                result += sameParagraph ? "" : "\n"
-            }
-            result += piece.text
-        }
-        return result
+        return fragments
     }
 
-    /// 복사 텍스트 조립용 조각 하나 (문단 연속 판정 메타 포함).
-    private struct Contribution {
-        let text: String
-        let paragraphId: UInt32?
-        /// 이 조각이 '이어짐' 표식을 달아 다음 조각이 같은 문단의 연속인지
-        let continuesNext: Bool
+    /// 앞 조각과 개행 없이 이어지는가 (#9): 본문 조각은 paraId 동일성으로
+    /// 판정하고, '이어짐' 표식은 identity를 확인할 수 없을 때(paraId 없음)만
+    /// 폴백으로 쓴다 — 분할 표 행에선 다른 셀의 top 조각이 연달아 오므로
+    /// 표식이 문단 identity를 대신할 수 없다 (#7).
+    static func joinsWithPrevious(_ previous: Fragment, _ piece: Fragment) -> Bool {
+        (previous.paragraphId != nil && previous.paragraphId == piece.paragraphId)
+            || (previous.continuesNext
+                && (previous.paragraphId == nil || piece.paragraphId == nil))
     }
 
     private static func isContinuedFragment(_ attributed: NSAttributedString) -> Bool {

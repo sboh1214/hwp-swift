@@ -54,6 +54,19 @@ final class HwpSelectionControllerTests: XCTestCase {
 
     // MARK: - beginAdjusting
 
+    func testSelectedAttributedTextFollowsSelectedTextContract() {
+        // 속성 짝 API(#118)는 같은 빈-선택 접기 규약을 쓴다 — 선택이 없으면
+        // nil, 있으면 .string이 selectedText()와 같다.
+        let controller = makeController(pageTexts: ["hello world"])
+        expect(controller.selectedAttributedText()).to(beNil())
+
+        controller.begin(at: position(0))
+        controller.extend(to: position(5))
+
+        expect(controller.selectedAttributedText()?.string) == controller.selectedText()
+        expect(controller.selectedAttributedText()?.string) == "hello"
+    }
+
     func testAdjustingNeedsANonCollapsedSelection() {
         let controller = makeController()
 

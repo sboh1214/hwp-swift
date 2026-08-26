@@ -261,6 +261,7 @@ typed 디코더들이 그 트리를 재귀로 내려가므로(표 셀 문단·�
   }
   ```
   타입을 실제로 검사하므로 `as!`보다 안전하기도 하다. CoreText 객체 (CTFont/CTLine/CTParagraphStyle)를 `Any`로 받아 오는 테스트 코드에서 재발하기 쉽다.
+- **CF 컬렉션의 조건 캐스트를 안전망으로 쓰기** — `CFArray`를 `as? [CTTextTab]`처럼 받으면 원소 타입을 **검사하지 않고 성공한다** (실측 2026-08-26: CTTextTab 하나 + CFString 하나를 담은 CFArray가 `as? [CTTextTab]`에 count 2로 통과). 그래서 그 캐스트 실패에 기댄 폴백은 **도달 불능**이고 이물 원소는 뒤에서 터진다. 원소마다 `CFGetTypeID`로 거를 것 — `HwpSelectionRTF`의 탭 정지 변환이 그 형태이고, #118 리뷰가 도달 불능 폴백을 거기서 잡았다. 위 `as!` 항목과 같은 계열이지만 방향이 반대다: 그쪽은 컴파일이 막히고 이쪽은 **조용히 통과**한다.
 - **폰트 바이너리 커밋** (`.ttf`/`.otf`/`.ttc`/`.woff`/`.woff2`) — 이 라이브러리는 폰트를 동봉하지 않는다 (README "폰트"). 세 겹으로 막혀 있다: `.gitignore` 확장자 패턴 → pre-commit 훅 `no-font-binaries` (`git add -f` 차단) → CI lint job의 `No font binaries` (훅 미설치 기여자·웹 UI 업로드 차단). 오픈 라이선스 폰트를 의도적으로 동봉하려면 `.gitignore`의 `!` 예외만으로는 안 된다 — 훅과 CI는 확장자만 보고 거부하므로 세 곳이 같은 예외 목록을 공유하도록 함께 고쳐야 한다. 한 번 커밋되면 history에 영구히 남으니 그 전에 라이선스를 확인할 것.
 
 ## 명령어
@@ -881,6 +882,30 @@ opt-in이다) — 축소판이 가장 먼저 그리는 쪽이 정확히 그 1쪽
 양쪽 `xcodebuild`를 로컬에서 돌리고, 파일을 추가했으면
 `cd Sample && xcodegen generate` 결과를 같은 커밋에 넣는다 (프로젝트가 파일을
 명시 참조한다).
+
+## 선택 영역 서식 복사 (#118)
+
+복사는 평문 옆에 RTF 표현형을 같은 페이스트보드 항목으로 병기한다. 핵심
+계약은 **층 분리**다 — 조립은 HwpKitCore
+(`HwpSelectionGeometry.attributedText(for:)` +
+`HwpSelectionController.selectedAttributedText()`, 평문과 같은 조각·같은
+개행 규칙이라 `.string` 파리티 보장), 정규화·직렬화는 HwpKitNative
+(`HwpSelectionRTF`). RTF 직렬화(`data(from:documentAttributes:)`)와 색·문단
+스타일 값 타입이 AppKit/UIKit 소속이라 HwpKitCore의 UI 프레임워크 금지
+규약에 막히기 때문이고, 변환 표를 한 파일이 소유해야 25종 커스텀 키 중
+하나를 놓치는 사고가 구조적으로 안 난다.
+
+변환 표의 요지: 키 이름이 표준과 같은 CT 키(NSFont·NSKern·NSStrokeWidth)는
+그대로 두고, CTForegroundColor는 키 개명, 기준선은
+`hwp.glyphBaselineOffset`(양수=위 — 글자위치·첨자 합산, NS 규약 일치)만
+공급원으로 옮기며 **반대 부호(HWP 원시: 양수=아래)의 CTBaselineOffset은
+버린다**, kCTParagraphStyle은 **값 재구성**(CTParagraphStyle은
+NSParagraphStyle과 toll-free 브리지가 아니다), 밑줄·취소선은 색과 함께
+명시 변환,
+`hwp.hyperlink`(String)는 `.link`(URL) 승격에 실패하면 링크만 버리고,
+나머지 `hwp.*`는 **접두사 일괄 제거**로 미래 키까지 방어한다. 전경색은 모든
+run에 이미 실려 있으므로(그림자·양각의 from-context run 포함) 장식 키
+제거로 잃는 정보가 없다. RTF 직렬화 실패는 평문 복사를 막지 않는다.
 
 ## 텍스트 선택 끝점 핸들 (#84)
 
