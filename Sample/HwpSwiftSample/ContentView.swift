@@ -76,6 +76,15 @@ struct ContentView: View {
     @State private var recents = RecentDocumentsStore.load()
     /// 드래그가 창 위에 있는 동안 true — 드롭 가능 시각 피드백 (#126).
     @State private var isDropTargeted = false
+    /// 현재 문서의 미지원 요소 (#126). `Set`인 것은 콜백이 델타가 아니라 배열
+    /// 전체를 매번 재방출하기 때문이다 — append로 쌓으면 중복 계수된다.
+    /// 로딩 중 스냅샷은 항상 빈 목록이라 로드 완료 후 0→N 한 번에 채워진다.
+    @State private var unsupportedElements: Set<HwpUnsupportedElement> = []
+    /// 미지원 요소 목록 표시 여부 — macOS는 인라인 열, iOS는 시트 (#126).
+    @State private var showUnsupportedList = false
+    /// 하이퍼링크를 시스템 브라우저로 여는 통로. 라이브러리는 콜백만 내고
+    /// 여는 것은 앱 책임이다 (`Sources/HwpKit/AGENTS.md`).
+    @Environment(\.openURL) private var openURL
 
     /// 내보내기를 마친 뒤 할 일 — 저장 대화상자냐 인쇄냐.
     private enum PDFDestination {
@@ -241,6 +250,16 @@ struct ContentView: View {
                 .padding(.horizontal)
                 .padding(.vertical, 6)
 
+            // 미지원 요소 배너 (#126) — 툴바 행이 아니라 문서 영역 상단이다
+            // (툴바에는 이미 재열기·사이드바·페이지 네비·내보내기·찾기·줌이
+            // 들어차 있다). 로딩 중에는 요소가 오지 않아 (중간 스냅샷은 빈
+            // 목록) 이 배너는 로드 완료 후 한 번의 전이로 나타난다.
+            if !unsupportedElements.isEmpty {
+                UnsupportedElementsBanner(elements: unsupportedElements) {
+                    showUnsupportedList.toggle()
+                }
+            }
+
             documentArea(document: document)
         }
         #if !os(macOS)
@@ -259,6 +278,21 @@ struct ContentView: View {
                     .toolbar {
                         Button("닫기") { sidebarVisible = false }
                     }
+            }
+        }
+        // 미지원 요소 목록 — 사이드바와 같은 이유로 iOS는 시트다 (#126).
+        .sheet(isPresented: $showUnsupportedList) {
+            NavigationStack {
+                UnsupportedElementsList(
+                    elements: unsupportedElements,
+                    pageCount: document.pages.count,
+                    currentPage: $currentPage,
+                    onSelect: { showUnsupportedList = false }
+                )
+                .navigationTitle("미지원 요소")
+                .toolbar {
+                    Button("닫기") { showUnsupportedList = false }
+                }
             }
         }
         #endif
@@ -336,12 +370,56 @@ struct ContentView: View {
                 currentPage: $currentPage,
                 searchController: search,
                 onHyperlinkTapped: { url in
-                    print("Hyperlink tapped: \(url)")
+                    openHyperlink(url)
                 },
                 onUnsupportedElement: { element in
-                    print("Unsupported: \(element)")
+                    collectUnsupportedElement(element)
                 }
             )
+
+            #if os(macOS)
+                // 개요·축소판(왼쪽 열)과 달리 **오른쪽** 열이다 — 왼쪽은 탐색,
+                // 오른쪽은 진단이라는 구분이다. iOS는 사이드바와 같은 이유로
+                // 시트다 (`loadedView`).
+                if showUnsupportedList, !unsupportedElements.isEmpty {
+                    Divider()
+                    UnsupportedElementsList(
+                        elements: unsupportedElements,
+                        pageCount: document.pages.count,
+                        currentPage: $currentPage
+                    )
+                    .frame(width: 260)
+                }
+            #endif
+        }
+    }
+
+    /// 허용 scheme 화이트리스트 (#126). 콜백 값은 `URL`이 아니라 `String`이고,
+    /// HWP 하이퍼링크에는 웹 URL 외에 문서 내부 앵커·로컬 파일 경로도 온다 —
+    /// 그런 값은 열지 않는다. 특히 `file:`을 목록에 넣으면 문서가 임의 로컬
+    /// 파일을 여는 통로가 되므로 넣지 말 것.
+    private static let allowedHyperlinkSchemes: Set<String> = ["http", "https", "mailto"]
+
+    /// 하이퍼링크 탭 → scheme 검증 후 `openURL` (#126). URL은 필드 명령의
+    /// 트레일링 플래그를 뗀 값으로 이미 정규화되어 오므로, 앱이 할 일은
+    /// `URL(string:)` 변환과 scheme 검증뿐이다.
+    private func openHyperlink(_ raw: String) {
+        guard let url = URL(string: raw),
+              let scheme = url.scheme?.lowercased(),
+              Self.allowedHyperlinkSchemes.contains(scheme)
+        else { return }
+        openURL(url)
+    }
+
+    /// 미지원 요소 수집 (#126). 상태 변경을 다음 주기로 미루는 것은 이 콜백이
+    /// 네이티브 뷰 갱신(`updateNSView`/`updateUIView`) 중에도 오기 때문이고
+    /// (문서 재대입 didSet이 전체를 재발화한다), 세대 대조는 미룬 삽입이 다음
+    /// 문서의 빈 집합을 오염시키지 않게 한다.
+    private func collectUnsupportedElement(_ element: HwpUnsupportedElement) {
+        let generation = loadGeneration
+        Task { @MainActor in
+            guard generation == loadGeneration else { return }
+            unsupportedElements.insert(element)
         }
     }
 
@@ -750,6 +828,9 @@ struct ContentView: View {
         loadTask?.cancel()
         errorMessage = nil
         document = nil
+        // 새 문서의 집계가 옛 문서의 요소로 시작하지 않게 비운다 (#126).
+        unsupportedElements = []
+        showUnsupportedList = false
         // 새 로드가 첫 스냅샷을 내기 전에 실패하면 이 렌더러를 갱신할 주체가 없어
         // 옛 문서(쪽·공급자·디코드 이미지·축소판)가 오류 화면 내내 상주한다.
         // `cancelOutstanding()`은 요청만 끊고 보유는 유지하므로 폐기는 교체로 한다.

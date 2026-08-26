@@ -30,7 +30,14 @@
   시스템이 지우기 때문이다 (`DropOpenSupport.swift`). 사본은 임시 경로라
   최근 문서에는 기록되지 않고, 다음 실행의 시작 시 잔해 청소가 거둔다
   (내보내기 임시 PDF와 같은 정책)
-- 하이퍼링크 탭 + 미지원 요소 콜백을 콘솔에 로그
+- 하이퍼링크 열기 + 미지원 요소 배너 (#126) — `onHyperlinkTapped`는 scheme
+  검증(`http`/`https`/`mailto`) 후 시스템 브라우저로 열고, 문서 내부 앵커·로컬
+  경로 값은 열지 않는다 (콜백 값은 `URL`이 아니라 `String`이다 — 라이브러리는
+  콜백만 내고 **여는 것은 앱 책임**이라는 `HwpKit` 규약의 소비처).
+  `onUnsupportedElement`는 `Set`으로 집계해 문서 영역 상단 배너 + 목록
+  (행 탭 → 그 쪽으로 이동)으로 보인다 — 콜백이 델타가 아니라 **전체 재방출**
+  이라 append로 쌓으면 중복 계수된다. 목록은 macOS 인라인 열 / iOS 시트
+  (사이드바와 같은 형태)
 - 문서 내 검색 — 컨트롤러 하나를 `HwpDocumentView(searchController:)`와
   `HwpSearchBar(controller:)`에 넘기면 하이라이트·매치 노출 스크롤·프로그레시브
   재스캔이 자동 배선된다. **Cmd+F는 이 앱이 잡는다** — 라이브러리는 전역
@@ -216,6 +223,7 @@ Sample/
 │   ├── DropOpenSupport.swift      # 드롭 provider → .hwp URL (플랫폼별 경로) (#126)
 │   ├── OutlineSidebar.swift       # metadata.outline만으로 만든 개요·책갈피 목록 (#77)
 │   ├── ThumbnailSidebar.swift     # HwpPageThumbnails만으로 만든 쪽 축소판 그리드 (#76)
+│   ├── UnsupportedElementsList.swift  # 미지원 요소 배너 + 목록 (#126)
 │   ├── PDFExportSupport.swift     # fileExporter용 FileDocument + 플랫폼 인쇄 (#if os)
 │   └── HwpSwiftSample.entitlements
 └── README.md
@@ -261,10 +269,12 @@ cd Sample && xcodebuild -project HwpSwiftSample.xcodeproj -resolvePackageDepende
 **`.hwp` 파일을 열었는데 렌더링이 비어 있음**
 Blank fixture는 원래 빈 페이지. 다른 fixture(예: `Tests/CoreHwpTests/**/Read/*.hwp`)로 시도.
 
-**하이퍼링크 클릭 / 미지원 요소 로그**
-Xcode 콘솔에 `print()`로 출력됨:
-- `Hyperlink tapped: <url>`
-- `Unsupported: <HwpUnsupportedElement>`
+**하이퍼링크 클릭 / 미지원 요소**
+하이퍼링크는 scheme 검증(`http`/`https`/`mailto`) 후 시스템 브라우저로 열리고,
+그 밖의 값(문서 내부 앵커·로컬 경로)은 조용히 무시된다. 미지원 요소는 로드
+완료 시 문서 영역 상단 배너로 집계된다 (`목록` → 행 탭 → 해당 쪽으로 이동).
+육안 확인 재료: 하이퍼링크는 `Tests/CoreHwpTests/Fixtures/CCL`·`공공누리`,
+미지원 배너는 `equation`·`chart`의 `document.hwp`.
 
 ## 스코프
 
@@ -277,4 +287,4 @@ Xcode 콘솔에 `print()`로 출력됨:
 
 `HwpDocumentView` / `HwpDocumentToolbar` / `HwpPageNavigator` / `HwpZoomControls` / `HwpSearchBar` / `HwpSearchNavigator` / `HwpSearchController` / `HwpDocumentLoader` / `HwpPDFExporter` / `HwpPageThumbnails` 10개 public surface가 모두 이 앱 안에서 활성화됨. 여기에 데이터 표면 `HwpDocumentMetadata.outline`(#77)이 사이드바로, 명령 표면 `HwpZoomFit`(#78)이 툴바 → 문서 뷰로 소비됨 — 후자는 **같은 바인딩을 둘에 함께 넘기는 것**이 사용법의 전부다 (배율 산식은 뷰포트를 아는 뷰가 쥔다).
 
-인쇄·저장·공유 **UI는 의도적으로 라이브러리 밖**이다 — `HwpKit`은 PDF 바이트까지만 만들고 그 앞뒤는 앱이 정한다. 이 앱의 `PDFExportSupport.swift`가 그 배선의 최소 예시이고, 저장소의 유일한 `#if os(macOS)` 분기이기도 하다.
+인쇄·저장·공유 **UI는 의도적으로 라이브러리 밖**이다 — `HwpKit`은 PDF 바이트까지만 만들고 그 앞뒤는 앱이 정한다. 이 앱의 `PDFExportSupport.swift`가 그 배선의 최소 예시다. 하이퍼링크도 같은 경계다 — 라이브러리는 탭 콜백까지만 내고, scheme 검증과 `openURL`은 이 앱이 한다 (`Tests/HwpKitTests/HwpKitScopeGuardTests.swift`가 `Sources/HwpKit` 안의 `openURL` 류 호출을 막는다 — 샘플은 그 가드 밖이고, 여기가 의도된 사용처다).
