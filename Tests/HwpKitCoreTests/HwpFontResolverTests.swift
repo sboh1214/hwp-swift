@@ -58,6 +58,22 @@ import XCTest
             expect(candidates).to(contain("Apple SD Gothic Neo"))
         }
 
+        /// face 이름 없는 라벨 (이미지 플레이스홀더)이 쓰는 script 안전망 —
+        /// 한국어 안전망은 한글 글리프를 **직접** 가져야 한다 (#125). Helvetica류로
+        /// 되돌리면 캐스케이드 의존이 되살아나 이 단언이 잡는다.
+        func testKoreanFallbackFontCoversHangulGlyphsDirectly() {
+            let font = resolver.fallbackFont(for: .korean, size: 12)
+
+            let characters = Array("이미지".utf16)
+            var glyphs = [CGGlyph](repeating: 0, count: characters.count)
+            let covered = CTFontGetGlyphsForCharacters(
+                font, characters, &glyphs, characters.count
+            )
+
+            expect(covered) == true
+            expect(CTFontGetSize(font)) == 12.0
+        }
+
         func testUnknownFontFallback() {
             let font = resolver.resolve(faceName: "unknown-font-xyz", script: .korean, size: 12)
             expect(CTFontGetSize(font)) == 12.0

@@ -181,11 +181,17 @@ import Foundation
                         return CTFontCreateWithFontDescriptor(descriptor, size, nil)
                     }
                 }
-                let fallbackName = scriptFallbacks[script] ?? "Helvetica"
-                return Self.createFont(
-                    name: fallbackName, size: size, cascade: fallbackCascade
-                )
+                return fallbackFont(for: script, size: size)
             }
+        }
+
+        /// face 이름 없이 script 안전망 폰트를 바로 얻는다 — 이미지 플레이스홀더
+        /// 라벨처럼 문서 글꼴과 무관한 텍스트용. `resolve`가 후보를 다 소진했을 때
+        /// 내려가는 것과 같은 폴백 테이블·캐스케이드를 타므로, 한국어는 한글
+        /// 글리프를 직접 가진 폰트 (Apple SD Gothic Neo)가 보장된다 (#125).
+        public func fallbackFont(for script: HwpScript, size: CGFloat) -> CTFont {
+            let fallbackName = scriptFallbacks[script] ?? "Helvetica"
+            return Self.createFont(name: fallbackName, size: size, cascade: fallbackCascade)
         }
 
         /// 시스템에 등록된 폰트 이름 (family ∪ PostScript). 프로세스당 1회 만든다.

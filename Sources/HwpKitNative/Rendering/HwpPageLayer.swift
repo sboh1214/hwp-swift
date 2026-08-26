@@ -365,7 +365,11 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
         }
     }
 
-    private static let placeholderFont = CTFontCreateWithName("Helvetica" as CFString, 12, nil)
+    /// 플레이스홀더 라벨은 한국어 ("[이미지]")인데 "Helvetica" 리터럴은 한글
+    /// 글리프가 없어 CoreText 캐스케이드 폴백에 전적으로 의존했다 — resolver의
+    /// 한국어 안전망 (Apple SD Gothic Neo)을 경유해 커버리지를 보장한다 (#125).
+    /// internal인 이유: 글리프 커버리지 회귀 테스트의 관측 지점.
+    static let placeholderFont = HwpFontResolver().fallbackFont(for: .korean, size: 12)
 
     private func drawPlaceholder(_ text: String, in rect: CGRect, context ctx: CGContext) {
         ctx.setFillColor(CGColor(gray: 0.9, alpha: 1))
