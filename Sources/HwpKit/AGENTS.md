@@ -104,7 +104,11 @@ SwiftUI 공개 API target. HwpKitNative 위에 `NSViewRepresentable` / `UIViewRe
 - 검색 **결과 목록 UI** (`HwpSearchResultsList`) — v1 OUT. 엔진·검색 바·탐색기는 제공한다 (#75). 목록은 `List` 행 레이아웃·선택 강조·스니펫 truncation·접근성·플랫폼 chrome 분기가 붙어 현행 Tools (21~53줄 순수 `HStack`) 관례를 넘고 검증 형판도 없다. `HwpSearchMatch: Identifiable` + `HwpSearchSnippet.matchRange` + `pageNumber` 를 공개했으므로 호스트가 10줄로 만든다
 - 정규식 검색 / 바꾸기 (replace) / 필드 한정 검색 — v1 OUT
 - 편집 API (v2)
-- 하이퍼링크 URL 라우팅 — 콜백만 제공, 실제 오픈은 앱 책임
+- 하이퍼링크 URL 라우팅 — 콜백만 제공, 실제 오픈은 앱 책임. 콜백 값은 `URL`이
+  아니라 **`String`**이고 웹 URL 외에 문서 내부 앵커·로컬 경로도 오므로, 호스트가
+  scheme 화이트리스트로 거른 뒤 연다 — `file:`을 허용하면 문서가 임의 로컬 파일을
+  여는 통로가 된다. 배선 예는 `Sample/HwpSwiftSample/ContentView.swift`의
+  `openHyperlink` (#126)
 - 인쇄/공유 **UI** — PDF 바이트까지가 우리 몫 (`HwpPDFExporter`), 저장 패널·인쇄
   대화상자·공유 시트는 앱 책임. PDF 링크 애노테이션(`.hyperlink` paint 명령이
   rect+url을 들고 있어 가능은 하다)도 v1 밖
@@ -119,9 +123,13 @@ SwiftUI 공개 API target. HwpKitNative 위에 `NSViewRepresentable` / `UIViewRe
 
 `Sample/HwpSwiftSample.xcodeproj` 는 xcodegen 산출 (`Sample/project.yml` 이 spec). SwiftPM 로컬 참조 `packages.hwp-swift.path: ..` (repo 루트). 재생성: `cd Sample && xcodegen generate`.
 
-Sandbox ON + `com.apple.security.files.user-selected.read-write` entitlement — PDF 내보내기가 저장 패널로 고른 위치에 쓰므로 read-only로는 부족하다 (#74). 시뮬레이터 QA 는 `Documents/document.hwp` 자동 로드 (`.task` 훅).
+Sandbox ON + entitlement 3종. `files.user-selected.read-write` — PDF 내보내기가 저장 패널로 고른 위치에 쓰므로 read-only로는 부족하다 (#74). `print` — `NSPrintOperation.run()` 의 Bool 이 취소와 실패를 구분하지 않아 사유를 올릴 수 없다. `files.bookmarks.app-scope` — 최근 문서(#126)가 **보안 범위 북마크**를 만들려면 파일 entitlement 만으로는 안 된다 (그쪽은 그 세션의 접근만 준다). 없으면 `bookmarkData(options: .withSecurityScope)` 가 **조용히 실패**해 목록이 영영 비어 있다 — 화면에 오류가 뜨지 않으므로 증상만으로는 배선 버그와 구분되지 않는다. 시뮬레이터 QA 는 `Documents/document.hwp` 자동 로드 (`.task` 훅).
 
 내보내기는 **앱 임시 디렉터리에 먼저 쓰고** 그 파일을 `fileExporter`/인쇄로 넘긴다. 진행률·취소를 우리가 쥐어야 하고(1,030쪽이면 수 초), 사용자가 고른 위치에 직접 쓰면 취소 시 열리지 않는 부분 파일이 그 자리에 남기 때문이다. 저장 패널·인쇄는 진행 시트의 `onDismiss`에서 띄운다 — 두 모달을 같은 갱신 주기에 겹치면 두 번째 표시가 유실된다.
+
+**파일을 여는 경로가 다섯이고 전부 `loadDocument(from:)` 하나로 수렴한다** (#126) — `fileImporter`·`onOpenURL`·최근 문서·드롭·시뮬레이터 QA 자동 로드. 보안 범위 접근의 시작·종료가 그 한 곳에만 있으므로 새 경로를 더할 때도 URL 만 넘기고 접근 관리는 건드리지 않는다. 미지원 요소 배너는 콜백이 아니라 `document.unsupportedElements` 를 직접 읽는다 (근거는 `Sources/HwpKitNative/AGENTS.md` 의 Callback 발화 규약).
+
+최근 문서·드롭 열기(#126)의 배선 제약은 셋이다. ① **기록 시점은 첫 스냅샷 직후 한 번**이다 — 북마크를 만들 수 있는 것은 보안 범위 접근이 살아 있는 그 로드 task 뿐이고(`startAccessingSecurityScopedResource` 구간), 스냅샷 **전**에 기록하면 파싱에 실패하는 파일이 목록에 들어가 누를 때마다 같은 오류가 난다. ② **드롭 사본은 내보내기 임시 PDF와 같은 정책**으로 청소한다 — 두 잔해 청소가 `processStart` 커서 하나를 공유하므로(`.task` 훅), 그 상수를 옮기면 양쪽이 함께 깨진다. iOS 경로가 사본을 만드는 이유는 provider 완료 핸들러가 반환되면 원본 임시 파일이 사라지기 때문이고, 임시 경로라 최근 문서에는 기록되지 않는다. ③ **목록의 진실 원본은 defaults**이고 뷰 상태는 그 거울이다 — `WindowGroup` 의 다른 창이 기록·제거한 것을 `UserDefaults.didChangeNotification` 으로 받아 맞춘다. 안 받으면 빈 상태로 남아 있는 창이 낡은 목록을 보이고, 다른 창에서 제거한 항목을 그 창에서 눌러 되살릴 수 있다.
 
 사이드바는 **표시 여부가 아니라 내용**이 상태다 (`SidebarMode?`, #76). 불리언을 축마다 두면 "개요와 축소판이 둘 다 켜짐"이라는 없는 상태가 생겨 macOS 인라인 열과 iPhone 시트에서 서로 다르게 깨진다. 개요를 골랐지만 그 문서에 개요가 없으면 축소판으로 **대신 그린다** — 개요가 없는 문서에서 사이드바가 통째로 사라지던 것이 그 축을 추가한 이유이고, 사용자의 선택을 덮어쓰지는 않는다(개요가 있는 문서를 다음에 열면 다시 개요다). 축소판 렌더러(`HwpPageThumbnails`)는 **호스트가** 소유한다: 사이드바 뷰가 소유하면 모드를 토글하거나 시트를 닫을 때마다 그때까지 그린 축소판을 통째로 버린다. 그렇게 오래 사는 만큼 **문서를 버릴 때 `update(document: .empty)`로 교체**해야 한다 (#76 리뷰) — `cancelOutstanding()`은 요청만 끊고 보유는 유지하므로, 새 로드가 첫 스냅샷을 내기 전에 실패하면 옛 문서(쪽·공급자·디코드 이미지·축소판)가 오류 화면 내내 상주한다.
 
