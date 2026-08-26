@@ -77,11 +77,12 @@ struct ContentView: View {
     @State private var recents = RecentDocumentsStore.load()
     /// 드래그가 창 위에 있는 동안 true — 드롭 가능 시각 피드백 (#126).
     @State private var isDropTargeted = false
-    /// 현재 문서의 미지원 요소 (#126). `Set`인 것은 콜백이 델타가 아니라 배열
-    /// 전체를 매번 재방출하기 때문이다 — append로 쌓으면 중복 계수된다.
-    /// 로딩 중 스냅샷은 항상 빈 목록이라 로드 완료 후 0→N 한 번에 채워진다.
-    @State private var unsupportedElements: Set<HwpUnsupportedElement> = []
     /// 미지원 요소 목록 표시 여부 — macOS는 인라인 열, iOS는 시트 (#126).
+    /// 요소 자체는 상태로 들지 않고 `document.unsupportedElements`(공개 배열,
+    /// 최종 스냅샷에만 실림)를 그대로 읽는다 — `onUnsupportedElement` 콜백은
+    /// 배열 전체를 매번 재방출해 "재방출 중복"과 "같은 쪽의 동종 요소"(값이
+    /// 완전히 같다)를 구분할 수 없어, 콜백 집계는 append든 `Set`이든 어느
+    /// 쪽으로도 개수가 틀린다 (전자는 과다, 후자는 과소).
     @State private var showUnsupportedList = false
     /// 하이퍼링크를 시스템 브라우저로 여는 통로. 라이브러리는 콜백만 내고
     /// 여는 것은 앱 책임이다 (`Sources/HwpKit/AGENTS.md`).
@@ -265,10 +266,10 @@ struct ContentView: View {
 
             // 미지원 요소 배너 (#126) — 툴바 행이 아니라 문서 영역 상단이다
             // (툴바에는 이미 재열기·사이드바·페이지 네비·내보내기·찾기·줌이
-            // 들어차 있다). 로딩 중에는 요소가 오지 않아 (중간 스냅샷은 빈
-            // 목록) 이 배너는 로드 완료 후 한 번의 전이로 나타난다.
-            if !unsupportedElements.isEmpty {
-                UnsupportedElementsBanner(elements: unsupportedElements) {
+            // 들어차 있다). 중간 스냅샷의 배열은 항상 비어 있어 이 배너는
+            // 로드 완료 후 한 번의 전이로 나타난다.
+            if !document.unsupportedElements.isEmpty {
+                UnsupportedElementsBanner(elements: document.unsupportedElements) {
                     showUnsupportedList.toggle()
                 }
             }
@@ -297,7 +298,7 @@ struct ContentView: View {
         .sheet(isPresented: $showUnsupportedList) {
             NavigationStack {
                 UnsupportedElementsList(
-                    elements: unsupportedElements,
+                    elements: document.unsupportedElements,
                     pageCount: document.pages.count,
                     currentPage: $currentPage,
                     onSelect: { showUnsupportedList = false }
@@ -384,9 +385,6 @@ struct ContentView: View {
                 searchController: search,
                 onHyperlinkTapped: { url in
                     openHyperlink(url)
-                },
-                onUnsupportedElement: { element in
-                    collectUnsupportedElement(element)
                 }
             )
 
@@ -394,10 +392,10 @@ struct ContentView: View {
                 // 개요·축소판(왼쪽 열)과 달리 **오른쪽** 열이다 — 왼쪽은 탐색,
                 // 오른쪽은 진단이라는 구분이다. iOS는 사이드바와 같은 이유로
                 // 시트다 (`loadedView`).
-                if showUnsupportedList, !unsupportedElements.isEmpty {
+                if showUnsupportedList, !document.unsupportedElements.isEmpty {
                     Divider()
                     UnsupportedElementsList(
-                        elements: unsupportedElements,
+                        elements: document.unsupportedElements,
                         pageCount: document.pages.count,
                         currentPage: $currentPage
                     )
@@ -422,18 +420,6 @@ struct ContentView: View {
               Self.allowedHyperlinkSchemes.contains(scheme)
         else { return }
         openURL(url)
-    }
-
-    /// 미지원 요소 수집 (#126). 상태 변경을 다음 주기로 미루는 것은 이 콜백이
-    /// 네이티브 뷰 갱신(`updateNSView`/`updateUIView`) 중에도 오기 때문이고
-    /// (문서 재대입 didSet이 전체를 재발화한다), 세대 대조는 미룬 삽입이 다음
-    /// 문서의 빈 집합을 오염시키지 않게 한다.
-    private func collectUnsupportedElement(_ element: HwpUnsupportedElement) {
-        let generation = loadGeneration
-        Task { @MainActor in
-            guard generation == loadGeneration else { return }
-            unsupportedElements.insert(element)
-        }
     }
 
     private func toolbar(document: HwpDocument) -> some View {
@@ -850,8 +836,8 @@ struct ContentView: View {
         loadTask?.cancel()
         errorMessage = nil
         document = nil
-        // 새 문서의 집계가 옛 문서의 요소로 시작하지 않게 비운다 (#126).
-        unsupportedElements = []
+        // 요소 목록의 내용은 문서 교체가 알아서 갈지만, 표시 여부는 상태라
+        // 직접 접는다 — 새 문서를 열자마자 옛 문서의 진단 열이 떠 있지 않게 (#126).
         showUnsupportedList = false
         // 새 로드가 첫 스냅샷을 내기 전에 실패하면 이 렌더러를 갱신할 주체가 없어
         // 옛 문서(쪽·공급자·디코드 이미지·축소판)가 오류 화면 내내 상주한다.

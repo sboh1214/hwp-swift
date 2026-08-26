@@ -34,10 +34,13 @@
   검증(`http`/`https`/`mailto`) 후 시스템 브라우저로 열고, 문서 내부 앵커·로컬
   경로 값은 열지 않는다 (콜백 값은 `URL`이 아니라 `String`이다 — 라이브러리는
   콜백만 내고 **여는 것은 앱 책임**이라는 `HwpKit` 규약의 소비처).
-  `onUnsupportedElement`는 `Set`으로 집계해 문서 영역 상단 배너 + 목록
-  (행 탭 → 그 쪽으로 이동)으로 보인다 — 콜백이 델타가 아니라 **전체 재방출**
-  이라 append로 쌓으면 중복 계수된다. 목록은 macOS 인라인 열 / iOS 시트
-  (사이드바와 같은 형태)
+  미지원 요소는 최종 스냅샷의 `document.unsupportedElements`(공개 배열)를
+  그대로 읽어 문서 영역 상단 배너 + 목록(행 탭 → 그 쪽으로 이동)으로 보인다.
+  `onUnsupportedElement` **콜백으로 집계하지 않는 이유**: 콜백은 델타가 아니라
+  배열 전체를 매번 재방출하고, 같은 쪽의 동종 요소는 값까지 완전히 같아서
+  (kind·page·hint가 전부) append 집계는 재방출을 중복 계수하고 `Set` 집계는
+  실존 요소를 접는다 — 배열만이 정확한 다중도를 준다. 목록은 macOS 인라인
+  열 / iOS 시트 (사이드바와 같은 형태)
 - 문서 내 검색 — 컨트롤러 하나를 `HwpDocumentView(searchController:)`와
   `HwpSearchBar(controller:)`에 넘기면 하이라이트·매치 노출 스크롤·프로그레시브
   재스캔이 자동 배선된다. **Cmd+F는 이 앱이 잡는다** — 라이브러리는 전역
@@ -240,7 +243,7 @@ cd Sample
 xcodegen generate
 ```
 
-SwiftUI 소스 파일(`HwpSwiftSampleApp.swift`, `ContentView.swift`, `OutlineSidebar.swift`, `ThumbnailSidebar.swift`) 추가/삭제는 xcodegen이 디렉터리를 자동 스캔하므로 별도 편집 없이 `xcodegen generate`만 다시 돌리면 됨. **다만 생성된 `.xcodeproj`는 파일을 명시 참조하므로 재생성 결과를 같은 커밋에 넣어야 한다** — CI는 샘플을 빌드하지 않아 이 누락이 초록으로 지나간다.
+SwiftUI 소스 파일 추가/삭제는 xcodegen이 디렉터리를 자동 스캔하므로 별도 편집 없이 `xcodegen generate`만 다시 돌리면 됨 (파일 목록은 위 "폴더 구조"가 진실 원본이다 — 여기 열거를 두 번 두면 한쪽이 낡는다). **다만 생성된 `.xcodeproj`는 파일을 명시 참조하므로 재생성 결과를 같은 커밋에 넣어야 한다** — CI는 샘플을 빌드하지 않아 이 누락이 초록으로 지나간다.
 
 ## 설정 요약
 
