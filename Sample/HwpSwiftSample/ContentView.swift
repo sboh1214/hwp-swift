@@ -71,6 +71,9 @@ struct ContentView: View {
     /// 내보내기·인쇄 실패 사유 (빈 화면의 errorMessage와 별개 — 문서를 보는
     /// 중에는 그쪽이 화면에 없다)
     @State private var exportError: String?
+    /// 최근 문서 목록 (#126) — 진실 원본은 `RecentDocumentsStore`(defaults)이고
+    /// 이 상태는 그 거울이다. 기록·제거 helper가 돌려주는 목록으로 맞춘다.
+    @State private var recents = RecentDocumentsStore.load()
 
     /// 내보내기를 마친 뒤 할 일 — 저장 대화상자냐 인쇄냐.
     private enum PDFDestination {
@@ -477,8 +480,60 @@ struct ContentView: View {
                     .foregroundStyle(.red)
                     .font(.caption)
             }
+            if !recents.isEmpty {
+                recentDocumentsList
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// 빈 상태 아래에 붙는 최근 문서 목록 (#126). 픽스처가 전부 `document.hwp`라
+    /// 이름만으로는 구별되지 않아 폴더를 보조 행으로 함께 보인다.
+    private var recentDocumentsList: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("최근 문서")
+                .font(.headline)
+                .padding(.bottom, 4)
+            ForEach(recents) { item in
+                Button {
+                    openRecent(item)
+                } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .imageScale(.small)
+                            .foregroundStyle(.secondary)
+                        Text(item.name)
+                            .lineLimit(1)
+                        Text(item.folderDisplayName)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.head)
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .contextMenu {
+                    Button("목록에서 제거", role: .destructive) {
+                        recents = RecentDocumentsStore.remove(item)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: 420)
+        .padding(.top, 8)
+    }
+
+    /// 최근 항목을 연다. 북마크가 죽었으면(파일 삭제 등) 그 자리에서 항목을
+    /// 거둔다 — 눌러도 아무 일이 없는 시체 행을 남기지 않는다.
+    private func openRecent(_ item: RecentDocument) {
+        guard let url = RecentDocumentsStore.resolve(item) else {
+            recents = RecentDocumentsStore.remove(item)
+            errorMessage = "\(item.name)을(를) 찾을 수 없어 최근 문서에서 제거했습니다."
+            return
+        }
+        loadDocument(from: url)
     }
 
     /// 문서를 앱 임시 디렉터리에 PDF로 만든 뒤 저장 대화상자 또는 인쇄로 넘긴다.
@@ -678,6 +733,7 @@ struct ContentView: View {
                     url.stopAccessingSecurityScopedResource()
                 }
             }
+            var didRecordRecent = false
             do {
                 // 프로그레시브 로딩: 첫 페이지 확정 즉시 표시, 잔여 페이지는
                 // 배치 스냅샷으로 이어 붙는다 (뷰가 loadToken으로 증분 적용).
@@ -701,6 +757,15 @@ struct ContentView: View {
                         thumbnails.update(document: snapshot.document)
                         loadProgress = snapshot.isComplete ? nil : snapshot.progress
                         isLoading = false
+                    }
+                    // 첫 스냅샷이 나온 **뒤** 한 번만 기록한다 (#126) — 파싱에
+                    // 실패하는 파일은 목록에 들어가지 않고, 보안 범위 접근이
+                    // 살아 있는 이 task가 북마크를 만들 수 있는 유일한 시점이다.
+                    if !didRecordRecent {
+                        didRecordRecent = true
+                        if let updated = RecentDocumentsStore.record(url: url) {
+                            await MainActor.run { recents = updated }
+                        }
                     }
                     if generation != loadGeneration {
                         break

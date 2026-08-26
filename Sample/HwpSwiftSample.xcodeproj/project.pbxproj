@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		1F41DD616F0D27606E71864F /* HwpKit in Frameworks */ = {isa = PBXBuildFile; productRef = 0478F39AEB002488AA1045BD /* HwpKit */; };
 		36581416E535363B5AA47F5A /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5232A086D38B2466914CFE61 /* ContentView.swift */; };
+		3C6BCDF1F76F7DC170B00A10 /* RecentDocuments.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A8DC5D8A8684D4C048B5040 /* RecentDocuments.swift */; };
 		68EE62E38E2242AB019D0407 /* HwpSwiftSampleApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A96B93F86DE19483CF1C608B /* HwpSwiftSampleApp.swift */; };
 		A7B2E2F0FBE61B9626B83301 /* ThumbnailSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE1C1462191E1C084D8F65B4 /* ThumbnailSidebar.swift */; };
 		C49D96BFAC81290CC7614F4E /* OutlineSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AC08C621EF8D9AEC075CE35 /* OutlineSidebar.swift */; };
@@ -17,6 +18,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		0A8DC5D8A8684D4C048B5040 /* RecentDocuments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentDocuments.swift; sourceTree = "<group>"; };
 		32544FDDF462496C3F2AAA62 /* HwpSwiftSample.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HwpSwiftSample.entitlements; sourceTree = "<group>"; };
 		50CC56F6743089790FD4CF8A /* hwp-swift */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "hwp-swift"; path = ..; sourceTree = SOURCE_ROOT; };
 		5232A086D38B2466914CFE61 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -75,6 +77,7 @@
 				FBC80478862156310CB7C524 /* Info.plist */,
 				5AC08C621EF8D9AEC075CE35 /* OutlineSidebar.swift */,
 				6D57CA8F51A97CDEAF0FA987 /* PDFExportSupport.swift */,
+				0A8DC5D8A8684D4C048B5040 /* RecentDocuments.swift */,
 				FE1C1462191E1C084D8F65B4 /* ThumbnailSidebar.swift */,
 			);
 			path = HwpSwiftSample;
@@ -149,6 +152,7 @@
 				68EE62E38E2242AB019D0407 /* HwpSwiftSampleApp.swift in Sources */,
 				C49D96BFAC81290CC7614F4E /* OutlineSidebar.swift in Sources */,
 				DDAD8077DFA353E890017484 /* PDFExportSupport.swift in Sources */,
+				3C6BCDF1F76F7DC170B00A10 /* RecentDocuments.swift in Sources */,
 				A7B2E2F0FBE61B9626B83301 /* ThumbnailSidebar.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

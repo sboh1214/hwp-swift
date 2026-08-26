@@ -19,6 +19,10 @@
 | `HwpPDFExporter` | PDF 내보내기 (진행률·취소) | 툴바 `PDF로 내보내기` / `인쇄` |
 
 - `.hwp` 파일을 사용자에게 선택받아 (`SwiftUI.fileImporter`) 위 컴포넌트로 렌더링/조작
+- 최근 문서 목록 (#126) — 성공적으로 연 파일을 **보안 범위 북마크**로 기록해
+  빈 상태에 목록으로 보인다 (경로 문자열로는 안 된다 — `fileImporter`가 준
+  샌드박스 접근 권한이 프로세스와 함께 사라진다). 파싱에 실패한 파일은
+  기록하지 않고, 지워진 파일의 항목은 누르는 순간 목록에서 거둔다
 - 하이퍼링크 탭 + 미지원 요소 콜백을 콘솔에 로그
 - 문서 내 검색 — 컨트롤러 하나를 `HwpDocumentView(searchController:)`와
   `HwpSearchBar(controller:)`에 넘기면 하이라이트·매치 노출 스크롤·프로그레시브
@@ -82,6 +86,8 @@ Xcode에서 스킴 `HwpSwiftSample` 선택 → 대상 지정:
 
 - 빈 상태의 **"Open .hwp"** 버튼 클릭 (또는 Return 키)
 - 우상단 툴바의 **"Open"** 버튼 (또는 Cmd+O)
+- 빈 상태의 **최근 문서** 목록에서 항목 클릭 (한 번이라도 성공적으로 연 파일이
+  있을 때만 나타난다)
 
 문서가 로드되면 화면 상단에 다음 툴바가 나타남:
 
@@ -198,6 +204,7 @@ Sample/
 ├── HwpSwiftSample/
 │   ├── HwpSwiftSampleApp.swift    # @main 진입점
 │   ├── ContentView.swift          # .fileImporter + HwpDocumentView + 검색·내보내기·사이드바 배선
+│   ├── RecentDocuments.swift      # 보안 범위 북마크 기반 최근 문서 저장소 (#126)
 │   ├── OutlineSidebar.swift       # metadata.outline만으로 만든 개요·책갈피 목록 (#77)
 │   ├── ThumbnailSidebar.swift     # HwpPageThumbnails만으로 만든 쪽 축소판 그리드 (#76)
 │   ├── PDFExportSupport.swift     # fileExporter용 FileDocument + 플랫폼 인쇄 (#if os)
@@ -227,7 +234,7 @@ SwiftUI 소스 파일(`HwpSwiftSampleApp.swift`, `ContentView.swift`, `OutlineSi
 | Swift | 5.9 |
 | Signing | Manual, ad-hoc identity (`-`) — "Sign to Run Locally" |
 | iOS Simulator | `CODE_SIGNING_ALLOWED=NO` |
-| Sandbox | ON (macOS) + `com.apple.security.files.user-selected.read-write` + `com.apple.security.print` |
+| Sandbox | ON (macOS) + `com.apple.security.files.user-selected.read-write` + `com.apple.security.print` + `com.apple.security.files.bookmarks.app-scope` |
 | SPM Product | `HwpKit`, `HwpKitCore` (부모 저장소 로컬 참조) |
 
 ## 문제 해결
@@ -252,7 +259,7 @@ Xcode 콘솔에 `print()`로 출력됨:
 
 ## 스코프
 
-이 샘플은 **`HwpKit`이 노출하는 모든 SwiftUI 컴포넌트를 실제로 조작해 볼 수 있는 최소 앱**. 실 서비스 UX (최근 파일, 편집 등)는 포함하지 않으며, 이는 `HwpKit` v1의 read-only 스코프와도 일치.
+이 샘플은 **`HwpKit`이 노출하는 모든 SwiftUI 컴포넌트를 실제로 조작해 볼 수 있는 최소 앱**. 편집 같은 실 서비스 UX는 포함하지 않으며, 이는 `HwpKit` v1의 read-only 스코프와도 일치. 최근 문서 목록은 예외로 들어왔다(#126) — 라이브러리 표면이 아니라 뷰어 앱이라면 어차피 만들게 되는 최소 편의라서다.
 
 개요·책갈피 사이드바와 쪽 축소판 사이드바는 예외처럼 보이지만 같은 규칙의
 결과다 — **라이브러리가 목록·그리드 UI를 내지 않기로** 했으므로(검색 결과
