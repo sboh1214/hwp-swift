@@ -203,7 +203,15 @@ enum DropOpenSupport {
             .appendingPathComponent("\(dropCopyPrefix)\(UUID().uuidString)", isDirectory: true)
         try manager.createDirectory(at: directory, withIntermediateDirectories: true)
         let destination = directory.appendingPathComponent(filename)
-        try manager.copyItem(at: url, to: destination)
+        do {
+            try manager.copyItem(at: url, to: destination)
+        } catch {
+            // 디스크 고갈 등으로 부분 파일이 남을 수 있다 — 호출자는 URL을 못
+            // 받아 어떤 청소도 닿지 않으므로 여기서 디렉터리째 되감는다
+            // (`removeStaleDropCopies`는 이번 실행 것을 건너뛴다).
+            try? manager.removeItem(at: directory)
+            throw error
+        }
         return destination
     }
 }
