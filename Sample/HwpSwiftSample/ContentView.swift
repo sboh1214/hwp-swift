@@ -1,3 +1,4 @@
+import Combine
 import HwpKit
 import HwpKitCore
 import SwiftUI
@@ -11,8 +12,16 @@ struct ContentView: View {
     /// 프로그레시브 로딩 진행률 (완료되면 nil)
     @State private var loadProgress: Double?
     @State private var loadGeneration = 0
+    /// 열기 요청 세대 (#126) — 드롭 provider 적재가 비동기라, 느린 항목의 완료가
+    /// 그 사이 시작된 다른 열기를 덮는 것을 막는다. `loadGeneration`으로는 못
+    /// 막는다: 그것은 `loadDocument` 안에서만 올라서, 낡은 드롭 완료가 스스로
+    /// 세대를 올리며 새 문서를 밀어낸다.
+    @State private var openGeneration = 0
     /// 진행 중 로드 task — 새 로드 시작 시 이전 것을 취소한다 (#6)
     @State private var loadTask: Task<Void, Never>?
+    /// 진행 중 드롭 적재의 취소 손잡이 (#126) — 세대 검사는 완료의 **결과**만
+    /// 버리고 전송은 계속 돌므로, 추월·뷰 해체 시 이것으로 전송 자체를 끊는다.
+    @State private var dropRequest: DropOpenRequest?
     @State private var currentPage: Int = 1
     @State private var zoomScale: CGFloat = 1.0
     /// 배율 맞춤 **원샷 명령** — 툴바가 값을 넣으면 문서 뷰가 한 번 적용하고
@@ -71,6 +80,21 @@ struct ContentView: View {
     /// 내보내기·인쇄 실패 사유 (빈 화면의 errorMessage와 별개 — 문서를 보는
     /// 중에는 그쪽이 화면에 없다)
     @State private var exportError: String?
+    /// 최근 문서 목록 (#126) — 진실 원본은 `RecentDocumentsStore`(defaults)이고
+    /// 이 상태는 그 거울이다. 기록·제거 helper가 돌려주는 목록으로 맞춘다.
+    @State private var recents = RecentDocumentsStore.load()
+    /// 드래그가 창 위에 있는 동안 true — 드롭 가능 시각 피드백 (#126).
+    @State private var isDropTargeted = false
+    /// 미지원 요소 목록 표시 여부 — macOS는 인라인 열, iOS는 시트 (#126).
+    /// 요소 자체는 상태로 들지 않고 `document.unsupportedElements`(공개 배열,
+    /// 최종 스냅샷에만 실림)를 그대로 읽는다 — `onUnsupportedElement` 콜백은
+    /// 배열 전체를 매번 재방출해 "재방출 중복"과 "같은 쪽의 동종 요소"(값이
+    /// 완전히 같다)를 구분할 수 없어, 콜백 집계는 append든 `Set`이든 어느
+    /// 쪽으로도 개수가 틀린다 (전자는 과다, 후자는 과소).
+    @State private var showUnsupportedList = false
+    /// 하이퍼링크를 시스템 브라우저로 여는 통로. 라이브러리는 콜백만 내고
+    /// 여는 것은 앱 책임이다 (`Sources/HwpKit/AGENTS.md`).
+    @Environment(\.openURL) private var openURL
 
     /// 내보내기를 마친 뒤 할 일 — 저장 대화상자냐 인쇄냐.
     private enum PDFDestination {
@@ -104,7 +128,8 @@ struct ContentView: View {
     }
 
     private static let exportFilePrefix = "hwp-sample-export-"
-    /// 이 프로세스가 시작된 시각 — 이보다 오래된 임시 PDF만 이전 실행의 잔해다.
+    /// 이 프로세스가 시작된 시각 — 이보다 오래된 임시 파일(내보내기 PDF·드롭
+    /// 사본)만 이전 실행의 잔해다.
     private static let processStart = Date()
 
     var body: some View {
@@ -127,7 +152,7 @@ struct ContentView: View {
         .fileImporter(
             isPresented: $showPicker,
             allowedContentTypes: [
-                UTType(importedAs: "dev.sboh.hwp"),
+                DropOpenSupport.hwpType,
             ]
         ) { result in
             switch result {
@@ -140,8 +165,36 @@ struct ContentView: View {
         .onOpenURL { url in
             loadDocument(from: url)
         }
+        // 드롭 대상은 **루트**다 — 빈 상태에는 열기, 문서를 보는 중에는
+        // Re-open과 같은 교체로 동작한다 (#126).
+        .onDrop(of: DropOpenSupport.acceptedTypes, isTargeted: $isDropTargeted) { providers in
+            handleDrop(providers)
+        }
+        .overlay {
+            // 드래그가 창 위에 있는 동안의 시각 피드백. 히트 테스트를 끄지
+            // 않으면 이 오버레이가 드롭 대상(아래 Group)을 가린다.
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(Color.accentColor, lineWidth: 3)
+                    .padding(4)
+                    .allowsHitTesting(false)
+            }
+        }
+        // WindowGroup의 다른 창이 기록·제거한 최근 문서를 이 창의 거울에도
+        // 반영한다 — 같은 프로세스의 defaults 변경마다 발화하고, 목록이 최대
+        // 10개라 재적재 비용은 무시된다. 이것이 없으면 빈 상태로 남아 있는
+        // 창이 낡은 목록을 계속 보이고, 다른 창에서 제거한 항목을 그 창에서
+        // 눌러 부활시킬 수 있다.
+        .onReceive(
+            NotificationCenter.default
+                .publisher(for: UserDefaults.didChangeNotification)
+                .receive(on: RunLoop.main)
+        ) { _ in
+            recents = RecentDocumentsStore.load()
+        }
         .task {
             Self.removeStaleExports()
+            DropOpenSupport.removeStaleDropCopies(olderThan: Self.processStart)
             if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
                 let candidate = docs.appendingPathComponent("document.hwp")
                 if FileManager.default.fileExists(atPath: candidate.path), document == nil {
@@ -219,6 +272,16 @@ struct ContentView: View {
                 .padding(.horizontal)
                 .padding(.vertical, 6)
 
+            // 미지원 요소 배너 (#126) — 툴바 행이 아니라 문서 영역 상단이다
+            // (툴바에는 이미 재열기·사이드바·페이지 네비·내보내기·찾기·줌이
+            // 들어차 있다). 중간 스냅샷의 배열은 항상 비어 있어 이 배너는
+            // 로드 완료 후 한 번의 전이로 나타난다.
+            if !document.unsupportedElements.isEmpty {
+                UnsupportedElementsBanner(elements: document.unsupportedElements) {
+                    showUnsupportedList.toggle()
+                }
+            }
+
             documentArea(document: document)
         }
         #if !os(macOS)
@@ -237,6 +300,21 @@ struct ContentView: View {
                     .toolbar {
                         Button("닫기") { sidebarVisible = false }
                     }
+            }
+        }
+        // 미지원 요소 목록 — 사이드바와 같은 이유로 iOS는 시트다 (#126).
+        .sheet(isPresented: $showUnsupportedList) {
+            NavigationStack {
+                UnsupportedElementsList(
+                    elements: document.unsupportedElements,
+                    pageCount: document.pages.count,
+                    currentPage: $currentPage,
+                    onSelect: { showUnsupportedList = false }
+                )
+                .navigationTitle("미지원 요소")
+                .toolbar {
+                    Button("닫기") { showUnsupportedList = false }
+                }
             }
         }
         #endif
@@ -314,13 +392,42 @@ struct ContentView: View {
                 currentPage: $currentPage,
                 searchController: search,
                 onHyperlinkTapped: { url in
-                    print("Hyperlink tapped: \(url)")
-                },
-                onUnsupportedElement: { element in
-                    print("Unsupported: \(element)")
+                    openHyperlink(url)
                 }
             )
+
+            #if os(macOS)
+                // 개요·축소판(왼쪽 열)과 달리 **오른쪽** 열이다 — 왼쪽은 탐색,
+                // 오른쪽은 진단이라는 구분이다. iOS는 사이드바와 같은 이유로
+                // 시트다 (`loadedView`).
+                if showUnsupportedList, !document.unsupportedElements.isEmpty {
+                    Divider()
+                    UnsupportedElementsList(
+                        elements: document.unsupportedElements,
+                        pageCount: document.pages.count,
+                        currentPage: $currentPage
+                    )
+                    .frame(width: 260)
+                }
+            #endif
         }
+    }
+
+    /// 허용 scheme 화이트리스트 (#126). 콜백 값은 `URL`이 아니라 `String`이고,
+    /// HWP 하이퍼링크에는 웹 URL 외에 문서 내부 앵커·로컬 파일 경로도 온다 —
+    /// 그런 값은 열지 않는다. 특히 `file:`을 목록에 넣으면 문서가 임의 로컬
+    /// 파일을 여는 통로가 되므로 넣지 말 것.
+    private static let allowedHyperlinkSchemes: Set<String> = ["http", "https", "mailto"]
+
+    /// 하이퍼링크 탭 → scheme 검증 후 `openURL` (#126). URL은 필드 명령의
+    /// 트레일링 플래그를 뗀 값으로 이미 정규화되어 오므로, 앱이 할 일은
+    /// `URL(string:)` 변환과 scheme 검증뿐이다.
+    private func openHyperlink(_ raw: String) {
+        guard let url = URL(string: raw),
+              let scheme = url.scheme?.lowercased(),
+              Self.allowedHyperlinkSchemes.contains(scheme)
+        else { return }
+        openURL(url)
     }
 
     private func toolbar(document: HwpDocument) -> some View {
@@ -462,23 +569,131 @@ struct ContentView: View {
         Task { @MainActor in presentPendingDestination() }
     }
 
+    /// 스크롤로 감싸는 이유: 최근 문서가 10개까지 쌓이면 내용이 낮은 뷰포트
+    /// (iPhone 가로 모드)를 넘는데, 스크롤이 없으면 넘친 행을 눌러서 열 방법이
+    /// 없다. 내용이 짧을 때는 `minHeight`가 뷰포트를 채워 종전처럼 중앙 정렬된다.
     private var emptyState: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "doc.text")
-                .font(.system(size: 64))
-                .foregroundStyle(.secondary)
-            Text("Open a .hwp file to preview")
-                .foregroundStyle(.secondary)
-            Button("Open .hwp") { showPicker = true }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
-            if let errorMessage {
-                Text(errorMessage)
-                    .foregroundStyle(.red)
-                    .font(.caption)
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(spacing: 16) {
+                    Image(systemName: "doc.text")
+                        .font(.system(size: 64))
+                        .foregroundStyle(.secondary)
+                    Text("Open a .hwp file to preview")
+                        .foregroundStyle(.secondary)
+                    Button("Open .hwp") { showPicker = true }
+                        .buttonStyle(.borderedProminent)
+                        .keyboardShortcut(.defaultAction)
+                    Text("또는 .hwp 파일을 여기로 끌어다 놓기")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if let errorMessage {
+                        Text(errorMessage)
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                    }
+                    if !recents.isEmpty {
+                        recentDocumentsList
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: proxy.size.height)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// 빈 상태 아래에 붙는 최근 문서 목록 (#126). 픽스처가 전부 `document.hwp`라
+    /// 이름만으로는 구별되지 않아 폴더를 보조 행으로 함께 보인다.
+    private var recentDocumentsList: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("최근 문서")
+                .font(.headline)
+                .padding(.bottom, 4)
+            ForEach(recents) { item in
+                Button {
+                    openRecent(item)
+                } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .imageScale(.small)
+                            .foregroundStyle(.secondary)
+                        Text(item.name)
+                            .lineLimit(1)
+                        Text(item.folderDisplayName)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.head)
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .contextMenu {
+                    Button("목록에서 제거", role: .destructive) {
+                        recents = RecentDocumentsStore.remove(item)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: 420)
+        .padding(.horizontal, 24)
+        .padding(.top, 8)
+    }
+
+    /// 드롭된 provider에서 URL을 뽑아 연다 (#126). 확장자 검증 실패 등의
+    /// 사유는 `errorMessage`로 올린다 — 문서를 보는 중에는 그 라벨이 화면에
+    /// 없지만, 그때는 열려 있는 문서가 그대로라 조용히 무시되는 것이 맞다.
+    private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
+        // 세대를 **먼저** 올려 두는 것은 완료가 동기로 오는 경우까지 덮기
+        // 위해서다. 드롭이 거절되면(후보 없음) 완료는 오지 않으므로 되돌린다 —
+        // 안 되돌리면 폴더처럼 열 수 없는 것을 떨어뜨린 것만으로 진행 중이던
+        // 드롭이 취소된다.
+        let previous = openGeneration
+        openGeneration += 1
+        let generation = openGeneration
+        let request = DropOpenSupport.open(providers: providers) { result in
+            // 이 요청이 시작된 뒤 다른 열기가 있었으면 결과를 버린다 — 성공만이
+            // 아니라 실패도 버려야 낡은 사유가 새 문서 위에 오류로 남지 않는다.
+            guard generation == openGeneration else {
+                // 버리는 성공 값이 소유 사본이면 이 참조가 마지막이다 — 원본은
+                // 출처 플래그가 걸러 이 삭제에 닿지 않는다.
+                if case let .success(opened) = result, opened.isOwnedCopy {
+                    DropOpenSupport.discardCopy(at: opened.url)
+                }
+                return
+            }
+            switch result {
+            case let .success(opened):
+                loadDocument(from: opened.url, isOwnedDropCopy: opened.isOwnedCopy)
+            case let .failure(failure):
+                errorMessage = failure.message
+            }
+        }
+        // 이전 전송을 끊는 것도 **수락됐을 때만**이다 — 거절(후보 없음)이 진행
+        // 중이던 드롭을 죽이면 안 되는 것은 세대 되감기와 같은 이유다.
+        guard let request else {
+            openGeneration = previous
+            return false
+        }
+        dropRequest?.cancel()
+        dropRequest = request
+        return true
+    }
+
+    /// 최근 항목을 연다. 열 수 없는 항목은 그 자리에서 거둔다 — 눌러도 아무 일이
+    /// 없는 시체 행을 남기지 않는다.
+    private func openRecent(_ item: RecentDocument) {
+        switch RecentDocumentsStore.resolve(item) {
+        case let .resolved(url):
+            loadDocument(from: url)
+        case .inaccessible:
+            recents = RecentDocumentsStore.remove(item)
+            errorMessage = "\(item.name)을(를) 열 권한이 없어 목록에서 제거했습니다. 다시 선택해 주세요."
+        case .unavailable:
+            recents = RecentDocumentsStore.remove(item)
+            errorMessage = "\(item.name)을(를) 찾을 수 없어 최근 문서에서 제거했습니다."
+        }
     }
 
     /// 문서를 앱 임시 디렉터리에 PDF로 만든 뒤 저장 대화상자 또는 인쇄로 넘긴다.
@@ -492,6 +707,14 @@ struct ContentView: View {
     private func cancelExportOnTeardown() {
         exportTask?.cancel()
         exportTask = nil
+        // 받아 줄 뷰가 없는 드롭 전송도 끊는다 — 창이 닫혀도 iCloud 적재가
+        // 네트워크·디스크를 계속 쓰지 않게 (#126). 세대를 먼저 올리는 것은
+        // 취소가 물리지 못하는 **이미 큐잉된 완료** 때문이다: teardown과 완료
+        // 배달이 같은 메인 액터라 여기서 올리면 그 완료는 반드시 스테일 가드에
+        // 걸리고, 소유 사본 정리까지 기존 경로가 한다.
+        openGeneration += 1
+        dropRequest?.cancel()
+        dropRequest = nil
         // 창이 사라지면 축소판 디코드도 놓는다 — 그러지 않으면 옛 문서의
         // store/cache를 붙든 태스크가 남는다 (PDF 내보내기와 같은 이유).
         thumbnails.cancelOutstanding()
@@ -653,12 +876,15 @@ struct ContentView: View {
         return clipped
     }
 
-    private func loadDocument(from url: URL) {
+    private func loadDocument(from url: URL, isOwnedDropCopy: Bool = false) {
         // 이전 로드를 취소해 겹치는 파싱·첫 페이지 레이아웃이 동시에 자원을
         // 소모하지 않게 한다 (#6). 스트림 취소는 actor의 파싱까지 전파된다.
         loadTask?.cancel()
         errorMessage = nil
         document = nil
+        // 요소 목록의 내용은 문서 교체가 알아서 갈지만, 표시 여부는 상태라
+        // 직접 접는다 — 새 문서를 열자마자 옛 문서의 진단 열이 떠 있지 않게 (#126).
+        showUnsupportedList = false
         // 새 로드가 첫 스냅샷을 내기 전에 실패하면 이 렌더러를 갱신할 주체가 없어
         // 옛 문서(쪽·공급자·디코드 이미지·축소판)가 오류 화면 내내 상주한다.
         // `cancelOutstanding()`은 요청만 끊고 보유는 유지하므로 폐기는 교체로 한다.
@@ -670,6 +896,13 @@ struct ContentView: View {
         #endif
         loadProgress = nil
         loadGeneration += 1
+        // 어느 경로로 열든 대기 중인 드롭 완료를 무효화한다 — fileImporter·최근
+        // 문서로 새 문서를 연 뒤 느린 드롭이 도착해 그것을 덮지 않게 (#126).
+        openGeneration += 1
+        // 무효화한 완료를 기다릴 이유도 없다 — 전송 자체를 끊는다 (방금 성공을
+        // 전달한 드롭 요청이면 이미 끝난 Progress라 무해).
+        dropRequest?.cancel()
+        dropRequest = nil
         let generation = loadGeneration
         let didStart = url.startAccessingSecurityScopedResource()
         loadTask = Task {
@@ -678,6 +911,8 @@ struct ContentView: View {
                     url.stopAccessingSecurityScopedResource()
                 }
             }
+            var didRecordRecent = false
+            var loadFailed = false
             do {
                 // 프로그레시브 로딩: 첫 페이지 확정 즉시 표시, 잔여 페이지는
                 // 배치 스냅샷으로 이어 붙는다 (뷰가 loadToken으로 증분 적용).
@@ -702,19 +937,40 @@ struct ContentView: View {
                         loadProgress = snapshot.isComplete ? nil : snapshot.progress
                         isLoading = false
                     }
+                    // 추월 검사가 기록보다 **먼저**다 — 위 MainActor.run의 가드는
+                    // UI 적용만 건너뛰고 실행은 여기로 흘러오므로, 검사를 기록
+                    // 뒤에 두면 화면에 뜬 적 없는 문서가 목록에 오르고, 나중에
+                    // 기록되는 만큼 표시 중인 새 문서보다 위로 올라간다.
                     if generation != loadGeneration {
                         break
+                    }
+                    // 첫 스냅샷이 나온 **뒤** 한 번만 기록한다 (#126) — 파싱에
+                    // 실패하는 파일은 목록에 들어가지 않고, 보안 범위 접근이
+                    // 살아 있는 이 task가 북마크를 만들 수 있는 유일한 시점이다.
+                    if !didRecordRecent {
+                        didRecordRecent = true
+                        if let updated = RecentDocumentsStore.record(url: url) {
+                            await MainActor.run { recents = updated }
+                        }
                     }
                 }
             } catch is CancellationError {
                 // 취소된 로드는 조용히 종료 (새 로드가 UI를 갱신한다)
             } catch {
+                loadFailed = true
                 await MainActor.run {
                     guard generation == loadGeneration else { return }
                     errorMessage = "\(error)"
                     isLoading = false
                     loadProgress = nil
                 }
+            }
+            // 버려진 로드의 드롭 사본은 여기서 지운다 — 실패했거나(오류 화면)
+            // 추월당한(취소·세대 전진 — 취소는 언제나 새 로드가 하므로 세대
+            // 검사가 포섭한다) 사본은 아무것도 뒷받침하지 않는다. 완주해 표시
+            // 중인 문서의 사본만 기존 정책대로 다음 실행의 잔해 청소에 남는다.
+            if isOwnedDropCopy, loadFailed || generation != loadGeneration {
+                DropOpenSupport.discardCopy(at: url)
             }
         }
     }

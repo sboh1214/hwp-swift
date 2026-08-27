@@ -35,6 +35,10 @@ targets:
         # `NSPrintOperation.run()`의 Bool은 취소와 실패를 구분하지 않아
         # 사유를 올리지 않기 때문이다 (`PDFExportSupport.swift`).
         com.apple.security.print: true
+        # 최근 문서 목록(#126)이 보안 범위 북마크를 만들려면 app-scope 북마크
+        # 엔타이틀먼트가 따로 필요하다 — 파일 엔타이틀먼트는 그 세션의 접근만
+        # 주고, 없으면 북마크 생성이 조용히 실패해 목록이 영영 비어 있다.
+        com.apple.security.files.bookmarks.app-scope: true
     info:
       path: HwpSwiftSample/Info.plist
       properties:

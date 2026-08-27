@@ -19,7 +19,34 @@
 | `HwpPDFExporter` | PDF 내보내기 (진행률·취소) | 툴바 `PDF로 내보내기` / `인쇄` |
 
 - `.hwp` 파일을 사용자에게 선택받아 (`SwiftUI.fileImporter`) 위 컴포넌트로 렌더링/조작
-- 하이퍼링크 탭 + 미지원 요소 콜백을 콘솔에 로그
+- 최근 문서 목록 (#126) — 성공적으로 연 파일을 **보안 범위 북마크**로 기록해
+  빈 상태에 목록으로 보인다 (경로 문자열로는 안 된다 — `fileImporter`가 준
+  샌드박스 접근 권한이 프로세스와 함께 사라진다). 파싱에 실패한 파일은
+  기록하지 않고, 열 수 없게 된 항목은 누르는 순간 목록에서 거둔다.
+  **iOS에서는 이 접근이 재부팅을 넘기지 못한다** — `.withSecurityScope`가
+  iOS에 없어(`API_UNAVAILABLE`) 옵션 없이 만든 북마크는 implicit ephemeral
+  security scope를 달고, SDK 문서가 그 범위를 "valid until reboot at the
+  latest"로 못박는다(`NSURL.h`의 `WithoutImplicitSecurityScope` 항목).
+  재부팅 뒤 북마크는 **URL로는 풀리는데 읽히지는 않으므로**, 되살리기가
+  읽기 가능 여부까지 확인해 그 항목을 거두고 다시 선택하라고 안내한다
+- 드래그앤드롭으로 열기 (#126) — 빈 상태·문서 화면 어디에 놓아도 그 파일로
+  교체한다. macOS(Finder)는 드래그가 파일 URL + 샌드박스 접근 확장을 실어
+  원본을 그대로 열고, iOS(Files 등)는 URL 대신 파일 표현이 와 **앱 임시
+  디렉터리로 복사한 사본**을 연다 — 그 파일은 완료 핸들러가 반환되면
+  시스템이 지우기 때문이다 (`DropOpenSupport.swift`). 사본은 임시 경로라
+  최근 문서에는 기록되지 않고, 다음 실행의 시작 시 잔해 청소가 거둔다
+  (내보내기 임시 PDF와 같은 정책)
+- 하이퍼링크 열기 + 미지원 요소 배너 (#126) — `onHyperlinkTapped`는 scheme
+  검증(`http`/`https`/`mailto`) 후 시스템 브라우저로 열고, 문서 내부 앵커·로컬
+  경로 값은 열지 않는다 (콜백 값은 `URL`이 아니라 `String`이다 — 라이브러리는
+  콜백만 내고 **여는 것은 앱 책임**이라는 `HwpKit` 규약의 소비처).
+  미지원 요소는 최종 스냅샷의 `document.unsupportedElements`(공개 배열)를
+  그대로 읽어 문서 영역 상단 배너 + 목록(행 탭 → 그 쪽으로 이동)으로 보인다.
+  `onUnsupportedElement` **콜백으로 집계하지 않는 이유**: 콜백은 델타가 아니라
+  배열 전체를 매번 재방출하고, 같은 쪽의 동종 요소는 값까지 완전히 같아서
+  (kind·page·hint가 전부) append 집계는 재방출을 중복 계수하고 `Set` 집계는
+  실존 요소를 접는다 — 배열만이 정확한 다중도를 준다. 목록은 macOS 인라인
+  열 / iOS 시트 (사이드바와 같은 형태)
 - 문서 내 검색 — 컨트롤러 하나를 `HwpDocumentView(searchController:)`와
   `HwpSearchBar(controller:)`에 넘기면 하이라이트·매치 노출 스크롤·프로그레시브
   재스캔이 자동 배선된다. **Cmd+F는 이 앱이 잡는다** — 라이브러리는 전역
@@ -82,6 +109,9 @@ Xcode에서 스킴 `HwpSwiftSample` 선택 → 대상 지정:
 
 - 빈 상태의 **"Open .hwp"** 버튼 클릭 (또는 Return 키)
 - 우상단 툴바의 **"Open"** 버튼 (또는 Cmd+O)
+- 빈 상태의 **최근 문서** 목록에서 항목 클릭 (한 번이라도 성공적으로 연 파일이
+  있을 때만 나타난다)
+- `.hwp` 파일을 창으로 **끌어다 놓기** (문서를 보는 중이면 그 파일로 교체)
 
 문서가 로드되면 화면 상단에 다음 툴바가 나타남:
 
@@ -198,8 +228,11 @@ Sample/
 ├── HwpSwiftSample/
 │   ├── HwpSwiftSampleApp.swift    # @main 진입점
 │   ├── ContentView.swift          # .fileImporter + HwpDocumentView + 검색·내보내기·사이드바 배선
+│   ├── RecentDocuments.swift      # 보안 범위 북마크 기반 최근 문서 저장소 (#126)
+│   ├── DropOpenSupport.swift      # 드롭 provider → .hwp URL (플랫폼별 경로) (#126)
 │   ├── OutlineSidebar.swift       # metadata.outline만으로 만든 개요·책갈피 목록 (#77)
 │   ├── ThumbnailSidebar.swift     # HwpPageThumbnails만으로 만든 쪽 축소판 그리드 (#76)
+│   ├── UnsupportedElementsList.swift  # 미지원 요소 배너 + 목록 (#126)
 │   ├── PDFExportSupport.swift     # fileExporter용 FileDocument + 플랫폼 인쇄 (#if os)
 │   └── HwpSwiftSample.entitlements
 └── README.md
@@ -216,7 +249,7 @@ cd Sample
 xcodegen generate
 ```
 
-SwiftUI 소스 파일(`HwpSwiftSampleApp.swift`, `ContentView.swift`, `OutlineSidebar.swift`, `ThumbnailSidebar.swift`) 추가/삭제는 xcodegen이 디렉터리를 자동 스캔하므로 별도 편집 없이 `xcodegen generate`만 다시 돌리면 됨. **다만 생성된 `.xcodeproj`는 파일을 명시 참조하므로 재생성 결과를 같은 커밋에 넣어야 한다** — CI는 샘플을 빌드하지 않아 이 누락이 초록으로 지나간다.
+SwiftUI 소스 파일 추가/삭제는 xcodegen이 디렉터리를 자동 스캔하므로 별도 편집 없이 `xcodegen generate`만 다시 돌리면 됨 (파일 목록은 위 "폴더 구조"가 진실 원본이다 — 여기 열거를 두 번 두면 한쪽이 낡는다). **다만 생성된 `.xcodeproj`는 파일을 명시 참조하므로 재생성 결과를 같은 커밋에 넣어야 한다** — CI는 샘플을 빌드하지 않아 이 누락이 초록으로 지나간다.
 
 ## 설정 요약
 
@@ -227,7 +260,7 @@ SwiftUI 소스 파일(`HwpSwiftSampleApp.swift`, `ContentView.swift`, `OutlineSi
 | Swift | 5.9 |
 | Signing | Manual, ad-hoc identity (`-`) — "Sign to Run Locally" |
 | iOS Simulator | `CODE_SIGNING_ALLOWED=NO` |
-| Sandbox | ON (macOS) + `com.apple.security.files.user-selected.read-write` + `com.apple.security.print` |
+| Sandbox | ON (macOS) + `com.apple.security.files.user-selected.read-write` + `com.apple.security.print` + `com.apple.security.files.bookmarks.app-scope` |
 | SPM Product | `HwpKit`, `HwpKitCore` (부모 저장소 로컬 참조) |
 
 ## 문제 해결
@@ -245,14 +278,16 @@ cd Sample && xcodebuild -project HwpSwiftSample.xcodeproj -resolvePackageDepende
 **`.hwp` 파일을 열었는데 렌더링이 비어 있음**
 Blank fixture는 원래 빈 페이지. 다른 fixture(예: `Tests/CoreHwpTests/**/Read/*.hwp`)로 시도.
 
-**하이퍼링크 클릭 / 미지원 요소 로그**
-Xcode 콘솔에 `print()`로 출력됨:
-- `Hyperlink tapped: <url>`
-- `Unsupported: <HwpUnsupportedElement>`
+**하이퍼링크 클릭 / 미지원 요소**
+하이퍼링크는 scheme 검증(`http`/`https`/`mailto`) 후 시스템 브라우저로 열리고,
+그 밖의 값(문서 내부 앵커·로컬 경로)은 조용히 무시된다. 미지원 요소는 로드
+완료 시 문서 영역 상단 배너로 집계된다 (`목록` → 행 탭 → 해당 쪽으로 이동).
+육안 확인 재료: 하이퍼링크는 `Tests/CoreHwpTests/Fixtures/CCL`·`공공누리`,
+미지원 배너는 `equation`·`chart`의 `document.hwp`.
 
 ## 스코프
 
-이 샘플은 **`HwpKit`이 노출하는 모든 SwiftUI 컴포넌트를 실제로 조작해 볼 수 있는 최소 앱**. 실 서비스 UX (최근 파일, 편집 등)는 포함하지 않으며, 이는 `HwpKit` v1의 read-only 스코프와도 일치.
+이 샘플은 **`HwpKit`이 노출하는 모든 SwiftUI 컴포넌트를 실제로 조작해 볼 수 있는 최소 앱**. 편집 같은 실 서비스 UX는 포함하지 않으며, 이는 `HwpKit` v1의 read-only 스코프와도 일치. 최근 문서 목록은 예외로 들어왔다(#126) — 라이브러리 표면이 아니라 뷰어 앱이라면 어차피 만들게 되는 최소 편의라서다.
 
 개요·책갈피 사이드바와 쪽 축소판 사이드바는 예외처럼 보이지만 같은 규칙의
 결과다 — **라이브러리가 목록·그리드 UI를 내지 않기로** 했으므로(검색 결과
@@ -261,4 +296,4 @@ Xcode 콘솔에 `print()`로 출력됨:
 
 `HwpDocumentView` / `HwpDocumentToolbar` / `HwpPageNavigator` / `HwpZoomControls` / `HwpSearchBar` / `HwpSearchNavigator` / `HwpSearchController` / `HwpDocumentLoader` / `HwpPDFExporter` / `HwpPageThumbnails` 10개 public surface가 모두 이 앱 안에서 활성화됨. 여기에 데이터 표면 `HwpDocumentMetadata.outline`(#77)이 사이드바로, 명령 표면 `HwpZoomFit`(#78)이 툴바 → 문서 뷰로 소비됨 — 후자는 **같은 바인딩을 둘에 함께 넘기는 것**이 사용법의 전부다 (배율 산식은 뷰포트를 아는 뷰가 쥔다).
 
-인쇄·저장·공유 **UI는 의도적으로 라이브러리 밖**이다 — `HwpKit`은 PDF 바이트까지만 만들고 그 앞뒤는 앱이 정한다. 이 앱의 `PDFExportSupport.swift`가 그 배선의 최소 예시이고, 저장소의 유일한 `#if os(macOS)` 분기이기도 하다.
+인쇄·저장·공유 **UI는 의도적으로 라이브러리 밖**이다 — `HwpKit`은 PDF 바이트까지만 만들고 그 앞뒤는 앱이 정한다. 이 앱의 `PDFExportSupport.swift`가 그 배선의 최소 예시다. 하이퍼링크도 같은 경계다 — 라이브러리는 탭 콜백까지만 내고, scheme 검증과 `openURL`은 이 앱이 한다 (`Tests/HwpKitTests/HwpKitScopeGuardTests.swift`가 `Sources/HwpKit` 안의 `openURL` 류 호출을 막는다 — 샘플은 그 가드 밖이고, 여기가 의도된 사용처다).
