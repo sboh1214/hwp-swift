@@ -662,7 +662,7 @@ struct ContentView: View {
             }
             switch result {
             case let .success(opened):
-                loadDocument(from: opened.url)
+                loadDocument(from: opened.url, isOwnedDropCopy: opened.isOwnedCopy)
             case let .failure(failure):
                 errorMessage = failure.message
             }
@@ -860,7 +860,7 @@ struct ContentView: View {
         return clipped
     }
 
-    private func loadDocument(from url: URL) {
+    private func loadDocument(from url: URL, isOwnedDropCopy: Bool = false) {
         // 이전 로드를 취소해 겹치는 파싱·첫 페이지 레이아웃이 동시에 자원을
         // 소모하지 않게 한다 (#6). 스트림 취소는 actor의 파싱까지 전파된다.
         loadTask?.cancel()
@@ -892,6 +892,7 @@ struct ContentView: View {
                 }
             }
             var didRecordRecent = false
+            var loadFailed = false
             do {
                 // 프로그레시브 로딩: 첫 페이지 확정 즉시 표시, 잔여 페이지는
                 // 배치 스냅샷으로 이어 붙는다 (뷰가 loadToken으로 증분 적용).
@@ -936,12 +937,20 @@ struct ContentView: View {
             } catch is CancellationError {
                 // 취소된 로드는 조용히 종료 (새 로드가 UI를 갱신한다)
             } catch {
+                loadFailed = true
                 await MainActor.run {
                     guard generation == loadGeneration else { return }
                     errorMessage = "\(error)"
                     isLoading = false
                     loadProgress = nil
                 }
+            }
+            // 버려진 로드의 드롭 사본은 여기서 지운다 — 실패했거나(오류 화면)
+            // 추월당한(취소·세대 전진 — 취소는 언제나 새 로드가 하므로 세대
+            // 검사가 포섭한다) 사본은 아무것도 뒷받침하지 않는다. 완주해 표시
+            // 중인 문서의 사본만 기존 정책대로 다음 실행의 잔해 청소에 남는다.
+            if isOwnedDropCopy, loadFailed || generation != loadGeneration {
+                DropOpenSupport.discardCopy(at: url)
             }
         }
     }
