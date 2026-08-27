@@ -29,15 +29,17 @@ enum DropOpenSupport {
     }
 
     /// providers에서 열 수 있는 항목의 URL을 만들어 main으로 돌려준다.
-    /// 반환 false는 처리할 provider가 없다는 뜻이다 (드롭 거절).
+    /// 반환 nil은 처리할 provider가 없다는 뜻이고(드롭 거절), 값은 진행 중
+    /// 적재의 취소 손잡이다 — 추월·뷰 해체 시 호출자가 취소한다.
     static func open(
         providers: [NSItemProvider],
         completion: @escaping @MainActor (Result<DropOpenedFile, DropOpenFailure>) -> Void
-    ) -> Bool {
+    ) -> DropOpenRequest? {
         let ordered = candidates(in: providers)
-        guard !ordered.isEmpty else { return false }
-        openNext(ordered, at: 0, lastFailure: .unreadable, completion: completion)
-        return true
+        guard !ordered.isEmpty else { return nil }
+        let request = DropOpenRequest()
+        openNext(ordered, at: 0, request: request, lastFailure: .unreadable, completion: completion)
+        return request
     }
 
     /// 드롭 후보 한 건 — provider와 그것을 여는 방법.
@@ -80,16 +82,21 @@ enum DropOpenSupport {
     private static func openNext(
         _ candidates: [Candidate],
         at index: Int,
+        request: DropOpenRequest,
         lastFailure: DropOpenFailure,
         completion: @escaping @MainActor (Result<DropOpenedFile, DropOpenFailure>) -> Void
     ) {
+        // 취소가 부른 적재 실패 콜백이 다음 후보의 전송을 새로 시작하지 않게
+        // 여기서 끊는다. 완료는 부르지 않는다 — 취소자는 결과를 받지 않기로
+        // 한 쪽이다.
+        guard !request.isCancelled else { return }
         guard index < candidates.count else {
             Task { @MainActor in completion(.failure(lastFailure)) }
             return
         }
         let candidate = candidates[index]
         guard let typeIdentifier = candidate.fileRepresentationType else {
-            _ = candidate.provider.loadObject(ofClass: URL.self) { url, _ in
+            let progress = candidate.provider.loadObject(ofClass: URL.self) { url, _ in
                 if let url, url.pathExtension.lowercased() == "hwp" {
                     Task { @MainActor in
                         completion(.success(DropOpenedFile(url: url, isOwnedCopy: false)))
@@ -99,18 +106,21 @@ enum DropOpenSupport {
                 openNext(
                     candidates,
                     at: index + 1,
+                    request: request,
                     lastFailure: url != nil ? .notHwp : lastFailure,
                     completion: completion
                 )
             }
+            request.advance(to: progress)
             return
         }
-        candidate.provider.loadFileRepresentation(forTypeIdentifier: typeIdentifier) { url, _ in
+        let progress = candidate.provider.loadFileRepresentation(forTypeIdentifier: typeIdentifier) { url, _ in
             // 이 URL의 파일은 핸들러가 반환되면 사라진다 — 복사는 여기서
             // **동기로** 끝내야 한다.
             guard let url else {
                 openNext(
-                    candidates, at: index + 1, lastFailure: lastFailure, completion: completion
+                    candidates, at: index + 1, request: request,
+                    lastFailure: lastFailure, completion: completion
                 )
                 return
             }
@@ -127,14 +137,18 @@ enum DropOpenSupport {
             // 거부한다.
             let urlIsHwp = url.pathExtension.lowercased() == "hwp"
             guard typeIdentifier == hwpType.identifier || nameIsHwp || urlIsHwp else {
-                openNext(candidates, at: index + 1, lastFailure: .notHwp, completion: completion)
+                openNext(
+                    candidates, at: index + 1, request: request,
+                    lastFailure: .notHwp, completion: completion
+                )
                 return
             }
             guard let copy = try? copyToTemporary(
                 url, as: nameIsHwp ? name : name + ".hwp"
             ) else {
                 openNext(
-                    candidates, at: index + 1, lastFailure: lastFailure, completion: completion
+                    candidates, at: index + 1, request: request,
+                    lastFailure: lastFailure, completion: completion
                 )
                 return
             }
@@ -142,6 +156,7 @@ enum DropOpenSupport {
                 completion(.success(DropOpenedFile(url: copy, isOwnedCopy: true)))
             }
         }
+        request.advance(to: progress)
     }
 
     /// 사본에 쓸 파일명 — provider가 광고한 이름을 먼저 보고, 없으면 임시 URL의
@@ -213,6 +228,43 @@ enum DropOpenSupport {
             throw error
         }
         return destination
+    }
+}
+
+/// 진행 중 드롭 적재의 취소 손잡이. 완료 무효화(세대 검사)는 결과만 버리고
+/// 전송은 계속 돌므로 — iCloud 대형 파일이면 전량 내려받는다 — 추월·뷰 해체
+/// 시 호출자가 이것으로 전송 자체를 끊는다.
+///
+/// provider 적재는 후보마다 새 `Progress`를 내므로 `advance`가 현재 것을
+/// 갈아 끼우고, `cancel()`과의 경주는 "취소 뒤 도착한 Progress도 즉시 취소"로
+/// 닫는다 — cancel(main)과 advance(적재 콜백 큐)가 다른 큐에서 와 락이 필요하다.
+final class DropOpenRequest {
+    private let lock = NSLock()
+    private var cancelled = false
+    private var current: Progress?
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        let progress = current
+        lock.unlock()
+        progress?.cancel()
+    }
+
+    var isCancelled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cancelled
+    }
+
+    fileprivate func advance(to progress: Progress) {
+        lock.lock()
+        current = progress
+        let wasCancelled = cancelled
+        lock.unlock()
+        if wasCancelled {
+            progress.cancel()
+        }
     }
 }
 

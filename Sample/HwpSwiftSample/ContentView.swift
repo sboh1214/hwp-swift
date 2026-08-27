@@ -19,6 +19,9 @@ struct ContentView: View {
     @State private var openGeneration = 0
     /// 진행 중 로드 task — 새 로드 시작 시 이전 것을 취소한다 (#6)
     @State private var loadTask: Task<Void, Never>?
+    /// 진행 중 드롭 적재의 취소 손잡이 (#126) — 세대 검사는 완료의 **결과**만
+    /// 버리고 전송은 계속 돌므로, 추월·뷰 해체 시 이것으로 전송 자체를 끊는다.
+    @State private var dropRequest: DropOpenRequest?
     @State private var currentPage: Int = 1
     @State private var zoomScale: CGFloat = 1.0
     /// 배율 맞춤 **원샷 명령** — 툴바가 값을 넣으면 문서 뷰가 한 번 적용하고
@@ -649,7 +652,7 @@ struct ContentView: View {
         let previous = openGeneration
         openGeneration += 1
         let generation = openGeneration
-        let accepted = DropOpenSupport.open(providers: providers) { result in
+        let request = DropOpenSupport.open(providers: providers) { result in
             // 이 요청이 시작된 뒤 다른 열기가 있었으면 결과를 버린다 — 성공만이
             // 아니라 실패도 버려야 낡은 사유가 새 문서 위에 오류로 남지 않는다.
             guard generation == openGeneration else {
@@ -667,10 +670,15 @@ struct ContentView: View {
                 errorMessage = failure.message
             }
         }
-        if !accepted {
+        // 이전 전송을 끊는 것도 **수락됐을 때만**이다 — 거절(후보 없음)이 진행
+        // 중이던 드롭을 죽이면 안 되는 것은 세대 되감기와 같은 이유다.
+        guard let request else {
             openGeneration = previous
+            return false
         }
-        return accepted
+        dropRequest?.cancel()
+        dropRequest = request
+        return true
     }
 
     /// 최근 항목을 연다. 열 수 없는 항목은 그 자리에서 거둔다 — 눌러도 아무 일이
@@ -699,6 +707,10 @@ struct ContentView: View {
     private func cancelExportOnTeardown() {
         exportTask?.cancel()
         exportTask = nil
+        // 받아 줄 뷰가 없는 드롭 전송도 끊는다 — 창이 닫혀도 iCloud 적재가
+        // 네트워크·디스크를 계속 쓰지 않게 (#126).
+        dropRequest?.cancel()
+        dropRequest = nil
         // 창이 사라지면 축소판 디코드도 놓는다 — 그러지 않으면 옛 문서의
         // store/cache를 붙든 태스크가 남는다 (PDF 내보내기와 같은 이유).
         thumbnails.cancelOutstanding()
@@ -883,6 +895,10 @@ struct ContentView: View {
         // 어느 경로로 열든 대기 중인 드롭 완료를 무효화한다 — fileImporter·최근
         // 문서로 새 문서를 연 뒤 느린 드롭이 도착해 그것을 덮지 않게 (#126).
         openGeneration += 1
+        // 무효화한 완료를 기다릴 이유도 없다 — 전송 자체를 끊는다 (방금 성공을
+        // 전달한 드롭 요청이면 이미 끝난 Progress라 무해).
+        dropRequest?.cancel()
+        dropRequest = nil
         let generation = loadGeneration
         let didStart = url.startAccessingSecurityScopedResource()
         loadTask = Task {
