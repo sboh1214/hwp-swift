@@ -666,15 +666,19 @@ struct ContentView: View {
         return accepted
     }
 
-    /// 최근 항목을 연다. 북마크가 죽었으면(파일 삭제 등) 그 자리에서 항목을
-    /// 거둔다 — 눌러도 아무 일이 없는 시체 행을 남기지 않는다.
+    /// 최근 항목을 연다. 열 수 없는 항목은 그 자리에서 거둔다 — 눌러도 아무 일이
+    /// 없는 시체 행을 남기지 않는다.
     private func openRecent(_ item: RecentDocument) {
-        guard let url = RecentDocumentsStore.resolve(item) else {
+        switch RecentDocumentsStore.resolve(item) {
+        case let .resolved(url):
+            loadDocument(from: url)
+        case .inaccessible:
+            recents = RecentDocumentsStore.remove(item)
+            errorMessage = "\(item.name)을(를) 열 권한이 없어 목록에서 제거했습니다. 다시 선택해 주세요."
+        case .unavailable:
             recents = RecentDocumentsStore.remove(item)
             errorMessage = "\(item.name)을(를) 찾을 수 없어 최근 문서에서 제거했습니다."
-            return
         }
-        loadDocument(from: url)
     }
 
     /// 문서를 앱 임시 디렉터리에 PDF로 만든 뒤 저장 대화상자 또는 인쇄로 넘긴다.

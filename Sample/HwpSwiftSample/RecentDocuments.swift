@@ -98,21 +98,53 @@ enum RecentDocumentsStore {
         return documents
     }
 
-    /// 북마크를 URL로 되살린다. 파일이 지워졌으면 nil — 호출 측이 항목을 거둔다.
+    /// `resolve`의 결과. **URL로 풀리는 것과 읽을 수 있는 것이 다르다** — 재부팅
+    /// 뒤 iOS 북마크는 URL은 내주면서 접근 권한은 잃는다 (`creationOptions` 참조).
+    /// 둘을 합쳐 옵셔널로 두면 그 차이가 사라져, 눌러도 매번 실패하는 행이
+    /// 목록에 남는다.
+    enum Resolution {
+        case resolved(URL)
+        /// URL은 풀렸지만 읽을 수 없다 — 권한 만료(재부팅)나 미다운로드.
+        case inaccessible
+        /// 북마크가 URL로 풀리지 않는다 — 파일 삭제 등.
+        case unavailable
+    }
+
+    /// 북마크를 URL로 되살리고 **실제로 읽을 수 있는지까지** 확인한다.
     ///
     /// 낡은(stale) 북마크는 여기서 재발급하지 않는다: 되살린 URL로 문서가
     /// 열리면 `record`가 어차피 새 북마크로 재기록한다.
-    static func resolve(_ document: RecentDocument) -> URL? {
+    static func resolve(_ document: RecentDocument) -> Resolution {
         var isStale = false
-        return try? URL(
+        guard let url = try? URL(
             resolvingBookmarkData: document.bookmark,
             options: resolutionOptions,
             bookmarkDataIsStale: &isStale
-        )
+        ) else { return .unavailable }
+        // 읽기 확인은 범위를 쥔 채로 해야 한다 — macOS의 보안 범위 URL은
+        // `startAccessing` 없이 읽히지 않는다.
+        let didStart = url.startAccessingSecurityScopedResource()
+        defer {
+            if didStart {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+        guard FileManager.default.isReadableFile(atPath: url.path) else {
+            return .inaccessible
+        }
+        return .resolved(url)
     }
 
-    /// 보안 범위 북마크 옵션은 macOS 전용이다 — iOS는 문서 피커 URL의 북마크가
-    /// 옵션 없이도 범위를 담고, `.withSecurityScope`를 주면 오히려 던진다.
+    /// 보안 범위 북마크 옵션은 macOS 전용이다 —
+    /// `NSURLBookmarkCreationWithSecurityScope`가 iOS에서 `API_UNAVAILABLE`이라
+    /// 옵션 없이 만드는 것 말고는 선택지가 없다.
+    ///
+    /// **그 대가가 수명이다.** 보안 범위 없이 만든 북마크는 implicit ephemeral
+    /// security scope를 자동으로 다는데, SDK 문서(`NSURL.h`의
+    /// `WithoutImplicitSecurityScope` 항목)가 그 범위를 "valid until reboot at
+    /// the latest"라고 못박는다. 즉 iOS에서 이 목록의 접근 권한은 재부팅을 넘기지
+    /// 못하고, 그때 북마크는 URL로는 여전히 풀린다 — `resolve`가 읽기 가능
+    /// 여부까지 보는 이유다.
     private static var creationOptions: URL.BookmarkCreationOptions {
         #if os(macOS)
             [.withSecurityScope]
