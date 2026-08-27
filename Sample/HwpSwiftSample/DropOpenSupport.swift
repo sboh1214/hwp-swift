@@ -118,9 +118,13 @@ enum DropOpenSupport {
             let nameIsHwp = (name as NSString).pathExtension.lowercased() == "hwp"
             // 앱 선언 타입으로 온 후보는 provider가 이미 HWP라고 **광고**한 것이라
             // 확장자를 다시 요구하지 않는다. 그러면 이름을 UUID로 바꿔 주는
-            // provider의 유효한 문서를 거부하게 된다. 확장자 검증은 아무 파일이나
-            // 오는 `.data` 폴백에만 남는다.
-            guard typeIdentifier == hwpType.identifier || nameIsHwp else {
+            // provider의 유효한 문서를 거부하게 된다. `.data` 폴백의 확장자
+            // 검증은 광고 이름과 표현 URL **어느 쪽이든** 통과면 받는다 —
+            // 표시 이름 선호와 검증은 별개라, 광고 이름 하나에 걸면 확장자
+            // 없는 제목형 suggestedName이 URL은 `document.hwp`인 유효 문서를
+            // 거부한다.
+            let urlIsHwp = url.pathExtension.lowercased() == "hwp"
+            guard typeIdentifier == hwpType.identifier || nameIsHwp || urlIsHwp else {
                 openNext(candidates, at: index + 1, lastFailure: .notHwp, completion: completion)
                 return
             }
