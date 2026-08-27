@@ -12,6 +12,11 @@ struct ContentView: View {
     /// 프로그레시브 로딩 진행률 (완료되면 nil)
     @State private var loadProgress: Double?
     @State private var loadGeneration = 0
+    /// 열기 요청 세대 (#126) — 드롭 provider 적재가 비동기라, 느린 항목의 완료가
+    /// 그 사이 시작된 다른 열기를 덮는 것을 막는다. `loadGeneration`으로는 못
+    /// 막는다: 그것은 `loadDocument` 안에서만 올라서, 낡은 드롭 완료가 스스로
+    /// 세대를 올리며 새 문서를 밀어낸다.
+    @State private var openGeneration = 0
     /// 진행 중 로드 task — 새 로드 시작 시 이전 것을 취소한다 (#6)
     @State private var loadTask: Task<Void, Never>?
     @State private var currentPage: Int = 1
@@ -637,7 +642,17 @@ struct ContentView: View {
     /// 사유는 `errorMessage`로 올린다 — 문서를 보는 중에는 그 라벨이 화면에
     /// 없지만, 그때는 열려 있는 문서가 그대로라 조용히 무시되는 것이 맞다.
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
-        DropOpenSupport.open(providers: providers) { result in
+        // 세대를 **먼저** 올려 두는 것은 완료가 동기로 오는 경우까지 덮기
+        // 위해서다. 드롭이 거절되면(후보 없음) 완료는 오지 않으므로 되돌린다 —
+        // 안 되돌리면 폴더처럼 열 수 없는 것을 떨어뜨린 것만으로 진행 중이던
+        // 드롭이 취소된다.
+        let previous = openGeneration
+        openGeneration += 1
+        let generation = openGeneration
+        let accepted = DropOpenSupport.open(providers: providers) { result in
+            // 이 요청이 시작된 뒤 다른 열기가 있었으면 결과를 버린다 — 성공만이
+            // 아니라 실패도 버려야 낡은 사유가 새 문서 위에 오류로 남지 않는다.
+            guard generation == openGeneration else { return }
             switch result {
             case let .success(url):
                 loadDocument(from: url)
@@ -645,6 +660,10 @@ struct ContentView: View {
                 errorMessage = failure.message
             }
         }
+        if !accepted {
+            openGeneration = previous
+        }
+        return accepted
     }
 
     /// 최근 항목을 연다. 북마크가 죽었으면(파일 삭제 등) 그 자리에서 항목을
@@ -850,6 +869,9 @@ struct ContentView: View {
         #endif
         loadProgress = nil
         loadGeneration += 1
+        // 어느 경로로 열든 대기 중인 드롭 완료를 무효화한다 — fileImporter·최근
+        // 문서로 새 문서를 연 뒤 느린 드롭이 도착해 그것을 덮지 않게 (#126).
+        openGeneration += 1
         let generation = loadGeneration
         let didStart = url.startAccessingSecurityScopedResource()
         loadTask = Task {
