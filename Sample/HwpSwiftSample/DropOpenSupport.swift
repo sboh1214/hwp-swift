@@ -106,18 +106,53 @@ enum DropOpenSupport {
         candidate.provider.loadFileRepresentation(forTypeIdentifier: typeIdentifier) { url, _ in
             // 이 URL의 파일은 핸들러가 반환되면 사라진다 — 복사는 여기서
             // **동기로** 끝내야 한다.
-            let isHwp = url?.pathExtension.lowercased() == "hwp"
-            if isHwp, let url, let copy = try? copyToTemporary(url) {
-                Task { @MainActor in completion(.success(copy)) }
+            guard let url else {
+                openNext(
+                    candidates, at: index + 1, lastFailure: lastFailure, completion: completion
+                )
                 return
             }
-            openNext(
-                candidates,
-                at: index + 1,
-                lastFailure: url != nil && !isHwp ? .notHwp : lastFailure,
-                completion: completion
-            )
+            // 이름의 권위는 임시 URL이 아니라 provider다 — `loadFileRepresentation`은
+            // "임시 위치에 사본을 쓴다"만 약속하고 원본 파일명 보존은 약속하지 않는다.
+            let name = suggestedFilename(of: candidate.provider, fallback: url)
+            let nameIsHwp = (name as NSString).pathExtension.lowercased() == "hwp"
+            // 앱 선언 타입으로 온 후보는 provider가 이미 HWP라고 **광고**한 것이라
+            // 확장자를 다시 요구하지 않는다. 그러면 이름을 UUID로 바꿔 주는
+            // provider의 유효한 문서를 거부하게 된다. 확장자 검증은 아무 파일이나
+            // 오는 `.data` 폴백에만 남는다.
+            guard typeIdentifier == hwpType.identifier || nameIsHwp else {
+                openNext(candidates, at: index + 1, lastFailure: .notHwp, completion: completion)
+                return
+            }
+            guard let copy = try? copyToTemporary(
+                url, as: nameIsHwp ? name : name + ".hwp"
+            ) else {
+                openNext(
+                    candidates, at: index + 1, lastFailure: lastFailure, completion: completion
+                )
+                return
+            }
+            Task { @MainActor in completion(.success(copy)) }
         }
+    }
+
+    /// 사본에 쓸 파일명 — provider가 광고한 이름을 먼저 보고, 없으면 임시 URL의
+    /// 이름으로 물러선다. 창 제목·최근 문서·내보내기 기본 이름이 이 값을 그대로
+    /// 물려받는다.
+    private static func suggestedFilename(of provider: NSItemProvider, fallback url: URL) -> String {
+        if let advertised = sanitizedComponent(provider.suggestedName) {
+            return advertised
+        }
+        return sanitizedComponent(url.lastPathComponent) ?? "document"
+    }
+
+    /// 파일명으로 쓸 수 있는 단일 성분만 통과시킨다 — provider가 준 이름에 경로
+    /// 구분자가 섞여 있으면 사본이 UUID 디렉터리 밖을 가리킬 수 있다.
+    private static func sanitizedComponent(_ name: String?) -> String? {
+        guard let name else { return nil }
+        let component = (name as NSString).lastPathComponent
+        guard !component.isEmpty, component != ".", component != ".." else { return nil }
+        return component
     }
 
     /// 이전 실행이 남긴 드롭 사본을 거둔다. 항목 판별이 접두사뿐인 것은
@@ -138,13 +173,13 @@ enum DropOpenSupport {
     }
 
     /// 드롭 파일을 UUID 하위 디렉터리로 복사한다 — 같은 이름을 연달아 드롭해도
-    /// 서로 덮어쓰지 않고, 원본 파일명이 보존돼 창 제목·내보내기 이름에 쓰인다.
-    private static func copyToTemporary(_ url: URL) throws -> URL {
+    /// 서로 덮어쓰지 않는다. 이름은 호출자가 정한다 (`suggestedFilename`).
+    private static func copyToTemporary(_ url: URL, as filename: String) throws -> URL {
         let manager = FileManager.default
         let directory = manager.temporaryDirectory
             .appendingPathComponent("\(dropCopyPrefix)\(UUID().uuidString)", isDirectory: true)
         try manager.createDirectory(at: directory, withIntermediateDirectories: true)
-        let destination = directory.appendingPathComponent(url.lastPathComponent)
+        let destination = directory.appendingPathComponent(filename)
         try manager.copyItem(at: url, to: destination)
         return destination
     }
