@@ -909,6 +909,13 @@ struct ContentView: View {
                         loadProgress = snapshot.isComplete ? nil : snapshot.progress
                         isLoading = false
                     }
+                    // 추월 검사가 기록보다 **먼저**다 — 위 MainActor.run의 가드는
+                    // UI 적용만 건너뛰고 실행은 여기로 흘러오므로, 검사를 기록
+                    // 뒤에 두면 화면에 뜬 적 없는 문서가 목록에 오르고, 나중에
+                    // 기록되는 만큼 표시 중인 새 문서보다 위로 올라간다.
+                    if generation != loadGeneration {
+                        break
+                    }
                     // 첫 스냅샷이 나온 **뒤** 한 번만 기록한다 (#126) — 파싱에
                     // 실패하는 파일은 목록에 들어가지 않고, 보안 범위 접근이
                     // 살아 있는 이 task가 북마크를 만들 수 있는 유일한 시점이다.
@@ -917,9 +924,6 @@ struct ContentView: View {
                         if let updated = RecentDocumentsStore.record(url: url) {
                             await MainActor.run { recents = updated }
                         }
-                    }
-                    if generation != loadGeneration {
-                        break
                     }
                 }
             } catch is CancellationError {
