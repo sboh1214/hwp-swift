@@ -155,6 +155,21 @@ enum DropOpenSupport {
         return component
     }
 
+    /// 이 앱이 소유한 드롭 사본이면 디렉터리째 지운다 — 스테일 가드가 성공
+    /// 값을 버리면 그 참조가 마지막인데, `removeStaleDropCopies`는 이전 실행
+    /// 것만 거두므로 여기서 지우지 않으면 이번 세션 내내 쌓인다. macOS 파일
+    /// URL 경로의 성공 값은 사용자 원본이라, **임시 디렉터리 안 사본 형태일
+    /// 때만** 지운다.
+    static func discardCopy(at url: URL) {
+        let manager = FileManager.default
+        let directory = url.deletingLastPathComponent()
+        guard directory.lastPathComponent.hasPrefix(dropCopyPrefix),
+              directory.deletingLastPathComponent().standardizedFileURL.path
+              == manager.temporaryDirectory.standardizedFileURL.path
+        else { return }
+        try? manager.removeItem(at: directory)
+    }
+
     /// 이전 실행이 남긴 드롭 사본을 거둔다. 항목 판별이 접두사뿐인 것은
     /// `ContentView.removeStaleExports`의 임시 PDF와 같은 이유다 — 이번 실행
     /// 것은 열려 있는 문서가 읽고 있을 수 있어 건드리지 않는다.

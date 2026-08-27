@@ -652,7 +652,14 @@ struct ContentView: View {
         let accepted = DropOpenSupport.open(providers: providers) { result in
             // 이 요청이 시작된 뒤 다른 열기가 있었으면 결과를 버린다 — 성공만이
             // 아니라 실패도 버려야 낡은 사유가 새 문서 위에 오류로 남지 않는다.
-            guard generation == openGeneration else { return }
+            guard generation == openGeneration else {
+                // 버리는 성공 값이 사본이면 이 참조가 마지막이다 — 소유 판별과
+                // 원본 보호는 헬퍼가 한다.
+                if case let .success(url) = result {
+                    DropOpenSupport.discardCopy(at: url)
+                }
+                return
+            }
             switch result {
             case let .success(url):
                 loadDocument(from: url)
