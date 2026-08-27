@@ -708,7 +708,11 @@ struct ContentView: View {
         exportTask?.cancel()
         exportTask = nil
         // 받아 줄 뷰가 없는 드롭 전송도 끊는다 — 창이 닫혀도 iCloud 적재가
-        // 네트워크·디스크를 계속 쓰지 않게 (#126).
+        // 네트워크·디스크를 계속 쓰지 않게 (#126). 세대를 먼저 올리는 것은
+        // 취소가 물리지 못하는 **이미 큐잉된 완료** 때문이다: teardown과 완료
+        // 배달이 같은 메인 액터라 여기서 올리면 그 완료는 반드시 스테일 가드에
+        // 걸리고, 소유 사본 정리까지 기존 경로가 한다.
+        openGeneration += 1
         dropRequest?.cancel()
         dropRequest = nil
         // 창이 사라지면 축소판 디코드도 놓는다 — 그러지 않으면 옛 문서의
