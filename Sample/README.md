@@ -22,7 +22,13 @@
 - 최근 문서 목록 (#126) — 성공적으로 연 파일을 **보안 범위 북마크**로 기록해
   빈 상태에 목록으로 보인다 (경로 문자열로는 안 된다 — `fileImporter`가 준
   샌드박스 접근 권한이 프로세스와 함께 사라진다). 파싱에 실패한 파일은
-  기록하지 않고, 지워진 파일의 항목은 누르는 순간 목록에서 거둔다
+  기록하지 않고, 열 수 없게 된 항목은 누르는 순간 목록에서 거둔다.
+  **iOS에서는 이 접근이 재부팅을 넘기지 못한다** — `.withSecurityScope`가
+  iOS에 없어(`API_UNAVAILABLE`) 옵션 없이 만든 북마크는 implicit ephemeral
+  security scope를 달고, SDK 문서가 그 범위를 "valid until reboot at the
+  latest"로 못박는다(`NSURL.h`의 `WithoutImplicitSecurityScope` 항목).
+  재부팅 뒤 북마크는 **URL로는 풀리는데 읽히지는 않으므로**, 되살리기가
+  읽기 가능 여부까지 확인해 그 항목을 거두고 다시 선택하라고 안내한다
 - 드래그앤드롭으로 열기 (#126) — 빈 상태·문서 화면 어디에 놓아도 그 파일로
   교체한다. macOS(Finder)는 드래그가 파일 URL + 샌드박스 접근 확장을 실어
   원본을 그대로 열고, iOS(Files 등)는 URL 대신 파일 표현이 와 **앱 임시
