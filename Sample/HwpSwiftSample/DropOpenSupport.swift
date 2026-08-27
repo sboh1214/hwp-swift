@@ -34,82 +34,89 @@ enum DropOpenSupport {
         providers: [NSItemProvider],
         completion: @escaping @MainActor (Result<URL, DropOpenFailure>) -> Void
     ) -> Bool {
-        // 파일 URL 경로를 먼저 본다 — 원본 위치를 알아야 최근 문서에 남는다.
-        // 여러 파일을 함께 드롭하면 앞에서부터 순회해 첫 `.hwp`를 연다 —
-        // 하나만 보고 판정하면 비-hwp가 섞인 드롭에서 hwp를 놓친다.
-        let urlProviders = providers.filter {
-            $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
-        }
-        if !urlProviders.isEmpty {
-            openNextFileURL(urlProviders, at: 0, lastFailure: .unreadable, completion: completion)
-            return true
-        }
-        if let provider = providers.first(where: {
-            $0.hasItemConformingToTypeIdentifier(hwpType.identifier)
-        }) {
-            openFileRepresentation(
-                of: provider, typeIdentifier: hwpType.identifier, completion: completion
-            )
-            return true
-        }
-        // 외래 UTI 폴백 — 파일 표현이 원본 파일명을 보존하므로 확장자 검증이
-        // 그대로 성립한다 (macOS `.fileURL` 경로와 같은 "넓게 받고 검증" 정책).
-        if let provider = providers.first(where: {
-            $0.hasItemConformingToTypeIdentifier(UTType.data.identifier)
-        }) {
-            openFileRepresentation(
-                of: provider, typeIdentifier: UTType.data.identifier, completion: completion
-            )
-            return true
-        }
-        return false
+        let ordered = candidates(in: providers)
+        guard !ordered.isEmpty else { return false }
+        openNext(ordered, at: 0, lastFailure: .unreadable, completion: completion)
+        return true
     }
 
-    /// fileURL 적합 provider들을 앞에서부터 시도해 첫 `.hwp`를 연다. 실패
-    /// 사유는 마지막까지 하나도 못 열었을 때만 전달한다 — URL을 읽긴 했는데
-    /// 확장자가 아니었으면 `.notHwp`가 `.unreadable`보다 정확한 사유다.
-    private static func openNextFileURL(
-        _ providers: [NSItemProvider],
+    /// 드롭 후보 한 건 — provider와 그것을 여는 방법.
+    private struct Candidate {
+        let provider: NSItemProvider
+        /// nil이면 파일 URL 경로, 값이 있으면 그 식별자로 파일 표현을 요청한다.
+        let fileRepresentationType: String?
+    }
+
+    /// 후보를 **하나의 순서열**로 만든다 — 적합성 버킷마다 따로 `first(where:)`로
+    /// 뽑으면 앞선 비-hwp 하나가 뒤의 유효한 문서를 가린다 (외래 UTI로 오는
+    /// `.hwp`와 아무 파일은 둘 다 `public.data`에만 적합해 같은 버킷에 들어간다).
+    ///
+    /// 파일 URL이 앞인 것은 원본 위치를 알아야 최근 문서에 남기 때문이다. 같은
+    /// provider가 URL·표현 양쪽에 오를 수 있는데, 앞 경로가 URL을 못 내줘도 뒤
+    /// 경로가 성공할 수 있으므로 의도된 중복이다.
+    private static func candidates(in providers: [NSItemProvider]) -> [Candidate] {
+        let urlCandidates = providers
+            .filter { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }
+            .map { Candidate(provider: $0, fileRepresentationType: nil) }
+        let representationCandidates = providers.compactMap { provider -> Candidate? in
+            if provider.hasItemConformingToTypeIdentifier(hwpType.identifier) {
+                return Candidate(provider: provider, fileRepresentationType: hwpType.identifier)
+            }
+            // 외래 UTI 폴백 — 파일 표현이 원본 파일명을 보존하므로 확장자 검증이
+            // 그대로 성립한다 (`.fileURL` 경로와 같은 "넓게 받고 검증" 정책).
+            if provider.hasItemConformingToTypeIdentifier(UTType.data.identifier) {
+                return Candidate(
+                    provider: provider, fileRepresentationType: UTType.data.identifier
+                )
+            }
+            return nil
+        }
+        return urlCandidates + representationCandidates
+    }
+
+    /// 후보를 앞에서부터 소진하며 첫 `.hwp`를 연다. 실패 사유는 마지막까지
+    /// 하나도 못 열었을 때만 전달한다 — 읽긴 했는데 확장자가 아니었으면
+    /// `.notHwp`가 `.unreadable`보다 정확한 사유라, 한 번 잡히면 유지된다.
+    private static func openNext(
+        _ candidates: [Candidate],
         at index: Int,
         lastFailure: DropOpenFailure,
         completion: @escaping @MainActor (Result<URL, DropOpenFailure>) -> Void
     ) {
-        guard index < providers.count else {
+        guard index < candidates.count else {
             Task { @MainActor in completion(.failure(lastFailure)) }
             return
         }
-        _ = providers[index].loadObject(ofClass: URL.self) { url, _ in
-            if let url, url.pathExtension.lowercased() == "hwp" {
-                Task { @MainActor in completion(.success(url)) }
-            } else {
-                openNextFileURL(
-                    providers,
+        let candidate = candidates[index]
+        guard let typeIdentifier = candidate.fileRepresentationType else {
+            _ = candidate.provider.loadObject(ofClass: URL.self) { url, _ in
+                if let url, url.pathExtension.lowercased() == "hwp" {
+                    Task { @MainActor in completion(.success(url)) }
+                    return
+                }
+                openNext(
+                    candidates,
                     at: index + 1,
                     lastFailure: url != nil ? .notHwp : lastFailure,
                     completion: completion
                 )
             }
+            return
         }
-    }
-
-    /// 파일 표현을 받아 임시 사본을 만들어 연다 (iOS 경로).
-    private static func openFileRepresentation(
-        of provider: NSItemProvider,
-        typeIdentifier: String,
-        completion: @escaping @MainActor (Result<URL, DropOpenFailure>) -> Void
-    ) {
-        provider.loadFileRepresentation(forTypeIdentifier: typeIdentifier) { url, _ in
+        candidate.provider.loadFileRepresentation(forTypeIdentifier: typeIdentifier) { url, _ in
             // 이 URL의 파일은 핸들러가 반환되면 사라진다 — 복사는 여기서
             // **동기로** 끝내야 한다.
-            let result: Result<URL, DropOpenFailure> =
-                if let url, url.pathExtension.lowercased() != "hwp" {
-                    .failure(.notHwp)
-                } else if let url, let copy = try? copyToTemporary(url) {
-                    .success(copy)
-                } else {
-                    .failure(.unreadable)
-                }
-            Task { @MainActor in completion(result) }
+            let isHwp = url?.pathExtension.lowercased() == "hwp"
+            if isHwp, let url, let copy = try? copyToTemporary(url) {
+                Task { @MainActor in completion(.success(copy)) }
+                return
+            }
+            openNext(
+                candidates,
+                at: index + 1,
+                lastFailure: url != nil && !isHwp ? .notHwp : lastFailure,
+                completion: completion
+            )
         }
     }
 
