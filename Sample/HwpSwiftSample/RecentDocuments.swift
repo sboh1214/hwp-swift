@@ -153,11 +153,17 @@ enum RecentDocumentsStore {
         #endif
     }
 
+    /// iOS는 `.withoutImplicitStartAccessing`을 켠다 — 기본 resolve는 접근을
+    /// **암시적으로 start**하는데 그것을 stop할 주체가 없어, 최근 문서를 열
+    /// 때마다 샌드박스 확장이 하나씩 새고 쌓이면 재실행까지 파일 접근이 막힌다
+    /// (`NSURL.h`의 startAccessing 경고). 접근 수명은 `resolve`의 읽기 프로브와
+    /// `loadDocument`의 명시적 start/stop 쌍이 소유한다. macOS의 보안 범위
+    /// 북마크는 암시적 start가 없어 이 옵션의 대상이 아니다.
     private static var resolutionOptions: URL.BookmarkResolutionOptions {
         #if os(macOS)
             [.withSecurityScope]
         #else
-            []
+            [.withoutImplicitStartAccessing]
         #endif
     }
 
