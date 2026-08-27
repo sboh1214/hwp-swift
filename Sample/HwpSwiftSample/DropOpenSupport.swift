@@ -32,7 +32,7 @@ enum DropOpenSupport {
     /// 반환 false는 처리할 provider가 없다는 뜻이다 (드롭 거절).
     static func open(
         providers: [NSItemProvider],
-        completion: @escaping @MainActor (Result<URL, DropOpenFailure>) -> Void
+        completion: @escaping @MainActor (Result<DropOpenedFile, DropOpenFailure>) -> Void
     ) -> Bool {
         let ordered = candidates(in: providers)
         guard !ordered.isEmpty else { return false }
@@ -81,7 +81,7 @@ enum DropOpenSupport {
         _ candidates: [Candidate],
         at index: Int,
         lastFailure: DropOpenFailure,
-        completion: @escaping @MainActor (Result<URL, DropOpenFailure>) -> Void
+        completion: @escaping @MainActor (Result<DropOpenedFile, DropOpenFailure>) -> Void
     ) {
         guard index < candidates.count else {
             Task { @MainActor in completion(.failure(lastFailure)) }
@@ -91,7 +91,9 @@ enum DropOpenSupport {
         guard let typeIdentifier = candidate.fileRepresentationType else {
             _ = candidate.provider.loadObject(ofClass: URL.self) { url, _ in
                 if let url, url.pathExtension.lowercased() == "hwp" {
-                    Task { @MainActor in completion(.success(url)) }
+                    Task { @MainActor in
+                        completion(.success(DropOpenedFile(url: url, isOwnedCopy: false)))
+                    }
                     return
                 }
                 openNext(
@@ -136,7 +138,9 @@ enum DropOpenSupport {
                 )
                 return
             }
-            Task { @MainActor in completion(.success(copy)) }
+            Task { @MainActor in
+                completion(.success(DropOpenedFile(url: copy, isOwnedCopy: true)))
+            }
         }
     }
 
@@ -159,11 +163,11 @@ enum DropOpenSupport {
         return component
     }
 
-    /// 이 앱이 소유한 드롭 사본이면 디렉터리째 지운다 — 스테일 가드가 성공
-    /// 값을 버리면 그 참조가 마지막인데, `removeStaleDropCopies`는 이전 실행
-    /// 것만 거두므로 여기서 지우지 않으면 이번 세션 내내 쌓인다. macOS 파일
-    /// URL 경로의 성공 값은 사용자 원본이라, **임시 디렉터리 안 사본 형태일
-    /// 때만** 지운다.
+    /// 소유 사본을 디렉터리째 지운다 — 스테일 가드가 성공 값을 버리면 그
+    /// 참조가 마지막인데, `removeStaleDropCopies`는 이전 실행 것만 거두므로
+    /// 여기서 지우지 않으면 이번 세션 내내 쌓인다. 소유 판정은 호출자가
+    /// `DropOpenedFile.isOwnedCopy`로 하고, 여기의 경로 형태 검사는 삭제
+    /// 경로의 **이중 게이트**다 — 어느 한쪽이 잘못돼도 원본은 지워지지 않는다.
     static func discardCopy(at url: URL) {
         let manager = FileManager.default
         let directory = url.deletingLastPathComponent()
@@ -202,6 +206,16 @@ enum DropOpenSupport {
         try manager.copyItem(at: url, to: destination)
         return destination
     }
+}
+
+/// 드롭 열기 성공 값 — URL과 그 **출처**. 스테일 폐기가 소유 사본만 지우도록
+/// 출처를 함께 나른다: 경로 형태는 소유의 증명이 아니다 (파일 URL 경로가
+/// 사본 형태의 경로를 내줄 수도 있다).
+struct DropOpenedFile {
+    let url: URL
+    /// 이 앱이 만든 임시 사본(파일 표현 경로)이면 true. 원본(파일 URL 경로)은
+    /// false — 스테일 폐기가 절대 지우면 안 된다.
+    let isOwnedCopy: Bool
 }
 
 enum DropOpenFailure: Error {
