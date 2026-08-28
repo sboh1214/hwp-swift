@@ -1,0 +1,69 @@
+{
+  "id": "noori",
+  "generationTool": "한컴오피스 한글 12.30.0 (6446) macOS",
+  "source": "기존 HWP fixture noori의 document.hwp를 한글.app에서 열어 파일 > 다른 이름으로 저장하기 > 한글 표준 문서 (*.hwpx)로 재저장 (Claude Computer Use GUI 자동화)",
+  "owpmlVersion": "5.1.1.0",
+  "sourceHwpFixture": "noori",
+  "features": [
+    "hwpx",
+    "derived-from-hwp",
+    "paragraph-text",
+    "multi-paragraph",
+    "table",
+    "image",
+    "columns",
+    "bin-data",
+    "doc-info",
+    "doc-properties",
+    "styles",
+    "preview-text",
+    "preview-image"
+  ],
+  "expectations": {
+    "binDataCount": 4,
+    "borderFillCount": 20,
+    "charShapeCount": 58,
+    "faceNamesKorean": [
+      "굴림",
+      "굴림체",
+      "바탕체",
+      "함초롬돋움",
+      "함초롬바탕",
+      "휴먼명조",
+      "HY울릉도M",
+      "HY헤드라인M",
+      "바탕"
+    ],
+    "imageBinItemIds": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "pageDef": {
+      "height": 84188,
+      "marginBottom": 2834,
+      "marginLeft": 5669,
+      "marginRight": 5669,
+      "marginTop": 2834,
+      "width": 59528
+    },
+    "paraShapeCount": 47,
+    "sectionCount": 1,
+    "sectionParagraphCounts": [
+      21
+    ],
+    "styleCount": 33,
+    "tabDefCount": 3,
+    "tableCellCounts": [
+      10,
+      1,
+      2,
+      3,
+      24
+    ],
+    "visibleTextContains": [
+      "□ 과학기술정보통신부(장관 유영민, 이하 ‘과기정통부’)는 우리나라 최초"
+    ]
+  }
+}
