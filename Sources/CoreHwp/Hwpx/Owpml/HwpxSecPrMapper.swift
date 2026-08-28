@@ -60,7 +60,10 @@ enum HwpxSecPrMapper {
         var column = HwpColumn()
         var property = HwpColumnProperty()
         property.type = Self.columnTypes[colPr.attribute("type") ?? "NEWSPAPER"] ?? .general
-        property.count = max(1, colPr.intAttribute("colCount", default: 1))
+        // 바이너리 모델은 count를 8비트(0...255)로 담으므로 HWPX 경로도 같은
+        // 범위로 클램프한다 — 상한이 없으면 조작된 colCount가 columnFrames의
+        // 0..<count 순회에서 행/OOM을 낸다 (P1).
+        property.count = min(255, max(1, colPr.intAttribute("colCount", default: 1)))
         property.direction = Self.columnDirections[colPr.attribute("layout") ?? "LEFT"]
             ?? .left
         property.isSameWidth = colPr.boolAttribute("sameSz", default: true)

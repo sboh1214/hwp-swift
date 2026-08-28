@@ -67,6 +67,19 @@ extension HwpxXMLNode {
         return namespaceURI.isEmpty || HwpxNamespace.known.contains(namespaceURI)
     }
 
+    /// local name이 일치하고 namespace가 기대 vocabulary이거나 비어 있는지.
+    ///
+    /// 전역 `known` 집합만 보는 `isNamed(_:)`와 달리 특정 namespace 하나로
+    /// 좁힌다 — 낯선 vocabulary의 동명 요소(`<hs:head>`가 `head`로, 확장
+    /// namespace의 `<ext:tbl>`이 `tbl`로)를 OWPML로 오인하지 않기 위해서다.
+    /// 무-namespace 폴백은 선언 없는 문서를 위해 보존한다.
+    func isNamed(_ localName: String, in namespace: String) -> Bool {
+        guard self.localName == localName else {
+            return false
+        }
+        return namespaceURI.isEmpty || namespaceURI == namespace
+    }
+
     func firstChild(named localName: String) -> HwpxXMLNode? {
         childElements.first { $0.isNamed(localName) }
     }

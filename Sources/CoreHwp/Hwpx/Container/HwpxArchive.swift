@@ -44,8 +44,20 @@ struct HwpxArchive {
         try Self.rejectZip64AndMultiDisk(data, eocdOffset: eocdOffset)
 
         let entryCount = Int(try data.readLittleEndianUInt16(at: eocdOffset + 10))
-        let directorySize = Int(try data.readLittleEndianUInt32(at: eocdOffset + 12))
-        let directoryOffset = Int(try data.readLittleEndianUInt32(at: eocdOffset + 16))
+        // 32비트 Int(watchOS arm64_32)에서 트랩하지 않게 구조 가드 전에 failable
+        // 변환한다 — sentinel 아닌 0x80000000...0xFFFFFFFE가 여기 도달한다 (P1,
+        // `parseDirectoryEntry`와 같은 이유).
+        guard let directorySize = Int(
+            exactly: try data.readLittleEndianUInt32(at: eocdOffset + 12)
+        ),
+            let directoryOffset = Int(
+                exactly: try data.readLittleEndianUInt32(at: eocdOffset + 16)
+            )
+        else {
+            throw HwpError.invalidArchive(
+                reason: "central directory size or offset beyond Int range"
+            )
+        }
         guard directoryOffset <= eocdOffset,
               directorySize <= eocdOffset - directoryOffset
         else {
@@ -126,9 +138,13 @@ private extension HwpxArchive {
     static let maximumCommentLength = 0xFFFF
 
     /// EOCD 레코드를 끝에서 역방향으로 찾는다 (주석 최대 64 KiB 허용).
-    /// 뒤에서부터 첫 매치가 실제 EOCD다 — 주석 안의 가짜 시그니처는 항상
-    /// 그보다 앞에 있다. 매치는 주석 길이가 남은 바이트 안에 드는지로
-    /// 추가 검증한다.
+    ///
+    /// 실제 EOCD의 주석은 파일 끝까지 정확히 이어지므로 선언 주석 길이가 남은
+    /// 바이트와 **정확히** 일치해야 한다 (`==`). 합법 주석 안에 박힌 가짜 EOCD
+    /// 시그니처는 실제 EOCD보다 **뒤**(높은 오프셋)에 있어 역방향 스캔이 먼저
+    /// 만나는데, 그 뒤에는 자기 주석 몫보다 많은 바이트가 남으므로 이 정확
+    /// 대조에서 탈락한다 — `<=`로 두면 가짜가 임의 주석 길이로 통과해 빈·엉뚱한
+    /// 디렉터리를 파싱한다 (P2). 탈락하면 스캔을 계속해 앞의 진짜 EOCD를 찾는다.
     static func locateEndOfCentralDirectory(_ data: Data) throws -> Int {
         guard data.count >= endOfCentralDirectoryLength else {
             throw HwpError.invalidArchive(
@@ -142,7 +158,7 @@ private extension HwpxArchive {
         while offset >= lowerBound {
             if try data.readLittleEndianUInt32(at: offset) == Signature.endOfCentralDirectory {
                 let commentLength = Int(try data.readLittleEndianUInt16(at: offset + 20))
-                if offset + endOfCentralDirectoryLength + commentLength <= data.count {
+                if offset + endOfCentralDirectoryLength + commentLength == data.count {
                     return offset
                 }
             }

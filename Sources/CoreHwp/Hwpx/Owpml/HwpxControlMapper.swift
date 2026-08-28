@@ -23,6 +23,12 @@ enum HwpxControlMapper {
         _ node: HwpxXMLNode,
         context: HwpxMappingContext
     ) throws -> HwpxRunChildAction {
+        // paragraph vocabulary가 아닌 동명 요소(`<ext:tbl>` 등)를 OWPML 컨트롤로
+        // 합성하면 WCHAR/컨트롤 스트림이 어긋난다 — local-name switch 전에
+        // namespace로 거른다 (P2). 낯선 요소는 앵커를 추측하지 않는다.
+        guard node.namespaceURI.isEmpty || node.namespaceURI == HwpxNamespace.paragraph else {
+            return .unknown
+        }
         switch node.localName {
         case "secPr":
             return .anchor(

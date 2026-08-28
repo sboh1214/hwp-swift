@@ -81,10 +81,14 @@ enum HwpxParaShapeMapper {
     }
 
     /// `hh:style` → `HwpStyle`.
-    static func mapStyle(_ node: HwpxXMLNode, tables: HwpxIdTables) -> HwpStyle {
-        HwpStyle(
-            node.attribute("name") ?? "",
-            node.attribute("engName") ?? "",
+    static func mapStyle(_ node: HwpxXMLNode, tables: HwpxIdTables) throws -> HwpStyle {
+        let name = node.attribute("name") ?? ""
+        let englishName = node.attribute("engName") ?? ""
+        try hwpxValidateNameLength(name)
+        try hwpxValidateNameLength(englishName)
+        return HwpStyle(
+            name,
+            englishName,
             property: node.attribute("type") == "CHAR" ? 1 : 0,
             nextId: BYTE(
                 clamping: tables.style.resolvedOffset(of: node.attribute("nextStyleIDRef"))

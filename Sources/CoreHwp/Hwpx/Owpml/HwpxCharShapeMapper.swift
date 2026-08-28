@@ -12,7 +12,7 @@ enum HwpxCharShapeMapper {
         _ fontfaces: HwpxXMLNode,
         into idMappings: inout HwpIdMappings,
         tables: inout HwpxIdTables
-    ) {
+    ) throws {
         var arrays: [[HwpFaceName]] = Array(repeating: [], count: 7)
         for fontface in fontfaces.children(named: "fontface") {
             guard let language = fontface.attribute("lang")
@@ -24,6 +24,10 @@ enum HwpxCharShapeMapper {
             for font in fontface.children(named: "font") {
                 let face = font.attribute("face") ?? ""
                 let substitute = font.firstChild(named: "substFont")?.attribute("face")
+                try hwpxValidateNameLength(face)
+                if let substitute {
+                    try hwpxValidateNameLength(substitute)
+                }
                 tables.fontFacesByLanguage[index].register(
                     id: font.attribute("id"), offset: arrays[index].count
                 )

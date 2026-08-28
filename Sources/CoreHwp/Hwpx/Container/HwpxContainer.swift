@@ -34,10 +34,13 @@ struct HwpxContainer {
         self.limits = limits
         budget = HwpxByteBudget(limits: limits)
 
+        // mimetype 게이트를 암호화 분류보다 먼저 통과시킨다 (불변식 #3) —
+        // encryption.xml을 가진 비-HWP ZIP(.docx 등)이 암호화 HWP 문서로
+        // 오분류돼 자동 감지·HwpKit로 새어 나가지 않게 한다 (P2).
+        try Self.validateMimetype(archive, limits: limits, budget: &budget)
         guard archive.entriesByName[EntryName.encryption] == nil else {
             throw HwpError.unsupportedFeature(.encryptedDocument)
         }
-        try Self.validateMimetype(archive, limits: limits, budget: &budget)
     }
 
     mutating func requiredEntry(_ name: String) throws -> Data {

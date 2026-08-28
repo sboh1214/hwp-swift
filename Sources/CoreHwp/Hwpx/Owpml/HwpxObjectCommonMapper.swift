@@ -83,8 +83,12 @@ private extension HwpxObjectCommonMapper {
         "RIGHT_ONLY": .rightOnly, "LARGEST_ONLY": .largestOnly,
     ]
 
+    /// 한컴 저장본은 그림을 numberingType="PICTURE"로 쓴다 (실측: 픽스처
+    /// section XML에 PICTURE만 있고 FIGURE는 0건) — HWP 모델의 .figure로 함께
+    /// 매핑해야 실제 그림이 .none으로 떨어지지 않는다 (P2).
     static let numberingCategories: [String: HwpCommonCtrlNumberingCategory] = [
-        "NONE": .none, "FIGURE": .figure, "TABLE": .table, "EQUATION": .equation,
+        "NONE": .none, "FIGURE": .figure, "PICTURE": .figure,
+        "TABLE": .table, "EQUATION": .equation,
     ]
 
     static let widthRelativeTos: [String: HwpCommonCtrlObjectWidthRelativeTo] = [

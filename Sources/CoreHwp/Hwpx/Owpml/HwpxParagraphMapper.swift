@@ -43,14 +43,22 @@ enum HwpxParagraphMapper {
         isLastInList: Bool
     ) throws -> HwpParagraph {
         var builder = ParagraphBuilder()
-        for run in node.children(named: "run") {
-            builder.beginRun(
-                shapeOffset: context.idTables.charShape.resolvedOffset(
-                    of: run.attribute("charPrIDRef")
+        for child in node.childElements {
+            if child.isNamed("run", in: HwpxNamespace.paragraph) {
+                builder.beginRun(
+                    shapeOffset: context.idTables.charShape.resolvedOffset(
+                        of: child.attribute("charPrIDRef")
+                    )
                 )
-            )
-            for child in run.childElements {
-                try consume(child, into: &builder, context: context)
+                for runChild in child.childElements {
+                    try consume(runChild, into: &builder, context: context)
+                }
+            } else if !child.isNamed("linesegarray", in: HwpxNamespace.paragraph) {
+                // run/linesegarray가 아닌 hp:p 직속 자식(문단 직속 개체 등)은
+                // synthetic unknown으로 남기고 위치 불확실로 표시한다 — 안 그러면
+                // 진단에서 빠지고 positionCertain이 참으로 남아 안전밸브가 걸리지
+                // 않은 채 잘못된 lineseg 캐시를 쓴다 (P2).
+                builder.appendUnknown(child.localName)
             }
         }
         builder.appendCharCode(13) // 문단 끝
@@ -67,11 +75,11 @@ private extension HwpxParagraphMapper {
         into builder: inout ParagraphBuilder,
         context: HwpxMappingContext
     ) throws {
-        if child.isNamed("t") {
+        if child.isNamed("t", in: HwpxNamespace.paragraph) {
             consumeText(child, into: &builder)
             return
         }
-        if child.isNamed("ctrl") {
+        if child.isNamed("ctrl", in: HwpxNamespace.paragraph) {
             for wrapped in child.childElements {
                 try classifyAndAppend(wrapped, into: &builder, context: context)
             }
@@ -116,6 +124,14 @@ private extension HwpxParagraphMapper {
         _ element: HwpxXMLNode,
         into builder: inout ParagraphBuilder
     ) {
+        // classify와 같은 이유로 paragraph vocabulary 밖의 동명 요소를
+        // 제어 문자로 오인하지 않는다 — 낯선 요소는 위치 불확실로 남긴다 (P2).
+        guard element.namespaceURI.isEmpty
+            || element.namespaceURI == HwpxNamespace.paragraph
+        else {
+            builder.appendUnknown(element.localName)
+            return
+        }
         switch element.localName {
         case "tab":
             builder.appendInline(code: 9, fourCC: 0)

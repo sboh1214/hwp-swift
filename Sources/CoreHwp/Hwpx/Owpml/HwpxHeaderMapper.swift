@@ -8,6 +8,21 @@ import Foundation
 /// OWPML local name).
 let hwpxSyntheticTagId: UInt32 = 0
 
+/// 글꼴·스타일 이름을 WORD 길이 필드로 축소하기 전에 검증한다.
+///
+/// `HwpFaceName`/`HwpStyle`의 합성 init은 `WORD(name.utf16.count)`로 이름
+/// 길이를 담는데, 65,536 UTF-16 단위 이상이면 그 축소가 트랩한다. 기본 엔트리
+/// 한도로 그만한 이름이 통과하므로, 프로세스 중단 대신 typed `invalidXML`로
+/// 거부한다 (P1). 이름은 전부 header.xml에서 온다.
+func hwpxValidateNameLength(_ name: String) throws {
+    guard name.utf16.count <= Int(WORD.max) else {
+        throw HwpError.invalidXML(
+            entry: HwpxContainer.EntryName.header,
+            reason: "font or style name exceeds \(WORD.max) UTF-16 units"
+        )
+    }
+}
+
 /// `Contents/header.xml`(`hh:head`) 전체를 `HwpDocInfo` 구성 요소로 옮긴다.
 struct HwpxHeaderMapping {
     var documentProperties = HwpDocumentProperties()
@@ -42,7 +57,16 @@ enum HwpxHeaderMapper {
         // 빈 문서 기본값에서 출발하되, 매핑 대상 가족은 전부 덮어쓴다 —
         // 기본값 항목이 리맵된 오프셋 공간에 섞이면 참조가 어긋난다.
         mapping.idMappings.binDataArray = binDataCatalog.binDataArray
+        // 7개 언어별 글꼴 배열을 전부 비운다 — HwpIdMappings()가 일곱 배열 모두를
+        // 기본 2종으로 채우므로, fontfaces 가족이 없는 헤더에서 한국어만 비우면
+        // 나머지 6종이 패키지에 없는 글꼴을 광고한다 (P2).
         mapping.idMappings.faceNameKoreanArray = []
+        mapping.idMappings.faceNameEnglishArray = []
+        mapping.idMappings.faceNameChineseArray = []
+        mapping.idMappings.faceNameJapaneseArray = []
+        mapping.idMappings.faceNameEtcArray = []
+        mapping.idMappings.faceNameSymbolArray = []
+        mapping.idMappings.faceNameUserArray = []
         mapping.idMappings.borderFillArray = []
         mapping.idMappings.charShapeArray = []
         mapping.idMappings.tabDefArray = []
@@ -55,7 +79,7 @@ enum HwpxHeaderMapper {
         mapping.idMappings.changeTraceCount = nil
         mapping.idMappings.changeTraceUserCount = nil
 
-        mapHeadChildren(root, into: &mapping)
+        try mapHeadChildren(root, into: &mapping)
 
         let docInfo = HwpDocInfo(
             hwpxDocumentProperties: mapping.documentProperties,
@@ -71,7 +95,7 @@ private extension HwpxHeaderMapper {
     static func mapHeadChildren(
         _ root: HwpxXMLNode,
         into mapping: inout HwpxHeaderMapping
-    ) {
+    ) throws {
         for child in root.childElements {
             if child.isNamed("beginNum") {
                 mapping.documentProperties = HwpDocumentProperties(
@@ -86,7 +110,7 @@ private extension HwpxHeaderMapper {
                     )
                 )
             } else if child.isNamed("refList") {
-                mapRefList(child, into: &mapping)
+                try mapRefList(child, into: &mapping)
             } else {
                 mapping.unknownRecords.append(unknownRecord(of: child))
             }
@@ -96,7 +120,7 @@ private extension HwpxHeaderMapper {
     static func mapRefList(
         _ refList: HwpxXMLNode,
         into mapping: inout HwpxHeaderMapping
-    ) {
+    ) throws {
         // 1차 패스: 가족별 id 테이블 등록 — 가족 사이 참조(글자→테두리,
         // 스타일→문단/글자, 문단→탭/번호)가 문서 내 등장 순서와 무관하게
         // 해석되도록 등록을 먼저 끝낸다.
@@ -129,7 +153,7 @@ private extension HwpxHeaderMapper {
             }
             switch family.localName {
             case "fontfaces":
-                HwpxCharShapeMapper.mapFontFaces(
+                try HwpxCharShapeMapper.mapFontFaces(
                     family, into: &mapping.idMappings, tables: &mapping.idTables
                 )
             case "borderFills":
@@ -145,8 +169,8 @@ private extension HwpxHeaderMapper {
                 mapping.idMappings.paraShapeArray = family.children(named: "paraPr")
                     .map { HwpxParaShapeMapper.mapParaShape($0, tables: mapping.idTables) }
             case "styles":
-                mapping.idMappings.styleArray = family.children(named: "style")
-                    .map { HwpxParaShapeMapper.mapStyle($0, tables: mapping.idTables) }
+                mapping.idMappings.styleArray = try family.children(named: "style")
+                    .map { try HwpxParaShapeMapper.mapStyle($0, tables: mapping.idTables) }
             case "numberings", "bullets":
                 // 1차 범위 밖 — id 테이블만 등록해 참조가 결정적으로
                 // 재작성되게 하고, 미해석 사실은 진단에 남긴다 (배열이
