@@ -188,66 +188,77 @@ private extension HwpxArchive {
         entries.reserveCapacity(entryCount)
         var offset = directoryOffset
         for _ in 0 ..< entryCount {
-            guard offset + 46 <= directoryEnd else {
-                throw HwpError.invalidArchive(reason: "truncated central directory")
-            }
-            guard try data.readLittleEndianUInt32(at: offset)
-                == Signature.centralDirectoryEntry
-            else {
-                throw HwpError.invalidArchive(
-                    reason: "central directory entry signature mismatch at \(offset)"
-                )
-            }
-
-            let flags = try data.readLittleEndianUInt16(at: offset + 8)
-            let method = try data.readLittleEndianUInt16(at: offset + 10)
-            let compressedSize = try data.readLittleEndianUInt32(at: offset + 20)
-            let uncompressedSize = try data.readLittleEndianUInt32(at: offset + 24)
-            let nameLength = Int(try data.readLittleEndianUInt16(at: offset + 28))
-            let extraLength = Int(try data.readLittleEndianUInt16(at: offset + 30))
-            let commentLength = Int(try data.readLittleEndianUInt16(at: offset + 32))
-            let localHeaderOffset = try data.readLittleEndianUInt32(at: offset + 42)
-            guard compressedSize != 0xFFFF_FFFF, uncompressedSize != 0xFFFF_FFFF,
-                  localHeaderOffset != 0xFFFF_FFFF
-            else {
-                throw HwpError.invalidArchive(reason: "Zip64 archives are not supported")
-            }
-
-            let nameEnd = offset + 46 + nameLength
-            guard nameEnd + extraLength + commentLength <= directoryEnd else {
-                throw HwpError.invalidArchive(reason: "truncated central directory")
-            }
-            // 이름은 UTF-8 손실 디코드로 읽는다 — HWPX 엔트리 이름은 전부
-            // ASCII라 손실 결과는 어떤 조회에도 걸리지 않을 뿐이다.
-            let name = String(
-                decoding: data[(offset + 46) ..< nameEnd], as: UTF8.self
+            let (entry, nextOffset) = try parseDirectoryEntry(
+                data, at: offset, directoryEnd: directoryEnd
             )
-            guard !name.contains("\u{0}") else {
-                throw HwpError.invalidArchive(reason: "entry name contains NUL byte")
+            if entries[entry.name] == nil {
+                entries[entry.name] = entry
             }
-            // 32비트 Int(watchOS arm64_32)에서 Int.max 초과 UInt32가 트랩하지
-            // 않게 failable 변환을 쓴다 (`EmbeddedCompoundFile`과 같은 이유, P1).
-            guard let compressed = Int(exactly: compressedSize),
-                  let uncompressed = Int(exactly: uncompressedSize),
-                  let headerOffset = Int(exactly: localHeaderOffset)
-            else {
-                throw HwpError.invalidArchive(
-                    reason: "entry '\(name)' declares sizes beyond Int range"
-                )
-            }
-            if entries[name] == nil {
-                entries[name] = Entry(
-                    name: name,
-                    method: method,
-                    flags: flags,
-                    compressedSize: compressed,
-                    uncompressedSize: uncompressed,
-                    localHeaderOffset: headerOffset
-                )
-            }
-            offset = nameEnd + extraLength + commentLength
+            offset = nextOffset
         }
         return entries
+    }
+
+    static func parseDirectoryEntry(
+        _ data: Data,
+        at offset: Int,
+        directoryEnd: Int
+    ) throws -> (entry: Entry, nextOffset: Int) {
+        guard offset + 46 <= directoryEnd else {
+            throw HwpError.invalidArchive(reason: "truncated central directory")
+        }
+        guard try data.readLittleEndianUInt32(at: offset)
+            == Signature.centralDirectoryEntry
+        else {
+            throw HwpError.invalidArchive(
+                reason: "central directory entry signature mismatch at \(offset)"
+            )
+        }
+
+        let flags = try data.readLittleEndianUInt16(at: offset + 8)
+        let method = try data.readLittleEndianUInt16(at: offset + 10)
+        let compressedSize = try data.readLittleEndianUInt32(at: offset + 20)
+        let uncompressedSize = try data.readLittleEndianUInt32(at: offset + 24)
+        let nameLength = Int(try data.readLittleEndianUInt16(at: offset + 28))
+        let extraLength = Int(try data.readLittleEndianUInt16(at: offset + 30))
+        let commentLength = Int(try data.readLittleEndianUInt16(at: offset + 32))
+        let localHeaderOffset = try data.readLittleEndianUInt32(at: offset + 42)
+        guard compressedSize != 0xFFFF_FFFF, uncompressedSize != 0xFFFF_FFFF,
+              localHeaderOffset != 0xFFFF_FFFF
+        else {
+            throw HwpError.invalidArchive(reason: "Zip64 archives are not supported")
+        }
+
+        let nameEnd = offset + 46 + nameLength
+        guard nameEnd + extraLength + commentLength <= directoryEnd else {
+            throw HwpError.invalidArchive(reason: "truncated central directory")
+        }
+        // HWPX 엔트리 이름은 전부 ASCII다 — UTF-8이 아닌 이름은 어떤 조회에도
+        // 걸리지 않으므로 빈 이름으로 접어 구조만 유지한다 (첫 등장 우선 규칙과
+        // 함께 결정적).
+        let name = String(bytes: data[(offset + 46) ..< nameEnd], encoding: .utf8) ?? ""
+        guard !name.contains("\u{0}") else {
+            throw HwpError.invalidArchive(reason: "entry name contains NUL byte")
+        }
+        // 32비트 Int(watchOS arm64_32)에서 Int.max 초과 UInt32가 트랩하지
+        // 않게 failable 변환을 쓴다 (`EmbeddedCompoundFile`과 같은 이유, P1).
+        guard let compressed = Int(exactly: compressedSize),
+              let uncompressed = Int(exactly: uncompressedSize),
+              let headerOffset = Int(exactly: localHeaderOffset)
+        else {
+            throw HwpError.invalidArchive(
+                reason: "entry '\(name)' declares sizes beyond Int range"
+            )
+        }
+        let entry = Entry(
+            name: name,
+            method: method,
+            flags: flags,
+            compressedSize: compressed,
+            uncompressedSize: uncompressed,
+            localHeaderOffset: headerOffset
+        )
+        return (entry, nameEnd + extraLength + commentLength)
     }
 
     /// local header를 건너뛰어 엔트리의 압축된 payload 슬라이스를 얻는다.

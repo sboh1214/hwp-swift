@@ -56,54 +56,9 @@ struct ZipBuilder {
         var directory = Data()
 
         for entry in entries {
-            let payload = entry.payload
-            let nameBytes = Data(entry.name.utf8)
-            let crc = ZipBuilder.crc32(of: entry.content)
-            let compressedSize = entry.declaredCompressedSize ?? UInt32(payload.count)
-            let uncompressedSize = entry.declaredUncompressedSize
-                ?? UInt32(entry.content.count)
             let headerOffset = UInt32(archive.count)
-
-            // local file header — data descriptor(비트 3) 흉내를 위해 CD와
-            // 별개로 크기 0을 적을 수 있게 flags로 가른다.
-            archive.appendLittleEndian(UInt32(0x0403_4B50))
-            archive.appendLittleEndian(UInt16(20))
-            archive.appendLittleEndian(entry.flags)
-            archive.appendLittleEndian(entry.method)
-            archive.appendLittleEndian(UInt32(0)) // 시각
-            let usesDataDescriptor = entry.flags & 0b1000 != 0
-            archive.appendLittleEndian(usesDataDescriptor ? 0 : crc)
-            archive.appendLittleEndian(usesDataDescriptor ? 0 : compressedSize)
-            archive.appendLittleEndian(usesDataDescriptor ? 0 : uncompressedSize)
-            archive.appendLittleEndian(UInt16(nameBytes.count))
-            archive.appendLittleEndian(UInt16(0)) // extra 없음
-            archive.append(nameBytes)
-            archive.append(payload)
-            if usesDataDescriptor {
-                archive.appendLittleEndian(UInt32(0x0807_4B50))
-                archive.appendLittleEndian(crc)
-                archive.appendLittleEndian(compressedSize)
-                archive.appendLittleEndian(uncompressedSize)
-            }
-
-            // central directory entry
-            directory.appendLittleEndian(UInt32(0x0201_4B50))
-            directory.appendLittleEndian(UInt16(20)) // made by
-            directory.appendLittleEndian(UInt16(20)) // needed
-            directory.appendLittleEndian(entry.flags)
-            directory.appendLittleEndian(entry.method)
-            directory.appendLittleEndian(UInt32(0)) // 시각
-            directory.appendLittleEndian(crc)
-            directory.appendLittleEndian(compressedSize)
-            directory.appendLittleEndian(uncompressedSize)
-            directory.appendLittleEndian(UInt16(nameBytes.count))
-            directory.appendLittleEndian(UInt16(0)) // extra
-            directory.appendLittleEndian(UInt16(0)) // comment
-            directory.appendLittleEndian(UInt16(0)) // disk
-            directory.appendLittleEndian(UInt16(0)) // internal attrs
-            directory.appendLittleEndian(UInt32(0)) // external attrs
-            directory.appendLittleEndian(headerOffset)
-            directory.append(nameBytes)
+            appendLocalRecord(of: entry, to: &archive)
+            appendDirectoryRecord(of: entry, headerOffset: headerOffset, to: &directory)
         }
 
         let directoryOffset = UInt32(archive.count)
@@ -120,6 +75,65 @@ struct ZipBuilder {
         archive.appendLittleEndian(UInt16(comment.count))
         archive.append(comment)
         return archive
+    }
+
+    /// local file header + payload — data descriptor(비트 3) 흉내를 위해 CD와
+    /// 별개로 크기 0을 적을 수 있게 flags로 가른다.
+    private func appendLocalRecord(of entry: Entry, to archive: inout Data) {
+        let payload = entry.payload
+        let nameBytes = Data(entry.name.utf8)
+        let crc = ZipBuilder.crc32(of: entry.content)
+        let compressedSize = entry.declaredCompressedSize ?? UInt32(payload.count)
+        let uncompressedSize = entry.declaredUncompressedSize ?? UInt32(entry.content.count)
+
+        archive.appendLittleEndian(UInt32(0x0403_4B50))
+        archive.appendLittleEndian(UInt16(20))
+        archive.appendLittleEndian(entry.flags)
+        archive.appendLittleEndian(entry.method)
+        archive.appendLittleEndian(UInt32(0)) // 시각
+        let usesDataDescriptor = entry.flags & 0b1000 != 0
+        archive.appendLittleEndian(usesDataDescriptor ? 0 : crc)
+        archive.appendLittleEndian(usesDataDescriptor ? 0 : compressedSize)
+        archive.appendLittleEndian(usesDataDescriptor ? 0 : uncompressedSize)
+        archive.appendLittleEndian(UInt16(nameBytes.count))
+        archive.appendLittleEndian(UInt16(0)) // extra 없음
+        archive.append(nameBytes)
+        archive.append(payload)
+        if usesDataDescriptor {
+            archive.appendLittleEndian(UInt32(0x0807_4B50))
+            archive.appendLittleEndian(crc)
+            archive.appendLittleEndian(compressedSize)
+            archive.appendLittleEndian(uncompressedSize)
+        }
+    }
+
+    private func appendDirectoryRecord(
+        of entry: Entry,
+        headerOffset: UInt32,
+        to directory: inout Data
+    ) {
+        let nameBytes = Data(entry.name.utf8)
+        let crc = ZipBuilder.crc32(of: entry.content)
+        let compressedSize = entry.declaredCompressedSize ?? UInt32(entry.payload.count)
+        let uncompressedSize = entry.declaredUncompressedSize ?? UInt32(entry.content.count)
+
+        directory.appendLittleEndian(UInt32(0x0201_4B50))
+        directory.appendLittleEndian(UInt16(20)) // made by
+        directory.appendLittleEndian(UInt16(20)) // needed
+        directory.appendLittleEndian(entry.flags)
+        directory.appendLittleEndian(entry.method)
+        directory.appendLittleEndian(UInt32(0)) // 시각
+        directory.appendLittleEndian(crc)
+        directory.appendLittleEndian(compressedSize)
+        directory.appendLittleEndian(uncompressedSize)
+        directory.appendLittleEndian(UInt16(nameBytes.count))
+        directory.appendLittleEndian(UInt16(0)) // extra
+        directory.appendLittleEndian(UInt16(0)) // comment
+        directory.appendLittleEndian(UInt16(0)) // disk
+        directory.appendLittleEndian(UInt16(0)) // internal attrs
+        directory.appendLittleEndian(UInt32(0)) // external attrs
+        directory.appendLittleEndian(headerOffset)
+        directory.append(nameBytes)
     }
 
     static func crc32(of data: Data) -> UInt32 {

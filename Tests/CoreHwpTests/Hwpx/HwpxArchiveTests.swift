@@ -268,8 +268,13 @@ final class HwpxArchiveTests: XCTestCase {
             assertInvalidArchive(error, containing: "truncated entry")
         })
     }
+}
 
-    // MARK: - 자원 한도
+/// 자원 한도(개별·집계)의 적용과 귀속 규약.
+final class HwpxArchiveLimitTests: XCTestCase {
+    private func makeBudget(_ limits: HwpReadLimits) -> HwpxByteBudget {
+        HwpxByteBudget(limits: limits)
+    }
 
     func testCompressedEntryOverPerEntryLimitThrowsTypedError() throws {
         let content = Data(repeating: 0x41, count: 4096)

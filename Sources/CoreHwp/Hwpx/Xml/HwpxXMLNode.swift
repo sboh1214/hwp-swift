@@ -83,7 +83,8 @@ enum HwpxNamespace {
     static let head = "http://www.hancom.co.kr/hwpml/2011/head"
     static let core = "http://www.hancom.co.kr/hwpml/2011/core"
     static let app = "http://www.hancom.co.kr/hwpml/2011/app"
-    static let masterPage = "http://www.hancom.co.kr/hwpml/2011/master-page"
+    /// OWPML의 master-page namespace — 한글 UI 용어로 "바탕쪽"이다.
+    static let batangPage = "http://www.hancom.co.kr/hwpml/2011/master-page"
     static let history = "http://www.hancom.co.kr/hwpml/2011/history"
     static let version = "http://www.hancom.co.kr/hwpml/2011/version"
     static let paragraph2016 = "http://www.hancom.co.kr/hwpml/2016/paragraph"
@@ -95,7 +96,7 @@ enum HwpxNamespace {
     static let ocfContainer = "urn:oasis:names:tc:opendocument:xmlns:container"
 
     static let known: Set<String> = [
-        paragraph, section, head, core, app, masterPage, history, version,
+        paragraph, section, head, core, app, batangPage, history, version,
         paragraph2016, hwpUnitChar, ooxmlChart, hpf, opf, dublinCore, ocfContainer,
     ]
 

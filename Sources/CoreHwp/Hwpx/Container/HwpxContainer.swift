@@ -92,10 +92,12 @@ struct HwpxContainer {
             named: EntryName.mimetype, limits: limits, budget: &budget
         )
         // 후행 개행 정도는 허용한다 — 판정의 본질은 미디어 타입 문자열이다.
-        let mimetype = String(decoding: data, as: UTF8.self)
+        let mimetype = String(bytes: data, encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard mimetype == expectedMimetype else {
-            throw HwpError.invalidArchive(reason: "unexpected mimetype '\(mimetype)'")
+            throw HwpError.invalidArchive(
+                reason: "unexpected mimetype '\(mimetype ?? "<not UTF-8>")'"
+            )
         }
     }
 }
