@@ -63,6 +63,17 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   앱 이름을 반환하지만, `sdef '/Applications/Hancom Office HWP.app'`는 `error -192`로
   실패합니다. bundle 안에 `.sdef`, `.scriptSuite`, `.scriptTerminology`, `.aeut`
   파일도 없고, `hwp`, `hwpctl`, `hwp5txt`, `hwp5proc` CLI 후보도 PATH에 없습니다.
+- 2026-08-28 재확인: 앱이 `/Applications/한컴오피스 한글.app`으로 **개명**되어
+  설치되어 있고 구 경로 `/Applications/Hancom Office HWP.app`은 더 이상
+  존재하지 않습니다. bundle id는 `com.hancom.office.hwp12.mac.general`로
+  동일하며 version/build는 `12.30.0` / `6446`으로 갱신되었습니다. 실행 파일은
+  여전히 `Contents/MacOS/Hancom Office HWP` 하나이고, bundle 안에 `.sdef`,
+  `.scriptSuite`, `.scriptTerminology`, `.aeut` 파일이 없으며
+  `sdef '/Applications/한컴오피스 한글.app'`도 계속 `error -192`로 실패합니다.
+  `CFBundleDocumentTypes`는 `.hwpx`(`SLDocumentTypeHanwordXMLDocument`)를
+  `Editor` 역할로 등록하므로 `파일 > 다른 이름으로 저장하기...`에서
+  `한글 표준 문서 (*.hwpx)` 형식 저장이 가능합니다 — HWPX fixture 생성
+  경로입니다.
 - CLI 후보: `hwp`, `hwp5txt`, `hwp5proc`는 PATH에서 확인되지 않았습니다.
 - 앱 번들의 `Contents/Frameworks/Hnc/Bin/Hwp`는 실행 파일이 아니라 `DocFilters`
   디렉터리이며, 그 안의 `lib*DocGroup.dylib` 파일들은 앱 내부 문서 필터입니다.
