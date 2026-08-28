@@ -1,18 +1,20 @@
 # ``HwpKitCore``
 
-HWP 문서의 조판·페인트를 담당하는 플랫폼 중립 렌더 코어입니다.
+HWP 문서를 조판해 페인트 목록을 만들며, UI 프레임워크에 의존하지 않는
+렌더 코어입니다.
 
 ## Overview
 
-HwpKitCore는 CoreHwp가 읽은 `HwpFile`을 CoreText·CoreGraphics 기반으로
-조판해 페이지 단위 표현(``HwpDocument`` → ``HwpPage`` → paint list)으로
-바꿉니다. AppKit·UIKit·SwiftUI를 import하지 않는 계층이므로 화면 밖
-렌더링(비트맵·PDF·검색 인덱싱)에도 그대로 쓸 수 있습니다.
+HwpKitCore는 CoreHwp가 파싱한 `HwpFile`을 CoreText·CoreGraphics 기반으로
+조판하는 모델과 엔진을 제공합니다. ``HwpPaginator``가 ``HwpPage``와
+``HwpPaintList``를 만들고, ``HwpDocument``가 페이지 결과를 묶습니다.
+AppKit·UIKit·SwiftUI에 의존하지 않아 화면·PDF·비트맵 렌더러가 같은
+조판 결과를 공유하며, 검색·선택도 같은 페이지 모델을 사용합니다.
 
-SwiftUI 앱이라면 보통 HwpKit의 `HwpDocumentLoader`가 이 모듈의
-``HwpDocument``를 만들어 줍니다. 이 모듈을 직접 쓰는 경우는 검색 세션
-(``HwpSearchController``)·선택(``HwpSelectionController``)·폰트 해석
-(``HwpFontResolver``)을 제어하거나, 커스텀 렌더러를 만들 때입니다.
+SwiftUI 앱에서는 보통 HwpKit의 `HwpDocumentLoader`가 이 모듈의
+``HwpDocument``를 생성합니다. 검색 세션(``HwpSearchController``)·선택
+(``HwpSelectionController``)·폰트 해석(``HwpFontResolver``)을 직접
+제어하거나 커스텀 렌더러를 만들 때는 이 모듈을 직접 사용합니다.
 
 ## Topics
 

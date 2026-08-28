@@ -21,13 +21,13 @@ hwp-swift/
 ├── Sources/HwpKitCore/    # 렌더 코어 — 파이프라인/모델/paint list (AGENTS.md 참조)
 ├── Sources/HwpKitNative/  # 플랫폼 브릿지 — CALayer/View (AGENTS.md 참조)
 ├── Sources/HwpKit/        # SwiftUI 공개 API + PDF 내보내기·쪽 축소판 (AGENTS.md 참조)
-├── Sources/*/*.docc/      # 타깃별 DocC 카탈로그 (모듈 랜딩 + Topics 큐레이션)
+├── Sources/*/*.docc/      # 타깃별 DocC 카탈로그 (모듈 시작 페이지·Topics 구성)
 ├── Tests/{CoreHwp,HwpKitCore,HwpKitNative,HwpKit}Tests/
 ├── Sample/                # HwpSwiftSample.xcodeproj (xcodegen, path: ..)
 ├── Package.swift          # swift-tools-version:5.9
 ├── .github/workflows/     # ci.yml, cd.yml, docs-check.yml
-├── .github/actions/build-docs-site/  # DocC 빌드 명령 단일 출처 (cd.yml + docs-check.yml 공용)
-├── .github/pages/         # DocC 사이트 루트 랜딩 (README 설치 안내의 사본)
+├── .github/actions/build-docs-site/  # DocC 사이트 CI 빌드 절차의 단일 원본 (cd.yml + docs-check.yml 공용)
+├── .github/pages/         # DocC 사이트 첫 화면 (README 설치 안내의 사본)
 └── .github/release-drafter.yml  # 릴리스 노트 분류 + 라벨 → 다음 버전 산정
 ```
 
@@ -47,7 +47,7 @@ hwp-swift/
 | 기본 타입 확장 | `Sources/CoreHwp/Utils/Extensions/` |
 | 새 미지원 문서 종류 추가 | `Models/FileHeader/HwpFileProperty.swift`의 `unsupportedFeature`(비트 → 종류) + `HwpError.swift`의 `HwpUnsupportedFeature` → HwpKit의 `HwpUnsupportedDocumentKind` 매핑(`switch`가 모든 케이스를 나열하므로 새 종류가 누락되면 컴파일 오류가 발생한다) + `HwpDocumentLoadError.description` + `HwpDocumentLoaderTests.testErrorDescriptionsCoverEveryCase` 배열 + 픽스처 manifest `expectedError` (#117) |
 | 테스트 픽스처 추가 | 테스트 파일과 같은 폴더에 `.hwp` 배치 (`openHwp(#file, "name")` 사용). `Tests/CoreHwpTests/Fixtures/`에 넣으면 `HwpLayoutRenderParitySweepTests`가 자동으로 훑으므로 그쪽 실측 핀(문단 수·측정 수·컨테이너 수)을 함께 갱신한다 |
-| 새 public 진입점 추가 | 해당 타깃의 `Sources/<타깃>/<타깃>.docc/<타깃>.md` `## Topics`에도 등재 — 빠뜨려도 빌드는 초록이라 CI가 못 잡는다 (아래 "DocC 문서 사이트") |
+| 새 공개 진입점 추가 | 해당 타깃의 `Sources/<타깃>/<타깃>.docc/<타깃>.md`에 있는 `## Topics`에도 등재한다. 누락해도 빌드가 성공하므로 CI에서는 감지하지 못한다(아래 "DocC 문서 사이트" 참고). |
 
 ## 코드 맵
 
@@ -253,8 +253,8 @@ typed 디코더들이 그 트리를 재귀로 내려가므로(표 셀 문단·�
 - 공백이 있는 새 파일/디렉터리명 추가 — 경로명은 PascalCase + 무공백을 유지.
 - `Package.swift`의 Darwin platform 최소 버전을 더 낮추기 — `SWCompression 4.9.1` / `BitByteData 2.1.0`이 macOS 14+/iOS 17+를 요구한다. #101 이후 이 둘은 테스트 타깃 전용 의존이지만 `platforms:`는 패키지 단위라 하한은 그대로다 (내리려면 압축 해제 기준선부터 갈아야 한다). Linux는 CoreHwp·CoreHwpTests만 지원하며 빌드에 zlib 개발 헤더가 필요하다 (뷰어 타깃은 Apple 전용 프레임워크 의존 — `Package.swift`의 `canImport(Darwin)` 분기; CI matrix: macOS + ubuntu-latest).
 - `swift-tools-version` 변경 시 `.swift-version`, `.swiftformat`, `.github/workflows/ci.yml`의 `test-linux` matrix 동시 갱신 누락 (`CONTRIBUTING.md` 참조).
-- **설치 안내를 한 곳만 고치기** — 같은 스니펫이 `README.md`와 `.github/pages/index.html` 두 곳에 있고, 후자는 `build-docs-site` action의 마지막 스텝이 DocC 산출물 위에 덮어 배포하는 사이트 랜딩이다 (`cp .github/pages/index.html ./docs/index.html`). README만 고치면 `hwp-swift.sboh.dev`가 낡은 안내를 계속 내보낸다 — 0.16.0 준비에서 실제로 갈렸다 (README는 `.upToNextMinor(from: "0.16.0")`로 옮겼는데 사이트는 `branch: "main"`에 남아 있었다). 릴리스 갱신 목록은 `CONTRIBUTING.md`의 "배포".
-- **PR 라벨 누락·오분류** — 라벨은 릴리스 노트 분류만이 아니라 **다음 버전 번호**를 정한다 (`.github/release-drafter.yml`의 `version-resolver`, 기본 `patch`). 공개 API가 깨지면 `api-breaking`을 달아야 minor로 올라간다 — 1.0 전까지 파괴 변경은 major가 아니라 **minor**에 싣는 규약이므로, 이 라벨이 빠지면 브레이킹 릴리스가 patch 번호로 나간다. 분류 라벨은 PR당 하나이고, 0.17.0부터 문서 PR은 `maintenance`가 아니라 **`documentation`**(📚 Documentation)이다 — CI·테스트·리팩터만 `maintenance`에 남는다. 규칙 전문은 `CONTRIBUTING.md`의 "Pull Request 라벨".
+- **설치 안내를 한 곳만 고치기** — 같은 스니펫이 `README.md`와 `.github/pages/index.html` 두 곳에 있다. 후자는 `build-docs-site` 액션의 마지막 단계에서 DocC 산출물의 `index.html`을 덮어써 배포하는 사이트 첫 화면이다 (`cp .github/pages/index.html ./docs/index.html`). README만 고치면 `hwp-swift.sboh.dev`가 낡은 안내를 계속 내보낸다 — 0.16.0 준비에서 실제로 갈렸다 (README는 `.upToNextMinor(from: "0.16.0")`로 옮겼는데 사이트는 `branch: "main"`에 남아 있었다). 릴리스 갱신 목록은 `CONTRIBUTING.md`의 "배포".
+- **PR 라벨 누락·오분류** — 라벨은 릴리스 노트 분류만이 아니라 **다음 버전 번호**를 정한다 (`.github/release-drafter.yml`의 `version-resolver`, 기본 `patch`). 공개 API가 깨지면 `api-breaking`을 달아야 minor로 올라간다 — 1.0 전까지 파괴 변경은 major가 아니라 **minor**에 싣는 규약이므로, 이 라벨이 빠지면 브레이킹 릴리스가 patch 번호로 나간다. 분류 라벨은 PR마다 하나만 달며, 0.17.0부터 문서 PR에는 `maintenance`가 아니라 **`documentation`**(📚 Documentation)을 단다. CI·테스트·리팩터링 PR에만 `maintenance`를 단다. 규칙 전문은 `CONTRIBUTING.md`의 "Pull Request 라벨".
 - **모듈별 `version` 상수 재도입** — `HwpKit.version` 같은 상수는 git 태그·`CHANGELOG.md`와 갈리는 두 번째 진실 원본이 된다. 타깃을 처음 만들 때 두었던 스텁 3종(`HwpKit.swift`·`HwpKitCore.swift`·`HwpKitNative.swift`, 각각 `version = "0.1.0-dev"`)은 참조 0건인 채 실제 버전과 어긋난 상태로 남아 있다가 0.16.0 준비에서 제거됐다.
 - 테스트에서 **CoreFoundation 타입에 `as!`** 쓰기 — SwiftFormat의 `noForceUnwrapInTests`가 이를 `try XCTUnwrap(... as? CFType)`으로 자동 변환하는데, CF 타입 대상 `as?`는 컴파일러가 "항상 성공한다"며 **에러**로 막는다. 즉 포매터가 컴파일 불가능한 코드를 만들어 낸다. `// swiftformat:disable:next` 주석도 듣지 않으므로, 캐스트 자체를 없애 우회한다 (컴파일러 note가 제안하는 방식):
   ```swift
@@ -285,7 +285,7 @@ swiftformat .                                  # 포맷
 swiftformat --lint .                           # CI lint 체크
 swiftlint                                      # lint
 pre-commit install && pre-commit run --all     # hook 설치 + 전체 실행
-swift package --disable-sandbox preview-documentation --target CoreHwp  # DocC 미리보기 (한 번에 한 타깃 — combined 미지원. 사이트 전체 재현은 CONTRIBUTING "문서")
+swift package --disable-sandbox preview-documentation --target CoreHwp  # DocC 미리보기 (한 번에 한 타깃만 지원. 전체 사이트 재현은 CONTRIBUTING.md의 "문서" 참고)
 ```
 
 성능 게이트: CI는 스모크 파라미터만 상시 실행 (공유 러너 wall-time 하드
@@ -881,9 +881,10 @@ opt-in이다) — 축소판이 가장 먼저 그리는 쪽이 정확히 그 1쪽
 **상하 반전을 통과시키므로** 위·아래 잉크 분포를 함께 단언한다 (PDF 가드가
 뒤집은 그리드를 대조군으로 쓰는 것과 같은 이유).
 
-**샘플은 CI가 빌드하지 않는다** — 잡이 `ci.yml`의 넷(`test-macos`·`test-ios`·
-`test-linux`·`lint`)과 `docs-check.yml`의 문서 빌드뿐이라 배선 회귀는 초록으로
-지나간다. `Sample/`을 건드리면 macOS·iOS 양쪽 `xcodebuild`를 로컬에서 돌리고,
+**샘플은 CI에서 빌드하지 않는다** — `ci.yml`의 네 작업(`test-macos`·
+`test-ios`·`test-linux`·`lint`)과 `docs-check.yml`의 문서 빌드 중 어느
+것도 `Sample/`을 빌드하지 않으므로 샘플 배선 회귀를 감지하지 못한다. `Sample/`을
+건드리면 macOS·iOS 양쪽 `xcodebuild`를 로컬에서 돌리고,
 파일을 추가했으면 `cd Sample && xcodegen generate` 결과를 같은 커밋에 넣는다
 (프로젝트가 파일을 명시 참조한다).
 
@@ -1107,10 +1108,12 @@ PR 리뷰를 반영하며 렌더링 코드를 수정할 때, 한글 파일 렌�
      없는 이미지라면 `apt-get install -y zlib1g-dev`를 선행한다.
      렌더·뷰어 코드를 만졌으면 iOS 빌드도 확인.
 4. **커밋·푸시** — 논리/포맷 커밋 분리. `Snapshots/`·`References/`·`docs/`·
-   스크래치 파일은 gitignore로 제외됨. push 후 CI 잡별(macOS[커버리지 포함]/
-   iOS/Linux·lint) 확인 — 브랜치 첫 PR 전엔 CI가 돈 적 없으니 특히 주시.
-   `Sources/**`를 건드렸으면 Docs Check(`docs-check.yml`)도 함께 보되, 그것은
-   **필수 체크가 아니라** 빨개도 머지가 막히지 않는다 (아래 "DocC 문서 사이트").
+   스크래치 파일은 `.gitignore`로 제외됨. 푸시한 뒤 macOS(커버리지 포함)·
+   iOS·Linux 5.9/6.3·Lint 작업의 결과를 확인한다. 브랜치의 첫 PR을 열기
+   전에는 CI 실행 이력이 없으므로 특히 주의한다.
+   `Sources/**`를 건드렸으면 Docs Check(`docs-check.yml`) 결과도 확인한다. 이
+   검사는 필수 체크가 아니어서 실패해도 병합이 차단되지 않는다(아래
+   "DocC 문서 사이트").
 
 원칙: **탐지는 해시, 진단은 블록 스냅샷 diff** (상호보완). 육안 재확인은
 바뀐 페이지만. 기준선이 **머신 종속인** 스위트만 기본·CI에서 skip하고 로컬
@@ -1118,43 +1121,53 @@ opt-in — **커밋된** 기준선을 쓰는 스위트는 CI에서 상시 돈다
 
 ## DocC 문서 사이트 (#129)
 
-`hwp-swift.sboh.dev`는 0.17.0부터 **4개 타깃 combined 아카이브 하나**다 (종전엔
-CoreHwp만 배포했다). 기존 `documentation/corehwp/` 딥링크는 그대로 살아 있고,
-action의 smoke check가 네 모듈 URL 존재를 배포 **전에** 확인한다.
+`hwp-swift.sboh.dev`는 0.17.0부터 **네 타깃의 문서를 통합한 DocC 사이트**를
+배포한다(종전에는 CoreHwp만 배포했다). 기존 `documentation/corehwp/` 딥 링크는
+유지된다. `build-docs-site` 액션의 생성 파일 검사가 배포 전에 네 모듈의
+`index.html` 생성 여부를 확인한다.
 
-- **빌드 명령의 단일 출처는 `.github/actions/build-docs-site/action.yml`이다.**
-  배포(`cd.yml`의 `docs` 잡)와 PR 검증(`docs-check.yml`)이 같은 composite
-  action을 쓰므로, 워크플로에 명령을 직접 쓰면 두 경로가 갈려 PR에서 초록인
-  문서가 배포에서 깨진다. `CONTRIBUTING.md`의 로컬 재현 스니펫이 세 번째
-  사본이니 절차를 바꿀 때 함께 고친다.
-- **combined 생성에는 Swift 6.0+(Xcode 16+)의 docc가 필요하다**
-  (`--enable-experimental-combined-documentation`). 낮으면
-  `generate-documentation`이 배포 전에 실패한다.
-- **진단 스텝은 어떤 실패도 삼킨다**(`|| true`) — 원인 판정을 도우라고 둔 스텝이
-  원인 대신 **실패 지점**이 되면 안 된다. 실제로 첫 docs-check 실행이
-  `xcrun docc --version`의 `Unknown option '--version'`(exit 64)으로 10초 만에
-  죽고 정작 빌드 스텝은 skip됐다. **`--version` 부재는 툴체인 부족을 뜻하지
-  않는다** — 같은 러너의 그 docc로 combined 빌드는 성공한다.
-- **`--hosting-base-path`는 쓰지 않는다** — 커스텀 도메인이 루트에서 서빙한다.
-  되살리면 자산 경로가 `/hwp-swift/...`로 굳어 사이트가 통째로 깨진다.
-- **Docs Check는 필수 체크가 아니다** (ruleset 필수 5종은 macOS·iOS·Linux
-  5.9/6.3·Lint). 문서 빌드가 깨져도 머지가 막히지 않으므로 직접 확인할 것.
-  `paths:` 필터도 있어 `Sources/**`·`Package.swift`·`Package.resolved`·랜딩·
-  action·두 워크플로를 건드리지 않은 PR에서는 아예 돌지 않는다.
-- **모듈 랜딩과 심볼 큐레이션은 `Sources/<타깃>/<타깃>.docc/<타깃>.md`가
-  소유한다.** `## Topics`에 안 올린 public 심볼은 오류가 아니라 종류별 자동
-  그룹으로 목록 맨 아래에 밀린다 — **빌드가 초록이라 CI가 못 잡는 축**이라
-  새 public 진입점을 낼 때 함께 등재해야 한다.
-- **목록에 실리는 요약은 doc-comment의 첫 문단뿐이다**(DocC abstract). 그래서
-  0.17.0에서 진입점 9종의 첫 문단을 "무엇이고 어디서 얻는지"로 새로 썼다 — 6종은
-  doc-comment가 아예 없었고, `HwpDocInfo`("문서 정보")·`HwpSection`("본문")·
-  `HwpIdMappings`("아이디 매핑 헤더")는 **한컴 공개 문서의 절 제목 한 줄**이라
-  Topics 목록에서 아무 정보도 주지 못했다. 절 제목을 한국어로 보존하는 규약과
-  충돌하지 않는다 — 스펙 산문은 버리지 않고 같은 문단 뒤나 다음 문단으로 옮긴다
-  (`HwpSection`·`HwpDocInfo`가 그 형태다).
-- **미리보기는 combined를 지원하지 않는다** — `preview-documentation`은 한 번에
-  한 타깃뿐이다. 사이트 전체 모양은 정적 생성 후 `python3 -m http.server`로 본다
-  (`CONTRIBUTING.md`의 "문서").
+- **DocC 사이트 CI 빌드 절차의 단일 원본은 `.github/actions/build-docs-site/action.yml`이다.**
+  배포(`cd.yml`의 `docs` 작업)과 PR 검증(`docs-check.yml`)은 같은 복합
+  액션을 사용한다. 워크플로마다 명령을 따로 적으면 이후 두 경로가 서로 달라질
+  수 있어, PR에서 통과한 문서 빌드가 배포 단계에서는 실패할 수 있다.
+  `CONTRIBUTING.md`의 로컬 재현 스니펫은 문서 생성 명령과 사이트 첫 화면을
+  덮어쓰는 명령의 별도 사본이므로 해당 명령이나 옵션을 바꿀 때 함께 고친다.
+- **통합 문서를 생성하려면 Swift 6.0 이상(Xcode 16 이상) 툴체인의 DocC가
+  필요하다** (`--enable-experimental-combined-documentation`). 이보다 낮은
+  버전에서는 `generate-documentation`이 문서 생성 단계에서 실패한다.
+- **진단 단계의 명령은 실패해도 다음 단계가 계속되도록 각각 `|| true`로
+  끝난다.** 원인 파악용 진단 단계 때문에 실제 문서 빌드가 실행되기도 전에
+  CI 작업이 중단되어서는 안 된다. 첫 Docs Check에서는 `xcrun docc --version`이 종료
+  코드 64로 실패해 실제 빌드 단계가 실행되지 않았다. **`--version` 옵션을
+  지원하지 않는다고 해서 툴체인이 부족한 것은 아니다.** 같은 러너의
+  DocC로도 통합 문서 빌드는 성공한다.
+- **`--hosting-base-path`는 사용하지 않는다.** 사이트가 커스텀 도메인의 루트
+  경로에서 제공되기 때문이다. 다시 사용하면 DocC 자산 경로가
+  `/hwp-swift/...`로 고정되어 페이지가 자산을 불러오지 못한다.
+- **Docs Check는 필수 체크가 아니다.** 필수 상태 검사는 macOS, iOS, Linux
+  Swift 5.9, Linux Swift 6.3, Lint의 다섯 개다. 문서 빌드가 실패해도 병합이
+  차단되지 않으므로 직접 확인해야 한다. `paths:` 필터도 있어
+  `Sources/**`·`Package.swift`·`Package.resolved`·`.github/pages/**`·
+  `.github/actions/build-docs-site/**`·`.github/workflows/docs-check.yml`·
+  `.github/workflows/cd.yml`을 건드리지 않은
+  PR에서는 실행되지 않는다.
+- **모듈 시작 페이지와 공개 심볼의 Topics 구성은
+  `Sources/<타깃>/<타깃>.docc/<타깃>.md`에서 정의한다.** `## Topics`에 등재하지
+  않은 공개 심볼은 오류가 아니라 종류별 자동 생성 그룹으로 목록 맨
+  아래에 표시된다. 빌드가 성공하므로 CI에서는 이 누락을 감지하지 못한다.
+  따라서 새 공개 진입점이나 대표 모델을 추가할 때 함께 등재해야 한다.
+- **목록에 표시되는 요약은 문서 주석의 첫 문단(DocC abstract)이다.** 그래서
+  0.17.0에서 주요 진입점과 대표 모델 9종의 첫 문단을 역할과 사용 맥락이
+  드러나도록 새로 썼다.
+  6종은 문서 주석이 아예 없었고, `HwpDocInfo`("문서 정보")·`HwpSection`("본문")·
+  `HwpIdMappings`("아이디 매핑 헤더")는 **한컴 공개 문서의 절 제목 한 줄**뿐이어서
+  Topics 목록에서 역할을 알 수 없었다. 절 제목을 한국어로 보존하는 규약과
+  충돌하지 않는다. 절 제목과 기존 설명의 의미는 보존하되 첫 문단에 역할과
+  사용 맥락을 덧붙인다. 필요한 경우 기존 설명은 다음 문단으로 옮긴다.
+  `HwpSection`은 절 제목을 풀어 쓴 예이고, `HwpDocInfo`는 기존 설명을 보존한 예다.
+- **미리보기 명령은 통합 문서를 지원하지 않는다.** `preview-documentation`은
+  한 번에 한 타깃만 실행할 수 있다. 전체 사이트 모습은 정적 사이트를 생성한 뒤
+  `python3 -m http.server`로 확인한다(`CONTRIBUTING.md`의 "문서").
 
 ## 의존성 (모두 exact pinning)
 
@@ -1162,7 +1175,7 @@ action의 smoke check가 네 모듈 URL 존재를 배포 **전에** 확인한다
 - `SWCompression 4.9.1` — **테스트 전용**. 압축 해제 바이트 동등성의 기준선(oracle)과 `Deflate.compress` 입력 합성에만 쓴다. 프로덕션(`CoreHwp`)은 #101에서 의존을 끊었다 — 4.9.0의 crash 패치 이후에도 deflate가 아닌 입력에서 throw 대신 프로세스를 중단시키는 경우가 있어(실측: `bookmark`의 `PrvText` 64 byte) 신뢰할 수 없는 문서를 여는 경로에 둘 수 없다. 테스트에서도 임의 바이트를 먹이지 말 것
 - **system zlib** — 비-Apple 플랫폼의 raw DEFLATE 해제. `Sources/CHwpZlib`의 SwiftPM `systemLibrary` 타깃(module map + shim 헤더)으로 링크하며, 호스트가 제공하므로 이 항목만 exact pinning 대상이 아니다. Linux 소비자는 빌드에 `zlib1g-dev`(rpm 계열은 `zlib-devel`), 실행에 zlib 런타임이 필요하다. Apple 플랫폼은 `Compression`을 쓰므로 이 타깃에 의존하지 않는다 — 의존 간선을 `.when(platforms:)`로 걸어 **타깃** 기준으로 가른다. 매니페스트의 `#if`는 호스트에서 평가되므로 그쪽으로 가르면 macOS 호스트의 Linux 크로스 컴파일(`--swift-sdk`)에서 모듈이 사라진다
 - `Nimble 13.8.0` — 테스트 DSL (testTarget 전용)
-- `swift-docc-plugin 1.5.0` — DocC 사이트 빌드. 명령은 `build-docs-site` action이 소유하고 `cd.yml`의 `docs` 잡(배포)과 `docs-check.yml`(PR 검증)이 공유한다. 4개 타깃 combined 아카이브라 플러그인 버전과 별개로 **Swift 6.0+(Xcode 16+) 툴체인의 docc**가 필요하다
+- `swift-docc-plugin 1.5.0` — DocC 사이트 빌드. CI 빌드 절차는 `build-docs-site` 액션에 있고 `cd.yml`의 `docs` 작업(배포)과 `docs-check.yml`(PR 검증)이 공유한다. 네 타깃의 문서를 통합한 아카이브이므로 플러그인 버전과는 별도로 **Swift 6.0 이상(Xcode 16 이상) 툴체인의 DocC**가 필요하다
 
 ## 노트
 

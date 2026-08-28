@@ -6,7 +6,7 @@
 
 ```
 HwpKitNative/
-├── HwpKitNative.docc/              # 모듈 랜딩 + Topics 큐레이션 (루트 AGENTS.md "DocC 문서 사이트")
+├── HwpKitNative.docc/              # 모듈 시작 페이지와 Topics 구성 (루트 AGENTS.md의 "DocC 문서 사이트")
 ├── Platform/PlatformTypes.swift    # typealias (PlatformView/Color/Image/Font) — 뷰 chrome + provider가 사용
 ├── HwpSelectionHandleGeometry.swift # 선택 핸들 순수 기하 (#if 밖 — iOS 잡은 커버리지 미수집, #84)
 ├── HwpSelectionRTF.swift           # 복사 RTF 정규화·직렬화 — CT·hwp.* → 표준 키 변환 표

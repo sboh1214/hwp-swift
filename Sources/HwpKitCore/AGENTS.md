@@ -2,12 +2,13 @@
 
 Platform-neutral 렌더 코어. **AppKit / UIKit / SwiftUI / CoreAnimation import 금지.** CoreGraphics / CoreText / Foundation / CoreHwp 가 기본이고, 필요에 따라 플랫폼 UI 가 아닌 시스템 모듈을 더 쓴다 (`ImageIO`, `OSLog`, `Observation`). 기준은 "UI 프레임워크인가"이지 목록 자체가 아니다 — `Observation` 은 `HwpSearchController` (#75) 가 호스트 UI 배선 없이 관찰되게 하려고 들어왔다.
 
-`HwpKitCore.docc/HwpKitCore.md`가 모듈 랜딩과 Topics 큐레이션을 소유한다. 이
-타깃의 public 표면은 **두 층으로 갈려** 있고 카탈로그가 그것을 드러낸다 —
-호스트가 실제로 만지는 것(문서 모델·검색·선택·폰트·접근성)과 커스텀 렌더러만
-쓰는 조판/페인트 엔진(`HwpPaginator`·`HwpPaintList`·`*Layout`)이 "고급" 그룹으로
-분리돼 있다. public으로 승격할 때 어느 쪽인지 정해 등재할 것 (규약은 루트
-AGENTS.md "DocC 문서 사이트").
+`HwpKitCore.docc/HwpKitCore.md`에 모듈 시작 페이지와 Topics 구성을 둔다.
+이 타깃의 공개 API는 두 계층으로 나뉘며, 카탈로그도 이를 구분한다.
+하나는 호스트 앱이 직접 사용하는 API(문서 모델·검색·선택·폰트·접근성)이고,
+다른 하나는 커스텀 렌더러 구현자가 직접 사용하는 조판·페인트 엔진
+(`HwpPaginator`·`HwpPaintList`·`*Layout`)이며, 카탈로그의 "고급" 그룹에 둔다. API를
+`public`으로 승격할 때는 어느 그룹에 속하는지 정해 등재한다(규약은 루트
+AGENTS.md의 "DocC 문서 사이트").
 
 ## 파이프라인 (canonical)
 

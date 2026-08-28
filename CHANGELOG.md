@@ -74,14 +74,13 @@
 
 ### Documentation
 
-- **문서 사이트가 4개 라이브러리 전부를 싣습니다.** hwp-swift.sboh.dev가
-  CoreHwp 하나만 게시하던 것을 combined DocC 아카이브로 바꿔
-  HwpKitCore·HwpKitNative·HwpKit 문서가 같은 사이트에 함께 배포됩니다 —
-  기존 `documentation/corehwp/` 주소는 그대로 유지됩니다. 각 타깃에 DocC
-  카탈로그를 신설해 모듈 랜딩(개요 산문 + 사용 예)과 심볼 큐레이션을
-  추가했고, `HwpFile`·`HwpDocumentLoader`·`HwpDocumentView` 같은 진입점이
-  각 모듈 문서 맨 위 "시작하기" 그룹에 노출됩니다. PR 단계에서도 같은
-  명령으로 문서 빌드를 검증합니다 (`docs-check.yml`).
+- **문서 사이트에서 네 라이브러리 문서를 모두 제공합니다.** CoreHwp
+  문서만 게시하던 hwp-swift.sboh.dev를 네 타깃의 문서를 통합한 DocC 사이트로
+  전환해 HwpKitCore·HwpKitNative·HwpKit 문서도 함께 배포합니다. 기존
+  `documentation/corehwp/` 주소는 유지됩니다. 각 타깃에 DocC 카탈로그를
+  신설해 모듈 시작 페이지(개요와 사용 예)와 Topics 구성을 추가했으며,
+  주요 진입점은 각 모듈 문서의 첫 번째 주제 그룹에 노출됩니다. PR
+  단계에서도 같은 절차로 문서 빌드를 검증합니다(`docs-check.yml`).
 
 ## 0.16.0 (2026-08-24)
 

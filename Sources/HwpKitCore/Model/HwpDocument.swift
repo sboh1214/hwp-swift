@@ -1,10 +1,12 @@
 import Foundation
 
-/// 조판이 끝난 HWP 문서의 페이지 단위 표현 — `HwpDocumentLoader`(HwpKit)
-/// 또는 `HwpDocumentActor`(HwpKitNative)가 만들어 주고, `HwpDocumentView`와
-/// 각 렌더러가 입력으로 받는다. 페이지 배열과 메타데이터, 렌더링이
-/// 지원하지 못한 요소 목록(`unsupportedElements`), 지연 디코딩용 이미지
-/// 저장소를 담는 불변 값이다.
+/// HWP 문서의 조판 결과를 페이지 단위로 담는 불변 값이다. 프로그레시브
+/// 로딩 중에는 문서의 첫 페이지부터 지금까지 확정된 페이지만 담을 수 있으며,
+/// 완료 여부는 `metadata.isComplete`로 확인한다. 페이지·메타데이터·지원되지
+/// 않거나 플레이스홀더로 대체된 요소(`unsupportedElements`)·지연 디코딩용
+/// 이미지 저장소를 함께 보관한다. `HwpDocumentLoader`(HwpKit) 또는
+/// `HwpDocumentActor`(HwpKitNative)가 만들며, `HwpDocumentView`와 렌더러가 이를
+/// 입력으로 사용한다.
 public struct HwpDocument: Sendable, Hashable {
     public let pages: [HwpPage]
     public let metadata: HwpDocumentMetadata

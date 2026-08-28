@@ -58,21 +58,23 @@ SwiftFormat과 SwiftLint는 모든 PR에서 CI(`ci.yml`의 `lint` 잡)으로 확
 
 문서는 [Swift-DocC](https://www.swift.org/documentation/docc/)로 빌드되며,
 `main` 브랜치에 푸시될 때 [https://hwp-swift.sboh.dev/](https://hwp-swift.sboh.dev/)에
-배포됩니다. 사이트는 4개 라이브러리 타깃(CoreHwp·HwpKitCore·HwpKitNative·
-HwpKit)의 combined DocC 아카이브 하나로 구성됩니다. 빌드 명령의 단일
-출처는 `.github/actions/build-docs-site/action.yml`이고, 배포는 `cd.yml`의
-`docs` 잡, PR 검증은 `docs-check.yml`입니다. combined 문서 생성에는
-Swift 6.0+(Xcode 16+) 툴체인의 docc가 필요합니다.
+배포됩니다. 사이트는 네 라이브러리 타깃(CoreHwp·HwpKitCore·HwpKitNative·
+HwpKit)의 문서를 통합한 하나의 DocC 아카이브로 구성됩니다. 배포와 PR 검증이
+공유하는 DocC 사이트 CI 빌드 절차의 단일 원본은
+`.github/actions/build-docs-site/action.yml`입니다. 배포는 `cd.yml`의 `docs` 작업,
+PR 검증은 `docs-check.yml`이 담당합니다. 통합 문서를 생성하려면
+Swift 6.0 이상(Xcode 16 이상) 툴체인의 DocC가 필요합니다.
 
-각 타깃의 모듈 랜딩과 심볼 큐레이션은 `Sources/<타깃>/<타깃>.docc/` 안의
-루트 문서가 정의합니다 — 새 public 진입점을 추가했으면 해당 루트 문서의
-`## Topics`에도 올려 주세요 (큐레이션되지 않은 심볼은 종류별 자동 그룹으로
-목록 맨 아래에 표시됩니다).
+각 타깃의 모듈 시작 페이지와 공개 심볼의 Topics 구성은 `Sources/<타깃>/<타깃>.docc/`
+안의 루트 문서가 정의합니다. 새 공개 진입점이나 대표 모델을 추가했다면 해당
+루트 문서의 `## Topics`에도 등재해 주세요(등재하지 않은 심볼은 종류별 자동
+그룹으로 목록 맨 아래에 표시됩니다).
 
 ### 로컬에서 미리보기
 
 DocC 미리보기 서버를 실행하면 변경 사항이 브라우저에 즉시 반영됩니다.
-미리보기는 combined 모드를 지원하지 않으므로 한 번에 한 타깃만 띄웁니다.
+미리보기 명령은 통합 문서를 지원하지 않으므로 한 번에 한 타깃만 미리 볼 수
+있습니다.
 
 ```sh
 swift package --disable-sandbox preview-documentation --target CoreHwp
@@ -80,16 +82,17 @@ swift package --disable-sandbox preview-documentation --target CoreHwp
 
 명령을 실행하면 `http://localhost:8080/documentation/corehwp` 같은 URL이
 콘솔에 표시되며, 그 주소를 브라우저에서 열면 됩니다. HwpKitCore·
-HwpKitNative·HwpKit도 같은 방식입니다.
+HwpKitNative·HwpKit도 같은 방식으로 미리 볼 수 있습니다.
 
 ### 배포본과 동일한 정적 사이트 생성
 
-GitHub Pages에 배포되는 결과물 그대로 확인하고 싶다면 정적 사이트를 직접
-생성한 뒤 로컬 HTTP 서버로 띄웁니다. 출력 위치(`./docs`)와 인자는
-`.github/actions/build-docs-site/action.yml`과 동일하며, 마지막의 랜딩
-페이지 overlay까지 같은 순서로 재현합니다. `--hosting-base-path`는 쓰지
-않습니다 — 커스텀 도메인이 루트에서 서빙합니다. `./docs`는 `.gitignore`에
-포함되어 있어 작업 후 별도로 정리하지 않아도 됩니다.
+GitHub Pages에 배포되는 결과물을 그대로 확인하고 싶다면 정적 사이트를 직접
+생성한 뒤 로컬 HTTP 서버로 띄웁니다. 출력 위치와 옵션은
+`.github/actions/build-docs-site/action.yml`에 정의된 값과 같으며, 사이트 첫
+화면을 덮어쓰는 마지막 단계까지 같은 순서로 실행합니다. 사이트가 커스텀
+도메인의 루트 경로에서 제공되므로 `--hosting-base-path`는 사용하지
+않습니다. `./docs`는 `.gitignore`에 포함되어 생성 후에도 작업 트리에 변경
+사항을 남기지 않습니다.
 
 ```sh
 rm -rf ./docs
@@ -108,9 +111,9 @@ cp .github/pages/index.html ./docs/index.html
 python3 -m http.server 8000 --directory ./docs
 ```
 
-이후 `http://localhost:8000/`에서 랜딩 페이지를,
+이후 `http://localhost:8000/`에서 사이트 첫 화면을,
 `http://localhost:8000/documentation/corehwp/` 등에서 모듈 문서를,
-`http://localhost:8000/documentation/`에서 합성 패키지 색인을
+`http://localhost:8000/documentation/`에서 통합 패키지 문서 색인을
 확인할 수 있습니다.
 
 ## 배포

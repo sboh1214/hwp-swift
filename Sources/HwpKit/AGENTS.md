@@ -6,12 +6,14 @@ SwiftUI 공개 API target. HwpKitNative 위에 `NSViewRepresentable` / `UIViewRe
 
 ## 공개 API 표면
 
-**이 목록의 HwpKit 소유 항목은 `HwpKit.docc/HwpKit.md` `## Topics`의 두 번째
-사본이다** — 컴포넌트를 더하거나 이름을 바꾸면 둘 다 고친다 (여기 함께 적힌
-`HwpSearchController`·`HwpDocumentMetadata.outline`·`HwpAccessibilityContent`
-같은 HwpKitCore 타입은 그쪽 카탈로그가 싣는다). 카탈로그에서 빠져도 자동
-그룹으로 밀릴 뿐 빌드는 초록이라 CI가 갈림을 못 잡는다. 배포 사이트에서 이
-모듈이 뷰어의 첫 진입점이다 (루트 AGENTS.md "DocC 문서 사이트").
+**이 절에서 다루는 HwpKit의 공개 타입은 `HwpKit.docc/HwpKit.md`의
+`## Topics`에도 등재해야 한다.** 컴포넌트를 추가하거나 이름을 바꾸면 두 곳을
+함께 수정한다. 이 절에 함께 나오는 `HwpSearchController`·
+`HwpAccessibilityContent` 타입과 `HwpDocumentMetadata.outline` 멤버는 HwpKitCore에
+속하며, HwpKitCore 카탈로그에서 문서화한다. 심볼이 Topics에서
+빠져도 종류별 자동 그룹에는 표시되어 빌드가 성공하므로, 두 목록의
+불일치를 CI가 감지하지 못한다. 배포 문서 사이트에서 HwpKit 모듈 문서는
+뷰어 API 문서의 시작 페이지다(루트 AGENTS.md의 "DocC 문서 사이트").
 
 - `HwpDocumentLoader(fontResolver:)` — 렌더에 쓸 폰트 해석기 주입 (기본 `HwpFontResolver()`). 커밋된 기준선을 쓰는 렌더 가드가 전부 이 인자 하나에 기대 기기 독립을 얻는다 (`.testDeterministic` — 루트 AGENTS.md "렌더 가드 4층"). 호스트도 재현 가능한 조판이 필요하면 같은 방식으로 고정 resolver를 넘긴다
 - `HwpDocumentLoader.load(from:)` — URL / Data / FileWrapper 오버로드. 내부적으로 `HwpDocumentActor` 사용. 오류는 `HwpDocumentLoadError`로 매핑 (`CustomStringConvertible` + `LocalizedError` 채택 — 오류 설명은 한국어이므로 호스트가 `error.localizedDescription`을 그대로 표시하면 된다. `presentationBuildFailed`는 하위 파서나 페이지네이터가 보고한 원인을 `reason`에 원문 그대로 보존한다. 새 케이스를 추가하면 `description`도 함께 채우고 `HwpDocumentLoaderTests.testErrorDescriptionsCoverEveryCase`의 배열에도 넣을 것) (#117)
