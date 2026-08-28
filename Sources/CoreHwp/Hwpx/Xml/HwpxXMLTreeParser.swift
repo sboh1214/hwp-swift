@@ -6,7 +6,7 @@ import Foundation
 /// `XMLParser`(SAX) 델리게이트로 XML 엔트리 하나를 `HwpxXMLNode` 트리로
 /// 만든다.
 ///
-/// 델리게이트 콜백은 throw할 수 없고 이 모듈은 `try?`를 쓰지 않으므로
+/// 델리게이트 콜백은 throw할 수 없고 이 모듈은 오류 무시 변환을 금지하므로
 /// (SourceSafetyTests), 실패를 **누적**했다가 `abortParsing()`으로 멈추고
 /// 파싱이 끝난 뒤 typed `HwpError.invalidXML`로 변환한다.
 ///
