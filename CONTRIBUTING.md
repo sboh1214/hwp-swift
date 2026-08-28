@@ -41,12 +41,13 @@ SwiftFormat과 SwiftLint는 모든 PR에서 CI(`ci.yml`의 `lint` 잡)으로 확
 - 버그 수정 PR → `bug` (🐛 Bug Fixes로 분류됩니다). 성능 회귀 수정도
   `performance`가 아니라 `bug`를 답니다. 버그 수정에는 `enhancement`를
   달지 않습니다.
-- 문서·CI·테스트·리팩터링 PR → `maintenance` (🧰 Maintenance로 분류됩니다)
+- 문서 PR → `documentation` (📚 Documentation으로 분류됩니다)
+- CI·테스트·리팩터링 PR → `maintenance` (🧰 Maintenance로 분류됩니다)
 - 공개 API의 소스 브레이킹 또는 동작 변경이 있으면 `api-breaking`을 추가로
   답니다. 이 라벨이 하나라도 든 구간은 다음 릴리스 버전이 minor로 올라갑니다
   — 1.0 전까지 파괴 변경은 minor 버전에 싣습니다.
 
-분류 라벨(`enhancement`·`performance`·`bug`·`maintenance`)은 PR당 하나만
+분류 라벨(`enhancement`·`performance`·`bug`·`documentation`·`maintenance`)은 PR당 하나만
 답니다 — release-drafter는 여러 카테고리에 걸치는 PR을 카테고리마다 중복
 기재합니다. `api-breaking`은 분류 라벨이 아니므로 함께 달아도 됩니다.
 
@@ -56,50 +57,63 @@ SwiftFormat과 SwiftLint는 모든 PR에서 CI(`ci.yml`의 `lint` 잡)으로 확
 ## 문서
 
 문서는 [Swift-DocC](https://www.swift.org/documentation/docc/)로 빌드되며,
-`main` 브랜치에 푸시될 때 [GitHub Pages](https://sboh1214.github.io/hwp-swift/)에
-배포됩니다. 배포 파이프라인은 `.github/workflows/cd.yml`을 참고하세요.
+`main` 브랜치에 푸시될 때 [https://hwp-swift.sboh.dev/](https://hwp-swift.sboh.dev/)에
+배포됩니다. 사이트는 네 라이브러리 타깃(CoreHwp·HwpKitCore·HwpKitNative·
+HwpKit)의 문서를 통합한 하나의 DocC 아카이브로 구성됩니다. 배포와 PR 검증이
+공유하는 DocC 사이트 CI 빌드 절차의 단일 원본은
+`.github/actions/build-docs-site/action.yml`입니다. 배포는 `cd.yml`의 `docs` 작업,
+PR 검증은 `docs-check.yml`이 담당합니다. 통합 문서를 생성하려면
+Swift 6.0 이상(Xcode 16 이상) 툴체인의 DocC가 필요합니다.
+
+각 타깃의 모듈 시작 페이지와 공개 심볼의 Topics 구성은 `Sources/<타깃>/<타깃>.docc/`
+안의 루트 문서가 정의합니다. 새 공개 진입점이나 대표 모델을 추가했다면 해당
+루트 문서의 `## Topics`에도 등재해 주세요(등재하지 않은 심볼은 종류별 자동
+그룹으로 목록 맨 아래에 표시됩니다).
 
 ### 로컬에서 미리보기
 
 DocC 미리보기 서버를 실행하면 변경 사항이 브라우저에 즉시 반영됩니다.
+미리보기 명령은 통합 문서를 지원하지 않으므로 한 번에 한 타깃만 미리 볼 수
+있습니다.
 
 ```sh
 swift package --disable-sandbox preview-documentation --target CoreHwp
 ```
 
 명령을 실행하면 `http://localhost:8080/documentation/corehwp` 같은 URL이
-콘솔에 표시되며, 그 주소를 브라우저에서 열면 됩니다.
+콘솔에 표시되며, 그 주소를 브라우저에서 열면 됩니다. HwpKitCore·
+HwpKitNative·HwpKit도 같은 방식으로 미리 볼 수 있습니다.
 
 ### 배포본과 동일한 정적 사이트 생성
 
-GitHub Pages에 배포되는 결과물 그대로 확인하고 싶다면 정적 사이트를 직접
-생성한 뒤 로컬 HTTP 서버로 띄웁니다. 출력 위치(`./docs`)와 인자는
-`cd.yml`의 `docs` job과 동일하며, 마지막의 랜딩 페이지 overlay까지 같은
-순서로 재현합니다. `./docs`는 `.gitignore`에 포함되어 있어 작업 후
-별도로 정리하지 않아도 됩니다.
-
-`--hosting-base-path hwp-swift`로 DocC 내부 자산이 `/hwp-swift/...`
-절대 경로로 굳어지므로, 로컬에서도 같은 URL 프리픽스가 필요합니다.
-임시 디렉터리에 심볼릭 링크를 두어 repo는 깨끗하게 유지하면서 그
-프리픽스만 만들어 줍니다.
+GitHub Pages에 배포되는 결과물을 그대로 확인하고 싶다면 정적 사이트를 직접
+생성한 뒤 로컬 HTTP 서버로 띄웁니다. 출력 위치와 옵션은
+`.github/actions/build-docs-site/action.yml`에 정의된 값과 같으며, 사이트 첫
+화면을 덮어쓰는 마지막 단계까지 같은 순서로 실행합니다. 사이트가 커스텀
+도메인의 루트 경로에서 제공되므로 `--hosting-base-path`는 사용하지
+않습니다. `./docs`는 `.gitignore`에 포함되어 생성 후에도 작업 트리에 변경
+사항을 남기지 않습니다.
 
 ```sh
 rm -rf ./docs
 swift package --allow-writing-to-directory ./docs \
-  generate-documentation --target CoreHwp \
+  generate-documentation \
+  --target CoreHwp \
+  --target HwpKitCore \
+  --target HwpKitNative \
+  --target HwpKit \
+  --enable-experimental-combined-documentation \
   --disable-indexing \
   --transform-for-static-hosting \
-  --hosting-base-path hwp-swift \
   --output-path ./docs
 cp .github/pages/index.html ./docs/index.html
 
-rm -rf /tmp/hwp-preview && mkdir -p /tmp/hwp-preview
-ln -s "$(pwd)/docs" /tmp/hwp-preview/hwp-swift
-python3 -m http.server 8000 --directory /tmp/hwp-preview
+python3 -m http.server 8000 --directory ./docs
 ```
 
-이후 `http://localhost:8000/hwp-swift/`에서 랜딩 페이지를,
-`http://localhost:8000/hwp-swift/documentation/corehwp/`에서 모듈 문서를
+이후 `http://localhost:8000/`에서 사이트 첫 화면을,
+`http://localhost:8000/documentation/corehwp/` 등에서 모듈 문서를,
+`http://localhost:8000/documentation/`에서 통합 패키지 문서 색인을
 확인할 수 있습니다.
 
 ## 배포

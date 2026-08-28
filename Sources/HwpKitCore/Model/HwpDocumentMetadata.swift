@@ -1,5 +1,9 @@
 import Foundation
 
+/// `HwpDocument`의 제목, 현재까지 확정된 쪽 수, 미리 보기 텍스트와 개요·책갈피
+/// 탐색 목록 등을 담는다. 프로그레시브 로딩에서는 `loadToken`으로 같은 로드에서
+/// 나온 스냅샷인지 판별하고, `isComplete`로 모든 페이지의 확정 여부를 확인한다.
+/// `outline`은 사이드바나 목차 탐색에 사용할 수 있다.
 public struct HwpDocumentMetadata: Sendable, Hashable {
     public let title: String?
     public let pageCount: Int

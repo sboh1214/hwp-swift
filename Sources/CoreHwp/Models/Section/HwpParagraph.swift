@@ -1,5 +1,13 @@
 import Foundation
 
+/**
+ 본문 문단 하나로, 텍스트(`paraText`), 글자 모양 적용 구간
+ (`paraCharShape`), 줄 배치 정보(`paraLineSeg`), 표·그림 같은 컨트롤을 함께
+ 담는다. 글자 모양·문단 모양·스타일·글꼴 정의는
+ `HwpDocInfo.idMappings`에 있다. 글자 모양은
+ `paraCharShape.shapeId`로, 문단 모양과 스타일은 `paraHeader.paraShapeId`·
+ `paraHeader.paraStyleId`로 참조하며, 글자 모양은 다시 글꼴 정의를 참조한다.
+ */
 public struct HwpParagraph: HwpTagValidatedRecordWithVersion {
     static let expectedTag: HwpSectionTag = .paraHeader
 

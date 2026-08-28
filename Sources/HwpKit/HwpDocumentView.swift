@@ -21,6 +21,11 @@ func hwpZoomBindingUnchanged(_ lhs: CGFloat, _ rhs: CGFloat) -> Bool {
     lhs == rhs || (lhs.isNaN && rhs.isNaN) || abs(lhs - rhs) < 0.001
 }
 
+/// HWP 문서 하나를 표시하는 SwiftUI 뷰로, 페이지 스크롤·줌·검색
+/// 하이라이트·키보드 페이지 이동을 내장한다. 보통 `HwpDocumentLoader`로 만든
+/// `HwpDocument`를 전달한다. 필요하면 배율(`zoomScale`)과 현재 페이지
+/// (`currentPage`)를 바인딩하고 검색 컨트롤러(`searchController`)를 연결한다.
+/// 툴바의 배치와 저장 패널 같은 주변 UI 구성은 호스트 앱이 맡는다.
 public struct HwpDocumentView: View {
     private let document: HwpDocument
     private let zoomScale: Binding<CGFloat>?

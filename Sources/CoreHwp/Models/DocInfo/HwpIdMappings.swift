@@ -1,7 +1,10 @@
 import Foundation
 
 /**
- 아이디 매핑 헤더
+ 아이디 매핑 헤더로, 글꼴·글자 모양·문단 모양·스타일 같은 문서 전역
+ 정의의 배열을 한데 묶는다. 본문 레코드의 `shapeId`·`paraShapeId`·
+ `paraStyleId`는 0부터 시작하는 각 배열의 인덱스로 해당 정의를 참조한다. 그
+ 밖의 정의는 종류에 따라 참조 규약이 다르다.
 
  Tag ID : HWPTAG_ID_MAPPINGS
  */

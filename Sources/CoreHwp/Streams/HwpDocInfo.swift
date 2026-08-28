@@ -1,9 +1,11 @@
 import Foundation
 
 /**
- 문서 정보
+ 문서 정보 스트림으로, 본문에서 공통으로 사용하는 글꼴, 글자 모양, 문단
+ 모양, 탭, 스타일 등의 정보를 담는다.
 
- 본문에 사용 중인 글꼴, 글자 속성, 문단 속성, 탭, 스타일 등에 문서 내 공통으로 사용되는 세부 정보를 담고 있다.
+ 본문 구역(`HwpSection`)의 레코드가 ID로 참조하는 전역 정의는
+ `idMappings`에 모여 있다. `HwpFile.docInfo`로 접근한다.
  */
 public struct HwpDocInfo: HwpFromDataWithVersion {
     /** 원본 payload */

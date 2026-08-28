@@ -18,6 +18,7 @@ off에서도 분리 복사)를 거쳐야 뷰어 모드 메모리 이득이 유�
 CoreHwp/
 ├── HwpFile.swift        # public 진입점 - 새 public 타입을 여기 직접 추가하지 말 것
 ├── HwpError.swift       # public error enum
+├── CoreHwp.docc/        # 모듈 시작 페이지와 Topics 구성 (배포 사이트의 CoreHwp 문서)
 ├── Enums/               # tag ID, stream 이름, 컨트롤 ID (raw-value enum)
 ├── Streams/             # OLE stream별 파일 하나씩 (FileHeader, DocInfo, BodyText, ...)
 ├── Models/              # stream이 디코딩되는 타입 정의
@@ -56,6 +57,12 @@ CoreHwp/
    이 경우에도 field 이름을 `rawPayload`, `rawTrailing`, `unknown`처럼 보존
    목적이 드러나게 둔다.
 5. 사용자 코드에서 접근이 필요하면 타입과 stored property를 `public`으로.
+6. 새 공개 진입점이나 기존 범주를 대표하는 모델을 추가했다면
+   `CoreHwp.docc/CoreHwp.md`의 `## Topics`에도 등재한다. **모든 공개 모델을
+   등재하지는 않는다.** 카탈로그에는 스트림·DocInfo·문단·컨트롤 범주별
+   대표 항목만 선별하고, 나머지는 종류별 자동 그룹에 맡긴다. Topics에서
+   빠져도 빌드가 성공하므로, 새 공개 진입점이나 대표 모델을 추가할 때는 등재가
+   누락되지 않았는지 직접 확인한다(루트 AGENTS.md의 "DocC 문서 사이트").
 
 ## 새 stream 추가하기
 
@@ -92,7 +99,12 @@ ID로 dispatch된다.
 
 ## 컨벤션
 
-- public 타입의 doc-comment는 한컴 공개 문서를 참조하는 한국어로 유지.
+- 공개 타입의 문서 주석은 한컴 공개 문서를 참조하되 한국어로 작성한다. 다만
+  **진입점과 스트림 타입의 첫 문단을 절 제목만으로 쓰지 않는다.** DocC가 첫
+  문단을 목록 요약으로 사용하므로, `HwpSection`의 "본문"이나 `HwpDocInfo`의
+  "문서 정보"처럼 정보가 거의 없는 요약이 생긴다. 한컴 공개 문서의 절 제목은
+  첫 문단에 역할 설명과 함께 두고, 기존 설명은 필요한 경우 다음 문단으로 옮겨
+  보존한다(루트 AGENTS.md의 "DocC 문서 사이트").
 - `Streams/Hwp*.swift`는 최상위 오케스트레이터다 — `parseTreeRecord`로 record를
   꺼내 모델로 dispatch만 수행. 파싱 로직은 stream이 아니라 모델 쪽에 두기.
 - **DocInfo children은 단일 분류 패스로 소비한다** (`HwpDocInfo.classify`, #125).
