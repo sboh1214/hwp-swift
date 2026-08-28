@@ -1,5 +1,10 @@
 import Foundation
 
+/// 조판이 끝난 HWP 문서의 페이지 단위 표현 — `HwpDocumentLoader`(HwpKit)
+/// 또는 `HwpDocumentActor`(HwpKitNative)가 만들어 주고, `HwpDocumentView`와
+/// 각 렌더러가 입력으로 받는다. 페이지 배열과 메타데이터, 렌더링이
+/// 지원하지 못한 요소 목록(`unsupportedElements`), 지연 디코딩용 이미지
+/// 저장소를 담는 불변 값이다.
 public struct HwpDocument: Sendable, Hashable {
     public let pages: [HwpPage]
     public let metadata: HwpDocumentMetadata

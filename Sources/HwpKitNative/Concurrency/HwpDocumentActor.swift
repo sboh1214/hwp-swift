@@ -17,6 +17,11 @@ public struct HwpDocumentSnapshot: Sendable {
     }
 }
 
+/// 파싱과 조판을 백그라운드에서 수행해 `HwpDocument`를 만드는 actor —
+/// HwpKitNative를 직접 쓸 때의 시작점이다 (SwiftUI 앱은 보통 HwpKit의
+/// `HwpDocumentLoader`를 통해 간접적으로 쓴다). 새 로드가 시작되면 진행
+/// 중이던 로드는 취소되고, 프로그레시브 로딩은 `HwpDocumentSnapshot`
+/// 스트림으로 중간 결과를 내보낸다.
 public actor HwpDocumentActor {
     private var paginator: HwpPaginator?
     private let fontResolver: HwpFontResolver

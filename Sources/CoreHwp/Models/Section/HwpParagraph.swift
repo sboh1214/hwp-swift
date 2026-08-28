@@ -1,5 +1,11 @@
 import Foundation
 
+/**
+ 본문 문단 하나 — 텍스트(`paraText`)와 글자 모양 적용 구간
+ (`paraCharShape`), 줄 배치(`paraLineSeg`), 그리고 표·그림 같은 컨트롤의
+ 참조를 함께 담는 본문의 기본 단위다. 글꼴·모양 정의 자체는 문단이 아니라
+ `HwpDocInfo.idMappings`에 있고, 문단 쪽에는 그 정의를 가리키는 id만 있다.
+ */
 public struct HwpParagraph: HwpTagValidatedRecordWithVersion {
     static let expectedTag: HwpSectionTag = .paraHeader
 

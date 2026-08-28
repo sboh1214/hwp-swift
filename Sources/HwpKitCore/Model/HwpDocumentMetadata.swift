@@ -1,5 +1,8 @@
 import Foundation
 
+/// 문서 제목·쪽수·개요 등 `HwpDocument`에 딸린 메타데이터. 프로그레시브
+/// 로딩의 연속성 판정(`loadToken`·`isComplete`)과 사이드바 탐색(`outline`)이
+/// 여기에 실린다.
 public struct HwpDocumentMetadata: Sendable, Hashable {
     public let title: String?
     public let pageCount: Int

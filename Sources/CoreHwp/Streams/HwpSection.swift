@@ -1,7 +1,11 @@
 import Foundation
 
 /**
- 본문
+ 본문 스트림의 구역(Section) 하나 — 문서 본문은 하나 이상의 구역으로
+ 이루어지고, 각 구역은 문단(`HwpParagraph`) 배열을 담는다. 용지·여백 같은
+ 구역 설정은 첫 문단의 컨트롤(`HwpSectionDef`·`HwpPageDef`)에 실려 온다.
+ `HwpFile.sectionArray`(원본)와 `HwpFile.displaySectionArray`(표시용
+ 선택 결과)로 접근한다.
  */
 public struct HwpSection: HwpFromDataWithVersion {
     /** 원본 payload */

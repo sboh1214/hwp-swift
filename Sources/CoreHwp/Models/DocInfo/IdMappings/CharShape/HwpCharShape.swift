@@ -11,7 +11,7 @@ public struct HwpCharShape {
     public var rawPayload: Data
     /** 언어별 글꼴 ID(FaceID) 참조 값 */
     public let faceId: [WORD]
-    /** 언어별 장평, 50%~200%( */
+    /** 언어별 장평, 50%~200% */
     public let faceScaleX: [UInt8]
     /** 언어별 자간, -50%~50% */
     public let faceSpacing: [Int8]
