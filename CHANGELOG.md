@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.17.0 (2026-08-28)
+
 ### Added
 
 - **복사가 서식을 함께 싣습니다** (#118). 선택 영역을 복사하면 평문 옆에
@@ -69,6 +71,17 @@
   - `enforcesEOF = false`는 커스텀 load 시절 EOF를 검사하지 않던 8종의 **현행
     동작을 동결**하는 스위치입니다. 새 타입에서 끄지 마십시오 — 일괄 강제
     전환은 실문서 확인과 함께 후속 이슈로 분리했습니다.
+
+### Documentation
+
+- **문서 사이트가 4개 라이브러리 전부를 싣습니다.** hwp-swift.sboh.dev가
+  CoreHwp 하나만 게시하던 것을 combined DocC 아카이브로 바꿔
+  HwpKitCore·HwpKitNative·HwpKit 문서가 같은 사이트에 함께 배포됩니다 —
+  기존 `documentation/corehwp/` 주소는 그대로 유지됩니다. 각 타깃에 DocC
+  카탈로그를 신설해 모듈 랜딩(개요 산문 + 사용 예)과 심볼 큐레이션을
+  추가했고, `HwpFile`·`HwpDocumentLoader`·`HwpDocumentView` 같은 진입점이
+  각 모듈 문서 맨 위 "시작하기" 그룹에 노출됩니다. PR 단계에서도 같은
+  명령으로 문서 빌드를 검증합니다 (`docs-check.yml`).
 
 ## 0.16.0 (2026-08-24)
 

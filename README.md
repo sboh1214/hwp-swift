@@ -1,6 +1,8 @@
 # Hwp-Swift
 
-> [hwp-swift.sboh.dev](https://hwp-swift.sboh.dev)
+> [hwp-swift.sboh.dev](https://hwp-swift.sboh.dev) · 문서:
+> [CoreHwp (파서)](https://hwp-swift.sboh.dev/documentation/corehwp/) ·
+> [HwpKit (뷰어)](https://hwp-swift.sboh.dev/documentation/hwpkit/)
 
 > 본 제품은 한글과컴퓨터의 한글 문서 파일(.hwp) 공개 문서를 참고하여 개발하였습니다.
 
@@ -28,12 +30,12 @@ Xcode에서 ```File``` > ```Swift Packages``` > ```Add Package Dependency...``` 
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/sboh1214/hwp-swift.git", .upToNextMinor(from: "0.16.0")),
+    .package(url: "https://github.com/sboh1214/hwp-swift.git", .upToNextMinor(from: "0.17.0")),
 ],
 ```
 
 > 이 저장소는 1.0 전까지 파괴 변경을 minor 버전에 싣습니다.
-> `.upToNextMinor(from: "0.16.0")`은 `0.16.0..<0.17.0`만 허용하므로, minor 버전은
+> `.upToNextMinor(from: "0.17.0")`은 `0.17.0..<0.18.0`만 허용하므로, minor 버전은
 > [릴리스 노트](https://github.com/sboh1214/hwp-swift/releases)를 확인한 뒤 올리는 것을 권장합니다.
 
 ## 라이브러리 구조
