@@ -6,6 +6,13 @@ SwiftUI 공개 API target. HwpKitNative 위에 `NSViewRepresentable` / `UIViewRe
 
 ## 공개 API 표면
 
+**이 목록의 HwpKit 소유 항목은 `HwpKit.docc/HwpKit.md` `## Topics`의 두 번째
+사본이다** — 컴포넌트를 더하거나 이름을 바꾸면 둘 다 고친다 (여기 함께 적힌
+`HwpSearchController`·`HwpDocumentMetadata.outline`·`HwpAccessibilityContent`
+같은 HwpKitCore 타입은 그쪽 카탈로그가 싣는다). 카탈로그에서 빠져도 자동
+그룹으로 밀릴 뿐 빌드는 초록이라 CI가 갈림을 못 잡는다. 배포 사이트에서 이
+모듈이 뷰어의 첫 진입점이다 (루트 AGENTS.md "DocC 문서 사이트").
+
 - `HwpDocumentLoader(fontResolver:)` — 렌더에 쓸 폰트 해석기 주입 (기본 `HwpFontResolver()`). 커밋된 기준선을 쓰는 렌더 가드가 전부 이 인자 하나에 기대 기기 독립을 얻는다 (`.testDeterministic` — 루트 AGENTS.md "렌더 가드 4층"). 호스트도 재현 가능한 조판이 필요하면 같은 방식으로 고정 resolver를 넘긴다
 - `HwpDocumentLoader.load(from:)` — URL / Data / FileWrapper 오버로드. 내부적으로 `HwpDocumentActor` 사용. 오류는 `HwpDocumentLoadError`로 매핑 (`CustomStringConvertible` + `LocalizedError` 채택 — 오류 설명은 한국어이므로 호스트가 `error.localizedDescription`을 그대로 표시하면 된다. `presentationBuildFailed`는 하위 파서나 페이지네이터가 보고한 원인을 `reason`에 원문 그대로 보존한다. 새 케이스를 추가하면 `description`도 함께 채우고 `HwpDocumentLoaderTests.testErrorDescriptionsCoverEveryCase`의 배열에도 넣을 것) (#117)
   - **미지원 문서의 종류를 보존한다** — 암호로 보호된 문서·배포용 문서·DRM 문서를 읽을 때 발생하는 `CoreHwp.HwpError.unsupportedFeature`를 `presentationBuildFailed`로 변환하기 전에 포착하고 `unsupportedDocument(HwpUnsupportedDocumentKind)`로 매핑한다 (`mapLoadFailure`가 매핑을 담당하며 세 로드 경로가 이를 공유한다). `HwpUnsupportedDocumentKind`는 `CoreHwp`의 `HwpUnsupportedFeature`에 대응하는 공개 타입이므로 호스트가 `CoreHwp`를 `import`하지 않고도 분기할 수 있다 — 매핑 `switch`가 모든 케이스를 나열하므로 `CoreHwp`에 새 종류가 추가되면 해당 종류의 매핑 누락이 컴파일 오류로 드러난다
