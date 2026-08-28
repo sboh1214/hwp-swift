@@ -9,10 +9,11 @@ runs:
   steps:
     # combined 문서는 docc의 'dependency' 기능(Swift 6.0+/Xcode 16+)이 필요하다.
     # 기능이 없으면 generate-documentation이 배포 전에 명확히 실패한다.
+    # 진단 전용 스텝 — 구형 docc는 --version조차 없으므로 어떤 실패도 삼킨다.
     - name: Show docc toolchain
       shell: bash
       run: |
-        xcrun docc --version
+        xcrun docc --version || true
         cat "$(dirname "$(dirname "$(xcrun --find docc)")")/share/docc/features.json" || true
 
     - name: Generate combined documentation
