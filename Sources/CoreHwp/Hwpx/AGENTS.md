@@ -54,7 +54,9 @@ HWPX(OCF ZIP + OWPML XML, KS X 6101)를 **기존 `Hwp*` 모델로 변환 파싱*
 
 ## 1차 범위 밖 (미해석 강등 — 진단으로 보고됨)
 
-numbering/bullet(배열 비움 — 번호 없이 조판), 각주/미주·머리말/꼬리말
+numbering/bullet(배열 비움 — 번호·글머리표 문자가 렌더에서 빠진다: noori
+제목 블록의 선행 "-"가 HWP 렌더에만 보이는 것이 실측 사례다. 파스 텍스트
+등가에는 영향 없음), 각주/미주·머리말/꼬리말
 내용(`.notImplemented`), 도형(line/rect/…)·OLE·수식·차트·글상자
 (`.notImplemented`), 형광펜·변경 추적 표식(zero-width 진단), 그러데이션/
 이미지 채우기, 명시 탭 정지, 쪽 테두리. 승격 시 대응 요소를
