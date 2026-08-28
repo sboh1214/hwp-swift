@@ -156,6 +156,16 @@ ID로 dispatch된다.
 `HwpError`로 반환하고, 아직 완전히 해석하지 못한 record/control은 raw payload를
 보존하는 방향으로 확장하고 있습니다.
 
+HWPX(OWPML, `.hwpx`)는 **변환 파싱**으로 읽습니다 — `HwpFile`의 public init
+3종이 파일 선두 바이트로 OLE/ZIP을 자동 감지해, ZIP이면 `Sources/CoreHwp/Hwpx/`
+파이프라인이 OWPML XML을 같은 `Hwp*` 모델로 합성합니다 (별도 모델·별도 public
+타입 없음, 상세 규약은 `Hwpx/AGENTS.md`). 1차 범위는 본문 텍스트·글자/문단
+모양·스타일·구역/쪽 설정·단·표·그림이고, 그 밖의 요소(각주·머리말 내용·도형·
+수식·번호 매기기 등)는 실제 4CC를 실은 `.notImplemented`와 합성 tagId(0)의
+`unknownRecords`로 강등되어 `parseDiagnostics()`에 보고됩니다. 같은 문서의
+HWP↔HWPX 파싱 등가는 `Tests/CoreHwpTests/FixtureHarness/Hwpx/`의
+`HwpxHwpEquivalenceTests`가 실물 변환 쌍 10종으로 고정합니다.
+
 `HwpReadLimits`는 OLE directory의 stream size를 기준으로 압축 입력과 비압축
 stream을 읽기 전에 제한하고, 압축 해제 결과가 한도를 넘으면
 `HwpError.streamSizeLimitExceeded`로 거부합니다. `HwpInflate`는 전 플랫폼에서

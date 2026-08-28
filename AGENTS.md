@@ -2,9 +2,11 @@
 
 ## 개요
 
-한글과컴퓨터의 한글 문서 파일(`.hwp`)을 파싱하고 렌더링하는 Swift package.
-HWP 파일은 OLE compound document이며, 그 안의 stream들은 record tree 구조로
-인코딩되어 있다. Swift 5.9+, macOS 14+/iOS 17+, LGPL.
+한글과컴퓨터의 한글 문서 파일(`.hwp`·`.hwpx`)을 파싱하고 렌더링하는 Swift
+package. HWP 파일은 OLE compound document이며, 그 안의 stream들은 record tree
+구조로 인코딩되어 있다. HWPX(OWPML)는 ZIP(OCF) + XML이고, `HwpFile` 진입점이
+선두 바이트로 두 포맷을 자동 감지해 **같은 모델로 변환 파싱**한다
+(`Sources/CoreHwp/Hwpx/AGENTS.md`). Swift 5.9+, macOS 14+/iOS 17+, LGPL.
 
 **4개 library target**:
 - `CoreHwp` — 파서 (read-only, binary HWP → typed model)
@@ -47,6 +49,8 @@ hwp-swift/
 | 기본 타입 확장 | `Sources/CoreHwp/Utils/Extensions/` |
 | 새 미지원 문서 종류 추가 | `Models/FileHeader/HwpFileProperty.swift`의 `unsupportedFeature`(비트 → 종류) + `HwpError.swift`의 `HwpUnsupportedFeature` → HwpKit의 `HwpUnsupportedDocumentKind` 매핑(`switch`가 모든 케이스를 나열하므로 새 종류가 누락되면 컴파일 오류가 발생한다) + `HwpDocumentLoadError.description` + `HwpDocumentLoaderTests.testErrorDescriptionsCoverEveryCase` 배열 + 픽스처 manifest `expectedError` (#117) |
 | 테스트 픽스처 추가 | 테스트 파일과 같은 폴더에 `.hwp` 배치 (`openHwp(#file, "name")` 사용). `Tests/CoreHwpTests/Fixtures/`에 넣으면 `HwpLayoutRenderParitySweepTests`가 자동으로 훑으므로 그쪽 실측 핀(문단 수·측정 수·컨테이너 수)을 함께 갱신한다 |
+| HWPX 픽스처 추가 | `Tests/CoreHwpTests/HwpxFixtures/<id>/` (`openHwpx` 사용, 별도 루트라 위 스윕 핀에 영향 없음 — `HwpxFixtures/README.md`의 생성 정책 참조) |
+| HWPX 매핑 확장 (요소 승격) | `Sources/CoreHwp/Hwpx/Owpml/HwpxControlMapper.swift` 분류표 + 대응 매퍼 (`Hwpx/AGENTS.md`의 불변식 준수) |
 | 새 공개 진입점 추가 | 해당 타깃의 `Sources/<타깃>/<타깃>.docc/<타깃>.md`에 있는 `## Topics`에도 등재한다. 누락해도 빌드가 성공하므로 CI에서는 감지하지 못한다(아래 "DocC 문서 사이트" 참고). |
 
 ## 코드 맵
@@ -75,6 +79,13 @@ hwp-swift/
 
 압축 여부는 `HwpFileHeader.fileProperty.isCompressed`에 있고, 이후 모든
 하위 `load` 호출에 인자로 전달된다.
+
+`.hwpx`는 같은 `HwpFile` init에서 선두 바이트(ZIP `PK`)로 갈라져 별도
+파이프라인을 탄다: `HwpxArchive`(자체 ZIP 리더, method 8은 `HwpInflate` 재사용)
+→ `HwpxContainer`(mimetype·encryption 게이트) → `HwpxXMLTreeParser`(SAX
+mini-DOM) → `Hwpx*Mapper`(OWPML → 같은 `Hwp*` 모델 — id 리맵·WCHAR 스트림
+합성) → `HwpFile`. 하류(뷰어)는 포맷을 모른다. 불변식·범위·실파일 검증 대기
+항목은 `Sources/CoreHwp/Hwpx/AGENTS.md`가 정본이다.
 
 `HwpReadLimits`는 OLE directory의 `streamSize`를 이용해 압축 입력과 비압축
 stream을 읽기 전에 제한하고, 압축 해제 결과가 한도를 넘으면 typed

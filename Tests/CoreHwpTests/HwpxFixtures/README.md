@@ -27,6 +27,10 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
 3. `manifest.json` 기대값을 갱신하고
    `swift test --filter "HwpxFixtureManifestTests|HwpxHwpEquivalenceTests"`를
    실행한다.
+4. **원본 `document.hwp`가 변하지 않았는지 `git status`로 확인한다** —
+   한글.app은 열람만으로도 OLE 원본을 다시 쓸 수 있다 (2026-08-28 chart
+   fixture 실측: 크기 동일한 바이너리 변경 발생 → 원복함). 변했으면
+   `git checkout -- <경로>`로 되돌린다.
 
 한글.app은 AppleScript를 지원하지 않으므로 자동화는 GUI 조작뿐이다 —
 `Fixtures/README.md`의 자동화 정책(별도 승인 하의 Computer Use)이 그대로
