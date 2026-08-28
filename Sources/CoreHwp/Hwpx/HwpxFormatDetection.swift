@@ -29,4 +29,41 @@ enum HwpxFormatDetection {
         }
         return .unknown
     }
+
+    /// 파일 선두 8바이트만 읽어 판정한다. 열기/읽기 실패는 `.unknown` —
+    /// 기존 OLE 경로가 종전과 같은 typed error를 내게 넘긴다.
+    static func sniffFile(atPath filePath: String) -> ContainerFormat {
+        guard let handle = FileHandle(forReadingAtPath: filePath) else {
+            return .unknown
+        }
+        defer {
+            do {
+                try handle.close()
+            } catch {
+                // close 실패는 이미 끝난 읽기 결과에 영향이 없다.
+            }
+        }
+        do {
+            guard let prefix = try handle.read(upToCount: 8) else {
+                return .unknown
+            }
+            return sniff(prefix)
+        } catch {
+            return .unknown
+        }
+    }
+
+    /// HWPX 경로의 파일 로드 — 아카이브는 임의 접근이 필요해 통째로 읽되
+    /// 가능하면 매핑한다.
+    static func hwpxData(atPath filePath: String) throws -> Data {
+        do {
+            return try Data(
+                contentsOf: URL(fileURLWithPath: filePath), options: .mappedIfSafe
+            )
+        } catch {
+            throw HwpError.invalidArchive(
+                reason: "cannot read file: \(String(describing: error))"
+            )
+        }
+    }
 }

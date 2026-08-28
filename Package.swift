@@ -35,6 +35,7 @@ var targets: [Target] = [
         ],
         exclude: [
             "AGENTS.md",
+            "Hwpx/AGENTS.md",
             "Models/Section/AGENTS.md",
             "Utils/AGENTS.md",
         ]

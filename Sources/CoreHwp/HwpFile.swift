@@ -40,8 +40,21 @@ public struct HwpFile: HwpPrimitive {
     }
 
     /// 파일 경로의 HWP 문서를 로드 옵션과 함께 읽습니다.
+    ///
+    /// 선두 바이트로 컨테이너를 자동 감지합니다 — ZIP(`PK`)이면 HWPX(OWPML)
+    /// 파이프라인으로, 그 외는 종전의 OLE(HWP 5.0 바이너리) 파이프라인으로
+    /// 읽습니다. 어느 쪽도 아닌 입력의 오류 표면은 종전과 같습니다
+    /// (`invalidOLEFile`).
     public init(fromPath filePath: String, options: HwpLoadOptions) throws {
         try options.readLimits.validate()
+
+        if HwpxFormatDetection.sniffFile(atPath: filePath) == .zip {
+            try self.init(
+                hwpxData: HwpxFormatDetection.hwpxData(atPath: filePath),
+                options: options
+            )
+            return
+        }
 
         let ole: OLEFile
         do {
@@ -64,8 +77,14 @@ public struct HwpFile: HwpPrimitive {
     }
 
     /// 메모리의 HWP 문서 데이터를 로드 옵션과 함께 읽습니다.
+    /// 선두 바이트로 HWP(OLE)/HWPX(ZIP)를 자동 감지합니다.
     public init(fromData data: Data, options: HwpLoadOptions) throws {
         try options.readLimits.validate()
+
+        if HwpxFormatDetection.sniff(data.prefix(8)) == .zip {
+            try self.init(hwpxData: data, options: options)
+            return
+        }
 
         let ole = try coreHwpOLEFile(fromData: data)
         do {
@@ -86,8 +105,16 @@ public struct HwpFile: HwpPrimitive {
     }
 
     /// `FileWrapper`로 전달된 HWP 문서를 로드 옵션과 함께 읽습니다.
+    /// 선두 바이트로 HWP(OLE)/HWPX(ZIP)를 자동 감지합니다.
     public init(fromWrapper fileWrapper: FileWrapper, options: HwpLoadOptions) throws {
         try options.readLimits.validate()
+
+        if let contents = fileWrapper.regularFileContents,
+           HwpxFormatDetection.sniff(contents.prefix(8)) == .zip
+        {
+            try self.init(hwpxData: contents, options: options)
+            return
+        }
 
         let ole = try coreHwpOLEFile(fromWrapper: fileWrapper)
         do {

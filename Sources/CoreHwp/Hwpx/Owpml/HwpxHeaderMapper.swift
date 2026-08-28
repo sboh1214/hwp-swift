@@ -20,7 +20,8 @@ enum HwpxHeaderMapper {
     static func map(
         _ data: Data,
         binDataCatalog: HwpxBinDataCatalog,
-        options: HwpLoadOptions
+        options: HwpLoadOptions,
+        sectionCount: Int? = nil
     ) throws -> (docInfo: HwpDocInfo, idTables: HwpxIdTables) {
         let entry = HwpxContainer.EntryName.header
         let root = try HwpxXMLTreeParser.parse(data, entry: entry)
@@ -32,8 +33,10 @@ enum HwpxHeaderMapper {
         }
 
         var mapping = HwpxHeaderMapping()
+        // 실재 구역 수(조립기가 셈)가 secCnt 선언보다 정확하다 — 선언이
+        // 어긋난 문서에서 모델 내부 일관성을 지킨다.
         mapping.documentProperties.sectionSize = UInt16(
-            clamping: root.intAttribute("secCnt", default: 1)
+            clamping: sectionCount ?? root.intAttribute("secCnt", default: 1)
         )
 
         // 빈 문서 기본값에서 출발하되, 매핑 대상 가족은 전부 덮어쓴다 —
