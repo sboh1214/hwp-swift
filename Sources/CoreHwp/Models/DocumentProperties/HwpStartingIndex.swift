@@ -21,6 +21,24 @@ public struct HwpStartingIndex: HwpFromData {
         equation = 1
     }
 
+    /// HWPX(`hh:beginNum`) 합성 전용 — 시작 번호 6종.
+    init(
+        hwpxPage page: UInt16,
+        footnote: UInt16,
+        endnote: UInt16,
+        picture: UInt16,
+        table: UInt16,
+        equation: UInt16
+    ) {
+        rawPayload = Data()
+        self.page = page
+        self.footnote = footnote
+        self.endnote = endnote
+        self.picture = picture
+        self.table = table
+        self.equation = equation
+    }
+
     init(_ reader: inout DataReader) throws {
         let startOffset = reader.byteOffset
         page = try reader.read(UInt16.self)

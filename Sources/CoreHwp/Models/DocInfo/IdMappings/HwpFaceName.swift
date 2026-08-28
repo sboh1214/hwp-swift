@@ -95,6 +95,32 @@ extension HwpFaceName: HwpFromData {
 }
 
 extension HwpFaceName {
+    /// HWPX(`hh:font`) 합성 전용 — 이름(+대체 글꼴)만 담은 face 항목.
+    /// property bit(대체·정보·기본)는 대체 글꼴 유무만 세운다 — 렌더 폰트
+    /// 해석은 `faceName`/`alternativeFaceName`을 읽는다.
+    init(hwpxFace name: String, substituteFace: String?) {
+        rawPayload = Data()
+        property = substituteFace == nil ? 0 : 0b1000_0000
+        faceNameLength = WORD(name.utf16.count)
+        faceName = name
+        faceNameRawPayload = Data()
+        if let substituteFace {
+            alternativeFaceType = 1
+            alternativeFaceNameLength = WORD(substituteFace.utf16.count)
+            alternativeFaceName = substituteFace
+            alternativeFaceNameRawPayload = Data()
+        } else {
+            alternativeFaceType = nil
+            alternativeFaceNameLength = nil
+            alternativeFaceName = nil
+            alternativeFaceNameRawPayload = nil
+        }
+        faceTypeInfo = nil
+        defaultFaceNameLength = nil
+        defaultFaceName = nil
+        defaultFaceNameRawPayload = nil
+    }
+
     init(_ faceName: String, _ faceTypeInfo: [BYTE], _ defaultFaceName: String) {
         rawPayload = Data()
         property = 97
