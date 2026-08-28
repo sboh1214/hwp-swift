@@ -1,0 +1,381 @@
+import Foundation
+
+/// HWPX(OCF) 컨테이너의 ZIP 계층을 읽는 최소 리더.
+///
+/// OLE는 OLEKit에 맡기지만 ZIP은 외부 의존 없이 직접 읽는다 — 순수 Swift
+/// 압축 라이브러리를 프로덕션에서 걷어낸 결정(#101)과 정합하도록, 필요한
+/// 만큼만 지원한다: central directory 기반 엔트리 탐색, method 0(stored)/
+/// 8(deflate), Zip64·멀티 디스크 거부. 압축 해제는 기존 `HwpInflate`
+/// (raw DEFLATE = ZIP method 8)에 위임해 스트리밍 도중 한도 적용을 그대로
+/// 얻는다. 자체 컨테이너 리더의 선례는 `EmbeddedCompoundFile`
+/// (`Utils/HwpEmbeddedChart.swift`)이다.
+///
+/// 엔트리 크기는 항상 central directory의 선언값을 쓴다 — general purpose
+/// bit 3(data descriptor)이 세워진 파일의 local header는 크기가 0이므로
+/// 보지 않는다. CRC는 검증하지 않는다 — HWP5 경로도 stream 무결성 검사를
+/// 하지 않으며, 손상은 상위 XML/모델 검증이 typed error로 받는다.
+///
+/// 같은 이름의 중복 엔트리는 **첫 등장이 이긴다** (결정적) — 뒤에 붙인
+/// 두 번째 `mimetype` 등으로 판정을 뒤집을 수 없다.
+struct HwpxArchive {
+    /// central directory 한 항목의 해석 결과.
+    struct Entry {
+        let name: String
+        let method: UInt16
+        let flags: UInt16
+        let compressedSize: Int
+        let uncompressedSize: Int
+        let localHeaderOffset: Int
+    }
+
+    private let data: Data
+    let entriesByName: [String: Entry]
+
+    /// 아카이브 전체 바이트에서 central directory를 해석한다.
+    ///
+    /// 여기서는 구조만 읽고 엔트리 내용은 읽지 않는다 — 내용 읽기와 자원
+    /// 한도 적용은 `entryData(named:limits:budget:)`가 맡는다.
+    init(data: Data) throws {
+        // 슬라이스 인덱스 함정을 피해 분리 복사 없이 0 기준으로 다룬다.
+        let data = data.startIndex == 0 ? data : Data(data)
+        self.data = data
+
+        let eocdOffset = try Self.locateEndOfCentralDirectory(data)
+        try Self.rejectZip64AndMultiDisk(data, eocdOffset: eocdOffset)
+
+        let entryCount = Int(try data.readLittleEndianUInt16(at: eocdOffset + 10))
+        let directorySize = Int(try data.readLittleEndianUInt32(at: eocdOffset + 12))
+        let directoryOffset = Int(try data.readLittleEndianUInt32(at: eocdOffset + 16))
+        guard directoryOffset <= eocdOffset,
+              directorySize <= eocdOffset - directoryOffset
+        else {
+            throw HwpError.invalidArchive(
+                reason: "central directory [\(directoryOffset), +\(directorySize)] " +
+                    "does not precede end-of-central-directory at \(eocdOffset)"
+            )
+        }
+
+        entriesByName = try Self.readCentralDirectory(
+            data,
+            directoryOffset: directoryOffset,
+            directoryEnd: directoryOffset + directorySize,
+            entryCount: entryCount
+        )
+    }
+}
+
+extension HwpxArchive {
+    /// 이름이 일치하는 엔트리의 압축 해제된 내용을 돌려준다.
+    ///
+    /// 한도 규약은 `StreamReader`와 같다: 압축 입력은
+    /// `maxCompressedStreamBytes`, 출력은 `maxDecompressedStreamBytes`와
+    /// 남은 집계 예산의 min을 **도중에** 적용하고, 실제로 걸린 쪽의 원래
+    /// 한도를 보고하되 같으면 개별 한도를 우선한다. 보유하게 된 출력
+    /// 바이트는 `budget`에 누적된다.
+    func entryData(
+        named name: String,
+        limits: HwpReadLimits,
+        budget: inout HwpxByteBudget
+    ) throws -> Data {
+        guard let entry = entriesByName[name] else {
+            throw HwpError.archiveEntryDoesNotExist(name: name)
+        }
+        // general purpose bit 0 = 엔트리 암호화. 별도 케이스를 만들지 않고
+        // 기존 미지원 분류를 재사용한다 — 뷰어가 그릴 수 없는 최소 전제라는
+        // 의미가 같다 (recovery-exempt 분류도 함께 따라온다).
+        guard entry.flags & 0b1 == 0 else {
+            throw HwpError.unsupportedFeature(.encryptedDocument)
+        }
+
+        let payload = try compressedPayload(of: entry)
+        switch entry.method {
+        case 0:
+            return try storedEntryData(entry, payload: payload, limits: limits, budget: &budget)
+        case 8:
+            return try deflatedEntryData(entry, payload: payload, limits: limits, budget: &budget)
+        default:
+            throw HwpError.invalidArchive(
+                reason: "unsupported compression method \(entry.method) in '\(entry.name)'"
+            )
+        }
+    }
+
+    /// 엔트리가 없으면 nil, 있으면 `entryData`와 같다.
+    func optionalEntryData(
+        named name: String,
+        limits: HwpReadLimits,
+        budget: inout HwpxByteBudget
+    ) throws -> Data? {
+        guard entriesByName[name] != nil else {
+            return nil
+        }
+        return try entryData(named: name, limits: limits, budget: &budget)
+    }
+}
+
+private extension HwpxArchive {
+    /// ZIP 시그니처 (little-endian UInt32로 읽은 값).
+    enum Signature {
+        static let endOfCentralDirectory: UInt32 = 0x0605_4B50
+        static let centralDirectoryEntry: UInt32 = 0x0201_4B50
+        static let localFileHeader: UInt32 = 0x0403_4B50
+        static let zip64Locator: UInt32 = 0x0706_4B50
+    }
+
+    static let endOfCentralDirectoryLength = 22
+    static let maximumCommentLength = 0xFFFF
+
+    /// EOCD 레코드를 끝에서 역방향으로 찾는다 (주석 최대 64 KiB 허용).
+    /// 뒤에서부터 첫 매치가 실제 EOCD다 — 주석 안의 가짜 시그니처는 항상
+    /// 그보다 앞에 있다. 매치는 주석 길이가 남은 바이트 안에 드는지로
+    /// 추가 검증한다.
+    static func locateEndOfCentralDirectory(_ data: Data) throws -> Int {
+        guard data.count >= endOfCentralDirectoryLength else {
+            throw HwpError.invalidArchive(
+                reason: "\(data.count) bytes is too small for a ZIP archive"
+            )
+        }
+        let lowerBound = max(
+            0, data.count - endOfCentralDirectoryLength - maximumCommentLength
+        )
+        var offset = data.count - endOfCentralDirectoryLength
+        while offset >= lowerBound {
+            if try data.readLittleEndianUInt32(at: offset) == Signature.endOfCentralDirectory {
+                let commentLength = Int(try data.readLittleEndianUInt16(at: offset + 20))
+                if offset + endOfCentralDirectoryLength + commentLength <= data.count {
+                    return offset
+                }
+            }
+            offset -= 1
+        }
+        throw HwpError.invalidArchive(reason: "end-of-central-directory record not found")
+    }
+
+    /// Zip64와 멀티 디스크 아카이브를 typed error로 거부한다.
+    ///
+    /// HWPX 문서는 4 GiB 근처에도 가지 않고, 그 크기라면 자원 한도가 어차피
+    /// 거부한다 — Zip64 필드 해석을 늘리는 대신 명시적으로 지원하지 않는다.
+    static func rejectZip64AndMultiDisk(_ data: Data, eocdOffset: Int) throws {
+        let diskNumber = try data.readLittleEndianUInt16(at: eocdOffset + 4)
+        let directoryDisk = try data.readLittleEndianUInt16(at: eocdOffset + 6)
+        guard diskNumber == 0, directoryDisk == 0 else {
+            throw HwpError.invalidArchive(reason: "multi-disk archives are not supported")
+        }
+
+        let entryCount = try data.readLittleEndianUInt16(at: eocdOffset + 10)
+        let directorySize = try data.readLittleEndianUInt32(at: eocdOffset + 12)
+        let directoryOffset = try data.readLittleEndianUInt32(at: eocdOffset + 16)
+        let zip64Sentinel = entryCount == 0xFFFF
+            || directorySize == 0xFFFF_FFFF
+            || directoryOffset == 0xFFFF_FFFF
+        var hasZip64Locator = false
+        if eocdOffset >= 20 {
+            hasZip64Locator = try data.readLittleEndianUInt32(at: eocdOffset - 20)
+                == Signature.zip64Locator
+        }
+        guard !zip64Sentinel, !hasZip64Locator else {
+            throw HwpError.invalidArchive(reason: "Zip64 archives are not supported")
+        }
+    }
+
+    static func readCentralDirectory(
+        _ data: Data,
+        directoryOffset: Int,
+        directoryEnd: Int,
+        entryCount: Int
+    ) throws -> [String: Entry] {
+        var entries: [String: Entry] = [:]
+        entries.reserveCapacity(entryCount)
+        var offset = directoryOffset
+        for _ in 0 ..< entryCount {
+            guard offset + 46 <= directoryEnd else {
+                throw HwpError.invalidArchive(reason: "truncated central directory")
+            }
+            guard try data.readLittleEndianUInt32(at: offset)
+                == Signature.centralDirectoryEntry
+            else {
+                throw HwpError.invalidArchive(
+                    reason: "central directory entry signature mismatch at \(offset)"
+                )
+            }
+
+            let flags = try data.readLittleEndianUInt16(at: offset + 8)
+            let method = try data.readLittleEndianUInt16(at: offset + 10)
+            let compressedSize = try data.readLittleEndianUInt32(at: offset + 20)
+            let uncompressedSize = try data.readLittleEndianUInt32(at: offset + 24)
+            let nameLength = Int(try data.readLittleEndianUInt16(at: offset + 28))
+            let extraLength = Int(try data.readLittleEndianUInt16(at: offset + 30))
+            let commentLength = Int(try data.readLittleEndianUInt16(at: offset + 32))
+            let localHeaderOffset = try data.readLittleEndianUInt32(at: offset + 42)
+            guard compressedSize != 0xFFFF_FFFF, uncompressedSize != 0xFFFF_FFFF,
+                  localHeaderOffset != 0xFFFF_FFFF
+            else {
+                throw HwpError.invalidArchive(reason: "Zip64 archives are not supported")
+            }
+
+            let nameEnd = offset + 46 + nameLength
+            guard nameEnd + extraLength + commentLength <= directoryEnd else {
+                throw HwpError.invalidArchive(reason: "truncated central directory")
+            }
+            // 이름은 UTF-8 손실 디코드로 읽는다 — HWPX 엔트리 이름은 전부
+            // ASCII라 손실 결과는 어떤 조회에도 걸리지 않을 뿐이다.
+            let name = String(
+                decoding: data[(offset + 46) ..< nameEnd], as: UTF8.self
+            )
+            guard !name.contains("\u{0}") else {
+                throw HwpError.invalidArchive(reason: "entry name contains NUL byte")
+            }
+            // 32비트 Int(watchOS arm64_32)에서 Int.max 초과 UInt32가 트랩하지
+            // 않게 failable 변환을 쓴다 (`EmbeddedCompoundFile`과 같은 이유, P1).
+            guard let compressed = Int(exactly: compressedSize),
+                  let uncompressed = Int(exactly: uncompressedSize),
+                  let headerOffset = Int(exactly: localHeaderOffset)
+            else {
+                throw HwpError.invalidArchive(
+                    reason: "entry '\(name)' declares sizes beyond Int range"
+                )
+            }
+            if entries[name] == nil {
+                entries[name] = Entry(
+                    name: name,
+                    method: method,
+                    flags: flags,
+                    compressedSize: compressed,
+                    uncompressedSize: uncompressed,
+                    localHeaderOffset: headerOffset
+                )
+            }
+            offset = nameEnd + extraLength + commentLength
+        }
+        return entries
+    }
+
+    /// local header를 건너뛰어 엔트리의 압축된 payload 슬라이스를 얻는다.
+    /// 길이는 central directory의 선언값이다. 오프셋 합은 전부 오버플로
+    /// 검사를 거친다 — 32비트 Int 플랫폼에서 조작 헤더가 트랩하지 않게.
+    func compressedPayload(of entry: Entry) throws -> Data {
+        let headerOffset = entry.localHeaderOffset
+        let headerEnd = headerOffset.addingReportingOverflow(30)
+        guard !headerEnd.overflow, headerEnd.partialValue <= data.count,
+              try data.readLittleEndianUInt32(at: headerOffset) == Signature.localFileHeader
+        else {
+            throw HwpError.invalidArchive(
+                reason: "local file header signature mismatch for '\(entry.name)'"
+            )
+        }
+        let nameLength = Int(try data.readLittleEndianUInt16(at: headerOffset + 26))
+        let extraLength = Int(try data.readLittleEndianUInt16(at: headerOffset + 28))
+        let payloadStart = headerEnd.partialValue.addingReportingOverflow(
+            nameLength + extraLength
+        )
+        guard !payloadStart.overflow else {
+            throw HwpError.invalidArchive(reason: "truncated entry '\(entry.name)'")
+        }
+        let payloadEnd = payloadStart.partialValue.addingReportingOverflow(
+            entry.compressedSize
+        )
+        guard !payloadEnd.overflow, payloadEnd.partialValue <= data.count else {
+            throw HwpError.invalidArchive(reason: "truncated entry '\(entry.name)'")
+        }
+        return data[payloadStart.partialValue ..< payloadEnd.partialValue]
+    }
+
+    func storedEntryData(
+        _ entry: Entry,
+        payload: Data,
+        limits: HwpReadLimits,
+        budget: inout HwpxByteBudget
+    ) throws -> Data {
+        guard entry.compressedSize == entry.uncompressedSize else {
+            throw HwpError.invalidArchive(
+                reason: "stored entry '\(entry.name)' declares mismatched sizes: " +
+                    "\(entry.compressedSize) compressed vs \(entry.uncompressedSize) uncompressed"
+            )
+        }
+        guard entry.uncompressedSize <= limits.maxDecompressedStreamBytes else {
+            throw HwpError.archiveEntrySizeLimitExceeded(
+                name: entry.name,
+                limit: limits.maxDecompressedStreamBytes,
+                actual: entry.uncompressedSize
+            )
+        }
+        try budget.consume(entry.uncompressedSize, entryName: entry.name)
+        // 아카이브 전체 버퍼를 붙잡지 않도록 분리 복사한다.
+        return Data(payload)
+    }
+
+    func deflatedEntryData(
+        _ entry: Entry,
+        payload: Data,
+        limits: HwpReadLimits,
+        budget: inout HwpxByteBudget
+    ) throws -> Data {
+        guard entry.compressedSize <= limits.maxCompressedStreamBytes else {
+            throw HwpError.archiveEntrySizeLimitExceeded(
+                name: entry.name,
+                limit: limits.maxCompressedStreamBytes,
+                actual: entry.compressedSize
+            )
+        }
+
+        let entryLimit = limits.maxDecompressedStreamBytes
+        let limit = min(entryLimit, budget.remaining)
+        let output: Data
+        do {
+            output = try HwpInflate.decompress(payload, limit: limit)
+        } catch HwpInflate.Failure.corrupted {
+            throw HwpError.invalidArchive(
+                reason: "corrupted deflate stream in '\(entry.name)'"
+            )
+        } catch let HwpInflate.Failure.limitExceeded(produced) {
+            // 실제로 걸린 쪽의 원래 한도를 보고한다 (같으면 개별 한도 우선 —
+            // `StreamReader.decompress`와 동일 규칙). `produced`는 실제 크기의
+            // 하한이다 (도중 중단이 이 경로의 목적).
+            guard limit == entryLimit else {
+                let (sum, overflow) = budget.totalBytes.addingReportingOverflow(produced)
+                throw HwpError.archiveEntrySizeLimitExceeded(
+                    name: entry.name,
+                    limit: budget.maxAggregateStreamBytes,
+                    actual: overflow ? Int.max : sum
+                )
+            }
+            throw HwpError.archiveEntrySizeLimitExceeded(
+                name: entry.name, limit: entryLimit, actual: produced
+            )
+        }
+        try budget.consume(output.count, entryName: entry.name)
+        return output
+    }
+}
+
+/// 한 HWPX 파일이 읽어 보유하는 엔트리 바이트 합계 예산.
+///
+/// `StreamReader`의 집계 예산(`maxAggregateStreamBytes`)과 같은 역할이다 —
+/// 개별 엔트리 한도만으로는 유효한 엔트리 다수(구역 XML·BinData)로 집계
+/// 메모리 사용량이 무제한이 될 수 있다.
+struct HwpxByteBudget {
+    let maxAggregateStreamBytes: Int
+    private(set) var totalBytes = 0
+
+    init(limits: HwpReadLimits) {
+        maxAggregateStreamBytes = limits.maxAggregateStreamBytes
+    }
+
+    var remaining: Int {
+        max(0, maxAggregateStreamBytes - totalBytes)
+    }
+
+    /// 한도−사용량 차와 비교해 Int 오버플로 없이 판정한다
+    /// (`StreamReader.consumeAggregateBudget`과 동일 규약).
+    mutating func consume(_ byteCount: Int, entryName: String) throws {
+        guard byteCount <= maxAggregateStreamBytes - totalBytes else {
+            let (sum, overflow) = totalBytes.addingReportingOverflow(byteCount)
+            throw HwpError.archiveEntrySizeLimitExceeded(
+                name: entryName,
+                limit: maxAggregateStreamBytes,
+                actual: overflow ? Int.max : sum
+            )
+        }
+        totalBytes += byteCount
+    }
+}
