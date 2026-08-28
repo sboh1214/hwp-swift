@@ -73,21 +73,19 @@ private extension HwpxParagraphMapper {
         }
         if child.isNamed("ctrl") {
             for wrapped in child.childElements {
-                classifyAndAppend(wrapped, into: &builder)
+                try classifyAndAppend(wrapped, into: &builder, context: context)
             }
             return
         }
-        // 후속 단계에서 typed 매핑으로 승격되는 개체(tbl·pic 포함)와 구역
-        // 부속 컨트롤 — 분류표가 결정한다.
-        _ = context
-        classifyAndAppend(child, into: &builder)
+        try classifyAndAppend(child, into: &builder, context: context)
     }
 
     static func classifyAndAppend(
         _ node: HwpxXMLNode,
-        into builder: inout ParagraphBuilder
-    ) {
-        switch HwpxControlMapper.classify(node) {
+        into builder: inout ParagraphBuilder,
+        context: HwpxMappingContext
+    ) throws {
+        switch try HwpxControlMapper.classify(node, context: context) {
         case let .anchor(code, fourCC, ctrl):
             builder.appendAnchor(code: code, fourCC: fourCC, ctrl: ctrl)
         case let .inlineOnly(code, fourCC):

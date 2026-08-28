@@ -19,7 +19,10 @@ enum HwpxRunChildAction {
 
 /// `hp:run`/`hp:ctrl` 자식 요소 → HWP5 제어 문자·컨트롤 대응표.
 enum HwpxControlMapper {
-    static func classify(_ node: HwpxXMLNode) -> HwpxRunChildAction {
+    static func classify(
+        _ node: HwpxXMLNode,
+        context: HwpxMappingContext
+    ) throws -> HwpxRunChildAction {
         switch node.localName {
         case "secPr":
             return .anchor(
@@ -42,13 +45,26 @@ enum HwpxControlMapper {
             )
         case "fieldEnd":
             return .inlineOnly(code: 4, fourCC: HwpFieldCtrlId.unknown.rawValue)
+        case "tbl":
+            return .anchor(
+                code: 11,
+                fourCC: HwpCommonCtrlId.table.rawValue,
+                ctrl: .table(try HwpxTableMapper.map(node, context: context))
+            )
+        case "pic":
+            return .anchor(
+                code: 11,
+                fourCC: HwpCommonCtrlId.picture.rawValue,
+                ctrl: .picture(HwpxPictureMapper.map(node, context: context))
+            )
         default:
             return classifyAnchorObject(node)
         }
     }
 
-    /// 개체·구역 부속 요소 — 전부 미구현 강등이되 4CC는 실제 값을 실어
-    /// `parseDiagnostics()`가 `notImplementedControl`로 종류까지 보고한다.
+    /// 미구현 개체·구역 부속 요소 — 전부 미구현 강등이되 4CC는 실제 값을
+    /// 실어 `parseDiagnostics()`가 `notImplementedControl`로 종류까지
+    /// 보고한다.
     private static func classifyAnchorObject(_ node: HwpxXMLNode) -> HwpxRunChildAction {
         if let fourCC = objectFourCCs[node.localName] {
             return .anchor(
@@ -82,11 +98,9 @@ enum HwpxControlMapper {
         ))
     }
 
-    /// 코드 11(개체 앵커)로 자리하는 요소들의 4CC.
-    /// tbl·pic은 후속 단계에서 typed 매핑으로 승격된다.
+    /// 코드 11(개체 앵커)로 자리하는 미구현 요소들의 4CC (tbl·pic은 위에서
+    /// typed 매핑으로 승격됐다).
     static let objectFourCCs: [String: UInt32] = [
-        "tbl": HwpCommonCtrlId.table.rawValue,
-        "pic": HwpCommonCtrlId.picture.rawValue,
         "ole": HwpCommonCtrlId.ole.rawValue,
         "equation": HwpCommonCtrlId.equation.rawValue,
         "line": HwpCommonCtrlId.line.rawValue,

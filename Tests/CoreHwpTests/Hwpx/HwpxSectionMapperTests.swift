@@ -172,7 +172,7 @@ final class HwpxSectionMapperTests: XCTestCase {
         let section = try mapSection(
             """
             <hp:p><hp:run charPrIDRef="7">\
-            <hp:tbl id="1" rowCnt="1" colCnt="1"/>\
+            <hp:ole id="1"/>\
             <hp:ctrl><hp:header id="2"/></hp:ctrl>\
             </hp:run>\
             <hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1000" \
@@ -186,12 +186,12 @@ final class HwpxSectionMapperTests: XCTestCase {
         expect(chars.map(\.value)) == [11, 16, 13]
         let ctrls = try XCTUnwrap(paragraph.ctrlHeaderArray)
         expect(ctrls.count) == 2
-        guard case let .notImplemented(table) = ctrls[0],
+        guard case let .notImplemented(ole) = ctrls[0],
               case let .notImplemented(header) = ctrls[1]
         else {
             return fail("Expected two .notImplemented, got \(ctrls)")
         }
-        expect(table.ctrlId) == HwpCommonCtrlId.table.rawValue
+        expect(ole.ctrlId) == HwpCommonCtrlId.ole.rawValue
         expect(header.ctrlId) == HwpOtherCtrlId.header.rawValue
         // 분류 가능한 요소는 위치가 확실하므로 lineseg가 유지된다.
         expect(paragraph.paraLineSeg.paraLineSegInternalArray.count) == 1
