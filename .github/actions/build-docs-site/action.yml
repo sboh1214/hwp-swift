@@ -1,0 +1,43 @@
+name: Build DocC site
+description: >
+  4개 라이브러리 타깃의 combined DocC 사이트를 ./docs에 생성하고 랜딩
+  페이지를 덮어쓴다. cd.yml(배포)과 docs-check.yml(PR 검증)이 같은 명령을
+  쓰도록 하는 단일 출처 — 빌드 절차를 바꿀 때는 이 파일만 수정한다.
+
+runs:
+  using: composite
+  steps:
+    # combined 문서는 docc의 'dependency' 기능(Swift 6.0+/Xcode 16+)이 필요하다.
+    # 기능이 없으면 generate-documentation이 배포 전에 명확히 실패한다.
+    - name: Show docc toolchain
+      shell: bash
+      run: |
+        xcrun docc --version
+        cat "$(dirname "$(dirname "$(xcrun --find docc)")")/share/docc/features.json" || true
+
+    - name: Generate combined documentation
+      shell: bash
+      run: |
+        swift package --allow-writing-to-directory ./docs \
+          generate-documentation \
+          --target CoreHwp \
+          --target HwpKitCore \
+          --target HwpKitNative \
+          --target HwpKit \
+          --enable-experimental-combined-documentation \
+          --disable-indexing \
+          --transform-for-static-hosting \
+          --output-path ./docs
+
+    # 기존 /documentation/corehwp/ 딥링크 보존이 배포의 필수 조건이다.
+    - name: Smoke-check module URLs
+      shell: bash
+      run: |
+        for m in corehwp hwpkitcore hwpkitnative hwpkit; do
+          test -f "./docs/documentation/$m/index.html" \
+            || { echo "::error::missing /documentation/$m/"; exit 1; }
+        done
+
+    - name: Overlay landing page
+      shell: bash
+      run: cp .github/pages/index.html ./docs/index.html

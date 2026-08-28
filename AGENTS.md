@@ -1102,7 +1102,7 @@ PR 리뷰를 반영하며 렌더링 코드를 수정할 때, 한글 파일 렌�
      (`swift:5.9-jammy`·`swift:6.3-noble`)에는 `zlib1g-dev`가 이미 들어 있고,
      없는 이미지라면 `apt-get install -y zlib1g-dev`를 선행한다.
      렌더·뷰어 코드를 만졌으면 iOS 빌드도 확인.
-4. **커밋·푸시** — 논리/포맷 커밋 분리. `Snapshots/`·`Docs/`·스크래치
+4. **커밋·푸시** — 논리/포맷 커밋 분리. `Snapshots/`·`References/`·스크래치
    파일은 gitignore로 제외됨. push 후 CI 잡별(macOS[커버리지 포함]/iOS/
    Linux·lint) 확인 — 브랜치 첫 PR 전엔 CI가 돈 적 없으니 특히 주시.
 

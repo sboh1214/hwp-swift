@@ -32,15 +32,8 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: actions/configure-pages@v5
-      - name: Generate documentation
-        run: |
-          swift package --allow-writing-to-directory ./docs \
-            generate-documentation --target CoreHwp \
-            --disable-indexing \
-            --transform-for-static-hosting \
-            --output-path ./docs
-      - name: Overlay landing page
-        run: cp .github/pages/index.html ./docs/index.html
+      - name: Build documentation site
+        uses: ./.github/actions/build-docs-site
       - name: Write CNAME
         run: echo 'hwp-swift.sboh.dev' > ./docs/CNAME
       - uses: actions/upload-pages-artifact@v3
