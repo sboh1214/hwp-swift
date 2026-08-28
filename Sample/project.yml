@@ -49,12 +49,21 @@ targets:
             CFBundleTypeRole: Viewer
             LSHandlerRank: Alternate
             LSItemContentTypes: [dev.sboh.hwp]
+          - CFBundleTypeName: HWPX Document
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [dev.sboh.hwpx]
         UTImportedTypeDeclarations:
           - UTTypeIdentifier: dev.sboh.hwp
             UTTypeDescription: HWP Document
             UTTypeConformsTo: [public.data]
             UTTypeTagSpecification:
               public.filename-extension: [hwp]
+          - UTTypeIdentifier: dev.sboh.hwpx
+            UTTypeDescription: HWPX Document
+            UTTypeConformsTo: [public.zip-archive]
+            UTTypeTagSpecification:
+              public.filename-extension: [hwpx]
         UILaunchScreen:
           UIColorName: ""
     settings:

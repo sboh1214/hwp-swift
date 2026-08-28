@@ -1,7 +1,7 @@
 import Foundation
 import UniformTypeIdentifiers
 
-/// 드래그앤드롭으로 받은 provider에서 열 `.hwp` 파일 URL을 뽑는다 (#126).
+/// 드래그앤드롭으로 받은 provider에서 열 `.hwp`/`.hwpx` 파일 URL을 뽑는다 (#126).
 ///
 /// 경로가 플랫폼마다 다르다:
 /// - macOS(Finder)는 드래그 페이스트보드가 **파일 URL**을 싣고 샌드박스 접근
@@ -14,6 +14,16 @@ enum DropOpenSupport {
     /// `.hwp` 콘텐츠 타입 — `Info.plist`의 imported 선언과 같은 식별자다.
     static let hwpType = UTType(importedAs: "dev.sboh.hwp")
 
+    /// `.hwpx`(OWPML) 콘텐츠 타입 — 파서가 자동 감지하므로 열기 경로는 공유한다.
+    static let hwpxType = UTType(importedAs: "dev.sboh.hwpx")
+
+    /// 열 수 있는 문서 확장자 — 파서(`HwpFile`)의 자동 감지와 같은 집합이다.
+    static let openableExtensions: Set<String> = ["hwp", "hwpx"]
+
+    static func hasOpenableExtension(_ name: String) -> Bool {
+        openableExtensions.contains((name as NSString).pathExtension.lowercased())
+    }
+
     /// 드롭 사본 디렉터리 접두사. 사본은 문서가 열려 있는 동안 살아야 하므로
     /// 세션 중에는 지우지 않고, 다음 실행의 시작 시 잔해 청소가 이 접두사로
     /// 찾아 거둔다 (내보내기 임시 PDF와 같은 정책).
@@ -25,7 +35,7 @@ enum DropOpenSupport {
     /// 그쪽 식별자가 되어 `hwpType`에 적합하지 않다. 대신 아무 파일이나 드롭이
     /// 활성화되므로, 확장자 검증은 `open(providers:)`가 맡는다.
     static var acceptedTypes: [UTType] {
-        [hwpType, .fileURL, .data]
+        [hwpType, hwpxType, .fileURL, .data]
     }
 
     /// providers에서 열 수 있는 항목의 URL을 만들어 main으로 돌려준다.
@@ -64,6 +74,9 @@ enum DropOpenSupport {
             if provider.hasItemConformingToTypeIdentifier(hwpType.identifier) {
                 return Candidate(provider: provider, fileRepresentationType: hwpType.identifier)
             }
+            if provider.hasItemConformingToTypeIdentifier(hwpxType.identifier) {
+                return Candidate(provider: provider, fileRepresentationType: hwpxType.identifier)
+            }
             // 외래 UTI 폴백 — 파일 표현이 원본 파일명을 보존하므로 확장자 검증이
             // 그대로 성립한다 (`.fileURL` 경로와 같은 "넓게 받고 검증" 정책).
             if provider.hasItemConformingToTypeIdentifier(UTType.data.identifier) {
@@ -76,9 +89,10 @@ enum DropOpenSupport {
         return urlCandidates + representationCandidates
     }
 
-    /// 후보를 앞에서부터 소진하며 첫 `.hwp`를 연다. 실패 사유는 마지막까지
-    /// 하나도 못 열었을 때만 전달한다 — 읽긴 했는데 확장자가 아니었으면
-    /// `.notHwp`가 `.unreadable`보다 정확한 사유라, 한 번 잡히면 유지된다.
+    /// 후보를 앞에서부터 소진하며 첫 `.hwp`/`.hwpx`를 연다. 실패 사유는
+    /// 마지막까지 하나도 못 열었을 때만 전달한다 — 읽긴 했는데 확장자가
+    /// 아니었으면 `.notSupportedType`이 `.unreadable`보다 정확한 사유라, 한 번
+    /// 잡히면 유지된다.
     private static func openNext(
         _ candidates: [Candidate],
         at index: Int,
@@ -97,7 +111,7 @@ enum DropOpenSupport {
         let candidate = candidates[index]
         guard let typeIdentifier = candidate.fileRepresentationType else {
             let progress = candidate.provider.loadObject(ofClass: URL.self) { url, _ in
-                if let url, url.pathExtension.lowercased() == "hwp" {
+                if let url, openableExtensions.contains(url.pathExtension.lowercased()) {
                     Task { @MainActor in
                         completion(.success(DropOpenedFile(url: url, isOwnedCopy: false)))
                     }
@@ -107,7 +121,7 @@ enum DropOpenSupport {
                     candidates,
                     at: index + 1,
                     request: request,
-                    lastFailure: url != nil ? .notHwp : lastFailure,
+                    lastFailure: url != nil ? .notSupportedType : lastFailure,
                     completion: completion
                 )
             }
@@ -127,7 +141,7 @@ enum DropOpenSupport {
             // 이름의 권위는 임시 URL이 아니라 provider다 — `loadFileRepresentation`은
             // "임시 위치에 사본을 쓴다"만 약속하고 원본 파일명 보존은 약속하지 않는다.
             let name = suggestedFilename(of: candidate.provider, fallback: url)
-            let nameIsHwp = (name as NSString).pathExtension.lowercased() == "hwp"
+            let nameIsOpenable = hasOpenableExtension(name)
             // 앱 선언 타입으로 온 후보는 provider가 이미 HWP라고 **광고**한 것이라
             // 확장자를 다시 요구하지 않는다. 그러면 이름을 UUID로 바꿔 주는
             // provider의 유효한 문서를 거부하게 된다. `.data` 폴백의 확장자
@@ -135,16 +149,20 @@ enum DropOpenSupport {
             // 표시 이름 선호와 검증은 별개라, 광고 이름 하나에 걸면 확장자
             // 없는 제목형 suggestedName이 URL은 `document.hwp`인 유효 문서를
             // 거부한다.
-            let urlIsHwp = url.pathExtension.lowercased() == "hwp"
-            guard typeIdentifier == hwpType.identifier || nameIsHwp || urlIsHwp else {
+            let urlIsOpenable = openableExtensions.contains(url.pathExtension.lowercased())
+            let advertisedType = [hwpType, hwpxType].first { $0.identifier == typeIdentifier }
+            guard advertisedType != nil || nameIsOpenable || urlIsOpenable else {
                 openNext(
                     candidates, at: index + 1, request: request,
-                    lastFailure: .notHwp, completion: completion
+                    lastFailure: .notSupportedType, completion: completion
                 )
                 return
             }
+            // 확장자 없는 이름에는 광고 타입 → 표현 URL 순서로 확장자를 빌린다.
+            let fallbackExtension = advertisedType == hwpxType
+                || url.pathExtension.lowercased() == "hwpx" ? ".hwpx" : ".hwp"
             guard let copy = try? copyToTemporary(
-                url, as: nameIsHwp ? name : name + ".hwp"
+                url, as: nameIsOpenable ? name : name + fallbackExtension
             ) else {
                 openNext(
                     candidates, at: index + 1, request: request,
@@ -279,14 +297,14 @@ struct DropOpenedFile {
 }
 
 enum DropOpenFailure: Error {
-    /// 드롭된 파일이 `.hwp`가 아니다.
-    case notHwp
+    /// 드롭된 파일이 `.hwp`/`.hwpx`가 아니다.
+    case notSupportedType
     /// provider가 URL도 파일 표현도 내주지 못했다 (또는 사본 생성 실패).
     case unreadable
 
     var message: String {
         switch self {
-        case .notHwp: ".hwp 파일만 열 수 있습니다."
+        case .notSupportedType: ".hwp 또는 .hwpx 파일만 열 수 있습니다."
         case .unreadable: "드롭한 파일을 읽지 못했습니다."
         }
     }

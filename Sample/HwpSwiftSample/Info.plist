@@ -20,6 +20,18 @@
 				<string>dev.sboh.hwp</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>HWPX Document</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>dev.sboh.hwpx</string>
+			</array>
+		</dict>
 	</array>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
@@ -58,6 +70,23 @@
 				<key>public.filename-extension</key>
 				<array>
 					<string>hwp</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.zip-archive</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>HWPX Document</string>
+			<key>UTTypeIdentifier</key>
+			<string>dev.sboh.hwpx</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>hwpx</string>
 				</array>
 			</dict>
 		</dict>

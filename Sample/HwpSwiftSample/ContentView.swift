@@ -153,6 +153,7 @@ struct ContentView: View {
             isPresented: $showPicker,
             allowedContentTypes: [
                 DropOpenSupport.hwpType,
+                DropOpenSupport.hwpxType,
             ]
         ) { result in
             switch result {
@@ -196,8 +197,12 @@ struct ContentView: View {
             Self.removeStaleExports()
             DropOpenSupport.removeStaleDropCopies(olderThan: Self.processStart)
             if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
-                let candidate = docs.appendingPathComponent("document.hwp")
-                if FileManager.default.fileExists(atPath: candidate.path), document == nil {
+                // 시뮬레이터 QA 자동 로드 — hwp가 우선이고 없으면 hwpx다.
+                let candidates = ["document.hwp", "document.hwpx"]
+                    .map(docs.appendingPathComponent)
+                if let candidate = candidates.first(where: {
+                    FileManager.default.fileExists(atPath: $0.path)
+                }), document == nil {
                     loadDocument(from: candidate)
                 }
             }
@@ -579,12 +584,12 @@ struct ContentView: View {
                     Image(systemName: "doc.text")
                         .font(.system(size: 64))
                         .foregroundStyle(.secondary)
-                    Text("Open a .hwp file to preview")
+                    Text("Open a .hwp or .hwpx file to preview")
                         .foregroundStyle(.secondary)
-                    Button("Open .hwp") { showPicker = true }
+                    Button("Open .hwp / .hwpx") { showPicker = true }
                         .buttonStyle(.borderedProminent)
                         .keyboardShortcut(.defaultAction)
-                    Text("또는 .hwp 파일을 여기로 끌어다 놓기")
+                    Text("또는 .hwp/.hwpx 파일을 여기로 끌어다 놓기")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     if let errorMessage {
