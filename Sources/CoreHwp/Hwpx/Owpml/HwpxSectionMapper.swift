@@ -23,8 +23,14 @@ enum HwpxSectionMapper {
 
         var paragraphs: [HwpParagraph] = []
         var unknownRecords: [HwpUnknownRecord] = []
-        let paragraphNodes = root.childElements.filter { $0.isNamed("p") }
-        for child in root.childElements where !child.isNamed("p") {
+        // 본문 문단은 정의상 hp:p뿐 — 전역 known 집합으로 매칭하면 다른
+        // known vocabulary의 동명 요소(hh:p)가 문단으로 오인되면서 unknown
+        // 보고에서도 빠진다 ((namespace, local name) 매칭 규약).
+        let isParagraph = { (node: HwpxXMLNode) in
+            node.isNamed("p", in: HwpxNamespace.paragraph)
+        }
+        let paragraphNodes = root.childElements.filter(isParagraph)
+        for child in root.childElements where !isParagraph(child) {
             unknownRecords.append(HwpUnknownRecord(
                 tagId: hwpxSyntheticTagId, level: 0, payload: Data(child.localName.utf8)
             ))

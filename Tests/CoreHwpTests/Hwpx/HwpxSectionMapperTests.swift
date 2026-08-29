@@ -52,6 +52,20 @@ final class HwpxSectionMapperTests: XCTestCase {
     flags="393216"/></hp:linesegarray></hp:p>
     """
 
+    func testParagraphFromOtherKnownVocabularyIsNotABodyParagraph() throws {
+        // local name "p"라도 head vocabulary(hh:p)면 본문 문단이 아니다 —
+        // 문단으로 오인하지 않고 unknown으로 보고한다 ((namespace, local name)).
+        let section = try mapSection(
+            blankBody + "<hh:p xmlns:hh=\"http://www.hancom.co.kr/hwpml/2011/head\"/>"
+        )
+
+        expect(section.paragraph.count) == 1
+        let names = section.unknownRecords.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names) == ["p"]
+    }
+
     func testUnconsumedSecPrChildrenDegradeIntoSectionDefDiagnostics() throws {
         // footNotePr 등 1차 범위 밖 자식은 조용히 사라지지 않고 합성
         // unknownChildren으로 남아야 한다 — 소비되는 pagePr·startNum은 제외.
