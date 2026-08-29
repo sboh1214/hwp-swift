@@ -329,6 +329,38 @@ final class HwpxHeaderMapperTests: XCTestCase {
         expect(docInfo.idMappings.faceNameKoreanArray.count) == 2
     }
 
+    func testNumberingAndBulletReferencesAreOneBased() throws {
+        // 조판이 `> 0` 게이트 뒤에서 -1로 되돌리므로 첫 정의(오프셋 0)도
+        // 1로 실려야 사라지지 않는다. 개요·없음은 이 배열을 안 써 0이다.
+        let withHeadings = headerXML
+            .replacingOccurrences(
+                of: "<hh:heading type=\"OUTLINE\" idRef=\"0\" level=\"2\"/>",
+                with: "<hh:heading type=\"NUMBER\" idRef=\"1\" level=\"2\"/>"
+            )
+            .replacingOccurrences(
+                of: "</hh:paraProperties>",
+                with: "<hh:paraPr id=\"77\">"
+                    + "<hh:heading type=\"BULLET\" idRef=\"1\" level=\"0\"/>"
+                    + "</hh:paraPr></hh:paraProperties>"
+            )
+            .replacingOccurrences(
+                of: "<hh:tabProperties",
+                with: "<hh:numberings itemCnt=\"1\"><hh:numbering id=\"1\"/></hh:numberings>"
+                    + "<hh:bullets itemCnt=\"1\"><hh:bullet id=\"1\"/></hh:bullets>"
+                    + "<hh:tabProperties"
+            )
+        let (docInfo, _) = try mapHeader(withHeadings)
+        let paraShapes = docInfo.idMappings.paraShapeArray
+
+        expect(paraShapes[0].property1Info.headingTypeRawValue) == 2
+        expect(paraShapes[0].numberingOrBulletId) == 1
+        expect(paraShapes[2].property1Info.headingTypeRawValue) == 3
+        expect(paraShapes[2].numberingOrBulletId) == 1
+        // 머리 없음(0)은 배열을 쓰지 않으므로 0 유지 (음성 대조).
+        expect(paraShapes[1].property1Info.headingTypeRawValue) == 0
+        expect(paraShapes[1].numberingOrBulletId) == 0
+    }
+
     func testRefListFamilyFromOtherKnownVocabularyIsDemotedNotMapped() throws {
         // hp:charProperties(paragraph vocabulary)는 hh 정의가 아니다 — 등록도
         // 매핑도 하지 않고 unknown으로 강등해야 진짜 배열을 덮지 않는다.

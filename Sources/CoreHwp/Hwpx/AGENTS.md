@@ -27,7 +27,8 @@ HWPX(OCF ZIP + OWPML XML, KS X 6101)를 **기존 `Hwp*` 모델로 변환 파싱*
   ctrl id다 (`HwpInlineControl.rawControlId` 계약).
 - **id 리맵은 gap-fill이 아니다** — HWPX id는 dense가 아니라서
   (`HwpxIdTables`) 가족별 문서 등장 순서 오프셋을 부여하고 모든 `*IDRef`를
-  재작성한다. borderFill 참조만 1-based(0 = 없음), 댕글링은 0 폴백.
+  재작성한다. borderFill과 번호/글머리표 참조는 1-based(0 = 없음) —
+  조판이 `> 0` 게이트 뒤에서 -1로 되돌린다. 댕글링은 0 폴백.
 - **lineseg 안전밸브** — `<hp:linesegarray>`는 절대 캐시 조판의 입력이다.
   미지 요소로 위치가 불확실하거나 sanity(첫 textpos 0·단조·범위)를 어기면
   **빈 배열로 강등**한다. 틀린 캐시로 오렌더하는 것보다 reflow가 낫다.

@@ -51,9 +51,13 @@ enum HwpxParaShapeMapper {
             tabDefId: UInt16(
                 clamping: tables.tabDef.resolvedOffset(of: node.attribute("tabPrIDRef"))
             ),
-            numberingOrBulletId: headingType == 0 ? 0 : UInt16(
-                clamping: headingIdTable.resolvedOffset(of: headingIdRef)
-            ),
+            // 번호·글머리표 참조는 borderFill과 같은 1-based다 (0 = 없음) —
+            // 조판이 `numberingOrBulletId > 0` 게이트 뒤에서 -1로 되돌리므로
+            // 0-based 오프셋을 그대로 실으면 첫 정의가 사라지고 이후 참조가
+            // 한 칸씩 앞을 가리킨다. 개요(1)는 이 배열을 쓰지 않아 0이다.
+            numberingOrBulletId: headingType == 2 || headingType == 3
+                ? UInt16(clamping: headingIdTable.resolvedOffset(of: headingIdRef) + 1)
+                : 0,
             borderFillId: tables.borderFillId(of: border?.attribute("borderFillIDRef")),
             borderSpacingLeft: Int16(
                 clamping: border?.intAttribute("offsetLeft", default: 0) ?? 0
