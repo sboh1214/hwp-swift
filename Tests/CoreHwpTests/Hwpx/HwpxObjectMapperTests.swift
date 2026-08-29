@@ -227,6 +227,31 @@ final class HwpxObjectMapperTests: XCTestCase {
         expect(property.borderThickness) == 0
     }
 
+    func testPictureUnconsumedChildrenDegradeIntoDiagnostics() throws {
+        // 회전·반전 등은 렌더에 반영되지 않으므로 조용히 사라지면 안 된다 —
+        // 진단 walker가 걷는 shapeControl.unknownChildren에 남는다.
+        let withTransforms = pictureXML.replacingOccurrences(
+            of: "</hp:pic>",
+            with: "<hp:rotationInfo angle=\"90\" centerX=\"0\" centerY=\"0\"/>"
+                + "<hp:renderingInfo/><hp:flip horizontal=\"1\" vertical=\"0\"/></hp:pic>"
+        )
+        let control = HwpxPictureMapper.map(
+            try parse(withTransforms),
+            context: makeContext(binItemIds: ["image1": 3])
+        )
+        let names = control.unknownChildren.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names) == ["rotationInfo", "renderingInfo", "flip"]
+
+        // 전부 소비되는 기본 그림은 강등 0건 (음성 대조).
+        let plain = HwpxPictureMapper.map(
+            try parse(pictureXML),
+            context: makeContext(binItemIds: ["image1": 3])
+        )
+        expect(plain.unknownChildren).to(beEmpty())
+    }
+
     func testPictureWithoutImgRectFallsBackToObjectSizeCorners() throws {
         let xml = """
         <hp:pic xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">\
