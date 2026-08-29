@@ -203,6 +203,32 @@ final class HwpxFileTests: XCTestCase {
         })
     }
 
+    func testSectionMissingFromPartialSpineIsStillLoaded() throws {
+        // spine이 실재 구역을 빠뜨리면 그 구역이 조용히 사라진다 — spine
+        // 순서를 유지하고 누락분을 숫자 순으로 병합해야 한다.
+        var builder = ZipBuilder()
+        builder.entries = [
+            .init(name: "mimetype", content: Data("application/hwp+zip".utf8), method: 0),
+            .init(name: "version.xml", content: Data(versionXML.utf8), method: 8),
+            .init(
+                name: "Contents/content.hpf", content: Data(manifestXML.utf8), method: 8
+            ),
+            .init(name: "Contents/header.xml", content: Data(headerXML.utf8), method: 8),
+            .init(
+                name: "Contents/section0.xml", content: Data(sectionXML.utf8), method: 8
+            ),
+            // spine·manifest에 없는 실재 구역.
+            .init(
+                name: "Contents/section1.xml", content: Data(sectionXML.utf8), method: 8
+            ),
+        ]
+
+        let hwp = try HwpFile(fromData: builder.build())
+
+        expect(hwp.sectionArray.count) == 2
+        expect(hwp.docInfo.documentProperties.sectionSize) == 2
+    }
+
     func testParseDiagnosticsReportDegradedHwpxElements() throws {
         let section = """
         <hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" \

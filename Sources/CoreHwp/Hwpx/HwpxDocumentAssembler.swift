@@ -18,12 +18,12 @@ extension HwpFile {
         )
         let catalog = try HwpxBinDataMapper.map(manifest: manifest, container: &container)
 
-        // 구역 순서의 정본은 spine이고, spine이 비면 아카이브의
-        // section{N}.xml 숫자 정렬로 폴백한다.
+        // 구역 순서의 정본은 spine이지만, spine이 아카이브 실재 구역을
+        // 빠뜨리면 그 구역이 조용히 사라진다 — spine 순서를 그대로 두고
+        // 누락분만 숫자 순으로 뒤에 병합한다 (`sectionEntryNames` 계약).
         var sectionNames = manifest.sectionHrefs
-        if sectionNames.isEmpty {
-            sectionNames = container.sectionEntryNames
-        }
+        let listed = Set(sectionNames)
+        sectionNames += container.sectionEntryNames.filter { !listed.contains($0) }
         guard !sectionNames.isEmpty else {
             throw HwpError.archiveEntryDoesNotExist(name: "Contents/section0.xml")
         }
