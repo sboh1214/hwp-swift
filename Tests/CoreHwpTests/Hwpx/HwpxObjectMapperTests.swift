@@ -117,6 +117,24 @@ final class HwpxObjectMapperTests: XCTestCase {
         expect(table.cellArray[2].header.cellProperty?.borderFillId) == 0
     }
 
+    func testCellHasMarginSetsAppliesInnerMarginBit() throws {
+        // hasMargin 없는 셀은 hp:cellMargin이 있어도 표 전체 여백을 쓴다
+        // (조판 게이트는 appliesInnerMargin — HwpTableLayout.cellMargins).
+        let withoutFlag = try HwpxTableMapper.map(try parse(tableXML), context: makeContext())
+        expect(withoutFlag.cellArray[0].header.cellPropertyInfo.appliesInnerMargin) == false
+
+        let withFlag = tableXML.replacingOccurrences(
+            of: "<hp:tc name=\"\" header=\"1\"",
+            with: "<hp:tc name=\"\" header=\"1\" hasMargin=\"1\""
+        )
+        let mapped = try HwpxTableMapper.map(try parse(withFlag), context: makeContext())
+        let headerCell = mapped.cellArray[0].header
+        expect(headerCell.cellPropertyInfo.appliesInnerMargin) == true
+        expect(headerCell.cellProperty?.marginArray) == [510, 510, 141, 141]
+        expect(headerCell.isHeader) == true
+        expect(mapped.cellArray[1].header.cellPropertyInfo.appliesInnerMargin) == false
+    }
+
     func testTableCellRecursionIsBoundedByMaxNestingDepth() throws {
         // 표 안 문단 안 표 … 를 maxNestingDepth보다 깊게 중첩하면 typed
         // error로 끊어야 한다 (스택 오버플로 방지 — parseTreeRecord의 level

@@ -114,7 +114,7 @@ enum HwpxTableMapper {
         listProperty.verticalAlignmentRawValue = listProperty.verticalAlignment?.rawValue ?? 0
 
         let isHeader = node.boolAttribute("header")
-        let widthRef: UInt16 = isHeader ? 1 << 2 : 0
+        let widthRef = Self.cellPropertyBits(of: node, isHeader: isHeader)
         let header = HwpTableCellHeader(
             paragraphCount: Int32(paragraphs.count),
             property: 0,
@@ -132,6 +132,17 @@ enum HwpxTableMapper {
 }
 
 private extension HwpxTableMapper {
+    /// 셀 리스트 헤더 속성 비트 — hasMargin은 bit 0(appliesInnerMargin)으로
+    /// 옮겨야 조판이 파싱된 hp:cellMargin 값을 셀 고유 여백으로 쓴다
+    /// (비트가 없으면 HwpTableLayout.cellMargins가 표 전체 여백으로 폴백).
+    static func cellPropertyBits(of node: HwpxXMLNode, isHeader: Bool) -> UInt16 {
+        var bits: UInt16 = isHeader ? 1 << 2 : 0
+        if node.boolAttribute("hasMargin") {
+            bits |= 1
+        }
+        return bits
+    }
+
     static let pageBreakModes: [String: Int] = [
         "NONE": 0, "CELL": 1, "TABLE": 2,
     ]
