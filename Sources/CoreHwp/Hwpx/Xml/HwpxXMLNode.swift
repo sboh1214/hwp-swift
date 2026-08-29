@@ -100,6 +100,12 @@ extension HwpxXMLNode {
         childElements.filter { $0.isNamed(localName) }
     }
 
+    /// paragraph vocabulary로 확정된 자식만 고른다 — 표 구조(tr·tc·셀 문단)
+    /// 처럼 vocabulary가 하나로 정해지는 자리에 쓴다.
+    func paragraphChildren(named localName: String) -> [HwpxXMLNode] {
+        childElements.filter { $0.isNamed(localName, in: HwpxNamespace.paragraph) }
+    }
+
     /// 소비되지 않은 자식을 진단용 합성 레코드로 옮긴다.
     ///
     /// 소비 판정은 **조회와 같은 술어**(`isNamed`)여야 한다 — local name만

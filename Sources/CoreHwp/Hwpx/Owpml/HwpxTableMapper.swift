@@ -9,7 +9,10 @@ enum HwpxTableMapper {
         _ node: HwpxXMLNode,
         context: HwpxMappingContext
     ) throws -> HwpTable {
-        let rows = node.children(named: "tr")
+        // 표 구조(tr·tc·셀 문단)는 정의상 paragraph vocabulary다 — 전역 known
+        // 매칭이면 <hh:tr> 같은 동명 요소가 진짜 행이 된다. hc: 자식 혼재가
+        // 없는 자리라 좁혀도 교차 vocabulary를 놓치지 않는다.
+        let rows = node.paragraphChildren(named: "tr")
 
         var tableProperty = HwpTableProperty()
         tableProperty.rowCount = node.uint16Attribute(
@@ -48,7 +51,7 @@ enum HwpxTableMapper {
         // rowSize는 행별 셀 개수의 LE UInt16 나열이다.
         var rowSize: [BYTE] = []
         for row in rows {
-            let count = UInt16(clamping: row.children(named: "tc").count)
+            let count = UInt16(clamping: row.paragraphChildren(named: "tc").count)
             rowSize.append(UInt8(count & 0xFF))
             rowSize.append(UInt8(count >> 8))
         }
@@ -56,7 +59,7 @@ enum HwpxTableMapper {
 
         var cells: [HwpTableCell] = []
         for row in rows {
-            for cell in row.children(named: "tc") {
+            for cell in row.paragraphChildren(named: "tc") {
                 cells.append(try Self.mapCell(cell, context: context))
             }
         }
@@ -79,7 +82,7 @@ enum HwpxTableMapper {
     ) throws -> HwpTableCell {
         let cellContext = try context.descending()
         let subList = node.firstChild(named: "subList")
-        let paragraphNodes = subList?.children(named: "p") ?? []
+        let paragraphNodes = subList?.paragraphChildren(named: "p") ?? []
         var paragraphs: [HwpParagraph] = []
         for (index, paragraphNode) in paragraphNodes.enumerated() {
             paragraphs.append(try HwpxParagraphMapper.map(

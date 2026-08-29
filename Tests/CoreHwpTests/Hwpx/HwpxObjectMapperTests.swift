@@ -135,6 +135,23 @@ final class HwpxObjectMapperTests: XCTestCase {
         expect(mapped.cellArray[1].header.cellPropertyInfo.appliesInnerMargin) == false
     }
 
+    func testTableStructureFromOtherKnownVocabularyIsNotAdopted() throws {
+        // <hh:tr>은 표 행이 아니다 — 전역 known 매칭이면 진짜 행이 되어
+        // 행/셀 수와 rowSize가 오염된다.
+        let withDecoyRow = tableXML.replacingOccurrences(
+            of: "<hp:tr>",
+            with: "<hh:tr xmlns:hh=\"http://www.hancom.co.kr/hwpml/2011/head\">"
+                + "<hh:tc><hh:subList><hh:p/></hh:subList></hh:tc></hh:tr><hp:tr>",
+            options: [],
+            range: tableXML.range(of: "<hp:tr>")
+        )
+        let table = try HwpxTableMapper.map(try parse(withDecoyRow), context: makeContext())
+
+        // 진짜 hp:tr 2행·셀 3개만 채택된다 (decoy 행은 제외).
+        expect(table.cellArray.count) == 3
+        expect(table.tableProperty.rowCellCounts) == [1, 2]
+    }
+
     func testUnconsumedTableAndCellChildrenDegradeIntoDiagnostics() throws {
         let withExtras = tableXML
             .replacingOccurrences(
