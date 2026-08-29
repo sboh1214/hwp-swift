@@ -95,6 +95,21 @@ extension HwpxXMLNode {
     func children(named localName: String) -> [HwpxXMLNode] {
         childElements.filter { $0.isNamed(localName) }
     }
+
+    /// 소비되지 않은 자식을 진단용 합성 레코드로 옮긴다.
+    ///
+    /// 소비 판정은 **조회와 같은 술어**(`isNamed`)여야 한다 — local name만
+    /// 비교하면 낯선 namespace의 동명 요소(`<ext:pagePr>`)가 조회에서는
+    /// 거부되면서 소비 목록에는 걸려 진단에서도 사라진다.
+    func unconsumedChildRecords(consumed: Set<String>) -> [HwpUnknownRecord] {
+        childElements
+            .filter { child in !consumed.contains { child.isNamed($0) } }
+            .map {
+                HwpUnknownRecord(
+                    tagId: hwpxSyntheticTagId, level: 0, payload: Data($0.localName.utf8)
+                )
+            }
+    }
 }
 
 /// OWPML이 선언하는 namespace URI 모음.

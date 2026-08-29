@@ -23,16 +23,9 @@ enum HwpxPictureMapper {
         // flip·rotationInfo·renderingInfo·effects 등 미소비 자식은 렌더에
         // 반영되지 않으므로 진단으로 강등한다 — 부착처는 diagnostics walker가
         // 걷는 shapeControl.unknownChildren이다.
-        let consumedChildren: Set = [
+        let unknownChildren = node.unconsumedChildRecords(consumed: [
             "sz", "pos", "outMargin", "img", "imgRect", "imgClip", "inMargin",
-        ]
-        let unknownChildren = node.childElements
-            .filter { !consumedChildren.contains($0.localName) }
-            .map {
-                HwpUnknownRecord(
-                    tagId: hwpxSyntheticTagId, level: 0, payload: Data($0.localName.utf8)
-                )
-            }
+        ])
         let picture = HwpShapeComponentPicture(
             rawPayload: payload,
             binaryDataId: binItemId,

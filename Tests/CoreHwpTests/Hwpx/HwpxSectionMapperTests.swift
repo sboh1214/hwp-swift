@@ -52,6 +52,27 @@ final class HwpxSectionMapperTests: XCTestCase {
     flags="393216"/></hp:linesegarray></hp:p>
     """
 
+    func testForeignSameNameChildIsPreservedInDiagnostics() throws {
+        // <ext:pagePr>는 조회에서 거부되므로 소비된 적이 없다 — 소비 판정이
+        // local name만 보면 진단에서도 사라진다.
+        let body = blankBody.replacingOccurrences(
+            of: "</hp:secPr>",
+            with: "<ext:pagePr xmlns:ext=\"urn:example:ext\"/></hp:secPr>"
+        )
+        let section = try mapSection(body)
+
+        guard case let .section(sectionDef)? = section.paragraph[0].ctrlHeaderArray?.first
+        else {
+            return fail("first control must be .section")
+        }
+        let names = sectionDef.unknownChildren.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names) == ["pagePr"]
+        // 진짜 hp:pagePr은 소비되므로 강등되지 않는다 (음성 대조).
+        expect(sectionDef.pageDef.width) == 59528
+    }
+
     func testParagraphFromOtherKnownVocabularyIsNotABodyParagraph() throws {
         // local name "p"라도 head vocabulary(hh:p)면 본문 문단이 아니다 —
         // 문단으로 오인하지 않고 unknown으로 보고한다 ((namespace, local name)).

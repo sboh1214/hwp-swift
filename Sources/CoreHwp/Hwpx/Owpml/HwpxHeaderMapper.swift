@@ -208,18 +208,14 @@ private extension HwpxHeaderMapper {
     static func mapBorderFills(_ family: HwpxXMLNode, into mapping: inout HwpxHeaderMapping) {
         let borderFills = family.children(named: "borderFill")
         mapping.idMappings.borderFillArray = borderFills.map(HwpxParaShapeMapper.mapBorderFill)
-        let consumedChildren: Set = [
-            "leftBorder", "rightBorder", "topBorder", "bottomBorder", "fillBrush",
-        ]
         for borderFill in borderFills {
-            for child in borderFill.childElements {
-                if child.localName == "fillBrush" {
-                    for brush in child.childElements where brush.localName != "winBrush" {
-                        mapping.unknownRecords.append(unknownRecord(of: brush))
-                    }
-                } else if !consumedChildren.contains(child.localName) {
-                    mapping.unknownRecords.append(unknownRecord(of: child))
-                }
+            mapping.unknownRecords += borderFill.unconsumedChildRecords(consumed: [
+                "leftBorder", "rightBorder", "topBorder", "bottomBorder", "fillBrush",
+            ])
+            for brush in borderFill.firstChild(named: "fillBrush")?.childElements ?? []
+                where !brush.isNamed("winBrush")
+            {
+                mapping.unknownRecords.append(unknownRecord(of: brush))
             }
         }
     }
@@ -233,15 +229,10 @@ private extension HwpxHeaderMapper {
         let paraPrs = family.children(named: "paraPr")
         mapping.idMappings.paraShapeArray = paraPrs
             .map { HwpxParaShapeMapper.mapParaShape($0, tables: mapping.idTables) }
-        let consumedChildren: Set = [
-            "align", "heading", "margin", "lineSpacing", "border",
-        ]
         for paraPr in paraPrs {
-            for child in paraPr.childElements
-                where !consumedChildren.contains(child.localName)
-            {
-                mapping.unknownRecords.append(unknownRecord(of: child))
-            }
+            mapping.unknownRecords += paraPr.unconsumedChildRecords(consumed: [
+                "align", "heading", "margin", "lineSpacing", "border",
+            ])
         }
     }
 
