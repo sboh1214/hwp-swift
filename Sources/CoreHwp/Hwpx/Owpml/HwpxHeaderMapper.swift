@@ -167,8 +167,7 @@ private extension HwpxHeaderMapper {
             case "tabProperties":
                 mapTabProperties(family, into: &mapping)
             case "paraProperties":
-                mapping.idMappings.paraShapeArray = family.children(named: "paraPr")
-                    .map { HwpxParaShapeMapper.mapParaShape($0, tables: mapping.idTables) }
+                mapParaProperties(family, into: &mapping)
             case "styles":
                 mapping.idMappings.styleArray = try family.children(named: "style")
                     .map { try HwpxParaShapeMapper.mapStyle($0, tables: mapping.idTables) }
@@ -193,6 +192,27 @@ private extension HwpxHeaderMapper {
         mapping.idMappings.tabDefArray = tabPrs.map(HwpxParaShapeMapper.mapTabDef)
         for tabPr in tabPrs {
             for child in tabPr.childElements {
+                mapping.unknownRecords.append(unknownRecord(of: child))
+            }
+        }
+    }
+
+    /// `hh:paraProperties` 가족을 문단 모양 배열로 옮긴다.
+    ///
+    /// breakSetting·autoSpacing 등 1차 범위 밖 자식은 `mapParaShape`가 속성만
+    /// 옮기고 버린다 — 진단으로 강등해야 "미해석 강등은 진단으로 보고됨"
+    /// 규약이 지켜진다 (tabPr의 tabItem 강등과 같은 채널).
+    static func mapParaProperties(_ family: HwpxXMLNode, into mapping: inout HwpxHeaderMapping) {
+        let paraPrs = family.children(named: "paraPr")
+        mapping.idMappings.paraShapeArray = paraPrs
+            .map { HwpxParaShapeMapper.mapParaShape($0, tables: mapping.idTables) }
+        let consumedChildren: Set = [
+            "align", "heading", "margin", "lineSpacing", "border",
+        ]
+        for paraPr in paraPrs {
+            for child in paraPr.childElements
+                where !consumedChildren.contains(child.localName)
+            {
                 mapping.unknownRecords.append(unknownRecord(of: child))
             }
         }
