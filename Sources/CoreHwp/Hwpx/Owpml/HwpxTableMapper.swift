@@ -67,7 +67,9 @@ enum HwpxTableMapper {
             rawPayload: Data(),
             rawTrailing: Data(),
             cellArray: cells,
-            unknownChildren: []
+            unknownChildren: Self.unknownChildren(
+                of: node, consumed: ["sz", "pos", "outMargin", "inMargin", "tr"]
+            )
         )
     }
 
@@ -125,13 +127,30 @@ enum HwpxTableMapper {
             cellProperty: cellProperty,
             rawTrailing: Data(),
             rawPayload: Data(),
-            unknownChildren: []
+            unknownChildren: Self.unknownChildren(
+                of: node,
+                consumed: ["subList", "cellAddr", "cellSpan", "cellSz", "cellMargin"]
+            )
         )
         return HwpTableCell(header: header, paragraphArray: paragraphs)
     }
 }
 
 private extension HwpxTableMapper {
+    /// 미소비 자식을 합성 unknownChildren으로 보존한다 — 진단 walker가 표와
+    /// 셀 헤더의 unknownChildren을 걷으므로 채우기만 하면 보고된다.
+    static func unknownChildren(
+        of node: HwpxXMLNode, consumed: Set<String>
+    ) -> [HwpUnknownRecord] {
+        node.childElements
+            .filter { !consumed.contains($0.localName) }
+            .map {
+                HwpUnknownRecord(
+                    tagId: hwpxSyntheticTagId, level: 0, payload: Data($0.localName.utf8)
+                )
+            }
+    }
+
     /// 셀 리스트 헤더 속성 비트 — hasMargin은 bit 0(appliesInnerMargin)으로
     /// 옮겨야 조판이 파싱된 hp:cellMargin 값을 셀 고유 여백으로 쓴다
     /// (비트가 없으면 HwpTableLayout.cellMargins가 표 전체 여백으로 폴백).

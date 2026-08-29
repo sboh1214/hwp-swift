@@ -135,6 +135,32 @@ final class HwpxObjectMapperTests: XCTestCase {
         expect(mapped.cellArray[1].header.cellPropertyInfo.appliesInnerMargin) == false
     }
 
+    func testUnconsumedTableAndCellChildrenDegradeIntoDiagnostics() throws {
+        let withExtras = tableXML
+            .replacingOccurrences(
+                of: "<hp:inMargin left=\"510\" right=\"510\" top=\"141\" bottom=\"141\"/>",
+                with: "<hp:inMargin left=\"510\" right=\"510\" top=\"141\" bottom=\"141\"/>"
+                    + "<hp:caption side=\"TOP\"/>"
+            )
+            .replacingOccurrences(
+                of: "<hp:cellMargin left=\"510\" right=\"510\" top=\"141\" bottom=\"141\"/>",
+                with: "<hp:cellMargin left=\"510\" right=\"510\" top=\"141\" bottom=\"141\"/>"
+                    + "<hp:cellzoneList/>"
+            )
+        let table = try HwpxTableMapper.map(try parse(withExtras), context: makeContext())
+
+        func names(_ records: [HwpUnknownRecord]) -> [String] {
+            records.compactMap { String(bytes: $0.payload, encoding: .utf8) }
+        }
+        expect(names(table.unknownChildren)) == ["caption"]
+        expect(names(table.cellArray[0].header.unknownChildren)) == ["cellzoneList"]
+
+        // 전부 소비되는 기본 표는 강등 0건 (음성 대조).
+        let plain = try HwpxTableMapper.map(try parse(tableXML), context: makeContext())
+        expect(plain.unknownChildren).to(beEmpty())
+        expect(plain.cellArray.flatMap(\.header.unknownChildren)).to(beEmpty())
+    }
+
     func testTableCellRecursionIsBoundedByMaxNestingDepth() throws {
         // 표 안 문단 안 표 … 를 maxNestingDepth보다 깊게 중첩하면 typed
         // error로 끊어야 한다 (스택 오버플로 방지 — parseTreeRecord의 level
