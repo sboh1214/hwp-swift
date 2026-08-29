@@ -163,8 +163,7 @@ private extension HwpxHeaderMapper {
                     family, into: &mapping.idMappings, tables: &mapping.idTables
                 )
             case "borderFills":
-                mapping.idMappings.borderFillArray = family.children(named: "borderFill")
-                    .map(HwpxParaShapeMapper.mapBorderFill)
+                mapBorderFills(family, into: &mapping)
             case "charProperties":
                 mapping.idMappings.charShapeArray = family.children(named: "charPr")
                     .map { HwpxCharShapeMapper.mapCharShape($0, tables: mapping.idTables) }
@@ -197,6 +196,30 @@ private extension HwpxHeaderMapper {
         for tabPr in tabPrs {
             for child in tabPr.childElements {
                 mapping.unknownRecords.append(unknownRecord(of: child))
+            }
+        }
+    }
+
+    /// `hh:borderFills` 가족을 테두리/배경 배열로 옮긴다.
+    ///
+    /// `mapBorderFill`은 4방향 테두리와 단색 채우기만 소비한다 — slash 계열
+    /// 테두리·그러데이션/이미지 채우기 등 미소비 자손은 진단으로 강등해야
+    /// "미해석 강등은 진단으로 보고됨" 규약이 지켜진다.
+    static func mapBorderFills(_ family: HwpxXMLNode, into mapping: inout HwpxHeaderMapping) {
+        let borderFills = family.children(named: "borderFill")
+        mapping.idMappings.borderFillArray = borderFills.map(HwpxParaShapeMapper.mapBorderFill)
+        let consumedChildren: Set = [
+            "leftBorder", "rightBorder", "topBorder", "bottomBorder", "fillBrush",
+        ]
+        for borderFill in borderFills {
+            for child in borderFill.childElements {
+                if child.localName == "fillBrush" {
+                    for brush in child.childElements where brush.localName != "winBrush" {
+                        mapping.unknownRecords.append(unknownRecord(of: brush))
+                    }
+                } else if !consumedChildren.contains(child.localName) {
+                    mapping.unknownRecords.append(unknownRecord(of: child))
+                }
             }
         }
     }
