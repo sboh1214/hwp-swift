@@ -157,6 +157,27 @@ final class HwpxDocumentPartMapperTests: XCTestCase {
         })
     }
 
+    func testManifestChildrenIgnoreDecoysFromOtherKnownVocabularies() throws {
+        // manifest/spine 자식은 정의상 OPF다 — 앞에 선 known vocabulary의
+        // 동명 요소(hh:manifest·hh:spine)에 가로채이면 안 된다.
+        let manifest = try HwpxManifest.parse(Data(
+            """
+            <opf:package xmlns:opf="http://www.idpf.org/2007/opf/" \
+            xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head">\
+            <hh:manifest><hh:item id="fake" href="Contents/section9.xml" \
+            media-type="application/xml"/></hh:manifest>\
+            <opf:manifest><opf:item id="s0" href="Contents/section0.xml" \
+            media-type="application/xml"/></opf:manifest>\
+            <hh:spine><hh:itemref idref="fake"/></hh:spine>\
+            <opf:spine><opf:itemref idref="s0"/></opf:spine>\
+            </opf:package>
+            """.utf8
+        ))
+
+        expect(manifest.items.map(\.href)) == ["Contents/section0.xml"]
+        expect(manifest.sectionHrefs) == ["Contents/section0.xml"]
+    }
+
     func testManifestWithoutSpineHasNoSectionHrefs() throws {
         let manifest = try HwpxManifest.parse(
             Data("<opf:package xmlns:opf=\"http://www.idpf.org/2007/opf/\"/>".utf8)

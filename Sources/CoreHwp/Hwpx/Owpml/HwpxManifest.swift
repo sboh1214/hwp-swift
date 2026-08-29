@@ -33,8 +33,8 @@ struct HwpxManifest {
         }
 
         var items: [Item] = []
-        if let manifest = root.firstChild(named: "manifest") {
-            for node in manifest.children(named: "item") {
+        if let manifest = Self.opfChild(root, "manifest") {
+            for node in Self.opfChildren(manifest, "item") {
                 let href = node.attribute("href") ?? ""
                 guard !href.isEmpty else {
                     continue
@@ -55,8 +55,8 @@ struct HwpxManifest {
         }
 
         var sectionHrefs: [String] = []
-        if let spine = root.firstChild(named: "spine") {
-            for itemref in spine.children(named: "itemref") {
+        if let spine = Self.opfChild(root, "spine") {
+            for itemref in Self.opfChildren(spine, "itemref") {
                 guard let idref = itemref.attribute("idref"),
                       let href = hrefById[idref],
                       HwpxContainer.sectionIndex(of: href) != nil
@@ -68,5 +68,15 @@ struct HwpxManifest {
         }
 
         return HwpxManifest(items: items, sectionHrefs: sectionHrefs)
+    }
+
+    /// manifest/spine 자식은 정의상 OPF vocabulary다 — 전역 known 매칭은
+    /// 다른 known vocabulary의 동명 요소에 가로채인다 ((namespace, local name)).
+    static func opfChild(_ parent: HwpxXMLNode, _ name: String) -> HwpxXMLNode? {
+        parent.childElements.first { $0.isNamed(name, in: HwpxNamespace.opf) }
+    }
+
+    static func opfChildren(_ parent: HwpxXMLNode, _ name: String) -> [HwpxXMLNode] {
+        parent.childElements.filter { $0.isNamed(name, in: HwpxNamespace.opf) }
     }
 }
