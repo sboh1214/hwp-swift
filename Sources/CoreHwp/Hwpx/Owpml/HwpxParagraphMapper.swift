@@ -223,7 +223,15 @@ private extension HwpxParagraphMapper {
         else {
             return []
         }
-        let segments = array.children(named: "lineseg").map {
+        // textpos는 다른 8속성과 달리 **sanity 판정의 기준**이라 기본값을
+        // 줄 수 없다 — 누락·비숫자를 0으로 합성하면 가장 불확실한 캐시가
+        // "첫 textpos 0" 가드를 통과해 절대 조판의 신뢰 입력이 된다.
+        let segmentNodes = array.children(named: "lineseg")
+        guard segmentNodes.allSatisfy({ $0.attribute("textpos").flatMap(UInt32.init) != nil })
+        else {
+            return []
+        }
+        let segments = segmentNodes.map {
             HwpParaLineSegInternal(
                 textStartingIndex: $0.uint32Attribute("textpos", default: 0),
                 lineLocation: $0.int32Attribute("vertpos", default: 0),

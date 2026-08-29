@@ -52,6 +52,24 @@ final class HwpxSectionMapperTests: XCTestCase {
     flags="393216"/></hp:linesegarray></hp:p>
     """
 
+    func testLineSegmentsWithoutTextposDegradeToReflow() throws {
+        // textpos는 sanity 판정의 기준이라 기본값 0으로 합성하면 안 된다 —
+        // 누락·비숫자 캐시는 빈 배열로 강등해 reflow로 넘긴다.
+        for broken in ["", " textpos=\"abc\""] {
+            let body = blankBody.replacingOccurrences(
+                of: "<hp:lineseg textpos=\"0\"",
+                with: "<hp:lineseg\(broken)"
+            )
+            let section = try mapSection(body)
+            expect(section.paragraph[0].paraLineSeg.paraLineSegInternalArray)
+                .to(beEmpty(), description: "broken=\(broken.isEmpty ? "missing" : broken)")
+        }
+
+        // 정상 캐시는 그대로 신뢰한다 (음성 대조).
+        let intact = try mapSection(blankBody)
+        expect(intact.paragraph[0].paraLineSeg.paraLineSegInternalArray.count) == 1
+    }
+
     func testForeignSameNameChildIsPreservedInDiagnostics() throws {
         // <ext:pagePr>는 조회에서 거부되므로 소비된 적이 없다 — 소비 판정이
         // local name만 보면 진단에서도 사라진다.
