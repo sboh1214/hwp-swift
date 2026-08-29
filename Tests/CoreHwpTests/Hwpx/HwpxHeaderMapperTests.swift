@@ -304,4 +304,24 @@ final class HwpxHeaderMapperTests: XCTestCase {
             expect(reason).to(contain("root element"))
         })
     }
+
+    func testExplicitTabStopsDegradeIntoDiagnostics() throws {
+        // hh:tabItem은 1차 범위 밖이라 mapTabDef가 버린다 — 조용히 사라지지
+        // 않고 합성 unknownRecord로 진단에 남아야 한다 (noori 픽스처 실측).
+        let withTabItems = """
+        <hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" secCnt="1">\
+        <hh:refList><hh:tabProperties itemCnt="1">\
+        <hh:tabPr id="0" autoTabLeft="0" autoTabRight="0">\
+        <hh:tabItem pos="4000" type="LEFT" leader="NONE"/>\
+        </hh:tabPr></hh:tabProperties></hh:refList></hh:head>
+        """
+        let (docInfo, _) = try mapHeader(withTabItems)
+
+        expect(docInfo.idMappings.tabDefArray.count) == 1
+        let names = docInfo.unknownRecords.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("tabItem"))
+        expect(docInfo.unknownRecords.map(\.tagId).allSatisfy { $0 == 0 }) == true
+    }
 }

@@ -97,6 +97,21 @@ final class HwpxFixtureManifestTests: XCTestCase {
         }
     }
 
+    /// noori 실물 저장본의 명시 탭 정지(hh:tabItem)가 조용히 사라지지 않고
+    /// 진단으로 강등되는지 잠근다 — 합성 케이스는 HwpxHeaderMapperTests가 본다.
+    func testNooriExplicitTabStopsSurfaceInDiagnostics() throws {
+        let fixture = try HwpxFixtureLoader.load(id: "noori")
+        let hwp = try HwpFile(fromPath: fixture.documentURL.path)
+
+        let names = hwp.docInfo.unknownRecords.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("tabItem"))
+        expect(hwp.parseDiagnostics().contains { diagnostic in
+            diagnostic.kind == .unknownRecord && diagnostic.tagId == hwpxSyntheticTagId
+        }) == true
+    }
+
     func testHwpxFixtureReadmesDocumentRegeneration() throws {
         for fixture in try HwpxFixtureLoader.loadAll() {
             let readme = try String(contentsOf: fixture.readmeURL, encoding: .utf8)

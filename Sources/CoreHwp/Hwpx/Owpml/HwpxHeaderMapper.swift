@@ -163,8 +163,7 @@ private extension HwpxHeaderMapper {
                 mapping.idMappings.charShapeArray = family.children(named: "charPr")
                     .map { HwpxCharShapeMapper.mapCharShape($0, tables: mapping.idTables) }
             case "tabProperties":
-                mapping.idMappings.tabDefArray = family.children(named: "tabPr")
-                    .map(HwpxParaShapeMapper.mapTabDef)
+                mapTabProperties(family, into: &mapping)
             case "paraProperties":
                 mapping.idMappings.paraShapeArray = family.children(named: "paraPr")
                     .map { HwpxParaShapeMapper.mapParaShape($0, tables: mapping.idTables) }
@@ -178,6 +177,21 @@ private extension HwpxHeaderMapper {
                 mapping.unknownRecords.append(unknownRecord(of: family))
             default:
                 mapping.unknownRecords.append(unknownRecord(of: family))
+            }
+        }
+    }
+
+    /// `hh:tabProperties` 가족을 탭 정의 배열로 옮긴다.
+    ///
+    /// 명시 탭 정지(`hh:tabItem`)는 1차 범위 밖이라 `mapTabDef`가 속성만
+    /// 옮긴다 — 버려지는 자식은 진단으로 강등해야 "미해석 강등은 진단으로
+    /// 보고됨" 규약이 지켜진다 (numbering/bullet의 가족 수준 강등과 같은 채널).
+    static func mapTabProperties(_ family: HwpxXMLNode, into mapping: inout HwpxHeaderMapping) {
+        let tabPrs = family.children(named: "tabPr")
+        mapping.idMappings.tabDefArray = tabPrs.map(HwpxParaShapeMapper.mapTabDef)
+        for tabPr in tabPrs {
+            for child in tabPr.childElements {
+                mapping.unknownRecords.append(unknownRecord(of: child))
             }
         }
     }
