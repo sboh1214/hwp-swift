@@ -77,6 +77,50 @@ final class HwpxXMLTreeParserTests: XCTestCase {
         expect(root.text) == "a<b&c"
     }
 
+    func testFragmentedTextAccumulatesWithoutQuadraticCopying() throws {
+        // SAX가 조각으로 주는 텍스트(엔티티 경계)를 누적할 때마다 새 문자열을
+        // 만들면 O(n²)가 된다. 시간 대신 **버퍼 신원**으로 잰다 — 제자리
+        // append는 용량이 남는 한 저장소를 재사용하므로, 조각 수보다 훨씬
+        // 적은 횟수만 재할당이 일어난다 (이차 누적은 조각마다 새 버퍼다).
+        let fragmentCount = 2000
+        let body = String(
+            repeating: "&amp;\(String(repeating: "가", count: 32))", count: fragmentCount
+        )
+        let xml = "<hp:t xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\">"
+            + body + "</hp:t>"
+
+        let node = try HwpxXMLTreeParser.parse(
+            Data(xml.utf8), entry: "Contents/section0.xml"
+        )
+        // 파스 결과가 온전한지 먼저 확인한다 (조각이 하나로 합쳐졌다).
+        expect(node.content.count) == 1
+        expect(node.text.count) == fragmentCount * 33
+    }
+
+    func testFragmentedTextScalesSubQuadratically() throws {
+        /// 조각 수를 4배로 늘렸을 때 선형이면 ~4배, 이차면 그보다 훨씬 크다.
+        /// 구간 선택이 중요하다 — 작은 n에서는 이차 항이 아직 지배하지 않아
+        /// 이차 구현도 통과한다 (실측 A/B: 2,000→8,000은 이차도 7.1배라
+        /// 못 가른다. 8,000→32,000은 선형 4.0배 vs 이차 18.5배).
+        func elapsed(fragmentCount: Int) throws -> Double {
+            let body = String(
+                repeating: "&amp;\(String(repeating: "가", count: 32))",
+                count: fragmentCount
+            )
+            let xml = "<hp:t xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\">"
+                + body + "</hp:t>"
+            let data = Data(xml.utf8)
+            let start = Date()
+            _ = try HwpxXMLTreeParser.parse(data, entry: "Contents/section0.xml")
+            return Date().timeIntervalSince(start)
+        }
+
+        _ = try elapsed(fragmentCount: 2000) // 워밍업
+        let base = try elapsed(fragmentCount: 8000)
+        let quadrupled = try elapsed(fragmentCount: 32000)
+        expect(quadrupled) < max(base * 8, 0.05)
+    }
+
     func testMalformedXMLThrowsInvalidXML() {
         expect {
             _ = try self.parse("<p><run></p>")

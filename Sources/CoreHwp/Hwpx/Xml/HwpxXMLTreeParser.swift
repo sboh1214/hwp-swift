@@ -61,9 +61,15 @@ final class HwpxXMLTreeParser: NSObject {
         }
         // 연속 텍스트 조각(엔티티 경계 등)은 하나로 합쳐 둔다 — content 조각
         // 수가 줄고, 소비자는 어차피 연결된 문자열을 기대한다.
+        // 제자리 append여야 한다 — `existing + string`으로 새 문자열을 만들면
+        // 조각이 많은 텍스트 노드(엔티티·CDATA 경계)에서 누적분을 매번 복사해
+        // O(n²)가 되고, byte 한도는 그 CPU 증폭을 막지 못한다.
         let top = stack.count - 1
-        if case let .text(existing)? = stack[top].content.last {
-            stack[top].content[stack[top].content.count - 1] = .text(existing + string)
+        let last = stack[top].content.count - 1
+        if last >= 0, case var .text(existing) = stack[top].content[last] {
+            stack[top].content[last] = .text("")
+            existing += string
+            stack[top].content[last] = .text(existing)
         } else {
             stack[top].content.append(.text(string))
         }
