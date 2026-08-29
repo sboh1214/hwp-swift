@@ -65,9 +65,13 @@ extension HwpxXMLNode {
     /// 한 파일 안에서 vocabulary가 합법적으로 섞이기 때문이다 (`hh:margin`의
     /// 자식은 `hc:left`, `hp:*` 요소도 `hc:*` 자식을 갖는다). 단일 namespace로
     /// 좁히려면 요소별 기대-namespace 표가 필요하고, 잘못 좁히면 교차
-    /// vocabulary 자식을 놓쳐 margin·색상 값이 조용히 0으로 떨어진다. 루트
-    /// 요소는 파일마다 vocabulary가 하나로 확정되므로 `isNamed(_:in:)`으로
-    /// 좁힌다.
+    /// vocabulary 자식을 놓쳐 margin·색상 값이 조용히 0으로 떨어진다.
+    ///
+    /// **vocabulary가 하나로 확정되는 지점은 이미 좁혀 두었다** —
+    /// 루트 4종·구역 본문 문단(`hp:p`)·manifest 자식·refList 가족. 남은
+    /// 중첩 조회(`hh:paraPr` 안의 `align` 등)를 좁히려면 위의 요소별
+    /// 기대-namespace 표가 필요하고, 표 없이 넓게 좁히면 합법적인 `hc:`
+    /// 자식을 놓친다 — 실물 픽스처 전수 검증과 함께 별도로 다룬다.
     func isNamed(_ localName: String) -> Bool {
         guard self.localName == localName else {
             return false
