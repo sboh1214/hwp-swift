@@ -370,6 +370,12 @@ private extension HwpxArchive {
                 name: entry.name, limit: entryLimit, actual: produced
             )
         }
+        guard output.count == entry.uncompressedSize else {
+            throw HwpError.invalidArchive(
+                reason: "deflated entry '\(entry.name)' declares mismatched sizes: " +
+                    "\(entry.uncompressedSize) uncompressed vs \(output.count) inflated"
+            )
+        }
         try budget.consume(output.count, entryName: entry.name)
         return output
     }

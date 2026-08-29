@@ -228,6 +228,28 @@ final class HwpxArchiveTests: XCTestCase {
         })
     }
 
+    func testDeflatedEntrySizeMismatchThrowsInvalidArchive() throws {
+        // stored 경로와 같은 규약 — central directory 선언값이 정본이므로
+        // 인플레이트 결과가 선언 크기와 다르면 구조 손상으로 거부한다.
+        var builder = ZipBuilder()
+        builder.entries = [
+            .init(
+                name: "a",
+                content: Data("abcd".utf8),
+                method: 8,
+                declaredUncompressedSize: 9
+            ),
+        ]
+        let archive = try HwpxArchive(data: builder.build())
+        var budget = makeBudget(limits)
+
+        expect {
+            _ = try archive.entryData(named: "a", limits: self.limits, budget: &budget)
+        }.to(throwError { error in
+            assertInvalidArchive(error, containing: "mismatched sizes")
+        })
+    }
+
     func testCorruptedDeflateStreamThrowsInvalidArchive() throws {
         var builder = ZipBuilder()
         builder.entries = [
