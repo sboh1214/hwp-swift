@@ -25,7 +25,7 @@ struct HwpxManifest {
     static func parse(_ data: Data) throws -> HwpxManifest {
         let entry = HwpxContainer.EntryName.manifest
         let root = try HwpxXMLTreeParser.parse(data, entry: entry)
-        guard root.isNamed("package") else {
+        guard root.isNamed("package", in: HwpxNamespace.opf) else {
             throw HwpError.invalidXML(
                 entry: entry,
                 reason: "unexpected root element <\(root.localName)>"

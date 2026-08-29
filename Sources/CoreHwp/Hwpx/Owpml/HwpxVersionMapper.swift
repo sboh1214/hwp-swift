@@ -22,7 +22,7 @@ enum HwpxVersionMapper {
         let root = try HwpxXMLTreeParser.parse(
             data, entry: HwpxContainer.EntryName.version
         )
-        guard root.isNamed("HCFVersion") else {
+        guard root.isNamed("HCFVersion", in: HwpxNamespace.version) else {
             throw HwpError.invalidXML(
                 entry: HwpxContainer.EntryName.version,
                 reason: "unexpected root element <\(root.localName)>"

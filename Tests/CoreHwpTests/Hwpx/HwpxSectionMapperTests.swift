@@ -308,4 +308,24 @@ final class HwpxSectionMapperTests: XCTestCase {
             expect(reason).to(contain("no paragraphs"))
         })
     }
+
+    func testRootInWrongKnownVocabularyIsRejected() {
+        // local name "sec"가 맞아도 namespace가 다른 known vocabulary(head)면
+        // 거부한다 — 전역 known 집합만 보던 이전 가드는 이를 통과시켰다.
+        expect {
+            _ = try HwpxSectionMapper.map(
+                Data(
+                    """
+                    <x:sec xmlns:x="http://www.hancom.co.kr/hwpml/2011/head"/>
+                    """.utf8
+                ),
+                context: self.makeContext()
+            )
+        }.to(throwError { error in
+            guard case let HwpError.invalidXML(_, reason) = error else {
+                return fail("Expected invalidXML, got \(error)")
+            }
+            expect(reason).to(contain("root element"))
+        })
+    }
 }

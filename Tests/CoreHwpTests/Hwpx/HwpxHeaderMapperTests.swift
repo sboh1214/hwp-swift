@@ -286,4 +286,22 @@ final class HwpxHeaderMapperTests: XCTestCase {
             expect(reason).to(contain("root element"))
         })
     }
+
+    func testRootElementInWrongKnownVocabularyIsRejected() {
+        // local name "head"가 맞아도 namespace가 다른 known vocabulary(section)면
+        // 거부한다 — 전역 known 집합만 보던 이전 가드는 이를 통과시켰다.
+        let wrongVocabulary = """
+        <x:head xmlns:x="http://www.hancom.co.kr/hwpml/2011/section" secCnt="1">\
+        <x:refList/></x:head>
+        """
+        expect {
+            _ = try self.mapHeader(wrongVocabulary)
+        }.to(throwError { error in
+            guard case let HwpError.invalidXML(entry, reason) = error else {
+                return fail("Expected invalidXML, got \(error)")
+            }
+            expect(entry) == "Contents/header.xml"
+            expect(reason).to(contain("root element"))
+        })
+    }
 }

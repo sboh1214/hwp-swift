@@ -60,6 +60,14 @@ extension HwpxXMLNode {
     /// 접두사(hp/hh/hs …)는 문서마다 다를 수 있으므로 보지 않는다. namespace
     /// URI가 비어 있지 않으면 알려진 집합에 들어야 한다 — 외부 namespace의
     /// 동명 요소를 OWPML로 오인하지 않기 위해서다.
+    ///
+    /// 자식 조회(`firstChild`/`children`)가 이 전역 집합을 쓰는 것은 의도다 —
+    /// 한 파일 안에서 vocabulary가 합법적으로 섞이기 때문이다 (`hh:margin`의
+    /// 자식은 `hc:left`, `hp:*` 요소도 `hc:*` 자식을 갖는다). 단일 namespace로
+    /// 좁히려면 요소별 기대-namespace 표가 필요하고, 잘못 좁히면 교차
+    /// vocabulary 자식을 놓쳐 margin·색상 값이 조용히 0으로 떨어진다. 루트
+    /// 요소는 파일마다 vocabulary가 하나로 확정되므로 `isNamed(_:in:)`으로
+    /// 좁힌다.
     func isNamed(_ localName: String) -> Bool {
         guard self.localName == localName else {
             return false

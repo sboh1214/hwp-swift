@@ -14,7 +14,7 @@ enum HwpxSectionMapper {
         context: HwpxMappingContext
     ) throws -> HwpSection {
         let root = try HwpxXMLTreeParser.parse(data, entry: context.entry)
-        guard root.isNamed("sec") else {
+        guard root.isNamed("sec", in: HwpxNamespace.section) else {
             throw HwpError.invalidXML(
                 entry: context.entry,
                 reason: "unexpected root element <\(root.localName)>"

@@ -40,7 +40,7 @@ enum HwpxHeaderMapper {
     ) throws -> (docInfo: HwpDocInfo, idTables: HwpxIdTables) {
         let entry = HwpxContainer.EntryName.header
         let root = try HwpxXMLTreeParser.parse(data, entry: entry)
-        guard root.isNamed("head") else {
+        guard root.isNamed("head", in: HwpxNamespace.head) else {
             throw HwpError.invalidXML(
                 entry: entry,
                 reason: "unexpected root element <\(root.localName)>"

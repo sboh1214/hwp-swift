@@ -52,6 +52,21 @@ final class HwpxDocumentPartMapperTests: XCTestCase {
         })
     }
 
+    func testVersionInWrongKnownVocabularyIsRejected() {
+        // known 집합의 다른 vocabulary(head)도 거부한다 — urn:x 테스트와 짝.
+        expect {
+            _ = try HwpxVersionMapper.version(fromVersionXML: Data(
+                """
+                <x:HCFVersion xmlns:x="http://www.hancom.co.kr/hwpml/2011/head"/>
+                """.utf8
+            ))
+        }.to(throwError { error in
+            guard case HwpError.invalidXML = error else {
+                return fail("Expected invalidXML, got \(error)")
+            }
+        })
+    }
+
     func testVersionThrowsOnUnexpectedRootElement() {
         expect {
             _ = try HwpxVersionMapper.version(fromVersionXML: Data("<other/>".utf8))
@@ -124,6 +139,21 @@ final class HwpxDocumentPartMapperTests: XCTestCase {
             }
             expect(entry) == "Contents/content.hpf"
             expect(reason).to(contain("root element"))
+        })
+    }
+
+    func testManifestRootInWrongKnownVocabularyIsRejected() {
+        // OPF package 루트가 한컴 head namespace로 위장해도 거부한다.
+        expect {
+            _ = try HwpxManifest.parse(Data(
+                """
+                <x:package xmlns:x="http://www.hancom.co.kr/hwpml/2011/head"/>
+                """.utf8
+            ))
+        }.to(throwError { error in
+            guard case HwpError.invalidXML = error else {
+                return fail("Expected invalidXML, got \(error)")
+            }
         })
     }
 
