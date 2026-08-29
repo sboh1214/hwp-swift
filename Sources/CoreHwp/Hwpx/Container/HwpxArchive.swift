@@ -346,6 +346,17 @@ private extension HwpxArchive {
         }
 
         let entryLimit = limits.maxDecompressedStreamBytes
+        // 선언값(central directory)이 정본이다 — 선언만으로 확정 초과인
+        // 엔트리는 풀기 전에 거부한다 (stored 경로와 같은 순서). 아래
+        // 스트리밍 한도는 선언을 속이는 payload의 방어로 남는다.
+        guard entry.uncompressedSize <= entryLimit else {
+            throw HwpError.archiveEntrySizeLimitExceeded(
+                name: entry.name,
+                limit: entryLimit,
+                actual: entry.uncompressedSize
+            )
+        }
+        try budget.validate(entry.uncompressedSize, entryName: entry.name)
         let limit = min(entryLimit, budget.remaining)
         let output: Data
         do {
@@ -399,8 +410,9 @@ struct HwpxByteBudget {
     }
 
     /// 한도−사용량 차와 비교해 Int 오버플로 없이 판정한다
-    /// (`StreamReader.consumeAggregateBudget`과 동일 규약).
-    mutating func consume(_ byteCount: Int, entryName: String) throws {
+    /// (`StreamReader.consumeAggregateBudget`과 동일 규약). 소비하지 않는
+    /// 판정만 — 선언 크기의 사전 거부가 쓴다.
+    func validate(_ byteCount: Int, entryName: String) throws {
         guard byteCount <= maxAggregateStreamBytes - totalBytes else {
             let (sum, overflow) = totalBytes.addingReportingOverflow(byteCount)
             throw HwpError.archiveEntrySizeLimitExceeded(
@@ -409,6 +421,10 @@ struct HwpxByteBudget {
                 actual: overflow ? Int.max : sum
             )
         }
+    }
+
+    mutating func consume(_ byteCount: Int, entryName: String) throws {
+        try validate(byteCount, entryName: entryName)
         totalBytes += byteCount
     }
 }

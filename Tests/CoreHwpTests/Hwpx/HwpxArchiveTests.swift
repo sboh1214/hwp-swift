@@ -298,6 +298,62 @@ final class HwpxArchiveLimitTests: XCTestCase {
         HwpxByteBudget(limits: limits)
     }
 
+    func testDeclaredOversizedDeflatedEntryIsRejectedBeforeInflating() throws {
+        // payload가 corrupt인데 invalidArchive가 아니라 크기 오류가 나면
+        // 인플레이트 전에 선언값으로 거부된 것이다.
+        var builder = ZipBuilder()
+        builder.entries = [
+            .init(
+                name: "a",
+                content: Data(count: 4),
+                method: 8,
+                storedPayload: Data([0xDE, 0xAD, 0xBE, 0xEF]),
+                declaredUncompressedSize: 1 << 20
+            ),
+        ]
+        let archive = try HwpxArchive(data: builder.build())
+        let limits = HwpReadLimits(maxDecompressedStreamBytes: 1 << 10)
+        var budget = makeBudget(limits)
+
+        expect {
+            _ = try archive.entryData(named: "a", limits: limits, budget: &budget)
+        }.to(throwError { error in
+            guard case let HwpError.archiveEntrySizeLimitExceeded(_, limit, actual) = error
+            else {
+                return fail("Expected archiveEntrySizeLimitExceeded, got \(error)")
+            }
+            expect(limit) == 1 << 10
+            expect(actual) == 1 << 20
+        })
+    }
+
+    func testDeclaredSizeOverAggregateBudgetIsRejectedBeforeInflating() throws {
+        var builder = ZipBuilder()
+        builder.entries = [
+            .init(
+                name: "a",
+                content: Data(count: 4),
+                method: 8,
+                storedPayload: Data([0xDE, 0xAD, 0xBE, 0xEF]),
+                declaredUncompressedSize: 2048
+            ),
+        ]
+        let archive = try HwpxArchive(data: builder.build())
+        let limits = HwpReadLimits(maxAggregateStreamBytes: 1 << 10)
+        var budget = makeBudget(limits)
+
+        expect {
+            _ = try archive.entryData(named: "a", limits: limits, budget: &budget)
+        }.to(throwError { error in
+            guard case let HwpError.archiveEntrySizeLimitExceeded(_, limit, actual) = error
+            else {
+                return fail("Expected archiveEntrySizeLimitExceeded, got \(error)")
+            }
+            expect(limit) == 1 << 10
+            expect(actual) == 2048
+        })
+    }
+
     func testCompressedEntryOverPerEntryLimitThrowsTypedError() throws {
         let content = Data(repeating: 0x41, count: 4096)
         var builder = ZipBuilder()
