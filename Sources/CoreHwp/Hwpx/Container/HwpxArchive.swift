@@ -357,28 +357,20 @@ private extension HwpxArchive {
             )
         }
         try budget.validate(entry.uncompressedSize, entryName: entry.name)
-        let limit = min(entryLimit, budget.remaining)
+        // 위 사전 검사로 선언값이 항상 최소 한도다 — 선언을 스트리밍 한도로
+        // 쓰면 작은 압축 입력이 전역 한도까지 증폭 할당을 강제하지 못하고,
+        // 한도 초과는 정의상 선언 위반(구조 손상)이다.
         let output: Data
         do {
-            output = try HwpInflate.decompress(payload, limit: limit)
+            output = try HwpInflate.decompress(payload, limit: entry.uncompressedSize)
         } catch HwpInflate.Failure.corrupted {
             throw HwpError.invalidArchive(
                 reason: "corrupted deflate stream in '\(entry.name)'"
             )
-        } catch let HwpInflate.Failure.limitExceeded(produced) {
-            // 실제로 걸린 쪽의 원래 한도를 보고한다 (같으면 개별 한도 우선 —
-            // `StreamReader.decompress`와 동일 규칙). `produced`는 실제 크기의
-            // 하한이다 (도중 중단이 이 경로의 목적).
-            guard limit == entryLimit else {
-                let (sum, overflow) = budget.totalBytes.addingReportingOverflow(produced)
-                throw HwpError.archiveEntrySizeLimitExceeded(
-                    name: entry.name,
-                    limit: budget.maxAggregateStreamBytes,
-                    actual: overflow ? Int.max : sum
-                )
-            }
-            throw HwpError.archiveEntrySizeLimitExceeded(
-                name: entry.name, limit: entryLimit, actual: produced
+        } catch HwpInflate.Failure.limitExceeded {
+            throw HwpError.invalidArchive(
+                reason: "deflated entry '\(entry.name)' inflates beyond its declared size " +
+                    "\(entry.uncompressedSize)"
             )
         }
         guard output.count == entry.uncompressedSize else {

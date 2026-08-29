@@ -250,6 +250,25 @@ final class HwpxArchiveTests: XCTestCase {
         })
     }
 
+    func testInflationIsBoundedByDeclaredSize() throws {
+        // 유효한 deflate가 선언보다 크게 풀리는 엔트리 — 전역 한도까지 증폭
+        // 할당하지 않고 선언 한도에서 구조 손상으로 중단해야 한다.
+        let content = Data(repeating: 0x42, count: 1 << 20)
+        var builder = ZipBuilder()
+        builder.entries = [
+            .init(name: "bomb", content: content, method: 8, declaredUncompressedSize: 64),
+        ]
+        let archive = try HwpxArchive(data: builder.build())
+        var budget = makeBudget(limits)
+
+        expect {
+            _ = try archive.entryData(named: "bomb", limits: self.limits, budget: &budget)
+        }.to(throwError { error in
+            assertInvalidArchive(error, containing: "declared size")
+        })
+        expect(budget.totalBytes) == 0
+    }
+
     func testCorruptedDeflateStreamThrowsInvalidArchive() throws {
         var builder = ZipBuilder()
         builder.entries = [
