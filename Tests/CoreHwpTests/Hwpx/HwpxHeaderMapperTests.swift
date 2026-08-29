@@ -184,14 +184,15 @@ final class HwpxHeaderMapperTests: XCTestCase {
         expect(paraShape.property1Info.headingLevelRawValue) == 2
         expect(paraShape.property1Info.borderConnect) == true
         expect(paraShape.property1Info.borderIgnoreMargin) == true
-        // HwpUnitChar case가 default를 이긴다 (switch 해소).
-        expect(paraShape.marginLeft) == 3000
-        expect(paraShape.marginRight) == 100
-        expect(paraShape.indent) == -2620
-        expect(paraShape.paragraphSpacingTop) == 2400
-        expect(paraShape.paragraphSpacingBottom) == 600
+        // HwpUnitChar case가 default를 이긴다 (switch 해소). 길이는 모델의
+        // 2배 저장 규약대로 XML HWPUNIT의 2배다 (noori HWP↔HWPX 실측).
+        expect(paraShape.marginLeft) == 6000
+        expect(paraShape.marginRight) == 200
+        expect(paraShape.indent) == -5240
+        expect(paraShape.paragraphSpacingTop) == 4800
+        expect(paraShape.paragraphSpacingBottom) == 1200
         expect(paraShape.resolvedLineSpacingKind) == HwpLineSpacingKind.fixed
-        expect(paraShape.resolvedLineSpacingValue) == 1600
+        expect(paraShape.resolvedLineSpacingValue) == 3200
         expect(paraShape.tabDefId) == 1 // id "3" → 오프셋 1
         expect(paraShape.borderFillId) == 2 // id "7" → 오프셋 1 → 1-based 2
         expect(paraShape.borderSpacingLeft) == 10

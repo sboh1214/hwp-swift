@@ -11,6 +11,35 @@ import XCTest
 /// id 매핑 인덱스(리맵됨 — 해석 결과로만 비교)·fileHeader·summary·preview·
 /// viewSectionArray·컨트롤 레코드 순서·numbering/bullet(1차 범위 밖).
 final class HwpxHwpEquivalenceTests: XCTestCase {
+    /// P1(2× 스케일)·P2-7(pageBreak 의미)의 실물 잠금 — noori 쌍의 문단 모양
+    /// 수치와 표 나눔 비트가 문서 순서 위치별로 일치해야 한다.
+    func testNooriParaShapeDimensionsAndTableBreaksMatchHwpSource() throws {
+        let hwp = try HwpFile(
+            fromPath: FixtureLoader.load(id: "noori").documentURL.path
+        )
+        let hwpx = try HwpFile(
+            fromPath: HwpxFixtureLoader.load(id: "noori").documentURL.path
+        )
+
+        func dimensions(_ file: HwpFile) -> [[Int32]] {
+            file.docInfo.idMappings.paraShapeArray.map {
+                [
+                    $0.marginLeft, $0.marginRight, $0.indent,
+                    $0.paragraphSpacingTop, $0.paragraphSpacingBottom,
+                    $0.resolvedLineSpacingValue,
+                ]
+            }
+        }
+        expect(dimensions(hwpx)) == dimensions(hwp)
+
+        func pageBreakBits(_ file: HwpFile) -> [Int] {
+            FixtureDerivedValues.tables(from: file).map {
+                Int($0.tableProperty.property & 0b11)
+            }
+        }
+        expect(pageBreakBits(hwpx)) == pageBreakBits(hwp)
+    }
+
     func testConvertedFixturesProjectEquallyToTheirHwpSources() throws {
         var comparedCount = 0
         for fixture in try HwpxFixtureLoader.loadAll() {

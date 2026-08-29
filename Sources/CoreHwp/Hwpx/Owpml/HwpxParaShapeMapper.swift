@@ -17,7 +17,12 @@ enum HwpxParaShapeMapper {
         let lineSpacingKind = Self.lineSpacingKinds[
             lineSpacing?.attribute("type") ?? "PERCENT"
         ] ?? HwpLineSpacingKind.percent
-        let lineSpacingValue = lineSpacing?.int32Attribute("value", default: 160) ?? 160
+        let rawLineSpacingValue = lineSpacing?.int32Attribute("value", default: 160) ?? 160
+        // 비율(%)은 순수 배율이라 그대로, HWPUNIT 종류(고정·최소·여백만)는
+        // 여백과 같은 2배 저장 규약을 따른다 (noori 실측: FIXED 3600↔1800).
+        let lineSpacingValue = lineSpacingKind == .percent
+            ? rawLineSpacingValue
+            : Int32(clamping: Int64(rawLineSpacingValue) * 2)
 
         let headingType = Self.headingTypes[heading?.attribute("type") ?? "NONE"] ?? 0
         var property1 = lineSpacingKind.rawValue & 0b11
@@ -156,9 +161,12 @@ extension HwpxParaShapeMapper {
 
     /// `hh:margin`의 `hc:<name> value= unit=` 자식 — HwpUnitChar 분기 해소
     /// 후이므로 단위는 HWPUNIT이 전제다 (다른 단위는 값 그대로 통과 — 실물
-    /// 검증 항목).
+    /// 검증 항목). HWP5 모델은 이 길이들을 HWPUNIT의 2배로 저장하므로
+    /// (조판이 /2로 소비 — noori HWP↔HWPX 실측: indent -2620↔-1310 등
+    /// 전 항목 2배) 모델 경계에서 2배로 올린다.
     static func marginValue(_ margin: HwpxXMLNode?, _ name: String) -> Int32 {
-        margin?.firstChild(named: name)?.int32Attribute("value", default: 0) ?? 0
+        let value = margin?.firstChild(named: name)?.int32Attribute("value", default: 0) ?? 0
+        return Int32(clamping: Int64(value) * 2)
     }
 
     /// `width="0.12 mm"` → 표 26 굵기 index (최근접 값).
