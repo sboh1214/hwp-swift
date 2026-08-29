@@ -143,8 +143,11 @@ private extension HwpxTableMapper {
         return bits
     }
 
+    /// 표 76 bits 0-1 대응 — noori HWP↔HWPX 실측: 바이너리 2(나눔)가
+    /// pageBreak="CELL"로 저장된다 ([0,0,2,2,2] ↔ [NONE,NONE,CELL,CELL,CELL]).
+    /// TABLE→1은 소거법 추론이다 (코퍼스에 TABLE 사례 0건 — 실물 확보 시 확정).
     static let pageBreakModes: [String: Int] = [
-        "NONE": 0, "CELL": 1, "TABLE": 2,
+        "NONE": 0, "CELL": 2, "TABLE": 1,
     ]
 
     static let verticalAlignments: [String: HwpListHeaderVerticalAlignment] = [

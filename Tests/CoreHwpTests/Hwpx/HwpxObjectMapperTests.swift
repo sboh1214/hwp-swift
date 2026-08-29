@@ -73,9 +73,9 @@ final class HwpxObjectMapperTests: XCTestCase {
 
         expect(table.tableProperty.rowCount) == 2
         expect(table.tableProperty.columnCount) == 2
-        // pageBreak CELL(1) + repeatHeader bit 2.
-        expect(table.tableProperty.property) == 0b101
-        expect(table.tableProperty.pageBreakMode) == HwpTableProperty.HwpTablePageBreakMode.byCell
+        // pageBreak CELL은 바이너리 2(나눔)다 (noori 실측) + repeatHeader bit 2.
+        expect(table.tableProperty.property) == 0b110
+        expect(table.tableProperty.pageBreakMode) == HwpTableProperty.HwpTablePageBreakMode.split
         expect(table.tableProperty.repeatsHeaderRow) == true
         expect(table.tableProperty.leftInnerMargin) == 510
         expect(table.tableProperty.topInnerMargin) == 141
