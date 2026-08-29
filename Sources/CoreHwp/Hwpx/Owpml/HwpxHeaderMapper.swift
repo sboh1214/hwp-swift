@@ -126,6 +126,8 @@ private extension HwpxHeaderMapper {
         // 해석되도록 등록을 먼저 끝낸다.
         for family in refList.childElements {
             switch family.localName {
+            case "fontfaces":
+                HwpxCharShapeMapper.registerFontFaces(family, into: &mapping.idTables)
             case "borderFills":
                 register(family, "borderFill", into: &mapping.idTables.borderFill)
             case "charProperties":

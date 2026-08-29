@@ -306,6 +306,49 @@ final class HwpxHeaderMapperTests: XCTestCase {
         })
     }
 
+    func testFontFacesAreResolvedWhenCharPropertiesComeFirst() throws {
+        // 1차 등록 패스의 순서 독립 약속은 fontfaces에도 성립해야 한다 —
+        // charProperties가 앞에 와도 fontRef가 빈 테이블로 0에 굳지 않는다.
+        guard let start = headerXML.range(of: "<hh:fontfaces"),
+              let end = headerXML.range(of: "</hh:fontfaces>")
+        else {
+            return fail("headerXML must contain a fontfaces family")
+        }
+        let fontfaces = String(headerXML[start.lowerBound ..< end.upperBound])
+        let reordered = headerXML
+            .replacingOccurrences(of: fontfaces, with: "")
+            .replacingOccurrences(
+                of: "</hh:charProperties>",
+                with: "</hh:charProperties>" + fontfaces
+            )
+        let (docInfo, _) = try mapHeader(reordered)
+
+        let first = docInfo.idMappings.charShapeArray[0]
+        expect(first.faceId[0]) == 1
+        expect(first.faceId[1]) == 0
+        expect(docInfo.idMappings.faceNameKoreanArray.count) == 2
+    }
+
+    func testUnconsumedParaPrChildrenDegradeIntoDiagnostics() throws {
+        let withExtras = headerXML.replacingOccurrences(
+            of: "<hh:paraPr id=\"4\" tabPrIDRef=\"3\" condense=\"0\">",
+            with: "<hh:paraPr id=\"4\" tabPrIDRef=\"3\" condense=\"0\">"
+                + "<hh:breakSetting breakLatinWord=\"KEEP_WORD\"/>"
+                + "<hh:autoSpacing eAsianEng=\"0\"/>"
+        )
+        let (docInfo, _) = try mapHeader(withExtras)
+
+        let names = docInfo.unknownRecords.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("breakSetting"))
+        expect(names).to(contain("autoSpacing"))
+        // 소비되는 자식은 강등되지 않는다 (음성 대조).
+        expect(names).toNot(contain("align"))
+        expect(names).toNot(contain("margin"))
+        expect(names).toNot(contain("lineSpacing"))
+    }
+
     func testExplicitTabStopsDegradeIntoDiagnostics() throws {
         // hh:tabItem은 1차 범위 밖이라 mapTabDef가 버린다 — 조용히 사라지지
         // 않고 합성 unknownRecord로 진단에 남아야 한다 (noori 픽스처 실측).

@@ -8,6 +8,27 @@ import Foundation
 /// bit 재합성은 하지 않는다.
 enum HwpxCharShapeMapper {
     /// `hh:fontface lang="…"` 목록 → 7개 faceName 배열 + 언어별 id 테이블.
+    /// 1차 등록 패스용 — `mapFontFaces`와 같은 순회로 언어별 폰트 id만
+    /// 등록한다. fontfaces가 charProperties 뒤에 오는 문서에서도 fontRef가
+    /// 해석되게 하는 순서 독립 등록이다 (다른 7가족과 같은 규약).
+    static func registerFontFaces(_ fontfaces: HwpxXMLNode, into tables: inout HwpxIdTables) {
+        var counts = [Int](repeating: 0, count: 7)
+        for fontface in fontfaces.children(named: "fontface") {
+            guard let language = fontface.attribute("lang")
+                .flatMap(HwpxFontLanguage.init(rawValue:))
+            else {
+                continue
+            }
+            let index = language.arrayIndex
+            for font in fontface.children(named: "font") {
+                tables.fontFacesByLanguage[index].register(
+                    id: font.attribute("id"), offset: counts[index]
+                )
+                counts[index] += 1
+            }
+        }
+    }
+
     static func mapFontFaces(
         _ fontfaces: HwpxXMLNode,
         into idMappings: inout HwpIdMappings,
