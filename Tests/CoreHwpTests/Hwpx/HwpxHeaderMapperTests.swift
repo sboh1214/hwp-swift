@@ -329,6 +329,47 @@ final class HwpxHeaderMapperTests: XCTestCase {
         expect(docInfo.idMappings.faceNameKoreanArray.count) == 2
     }
 
+    func testRefListFamilyFromOtherKnownVocabularyIsDemotedNotMapped() throws {
+        // hp:charProperties(paragraph vocabulary)는 hh 정의가 아니다 — 등록도
+        // 매핑도 하지 않고 unknown으로 강등해야 진짜 배열을 덮지 않는다.
+        let withDecoy = headerXML.replacingOccurrences(
+            of: "<hh:tabProperties",
+            with: "<hp:charProperties itemCnt=\"1\">"
+                + "<hp:charPr id=\"99\" height=\"9999\"/></hp:charProperties>"
+                + "<hh:tabProperties"
+        )
+        let (docInfo, tables) = try mapHeader(withDecoy)
+
+        expect(docInfo.idMappings.charShapeArray.count) == 2
+        expect(docInfo.idMappings.charShapeArray[0].baseSize) == 1000
+        expect(tables.charShape.offset(of: "99")).to(beNil())
+        let names = docInfo.unknownRecords.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("charProperties"))
+    }
+
+    func testUnconsumedBorderFillDescendantsDegradeIntoDiagnostics() throws {
+        let withExtras = headerXML
+            .replacingOccurrences(
+                of: "<hc:fillBrush>",
+                with: "<hh:slash type=\"NONE\" Crooked=\"0\" isCounter=\"0\"/>"
+                    + "<hc:fillBrush><hc:gradation angle=\"90\"/>"
+            )
+        let (docInfo, _) = try mapHeader(withExtras)
+
+        expect(docInfo.idMappings.borderFillArray.count) == 2
+        let names = docInfo.unknownRecords.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("slash"))
+        expect(names).to(contain("gradation"))
+        // 소비되는 자식은 강등되지 않는다 (음성 대조).
+        expect(names).toNot(contain("leftBorder"))
+        expect(names).toNot(contain("winBrush"))
+        expect(names).toNot(contain("fillBrush"))
+    }
+
     func testUnconsumedParaPrChildrenDegradeIntoDiagnostics() throws {
         let withExtras = headerXML.replacingOccurrences(
             of: "<hh:paraPr id=\"4\" tabPrIDRef=\"3\" condense=\"0\">",

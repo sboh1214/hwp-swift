@@ -124,7 +124,9 @@ private extension HwpxHeaderMapper {
         // 1차 패스: 가족별 id 테이블 등록 — 가족 사이 참조(글자→테두리,
         // 스타일→문단/글자, 문단→탭/번호)가 문서 내 등장 순서와 무관하게
         // 해석되도록 등록을 먼저 끝낸다.
-        for family in refList.childElements {
+        for family in refList.childElements
+            where family.isNamed(family.localName, in: HwpxNamespace.head)
+        {
             switch family.localName {
             case "fontfaces":
                 HwpxCharShapeMapper.registerFontFaces(family, into: &mapping.idTables)
@@ -147,9 +149,11 @@ private extension HwpxHeaderMapper {
             }
         }
 
-        // 2차 패스: 모델 매핑.
+        // 2차 패스: 모델 매핑. 가족은 head vocabulary여야 한다 — 전역 known
+        // 매칭이면 hp:styles 같은 동명 가족이 hh 정의로 매핑돼 id 테이블을
+        // 다시 쓴다 ((namespace, local name) 규칙).
         for family in refList.childElements {
-            guard family.isNamed(family.localName) else {
+            guard family.isNamed(family.localName, in: HwpxNamespace.head) else {
                 mapping.unknownRecords.append(unknownRecord(of: family))
                 continue
             }
