@@ -51,8 +51,17 @@ enum HwpxSecPrMapper {
             sectionDef.tableStartNumber = startNum.uint16Attribute("tbl", default: 0)
             sectionDef.equationNumber = startNum.uint16Attribute("equation", default: 0)
         }
-        // 각주/미주 모양·쪽 테두리는 1차 범위 밖 — 빈 문서 기본값을 유지한다
-        // (해당 fixture는 변환 대상에서 제외됨).
+        // 각주/미주 모양·쪽 테두리는 1차 범위 밖 — 빈 문서 기본값을 유지하되,
+        // 버려지는 자식은 진단으로 강등해야 "미해석 강등은 진단으로 보고됨"
+        // 규약이 지켜진다 (tabPr의 tabItem 강등과 같은 채널).
+        let consumedChildren: Set = ["pagePr", "startNum"]
+        for child in secPr.childElements where !consumedChildren.contains(child.localName) {
+            sectionDef.unknownChildren.append(HwpUnknownRecord(
+                tagId: hwpxSyntheticTagId,
+                level: 0,
+                payload: Data(child.localName.utf8)
+            ))
+        }
         return sectionDef
     }
 

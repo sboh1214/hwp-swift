@@ -52,6 +52,27 @@ final class HwpxSectionMapperTests: XCTestCase {
     flags="393216"/></hp:linesegarray></hp:p>
     """
 
+    func testUnconsumedSecPrChildrenDegradeIntoSectionDefDiagnostics() throws {
+        // footNotePr 등 1차 범위 밖 자식은 조용히 사라지지 않고 합성
+        // unknownChildren으로 남아야 한다 — 소비되는 pagePr·startNum은 제외.
+        let body = blankBody.replacingOccurrences(
+            of: "</hp:secPr>",
+            with: "<hp:footNotePr/><hp:endNotePr/><hp:pageBorderFill type=\"BOTH\"/></hp:secPr>"
+        )
+        let section = try mapSection(body)
+
+        guard case let .section(sectionDef)? = section.paragraph[0].ctrlHeaderArray?.first else {
+            return fail("first control must be .section")
+        }
+        let names = sectionDef.unknownChildren.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names) == ["footNotePr", "endNotePr", "pageBorderFill"]
+        expect(sectionDef.unknownChildren.map(\.tagId)) == [
+            hwpxSyntheticTagId, hwpxSyntheticTagId, hwpxSyntheticTagId,
+        ]
+    }
+
     func testBlankSectionMatchesBinaryBlankDocumentShape() throws {
         let section = try mapSection(blankBody)
 
