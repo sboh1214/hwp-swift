@@ -361,6 +361,20 @@ final class HwpxHeaderMapperTests: XCTestCase {
         expect(paraShapes[1].numberingOrBulletId) == 0
     }
 
+    func testDanglingHeadingReferenceStaysZero() throws {
+        // 없는 idRef는 0(없음)으로 남아야 한다 — +1을 무조건 걸면 댕글링이
+        // 첫 정의를 가리키게 된다 ("댕글링은 0 폴백" 규약).
+        let withDangling = headerXML.replacingOccurrences(
+            of: "<hh:heading type=\"OUTLINE\" idRef=\"0\" level=\"2\"/>",
+            with: "<hh:heading type=\"NUMBER\" idRef=\"404\" level=\"2\"/>"
+        )
+        let (docInfo, _) = try mapHeader(withDangling)
+
+        let paraShape = docInfo.idMappings.paraShapeArray[0]
+        expect(paraShape.property1Info.headingTypeRawValue) == 2
+        expect(paraShape.numberingOrBulletId) == 0
+    }
+
     func testRefListFamilyFromOtherKnownVocabularyIsDemotedNotMapped() throws {
         // hp:charProperties(paragraph vocabulary)는 hh 정의가 아니다 — 등록도
         // 매핑도 하지 않고 unknown으로 강등해야 진짜 배열을 덮지 않는다.

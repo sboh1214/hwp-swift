@@ -55,8 +55,11 @@ enum HwpxParaShapeMapper {
             // 조판이 `numberingOrBulletId > 0` 게이트 뒤에서 -1로 되돌리므로
             // 0-based 오프셋을 그대로 실으면 첫 정의가 사라지고 이후 참조가
             // 한 칸씩 앞을 가리킨다. 개요(1)는 이 배열을 쓰지 않아 0이다.
+            // +1은 **조회에 성공했을 때만**이다 — `resolvedOffset`의 댕글링
+            // 폴백 0에 더하면 없는 참조가 첫 정의를 가리키게 된다.
             numberingOrBulletId: headingType == 2 || headingType == 3
-                ? UInt16(clamping: headingIdTable.resolvedOffset(of: headingIdRef) + 1)
+                ? headingIdTable.offset(of: headingIdRef)
+                .map { UInt16(clamping: $0 + 1) } ?? 0
                 : 0,
             borderFillId: tables.borderFillId(of: border?.attribute("borderFillIDRef")),
             borderSpacingLeft: Int16(
