@@ -43,7 +43,17 @@ struct HwpxArchive {
         let eocdOffset = try Self.locateEndOfCentralDirectory(data)
         try Self.rejectZip64AndMultiDisk(data, eocdOffset: eocdOffset)
 
+        // 단일 디스크 아카이브만 지원하므로 이 디스크의 개수(+8)와 총
+        // 개수(+10)가 같아야 한다 — 어긋나면 어느 쪽을 믿어도 디렉터리를
+        // 부분만 읽게 된다.
+        let diskEntryCount = try data.readLittleEndianUInt16(at: eocdOffset + 8)
         let entryCount = Int(try data.readLittleEndianUInt16(at: eocdOffset + 10))
+        guard Int(diskEntryCount) == entryCount else {
+            throw HwpError.invalidArchive(
+                reason: "end-of-central-directory entry counts disagree: " +
+                    "\(diskEntryCount) on disk vs \(entryCount) total"
+            )
+        }
         // 32비트 Int(watchOS arm64_32)에서 트랩하지 않게 구조 가드 전에 failable
         // 변환한다 — sentinel 아닌 0x80000000...0xFFFFFFFE가 여기 도달한다 (P1,
         // `parseDirectoryEntry`와 같은 이유).
@@ -211,6 +221,15 @@ private extension HwpxArchive {
                 entries[entry.name] = entry
             }
             offset = nextOffset
+        }
+        // 선언 개수만큼 돌고 끝났는데 디렉터리가 남아 있으면 선언이 실제를
+        // 덮지 못한 것이다 — 남은 레코드(예: 마지막 META-INF/encryption.xml)가
+        // entriesByName에서 빠져 존재 기반 게이트가 통째로 우회된다.
+        guard offset == directoryEnd else {
+            throw HwpError.invalidArchive(
+                reason: "central directory has \(directoryEnd - offset) trailing bytes " +
+                    "beyond the declared \(entryCount) entries"
+            )
         }
         return entries
     }
