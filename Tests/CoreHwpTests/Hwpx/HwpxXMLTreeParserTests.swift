@@ -38,6 +38,28 @@ final class HwpxXMLTreeParserTests: XCTestCase {
         expect(root.firstChild(named: "run")?.firstChild(named: "t")?.text) == "본문"
     }
 
+    func testUnprefixedAttributeWinsOverForeignPrefixedTwin() throws {
+        // id/ext:id가 같은 local name으로 접힐 때 무접두사 키가 결정적으로
+        // 이긴다 — 사전 순회 무작위에 맡기면 실행마다 다른 값이 된다.
+        // 요소마다 접두사를 달리해 키 집합을 갈라야 순회 순서가 요소별로
+        // 독립이다 — 같은 키 쌍이면 프로세스 해시 시드 하나에 묶여 열 개가
+        // 통째로 같은 동전이 된다.
+        let children = (0 ..< 10).map { index in
+            "<hp:item xmlns:p\(index)=\"urn:x\(index)\" id=\"1\" p\(index):id=\"999\"/>"
+        }.joined()
+        let root = try parse(
+            "<hp:root xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" "
+                + "xmlns:ext=\"urn:x\">" + children
+                + "<hp:only ext:tag=\"v\"/></hp:root>"
+        )
+
+        for item in root.childElements where item.localName == "item" {
+            expect(item.attribute("id")) == "1"
+        }
+        // 접두사만 있는 속성은 종전대로 local name으로 접근된다.
+        expect(root.childElements.last?.attribute("tag")) == "v"
+    }
+
     func testForeignNamespaceElementIsNotMatched() throws {
         let root = try parse(
             """

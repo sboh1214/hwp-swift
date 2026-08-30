@@ -95,7 +95,15 @@ extension HwpxXMLTreeParser: XMLParserDelegate {
         // 무접두사지만 `hp:required-namespace`처럼 접두사가 붙는 예가 있다.
         var attributes: [String: String] = [:]
         attributes.reserveCapacity(attributeDict.count)
-        for (key, value) in attributeDict {
+        for (key, value) in attributeDict where !key.contains(":") {
+            attributes[key] = value
+        }
+        // 접두사 키는 무접두사 키에 밀리고 정렬 순회로 결정화한다 — 사전
+        // 순회는 실행마다 무작위라 id/ext:id 충돌이 실행마다 다른 값으로
+        // 해석되는 비결정 파싱이 된다.
+        for (key, value) in attributeDict.sorted(by: { $0.key < $1.key })
+            where key.contains(":")
+        {
             let localKey = key.split(separator: ":").last.map(String.init) ?? key
             if attributes[localKey] == nil {
                 attributes[localKey] = value
