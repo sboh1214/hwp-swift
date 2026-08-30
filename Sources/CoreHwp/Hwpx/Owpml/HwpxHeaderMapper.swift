@@ -112,6 +112,7 @@ private extension HwpxHeaderMapper {
                         equation: child.uint16Attribute("equation", default: 1)
                     )
                 )
+                mapping.unknownRecords += child.unconsumedChildRecords(consumed: [])
             } else if child.isNamed("refList", in: HwpxNamespace.head) {
                 try mapRefList(child, into: &mapping)
             } else {
@@ -208,6 +209,9 @@ private extension HwpxHeaderMapper {
         }
         mapping.idMappings.styleArray = try styles
             .map { try HwpxParaShapeMapper.mapStyle($0, tables: mapping.idTables) }
+        for style in styles {
+            mapping.unknownRecords += style.unconsumedChildRecords(consumed: [])
+        }
     }
 
     static func demoteUnconsumedFamilyChildren(
@@ -290,6 +294,19 @@ private extension HwpxHeaderMapper {
             mapping.unknownRecords += borderFill.unconsumedChildRecords(consumed: [
                 "leftBorder", "rightBorder", "topBorder", "bottomBorder", "fillBrush",
             ])
+            for borderName in ["leftBorder", "rightBorder", "topBorder", "bottomBorder"] {
+                if let border = borderFill.firstChild(named: borderName) {
+                    mapping.unknownRecords += border.unconsumedChildRecords(consumed: [])
+                }
+            }
+            if let fillBrush = borderFill.firstChild(named: "fillBrush") {
+                mapping.unknownRecords += fillBrush.unconsumedChildRecords(
+                    consumed: ["winBrush"]
+                )
+                if let winBrush = fillBrush.firstChild(named: "winBrush") {
+                    mapping.unknownRecords += winBrush.unconsumedChildRecords(consumed: [])
+                }
+            }
             for brush in borderFill.firstChild(named: "fillBrush")?.childElements ?? []
                 where !brush.isNamed("winBrush")
             {
@@ -317,6 +334,11 @@ private extension HwpxHeaderMapper {
                 mapping.unknownRecords += margin.unconsumedChildRecords(consumed: [
                     "intent", "left", "right", "prev", "next",
                 ])
+                for valueName in ["intent", "left", "right", "prev", "next"] {
+                    if let value = margin.firstChild(named: valueName) {
+                        mapping.unknownRecords += value.unconsumedChildRecords(consumed: [])
+                    }
+                }
             }
             for leafName in ["align", "heading", "lineSpacing", "border"] {
                 if let leaf = paraPr.firstChild(named: leafName) {

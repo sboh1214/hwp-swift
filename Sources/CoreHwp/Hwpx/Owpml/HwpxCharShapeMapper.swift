@@ -56,6 +56,9 @@ enum HwpxCharShapeMapper {
                 }
                 // typeInfo 등 1차 범위 밖 자식은 진단으로 강등한다.
                 unknownRecords += font.unconsumedChildRecords(consumed: ["substFont"])
+                if let substFontNode = font.firstChild(named: "substFont") {
+                    unknownRecords += substFontNode.unconsumedChildRecords(consumed: [])
+                }
                 tables.fontFacesByLanguage[index].register(
                     id: font.attribute("id"), offset: arrays[index].count
                 )

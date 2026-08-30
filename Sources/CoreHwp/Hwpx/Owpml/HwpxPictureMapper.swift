@@ -42,6 +42,11 @@ enum HwpxPictureMapper {
             unknownChildren += imgRect.unconsumedChildRecords(
                 consumed: ["pt0", "pt1", "pt2", "pt3"]
             )
+            for ptName in ["pt0", "pt1", "pt2", "pt3"] {
+                if let point = imgRect.firstChild(named: ptName) {
+                    unknownChildren += point.unconsumedChildRecords(consumed: [])
+                }
+            }
         }
         if let imgClip = node.paragraphFirstChild(named: "imgClip") {
             unknownChildren += imgClip.unconsumedChildRecords(consumed: [])

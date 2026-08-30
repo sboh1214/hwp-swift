@@ -132,6 +132,52 @@ final class HwpxHeaderDiagnosticsTests: XCTestCase {
         expect(names).toNot(contain("left"))
     }
 
+    func testHeaderLeafWrapperDescendantsDegradeIntoDiagnostics() throws {
+        // 테두리·winBrush·substFont·margin 값·beginNum·style은 속성만 읽는
+        // 잎이다 — 안의 확장 요소가 진단에 남아야 한다.
+        let withExtras = HwpxHeaderFixture.headerXML
+            .replacingOccurrences(
+                of: "<hh:leftBorder type=\"SOLID\" width=\"0.4 mm\" color=\"#FF0000\"/>",
+                with: "<hh:leftBorder type=\"SOLID\" width=\"0.4 mm\" color=\"#FF0000\">"
+                    + "<hh:borderExtra/></hh:leftBorder>"
+            )
+            .replacingOccurrences(
+                of: "<hc:winBrush faceColor=\"#DDEEFF\" hatchColor=\"#999999\" alpha=\"0\"/>",
+                with: "<hc:winBrush faceColor=\"#DDEEFF\" hatchColor=\"#999999\" alpha=\"0\">"
+                    + "<hc:brushExtra/></hc:winBrush>"
+            )
+            .replacingOccurrences(
+                of: "<hh:substFont face=\"바탕\" type=\"TTF\"/>",
+                with: "<hh:substFont face=\"바탕\" type=\"TTF\"><hh:substExtra/></hh:substFont>"
+            )
+            .replacingOccurrences(
+                of: "<hc:intent value=\"-2620\" unit=\"HWPUNIT\"/>",
+                with: "<hc:intent value=\"-2620\" unit=\"HWPUNIT\"><hc:intentExtra/></hc:intent>"
+            )
+            .replacingOccurrences(
+                of: "equation=\"1\"/>",
+                with: "equation=\"1\"><hh:beginNumExtra/></hh:beginNum>"
+            )
+            .replacingOccurrences(
+                of: "nextStyleIDRef=\"0\" langID=\"1042\" lockForm=\"0\"/>",
+                with: "nextStyleIDRef=\"0\" langID=\"1042\" lockForm=\"0\">"
+                    + "<hh:styleExtra/></hh:style>"
+            )
+        let (docInfo, _) = try HwpxHeaderFixture.mapHeader(withExtras)
+
+        let names = docInfo.unknownRecords.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        for expected in [
+            "borderExtra", "brushExtra", "substExtra",
+            "intentExtra", "beginNumExtra", "styleExtra",
+        ] {
+            expect(names).to(contain(expected))
+        }
+        // 소비되는 래퍼 자체는 강등되지 않는다 (음성 대조).
+        expect(names).toNot(contain("winBrush"))
+    }
+
     func testCharPrLeafWrapperDescendantsDegradeIntoDiagnostics() throws {
         // underline 같은 잎 래퍼는 속성만 읽는다 — 안의 확장 요소가 진단에
         // 남아야 한다.

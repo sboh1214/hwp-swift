@@ -376,6 +376,23 @@ final class HwpxObjectMapperTests: XCTestCase {
         expect(tableNames).to(contain("marginExtra"))
     }
 
+    func testPicturePointDescendantsDegradeIntoDiagnostics() throws {
+        // pt0-pt3은 좌표 속성만 읽는 잎이다 — 안의 확장 요소가 진단에 남는다.
+        let withExtras = pictureXML.replacingOccurrences(
+            of: "<hc:pt0 x=\"0\" y=\"0\"/>",
+            with: "<hc:pt0 x=\"0\" y=\"0\"><hc:ptExtra/></hc:pt0>"
+        )
+        let control = HwpxPictureMapper.map(
+            try parse(withExtras),
+            context: makeContext(binItemIds: ["image1": 3])
+        )
+
+        let names = control.unknownChildren.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("ptExtra"))
+    }
+
     func testPictureWrapperDescendantsDegradeIntoDiagnostics() throws {
         // img·imgRect 래퍼 안 확장 요소도 진단에 남아야 한다 — 래퍼를 통째로
         // 소비 처리하면 사라진다 (paraPr 래퍼 강등과 같은 채널).
