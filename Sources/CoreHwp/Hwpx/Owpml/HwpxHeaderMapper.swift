@@ -160,7 +160,10 @@ private extension HwpxHeaderMapper {
             switch family.localName {
             case "fontfaces":
                 try HwpxCharShapeMapper.mapFontFaces(
-                    family, into: &mapping.idMappings, tables: &mapping.idTables
+                    family,
+                    into: &mapping.idMappings,
+                    tables: &mapping.idTables,
+                    unknownRecords: &mapping.unknownRecords
                 )
             case "borderFills":
                 mapBorderFills(family, into: &mapping)

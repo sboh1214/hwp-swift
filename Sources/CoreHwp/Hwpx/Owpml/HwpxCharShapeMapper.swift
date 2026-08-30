@@ -32,13 +32,21 @@ enum HwpxCharShapeMapper {
     static func mapFontFaces(
         _ fontfaces: HwpxXMLNode,
         into idMappings: inout HwpIdMappings,
-        tables: inout HwpxIdTables
+        tables: inout HwpxIdTables,
+        unknownRecords: inout [HwpUnknownRecord]
     ) throws {
         var arrays: [[HwpFaceName]] = Array(repeating: [], count: 7)
         for fontface in fontfaces.children(named: "fontface") {
             guard let language = fontface.attribute("lang")
                 .flatMap(HwpxFontLanguage.init(rawValue:))
             else {
+                // 미지 lang의 fontface는 글꼴 목록이 통째로 빠지므로 조용히
+                // 버리면 안 된다 — 진단으로 남긴다.
+                unknownRecords.append(HwpUnknownRecord(
+                    tagId: hwpxSyntheticTagId,
+                    level: 0,
+                    payload: Data(fontface.localName.utf8)
+                ))
                 continue
             }
             let index = language.arrayIndex
@@ -49,6 +57,8 @@ enum HwpxCharShapeMapper {
                 if let substitute {
                     try hwpxValidateNameLength(substitute)
                 }
+                // typeInfo 등 1차 범위 밖 자식은 진단으로 강등한다.
+                unknownRecords += font.unconsumedChildRecords(consumed: ["substFont"])
                 tables.fontFacesByLanguage[index].register(
                     id: font.attribute("id"), offset: arrays[index].count
                 )

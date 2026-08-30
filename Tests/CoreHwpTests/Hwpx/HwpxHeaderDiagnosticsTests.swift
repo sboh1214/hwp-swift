@@ -60,6 +60,32 @@ final class HwpxHeaderDiagnosticsTests: XCTestCase {
         expect(paraShapes[1].numberingOrBulletId) == 0
     }
 
+    func testUnconsumedFontChildrenAndUnknownLanguageDegradeIntoDiagnostics() throws {
+        let withExtras = HwpxHeaderFixture.headerXML
+            .replacingOccurrences(
+                of: "<hh:font id=\"0\" face=\"함초롬돋움\" type=\"TTF\" isEmbedded=\"0\"/>",
+                with: "<hh:font id=\"0\" face=\"함초롬돋움\" type=\"TTF\" isEmbedded=\"0\">"
+                    + "<hh:typeInfo familyType=\"FCAT_GOTHIC\"/></hh:font>"
+            )
+            .replacingOccurrences(
+                of: "</hh:fontfaces>",
+                with: "<hh:fontface lang=\"KLINGON\" fontCnt=\"1\">"
+                    + "<hh:font id=\"9\" face=\"nope\"/></hh:fontface></hh:fontfaces>"
+            )
+        let (docInfo, _) = try HwpxHeaderFixture.mapHeader(withExtras)
+
+        let names = docInfo.unknownRecords.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("typeInfo"))
+        expect(names).to(contain("fontface"))
+        // 미지 lang 목록은 채택되지 않는다 (한글 2 + 영어 1 그대로).
+        expect(docInfo.idMappings.faceNameKoreanArray.count) == 2
+        expect(docInfo.idMappings.faceNameEnglishArray.count) == 1
+        // 소비되는 substFont는 강등되지 않는다 (음성 대조).
+        expect(names).toNot(contain("substFont"))
+    }
+
     func testDanglingHeadingReferenceStaysZero() throws {
         // 없는 idRef는 0(없음)으로 남아야 한다 — +1을 무조건 걸면 댕글링이
         // 첫 정의를 가리키게 된다 ("댕글링은 0 폴백" 규약).
