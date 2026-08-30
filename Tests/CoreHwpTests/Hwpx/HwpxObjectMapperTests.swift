@@ -359,6 +359,32 @@ final class HwpxObjectMapperTests: XCTestCase {
         expect(property.borderThickness) == 0
     }
 
+    func testPictureWrapperDescendantsDegradeIntoDiagnostics() throws {
+        // img·imgRect 래퍼 안 확장 요소도 진단에 남아야 한다 — 래퍼를 통째로
+        // 소비 처리하면 사라진다 (paraPr 래퍼 강등과 같은 채널).
+        let withExtras = pictureXML
+            .replacingOccurrences(
+                of: "<hp:imgRect>",
+                with: "<hp:imgRect><hp:rectExtra/>"
+            )
+            .replacingOccurrences(
+                of: "alpha=\"0\"/>",
+                with: "alpha=\"0\"><hp:imgExtra/></hp:img>"
+            )
+        let control = HwpxPictureMapper.map(
+            try parse(withExtras),
+            context: makeContext(binItemIds: ["image1": 3])
+        )
+
+        let names = control.unknownChildren.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("rectExtra"))
+        expect(names).to(contain("imgExtra"))
+        // 소비되는 pt 좌표는 강등되지 않는다 (음성 대조).
+        expect(names).toNot(contain("pt0"))
+    }
+
     func testPictureUnconsumedChildrenDegradeIntoDiagnostics() throws {
         // 회전·반전 등은 렌더에 반영되지 않으므로 조용히 사라지면 안 된다 —
         // 진단 walker가 걷는 shapeControl.unknownChildren에 남는다.
