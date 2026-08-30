@@ -56,6 +56,47 @@ final class HwpxSectionInvariantTests: XCTestCase {
         }) == "inner"
     }
 
+    func testRecoveredParagraphPlaceholderPreservesOriginalSubtree() throws {
+        // 복구 placeholder가 합성 p 레코드만 남기면 원본 자식이 사라진다 —
+        // .viewer는 구역 rawPayload도 비우므로 유일한 흔적이다.
+        // 셀 컨텍스트마다 descending()이 한 번이라 표를 2겹으로 중첩해야
+        // maxNestingDepth 1에 걸린다.
+        let innerTable = "<hp:tbl id=\"10\" rowCnt=\"1\" colCnt=\"1\">"
+            + "<hp:tr><hp:tc><hp:subList>"
+            + "<hp:p id=\"4\" paraPrIDRef=\"4\" styleIDRef=\"0\">"
+            + "<hp:run charPrIDRef=\"7\"><hp:t>안쪽</hp:t></hp:run></hp:p>"
+            + "</hp:subList></hp:tc></hp:tr></hp:tbl>"
+        let deep = "<hp:p id=\"2\" paraPrIDRef=\"4\" styleIDRef=\"0\">"
+            + "<hp:run charPrIDRef=\"7\"><hp:tbl id=\"9\" rowCnt=\"1\" colCnt=\"1\">"
+            + "<hp:tr><hp:tc><hp:subList>"
+            + "<hp:p id=\"3\" paraPrIDRef=\"4\" styleIDRef=\"0\">"
+            + "<hp:run charPrIDRef=\"7\">\(innerTable)</hp:run></hp:p>"
+            + "</hp:subList></hp:tc></hp:tr></hp:tbl></hp:run></hp:p>"
+        let options = HwpLoadOptions(
+            readLimits: HwpReadLimits(maxNestingDepth: 1),
+            preserveRawPayload: false,
+            recoverPartialContent: true
+        )
+
+        let section = try HwpxSectionFixture.mapSection(
+            HwpxSectionFixture.blankBody + deep, options: options
+        )
+
+        expect(section.paragraph.count) == 2
+        let placeholder = section.paragraph[1]
+        expect(placeholder.parseFailure).notTo(beNil())
+        expect(placeholder.paraText).to(beNil())
+        // 원본 요소가 자식 트리째 남는다 — 진단 walker의 .child[i] 재귀가
+        // 안쪽 표까지 닿는다.
+        let record = try XCTUnwrap(placeholder.unknownChildren.first)
+        expect(String(bytes: record.payload, encoding: .utf8)) == "p"
+        let names = record.children.flatMap { child in
+            [child] + child.children
+        }.compactMap { String(bytes: $0.payload, encoding: .utf8) }
+        expect(names).to(contain("run"))
+        expect(names).to(contain("tbl"))
+    }
+
     func testChildrenOfRecognizedInlineElementsAreDemoted() throws {
         // <hp:tab> 같은 인식 인라인 요소는 잎이다 — 하위를 삼키면 진단에서
         // 빠지고 positionCertain이 참으로 남아 잘못된 lineseg 캐시를 쓴다.

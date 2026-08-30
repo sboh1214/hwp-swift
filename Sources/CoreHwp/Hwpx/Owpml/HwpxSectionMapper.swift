@@ -44,7 +44,7 @@ enum HwpxSectionMapper {
                 where index > 0
                 && context.options.recoverPartialContent && !error.isRecoveryExempt
             {
-                paragraphs.append(Self.paragraphPlaceholder(error: error))
+                paragraphs.append(Self.paragraphPlaceholder(error: error, node: node))
             }
         }
 
@@ -80,13 +80,15 @@ enum HwpxSectionMapper {
 
     /// XML 문단 placeholder — 바이너리 `parseFailurePlaceholder`와 같은 형태
     /// (`paraText = nil` → run builder가 빈 문단으로 처리, 원인은
-    /// `parseFailure`에, 요소 표식은 `unknownChildren`에).
-    static func paragraphPlaceholder(error: HwpError) -> HwpParagraph {
+    /// `parseFailure`에, **원본 요소는 자식 트리째** `unknownChildren`에).
+    ///
+    /// 합성 `p` 레코드만 남기면 원본 자식이 통째로 사라진다 — `.viewer`는
+    /// 구역 rawPayload도 비우므로 재파싱 근거도 진단도 남지 않는다
+    /// (바이너리 복구가 원본 레코드를 보존하는 것과 같은 규약).
+    static func paragraphPlaceholder(error: HwpError, node: HwpxXMLNode) -> HwpParagraph {
         var paragraph = HwpParagraph()
         paragraph.paraText = nil
-        paragraph.unknownChildren = [HwpUnknownRecord(
-            tagId: hwpxSyntheticTagId, level: 0, payload: Data("p".utf8)
-        )]
+        paragraph.unknownChildren = [node.syntheticUnknownRecord()]
         paragraph.parseFailure = String(describing: error)
         return paragraph
     }
