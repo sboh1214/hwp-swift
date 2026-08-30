@@ -213,13 +213,23 @@ private extension HwpxHeaderMapper {
         mapping.idMappings.charShapeArray = charPrs
             .map { HwpxCharShapeMapper.mapCharShape($0, tables: mapping.idTables) }
         for charPr in charPrs {
-            mapping.unknownRecords += charPr.unconsumedChildRecords(consumed: [
-                "fontRef", "ratio", "spacing", "relSz", "offset", "bold", "italic",
-                "emboss", "engrave", "supscript", "subscript", "underline",
-                "strikeout", "outline", "shadow",
-            ])
+            mapping.unknownRecords += charPr.unconsumedChildRecords(
+                consumed: Set(Self.charPrLeafNames)
+            )
+            // 잎 래퍼 15종은 속성만 읽는다 — 자식이 전부 미소비다.
+            for leafName in Self.charPrLeafNames {
+                if let leaf = charPr.firstChild(named: leafName) {
+                    mapping.unknownRecords += leaf.unconsumedChildRecords(consumed: [])
+                }
+            }
         }
     }
+
+    static let charPrLeafNames = [
+        "fontRef", "ratio", "spacing", "relSz", "offset", "bold", "italic",
+        "emboss", "engrave", "supscript", "subscript", "underline",
+        "strikeout", "outline", "shadow",
+    ]
 
     /// 가족 → 정의 요소 이름. `headChildren` 조회가 거른 타 vocabulary
     /// 디코이를 강등할 때 쓴다 (numbering/bullet 가족은 통째로 강등되므로 제외).

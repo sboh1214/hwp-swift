@@ -333,6 +333,21 @@ final class HwpxObjectMapperTests: XCTestCase {
         expect(property.borderThickness) == 0
     }
 
+    func testUnknownSubListChildrenDegradeIntoDiagnostics() throws {
+        // subList는 문단만 읽는다 — 그 밖의 자식이 진단 없이 사라지면 안 된다.
+        let withExtras = tableXML.replacingOccurrences(
+            of: "<hp:t>머리</hp:t></hp:run></hp:p>",
+            with: "<hp:t>머리</hp:t></hp:run></hp:p><ext:future xmlns:ext=\"urn:x\"/>"
+        )
+        let table = try HwpxTableMapper.map(try parse(withExtras), context: makeContext())
+
+        let names = table.cellArray[0].header.unknownChildren.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("future"))
+        expect(table.cellArray[0].header.paragraphCount) == 1
+    }
+
     func testLeafWrapperDescendantsDegradeIntoDiagnostics() throws {
         // 속성만 읽는 sz·inMargin 잎 래퍼 안 확장 요소도 진단에 남아야 한다
         // — 그림·표 양쪽 모두 같은 규약이다.

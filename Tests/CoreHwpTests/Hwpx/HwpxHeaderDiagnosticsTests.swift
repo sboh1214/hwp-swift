@@ -132,6 +132,23 @@ final class HwpxHeaderDiagnosticsTests: XCTestCase {
         expect(names).toNot(contain("left"))
     }
 
+    func testCharPrLeafWrapperDescendantsDegradeIntoDiagnostics() throws {
+        // underline 같은 잎 래퍼는 속성만 읽는다 — 안의 확장 요소가 진단에
+        // 남아야 한다.
+        let withExtras = HwpxHeaderFixture.headerXML.replacingOccurrences(
+            of: "<hh:underline type=\"BOTTOM\" shape=\"DASH\" color=\"#FF00FF\"/>",
+            with: "<hh:underline type=\"BOTTOM\" shape=\"DASH\" color=\"#FF00FF\">"
+                + "<hh:underlineExtra/></hh:underline>"
+        )
+        let (docInfo, _) = try HwpxHeaderFixture.mapHeader(withExtras)
+
+        let names = docInfo.unknownRecords.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("underlineExtra"))
+        expect(names).toNot(contain("underline"))
+    }
+
     func testUnconsumedCharPrChildrenDegradeIntoDiagnostics() throws {
         let withExtras = HwpxHeaderFixture.headerXML.replacingOccurrences(
             of: "<hh:bold/>",

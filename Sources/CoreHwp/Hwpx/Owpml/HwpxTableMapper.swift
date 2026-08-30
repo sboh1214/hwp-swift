@@ -152,6 +152,23 @@ enum HwpxTableMapper {
 
         let isHeader = node.boolAttribute("header")
         let widthRef = Self.cellPropertyBits(of: node, isHeader: isHeader)
+        var cellUnknowns = node.unconsumedChildRecords(
+            consumed: ["subList", "cellAddr", "cellSpan", "cellSz", "cellMargin"],
+            in: HwpxNamespace.paragraph
+        )
+        // 소비 래퍼 안 미지 자식 — subList는 문단만, 주소·크기 잎 4종은
+        // 속성만 읽는다.
+        if let subList {
+            cellUnknowns += subList.unconsumedChildRecords(
+                consumed: ["p"], in: HwpxNamespace.paragraph
+            )
+        }
+        for leaf in [address, span, size, margin] {
+            if let leaf {
+                cellUnknowns += leaf.unconsumedChildRecords(consumed: [])
+            }
+        }
+
         let header = HwpTableCellHeader(
             paragraphCount: Int32(paragraphs.count),
             property: 0,
@@ -162,10 +179,7 @@ enum HwpxTableMapper {
             cellProperty: cellProperty,
             rawTrailing: Data(),
             rawPayload: Data(),
-            unknownChildren: node.unconsumedChildRecords(
-                consumed: ["subList", "cellAddr", "cellSpan", "cellSz", "cellMargin"],
-                in: HwpxNamespace.paragraph
-            )
+            unknownChildren: cellUnknowns
         )
         return HwpTableCell(header: header, paragraphArray: paragraphs)
     }

@@ -56,6 +56,28 @@ final class HwpxSectionInvariantTests: XCTestCase {
         }) == "inner"
     }
 
+    func testSecPrWrapperDescendantsDegradeIntoDiagnostics() throws {
+        // pagePr는 margin만, margin·startNum은 속성만 읽는다 — 래퍼 안
+        // 확장 요소가 진단에 남아야 한다.
+        let xml = """
+        <hp:secPr xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" id="">\
+        <hp:pagePr width="59528" height="84186"><hp:pagePrExtra/>\
+        <hp:margin left="8504"><hp:marginExtra/></hp:margin></hp:pagePr>\
+        <hp:startNum page="0"><hp:startNumExtra/></hp:startNum>\
+        </hp:secPr>
+        """
+        let sectionDef = HwpxSecPrMapper.mapSectionDef(try parse(xml))
+
+        let names = sectionDef.unknownChildren.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("pagePrExtra"))
+        expect(names).to(contain("marginExtra"))
+        expect(names).to(contain("startNumExtra"))
+        // 소비되는 래퍼 자체는 강등되지 않는다 (음성 대조).
+        expect(names).toNot(contain("margin"))
+    }
+
     func testPagePrLookupIgnoresOtherVocabularyDecoy() throws {
         // firstChild 전역 매칭이면 진짜 앞의 hh:pagePr 디코이가 쪽 기하를 대체한다.
         let xml = """

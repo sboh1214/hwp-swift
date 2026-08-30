@@ -63,6 +63,19 @@ enum HwpxSecPrMapper {
         sectionDef.unknownChildren = secPr.unconsumedChildRecords(
             consumed: ["pagePr", "startNum"], in: HwpxNamespace.paragraph
         )
+        // 소비 래퍼 안 미지 자식 — pagePr는 margin만, margin·startNum은
+        // 속성만 읽는다.
+        if let pagePr = secPr.paragraphFirstChild(named: "pagePr") {
+            sectionDef.unknownChildren += pagePr.unconsumedChildRecords(
+                consumed: ["margin"], in: HwpxNamespace.paragraph
+            )
+            if let margin = pagePr.paragraphFirstChild(named: "margin") {
+                sectionDef.unknownChildren += margin.unconsumedChildRecords(consumed: [])
+            }
+        }
+        if let startNum = secPr.paragraphFirstChild(named: "startNum") {
+            sectionDef.unknownChildren += startNum.unconsumedChildRecords(consumed: [])
+        }
         return sectionDef
     }
 
@@ -103,6 +116,12 @@ enum HwpxSecPrMapper {
         column.unknownChildren = colPr.unconsumedChildRecords(
             consumed: ["colSz", "colLine"], in: HwpxNamespace.paragraph
         )
+        for size in sizes {
+            column.unknownChildren += size.unconsumedChildRecords(consumed: [])
+        }
+        if let line = colPr.paragraphFirstChild(named: "colLine") {
+            column.unknownChildren += line.unconsumedChildRecords(consumed: [])
+        }
         return column
     }
 }
