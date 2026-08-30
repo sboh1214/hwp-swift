@@ -106,6 +106,26 @@ extension HwpxXMLNode {
         childElements.filter { $0.isNamed(localName, in: HwpxNamespace.paragraph) }
     }
 
+    /// head vocabulary로 확정된 자식만 고른다 — refList 정의 요소(charPr·
+    /// style 등)처럼 vocabulary가 하나로 정해지는 자리에 쓴다
+    /// (`paragraphChildren`의 head 대응).
+    func headChildren(named localName: String) -> [HwpxXMLNode] {
+        childElements.filter { $0.isNamed(localName, in: HwpxNamespace.head) }
+    }
+
+    /// `headChildren(named:)` 조회의 강등 짝 — 이름은 정의 요소와 같지만 head
+    /// vocabulary가 아닌 디코이를 진단용 합성 레코드로 옮긴다. 조회만 좁히고
+    /// 이것을 빠뜨리면 디코이가 흔적 없이 사라진다.
+    func headDecoyRecords(named localName: String) -> [HwpUnknownRecord] {
+        childElements
+            .filter { $0.localName == localName && !$0.isNamed(localName, in: HwpxNamespace.head) }
+            .map {
+                HwpUnknownRecord(
+                    tagId: hwpxSyntheticTagId, level: 0, payload: Data($0.localName.utf8)
+                )
+            }
+    }
+
     /// 소비되지 않은 자식을 진단용 합성 레코드로 옮긴다.
     ///
     /// 소비 판정은 **조회와 같은 술어**(`isNamed`)여야 한다 — local name만

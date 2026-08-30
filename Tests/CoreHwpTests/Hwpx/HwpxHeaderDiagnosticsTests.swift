@@ -107,6 +107,28 @@ final class HwpxHeaderDiagnosticsTests: XCTestCase {
         expect(docInfo.idMappings.borderFillArray.count) == 2
     }
 
+    func testRefListDefinitionDecoysAreDemotedAndDoNotShiftRegistration() throws {
+        // 진짜 hh:charPr(id 7) 앞에 다른 id의 hp:charPr 디코이 — 등록이
+        // 디코이를 세면 id 7의 오프셋이 밀려 스타일 참조가 어긋난다.
+        let withDecoy = HwpxHeaderFixture.headerXML.replacingOccurrences(
+            of: "<hh:charPr id=\"7\"",
+            with: "<hp:charPr id=\"99\" height=\"9999\"/><hh:charPr id=\"7\""
+        )
+        let (docInfo, _) = try HwpxHeaderFixture.mapHeader(withDecoy)
+
+        // 매핑은 진짜 2건만 담고 첫째가 실값이다.
+        let shapes = docInfo.idMappings.charShapeArray
+        expect(shapes.count) == 2
+        expect(shapes[0].baseSize) == 1000
+        // 등록도 디코이를 세지 않는다 — charPrIDRef="7"이 여전히 오프셋 0.
+        expect(docInfo.idMappings.styleArray[0].charShapeId) == 0
+        // 디코이는 진단에 남는다.
+        let names = docInfo.unknownRecords.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("charPr"))
+    }
+
     func testDanglingHeadingReferenceStaysZero() throws {
         // 없는 idRef는 0(없음)으로 남아야 한다 — +1을 무조건 걸면 댕글링이
         // 첫 정의를 가리키게 된다 ("댕글링은 0 폴백" 규약).

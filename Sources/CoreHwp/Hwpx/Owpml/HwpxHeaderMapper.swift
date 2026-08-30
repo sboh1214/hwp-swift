@@ -171,14 +171,14 @@ private extension HwpxHeaderMapper {
             case "borderFills":
                 mapBorderFills(family, into: &mapping)
             case "charProperties":
-                mapping.idMappings.charShapeArray = family.children(named: "charPr")
+                mapping.idMappings.charShapeArray = family.headChildren(named: "charPr")
                     .map { HwpxCharShapeMapper.mapCharShape($0, tables: mapping.idTables) }
             case "tabProperties":
                 mapTabProperties(family, into: &mapping)
             case "paraProperties":
                 mapParaProperties(family, into: &mapping)
             case "styles":
-                mapping.idMappings.styleArray = try family.children(named: "style")
+                mapping.idMappings.styleArray = try family.headChildren(named: "style")
                     .map { try HwpxParaShapeMapper.mapStyle($0, tables: mapping.idTables) }
             case "numberings", "bullets":
                 // 1차 범위 밖 — id 테이블만 등록해 참조가 결정적으로
@@ -188,8 +188,27 @@ private extension HwpxHeaderMapper {
             default:
                 mapping.unknownRecords.append(unknownRecord(of: family))
             }
+            demoteDefinitionDecoys(in: family, into: &mapping)
         }
     }
+
+    static func demoteDefinitionDecoys(
+        in family: HwpxXMLNode,
+        into mapping: inout HwpxHeaderMapping
+    ) {
+        guard let definitionName = definitionNames[family.localName] else {
+            return
+        }
+        mapping.unknownRecords += family.headDecoyRecords(named: definitionName)
+    }
+
+    /// 가족 → 정의 요소 이름. `headChildren` 조회가 거른 타 vocabulary
+    /// 디코이를 강등할 때 쓴다 (numbering/bullet 가족은 통째로 강등되므로 제외).
+    static let definitionNames: [String: String] = [
+        "fontfaces": "fontface", "borderFills": "borderFill",
+        "charProperties": "charPr", "tabProperties": "tabPr",
+        "paraProperties": "paraPr", "styles": "style",
+    ]
 
     /// `hh:tabProperties` 가족을 탭 정의 배열로 옮긴다.
     ///
@@ -197,7 +216,7 @@ private extension HwpxHeaderMapper {
     /// 옮긴다 — 버려지는 자식은 진단으로 강등해야 "미해석 강등은 진단으로
     /// 보고됨" 규약이 지켜진다 (numbering/bullet의 가족 수준 강등과 같은 채널).
     static func mapTabProperties(_ family: HwpxXMLNode, into mapping: inout HwpxHeaderMapping) {
-        let tabPrs = family.children(named: "tabPr")
+        let tabPrs = family.headChildren(named: "tabPr")
         mapping.idMappings.tabDefArray = tabPrs.map(HwpxParaShapeMapper.mapTabDef)
         for tabPr in tabPrs {
             for child in tabPr.childElements {
@@ -212,7 +231,7 @@ private extension HwpxHeaderMapper {
     /// 테두리·그러데이션/이미지 채우기 등 미소비 자손은 진단으로 강등해야
     /// "미해석 강등은 진단으로 보고됨" 규약이 지켜진다.
     static func mapBorderFills(_ family: HwpxXMLNode, into mapping: inout HwpxHeaderMapping) {
-        let borderFills = family.children(named: "borderFill")
+        let borderFills = family.headChildren(named: "borderFill")
         mapping.idMappings.borderFillArray = borderFills.map(HwpxParaShapeMapper.mapBorderFill)
         for borderFill in borderFills {
             mapping.unknownRecords += borderFill.unconsumedChildRecords(consumed: [
@@ -232,7 +251,7 @@ private extension HwpxHeaderMapper {
     /// 옮기고 버린다 — 진단으로 강등해야 "미해석 강등은 진단으로 보고됨"
     /// 규약이 지켜진다 (tabPr의 tabItem 강등과 같은 채널).
     static func mapParaProperties(_ family: HwpxXMLNode, into mapping: inout HwpxHeaderMapping) {
-        let paraPrs = family.children(named: "paraPr")
+        let paraPrs = family.headChildren(named: "paraPr")
         mapping.idMappings.paraShapeArray = paraPrs
             .map { HwpxParaShapeMapper.mapParaShape($0, tables: mapping.idTables) }
         for paraPr in paraPrs {
@@ -247,7 +266,7 @@ private extension HwpxHeaderMapper {
         _ childName: String,
         into table: inout HwpxIdTable
     ) {
-        for (offset, child) in family.children(named: childName).enumerated() {
+        for (offset, child) in family.headChildren(named: childName).enumerated() {
             table.register(id: child.attribute("id"), offset: offset)
         }
     }

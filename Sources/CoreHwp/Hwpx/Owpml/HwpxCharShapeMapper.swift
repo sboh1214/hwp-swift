@@ -13,14 +13,14 @@ enum HwpxCharShapeMapper {
     /// 해석되게 하는 순서 독립 등록이다 (다른 7가족과 같은 규약).
     static func registerFontFaces(_ fontfaces: HwpxXMLNode, into tables: inout HwpxIdTables) {
         var counts = [Int](repeating: 0, count: 7)
-        for fontface in fontfaces.children(named: "fontface") {
+        for fontface in fontfaces.headChildren(named: "fontface") {
             guard let language = fontface.attribute("lang")
                 .flatMap(HwpxFontLanguage.init(rawValue:))
             else {
                 continue
             }
             let index = language.arrayIndex
-            for font in fontface.children(named: "font") {
+            for font in fontface.headChildren(named: "font") {
                 tables.fontFacesByLanguage[index].register(
                     id: font.attribute("id"), offset: counts[index]
                 )
@@ -36,7 +36,7 @@ enum HwpxCharShapeMapper {
         unknownRecords: inout [HwpUnknownRecord]
     ) throws {
         var arrays: [[HwpFaceName]] = Array(repeating: [], count: 7)
-        for fontface in fontfaces.children(named: "fontface") {
+        for fontface in fontfaces.headChildren(named: "fontface") {
             guard let language = fontface.attribute("lang")
                 .flatMap(HwpxFontLanguage.init(rawValue:))
             else {
@@ -50,7 +50,8 @@ enum HwpxCharShapeMapper {
                 continue
             }
             let index = language.arrayIndex
-            for font in fontface.children(named: "font") {
+            unknownRecords += fontface.headDecoyRecords(named: "font")
+            for font in fontface.headChildren(named: "font") {
                 let face = font.attribute("face") ?? ""
                 let substitute = font.firstChild(named: "substFont")?.attribute("face")
                 try hwpxValidateNameLength(face)
