@@ -156,6 +156,27 @@ final class HwpxObjectMapperTests: XCTestCase {
         }
     }
 
+    func testUnknownRowChildrenDegradeIntoDiagnostics() throws {
+        // tr 전체를 소비 처리하면 행 안 미지 자식이 사라진다. hh:tc 디코이는
+        // 전역 소비 판정이면 "소비됨"으로 오인되는 대조군이다.
+        let withRowExtras = tableXML.replacingOccurrences(
+            of: "<hp:tc name=\"\" header=\"1\"",
+            with: "<hp:rowExtension/>"
+                + "<hh:tc xmlns:hh=\"http://www.hancom.co.kr/hwpml/2011/head\"/>"
+                + "<hp:tc name=\"\" header=\"1\""
+        )
+        let table = try HwpxTableMapper.map(try parse(withRowExtras), context: makeContext())
+
+        let names = table.unknownChildren.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("rowExtension"))
+        expect(names).to(contain("tc"))
+        // 채택 행·셀은 그대로다.
+        expect(table.cellArray.count) == 3
+        expect(table.tableProperty.rowCellCounts) == [1, 2]
+    }
+
     func testTableDimensionsFollowParsedStructureOverStaleDeclarations() throws {
         // rowCnt="9"·colCnt="0" 선언 — 파싱 구조는 2행, 머리 셀 colSpan=2가
         // 2열을 덮는다. 선언을 믿으면 빈 행 7개 또는 grid nil(표 소실)이다.

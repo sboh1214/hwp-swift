@@ -140,6 +140,22 @@ extension HwpxXMLNode {
                 )
             }
     }
+
+    /// `unconsumedChildRecords(consumed:)`의 vocabulary-좁힘 변형 —
+    /// `paragraphChildren`처럼 좁혀 조회한 자리는 소비 판정도 같은 술어여야
+    /// 한다. 전역 판정이면 타 vocabulary 디코이(`<hh:tc>`)가 소비로 오인돼
+    /// 진단에서 사라진다.
+    func unconsumedChildRecords(
+        consumed: Set<String>, in namespace: String
+    ) -> [HwpUnknownRecord] {
+        childElements
+            .filter { child in !consumed.contains { child.isNamed($0, in: namespace) } }
+            .map {
+                HwpUnknownRecord(
+                    tagId: hwpxSyntheticTagId, level: 0, payload: Data($0.localName.utf8)
+                )
+            }
+    }
 }
 
 /// OWPML이 선언하는 namespace URI 모음.
