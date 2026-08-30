@@ -47,7 +47,16 @@ enum HwpxCharShapeMapper {
             }
             let index = language.arrayIndex
             unknownRecords += fontface.headDecoyRecords(named: "font")
-            for font in fontface.headChildren(named: "font") {
+            let fonts = fontface.headChildren(named: "font")
+            // fontRef의 언어별 faceId는 0-based WORD — 65,537번째부터
+            // 오프셋이 65,535로 별칭화된다 (tabPr·paraPr 가드와 같은 계열).
+            guard fonts.count <= 65536 else {
+                throw HwpError.invalidXML(
+                    entry: HwpxContainer.EntryName.header,
+                    reason: "font definitions exceed the 65,536-entry reference space"
+                )
+            }
+            for font in fonts {
                 let face = font.attribute("face") ?? ""
                 let substitute = font.firstChild(named: "substFont")?.attribute("face")
                 try hwpxValidateNameLength(face)

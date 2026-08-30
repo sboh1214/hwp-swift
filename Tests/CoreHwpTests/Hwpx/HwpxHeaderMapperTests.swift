@@ -136,6 +136,46 @@ final class HwpxHeaderMapperTests: XCTestCase {
         expect(docInfo.documentProperties.sectionSize) == 65535
     }
 
+    func testTabDefinitionsBeyondReferenceSpaceAreRejected() {
+        // 문단 tabDefId는 0-based UInt16 — 65,537번째부터 오프셋이 65,535로
+        // 별칭화된다.
+        let tabPrs = (0 ..< 65537).map { "<hh:tabPr id=\"t\($0)\"/>" }.joined()
+        let withMany = HwpxHeaderFixture.headerXML.replacingOccurrences(
+            of: #"<hh:tabProperties itemCnt="2">.*</hh:tabProperties>"#,
+            with: "<hh:tabProperties itemCnt=\"65537\">\(tabPrs)</hh:tabProperties>",
+            options: .regularExpression
+        )
+
+        expect {
+            _ = try HwpxHeaderFixture.mapHeader(withMany)
+        }.to(throwError { error in
+            guard case let HwpError.invalidXML(_, reason) = error else {
+                return fail("Expected invalidXML, got \(error)")
+            }
+            expect(reason).to(contain("tabPr"))
+        })
+    }
+
+    func testFontDefinitionsBeyondReferenceSpaceAreRejected() {
+        // fontRef의 언어별 faceId는 0-based WORD — 같은 별칭화가 언어별
+        // 글꼴 테이블에도 성립한다.
+        let fonts = (0 ..< 65537).map { "<hh:font id=\"f\($0)\" face=\"F\"/>" }.joined()
+        let withMany = HwpxHeaderFixture.headerXML.replacingOccurrences(
+            of: #"<hh:fontface lang="LATIN" fontCnt="1">.*?</hh:fontface>"#,
+            with: "<hh:fontface lang=\"LATIN\" fontCnt=\"65537\">\(fonts)</hh:fontface>",
+            options: .regularExpression
+        )
+
+        expect {
+            _ = try HwpxHeaderFixture.mapHeader(withMany)
+        }.to(throwError { error in
+            guard case let HwpError.invalidXML(_, reason) = error else {
+                return fail("Expected invalidXML, got \(error)")
+            }
+            expect(reason).to(contain("font"))
+        })
+    }
+
     func testBorderFillsBeyondOneBasedReferenceSpaceAreRejected() {
         // borderFill 참조는 1-based UInt16 (0 = 없음) — 65,536번째 정의부터
         // `borderFillId`의 offset + 1 클램프가 직전 정의로 별칭화된다.
