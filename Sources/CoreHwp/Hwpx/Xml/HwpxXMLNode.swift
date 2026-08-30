@@ -113,6 +113,13 @@ extension HwpxXMLNode {
         childElements.filter { $0.isNamed(localName, in: HwpxNamespace.head) }
     }
 
+    /// paragraph vocabulary로 확정된 첫 자식 — secPr 하위(pagePr·margin·
+    /// colLine)처럼 vocabulary가 하나로 정해지는 단일 자식 조회에 쓴다
+    /// (`paragraphChildren`의 firstChild 대응).
+    func paragraphFirstChild(named localName: String) -> HwpxXMLNode? {
+        childElements.first { $0.isNamed(localName, in: HwpxNamespace.paragraph) }
+    }
+
     /// `headChildren(named:)` 조회의 강등 짝 — 이름은 정의 요소와 같지만 head
     /// vocabulary가 아닌 디코이를 진단용 합성 레코드로 옮긴다. 조회만 좁히고
     /// 이것을 빠뜨리면 디코이가 흔적 없이 사라진다.

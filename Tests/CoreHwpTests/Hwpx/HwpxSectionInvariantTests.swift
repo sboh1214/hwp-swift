@@ -38,4 +38,46 @@ final class HwpxSectionInvariantTests: XCTestCase {
         )
         expect(degraded.paragraph[0].paraLineSeg.paraLineSegInternalArray).to(beEmpty())
     }
+
+    func testPagePrLookupIgnoresOtherVocabularyDecoy() throws {
+        // firstChild 전역 매칭이면 진짜 앞의 hh:pagePr 디코이가 쪽 기하를 대체한다.
+        let xml = """
+        <hp:secPr xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" \
+        xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" id="">\
+        <hh:pagePr width="11111" height="22222"/>\
+        <hp:pagePr width="59528" height="84186"/>\
+        </hp:secPr>
+        """
+        let sectionDef = HwpxSecPrMapper.mapSectionDef(try parse(xml))
+
+        expect(sectionDef.pageDef.width) == 59528
+        expect(sectionDef.pageDef.height) == 84186
+        // 디코이는 소비되지 않았으므로 진단에 남는다.
+        let names = sectionDef.unknownChildren.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("pagePr"))
+    }
+
+    func testColumnLookupsIgnoreOtherVocabularyDecoys() throws {
+        let xml = """
+        <hp:colPr xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" \
+        xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" id="" type="NEWSPAPER" \
+        layout="LEFT" colCount="2" sameSz="0" sameGap="0">\
+        <hh:colSz width="999" gap="9"/>\
+        <hp:colSz width="100" gap="1"/><hp:colSz width="200" gap="2"/>\
+        <hh:colLine type="SOLID" width="0.4 mm" color="#FF0000"/>\
+        </hp:colPr>
+        """
+        let column = HwpxSecPrMapper.mapColumn(try parse(xml))
+
+        expect(column.widthArray) == [100, 200]
+        // hh:colLine 디코이는 구분선을 만들지 않는다.
+        expect(column.dividerType) == 0
+        let names = column.unknownChildren.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("colSz"))
+        expect(names).to(contain("colLine"))
+    }
 }

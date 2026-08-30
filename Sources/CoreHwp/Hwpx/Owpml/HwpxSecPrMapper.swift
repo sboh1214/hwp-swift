@@ -10,14 +10,14 @@ enum HwpxSecPrMapper {
     static func mapSectionDef(_ secPr: HwpxXMLNode) -> HwpSectionDef {
         var sectionDef = HwpSectionDef()
 
-        if let pagePr = secPr.firstChild(named: "pagePr") {
+        if let pagePr = secPr.paragraphFirstChild(named: "pagePr") {
             var pageDef = HwpPageDef()
             pageDef.width = pagePr.uint32Attribute("width", default: pageDef.width)
             pageDef.height = pagePr.uint32Attribute("height", default: pageDef.height)
             // landscape 속성은 방향 표식일 뿐 조판은 width/height를 그대로
             // 쓴다 (실측: 세로 A4가 landscape="WIDELY"로 저장됨 — 값 의미는
             // 실파일 검증 항목이라 property로 옮기지 않는다).
-            if let margin = pagePr.firstChild(named: "margin") {
+            if let margin = pagePr.paragraphFirstChild(named: "margin") {
                 pageDef.marginLeft = margin.uint32Attribute("left", default: pageDef.marginLeft)
                 pageDef.marginRight = margin.uint32Attribute(
                     "right", default: pageDef.marginRight
@@ -51,7 +51,7 @@ enum HwpxSecPrMapper {
         sectionDef.defaultTabSpacing = secPr.uint32Attribute(
             "tabStop", default: sectionDef.defaultTabSpacing
         )
-        if let startNum = secPr.firstChild(named: "startNum") {
+        if let startNum = secPr.paragraphFirstChild(named: "startNum") {
             sectionDef.pageStartNumber = startNum.uint16Attribute("page", default: 0)
             sectionDef.pictureStartNumber = startNum.uint16Attribute("pic", default: 0)
             sectionDef.tableStartNumber = startNum.uint16Attribute("tbl", default: 0)
@@ -61,7 +61,7 @@ enum HwpxSecPrMapper {
         // 버려지는 자식은 진단으로 강등해야 "미해석 강등은 진단으로 보고됨"
         // 규약이 지켜진다 (tabPr의 tabItem 강등과 같은 채널).
         sectionDef.unknownChildren = secPr.unconsumedChildRecords(
-            consumed: ["pagePr", "startNum"]
+            consumed: ["pagePr", "startNum"], in: HwpxNamespace.paragraph
         )
         return sectionDef
     }
@@ -82,14 +82,14 @@ enum HwpxSecPrMapper {
         column.spacing = Int16(clamping: colPr.intAttribute("sameGap", default: 0))
 
         // 폭이 다른 다단: hp:colSz(width·gap)가 단 수만큼 나열된다.
-        let sizes = colPr.children(named: "colSz")
+        let sizes = colPr.paragraphChildren(named: "colSz")
         if !property.isSameWidth, !sizes.isEmpty {
             column.widthArray = sizes.map { $0.uint16Attribute("width", default: 0) }
             column.gapArray = sizes.map { $0.uint16Attribute("gap", default: 0) }
             column.spacing = nil
         }
 
-        if let line = colPr.firstChild(named: "colLine") {
+        if let line = colPr.paragraphFirstChild(named: "colLine") {
             column.dividerType = UInt8(clamping: HwpxCharShapeMapper.lineShapeIndex(
                 line.attribute("type"), default: 0
             ))
@@ -101,7 +101,7 @@ enum HwpxSecPrMapper {
         // 미소비 자식(미래 요소)은 진단으로 강등한다 — 비우면
         // parseDiagnostics()가 완전한 파스로 오보한다.
         column.unknownChildren = colPr.unconsumedChildRecords(
-            consumed: ["colSz", "colLine"]
+            consumed: ["colSz", "colLine"], in: HwpxNamespace.paragraph
         )
         return column
     }
