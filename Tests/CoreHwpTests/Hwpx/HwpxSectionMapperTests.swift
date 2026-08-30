@@ -57,6 +57,39 @@ final class HwpxSectionMapperTests: XCTestCase {
         return sectionDef
     }
 
+    func testParagraphMetadataBeyondUInt16IsRejected() throws {
+        // 65,536개 글자 모양 변경 — 헤더 count(UInt16)가 담지 못하는 배열은
+        // 클램프가 아니라 typed error로 거부된다.
+        let runs = (0 ..< 65536).map {
+            "<hp:run charPrIDRef=\"\($0 % 2)\"><hp:t>a</hp:t></hp:run>"
+        }.joined()
+        let xml = """
+        <hp:p xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" \
+        id="1" paraPrIDRef="0" styleIDRef="0">\(runs)</hp:p>
+        """
+        var tables = HwpxIdTables()
+        tables.charShape.register(id: "0", offset: 0)
+        tables.charShape.register(id: "1", offset: 1)
+        let context = HwpxMappingContext(
+            idTables: tables,
+            binItemIdByManifestId: [:],
+            options: .default,
+            entry: "Contents/section0.xml"
+        )
+        let node = try HwpxXMLTreeParser.parse(
+            Data(xml.utf8), entry: "Contents/section0.xml"
+        )
+
+        expect {
+            _ = try HwpxParagraphMapper.map(node, context: context, isLastInList: true)
+        }.to(throwError { error in
+            guard case let HwpError.invalidXML(_, reason) = error else {
+                return fail("Expected invalidXML, got \(error)")
+            }
+            expect(reason).to(contain("exceed"))
+        })
+    }
+
     func testUnknownColumnChildrenDegradeIntoDiagnostics() throws {
         // colPr의 미소비 자식은 column.unknownChildren으로 남아야
         // parseDiagnostics()가 완전한 파스로 오보하지 않는다.

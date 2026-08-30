@@ -63,7 +63,7 @@ enum HwpxParagraphMapper {
         }
         builder.appendCharCode(13) // 문단 끝
 
-        return assemble(
+        return try assemble(
             node, builder: builder, context: context, isLastInList: isLastInList
         )
     }
@@ -158,7 +158,7 @@ private extension HwpxParagraphMapper {
         builder: ParagraphBuilder,
         context: HwpxMappingContext,
         isLastInList: Bool
-    ) -> HwpParagraph {
+    ) throws -> HwpParagraph {
         var paragraph = HwpParagraph()
         paragraph.paraText = HwpParaText(rawPayload: Data(), charArray: builder.charArray)
 
@@ -172,6 +172,19 @@ private extension HwpxParagraphMapper {
         var paraLineSeg = HwpParaLineSeg()
         paraLineSeg.paraLineSegInternalArray = lineSegs
         paragraph.paraLineSeg = paraLineSeg
+
+        // 헤더 count 필드는 UInt16이다 — count만 접고 배열을 남기면 "count ==
+        // 배열 크기"라는 바이너리 로더 불변식이 깨진 모델이 나간다. XML 바이트
+        // 한도 안에서 표현 가능한 입력이라 typed error로 거부한다 (복구
+        // 모드에선 문단 placeholder로 흡수 — #65).
+        guard startingIndex.count <= Int(UInt16.max),
+              lineSegs.count <= Int(UInt16.max)
+        else {
+            throw HwpError.invalidXML(
+                entry: context.entry,
+                reason: "paragraph char-shape or line-segment entries exceed \(UInt16.max)"
+            )
+        }
 
         paragraph.ctrlHeaderArray = builder.ctrls
         paragraph.paraRangeTagArray = []
