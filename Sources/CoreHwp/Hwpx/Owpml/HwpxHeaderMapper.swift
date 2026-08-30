@@ -177,8 +177,7 @@ private extension HwpxHeaderMapper {
             case "paraProperties":
                 mapParaProperties(family, into: &mapping)
             case "styles":
-                mapping.idMappings.styleArray = try family.headChildren(named: "style")
-                    .map { try HwpxParaShapeMapper.mapStyle($0, tables: mapping.idTables) }
+                try mapStyles(family, into: &mapping)
             case "numberings", "bullets":
                 // 1차 범위 밖 — id 테이블만 등록해 참조가 결정적으로
                 // 재작성되게 하고, 미해석 사실은 진단에 남긴다 (배열이
@@ -189,6 +188,26 @@ private extension HwpxHeaderMapper {
             }
             demoteUnconsumedFamilyChildren(in: family, into: &mapping)
         }
+    }
+
+    /// `hh:styles` 가족을 스타일 배열로 옮긴다.
+    ///
+    /// 스타일 참조(문단 paraStyleId·스타일 nextId)는 UInt8이다 — 257번째부터
+    /// 등장 순서 오프셋이 255로 별칭화되어 리맵 단사성이 깨지므로 정의 수를
+    /// 참조 공간(256)으로 제한한다.
+    static func mapStyles(
+        _ family: HwpxXMLNode,
+        into mapping: inout HwpxHeaderMapping
+    ) throws {
+        let styles = family.headChildren(named: "style")
+        guard styles.count <= 256 else {
+            throw HwpError.invalidXML(
+                entry: HwpxContainer.EntryName.header,
+                reason: "style definitions exceed the 256-entry reference space"
+            )
+        }
+        mapping.idMappings.styleArray = try styles
+            .map { try HwpxParaShapeMapper.mapStyle($0, tables: mapping.idTables) }
     }
 
     static func demoteUnconsumedFamilyChildren(

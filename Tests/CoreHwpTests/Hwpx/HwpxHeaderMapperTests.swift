@@ -114,6 +114,34 @@ final class HwpxHeaderMapperTests: XCTestCase {
         expect(tabDefs.map(\.property)) == [0, 0b11]
     }
 
+    func testStylesBeyondByteReferenceSpaceAreRejected() throws {
+        /// 스타일 참조(paraStyleId·nextId)는 UInt8 — 257번째부터 오프셋이
+        /// 255로 별칭화되므로 정의 수를 참조 공간으로 제한한다.
+        func headerXML(styleCount: Int) -> String {
+            let styles = (0 ..< styleCount).map {
+                "<hh:style id=\"\($0)\" type=\"PARA\" name=\"s\($0)\" "
+                    + "engName=\"s\($0)\" paraPrIDRef=\"9\" charPrIDRef=\"7\" "
+                    + "nextStyleIDRef=\"0\"/>"
+            }.joined()
+            return HwpxHeaderFixture.headerXML.replacingOccurrences(
+                of: #"<hh:styles itemCnt="2">.*</hh:styles>"#,
+                with: "<hh:styles itemCnt=\"\(styleCount)\">\(styles)</hh:styles>",
+                options: .regularExpression
+            )
+        }
+        let (docInfo, _) = try HwpxHeaderFixture.mapHeader(headerXML(styleCount: 256))
+        expect(docInfo.idMappings.styleArray.count) == 256
+
+        expect {
+            _ = try HwpxHeaderFixture.mapHeader(headerXML(styleCount: 257))
+        }.to(throwError { error in
+            guard case let HwpError.invalidXML(_, reason) = error else {
+                return fail("Expected invalidXML, got \(error)")
+            }
+            expect(reason).to(contain("256"))
+        })
+    }
+
     func testMapsStylesWithRemappedReferences() throws {
         let (docInfo, _) = try HwpxHeaderFixture.mapHeader(HwpxHeaderFixture.headerXML)
         let styles = docInfo.idMappings.styleArray
