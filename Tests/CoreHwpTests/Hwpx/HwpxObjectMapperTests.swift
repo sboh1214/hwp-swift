@@ -243,6 +243,24 @@ final class HwpxObjectMapperTests: XCTestCase {
         expect(names).to(contain("sz"))
     }
 
+    func testForeignVocabularyRowIsDemotedIntoDiagnostics() throws {
+        // hh:tr은 행으로 채택되지 않는데(전용 테스트 별도) 소비 판정이
+        // 전역이면 진단에도 안 남아 흔적 없이 사라진다.
+        let withDecoyRow = tableXML.replacingOccurrences(
+            of: "<hp:tr>",
+            with: "<hh:tr xmlns:hh=\"http://www.hancom.co.kr/hwpml/2011/head\"/><hp:tr>",
+            options: [],
+            range: tableXML.range(of: "<hp:tr>")
+        )
+        let table = try HwpxTableMapper.map(try parse(withDecoyRow), context: makeContext())
+
+        expect(table.tableProperty.rowCellCounts) == [1, 2]
+        let names = table.unknownChildren.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("tr"))
+    }
+
     func testTableStructureFromOtherKnownVocabularyIsNotAdopted() throws {
         // <hh:tr>은 표 행이 아니다 — 전역 known 매칭이면 진짜 행이 되어
         // 행/셀 수와 rowSize가 오염된다.

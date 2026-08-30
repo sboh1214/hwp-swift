@@ -97,7 +97,8 @@ enum HwpxTableMapper {
             rawTrailing: Data(),
             cellArray: cells,
             unknownChildren: node.unconsumedChildRecords(
-                consumed: ["sz", "pos", "outMargin", "inMargin", "tr"]
+                consumed: ["sz", "pos", "outMargin", "inMargin", "tr"],
+                in: HwpxNamespace.paragraph
             ) + rows.flatMap {
                 $0.unconsumedChildRecords(consumed: ["tc"], in: HwpxNamespace.paragraph)
             }
