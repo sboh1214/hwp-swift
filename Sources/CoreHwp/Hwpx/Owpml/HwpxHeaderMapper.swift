@@ -176,7 +176,7 @@ private extension HwpxHeaderMapper {
             case "tabProperties":
                 mapTabProperties(family, into: &mapping)
             case "paraProperties":
-                mapParaProperties(family, into: &mapping)
+                try mapParaProperties(family, into: &mapping)
             case "styles":
                 try mapStyles(family, into: &mapping)
             case "numberings", "bullets":
@@ -320,8 +320,20 @@ private extension HwpxHeaderMapper {
     /// breakSetting·autoSpacing 등 1차 범위 밖 자식은 `mapParaShape`가 속성만
     /// 옮기고 버린다 — 진단으로 강등해야 "미해석 강등은 진단으로 보고됨"
     /// 규약이 지켜진다 (tabPr의 tabItem 강등과 같은 채널).
-    static func mapParaProperties(_ family: HwpxXMLNode, into mapping: inout HwpxHeaderMapping) {
+    static func mapParaProperties(
+        _ family: HwpxXMLNode,
+        into mapping: inout HwpxHeaderMapping
+    ) throws {
         let paraPrs = family.headChildren(named: "paraPr")
+        // 문단 paraShapeId는 UInt16 — 65,537번째부터 오프셋이 65,535로
+        // 별칭화되므로 정의 수를 참조 공간으로 제한한다 (스타일 256 가드와
+        // 같은 계열).
+        guard paraPrs.count <= 65536 else {
+            throw HwpError.invalidXML(
+                entry: HwpxContainer.EntryName.header,
+                reason: "paraPr definitions exceed the 65,536-entry reference space"
+            )
+        }
         mapping.idMappings.paraShapeArray = paraPrs
             .map { HwpxParaShapeMapper.mapParaShape($0, tables: mapping.idTables) }
         for paraPr in paraPrs {

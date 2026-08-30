@@ -114,6 +114,26 @@ final class HwpxHeaderMapperTests: XCTestCase {
         expect(tabDefs.map(\.property)) == [0, 0b11]
     }
 
+    func testParaShapesBeyondReferenceSpaceAreRejected() {
+        // 문단 paraShapeId는 UInt16 — 65,537번째부터 참조가 65,535로
+        // 별칭화되므로 정의 수를 참조 공간으로 제한한다.
+        let paraPrs = (0 ..< 65537).map { "<hh:paraPr id=\"p\($0)\"/>" }.joined()
+        let withMany = HwpxHeaderFixture.headerXML.replacingOccurrences(
+            of: #"<hh:paraProperties itemCnt="2">.*</hh:paraProperties>"#,
+            with: "<hh:paraProperties itemCnt=\"65537\">\(paraPrs)</hh:paraProperties>",
+            options: .regularExpression
+        )
+
+        expect {
+            _ = try HwpxHeaderFixture.mapHeader(withMany)
+        }.to(throwError { error in
+            guard case let HwpError.invalidXML(_, reason) = error else {
+                return fail("Expected invalidXML, got \(error)")
+            }
+            expect(reason).to(contain("65,536"))
+        })
+    }
+
     func testStylesBeyondByteReferenceSpaceAreRejected() throws {
         /// 스타일 참조(paraStyleId·nextId)는 UInt8 — 257번째부터 오프셋이
         /// 255로 별칭화되므로 정의 수를 참조 공간으로 제한한다.
