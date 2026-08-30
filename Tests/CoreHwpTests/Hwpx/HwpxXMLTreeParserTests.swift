@@ -157,6 +157,25 @@ final class HwpxXMLTreeParserTests: XCTestCase {
         expect(quadrupled) < max(base * 8, 0.05)
     }
 
+    func testCustomEntityDeclarationIsRejected() {
+        // 실측: 선언 엔티티는 parse 성공인 채 참조 본문만 빠진다
+        // (before&custom;after → "beforeafter") — 조용한 유실 대신 거부한다.
+        let xml = """
+        <!DOCTYPE doc [<!ENTITY custom "SECRET">]>
+        <doc>before&custom;after</doc>
+        """
+        expect {
+            _ = try HwpxXMLTreeParser.parse(
+                Data(xml.utf8), entry: "Contents/section0.xml"
+            )
+        }.to(throwError { error in
+            guard case let HwpError.invalidXML(_, reason) = error else {
+                return fail("Expected invalidXML, got \(error)")
+            }
+            expect(reason).to(contain("entity"))
+        })
+    }
+
     func testMalformedXMLThrowsInvalidXML() {
         expect {
             _ = try self.parse("<p><run></p>")

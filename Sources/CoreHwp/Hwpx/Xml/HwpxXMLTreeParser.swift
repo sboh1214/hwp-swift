@@ -150,6 +150,35 @@ extension HwpxXMLTreeParser: XMLParserDelegate {
         appendText(string)
     }
 
+    func parser(
+        _: XMLParser,
+        foundInternalEntityDeclarationWithName name: String,
+        value _: String?
+    ) {
+        // 선언된 엔티티는 성공 판정 속에서 참조 지점의 본문을 조용히 비운다
+        // (실측: before&custom;after → "beforeafter") — 거부만이 안전하다.
+        record(failure: "custom entity declaration '\(name)' is not supported")
+    }
+
+    func parser(
+        _: XMLParser,
+        foundExternalEntityDeclarationWithName name: String,
+        publicID _: String?,
+        systemID _: String?
+    ) {
+        record(failure: "custom entity declaration '\(name)' is not supported")
+    }
+
+    func parser(
+        _: XMLParser,
+        foundUnparsedEntityDeclarationWithName name: String,
+        publicID _: String?,
+        systemID _: String?,
+        notationName _: String?
+    ) {
+        record(failure: "custom entity declaration '\(name)' is not supported")
+    }
+
     func parser(_: XMLParser, parseErrorOccurred parseError: Error) {
         record(failure: String(describing: parseError))
     }
