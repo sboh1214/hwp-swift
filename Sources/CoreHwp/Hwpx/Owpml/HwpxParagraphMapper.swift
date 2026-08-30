@@ -150,6 +150,13 @@ private extension HwpxParagraphMapper {
             builder.recordZeroWidth(element.localName)
         default:
             builder.appendUnknown(element)
+            return
+        }
+        // 인식된 인라인 요소는 잎이다 — 하위를 삼키면 진단에서 빠지고
+        // positionCertain이 참으로 남아 안전밸브가 걸리지 않은 채 잘못된
+        // lineseg 캐시를 쓴다 (hp:p 직속 미지 자식과 같은 근거).
+        for child in element.childElements {
+            builder.appendUnknown(child)
         }
     }
 

@@ -56,6 +56,36 @@ final class HwpxSectionInvariantTests: XCTestCase {
         }) == "inner"
     }
 
+    func testChildrenOfRecognizedInlineElementsAreDemoted() throws {
+        // <hp:tab> 같은 인식 인라인 요소는 잎이다 — 하위를 삼키면 진단에서
+        // 빠지고 positionCertain이 참으로 남아 잘못된 lineseg 캐시를 쓴다.
+        // 대조군: 빈 인라인 요소는 위치 확실로 남아 캐시가 채택된다.
+        let clean = try HwpxSectionFixture.mapSection(
+            HwpxSectionFixture.blankBody.replacingOccurrences(
+                of: "<hp:t/>", with: "<hp:t>가<hp:tab/></hp:t>"
+            )
+        )
+        expect(clean.paragraph[0].paraLineSeg.paraLineSegInternalArray.count) == 1
+
+        let section = try HwpxSectionFixture.mapSection(
+            HwpxSectionFixture.blankBody.replacingOccurrences(
+                of: "<hp:t/>",
+                with: "<hp:t>가<hp:tab><ext:metadata xmlns:ext=\"urn:x\"/></hp:tab></hp:t>"
+            )
+        )
+
+        let paragraph = section.paragraph[0]
+        let names = paragraph.unknownChildren.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("metadata"))
+        expect(paragraph.paraLineSeg.paraLineSegInternalArray).to(beEmpty())
+        // 인식된 tab 컨트롤 자체는 종전대로 방출된다.
+        expect(paragraph.paraText?.charArray.contains {
+            $0.type == .inline && $0.value == 9
+        }) == true
+    }
+
     func testLineCacheWithNestedUnknownInsideSegmentIsRejected() throws {
         // lineseg는 속성 전용 — 유효 lineseg 안의 미지 자식은 직계 수
         // 대조를 통과하므로 세그먼트 층에서 따로 거부해야 한다.
