@@ -50,9 +50,18 @@ enum HwpxHeaderMapper {
         var mapping = HwpxHeaderMapping()
         // 실재 구역 수(조립기가 셈)가 secCnt 선언보다 정확하다 — 선언이
         // 어긋난 문서에서 모델 내부 일관성을 지킨다.
-        mapping.documentProperties.sectionSize = UInt16(
-            clamping: sectionCount ?? root.intAttribute("secCnt", default: 1)
-        )
+        let sections = sectionCount ?? root.intAttribute("secCnt", default: 1)
+        // sectionSize는 UInt16인데 조립기는 spine 목록 전체로 구역을 만든다
+        // (중복 itemref도 각각) — 클램프하면 sectionArray.count == sectionSize
+        // 불변식이 깨진 모델이 나가므로 거부한다. 중복 제거는 처방이 아니다:
+        // 중복 참조를 몇 구역으로 조립할지는 별개 정책이라 렌더가 달라진다.
+        guard sections <= Int(UInt16.max) else {
+            throw HwpError.invalidXML(
+                entry: entry,
+                reason: "section count exceeds the 65,535-entry model field"
+            )
+        }
+        mapping.documentProperties.sectionSize = UInt16(clamping: sections)
 
         // 빈 문서 기본값에서 출발하되, 매핑 대상 가족은 전부 덮어쓴다 —
         // 기본값 항목이 리맵된 오프셋 공간에 섞이면 참조가 어긋난다.

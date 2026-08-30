@@ -10,10 +10,14 @@ import XCTest
 enum HwpxHeaderFixture {
     static func mapHeader(
         _ xml: String,
-        catalog: HwpxBinDataCatalog = HwpxBinDataCatalog()
+        catalog: HwpxBinDataCatalog = HwpxBinDataCatalog(),
+        sectionCount: Int? = nil
     ) throws -> (docInfo: HwpDocInfo, idTables: HwpxIdTables) {
         try HwpxHeaderMapper.map(
-            Data(xml.utf8), binDataCatalog: catalog, options: .default
+            Data(xml.utf8),
+            binDataCatalog: catalog,
+            options: .default,
+            sectionCount: sectionCount
         )
     }
 

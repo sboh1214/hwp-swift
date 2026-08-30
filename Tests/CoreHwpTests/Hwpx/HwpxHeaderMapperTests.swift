@@ -114,6 +114,28 @@ final class HwpxHeaderMapperTests: XCTestCase {
         expect(tabDefs.map(\.property)) == [0, 0b11]
     }
 
+    func testSectionCountBeyondModelFieldIsRejected() throws {
+        // 조립기는 spine 목록 전체로 구역을 만드는데(중복 itemref도 각각)
+        // sectionSize는 UInt16이라, 클램프하면 sectionArray.count ==
+        // sectionSize 불변식이 깨진 모델이 나간다.
+        expect {
+            _ = try HwpxHeaderFixture.mapHeader(
+                HwpxHeaderFixture.headerXML, sectionCount: 65536
+            )
+        }.to(throwError { error in
+            guard case let HwpError.invalidXML(_, reason) = error else {
+                return fail("Expected invalidXML, got \(error)")
+            }
+            expect(reason).to(contain("65,535"))
+        })
+
+        // 경계 대조군 — 65,535개는 수용되고 그대로 실린다.
+        let (docInfo, _) = try HwpxHeaderFixture.mapHeader(
+            HwpxHeaderFixture.headerXML, sectionCount: 65535
+        )
+        expect(docInfo.documentProperties.sectionSize) == 65535
+    }
+
     func testBorderFillsBeyondOneBasedReferenceSpaceAreRejected() {
         // borderFill 참조는 1-based UInt16 (0 = 없음) — 65,536번째 정의부터
         // `borderFillId`의 offset + 1 클램프가 직전 정의로 별칭화된다.
