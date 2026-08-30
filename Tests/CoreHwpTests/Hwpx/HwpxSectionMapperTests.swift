@@ -74,6 +74,24 @@ final class HwpxSectionMapperTests: XCTestCase {
         })
     }
 
+    func testLineCacheWithUnknownChildIsRejectedAndDemoted() throws {
+        // 안전밸브의 "미지 요소" 축 — lineseg만 골라 채택하면 불확실한
+        // 캐시가 절대 조판의 신뢰 입력이 된다. 대조군: 깨끗한 캐시는 채택.
+        let clean = try mapSection(blankBody)
+        expect(clean.paragraph[0].paraLineSeg.paraLineSegInternalArray.count) == 1
+
+        let withUnknown = try mapSection(blankBody.replacingOccurrences(
+            of: "<hp:linesegarray>",
+            with: "<hp:linesegarray><hp:future/>"
+        ))
+        let paragraph = withUnknown.paragraph[0]
+        expect(paragraph.paraLineSeg.paraLineSegInternalArray).to(beEmpty())
+        let names = paragraph.unknownChildren.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("future"))
+    }
+
     func testUnknownColumnChildrenDegradeIntoDiagnostics() throws {
         // colPr의 미소비 자식은 column.unknownChildren으로 남아야
         // parseDiagnostics()가 완전한 파스로 오보하지 않는다.

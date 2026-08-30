@@ -168,7 +168,7 @@ private extension HwpxParagraphMapper {
         paraCharShape.shapeId = shapeId
         paragraph.paraCharShape = paraCharShape
 
-        let lineSegs = mapLineSegments(node, builder: builder)
+        let (lineSegs, lineSegUnknowns) = mapLineSegments(node, builder: builder)
         var paraLineSeg = HwpParaLineSeg()
         paraLineSeg.paraLineSegInternalArray = lineSegs
         paragraph.paraLineSeg = paraLineSeg
@@ -189,7 +189,7 @@ private extension HwpxParagraphMapper {
         paragraph.ctrlHeaderArray = builder.ctrls
         paragraph.paraRangeTagArray = []
         paragraph.listHeaderArray = []
-        paragraph.unknownChildren = builder.unknownChildren
+        paragraph.unknownChildren = builder.unknownChildren + lineSegUnknowns
         paragraph.paraHeader = HwpParaHeader(
             hwpxCharCount: builder.wcharPosition,
             controlMask: builder.controlMask,
@@ -230,19 +230,33 @@ private extension HwpxParagraphMapper {
     static func mapLineSegments(
         _ node: HwpxXMLNode,
         builder: ParagraphBuilder
-    ) -> [HwpParaLineSegInternal] {
+    ) -> (segments: [HwpParaLineSegInternal], unknowns: [HwpUnknownRecord]) {
         guard builder.positionCertain,
               let array = node.firstChild(named: "linesegarray")
         else {
-            return []
+            return ([], [])
+        }
+        // 미지 자식이 섞인 캐시는 통째로 거부한다 — lineseg만 골라 채택하면
+        // 위치가 불확실한 캐시가 절대 조판의 신뢰 입력이 된다 (안전밸브의
+        // "미지 요소" 축). 버리는 요소는 진단에 남긴다.
+        let segmentNodes = array.paragraphChildren(named: "lineseg")
+        guard segmentNodes.count == array.childElements.count else {
+            let unknowns = array.childElements
+                .filter { !$0.isNamed("lineseg", in: HwpxNamespace.paragraph) }
+                .map {
+                    HwpUnknownRecord(
+                        tagId: hwpxSyntheticTagId, level: 0,
+                        payload: Data($0.localName.utf8)
+                    )
+                }
+            return ([], unknowns)
         }
         // textpos는 다른 8속성과 달리 **sanity 판정의 기준**이라 기본값을
         // 줄 수 없다 — 누락·비숫자를 0으로 합성하면 가장 불확실한 캐시가
         // "첫 textpos 0" 가드를 통과해 절대 조판의 신뢰 입력이 된다.
-        let segmentNodes = array.children(named: "lineseg")
         guard segmentNodes.allSatisfy({ $0.attribute("textpos").flatMap(UInt32.init) != nil })
         else {
-            return []
+            return ([], [])
         }
         let segments = segmentNodes.map {
             HwpParaLineSegInternal(
@@ -258,18 +272,18 @@ private extension HwpxParagraphMapper {
             )
         }
         guard let first = segments.first, first.textStartingIndex == 0 else {
-            return []
+            return ([], [])
         }
         var previous: UInt32 = 0
         for segment in segments {
             guard segment.textStartingIndex >= previous,
                   segment.textStartingIndex < max(1, builder.wcharPosition)
             else {
-                return []
+                return ([], [])
             }
             previous = segment.textStartingIndex
         }
-        return segments
+        return (segments, [])
     }
 }
 
