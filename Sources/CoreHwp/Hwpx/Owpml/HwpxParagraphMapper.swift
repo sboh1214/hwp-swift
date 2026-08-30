@@ -254,7 +254,20 @@ private extension HwpxParagraphMapper {
         // textpos는 다른 8속성과 달리 **sanity 판정의 기준**이라 기본값을
         // 줄 수 없다 — 누락·비숫자를 0으로 합성하면 가장 불확실한 캐시가
         // "첫 textpos 0" 가드를 통과해 절대 조판의 신뢰 입력이 된다.
-        guard segmentNodes.allSatisfy({ $0.attribute("textpos").flatMap(UInt32.init) != nil })
+        // textpos만이 아니라 9속성 전부가 판정 기준이다 — 누락·비숫자를 0으로
+        // 합성하면 높이 0 줄 같은 손상 기하가 절대 조판에 채택된다. 값 0은
+        // 합법이므로 (첫 줄 vertpos·horzpos 등) 거부 대상은 부재·비숫자다.
+        let requiredInt32Attributes = [
+            "vertpos", "vertsize", "textheight", "baseline",
+            "spacing", "horzpos", "horzsize",
+        ]
+        guard segmentNodes.allSatisfy({ segment in
+            segment.attribute("textpos").flatMap(UInt32.init) != nil
+                && segment.attribute("flags").flatMap(UInt32.init) != nil
+                && requiredInt32Attributes.allSatisfy {
+                    segment.attribute($0).flatMap(Int32.init) != nil
+                }
+        })
         else {
             return ([], [])
         }

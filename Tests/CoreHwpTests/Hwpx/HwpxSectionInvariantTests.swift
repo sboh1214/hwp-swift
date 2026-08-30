@@ -24,4 +24,18 @@ final class HwpxSectionInvariantTests: XCTestCase {
             expect(reason).to(contain("secPr"))
         })
     }
+
+    func testLineCacheMissingGeometryAttributeDegradesToReflow() throws {
+        // vertsize 부재 — 0을 합성하면 높이 0 줄이 절대 조판에 채택된다.
+        // 대조군: 속성이 온전한 blankBody 캐시는 채택된다.
+        let clean = try HwpxSectionFixture.mapSection(HwpxSectionFixture.blankBody)
+        expect(clean.paragraph[0].paraLineSeg.paraLineSegInternalArray.count) == 1
+
+        let degraded = try HwpxSectionFixture.mapSection(
+            HwpxSectionFixture.blankBody.replacingOccurrences(
+                of: " vertsize=\"1000\"", with: ""
+            )
+        )
+        expect(degraded.paragraph[0].paraLineSeg.paraLineSegInternalArray).to(beEmpty())
+    }
 }
