@@ -333,6 +333,34 @@ final class HwpxObjectMapperTests: XCTestCase {
         expect(property.borderThickness) == 0
     }
 
+    func testLeafWrapperDescendantsDegradeIntoDiagnostics() throws {
+        // 속성만 읽는 sz·inMargin 잎 래퍼 안 확장 요소도 진단에 남아야 한다
+        // — 그림·표 양쪽 모두 같은 규약이다.
+        let pictureWithExtras = pictureXML.replacingOccurrences(
+            of: "protect=\"0\"/>",
+            with: "protect=\"0\"><hp:szExtra/></hp:sz>"
+        )
+        let control = HwpxPictureMapper.map(
+            try parse(pictureWithExtras),
+            context: makeContext(binItemIds: ["image1": 3])
+        )
+        let pictureNames = control.unknownChildren.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(pictureNames).to(contain("szExtra"))
+
+        let tableWithExtras = tableXML.replacingOccurrences(
+            of: "<hp:inMargin left=\"510\" right=\"510\" top=\"141\" bottom=\"141\"/>",
+            with: "<hp:inMargin left=\"510\" right=\"510\" top=\"141\" bottom=\"141\">"
+                + "<hp:marginExtra/></hp:inMargin>"
+        )
+        let table = try HwpxTableMapper.map(try parse(tableWithExtras), context: makeContext())
+        let tableNames = table.unknownChildren.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(tableNames).to(contain("marginExtra"))
+    }
+
     func testPictureWrapperDescendantsDegradeIntoDiagnostics() throws {
         // img·imgRect 래퍼 안 확장 요소도 진단에 남아야 한다 — 래퍼를 통째로
         // 소비 처리하면 사라진다 (paraPr 래퍼 강등과 같은 채널).

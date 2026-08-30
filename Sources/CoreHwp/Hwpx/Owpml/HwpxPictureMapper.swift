@@ -50,6 +50,13 @@ enum HwpxPictureMapper {
         if let imgClip = node.paragraphFirstChild(named: "imgClip") {
             unknownChildren += imgClip.unconsumedChildRecords(consumed: [])
         }
+        // sz·pos·outMargin·inMargin은 속성만 읽는 잎 래퍼다 — 자식이 전부
+        // 미소비라 여기서 강등해야 진단에 남는다.
+        for wrapperName in ["sz", "pos", "outMargin", "inMargin"] {
+            if let wrapper = node.paragraphFirstChild(named: wrapperName) {
+                unknownChildren += wrapper.unconsumedChildRecords(consumed: [])
+            }
+        }
         let picture = HwpShapeComponentPicture(
             rawPayload: payload,
             binaryDataId: binItemId,

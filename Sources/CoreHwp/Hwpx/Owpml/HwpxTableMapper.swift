@@ -101,6 +101,9 @@ enum HwpxTableMapper {
                 in: HwpxNamespace.paragraph
             ) + rows.flatMap {
                 $0.unconsumedChildRecords(consumed: ["tc"], in: HwpxNamespace.paragraph)
+            } + ["sz", "pos", "outMargin", "inMargin"].flatMap { wrapperName in
+                node.paragraphFirstChild(named: wrapperName)?
+                    .unconsumedChildRecords(consumed: []) ?? []
             }
         )
     }
