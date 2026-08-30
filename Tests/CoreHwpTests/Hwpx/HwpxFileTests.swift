@@ -234,7 +234,7 @@ final class HwpxFileTests: XCTestCase {
         <hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" \
         xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">\
         <hp:p id="1" paraPrIDRef="0" styleIDRef="0">\
-        <hp:run charPrIDRef="0">\
+        <hp:run charPrIDRef="0"><hp:secPr id=""/>\
         <hp:ctrl><hp:header id="9"/></hp:ctrl><hp:t>가</hp:t>\
         </hp:run></hp:p></hs:sec>
         """

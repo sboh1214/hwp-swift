@@ -55,6 +55,22 @@ enum HwpxSectionMapper {
                 entry: context.entry, reason: "section has no paragraphs"
             )
         }
+        // 구역 첫 문단은 sectionDef를 실어야 한다 — paginator는 sectionDef(in:)
+        // 하나로만 구역 경계를 인식하므로, 없으면 이 구역이 앞 구역의 기하로
+        // 조판되고 뒤 문단의 secPr는 유령 경계를 만든다. 복구 모드에선 구역
+        // placeholder가 이 전제를 지킨다 (#110의 구역 단위 처리와 같은 근거).
+        let hasLeadingSectionDef = paragraphs[0].ctrlHeaderArray?.contains { ctrl in
+            if case .section = ctrl {
+                return true
+            }
+            return false
+        } ?? false
+        guard hasLeadingSectionDef else {
+            throw HwpError.invalidXML(
+                entry: context.entry,
+                reason: "section's first paragraph lacks secPr"
+            )
+        }
 
         var section = HwpSection()
         section.rawPayload = context.options.preservedPayload(data)

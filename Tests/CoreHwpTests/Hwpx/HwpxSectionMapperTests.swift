@@ -244,14 +244,14 @@ final class HwpxSectionMapperTests: XCTestCase {
 
     func testTextRunsPreserveInterleavingAndWcharArithmetic() throws {
         let section = try mapSection(
-            """
+            HwpxSectionFixture.blankBody + """
             <hp:p paraPrIDRef="9" styleIDRef="2">\
             <hp:run charPrIDRef="7"><hp:t>ab<hp:tab/>cd</hp:t></hp:run>\
             <hp:run charPrIDRef="12"><hp:t>한𐐷</hp:t></hp:run>\
             </hp:p>
             """
         )
-        let paragraph = section.paragraph[0]
+        let paragraph = section.paragraph[1]
         let chars = try XCTUnwrap(paragraph.paraText?.charArray)
 
         // a, b, tab(inline 9), c, d, 한, 𐐷(서로게이트 2), 문단 끝 13.
@@ -275,7 +275,7 @@ final class HwpxSectionMapperTests: XCTestCase {
 
     func testFieldBeginEndKeepOrdinalAlignment() throws {
         let section = try mapSection(
-            """
+            HwpxSectionFixture.blankBody + """
             <hp:p><hp:run charPrIDRef="7">\
             <hp:ctrl><hp:fieldBegin id="1" type="HYPERLINK"/></hp:ctrl>\
             <hp:t>링크</hp:t>\
@@ -283,7 +283,7 @@ final class HwpxSectionMapperTests: XCTestCase {
             </hp:run></hp:p>
             """
         )
-        let paragraph = section.paragraph[0]
+        let paragraph = section.paragraph[1]
         let chars = try XCTUnwrap(paragraph.paraText?.charArray)
 
         // ext3(필드 시작) → 텍스트 → inline4(필드 끝, ctrl 슬롯 없음) → 13.
@@ -303,7 +303,7 @@ final class HwpxSectionMapperTests: XCTestCase {
 
     func testObjectElementsDegradeToNotImplementedAnchors() throws {
         let section = try mapSection(
-            """
+            HwpxSectionFixture.blankBody + """
             <hp:p><hp:run charPrIDRef="7">\
             <hp:ole id="1"/>\
             <hp:ctrl><hp:header id="2"/></hp:ctrl>\
@@ -313,7 +313,7 @@ final class HwpxSectionMapperTests: XCTestCase {
             horzsize="42520" flags="393216"/></hp:linesegarray></hp:p>
             """
         )
-        let paragraph = section.paragraph[0]
+        let paragraph = section.paragraph[1]
         let chars = try XCTUnwrap(paragraph.paraText?.charArray)
 
         expect(chars.map(\.value)) == [11, 16, 13]
@@ -332,7 +332,7 @@ final class HwpxSectionMapperTests: XCTestCase {
 
     func testUnknownElementDropsLineSegCacheAndRecordsDiagnostic() throws {
         let section = try mapSection(
-            """
+            HwpxSectionFixture.blankBody + """
             <hp:p><hp:run charPrIDRef="7"><hp:t>가</hp:t>\
             <hp:mysteryObject/></hp:run>\
             <hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1000" \
@@ -340,7 +340,7 @@ final class HwpxSectionMapperTests: XCTestCase {
             horzsize="42520" flags="393216"/></hp:linesegarray></hp:p>
             """
         )
-        let paragraph = section.paragraph[0]
+        let paragraph = section.paragraph[1]
 
         // 미지 요소는 앵커를 추측하지 않는다 — WCHAR 위치가 불확실해지므로
         // 절대 캐시를 폐기하고 reflow로 강등한다.
@@ -356,7 +356,7 @@ final class HwpxSectionMapperTests: XCTestCase {
 
     func testZeroWidthMarksKeepLineSegAndLeaveDiagnostic() throws {
         let section = try mapSection(
-            """
+            HwpxSectionFixture.blankBody + """
             <hp:p><hp:run charPrIDRef="7">\
             <hp:t>가<hp:markpenBegin color="#FFFF00"/>나<hp:markpenEnd/></hp:t>\
             </hp:run>\
@@ -365,7 +365,7 @@ final class HwpxSectionMapperTests: XCTestCase {
             horzsize="42520" flags="393216"/></hp:linesegarray></hp:p>
             """
         )
-        let paragraph = section.paragraph[0]
+        let paragraph = section.paragraph[1]
 
         // 형광펜 표식은 HWP5에서 WCHAR를 차지하지 않는다 — 위치 확실.
         expect(paragraph.paraText?.wcharCount) == 3
@@ -378,7 +378,7 @@ final class HwpxSectionMapperTests: XCTestCase {
 
     func testInvalidLineSegCacheIsDropped() throws {
         let section = try mapSection(
-            """
+            HwpxSectionFixture.blankBody + """
             <hp:p><hp:run charPrIDRef="7"><hp:t>가나</hp:t></hp:run>\
             <hp:linesegarray>\
             <hp:lineseg textpos="5" vertpos="0" vertsize="1000" textheight="1000" \
@@ -388,22 +388,22 @@ final class HwpxSectionMapperTests: XCTestCase {
         )
 
         // 첫 textpos ≠ 0 — 신뢰할 수 없는 캐시는 폐기한다.
-        expect(section.paragraph[0].paraLineSeg.paraLineSegInternalArray).to(beEmpty())
+        expect(section.paragraph[1].paraLineSeg.paraLineSegInternalArray).to(beEmpty())
     }
 
     func testPageBreakAttributeSetsColumnTypeBit() throws {
         let section = try mapSection(
-            """
+            HwpxSectionFixture.blankBody + """
             <hp:p pageBreak="1"><hp:run charPrIDRef="7"><hp:t>가</hp:t></hp:run></hp:p>\
             <hp:p><hp:run charPrIDRef="7"><hp:t>나</hp:t></hp:run></hp:p>
             """
         )
 
         // paginator가 읽는 쪽 나누기 bit 2.
-        expect(section.paragraph[0].paraHeader.columnType & 0b100) == 0b100
-        expect(section.paragraph[1].paraHeader.columnType) == 0
-        expect(section.paragraph[0].paraHeader.isLastInList) == false
-        expect(section.paragraph[1].paraHeader.isLastInList) == true
+        expect(section.paragraph[1].paraHeader.columnType & 0b100) == 0b100
+        expect(section.paragraph[2].paraHeader.columnType) == 0
+        expect(section.paragraph[1].paraHeader.isLastInList) == false
+        expect(section.paragraph[2].paraHeader.isLastInList) == true
     }
 
     func testNonParagraphChildrenLandInUnknownRecords() throws {
