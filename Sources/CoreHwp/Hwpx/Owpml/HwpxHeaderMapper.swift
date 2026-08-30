@@ -170,7 +170,7 @@ private extension HwpxHeaderMapper {
                     unknownRecords: &mapping.unknownRecords
                 )
             case "borderFills":
-                mapBorderFills(family, into: &mapping)
+                try mapBorderFills(family, into: &mapping)
             case "charProperties":
                 mapCharProperties(family, into: &mapping)
             case "tabProperties":
@@ -287,8 +287,21 @@ private extension HwpxHeaderMapper {
     /// `mapBorderFill`은 4방향 테두리와 단색 채우기만 소비한다 — slash 계열
     /// 테두리·그러데이션/이미지 채우기 등 미소비 자손은 진단으로 강등해야
     /// "미해석 강등은 진단으로 보고됨" 규약이 지켜진다.
-    static func mapBorderFills(_ family: HwpxXMLNode, into mapping: inout HwpxHeaderMapping) {
+    static func mapBorderFills(
+        _ family: HwpxXMLNode,
+        into mapping: inout HwpxHeaderMapping
+    ) throws {
         let borderFills = family.headChildren(named: "borderFill")
+        // borderFill 참조는 1-based UInt16 (0 = 없음) — 표현 공간이 65,535라
+        // 65,536번째 정의부터 `borderFillId`의 offset + 1 클램프가 직전
+        // 정의로 별칭화한다 (스타일 256·paraPr 65,536 가드와 같은 계열,
+        // 1-based라 상한만 1 작다).
+        guard borderFills.count <= 65535 else {
+            throw HwpError.invalidXML(
+                entry: HwpxContainer.EntryName.header,
+                reason: "borderFill definitions exceed the 65,535-entry reference space"
+            )
+        }
         mapping.idMappings.borderFillArray = borderFills.map(HwpxParaShapeMapper.mapBorderFill)
         for borderFill in borderFills {
             mapping.unknownRecords += borderFill.unconsumedChildRecords(consumed: [

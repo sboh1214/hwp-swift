@@ -114,6 +114,41 @@ final class HwpxHeaderMapperTests: XCTestCase {
         expect(tabDefs.map(\.property)) == [0, 0b11]
     }
 
+    func testBorderFillsBeyondOneBasedReferenceSpaceAreRejected() {
+        // borderFill 참조는 1-based UInt16 (0 = 없음) — 65,536번째 정의부터
+        // `borderFillId`의 offset + 1 클램프가 직전 정의로 별칭화된다.
+        let fills = (0 ..< 65536).map { "<hh:borderFill id=\"b\($0)\"/>" }.joined()
+        let withMany = HwpxHeaderFixture.headerXML.replacingOccurrences(
+            of: #"<hh:borderFills itemCnt="2">.*</hh:borderFills>"#,
+            with: "<hh:borderFills itemCnt=\"65536\">\(fills)</hh:borderFills>",
+            options: .regularExpression
+        )
+
+        expect {
+            _ = try HwpxHeaderFixture.mapHeader(withMany)
+        }.to(throwError { error in
+            guard case let HwpError.invalidXML(_, reason) = error else {
+                return fail("Expected invalidXML, got \(error)")
+            }
+            expect(reason).to(contain("65,535"))
+        })
+    }
+
+    func testBorderFillsAtTheOneBasedReferenceSpaceBoundaryAreAccepted() throws {
+        // 경계 대조군 — 65,535개는 수용되고 마지막 정의가 별칭 없이 참조
+        // 공간의 끝(65,535)으로 리맵된다.
+        let fills = (0 ..< 65535).map { "<hh:borderFill id=\"b\($0)\"/>" }.joined()
+        let atBoundary = HwpxHeaderFixture.headerXML.replacingOccurrences(
+            of: #"<hh:borderFills itemCnt="2">.*</hh:borderFills>"#,
+            with: "<hh:borderFills itemCnt=\"65535\">\(fills)</hh:borderFills>",
+            options: .regularExpression
+        )
+
+        let (docInfo, idTables) = try HwpxHeaderFixture.mapHeader(atBoundary)
+        expect(docInfo.idMappings.borderFillArray.count) == 65535
+        expect(idTables.borderFillId(of: "b65534")) == 65535
+    }
+
     func testParaShapesBeyondReferenceSpaceAreRejected() {
         // 문단 paraShapeId는 UInt16 — 65,537번째부터 참조가 65,535로
         // 별칭화되므로 정의 수를 참조 공간으로 제한한다.
