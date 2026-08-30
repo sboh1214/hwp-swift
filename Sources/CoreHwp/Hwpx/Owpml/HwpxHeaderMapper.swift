@@ -307,11 +307,6 @@ private extension HwpxHeaderMapper {
                     mapping.unknownRecords += winBrush.unconsumedChildRecords(consumed: [])
                 }
             }
-            for brush in borderFill.firstChild(named: "fillBrush")?.childElements ?? []
-                where !brush.isNamed("winBrush")
-            {
-                mapping.unknownRecords.append(unknownRecord(of: brush))
-            }
         }
     }
 

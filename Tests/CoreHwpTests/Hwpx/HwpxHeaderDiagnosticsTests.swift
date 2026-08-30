@@ -132,6 +132,22 @@ final class HwpxHeaderDiagnosticsTests: XCTestCase {
         expect(names).toNot(contain("left"))
     }
 
+    func testUnsupportedBrushIsDemotedExactlyOnce() throws {
+        // 강등 경로가 둘이면(레거시 루프 + fillBrush 소비 목록) 같은 레코드가
+        // 두 번 실려 공개 진단 카운트가 부풀려진다.
+        let withGradation = HwpxHeaderFixture.headerXML.replacingOccurrences(
+            of: "<hc:winBrush faceColor=\"#DDEEFF\" hatchColor=\"#999999\" alpha=\"0\"/>",
+            with: "<hc:winBrush faceColor=\"#DDEEFF\" hatchColor=\"#999999\" alpha=\"0\"/>"
+                + "<hc:gradation angle=\"90\"/>"
+        )
+        let (docInfo, _) = try HwpxHeaderFixture.mapHeader(withGradation)
+
+        let names = docInfo.unknownRecords.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names.filter { $0 == "gradation" }.count) == 1
+    }
+
     func testHeaderLeafWrapperDescendantsDegradeIntoDiagnostics() throws {
         // 테두리·winBrush·substFont·margin 값·beginNum·style은 속성만 읽는
         // 잎이다 — 안의 확장 요소가 진단에 남아야 한다.
