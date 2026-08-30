@@ -135,6 +135,34 @@ final class HwpxObjectMapperTests: XCTestCase {
         expect(mapped.cellArray[1].header.cellPropertyInfo.appliesInnerMargin) == false
     }
 
+    func testTableDimensionsFollowParsedStructureOverStaleDeclarations() throws {
+        // rowCnt="9"·colCnt="0" 선언 — 파싱 구조는 2행, 머리 셀 colSpan=2가
+        // 2열을 덮는다. 선언을 믿으면 빈 행 7개 또는 grid nil(표 소실)이다.
+        let withStaleDeclarations = tableXML.replacingOccurrences(
+            of: "rowCnt=\"2\" colCnt=\"2\"",
+            with: "rowCnt=\"9\" colCnt=\"0\""
+        )
+        let table = try HwpxTableMapper.map(
+            try parse(withStaleDeclarations), context: makeContext()
+        )
+
+        expect(table.tableProperty.rowCount) == 2
+        expect(table.tableProperty.columnCount) == 2
+    }
+
+    func testDeclaredColumnCountWiderThanCoveredCellsIsTrusted() throws {
+        // 셀이 덮는 폭(2)보다 넓은 colCnt="5"는 그대로 믿는다 — 도출은
+        // 하한이지 대체가 아니다 (선언 격자를 존중하는 acceptedCells 정책).
+        let withWiderDeclaration = tableXML.replacingOccurrences(
+            of: "colCnt=\"2\"", with: "colCnt=\"5\""
+        )
+        let table = try HwpxTableMapper.map(
+            try parse(withWiderDeclaration), context: makeContext()
+        )
+
+        expect(table.tableProperty.columnCount) == 5
+    }
+
     func testTableStructureFromOtherKnownVocabularyIsNotAdopted() throws {
         // <hh:tr>은 표 행이 아니다 — 전역 known 매칭이면 진짜 행이 되어
         // 행/셀 수와 rowSize가 오염된다.

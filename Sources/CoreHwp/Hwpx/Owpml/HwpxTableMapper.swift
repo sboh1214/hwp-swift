@@ -15,9 +15,10 @@ enum HwpxTableMapper {
         let rows = node.paragraphChildren(named: "tr")
 
         var tableProperty = HwpTableProperty()
-        tableProperty.rowCount = node.uint16Attribute(
-            "rowCnt", default: UInt16(clamping: rows.count)
-        )
+        // 선언 rowCnt는 쓰지 않는다 — rowSize·셀이 파싱된 <hp:tr>에서
+        // 만들어지므로, 어긋난 선언을 믿으면 조판이 빈 행을 깔거나 grid
+        // 상한 가드로 표를 통째로 거부한다.
+        tableProperty.rowCount = UInt16(clamping: rows.count)
         tableProperty.columnCount = node.uint16Attribute("colCnt", default: 0)
         tableProperty.cellSpacing = Int16(
             clamping: node.intAttribute("cellSpacing", default: 0)
@@ -58,11 +59,25 @@ enum HwpxTableMapper {
         tableProperty.rowSize = rowSize
 
         var cells: [HwpTableCell] = []
+        var coveredColumns = 0
         for row in rows {
             for cell in row.paragraphChildren(named: "tc") {
-                cells.append(try Self.mapCell(cell, context: context))
+                let mapped = try Self.mapCell(cell, context: context)
+                if let property = mapped.header.cellProperty {
+                    coveredColumns = max(
+                        coveredColumns,
+                        Int(property.columnAddress) + Int(property.columnSpan)
+                    )
+                }
+                cells.append(mapped)
             }
         }
+        // colCnt가 셀 주소+span이 덮는 폭보다 작으면 (colCnt="0" 포함) 조판의
+        // grid 가드가 셀을 거부하거나 표를 통째로 지운다 — 파싱 구조가 덮는
+        // 폭 밑으로 내려가지 않게 올리고, 더 큰 선언은 그대로 믿는다.
+        tableProperty.columnCount = max(
+            tableProperty.columnCount, UInt16(clamping: coveredColumns)
+        )
 
         return HwpTable(
             commonCtrlProperty: HwpxObjectCommonMapper.map(node, ctrlId: .table),
