@@ -206,7 +206,9 @@ extension HwpxXMLNode {
             guard case let .element(child) = piece else {
                 return [piece]
             }
-            if child.isNamed("switch") {
+            // switch·case·default는 paragraph vocabulary다 — 전역 매칭이면
+            // 타 vocabulary의 동명 요소가 매퍼·진단이 보기 전에 접합·삭제된다.
+            if child.isNamed("switch", in: HwpxNamespace.paragraph) {
                 return Self.switchReplacement(child).map { $0.resolvingSwitches() }
                     .map { Content.element($0) }
             }
@@ -216,12 +218,14 @@ extension HwpxXMLNode {
     }
 
     private static func switchReplacement(_ switchNode: HwpxXMLNode) -> [HwpxXMLNode] {
-        for candidate in switchNode.childElements where candidate.isNamed("case") {
+        for candidate in switchNode.childElements
+            where candidate.isNamed("case", in: HwpxNamespace.paragraph)
+        {
             let required = candidate.attributes["required-namespace"] ?? ""
             if HwpxNamespace.supportedSwitchNamespaces.contains(required) {
                 return candidate.childElements
             }
         }
-        return switchNode.firstChild(named: "default")?.childElements ?? []
+        return switchNode.paragraphFirstChild(named: "default")?.childElements ?? []
     }
 }

@@ -60,6 +60,20 @@ final class HwpxXMLTreeParserTests: XCTestCase {
         expect(root.childElements.last?.attribute("tag")) == "v"
     }
 
+    func testForeignVocabularySwitchIsNotResolved() throws {
+        // switch 3종은 paragraph vocabulary — hh:switch가 hp:switch로
+        // 오인되면 매퍼·진단이 보기 전에 내용이 접합·삭제된다.
+        let root = try parse(
+            "<hp:root xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" "
+                + "xmlns:hh=\"http://www.hancom.co.kr/hwpml/2011/head\">"
+                + "<hp:switch><hp:default><hp:real/></hp:default></hp:switch>"
+                + "<hh:switch><hh:default><hh:decoy/></hh:default></hh:switch>"
+                + "</hp:root>"
+        )
+
+        expect(root.childElements.map(\.localName)) == ["real", "switch"]
+    }
+
     func testForeignNamespaceElementIsNotMatched() throws {
         let root = try parse(
             """
