@@ -376,6 +376,28 @@ final class HwpxObjectMapperTests: XCTestCase {
         expect(tableNames).to(contain("marginExtra"))
     }
 
+    func testPicturePointLookupsIgnoreOtherVocabularyDecoys() throws {
+        // pt는 core vocabulary — 전역 매칭이면 진짜 앞의 hh:pt0 디코이가
+        // 좌표를 대체하고 진단에도 안 남는다.
+        let withDecoy = pictureXML.replacingOccurrences(
+            of: "<hc:pt0 x=\"0\" y=\"0\"/>",
+            with: "<hh:pt0 xmlns:hh=\"http://www.hancom.co.kr/hwpml/2011/head\" "
+                + "x=\"999\" y=\"999\"/><hc:pt0 x=\"0\" y=\"0\"/>"
+        )
+        let control = HwpxPictureMapper.map(
+            try parse(withDecoy),
+            context: makeContext(binItemIds: ["image1": 3])
+        )
+
+        let picture = try XCTUnwrap(control.shapeComponentArray.first?.pictureArray.first)
+        let property = try XCTUnwrap(picture.pictureProperty)
+        expect(property.imageCorners.map(\.x)) == [0, 21000, 21000, 0]
+        let names = control.unknownChildren.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("pt0"))
+    }
+
     func testPicturePointDescendantsDegradeIntoDiagnostics() throws {
         // pt0-pt3은 좌표 속성만 읽는 잎이다 — 안의 확장 요소가 진단에 남는다.
         let withExtras = pictureXML.replacingOccurrences(

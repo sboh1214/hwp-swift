@@ -40,10 +40,12 @@ enum HwpxPictureMapper {
         }
         if let imgRect = node.paragraphFirstChild(named: "imgRect") {
             unknownChildren += imgRect.unconsumedChildRecords(
-                consumed: ["pt0", "pt1", "pt2", "pt3"]
+                consumed: ["pt0", "pt1", "pt2", "pt3"], in: HwpxNamespace.core
             )
             for ptName in ["pt0", "pt1", "pt2", "pt3"] {
-                if let point = imgRect.firstChild(named: ptName) {
+                if let point = imgRect.childElements.first(where: {
+                    $0.isNamed(ptName, in: HwpxNamespace.core)
+                }) {
                     unknownChildren += point.unconsumedChildRecords(consumed: [])
                 }
             }
@@ -140,8 +142,10 @@ enum HwpxPictureMapper {
         common: HwpCommonCtrlProperty
     ) -> [(x: Int32, y: Int32)] {
         if let rect = node.paragraphFirstChild(named: "imgRect") {
-            let points = ["pt0", "pt1", "pt2", "pt3"].compactMap {
-                rect.firstChild(named: $0)
+            // pt는 core vocabulary다 (실측 hc:pt0-3) — 전역 매칭이면
+            // hh:pt0 디코이가 좌표를 대체한다.
+            let points = ["pt0", "pt1", "pt2", "pt3"].compactMap { ptName in
+                rect.childElements.first { $0.isNamed(ptName, in: HwpxNamespace.core) }
             }
             if points.count == 4 {
                 return points.map {
