@@ -13,6 +13,17 @@ enum HwpxTableMapper {
         // 매칭이면 <hh:tr> 같은 동명 요소가 진짜 행이 된다. hc: 자식 혼재가
         // 없는 자리라 좁혀도 교차 vocabulary를 놓치지 않는다.
         let rows = node.paragraphChildren(named: "tr")
+        // 행 수·행당 셀 수는 UInt16 필드(rowCount·rowSize)다 — 접으면
+        // 배열과 어긋난 모델이 나간다 (문단 메타데이터와 같은 계약, 복구
+        // 모드에선 문단 placeholder로 흡수).
+        guard rows.count <= Int(UInt16.max),
+              rows.allSatisfy({ $0.paragraphChildren(named: "tc").count <= Int(UInt16.max) })
+        else {
+            throw HwpError.invalidXML(
+                entry: context.entry,
+                reason: "table rows or per-row cells exceed \(UInt16.max)"
+            )
+        }
 
         var tableProperty = HwpTableProperty()
         // 선언 rowCnt는 쓰지 않는다 — rowSize·셀이 파싱된 <hp:tr>에서

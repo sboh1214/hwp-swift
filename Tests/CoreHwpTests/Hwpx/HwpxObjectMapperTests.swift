@@ -135,6 +135,27 @@ final class HwpxObjectMapperTests: XCTestCase {
         expect(mapped.cellArray[1].header.cellPropertyInfo.appliesInnerMargin) == false
     }
 
+    func testTableDimensionsBeyondUInt16AreRejected() {
+        // 행 수·행당 셀 수는 UInt16 필드다 — 접으면 rowSize·셀 배열과
+        // 어긋난 모델이 나가므로 typed error로 거부된다.
+        let manyRows = String(repeating: "<hp:tr/>", count: 65536)
+        let manyCells = "<hp:tr>" + String(repeating: "<hp:tc/>", count: 65536) + "</hp:tr>"
+        for body in [manyRows, manyCells] {
+            let xml = """
+            <hp:tbl xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" \
+            rowCnt="2" colCnt="1">\(body)</hp:tbl>
+            """
+            expect {
+                _ = try HwpxTableMapper.map(try self.parse(xml), context: self.makeContext())
+            }.to(throwError { error in
+                guard case let HwpError.invalidXML(_, reason) = error else {
+                    return fail("Expected invalidXML, got \(error)")
+                }
+                expect(reason).to(contain("exceed"))
+            })
+        }
+    }
+
     func testTableDimensionsFollowParsedStructureOverStaleDeclarations() throws {
         // rowCnt="9"·colCnt="0" 선언 — 파싱 구조는 2행, 머리 셀 colSpan=2가
         // 2열을 덮는다. 선언을 믿으면 빈 행 7개 또는 grid nil(표 소실)이다.
