@@ -251,4 +251,85 @@ final class HwpxFileTests: XCTestCase {
             diagnostic.kind == .unknownRecord && diagnostic.tagId == hwpxSyntheticTagId
         }) == true
     }
+
+    func testMissingSectionEntryFailsFastByDefaultAndRecoversInViewerMode() throws {
+        // manifest spine은 section0을 가리키는데 아카이브에 그 entry가 없다.
+        var builder = ZipBuilder()
+        builder.entries = [
+            .init(name: "mimetype", content: Data("application/hwp+zip".utf8), method: 0),
+            .init(name: "version.xml", content: Data(versionXML.utf8), method: 8),
+            .init(
+                name: "Contents/content.hpf", content: Data(manifestXML.utf8), method: 8
+            ),
+            .init(name: "Contents/header.xml", content: Data(headerXML.utf8), method: 8),
+        ]
+        let archive = builder.build()
+
+        expect {
+            _ = try HwpFile(fromData: archive)
+        }.to(throwError { error in
+            guard case let HwpError.archiveEntryDoesNotExist(name) = error else {
+                return fail("Expected archiveEntryDoesNotExist, got \(error)")
+            }
+            expect(name) == "Contents/section0.xml"
+        })
+
+        let recovered = try HwpFile(fromData: archive, options: .viewer)
+        expect(recovered.sectionArray.count) == 1
+        expect(recovered.sectionArray[0].parseFailure).notTo(beNil())
+    }
+
+    func testCorruptSectionDeflateFailsFastByDefaultAndRecoversInViewerMode() throws {
+        var builder = ZipBuilder()
+        builder.entries = [
+            .init(name: "mimetype", content: Data("application/hwp+zip".utf8), method: 0),
+            .init(name: "version.xml", content: Data(versionXML.utf8), method: 8),
+            .init(
+                name: "Contents/content.hpf", content: Data(manifestXML.utf8), method: 8
+            ),
+            .init(name: "Contents/header.xml", content: Data(headerXML.utf8), method: 8),
+            .init(
+                name: "Contents/section0.xml",
+                content: Data(sectionXML.utf8),
+                method: 8,
+                storedPayload: Data([0xDE, 0xAD, 0xBE, 0xEF])
+            ),
+        ]
+        let archive = builder.build()
+
+        expect { _ = try HwpFile(fromData: archive) }.to(throwError { error in
+            expect(error is HwpError) == true
+        })
+
+        let recovered = try HwpFile(fromData: archive, options: .viewer)
+        expect(recovered.sectionArray.count) == 1
+        expect(recovered.sectionArray[0].parseFailure).notTo(beNil())
+    }
+
+    func testRecoveryExemptSectionEntryErrorStillFailsInViewerMode() {
+        // 자원 한도(exempt)는 구역 entry 읽기가 복구 경계 안이어도 전파된다.
+        var builder = ZipBuilder()
+        builder.entries = [
+            .init(name: "mimetype", content: Data("application/hwp+zip".utf8), method: 0),
+            .init(name: "version.xml", content: Data(versionXML.utf8), method: 8),
+            .init(
+                name: "Contents/content.hpf", content: Data(manifestXML.utf8), method: 8
+            ),
+            .init(name: "Contents/header.xml", content: Data(headerXML.utf8), method: 8),
+            .init(
+                name: "Contents/section0.xml",
+                content: Data(sectionXML.utf8),
+                method: 8,
+                declaredUncompressedSize: 0xFFFF_FFFE
+            ),
+        ]
+
+        expect {
+            _ = try HwpFile(fromData: builder.build(), options: .viewer)
+        }.to(throwError { error in
+            guard let hwpError = error as? HwpError, hwpError.isRecoveryExempt else {
+                return fail("Expected recovery-exempt error, got \(error)")
+            }
+        })
+    }
 }

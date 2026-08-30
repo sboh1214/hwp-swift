@@ -37,7 +37,20 @@ extension HwpFile {
 
         var sections: [HwpSection] = []
         for name in sectionNames {
-            let sectionData = try container.requiredEntry(name)
+            // entry 읽기도 복구 경계 안이다 — spine이 가리키는 구역이
+            // 아카이브에 없거나 deflate가 손상되면 매핑에 닿기 전에 던져져,
+            // 매핑만 감쌌을 때는 복구가 통째로 우회된다. 자원 한도·미지원
+            // (isRecoveryExempt)은 여기서도 그대로 전파된다.
+            let sectionData: Data
+            do {
+                sectionData = try container.requiredEntry(name)
+            } catch let error as HwpError
+                where options.recoverPartialContent && !error.isRecoveryExempt
+            {
+                // entry 자체를 읽지 못했으므로 rawPayload에 남길 원본이 없다.
+                sections.append(HwpSection.parseFailurePlaceholder(error: error))
+                continue
+            }
             let context = HwpxMappingContext(
                 idTables: idTables,
                 binItemIdByManifestId: catalog.binItemIdByManifestId,
