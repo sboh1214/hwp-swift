@@ -109,7 +109,7 @@ enum HwpxTableMapper {
         context: HwpxMappingContext
     ) throws -> HwpTableCell {
         let cellContext = try context.descending()
-        let subList = node.firstChild(named: "subList")
+        let subList = node.paragraphFirstChild(named: "subList")
         let paragraphNodes = subList?.paragraphChildren(named: "p") ?? []
         var paragraphs: [HwpParagraph] = []
         for (index, paragraphNode) in paragraphNodes.enumerated() {
@@ -120,10 +120,10 @@ enum HwpxTableMapper {
             ))
         }
 
-        let address = node.firstChild(named: "cellAddr")
-        let span = node.firstChild(named: "cellSpan")
-        let size = node.firstChild(named: "cellSz")
-        let margin = node.firstChild(named: "cellMargin")
+        let address = node.paragraphFirstChild(named: "cellAddr")
+        let span = node.paragraphFirstChild(named: "cellSpan")
+        let size = node.paragraphFirstChild(named: "cellSz")
+        let margin = node.paragraphFirstChild(named: "cellMargin")
         let cellProperty = HwpTableCellProperty(
             columnAddress: address?.uint16Attribute("colAddr", default: 0) ?? 0,
             rowAddress: address?.uint16Attribute("rowAddr", default: 0) ?? 0,
@@ -159,7 +159,8 @@ enum HwpxTableMapper {
             rawTrailing: Data(),
             rawPayload: Data(),
             unknownChildren: node.unconsumedChildRecords(
-                consumed: ["subList", "cellAddr", "cellSpan", "cellSz", "cellMargin"]
+                consumed: ["subList", "cellAddr", "cellSpan", "cellSz", "cellMargin"],
+                in: HwpxNamespace.paragraph
             )
         )
         return HwpTableCell(header: header, paragraphArray: paragraphs)

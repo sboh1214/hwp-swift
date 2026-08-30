@@ -177,6 +177,25 @@ final class HwpxObjectMapperTests: XCTestCase {
         expect(table.tableProperty.rowCellCounts) == [1, 2]
     }
 
+    func testCellLookupsIgnoreOtherVocabularyDecoys() throws {
+        // 진짜 앞의 hh:subList 디코이가 셀 본문을 대체하면 안 되고, 밀린
+        // 디코이는 셀 진단에 남아야 한다.
+        let withDecoys = tableXML.replacingOccurrences(
+            of: "<hp:subList vertAlign=\"CENTER\">",
+            with: "<hh:subList xmlns:hh=\"http://www.hancom.co.kr/hwpml/2011/head\">"
+                + "<hh:p/></hh:subList><hp:subList vertAlign=\"CENTER\">"
+        )
+        let table = try HwpxTableMapper.map(try parse(withDecoys), context: makeContext())
+
+        let headerCell = table.cellArray[0]
+        expect(headerCell.header.paragraphCount) == 1
+        expect(headerCell.paragraphArray[0].paraText?.wcharCount) == 3
+        let names = headerCell.header.unknownChildren.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("subList"))
+    }
+
     func testTableDimensionsFollowParsedStructureOverStaleDeclarations() throws {
         // rowCnt="9"·colCnt="0" 선언 — 파싱 구조는 2행, 머리 셀 colSpan=2가
         // 2열을 덮는다. 선언을 믿으면 빈 행 7개 또는 grid nil(표 소실)이다.
