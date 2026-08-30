@@ -86,6 +86,27 @@ final class HwpxHeaderDiagnosticsTests: XCTestCase {
         expect(names).toNot(contain("substFont"))
     }
 
+    func testHeadChildDecoysFromOtherKnownVocabularyAreDemotedNotMapped() throws {
+        // 같은 local name의 <hp:*> 디코이 — head vocabulary가 아니므로
+        // 시작 번호를 덮지 못하고 진단으로 강등되어야 한다.
+        let withDecoys = HwpxHeaderFixture.headerXML.replacingOccurrences(
+            of: "<hh:refList>",
+            with: "<hp:beginNum page=\"99\" tbl=\"77\"/>"
+                + "<hp:refList><hp:borderFills itemCnt=\"1\"/></hp:refList><hh:refList>"
+        )
+        let (docInfo, _) = try HwpxHeaderFixture.mapHeader(withDecoys)
+
+        expect(docInfo.documentProperties.startingIndex.page) == 3
+        expect(docInfo.documentProperties.startingIndex.table) == 1
+        let names = docInfo.unknownRecords.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("beginNum"))
+        expect(names).to(contain("refList"))
+        // 진짜 <hh:refList>는 계속 소비된다 — borderFill 2종 매핑 유지.
+        expect(docInfo.idMappings.borderFillArray.count) == 2
+    }
+
     func testDanglingHeadingReferenceStaysZero() throws {
         // 없는 idRef는 0(없음)으로 남아야 한다 — +1을 무조건 걸면 댕글링이
         // 첫 정의를 가리키게 된다 ("댕글링은 0 폴백" 규약).

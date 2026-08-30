@@ -96,8 +96,11 @@ private extension HwpxHeaderMapper {
         _ root: HwpxXMLNode,
         into mapping: inout HwpxHeaderMapping
     ) throws {
+        // head 직계 자식은 head vocabulary 하나로 정해지는 자리다 — 전역
+        // known 매칭이면 <hp:beginNum> 같은 타 vocabulary 디코이가 시작
+        // 번호를 조용히 덮는다 (가족 루프의 head 좁히기와 같은 근거).
         for child in root.childElements {
-            if child.isNamed("beginNum") {
+            if child.isNamed("beginNum", in: HwpxNamespace.head) {
                 mapping.documentProperties = HwpDocumentProperties(
                     hwpxSectionSize: mapping.documentProperties.sectionSize,
                     startingIndex: HwpStartingIndex(
@@ -109,7 +112,7 @@ private extension HwpxHeaderMapper {
                         equation: child.uint16Attribute("equation", default: 1)
                     )
                 )
-            } else if child.isNamed("refList") {
+            } else if child.isNamed("refList", in: HwpxNamespace.head) {
                 try mapRefList(child, into: &mapping)
             } else {
                 mapping.unknownRecords.append(unknownRecord(of: child))
