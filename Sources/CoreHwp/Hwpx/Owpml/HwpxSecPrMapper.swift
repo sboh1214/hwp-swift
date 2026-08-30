@@ -36,6 +36,12 @@ enum HwpxSecPrMapper {
                     "gutter", default: pageDef.marginGutter
                 )
             }
+            // 제본 방향(bits 1-2) — gutterInsets가 이 비트로 gutter를
+            // 왼쪽(한쪽·맞쪽)/위쪽(위로)에 배분한다. 양만 옮기면 위 제본
+            // 문서가 왼쪽에 제본 여백을 얻는다.
+            pageDef.property = Self.gutterTypes[
+                pagePr.attribute("gutterType") ?? "LEFT_ONLY"
+            ] ?? 0
             sectionDef.pageDef = pageDef
         }
 
@@ -102,6 +108,10 @@ enum HwpxSecPrMapper {
 }
 
 private extension HwpxSecPrMapper {
+    static let gutterTypes: [String: UInt32] = [
+        "LEFT_ONLY": 0b000, "LEFT_RIGHT": 0b010, "TOP_BOTTOM": 0b100,
+    ]
+
     static let columnTypes: [String: HwpColumnType] = [
         "NEWSPAPER": .general, "BALANCED_NEWSPAPER": .div, "PARALLEL": .along,
     ]

@@ -32,6 +32,31 @@ final class HwpxSectionMapperTests: XCTestCase {
         return try HwpxSectionMapper.map(Data(xml.utf8), context: makeContext(options: options))
     }
 
+    func testGutterTypeMapsIntoPageDefinitionProperty() throws {
+        // 조판 gutterInsets는 property bits 1-2로 제본 방향을 정한다 —
+        // 양만 옮기면 위 제본(TOP_BOTTOM) 문서가 왼쪽에 제본 여백을 얻는다.
+        let topBottom = try mapSection(blankBody.replacingOccurrences(
+            of: "gutterType=\"LEFT_ONLY\"", with: "gutterType=\"TOP_BOTTOM\""
+        ))
+        let leftRight = try mapSection(blankBody.replacingOccurrences(
+            of: "gutterType=\"LEFT_ONLY\"", with: "gutterType=\"LEFT_RIGHT\""
+        ))
+        let leftOnly = try mapSection(blankBody)
+
+        expect(try self.firstSectionDef(of: topBottom).pageDef.property) == 0b100
+        expect(try self.firstSectionDef(of: leftRight).pageDef.property) == 0b010
+        expect(try self.firstSectionDef(of: leftOnly).pageDef.property) == 0
+    }
+
+    private func firstSectionDef(of section: HwpSection) throws -> HwpSectionDef {
+        let ctrls = try XCTUnwrap(section.paragraph[0].ctrlHeaderArray)
+        guard case let .section(sectionDef) = ctrls[0] else {
+            struct UnexpectedControl: Error {}
+            throw UnexpectedControl()
+        }
+        return sectionDef
+    }
+
     func testUnknownColumnChildrenDegradeIntoDiagnostics() throws {
         // colPr의 미소비 자식은 column.unknownChildren으로 남아야
         // parseDiagnostics()가 완전한 파스로 오보하지 않는다.
