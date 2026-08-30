@@ -187,18 +187,23 @@ private extension HwpxHeaderMapper {
             default:
                 mapping.unknownRecords.append(unknownRecord(of: family))
             }
-            demoteDefinitionDecoys(in: family, into: &mapping)
+            demoteUnconsumedFamilyChildren(in: family, into: &mapping)
         }
     }
 
-    static func demoteDefinitionDecoys(
+    static func demoteUnconsumedFamilyChildren(
         in family: HwpxXMLNode,
         into mapping: inout HwpxHeaderMapping
     ) {
         guard let definitionName = definitionNames[family.localName] else {
             return
         }
-        mapping.unknownRecords += family.headDecoyRecords(named: definitionName)
+        // 이름이 같은 타 vocabulary 디코이와 이름이 다른 미래 자식을 한
+        // 술어로 강등한다 — 진짜 정의(head)만 소비로 남는다. 이름이 같은
+        // 자식만 잡으면 <hh:newDefinition> 같은 미래 자식이 사라진다.
+        mapping.unknownRecords += family.unconsumedChildRecords(
+            consumed: [definitionName], in: HwpxNamespace.head
+        )
     }
 
     /// `hh:charProperties` 가족을 글자 모양 배열로 옮긴다.

@@ -165,6 +165,24 @@ final class HwpxHeaderDiagnosticsTests: XCTestCase {
         expect(names).toNot(contain("underline"))
     }
 
+    func testUnknownFamilyChildrenDegradeIntoDiagnostics() throws {
+        // 정의와 이름이 다른 미래 자식도 진단에 남아야 한다 — 이름이 같은
+        // 디코이만 잡는 강등이면 조용히 사라진다.
+        let withExtras = HwpxHeaderFixture.headerXML.replacingOccurrences(
+            of: "<hh:charPr id=\"7\"",
+            with: "<hh:newDefinition/><hh:charPr id=\"7\""
+        )
+        let (docInfo, _) = try HwpxHeaderFixture.mapHeader(withExtras)
+
+        let names = docInfo.unknownRecords.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("newDefinition"))
+        // 진짜 정의는 강등되지 않고 매핑된다 (음성 대조).
+        expect(names).toNot(contain("charPr"))
+        expect(docInfo.idMappings.charShapeArray.count) == 2
+    }
+
     func testRefListDefinitionDecoysAreDemotedAndDoNotShiftRegistration() throws {
         // 진짜 hh:charPr(id 7) 앞에 다른 id의 hp:charPr 디코이 — 등록이
         // 디코이를 세면 id 7의 오프셋이 밀려 스타일 참조가 어긋난다.
