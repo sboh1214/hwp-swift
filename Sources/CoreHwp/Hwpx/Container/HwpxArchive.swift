@@ -168,7 +168,7 @@ private extension HwpxArchive {
         while offset >= lowerBound {
             if try data.readLittleEndianUInt32(at: offset) == Signature.endOfCentralDirectory {
                 let commentLength = Int(try data.readLittleEndianUInt16(at: offset + 20))
-                if offset + endOfCentralDirectoryLength + commentLength == data.count {
+                if commentLength == data.count - endOfCentralDirectoryLength - offset {
                     return offset
                 }
             }
@@ -239,7 +239,10 @@ private extension HwpxArchive {
         at offset: Int,
         directoryEnd: Int
     ) throws -> (entry: Entry, nextOffset: Int) {
-        guard offset + 46 <= directoryEnd else {
+        // 경계 판정은 뺄셈형이다 — `offset + 46 + 길이` 꼴은 data.count가
+        // Int.max 부근인 32비트(watchOS arm64_32) 입력에서 가드가 던지기 전에
+        // 트랩한다 (P1, 아래 Int(exactly:) 변환과 같은 계약).
+        guard directoryEnd - offset >= 46 else {
             throw HwpError.invalidArchive(reason: "truncated central directory")
         }
         guard try data.readLittleEndianUInt32(at: offset)
@@ -264,10 +267,13 @@ private extension HwpxArchive {
             throw HwpError.invalidArchive(reason: "Zip64 archives are not supported")
         }
 
-        let nameEnd = offset + 46 + nameLength
-        guard nameEnd + extraLength + commentLength <= directoryEnd else {
+        // 우변은 WORD 필드 3개 합(≤ 196,605)이라 오버플로할 수 없고, 좌변은
+        // 위 가드로 46 이상이다 — 이 판정을 지나면 아래 덧셈들은 전부
+        // directoryEnd 이하로 유계라 트랩하지 않는다.
+        guard directoryEnd - offset - 46 >= nameLength + extraLength + commentLength else {
             throw HwpError.invalidArchive(reason: "truncated central directory")
         }
+        let nameEnd = offset + 46 + nameLength
         // HWPX 엔트리 이름은 전부 ASCII다 — UTF-8이 아닌 이름은 어떤 조회에도
         // 걸리지 않으므로 빈 이름으로 접어 구조만 유지한다 (첫 등장 우선 규칙과
         // 함께 결정적).

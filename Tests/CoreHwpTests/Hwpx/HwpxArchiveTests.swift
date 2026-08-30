@@ -233,6 +233,28 @@ final class HwpxArchiveTests: XCTestCase {
         })
     }
 
+    func testOversizedDirectoryLengthFieldsAreRejectedAsTruncated() {
+        // 이름 길이 필드를 0xFFFF로 조작 — 길이 합이 디렉터리 끝을 넘는
+        // 입력은 (32비트에서 트랩할 수 있는 덧셈 없이) invalidArchive다.
+        var builder = ZipBuilder()
+        builder.entries = [
+            .init(name: "mimetype", content: Data("application/hwp+zip".utf8), method: 0),
+        ]
+        var archive = builder.build()
+        let signature = Data([0x50, 0x4B, 0x01, 0x02])
+        guard let entryRange = archive.firstRange(of: signature) else {
+            return fail("central directory entry not found")
+        }
+        archive[entryRange.lowerBound + 28] = 0xFF
+        archive[entryRange.lowerBound + 29] = 0xFF
+
+        expect {
+            _ = try HwpxArchive(data: archive)
+        }.to(throwError { error in
+            assertInvalidArchive(error, containing: "truncated central directory")
+        })
+    }
+
     func testDisagreeingEntryCountsAreRejected() {
         var builder = ZipBuilder()
         builder.entries = [.init(name: "a", content: Data("x".utf8), method: 0)]
