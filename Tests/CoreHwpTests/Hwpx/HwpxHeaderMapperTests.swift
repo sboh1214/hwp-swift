@@ -129,6 +129,25 @@ final class HwpxHeaderMapperTests: XCTestCase {
         expect(styles[1].nextId) == 1 // nextStyleIDRef "2" → 오프셋 1
     }
 
+    func testMapsCharacterOutlineThroughDedicatedTable() throws {
+        // 외곽선은 표 33 체계다 — 표 27 계열 lineShapes를 공유하면 THICK이
+        // .none으로 접혀 외곽선이 사라지고 DASH가 점선으로 그려진다.
+        let withOutlines = HwpxHeaderFixture.headerXML
+            .replacingOccurrences(
+                of: "<hh:bold/>",
+                with: "<hh:bold/><hh:outline type=\"THICK\"/>"
+            )
+            .replacingOccurrences(
+                of: "<hh:italic/>",
+                with: "<hh:italic/><hh:outline type=\"DASH\"/>"
+            )
+        let (docInfo, _) = try HwpxHeaderFixture.mapHeader(withOutlines)
+
+        let shapes = docInfo.idMappings.charShapeArray
+        expect(shapes[0].property.borderlineType) == HwpBorderLineType.thickLine
+        expect(shapes[1].property.borderlineType) == HwpBorderLineType.loneDot
+    }
+
     func testUnmappedElementsLandInUnknownRecordsWithSyntheticTag() throws {
         let (docInfo, _) = try HwpxHeaderFixture.mapHeader(HwpxHeaderFixture.headerXML)
 

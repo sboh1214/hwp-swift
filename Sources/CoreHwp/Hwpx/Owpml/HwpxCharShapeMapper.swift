@@ -121,9 +121,9 @@ enum HwpxCharShapeMapper {
         }
 
         if let outline = node.firstChild(named: "outline") {
-            property.borderlineType = HwpBorderLineType(
-                rawValue: Self.lineShapeIndex(outline.attribute("type"), default: 0)
-            ) ?? HwpBorderLineType.none
+            property.borderlineType = Self.outlineTypes[
+                outline.attribute("type") ?? "NONE"
+            ] ?? HwpBorderLineType.none
         }
 
         let shadow = node.firstChild(named: "shadow")
@@ -200,6 +200,15 @@ extension HwpxCharShapeMapper {
         }
         return lineShapes[name] ?? defaultValue
     }
+
+    /// OWPML LineType1 → 표 33 글자 외곽선. 밑줄·취소선의 `lineShapes`(표 27
+    /// 계열)와 인덱스 체계가 다르다 — 공유하면 DOT/DASH가 다른 의미로 매핑되고
+    /// THICK이 표에 없어 굵은 외곽선이 .none으로 사라진다.
+    static let outlineTypes: [String: HwpBorderLineType] = [
+        "NONE": .none, "SOLID": .line, "DOT": .dot, "THICK": .thickLine,
+        "DASH": .loneDot, "DASH_DOT": .oneDotOneLine,
+        "DASH_DOT_DOT": .twoDotsOneLine,
+    ]
 
     static let underlineTypes: [String: HwpUnderlineType] = [
         "NONE": .none, "BOTTOM": .under, "TOP": .above,
