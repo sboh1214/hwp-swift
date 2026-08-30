@@ -13,7 +13,9 @@ enum HwpxPictureMapper {
         context: HwpxMappingContext
     ) -> HwpShapeControl {
         let common = HwpxObjectCommonMapper.map(node, ctrlId: .picture)
-        let image = node.firstChild(named: "img")
+        // img만 core vocabulary다 — 실측: BinData·noori 실저장본이 hc:img를
+        // 쓴다 (sz·pos·outMargin·inMargin·imgRect·imgClip은 전부 hp).
+        let image = node.childElements.first { $0.isNamed("img", in: HwpxNamespace.core) }
         let binItemId = image?.attribute("binaryItemIDRef")
             .flatMap { context.binItemIdByManifestId[$0] } ?? 0
 
@@ -23,20 +25,29 @@ enum HwpxPictureMapper {
         // flip·rotationInfo·renderingInfo·effects 등 미소비 자식은 렌더에
         // 반영되지 않으므로 진단으로 강등한다 — 부착처는 diagnostics walker가
         // 걷는 shapeControl.unknownChildren이다.
-        var unknownChildren = node.unconsumedChildRecords(consumed: [
-            "sz", "pos", "outMargin", "img", "imgRect", "imgClip", "inMargin",
-        ])
+        let paragraphConsumed = ["sz", "pos", "outMargin", "imgRect", "imgClip", "inMargin"]
+        var unknownChildren = node.childElements
+            .filter { child in
+                !paragraphConsumed.contains {
+                    child.isNamed($0, in: HwpxNamespace.paragraph)
+                } && !child.isNamed("img", in: HwpxNamespace.core)
+            }
+            .map {
+                HwpUnknownRecord(
+                    tagId: hwpxSyntheticTagId, level: 0, payload: Data($0.localName.utf8)
+                )
+            }
         // 래퍼는 속성·pt 좌표만 읽는다 — 안의 미지 자식은 여기서 강등해야
         // 진단에 남는다 (paraPr 래퍼 강등과 같은 채널).
         if let image {
             unknownChildren += image.unconsumedChildRecords(consumed: [])
         }
-        if let imgRect = node.firstChild(named: "imgRect") {
+        if let imgRect = node.paragraphFirstChild(named: "imgRect") {
             unknownChildren += imgRect.unconsumedChildRecords(
                 consumed: ["pt0", "pt1", "pt2", "pt3"]
             )
         }
-        if let imgClip = node.firstChild(named: "imgClip") {
+        if let imgClip = node.paragraphFirstChild(named: "imgClip") {
             unknownChildren += imgClip.unconsumedChildRecords(consumed: [])
         }
         let picture = HwpShapeComponentPicture(
@@ -90,14 +101,14 @@ enum HwpxPictureMapper {
             payload.appendHwpxLittleEndian(UInt32(bitPattern: corner.y))
         }
 
-        let clip = node.firstChild(named: "imgClip")
+        let clip = node.paragraphFirstChild(named: "imgClip")
         for name in ["left", "top", "right", "bottom"] {
             payload.appendHwpxLittleEndian(
                 UInt32(bitPattern: clip?.int32Attribute(name, default: 0) ?? 0)
             )
         }
 
-        let margin = node.firstChild(named: "inMargin")
+        let margin = node.paragraphFirstChild(named: "inMargin")
         for name in ["left", "right", "top", "bottom"] {
             let value = Int16(clamping: margin?.intAttribute(name, default: 0) ?? 0)
             payload.append(UInt8(UInt16(bitPattern: value) & 0xFF))
@@ -120,7 +131,7 @@ enum HwpxPictureMapper {
         _ node: HwpxXMLNode,
         common: HwpCommonCtrlProperty
     ) -> [(x: Int32, y: Int32)] {
-        if let rect = node.firstChild(named: "imgRect") {
+        if let rect = node.paragraphFirstChild(named: "imgRect") {
             let points = ["pt0", "pt1", "pt2", "pt3"].compactMap {
                 rect.firstChild(named: $0)
             }

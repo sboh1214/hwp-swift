@@ -11,7 +11,7 @@ enum HwpxObjectCommonMapper {
         var property = HwpCommonCtrlProperty(commonCtrlId: ctrlId)
         var info = HwpCommonCtrlPropertyInfo()
 
-        if let size = node.firstChild(named: "sz") {
+        if let size = node.paragraphFirstChild(named: "sz") {
             property.width = size.uint32Attribute("width", default: 0)
             property.height = size.uint32Attribute("height", default: 0)
             info.widthRelativeTo = widthRelativeTos[size.attribute("widthRelTo") ?? "ABSOLUTE"]
@@ -24,7 +24,7 @@ enum HwpxObjectCommonMapper {
             info.protectSizeInParagraphVertRelTo = size.boolAttribute("protect")
         }
 
-        if let position = node.firstChild(named: "pos") {
+        if let position = node.paragraphFirstChild(named: "pos") {
             info.treatAsChar = position.boolAttribute("treatAsChar")
             info.affectsLineSpacing = position.boolAttribute("affectLSpacing")
             info.allowOverlap = position.boolAttribute("allowOverlap")
@@ -47,7 +47,7 @@ enum HwpxObjectCommonMapper {
             property.horizontalOffset = position.uint32Attribute("horzOffset", default: 0)
         }
 
-        if let outMargin = node.firstChild(named: "outMargin") {
+        if let outMargin = node.paragraphFirstChild(named: "outMargin") {
             property.marginArray = ["left", "right", "top", "bottom"].map {
                 Int16(clamping: outMargin.intAttribute($0, default: 0))
             }

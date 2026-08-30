@@ -224,6 +224,25 @@ final class HwpxObjectMapperTests: XCTestCase {
         expect(table.tableProperty.columnCount) == 5
     }
 
+    func testObjectCommonLookupsIgnoreOtherVocabularyDecoys() throws {
+        // 진짜 앞의 hh:sz 디코이가 개체 크기를 대체하면 안 되고, 밀린
+        // 디코이는 진단에 남아야 한다 (셀 조회 좁히기와 같은 술어 규칙).
+        let withDecoy = tableXML.replacingOccurrences(
+            of: "<hp:sz",
+            with: "<hh:sz xmlns:hh=\"http://www.hancom.co.kr/hwpml/2011/head\" "
+                + "width=\"1\" height=\"1\"/><hp:sz"
+        )
+        let table = try HwpxTableMapper.map(try parse(withDecoy), context: makeContext())
+
+        let common = try XCTUnwrap(table.commonCtrlProperty)
+        expect(common.width) == 41954
+        expect(common.height) == 8000
+        let names = table.unknownChildren.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("sz"))
+    }
+
     func testTableStructureFromOtherKnownVocabularyIsNotAdopted() throws {
         // <hh:tr>은 표 행이 아니다 — 전역 known 매칭이면 진짜 행이 되어
         // 행/셀 수와 rowSize가 오염된다.
@@ -317,7 +336,7 @@ final class HwpxObjectMapperTests: XCTestCase {
     <hc:pt2 x="21000" y="14000"/><hc:pt3 x="0" y="14000"/></hp:imgRect>\
     <hp:imgClip left="10" top="20" right="30" bottom="40"/>\
     <hp:inMargin left="1" right="2" top="3" bottom="4"/>\
-    <hp:img binaryItemIDRef="image1" bright="5" contrast="-3" effect="GRAY_SCALE" \
+    <hc:img binaryItemIDRef="image1" bright="5" contrast="-3" effect="GRAY_SCALE" \
     alpha="0"/>\
     </hp:pic>
     """
@@ -369,7 +388,7 @@ final class HwpxObjectMapperTests: XCTestCase {
             )
             .replacingOccurrences(
                 of: "alpha=\"0\"/>",
-                with: "alpha=\"0\"><hp:imgExtra/></hp:img>"
+                with: "alpha=\"0\"><hp:imgExtra/></hc:img>"
             )
         let control = HwpxPictureMapper.map(
             try parse(withExtras),

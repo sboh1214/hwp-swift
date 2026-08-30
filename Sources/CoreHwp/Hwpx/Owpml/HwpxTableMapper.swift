@@ -34,7 +34,7 @@ enum HwpxTableMapper {
         tableProperty.cellSpacing = Int16(
             clamping: node.intAttribute("cellSpacing", default: 0)
         )
-        if let inMargin = node.firstChild(named: "inMargin") {
+        if let inMargin = node.paragraphFirstChild(named: "inMargin") {
             tableProperty.leftInnerMargin = Int16(
                 clamping: inMargin.intAttribute("left", default: 0)
             )
