@@ -92,6 +92,11 @@ enum HwpxSecPrMapper {
             )
             column.dividerColor = line.colorAttribute("color") ?? HwpColor()
         }
+        // 미소비 자식(미래 요소)은 진단으로 강등한다 — 비우면
+        // parseDiagnostics()가 완전한 파스로 오보한다.
+        column.unknownChildren = colPr.unconsumedChildRecords(
+            consumed: ["colSz", "colLine"]
+        )
         return column
     }
 }

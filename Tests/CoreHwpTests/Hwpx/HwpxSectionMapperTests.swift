@@ -32,6 +32,25 @@ final class HwpxSectionMapperTests: XCTestCase {
         return try HwpxSectionMapper.map(Data(xml.utf8), context: makeContext(options: options))
     }
 
+    func testUnknownColumnChildrenDegradeIntoDiagnostics() throws {
+        // colPr의 미소비 자식은 column.unknownChildren으로 남아야
+        // parseDiagnostics()가 완전한 파스로 오보하지 않는다.
+        let body = blankBody.replacingOccurrences(
+            of: "sameSz=\"1\" sameGap=\"0\"/>",
+            with: "sameSz=\"1\" sameGap=\"0\"><hp:colBreak/></hp:colPr>"
+        )
+        let section = try mapSection(body)
+
+        let ctrls = try XCTUnwrap(section.paragraph[0].ctrlHeaderArray)
+        guard case let .column(column) = ctrls[1] else {
+            return fail("Expected .column, got \(ctrls[1])")
+        }
+        let names = column.unknownChildren.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names) == ["colBreak"]
+    }
+
     /// 번들 Normal.hwtx의 section0.xml을 본뜬 최소 구역.
     private let blankBody = """
     <hp:p id="3121190098" paraPrIDRef="4" styleIDRef="0" pageBreak="0" \
