@@ -63,7 +63,8 @@ final class HwpxFileTests: XCTestCase {
 
     private func makeArchive(
         sectionXML: String? = nil,
-        includePreview: Bool = true
+        includePreview: Bool = true,
+        includePreviewImage: Bool = false
     ) -> Data {
         var builder = ZipBuilder()
         builder.entries = [
@@ -89,7 +90,31 @@ final class HwpxFileTests: XCTestCase {
                 .init(name: "Preview/PrvText.txt", content: Data("HWPX 본문".utf8), method: 0)
             )
         }
+        if includePreviewImage {
+            builder.entries.append(.init(
+                name: "Preview/PrvImage.png",
+                content: Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
+                method: 0
+            ))
+        }
         return builder.build()
+    }
+
+    func testViewerOptionsGatePreviewPayloads() throws {
+        // .viewer의 상주 메모리 절감은 미리보기에도 걸려야 한다 — 바이너리
+        // 경로 패리티: text·format 판정은 남고 payload만 비운다.
+        let archive = makeArchive(includePreviewImage: true)
+
+        let viewer = try HwpFile(fromData: archive, options: .viewer)
+        expect(viewer.previewText.text) == "HWPX 본문"
+        expect(viewer.previewText.rawPayload).to(beEmpty())
+        expect(viewer.previewImage.format) == HwpPreviewImageFormat.png
+        expect(viewer.previewImage.image).to(beEmpty())
+        expect(viewer.previewImage.rawPayload).to(beEmpty())
+
+        let preserved = try HwpFile(fromData: archive)
+        expect(preserved.previewText.rawPayload).toNot(beEmpty())
+        expect(preserved.previewImage.rawPayload).toNot(beEmpty())
     }
 
     func testLoadsHwpxFromDataWithAutoDetection() throws {

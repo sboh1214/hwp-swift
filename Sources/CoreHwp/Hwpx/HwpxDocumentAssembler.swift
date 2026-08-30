@@ -71,11 +71,15 @@ extension HwpFile {
             }
         }
 
+        // options를 넘겨야 `.viewer`의 payload 게이트가 미리보기에도 걸린다 —
+        // 빠뜨리면 바이너리 경로와 달리 미리보기 payload가 통째로 상주한다.
         let previewText = HwpxPreviewMapper.previewText(
-            from: try container.optionalEntry(HwpxContainer.EntryName.previewText)
+            from: try container.optionalEntry(HwpxContainer.EntryName.previewText),
+            options: options
         )
         let previewImage = HwpxPreviewMapper.previewImage(
-            from: try container.optionalEntry(HwpxContainer.EntryName.previewImage)
+            from: try container.optionalEntry(HwpxContainer.EntryName.previewImage),
+            options: options
         )
 
         self.init(
