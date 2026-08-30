@@ -86,6 +86,26 @@ final class HwpxHeaderDiagnosticsTests: XCTestCase {
         expect(names).toNot(contain("substFont"))
     }
 
+    func testCharPropertyLeafDecoysFromOtherVocabularyAreDemotedNotApplied() throws {
+        // <hp:bold>는 head vocabulary가 아니다 — 전역 조회면 굵게가 적용되고
+        // 전역 소비 필터가 그것을 진단에서도 지운다.
+        // 픽스처의 charPr[0]은 진짜 <hh:bold/>를 가지므로 대조가 되지 않는다 —
+        // 굵게가 없는 charPr[1]에 디코이만 넣는다.
+        let withDecoy = HwpxHeaderFixture.headerXML.replacingOccurrences(
+            of: "borderFillIDRef=\"404\"><hh:italic/>",
+            with: "borderFillIDRef=\"404\"><hh:italic/><hp:bold/>"
+        )
+        let (docInfo, _) = try HwpxHeaderFixture.mapHeader(withDecoy)
+
+        expect(docInfo.idMappings.charShapeArray[1].property.isBold) == false
+        // 대조군: 진짜 hh:bold는 그대로 적용된다.
+        expect(docInfo.idMappings.charShapeArray[0].property.isBold) == true
+        let names = docInfo.unknownRecords.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("bold"))
+    }
+
     func testHeadChildDecoysFromOtherKnownVocabularyAreDemotedNotMapped() throws {
         // 같은 local name의 <hp:*> 디코이 — head vocabulary가 아니므로
         // 시작 번호를 덮지 못하고 진단으로 강등되어야 한다.

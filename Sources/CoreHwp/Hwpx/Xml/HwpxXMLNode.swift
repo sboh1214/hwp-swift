@@ -120,6 +120,13 @@ extension HwpxXMLNode {
         childElements.first { $0.isNamed(localName, in: HwpxNamespace.paragraph) }
     }
 
+    /// head vocabulary로 확정된 첫 자식 — charPr 잎(bold·underline 등)처럼
+    /// 스키마가 vocabulary를 하나로 고정하는 단일 자식 조회에 쓴다
+    /// (`paragraphFirstChild`의 head 대응).
+    func headFirstChild(named localName: String) -> HwpxXMLNode? {
+        childElements.first { $0.isNamed(localName, in: HwpxNamespace.head) }
+    }
+
     /// `headChildren(named:)` 조회의 강등 짝 — 이름은 정의 요소와 같지만 head
     /// vocabulary가 아닌 디코이를 진단용 합성 레코드로 옮긴다. 조회만 좁히고
     /// 이것을 빠뜨리면 디코이가 흔적 없이 사라진다.

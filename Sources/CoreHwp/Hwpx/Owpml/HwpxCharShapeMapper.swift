@@ -58,14 +58,16 @@ enum HwpxCharShapeMapper {
             }
             for font in fonts {
                 let face = font.attribute("face") ?? ""
-                let substitute = font.firstChild(named: "substFont")?.attribute("face")
+                let substitute = font.headFirstChild(named: "substFont")?.attribute("face")
                 try hwpxValidateNameLength(face)
                 if let substitute {
                     try hwpxValidateNameLength(substitute)
                 }
                 // typeInfo 등 1차 범위 밖 자식은 진단으로 강등한다.
-                unknownRecords += font.unconsumedChildRecords(consumed: ["substFont"])
-                if let substFontNode = font.firstChild(named: "substFont") {
+                unknownRecords += font.unconsumedChildRecords(
+                    consumed: ["substFont"], in: HwpxNamespace.head
+                )
+                if let substFontNode = font.headFirstChild(named: "substFont") {
                     unknownRecords += substFontNode.unconsumedChildRecords(consumed: [])
                 }
                 tables.fontFacesByLanguage[index].register(
@@ -87,25 +89,25 @@ enum HwpxCharShapeMapper {
 
     /// `hh:charPr` 하나 → `HwpCharShape`.
     static func mapCharShape(_ node: HwpxXMLNode, tables: HwpxIdTables) -> HwpCharShape {
-        let fontRef = node.firstChild(named: "fontRef")
-        let ratio = node.firstChild(named: "ratio")
-        let spacing = node.firstChild(named: "spacing")
-        let relativeSize = node.firstChild(named: "relSz")
-        let offset = node.firstChild(named: "offset")
+        let fontRef = node.headFirstChild(named: "fontRef")
+        let ratio = node.headFirstChild(named: "ratio")
+        let spacing = node.headFirstChild(named: "spacing")
+        let relativeSize = node.headFirstChild(named: "relSz")
+        let offset = node.headFirstChild(named: "offset")
 
         var property = HwpCharShapeProperty()
-        property.isBold = node.firstChild(named: "bold") != nil
-        property.isItalic = node.firstChild(named: "italic") != nil
-        property.isRelief = node.firstChild(named: "emboss") != nil
-        property.isCounterRelief = node.firstChild(named: "engrave") != nil
-        property.isSuperscript = node.firstChild(named: "supscript") != nil
-        property.isSubscript = node.firstChild(named: "subscript") != nil
+        property.isBold = node.headFirstChild(named: "bold") != nil
+        property.isItalic = node.headFirstChild(named: "italic") != nil
+        property.isRelief = node.headFirstChild(named: "emboss") != nil
+        property.isCounterRelief = node.headFirstChild(named: "engrave") != nil
+        property.isSuperscript = node.headFirstChild(named: "supscript") != nil
+        property.isSubscript = node.headFirstChild(named: "subscript") != nil
         property.isKerning = node.boolAttribute("useKerning")
         property.doesAdjustBlank = node.boolAttribute("useFontSpace")
         property.emphasisType = Self.emphasisTypes[node.attribute("symMark") ?? "NONE"]
             ?? .none
 
-        let underline = node.firstChild(named: "underline")
+        let underline = node.headFirstChild(named: "underline")
         var underlineColor = HwpColor()
         if let underline {
             property.underlineType = Self.underlineTypes[
@@ -117,7 +119,7 @@ enum HwpxCharShapeMapper {
             underlineColor = underline.colorAttribute("color") ?? HwpColor()
         }
 
-        let strikeout = node.firstChild(named: "strikeout")
+        let strikeout = node.headFirstChild(named: "strikeout")
         var strikethroughColor: HwpColor? = HwpColor()
         if let strikeout {
             let shape = strikeout.attribute("shape") ?? "NONE"
@@ -128,13 +130,13 @@ enum HwpxCharShapeMapper {
             strikethroughColor = strikeout.colorAttribute("color") ?? HwpColor()
         }
 
-        if let outline = node.firstChild(named: "outline") {
+        if let outline = node.headFirstChild(named: "outline") {
             property.borderlineType = Self.outlineTypes[
                 outline.attribute("type") ?? "NONE"
             ] ?? HwpBorderLineType.none
         }
 
-        let shadow = node.firstChild(named: "shadow")
+        let shadow = node.headFirstChild(named: "shadow")
         var shadowType = HwpShadowType.none
         if let shadow {
             shadowType = Self.shadowTypes[shadow.attribute("type") ?? "NONE"]

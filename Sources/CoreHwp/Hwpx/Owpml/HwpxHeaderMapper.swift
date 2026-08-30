@@ -251,11 +251,11 @@ private extension HwpxHeaderMapper {
             .map { HwpxCharShapeMapper.mapCharShape($0, tables: mapping.idTables) }
         for charPr in charPrs {
             mapping.unknownRecords += charPr.unconsumedChildRecords(
-                consumed: Set(Self.charPrLeafNames)
+                consumed: Set(Self.charPrLeafNames), in: HwpxNamespace.head
             )
             // 잎 래퍼 15종은 속성만 읽는다 — 자식이 전부 미소비다.
             for leafName in Self.charPrLeafNames {
-                if let leaf = charPr.firstChild(named: leafName) {
+                if let leaf = charPr.headFirstChild(named: leafName) {
                     mapping.unknownRecords += leaf.unconsumedChildRecords(consumed: [])
                 }
             }
