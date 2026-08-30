@@ -39,6 +39,23 @@ final class HwpxSectionInvariantTests: XCTestCase {
         expect(degraded.paragraph[0].paraLineSeg.paraLineSegInternalArray).to(beEmpty())
     }
 
+    func testNestedUnknownElementsAreRetainedRecursively() throws {
+        // 바이너리 변환(HwpUnknownRecord(HwpRecord))과 같은 재귀 보존 —
+        // 평탄 변환이면 진단 walker의 .child[i] 재귀가 안쪽에 닿지 못한다.
+        let section = try HwpxSectionFixture.mapSection(
+            HwpxSectionFixture.blankBody
+                + "<ext:outer xmlns:ext=\"urn:x\"><ext:inner/></ext:outer>"
+        )
+
+        let outer = try XCTUnwrap(section.unknownRecords.first {
+            String(bytes: $0.payload, encoding: .utf8) == "outer"
+        })
+        expect(outer.children.count) == 1
+        expect(outer.children.first.flatMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }) == "inner"
+    }
+
     func testPagePrLookupIgnoresOtherVocabularyDecoy() throws {
         // firstChild 전역 매칭이면 진짜 앞의 hh:pagePr 디코이가 쪽 기하를 대체한다.
         let xml = """

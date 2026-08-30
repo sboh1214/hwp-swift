@@ -126,11 +126,20 @@ extension HwpxXMLNode {
     func headDecoyRecords(named localName: String) -> [HwpUnknownRecord] {
         childElements
             .filter { $0.localName == localName && !$0.isNamed(localName, in: HwpxNamespace.head) }
-            .map {
-                HwpUnknownRecord(
-                    tagId: hwpxSyntheticTagId, level: 0, payload: Data($0.localName.utf8)
-                )
-            }
+            .map { $0.syntheticUnknownRecord() }
+    }
+
+    /// 미지 요소를 자식 트리째 합성 레코드로 바꾼다 — 바이너리 변환
+    /// (`HwpUnknownRecord(HwpRecord)`)과 같은 재귀 보존이다. 평탄 변환은
+    /// 진단 walker의 `.child[i]` 재귀가 안쪽 미지 요소에 닿지 못하게 한다.
+    /// 깊이는 파서의 `maximumElementDepth`가 유계로 잡는다.
+    func syntheticUnknownRecord() -> HwpUnknownRecord {
+        HwpUnknownRecord(
+            tagId: hwpxSyntheticTagId,
+            level: 0,
+            payload: Data(localName.utf8),
+            children: childElements.map { $0.syntheticUnknownRecord() }
+        )
     }
 
     /// 소비되지 않은 자식을 진단용 합성 레코드로 옮긴다.
@@ -141,11 +150,7 @@ extension HwpxXMLNode {
     func unconsumedChildRecords(consumed: Set<String>) -> [HwpUnknownRecord] {
         childElements
             .filter { child in !consumed.contains { child.isNamed($0) } }
-            .map {
-                HwpUnknownRecord(
-                    tagId: hwpxSyntheticTagId, level: 0, payload: Data($0.localName.utf8)
-                )
-            }
+            .map { $0.syntheticUnknownRecord() }
     }
 
     /// `unconsumedChildRecords(consumed:)`의 vocabulary-좁힘 변형 —
@@ -157,11 +162,7 @@ extension HwpxXMLNode {
     ) -> [HwpUnknownRecord] {
         childElements
             .filter { child in !consumed.contains { child.isNamed($0, in: namespace) } }
-            .map {
-                HwpUnknownRecord(
-                    tagId: hwpxSyntheticTagId, level: 0, payload: Data($0.localName.utf8)
-                )
-            }
+            .map { $0.syntheticUnknownRecord() }
     }
 }
 

@@ -31,9 +31,7 @@ enum HwpxSectionMapper {
         }
         let paragraphNodes = root.childElements.filter(isParagraph)
         for child in root.childElements where !isParagraph(child) {
-            unknownRecords.append(HwpUnknownRecord(
-                tagId: hwpxSyntheticTagId, level: 0, payload: Data(child.localName.utf8)
-            ))
+            unknownRecords.append(child.syntheticUnknownRecord())
         }
 
         for (index, node) in paragraphNodes.enumerated() {

@@ -32,11 +32,7 @@ enum HwpxPictureMapper {
                     child.isNamed($0, in: HwpxNamespace.paragraph)
                 } && !child.isNamed("img", in: HwpxNamespace.core)
             }
-            .map {
-                HwpUnknownRecord(
-                    tagId: hwpxSyntheticTagId, level: 0, payload: Data($0.localName.utf8)
-                )
-            }
+            .map { $0.syntheticUnknownRecord() }
         // 래퍼는 속성·pt 좌표만 읽는다 — 안의 미지 자식은 여기서 강등해야
         // 진단에 남는다 (paraPr 래퍼 강등과 같은 채널).
         if let image {

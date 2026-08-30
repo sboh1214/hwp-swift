@@ -303,10 +303,6 @@ private extension HwpxHeaderMapper {
     }
 
     static func unknownRecord(of node: HwpxXMLNode) -> HwpUnknownRecord {
-        HwpUnknownRecord(
-            tagId: hwpxSyntheticTagId,
-            level: 0,
-            payload: Data(node.localName.utf8)
-        )
+        node.syntheticUnknownRecord()
     }
 }

@@ -47,7 +47,7 @@ enum HwpxControlMapper {
             return .anchor(
                 code: 3,
                 fourCC: fourCC,
-                ctrl: degradedControl(fourCC: fourCC, elementName: node.localName)
+                ctrl: degradedControl(fourCC: fourCC, element: node)
             )
         case "fieldEnd":
             return .inlineOnly(code: 4, fourCC: HwpFieldCtrlId.unknown.rawValue)
@@ -76,14 +76,14 @@ enum HwpxControlMapper {
             return .anchor(
                 code: 11,
                 fourCC: fourCC,
-                ctrl: degradedControl(fourCC: fourCC, elementName: node.localName)
+                ctrl: degradedControl(fourCC: fourCC, element: node)
             )
         }
         if let (code, fourCC) = sectionAttachments[node.localName] {
             return .anchor(
                 code: code,
                 fourCC: fourCC,
-                ctrl: degradedControl(fourCC: fourCC, elementName: node.localName)
+                ctrl: degradedControl(fourCC: fourCC, element: node)
             )
         }
         return .unknown
@@ -92,15 +92,11 @@ enum HwpxControlMapper {
     /// 미구현 컨트롤 강등 — 요소 이름을 header payload와 unknownChildren에
     /// 함께 실어 진단이 OWPML 이름까지 보존한다 (`.notImplemented`의
     /// unknownChildren은 diagnostics walker가 걷는다).
-    static func degradedControl(fourCC: UInt32, elementName: String) -> HwpCtrlId {
+    static func degradedControl(fourCC: UInt32, element: HwpxXMLNode) -> HwpCtrlId {
         .notImplemented(HwpCtrlHeader(
             ctrlId: fourCC,
-            rawPayload: Data(elementName.utf8),
-            unknownChildren: [HwpUnknownRecord(
-                tagId: hwpxSyntheticTagId,
-                level: 0,
-                payload: Data(elementName.utf8)
-            )]
+            rawPayload: Data(element.localName.utf8),
+            unknownChildren: [element.syntheticUnknownRecord()]
         ))
     }
 

@@ -42,11 +42,7 @@ enum HwpxCharShapeMapper {
             else {
                 // 미지 lang의 fontface는 글꼴 목록이 통째로 빠지므로 조용히
                 // 버리면 안 된다 — 진단으로 남긴다.
-                unknownRecords.append(HwpUnknownRecord(
-                    tagId: hwpxSyntheticTagId,
-                    level: 0,
-                    payload: Data(fontface.localName.utf8)
-                ))
+                unknownRecords.append(fontface.syntheticUnknownRecord())
                 continue
             }
             let index = language.arrayIndex

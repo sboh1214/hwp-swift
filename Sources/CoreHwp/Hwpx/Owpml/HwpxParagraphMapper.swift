@@ -58,7 +58,7 @@ enum HwpxParagraphMapper {
                 // synthetic unknown으로 남기고 위치 불확실로 표시한다 — 안 그러면
                 // 진단에서 빠지고 positionCertain이 참으로 남아 안전밸브가 걸리지
                 // 않은 채 잘못된 lineseg 캐시를 쓴다 (P2).
-                builder.appendUnknown(child.localName)
+                builder.appendUnknown(child)
             }
         }
         builder.appendCharCode(13) // 문단 끝
@@ -101,7 +101,7 @@ private extension HwpxParagraphMapper {
         case .zeroWidth:
             builder.recordZeroWidth(node.localName)
         case .unknown:
-            builder.appendUnknown(node.localName)
+            builder.appendUnknown(node)
         }
     }
 
@@ -129,7 +129,7 @@ private extension HwpxParagraphMapper {
         guard element.namespaceURI.isEmpty
             || element.namespaceURI == HwpxNamespace.paragraph
         else {
-            builder.appendUnknown(element.localName)
+            builder.appendUnknown(element)
             return
         }
         switch element.localName {
@@ -149,7 +149,7 @@ private extension HwpxParagraphMapper {
             // 위치는 확실하므로 진단만 남긴다.
             builder.recordZeroWidth(element.localName)
         default:
-            builder.appendUnknown(element.localName)
+            builder.appendUnknown(element)
         }
     }
 
@@ -243,12 +243,7 @@ private extension HwpxParagraphMapper {
         guard segmentNodes.count == array.childElements.count else {
             let unknowns = array.childElements
                 .filter { !$0.isNamed("lineseg", in: HwpxNamespace.paragraph) }
-                .map {
-                    HwpUnknownRecord(
-                        tagId: hwpxSyntheticTagId, level: 0,
-                        payload: Data($0.localName.utf8)
-                    )
-                }
+                .map { $0.syntheticUnknownRecord() }
             return ([], unknowns)
         }
         // textpos는 다른 8속성과 달리 **sanity 판정의 기준**이라 기본값을
@@ -344,11 +339,9 @@ private struct ParagraphBuilder {
         controlMask |= 1 << UInt32(min(code, 31))
     }
 
-    mutating func appendUnknown(_ elementName: String) {
+    mutating func appendUnknown(_ element: HwpxXMLNode) {
         positionCertain = false
-        unknownChildren.append(HwpUnknownRecord(
-            tagId: hwpxSyntheticTagId, level: 0, payload: Data(elementName.utf8)
-        ))
+        unknownChildren.append(element.syntheticUnknownRecord())
     }
 
     mutating func recordZeroWidth(_ elementName: String) {
