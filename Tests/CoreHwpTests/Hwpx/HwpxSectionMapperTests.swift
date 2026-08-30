@@ -5,31 +5,15 @@ import XCTest
 
 /// 섹션/문단 매핑 크럭스 — WCHAR 스트림 합성 불변식을 합성 XML로 고정한다.
 final class HwpxSectionMapperTests: XCTestCase {
-    private func makeContext(options: HwpLoadOptions = .default) -> HwpxMappingContext {
-        var tables = HwpxIdTables()
-        tables.charShape.register(id: "7", offset: 0)
-        tables.charShape.register(id: "12", offset: 1)
-        tables.paraShape.register(id: "4", offset: 0)
-        tables.paraShape.register(id: "9", offset: 1)
-        tables.style.register(id: "0", offset: 0)
-        tables.style.register(id: "2", offset: 1)
-        return HwpxMappingContext(
-            idTables: tables,
-            binItemIdByManifestId: [:],
-            options: options,
-            entry: "Contents/section0.xml"
-        )
-    }
-
     private func mapSection(
         _ body: String,
         options: HwpLoadOptions = .default
     ) throws -> HwpSection {
-        let xml = """
-        <hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" \
-        xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">\(body)</hs:sec>
-        """
-        return try HwpxSectionMapper.map(Data(xml.utf8), context: makeContext(options: options))
+        try HwpxSectionFixture.mapSection(body, options: options)
+    }
+
+    private var blankBody: String {
+        HwpxSectionFixture.blankBody
     }
 
     func testGutterTypeMapsIntoPageDefinitionProperty() throws {
@@ -108,26 +92,6 @@ final class HwpxSectionMapperTests: XCTestCase {
         }
         expect(names) == ["colBreak"]
     }
-
-    /// 번들 Normal.hwtx의 section0.xml을 본뜬 최소 구역.
-    private let blankBody = """
-    <hp:p id="3121190098" paraPrIDRef="4" styleIDRef="0" pageBreak="0" \
-    columnBreak="0" merged="0">\
-    <hp:run charPrIDRef="7">\
-    <hp:secPr id="" textDirection="HORIZONTAL" spaceColumns="1134" tabStop="8000">\
-    <hp:startNum pageStartsOn="BOTH" page="0" pic="0" tbl="0" equation="0"/>\
-    <hp:pagePr landscape="WIDELY" width="59528" height="84186" gutterType="LEFT_ONLY">\
-    <hp:margin header="4252" footer="4252" gutter="0" left="8504" right="8504" \
-    top="5668" bottom="4252"/></hp:pagePr>\
-    </hp:secPr>\
-    <hp:ctrl><hp:colPr id="" type="NEWSPAPER" layout="LEFT" colCount="1" \
-    sameSz="1" sameGap="0"/></hp:ctrl>\
-    </hp:run>\
-    <hp:run charPrIDRef="7"><hp:t/></hp:run>\
-    <hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1000" \
-    textheight="1000" baseline="850" spacing="600" horzpos="0" horzsize="42520" \
-    flags="393216"/></hp:linesegarray></hp:p>
-    """
 
     func testLineSegmentsWithoutTextposDegradeToReflow() throws {
         // textpos는 sanity 판정의 기준이라 기본값 0으로 합성하면 안 된다 —
@@ -439,7 +403,7 @@ final class HwpxSectionMapperTests: XCTestCase {
         expect {
             _ = try HwpxSectionMapper.map(
                 Data("<hh:head xmlns:hh=\"urn:x\"/>".utf8),
-                context: self.makeContext()
+                context: HwpxSectionFixture.makeContext()
             )
         }.to(throwError { error in
             guard case let HwpError.invalidXML(_, reason) = error else {
@@ -470,7 +434,7 @@ final class HwpxSectionMapperTests: XCTestCase {
                     <x:sec xmlns:x="http://www.hancom.co.kr/hwpml/2011/head"/>
                     """.utf8
                 ),
-                context: self.makeContext()
+                context: HwpxSectionFixture.makeContext()
             )
         }.to(throwError { error in
             guard case let HwpError.invalidXML(_, reason) = error else {
