@@ -88,8 +88,15 @@ struct HwpxContainer {
         limits: HwpReadLimits,
         budget: inout HwpxByteBudget
     ) throws {
-        guard archive.entriesByName[EntryName.mimetype] != nil else {
+        guard let entry = archive.entriesByName[EntryName.mimetype] else {
             throw HwpError.invalidArchive(reason: "missing 'mimetype' entry")
+        }
+        // 암호화된 mimetype은 포맷 판정 자체가 불능이다 — 범용 entry 리더에
+        // 맡기면 encryptedDocument(HWP 도메인 주장)가 미디어 타입 비교보다
+        // 먼저 던져져 임의 암호화 ZIP이 "암호 한글 문서"로 오분류된다. OCF는
+        // mimetype을 평문 저장하므로 이 아카이브는 한컴 저장본이 아니다.
+        guard entry.flags & 0b1 == 0 else {
+            throw HwpError.invalidArchive(reason: "encrypted 'mimetype' entry")
         }
         let data = try archive.entryData(
             named: EntryName.mimetype, limits: limits, budget: &budget

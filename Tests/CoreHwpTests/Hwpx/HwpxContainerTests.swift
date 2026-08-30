@@ -70,6 +70,52 @@ final class HwpxContainerTests: XCTestCase {
         })
     }
 
+    func testEncryptedMimetypeEntryThrowsInvalidArchive() {
+        // 암호화 ZIP의 mimetype은 읽을 수 없어 포맷을 확인할 길이 없다 —
+        // encryptedDocument(HWP 도메인 주장)가 아니라 게이트의 invalidArchive다.
+        expect {
+            _ = try HwpxContainer(
+                data: self.makeArchive(mimetype: nil, extraEntries: [
+                    .init(
+                        name: "mimetype",
+                        content: Data("application/hwp+zip".utf8),
+                        method: 0,
+                        flags: 0b1
+                    ),
+                ]),
+                limits: self.limits
+            )
+        }.to(throwError { error in
+            guard case let HwpError.invalidArchive(reason) = error else {
+                return fail("Expected invalidArchive, got \(error)")
+            }
+            expect(reason).to(contain("encrypted 'mimetype'"))
+        })
+    }
+
+    func testEncryptedEntryAfterGatePassesStillThrowsUnsupportedFeature() {
+        // 게이트를 통과한(평문 mimetype 일치) 아카이브의 암호화 entry는
+        // 종전대로 encryptedDocument다 — 게이트 수정이 이 분류를 좁히지 않는다.
+        expect {
+            var container = try HwpxContainer(
+                data: self.makeArchive(extraEntries: [
+                    .init(
+                        name: "Contents/header.xml",
+                        content: Data("<hh:head/>".utf8),
+                        method: 0,
+                        flags: 0b1
+                    ),
+                ]),
+                limits: self.limits
+            )
+            _ = try container.requiredEntry("Contents/header.xml")
+        }.to(throwError { error in
+            guard case HwpError.unsupportedFeature(.encryptedDocument) = error else {
+                return fail("Expected unsupportedFeature(.encryptedDocument), got \(error)")
+            }
+        })
+    }
+
     func testEncryptionEntryThrowsUnsupportedFeature() {
         expect {
             _ = try HwpxContainer(
