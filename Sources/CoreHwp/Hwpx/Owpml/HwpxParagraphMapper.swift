@@ -246,6 +246,15 @@ private extension HwpxParagraphMapper {
                 .map { $0.syntheticUnknownRecord() }
             return ([], unknowns)
         }
+        // lineseg는 속성 전용이다 — 자식을 가진 세그먼트는 그 자체로
+        // 불확실한 캐시 메타데이터라 통째로 거부하고 자식을 진단에 남긴다
+        // (직계 수 대조만으로는 세그먼트 안 미지 요소가 통과한다).
+        guard segmentNodes.allSatisfy(\.childElements.isEmpty) else {
+            let unknowns = segmentNodes.flatMap { segment in
+                segment.childElements.map { $0.syntheticUnknownRecord() }
+            }
+            return ([], unknowns)
+        }
         // textpos는 다른 8속성과 달리 **sanity 판정의 기준**이라 기본값을
         // 줄 수 없다 — 누락·비숫자를 0으로 합성하면 가장 불확실한 캐시가
         // "첫 textpos 0" 가드를 통과해 절대 조판의 신뢰 입력이 된다.

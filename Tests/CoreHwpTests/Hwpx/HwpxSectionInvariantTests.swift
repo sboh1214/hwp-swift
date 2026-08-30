@@ -56,6 +56,24 @@ final class HwpxSectionInvariantTests: XCTestCase {
         }) == "inner"
     }
 
+    func testLineCacheWithNestedUnknownInsideSegmentIsRejected() throws {
+        // lineseg는 속성 전용 — 유효 lineseg 안의 미지 자식은 직계 수
+        // 대조를 통과하므로 세그먼트 층에서 따로 거부해야 한다.
+        let section = try HwpxSectionFixture.mapSection(
+            HwpxSectionFixture.blankBody.replacingOccurrences(
+                of: "flags=\"393216\"/>",
+                with: "flags=\"393216\"><hp:cacheExtra/></hp:lineseg>"
+            )
+        )
+
+        let paragraph = section.paragraph[0]
+        expect(paragraph.paraLineSeg.paraLineSegInternalArray).to(beEmpty())
+        let names = paragraph.unknownChildren.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("cacheExtra"))
+    }
+
     func testSecPrWrapperDescendantsDegradeIntoDiagnostics() throws {
         // pagePr는 margin만, margin·startNum은 속성만 읽는다 — 래퍼 안
         // 확장 요소가 진단에 남아야 한다.
