@@ -107,6 +107,31 @@ final class HwpxHeaderDiagnosticsTests: XCTestCase {
         expect(docInfo.idMappings.borderFillArray.count) == 2
     }
 
+    func testUnconsumedWrapperDescendantsDegradeIntoDiagnostics() throws {
+        // 소비된 래퍼(margin·align) 안 미지 자식도 진단에 남아야 한다 —
+        // 래퍼를 통째로 소비 처리하면 그 안의 확장 요소가 사라진다.
+        let withExtras = HwpxHeaderFixture.headerXML
+            .replacingOccurrences(
+                of: "<hh:margin><hc:intent value=\"-2620\" unit=\"HWPUNIT\"/>",
+                with: "<hh:margin><hh:marginExtra/><hc:intent value=\"-2620\" unit=\"HWPUNIT\"/>"
+            )
+            .replacingOccurrences(
+                of: "<hh:paraPr id=\"9\"><hh:align horizontal=\"JUSTIFY\"/>",
+                with: "<hh:paraPr id=\"9\"><hh:align horizontal=\"JUSTIFY\">"
+                    + "<hh:alignExtra/></hh:align>"
+            )
+        let (docInfo, _) = try HwpxHeaderFixture.mapHeader(withExtras)
+
+        let names = docInfo.unknownRecords.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("marginExtra"))
+        expect(names).to(contain("alignExtra"))
+        // 소비되는 margin 자식은 강등되지 않는다 (음성 대조).
+        expect(names).toNot(contain("intent"))
+        expect(names).toNot(contain("left"))
+    }
+
     func testUnconsumedCharPrChildrenDegradeIntoDiagnostics() throws {
         let withExtras = HwpxHeaderFixture.headerXML.replacingOccurrences(
             of: "<hh:bold/>",

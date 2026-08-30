@@ -277,6 +277,18 @@ private extension HwpxHeaderMapper {
             mapping.unknownRecords += paraPr.unconsumedChildRecords(consumed: [
                 "align", "heading", "margin", "lineSpacing", "border",
             ])
+            // 소비된 래퍼 안 미지 자식 — margin은 5종만 읽고 나머지 래퍼
+            // 4종은 속성만 읽는 잎이라 자식이 전부 미소비다.
+            if let margin = paraPr.firstChild(named: "margin") {
+                mapping.unknownRecords += margin.unconsumedChildRecords(consumed: [
+                    "intent", "left", "right", "prev", "next",
+                ])
+            }
+            for leafName in ["align", "heading", "lineSpacing", "border"] {
+                if let leaf = paraPr.firstChild(named: leafName) {
+                    mapping.unknownRecords += leaf.unconsumedChildRecords(consumed: [])
+                }
+            }
         }
     }
 
