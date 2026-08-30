@@ -171,8 +171,7 @@ private extension HwpxHeaderMapper {
             case "borderFills":
                 mapBorderFills(family, into: &mapping)
             case "charProperties":
-                mapping.idMappings.charShapeArray = family.headChildren(named: "charPr")
-                    .map { HwpxCharShapeMapper.mapCharShape($0, tables: mapping.idTables) }
+                mapCharProperties(family, into: &mapping)
             case "tabProperties":
                 mapTabProperties(family, into: &mapping)
             case "paraProperties":
@@ -200,6 +199,26 @@ private extension HwpxHeaderMapper {
             return
         }
         mapping.unknownRecords += family.headDecoyRecords(named: definitionName)
+    }
+
+    /// `hh:charProperties` 가족을 글자 모양 배열로 옮긴다.
+    ///
+    /// `mapCharShape`가 소비하지 않는 자식은 진단으로 강등해야 "미해석
+    /// 강등은 진단으로 보고됨" 규약이 지켜진다 (borderFill·paraPr와 같은 채널).
+    static func mapCharProperties(
+        _ family: HwpxXMLNode,
+        into mapping: inout HwpxHeaderMapping
+    ) {
+        let charPrs = family.headChildren(named: "charPr")
+        mapping.idMappings.charShapeArray = charPrs
+            .map { HwpxCharShapeMapper.mapCharShape($0, tables: mapping.idTables) }
+        for charPr in charPrs {
+            mapping.unknownRecords += charPr.unconsumedChildRecords(consumed: [
+                "fontRef", "ratio", "spacing", "relSz", "offset", "bold", "italic",
+                "emboss", "engrave", "supscript", "subscript", "underline",
+                "strikeout", "outline", "shadow",
+            ])
+        }
     }
 
     /// 가족 → 정의 요소 이름. `headChildren` 조회가 거른 타 vocabulary

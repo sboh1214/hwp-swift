@@ -107,6 +107,22 @@ final class HwpxHeaderDiagnosticsTests: XCTestCase {
         expect(docInfo.idMappings.borderFillArray.count) == 2
     }
 
+    func testUnconsumedCharPrChildrenDegradeIntoDiagnostics() throws {
+        let withExtras = HwpxHeaderFixture.headerXML.replacingOccurrences(
+            of: "<hh:bold/>",
+            with: "<hh:bold/><hh:extraDecoration/>"
+        )
+        let (docInfo, _) = try HwpxHeaderFixture.mapHeader(withExtras)
+
+        let names = docInfo.unknownRecords.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("extraDecoration"))
+        // 소비되는 자식은 강등되지 않는다 (음성 대조).
+        expect(names).toNot(contain("bold"))
+        expect(names).toNot(contain("underline"))
+    }
+
     func testRefListDefinitionDecoysAreDemotedAndDoNotShiftRegistration() throws {
         // 진짜 hh:charPr(id 7) 앞에 다른 id의 hp:charPr 디코이 — 등록이
         // 디코이를 세면 id 7의 오프셋이 밀려 스타일 참조가 어긋난다.
