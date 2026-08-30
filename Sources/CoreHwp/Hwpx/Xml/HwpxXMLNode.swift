@@ -127,15 +127,6 @@ extension HwpxXMLNode {
         childElements.first { $0.isNamed(localName, in: HwpxNamespace.head) }
     }
 
-    /// `headChildren(named:)` 조회의 강등 짝 — 이름은 정의 요소와 같지만 head
-    /// vocabulary가 아닌 디코이를 진단용 합성 레코드로 옮긴다. 조회만 좁히고
-    /// 이것을 빠뜨리면 디코이가 흔적 없이 사라진다.
-    func headDecoyRecords(named localName: String) -> [HwpUnknownRecord] {
-        childElements
-            .filter { $0.localName == localName && !$0.isNamed(localName, in: HwpxNamespace.head) }
-            .map { $0.syntheticUnknownRecord() }
-    }
-
     /// 미지 요소를 자식 트리째 합성 레코드로 바꾼다 — 바이너리 변환
     /// (`HwpUnknownRecord(HwpRecord)`)과 같은 재귀 보존이다. 평탄 변환은
     /// 진단 walker의 `.child[i]` 재귀가 안쪽 미지 요소에 닿지 못하게 한다.

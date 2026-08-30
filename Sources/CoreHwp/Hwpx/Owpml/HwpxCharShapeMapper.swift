@@ -46,7 +46,13 @@ enum HwpxCharShapeMapper {
                 continue
             }
             let index = language.arrayIndex
-            unknownRecords += fontface.headDecoyRecords(named: "font")
+            // 이름이 같은 타 vocabulary 디코이와 이름이 다른 미래·미지원
+            // 자식을 한 술어로 강등한다 — 디코이만 잡는 좁은 술어로는
+            // <hh:faceMeta> 같은 자식이 매핑도 강등도 되지 않아 흔적 없이
+            // 사라진다 (가족 수준 demoteUnconsumedFamilyChildren와 같은 채널).
+            unknownRecords += fontface.unconsumedChildRecords(
+                consumed: ["font"], in: HwpxNamespace.head
+            )
             let fonts = fontface.headChildren(named: "font")
             // fontRef의 언어별 faceId는 0-based WORD — 65,537번째부터
             // 오프셋이 65,535로 별칭화된다 (tabPr·paraPr 가드와 같은 계열).

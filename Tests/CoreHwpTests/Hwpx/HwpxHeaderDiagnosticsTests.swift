@@ -106,6 +106,25 @@ final class HwpxHeaderDiagnosticsTests: XCTestCase {
         expect(names).to(contain("bold"))
     }
 
+    func testUnconsumedFontfaceChildrenWithOtherNamesAreDemoted() throws {
+        // fontface 직속의 다른 이름 자식 — 이름이 "font"인 디코이만 잡는
+        // 술어로는 매핑도 강등도 되지 않아 흔적 없이 사라진다.
+        let withExtra = HwpxHeaderFixture.headerXML.replacingOccurrences(
+            of: "<hh:font id=\"5\" face=\"Arial\" type=\"TTF\" isEmbedded=\"0\"/>",
+            with: "<hh:font id=\"5\" face=\"Arial\" type=\"TTF\" isEmbedded=\"0\"/>"
+                + "<hh:faceMeta vendor=\"x\"/>"
+        )
+        let (docInfo, _) = try HwpxHeaderFixture.mapHeader(withExtra)
+
+        let names = docInfo.unknownRecords.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("faceMeta"))
+        // 소비되는 font는 강등되지 않는다 (음성 대조).
+        expect(docInfo.idMappings.faceNameEnglishArray.count) == 1
+        expect(names).toNot(contain("font"))
+    }
+
     func testHeadChildDecoysFromOtherKnownVocabularyAreDemotedNotMapped() throws {
         // 같은 local name의 <hp:*> 디코이 — head vocabulary가 아니므로
         // 시작 번호를 덮지 못하고 진단으로 강등되어야 한다.
