@@ -80,7 +80,12 @@ struct HwpxContainer {
         guard !digits.isEmpty, digits.allSatisfy(\.isNumber) else {
             return nil
         }
-        return Int(digits)
+        // 정규 이름만 폴백에 채택한다 — Int("01")도 1이라 별칭을 받으면 같은
+        // 인덱스의 구역이 중복되고, 동률 정렬 순서가 사전 순회 무작위를 탄다.
+        guard let index = Int(digits), String(index) == digits else {
+            return nil
+        }
+        return index
     }
 
     private static func validateMimetype(

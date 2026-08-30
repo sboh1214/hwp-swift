@@ -148,6 +148,33 @@ final class HwpxContainerTests: XCTestCase {
         expect(container.sectionEntryNames) == sectionNames
     }
 
+    func testNoncanonicalSectionAliasesAreExcludedFromFallback() throws {
+        // Int("01")도 1이라 별칭을 받으면 같은 인덱스의 구역이 중복되고
+        // 동률 정렬 순서가 사전 순회 무작위를 탄다 — 정규 이름만 채택한다.
+        let container = try HwpxContainer(
+            data: makeArchive(extraEntries: [
+                .init(
+                    name: "Contents/section0.xml",
+                    content: Data("<hs:sec/>".utf8), method: 0
+                ),
+                .init(
+                    name: "Contents/section1.xml",
+                    content: Data("<hs:sec/>".utf8), method: 0
+                ),
+                .init(
+                    name: "Contents/section01.xml",
+                    content: Data("<hs:sec/>".utf8), method: 0
+                ),
+            ]),
+            limits: limits
+        )
+
+        expect(container.sectionEntryNames) == [
+            "Contents/section0.xml", "Contents/section1.xml",
+        ]
+        expect(HwpxContainer.sectionIndex(of: "Contents/section01.xml")).to(beNil())
+    }
+
     func testSectionIndexRejectsNonSectionNames() {
         expect(HwpxContainer.sectionIndex(of: "Contents/section0.xml")) == 0
         expect(HwpxContainer.sectionIndex(of: "Contents/section12.xml")) == 12
