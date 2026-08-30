@@ -96,7 +96,12 @@ enum HwpxSecPrMapper {
 
         // 폭이 다른 다단: hp:colSz(width·gap)가 단 수만큼 나열된다.
         let sizes = colPr.paragraphChildren(named: "colSz")
-        if !property.isSameWidth, !sizes.isEmpty {
+        if !property.isSameWidth, !sizes.isEmpty, sizes.count <= 255 {
+            // 비등폭 단은 파싱된 colSz가 구조의 정본이다 — 선언 colCount와
+            // 어긋나면 columnFrames의 count 대조(widths.count == count)가
+            // widthArray를 버리고 등폭으로 그린다.
+            property.count = sizes.count
+            column.property = property
             column.widthArray = sizes.map { $0.uint16Attribute("width", default: 0) }
             column.gapArray = sizes.map { $0.uint16Attribute("gap", default: 0) }
             column.spacing = nil
@@ -116,8 +121,14 @@ enum HwpxSecPrMapper {
         column.unknownChildren = colPr.unconsumedChildRecords(
             consumed: ["colSz", "colLine"], in: HwpxNamespace.paragraph
         )
-        for size in sizes {
-            column.unknownChildren += size.unconsumedChildRecords(consumed: [])
+        if !property.isSameWidth, sizes.count > 255 {
+            // 8비트 count가 못 담는 폭 목록은 채택 불능이다 — 등폭 폴백으로
+            // 그리되 버리는 colSz를 진단에 남겨 조용히 지나가지 않게 한다.
+            column.unknownChildren += sizes.map { $0.syntheticUnknownRecord() }
+        } else {
+            for size in sizes {
+                column.unknownChildren += size.unconsumedChildRecords(consumed: [])
+            }
         }
         if let line = colPr.paragraphFirstChild(named: "colLine") {
             column.unknownChildren += line.unconsumedChildRecords(consumed: [])

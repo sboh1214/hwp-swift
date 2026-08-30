@@ -116,6 +116,40 @@ final class HwpxSectionInvariantTests: XCTestCase {
         expect(names).to(contain("pagePr"))
     }
 
+    func testVariableColumnCountFollowsParsedSizes() throws {
+        // 선언 colCount=3에 colSz 2개 — 파싱 구조가 정본이다. 선언을 믿으면
+        // columnFrames의 count 대조(widths.count == count)가 widthArray를
+        // 버리고 등폭으로 그린다.
+        let xml = """
+        <hp:colPr xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" id="" \
+        type="NEWSPAPER" layout="LEFT" colCount="3" sameSz="0" sameGap="0">\
+        <hp:colSz width="100" gap="1"/><hp:colSz width="200" gap="2"/>\
+        </hp:colPr>
+        """
+        let column = HwpxSecPrMapper.mapColumn(try parse(xml))
+
+        expect(column.property.count) == 2
+        expect(column.widthArray) == [100, 200]
+    }
+
+    func testOversizedVariableColumnListFallsBackToEqualWidth() throws {
+        // 8비트 count가 못 담는 폭 목록은 채택 불능 — 등폭 폴백으로 그리되
+        // 버려진 colSz가 진단에 남아야 조용히 지나가지 않는다.
+        let sizes = String(repeating: "<hp:colSz width=\"10\" gap=\"1\"/>", count: 256)
+        let xml = """
+        <hp:colPr xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" id="" \
+        type="NEWSPAPER" layout="LEFT" colCount="256" sameSz="0" \
+        sameGap="0">\(sizes)</hp:colPr>
+        """
+        let column = HwpxSecPrMapper.mapColumn(try parse(xml))
+
+        expect(column.widthArray).to(beNil())
+        let names = column.unknownChildren.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names.filter { $0 == "colSz" }.count) == 256
+    }
+
     func testColumnLookupsIgnoreOtherVocabularyDecoys() throws {
         let xml = """
         <hp:colPr xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" \
