@@ -155,12 +155,15 @@ final class HwpxArchiveTests: XCTestCase {
     /// 중앙 디렉터리와 EOCD 사이에 임의 20바이트를 끼운다 — EOCD의
     /// offset/size 관계는 그대로라 아카이브는 여전히 유효하다.
     private func endOfCentralDirectoryOffset(of archive: Data) throws -> Int {
-        try XCTUnwrap(
-            (0 ..< archive.count - 3).last {
-                archive[$0] == 0x50 && archive[$0 + 1] == 0x4B
-                    && archive[$0 + 2] == 0x05 && archive[$0 + 3] == 0x06
-            }
-        )
+        // 한 식에 몰면 Swift 5.9 타입 체커가 시간 안에 못 푼다 (Linux CI 실측:
+        // "unable to type-check this expression in reasonable time").
+        let bytes = [UInt8](archive)
+        let signature: [UInt8] = [0x50, 0x4B, 0x05, 0x06]
+        let candidates = stride(from: bytes.count - signature.count, through: 0, by: -1)
+        let offset = candidates.first { start in
+            Array(bytes[start ..< start + signature.count]) == signature
+        }
+        return try XCTUnwrap(offset)
     }
 
     private func splicingBeforeEndOfCentralDirectory(

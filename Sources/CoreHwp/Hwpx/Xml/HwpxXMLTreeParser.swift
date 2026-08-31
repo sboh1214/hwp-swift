@@ -33,6 +33,14 @@ final class HwpxXMLTreeParser: NSObject {
     /// XML 바이트를 파싱해 루트 요소를 돌려준다. `hp:switch`는 여기서 이미
     /// 해소되어 매퍼는 조건 분기를 보지 않는다.
     static func parse(_ data: Data, entry: String) throws -> HwpxXMLNode {
+        // 델리게이트 기반 거부는 Apple 한정이다 — libxml2 기반 Linux
+        // XMLParser는 엔티티 선언 콜백을 부르지 않아 선언이 그대로 통과한다
+        // (Linux CI 실측). 조용한 본문 유실·치환은 두 플랫폼 모두에서
+        // 일어나므로 바이트에서 먼저 거른다.
+        if let reason = entityDeclarationFailure(in: data) {
+            throw HwpError.invalidXML(entry: entry, reason: reason)
+        }
+
         let delegate = HwpxXMLTreeParser()
         let parser = XMLParser(data: data)
         parser.shouldProcessNamespaces = true
@@ -59,6 +67,21 @@ final class HwpxXMLTreeParser: NSObject {
             return root.resolvingSwitches()
         }
         return root.markingUnqualifiedElements().resolvingSwitches()
+    }
+
+    /// DTD 내부 서브셋의 엔티티 선언을 바이트에서 찾는다.
+    ///
+    /// 엔티티 선언은 XML 문법상 DOCTYPE 안에만 올 수 있으므로 그 뒤만 본다 —
+    /// 본문 CDATA에 같은 문자열이 있어도 DOCTYPE이 없으면 통과한다 (실측:
+    /// HWPX 픽스처 10종·한컴 번들 템플릿 전수에 DOCTYPE 0건).
+    static func entityDeclarationFailure(in data: Data) -> String? {
+        guard let doctype = data.range(of: Data("<!DOCTYPE".utf8)) else {
+            return nil
+        }
+        guard data[doctype.upperBound...].range(of: Data("<!ENTITY".utf8)) != nil else {
+            return nil
+        }
+        return "custom entity declaration is not supported"
     }
 
     private func record(failure reason: String) {
