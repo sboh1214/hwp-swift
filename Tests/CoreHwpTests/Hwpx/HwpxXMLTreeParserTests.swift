@@ -304,6 +304,22 @@ final class HwpxXMLTreeParserTests: XCTestCase {
 
     // MARK: - 속성 리더
 
+    func testColorAttributeAcceptsEightDigitARGB() throws {
+        // 한컴은 같은 자리에 8자리 ARGB도 쓴다 (noori의 테두리 #FF000000,
+        // 번들 템플릿의 shadeColor #FFFFFFFF) — 거부하면 호출자 기본값으로
+        // 떨어져 색이 조용히 바뀐다.
+        let root = try parse(
+            "<hh:borderFill xmlns:hh=\"http://www.hancom.co.kr/hwpml/2011/head\" "
+                + "argb=\"#FF3366CC\" rgb=\"#3366CC\" absent=\"none\" short=\"#FF3366C\"/>"
+        )
+
+        expect(root.colorAttribute("argb")) == HwpColor(0x33, 0x66, 0xCC)
+        // 알파만 다른 8자리는 7자리와 같은 색으로 접힌다.
+        expect(root.colorAttribute("argb")) == root.colorAttribute("rgb")
+        expect(root.colorAttribute("absent")).to(beNil())
+        expect(root.colorAttribute("short")).to(beNil())
+    }
+
     func testRequiredAttributeThrowsOnAbsence() throws {
         let root = try parse("<pagePr width=\"59528\"/>")
 

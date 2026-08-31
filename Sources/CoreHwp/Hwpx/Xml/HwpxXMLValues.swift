@@ -61,9 +61,18 @@ extension HwpxXMLNode {
         }
     }
 
-    /// `#RRGGBB` 색상. `none`과 형식 오류는 nil이다.
+    /// `#RRGGBB`·`#AARRGGBB` 색상. `none`과 형식 오류는 nil이다.
+    ///
+    /// 한컴은 같은 자리에 8자리 ARGB도 쓴다 (실측: noori의 테두리
+    /// `#FF000000` 4건·`hatchColor` 2건, 번들 템플릿의 `shadeColor`
+    /// `#FFFFFFFF` 7건). 거부하면 호출자 기본값으로 떨어져 색이 조용히
+    /// 바뀌므로 저 24비트를 취한다 — 같은 문서가 같은 속성에 7자리
+    /// `#000000`을 336건 쓰므로 선두 바이트는 알파다 (RGBA로 읽으면 그
+    /// 테두리가 "투명한 빨강"이 되어 어긋난다). 모델에 알파 채널이 없어
+    /// 알파는 버린다.
     func colorAttribute(_ name: String) -> HwpColor? {
-        guard let raw = attributes[name], raw.hasPrefix("#"), raw.count == 7,
+        guard let raw = attributes[name], raw.hasPrefix("#"),
+              raw.count == 7 || raw.count == 9,
               let value = UInt32(raw.dropFirst(), radix: 16)
         else {
             return nil
