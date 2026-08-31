@@ -152,6 +152,58 @@ final class HwpxArchiveTests: XCTestCase {
         })
     }
 
+    /// 중앙 디렉터리와 EOCD 사이에 임의 20바이트를 끼운다 — EOCD의
+    /// offset/size 관계는 그대로라 아카이브는 여전히 유효하다.
+    private func endOfCentralDirectoryOffset(of archive: Data) throws -> Int {
+        try XCTUnwrap(
+            (0 ..< archive.count - 3).last {
+                archive[$0] == 0x50 && archive[$0 + 1] == 0x4B
+                    && archive[$0 + 2] == 0x05 && archive[$0 + 3] == 0x06
+            }
+        )
+    }
+
+    private func splicingBeforeEndOfCentralDirectory(
+        _ archive: Data, _ filler: [UInt8]
+    ) throws -> Data {
+        let eocd = try endOfCentralDirectoryOffset(of: archive)
+        return archive[..<eocd] + Data(filler) + archive[eocd...]
+    }
+
+    func testLocatorSignatureWithoutValidStructureIsNotZip64() throws {
+        // 유효한 non-Zip64인데 EOCD 앞 20바이트가 우연히 locator 시그니처로
+        // 시작하는 경우 — 시그니처만 보면 이 아카이브를 잃는다.
+        var builder = ZipBuilder()
+        builder.entries = [.init(name: "a", content: Data("x".utf8), method: 0)]
+        let decoy: [UInt8] = [0x50, 0x4B, 0x06, 0x07] + [UInt8](repeating: 0xAA, count: 16)
+
+        let archive = try splicingBeforeEndOfCentralDirectory(builder.build(), decoy)
+        let parsed = try HwpxArchive(data: archive)
+
+        expect(parsed.entriesByName.keys.sorted()) == ["a"]
+    }
+
+    func testCoherentZip64LocatorStillThrowsInvalidArchive() throws {
+        // 대조군 — 가리키는 자리에 실제 Zip64 EOCD가 있으면 종전대로 거부한다.
+        var builder = ZipBuilder()
+        builder.entries = [.init(name: "a", content: Data("x".utf8), method: 0)]
+        let base = builder.build()
+        // 끼워 넣은 record가 놓일 자리 = 원래 EOCD 위치.
+        let recordOffset = UInt32(try endOfCentralDirectoryOffset(of: base))
+        var locator: [UInt8] = [0x50, 0x4B, 0x06, 0x07, 0, 0, 0, 0]
+        locator += withUnsafeBytes(of: recordOffset.littleEndian, Array.init)
+        locator += [0, 0, 0, 0] + [1, 0, 0, 0]
+        let record: [UInt8] = [0x50, 0x4B, 0x06, 0x06]
+
+        let archive = try splicingBeforeEndOfCentralDirectory(base, record + locator)
+
+        expect {
+            _ = try HwpxArchive(data: archive)
+        }.to(throwError { error in
+            assertInvalidArchive(error, containing: "Zip64")
+        })
+    }
+
     func testZip64SentinelThrowsInvalidArchive() {
         var builder = ZipBuilder()
         builder.entries = [.init(name: "a", content: Data("x".utf8), method: 0)]

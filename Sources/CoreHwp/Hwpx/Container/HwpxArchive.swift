@@ -153,6 +153,7 @@ private extension HwpxArchive {
         static let centralDirectoryEntry: UInt32 = 0x0201_4B50
         static let localFileHeader: UInt32 = 0x0403_4B50
         static let zip64Locator: UInt32 = 0x0706_4B50
+        static let zip64EndOfCentralDirectory: UInt32 = 0x0606_4B50
     }
 
     static let endOfCentralDirectoryLength = 22
@@ -205,14 +206,39 @@ private extension HwpxArchive {
         let zip64Sentinel = entryCount == 0xFFFF
             || directorySize == 0xFFFF_FFFF
             || directoryOffset == 0xFFFF_FFFF
-        var hasZip64Locator = false
-        if eocdOffset >= 20 {
-            hasZip64Locator = try data.readLittleEndianUInt32(at: eocdOffset - 20)
-                == Signature.zip64Locator
-        }
-        guard !zip64Sentinel, !hasZip64Locator else {
+        guard !zip64Sentinel, try !hasZip64Locator(data, eocdOffset: eocdOffset) else {
             throw HwpError.invalidArchive(reason: "Zip64 archives are not supported")
         }
+    }
+
+    /// EOCD 앞 20바이트가 **온전한** Zip64 EOCD locator인지.
+    ///
+    /// 시그니처만 보면 중앙 디렉터리의 마지막 바이트들이 우연히 그 4바이트로
+    /// 시작하는 유효한 non-Zip64 아카이브(엔트리 주석 등)를 거부한다. 단일
+    /// 디스크 형태이고 가리키는 자리에 실제 Zip64 EOCD가 있을 때만 Zip64로
+    /// 판정한다 — 진짜 Zip64는 EOCD sentinel(0xFFFF·0xFFFF_FFFF)이 별도로
+    /// 잡으므로 이 판정을 좁혀도 통과하지 않는다.
+    static func hasZip64Locator(_ data: Data, eocdOffset: Int) throws -> Bool {
+        guard eocdOffset >= 20 else {
+            return false
+        }
+        let offset = eocdOffset - 20
+        guard try data.readLittleEndianUInt32(at: offset) == Signature.zip64Locator,
+              try data.readLittleEndianUInt32(at: offset + 4) == 0,
+              try data.readLittleEndianUInt32(at: offset + 16) == 1
+        else {
+            return false
+        }
+        // 레코드 오프셋은 64비트다 — 상위 워드가 있으면 4 GiB 밖이라 이 Data로
+        // 확인할 수 없다 (그런 아카이브는 EOCD sentinel이 잡는다).
+        guard try data.readLittleEndianUInt32(at: offset + 12) == 0,
+              let recordOffset = Int(exactly: try data.readLittleEndianUInt32(at: offset + 8)),
+              recordOffset + 4 <= offset
+        else {
+            return false
+        }
+        return try data.readLittleEndianUInt32(at: recordOffset)
+            == Signature.zip64EndOfCentralDirectory
     }
 
     static func readCentralDirectory(
