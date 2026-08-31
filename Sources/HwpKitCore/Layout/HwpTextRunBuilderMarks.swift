@@ -116,7 +116,11 @@ extension HwpTextRunBuilder {
         let text = attributed.string as NSString
         var index = 0
         while index < text.length {
-            if text.character(at: index) == 0x20 {
+            // U+00A0도 대상이다 — 묶음·고정폭 빈칸(30/31)이 이 문자로 오므로
+            // 일반 공백과 같은 0.5em 규칙을 받아야 한다. 빼면 폰트 고유
+            // advance(HCR Batang ≈ 0.3em)에 머물러 그 문단만 좁게 조판된다.
+            let unit = text.character(at: index)
+            if unit == 0x20 || unit == 0xA0 {
                 let attrs = attributed.attributes(at: index, effectiveRange: nil)
                 if let fontValue = attrs[kCTFontAttributeName as NSAttributedString.Key],
                    CFGetTypeID(fontValue as CFTypeRef) == CTFontGetTypeID()
@@ -128,7 +132,7 @@ extension HwpTextRunBuilder {
                     // 상대크기 170 줄 공백 = 1.7배)
                     let base = (attrs[HwpAttributedStringKey.spaceTargetSize]
                         as? NSNumber).map { CGFloat($0.doubleValue) }
-                    let kern = Self.fixedSpaceKern(for: font, targetEm: base)
+                    let kern = Self.fixedSpaceKern(for: font, targetEm: base, character: unit)
                     if abs(kern) > 0.01 {
                         attributed.addAttribute(
                             kCTKernAttributeName as NSAttributedString.Key,
@@ -144,8 +148,14 @@ extension HwpTextRunBuilder {
 
     /// 공백 글리프의 고유 advance와 0.5em 목표의 차 (폰트별 캐시 없이 즉석 계산 —
     /// CTFontGetAdvancesForGlyphs는 가볍고 chunk 단위로만 불린다)
-    static func fixedSpaceKern(for font: CTFont, targetEm: CGFloat? = nil) -> CGFloat {
-        var character: UniChar = 0x20
+    static func fixedSpaceKern(
+        for font: CTFont,
+        targetEm: CGFloat? = nil,
+        character: UniChar = 0x20
+    ) -> CGFloat {
+        // 보정 대상 문자 자신의 advance를 잰다 — U+0020으로 고정하면 고유
+        // advance가 다른 공백(U+00A0)에서 목표 폭이 어긋난다.
+        var character = character
         var glyph = CGGlyph()
         guard CTFontGetGlyphsForCharacters(font, &character, &glyph, 1) else { return 0 }
         var advance = CGSize.zero

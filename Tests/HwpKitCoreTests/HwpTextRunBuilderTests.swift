@@ -40,6 +40,29 @@ import XCTest
             expect(result.string) == "가\u{A0}나\u{A0}다"
         }
 
+        func testControlSpacesReceiveTheFixedSpaceWidth() {
+            // U+00A0으로 옮긴 30/31도 일반 공백과 같은 0.5em 보정을 받아야
+            // 한다 — 빠지면 폰트 고유 advance에 머물러 그 문단만 좁게 조판된다.
+            let font = CTFontCreateWithName("Helvetica" as CFString, 12, nil)
+            let attributed = NSMutableAttributedString(
+                string: "가 나\u{A0}다",
+                attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
+            )
+            HwpTextRunBuilder.applyFixedSpaceWidth(to: attributed)
+
+            func advance(at location: Int) -> Double {
+                let piece = attributed.attributedSubstring(
+                    from: NSRange(location: location, length: 1)
+                )
+                return CTLineGetTypographicBounds(
+                    CTLineCreateWithAttributedString(piece), nil, nil, nil
+                )
+            }
+
+            expect(advance(at: 3)) == advance(at: 1)
+            expect(advance(at: 3)).to(beCloseTo(6.0, within: 0.01))
+        }
+
         func testSingleShapeParagraphProducesOneFontRange() throws {
             let paragraph = paragraph(text: "hello", runs: [(0, 0)])
             let result = builder(shapes: [0: try charShape()]).build(paragraph: paragraph)
