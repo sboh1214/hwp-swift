@@ -342,6 +342,14 @@ private struct ParagraphBuilder {
     private(set) var unknownChildren: [HwpUnknownRecord] = []
     private var shapeEntries: [(start: UInt32, shape: UInt32)] = []
 
+    /// 명시 init — 저장 프로퍼티가 `private(set)`·`private`이라 합성
+    /// memberwise init의 접근 수준이 `private`으로 내려가고, 그러면 같은
+    /// 파일의 `map`에서도 부를 수 없다 (Swift 6.4는 통과시키지만 6.3·5.9와
+    /// Xcode 툴체인은 거부한다 — CI 실측).
+    init(unknownDepthLimit: Int) {
+        self.unknownDepthLimit = unknownDepthLimit
+    }
+
     mutating func beginRun(shapeOffset: UInt32) {
         shapeEntries.append((wcharPosition, shapeOffset))
     }
