@@ -160,6 +160,17 @@ private extension HwpxParagraphMapper {
         }
     }
 
+    /// `<hp:linesegarray>` 안에서 채택되지 않는 요소 — 직계 비-lineseg 자식과
+    /// lineseg의 자식(lineseg는 속성 전용이다).
+    static func cacheUnknownRecords(in array: HwpxXMLNode) -> [HwpUnknownRecord] {
+        array.childElements.flatMap { child -> [HwpUnknownRecord] in
+            guard child.isNamed("lineseg", in: HwpxNamespace.paragraph) else {
+                return [child.syntheticUnknownRecord()]
+            }
+            return child.childElements.map { $0.syntheticUnknownRecord() }
+        }
+    }
+
     static func assemble(
         _ node: HwpxXMLNode,
         builder: ParagraphBuilder,
@@ -238,28 +249,26 @@ private extension HwpxParagraphMapper {
         _ node: HwpxXMLNode,
         builder: ParagraphBuilder
     ) -> (segments: [HwpParaLineSegInternal], unknowns: [HwpUnknownRecord]) {
-        guard builder.positionCertain,
-              let array = node.firstChild(named: "linesegarray")
-        else {
+        guard let array = node.firstChild(named: "linesegarray") else {
             return ([], [])
+        }
+        // 캐시를 어떤 이유로 버리든 그 안 미지 요소는 진단에 남긴다 — 바깥
+        // 문단 루프가 linesegarray를 건너뛰므로 이 지점이 그 자식을 걷는
+        // 유일한 곳이다 (위치가 이미 불확실한 문단도 마찬가지다).
+        let unknowns = cacheUnknownRecords(in: array)
+        guard builder.positionCertain else {
+            return ([], unknowns)
         }
         // 미지 자식이 섞인 캐시는 통째로 거부한다 — lineseg만 골라 채택하면
         // 위치가 불확실한 캐시가 절대 조판의 신뢰 입력이 된다 (안전밸브의
-        // "미지 요소" 축). 버리는 요소는 진단에 남긴다.
+        // "미지 요소" 축).
         let segmentNodes = array.paragraphChildren(named: "lineseg")
-        guard segmentNodes.count == array.childElements.count else {
-            let unknowns = array.childElements
-                .filter { !$0.isNamed("lineseg", in: HwpxNamespace.paragraph) }
-                .map { $0.syntheticUnknownRecord() }
-            return ([], unknowns)
-        }
-        // lineseg는 속성 전용이다 — 자식을 가진 세그먼트는 그 자체로
-        // 불확실한 캐시 메타데이터라 통째로 거부하고 자식을 진단에 남긴다
-        // (직계 수 대조만으로는 세그먼트 안 미지 요소가 통과한다).
-        guard segmentNodes.allSatisfy(\.childElements.isEmpty) else {
-            let unknowns = segmentNodes.flatMap { segment in
-                segment.childElements.map { $0.syntheticUnknownRecord() }
-            }
+        guard segmentNodes.count == array.childElements.count,
+              // lineseg는 속성 전용이다 — 자식을 가진 세그먼트는 그 자체로
+              // 불확실한 캐시 메타데이터다 (직계 수 대조만으로는 세그먼트 안
+              // 미지 요소가 통과한다).
+              segmentNodes.allSatisfy(\.childElements.isEmpty)
+        else {
             return ([], unknowns)
         }
         // textpos는 다른 8속성과 달리 **sanity 판정의 기준**이라 기본값을

@@ -127,6 +127,24 @@ final class HwpxSectionInvariantTests: XCTestCase {
         }) == true
     }
 
+    func testLineCacheUnknownsSurviveWhenPositionIsAlreadyUncertain() throws {
+        // 문단에 미지 요소가 있어 캐시를 이미 버리기로 한 경우에도 캐시 안
+        // 미지 요소는 진단에 남아야 한다 — 바깥 문단 루프가 linesegarray를
+        // 건너뛰므로 여기서 안 걷으면 아무 데도 안 남는다.
+        let section = try HwpxSectionFixture.mapSection(
+            HwpxSectionFixture.blankBody + """
+            <hp:p><hp:run charPrIDRef="7"><ext:mystery xmlns:ext="urn:x"/></hp:run>\
+            <hp:linesegarray><ext:cacheGhost xmlns:ext="urn:x"/></hp:linesegarray></hp:p>
+            """
+        )
+
+        let names = section.paragraph[1].unknownChildren.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("mystery"))
+        expect(names).to(contain("cacheGhost"))
+    }
+
     func testLineCacheWithNestedUnknownInsideSegmentIsRejected() throws {
         // lineseg는 속성 전용 — 유효 lineseg 안의 미지 자식은 직계 수
         // 대조를 통과하므로 세그먼트 층에서 따로 거부해야 한다.
