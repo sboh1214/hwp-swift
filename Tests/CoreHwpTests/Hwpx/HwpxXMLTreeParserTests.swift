@@ -216,12 +216,13 @@ final class HwpxXMLTreeParserTests: XCTestCase {
     func testSwitchResolutionPrefersSupportedCaseOverDefault() throws {
         let root = try parse(
             """
-            <paraPr xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">\
+            <hh:paraPr xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" \
+            xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">\
             <hp:switch>\
             <hp:case hp:required-namespace="http://www.hancom.co.kr/hwpml/2016/HwpUnitChar">\
-            <margin unit="HWPUNIT"/></hp:case>\
-            <hp:default><margin unit="CHAR"/></hp:default>\
-            </hp:switch></paraPr>
+            <hh:margin unit="HWPUNIT"/></hp:case>\
+            <hp:default><hh:margin unit="CHAR"/></hp:default>\
+            </hp:switch></hh:paraPr>
             """
         )
 
@@ -233,12 +234,13 @@ final class HwpxXMLTreeParserTests: XCTestCase {
     func testSwitchResolutionFallsBackToDefault() throws {
         let root = try parse(
             """
-            <paraPr xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">\
+            <hh:paraPr xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" \
+            xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">\
             <hp:switch>\
             <hp:case hp:required-namespace="http://example.com/unsupported">\
-            <margin unit="FUTURE"/></hp:case>\
-            <hp:default><margin unit="CHAR"/></hp:default>\
-            </hp:switch></paraPr>
+            <hh:margin unit="FUTURE"/></hp:case>\
+            <hp:default><hh:margin unit="CHAR"/></hp:default>\
+            </hp:switch></hh:paraPr>
             """
         )
 
@@ -250,11 +252,12 @@ final class HwpxXMLTreeParserTests: XCTestCase {
     func testSwitchWithoutMatchingBranchIsRemoved() throws {
         let root = try parse(
             """
-            <paraPr xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">\
+            <hh:paraPr xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" \
+            xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">\
             <hp:switch>\
             <hp:case hp:required-namespace="http://example.com/unsupported">\
-            <margin/></hp:case>\
-            </hp:switch><align/></paraPr>
+            <hh:margin/></hp:case>\
+            </hp:switch><hh:align/></hh:paraPr>
             """
         )
 
@@ -265,16 +268,38 @@ final class HwpxXMLTreeParserTests: XCTestCase {
     func testNestedSwitchInsideChosenBranchIsResolved() throws {
         let root = try parse(
             """
-            <paraPr xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">\
+            <hh:paraPr xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" \
+            xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">\
             <hp:switch><hp:default>\
-            <inner><hp:switch><hp:default><margin unit="CHAR"/></hp:default>\
-            </hp:switch></inner>\
-            </hp:default></hp:switch></paraPr>
+            <hh:inner><hp:switch><hp:default><hh:margin unit="CHAR"/></hp:default>\
+            </hp:switch></hh:inner>\
+            </hp:default></hp:switch></hh:paraPr>
             """
         )
 
         let inner = try XCTUnwrap(root.firstChild(named: "inner"))
         expect(inner.children(named: "margin").count) == 1
+    }
+
+    func testUnqualifiedElementInNamespacedPartIsNotMatched() throws {
+        // 무접두사 요소의 URI는 빈 문자열이고 그 폴백은 선언 없는 문서용이라,
+        // 좁히지 않으면 정상 HWPX에 섞인 <p>가 hp:p로 파싱된다.
+        let root = try parse(
+            """
+            <hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" \
+            xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">\
+            <hp:p id="1"/><p id="2"/></hs:sec>
+            """
+        )
+
+        let paragraphs = root.paragraphChildren(named: "p")
+        expect(paragraphs.count) == 1
+        expect(paragraphs.first?.attributes["id"]) == "1"
+        // 강등돼도 local name은 남아 진단에 실린다.
+        let demoted = try XCTUnwrap(root.childElements.last)
+        expect(demoted.localName) == "p"
+        expect(demoted.isNamed("p")) == false
+        expect(demoted.isNamed("p", in: HwpxNamespace.paragraph)) == false
     }
 
     // MARK: - 속성 리더

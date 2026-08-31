@@ -22,6 +22,7 @@ final class HwpxXMLTreeParser: NSObject {
     private var stack: [HwpxXMLNode] = []
     private var root: HwpxXMLNode?
     private var failure: String?
+    private var sawNamespacedElement = false
     private weak var runningParser: XMLParser?
 
     /// XML 바이트를 파싱해 루트 요소를 돌려준다. `hp:switch`는 여기서 이미
@@ -109,9 +110,18 @@ extension HwpxXMLTreeParser: XMLParserDelegate {
                 attributes[localKey] = value
             }
         }
+        // 무접두사 요소의 URI는 빈 문자열인데 그 값은 선언 없는 문서용
+        // 폴백이라 어느 vocabulary 조회에도 걸린다 — namespace를 쓰는 파트에
+        // 섞인 <p>가 hp:p로 파싱된다. 그런 파트에서는 sentinel로 갈라 낸다
+        // (판정은 문서 순서 기준이라, 선언이 있는 파트는 루트에서 이미 참이다).
+        let uri = namespaceURI ?? ""
+        if !uri.isEmpty {
+            sawNamespacedElement = true
+        }
         stack.append(HwpxXMLNode(
             localName: elementName,
-            namespaceURI: namespaceURI ?? "",
+            namespaceURI: uri.isEmpty && sawNamespacedElement
+                ? HwpxNamespace.unqualified : uri,
             attributes: attributes
         ))
     }

@@ -183,6 +183,15 @@ enum HwpxNamespace {
     static let dublinCore = "http://purl.org/dc/elements/1.1/"
     static let ocfContainer = "urn:oasis:names:tc:opendocument:xmlns:container"
 
+    /// namespace를 선언한 파트 안의 **무접두사** 요소에 파서가 붙이는 표식.
+    ///
+    /// XML 의미론상 그런 요소의 URI는 빈 문자열인데, 빈 URI는 선언 없는
+    /// 문서를 위한 폴백이라 어느 vocabulary 조회에도 걸린다 — 정상 HWPX에
+    /// 섞인 `<p>`가 `hp:p`로 파싱된다. 파트 전체가 무-namespace일 때만 그
+    /// 폴백이 성립하므로, 그렇지 않은 파트에서는 이 표식으로 갈라 낸다
+    /// (known에 넣지 않아 모든 조회에서 미지로 강등된다).
+    static let unqualified = "urn:x-hwp-swift-unqualified"
+
     static let known: Set<String> = [
         paragraph, section, head, core, app, batangPage, history, version,
         paragraph2016, hwpUnitChar, ooxmlChart, hpf, opf, dublinCore, ocfContainer,
