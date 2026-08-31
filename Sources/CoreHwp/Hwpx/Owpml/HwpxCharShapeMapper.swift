@@ -56,7 +56,9 @@ enum HwpxCharShapeMapper {
             let fonts = fontface.headChildren(named: "font")
             // fontRef의 언어별 faceId는 0-based WORD — 65,537번째부터
             // 오프셋이 65,535로 별칭화된다 (tabPr·paraPr 가드와 같은 계열).
-            guard fonts.count <= 65536 else {
+            // 오프셋은 같은 lang의 여러 fontface 블록에 걸쳐 누적되므로
+            // 블록 단위로 세면 40,000짜리 두 블록이 가드를 통과한다.
+            guard arrays[index].count + fonts.count <= 65536 else {
                 throw HwpError.invalidXML(
                     entry: HwpxContainer.EntryName.header,
                     reason: "font definitions exceed the 65,536-entry reference space"

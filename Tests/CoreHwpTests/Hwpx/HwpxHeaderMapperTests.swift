@@ -176,6 +176,30 @@ final class HwpxHeaderMapperTests: XCTestCase {
         })
     }
 
+    func testFontDefinitionsAreCountedAcrossSameLanguageBlocks() {
+        /// 오프셋은 같은 lang의 여러 fontface 블록에 걸쳐 누적되므로 블록
+        /// 단위로 세면 두 블록이 각각 가드를 통과한 뒤 별칭화된다.
+        func block(_ range: Range<Int>) -> String {
+            let fonts = range.map { "<hh:font id=\"f\($0)\" face=\"F\"/>" }.joined()
+            return "<hh:fontface lang=\"LATIN\" fontCnt=\"\(range.count)\">"
+                + fonts + "</hh:fontface>"
+        }
+        let split = HwpxHeaderFixture.headerXML.replacingOccurrences(
+            of: #"<hh:fontface lang="LATIN" fontCnt="1">.*?</hh:fontface>"#,
+            with: block(0 ..< 32769) + block(32769 ..< 65538),
+            options: .regularExpression
+        )
+
+        expect {
+            _ = try HwpxHeaderFixture.mapHeader(split)
+        }.to(throwError { error in
+            guard case let HwpError.invalidXML(_, reason) = error else {
+                return fail("Expected invalidXML, got \(error)")
+            }
+            expect(reason).to(contain("font"))
+        })
+    }
+
     func testBorderFillsBeyondOneBasedReferenceSpaceAreRejected() {
         // borderFill 참조는 1-based UInt16 (0 = 없음) — 65,536번째 정의부터
         // `borderFillId`의 offset + 1 클램프가 직전 정의로 별칭화된다.
