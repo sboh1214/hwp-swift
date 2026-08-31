@@ -7,6 +7,25 @@ import Foundation
 /// (`HwpCommonCtrlTextWrap` 주석의 #1 예고)과 달리 이름 붙은 값이 오며,
 /// HWP5 모델에 없는 THROUGH/TIGHT는 어울림(square)으로 근사한다.
 enum HwpxObjectCommonMapper {
+    /// `hp:pos`의 오프셋은 음수가 정상값인데(기준 위·왼쪽으로 밀린 개체)
+    /// 표현이 **두 가지**다 — 한글.app 저장본은 UInt32 비트 패턴으로 적고
+    /// (실측: noori의 표가 -140을 `4294967156`으로), 스키마가 허용하는 부호
+    /// 리터럴도 올 수 있다. 한쪽만 받으면 다른 쪽이 파싱 실패로 0이 되어
+    /// 개체가 기준 원점으로 이동한다.
+    ///
+    /// 두 해석은 배타적이라 모호하지 않다 — `-140`은 UInt32로, `4294967156`은
+    /// Int32로 각각 파싱되지 않고, 겹치는 `0...Int32.max`는 두 경로가 같은
+    /// 비트열을 낸다. 하류는 `Int32(bitPattern:)`으로 되읽는다.
+    static func offset(_ node: HwpxXMLNode, _ name: String) -> HWPUNIT {
+        guard let raw = node.attribute(name) else {
+            return 0
+        }
+        if let signed = Int32(raw) {
+            return HWPUNIT(bitPattern: signed)
+        }
+        return UInt32(raw) ?? 0
+    }
+
     static func map(_ node: HwpxXMLNode, ctrlId: HwpCommonCtrlId) -> HwpCommonCtrlProperty {
         var property = HwpCommonCtrlProperty(commonCtrlId: ctrlId)
         var info = HwpCommonCtrlPropertyInfo()
@@ -43,15 +62,8 @@ enum HwpxObjectCommonMapper {
             info.horizontalAlignment = alignments[position.attribute("horzAlign") ?? "LEFT"]
                 ?? .topOrLeft
             info.horizontalAlignmentRawValue = info.horizontalAlignment?.rawValue ?? 0
-            // 오프셋은 음수가 정상값이다 (기준 위·왼쪽으로 밀린 개체) —
-            // UInt32로 읽으면 파싱이 실패해 0으로 접혀 개체가 기준 원점으로
-            // 이동한다. 하류가 Int32(bitPattern:)로 되읽으므로 비트열을 보존한다.
-            property.verticalOffset = HWPUNIT(
-                bitPattern: position.int32Attribute("vertOffset", default: 0)
-            )
-            property.horizontalOffset = HWPUNIT(
-                bitPattern: position.int32Attribute("horzOffset", default: 0)
-            )
+            property.verticalOffset = Self.offset(position, "vertOffset")
+            property.horizontalOffset = Self.offset(position, "horzOffset")
         }
 
         if let outMargin = node.paragraphFirstChild(named: "outMargin") {
