@@ -30,6 +30,16 @@ import XCTest
             expect(capped.string.count) == 100
         }
 
+        func testControlSpacesBecomeNonBreakingSpaces() throws {
+            // 묶음 빈칸(30)·고정폭 빈칸(31)을 그대로 디코드하면 U+001E/U+001F가
+            // 되어 CoreText가 폭 0으로 그린다 (실측: "가나"와 "가\u{1E}나"의
+            // 타이포그래픽 폭이 같다) — 빈칸이 사라지고 줄바꿈이 달라진다.
+            let paragraph = paragraph(text: "가\u{1E}나\u{1F}다", runs: [(0, 0)])
+            let result = builder(shapes: [0: try charShape()]).build(paragraph: paragraph)
+
+            expect(result.string) == "가\u{A0}나\u{A0}다"
+        }
+
         func testSingleShapeParagraphProducesOneFontRange() throws {
             let paragraph = paragraph(text: "hello", runs: [(0, 0)])
             let result = builder(shapes: [0: try charShape()]).build(paragraph: paragraph)

@@ -640,6 +640,9 @@ extension HwpTextRunBuilder {
                 pendingHighSurrogate = unit
                 return ""
             }
+            if let space = Self.controlSpace(unit) {
+                return space
+            }
             return String(decoding: [unit], as: UTF16.self)
         case .inline, .extended:
             if let lone = pendingHighSurrogate {

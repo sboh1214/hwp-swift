@@ -163,3 +163,25 @@ extension HwpTextRunBuilder {
     /// 아래 첨자 베이스라인 하강 배율 (실물: 다음 줄 방향 ~0.35줄)
     static let subscriptBaselineRatio: CGFloat = 0.30
 }
+
+/// 그대로 디코드하면 안 되는 제어 문자 변환.
+extension HwpTextRunBuilder {
+    /// WCHAR를 그대로 디코드하면 안 되는 **공백** 제어 문자.
+    ///
+    /// 묶음 빈칸(30)·고정폭 빈칸(31)은 U+001E/U+001F로 디코드되어 CoreText가
+    /// 폭 0으로 그린다 — 빈칸이 사라지고 줄바꿈이 달라진다. 두 포맷 공통
+    /// 경로다 (바이너리 `HwpParaText`의 default 분기와 HWPX의 nbSpace·fwSpace가
+    /// 같은 값을 낸다).
+    ///
+    /// 고정폭 빈칸의 "양쪽 정렬에서 늘어나지 않음"은 조판이 모델링하지
+    /// 않으므로 폭이 같은 U+00A0을 쓴다 — U+2007처럼 폭이 다른 문자를 쓰면
+    /// 실물보다 넓어진다.
+    static func controlSpace(_ unit: UInt16) -> String? {
+        switch unit {
+        case 30, 31:
+            "\u{00A0}"
+        default:
+            nil
+        }
+    }
+}
