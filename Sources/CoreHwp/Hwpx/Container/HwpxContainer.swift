@@ -30,7 +30,7 @@ struct HwpxContainer {
     private var budget: HwpxByteBudget
 
     init(data: Data, limits: HwpReadLimits) throws {
-        archive = try HwpxArchive(data: data)
+        archive = try HwpxArchive(data: data, limits: limits)
         self.limits = limits
         budget = HwpxByteBudget(limits: limits)
 

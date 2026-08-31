@@ -9,6 +9,34 @@ final class HwpxArchiveLimitTests: XCTestCase {
         HwpxByteBudget(limits: limits)
     }
 
+    func testOversizedCentralDirectoryIsRejectedBeforeDecodingNames() throws {
+        // 이름 디코딩은 엔트리 예산이 서기 전이라 설정 한도를 우회한다 —
+        // 디렉터리 크기로 사전에 막는다.
+        var builder = ZipBuilder()
+        builder.entries = [
+            .init(name: "mimetype", content: Data("application/hwp+zip".utf8), method: 0),
+            .init(name: "Contents/header.xml", content: Data("<x/>".utf8), method: 0),
+        ]
+        let archive = builder.build()
+
+        expect {
+            _ = try HwpxArchive(
+                data: archive, limits: HwpReadLimits(maxAggregateStreamBytes: 16)
+            )
+        }.to(throwError { error in
+            guard case let HwpError.archiveEntrySizeLimitExceeded(name, limit, _) = error
+            else {
+                return fail("Expected archiveEntrySizeLimitExceeded, got \(error)")
+            }
+            expect(name) == "central directory"
+            expect(limit) == 16
+        })
+
+        // 대조군: 넉넉한 한도에서는 그대로 열린다.
+        let opened = try HwpxArchive(data: archive)
+        expect(opened.entriesByName.keys.sorted()) == ["Contents/header.xml", "mimetype"]
+    }
+
     func testDeclaredOversizedDeflatedEntryIsRejectedBeforeInflating() throws {
         // payload가 corrupt인데 invalidArchive가 아니라 크기 오류가 나면
         // 인플레이트 전에 선언값으로 거부된 것이다.

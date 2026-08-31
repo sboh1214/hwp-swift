@@ -35,7 +35,7 @@ struct HwpxArchive {
     ///
     /// 여기서는 구조만 읽고 엔트리 내용은 읽지 않는다 — 내용 읽기와 자원
     /// 한도 적용은 `entryData(named:limits:budget:)`가 맡는다.
-    init(data: Data) throws {
+    init(data: Data, limits: HwpReadLimits = .default) throws {
         // 슬라이스 인덱스 함정을 피해 분리 복사 없이 0 기준으로 다룬다.
         let data = data.startIndex == 0 ? data : Data(data)
         self.data = data
@@ -74,6 +74,17 @@ struct HwpxArchive {
             throw HwpError.invalidArchive(
                 reason: "central directory [\(directoryOffset), +\(directorySize)] " +
                     "does not precede end-of-central-directory at \(eocdOffset)"
+            )
+        }
+        // 이름 디코딩은 매핑된 바이트를 **상주** String으로 옮기는 유일한
+        // 지점인데, 여기는 엔트리 예산(HwpxByteBudget)이 서기 전이라 설정한
+        // 한도가 통째로 우회된다. 이름 바이트 합은 디렉터리 크기 이하이므로
+        // 그것으로 사전에 막는다 (항목 수는 EOCD가 UInt16이라 이미 유계다).
+        guard directorySize <= limits.maxAggregateStreamBytes else {
+            throw HwpError.archiveEntrySizeLimitExceeded(
+                name: "central directory",
+                limit: limits.maxAggregateStreamBytes,
+                actual: directorySize
             )
         }
 
