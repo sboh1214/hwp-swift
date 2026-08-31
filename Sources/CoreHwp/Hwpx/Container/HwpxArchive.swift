@@ -30,6 +30,10 @@ struct HwpxArchive {
 
     private let data: Data
     let entriesByName: [String: Entry]
+    /// central directory가 상주로 옮긴 바이트 — 엔트리 이름 문자열의 상한이다.
+    /// 컨테이너가 이것을 집계 예산에서 **차감**해야 이름과 엔트리 데이터가
+    /// 한 상한을 나눠 쓴다 (고립 검사만 두면 각각 한도만큼 써 2배가 된다).
+    let centralDirectoryBytes: Int
 
     /// 아카이브 전체 바이트에서 central directory를 해석한다.
     ///
@@ -88,6 +92,7 @@ struct HwpxArchive {
             )
         }
 
+        centralDirectoryBytes = directorySize
         entriesByName = try Self.readCentralDirectory(
             data,
             directoryOffset: directoryOffset,

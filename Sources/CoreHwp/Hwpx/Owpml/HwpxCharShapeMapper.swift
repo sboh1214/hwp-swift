@@ -34,7 +34,7 @@ enum HwpxCharShapeMapper {
         into idMappings: inout HwpIdMappings,
         tables: inout HwpxIdTables,
         unknownRecords: inout [HwpUnknownRecord],
-        maxDepth: Int = HwpReadLimits.default.maxNestingDepth
+        maxDepth: Int
     ) throws {
         var arrays: [[HwpFaceName]] = Array(repeating: [], count: 7)
         for fontface in fontfaces.headChildren(named: "fontface") {

@@ -219,4 +219,42 @@ final class HwpxArchiveLimitTests: XCTestCase {
             expect(actual) == 16 * 1024
         })
     }
+
+    func testCentralDirectoryIsDebitedFromTheAggregateBudget() throws {
+        // 고립 검사만 두면 상주 이름과 엔트리 데이터가 각각 한도만큼 써
+        // 파일 단위 상한의 2배까지 간다 — 디렉터리 비용을 예산에서 뺀다.
+        let header = Data(repeating: 0x41, count: 400)
+        var builder = ZipBuilder()
+        builder.entries = [
+            .init(name: "mimetype", content: Data("application/hwp+zip".utf8), method: 0),
+            .init(name: "Contents/header.xml", content: header, method: 0),
+        ]
+        let archive = builder.build()
+        let directoryBytes = try HwpxArchive(data: archive).centralDirectoryBytes
+        let mimetypeBytes = "application/hwp+zip".utf8.count
+
+        // 디렉터리와 mimetype을 뺀 잔여가 399 — header 400에 한 바이트 모자란다.
+        var tight = try HwpxContainer(
+            data: archive,
+            limits: HwpReadLimits(
+                maxAggregateStreamBytes: directoryBytes + mimetypeBytes + 399
+            )
+        )
+        expect {
+            _ = try tight.requiredEntry("Contents/header.xml")
+        }.to(throwError { error in
+            guard case HwpError.archiveEntrySizeLimitExceeded = error else {
+                return fail("Expected archiveEntrySizeLimitExceeded, got \(error)")
+            }
+        })
+
+        // 대조군: 딱 한 바이트를 더 주면 열린다 (차감이 없으면 위도 통과한다).
+        var ample = try HwpxContainer(
+            data: archive,
+            limits: HwpReadLimits(
+                maxAggregateStreamBytes: directoryBytes + mimetypeBytes + 400
+            )
+        )
+        expect(try ample.requiredEntry("Contents/header.xml").count) == 400
+    }
 }

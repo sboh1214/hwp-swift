@@ -35,6 +35,9 @@ struct HwpxContainer {
         archive = try HwpxArchive(data: data, limits: limits)
         self.limits = limits
         budget = HwpxByteBudget(limits: limits)
+        // 이름 디코딩은 예산이 서기 전에 끝나므로 사후 차감이다 — 그래도
+        // 남은 엔트리 예산이 그만큼 줄어 파일 단위 상한이 하나로 지켜진다.
+        try budget.consume(archive.centralDirectoryBytes, entryName: "central directory")
 
         // mimetype 게이트를 암호화 분류보다 먼저 통과시킨다 (불변식 #3) —
         // encryption.xml을 가진 비-HWP ZIP(.docx 등)이 암호화 HWP 문서로

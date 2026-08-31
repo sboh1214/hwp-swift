@@ -3,11 +3,10 @@ import Foundation
 import Nimble
 import XCTest
 
-/// 개체 공통 속성의 위치 오프셋 계약.
+/// 개체 공통 속성의 계약 — 위치 오프셋, raw 비트필드, 강등 깊이.
 ///
 /// `HwpxObjectMapperTests`와 분리한 것은 그 스위트가 SwiftLint
-/// `type_body_length` error 상한에 붙어 있어서다 — 주제도 배치 좌표 하나로
-/// 좁다.
+/// `type_body_length` error 상한에 붙어 있어서다.
 final class HwpxObjectPositionTests: XCTestCase {
     private func mapTable(vertOffset: String, horzOffset: String) throws -> HwpTable {
         let xml = HwpxObjectFixture.tableXML.replacingOccurrences(
@@ -87,6 +86,52 @@ final class HwpxObjectPositionTests: XCTestCase {
         for raw in raws {
             expect(try HwpCommonCtrlPropertyInfo.load(raw).synthesizedRawValue) == raw & mask
         }
+    }
+
+    func testObjectDemotionDepthHonorsTheCallerLimit() throws {
+        // 그림·표 강등도 본문·헤더와 같은 호출자 한도를 따라야 한다. 인자는
+        // 이제 컴파일러가 강제하지만 값이 옳은지는 동작으로만 증명된다.
+        let capped = HwpLoadOptions(readLimits: HwpReadLimits(maxNestingDepth: 2))
+        let picture = HwpxObjectFixture.pictureXML.replacingOccurrences(
+            of: "</hp:pic>", with: Self.deepUnknown + "</hp:pic>"
+        )
+        let table = HwpxObjectFixture.tableXML.replacingOccurrences(
+            of: "</hp:tbl>", with: Self.deepUnknown + "</hp:tbl>"
+        )
+
+        // 대조군: 기본 한도에서는 네 겹이 그대로 남는다.
+        let full = HwpxPictureMapper.map(
+            try HwpxObjectFixture.parse(picture),
+            context: HwpxObjectFixture.makeContext()
+        )
+        expect(Self.depth(of: try Self.deepRecord(in: full.unknownChildren))) == 4
+
+        let cappedPicture = HwpxPictureMapper.map(
+            try HwpxObjectFixture.parse(picture),
+            context: HwpxObjectFixture.makeContext(options: capped)
+        )
+        expect(Self.depth(of: try Self.deepRecord(in: cappedPicture.unknownChildren))) == 2
+
+        let cappedTable = try HwpxTableMapper.map(
+            HwpxObjectFixture.parse(table),
+            context: HwpxObjectFixture.makeContext(options: capped)
+        )
+        expect(Self.depth(of: try Self.deepRecord(in: cappedTable.unknownChildren))) == 2
+    }
+
+    private static let deepUnknown = "<ext:deep xmlns:ext=\"urn:x\">"
+        + "<ext:a><ext:b><ext:c/></ext:b></ext:a></ext:deep>"
+
+    private static func depth(of record: HwpUnknownRecord) -> Int {
+        1 + (record.children.map(depth(of:)).max() ?? 0)
+    }
+
+    private static func deepRecord(
+        in records: [HwpUnknownRecord]
+    ) throws -> HwpUnknownRecord {
+        try XCTUnwrap(records.first {
+            String(bytes: $0.payload, encoding: .utf8) == "deep"
+        })
     }
 
     func testPositiveObjectOffsetsAreUnchanged() throws {

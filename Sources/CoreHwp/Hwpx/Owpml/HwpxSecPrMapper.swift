@@ -7,7 +7,7 @@ import Foundation
 /// `sectionDef(in:)` 하나로만 구역 경계를 인식하므로 이 매핑이 구역
 /// 지오메트리의 전부다.
 enum HwpxSecPrMapper {
-    static func mapSectionDef(_ secPr: HwpxXMLNode) -> HwpSectionDef {
+    static func mapSectionDef(_ secPr: HwpxXMLNode, maxDepth: Int) -> HwpSectionDef {
         var sectionDef = HwpSectionDef()
 
         if let pagePr = secPr.paragraphFirstChild(named: "pagePr") {
@@ -69,25 +69,30 @@ enum HwpxSecPrMapper {
         // 버려지는 자식은 진단으로 강등해야 "미해석 강등은 진단으로 보고됨"
         // 규약이 지켜진다 (tabPr의 tabItem 강등과 같은 채널).
         sectionDef.unknownChildren = secPr.unconsumedChildRecords(
-            consumed: ["pagePr", "startNum"], in: HwpxNamespace.paragraph
+            consumed: ["pagePr", "startNum"], in: HwpxNamespace.paragraph,
+            maxDepth: maxDepth
         )
         // 소비 래퍼 안 미지 자식 — pagePr는 margin만, margin·startNum은
         // 속성만 읽는다.
         if let pagePr = secPr.paragraphFirstChild(named: "pagePr") {
             sectionDef.unknownChildren += pagePr.unconsumedChildRecords(
-                consumed: ["margin"], in: HwpxNamespace.paragraph
+                consumed: ["margin"], in: HwpxNamespace.paragraph, maxDepth: maxDepth
             )
             if let margin = pagePr.paragraphFirstChild(named: "margin") {
-                sectionDef.unknownChildren += margin.unconsumedChildRecords(consumed: [])
+                sectionDef.unknownChildren += margin.unconsumedChildRecords(
+                    consumed: [], maxDepth: maxDepth
+                )
             }
         }
         if let startNum = secPr.paragraphFirstChild(named: "startNum") {
-            sectionDef.unknownChildren += startNum.unconsumedChildRecords(consumed: [])
+            sectionDef.unknownChildren += startNum.unconsumedChildRecords(
+                consumed: [], maxDepth: maxDepth
+            )
         }
         return sectionDef
     }
 
-    static func mapColumn(_ colPr: HwpxXMLNode) -> HwpColumn {
+    static func mapColumn(_ colPr: HwpxXMLNode, maxDepth: Int) -> HwpColumn {
         var column = HwpColumn()
         var property = HwpColumnProperty()
         property.type = Self.columnTypes[colPr.attribute("type") ?? "NEWSPAPER"] ?? .general
@@ -127,19 +132,20 @@ enum HwpxSecPrMapper {
         // 미소비 자식(미래 요소)은 진단으로 강등한다 — 비우면
         // parseDiagnostics()가 완전한 파스로 오보한다.
         column.unknownChildren = colPr.unconsumedChildRecords(
-            consumed: ["colSz", "colLine"], in: HwpxNamespace.paragraph
+            consumed: ["colSz", "colLine"], in: HwpxNamespace.paragraph,
+            maxDepth: maxDepth
         )
         if !property.isSameWidth, sizes.count > 255 {
             // 8비트 count가 못 담는 폭 목록은 채택 불능이다 — 등폭 폴백으로
             // 그리되 버리는 colSz를 진단에 남겨 조용히 지나가지 않게 한다.
-            column.unknownChildren += sizes.map { $0.syntheticUnknownRecord() }
+            column.unknownChildren += sizes.map { $0.syntheticUnknownRecord(maxDepth: maxDepth) }
         } else {
             for size in sizes {
-                column.unknownChildren += size.unconsumedChildRecords(consumed: [])
+                column.unknownChildren += size.unconsumedChildRecords(consumed: [], maxDepth: maxDepth)
             }
         }
         if let line = colPr.paragraphFirstChild(named: "colLine") {
-            column.unknownChildren += line.unconsumedChildRecords(consumed: [])
+            column.unknownChildren += line.unconsumedChildRecords(consumed: [], maxDepth: maxDepth)
         }
         return column
     }

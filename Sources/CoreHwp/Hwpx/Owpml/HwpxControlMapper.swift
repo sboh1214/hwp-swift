@@ -34,13 +34,17 @@ enum HwpxControlMapper {
             return .anchor(
                 code: 2,
                 fourCC: HwpOtherCtrlId.section.rawValue,
-                ctrl: .section(HwpxSecPrMapper.mapSectionDef(node))
+                ctrl: .section(HwpxSecPrMapper.mapSectionDef(
+                    node, maxDepth: context.unknownDepthLimit
+                ))
             )
         case "colPr":
             return .anchor(
                 code: 2,
                 fourCC: HwpOtherCtrlId.column.rawValue,
-                ctrl: .column(HwpxSecPrMapper.mapColumn(node))
+                ctrl: .column(HwpxSecPrMapper.mapColumn(
+                    node, maxDepth: context.unknownDepthLimit
+                ))
             )
         case "fieldBegin":
             let fourCC = fieldFourCC(of: node.attribute("type"))

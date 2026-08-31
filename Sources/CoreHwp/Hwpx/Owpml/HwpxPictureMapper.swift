@@ -26,38 +26,48 @@ enum HwpxPictureMapper {
         // 반영되지 않으므로 진단으로 강등한다 — 부착처는 diagnostics walker가
         // 걷는 shapeControl.unknownChildren이다.
         let paragraphConsumed = ["sz", "pos", "outMargin", "imgRect", "imgClip", "inMargin"]
+        let depthLimit = context.unknownDepthLimit
         var unknownChildren = node.childElements
             .filter { child in
                 !paragraphConsumed.contains {
                     child.isNamed($0, in: HwpxNamespace.paragraph)
                 } && !child.isNamed("img", in: HwpxNamespace.core)
             }
-            .map { $0.syntheticUnknownRecord() }
+            .map { $0.syntheticUnknownRecord(maxDepth: depthLimit) }
         // 래퍼는 속성·pt 좌표만 읽는다 — 안의 미지 자식은 여기서 강등해야
         // 진단에 남는다 (paraPr 래퍼 강등과 같은 채널).
         if let image {
-            unknownChildren += image.unconsumedChildRecords(consumed: [])
+            unknownChildren += image.unconsumedChildRecords(
+                consumed: [], maxDepth: depthLimit
+            )
         }
         if let imgRect = node.paragraphFirstChild(named: "imgRect") {
             unknownChildren += imgRect.unconsumedChildRecords(
-                consumed: ["pt0", "pt1", "pt2", "pt3"], in: HwpxNamespace.core
+                consumed: ["pt0", "pt1", "pt2", "pt3"], in: HwpxNamespace.core,
+                maxDepth: depthLimit
             )
             for ptName in ["pt0", "pt1", "pt2", "pt3"] {
                 if let point = imgRect.childElements.first(where: {
                     $0.isNamed(ptName, in: HwpxNamespace.core)
                 }) {
-                    unknownChildren += point.unconsumedChildRecords(consumed: [])
+                    unknownChildren += point.unconsumedChildRecords(
+                        consumed: [], maxDepth: depthLimit
+                    )
                 }
             }
         }
         if let imgClip = node.paragraphFirstChild(named: "imgClip") {
-            unknownChildren += imgClip.unconsumedChildRecords(consumed: [])
+            unknownChildren += imgClip.unconsumedChildRecords(
+                consumed: [], maxDepth: depthLimit
+            )
         }
         // sz·pos·outMargin·inMargin은 속성만 읽는 잎 래퍼다 — 자식이 전부
         // 미소비라 여기서 강등해야 진단에 남는다.
         for wrapperName in ["sz", "pos", "outMargin", "inMargin"] {
             if let wrapper = node.paragraphFirstChild(named: wrapperName) {
-                unknownChildren += wrapper.unconsumedChildRecords(consumed: [])
+                unknownChildren += wrapper.unconsumedChildRecords(
+                    consumed: [], maxDepth: depthLimit
+                )
             }
         }
         let picture = HwpShapeComponentPicture(

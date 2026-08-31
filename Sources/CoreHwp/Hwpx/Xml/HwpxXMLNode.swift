@@ -131,7 +131,7 @@ extension HwpxXMLNode {
     /// 함께 표현할 수 없다.
     func unconsumedChildRecords(
         consumed: [String: String],
-        maxDepth: Int = HwpReadLimits.default.maxNestingDepth
+        maxDepth: Int
     ) -> [HwpUnknownRecord] {
         childElements
             .filter { child in
@@ -154,9 +154,7 @@ extension HwpxXMLNode {
     /// (`HwpUnknownRecord(HwpRecord)`)과 같은 재귀 보존이다. 평탄 변환은
     /// 진단 walker의 `.child[i]` 재귀가 안쪽 미지 요소에 닿지 못하게 한다.
     /// 깊이는 파서의 `maximumElementDepth`가 유계로 잡는다.
-    func syntheticUnknownRecord(
-        maxDepth: Int = HwpReadLimits.default.maxNestingDepth
-    ) -> HwpUnknownRecord {
+    func syntheticUnknownRecord(maxDepth: Int) -> HwpUnknownRecord {
         HwpUnknownRecord(
             tagId: hwpxSyntheticTagId,
             level: 0,
@@ -174,7 +172,7 @@ extension HwpxXMLNode {
     /// 거부되면서 소비 목록에는 걸려 진단에서도 사라진다.
     func unconsumedChildRecords(
         consumed: Set<String>,
-        maxDepth: Int = HwpReadLimits.default.maxNestingDepth
+        maxDepth: Int
     ) -> [HwpUnknownRecord] {
         childElements
             .filter { child in !consumed.contains { child.isNamed($0) } }
@@ -188,7 +186,7 @@ extension HwpxXMLNode {
     func unconsumedChildRecords(
         consumed: Set<String>,
         in namespace: String,
-        maxDepth: Int = HwpReadLimits.default.maxNestingDepth
+        maxDepth: Int
     ) -> [HwpUnknownRecord] {
         childElements
             .filter { child in !consumed.contains { child.isNamed($0, in: namespace) } }

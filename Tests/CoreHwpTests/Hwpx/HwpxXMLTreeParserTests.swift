@@ -405,4 +405,33 @@ final class HwpxXMLTreeParserTests: XCTestCase {
 
         expect(root.attributes["required-namespace"]) == "urn:x"
     }
+
+    func testEntityDeclarationIsRejectedInUTF16Encodings() {
+        // UTF-8 바이트만 훑으면 UTF-16 파트에서 스캔이 빗나가고, Linux는
+        // 엔티티 콜백을 부르지 않아 참조 본문만 조용히 사라진다 (실측:
+        // before&custom;after → beforeafter).
+        let xml = "<?xml version=\"1.0\" encoding=\"UTF-16\"?>"
+            + "<!DOCTYPE doc [<!ENTITY custom \"SECRET\">]>"
+            + "<doc>before&custom;after</doc>"
+        for littleEndian in [true, false] {
+            var data = Data(littleEndian ? [0xFF, 0xFE] : [0xFE, 0xFF])
+            for unit in xml.utf16 {
+                let low = UInt8(truncatingIfNeeded: unit)
+                let high = UInt8(truncatingIfNeeded: unit >> 8)
+                data.append(littleEndian ? low : high)
+                data.append(littleEndian ? high : low)
+            }
+
+            expect {
+                _ = try HwpxXMLTreeParser.parse(data, entry: "Contents/header.xml")
+            }.to(throwError { error in
+                guard case let HwpError.invalidXML(_, reason) = error else {
+                    return fail("Expected invalidXML, got \(error)")
+                }
+                // 델리게이트 사유는 이름을 담는다 — 이름이 없으면 바이트
+                // 프리플라이트가 잡은 것이라 Linux에서도 같은 판정이다.
+                expect(reason) == "custom entity declaration is not supported"
+            })
+        }
+    }
 }

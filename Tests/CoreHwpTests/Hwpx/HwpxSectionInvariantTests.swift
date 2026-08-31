@@ -232,7 +232,9 @@ final class HwpxSectionInvariantTests: XCTestCase {
         <hp:startNum page="0"><hp:startNumExtra/></hp:startNum>\
         </hp:secPr>
         """
-        let sectionDef = HwpxSecPrMapper.mapSectionDef(try parse(xml))
+        let sectionDef = HwpxSecPrMapper.mapSectionDef(
+            try parse(xml), maxDepth: HwpReadLimits.default.maxNestingDepth
+        )
 
         let names = sectionDef.unknownChildren.compactMap {
             String(bytes: $0.payload, encoding: .utf8)
@@ -253,7 +255,9 @@ final class HwpxSectionInvariantTests: XCTestCase {
         <hp:pagePr width="59528" height="84186"/>\
         </hp:secPr>
         """
-        let sectionDef = HwpxSecPrMapper.mapSectionDef(try parse(xml))
+        let sectionDef = HwpxSecPrMapper.mapSectionDef(
+            try parse(xml), maxDepth: HwpReadLimits.default.maxNestingDepth
+        )
 
         expect(sectionDef.pageDef.width) == 59528
         expect(sectionDef.pageDef.height) == 84186
@@ -274,7 +278,9 @@ final class HwpxSectionInvariantTests: XCTestCase {
         <hp:colSz width="100" gap="1"/><hp:colSz width="200" gap="2"/>\
         </hp:colPr>
         """
-        let column = HwpxSecPrMapper.mapColumn(try parse(xml))
+        let column = HwpxSecPrMapper.mapColumn(
+            try parse(xml), maxDepth: HwpReadLimits.default.maxNestingDepth
+        )
 
         expect(column.property.count) == 2
         expect(column.widthArray) == [100, 200]
@@ -289,7 +295,9 @@ final class HwpxSectionInvariantTests: XCTestCase {
         type="NEWSPAPER" layout="LEFT" colCount="256" sameSz="0" \
         sameGap="0">\(sizes)</hp:colPr>
         """
-        let column = HwpxSecPrMapper.mapColumn(try parse(xml))
+        let column = HwpxSecPrMapper.mapColumn(
+            try parse(xml), maxDepth: HwpReadLimits.default.maxNestingDepth
+        )
 
         expect(column.widthArray).to(beNil())
         let names = column.unknownChildren.compactMap {
@@ -308,7 +316,9 @@ final class HwpxSectionInvariantTests: XCTestCase {
         <hh:colLine type="SOLID" width="0.4 mm" color="#FF0000"/>\
         </hp:colPr>
         """
-        let column = HwpxSecPrMapper.mapColumn(try parse(xml))
+        let column = HwpxSecPrMapper.mapColumn(
+            try parse(xml), maxDepth: HwpReadLimits.default.maxNestingDepth
+        )
 
         expect(column.widthArray) == [100, 200]
         // hh:colLine 디코이는 구분선을 만들지 않는다.
@@ -318,5 +328,50 @@ final class HwpxSectionInvariantTests: XCTestCase {
         }
         expect(names).to(contain("colSz"))
         expect(names).to(contain("colLine"))
+    }
+
+    func testSectionControlDemotionDepthHonorsTheCallerLimit() throws {
+        // secPr·colPr 강등도 같은 호출자 한도를 따라야 한다 — 그림·표와 함께
+        // 매퍼 네 곳이 모두 본문·헤더와 한 규약을 쓴다.
+        let deep = "<ext:deep xmlns:ext=\"urn:x\">"
+            + "<ext:a><ext:b><ext:c/></ext:b></ext:a></ext:deep>"
+        let body = HwpxSectionFixture.blankBody
+            .replacingOccurrences(of: "</hp:secPr>", with: deep + "</hp:secPr>")
+            .replacingOccurrences(
+                of: "sameSz=\"1\" sameGap=\"0\"/>",
+                with: "sameSz=\"1\" sameGap=\"0\">" + deep + "</hp:colPr>"
+            )
+        func depth(of record: HwpUnknownRecord) -> Int {
+            1 + (record.children.map(depth(of:)).max() ?? 0)
+        }
+        func deepDepth(_ records: [HwpUnknownRecord]) throws -> Int {
+            depth(of: try XCTUnwrap(records.first {
+                String(bytes: $0.payload, encoding: .utf8) == "deep"
+            }))
+        }
+        func depths(_ options: HwpLoadOptions) throws -> (section: Int, column: Int) {
+            let section = try HwpxSectionFixture.mapSection(body, options: options)
+            let ctrls = try XCTUnwrap(section.paragraph[0].ctrlHeaderArray)
+            guard case let .section(sectionDef) = ctrls[0],
+                  case let .column(column) = ctrls[1]
+            else {
+                throw HwpError.invalidXML(entry: "", reason: "unexpected controls")
+            }
+            return (
+                try deepDepth(sectionDef.unknownChildren),
+                try deepDepth(column.unknownChildren)
+            )
+        }
+
+        // 대조군: 기본 한도에서는 네 겹이 그대로 남는다.
+        let full = try depths(.default)
+        expect(full.section) == 4
+        expect(full.column) == 4
+
+        let capped = try depths(
+            HwpLoadOptions(readLimits: HwpReadLimits(maxNestingDepth: 2))
+        )
+        expect(capped.section) == 2
+        expect(capped.column) == 2
     }
 }

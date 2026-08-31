@@ -75,13 +75,49 @@ final class HwpxXMLTreeParser: NSObject {
     /// 본문 CDATA에 같은 문자열이 있어도 DOCTYPE이 없으면 통과한다 (실측:
     /// HWPX 픽스처 10종·한컴 번들 템플릿 전수에 DOCTYPE 0건).
     static func entityDeclarationFailure(in data: Data) -> String? {
-        guard let doctype = data.range(of: Data("<!DOCTYPE".utf8)) else {
-            return nil
+        for encoding in PrologEncoding.allCases {
+            guard let doctype = data.range(of: encoding.encode("<!DOCTYPE")) else {
+                continue
+            }
+            guard data[doctype.upperBound...]
+                .range(of: encoding.encode("<!ENTITY")) != nil
+            else {
+                continue
+            }
+            return "custom entity declaration is not supported"
         }
-        guard data[doctype.upperBound...].range(of: Data("<!ENTITY".utf8)) != nil else {
-            return nil
+        return nil
+    }
+
+    /// 프리플라이트가 훑는 인코딩 — XML 처리기가 반드시 받아야 하는 UTF-8과
+    /// UTF-16 두 갈래다.
+    ///
+    /// UTF-8 바이트열만 찾으면 UTF-16 파트에서 스캔이 통째로 빗나가고,
+    /// Linux는 엔티티 선언 콜백을 부르지 않으므로 그 선언이 **성공한 파싱
+    /// 속에서 참조 본문만 지운 채** 통과한다 (Linux 실측: UTF-16LE로 적은
+    /// `before&custom;after`가 `beforeafter`로 파싱됨).
+    enum PrologEncoding: CaseIterable {
+        case utf8
+        case utf16LittleEndian
+        case utf16BigEndian
+
+        /// ASCII 토큰을 이 인코딩의 바이트열로 옮긴다.
+        func encode(_ token: String) -> Data {
+            var encoded = Data()
+            for unit in token.utf16 {
+                switch self {
+                case .utf8:
+                    encoded.append(UInt8(truncatingIfNeeded: unit))
+                case .utf16LittleEndian:
+                    encoded.append(UInt8(truncatingIfNeeded: unit))
+                    encoded.append(UInt8(truncatingIfNeeded: unit >> 8))
+                case .utf16BigEndian:
+                    encoded.append(UInt8(truncatingIfNeeded: unit >> 8))
+                    encoded.append(UInt8(truncatingIfNeeded: unit))
+                }
+            }
+            return encoded
         }
-        return "custom entity declaration is not supported"
     }
 
     private func record(failure reason: String) {

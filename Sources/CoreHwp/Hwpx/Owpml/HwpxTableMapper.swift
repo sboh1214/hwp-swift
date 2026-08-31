@@ -90,21 +90,32 @@ enum HwpxTableMapper {
             tableProperty.columnCount, UInt16(clamping: coveredColumns)
         )
 
+        let depthLimit = context.unknownDepthLimit
+        var tableUnknowns = node.unconsumedChildRecords(
+            consumed: ["sz", "pos", "outMargin", "inMargin", "tr"],
+            in: HwpxNamespace.paragraph,
+            maxDepth: depthLimit
+        )
+        for row in rows {
+            tableUnknowns += row.unconsumedChildRecords(
+                consumed: ["tc"], in: HwpxNamespace.paragraph, maxDepth: depthLimit
+            )
+        }
+        for wrapperName in ["sz", "pos", "outMargin", "inMargin"] {
+            if let wrapper = node.paragraphFirstChild(named: wrapperName) {
+                tableUnknowns += wrapper.unconsumedChildRecords(
+                    consumed: [], maxDepth: depthLimit
+                )
+            }
+        }
+
         return HwpTable(
             commonCtrlProperty: HwpxObjectCommonMapper.map(node, ctrlId: .table),
             tableProperty: tableProperty,
             rawPayload: Data(),
             rawTrailing: Data(),
             cellArray: cells,
-            unknownChildren: node.unconsumedChildRecords(
-                consumed: ["sz", "pos", "outMargin", "inMargin", "tr"],
-                in: HwpxNamespace.paragraph
-            ) + rows.flatMap {
-                $0.unconsumedChildRecords(consumed: ["tc"], in: HwpxNamespace.paragraph)
-            } + ["sz", "pos", "outMargin", "inMargin"].flatMap { wrapperName in
-                node.paragraphFirstChild(named: wrapperName)?
-                    .unconsumedChildRecords(consumed: []) ?? []
-            }
+            unknownChildren: tableUnknowns
         )
     }
 
@@ -152,20 +163,24 @@ enum HwpxTableMapper {
 
         let isHeader = node.boolAttribute("header")
         let widthRef = Self.cellPropertyBits(of: node, isHeader: isHeader)
+        let depthLimit = context.unknownDepthLimit
         var cellUnknowns = node.unconsumedChildRecords(
             consumed: ["subList", "cellAddr", "cellSpan", "cellSz", "cellMargin"],
-            in: HwpxNamespace.paragraph
+            in: HwpxNamespace.paragraph,
+            maxDepth: depthLimit
         )
         // 소비 래퍼 안 미지 자식 — subList는 문단만, 주소·크기 잎 4종은
         // 속성만 읽는다.
         if let subList {
             cellUnknowns += subList.unconsumedChildRecords(
-                consumed: ["p"], in: HwpxNamespace.paragraph
+                consumed: ["p"], in: HwpxNamespace.paragraph, maxDepth: depthLimit
             )
         }
         for leaf in [address, span, size, margin] {
             if let leaf {
-                cellUnknowns += leaf.unconsumedChildRecords(consumed: [])
+                cellUnknowns += leaf.unconsumedChildRecords(
+                    consumed: [], maxDepth: depthLimit
+                )
             }
         }
 
