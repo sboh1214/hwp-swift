@@ -23,6 +23,8 @@ struct HwpxContainer {
         static let previewText = "Preview/PrvText.txt"
         static let previewImage = "Preview/PrvImage.png"
         static let encryption = "META-INF/encryption.xml"
+        static let container = "META-INF/container.xml"
+        static let packageMediaType = "application/hwpml-package+xml"
     }
 
     private let archive: HwpxArchive
@@ -41,6 +43,44 @@ struct HwpxContainer {
         guard archive.entriesByName[EntryName.encryption] == nil else {
             throw HwpError.unsupportedFeature(.encryptedDocument)
         }
+    }
+
+    /// 패키지 문서(content.hpf)의 실제 경로.
+    ///
+    /// OCF에서 그 경로의 정본은 `META-INF/container.xml`의 rootfile이라
+    /// 기본 경로만 보면 다시 포장한 유효 컨테이너를 거부한다. 다만 기본
+    /// 경로가 있으면 그대로 쓴다 — 정상 문서에서 XML 파싱 단계를 하나 더
+    /// 늘리지 않기 위해서다 (한컴 저장본·픽스처 전수가 기본 경로다).
+    mutating func packageEntryName() throws -> String {
+        if hasEntry(EntryName.manifest) {
+            return EntryName.manifest
+        }
+        guard let data = try optionalEntry(EntryName.container) else {
+            return EntryName.manifest
+        }
+        let root = try HwpxXMLTreeParser.parse(data, entry: EntryName.container)
+        guard root.isNamed("container", in: HwpxNamespace.ocfContainer) else {
+            return EntryName.manifest
+        }
+        return Self.packagePath(in: root) ?? EntryName.manifest
+    }
+
+    private static func packagePath(in container: HwpxXMLNode) -> String? {
+        for rootfiles in container.childElements
+            where rootfiles.isNamed("rootfiles", in: HwpxNamespace.ocfContainer)
+        {
+            for rootfile in rootfiles.childElements
+                where rootfile.isNamed("rootfile", in: HwpxNamespace.ocfContainer)
+            {
+                guard rootfile.attribute("media-type") == EntryName.packageMediaType,
+                      let path = rootfile.attribute("full-path"), !path.isEmpty
+                else {
+                    continue
+                }
+                return path
+            }
+        }
+        return nil
     }
 
     mutating func requiredEntry(_ name: String) throws -> Data {

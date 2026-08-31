@@ -52,6 +52,14 @@ enum HwpxSecPrMapper {
             "tabStop", default: sectionDef.defaultTabSpacing
         )
         if let startNum = secPr.paragraphFirstChild(named: "startNum") {
+            // 카운터만 옮기면 홀수/짝수쪽 시작이 '양쪽'으로 보고된다 —
+            // 구역 정의 속성 bits 20-21("새 쪽 번호 적용")에 함께 싣는다.
+            // raw와 파생 필드를 같이 써야 둘이 어긋나지 않는다.
+            let startsOn = Self.pageStartModes[
+                startNum.attribute("pageStartsOn") ?? "BOTH"
+            ] ?? 0
+            sectionDef.property |= UInt32(startsOn) << 20
+            sectionDef.propertyInfo.newPageNumberApplyRawValue = startsOn
             sectionDef.pageStartNumber = startNum.uint16Attribute("page", default: 0)
             sectionDef.pictureStartNumber = startNum.uint16Attribute("pic", default: 0)
             sectionDef.tableStartNumber = startNum.uint16Attribute("tbl", default: 0)
@@ -140,6 +148,15 @@ enum HwpxSecPrMapper {
 private extension HwpxSecPrMapper {
     static let gutterTypes: [String: UInt32] = [
         "LEFT_ONLY": 0b000, "LEFT_RIGHT": 0b010, "TOP_BOTTOM": 0b100,
+    ]
+
+    /// `hp:startNum pageStartsOn` → 구역 정의 속성 bits 20-21의 값.
+    ///
+    /// 코퍼스는 `BOTH`(11건)만 쓰므로 나머지 두 값은 **실물 대조 전**이다 —
+    /// HWP5 표의 나열 순서(양쪽·홀수쪽·짝수쪽)를 따랐다. 홀수/짝수 시작
+    /// 문서를 얻으면 그 값부터 확인할 것.
+    static let pageStartModes: [String: Int] = [
+        "BOTH": 0, "ODD": 1, "EVEN": 2,
     ]
 
     static let columnTypes: [String: HwpColumnType] = [

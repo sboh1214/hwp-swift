@@ -374,9 +374,10 @@ private extension HwpxHeaderMapper {
         mapping.idMappings.paraShapeArray = paraPrs
             .map { HwpxParaShapeMapper.mapParaShape($0, tables: mapping.idTables) }
         for paraPr in paraPrs {
-            mapping.unknownRecords += paraPr.unconsumedChildRecords(consumed: [
-                "align", "heading", "margin", "lineSpacing", "border",
-            ])
+            mapping.unknownRecords += paraPr.unconsumedChildRecords(
+                consumed: ["align", "heading", "margin", "lineSpacing", "border"],
+                in: HwpxNamespace.head
+            )
             // 소비된 래퍼 안 미지 자식 — margin은 5종만 읽고 나머지 래퍼
             // 4종은 속성만 읽는 잎이라 자식이 전부 미소비다.
             if let margin = paraPr.firstChild(named: "margin") {
@@ -390,7 +391,7 @@ private extension HwpxHeaderMapper {
                 }
             }
             for leafName in ["align", "heading", "lineSpacing", "border"] {
-                if let leaf = paraPr.firstChild(named: leafName) {
+                if let leaf = paraPr.headFirstChild(named: leafName) {
                     mapping.unknownRecords += leaf.unconsumedChildRecords(consumed: [])
                 }
             }

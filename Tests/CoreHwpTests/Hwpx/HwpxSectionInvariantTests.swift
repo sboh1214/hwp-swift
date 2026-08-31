@@ -127,6 +127,33 @@ final class HwpxSectionInvariantTests: XCTestCase {
         }) == true
     }
 
+    func testPageStartsOnLandsInTheSectionPropertyBitField() throws {
+        // 카운터만 옮기면 홀수쪽 시작이 '양쪽'으로 보고된다. raw와 파생
+        // 필드가 함께 서야 둘이 어긋나지 않는다.
+        let odd = try HwpxSectionFixture.mapSection(
+            HwpxSectionFixture.blankBody.replacingOccurrences(
+                of: "pageStartsOn=\"BOTH\"", with: "pageStartsOn=\"ODD\""
+            )
+        )
+        let sectionDef = try XCTUnwrap(oddSectionDef(in: odd))
+        expect(sectionDef.propertyInfo.newPageNumberApplyRawValue) == 1
+        expect((sectionDef.property >> 20) & 0b11) == 1
+
+        // 대조군: 기본값 BOTH는 종전대로 0이다.
+        let both = try HwpxSectionFixture.mapSection(HwpxSectionFixture.blankBody)
+        let bothSectionDef = try XCTUnwrap(oddSectionDef(in: both))
+        expect(bothSectionDef.propertyInfo.newPageNumberApplyRawValue) == 0
+    }
+
+    private func oddSectionDef(in section: HwpSection) -> HwpSectionDef? {
+        for ctrl in section.paragraph[0].ctrlHeaderArray ?? [] {
+            if case let .section(sectionDef) = ctrl {
+                return sectionDef
+            }
+        }
+        return nil
+    }
+
     func testLineCacheUnknownsSurviveWhenPositionIsAlreadyUncertain() throws {
         // 문단에 미지 요소가 있어 캐시를 이미 버리기로 한 경우에도 캐시 안
         // 미지 요소는 진단에 남아야 한다 — 바깥 문단 루프가 linesegarray를

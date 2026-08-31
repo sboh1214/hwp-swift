@@ -8,11 +8,11 @@ import Foundation
 enum HwpxParaShapeMapper {
     /// `hh:paraPr` 하나 → `HwpParaShape`.
     static func mapParaShape(_ node: HwpxXMLNode, tables: HwpxIdTables) -> HwpParaShape {
-        let align = node.firstChild(named: "align")
-        let heading = node.firstChild(named: "heading")
-        let margin = node.firstChild(named: "margin")
-        let lineSpacing = node.firstChild(named: "lineSpacing")
-        let border = node.firstChild(named: "border")
+        let align = node.headFirstChild(named: "align")
+        let heading = node.headFirstChild(named: "heading")
+        let margin = node.headFirstChild(named: "margin")
+        let lineSpacing = node.headFirstChild(named: "lineSpacing")
+        let border = node.headFirstChild(named: "border")
 
         let lineSpacingKind = Self.lineSpacingKinds[
             lineSpacing?.attribute("type") ?? "PERCENT"

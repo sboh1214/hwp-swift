@@ -100,6 +100,38 @@ final class HwpxFileTests: XCTestCase {
         return builder.build()
     }
 
+    func testPackageDocumentIsResolvedThroughContainerXML() throws {
+        // OCF에서 패키지 문서 경로의 정본은 container.xml의 rootfile이다 —
+        // 기본 경로만 보면 다시 포장한 유효 컨테이너를 거부한다.
+        let containerXML = """
+        <ocf:container \
+        xmlns:ocf="urn:oasis:names:tc:opendocument:xmlns:container">\
+        <ocf:rootfiles>\
+        <ocf:rootfile full-path="Package/main.hpf" \
+        media-type="application/hwpml-package+xml"/>\
+        </ocf:rootfiles></ocf:container>
+        """
+        var builder = ZipBuilder()
+        builder.entries = [
+            .init(name: "mimetype", content: Data("application/hwp+zip".utf8), method: 0),
+            .init(
+                name: "META-INF/container.xml", content: Data(containerXML.utf8), method: 8
+            ),
+            .init(name: "version.xml", content: Data(versionXML.utf8), method: 8),
+            .init(name: "Package/main.hpf", content: Data(manifestXML.utf8), method: 8),
+            .init(name: "Contents/header.xml", content: Data(headerXML.utf8), method: 8),
+            .init(
+                name: "Contents/section0.xml", content: Data(sectionXML.utf8), method: 8
+            ),
+            .init(name: "BinData/image1.png", content: Data("png-bytes".utf8), method: 0),
+        ]
+
+        let hwp = try HwpFile(fromData: builder.build())
+
+        expect(hwp.sectionArray.count) == 1
+        expect(hwp.binaryDataArray.map(\.name)) == ["BIN0001.png"]
+    }
+
     func testViewerOptionsGatePreviewPayloads() throws {
         // .viewer의 상주 메모리 절감은 미리보기에도 걸려야 한다 — 바이너리
         // 경로 패리티: text·format 판정은 남고 payload만 비운다.

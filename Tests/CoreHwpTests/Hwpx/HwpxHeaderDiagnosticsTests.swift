@@ -106,6 +106,25 @@ final class HwpxHeaderDiagnosticsTests: XCTestCase {
         expect(names).to(contain("bold"))
     }
 
+    func testParagraphShapeLeafDecoysFromOtherVocabularyAreDemotedNotApplied() throws {
+        // <hp:align>은 head vocabulary가 아니다 — 전역 조회면 이 디코이가
+        // 정렬을 덮고, 전역 소비 필터가 그것을 진단에서도 지운다.
+        // 디코이를 진짜 <hh:align> 앞에 둬 먼저 발견되게 한다.
+        let withDecoy = HwpxHeaderFixture.headerXML.replacingOccurrences(
+            of: "<hh:align horizontal=\"CENTER\"",
+            with: "<hp:align horizontal=\"RIGHT\" vertical=\"BASELINE\"/>"
+                + "<hh:align horizontal=\"CENTER\""
+        )
+        let (docInfo, _) = try HwpxHeaderFixture.mapHeader(withDecoy)
+
+        // CENTER(3)가 유지되고 디코이의 RIGHT(2)로 덮이지 않는다.
+        expect(docInfo.idMappings.paraShapeArray[0].property1Info.alignmentRawValue) == 3
+        let names = docInfo.unknownRecords.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("align"))
+    }
+
     func testUnconsumedFontfaceChildrenWithOtherNamesAreDemoted() throws {
         // fontface 직속의 다른 이름 자식 — 이름이 "font"인 디코이만 잡는
         // 술어로는 매핑도 강등도 되지 않아 흔적 없이 사라진다.
