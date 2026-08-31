@@ -88,12 +88,22 @@ struct DocumentEquivalenceProjection {
         let spans: [[UInt16]]
     }
 
+    /// 개체 앵커 오프셋 — 부호 있는 좌표라 두 포맷의 인코딩이 갈린다
+    /// (HWPX는 UInt32 비트 패턴, 바이너리는 그대로 HWPUNIT). 이 축이 없어서
+    /// noori의 표가 (-140, -140) → (0, 0)으로 밀린 회귀가 10쌍 등가 비교를
+    /// 통과했다.
+    struct AnchorOffset: Equatable {
+        let vertical: Int32
+        let horizontal: Int32
+    }
+
     let sectionCount: Int
     let sectionParagraphCounts: [Int]
     let sectionTexts: [String]
     let pageGeometries: [PageGeometry]
     let resolvedRunsByParagraph: [[ResolvedRun]]
     let tableShapes: [TableShape]
+    let tableAnchorOffsets: [AnchorOffset]
     let imageCount: Int
 
     init(of file: HwpFile) {
@@ -126,6 +136,12 @@ struct DocumentEquivalenceProjection {
                     }
                     return [property.columnSpan, property.rowSpan]
                 }
+            )
+        }
+        tableAnchorOffsets = FixtureDerivedValues.tables(from: file).map { table in
+            AnchorOffset(
+                vertical: Int32(bitPattern: table.commonCtrlProperty.verticalOffset),
+                horizontal: Int32(bitPattern: table.commonCtrlProperty.horizontalOffset)
             )
         }
         imageCount = HwpxFixtureAssertions.imageBinItemIds(from: file).count
@@ -200,6 +216,10 @@ struct DocumentEquivalenceProjection {
         )
         expect(tableShapes).to(
             equal(other.tableShapes), description: "\(fixtureId) tableShapes"
+        )
+        expect(tableAnchorOffsets).to(
+            equal(other.tableAnchorOffsets),
+            description: "\(fixtureId) tableAnchorOffsets"
         )
         expect(imageCount).to(
             equal(other.imageCount), description: "\(fixtureId) imageCount"
