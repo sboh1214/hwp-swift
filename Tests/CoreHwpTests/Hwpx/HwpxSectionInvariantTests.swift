@@ -59,21 +59,30 @@ final class HwpxSectionInvariantTests: XCTestCase {
     func testRecoveredParagraphPlaceholderPreservesOriginalSubtree() throws {
         // 복구 placeholder가 합성 p 레코드만 남기면 원본 자식이 사라진다 —
         // .viewer는 구역 rawPayload도 비우므로 유일한 흔적이다.
-        // 셀 컨텍스트마다 descending()이 한 번이라 표를 2겹으로 중첩해야
-        // maxNestingDepth 1에 걸린다.
+        // 셀 컨텍스트마다 descending()이 한 번이라 한도만큼 중첩해야
+        // 문단 매핑이 실패한다. 한도는 보존 트리의 깊이 상한이기도 하므로
+        // p > run > tbl이 들어갈 만큼(4) 잡는다 — 1로 낮추면 실패는 나지만
+        // 보존이 첫 단계에서 잘려 이 테스트의 대상이 사라진다.
         let innerTable = "<hp:tbl id=\"10\" rowCnt=\"1\" colCnt=\"1\">"
             + "<hp:tr><hp:tc><hp:subList>"
             + "<hp:p id=\"4\" paraPrIDRef=\"4\" styleIDRef=\"0\">"
             + "<hp:run charPrIDRef=\"7\"><hp:t>안쪽</hp:t></hp:run></hp:p>"
             + "</hp:subList></hp:tc></hp:tr></hp:tbl>"
+        func wrapping(_ inner: String, id: Int) -> String {
+            "<hp:tbl id=\"\(id)\" rowCnt=\"1\" colCnt=\"1\">"
+                + "<hp:tr><hp:tc><hp:subList>"
+                + "<hp:p id=\"\(id)\" paraPrIDRef=\"4\" styleIDRef=\"0\">"
+                + "<hp:run charPrIDRef=\"7\">\(inner)</hp:run></hp:p>"
+                + "</hp:subList></hp:tc></hp:tr></hp:tbl>"
+        }
+        // 표 N겹이면 descending()이 N회라 한도 4를 넘으려면 5겹이다.
+        let nested = wrapping(
+            wrapping(wrapping(wrapping(innerTable, id: 11), id: 12), id: 13), id: 14
+        )
         let deep = "<hp:p id=\"2\" paraPrIDRef=\"4\" styleIDRef=\"0\">"
-            + "<hp:run charPrIDRef=\"7\"><hp:tbl id=\"9\" rowCnt=\"1\" colCnt=\"1\">"
-            + "<hp:tr><hp:tc><hp:subList>"
-            + "<hp:p id=\"3\" paraPrIDRef=\"4\" styleIDRef=\"0\">"
-            + "<hp:run charPrIDRef=\"7\">\(innerTable)</hp:run></hp:p>"
-            + "</hp:subList></hp:tc></hp:tr></hp:tbl></hp:run></hp:p>"
+            + "<hp:run charPrIDRef=\"7\">\(nested)</hp:run></hp:p>"
         let options = HwpLoadOptions(
-            readLimits: HwpReadLimits(maxNestingDepth: 1),
+            readLimits: HwpReadLimits(maxNestingDepth: 4),
             preserveRawPayload: false,
             recoverPartialContent: true
         )
@@ -125,6 +134,29 @@ final class HwpxSectionInvariantTests: XCTestCase {
         expect(paragraph.paraText?.charArray.contains {
             $0.type == .inline && $0.value == 9
         }) == true
+    }
+
+    func testUnknownSubtreeDepthHonorsTheCallerLimit() throws {
+        // 파서의 512는 XML 요소 깊이 상한이지 호출자 한도가 아니다 —
+        // 낮은 maxNestingDepth를 준 호출자가 수백 단계 진단 트리를 받으면
+        // 안 된다.
+        let depth = 40
+        let nested = String(repeating: "<ext:n xmlns:ext=\"urn:x\">", count: depth)
+            + String(repeating: "</ext:n>", count: depth)
+        let options = HwpLoadOptions(readLimits: HwpReadLimits(maxNestingDepth: 4))
+
+        let section = try HwpxSectionFixture.mapSection(
+            HwpxSectionFixture.blankBody + nested, options: options
+        )
+
+        let record = try XCTUnwrap(section.unknownRecords.first)
+        var levels = 1
+        var node = record
+        while let child = node.children.first {
+            levels += 1
+            node = child
+        }
+        expect(levels) == 4
     }
 
     func testPageStartsOnLandsInTheSectionPropertyBitField() throws {

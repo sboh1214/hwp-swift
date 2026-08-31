@@ -119,7 +119,7 @@ enum HwpxParaShapeMapper {
     static func mapBorderFill(_ node: HwpxXMLNode) -> HwpBorderFill {
         let borders = ["leftBorder", "rightBorder", "topBorder", "bottomBorder"]
             .map { name -> HwpBorderLine in
-                guard let child = node.firstChild(named: name) else {
+                guard let child = node.headFirstChild(named: name) else {
                     return HwpBorderLine()
                 }
                 return HwpBorderLine(
@@ -132,8 +132,9 @@ enum HwpxParaShapeMapper {
             }
 
         var fillInfo: [BYTE] = []
-        if let brush = node.firstChild(named: "fillBrush")?.firstChild(named: "winBrush"),
-           let faceColor = brush.colorAttribute("faceColor")
+        if let brush = node.coreFirstChild(named: "fillBrush")?
+            .coreFirstChild(named: "winBrush"),
+            let faceColor = brush.colorAttribute("faceColor")
         {
             // 표 28 단색 채우기: type(4B LE=1) + 배경색 COLORREF + 무늬색
             // COLORREF + 무늬 종류 Int32(-1 = 무늬 없음).

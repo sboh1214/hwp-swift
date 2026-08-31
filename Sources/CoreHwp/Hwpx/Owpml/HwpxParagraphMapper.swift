@@ -9,6 +9,13 @@ struct HwpxMappingContext {
     let entry: String
     var depth = 0
 
+    /// 미지 서브트리 합성에 쓰는 깊이 한도 — typed 재귀와 같은 설정을
+    /// 따라야 호출자가 낮춘 한도가 진단 트리에도 선다 (파서의 512는 XML
+    /// 요소 깊이 상한이지 호출자 한도가 아니다).
+    var unknownDepthLimit: Int {
+        options.readLimits.maxNestingDepth
+    }
+
     /// typed 매퍼 재귀(표 셀 문단 등)의 유일한 깊이 가드 —
     /// `parseTreeRecord`의 level 가드와 같은 역할을 XML 쪽에서 한다.
     func descending() throws -> HwpxMappingContext {
@@ -42,7 +49,7 @@ enum HwpxParagraphMapper {
         context: HwpxMappingContext,
         isLastInList: Bool
     ) throws -> HwpParagraph {
-        var builder = ParagraphBuilder()
+        var builder = ParagraphBuilder(unknownDepthLimit: context.unknownDepthLimit)
         for child in node.childElements {
             if child.isNamed("run", in: HwpxNamespace.paragraph) {
                 builder.beginRun(
@@ -162,12 +169,16 @@ private extension HwpxParagraphMapper {
 
     /// `<hp:linesegarray>` 안에서 채택되지 않는 요소 — 직계 비-lineseg 자식과
     /// lineseg의 자식(lineseg는 속성 전용이다).
-    static func cacheUnknownRecords(in array: HwpxXMLNode) -> [HwpUnknownRecord] {
+    static func cacheUnknownRecords(
+        in array: HwpxXMLNode, maxDepth: Int
+    ) -> [HwpUnknownRecord] {
         array.childElements.flatMap { child -> [HwpUnknownRecord] in
             guard child.isNamed("lineseg", in: HwpxNamespace.paragraph) else {
-                return [child.syntheticUnknownRecord()]
+                return [child.syntheticUnknownRecord(maxDepth: maxDepth)]
             }
-            return child.childElements.map { $0.syntheticUnknownRecord() }
+            return child.childElements.map {
+                $0.syntheticUnknownRecord(maxDepth: maxDepth)
+            }
         }
     }
 
@@ -255,7 +266,7 @@ private extension HwpxParagraphMapper {
         // 캐시를 어떤 이유로 버리든 그 안 미지 요소는 진단에 남긴다 — 바깥
         // 문단 루프가 linesegarray를 건너뛰므로 이 지점이 그 자식을 걷는
         // 유일한 곳이다 (위치가 이미 불확실한 문단도 마찬가지다).
-        let unknowns = cacheUnknownRecords(in: array)
+        let unknowns = cacheUnknownRecords(in: array, maxDepth: builder.unknownDepthLimit)
         guard builder.positionCertain else {
             return ([], unknowns)
         }
@@ -322,6 +333,7 @@ private extension HwpxParagraphMapper {
 
 /// 단일 패스 WCHAR 스트림 빌더.
 private struct ParagraphBuilder {
+    let unknownDepthLimit: Int
     private(set) var charArray: [HwpChar] = []
     private(set) var ctrls: [HwpCtrlId] = []
     private(set) var wcharPosition: UInt32 = 0
@@ -366,7 +378,7 @@ private struct ParagraphBuilder {
 
     mutating func appendUnknown(_ element: HwpxXMLNode) {
         positionCertain = false
-        unknownChildren.append(element.syntheticUnknownRecord())
+        unknownChildren.append(element.syntheticUnknownRecord(maxDepth: unknownDepthLimit))
     }
 
     mutating func recordZeroWidth(_ elementName: String) {

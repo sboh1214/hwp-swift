@@ -47,14 +47,13 @@ struct HwpxContainer {
 
     /// 패키지 문서(content.hpf)의 실제 경로.
     ///
-    /// OCF에서 그 경로의 정본은 `META-INF/container.xml`의 rootfile이라
-    /// 기본 경로만 보면 다시 포장한 유효 컨테이너를 거부한다. 다만 기본
-    /// 경로가 있으면 그대로 쓴다 — 정상 문서에서 XML 파싱 단계를 하나 더
-    /// 늘리지 않기 위해서다 (한컴 저장본·픽스처 전수가 기본 경로다).
+    /// OCF에서 그 경로의 정본은 `META-INF/container.xml`의 rootfile이므로
+    /// **선언을 먼저 본다** — 관례 경로를 앞세우면 낡은
+    /// `Contents/content.hpf`가 남은 재포장 컨테이너에서 선언된 문서 대신
+    /// 그 낡은 패키지를 파싱한다. 관례 경로는 container.xml이 없거나
+    /// hwpml-package rootfile을 선언하지 않을 때의 폴백이다 (파싱 실패는
+    /// 이 모듈의 규약대로 전파한다).
     mutating func packageEntryName() throws -> String {
-        if hasEntry(EntryName.manifest) {
-            return EntryName.manifest
-        }
         guard let data = try optionalEntry(EntryName.container) else {
             return EntryName.manifest
         }

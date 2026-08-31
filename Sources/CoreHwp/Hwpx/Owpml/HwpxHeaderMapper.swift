@@ -279,6 +279,17 @@ private extension HwpxHeaderMapper {
 
     /// 가족 → 정의 요소 이름. `headChildren` 조회가 거른 타 vocabulary
     /// 디코이를 강등할 때 쓴다 (numbering/bullet 가족은 통째로 강등되므로 제외).
+    /// `hh:borderFill` 자식의 기대 vocabulary — 테두리 4종은 head, 채우기는
+    /// core다 (전 픽스처 실측: 테두리 각 38건 `hh:`, fillBrush·winBrush 각
+    /// 17건 `hc:`). 한쪽으로 통일하면 반드시 다른 쪽이 진단에서 오보된다.
+    static let borderFillChildNamespaces: [String: String] = [
+        "leftBorder": HwpxNamespace.head,
+        "rightBorder": HwpxNamespace.head,
+        "topBorder": HwpxNamespace.head,
+        "bottomBorder": HwpxNamespace.head,
+        "fillBrush": HwpxNamespace.core,
+    ]
+
     static let definitionNames: [String: String] = [
         "fontfaces": "fontface", "borderFills": "borderFill",
         "charProperties": "charPr", "tabProperties": "tabPr",
@@ -333,19 +344,19 @@ private extension HwpxHeaderMapper {
         }
         mapping.idMappings.borderFillArray = borderFills.map(HwpxParaShapeMapper.mapBorderFill)
         for borderFill in borderFills {
-            mapping.unknownRecords += borderFill.unconsumedChildRecords(consumed: [
-                "leftBorder", "rightBorder", "topBorder", "bottomBorder", "fillBrush",
-            ])
+            mapping.unknownRecords += borderFill.unconsumedChildRecords(
+                consumed: Self.borderFillChildNamespaces
+            )
             for borderName in ["leftBorder", "rightBorder", "topBorder", "bottomBorder"] {
-                if let border = borderFill.firstChild(named: borderName) {
+                if let border = borderFill.headFirstChild(named: borderName) {
                     mapping.unknownRecords += border.unconsumedChildRecords(consumed: [])
                 }
             }
-            if let fillBrush = borderFill.firstChild(named: "fillBrush") {
+            if let fillBrush = borderFill.coreFirstChild(named: "fillBrush") {
                 mapping.unknownRecords += fillBrush.unconsumedChildRecords(
-                    consumed: ["winBrush"]
+                    consumed: ["winBrush"], in: HwpxNamespace.core
                 )
-                if let winBrush = fillBrush.firstChild(named: "winBrush") {
+                if let winBrush = fillBrush.coreFirstChild(named: "winBrush") {
                     mapping.unknownRecords += winBrush.unconsumedChildRecords(consumed: [])
                 }
             }

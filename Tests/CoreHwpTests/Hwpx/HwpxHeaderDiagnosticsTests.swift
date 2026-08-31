@@ -106,6 +106,28 @@ final class HwpxHeaderDiagnosticsTests: XCTestCase {
         expect(names).to(contain("bold"))
     }
 
+    func testBorderDecoysAreDemotedWhileCoreFillIsStillConsumed() throws {
+        // 테두리는 head, 채우기는 core다 — 한쪽으로 통일하면 디코이가
+        // 적용되거나(전역) 정상 hc:fillBrush가 미지로 오보된다(head 통일).
+        let withDecoy = HwpxHeaderFixture.headerXML.replacingOccurrences(
+            of: "<hh:leftBorder type=\"SOLID\"",
+            with: "<hp:leftBorder type=\"DOT\" width=\"1.0 mm\" color=\"#00FF00\"/>"
+                + "<hh:leftBorder type=\"SOLID\""
+        )
+        let (docInfo, _) = try HwpxHeaderFixture.mapHeader(withDecoy)
+
+        // SOLID(1)가 유지되고 디코이의 DOT(3)으로 덮이지 않는다.
+        // borderLineArray는 매퍼가 넣은 순서(left·right·top·bottom)다.
+        let fill = docInfo.idMappings.borderFillArray[1]
+        expect(fill.borderLineArray[0].typeRawValue) == 1
+        let names = docInfo.unknownRecords.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("leftBorder"))
+        // 대조군: 소비되는 hc:fillBrush는 강등되지 않는다.
+        expect(names).toNot(contain("fillBrush"))
+    }
+
     func testParagraphShapeLeafDecoysFromOtherVocabularyAreDemotedNotApplied() throws {
         // <hp:align>은 head vocabulary가 아니다 — 전역 조회면 이 디코이가
         // 정렬을 덮고, 전역 소비 필터가 그것을 진단에서도 지운다.

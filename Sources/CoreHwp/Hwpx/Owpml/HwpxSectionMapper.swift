@@ -31,7 +31,9 @@ enum HwpxSectionMapper {
         }
         let paragraphNodes = root.childElements.filter(isParagraph)
         for child in root.childElements where !isParagraph(child) {
-            unknownRecords.append(child.syntheticUnknownRecord())
+            unknownRecords.append(
+                child.syntheticUnknownRecord(maxDepth: context.unknownDepthLimit)
+            )
         }
 
         for (index, node) in paragraphNodes.enumerated() {
@@ -44,7 +46,9 @@ enum HwpxSectionMapper {
                 where index > 0
                 && context.options.recoverPartialContent && !error.isRecoveryExempt
             {
-                paragraphs.append(Self.paragraphPlaceholder(error: error, node: node))
+                paragraphs.append(Self.paragraphPlaceholder(
+                    error: error, node: node, maxDepth: context.unknownDepthLimit
+                ))
             }
         }
 
@@ -85,10 +89,12 @@ enum HwpxSectionMapper {
     /// 합성 `p` 레코드만 남기면 원본 자식이 통째로 사라진다 — `.viewer`는
     /// 구역 rawPayload도 비우므로 재파싱 근거도 진단도 남지 않는다
     /// (바이너리 복구가 원본 레코드를 보존하는 것과 같은 규약).
-    static func paragraphPlaceholder(error: HwpError, node: HwpxXMLNode) -> HwpParagraph {
+    static func paragraphPlaceholder(
+        error: HwpError, node: HwpxXMLNode, maxDepth: Int
+    ) -> HwpParagraph {
         var paragraph = HwpParagraph()
         paragraph.paraText = nil
-        paragraph.unknownChildren = [node.syntheticUnknownRecord()]
+        paragraph.unknownChildren = [node.syntheticUnknownRecord(maxDepth: maxDepth)]
         paragraph.parseFailure = String(describing: error)
         return paragraph
     }

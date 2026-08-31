@@ -47,7 +47,9 @@ enum HwpxControlMapper {
             return .anchor(
                 code: 3,
                 fourCC: fourCC,
-                ctrl: degradedControl(fourCC: fourCC, element: node)
+                ctrl: degradedControl(
+                    fourCC: fourCC, element: node, maxDepth: context.unknownDepthLimit
+                )
             )
         case "fieldEnd":
             return .inlineOnly(code: 4, fourCC: HwpFieldCtrlId.unknown.rawValue)
@@ -64,26 +66,28 @@ enum HwpxControlMapper {
                 ctrl: .picture(HwpxPictureMapper.map(node, context: context))
             )
         default:
-            return classifyAnchorObject(node)
+            return classifyAnchorObject(node, maxDepth: context.unknownDepthLimit)
         }
     }
 
     /// 미구현 개체·구역 부속 요소 — 전부 미구현 강등이되 4CC는 실제 값을
     /// 실어 `parseDiagnostics()`가 `notImplementedControl`로 종류까지
     /// 보고한다.
-    private static func classifyAnchorObject(_ node: HwpxXMLNode) -> HwpxRunChildAction {
+    private static func classifyAnchorObject(
+        _ node: HwpxXMLNode, maxDepth: Int
+    ) -> HwpxRunChildAction {
         if let fourCC = objectFourCCs[node.localName] {
             return .anchor(
                 code: 11,
                 fourCC: fourCC,
-                ctrl: degradedControl(fourCC: fourCC, element: node)
+                ctrl: degradedControl(fourCC: fourCC, element: node, maxDepth: maxDepth)
             )
         }
         if let (code, fourCC) = sectionAttachments[node.localName] {
             return .anchor(
                 code: code,
                 fourCC: fourCC,
-                ctrl: degradedControl(fourCC: fourCC, element: node)
+                ctrl: degradedControl(fourCC: fourCC, element: node, maxDepth: maxDepth)
             )
         }
         return .unknown
@@ -92,11 +96,13 @@ enum HwpxControlMapper {
     /// 미구현 컨트롤 강등 — 요소 이름을 header payload와 unknownChildren에
     /// 함께 실어 진단이 OWPML 이름까지 보존한다 (`.notImplemented`의
     /// unknownChildren은 diagnostics walker가 걷는다).
-    static func degradedControl(fourCC: UInt32, element: HwpxXMLNode) -> HwpCtrlId {
+    static func degradedControl(
+        fourCC: UInt32, element: HwpxXMLNode, maxDepth: Int
+    ) -> HwpCtrlId {
         .notImplemented(HwpCtrlHeader(
             ctrlId: fourCC,
             rawPayload: Data(element.localName.utf8),
-            unknownChildren: [element.syntheticUnknownRecord()]
+            unknownChildren: [element.syntheticUnknownRecord(maxDepth: maxDepth)]
         ))
     }
 

@@ -111,6 +111,12 @@ final class HwpxFileTests: XCTestCase {
         media-type="application/hwpml-package+xml"/>\
         </ocf:rootfiles></ocf:container>
         """
+        // 낡은 관례 경로가 남아 있어도 선언이 이겨야 한다 — 이쪽은 BinData를
+        // 선언하지 않으므로 잘못 읽으면 binaryDataArray가 빈다.
+        let staleXML = manifestXML.replacingOccurrences(
+            of: "<opf:item id=\"image1\" href=\"BinData/image1.png\" media-type=\"image/png\"/>",
+            with: ""
+        )
         var builder = ZipBuilder()
         builder.entries = [
             .init(name: "mimetype", content: Data("application/hwp+zip".utf8), method: 0),
@@ -118,6 +124,9 @@ final class HwpxFileTests: XCTestCase {
                 name: "META-INF/container.xml", content: Data(containerXML.utf8), method: 8
             ),
             .init(name: "version.xml", content: Data(versionXML.utf8), method: 8),
+            .init(
+                name: "Contents/content.hpf", content: Data(staleXML.utf8), method: 8
+            ),
             .init(name: "Package/main.hpf", content: Data(manifestXML.utf8), method: 8),
             .init(name: "Contents/header.xml", content: Data(headerXML.utf8), method: 8),
             .init(

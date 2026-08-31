@@ -120,6 +120,26 @@ extension HwpxXMLNode {
         childElements.first { $0.isNamed(localName, in: HwpxNamespace.paragraph) }
     }
 
+    /// core vocabulary로 확정된 첫 자식 — 채우기(`hc:fillBrush`)처럼 값
+    /// 표현이 core로 정해지는 자리에 쓴다.
+    func coreFirstChild(named localName: String) -> HwpxXMLNode? {
+        childElements.first { $0.isNamed(localName, in: HwpxNamespace.core) }
+    }
+
+    /// 이름마다 기대 vocabulary가 갈리는 가족의 소비 판정 — `hh:borderFill`은
+    /// 테두리 4종이 head, 채우기가 core다. 단일 namespace 변형으로는 그 둘을
+    /// 함께 표현할 수 없다.
+    func unconsumedChildRecords(consumed: [String: String]) -> [HwpUnknownRecord] {
+        childElements
+            .filter { child in
+                guard let namespace = consumed[child.localName] else {
+                    return true
+                }
+                return !child.isNamed(child.localName, in: namespace)
+            }
+            .map { $0.syntheticUnknownRecord() }
+    }
+
     /// head vocabulary로 확정된 첫 자식 — charPr 잎(bold·underline 등)처럼
     /// 스키마가 vocabulary를 하나로 고정하는 단일 자식 조회에 쓴다
     /// (`paragraphFirstChild`의 head 대응).
@@ -131,12 +151,16 @@ extension HwpxXMLNode {
     /// (`HwpUnknownRecord(HwpRecord)`)과 같은 재귀 보존이다. 평탄 변환은
     /// 진단 walker의 `.child[i]` 재귀가 안쪽 미지 요소에 닿지 못하게 한다.
     /// 깊이는 파서의 `maximumElementDepth`가 유계로 잡는다.
-    func syntheticUnknownRecord() -> HwpUnknownRecord {
+    func syntheticUnknownRecord(
+        maxDepth: Int = HwpReadLimits.default.maxNestingDepth
+    ) -> HwpUnknownRecord {
         HwpUnknownRecord(
             tagId: hwpxSyntheticTagId,
             level: 0,
             payload: Data(localName.utf8),
-            children: childElements.map { $0.syntheticUnknownRecord() }
+            children: maxDepth <= 1 ? [] : childElements.map {
+                $0.syntheticUnknownRecord(maxDepth: maxDepth - 1)
+            }
         )
     }
 
@@ -145,10 +169,13 @@ extension HwpxXMLNode {
     /// 소비 판정은 **조회와 같은 술어**(`isNamed`)여야 한다 — local name만
     /// 비교하면 낯선 namespace의 동명 요소(`<ext:pagePr>`)가 조회에서는
     /// 거부되면서 소비 목록에는 걸려 진단에서도 사라진다.
-    func unconsumedChildRecords(consumed: Set<String>) -> [HwpUnknownRecord] {
+    func unconsumedChildRecords(
+        consumed: Set<String>,
+        maxDepth: Int = HwpReadLimits.default.maxNestingDepth
+    ) -> [HwpUnknownRecord] {
         childElements
             .filter { child in !consumed.contains { child.isNamed($0) } }
-            .map { $0.syntheticUnknownRecord() }
+            .map { $0.syntheticUnknownRecord(maxDepth: maxDepth) }
     }
 
     /// `unconsumedChildRecords(consumed:)`의 vocabulary-좁힘 변형 —
@@ -156,11 +183,13 @@ extension HwpxXMLNode {
     /// 한다. 전역 판정이면 타 vocabulary 디코이(`<hh:tc>`)가 소비로 오인돼
     /// 진단에서 사라진다.
     func unconsumedChildRecords(
-        consumed: Set<String>, in namespace: String
+        consumed: Set<String>,
+        in namespace: String,
+        maxDepth: Int = HwpReadLimits.default.maxNestingDepth
     ) -> [HwpUnknownRecord] {
         childElements
             .filter { child in !consumed.contains { child.isNamed($0, in: namespace) } }
-            .map { $0.syntheticUnknownRecord() }
+            .map { $0.syntheticUnknownRecord(maxDepth: maxDepth) }
     }
 }
 
