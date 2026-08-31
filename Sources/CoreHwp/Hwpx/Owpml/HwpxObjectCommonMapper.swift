@@ -82,7 +82,12 @@ enum HwpxObjectCommonMapper {
         ] ?? HwpCommonCtrlNumberingCategory.none
         info.numberingCategoryRawValue = info.numberingCategory?.rawValue ?? 0
 
+        // typed 필드만 채우면 raw 두 자리가 0으로 남아 "종이 기준·어울림"
+        // 이라는 어긋난 값이 함께 공개된다 (렌더는 typed만 보므로 조판이 아니라
+        // 모델 정합성 문제다). 읽기 순서를 역산해 둘을 함께 세운다.
+        info.rawValue = info.synthesizedRawValue
         property.propertyInfo = info
+        property.property = info.rawValue
         property.zOrder = node.int32Attribute("zOrder", default: 0)
         property.instanceId = node.uint32Attribute("id", default: 0)
         return property

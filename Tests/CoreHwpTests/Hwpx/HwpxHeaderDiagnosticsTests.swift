@@ -441,4 +441,50 @@ final class HwpxHeaderDiagnosticsTests: XCTestCase {
         expect(names).to(contain("tabItem"))
         expect(docInfo.unknownRecords.map(\.tagId).allSatisfy { $0 == 0 }) == true
     }
+
+    func testMarginValueDecoysFromOtherVocabularyAreDemotedNotApplied() throws {
+        // 여백 값 자식은 hc:다 — 전역 조회면 앞에 놓인 hp: 디코이가 여백을
+        // 덮고, 전역 소비 필터가 그것을 진단에서도 지운다.
+        let withDecoy = HwpxHeaderFixture.headerXML.replacingOccurrences(
+            of: "<hc:left value=\"3000\" unit=\"HWPUNIT\"/>",
+            with: "<hp:left value=\"9999\" unit=\"HWPUNIT\"/>"
+                + "<hc:left value=\"3000\" unit=\"HWPUNIT\"/>"
+        )
+        let (docInfo, _) = try HwpxHeaderFixture.mapHeader(withDecoy)
+
+        // HWPUNIT 3000이 모델에서 2배로 저장된다 — 디코이의 9999가 아니다.
+        expect(docInfo.idMappings.paraShapeArray[0].marginLeft) == 6000
+        let names = docInfo.unknownRecords.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("left"))
+    }
+
+    func testHeaderUnknownSubtreeDepthHonorsTheCallerLimit() throws {
+        // 헤더 강등도 호출자의 maxNestingDepth를 따라야 한다 — 본문 경로만
+        // 전파하면 진단이 요청보다 깊은 트리를 받는다.
+        let withDeep = HwpxHeaderFixture.headerXML.replacingOccurrences(
+            of: "</hh:head>",
+            with: "<ext:deep xmlns:ext=\"urn:x\"><ext:a><ext:b><ext:c/></ext:b></ext:a>"
+                + "</ext:deep></hh:head>"
+        )
+        func depth(of record: HwpUnknownRecord) -> Int {
+            1 + (record.children.map(depth(of:)).max() ?? 0)
+        }
+        func deepRecord(_ docInfo: HwpDocInfo) throws -> HwpUnknownRecord {
+            try XCTUnwrap(docInfo.unknownRecords.first {
+                String(bytes: $0.payload, encoding: .utf8) == "deep"
+            })
+        }
+
+        // 대조군: 기본 한도에서는 네 겹이 그대로 남는다.
+        let (full, _) = try HwpxHeaderFixture.mapHeader(withDeep)
+        expect(depth(of: try deepRecord(full))) == 4
+
+        let (capped, _) = try HwpxHeaderFixture.mapHeader(
+            withDeep,
+            options: HwpLoadOptions(readLimits: HwpReadLimits(maxNestingDepth: 2))
+        )
+        expect(depth(of: try deepRecord(capped))) == 2
+    }
 }

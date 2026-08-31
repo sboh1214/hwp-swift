@@ -29,6 +29,35 @@ struct HwpxHeaderMapping {
     var idMappings = HwpIdMappings()
     var idTables = HwpxIdTables()
     var unknownRecords: [HwpUnknownRecord] = []
+    /// 미지 서브트리 합성의 깊이 한도 — 호출자의 `maxNestingDepth`다.
+    var unknownDepthLimit = HwpReadLimits.default.maxNestingDepth
+
+    /// 강등은 전부 이 셋을 지난다 — 호출부마다 한도를 다는 방식이면 새
+    /// 경로가 그것을 빠뜨린다 (본문 경로만 전파하고 헤더를 빠뜨린 것이
+    /// 이 규약의 첫 결함이었다).
+    mutating func demote(_ node: HwpxXMLNode) {
+        unknownRecords.append(node.syntheticUnknownRecord(maxDepth: unknownDepthLimit))
+    }
+
+    mutating func demoteUnconsumed(in node: HwpxXMLNode, consumed: Set<String>) {
+        unknownRecords += node.unconsumedChildRecords(
+            consumed: consumed, maxDepth: unknownDepthLimit
+        )
+    }
+
+    mutating func demoteUnconsumed(
+        in node: HwpxXMLNode, consumed: Set<String>, namespace: String
+    ) {
+        unknownRecords += node.unconsumedChildRecords(
+            consumed: consumed, in: namespace, maxDepth: unknownDepthLimit
+        )
+    }
+
+    mutating func demoteUnconsumed(in node: HwpxXMLNode, consumed: [String: String]) {
+        unknownRecords += node.unconsumedChildRecords(
+            consumed: consumed, maxDepth: unknownDepthLimit
+        )
+    }
 }
 
 enum HwpxHeaderMapper {
@@ -48,6 +77,7 @@ enum HwpxHeaderMapper {
         }
 
         var mapping = HwpxHeaderMapping()
+        mapping.unknownDepthLimit = options.readLimits.maxNestingDepth
         // 실재 구역 수(조립기가 셈)가 secCnt 선언보다 정확하다 — 선언이
         // 어긋난 문서에서 모델 내부 일관성을 지킨다.
         let sections = sectionCount ?? root.intAttribute("secCnt", default: 1)
@@ -121,11 +151,11 @@ private extension HwpxHeaderMapper {
                         equation: child.uint16Attribute("equation", default: 1)
                     )
                 )
-                mapping.unknownRecords += child.unconsumedChildRecords(consumed: [])
+                mapping.demoteUnconsumed(in: child, consumed: [])
             } else if child.isNamed("refList", in: HwpxNamespace.head) {
                 try mapRefList(child, into: &mapping)
             } else {
-                mapping.unknownRecords.append(unknownRecord(of: child))
+                mapping.demote(child)
             }
         }
     }
@@ -167,16 +197,18 @@ private extension HwpxHeaderMapper {
         // 다시 쓴다 ((namespace, local name) 규칙).
         for family in refList.childElements {
             guard family.isNamed(family.localName, in: HwpxNamespace.head) else {
-                mapping.unknownRecords.append(unknownRecord(of: family))
+                mapping.demote(family)
                 continue
             }
             switch family.localName {
             case "fontfaces":
+                let depthLimit = mapping.unknownDepthLimit
                 try HwpxCharShapeMapper.mapFontFaces(
                     family,
                     into: &mapping.idMappings,
                     tables: &mapping.idTables,
-                    unknownRecords: &mapping.unknownRecords
+                    unknownRecords: &mapping.unknownRecords,
+                    maxDepth: depthLimit
                 )
             case "borderFills":
                 try mapBorderFills(family, into: &mapping)
@@ -192,9 +224,9 @@ private extension HwpxHeaderMapper {
                 // 1차 범위 밖 — id 테이블만 등록해 참조가 결정적으로
                 // 재작성되게 하고, 미해석 사실은 진단에 남긴다 (배열이
                 // 비어 있으므로 조판은 번호 없이 그린다).
-                mapping.unknownRecords.append(unknownRecord(of: family))
+                mapping.demote(family)
             default:
-                mapping.unknownRecords.append(unknownRecord(of: family))
+                mapping.demote(family)
             }
             demoteUnconsumedFamilyChildren(in: family, into: &mapping)
         }
@@ -219,7 +251,7 @@ private extension HwpxHeaderMapper {
         mapping.idMappings.styleArray = try styles
             .map { try HwpxParaShapeMapper.mapStyle($0, tables: mapping.idTables) }
         for style in styles {
-            mapping.unknownRecords += style.unconsumedChildRecords(consumed: [])
+            mapping.demoteUnconsumed(in: style, consumed: [])
         }
     }
 
@@ -233,8 +265,8 @@ private extension HwpxHeaderMapper {
         // 이름이 같은 타 vocabulary 디코이와 이름이 다른 미래 자식을 한
         // 술어로 강등한다 — 진짜 정의(head)만 소비로 남는다. 이름이 같은
         // 자식만 잡으면 <hh:newDefinition> 같은 미래 자식이 사라진다.
-        mapping.unknownRecords += family.unconsumedChildRecords(
-            consumed: [definitionName], in: HwpxNamespace.head
+        mapping.demoteUnconsumed(
+            in: family, consumed: [definitionName], namespace: HwpxNamespace.head
         )
     }
 
@@ -259,13 +291,14 @@ private extension HwpxHeaderMapper {
         mapping.idMappings.charShapeArray = charPrs
             .map { HwpxCharShapeMapper.mapCharShape($0, tables: mapping.idTables) }
         for charPr in charPrs {
-            mapping.unknownRecords += charPr.unconsumedChildRecords(
-                consumed: Set(Self.charPrLeafNames), in: HwpxNamespace.head
+            mapping.demoteUnconsumed(
+                in: charPr, consumed: Set(Self.charPrLeafNames),
+                namespace: HwpxNamespace.head
             )
             // 잎 래퍼 15종은 속성만 읽는다 — 자식이 전부 미소비다.
             for leafName in Self.charPrLeafNames {
                 if let leaf = charPr.headFirstChild(named: leafName) {
-                    mapping.unknownRecords += leaf.unconsumedChildRecords(consumed: [])
+                    mapping.demoteUnconsumed(in: leaf, consumed: [])
                 }
             }
         }
@@ -317,7 +350,7 @@ private extension HwpxHeaderMapper {
         mapping.idMappings.tabDefArray = tabPrs.map(HwpxParaShapeMapper.mapTabDef)
         for tabPr in tabPrs {
             for child in tabPr.childElements {
-                mapping.unknownRecords.append(unknownRecord(of: child))
+                mapping.demote(child)
             }
         }
     }
@@ -344,20 +377,20 @@ private extension HwpxHeaderMapper {
         }
         mapping.idMappings.borderFillArray = borderFills.map(HwpxParaShapeMapper.mapBorderFill)
         for borderFill in borderFills {
-            mapping.unknownRecords += borderFill.unconsumedChildRecords(
-                consumed: Self.borderFillChildNamespaces
+            mapping.demoteUnconsumed(
+                in: borderFill, consumed: Self.borderFillChildNamespaces
             )
             for borderName in ["leftBorder", "rightBorder", "topBorder", "bottomBorder"] {
                 if let border = borderFill.headFirstChild(named: borderName) {
-                    mapping.unknownRecords += border.unconsumedChildRecords(consumed: [])
+                    mapping.demoteUnconsumed(in: border, consumed: [])
                 }
             }
             if let fillBrush = borderFill.coreFirstChild(named: "fillBrush") {
-                mapping.unknownRecords += fillBrush.unconsumedChildRecords(
-                    consumed: ["winBrush"], in: HwpxNamespace.core
+                mapping.demoteUnconsumed(
+                    in: fillBrush, consumed: ["winBrush"], namespace: HwpxNamespace.core
                 )
                 if let winBrush = fillBrush.coreFirstChild(named: "winBrush") {
-                    mapping.unknownRecords += winBrush.unconsumedChildRecords(consumed: [])
+                    mapping.demoteUnconsumed(in: winBrush, consumed: [])
                 }
             }
         }
@@ -385,25 +418,28 @@ private extension HwpxHeaderMapper {
         mapping.idMappings.paraShapeArray = paraPrs
             .map { HwpxParaShapeMapper.mapParaShape($0, tables: mapping.idTables) }
         for paraPr in paraPrs {
-            mapping.unknownRecords += paraPr.unconsumedChildRecords(
+            mapping.demoteUnconsumed(
+                in: paraPr,
                 consumed: ["align", "heading", "margin", "lineSpacing", "border"],
-                in: HwpxNamespace.head
+                namespace: HwpxNamespace.head
             )
             // 소비된 래퍼 안 미지 자식 — margin은 5종만 읽고 나머지 래퍼
             // 4종은 속성만 읽는 잎이라 자식이 전부 미소비다.
-            if let margin = paraPr.firstChild(named: "margin") {
-                mapping.unknownRecords += margin.unconsumedChildRecords(consumed: [
-                    "intent", "left", "right", "prev", "next",
-                ])
+            if let margin = paraPr.headFirstChild(named: "margin") {
+                mapping.demoteUnconsumed(
+                    in: margin,
+                    consumed: ["intent", "left", "right", "prev", "next"],
+                    namespace: HwpxNamespace.core
+                )
                 for valueName in ["intent", "left", "right", "prev", "next"] {
-                    if let value = margin.firstChild(named: valueName) {
-                        mapping.unknownRecords += value.unconsumedChildRecords(consumed: [])
+                    if let value = margin.coreFirstChild(named: valueName) {
+                        mapping.demoteUnconsumed(in: value, consumed: [])
                     }
                 }
             }
             for leafName in ["align", "heading", "lineSpacing", "border"] {
                 if let leaf = paraPr.headFirstChild(named: leafName) {
-                    mapping.unknownRecords += leaf.unconsumedChildRecords(consumed: [])
+                    mapping.demoteUnconsumed(in: leaf, consumed: [])
                 }
             }
         }
@@ -417,9 +453,5 @@ private extension HwpxHeaderMapper {
         for (offset, child) in family.headChildren(named: childName).enumerated() {
             table.register(id: child.attribute("id"), offset: offset)
         }
-    }
-
-    static func unknownRecord(of node: HwpxXMLNode) -> HwpUnknownRecord {
-        node.syntheticUnknownRecord()
     }
 }

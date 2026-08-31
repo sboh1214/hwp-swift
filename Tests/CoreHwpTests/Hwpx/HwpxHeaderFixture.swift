@@ -11,12 +11,13 @@ enum HwpxHeaderFixture {
     static func mapHeader(
         _ xml: String,
         catalog: HwpxBinDataCatalog = HwpxBinDataCatalog(),
-        sectionCount: Int? = nil
+        sectionCount: Int? = nil,
+        options: HwpLoadOptions = .default
     ) throws -> (docInfo: HwpDocInfo, idTables: HwpxIdTables) {
         try HwpxHeaderMapper.map(
             Data(xml.utf8),
             binDataCatalog: catalog,
-            options: .default,
+            options: options,
             sectionCount: sectionCount
         )
     }

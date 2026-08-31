@@ -129,7 +129,10 @@ extension HwpxXMLNode {
     /// 이름마다 기대 vocabulary가 갈리는 가족의 소비 판정 — `hh:borderFill`은
     /// 테두리 4종이 head, 채우기가 core다. 단일 namespace 변형으로는 그 둘을
     /// 함께 표현할 수 없다.
-    func unconsumedChildRecords(consumed: [String: String]) -> [HwpUnknownRecord] {
+    func unconsumedChildRecords(
+        consumed: [String: String],
+        maxDepth: Int = HwpReadLimits.default.maxNestingDepth
+    ) -> [HwpUnknownRecord] {
         childElements
             .filter { child in
                 guard let namespace = consumed[child.localName] else {
@@ -137,7 +140,7 @@ extension HwpxXMLNode {
                 }
                 return !child.isNamed(child.localName, in: namespace)
             }
-            .map { $0.syntheticUnknownRecord() }
+            .map { $0.syntheticUnknownRecord(maxDepth: maxDepth) }
     }
 
     /// head vocabulary로 확정된 첫 자식 — charPr 잎(bold·underline 등)처럼

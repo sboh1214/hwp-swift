@@ -173,7 +173,8 @@ extension HwpxParaShapeMapper {
     /// (조판이 /2로 소비 — noori HWP↔HWPX 실측: indent -2620↔-1310 등
     /// 전 항목 2배) 모델 경계에서 2배로 올린다.
     static func marginValue(_ margin: HwpxXMLNode?, _ name: String) -> Int32 {
-        let value = margin?.firstChild(named: name)?.int32Attribute("value", default: 0) ?? 0
+        let value = margin?.coreFirstChild(named: name)?
+            .int32Attribute("value", default: 0) ?? 0
         return Int32(clamping: Int64(value) * 2)
     }
 

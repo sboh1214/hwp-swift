@@ -33,7 +33,8 @@ enum HwpxCharShapeMapper {
         _ fontfaces: HwpxXMLNode,
         into idMappings: inout HwpIdMappings,
         tables: inout HwpxIdTables,
-        unknownRecords: inout [HwpUnknownRecord]
+        unknownRecords: inout [HwpUnknownRecord],
+        maxDepth: Int = HwpReadLimits.default.maxNestingDepth
     ) throws {
         var arrays: [[HwpFaceName]] = Array(repeating: [], count: 7)
         for fontface in fontfaces.headChildren(named: "fontface") {
@@ -42,7 +43,7 @@ enum HwpxCharShapeMapper {
             else {
                 // 미지 lang의 fontface는 글꼴 목록이 통째로 빠지므로 조용히
                 // 버리면 안 된다 — 진단으로 남긴다.
-                unknownRecords.append(fontface.syntheticUnknownRecord())
+                unknownRecords.append(fontface.syntheticUnknownRecord(maxDepth: maxDepth))
                 continue
             }
             let index = language.arrayIndex
@@ -51,7 +52,7 @@ enum HwpxCharShapeMapper {
             // <hh:faceMeta> 같은 자식이 매핑도 강등도 되지 않아 흔적 없이
             // 사라진다 (가족 수준 demoteUnconsumedFamilyChildren와 같은 채널).
             unknownRecords += fontface.unconsumedChildRecords(
-                consumed: ["font"], in: HwpxNamespace.head
+                consumed: ["font"], in: HwpxNamespace.head, maxDepth: maxDepth
             )
             let fonts = fontface.headChildren(named: "font")
             // fontRef의 언어별 faceId는 0-based WORD — 65,537번째부터
@@ -73,10 +74,12 @@ enum HwpxCharShapeMapper {
                 }
                 // typeInfo 등 1차 범위 밖 자식은 진단으로 강등한다.
                 unknownRecords += font.unconsumedChildRecords(
-                    consumed: ["substFont"], in: HwpxNamespace.head
+                    consumed: ["substFont"], in: HwpxNamespace.head, maxDepth: maxDepth
                 )
                 if let substFontNode = font.headFirstChild(named: "substFont") {
-                    unknownRecords += substFontNode.unconsumedChildRecords(consumed: [])
+                    unknownRecords += substFontNode.unconsumedChildRecords(
+                        consumed: [], maxDepth: maxDepth
+                    )
                 }
                 tables.fontFacesByLanguage[index].register(
                     id: font.attribute("id"), offset: arrays[index].count
