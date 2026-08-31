@@ -200,6 +200,27 @@ final class HwpxHeaderMapperTests: XCTestCase {
         })
     }
 
+    func testCharShapesBeyondReferenceSpaceAreRejected() {
+        // 스타일의 charShapeId는 0-based UInt16 — run 참조(UInt32)만 온전해
+        // 같은 문서 안에서 두 참조가 어긋난다.
+        let charPrs = (0 ..< 65537).map { "<hh:charPr id=\"c\($0)\" height=\"1000\"/>" }
+            .joined()
+        let withMany = HwpxHeaderFixture.headerXML.replacingOccurrences(
+            of: #"<hh:charProperties itemCnt="2">.*</hh:charProperties>"#,
+            with: "<hh:charProperties itemCnt=\"65537\">\(charPrs)</hh:charProperties>",
+            options: .regularExpression
+        )
+
+        expect {
+            _ = try HwpxHeaderFixture.mapHeader(withMany)
+        }.to(throwError { error in
+            guard case let HwpError.invalidXML(_, reason) = error else {
+                return fail("Expected invalidXML, got \(error)")
+            }
+            expect(reason).to(contain("charPr"))
+        })
+    }
+
     func testBorderFillsBeyondOneBasedReferenceSpaceAreRejected() {
         // borderFill 참조는 1-based UInt16 (0 = 없음) — 65,536번째 정의부터
         // `borderFillId`의 offset + 1 클램프가 직전 정의로 별칭화된다.

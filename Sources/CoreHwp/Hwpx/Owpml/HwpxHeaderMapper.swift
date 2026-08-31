@@ -181,7 +181,7 @@ private extension HwpxHeaderMapper {
             case "borderFills":
                 try mapBorderFills(family, into: &mapping)
             case "charProperties":
-                mapCharProperties(family, into: &mapping)
+                try mapCharProperties(family, into: &mapping)
             case "tabProperties":
                 try mapTabProperties(family, into: &mapping)
             case "paraProperties":
@@ -245,8 +245,17 @@ private extension HwpxHeaderMapper {
     static func mapCharProperties(
         _ family: HwpxXMLNode,
         into mapping: inout HwpxHeaderMapping
-    ) {
+    ) throws {
         let charPrs = family.headChildren(named: "charPr")
+        // 스타일의 charShapeId는 0-based UInt16 — 65,537번째부터 그 참조만
+        // 65,535로 접힌다. run 참조(paraCharShape.shapeId)는 UInt32라 온전해
+        // 같은 문서 안에서 두 참조가 어긋난다 (tabPr·font 가드와 같은 계열).
+        guard charPrs.count <= 65536 else {
+            throw HwpError.invalidXML(
+                entry: HwpxContainer.EntryName.header,
+                reason: "charPr definitions exceed the 65,536-entry reference space"
+            )
+        }
         mapping.idMappings.charShapeArray = charPrs
             .map { HwpxCharShapeMapper.mapCharShape($0, tables: mapping.idTables) }
         for charPr in charPrs {
