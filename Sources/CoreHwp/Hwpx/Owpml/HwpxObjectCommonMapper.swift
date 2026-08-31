@@ -43,8 +43,15 @@ enum HwpxObjectCommonMapper {
             info.horizontalAlignment = alignments[position.attribute("horzAlign") ?? "LEFT"]
                 ?? .topOrLeft
             info.horizontalAlignmentRawValue = info.horizontalAlignment?.rawValue ?? 0
-            property.verticalOffset = position.uint32Attribute("vertOffset", default: 0)
-            property.horizontalOffset = position.uint32Attribute("horzOffset", default: 0)
+            // 오프셋은 음수가 정상값이다 (기준 위·왼쪽으로 밀린 개체) —
+            // UInt32로 읽으면 파싱이 실패해 0으로 접혀 개체가 기준 원점으로
+            // 이동한다. 하류가 Int32(bitPattern:)로 되읽으므로 비트열을 보존한다.
+            property.verticalOffset = HWPUNIT(
+                bitPattern: position.int32Attribute("vertOffset", default: 0)
+            )
+            property.horizontalOffset = HWPUNIT(
+                bitPattern: position.int32Attribute("horzOffset", default: 0)
+            )
         }
 
         if let outMargin = node.paragraphFirstChild(named: "outMargin") {
