@@ -104,6 +104,13 @@ enum HwpxControlMapper {
     /// typed 매핑으로 승격됐다).
     static let objectFourCCs: [String: UInt32] = [
         "ole": HwpCommonCtrlId.ole.rawValue,
+        // 2016 ooxmlchart 확장 — 한글.app은 <hp:switch>로 <hp:chart>와
+        // <hp:ole> 두 표현을 함께 적고 우리는 default(ole)를 고르지만,
+        // fallback 없이 <hp:chart>만 오면 여기 없을 때 .unknown으로 떨어져
+        // 앵커도 ctrl 슬롯도 없이 사라진다. 쌍둥이와 같은 4CC를 실어 어느
+        // 분기를 고르든 같은 강등 앵커가 되게 한다 (요소 이름은 payload에
+        // 남아 진단에서 갈린다).
+        "chart": HwpCommonCtrlId.ole.rawValue,
         "equation": HwpCommonCtrlId.equation.rawValue,
         "line": HwpCommonCtrlId.line.rawValue,
         "rect": HwpCommonCtrlId.rectangle.rawValue,

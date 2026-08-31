@@ -306,6 +306,7 @@ final class HwpxSectionMapperTests: XCTestCase {
             HwpxSectionFixture.blankBody + """
             <hp:p><hp:run charPrIDRef="7">\
             <hp:ole id="1"/>\
+            <hp:chart id="3"/>\
             <hp:ctrl><hp:header id="2"/></hp:ctrl>\
             </hp:run>\
             <hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1000" \
@@ -316,15 +317,25 @@ final class HwpxSectionMapperTests: XCTestCase {
         let paragraph = section.paragraph[1]
         let chars = try XCTUnwrap(paragraph.paraText?.charArray)
 
-        expect(chars.map(\.value)) == [11, 16, 13]
+        expect(chars.map(\.value)) == [11, 11, 16, 13]
         let ctrls = try XCTUnwrap(paragraph.ctrlHeaderArray)
-        expect(ctrls.count) == 2
+        // 개수를 guard로 본다 — expect만 두면 슬롯이 빌 때 뒤 인덱스 접근이
+        // 트랩해 실패 사유가 출력에 남지 않는다.
+        guard ctrls.count == 3 else {
+            return fail("Expected three controls, got \(ctrls)")
+        }
         guard case let .notImplemented(ole) = ctrls[0],
-              case let .notImplemented(header) = ctrls[1]
+              case let .notImplemented(chart) = ctrls[1],
+              case let .notImplemented(header) = ctrls[2]
         else {
-            return fail("Expected two .notImplemented, got \(ctrls)")
+            return fail("Expected three .notImplemented, got \(ctrls)")
         }
         expect(ole.ctrlId) == HwpCommonCtrlId.ole.rawValue
+        // fallback 없는 <hp:chart>는 쌍둥이 <hp:ole>과 같은 강등 앵커여야
+        // 한다 — 분류표에 없으면 앵커도 ctrl 슬롯도 없이 사라진다.
+        expect(chart.ctrlId) == HwpCommonCtrlId.ole.rawValue
+        // 4CC는 같아도 요소 이름은 payload에 남아 진단에서 갈린다.
+        expect(String(bytes: chart.rawPayload, encoding: .utf8)) == "chart"
         expect(header.ctrlId) == HwpOtherCtrlId.header.rawValue
         // 분류 가능한 요소는 위치가 확실하므로 lineseg가 유지된다.
         expect(paragraph.paraLineSeg.paraLineSegInternalArray.count) == 1
