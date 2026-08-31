@@ -23,6 +23,11 @@ final class HwpxXMLTreeParser: NSObject {
     private var root: HwpxXMLNode?
     private var failure: String?
     private var sawNamespacedElement = false
+    /// 첫 namespaced 요소보다 **앞서** 만들어진 무접두사 노드 수. 루트가
+    /// 접두사를 선언만 하고 자신은 무접두사인 파트(`<head xmlns:hh="…">`)가
+    /// 그렇다 — 생성 시점에는 파트가 namespace를 쓰는지 알 수 없으므로 그
+    /// 노드들만 파싱이 끝난 뒤 소급 표시한다.
+    private var unqualifiedNodesBeforeNamespace = 0
     private weak var runningParser: XMLParser?
 
     /// XML 바이트를 파싱해 루트 요소를 돌려준다. `hp:switch`는 여기서 이미
@@ -45,7 +50,15 @@ final class HwpxXMLTreeParser: NSObject {
                 ?? "no root element"
             throw HwpError.invalidXML(entry: entry, reason: reason)
         }
-        return root.resolvingSwitches()
+        // 소급 표시는 switch 해소보다 **먼저**다 — 해소도 (URI, local name)로
+        // 분기를 고르므로, 뒤늦게 갈라 낼 노드를 남긴 채 돌리면 무접두사
+        // <switch>가 hp:switch로 해소된다.
+        guard delegate.sawNamespacedElement,
+              delegate.unqualifiedNodesBeforeNamespace > 0
+        else {
+            return root.resolvingSwitches()
+        }
+        return root.markingUnqualifiedElements().resolvingSwitches()
     }
 
     private func record(failure reason: String) {
@@ -117,6 +130,8 @@ extension HwpxXMLTreeParser: XMLParserDelegate {
         let uri = namespaceURI ?? ""
         if !uri.isEmpty {
             sawNamespacedElement = true
+        } else if !sawNamespacedElement {
+            unqualifiedNodesBeforeNamespace += 1
         }
         stack.append(HwpxXMLNode(
             localName: elementName,
@@ -191,5 +206,26 @@ extension HwpxXMLTreeParser: XMLParserDelegate {
 
     func parser(_: XMLParser, parseErrorOccurred parseError: Error) {
         record(failure: String(describing: parseError))
+    }
+}
+
+private extension HwpxXMLNode {
+    /// 남은 빈 URI를 sentinel로 바꾼다 — 생성 시점 판정이 놓친 노드
+    /// (`unqualifiedNodesBeforeNamespace`)를 위한 소급 패스다.
+    ///
+    /// 파트가 namespace를 쓸 때만 호출되므로 빈 URI는 전부 무접두사 요소다.
+    /// 생성 시점에 이미 표시된 노드는 URI가 비어 있지 않아 그대로 지난다.
+    func markingUnqualifiedElements() -> HwpxXMLNode {
+        var node = self
+        if node.namespaceURI.isEmpty {
+            node.namespaceURI = HwpxNamespace.unqualified
+        }
+        node.content = node.content.map { piece in
+            guard case let .element(child) = piece else {
+                return piece
+            }
+            return .element(child.markingUnqualifiedElements())
+        }
+        return node
     }
 }

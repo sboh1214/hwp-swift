@@ -302,6 +302,32 @@ final class HwpxXMLTreeParserTests: XCTestCase {
         expect(demoted.isNamed("p", in: HwpxNamespace.paragraph)) == false
     }
 
+    func testUnqualifiedRootDeclaringPrefixesIsNotMatched() throws {
+        // 루트가 접두사를 **선언만** 하고 자신은 무접두사면 생성 시점엔
+        // 파트가 namespace를 쓰는지 알 수 없다 — 소급 표시가 없으면 이
+        // 루트가 hh:head 게이트를 통과한다.
+        let root = try parse(
+            "<head xmlns:hh=\"http://www.hancom.co.kr/hwpml/2011/head\">"
+                + "<hh:refList/></head>"
+        )
+
+        expect(root.isNamed("head", in: HwpxNamespace.head)) == false
+        expect(root.localName) == "head"
+        // 접두사를 쓴 자식은 그대로 head vocabulary다 (소급 표시가 건드리지 않는다).
+        expect(root.firstChild(named: "refList")?.namespaceURI) == HwpxNamespace.head
+    }
+
+    func testUnqualifiedElementsBeforeTheFirstNamespacedSiblingAreDemoted() throws {
+        // 주입이 첫 namespaced 요소보다 앞서면 생성 시점 판정이 놓친다 —
+        // 순서만 바꾼 같은 공격이다.
+        let root = try parse(
+            "<sec xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\">"
+                + "<p id=\"1\"/><hp:p id=\"2\"/></sec>"
+        )
+
+        expect(root.paragraphChildren(named: "p").map { $0.attribute("id") }) == ["2"]
+    }
+
     // MARK: - 속성 리더
 
     func testColorAttributeAcceptsEightDigitARGB() throws {
