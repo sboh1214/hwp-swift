@@ -60,6 +60,9 @@ enum HwpxSecPrMapper {
             ] ?? 0
             sectionDef.property |= UInt32(startsOn) << 20
             sectionDef.propertyInfo.newPageNumberApplyRawValue = startsOn
+            // 표현이 셋이다 — property·파생 필드·propertyInfo.rawValue.
+            // 바이너리는 load(property)가 셋을 함께 세우므로 여기서도 맞춘다.
+            sectionDef.propertyInfo.rawValue = sectionDef.property
             sectionDef.pageStartNumber = startNum.uint16Attribute("page", default: 0)
             sectionDef.pictureStartNumber = startNum.uint16Attribute("pic", default: 0)
             sectionDef.tableStartNumber = startNum.uint16Attribute("tbl", default: 0)
@@ -103,7 +106,6 @@ enum HwpxSecPrMapper {
         property.direction = Self.columnDirections[colPr.attribute("layout") ?? "LEFT"]
             ?? .left
         property.isSameWidth = colPr.boolAttribute("sameSz", default: true)
-        column.property = property
         // sameGap은 동일 폭 다단의 단 간격이다 (HWPUNIT).
         column.spacing = Int16(clamping: colPr.intAttribute("sameGap", default: 0))
 
@@ -114,11 +116,14 @@ enum HwpxSecPrMapper {
             // 어긋나면 columnFrames의 count 대조(widths.count == count)가
             // widthArray를 버리고 등폭으로 그린다.
             property.count = sizes.count
-            column.property = property
             column.widthArray = sizes.map { $0.uint16Attribute("width", default: 0) }
             column.gapArray = sizes.map { $0.uint16Attribute("gap", default: 0) }
             column.spacing = nil
         }
+        // typed 필드가 확정된 뒤 raw를 합성한다 — 비등폭 분기가 count를
+        // 고쳐 쓰므로 그 앞에서 실으면 두 표현이 어긋난다.
+        property.rawValue = property.synthesizedRawValue
+        column.property = property
 
         if let line = colPr.paragraphFirstChild(named: "colLine") {
             column.dividerType = UInt8(clamping: HwpxCharShapeMapper.lineShapeIndex(

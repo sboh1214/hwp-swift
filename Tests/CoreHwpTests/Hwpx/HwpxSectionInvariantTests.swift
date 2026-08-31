@@ -170,6 +170,8 @@ final class HwpxSectionInvariantTests: XCTestCase {
         let sectionDef = try XCTUnwrap(oddSectionDef(in: odd))
         expect(sectionDef.propertyInfo.newPageNumberApplyRawValue) == 1
         expect((sectionDef.property >> 20) & 0b11) == 1
+        // 표현이 셋이다 — 바이너리는 load(property)가 셋을 함께 세운다.
+        expect(sectionDef.propertyInfo.rawValue) == sectionDef.property
 
         // 대조군: 기본값 BOTH는 종전대로 0이다.
         let both = try HwpxSectionFixture.mapSection(HwpxSectionFixture.blankBody)
@@ -373,5 +375,28 @@ final class HwpxSectionInvariantTests: XCTestCase {
         )
         expect(capped.section) == 2
         expect(capped.column) == 2
+    }
+
+    func testColumnPropertyRawValueMatchesTypedFields() throws {
+        // typed 필드만 채우면 rawValue가 0으로 남아 같은 모델이 "일반 다단·
+        // 1단·등폭"이라는 어긋난 값을 함께 주장한다.
+        let xml = """
+        <hp:colPr xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" \
+        type="BALANCED_NEWSPAPER" colCount="3" sameSz="0">\
+        <hp:colSz width="100" gap="10"/><hp:colSz width="200" gap="10"/>\
+        </hp:colPr>
+        """
+        let column = HwpxSecPrMapper.mapColumn(
+            try parse(xml), maxDepth: HwpReadLimits.default.maxNestingDepth
+        )
+
+        expect(column.property.rawValue) != 0
+        let decoded = try HwpColumnProperty.load(column.property.rawValue)
+        expect(decoded.type) == column.property.type
+        expect(decoded.direction) == column.property.direction
+        expect(decoded.isSameWidth) == column.property.isSameWidth
+        // 비등폭 분기가 count를 colSz 수로 고쳐 쓴 **뒤**의 값이 실려야 한다.
+        expect(decoded.count) == 2
+        expect(column.property.count) == 2
     }
 }

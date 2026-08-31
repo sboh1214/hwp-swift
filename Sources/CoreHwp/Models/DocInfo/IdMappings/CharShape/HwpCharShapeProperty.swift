@@ -110,6 +110,35 @@ extension HwpCharShapeProperty: HwpFromUInt {
 }
 
 extension HwpCharShapeProperty {
+    /// typed 필드에서 bit field를 되만든다 — 위 `init(_ reader:)`의 읽기
+    /// 순서를 그대로 뒤집은 것이라 두 방향이 한 파일에서 대조된다.
+    /// raw가 없는 합성 경로(HWPX)가 쓴다. 마지막 예약 1비트는 0으로 둔다.
+    var synthesizedRawValue: UInt32 {
+        var raw: UInt32 = 0
+        var offset = 0
+        func put(_ value: Int, width: Int) {
+            raw |= UInt32(value & ((1 << width) - 1)) << offset
+            offset += width
+        }
+        put(isItalic ? 1 : 0, width: 1)
+        put(isBold ? 1 : 0, width: 1)
+        put(underlineType.rawValue, width: 2)
+        put(underlineShape, width: 4)
+        put(borderlineType.rawValue, width: 3)
+        put(shadowType.rawValue, width: 2)
+        put(isRelief ? 1 : 0, width: 1)
+        put(isCounterRelief ? 1 : 0, width: 1)
+        put(isSuperscript ? 1 : 0, width: 1)
+        put(isSubscript ? 1 : 0, width: 1)
+        put(reserved ? 1 : 0, width: 1)
+        put(strikethrough, width: 3)
+        put(emphasisType.rawValue, width: 4)
+        put(doesAdjustBlank ? 1 : 0, width: 1)
+        put(strikethroughShape, width: 4)
+        put(isKerning ? 1 : 0, width: 1)
+        return raw
+    }
+
     init() {
         rawValue = 0
         isItalic = false

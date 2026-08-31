@@ -14,7 +14,9 @@ extension HwpFile {
         let fileHeader = HwpxVersionMapper.fileHeader(version: version)
 
         let packageName = try container.packageEntryName()
-        let manifest = try HwpxManifest.parse(container.requiredEntry(packageName))
+        let manifest = try HwpxManifest.parse(
+            container.requiredEntry(packageName), entry: packageName
+        )
         let catalog = try HwpxBinDataMapper.map(manifest: manifest, container: &container)
 
         // 구역 순서의 정본은 spine이지만, spine이 아카이브 실재 구역을

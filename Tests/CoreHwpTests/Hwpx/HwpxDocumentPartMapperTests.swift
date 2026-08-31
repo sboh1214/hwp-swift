@@ -119,7 +119,7 @@ final class HwpxDocumentPartMapperTests: XCTestCase {
     """
 
     func testManifestParsesItemsSpineOrderAndBinData() throws {
-        let manifest = try HwpxManifest.parse(Data(manifestXML.utf8))
+        let manifest = try parseManifest(manifestXML)
 
         expect(manifest.items.count) == 6
         // spine 순서가 정본이다 — 숫자 순서가 아니라 나열 순서를 따르고,
@@ -132,7 +132,7 @@ final class HwpxDocumentPartMapperTests: XCTestCase {
 
     func testManifestThrowsOnUnexpectedRootElement() {
         expect {
-            _ = try HwpxManifest.parse(Data("<html/>".utf8))
+            _ = try parseManifest("<html/>")
         }.to(throwError { error in
             guard case let HwpError.invalidXML(entry, reason) = error else {
                 return fail("Expected invalidXML, got \(error)")
@@ -145,11 +145,11 @@ final class HwpxDocumentPartMapperTests: XCTestCase {
     func testManifestRootInWrongKnownVocabularyIsRejected() {
         // OPF package 루트가 한컴 head namespace로 위장해도 거부한다.
         expect {
-            _ = try HwpxManifest.parse(Data(
+            _ = try parseManifest(
                 """
                 <x:package xmlns:x="http://www.hancom.co.kr/hwpml/2011/head"/>
-                """.utf8
-            ))
+                """
+            )
         }.to(throwError { error in
             guard case HwpError.invalidXML = error else {
                 return fail("Expected invalidXML, got \(error)")
@@ -160,7 +160,7 @@ final class HwpxDocumentPartMapperTests: XCTestCase {
     func testManifestChildrenIgnoreDecoysFromOtherKnownVocabularies() throws {
         // manifest/spine 자식은 정의상 OPF다 — 앞에 선 known vocabulary의
         // 동명 요소(hh:manifest·hh:spine)에 가로채이면 안 된다.
-        let manifest = try HwpxManifest.parse(Data(
+        let manifest = try parseManifest(
             """
             <opf:package xmlns:opf="http://www.idpf.org/2007/opf/" \
             xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head">\
@@ -171,17 +171,15 @@ final class HwpxDocumentPartMapperTests: XCTestCase {
             <hh:spine><hh:itemref idref="fake"/></hh:spine>\
             <opf:spine><opf:itemref idref="s0"/></opf:spine>\
             </opf:package>
-            """.utf8
-        ))
+            """
+        )
 
         expect(manifest.items.map(\.href)) == ["Contents/section0.xml"]
         expect(manifest.sectionHrefs) == ["Contents/section0.xml"]
     }
 
     func testManifestWithoutSpineHasNoSectionHrefs() throws {
-        let manifest = try HwpxManifest.parse(
-            Data("<opf:package xmlns:opf=\"http://www.idpf.org/2007/opf/\"/>".utf8)
-        )
+        let manifest = try parseManifest("<opf:package xmlns:opf=\"http://www.idpf.org/2007/opf/\"/>")
 
         expect(manifest.sectionHrefs).to(beEmpty())
         expect(manifest.binDataItems).to(beEmpty())
@@ -232,6 +230,44 @@ final class HwpxDocumentPartMapperTests: XCTestCase {
 
     // MARK: - BinData
 
+    func testBinDataItemsBeyondTheIdSpaceAreRejected() throws {
+        /// BinItem id는 1-based 16비트다 — 종전에는 65,536번째부터 조용히
+        /// 잘려 그 항목을 참조하는 그림이 id 0으로 떨어졌는데 문서는 성공한
+        /// 파스로 보고됐다. manifest XML을 짓지 않고 항목만 합성한다.
+        func manifest(itemCount: Int) -> HwpxManifest {
+            HwpxManifest(
+                items: (0 ..< itemCount).map {
+                    HwpxManifest.Item(
+                        id: "b\($0)", href: "BinData/f\($0).png", mediaType: "image/png"
+                    )
+                },
+                sectionHrefs: [],
+                entry: "Package/main.hpf"
+            )
+        }
+        var container = try makeContainer(entries: [])
+
+        // 대조군: 경계값 65,535개는 그대로 실린다.
+        let catalog = try HwpxBinDataMapper.map(
+            manifest: manifest(itemCount: 65535), container: &container
+        )
+        expect(catalog.binDataArray.count) == 65535
+        expect(catalog.binDataArray.last?.streamId) == 65535
+
+        expect {
+            _ = try HwpxBinDataMapper.map(
+                manifest: manifest(itemCount: 65536), container: &container
+            )
+        }.to(throwError { error in
+            guard case let HwpError.invalidXML(entry, reason) = error else {
+                return fail("Expected invalidXML, got \(error)")
+            }
+            // 진단은 해석된 패키지 경로를 가리킨다.
+            expect(entry) == "Package/main.hpf"
+            expect(reason).to(contain("65,535"))
+        })
+    }
+
     private func makeContainer(entries: [ZipBuilder.Entry]) throws -> HwpxContainer {
         var builder = ZipBuilder()
         builder.entries = [
@@ -241,7 +277,7 @@ final class HwpxDocumentPartMapperTests: XCTestCase {
     }
 
     func testBinDataCatalogAssignsSequentialStreamIds() throws {
-        let manifest = try HwpxManifest.parse(Data(manifestXML.utf8))
+        let manifest = try parseManifest(manifestXML)
         var container = try makeContainer(entries: [
             .init(name: "BinData/image1.png", content: Data("png-bytes".utf8), method: 8),
             .init(name: "BinData/image2.jpg", content: Data("jpg-bytes".utf8), method: 0),
@@ -264,7 +300,7 @@ final class HwpxDocumentPartMapperTests: XCTestCase {
     func testBinDataCatalogKeepsIdSpaceWhenEntryIsMissing() throws {
         // image1 엔트리가 아카이브에 없다 — 메타는 남아 id 공간이 밀리지 않고
         // 스트림만 비어 그 그림이 placeholder로 강등된다.
-        let manifest = try HwpxManifest.parse(Data(manifestXML.utf8))
+        let manifest = try parseManifest(manifestXML)
         var container = try makeContainer(entries: [
             .init(name: "BinData/image2.jpg", content: Data("jpg-bytes".utf8), method: 0),
         ])
@@ -283,4 +319,10 @@ final class HwpxDocumentPartMapperTests: XCTestCase {
         expect(HwpxBinDataMapper.extensionName(of: "BinData/noext")) == "bin"
         expect(HwpxBinDataMapper.extensionName(of: "BinData/trailingdot.")) == "bin"
     }
+}
+
+/// 진단 엔트리 이름은 이 스위트의 관심사가 아니다 — 관례 경로로 고정한다
+/// (해석된 경로를 싣는지는 HwpxFileTests가 본다).
+private func parseManifest(_ xml: String) throws -> HwpxManifest {
+    try HwpxManifest.parse(Data(xml.utf8), entry: HwpxContainer.EntryName.manifest)
 }

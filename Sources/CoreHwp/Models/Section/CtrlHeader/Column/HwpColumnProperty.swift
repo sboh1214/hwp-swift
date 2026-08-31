@@ -45,6 +45,22 @@ extension HwpColumnProperty: HwpFromUInt {
 }
 
 extension HwpColumnProperty {
+    /// typed 필드에서 bit field를 되만든다 — 위 `init(_ reader:)`의 읽기
+    /// 순서를 그대로 뒤집는다. 후미 예약 3비트는 0으로 둔다.
+    var synthesizedRawValue: UInt16 {
+        var raw: UInt16 = 0
+        var offset = 0
+        func put(_ value: Int, width: Int) {
+            raw |= UInt16(value & ((1 << width) - 1)) << offset
+            offset += width
+        }
+        put(type.rawValue, width: 2)
+        put(count, width: 8)
+        put(direction.rawValue, width: 2)
+        put(isSameWidth ? 1 : 0, width: 1)
+        return raw
+    }
+
     init() {
         rawValue = 0
         type = .general

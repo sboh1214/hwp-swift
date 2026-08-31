@@ -23,12 +23,19 @@ enum HwpxBinDataMapper {
         container: inout HwpxContainer
     ) throws -> HwpxBinDataCatalog {
         var catalog = HwpxBinDataCatalog()
-        for (index, item) in manifest.binDataItems.enumerated() {
-            // BinItem id는 16비트다 — 65,535개를 넘는 첨부는 id 공간 자체가
-            // 없으므로 이후 항목은 싣지 않는다 (실문서에서는 도달 불능).
-            guard let binItemId = UInt16(exactly: index + 1) else {
-                break
-            }
+        let binDataItems = manifest.binDataItems
+        // BinItem id는 1-based 16비트라 65,536번째부터는 id 공간이 없다.
+        // 조용히 자르면 그 항목을 참조하는 그림이 id 0으로 떨어져 사라지는데
+        // 문서는 성공한 파스로 보고된다 — 다른 가족 가드처럼 거부한다.
+        guard binDataItems.count <= Int(UInt16.max) else {
+            throw HwpError.invalidXML(
+                entry: manifest.entry,
+                reason: "BinData items exceed the 65,535-entry ID space"
+            )
+        }
+        for (index, item) in binDataItems.enumerated() {
+            // 위 가드가 index + 1 <= 65,535를 보장한다.
+            let binItemId = UInt16(index + 1)
 
             var meta = HwpBinData()
             var property = HwpBinDataProperty()

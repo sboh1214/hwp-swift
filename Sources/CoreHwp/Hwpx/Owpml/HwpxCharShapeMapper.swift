@@ -155,6 +155,7 @@ enum HwpxCharShapeMapper {
         }
         property.shadowType = shadowType
 
+        property.rawValue = property.synthesizedRawValue
         return HwpCharShape(
             hwpxFaceId: Self.perLanguageWords(fontRef) { language, ref in
                 WORD(clamping: tables.fontFacesByLanguage[language.arrayIndex]

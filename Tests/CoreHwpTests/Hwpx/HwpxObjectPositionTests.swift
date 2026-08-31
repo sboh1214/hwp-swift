@@ -142,4 +142,21 @@ final class HwpxObjectPositionTests: XCTestCase {
         expect(property.verticalOffset) == 1000
         expect(property.horizontalOffset) == 6411
     }
+
+    func testCellListHeaderBitfieldIsSynchronized() throws {
+        // typed 필드만 채우면 raw 두 자리가 0으로 남아 "위 정렬"이라는
+        // 어긋난 값이 함께 공개된다 (픽스처 첫 셀은 vertAlign="CENTER").
+        let table = try HwpxTableMapper.map(
+            HwpxObjectFixture.parse(HwpxObjectFixture.tableXML),
+            context: HwpxObjectFixture.makeContext()
+        )
+        let header = table.cellArray[0].header
+
+        expect(header.propertyInfo.verticalAlignment) == HwpListHeaderVerticalAlignment.center
+        expect(header.property) != 0
+        expect(header.propertyInfo.rawValue) == header.property
+        // 하위 레이아웃(bits 0-6)에 실려야 리더가 폴백으로 되읽는다.
+        let decoded = try HwpListHeaderProperty.load(header.property)
+        expect(decoded.verticalAlignment) == HwpListHeaderVerticalAlignment.center
+    }
 }

@@ -160,6 +160,7 @@ enum HwpxTableMapper {
             subList?.attribute("vertAlign") ?? "TOP"
         ] ?? .top
         listProperty.verticalAlignmentRawValue = listProperty.verticalAlignment?.rawValue ?? 0
+        listProperty.rawValue = listProperty.synthesizedRawValue
 
         let isHeader = node.boolAttribute("header")
         let widthRef = Self.cellPropertyBits(of: node, isHeader: isHeader)
@@ -186,7 +187,7 @@ enum HwpxTableMapper {
 
         let header = HwpTableCellHeader(
             paragraphCount: Int32(paragraphs.count),
-            property: 0,
+            property: listProperty.rawValue,
             propertyInfo: listProperty,
             listHeaderWidthRef: widthRef,
             cellPropertyInfo: HwpTableCellHeaderProperty(rawValue: widthRef),

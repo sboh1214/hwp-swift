@@ -415,4 +415,23 @@ final class HwpxHeaderMapperTests: XCTestCase {
             expect(reason).to(contain("root element"))
         })
     }
+
+    func testCharShapePropertyRawValueMatchesTypedFields() throws {
+        // typed 필드만 채우면 rawValue가 0으로 남아 같은 모델이 "보통 글자"
+        // 라는 어긋난 값을 함께 주장한다.
+        let (docInfo, _) = try HwpxHeaderFixture.mapHeader(HwpxHeaderFixture.headerXML)
+        let property = docInfo.idMappings.charShapeArray[0].property
+
+        // 비공허: 픽스처 charPr[0]은 진하게·밑줄·취소선을 함께 쓴다.
+        expect(property.isBold) == true
+        expect(property.rawValue) != 0
+
+        let decoded = try HwpCharShapeProperty.load(property.rawValue)
+        expect(decoded.isBold) == property.isBold
+        expect(decoded.underlineType) == property.underlineType
+        expect(decoded.underlineShape) == property.underlineShape
+        expect(decoded.strikethrough) == property.strikethrough
+        expect(decoded.strikethroughShape) == property.strikethroughShape
+        expect(decoded.emphasisType) == property.emphasisType
+    }
 }

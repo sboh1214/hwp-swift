@@ -16,14 +16,16 @@ struct HwpxManifest {
     let items: [Item]
     /// spine 순서로 나열한 구역 엔트리 이름 (`Contents/section{N}.xml`만).
     let sectionHrefs: [String]
+    /// 이 패키지 문서가 실제로 읽힌 엔트리 이름 — container.xml이 관례
+    /// 경로가 아닌 rootfile을 지목할 수 있으므로 진단은 이것을 가리켜야 한다.
+    let entry: String
 
     /// `BinData/` 아래 첨부 항목 — manifest 등재 순서 보존.
     var binDataItems: [Item] {
         items.filter { $0.href.hasPrefix("BinData/") }
     }
 
-    static func parse(_ data: Data) throws -> HwpxManifest {
-        let entry = HwpxContainer.EntryName.manifest
+    static func parse(_ data: Data, entry: String) throws -> HwpxManifest {
         let root = try HwpxXMLTreeParser.parse(data, entry: entry)
         guard root.isNamed("package", in: HwpxNamespace.opf) else {
             throw HwpError.invalidXML(
@@ -67,7 +69,7 @@ struct HwpxManifest {
             }
         }
 
-        return HwpxManifest(items: items, sectionHrefs: sectionHrefs)
+        return HwpxManifest(items: items, sectionHrefs: sectionHrefs, entry: entry)
     }
 
     /// manifest/spine 자식은 정의상 OPF vocabulary다 — 전역 known 매칭은
