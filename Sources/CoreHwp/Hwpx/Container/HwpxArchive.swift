@@ -233,7 +233,10 @@ private extension HwpxArchive {
         // 확인할 수 없다 (그런 아카이브는 EOCD sentinel이 잡는다).
         guard try data.readLittleEndianUInt32(at: offset + 12) == 0,
               let recordOffset = Int(exactly: try data.readLittleEndianUInt32(at: offset + 8)),
-              recordOffset + 4 <= offset
+              // 뺄셈형이어야 한다 — `recordOffset + 4` 꼴은 32비트 Int
+              // (watchOS arm64_32)에서 가드가 판정하기 전에 트랩한다
+              // (`parseDirectoryEntry`의 경계 판정과 같은 계약).
+              recordOffset <= offset - 4
         else {
             return false
         }
@@ -379,6 +382,16 @@ private extension HwpxArchive {
             throw HwpError.invalidArchive(
                 reason: "stored entry '\(entry.name)' declares mismatched sizes: " +
                     "\(entry.compressedSize) compressed vs \(entry.uncompressedSize) uncompressed"
+            )
+        }
+        // 두 한도를 따로 두는 계약은 method 0에도 적용된다 — 압축 입력 상한만
+        // 작게 잡은 호출자가 stored로 저장된 파트에서 그것을 우회하면 안
+        // 된다 (deflate 경로와 같은 검사·같은 순서).
+        guard entry.compressedSize <= limits.maxCompressedStreamBytes else {
+            throw HwpError.archiveEntrySizeLimitExceeded(
+                name: entry.name,
+                limit: limits.maxCompressedStreamBytes,
+                actual: entry.compressedSize
             )
         }
         guard entry.uncompressedSize <= limits.maxDecompressedStreamBytes else {

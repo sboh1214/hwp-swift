@@ -166,6 +166,34 @@ final class HwpxArchiveLimitTests: XCTestCase {
         })
     }
 
+    func testStoredEntryOverCompressedLimitIsRejected() throws {
+        // 압축 입력 상한은 method 0에도 적용된다 — 출력 상한만 보면 stored로
+        // 저장한 파트가 그 한도를 우회한다. 출력 상한은 넉넉히 둬서 이
+        // 거부가 압축 상한에서 나온 것임을 분명히 한다.
+        var builder = ZipBuilder()
+        builder.entries = [
+            .init(name: "a", content: Data(repeating: 0x55, count: 4 * 1024), method: 0),
+        ]
+        let archive = try HwpxArchive(data: builder.build())
+        let limits = HwpReadLimits(
+            maxCompressedStreamBytes: 1024,
+            maxDecompressedStreamBytes: 1 << 20
+        )
+        var budget = makeBudget(limits)
+
+        expect {
+            _ = try archive.entryData(named: "a", limits: limits, budget: &budget)
+        }.to(throwError { error in
+            guard case let HwpError.archiveEntrySizeLimitExceeded(name, limit, actual) = error
+            else {
+                return fail("Expected archiveEntrySizeLimitExceeded, got \(error)")
+            }
+            expect(name) == "a"
+            expect(limit) == 1024
+            expect(actual) == 4 * 1024
+        })
+    }
+
     func testStoredEntryOverAggregateBudgetThrowsAggregateLimit() throws {
         let content = Data(repeating: 0x44, count: 8 * 1024)
         var builder = ZipBuilder()
