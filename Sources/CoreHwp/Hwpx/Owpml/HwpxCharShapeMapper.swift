@@ -4,8 +4,8 @@ import Foundation
 ///
 /// OWPML 글자 모양은 KS X 6101의 이름 붙은 값이고 HWP5는 bit field지만,
 /// 두 포맷의 수치 단위는 같다 (baseSize = 1/100pt, 장평/자간/상대크기 = %).
-/// 렌더 스택은 `HwpCharShapeProperty`의 typed 필드만 읽으므로 `rawValue`
-/// bit 재합성은 하지 않는다.
+/// 렌더 스택은 `HwpCharShapeProperty`의 typed 필드만 읽지만 `rawValue`도
+/// 함께 세운다 — 조판이 아니라 모델·공개 API 정합성 문제다.
 enum HwpxCharShapeMapper {
     /// `hh:fontface lang="…"` 목록 → 7개 faceName 배열 + 언어별 id 테이블.
     /// 1차 등록 패스용 — `mapFontFaces`와 같은 순회로 언어별 폰트 id만

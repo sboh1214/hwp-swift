@@ -40,8 +40,18 @@ enum HwpxBinDataMapper {
             var meta = HwpBinData()
             var property = HwpBinDataProperty()
             property.type = .embedding
-            property.compressType = .followStorage
+            // 실물 한/글 저장본이 임베드 그림에 쓰는 값이다 (BinData 픽스처의
+            // HWP5 원본 3항목 전부 property raw 33 = embedding·never·never).
+            // 의미로도 맞다 — HWPX는 zip이 이미 푼 바이트를 그대로 싣는데
+            // `.followStorage`는 스토리지 기본값이 압축이면 그 바이트를 또
+            // 풀라는 표시가 된다 (`binaryDataCompressionByStreamId`).
+            property.compressType = .never
             property.state = .never
+            // typed가 확정된 뒤 raw를 합성한다 — 안 하면 raw 0이 `.link`로
+            // 디코드돼, 링크가 가질 수 없는 streamId·extensionName을 단
+            // 자기모순 상태가 공개 API로 나간다 (바이너리는 `load(_:)`가
+            // 채운다). raw/typed를 함께 세우는 다른 매퍼 넷과 같은 계열이다.
+            property.rawValue = property.synthesizedRawValue
             meta.property = property
             meta.streamId = binItemId
             let extensionName = Self.extensionName(of: item.href)

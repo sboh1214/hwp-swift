@@ -67,6 +67,21 @@ extension HwpBinDataProperty: HwpFromUInt {
 }
 
 extension HwpBinDataProperty {
+    /// typed 필드에서 bit field를 되만든다 — 위 `init(_ reader:)`의 읽기
+    /// 순서를 그대로 뒤집는다. 후미 예약 8비트는 0으로 둔다.
+    var synthesizedRawValue: UInt16 {
+        var raw: UInt16 = 0
+        var offset = 0
+        func put(_ value: Int, width: Int) {
+            raw |= UInt16(value & ((1 << width) - 1)) << offset
+            offset += width
+        }
+        put(type.rawValue, width: 4)
+        put(compressType.rawValue, width: 2)
+        put(state.rawValue, width: 2)
+        return raw
+    }
+
     init() {
         rawValue = 0
         type = .link

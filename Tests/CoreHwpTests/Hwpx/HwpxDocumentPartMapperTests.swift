@@ -330,6 +330,28 @@ final class HwpxDocumentPartMapperTests: XCTestCase {
         expect(catalog.binItemIdByManifestId["image2"]) == 2
     }
 
+    func testBinDataPropertyRawValueMatchesTypedFields() throws {
+        // typed 필드만 채우면 raw가 0으로 남아 같은 모델이 `.link`를 자처한다
+        // — 링크는 streamId·extensionName을 가질 수 없으므로(HwpBinData의
+        // 배타 분기) 바이너리로는 만들어질 수 없는 자기모순 상태다. raw는
+        // @ExcludeEquatable이라 등가·왕복 비교로는 안 잡혀 여기서 못박는다.
+        let manifest = try parseManifest(manifestXML)
+        var container = try makeContainer(entries: [
+            .init(name: "BinData/image1.png", content: Data("png-bytes".utf8), method: 8),
+        ])
+
+        let catalog = try HwpxBinDataMapper.map(manifest: manifest, container: &container)
+
+        let property = catalog.binDataArray[0].property
+        // 실물 한/글 저장본과 같은 값이다 (BinData 픽스처 HWP5 원본 = 33).
+        expect(property.rawValue) == 33
+        let decoded = try HwpBinDataProperty.load(property.rawValue)
+        expect(decoded.type) == property.type
+        expect(decoded.compressType) == property.compressType
+        expect(decoded.state) == property.state
+        expect(decoded.type) == HwpBinDataType.embedding
+    }
+
     func testPercentEncodedHrefIsComparedLiterally() throws {
         // 대조군 — href는 URI가 아니라 엔트리 이름 그대로 대조한다. 한글.app
         // 12.30 실측: 엔트리가 `BinData/my image1.png`일 때 href를
