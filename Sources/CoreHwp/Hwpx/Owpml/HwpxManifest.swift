@@ -20,6 +20,17 @@ struct HwpxManifest {
     /// 경로가 아닌 rootfile을 지목할 수 있으므로 진단은 이것을 가리켜야 한다.
     let entry: String
 
+    /// 헤더 파트의 **선언** 경로 — manifest가 `id="header"`로 등재한다.
+    ///
+    /// media-type으로는 특정할 수 없다 — 구역·설정과 같은 `application/xml`
+    /// 이라(실측: 전 픽스처 31건이 같은 값) 타입 기반 식별이 불가능하다.
+    /// `id="header"`는 픽스처 10종·한컴 템플릿 전수가 쓰는 관례이고, 선언이
+    /// 없으면 호출자가 관례 경로로 폴백한다 (다른 id를 쓰는 생산자를
+    /// 거부하지 않게).
+    var headerHref: String? {
+        items.first { $0.id == "header" }?.href
+    }
+
     /// `BinData/` 아래 첨부 항목 — manifest 등재 순서 보존.
     var binDataItems: [Item] {
         items.filter { $0.href.hasPrefix("BinData/") }

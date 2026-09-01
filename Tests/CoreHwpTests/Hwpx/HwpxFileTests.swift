@@ -8,58 +8,10 @@ import XCTest
 /// 실픽스처 기반 기능 검증은 HwpxFixtures 하니스가 맡고, 여기서는 합성
 /// 아카이브로 라우팅·조립·복구·오류 표면을 고정한다.
 final class HwpxFileTests: XCTestCase {
-    private let versionXML = """
-    <?xml version="1.0" encoding="UTF-8" standalone="yes" ?>\
-    <hv:HCFVersion xmlns:hv="http://www.hancom.co.kr/hwpml/2011/version" \
-    tagetApplication="WORDPROCESSOR" major="5" minor="1" micro="1" buildNumber="0"/>
-    """
-
-    private let manifestXML = """
-    <opf:package xmlns:opf="http://www.idpf.org/2007/opf/">\
-    <opf:manifest>\
-    <opf:item id="header" href="Contents/header.xml" media-type="application/xml"/>\
-    <opf:item id="section0" href="Contents/section0.xml" media-type="application/xml"/>\
-    <opf:item id="image1" href="BinData/image1.png" media-type="image/png"/>\
-    </opf:manifest>\
-    <opf:spine><opf:itemref idref="header"/><opf:itemref idref="section0"/>\
-    </opf:spine></opf:package>
-    """
-
-    private let headerXML = """
-    <hh:head xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" version="1.5" secCnt="1">\
-    <hh:beginNum page="1" footnote="1" endnote="1" pic="1" tbl="1" equation="1"/>\
-    <hh:refList>\
-    <hh:fontfaces itemCnt="1"><hh:fontface lang="HANGUL" fontCnt="1">\
-    <hh:font id="0" face="함초롬바탕" type="TTF" isEmbedded="0"/>\
-    </hh:fontface></hh:fontfaces>\
-    <hh:charProperties itemCnt="1">\
-    <hh:charPr id="0" height="1000" textColor="#000000"/>\
-    </hh:charProperties>\
-    <hh:paraProperties itemCnt="1"><hh:paraPr id="0">\
-    <hh:align horizontal="JUSTIFY"/></hh:paraPr></hh:paraProperties>\
-    <hh:styles itemCnt="1">\
-    <hh:style id="0" type="PARA" name="바탕글" engName="Normal" paraPrIDRef="0" \
-    charPrIDRef="0" nextStyleIDRef="0"/></hh:styles>\
-    </hh:refList></hh:head>
-    """
-
-    private let sectionXML = """
-    <hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" \
-    xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">\
-    <hp:p id="1" paraPrIDRef="0" styleIDRef="0">\
-    <hp:run charPrIDRef="0">\
-    <hp:secPr id="" spaceColumns="1134" tabStop="8000">\
-    <hp:pagePr landscape="WIDELY" width="59528" height="84186">\
-    <hp:margin header="4252" footer="4252" gutter="0" left="8504" right="8504" \
-    top="5668" bottom="4252"/></hp:pagePr></hp:secPr>\
-    <hp:ctrl><hp:colPr id="" type="NEWSPAPER" layout="LEFT" colCount="1" \
-    sameSz="1" sameGap="0"/></hp:ctrl>\
-    </hp:run>\
-    <hp:run charPrIDRef="0"><hp:t>HWPX 본문</hp:t></hp:run>\
-    <hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1000" \
-    textheight="1000" baseline="850" spacing="600" horzpos="0" horzsize="42520" \
-    flags="393216"/></hp:linesegarray></hp:p></hs:sec>
-    """
+    private let versionXML = HwpxArchiveFixture.versionXML
+    private let manifestXML = HwpxArchiveFixture.manifestXML
+    private let headerXML = HwpxArchiveFixture.headerXML
+    private let sectionXML = HwpxArchiveFixture.sectionXML
 
     private func makeArchive(
         sectionXML: String? = nil,
@@ -98,6 +50,78 @@ final class HwpxFileTests: XCTestCase {
             ))
         }
         return builder.build()
+    }
+
+    private var headerItem: String {
+        "<opf:item id=\"header\" href=\"Contents/header.xml\" "
+            + "media-type=\"application/xml\"/>"
+    }
+
+    private func archiveWithHeader(manifest: String, extra: [ZipBuilder.Entry]) -> Data {
+        var builder = ZipBuilder()
+        builder.entries = [
+            .init(name: "mimetype", content: Data("application/hwp+zip".utf8), method: 0),
+            .init(name: "version.xml", content: Data(versionXML.utf8), method: 8),
+            .init(name: "Contents/content.hpf", content: Data(manifest.utf8), method: 8),
+            .init(
+                name: "Contents/section0.xml", content: Data(sectionXML.utf8), method: 8
+            ),
+        ] + extra
+        return builder.build()
+    }
+
+    private var declaredElsewhere: String {
+        manifestXML.replacingOccurrences(
+            of: headerItem,
+            with: "<opf:item id=\"header\" href=\"Package/head.xml\" "
+                + "media-type=\"application/xml\"/>"
+        )
+    }
+
+    func testHeaderIsResolvedThroughTheManifestItem() throws {
+        // 헤더도 선언이 정본이다 — 관례 경로만 보면 재포장 후 남은 낡은
+        // Contents/header.xml의 스타일·id 테이블을 조용히 쓴다. 두 헤더의
+        // baseSize를 갈라 어느 쪽을 읽었는지 관측한다.
+        let stale = headerXML.replacingOccurrences(
+            of: "height=\"1000\"", with: "height=\"2000\""
+        )
+        let hwp = try HwpFile(fromData: archiveWithHeader(
+            manifest: declaredElsewhere,
+            extra: [
+                .init(name: "Package/head.xml", content: Data(headerXML.utf8), method: 8),
+                .init(name: "Contents/header.xml", content: Data(stale.utf8), method: 8),
+            ]
+        ))
+        expect(hwp.docInfo.idMappings.charShapeArray[0].baseSize) == 1000
+
+        // 대조군: 선언이 없으면 관례 경로로 폴백한다.
+        let undeclared = manifestXML.replacingOccurrences(of: headerItem, with: "")
+        let fallback = try HwpFile(fromData: archiveWithHeader(
+            manifest: undeclared,
+            extra: [
+                .init(name: "Contents/header.xml", content: Data(stale.utf8), method: 8),
+            ]
+        ))
+        expect(fallback.docInfo.idMappings.charShapeArray[0].baseSize) == 2000
+    }
+
+    func testMalformedResolvedHeaderReportsItsOwnPath() {
+        // 진단도 실제로 읽은 경로를 가리켜야 한다 (패키지 문서와 같은 규약).
+        let archive = archiveWithHeader(
+            manifest: declaredElsewhere,
+            extra: [
+                .init(name: "Package/head.xml", content: Data("<html/>".utf8), method: 8),
+            ]
+        )
+
+        expect {
+            _ = try HwpFile(fromData: archive)
+        }.to(throwError { error in
+            guard case let HwpError.invalidXML(entry, _) = error else {
+                return fail("Expected invalidXML, got \(error)")
+            }
+            expect(entry) == "Package/head.xml"
+        })
     }
 
     func testMalformedResolvedPackageDocumentReportsItsOwnPath() {

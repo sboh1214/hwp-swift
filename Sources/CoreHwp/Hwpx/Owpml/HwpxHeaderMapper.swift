@@ -14,10 +14,10 @@ let hwpxSyntheticTagId: UInt32 = 0
 /// 길이를 담는데, 65,536 UTF-16 단위 이상이면 그 축소가 트랩한다. 기본 엔트리
 /// 한도로 그만한 이름이 통과하므로, 프로세스 중단 대신 typed `invalidXML`로
 /// 거부한다 (P1). 이름은 전부 header.xml에서 온다.
-func hwpxValidateNameLength(_ name: String) throws {
+func hwpxValidateNameLength(_ name: String, entry: String) throws {
     guard name.utf16.count <= Int(WORD.max) else {
         throw HwpError.invalidXML(
-            entry: HwpxContainer.EntryName.header,
+            entry: entry,
             reason: "font or style name exceeds \(WORD.max) UTF-16 units"
         )
     }
@@ -31,6 +31,9 @@ struct HwpxHeaderMapping {
     var unknownRecords: [HwpUnknownRecord] = []
     /// 미지 서브트리 합성의 깊이 한도 — 호출자의 `maxNestingDepth`다.
     var unknownDepthLimit = HwpReadLimits.default.maxNestingDepth
+    /// 이 헤더가 실제로 읽힌 엔트리 이름 — manifest가 관례 아닌 href를
+    /// 선언할 수 있으므로 진단은 이것을 가리켜야 한다 (패키지 문서와 같다).
+    var entry = HwpxContainer.EntryName.header
 
     /// 강등은 전부 이 셋을 지난다 — 호출부마다 한도를 다는 방식이면 새
     /// 경로가 그것을 빠뜨린다 (본문 경로만 전파하고 헤더를 빠뜨린 것이
@@ -65,9 +68,9 @@ enum HwpxHeaderMapper {
         _ data: Data,
         binDataCatalog: HwpxBinDataCatalog,
         options: HwpLoadOptions,
-        sectionCount: Int? = nil
+        sectionCount: Int? = nil,
+        entry: String
     ) throws -> (docInfo: HwpDocInfo, idTables: HwpxIdTables) {
-        let entry = HwpxContainer.EntryName.header
         let root = try HwpxXMLTreeParser.parse(data, entry: entry)
         guard root.isNamed("head", in: HwpxNamespace.head) else {
             throw HwpError.invalidXML(
@@ -78,6 +81,7 @@ enum HwpxHeaderMapper {
 
         var mapping = HwpxHeaderMapping()
         mapping.unknownDepthLimit = options.readLimits.maxNestingDepth
+        mapping.entry = entry
         // 실재 구역 수(조립기가 셈)가 secCnt 선언보다 정확하다 — 선언이
         // 어긋난 문서에서 모델 내부 일관성을 지킨다.
         let sections = sectionCount ?? root.intAttribute("secCnt", default: 1)
@@ -208,7 +212,8 @@ private extension HwpxHeaderMapper {
                     into: &mapping.idMappings,
                     tables: &mapping.idTables,
                     unknownRecords: &mapping.unknownRecords,
-                    maxDepth: depthLimit
+                    maxDepth: depthLimit,
+                    entry: mapping.entry
                 )
             case "borderFills":
                 try mapBorderFills(family, into: &mapping)
@@ -244,12 +249,16 @@ private extension HwpxHeaderMapper {
         let styles = family.headChildren(named: "style")
         guard styles.count <= 256 else {
             throw HwpError.invalidXML(
-                entry: HwpxContainer.EntryName.header,
+                entry: mapping.entry,
                 reason: "style definitions exceed the 256-entry reference space"
             )
         }
         mapping.idMappings.styleArray = try styles
-            .map { try HwpxParaShapeMapper.mapStyle($0, tables: mapping.idTables) }
+            .map {
+                try HwpxParaShapeMapper.mapStyle(
+                    $0, tables: mapping.idTables, entry: mapping.entry
+                )
+            }
         for style in styles {
             mapping.demoteUnconsumed(in: style, consumed: [])
         }
@@ -284,7 +293,7 @@ private extension HwpxHeaderMapper {
         // 같은 문서 안에서 두 참조가 어긋난다 (tabPr·font 가드와 같은 계열).
         guard charPrs.count <= 65536 else {
             throw HwpError.invalidXML(
-                entry: HwpxContainer.EntryName.header,
+                entry: mapping.entry,
                 reason: "charPr definitions exceed the 65,536-entry reference space"
             )
         }
@@ -343,7 +352,7 @@ private extension HwpxHeaderMapper {
         // 별칭화된다 (paraPr 65,536 가드와 같은 계열).
         guard tabPrs.count <= 65536 else {
             throw HwpError.invalidXML(
-                entry: HwpxContainer.EntryName.header,
+                entry: mapping.entry,
                 reason: "tabPr definitions exceed the 65,536-entry reference space"
             )
         }
@@ -371,7 +380,7 @@ private extension HwpxHeaderMapper {
         // 1-based라 상한만 1 작다).
         guard borderFills.count <= 65535 else {
             throw HwpError.invalidXML(
-                entry: HwpxContainer.EntryName.header,
+                entry: mapping.entry,
                 reason: "borderFill definitions exceed the 65,535-entry reference space"
             )
         }
@@ -411,7 +420,7 @@ private extension HwpxHeaderMapper {
         // 같은 계열).
         guard paraPrs.count <= 65536 else {
             throw HwpError.invalidXML(
-                entry: HwpxContainer.EntryName.header,
+                entry: mapping.entry,
                 reason: "paraPr definitions exceed the 65,536-entry reference space"
             )
         }

@@ -18,7 +18,8 @@ enum HwpxHeaderFixture {
             Data(xml.utf8),
             binDataCatalog: catalog,
             options: options,
-            sectionCount: sectionCount
+            sectionCount: sectionCount,
+            entry: HwpxContainer.EntryName.header
         )
     }
 

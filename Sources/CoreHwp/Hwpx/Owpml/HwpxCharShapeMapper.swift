@@ -34,7 +34,8 @@ enum HwpxCharShapeMapper {
         into idMappings: inout HwpIdMappings,
         tables: inout HwpxIdTables,
         unknownRecords: inout [HwpUnknownRecord],
-        maxDepth: Int
+        maxDepth: Int,
+        entry: String
     ) throws {
         var arrays: [[HwpFaceName]] = Array(repeating: [], count: 7)
         for fontface in fontfaces.headChildren(named: "fontface") {
@@ -61,16 +62,16 @@ enum HwpxCharShapeMapper {
             // 블록 단위로 세면 40,000짜리 두 블록이 가드를 통과한다.
             guard arrays[index].count + fonts.count <= 65536 else {
                 throw HwpError.invalidXML(
-                    entry: HwpxContainer.EntryName.header,
+                    entry: entry,
                     reason: "font definitions exceed the 65,536-entry reference space"
                 )
             }
             for font in fonts {
                 let face = font.attribute("face") ?? ""
                 let substitute = font.headFirstChild(named: "substFont")?.attribute("face")
-                try hwpxValidateNameLength(face)
+                try hwpxValidateNameLength(face, entry: entry)
                 if let substitute {
-                    try hwpxValidateNameLength(substitute)
+                    try hwpxValidateNameLength(substitute, entry: entry)
                 }
                 // typeInfo 등 1차 범위 밖 자식은 진단으로 강등한다.
                 unknownRecords += font.unconsumedChildRecords(
