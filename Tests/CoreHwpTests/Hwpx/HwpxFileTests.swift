@@ -124,6 +124,29 @@ final class HwpxFileTests: XCTestCase {
         })
     }
 
+    func testSpineSectionHrefOutsideTheConventionIsLoaded() throws {
+        // spine이 본문 순서의 정본이다 — 이름 관례로 거르면 관례 밖 경로에
+        // 둔 유효한 구역이 조용히 사라지고 "section0이 없다"로 실패한다.
+        // 동시에 spine 첫 itemref인 헤더는 구역이 아니어야 한다 (count == 1).
+        let manifest = manifestXML.replacingOccurrences(
+            of: "href=\"Contents/section0.xml\"", with: "href=\"Body/main.xml\""
+        )
+        var builder = ZipBuilder()
+        builder.entries = [
+            .init(name: "mimetype", content: Data("application/hwp+zip".utf8), method: 0),
+            .init(name: "version.xml", content: Data(versionXML.utf8), method: 8),
+            .init(name: "Contents/content.hpf", content: Data(manifest.utf8), method: 8),
+            .init(name: "Contents/header.xml", content: Data(headerXML.utf8), method: 8),
+            .init(name: "Body/main.xml", content: Data(sectionXML.utf8), method: 8),
+        ]
+
+        let hwp = try HwpFile(fromData: builder.build())
+
+        expect(hwp.sectionArray.count) == 1
+        expect(hwp.docInfo.documentProperties.sectionSize) == 1
+        expect(hwp.sectionArray[0].paragraph.isEmpty) == false
+    }
+
     func testMalformedResolvedPackageDocumentReportsItsOwnPath() {
         // container.xml이 지목한 경로가 깨졌으면 진단이 그 경로를 가리켜야
         // 한다 — 관례 경로를 적으면 존재하지도 않는 파일을 가리킨다.

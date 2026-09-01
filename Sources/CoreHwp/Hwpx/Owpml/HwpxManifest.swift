@@ -67,12 +67,18 @@ struct HwpxManifest {
             }
         }
 
+        // spine이 본문 순서의 정본이다 — 이름 관례로 거르면 관례 밖 경로에
+        // 둔 유효한 구역이 조용히 사라지고, 아카이브 폴백이 낡은 관례 구역을
+        // 대신 집는다. 다만 spine의 첫 itemref는 **헤더**라 (실측: 픽스처
+        // 10종 전부 `header→Contents/header.xml`) 그것만 빼야 한다 — 그대로
+        // 받으면 헤더가 구역으로 조립돼 문서가 통째로 무너진다.
+        let headerHref = hrefById["header"]
         var sectionHrefs: [String] = []
         if let spine = Self.opfChild(root, "spine") {
             for itemref in Self.opfChildren(spine, "itemref") {
                 guard let idref = itemref.attribute("idref"),
                       let href = hrefById[idref],
-                      HwpxContainer.sectionIndex(of: href) != nil
+                      href != headerHref
                 else {
                     continue
                 }

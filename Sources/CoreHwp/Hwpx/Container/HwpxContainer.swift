@@ -30,6 +30,19 @@ struct HwpxContainer {
     private let archive: HwpxArchive
     private let limits: HwpReadLimits
     private var budget: HwpxByteBudget
+    /// 실패한 엔트리 이름 → 그 오류.
+    ///
+    /// spine은 같은 구역을 65,535번까지 참조할 수 있고 손상 deflate의
+    /// `invalidArchive`는 복구 대상이라 루프가 계속 돈다. 그런데 실패 출력은
+    /// 예산에 잡히지 않으므로 (`consume`은 성공 경로에만 있다) 선언 크기까지의
+    /// 압축 해제가 상한 없이 반복돼 뷰어가 멈춘다. 판정은 엔트리마다
+    /// 결정적이고 예산은 줄지 않으므로 (단조 증가) 캐시가 결과를 바꾸지 않는다.
+    /// 성공은 캐시하지 않는다 — 반복 성공은 매번 예산을 소비해 집계 한도가
+    /// 멈추고, 캐시하면 오히려 전 구역을 상주시킨다.
+    private(set) var failedEntries: [String: HwpError] = [:]
+    /// 아카이브에서 실제로 읽은 횟수 — 캐시가 반복 압축 해제를 끊는지는
+    /// 이 값으로만 관측된다 (실패는 예산을 소비하지 않아 다른 흔적이 없다).
+    private(set) var archiveReadCount = 0
 
     init(data: Data, limits: HwpReadLimits) throws {
         archive = try HwpxArchive(data: data, limits: limits)
@@ -86,11 +99,31 @@ struct HwpxContainer {
     }
 
     mutating func requiredEntry(_ name: String) throws -> Data {
-        try archive.entryData(named: name, limits: limits, budget: &budget)
+        if let failure = failedEntries[name] {
+            throw failure
+        }
+        archiveReadCount += 1
+        do {
+            return try archive.entryData(named: name, limits: limits, budget: &budget)
+        } catch let error as HwpError {
+            failedEntries[name] = error
+            throw error
+        }
     }
 
     mutating func optionalEntry(_ name: String) throws -> Data? {
-        try archive.optionalEntryData(named: name, limits: limits, budget: &budget)
+        if let failure = failedEntries[name] {
+            throw failure
+        }
+        archiveReadCount += 1
+        do {
+            return try archive.optionalEntryData(
+                named: name, limits: limits, budget: &budget
+            )
+        } catch let error as HwpError {
+            failedEntries[name] = error
+            throw error
+        }
     }
 
     func hasEntry(_ name: String) -> Bool {

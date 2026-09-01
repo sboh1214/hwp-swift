@@ -469,4 +469,16 @@ final class HwpxXMLTreeParserTests: XCTestCase {
             expect(reason) == "DOCTYPE internal subset is not supported"
         })
     }
+
+    func testCommentedDoctypeFragmentDoesNotRejectTheDocument() throws {
+        // 주석 안의 문서화용 조각은 선언이 아니다 — 매치를 모두 훑던 방식은
+        // `[`를 보고 유효 문서를 거부했다 (프롤로그 어휘 스캔으로 닫힌다).
+        let xml = "<?xml version=\"1.0\"?><!-- <!DOCTYPE example [ -->"
+            + "<hh:head xmlns:hh=\"http://www.hancom.co.kr/hwpml/2011/head\"/>"
+        let root = try HwpxXMLTreeParser.parse(
+            Data(xml.utf8), entry: "Contents/header.xml"
+        )
+
+        expect(root.isNamed("head", in: HwpxNamespace.head)) == true
+    }
 }

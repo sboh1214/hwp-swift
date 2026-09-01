@@ -257,4 +257,35 @@ final class HwpxArchiveLimitTests: XCTestCase {
         )
         expect(try ample.requiredEntry("Contents/header.xml").count) == 400
     }
+
+    func testFailedEntryIsCachedInsteadOfReinflating() throws {
+        // spine은 같은 손상 구역을 65,535번까지 참조할 수 있는데 실패 출력은
+        // 예산에 잡히지 않아 (consume은 성공 경로에만 있다) 압축 해제가 상한
+        // 없이 반복된다 — 실패를 캐시해 끊는다.
+        var builder = ZipBuilder()
+        builder.entries = [
+            .init(name: "mimetype", content: Data("application/hwp+zip".utf8), method: 0),
+            .init(
+                name: "Contents/section0.xml",
+                content: Data(count: 4),
+                method: 8,
+                storedPayload: Data([0xDE, 0xAD, 0xBE, 0xEF])
+            ),
+        ]
+        var container = try HwpxContainer(data: builder.build(), limits: .default)
+
+        for _ in 0 ..< 2 {
+            expect {
+                _ = try container.requiredEntry("Contents/section0.xml")
+            }.to(throwError { error in
+                guard case HwpError.invalidArchive = error else {
+                    return fail("Expected invalidArchive, got \(error)")
+                }
+            })
+        }
+        // 두 번 불렀지만 아카이브는 한 번만 읽혔다 — 조기 반환이 없으면
+        // 같은 손상 스트림을 매번 다시 푼다.
+        expect(container.archiveReadCount) == 1
+        expect(container.failedEntries.keys.sorted()) == ["Contents/section0.xml"]
+    }
 }

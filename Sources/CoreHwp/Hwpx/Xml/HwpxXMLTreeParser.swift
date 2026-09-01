@@ -82,26 +82,95 @@ final class HwpxXMLTreeParser: NSObject {
     /// DOCTYPE 선언의 첫 `>`보다 앞서므로 이 판정은 본문에 흔들리지 않는다
     /// (실측: 픽스처 10종·한컴 번들 템플릿 전수에 DOCTYPE 0건).
     static func doctypeInternalSubsetFailure(in data: Data) -> String? {
-        for encoding in PrologEncoding.allCases {
-            let doctypeToken = encoding.encode("<!DOCTYPE")
-            let subsetToken = encoding.encode("[")
-            let endToken = encoding.encode(">")
-            // **모든** 매치를 훑는다 — 첫 매치만 보면 주석 속 가짜 DOCTYPE
-            // (`<!-- <!DOCTYPE fake> -->`)이 뒤따르는 진짜 선언을 가려,
-            // 서브셋 판정이 한 번도 그것에 닿지 못한다 (실측).
-            var searchStart = data.startIndex
-            while let doctype = data[searchStart...].range(of: doctypeToken) {
-                let rest = data[doctype.upperBound...]
-                let declarationEnd = rest.range(of: endToken)
-                if let subset = rest.range(of: subsetToken),
-                   declarationEnd.map({ subset.lowerBound < $0.lowerBound }) ?? true
-                {
-                    return "DOCTYPE internal subset is not supported"
-                }
-                searchStart = doctype.upperBound
-            }
+        for encoding in PrologEncoding.allCases
+            where prologDeclaresInternalSubset(in: data, encoding: encoding)
+        {
+            return "DOCTYPE internal subset is not supported"
         }
         return nil
+    }
+
+    /// 프롤로그를 **어휘적으로** 훑어 DOCTYPE 선언의 내부 서브셋을 찾는다.
+    ///
+    /// 바이트 검색으로는 두 방향을 함께 닫을 수 없다 — 첫 매치만 보면 주석 속
+    /// 가짜 DOCTYPE이 진짜를 가리고(회피), 매치를 모두 훑으면 주석 안의
+    /// `<!DOCTYPE x [` 조각이 유효 문서를 거부한다(오탐). DOCTYPE은 루트 요소
+    /// 앞에만 올 수 있으므로, 선두에서 XML 선언·주석·공백만 건너뛰며 진행하면
+    /// 둘 다 사라진다. 프롤로그 문법은 전부 ASCII라 세 인코딩이 같은 스캐너를
+    /// 쓴다 (실측: 픽스처 10종·한컴 번들 템플릿 전수에 DOCTYPE 0건).
+    static func prologDeclaresInternalSubset(
+        in data: Data, encoding: PrologEncoding
+    ) -> Bool {
+        var index = 0
+        func unit(_ offset: Int = 0) -> UInt16? {
+            encoding.unit(at: index + offset, in: data)
+        }
+        func matches(_ token: String) -> Bool {
+            for (offset, scalar) in token.unicodeScalars.enumerated()
+                where unit(offset) != UInt16(scalar.value)
+            {
+                return false
+            }
+            return true
+        }
+        func skip(past token: String) -> Bool {
+            while unit() != nil, !matches(token) {
+                index += 1
+            }
+            guard unit() != nil else {
+                return false
+            }
+            index += token.unicodeScalars.count
+            return true
+        }
+
+        if unit() == 0xFEFF {
+            index += 1
+        } else if unit() == 0xEF, unit(1) == 0xBB, unit(2) == 0xBF {
+            index += 3
+        }
+        while let current = unit() {
+            switch current {
+            case 0x20, 0x09, 0x0A, 0x0D:
+                index += 1
+            case 0x3C where matches("<!--"):
+                index += 4
+                guard skip(past: "-->") else { return false }
+            case 0x3C where matches("<?"):
+                index += 2
+                guard skip(past: "?>") else { return false }
+            case 0x3C where matches("<!DOCTYPE"):
+                index += 9
+                return doctypeHasSubset(after: &index, encoding: encoding, data: data)
+            default:
+                // 루트 요소 시작 — DOCTYPE은 이 앞에만 올 수 있다.
+                return false
+            }
+        }
+        return false
+    }
+
+    /// `<!DOCTYPE` 뒤에서 선언이 끝나기(`>`) 전에 `[`가 오는지. 인용부호 안의
+    /// 두 문자는 공개 식별자의 일부이므로 세지 않는다.
+    private static func doctypeHasSubset(
+        after index: inout Int, encoding: PrologEncoding, data: Data
+    ) -> Bool {
+        var quote: UInt16?
+        while let character = encoding.unit(at: index, in: data) {
+            if let open = quote {
+                if character == open {
+                    quote = nil
+                }
+            } else if character == 0x22 || character == 0x27 {
+                quote = character
+            } else if character == 0x5B {
+                return true
+            } else if character == 0x3E {
+                return false
+            }
+            index += 1
+        }
+        return false
     }
 
     /// 접두사가 붙어도 승격하는 속성 — `hp:switch`의 분기 선택자 하나뿐이다.
@@ -119,22 +188,29 @@ final class HwpxXMLTreeParser: NSObject {
         case utf16LittleEndian
         case utf16BigEndian
 
-        /// ASCII 토큰을 이 인코딩의 바이트열로 옮긴다.
-        func encode(_ token: String) -> Data {
-            var encoded = Data()
-            for unit in token.utf16 {
-                switch self {
-                case .utf8:
-                    encoded.append(UInt8(truncatingIfNeeded: unit))
-                case .utf16LittleEndian:
-                    encoded.append(UInt8(truncatingIfNeeded: unit))
-                    encoded.append(UInt8(truncatingIfNeeded: unit >> 8))
-                case .utf16BigEndian:
-                    encoded.append(UInt8(truncatingIfNeeded: unit >> 8))
-                    encoded.append(UInt8(truncatingIfNeeded: unit))
+        /// 유닛 하나를 읽는다 (범위 밖이면 nil). 프롤로그 문법은 전부
+        /// ASCII라 비-ASCII 유닛은 어떤 구문 문자와도 같지 않아 그냥 지나간다.
+        func unit(at offset: Int, in data: Data) -> UInt16? {
+            switch self {
+            case .utf8:
+                let index = data.startIndex + offset
+                guard index < data.endIndex else {
+                    return nil
                 }
+                return UInt16(data[index])
+            case .utf16LittleEndian:
+                let index = data.startIndex + offset * 2
+                guard index + 1 < data.endIndex else {
+                    return nil
+                }
+                return UInt16(data[index]) | (UInt16(data[index + 1]) << 8)
+            case .utf16BigEndian:
+                let index = data.startIndex + offset * 2
+                guard index + 1 < data.endIndex else {
+                    return nil
+                }
+                return (UInt16(data[index]) << 8) | UInt16(data[index + 1])
             }
-            return encoded
         }
     }
 
