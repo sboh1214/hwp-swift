@@ -156,7 +156,7 @@ payload가 0xFFF 이상이면 size 비트가 level 필드로 넘쳐 헤더가 �
 
 - `Utils/Core/HwpErrorTests.swift`의
   `testRecoveryExemptSetCoversResourceLimitsAndUnsupportedFeature` — recovery-exempt
-  집합(`isRecoveryExempt`: 자원 한도 2종 + `unsupportedFeature`)을 `HwpError`
+  집합(`isRecoveryExempt`: 자원 한도 3종 + `unsupportedFeature`)을 `HwpError`
   **케이스 단위로** 고정한다. 새 error 케이스를 추가하면 이 스펙이 분류를
   강제한다 — **`invalidRecordTree`가 exempt로 새어 들면 여기서 빨개진다**
   (그 케이스를 비-exempt로 명시 단언).

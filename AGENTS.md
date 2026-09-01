@@ -147,12 +147,13 @@ typed 디코더들이 그 트리를 재귀로 내려가므로(표 셀 문단·�
   `HwpSection.parseFailure`. 정상 파싱은 nil. **Equatable/Hashable에 참여한다**:
   placeholder와 진짜 빈 문단/구역이 같다고 판정되면 복구 흔적이 비교에서
   지워지기 때문이다. 별도 `HwpRecoveryDiagnostic` 타입은 없다.
-- **recovery-exempt는 3종이다** (`HwpError.isRecoveryExempt`):
-  자원 한도 2종(`streamSizeLimitExceeded`·`aggregateStreamSizeLimitExceeded`)에
+- **recovery-exempt는 4종이다** (`HwpError.isRecoveryExempt`):
+  자원 한도 3종(`streamSizeLimitExceeded`·`aggregateStreamSizeLimitExceeded`·
+  HWPX 컨테이너의 `archiveEntrySizeLimitExceeded`)에
   더해 **`unsupportedFeature`**(암호·배포용·DRM — 뷰어가 그릴 수 있는 최소
-  전제). 이 3종은 복구 모드에서도 placeholder로 삼키지 않고 그대로 throw한다.
+  전제). 이 4종은 복구 모드에서도 placeholder로 삼키지 않고 그대로 throw한다.
   집합 멤버십은 `HwpErrorTests.testRecoveryExemptSetCoversResourceLimitsAndUnsupportedFeature`
-  가 `HwpError` 케이스 단위로 고정한다 (exempt 3종 + `invalidRecordTree`는
+  가 `HwpError` 케이스 단위로 고정한다 (exempt 4종 + `invalidRecordTree`는
   **비-exempt**로 명시) — **구조 손상은 복구 대상**이다.
 - **메모 문단도 복구된다.** 손상 메모 문단을 그대로 전파시키면 호스트 문단
   전체가 placeholder가 되어 본문 텍스트까지 잃고 메모 그룹 경계도 사라진다.

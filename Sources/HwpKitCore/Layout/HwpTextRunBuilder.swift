@@ -643,8 +643,8 @@ extension HwpTextRunBuilder {
                 pendingHighSurrogate = unit
                 return ""
             }
-            if let space = Self.controlSpace(unit) {
-                return space
+            if let text = Self.controlText(unit) {
+                return text
             }
             return String(decoding: [unit], as: UTF16.self)
         case .inline, .extended:

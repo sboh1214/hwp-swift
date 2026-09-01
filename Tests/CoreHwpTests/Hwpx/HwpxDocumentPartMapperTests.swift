@@ -130,6 +130,22 @@ final class HwpxDocumentPartMapperTests: XCTestCase {
         expect(manifest.binDataItems.map(\.id)) == ["image1", "image2"]
     }
 
+    func testManifestExcludesFallbackHeaderFromTheSpine() throws {
+        // 제외 기준은 헤더로 **실제 읽는** 경로다 — 선언 없이 관례 href만
+        // 맞춘 생산자(id≠"header")의 헤더 itemref를 선언 비교만으로
+        // 통과시키면 <head> 문서가 구역으로 조립된다.
+        let renamed = manifestXML
+            .replacingOccurrences(of: "id=\"header\"", with: "id=\"head-part\"")
+            .replacingOccurrences(of: "idref=\"header\"", with: "idref=\"head-part\"")
+        let manifest = try parseManifest(renamed)
+
+        expect(manifest.sectionHrefs) == [
+            "Contents/section1.xml", "Contents/section0.xml",
+        ]
+        expect(manifest.headerHref).to(beNil())
+        expect(manifest.resolvedHeaderHref) == "Contents/header.xml"
+    }
+
     func testManifestThrowsOnUnexpectedRootElement() {
         expect {
             _ = try parseManifest("<html/>")

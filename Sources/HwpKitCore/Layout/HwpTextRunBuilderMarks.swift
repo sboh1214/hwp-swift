@@ -181,7 +181,7 @@ extension HwpTextRunBuilder {
 
 /// 그대로 디코드하면 안 되는 제어 문자 변환.
 extension HwpTextRunBuilder {
-    /// WCHAR를 그대로 디코드하면 안 되는 **공백** 제어 문자.
+    /// WCHAR를 그대로 디코드하면 안 되는 제어 문자의 표시 대체 텍스트.
     ///
     /// 묶음 빈칸(30)·고정폭 빈칸(31)은 U+001E/U+001F로 디코드되어 CoreText가
     /// 폭 0으로 그린다 — 빈칸이 사라지고 줄바꿈이 달라진다. 두 포맷 공통
@@ -191,8 +191,16 @@ extension HwpTextRunBuilder {
     /// 고정폭 빈칸의 "양쪽 정렬에서 늘어나지 않음"은 조판이 모델링하지
     /// 않으므로 폭이 같은 U+00A0을 쓴다 — U+2007처럼 폭이 다른 문자를 쓰면
     /// 실물보다 넓어진다.
-    static func controlSpace(_ unit: UInt16) -> String? {
+    ///
+    /// 하이픈(24, HWPX `<hp:hyphen/>`)은 아무것도 그리지 않는다 — 실측
+    /// (한글.app 12.30, 하이픈 유무 대조 문서): 줄 중간 글리프 없음·줄바꿈
+    /// 기회 없음·줄 끝 하이픈 없음·글자 수 미집계. U+00AD로 옮기면 실물에
+    /// 없는 줄바꿈 기회가 생기고, 그대로 두면 표시·복사 문자열에 U+0018이
+    /// 남는다.
+    static func controlText(_ unit: UInt16) -> String? {
         switch unit {
+        case 24:
+            ""
         case 30, 31:
             "\u{00A0}"
         default:

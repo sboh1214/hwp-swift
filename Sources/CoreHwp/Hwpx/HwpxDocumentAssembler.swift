@@ -32,8 +32,8 @@ extension HwpFile {
         // 헤더도 선언이 정본이다 — 관례 경로만 보면 재포장 컨테이너에서
         // 낡은 Contents/header.xml의 스타일·id 테이블을 조용히 쓰고, 선언
         // href가 관례가 아니면 있는 헤더를 못 찾는다 (낡은 패키지 문서와
-        // 같은 계열). 선언이 없으면 관례로 폴백한다.
-        let headerName = manifest.headerHref ?? HwpxContainer.EntryName.header
+        // 같은 계열). 선언이 없으면 관례로 폴백한다 — spine 제외와 같은 값.
+        let headerName = manifest.resolvedHeaderHref
         let (docInfo, idTables) = try HwpxHeaderMapper.map(
             container.requiredEntry(headerName),
             binDataCatalog: catalog,

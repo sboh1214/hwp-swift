@@ -40,6 +40,17 @@ import XCTest
             expect(result.string) == "가\u{A0}나\u{A0}다"
         }
 
+        func testHyphenControlRendersAsNothing() throws {
+            // 하이픈(24)을 그대로 디코드하면 U+0018이 표시·복사 문자열에
+            // 남는다. 실측(한글.app 12.30, `<hp:hyphen/>` 유무 대조 문서):
+            // 줄 중간 글리프 없음·줄바꿈 기회 없음·줄 끝 하이픈 없음 —
+            // 실물은 아무것도 그리지 않으므로 표시 문자열에서 떨군다.
+            let paragraph = paragraph(text: "가\u{18}나", runs: [(0, 0)])
+            let result = builder(shapes: [0: try charShape()]).build(paragraph: paragraph)
+
+            expect(result.string) == "가나"
+        }
+
         func testControlSpacesKeepFixedWidthWhenOrdinarySpacesFollowTheFont() {
             // '글꼴에 어울리는 빈칸'·워드 호환 문서에서는 보통 빈칸이 폰트 고유
             // 폭으로 돌아간다 — 그때 고정폭 빈칸까지 글꼴을 따르면 이름과
