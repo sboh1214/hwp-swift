@@ -56,8 +56,9 @@ final class HwpxXMLTreeParserTests: XCTestCase {
         for item in root.childElements where item.localName == "item" {
             expect(item.attribute("id")) == "1"
         }
-        // 접두사만 있는 속성은 종전대로 local name으로 접근된다.
-        expect(root.childElements.last?.attribute("tag")) == "v"
+        // 접두사만 있는 속성은 승격되지 않는다 — 허용 목록 밖이라
+        // local name으로 접근되면 조작 속성이 조판을 바꾼다.
+        expect(root.childElements.last?.attribute("tag")).to(beNil())
     }
 
     func testForeignVocabularySwitchIsNotResolved() throws {
@@ -172,7 +173,7 @@ final class HwpxXMLTreeParserTests: XCTestCase {
             guard case let HwpError.invalidXML(_, reason) = error else {
                 return fail("Expected invalidXML, got \(error)")
             }
-            expect(reason).to(contain("entity"))
+            expect(reason).to(contain("DOCTYPE"))
         })
     }
 
@@ -430,8 +431,23 @@ final class HwpxXMLTreeParserTests: XCTestCase {
                 }
                 // 델리게이트 사유는 이름을 담는다 — 이름이 없으면 바이트
                 // 프리플라이트가 잡은 것이라 Linux에서도 같은 판정이다.
-                expect(reason) == "custom entity declaration is not supported"
+                expect(reason) == "DOCTYPE internal subset is not supported"
             })
         }
+    }
+
+    func testBenignDoctypeWithoutInternalSubsetIsAccepted() throws {
+        // 내부 서브셋이 없는 DOCTYPE은 엔티티를 선언할 수 없다 (외부 DTD는
+        // shouldResolveExternalEntities=false로 무력) — 본문에 <!ENTITY
+        // 문자열이 있어도 거부하면 오탐이다.
+        let xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+            + "<!DOCTYPE hh:head SYSTEM \"owpml.dtd\">"
+            + "<hh:head xmlns:hh=\"http://www.hancom.co.kr/hwpml/2011/head\">"
+            + "<![CDATA[<!ENTITY custom \"SECRET\">]]></hh:head>"
+        let root = try HwpxXMLTreeParser.parse(
+            Data(xml.utf8), entry: "Contents/header.xml"
+        )
+
+        expect(root.isNamed("head", in: HwpxNamespace.head)) == true
     }
 }

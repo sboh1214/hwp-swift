@@ -37,7 +37,7 @@ final class HwpxXMLTreeParser: NSObject {
         // XMLParser는 엔티티 선언 콜백을 부르지 않아 선언이 그대로 통과한다
         // (Linux CI 실측). 조용한 본문 유실·치환은 두 플랫폼 모두에서
         // 일어나므로 바이트에서 먼저 거른다.
-        if let reason = entityDeclarationFailure(in: data) {
+        if let reason = doctypeInternalSubsetFailure(in: data) {
             throw HwpError.invalidXML(entry: entry, reason: reason)
         }
 
@@ -71,23 +71,37 @@ final class HwpxXMLTreeParser: NSObject {
 
     /// DTD 내부 서브셋의 엔티티 선언을 바이트에서 찾는다.
     ///
-    /// 엔티티 선언은 XML 문법상 DOCTYPE 안에만 올 수 있으므로 그 뒤만 본다 —
-    /// 본문 CDATA에 같은 문자열이 있어도 DOCTYPE이 없으면 통과한다 (실측:
-    /// HWPX 픽스처 10종·한컴 번들 템플릿 전수에 DOCTYPE 0건).
-    static func entityDeclarationFailure(in data: Data) -> String? {
+    /// DOCTYPE의 **내부 서브셋**을 거부한다 — 엔티티 선언은 거기서만 올 수
+    /// 있고(외부 DTD는 `shouldResolveExternalEntities = false`로 무력),
+    /// Linux는 선언 콜백을 부르지 않아 바이트에서 걸러야 한다.
+    ///
+    /// 서브셋 안의 `<!ENTITY`만 찾지 않는 이유는 인용부호 안의 `]`이
+    /// (`<!NOTATION n SYSTEM "]">`) 서브셋을 조기 종료시켜 뒤따르는 선언을
+    /// 놓치기 때문이다. 반대로 DOCTYPE **뒤 전체**를 훑으면 무해한 DOCTYPE이
+    /// 있는 문서의 주석·CDATA 속 `<!ENTITY` 문자열이 오탐이 된다. `[`는
+    /// DOCTYPE 선언의 첫 `>`보다 앞서므로 이 판정은 본문에 흔들리지 않는다
+    /// (실측: 픽스처 10종·한컴 번들 템플릿 전수에 DOCTYPE 0건).
+    static func doctypeInternalSubsetFailure(in data: Data) -> String? {
         for encoding in PrologEncoding.allCases {
             guard let doctype = data.range(of: encoding.encode("<!DOCTYPE")) else {
                 continue
             }
-            guard data[doctype.upperBound...]
-                .range(of: encoding.encode("<!ENTITY")) != nil
-            else {
+            let rest = data[doctype.upperBound...]
+            guard let subset = rest.range(of: encoding.encode("[")) else {
                 continue
             }
-            return "custom entity declaration is not supported"
+            if let declarationEnd = rest.range(of: encoding.encode(">")),
+               declarationEnd.lowerBound < subset.lowerBound
+            {
+                continue
+            }
+            return "DOCTYPE internal subset is not supported"
         }
         return nil
     }
+
+    /// 접두사가 붙어도 승격하는 속성 — `hp:switch`의 분기 선택자 하나뿐이다.
+    static let prefixedAttributeAllowlist: Set<String> = ["required-namespace"]
 
     /// 프리플라이트가 훑는 인코딩 — XML 처리기가 반드시 받아야 하는 UTF-8과
     /// UTF-16 두 갈래다.
@@ -171,14 +185,20 @@ extension HwpxXMLTreeParser: XMLParserDelegate {
         for (key, value) in attributeDict where !key.contains(":") {
             attributes[key] = value
         }
-        // 접두사 키는 무접두사 키에 밀리고 정렬 순회로 결정화한다 — 사전
-        // 순회는 실행마다 무작위라 id/ext:id 충돌이 실행마다 다른 값으로
-        // 해석되는 비결정 파싱이 된다.
+        // 접두사 붙은 속성은 **허용 목록만** 승격한다 — 요소를 (namespace,
+        // local name)으로 엄격히 매칭하면서 속성만 접두사를 무시하면
+        // `<hp:p ext:pageBreak="true">`가 진짜 쪽 나누기로 읽힌다.
+        // 실물에서 접두사를 쓰는 OWPML 속성은 `hp:required-namespace`
+        // 하나다 (픽스처 290건·한컴 템플릿 227건; 그 밖은 우리가 읽지 않는
+        // `xml:space`뿐). 무접두사 키에 밀리는 것과 정렬 순회는 그대로 —
+        // 사전 순회는 실행마다 무작위라 비결정 파싱이 된다.
         for (key, value) in attributeDict.sorted(by: { $0.key < $1.key })
             where key.contains(":")
         {
             let localKey = key.split(separator: ":").last.map(String.init) ?? key
-            if attributes[localKey] == nil {
+            if Self.prefixedAttributeAllowlist.contains(localKey),
+               attributes[localKey] == nil
+            {
                 attributes[localKey] = value
             }
         }

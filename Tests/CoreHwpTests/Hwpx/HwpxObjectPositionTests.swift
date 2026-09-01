@@ -3,7 +3,7 @@ import Foundation
 import Nimble
 import XCTest
 
-/// 개체 공통 속성의 계약 — 위치 오프셋, raw 비트필드, 강등 깊이.
+/// 개체 매핑의 계약 — 위치 오프셋, raw 비트필드, 강등 깊이, 격자 범위.
 ///
 /// `HwpxObjectMapperTests`와 분리한 것은 그 스위트가 SwiftLint
 /// `type_body_length` error 상한에 붙어 있어서다.
@@ -158,5 +158,33 @@ final class HwpxObjectPositionTests: XCTestCase {
         // 하위 레이아웃(bits 0-6)에 실려야 리더가 폴백으로 되읽는다.
         let decoded = try HwpListHeaderProperty.load(header.property)
         expect(decoded.verticalAlignment) == HwpListHeaderVerticalAlignment.center
+    }
+
+    func testTableColumnExtentBeyondTheFieldIsRejected() throws {
+        // colAddr·colSpan이 각각 UInt16이라 덮는 폭이 columnCount 필드를 넘을
+        // 수 있다 — 클램프하면 조판이 격자 밖 셀을 떨어뜨리거나 옮기는데
+        // 문서는 성공한 파스로 보고된다.
+        let overflowing = HwpxObjectFixture.tableXML.replacingOccurrences(
+            of: "<hp:cellAddr colAddr=\"0\" rowAddr=\"0\"/>",
+            with: "<hp:cellAddr colAddr=\"65535\" rowAddr=\"0\"/>"
+        )
+        expect {
+            _ = try HwpxTableMapper.map(
+                HwpxObjectFixture.parse(overflowing),
+                context: HwpxObjectFixture.makeContext()
+            )
+        }.to(throwError { error in
+            guard case let HwpError.invalidXML(_, reason) = error else {
+                return fail("Expected invalidXML, got \(error)")
+            }
+            expect(reason).to(contain("65,535-column"))
+        })
+
+        // 대조군: 원본 픽스처는 그대로 매핑된다.
+        let table = try HwpxTableMapper.map(
+            HwpxObjectFixture.parse(HwpxObjectFixture.tableXML),
+            context: HwpxObjectFixture.makeContext()
+        )
+        expect(table.tableProperty.columnCount) == 2
     }
 }

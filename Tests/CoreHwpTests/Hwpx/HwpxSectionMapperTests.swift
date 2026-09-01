@@ -472,4 +472,20 @@ final class HwpxSectionMapperTests: XCTestCase {
             expect(reason).to(contain("root element"))
         })
     }
+
+    func testForeignPrefixedAttributesDoNotDriveLayout() throws {
+        // 요소는 (namespace, local name)으로 엄격히 매칭하면서 속성만 접두사를
+        // 무시하면 조작 속성이 진짜 조판을 바꾼다 — ext:pageBreak가 쪽 나누기로
+        // 읽히면 안 된다. 대조군은 무접두사 pageBreak다 (bit 2).
+        let section = try mapSection(
+            HwpxSectionFixture.blankBody + """
+            <hp:p xmlns:ext="urn:x" ext:pageBreak="1">\
+            <hp:run charPrIDRef="7"><hp:t>가</hp:t></hp:run></hp:p>\
+            <hp:p pageBreak="1"><hp:run charPrIDRef="7"><hp:t>나</hp:t></hp:run></hp:p>
+            """
+        )
+
+        expect(section.paragraph[1].paraHeader.columnType & 0b100) == 0
+        expect(section.paragraph[2].paraHeader.columnType & 0b100) == 0b100
+    }
 }

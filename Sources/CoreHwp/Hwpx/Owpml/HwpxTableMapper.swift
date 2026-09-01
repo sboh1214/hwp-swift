@@ -86,8 +86,18 @@ enum HwpxTableMapper {
         // colCnt가 셀 주소+span이 덮는 폭보다 작으면 (colCnt="0" 포함) 조판의
         // grid 가드가 셀을 거부하거나 표를 통째로 지운다 — 파싱 구조가 덮는
         // 폭 밑으로 내려가지 않게 올리고, 더 큰 선언은 그대로 믿는다.
+        // colAddr·colSpan이 각각 UInt16이라 덮는 폭은 131,070까지 나오는데
+        // columnCount는 UInt16이다 — 클램프하면 셀이 주장하는 범위보다 작은
+        // 폭이 나가고, 조판이 격자 밖 셀을 떨어뜨리거나 다른 자리로 옮기는데
+        // 문서는 성공한 파스로 보고된다 (BinData id 공간 가드와 같은 계열).
+        guard coveredColumns <= Int(UInt16.max) else {
+            throw HwpError.invalidXML(
+                entry: context.entry,
+                reason: "table column extent exceeds the 65,535-column field"
+            )
+        }
         tableProperty.columnCount = max(
-            tableProperty.columnCount, UInt16(clamping: coveredColumns)
+            tableProperty.columnCount, UInt16(coveredColumns)
         )
 
         let depthLimit = context.unknownDepthLimit
