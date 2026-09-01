@@ -25,15 +25,26 @@ enum HwpxPictureMapper {
         // flip·rotationInfo·renderingInfo·effects 등 미소비 자식은 렌더에
         // 반영되지 않으므로 진단으로 강등한다 — 부착처는 diagnostics walker가
         // 걷는 shapeControl.unknownChildren이다.
-        let paragraphConsumed = ["sz", "pos", "outMargin", "imgRect", "imgClip", "inMargin"]
+        // 이름마다 vocabulary가 갈린다 — img만 core, 나머지 6종은 paragraph다
+        // (borderFill의 테두리·채우기와 같은 사전 변형).
+        let consumed = [
+            "sz": HwpxNamespace.paragraph,
+            "pos": HwpxNamespace.paragraph,
+            "outMargin": HwpxNamespace.paragraph,
+            "imgRect": HwpxNamespace.paragraph,
+            "imgClip": HwpxNamespace.paragraph,
+            "inMargin": HwpxNamespace.paragraph,
+            "img": HwpxNamespace.core,
+        ]
         let depthLimit = context.unknownDepthLimit
-        var unknownChildren = node.childElements
-            .filter { child in
-                !paragraphConsumed.contains {
-                    child.isNamed($0, in: HwpxNamespace.paragraph)
-                } && !child.isNamed("img", in: HwpxNamespace.core)
-            }
-            .map { $0.syntheticUnknownRecord(maxDepth: depthLimit) }
+        var unknownChildren = node.unconsumedChildRecords(
+            consumed: consumed, maxDepth: depthLimit
+        )
+        // 일곱 이름 모두 단일 조회다 — 둘째 등장부터는 읽히지 않으므로
+        // 그대로 두면 래퍼와 그 안 미지 자식이 값도 진단도 없이 사라진다.
+        unknownChildren += node.duplicateSingletonRecords(
+            of: consumed, maxDepth: depthLimit
+        )
         // 래퍼는 속성·pt 좌표만 읽는다 — 안의 미지 자식은 여기서 강등해야
         // 진단에 남는다 (paraPr 래퍼 강등과 같은 채널).
         if let image {

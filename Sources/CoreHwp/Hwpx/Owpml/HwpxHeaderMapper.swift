@@ -160,8 +160,16 @@ private extension HwpxHeaderMapper {
         // head 직계 자식은 head vocabulary 하나로 정해지는 자리다 — 전역
         // known 매칭이면 <hp:beginNum> 같은 타 vocabulary 디코이가 시작
         // 번호를 조용히 덮는다 (가족 루프의 head 좁히기와 같은 근거).
+        // beginNum·refList는 head 아래 한 번씩 오는 자리다 — 두 번째부터도
+        // 적용하면 마지막이 이겨 ("첫 등장이 이긴다"와 반대) 앞선 선언이
+        // 조용히 덮이고 진단에도 안 남는다.
+        var applied = Set<String>()
         for child in root.childElements {
             if child.isNamed("beginNum", in: HwpxNamespace.head) {
+                guard applied.insert("beginNum").inserted else {
+                    mapping.demote(child)
+                    continue
+                }
                 mapping.documentProperties = HwpDocumentProperties(
                     hwpxSectionSize: mapping.documentProperties.sectionSize,
                     startingIndex: HwpStartingIndex(
@@ -175,6 +183,10 @@ private extension HwpxHeaderMapper {
                 )
                 mapping.demoteUnconsumed(in: child, consumed: [])
             } else if child.isNamed("refList", in: HwpxNamespace.head) {
+                guard applied.insert("refList").inserted else {
+                    mapping.demote(child)
+                    continue
+                }
                 try mapRefList(child, into: &mapping)
             } else {
                 mapping.demote(child)
@@ -186,12 +198,28 @@ private extension HwpxHeaderMapper {
         _ refList: HwpxXMLNode,
         into mapping: inout HwpxHeaderMapping
     ) throws {
-        // 1차 패스: 가족별 id 테이블 등록 — 가족 사이 참조(글자→테두리,
-        // 스타일→문단/글자, 문단→탭/번호)가 문서 내 등장 순서와 무관하게
-        // 해석되도록 등록을 먼저 끝낸다.
+        registerFamilies(refList, into: &mapping)
+        try mapFamilies(refList, into: &mapping)
+    }
+
+    /// 1차 패스: 가족별 id 테이블 등록 — 가족 사이 참조(글자→테두리,
+    /// 스타일→문단/글자, 문단→탭/번호)가 문서 내 등장 순서와 무관하게
+    /// 해석되도록 등록을 먼저 끝낸다.
+    static func registerFamilies(
+        _ refList: HwpxXMLNode,
+        into mapping: inout HwpxHeaderMapping
+    ) {
+        // 가족은 refList 안에 한 번씩 온다 — 중복 가족까지 등록하면 offset이
+        // 가족마다 0부터 다시 매겨져 두 가족의 서로 다른 id가 같은 슬롯을
+        // 신청한다. 첫 가족만 등록해 오프셋 공간을 하나로 유지한다 (2차
+        // 패스의 강등과 짝이고, 승격 대기 중인 numberings·bullets도 같다).
+        var registered = Set<String>()
         for family in refList.childElements
             where family.isNamed(family.localName, in: HwpxNamespace.head)
         {
+            guard registered.insert(family.localName).inserted else {
+                continue
+            }
             switch family.localName {
             case "fontfaces":
                 HwpxCharShapeMapper.registerFontFaces(family, into: &mapping.idTables)
@@ -213,12 +241,28 @@ private extension HwpxHeaderMapper {
                 break
             }
         }
+    }
 
-        // 2차 패스: 모델 매핑. 가족은 head vocabulary여야 한다 — 전역 known
-        // 매칭이면 hp:styles 같은 동명 가족이 hh 정의로 매핑돼 id 테이블을
-        // 다시 쓴다 ((namespace, local name) 규칙).
+    /// 2차 패스: 모델 매핑. 가족은 head vocabulary여야 한다 — 전역 known
+    /// 매칭이면 hp:styles 같은 동명 가족이 hh 정의로 매핑돼 id 테이블을
+    /// 다시 쓴다 ((namespace, local name) 규칙).
+    static func mapFamilies(
+        _ refList: HwpxXMLNode,
+        into mapping: inout HwpxHeaderMapping
+    ) throws {
+        var mapped = Set<String>()
         for family in refList.childElements {
             guard family.isNamed(family.localName, in: HwpxNamespace.head) else {
+                mapping.demote(family)
+                continue
+            }
+            // 같은 가족이 두 번 오면 배열은 대입이라 **마지막**이 이기는데 id
+            // 테이블은 **첫 등장**이 이겨, 첫 가족의 id가 두 번째 가족의
+            // 정의로 해석된다 (조용한 서식 오염 — 진단에도 안 남는다).
+            // 첫 등장만 소비하고 나머지는 가족째 진단에 남긴다 (바이너리
+            // ID_MAPPINGS의 singleton 슬롯 계약과 같다). `continue`가 필수다 —
+            // 아래 가족 자식 강등까지 흐르면 같은 자식이 두 번 실린다.
+            guard mapped.insert(family.localName).inserted else {
                 mapping.demote(family)
                 continue
             }
