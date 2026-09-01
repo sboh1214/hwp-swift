@@ -54,6 +54,15 @@ enum HwpxBinDataMapper {
             // 엔트리가 없는 항목은 메타만 남긴다 — id 공간(offset+1)이
             // 밀리면 뒤 그림 전부가 엉뚱한 스트림에 조인되므로 배열에서
             // 빼는 대신 스트림 쪽을 비워 placeholder로 강등시킨다.
+            //
+            // href는 URI가 아니라 **엔트리 이름 그대로** 대조한다. 한글.app
+            // 12.30 실측(BinData 픽스처 A/B 사본): 엔트리가
+            // `BinData/my image1.png`일 때 href를 `my%20image1.png`로 적은
+            // 사본은 그림이 빈 프레임이 되고, 공백 그대로 적은 사본만 그려졌다
+            // — 정본 렌더러도 문자 그대로 대조한다. percent-decode를 넣으면
+            // 한글이 못 그리는 그림을 우리만 그리고(역방향 divergence), 이름에
+            // `%`가 든 실재 엔트리는 반대로 못 찾으며, `%2F`는 `BinData/`
+            // 분류까지 흔든다. 실물 픽스처 10종의 href도 전수 리터럴 일치다.
             guard let payload = try container.optionalEntry(item.href) else {
                 continue
             }

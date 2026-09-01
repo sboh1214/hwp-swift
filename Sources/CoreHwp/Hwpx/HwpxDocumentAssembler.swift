@@ -22,6 +22,16 @@ extension HwpFile {
         // 구역 순서의 정본은 spine이지만, spine이 아카이브 실재 구역을
         // 빠뜨리면 그 구역이 조용히 사라진다 — spine 순서를 그대로 두고
         // 누락분만 숫자 순으로 뒤에 병합한다 (`sectionEntryNames` 계약).
+        //
+        // 병합을 "spine이 구역을 하나도 못 낼 때"로 좁히지 않는다. 좁히면
+        // 재포장 잔재(비관례 spine + 낡은 `Contents/section0.xml`)가 뒤에
+        // 붙는 일은 사라지지만, 대신 일부만 나열한 spine에서 실재 본문이
+        // **조용히** 사라진다 — 관측 가능한 여분 구역보다 나쁜 실패다.
+        // 헤더·패키지 문서가 선언을 정본으로 삼는 것과 어긋나 보이지만,
+        // 그쪽은 단수 파트라 관례 채택이 곧 **치환**(낡은 스타일·id가 옳은
+        // 것을 덮는다)인 반면 구역은 선언 본문이 온전한 채 **추가**될 뿐이다.
+        // 구역 수는 선언(secCnt)이 아니라 실재가 정본이라는 `HwpxHeaderMapper`
+        // 판정과 같은 축이다.
         var sectionNames = manifest.sectionHrefs
         let listed = Set(sectionNames)
         sectionNames += container.sectionEntryNames.filter { !listed.contains($0) }

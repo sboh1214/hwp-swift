@@ -75,6 +75,37 @@ final class HwpxFileTests: XCTestCase {
         expect(hwp.sectionArray[0].paragraph.isEmpty) == false
     }
 
+    func testStaleConventionalSectionIsMergedBehindANonConventionalSpine() throws {
+        // 대조군 — 재포장 잔재(비관례 spine + 낡은 `Contents/section0.xml`)는
+        // spine 본문 **뒤에 붙는다**. 병합을 "spine이 비었을 때만"으로 좁히면
+        // 이 여분 구역은 사라지지만, 일부만 나열한 spine에서 실재 본문이
+        // 조용히 사라진다 (testSectionMissingFromPartialSpineIsStillLoaded와
+        // 짝) — 관측 가능한 여분보다 조용한 소실이 나쁘다는 판단을 고정한다.
+        let manifest = manifestXML.replacingOccurrences(
+            of: "href=\"Contents/section0.xml\"", with: "href=\"Body/main.xml\""
+        )
+        let stale = sectionXML.replacingOccurrences(of: "HWPX 본문", with: "낡은 구역")
+        var builder = ZipBuilder()
+        builder.entries = [
+            .init(name: "mimetype", content: Data("application/hwp+zip".utf8), method: 0),
+            .init(name: "version.xml", content: Data(versionXML.utf8), method: 8),
+            .init(name: "Contents/content.hpf", content: Data(manifest.utf8), method: 8),
+            .init(name: "Contents/header.xml", content: Data(headerXML.utf8), method: 8),
+            .init(name: "Body/main.xml", content: Data(sectionXML.utf8), method: 8),
+            .init(name: "Contents/section0.xml", content: Data(stale.utf8), method: 8),
+        ]
+
+        let hwp = try HwpFile(fromData: builder.build())
+
+        expect(hwp.sectionArray.count) == 2
+        expect(hwp.docInfo.documentProperties.sectionSize) == 2
+        // 순서까지 못박는다 — 선언 본문("HWPX 본문")이 앞, 잔재("낡은 구역")가
+        // 뒤다. count만 보면 병합을 prepend로 뒤집어도 초록인 채 문서 순서가
+        // 뒤집힌다.
+        expect(hwp.sectionArray[0].paragraph[0].paraText?.wcharCount) == 24
+        expect(hwp.sectionArray[1].paragraph[0].paraText?.wcharCount) == 22
+    }
+
     func testMalformedResolvedPackageDocumentReportsItsOwnPath() {
         // container.xml이 지목한 경로가 깨졌으면 진단이 그 경로를 가리켜야
         // 한다 — 관례 경로를 적으면 존재하지도 않는 파일을 가리킨다.

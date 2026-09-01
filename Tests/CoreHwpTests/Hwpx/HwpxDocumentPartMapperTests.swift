@@ -330,6 +330,31 @@ final class HwpxDocumentPartMapperTests: XCTestCase {
         expect(catalog.binItemIdByManifestId["image2"]) == 2
     }
 
+    func testPercentEncodedHrefIsComparedLiterally() throws {
+        // 대조군 — href는 URI가 아니라 엔트리 이름 그대로 대조한다. 한글.app
+        // 12.30 실측: 엔트리가 `BinData/my image1.png`일 때 href를
+        // `my%20image1.png`로 적은 사본은 그림이 빈 프레임이 되고 공백 그대로
+        // 적은 사본만 그려졌다 — 정본 렌더러도 리터럴 대조다. decode를 넣으면
+        // 한글이 못 그리는 그림을 우리만 그리고, 이름에 `%`가 든 실재 엔트리는
+        // 반대로 못 찾는다. 여기서는 종전 부재 규약대로 메타만 남는다.
+        let manifest = try parseManifest(manifestXML.replacingOccurrences(
+            of: "href=\"BinData/image1.png\"",
+            with: "href=\"BinData/my%20image1.png\""
+        ))
+        var container = try makeContainer(entries: [
+            .init(
+                name: "BinData/my image1.png", content: Data("png-bytes".utf8), method: 8
+            ),
+            .init(name: "BinData/image2.jpg", content: Data("jpg-bytes".utf8), method: 0),
+        ])
+
+        let catalog = try HwpxBinDataMapper.map(manifest: manifest, container: &container)
+
+        expect(catalog.binDataArray.count) == 2
+        expect(catalog.binDataArray[0].streamId) == 1
+        expect(catalog.binaryDataArray.map(\.name)) == ["BIN0002.jpg"]
+    }
+
     func testExtensionNameFallsBackToBin() {
         expect(HwpxBinDataMapper.extensionName(of: "BinData/image1.png")) == "png"
         expect(HwpxBinDataMapper.extensionName(of: "BinData/noext")) == "bin"

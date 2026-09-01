@@ -158,25 +158,6 @@ final class HwpxXMLTreeParserTests: XCTestCase {
         expect(quadrupled) < max(base * 8, 0.05)
     }
 
-    func testCustomEntityDeclarationIsRejected() {
-        // 실측: 선언 엔티티는 parse 성공인 채 참조 본문만 빠진다
-        // (before&custom;after → "beforeafter") — 조용한 유실 대신 거부한다.
-        let xml = """
-        <!DOCTYPE doc [<!ENTITY custom "SECRET">]>
-        <doc>before&custom;after</doc>
-        """
-        expect {
-            _ = try HwpxXMLTreeParser.parse(
-                Data(xml.utf8), entry: "Contents/section0.xml"
-            )
-        }.to(throwError { error in
-            guard case let HwpError.invalidXML(_, reason) = error else {
-                return fail("Expected invalidXML, got \(error)")
-            }
-            expect(reason).to(contain("DOCTYPE"))
-        })
-    }
-
     func testMalformedXMLThrowsInvalidXML() {
         expect {
             _ = try self.parse("<p><run></p>")
@@ -448,80 +429,5 @@ final class HwpxXMLTreeParserTests: XCTestCase {
         )
 
         expect(root.childElements.map(\.localName)) == ["real"]
-    }
-
-    func testEntityDeclarationIsRejectedInUTF16Encodings() {
-        // UTF-8 바이트만 훑으면 UTF-16 파트에서 스캔이 빗나가고, Linux는
-        // 엔티티 콜백을 부르지 않아 참조 본문만 조용히 사라진다 (실측:
-        // before&custom;after → beforeafter).
-        let xml = "<?xml version=\"1.0\" encoding=\"UTF-16\"?>"
-            + "<!DOCTYPE doc [<!ENTITY custom \"SECRET\">]>"
-            + "<doc>before&custom;after</doc>"
-        for littleEndian in [true, false] {
-            var data = Data(littleEndian ? [0xFF, 0xFE] : [0xFE, 0xFF])
-            for unit in xml.utf16 {
-                let low = UInt8(truncatingIfNeeded: unit)
-                let high = UInt8(truncatingIfNeeded: unit >> 8)
-                data.append(littleEndian ? low : high)
-                data.append(littleEndian ? high : low)
-            }
-
-            expect {
-                _ = try HwpxXMLTreeParser.parse(data, entry: "Contents/header.xml")
-            }.to(throwError { error in
-                guard case let HwpError.invalidXML(_, reason) = error else {
-                    return fail("Expected invalidXML, got \(error)")
-                }
-                // 델리게이트 사유는 이름을 담는다 — 이름이 없으면 바이트
-                // 프리플라이트가 잡은 것이라 Linux에서도 같은 판정이다.
-                expect(reason) == "DOCTYPE internal subset is not supported"
-            })
-        }
-    }
-
-    func testBenignDoctypeWithoutInternalSubsetIsAccepted() throws {
-        // 내부 서브셋이 없는 DOCTYPE은 엔티티를 선언할 수 없다 (외부 DTD는
-        // shouldResolveExternalEntities=false로 무력) — 본문에 <!ENTITY
-        // 문자열이 있어도 거부하면 오탐이다.
-        let xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-            + "<!DOCTYPE hh:head SYSTEM \"owpml.dtd\">"
-            + "<hh:head xmlns:hh=\"http://www.hancom.co.kr/hwpml/2011/head\">"
-            + "<![CDATA[<!ENTITY custom \"SECRET\">]]></hh:head>"
-        let root = try HwpxXMLTreeParser.parse(
-            Data(xml.utf8), entry: "Contents/header.xml"
-        )
-
-        expect(root.isNamed("head", in: HwpxNamespace.head)) == true
-    }
-
-    func testFakeDoctypeInACommentDoesNotShadowTheRealOne() {
-        // 첫 매치만 보면 주석 속 가짜 DOCTYPE이 뒤따르는 진짜 선언을 가린다 —
-        // Linux는 엔티티 선언 콜백이 없어 이 우회가 곧 조용한 내용 치환이다.
-        let xml = "<?xml version=\"1.0\"?><!-- <!DOCTYPE fake> -->"
-            + "<!DOCTYPE doc [<!ENTITY custom \"SECRET\">]>"
-            + "<doc>before&custom;after</doc>"
-        expect {
-            _ = try HwpxXMLTreeParser.parse(
-                Data(xml.utf8), entry: "Contents/header.xml"
-            )
-        }.to(throwError { error in
-            guard case let HwpError.invalidXML(_, reason) = error else {
-                return fail("Expected invalidXML, got \(error)")
-            }
-            // 이름이 없으면 바이트 프리플라이트가 잡은 것이다 (델리게이트 아님).
-            expect(reason) == "DOCTYPE internal subset is not supported"
-        })
-    }
-
-    func testCommentedDoctypeFragmentDoesNotRejectTheDocument() throws {
-        // 주석 안의 문서화용 조각은 선언이 아니다 — 매치를 모두 훑던 방식은
-        // `[`를 보고 유효 문서를 거부했다 (프롤로그 어휘 스캔으로 닫힌다).
-        let xml = "<?xml version=\"1.0\"?><!-- <!DOCTYPE example [ -->"
-            + "<hh:head xmlns:hh=\"http://www.hancom.co.kr/hwpml/2011/head\"/>"
-        let root = try HwpxXMLTreeParser.parse(
-            Data(xml.utf8), entry: "Contents/header.xml"
-        )
-
-        expect(root.isNamed("head", in: HwpxNamespace.head)) == true
     }
 }

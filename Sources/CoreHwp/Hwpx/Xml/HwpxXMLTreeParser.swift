@@ -42,8 +42,9 @@ final class HwpxXMLTreeParser: NSObject {
         // 델리게이트 기반 거부는 Apple 한정이다 — libxml2 기반 Linux
         // XMLParser는 엔티티 선언 콜백을 부르지 않아 선언이 그대로 통과한다
         // (Linux CI 실측). 조용한 본문 유실·치환은 두 플랫폼 모두에서
-        // 일어나므로 바이트에서 먼저 거른다.
-        if let reason = doctypeInternalSubsetFailure(in: data) {
+        // 일어나므로 바이트에서 먼저 거른다. 갈림은 양방향이다 — 외부 식별자
+        // DOCTYPE은 반대로 macOS만 뚫린다 (`doctypeFailure` 주석).
+        if let reason = doctypeFailure(in: data) {
             throw HwpError.invalidXML(entry: entry, reason: reason)
         }
 
@@ -77,28 +78,85 @@ final class HwpxXMLTreeParser: NSObject {
         return root.markingUnqualifiedElements().resolvingSwitches()
     }
 
-    /// DTD 내부 서브셋의 엔티티 선언을 바이트에서 찾는다.
+    /// DOCTYPE 선언의 **내부 서브셋**과 **외부 식별자**를 바이트에서 거부한다.
     ///
-    /// DOCTYPE의 **내부 서브셋**을 거부한다 — 엔티티 선언은 거기서만 올 수
-    /// 있고(외부 DTD는 `shouldResolveExternalEntities = false`로 무력),
-    /// Linux는 선언 콜백을 부르지 않아 바이트에서 걸러야 한다.
+    /// 엔티티 선언은 내부 서브셋에서만 오지만, 외부 DTD를 매단 문서는 선언이
+    /// 없어도 위험하다 — 외부 서브셋이 붙으면 **미선언 엔티티 참조가
+    /// 오류에서 경고로 격하**되어 참조 자리가 빈 채 성공한 파스로 통과한다
+    /// (macOS 실측: `<!DOCTYPE doc SYSTEM "x.dtd">` 아래
+    /// `before&custom;after`가 "beforeafter"로 파싱되고 속성값도 같다.
+    /// libxml2는 두 플랫폼 모두 이 참조를 경고로 격하하지만 Linux Foundation만
+    /// 그 경고를 `parseErrorOccurred`로 올려 줘 우리 델리게이트가 잡는다 —
+    /// 방어가 플랫폼에 갈리므로 바이트 판정이 정본이어야 한다).
+    /// `shouldResolveExternalEntities = false`는 외부 실체를 **가져오지 않을**
+    /// 뿐 이 격하를 막지 못한다.
+    /// 외부 식별자 없는 `<!DOCTYPE doc>`은 격하를 열지 않으므로(실측: 미선언
+    /// 참조가 두 플랫폼 모두 오류) 그대로 받는다.
+    ///
+    /// 외부 식별자는 선언 콜백으로 잡을 수 없다 — 선언이 문서 안에 없다.
+    /// 내부 서브셋도 Linux는 콜백을 부르지 않는다. 그래서 바이트에서 먼저
+    /// 거른다.
     ///
     /// 서브셋 안의 `<!ENTITY`만 찾지 않는 이유는 인용부호 안의 `]`이
     /// (`<!NOTATION n SYSTEM "]">`) 서브셋을 조기 종료시켜 뒤따르는 선언을
     /// 놓치기 때문이다. 반대로 DOCTYPE **뒤 전체**를 훑으면 무해한 DOCTYPE이
-    /// 있는 문서의 주석·CDATA 속 `<!ENTITY` 문자열이 오탐이 된다. `[`는
-    /// DOCTYPE 선언의 첫 `>`보다 앞서므로 이 판정은 본문에 흔들리지 않는다
-    /// (실측: 픽스처 10종·한컴 번들 템플릿 전수에 DOCTYPE 0건).
-    static func doctypeInternalSubsetFailure(in data: Data) -> String? {
-        for encoding in PrologEncoding.allCases
-            where prologDeclaresInternalSubset(in: data, encoding: encoding)
-        {
-            return "DOCTYPE internal subset is not supported"
+    /// 있는 문서의 주석·CDATA 속 `<!ENTITY` 문자열이 오탐이 된다. `[`와
+    /// 인용부호는 DOCTYPE 선언의 첫 `>`보다 앞서므로 이 판정은 본문에
+    /// 흔들리지 않는다 (실측: 픽스처 10종·한컴 번들 템플릿 전수에 DOCTYPE 0건).
+    ///
+    /// 세 인코딩 중 **어느 것으로도 XML로 읽히지 않는** 파트는 그 자체로
+    /// 거부한다. 스캐너가 ASCII 호환 바이트열만 훑으므로 그렇지 않은
+    /// 인코딩으로 적으면 위 두 판정이 통째로 우회되는데, libxml2는 XML 선언의
+    /// `encoding`을 보고 그런 파트도 파싱한다 — 실측(IBM037로 적은 같은
+    /// 입력): macOS는 외부 식별자 형태를, Linux는 내부 서브셋 형태를 각각
+    /// 조용히 통과시켜 `before&custom;after`가 "beforeafter"가 된다. XML
+    /// 문서는 (BOM 뒤) 공백이나 `<`로만 시작할 수 있으므로 이 게이트가
+    /// 거부하는 건 어차피 well-formed가 아니거나 우리가 못 읽는 인코딩뿐이다
+    /// (실측: 픽스처·번들 템플릿의 XML 엔트리 161개 전부 통과).
+    static func doctypeFailure(in data: Data) -> String? {
+        var readable = false
+        for encoding in PrologEncoding.allCases {
+            switch prologScan(in: data, encoding: encoding) {
+            case let .rejected(rejection):
+                return rejection.reason
+            case .xmlProlog:
+                readable = true
+            case .unreadable:
+                continue
+            }
         }
-        return nil
+        return readable ? nil : "unsupported XML encoding"
     }
 
-    /// 프롤로그를 **어휘적으로** 훑어 DOCTYPE 선언의 내부 서브셋을 찾는다.
+    /// 프롤로그 스캔 결과 — 인코딩 하나에 대한 판정.
+    enum PrologScan {
+        /// 이 인코딩으로는 프롤로그가 XML로 읽히지 않는다.
+        case unreadable
+        /// XML로 읽혔고 거부할 DOCTYPE이 없다.
+        case xmlProlog
+        /// 거부할 DOCTYPE을 찾았다.
+        case rejected(DoctypeRejection)
+    }
+
+    /// 바이트 프리플라이트가 거부하는 DOCTYPE 두 형태.
+    enum DoctypeRejection {
+        /// 내부 서브셋 — 엔티티 선언이 여기서만 온다.
+        case internalSubset
+        /// 외부 식별자(`SYSTEM`·`PUBLIC`) — 미선언 참조를 조용한 유실로 만든다.
+        case externalIdentifier
+
+        var reason: String {
+            switch self {
+            case .internalSubset:
+                "DOCTYPE internal subset is not supported"
+            case .externalIdentifier:
+                "DOCTYPE external identifier is not supported"
+            }
+        }
+    }
+
+    /// 프롤로그를 **어휘적으로** 훑어 거부 사유(내부 서브셋·외부 식별자)를
+    /// 찾고, 이 인코딩으로 XML로 읽히는지도 함께 판정한다.
     ///
     /// 바이트 검색으로는 두 방향을 함께 닫을 수 없다 — 첫 매치만 보면 주석 속
     /// 가짜 DOCTYPE이 진짜를 가리고(회피), 매치를 모두 훑으면 주석 안의
@@ -106,9 +164,9 @@ final class HwpxXMLTreeParser: NSObject {
     /// 앞에만 올 수 있으므로, 선두에서 XML 선언·주석·공백만 건너뛰며 진행하면
     /// 둘 다 사라진다. 프롤로그 문법은 전부 ASCII라 세 인코딩이 같은 스캐너를
     /// 쓴다 (실측: 픽스처 10종·한컴 번들 템플릿 전수에 DOCTYPE 0건).
-    static func prologDeclaresInternalSubset(
+    static func prologScan(
         in data: Data, encoding: PrologEncoding
-    ) -> Bool {
+    ) -> PrologScan {
         var index = 0
         func unit(_ offset: Int = 0) -> UInt16? {
             encoding.unit(at: index + offset, in: data)
@@ -137,48 +195,65 @@ final class HwpxXMLTreeParser: NSObject {
         } else if unit() == 0xEF, unit(1) == 0xBB, unit(2) == 0xBF {
             index += 3
         }
+        // `<`로 시작하는 마크업을 하나라도 소화했으면 이 인코딩으로 읽힌 것이다
+        // — 뒤가 깨졌어도 인코딩 판정과는 무관하다 (파서가 던진다).
+        var sawMarkup = false
         while let current = unit() {
             switch current {
             case 0x20, 0x09, 0x0A, 0x0D:
                 index += 1
             case 0x3C where matches("<!--"):
+                sawMarkup = true
                 index += 4
-                guard skip(past: "-->") else { return false }
+                guard skip(past: "-->") else { return .xmlProlog }
             case 0x3C where matches("<?"):
+                sawMarkup = true
                 index += 2
-                guard skip(past: "?>") else { return false }
+                guard skip(past: "?>") else { return .xmlProlog }
             case 0x3C where matches("<!DOCTYPE"):
                 index += 9
-                return doctypeHasSubset(after: &index, encoding: encoding, data: data)
-            default:
+                guard let rejection = doctypeRejection(
+                    after: index, encoding: encoding, data: data
+                ) else {
+                    return .xmlProlog
+                }
+                return .rejected(rejection)
+            case 0x3C:
                 // 루트 요소 시작 — DOCTYPE은 이 앞에만 올 수 있다.
-                return false
+                return .xmlProlog
+            default:
+                // 마크업이 아니다 — 선행 공백만 보고 여기 닿았으면 이
+                // 인코딩으로는 XML이 아니다.
+                return sawMarkup ? .xmlProlog : .unreadable
             }
         }
-        return false
+        return sawMarkup ? .xmlProlog : .unreadable
     }
 
-    /// `<!DOCTYPE` 뒤에서 선언이 끝나기(`>`) 전에 `[`가 오는지. 인용부호 안의
-    /// 두 문자는 공개 식별자의 일부이므로 세지 않는다.
-    private static func doctypeHasSubset(
-        after index: inout Int, encoding: PrologEncoding, data: Data
-    ) -> Bool {
-        var quote: UInt16?
+    /// `<!DOCTYPE` 뒤에서 선언이 끝나기(`>`) 전에 오는 `[`(내부 서브셋)와
+    /// 인용부호(외부 식별자)를 찾는다.
+    ///
+    /// 선언 머리의 문법은 `'<!DOCTYPE' S Name (S ExternalID)? S? ('[' … ']')?`
+    /// 라 인용 문자열은 `SYSTEM`·`PUBLIC` 식별자에만 올 수 있다 (XML 이름에는
+    /// 인용부호를 못 쓴다) — 첫 인용부호가 곧 외부 식별자다. 그래서 종전처럼
+    /// 인용 구간을 건너뛰지 않고, 호출자와 커서를 공유할 이유도 없다.
+    private static func doctypeRejection(
+        after start: Int, encoding: PrologEncoding, data: Data
+    ) -> DoctypeRejection? {
+        var index = start
         while let character = encoding.unit(at: index, in: data) {
-            if let open = quote {
-                if character == open {
-                    quote = nil
-                }
-            } else if character == 0x22 || character == 0x27 {
-                quote = character
-            } else if character == 0x5B {
-                return true
-            } else if character == 0x3E {
-                return false
+            switch character {
+            case 0x22, 0x27:
+                return .externalIdentifier
+            case 0x5B:
+                return .internalSubset
+            case 0x3E:
+                return nil
+            default:
+                index += 1
             }
-            index += 1
         }
-        return false
+        return nil
     }
 
     /// 접두사가 붙어도 승격하는 속성 — `hp:switch`의 분기 선택자 하나뿐이고,
@@ -186,7 +261,8 @@ final class HwpxXMLTreeParser: NSObject {
     static let prefixedAttributeAllowlist: Set<String> = ["required-namespace"]
 
     /// 프리플라이트가 훑는 인코딩 — XML 처리기가 반드시 받아야 하는 UTF-8과
-    /// UTF-16 두 갈래다.
+    /// UTF-16 두 갈래다. 그 밖의 인코딩은 스캐너가 읽지 못하므로 파싱을
+    /// 허용하지 않고 `doctypeFailure`가 파트째로 거부한다.
     ///
     /// UTF-8 바이트열만 찾으면 UTF-16 파트에서 스캔이 통째로 빗나가고,
     /// Linux는 엔티티 선언 콜백을 부르지 않으므로 그 선언이 **성공한 파싱
