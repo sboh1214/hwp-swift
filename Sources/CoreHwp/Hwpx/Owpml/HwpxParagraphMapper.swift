@@ -50,6 +50,11 @@ enum HwpxParagraphMapper {
         isLastInList: Bool
     ) throws -> HwpParagraph {
         var builder = ParagraphBuilder(unknownDepthLimit: context.unknownDepthLimit)
+        // 캐시는 첫 `linesegarray`만 읽는다 — 둘째부터를 그냥 건너뛰면 값도
+        // 진단도 없이 사라지고(그 안 미지 요소까지), positionCertain이 참으로
+        // 남아 낡은 캐시가 그대로 채택된다. `appendUnknown`이 강등과 밸브를
+        // 함께 처리한다.
+        var sawLineSegArray = false
         for child in node.childElements {
             if child.isNamed("run", in: HwpxNamespace.paragraph) {
                 builder.beginRun(
@@ -60,7 +65,12 @@ enum HwpxParagraphMapper {
                 for runChild in child.childElements {
                     try consume(runChild, into: &builder, context: context)
                 }
-            } else if !child.isNamed("linesegarray", in: HwpxNamespace.paragraph) {
+            } else if child.isNamed("linesegarray", in: HwpxNamespace.paragraph) {
+                if sawLineSegArray {
+                    builder.appendUnknown(child)
+                }
+                sawLineSegArray = true
+            } else {
                 // run/linesegarray가 아닌 hp:p 직속 자식(문단 직속 개체 등)은
                 // synthetic unknown으로 남기고 위치 불확실로 표시한다 — 안 그러면
                 // 진단에서 빠지고 positionCertain이 참으로 남아 안전밸브가 걸리지
@@ -260,7 +270,10 @@ private extension HwpxParagraphMapper {
         _ node: HwpxXMLNode,
         builder: ParagraphBuilder
     ) -> (segments: [HwpParaLineSegInternal], unknowns: [HwpUnknownRecord]) {
-        guard let array = node.firstChild(named: "linesegarray") else {
+        // 조회 술어는 위 문단 루프의 소비 판정과 같아야 한다 — 전역 known으로
+        // 찾으면 `<hh:linesegarray>` 디코이가 진짜 캐시를 가로채 폐기시키고,
+        // 그 디코이는 강등과 여기 순회에서 두 번 보고된다.
+        guard let array = node.paragraphFirstChild(named: "linesegarray") else {
             return ([], [])
         }
         // 캐시를 어떤 이유로 버리든 그 안 미지 요소는 진단에 남긴다 — 바깥

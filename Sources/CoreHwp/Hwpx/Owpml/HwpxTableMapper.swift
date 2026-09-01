@@ -114,6 +114,12 @@ enum HwpxTableMapper {
             in: HwpxNamespace.paragraph,
             maxDepth: depthLimit
         )
+        // tr은 목록이라 전부 소비되지만 래퍼 4종은 단일 조회다.
+        tableUnknowns += node.duplicateSingletonRecords(
+            of: ["sz", "pos", "outMargin", "inMargin"],
+            in: HwpxNamespace.paragraph,
+            maxDepth: depthLimit
+        )
         for row in rows {
             tableUnknowns += row.unconsumedChildRecords(
                 consumed: ["tc"], in: HwpxNamespace.paragraph, maxDepth: depthLimit
@@ -185,6 +191,12 @@ enum HwpxTableMapper {
         let depthLimit = context.unknownDepthLimit
         var cellUnknowns = node.unconsumedChildRecords(
             consumed: ["subList", "cellAddr", "cellSpan", "cellSz", "cellMargin"],
+            in: HwpxNamespace.paragraph,
+            maxDepth: depthLimit
+        )
+        // 다섯 이름 모두 단일 조회다.
+        cellUnknowns += node.duplicateSingletonRecords(
+            of: ["subList", "cellAddr", "cellSpan", "cellSz", "cellMargin"],
             in: HwpxNamespace.paragraph,
             maxDepth: depthLimit
         )

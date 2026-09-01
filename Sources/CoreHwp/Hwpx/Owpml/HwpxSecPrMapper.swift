@@ -75,11 +75,20 @@ enum HwpxSecPrMapper {
             consumed: ["pagePr", "startNum"], in: HwpxNamespace.paragraph,
             maxDepth: maxDepth
         )
+        // 둘 다 단일 조회라 둘째 등장부터는 읽히지 않는다 — 소비 표시가
+        // 이름 단위라 그대로 두면 값도 진단도 없이 사라진다.
+        sectionDef.unknownChildren += secPr.duplicateSingletonRecords(
+            of: ["pagePr", "startNum"], in: HwpxNamespace.paragraph,
+            maxDepth: maxDepth
+        )
         // 소비 래퍼 안 미지 자식 — pagePr는 margin만, margin·startNum은
         // 속성만 읽는다.
         if let pagePr = secPr.paragraphFirstChild(named: "pagePr") {
             sectionDef.unknownChildren += pagePr.unconsumedChildRecords(
                 consumed: ["margin"], in: HwpxNamespace.paragraph, maxDepth: maxDepth
+            )
+            sectionDef.unknownChildren += pagePr.duplicateSingletonRecords(
+                of: ["margin"], in: HwpxNamespace.paragraph, maxDepth: maxDepth
             )
             if let margin = pagePr.paragraphFirstChild(named: "margin") {
                 sectionDef.unknownChildren += margin.unconsumedChildRecords(
@@ -139,6 +148,10 @@ enum HwpxSecPrMapper {
         column.unknownChildren = colPr.unconsumedChildRecords(
             consumed: ["colSz", "colLine"], in: HwpxNamespace.paragraph,
             maxDepth: maxDepth
+        )
+        // colSz는 목록이라 전부 소비되지만 colLine은 단일 조회다.
+        column.unknownChildren += colPr.duplicateSingletonRecords(
+            of: ["colLine"], in: HwpxNamespace.paragraph, maxDepth: maxDepth
         )
         if !property.isSameWidth, sizes.count > 255 {
             // 8비트 count가 못 담는 폭 목록은 채택 불능이다 — 등폭 폴백으로

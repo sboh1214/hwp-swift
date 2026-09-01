@@ -382,9 +382,9 @@ extension HwpxXMLTreeParser: XMLParserDelegate {
         // 섞인 <p>가 hp:p로 파싱된다. 그런 파트에서는 sentinel로 갈라 낸다
         // (판정은 문서 순서 기준이라, 선언이 있는 파트는 루트에서 이미 참이다).
         let uri = namespaceURI ?? ""
-        if !uri.isEmpty {
+        if HwpxNamespace.known.contains(uri) {
             sawNamespacedElement = true
-        } else if !sawNamespacedElement {
+        } else if uri.isEmpty, !sawNamespacedElement {
             unqualifiedNodesBeforeNamespace += 1
         }
         stack.append(HwpxXMLNode(

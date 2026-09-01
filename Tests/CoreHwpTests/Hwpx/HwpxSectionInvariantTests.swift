@@ -206,6 +206,46 @@ final class HwpxSectionInvariantTests: XCTestCase {
         expect(names).to(contain("cacheGhost"))
     }
 
+    func testDuplicateLineSegArrayIsDemotedAndDiscardsTheCache() throws {
+        // 캐시는 첫 배열만 읽는다 — 둘째를 그냥 건너뛰면 값도 진단도 없이
+        // 사라지고(그 안 미지 요소까지) 낡은 캐시가 positionCertain인 채
+        // 절대 조판에 채택된다.
+        let section = try HwpxSectionFixture.mapSection(
+            HwpxSectionFixture.blankBody.replacingOccurrences(
+                of: "</hp:linesegarray>",
+                with: "</hp:linesegarray>"
+                    + "<hp:linesegarray><hp:ghostSeg/></hp:linesegarray>"
+            )
+        )
+
+        let paragraph = section.paragraph[0]
+        let names = paragraph.unknownChildren.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("linesegarray"))
+        expect(paragraph.paraLineSeg.paraLineSegInternalArray).to(beEmpty())
+    }
+
+    func testForeignLineSegArrayDecoyDoesNotHijackTheCacheLookup() throws {
+        // 캐시 조회가 전역 known이면 <hh:linesegarray> 디코이를 집어 그 자식을
+        // 한 번 더 보고한다 — 좁혀 조회한 자리는 조회와 소비가 같은 술어여야
+        // 한다. 디코이 자신은 강등 레코드로 한 번만 남는다.
+        let section = try HwpxSectionFixture.mapSection(
+            HwpxSectionFixture.blankBody.replacingOccurrences(
+                of: "<hp:linesegarray>",
+                with: "<hh:linesegarray "
+                    + "xmlns:hh=\"http://www.hancom.co.kr/hwpml/2011/head\">"
+                    + "<hh:decoyChild/></hh:linesegarray><hp:linesegarray>"
+            )
+        )
+
+        let names = section.paragraph[0].unknownChildren.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("linesegarray"))
+        expect(names).toNot(contain("decoyChild"))
+    }
+
     func testLineCacheWithNestedUnknownInsideSegmentIsRejected() throws {
         // lineseg는 속성 전용 — 유효 lineseg 안의 미지 자식은 직계 수
         // 대조를 통과하므로 세그먼트 층에서 따로 거부해야 한다.

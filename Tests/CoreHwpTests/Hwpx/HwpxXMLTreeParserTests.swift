@@ -388,6 +388,33 @@ final class HwpxXMLTreeParserTests: XCTestCase {
         expect(root.attributes["required-namespace"]) == "urn:x"
     }
 
+    func testForeignExtensionKeepsANamespaceFreeDocumentValid() throws {
+        // 무접두사 파트에 외래 확장 요소가 섞였다고 루트까지 sentinel로 덮으면
+        // 폴백으로 열리던 문서가 통째로 로드 실패한다 (헤더는 단수 파트라
+        // 복구 모드로도 구제되지 않는다). 트리거는 "접두사 요소가 있었는가"가
+        // 아니라 "known vocabulary를 봤는가"다.
+        let root = try parse(
+            "<head><beginNum page=\"1\"/><ext:metadata xmlns:ext=\"urn:x\"/></head>"
+        )
+
+        expect(root.isNamed("head", in: HwpxNamespace.head)) == true
+        expect(root.headFirstChild(named: "beginNum")).toNot(beNil())
+        // 외래 요소는 어느 조회에도 안 걸려 진단으로 강등된다 (대조군).
+        expect(root.headFirstChild(named: "metadata")).to(beNil())
+    }
+
+    func testNamespaceFreeRootSurvivesWhenEveryChildIsForeign() throws {
+        // 본문이 전부 미지 vocabulary여도 무접두사 루트는 폴백으로 남는다 —
+        // 낯선 자식을 정본으로 오인하지 않으면서 파트는 연다 (거부가 아니라
+        // "수락 + 진단"이 정본이다).
+        let root = try parse(
+            "<head xmlns:ext=\"urn:x\"><ext:beginNum page=\"9\"/></head>"
+        )
+
+        expect(root.isNamed("head", in: HwpxNamespace.head)) == true
+        expect(root.headFirstChild(named: "beginNum")).to(beNil())
+    }
+
     func testForeignBoundSelectorAttributeIsNotPromoted() throws {
         // 허용 목록이 이름만 보면 외래 vocabulary에 바인딩된
         // ext:required-namespace가 승격되어 hp:switch 해소에서 위조 case가

@@ -86,6 +86,25 @@ final class HwpxHeaderDiagnosticsTests: XCTestCase {
         expect(names).toNot(contain("substFont"))
     }
 
+    func testDuplicateCharPropertyLeafIsDemotedIntoDiagnostics() throws {
+        // 잎은 단일 조회라 둘째 <hh:italic>은 모델에 안 실린다 — 소비 표시가
+        // 이름 단위라 진단에서도 지워지면 부분 해석된 헤더가 완전한 파스로
+        // 보고되고, 둘째 래퍼 안의 미지 요소까지 함께 사라진다.
+        let withDuplicate = HwpxHeaderFixture.headerXML.replacingOccurrences(
+            of: "borderFillIDRef=\"404\"><hh:italic/>",
+            with: "borderFillIDRef=\"404\"><hh:italic/>"
+                + "<hh:italic><hh:ghost/></hh:italic>"
+        )
+        let (docInfo, _) = try HwpxHeaderFixture.mapHeader(withDuplicate)
+
+        let names = docInfo.unknownRecords.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names).to(contain("italic"))
+        // 첫 등장은 그대로 모델에 실린다 (음성 대조).
+        expect(docInfo.idMappings.charShapeArray[1].property.isItalic) == true
+    }
+
     func testCharPropertyLeafDecoysFromOtherVocabularyAreDemotedNotApplied() throws {
         // <hp:bold>는 head vocabulary가 아니다 — 전역 조회면 굵게가 적용되고
         // 전역 소비 필터가 그것을 진단에서도 지운다.

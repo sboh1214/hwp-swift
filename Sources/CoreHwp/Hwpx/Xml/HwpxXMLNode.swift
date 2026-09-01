@@ -192,6 +192,51 @@ extension HwpxXMLNode {
             .filter { child in !consumed.contains { child.isNamed($0, in: namespace) } }
             .map { $0.syntheticUnknownRecord(maxDepth: maxDepth) }
     }
+
+    /// 단일 조회(`*FirstChild`)로 읽는 이름의 **두 번째 이후** 등장.
+    ///
+    /// 소비 판정은 이름 집합 멤버십이라 같은 이름이 반복되면 몇 번째든 소비로
+    /// 접히는데, 모델에는 첫 등장만 실린다 — 나머지는 값도 잃고 진단에도 안
+    /// 남아 부분 해석된 파트가 완전한 파스로 보고된다. 둘째 래퍼 **안의 미지
+    /// 요소**까지 함께 사라지는 것이 특히 나쁘다 (같은 요소가 첫 래퍼 안에
+    /// 있으면 보고된다). 바이너리 경로가 singleton 태그에 쓰는 계약과 같다 —
+    /// 첫 레코드만 소비하고 중복은 `unknownRecords`로 (`HwpDocInfo` 분류).
+    ///
+    /// 목록 조회(`*Children`)로 읽는 이름은 넘기지 않는다 — 그 이름은 모든
+    /// 등장이 실제로 소비된다.
+    func duplicateSingletonRecords(
+        of names: [String],
+        in namespace: String,
+        maxDepth: Int
+    ) -> [HwpUnknownRecord] {
+        var seen = Set<String>()
+        return childElements.compactMap { child in
+            guard let name = names.first(where: { child.isNamed($0, in: namespace) })
+            else {
+                return nil
+            }
+            return seen.insert(name).inserted
+                ? nil : child.syntheticUnknownRecord(maxDepth: maxDepth)
+        }
+    }
+
+    /// 이름마다 vocabulary가 다른 자리(`borderFill`)용 변형 — 소비 판정의
+    /// `[이름: namespace]` 짝과 같은 술어를 쓴다.
+    func duplicateSingletonRecords(
+        of namespaces: [String: String],
+        maxDepth: Int
+    ) -> [HwpUnknownRecord] {
+        var seen = Set<String>()
+        return childElements.compactMap { child in
+            guard let namespace = namespaces[child.localName],
+                  child.isNamed(child.localName, in: namespace)
+            else {
+                return nil
+            }
+            return seen.insert(child.localName).inserted
+                ? nil : child.syntheticUnknownRecord(maxDepth: maxDepth)
+        }
+    }
 }
 
 /// OWPML이 선언하는 namespace URI 모음.

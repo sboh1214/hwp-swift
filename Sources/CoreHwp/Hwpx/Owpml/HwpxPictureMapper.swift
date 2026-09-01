@@ -46,6 +46,10 @@ enum HwpxPictureMapper {
                 consumed: ["pt0", "pt1", "pt2", "pt3"], in: HwpxNamespace.core,
                 maxDepth: depthLimit
             )
+            unknownChildren += imgRect.duplicateSingletonRecords(
+                of: ["pt0", "pt1", "pt2", "pt3"], in: HwpxNamespace.core,
+                maxDepth: depthLimit
+            )
             for ptName in ["pt0", "pt1", "pt2", "pt3"] {
                 if let point = imgRect.childElements.first(where: {
                     $0.isNamed(ptName, in: HwpxNamespace.core)

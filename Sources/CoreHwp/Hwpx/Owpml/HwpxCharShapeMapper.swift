@@ -77,6 +77,9 @@ enum HwpxCharShapeMapper {
                 unknownRecords += font.unconsumedChildRecords(
                     consumed: ["substFont"], in: HwpxNamespace.head, maxDepth: maxDepth
                 )
+                unknownRecords += font.duplicateSingletonRecords(
+                    of: ["substFont"], in: HwpxNamespace.head, maxDepth: maxDepth
+                )
                 if let substFontNode = font.headFirstChild(named: "substFont") {
                     unknownRecords += substFontNode.unconsumedChildRecords(
                         consumed: [], maxDepth: maxDepth

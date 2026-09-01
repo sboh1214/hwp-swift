@@ -61,6 +61,24 @@ struct HwpxHeaderMapping {
             consumed: consumed, maxDepth: unknownDepthLimit
         )
     }
+
+    /// 단일 조회로 읽는 이름의 두 번째 이후 등장을 진단으로 강등한다 —
+    /// 소비 표시는 이름 단위라 중복도 소비로 접힌다 (`duplicateSingletonRecords`).
+    mutating func demoteDuplicateSingletons(
+        in node: HwpxXMLNode, of names: [String], namespace: String
+    ) {
+        unknownRecords += node.duplicateSingletonRecords(
+            of: names, in: namespace, maxDepth: unknownDepthLimit
+        )
+    }
+
+    mutating func demoteDuplicateSingletons(
+        in node: HwpxXMLNode, of namespaces: [String: String]
+    ) {
+        unknownRecords += node.duplicateSingletonRecords(
+            of: namespaces, maxDepth: unknownDepthLimit
+        )
+    }
 }
 
 enum HwpxHeaderMapper {
@@ -304,6 +322,10 @@ private extension HwpxHeaderMapper {
                 in: charPr, consumed: Set(Self.charPrLeafNames),
                 namespace: HwpxNamespace.head
             )
+            // 잎은 전부 단일 조회라 둘째 등장부터는 읽히지 않는다.
+            mapping.demoteDuplicateSingletons(
+                in: charPr, of: Self.charPrLeafNames, namespace: HwpxNamespace.head
+            )
             // 잎 래퍼 15종은 속성만 읽는다 — 자식이 전부 미소비다.
             for leafName in Self.charPrLeafNames {
                 if let leaf = charPr.headFirstChild(named: leafName) {
@@ -389,6 +411,9 @@ private extension HwpxHeaderMapper {
             mapping.demoteUnconsumed(
                 in: borderFill, consumed: Self.borderFillChildNamespaces
             )
+            mapping.demoteDuplicateSingletons(
+                in: borderFill, of: Self.borderFillChildNamespaces
+            )
             for borderName in ["leftBorder", "rightBorder", "topBorder", "bottomBorder"] {
                 if let border = borderFill.headFirstChild(named: borderName) {
                     mapping.demoteUnconsumed(in: border, consumed: [])
@@ -397,6 +422,9 @@ private extension HwpxHeaderMapper {
             if let fillBrush = borderFill.coreFirstChild(named: "fillBrush") {
                 mapping.demoteUnconsumed(
                     in: fillBrush, consumed: ["winBrush"], namespace: HwpxNamespace.core
+                )
+                mapping.demoteDuplicateSingletons(
+                    in: fillBrush, of: ["winBrush"], namespace: HwpxNamespace.core
                 )
                 if let winBrush = fillBrush.coreFirstChild(named: "winBrush") {
                     mapping.demoteUnconsumed(in: winBrush, consumed: [])
@@ -432,12 +460,22 @@ private extension HwpxHeaderMapper {
                 consumed: ["align", "heading", "margin", "lineSpacing", "border"],
                 namespace: HwpxNamespace.head
             )
+            mapping.demoteDuplicateSingletons(
+                in: paraPr,
+                of: ["align", "heading", "margin", "lineSpacing", "border"],
+                namespace: HwpxNamespace.head
+            )
             // 소비된 래퍼 안 미지 자식 — margin은 5종만 읽고 나머지 래퍼
             // 4종은 속성만 읽는 잎이라 자식이 전부 미소비다.
             if let margin = paraPr.headFirstChild(named: "margin") {
                 mapping.demoteUnconsumed(
                     in: margin,
                     consumed: ["intent", "left", "right", "prev", "next"],
+                    namespace: HwpxNamespace.core
+                )
+                mapping.demoteDuplicateSingletons(
+                    in: margin,
+                    of: ["intent", "left", "right", "prev", "next"],
                     namespace: HwpxNamespace.core
                 )
                 for valueName in ["intent", "left", "right", "prev", "next"] {
