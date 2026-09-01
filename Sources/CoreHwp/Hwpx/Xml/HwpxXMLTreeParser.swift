@@ -23,6 +23,12 @@ final class HwpxXMLTreeParser: NSObject {
     private var root: HwpxXMLNode?
     private var failure: String?
     private var sawNamespacedElement = false
+    /// 접두사 → 바인딩 URI 스택. 델리게이트 attributeDict는 속성의 resolved
+    /// namespace를 주지 않으므로(qName뿐) 매핑 콜백으로 직접 유지한다 —
+    /// 같은 접두사의 중첩 재선언(shadowing)이 있어 스택이어야 한다. 콜백
+    /// 순서는 세 플랫폼 실측이 같다 (macOS·Linux 5.9/6.3: 선언을 실은 요소의
+    /// didStartElement보다 먼저 시작하고, 그 요소가 끝난 뒤 끝난다).
+    private var prefixBindings: [String: [String]] = [:]
     /// 첫 namespaced 요소보다 **앞서** 만들어진 무접두사 노드 수. 루트가
     /// 접두사를 선언만 하고 자신은 무접두사인 파트(`<head xmlns:hh="…">`)가
     /// 그렇다 — 생성 시점에는 파트가 namespace를 쓰는지 알 수 없으므로 그
@@ -44,7 +50,9 @@ final class HwpxXMLTreeParser: NSObject {
         let delegate = HwpxXMLTreeParser()
         let parser = XMLParser(data: data)
         parser.shouldProcessNamespaces = true
-        parser.shouldReportNamespacePrefixes = false
+        // 속성 승격 게이트가 접두사 바인딩을 요구한다 — 꺼 두면 매핑 콜백이
+        // 오지 않아 `hp:required-namespace`까지 승격이 전부 막힌다.
+        parser.shouldReportNamespacePrefixes = true
         parser.shouldResolveExternalEntities = false
         parser.delegate = delegate
         delegate.runningParser = parser
@@ -173,7 +181,8 @@ final class HwpxXMLTreeParser: NSObject {
         return false
     }
 
-    /// 접두사가 붙어도 승격하는 속성 — `hp:switch`의 분기 선택자 하나뿐이다.
+    /// 접두사가 붙어도 승격하는 속성 — `hp:switch`의 분기 선택자 하나뿐이고,
+    /// 접두사가 paragraph vocabulary에 바인딩됐을 때만 승격한다.
     static let prefixedAttributeAllowlist: Set<String> = ["required-namespace"]
 
     /// 프리플라이트가 훑는 인코딩 — XML 처리기가 반드시 받아야 하는 UTF-8과
@@ -265,19 +274,29 @@ extension HwpxXMLTreeParser: XMLParserDelegate {
         for (key, value) in attributeDict where !key.contains(":") {
             attributes[key] = value
         }
-        // 접두사 붙은 속성은 **허용 목록만** 승격한다 — 요소를 (namespace,
-        // local name)으로 엄격히 매칭하면서 속성만 접두사를 무시하면
-        // `<hp:p ext:pageBreak="true">`가 진짜 쪽 나누기로 읽힌다.
+        // 접두사 붙은 속성은 **허용 목록 이름이 paragraph vocabulary에
+        // 바인딩된 접두사로 올 때만** 승격한다 — 요소를 (namespace, local
+        // name)으로 엄격히 매칭하면서 속성만 접두사를 무시하면
+        // `<hp:p ext:pageBreak="true">`가 진짜 쪽 나누기로 읽히고, local
+        // name만 보는 허용 목록도 외래 바인딩 `ext:required-namespace`가
+        // 분기 선택자 행세를 해 위조 case가 default 분기를 대체한다.
         // 실물에서 접두사를 쓰는 OWPML 속성은 `hp:required-namespace`
-        // 하나다 (픽스처 290건·한컴 템플릿 227건; 그 밖은 우리가 읽지 않는
-        // `xml:space`뿐). 무접두사 키에 밀리는 것과 정렬 순회는 그대로 —
-        // 사전 순회는 실행마다 무작위라 비결정 파싱이 된다.
+        // 하나뿐이고 전수 paragraph 바인딩이다 (픽스처 290건·한컴 템플릿
+        // 227건; 그 밖은 우리가 읽지 않는 `xml:space`뿐). 게이트는 접두사
+        // 문자열이 아니라 바인딩이다 — 접두사는 문서마다 다를 수 있다.
+        // 무접두사 키에 밀리는 것과 정렬 순회는 그대로 — 사전 순회는
+        // 실행마다 무작위라 비결정 파싱이 된다.
         for (key, value) in attributeDict.sorted(by: { $0.key < $1.key })
             where key.contains(":")
         {
-            let localKey = key.split(separator: ":").last.map(String.init) ?? key
+            guard let separator = key.firstIndex(of: ":") else {
+                continue
+            }
+            let prefix = String(key[..<separator])
+            let localKey = String(key[key.index(after: separator)...])
             if Self.prefixedAttributeAllowlist.contains(localKey),
-               attributes[localKey] == nil
+               attributes[localKey] == nil,
+               prefixBindings[prefix]?.last == HwpxNamespace.paragraph
             {
                 attributes[localKey] = value
             }
@@ -314,6 +333,16 @@ extension HwpxXMLTreeParser: XMLParserDelegate {
         } else {
             stack[stack.count - 1].content.append(.element(finished))
         }
+    }
+
+    func parser(
+        _: XMLParser, didStartMappingPrefix prefix: String, toURI namespaceURI: String
+    ) {
+        prefixBindings[prefix, default: []].append(namespaceURI)
+    }
+
+    func parser(_: XMLParser, didEndMappingPrefix prefix: String) {
+        _ = prefixBindings[prefix]?.popLast()
     }
 
     func parser(_: XMLParser, foundCharacters string: String) {

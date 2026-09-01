@@ -407,6 +407,49 @@ final class HwpxXMLTreeParserTests: XCTestCase {
         expect(root.attributes["required-namespace"]) == "urn:x"
     }
 
+    func testForeignBoundSelectorAttributeIsNotPromoted() throws {
+        // 허용 목록이 이름만 보면 외래 vocabulary에 바인딩된
+        // ext:required-namespace가 승격되어 hp:switch 해소에서 위조 case가
+        // default 분기를 대체한다 — 요소 엄격 매칭과 같은 규약이다 (P2).
+        let root = try parse(
+            """
+            <case xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" \
+            xmlns:ext="urn:foreign" ext:required-namespace="urn:x"/>
+            """
+        )
+
+        expect(root.attributes["required-namespace"]).to(beNil())
+    }
+
+    func testSelectorAttributePromotionFollowsBindingNotPrefixSpelling() throws {
+        // 게이트는 바인딩이지 접두사 문자열이 아니다 — x:가 paragraph에
+        // 바인딩된 문서는 합법이고 hp: 관례와 같게 읽혀야 한다.
+        let root = try parse(
+            """
+            <case xmlns:x="http://www.hancom.co.kr/hwpml/2011/paragraph" \
+            x:required-namespace="urn:x"/>
+            """
+        )
+
+        expect(root.attributes["required-namespace"]) == "urn:x"
+    }
+
+    func testForeignBoundSelectorDoesNotChooseTheSwitchCase() throws {
+        // 종단 확인 — 외래 바인딩 선택자는 case를 고르지 못하고 default의
+        // 진짜 내용이 남는다.
+        let root = try parse(
+            "<hp:root xmlns:hp=\"http://www.hancom.co.kr/hwpml/2011/paragraph\" "
+                + "xmlns:ext=\"urn:foreign\"><hp:switch>"
+                + "<hp:case ext:required-namespace="
+                + "\"http://www.hancom.co.kr/hwpml/2016/HwpUnitChar\">"
+                + "<hp:forged/></hp:case>"
+                + "<hp:default><hp:real/></hp:default>"
+                + "</hp:switch></hp:root>"
+        )
+
+        expect(root.childElements.map(\.localName)) == ["real"]
+    }
+
     func testEntityDeclarationIsRejectedInUTF16Encodings() {
         // UTF-8 바이트만 훑으면 UTF-16 파트에서 스캔이 빗나가고, Linux는
         // 엔티티 콜백을 부르지 않아 참조 본문만 조용히 사라진다 (실측:

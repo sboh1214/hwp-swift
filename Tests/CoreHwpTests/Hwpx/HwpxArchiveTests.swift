@@ -233,6 +233,46 @@ final class HwpxArchiveTests: XCTestCase {
         })
     }
 
+    func testEntryOnAnotherDiskThrowsInvalidArchive() throws {
+        // EOCD 검사는 아카이브 수준 선언만 본다 — 엔트리 자신의 disk
+        // 선언(+34)이 다른 디스크를 가리키면 localHeaderOffset을 현재
+        // 바이트로 읽으면 안 되므로 같은 문구로 거부한다.
+        let data = try archivePatchingDirectoryEntryDisk(to: 1)
+
+        expect {
+            _ = try HwpxArchive(data: data)
+        }.to(throwError { error in
+            assertInvalidArchive(error, containing: "multi-disk")
+        })
+    }
+
+    func testEntryDiskZip64SentinelThrowsInvalidArchive() throws {
+        // 0xFFFF는 멀티 디스크 주장이 아니라 Zip64 extra field 위임 표식이다
+        // — EOCD sentinel과 같은 분류로 던진다.
+        let data = try archivePatchingDirectoryEntryDisk(to: 0xFFFF)
+
+        expect {
+            _ = try HwpxArchive(data: data)
+        }.to(throwError { error in
+            assertInvalidArchive(error, containing: "Zip64")
+        })
+    }
+
+    /// central directory 엔트리(PK\x01\x02)의 disk-number-start(+34)를
+    /// 조작한 단일 엔트리 아카이브.
+    private func archivePatchingDirectoryEntryDisk(to value: UInt16) throws -> Data {
+        var builder = ZipBuilder()
+        builder.entries = [.init(name: "a", content: Data("x".utf8), method: 0)]
+        var data = builder.build()
+        let signature: [UInt8] = [0x50, 0x4B, 0x01, 0x02]
+        let start = try XCTUnwrap(data.indices.first { index in
+            index + 4 <= data.endIndex && data[index ..< index + 4].elementsEqual(signature)
+        })
+        data[start + 34] = UInt8(value & 0xFF)
+        data[start + 35] = UInt8(value >> 8)
+        return data
+    }
+
     func testUnsupportedCompressionMethodThrowsInvalidArchive() throws {
         var builder = ZipBuilder()
         builder.entries = [

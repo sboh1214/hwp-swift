@@ -83,6 +83,14 @@ enum HwpxTableMapper {
                 cells.append(mapped)
             }
         }
+        // 행 범위(rowAddr+rowSpan vs 파싱된 행 수)는 검증하지 않는다 —
+        // 바이너리 경로(`HwpTableCellProperty`)와 동일한 관용이고, 모델은
+        // 주장을 UInt16 그대로 담아 변조가 없다. 존재하지 않는 행을 덮는
+        // 충실한 렌더는 정의상 없어 조판의 클램프·폴백(`HwpTableLayout
+        // .placement`, 셀은 절대 거부하지 않는다)이 유일한 렌더다. 여기서
+        // 거부하면 복구 모드가 표 내용 전체를 문단 placeholder로 소실시켜
+        // 모든 경우에 현행보다 나쁘다. 아래 colCnt 가드는 UInt16 표현 불가
+        // (클램프 = 조용한 변조)에만 발동하는 다른 계열이다.
         // colCnt가 셀 주소+span이 덮는 폭보다 작으면 (colCnt="0" 포함) 조판의
         // grid 가드가 셀을 거부하거나 표를 통째로 지운다 — 파싱 구조가 덮는
         // 폭 밑으로 내려가지 않게 올리고, 더 큰 선언은 그대로 믿는다.

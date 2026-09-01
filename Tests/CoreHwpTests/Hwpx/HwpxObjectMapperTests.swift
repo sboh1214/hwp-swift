@@ -176,6 +176,24 @@ final class HwpxObjectMapperTests: XCTestCase {
         expect(table.tableProperty.columnCount) == 5
     }
 
+    func testCellRowExtentBeyondParsedRowsIsMappedVerbatim() throws {
+        // 대조군 — 행 범위 초과(rowSpan=5, 실행 2행)는 **거부하지 않는다**.
+        // 모델은 주장을 UInt16 그대로 담고(변조 없음) 조판의 클램프·폴백에
+        // 위임한다 — 바이너리 경로와 동일한 관용이고, 거부하면 복구 모드에서
+        // 표 내용 전체가 문단 placeholder로 소실된다. colCnt 가드(표현 불가
+        // 전용)와 다른 계열임을 이 테스트가 고정한다.
+        let withOverspanningCell = tableXML.replacingOccurrences(
+            of: "<hp:cellSpan colSpan=\"2\" rowSpan=\"1\"/>",
+            with: "<hp:cellSpan colSpan=\"2\" rowSpan=\"5\"/>"
+        )
+        let table = try HwpxTableMapper.map(
+            try parse(withOverspanningCell), context: makeContext()
+        )
+
+        expect(table.tableProperty.rowCount) == 2
+        expect(table.cellArray[0].header.cellProperty?.rowSpan) == 5
+    }
+
     func testObjectCommonLookupsIgnoreOtherVocabularyDecoys() throws {
         // 진짜 앞의 hh:sz 디코이가 개체 크기를 대체하면 안 되고, 밀린
         // 디코이는 진단에 남아야 한다 (셀 조회 좁히기와 같은 술어 규칙).

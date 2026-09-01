@@ -305,11 +305,20 @@ private extension HwpxArchive {
         let nameLength = Int(try data.readLittleEndianUInt16(at: offset + 28))
         let extraLength = Int(try data.readLittleEndianUInt16(at: offset + 30))
         let commentLength = Int(try data.readLittleEndianUInt16(at: offset + 32))
+        let diskNumberStart = try data.readLittleEndianUInt16(at: offset + 34)
         let localHeaderOffset = try data.readLittleEndianUInt32(at: offset + 42)
         guard compressedSize != 0xFFFF_FFFF, uncompressedSize != 0xFFFF_FFFF,
-              localHeaderOffset != 0xFFFF_FFFF
+              localHeaderOffset != 0xFFFF_FFFF, diskNumberStart != 0xFFFF
         else {
             throw HwpError.invalidArchive(reason: "Zip64 archives are not supported")
+        }
+        // EOCD의 멀티 디스크 거부는 아카이브 수준 선언만 본다 — 엔트리가
+        // 스스로 다른 디스크 소속을 선언하면 localHeaderOffset은 그 디스크
+        // 기준이라 현재 바이트에서 읽으면 안 된다. 조용히 disk 0으로
+        // 재해석하지 않고 EOCD 경로와 같은 문구로 거부한다 (0xFFFF는 멀티
+        // 디스크 주장이 아니라 Zip64 위임 표식이라 위 가드가 먼저 잡는다).
+        guard diskNumberStart == 0 else {
+            throw HwpError.invalidArchive(reason: "multi-disk archives are not supported")
         }
 
         // 우변은 WORD 필드 3개 합(≤ 196,605)이라 오버플로할 수 없고, 좌변은
