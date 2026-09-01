@@ -40,6 +40,32 @@ import XCTest
             expect(result.string) == "가\u{A0}나\u{A0}다"
         }
 
+        func testControlSpacesKeepFixedWidthWhenOrdinarySpacesFollowTheFont() {
+            // '글꼴에 어울리는 빈칸'·워드 호환 문서에서는 보통 빈칸이 폰트 고유
+            // 폭으로 돌아간다 — 그때 고정폭 빈칸까지 글꼴을 따르면 이름과
+            // 모순이라, 제어 빈칸만 게이트 밖에서 0.5em을 유지해야 한다.
+            let font = CTFontCreateWithName("Helvetica" as CFString, 12, nil)
+            let attributed = NSMutableAttributedString(
+                string: "가 나\u{A0}다",
+                attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
+            )
+            HwpTextRunBuilder.applyFixedSpaceWidth(
+                to: attributed, includesOrdinarySpace: false
+            )
+
+            func advance(at location: Int) -> Double {
+                let piece = attributed.attributedSubstring(
+                    from: NSRange(location: location, length: 1)
+                )
+                return CTLineGetTypographicBounds(
+                    CTLineCreateWithAttributedString(piece), nil, nil, nil
+                )
+            }
+
+            expect(advance(at: 3)).to(beCloseTo(6.0, within: 0.01))
+            expect(advance(at: 1)).to(beLessThan(advance(at: 3)))
+        }
+
         func testControlSpacesReceiveTheFixedSpaceWidth() {
             // U+00A0으로 옮긴 30/31도 일반 공백과 같은 0.5em 보정을 받아야
             // 한다 — 빠지면 폰트 고유 advance에 머물러 그 문단만 좁게 조판된다.
@@ -48,7 +74,9 @@ import XCTest
                 string: "가 나\u{A0}다",
                 attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
             )
-            HwpTextRunBuilder.applyFixedSpaceWidth(to: attributed)
+            HwpTextRunBuilder.applyFixedSpaceWidth(
+                to: attributed, includesOrdinarySpace: true
+            )
 
             func advance(at location: Int) -> Double {
                 let piece = attributed.attributedSubstring(

@@ -187,4 +187,26 @@ final class HwpxObjectPositionTests: XCTestCase {
         )
         expect(table.tableProperty.columnCount) == 2
     }
+
+    func testObjectInstanceIdPrefersTheDeclaredInstid() throws {
+        // instid가 인스턴스 아이디다 — id는 OWPML 요소 식별자라 실물 그림
+        // 7개에서 값이 갈린다.
+        let withInstid = HwpxObjectFixture.pictureXML.replacingOccurrences(
+            of: "id=\"77\" zOrder=\"0\"",
+            with: "id=\"77\" instid=\"505652846\" zOrder=\"0\""
+        )
+        let picture = HwpxPictureMapper.map(
+            try HwpxObjectFixture.parse(withInstid),
+            context: HwpxObjectFixture.makeContext()
+        )
+        expect(picture.commonCtrlProperty?.instanceId) == 505_652_846
+
+        // 대조군: 표처럼 instid를 선언하지 않으면 id로 폴백한다 — 없애면
+        // 모든 표가 0이 되어 조판의 행 상한 버킷이 뭉개진다.
+        let table = try HwpxTableMapper.map(
+            HwpxObjectFixture.parse(HwpxObjectFixture.tableXML),
+            context: HwpxObjectFixture.makeContext()
+        )
+        expect(table.commonCtrlProperty.instanceId) == 123
+    }
 }

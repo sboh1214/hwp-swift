@@ -83,19 +83,23 @@ final class HwpxXMLTreeParser: NSObject {
     /// (실측: 픽스처 10종·한컴 번들 템플릿 전수에 DOCTYPE 0건).
     static func doctypeInternalSubsetFailure(in data: Data) -> String? {
         for encoding in PrologEncoding.allCases {
-            guard let doctype = data.range(of: encoding.encode("<!DOCTYPE")) else {
-                continue
+            let doctypeToken = encoding.encode("<!DOCTYPE")
+            let subsetToken = encoding.encode("[")
+            let endToken = encoding.encode(">")
+            // **모든** 매치를 훑는다 — 첫 매치만 보면 주석 속 가짜 DOCTYPE
+            // (`<!-- <!DOCTYPE fake> -->`)이 뒤따르는 진짜 선언을 가려,
+            // 서브셋 판정이 한 번도 그것에 닿지 못한다 (실측).
+            var searchStart = data.startIndex
+            while let doctype = data[searchStart...].range(of: doctypeToken) {
+                let rest = data[doctype.upperBound...]
+                let declarationEnd = rest.range(of: endToken)
+                if let subset = rest.range(of: subsetToken),
+                   declarationEnd.map({ subset.lowerBound < $0.lowerBound }) ?? true
+                {
+                    return "DOCTYPE internal subset is not supported"
+                }
+                searchStart = doctype.upperBound
             }
-            let rest = data[doctype.upperBound...]
-            guard let subset = rest.range(of: encoding.encode("[")) else {
-                continue
-            }
-            if let declarationEnd = rest.range(of: encoding.encode(">")),
-               declarationEnd.lowerBound < subset.lowerBound
-            {
-                continue
-            }
-            return "DOCTYPE internal subset is not supported"
         }
         return nil
     }

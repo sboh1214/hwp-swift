@@ -112,15 +112,20 @@ extension HwpTextRunBuilder {
     /// 꺼져 있으면 공백 advance를 폰트 고유 폭 대신 글자 크기의 1/2로 맞춘다.
     /// 실측 (2026-07-10 plain-text-minimal 실물 픽셀): 한글.app 공백 advance
     /// ≈ 0.5em, HCR Batang 고유 공백 ≈ 0.3em — 부족분을 kern으로 더한다.
-    static func applyFixedSpaceWidth(to attributed: NSMutableAttributedString) {
+    static func applyFixedSpaceWidth(
+        to attributed: NSMutableAttributedString,
+        includesOrdinarySpace: Bool
+    ) {
         let text = attributed.string as NSString
         var index = 0
         while index < text.length {
-            // U+00A0도 대상이다 — 묶음·고정폭 빈칸(30/31)이 이 문자로 오므로
-            // 일반 공백과 같은 0.5em 규칙을 받아야 한다. 빼면 폰트 고유
-            // advance(HCR Batang ≈ 0.3em)에 머물러 그 문단만 좁게 조판된다.
+            // U+00A0은 묶음·고정폭 빈칸(30/31)이 오는 자리다 — 보통 빈칸과
+            // 달리 문서 설정 게이트 **밖에서** 늘 0.5em으로 맞춘다:
+            // "고정폭" 빈칸의 폭이 글꼴에 따라 달라지면 이름과 모순이다.
+            // 묶음 빈칸(30)도 같은 문자로 접히므로 함께 따라간다 — 둘을
+            // 가르려면 별도 표식이 필요하고 그 판단은 실물 대조 항목이다.
             let unit = text.character(at: index)
-            if unit == 0x20 || unit == 0xA0 {
+            if unit == 0xA0 || (unit == 0x20 && includesOrdinarySpace) {
                 let attrs = attributed.attributes(at: index, effectiveRange: nil)
                 if let fontValue = attrs[kCTFontAttributeName as NSAttributedString.Key],
                    CFGetTypeID(fontValue as CFTypeRef) == CTFontGetTypeID()

@@ -450,4 +450,23 @@ final class HwpxXMLTreeParserTests: XCTestCase {
 
         expect(root.isNamed("head", in: HwpxNamespace.head)) == true
     }
+
+    func testFakeDoctypeInACommentDoesNotShadowTheRealOne() {
+        // 첫 매치만 보면 주석 속 가짜 DOCTYPE이 뒤따르는 진짜 선언을 가린다 —
+        // Linux는 엔티티 선언 콜백이 없어 이 우회가 곧 조용한 내용 치환이다.
+        let xml = "<?xml version=\"1.0\"?><!-- <!DOCTYPE fake> -->"
+            + "<!DOCTYPE doc [<!ENTITY custom \"SECRET\">]>"
+            + "<doc>before&custom;after</doc>"
+        expect {
+            _ = try HwpxXMLTreeParser.parse(
+                Data(xml.utf8), entry: "Contents/header.xml"
+            )
+        }.to(throwError { error in
+            guard case let HwpError.invalidXML(_, reason) = error else {
+                return fail("Expected invalidXML, got \(error)")
+            }
+            // 이름이 없으면 바이트 프리플라이트가 잡은 것이다 (델리게이트 아님).
+            expect(reason) == "DOCTYPE internal subset is not supported"
+        })
+    }
 }

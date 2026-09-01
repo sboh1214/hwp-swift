@@ -89,7 +89,15 @@ enum HwpxObjectCommonMapper {
         property.propertyInfo = info
         property.property = info.rawValue
         property.zOrder = node.int32Attribute("zOrder", default: 0)
-        property.instanceId = node.uint32Attribute("id", default: 0)
+        // 인스턴스 아이디는 `instid`다 — `id`는 OWPML 요소 식별자라 실물에서
+        // 값이 갈린다 (픽스처 그림 7개에서 서로 다르다). 표는 `instid`를
+        // 선언하지 않으므로 폴백이 필수다: 없애면 모든 표의 instanceId가 0이
+        // 되어 조판의 truncatedTableRowLimits 버킷이 뭉개진다.
+        if let declared = node.attribute("instid").flatMap(UInt32.init) {
+            property.instanceId = declared
+        } else {
+            property.instanceId = node.uint32Attribute("id", default: 0)
+        }
         return property
     }
 }

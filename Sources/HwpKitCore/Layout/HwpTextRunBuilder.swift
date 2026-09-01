@@ -393,10 +393,13 @@ extension HwpTextRunBuilder {
             string: chunk.text,
             attributes: chunkAttributes
         )
-        if !resolved.shape.property.doesAdjustBlank, !index.isCompatibilityDocument {
-            // 워드 호환 문서 (표 20)는 폰트 고유 공백 — 한글 문서만 0.5em
-            Self.applyFixedSpaceWidth(to: attributed)
-        }
+        // 워드 호환 문서 (표 20)와 '글꼴에 어울리는 빈칸'은 **보통 빈칸**만
+        // 폰트 고유 폭으로 돌린다 — 제어 빈칸은 그 게이트 밖이다.
+        Self.applyFixedSpaceWidth(
+            to: attributed,
+            includesOrdinarySpace: !resolved.shape.property.doesAdjustBlank
+                && !index.isCompatibilityDocument
+        )
         output.append(attributed)
     }
 
@@ -651,46 +654,6 @@ extension HwpTextRunBuilder {
             }
             return "\u{FFFC}"
         }
-    }
-
-    func symbolicTraits(for property: CoreHwp.HwpCharShapeProperty) -> CTFontSymbolicTraits {
-        var traits = CTFontSymbolicTraits()
-        if property.isBold {
-            traits.insert(.traitBold)
-        }
-        if property.isItalic {
-            traits.insert(.traitItalic)
-        }
-        return traits
-    }
-
-    func copy(_ font: CTFont, adding traits: CTFontSymbolicTraits) -> CTFont {
-        guard !traits.isEmpty else { return font }
-        if let descriptor = CTFontDescriptorCreateCopyWithSymbolicTraits(
-            CTFontCopyFontDescriptor(font),
-            traits,
-            traits
-        ) {
-            return CTFontCreateWithFontDescriptor(descriptor, CTFontGetSize(font), nil)
-        }
-        // 요청한 조합 페이스가 없는 폰트 (한글 명조 등): 볼드만 먼저 시도하고,
-        // 이탤릭은 기울임 매트릭스로 근사한다 (한글.app 동작).
-        var result = font
-        if traits.contains(.traitBold),
-           let boldDescriptor = CTFontDescriptorCreateCopyWithSymbolicTraits(
-               CTFontCopyFontDescriptor(result),
-               .traitBold,
-               .traitBold
-           )
-        {
-            result = CTFontCreateWithFontDescriptor(boldDescriptor, CTFontGetSize(result), nil)
-        }
-        if traits.contains(.traitItalic) {
-            var matrix = CTFontGetMatrix(result)
-            matrix.c += 0.22
-            result = CTFontCreateCopyWithAttributes(result, 0, &matrix, nil)
-        }
-        return result
     }
 
     func value<T>(at index: Int, in array: [T], default fallback: T) -> T {
