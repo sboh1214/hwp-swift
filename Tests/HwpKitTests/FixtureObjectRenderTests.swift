@@ -69,6 +69,23 @@ final class FixtureObjectRenderTests: XCTestCase {
         expect(image.frame.minY) < host.frame.maxY
     }
 
+    func testNooriPageNumbersHaveNoSideChar() async throws {
+        // pgnp 줄표 필드(표 147 4번째 WCHAR)가 0인 문서 — 한글.app은 "1"만 그린다 (#138).
+        // 쪽 크롬 블록은 쪽 번호뿐이라 페이지별 문자열이 그대로 쪽 번호다. 쪽수
+        // 자체는 결정론 resolver 스위트(testPageCountsMatchManifest·블록 스냅샷)가
+        // 핀하므로 여기서는 기본 resolver 아래 "번호만"이라는 성질만 본다.
+        // 매니페스트 visibleTextContains는 부분 문자열 검사라 본문 숫자와 섞여
+        // "1"·"2"·"3" 핀이 무의미하다 — 그래서 쪽 크롬 블록 등식으로 잠근다.
+        let document = try await loadFixture("noori")
+        let pageNumbers = document.pages.map { page in
+            page.blocks
+                .filter { $0.role == .pageChrome && $0.kind == .text }
+                .compactMap { $0.attributedString?.string }
+        }
+        expect(pageNumbers.count) >= 2
+        expect(pageNumbers) == document.pages.indices.map { ["\($0 + 1)"] }
+    }
+
     // MARK: - BinData (그림 3장)
 
     func testBinDataRendersThreeDistinctImageReferences() async throws {

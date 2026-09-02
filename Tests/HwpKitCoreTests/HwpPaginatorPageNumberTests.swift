@@ -48,6 +48,45 @@ import XCTest
             expect(self.pageNumberTexts(of: secondPage)).to(contain("-ii-"))
         }
 
+        func testPageNumberWithoutSideCharDrawsBareNumber() async throws {
+            // 줄표 필드(표 147 4번째 WCHAR)가 0이면 번호만 — noori 실측, 한글.app "1" (#138)
+            let paginator = try makePaginator(
+                firstParagraphControls: [
+                    .section(HwpSynthetic.sectionDef(pageHeight: 30000)),
+                    HwpSynthetic.pageNumberPositionControl(
+                        numberFormat: 0,
+                        displayPosition: 5,
+                        sideChar: nil
+                    ),
+                ]
+            )
+
+            let firstPage = try await paginator.page(at: 0)
+            let secondPage = try await paginator.page(at: 1)
+
+            expect(self.pageNumberTexts(of: firstPage)) == ["1"]
+            expect(self.pageNumberTexts(of: secondPage)) == ["2"]
+        }
+
+        func testPageNumberDecorationsTakePrecedenceOverSideChar() async throws {
+            // 앞/뒤 장식 문자가 있으면 줄표 필드 값과 무관하게 장식만 붙는다
+            let paginator = try makePaginator(
+                firstParagraphControls: [
+                    .section(HwpSynthetic.sectionDef(pageHeight: 30000)),
+                    HwpSynthetic.pageNumberPositionControl(
+                        numberFormat: 0,
+                        displayPosition: 5,
+                        headDecoration: "[",
+                        tailDecoration: "]",
+                        sideChar: "-"
+                    ),
+                ]
+            )
+
+            let firstPage = try await paginator.page(at: 0)
+            expect(self.pageNumberTexts(of: firstPage)) == ["[1]"]
+        }
+
         func testPageHideSuppressesPageNumberOnControlPage() async throws {
             // 첫 문단의 pghd (0x20)는 1페이지 쪽 번호만 감춘다 (헌법주석 표지 구조)
             let paginator = try makePaginator(

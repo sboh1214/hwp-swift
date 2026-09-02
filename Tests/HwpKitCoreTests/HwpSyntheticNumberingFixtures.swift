@@ -69,11 +69,14 @@ extension HwpSynthetic {
     /// 쪽 번호 위치 (pgNumPos, 표 147/148) 컨트롤.
     /// displayPosition: 0 없음, 1~3 위 (좌/중/우), 4~6 아래 (좌/중/우),
     /// 7/8 바깥쪽, 9/10 안쪽. numberFormat: 표 134 번호 모양.
+    /// sideChar: 줄표 필드(표 147 4번째 WCHAR, `unused`) — 한글 기본값 "-",
+    /// nil이면 0 (줄표 없음, noori 실측).
     static func pageNumberPositionControl(
         numberFormat: Int = 0,
         displayPosition: Int = 5,
         headDecoration: Character? = nil,
-        tailDecoration: Character? = nil
+        tailDecoration: Character? = nil,
+        sideChar: Character? = "-"
     ) -> CoreHwp.HwpCtrlId {
         var property = CoreHwp.HwpPageNumberPositionProperty()
         property.numberFormat = numberFormat
@@ -87,7 +90,7 @@ extension HwpSynthetic {
             userSymbol: 0,
             headDecoration: headDecoration?.utf16.first ?? 0,
             tailDecoration: tailDecoration?.utf16.first ?? 0,
-            unused: 0x2D,
+            unused: sideChar?.utf16.first ?? 0,
             unknown: 0,
             rawPayload: Data(),
             rawTrailing: Data(),

@@ -292,10 +292,14 @@ struct HwpPageChromeBuilder {
             decorationHead: position.headDecoration,
             decorationTail: position.tailDecoration
         )
-        // 장식 문자가 없으면 한글 기본 줄표 "- N -" (표 147의 '항상 -' 필드,
-        // 한글.app 실측: 장식 0인 헌법주석도 "- xi -"로 표시)
-        if position.headDecoration == 0, position.tailDecoration == 0 {
-            text = "- \(text) -"
+        // 앞/뒤 장식 문자가 없으면 줄표 필드(표 147 4번째 WCHAR)를 따른다. 공개
+        // 문서는 '항상 -'라 적지만 실물은 줄표 문자 또는 0이다 — 헌법주석은 0x2D라
+        // 한글.app 실측 "- xi -"처럼 감싸고, noori는 0이라 "1"만 그린다 (#138).
+        if position.headDecoration == 0, position.tailDecoration == 0,
+           position.unused != 0, let scalar = Unicode.Scalar(position.unused)
+        {
+            let sideChar = String(Character(scalar))
+            text = "\(sideChar) \(text) \(sideChar)"
         }
         let attributed = pageNumberAttributedString(text: text, alignment: placement.alignment)
         return AnyHwpBlock(

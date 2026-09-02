@@ -590,7 +590,7 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
 | text box | 검증 중: 한컴오피스 생성 가로 글상자의 `genShapeObject`, `rectangle` shape component, 내부 list/paragraph text, 미해석 rectangle detail raw payload 보존 기준 | `text-box` |
 | header/footer | 검증 중: 한컴오피스 생성 문서의 header/footer control count와 nested text 기준 | `header-footer` |
 | footnote/endnote | 검증 중: 한컴오피스 생성 문서의 footnote/endnote control count와 nested text 기준 | `footnote-endnote` |
-| page number | 검증 중: `pgnp` control의 property, 장식 문자 필드, raw payload 기준 | `noori` |
+| page number | 검증 중: `pgnp` control의 property, 앞/뒤 장식 문자·줄표 필드(4번째 WCHAR, `unused`), raw payload 기준. 줄표 필드가 0인 `noori`는 쪽 번호를 한글.app과 같이 "1"로 렌더한다 (#138) | `noori` |
 | large/legacy document | 검증 중: 41개 section, 14,000개 이상 nested paragraph, 7,000개 이상 control을 가진 HWP 5.0.2.2 문서 기준. 대표 fixture truncation/corruption 테스트에도 포함해 typed `HwpError` 반환을 확인 | `legacy-common-control-property` |
 | other known controls | 검증 중: `atno`, `nwno`, `pghd`, `idxm`, `tdut` raw payload/trailing bytes/unknown child records 기준. `pghd`는 raw bit field, `idxm`은 UTF-16LE 문자열 typed value까지 검증 | `legacy-common-control-property` |
 | columns | 검증 중: 다단 control과 DocInfo/document properties 기준 | `Column`, `noori` |

@@ -48,7 +48,8 @@ CoreHwp.HwpFile
         └─ per page (cacheCurrentPage)
             활성 머리말/꼬리말 밴드 반복 방출 (짝/홀 우선, pageHide 0x01/0x02 억제,
               자동 쪽 번호 (atno kind 0) 밴드는 논리 쪽 번호 치환 + 캐시 제외)
-            쪽 번호 방출 (표 147/148 위치·모양·장식, pageHide 0x20 억제)
+            쪽 번호 방출 (표 147/148 위치·모양·장식, 장식 없으면 줄표 필드(4번째
+              WCHAR `unused`)가 0이 아닐 때만 "- N -", pageHide 0x20 억제 — #138)
             HwpFootnoteLayout.place  # 각주 하단 배치, 넘침은 다음 페이지 이월
             HwpPaintListBuilder → HwpPaintList
         └─ 문서/구역 끝: HwpFootnoteLayout.placeFlow  # 미주 (표 134 bits 8-9)
