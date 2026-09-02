@@ -49,7 +49,7 @@ hwp-swift/
 | 기본 타입 확장 | `Sources/CoreHwp/Utils/Extensions/` |
 | 새 미지원 문서 종류 추가 | `Models/FileHeader/HwpFileProperty.swift`의 `unsupportedFeature`(비트 → 종류) + `HwpError.swift`의 `HwpUnsupportedFeature` → HwpKit의 `HwpUnsupportedDocumentKind` 매핑(`switch`가 모든 케이스를 나열하므로 새 종류가 누락되면 컴파일 오류가 발생한다) + `HwpDocumentLoadError.description` + `HwpDocumentLoaderTests.testErrorDescriptionsCoverEveryCase` 배열 + 픽스처 manifest `expectedError` (#117) |
 | 테스트 픽스처 추가 | 테스트 파일과 같은 폴더에 `.hwp` 배치 (`openHwp(#file, "name")` 사용). `Tests/CoreHwpTests/Fixtures/`에 넣으면 `HwpLayoutRenderParitySweepTests`가 자동으로 훑으므로 그쪽 실측 핀(문단 수·측정 수·컨테이너 수)을 함께 갱신한다 |
-| HWPX 픽스처 추가 | `Tests/CoreHwpTests/HwpxFixtures/<id>/` (`openHwpx` 사용, 별도 루트라 위 스윕 핀에 영향 없음 — `HwpxFixtures/README.md`의 생성 정책 참조) |
+| HWPX 픽스처 추가 | `Tests/CoreHwpTests/HwpxFixtures/<id>/` (`openHwpx` 사용, 별도 루트라 위 스윕 핀에는 영향 없음 — `HwpxFixtures/README.md`의 생성 정책 참조). 대신 **뷰어 계층 핀**이 걸린다: manifest에 `sourceHwpFixture`(HWP 쌍)와 `pageCount`+`pageCountSource`를 채운다 — `Tests/HwpKitTests/HwpxFixtureRenderTests.swift`가 파싱 가능한 픽스처 전부에 쪽수 핀과 출처를 **등식으로 강제**하므로 빠뜨리면 빨개진다 (`expectedError` 픽스처만 예외). 유실 가드용 하한(픽스처 10·가시 텍스트 8)은 함께 올린다 |
 | HWPX 매핑 확장 (요소 승격) | `Sources/CoreHwp/Hwpx/Owpml/HwpxControlMapper.swift` 분류표 + 대응 매퍼 (`Hwpx/AGENTS.md`의 불변식 준수) |
 | 새 공개 진입점 추가 | 해당 타깃의 `Sources/<타깃>/<타깃>.docc/<타깃>.md`에 있는 `## Topics`에도 등재한다. 누락해도 빌드가 성공하므로 CI에서는 감지하지 못한다(아래 "DocC 문서 사이트" 참고). |
 
@@ -310,7 +310,7 @@ PR은 실측 수치를 커밋 메시지에 기록한다.
 |--------|-----|--------|-----|
 | `FixtureRenderHashSnapshotTests` | 엄격·비이동 (전 픽스처 × 전 페이지 SHA-256) | `Snapshots/` **gitignore** | ✗ opt-in |
 | `FixturePreviewFidelityTests` | 정합성 (PrvImage 오라클) — **1쪽뿐** | 소스 상수 임계 | ✗ opt-in |
-| `FixtureBlockLayoutSnapshotTests`·`FixtureRenderGoldenTests`·`testPageCountsMatchManifest` | 관대·이동 가능 (좌표·잉크 그리드·페이지 수) | **커밋됨** | ✓ 상시 |
+| `FixtureBlockLayoutSnapshotTests`·`FixtureRenderGoldenTests`·`testPageCountsMatchManifest`·`HwpxFixtureRenderTests` | 관대·이동 가능 (좌표·잉크 그리드·페이지 수 — HWPX 쌍 포함) | **커밋됨** | ✓ 상시 |
 | `FixtureFootnoteOverlapTests` | 성질 (각주 스택 ∩ 본문 = ∅, 각주 ⊆ 종이, 각주 영역 상단 ≥ 본문 상단) | **커밋됨** (소스 상수) | ✓ 상시 |
 
 넷째 줄은 좌표를 기록하지 않고 **성질**을 검사한다 (#95) — 위 셋은 전부 "안
@@ -341,12 +341,15 @@ walker로 받는다)로 잰다 — 오버레이 개체는 블록을 키우지 �
 개선됨을 함께 보이고 근거를 소스 상수 옆에 남긴다** — 그러지 않으면 완화와
 구분되지 않는다.
 
-CI ✓인 네 스위트가 도는 근거는 전부 `HwpFontResolver.testDeterministic`
+CI ✓인 다섯 스위트가 도는 근거는 전부 `HwpFontResolver.testDeterministic`
 하나다 — 폰트 조회 세 축(시스템 등록 폰트·한컴 번들·문서 대체 글꼴)을 모두
-닫아 설치 폰트와 무관하게 같은 CTFont가 나온다. **이 스위트들의 로더를 기본
-resolver로 되돌리면 안 된다**: 좌표가 설치 폰트 메트릭의 함수가 되어
-한컴오피스가 없는 CI 러너와 갈리고, 굴림·바탕·함초롬체가 설치된 한국인 기여자
-머신에서만 빨개진다. **넷째 축은 대체 폰트다** — 세 축을 닫아 모든 face를 Menlo로
+닫아 설치 폰트와 무관하게 같은 CTFont가 나온다. `HwpxFixtureRenderTests`도
+쪽수 두 축(manifest 대조·HWP 쌍 대조)에서 그 resolver를 쓰고, 같은 클래스의
+가시 텍스트 축만 기본 resolver다 — 좌표가 아니라 문자열 포함만 보므로 폰트의
+함수가 아니다 (HWP 쪽 `testAllFixturesRenderExpectedText`와 같은 기준).
+**이 스위트들의 로더를 기본 resolver로 되돌리면 안 된다**: 좌표가 설치 폰트
+메트릭의 함수가 되어 한컴오피스가 없는 CI 러너와 갈리고, 굴림·바탕·함초롬체가
+설치된 한국인 기여자 머신에서만 빨개진다. **넷째 축은 대체 폰트다** — 세 축을 닫아 모든 face를 Menlo로
 보내도 Menlo가 못 가진 글자는 CoreText가 호스트 폰트 목록에서 고른다. 헌법주석은
 2,054자 중 1,929자(94%)가 Menlo 밖이라 사실상 조판 전체가 그 선택에 달려 있었고,
 로마숫자 `Ⅵ`가 러너마다 다른 폰트로 잡혀 블록 좌표 기준선이 CI에서 갈렸다(#95).
@@ -1081,15 +1084,19 @@ PR 리뷰를 반영하며 렌더링 코드를 수정할 때, 한글 파일 렌�
 2. **수정** — 관심사별 커밋 분리 (로직 / 기계적 포맷).
 3. **검증 (계층별)**
    - `swift test` — 환경 의존 2종(렌더 해시·fidelity)은 자동 skip. 커밋된
-     기준선을 쓰는 4종(블록 스냅샷·렌더 골든·페이지 수·각주 겹침)은 **여기서
-     돈다** — 그 실패는 환경 차이가 아니라 진짜 회귀다. 의도된 변경이면
-     `RECORD_BLOCK_SNAPSHOTS=1`·`RECORD_RENDER_GOLDENS=1`로 재기록하고
-     diff를 리뷰할 것 (레코딩은 의도적으로 실패한다). 각주 겹침만 레코딩이
-     없다 — 예산이 소스 상수라 손으로 고치고 **낮추는 방향만**이다 (올려서
-     통과시키면 그 스위트가 존재할 이유가 사라진다). 유일한 예외는 위 "렌더
-     가드 4층"의 정합성 수정 사례다.
+     기준선을 쓰는 5종(블록 스냅샷·렌더 골든·페이지 수·각주 겹침·HWPX 렌더
+     쪽수)은 **여기서 돈다** — 그 실패는 환경 차이가 아니라 진짜 회귀다.
+     의도된 변경이면 `RECORD_BLOCK_SNAPSHOTS=1`·`RECORD_RENDER_GOLDENS=1`로
+     재기록하고 diff를 리뷰할 것 (레코딩은 의도적으로 실패한다). **레코딩이
+     없는 축이 둘이고 손으로 고치는 규율이 서로 다르다**: 각주 겹침은 예산이
+     소스 상수라 **낮추는 방향만**이고(올려서 통과시키면 그 스위트가 존재할
+     이유가 사라진다 — 유일한 예외는 위 "렌더 가드 4층"의 정합성 수정 사례),
+     HWPX 쪽수는 기준선이 픽스처 `manifest.json`의 `pageCount`라 방향 제약은
+     없는 대신 **`pageCountSource`에 출처를 다시 적어야 한다**
+     (`Tests/CoreHwpTests/HwpxFixtures/README.md`). 그 값을 렌더 실측으로만
+     맞추면 HWP 쌍 대조 축까지 함께 움직여 두 축이 같은 회귀를 통과시킨다.
    - 같은 `swift test`에 **측정·렌더 등가 스윕**(`HwpLayoutRenderParitySweep`,
-     #80)도 들어 있다 — 위 4종과 축이 다르다. 렌더 산출물을 기준선과 대는 것이
+     #80)도 들어 있다 — 위 5종과 축이 다르다. 렌더 산출물을 기준선과 대는 것이
      아니라 **두 조판 경로가 같은 줄바꿈 코어를 쓰는지**를 픽스처 전체에서
      대조한다 (계약은 `Sources/HwpKitCore/AGENTS.md` "측정·렌더 공유 줄바꿈
      코어"). 그래서 실패의 뜻이 둘로 갈린다: 등가 위반 메시지가 뜨면 조판

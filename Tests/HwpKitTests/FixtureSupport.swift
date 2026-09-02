@@ -39,10 +39,24 @@ struct FixtureExpectations: Decodable {
     let visibleTextContains: [String]?
     /// 렌더 페이지 수 회귀 가드 (출처는 manifest의 pageCountSource 참조)
     let pageCount: Int?
+    /// `pageCount`의 출처 — 한글.app 실측인지 렌더 잠금인지. 핀이 있으면 비어
+    /// 있으면 안 된다 (`HwpxFixtures/README.md`).
+    let pageCountSource: String?
+}
+
+/// manifest 키의 **존재**만 기록한다 — 값의 형태(`expectedError`의 code·
+/// description 등)는 CoreHwpTests 하니스 몫이고 여기서는 "파싱 불가 픽스처인가"만
+/// 알면 된다.
+struct FixtureKeyPresence: Decodable {
+    init(from _: Decoder) throws {}
 }
 
 struct FixtureManifestLite: Decodable {
     let id: String
+    /// HWPX 픽스처만 — 등가 비교 축이 되는 원본 HWP fixture id (`Fixtures/<id>`).
+    let sourceHwpFixture: String?
+    /// 암호·배포용·DRM처럼 열 수 없는 픽스처의 표식 — 쪽수 핀 대상이 아니다.
+    let expectedError: FixtureKeyPresence?
     let expectations: FixtureExpectations
 }
 
@@ -51,21 +65,41 @@ struct FixtureCase {
     let documentURL: URL
     let expectedVisibleText: [String]
     let expectedPageCount: Int?
+    let expectedPageCountSource: String?
+    /// manifest에 `expectedError`가 있으면 true — 렌더 핀을 요구하지 않는다.
+    let hasExpectedError: Bool
+    /// HWPX 픽스처의 원본 HWP fixture id. HWP 픽스처는 nil.
+    let sourceHwpFixture: String?
 }
 
 enum FixtureRoot {
-    static func url(from location: String) -> URL {
+    /// `Tests/CoreHwpTests/<subdirectory>` — 기본은 HWP 픽스처 루트(`Fixtures`),
+    /// HWPX 변환 쌍은 별도 루트 `HwpxFixtures`다 (`Tests/CoreHwpTests/AGENTS.md`).
+    static func url(from location: String, subdirectory: String = "Fixtures") -> URL {
         var url = URL(fileURLWithPath: location).deletingLastPathComponent()
         while url.lastPathComponent != "Tests", url.path != "/" {
             url.deleteLastPathComponent()
         }
         return url
             .appendingPathComponent("CoreHwpTests")
-            .appendingPathComponent("Fixtures")
+            .appendingPathComponent(subdirectory)
     }
 
-    static func loadAllFixtures(from location: String) throws -> [FixtureCase] {
-        let root = url(from: location)
+    /// HWPX 픽스처(`HwpxFixtures/<id>/document.hwpx`). 로더는 포맷을 모른다 —
+    /// `HwpDocumentLoader` → `HwpFile` 선두 바이트 자동 감지로 열리므로 Sample 앱과
+    /// 같은 경로다.
+    static func loadAllHwpxFixtures(from location: String) throws -> [FixtureCase] {
+        try loadAllFixtures(
+            from: location, subdirectory: "HwpxFixtures", documentName: "document.hwpx"
+        )
+    }
+
+    static func loadAllFixtures(
+        from location: String,
+        subdirectory: String = "Fixtures",
+        documentName: String = "document.hwp"
+    ) throws -> [FixtureCase] {
+        let root = url(from: location, subdirectory: subdirectory)
         let dirs = try FileManager.default.contentsOfDirectory(
             at: root,
             includingPropertiesForKeys: [.isDirectoryKey]
@@ -78,7 +112,7 @@ enum FixtureRoot {
         return try dirs.compactMap { dir -> FixtureCase? in
             let id = dir.lastPathComponent
             let manifestURL = dir.appendingPathComponent("manifest.json")
-            let documentURL = dir.appendingPathComponent("document.hwp")
+            let documentURL = dir.appendingPathComponent(documentName)
             guard FileManager.default.fileExists(atPath: manifestURL.path),
                   FileManager.default.fileExists(atPath: documentURL.path)
             else { return nil }
@@ -89,7 +123,10 @@ enum FixtureRoot {
                 id: id,
                 documentURL: documentURL,
                 expectedVisibleText: manifest.expectations.visibleTextContains ?? [],
-                expectedPageCount: manifest.expectations.pageCount
+                expectedPageCount: manifest.expectations.pageCount,
+                expectedPageCountSource: manifest.expectations.pageCountSource,
+                hasExpectedError: manifest.expectedError != nil,
+                sourceHwpFixture: manifest.sourceHwpFixture
             )
         }
     }

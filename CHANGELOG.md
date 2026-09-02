@@ -14,7 +14,13 @@
   아카이브·XML은 새 `HwpError` 케이스(`invalidArchive`·
   `archiveEntryDoesNotExist`·`archiveEntrySizeLimitExceeded`·`invalidXML`)로
   보고됩니다. 암호화 HWPX(`META-INF/encryption.xml`)는 기존
-  `unsupportedFeature(.encryptedDocument)`로 거부됩니다.
+  `unsupportedFeature(.encryptedDocument)`로 거부됩니다. `.hwpx`를 파일
+  선택기·드롭에서 **고르게** 하는 것은 호스트 몫입니다 — `.hwpx` 콘텐츠
+  타입(imported UTI)을 `Info.plist`의 문서 타입에 선언하고
+  `fileImporter(allowedContentTypes:)`·드롭 허용 타입에 넣지 않으면 선택기가
+  `.hwpx`를 비활성화합니다. `Sample/`이 그 배선 예를 보입니다
+  (`project.yml`의 `dev.sboh.hwpx` 선언, `DropOpenSupport.swift`,
+  `ContentView.swift`).
 
 ## 0.17.0 (2026-08-28)
 

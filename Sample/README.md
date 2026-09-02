@@ -18,7 +18,7 @@
 | `HwpPageThumbnails` | 쪽 축소판 렌더러 (진행·취소·캐시) | 축소판 사이드바(`ThumbnailSidebar.swift`)가 이 하나로 만들어진다 |
 | `HwpPDFExporter` | PDF 내보내기 (진행률·취소) | 툴바 `PDF로 내보내기` / `인쇄` |
 
-- `.hwp` 파일을 사용자에게 선택받아 (`SwiftUI.fileImporter`) 위 컴포넌트로 렌더링/조작
+- `.hwp`/`.hwpx` 파일을 사용자에게 선택받아 (`SwiftUI.fileImporter`) 위 컴포넌트로 렌더링/조작 — 포맷 감지는 파서(`HwpFile`)가 한다
 - 최근 문서 목록 (#126) — 성공적으로 연 파일을 **보안 범위 북마크**로 기록해
   빈 상태에 목록으로 보인다 (경로 문자열로는 안 된다 — `fileImporter`가 준
   샌드박스 접근 권한이 프로세스와 함께 사라진다). 파싱에 실패한 파일은
@@ -107,11 +107,14 @@ Xcode에서 스킴 `HwpSwiftSample` 선택 → 대상 지정:
 
 앱이 실행되면 다음 중 하나로 파일 선택:
 
-- 빈 상태의 **"Open .hwp"** 버튼 클릭 (또는 Return 키)
+- 빈 상태의 **"Open .hwp / .hwpx"** 버튼 클릭 (또는 Return 키)
 - 우상단 툴바의 **"Open"** 버튼 (또는 Cmd+O)
 - 빈 상태의 **최근 문서** 목록에서 항목 클릭 (한 번이라도 성공적으로 연 파일이
   있을 때만 나타난다)
-- `.hwp` 파일을 창으로 **끌어다 놓기** (문서를 보는 중이면 그 파일로 교체)
+- `.hwp`/`.hwpx` 파일을 창으로 **끌어다 놓기** (문서를 보는 중이면 그 파일로 교체)
+- (시뮬레이터 QA) 앱 컨테이너 `Documents/document.hwp`(없으면 `document.hwpx`)가
+  있으면 시작 시 자동으로 연다 — 둘 다 있으면 `.hwp` 우선이므로 `.hwpx`를
+  검증할 때는 `document.hwp`를 치울 것
 
 문서가 로드되면 화면 상단에 다음 툴바가 나타남:
 
@@ -138,7 +141,7 @@ Xcode에서 스킴 `HwpSwiftSample` 선택 → 대상 지정:
   열린다(사용자 선택 자체는 덮어쓰지 않는다). 스크롤해서 화면 밖으로 나간 셀은
   요청을 **취소한다** — 디코드 슬롯이 문서 뷰와 공유되는 전역 3개라 그러지 않으면
   1,030쪽 문서에서 본문 스크롤이 눈에 띄게 느려진다
-- Re-open 클릭 시 다른 `.hwp` 파일로 교체
+- Re-open 클릭 시 다른 `.hwp`/`.hwpx` 파일로 교체
 - `찾기`(Cmd+F)는 검색 필드로 **포커스만** 옮긴다. 검색 바를 툴바 **안**에 넣지
   않은 이유는 `HwpDocumentToolbar`가 순수 `HStack`이라 가변 폭 필드가 iPhone
   폭에서 레이아웃을 무너뜨리기 때문 — 툴바 컴포넌트 자체는 고치지 않는다
@@ -195,9 +198,13 @@ Xcode에서 스킴 `HwpSwiftSample` 선택 → 대상 지정:
 
 저장소 안의 fixture로 스모크 테스트 가능:
 
-- `Tests/CoreHwpTests/Blank/Blank.hwp` — 빈 문서 (빈 페이지 1장)
+- `Tests/CoreHwpTests/Fixtures/blank-win2020/document.hwp` — 빈 문서 (빈 페이지 1장)
 - `Tests/CoreHwpTests/Fixtures/bookmark/document.hwp` — 텍스트/북마크 포함
-- `Tests/CoreHwpTests/Fixtures/**/*.hwp` — 그 밖의 fixture 목록
+- `Tests/CoreHwpTests/Fixtures/**/document.hwp` — 그 밖의 `.hwp` fixture 목록
+- `Tests/CoreHwpTests/HwpxFixtures/<id>/document.hwpx` — `.hwpx` fixture. 같은
+  `<id>`의 `Fixtures/<id>/document.hwp`를 한글.app에서 재저장한 쌍이라 두 파일을
+  나란히 열면 포맷 간 렌더 대조가 된다 (생성 정책은
+  `Tests/CoreHwpTests/HwpxFixtures/README.md`)
 
 ## CLI 빌드 검증
 
@@ -229,7 +236,7 @@ Sample/
 │   ├── HwpSwiftSampleApp.swift    # @main 진입점
 │   ├── ContentView.swift          # .fileImporter + HwpDocumentView + 검색·내보내기·사이드바 배선
 │   ├── RecentDocuments.swift      # 보안 범위 북마크 기반 최근 문서 저장소 (#126)
-│   ├── DropOpenSupport.swift      # 드롭 provider → .hwp URL (플랫폼별 경로) (#126)
+│   ├── DropOpenSupport.swift      # 드롭 provider → .hwp/.hwpx URL (플랫폼별 경로) (#126)
 │   ├── OutlineSidebar.swift       # metadata.outline만으로 만든 개요·책갈피 목록 (#77)
 │   ├── ThumbnailSidebar.swift     # HwpPageThumbnails만으로 만든 쪽 축소판 그리드 (#76)
 │   ├── UnsupportedElementsList.swift  # 미지원 요소 배너 + 목록 (#126)
@@ -261,6 +268,7 @@ SwiftUI 소스 파일 추가/삭제는 xcodegen이 디렉터리를 자동 스캔
 | Signing | Manual, ad-hoc identity (`-`) — "Sign to Run Locally" |
 | iOS Simulator | `CODE_SIGNING_ALLOWED=NO` |
 | Sandbox | ON (macOS) + `com.apple.security.files.user-selected.read-write` + `com.apple.security.print` + `com.apple.security.files.bookmarks.app-scope` |
+| 문서 타입 | imported UTI `dev.sboh.hwp`(`.hwp`) / `dev.sboh.hwpx`(`.hwpx`) — **둘 다 `public.data`에만 적합**. `.hwpx`는 ZIP이지만 `public.zip-archive`에 적합시키지 않는다 (근거는 `project.yml` 주석: iOS Files가 탭 시 압축을 풀고 macOS '다음으로 열기'에 Archive Utility가 낀다) |
 | SPM Product | `HwpKit`, `HwpKitCore` (부모 저장소 로컬 참조) |
 
 ## 문제 해결
@@ -275,8 +283,16 @@ rm -rf ~/Library/Developer/Xcode/DerivedData/HwpSwiftSample-*
 cd Sample && xcodebuild -project HwpSwiftSample.xcodeproj -resolvePackageDependencies
 ```
 
-**`.hwp` 파일을 열었는데 렌더링이 비어 있음**
-Blank fixture는 원래 빈 페이지. 다른 fixture(예: `Tests/CoreHwpTests/**/Read/*.hwp`)로 시도.
+**파일 선택기에서 `.hwpx`가 회색으로 비활성화됨 (또는 드롭이 거부됨)**
+파서는 포맷을 자동 감지하지만 선택기·드롭은 **콘텐츠 타입**으로 거른다. 세 곳이
+모두 있어야 한다 — `project.yml`의 `dev.sboh.hwpx` imported UTI 선언(+
+`CFBundleDocumentTypes` 항목), `ContentView.swift`의
+`fileImporter(allowedContentTypes:)`, `DropOpenSupport.acceptedTypes`.
+`project.yml`만 고치고 `xcodegen generate`를 안 돌리면 생성된 `Info.plist`가
+낡은 채로 남는다.
+
+**`.hwp`/`.hwpx` 파일을 열었는데 렌더링이 비어 있음**
+`blank-win2020` fixture는 `Fixtures/`(`.hwp`)·`HwpxFixtures/`(`.hwpx`) 양쪽 다 원래 빈 페이지. 다른 fixture(예: `Tests/CoreHwpTests/Fixtures/noori/document.hwp`, `Tests/CoreHwpTests/HwpxFixtures/noori/document.hwpx`)로 시도.
 
 **하이퍼링크 클릭 / 미지원 요소**
 하이퍼링크는 scheme 검증(`http`/`https`/`mailto`) 후 시스템 브라우저로 열리고,

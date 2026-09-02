@@ -1,6 +1,6 @@
 # ``HwpKit``
 
-HWP 문서를 표시하는 SwiftUI 뷰어 컴포넌트 모음입니다.
+HWP 문서(.hwp)와 HWPX 문서(.hwpx)를 표시하는 SwiftUI 뷰어 컴포넌트 모음입니다.
 
 ## Overview
 

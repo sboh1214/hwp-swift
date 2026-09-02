@@ -21,6 +21,8 @@
       "함초롬돋움",
       "함초롬바탕"
     ],
+    "pageCount": 1,
+    "pageCountSource": "한글.app 12.30.0 (6446) 실측 (2026-09-02, 사본 열람 상태바 1쪽) = HwpKit 렌더 (.testDeterministic) = HWP 쌍 쪽수",
     "pageDef": {
       "height": 84186,
       "marginBottom": 4252,

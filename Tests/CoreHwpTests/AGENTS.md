@@ -99,7 +99,10 @@ HWPX fixture는 **별도 루트** `Tests/CoreHwpTests/HwpxFixtures/<fixture-id>/
 서로 간섭하지 않는다. 로더는 `HwpxFixtureLoader`, 열기는
 `openHwpx(#file, "id")`(public 자동 감지 진입점 경유), 원본 HWP와의 파싱
 등가는 `HwpxHwpEquivalenceTests`가 `sourceHwpFixture` 링크로 비교한다. 생성
-정책은 `HwpxFixtures/README.md` 참조.
+정책은 `HwpxFixtures/README.md` 참조. 뷰어 계층 가드는
+`Tests/HwpKitTests/HwpxFixtureRenderTests.swift`다 — manifest `pageCount`를
+소비하고 HWP 쌍과 렌더 쪽수가 같은지 본다 (등가 스위트가 제외하는
+조판 캐시 `<hp:linesegarray>` 경로의 유일한 자동 회귀 가드).
 
 **픽스처 추가는 이 타깃 밖으로도 번진다** (#80). `HwpKitCoreTests`의
 `HwpLayoutRenderParitySweepTests`가 `Fixtures/*/document.hwp`를 **디렉터리에서
