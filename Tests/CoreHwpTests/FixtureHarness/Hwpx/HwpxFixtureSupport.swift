@@ -38,7 +38,8 @@ struct HwpxFixtureExpectations: Decodable {
     let tableCellCounts: [Int]?
     /// 그림 개체가 참조하는 BinItem id (문서 순서).
     let imageBinItemIds: [Int]?
-    /// 한글.app 실측 쪽수 (뷰어 QA에서 기록 — 아직 없으면 nil).
+    /// 뷰어 렌더 쪽수 핀 — 출처는 `pageCountSource`. 소비자는
+    /// `Tests/HwpKitTests/HwpxFixtureRenderTests`다 (이 타깃은 조판하지 않는다).
     let pageCount: Int?
     let pageCountSource: String?
 }

@@ -43,6 +43,8 @@ struct FixtureExpectations: Decodable {
 
 struct FixtureManifestLite: Decodable {
     let id: String
+    /// HWPX 픽스처만 — 등가 비교 축이 되는 원본 HWP fixture id (`Fixtures/<id>`).
+    let sourceHwpFixture: String?
     let expectations: FixtureExpectations
 }
 
@@ -51,21 +53,38 @@ struct FixtureCase {
     let documentURL: URL
     let expectedVisibleText: [String]
     let expectedPageCount: Int?
+    /// HWPX 픽스처의 원본 HWP fixture id. HWP 픽스처는 nil.
+    let sourceHwpFixture: String?
 }
 
 enum FixtureRoot {
-    static func url(from location: String) -> URL {
+    /// `Tests/CoreHwpTests/<subdirectory>` — 기본은 HWP 픽스처 루트(`Fixtures`),
+    /// HWPX 변환 쌍은 별도 루트 `HwpxFixtures`다 (`Tests/CoreHwpTests/AGENTS.md`).
+    static func url(from location: String, subdirectory: String = "Fixtures") -> URL {
         var url = URL(fileURLWithPath: location).deletingLastPathComponent()
         while url.lastPathComponent != "Tests", url.path != "/" {
             url.deleteLastPathComponent()
         }
         return url
             .appendingPathComponent("CoreHwpTests")
-            .appendingPathComponent("Fixtures")
+            .appendingPathComponent(subdirectory)
     }
 
-    static func loadAllFixtures(from location: String) throws -> [FixtureCase] {
-        let root = url(from: location)
+    /// HWPX 픽스처(`HwpxFixtures/<id>/document.hwpx`). 로더는 포맷을 모른다 —
+    /// `HwpDocumentLoader` → `HwpFile` 선두 바이트 자동 감지로 열리므로 Sample 앱과
+    /// 같은 경로다.
+    static func loadAllHwpxFixtures(from location: String) throws -> [FixtureCase] {
+        try loadAllFixtures(
+            from: location, subdirectory: "HwpxFixtures", documentName: "document.hwpx"
+        )
+    }
+
+    static func loadAllFixtures(
+        from location: String,
+        subdirectory: String = "Fixtures",
+        documentName: String = "document.hwp"
+    ) throws -> [FixtureCase] {
+        let root = url(from: location, subdirectory: subdirectory)
         let dirs = try FileManager.default.contentsOfDirectory(
             at: root,
             includingPropertiesForKeys: [.isDirectoryKey]
@@ -78,7 +97,7 @@ enum FixtureRoot {
         return try dirs.compactMap { dir -> FixtureCase? in
             let id = dir.lastPathComponent
             let manifestURL = dir.appendingPathComponent("manifest.json")
-            let documentURL = dir.appendingPathComponent("document.hwp")
+            let documentURL = dir.appendingPathComponent(documentName)
             guard FileManager.default.fileExists(atPath: manifestURL.path),
                   FileManager.default.fileExists(atPath: documentURL.path)
             else { return nil }
@@ -89,7 +108,8 @@ enum FixtureRoot {
                 id: id,
                 documentURL: documentURL,
                 expectedVisibleText: manifest.expectations.visibleTextContains ?? [],
-                expectedPageCount: manifest.expectations.pageCount
+                expectedPageCount: manifest.expectations.pageCount,
+                sourceHwpFixture: manifest.sourceHwpFixture
             )
         }
     }

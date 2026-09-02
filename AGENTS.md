@@ -310,7 +310,7 @@ PR은 실측 수치를 커밋 메시지에 기록한다.
 |--------|-----|--------|-----|
 | `FixtureRenderHashSnapshotTests` | 엄격·비이동 (전 픽스처 × 전 페이지 SHA-256) | `Snapshots/` **gitignore** | ✗ opt-in |
 | `FixturePreviewFidelityTests` | 정합성 (PrvImage 오라클) — **1쪽뿐** | 소스 상수 임계 | ✗ opt-in |
-| `FixtureBlockLayoutSnapshotTests`·`FixtureRenderGoldenTests`·`testPageCountsMatchManifest` | 관대·이동 가능 (좌표·잉크 그리드·페이지 수) | **커밋됨** | ✓ 상시 |
+| `FixtureBlockLayoutSnapshotTests`·`FixtureRenderGoldenTests`·`testPageCountsMatchManifest`·`HwpxFixtureRenderTests` | 관대·이동 가능 (좌표·잉크 그리드·페이지 수 — HWPX 쌍 포함) | **커밋됨** | ✓ 상시 |
 | `FixtureFootnoteOverlapTests` | 성질 (각주 스택 ∩ 본문 = ∅, 각주 ⊆ 종이, 각주 영역 상단 ≥ 본문 상단) | **커밋됨** (소스 상수) | ✓ 상시 |
 
 넷째 줄은 좌표를 기록하지 않고 **성질**을 검사한다 (#95) — 위 셋은 전부 "안
