@@ -132,7 +132,7 @@ SwiftUI 공개 API target. HwpKitNative 위에 `NSViewRepresentable` / `UIViewRe
 
 `Sample/HwpSwiftSample.xcodeproj` 는 xcodegen 산출 (`Sample/project.yml` 이 spec). SwiftPM 로컬 참조 `packages.hwp-swift.path: ..` (repo 루트). 재생성: `cd Sample && xcodegen generate`.
 
-Sandbox ON + entitlement 3종. `files.user-selected.read-write` — PDF 내보내기가 저장 패널로 고른 위치에 쓰므로 read-only로는 부족하다 (#74). `print` — `NSPrintOperation.run()` 의 Bool 이 취소와 실패를 구분하지 않아 사유를 올릴 수 없다. `files.bookmarks.app-scope` — 최근 문서(#126)가 **보안 범위 북마크**를 만들려면 파일 entitlement 만으로는 안 된다 (그쪽은 그 세션의 접근만 준다). 없으면 `bookmarkData(options: .withSecurityScope)` 가 **조용히 실패**해 목록이 영영 비어 있다 — 화면에 오류가 뜨지 않으므로 증상만으로는 배선 버그와 구분되지 않는다. 시뮬레이터 QA 는 `Documents/document.hwp` 자동 로드 (`.task` 훅).
+Sandbox ON + entitlement 3종. `files.user-selected.read-write` — PDF 내보내기가 저장 패널로 고른 위치에 쓰므로 read-only로는 부족하다 (#74). `print` — `NSPrintOperation.run()` 의 Bool 이 취소와 실패를 구분하지 않아 사유를 올릴 수 없다. `files.bookmarks.app-scope` — 최근 문서(#126)가 **보안 범위 북마크**를 만들려면 파일 entitlement 만으로는 안 된다 (그쪽은 그 세션의 접근만 준다). 없으면 `bookmarkData(options: .withSecurityScope)` 가 **조용히 실패**해 목록이 영영 비어 있다 — 화면에 오류가 뜨지 않으므로 증상만으로는 배선 버그와 구분되지 않는다. 시뮬레이터 QA 는 `Documents/document.hwp` → 없으면 `document.hwpx` 순으로 첫 존재 파일을 자동 로드 (`.task` 훅) — 둘 다 있으면 `.hwp` 가 이기므로 `.hwpx` 를 검증할 때는 `document.hwp` 를 먼저 치운다.
 
 내보내기는 **앱 임시 디렉터리에 먼저 쓰고** 그 파일을 `fileExporter`/인쇄로 넘긴다. 진행률·취소를 우리가 쥐어야 하고(1,030쪽이면 수 초), 사용자가 고른 위치에 직접 쓰면 취소 시 열리지 않는 부분 파일이 그 자리에 남기 때문이다. 저장 패널·인쇄는 진행 시트의 `onDismiss`에서 띄운다 — 두 모달을 같은 갱신 주기에 겹치면 두 번째 표시가 유실된다.
 

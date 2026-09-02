@@ -71,10 +71,11 @@ extension HwpDocumentLoadError: LocalizedError {
     }
 }
 
-/// HWP 파일(.hwp)을 읽어 화면에 그릴 수 있는 `HwpDocument`로 만드는 로더이며,
-/// HwpKit 사용의 시작점이다. URL·Data·FileWrapper를 받아 파싱과 조판을
-/// `HwpDocumentActor`를 통해 비동기로 수행하며, 하위 계층의 오류는
-/// `HwpDocumentLoadError`로 변환해 던진다. 큰 문서는 `loadUpdates(from:)`로
+/// HWP 파일(.hwp)과 HWPX 파일(.hwpx)을 읽어 화면에 그릴 수 있는 `HwpDocument`로
+/// 만드는 로더이며, HwpKit 사용의 시작점이다. 포맷은 CoreHwp의 `HwpFile`이 파일
+/// 선두 바이트로 자동 감지하므로 호출 측은 구분하지 않는다. URL·Data·FileWrapper를
+/// 받아 파싱과 조판을 `HwpDocumentActor`를 통해 비동기로 수행하며, 하위 계층의
+/// 오류는 `HwpDocumentLoadError`로 변환해 던진다. 큰 문서는 `loadUpdates(from:)`로
 /// 첫 페이지가 확정되는 즉시 중간 스냅샷을 받을 수 있다.
 public struct HwpDocumentLoader: Sendable {
     private let actor: HwpDocumentActor
