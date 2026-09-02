@@ -268,6 +268,7 @@ SwiftUI 소스 파일 추가/삭제는 xcodegen이 디렉터리를 자동 스캔
 | Signing | Manual, ad-hoc identity (`-`) — "Sign to Run Locally" |
 | iOS Simulator | `CODE_SIGNING_ALLOWED=NO` |
 | Sandbox | ON (macOS) + `com.apple.security.files.user-selected.read-write` + `com.apple.security.print` + `com.apple.security.files.bookmarks.app-scope` |
+| 문서 타입 | imported UTI `dev.sboh.hwp`(`.hwp`) / `dev.sboh.hwpx`(`.hwpx`) — **둘 다 `public.data`에만 적합**. `.hwpx`는 ZIP이지만 `public.zip-archive`에 적합시키지 않는다 (근거는 `project.yml` 주석: iOS Files가 탭 시 압축을 풀고 macOS '다음으로 열기'에 Archive Utility가 낀다) |
 | SPM Product | `HwpKit`, `HwpKitCore` (부모 저장소 로컬 참조) |
 
 ## 문제 해결
@@ -281,6 +282,14 @@ DerivedData의 패키지 캐시가 오래된 경우 발생. 초기화 후 다시
 rm -rf ~/Library/Developer/Xcode/DerivedData/HwpSwiftSample-*
 cd Sample && xcodebuild -project HwpSwiftSample.xcodeproj -resolvePackageDependencies
 ```
+
+**파일 선택기에서 `.hwpx`가 회색으로 비활성화됨 (또는 드롭이 거부됨)**
+파서는 포맷을 자동 감지하지만 선택기·드롭은 **콘텐츠 타입**으로 거른다. 세 곳이
+모두 있어야 한다 — `project.yml`의 `dev.sboh.hwpx` imported UTI 선언(+
+`CFBundleDocumentTypes` 항목), `ContentView.swift`의
+`fileImporter(allowedContentTypes:)`, `DropOpenSupport.acceptedTypes`.
+`project.yml`만 고치고 `xcodegen generate`를 안 돌리면 생성된 `Info.plist`가
+낡은 채로 남는다.
 
 **`.hwp`/`.hwpx` 파일을 열었는데 렌더링이 비어 있음**
 `blank-win2020` fixture는 `Fixtures/`(`.hwp`)·`HwpxFixtures/`(`.hwpx`) 양쪽 다 원래 빈 페이지. 다른 fixture(예: `Tests/CoreHwpTests/Fixtures/noori/document.hwp`, `Tests/CoreHwpTests/HwpxFixtures/noori/document.hwpx`)로 시도.
