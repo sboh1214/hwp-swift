@@ -35,6 +35,7 @@ var targets: [Target] = [
         ],
         exclude: [
             "AGENTS.md",
+            "Hwpx/AGENTS.md",
             "Models/Section/AGENTS.md",
             "Utils/AGENTS.md",
         ]
@@ -50,6 +51,7 @@ var targets: [Target] = [
         exclude: [
             "AGENTS.md",
             "Fixtures",
+            "HwpxFixtures",
         ]
     ),
     // 타깃 자체는 플랫폼과 무관하게 선언한다. Apple 빌드에서는 위 조건부

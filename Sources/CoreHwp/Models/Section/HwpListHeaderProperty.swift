@@ -57,6 +57,24 @@ extension HwpListHeaderProperty: HwpFromUInt {
 }
 
 extension HwpListHeaderProperty {
+    /// typed 필드에서 bit field를 되만든다 — **하위 레이아웃(bits 0-6)**에
+    /// 쓴다. 위 리더는 상위(bits 16-22)가 하나라도 0이 아닐 때만 상위를
+    /// 읽으므로, 하위에 쓰면 상위가 0이라 폴백이 걸려 그대로 되읽힌다.
+    /// 상위에 쓰면 "한/글 윈도우 저장본" 레이아웃을 자처하게 된다 —
+    /// HWPX는 어느 쪽도 아니므로 스펙 자리를 쓴다.
+    var synthesizedRawValue: UInt32 {
+        var raw: UInt32 = 0
+        var offset = 0
+        func put(_ value: Int, width: Int) {
+            raw |= UInt32(value & ((1 << width) - 1)) << offset
+            offset += width
+        }
+        put(textDirectionRawValue, width: 3)
+        put(textWrapRawValue, width: 2)
+        put(verticalAlignmentRawValue, width: 2)
+        return raw
+    }
+
     init() {
         rawValue = 0
         textDirectionRawValue = 0

@@ -99,6 +99,20 @@ public extension HwpBorderFill {
 }
 
 extension HwpBorderFill {
+    /// HWPX 매퍼 전용 init — 방향 순서는 표 25(왼쪽/오른쪽/위쪽/아래쪽)다.
+    init(hwpxBorders borders: [HwpBorderLine], fillInfo: [BYTE]) {
+        rawPayload = Data()
+        property = 0
+        borderLineArray = borders
+        borderType = borders.map(\.typeRawValue)
+        borderThickness = borders.map(\.thickness)
+        borderColor = borders.map(\.color)
+        diagonalType = 0
+        diagonalThickness = 0
+        diagonalColor = HwpColor()
+        self.fillInfo = fillInfo
+    }
+
     init(fillInfo: [BYTE]) {
         rawPayload = Data()
         property = 0

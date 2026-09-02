@@ -112,6 +112,41 @@ extension HwpCommonCtrlPropertyInfo: HwpFromUInt {
 }
 
 extension HwpCommonCtrlPropertyInfo {
+    /// typed 필드에서 bit field를 되만든다 — 위 `init(_ reader:)`의 읽기
+    /// 순서를 그대로 뒤집은 것이라 두 방향이 한 파일에서 대조된다
+    /// (LSB-first, `BitsReader` 규약).
+    ///
+    /// raw가 없는 합성 경로(HWPX)를 위한 것이다 — typed 필드만 채우면
+    /// `rawValue`/`property`가 0으로 남아 같은 모델 안에서 두 표현이
+    /// 어긋난다. 예약 비트(1, 29-31)는 되살릴 근거가 없어 0으로 둔다.
+    var synthesizedRawValue: UInt32 {
+        var raw: UInt32 = 0
+        var offset = 0
+        func put(_ value: Int, width: Int) {
+            raw |= UInt32(value & ((1 << width) - 1)) << offset
+            offset += width
+        }
+        put(treatAsChar ? 1 : 0, width: 1)
+        put(0, width: 1)
+        put(affectsLineSpacing ? 1 : 0, width: 1)
+        put(verticalRelativeToRawValue, width: 2)
+        put(verticalAlignmentRawValue, width: 3)
+        put(horizontalRelativeToRawValue, width: 2)
+        put(horizontalAlignmentRawValue, width: 3)
+        put(restrictInPage ? 1 : 0, width: 1)
+        put(allowOverlap ? 1 : 0, width: 1)
+        put(widthRelativeToRawValue, width: 3)
+        put(heightRelativeToRawValue, width: 2)
+        put(protectSizeInParagraphVertRelTo ? 1 : 0, width: 1)
+        put(textWrapRawValue, width: 3)
+        put(textFlowSideRawValue, width: 2)
+        put(numberingCategoryRawValue, width: 3)
+        return raw
+    }
+
+    /// 합성 raw가 표현하지 않는 자리 — 예약 비트 1과 29-31.
+    static let reservedRawValueMask: UInt32 = 0b1110_0000_0000_0000_0000_0000_0000_0010
+
     init() {
         rawValue = 0
         treatAsChar = false

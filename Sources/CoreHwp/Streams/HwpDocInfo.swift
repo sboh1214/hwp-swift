@@ -46,6 +46,31 @@ public struct HwpDocInfo: HwpFromDataWithVersion {
         compatibleDocument = HwpCompatibleDocument()
     }
 
+    /// HWPX 합성 전용 init — DocInfo stream이 없으므로 stream 파생 optional
+    /// (docData·배포·호환 문서·변경 추적)은 전부 부재로 둔다.
+    init(
+        hwpxDocumentProperties documentProperties: HwpDocumentProperties,
+        idMappings: HwpIdMappings,
+        unknownRecords: [HwpUnknownRecord],
+        rawPayload: Data
+    ) {
+        self.rawPayload = rawPayload
+        self.documentProperties = documentProperties
+        self.idMappings = idMappings
+        docData = nil
+        distributeDocData = nil
+        layoutCompatibility = nil
+        topLevelTrackChangeArray = []
+        trackChangeArray = idMappings.trackChangeArray
+        memoShapeArray = idMappings.memoShapeArray
+        trackChangeContentArray = idMappings.trackChangeContentArray
+        trackChangeAuthorArray = idMappings.trackChangeAuthorArray
+        topLevelForbiddenCharArray = []
+        forbiddenCharArray = idMappings.forbiddenCharArray
+        self.unknownRecords = unknownRecords
+        compatibleDocument = nil
+    }
+
     // MARK: loader contract exemption - DocInfo stream must be parsed as one record tree
 
     init(_ reader: inout DataReader, _ version: HwpVersion) throws {

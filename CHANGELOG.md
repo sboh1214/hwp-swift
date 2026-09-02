@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Added
+
+- **HWPX(OWPML) 문서를 읽습니다**. `HwpFile(fromPath:)`·`(fromData:)`·
+  `(fromWrapper:)`가 파일 선두 바이트로 HWP(OLE)/HWPX(ZIP)를 자동 감지해
+  같은 문서 모델로 변환하므로, 뷰어(`HwpKit`)는 코드 변경 없이 `.hwpx`를
+  렌더합니다. 1차 지원 범위는 본문 텍스트·글자/문단 모양·스타일·구역/쪽
+  설정·단·표·그림이며, 조판 캐시(`<hp:linesegarray>`)를 매핑해 한글.app과
+  같은 쪽나눔을 유지합니다. 범위 밖 요소는 `HwpFile.parseDiagnostics()`에
+  보고하고 건너뜁니다. ZIP 컨테이너는 외부 의존성 없이 읽으며, 잘못된
+  아카이브·XML은 새 `HwpError` 케이스(`invalidArchive`·
+  `archiveEntryDoesNotExist`·`archiveEntrySizeLimitExceeded`·`invalidXML`)로
+  보고됩니다. 암호화 HWPX(`META-INF/encryption.xml`)는 기존
+  `unsupportedFeature(.encryptedDocument)`로 거부됩니다.
+
 ## 0.17.0 (2026-08-28)
 
 ### Added

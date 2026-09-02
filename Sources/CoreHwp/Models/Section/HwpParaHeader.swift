@@ -54,6 +54,33 @@ public struct HwpParaHeader: HwpFromDataWithVersion {
         isTraceChange = 0
     }
 
+    /// HWPX 합성 전용 — 같은 패스에서 집계한 수치로 count 4종을 채워
+    /// `charCount == paraText.wcharCount` 등 문단 불변식이 구성상 성립한다.
+    init(
+        hwpxCharCount charCount: UInt32,
+        controlMask: UInt32,
+        paraShapeId: UInt16,
+        paraStyleId: UInt8,
+        columnType: UInt8,
+        charShapeInfoCount: UInt16,
+        alignInfoCount: UInt16,
+        paraId: UInt32,
+        isLastInList: Bool
+    ) {
+        rawPayload = Data()
+        self.isLastInList = isLastInList
+        self.charCount = charCount
+        self.controlMask = controlMask
+        self.paraShapeId = paraShapeId
+        self.paraStyleId = paraStyleId
+        self.columnType = columnType
+        self.charShapeInfoCount = charShapeInfoCount
+        rangeTagInfoCount = 0
+        self.alignInfoCount = alignInfoCount
+        self.paraId = paraId
+        isTraceChange = 0
+    }
+
     init(_ reader: inout DataReader, _ version: HwpVersion) throws {
         let startOffset = reader.byteOffset
         let value = try reader.read(UInt32.self)

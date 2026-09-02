@@ -93,6 +93,14 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
 harness에 추가하고, 단순히 "열린다"가 아니라 manifest 값과 실제 파싱 결과를
 비교한다. 저수준 corrupt/malformed regression만 synthetic data를 사용한다.
 
+HWPX fixture는 **별도 루트** `Tests/CoreHwpTests/HwpxFixtures/<fixture-id>/`
+(`document.hwpx` + `manifest.json` + `README.md`)를 쓴다 — 이 루트의 가드
+(`HwpxFixtureManifestTests`)와 아래 스윕 핀은 `document.hwp`/`.hwp`만 보므로
+서로 간섭하지 않는다. 로더는 `HwpxFixtureLoader`, 열기는
+`openHwpx(#file, "id")`(public 자동 감지 진입점 경유), 원본 HWP와의 파싱
+등가는 `HwpxHwpEquivalenceTests`가 `sourceHwpFixture` 링크로 비교한다. 생성
+정책은 `HwpxFixtures/README.md` 참조.
+
 **픽스처 추가는 이 타깃 밖으로도 번진다** (#80). `HwpKitCoreTests`의
 `HwpLayoutRenderParitySweepTests`가 `Fixtures/*/document.hwp`를 **디렉터리에서
 직접 훑어** 측정·렌더 등가를 대조하므로, 새 픽스처는 harness 등록 없이 자동으로
@@ -148,7 +156,7 @@ payload가 0xFFF 이상이면 size 비트가 level 필드로 넘쳐 헤더가 �
 
 - `Utils/Core/HwpErrorTests.swift`의
   `testRecoveryExemptSetCoversResourceLimitsAndUnsupportedFeature` — recovery-exempt
-  집합(`isRecoveryExempt`: 자원 한도 2종 + `unsupportedFeature`)을 `HwpError`
+  집합(`isRecoveryExempt`: 자원 한도 3종 + `unsupportedFeature`)을 `HwpError`
   **케이스 단위로** 고정한다. 새 error 케이스를 추가하면 이 스펙이 분류를
   강제한다 — **`invalidRecordTree`가 exempt로 새어 들면 여기서 빨개진다**
   (그 케이스를 비-exempt로 명시 단언).

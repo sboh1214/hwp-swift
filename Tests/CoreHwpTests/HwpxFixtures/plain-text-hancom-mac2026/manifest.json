@@ -1,0 +1,43 @@
+{
+  "id": "plain-text-hancom-mac2026",
+  "generationTool": "한컴오피스 한글 12.30.0 (6446) macOS",
+  "source": "기존 HWP fixture plain-text-hancom-mac2026의 document.hwp를 한글.app에서 열어 파일 > 다른 이름으로 저장하기 > 한글 표준 문서 (*.hwpx)로 재저장 (Claude Computer Use GUI 자동화)",
+  "owpmlVersion": "5.1.1.0",
+  "sourceHwpFixture": "plain-text-hancom-mac2026",
+  "features": [
+    "hwpx",
+    "derived-from-hwp",
+    "hancom-mac2026",
+    "paragraph-text",
+    "multi-paragraph",
+    "preview-text",
+    "preview-image"
+  ],
+  "expectations": {
+    "binDataCount": 0,
+    "borderFillCount": 2,
+    "charShapeCount": 7,
+    "faceNamesKorean": [
+      "함초롬돋움",
+      "함초롬바탕"
+    ],
+    "pageDef": {
+      "height": 84186,
+      "marginBottom": 4252,
+      "marginLeft": 8504,
+      "marginRight": 8504,
+      "marginTop": 5668,
+      "width": 59528
+    },
+    "paraShapeCount": 20,
+    "sectionCount": 1,
+    "sectionParagraphCounts": [
+      2
+    ],
+    "styleCount": 22,
+    "tabDefCount": 3,
+    "visibleTextContains": [
+      "CoreHwp Hancom macOS 2026 fixture."
+    ]
+  }
+}

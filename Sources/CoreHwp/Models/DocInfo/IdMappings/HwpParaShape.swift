@@ -121,6 +121,48 @@ public extension HwpParaShape {
 }
 
 extension HwpParaShape {
+    /// HWPX 매퍼 전용 전체 필드 init — 속성1 bit는 재합성한 값을 그대로 싣고
+    /// 5.0.2.5 이상 필드(속성3·lineSpacing2)까지 채운다.
+    init(
+        hwpxProperty1 property1: UInt32,
+        marginLeft: Int32,
+        marginRight: Int32,
+        indent: Int32,
+        paragraphSpacingTop: Int32,
+        paragraphSpacingBottom: Int32,
+        lineSpacing: Int32,
+        tabDefId: UInt16,
+        numberingOrBulletId: UInt16,
+        borderFillId: UInt16,
+        borderSpacingLeft: Int16,
+        borderSpacingRight: Int16,
+        borderSpacingTop: Int16,
+        borderSpacingBottom: Int16,
+        property3: UInt32,
+        lineSpacing2: UInt32
+    ) {
+        rawPayload = Data()
+        self.property1 = property1
+        property1Info = HwpParaShapeProperty1(rawValue: property1)
+        self.marginLeft = marginLeft
+        self.marginRight = marginRight
+        self.indent = indent
+        self.paragraphSpacingTop = paragraphSpacingTop
+        self.paragraphSpacingBottom = paragraphSpacingBottom
+        self.lineSpacing = lineSpacing
+        self.tabDefId = tabDefId
+        self.numberingOrBulletId = numberingOrBulletId
+        self.borderFillId = borderFillId
+        self.borderSpacingLeft = borderSpacingLeft
+        self.borderSpacingRight = borderSpacingRight
+        self.borderSpacingTop = borderSpacingTop
+        self.borderSpacingBottom = borderSpacingBottom
+        property2 = 0
+        self.property3 = property3
+        self.lineSpacing2 = lineSpacing2
+        unknown = nil
+    }
+
     public init() {
         rawPayload = Data()
         property1 = 0

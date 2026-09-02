@@ -112,11 +112,20 @@ extension HwpTextRunBuilder {
     /// 꺼져 있으면 공백 advance를 폰트 고유 폭 대신 글자 크기의 1/2로 맞춘다.
     /// 실측 (2026-07-10 plain-text-minimal 실물 픽셀): 한글.app 공백 advance
     /// ≈ 0.5em, HCR Batang 고유 공백 ≈ 0.3em — 부족분을 kern으로 더한다.
-    static func applyFixedSpaceWidth(to attributed: NSMutableAttributedString) {
+    static func applyFixedSpaceWidth(
+        to attributed: NSMutableAttributedString,
+        includesOrdinarySpace: Bool
+    ) {
         let text = attributed.string as NSString
         var index = 0
         while index < text.length {
-            if text.character(at: index) == 0x20 {
+            // U+00A0은 묶음·고정폭 빈칸(30/31)이 오는 자리다 — 보통 빈칸과
+            // 달리 문서 설정 게이트 **밖에서** 늘 0.5em으로 맞춘다:
+            // "고정폭" 빈칸의 폭이 글꼴에 따라 달라지면 이름과 모순이다.
+            // 묶음 빈칸(30)도 같은 문자로 접히므로 함께 따라간다 — 둘을
+            // 가르려면 별도 표식이 필요하고 그 판단은 실물 대조 항목이다.
+            let unit = text.character(at: index)
+            if unit == 0xA0 || (unit == 0x20 && includesOrdinarySpace) {
                 let attrs = attributed.attributes(at: index, effectiveRange: nil)
                 if let fontValue = attrs[kCTFontAttributeName as NSAttributedString.Key],
                    CFGetTypeID(fontValue as CFTypeRef) == CTFontGetTypeID()
@@ -128,7 +137,7 @@ extension HwpTextRunBuilder {
                     // 상대크기 170 줄 공백 = 1.7배)
                     let base = (attrs[HwpAttributedStringKey.spaceTargetSize]
                         as? NSNumber).map { CGFloat($0.doubleValue) }
-                    let kern = Self.fixedSpaceKern(for: font, targetEm: base)
+                    let kern = Self.fixedSpaceKern(for: font, targetEm: base, character: unit)
                     if abs(kern) > 0.01 {
                         attributed.addAttribute(
                             kCTKernAttributeName as NSAttributedString.Key,
@@ -144,8 +153,14 @@ extension HwpTextRunBuilder {
 
     /// 공백 글리프의 고유 advance와 0.5em 목표의 차 (폰트별 캐시 없이 즉석 계산 —
     /// CTFontGetAdvancesForGlyphs는 가볍고 chunk 단위로만 불린다)
-    static func fixedSpaceKern(for font: CTFont, targetEm: CGFloat? = nil) -> CGFloat {
-        var character: UniChar = 0x20
+    static func fixedSpaceKern(
+        for font: CTFont,
+        targetEm: CGFloat? = nil,
+        character: UniChar = 0x20
+    ) -> CGFloat {
+        // 보정 대상 문자 자신의 advance를 잰다 — U+0020으로 고정하면 고유
+        // advance가 다른 공백(U+00A0)에서 목표 폭이 어긋난다.
+        var character = character
         var glyph = CGGlyph()
         guard CTFontGetGlyphsForCharacters(font, &character, &glyph, 1) else { return 0 }
         var advance = CGSize.zero
@@ -162,4 +177,34 @@ extension HwpTextRunBuilder {
     static let superscriptBaselineRatio: CGFloat = 0.33
     /// 아래 첨자 베이스라인 하강 배율 (실물: 다음 줄 방향 ~0.35줄)
     static let subscriptBaselineRatio: CGFloat = 0.30
+}
+
+/// 그대로 디코드하면 안 되는 제어 문자 변환.
+extension HwpTextRunBuilder {
+    /// WCHAR를 그대로 디코드하면 안 되는 제어 문자의 표시 대체 텍스트.
+    ///
+    /// 묶음 빈칸(30)·고정폭 빈칸(31)은 U+001E/U+001F로 디코드되어 CoreText가
+    /// 폭 0으로 그린다 — 빈칸이 사라지고 줄바꿈이 달라진다. 두 포맷 공통
+    /// 경로다 (바이너리 `HwpParaText`의 default 분기와 HWPX의 nbSpace·fwSpace가
+    /// 같은 값을 낸다).
+    ///
+    /// 고정폭 빈칸의 "양쪽 정렬에서 늘어나지 않음"은 조판이 모델링하지
+    /// 않으므로 폭이 같은 U+00A0을 쓴다 — U+2007처럼 폭이 다른 문자를 쓰면
+    /// 실물보다 넓어진다.
+    ///
+    /// 하이픈(24, HWPX `<hp:hyphen/>`)은 아무것도 그리지 않는다 — 실측
+    /// (한글.app 12.30, 하이픈 유무 대조 문서): 줄 중간 글리프 없음·줄바꿈
+    /// 기회 없음·줄 끝 하이픈 없음·글자 수 미집계. U+00AD로 옮기면 실물에
+    /// 없는 줄바꿈 기회가 생기고, 그대로 두면 표시·복사 문자열에 U+0018이
+    /// 남는다.
+    static func controlText(_ unit: UInt16) -> String? {
+        switch unit {
+        case 24:
+            ""
+        case 30, 31:
+            "\u{00A0}"
+        default:
+            nil
+        }
+    }
 }

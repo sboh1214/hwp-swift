@@ -83,6 +83,44 @@ extension HwpCharShape: HwpFromDataWithVersion {
 }
 
 extension HwpCharShape {
+    /// HWPX 매퍼 전용 전체 필드 init — 바이너리 loader와 달리 버전 게이트가
+    /// 없으므로 5.0.3.0 이상 필드(borderFillId·strikethroughColor)까지 모두
+    /// 채운다 (합성 버전 5.1.1.0과 정합).
+    init(
+        hwpxFaceId faceId: [WORD],
+        faceScaleX: [UInt8],
+        faceSpacing: [Int8],
+        faceRelativeSize: [UInt8],
+        faceLocation: [Int8],
+        baseSize: Int32,
+        property: HwpCharShapeProperty,
+        shadowIntervalX: Int8,
+        shadowIntervalY: Int8,
+        faceColor: HwpColor,
+        underlineColor: HwpColor,
+        shadeColor: HwpColor,
+        shadowColor: HwpColor,
+        borderFillId: UInt16?,
+        strikethroughColor: HwpColor?
+    ) {
+        rawPayload = Data()
+        self.faceId = faceId
+        self.faceScaleX = faceScaleX
+        self.faceSpacing = faceSpacing
+        self.faceRelativeSize = faceRelativeSize
+        self.faceLocation = faceLocation
+        self.baseSize = baseSize
+        self.property = property
+        self.shadowIntervalX = shadowIntervalX
+        self.shadowIntervalY = shadowIntervalY
+        self.faceColor = faceColor
+        self.underlineColor = underlineColor
+        self.shadeColor = shadeColor
+        self.shadowColor = shadowColor
+        self.borderFillId = borderFillId
+        self.strikethroughColor = strikethroughColor
+    }
+
     public init() {
         self.init(
             faceId: [0, 0, 0, 0, 0, 0, 0],

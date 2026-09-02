@@ -21,6 +21,15 @@ public struct HwpDocumentProperties: HwpFromData {
         caratLocation = HwpCaratLocation()
     }
 
+    /// HWPX 합성 전용 — DOCUMENT_PROPERTIES record가 없으므로 구역 수와
+    /// 시작 번호만 싣고 캐럿 위치는 기본값이다.
+    init(hwpxSectionSize sectionSize: UInt16, startingIndex: HwpStartingIndex) {
+        rawPayload = Data()
+        self.sectionSize = sectionSize
+        self.startingIndex = startingIndex
+        caratLocation = HwpCaratLocation()
+    }
+
     init(_ reader: inout DataReader) throws {
         let startOffset = reader.byteOffset
         sectionSize = try reader.read(UInt16.self)

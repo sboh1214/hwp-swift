@@ -33,6 +33,10 @@ public enum HwpError: Error {
     case bytesAreNotEOF(modelName: String, remain: Int)
     case bitsAreNotEOF(modelName: String, remain: Int)
     case invalidRawValueForEnum(modelName: String, rawValue: Int)
+    case invalidArchive(reason: String)
+    case archiveEntryDoesNotExist(name: String)
+    case archiveEntrySizeLimitExceeded(name: String, limit: Int, actual: Int)
+    case invalidXML(entry: String, reason: String)
 }
 
 extension HwpError: CustomStringConvertible {
@@ -85,18 +89,28 @@ extension HwpError: CustomStringConvertible {
             "Bits are not EOF : \(remain) bits remain in \(modelName)"
         case let .invalidRawValueForEnum(modelName, rawValue):
             "Invalid rawValue : \(rawValue) for initiating enum : \(modelName)"
+        case let .invalidArchive(reason):
+            "Invalid HWPX archive: \(reason)"
+        case let .archiveEntryDoesNotExist(name):
+            "Archive entry '\(name)' does not exist"
+        case let .archiveEntrySizeLimitExceeded(name, limit, actual):
+            "Archive entry '\(name)' exceeded size limit: \(actual) bytes > \(limit) bytes"
+        case let .invalidXML(entry, reason):
+            "Invalid XML in archive entry '\(entry)': \(reason)"
         }
     }
 }
 
 extension HwpError {
     /// `HwpLoadOptions.recoverPartialContent`가 켜져도 placeholder로 삼키지
-    /// 않고 전파하는 오류 — 자원 한도 2종은 설정된 하드 한계이고,
+    /// 않고 전파하는 오류 — 자원 한도는 설정된 하드 한계이고
+    /// (`archiveEntrySizeLimitExceeded`는 HWPX 컨테이너의 같은 분류),
     /// `unsupportedFeature`는 뷰어가 그릴 수 있는 최소 전제다
     /// (`HwpFile`의 ViewText read 폴백과 같은 분류, P1).
     var isRecoveryExempt: Bool {
         switch self {
-        case .streamSizeLimitExceeded, .aggregateStreamSizeLimitExceeded, .unsupportedFeature:
+        case .streamSizeLimitExceeded, .aggregateStreamSizeLimitExceeded,
+             .archiveEntrySizeLimitExceeded, .unsupportedFeature:
             true
         default:
             false

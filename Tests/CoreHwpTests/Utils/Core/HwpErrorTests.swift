@@ -132,6 +132,12 @@ class HwpErrorTests: XCTestCase {
             HwpError.invalidDataLength(length: "-1").description,
             HwpError.unsupportedDataReadType(type: "UInt64").description,
             HwpError.unsupportedFeature(.encryptedDocument).description,
+            HwpError.invalidArchive(reason: "bad").description,
+            HwpError.archiveEntryDoesNotExist(name: "mimetype").description,
+            HwpError.archiveEntrySizeLimitExceeded(
+                name: "Contents/header.xml", limit: 1, actual: 2
+            ).description,
+            HwpError.invalidXML(entry: "Contents/header.xml", reason: "bad").description,
         ]
 
         for description in descriptions {
@@ -180,6 +186,7 @@ class HwpErrorTests: XCTestCase {
         let exempt: [HwpError] = [
             .streamSizeLimitExceeded(name: .bodyText, limit: 1, actual: 2),
             .aggregateStreamSizeLimitExceeded(name: .bodyText, limit: 1, actual: 2),
+            .archiveEntrySizeLimitExceeded(name: "Contents/section0.xml", limit: 1, actual: 2),
             .unsupportedFeature(.encryptedDocument),
         ]
         for error in exempt {
@@ -193,6 +200,9 @@ class HwpErrorTests: XCTestCase {
             .recordDoesNotExist(tag: 68),
             .truncatedData(expected: 4, actual: 1),
             .bytesAreNotEOF(modelName: "HwpParaRangeTag", remain: 1),
+            .invalidArchive(reason: "spec"),
+            .archiveEntryDoesNotExist(name: "Contents/section1.xml"),
+            .invalidXML(entry: "Contents/section0.xml", reason: "spec"),
         ]
         for error in recoverable {
             expect(error.isRecoveryExempt).to(

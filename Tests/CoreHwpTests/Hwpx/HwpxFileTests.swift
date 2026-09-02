@@ -1,0 +1,438 @@
+@testable import CoreHwp
+import Foundation
+import Nimble
+import XCTest
+
+/// `HwpFile` 진입점의 HWPX 자동 감지와 문서 조립 종단 경로.
+///
+/// 실픽스처 기반 기능 검증은 HwpxFixtures 하니스가 맡고, 여기서는 합성
+/// 아카이브로 라우팅·조립·복구·오류 표면을 고정한다.
+final class HwpxFileTests: XCTestCase {
+    private let versionXML = HwpxArchiveFixture.versionXML
+    private let manifestXML = HwpxArchiveFixture.manifestXML
+    private let headerXML = HwpxArchiveFixture.headerXML
+    private let sectionXML = HwpxArchiveFixture.sectionXML
+
+    private func makeArchive(
+        sectionXML: String? = nil,
+        includePreview: Bool = true,
+        includePreviewImage: Bool = false
+    ) -> Data {
+        var builder = ZipBuilder()
+        builder.entries = [
+            .init(
+                name: "mimetype",
+                content: Data("application/hwp+zip".utf8),
+                method: 0
+            ),
+            .init(name: "version.xml", content: Data(versionXML.utf8), method: 8),
+            .init(
+                name: "Contents/content.hpf", content: Data(manifestXML.utf8), method: 8
+            ),
+            .init(name: "Contents/header.xml", content: Data(headerXML.utf8), method: 8),
+            .init(
+                name: "Contents/section0.xml",
+                content: Data((sectionXML ?? self.sectionXML).utf8),
+                method: 8
+            ),
+            .init(name: "BinData/image1.png", content: Data("png-bytes".utf8), method: 0),
+        ]
+        if includePreview {
+            builder.entries.append(
+                .init(name: "Preview/PrvText.txt", content: Data("HWPX 본문".utf8), method: 0)
+            )
+        }
+        if includePreviewImage {
+            builder.entries.append(.init(
+                name: "Preview/PrvImage.png",
+                content: Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
+                method: 0
+            ))
+        }
+        return builder.build()
+    }
+
+    func testSpineSectionHrefOutsideTheConventionIsLoaded() throws {
+        // spine이 본문 순서의 정본이다 — 이름 관례로 거르면 관례 밖 경로에
+        // 둔 유효한 구역이 조용히 사라지고 "section0이 없다"로 실패한다.
+        // 동시에 spine 첫 itemref인 헤더는 구역이 아니어야 한다 (count == 1).
+        let manifest = manifestXML.replacingOccurrences(
+            of: "href=\"Contents/section0.xml\"", with: "href=\"Body/main.xml\""
+        )
+        var builder = ZipBuilder()
+        builder.entries = [
+            .init(name: "mimetype", content: Data("application/hwp+zip".utf8), method: 0),
+            .init(name: "version.xml", content: Data(versionXML.utf8), method: 8),
+            .init(name: "Contents/content.hpf", content: Data(manifest.utf8), method: 8),
+            .init(name: "Contents/header.xml", content: Data(headerXML.utf8), method: 8),
+            .init(name: "Body/main.xml", content: Data(sectionXML.utf8), method: 8),
+        ]
+
+        let hwp = try HwpFile(fromData: builder.build())
+
+        expect(hwp.sectionArray.count) == 1
+        expect(hwp.docInfo.documentProperties.sectionSize) == 1
+        expect(hwp.sectionArray[0].paragraph.isEmpty) == false
+    }
+
+    func testStaleConventionalSectionIsMergedBehindANonConventionalSpine() throws {
+        // 대조군 — 재포장 잔재(비관례 spine + 낡은 `Contents/section0.xml`)는
+        // spine 본문 **뒤에 붙는다**. 병합을 "spine이 비었을 때만"으로 좁히면
+        // 이 여분 구역은 사라지지만, 일부만 나열한 spine에서 실재 본문이
+        // 조용히 사라진다 (testSectionMissingFromPartialSpineIsStillLoaded와
+        // 짝) — 관측 가능한 여분보다 조용한 소실이 나쁘다는 판단을 고정한다.
+        let manifest = manifestXML.replacingOccurrences(
+            of: "href=\"Contents/section0.xml\"", with: "href=\"Body/main.xml\""
+        )
+        let stale = sectionXML.replacingOccurrences(of: "HWPX 본문", with: "낡은 구역")
+        var builder = ZipBuilder()
+        builder.entries = [
+            .init(name: "mimetype", content: Data("application/hwp+zip".utf8), method: 0),
+            .init(name: "version.xml", content: Data(versionXML.utf8), method: 8),
+            .init(name: "Contents/content.hpf", content: Data(manifest.utf8), method: 8),
+            .init(name: "Contents/header.xml", content: Data(headerXML.utf8), method: 8),
+            .init(name: "Body/main.xml", content: Data(sectionXML.utf8), method: 8),
+            .init(name: "Contents/section0.xml", content: Data(stale.utf8), method: 8),
+        ]
+
+        let hwp = try HwpFile(fromData: builder.build())
+
+        expect(hwp.sectionArray.count) == 2
+        expect(hwp.docInfo.documentProperties.sectionSize) == 2
+        // 순서까지 못박는다 — 선언 본문("HWPX 본문")이 앞, 잔재("낡은 구역")가
+        // 뒤다. count만 보면 병합을 prepend로 뒤집어도 초록인 채 문서 순서가
+        // 뒤집힌다.
+        expect(hwp.sectionArray[0].paragraph[0].paraText?.wcharCount) == 24
+        expect(hwp.sectionArray[1].paragraph[0].paraText?.wcharCount) == 22
+    }
+
+    func testMalformedResolvedPackageDocumentReportsItsOwnPath() {
+        // container.xml이 지목한 경로가 깨졌으면 진단이 그 경로를 가리켜야
+        // 한다 — 관례 경로를 적으면 존재하지도 않는 파일을 가리킨다.
+        let containerXML = """
+        <ocf:container \
+        xmlns:ocf="urn:oasis:names:tc:opendocument:xmlns:container">\
+        <ocf:rootfiles>\
+        <ocf:rootfile full-path="Package/main.hpf" \
+        media-type="application/hwpml-package+xml"/>\
+        </ocf:rootfiles></ocf:container>
+        """
+        var builder = ZipBuilder()
+        builder.entries = [
+            .init(name: "mimetype", content: Data("application/hwp+zip".utf8), method: 0),
+            .init(
+                name: "META-INF/container.xml", content: Data(containerXML.utf8), method: 8
+            ),
+            .init(name: "version.xml", content: Data(versionXML.utf8), method: 8),
+            .init(name: "Package/main.hpf", content: Data("<html/>".utf8), method: 8),
+        ]
+
+        expect {
+            _ = try HwpFile(fromData: builder.build())
+        }.to(throwError { error in
+            guard case let HwpError.invalidXML(entry, _) = error else {
+                return fail("Expected invalidXML, got \(error)")
+            }
+            expect(entry) == "Package/main.hpf"
+        })
+    }
+
+    func testPackageDocumentIsResolvedThroughContainerXML() throws {
+        // OCF에서 패키지 문서 경로의 정본은 container.xml의 rootfile이다 —
+        // 기본 경로만 보면 다시 포장한 유효 컨테이너를 거부한다.
+        let containerXML = """
+        <ocf:container \
+        xmlns:ocf="urn:oasis:names:tc:opendocument:xmlns:container">\
+        <ocf:rootfiles>\
+        <ocf:rootfile full-path="Package/main.hpf" \
+        media-type="application/hwpml-package+xml"/>\
+        </ocf:rootfiles></ocf:container>
+        """
+        // 낡은 관례 경로가 남아 있어도 선언이 이겨야 한다 — 이쪽은 BinData를
+        // 선언하지 않으므로 잘못 읽으면 binaryDataArray가 빈다.
+        let staleXML = manifestXML.replacingOccurrences(
+            of: "<opf:item id=\"image1\" href=\"BinData/image1.png\" media-type=\"image/png\"/>",
+            with: ""
+        )
+        var builder = ZipBuilder()
+        builder.entries = [
+            .init(name: "mimetype", content: Data("application/hwp+zip".utf8), method: 0),
+            .init(
+                name: "META-INF/container.xml", content: Data(containerXML.utf8), method: 8
+            ),
+            .init(name: "version.xml", content: Data(versionXML.utf8), method: 8),
+            .init(
+                name: "Contents/content.hpf", content: Data(staleXML.utf8), method: 8
+            ),
+            .init(name: "Package/main.hpf", content: Data(manifestXML.utf8), method: 8),
+            .init(name: "Contents/header.xml", content: Data(headerXML.utf8), method: 8),
+            .init(
+                name: "Contents/section0.xml", content: Data(sectionXML.utf8), method: 8
+            ),
+            .init(name: "BinData/image1.png", content: Data("png-bytes".utf8), method: 0),
+        ]
+
+        let hwp = try HwpFile(fromData: builder.build())
+
+        expect(hwp.sectionArray.count) == 1
+        expect(hwp.binaryDataArray.map(\.name)) == ["BIN0001.png"]
+    }
+
+    func testViewerOptionsGatePreviewPayloads() throws {
+        // .viewer의 상주 메모리 절감은 미리보기에도 걸려야 한다 — 바이너리
+        // 경로 패리티: text·format 판정은 남고 payload만 비운다.
+        let archive = makeArchive(includePreviewImage: true)
+
+        let viewer = try HwpFile(fromData: archive, options: .viewer)
+        expect(viewer.previewText.text) == "HWPX 본문"
+        expect(viewer.previewText.rawPayload).to(beEmpty())
+        expect(viewer.previewImage.format) == HwpPreviewImageFormat.png
+        expect(viewer.previewImage.image).to(beEmpty())
+        expect(viewer.previewImage.rawPayload).to(beEmpty())
+
+        let preserved = try HwpFile(fromData: archive)
+        expect(preserved.previewText.rawPayload).toNot(beEmpty())
+        expect(preserved.previewImage.rawPayload).toNot(beEmpty())
+    }
+
+    func testLoadsHwpxFromDataWithAutoDetection() throws {
+        let hwp = try HwpFile(fromData: makeArchive())
+
+        expect(hwp.fileHeader.version) == HwpVersion(5, 1, 1, 0)
+        expect(hwp.sectionArray.count) == 1
+        expect(hwp.viewSectionArray).to(beEmpty())
+        expect(hwp.displaySectionArray.count) == 1
+        expect(hwp.docInfo.documentProperties.sectionSize) == 1
+        expect(hwp.docInfo.idMappings.charShapeArray.count) == 1
+        expect(hwp.docInfo.idMappings.binDataArray.count) == 1
+        expect(hwp.binaryDataArray.map(\.name)) == ["BIN0001.png"]
+        expect(hwp.previewText.text) == "HWPX 본문"
+
+        let paragraph = hwp.sectionArray[0].paragraph[0]
+        let ctrls = try XCTUnwrap(paragraph.ctrlHeaderArray)
+        guard case .section = ctrls.first else {
+            return fail("Expected leading .section control, got \(ctrls)")
+        }
+        // 본문 텍스트가 WCHAR 스트림에 실려 있다: ext2 + ext2 + "HWPX 본문" + 13.
+        expect(paragraph.paraText?.wcharCount) == 8 + 8 + 7 + 1
+    }
+
+    func testLoadsHwpxFromPathAndWrapper() throws {
+        let archive = makeArchive()
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("hwpx-e2e-\(UUID().uuidString).hwpx")
+        try archive.write(to: url)
+        defer {
+            do {
+                try FileManager.default.removeItem(at: url)
+            } catch {
+                // 임시 파일 정리 실패는 테스트 결과와 무관하다.
+            }
+        }
+
+        let fromPath = try HwpFile(fromPath: url.path)
+        expect(fromPath.sectionArray.count) == 1
+
+        let fromWrapper = try HwpFile(
+            fromWrapper: FileWrapper(regularFileWithContents: archive)
+        )
+        expect(fromWrapper.sectionArray.count) == 1
+        expect(fromPath) == fromWrapper
+    }
+
+    func testNonZipInputKeepsExistingOLEErrorSurface() {
+        expect {
+            _ = try HwpFile(fromData: Data("definitely not a container".utf8))
+        }.to(throwError { error in
+            guard case HwpError.invalidOLEFile = error else {
+                return fail("Expected invalidOLEFile, got \(error)")
+            }
+        })
+    }
+
+    func testForeignZipIsRejectedAtContainerGate() {
+        var builder = ZipBuilder()
+        builder.entries = [
+            .init(
+                name: "mimetype",
+                content: Data("application/vnd.oasis.opendocument.text".utf8),
+                method: 0
+            ),
+        ]
+
+        expect {
+            _ = try HwpFile(fromData: builder.build())
+        }.to(throwError { error in
+            guard case let HwpError.invalidArchive(reason) = error else {
+                return fail("Expected invalidArchive, got \(error)")
+            }
+            expect(reason).to(contain("unexpected mimetype"))
+        })
+    }
+
+    func testBrokenSectionFailsFastByDefaultAndRecoversInViewerMode() throws {
+        let archive = makeArchive(sectionXML: "<hs:sec xmlns:hs=\"urn:x\"><broken")
+
+        expect {
+            _ = try HwpFile(fromData: archive)
+        }.to(throwError { error in
+            guard case HwpError.invalidXML = error else {
+                return fail("Expected invalidXML, got \(error)")
+            }
+        })
+
+        // 복구 모드 — 구역 수를 보존한 placeholder로 강등되고 문서는 열린다.
+        let recovered = try HwpFile(fromData: archive, options: .viewer)
+        expect(recovered.sectionArray.count) == 1
+        expect(recovered.sectionArray[0].parseFailure).notTo(beNil())
+    }
+
+    func testMissingHeaderEntryThrowsTypedError() {
+        var builder = ZipBuilder()
+        builder.entries = [
+            .init(name: "mimetype", content: Data("application/hwp+zip".utf8), method: 0),
+            .init(
+                name: "Contents/content.hpf", content: Data(manifestXML.utf8), method: 8
+            ),
+        ]
+
+        expect {
+            _ = try HwpFile(fromData: builder.build())
+        }.to(throwError { error in
+            guard case let HwpError.archiveEntryDoesNotExist(name) = error else {
+                return fail("Expected archiveEntryDoesNotExist, got \(error)")
+            }
+            expect(name) == "Contents/header.xml"
+        })
+    }
+
+    func testSectionMissingFromPartialSpineIsStillLoaded() throws {
+        // spine이 실재 구역을 빠뜨리면 그 구역이 조용히 사라진다 — spine
+        // 순서를 유지하고 누락분을 숫자 순으로 병합해야 한다.
+        var builder = ZipBuilder()
+        builder.entries = [
+            .init(name: "mimetype", content: Data("application/hwp+zip".utf8), method: 0),
+            .init(name: "version.xml", content: Data(versionXML.utf8), method: 8),
+            .init(
+                name: "Contents/content.hpf", content: Data(manifestXML.utf8), method: 8
+            ),
+            .init(name: "Contents/header.xml", content: Data(headerXML.utf8), method: 8),
+            .init(
+                name: "Contents/section0.xml", content: Data(sectionXML.utf8), method: 8
+            ),
+            // spine·manifest에 없는 실재 구역.
+            .init(
+                name: "Contents/section1.xml", content: Data(sectionXML.utf8), method: 8
+            ),
+        ]
+
+        let hwp = try HwpFile(fromData: builder.build())
+
+        expect(hwp.sectionArray.count) == 2
+        expect(hwp.docInfo.documentProperties.sectionSize) == 2
+    }
+
+    func testParseDiagnosticsReportDegradedHwpxElements() throws {
+        let section = """
+        <hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" \
+        xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">\
+        <hp:p id="1" paraPrIDRef="0" styleIDRef="0">\
+        <hp:run charPrIDRef="0"><hp:secPr id=""/>\
+        <hp:ctrl><hp:header id="9"/></hp:ctrl><hp:t>가</hp:t>\
+        </hp:run></hp:p></hs:sec>
+        """
+        let hwp = try HwpFile(fromData: makeArchive(sectionXML: section))
+
+        let diagnostics = hwp.parseDiagnostics()
+        // 머리말 강등: notImplementedControl(실제 4CC)과 합성 tagId(0)의
+        // unknownRecord 쌍으로 이중 보고된다.
+        expect(diagnostics.contains { diagnostic in
+            diagnostic.kind == .notImplementedControl
+                && diagnostic.ctrlId == HwpOtherCtrlId.header.rawValue
+        }) == true
+        expect(diagnostics.contains { diagnostic in
+            diagnostic.kind == .unknownRecord && diagnostic.tagId == hwpxSyntheticTagId
+        }) == true
+    }
+
+    func testMissingSectionEntryFailsFastByDefaultAndRecoversInViewerMode() throws {
+        // manifest spine은 section0을 가리키는데 아카이브에 그 entry가 없다.
+        var builder = ZipBuilder()
+        builder.entries = [
+            .init(name: "mimetype", content: Data("application/hwp+zip".utf8), method: 0),
+            .init(name: "version.xml", content: Data(versionXML.utf8), method: 8),
+            .init(
+                name: "Contents/content.hpf", content: Data(manifestXML.utf8), method: 8
+            ),
+            .init(name: "Contents/header.xml", content: Data(headerXML.utf8), method: 8),
+        ]
+        let archive = builder.build()
+
+        expect {
+            _ = try HwpFile(fromData: archive)
+        }.to(throwError { error in
+            guard case let HwpError.archiveEntryDoesNotExist(name) = error else {
+                return fail("Expected archiveEntryDoesNotExist, got \(error)")
+            }
+            expect(name) == "Contents/section0.xml"
+        })
+
+        let recovered = try HwpFile(fromData: archive, options: .viewer)
+        expect(recovered.sectionArray.count) == 1
+        expect(recovered.sectionArray[0].parseFailure).notTo(beNil())
+    }
+
+    func testCorruptSectionDeflateFailsFastByDefaultAndRecoversInViewerMode() throws {
+        var builder = ZipBuilder()
+        builder.entries = [
+            .init(name: "mimetype", content: Data("application/hwp+zip".utf8), method: 0),
+            .init(name: "version.xml", content: Data(versionXML.utf8), method: 8),
+            .init(
+                name: "Contents/content.hpf", content: Data(manifestXML.utf8), method: 8
+            ),
+            .init(name: "Contents/header.xml", content: Data(headerXML.utf8), method: 8),
+            .init(
+                name: "Contents/section0.xml",
+                content: Data(sectionXML.utf8),
+                method: 8,
+                storedPayload: Data([0xDE, 0xAD, 0xBE, 0xEF])
+            ),
+        ]
+        let archive = builder.build()
+
+        expect { _ = try HwpFile(fromData: archive) }.to(throwError { error in
+            expect(error is HwpError) == true
+        })
+
+        let recovered = try HwpFile(fromData: archive, options: .viewer)
+        expect(recovered.sectionArray.count) == 1
+        expect(recovered.sectionArray[0].parseFailure).notTo(beNil())
+    }
+
+    func testRecoveryExemptSectionEntryErrorStillFailsInViewerMode() {
+        // 자원 한도(exempt)는 구역 entry 읽기가 복구 경계 안이어도 전파된다.
+        var builder = ZipBuilder()
+        builder.entries = [
+            .init(name: "mimetype", content: Data("application/hwp+zip".utf8), method: 0),
+            .init(name: "version.xml", content: Data(versionXML.utf8), method: 8),
+            .init(
+                name: "Contents/content.hpf", content: Data(manifestXML.utf8), method: 8
+            ),
+            .init(name: "Contents/header.xml", content: Data(headerXML.utf8), method: 8),
+            .init(
+                name: "Contents/section0.xml",
+                content: Data(sectionXML.utf8),
+                method: 8,
+                declaredUncompressedSize: 0xFFFF_FFFE
+            ),
+        ]
+
+        expect {
+            _ = try HwpFile(fromData: builder.build(), options: .viewer)
+        }.to(throwError { error in
+            guard let hwpError = error as? HwpError, hwpError.isRecoveryExempt else {
+                return fail("Expected recovery-exempt error, got \(error)")
+            }
+        })
+    }
+}
