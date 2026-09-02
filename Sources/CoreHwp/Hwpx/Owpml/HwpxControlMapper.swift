@@ -61,7 +61,7 @@ enum HwpxControlMapper {
             // 쪽 번호 위치(표 147/148) — 구역 부속 컨트롤(코드 21) 중 유일한
             // typed 승격. 조판이 `.pageNumberPosition`만 등록하므로 강등 상태로는
             // 쪽 번호가 그려지지 않는다 (#135).
-            return HwpxPageNumberMapper.anchor(node, maxDepth: context.unknownDepthLimit)
+            return HwpxPageNumberMapper.anchor(node, context: context)
         case "tbl":
             return .anchor(
                 code: 11,

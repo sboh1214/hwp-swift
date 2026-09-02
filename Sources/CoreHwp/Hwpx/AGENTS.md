@@ -81,8 +81,15 @@ HWPX `<hh:strikeout>`)을 .hwp는 글자 아래 단선으로, .hwpx는 글자 �
 `HwpxNumberFormatMapper` — `hh:paraHead numFormat`·`hp:autoNumFormat type`도
 같은 NumberType1 열거라 승격 시 재사용), `sideChar` → 4번째 WCHAR `unused`
 (줄표 문자, #138 — 빈 문자열 0, 두 글자 이상은 첫 UTF-16 unit). 앞/뒤 장식
-문자·사용자 기호는 HWPX에 대응 속성이 없어 0. 조판(`HwpPageChromeBuilder`)은
-typed 필드만 읽으므로 표 147 16바이트 payload 합성은 진단·매니페스트 등식용이다.
+문자·사용자 기호는 HWPX에 대응 속성이 없어 0. 생략 속성은 OWPML ParaList
+스키마의 `default`(`pos` TOP_LEFT·`formatType` DIGIT·`sideChar` "-")를 따르고
+미지 이름은 0으로 접는다(위치를 추측해 그리지 않는다) — 한글.app 실저장본은
+세 속성을 항상 명시해 생략 경로의 실물은 없다. 조판(`HwpPageChromeBuilder`)은
+typed 필드만 읽으므로 표 147 16바이트 payload 합성은 `.default`에서 바이너리
+pgnp와 같은 모양을 유지하는 보존용이고, `.viewer`에서는 `preservedPayload`
+게이트로 비운다(바이너리 `consumedData`와 패리티 — HWPX 매니페스트에 payload
+핀은 없고 등가 투영도 rawPayload를 제외한다). 강등 컨트롤(`degradedControl`)의
+요소명 payload는 게이트 없이 남는 선행 편차라 별도 후속이다.
 실측 근거는 둘이다. (1) noori 쌍 — `BOTTOM_CENTER`↔5·`DIGIT`↔0·`sideChar=""`↔0,
 HWP 쌍 manifest `pageNumberPositions[0]`과 payload 바이트 동일. (2) 2026-09-02
 한글.app 12.30.0의 쪽 번호 매기기 대화상자로 만든 .hwp/.hwpx 쌍 4종 —
@@ -118,3 +125,6 @@ HWP 쌍 manifest `pageNumberPositions[0]`과 payload 바이트 동일. (2) 2026-
   .hwpx로 저장한 뒤, .hwp는 `HwpFile`로 열어 `pgnp`(`HwpPageNumberPosition`의
   `property`·`userSymbol`·`unused`)를, .hwpx는 `Contents/section0.xml`의
   `hp:pageNum` 속성을 읽어 대조한다 (2026-09-02 실측 4쌍이 이 절차다).
+- `<hp:pageNum/>`(속성 생략)을 한글.app이 실제로 왼쪽 위 "- N -"으로 그리는지
+  — 우리는 스키마 `default`대로 TOP_LEFT(1)·"-"(0x2D)로 읽지만, 실저장본은
+  항상 세 속성을 명시해 실물이 없다(제3자 저장기 문서를 확보하면 대조할 것).

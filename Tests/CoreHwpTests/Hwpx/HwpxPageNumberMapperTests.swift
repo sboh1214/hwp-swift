@@ -3,8 +3,8 @@ import Foundation
 import Nimble
 import XCTest
 
-/// `hp:pageNum` → `.pageNumberPosition` typed 매핑 — 속성 대응표·표 147 payload
-/// 합성·미소비 자식 강등을 합성 XML로 고정한다 (#135).
+/// `hp:pageNum` → `.pageNumberPosition` typed 매핑 — 속성 대응표·스키마 기본값·
+/// 표 147 payload 합성·viewer 게이트·미소비 자식 강등을 합성 XML로 고정한다 (#135).
 final class HwpxPageNumberMapperTests: XCTestCase {
     private struct UnexpectedControl: Error {
         let ctrls: [HwpCtrlId]
@@ -12,7 +12,8 @@ final class HwpxPageNumberMapperTests: XCTestCase {
 
     /// 빈 구역 뒤에 `hp:ctrl` 하나를 가진 문단을 붙여 그 컨트롤을 꺼낸다.
     private func mapPageNumber(
-        _ element: String
+        _ element: String,
+        options: HwpLoadOptions = .default
     ) throws -> (paragraph: HwpParagraph, position: HwpPageNumberPosition) {
         let section = try HwpxSectionFixture.mapSection(
             HwpxSectionFixture.blankBody + """
@@ -20,7 +21,8 @@ final class HwpxPageNumberMapperTests: XCTestCase {
             <hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1000" \
             textheight="1000" baseline="850" spacing="600" horzpos="0" \
             horzsize="42520" flags="393216"/></hp:linesegarray></hp:p>
-            """
+            """,
+            options: options
         )
         let paragraph = section.paragraph[1]
         let ctrls = try XCTUnwrap(paragraph.ctrlHeaderArray)
@@ -149,22 +151,44 @@ final class HwpxPageNumberMapperTests: XCTestCase {
         }
     }
 
-    func testUnknownOrMissingEnumValuesFallBackToZero() throws {
-        // 미지 이름은 0(위치 없음·숫자)으로 — 뷰어도 범위 밖 코드를 숫자로 그린다.
-        let (_, unknown) = try mapPageNumber(
+    func testMissingAttributesUseOwpmlSchemaDefaults() throws {
+        // OWPML ParaList 스키마 default: pos TOP_LEFT·formatType DIGIT·sideChar "-".
+        // 한글.app은 세 속성을 항상 명시하므로 제3자 저장기용 경로다 — 생략을
+        // NONE(0)으로 접으면 스키마 유효 문서의 쪽 번호가 통째로 사라진다.
+        let (paragraph, missing) = try mapPageNumber("<hp:pageNum/>")
+        expect(paragraph.paraText?.charArray.map(\.value)) == [21, 13]
+        expect(missing.propertyInfo.displayPosition) == 1
+        expect(missing.propertyInfo.numberFormat) == 0
+        expect(missing.property) == 0x0100
+        expect(missing.propertyInfo.rawValue) == 0x0100
+        expect(missing.unused) == 0x2D
+        expect(Array(missing.rawPayload))
+            == [112, 110, 103, 112, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0x2D, 0]
+
+        // 속성별로 독립 기본값 — 일부만 적어도 나머지는 스키마 기본값.
+        let (_, partial) = try mapPageNumber("<hp:pageNum pos=\"BOTTOM_CENTER\"/>")
+        expect(partial.propertyInfo.displayPosition) == 5
+        expect(partial.unused) == 0x2D
+
+        // 명시 빈 문자열은 기본값이 아니라 '줄표 없음'이다 (noori 실물, #138).
+        let (_, emptySide) = try mapPageNumber("<hp:pageNum sideChar=\"\"/>")
+        expect(emptySide.propertyInfo.displayPosition) == 1
+        expect(emptySide.unused) == 0
+    }
+
+    func testUnknownEnumValuesFallBackToZero() throws {
+        // 미지 이름은 기본값으로 접지 않고 0(위치 없음·숫자) — 위치를 추측해
+        // 그리지 않는다. 뷰어도 범위 밖 번호 모양 코드를 숫자로 그린다. 컨트롤
+        // 슬롯은 서야 WCHAR 정렬이 유지된다.
+        let (paragraph, unknown) = try mapPageNumber(
             "<hp:pageNum pos=\"SIDEWAYS\" formatType=\"KLINGON\" sideChar=\"\"/>"
         )
+        expect(paragraph.paraText?.charArray.map(\.value)) == [21, 13]
         expect(unknown.propertyInfo.displayPosition) == 0
         expect(unknown.propertyInfo.numberFormat) == 0
         expect(unknown.property) == 0
-
-        // 속성이 전부 빠진 요소도 컨트롤 슬롯은 서야 WCHAR 정렬이 유지된다.
-        let (paragraph, missing) = try mapPageNumber("<hp:pageNum/>")
-        expect(paragraph.paraText?.charArray.map(\.value)) == [21, 13]
-        expect(missing.propertyInfo.displayPosition) == 0
-        expect(missing.propertyInfo.numberFormat) == 0
-        expect(missing.unused) == 0
-        expect(missing.rawPayload.count) == 16
+        expect(unknown.unused) == 0
+        expect(unknown.rawPayload.count) == 16
     }
 
     func testSideCharLandsInFourthWcharOnly() throws {
@@ -183,6 +207,37 @@ final class HwpxPageNumberMapperTests: XCTestCase {
         // 필드가 WCHAR 하나라 두 글자 이상이면 첫 UTF-16 unit만 싣는다.
         let (_, multi) = try mapPageNumber("<hp:pageNum sideChar=\"★☆\"/>")
         expect(multi.unused) == 0x2605
+    }
+
+    func testViewerOptionsEmptySynthesizedPayloadButKeepTypedFields() throws {
+        // `.viewer`는 보존용 rawPayload를 비운다 — 바이너리 pgnp가
+        // DataReader.consumedData로 비워지는 것과 패리티. typed 필드·앵커 WCHAR·
+        // 진단(unknownChildren — 합성 레코드는 옵션과 무관)은 양 모드 동일.
+        let element = "<hp:pageNum pos=\"BOTTOM_CENTER\" formatType=\"DIGIT\" sideChar=\"-\">"
+            + "<hp:extra/></hp:pageNum>"
+        let (defaultParagraph, preserved) = try mapPageNumber(element)
+        let (viewerParagraph, viewer) = try mapPageNumber(element, options: .viewer)
+
+        expect(preserved.rawPayload.count) == 16
+        expect(viewer.rawPayload).to(beEmpty())
+        expect(viewer.rawTrailing).to(beEmpty())
+        expect(viewer.property) == preserved.property
+        expect(viewer.propertyInfo.rawValue) == preserved.propertyInfo.rawValue
+        expect(viewer.propertyInfo.displayPosition) == 5
+        expect(viewer.unused) == 0x2D
+        expect(viewer.headDecoration) == preserved.headDecoration
+        expect(viewer.tailDecoration) == preserved.tailDecoration
+        expect(viewerParagraph.paraText?.charArray.map(\.value))
+            == defaultParagraph.paraText?.charArray.map(\.value)
+        expect(viewer.unknownChildren.map(\.payload)) == preserved.unknownChildren.map(\.payload)
+        expect(viewer.unknownChildren.count) == 1
+
+        // 게이트는 복구 옵션과 결합돼 있지 않다 — preserveRawPayload만 꺼도 같다.
+        let (_, optOut) = try mapPageNumber(
+            element, options: HwpLoadOptions(preserveRawPayload: false)
+        )
+        expect(optOut.rawPayload).to(beEmpty())
+        expect(optOut.property) == preserved.property
     }
 
     func testUnconsumedChildrenDegradeIntoDiagnostics() throws {
