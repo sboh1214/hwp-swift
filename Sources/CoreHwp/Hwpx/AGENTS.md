@@ -59,19 +59,50 @@ numbering/bullet(배열 비움 — 번호·글머리표 문자가 렌더에서 �
 제목 블록의 선행 "-"가 HWP 렌더에만 보이는 것이 실측 사례다. 파스 텍스트
 등가에는 영향 없음), 각주/미주·머리말/꼬리말
 내용(`.notImplemented`), 도형(line/rect/…)·OLE·수식·차트·글상자
-(`.notImplemented`), 쪽 번호 위치(`pgnp` — noori 꼬리 쪽 번호가 HWPX 렌더에서
-빠진다, 2026-09-02 한글.app 대조 실측), 형광펜·변경 추적 표식(zero-width
+(`.notImplemented`), 자동 번호·새 번호·홀/짝수 조정(`atno`·`nwno`·`pgct` —
+HWPX 픽스처 10종에 사례 없음), 형광펜·변경 추적 표식(zero-width
 진단), 그러데이션/이미지 채우기, 명시 탭 정지, 쪽 테두리. 승격 시 대응
 요소를 `HwpxControlMapper` 분류표에서 옮긴다.
 
 2026-09-02 한글.app 12.30.0 나란히 육안 대조(변환 쌍 10종 13쪽, 한컴 폰트
 모드): 쪽수 10종 전부 일치, 표·그림·다단·글자 장식·쪽나눔 일치. HWPX
-렌더에만 보이는 격차는 위 범위 밖 3건(글머리표 "-" #133·차트 OLE #134·쪽 번호
-#135)뿐이고, HWP 쌍 렌더와 HWPX 렌더는 그 3건을 빼면 동일했다. 한글.app
-자체가 포맷에 따라
+렌더에만 보이던 격차는 범위 밖 3건(글머리표 "-" #133·차트 OLE #134·쪽 번호
+#135)이었고, HWP 쌍 렌더와 HWPX 렌더는 그 3건을 빼면 동일했다. 쪽 번호는
+#135에서 승격돼 남은 격차는 2건이다. 한글.app 자체가 포맷에 따라
 다르게 그리는 것이 하나 있다 — CharShape 취소선 견본(HWP 밑줄 종류 raw 2 ↔
 HWPX `<hh:strikeout>`)을 .hwp는 글자 아래 단선으로, .hwpx는 글자 가운데
 취소선으로 그린다. 우리는 두 포맷 모두 HWP 쪽(아래 단선)으로 그린다 (#136).
+
+## 쪽 번호 위치 (`hp:pageNum` → `pgnp`, #135)
+
+`HwpxPageNumberMapper`가 `.pageNumberPosition(HwpPageNumberPosition)`으로
+승격한다 — 구역 부속 컨트롤(코드 21) 중 유일한 typed 매핑이다. `pos` →
+`displayPosition`(표 148 bit 8-11), `formatType` → `numberFormat`(표 134,
+`HwpxNumberFormatMapper` — `hh:paraHead numFormat`·`hp:autoNumFormat type`도
+같은 NumberType1 열거라 승격 시 재사용), `sideChar` → 4번째 WCHAR `unused`
+(줄표 문자, #138 — 빈 문자열 0, 두 글자 이상은 첫 UTF-16 unit). 앞/뒤 장식
+문자·사용자 기호는 HWPX에 대응 속성이 없어 0. 생략 속성은 OWPML ParaList
+스키마의 `default`(`pos` TOP_LEFT·`formatType` DIGIT·`sideChar` "-")를 따르고
+미지 이름은 0으로 접는다(위치를 추측해 그리지 않는다) — 한글.app 실저장본은
+세 속성을 항상 명시해 생략 경로의 실물은 없다. 조판(`HwpPageChromeBuilder`)은
+typed 필드만 읽으므로 표 147 16바이트 payload 합성은 `.default`에서 바이너리
+pgnp와 같은 모양을 유지하는 보존용이고, `.viewer`에서는 `preservedPayload`
+게이트로 비운다(바이너리 `consumedData`와 패리티 — HWPX 매니페스트에 payload
+핀은 없고 등가 투영도 rawPayload를 제외한다). 강등 컨트롤(`degradedControl`)의
+요소명 payload는 게이트 없이 남는 선행 편차라 별도 후속이다.
+실측 근거는 둘이다. (1) noori 쌍 — `BOTTOM_CENTER`↔5·`DIGIT`↔0·`sideChar=""`↔0,
+HWP 쌍 manifest `pageNumberPositions[0]`과 payload 바이트 동일. (2) 2026-09-02
+한글.app 12.30.0의 쪽 번호 매기기 대화상자로 만든 .hwp/.hwpx 쌍 4종 —
+`OUTSIDE_TOP`+`ROMAN_CAPITAL`+줄표 ↔ property 0x0702·4번째 WCHAR 0x2D,
+`INSIDE_BOTTOM`+`DECAGON_CIRCLE_HANJA`+줄표 없음 ↔ 0x0A10·0,
+`BOTTOM_LEFT`+`HANGUL_SYLLABLE`+줄표 ↔ 0x0408·0x2D,
+`TOP_CENTER`+`CIRCLED_DIGIT`+줄표 ↔ 0x0201·0x2D. 즉 `pos` 5값·`formatType`
+5값이 표 148·표 134 코드와 일치하고, "줄표 넣기"는 앞/뒤 장식 WCHAR가 아니라
+4번째 WCHAR에만 실리며 HWPX는 `sideChar="-"`/`""`로 쓴다. 네 쌍 모두 payload
+16바이트(미해석 UINT32 없음)였다. 가드는
+`HwpxPageNumberMapperTests`(대응표·payload·실측 쌍)·`HwpxHwpEquivalenceTests`
+(pageNumberPositions 축)·`HwpxFixtureRenderTests.testHwpxPageChromeMatchesHwpPairs`
+(noori 각 쪽 "1"·"2"·"3")다.
 
 ## 실파일 검증 대기 항목
 
@@ -80,3 +111,20 @@ HWPX `<hh:strikeout>`)을 .hwp는 글자 아래 단선으로, .hwpx는 글자 �
 - `hp:pagePr landscape` 값 의미 (실측: 세로 A4가 `WIDELY`) — 조판은
   width/height만 쓰므로 property로 옮기지 않았다.
 - textWrap 6값 전체 목록·`hp:t` 내 비앵커 요소 목록·배포용 HWPX의 표식.
+- `hp:pageNum` 열거 대응표의 미실측 값 — `pos` 11값 중 실측은 5값(위 "쪽 번호
+  위치")이고 미실측은 `TOP_LEFT`·`TOP_RIGHT`·`BOTTOM_RIGHT`·`OUTSIDE_BOTTOM`·
+  `INSIDE_TOP`과 `NONE`(0 — 쪽 번호 없는 문서는 `hp:pageNum` 자체를 쓰지 않아
+  실물이 없다). `formatType` 19값 중 실측은 5값, 미실측은 대화상자가 제공하는
+  9종 중 `ROMAN_SMALL`·`LATIN_CAPITAL`·`IDEOGRAPH`·`DECAGON_CIRCLE`과 대화상자에
+  없는 10종(`LATIN_SMALL`·`CIRCLED_LATIN_CAPITAL`·`CIRCLED_LATIN_SMALL`·
+  `CIRCLED_HANGUL_SYLLABLE`·`CIRCLED_HANGUL_JAMO`·`CIRCLED_IDEOGRAPH`·
+  `HANGUL_JAMO`·`HANGUL_PHONETIC`·`SYMBOL`·`USER_CHAR`). 실측된 값이 모두
+  스키마 나열 순서 = 표 코드였으므로 나머지도 같은 규칙으로 채웠다.
+  `USER_CHAR`의 문자(표 147 사용자 기호 WCHAR)를 HWPX가 어느 속성에 쓰는지는
+  미확정 — 확정하려면 한글.app 쪽 번호 매기기 대화상자로 만든 문서를 .hwp와
+  .hwpx로 저장한 뒤, .hwp는 `HwpFile`로 열어 `pgnp`(`HwpPageNumberPosition`의
+  `property`·`userSymbol`·`unused`)를, .hwpx는 `Contents/section0.xml`의
+  `hp:pageNum` 속성을 읽어 대조한다 (2026-09-02 실측 4쌍이 이 절차다).
+- `<hp:pageNum/>`(속성 생략)을 한글.app이 실제로 왼쪽 위 "- N -"으로 그리는지
+  — 우리는 스키마 `default`대로 TOP_LEFT(1)·"-"(0x2D)로 읽지만, 실저장본은
+  항상 세 속성을 명시해 실물이 없다(제3자 저장기 문서를 확보하면 대조할 것).
