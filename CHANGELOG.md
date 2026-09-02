@@ -22,6 +22,15 @@
   (`project.yml`의 `dev.sboh.hwpx` 선언, `DropOpenSupport.swift`,
   `ContentView.swift`).
 
+### Changed
+
+- **쪽 번호 줄표는 문서가 지정한 경우에만 그립니다** (#138). 쪽 번호 위치
+  컨트롤(`pgnp`)의 4번째 WCHAR(`HwpPageNumberPosition.unused`)가 줄표 문자를
+  실을 때만 "- 1 -"처럼 양옆에 붙이고, 0이면 "1"만 그립니다. 종전에는 앞/뒤
+  장식 문자가 없으면 무조건 줄표를 붙여, 줄표를 넣지 않은 문서가 한글.app과
+  다르게 보였습니다. 공개 문서(표 147)가 '항상 "-"'라 적은 이 필드는 실물에서
+  줄표 문자(0x2D) 또는 0으로 갈립니다.
+
 ## 0.17.0 (2026-08-28)
 
 ### Added

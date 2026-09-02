@@ -16,7 +16,13 @@ public struct HwpPageNumberPosition {
     public var headDecoration: WCHAR
     /** 뒤 장식 문자 */
     public var tailDecoration: WCHAR
-    /** 항상 "-" */
+    /**
+     줄표 문자. 앞/뒤 장식 문자가 없을 때 쪽 번호 양옆에 붙는다 ("- 1 -").
+
+     공개 문서(표 147)는 '항상 "-"'라 적지만, 실물은 줄표를 넣은 문서에서 0x2D('-'),
+     넣지 않은 문서에서 0이다 (#138). 한글.app이 재저장한 HWPX의 `hp:pageNum`
+     `sideChar`에 대응한다. 필드 이름은 호환을 위해 유지한다.
+     */
     public var unused: WCHAR
     /** unknown */
     public var unknown: UInt32

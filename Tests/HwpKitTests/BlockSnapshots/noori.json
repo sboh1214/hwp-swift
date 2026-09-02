@@ -177,8 +177,8 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "pageChrome",
-          "textLength" : 5,
-          "textPrefix" : "- 1 -"
+          "textLength" : 1,
+          "textPrefix" : "1"
         }
       ],
       "page" : 0
@@ -348,8 +348,8 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "pageChrome",
-          "textLength" : 5,
-          "textPrefix" : "- 2 -"
+          "textLength" : 1,
+          "textPrefix" : "2"
         }
       ],
       "page" : 1
@@ -419,8 +419,8 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "pageChrome",
-          "textLength" : 5,
-          "textPrefix" : "- 3 -"
+          "textLength" : 1,
+          "textPrefix" : "3"
         }
       ],
       "page" : 2
