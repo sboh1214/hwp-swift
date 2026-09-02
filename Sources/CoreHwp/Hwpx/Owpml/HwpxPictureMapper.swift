@@ -197,4 +197,10 @@ extension Data {
         append(UInt8((value >> 16) & 0xFF))
         append(UInt8((value >> 24) & 0xFF))
     }
+
+    /// WCHAR(UInt16) 필드용 — 표 147 쪽 번호 위치의 문자 4개처럼 2바이트 LE.
+    mutating func appendHwpxLittleEndian(_ value: UInt16) {
+        append(UInt8(value & 0xFF))
+        append(UInt8(value >> 8))
+    }
 }

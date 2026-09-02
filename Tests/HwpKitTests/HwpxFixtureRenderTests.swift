@@ -101,6 +101,58 @@ final class HwpxFixtureRenderTests: XCTestCase {
         }
     }
 
+    /// 쪽 크롬(머리말/꼬리말/쪽 번호) 블록 텍스트가 HWP 쌍과 같아야 한다 —
+    /// HWPX `hp:pageNum`이 typed 승격돼야 noori 꼬리 쪽 번호가 선다 (#135).
+    /// 10쌍 중 쪽 크롬을 가진 문서는 noori(쪽 번호 위치 1건)뿐이라 나머지는
+    /// 빈 배열 등식이고, noori는 #138 이후 줄표 없는 "1"·"2"·"3"으로 직접
+    /// 핀한다 — 등식만 두면 양쪽이 함께 비어도 통과하기 때문이다.
+    func testHwpxPageChromeMatchesHwpPairs() async throws {
+        let hwpxFixtures = try FixtureRoot.loadAllHwpxFixtures(from: #file)
+        let hwpFixtures = try FixtureRoot.loadAllFixtures(from: #file)
+        let hwpByID = Dictionary(uniqueKeysWithValues: hwpFixtures.map { ($0.id, $0) })
+        let loader = HwpDocumentLoader(fontResolver: .testDeterministic)
+
+        var failures: [String] = []
+        var comparedCount = 0
+        var nooriChrome: [[String]]?
+        for fixture in hwpxFixtures where !fixture.hasExpectedError {
+            guard let pairID = fixture.sourceHwpFixture, let pair = hwpByID[pairID],
+                  !pair.hasExpectedError
+            else { continue }
+            comparedCount += 1
+            do {
+                let hwpx = try await loader.load(from: fixture.documentURL)
+                let hwp = try await loader.load(from: pair.documentURL)
+                let hwpxChrome = Self.pageChromeTexts(of: hwpx)
+                let hwpChrome = Self.pageChromeTexts(of: hwp)
+                if hwpxChrome != hwpChrome {
+                    failures.append("[\(fixture.id)] hwpx chrome \(hwpxChrome) != hwp \(hwpChrome)")
+                }
+                if fixture.id == "noori" {
+                    nooriChrome = hwpxChrome
+                }
+            } catch {
+                failures.append("[\(fixture.id)] load threw: \(error)")
+            }
+        }
+
+        expect(comparedCount) >= 10
+        expect(nooriChrome) == [["1"], ["2"], ["3"]]
+        if !failures.isEmpty {
+            fail("HWP↔HWPX page chrome mismatches (\(failures.count)):\n" +
+                failures.joined(separator: "\n"))
+        }
+    }
+
+    /// 페이지별 쪽 크롬 텍스트 블록 문자열 (문서 순서).
+    private static func pageChromeTexts(of document: HwpDocument) -> [[String]] {
+        document.pages.map { page in
+            page.blocks
+                .filter { $0.role == .pageChrome && $0.kind == .text }
+                .compactMap { $0.attributedString?.string }
+        }
+    }
+
     /// manifest `visibleTextContains`가 조판된 블록 텍스트에 그대로 있어야 한다 —
     /// HWP 쪽 `testAllFixturesRenderExpectedText`의 HWPX 판이다. 열 수 없는
     /// 픽스처(`expectedError`)는 문구를 갖지 않지만 규약을 한 곳에 모으려고

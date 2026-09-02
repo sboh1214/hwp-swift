@@ -57,6 +57,11 @@ enum HwpxControlMapper {
             )
         case "fieldEnd":
             return .inlineOnly(code: 4, fourCC: HwpFieldCtrlId.unknown.rawValue)
+        case "pageNum":
+            // 쪽 번호 위치(표 147/148) — 구역 부속 컨트롤(코드 21) 중 유일한
+            // typed 승격. 조판이 `.pageNumberPosition`만 등록하므로 강등 상태로는
+            // 쪽 번호가 그려지지 않는다 (#135).
+            return HwpxPageNumberMapper.anchor(node, maxDepth: context.unknownDepthLimit)
         case "tbl":
             return .anchor(
                 code: 11,
@@ -134,7 +139,8 @@ enum HwpxControlMapper {
         "video": HwpCommonCtrlId.genShapeObject.rawValue,
     ]
 
-    /// 개체가 아닌 구역 부속 컨트롤 — (제어 문자 코드, 4CC).
+    /// 개체가 아닌 구역 부속 컨트롤 중 미구현 강등 대상 — (제어 문자 코드, 4CC).
+    /// 같은 코드 21의 `pageNum`은 위에서 typed 매핑으로 승격됐다.
     static let sectionAttachments: [String: (code: UInt16, fourCC: UInt32)] = [
         "header": (16, HwpOtherCtrlId.header.rawValue),
         "footer": (16, HwpOtherCtrlId.footer.rawValue),
@@ -142,7 +148,6 @@ enum HwpxControlMapper {
         "endNote": (17, HwpOtherCtrlId.endnote.rawValue),
         "autoNum": (18, HwpOtherCtrlId.autoNumber.rawValue),
         "newNum": (18, HwpOtherCtrlId.newNumber.rawValue),
-        "pageNum": (21, HwpOtherCtrlId.pageNumberPosition.rawValue),
         "pageNumCtrl": (21, HwpOtherCtrlId.pageCT.rawValue),
         "pageHiding": (21, HwpOtherCtrlId.pageHide.rawValue),
         "bookmark": (22, HwpOtherCtrlId.bookmark.rawValue),

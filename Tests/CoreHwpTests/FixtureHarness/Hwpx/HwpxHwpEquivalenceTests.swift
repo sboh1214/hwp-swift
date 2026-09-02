@@ -97,6 +97,19 @@ struct DocumentEquivalenceProjection {
         let horizontal: Int32
     }
 
+    /// 쪽 번호 위치(표 147) — HWPX `hp:pageNum`이 typed 승격돼야 HWP 쌍과
+    /// 같은 컨트롤이 선다 (#135). 강등 상태면 HWPX 쪽 배열이 비어 등식이
+    /// 깨진다. 4번째 WCHAR(`unused`)는 줄표 문자로 HWPX `sideChar`의 대응이다
+    /// (#138). payload 바이트는 비교하지 않는다 — 바이너리는 뒤에 미해석
+    /// UINT32가 붙은 20바이트 변형이 있어 포맷 무관 축이 아니다.
+    struct PageNumberPosition: Equatable {
+        let property: UInt32
+        let userSymbol: UInt16
+        let headDecoration: UInt16
+        let tailDecoration: UInt16
+        let sideChar: UInt16
+    }
+
     let sectionCount: Int
     let sectionParagraphCounts: [Int]
     let sectionTexts: [String]
@@ -105,6 +118,7 @@ struct DocumentEquivalenceProjection {
     let tableShapes: [TableShape]
     let tableAnchorOffsets: [AnchorOffset]
     let imageCount: Int
+    let pageNumberPositions: [PageNumberPosition]
 
     init(of file: HwpFile) {
         sectionCount = file.sectionArray.count
@@ -145,6 +159,15 @@ struct DocumentEquivalenceProjection {
             )
         }
         imageCount = HwpxFixtureAssertions.imageBinItemIds(from: file).count
+        pageNumberPositions = FixtureDerivedValues.pageNumberPositions(from: file).map {
+            PageNumberPosition(
+                property: $0.property,
+                userSymbol: $0.userSymbol,
+                headDecoration: $0.headDecoration,
+                tailDecoration: $0.tailDecoration,
+                sideChar: $0.unused
+            )
+        }
     }
 
     /// 인쇄 가능한 문자만 문서 순서(표 셀 재귀 포함)로 모은다 — 제어 문자
@@ -223,6 +246,10 @@ struct DocumentEquivalenceProjection {
         )
         expect(imageCount).to(
             equal(other.imageCount), description: "\(fixtureId) imageCount"
+        )
+        expect(pageNumberPositions).to(
+            equal(other.pageNumberPositions),
+            description: "\(fixtureId) pageNumberPositions"
         )
     }
 }
