@@ -49,7 +49,7 @@ hwp-swift/
 | 기본 타입 확장 | `Sources/CoreHwp/Utils/Extensions/` |
 | 새 미지원 문서 종류 추가 | `Models/FileHeader/HwpFileProperty.swift`의 `unsupportedFeature`(비트 → 종류) + `HwpError.swift`의 `HwpUnsupportedFeature` → HwpKit의 `HwpUnsupportedDocumentKind` 매핑(`switch`가 모든 케이스를 나열하므로 새 종류가 누락되면 컴파일 오류가 발생한다) + `HwpDocumentLoadError.description` + `HwpDocumentLoaderTests.testErrorDescriptionsCoverEveryCase` 배열 + 픽스처 manifest `expectedError` (#117) |
 | 테스트 픽스처 추가 | 테스트 파일과 같은 폴더에 `.hwp` 배치 (`openHwp(#file, "name")` 사용). `Tests/CoreHwpTests/Fixtures/`에 넣으면 `HwpLayoutRenderParitySweepTests`가 자동으로 훑으므로 그쪽 실측 핀(문단 수·측정 수·컨테이너 수)을 함께 갱신한다 |
-| HWPX 픽스처 추가 | `Tests/CoreHwpTests/HwpxFixtures/<id>/` (`openHwpx` 사용, 별도 루트라 위 스윕 핀에는 영향 없음 — `HwpxFixtures/README.md`의 생성 정책 참조). 대신 **뷰어 계층 핀**이 걸린다: manifest에 `sourceHwpFixture`(HWP 쌍)와 `pageCount`+`pageCountSource`를 채우고 `Tests/HwpKitTests/HwpxFixtureRenderTests.swift`의 개수 핀(쪽수 10·쌍 10·가시 텍스트 8)을 함께 올린다 |
+| HWPX 픽스처 추가 | `Tests/CoreHwpTests/HwpxFixtures/<id>/` (`openHwpx` 사용, 별도 루트라 위 스윕 핀에는 영향 없음 — `HwpxFixtures/README.md`의 생성 정책 참조). 대신 **뷰어 계층 핀**이 걸린다: manifest에 `sourceHwpFixture`(HWP 쌍)와 `pageCount`+`pageCountSource`를 채운다 — `Tests/HwpKitTests/HwpxFixtureRenderTests.swift`가 파싱 가능한 픽스처 전부에 쪽수 핀과 출처를 **등식으로 강제**하므로 빠뜨리면 빨개진다 (`expectedError` 픽스처만 예외). 유실 가드용 하한(픽스처 10·가시 텍스트 8)은 함께 올린다 |
 | HWPX 매핑 확장 (요소 승격) | `Sources/CoreHwp/Hwpx/Owpml/HwpxControlMapper.swift` 분류표 + 대응 매퍼 (`Hwpx/AGENTS.md`의 불변식 준수) |
 | 새 공개 진입점 추가 | 해당 타깃의 `Sources/<타깃>/<타깃>.docc/<타깃>.md`에 있는 `## Topics`에도 등재한다. 누락해도 빌드가 성공하므로 CI에서는 감지하지 못한다(아래 "DocC 문서 사이트" 참고). |
 

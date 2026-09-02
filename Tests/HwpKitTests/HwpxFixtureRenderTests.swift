@@ -14,11 +14,25 @@ import XCTest
 final class HwpxFixtureRenderTests: XCTestCase {
     /// manifest `expectations.pageCount`(출처는 `pageCountSource`)와 실제 렌더
     /// 쪽수가 정확히 일치해야 한다.
+    ///
+    /// 핀은 **파싱 가능한 픽스처 전부**에 강제한다 — 하한(`>= 10`)만 두면
+    /// `pageCount` 없는 새 픽스처가 조판 캐시 회귀 가드에서 조용히 빠진다.
+    /// 등식만 두면 반대로 픽스처가 전부 유실돼도 0 == 0으로 통과하므로 하한도
+    /// 남긴다. `expectedError` 픽스처(암호·배포용·DRM)는 HWP 하니스가 33종 중
+    /// 29종만 요구하는 것과 같은 이유로 분모에서 뺀다.
     func testHwpxPageCountsMatchManifest() async throws {
         let fixtures = try FixtureRoot.loadAllHwpxFixtures(from: #file)
-        let withPageCount = fixtures.filter { $0.expectedPageCount != nil }
-        // 변환 쌍 10종 전부에 pageCount 핀이 있다
-        expect(withPageCount.count) >= 10
+        let parseable = fixtures.filter { !$0.hasExpectedError }
+        let withPageCount = parseable.filter { $0.expectedPageCount != nil }
+        // 픽스처 유실 가드 — 변환 쌍 10종
+        expect(fixtures.count) >= 10
+        // 파싱 가능한 픽스처는 전부 pageCount 핀이 있어야 한다 (AGENTS.md "HWPX 픽스처 추가")
+        expect(withPageCount.count) == parseable.count
+        for fixture in withPageCount {
+            // 출처 없는 핀은 핀이 아니다 (HwpxFixtures/README.md)
+            expect(fixture.expectedPageCountSource?.isEmpty)
+                .to(equal(false), description: "[\(fixture.id)] pageCountSource 누락")
+        }
 
         var failures: [String] = []
         for fixture in withPageCount {

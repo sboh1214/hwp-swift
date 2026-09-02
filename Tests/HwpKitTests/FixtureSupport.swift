@@ -39,12 +39,24 @@ struct FixtureExpectations: Decodable {
     let visibleTextContains: [String]?
     /// 렌더 페이지 수 회귀 가드 (출처는 manifest의 pageCountSource 참조)
     let pageCount: Int?
+    /// `pageCount`의 출처 — 한글.app 실측인지 렌더 잠금인지. 핀이 있으면 비어
+    /// 있으면 안 된다 (`HwpxFixtures/README.md`).
+    let pageCountSource: String?
+}
+
+/// manifest 키의 **존재**만 기록한다 — 값의 형태(`expectedError`의 code·
+/// description 등)는 CoreHwpTests 하니스 몫이고 여기서는 "파싱 불가 픽스처인가"만
+/// 알면 된다.
+struct FixtureKeyPresence: Decodable {
+    init(from _: Decoder) throws {}
 }
 
 struct FixtureManifestLite: Decodable {
     let id: String
     /// HWPX 픽스처만 — 등가 비교 축이 되는 원본 HWP fixture id (`Fixtures/<id>`).
     let sourceHwpFixture: String?
+    /// 암호·배포용·DRM처럼 열 수 없는 픽스처의 표식 — 쪽수 핀 대상이 아니다.
+    let expectedError: FixtureKeyPresence?
     let expectations: FixtureExpectations
 }
 
@@ -53,6 +65,9 @@ struct FixtureCase {
     let documentURL: URL
     let expectedVisibleText: [String]
     let expectedPageCount: Int?
+    let expectedPageCountSource: String?
+    /// manifest에 `expectedError`가 있으면 true — 렌더 핀을 요구하지 않는다.
+    let hasExpectedError: Bool
     /// HWPX 픽스처의 원본 HWP fixture id. HWP 픽스처는 nil.
     let sourceHwpFixture: String?
 }
@@ -109,6 +124,8 @@ enum FixtureRoot {
                 documentURL: documentURL,
                 expectedVisibleText: manifest.expectations.visibleTextContains ?? [],
                 expectedPageCount: manifest.expectations.pageCount,
+                expectedPageCountSource: manifest.expectations.pageCountSource,
+                hasExpectedError: manifest.expectedError != nil,
                 sourceHwpFixture: manifest.sourceHwpFixture
             )
         }
