@@ -59,18 +59,25 @@ final class HwpxFixtureRenderTests: XCTestCase {
     /// 같은 문서를 한글.app이 재저장한 쌍이므로 HWP↔HWPX 렌더 쪽수가 같아야
     /// 한다 — 다르면 매핑된 조판 캐시가 한글.app의 쪽나눔을 잃었다는 뜻이다.
     /// 쌍은 manifest `sourceHwpFixture`가 잇는다.
+    ///
+    /// 순회 대상은 CoreHwp의 `HwpxHwpEquivalenceTests`와 같은 규약이다 — 어느
+    /// 쪽이든 `expectedError`(암호·배포용·DRM)면 열 수 없어 비교가 성립하지
+    /// 않으므로 건너뛰고, 실제로 비교한 쌍 수에 하한을 건다.
     func testHwpxPageCountsMatchHwpPairs() async throws {
         let hwpxFixtures = try FixtureRoot.loadAllHwpxFixtures(from: #file)
         let hwpFixtures = try FixtureRoot.loadAllFixtures(from: #file)
         let hwpByID = Dictionary(uniqueKeysWithValues: hwpFixtures.map { ($0.id, $0) })
-        expect(hwpxFixtures.count) >= 10
+        let parseable = hwpxFixtures.filter { !$0.hasExpectedError }
 
         var failures: [String] = []
-        for fixture in hwpxFixtures {
+        var comparedCount = 0
+        for fixture in parseable {
             guard let pairID = fixture.sourceHwpFixture, let pair = hwpByID[pairID] else {
                 failures.append("[\(fixture.id)] no HWP pair (sourceHwpFixture)")
                 continue
             }
+            guard !pair.hasExpectedError else { continue }
+            comparedCount += 1
             do {
                 let loader = HwpDocumentLoader(fontResolver: .testDeterministic)
                 let hwpx = try await loader.load(from: fixture.documentURL)
@@ -86,6 +93,8 @@ final class HwpxFixtureRenderTests: XCTestCase {
             }
         }
 
+        // 비교 가능한 변환 쌍 10종 — 하한은 유실 가드
+        expect(comparedCount) >= 10
         if !failures.isEmpty {
             fail("HWP↔HWPX page count mismatches (\(failures.count)):\n" +
                 failures.joined(separator: "\n"))
@@ -93,10 +102,12 @@ final class HwpxFixtureRenderTests: XCTestCase {
     }
 
     /// manifest `visibleTextContains`가 조판된 블록 텍스트에 그대로 있어야 한다 —
-    /// HWP 쪽 `testAllFixturesRenderExpectedText`의 HWPX 판이다.
+    /// HWP 쪽 `testAllFixturesRenderExpectedText`의 HWPX 판이다. 열 수 없는
+    /// 픽스처(`expectedError`)는 문구를 갖지 않지만 규약을 한 곳에 모으려고
+    /// 명시적으로 뺀다.
     func testHwpxFixturesRenderExpectedText() async throws {
         let fixtures = try FixtureRoot.loadAllHwpxFixtures(from: #file)
-        let withText = fixtures.filter { !$0.expectedVisibleText.isEmpty }
+        let withText = fixtures.filter { !$0.hasExpectedError && !$0.expectedVisibleText.isEmpty }
         expect(withText.count) >= 8
 
         var failures: [String] = []
