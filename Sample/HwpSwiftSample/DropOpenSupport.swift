@@ -30,10 +30,12 @@ enum DropOpenSupport {
     static let dropCopyPrefix = "hwp-sample-drop-"
 
     /// `.fileURL`·`.data`를 함께 받는 이유: Finder 드래그는 파일 URL 타입으로
-    /// 오고 콘텐츠 타입 적합성은 보장되지 않으며, iOS에서는 `.hwp` 확장자에
-    /// 자체 UTI를 export하는 앱이 설치된 기기에서 Files 드래그 항목의 타입이
-    /// 그쪽 식별자가 되어 `hwpType`에 적합하지 않다. 대신 아무 파일이나 드롭이
-    /// 활성화되므로, 확장자 검증은 `open(providers:)`가 맡는다.
+    /// 오고 콘텐츠 타입 적합성은 보장되지 않으며, iOS에서는 `.hwp`/`.hwpx`
+    /// 확장자에 자체 UTI를 export하는 앱이 설치된 기기에서 Files 드래그 항목의
+    /// 타입이 그쪽 식별자가 되어 `hwpType`/`hwpxType`에 적합하지 않다 (한글.app이
+    /// 깔린 Mac에서 두 확장자 모두 `com.haansoft.hancomofficeviewer.mac.*`로
+    /// 풀리며 그 타입은 `public.data`에만 적합하다 — 실측). 대신 아무 파일이나
+    /// 드롭이 활성화되므로, 확장자 검증은 `open(providers:)`가 맡는다.
     static var acceptedTypes: [UTType] {
         [hwpType, hwpxType, .fileURL, .data]
     }
@@ -60,8 +62,9 @@ enum DropOpenSupport {
     }
 
     /// 후보를 **하나의 순서열**로 만든다 — 적합성 버킷마다 따로 `first(where:)`로
-    /// 뽑으면 앞선 비-hwp 하나가 뒤의 유효한 문서를 가린다 (외래 UTI로 오는
-    /// `.hwp`와 아무 파일은 둘 다 `public.data`에만 적합해 같은 버킷에 들어간다).
+    /// 뽑으면 앞선 비-문서 하나가 뒤의 유효한 문서를 가린다 (외래 UTI로 오는
+    /// `.hwp`/`.hwpx`와 아무 파일은 모두 `public.data`에만 적합해 같은 버킷에
+    /// 들어간다).
     ///
     /// 파일 URL이 앞인 것은 원본 위치를 알아야 최근 문서에 남기 때문이다. 같은
     /// provider가 URL·표현 양쪽에 오를 수 있는데, 앞 경로가 URL을 못 내줘도 뒤
@@ -142,13 +145,13 @@ enum DropOpenSupport {
             // "임시 위치에 사본을 쓴다"만 약속하고 원본 파일명 보존은 약속하지 않는다.
             let name = suggestedFilename(of: candidate.provider, fallback: url)
             let nameIsOpenable = hasOpenableExtension(name)
-            // 앱 선언 타입으로 온 후보는 provider가 이미 HWP라고 **광고**한 것이라
-            // 확장자를 다시 요구하지 않는다. 그러면 이름을 UUID로 바꿔 주는
-            // provider의 유효한 문서를 거부하게 된다. `.data` 폴백의 확장자
-            // 검증은 광고 이름과 표현 URL **어느 쪽이든** 통과면 받는다 —
-            // 표시 이름 선호와 검증은 별개라, 광고 이름 하나에 걸면 확장자
-            // 없는 제목형 suggestedName이 URL은 `document.hwp`인 유효 문서를
-            // 거부한다.
+            // 앱 선언 타입(`hwpType`·`hwpxType`)으로 온 후보는 provider가 이미
+            // HWP/HWPX라고 **광고**한 것이라 확장자를 다시 요구하지 않는다. 그러면
+            // 이름을 UUID로 바꿔 주는 provider의 유효한 문서를 거부하게 된다.
+            // `.data` 폴백의 확장자 검증은 광고 이름과 표현 URL **어느 쪽이든**
+            // 통과면 받는다 — 표시 이름 선호와 검증은 별개라, 광고 이름 하나에
+            // 걸면 확장자 없는 제목형 suggestedName이 URL은 `document.hwp`인 유효
+            // 문서를 거부한다.
             let urlIsOpenable = openableExtensions.contains(url.pathExtension.lowercased())
             let advertisedType = [hwpType, hwpxType].first { $0.identifier == typeIdentifier }
             guard advertisedType != nil || nameIsOpenable || urlIsOpenable else {
@@ -158,7 +161,10 @@ enum DropOpenSupport {
                 )
                 return
             }
-            // 확장자 없는 이름에는 광고 타입 → 표현 URL 순서로 확장자를 빌린다.
+            // 확장자 없는 이름에 붙일 확장자 — 광고 타입이 hwpx이거나 표현 URL이
+            // `.hwpx`이면 `.hwpx`, 어느 쪽도 아니면 `.hwp`다 (우선순위가 아니라
+            // 논리합). 파서가 선두 바이트로 자동 감지하므로 이 값은 사본 파일명에만
+            // 남는 표시용이다.
             let fallbackExtension = advertisedType == hwpxType
                 || url.pathExtension.lowercased() == "hwpx" ? ".hwpx" : ".hwp"
             guard let copy = try? copyToTemporary(
@@ -178,8 +184,9 @@ enum DropOpenSupport {
     }
 
     /// 사본에 쓸 파일명 — provider가 광고한 이름을 먼저 보고, 없으면 임시 URL의
-    /// 이름으로 물러선다. 창 제목·최근 문서·내보내기 기본 이름이 이 값을 그대로
-    /// 물려받는다.
+    /// 이름으로 물러선다. 이 값은 사본 파일명에만 남는다 — 창 제목은 `mode.title`,
+    /// 내보내기 기본 이름은 `metadata.title`에서 나오고, 최근 문서는 임시 사본을
+    /// 기록하지 않는다 (`RecentDocumentsStore.record`).
     private static func suggestedFilename(of provider: NSItemProvider, fallback url: URL) -> String {
         if let advertised = sanitizedComponent(provider.suggestedName) {
             return advertised

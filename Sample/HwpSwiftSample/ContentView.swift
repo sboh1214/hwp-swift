@@ -607,8 +607,9 @@ struct ContentView: View {
         }
     }
 
-    /// 빈 상태 아래에 붙는 최근 문서 목록 (#126). 픽스처가 전부 `document.hwp`라
-    /// 이름만으로는 구별되지 않아 폴더를 보조 행으로 함께 보인다.
+    /// 빈 상태 아래에 붙는 최근 문서 목록 (#126). 픽스처가 전부
+    /// `document.hwp`/`document.hwpx`라 이름만으로는 구별되지 않아 폴더를
+    /// 보조 행으로 함께 보인다.
     private var recentDocumentsList: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("최근 문서")

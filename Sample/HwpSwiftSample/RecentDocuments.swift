@@ -12,8 +12,9 @@ struct RecentDocument: Codable, Hashable, Identifiable {
 
     /// 파일 이름 (`lastPathComponent`).
     let name: String
-    /// 표준화된 파일 경로. 픽스처가 전부 `document.hwp`라 이름만으로는 항목이
-    /// 구별되지 않는다 — 폴더 표시(`folderDisplayName`)가 그 구별을 맡는다.
+    /// 표준화된 파일 경로. 픽스처가 전부 `document.hwp`/`document.hwpx`라
+    /// 이름만으로는 항목이 구별되지 않는다 (HWP/HWPX 변환 쌍은 폴더 id까지
+    /// 같다) — 폴더 표시(`folderDisplayName`)가 그 구별을 맡는다.
     let path: String
     let bookmark: Data
 

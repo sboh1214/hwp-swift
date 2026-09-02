@@ -112,6 +112,9 @@ Xcode에서 스킴 `HwpSwiftSample` 선택 → 대상 지정:
 - 빈 상태의 **최근 문서** 목록에서 항목 클릭 (한 번이라도 성공적으로 연 파일이
   있을 때만 나타난다)
 - `.hwp`/`.hwpx` 파일을 창으로 **끌어다 놓기** (문서를 보는 중이면 그 파일로 교체)
+- (시뮬레이터 QA) 앱 컨테이너 `Documents/document.hwp`(없으면 `document.hwpx`)가
+  있으면 시작 시 자동으로 연다 — 둘 다 있으면 `.hwp` 우선이므로 `.hwpx`를
+  검증할 때는 `document.hwp`를 치울 것
 
 문서가 로드되면 화면 상단에 다음 툴바가 나타남:
 
@@ -195,9 +198,13 @@ Xcode에서 스킴 `HwpSwiftSample` 선택 → 대상 지정:
 
 저장소 안의 fixture로 스모크 테스트 가능:
 
-- `Tests/CoreHwpTests/Blank/Blank.hwp` — 빈 문서 (빈 페이지 1장)
+- `Tests/CoreHwpTests/Fixtures/blank-win2020/document.hwp` — 빈 문서 (빈 페이지 1장)
 - `Tests/CoreHwpTests/Fixtures/bookmark/document.hwp` — 텍스트/북마크 포함
-- `Tests/CoreHwpTests/Fixtures/**/*.hwp` — 그 밖의 fixture 목록
+- `Tests/CoreHwpTests/Fixtures/**/document.hwp` — 그 밖의 `.hwp` fixture 목록
+- `Tests/CoreHwpTests/HwpxFixtures/<id>/document.hwpx` — `.hwpx` fixture. 같은
+  `<id>`의 `Fixtures/<id>/document.hwp`를 한글.app에서 재저장한 쌍이라 두 파일을
+  나란히 열면 포맷 간 렌더 대조가 된다 (생성 정책은
+  `Tests/CoreHwpTests/HwpxFixtures/README.md`)
 
 ## CLI 빌드 검증
 
@@ -229,7 +236,7 @@ Sample/
 │   ├── HwpSwiftSampleApp.swift    # @main 진입점
 │   ├── ContentView.swift          # .fileImporter + HwpDocumentView + 검색·내보내기·사이드바 배선
 │   ├── RecentDocuments.swift      # 보안 범위 북마크 기반 최근 문서 저장소 (#126)
-│   ├── DropOpenSupport.swift      # 드롭 provider → .hwp URL (플랫폼별 경로) (#126)
+│   ├── DropOpenSupport.swift      # 드롭 provider → .hwp/.hwpx URL (플랫폼별 경로) (#126)
 │   ├── OutlineSidebar.swift       # metadata.outline만으로 만든 개요·책갈피 목록 (#77)
 │   ├── ThumbnailSidebar.swift     # HwpPageThumbnails만으로 만든 쪽 축소판 그리드 (#76)
 │   ├── UnsupportedElementsList.swift  # 미지원 요소 배너 + 목록 (#126)
@@ -275,8 +282,8 @@ rm -rf ~/Library/Developer/Xcode/DerivedData/HwpSwiftSample-*
 cd Sample && xcodebuild -project HwpSwiftSample.xcodeproj -resolvePackageDependencies
 ```
 
-**`.hwp` 파일을 열었는데 렌더링이 비어 있음**
-Blank fixture는 원래 빈 페이지. 다른 fixture(예: `Tests/CoreHwpTests/**/Read/*.hwp`)로 시도.
+**`.hwp`/`.hwpx` 파일을 열었는데 렌더링이 비어 있음**
+`blank-win2020` fixture는 `Fixtures/`(`.hwp`)·`HwpxFixtures/`(`.hwpx`) 양쪽 다 원래 빈 페이지. 다른 fixture(예: `Tests/CoreHwpTests/Fixtures/noori/document.hwp`, `Tests/CoreHwpTests/HwpxFixtures/noori/document.hwpx`)로 시도.
 
 **하이퍼링크 클릭 / 미지원 요소**
 하이퍼링크는 scheme 검증(`http`/`https`/`mailto`) 후 시스템 브라우저로 열리고,

@@ -61,7 +61,13 @@ targets:
               public.filename-extension: [hwp]
           - UTTypeIdentifier: dev.sboh.hwpx
             UTTypeDescription: HWPX Document
-            UTTypeConformsTo: [public.zip-archive]
+            # 컨테이너가 ZIP이어도 `public.zip-archive`에 적합시키지 않는다 —
+            # 그러면 iOS Files가 .hwpx를 아카이브로 보고 탭 시 압축 해제하며
+            # macOS '다음으로 열기' 후보에 Archive Utility가 낀다 (시뮬레이터·
+            # 프로브 앱 실측). docx/epub·한컴의 hwpx UTI처럼 문서 UTI는
+            # `public.data`만 적합하고, ZIP 감지는 파서(`HwpFile`)의 바이트
+            # 스니핑이 맡는다.
+            UTTypeConformsTo: [public.data]
             UTTypeTagSpecification:
               public.filename-extension: [hwpx]
         UILaunchScreen:
