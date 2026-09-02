@@ -12,8 +12,8 @@ struct HwpxBinDataCatalog {
     var binDataArray: [HwpBinData] = []
     /// `HwpFile.binaryDataArray`에 들어갈 스트림 — 엔트리가 실재하는 것만.
     var binaryDataArray: [HwpBinaryData] = []
-    /// manifest item id → BinItem id (1-based). `hp:pic`의
-    /// `binaryItemIDRef`를 표 107 payload의 binItemId로 바꿀 때 쓴다.
+    /// manifest item id → BinItem id (1-based). `hp:pic`(표 107 payload)과
+    /// `hp:ole`(표 118 payload, #134)의 `binaryItemIDRef`를 BinItem id로 바꿀 때 쓴다.
     var binItemIdByManifestId: [String: UInt16] = [:]
 }
 

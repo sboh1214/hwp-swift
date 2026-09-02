@@ -1,7 +1,7 @@
 @testable import CoreHwp
 import Foundation
 
-/// 표·그림 매퍼 스위트가 공유하는 합성 픽스처 — id 테이블·파서 래퍼·실물 구조 XML.
+/// 표·그림·OLE 매퍼 스위트가 공유하는 합성 픽스처 — id 테이블·파서 래퍼·실물 구조 XML.
 enum HwpxObjectFixture {
     static func makeContext(
         options: HwpLoadOptions = .default,
@@ -83,5 +83,31 @@ enum HwpxObjectFixture {
     <hc:img binaryItemIDRef="image1" bright="5" contrast="-3" effect="GRAY_SCALE" \
     alpha="0"/>\
     </hp:pic>
+    """
+
+    /// chart 변환 쌍의 `hp:ole` 실물 구조 (한글.app 12.30.0 저장본, 속성·자식 순서 그대로).
+    static let oleXML = """
+    <hp:ole xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" \
+    xmlns:hc="http://www.hancom.co.kr/hwpml/2011/core" id="1179796405" zOrder="0" \
+    numberingType="PICTURE" textWrap="SQUARE" textFlow="BOTH_SIDES" lock="0" \
+    dropcapstyle="None" href="" groupLevel="0" instid="0" objectType="UNKNOWN" \
+    binaryItemIDRef="ole1" hasMoniker="0" drawAspect="CONTENT" eqBaseLine="0">\
+    <hp:offset x="0" y="0"/><hp:orgSz width="7200" height="7200"/>\
+    <hp:curSz width="0" height="0"/><hp:flip horizontal="0" vertical="0"/>\
+    <hp:rotationInfo angle="0" centerX="0" centerY="0" rotateimage="1"/>\
+    <hp:renderingInfo><hc:transMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/>\
+    <hc:scaMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/>\
+    <hc:rotMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/></hp:renderingInfo>\
+    <hc:extent x="7200" y="7200"/>\
+    <hp:lineShape color="#000000" width="0" style="NONE" endCap="ROUND" \
+    headStyle="NORMAL" tailStyle="NORMAL" headfill="0" tailfill="0" \
+    headSz="SMALL_SMALL" tailSz="SMALL_SMALL" outlineStyle="NORMAL" alpha="0"/>\
+    <hp:sz width="32250" widthRelTo="ABSOLUTE" height="18750" heightRelTo="ABSOLUTE" \
+    protect="0"/>\
+    <hp:pos treatAsChar="0" affectLSpacing="0" flowWithText="1" allowOverlap="0" \
+    holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="COLUMN" vertAlign="TOP" \
+    horzAlign="LEFT" vertOffset="0" horzOffset="0"/>\
+    <hp:outMargin left="0" right="0" top="0" bottom="0"/>\
+    </hp:ole>
     """
 }

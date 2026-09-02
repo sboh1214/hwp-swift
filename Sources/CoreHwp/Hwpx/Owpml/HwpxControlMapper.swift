@@ -74,6 +74,11 @@ enum HwpxControlMapper {
                 fourCC: HwpCommonCtrlId.picture.rawValue,
                 ctrl: .picture(HwpxPictureMapper.map(node, context: context))
             )
+        case "ole":
+            // OLE 개체(표 117, 속성은 표 118) — 내장 차트가 여기로 온다. 조판이 `.ole`을
+            // `.genShapeObject`와 같은 개체 분기로 보내 `chartFrame`을 그리므로
+            // 강등 상태로는 차트가 통째로 빠진다 (#134).
+            return HwpxOleMapper.anchor(node, context: context)
         default:
             return classifyAnchorObject(node, maxDepth: context.unknownDepthLimit)
         }
@@ -115,16 +120,16 @@ enum HwpxControlMapper {
         ))
     }
 
-    /// 코드 11(개체 앵커)로 자리하는 미구현 요소들의 4CC (tbl·pic은 위에서
+    /// 코드 11(개체 앵커)로 자리하는 미구현 요소들의 4CC (tbl·pic·ole은 위에서
     /// typed 매핑으로 승격됐다).
     static let objectFourCCs: [String: UInt32] = [
-        "ole": HwpCommonCtrlId.ole.rawValue,
         // 2016 ooxmlchart 확장 — 한글.app은 <hp:switch>로 <hp:chart>와
-        // <hp:ole> 두 표현을 함께 적고 우리는 default(ole)를 고르지만,
-        // fallback 없이 <hp:chart>만 오면 여기 없을 때 .unknown으로 떨어져
-        // 앵커도 ctrl 슬롯도 없이 사라진다. 쌍둥이와 같은 4CC를 실어 어느
-        // 분기를 고르든 같은 강등 앵커가 되게 한다 (요소 이름은 payload에
-        // 남아 진단에서 갈린다).
+        // <hp:ole> 두 표현을 함께 적고 우리는 default(ole)를 골라 typed
+        // 승격하지만(#134), fallback 없이 <hp:chart>만 오면 여기 없을 때
+        // .unknown으로 떨어져 앵커도 ctrl 슬롯도 없이 사라진다. 쌍둥이와 같은
+        // 4CC를 실어 강등 앵커라도 자리를 지키게 한다 (요소 이름은 payload에
+        // 남아 진단에서 갈린다). chartIDRef로 Chart/*.xml을 직접 읽는 경로는
+        // 실물 픽스처가 없어 미승격이다.
         "chart": HwpCommonCtrlId.ole.rawValue,
         "equation": HwpCommonCtrlId.equation.rawValue,
         "line": HwpCommonCtrlId.line.rawValue,

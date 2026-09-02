@@ -118,6 +118,11 @@ struct DocumentEquivalenceProjection {
     let tableShapes: [TableShape]
     let tableAnchorOffsets: [AnchorOffset]
     let imageCount: Int
+    /// OLE 개체 요소의 BinItem id — HWPX `hp:ole`이 typed 승격돼야 HWP 쌍(gso +
+    /// `$ole` 개체 요소)과 같은 개체 요소가 선다 (#134). 강등 상태면 HWPX 쪽
+    /// 배열이 비어 등식이 깨진다. 컨트롤 종류(`.genShapeObject` ↔ `.ole`)는
+    /// 포맷마다 다르므로 개체 요소 단위로 센다 — 그림 축과 같은 기준이다.
+    let oleBinItemIds: [Int]
     let pageNumberPositions: [PageNumberPosition]
 
     init(of file: HwpFile) {
@@ -159,6 +164,7 @@ struct DocumentEquivalenceProjection {
             )
         }
         imageCount = HwpxFixtureAssertions.imageBinItemIds(from: file).count
+        oleBinItemIds = HwpxFixtureAssertions.oleBinItemIds(from: file)
         pageNumberPositions = FixtureDerivedValues.pageNumberPositions(from: file).map {
             PageNumberPosition(
                 property: $0.property,
@@ -246,6 +252,9 @@ struct DocumentEquivalenceProjection {
         )
         expect(imageCount).to(
             equal(other.imageCount), description: "\(fixtureId) imageCount"
+        )
+        expect(oleBinItemIds).to(
+            equal(other.oleBinItemIds), description: "\(fixtureId) oleBinItemIds"
         )
         expect(pageNumberPositions).to(
             equal(other.pageNumberPositions),
