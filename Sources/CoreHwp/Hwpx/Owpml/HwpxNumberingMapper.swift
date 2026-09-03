@@ -207,6 +207,17 @@ private extension HwpxNumberingMapper {
     /// 슬롯을 얻은 형식만 보고 한다 — 슬롯을 못 얻은 `hh:paraHead`는 형식이 되지
     /// 않으므로 거부 사유가 아니라 강등 대상이다. 65,535 단위에서 자르는 절단은
     /// 서러게이트 쌍을 갈라 조용히 손상시키므로 쓰지 않는다.
+    ///
+    /// 검사를 `HwpNumberingFormat` 생성 **앞**으로 당기지 않는다. 그 init이
+    /// 문자열을 UTF-16 payload로 즉시 직렬화하는 것은 맞지만 거부 경로가 수락
+    /// 경로보다 비싸지 않다 — 같은 8M code unit 총량 실측에서 초과 형식 하나가
+    /// 0.157s/16,000,000바이트, 유효 형식 122개가 0.159s/15,990,540바이트이고
+    /// **유효 쪽은 그 payload를 문서에 상주시킨다**(거부 쪽은 throw로 즉시
+    /// 해제된다). 즉 초과 입력으로 얻는 자원 이득이 없어 당겨도 최악 봉투가
+    /// 줄지 않고, `entry`를 순수 매퍼로 흘려 `mapBullet`·`paraHeadInfo`와
+    /// 시그니처만 비대칭이 된다. `hwpxValidateNameLength`가 사전 검사인 것은
+    /// 비용이 아니라 `WORD(name.utf16.count)`가 **트랩**하기 때문이다(P1) —
+    /// 여기 `WORD(clamping:)`은 트랩하지 않는다.
     static func format(
         for node: HwpxXMLNode?, tables: HwpxIdTables
     ) -> HwpNumberingFormat {
