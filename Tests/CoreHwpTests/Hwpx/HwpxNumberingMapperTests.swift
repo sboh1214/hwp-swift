@@ -382,6 +382,27 @@ final class HwpxNumberingMapperTests: XCTestCase {
         }.to(throwError())
     }
 
+    /// 슬롯을 얻지 못한 `hh:paraHead`는 형식이 되지 않으므로 길이 가드의
+    /// 대상이 아니다 — 중복 수준·범위 밖 수준은 문서를 거부하지 않고 진단으로
+    /// 강등해야 한다 (`Sources/CoreHwp/Hwpx/AGENTS.md` 문단 머리 규약).
+    func testOverlongTextOnRejectedParaHeadIsDemotedNotRejected() throws {
+        let overLimit = String(repeating: "^", count: Int(WORD.max) + 1)
+        for rejected in [
+            "<hh:paraHead level=\"1\" textOffset=\"0\" charPrIDRef=\"-1\">\(overLimit)</hh:paraHead>",
+            "<hh:paraHead level=\"0\" textOffset=\"0\" charPrIDRef=\"-1\">\(overLimit)</hh:paraHead>",
+            "<hh:paraHead level=\"11\" textOffset=\"0\" charPrIDRef=\"-1\">\(overLimit)</hh:paraHead>",
+        ] {
+            let docInfo = try mapFamilies("""
+            <hh:numberings itemCnt="1"><hh:numbering id="1" start="1">\
+            <hh:paraHead level="1" textOffset="0" charPrIDRef="-1">^1.</hh:paraHead>\
+            \(rejected)</hh:numbering></hh:numberings>
+            """)
+            let numbering = try XCTUnwrap(docInfo.idMappings.numberingArray.first)
+            expect(numbering.formatArray[0].format) == "^1."
+            expect(Self.demotedNames(docInfo)) == ["paraHead"]
+        }
+    }
+
     // MARK: - Helpers
 
     /// 속성 12바이트의 선두 `UINT32`.

@@ -422,27 +422,26 @@ private extension HwpxHeaderMapper {
                 reason: "numbering definitions exceed the 65,535-entry reference space"
             )
         }
-        // 번호 형식 문자열은 표 38이 WORD 길이 + WCHAR×len으로 적는다 — 65,535
-        // 단위를 넘으면 `HwpNumberingFormat`의 길이만 접히고 문자열은 남아
-        // "길이 == 문자 수" 불변식이 깨진 모델이 나간다. 절단은 서러게이트 쌍을
-        // 가르므로 typed error로 거부한다 (`HwpxParagraphMapper`·`HwpxTableMapper`의
-        // 카운트 불변식 가드와 같은 처방).
-        for numbering in numberings {
-            for paraHead in numbering.headChildren(named: "paraHead")
-                where paraHead.text.utf16.count > Int(WORD.max)
-            {
-                throw HwpError.invalidXML(
-                    entry: mapping.entry,
-                    reason: "numbering format text exceeds the 65,535 UTF-16 unit length field"
-                )
-            }
-        }
         var mapped: [HwpNumbering] = []
         var rejected: [[Int]] = []
         for numbering in numberings {
             let definition = HwpxNumberingMapper.mapNumbering(
                 numbering, tables: mapping.idTables
             )
+            // 번호 형식 문자열은 표 38이 WORD 길이 + WCHAR×len으로 적는다 —
+            // 65,535 단위를 넘으면 `HwpNumberingFormat`의 길이만 접히고 문자열은
+            // 남아 "길이 == 문자 수" 불변식이 깨진 모델이 나간다. 절단은
+            // 서러게이트 쌍을 가르므로 typed error로 거부한다
+            // (`HwpxParagraphMapper`·`HwpxTableMapper`의 카운트 불변식 가드와
+            // 같은 처방). 검사는 **수준 슬롯을 얻은 형식만** 본다 — 중복 수준과
+            // 1-10 밖 수준의 `hh:paraHead`는 형식이 되지 않으므로 불변식을
+            // 깨뜨릴 수 없고, 문서를 거부하는 대신 진단으로 강등하는 것이 규약이다.
+            guard Self.formatLengthsAreConsistent(definition.numbering) else {
+                throw HwpError.invalidXML(
+                    entry: mapping.entry,
+                    reason: "numbering format text exceeds the 65,535 UTF-16 unit length field"
+                )
+            }
             mapped.append(definition.numbering)
             rejected.append(definition.rejectedParaHeadIndices)
         }
@@ -450,6 +449,13 @@ private extension HwpxHeaderMapper {
         for (numbering, rejectedIndices) in zip(numberings, rejected) {
             demoteParaHeads(in: numbering, rejected: rejectedIndices, into: &mapping)
         }
+    }
+
+    /// `formatLength == format.utf16.count` — 바이너리 로더가 길이 필드만큼
+    /// WCHAR를 정확히 읽어 보장하는 불변식이다.
+    static func formatLengthsAreConsistent(_ numbering: HwpNumbering) -> Bool {
+        (numbering.formatArray + (numbering.extendedFormatArray ?? []))
+            .allSatisfy { Int($0.formatLength) == $0.format.utf16.count }
     }
 
     /// `hh:bullets` 가족을 글머리표 배열로 옮긴다.

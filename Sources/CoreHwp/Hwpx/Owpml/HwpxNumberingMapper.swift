@@ -202,9 +202,11 @@ private extension HwpxNumberingMapper {
     ///
     /// `formatLength == format.utf16.count`는 바이너리 파서가 보장하는 불변식이라
     /// (표 38이 WORD 길이 + WCHAR×len으로 적고 로더가 len개를 정확히 읽는다)
-    /// 길이만 접히면 모델이 어긋난다. 여기 `clamping`은 방어용이고, 실제 거부는
-    /// `HwpxHeaderMapper.mapNumberings`가 가족 단위로 먼저 한다 — 65,535 단위에서
-    /// 자르는 절단은 서러게이트 쌍을 갈라 조용히 손상시키므로 쓰지 않는다.
+    /// 길이만 접히면 모델이 어긋난다. 여기 `clamping`은 그 어긋남을 관찰 가능한
+    /// 형태로 남기고, 실제 거부는 `HwpxHeaderMapper.mapNumberings`가 **매핑 뒤에**
+    /// 슬롯을 얻은 형식만 보고 한다 — 슬롯을 못 얻은 `hh:paraHead`는 형식이 되지
+    /// 않으므로 거부 사유가 아니라 강등 대상이다. 65,535 단위에서 자르는 절단은
+    /// 서러게이트 쌍을 갈라 조용히 손상시키므로 쓰지 않는다.
     static func format(
         for node: HwpxXMLNode?, tables: HwpxIdTables
     ) -> HwpNumberingFormat {
