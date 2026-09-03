@@ -157,9 +157,10 @@ binaryItemIDRef="ole1" hasMoniker="0" drawAspect="CONTENT" eqBaseLine="0"` +
 
 `eqBaseLine`은 **수식 개체에서만** 표 119 코드로 변환한다. 스펙은 raw 0을
 "디폴트(85%)", 1~101을 0~100%로 적고 "현재는 수식만이 베이스라인을 별도로
-가진다"고 명시한다. HWPX 값이 백분율이라는 근거는 한컴 모델의 XML 기본값이
-85라는 것이다(`OWPML/Class/Para/OLEType.cpp`의 `m_uEqBaseLine(85)`) — raw를
-담는 속성이었다면 기본값이 "디폴트"를 뜻하는 0이었을 것이다. 그래서
+가진다"고 명시한다. HWPX 값이 백분율이라는 근거는 한컴 모델이 그 속성을 85로
+초기화해 직렬화한다는 것이다(`OWPML/Class/Para/OLEType.cpp`의
+`m_uEqBaseLine(85)`; 공개 모델에 XSD는 없다) — raw를 담는 속성이었다면 기본값이
+"디폴트"를 뜻하는 0이었을 것이다. 그래서
 `objectType="EQUATION"`의 명시값만 0~100으로 좁혀 `+1`로 싣고(0% → 1,
 50% → 51, 100% → 101), 생략·형식 오류는 raw 0("디폴트 85%")이다.
 수식이 아닌 종류는 값을 그대로 싣는다 — 스펙상 베이스라인을 갖지 않는
