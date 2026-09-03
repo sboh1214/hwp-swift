@@ -16,12 +16,14 @@
     "doc-info",
     "doc-properties",
     "styles",
+    "bullets-numbering",
     "preview-text",
     "preview-image"
   ],
   "expectations": {
     "binDataCount": 4,
     "borderFillCount": 20,
+    "bulletCount": 1,
     "charShapeCount": 58,
     "faceNamesKorean": [
       "굴림",
@@ -50,6 +52,7 @@
       "marginTop": 2834,
       "width": 59528
     },
+    "numberingCount": 2,
     "paraShapeCount": 47,
     "sectionCount": 1,
     "sectionParagraphCounts": [

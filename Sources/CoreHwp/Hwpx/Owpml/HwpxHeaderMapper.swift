@@ -212,7 +212,7 @@ private extension HwpxHeaderMapper {
         // 가족은 refList 안에 한 번씩 온다 — 중복 가족까지 등록하면 offset이
         // 가족마다 0부터 다시 매겨져 두 가족의 서로 다른 id가 같은 슬롯을
         // 신청한다. 첫 가족만 등록해 오프셋 공간을 하나로 유지한다 (2차
-        // 패스의 강등과 짝이고, 승격 대기 중인 numberings·bullets도 같다).
+        // 패스의 강등과 짝이다).
         var registered = Set<String>()
         for family in refList.childElements
             where family.isNamed(family.localName, in: HwpxNamespace.head)
@@ -287,11 +287,10 @@ private extension HwpxHeaderMapper {
                 try mapParaProperties(family, into: &mapping)
             case "styles":
                 try mapStyles(family, into: &mapping)
-            case "numberings", "bullets":
-                // 1차 범위 밖 — id 테이블만 등록해 참조가 결정적으로
-                // 재작성되게 하고, 미해석 사실은 진단에 남긴다 (배열이
-                // 비어 있으므로 조판은 번호 없이 그린다).
-                mapping.demote(family)
+            case "numberings":
+                try mapNumberings(family, into: &mapping)
+            case "bullets":
+                try mapBullets(family, into: &mapping)
             default:
                 mapping.demote(family)
             }
@@ -386,7 +385,7 @@ private extension HwpxHeaderMapper {
     ]
 
     /// 가족 → 정의 요소 이름. `headChildren` 조회가 거른 타 vocabulary
-    /// 디코이를 강등할 때 쓴다 (numbering/bullet 가족은 통째로 강등되므로 제외).
+    /// 디코이를 강등할 때 쓴다.
     /// `hh:borderFill` 자식의 기대 vocabulary — 테두리 4종은 head, 채우기는
     /// core다 (전 픽스처 실측: 테두리 각 38건 `hh:`, fillBrush·winBrush 각
     /// 17건 `hc:`). 한쪽으로 통일하면 반드시 다른 쪽이 진단에서 오보된다.
@@ -401,8 +400,89 @@ private extension HwpxHeaderMapper {
     static let definitionNames: [String: String] = [
         "fontfaces": "fontface", "borderFills": "borderFill",
         "charProperties": "charPr", "tabProperties": "tabPr",
+        "numberings": "numbering", "bullets": "bullet",
         "paraProperties": "paraPr", "styles": "style",
     ]
+
+    /// `hh:numberings` 가족을 문단 번호 배열로 옮긴다.
+    ///
+    /// 수준 슬롯을 얻지 못한 `hh:paraHead`(중복 수준·1-10 밖 수준)는 진단으로
+    /// 강등해야 "미해석 강등은 진단으로 보고됨" 규약이 지켜진다.
+    static func mapNumberings(
+        _ family: HwpxXMLNode,
+        into mapping: inout HwpxHeaderMapping
+    ) throws {
+        let numberings = family.headChildren(named: "numbering")
+        // 번호 참조는 1-based UInt16 (0 = 없음) — borderFill과 같은 계열이라
+        // 65,536번째 정의부터 `numberingOrBulletId`의 offset + 1 클램프가
+        // 직전 정의로 별칭화한다.
+        guard numberings.count <= 65535 else {
+            throw HwpError.invalidXML(
+                entry: mapping.entry,
+                reason: "numbering definitions exceed the 65,535-entry reference space"
+            )
+        }
+        var mapped: [HwpNumbering] = []
+        var rejected: [[Int]] = []
+        for numbering in numberings {
+            let definition = HwpxNumberingMapper.mapNumbering(
+                numbering, tables: mapping.idTables
+            )
+            mapped.append(definition.numbering)
+            rejected.append(definition.rejectedParaHeadIndices)
+        }
+        mapping.idMappings.numberingArray = mapped
+        for (numbering, rejectedIndices) in zip(numberings, rejected) {
+            demoteParaHeads(in: numbering, rejected: rejectedIndices, into: &mapping)
+        }
+    }
+
+    /// `hh:bullets` 가족을 글머리표 배열로 옮긴다.
+    static func mapBullets(
+        _ family: HwpxXMLNode,
+        into mapping: inout HwpxHeaderMapping
+    ) throws {
+        let bullets = family.headChildren(named: "bullet")
+        // 글머리표 참조도 1-based UInt16이다 (문단 모양이 번호와 같은 필드를
+        // 쓰고 머리 종류로 어느 배열인지 가른다).
+        guard bullets.count <= 65535 else {
+            throw HwpError.invalidXML(
+                entry: mapping.entry,
+                reason: "bullet definitions exceed the 65,535-entry reference space"
+            )
+        }
+        var mapped: [HwpBullet] = []
+        var rejected: [[Int]] = []
+        for bullet in bullets {
+            let definition = HwpxNumberingMapper.mapBullet(bullet, tables: mapping.idTables)
+            mapped.append(definition.bullet)
+            rejected.append(definition.rejectedParaHeadIndices)
+        }
+        mapping.idMappings.bulletArray = mapped
+        for (bullet, rejectedIndices) in zip(bullets, rejected) {
+            demoteParaHeads(in: bullet, rejected: rejectedIndices, into: &mapping)
+        }
+    }
+
+    /// 정의 하나의 자식 강등 — 소비된 `hh:paraHead`는 그 안의 미지 자식만,
+    /// 슬롯을 얻지 못한 것은 서브트리째 남긴다 (같은 노드를 두 번 싣지 않는다).
+    static func demoteParaHeads(
+        in definition: HwpxXMLNode,
+        rejected: [Int],
+        into mapping: inout HwpxHeaderMapping
+    ) {
+        mapping.demoteUnconsumed(
+            in: definition, consumed: ["paraHead"], namespace: HwpxNamespace.head
+        )
+        let rejectedIndices = Set(rejected)
+        for (index, paraHead) in definition.headChildren(named: "paraHead").enumerated() {
+            if rejectedIndices.contains(index) {
+                mapping.demote(paraHead)
+            } else {
+                mapping.demoteUnconsumed(in: paraHead, consumed: [])
+            }
+        }
+    }
 
     /// `hh:tabProperties` 가족을 탭 정의 배열로 옮긴다.
     ///

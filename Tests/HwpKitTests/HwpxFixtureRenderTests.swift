@@ -200,6 +200,77 @@ final class HwpxFixtureRenderTests: XCTestCase {
         }
     }
 
+    /// 글머리표 문단 머리는 PARA_TEXT가 아니라 조판이 만드는 라벨이라 파싱
+    /// 등가로는 잡히지 않는다 (#133). `hh:bullet` 정의가 비어 있으면
+    /// `HwpTextRunBuilder.appendBulletHeading`이 조기 반환해 선행 `- `가
+    /// 통째로 사라지므로, 라벨이 붙은 줄만 뽑아 HWP 쌍과 등식으로 건다.
+    ///
+    /// 페인트 리스트 전량 등식은 축이 아니다 — noori HWPX 렌더에는 빈 문단
+    /// draw(`"\r"`)가 4건 더 있어(2쪽 3건·3쪽 1건, drawText 64 대 68) 이
+    /// 이슈와 무관하게 문자열이 갈린다. 등식만 두면 양쪽이 함께 비어도
+    /// 통과하므로 HWPX 쪽에 직접 핀을 함께 둔다.
+    func testHwpxBulletHeadingsMatchHwpPairs() async throws {
+        let hwpxFixtures = try FixtureRoot.loadAllHwpxFixtures(from: #file)
+        let hwpFixtures = try FixtureRoot.loadAllFixtures(from: #file)
+        let hwpByID = Dictionary(uniqueKeysWithValues: hwpFixtures.map { ($0.id, $0) })
+        let loader = HwpDocumentLoader(fontResolver: .testDeterministic)
+
+        var failures: [String] = []
+        var comparedCount = 0
+        var nooriBulletLines: [String]?
+        for fixture in hwpxFixtures where !fixture.hasExpectedError {
+            guard let pairID = fixture.sourceHwpFixture, let pair = hwpByID[pairID],
+                  !pair.hasExpectedError
+            else { continue }
+            comparedCount += 1
+            do {
+                let hwpx = try await loader.load(from: fixture.documentURL)
+                let hwp = try await loader.load(from: pair.documentURL)
+                let hwpxLines = Self.bulletHeadingLines(of: hwpx)
+                let hwpLines = Self.bulletHeadingLines(of: hwp)
+                if hwpxLines != hwpLines {
+                    failures.append(
+                        "[\(fixture.id)] hwpx bullet lines \(hwpxLines) != hwp \(hwpLines)"
+                    )
+                }
+                if fixture.id == "noori" {
+                    nooriBulletLines = hwpxLines
+                }
+            } catch {
+                failures.append("[\(fixture.id)] load threw: \(error)")
+            }
+        }
+
+        expect(comparedCount) >= 10
+        // 두 문단은 표 셀 안이라 `page.blocks`에는 잡히지 않는다 — 추출은
+        // 페인트 리스트여야 한다. 본문 자체가 `-`로 끝나므로 `contains("-")`
+        // 검사는 무의미하고, 선행 `- `를 문자열로 직접 핀한다.
+        expect(nooriBulletLines) == [
+            "- “세상”의 옛말로, 우주까지 확장된 새로운 세상을 연다는 의미 -",
+            "- 명칭공모전에 1만건 이상 응모, 뜨거운 관심 보여 -",
+        ]
+        if !failures.isEmpty {
+            fail("HWP↔HWPX bullet heading mismatches (\(failures.count)):\n" +
+                failures.joined(separator: "\n"))
+        }
+    }
+
+    /// 글머리표 라벨(`문자 + 공백`)이 앞에 붙은 줄만 문서 순서로 모은다.
+    ///
+    /// 라벨 문자는 픽스처 10종의 유일한 실물인 `-`로 한정한다. `□`·`o` 같은
+    /// 다른 기호는 noori 본문 문단이 **글자 그대로** 쓰고 있어(문단 머리가
+    /// 아니다) 넓히면 본문이 딸려 들어온다.
+    ///
+    /// 줄 나누기는 `components(separatedBy: .newlines)`여야 한다 — 문단 끝은
+    /// CRLF이고 Swift에서 `"\r\n"`은 **문자 하나**(확장 grapheme cluster)라
+    /// `split(separator: "\n")`은 아무것도 쪼개지 못한다.
+    private static func bulletHeadingLines(of document: HwpDocument) -> [String] {
+        FixtureText.extractFromPaintList(document)
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { $0.hasPrefix("- ") }
+    }
+
     /// 문서 전체의 `.chart` payload 블록 수.
     private static func chartBlockCount(of document: HwpDocument) -> Int {
         document.pages.flatMap(\.blocks).filter { block in
