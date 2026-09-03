@@ -149,9 +149,21 @@ U+0000 한 자로 두면 조판의 `char.isEmpty` 게이트를 지나 NUL 글리
 체크 글머리표 문자(`hh:bullet@checkedChar`)도 같은 WCHAR 규약으로 읽되 **등가
 축에는 올리지 않는다** — 바이너리는 표 42의 고정 WCHAR라 값이 없어도 U+0000을
 담고 HWPX는 선택 속성이라 부재가 빈 문자열이어서, 정규화 없이는 같은 문서가
-포맷마다 다른 값이 된다.
-레코드 payload는 합성하지 않는다(`rawPayload = Data()` — `HwpBorderFill`·
-`HwpFaceName`의 HWPX 전용 init과 같은 DocInfo 가족 관행).
+포맷마다 다른 값이 된다. 표 42의 필드가 WCHAR **하나**라 비BMP 문자
+(`char="😀"`)도 담기지 않는데, 첫 unit만 떼면 반쪽 서러게이트를 `String`이
+U+FFFD로 복구해 문서에 없던 대체 글리프를 **우리가 만들어** 그리게 된다 —
+표현 불가한 unit은 U+0000과 같이 빈 문자열로 접는다(`surrogateSafePrefix`가
+자기 절단이 만든 U+FFFD를 떨구는 것과 같은 태도다).
+
+레코드 payload는 합성하지 않는다 — `rawPayload`·`charRawPayload`뿐 아니라
+**`HwpNumberingFormat.formatRawPayload`도 `Data()`로 명시**한다
+(`HwpBorderFill`·`HwpFaceName`의 HWPX 전용 init과 같은 DocInfo 가족 관행).
+범용 init에 맡기면 기본 인자가 문자열 전체를 UTF-16으로 합성해 **양 모드에서**
+들고 있는데, 게이트 여부의 기준은 대응 바이너리 로더다 — 번호 형식은
+`consumedData`(`.viewer`에서 비움)라 HWPX도 비워야 패리티이고, `hp:ole`처럼
+`decoupledPayload`(양 모드 보존)인 것은 반대로 비우면 안 된다
+(`HwpxOleMapperTests.testPayloadSurvivesViewerOptions`). noori 실측으로
+`.viewer`에서 HWP 0바이트 대 HWPX 88바이트로 갈렸던 자리다.
 
 조판은 무변경이다 — `bulletArray`만 차면 `HwpTextRunBuilder.appendBulletHeading`이
 `bullet.char + " "`를 문단 앞에 전치한다. **번호 문단 머리의 라벨은 이 승격으로도

@@ -289,6 +289,39 @@ final class HwpxNumberingMapperTests: XCTestCase {
         expect(omitted.char) == ""
     }
 
+    /// 표 42의 필드가 WCHAR 하나라 비BMP 문자는 담기지 않는다 — 첫 unit만 떼면
+    /// 반쪽 서러게이트가 U+FFFD로 복구돼 문서에 없던 대체 글리프를 그리므로,
+    /// U+0000과 같이 빈 문자열로 접는다.
+    func testNonBmpBulletCharFoldsToEmptyInsteadOfReplacementCharacter() throws {
+        let emoji = try mapBullet("<hh:bullet id=\"1\" char=\"😀\" checkedChar=\"😀\"/>")
+        expect(emoji.char) == ""
+        expect(emoji.checkChar) == ""
+        // 조판은 `char.isEmpty` 게이트로 건너뛴다 — U+FFFD였다면 통과해 대체
+        // 글리프를 그렸을 것이다.
+        expect(emoji.char.unicodeScalars.contains("\u{FFFD}")) == false
+
+        // 비BMP 뒤에 BMP 문자가 와도 첫 문자가 기준이라 접힌다.
+        let leading = try mapBullet("<hh:bullet id=\"1\" char=\"😀x\"/>")
+        expect(leading.char) == ""
+    }
+
+    /// 레코드 payload는 합성하지 않는다 — 바이너리는 `consumedData`(뷰어 게이트
+    /// 부류)라 `.viewer`에서 비우므로, HWPX만 양 모드에서 들고 있으면 패리티가
+    /// 깨진다. `HwpBullet`의 `charRawPayload`와 같은 DocInfo 가족 관행이다.
+    func testNumberingFormatDoesNotSynthesizeRawPayload() throws {
+        let numbering = try mapNumbering(
+            paraHead("textOffset=\"0\" charPrIDRef=\"-1\"", text: "^1.")
+        )
+        expect(numbering.formatArray[0].format) == "^1."
+        expect(numbering.formatArray[0].formatRawPayload).to(beEmpty())
+        expect(numbering.formatArray.allSatisfy(\.formatRawPayload.isEmpty)) == true
+        expect(numbering.extendedFormatArray?.allSatisfy(\.formatRawPayload.isEmpty)) == true
+
+        let bullet = try mapBullet("<hh:bullet id=\"1\" char=\"-\"/>")
+        expect(bullet.charRawPayload).to(beEmpty())
+        expect(bullet.checkCharRawPayload).to(beEmpty())
+    }
+
     /// `hh:bullet@checkedChar`는 체크 글머리표 문자다 — 한컴 모델이 값이 있을
     /// 때만 쓰므로(`BulletType.cpp`) 생략은 "없음"이다.
     func testBulletCheckedCharIsCarriedIntoCheckChar() throws {

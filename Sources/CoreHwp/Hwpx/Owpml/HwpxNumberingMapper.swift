@@ -208,16 +208,14 @@ private extension HwpxNumberingMapper {
     /// 않으므로 거부 사유가 아니라 강등 대상이다. 65,535 단위에서 자르는 절단은
     /// 서러게이트 쌍을 갈라 조용히 손상시키므로 쓰지 않는다.
     ///
-    /// 검사를 `HwpNumberingFormat` 생성 **앞**으로 당기지 않는다. 그 init이
-    /// 문자열을 UTF-16 payload로 즉시 직렬화하는 것은 맞지만 거부 경로가 수락
-    /// 경로보다 비싸지 않다 — 같은 8M code unit 총량 실측에서 초과 형식 하나가
-    /// 0.157s/16,000,000바이트, 유효 형식 122개가 0.159s/15,990,540바이트이고
-    /// **유효 쪽은 그 payload를 문서에 상주시킨다**(거부 쪽은 throw로 즉시
-    /// 해제된다). 즉 초과 입력으로 얻는 자원 이득이 없어 당겨도 최악 봉투가
-    /// 줄지 않고, `entry`를 순수 매퍼로 흘려 `mapBullet`·`paraHeadInfo`와
-    /// 시그니처만 비대칭이 된다. `hwpxValidateNameLength`가 사전 검사인 것은
-    /// 비용이 아니라 `WORD(name.utf16.count)`가 **트랩**하기 때문이다(P1) —
-    /// 여기 `WORD(clamping:)`은 트랩하지 않는다.
+    /// 검사를 `HwpNumberingFormat` 생성 **앞**으로 당기지 않는다. 아낄 것이
+    /// 없기 때문이다 — `formatRawPayload`를 합성하지 않으므로 수락 경로도 거부
+    /// 경로도 payload 비용이 0이고, 형식 문자열 자체는 `node.text`가 XML 파싱
+    /// 단계에서 이미 물질화한다. 당기면 `entry`를 순수 매퍼로 흘려
+    /// `mapBullet`·`paraHeadInfo`와 시그니처만 비대칭이 된다.
+    /// `hwpxValidateNameLength`가 사전 검사인 것은 비용이 아니라
+    /// `WORD(name.utf16.count)`가 **트랩**하기 때문이다(P1) — 여기
+    /// `WORD(clamping:)`은 트랩하지 않는다.
     static func format(
         for node: HwpxXMLNode?, tables: HwpxIdTables
     ) -> HwpNumberingFormat {
@@ -225,7 +223,14 @@ private extension HwpxNumberingMapper {
         return HwpNumberingFormat(
             property: paraHeadInfo(node, tables: tables).propertyBytes,
             formatLength: WORD(clamping: format.utf16.count),
-            format: format
+            format: format,
+            // 레코드 payload는 합성하지 않는다 — `HwpBullet`의 HWPX init이
+            // `charRawPayload`를 비우는 것과 같은 DocInfo 가족 관행이다.
+            // 생략하면 범용 init의 기본 인자가 문자열 전체를 UTF-16으로
+            // 합성해 **양 모드에서** 들고 있게 되는데, 바이너리 쪽은
+            // `consumedData`(뷰어 게이트 부류)라 `.viewer`에서 비운다 —
+            // noori 실측 `.viewer` HWP 0바이트 대 HWPX 88바이트로 갈렸다.
+            formatRawPayload: Data()
         )
     }
 
@@ -243,10 +248,21 @@ private extension HwpxNumberingMapper {
     /// 이상은 첫 UTF-16 unit이다 (`hp:pageNum sideChar`와 같은 규약).
     /// 조판은 `char.isEmpty` 게이트로 글머리표를 건너뛰므로 U+0000 한 자로
     /// 접으면 NUL 글리프를 그리게 된다.
+    ///
+    /// 표 42의 필드가 WCHAR **하나**라 비BMP 문자(`char="😀"`)는 담기지 않는다.
+    /// 첫 unit만 떼면 반쪽 서러게이트가 되고 `String`이 그것을 U+FFFD로
+    /// 복구해, 문서에 없던 대체 글리프를 **우리가 만들어** 그리게 된다. 그래서
+    /// 표현 불가한 unit은 U+0000과 같이 빈 문자열로 접는다 — 자기 절단이 만든
+    /// U+FFFD를 남기지 않는 `HwpTextRunBuilder.surrogateSafePrefix`(R46 #1),
+    /// `Unicode.Scalar`가 nil이면 장식을 생략하는 `HwpPageChromeBuilder`의
+    /// 줄표 가드와 같은 태도다. 바이너리 쪽은 애초에 고립 서러게이트에서
+    /// 디코딩이 throw하므로 대응 쌍이 없다.
     static func wchar(_ value: String?) -> String {
-        guard let unit = value?.utf16.first, unit != 0 else {
+        guard let unit = value?.utf16.first, unit != 0,
+              let scalar = Unicode.Scalar(unit)
+        else {
             return ""
         }
-        return String(utf16CodeUnits: [unit], count: 1)
+        return String(scalar)
     }
 }
