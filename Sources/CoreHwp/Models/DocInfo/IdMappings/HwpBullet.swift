@@ -39,7 +39,7 @@ extension HwpBullet {
     /// 레코드 payload는 합성하지 않는다 (`HwpBorderFill(hwpxBorders:fillInfo:)`·
     /// `HwpFaceName(hwpxFace:substituteFace:)`와 같은 DocInfo 가족 관행 —
     /// HWPX 매니페스트에 payload 핀이 없고 등가 투영도 제외한다).
-    init(hwpxInfo info: [BYTE], headCharShapeId: Int32, char: String) {
+    init(hwpxInfo info: [BYTE], headCharShapeId: Int32, char: String, checkChar: String) {
         rawPayload = Data()
         self.info = info
         self.headCharShapeId = headCharShapeId
@@ -50,9 +50,11 @@ extension HwpBullet {
         // 픽스처 10종에 사례가 없어 실파일 검증 대기 항목이다.
         imageId = 0
         imageProperty = [0, 0, 0, 0]
-        // 체크 글머리표 문자는 대응 OWPML 속성의 실물이 없어 비운다 — 체크
-        // 여부 자체는 표 39에 자리가 없는 `hh:paraHead@checkable`에 있다.
-        checkChar = ""
+        // 체크 글머리표 문자는 `hh:bullet@checkedChar`다 — 한컴 모델이 값이
+        // 있을 때만 쓰므로(`BulletType.cpp`) 생략은 "없음"이고, HWPX 픽스처
+        // 10종에도 실물이 없다. 체크 **여부**는 표 39에 자리가 없는
+        // `hh:paraHead@checkable`이라 여전히 싣지 않는다.
+        self.checkChar = checkChar
         checkCharRawPayload = Data()
         undocumentedTrailing = []
     }

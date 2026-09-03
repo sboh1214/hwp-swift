@@ -422,6 +422,21 @@ private extension HwpxHeaderMapper {
                 reason: "numbering definitions exceed the 65,535-entry reference space"
             )
         }
+        // 번호 형식 문자열은 표 38이 WORD 길이 + WCHAR×len으로 적는다 — 65,535
+        // 단위를 넘으면 `HwpNumberingFormat`의 길이만 접히고 문자열은 남아
+        // "길이 == 문자 수" 불변식이 깨진 모델이 나간다. 절단은 서러게이트 쌍을
+        // 가르므로 typed error로 거부한다 (`HwpxParagraphMapper`·`HwpxTableMapper`의
+        // 카운트 불변식 가드와 같은 처방).
+        for numbering in numberings {
+            for paraHead in numbering.headChildren(named: "paraHead")
+                where paraHead.text.utf16.count > Int(WORD.max)
+            {
+                throw HwpError.invalidXML(
+                    entry: mapping.entry,
+                    reason: "numbering format text exceeds the 65,535 UTF-16 unit length field"
+                )
+            }
+        }
         var mapped: [HwpNumbering] = []
         var rejected: [[Int]] = []
         for numbering in numberings {

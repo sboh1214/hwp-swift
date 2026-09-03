@@ -70,7 +70,11 @@ enum HwpxNumberingMapper {
             assignment.slots[$0]
         }
         let formats = levels.map { format(for: $0, tables: tables) }
-        let startingIndexes = levels.map { UInt32($0?.uint16Attribute("start", default: 1) ?? 1) }
+        // 수준별 시작 번호는 표 38이 UINT(4바이트)로 적고 한컴 모델도 `UINT`다
+        // (`CParaHeadType2::m_StartNumber`). `uint16Attribute`로 먼저 읽으면
+        // 65,535를 넘는 값이 파싱 실패로 기본값 1이 되어 조용히 뭉개진다 —
+        // 문서 수준 `hh:numbering@start`만 표 38대로 UINT16이다.
+        let startingIndexes = levels.map { $0?.uint32Attribute("start", default: 1) ?? 1 }
 
         return HwpxNumberingDefinition(
             numbering: HwpNumbering(
@@ -93,7 +97,7 @@ enum HwpxNumberingMapper {
     ) -> HwpxBulletDefinition {
         let paraHeads = node.headChildren(named: "paraHead")
         return HwpxBulletDefinition(
-            bullet: bullet(paraHeads.first, char: node.attribute("char"), tables: tables),
+            bullet: bullet(paraHeads.first, of: node, tables: tables),
             rejectedParaHeadIndices: Array(paraHeads.indices.dropFirst())
         )
     }
@@ -110,10 +114,16 @@ enum HwpxNumberingMapper {
             return HwpxParaHeadInfo()
         }
         var property = UInt32(alignments[node.attribute("align") ?? "LEFT"] ?? 0) & 0b11
-        if node.boolAttribute("useInstWidth") {
+        // 생략은 참이다. 근거는 생성자 초기값이 아니라 **참조 리더의 생략
+        // 처리**다 — 한컴 `Util.cpp`의 `GetAttribute(..., bool& value)`는 속성이
+        // 없으면 `value`를 건드리지 않고 false를 반환하므로, 생성자가 세운
+        // `m_bUseInstWidth(true)`·`m_bAutoIndent(true)`(`ParaHeadType.cpp`)가
+        // 그대로 남는다. 인자 없는 `boolAttribute`의 거짓 기본값을 쓰면 두 속성을
+        // 생략하는 저장기의 문서에서 bit 2·3이 참조 구현과 반대로 선다.
+        if node.boolAttribute("useInstWidth", default: true) {
             property |= 1 << 2
         }
-        if node.boolAttribute("autoIndent") {
+        if node.boolAttribute("autoIndent", default: true) {
             property |= 1 << 3
         }
         if textOffsetTypes[node.attribute("textOffsetType") ?? "PERCENT"] ?? 0 != 0 {
@@ -157,13 +167,14 @@ struct HwpxBulletDefinition {
 
 private extension HwpxNumberingMapper {
     static func bullet(
-        _ paraHead: HwpxXMLNode?, char: String?, tables: HwpxIdTables
+        _ paraHead: HwpxXMLNode?, of node: HwpxXMLNode, tables: HwpxIdTables
     ) -> HwpBullet {
         let info = paraHeadInfo(paraHead, tables: tables)
         return HwpBullet(
             hwpxInfo: info.infoBytes,
             headCharShapeId: info.charShapeId,
-            char: wchar(char)
+            char: wchar(node.attribute("char")),
+            checkChar: wchar(node.attribute("checkedChar"))
         )
     }
 
@@ -188,6 +199,12 @@ private extension HwpxNumberingMapper {
 
     /// 수준 하나 → `HwpNumberingFormat`. 번호 형식 문자열은 속성이 아니라
     /// 요소 텍스트다. 슬롯이 빈 수준은 형식 길이 0·속성 0·바탕글(-1)이다.
+    ///
+    /// `formatLength == format.utf16.count`는 바이너리 파서가 보장하는 불변식이라
+    /// (표 38이 WORD 길이 + WCHAR×len으로 적고 로더가 len개를 정확히 읽는다)
+    /// 길이만 접히면 모델이 어긋난다. 여기 `clamping`은 방어용이고, 실제 거부는
+    /// `HwpxHeaderMapper.mapNumberings`가 가족 단위로 먼저 한다 — 65,535 단위에서
+    /// 자르는 절단은 서러게이트 쌍을 갈라 조용히 손상시키므로 쓰지 않는다.
     static func format(
         for node: HwpxXMLNode?, tables: HwpxIdTables
     ) -> HwpNumberingFormat {

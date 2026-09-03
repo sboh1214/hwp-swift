@@ -95,6 +95,13 @@ final class HwpxNumberingMapperTests: XCTestCase {
         expect(neither.formatArray[0].property[0] & 0b1100) == 0
     }
 
+    /// 생략은 거짓이 아니라 **참**이다 — 한컴 모델이 두 속성을
+    /// `m_bUseInstWidth(true)`·`m_bAutoIndent(true)`로 초기화해 직렬화한다.
+    func testOmittedWidthAndIndentFlagsDefaultToTrue() throws {
+        let omitted = try mapNumbering(paraHead("textOffset=\"0\" charPrIDRef=\"-1\""))
+        expect(omitted.formatArray[0].property[0] & 0b1100) == 0b1100
+    }
+
     func testTextOffsetTypeOccupiesBitFour() throws {
         let percent = try mapNumbering(paraHead(
             "textOffsetType=\"PERCENT\" textOffset=\"0\" charPrIDRef=\"-1\""
@@ -111,6 +118,8 @@ final class HwpxNumberingMapperTests: XCTestCase {
     /// `^1.` 0x0C · `^2.` 0x10C · `^7` 0x2C가 noori HWPX의 `DIGIT`(0)·
     /// `HANGUL_SYLLABLE`(8)·`CIRCLED_DIGIT`(1)과 맞아 bit 5-8이다.
     func testNumberFormatOccupiesBitsFiveToEight() throws {
+        // 두 불리언을 생략했으므로 bit 2·3(0x0C)이 기본으로 선다.
+        let defaultFlags: UInt32 = 0x0000_000C
         let expected: [(String, UInt32)] = [
             ("DIGIT", 0x0000_0000), ("CIRCLED_DIGIT", 0x0000_0020),
             ("HANGUL_SYLLABLE", 0x0000_0100), ("CIRCLED_IDEOGRAPH", 0x0000_01C0),
@@ -119,7 +128,7 @@ final class HwpxNumberingMapperTests: XCTestCase {
             let numbering = try mapNumbering(paraHead(
                 "numFormat=\"\(name)\" textOffset=\"0\" charPrIDRef=\"-1\""
             ))
-            expect(Self.property(numbering.formatArray[0])) == bits
+            expect(Self.property(numbering.formatArray[0])) == bits | defaultFlags
         }
     }
 
@@ -134,7 +143,8 @@ final class HwpxNumberingMapperTests: XCTestCase {
         let unknown = try mapNumbering(paraHead(
             "numFormat=\"NOT_A_FORMAT\" textOffset=\"0\" charPrIDRef=\"-1\""
         ))
-        expect(Self.property(unknown.formatArray[0])) == 0
+        // 번호 모양 비트만 0이고, 생략한 두 불리언의 기본 bit 2·3은 선다.
+        expect(Self.property(unknown.formatArray[0])) == 0x0000_000C
     }
 
     func testWidthAdjustAndTextOffsetAreSignedSixteenBitFields() throws {
@@ -249,6 +259,20 @@ final class HwpxNumberingMapperTests: XCTestCase {
         expect(numbering.extendedStartingIndexArray) == [1, 1, 1]
     }
 
+    /// 수준별 시작 번호는 표 38이 `UINT`로 적는다 — 16비트로 먼저 읽으면
+    /// 65,535를 넘는 값이 파싱 실패로 기본값 1이 되어 조용히 뭉개진다.
+    func testLevelStartingIndexKeepsValuesBeyondSixteenBits() throws {
+        let docInfo = try mapFamilies("""
+        <hh:numberings itemCnt="1"><hh:numbering id="1" start="1">\
+        <hh:paraHead level="1" start="65535" textOffset="0" charPrIDRef="-1"/>\
+        <hh:paraHead level="2" start="65536" textOffset="0" charPrIDRef="-1"/>\
+        <hh:paraHead level="3" start="70000" textOffset="0" charPrIDRef="-1"/>\
+        </hh:numbering></hh:numberings>
+        """)
+        let numbering = try XCTUnwrap(docInfo.idMappings.numberingArray.first)
+        expect(numbering.startingIndexArray?.prefix(3)) == [65535, 65536, 70000]
+    }
+
     // MARK: - 글머리표 문자
 
     func testBulletCharTakesTheFirstUtf16UnitAndEmptyStaysEmpty() throws {
@@ -263,6 +287,17 @@ final class HwpxNumberingMapperTests: XCTestCase {
         expect(empty.char) == ""
         let omitted = try mapBullet("<hh:bullet id=\"1\"/>")
         expect(omitted.char) == ""
+    }
+
+    /// `hh:bullet@checkedChar`는 체크 글머리표 문자다 — 한컴 모델이 값이 있을
+    /// 때만 쓰므로(`BulletType.cpp`) 생략은 "없음"이다.
+    func testBulletCheckedCharIsCarriedIntoCheckChar() throws {
+        let checked = try mapBullet("<hh:bullet id=\"1\" char=\"□\" checkedChar=\"■\"/>")
+        expect(checked.char) == "□"
+        expect(checked.checkChar) == "■"
+
+        let omitted = try mapBullet("<hh:bullet id=\"1\" char=\"□\"/>")
+        expect(omitted.checkChar) == ""
     }
 
     func testBulletKeepsFirstParaHeadAndDemotesTheRest() throws {
@@ -324,6 +359,26 @@ final class HwpxNumberingMapperTests: XCTestCase {
         let bullets = (0 ..< 65536).map { "<hh:bullet id=\"\($0)\"/>" }.joined()
         expect {
             try self.mapFamilies("<hh:bullets itemCnt=\"65536\">\(bullets)</hh:bullets>")
+        }.to(throwError())
+    }
+
+    /// 번호 형식 길이는 표 38의 WORD다 — 넘치면 길이만 접혀
+    /// `formatLength == format.utf16.count` 불변식이 깨진 모델이 나가므로
+    /// 절단하지 않고 거부한다 (절단은 서러게이트 쌍을 가른다).
+    func testFormatTextBeyondTheWordLengthFieldIsRejected() throws {
+        let atLimit = String(repeating: "^", count: Int(WORD.max))
+        let overLimit = String(repeating: "^", count: Int(WORD.max) + 1)
+
+        let accepted = try mapNumbering(
+            paraHead("textOffset=\"0\" charPrIDRef=\"-1\"", text: atLimit)
+        )
+        expect(accepted.formatArray[0].formatLength) == WORD.max
+        expect(accepted.formatArray[0].format.utf16.count) == Int(WORD.max)
+
+        expect {
+            try self.mapNumbering(
+                self.paraHead("textOffset=\"0\" charPrIDRef=\"-1\"", text: overLimit)
+            )
         }.to(throwError())
     }
 

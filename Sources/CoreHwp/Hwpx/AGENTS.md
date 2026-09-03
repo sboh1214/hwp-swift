@@ -125,6 +125,18 @@ bit 0-4(정렬·번호 너비·자동 내어 쓰기·거리 종류)만 적고 **
 표 41의 0-14만 담기고 `SYMBOL`(0x80) 같은 표 밖 코드는 접힌다. 표 41은 표 134
 번호 모양의 0-14 구간과 항목이 같아 `HwpxNumberFormatMapper`를 재사용한다.
 
+생략 속성의 기본값은 **참조 리더의 생략 처리**에서 온다. 한컴 `Util.cpp`의
+`GetAttribute(..., bool& value)`는 속성이 없으면 `value`를 건드리지 않고 false를
+반환하므로, 생성자가 세운 값이 그대로 남는다 — `useInstWidth`·`autoIndent`는
+`m_bUseInstWidth(true)`·`m_bAutoIndent(true)`라 **생략이 참**이다(우리 기본값도
+참이다). 같은 생성자의 `m_uCharPrIDRef(0)`은 따르지 않는다: 0은 실재하는 charPr
+참조라 생략을 0으로 접으면 없는 참조가 첫 글자 모양을 가리키고, `HwpBullet`의
+계약(`-1`이면 바탕글)과도 어긋난다 — 생략·센티널 모두 -1이다. `hh:paraHead@start`는
+표 38이 UINT(4바이트)이고 한컴도 `UINT m_StartNumber`라 16비트로 읽으면 65,535
+초과가 조용히 기본값이 된다(문서 수준 `hh:numbering@start`만 UINT16이다).
+번호 형식 문자열은 표 38의 WORD 길이 필드를 넘으면 거부한다 — 절단은 서러게이트
+쌍을 갈라 조용히 손상시킨다.
+
 주의할 지점 셋이다. (1) `charPrIDRef="4294967295"`는 id 테이블 참조가 아니라
 -1 센티널(바탕글 모양)이라 리맵하면 안 된다 — `resolvedOffset`에 넣으면 댕글링
 폴백 0이 되어 charShape 0을 가리킨다. (2) 수준 슬롯은 문서 순서가 아니라 `level`
@@ -132,6 +144,10 @@ bit 0-4(정렬·번호 너비·자동 내어 쓰기·거리 종류)만 적고 **
 길이 0·속성 0·바탕글 -1). 중복 수준은 첫 등장이 이기고, 1-10 밖 수준과 두 번째
 이후 `hh:paraHead`는 진단으로 강등한다. (3) 글머리표 문자는 빈 문자열로 접는다 —
 U+0000 한 자로 두면 조판의 `char.isEmpty` 게이트를 지나 NUL 글리프를 그린다.
+체크 글머리표 문자(`hh:bullet@checkedChar`)도 같은 WCHAR 규약으로 읽되 **등가
+축에는 올리지 않는다** — 바이너리는 표 42의 고정 WCHAR라 값이 없어도 U+0000을
+담고 HWPX는 선택 속성이라 부재가 빈 문자열이어서, 정규화 없이는 같은 문서가
+포맷마다 다른 값이 된다.
 레코드 payload는 합성하지 않는다(`rawPayload = Data()` — `HwpBorderFill`·
 `HwpFaceName`의 HWPX 전용 init과 같은 DocInfo 가족 관행).
 

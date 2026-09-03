@@ -188,8 +188,11 @@ struct DocumentEquivalenceProjection {
 
     /// 글머리표 정의 하나 (#133).
     ///
-    /// `checkChar`와 문서화되지 않은 trailing 바이트는 축이 아니다 — 바이너리는
-    /// 표 42대로 WCHAR 하나를 늘 읽어 U+0000을 담지만 HWPX에는 대응 속성이 없다.
+    /// `checkChar`와 문서화되지 않은 trailing 바이트는 축이 아니다. 대응 속성이
+    /// 없어서가 아니라(`hh:bullet@checkedChar`는 실재하고 매퍼가 읽는다) **포맷
+    /// 비대칭** 때문이다 — 바이너리는 표 42대로 고정 WCHAR 필드라 값이 없어도
+    /// U+0000 한 자를 담고, HWPX는 선택 속성이라 부재가 곧 빈 문자열이다. 같은
+    /// 문서가 포맷마다 다른 값이 되므로 정규화 없이는 축이 될 수 없다.
     struct BulletDefinition: Equatable {
         let char: String
         let info: [BYTE]
