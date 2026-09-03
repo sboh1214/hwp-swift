@@ -100,10 +100,17 @@ final class HwpxOleMapperTests: XCTestCase {
         expect(try property("objectType=\"STATIC\"")) == 1 | 3 << 16
         expect(try property("objectType=\"EQUATION\"")) == 1 | 4 << 16
         expect(try property("objectType=\"BOGUS\"")) == 1
-        // 전부 함께 — 필드가 서로 침범하지 않는다.
+        // 전부 함께 — 필드가 서로 침범하지 않는다. 기대값은 문장으로 쪼개
+        // 미리 세운다: 항이 많은 리터럴 연결식은 CI 타입 체커가 시간 안에 풀지
+        // 못해 로컬에서만 통과하는 컴파일 오류가 된다 (루트 AGENTS.md).
+        let drawAspectICON: UInt32 = 4
+        let monikerBit: UInt32 = 1 << 8
+        let baseline101: UInt32 = 101 << 9
+        let objectTypeLINK: UInt32 = 2 << 16
+        let combined = drawAspectICON | monikerBit | baseline101 | objectTypeLINK
         expect(try property(
             "drawAspect=\"ICON\" hasMoniker=\"true\" eqBaseLine=\"101\" objectType=\"LINK\""
-        )) == 4 | 1 << 8 | 101 << 9 | 2 << 16
+        )) == combined
     }
 
     /// 수식 OLE의 베이스라인만 표 119 코드로 변환한다 — 스펙의 "1~101이
