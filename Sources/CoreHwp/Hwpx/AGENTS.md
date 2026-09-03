@@ -155,13 +155,17 @@ binaryItemIDRef="ole1" hasMoniker="0" drawAspect="CONTENT" eqBaseLine="0"` +
 오프셋 10282 = 스트림 오프셋 8742)만 다르다. `hp:case` 쪽 `Chart/chart1.xml`도
 같은 XML이다.
 
-`eqBaseLine`은 값을 그대로 싣는다. 표 119는 raw 0을 "디폴트(85%)", 1~101을
-0~100%로 적고 한컴 모델은 그 속성을 기본값 85의 평범한 UINT로 읽고 쓰므로
-(±1 변환 없음, `OWPML/Class/Para/OLEType.cpp`) 퍼센트인지 raw인지가 스펙만으로
-갈리지 않는데, chart 쌍이 identity를 지지한다 — HWPX `eqBaseLine="0"`인 문서의
-HWP payload 속성이 0x00000001(베이스라인 비트 0)이다. 퍼센트로 보아 +1을 걸면
-그 문서가 raw 1(0%)이 되어 한글.app이 쓴 바이트와 어긋난다. 속성 생략도 0으로
-접히는데 raw 0이 곧 "디폴트 85%"라 두 해석 어느 쪽에서도 옳다.
+`eqBaseLine`은 **수식 개체에서만** 표 119 코드로 변환한다. 스펙은 raw 0을
+"디폴트(85%)", 1~101을 0~100%로 적고 "현재는 수식만이 베이스라인을 별도로
+가진다"고 명시한다. HWPX 값이 백분율이라는 근거는 한컴 모델의 XML 기본값이
+85라는 것이다(`OWPML/Class/Para/OLEType.cpp`의 `m_uEqBaseLine(85)`) — raw를
+담는 속성이었다면 기본값이 "디폴트"를 뜻하는 0이었을 것이다. 그래서
+`objectType="EQUATION"`의 명시값만 0~100으로 좁혀 `+1`로 싣고(0% → 1,
+50% → 51, 100% → 101), 생략·형식 오류는 raw 0("디폴트 85%")이다.
+수식이 아닌 종류는 값을 그대로 싣는다 — 스펙상 베이스라인을 갖지 않는
+종류이고, chart 쌍이 그 경로의 실측이다(HWPX `eqBaseLine="0"` ↔ HWP payload
+0x00000001, 베이스라인 비트 0). 그쪽에 +1을 걸면 한글.app이 쓴 바이트와
+어긋난다 — 안 쓰는 필드를 양쪽에서 0으로 적을 뿐이다.
 
 가드는 `HwpxOleMapperTests`(payload·속성 비트·리맵·폴백·viewer 패리티·진단
 강등·실물 쌍)·`HwpxSectionMapperTests`(`hp:chart` 단독 강등 유지)·
@@ -198,12 +202,11 @@ HWP payload 속성이 0x00000001(베이스라인 비트 0)이다. 퍼센트로 �
 - `hp:ole` 열거의 미실측 값 — 이름은 한컴 모델의 직렬화 표에서 왔지만 실물로
   본 값은 `objectType` `UNKNOWN`과 `drawAspect` `CONTENT`뿐이다
   (`EMBEDDED`·`LINK`·`STATIC`·`EQUATION`, `THUMB_NAIL`·`ICON`·`DOC_PRINT` 미실측).
-  `eqBaseLine`은 0만 실측이라 표 119 "1~101 → 0~100%" 인코딩을 HWPX가 퍼센트로
-  적는지(그러면 +1 필요) raw로 적는지 미확정이다 — 한컴 모델의 XML 기본값이 85라
-  퍼센트 해석에도 근거가 있으나, chart 쌍(HWPX "0" ↔ HWP raw 0)은 identity를
-  가리킨다. 베이스라인이 실제로 쓰이는 **수식 OLE** 문서가 있어야 갈린다.
-  확정 절차는 쪽 번호와 같다 — 한글.app으로 .hwp/.hwpx 쌍을 만들어 `$ole`
-  payload 선두 UINT32와 `hp:ole` 속성을 대조한다.
+  `eqBaseLine`은 수식 개체의 백분율 인코딩(`+1`)을 스펙과 한컴 모델의 기본값
+  85로 세웠을 뿐 실물이 없다 — 실측은 수식이 아닌 chart 쌍의 0 하나뿐이다.
+  베이스라인을 실제로 쓰는 **수식 OLE**(`objectType="EQUATION"`) 문서를
+  확보하면 확정된다. 절차는 쪽 번호와 같다 — 한글.app으로 .hwp/.hwpx 쌍을
+  만들어 `$ole` payload 선두 UINT32와 `hp:ole` 속성을 대조한다.
 - HWP `$ole` 개체 요소 payload의 뒤 4바이트 — 표 118의 24바이트(실물 26바이트)
   뒤에 붙는 미해석 UINT32(chart 픽스처 0). HWPX 합성은 26바이트로 끝낸다.
 - `hp:default` fallback 없이 `hp:chart chartIDRef`만 적는 저장기 — 실물이 없어

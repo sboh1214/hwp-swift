@@ -87,8 +87,8 @@ final class HwpxOleMapperTests: XCTestCase {
         expect(try property("drawAspect=\"THUMBNAIL\"")) == 0
         expect(try property("drawAspect=\"DOCPRINT\"")) == 0
         expect(try property("hasMoniker=\"1\"")) == 1 | 1 << 8
-        // 값은 그대로 실린다 — chart 쌍 실측(HWPX "0" ↔ HWP raw 0)이 근거이고
-        // 퍼센트 해석(+1)이면 그 문서가 raw 1로 어긋난다.
+        // 수식이 아닌 개체의 베이스라인은 그대로 실린다 — 스펙상 이 종류는
+        // 베이스라인을 갖지 않고, chart 쌍 실측(HWPX "0" ↔ HWP raw 0)이 근거다.
         expect(try property("eqBaseLine=\"0\"")) == 1
         expect(try property("eqBaseLine=\"50\"")) == 1 | 50 << 9
         // 7비트 필드 — 범위 밖은 클램프 (마스킹이면 999 → 103으로 뒤틀린다).
@@ -104,6 +104,38 @@ final class HwpxOleMapperTests: XCTestCase {
         expect(try property(
             "drawAspect=\"ICON\" hasMoniker=\"true\" eqBaseLine=\"101\" objectType=\"LINK\""
         )) == 4 | 1 << 8 | 101 << 9 | 2 << 16
+    }
+
+    /// 수식 OLE의 베이스라인만 표 119 코드로 변환한다 — 스펙의 "1~101이
+    /// 0~100%"이고, 한컴 모델의 XML 기본값 85가 그 값이 백분율임을 가리킨다.
+    /// 수식이 아닌 종류는 스펙상 베이스라인을 갖지 않아 그대로 싣는다(chart 쌍
+    /// 실측). 두 경로를 한 테스트에서 나란히 고정한다.
+    func testEquationBaselineEncodesPercentIntoTable119Code() throws {
+        func baseline(_ attributes: String) throws -> UInt32 {
+            let xml = """
+            <hp:ole xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" \(attributes)/>
+            """
+            let control = HwpxOleMapper.map(try parse(xml), context: makeContext())
+            let property = try oleElement(of: control)
+                .rawPayload.readLittleEndianUInt32(at: 0)
+            return (property >> 9) & 0x7F
+        }
+
+        // 수식: 백분율 + 1 (0% → 1, 50% → 51, 100% → 101).
+        expect(try baseline("objectType=\"EQUATION\" eqBaseLine=\"0\"")) == 1
+        expect(try baseline("objectType=\"EQUATION\" eqBaseLine=\"50\"")) == 51
+        expect(try baseline("objectType=\"EQUATION\" eqBaseLine=\"100\"")) == 101
+        // 범위 밖은 0~100으로 좁힌 뒤 인코딩한다 — 101을 넘는 코드는 없다.
+        expect(try baseline("objectType=\"EQUATION\" eqBaseLine=\"999\"")) == 101
+        expect(try baseline("objectType=\"EQUATION\" eqBaseLine=\"-4\"")) == 1
+        // 생략·형식 오류는 raw 0 = "디폴트(85%)" — 모델 기본값 85와 같은 뜻이다.
+        expect(try baseline("objectType=\"EQUATION\"")) == 0
+        expect(try baseline("objectType=\"EQUATION\" eqBaseLine=\"abc\"")) == 0
+
+        // 수식이 아닌 종류는 게이트 밖이다 — 같은 "50"이 51이 되지 않는다.
+        expect(try baseline("objectType=\"UNKNOWN\" eqBaseLine=\"50\"")) == 50
+        expect(try baseline("objectType=\"EMBEDDED\" eqBaseLine=\"50\"")) == 50
+        expect(try baseline("eqBaseLine=\"50\"")) == 50
     }
 
     func testDanglingBinaryItemFallsBackToZero() throws {

@@ -154,20 +154,37 @@ enum HwpxOleMapper {
         // 저장본이 쓰는 유일한 값이다. 미지 이름은 0으로 둔다 (추측하지 않는다).
         let drawAspect = drawAspects[node.attribute("drawAspect") ?? "CONTENT"] ?? 0
         let moniker: UInt32 = node.boolAttribute("hasMoniker") ? 1 << 8 : 0
-        // 값을 그대로 싣는다 (7비트 필드라 범위 밖은 클램프).
-        //
-        // 표 119는 raw 0을 "디폴트(85%)", 1~101을 0~100%로 적고 한컴 모델은
-        // `m_uEqBaseLine`을 기본값 85의 평범한 UINT로 읽고 쓴다(±1 변환 없음,
-        // `OWPML/Class/Para/OLEType.cpp`). 그래서 XML 값이 퍼센트인지 raw인지는
-        // 스펙만으로 갈리지 않는데, **실측이 identity를 지지한다** — chart 변환
-        // 쌍은 HWPX `eqBaseLine="0"`이고 같은 문서의 HWP payload 속성이
-        // 0x00000001(베이스라인 비트 0)이다. 퍼센트로 보아 +1을 걸면 그 문서가
-        // raw 1(0%)이 되어 한글.app이 실제로 쓴 바이트와 어긋난다.
-        // 속성 생략도 0으로 접히는데, raw 0이 곧 "디폴트 85%"라 두 해석 어느
-        // 쪽에서도 옳다. 수식 OLE 실물을 얻으면 확정할 것 (AGENTS.md 검증 대기).
-        let baseline = UInt32(min(127, max(0, node.intAttribute("eqBaseLine"))))
         let objectType = objectTypes[node.attribute("objectType") ?? "UNKNOWN"] ?? 0
+        let baseline = Self.baseline(node, objectType: objectType)
         return drawAspect | moniker | (baseline << 9) | (objectType << 16)
+    }
+
+    /// `eqBaseLine` → 표 119 bit 9-15 베이스라인 코드.
+    ///
+    /// 스펙은 raw 0을 "디폴트(85%)", 1~101을 0~100%로 적고 **"현재는 수식만이
+    /// 베이스라인을 별도로 가진다"**고 명시한다. HWPX 쪽 값이 퍼센트라는 근거는
+    /// 한컴 모델의 XML 기본값이 85라는 것이다 (`OWPML/Class/Para/OLEType.cpp`의
+    /// `m_uEqBaseLine(85)`) — raw를 담는 속성이었다면 기본값은 "디폴트"를 뜻하는
+    /// 0이었을 것이고, 하필 스펙이 디폴트로 명시한 85%와 같은 수가 나올 이유가
+    /// 없다. 그래서 **수식 개체의 명시값만** 0~100으로 좁혀 `+1`로 인코딩한다.
+    ///
+    /// 수식이 아닌 개체는 값을 그대로 싣는다. 스펙상 베이스라인을 갖지 않는
+    /// 종류이고, chart 변환 쌍이 그 경로의 실측이다 — HWPX `eqBaseLine="0"`인
+    /// 문서의 HWP payload 속성이 0x00000001(베이스라인 비트 0)이라 여기에 +1을
+    /// 걸면 한글.app이 쓴 바이트와 어긋난다 (한글.app이 안 쓰는 필드를 양쪽에서
+    /// 0으로 적을 뿐이다).
+    ///
+    /// 생략·형식 오류는 raw 0이다 — 수식이든 아니든 "디폴트 85%"가 맞는 뜻이고,
+    /// 모델 기본값 85(= 85%)와도 같은 결과다.
+    static func baseline(_ node: HwpxXMLNode, objectType: UInt32) -> UInt32 {
+        guard let raw = node.attribute("eqBaseLine"), let percent = Int(raw) else {
+            return 0
+        }
+        guard objectType == equationObjectType else {
+            // 7비트 필드라 범위 밖은 클램프한다 (해석하지 않는 값의 보존).
+            return UInt32(min(127, max(0, percent)))
+        }
+        return UInt32(min(100, max(0, percent))) + 1
     }
 
     /// `hc:extent`(개체 자체 크기) — 없으면 개체 크기(`hp:sz`)로 합성한다
@@ -196,10 +213,15 @@ enum HwpxOleMapper {
         "CONTENT": 1, "THUMB_NAIL": 2, "ICON": 4, "DOC_PRINT": 8,
     ]
 
+    /// 표 119 bit 16-21의 수식 개체 — 베이스라인을 갖는 유일한 종류다
+    /// (`baseline(_:objectType:)`의 게이트).
+    static let equationObjectType: UInt32 = 4
+
     /// OWPML `objectType` → 표 119 bit 16-21 개체 종류. 실측은 UNKNOWN뿐이고
     /// 나머지 이름·값은 한컴 모델의 `g_OleObjectList`·`OLEOBJECTTYPE`이 표 119
     /// 나열 순서와 일치함을 확인해 채웠다.
     static let objectTypes: [String: UInt32] = [
-        "UNKNOWN": 0, "EMBEDDED": 1, "LINK": 2, "STATIC": 3, "EQUATION": 4,
+        "UNKNOWN": 0, "EMBEDDED": 1, "LINK": 2, "STATIC": 3,
+        "EQUATION": equationObjectType,
     ]
 }
