@@ -13,7 +13,7 @@ public struct HwpBullet {
     public var rawPayload: Data
     /** 문단 머리의 정보 8바이트 */
     public let info: [BYTE]
-    /** 문단 머리 글자 모양 ID (표 40 — −1이면 바탕글 모양) */
+    /** 문단 머리 글자 모양 ID (표 39 — −1이면 바탕글 모양) */
     public let headCharShapeId: Int32
     /** 글머리표 문자 */
     public let char: String
@@ -66,7 +66,7 @@ extension HwpBullet: HwpFromData {
     init(_ reader: inout DataReader) throws {
         let startOffset = reader.byteOffset
         info = try reader.readBytes(8).bytes
-        // 표 40 문단 머리 정보는 글자 모양 ID(INT32)까지 12바이트다 — 8바이트로
+        // 표 39 문단 머리 정보는 글자 모양 ID(INT32)까지 12바이트다 — 8바이트로
         // 읽으면 글머리표 문자가 4바이트 밀려 U+FFFF가 된다 (noori '-' 실측)
         headCharShapeId = try reader.read(Int32.self)
         let charStartOffset = reader.byteOffset

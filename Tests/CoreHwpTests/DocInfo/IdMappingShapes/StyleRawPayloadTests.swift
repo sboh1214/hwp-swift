@@ -158,7 +158,7 @@ final class StyleRawPayloadTests: XCTestCase {
         expect(sameBullet) == bullet
     }
 
-    /// 표 40의 글자 모양 ID(INT32) 슬롯을 실제로 읽는지 잠근다 — 기본값 -1만
+    /// 표 39의 글자 모양 ID(INT32) 슬롯을 실제로 읽는지 잠근다 — 기본값 -1만
     /// 단언하면 슬롯을 소비만 하고 상수를 저장하는 회귀와 구별되지 않는다.
     func testBulletParsesPositiveHeadCharShapeIdFromTable40Layout() throws {
         let payload = bulletPayload(headCharShapeId: 7, undocumentedTrailing: [0xAA])
@@ -388,7 +388,7 @@ private func bulletPayload(
 ) -> Data {
     concatenatedData(
         Data([1, 2, 3, 4, 5, 6, 7, 8]),
-        littleEndianData(headCharShapeId), // 문단 머리 글자 모양 ID (표 40)
+        littleEndianData(headCharShapeId), // 문단 머리 글자 모양 ID (표 39)
         littleEndianData(WCHAR(0x2022)),
         littleEndianData(Int32(42)),
         Data([9, 10, 11, 12]),

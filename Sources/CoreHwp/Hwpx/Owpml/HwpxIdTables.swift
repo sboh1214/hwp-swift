@@ -48,9 +48,11 @@ struct HwpxIdTables {
     var paraShape = HwpxIdTable()
     var style = HwpxIdTable()
 
-    /// borderFill 참조만 1-based다 — 렌더 스택이 "0 = 없음, N = 배열
-    /// 오프셋 N-1" 관례로 해석한다 (`HwpTableLayout.resolvedBorderFill`,
-    /// 실물 HWPX도 id를 1부터 매긴다). 댕글링은 0(없음)으로 폴백한다.
+    /// borderFill·번호·글머리표 참조가 1-based다 — 렌더 스택이 "0 = 없음,
+    /// N = 배열 오프셋 N-1" 관례로 해석한다 (`HwpTableLayout.resolvedBorderFill`,
+    /// `HwpTextRunBuilder.appendBulletHeading`, 실물 HWPX도 id를 1부터 매긴다).
+    /// 댕글링은 0(없음)으로 폴백한다. 이 헬퍼는 borderFill 전용이고, 번호·글머리표의
+    /// `+1`은 머리 종류로 배열을 갈라야 해서 `HwpxParaShapeMapper`에 인라인돼 있다.
     func borderFillId(of ref: String?) -> UInt16 {
         guard let offset = borderFill.offset(of: ref) else {
             return 0
