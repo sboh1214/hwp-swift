@@ -50,7 +50,7 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
 
 - `id`는 디렉터리명과 정확히 일치해야 한다.
 - `expectations`는 의미 있는 기대값만 적는다 — 구역/문단 수, 가시 텍스트,
-  id 매핑 배열 크기, 쪽 지오메트리(HWPUNIT), 표 셀 수/병합, 그림 BinItem id.
+  id 매핑 배열 크기, 쪽 지오메트리(HWPUNIT), 표 셀 수/병합, 그림·OLE BinItem id.
 - `pageCount`는 뷰어 렌더 쪽수 핀이다 —
   `Tests/HwpKitTests/HwpxFixtureRenderTests.swift`가
   `HwpDocumentLoader(fontResolver: .testDeterministic)`로 열어 대조하고 HWP

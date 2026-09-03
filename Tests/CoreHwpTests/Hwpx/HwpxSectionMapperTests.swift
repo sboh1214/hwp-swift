@@ -301,7 +301,7 @@ final class HwpxSectionMapperTests: XCTestCase {
         expect(chars[0].inlineControl?.rawControlId) == HwpFieldCtrlId.hyperLink.rawValue
     }
 
-    func testObjectElementsDegradeToNotImplementedAnchors() throws {
+    func testObjectElementsPromoteOleAndKeepChartAndHeaderDegraded() throws {
         let section = try mapSection(
             HwpxSectionFixture.blankBody + """
             <hp:p><hp:run charPrIDRef="7">\
@@ -324,14 +324,17 @@ final class HwpxSectionMapperTests: XCTestCase {
         guard ctrls.count == 3 else {
             return fail("Expected three controls, got \(ctrls)")
         }
-        guard case let .notImplemented(ole) = ctrls[0],
+        guard case let .ole(ole) = ctrls[0],
               case let .notImplemented(chart) = ctrls[1],
               case let .notImplemented(header) = ctrls[2]
         else {
-            return fail("Expected three .notImplemented, got \(ctrls)")
+            return fail("Expected .ole + two .notImplemented, got \(ctrls)")
         }
-        expect(ole.ctrlId) == HwpCommonCtrlId.ole.rawValue
-        // fallback 없는 <hp:chart>는 쌍둥이 <hp:ole>과 같은 강등 앵커여야
+        // <hp:ole>은 typed 승격됐다 (#134) — manifest 참조가 없는 합성 문서라
+        // BinData id는 0으로 접힌다.
+        expect(ole.ctrlId) == HwpCommonCtrlId.ole
+        expect(ole.shapeComponentArray.first?.oleArray.first?.binaryDataId) == 0
+        // fallback 없는 <hp:chart>는 쌍둥이 <hp:ole>과 같은 4CC의 강등 앵커여야
         // 한다 — 분류표에 없으면 앵커도 ctrl 슬롯도 없이 사라진다.
         expect(chart.ctrlId) == HwpCommonCtrlId.ole.rawValue
         // 4CC는 같아도 요소 이름은 payload에 남아 진단에서 갈린다.

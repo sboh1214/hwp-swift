@@ -40,6 +40,26 @@ final class HwpxHwpEquivalenceTests: XCTestCase {
         expect(pageBreakBits(hwpx)) == pageBreakBits(hwp)
     }
 
+    /// `oleObjects` 축이 **비어 있지 않게** 성립하는지 직접 핀한다 (#134).
+    /// 등식만 두면 조인이 깨져 양쪽이 함께 nil이어도 통과한다 — chart 쌍은 두
+    /// 포맷 모두 BinData에 닿는 OLE 개체 1건이고 차트 XML digest가 같아야 한다.
+    func testChartPairProjectsResolvedOleChartOnBothFormats() throws {
+        let hwp = try HwpFile(fromPath: FixtureLoader.load(id: "chart").documentURL.path)
+        let hwpx = try HwpFile(
+            fromPath: HwpxFixtureLoader.load(id: "chart").documentURL.path
+        )
+
+        let hwpObjects = DocumentEquivalenceProjection.oleObjects(of: hwp)
+        let hwpxObjects = DocumentEquivalenceProjection.oleObjects(of: hwpx)
+        expect(hwpObjects.count) == 1
+        expect(hwpxObjects.count) == 1
+        expect(hwpObjects.first?.resolvesBinaryData) == true
+        expect(hwpxObjects.first?.resolvesBinaryData) == true
+        // 내장 차트가 실제로 디코드됐다 (nil이면 축이 공허해진다).
+        expect(hwpObjects.first?.chartXMLDigest).toNot(beNil())
+        expect(hwpxObjects.first?.chartXMLDigest) == hwpObjects.first?.chartXMLDigest
+    }
+
     func testConvertedFixturesProjectEquallyToTheirHwpSources() throws {
         var comparedCount = 0
         for fixture in try HwpxFixtureLoader.loadAll() {
@@ -97,6 +117,24 @@ struct DocumentEquivalenceProjection {
         let horizontal: Int32
     }
 
+    /// OLE 개체 요소 하나의 포맷 무관 투영 (#134).
+    ///
+    /// **BinItem id 숫자는 넣지 않는다** — id 공간은 재저장이 재생성하고(HWPX는
+    /// manifest 등장 순서, `Hwpx/AGENTS.md`의 리맵 규약) 그래서 같은 개체가
+    /// 포맷마다 다른 번호를 받을 수 있다. 이 투영이 id 매핑 인덱스를 제외하고
+    /// 그림 축이 개수만 보는 것과 같은 이유다. 대신 참조가 실제로 닿는지와
+    /// 내장 차트 XML을 비교한다.
+    struct OleObject: Equatable {
+        /// `binaryDataId`가 BinData 스트림에 닿는가 (댕글링이면 false).
+        let resolvesBinaryData: Bool
+        /// 내장 차트 XML의 digest — 차트가 아니거나 못 읽으면 nil.
+        ///
+        /// payload 전체는 축이 아니다: chart 쌍 실측에서 CFB의
+        /// `OOXMLChartContents` 4,926바이트는 바이트 동일이지만 `Contents`
+        /// 스트림이 1바이트 다르다. 그래서 렌더가 실제로 읽는 차트 XML만 본다.
+        let chartXMLDigest: String?
+    }
+
     /// 쪽 번호 위치(표 147) — HWPX `hp:pageNum`이 typed 승격돼야 HWP 쌍과
     /// 같은 컨트롤이 선다 (#135). 강등 상태면 HWPX 쪽 배열이 비어 등식이
     /// 깨진다. 4번째 WCHAR(`unused`)는 줄표 문자로 HWPX `sideChar`의 대응이다
@@ -118,6 +156,11 @@ struct DocumentEquivalenceProjection {
     let tableShapes: [TableShape]
     let tableAnchorOffsets: [AnchorOffset]
     let imageCount: Int
+    /// OLE 개체 요소의 **해석 결과** — HWPX `hp:ole`이 typed 승격돼야 HWP 쌍(gso +
+    /// `$ole` 개체 요소)과 같은 개체 요소가 선다 (#134). 강등 상태면 HWPX 쪽
+    /// 배열이 비어 등식이 깨진다. 컨트롤 종류(`.genShapeObject` ↔ `.ole`)는
+    /// 포맷마다 다르므로 개체 요소 단위로 센다 — 그림 축과 같은 기준이다.
+    let oleObjects: [OleObject]
     let pageNumberPositions: [PageNumberPosition]
 
     init(of file: HwpFile) {
@@ -159,6 +202,7 @@ struct DocumentEquivalenceProjection {
             )
         }
         imageCount = HwpxFixtureAssertions.imageBinItemIds(from: file).count
+        oleObjects = Self.oleObjects(of: file)
         pageNumberPositions = FixtureDerivedValues.pageNumberPositions(from: file).map {
             PageNumberPosition(
                 property: $0.property,
@@ -190,6 +234,42 @@ struct DocumentEquivalenceProjection {
             }.joined()
         }
         return walk(section.paragraph)
+    }
+
+    /// OLE 개체 요소를 문서 순서로 투영한다 — BinItem 조인은 `HwpImageStore`와
+    /// 같은 규칙(binDataArray 등재 순서 + 1 → `streamId` → 스트림)이다.
+    static func oleObjects(of file: HwpFile) -> [OleObject] {
+        var streams: [UInt16: Data] = [:]
+        for stream in file.binaryDataArray {
+            guard let streamId = stream.streamId, streams[streamId] == nil else { continue }
+            streams[streamId] = stream.data
+        }
+        var payloads: [UInt32: Data] = [:]
+        for (index, entry) in file.docInfo.idMappings.binDataArray.enumerated() {
+            guard let streamId = entry.streamId, let data = streams[streamId] else { continue }
+            payloads[UInt32(index + 1)] = data
+        }
+
+        let elements = HwpxFixtureAssertions.shapeComponents(from: file).flatMap(\.oleArray)
+        return elements.map { ole -> OleObject in
+            let payload = ole.binaryDataId.flatMap { payloads[$0] }
+            let chartXML = payload.flatMap { HwpEmbeddedChart.chartXML(fromOLEPayload: $0) }
+            return OleObject(
+                resolvesBinaryData: payload != nil,
+                chartXMLDigest: chartXML.map(Self.digest)
+            )
+        }
+    }
+
+    /// FNV-1a 64비트 digest — 실패 메시지에 4,926자 차트 XML이 통째로 찍히지
+    /// 않게 하면서 내용 변화는 잡는다 (CryptoKit은 Linux에 없다).
+    static func digest(_ text: String) -> String {
+        var hash: UInt64 = 0xCBF2_9CE4_8422_2325
+        for byte in text.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 0x0000_0100_0000_01B3
+        }
+        return String(hash, radix: 16)
     }
 
     /// 문단별 글자 모양 run — id가 아니라 **해석된 속성**의 인접 dedupe
@@ -246,6 +326,9 @@ struct DocumentEquivalenceProjection {
         )
         expect(imageCount).to(
             equal(other.imageCount), description: "\(fixtureId) imageCount"
+        )
+        expect(oleObjects).to(
+            equal(other.oleObjects), description: "\(fixtureId) oleObjects"
         )
         expect(pageNumberPositions).to(
             equal(other.pageNumberPositions),

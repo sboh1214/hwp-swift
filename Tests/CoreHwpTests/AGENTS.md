@@ -104,7 +104,8 @@ HWPX fixture는 **별도 루트** `Tests/CoreHwpTests/HwpxFixtures/<fixture-id>/
 소비하고 HWP 쌍과 렌더 쪽수가 같은지 본다 (등가 스위트가 제외하는
 조판 캐시 `<hp:linesegarray>` 경로의 유일한 자동 회귀 가드). 쪽 크롬(머리말/
 꼬리말/쪽 번호) 블록 텍스트가 HWP 쌍과 같은지도 본다 (#135 — noori 각 쪽
-"1"·"2"·"3" 직접 핀 포함).
+"1"·"2"·"3" 직접 핀 포함). 내장 차트 블록(`.chart` payload) 수와 미지원 힌트가
+HWP 쌍과 같은지도 본다 (#134 — chart 쌍 1개·"OLE" 직접 핀 포함).
 
 **픽스처 추가는 이 타깃 밖으로도 번진다** (#80). `HwpKitCoreTests`의
 `HwpLayoutRenderParitySweepTests`가 `Fixtures/*/document.hwp`를 **디렉터리에서

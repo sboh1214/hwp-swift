@@ -18,3 +18,15 @@
 - 앱: /Applications/한컴오피스 한글.app (com.hancom.office.hwp12.mac.general)
 - 버전: 12.30.0 (build 6446)
 - 일자: 2026-08-28 (Claude Computer Use GUI 자동화로 저장)
+
+## 내장 차트 (#134)
+
+`Contents/section0.xml`의 차트는 `<hp:switch>` 두 벌이다 — `hp:case`
+(`required-namespace` 2016 `ooxmlchart`)의 `<hp:chart chartIDRef="Chart/chart1.xml">`과
+`hp:default`의 `<hp:ole objectType="UNKNOWN" binaryItemIDRef="ole1" drawAspect="CONTENT">`.
+파서는 `hp:default`를 채택하고 `HwpxOleMapper`가 `.ole(HwpShapeControl)`로 승격한다
+(manifest `oleBinItemIds: [1]`). `BinData/ole1.ole`(15,876바이트)은 HWP 쌍의
+`BIN0001.OLE`과 같은 4바이트 길이 프리픽스 + CFB이고, 차트 XML 스트림
+`OOXMLChartContents`(4,926바이트)는 `Chart/chart1.xml`과도 HWP 쌍과도 바이트 동일하다
+(`Contents` 스트림 1바이트만 다름). 렌더 가드는
+`HwpxFixtureRenderTests.testHwpxChartBlocksMatchHwpPairs`(`.chart` 블록 1개)다.

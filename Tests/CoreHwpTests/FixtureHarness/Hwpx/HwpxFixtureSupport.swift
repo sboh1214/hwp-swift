@@ -38,6 +38,8 @@ struct HwpxFixtureExpectations: Decodable {
     let tableCellCounts: [Int]?
     /// 그림 개체가 참조하는 BinItem id (문서 순서).
     let imageBinItemIds: [Int]?
+    /// OLE 개체 요소가 참조하는 BinItem id (문서 순서) — 내장 차트 (#134).
+    let oleBinItemIds: [Int]?
     /// 뷰어 렌더 쪽수 핀 — 출처는 `pageCountSource`. 소비자는
     /// `Tests/HwpKitTests/HwpxFixtureRenderTests`다 (이 타깃은 조판하지 않는다).
     let pageCount: Int?

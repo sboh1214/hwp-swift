@@ -144,6 +144,72 @@ final class HwpxFixtureRenderTests: XCTestCase {
         }
     }
 
+    /// 내장 차트 블록(`.chart` payload) 수가 HWP 쌍과 같아야 한다 — HWPX `hp:ole`이
+    /// `.ole`로 typed 승격돼야 `HwpPaginator.chartFrame`이 chart 쌍의 차트를 그린다
+    /// (#134). 10쌍 중 차트를 가진 문서는 chart뿐이라 나머지는 0 == 0 등식이고,
+    /// chart는 1로 직접 핀한다 — 등식만 두면 양쪽이 함께 0이어도 통과하기 때문이다.
+    /// 미지원 힌트도 HWP 쌍과 같은 "OLE"여야 한다 (`HwpUnsupportedDetector`가
+    /// `.ole` 컨트롤과 gso의 OLE 개체 요소에 같은 힌트를 낸다 — 근사 렌더라 힌트는
+    /// 유지된다).
+    func testHwpxChartBlocksMatchHwpPairs() async throws {
+        let hwpxFixtures = try FixtureRoot.loadAllHwpxFixtures(from: #file)
+        let hwpFixtures = try FixtureRoot.loadAllFixtures(from: #file)
+        let hwpByID = Dictionary(uniqueKeysWithValues: hwpFixtures.map { ($0.id, $0) })
+        let loader = HwpDocumentLoader(fontResolver: .testDeterministic)
+
+        var failures: [String] = []
+        var comparedCount = 0
+        var chartHwpxCount: Int?
+        var chartHwpCount: Int?
+        var chartHints: [String]?
+        for fixture in hwpxFixtures where !fixture.hasExpectedError {
+            guard let pairID = fixture.sourceHwpFixture, let pair = hwpByID[pairID],
+                  !pair.hasExpectedError
+            else { continue }
+            comparedCount += 1
+            do {
+                let hwpx = try await loader.load(from: fixture.documentURL)
+                let hwp = try await loader.load(from: pair.documentURL)
+                let hwpxCharts = Self.chartBlockCount(of: hwpx)
+                let hwpCharts = Self.chartBlockCount(of: hwp)
+                if hwpxCharts != hwpCharts {
+                    failures.append("[\(fixture.id)] hwpx charts \(hwpxCharts) != hwp \(hwpCharts)")
+                }
+                let hwpxHints = hwpx.unsupportedElements.map(\.hint)
+                let hwpHints = hwp.unsupportedElements.map(\.hint)
+                if hwpxHints != hwpHints {
+                    failures.append("[\(fixture.id)] hwpx hints \(hwpxHints) != hwp \(hwpHints)")
+                }
+                if fixture.id == "chart" {
+                    chartHwpxCount = hwpxCharts
+                    chartHwpCount = hwpCharts
+                    chartHints = hwpxHints
+                }
+            } catch {
+                failures.append("[\(fixture.id)] load threw: \(error)")
+            }
+        }
+
+        expect(comparedCount) >= 10
+        expect(chartHwpxCount) == 1
+        expect(chartHwpCount) == 1
+        expect(chartHints) == ["OLE"]
+        if !failures.isEmpty {
+            fail("HWP↔HWPX chart block mismatches (\(failures.count)):\n" +
+                failures.joined(separator: "\n"))
+        }
+    }
+
+    /// 문서 전체의 `.chart` payload 블록 수.
+    private static func chartBlockCount(of document: HwpDocument) -> Int {
+        document.pages.flatMap(\.blocks).filter { block in
+            if case .chart = block.payload {
+                return true
+            }
+            return false
+        }.count
+    }
+
     /// 페이지별 쪽 크롬 텍스트 블록 문자열 (문서 순서).
     private static func pageChromeTexts(of document: HwpDocument) -> [[String]] {
         document.pages.map { page in

@@ -218,6 +218,11 @@ enum HwpxFixtureAssertions {
                 equal(binItemIds), description: "\(id) imageBinItemIds"
             )
         }
+        if let binItemIds = expectations.oleBinItemIds {
+            expect(Self.oleBinItemIds(from: hwp)).to(
+                equal(binItemIds), description: "\(id) oleBinItemIds"
+            )
+        }
     }
 
     static func assertPageDef(
@@ -239,32 +244,43 @@ enum HwpxFixtureAssertions {
         expect(Int(pageDef.marginBottom)) == expectation.marginBottom
     }
 
+    /// 그림 개체 요소의 BinItem id (문서 순서) — 표 107 payload에서 재디코드한 값.
     static func imageBinItemIds(from hwp: HwpFile) -> [Int] {
-        var binItemIds: [Int] = []
+        shapeComponents(from: hwp)
+            .flatMap(\.pictureArray)
+            .map { Int($0.pictureProperty?.binItemId ?? 0) }
+    }
+
+    /// OLE 개체 요소의 BinItem id (문서 순서) — 컨트롤 종류가 달라도(HWP `gso` ↔
+    /// HWPX `.ole`) 개체 요소 단위로 세므로 포맷 무관 축이다 (#134).
+    static func oleBinItemIds(from hwp: HwpFile) -> [Int] {
+        shapeComponents(from: hwp)
+            .flatMap(\.oleArray)
+            .map { Int($0.binaryDataId ?? 0) }
+    }
+
+    /// 개체 요소(shape component)를 문서 순서로 모은다 — 표 셀 문단까지 재귀하며
+    /// gso와 공통 개체 컨트롤(그림·OLE·도형 등)을 모두 편다.
+    static func shapeComponents(from hwp: HwpFile) -> [HwpShapeComponent] {
+        var components: [HwpShapeComponent] = []
         func walk(_ paragraphs: [HwpParagraph]) {
             for paragraph in paragraphs {
                 for ctrl in paragraph.ctrlHeaderArray ?? [] {
-                    var components: [HwpShapeComponent] = []
                     switch ctrl {
                     case let .table(table):
                         for cell in table.cellArray {
                             walk(cell.paragraphArray)
                         }
                     case let .genShapeObject(object):
-                        components = object.shapeComponentArray
+                        components += object.shapeComponentArray
                     case let .picture(control), let .shape(control), let .line(control),
                          let .rectangle(control), let .ellipse(control), let .arc(control),
                          let .polygon(control), let .curve(control), let .equation(control),
                          let .equationLegacy(control), let .ole(control),
                          let .container(control):
-                        components = control.shapeComponentArray
+                        components += control.shapeComponentArray
                     default:
                         break
-                    }
-                    for component in components {
-                        for picture in component.pictureArray {
-                            binItemIds.append(Int(picture.pictureProperty?.binItemId ?? 0))
-                        }
                     }
                 }
             }
@@ -272,6 +288,6 @@ enum HwpxFixtureAssertions {
         for section in hwp.sectionArray {
             walk(section.paragraph)
         }
-        return binItemIds
+        return components
     }
 }

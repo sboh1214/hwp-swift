@@ -344,8 +344,9 @@ walker로 받는다)로 잰다 — 오버레이 개체는 블록을 키우지 �
 CI ✓인 다섯 스위트가 도는 근거는 전부 `HwpFontResolver.testDeterministic`
 하나다 — 폰트 조회 세 축(시스템 등록 폰트·한컴 번들·문서 대체 글꼴)을 모두
 닫아 설치 폰트와 무관하게 같은 CTFont가 나온다. `HwpxFixtureRenderTests`도
-쪽수 두 축(manifest 대조·HWP 쌍 대조)과 쪽 크롬 텍스트 축(HWP 쌍 대조, #135)에서
-그 resolver를 쓰고, 같은 클래스의 가시 텍스트 축만 기본 resolver다 — 좌표가
+쪽수 두 축(manifest 대조·HWP 쌍 대조)과 쪽 크롬 텍스트 축(HWP 쌍 대조, #135)·
+차트 블록 수 축(HWP 쌍 대조, #134)에서 그 resolver를 쓰고, 같은 클래스의 가시
+텍스트 축만 기본 resolver다 — 좌표가
 아니라 문자열 포함만 보므로 폰트의 함수가 아니다 (HWP 쪽
 `testAllFixturesRenderExpectedText`와 같은 기준).
 **이 스위트들의 로더를 기본 resolver로 되돌리면 안 된다**: 좌표가 설치 폰트

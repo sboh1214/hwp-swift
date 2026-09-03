@@ -51,7 +51,7 @@ CoreHwp는 현재 읽기 전용 binary HWP reader에 초점을 둡니다. 파싱
 HWPX(OWPML, `.hwpx`)도 읽습니다 — 같은 `HwpFile` 진입점이 파일 선두 바이트로
 HWP(OLE)/HWPX(ZIP)를 자동 감지해 동일한 문서 모델로 변환하므로, 뷰어 타깃은
 두 포맷을 구분 없이 렌더합니다. 1차 지원 범위는 본문 텍스트·글자/문단 모양·
-스타일·구역/쪽 설정·단·표·그림·쪽 번호 위치이고, 그 밖의 요소는 진단
+스타일·구역/쪽 설정·단·표·그림·쪽 번호 위치·OLE 개체(내장 차트)이고, 그 밖의 요소는 진단
 (`HwpFile.parseDiagnostics()`)에 남기고 건너뜁니다.
 
 자세한 reader 지원 범위는 [Sources/CoreHwp/AGENTS.md](Sources/CoreHwp/AGENTS.md),
