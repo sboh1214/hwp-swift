@@ -179,6 +179,51 @@ extension HwpTextRunBuilder {
     static let subscriptBaselineRatio: CGFloat = 0.30
 }
 
+/// 조판 문자열 생성 보조 (메모 앵커 sweep·문자별 방출 텍스트).
+extension HwpTextRunBuilder {
+    /// 메모 앵커 구간 커서를 `position`까지 앞으로만 밀고 포함 여부를 준다
+    /// (`build`의 sweep 규약 — position은 단조 증가한다).
+    func memoAnchor(
+        at position: UInt32,
+        in ranges: [Range<UInt32>],
+        cursor: inout Int
+    ) -> Bool {
+        while cursor < ranges.count, ranges[cursor].upperBound <= position {
+            cursor += 1
+        }
+        return cursor < ranges.count && ranges[cursor].contains(position)
+    }
+
+    /// 이 문자가 조판 문자열에 낼 텍스트.
+    ///
+    /// 문단 끝(13)은 `controlText`가 접지만, **한 줄 끝(10) 바로 뒤**에서는 폭 0
+    /// 앵커를 낸다. CoreText는 하드 개행 뒤에 내용이 있어야 그 줄을 만들기
+    /// 때문이다 — `"가\n"`은 한 줄이고 `"가\n<무언가>"`가 두 줄이다. 앵커 없이
+    /// 접으면 한글이 라인 캐시에 배정해 둔 마지막 빈 줄이 사라져, 캐시를 쓰지
+    /// 않는 측정 경로(글상자·캐시 무효 문단·안전밸브로 linesegarray를 폐기한
+    /// HWPX 문단)에서 문단 높이가 한 줄만큼 짧아진다 (실측:
+    /// `legacy-common-control-property` Section9의 407 WCHAR 문단, 폭 400에서
+    /// 접기 전 9줄 144pt → 앵커 없이 접으면 8줄 128pt → 앵커를 넣으면 다시
+    /// 9줄 144pt). 앵커는 U+000D가 아니라 U+200B다 — 기본 무시
+    /// (default-ignorable) 문자라 어느 폰트에서도 잉크가 없고 (실측: HY울릉도M·
+    /// 함초롬바탕·Apple SD Gothic Neo 모두 마지막 줄 잉크 폭 0), U+000D를
+    /// 남기면 #137이 고친 조판 부호가 그 빈 줄에 그대로 다시 그려진다.
+    func emittedText(
+        of hwpChar: CoreHwp.HwpChar,
+        pendingHighSurrogate: inout UInt16?,
+        followsLineBreak: inout Bool
+    ) -> String {
+        var text = string(from: hwpChar, pendingHighSurrogate: &pendingHighSurrogate)
+        if text.isEmpty, hwpChar.type == .char, hwpChar.value == 13, followsLineBreak {
+            text = "\u{200B}"
+        }
+        if !text.isEmpty {
+            followsLineBreak = text.unicodeScalars.last == "\u{000A}"
+        }
+        return text
+    }
+}
+
 /// 그대로 디코드하면 안 되는 제어 문자 변환.
 extension HwpTextRunBuilder {
     /// WCHAR를 그대로 디코드하면 안 되는 제어 문자의 표시 대체 텍스트.
@@ -197,9 +242,33 @@ extension HwpTextRunBuilder {
     /// 기회 없음·줄 끝 하이픈 없음·글자 수 미집계. U+00AD로 옮기면 실물에
     /// 없는 줄바꿈 기회가 생기고, 그대로 두면 표시·복사 문자열에 U+0018이
     /// 남는다.
+    ///
+    /// 문단 끝(13)도 마찬가지로 떨군다 (#137). 모든 문단의 WCHAR 스트림이
+    /// 13으로 끝나므로 (바이너리 `HwpParaText`의 `case 0, 1, 13`, HWPX
+    /// `HwpxParagraphMapper`의 문단 끝 합성) 그대로 두면 폐해가 셋이다.
+    ///
+    /// 1. U+000D에 잉크가 있는 폰트에서 문단 끝마다 조판 부호가 그려진다 —
+    ///    실측 2026-09-04: 한컴오피스 12.30 번들 187개 페이스 중 25개(전부 HY
+    ///    계열)가 U+000D를 `¬` 모양으로 그리고, noori 3쪽 비교표 셀의 라틴
+    ///    슬롯인 HY울릉도M이 그중 하나다.
+    /// 2. 줄 높이가 부푼다. U+000D는 `HwpScript.detect`의 default로 `.english`가
+    ///    되어 **라틴 슬롯 폰트**로 조판되는데, 그 폰트가 본문 글꼴과 다르면
+    ///    CTLine ascent를 자기 기준으로 끌어올린다 (실측 13pt: "보도일시"를
+    ///    휴먼명조로 조판하면 ascent 11.172인데 U+000D를 함초롬바탕으로 붙이면
+    ///    13.910). 표 셀은 세로 가운데 정렬이라 글이 위로 밀렸다.
+    /// 3. 표시·복사·낭독 문자열에 U+000D가 실린다 (`HwpSelectionGeometry`의
+    ///    평문·RTF와 `HwpAccessibilityContent`의 라벨은 U+FFFC만 지운다).
+    ///
+    /// 조판 폭에는 기여하지 않으므로 (CoreText가 문단 종결자 run의 진행 폭을
+    /// 0으로 만든다 — 실측: `"구 분"`과 `"구 분\r"`의
+    /// `CTLineGetTypographicBounds`가 같다) 떨궈도 줄 폭·줄바꿈은 그대로다.
+    /// 예외는 한 줄 끝(10) 바로 뒤에 오는 문단 끝뿐이라 `build`가 그 자리에만
+    /// 폭 0 앵커를 넣는다 (`HwpTextRunBuilder.build`의 `pendingEmptyLastLine`).
+    ///
+    /// **한 줄 끝(10)은 남긴다** — 의도된 줄 나눔이라 U+000A로 조판되어야 한다.
     static func controlText(_ unit: UInt16) -> String? {
         switch unit {
-        case 24:
+        case 13, 24:
             ""
         case 30, 31:
             "\u{00A0}"

@@ -51,6 +51,59 @@ import XCTest
             expect(result.string) == "가나"
         }
 
+        func testParagraphEndControlRendersAsNothing() throws {
+            // 모든 문단의 WCHAR 스트림이 문단 끝(13)으로 끝난다. 그대로 두면
+            // 표시·복사 문자열에 U+000D가 남고, 라틴 슬롯 폰트가 U+000D에 잉크를
+            // 가진 HY 계열이면 문단 끝마다 '¬' 조판 부호가 그려진다 (#137).
+            let paragraph = paragraph(text: "가나\u{0D}", runs: [(0, 0)])
+            let result = builder(shapes: [0: try charShape()]).build(paragraph: paragraph)
+
+            expect(result.string) == "가나"
+        }
+
+        func testLineBreakControlSurvivesParagraphEndFolding() throws {
+            // 한 줄 끝(10)은 의도된 줄 나눔이라 U+000A로 조판되어야 한다 —
+            // 문단 끝(13)을 접으면서 함께 떨구면 줄 나눔이 사라진다.
+            let paragraph = paragraph(text: "가\u{0A}나\u{0D}", runs: [(0, 0)])
+            let result = builder(shapes: [0: try charShape()]).build(paragraph: paragraph)
+
+            expect(result.string) == "가\u{0A}나"
+        }
+
+        func testParagraphEndingWithLineBreakKeepsTheEmptyLastLine() throws {
+            // 한 줄 끝(10)으로 끝난 문단은 한글이 라인 캐시에 마지막 빈 줄을
+            // 배정한다 (실측: legacy-common-control-property Section9의 407 WCHAR
+            // 문단이 세그먼트 10개, 마지막 textpos가 그 13의 자리다). CoreText는
+            // 하드 개행 뒤에 내용이 있어야 그 줄을 만들므로 문단 끝을 그냥 접으면
+            // 줄이 하나 사라진다 — 폭 0·잉크 0인 U+200B를 앵커로 남긴다.
+            let paragraph = paragraph(text: "가\u{0A}\u{0D}", runs: [(0, 0)])
+            let result = builder(shapes: [0: try charShape()]).build(paragraph: paragraph)
+
+            expect(result.string) == "가\u{0A}\u{200B}"
+
+            let frame = HwpParagraphLayout().layout(
+                attributedString: result, paraShape: CoreHwp.HwpParaShape(), columnWidth: 300
+            )
+            let folded = builder(shapes: [0: try charShape()])
+                .build(paragraph: self.paragraph(text: "가\u{0A}", runs: [(0, 0)]))
+            let foldedFrame = HwpParagraphLayout().layout(
+                attributedString: folded, paraShape: CoreHwp.HwpParaShape(), columnWidth: 300
+            )
+            expect(frame.lines.count) == 2
+            expect(foldedFrame.lines.count) == 1
+        }
+
+        func testParagraphOfOnlyTheEndControlProducesEmptyString() throws {
+            // 빈 문단의 WCHAR 스트림은 13 하나다 (HWPX는 `HwpxParagraphMapper`가
+            // 항상 붙이고, 바이너리도 PARA_TEXT를 가진 빈 문단이면 같다).
+            // 접고 나면 문자열이 비므로 `paraText`가 없는 빈 문단과 같은 상태가
+            // 된다 — 두 포맷의 빈 문단이 같은 조판 입력으로 모인다.
+            let paragraph = paragraph(text: "\u{0D}", runs: [(0, 0)])
+            let result = builder(shapes: [0: try charShape()]).build(paragraph: paragraph)
+
+            expect(result.length) == 0
+        }
+
         func testControlSpacesKeepFixedWidthWhenOrdinarySpacesFollowTheFont() {
             // '글꼴에 어울리는 빈칸'·워드 호환 문서에서는 보통 빈칸이 폰트 고유
             // 폭으로 돌아간다 — 그때 고정폭 빈칸까지 글꼴을 따르면 이름과
