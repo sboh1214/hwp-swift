@@ -195,6 +195,16 @@ enum HwpxFixtureAssertions {
                 equal(count), description: "\(id) tabDefCount"
             )
         }
+        if let count = expectations.numberingCount {
+            expect(idMappings.numberingArray.count).to(
+                equal(count), description: "\(id) numberingCount"
+            )
+        }
+        if let count = expectations.bulletCount {
+            expect(idMappings.bulletArray.count).to(
+                equal(count), description: "\(id) bulletCount"
+            )
+        }
         if let count = expectations.binDataCount {
             expect(idMappings.binDataArray.count).to(
                 equal(count), description: "\(id) binDataCount"

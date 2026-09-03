@@ -31,6 +31,10 @@ struct HwpxFixtureExpectations: Decodable {
     let styleCount: Int?
     let borderFillCount: Int?
     let tabDefCount: Int?
+    /// 문단 번호·글머리표 정의 수 (#133) — HWP 쌍 manifest의 같은 이름과
+    /// 짝이다. 등가 투영의 정의 축이 양쪽 모두 비어도 통과하는 것을 막는다.
+    let numberingCount: Int?
+    let bulletCount: Int?
     let binDataCount: Int?
     let faceNamesKorean: [String]?
     let pageDef: HwpxPageDefExpectation?

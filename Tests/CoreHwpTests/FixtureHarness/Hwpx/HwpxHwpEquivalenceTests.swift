@@ -9,7 +9,7 @@ import XCTest
 /// 미리보기·요약을 재생성하기 때문이다. 그래서 **포맷 무관 투영**만 비교한다.
 /// 투영에서 명시적으로 제외한 것: rawPayload 계열·lineseg(재조판 캐시)·
 /// id 매핑 인덱스(리맵됨 — 해석 결과로만 비교)·fileHeader·summary·preview·
-/// viewSectionArray·컨트롤 레코드 순서·numbering/bullet(1차 범위 밖).
+/// viewSectionArray·컨트롤 레코드 순서.
 final class HwpxHwpEquivalenceTests: XCTestCase {
     /// P1(2× 스케일)·P2-7(pageBreak 의미)의 실물 잠금 — noori 쌍의 문단 모양
     /// 수치와 표 나눔 비트가 문서 순서 위치별로 일치해야 한다.
@@ -58,6 +58,30 @@ final class HwpxHwpEquivalenceTests: XCTestCase {
         // 내장 차트가 실제로 디코드됐다 (nil이면 축이 공허해진다).
         expect(hwpObjects.first?.chartXMLDigest).toNot(beNil())
         expect(hwpxObjects.first?.chartXMLDigest) == hwpObjects.first?.chartXMLDigest
+    }
+
+    /// 번호·글머리표 축이 **비어 있지 않게** 성립하는지 직접 핀한다 (#133).
+    /// 등식만 두면 두 포맷이 함께 비어도 통과한다 — noori 쌍은 번호 정의 2종·
+    /// 글머리표 1종이고, 글머리표 문단 머리를 쓰는 문단이 표 셀 안에 2개다.
+    func testNooriPairProjectsNumberingAndBulletDefinitionsOnBothFormats() throws {
+        let hwp = try HwpFile(fromPath: FixtureLoader.load(id: "noori").documentURL.path)
+        let hwpx = try HwpFile(
+            fromPath: HwpxFixtureLoader.load(id: "noori").documentURL.path
+        )
+        let hwpProjection = DocumentEquivalenceProjection(of: hwp)
+        let hwpxProjection = DocumentEquivalenceProjection(of: hwpx)
+
+        expect(hwpProjection.numberingDefinitions.count) == 2
+        expect(hwpxProjection.numberingDefinitions.count) == 2
+        expect(hwpProjection.bulletDefinitions.count) == 1
+        expect(hwpxProjection.bulletDefinitions.count) == 1
+        expect(hwpxProjection.bulletDefinitions.first?.char) == "-"
+        expect(hwpxProjection.numberingDefinitions.first?.formats.first) == "^1."
+        // 글머리표 문단 머리(종류 3)를 쓰는 문단은 표 셀 안 2개다.
+        let bulletHeadings = hwpxProjection.paragraphHeadings.filter { $0.kind == 3 }
+        expect(bulletHeadings.count) == 2
+        expect(bulletHeadings.allSatisfy { $0.definitionId == 1 }) == true
+        expect(hwpProjection.paragraphHeadings.filter { $0.kind == 3 }) == bulletHeadings
     }
 
     func testConvertedFixturesProjectEquallyToTheirHwpSources() throws {
@@ -148,6 +172,41 @@ struct DocumentEquivalenceProjection {
         let sideChar: UInt16
     }
 
+    /// 문단 번호 정의 하나 (#133).
+    ///
+    /// **확장 수준(8-10)은 축이 아니다** — 표 38의 확장 필드는 5.1.0.0 이상에만
+    /// 있고 noori HWP 쌍은 5.0.3.4라 배열 자체가 없다. HWPX 재저장본은 항상
+    /// 5.1.1.0이므로 수준 개수를 직접 비교하면 유효한 쌍이 깨진다 (`oleObjects`가
+    /// 재부여되는 BinItem id를 뺀 것과 같은 판단). 두 포맷이 공통으로 갖는
+    /// 수준 1-7의 형식 문자열·수준별 시작 번호·문단 머리 정보 12바이트만 본다.
+    struct NumberingDefinition: Equatable {
+        let startingIndex: UInt16
+        let formats: [String]
+        let startingIndexes: [UInt32]
+        let paraHeadInfo: [[BYTE]]
+    }
+
+    /// 글머리표 정의 하나 (#133).
+    ///
+    /// `checkChar`와 문서화되지 않은 trailing 바이트는 축이 아니다. 대응 속성이
+    /// 없어서가 아니라(`hh:bullet@checkedChar`는 실재하고 매퍼가 읽는다) **포맷
+    /// 비대칭** 때문이다 — 바이너리는 표 42대로 고정 WCHAR 필드라 값이 없어도
+    /// U+0000 한 자를 담고, HWPX는 선택 속성이라 부재가 곧 빈 문자열이다. 같은
+    /// 문서가 포맷마다 다른 값이 되므로 정규화 없이는 축이 될 수 없다.
+    struct BulletDefinition: Equatable {
+        let char: String
+        let info: [BYTE]
+        let headCharShapeId: Int32
+        let imageId: Int32
+    }
+
+    /// 문단 하나의 문단 머리 (표 44 bit 23-27 + 1-based 정의 참조).
+    struct ParagraphHeading: Equatable {
+        let kind: UInt32
+        let level: UInt32
+        let definitionId: UInt16
+    }
+
     let sectionCount: Int
     let sectionParagraphCounts: [Int]
     let sectionTexts: [String]
@@ -162,6 +221,16 @@ struct DocumentEquivalenceProjection {
     /// 포맷마다 다르므로 개체 요소 단위로 센다 — 그림 축과 같은 기준이다.
     let oleObjects: [OleObject]
     let pageNumberPositions: [PageNumberPosition]
+    /// 문단 번호 정의 — HWPX `hh:numbering`이 승격돼야 HWP 쌍과 같은 배열이
+    /// 선다 (#133). 이 축은 #134·#135와 달리 **10쌍 전부에서 비어 있지 않다**
+    /// (HWPX 10종 모두 `hh:numberings`를 갖고 HWP 쌍도 정의 1-2종을 싣는다).
+    let numberingDefinitions: [NumberingDefinition]
+    /// 글머리표 정의 — noori 1쌍만 값이 있고 나머지 9쌍은 빈 배열 등식이다.
+    let bulletDefinitions: [BulletDefinition]
+    /// 문단 머리(표 44) — 이 승격 전에도 두 포맷이 같았으므로 이 축은 격차를
+    /// 잡지 못한다. 정의 축이 참조를 따라가지 않으므로 참조 배선
+    /// (`hh:paraPr`의 `hh:heading` 리맵)이 깨지는 회귀를 여기서 잡는다.
+    let paragraphHeadings: [ParagraphHeading]
 
     init(of file: HwpFile) {
         sectionCount = file.sectionArray.count
@@ -212,6 +281,53 @@ struct DocumentEquivalenceProjection {
                 sideChar: $0.unused
             )
         }
+        numberingDefinitions = file.docInfo.idMappings.numberingArray.map { numbering in
+            NumberingDefinition(
+                startingIndex: numbering.startingIndex,
+                formats: numbering.formatArray.map(\.format),
+                startingIndexes: numbering.startingIndexArray ?? [],
+                paraHeadInfo: numbering.formatArray.map(\.property)
+            )
+        }
+        bulletDefinitions = file.docInfo.idMappings.bulletArray.map {
+            BulletDefinition(
+                char: $0.char,
+                info: $0.info,
+                headCharShapeId: $0.headCharShapeId,
+                imageId: $0.imageId
+            )
+        }
+        paragraphHeadings = Self.paragraphHeadings(of: file)
+    }
+
+    /// 문단 머리를 문서 순서(표 셀 재귀 포함)로 모은다 — noori의 글머리표
+    /// 문단 2개가 표 셀 안이라 최상위 문단만 걸으면 이 축이 비어 버린다.
+    /// 머리 없는 문단은 싣지 않는다 (문단 분할 차이에 흔들리지 않게).
+    static func paragraphHeadings(of file: HwpFile) -> [ParagraphHeading] {
+        let paraShapes = file.docInfo.idMappings.paraShapeArray
+        func walk(_ paragraphs: [HwpParagraph]) -> [ParagraphHeading] {
+            paragraphs.flatMap { paragraph -> [ParagraphHeading] in
+                var headings: [ParagraphHeading] = []
+                let shapeId = Int(paragraph.paraHeader.paraShapeId)
+                if paraShapes.indices.contains(shapeId) {
+                    let property = paraShapes[shapeId].property1Info
+                    if property.headingTypeRawValue != 0 {
+                        headings.append(ParagraphHeading(
+                            kind: property.headingTypeRawValue,
+                            level: property.headingLevelRawValue,
+                            definitionId: paraShapes[shapeId].numberingOrBulletId
+                        ))
+                    }
+                }
+                for ctrl in paragraph.ctrlHeaderArray ?? [] {
+                    if case let .table(table) = ctrl {
+                        headings += table.cellArray.flatMap { walk($0.paragraphArray) }
+                    }
+                }
+                return headings
+            }
+        }
+        return file.sectionArray.flatMap { walk($0.paragraph) }
     }
 
     /// 인쇄 가능한 문자만 문서 순서(표 셀 재귀 포함)로 모은다 — 제어 문자
@@ -333,6 +449,17 @@ struct DocumentEquivalenceProjection {
         expect(pageNumberPositions).to(
             equal(other.pageNumberPositions),
             description: "\(fixtureId) pageNumberPositions"
+        )
+        expect(numberingDefinitions).to(
+            equal(other.numberingDefinitions),
+            description: "\(fixtureId) numberingDefinitions"
+        )
+        expect(bulletDefinitions).to(
+            equal(other.bulletDefinitions),
+            description: "\(fixtureId) bulletDefinitions"
+        )
+        expect(paragraphHeadings).to(
+            equal(other.paragraphHeadings), description: "\(fixtureId) paragraphHeadings"
         )
     }
 }

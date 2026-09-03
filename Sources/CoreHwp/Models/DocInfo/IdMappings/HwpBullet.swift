@@ -13,7 +13,7 @@ public struct HwpBullet {
     public var rawPayload: Data
     /** 문단 머리의 정보 8바이트 */
     public let info: [BYTE]
-    /** 문단 머리 글자 모양 ID (표 40 — −1이면 바탕글 모양) */
+    /** 문단 머리 글자 모양 ID (표 39 — −1이면 바탕글 모양) */
     public let headCharShapeId: Int32
     /** 글머리표 문자 */
     public let char: String
@@ -33,13 +33,40 @@ public struct HwpBullet {
     public let undocumentedTrailing: [BYTE]
 }
 
+extension HwpBullet {
+    /// HWPX(`hh:bullet`) 합성 전용 — 표 39 문단 머리 정보 12바이트를
+    /// `info`(앞 8바이트)와 `headCharShapeId`(뒤 `INT32`)로 쪼개 든다.
+    /// 레코드 payload는 합성하지 않는다 (`HwpBorderFill(hwpxBorders:fillInfo:)`·
+    /// `HwpFaceName(hwpxFace:substituteFace:)`와 같은 DocInfo 가족 관행 —
+    /// HWPX 매니페스트에 payload 핀이 없고 등가 투영도 제외한다).
+    init(hwpxInfo info: [BYTE], headCharShapeId: Int32, char: String, checkChar: String) {
+        rawPayload = Data()
+        self.info = info
+        self.headCharShapeId = headCharShapeId
+        self.char = char
+        charRawPayload = Data()
+        // `imageId`는 여부가 아니라 "글머리표 0, 이미지 글머리표 ID"인 값이라
+        // 0이 곧 "이미지 아님"이다. 이미지 글머리표(`useImage="1"`)는 HWPX
+        // 픽스처 10종에 사례가 없어 실파일 검증 대기 항목이다.
+        imageId = 0
+        imageProperty = [0, 0, 0, 0]
+        // 체크 글머리표 문자는 `hh:bullet@checkedChar`다 — 한컴 모델이 값이
+        // 있을 때만 쓰므로(`BulletType.cpp`) 생략은 "없음"이고, HWPX 픽스처
+        // 10종에도 실물이 없다. 체크 **여부**는 표 39에 자리가 없는
+        // `hh:paraHead@checkable`이라 여전히 싣지 않는다.
+        self.checkChar = checkChar
+        checkCharRawPayload = Data()
+        undocumentedTrailing = []
+    }
+}
+
 extension HwpBullet: HwpFromData {
     // MARK: loader contract exemption - preserves undocumented trailing bytes after known fields
 
     init(_ reader: inout DataReader) throws {
         let startOffset = reader.byteOffset
         info = try reader.readBytes(8).bytes
-        // 표 40 문단 머리 정보는 글자 모양 ID(INT32)까지 12바이트다 — 8바이트로
+        // 표 39 문단 머리 정보는 글자 모양 ID(INT32)까지 12바이트다 — 8바이트로
         // 읽으면 글머리표 문자가 4바이트 밀려 U+FFFF가 된다 (noori '-' 실측)
         headCharShapeId = try reader.read(Int32.self)
         let charStartOffset = reader.byteOffset

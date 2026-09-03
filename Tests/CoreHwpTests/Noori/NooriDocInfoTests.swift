@@ -142,7 +142,7 @@ final class NooriDocInfoTests: XCTestCase {
 
         let bullet = try XCTUnwrap(hwp.docInfo.idMappings.bulletArray.first)
 
-        // 표 40 문단 머리 정보는 글자 모양 ID(INT32)까지 12바이트 —
+        // 표 39 문단 머리 정보는 글자 모양 ID(INT32)까지 12바이트 —
         // 글머리표 문자는 '-' (한글.app 실물 렌더와 일치)
         expect(bullet.char) == "-"
         expect(bullet.headCharShapeId) == -1

@@ -55,9 +55,9 @@ HWPX(OCF ZIP + OWPML XML, KS X 6101)를 **기존 `Hwp*` 모델로 변환 파싱*
 
 ## 1차 범위 밖 (미해석 강등 — 진단으로 보고됨)
 
-numbering/bullet(배열 비움 — 번호·글머리표 문자가 렌더에서 빠진다: noori
-제목 블록의 선행 "-"가 HWP 렌더에만 보이는 것이 실측 사례다. 파스 텍스트
-등가에는 영향 없음), 각주/미주·머리말/꼬리말
+번호 매기기 라벨(정의는 #133에서 승격됐고 `^1.` 캐럿 서식 파서·자동 번호
+카운터·수준 승계가 HWP 경로에도 없다 — 두 포맷 공통 격차라
+`HwpPaginator`가 "(미렌더)"로 보고만 한다), 각주/미주·머리말/꼬리말
 내용(`.notImplemented`), 도형(line/rect/…)·수식·글상자
 (`.notImplemented`; `hp:default` fallback 없이 `hp:chart`만 오는 문서도 여기 —
 OLE 개체 `hp:ole`은 #134에서 승격됐다), 자동 번호·새 번호·홀/짝수 조정
@@ -69,7 +69,7 @@ OLE 개체 `hp:ole`은 #134에서 승격됐다), 자동 번호·새 번호·홀/
 모드): 쪽수 10종 전부 일치, 표·그림·다단·글자 장식·쪽나눔 일치. HWPX
 렌더에만 보이던 격차는 범위 밖 3건(글머리표 "-" #133·차트 OLE #134·쪽 번호
 #135)이었고, HWP 쌍 렌더와 HWPX 렌더는 그 3건을 빼면 동일했다. 쪽 번호는
-#135, 차트 OLE는 #134에서 승격돼 남은 격차는 글머리표 1건이다. 한글.app
+#135, 차트 OLE는 #134, 글머리표는 #133에서 승격돼 남은 격차는 없다. 한글.app
 자체가 포맷에 따라 다르게 그리는 것이 하나 있다 — CharShape 취소선 견본(HWP
 밑줄 종류 raw 2 ↔
 HWPX `<hh:strikeout>`)을 .hwp는 글자 아래 단선으로, .hwpx는 글자 가운데
@@ -105,6 +105,80 @@ HWP 쌍 manifest `pageNumberPositions[0]`과 payload 바이트 동일. (2) 2026-
 `HwpxPageNumberMapperTests`(대응표·payload·실측 쌍)·`HwpxHwpEquivalenceTests`
 (pageNumberPositions 축)·`HwpxFixtureRenderTests.testHwpxPageChromeMatchesHwpPairs`
 (noori 각 쪽 "1"·"2"·"3")다.
+
+## 문단 번호·글머리표 (`hh:numbering`·`hh:bullet`, #133)
+
+`HwpxNumberingMapper`가 두 가족을 `HwpNumbering`/`HwpBullet` 배열로 옮긴다.
+참조 배선은 그전부터 끝나 있었다 — `HwpxParaShapeMapper`가 `hh:paraPr`의
+`hh:heading`을 표 44 bit 23-24(머리 종류)·bit 25-27(수준)과 1-based
+`numberingOrBulletId`로 이미 옮겼고, 비어 있던 것은 정의 배열뿐이라 조판이
+게이트를 지나고도 `HwpIndex`에서 정의를 못 찾아 아무것도 그리지 않았다.
+
+두 가족은 자식 `hh:paraHead`(표 39 문단 머리 정보 12바이트)를 공유한다. 스펙은
+항목 4개(속성 UINT32 · 너비 보정값 HWPUNIT16 · 본문과의 거리 HWPUNIT16 · 글자
+모양 아이디 참조 INT32)를 적고 "전체 길이 8"로 합계를 틀리게 적었다 — 실물은
+12바이트다(같은 정정으로 표 42의 "전체 길이 20"도 24바이트). 속성 비트는 표 40이
+bit 0-4(정렬·번호 너비·자동 내어 쓰기·거리 종류)만 적고 **번호 모양은 적지
+않는데, 실측이 bit 5-8이다**: 빈 문서 기본 `numberingArray`(`HwpIdMappings`)의
+수준별 선두 UINT32가 `^1.` 0x0C · `^2.` 0x10C · `^7` 0x2C이고 noori HWPX의 같은
+수준이 `DIGIT`(표 41 값 0)·`HANGUL_SYLLABLE`(8)·`CIRCLED_DIGIT`(1)이다. 4비트라
+표 41의 0-14만 담기고 `SYMBOL`(0x80) 같은 표 밖 코드는 접힌다. 표 41은 표 134
+번호 모양의 0-14 구간과 항목이 같아 `HwpxNumberFormatMapper`를 재사용한다.
+
+생략 속성의 기본값은 **참조 리더의 생략 처리**에서 온다. 한컴 `Util.cpp`의
+`GetAttribute(..., bool& value)`는 속성이 없으면 `value`를 건드리지 않고 false를
+반환하므로, 생성자가 세운 값이 그대로 남는다 — `useInstWidth`·`autoIndent`는
+`m_bUseInstWidth(true)`·`m_bAutoIndent(true)`라 **생략이 참**이다(우리 기본값도
+참이다). 같은 생성자의 `m_uCharPrIDRef(0)`은 따르지 않는다: 0은 실재하는 charPr
+참조라 생략을 0으로 접으면 없는 참조가 첫 글자 모양을 가리키고, `HwpBullet`의
+계약(`-1`이면 바탕글)과도 어긋난다 — 생략·센티널 모두 -1이다. `hh:paraHead@start`는
+표 38이 UINT(4바이트)이고 한컴도 `UINT m_StartNumber`라 16비트로 읽으면 65,535
+초과가 조용히 기본값이 된다(문서 수준 `hh:numbering@start`만 UINT16이다).
+번호 형식 문자열은 표 38의 WORD 길이 필드를 넘으면 거부한다 — 절단은 서러게이트
+쌍을 갈라 조용히 손상시킨다. 다만 거부 대상은 **수준 슬롯을 얻은 형식만**이다:
+중복 수준과 1-10 밖 수준의 `hh:paraHead`는 형식이 되지 않아 불변식을 깨뜨릴 수
+없으므로, 문서를 거부하는 대신 아래 강등 규약을 따른다.
+
+주의할 지점 셋이다. (1) `charPrIDRef="4294967295"`는 id 테이블 참조가 아니라
+-1 센티널(바탕글 모양)이라 리맵하면 안 된다 — `resolvedOffset`에 넣으면 댕글링
+폴백 0이 되어 charShape 0을 가리킨다. (2) 수준 슬롯은 문서 순서가 아니라 `level`
+속성이 정하고, 배열 길이는 바이너리와 같게 7 + 3으로 고정한다(빈 수준은 형식
+길이 0·속성 0·바탕글 -1). 중복 수준은 첫 등장이 이기고, 1-10 밖 수준과 두 번째
+이후 `hh:paraHead`는 진단으로 강등한다. (3) 글머리표 문자는 빈 문자열로 접는다 —
+U+0000 한 자로 두면 조판의 `char.isEmpty` 게이트를 지나 NUL 글리프를 그린다.
+체크 글머리표 문자(`hh:bullet@checkedChar`)도 같은 WCHAR 규약으로 읽되 **등가
+축에는 올리지 않는다** — 바이너리는 표 42의 고정 WCHAR라 값이 없어도 U+0000을
+담고 HWPX는 선택 속성이라 부재가 빈 문자열이어서, 정규화 없이는 같은 문서가
+포맷마다 다른 값이 된다. 표 42의 필드가 WCHAR **하나**라 비BMP 문자
+(`char="😀"`)도 담기지 않는데, 첫 unit만 떼면 반쪽 서러게이트를 `String`이
+U+FFFD로 복구해 문서에 없던 대체 글리프를 **우리가 만들어** 그리게 된다 —
+표현 불가한 unit은 U+0000과 같이 빈 문자열로 접는다(`surrogateSafePrefix`가
+자기 절단이 만든 U+FFFD를 떨구는 것과 같은 태도다).
+
+레코드 payload는 합성하지 않는다 — `rawPayload`·`charRawPayload`뿐 아니라
+**`HwpNumberingFormat.formatRawPayload`도 `Data()`로 명시**한다
+(`HwpBorderFill`·`HwpFaceName`의 HWPX 전용 init과 같은 DocInfo 가족 관행).
+범용 init에 맡기면 기본 인자가 문자열 전체를 UTF-16으로 합성해 **양 모드에서**
+들고 있는데, 게이트 여부의 기준은 대응 바이너리 로더다 — 번호 형식은
+`consumedData`(`.viewer`에서 비움)라 HWPX도 비워야 패리티이고, `hp:ole`처럼
+`decoupledPayload`(양 모드 보존)인 것은 반대로 비우면 안 된다
+(`HwpxOleMapperTests.testPayloadSurvivesViewerOptions`). noori 실측으로
+`.viewer`에서 HWP 0바이트 대 HWPX 88바이트로 갈렸던 자리다.
+
+조판은 무변경이다 — `bulletArray`만 차면 `HwpTextRunBuilder.appendBulletHeading`이
+`bullet.char + " "`를 문단 앞에 전치한다. **번호 문단 머리의 라벨은 이 승격으로도
+그려지지 않는다** (위 "1차 범위 밖").
+
+실측 근거는 noori 쌍이다. 수준 1-7의 12바이트와 `start`(1·0)·수준별 시작 번호가
+HWP 쌍과 **바이트 동일**하고, 글머리표는 `info` `08 00 00 00 00 00 32 00` ·
+글자 모양 ID -1 · 문자 `-`가 동일하다. 두 쌍을 조판하면 선행 `- `가 붙은 두 줄이
+같은 좌표(1쪽 59,291·59,321)에 선다. 확장 수준(8-10)만 갈린다 — 표 38의 확장
+필드는 5.1.0.0 이상에만 있고 HWP 쌍은 5.0.3.4라 배열 자체가 없으므로 **등가
+투영에서 수준 개수를 비교하면 안 된다**. 가드는 `HwpxNumberingMapperTests`
+(비트·센티널·슬롯·상한·강등)·`HwpxHwpEquivalenceTests`(정의 축과 문단 머리 축 —
+번호 정의는 10쌍 전부에서 비어 있지 않고 글머리표는 noori 1쌍뿐이다)·
+`HwpxFixtureRenderTests.testHwpxBulletHeadingsMatchHwpPairs`(선행 `- ` 줄 등식과
+noori 직접 핀)·noori HWPX manifest의 `numberingCount` 2·`bulletCount` 1이다.
 
 ## OLE 개체 (`hp:ole` → `$ole`, #134)
 

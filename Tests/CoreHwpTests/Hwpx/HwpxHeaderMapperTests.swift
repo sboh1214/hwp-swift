@@ -98,7 +98,7 @@ final class HwpxHeaderMapperTests: XCTestCase {
         expect(paraShape.borderFillId) == 2 // id "7" → 오프셋 1 → 1-based 2
         expect(paraShape.borderSpacingLeft) == 10
         expect(paraShape.borderSpacingBottom) == 40
-        // 개요 머리인데 numbering 배열은 1차 범위 밖 — id 테이블 리맵만 남는다.
+        // 개요(머리 종류 1)는 numbering 참조를 싣지 않아 0이다.
         expect(paraShape.numberingOrBulletId) == 0
 
         let plain = docInfo.idMappings.paraShapeArray[1]
@@ -344,8 +344,10 @@ final class HwpxHeaderMapperTests: XCTestCase {
         let names = docInfo.unknownRecords.map {
             String(bytes: $0.payload, encoding: .utf8)
         }
-        expect(names).to(contain("numberings"))
+        // `numberings`는 #133에서 승격돼 더는 강등되지 않는다 — 이 픽스처에서
+        // 매핑 밖에 남은 가족은 금칙어 목록뿐이다.
         expect(names).to(contain("forbiddenWordList"))
+        expect(names).toNot(contain("numberings"))
         expect(docInfo.unknownRecords.map(\.tagId).allSatisfy { $0 == 0 }) == true
     }
 
