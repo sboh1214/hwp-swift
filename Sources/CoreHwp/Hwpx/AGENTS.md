@@ -133,10 +133,13 @@ gso의 OLE 개체 요소(`unsupportedComponentHint`)에 같은 힌트 "OLE"를 �
 UINT16(offset 12) · 테두리 3필드 = 26바이트)는 보존용으로 합성한다. 게이트는
 없다 — 바이너리 `HwpShapeComponentOLE`가 `decoupledPayload`(양 모드 보존)라
 `.viewer`에서도 남는 것이 패리티다 (그림 73바이트와 같은 부류이고 pgnp의
-`preservedPayload`와 다르다). 속성 대응(표 119): `drawAspect`(CONTENT 1 ·
-THUMBNAIL 2 · ICON 4 · DOCPRINT 8, 생략은 CONTENT) → bit 0-7, `hasMoniker` →
+`preservedPayload`와 다르다). 속성 대응(값은 표 119, **이름은 한컴 공개 OWPML
+모델 `OWPML/Class/enumdef.h`의 직렬화 표**): `drawAspect`(CONTENT 1 ·
+THUMB_NAIL 2 · ICON 4 · DOC_PRINT 8, 생략은 CONTENT) → bit 0-7, `hasMoniker` →
 bit 8, `eqBaseLine`(0~127 클램프) → bit 9-15, `objectType`(UNKNOWN 0 · EMBEDDED 1 ·
-LINK 2 · STATIC 3 · EQUATION 4) → bit 16-21, 미지 이름은 0. `hc:extent` →
+LINK 2 · STATIC 3 · EQUATION 4) → bit 16-21, 미지 이름은 0. `THUMB_NAIL`·
+`DOC_PRINT`의 밑줄은 `g_OleDrawAspectList` 실측이다 — 붙여 쓴 이름으로 표를
+만들면 실물 문서의 표시 방식이 조용히 0으로 접힌다. `hc:extent` →
 extent(없으면 `hp:sz`). 테두리 3필드는 0이고 `hp:lineShape`는 소비하지 않는다
 (그림 매퍼와 같음 — 렌더가 읽지 않는다). 미소비 자식(`offset`·`orgSz`·`curSz`·
 `flip`·`rotationInfo`·`renderingInfo`·`lineShape`)은 `shapeControl.unknownChildren`
@@ -149,10 +152,23 @@ binaryItemIDRef="ole1" hasMoniker="0" drawAspect="CONTENT" eqBaseLine="0"` +
 뒤 미해석 4바이트는 0). BinData는 HWPX `BinData/ole1.ole`(15,876바이트) ↔ HWP
 `BIN0001.OLE`(압축 해제 15,876바이트): 둘 다 4바이트 길이 프리픽스 + CFB이고
 `OOXMLChartContents` 4,926바이트는 바이트 동일, `Contents` 스트림 1바이트(파일
-오프셋 10282 = 스트림 오프셋 8742)만 다르다. `hp:case` 쪽 `Chart/chart1.xml`도 같은 XML이다. 가드는
-`HwpxOleMapperTests`(payload·속성 비트·리맵·폴백·viewer 패리티·진단 강등·실물
-쌍)·`HwpxSectionMapperTests`(`hp:chart` 단독 강등 유지)·`HwpxHwpEquivalenceTests`
-(`oleBinItemIds` 축)·`HwpxFixtureRenderTests.testHwpxChartBlocksMatchHwpPairs`
+오프셋 10282 = 스트림 오프셋 8742)만 다르다. `hp:case` 쪽 `Chart/chart1.xml`도
+같은 XML이다.
+
+`eqBaseLine`은 값을 그대로 싣는다. 표 119는 raw 0을 "디폴트(85%)", 1~101을
+0~100%로 적고 한컴 모델은 그 속성을 기본값 85의 평범한 UINT로 읽고 쓰므로
+(±1 변환 없음, `OWPML/Class/Para/OLEType.cpp`) 퍼센트인지 raw인지가 스펙만으로
+갈리지 않는데, chart 쌍이 identity를 지지한다 — HWPX `eqBaseLine="0"`인 문서의
+HWP payload 속성이 0x00000001(베이스라인 비트 0)이다. 퍼센트로 보아 +1을 걸면
+그 문서가 raw 1(0%)이 되어 한글.app이 쓴 바이트와 어긋난다. 속성 생략도 0으로
+접히는데 raw 0이 곧 "디폴트 85%"라 두 해석 어느 쪽에서도 옳다.
+
+가드는 `HwpxOleMapperTests`(payload·속성 비트·리맵·폴백·viewer 패리티·진단
+강등·실물 쌍)·`HwpxSectionMapperTests`(`hp:chart` 단독 강등 유지)·
+`HwpxHwpEquivalenceTests`(`oleObjects` 축 — BinItem id 숫자가 아니라 참조가
+닿는지와 차트 XML digest를 비교한다. id 공간은 재저장이 재생성하므로 숫자
+등식은 유효한 쌍을 깨뜨릴 수 있고, payload 전체도 `Contents` 1바이트 차이 때문에
+축이 아니다)·`HwpxFixtureRenderTests.testHwpxChartBlocksMatchHwpPairs`
 (chart 쌍 `.chart` 블록 1개 · 힌트 "OLE")다.
 
 ## 실파일 검증 대기 항목
@@ -179,13 +195,15 @@ binaryItemIDRef="ole1" hasMoniker="0" drawAspect="CONTENT" eqBaseLine="0"` +
 - `<hp:pageNum/>`(속성 생략)을 한글.app이 실제로 왼쪽 위 "- N -"으로 그리는지
   — 우리는 스키마 `default`대로 TOP_LEFT(1)·"-"(0x2D)로 읽지만, 실저장본은
   항상 세 속성을 명시해 실물이 없다(제3자 저장기 문서를 확보하면 대조할 것).
-- `hp:ole` 열거의 미실측 값 — `objectType` 5값 중 실측은 `UNKNOWN`뿐이고
-  `EMBEDDED`·`LINK`·`STATIC`·`EQUATION`은 표 119 순서로 채운 이름이다.
-  `drawAspect`도 `CONTENT`만 실측(`THUMBNAIL`·`ICON`·`DOCPRINT` 미실측),
-  `eqBaseLine`은 0만 실측이라 표 119 "1~101 → 0~100%" 인코딩을 HWPX가 그대로
-  쓰는지 미확정이다 (수식을 OLE로 넣은 문서가 필요하다). 확정 절차는 쪽 번호와
-  같다 — 한글.app으로 .hwp/.hwpx 쌍을 만들어 `$ole` payload 선두 UINT32와
-  `hp:ole` 속성을 대조한다.
+- `hp:ole` 열거의 미실측 값 — 이름은 한컴 모델의 직렬화 표에서 왔지만 실물로
+  본 값은 `objectType` `UNKNOWN`과 `drawAspect` `CONTENT`뿐이다
+  (`EMBEDDED`·`LINK`·`STATIC`·`EQUATION`, `THUMB_NAIL`·`ICON`·`DOC_PRINT` 미실측).
+  `eqBaseLine`은 0만 실측이라 표 119 "1~101 → 0~100%" 인코딩을 HWPX가 퍼센트로
+  적는지(그러면 +1 필요) raw로 적는지 미확정이다 — 한컴 모델의 XML 기본값이 85라
+  퍼센트 해석에도 근거가 있으나, chart 쌍(HWPX "0" ↔ HWP raw 0)은 identity를
+  가리킨다. 베이스라인이 실제로 쓰이는 **수식 OLE** 문서가 있어야 갈린다.
+  확정 절차는 쪽 번호와 같다 — 한글.app으로 .hwp/.hwpx 쌍을 만들어 `$ole`
+  payload 선두 UINT32와 `hp:ole` 속성을 대조한다.
 - HWP `$ole` 개체 요소 payload의 뒤 4바이트 — 표 118의 24바이트(실물 26바이트)
   뒤에 붙는 미해석 UINT32(chart 픽스처 0). HWPX 합성은 26바이트로 끝낸다.
 - `hp:default` fallback 없이 `hp:chart chartIDRef`만 적는 저장기 — 실물이 없어

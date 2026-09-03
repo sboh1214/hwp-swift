@@ -29,8 +29,8 @@ import Foundation
 /// 실측 근거 (`Sources/CoreHwp/Hwpx/AGENTS.md` "OLE 개체"): chart 변환 쌍 —
 /// `objectType="UNKNOWN"`·`drawAspect="CONTENT"`·`hasMoniker="0"`·`eqBaseLine="0"`·
 /// `hc:extent 7200×7200`·`binaryItemIDRef="ole1"` ↔ HWP 쌍 payload
-/// `01 00 00 00 | 20 1C 00 00 | 20 1C 00 00 | 01 00`. 나머지 열거 값은 표 119
-/// 순서로 채웠고 미실측이다.
+/// `01 00 00 00 | 20 1C 00 00 | 20 1C 00 00 | 01 00`. 나머지 열거 값은 미실측이고
+/// 이름은 한컴 공개 OWPML 모델(`OWPML/Class/enumdef.h`)의 직렬화 표, 값은 표 119다.
 enum HwpxOleMapper {
     /// 개체 앵커(제어 문자 코드 11) + typed 컨트롤 — `classify`의 분기.
     static func anchor(
@@ -154,7 +154,17 @@ enum HwpxOleMapper {
         // 저장본이 쓰는 유일한 값이다. 미지 이름은 0으로 둔다 (추측하지 않는다).
         let drawAspect = drawAspects[node.attribute("drawAspect") ?? "CONTENT"] ?? 0
         let moniker: UInt32 = node.boolAttribute("hasMoniker") ? 1 << 8 : 0
-        // 7비트 필드 — 범위 밖 값은 클램프한다 (실측은 0뿐).
+        // 값을 그대로 싣는다 (7비트 필드라 범위 밖은 클램프).
+        //
+        // 표 119는 raw 0을 "디폴트(85%)", 1~101을 0~100%로 적고 한컴 모델은
+        // `m_uEqBaseLine`을 기본값 85의 평범한 UINT로 읽고 쓴다(±1 변환 없음,
+        // `OWPML/Class/Para/OLEType.cpp`). 그래서 XML 값이 퍼센트인지 raw인지는
+        // 스펙만으로 갈리지 않는데, **실측이 identity를 지지한다** — chart 변환
+        // 쌍은 HWPX `eqBaseLine="0"`이고 같은 문서의 HWP payload 속성이
+        // 0x00000001(베이스라인 비트 0)이다. 퍼센트로 보아 +1을 걸면 그 문서가
+        // raw 1(0%)이 되어 한글.app이 실제로 쓴 바이트와 어긋난다.
+        // 속성 생략도 0으로 접히는데, raw 0이 곧 "디폴트 85%"라 두 해석 어느
+        // 쪽에서도 옳다. 수식 OLE 실물을 얻으면 확정할 것 (AGENTS.md 검증 대기).
         let baseline = UInt32(min(127, max(0, node.intAttribute("eqBaseLine"))))
         let objectType = objectTypes[node.attribute("objectType") ?? "UNKNOWN"] ?? 0
         return drawAspect | moniker | (baseline << 9) | (objectType << 16)
@@ -177,13 +187,18 @@ enum HwpxOleMapper {
         )
     }
 
-    /// OWPML `drawAspect` → 표 119 bit 0-7 (DVASPECT_*). 실측은 CONTENT뿐이다.
+    /// OWPML `drawAspect` → 표 119 bit 0-7 (DVASPECT_*). 실측은 CONTENT뿐이고
+    /// 이름은 한컴 공개 OWPML 모델의 직렬화 표 `g_OleDrawAspectList`
+    /// (`OWPML/Class/enumdef.h`)를 그대로 쓴다 — **밑줄이 있는 `THUMB_NAIL`·
+    /// `DOC_PRINT`가 실제 저장 문자열이다**. 붙여 쓴 표기를 별칭으로 받지 않는
+    /// 것은 다른 열거 매퍼와 같은 규약이다 (스키마에 없는 이름은 0).
     static let drawAspects: [String: UInt32] = [
-        "CONTENT": 1, "THUMBNAIL": 2, "ICON": 4, "DOCPRINT": 8,
+        "CONTENT": 1, "THUMB_NAIL": 2, "ICON": 4, "DOC_PRINT": 8,
     ]
 
     /// OWPML `objectType` → 표 119 bit 16-21 개체 종류. 실측은 UNKNOWN뿐이고
-    /// 나머지는 표 119 나열 순서로 채웠다.
+    /// 나머지 이름·값은 한컴 모델의 `g_OleObjectList`·`OLEOBJECTTYPE`이 표 119
+    /// 나열 순서와 일치함을 확인해 채웠다.
     static let objectTypes: [String: UInt32] = [
         "UNKNOWN": 0, "EMBEDDED": 1, "LINK": 2, "STATIC": 3, "EQUATION": 4,
     ]

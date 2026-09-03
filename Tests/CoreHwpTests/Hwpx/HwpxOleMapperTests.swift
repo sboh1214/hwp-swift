@@ -77,12 +77,19 @@ final class HwpxOleMapperTests: XCTestCase {
 
         // 생략 → CONTENT(1) — 한글.app 저장본이 쓰는 유일한 값.
         expect(try property("")) == 1
-        expect(try property("drawAspect=\"THUMBNAIL\"")) == 2
+        // 이름은 한컴 모델 `g_OleDrawAspectList`의 직렬화 문자열 그대로다 —
+        // 밑줄이 빠지면 실물 문서의 값이 조용히 0으로 접힌다.
+        expect(try property("drawAspect=\"THUMB_NAIL\"")) == 2
         expect(try property("drawAspect=\"ICON\"")) == 4
-        expect(try property("drawAspect=\"DOCPRINT\"")) == 8
-        // 미지 이름은 추측하지 않는다.
+        expect(try property("drawAspect=\"DOC_PRINT\"")) == 8
+        // 미지 이름은 추측하지 않는다 — 붙여 쓴 표기는 스키마에 없다.
         expect(try property("drawAspect=\"BOGUS\"")) == 0
+        expect(try property("drawAspect=\"THUMBNAIL\"")) == 0
+        expect(try property("drawAspect=\"DOCPRINT\"")) == 0
         expect(try property("hasMoniker=\"1\"")) == 1 | 1 << 8
+        // 값은 그대로 실린다 — chart 쌍 실측(HWPX "0" ↔ HWP raw 0)이 근거이고
+        // 퍼센트 해석(+1)이면 그 문서가 raw 1로 어긋난다.
+        expect(try property("eqBaseLine=\"0\"")) == 1
         expect(try property("eqBaseLine=\"50\"")) == 1 | 50 << 9
         // 7비트 필드 — 범위 밖은 클램프 (마스킹이면 999 → 103으로 뒤틀린다).
         expect(try property("eqBaseLine=\"999\"")) == 1 | 127 << 9
@@ -260,7 +267,9 @@ final class HwpxOleMapperTests: XCTestCase {
         expect(control.commonCtrlProperty?.width) == 32250
         expect(control.commonCtrlProperty?.height) == 18750
 
-        // HWP 쌍은 gso + $ole 개체 요소다 — 개체 요소 단위로 같은 BinData id.
+        // HWP 쌍은 gso + $ole 개체 요소다. 두 파일 각각의 **실측 핀**이고 교차
+        // 포맷 불변식이 아니다 — id 공간은 재저장이 재생성하므로 등가 투영은
+        // 숫자 대신 해석 결과(차트 XML)를 본다 (`DocumentEquivalenceProjection`).
         expect(HwpxFixtureAssertions.oleBinItemIds(from: hwpx)) == [1]
         expect(HwpxFixtureAssertions.oleBinItemIds(from: hwp)) == [1]
         let hwpOle = try XCTUnwrap(HwpxFixtureAssertions.shapeComponents(from: hwp)
