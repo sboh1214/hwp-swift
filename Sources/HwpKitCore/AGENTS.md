@@ -291,10 +291,18 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   색·문단 스타일 값 타입(NSColor/UIColor·NSParagraphStyle)이 Foundation이
   아니라 AppKit/UIKit 소속이라 이 모듈의 첫머리 규약(UI 프레임워크 import
   금지)에 막힌다.
-- U+FFFC 마커 run만 여기서 지운다 (`strippingControlMarkerRuns`) — 마커
-  **사이** 구간을 새 버퍼에 옮겨 담아 글자마다 한 번만 복사한다. 마커를
-  가로지르던 속성 범위(감싼 하이퍼링크)는 양옆이 같은 값으로 이어 붙어
-  `longestEffectiveRange`에서 하나로 보이므로 범위 재계산이 없다.
+- 복사에서 빠지는 것은 **둘**이다: U+FFFC 마커 run
+  (`strippingControlMarkerRuns`)과 조판 전용 빈 줄 앵커
+  (`droppingEmptyLineAnchor`, #137). 마커 제거는 마커 **사이** 구간을 새 버퍼에
+  옮겨 담아 글자마다 한 번만 복사한다 — 마커를 가로지르던 속성 범위(감싼
+  하이퍼링크)는 양옆이 같은 값으로 이어 붙어 `longestEffectiveRange`에서 하나로
+  보이므로 범위 재계산이 없다. 앵커 제거는 조각의 **마지막 글자 하나**만 본다
+  (앵커는 언제나 문단 끝이라 조각에 실렸다면 그 자리다). 앵커는 글자가 빈칸이라
+  사용자 입력 공백과 구별되지 않으므로 판정은 **표식**
+  (`HwpAttributedStringKey.emptyLineAnchor`)으로만 한다 — 꼬리 문자열로
+  판정하면 `가 + LF + 빈칸 + CR`의 진짜 빈칸까지 함께 떨어진다. 두 제거는
+  `plainText`·`attributedText`가 **같은 순서로** 적용해야 `.string` 파리티가
+  유지된다.
 - **제자리 삭제로 되돌리면 이차가 된다** (#118 리뷰). 마커마다
   `deleteCharacters`를 부르면 남은 접미가 매번 밀려 마커 수의 제곱이고, 복사는
   `@MainActor`에서 도므로 그대로 화면이 멈춘다 (실측: 한 문단 5,000개 1.48초 ·

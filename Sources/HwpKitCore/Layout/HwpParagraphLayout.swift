@@ -138,6 +138,17 @@ public struct HwpParagraphLayout {
         columnWidth: CGFloat,
         maxLineFrames: Int = HwpParagraphLayout.maximumLineFrames
     ) -> HwpParagraphFrame {
+        // 조판 문자열이 빈 문단은 높이 0이다. **이것은 알려진 격차이고 여기서는
+        // 고칠 수 없다** — 빈 문자열에는 글꼴도 `hwp.baseFontSize`도 없는데
+        // (`HwpTextRunBuilder.attachParagraphStyle`이 length 0에서 빠진다) 픽스처
+        // paraShape 850개 중 848개가 쓰는 `.percent` 줄 간격은 그 둘이 있어야
+        // 줄 높이를 낸다. 한 줄 높이를 주려면 글자 모양을 아는 계층
+        // (`HwpParagraphMeasurer`·`HwpPaginator.height(for:fallback:)`)에서
+        // `charShape.baseSize × 줄간격%`로 하한을 걸어야 한다.
+        //
+        // 발현 경로는 라인 캐시를 쓰지 않는 측정뿐이다 (글상자·캐시 무효 문단·
+        // 안전밸브로 linesegarray를 폐기한 HWPX 문단). 픽스처 전수에서는 빈 문단
+        // 3,954개가 **전부** 유효한 캐시를 가져 재현되지 않는다.
         guard attributedString.length > 0 else {
             return HwpParagraphFrame(totalHeight: 0, lines: [])
         }

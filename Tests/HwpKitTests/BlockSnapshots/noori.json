@@ -15,7 +15,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 4,
+          "textLength" : 3,
           "textPrefix" : ""
         },
         {
@@ -41,7 +41,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 2,
+          "textLength" : 1,
           "textPrefix" : ""
         },
         {
@@ -67,7 +67,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 2,
+          "textLength" : 1,
           "textPrefix" : ""
         },
         {
@@ -81,7 +81,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 2,
+          "textLength" : 1,
           "textPrefix" : ""
         },
         {
@@ -107,7 +107,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 100,
+          "textLength" : 99,
           "textPrefix" : "□ 과학기술정보"
         },
         {
@@ -121,7 +121,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 110,
+          "textLength" : 109,
           "textPrefix" : "  o 한국형발"
         },
         {
@@ -135,7 +135,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 68,
+          "textLength" : 67,
           "textPrefix" : "  o 올해 1"
         },
         {
@@ -149,7 +149,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 111,
+          "textLength" : 110,
           "textPrefix" : "□ 과기정통부는"
         },
         {
@@ -163,7 +163,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 94,
+          "textLength" : 93,
           "textPrefix" : "  o 4월 2"
         },
         {
@@ -196,7 +196,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 106,
+          "textLength" : 105,
           "textPrefix" : "  o 명칭선정"
         },
         {
@@ -210,7 +210,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 74,
+          "textLength" : 73,
           "textPrefix" : "  o 발사체 "
         },
         {
@@ -224,7 +224,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 94,
+          "textLength" : 93,
           "textPrefix" : "□ 이러한 절차"
         },
         {
@@ -238,7 +238,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 135,
+          "textLength" : 134,
           "textPrefix" : "  o 동 명칭"
         },
         {
@@ -252,7 +252,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 59,
+          "textLength" : 58,
           "textPrefix" : "  o 백승엽학"
         },
         {
@@ -266,7 +266,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 137,
+          "textLength" : 136,
           "textPrefix" : "□ 과기정통부 "
         },
         {
@@ -322,7 +322,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 2,
+          "textLength" : 1,
           "textPrefix" : ""
         },
         {
@@ -367,7 +367,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 2,
+          "textLength" : 1,
           "textPrefix" : ""
         },
         {
@@ -393,7 +393,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 2,
+          "textLength" : 1,
           "textPrefix" : ""
         },
         {

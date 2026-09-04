@@ -205,10 +205,12 @@ final class HwpxFixtureRenderTests: XCTestCase {
     /// `HwpTextRunBuilder.appendBulletHeading`이 조기 반환해 선행 `- `가
     /// 통째로 사라지므로, 라벨이 붙은 줄만 뽑아 HWP 쌍과 등식으로 건다.
     ///
-    /// 페인트 리스트 전량 등식은 축이 아니다 — noori HWPX 렌더에는 빈 문단
-    /// draw(`"\r"`)가 4건 더 있어(2쪽 3건·3쪽 1건, drawText 64 대 68) 이
-    /// 이슈와 무관하게 문자열이 갈린다. 등식만 두면 양쪽이 함께 비어도
-    /// 통과하므로 HWPX 쪽에 직접 핀을 함께 둔다.
+    /// 페인트 리스트 전량 등식은 축이 아니다 — 등식만 두면 양쪽이 함께 비어도
+    /// 통과하므로 HWPX 쪽에 직접 핀을 함께 둔다. (#137로 문단 끝 코드를 조판
+    /// 문자열에서 접기 전에는 noori HWPX 렌더에 빈 문단 draw(`"\r"`)가 4건 더
+    /// 있어 drawText가 64 대 68로 갈렸다. HWPX는 빈 문단도 `paraText`를 갖고
+    /// 그 안이 코드 13 하나였기 때문인데, 접고 나면 `paraText`가 없는 HWP 빈
+    /// 문단과 같은 빈 문자열이라 지금은 두 포맷 모두 64다.)
     func testHwpxBulletHeadingsMatchHwpPairs() async throws {
         let hwpxFixtures = try FixtureRoot.loadAllHwpxFixtures(from: #file)
         let hwpFixtures = try FixtureRoot.loadAllFixtures(from: #file)
@@ -261,9 +263,11 @@ final class HwpxFixtureRenderTests: XCTestCase {
     /// 다른 기호는 noori 본문 문단이 **글자 그대로** 쓰고 있어(문단 머리가
     /// 아니다) 넓히면 본문이 딸려 들어온다.
     ///
-    /// 줄 나누기는 `components(separatedBy: .newlines)`여야 한다 — 문단 끝은
-    /// CRLF이고 Swift에서 `"\r\n"`은 **문자 하나**(확장 grapheme cluster)라
-    /// `split(separator: "\n")`은 아무것도 쪼개지 못한다.
+    /// 줄 나누기는 `components(separatedBy: .newlines)`로 둔다 — 문단 안의 한 줄
+    /// 끝(U+000A)까지 함께 쪼개야 라벨이 붙은 줄만 남는다. (#137로 문단 끝 코드를
+    /// 접기 전에는 문단 경계가 CRLF였고, Swift에서 `"\r\n"`은 **문자 하나**
+    /// (확장 grapheme cluster)라 `split(separator: "\n")`이 아무것도 쪼개지 못했다.
+    /// 지금 문단 경계는 `FixtureText.extractFromPaintList`가 넣는 `"\n"` 하나다.)
     private static func bulletHeadingLines(of document: HwpDocument) -> [String] {
         FixtureText.extractFromPaintList(document)
             .components(separatedBy: .newlines)

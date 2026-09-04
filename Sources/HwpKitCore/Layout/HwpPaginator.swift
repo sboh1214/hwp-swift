@@ -1217,11 +1217,19 @@ private extension HwpPaginator {
         attributedString: NSAttributedString
     ) async throws -> HwpParagraphFrame {
         await yieldPeriodically()
-        return HwpParagraphLayout().layout(
-            attributedString: attributedString,
+        // 빈 문단의 한 줄 하한은 `HwpParagraphMeasurer`와 같은 규약이다 (#137) —
+        // 라인 캐시가 유효하면 `height(for:fallback:)`이 캐시 높이를 쓰므로 이
+        // 값은 캐시가 없거나 무효일 때만 쓰인다.
+        let measured = attributedString.length == 0
+            ? textRunBuilder().emptyParagraphProbe(for: paragraph)
+            : attributedString
+        let frame = HwpParagraphLayout().layout(
+            attributedString: measured,
             paraShape: index.paraShapeOrDefault(for: paragraph),
             columnWidth: currentColumnFrame.width
         )
+        guard attributedString.length == 0 else { return frame }
+        return HwpParagraphFrame(totalHeight: frame.totalHeight, lines: [])
     }
 
     /// 전체 문단 대비 처리 위치 (0...1 근사) — 프로그레시브 로딩 진행률

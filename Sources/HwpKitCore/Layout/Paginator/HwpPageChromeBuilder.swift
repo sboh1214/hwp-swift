@@ -244,7 +244,19 @@ struct HwpPageChromeBuilder {
                 paragraph: paragraph,
                 controlReplacements: replacements
             )
-            guard attributed.length > 0 else { continue }
+            guard attributed.length > 0 else {
+                // 빈 문단은 그릴 글자가 없어 블록을 만들지 않지만 **한 줄을
+                // 차지한다** — 자리를 안 비우면 뒤 줄이 한 줄 위로 올라온다
+                // (#137). 측정 계층(`HwpParagraphMeasurer`·`HwpPaginator.layout`)과
+                // 같은 규약이라 높이도 같은 대역 문자열로 잰다.
+                cursorY += emptyParagraphHeight(
+                    paragraph: paragraph,
+                    builder: builder,
+                    paragraphLayout: paragraphLayout,
+                    width: bandFrame.width
+                )
+                continue
+            }
             let frame = paragraphLayout.layout(
                 attributedString: attributed,
                 paraShape: index.paraShapeOrDefault(for: paragraph),
@@ -266,6 +278,32 @@ struct HwpPageChromeBuilder {
             cursorY += blockHeight
         }
         return blocks
+    }
+
+    /// 조판 문자열이 빈 문단이 크롬 밴드에서 차지하는 높이.
+    ///
+    /// 이 빌더는 `HwpParagraphMeasurer`를 쓰지 않고 `layout(attributedString:…)`을
+    /// 직접 부르는 **셋** 중 하나다 (나머지는 `HwpParagraphMeasurer`·
+    /// `HwpPaginator.layout`). 그래서 빈 문단 하한도 여기서 따로 걸어야 한다 —
+    /// 대역 문자열은 측정 계층과 같은 `HwpTextRunBuilder.emptyParagraphProbe`를
+    /// 쓴다.
+    ///
+    /// `Sources/HwpKitCore/AGENTS.md`의 "layout에 닿는 경로 넷"은 **다른 축**이다
+    /// — 그 문장이 세는 것은 `paraShapeOrDefault`로 shape를 푸는 곳이라
+    /// `attachParagraphStyle`이 하나로 들어가는데, 그쪽은 static
+    /// `HwpParagraphLayout.paragraphStyle`만 부르고 `layout`은 부르지 않는다.
+    /// 빈 문단 하한이 필요한 곳은 넷이 아니라 셋이다.
+    private func emptyParagraphHeight(
+        paragraph: CoreHwp.HwpParagraph,
+        builder: HwpTextRunBuilder,
+        paragraphLayout: HwpParagraphLayout,
+        width: CGFloat
+    ) -> CGFloat {
+        max(1, paragraphLayout.layout(
+            attributedString: builder.emptyParagraphProbe(for: paragraph),
+            paraShape: index.paraShapeOrDefault(for: paragraph),
+            columnWidth: width
+        ).totalHeight)
     }
 
     // MARK: 쪽 번호 (표 147/148)

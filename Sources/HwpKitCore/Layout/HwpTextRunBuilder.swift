@@ -122,12 +122,19 @@ public struct HwpTextRunBuilder {
         // 못하게 한다 — 시작 마커 뒤부터 매칭 끝 마커 전까지 속성을 단다 (#1·#2).
         var fieldDepth = 0
         var hyperlinkStack: [HyperlinkFrame] = []
+        // 직전에 방출한 문자가 한 줄 끝(U+000A)인지 — 문단 끝 앵커 판정용 (아래).
+        var pendingEmptyLastLine = false
+        var emittedEmptyLastLineAnchor = false
 
         for hwpChar in units {
             let position = wcharPosition
             wcharPosition += wcharLength(of: hwpChar)
 
-            let text = string(from: hwpChar, pendingHighSurrogate: &pendingHighSurrogate)
+            let text = emittedText(
+                of: hwpChar, pendingHighSurrogate: &pendingHighSurrogate,
+                followsLineBreak: &pendingEmptyLastLine,
+                emittedAnchor: &emittedEmptyLastLineAnchor
+            )
             guard !text.isEmpty else { continue }
 
             while shapeSweep < shapeStarts.count, shapeStarts[shapeSweep] <= position {
@@ -142,13 +149,7 @@ public struct HwpTextRunBuilder {
                 && trackIntervals[trackCursor].start <= position
                 && position < trackIntervals[trackCursor].end
                 ? trackIntervals[trackCursor].kind : 0
-            while memoCursor < memoAnchorRanges.count,
-                  memoAnchorRanges[memoCursor].upperBound <= position
-            {
-                memoCursor += 1
-            }
-            let memoAnchor = memoCursor < memoAnchorRanges.count
-                && memoAnchorRanges[memoCursor].contains(position)
+            let memoAnchor = memoAnchor(at: position, in: memoAnchorRanges, cursor: &memoCursor)
             if hwpChar.type == .char {
                 accumulate(
                     text, shapeId: shapeId, trackMark: trackMark, memoAnchor: memoAnchor,
@@ -214,6 +215,7 @@ public struct HwpTextRunBuilder {
             chunk.text += String(decoding: [lone], as: UTF16.self)
         }
         append(chunk, paragraph: paragraph, to: output)
+        finishEmptyLastLineAnchor(in: output, emitted: emittedEmptyLastLineAnchor)
         attachParagraphStyle(to: output, paragraph: paragraph)
         return output
     }

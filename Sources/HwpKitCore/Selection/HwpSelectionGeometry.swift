@@ -241,7 +241,9 @@ public final class HwpSelectionGeometry {
             if index > 0 {
                 result += Self.joinsWithPrevious(pieces[index - 1], piece) ? "" : "\n"
             }
-            result += Self.strippingControlMarkers(piece.attributedText.string)
+            result += Self.strippingControlMarkers(
+                Self.droppingEmptyLineAnchor(piece.attributedText).string
+            )
         }
         return result
     }
@@ -342,6 +344,26 @@ public final class HwpSelectionGeometry {
     /// U+FFFC 개체 자리 표시 마커 제거
     static func strippingControlMarkers(_ text: String) -> String {
         text.replacingOccurrences(of: "\u{FFFC}", with: "")
+    }
+
+    /// 조판 전용 빈 줄 앵커를 뗀다 (`HwpAttributedStringKey.emptyLineAnchor`).
+    ///
+    /// 앵커는 한 줄 끝(10)으로 끝난 문단의 마지막 빈 줄을 CoreText가 만들게
+    /// 하려고 조판이 **합성한** 빈칸이라 원문에 없다 — 복사에 실리면 안 된다.
+    /// 글자만으로는 사용자가 입력한 빈칸과 구별할 수 없으므로 표식으로 판정한다.
+    /// 앵커는 언제나 문단의 마지막 문자라 조각에 실렸다면 그 조각의 끝이다 —
+    /// 전수 스캔 없이 마지막 글자만 본다 (마커 제거의 선형 규약과 같은 이유).
+    static func droppingEmptyLineAnchor(_ attributed: NSAttributedString) -> NSAttributedString {
+        guard attributed.length > 0,
+              attributed.attribute(
+                  HwpAttributedStringKey.emptyLineAnchor,
+                  at: attributed.length - 1,
+                  effectiveRange: nil
+              ) != nil
+        else { return attributed }
+        return attributed.attributedSubstring(
+            from: NSRange(location: 0, length: attributed.length - 1)
+        )
     }
 
     // MARK: - 전체 선택

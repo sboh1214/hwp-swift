@@ -15,7 +15,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 17,
+          "textLength" : 16,
           "textPrefix" : "학술연구용역 최"
         },
         {
@@ -43,7 +43,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 16,
+          "textLength" : 15,
           "textPrefix" : "주요법령에 대한"
         },
         {
@@ -57,7 +57,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 17,
+          "textLength" : 16,
           "textPrefix" : "(헌법-총강 및"
         },
         {
@@ -85,7 +85,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 10,
+          "textLength" : 9,
           "textPrefix" : "2007. 12"
         },
         {
@@ -113,7 +113,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 12,
+          "textLength" : 11,
           "textPrefix" : "사단법인 한국헌"
         },
         {
@@ -155,7 +155,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 19,
+          "textLength" : 18,
           "textPrefix" : "\t\t\t\t연구책임"
         },
         {
@@ -169,7 +169,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 12,
+          "textLength" : 11,
           "textPrefix" : "\t\t\t\t공동연구"
         },
         {
@@ -183,7 +183,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 38,
+          "textLength" : 37,
           "textPrefix" : "김대환(서울시립"
         },
         {
@@ -197,7 +197,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 37,
+          "textLength" : 36,
           "textPrefix" : "\/노기호(군산대"
         },
         {
@@ -211,7 +211,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 36,
+          "textLength" : 35,
           "textPrefix" : "\/방승주(한양대"
         },
         {
@@ -225,7 +225,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 37,
+          "textLength" : 36,
           "textPrefix" : "\/이성환(국민대"
         },
         {
@@ -239,7 +239,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 37,
+          "textLength" : 36,
           "textPrefix" : "\/장용근(단국대"
         },
         {
@@ -253,7 +253,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 38,
+          "textLength" : 37,
           "textPrefix" : "\/조재현(동아대"
         },
         {
@@ -267,7 +267,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 11,
+          "textLength" : 10,
           "textPrefix" : "\/전학선(한국외"
         },
         {
@@ -314,7 +314,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 95,
+          "textLength" : 94,
           "textPrefix" : "Matthews"
         },
         {
@@ -328,7 +328,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 304,
+          "textLength" : 303,
           "textPrefix" : "본 사안에 있어"
         },
         {
@@ -356,7 +356,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 18,
+          "textLength" : 17,
           "textPrefix" : "Yick Wo판"
         },
         {
@@ -384,7 +384,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 228,
+          "textLength" : 227,
           "textPrefix" : "그 법 ‘내용’"
         },
         {
@@ -412,7 +412,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 25,
+          "textLength" : 24,
           "textPrefix" : "Plessy판결"
         },
         {
@@ -440,7 +440,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 72,
+          "textLength" : 71,
           "textPrefix" : "1896년에 선"
         },
         {
@@ -468,7 +468,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 5,
+          "textLength" : 4,
           "textPrefix" : "사실관계"
         },
         {
@@ -496,7 +496,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 303,
+          "textLength" : 302,
           "textPrefix" : "1890년에 제"
         },
         {
@@ -538,7 +538,7 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 157,
+          "textLength" : 156,
           "textPrefix" : "5) 배심재판이"
         },
         {
@@ -552,7 +552,7 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 42,
+          "textLength" : 41,
           "textPrefix" : "6) Pless"
         },
         {
@@ -566,7 +566,7 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 22,
+          "textLength" : 21,
           "textPrefix" : "7) 163 U"
         }
       ],
@@ -585,7 +585,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 71,
+          "textLength" : 70,
           "textPrefix" : "고 있어 위헌의"
         },
         {
@@ -613,7 +613,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 17,
+          "textLength" : 16,
           "textPrefix" : "검열금지(사전억"
         },
         {
@@ -641,7 +641,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 617,
+          "textLength" : 616,
           "textPrefix" : "그리스 로마시절"
         },
         {
@@ -655,7 +655,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 259,
+          "textLength" : 258,
           "textPrefix" : "우리 헌법재판소"
         },
         {
@@ -697,7 +697,7 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 127,
+          "textLength" : 126,
           "textPrefix" : "38) 역사적으"
         },
         {
@@ -711,7 +711,7 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 289,
+          "textLength" : 288,
           "textPrefix" : "39) 사문제도"
         },
         {
@@ -725,7 +725,7 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 30,
+          "textLength" : 29,
           "textPrefix" : "40) 헌재결 "
         },
         {
@@ -739,7 +739,7 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 90,
+          "textLength" : 89,
           "textPrefix" : "41) 이균용,"
         }
       ],
@@ -772,7 +772,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 5,
+          "textLength" : 4,
           "textPrefix" : "현행헌법"
         },
         {
@@ -800,7 +800,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 705,
+          "textLength" : 704,
           "textPrefix" : "현행헌법은 제2"
         },
         {
@@ -842,7 +842,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 2,
+          "textLength" : 1,
           "textPrefix" : ""
         },
         {
@@ -927,7 +927,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 10,
+          "textLength" : 9,
           "textPrefix" : "집회․결사의 자"
         },
         {
@@ -955,7 +955,7 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 126,
+          "textLength" : 125,
           "textPrefix" : "102) 196"
         }
       ],
@@ -1002,7 +1002,7 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 101,
+          "textLength" : 100,
           "textPrefix" : "13) 정종섭("
         },
         {
@@ -1016,7 +1016,7 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 135,
+          "textLength" : 134,
           "textPrefix" : "14) 제정헌법"
         },
         {
@@ -1030,7 +1030,7 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 321,
+          "textLength" : 320,
           "textPrefix" : "15) 수정 제"
         },
         {
@@ -1044,7 +1044,7 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 205,
+          "textLength" : 204,
           "textPrefix" : "16) 수정 제"
         },
         {
@@ -1058,7 +1058,7 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 150,
+          "textLength" : 149,
           "textPrefix" : "17) 수정 제"
         },
         {
@@ -1072,7 +1072,7 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 26,
+          "textLength" : 25,
           "textPrefix" : "18) 김일환\/"
         },
         {
@@ -1086,7 +1086,7 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 23,
+          "textLength" : 22,
           "textPrefix" : "19) 김일환\/"
         },
         {
@@ -1100,7 +1100,7 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 307,
+          "textLength" : 306,
           "textPrefix" : "20) 노무현 "
         },
         {
@@ -1114,7 +1114,7 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 82,
+          "textLength" : 81,
           "textPrefix" : "21) 국민의 "
         },
         {
@@ -1128,7 +1128,7 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 80,
+          "textLength" : 79,
           "textPrefix" : "22) ‘국민의"
         }
       ],
@@ -1147,7 +1147,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 63,
+          "textLength" : 62,
           "textPrefix" : "성을 확보하면서"
         },
         {
@@ -1175,7 +1175,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 28,
+          "textLength" : 27,
           "textPrefix" : "헌법 제27조가"
         },
         {
@@ -1203,7 +1203,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 441,
+          "textLength" : 440,
           "textPrefix" : "헌법 제27조와"
         },
         {
@@ -1217,7 +1217,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 328,
+          "textLength" : 327,
           "textPrefix" : "헌법상 제27조"
         },
         {
@@ -1259,7 +1259,7 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 185,
+          "textLength" : 184,
           "textPrefix" : "23) 이러한 "
         },
         {
@@ -1273,7 +1273,7 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 238,
+          "textLength" : 237,
           "textPrefix" : "24) 독일 연"
         },
         {
@@ -1287,7 +1287,7 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 107,
+          "textLength" : 106,
           "textPrefix" : "25) 권영성,"
         },
         {
@@ -1301,7 +1301,7 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 346,
+          "textLength" : 345,
           "textPrefix" : "26) 이를 헌"
         }
       ],
@@ -1320,7 +1320,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 142,
+          "textLength" : 141,
           "textPrefix" : "진다고 할 수 "
         },
         {
@@ -1362,7 +1362,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 13,
+          "textLength" : 12,
           "textPrefix" : "재판청구권의 법"
         },
         {
@@ -1390,7 +1390,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 3,
+          "textLength" : 2,
           "textPrefix" : "개설"
         },
         {
@@ -1418,7 +1418,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 311,
+          "textLength" : 310,
           "textPrefix" : "국가의 공권력 "
         },
         {
@@ -1446,7 +1446,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 16,
+          "textLength" : 15,
           "textPrefix" : "주관적 공권성과"
         },
         {
@@ -1474,7 +1474,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 8,
+          "textLength" : 7,
           "textPrefix" : "주관적 공권성"
         },
         {
@@ -1502,7 +1502,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 272,
+          "textLength" : 271,
           "textPrefix" : "재판청구권의 주"
         },
         {
@@ -1544,7 +1544,7 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 18,
+          "textLength" : 17,
           "textPrefix" : "27) 장석조("
         },
         {
@@ -1558,7 +1558,7 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 34,
+          "textLength" : 33,
           "textPrefix" : "28) 허 영,"
         },
         {
@@ -1572,7 +1572,7 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 19,
+          "textLength" : 18,
           "textPrefix" : "29) 백윤철("
         },
         {
@@ -1586,7 +1586,7 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 131,
+          "textLength" : 130,
           "textPrefix" : "30) 정종섭("
         }
       ],
@@ -1605,7 +1605,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 128,
+          "textLength" : 127,
           "textPrefix" : "하여 관련 사회"
         },
         {
@@ -1619,7 +1619,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 293,
+          "textLength" : 292,
           "textPrefix" : "셋째, 사회적 "
         },
         {
@@ -1633,7 +1633,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 245,
+          "textLength" : 244,
           "textPrefix" : "넷째, 사회적 "
         },
         {
@@ -1661,7 +1661,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 26,
+          "textLength" : 25,
           "textPrefix" : "법적 효력에 따"
         },
         {
@@ -1689,7 +1689,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 146,
+          "textLength" : 145,
           "textPrefix" : "이러한 유형과 "
         },
         {
@@ -1731,7 +1731,7 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 240,
+          "textLength" : 239,
           "textPrefix" : "28) 기본권의"
         },
         {
@@ -1745,7 +1745,7 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 49,
+          "textLength" : 48,
           "textPrefix" : "29) R. A"
         },
         {
@@ -1759,7 +1759,7 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 2,
+          "textLength" : 1,
           "textPrefix" : ""
         },
         {
@@ -1773,7 +1773,7 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 32,
+          "textLength" : 31,
           "textPrefix" : "30) 상세한 "
         }
       ],
@@ -1792,7 +1792,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 53,
+          "textLength" : 52,
           "textPrefix" : "오호택, “병역"
         },
         {
@@ -1806,7 +1806,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 23,
+          "textLength" : 22,
           "textPrefix" : "이준일, 헌법학"
         },
         {
@@ -1820,7 +1820,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 25,
+          "textLength" : 24,
           "textPrefix" : "유진오, 신고 "
         },
         {
@@ -1834,7 +1834,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 49,
+          "textLength" : 48,
           "textPrefix" : "윤진숙, “병역"
         },
         {
@@ -1848,7 +1848,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 21,
+          "textLength" : 20,
           "textPrefix" : "장영수, 헌법학"
         },
         {
@@ -1862,7 +1862,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 23,
+          "textLength" : 22,
           "textPrefix" : "전광석, 한국헌"
         },
         {
@@ -1876,7 +1876,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 23,
+          "textLength" : 22,
           "textPrefix" : "정종섭, 헌법학"
         },
         {
@@ -1890,7 +1890,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 46,
+          "textLength" : 45,
           "textPrefix" : "정혜영, “여성"
         },
         {
@@ -1918,7 +1918,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 5,
+          "textLength" : 4,
           "textPrefix" : "외국문헌"
         },
         {
@@ -1946,7 +1946,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 92,
+          "textLength" : 91,
           "textPrefix" : "Bernsdor"
         },
         {
@@ -1960,7 +1960,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 51,
+          "textLength" : 50,
           "textPrefix" : "Dreier, "
         },
         {
@@ -1974,7 +1974,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 40,
+          "textLength" : 39,
           "textPrefix" : "Dreier(H"
         },
         {
@@ -1988,7 +1988,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 46,
+          "textLength" : 45,
           "textPrefix" : "Pieroth\/"
         },
         {
@@ -2002,7 +2002,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 61,
+          "textLength" : 60,
           "textPrefix" : "Gaitanid"
         },
         {
@@ -2016,7 +2016,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 68,
+          "textLength" : 67,
           "textPrefix" : "Gornig, "
         },
         {
@@ -2030,7 +2030,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 50,
+          "textLength" : 49,
           "textPrefix" : "Heun, in"
         },
         {
@@ -2044,7 +2044,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 30,
+          "textLength" : 29,
           "textPrefix" : "Jarass, "
         },
         {
@@ -2058,7 +2058,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 45,
+          "textLength" : 44,
           "textPrefix" : "Kokott, "
         },
         {
@@ -2072,7 +2072,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 36,
+          "textLength" : 35,
           "textPrefix" : "Meyer-La"
         },
         {
@@ -2086,7 +2086,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 48,
+          "textLength" : 47,
           "textPrefix" : "Muckel, "
         },
         {
@@ -2100,7 +2100,7 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 58,
+          "textLength" : 57,
           "textPrefix" : "Scholz, "
         },
         {

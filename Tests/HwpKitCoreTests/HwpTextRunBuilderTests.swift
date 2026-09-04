@@ -30,78 +30,6 @@ import XCTest
             expect(capped.string.count) == 100
         }
 
-        func testControlSpacesBecomeNonBreakingSpaces() throws {
-            // 묶음 빈칸(30)·고정폭 빈칸(31)을 그대로 디코드하면 U+001E/U+001F가
-            // 되어 CoreText가 폭 0으로 그린다 (실측: "가나"와 "가\u{1E}나"의
-            // 타이포그래픽 폭이 같다) — 빈칸이 사라지고 줄바꿈이 달라진다.
-            let paragraph = paragraph(text: "가\u{1E}나\u{1F}다", runs: [(0, 0)])
-            let result = builder(shapes: [0: try charShape()]).build(paragraph: paragraph)
-
-            expect(result.string) == "가\u{A0}나\u{A0}다"
-        }
-
-        func testHyphenControlRendersAsNothing() throws {
-            // 하이픈(24)을 그대로 디코드하면 U+0018이 표시·복사 문자열에
-            // 남는다. 실측(한글.app 12.30, `<hp:hyphen/>` 유무 대조 문서):
-            // 줄 중간 글리프 없음·줄바꿈 기회 없음·줄 끝 하이픈 없음 —
-            // 실물은 아무것도 그리지 않으므로 표시 문자열에서 떨군다.
-            let paragraph = paragraph(text: "가\u{18}나", runs: [(0, 0)])
-            let result = builder(shapes: [0: try charShape()]).build(paragraph: paragraph)
-
-            expect(result.string) == "가나"
-        }
-
-        func testControlSpacesKeepFixedWidthWhenOrdinarySpacesFollowTheFont() {
-            // '글꼴에 어울리는 빈칸'·워드 호환 문서에서는 보통 빈칸이 폰트 고유
-            // 폭으로 돌아간다 — 그때 고정폭 빈칸까지 글꼴을 따르면 이름과
-            // 모순이라, 제어 빈칸만 게이트 밖에서 0.5em을 유지해야 한다.
-            let font = CTFontCreateWithName("Helvetica" as CFString, 12, nil)
-            let attributed = NSMutableAttributedString(
-                string: "가 나\u{A0}다",
-                attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
-            )
-            HwpTextRunBuilder.applyFixedSpaceWidth(
-                to: attributed, includesOrdinarySpace: false
-            )
-
-            func advance(at location: Int) -> Double {
-                let piece = attributed.attributedSubstring(
-                    from: NSRange(location: location, length: 1)
-                )
-                return CTLineGetTypographicBounds(
-                    CTLineCreateWithAttributedString(piece), nil, nil, nil
-                )
-            }
-
-            expect(advance(at: 3)).to(beCloseTo(6.0, within: 0.01))
-            expect(advance(at: 1)).to(beLessThan(advance(at: 3)))
-        }
-
-        func testControlSpacesReceiveTheFixedSpaceWidth() {
-            // U+00A0으로 옮긴 30/31도 일반 공백과 같은 0.5em 보정을 받아야
-            // 한다 — 빠지면 폰트 고유 advance에 머물러 그 문단만 좁게 조판된다.
-            let font = CTFontCreateWithName("Helvetica" as CFString, 12, nil)
-            let attributed = NSMutableAttributedString(
-                string: "가 나\u{A0}다",
-                attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
-            )
-            HwpTextRunBuilder.applyFixedSpaceWidth(
-                to: attributed, includesOrdinarySpace: true
-            )
-
-            func advance(at location: Int) -> Double {
-                let piece = attributed.attributedSubstring(
-                    from: NSRange(location: location, length: 1)
-                )
-                return CTLineGetTypographicBounds(
-                    CTLineCreateWithAttributedString(piece), nil, nil, nil
-                )
-            }
-
-            expect(advance(at: 3)) == advance(at: 1)
-            expect(advance(at: 3)).to(beCloseTo(6.0, within: 0.01))
-        }
-
         func testSingleShapeParagraphProducesOneFontRange() throws {
             let paragraph = paragraph(text: "hello", runs: [(0, 0)])
             let result = builder(shapes: [0: try charShape()]).build(paragraph: paragraph)
@@ -452,7 +380,10 @@ import XCTest
         }
     }
 
-    private extension HwpTextRunBuilderTests {
+    /// 픽스처 헬퍼 — 제어 문자 스위트
+    /// (`HwpTextRunBuilderControlCharacterTests.swift`)가 같은 타입의 확장이라
+    /// 파일 밖에서도 보여야 한다. 그래서 `private`이 아니다.
+    extension HwpTextRunBuilderTests {
         func builder(shapes: [UInt32: CoreHwp.HwpCharShape]) -> HwpTextRunBuilder {
             HwpTextRunBuilder(index: index(shapes: shapes), fontResolver: .testDeterministic)
         }
