@@ -256,6 +256,7 @@ extension HwpTextRunBuilder {
         paragraph: CoreHwp.HwpParagraph
     ) {
         guard output.length > 0 else { return }
+        stripDecorationsFromEmptyLastLineAnchor(in: output)
         let paraShape = index.paraShapeOrDefault(for: paragraph)
         output.addAttribute(
             kCTParagraphStyleAttributeName as NSAttributedString.Key,

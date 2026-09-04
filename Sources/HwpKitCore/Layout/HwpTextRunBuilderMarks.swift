@@ -194,6 +194,43 @@ extension HwpTextRunBuilder {
         return cursor < ranges.count && ranges[cursor].contains(position)
     }
 
+    /// 빈 줄 앵커가 유지하는 속성 — 빈 줄의 **높이**를 정하는 것만 남긴다.
+    /// 허용 목록인 이유는 장식 키가 늘어도 앵커가 새 장식을 물려받지 않게
+    /// 하기 위해서다 (`emittedText`의 장식 항목 참조).
+    static let emptyLastLineAnchorAttributes: [NSAttributedString.Key] = [
+        kCTFontAttributeName as NSAttributedString.Key,
+        HwpAttributedStringKey.baseFontSize,
+    ]
+
+    /// 빈 줄 앵커 run에서 장식 속성을 떼어 낸다.
+    ///
+    /// 앵커는 잉크가 없지만 **장식은 글리프가 아니라 run 폭에 그려진다** —
+    /// `HwpPageLayerDecorations.runBounds`가 `CTRunGetTypographicBounds`를 쓰고
+    /// 그 값은 후행 공백을 포함하므로, 마지막 글자 모양에 음영·밑줄·취소선이
+    /// 걸려 있으면 앵커만 있는 빈 줄에 0.5em짜리 장식 토막이 그려진다 (합성
+    /// 실측: 접기 전 0.000 → 앵커 도입 후 5.000). 픽스처에는 재현 사례가 없지만
+    /// (앵커가 붙는 문단 1개·그 문단에 장식 0개) 실문서에서는 형광펜을 칠한
+    /// 문단이 Shift+Enter로 끝나면 바로 나온다.
+    ///
+    /// 앵커의 위치 판정은 조판 문자열만으로 한다 — "U+000A 뒤의 마지막 빈칸".
+    /// `maxCharacters`로 잘린 문단이 우연히 같은 꼬리를 가지면 진짜 빈칸의
+    /// 장식이 함께 떨어지지만, 그 빈칸도 줄 끝 후행 공백이라 장식이 그려지면
+    /// 안 되는 자리이므로 결과가 같다.
+    func stripDecorationsFromEmptyLastLineAnchor(in output: NSMutableAttributedString) {
+        let text = output.string as NSString
+        guard text.length >= 2,
+              text.character(at: text.length - 1) == 0x20,
+              text.character(at: text.length - 2) == 0x0A
+        else { return }
+        let range = NSRange(location: text.length - 1, length: 1)
+        let existing = output.attributes(at: range.location, effectiveRange: nil)
+        var kept: [NSAttributedString.Key: Any] = [:]
+        for key in Self.emptyLastLineAnchorAttributes {
+            kept[key] = existing[key]
+        }
+        output.setAttributes(kept, range: range)
+    }
+
     /// 이 문자가 조판 문자열에 낼 텍스트.
     ///
     /// 문단 끝(13)은 `controlText`가 접지만, **한 줄 끝(10) 바로 뒤**에서는 빈 줄
@@ -215,7 +252,13 @@ extension HwpTextRunBuilder {
     /// 지운다 — `HwpSelectionGeometry.strippingControlMarkers`). 빈칸은 U+000D와
     /// 같은 공백 부류라 접기 전 계약이 그대로 유지된다. 잉크는 어느 폰트에서도
     /// 없고 (실측: HY울릉도M·함초롬바탕·Apple SD Gothic Neo 모두 마지막 줄 잉크
-    /// 폭 0) 빈 줄이라 진행 폭도 화면에 드러나지 않는다.
+    /// 폭 0) 진행 폭도 화면에 드러나지 않는다 — 선택 상자·하이라이트·캐럿이
+    /// 모두 `CTLineGetTrailingWhitespaceWidth`를 빼거나 그것으로 클램프해서
+    /// 접기 전과 자릿수까지 같은 값을 낸다.
+    ///
+    /// 다만 **장식은 후행 공백을 포함한 run 폭에 그려진다** — 그 구멍은
+    /// `stripDecorationsFromEmptyLastLineAnchor`가 앵커 run의 속성을 허용
+    /// 목록으로 깎아 막는다.
     func emittedText(
         of hwpChar: CoreHwp.HwpChar,
         pendingHighSurrogate: inout UInt16?,

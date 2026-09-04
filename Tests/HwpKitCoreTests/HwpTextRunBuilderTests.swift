@@ -97,6 +97,26 @@ import XCTest
             expect(foldedFrame.lines.count) == 1
         }
 
+        func testEmptyLastLineAnchorCarriesNoDecoration() throws {
+            // 장식은 글리프가 아니라 run 폭에 그려지고 그 폭은 후행 공백을
+            // 포함한다 (`HwpPageLayerDecorations.runBounds`). 앵커가 마지막 글자
+            // 모양의 밑줄·취소선을 물려받으면 빈 줄에 장식 토막이 남는다.
+            let paragraph = paragraph(text: "가\u{0A}\u{0D}", runs: [(0, 0)])
+            let underlined = try charShape(property: 1 << 2)
+            let result = builder(shapes: [0: underlined]).build(paragraph: paragraph)
+
+            let anchor = NSRange(location: result.length - 1, length: 1)
+            let attributes = result.attributes(at: anchor.location, effectiveRange: nil)
+            expect(result.string.last) == " "
+            // 높이를 정하는 글꼴은 남고, 장식 키는 하나도 남지 않는다.
+            expect(attributes[kCTFontAttributeName as NSAttributedString.Key]).notTo(beNil())
+            expect(attributes[HwpAttributedStringKey.underlineStyle]).to(beNil())
+            expect(attributes[HwpAttributedStringKey.underlineColor]).to(beNil())
+            // 앞 글자에는 그대로 있어야 한다 — 앵커만 깎였음을 확인한다.
+            let body = result.attributes(at: 0, effectiveRange: nil)
+            expect(body[HwpAttributedStringKey.underlineStyle]).notTo(beNil())
+        }
+
         func testParagraphOfOnlyTheEndControlProducesEmptyString() throws {
             // 빈 문단의 WCHAR 스트림은 13 하나다 (HWPX는 `HwpxParagraphMapper`가
             // 항상 붙이고, 바이너리도 PARA_TEXT를 가진 빈 문단이면 같다).
