@@ -244,7 +244,19 @@ struct HwpPageChromeBuilder {
                 paragraph: paragraph,
                 controlReplacements: replacements
             )
-            guard attributed.length > 0 else { continue }
+            guard attributed.length > 0 else {
+                // 빈 문단은 그릴 글자가 없어 블록을 만들지 않지만 **한 줄을
+                // 차지한다** — 자리를 안 비우면 뒤 줄이 한 줄 위로 올라온다
+                // (#137). 측정 계층(`HwpParagraphMeasurer`·`HwpPaginator.layout`)과
+                // 같은 규약이라 높이도 같은 대역 문자열로 잰다.
+                cursorY += emptyParagraphHeight(
+                    paragraph: paragraph,
+                    builder: builder,
+                    paragraphLayout: paragraphLayout,
+                    width: bandFrame.width
+                )
+                continue
+            }
             let frame = paragraphLayout.layout(
                 attributedString: attributed,
                 paraShape: index.paraShapeOrDefault(for: paragraph),
@@ -266,6 +278,25 @@ struct HwpPageChromeBuilder {
             cursorY += blockHeight
         }
         return blocks
+    }
+
+    /// 조판 문자열이 빈 문단이 크롬 밴드에서 차지하는 높이.
+    ///
+    /// 이 빌더는 `HwpParagraphMeasurer`를 쓰지 않고 `layout`을 직접 부르는 네
+    /// 경로 중 하나다 (`Sources/HwpKitCore/AGENTS.md` "layout에 닿는 경로").
+    /// 그래서 빈 문단 하한도 여기서 따로 걸어야 한다 — 대역 문자열은 측정
+    /// 계층과 같은 `HwpTextRunBuilder.emptyParagraphProbe`를 쓴다.
+    private func emptyParagraphHeight(
+        paragraph: CoreHwp.HwpParagraph,
+        builder: HwpTextRunBuilder,
+        paragraphLayout: HwpParagraphLayout,
+        width: CGFloat
+    ) -> CGFloat {
+        max(1, paragraphLayout.layout(
+            attributedString: builder.emptyParagraphProbe(for: paragraph),
+            paraShape: index.paraShapeOrDefault(for: paragraph),
+            columnWidth: width
+        ).totalHeight)
     }
 
     // MARK: 쪽 번호 (표 147/148)
