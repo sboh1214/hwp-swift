@@ -124,6 +124,7 @@ public struct HwpTextRunBuilder {
         var hyperlinkStack: [HyperlinkFrame] = []
         // 직전에 방출한 문자가 한 줄 끝(U+000A)인지 — 문단 끝 앵커 판정용 (아래).
         var pendingEmptyLastLine = false
+        var emittedEmptyLastLineAnchor = false
 
         for hwpChar in units {
             let position = wcharPosition
@@ -131,7 +132,8 @@ public struct HwpTextRunBuilder {
 
             let text = emittedText(
                 of: hwpChar, pendingHighSurrogate: &pendingHighSurrogate,
-                followsLineBreak: &pendingEmptyLastLine
+                followsLineBreak: &pendingEmptyLastLine,
+                emittedAnchor: &emittedEmptyLastLineAnchor
             )
             guard !text.isEmpty else { continue }
 
@@ -213,6 +215,7 @@ public struct HwpTextRunBuilder {
             chunk.text += String(decoding: [lone], as: UTF16.self)
         }
         append(chunk, paragraph: paragraph, to: output)
+        finishEmptyLastLineAnchor(in: output, emitted: emittedEmptyLastLineAnchor)
         attachParagraphStyle(to: output, paragraph: paragraph)
         return output
     }
@@ -256,7 +259,6 @@ extension HwpTextRunBuilder {
         paragraph: CoreHwp.HwpParagraph
     ) {
         guard output.length > 0 else { return }
-        stripDecorationsFromEmptyLastLineAnchor(in: output)
         let paraShape = index.paraShapeOrDefault(for: paragraph)
         output.addAttribute(
             kCTParagraphStyleAttributeName as NSAttributedString.Key,

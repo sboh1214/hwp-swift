@@ -30,155 +30,6 @@ import XCTest
             expect(capped.string.count) == 100
         }
 
-        func testControlSpacesBecomeNonBreakingSpaces() throws {
-            // 묶음 빈칸(30)·고정폭 빈칸(31)을 그대로 디코드하면 U+001E/U+001F가
-            // 되어 CoreText가 폭 0으로 그린다 (실측: "가나"와 "가\u{1E}나"의
-            // 타이포그래픽 폭이 같다) — 빈칸이 사라지고 줄바꿈이 달라진다.
-            let paragraph = paragraph(text: "가\u{1E}나\u{1F}다", runs: [(0, 0)])
-            let result = builder(shapes: [0: try charShape()]).build(paragraph: paragraph)
-
-            expect(result.string) == "가\u{A0}나\u{A0}다"
-        }
-
-        func testHyphenControlRendersAsNothing() throws {
-            // 하이픈(24)을 그대로 디코드하면 U+0018이 표시·복사 문자열에
-            // 남는다. 실측(한글.app 12.30, `<hp:hyphen/>` 유무 대조 문서):
-            // 줄 중간 글리프 없음·줄바꿈 기회 없음·줄 끝 하이픈 없음 —
-            // 실물은 아무것도 그리지 않으므로 표시 문자열에서 떨군다.
-            let paragraph = paragraph(text: "가\u{18}나", runs: [(0, 0)])
-            let result = builder(shapes: [0: try charShape()]).build(paragraph: paragraph)
-
-            expect(result.string) == "가나"
-        }
-
-        func testParagraphEndControlRendersAsNothing() throws {
-            // 모든 문단의 WCHAR 스트림이 문단 끝(13)으로 끝난다. 그대로 두면
-            // 표시·복사 문자열에 U+000D가 남고, 라틴 슬롯 폰트가 U+000D에 잉크를
-            // 가진 HY 계열이면 문단 끝마다 '¬' 조판 부호가 그려진다 (#137).
-            let paragraph = paragraph(text: "가나\u{0D}", runs: [(0, 0)])
-            let result = builder(shapes: [0: try charShape()]).build(paragraph: paragraph)
-
-            expect(result.string) == "가나"
-        }
-
-        func testLineBreakControlSurvivesParagraphEndFolding() throws {
-            // 한 줄 끝(10)은 의도된 줄 나눔이라 U+000A로 조판되어야 한다 —
-            // 문단 끝(13)을 접으면서 함께 떨구면 줄 나눔이 사라진다.
-            let paragraph = paragraph(text: "가\u{0A}나\u{0D}", runs: [(0, 0)])
-            let result = builder(shapes: [0: try charShape()]).build(paragraph: paragraph)
-
-            expect(result.string) == "가\u{0A}나"
-        }
-
-        func testParagraphEndingWithLineBreakKeepsTheEmptyLastLine() throws {
-            // 한 줄 끝(10)으로 끝난 문단은 한글이 라인 캐시에 마지막 빈 줄을
-            // 배정한다 (실측: legacy-common-control-property Section9의 407 WCHAR
-            // 문단이 세그먼트 10개, 마지막 textpos가 그 13의 자리다). CoreText는
-            // 하드 개행 뒤에 내용이 있어야 그 줄을 만들므로 문단 끝을 그냥 접으면
-            // 줄이 하나 사라진다 — 잉크 없는 빈칸을 앵커로 남긴다.
-            let paragraph = paragraph(text: "가\u{0A}\u{0D}", runs: [(0, 0)])
-            let result = builder(shapes: [0: try charShape()]).build(paragraph: paragraph)
-
-            expect(result.string) == "가\u{0A} "
-            // 앵커는 **공백**이어야 한다 — 낭독 라벨의 "공백만 남으면 버린다"
-            // 판정(`HwpAccessibilityContent.accessibilityLabel`)이 `isWhitespace`를
-            // 보므로, U+200B 같은 비공백 앵커는 읽을 것이 없는 정지점을 만든다.
-            expect(result.string.last?.isWhitespace) == true
-
-            let frame = HwpParagraphLayout().layout(
-                attributedString: result, paraShape: CoreHwp.HwpParaShape(), columnWidth: 300
-            )
-            let folded = builder(shapes: [0: try charShape()])
-                .build(paragraph: self.paragraph(text: "가\u{0A}", runs: [(0, 0)]))
-            let foldedFrame = HwpParagraphLayout().layout(
-                attributedString: folded, paraShape: CoreHwp.HwpParaShape(), columnWidth: 300
-            )
-            expect(frame.lines.count) == 2
-            expect(foldedFrame.lines.count) == 1
-        }
-
-        func testEmptyLastLineAnchorCarriesNoDecoration() throws {
-            // 장식은 글리프가 아니라 run 폭에 그려지고 그 폭은 후행 공백을
-            // 포함한다 (`HwpPageLayerDecorations.runBounds`). 앵커가 마지막 글자
-            // 모양의 밑줄·취소선을 물려받으면 빈 줄에 장식 토막이 남는다.
-            let paragraph = paragraph(text: "가\u{0A}\u{0D}", runs: [(0, 0)])
-            let underlined = try charShape(property: 1 << 2)
-            let result = builder(shapes: [0: underlined]).build(paragraph: paragraph)
-
-            let anchor = NSRange(location: result.length - 1, length: 1)
-            let attributes = result.attributes(at: anchor.location, effectiveRange: nil)
-            expect(result.string.last) == " "
-            // 높이를 정하는 글꼴은 남고, 장식 키는 하나도 남지 않는다.
-            expect(attributes[kCTFontAttributeName as NSAttributedString.Key]).notTo(beNil())
-            expect(attributes[HwpAttributedStringKey.underlineStyle]).to(beNil())
-            expect(attributes[HwpAttributedStringKey.underlineColor]).to(beNil())
-            // 앞 글자에는 그대로 있어야 한다 — 앵커만 깎였음을 확인한다.
-            let body = result.attributes(at: 0, effectiveRange: nil)
-            expect(body[HwpAttributedStringKey.underlineStyle]).notTo(beNil())
-        }
-
-        func testParagraphOfOnlyTheEndControlProducesEmptyString() throws {
-            // 빈 문단의 WCHAR 스트림은 13 하나다 (HWPX는 `HwpxParagraphMapper`가
-            // 항상 붙이고, 바이너리도 PARA_TEXT를 가진 빈 문단이면 같다).
-            // 접고 나면 문자열이 비므로 `paraText`가 없는 빈 문단과 같은 상태가
-            // 된다 — 두 포맷의 빈 문단이 같은 조판 입력으로 모인다.
-            let paragraph = paragraph(text: "\u{0D}", runs: [(0, 0)])
-            let result = builder(shapes: [0: try charShape()]).build(paragraph: paragraph)
-
-            expect(result.length) == 0
-        }
-
-        func testControlSpacesKeepFixedWidthWhenOrdinarySpacesFollowTheFont() {
-            // '글꼴에 어울리는 빈칸'·워드 호환 문서에서는 보통 빈칸이 폰트 고유
-            // 폭으로 돌아간다 — 그때 고정폭 빈칸까지 글꼴을 따르면 이름과
-            // 모순이라, 제어 빈칸만 게이트 밖에서 0.5em을 유지해야 한다.
-            let font = CTFontCreateWithName("Helvetica" as CFString, 12, nil)
-            let attributed = NSMutableAttributedString(
-                string: "가 나\u{A0}다",
-                attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
-            )
-            HwpTextRunBuilder.applyFixedSpaceWidth(
-                to: attributed, includesOrdinarySpace: false
-            )
-
-            func advance(at location: Int) -> Double {
-                let piece = attributed.attributedSubstring(
-                    from: NSRange(location: location, length: 1)
-                )
-                return CTLineGetTypographicBounds(
-                    CTLineCreateWithAttributedString(piece), nil, nil, nil
-                )
-            }
-
-            expect(advance(at: 3)).to(beCloseTo(6.0, within: 0.01))
-            expect(advance(at: 1)).to(beLessThan(advance(at: 3)))
-        }
-
-        func testControlSpacesReceiveTheFixedSpaceWidth() {
-            // U+00A0으로 옮긴 30/31도 일반 공백과 같은 0.5em 보정을 받아야
-            // 한다 — 빠지면 폰트 고유 advance에 머물러 그 문단만 좁게 조판된다.
-            let font = CTFontCreateWithName("Helvetica" as CFString, 12, nil)
-            let attributed = NSMutableAttributedString(
-                string: "가 나\u{A0}다",
-                attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
-            )
-            HwpTextRunBuilder.applyFixedSpaceWidth(
-                to: attributed, includesOrdinarySpace: true
-            )
-
-            func advance(at location: Int) -> Double {
-                let piece = attributed.attributedSubstring(
-                    from: NSRange(location: location, length: 1)
-                )
-                return CTLineGetTypographicBounds(
-                    CTLineCreateWithAttributedString(piece), nil, nil, nil
-                )
-            }
-
-            expect(advance(at: 3)) == advance(at: 1)
-            expect(advance(at: 3)).to(beCloseTo(6.0, within: 0.01))
-        }
-
         func testSingleShapeParagraphProducesOneFontRange() throws {
             let paragraph = paragraph(text: "hello", runs: [(0, 0)])
             let result = builder(shapes: [0: try charShape()]).build(paragraph: paragraph)
@@ -529,7 +380,10 @@ import XCTest
         }
     }
 
-    private extension HwpTextRunBuilderTests {
+    /// 픽스처 헬퍼 — 제어 문자 스위트
+    /// (`HwpTextRunBuilderControlCharacterTests.swift`)가 같은 타입의 확장이라
+    /// 파일 밖에서도 보여야 한다. 그래서 `private`이 아니다.
+    extension HwpTextRunBuilderTests {
         func builder(shapes: [UInt32: CoreHwp.HwpCharShape]) -> HwpTextRunBuilder {
             HwpTextRunBuilder(index: index(shapes: shapes), fontResolver: .testDeterministic)
         }

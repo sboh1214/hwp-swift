@@ -21,7 +21,9 @@ extension HwpSelectionGeometry {
         let result = NSMutableAttributedString()
         var previousParagraphTail = NSAttributedString()
         for (index, piece) in pieces.enumerated() {
-            let contribution = Self.strippingControlMarkerRuns(piece.attributedText)
+            let contribution = Self.strippingControlMarkerRuns(
+                Self.droppingEmptyLineAnchor(piece.attributedText)
+            )
             if index > 0, !Self.joinsWithPrevious(pieces[index - 1], piece) {
                 result.append(NSAttributedString(
                     string: "\n",

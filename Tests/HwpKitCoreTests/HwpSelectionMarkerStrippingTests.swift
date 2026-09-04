@@ -22,6 +22,18 @@ final class HwpSelectionMarkerStrippingTests: XCTestCase {
         return NSAttributedString(string: text, attributes: attributes)
     }
 
+    /// 빈 줄 앵커(#137)는 조판이 합성한 빈칸이라 복사에 실리면 안 된다.
+    /// 글자만으로는 사용자 입력 빈칸과 구별되지 않으므로 표식으로만 판정한다.
+    func testEmptyLineAnchorIsDroppedFromCopyButUserSpaceIsNot() {
+        let anchored = NSMutableAttributedString()
+        anchored.append(attributed("가\u{0A}"))
+        anchored.append(attributed(" ", extra: [HwpAttributedStringKey.emptyLineAnchor: true]))
+        let typed = attributed("가\u{0A} ")
+
+        expect(HwpSelectionGeometry.droppingEmptyLineAnchor(anchored).string) == "가\u{0A}"
+        expect(HwpSelectionGeometry.droppingEmptyLineAnchor(typed).string) == "가\u{0A} "
+    }
+
     func testMarkerRemovalDropsMarkerOnlyAttributes() {
         // 마커 문자가 사라지면 run delegate·controlIndex 같은 마커 전용
         // 속성도 함께 사라지고, 남은 글자에는 어떤 잔재도 없어야 한다.

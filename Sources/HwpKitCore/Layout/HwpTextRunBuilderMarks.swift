@@ -194,37 +194,58 @@ extension HwpTextRunBuilder {
         return cursor < ranges.count && ranges[cursor].contains(position)
     }
 
+    /// 조판 문자열이 빈 문단의 **한 줄 높이를 재기 위한** 대역 문자열.
+    ///
+    /// 문단의 첫 글자 모양으로 빈칸 하나를 조판하고 같은 paraShape의 문단
+    /// 스타일을 붙인다 — 이걸 `HwpParagraphLayout.layout`에 넣으면 줄 간격 종류
+    /// (비율·고정·최소·여백만), 강제 줄 높이 클램프, 문단 위/아래 간격이 전부
+    /// 실제 문단과 **같은 코드로** 계산된다. 산식을 다시 쓰지 않는 이유가 그것이다.
+    ///
+    /// 이 문자열은 측정에만 쓰고 어디에도 싣지 않는다 — 빈 문단의 조판 문자열은
+    /// 여전히 비어 있고, 그래서 복사·검색·낭독·페인트가 그대로다.
+    func emptyParagraphProbe(for paragraph: CoreHwp.HwpParagraph) -> NSAttributedString {
+        let shapeId = paragraph.paraCharShape.shapeId.first ?? 0
+        let shape = index.charShape(id: shapeId) ?? CoreHwp.HwpCharShape()
+        let probe = NSMutableAttributedString(
+            string: " ",
+            attributes: attributes(for: shape, script: .korean)
+        )
+        attachParagraphStyle(to: probe, paragraph: paragraph)
+        return probe
+    }
+
     /// 빈 줄 앵커가 유지하는 속성 — 빈 줄의 **높이**를 정하는 것만 남긴다.
     /// 허용 목록인 이유는 장식 키가 늘어도 앵커가 새 장식을 물려받지 않게
-    /// 하기 위해서다 (`emittedText`의 장식 항목 참조).
+    /// 하기 위해서다 (아래 장식 항목 참조).
     static let emptyLastLineAnchorAttributes: [NSAttributedString.Key] = [
         kCTFontAttributeName as NSAttributedString.Key,
         HwpAttributedStringKey.baseFontSize,
     ]
 
-    /// 빈 줄 앵커 run에서 장식 속성을 떼어 낸다.
+    /// 빈 줄 앵커 run을 표식하고 장식 속성을 떼어 낸다. `build`가 앵커를 실제로
+    /// 방출했을 때만 부른다 — 앵커는 언제나 문단의 **마지막** 문자다.
     ///
-    /// 앵커는 잉크가 없지만 **장식은 글리프가 아니라 run 폭에 그려진다** —
-    /// `HwpPageLayerDecorations.runBounds`가 `CTRunGetTypographicBounds`를 쓰고
-    /// 그 값은 후행 공백을 포함하므로, 마지막 글자 모양에 음영·밑줄·취소선이
-    /// 걸려 있으면 앵커만 있는 빈 줄에 0.5em짜리 장식 토막이 그려진다 (합성
-    /// 실측: 접기 전 0.000 → 앵커 도입 후 5.000). 픽스처에는 재현 사례가 없지만
-    /// (앵커가 붙는 문단 1개·그 문단에 장식 0개) 실문서에서는 형광펜을 칠한
-    /// 문단이 Shift+Enter로 끝나면 바로 나온다.
+    /// **글자만 보고 판정하지 않는다.** 앵커는 빈칸이라 `가 + LF + 빈칸 + CR`가
+    /// 내는 **사용자 입력 빈칸**과 조판 문자열이 완전히 같다(둘 다 `가 + LF +
+    /// 빈칸`). 꼬리 문자열로 판정하면 후자의 진짜 빈칸에 걸린 변경 추적·밑줄·
+    /// 음영·메모 강조까지 함께 떨어진다. 그래서 방출 시점의 사실
+    /// (`emittedText`의 `emittedAnchor`)만 믿고, 표식은
+    /// `HwpAttributedStringKey.emptyLineAnchor`로 남겨 복사 경로가 같은 판정을
+    /// 다시 할 수 있게 한다.
     ///
-    /// 앵커의 위치 판정은 조판 문자열만으로 한다 — "U+000A 뒤의 마지막 빈칸".
-    /// `maxCharacters`로 잘린 문단이 우연히 같은 꼬리를 가지면 진짜 빈칸의
-    /// 장식이 함께 떨어지지만, 그 빈칸도 줄 끝 후행 공백이라 장식이 그려지면
-    /// 안 되는 자리이므로 결과가 같다.
-    func stripDecorationsFromEmptyLastLineAnchor(in output: NSMutableAttributedString) {
-        let text = output.string as NSString
-        guard text.length >= 2,
-              text.character(at: text.length - 1) == 0x20,
-              text.character(at: text.length - 2) == 0x0A
-        else { return }
-        let range = NSRange(location: text.length - 1, length: 1)
+    /// 장식을 떼는 이유: 앵커는 잉크가 없지만 **장식은 글리프가 아니라 run
+    /// 폭에 그려진다** — `HwpPageLayerDecorations.runBounds`가
+    /// `CTRunGetTypographicBounds`를 쓰고 그 값은 후행 공백을 포함하므로,
+    /// 마지막 글자 모양에 음영·밑줄·취소선이 걸려 있으면 앵커만 있는 빈 줄에
+    /// 0.5em짜리 장식 토막이 그려진다 (합성 실측: 접기 전 0.000 → 앵커 도입 후
+    /// 5.000). 형광펜을 칠한 문단을 Shift+Enter로 끝내면 바로 나오는 형태다.
+    func finishEmptyLastLineAnchor(in output: NSMutableAttributedString, emitted: Bool) {
+        guard emitted, output.length > 0 else { return }
+        let range = NSRange(location: output.length - 1, length: 1)
         let existing = output.attributes(at: range.location, effectiveRange: nil)
-        var kept: [NSAttributedString.Key: Any] = [:]
+        var kept: [NSAttributedString.Key: Any] = [
+            HwpAttributedStringKey.emptyLineAnchor: true,
+        ]
         for key in Self.emptyLastLineAnchorAttributes {
             kept[key] = existing[key]
         }
@@ -262,11 +283,13 @@ extension HwpTextRunBuilder {
     func emittedText(
         of hwpChar: CoreHwp.HwpChar,
         pendingHighSurrogate: inout UInt16?,
-        followsLineBreak: inout Bool
+        followsLineBreak: inout Bool,
+        emittedAnchor: inout Bool
     ) -> String {
         var text = string(from: hwpChar, pendingHighSurrogate: &pendingHighSurrogate)
         if text.isEmpty, hwpChar.type == .char, hwpChar.value == 13, followsLineBreak {
             text = " "
+            emittedAnchor = true
         }
         if !text.isEmpty {
             followsLineBreak = text.unicodeScalars.last == "\u{000A}"
