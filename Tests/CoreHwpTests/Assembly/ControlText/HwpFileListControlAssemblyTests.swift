@@ -310,9 +310,9 @@ private func listControl(_ ctrlId: HwpOtherCtrlId, in hwp: HwpFile) -> HwpListCo
                  let (.footer, .footer(listControl)),
                  let (.footnote, .footnote(listControl)),
                  let (.endnote, .endnote(listControl)):
-                return listControl
+                listControl
             default:
-                return nil
+                nil
             }
         }
     }.last

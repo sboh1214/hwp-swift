@@ -152,9 +152,9 @@ private func rawOtherControl(_ ctrlId: HwpOtherCtrlId, in hwp: HwpFile) -> HwpOt
                  let (.comment, .comment(other)),
                  let (.hiddenComment, .hiddenComment(other)),
                  let (.form, .form(other)):
-                return other
+                other
             default:
-                return nil
+                nil
             }
         }
     }.last

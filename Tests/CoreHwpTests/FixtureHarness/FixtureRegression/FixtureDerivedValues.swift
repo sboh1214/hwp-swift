@@ -204,9 +204,9 @@ enum FixtureDerivedValues {
                 case let .memo(control),
                      let .revision(control),
                      let .field(control):
-                    return control
+                    control
                 default:
-                    return nil
+                    nil
                 }
             }
     }
@@ -226,9 +226,9 @@ enum FixtureDerivedValues {
                      let .comment(control),
                      let .hiddenComment(control),
                      let .other(control):
-                    return control
+                    control
                 default:
-                    return nil
+                    nil
                 }
             }
     }
