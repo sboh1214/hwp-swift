@@ -75,11 +75,15 @@ import XCTest
             // 배정한다 (실측: legacy-common-control-property Section9의 407 WCHAR
             // 문단이 세그먼트 10개, 마지막 textpos가 그 13의 자리다). CoreText는
             // 하드 개행 뒤에 내용이 있어야 그 줄을 만들므로 문단 끝을 그냥 접으면
-            // 줄이 하나 사라진다 — 폭 0·잉크 0인 U+200B를 앵커로 남긴다.
+            // 줄이 하나 사라진다 — 잉크 없는 빈칸을 앵커로 남긴다.
             let paragraph = paragraph(text: "가\u{0A}\u{0D}", runs: [(0, 0)])
             let result = builder(shapes: [0: try charShape()]).build(paragraph: paragraph)
 
-            expect(result.string) == "가\u{0A}\u{200B}"
+            expect(result.string) == "가\u{0A} "
+            // 앵커는 **공백**이어야 한다 — 낭독 라벨의 "공백만 남으면 버린다"
+            // 판정(`HwpAccessibilityContent.accessibilityLabel`)이 `isWhitespace`를
+            // 보므로, U+200B 같은 비공백 앵커는 읽을 것이 없는 정지점을 만든다.
+            expect(result.string.last?.isWhitespace) == true
 
             let frame = HwpParagraphLayout().layout(
                 attributedString: result, paraShape: CoreHwp.HwpParaShape(), columnWidth: 300

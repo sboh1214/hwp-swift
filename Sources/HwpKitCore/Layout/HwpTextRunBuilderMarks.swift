@@ -196,18 +196,26 @@ extension HwpTextRunBuilder {
 
     /// 이 문자가 조판 문자열에 낼 텍스트.
     ///
-    /// 문단 끝(13)은 `controlText`가 접지만, **한 줄 끝(10) 바로 뒤**에서는 폭 0
-    /// 앵커를 낸다. CoreText는 하드 개행 뒤에 내용이 있어야 그 줄을 만들기
-    /// 때문이다 — `"가\n"`은 한 줄이고 `"가\n<무언가>"`가 두 줄이다. 앵커 없이
-    /// 접으면 한글이 라인 캐시에 배정해 둔 마지막 빈 줄이 사라져, 캐시를 쓰지
-    /// 않는 측정 경로(글상자·캐시 무효 문단·안전밸브로 linesegarray를 폐기한
+    /// 문단 끝(13)은 `controlText`가 접지만, **한 줄 끝(10) 바로 뒤**에서는 빈 줄
+    /// 앵커로 빈칸(U+0020)을 낸다. CoreText는 하드 개행 뒤에 내용이 있어야 그 줄을
+    /// 만들기 때문이다 — `"가\n"`은 한 줄이고 `"가\n<무언가>"`가 두 줄이다. 앵커
+    /// 없이 접으면 한글이 라인 캐시에 배정해 둔 마지막 빈 줄이 사라져, 캐시를
+    /// 쓰지 않는 측정 경로(글상자·캐시 무효 문단·안전밸브로 linesegarray를 폐기한
     /// HWPX 문단)에서 문단 높이가 한 줄만큼 짧아진다 (실측:
     /// `legacy-common-control-property` Section9의 407 WCHAR 문단, 폭 400에서
     /// 접기 전 9줄 144pt → 앵커 없이 접으면 8줄 128pt → 앵커를 넣으면 다시
-    /// 9줄 144pt). 앵커는 U+000D가 아니라 U+200B다 — 기본 무시
-    /// (default-ignorable) 문자라 어느 폰트에서도 잉크가 없고 (실측: HY울릉도M·
-    /// 함초롬바탕·Apple SD Gothic Neo 모두 마지막 줄 잉크 폭 0), U+000D를
-    /// 남기면 #137이 고친 조판 부호가 그 빈 줄에 그대로 다시 그려진다.
+    /// 9줄 144pt).
+    ///
+    /// **앵커를 U+000D로도 U+200B로도 두지 않는다.** U+000D를 남기면 #137이 고친
+    /// 조판 부호가 그 빈 줄에 그대로 다시 그려진다. U+200B는 잉크가 없지만
+    /// `isWhitespace`가 **거짓**이라 조판 문자열을 소비하는 계약을 조용히 깬다:
+    /// `HwpAccessibilityContent.accessibilityLabel`의 "공백만 남으면 버린다"
+    /// 판정을 통과해 읽을 것이 없는 VoiceOver 정지점을 만들고, 복사 문자열에는
+    /// 어떤 다듬기에도 걸리지 않는 보이지 않는 문자가 남는다 (평문·RTF는 U+FFFC만
+    /// 지운다 — `HwpSelectionGeometry.strippingControlMarkers`). 빈칸은 U+000D와
+    /// 같은 공백 부류라 접기 전 계약이 그대로 유지된다. 잉크는 어느 폰트에서도
+    /// 없고 (실측: HY울릉도M·함초롬바탕·Apple SD Gothic Neo 모두 마지막 줄 잉크
+    /// 폭 0) 빈 줄이라 진행 폭도 화면에 드러나지 않는다.
     func emittedText(
         of hwpChar: CoreHwp.HwpChar,
         pendingHighSurrogate: inout UInt16?,
@@ -215,7 +223,7 @@ extension HwpTextRunBuilder {
     ) -> String {
         var text = string(from: hwpChar, pendingHighSurrogate: &pendingHighSurrogate)
         if text.isEmpty, hwpChar.type == .char, hwpChar.value == 13, followsLineBreak {
-            text = "\u{200B}"
+            text = " "
         }
         if !text.isEmpty {
             followsLineBreak = text.unicodeScalars.last == "\u{000A}"
@@ -263,7 +271,7 @@ extension HwpTextRunBuilder {
     /// 0으로 만든다 — 실측: `"구 분"`과 `"구 분\r"`의
     /// `CTLineGetTypographicBounds`가 같다) 떨궈도 줄 폭·줄바꿈은 그대로다.
     /// 예외는 한 줄 끝(10) 바로 뒤에 오는 문단 끝뿐이라 `build`가 그 자리에만
-    /// 폭 0 앵커를 넣는다 (`HwpTextRunBuilder.build`의 `pendingEmptyLastLine`).
+    /// 빈 줄 앵커(빈칸)를 넣는다 — `emittedText` 참조.
     ///
     /// **한 줄 끝(10)은 남긴다** — 의도된 줄 나눔이라 U+000A로 조판되어야 한다.
     static func controlText(_ unit: UInt16) -> String? {

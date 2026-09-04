@@ -85,6 +85,18 @@ final class HwpAccessibilityContentTests: XCTestCase {
         expect(self.pageUnits(page).map(\.label)) == ["본문"]
     }
 
+    /// 한 줄 끝(10)으로 끝난 문단의 빈 줄 앵커는 **공백**이어야 한다 (#137).
+    /// 앵커를 U+200B로 두면 `isWhitespace`가 거짓이라 이 건너뛰기를 통과해
+    /// 읽을 것이 없는 VoiceOver 정지점이 생긴다.
+    func testEmptyLastLineAnchorDoesNotCreateAReadableUnit() {
+        let page = page(blocks: [
+            textBlock("\u{0A} ", frame: CGRect(x: 50, y: 100, width: 400, height: 20)),
+            textBlock("본문", frame: CGRect(x: 50, y: 140, width: 400, height: 20)),
+        ])
+
+        expect(self.pageUnits(page).map(\.label)) == ["본문"]
+    }
+
     // MARK: - 쪽 크롬
 
     /// 머리말/꼬리말/쪽 번호는 본문 단위 (`HwpSelectableText`) 가 걷지 않으므로
