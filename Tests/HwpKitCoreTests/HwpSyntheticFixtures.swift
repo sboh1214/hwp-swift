@@ -221,13 +221,16 @@ enum HwpSynthetic {
         pageWidth: UInt32 = 59528,
         pageHeight: UInt32 = 84188,
         footnoteNumberingMode: UInt32 = 0,
-        footnoteStartingNumber: UInt16 = 0
+        footnoteStartingNumber: UInt16 = 0,
+        outlineNumberingId: UInt16 = 1
     ) -> CoreHwp.HwpSectionDef {
         var sectionDef = CoreHwp.HwpSectionDef()
         sectionDef.pageDef.width = pageWidth
         sectionDef.pageDef.height = pageHeight
         sectionDef.pageDef.marginHeader = 0
         sectionDef.pageDef.marginFootnote = 0
+        // 개요 번호 정의 참조 (1-based, 0 = 없음) — 빈 문서 기본값은 1이다 (#152).
+        sectionDef.numberParaShapeId = outlineNumberingId
         // 각주 번호 매김 방식은 표 134 bits 10-11 (0 이어서 / 1 구역마다 / 2 쪽마다)
         sectionDef.footNoteShape.property = footnoteNumberingMode << 10
         sectionDef.footNoteShape.startingNumber = footnoteStartingNumber

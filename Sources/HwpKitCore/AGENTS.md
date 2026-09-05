@@ -123,6 +123,20 @@ CoreHwp.HwpFile
 `AGENTS.md` "미해석 요소 집계"). 렌더 스택은 그 API를 소비하지 않는다 — 새
 뷰어 노출을 붙일 때 두 채널을 합치지 말 것.
 
+**번호 문단 머리 진단** (#152): 개요(문단 머리 종류 1)·번호 매기기(종류 2)의
+생성 라벨은 아직 렌더하지 않으므로 `collectUnsupportedNumberingHeading`이
+문단마다 "(미렌더)"로 보고한다. 정의 참조는 `Paginator/HwpNumberingHeadingReference`
+가 푼다 — **개요는 문단 모양이 아니라 현재 구역 정의의 `numberParaShapeId`**
+(1-based)이고 번호 매기기만 `paraShape.numberingOrBulletId`다. 실문서 개요
+paraShape의 그 값은 전부 0이라 (헌법주석 1,944문단) 종전 `> 0` 게이트로는 한
+건도 잡히지 않았다. `currentSectionDef`는 `applySectionDef`가 문단 처리 앞에서
+세우므로 구역 첫 문단도 자기 구역의 정의를 본다. 참조 0은 "(번호 정의 참조
+없음)", 정의 배열 밖은 "(없는 번호 정의 N 참조)"로 문구를 가른다 — 빈 문서
+기본값 1을 지어내지 않는다(`sectionDef == nil`이면 참조 없음). 집계 단위는
+문단이고 쪽은 문단이 시작한 쪽이다 (헌법주석 1,944건, 첫 건 13쪽 —
+`FixtureObjectRenderTests`; 조판 없는 집계는 `HwpNumberingHeadingFixtureTests`).
+#154가 라벨을 실제로 그린 문단을 이 진단에서 뺀다.
+
 라인 세그먼트 캐시 (PARA_LINE_SEG)의 `lineLocation`은 페이지 내 절대 y다.
 **실제 줄 전진량 = lineHeight + lineSpacing (per-line 캐시 필드)** — 실측:
 연속 세그먼트의 lineLocation 델타와 일치 (헌법주석 30,345/30,348, noori 전부;

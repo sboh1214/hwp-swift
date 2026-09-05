@@ -578,10 +578,12 @@ noori p2에서 비영 셀의 30%까지 지워도 양쪽 통과).
   아니다 — `개요 8` 이상 스타일은 문단 머리 모양이 개요로 설정돼 있지 않아
   (헌법주석의 `개요 8`·`개요 9` → paraShape raw `0x180`, `headingType == 0`)
   비트 경로로는 **원리적으로** 잡히지 않는다.
-- **옆에 있는 `collectUnsupportedNumberingHeading`의 가드를 복사하면 안 된다.**
-  그 진단은 `numberingOrBulletId > 0`을 요구하는데 실문서 개요 paraShape의 그
-  값은 전 픽스처에서 0이다. 그대로 베끼면 1,944개 중 0개가 수집되고 사이드바가
-  조용히 빈다. 그 가드가 발화하는 유일한 경우는 합성 테스트다.
+- **개요 수집은 문단 모양의 `numberingOrBulletId`를 보지 않는다.** 실문서 개요
+  paraShape의 그 값은 전 픽스처에서 0이다 — 그 값에 걸면 1,944개 중 0개가
+  수집되고 사이드바가 조용히 빈다. 옆의 미지원 진단
+  (`collectUnsupportedNumberingHeading`)도 #152부터 같은 값에 걸지 않는다:
+  개요의 정의는 **구역 정의**의 `numberParaShapeId`가 가리키므로
+  `HwpNumberingHeadingReference`가 그쪽을 푼다 (`Sources/HwpKitCore/AGENTS.md`).
 - 같은 개요 문단이 **미지원 목록과 탐색 목록에 동시에** 뜨는 것은 의도다 —
   개요를 탐색 대상으로 승격시켜도 생성 라벨을 렌더하게 되는 것은 아니므로
   "번호가 조용히 사라진다"는 신고는 유지되어야 한다.

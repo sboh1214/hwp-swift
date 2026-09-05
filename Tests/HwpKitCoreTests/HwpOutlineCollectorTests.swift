@@ -49,10 +49,11 @@ import XCTest
             expect(outline.map(\.level)) == [8]
         }
 
-        /// **옆에 있는 `collectUnsupportedNumberingHeading`의 가드를 복사하면 안 된다.**
-        /// 그 가드는 `numberingOrBulletId > 0`을 요구하는데 실문서 개요 paraShape의
-        /// 그 값은 전 픽스처에서 0이다 — 베끼면 헌법주석의 개요 1,944개 중 0개가
-        /// 수집되고 사이드바가 조용히 빈다.
+        /// 개요 수집은 문단 모양의 `numberingOrBulletId`를 보지 않는다 — 실문서 개요
+        /// paraShape의 그 값은 전 픽스처에서 0이다 (헌법주석 1,944개). 미지원 진단도
+        /// 이제 같은 값에 걸리지 않는다: 개요의 정의는 구역 정의의
+        /// `numberParaShapeId`가 가리키므로 (#152), 정의 사전이 비어 있으면 그 참조가
+        /// 댕글링이라고 보고한다 — 종전처럼 조용히 지나가지 않는다.
         func testHeadingWithoutNumberingIdIsStillCollected() async throws {
             let paginator = HwpSynthetic.outlinePaginator(
                 bodyParagraphs: [try HwpSynthetic.styledParagraph("번호 정의 없는 개요", paraShapeId: 1)],
@@ -66,8 +67,8 @@ import XCTest
             let unsupported = await paginator.unsupportedElements()
 
             expect(outline.map(\.title)) == ["번호 정의 없는 개요"]
-            // 그 진단은 numberingOrBulletId > 0에서만 발화하므로 여기서는 없다.
-            expect(unsupported.map(\.hint).filter { $0.contains("개요") }) == []
+            // 구역 정의 기본값 1이 가리키는 정의가 사전에 없다 — 댕글링 진단.
+            expect(unsupported.map(\.hint)) == ["개요 번호 문단 머리 (없는 번호 정의 1 참조)"]
         }
 
         /// 같은 문단이 미지원 목록과 탐색 목록에 **동시에** 뜨는 것은 의도다 —
@@ -75,9 +76,12 @@ import XCTest
         func testHeadingIsReportedBothAsOutlineAndAsUnrenderedLabel() async throws {
             let paginator = HwpSynthetic.outlinePaginator(
                 bodyParagraphs: [try HwpSynthetic.styledParagraph("번호 정의 있는 개요", paraShapeId: 1)],
-                index: HwpSynthetic.outlineIndex(paraShapes: [
-                    1: HwpSynthetic.outlineParaShape(levelRawValue: 1, numberingOrBulletId: 1),
-                ])
+                index: HwpSynthetic.outlineIndex(
+                    // 개요 정의는 문단 모양이 아니라 구역 정의(기본 참조 1 → 사전 키 0)가
+                    // 가리킨다 (#152) — 문단 모양의 값은 0이어도 진단이 선다.
+                    paraShapes: [1: HwpSynthetic.outlineParaShape(levelRawValue: 1)],
+                    numberings: [0: HwpSynthetic.numberingDefinition()]
+                )
             )
 
             _ = await paginator.totalPages()

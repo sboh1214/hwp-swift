@@ -82,6 +82,24 @@ final class HwpxHwpEquivalenceTests: XCTestCase {
         expect(bulletHeadings.count) == 2
         expect(bulletHeadings.allSatisfy { $0.definitionId == 1 }) == true
         expect(hwpProjection.paragraphHeadings.filter { $0.kind == 3 }) == bulletHeadings
+        // 구역 정의의 개요 번호 참조 — noori는 두 번째 정의(id "2" → 1-based 2)를
+        // 가리키고, HWP 쌍의 `numberParaShapeId`도 2다 (#152).
+        expect(hwpProjection.sectionOutlineNumberingIds) == [2]
+        expect(hwpxProjection.sectionOutlineNumberingIds) == [2]
+    }
+
+    /// 구역별 개요 번호 참조 축이 **구역마다** 성립하는지 직접 핀한다 (#152) —
+    /// multi-section 쌍은 두 구역이 서로 다른 정의(1·2)를 가리킨다. HWPX id를
+    /// 숫자 그대로 실으면 여기서는 우연히 맞으므로, 조작 대조는
+    /// `HwpxSecPrOutlineReferenceTests`가 dense하지 않은 id로 한다.
+    func testMultiSectionPairProjectsPerSectionOutlineNumberingIds() throws {
+        let hwp = try HwpFile(fromPath: FixtureLoader.load(id: "multi-section").documentURL.path)
+        let hwpx = try HwpFile(
+            fromPath: HwpxFixtureLoader.load(id: "multi-section").documentURL.path
+        )
+
+        expect(DocumentEquivalenceProjection(of: hwp).sectionOutlineNumberingIds) == [1, 2]
+        expect(DocumentEquivalenceProjection(of: hwpx).sectionOutlineNumberingIds) == [1, 2]
     }
 
     func testConvertedFixturesProjectEquallyToTheirHwpSources() throws {
@@ -232,6 +250,12 @@ struct DocumentEquivalenceProjection {
     /// 잡지 못한다. 정의 축이 참조를 따라가지 않으므로 참조 배선
     /// (`hh:paraPr`의 `hh:heading` 리맵)이 깨지는 회귀를 여기서 잡는다.
     let paragraphHeadings: [ParagraphHeading]
+    /// 구역별 개요 번호 정의 참조(`HwpSectionDef.numberParaShapeId`, 1-based) —
+    /// HWPX `hp:secPr@outlineShapeIDRef`가 id 테이블로 리맵돼야 HWP 쌍과 같은
+    /// 값이 선다 (#152). 매핑 전에는 HWPX 쪽이 빈 문서 기본값 1이라 noori
+    /// (2)에서 갈린다. 구역 첫 문단의 첫 `.section` 컨트롤을 본다 — 헌법주석처럼
+    /// 단 정의가 앞서는 저장본도 있어 첫 컨트롤만 보면 안 된다.
+    let sectionOutlineNumberingIds: [UInt16]
 
     init(of file: HwpFile) {
         sectionCount = file.sectionArray.count
@@ -299,6 +323,14 @@ struct DocumentEquivalenceProjection {
             )
         }
         paragraphHeadings = Self.paragraphHeadings(of: file)
+        sectionOutlineNumberingIds = file.sectionArray.compactMap { section in
+            section.paragraph.first?.ctrlHeaderArray?.lazy.compactMap { ctrl -> UInt16? in
+                if case let .section(sectionDef) = ctrl {
+                    return sectionDef.numberParaShapeId
+                }
+                return nil
+            }.first
+        }
     }
 
     /// 문단 머리를 문서 순서(표 셀 재귀 포함)로 모은다 — noori의 글머리표
@@ -463,6 +495,10 @@ struct DocumentEquivalenceProjection {
         )
         expect(paragraphHeadings).to(
             equal(other.paragraphHeadings), description: "\(fixtureId) paragraphHeadings"
+        )
+        expect(sectionOutlineNumberingIds).to(
+            equal(other.sectionOutlineNumberingIds),
+            description: "\(fixtureId) sectionOutlineNumberingIds"
         )
     }
 }

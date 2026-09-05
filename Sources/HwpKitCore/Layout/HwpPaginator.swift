@@ -1582,21 +1582,26 @@ private extension HwpPaginator {
     /// PARA_TEXT에 없다 — 렌더러가 아직 그 라벨을 만들지 않으므로, 번호가
     /// 조용히 사라지지 않게 unsupported로 보고한다. 글머리표(3)는
     /// appendBulletHeading이 렌더하므로 제외 (#1).
+    ///
+    /// 참조 해석은 `HwpNumberingHeadingReference`다 (#152) — 개요는 문단 모양이
+    /// 아니라 **현재 구역 정의**의 `numberParaShapeId`를 따르므로, 종전의
+    /// `paraShape.numberingOrBulletId > 0` 게이트로는 실문서 개요 문단(헌법주석
+    /// 1,944개, 그 값이 전부 0)이 한 건도 잡히지 않았다. 집계 단위는 문단이고
+    /// 쪽은 문단이 시작한 쪽이다. `currentSectionDef`는 `applySectionDef`가 이
+    /// 문단 처리 앞에서 세우므로 구역 첫 문단도 자기 구역의 정의를 본다.
     private func collectUnsupportedNumberingHeading(
         from paragraph: CoreHwp.HwpParagraph,
         page: Int
     ) {
         guard let paraShape = index.paraShape(
             id: UInt32(paragraph.paraHeader.paraShapeId)
+        ), let reference = HwpNumberingHeadingReference.resolve(
+            paraShape: paraShape, sectionDef: currentSectionDef, index: index
         ) else { return }
-        let headingType = paraShape.property1Info.headingTypeRawValue
-        guard headingType == 1 || headingType == 2,
-              paraShape.numberingOrBulletId > 0
-        else { return }
         collectedUnsupported.append(HwpUnsupportedElement(
             kind: .placeholder,
             page: page,
-            hint: headingType == 1 ? "개요 번호 문단 머리 (미렌더)" : "번호 매기기 문단 머리 (미렌더)"
+            hint: reference.unsupportedHint
         ))
     }
 

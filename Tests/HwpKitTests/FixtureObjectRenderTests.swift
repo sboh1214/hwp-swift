@@ -265,6 +265,26 @@ final class FixtureObjectRenderTests: XCTestCase {
         )
     }
 
+    // MARK: - legacy-common-control-property (개요 번호 진단, #152)
+
+    /// 개요 문단 1,944개가 전부 "개요 번호 문단 머리 (미렌더)"로 보고된다 — 종전
+    /// 진단은 문단 모양의 참조(전부 0)에 걸려 한 건도 내지 못했다. 진단 건수는
+    /// 문단 단위라 감지한 문단 수와 같고 (`HwpNumberingHeadingFixtureTests`의
+    /// 조판 없는 집계와 같은 1,944), 첫 건은 문서 순서 13쪽(인쇄 1쪽)이다.
+    func testLegacyOutlineHeadingsAreReportedAsUnrenderedLabels() async throws {
+        _ = try await legacyPage(index: 0)
+        let document = try XCTUnwrap(Self.legacyDocument)
+        let headingHints = document.unsupportedElements.filter { $0.hint.contains("번호 문단 머리") }
+
+        expect(headingHints.count) == 1944
+        expect(Set(headingHints.map(\.hint))) == ["개요 번호 문단 머리 (미렌더)"]
+        expect(headingHints.first?.page) == 13
+        expect(headingHints.allSatisfy { $0.kind == .placeholder }) == true
+        expect(headingHints.map(\.page).allSatisfy { (1 ... 1030).contains($0) }) == true
+        // 쪽은 문서 순서로 단조다 — 문단이 시작한 쪽을 실었다는 증거.
+        expect(headingHints.map(\.page)) == headingHints.map(\.page).sorted()
+    }
+
     // MARK: - legacy-common-control-property (각주 안 개체, #94)
 
     /// 각주 문단에 앵커된 그림이 각주 블록 안에 렌더된다 — 한글.app 실측
