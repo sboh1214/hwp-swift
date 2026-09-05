@@ -18,8 +18,8 @@ import Foundation
    `.level`은 1-9뿐이고, 10수준은 자기 번호를 숫자 참조로 적을 수 없다.
  - `^n`은 1수준부터 **그 정의 수준까지**의 번호를 각 수준의 번호 모양으로
    `.`로 이어 붙인 경로다 (10수준에서 `I.가.1.가.1.가.①.㉮.ㄱ.i`), `^N`은 그
-   뒤에 마침표를 하나 더 찍는다. 렌더는 아직 지원하지 않는다 —
-   `.levelPath`로 구분만 하고 `isSupported`가 거짓이 된다 (#153).
+   뒤에 마침표를 하나 더 찍는다. 문자열 조립은 HwpKitCore의
+   `HwpParagraphNumbering`이 한다 (#153).
  - 그 밖의 캐럿은 지시자가 아니라 **다음 글자와 함께** 문자 그대로 그려진다
    (`^0)`→`^0)`, `^x^^)`→`^x^^)`, `^^1)`→`^^1)`, `^^^1)`→`^^I)`, `^a^1)`→`^aI)`,
    끝의 `^`는 혼자). 캐럿이 짝을 이룬 뒤에야 다음 캐럿이 지시자가 되므로
@@ -30,7 +30,7 @@ import Foundation
    `^^n)` 문자 그대로다.
 
  분해는 순수 함수라 문서 순서·카운터와 무관하다 — 문단별 번호 문자열 조립은
- #153이 이 토큰 위에서 한다.
+ HwpKitCore의 `HwpParagraphNumbering`이 이 토큰 위에서 한다 (#153).
  */
 public struct HwpNumberingFormatPattern: HwpPrimitive {
     /// 형식 문자열의 조각 하나.
@@ -41,7 +41,7 @@ public struct HwpNumberingFormatPattern: HwpPrimitive {
         /// 수준 1-9의 번호 자리 — `^1`…`^9`. 캐럿은 숫자 한 자리만 먹는다.
         case level(Int)
         /// 레벨 경로 — `^n`(1.1.1) 또는 마침표를 하나 더 찍는 `^N`(1.1.1.).
-        /// 스펙에는 있으나 아직 지원하지 않는다.
+        /// 1수준부터 그 정의 수준까지를 각 수준의 번호 모양으로 잇는다.
         case levelPath(trailingPeriod: Bool)
     }
 
@@ -63,19 +63,6 @@ public struct HwpNumberingFormatPattern: HwpPrimitive {
                 return level
             }
             return nil
-        }
-    }
-
-    /// 모든 토큰이 문자 조각이거나 수준 참조인가 — 거짓이면(레벨 경로) 렌더가
-    /// 번호를 만들지 않고 진단으로 남겨야 한다.
-    public var isSupported: Bool {
-        tokens.allSatisfy { token in
-            switch token {
-            case .literal, .level:
-                true
-            case .levelPath:
-                false
-            }
         }
     }
 

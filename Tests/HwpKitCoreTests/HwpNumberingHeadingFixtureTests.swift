@@ -116,7 +116,6 @@ import XCTest
                 let format = try XCTUnwrap(reference.format(in: index))
                 expect(format.format) == expectedFormats[reference.level - 1]
                 expect(format.pattern.referencedLevels) == [reference.level]
-                expect(format.pattern.isSupported) == true
                 let info = try XCTUnwrap(format.paraHeadInfo)
                 expect(info.numberFormat) == [2, 0, 8, 0, 8, 0, 8][reference.level - 1]
                 expect(info.useInstWidth) == true
