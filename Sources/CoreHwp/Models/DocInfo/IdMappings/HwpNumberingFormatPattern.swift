@@ -8,16 +8,21 @@ import Foundation
  꼴이고, 캐럿 뒤 숫자는 **참조할 수준**이다 — 4수준 정의의 `(^4)`는 4수준
  번호를 괄호로 감싸고, 상위 수준을 함께 적는 `^1.^2` 같은 형식도 이 규칙으로
  읽힌다. 스펙이 적은 `^n`(레벨 경로 1.1.1)과 `^N`(경로 + 마침표)은 문자
- 그대로의 n·N이며 숫자 참조와 다른 토큰이다. 둘은 실문서 견본이 없어
- `.levelPath`로 구분만 하고 아직 지원하지 않는다.
+ 그대로의 n·N이며 숫자 참조와 다른 토큰이다.
 
- 지원 범위 밖 지시자 — 캐럿 뒤에 숫자·n·N이 아닌 문자가 오거나 캐럿으로
- 끝나는 형식, 1-10 밖의 수준(`^0`·`^11`) — 는 `.unsupported`에 원문을 남긴다.
- 렌더가 그런 형식을 임의의 번호로 그리지 않도록 `isSupported`가 거짓이 된다
- (#151 "지원하지 못하는 형식을 임의의 번호로 표시하지 않는다"). `^10`은
- 10수준 참조로 읽는다 — 두 자리 숫자 중 유일하게 수준 범위(표 38의 수준
- 1-10) 안이며, `^1` 뒤에 문자 그대로의 `0`을 붙인 형식은 실문서에 없다.
- 이 두 자리 해석은 실파일 검증 대기 항목이다.
+ 지시자의 경계는 2026-09-05 한글.app 12.30 개요 번호 사용자 정의 대화상자의
+ 미리보기로 실측했다 (`outline-numbering` 픽스처 쌍의 9·10수준 형식이 그
+ 견본이다):
+ - 캐럿은 **숫자 한 자리(1-9)**만 먹는다 — `^10`은 10수준이 아니라 `^1` 뒤에 문자
+   `0`이다 (10수준 정의에 `^9.^10)`을 넣으면 `ㄱ.I0)`로 그려진다). 그래서
+   `.level`은 1-9뿐이고, 10수준은 자기 번호를 숫자 참조로 적을 수 없다.
+ - `^n`은 1수준부터 **그 정의 수준까지**의 번호를 각 수준의 번호 모양으로
+   `.`로 이어 붙인 경로다 (10수준에서 `I.가.1.가.1.가.①.㉮.ㄱ.i`), `^N`은 그
+   뒤에 마침표를 하나 더 찍는다. 렌더는 아직 지원하지 않는다 —
+   `.levelPath`로 구분만 하고 `isSupported`가 거짓이 된다 (#153).
+ - 그 밖의 캐럿(`^0`·`^x`·`^^`·끝의 `^`)은 지시자가 아니라 **문자 그대로**
+   그려진다 (`^0)`이 `^0)`로, `^x^^)`가 `^x^^)`로). 그래서 별도 토큰 없이
+   `.literal`에 합친다 — 임의의 번호로 읽지 않으면서 한글과 같은 글자가 된다.
 
  분해는 순수 함수라 문서 순서·카운터와 무관하다 — 문단별 번호 문자열 조립은
  #153이 이 토큰 위에서 한다.
@@ -25,19 +30,19 @@ import Foundation
 public struct HwpNumberingFormatPattern: HwpPrimitive {
     /// 형식 문자열의 조각 하나.
     public enum Token: HwpPrimitive {
-        /// 문자 그대로 표시할 조각 — 인접한 문자는 하나로 합친다.
+        /// 문자 그대로 표시할 조각 — 인접한 문자는 하나로 합치고, 지시자가 아닌
+        /// 캐럿(`^0`·`^x`·`^^`·끝의 `^`)도 여기에 든다.
         case literal(String)
-        /// 수준 N(1-10)의 번호 자리 — `^N`.
+        /// 수준 N(1-9)의 번호 자리 — `^N`. 캐럿은 숫자 한 자리만 먹는다.
         case level(Int)
         /// 레벨 경로 — `^n`(1.1.1) 또는 마침표를 하나 더 찍는 `^N`(1.1.1.).
         /// 스펙에는 있으나 아직 지원하지 않는다.
         case levelPath(trailingPeriod: Bool)
-        /// 해석하지 못한 캐럿 지시자 — 캐럿과 그 뒤 문자(또는 숫자열) 원문.
-        case unsupported(String)
     }
 
-    /// 표 38이 정의하는 수준 범위 — 기본 7 + 확장 3.
-    public static let levelRange = 1 ... 10
+    /// 숫자 참조로 가리킬 수 있는 수준 — 캐럿이 한 자리만 먹으므로 1-9다
+    /// (정의의 수준 범위 1-10과 다르다: `HwpNumbering.format(forLevel:)`).
+    public static let referenceLevelRange = 1 ... 9
 
     /// 문서 순서의 토큰.
     public let tokens: [Token]
@@ -56,14 +61,14 @@ public struct HwpNumberingFormatPattern: HwpPrimitive {
         }
     }
 
-    /// 모든 토큰이 문자 조각이거나 수준 참조인가 — 거짓이면 렌더가 번호를
-    /// 만들지 않고 진단으로 남겨야 한다.
+    /// 모든 토큰이 문자 조각이거나 수준 참조인가 — 거짓이면(레벨 경로) 렌더가
+    /// 번호를 만들지 않고 진단으로 남겨야 한다.
     public var isSupported: Bool {
         tokens.allSatisfy { token in
             switch token {
             case .literal, .level:
                 true
-            case .levelPath, .unsupported:
+            case .levelPath:
                 false
             }
         }
@@ -87,57 +92,33 @@ public struct HwpNumberingFormatPattern: HwpPrimitive {
         var index = 0
         while index < scalars.count {
             let scalar = scalars[index]
-            guard scalar == "^" else {
+            let next: Unicode.Scalar? = index + 1 < scalars.count ? scalars[index + 1] : nil
+            guard scalar == "^", let token = directive(after: next) else {
+                // 지시자가 아닌 캐럿은 다음 글자와 함께 문자 그대로 남는다.
                 literal.append(scalar)
                 index += 1
                 continue
             }
             flushLiteral()
-            let next: Unicode.Scalar? = index + 1 < scalars.count ? scalars[index + 1] : nil
-            switch next {
-            case "n":
-                tokens.append(.levelPath(trailingPeriod: false))
-                index += 2
-            case "N":
-                tokens.append(.levelPath(trailingPeriod: true))
-                index += 2
-            case let digit? where isASCIIDigit(digit):
-                let (token, cursor) = levelToken(in: scalars, from: index + 1)
-                tokens.append(token)
-                index = cursor
-            case let other?:
-                tokens.append(.unsupported("^" + String(other)))
-                index += 2
-            case nil:
-                tokens.append(.unsupported("^"))
-                index += 1
-            }
+            tokens.append(token)
+            index += 2
         }
         flushLiteral()
         return HwpNumberingFormatPattern(tokens: tokens)
     }
 
-    private static func isASCIIDigit(_ scalar: Unicode.Scalar) -> Bool {
-        ("0" ... "9").contains(scalar)
-    }
-
-    /// 캐럿 뒤 숫자열 → 수준 토큰과 그다음 위치. 숫자열은 통째로 읽는다 —
-    /// `^12`를 `^1` + `2`로 가르지 않고 미지원으로 남긴다.
-    private static func levelToken(
-        in scalars: [Unicode.Scalar], from start: Int
-    ) -> (Token, Int) {
-        var digits = ""
-        var cursor = start
-        while cursor < scalars.count, isASCIIDigit(scalars[cursor]) {
-            digits.unicodeScalars.append(scalars[cursor])
-            cursor += 1
+    /// 캐럿 다음 글자 하나가 만드는 지시자 — 숫자 1-9·n·N 밖이면 nil(문자 그대로).
+    private static func directive(after scalar: Unicode.Scalar?) -> Token? {
+        switch scalar {
+        case "n":
+            .levelPath(trailingPeriod: false)
+        case "N":
+            .levelPath(trailingPeriod: true)
+        case let digit? where ("1" ... "9").contains(digit):
+            .level(Int(digit.value - Unicode.Scalar("0").value))
+        default:
+            nil
         }
-        if let level = Int(digits), levelRange.contains(level),
-           digits.count == (level == 10 ? 2 : 1)
-        {
-            return (.level(level), cursor)
-        }
-        return (.unsupported("^" + digits), cursor)
     }
 }
 
@@ -153,7 +134,7 @@ public extension HwpNumbering {
     /// `extendedFormatArray`(5.1.0.0 이상에만 있다). 범위 밖이거나 그 수준의
     /// 배열이 없으면 nil.
     func format(forLevel level: Int) -> HwpNumberingFormat? {
-        guard HwpNumberingFormatPattern.levelRange.contains(level) else {
+        guard (1 ... 10).contains(level) else {
             return nil
         }
         if level <= 7 {

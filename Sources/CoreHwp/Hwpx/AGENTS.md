@@ -126,7 +126,13 @@ HWP 쌍 manifest `pageNumberPositions[0]`과 payload 바이트 동일. (2) 2026-
 12바이트다(같은 정정으로 표 42의 "전체 길이 20"도 24바이트). 12바이트의 합성은
 공개 모델 `HwpParaHeadInfo`(#152)가 한다 — 바이너리 쪽 `HwpNumberingFormat.paraHeadInfo`·
 `HwpBullet.paraHeadInfo`가 같은 타입으로 디코드하므로 배치가 `HwpParaHeadInfo.bytes`
-한 곳에만 있고, `ParaHeadInfoTests`가 전 픽스처 왕복으로 거울상을 잠근다. 속성 비트는 표 40이
+한 곳에만 있고, `ParaHeadInfoTests`가 전 픽스처 왕복으로 거울상을 잠근다. 정렬(bit
+0-1)·거리 종류(bit 4)의 비기본값은 `outline-numbering` 쌍이 실물이다 — 1수준
+`align="RIGHT" textOffsetType="HWPUNIT" textOffset="1000" widthAdjust="200"`이 HWP 쌍의
+속성 `0x52`·거리 1000·너비 보정 200과, 2수준 `align="CENTER"`가 `0x10D`와 같아
+스키마 나열 순서 배치가 맞다. 번호 형식 지시자의 경계(캐럿은 한 자리 숫자만,
+`^n`은 1수준부터 그 수준까지의 경로, 그 밖의 캐럿은 문자 그대로)는
+`HwpNumberingFormatPattern` doc-comment의 한글.app 미리보기 실측이 정본이다. 속성 비트는 표 40이
 bit 0-4(정렬·번호 너비·자동 내어 쓰기·거리 종류)만 적고 **번호 모양은 적지
 않는데, 실측이 bit 5-8이다**: 빈 문서 기본 `numberingArray`(`HwpIdMappings`)의
 수준별 선두 UINT32가 `^1.` 0x0C · `^2.` 0x10C · `^7` 0x2C이고 noori HWPX의 같은
@@ -185,7 +191,7 @@ HWP 쌍과 **바이트 동일**하고, 글머리표는 `info` `08 00 00 00 00 00
 필드는 5.1.0.0 이상에만 있고 HWP 쌍은 5.0.3.4라 배열 자체가 없으므로 **등가
 투영에서 수준 개수를 비교하면 안 된다**. 가드는 `HwpxNumberingMapperTests`
 (비트·센티널·슬롯·상한·강등)·`HwpxHwpEquivalenceTests`(정의 축과 문단 머리 축 —
-번호 정의는 11쌍 전부에서 비어 있지 않고 글머리표는 noori 1쌍뿐이다)·
+번호 정의는 12쌍 전부에서 비어 있지 않고 글머리표는 noori 1쌍뿐이다)·
 `HwpxFixtureRenderTests.testHwpxBulletHeadingsMatchHwpPairs`(선행 `- ` 줄 등식과
 noori 직접 핀)·noori HWPX manifest의 `numberingCount` 2·`bulletCount` 1이다.
 
@@ -195,8 +201,11 @@ noori 직접 핀)·noori HWPX manifest의 `numberingCount` 2·`bulletCount` 1이
 가리킨다 — HWP5 `HwpSectionDef.numberParaShapeId`(1-based, 0 = 없음)이고
 HWPX는 `hp:secPr@outlineShapeIDRef`다. `HwpxSecPrMapper.outlineNumberingId`가
 `HwpxIdTables.numbering` 오프셋 + 1로 리맵한다 — id는 dense가 아니라 숫자를
-그대로 실으면 안 된다 (noori 실물: `hh:numbering id="1"`·`"2"` 중 `"2"` →
-오프셋 1 → 2, HWP 쌍의 필드도 2; multi-section은 구역마다 `"1"`·`"2"`).
+그대로 실으면 안 된다 (noori·`outline-numbering` 실물: `hh:numbering id="1"`·`"2"`
+중 `"2"` → 오프셋 1 → 2, HWP 쌍의 필드도 2; multi-section은 구역마다 `"1"`·`"2"`).
+`outline-numbering`은 한글.app이 개요 번호 사용자 정의를 **새 정의**(id "2")로
+저장하고 구역 참조를 그쪽으로 옮기며, 문단 번호(`hh:heading type="NUMBER"`)는
+기본 정의 id "1"을 그대로 참조한다는 실물이기도 하다.
 
 세 경로를 가른다. **생략**은 0이다 — 한컴 참조 모델 `SectionDefinitionType.cpp`가
 `m_uOutlineShapeIDRef(0)`으로 세우고 `GetAttribute`가 속성 부재 시 값을 건드리지
@@ -300,14 +309,6 @@ binaryItemIDRef="ole1" hasMoniker="0" drawAspect="CONTENT" eqBaseLine="0"` +
   .hwpx로 저장한 뒤, .hwp는 `HwpFile`로 열어 `pgnp`(`HwpPageNumberPosition`의
   `property`·`userSymbol`·`unused`)를, .hwpx는 `Contents/section0.xml`의
   `hp:pageNum` 속성을 읽어 대조한다 (2026-09-02 실측 4쌍이 이 절차다).
-- 문단 머리 정보(`hh:paraHead`)의 정렬 `CENTER`·`RIGHT`(표 40 bit 0-1 값 1·2)와
-  거리 종류 `HWPUNIT`(bit 4) — 픽스처 11종이 전부 `LEFT`·`PERCENT`라 값 배치는
-  한컴 모델 `g_ParaHeadAlignList`·`g_TextOffsetTypeList`의 나열 순서다. 한글.app
-  개요 번호 모양 › 사용자 정의에서 정렬·거리 단위를 바꿔 저장한 .hwp/.hwpx 쌍으로
-  `HwpParaHeadInfo`와 `hh:paraHead` 속성을 대조하면 확정된다 (#152).
-- 번호 형식의 두 자리 수준 참조 `^10` — `HwpNumberingFormatPattern`은 10만 수준으로
-  읽고 다른 두 자리(`^11`)는 미지원으로 남기는데, 한글.app이 10수준 형식을 `^10`으로
-  적는지는 실물이 없다 (빈 문서 기본값은 9·10수준 형식이 비어 있다).
 - `hp:secPr@outlineShapeIDRef` 생략의 실물 — 한글.app 저장본은 항상 명시한다.
   참조 모델 기본값(0 = 참조 없음)을 따랐다.
 - `<hp:pageNum/>`(속성 생략)을 한글.app이 실제로 왼쪽 위 "- N -"으로 그리는지

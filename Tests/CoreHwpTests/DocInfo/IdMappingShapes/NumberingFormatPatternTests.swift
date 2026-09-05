@@ -2,9 +2,9 @@
 import Nimble
 import XCTest
 
-/// 번호 형식 문자열 분해 (#152) — 실문서 형식(헌법주석 7수준·빈 문서 기본값)과
-/// 합성 입력을 함께 쓴다. 문자 그대로의 `^n`·`^N`과 지원 범위 밖 지시자의
-/// 처리 결과를 고정한다.
+/// 번호 형식 문자열 분해 (#152) — 실문서 형식(헌법주석 7수준·빈 문서 기본값·
+/// 한글.app으로 만든 `outline-numbering`의 9·10수준)과 합성 입력을 함께 쓴다.
+/// 문자 그대로의 `^n`·`^N`과 지시자가 아닌 캐럿의 처리 결과를 고정한다.
 final class NumberingFormatPatternTests: XCTestCase {
     private typealias Token = HwpNumberingFormatPattern.Token
 
@@ -38,6 +38,29 @@ final class NumberingFormatPatternTests: XCTestCase {
             == true
         expect(numbering.format(forLevel: 0)).to(beNil())
         expect(numbering.format(forLevel: 11)).to(beNil())
+    }
+
+    /// 한글.app이 저장한 `outline-numbering` 쌍의 사용자 정의 — 9수준 `^n)`은 레벨
+    /// 경로, 10수준 `^9.^10)`은 캐럿이 한 자리만 먹어 `^1` + `0`이다 (미리보기 실측
+    /// `ㄱ.I0)`). 두 포맷의 형식 문자열이 같다.
+    func testOutlineNumberingFixturePinsLevelPathAndSingleDigitDirectives() throws {
+        for hwp in [
+            try openHwp(#file, "outline-numbering"), try openHwpx(#file, "outline-numbering"),
+        ] {
+            let custom = try XCTUnwrap(hwp.docInfo.idMappings.numberingArray.last)
+            let ninth = try XCTUnwrap(custom.format(forLevel: 9))
+            expect(ninth.format) == "^n)"
+            expect(ninth.pattern.tokens) == [.levelPath(trailingPeriod: false), .literal(")")]
+            expect(ninth.pattern.isSupported) == false
+
+            let tenth = try XCTUnwrap(custom.format(forLevel: 10))
+            expect(tenth.format) == "^9.^10)"
+            expect(tenth.pattern.tokens) == [
+                .level(9), .literal("."), .level(1), .literal("0)"),
+            ]
+            expect(tenth.pattern.referencedLevels) == [9, 1]
+            expect(tenth.pattern.isSupported) == true
+        }
     }
 
     /// 한글 2020 빈 문서(`blank-win2020`)의 기본 정의 — 확장 수준 8은 `^8`,
@@ -92,33 +115,36 @@ final class NumberingFormatPatternTests: XCTestCase {
         expect(dotted.isSupported) == false
     }
 
-    /// 두 자리 숫자 중 수준 범위 안은 10뿐이다 — 그 밖의 숫자열은 원문째
-    /// 미지원으로 남기고 임의의 수준으로 읽지 않는다.
-    func testTenIsTheOnlyTwoDigitLevelReference() {
-        expect(HwpNumberingFormatPattern.parse("^10)").tokens) == [.level(10), .literal(")")]
+    /// 캐럿은 숫자 한 자리만 먹는다 — 한글.app 실측(2026-09-05, 12.30): 10수준 정의의
+    /// `^9.^10)`이 `ㄱ.I0)`로 그려진다(`^1` = 로마 대문자 I + 문자 `0`). 그래서 두
+    /// 자리 숫자는 첫 자리 참조 + 나머지 문자이고, `^0`은 지시자가 아니라 문자다.
+    func testCaretConsumesOneDigitOnly() {
+        expect(HwpNumberingFormatPattern.parse("^9.^10)").tokens) == [
+            .level(9), .literal("."), .level(1), .literal("0)"),
+        ]
+        expect(HwpNumberingFormatPattern.parse("^11").tokens) == [.level(1), .literal("1")]
+        expect(HwpNumberingFormatPattern.parse("^100").tokens) == [.level(1), .literal("00")]
         expect(HwpNumberingFormatPattern.parse("^9").tokens) == [.level(9)]
-
-        for format in ["^0", "^11", "^01", "^100", "^010"] {
-            let pattern = HwpNumberingFormatPattern.parse(format)
-            expect(pattern.tokens).to(equal([.unsupported(format)]), description: format)
-            expect(pattern.isSupported).to(beFalse(), description: format)
-            expect(pattern.referencedLevels).to(beEmpty(), description: format)
-        }
+        expect(HwpNumberingFormatPattern.parse("^0)").tokens) == [.literal("^0)")]
+        expect(HwpNumberingFormatPattern.parse("^01").tokens) == [.literal("^01")]
+        expect(HwpNumberingFormatPattern.referenceLevelRange) == 1 ... 9
     }
 
-    /// 캐럿 뒤에 숫자·n·N이 아닌 문자가 오거나 캐럿으로 끝나면 그 지시자만
-    /// 미지원이고 나머지 문자는 그대로 조각이다.
-    func testUnknownDirectivesKeepTheirSourceText() {
-        expect(HwpNumberingFormatPattern.parse("^x").tokens) == [.unsupported("^x")]
-        expect(HwpNumberingFormatPattern.parse("제^").tokens) == [.literal("제"), .unsupported("^")]
-        expect(HwpNumberingFormatPattern.parse("^^1").tokens) == [.unsupported("^^"), .literal("1")]
+    /// 지시자가 아닌 캐럿은 문자 그대로다 — 한글.app이 `^0)`·`^x^^)`를 그 글자
+    /// 그대로 그린다(같은 실측). 별도 미지원 토큰을 두지 않고 문자 조각에 합친다.
+    func testNonDirectiveCaretsAreLiteralText() {
+        expect(HwpNumberingFormatPattern.parse("^x").tokens) == [.literal("^x")]
+        expect(HwpNumberingFormatPattern.parse("제^").tokens) == [.literal("제^")]
+        expect(HwpNumberingFormatPattern.parse("^x^^)").tokens) == [.literal("^x^^)")]
+        // 캐럿은 이스케이프가 아니다 — `^x^^)`가 그대로 그려졌으므로 캐럿마다 따로
+        // 판정한다: 첫 캐럿은 다음이 캐럿이라 문자, 둘째 캐럿은 숫자를 먹는다.
+        expect(HwpNumberingFormatPattern.parse("^^1").tokens) == [.literal("^"), .level(1)]
         // 전각 숫자는 ASCII 숫자가 아니다.
-        expect(HwpNumberingFormatPattern.parse("^１").tokens) == [.unsupported("^１")]
+        expect(HwpNumberingFormatPattern.parse("^１").tokens) == [.literal("^１")]
 
         let mixed = HwpNumberingFormatPattern.parse("^1.^x")
-        expect(mixed.tokens) == [.level(1), .literal("."), .unsupported("^x")]
-        expect(mixed.isSupported) == false
-        // 지원하는 참조는 미지원 지시자와 무관하게 셈한다 — 진단이 수준을 적을 수 있게.
+        expect(mixed.tokens) == [.level(1), .literal(".^x")]
+        expect(mixed.isSupported) == true
         expect(mixed.referencedLevels) == [1]
     }
 
