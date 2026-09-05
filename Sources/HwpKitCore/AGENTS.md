@@ -138,6 +138,34 @@ paraShape의 그 값은 전부 0이라 (헌법주석 1,944문단) 종전 `> 0` �
 개요와 번호 매기기가 서로 다른 정의에 닿는 실물은 한글.app으로 만든
 `outline-numbering` 쌍뿐이다). #154가 라벨을 실제로 그린 문단을 이 진단에서 뺀다.
 
+**문단 번호·개요 번호 생성** (#153, `Numbering/`): `HwpParagraphNumbering.generate`
+가 구역 배열을 **조판과 무관하게** 한 번 훑어 문단마다 `HwpParagraphNumber`(종류·
+수준·1수준부터의 번호·조립한 라벨)를 만들고, `HwpPaginator`가 init에서 그 표를
+만들어 `paragraphNumbering()`으로 낸다 — 조판이 문단을 재측정·재배치해도 카운터가
+한 번만 느는 것은 이 분리가 보장한다(#154의 라벨 렌더가 문단마다 읽는다). 조회
+열쇠는 `HwpParagraphPath` — 최상위는 `HwpParagraphKey`, 컨테이너 안 문단은
+컨트롤 서수 + `childParagraphs(of:)` 서수를 이어 붙인 경로다(`paraId`는 비고유).
+정의 해석은 위 진단과 같은 `HwpNumberingHeadingReference`, 시작 번호 해석은
+CoreHwp `HwpNumbering.continuesPreviousList`·`startingNumber(forLevel:)`(정의
+전체 시작 번호 0 = 앞 목록/앞 구역에 이어, ≥1 = 새 번호; 근거는 그 파일의
+doc-comment)이고, 카운터(`HwpNumberingCounter`)는 **종류마다 따로** 돈다 —
+개요는 **구역 시작**에서, 번호 매기기는 **정의가 바뀌는 번호 문단**에서 새 정의가
+새 번호면 비우고 이어 매기기면 잇는다. 상위 수준을 매기면 하위는 비워지고,
+비워진 수준을 형식이 참조하면 시작 번호를 보인다(한글 대화상자 미리보기 규약).
+`^n`·`^N`은 1수준부터 그 수준까지를 각 수준의 번호 모양으로 잇는다
+(`HwpNumberingLabelFormatter`). 표 셀·글상자·각주·머리말 안 문단도 품은 문단
+뒤에 같은 카운터로 센다(실물 대조 전 — 아래). 오라클 셋: 헌법주석의 **생성
+목차**(구역 0 문단 50-377, 1수준 표제 280개의 `I.`… 가 조문(구역)마다 다시
+시작 — 41개 구역 정의 중 첫 것만 시작 번호 0이고 40개가 1), 한글.app 저장본
+`outline-numbering`의 PrvImage 라벨, 1,944개 전체의 커밋 스냅샷
+`Tests/HwpKitCoreTests/ParagraphNumberingSnapshots/`(`RECORD_NUMBERING_SNAPSHOTS=1`).
+**한글.app 실측이 남은 것**: 새 번호 N이 정의 전체 시작 번호와 수준별 시작 번호
+중 어디에 적히는지(둘 중 큰 값을 써 두 인코딩을 모두 덮는다), 같은 정의를 두
+구역이 가리킬 때의 재시작, 컨테이너 안 문단이 본문 카운터를 잇는지, 2수준 없이
+3수준이 올 때 다수준 형식이 보이는 값, 도움말의 셋째 방식 "이전 번호 목록에 이어"
+의 저장 형식(구분 못 함 — 이어 매기기로 읽힌다). 2026-09-06 GUI 접근이 거부돼
+그 실측과 번호 매기기·시작 번호 지정 픽스처 쌍은 미뤘다.
+
 라인 세그먼트 캐시 (PARA_LINE_SEG)의 `lineLocation`은 페이지 내 절대 y다.
 **실제 줄 전진량 = lineHeight + lineSpacing (per-line 캐시 필드)** — 실측:
 연속 세그먼트의 lineLocation 델타와 일치 (헌법주석 30,345/30,348, noori 전부;

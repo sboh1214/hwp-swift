@@ -16,6 +16,7 @@ import Foundation
 /// 진단 문자열(`unsupportedHint`)의 집계 단위는 **문단**이다 — 문단마다 한 건이고
 /// 쪽은 그 문단이 시작한 쪽이다 (`HwpPaginator.collectUnsupportedNumberingHeading`).
 /// 글머리표(종류 3)는 `appendBulletHeading`이 그리므로 대상이 아니다(nil).
+/// 번호 문자열 생성(`HwpParagraphNumbering`, #153)도 같은 해석으로 정의를 찾는다.
 struct HwpNumberingHeadingReference: Equatable {
     /// 문단 머리 종류 (표 44 bit 23-24).
     enum Kind: Equatable {

@@ -586,7 +586,11 @@ noori p2에서 비영 셀의 30%까지 지워도 양쪽 통과).
   `HwpNumberingHeadingReference`가 그쪽을 푼다 (`Sources/HwpKitCore/AGENTS.md`).
 - 같은 개요 문단이 **미지원 목록과 탐색 목록에 동시에** 뜨는 것은 의도다 —
   개요를 탐색 대상으로 승격시켜도 생성 라벨을 렌더하게 되는 것은 아니므로
-  "번호가 조용히 사라진다"는 신고는 유지되어야 한다.
+  "번호가 조용히 사라진다"는 신고는 유지되어야 한다. 라벨 문자열 자체는
+  #153부터 `HwpParagraphNumbering`(`Sources/HwpKitCore/Numbering/`)이 조판과
+  무관하게 만든다 — 탐색 목록의 스타일 이름 폴백(`개요 N`)은 **번호의 규칙이
+  아니다**: noori의 표 셀 안 `개요 3` 문단 4개는 머리 종류가 0·3이라 번호가 없다
+  (`Sources/HwpKitCore/AGENTS.md` "문단 번호·개요 번호 생성").
 - **쪽 기준이 둘이다.** 개요는 문단의 **첫 조각이 놓인** 쪽
   (`currentParagraphFirstPlacedPage`), 책갈피는 **호스트 문단의 배치가 끝난**
   쪽(진단 `walkUnsupported`와 같은 기준). 개요에 배치 후 값을 쓰면 쪽 경계를

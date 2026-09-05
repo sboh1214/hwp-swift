@@ -32,7 +32,6 @@ final class NumberingFormatPatternTests: XCTestCase {
             [.level(7), .literal(")")],
         ]
         expect(patterns.map { $0?.referencedLevels }) == (1 ... 7).map { [$0] }
-        expect(patterns.allSatisfy { $0?.isSupported == true }) == true
         // 5.0.2.2 저장본은 확장 수준 배열이 없어 8-10수준 형식이 없다.
         expect((8 ... 10).map { numbering.format(forLevel: $0) }.allSatisfy { $0 == nil })
             == true
@@ -51,7 +50,6 @@ final class NumberingFormatPatternTests: XCTestCase {
             let ninth = try XCTUnwrap(custom.format(forLevel: 9))
             expect(ninth.format) == "^n)"
             expect(ninth.pattern.tokens) == [.levelPath(trailingPeriod: false), .literal(")")]
-            expect(ninth.pattern.isSupported) == false
 
             let tenth = try XCTUnwrap(custom.format(forLevel: 10))
             expect(tenth.format) == "^9.^10)"
@@ -59,12 +57,11 @@ final class NumberingFormatPatternTests: XCTestCase {
                 .level(9), .literal("."), .level(1), .literal("0)"),
             ]
             expect(tenth.pattern.referencedLevels) == [9, 1]
-            expect(tenth.pattern.isSupported) == true
         }
     }
 
     /// 한글 2020 빈 문서(`blank-win2020`)의 기본 정의 — 확장 수준 8은 `^8`,
-    /// 9·10은 빈 형식(토큰 없음·지원). `HwpIdMappings()`의 템플릿은 8-10이 전부
+    /// 9·10은 빈 형식(토큰 없음). `HwpIdMappings()`의 템플릿은 8-10이 전부
     /// 빈 형식이라 `^8`은 실저장본으로 본다.
     func testBlankDocumentDefaultsCoverExtendedLevels() throws {
         let hwp = try openHwp(#file, "blank-win2020")
@@ -77,7 +74,6 @@ final class NumberingFormatPatternTests: XCTestCase {
         expect(try XCTUnwrap(numbering.format(forLevel: 8)).pattern.tokens) == [.level(8)]
         let tenth = try XCTUnwrap(numbering.format(forLevel: 10)).pattern
         expect(tenth.tokens).to(beEmpty())
-        expect(tenth.isSupported) == true
         expect(tenth.referencedLevels).to(beEmpty())
 
         let template = try XCTUnwrap(HwpIdMappings().numberingArray.first)
@@ -94,7 +90,6 @@ final class NumberingFormatPatternTests: XCTestCase {
             .level(1), .literal("."), .level(2), .literal("."), .level(3),
         ]
         expect(pattern.referencedLevels) == [1, 2, 3]
-        expect(pattern.isSupported) == true
 
         let wrapped = HwpNumberingFormatPattern.parse("제^1장 ^1.^1")
         expect(wrapped.tokens) == [
@@ -103,16 +98,16 @@ final class NumberingFormatPatternTests: XCTestCase {
         expect(wrapped.referencedLevels) == [1, 1, 1]
     }
 
-    /// `^n`·`^N`은 레벨 경로 토큰이다 — 숫자 참조와 구분하고 아직 지원하지 않는다.
-    func testLevelPathDirectivesAreDistinctAndUnsupported() {
+    /// `^n`·`^N`은 레벨 경로 토큰이다 — 숫자 참조와 구분하고 `referencedLevels`에
+    /// 오르지 않는다 (경로가 참조하는 수준은 문단의 수준이 정한다).
+    func testLevelPathDirectivesAreDistinctFromLevelReferences() {
         let path = HwpNumberingFormatPattern.parse("^n.")
         expect(path.tokens) == [.levelPath(trailingPeriod: false), .literal(".")]
-        expect(path.isSupported) == false
         expect(path.referencedLevels).to(beEmpty())
 
         let dotted = HwpNumberingFormatPattern.parse("(^N)")
         expect(dotted.tokens) == [.literal("("), .levelPath(trailingPeriod: true), .literal(")")]
-        expect(dotted.isSupported) == false
+        expect(dotted.referencedLevels).to(beEmpty())
     }
 
     /// 캐럿은 숫자 한 자리만 먹는다 — 한글.app 실측(2026-09-05, 12.30): 10수준 정의의
@@ -154,7 +149,6 @@ final class NumberingFormatPatternTests: XCTestCase {
 
         let mixed = HwpNumberingFormatPattern.parse("^1.^x")
         expect(mixed.tokens) == [.level(1), .literal(".^x")]
-        expect(mixed.isSupported) == true
         expect(mixed.referencedLevels) == [1]
     }
 
@@ -163,7 +157,6 @@ final class NumberingFormatPatternTests: XCTestCase {
         expect(HwpNumberingFormatPattern.parse("가나다").tokens) == [.literal("가나다")]
         let empty = HwpNumberingFormatPattern.parse("")
         expect(empty.tokens).to(beEmpty())
-        expect(empty.isSupported) == true
         // 형식 문자열은 결합 문자·서러게이트 쌍을 그대로 돌려준다.
         let surrogates = HwpNumberingFormatPattern.parse("😀^1\u{0301}")
         expect(surrogates.tokens) == [.literal("😀"), .level(1), .literal("\u{0301}")]

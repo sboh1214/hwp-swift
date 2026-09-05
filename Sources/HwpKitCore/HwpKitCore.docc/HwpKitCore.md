@@ -24,6 +24,9 @@ SwiftUI 앱에서는 보통 HwpKit의 `HwpDocumentLoader`가 이 모듈의
 - ``HwpDocumentMetadata``
 - ``HwpPage``
 - ``HwpOutlineItem``
+- ``HwpParagraphNumbering``
+- ``HwpParagraphNumber``
+- ``HwpParagraphPath``
 - ``HwpUnsupportedElement``
 - ``HwpImageStore``
 - ``HwpZoomFit``

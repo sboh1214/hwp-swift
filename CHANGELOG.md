@@ -30,14 +30,29 @@
   `HwpNumberingFormat.pattern`이 `^1.`·`(^4)`·`^6)` 같은 번호 형식을 문자 조각과
   수준 참조로 분해합니다(`HwpNumberingFormatPattern`). 지시자의 경계는 한글.app
   12.30 실측을 따릅니다 — 캐럿은 숫자 한 자리(1-9)만 먹어 `^10`은 `^1` 뒤의 `0`이고,
-  `^n`·`^N`은 레벨 경로 토큰(아직 미지원이라 `isSupported`가 거짓), 그 밖의 캐럿
-  (`^0`·`^x`)은 문자 그대로입니다. `HwpNumbering.format(forLevel:)`이 확장 수준(8-10)
+  `^n`·`^N`은 레벨 경로 토큰, 그 밖의 캐럿(`^0`·`^x`)은 문자 그대로입니다. `HwpNumbering.format(forLevel:)`이 확장 수준(8-10)
   까지 수준별 형식을 돌려줍니다. HWPX는 `hp:secPr@outlineShapeIDRef`를 id 테이블로
   리맵해 `HwpSectionDef.numberParaShapeId`에 싣습니다 — 생략은 0(참조 없음)이고
   잘못된 참조는 0으로 접되 `parseDiagnostics()`에 합성 레코드로 남습니다. 정렬·
   거리 종류의 비기본값과 개요·문단 번호 문단의 실물 근거로 한글.app이 저장한
-  `outline-numbering` 픽스처 쌍을 추가했습니다. 번호 문자열 생성과 렌더링은
-  #153·#154에서 다룹니다.
+  `outline-numbering` 픽스처 쌍을 추가했습니다. 렌더링은 #154에서 다룹니다.
+- **문단 번호·개요 번호를 문서 순서로 생성합니다** (#153 — #151의 두 번째 단계).
+  새 `HwpParagraphNumbering.generate(sections:index:)`(HwpKitCore)가 구역·문단·
+  표 셀·글상자·각주 안 문단을 한 번 훑어 개요(문단 머리 종류 1)와 번호 매기기
+  (종류 2) 문단마다 `HwpParagraphNumber`(종류·수준·수준별 번호·조립한 라벨)를
+  만들고, 문단의 위치 경로 `HwpParagraphPath`(최상위는 `HwpParagraphKey`, 컨테이너
+  안은 컨트롤·자식 문단 서수)로 조회합니다. `HwpPaginator.paragraphNumbering()`이
+  같은 표를 돌려주며, 조판과 무관한 순수 함수라 문단을 재측정·재배치해도 번호는
+  한 번만 늡니다. 카운터 규칙은 한컴 도움말을 따릅니다 — 상위 수준이 늘면 하위
+  수준은 시작 번호로 돌아가고, 개요는 구역 시작에서, 번호 매기기는 정의가 바뀌는
+  번호 문단에서 새 정의의 시작 번호 방식(새 `HwpNumbering.continuesPreviousList`·
+  `startingNumber(forLevel:)`)에 따라 다시 세거나 이어 갑니다. 개요와 번호 매기기는
+  같은 정의를 가리켜도 따로 셉니다. `^n`·`^N` 레벨 경로도 각 수준의 번호 모양으로
+  조립하므로 #152의 `HwpNumberingFormatPattern.isSupported`는 없어졌습니다(미공개
+  API). 헌법주석의 개요 문단 1,944개는 그 문서가 실은 생성 목차(1수준 표제 280개)와
+  번호·제목이 일치하고, 한글.app 저장본 `outline-numbering`은 미리보기 이미지의
+  라벨(`I.`·`가.`·`1)`·`1.`·`2.`)과 같습니다. 화면·PDF·복사 텍스트에 번호를 넣는
+  것은 #154입니다.
 
 ### Breaking Changes
 
