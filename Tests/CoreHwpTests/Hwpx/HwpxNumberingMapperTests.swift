@@ -147,8 +147,8 @@ final class HwpxNumberingMapperTests: XCTestCase {
         expect(Self.property(unknown.formatArray[0])) == 0x0000_000C
     }
 
-    /// 매퍼가 합성한 12바이트는 바이너리 파서와 같은 `HwpParaHeadInfo`로 읽힌다 —
-    /// 합성 입력이다: 가운데 정렬·HWPUNIT 거리의 실물은 아직 없다 (#152).
+    /// 매퍼가 합성한 12바이트는 바이너리 파서와 같은 `HwpParaHeadInfo`로 읽힌다 (#152).
+    /// 합성 입력이다 — 실물 대조는 `outline-numbering` 쌍(`ParaHeadInfoTests`·등가 축).
     func testMappedParaHeadInfoDecodesThroughTheSharedModel() throws {
         let numbering = try mapNumbering(paraHead(
             """

@@ -17,8 +17,8 @@ import Foundation
 /// 표 39 문단 머리 정보 12바이트는 `HwpParaHeadInfo`로 합성한다 — 바이너리
 /// 파서가 같은 타입으로 디코드하므로 배치가 한 곳(`HwpParaHeadInfo.bytes`)에만
 /// 있다. 표 40 속성 비트의 실측 근거(bit 5-8 번호 모양, 0x0C와 수준 8-10
-/// 기본값 0x08의 차이 = bit 2 `useInstWidth`)와 정렬(bit 0-1)·거리 종류(bit 4)
-/// 비-기본값의 실파일 검증 대기 상태는 그 타입의 doc-comment와
+/// 기본값 0x08의 차이 = bit 2 `useInstWidth`, 정렬·거리 종류의 비기본값은
+/// `outline-numbering` 쌍)는 그 타입의 doc-comment와
 /// `Sources/CoreHwp/Hwpx/AGENTS.md`에 있다.
 enum HwpxNumberingMapper {
     /// 표 38이 7회 반복하는 수준(1-7) — `HwpNumbering.formatArray`.
@@ -102,12 +102,13 @@ enum HwpxNumberingMapper {
     }
 
     /// 표 40 bit 0-1 문단의 정렬 종류 — 스키마 나열 순서(한컴 모델
-    /// `g_ParaHeadAlignList`)이고 왼쪽만 실물로 확인됐다.
+    /// `g_ParaHeadAlignList`)이고 세 값 모두 `outline-numbering` 쌍으로 확인됐다.
     static let alignments: [String: HwpParaHeadAlignment] = [
         "LEFT": .left, "CENTER": .center, "RIGHT": .right,
     ]
 
-    /// 표 40 bit 4 수준별 본문과의 거리 종류 — 비율만 실물로 확인됐다.
+    /// 표 40 bit 4 수준별 본문과의 거리 종류 — 두 값 모두 `outline-numbering` 쌍으로
+    /// 확인됐다.
     static let textOffsetTypes: [String: HwpParaHeadTextOffsetType] = [
         "PERCENT": .percent, "HWPUNIT": .hwpUnit,
     ]

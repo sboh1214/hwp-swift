@@ -134,8 +134,9 @@ paraShape의 그 값은 전부 0이라 (헌법주석 1,944문단) 종전 `> 0` �
 없음)", 정의 배열 밖은 "(없는 번호 정의 N 참조)"로 문구를 가른다 — 빈 문서
 기본값 1을 지어내지 않는다(`sectionDef == nil`이면 참조 없음). 집계 단위는
 문단이고 쪽은 문단이 시작한 쪽이다 (헌법주석 1,944건, 첫 건 13쪽 —
-`FixtureObjectRenderTests`; 조판 없는 집계는 `HwpNumberingHeadingFixtureTests`).
-#154가 라벨을 실제로 그린 문단을 이 진단에서 뺀다.
+`FixtureObjectRenderTests`; 조판 없는 집계는 `HwpNumberingHeadingFixtureTests` —
+개요와 번호 매기기가 서로 다른 정의에 닿는 실물은 한글.app으로 만든
+`outline-numbering` 쌍뿐이다). #154가 라벨을 실제로 그린 문단을 이 진단에서 뺀다.
 
 라인 세그먼트 캐시 (PARA_LINE_SEG)의 `lineLocation`은 페이지 내 절대 y다.
 **실제 줄 전진량 = lineHeight + lineSpacing (per-line 캐시 필드)** — 실측:
@@ -635,7 +636,7 @@ paraShape와 같은 값**이어야 한다.
   **`paraShape(for:)`의 nil은 표가 통째로 빌 때만 나온다** — id는
   `HwpIndex.makeIndex`가 배열 오프셋으로 매긴 조밀한 값이라 (`paraShapeArray`에
   id 필드가 없다) 표가 비어 있지 않으면 id 0이 반드시 있고 뒤 폴백이 항상 걸린다.
-  즉 이 축은 정상 문서가 아니라 **손상·조작 DocInfo**다. 픽스처 34종 중 0개라
+  즉 이 축은 정상 문서가 아니라 **손상·조작 DocInfo**다. 픽스처 35종 중 0개라
   합성 가드로만 잡힌다:
   `HwpMeasurementInputContractTests.testEmptyParaShapeTableStillAppliesDefaultParagraphStyle`
   (부착을 되돌리면 줄 피치가 16.0 → 12.44pt로 떨어져 빨개진다). `HwpPaginator.layout`도

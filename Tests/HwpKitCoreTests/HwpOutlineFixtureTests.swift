@@ -7,10 +7,10 @@ import XCTest
 #if canImport(CoreText)
     /// 개요·책갈피 수집의 **실측 핀** (#77).
     ///
-    /// 저장소 픽스처 34종 중 개요 문단을 가진 것은
-    /// `legacy-common-control-property`(헌법주석) 하나뿐이고 (나머지는 0개,
-    /// 암호·DRM 4종은 FileHeader에서 거부), 책갈피를 가진 것은 `bookmark`
-    /// 하나뿐이다. 그 둘이 두 경로의 오라클을 겸한다.
+    /// 저장소 픽스처 35종 중 개요 문단을 가진 것은
+    /// `legacy-common-control-property`(헌법주석)와 `outline-numbering`(#152, 3개)
+    /// 둘이고 (나머지는 0개, 암호·DRM 4종은 FileHeader에서 거부), 책갈피를 가진
+    /// 것은 `bookmark` 하나뿐이다. 그것들이 두 경로의 오라클을 겸한다.
     ///
     /// 개요 쪽은 **조판 없이** 수집기를 직접 몬다 — 1,030쪽을 다시 배치하지 않고도
     /// 수준 판정·제목 정규화·개수를 전부 태울 수 있고 (쪽 귀속은
@@ -59,6 +59,15 @@ import XCTest
                 == true
             expect(items.first?.title) == "대한민국헌법 제정의 유래"
             expect(items.map(\.ordinal)) == Array(0 ..< items.count)
+        }
+
+        /// 한글.app으로 만든 개요 1~3수준 문단 — 수준 비트와 제목이 그대로 목록이 된다.
+        func testOutlineNumberingFixtureListsItsThreeHeadings() throws {
+            let items = collectHeadings(from: try fixture("outline-numbering"))
+            expect(items.map(\.title)) == [
+                "Outline level one", "Outline level two", "Outline level three",
+            ]
+            expect(items.map(\.level)) == [1, 2, 3]
         }
 
         /// 개요가 없는 문서에서는 목록도 비어 있다 — 사이드바를 숨기는 근거.

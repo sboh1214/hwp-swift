@@ -3,10 +3,45 @@ import Nimble
 import XCTest
 
 /// 표 39 문단 머리 정보 12바이트의 타입 접근자 (#152) — 실문서 핀과 합성
-/// 입력을 가른다. 정렬(bit 0-1)·거리 종류(bit 4)의 비기본값은 합성으로만
-/// 검증한다 — 저장소 픽스처는 전부 왼쪽 정렬·비율 거리라 실물이 없다.
+/// 입력을 가른다. 정렬(bit 0-1)·거리 종류(bit 4)의 비기본값은 한글.app으로
+/// 만든 `outline-numbering` 쌍이 실물 근거다.
 final class ParaHeadInfoTests: XCTestCase {
     // MARK: - 실문서
+
+    /// 한글.app 12.30 개요 번호 사용자 정의(2026-09-05)의 비기본값 — 1수준 오른쪽
+    /// 정렬·번호 너비/자동 내어쓰기 해제·너비 조정 2pt·본문과의 간격 10pt·로마
+    /// 대문자, 2수준 가운데 정렬. HWPX 쌍의 `align="RIGHT" useInstWidth="0"
+    /// autoIndent="0" widthAdjust="200" textOffsetType="HWPUNIT" textOffset="1000"
+    /// numFormat="ROMAN_CAPITAL"`·`align="CENTER"`와 같은 값이다.
+    func testOutlineNumberingFixturePinsNonDefaultAlignmentAndOffsetType() throws {
+        for hwp in [
+            try openHwp(#file, "outline-numbering"), try openHwpx(#file, "outline-numbering"),
+        ] {
+            let definitions = hwp.docInfo.idMappings.numberingArray
+            expect(definitions.count) == 2
+            let custom = try XCTUnwrap(definitions.last)
+            let first = try XCTUnwrap(custom.formatArray[0].paraHeadInfo)
+            expect(first.property) == 0x52
+            expect(first.alignment) == HwpParaHeadAlignment.right
+            expect(first.useInstWidth) == false
+            expect(first.autoIndent) == false
+            expect(first.textOffsetType) == HwpParaHeadTextOffsetType.hwpUnit
+            expect(first.textOffset) == 1000
+            expect(first.widthAdjust) == 200
+            expect(first.numberFormat) == 2
+            expect(first.charShapeId) == -1
+
+            let second = try XCTUnwrap(custom.formatArray[1].paraHeadInfo)
+            expect(second.property) == 0x10D
+            expect(second.alignment) == HwpParaHeadAlignment.center
+            expect(second.textOffsetType) == HwpParaHeadTextOffsetType.percent
+            expect(second.textOffset) == 50
+            expect(second.numberFormat) == 8
+            // 한글 기본 정의는 그대로다 — 문단 번호 문단이 이쪽을 참조한다.
+            let base = try XCTUnwrap(definitions.first?.formatArray[0].paraHeadInfo)
+            expect(base.property) == 0x0C
+        }
+    }
 
     /// 헌법주석 개요 번호 정의 1-7수준 — 번호 종류 bit 5-8이 로마 대문자(2)·
     /// 숫자(0)·한글 가나다(8)를 번갈아 쓰고 나머지 필드는 전 수준 동일하다.

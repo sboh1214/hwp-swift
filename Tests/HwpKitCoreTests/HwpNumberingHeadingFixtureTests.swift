@@ -5,8 +5,9 @@ import Nimble
 import XCTest
 
 #if canImport(CoreText)
-    /// 개요 번호 정의 참조의 **실측 핀** (#152) — 헌법주석(`legacy-common-control-property`)
-    /// 은 저장소에서 유일하게 최상위 개요 문단을 가진 픽스처다.
+    /// 개요 번호 정의 참조의 **실측 핀** (#152) — 최상위 개요 문단을 가진 픽스처는
+    /// 헌법주석(`legacy-common-control-property`)과 한글.app으로 만든
+    /// `outline-numbering`(개요 3 + 문단 번호 2) 둘이다.
     ///
     /// 조판 없이 문단을 걸어 참조를 푼다 (`HwpOutlineFixtureTests`와 같은 방식) —
     /// 조판을 거친 진단 건수는 `Tests/HwpKitTests/FixtureObjectRenderTests`가
@@ -117,6 +118,35 @@ import XCTest
                 checked += 1
             }
             expect(checked) == 1944
+        }
+
+        /// `outline-numbering` — 개요 3개는 구역 정의(참조 2 → 사용자 정의 정의)를,
+        /// 문단 번호 2개는 문단 모양(참조 1 → 한글 기본 정의)을 따른다. 두 종류가 서로
+        /// 다른 정의에 닿는 유일한 실물이고 HWPX 쌍도 같은 결과여야 한다.
+        func testOutlineNumberingFixtureResolvesBothHeadingKinds() throws {
+            for id in ["outline-numbering"] {
+                let file = try fixture(id)
+                let index = HwpIndex(from: file)
+                let walk = walk(file)
+
+                expect(walk.sectionReferenceIds) == [2]
+                expect(walk.references.map(\.kind)) == [
+                    .outline, .outline, .outline, .numbering, .numbering,
+                ]
+                expect(walk.references.map(\.level)) == [1, 2, 3, 1, 1]
+                expect(walk.references.map(\.definition)) == [
+                    .resolved(index: 1), .resolved(index: 1), .resolved(index: 1),
+                    .resolved(index: 0), .resolved(index: 0),
+                ]
+                expect(walk.references.map { $0.format(in: index)?.format }) == [
+                    "^1.", "^2.", "^3)", "^1.", "^1.",
+                ]
+                expect(walk.references.map(\.unsupportedHint)) == [
+                    "개요 번호 문단 머리 (미렌더)", "개요 번호 문단 머리 (미렌더)",
+                    "개요 번호 문단 머리 (미렌더)", "번호 매기기 문단 머리 (미렌더)",
+                    "번호 매기기 문단 머리 (미렌더)",
+                ]
+            }
         }
 
         /// 개요 문단이 없는 문서에서는 참조가 없다 — 진단이 서지 않는 근거.

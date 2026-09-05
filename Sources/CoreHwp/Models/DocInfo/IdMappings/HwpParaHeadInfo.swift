@@ -21,10 +21,14 @@ import Foundation
  대문자(2)다 (#152). 표 41 코드는 표 134 번호 모양의 0-14 구간과 항목이
  같아 `HwpNumberFormat.string(for:shape:)`(HwpKitCore)이 그대로 소비한다.
 
- 정렬(bit 0-1)과 본문과의 거리 종류(bit 4)의 **비기본값은 실문서 대조 전**이다
- — 저장소 픽스처는 전부 왼쪽 정렬·비율 거리라 값 배치는 OWPML 스키마 나열
- 순서(한컴 참조 모델 `g_ParaHeadAlignList`·`g_TextOffsetTypeList`)를 따른다
- (`Sources/CoreHwp/Hwpx/AGENTS.md` "실파일 검증 대기 항목").
+ 정렬(bit 0-1)과 본문과의 거리 종류(bit 4)의 값 배치는 한글.app 12.30이 저장한
+ `outline-numbering` 쌍으로 확정했다 (2026-09-05, #152): 개요 번호 사용자 정의에서
+ 1수준을 오른쪽 정렬·본문과의 간격 10pt·너비 조정 2pt·번호 너비/자동 내어쓰기
+ 해제·로마 대문자로 저장하면 속성이 `0x52`(정렬 2 · bit 4 · 번호 모양 2)이고
+ 거리 1000·너비 보정 200이며, HWPX 쌍의 `align="RIGHT" textOffsetType="HWPUNIT"
+ textOffset="1000" widthAdjust="200"`과 같다. 2수준 가운데 정렬은 `0x10D`(정렬 1)다.
+ OWPML 열거의 나열 순서(한컴 참조 모델 `g_ParaHeadAlignList`·`g_TextOffsetTypeList`)
+ 와 일치한다.
  */
 public struct HwpParaHeadInfo: HwpPrimitive {
     /// 표 39 실물 길이 — 스펙의 "전체 길이 8"은 오기다.
@@ -189,9 +193,9 @@ public struct HwpParaHeadInfo: HwpPrimitive {
 
 /// 표 40 bit 0-1 문단의 정렬 종류.
 ///
-/// 값 배치는 OWPML `align` 열거(`LEFT`·`CENTER`·`RIGHT`)의 나열 순서다 —
-/// 왼쪽 정렬만 실문서(전 픽스처)로 확인됐고 가운데·오른쪽은 실파일 검증
-/// 대기 항목이다. raw 3은 정의가 없어 케이스로 두지 않는다.
+/// 값 배치는 OWPML `align` 열거(`LEFT`·`CENTER`·`RIGHT`)의 나열 순서이고 세 값
+/// 모두 실문서로 확인됐다 (`outline-numbering` 쌍 — 1수준 오른쪽 2 · 2수준 가운데 1).
+/// raw 3은 정의가 없어 케이스로 두지 않는다.
 public enum HwpParaHeadAlignment: UInt32, HwpPrimitive {
     /// 왼쪽
     case left = 0
@@ -203,9 +207,9 @@ public enum HwpParaHeadAlignment: UInt32, HwpPrimitive {
 
 /// 표 40 bit 4 수준별 본문과의 거리 종류 — `HwpParaHeadInfo.textOffset`의 단위.
 ///
-/// 비율만 실문서(전 픽스처의 50%)로 확인됐고 HWPUNIT 값은 OWPML
-/// `textOffsetType` 열거(`PERCENT`·`HWPUNIT`)의 나열 순서를 따른 실파일 검증
-/// 대기 항목이다.
+/// 두 값 모두 실문서로 확인됐다 — 비율은 전 픽스처의 50%, HWPUNIT은
+/// `outline-numbering` 쌍 1수준의 10pt(1000)다. OWPML `textOffsetType` 열거
+/// (`PERCENT`·`HWPUNIT`)의 나열 순서와 같다.
 public enum HwpParaHeadTextOffsetType: UInt32, HwpPrimitive {
     /// 글자 크기에 대한 상대 비율(%)
     case percent = 0
