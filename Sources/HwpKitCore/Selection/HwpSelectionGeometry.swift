@@ -254,6 +254,8 @@ public final class HwpSelectionGeometry {
         /// 선택 구간으로 자른 attributed 부분열 (조판 속성 그대로)
         let attributedText: NSAttributedString
         let paragraphId: UInt32?
+        /// 본문 문단의 위치 열쇠 — 있으면 이것만이 "같은 문단"의 근거다 (#145)
+        let paragraphKey: HwpParagraphKey?
         /// 이 조각이 '이어짐' 표식을 달아 다음 조각이 같은 문단의 연속인지
         let continuesNext: Bool
     }
@@ -280,9 +282,21 @@ public final class HwpSelectionGeometry {
                     unitIndex: unit.unitIndex,
                     characterOffset: unit.attributedString.length
                 )
-                guard unitEnd > start, unitStart < end else { continue }
-                let lower = max(start, unitStart).characterOffset
-                let upper = unitStart >= start && unitEnd <= end
+                // 빈 문단(앵커 하나뿐인 단위, #145)은 캐럿 자리가 하나라 (P,0)과
+                // (P,1)이 같은 자리다 — 선택이 닿기만 하면 그 줄을 통째로 싣는다.
+                // 비어 있지 않은 단위의 배타 규칙(끝점이 단위 시작이면 제외)을 그대로
+                // 두면 'A에서 빈 줄까지'가 A의 종결자를, '빈 줄에서 B까지'가 빈 줄을
+                // 잃는다. 조각의 글자(앵커)는 조립이 뗀다 (`droppingEmptyLineAnchor`).
+                let isEmptyParagraph = HwpTextRunBuilder.isEmptyParagraphAnchor(
+                    unit.attributedString
+                )
+                if isEmptyParagraph {
+                    guard unitEnd >= start, unitStart <= end else { continue }
+                } else {
+                    guard unitEnd > start, unitStart < end else { continue }
+                }
+                let lower = isEmptyParagraph ? 0 : max(start, unitStart).characterOffset
+                let upper = isEmptyParagraph || (unitStart >= start && unitEnd <= end)
                     ? unit.attributedString.length
                     : min(end, unitEnd).characterOffset
                 guard upper > lower else { continue }
@@ -303,6 +317,7 @@ public final class HwpSelectionGeometry {
                         from: NSRange(location: lower, length: upper - lower)
                     ),
                     paragraphId: unit.paragraphId,
+                    paragraphKey: unit.paragraphKey,
                     continuesNext: upper == unit.attributedString.length
                         && Self.isContinuedFragment(unit.attributedString)
                 ))
@@ -311,14 +326,23 @@ public final class HwpSelectionGeometry {
         return fragments
     }
 
-    /// 앞 조각과 개행 없이 이어지는가 (#9): 본문 조각은 paraId 동일성으로
-    /// 판정하고, '이어짐' 표식은 identity를 확인할 수 없을 때(paraId 없음)만
-    /// 폴백으로 쓴다 — 분할 표 행에선 다른 셀의 top 조각이 연달아 오므로
-    /// 표식이 문단 identity를 대신할 수 없다 (#7).
+    /// 앞 조각과 개행 없이 이어지는가 (#9, #145): 본문 조각은 **위치 열쇠**
+    /// 동일성으로 판정한다 — 열/쪽에 걸친 조각·다단 재분배 블록이 모두 같은
+    /// 열쇠를 물려받는다. 열쇠가 없는 조각(표 셀·글상자·각주 문단)은 '이어짐'
+    /// 표식이 있을 때만 잇되, 분할 표 행에선 다른 셀의 top 조각이 연달아 오므로
+    /// paraId가 있고 서로 다르면 표식이 있어도 잇지 않는다 (#7).
+    ///
+    /// 종전의 "같은 paraId면 같은 문단" 갈래는 뺐다 — 한글.app 저장본은 paraId가
+    /// 문단마다 고유하지 않아(noori HWP·HWPX 65문단 중 고유 값 0·0x80000000 둘)
+    /// 서로 다른 본문 문단·같은 셀의 문단들이 개행 없이 붙었다. 그 값은 반복
+    /// 머리행 클론 dedup의 출처 식별에만 남는다.
     static func joinsWithPrevious(_ previous: Fragment, _ piece: Fragment) -> Bool {
-        (previous.paragraphId != nil && previous.paragraphId == piece.paragraphId)
-            || (previous.continuesNext
-                && (previous.paragraphId == nil || piece.paragraphId == nil))
+        if let previousKey = previous.paragraphKey, let key = piece.paragraphKey {
+            return previousKey == key
+        }
+        return previous.continuesNext
+            && (previous.paragraphId == nil || piece.paragraphId == nil
+                || previous.paragraphId == piece.paragraphId)
     }
 
     private static func isContinuedFragment(_ attributed: NSAttributedString) -> Bool {

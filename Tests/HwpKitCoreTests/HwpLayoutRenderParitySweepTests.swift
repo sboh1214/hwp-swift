@@ -152,8 +152,9 @@ import XCTest
 
         // MARK: - 실측 핀
 
-        private static let expectedFixtureVisited = 137
-        private static let expectedFixtureMeasured = 260
+        // 2026-09-05 `underline-above` 픽스처 추가로 문단 1·대조 2(폭 2종) 증가.
+        private static let expectedFixtureVisited = 138
+        private static let expectedFixtureMeasured = 262
         private static let expectedFixtureContainers = 50
         private static let minimumFixtureMultiLine = 60
         private static let maximumFixtureSharedCoreSkips = 5

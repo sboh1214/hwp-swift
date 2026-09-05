@@ -7,7 +7,7 @@ import XCTest
 #if canImport(CoreText)
     /// 개요·책갈피 수집의 **실측 핀** (#77).
     ///
-    /// 저장소 픽스처 33종 중 개요 문단을 가진 것은
+    /// 저장소 픽스처 34종 중 개요 문단을 가진 것은
     /// `legacy-common-control-property`(헌법주석) 하나뿐이고 (나머지는 0개,
     /// 암호·DRM 4종은 FileHeader에서 거부), 책갈피를 가진 것은 `bookmark`
     /// 하나뿐이다. 그 둘이 두 경로의 오라클을 겸한다.

@@ -1,0 +1,46 @@
+{
+  "id": "underline-above",
+  "generationTool": "한컴오피스 한글 12.30.0 (6446) macOS",
+  "source": "HWP fixture underline-above와 같은 편집 세션에서 파일 > 다른 이름으로 저장하기 > 한글 표준 문서 (*.hwpx)로 저장 (Claude Computer Use GUI 자동화)",
+  "owpmlVersion": "5.1.1.0",
+  "sourceHwpFixture": "underline-above",
+  "features": [
+    "hwpx",
+    "derived-from-hwp",
+    "char-shape-property",
+    "paragraph-text",
+    "doc-info",
+    "doc-properties",
+    "preview-text",
+    "preview-image"
+  ],
+  "expectations": {
+    "binDataCount": 0,
+    "borderFillCount": 2,
+    "charShapeCount": 8,
+    "faceNamesKorean": [
+      "함초롬돋움",
+      "함초롬바탕"
+    ],
+    "pageCount": 1,
+    "pageCountSource": "HwpKit 렌더 실측 잠금 (2026-09-05, .testDeterministic) = HWP 쌍 쪽수 — 한글.app 실측 확인 대기",
+    "pageDef": {
+      "height": 84186,
+      "marginBottom": 4252,
+      "marginLeft": 8504,
+      "marginRight": 8504,
+      "marginTop": 5668,
+      "width": 59528
+    },
+    "paraShapeCount": 20,
+    "sectionCount": 1,
+    "sectionParagraphCounts": [
+      1
+    ],
+    "styleCount": 22,
+    "tabDefCount": 3,
+    "visibleTextContains": [
+      "Hello CoreHwp plain text fixture."
+    ]
+  }
+}

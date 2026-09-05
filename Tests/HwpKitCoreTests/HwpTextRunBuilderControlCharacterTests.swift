@@ -118,38 +118,54 @@ import XCTest
             expect(attributes[HwpAttributedStringKey.emptyLineAnchor]).to(beNil())
         }
 
-        func testEmptyParagraphProbeGivesOneLineHeightWithoutCache() throws {
-            // 빈 문단은 조판 문자열이 없어 `layout`이 높이 0을 준다. 라인 캐시가
-            // 없는 측정 경로에서 그 0은 빈 줄을 통째로 없애므로 (#137), 글자
-            // 모양을 아는 계층이 대역 문자열로 한 줄 높이를 잰다. HWPX의 빈
-            // 문단이 정확히 이 모양이다 (`charArray == [13]`).
+        func testEmptyParagraphAnchorGivesOneLineHeightWithoutCache() throws {
+            // 빈 문단의 조판 문자열은 빈 문단 앵커다 (#145). 라인 캐시가 없는
+            // 측정 경로에서도 `layout`이 한 줄 높이를 내야 빈 줄이 살아남는다
+            // (#137). HWPX의 빈 문단이 정확히 이 모양이다 (`charArray == [13]`).
             let paragraph = paragraph(text: "\u{0D}", runs: [(0, 0)])
-            let textBuilder = builder(shapes: [0: try charShape()])
-            let built = textBuilder.build(paragraph: paragraph)
-            expect(built.length) == 0
+            let built = builder(shapes: [0: try charShape()]).build(paragraph: paragraph)
+            expect(HwpTextRunBuilder.isEmptyParagraphAnchor(built)) == true
 
-            let paraShape = CoreHwp.HwpParaShape()
-            let empty = HwpParagraphLayout().layout(
-                attributedString: built, paraShape: paraShape, columnWidth: 300
+            let frame = HwpParagraphLayout().layout(
+                attributedString: built, paraShape: CoreHwp.HwpParaShape(), columnWidth: 300
             )
-            let probed = HwpParagraphLayout().layout(
-                attributedString: textBuilder.emptyParagraphProbe(for: paragraph),
-                paraShape: paraShape, columnWidth: 300
-            )
-
-            expect(empty.totalHeight) == 0
-            expect(probed.totalHeight).to(beGreaterThan(0))
-            expect(probed.lines.count) == 1
+            expect(frame.totalHeight).to(beGreaterThan(0))
+            expect(frame.lines.count) == 1
         }
 
-        func testParagraphOfOnlyTheEndControlProducesEmptyString() throws {
-            // 빈 문단의 WCHAR 스트림은 13 하나다 (HWPX는 `HwpxParagraphMapper`가
-            // 항상 붙이고, 바이너리도 PARA_TEXT를 가진 빈 문단이면 같다).
-            // 접고 나면 문자열이 비므로 `paraText`가 없는 빈 문단과 같은 상태가
-            // 된다 — 두 포맷의 빈 문단이 같은 조판 입력으로 모인다.
-            let paragraph = paragraph(text: "\u{0D}", runs: [(0, 0)])
-            let result = builder(shapes: [0: try charShape()]).build(paragraph: paragraph)
+        func testEmptyParagraphShapesConvergeOnTheSameAnchor() throws {
+            // 빈 문단의 세 모델 형태 — HWP 바이너리(PARA_TEXT 없음)·빈 배열·
+            // HWPX(문단 끝 코드 13뿐, 하이픈만 있는 문단 포함) — 가 같은 앵커로
+            // 모여야 두 포맷이 같게 선택·복사된다. 앵커는 글꼴·문단 스타일만
+            // 갖고 장식은 없다 (빈 줄 앵커와 같은 허용 목록).
+            let underlined = try charShape(property: 1 << 2)
+            var withoutParaText = paragraph(text: "", runs: [(0, 0)])
+            withoutParaText.paraText = nil
+            let shapes = [
+                withoutParaText,
+                paragraph(text: "", runs: [(0, 0)]),
+                paragraph(text: "\u{0D}", runs: [(0, 0)]),
+                paragraph(text: "\u{18}\u{0D}", runs: [(0, 0)]),
+            ]
+            for shape in shapes {
+                let result = builder(shapes: [0: underlined]).build(paragraph: shape)
+                expect(result.string) == " "
+                let attributes = result.attributes(at: 0, effectiveRange: nil)
+                expect(attributes[HwpAttributedStringKey.emptyLineAnchor]).notTo(beNil())
+                expect(attributes[kCTFontAttributeName as NSAttributedString.Key]).notTo(beNil())
+                expect(attributes[kCTParagraphStyleAttributeName as NSAttributedString.Key])
+                    .notTo(beNil())
+                expect(attributes[HwpAttributedStringKey.underlineStyle]).to(beNil())
+            }
+        }
 
+        func testTruncatedBuildDoesNotSynthesizeAnAnchor() throws {
+            // 상한으로 잘린 결과(메모 표시 예산)는 빈 문단이 아니다 — 앵커를
+            // 만들면 잘린 문단이 빈 줄 하나로 보인다.
+            let paragraph = paragraph(text: "hello", runs: [(0, 0)])
+            let result = builder(shapes: [0: try charShape()]).build(
+                paragraph: paragraph, maxCharacters: 0
+            )
             expect(result.length) == 0
         }
 

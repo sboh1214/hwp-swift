@@ -15,17 +15,17 @@ final class HwpxFixtureRenderTests: XCTestCase {
     /// manifest `expectations.pageCount`(출처는 `pageCountSource`)와 실제 렌더
     /// 쪽수가 정확히 일치해야 한다.
     ///
-    /// 핀은 **파싱 가능한 픽스처 전부**에 강제한다 — 하한(`>= 10`)만 두면
+    /// 핀은 **파싱 가능한 픽스처 전부**에 강제한다 — 하한(`>= 11`)만 두면
     /// `pageCount` 없는 새 픽스처가 조판 캐시 회귀 가드에서 조용히 빠진다.
     /// 등식만 두면 반대로 픽스처가 전부 유실돼도 0 == 0으로 통과하므로 하한도
-    /// 남긴다. `expectedError` 픽스처(암호·배포용·DRM)는 HWP 하니스가 33종 중
-    /// 29종만 요구하는 것과 같은 이유로 분모에서 뺀다.
+    /// 남긴다. `expectedError` 픽스처(암호·배포용·DRM)는 HWP 하니스가 34종 중
+    /// 30종만 요구하는 것과 같은 이유로 분모에서 뺀다.
     func testHwpxPageCountsMatchManifest() async throws {
         let fixtures = try FixtureRoot.loadAllHwpxFixtures(from: #file)
         let parseable = fixtures.filter { !$0.hasExpectedError }
         let withPageCount = parseable.filter { $0.expectedPageCount != nil }
-        // 픽스처 유실 가드 — 변환 쌍 10종
-        expect(fixtures.count) >= 10
+        // 픽스처 유실 가드 — 변환 쌍 11종
+        expect(fixtures.count) >= 11
         // 파싱 가능한 픽스처는 전부 pageCount 핀이 있어야 한다 (AGENTS.md "HWPX 픽스처 추가")
         expect(withPageCount.count) == parseable.count
         for fixture in withPageCount {
@@ -93,8 +93,8 @@ final class HwpxFixtureRenderTests: XCTestCase {
             }
         }
 
-        // 비교 가능한 변환 쌍 10종 — 하한은 유실 가드
-        expect(comparedCount) >= 10
+        // 비교 가능한 변환 쌍 11종 — 하한은 유실 가드
+        expect(comparedCount) >= 11
         if !failures.isEmpty {
             fail("HWP↔HWPX page count mismatches (\(failures.count)):\n" +
                 failures.joined(separator: "\n"))
@@ -103,7 +103,7 @@ final class HwpxFixtureRenderTests: XCTestCase {
 
     /// 쪽 크롬(머리말/꼬리말/쪽 번호) 블록 텍스트가 HWP 쌍과 같아야 한다 —
     /// HWPX `hp:pageNum`이 typed 승격돼야 noori 꼬리 쪽 번호가 선다 (#135).
-    /// 10쌍 중 쪽 크롬을 가진 문서는 noori(쪽 번호 위치 1건)뿐이라 나머지는
+    /// 11쌍 중 쪽 크롬을 가진 문서는 noori(쪽 번호 위치 1건)뿐이라 나머지는
     /// 빈 배열 등식이고, noori는 #138 이후 줄표 없는 "1"·"2"·"3"으로 직접
     /// 핀한다 — 등식만 두면 양쪽이 함께 비어도 통과하기 때문이다.
     func testHwpxPageChromeMatchesHwpPairs() async throws {
@@ -136,7 +136,7 @@ final class HwpxFixtureRenderTests: XCTestCase {
             }
         }
 
-        expect(comparedCount) >= 10
+        expect(comparedCount) >= 11
         expect(nooriChrome) == [["1"], ["2"], ["3"]]
         if !failures.isEmpty {
             fail("HWP↔HWPX page chrome mismatches (\(failures.count)):\n" +
@@ -146,7 +146,7 @@ final class HwpxFixtureRenderTests: XCTestCase {
 
     /// 내장 차트 블록(`.chart` payload) 수가 HWP 쌍과 같아야 한다 — HWPX `hp:ole`이
     /// `.ole`로 typed 승격돼야 `HwpPaginator.chartFrame`이 chart 쌍의 차트를 그린다
-    /// (#134). 10쌍 중 차트를 가진 문서는 chart뿐이라 나머지는 0 == 0 등식이고,
+    /// (#134). 11쌍 중 차트를 가진 문서는 chart뿐이라 나머지는 0 == 0 등식이고,
     /// chart는 1로 직접 핀한다 — 등식만 두면 양쪽이 함께 0이어도 통과하기 때문이다.
     /// 미지원 힌트도 HWP 쌍과 같은 "OLE"여야 한다 (`HwpUnsupportedDetector`가
     /// `.ole` 컨트롤과 gso의 OLE 개체 요소에 같은 힌트를 낸다 — 근사 렌더라 힌트는
@@ -190,7 +190,7 @@ final class HwpxFixtureRenderTests: XCTestCase {
             }
         }
 
-        expect(comparedCount) >= 10
+        expect(comparedCount) >= 11
         expect(chartHwpxCount) == 1
         expect(chartHwpCount) == 1
         expect(chartHints) == ["OLE"]
@@ -209,8 +209,9 @@ final class HwpxFixtureRenderTests: XCTestCase {
     /// 통과하므로 HWPX 쪽에 직접 핀을 함께 둔다. (#137로 문단 끝 코드를 조판
     /// 문자열에서 접기 전에는 noori HWPX 렌더에 빈 문단 draw(`"\r"`)가 4건 더
     /// 있어 drawText가 64 대 68로 갈렸다. HWPX는 빈 문단도 `paraText`를 갖고
-    /// 그 안이 코드 13 하나였기 때문인데, 접고 나면 `paraText`가 없는 HWP 빈
-    /// 문단과 같은 빈 문자열이라 지금은 두 포맷 모두 64다.)
+    /// 그 안이 코드 13 하나였기 때문이다. 지금은 두 포맷의 빈 문단이 같은 빈
+    /// 문단 앵커(#145)로 모여 drawText 수가 같다 — 전체 선택 복사 평문 등식은
+    /// `HwpxFixtureCopyParityTests`가 건다.)
     func testHwpxBulletHeadingsMatchHwpPairs() async throws {
         let hwpxFixtures = try FixtureRoot.loadAllHwpxFixtures(from: #file)
         let hwpFixtures = try FixtureRoot.loadAllFixtures(from: #file)
@@ -243,7 +244,7 @@ final class HwpxFixtureRenderTests: XCTestCase {
             }
         }
 
-        expect(comparedCount) >= 10
+        expect(comparedCount) >= 11
         // 두 문단은 표 셀 안이라 `page.blocks`에는 잡히지 않는다 — 추출은
         // 페인트 리스트여야 한다. 본문 자체가 `-`로 끝나므로 `contains("-")`
         // 검사는 무의미하고, 선행 `- `를 문자열로 직접 핀한다.
@@ -259,7 +260,7 @@ final class HwpxFixtureRenderTests: XCTestCase {
 
     /// 글머리표 라벨(`문자 + 공백`)이 앞에 붙은 줄만 문서 순서로 모은다.
     ///
-    /// 라벨 문자는 픽스처 10종의 유일한 실물인 `-`로 한정한다. `□`·`o` 같은
+    /// 라벨 문자는 픽스처 11종의 유일한 실물인 `-`로 한정한다. `□`·`o` 같은
     /// 다른 기호는 noori 본문 문단이 **글자 그대로** 쓰고 있어(문단 머리가
     /// 아니다) 넓히면 본문이 딸려 들어온다.
     ///
@@ -301,7 +302,7 @@ final class HwpxFixtureRenderTests: XCTestCase {
     func testHwpxFixturesRenderExpectedText() async throws {
         let fixtures = try FixtureRoot.loadAllHwpxFixtures(from: #file)
         let withText = fixtures.filter { !$0.hasExpectedError && !$0.expectedVisibleText.isEmpty }
-        expect(withText.count) >= 8
+        expect(withText.count) >= 9
 
         var failures: [String] = []
         for fixture in withText {

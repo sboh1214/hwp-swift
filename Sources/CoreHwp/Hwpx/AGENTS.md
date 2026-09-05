@@ -70,10 +70,13 @@ OLE 개체 `hp:ole`은 #134에서 승격됐다), 자동 번호·새 번호·홀/
 렌더에만 보이던 격차는 범위 밖 3건(글머리표 "-" #133·차트 OLE #134·쪽 번호
 #135)이었고, HWP 쌍 렌더와 HWPX 렌더는 그 3건을 빼면 동일했다. 쪽 번호는
 #135, 차트 OLE는 #134, 글머리표는 #133에서 승격돼 남은 격차는 없다. 한글.app
-자체가 포맷에 따라 다르게 그리는 것이 하나 있다 — CharShape 취소선 견본(HWP
-밑줄 종류 raw 2 ↔
-HWPX `<hh:strikeout>`)을 .hwp는 글자 아래 단선으로, .hwpx는 글자 가운데
-취소선으로 그린다. 우리는 두 포맷 모두 HWP 쪽(아래 단선)으로 그린다 (#136).
+자체가 포맷에 따라 다르게 그리는 것이 하나 있다 — CharShape 취소선 견본(HWP는
+취소선 비트에 더해 스펙 미정의 밑줄 종류 raw 2(`HwpUnderlineType.undefined2`)를
+갖고, HWPX 재저장본은 밑줄 없음 + `<hh:strikeout>`만 적는다)을 .hwp는 글자 아래
+단선으로, .hwpx는 글자 가운데 취소선으로 그린다. 우리는 두 포맷 모두 HWP 쪽(아래
+단선)으로 그린다 (#136). 그래서 등가 투영은 밑줄 종류를 비교하되 raw 2만
+없음으로 접는다 — 진짜 '글자 위'는 raw 3 ↔ `type="TOP"`으로 같은 `.above`에
+모인다 (#149, `underline-above` 쌍).
 
 ## 쪽 번호 위치 (`hp:pageNum` → `pgnp`, #135)
 
@@ -176,7 +179,7 @@ HWP 쌍과 **바이트 동일**하고, 글머리표는 `info` `08 00 00 00 00 00
 필드는 5.1.0.0 이상에만 있고 HWP 쌍은 5.0.3.4라 배열 자체가 없으므로 **등가
 투영에서 수준 개수를 비교하면 안 된다**. 가드는 `HwpxNumberingMapperTests`
 (비트·센티널·슬롯·상한·강등)·`HwpxHwpEquivalenceTests`(정의 축과 문단 머리 축 —
-번호 정의는 10쌍 전부에서 비어 있지 않고 글머리표는 noori 1쌍뿐이다)·
+번호 정의는 11쌍 전부에서 비어 있지 않고 글머리표는 noori 1쌍뿐이다)·
 `HwpxFixtureRenderTests.testHwpxBulletHeadingsMatchHwpPairs`(선행 `- ` 줄 등식과
 noori 직접 핀)·noori HWPX manifest의 `numberingCount` 2·`bulletCount` 1이다.
 

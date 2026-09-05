@@ -160,13 +160,22 @@ extension HwpCharShapeProperty {
     }
 }
 
+/// 밑줄 종류 (표 33, bit 2~3). 2비트 필드의 네 값이 전부 케이스를 가져야
+/// 한글.app 정상 저장본이 `invalidRawValueForEnum`으로 거부되지 않는다 (#149).
 public enum HwpUnderlineType: Int, HwpPrimitive {
     /** 0: 없음 */
     case none = 0
     /** 1: 글자 아래 */
     case under = 1
-    /** 3: 글자 위 */
-    case above = 2
+    /**
+     2: 스펙(표 33)에 정의가 없는 값 — 실체 미확정이라 값만 보존한다.
+     `CharShape`·`CharShapeProperty` 픽스처의 취소선 견본이 취소선 비트와 함께
+     이 값을 갖고, 한글.app은 HWPX로 재저장할 때 밑줄 없음(`type="NONE"`)으로
+     쓴다. pyhwp는 `LINE_THROUGH`, hwplib은 `Middle`로 읽는다.
+     */
+    case undefined2 = 2
+    /** 3: 글자 위 — 한글.app이 밑줄 위치 '위쪽'으로 저장하는 값 (2026-09-05 실측) */
+    case above = 3
 }
 
 public enum HwpBorderLineType: Int, HwpPrimitive {

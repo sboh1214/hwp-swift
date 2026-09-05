@@ -194,24 +194,66 @@ extension HwpTextRunBuilder {
         return cursor < ranges.count && ranges[cursor].contains(position)
     }
 
-    /// 조판 문자열이 빈 문단의 **한 줄 높이를 재기 위한** 대역 문자열.
+    /// 글자가 하나도 없는 문단의 조판 문자열 — **빈 문단 앵커**. 문단의 첫 글자
+    /// 모양으로 빈칸 하나를 만들고 빈 줄 앵커와 같은 표식·허용 목록
+    /// (`finishEmptyLastLineAnchor`: 글꼴·`baseFontSize`만, 장식 없음)을 적용한 뒤
+    /// 같은 paraShape의 문단 스타일을 붙인다.
     ///
-    /// 문단의 첫 글자 모양으로 빈칸 하나를 조판하고 같은 paraShape의 문단
-    /// 스타일을 붙인다 — 이걸 `HwpParagraphLayout.layout`에 넣으면 줄 간격 종류
-    /// (비율·고정·최소·여백만), 강제 줄 높이 클램프, 문단 위/아래 간격이 전부
-    /// 실제 문단과 **같은 코드로** 계산된다. 산식을 다시 쓰지 않는 이유가 그것이다.
+    /// 빈 문단이 조판 문자열을 갖는 이유 (#145): 길이 0이면
+    /// `HwpBlockContentWalker`가 단위를 내지 않아 선택·복사에서 그 줄이 빠지고
+    /// (`A / 빈 문단 / B`를 복사하면 `A\n\nB`가 아니라 `A\nB`), 캐럿도 놓이지
+    /// 않는다. 빈칸 1자면 단위·조각·캐럿·히트가 무수정으로 빈 줄을 다루고, 복사는
+    /// 빈 줄 앵커와 같은 판정(`droppingEmptyLineAnchor`)으로 글자를 떼되 그 문단을
+    /// 종결하는 개행에 앵커의 문단 스타일·글꼴을 실어 서식이 RTF에 남는다.
     ///
-    /// 이 문자열은 측정에만 쓰고 어디에도 싣지 않는다 — 빈 문단의 조판 문자열은
-    /// 여전히 비어 있고, 그래서 복사·검색·낭독·페인트가 그대로다.
-    func emptyParagraphProbe(for paragraph: CoreHwp.HwpParagraph) -> NSAttributedString {
+    /// 높이 산식은 종전 측정 대역과 같다 — 이 문자열을 `HwpParagraphLayout.layout`에
+    /// 넣으면 줄 간격 종류(비율·고정·최소·여백만), 강제 줄 높이 클램프, 문단
+    /// 위/아래 간격이 실제 문단과 **같은 코드로** 계산된다. 다만 측정 셋
+    /// (`HwpParagraphMeasurer`·`HwpPaginator.layout`·`HwpPageChromeBuilder`)은
+    /// 높이만 취하고 줄 프레임은 비워 둔다 — 표 절단·다단 재분배·줄 중간 앵커가
+    /// 라인 유무로 갈리므로 페이지네이션 결과를 접기 전과 같게 두기 위해서다.
+    ///
+    /// 소비자별 가드: 복사 `droppingEmptyLineAnchor`(글자 제거)·검색
+    /// `HwpTextSearcher`(앵커 전용 단위 제외)·낭독 `accessibilityLabel`(공백만
+    /// 남으면 버림)·페인트(빈칸은 잉크가 없고 장식은 허용 목록으로 떨어짐).
+    func emptyParagraphAnchor(for paragraph: CoreHwp.HwpParagraph) -> NSAttributedString {
         let shapeId = paragraph.paraCharShape.shapeId.first ?? 0
         let shape = index.charShape(id: shapeId) ?? CoreHwp.HwpCharShape()
-        let probe = NSMutableAttributedString(
+        let anchor = NSMutableAttributedString(
             string: " ",
             attributes: attributes(for: shape, script: .korean)
         )
-        attachParagraphStyle(to: probe, paragraph: paragraph)
-        return probe
+        finishEmptyLastLineAnchor(in: anchor, emitted: true)
+        attachParagraphStyle(to: anchor, paragraph: paragraph)
+        return anchor
+    }
+
+    /// `build`의 마무리 — 문단 스타일을 붙여 돌려주되, 잘리지 않은 문단이 아무
+    /// 글자도 내지 않았으면(PARA_TEXT 없음·빈 배열·문단 끝(13)·하이픈(24)뿐인 HWPX
+    /// 빈 문단) 빈 문단 앵커로 바꾼다 (#145). 세 형태의 조판 문자열이 같아야 두
+    /// 포맷의 빈 문단이 같게 선택·복사된다. 상한으로 잘린 결과(`whole == false`,
+    /// 메모 표시 예산)는 빈 채로 둔다 — 잘린 문단이 빈 줄 하나로 보이면 안 된다.
+    func finishBuild(
+        _ output: NSMutableAttributedString,
+        paragraph: CoreHwp.HwpParagraph,
+        whole: Bool
+    ) -> NSAttributedString {
+        if output.length == 0, whole {
+            return emptyParagraphAnchor(for: paragraph)
+        }
+        attachParagraphStyle(to: output, paragraph: paragraph)
+        return output
+    }
+
+    /// 조판 문자열이 빈 문단 앵커 **하나뿐**인지 — 빈 줄 앵커(`가\n `)는 언제나
+    /// 한 줄 끝 뒤에 오므로 길이가 2 이상이라 갈린다. 측정 셋이 줄 프레임을
+    /// 비우는 술어이고, 검색이 앵커 전용 단위를 거르는 술어이며, 복사가 빈
+    /// 문단의 선택 포함 규칙을 가르는 술어다.
+    static func isEmptyParagraphAnchor(_ attributed: NSAttributedString) -> Bool {
+        attributed.length == 1
+            && attributed.attribute(
+                HwpAttributedStringKey.emptyLineAnchor, at: 0, effectiveRange: nil
+            ) != nil
     }
 
     /// 빈 줄 앵커가 유지하는 속성 — 빈 줄의 **높이**를 정하는 것만 남긴다.
@@ -223,7 +265,8 @@ extension HwpTextRunBuilder {
     ]
 
     /// 빈 줄 앵커 run을 표식하고 장식 속성을 떼어 낸다. `build`가 앵커를 실제로
-    /// 방출했을 때만 부른다 — 앵커는 언제나 문단의 **마지막** 문자다.
+    /// 방출했을 때만 부른다 — 앵커는 언제나 문단의 **마지막** 문자다. 빈 문단
+    /// 앵커(`emptyParagraphAnchor`)도 같은 표식·허용 목록을 쓴다.
     ///
     /// **글자만 보고 판정하지 않는다.** 앵커는 빈칸이라 `가 + LF + 빈칸 + CR`가
     /// 내는 **사용자 입력 빈칸**과 조판 문자열이 완전히 같다(둘 다 `가 + LF +
@@ -278,7 +321,7 @@ extension HwpTextRunBuilder {
     /// 접기 전과 자릿수까지 같은 값을 낸다.
     ///
     /// 다만 **장식은 후행 공백을 포함한 run 폭에 그려진다** — 그 구멍은
-    /// `stripDecorationsFromEmptyLastLineAnchor`가 앵커 run의 속성을 허용
+    /// `finishEmptyLastLineAnchor`가 앵커 run의 속성을 허용
     /// 목록으로 깎아 막는다.
     func emittedText(
         of hwpChar: CoreHwp.HwpChar,

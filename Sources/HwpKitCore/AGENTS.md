@@ -293,7 +293,8 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   금지)에 막힌다.
 - 복사에서 빠지는 것은 **둘**이다: U+FFFC 마커 run
   (`strippingControlMarkerRuns`)과 조판 전용 빈 줄 앵커
-  (`droppingEmptyLineAnchor`, #137). 마커 제거는 마커 **사이** 구간을 새 버퍼에
+  (`droppingEmptyLineAnchor`, #137 — 빈 문단 앵커(#145)도 같은 표식이라 같은
+  자리에서 떨어진다). 마커 제거는 마커 **사이** 구간을 새 버퍼에
   옮겨 담아 글자마다 한 번만 복사한다 — 마커를 가로지르던 속성 범위(감싼
   하이퍼링크)는 양옆이 같은 값으로 이어 붙어 `longestEffectiveRange`에서 하나로
   보이므로 범위 재계산이 없다. 앵커 제거는 조각의 **마지막 글자 하나**만 본다
@@ -326,6 +327,27 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
 - `newlineAttributes`의 `tail.length > 0` 가드는 **방어로만 남는다** —
   `fragments(for:)`가 빈 조각을 내지 않으므로(`upper > lower`) 공개 경로로는
   도달하지 않는다. 그 자리를 겨냥한 테스트를 새로 쓰지 말 것.
+- **빈 문단은 빈 문단 앵커로 단위가 된다** (#145). 글자가 없는 문단의 조판
+  문자열은 빈 줄 앵커와 같은 표식이 붙은 빈칸 1자다
+  (`HwpTextRunBuilder.emptyParagraphAnchor`) — 워커·조각·캐럿·히트는 무수정으로
+  빈 줄을 다루고, 복사는 `droppingEmptyLineAnchor`가 글자를 떼되 기여가 비면
+  #124 폴백이 앵커 run(글꼴·문단 스타일)을 꼬리로 넘겨 그 문단을 종결하는
+  개행이 서식을 입는다. 선택 포함 규칙만 다르다: 빈 문단은 캐럿 자리가 하나라
+  선택이 **닿기만 하면** 싣는다(`fragments`의 `isEmptyParagraph` 갈래) — 'A에서
+  빈 줄까지'는 `A\n`, '빈 줄에서 B까지'는 `\nB`, 빈 줄만 고르면 빈 결과다.
+  검색은 앵커 전용 단위를 거르고(`HwpTextSearcher`), 낭독은 공백 라벨 필터로
+  뺀다 — 그래서 앵커는 반드시 **빈칸(U+0020)**이어야 한다. 측정 셋
+  (`HwpParagraphMeasurer`·`HwpPaginator.layout`·`HwpPageChromeBuilder`)은 앵커
+  문단의 높이만 취하고 줄 프레임은 비워 페이지네이션을 접기 전과 같게 둔다.
+- **조각 접합의 identity는 위치 열쇠다** (#145). `paraId`는 한글.app 저장본에서
+  0·0x80000000이 되풀이돼(noori 65문단 중 고유 값 2개) 문단을 가르지 못하고,
+  종전의 "같은 paraId면 잇는다" 갈래는 서로 다른 본문 문단·같은 셀의 문단들을
+  한 줄로 붙였다(noori 21블록 → 12줄). 본문 블록은 `HwpPaginator.appendBlock`이
+  `HwpBlockSource.sectionIndex`/`paragraphIndex`를 채우고 `HwpSelectableText`가
+  `HwpTextUnit.paragraphKey`로 싣는다 — 열/쪽 조각·다단 재분배 블록이 같은
+  열쇠를 물려받아 표식 없이도 이어진다. 열쇠가 없는 컨테이너 문단은 '이어짐'
+  표식이 있고 paraId가 다르지 않을 때만 잇는다 (#7). `paraId`는 반복 머리행
+  클론 dedup의 출처 식별에만 남는다 — 그쪽은 비유일 id 오탐을 안고 간다.
 - **평문 쪽 회귀 그물은 #118이 새로 깔았다.** 공통 순회로 접기 전 main에는
   복사 경로의 반복 제목 행 dedup(#8) 테스트가 **한 건도 없었고**
   (`repeatedTableHeaderClone`을 보는 스위트가 검색·블록 동등성뿐이었다)
@@ -599,7 +621,7 @@ paraShape와 같은 값**이어야 한다.
   **`paraShape(for:)`의 nil은 표가 통째로 빌 때만 나온다** — id는
   `HwpIndex.makeIndex`가 배열 오프셋으로 매긴 조밀한 값이라 (`paraShapeArray`에
   id 필드가 없다) 표가 비어 있지 않으면 id 0이 반드시 있고 뒤 폴백이 항상 걸린다.
-  즉 이 축은 정상 문서가 아니라 **손상·조작 DocInfo**다. 픽스처 33종 중 0개라
+  즉 이 축은 정상 문서가 아니라 **손상·조작 DocInfo**다. 픽스처 34종 중 0개라
   합성 가드로만 잡힌다:
   `HwpMeasurementInputContractTests.testEmptyParaShapeTableStillAppliesDefaultParagraphStyle`
   (부착을 되돌리면 줄 피치가 16.0 → 12.44pt로 떨어져 빨개진다). `HwpPaginator.layout`도

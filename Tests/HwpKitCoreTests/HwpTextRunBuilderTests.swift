@@ -12,11 +12,14 @@ import XCTest
             text.utf16.map { CoreHwp.HwpChar(type: .char, value: $0) }
         }
 
-        func testEmptyParagraphReturnsEmptyAttributedString() throws {
+        func testEmptyParagraphEmitsAnEmptyParagraphAnchor() throws {
+            // 글자가 없는 문단은 빈 문단 앵커(표식 붙은 빈칸 1자)를 낸다 (#145) —
+            // 길이 0이면 선택·복사 단위에서 빠져 빈 줄이 복사에서 사라진다.
             let paragraph = paragraph(text: "", runs: [(0, 0)])
             let result = builder(shapes: [0: try charShape()]).build(paragraph: paragraph)
 
-            expect(result.length) == 0
+            expect(result.string) == " "
+            expect(HwpTextRunBuilder.isEmptyParagraphAnchor(result)) == true
         }
 
         func testBuildCapsOutputToMaxCharacters() throws {
@@ -405,7 +408,7 @@ import XCTest
         func decoratedShapes() throws -> [UInt32: CoreHwp.HwpCharShape] {
             [
                 0: try charShape(),
-                // 표 33 property: bit 0 이탤릭 / bit 1 진하게 / bits 2-4 밑줄 종류
+                // 표 33 property: bit 0 이탤릭 / bit 1 진하게 / bits 2-3 밑줄 종류(bits 4-7 밑줄 모양)
                 1: try charShape(property: 0b111, faceScaleX: Array(repeating: 90, count: 7)),
                 2: try charShape(property: 0b10, faceScaleX: Array(repeating: 120, count: 7)),
             ]
