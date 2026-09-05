@@ -103,7 +103,7 @@ final class HwpxHwpEquivalenceTests: XCTestCase {
             )
             comparedCount += 1
         }
-        expect(comparedCount) >= 10
+        expect(comparedCount) >= 11
     }
 }
 
@@ -135,7 +135,7 @@ struct DocumentEquivalenceProjection {
 
     /// 개체 앵커 오프셋 — 부호 있는 좌표라 두 포맷의 인코딩이 갈린다
     /// (HWPX는 UInt32 비트 패턴, 바이너리는 그대로 HWPUNIT). 이 축이 없어서
-    /// noori의 표가 (-140, -140) → (0, 0)으로 밀린 회귀가 10쌍 등가 비교를
+    /// noori의 표가 (-140, -140) → (0, 0)으로 밀린 회귀가 11쌍 등가 비교를
     /// 통과했다.
     struct AnchorOffset: Equatable {
         let vertical: Int32
@@ -223,10 +223,10 @@ struct DocumentEquivalenceProjection {
     let oleObjects: [OleObject]
     let pageNumberPositions: [PageNumberPosition]
     /// 문단 번호 정의 — HWPX `hh:numbering`이 승격돼야 HWP 쌍과 같은 배열이
-    /// 선다 (#133). 이 축은 #134·#135와 달리 **10쌍 전부에서 비어 있지 않다**
-    /// (HWPX 10종 모두 `hh:numberings`를 갖고 HWP 쌍도 정의 1-2종을 싣는다).
+    /// 선다 (#133). 이 축은 #134·#135와 달리 **11쌍 전부에서 비어 있지 않다**
+    /// (HWPX 11종 모두 `hh:numberings`를 갖고 HWP 쌍도 정의 1-2종을 싣는다).
     let numberingDefinitions: [NumberingDefinition]
-    /// 글머리표 정의 — noori 1쌍만 값이 있고 나머지 9쌍은 빈 배열 등식이다.
+    /// 글머리표 정의 — noori 1쌍만 값이 있고 나머지 10쌍은 빈 배열 등식이다.
     let bulletDefinitions: [BulletDefinition]
     /// 문단 머리(표 44) — 이 승격 전에도 두 포맷이 같았으므로 이 축은 격차를
     /// 잡지 못한다. 정의 축이 참조를 따라가지 않으므로 참조 배선

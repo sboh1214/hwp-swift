@@ -19,7 +19,7 @@ import XCTest
         /// 측정이 부착본을 그대로 framesetting하게 된 뒤로 이 축은 이론이 아니다 —
         /// 부착이 `paraShape(for:)`(nil 가능)로 돌아가면 스타일이 통째로 생략되고,
         /// 측정은 강제 줄 높이를 잃어 CT 자연 줄 높이로 떨어진다. 저장소 픽스처
-        /// 33종 중 이 경로를 타는 것이 **0개**라 합성으로만 잡을 수 있다
+        /// 34종 중 이 경로를 타는 것이 **0개**라 합성으로만 잡을 수 있다
         /// (되돌리면 줄 피치가 16.0 → 12.44pt로 떨어져 빨개진다 — 2026-08-22 실측).
         func testEmptyParaShapeTableStillAppliesDefaultParagraphStyle() throws {
             let index = Self.emptyIndex()

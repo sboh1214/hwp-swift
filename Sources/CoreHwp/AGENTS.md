@@ -165,7 +165,7 @@ HWPX(OWPML, `.hwpx`)는 **변환 파싱**으로 읽습니다 — `HwpFile`의 pu
 라벨 등)는 실제 4CC를 실은 `.notImplemented`와 합성 tagId(0)의
 `unknownRecords`로 강등되어 `parseDiagnostics()`에 보고됩니다. 같은 문서의
 HWP↔HWPX 파싱 등가는 `Tests/CoreHwpTests/FixtureHarness/Hwpx/`의
-`HwpxHwpEquivalenceTests`가 실물 변환 쌍 10종으로 고정합니다.
+`HwpxHwpEquivalenceTests`가 실물 변환 쌍 11종으로 고정합니다.
 
 `HwpReadLimits`는 OLE directory의 stream size를 기준으로 압축 입력과 비압축
 stream을 읽기 전에 제한하고, 압축 해제 결과가 한도를 넘으면

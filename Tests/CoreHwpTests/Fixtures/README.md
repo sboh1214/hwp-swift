@@ -133,6 +133,11 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   OLE shape component와 `BIN0001.OLE` BinData stream의 id/raw payload 연결을
   manifest와 실제 fixture 회귀 테스트로 검증.
 - `multi-section`: Hancom Office HWP for macOS 12.30.0 build 6382로 생성.
+- `underline-above`: `plain-text-minimal` 사본에 글자 모양 › 확장 › 밑줄 위치
+  '위쪽'을 적용해 Hancom Office HWP for macOS 12.30.0 build 6446으로 2026-09-05에
+  저장. 한글.app이 '글자 위' 밑줄을 밑줄 종류 raw **3**으로 쓴다는 실측 근거이며
+  `HwpUnderlineType.above`(raw 3) 파싱과 뷰어 옵션 열기를 검증 (#149). HWPX 쌍은
+  `HwpxFixtures/underline-above`.
 - `track-changes`: WordprocessingML tracked changes DOCX를 Hancom Office HWP for macOS
   12.30.0 build 6382에서 열고 HWP로 저장. FileHeader, 본문/preview,
   DocumentProperties, DocInfo id mappings를 manifest로 검증.

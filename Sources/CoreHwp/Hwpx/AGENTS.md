@@ -179,7 +179,7 @@ HWP 쌍과 **바이트 동일**하고, 글머리표는 `info` `08 00 00 00 00 00
 필드는 5.1.0.0 이상에만 있고 HWP 쌍은 5.0.3.4라 배열 자체가 없으므로 **등가
 투영에서 수준 개수를 비교하면 안 된다**. 가드는 `HwpxNumberingMapperTests`
 (비트·센티널·슬롯·상한·강등)·`HwpxHwpEquivalenceTests`(정의 축과 문단 머리 축 —
-번호 정의는 10쌍 전부에서 비어 있지 않고 글머리표는 noori 1쌍뿐이다)·
+번호 정의는 11쌍 전부에서 비어 있지 않고 글머리표는 noori 1쌍뿐이다)·
 `HwpxFixtureRenderTests.testHwpxBulletHeadingsMatchHwpPairs`(선행 `- ` 줄 등식과
 noori 직접 핀)·noori HWPX manifest의 `numberingCount` 2·`bulletCount` 1이다.
 

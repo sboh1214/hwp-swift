@@ -599,7 +599,7 @@ paraShape와 같은 값**이어야 한다.
   **`paraShape(for:)`의 nil은 표가 통째로 빌 때만 나온다** — id는
   `HwpIndex.makeIndex`가 배열 오프셋으로 매긴 조밀한 값이라 (`paraShapeArray`에
   id 필드가 없다) 표가 비어 있지 않으면 id 0이 반드시 있고 뒤 폴백이 항상 걸린다.
-  즉 이 축은 정상 문서가 아니라 **손상·조작 DocInfo**다. 픽스처 33종 중 0개라
+  즉 이 축은 정상 문서가 아니라 **손상·조작 DocInfo**다. 픽스처 34종 중 0개라
   합성 가드로만 잡힌다:
   `HwpMeasurementInputContractTests.testEmptyParaShapeTableStillAppliesDefaultParagraphStyle`
   (부착을 되돌리면 줄 피치가 16.0 → 12.44pt로 떨어져 빨개진다). `HwpPaginator.layout`도
