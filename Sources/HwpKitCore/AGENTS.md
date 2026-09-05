@@ -339,17 +339,25 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
   비면 원본 조각을 꼬리로 넘긴다 — 마커 run이 문단 스타일·폰트를 그대로 들고
   있다. 가드 `testNewlineAfterMarkerOnlyParagraphCarriesThatParagraphStyle`은
   폴백을 지우면 3건이 빨개진다 (무력화 실험 확인).
-- `newlineAttributes`의 `tail.length > 0` 가드는 **방어로만 남는다** —
-  `fragments(for:)`가 빈 조각을 내지 않으므로(`upper > lower`) 공개 경로로는
-  도달하지 않는다. 그 자리를 겨냥한 테스트를 새로 쓰지 말 것.
+- **조각은 비어 있을 수 있다** (PR 리뷰 P2). 선택 끝점이 단위 시작이거나 시작점이
+  단위 끝이면 글자 0개의 조각을 싣는다 — 문단 부호가 조판 문자열에 없으므로(#137)
+  선택이 지난 문단 경계는 조각 **사이** 개행으로만 남고, 그 개행은 양옆 조각이
+  있어야 나온다. 종전의 배타 규칙(끝점이 단위 시작이면 제외)은 A 시작→B 시작을
+  `A`로, 문단 부호만 고른 선택을 빈 문자열로 만들었다. 한글.app 실측은 `A\r\n`·
+  `\r\n`·(A 끝→B 중간) `\r\nB…`다 — `HwpParagraphBoundaryCopyTests`. 빈 조각은
+  dedup의 출처로 세지 않고, 그 개행의 속성은 조각이 아니라 **단위의 조판 문자열**
+  (`Fragment.unitText`)에서 온다. 그래서 `newlineAttributes`의 `tail.length > 0`
+  가드는 여전히 방어로만 남는다 — 단위 문자열은 비지 않는다.
 - **빈 문단은 빈 문단 앵커로 단위가 된다** (#145). 글자가 없는 문단의 조판
   문자열은 빈 줄 앵커와 같은 표식이 붙은 빈칸 1자다
   (`HwpTextRunBuilder.emptyParagraphAnchor`) — 워커·조각·캐럿·히트는 무수정으로
   빈 줄을 다루고, 복사는 `droppingEmptyLineAnchor`가 글자를 떼되 기여가 비면
   #124 폴백이 앵커 run(글꼴·문단 스타일)을 꼬리로 넘겨 그 문단을 종결하는
-  개행이 서식을 입는다. 선택 포함 규칙만 다르다: 빈 문단은 캐럿 자리가 하나라
-  선택이 **닿기만 하면** 싣는다(`fragments`의 `isEmptyParagraph` 갈래) — 'A에서
-  빈 줄까지'는 `A\n`, '빈 줄에서 B까지'는 `\nB`, 빈 줄만 고르면 빈 결과다.
+  개행이 서식을 입는다. 빈 문단은 캐럿 자리가 하나라 선택이 **닿기만 하면**
+  통째로 싣는다(`fragments`의 `isEmptyParagraph` 갈래) — 'A에서 빈 줄까지'는
+  `A\n`, '빈 줄에서 B까지'는 `\nB`, 빈 줄만 고르면 빈 결과다. 비어 있지 않은
+  단위도 닿으면 빈 조각으로 실리므로(위 항목) 'A 시작에서 빈 줄 뒤 B 시작까지'는
+  부호 둘을 지나 `A\n\n`이다.
   검색은 앵커 전용 단위를 거르고(`HwpTextSearcher`), 낭독은 공백 라벨 필터로
   뺀다 — 그래서 앵커는 반드시 **빈칸(U+0020)**이어야 한다. 측정 셋
   (`HwpParagraphMeasurer`·`HwpPaginator.layout`·`HwpPageChromeBuilder`)은 앵커
