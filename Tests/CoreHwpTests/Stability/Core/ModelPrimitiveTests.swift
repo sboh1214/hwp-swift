@@ -257,7 +257,9 @@ final class ModelPrimitiveTests: XCTestCase {
     }
 
     func testCharShapePropertyInvalidRawValuesThrow() {
-        for value in [UInt32(3 << 2), UInt32(7 << 8), UInt32(3 << 11), UInt32(7 << 21)] {
+        // 밑줄 종류(bit 2~3)는 2비트 네 값이 전부 유효하다 (#149) — 양성 대조군은
+        // `HwpUnderlineTypeTests`가 못박는다. 외곽선 7·그림자 3·강조점 7은 여전히 빈자리다.
+        for value in [UInt32(7 << 8), UInt32(3 << 11), UInt32(7 << 21)] {
             expect {
                 _ = try HwpCharShapeProperty.load(value)
             }.to(throwError { error in

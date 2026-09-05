@@ -109,16 +109,17 @@ final class HwpxHwpEquivalenceTests: XCTestCase {
 
 /// 포맷 무관 문서 투영 — `HwpFile`만으로 만든다.
 struct DocumentEquivalenceProjection {
-    /// 밑줄 종류는 비교하지 않는다 — HWP5 바이너리는 취소선 견본의 밑줄
-    /// 종류 비트가 2로 읽히는 반면(리포 해석은 `.above`) 한글.app의 HWPX
-    /// 저장본은 같은 모양을 `strikeout`으로 적는다 (CharShape 픽스처 실측).
-    /// 교차 포맷 표현이 갈리는 필드라 실파일 검증 항목으로 남긴다
-    /// (`Sources/CoreHwp/Hwpx/AGENTS.md`).
+    /// 밑줄 종류는 스펙 미정의 값 2(`undefined2`)만 없음으로 접어 비교한다 —
+    /// 취소선 견본(CharShape·CharShapeProperty [18])이 HWP5에서는 그 값을 취소선
+    /// 비트와 함께 갖는데 한글.app의 HWPX 저장본은 밑줄 없음 + `strikeout`으로
+    /// 적기 때문이다 (#136). 나머지 값(없음·글자 아래·글자 위 = 3)은 두 포맷이
+    /// 같은 케이스로 모여야 한다 (#149 — `underline-above` 쌍).
     struct ResolvedRun: Equatable {
         let baseSize: Int32
         let isBold: Bool
         let isItalic: Bool
         let faceColor: HwpColor
+        let underlineType: HwpUnderlineType
     }
 
     struct PageGeometry: Equatable {
@@ -401,11 +402,13 @@ struct DocumentEquivalenceProjection {
                 else {
                     continue
                 }
+                let underlineType = shape.property.underlineType
                 let run = ResolvedRun(
                     baseSize: shape.baseSize,
                     isBold: shape.property.isBold,
                     isItalic: shape.property.isItalic,
-                    faceColor: shape.faceColor
+                    faceColor: shape.faceColor,
+                    underlineType: underlineType == .undefined2 ? .none : underlineType
                 )
                 if runs.last != run {
                     runs.append(run)

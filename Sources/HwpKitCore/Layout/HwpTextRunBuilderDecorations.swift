@@ -12,9 +12,10 @@ extension HwpTextRunBuilder {
         shape: CoreHwp.HwpCharShape,
         size: CGFloat
     ) {
-        // 밑줄 종류 1(글자 아래)만 밑줄로 그린다. 종류 2(글자 위)는 취소선과
-        // 함께 저장되는 조합이고 한글이 밑줄을 그리지 않는다 (CharShape 실물
-        // 취소선 색 행 — 시안 취소선 단선만 표시).
+        // 밑줄 종류 1(글자 아래)만 밑줄로 그린다. 3(글자 위)은 선 위치 실측
+        // 전이라 아직 그리지 않는다 (#149 — #136과 함께). 2(`undefined2`)는
+        // 스펙 미정의 값이라 보존만 한다: CharShape 실물 취소선 색 행이 취소선
+        // 비트와 함께 그 값을 갖고, 한글은 시안 취소선 단선만 표시한다.
         if shape.property.underlineType == .under {
             // CT 밑줄은 두껍다 (실물 헤어라인 대비 3-4배) — 렌더러가
             // 직접 0.4pt 헤어라인으로 그린다 (전용 키)

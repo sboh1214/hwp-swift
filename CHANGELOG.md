@@ -24,6 +24,22 @@
   (`project.yml`의 `dev.sboh.hwpx` 선언, `DropOpenSupport.swift`,
   `ContentView.swift`).
 
+### Breaking Changes
+
+- **`HwpUnderlineType`의 raw 값을 HWP 5.0 스펙(표 33)에 맞췄습니다** (#149).
+  한글.app은 글자 모양 › 밑줄 위치 '위쪽'을 밑줄 종류 **3**으로 저장하는데
+  종전 enum은 `above = 2`뿐이라 그런 문서는 DocInfo 파싱이
+  `HwpError.invalidRawValueForEnum`으로 끝나 문서 전체가 열리지 않았고, 뷰어
+  옵션(`HwpLoadOptions.viewer`)의 부분 복구도 DocInfo에는 미치지 않아 살아나지
+  않았습니다. 이제 `above`의 raw 값이 3이고, 스펙에 정의가 없는 2는 새 케이스
+  `undefined2`로 값만 보존합니다 (`CharShape` 픽스처의 취소선 견본이 이 값을
+  취소선 비트와 함께 갖고, 한글.app은 HWPX로 재저장할 때 밑줄 없음으로
+  씁니다). HWPX `<hh:underline type="TOP"/>`은 계속 `.above`로 매핑되며 합성
+  `rawValue`의 bit 2~3도 스펙 값 3이 됩니다. `above.rawValue`를 숫자 2로
+  대조하던 코드와 `default` 없이 모든 케이스를 나열한 `switch`는 수정이
+  필요합니다. 렌더는 종전대로 글자 아래 밑줄만 그립니다 — 글자 위 밑줄의 선
+  위치는 취소선(#136)과 함께 실측한 뒤 다룹니다.
+
 ### Changed
 
 - **문단 끝 코드는 조판 문자열에 남지 않습니다** (#137). 모든 문단의 WCHAR

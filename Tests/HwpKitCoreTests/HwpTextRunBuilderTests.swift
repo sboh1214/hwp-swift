@@ -405,7 +405,7 @@ import XCTest
         func decoratedShapes() throws -> [UInt32: CoreHwp.HwpCharShape] {
             [
                 0: try charShape(),
-                // 표 33 property: bit 0 이탤릭 / bit 1 진하게 / bits 2-4 밑줄 종류
+                // 표 33 property: bit 0 이탤릭 / bit 1 진하게 / bits 2-3 밑줄 종류(bits 4-7 밑줄 모양)
                 1: try charShape(property: 0b111, faceScaleX: Array(repeating: 90, count: 7)),
                 2: try charShape(property: 0b10, faceScaleX: Array(repeating: 120, count: 7)),
             ]
