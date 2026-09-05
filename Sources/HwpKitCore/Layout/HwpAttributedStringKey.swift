@@ -59,8 +59,10 @@ public enum HwpAttributedStringKey {
     /// 하이퍼링크(%hlk) 필드가 감싸는 텍스트의 URL — 히트/페인트가 블록 전체가
     /// 아니라 이 속성 범위의 글리프 rect로 링크를 스코프한다 (#2).
     public static let hyperlink = NSAttributedString.Key("hwp.hyperlink")
-    /// 한 줄 끝(10)으로 끝난 문단의 마지막 빈 줄을 살리는 **조판 전용 앵커**
-    /// (`HwpTextRunBuilder.emittedText`). 문자 자체는 빈칸이라 사용자가 입력한
-    /// 공백과 구별되지 않으므로, 장식 제거·복사 제외는 이 표식으로만 판정한다.
+    /// **조판 전용 앵커** 표식 — 한 줄 끝(10)으로 끝난 문단의 마지막 빈 줄을
+    /// 살리는 빈칸(`HwpTextRunBuilder.emittedText`, #137)과, 글자가 없는 문단의
+    /// 조판 문자열인 빈 문단 앵커(`emptyParagraphAnchor`, #145)가 같은 표식을 쓴다.
+    /// 문자 자체는 빈칸이라 사용자가 입력한 공백과 구별되지 않으므로, 장식
+    /// 제거·복사 제외·검색 제외는 이 표식으로만 판정한다.
     public static let emptyLineAnchor = NSAttributedString.Key("hwp.emptyLineAnchor")
 }

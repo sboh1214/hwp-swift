@@ -306,9 +306,13 @@ final class FixtureFootnoteOverlapTests: XCTestCase {
 
     /// 빈 **텍스트** 블록만 잉크가 없다 (#95 리뷰 반영). 표·그림·도형·글상자는
     /// 내용이 payload에 살아 `attributedString`이 nil이므로, 텍스트 유무로 거르면
-    /// 최하단이 표인 쪽의 겹침이 통째로 예산에서 빠진다.
+    /// 최하단이 표인 쪽의 겹침이 통째로 예산에서 빠진다. 빈 문단 앵커(#145)는
+    /// 조판 문자열이 빈칸 1자라 길이로는 못 거른다 — 표식으로 뺀다.
     private static func hasInk(_ block: AnyHwpBlock) -> Bool {
         guard block.kind == .text else { return true }
-        return (block.attributedString?.length ?? 0) > 0
+        guard let attributed = block.attributedString, attributed.length > 0 else {
+            return false
+        }
+        return !HwpTextRunBuilder.isEmptyParagraphAnchor(attributed)
     }
 }

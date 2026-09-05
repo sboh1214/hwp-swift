@@ -12,11 +12,14 @@ import XCTest
             text.utf16.map { CoreHwp.HwpChar(type: .char, value: $0) }
         }
 
-        func testEmptyParagraphReturnsEmptyAttributedString() throws {
+        func testEmptyParagraphEmitsAnEmptyParagraphAnchor() throws {
+            // 글자가 없는 문단은 빈 문단 앵커(표식 붙은 빈칸 1자)를 낸다 (#145) —
+            // 길이 0이면 선택·복사 단위에서 빠져 빈 줄이 복사에서 사라진다.
             let paragraph = paragraph(text: "", runs: [(0, 0)])
             let result = builder(shapes: [0: try charShape()]).build(paragraph: paragraph)
 
-            expect(result.length) == 0
+            expect(result.string) == " "
+            expect(HwpTextRunBuilder.isEmptyParagraphAnchor(result)) == true
         }
 
         func testBuildCapsOutputToMaxCharacters() throws {

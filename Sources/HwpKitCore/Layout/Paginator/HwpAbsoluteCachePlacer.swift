@@ -214,7 +214,11 @@ struct HwpAbsoluteCachePlacer {
     ) -> Bool {
         let maxCacheHeight = run.map { max(0, $0.lineHeight) }.max() ?? 0
         let cacheHeightPoints = HwpUnits.points(fromHwpUnit: maxCacheHeight)
-        guard cacheHeightPoints > 0, attributedString.length > 0 else { return false }
+        // 빈 문단 앵커(#145)는 stale 판정에서 뺀다 — 종전(길이 0)과 같은 배치를
+        // 유지하기 위해서다. 앵커 글꼴 크기 대 캐시 높이는 실물 높이 근거가 아니다.
+        guard cacheHeightPoints > 0, attributedString.length > 0,
+              !HwpTextRunBuilder.isEmptyParagraphAnchor(attributedString)
+        else { return false }
         var maxFontSize: CGFloat = 0
         attributedString.enumerateAttribute(
             kCTFontAttributeName as NSAttributedString.Key,

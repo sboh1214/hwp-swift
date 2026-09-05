@@ -184,13 +184,18 @@ final class HwpSelectionGeometryTests: XCTestCase {
     private func sourcedBlock(
         _ attributed: NSAttributedString,
         frame: CGRect,
-        paragraphId: UInt32
+        paragraphId: UInt32,
+        paragraphKey: HwpParagraphKey? = nil
     ) -> AnyHwpBlock {
         AnyHwpBlock(
             frame: frame,
             kind: .text,
             attributedString: attributed,
-            source: HwpBlockSource(paragraphId: paragraphId)
+            source: HwpBlockSource(
+                paragraphId: paragraphId,
+                sectionIndex: paragraphKey?.sectionIndex,
+                paragraphIndex: paragraphKey?.paragraphIndex
+            )
         )
     }
 
@@ -266,7 +271,7 @@ final class HwpSelectionGeometryTests: XCTestCase {
     }
 
     func testPlainTextJoinsSameParagraphAcrossPagesWithoutNewline() {
-        // 같은 paraId의 조각은 쪽 경계를 건너도 개행 없이 이어진다 (#9).
+        // 같은 위치 열쇠의 조각은 쪽 경계를 건너도 개행 없이 이어진다 (#9, #145).
         let first = NSAttributedString(
             string: "이어지는",
             attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
@@ -276,9 +281,10 @@ final class HwpSelectionGeometryTests: XCTestCase {
             attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
         )
         let row = CGRect(x: 50, y: 100, width: 200, height: 20)
+        let key = HwpParagraphKey(sectionIndex: 0, paragraphIndex: 3)
         let document = makeDocument(pages: [
-            [sourcedBlock(first, frame: row, paragraphId: 5)],
-            [sourcedBlock(second, frame: row, paragraphId: 5)],
+            [sourcedBlock(first, frame: row, paragraphId: 5, paragraphKey: key)],
+            [sourcedBlock(second, frame: row, paragraphId: 5, paragraphKey: key)],
         ])
         let geometry = HwpSelectionGeometry(document: document)
         guard let selection = geometry.documentSelection() else {
@@ -286,6 +292,32 @@ final class HwpSelectionGeometryTests: XCTestCase {
         }
 
         expect(geometry.plainText(for: selection)) == "이어지는문단"
+    }
+
+    func testSameParagraphIdAloneNoLongerJoinsParagraphs() {
+        // paraId는 한글.app 저장본에서 문단마다 고유하지 않다 (noori 65문단 중
+        // 고유 값 2개) — 같은 paraId만으로 이으면 서로 다른 문단이 한 줄로 붙는다
+        // (#145). 열쇠도 표식도 없으면 개행을 유지한다.
+        let first = NSAttributedString(
+            string: "첫 문단",
+            attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
+        )
+        let second = NSAttributedString(
+            string: "둘째 문단",
+            attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
+        )
+        let row = CGRect(x: 50, y: 100, width: 200, height: 20)
+        let below = CGRect(x: 50, y: 130, width: 200, height: 20)
+        let document = makeDocument(pages: [[
+            sourcedBlock(first, frame: row, paragraphId: 0),
+            sourcedBlock(second, frame: below, paragraphId: 0),
+        ]])
+        let geometry = HwpSelectionGeometry(document: document)
+        guard let selection = geometry.documentSelection() else {
+            return fail("expected selection")
+        }
+
+        expect(geometry.plainText(for: selection)) == "첫 문단\n둘째 문단"
     }
 
     func testContinuationMarkerJoinsWhenParagraphIdentityUnknown() {

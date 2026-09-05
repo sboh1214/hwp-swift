@@ -357,3 +357,27 @@ public extension HwpLaidOutParagraph {
         return found
     }
 }
+
+/// 문단의 **위치 열쇠** — (구역 서수, 구역 안 문단 서수). 조판이 본문 문단 블록에
+/// 싣고(`HwpPaginator.appendBlock`) 복사(`HwpSelectionGeometry.joinsWithPrevious`)가
+/// 열/쪽에 걸친 같은 문단의 조각을 잇는 identity로 쓴다. `paraId`는 한글.app
+/// 저장본에서 0·0x80000000이 되풀이돼(noori 65문단 중 고유 값 2개) 문단을 가르지
+/// 못한다 (#145).
+public struct HwpParagraphKey: Hashable, Sendable {
+    public let sectionIndex: Int
+    public let paragraphIndex: Int
+
+    public init(sectionIndex: Int, paragraphIndex: Int) {
+        self.sectionIndex = sectionIndex
+        self.paragraphIndex = paragraphIndex
+    }
+}
+
+public extension HwpBlockSource {
+    /// 구역·문단 서수가 모두 있을 때의 위치 열쇠 — 본문 문단 블록은 조판이
+    /// 채우고, 개체 블록·손으로 만든 블록은 nil이다.
+    var paragraphKey: HwpParagraphKey? {
+        guard let sectionIndex, let paragraphIndex else { return nil }
+        return HwpParagraphKey(sectionIndex: sectionIndex, paragraphIndex: paragraphIndex)
+    }
+}

@@ -1217,18 +1217,16 @@ private extension HwpPaginator {
         attributedString: NSAttributedString
     ) async throws -> HwpParagraphFrame {
         await yieldPeriodically()
-        // 빈 문단의 한 줄 하한은 `HwpParagraphMeasurer`와 같은 규약이다 (#137) —
-        // 라인 캐시가 유효하면 `height(for:fallback:)`이 캐시 높이를 쓰므로 이
-        // 값은 캐시가 없거나 무효일 때만 쓰인다.
-        let measured = attributedString.length == 0
-            ? textRunBuilder().emptyParagraphProbe(for: paragraph)
-            : attributedString
+        // 빈 문단의 한 줄 높이는 `HwpParagraphMeasurer`와 같은 규약이다 (#137) —
+        // 조판 문자열이 빈 문단 앵커(#145)라 `layout`이 실물 높이를 내고, 줄
+        // 프레임만 비운다. 라인 캐시가 유효하면 `height(for:fallback:)`이 캐시
+        // 높이를 쓰므로 이 값은 캐시가 없거나 무효일 때만 쓰인다.
         let frame = HwpParagraphLayout().layout(
-            attributedString: measured,
+            attributedString: attributedString,
             paraShape: index.paraShapeOrDefault(for: paragraph),
             columnWidth: currentColumnFrame.width
         )
-        guard attributedString.length == 0 else { return frame }
+        guard HwpTextRunBuilder.isEmptyParagraphAnchor(attributedString) else { return frame }
         return HwpParagraphFrame(totalHeight: frame.totalHeight, lines: [])
     }
 
@@ -1296,7 +1294,15 @@ private extension HwpPaginator {
             kind: .text,
             attributedString: immutable,
             hyperlinkURL: hyperlinkURL,
-            source: HwpBlockSource(paragraphId: paragraphId)
+            // 위치 열쇠(구역·문단 서수)는 이 시점의 문단 커서다 — 조각·재시도·
+            // 다단 재분배 모두 `advanceParagraph()` 전에 여기를 지난다. 복사가
+            // 열/쪽에 걸친 같은 문단을 잇는 identity로 쓴다 (`paraId`는 한글.app
+            // 저장본에서 0·0x80000000이 되풀이돼 문단을 가르지 못한다, #145).
+            source: HwpBlockSource(
+                paragraphId: paragraphId,
+                sectionIndex: nextSectionIndex,
+                paragraphIndex: nextParagraphIndex
+            )
         ))
         bandTextBlocks.append((currentBlocks.count - 1, lines))
         // 줄 중간 앵커 기준은 라인 정보가 온전한 (분할되지 않은) 문단 블록만.

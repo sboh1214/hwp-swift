@@ -209,8 +209,9 @@ final class HwpxFixtureRenderTests: XCTestCase {
     /// 통과하므로 HWPX 쪽에 직접 핀을 함께 둔다. (#137로 문단 끝 코드를 조판
     /// 문자열에서 접기 전에는 noori HWPX 렌더에 빈 문단 draw(`"\r"`)가 4건 더
     /// 있어 drawText가 64 대 68로 갈렸다. HWPX는 빈 문단도 `paraText`를 갖고
-    /// 그 안이 코드 13 하나였기 때문인데, 접고 나면 `paraText`가 없는 HWP 빈
-    /// 문단과 같은 빈 문자열이라 지금은 두 포맷 모두 64다.)
+    /// 그 안이 코드 13 하나였기 때문이다. 지금은 두 포맷의 빈 문단이 같은 빈
+    /// 문단 앵커(#145)로 모여 drawText 수가 같다 — 전체 선택 복사 평문 등식은
+    /// `HwpxFixtureCopyParityTests`가 건다.)
     func testHwpxBulletHeadingsMatchHwpPairs() async throws {
         let hwpxFixtures = try FixtureRoot.loadAllHwpxFixtures(from: #file)
         let hwpFixtures = try FixtureRoot.loadAllFixtures(from: #file)

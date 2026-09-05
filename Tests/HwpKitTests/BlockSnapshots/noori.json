@@ -280,8 +280,8 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 0,
-          "textPrefix" : ""
+          "textLength" : 1,
+          "textPrefix" : " "
         },
         {
           "frame" : [
@@ -294,8 +294,8 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 0,
-          "textPrefix" : ""
+          "textLength" : 1,
+          "textPrefix" : " "
         },
         {
           "frame" : [
@@ -308,8 +308,8 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 0,
-          "textPrefix" : ""
+          "textLength" : 1,
+          "textPrefix" : " "
         },
         {
           "frame" : [

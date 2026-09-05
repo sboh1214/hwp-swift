@@ -145,7 +145,10 @@ public enum HwpTextSearcher {
         into results: inout [HwpSearchMatch]
     ) {
         let text = unit.attributedString.string as NSString
-        guard text.length > 0 else { return }
+        // 빈 문단 앵커(빈칸 1자, #145)는 원문에 없는 글자라 " " 질의에 걸리면 안 된다.
+        guard text.length > 0,
+              !HwpTextRunBuilder.isEmptyParagraphAnchor(unit.attributedString)
+        else { return }
         let options = query.compareOptions
         let isClone = HwpSelectionGeometry.isRepeatedHeaderClone(unit.attributedString)
         var cursor = 0

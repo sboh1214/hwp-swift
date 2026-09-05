@@ -81,23 +81,14 @@ struct HwpParagraphMeasurer {
             paraShape: paraShape,
             columnWidth: width
         )
-        // 빈 문단은 조판 문자열이 없어 `layout`이 높이 0을 준다 (그쪽 주석 참조).
-        // 실물은 한 줄을 차지하므로 글자 모양을 아는 이 계층에서 하한을 건다 —
-        // 안 걸면 라인 캐시를 쓰지 않는 측정(글상자·캐시 무효 문단·안전밸브로
-        // linesegarray를 폐기한 HWPX 문단)에서 빈 줄이 통째로 사라져 뒤 내용이
-        // 한 줄 위로 당겨진다 (#137). 대역 문자열로 재므로 줄 간격 종류·클램프·
-        // 문단 간격이 실제 문단과 같은 코드로 계산된다. 줄 프레임은 만들지
-        // 않는다 — 그릴 글자가 없고, 합성 프레임은 선택 기하가 조판 문자열
-        // 범위를 벗어나게 만든다.
-        if attributed.length == 0 {
-            frame = HwpParagraphFrame(
-                totalHeight: HwpParagraphLayout().layout(
-                    attributedString: builder.emptyParagraphProbe(for: paragraph),
-                    paraShape: paraShape,
-                    columnWidth: width
-                ).totalHeight,
-                lines: []
-            )
+        // 빈 문단의 조판 문자열은 빈 문단 앵커(빈칸 1자, #145)라 위 `layout`이
+        // 실물과 같은 한 줄 높이를 이미 냈다 — 길이 0이면 라인 캐시를 쓰지 않는
+        // 측정(글상자·캐시 무효 문단·안전밸브로 linesegarray를 폐기한 HWPX 문단)
+        // 에서 빈 줄이 통째로 사라져 뒤 내용이 한 줄 위로 당겨진다 (#137). 줄
+        // 프레임은 비운다 — 표 절단·다단 재분배가 라인 유무로 갈리므로 앵커가
+        // 줄을 만들면 페이지네이션이 접기 전과 달라진다.
+        if HwpTextRunBuilder.isEmptyParagraphAnchor(attributed) {
+            frame = HwpParagraphFrame(totalHeight: frame.totalHeight, lines: [])
         }
         // 표 43 여백 계열과 같은 1/2 단위 (HwpParagraphMetrics와 동일).
         let spacingBefore = options.addHalfSpacingBefore

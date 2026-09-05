@@ -94,7 +94,10 @@ public struct HwpTextRunBuilder {
         // 입력 문자를 상한까지만 처리해 거대 문단 build 비용을 제한한다 (메모 표시
         // 예산 등). 음수 클램프와 서로게이트 경계 처리는 surrogateSafePrefix에 있다.
         let units = surrogateSafePrefix(paragraph.paraText?.charArray ?? [], upTo: maxCharacters)
-        guard !units.isEmpty else { return NSAttributedString(string: "") }
+        // 잘리지 않은 문단만 빈 문단 앵커 후보다 (#145) — 상한으로 잘린 결과는
+        // 종전대로 빈 채로 둔다 (`finishBuild`).
+        let isWhole = units.count == (paragraph.paraText?.charArray.count ?? 0)
+        guard !units.isEmpty else { return finishBuild(.init(), paragraph: paragraph, whole: isWhole) }
 
         let output = NSMutableAttributedString()
         appendBulletHeading(for: paragraph, to: output)
@@ -216,8 +219,7 @@ public struct HwpTextRunBuilder {
         }
         append(chunk, paragraph: paragraph, to: output)
         finishEmptyLastLineAnchor(in: output, emitted: emittedEmptyLastLineAnchor)
-        attachParagraphStyle(to: output, paragraph: paragraph)
-        return output
+        return finishBuild(output, paragraph: paragraph, whole: isWhole)
     }
 }
 

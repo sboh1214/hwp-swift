@@ -53,13 +53,18 @@ final class HwpSelectionGeometryAttributedTests: XCTestCase {
     private func block(
         _ attributed: NSAttributedString,
         frame: CGRect,
-        paragraphId: UInt32? = nil
+        paragraphId: UInt32? = nil,
+        paragraphKey: HwpParagraphKey? = nil
     ) -> AnyHwpBlock {
         AnyHwpBlock(
             frame: frame,
             kind: .text,
             attributedString: attributed,
-            source: paragraphId.map { HwpBlockSource(paragraphId: $0) }
+            source: paragraphId == nil && paragraphKey == nil ? nil : HwpBlockSource(
+                paragraphId: paragraphId,
+                sectionIndex: paragraphKey?.sectionIndex,
+                paragraphIndex: paragraphKey?.paragraphIndex
+            )
         )
     }
 
@@ -68,20 +73,22 @@ final class HwpSelectionGeometryAttributedTests: XCTestCase {
     func testStringMatchesPlainTextAcrossDedupAndJoinBranches() {
         let row = CGRect(x: 50, y: 100, width: 200, height: 20)
         let below = CGRect(x: 50, y: 130, width: 200, height: 20)
-        // 1쪽: 원본 머리행(paraId 7) + 본문, 2쪽: 클론(제외) + 같은 paraId 연속
-        // 조각 + 표식 폴백 조각(paraId 없음) — dedup과 join 갈래를 한 문서에 담는다.
+        // 1쪽: 원본 머리행(paraId 7) + 본문, 2쪽: 클론(제외) + 같은 위치 열쇠의
+        // 연속 조각 + 표식 폴백 조각(paraId 없음) — dedup과 join 갈래를 한 문서에
+        // 담는다.
         let marked = HwpTableSplitter.markedAsContinuedFragment(attributed("seg"))
+        let key = HwpParagraphKey(sectionIndex: 0, paragraphIndex: 1)
         let document = makeDocument(pages: [
             [
                 block(attributed("헤더"), frame: row, paragraphId: 7),
-                block(attributed("이어지는"), frame: below, paragraphId: 5),
+                block(attributed("이어지는"), frame: below, paragraphId: 5, paragraphKey: key),
             ],
             [
                 block(
                     markedAsRepeatedHeaderClone(attributed("헤더")),
                     frame: row, paragraphId: 7
                 ),
-                block(attributed("문단"), frame: below, paragraphId: 5),
+                block(attributed("문단"), frame: below, paragraphId: 5, paragraphKey: key),
             ],
             [
                 block(marked, frame: row),
