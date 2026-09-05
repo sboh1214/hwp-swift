@@ -21,6 +21,37 @@ import Foundation
             )
         }
 
+        /// 문단 머리 모양 종류 = 2(번호 매기기) + 0-기반 수준 비트 — 정의 참조는
+        /// 개요와 달리 문단 모양 자신의 `numberingOrBulletId`(1-based)다 (#152).
+        static func numberingParaShape(
+            levelRawValue: UInt32,
+            numberingOrBulletId: UInt16
+        ) -> CoreHwp.HwpParaShape {
+            CoreHwp.HwpParaShape(
+                property1: (2 << 23) | (levelRawValue << 25),
+                marginLeft: 0,
+                tabDefId: 0,
+                numberingOrBulletId: numberingOrBulletId
+            )
+        }
+
+        /// 수준 1-7의 형식만 가진 합성 번호 정의 — 문단 머리 정보는 빈 문서
+        /// 기본값(`^1.` 0x0C 꼴)과 같은 12바이트다.
+        static func numberingDefinition(
+            formats: [String] = ["^1.", "^2.", "^3.", "(^4)", "(^5)", "^6)", "^7)"]
+        ) -> CoreHwp.HwpNumbering {
+            CoreHwp.HwpNumbering(
+                formatArray: formats.map {
+                    CoreHwp.HwpNumberingFormat(
+                        property: [12, 0, 0, 0, 0, 0, 50, 0, 255, 255, 255, 255],
+                        formatLength: WORD($0.utf16.count),
+                        format: $0
+                    )
+                },
+                startingIndex: 1
+            )
+        }
+
         /// 머리 모양이 개요가 **아닌** 문단 모양 — 스타일 이름 폴백을 태우는 쪽.
         /// raw `0x180`은 헌법주석의 `개요 8`·`개요 9` 스타일이 가리키는 실제 값이다.
         static func plainParaShape() -> CoreHwp.HwpParaShape {
@@ -33,7 +64,8 @@ import Foundation
 
         static func outlineIndex(
             paraShapes: [UInt32: CoreHwp.HwpParaShape] = [:],
-            styles: [UInt32: CoreHwp.HwpStyle] = [:]
+            styles: [UInt32: CoreHwp.HwpStyle] = [:],
+            numberings: [UInt32: CoreHwp.HwpNumbering] = [:]
         ) -> HwpIndex {
             HwpIndex(
                 charShapes: [:],
@@ -42,7 +74,7 @@ import Foundation
                 tabDefs: [:],
                 styles: styles,
                 bullets: [:],
-                numberings: [:],
+                numberings: numberings,
                 binData: [:],
                 faceNamesKorean: [:],
                 faceNamesEnglish: [:],
@@ -112,10 +144,13 @@ import Foundation
         static func outlinePaginator(
             bodyParagraphs: [CoreHwp.HwpParagraph],
             index: HwpIndex,
-            pageHeight: UInt32 = 84188
+            pageHeight: UInt32 = 84188,
+            outlineNumberingId: UInt16 = 1
         ) -> HwpPaginator {
             let section = section(
-                firstParagraphControls: [.section(sectionDef(pageHeight: pageHeight))],
+                firstParagraphControls: [.section(sectionDef(
+                    pageHeight: pageHeight, outlineNumberingId: outlineNumberingId
+                ))],
                 bodyParagraphs: bodyParagraphs
             )
             return HwpPaginator(

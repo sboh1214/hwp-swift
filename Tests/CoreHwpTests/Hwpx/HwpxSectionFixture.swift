@@ -11,6 +11,10 @@ enum HwpxSectionFixture {
         tables.paraShape.register(id: "9", offset: 1)
         tables.style.register(id: "0", offset: 0)
         tables.style.register(id: "2", offset: 1)
+        // 개요 번호 정의 참조(`hp:secPr@outlineShapeIDRef`)용 — id는 dense가
+        // 아니라 "2"가 오프셋 1이다 (noori 실물과 같은 배치).
+        tables.numbering.register(id: "1", offset: 0)
+        tables.numbering.register(id: "2", offset: 1)
         return HwpxMappingContext(
             idTables: tables,
             binItemIdByManifestId: [:],

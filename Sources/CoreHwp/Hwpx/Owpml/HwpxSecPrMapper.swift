@@ -7,7 +7,9 @@ import Foundation
 /// `sectionDef(in:)` 하나로만 구역 경계를 인식하므로 이 매핑이 구역
 /// 지오메트리의 전부다.
 enum HwpxSecPrMapper {
-    static func mapSectionDef(_ secPr: HwpxXMLNode, maxDepth: Int) -> HwpSectionDef {
+    static func mapSectionDef(
+        _ secPr: HwpxXMLNode, tables: HwpxIdTables, maxDepth: Int
+    ) -> HwpSectionDef {
         var sectionDef = HwpSectionDef()
 
         if let pagePr = secPr.paragraphFirstChild(named: "pagePr") {
@@ -51,6 +53,14 @@ enum HwpxSecPrMapper {
         sectionDef.defaultTabSpacing = secPr.uint32Attribute(
             "tabStop", default: sectionDef.defaultTabSpacing
         )
+        // 잘못된 참조의 진단은 아래 강등 목록 **앞**에 싣는다 — 목록은 대입으로
+        // 시작하므로 여기서 `unknownChildren`에 직접 붙이면 덮인다.
+        var referenceDiagnostics: [HwpUnknownRecord] = []
+        sectionDef.numberParaShapeId = Self.outlineNumberingId(
+            secPr.attribute("outlineShapeIDRef"),
+            tables: tables,
+            diagnostics: &referenceDiagnostics
+        )
         if let startNum = secPr.paragraphFirstChild(named: "startNum") {
             // 카운터만 옮기면 홀수/짝수쪽 시작이 '양쪽'으로 보고된다 —
             // 구역 정의 속성 bits 20-21("새 쪽 번호 적용")에 함께 싣는다.
@@ -71,7 +81,7 @@ enum HwpxSecPrMapper {
         // 각주/미주 모양·쪽 테두리는 1차 범위 밖 — 빈 문서 기본값을 유지하되,
         // 버려지는 자식은 진단으로 강등해야 "미해석 강등은 진단으로 보고됨"
         // 규약이 지켜진다 (tabPr의 tabItem 강등과 같은 채널).
-        sectionDef.unknownChildren = secPr.unconsumedChildRecords(
+        sectionDef.unknownChildren = referenceDiagnostics + secPr.unconsumedChildRecords(
             consumed: ["pagePr", "startNum"], in: HwpxNamespace.paragraph,
             maxDepth: maxDepth
         )
@@ -166,6 +176,46 @@ enum HwpxSecPrMapper {
             column.unknownChildren += line.unconsumedChildRecords(consumed: [], maxDepth: maxDepth)
         }
         return column
+    }
+}
+
+extension HwpxSecPrMapper {
+    /// 잘못된 `outlineShapeIDRef`를 진단으로 남길 때의 합성 레코드 payload 접두.
+    /// 요소 강등의 payload가 OWPML local name인 것과 달리 속성 강등이라
+    /// `요소@속성=값` 꼴로 적는다 (`parseDiagnostics()`가 그대로 읽는다).
+    static let outlineReferenceDiagnosticPrefix = "secPr@outlineShapeIDRef="
+
+    /// `hp:secPr@outlineShapeIDRef` → 구역 정의의 번호 문단 모양 ID (#152).
+    ///
+    /// HWP5의 필드는 1-based 참조(0 = 없음)라 `numberingOrBulletId`와 같은
+    /// 규약으로 id 테이블 오프셋 + 1을 싣는다 — HWPX id는 dense가 아니라
+    /// 숫자를 그대로 쓰면 안 된다 (noori 실물: id "2"가 오프셋 1 → 2, HWP 쌍도 2).
+    /// 세 경로를 가른다: **생략**은 0 — 한컴 참조 모델이 `m_uOutlineShapeIDRef(0)`
+    /// 으로 세우고 `GetAttribute`가 속성 부재 시 값을 건드리지 않는다
+    /// (`SectionDefinitionType.cpp`; 빈 문서 기본값 1은 바이너리 저장기의 값이지
+    /// 생략의 뜻이 아니다). **잘못된 참조**(테이블에 없는 id)도 0으로 접되 진단
+    /// 레코드를 남겨 생략과 구분한다 — 조판이 "참조 없음"으로 보고하는 것은
+    /// 같지만 `parseDiagnostics()`에서는 이쪽만 드러난다. 정상 참조는 조판이
+    /// 개요 번호 정의를 찾는 유일한 통로다 (`HwpSectionDef.numberParaShapeId`).
+    static func outlineNumberingId(
+        _ ref: String?,
+        tables: HwpxIdTables,
+        diagnostics: inout [HwpUnknownRecord]
+    ) -> UInt16 {
+        guard let ref else {
+            return 0
+        }
+        guard let offset = tables.numbering.offset(of: ref) else {
+            diagnostics.append(HwpUnknownRecord(
+                tagId: hwpxSyntheticTagId,
+                level: 0,
+                payload: Data((outlineReferenceDiagnosticPrefix + ref).utf8)
+            ))
+            return 0
+        }
+        // 정의는 헤더 매핑이 65,535개로 상한을 걸어 (`mapNumberings`) 오프셋 + 1이
+        // UInt16을 넘지 않는다 — clamping은 그 불변식의 방어다.
+        return UInt16(clamping: offset + 1)
     }
 }
 

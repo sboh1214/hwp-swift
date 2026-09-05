@@ -1,0 +1,51 @@
+{
+  "id": "outline-numbering",
+  "generationTool": "한컴오피스 한글 12.30.0 (6446) macOS",
+  "source": "HWP fixture outline-numbering과 같은 편집 세션에서 파일 > 다른 이름으로 저장하기 > 한글 표준 문서 (*.hwpx)로 저장 (Claude Computer Use GUI 자동화)",
+  "owpmlVersion": "5.1.1.0",
+  "sourceHwpFixture": "outline-numbering",
+  "features": [
+    "hwpx",
+    "derived-from-hwp",
+    "paragraph-text",
+    "multi-paragraph",
+    "doc-info",
+    "doc-properties",
+    "styles",
+    "preview-text",
+    "preview-image"
+  ],
+  "expectations": {
+    "binDataCount": 0,
+    "borderFillCount": 2,
+    "bulletCount": 0,
+    "charShapeCount": 7,
+    "faceNamesKorean": [
+      "함초롬돋움",
+      "함초롬바탕"
+    ],
+    "numberingCount": 2,
+    "pageCount": 1,
+    "pageCountSource": "한글.app 실측 (2026-09-05, 상태 표시줄 1/1쪽) = HwpKit 렌더 (.testDeterministic) = HWP 쌍 쪽수",
+    "pageDef": {
+      "height": 84186,
+      "marginBottom": 4252,
+      "marginLeft": 8504,
+      "marginRight": 8504,
+      "marginTop": 5668,
+      "width": 59528
+    },
+    "paraShapeCount": 21,
+    "sectionCount": 1,
+    "sectionParagraphCounts": [
+      7
+    ],
+    "styleCount": 22,
+    "tabDefCount": 3,
+    "visibleTextContains": [
+      "Outline level one",
+      "Outline level three",
+      "Numbered item two"
+    ]
+  }
+}

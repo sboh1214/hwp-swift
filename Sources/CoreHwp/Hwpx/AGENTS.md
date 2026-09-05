@@ -28,14 +28,17 @@ HWPX(OCF ZIP + OWPML XML, KS X 6101)를 **기존 `Hwp*` 모델로 변환 파싱*
 - **id 리맵은 gap-fill이 아니다** — HWPX id는 dense가 아니라서
   (`HwpxIdTables`) 가족별 문서 등장 순서 오프셋을 부여하고 모든 `*IDRef`를
   재작성한다. borderFill과 번호/글머리표 참조는 1-based(0 = 없음) —
-  조판이 `> 0` 게이트 뒤에서 -1로 되돌린다. 댕글링은 0 폴백.
+  조판이 `> 0` 게이트 뒤에서 -1로 되돌린다. 댕글링은 0 폴백. 구역 정의의
+  개요 번호 참조(`hp:secPr@outlineShapeIDRef` → `numberParaShapeId`)도 같은
+  1-based다 (#152, 아래 "구역의 개요 번호 참조").
 - **lineseg 안전밸브** — `<hp:linesegarray>`는 절대 캐시 조판의 입력이다.
   미지 요소로 위치가 불확실하거나 sanity(첫 textpos 0·단조·범위)를 어기면
   **빈 배열로 강등**한다. 틀린 캐시로 오렌더하는 것보다 reflow가 낫다.
 - **미지 요소는 `hwpxSyntheticTagId`(0) + 요소명 payload**로
   `HwpUnknownRecord`에 남긴다 — `parseDiagnostics()`가 무변경으로 HWPX
   미해석 요소를 보고하는 규약이다. HWPX 문서의 진단에서 tagId 0의 payload는
-  UTF-8 OWPML local name으로 읽는다.
+  UTF-8 OWPML local name으로 읽되, **속성 수준 강등**은 `요소@속성=값` 꼴이다
+  (현재 `secPr@outlineShapeIDRef=` 하나 — "구역의 개요 번호 참조" 참조).
 - **요소 매칭은 (namespace URI, local name)** — 접두사(hp/hh/hs)는 문서마다
   다를 수 있다. 낯선 namespace의 동명 요소는 OWPML로 오인하지 않는다.
 - **복구 규약은 바이너리와 동일** — 손상 문단은 placeholder, 구역 첫 문단은
@@ -55,9 +58,10 @@ HWPX(OCF ZIP + OWPML XML, KS X 6101)를 **기존 `Hwp*` 모델로 변환 파싱*
 
 ## 1차 범위 밖 (미해석 강등 — 진단으로 보고됨)
 
-번호 매기기 라벨(정의는 #133에서 승격됐고 `^1.` 캐럿 서식 파서·자동 번호
-카운터·수준 승계가 HWP 경로에도 없다 — 두 포맷 공통 격차라
-`HwpPaginator`가 "(미렌더)"로 보고만 한다), 각주/미주·머리말/꼬리말
+번호 매기기 라벨(정의는 #133, 문단 머리 정보·형식 분해·구역의 개요 번호
+참조는 #152에서 승격됐고 자동 번호 카운터·수준 승계·렌더가 HWP 경로에도
+없다 — 두 포맷 공통 격차라 `HwpPaginator`가 "(미렌더)"로 보고만 한다,
+#153·#154), 각주/미주·머리말/꼬리말
 내용(`.notImplemented`), 도형(line/rect/…)·수식·글상자
 (`.notImplemented`; `hp:default` fallback 없이 `hp:chart`만 오는 문서도 여기 —
 OLE 개체 `hp:ole`은 #134에서 승격됐다), 자동 번호·새 번호·홀/짝수 조정
@@ -120,7 +124,16 @@ HWP 쌍 manifest `pageNumberPositions[0]`과 payload 바이트 동일. (2) 2026-
 두 가족은 자식 `hh:paraHead`(표 39 문단 머리 정보 12바이트)를 공유한다. 스펙은
 항목 4개(속성 UINT32 · 너비 보정값 HWPUNIT16 · 본문과의 거리 HWPUNIT16 · 글자
 모양 아이디 참조 INT32)를 적고 "전체 길이 8"로 합계를 틀리게 적었다 — 실물은
-12바이트다(같은 정정으로 표 42의 "전체 길이 20"도 24바이트). 속성 비트는 표 40이
+12바이트다(같은 정정으로 표 42의 "전체 길이 20"도 24바이트). 12바이트의 합성은
+공개 모델 `HwpParaHeadInfo`(#152)가 한다 — 바이너리 쪽 `HwpNumberingFormat.paraHeadInfo`·
+`HwpBullet.paraHeadInfo`가 같은 타입으로 디코드하므로 배치가 `HwpParaHeadInfo.bytes`
+한 곳에만 있고, `ParaHeadInfoTests`가 전 픽스처 왕복으로 거울상을 잠근다. 정렬(bit
+0-1)·거리 종류(bit 4)의 비기본값은 `outline-numbering` 쌍이 실물이다 — 1수준
+`align="RIGHT" textOffsetType="HWPUNIT" textOffset="1000" widthAdjust="200"`이 HWP 쌍의
+속성 `0x52`·거리 1000·너비 보정 200과, 2수준 `align="CENTER"`가 `0x10D`와 같아
+스키마 나열 순서 배치가 맞다. 번호 형식 지시자의 경계(캐럿은 한 자리 숫자만,
+`^n`은 1수준부터 그 수준까지의 경로, 그 밖의 캐럿은 문자 그대로)는
+`HwpNumberingFormatPattern` doc-comment의 한글.app 미리보기 실측이 정본이다. 속성 비트는 표 40이
 bit 0-4(정렬·번호 너비·자동 내어 쓰기·거리 종류)만 적고 **번호 모양은 적지
 않는데, 실측이 bit 5-8이다**: 빈 문서 기본 `numberingArray`(`HwpIdMappings`)의
 수준별 선두 UINT32가 `^1.` 0x0C · `^2.` 0x10C · `^7` 0x2C이고 noori HWPX의 같은
@@ -179,9 +192,32 @@ HWP 쌍과 **바이트 동일**하고, 글머리표는 `info` `08 00 00 00 00 00
 필드는 5.1.0.0 이상에만 있고 HWP 쌍은 5.0.3.4라 배열 자체가 없으므로 **등가
 투영에서 수준 개수를 비교하면 안 된다**. 가드는 `HwpxNumberingMapperTests`
 (비트·센티널·슬롯·상한·강등)·`HwpxHwpEquivalenceTests`(정의 축과 문단 머리 축 —
-번호 정의는 11쌍 전부에서 비어 있지 않고 글머리표는 noori 1쌍뿐이다)·
+번호 정의는 12쌍 전부에서 비어 있지 않고 글머리표는 noori 1쌍뿐이다)·
 `HwpxFixtureRenderTests.testHwpxBulletHeadingsMatchHwpPairs`(선행 `- ` 줄 등식과
 noori 직접 핀)·noori HWPX manifest의 `numberingCount` 2·`bulletCount` 1이다.
+
+## 구역의 개요 번호 참조 (`hp:secPr@outlineShapeIDRef`, #152)
+
+개요(문단 머리 종류 1) 문단의 번호 정의는 문단 모양이 아니라 **구역 정의**가
+가리킨다 — HWP5 `HwpSectionDef.numberParaShapeId`(1-based, 0 = 없음)이고
+HWPX는 `hp:secPr@outlineShapeIDRef`다. `HwpxSecPrMapper.outlineNumberingId`가
+`HwpxIdTables.numbering` 오프셋 + 1로 리맵한다 — id는 dense가 아니라 숫자를
+그대로 실으면 안 된다 (noori·`outline-numbering` 실물: `hh:numbering id="1"`·`"2"`
+중 `"2"` → 오프셋 1 → 2, HWP 쌍의 필드도 2; multi-section은 구역마다 `"1"`·`"2"`).
+`outline-numbering`은 한글.app이 개요 번호 사용자 정의를 **새 정의**(id "2")로
+저장하고 구역 참조를 그쪽으로 옮기며, 문단 번호(`hh:heading type="NUMBER"`)는
+기본 정의 id "1"을 그대로 참조한다는 실물이기도 하다.
+
+세 경로를 가른다. **생략**은 0이다 — 한컴 참조 모델 `SectionDefinitionType.cpp`가
+`m_uOutlineShapeIDRef(0)`으로 세우고 `GetAttribute`가 속성 부재 시 값을 건드리지
+않으므로, 바이너리 빈 문서 기본값 1(`HwpSectionDef()`)을 지어내지 않는다.
+**잘못된 참조**(테이블에 없는 id)도 0으로 접되 `unknownChildren`에 합성 레코드
+(payload `secPr@outlineShapeIDRef=<값>`)를 남겨 생략과 구분한다 — 요소 강등의
+payload가 local name인 것과 달리 **속성 강등**이라 `요소@속성=값` 꼴이고,
+`parseDiagnostics()`가 tagId 0 `unknownRecord`로 그대로 낸다 (첫 속성 수준
+강등 채널). 정상·생략·잘못된 참조는 `HwpxSecPrOutlineReferenceTests`, HWP 쌍
+대조는 `HwpxHwpEquivalenceTests`의 `sectionOutlineNumberingIds` 축이 잠근다.
+조판 쪽 소비자는 `HwpNumberingHeadingReference`(HwpKitCore)다.
 
 ## OLE 개체 (`hp:ole` → `$ole`, #134)
 
@@ -274,6 +310,8 @@ binaryItemIDRef="ole1" hasMoniker="0" drawAspect="CONTENT" eqBaseLine="0"` +
   .hwpx로 저장한 뒤, .hwp는 `HwpFile`로 열어 `pgnp`(`HwpPageNumberPosition`의
   `property`·`userSymbol`·`unused`)를, .hwpx는 `Contents/section0.xml`의
   `hp:pageNum` 속성을 읽어 대조한다 (2026-09-02 실측 4쌍이 이 절차다).
+- `hp:secPr@outlineShapeIDRef` 생략의 실물 — 한글.app 저장본은 항상 명시한다.
+  참조 모델 기본값(0 = 참조 없음)을 따랐다.
 - `<hp:pageNum/>`(속성 생략)을 한글.app이 실제로 왼쪽 위 "- N -"으로 그리는지
   — 우리는 스키마 `default`대로 TOP_LEFT(1)·"-"(0x2D)로 읽지만, 실저장본은
   항상 세 속성을 명시해 실물이 없다(제3자 저장기 문서를 확보하면 대조할 것).

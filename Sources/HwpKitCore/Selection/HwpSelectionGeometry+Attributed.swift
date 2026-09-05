@@ -31,7 +31,13 @@ extension HwpSelectionGeometry {
                 ))
             }
             result.append(contribution)
-            previousParagraphTail = contribution.length > 0 ? contribution : piece.attributedText
+            previousParagraphTail = if contribution.length > 0 {
+                contribution
+            } else if piece.attributedText.length > 0 {
+                piece.attributedText
+            } else {
+                piece.unitText
+            }
         }
         return result
     }
@@ -46,7 +52,9 @@ extension HwpSelectionGeometry {
     /// **누적 결과에서 읽으면 안 된다** (#124 리뷰) — 개체만 있는 문단은 마커를
     /// 지운 기여가 비어, 선두면 아무 속성도 못 얻고 중간이면 **그 앞 문단**의
     /// 스타일을 가져간다. 호출부가 그때 원본 조각(마커 run이 문단 스타일·폰트를
-    /// 그대로 들고 있다)을 꼬리로 넘긴다.
+    /// 그대로 들고 있다)을 꼬리로 넘기고, 조각 자체가 비었으면(문단 경계에서
+    /// 끝나거나 시작한 선택) 그 단위의 조판 문자열 전체를 꼬리로 넘긴다 — 문단
+    /// 부호만 복사해도 그 문단의 스타일·폰트를 입은 개행이 나간다.
     private static func newlineAttributes(
         terminating tail: NSAttributedString
     ) -> [NSAttributedString.Key: Any] {

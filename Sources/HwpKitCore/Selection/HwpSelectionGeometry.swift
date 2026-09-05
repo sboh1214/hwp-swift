@@ -250,9 +250,19 @@ public final class HwpSelectionGeometry {
 
     /// 복사 조립용 조각 하나 (문단 연속 판정 메타 포함). 조각은 마커(U+FFFC)를
     /// 아직 품고 있다 — 제거는 각 조립 경로 몫이다.
+    ///
+    /// **비어 있을 수 있다.** 선택 끝점이 단위의 시작이거나 시작점이 단위의 끝이면
+    /// 글자는 없지만 그 단위를 조각으로 싣는다 — 문단 끝 코드 13이 조판 문자열에
+    /// 없으므로(#137) 선택이 문단 경계를 **지났다**는 사실은 조각 사이 개행으로만
+    /// 남길 수 있고, 그 개행은 인접 조각이 있어야 나온다. 한글.app 실측
+    /// (2026-09-05): A 시작→B 시작 복사는 `A\r\n`, 문단 부호만 고르면 `\r\n`,
+    /// A 끝→B 중간은 `\r\nB…`다.
     struct Fragment {
-        /// 선택 구간으로 자른 attributed 부분열 (조판 속성 그대로)
+        /// 선택 구간으로 자른 attributed 부분열 (조판 속성 그대로) — 빈 조각이면 길이 0
         let attributedText: NSAttributedString
+        /// 조각이 속한 단위의 조판 문자열 전체 — 빈 조각의 종결 개행이 문단 스타일·
+        /// 글꼴을 어디서 가져올지 (`HwpSelectionGeometry+Attributed`의 #124 폴백)
+        let unitText: NSAttributedString
         let paragraphId: UInt32?
         /// 본문 문단의 위치 열쇠 — 있으면 이것만이 "같은 문단"의 근거다 (#145)
         let paragraphKey: HwpParagraphKey?
@@ -282,40 +292,46 @@ public final class HwpSelectionGeometry {
                     unitIndex: unit.unitIndex,
                     characterOffset: unit.attributedString.length
                 )
+                // 선택이 **닿기만 해도** 단위를 싣는다 — 끝점이 단위 시작(글자 0개)이나
+                // 시작점이 단위 끝이면 빈 조각이다. 문단 끝 코드 13이 조판 문자열에
+                // 없으므로(#137) 선택이 문단 경계를 지난 사실은 조각 사이 개행으로만
+                // 남고, 그 개행은 양옆 조각이 있어야 나온다: A 시작→B 시작은 `A\n`,
+                // A 끝→B 시작(문단 부호만)은 `\n`, A 끝→B 중간은 `\nB…`가 한글.app과
+                // 같다. 종전의 배타 규칙(끝점이 단위 시작이면 제외)은 세 경우 모두에서
+                // 종결 개행을 잃었다. 같은 문단의 조각(쪽·단 걸침)은 접합 판정이 이어
+                // 붙이므로 빈 조각이 개행을 만들지 않는다.
+                guard unitEnd >= start, unitStart <= end else { continue }
                 // 빈 문단(앵커 하나뿐인 단위, #145)은 캐럿 자리가 하나라 (P,0)과
-                // (P,1)이 같은 자리다 — 선택이 닿기만 하면 그 줄을 통째로 싣는다.
-                // 비어 있지 않은 단위의 배타 규칙(끝점이 단위 시작이면 제외)을 그대로
-                // 두면 'A에서 빈 줄까지'가 A의 종결자를, '빈 줄에서 B까지'가 빈 줄을
-                // 잃는다. 조각의 글자(앵커)는 조립이 뗀다 (`droppingEmptyLineAnchor`).
+                // (P,1)이 같은 자리다 — 닿기만 하면 그 줄을 통째로 싣는다. 조각의
+                // 글자(앵커)는 조립이 뗀다 (`droppingEmptyLineAnchor`).
                 let isEmptyParagraph = HwpTextRunBuilder.isEmptyParagraphAnchor(
                     unit.attributedString
                 )
-                if isEmptyParagraph {
-                    guard unitEnd >= start, unitStart <= end else { continue }
-                } else {
-                    guard unitEnd > start, unitStart < end else { continue }
-                }
                 let lower = isEmptyParagraph ? 0 : max(start, unitStart).characterOffset
                 let upper = isEmptyParagraph || (unitStart >= start && unitEnd <= end)
                     ? unit.attributedString.length
                     : min(end, unitEnd).characterOffset
-                guard upper > lower else { continue }
                 // 반복 제목 행 클론은 같은 출처(paraId)가 이미 기여했을 때만
                 // 제외한다 — 원본이 선택 밖(뒷페이지 클론만 선택)이면 그 클론을
                 // 넣어야 복사가 비지 않는다. 하이라이트는 항상 남는다 (#8, #21 보정).
-                if Self.isRepeatedHeaderClone(unit.attributedString),
-                   let paragraphId = unit.paragraphId,
-                   contributedParagraphIds.contains(paragraphId)
-                {
-                    continue
-                }
-                if let paragraphId = unit.paragraphId {
-                    contributedParagraphIds.insert(paragraphId)
+                // 빈 조각은 글자를 기여하지 않으므로 dedup의 출처로 세지도, 제외하지도
+                // 않는다 — 클론 시작에서 끝난 선택도 앞 문단의 종결 개행을 지켜야 한다.
+                if upper > lower {
+                    if Self.isRepeatedHeaderClone(unit.attributedString),
+                       let paragraphId = unit.paragraphId,
+                       contributedParagraphIds.contains(paragraphId)
+                    {
+                        continue
+                    }
+                    if let paragraphId = unit.paragraphId {
+                        contributedParagraphIds.insert(paragraphId)
+                    }
                 }
                 fragments.append(Fragment(
                     attributedText: unit.attributedString.attributedSubstring(
-                        from: NSRange(location: lower, length: upper - lower)
+                        from: NSRange(location: lower, length: max(0, upper - lower))
                     ),
+                    unitText: unit.attributedString,
                     paragraphId: unit.paragraphId,
                     paragraphKey: unit.paragraphKey,
                     continuesNext: upper == unit.attributedString.length

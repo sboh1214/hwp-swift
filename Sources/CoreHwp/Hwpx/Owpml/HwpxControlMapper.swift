@@ -35,7 +35,7 @@ enum HwpxControlMapper {
                 code: 2,
                 fourCC: HwpOtherCtrlId.section.rawValue,
                 ctrl: .section(HwpxSecPrMapper.mapSectionDef(
-                    node, maxDepth: context.unknownDepthLimit
+                    node, tables: context.idTables, maxDepth: context.unknownDepthLimit
                 ))
             )
         case "colPr":

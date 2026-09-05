@@ -275,7 +275,8 @@ final class HwpxSectionInvariantTests: XCTestCase {
         </hp:secPr>
         """
         let sectionDef = HwpxSecPrMapper.mapSectionDef(
-            try parse(xml), maxDepth: HwpReadLimits.default.maxNestingDepth
+            try parse(xml), tables: HwpxIdTables(),
+            maxDepth: HwpReadLimits.default.maxNestingDepth
         )
 
         let names = sectionDef.unknownChildren.compactMap {
@@ -298,7 +299,8 @@ final class HwpxSectionInvariantTests: XCTestCase {
         </hp:secPr>
         """
         let sectionDef = HwpxSecPrMapper.mapSectionDef(
-            try parse(xml), maxDepth: HwpReadLimits.default.maxNestingDepth
+            try parse(xml), tables: HwpxIdTables(),
+            maxDepth: HwpReadLimits.default.maxNestingDepth
         )
 
         expect(sectionDef.pageDef.width) == 59528

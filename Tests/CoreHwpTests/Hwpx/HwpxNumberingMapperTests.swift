@@ -147,6 +147,29 @@ final class HwpxNumberingMapperTests: XCTestCase {
         expect(Self.property(unknown.formatArray[0])) == 0x0000_000C
     }
 
+    /// 매퍼가 합성한 12바이트는 바이너리 파서와 같은 `HwpParaHeadInfo`로 읽힌다 (#152).
+    /// 합성 입력이다 — 실물 대조는 `outline-numbering` 쌍(`ParaHeadInfoTests`·등가 축).
+    func testMappedParaHeadInfoDecodesThroughTheSharedModel() throws {
+        let numbering = try mapNumbering(paraHead(
+            """
+            align="CENTER" useInstWidth="0" autoIndent="1" widthAdjust="-3" \
+            textOffsetType="HWPUNIT" textOffset="300" numFormat="ROMAN_CAPITAL" \
+            charPrIDRef="-1"
+            """,
+            text: "^1."
+        ))
+        let info = try XCTUnwrap(numbering.formatArray[0].paraHeadInfo)
+
+        expect(info) == HwpParaHeadInfo(
+            alignment: .center, useInstWidth: false, autoIndent: true,
+            textOffsetType: .hwpUnit, numberFormat: 2,
+            widthAdjust: -3, textOffset: 300, charShapeId: -1
+        )
+        expect(info.bytes) == numbering.formatArray[0].property
+        // 슬롯이 빈 수준은 기본 init 그대로다 — 속성 0 · 거리 0 · 바탕글.
+        expect(numbering.formatArray[1].paraHeadInfo) == HwpParaHeadInfo()
+    }
+
     func testWidthAdjustAndTextOffsetAreSignedSixteenBitFields() throws {
         let numbering = try mapNumbering(paraHead(
             "widthAdjust=\"-3\" textOffset=\"50\" charPrIDRef=\"-1\""

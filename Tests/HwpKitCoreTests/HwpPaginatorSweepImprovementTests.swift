@@ -130,16 +130,18 @@ import XCTest
             )
         }
 
-        /// 문단 머리 종류(표 44 bit 23-24) = 1 개요 + 번호 참조 문단은 생성 라벨이
-        /// numbering 정의에 있고 PARA_TEXT에 없어 렌더러가 못 만든다 — 번호가
-        /// 조용히 사라지지 않도록 unsupported로 보고돼야 한다 (#1).
+        /// 문단 머리 종류(표 44 bit 23-24) = 1 개요 문단은 생성 라벨이 numbering
+        /// 정의에 있고 PARA_TEXT에 없어 렌더러가 못 만든다 — 번호가 조용히 사라지지
+        /// 않도록 unsupported로 보고돼야 한다 (#1). 정의는 문단 모양이 아니라 구역
+        /// 정의(기본 참조 1 → 사전 키 0)가 가리키므로(#152) 문단 모양의 참조는 0이다.
         func testOutlineNumberingHeadingReportedAsUnsupported() async throws {
             let headingParaShape = CoreHwp.HwpParaShape(
-                property1: 1 << 23, marginLeft: 0, tabDefId: 0, numberingOrBulletId: 1
+                property1: 1 << 23, marginLeft: 0, tabDefId: 0, numberingOrBulletId: 0
             )
             let index = HwpIndex(
                 charShapes: [:], paraShapes: [0: headingParaShape], borderFills: [:],
-                tabDefs: [:], styles: [:], bullets: [:], numberings: [:], binData: [:],
+                tabDefs: [:], styles: [:], bullets: [:],
+                numberings: [0: HwpSynthetic.numberingDefinition()], binData: [:],
                 faceNamesKorean: [:], faceNamesEnglish: [:], faceNamesChinese: [:],
                 faceNamesJapanese: [:], faceNamesEtc: [:], faceNamesSymbol: [:],
                 faceNamesUser: [:]
@@ -157,10 +159,9 @@ import XCTest
 
             _ = await paginator.totalPages()
             let hints = await paginator.unsupportedElements().map(\.hint)
-            expect(hints.contains { $0.contains("개요 번호 문단 머리") }).to(
-                beTrue(),
-                description: "unsupported hints: \(hints)"
-            )
+            // 구역 첫 문단(빈 문서 템플릿)도 문단 모양 0을 쓰므로 개요 문단이 둘이다 —
+            // 집계 단위가 문단이라 건수도 둘이다.
+            expect(hints) == Array(repeating: "개요 번호 문단 머리 (미렌더)", count: 2)
         }
 
         /// 각주 예약으로 페이지가 사실상 찬 상태 + 이어지는 2단 정의 구역

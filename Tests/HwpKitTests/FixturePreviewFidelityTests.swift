@@ -79,6 +79,8 @@ final class FixturePreviewFidelityTests: XCTestCase {
         "track-changes": 0.001, // 실측 0.0002
         // PrvImage에는 한글.app이 그린 글자 위 밑줄이 있고 우리는 아직 안 그린다 (#149)
         "underline-above": 0.001, // 실측 0.0006 (2026-09-05)
+        // PrvImage에는 한글.app이 그린 개요·문단 번호 라벨이 있고 우리는 아직 안 그린다 (#152)
+        "outline-numbering": 0.001, // 실측 0.0005 (2026-09-05)
         "공공누리": 0.004, // 실측 0.0028 (저해상 GIF)
         "문서이력관리": 0.001, // 실측 0.0000
         "변경내용추적": 0.001, // 실측 0.0000

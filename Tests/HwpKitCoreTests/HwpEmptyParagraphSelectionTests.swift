@@ -104,8 +104,8 @@ final class HwpEmptyParagraphSelectionTests: XCTestCase {
 
     func testSelectionTouchingAnEmptyParagraphCarriesItsLine() {
         // 빈 문단은 캐럿 자리가 하나라 (P,0)과 (P,1)이 같은 자리다 — 선택이
-        // 닿기만 하면 그 줄이 실린다. 비어 있지 않은 단위의 배타 규칙(끝점이
-        // 단위 시작이면 제외)과 다르다.
+        // 닿기만 하면 그 줄이 실린다. 비어 있지 않은 단위도 닿으면 빈 조각으로
+        // 실려 지나온 문단 경계가 개행으로 남는다 (`HwpParagraphBoundaryCopyTests`).
         let row = rows(3)
         let geometry = HwpSelectionGeometry(document: makeDocument([
             textBlock("A", frame: row[0]),
@@ -129,8 +129,8 @@ final class HwpEmptyParagraphSelectionTests: XCTestCase {
         expect(plain(emptyEnd, bEnd)) == "\nB"
         // 빈 줄만 고르면 글자가 없다.
         expect(plain(emptyStart, emptyEnd)) == ""
-        // 비어 있지 않은 단위는 종전 규칙 그대로 — B 시작에서 끝나면 B는 빠진다.
-        expect(plain(aStart, bStart)) == "A\n"
+        // B 시작에서 끝나면 A의 문단 부호와 빈 문단의 부호를 둘 다 지난다 — 개행 둘.
+        expect(plain(aStart, bStart)) == "A\n\n"
     }
 
     func testNewlineAfterEmptyParagraphInheritsTheAnchorStyle() throws {
