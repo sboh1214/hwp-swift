@@ -129,7 +129,9 @@ final class ParaHeadInfoTests: XCTestCase {
     // MARK: - 합성
 
     /// 표 40 필드를 받는 init이 비트를 합성하고 디코더가 같은 값을 돌려준다 —
-    /// 가운데·오른쪽 정렬과 HWPUNIT 거리는 실문서 대조 전이라 여기서만 본다.
+    /// 실문서 대조는 위 `testOutlineNumberingFixturePinsNonDefaultAlignmentAndOffsetType`이
+    /// 하고, 여기서는 실물에 없는 조합(번호 모양 14·음수 너비 보정·글자 모양 ID 7)의
+    /// 합성 왕복만 본다.
     func testTypedInitComposesTable40BitsAndRoundTrips() {
         let info = HwpParaHeadInfo(
             alignment: .right,

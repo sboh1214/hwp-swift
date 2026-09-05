@@ -20,9 +20,14 @@ import Foundation
    `.`로 이어 붙인 경로다 (10수준에서 `I.가.1.가.1.가.①.㉮.ㄱ.i`), `^N`은 그
    뒤에 마침표를 하나 더 찍는다. 렌더는 아직 지원하지 않는다 —
    `.levelPath`로 구분만 하고 `isSupported`가 거짓이 된다 (#153).
- - 그 밖의 캐럿(`^0`·`^x`·`^^`·끝의 `^`)은 지시자가 아니라 **문자 그대로**
-   그려진다 (`^0)`이 `^0)`로, `^x^^)`가 `^x^^)`로). 그래서 별도 토큰 없이
-   `.literal`에 합친다 — 임의의 번호로 읽지 않으면서 한글과 같은 글자가 된다.
+ - 그 밖의 캐럿은 지시자가 아니라 **다음 글자와 함께** 문자 그대로 그려진다
+   (`^0)`→`^0)`, `^x^^)`→`^x^^)`, `^^1)`→`^^1)`, `^^^1)`→`^^I)`, `^a^1)`→`^aI)`,
+   끝의 `^`는 혼자). 캐럿이 짝을 이룬 뒤에야 다음 캐럿이 지시자가 되므로
+   `^^1`은 1수준 참조가 아니다. 그래서 별도 토큰 없이 두 글자를 `.literal`에
+   합친다 — 임의의 번호로 읽지 않으면서 한글과 같은 글자가 된다. 예외적으로
+   `^^n)`은 한글이 `^^` 뒤에 경로(첫 수준이 숫자 1로 보이는)를 그리는 특이
+   경로를 탔는데, 실문서에 있을 수 없는 형식이라 모델링하지 않고 여기서는
+   `^^n)` 문자 그대로다.
 
  분해는 순수 함수라 문서 순서·카운터와 무관하다 — 문단별 번호 문자열 조립은
  #153이 이 토큰 위에서 한다.
@@ -31,9 +36,9 @@ public struct HwpNumberingFormatPattern: HwpPrimitive {
     /// 형식 문자열의 조각 하나.
     public enum Token: HwpPrimitive {
         /// 문자 그대로 표시할 조각 — 인접한 문자는 하나로 합치고, 지시자가 아닌
-        /// 캐럿(`^0`·`^x`·`^^`·끝의 `^`)도 여기에 든다.
+        /// 캐럿은 다음 글자와 함께(`^0`·`^x`·`^^`, 끝의 `^`는 혼자) 여기에 든다.
         case literal(String)
-        /// 수준 N(1-9)의 번호 자리 — `^N`. 캐럿은 숫자 한 자리만 먹는다.
+        /// 수준 1-9의 번호 자리 — `^1`…`^9`. 캐럿은 숫자 한 자리만 먹는다.
         case level(Int)
         /// 레벨 경로 — `^n`(1.1.1) 또는 마침표를 하나 더 찍는 `^N`(1.1.1.).
         /// 스펙에는 있으나 아직 지원하지 않는다.
@@ -85,23 +90,36 @@ public struct HwpNumberingFormatPattern: HwpPrimitive {
             }
         }
 
-        // 유니코드 스칼라 단위로 본다 — 캐럿과 ASCII 숫자는 결합 문자와 클러스터를
-        // 이루지 않으므로 Character 단위와 결과가 같고, 원문 조각을 그대로
-        // 돌려주는 데는 스칼라가 정확하다.
+        // 유니코드 스칼라 단위로 본다 — 한글은 WCHAR(UTF-16 단위) 스트림을 훑으므로
+        // 숫자 뒤에 결합 문자가 와도(`^1\u{0301}`) 지시자다. Character 단위로 돌면
+        // `1` + U+0301이 한 클러스터로 붙어 `"1"`과 달라져 지시자를 놓친다. 지시자
+        // 글자가 전부 BMP ASCII라 스칼라 스캔은 UTF-16 스캔과 결과가 같다.
         let scalars: [Unicode.Scalar] = Array(format.unicodeScalars)
         var index = 0
         while index < scalars.count {
             let scalar = scalars[index]
             let next: Unicode.Scalar? = index + 1 < scalars.count ? scalars[index + 1] : nil
-            guard scalar == "^", let token = directive(after: next) else {
-                // 지시자가 아닌 캐럿은 다음 글자와 함께 문자 그대로 남는다.
+            guard scalar == "^" else {
                 literal.append(scalar)
                 index += 1
                 continue
             }
-            flushLiteral()
-            tokens.append(token)
-            index += 2
+            if let token = directive(after: next) {
+                flushLiteral()
+                tokens.append(token)
+                index += 2
+                continue
+            }
+            // 지시자가 아닌 캐럿은 다음 글자를 **함께** 소비해 문자 그대로 남긴다 —
+            // 한글.app 실측 `^^1)` → `^^1)`(둘째 캐럿이 1을 먹지 않는다),
+            // `^^^1)` → `^^I)`, `^a^1)` → `^aI)`. 끝의 캐럿은 혼자 남는다.
+            literal.append(scalar)
+            if let next {
+                literal.append(next)
+                index += 2
+            } else {
+                index += 1
+            }
         }
         flushLiteral()
         return HwpNumberingFormatPattern(tokens: tokens)

@@ -37,7 +37,8 @@ HWPX(OCF ZIP + OWPML XML, KS X 6101)를 **기존 `Hwp*` 모델로 변환 파싱*
 - **미지 요소는 `hwpxSyntheticTagId`(0) + 요소명 payload**로
   `HwpUnknownRecord`에 남긴다 — `parseDiagnostics()`가 무변경으로 HWPX
   미해석 요소를 보고하는 규약이다. HWPX 문서의 진단에서 tagId 0의 payload는
-  UTF-8 OWPML local name으로 읽는다.
+  UTF-8 OWPML local name으로 읽되, **속성 수준 강등**은 `요소@속성=값` 꼴이다
+  (현재 `secPr@outlineShapeIDRef=` 하나 — "구역의 개요 번호 참조" 참조).
 - **요소 매칭은 (namespace URI, local name)** — 접두사(hp/hh/hs)는 문서마다
   다를 수 있다. 낯선 namespace의 동명 요소는 OWPML로 오인하지 않는다.
 - **복구 규약은 바이너리와 동일** — 손상 문단은 placeholder, 구역 첫 문단은

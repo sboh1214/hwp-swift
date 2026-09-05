@@ -21,6 +21,15 @@ import XCTest
             return try CoreHwp.HwpFile(fromPath: url.path)
         }
 
+        /// 같은 문서의 HWPX 쌍 — `HwpFile`이 선두 바이트로 포맷을 가른다.
+        private func hwpxFixture(_ id: String) throws -> CoreHwp.HwpFile {
+            let url = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("CoreHwpTests/HwpxFixtures/\(id)/document.hwpx")
+            return try CoreHwp.HwpFile(fromPath: url.path)
+        }
+
         private struct Walk {
             var references: [HwpNumberingHeadingReference] = []
             /// 구역 인덱스 → 그 구역 정의의 참조 (1-based).
@@ -124,8 +133,7 @@ import XCTest
         /// 문단 번호 2개는 문단 모양(참조 1 → 한글 기본 정의)을 따른다. 두 종류가 서로
         /// 다른 정의에 닿는 유일한 실물이고 HWPX 쌍도 같은 결과여야 한다.
         func testOutlineNumberingFixtureResolvesBothHeadingKinds() throws {
-            for id in ["outline-numbering"] {
-                let file = try fixture(id)
+            for file in [try fixture("outline-numbering"), try hwpxFixture("outline-numbering")] {
                 let index = HwpIndex(from: file)
                 let walk = walk(file)
 

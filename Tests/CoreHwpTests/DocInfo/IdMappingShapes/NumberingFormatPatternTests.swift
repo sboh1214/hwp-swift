@@ -130,17 +130,27 @@ final class NumberingFormatPatternTests: XCTestCase {
         expect(HwpNumberingFormatPattern.referenceLevelRange) == 1 ... 9
     }
 
-    /// 지시자가 아닌 캐럿은 문자 그대로다 — 한글.app이 `^0)`·`^x^^)`를 그 글자
-    /// 그대로 그린다(같은 실측). 별도 미지원 토큰을 두지 않고 문자 조각에 합친다.
+    /// 지시자가 아닌 캐럿은 다음 글자와 함께 문자 그대로다 — 한글.app 실측
+    /// (2026-09-05, 10수준 미리보기): `^0)`→`^0)`, `^x^^)`→`^x^^)`, `^^1)`→`^^1)`,
+    /// `^^^1)`→`^^I)`, `^a^1)`→`^aI)`. 둘째 캐럿이 첫 캐럿과 짝지어 소비되므로
+    /// `^^1`은 1수준 참조가 아니고, 홀수 번째 캐럿만 지시자가 될 수 있다.
+    /// 별도 미지원 토큰을 두지 않고 문자 조각에 합친다.
     func testNonDirectiveCaretsAreLiteralText() {
         expect(HwpNumberingFormatPattern.parse("^x").tokens) == [.literal("^x")]
         expect(HwpNumberingFormatPattern.parse("제^").tokens) == [.literal("제^")]
         expect(HwpNumberingFormatPattern.parse("^x^^)").tokens) == [.literal("^x^^)")]
-        // 캐럿은 이스케이프가 아니다 — `^x^^)`가 그대로 그려졌으므로 캐럿마다 따로
-        // 판정한다: 첫 캐럿은 다음이 캐럿이라 문자, 둘째 캐럿은 숫자를 먹는다.
-        expect(HwpNumberingFormatPattern.parse("^^1").tokens) == [.literal("^"), .level(1)]
+        expect(HwpNumberingFormatPattern.parse("^^1)").tokens) == [.literal("^^1)")]
+        expect(HwpNumberingFormatPattern.parse("^^^1)").tokens) == [
+            .literal("^^"), .level(1), .literal(")"),
+        ]
+        expect(HwpNumberingFormatPattern.parse("^a^1)").tokens) == [
+            .literal("^a"), .level(1), .literal(")"),
+        ]
         // 전각 숫자는 ASCII 숫자가 아니다.
         expect(HwpNumberingFormatPattern.parse("^１").tokens) == [.literal("^１")]
+        // `^^n)`은 한글이 특이하게 그리지만(`^^` 뒤에 경로) 실문서에 없는 형식이라
+        // 모델링하지 않는다 — 짝 규칙대로 문자 그대로다.
+        expect(HwpNumberingFormatPattern.parse("^^n)").tokens) == [.literal("^^n)")]
 
         let mixed = HwpNumberingFormatPattern.parse("^1.^x")
         expect(mixed.tokens) == [.level(1), .literal(".^x")]

@@ -23,7 +23,9 @@ fixture다. 저장소에서 헌법주석(`legacy-common-control-property`) 다�
   한글.app이 `ㄱ.I0)`로 그린다)
 - 개요 문단의 `paraShape.numberingOrBulletId`는 전부 0 — 개요 정의는 구역 정의가
   가리킨다
-- PreviewText·PreviewImage stream, BinData storage 없음
+- PreviewText stream
+- PreviewImage stream (한글.app이 그린 개요·문단 번호 라벨 포함 — fidelity 임계 0.001)
+- BinData storage 없음
 
 ## 재생성 절차
 
