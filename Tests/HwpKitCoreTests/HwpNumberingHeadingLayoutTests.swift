@@ -222,35 +222,51 @@ import XCTest
         /// 시작하면 첫 줄도 그대로다 — 문단 전체 측정과 조각 렌더의 줄 수가 같아야 한다
         /// (33자 줄은 들여쓰기 0에서만 한 줄에 든다).
         func testContinuationFragmentKeepsStyleAfterExplicitLineBreaks() throws {
+            try Self.assertContinuationParity(separator: "\n")
+        }
+
+        /// 본문의 U+2029(문단 구분자)도 CoreText에는 CT 문단 경계라 같은 규칙이다 —
+        /// `\n`만 경계로 보면 U+2029 뒤 줄까지 보정돼 줄 수가 갈린다.
+        func testContinuationFragmentTreatsParagraphSeparatorAsBoundary() throws {
+            try Self.assertContinuationParity(separator: "\u{2029}")
+        }
+
+        private static func assertContinuationParity(
+            separator: String, file: FileString = #file, line: UInt = #line
+        ) throws {
             let width: CGFloat = 200
-            let line = String(repeating: "a", count: 33)
-            let text = Array(repeating: line, count: 8).joined(separator: "\n")
+            let lineText = String(repeating: "a", count: 33)
+            let text = Array(repeating: lineText, count: 8).joined(separator: separator)
             // 한 줄 끝(코드 10)은 1 WCHAR 문자 컨트롤(`.char`)이라 합성 문단의 "\n"이
-            // 그대로 실물과 같은 표현이다.
+            // 그대로 실물과 같은 표현이고, U+2029는 본문 글자로 그대로 실린다.
             let attributed = try Support.build(text, runs: [(0, 0)])
             let string = attributed.string as NSString
-            expect(string.components(separatedBy: "\n").count) == 8
+            expect(file: file, line: line, string.components(separatedBy: separator).count) == 8
             let hanging = Support.styleValue(.headIndent, in: attributed)
-            expect(hanging) > 10
+            expect(file: file, line: line, hanging) > 10
 
             // 셋째 줄 끝 바로 뒤에서 시작하는 조각: 첫 줄도 원래 들여쓰기(0).
-            let breaks = (0 ..< string.length).filter { string.character(at: $0) == 0x0A }
+            let unit = (separator as NSString).character(at: 0)
+            let breaks = (0 ..< string.length).filter { string.character(at: $0) == unit }
             let afterBreak = NSRange(location: breaks[2] + 1, length: string.length - breaks[2] - 1)
             let afterBreakFragment = HwpParagraphLayout.continuationFragment(
                 of: attributed, range: afterBreak
             )
-            expect(Support.styleValue(.firstLineHeadIndent, in: afterBreakFragment)) == 0
+            expect(file: file, line: line, Support.styleValue(.firstLineHeadIndent, in: afterBreakFragment))
+                == 0
 
             // 넷째 줄 중간에서 시작하는 조각: 첫 CT 문단만 headIndent, 그 뒤는 원래대로.
             let midLine = NSRange(location: breaks[2] + 11, length: string.length - breaks[2] - 11)
             let fragment = HwpParagraphLayout.continuationFragment(of: attributed, range: midLine)
-            expect(Support.styleValue(.firstLineHeadIndent, in: fragment)) == hanging
+            expect(file: file, line: line, Support.styleValue(.firstLineHeadIndent, in: fragment))
+                == hanging
             let fragmentString = fragment.string as NSString
-            let nextBreak = fragmentString.range(of: "\n").location
+            let nextBreak = fragmentString.range(of: separator).location
             let afterBreakLine = fragment.attributedSubstring(
                 from: NSRange(location: nextBreak + 1, length: 1)
             )
-            expect(Support.styleValue(.firstLineHeadIndent, in: afterBreakLine)) == 0
+            expect(file: file, line: line, Support.styleValue(.firstLineHeadIndent, in: afterBreakLine))
+                == 0
 
             // 문단 전체 측정에서 조각 범위에 걸친 줄 수 == 조각 렌더의 줄 수.
             let measured = HwpParagraphLayout().layout(
@@ -261,8 +277,8 @@ import XCTest
             let drawn = HwpDrawnTextLayout.lines(
                 attributedString: fragment, origin: .zero, lineWidth: width
             )
-            expect(measured.count) == 5
-            expect(drawn.count) == measured.count
+            expect(file: file, line: line, measured.count) == 5
+            expect(file: file, line: line, drawn.count) == measured.count
         }
     }
 #endif

@@ -15,18 +15,29 @@ public extension HwpParagraphLayout {
     /// 측정(`layout`)은 문단 전체를 한 프레임으로 재 그 줄을 이미 `headIndent`에
     /// 두었으므로 조각의 줄바꿈도 측정과 같아진다.
     ///
-    /// 바꾸는 범위는 조각의 **첫 CT 문단**(첫 한 줄 끝 `\n`까지)뿐이다 — 한 줄
-    /// 끝(코드 10) 뒤는 측정에서도 CT 문단이 새로 시작해 `firstLineHeadIndent`에
-    /// 놓이므로 원래 스타일을 유지해야 줄바꿈이 같다. 같은 이유로 조각이 한 줄 끝
-    /// 바로 뒤에서 시작하면 첫 줄도 원래대로 둔다. 문단 첫머리 조각, 두 들여쓰기가
-    /// 같은 문단, 스타일 없는 문자열은 그대로 잘라 돌려준다.
+    /// 바꾸는 범위는 조각의 **첫 CT 문단**(첫 문단 구분자까지)뿐이다 — 한 줄 끝(코드
+    /// 10, `\n`)이나 본문의 U+2029 뒤는 측정에서도 CT 문단이 새로 시작해
+    /// `firstLineHeadIndent`에 놓이므로 원래 스타일을 유지해야 줄바꿈이 같다. 같은
+    /// 이유로 조각이 문단 구분자 바로 뒤에서 시작하면 첫 줄도 원래대로 둔다. 경계는
+    /// `NSString.getParagraphStart(_:end:contentsEnd:for:)`의 문단 정의(LF·CR·CRLF·
+    /// U+2029)로 찾아 CoreText와 같다 — `\n`만 보면 U+2029 뒤 줄까지 보정돼 줄 수가
+    /// 갈린다. 문단 첫머리 조각, 두 들여쓰기가 같은 문단, 스타일 없는 문자열은 그대로
+    /// 잘라 돌려준다.
     static func continuationFragment(
         of attributedString: NSAttributedString, range: NSRange
     ) -> NSAttributedString {
         let fragment = attributedString.attributedSubstring(from: range)
         let string = attributedString.string as NSString
+        var paragraphStart = 0
+        var paragraphEnd = 0
+        if fragment.length > 0 {
+            string.getParagraphStart(
+                &paragraphStart, end: &paragraphEnd, contentsEnd: nil,
+                for: NSRange(location: range.location, length: 0)
+            )
+        }
         guard range.location > 0, fragment.length > 0,
-              string.character(at: range.location - 1) != 0x0A,
+              paragraphStart < range.location,
               let value = fragment.attribute(
                   kCTParagraphStyleAttributeName as NSAttributedString.Key, at: 0,
                   effectiveRange: nil
@@ -37,9 +48,8 @@ public extension HwpParagraphLayout {
         let head = floatValue(.headIndent, of: style)
         guard abs(firstLine - head) > 0.001 else { return fragment }
 
-        let lineBreak = (fragment.string as NSString).range(of: "\n")
-        let firstParagraphLength = lineBreak.location == NSNotFound
-            ? fragment.length : lineBreak.location + lineBreak.length
+        // 첫 CT 문단 = 조각 시작부터 그 문단의 구분자(포함)까지, 조각 끝이 먼저면 거기까지.
+        let firstParagraphLength = min(paragraphEnd, NSMaxRange(range)) - range.location
         let mutable = NSMutableAttributedString(attributedString: fragment)
         mutable.addAttribute(
             kCTParagraphStyleAttributeName as NSAttributedString.Key,
