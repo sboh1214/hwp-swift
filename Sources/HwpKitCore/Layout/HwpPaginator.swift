@@ -1004,11 +1004,10 @@ private extension HwpPaginator {
             columnIndex = runIndex
             contentHeightUsed = 0
             paragraphAnchorTop = currentColumnFrame.minY
-            let slice = attributedString.attributedSubstring(
-                from: NSRange(location: start, length: length)
-            )
             // 둘째 단부터는 이어지는 조각이라 첫 줄 들여쓰기를 둘째 줄에 맞춘다.
-            let fragment = start > 0 ? HwpParagraphLayout.continuationFragment(slice) : slice
+            let fragment = HwpParagraphLayout.continuationFragment(
+                of: attributedString, range: NSRange(location: start, length: length)
+            )
             appendBlock(
                 height: max(1, HwpUnits.points(
                     fromHwpUnit: Int32(clamping: runBottom - Int(firstSegment.lineLocation))
@@ -1512,12 +1511,12 @@ private extension HwpPaginator {
                 NSUnionRange($0, $1.attributedRange)
             }
             let isWholeParagraph = takeCount == lines.count
-            // 이어지는 조각은 첫 줄 들여쓰기를 둘째 줄에 맞춘다 (`continuationFragment`).
-            let fragment = attributedString.attributedSubstring(from: range)
             appendBlock(
                 height: takenHeight,
-                attributedString: range.location > 0
-                    ? HwpParagraphLayout.continuationFragment(fragment) : fragment,
+                // 이어지는 조각은 첫 줄 들여쓰기를 둘째 줄에 맞춘다 (`continuationFragment`).
+                attributedString: HwpParagraphLayout.continuationFragment(
+                    of: attributedString, range: range
+                ),
                 hyperlinkURL: isWholeParagraph ? hyperlinkURL : fragmentURL,
                 paragraphId: paragraphId,
                 lines: isWholeParagraph ? lines : []

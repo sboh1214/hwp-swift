@@ -450,9 +450,10 @@ enum HwpTableSplitter {
                 inlineAnchors: line.inlineAnchors
             )
         }
-        let slice = paragraph.attributedString.attributedSubstring(from: range)
         // 문단 첫머리가 아닌 조각은 이어지는 조각 — 첫 줄 들여쓰기를 둘째 줄에 맞춘다.
-        let sub = range.location > 0 ? HwpParagraphLayout.continuationFragment(slice) : slice
+        let sub = HwpParagraphLayout.continuationFragment(
+            of: paragraph.attributedString, range: range
+        )
         let continued = range.location + range.length < paragraph.attributedString.length
         return HwpLaidOutParagraph(
             attributedString: continued ? markedAsContinuedFragment(sub) : sub,

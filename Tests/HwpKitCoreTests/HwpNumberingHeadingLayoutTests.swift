@@ -189,11 +189,12 @@ import XCTest
         }
 
         /// 이어지는 조각의 문단 스타일: 첫 줄 들여쓰기가 둘째 줄 들여쓰기로 바뀌고 나머지
-        /// 설정은 그대로다. 두 값이 같은 문단은 원본을 돌려준다.
+        /// 설정은 그대로다. 문단 첫머리 조각과 두 들여쓰기가 같은 문단은 그대로 잘린다.
         func testContinuationFragmentAlignsItsFirstLineWithTheHangingIndent() throws {
             let attributed = try Support.build(String(repeating: "가나다 ", count: 30), runs: [(0, 0)])
-            let fragment = attributed.attributedSubstring(from: NSRange(location: 12, length: 20))
-            let continued = HwpParagraphLayout.continuationFragment(fragment)
+            let range = NSRange(location: 12, length: 20)
+            let fragment = attributed.attributedSubstring(from: range)
+            let continued = HwpParagraphLayout.continuationFragment(of: attributed, range: range)
 
             expect(Support.styleValue(.firstLineHeadIndent, in: fragment)) == 0
             expect(Support.styleValue(.firstLineHeadIndent, in: continued))
@@ -204,8 +205,64 @@ import XCTest
                 == Support.styleValue(.maximumLineHeight, in: fragment)
             expect(continued.string) == fragment.string
 
-            let plain = try Support.build("가나", runs: [(0, 0)], number: nil)
-            expect(HwpParagraphLayout.continuationFragment(plain)) === plain
+            let head = HwpParagraphLayout.continuationFragment(
+                of: attributed, range: NSRange(location: 0, length: 20)
+            )
+            expect(Support.styleValue(.firstLineHeadIndent, in: head)) == 0
+            let plain = try Support.build("가나다 가나다", runs: [(0, 0)], number: nil)
+            let plainTail = HwpParagraphLayout.continuationFragment(
+                of: plain, range: NSRange(location: 4, length: 3)
+            )
+            expect(Support.styleValue(.firstLineHeadIndent, in: plainTail))
+                == Support.styleValue(.headIndent, in: plain)
+        }
+
+        /// 한 줄 끝(코드 10) 뒤는 측정에서도 CT 문단이 새로 시작해 첫 줄 들여쓰기에 놓이므로
+        /// 이어지는 조각의 보정은 첫 CT 문단까지만이고, 조각이 한 줄 끝 바로 뒤에서
+        /// 시작하면 첫 줄도 그대로다 — 문단 전체 측정과 조각 렌더의 줄 수가 같아야 한다
+        /// (33자 줄은 들여쓰기 0에서만 한 줄에 든다).
+        func testContinuationFragmentKeepsStyleAfterExplicitLineBreaks() throws {
+            let width: CGFloat = 200
+            let line = String(repeating: "a", count: 33)
+            let text = Array(repeating: line, count: 8).joined(separator: "\n")
+            // 한 줄 끝(코드 10)은 1 WCHAR 문자 컨트롤(`.char`)이라 합성 문단의 "\n"이
+            // 그대로 실물과 같은 표현이다.
+            let attributed = try Support.build(text, runs: [(0, 0)])
+            let string = attributed.string as NSString
+            expect(string.components(separatedBy: "\n").count) == 8
+            let hanging = Support.styleValue(.headIndent, in: attributed)
+            expect(hanging) > 10
+
+            // 셋째 줄 끝 바로 뒤에서 시작하는 조각: 첫 줄도 원래 들여쓰기(0).
+            let breaks = (0 ..< string.length).filter { string.character(at: $0) == 0x0A }
+            let afterBreak = NSRange(location: breaks[2] + 1, length: string.length - breaks[2] - 1)
+            let afterBreakFragment = HwpParagraphLayout.continuationFragment(
+                of: attributed, range: afterBreak
+            )
+            expect(Support.styleValue(.firstLineHeadIndent, in: afterBreakFragment)) == 0
+
+            // 넷째 줄 중간에서 시작하는 조각: 첫 CT 문단만 headIndent, 그 뒤는 원래대로.
+            let midLine = NSRange(location: breaks[2] + 11, length: string.length - breaks[2] - 11)
+            let fragment = HwpParagraphLayout.continuationFragment(of: attributed, range: midLine)
+            expect(Support.styleValue(.firstLineHeadIndent, in: fragment)) == hanging
+            let fragmentString = fragment.string as NSString
+            let nextBreak = fragmentString.range(of: "\n").location
+            let afterBreakLine = fragment.attributedSubstring(
+                from: NSRange(location: nextBreak + 1, length: 1)
+            )
+            expect(Support.styleValue(.firstLineHeadIndent, in: afterBreakLine)) == 0
+
+            // 문단 전체 측정에서 조각 범위에 걸친 줄 수 == 조각 렌더의 줄 수.
+            let measured = HwpParagraphLayout().layout(
+                attributedString: attributed,
+                paraShape: HwpSynthetic.outlineParaShape(levelRawValue: 0),
+                columnWidth: width
+            ).lines.filter { NSIntersectionRange($0.attributedRange, midLine).length > 0 }
+            let drawn = HwpDrawnTextLayout.lines(
+                attributedString: fragment, origin: .zero, lineWidth: width
+            )
+            expect(measured.count) == 5
+            expect(drawn.count) == measured.count
         }
     }
 #endif

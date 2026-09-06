@@ -186,7 +186,11 @@ paraShape의 그 값은 전부 0이라 (헌법주석 1,944문단) 종전 `> 0` �
   `HwpParagraphLayout.continuationFragment`가 문단 스타일의 `firstLineHeadIndent`를
   `headIndent`로 바꿔 단다 — 한글은 이어지는 쪽의 첫 줄을 문단 첫 줄로 취급하지 않고,
   측정은 문단 전체를 한 프레임으로 재 그 줄들을 이미 `headIndent`에 두었다(들여쓰기
-  문단 전반에 걸친 규칙이라 번호 문단만의 것이 아니다).
+  문단 전반에 걸친 규칙이라 번호 문단만의 것이 아니다). 바꾸는 범위는 조각의 **첫
+  CT 문단**(첫 한 줄 끝 `\n`까지)뿐이고 조각이 한 줄 끝 바로 뒤에서 시작하면 첫
+  줄도 그대로다 — 한 줄 끝(코드 10) 뒤는 측정에서도 CT 문단이 새로 시작해
+  `firstLineHeadIndent`에 놓이므로, 조각 전체를 바꾸면 그 뒤 줄들이 측정과 다른
+  폭으로 접혀 줄 수가 갈린다(측정·렌더 공유 줄바꿈 규약).
 실물 대조는 `outline-numbering`(7줄 전부 라벨·본문 x가 한글.app과 0.5pt 이내)과
 헌법주석 13쪽(`1.` 라벨·본문 0.2pt 이내, 제목 띠 가운데 정렬 동일)이고, 가드는
 `HwpNumberingHeadingRenderTests`(합성)·`FixtureNumberingLabelRenderTests`(실물 —
