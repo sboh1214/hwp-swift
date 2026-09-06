@@ -292,6 +292,7 @@ HWP_HANCOM_FONTS=1 swift test                  # 한컴오피스 번들 폰트 o
 RECORD_RENDER_HASHES=1 swift test --filter FixtureRenderHash     # 렌더 픽셀 해시 기준선 레코딩 (Snapshots/ — gitignore, 이 머신·현재 폰트 모드 전용)
 RECORD_BLOCK_SNAPSHOTS=1 swift test --filter FixtureBlockLayout  # 블록 좌표 스냅샷 재생성 (기준선은 커밋 대상 — diff 리뷰 필수)
 RECORD_RENDER_GOLDENS=1 swift test --filter FixtureRenderGolden  # 결정론 잉크 그리드 골든 재기록 (기준선은 커밋 대상 — diff 리뷰 필수)
+RECORD_NUMBERING_SNAPSHOTS=1 swift test --filter HwpParagraphNumberingFixture  # 문단 번호·개요 번호 라벨 스냅샷 재기록 (기준선은 커밋 대상 — diff 리뷰 필수, 레코딩 뒤 의도적으로 실패)
 xcodebuild test -scheme Hwp-Swift-Package -destination 'platform=iOS Simulator,name=iPhone 17 Pro'  # iOS 테스트 (#if os(iOS) 코드는 여기서만 실행)
 swiftformat .                                  # 포맷
 swiftformat --lint .                           # CI lint 체크
@@ -617,7 +618,7 @@ noori p2에서 비영 셀의 30%까지 지워도 양쪽 통과).
 - **두 종류의 스코프가 다르다.** 개요는 **최상위 본문 문단만**이다 — 문서의
   목차는 본문 흐름의 제목 계층이지 개체 안 텍스트가 아니고, 실측도 그쪽이다
   (헌법주석의 개요 1,944개는 전부 최상위 본문; `noori`의 개요 4개는 전부
-  표/글상자 안이라 목차 항목이 아니다). 책갈피는 앵커라 어디에 놓이든
+  표 셀 안이라 목차 항목이 아니다). 책갈피는 앵커라 어디에 놓이든
   목적지이므로 **검색과 같은 스코프**(`role == .body`)로 모은다: 머리말/꼬리말은
   빠지고 각주·표 셀·글상자·중첩 표는 들어온다. 모델을 걷는 것이라 여러 쪽에
   걸친 표에서도 셀은 한 번만 순회된다.

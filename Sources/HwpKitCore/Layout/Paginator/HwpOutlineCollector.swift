@@ -189,7 +189,7 @@ private extension HwpOutlineCollector {
     /// 문단은 목록에 넣지 않는다 (호출자가 그 문단으로 이 함수를 부르지 않는다).
     /// 문서의 목차는 본문 흐름의 제목 계층이지 개체 안 텍스트가 아니고, 실측도
     /// 그쪽을 가리킨다: 헌법주석의 개요 문단 1,944개는 전부 최상위 본문 문단이고,
-    /// `noori`의 개요 문단 4개는 전부 표/글상자 안이라 목차 항목이 아니다.
+    /// `noori`의 개요 문단 4개는 전부 표 셀 안이라 목차 항목이 아니다.
     /// 책갈피는 반대다 — 앵커라 어디에 놓이든 목적지이므로 본문 컨테이너를
     /// 재귀한다 (`collectBookmarks`).
     mutating func collectHeading(from paragraph: CoreHwp.HwpParagraph, page: Int) {

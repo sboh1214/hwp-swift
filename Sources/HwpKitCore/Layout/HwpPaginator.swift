@@ -32,8 +32,10 @@ public actor HwpPaginator {
     private var contentHeightUsed: CGFloat = 0
     private var didFinishPagination = false
     /// 문서 순서로 생성한 문단 번호·개요 번호 (#153). 조판과 무관한 순수 함수의
-    /// 결과라 init에서 한 번 만든다 — 라벨 렌더(#154)가 문단마다 위치 경로로 읽는다.
-    private let numbering: HwpParagraphNumbering
+    /// 결과라 init에서 한 번 만들고 이후 바뀌지 않는다 — 불변 `Sendable` 값이라
+    /// actor 밖에서도 동기로 읽는다(라벨 렌더 #154의 조판 문자열 조립·복사·
+    /// 접근성은 actor 격리 밖 동기 코드다). 화면에는 아직 그리지 않는다.
+    public nonisolated let paragraphNumbering: HwpParagraphNumbering
 
     /// 문서 전역 페이지 상한 — 쪽 나누기 문단·별개 표가 다수면 표당 세그먼트
     /// 상한(maximumTableSegments)만으로는 총 페이지가 무제한이라, 작은 레코드
@@ -269,7 +271,7 @@ public actor HwpPaginator {
         )
         absoluteCachePlacer = HwpAbsoluteCachePlacer(sections: sections)
         outlineCollector = HwpOutlineCollector(index: index)
-        numbering = HwpParagraphNumbering.generate(sections: sections, index: index)
+        paragraphNumbering = HwpParagraphNumbering.generate(sections: sections, index: index)
         currentPageGeometry = Self.initialGeometry(for: sections)
         currentSectionDef = Self.firstSectionDef(for: sections)
         // init에서는 계산 프로퍼티 (actor-isolated) 대신 저장소에 직접 쓴다.
@@ -341,12 +343,6 @@ public actor HwpPaginator {
     /// 끝나면 나온다.
     public func outlineIsTruncated() async -> Bool {
         outlineCollector.didReachItemLimit
-    }
-
-    /// 문서 순서로 생성한 문단 번호·개요 번호 (#153) — 조판 진행과 무관하게
-    /// 언제 물어도 전체 표다 (init에서 한 번 만든다). 화면에는 아직 그리지 않는다.
-    public func paragraphNumbering() async -> HwpParagraphNumbering {
-        numbering
     }
 
     public func outline() async -> [HwpOutlineItem] {
@@ -1600,9 +1596,9 @@ private extension HwpPaginator {
     }
 
     /// 개요(머리 종류 1)/번호(2) 문단 머리의 생성 라벨은 numbering 정의에 있고
-    /// PARA_TEXT에 없다 — 렌더러가 아직 그 라벨을 만들지 않으므로, 번호가
-    /// 조용히 사라지지 않게 unsupported로 보고한다. 글머리표(3)는
-    /// appendBulletHeading이 렌더하므로 제외 (#1).
+    /// PARA_TEXT에 없다 — 라벨 문자열은 `paragraphNumbering`이 만들지만(#153)
+    /// 렌더러가 아직 그리지 않으므로, 번호가 조용히 사라지지 않게 unsupported로
+    /// 보고한다. 글머리표(3)는 appendBulletHeading이 렌더하므로 제외 (#1).
     ///
     /// 참조 해석은 `HwpNumberingHeadingReference`다 (#152) — 개요는 문단 모양이
     /// 아니라 **현재 구역 정의**의 `numberParaShapeId`를 따르므로, 종전의

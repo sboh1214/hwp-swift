@@ -90,8 +90,9 @@ struct HwpNumberingHeadingReference: Equatable {
 
     /// `unsupportedElements()`에 실을 진단 문자열.
     ///
-    /// 정의에 닿은 문단은 종전 문구 "(미렌더)"를 그대로 쓴다 — 라벨을 렌더러가
-    /// 아직 만들지 않는다는 뜻이고 #154가 렌더한 문단을 여기서 뺀다. 참조가
+    /// 정의에 닿은 문단은 종전 문구 "(미렌더)"를 그대로 쓴다 — 라벨 문자열은
+    /// `HwpParagraphNumbering`이 만들지만(#153) 렌더러가 아직 그리지 않는다는
+    /// 뜻이고 #154가 렌더한 문단을 여기서 뺀다. 참조가
     /// 없거나 댕글링이면 라벨을 만들 정의 자체가 없으므로 그 사실을 적는다.
     var unsupportedHint: String {
         let subject = switch kind {

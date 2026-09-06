@@ -105,6 +105,9 @@ if buildsForApplePlatforms {
                 "HwpKitCore",
                 "CoreHwp",
                 .product(name: "Nimble", package: "Nimble"),
+            ],
+            exclude: [
+                "ParagraphNumberingSnapshots",
             ]
         ),
         .testTarget(

@@ -35,8 +35,9 @@ enum HwpNumberingLabelFormatter {
         return text
     }
 
-    /// 수준 하나의 번호를 그 수준의 번호 모양(표 41 = 표 134의 0-14)으로 그린다.
-    /// 문단 머리 정보가 없는(12바이트 미만) 슬롯은 숫자다.
+    /// 수준 하나의 번호를 그 수준의 번호 모양(표 41 = 표 134의 0-14; 4비트 필드라
+    /// 15까지 담기고 그 밖의 표 134 코드는 파서가 접는다)으로 그린다. 문단 머리
+    /// 정보가 없는(12바이트 미만) 슬롯은 숫자다.
     private static func rendered(
         level: Int,
         definition: CoreHwp.HwpNumbering,

@@ -4,7 +4,7 @@ import XCTest
 
 /// 문단 번호 정의의 시작 번호 해석 (#153) — 시작 번호 방식(`continuesPreviousList`)과
 /// 수준별 시작 번호(`startingNumber(forLevel:)`). 실물은 헌법주석(5.0.2.2, 수준별
-/// 배열 없음·정의 54개)과 한글.app 12.30 저장본(`outline-numbering`)이다.
+/// 배열 없음·정의 41개)과 한글.app 12.30 저장본(`outline-numbering`)이다.
 final class NumberingStartingNumberTests: XCTestCase {
     private static func definition(
         startingIndex: UInt16,
@@ -82,5 +82,18 @@ final class NumberingStartingNumberTests: XCTestCase {
         ) == 4
         expect(Self.definition(startingIndex: 1).continuesPreviousList) == false
         expect(Self.definition(startingIndex: 5).continuesPreviousList) == false
+    }
+
+    /// 수준별 값은 UINT32지만 65,535로 접는다 — 정의 전체 시작 번호(UINT16)와 한글의
+    /// 새 번호 입력 상한이 그 값이고, 그 위는 로마 숫자 라벨 길이를 키우는 조작이다.
+    func testStartingNumbersAreClampedToTheSixteenBitCeiling() {
+        let numbering = Self.definition(
+            startingIndex: 0,
+            startingIndexArray: [UInt32.max, 65536, 65535],
+            extendedStartingIndexArray: [70000]
+        )
+        expect((1 ... 3).map { numbering.startingNumber(forLevel: $0) }) == [65535, 65535, 65535]
+        expect(numbering.startingNumber(forLevel: 8)) == 65535
+        expect(Self.definition(startingIndex: UInt16.max).startingNumber(forLevel: 1)) == 65535
     }
 }

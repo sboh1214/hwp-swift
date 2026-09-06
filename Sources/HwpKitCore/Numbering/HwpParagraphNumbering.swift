@@ -7,38 +7,49 @@ import Foundation
 /// 안 문단을 한 번 훑어 문단마다 `HwpParagraphNumber`를 만들고, 결과는 문단의
 /// 위치 경로(`HwpParagraphPath`)로 조회한다. 조판이 같은 문단을 몇 번
 /// 재측정·재배치하든(쪽 경계 재시도·다단 재배치) 카운터는 이 한 번의 순회에서만
-/// 늘므로 "한 번만 증가"가 구조로 보장된다. `HwpPaginator`는 이 표를 만들어
-/// 두고(`paragraphNumbering()`) 라벨 렌더(#154)가 읽는다.
+/// 늘므로 "한 번만 증가"가 구조로 보장된다. `HwpPaginator`는 이 표를 init에서
+/// 만들어 두고(`paragraphNumbering`) 라벨 렌더(#154)가 읽는다.
 ///
 /// **정의 해석**은 `HwpNumberingHeadingReference`와 같다 — 개요(문단 머리 종류 1)는
 /// 현재 구역 정의의 `numberParaShapeId`, 번호 매기기(종류 2)는 문단 모양의
 /// `numberingOrBulletId`. 참조가 0이거나 정의 배열 밖이면 번호를 만들지 않고
 /// 카운터도 늘리지 않는다(진단은 조판이 낸다). 글머리표(3)는 대상이 아니다.
+/// 현재 구역 정의는 조판(`HwpPaginator.currentSectionDef`)과 같이 문서의 첫 구역
+/// 정의에서 시작하므로, 그 정의 문단보다 앞선 문단도 같은 구역으로 센다.
 ///
-/// **카운터 규칙** (`HwpNumberingCounter`, 근거는 한컴 도움말 — 문단 번호의
-/// "시작 번호 방식"과 개요 번호 모양의 "이전 구역에 이어 / 새 번호로 시작"):
+/// **카운터 규칙** (`HwpNumberingCounter`; 근거는 한컴 도움말 — 문단 번호의
+/// "시작 번호 방식"과 개요 번호 모양의 "이전 구역에 이어 / 새 번호로 시작" — 와
+/// 실물이 모순되지 않는지 확인한 것이고, 실물이 가르지 못하는 항목은 아래에
+/// 적었다):
 /// - 개요와 번호 매기기는 **카운터를 공유하지 않는다** — 같은 정의를 가리켜도
-///   따로 센다. 한글의 두 기능은 별개 대화상자·별개 목록이고, 헌법주석처럼 개요
-///   사이에 번호 매기기 목록이 끼어도 장 번호를 잇지 않는다.
+///   따로 센다. 한글의 두 기능은 별개 대화상자·별개 목록이라 그렇게 추론했다.
+///   두 종류가 한 문서에 함께 있는 실물은 `outline-numbering`(서로 다른 정의)뿐이고
+///   같은 정의를 공유하는 실물은 없다.
 /// - 개요는 **구역 시작**에서 구역 정의의 정의를 본다: 시작 번호 방식이 새 번호면
 ///   1수준부터 시작 번호로, 이어 매기기면 앞 구역의 번호를 잇는다. 헌법주석은
-///   41개 구역이 각각 새 번호 정의를 가리켜 조문마다 `I.`부터 세고, 첫 구역만
-///   이어 매기기(앞이 없어 1부터)다 — 생성 목차 280개와 일치한다.
-/// - 번호 매기기는 **정의가 바뀌는 번호 문단**에서 같은 판정을 한다("새 번호 목록
-///   시작"은 한글이 새 정의로 저장한다). 사이에 낀 본문 문단은 목록을 끊지 않는다.
+///   41개 구역이 각각 새 번호 정의를 가리켜 조문마다 `I.`부터 세고(생성 목차
+///   280개와 일치), 첫 구역만 이어 매기기(앞이 없어 1부터)다 — 즉 실물은 새
+///   번호 쪽만 행사하고, 이어 매기기가 실제로 앞 구역을 잇는 자리는 아직 없다.
+/// - 번호 매기기는 **정의가 바뀌는 번호 문단**에서 같은 판정을 한다. 표 38의
+///   시작 번호가 정의에만 있으므로 "새 번호 목록 시작"은 새 정의로 저장될 수밖에
+///   없다(개요 사용자 정의가 새 정의 id 2를 만드는 실측과 같은 구조) — 다만 같은
+///   새 번호 정의로 되돌아올 때도 다시 세는지는 실측 전이다. 사이에 낀 본문 문단은
+///   목록을 끊지 않고, **구역 시작도 보지 않는다** — 도움말의 "앞 번호 목록에
+///   이어"가 문서 순서로 가장 가까운 번호 문단을 잇는다는 정의를 따른다.
 ///   도움말의 셋째 방식 "이전 번호 목록에 이어"(다른 정의의 문단을 사이에
 ///   끼워도 같은 정의의 앞 목록을 잇는다)는 저장 형식을 모르는 상태라 구분하지
 ///   못한다 — 그런 문서는 이어 매기기로 읽힌다.
 /// - 상위 수준을 매기면 하위 수준은 비워지고, 비워진 수준이 형식에 참조되면
 ///   시작 번호로 보인다.
 ///
-/// **범위** — 표 셀·글상자·각주·미주·머리말/꼬리말 안 문단도 센다. 컨테이너
-/// 문단은 그것을 품은 본문 문단 **뒤에**, 컨트롤 순서와 자식 문단 순서
-/// (`HwpPaginator.childParagraphs(of:)`)로 방문하며 본문과 **같은 카운터**를
-/// 쓴다 — 한글의 "앞 번호 목록에 이어"가 문서 순서로 가장 가까운 번호 문단을
-/// 잇는다는 정의를 따른 것이고, 컨테이너 문단의 개요 정의도 현재 구역의 것이다.
-/// 실물 대조는 아직이다(noori의 표·글상자 안 개요 문단 4개는 첫 쪽 미리보기에
-/// 없다) — 새 번호 지정 컨트롤(`nwno`, 표 144)은 쪽·각주·그림 번호용이라 여기
+/// **범위** — 표 셀·글상자·각주·미주·머리말/꼬리말 안 문단도 센다
+/// (`HwpPaginator.childParagraphs(of:)`가 여는 컨테이너 전부). 컨테이너 문단은
+/// 그것을 품은 본문 문단 **뒤에**, 컨트롤 순서와 자식 문단 순서로 방문하며 본문과
+/// **같은 카운터**를 쓴다 — 한글의 "앞 번호 목록에 이어"가 문서 순서로 가장 가까운
+/// 번호 문단을 잇는다는 정의를 따른 것이고, 컨테이너 문단의 개요 정의도 현재
+/// 구역의 것이다. 실물 대조는 아직이다 — 컨테이너 안에 번호 문단(머리 종류 1·2)을
+/// 가진 픽스처가 없다(noori의 표 셀 안 `개요 3` 문단 4개는 머리 종류 0·3이라 번호가
+/// 없다). 새 번호 지정 컨트롤(`nwno`, 표 144)은 쪽·각주·그림 번호용이라 여기
 /// 입력이 아니다.
 public struct HwpParagraphNumbering: Sendable, Hashable {
     /// 문단 경로 → 번호. 번호가 없는 문단(머리 종류 0·3, 참조 없음·댕글링)은 없다.
@@ -96,20 +107,30 @@ private extension HwpParagraphNumbering {
         /// 현재 구역 정의 — 조판(`HwpPaginator.currentSectionDef`)과 같은 규칙으로
         /// 문서의 첫 구역 정의에서 시작해 구역 정의를 만날 때마다 바뀐다.
         var currentSectionDef: CoreHwp.HwpSectionDef?
+        /// 첫 구역 정의는 init에서 이미 적용했으므로 문서에서 처음 만나는 구역
+        /// 정의(같은 것)는 건너뛴다 — 안 그러면 그 앞에서 센 개요 번호가 거기서
+        /// 비워져 정의 문단이 앞 문단과 같은 번호를 받는다.
+        var didSkipFirstSectionDef = false
         var outlineCounter = HwpNumberingCounter()
         var numberingCounter = HwpNumberingCounter()
 
         init(sections: [CoreHwp.HwpSection], index: HwpIndex) {
             self.sections = sections
             self.index = index
-            currentSectionDef = HwpPaginator.firstSectionDef(for: sections)
+            if let first = HwpPaginator.firstSectionDef(for: sections) {
+                beginSection(first)
+            }
         }
 
         mutating func walk() {
             for (sectionIndex, section) in sections.enumerated() {
                 for (paragraphIndex, paragraph) in section.paragraph.enumerated() {
                     if let sectionDef = HwpPaginator.sectionDef(in: paragraph) {
-                        beginSection(sectionDef)
+                        if didSkipFirstSectionDef {
+                            beginSection(sectionDef)
+                        } else {
+                            didSkipFirstSectionDef = true
+                        }
                     }
                     visit(paragraph, path: HwpParagraphPath(
                         sectionIndex: sectionIndex, paragraphIndex: paragraphIndex
@@ -165,7 +186,6 @@ private extension HwpParagraphNumbering {
             }
             let number = HwpParagraphNumber(
                 kind: kind,
-                level: levels.count,
                 definitionIndex: definitionIndex,
                 numbers: levels,
                 text: HwpNumberingLabelFormatter.text(

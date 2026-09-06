@@ -16,22 +16,25 @@ public struct HwpParagraphNumber: Hashable, Sendable {
     }
 
     public let kind: Kind
-    /// 사람이 읽는 수준 (1-기반).
-    public let level: Int
     /// 번호 정의 — `HwpIndex.numbering(id:)`의 0-based 키.
     public let definitionIndex: UInt32
-    /// 1수준부터 `level`까지의 번호. 개수는 언제나 `level`이다.
+    /// 1수준부터 이 문단의 수준까지의 번호 — 개수가 곧 수준이라 `level`을 따로
+    /// 저장하지 않는다 (같은 문단을 나타내는 두 값이 수준만 달라 어긋날 길이 없다).
     public let numbers: [Int]
     /// 번호 형식으로 조립한 라벨. 형식 슬롯이 비어 있으면 빈 문자열이다 —
     /// 번호는 세어지되 보일 글자가 없다.
     public let text: String
 
-    public init(kind: Kind, level: Int, definitionIndex: UInt32, numbers: [Int], text: String) {
+    public init(kind: Kind, definitionIndex: UInt32, numbers: [Int], text: String) {
         self.kind = kind
-        self.level = level
         self.definitionIndex = definitionIndex
         self.numbers = numbers
         self.text = text
+    }
+
+    /// 사람이 읽는 수준 (1-기반) — `numbers.count`.
+    public var level: Int {
+        numbers.count
     }
 
     /// 이 문단 자신의 수준 번호 — `numbers.last`.

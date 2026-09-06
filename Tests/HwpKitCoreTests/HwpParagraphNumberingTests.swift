@@ -140,6 +140,40 @@ import XCTest
             expect(numbering.entries.map(\.number.numbers)) == [[5], [5, 3], [5, 4], [6], [6, 3]]
         }
 
+        /// 매겨지지 않은 상위 수준이 형식에 참조되면 그 수준의 **시작 번호**를 보인다 —
+        /// 1이 아닌 시작 번호로 하드코딩 1과 구분한다 (한글.app 실측 전 핀).
+        func testUnnumberedUpperLevelsShowTheirStartingNumbers() throws {
+            let numbering = HwpSynthetic.generateNumbering(
+                [
+                    try Self.paragraph("1", shape: 1), try Self.paragraph("1.5.1", shape: 3),
+                    try Self.paragraph("1.5", shape: 2), try Self.paragraph("1.5.1 다시", shape: 3),
+                ],
+                numberings: [0: HwpSynthetic.numberingDefinition(
+                    formats: ["^1.", "^1.^2", "^1.^2.^3", "(^4)", "(^5)", "^6)", "^7)"],
+                    startingIndexArray: [1, 5, 1, 1, 1, 1, 1]
+                )]
+            )
+            expect(Self.texts(numbering)) == ["1.", "1.5.1", "1.5", "1.5.1"]
+            expect(numbering.entries.map(\.number.numbers)) == [[1], [1, 5, 1], [1, 5], [1, 5, 1]]
+        }
+
+        /// 조작 문서의 32비트 시작 번호는 65,535로 접힌다 — 로마 숫자 모양의 라벨 길이가
+        /// 값에 비례하므로 접지 않으면 문서를 여는 순간 메모리를 삼킨다.
+        func testHugeStartingNumbersAreClampedSoRomanLabelsStayBounded() throws {
+            let numbering = HwpSynthetic.generateNumbering(
+                [try Self.paragraph("MMM…", shape: 11), try Self.paragraph("둘째", shape: 11)],
+                numberings: [0: HwpSynthetic.numberingDefinition(
+                    numberFormats: [2], startingIndex: 1,
+                    startingIndexArray: [UInt32.max, 1, 1, 1, 1, 1, 1]
+                )]
+            )
+            expect(numbering.entries.map(\.number.number)) == [65535, 65536]
+            // 65,535 = M×65 + DXXXV (70자) + 마침표, 65,536은 한 글자 더.
+            expect(numbering.entries.map(\.number.text.count)) == [71, 72]
+            expect(numbering.entries[0].number.text.hasPrefix("MMMMM")) == true
+            expect(numbering.entries[0].number.text.hasSuffix("MMDXXXV.")) == true
+        }
+
         // MARK: - 구역 경계
 
         /// 개요는 구역 시작에서 구역 정의의 정의를 본다 — 새 번호면 다시 세고, 이어
@@ -166,6 +200,58 @@ import XCTest
             )
             expect(Self.texts(numbering)) == ["1.", "2.", "1.", "2)", "3)", "1."]
             expect(numbering.paths.map(\.paragraph.sectionIndex)) == [0, 0, 1, 2, 2, 3]
+        }
+
+        /// 번호 매기기 카운터는 구역 시작을 보지 않는다 — 구역 정의가 새 번호 개요
+        /// 정의를 가리켜도 번호 목록은 구역을 넘어 잇고, 정의가 바뀌는 번호 문단에서만
+        /// 다시 센다 (도움말의 "앞 번호 목록에 이어"; 실측 전 핀).
+        func testNumberingListContinuesAcrossSectionsUnlikeOutline() throws {
+            let numbering = HwpParagraphNumbering.generate(
+                sections: [
+                    HwpSynthetic.numberingSection(paragraphs: [
+                        try Self.paragraph("1", shape: 11), try Self.paragraph("2", shape: 11),
+                        try Self.paragraph("개요 1", shape: 1),
+                    ]),
+                    HwpSynthetic.numberingSection(paragraphs: [
+                        try Self.paragraph("3", shape: 11), try Self.paragraph("개요 1 다시", shape: 1),
+                        try Self.paragraph("B1 새 정의", shape: 21), try Self.paragraph("4 이어", shape: 31),
+                    ]),
+                ],
+                index: HwpSynthetic.numberingIndex(numberings: [
+                    0: HwpSynthetic.numberingDefinition(startingIndex: 1),
+                    1: HwpSynthetic.numberingDefinition(
+                        formats: ["^1)", "^2.", "^3.", "(^4)", "(^5)", "^6)", "^7)"], startingIndex: 1
+                    ),
+                    2: HwpSynthetic.numberingDefinition(
+                        formats: ["(^1)", "^2.", "^3.", "(^4)", "(^5)", "^6)", "^7)"], startingIndex: 0
+                    ),
+                ])
+            )
+            expect(Self.texts(numbering)) == ["1.", "2.", "1.", "3.", "1.", "1)", "(2)"]
+            expect(numbering.paths.map(\.paragraph.sectionIndex)) == [0, 0, 0, 1, 1, 1, 1]
+        }
+
+        /// 첫 구역 정의 문단보다 앞선 개요 문단도 그 구역으로 센다 — 조판의
+        /// `currentSectionDef`가 문서의 첫 구역 정의에서 시작하는 것과 같고, 정의
+        /// 문단에서 카운터를 다시 비우지 않는다 (합성·손상 입력에서만 생기는 배치).
+        func testOutlineParagraphsBeforeTheFirstSectionDefinitionCountOnce() throws {
+            var definitionParagraph = try Self.paragraph("2 (구역 정의를 품음)", shape: 1)
+            definitionParagraph.ctrlHeaderArray = [
+                .section(HwpSynthetic.sectionDef(outlineNumberingId: 1)),
+            ]
+            var section = HwpSynthetic.section(firstParagraphControls: [], bodyParagraphs: [
+                definitionParagraph, try Self.paragraph("3", shape: 1),
+            ])
+            section.paragraph[0].paraHeader = try HwpSynthetic.outlineParaHeader(
+                paraShapeId: 1, paraStyleId: 0
+            )
+            let numbering = HwpParagraphNumbering.generate(
+                sections: [section],
+                index: HwpSynthetic.numberingIndex(
+                    numberings: [0: HwpSynthetic.numberingDefinition(startingIndex: 1)]
+                )
+            )
+            expect(Self.texts(numbering)) == ["1.", "2.", "3."]
         }
 
         /// 첫 구역의 정의가 이어 매기기여도 앞이 없으니 시작 번호부터다 (헌법주석 첫

@@ -60,6 +60,22 @@ import XCTest
             expect(numbering.paths.filter(\.isTopLevel).count) == 4
         }
 
+        /// 머리말·꼬리말 안 문단도 컨테이너다 — 구역 첫 문단의 머리말 컨트롤 안 번호
+        /// 문단이 본문 목록의 번호 하나를 소비한다(한글.app 실측 전 — 쪽마다 반복되는
+        /// 크롬이라 본문 카운터를 잇는 것이 맞는지는 미실측 항목이다).
+        func testHeaderParagraphsShareTheBodyCounter() throws {
+            var host = try Self.paragraph("2 (머리말을 품음)", shape: 11)
+            host.ctrlHeaderArray = [try XCTUnwrap(HwpSynthetic.noteControl(
+                .header, paragraphs: [try Self.paragraph("1 머리말", shape: 11)]
+            ))]
+            let numbering = HwpSynthetic.generateNumbering(
+                [try Self.paragraph("1", shape: 11), host, try Self.paragraph("4", shape: 11)],
+                numberings: [0: HwpSynthetic.numberingDefinition()]
+            )
+            expect(numbering.entries.map(\.number.text)) == ["1.", "2.", "3.", "4."]
+            expect(numbering.paths.map(\.description)) == ["s0/p1", "s0/p2", "s0/p2/c0/n0", "s0/p3"]
+        }
+
         /// 생성은 순수 함수다 — 같은 입력이면 같은 표이고, 같은 문단을 몇 번 물어도
         /// 같은 번호다 (조판이 문단을 재측정·재배치해도 카운터는 한 번만 는다).
         func testGenerationIsPureAndRepeatedLookupsAreStable() throws {
@@ -94,12 +110,13 @@ import XCTest
             let paginator = HwpSynthetic.outlinePaginator(bodyParagraphs: paragraphs, index: index)
             let expected = HwpSynthetic.generateNumbering(paragraphs, numberings: [0: definition])
 
-            let before = await paginator.paragraphNumbering()
+            // 불변 `Sendable` 값이라 actor 격리 없이 동기로 읽는다.
+            let before = paginator.paragraphNumbering
             expect(before) == expected
             // 번호 매기기도 같은 정의(1수준 로마 대문자)를 쓰되 카운터는 따로다.
             expect(before.entries.map(\.number.text)) == ["I.", "가.", "I."]
             _ = await paginator.totalPages()
-            let after = await paginator.paragraphNumbering()
+            let after = paginator.paragraphNumbering
             expect(after) == expected
             // 진단은 그대로 "(미렌더)"다 — 라벨은 아직 그리지 않는다 (#154).
             let hints = await paginator.unsupportedElements().map(\.hint)

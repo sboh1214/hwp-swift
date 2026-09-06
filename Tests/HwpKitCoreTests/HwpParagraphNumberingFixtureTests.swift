@@ -165,6 +165,13 @@ import XCTest
             }
         }
 
+        /// HWPX manifest 가운데 쌍을 잇는 열쇠만 읽는다 (`HwpxFixtureRenderTests`와
+        /// 같은 규약 — 디렉터리 이름이 아니라 `sourceHwpFixture`가 쌍이다).
+        private struct HwpxPairManifest: Decodable {
+            let id: String
+            let sourceHwpFixture: String?
+        }
+
         /// HWP·HWPX 쌍은 같은 번호를 낸다 — 정의 배열·구역 참조·문단 머리가 등가라는
         /// 파서 층의 대조(`HwpxHwpEquivalenceTests`)를 생성 결과까지 잇는다.
         func testHwpxPairsGenerateTheSameNumbersAsTheirHwpSources() throws {
@@ -172,19 +179,47 @@ import XCTest
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
                 .appendingPathComponent("CoreHwpTests/HwpxFixtures")
-            let ids = try FileManager.default.contentsOfDirectory(atPath: root.path)
-                .filter { FileManager.default.fileExists(atPath: Self.fixtureURL($0, hwpx: true).path) }
+            let manifests = try FileManager.default.contentsOfDirectory(atPath: root.path)
                 .sorted()
-            expect(ids.count) >= 12
+                .compactMap { id -> HwpxPairManifest? in
+                    let url = root.appendingPathComponent("\(id)/manifest.json")
+                    guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+                    return try JSONDecoder().decode(HwpxPairManifest.self, from: Data(contentsOf: url))
+                }
+            expect(manifests.count) >= 12
             var numbered = 0
-            for id in ids {
-                let hwp = Self.numbering(of: try Self.fixture(id))
-                let hwpx = Self.numbering(of: try Self.fixture(id, hwpx: true))
-                expect(hwpx).to(equal(hwp), description: id)
+            for manifest in manifests {
+                guard let pairId = manifest.sourceHwpFixture else {
+                    return fail("[\(manifest.id)] no HWP pair (sourceHwpFixture)")
+                }
+                let hwp = Self.numbering(of: try Self.fixture(pairId))
+                let hwpx = Self.numbering(of: try Self.fixture(manifest.id, hwpx: true))
+                expect(hwpx).to(equal(hwp), description: manifest.id)
                 numbered += hwp.count
             }
             // 쌍 가운데 번호 문단을 가진 것은 `outline-numbering`(5)뿐이다.
             expect(numbered) == 5
+        }
+
+        /// `outline-numbering` 둘째 정의의 9·10수준 형식 — 한글.app 12.30 개요 번호 모양
+        /// 대화상자 미리보기 실측 문자열을 조립기에 박는다. 문단 수준 비트는 3비트(최대
+        /// 8수준)라 문서 순회로는 닿지 않으므로 조립기를 직접 부른다.
+        func testOutlineNumberingFixtureLevelPathsMatchTheHancomPreview() throws {
+            for hwpx in [false, true] {
+                let file = try Self.fixture("outline-numbering", hwpx: hwpx)
+                let custom = try XCTUnwrap(file.docInfo.idMappings.numberingArray.last)
+                let path = HwpNumberingLabelFormatter.text(
+                    definition: custom, level: 9, numbers: Array(repeating: 1, count: 9)
+                )
+                expect(path).to(equal("I.가.1.가.1.가.①.㉮.ㄱ)"), description: hwpx ? "HWPX" : "HWP")
+                let tenth = HwpNumberingLabelFormatter.text(
+                    definition: custom, level: 10, numbers: Array(repeating: 1, count: 10)
+                )
+                expect(tenth).to(equal("ㄱ.I0)"), description: hwpx ? "HWPX" : "HWP")
+                // 같은 정의의 3수준 형식 `^3)`은 문단 수준보다 얕은 참조가 없으니 그대로다.
+                expect(HwpNumberingLabelFormatter.text(definition: custom, level: 3, numbers: [2, 3, 4]))
+                    == "4)"
+            }
         }
 
         /// noori — 탐색 목록의 개요 문단 4개(표 셀 안, 스타일 이름 `개요 3`)는 문단
@@ -194,14 +229,14 @@ import XCTest
         func testNooriStyleNamedHeadingsInsideCellsGetNoNumber() throws {
             let file = try Self.fixture("noori")
             let index = HwpIndex(from: file)
-            var styleNamedHeadings = 0
+            var headingKinds: [UInt32?] = []
             func visit(_ paragraph: HwpParagraph) {
                 let style = index.style(id: UInt32(paragraph.paraHeader.paraStyleId))
                 if style?.styleLocalName.hasPrefix("개요") == true {
-                    styleNamedHeadings += 1
-                    let kind = index.paraShape(id: UInt32(paragraph.paraHeader.paraShapeId))?
-                        .property1Info.headingTypeRawValue
-                    expect(kind).toNot(equal(1))
+                    headingKinds.append(
+                        index.paraShape(id: UInt32(paragraph.paraHeader.paraShapeId))?
+                            .property1Info.headingTypeRawValue
+                    )
                 }
                 for control in paragraph.ctrlHeaderArray ?? [] {
                     for (child, _) in HwpPaginator.childParagraphs(of: control) {
@@ -214,7 +249,8 @@ import XCTest
                     visit(paragraph)
                 }
             }
-            expect(styleNamedHeadings) == 4
+            // 실측 순서대로 없음·없음·글머리표·글머리표 — nil(문단 모양 유실)도 잡는다.
+            expect(headingKinds) == [0, 0, 3, 3]
             expect(Self.numbering(of: file).count) == 0
         }
 
