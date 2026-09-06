@@ -173,21 +173,21 @@ import XCTest
             expect(HwpParagraphNumbering.maximumDocumentEntries) == 20000
         }
 
-        /// 걷는 문단 수에도 상한이 있다 — 항목 상한은 번호 문단에서만 줄어들어 번호
-        /// 없는 문단이 수백만 개면 순회 자체가 문서를 여는 시간을 삼킨다. 상한 뒤의
-        /// 번호 문단은 버리고 `isTruncated`로 알린다.
-        func testVisitedParagraphLimitStopsTheWalkAndFlagsIt() throws {
+        /// 걷는 노드 수(문단 + 컨트롤)에도 상한이 있다 — 항목 상한은 번호 문단에서만
+        /// 줄어들어 번호 없는 문단이 수백만 개면 순회 자체가 문서를 여는 시간을
+        /// 삼킨다. 상한 뒤의 번호 문단은 버리고 `isTruncated`로 알린다.
+        func testVisitedNodeLimitStopsTheWalkAndFlagsIt() throws {
             var paragraphs = try (1 ... 6).map { try Self.paragraph("본문 \($0)", shape: 9) }
             paragraphs.append(try Self.paragraph("상한 뒤 번호", shape: 11))
             let section = HwpSynthetic.numberingSection(paragraphs: paragraphs)
             let index = HwpSynthetic.numberingIndex(
                 numberings: [0: HwpSynthetic.numberingDefinition()]
             )
-            // 구역 첫 문단(구역 정의)까지 8문단 — 상한 4는 번호 문단 앞에서 멈춘다.
+            // 구역 첫 문단(1) + 그 구역 정의 컨트롤(1) + 본문 6 = 8걸음 뒤가 번호 문단이다.
             let truncated = HwpParagraphNumbering.generate(
                 sections: [section], index: index,
                 maximumEntries: HwpParagraphNumbering.maximumDocumentEntries,
-                maximumVisitedParagraphs: 4
+                maximumVisitedNodes: 8
             )
             expect(truncated.isTruncated) == true
             expect(truncated.count) == 0
@@ -195,11 +195,41 @@ import XCTest
             let whole = HwpParagraphNumbering.generate(
                 sections: [section], index: index,
                 maximumEntries: HwpParagraphNumbering.maximumDocumentEntries,
-                maximumVisitedParagraphs: 8
+                maximumVisitedNodes: 9
             )
             expect(whole.isTruncated) == false
             expect(whole.entries.map(\.number.text)) == ["1."]
-            expect(HwpParagraphNumbering.maximumVisitedParagraphs) == 500_000
+            expect(HwpParagraphNumbering.maximumVisitedNodes) == 500_000
+        }
+
+        /// 자식 없는 컨트롤도 한 걸음이다 — 책갈피 수천 개를 품은 문단 하나가 문단
+        /// 예산을 한 번만 쓰고 컨트롤 배열 전체를 훑지 못하게, 컨트롤 순회도 같은
+        /// 예산과 취소 관찰을 지난다.
+        func testChildlessControlsConsumeTheWalkBudget() throws {
+            var host = try Self.paragraph("책갈피 묶음", shape: 9)
+            host.ctrlHeaderArray = (0 ..< 1000).map { HwpSynthetic.bookmarkControl("b\($0)") }
+            let section = HwpSynthetic.numberingSection(paragraphs: [
+                host, try Self.paragraph("책갈피 뒤 번호", shape: 11),
+            ])
+            let index = HwpSynthetic.numberingIndex(
+                numberings: [0: HwpSynthetic.numberingDefinition()]
+            )
+            let truncated = HwpParagraphNumbering.generate(
+                sections: [section], index: index,
+                maximumEntries: HwpParagraphNumbering.maximumDocumentEntries,
+                maximumVisitedNodes: 100
+            )
+            expect(truncated.isTruncated) == true
+            expect(truncated.count) == 0
+
+            // 구역 첫 문단(1) + 구역 정의(1) + 호스트(1) + 책갈피 1,000 + 번호 문단(1).
+            let whole = HwpParagraphNumbering.generate(
+                sections: [section], index: index,
+                maximumEntries: HwpParagraphNumbering.maximumDocumentEntries,
+                maximumVisitedNodes: 1004
+            )
+            expect(whole.isTruncated) == false
+            expect(whole.entries.map(\.number.text)) == ["1."]
         }
 
         /// 감싼 Task가 취소되면 걷다 만다 — 순회는 `HwpPaginator.init`의 동기 경로라
@@ -223,6 +253,33 @@ import XCTest
             let whole = await Task { HwpParagraphNumbering.generate(sections: [section], index: index) }.value
             expect(whole.isTruncated) == false
             expect(whole.count) == 3
+        }
+
+        /// 조판기는 init에서 같은 표를 만들어 둔다 — 조판 전에 물어도 전체다.
+        func testPaginatorExposesTheSameTableBeforeAndAfterPagination() async throws {
+            let definition = HwpSynthetic.numberingDefinition(numberFormats: [2, 8, 0, 8, 0, 8, 0])
+            let paragraphs = [
+                try Self.paragraph("I", shape: 1), try Self.paragraph("가", shape: 2),
+                try Self.paragraph("1", shape: 11),
+            ]
+            let index = HwpSynthetic.numberingIndex(numberings: [0: definition])
+            let paginator = HwpSynthetic.outlinePaginator(bodyParagraphs: paragraphs, index: index)
+            let expected = HwpSynthetic.generateNumbering(paragraphs, numberings: [0: definition])
+
+            // 불변 `Sendable` 값이라 actor 격리 없이 동기로 읽는다.
+            let before = paginator.paragraphNumbering
+            expect(before) == expected
+            // 번호 매기기도 같은 정의(1수준 로마 대문자)를 쓰되 카운터는 따로다.
+            expect(before.entries.map(\.number.text)) == ["I.", "가.", "I."]
+            _ = await paginator.totalPages()
+            let after = paginator.paragraphNumbering
+            expect(after) == expected
+            // 진단은 그대로 "(미렌더)"다 — 라벨은 아직 그리지 않는다 (#154).
+            let hints = await paginator.unsupportedElements().map(\.hint)
+            expect(hints) == [
+                "개요 번호 문단 머리 (미렌더)", "개요 번호 문단 머리 (미렌더)",
+                "번호 매기기 문단 머리 (미렌더)",
+            ]
         }
 
         /// 컨테이너 자식은 게으른 원본(`childParagraphSequence`)과 배열
@@ -253,7 +310,7 @@ import XCTest
             expect(Array(HwpPaginator.childParagraphSequence(of: HwpSynthetic.bookmarkControl("b")))
                 .isEmpty) == true
 
-            // 상한이 셀 하나에서 걸리면 그 뒤 셀 문단은 세지 않는다.
+            // 걸음 상한이 셀 하나에서 걸리면 그 뒤 셀 문단은 세지 않는다.
             var host = try Self.paragraph("표", shape: 9)
             host.ctrlHeaderArray = [.table(table)]
             let numbering = HwpParagraphNumbering.generate(
@@ -262,7 +319,8 @@ import XCTest
                     numberings: [0: HwpSynthetic.numberingDefinition()]
                 ),
                 maximumEntries: HwpParagraphNumbering.maximumDocumentEntries,
-                maximumVisitedParagraphs: 3
+                // 구역 첫 문단·구역 정의·호스트·표 컨트롤 뒤 첫 셀 문단까지 5걸음.
+                maximumVisitedNodes: 5
             )
             expect(numbering.isTruncated) == true
             expect(numbering.entries.map(\.number.text)) == ["1."]

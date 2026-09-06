@@ -94,25 +94,28 @@ public struct HwpNumberingFormatPattern: HwpPrimitive {
         // 숫자 뒤에 결합 문자가 와도(`^1\u{0301}`) 지시자다. Character 단위로 돌면
         // `1` + U+0301이 한 클러스터로 붙어 `"1"`과 달라져 지시자를 놓친다. 지시자
         // 글자가 전부 BMP ASCII라 스칼라 스캔은 UTF-16 스캔과 결과가 같다.
-        let scalars: [Unicode.Scalar] = Array(format.unicodeScalars)
-        var index = 0
-        while index < scalars.count {
+        // 스칼라 뷰를 **배열로 펼치지 않고** 인덱스로 한 칸 앞을 본다 — 펼치면
+        // 천장이 있어도 65,535단위 형식 전체를 호출마다 복사·디코드한다.
+        let scalars = format.unicodeScalars
+        var index = scalars.startIndex
+        while index < scalars.endIndex {
             if let unitCeiling, guaranteedUnits >= unitCeiling {
                 break
             }
             let scalar = scalars[index]
-            let next: Unicode.Scalar? = index + 1 < scalars.count ? scalars[index + 1] : nil
+            let nextIndex = scalars.index(after: index)
+            let next: Unicode.Scalar? = nextIndex < scalars.endIndex ? scalars[nextIndex] : nil
             guard scalar == "^" else {
                 literal.append(scalar)
                 guaranteedUnits += UTF16.width(scalar)
-                index += 1
+                index = nextIndex
                 continue
             }
             if let token = directive(after: next) {
                 flushLiteral()
                 tokens.append(token)
                 guaranteedUnits += 1
-                index += 2
+                index = scalars.index(after: nextIndex)
                 continue
             }
             // 지시자가 아닌 캐럿은 다음 글자를 **함께** 소비해 문자 그대로 남긴다 —
@@ -123,9 +126,9 @@ public struct HwpNumberingFormatPattern: HwpPrimitive {
             if let next {
                 literal.append(next)
                 guaranteedUnits += UTF16.width(next)
-                index += 2
+                index = scalars.index(after: nextIndex)
             } else {
-                index += 1
+                index = nextIndex
             }
         }
         flushLiteral()

@@ -47,7 +47,7 @@ public struct HwpParagraphNumbering: Sendable, Hashable {
     /// 번호가 붙은 문단의 경로 — 문서 순서.
     public let paths: [HwpParagraphPath]
     /// 순회가 끝까지 가지 못해 **뒤쪽 번호 문단을 버렸는가** — 항목 상한
-    /// (`maximumDocumentEntries`)이나 방문 문단 상한(`maximumVisitedParagraphs`)에
+    /// (`maximumDocumentEntries`)이나 걸음 상한(`maximumVisitedNodes`)에
     /// 걸렸거나, 생성을 감싼 Task가 취소됐다. 표만 보면 완전한 것과 구별되지
     /// 않으므로 알린다 — 탐색 목록의 `HwpDocumentMetadata.isOutlineTruncated`와 같은
     /// 이유다.
@@ -62,13 +62,15 @@ public struct HwpParagraphNumbering: Sendable, Hashable {
     /// 10배 여유를 둔다. 상한에서 라벨이 512단위씩이어도 약 20MB다.
     public static let maximumDocumentEntries = 20000
 
-    /// 한 문서에서 **걸어 보는** 문단 수(최상위 + 컨테이너 안)의 상한. 항목 상한은
-    /// 번호가 붙는 문단에서만 줄어들므로, 번호 없는 문단이 수백만 개인 문서는 그
-    /// 상한과 무관하게 순회 자체가 문서를 여는 시간을 삼킨다 — 이 순회는
-    /// `HwpPaginator.init`에서 동기로 돌고 조판의 쪽 단위 지연·취소 관찰 밖이다.
-    /// 실측 최대는 헌법주석의 14,660개(컨테이너 문단 포함)이므로 약 30배 여유를
-    /// 두되, 걷는 비용이 문단당 사전 조회 몇 번이라 상한에서도 1초 안이다.
-    public static let maximumVisitedParagraphs = 500_000
+    /// 한 문서에서 **걸어 보는** 노드 수의 상한 — 문단(최상위 + 컨테이너 안)과
+    /// 문단이 품은 컨트롤을 각각 한 걸음으로 센다. 항목 상한은 번호가 붙는
+    /// 문단에서만 줄어들므로, 번호 없는 문단이 수백만 개이거나 한 문단이 자식 없는
+    /// 컨트롤(책갈피 등)을 수백만 개 품은 문서는 그 상한과 무관하게 순회 자체가
+    /// 문서를 여는 시간을 삼킨다 — 이 순회는 `HwpPaginator.init`에서 동기로 돌고
+    /// 조판의 쪽 단위 지연·취소 관찰 밖이다. 실측 최대는 헌법주석의 문단
+    /// 14,660개(컨테이너 문단 포함)와 그 컨트롤이므로 약 30배 여유를 두되, 걸음
+    /// 비용이 사전 조회 몇 번이라 상한에서도 1초 안이다.
+    public static let maximumVisitedNodes = 500_000
 
     /// 번호가 하나도 없는 표.
     public static let empty = HwpParagraphNumbering(numbers: [:], paths: [], isTruncated: false)
@@ -112,13 +114,13 @@ public struct HwpParagraphNumbering: Sendable, Hashable {
         sections: [CoreHwp.HwpSection],
         index: HwpIndex,
         maximumEntries: Int,
-        maximumVisitedParagraphs: Int = maximumVisitedParagraphs
+        maximumVisitedNodes: Int = maximumVisitedNodes
     ) -> HwpParagraphNumbering {
         var walker = Walker(
             sections: sections,
             index: index,
             maximumEntries: maximumEntries,
-            maximumVisitedParagraphs: maximumVisitedParagraphs
+            maximumVisitedNodes: maximumVisitedNodes
         )
         walker.walk()
         return HwpParagraphNumbering(
@@ -134,17 +136,17 @@ private extension HwpParagraphNumbering {
         let sections: [CoreHwp.HwpSection]
         let index: HwpIndex
         let maximumEntries: Int
-        let maximumVisitedParagraphs: Int
+        let maximumVisitedNodes: Int
         var numbers: [HwpParagraphPath: HwpParagraphNumber] = [:]
         var paths: [HwpParagraphPath] = []
-        /// 지금까지 걸어 본 문단 수(번호 유무와 무관).
-        var visitedParagraphs = 0
-        /// 순회를 끝까지 가지 못하고 멈췄는가 — 항목 상한·방문 상한·Task 취소.
+        /// 지금까지 걸어 본 노드 수 — 문단(번호 유무와 무관)과 컨트롤.
+        var visitedNodes = 0
+        /// 순회를 끝까지 가지 못하고 멈췄는가 — 항목 상한·걸음 상한·Task 취소.
         /// 멈춘 뒤로는 걷지 않는다 — 세지 않을 문단을 걷는 것은 시간만 쓴다.
         var didStop = false
 
-        /// 취소를 살피는 주기(문단 수). 조판의 `yieldBatchSize`처럼 매 문단이 아니라
-        /// 묶음마다 본다 — `Task.isCancelled`는 값싼 읽기지만 문단당 일이 그보다 작다.
+        /// 취소를 살피는 주기(걸음 수). 조판의 `yieldBatchSize`처럼 매 걸음이 아니라
+        /// 묶음마다 본다 — `Task.isCancelled`는 값싼 읽기지만 걸음당 일이 그보다 작다.
         static let cancellationCheckInterval = 256
         /// 현재 구역 정의 — 조판(`HwpPaginator.currentSectionDef`)과 같은 규칙으로
         /// 문서의 첫 구역 정의에서 시작해 구역 정의를 만날 때마다 바뀐다.
@@ -160,12 +162,12 @@ private extension HwpParagraphNumbering {
             sections: [CoreHwp.HwpSection],
             index: HwpIndex,
             maximumEntries: Int,
-            maximumVisitedParagraphs: Int
+            maximumVisitedNodes: Int
         ) {
             self.sections = sections
             self.index = index
             self.maximumEntries = maximumEntries
-            self.maximumVisitedParagraphs = maximumVisitedParagraphs
+            self.maximumVisitedNodes = maximumVisitedNodes
             if let first = HwpPaginator.firstSectionDef(for: sections) {
                 beginSection(first)
             }
@@ -198,23 +200,32 @@ private extension HwpParagraphNumbering {
             outlineCounter.beginSection(definitionIndex: reference - 1, definition: definition)
         }
 
+        /// 걸음 하나(문단 또는 컨트롤)를 예산에서 쓴다 — 걸음 상한에 닿거나 감싼
+        /// Task가 취소되면 멈춘다. 이 순회는 `HwpPaginator.init`에서 동기로 돌아
+        /// 조판의 문단 단위 취소 관찰 밖이므로 여기서 직접 살핀다(취소된 로드의
+        /// 표는 어차피 조판기와 함께 버려진다). 문단뿐 아니라 컨트롤도 한 걸음인
+        /// 것은, 자식 없는 컨트롤(책갈피 등)을 수백만 개 품은 문단 하나가 문단
+        /// 예산을 한 번만 쓰고 컨트롤 배열 전체를 훑게 되기 때문이다.
+        mutating func step() -> Bool {
+            if visitedNodes.isMultiple(of: Self.cancellationCheckInterval), Task.isCancelled {
+                didStop = true
+                return false
+            }
+            guard visitedNodes < maximumVisitedNodes else {
+                didStop = true
+                return false
+            }
+            visitedNodes += 1
+            return true
+        }
+
         /// 문단 하나에 번호를 매기고 컨테이너 안 문단으로 내려간다. 재귀는 파스
-        /// 시점 중첩 한도로 유한하다. 걷는 문단 수가 상한에 닿거나 감싼 Task가
-        /// 취소되면 멈춘다 — 이 순회는 `HwpPaginator.init`에서 동기로 돌아 조판의
-        /// 문단 단위 취소 관찰 밖이므로 여기서 직접 살핀다(취소된 로드의 표는 어차피
-        /// 조판기와 함께 버려진다).
+        /// 시점 중첩 한도로 유한하고, 걸음 예산(`step`)이 문단·컨트롤마다 줄어든다.
         mutating func visit(_ paragraph: CoreHwp.HwpParagraph, path: HwpParagraphPath) {
-            if visitedParagraphs.isMultiple(of: Self.cancellationCheckInterval), Task.isCancelled {
-                didStop = true
-                return
-            }
-            guard visitedParagraphs < maximumVisitedParagraphs else {
-                didStop = true
-                return
-            }
-            visitedParagraphs += 1
+            guard step() else { return }
             number(paragraph, path: path)
             for (controlIndex, control) in (paragraph.ctrlHeaderArray ?? []).enumerated() {
+                guard step() else { return }
                 // 자식 목록은 게으르게 연다 — 컨테이너 하나가 상한보다 많은 문단을
                 // 품어도 배열로 펼치기 전에 상한·취소에서 멈춘다.
                 let children = HwpPaginator.childParagraphSequence(of: control)

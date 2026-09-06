@@ -58,7 +58,7 @@
   전체의 라벨은 스냅샷으로 잠갔습니다. 조작 문서가 문서를 여는 순간 메모리를
   삼키지 못하게 라벨 하나는 `HwpParagraphNumber.textUnitCeiling`(512 UTF-16 단위)
   에서 스칼라 경계로 끊고, 문서 전체는 `HwpParagraphNumbering.maximumDocumentEntries`
-  (20,000)와 걷는 문단 수 `maximumVisitedParagraphs`(500,000)에서 멈추며 취소된
+  (20,000)와 걸음 수(문단·컨트롤) `maximumVisitedNodes`(500,000)에서 멈추며 취소된
   로드도 걷다 말고 `isTruncated`로 알립니다. 형식 분해도 출력 천장까지만 합니다
   (`HwpNumberingFormatPattern.parse(_:unitCeiling:)`). HWPX의 `hh:heading@level`이
   3비트 밖(9·10수준)이면 머리 종류 없음으로 접고 `parseDiagnostics()`에 남깁니다.

@@ -37,7 +37,7 @@ public actor HwpPaginator {
     /// 접근성은 actor 격리 밖 동기 코드다). 화면에는 아직 그리지 않는다.
     ///
     /// init의 동기 순회라 조판의 쪽 단위 지연·취소 관찰 밖이므로 순회 쪽이 스스로
-    /// 유계다 — 걷는 문단 수(`HwpParagraphNumbering.maximumVisitedParagraphs`)·항목
+    /// 유계다 — 걸음 수(`HwpParagraphNumbering.maximumVisitedNodes` — 문단과 컨트롤)·항목
     /// 수·라벨 길이에 상한이 있고, 감싼 Task가 취소되면 걷다 만다(`isTruncated`).
     public nonisolated let paragraphNumbering: HwpParagraphNumbering
 
