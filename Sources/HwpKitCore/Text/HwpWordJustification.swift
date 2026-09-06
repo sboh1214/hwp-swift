@@ -63,11 +63,18 @@ public enum HwpWordJustification {
         let (spaceOffsets, excludedLabelSpaces) = stretchableSpaceOffsets(
             in: string, range: nsRange, attributedString: attributedString
         )
-        guard !spaceOffsets.isEmpty else {
-            // 늘릴 빈칸이 라벨 빈칸뿐이면 CT가 프레임 줄을 글자 사이로 벌리며 그
-            // 빈칸도 늘리므로, 벌리지 않은 단독 조판 줄로 바꾼다.
-            return excludedLabelSpaces
-                ? (line: CTLineCreateWithAttributedString(substring), xOffset: 0) : nil
+        // 늘릴 곳: 단어 간격이 있으면 빈칸, 라벨 빈칸뿐이면 본문 글자 사이 (CT의
+        // 프레임 정렬은 라벨 빈칸까지 늘리므로 한글처럼 글자 사이만 균등하게
+        // 벌린다). 라벨도 빈칸도 없는 줄은 CT 기본 정렬 그대로다.
+        let stretchRanges: [NSRange]
+        if spaceOffsets.isEmpty {
+            guard excludedLabelSpaces else { return nil }
+            stretchRanges = interCharacterRanges(in: substring)
+            guard !stretchRanges.isEmpty else {
+                return (line: CTLineCreateWithAttributedString(substring), xOffset: 0)
+            }
+        } else {
+            stretchRanges = spaceOffsets.map { NSRange(location: $0, length: 1) }
         }
 
         // 자연 폭 (문단 스타일 정렬은 CTLine 단독 조판에 적용되지 않는다)
@@ -78,25 +85,45 @@ public enum HwpWordJustification {
         guard extra > 0.25 else { return nil }
 
         let kernPerSpace = distributes
-            ? extra / CGFloat(spaceOffsets.count + 1)
-            : extra / CGFloat(spaceOffsets.count)
+            ? extra / CGFloat(stretchRanges.count + 1)
+            : extra / CGFloat(stretchRanges.count)
         let mutable = NSMutableAttributedString(attributedString: substring)
         let kernKey = kCTKernAttributeName as NSAttributedString.Key
-        for offset in spaceOffsets {
+        for range in stretchRanges {
             // 기존 kern (고정 공백 폭 보정)에 가산 — 교체하면 배분이 기존
             // kern 합만큼 상쇄되어 양쪽 정렬이 무효가 된다 (CCL 실측)
-            let existing = (mutable.attribute(kernKey, at: offset, effectiveRange: nil)
+            let existing = (mutable.attribute(kernKey, at: range.location, effectiveRange: nil)
                 as? NSNumber)?.doubleValue ?? 0
             mutable.addAttribute(
-                kernKey,
-                value: NSNumber(value: existing + Double(kernPerSpace)),
-                range: NSRange(location: offset, length: 1)
+                kernKey, value: NSNumber(value: existing + Double(kernPerSpace)), range: range
             )
         }
         return (
             line: CTLineCreateWithAttributedString(mutable),
             xOffset: distributes ? kernPerSpace / 2 : 0
         )
+    }
+
+    /// 라벨 빈칸만 있는 줄의 글자 사이 벌림 자리 — 라벨 범위(`numberingLabel`)와
+    /// 뒤쪽 공백을 뺀 본문의 글자(결합 문자 단위)마다 그 범위, 마지막 글자는 제외
+    /// (마지막 글자 뒤 kern은 줄 폭 밖으로 나간다).
+    private static func interCharacterRanges(in substring: NSAttributedString) -> [NSRange] {
+        let string = substring.string as NSString
+        var contentLength = substring.length
+        while contentLength > 0, isStretchableSpace(string.character(at: contentLength - 1)) {
+            contentLength -= 1
+        }
+        var ranges: [NSRange] = []
+        string.enumerateSubstrings(
+            in: NSRange(location: 0, length: contentLength),
+            options: [.byComposedCharacterSequences, .substringNotRequired]
+        ) { _, range, _, _ in
+            guard substring.attribute(
+                HwpAttributedStringKey.numberingLabel, at: range.location, effectiveRange: nil
+            ) == nil else { return }
+            ranges.append(range)
+        }
+        return Array(ranges.dropLast())
     }
 
     /// 오른쪽 여백 (tailIndent ≤ 0 = 오른쪽 끝에서의 오프셋)만큼 줄 폭을 줄인다

@@ -68,7 +68,11 @@
   `paragraphNumbering`의 번호를 `HwpTextRunBuilder.build`의 새 `number` 매개변수로
   넘기고, 조판 문자열 앞에 `I. `·`가. `·`(1) ` 같은 라벨과 본문과의 거리 빈칸을
   전치합니다(글머리표와 같은 자리). 양쪽 정렬의 단어 간격 벌림은 라벨의 거리
-  빈칸을 늘리지 않습니다. 라벨 범위에는 새
+  빈칸을 늘리지 않고, 빈칸 없는 본문은 글자 사이를 벌려 줄 폭을 채웁니다.
+  접근성 낭독에는 라벨이 들어가되 개요 제목 판정은 라벨을 뗀 본문으로 합니다.
+  쪽·단 경계 뒤로 이어지는 문단 조각은 첫 줄 들여쓰기를 다시 적용하지 않고
+  둘째 줄 들여쓰기에서 시작합니다(`HwpParagraphLayout.continuationFragment` —
+  들여쓰기·내어쓰기 문단 전반에 적용). 라벨 범위에는 새
   `HwpAttributedStringKey.numberingLabel` 표식이, 자동 내어쓰기 전진량과 번호
   너비 안 정렬의 첫 줄 여백에는 `numberingHeadIndent`·`numberingFirstLineInset`
   (pt)이 붙습니다. 표 39 문단 머리 정보는 한컴 도움말과 한글.app 12.30 실측대로

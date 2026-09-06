@@ -301,7 +301,9 @@ struct HwpAbsoluteCachePlacer {
         let range = slice.dropFirst().reduce(first.attributedRange) {
             NSUnionRange($0, $1.attributedRange)
         }
-        return (attributedString.attributedSubstring(from: range), [])
+        let text = attributedString.attributedSubstring(from: range)
+        // 둘째 run부터는 이어지는 조각 — 첫 줄 들여쓰기를 둘째 줄에 맞춘다.
+        return (range.location > 0 ? HwpParagraphLayout.continuationFragment(text) : text, [])
     }
 
     // MARK: 다단 캐시 단 경계

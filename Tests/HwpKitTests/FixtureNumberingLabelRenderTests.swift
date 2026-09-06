@@ -86,6 +86,26 @@ final class FixtureNumberingLabelRenderTests: XCTestCase {
         }
     }
 
+    /// 접근성 낭독에는 라벨이 들어가되 개요 제목 대조는 라벨을 뗀 본문으로 한다 —
+    /// 개요 문단 3개가 VoiceOver 제목으로 남고, 문단 번호 문단은 제목이 아니다.
+    func testAccessibilityReadsLabelsButStillDetectsHeadings() async throws {
+        let document = try await Self.load("outline-numbering")
+        let page = try XCTUnwrap(document.pages.first)
+        let titles = document.metadata.outline.map(\.title)
+        expect(titles) == ["Outline level one", "Outline level two", "Outline level three"]
+
+        let units = HwpAccessibilityContent.pageUnits(
+            page: page, bodyUnits: HwpSelectableText.units(in: page), headingTitles: titles
+        )
+        let spoken = units.filter { $0.kind == .body }.map { ($0.label, $0.isHeading) }
+        expect(spoken.map(\.0)) == [
+            "Hello CoreHwp plain text fixture.", "I. Outline level one", "가. Outline level two",
+            "1) Outline level three", "Plain body paragraph", "1. Numbered item one",
+            "2. Numbered item two",
+        ]
+        expect(spoken.map(\.1)) == [false, true, true, true, false, false, false]
+    }
+
     /// 복사 텍스트에 라벨이 들어간다 — 한글.app도 자동 번호 라벨을 복사한다
     /// (문단 경계 복사 실측: `\\r\\n1. Nu`).
     func testCopiedTextIncludesLabels() async throws {

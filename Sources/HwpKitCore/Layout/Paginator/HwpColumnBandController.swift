@@ -199,7 +199,10 @@ struct HwpColumnBandController {
                 }
                 let original = currentBlocks[blockIndex]
                 guard let attributed = original.attributedString else { continue }
-                let sub = attributed.attributedSubstring(from: mergedRange)
+                let slice = attributed.attributedSubstring(from: mergedRange)
+                // 블록 첫머리가 아닌 조각은 이어지는 조각 — 첫 줄 들여쓰기를 둘째 줄에 맞춘다.
+                let sub = mergedRange.location > 0
+                    ? HwpParagraphLayout.continuationFragment(slice) : slice
                 newBlocks.append(AnyHwpBlock(
                     frame: CGRect(
                         x: columnFrames[column].minX,

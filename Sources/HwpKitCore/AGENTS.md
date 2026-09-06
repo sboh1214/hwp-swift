@@ -153,7 +153,11 @@ paraShape의 그 값은 전부 0이라 (헌법주석 1,944문단) 종전 `> 0` �
 양쪽 정렬의 단어 간격 벌림(`HwpWordJustification`)은 이 표식이 붙은 빈칸을
 늘리지 않는다 — 거리는 정의가 정한 값이고, 늘리면 첫 줄 본문 시작이 자동
 내어쓰기로 맞춘 둘째 줄보다 오른쪽으로 튄다(글머리표의 빈칸은 표식이 없어
-종전대로 늘어난다). 표 39 문단 머리
+종전대로 늘어난다). 빈칸이 라벨 빈칸뿐인 줄(빈칸 없는 한글 본문)은 CT의 프레임
+정렬이 라벨 빈칸까지 늘리므로 본문 글자 사이(결합 문자 단위, 마지막 글자 제외)에
+여분을 균등 배분해 줄 폭을 채운다. 접근성(`HwpAccessibilityContent`)은 낭독
+문자열에 라벨을 넣되 개요 제목 대조는 라벨을 뗀 본문으로 한다 — 제목 수집
+(`HwpOutlineCollector.titleUnits`)은 PARA_TEXT만 담아 라벨이 없다. 표 39 문단 머리
 정보의 해석은 한컴 도움말과 한글.app 12.30 실측(2026-09-06)이다:
 - **글자 모양**: 정의 `charShapeId`가 실재하면 그것, -1이면 **문단 맨 마지막
   글자의 글자 모양**(도움말 "개요 번호의 글자 모양은 개요 문단의 맨 마지막
@@ -172,10 +176,17 @@ paraShape의 그 값은 전부 0이라 (헌법주석 1,944문단) 종전 `> 0` �
   0.5em), HWPUNIT이면 절대값(`outline-numbering` 1수준 10pt). 빈칸 한 자의 kern으로
   낸다 — `applyFixedSpaceWidth`의 0.5em 규칙은 `append`를 거치지 않으므로 이
   kern이 유일한 폭 근거다.
-- **자동 내어쓰기**(`autoIndent`): 라벨 + 뒤 여백 + 거리를 `numberingHeadIndent`로
-  실어 `ParagraphMetrics`가 둘째 줄부터의 `headIndent`를 첫 줄 본문 시작에 맞춘다
-  (실측: 3수준 두 줄 문단의 둘째 줄이 본문 시작과 같은 x). 해제면 둘째 줄은
-  문단 왼쪽 여백에 남는다(실측: 1수준).
+- **자동 내어쓰기**(`autoIndent`): 라벨 + 실제로 방출한 거리 빈칸 폭(`gapSpaceWidth`
+  = max(0, 뒤 여백 + 거리) — 음수 너비 보정값이 거리를 삼키면 0)을
+  `numberingHeadIndent`로 실어 `ParagraphMetrics`가 둘째 줄부터의 `headIndent`를 첫 줄
+  본문 시작에 맞춘다(실측: 3수준 두 줄 문단의 둘째 줄이 본문 시작과 같은 x). 해제면
+  둘째 줄은 문단 왼쪽 여백에 남는다(실측: 1수준). **이어지는 조각**(쪽·단 경계 뒤
+  부분 문자열 — `HwpPaginator`의 쪽 분할·단 run·`HwpAbsoluteCachePlacer`·
+  `HwpColumnBandController`·`HwpTableSplitter`)은 독립 CT 프레임으로 다시 조판되므로
+  `HwpParagraphLayout.continuationFragment`가 문단 스타일의 `firstLineHeadIndent`를
+  `headIndent`로 바꿔 단다 — 한글은 이어지는 쪽의 첫 줄을 문단 첫 줄로 취급하지 않고,
+  측정은 문단 전체를 한 프레임으로 재 그 줄들을 이미 `headIndent`에 두었다(들여쓰기
+  문단 전반에 걸친 규칙이라 번호 문단만의 것이 아니다).
 실물 대조는 `outline-numbering`(7줄 전부 라벨·본문 x가 한글.app과 0.5pt 이내)과
 헌법주석 13쪽(`1.` 라벨·본문 0.2pt 이내, 제목 띠 가운데 정렬 동일)이고, 가드는
 `HwpNumberingHeadingRenderTests`(합성)·`FixtureNumberingLabelRenderTests`(실물 —

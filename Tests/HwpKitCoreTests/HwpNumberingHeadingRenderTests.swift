@@ -6,15 +6,16 @@ import Nimble
 import XCTest
 
 #if canImport(CoreText)
-    /// 문단 번호·개요 번호 라벨 전치 (#154) — 글자 모양·번호 너비·정렬·본문과의
-    /// 거리·자동 내어쓰기·표식·진단 제외를 합성 입력으로 잠근다. 실물 대조는
-    /// `HwpKitTests`의 픽스처 스위트(헌법주석 13쪽·`outline-numbering`·
-    /// `numbering-sequence`)가 맡는다.
+    /// 문단 번호·개요 번호 라벨 전치 (#154) — 글자 모양·스크립트 슬롯·빈 라벨·빈
+    /// 문단·글머리표 불변·진단 제외·조판기 통합을 합성 입력으로 잠근다. 기하(번호
+    /// 너비·정렬·거리·자동 내어쓰기·이어지는 조각)는 같은 헬퍼를 쓰는
+    /// `HwpNumberingHeadingLayoutTests`가, 실물 대조는 `HwpKitTests`의 픽스처
+    /// 스위트(헌법주석 13쪽·`outline-numbering`·`numbering-sequence`)가 맡는다.
     final class HwpNumberingHeadingRenderTests: XCTestCase {
         /// 글자 모양 0 = 10pt(바탕글 상당), 1 = 12pt(제목 상당).
-        private static let sizes: [UInt32: Int32] = [0: 1000, 1: 1200]
+        static let sizes: [UInt32: Int32] = [0: 1000, 1: 1200]
 
-        private static func charShape(baseSize: Int32) throws -> CoreHwp.HwpCharShape {
+        static func charShape(baseSize: Int32) throws -> CoreHwp.HwpCharShape {
             var data = Data()
             func append(_ value: some FixedWidthInteger) {
                 withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
@@ -36,7 +37,7 @@ import XCTest
         }
 
         /// 정의 하나(형식 `^1.`, 로마 대문자)와 개요 1수준 문단 모양 1을 담은 사전.
-        private static func index(
+        static func index(
             definition: CoreHwp.HwpNumbering = definition(),
             paraShape: CoreHwp.HwpParaShape = HwpSynthetic.outlineParaShape(levelRawValue: 0),
             bullets: [UInt32: CoreHwp.HwpBullet] = [:]
@@ -52,7 +53,7 @@ import XCTest
             )
         }
 
-        private static func definition(
+        static func definition(
             alignment: CoreHwp.HwpParaHeadAlignment = .left,
             useInstWidth: Bool = true,
             autoIndent: Bool = true,
@@ -78,7 +79,7 @@ import XCTest
         }
 
         /// 문단 모양 1의 개요 문단 — 글자 모양 run은 `(시작 위치, 모양 id)`.
-        private static func paragraph(
+        static func paragraph(
             _ text: String, runs: [(UInt32, UInt32)]
         ) throws -> CoreHwp.HwpParagraph {
             var paragraph = try HwpSynthetic.styledParagraph(text, paraShapeId: 1)
@@ -89,11 +90,11 @@ import XCTest
             return paragraph
         }
 
-        private static let roman = HwpParagraphNumber(
+        static let roman = HwpParagraphNumber(
             kind: .outline, definitionIndex: 0, numbers: [1], text: "I."
         )
 
-        private static func build(
+        static func build(
             _ text: String = "가나", runs: [(UInt32, UInt32)] = [(0, 0), (1, 1)],
             definition: CoreHwp.HwpNumbering = definition(),
             number: HwpParagraphNumber? = roman
@@ -103,7 +104,7 @@ import XCTest
             ).build(paragraph: try paragraph(text, runs: runs), number: number)
         }
 
-        private static func font(at location: Int, in attributed: NSAttributedString) -> CTFont? {
+        static func font(at location: Int, in attributed: NSAttributedString) -> CTFont? {
             let value = attributed.attribute(
                 kCTFontAttributeName as NSAttributedString.Key, at: location, effectiveRange: nil
             )
@@ -114,14 +115,14 @@ import XCTest
             return (value as! CTFont)
         }
 
-        private static func kern(at location: Int, in attributed: NSAttributedString) -> CGFloat {
+        static func kern(at location: Int, in attributed: NSAttributedString) -> CGFloat {
             let value = attributed.attribute(
                 kCTKernAttributeName as NSAttributedString.Key, at: location, effectiveRange: nil
             ) as? NSNumber
             return CGFloat(value?.doubleValue ?? 0)
         }
 
-        private static func labelRange(in attributed: NSAttributedString) -> NSRange? {
+        static func labelRange(in attributed: NSAttributedString) -> NSRange? {
             var range = NSRange(location: NSNotFound, length: 0)
             let value = attributed.attribute(
                 HwpAttributedStringKey.numberingLabel, at: 0,
@@ -130,7 +131,7 @@ import XCTest
             return value == nil ? nil : range
         }
 
-        private static func styleValue(
+        static func styleValue(
             _ specifier: CTParagraphStyleSpecifier, in attributed: NSAttributedString
         ) -> CGFloat {
             let value = attributed.attribute(
@@ -147,7 +148,7 @@ import XCTest
 
         /// 문자열 인덱스가 시작하는 글리프의 줄-내 x — 캐럿 오프셋과 달리 kern을 나누지
         /// 않는다.
-        private static func glyphX(ofStringIndex index: Int, in line: CTLine) -> CGFloat? {
+        static func glyphX(ofStringIndex index: Int, in line: CTLine) -> CGFloat? {
             // swiftlint:disable:next force_cast
             for run in CTLineGetGlyphRuns(line) as! [CTRun] {
                 let range = CTRunGetStringRange(run)
@@ -161,7 +162,7 @@ import XCTest
         }
 
         /// 빈칸 한 자의 목표 폭 = 글리프 advance + kern.
-        private static func spaceWidth(
+        static func spaceWidth(
             at location: Int, in attributed: NSAttributedString
         ) throws -> CGFloat {
             let font = try XCTUnwrap(font(at: location, in: attributed))
@@ -302,148 +303,6 @@ import XCTest
             expect(Self.styleValue(.headIndent, in: attributed)) == 0
         }
 
-        // MARK: - 자동 내어쓰기
-
-        /// 자동 내어쓰기: 라벨 폭 + 거리가 표식으로 실리고 문단 스타일의 둘째 줄
-        /// 들여쓰기(`headIndent`)가 첫 줄 본문 시작과 같아진다.
-        func testAutoIndentAlignsFollowingLinesWithTheBody() throws {
-            let attributed = try Self.build()
-            let labelWidth = HwpTextRunBuilder.typographicWidth(
-                of: attributed.attributedSubstring(from: NSRange(location: 0, length: 2))
-            )
-            let head = attributed.attribute(
-                HwpAttributedStringKey.numberingHeadIndent, at: 0, effectiveRange: nil
-            ) as? NSNumber
-
-            expect(head.map { CGFloat($0.doubleValue) })
-                .to(beCloseTo(labelWidth + 6, within: 0.01))
-            expect(Self.styleValue(.firstLineHeadIndent, in: attributed)) == 0
-            expect(Self.styleValue(.headIndent, in: attributed))
-                .to(beCloseTo(labelWidth + 6, within: 0.01))
-        }
-
-        /// `ParagraphMetrics`는 첫 줄 여백 표식을 첫 줄 시작에, 내어쓰기 표식을 그 위에
-        /// 더한다.
-        func testParagraphMetricsAddHangingIndentToFirstLineStart() {
-            let paraShape = CoreHwp.HwpParaShape(
-                property1: 1 << 23, marginLeft: 2000, tabDefId: 0, numberingOrBulletId: 0
-            )
-            let plain = NSAttributedString(string: "가")
-            let labelled = NSAttributedString(string: "1. 가", attributes: [
-                HwpAttributedStringKey.numberingFirstLineInset: NSNumber(value: 4),
-                HwpAttributedStringKey.numberingHeadIndent: NSNumber(value: 20),
-            ])
-
-            let before = HwpParagraphLayout.ParagraphMetrics(
-                paraShape: paraShape, attributedString: plain
-            )
-            expect(before.firstLineHeadIndent) == 10
-            expect(before.headIndent) == 10
-            let after = HwpParagraphLayout.ParagraphMetrics(
-                paraShape: paraShape, attributedString: labelled
-            )
-            expect(after.firstLineHeadIndent) == 14
-            expect(after.headIndent) == 34
-        }
-
-        // MARK: - 기하 순수 함수
-
-        /// 정보가 없으면 한글 기본값(왼쪽·자릿수 맞춤·비율 50%).
-        func testMetricsDefaultToLeftInstanceWidthAndHalfEm() {
-            let metrics = HwpTextRunBuilder.NumberingHeadingMetrics(
-                info: nil, labelWidth: 8, fontSize: 10
-            )
-            expect(metrics.leadingPad) == 0
-            expect(metrics.trailingPad) == 0
-            expect(metrics.gap) == 5
-            expect(metrics.headIndent) == 13
-        }
-
-        /// 자릿수 맞춤 해제 + 너비 조정 5pt: 번호 너비 = 1.5em(15pt) + 5pt = 20pt라
-        /// 라벨(8pt)보다 넓은 영역 안에서 정렬한다.
-        func testMetricsAlignLabelInsideFixedWidth() {
-            func info(_ alignment: CoreHwp.HwpParaHeadAlignment) -> CoreHwp.HwpParaHeadInfo {
-                CoreHwp.HwpParaHeadInfo(
-                    alignment: alignment, useInstWidth: false, autoIndent: true,
-                    textOffsetType: .percent, numberFormat: 0, widthAdjust: 500, textOffset: 100
-                )
-            }
-            typealias Metrics = HwpTextRunBuilder.NumberingHeadingMetrics
-            let left = Metrics(info: info(.left), labelWidth: 8, fontSize: 10)
-            expect([left.leadingPad, left.trailingPad, left.gap, left.headIndent])
-                == [0, 12, 10, 30]
-            // 앞 여백은 첫 줄 들여쓰기로 나가므로 내어쓰기 전진량에서 빠진다.
-            let center = Metrics(info: info(.center), labelWidth: 8, fontSize: 10)
-            expect([center.leadingPad, center.trailingPad, center.gap, center.headIndent])
-                == [6, 6, 10, 24]
-            let right = Metrics(info: info(.right), labelWidth: 8, fontSize: 10)
-            expect([right.leadingPad, right.trailingPad, right.gap, right.headIndent])
-                == [12, 0, 10, 18]
-            // 라벨이 영역보다 넓으면 라벨 폭이 영역이다.
-            let wide = Metrics(info: info(.right), labelWidth: 25, fontSize: 10)
-            expect([wide.leadingPad, wide.trailingPad, wide.headIndent]) == [0, 0, 35]
-        }
-
-        /// 자릿수 맞춤 + 음수 너비 조정은 거리를 깎고, HWPUNIT 거리는 글자 크기와
-        /// 무관하다.
-        func testMetricsApplyNegativeAdjustAndHwpUnitOffset() {
-            let negative = CoreHwp.HwpParaHeadInfo(
-                alignment: .left, useInstWidth: true, autoIndent: true,
-                textOffsetType: .percent, numberFormat: 0, widthAdjust: -300, textOffset: 50
-            )
-            let shrunk = HwpTextRunBuilder.NumberingHeadingMetrics(
-                info: negative, labelWidth: 8, fontSize: 10
-            )
-            expect([shrunk.leadingPad, shrunk.trailingPad, shrunk.gap, shrunk.headIndent])
-                == [0, -3, 5, 10]
-
-            let absolute = CoreHwp.HwpParaHeadInfo(
-                alignment: .left, useInstWidth: true, autoIndent: true,
-                textOffsetType: .hwpUnit, numberFormat: 0, textOffset: 1000
-            )
-            let fixed = HwpTextRunBuilder.NumberingHeadingMetrics(
-                info: absolute, labelWidth: 8, fontSize: 24
-            )
-            expect(fixed.gap) == 10
-            expect(fixed.headIndent) == 18
-        }
-
-        /// 여러 줄 문단: 라벨은 첫 줄에 한 번이고, 둘째 줄부터는 자동 내어쓰기로 첫 줄
-        /// 본문 시작 x(라벨 폭 + 거리)에서 시작한다 — 렌더 줄(`HwpDrawnTextLayout.lines`)
-        /// 의 시작 x로 직접 잰다.
-        func testMultiLineParagraphHangsFollowingLinesAtTheBodyStart() throws {
-            let attributed = try Self.build(String(repeating: "가나다 ", count: 60), runs: [(0, 0)])
-            let lines = HwpDrawnTextLayout.lines(
-                attributedString: attributed, origin: .zero, lineWidth: 160
-            )
-            let hanging = try XCTUnwrap(attributed.attribute(
-                HwpAttributedStringKey.numberingHeadIndent, at: 0, effectiveRange: nil
-            ) as? NSNumber)
-
-            expect(lines.count) > 2
-            expect(lines[0].stringRange.location) == 0
-            expect(lines[0].baselineOrigin.x) == 0
-            for line in lines.dropFirst() {
-                expect(line.baselineOrigin.x)
-                    .to(beCloseTo(CGFloat(hanging.doubleValue), within: 0.01))
-            }
-            // 양쪽 정렬(표 44 정렬 0)의 첫 줄에서도 라벨 거리 빈칸은 벌어지지 않아
-            // 본문 첫 글자가 둘째 줄 시작과 같은 x에 놓인다. 캐럿 오프셋
-            // (`CTLineGetOffsetForStringIndex`)은 kern을 반씩 나눠 놓으므로 글리프
-            // 위치로 잰다.
-            let bodyStart = try XCTUnwrap(Self.glyphX(ofStringIndex: 3, in: lines[0].line))
-            expect(lines[0].baselineOrigin.x + bodyStart)
-                .to(beCloseTo(CGFloat(hanging.doubleValue), within: 0.01))
-            // 라벨 표식은 첫 줄 안에만 있다.
-            var labelRange = NSRange(location: NSNotFound, length: 0)
-            _ = attributed.attribute(
-                HwpAttributedStringKey.numberingLabel, at: 0,
-                longestEffectiveRange: &labelRange,
-                in: NSRange(location: 0, length: attributed.length)
-            )
-            expect(NSMaxRange(labelRange)) <= NSMaxRange(lines[0].stringRange)
-        }
-
         // MARK: - 조판기 통합
 
         /// 쪽 경계: 라벨 문단이 두 쪽에 걸쳐도 라벨은 첫 쪽의 첫 조각에 한 번뿐이고,
@@ -480,6 +339,19 @@ import XCTest
             expect(Set(fragmentPages).count) >= 2
             expect(labelled.map(\.page)) == [fragmentPages.first]
             expect(labelled.map(\.text)) == ["I. "]
+            // 이어지는 쪽의 조각은 첫 줄부터 자동 내어쓰기 x에서 시작한다 — 조각을
+            // 독립 프레임으로 다시 조판해도 첫 줄 들여쓰기로 돌아가지 않는다.
+            let lastPage = try await paginator.page(at: pageCount - 1)
+            let continuation = try XCTUnwrap(lastPage?.blocks.first {
+                $0.attributedString?.string.contains("가나다라마바사") == true
+            })
+            let text = try XCTUnwrap(continuation.attributedString)
+            let lines = HwpDrawnTextLayout.lines(
+                attributedString: text, origin: .zero, lineWidth: continuation.frame.width
+            )
+            expect(lines.count) >= 2
+            expect(lines[0].baselineOrigin.x) == lines[1].baselineOrigin.x
+            expect(lines[0].baselineOrigin.x) > 10
             let last = try await paginator.page(at: pageCount - 1)
             expect(last?.blocks.compactMap { $0.attributedString?.string }.last) == "II. 둘째"
         }

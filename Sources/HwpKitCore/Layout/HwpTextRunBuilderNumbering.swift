@@ -92,8 +92,7 @@ extension HwpTextRunBuilder {
         let start = output.length
         output.append(label)
         output.append(Self.paddingSpace(
-            width: max(0, metrics.trailingPad + metrics.gap), font: font,
-            attributes: spaceAttributes
+            width: metrics.gapSpaceWidth, font: font, attributes: spaceAttributes
         ))
         Self.markNumberingLabel(
             in: output, from: start, metrics: metrics, autoIndent: info?.autoIndent ?? false
@@ -185,8 +184,11 @@ extension HwpTextRunBuilder {
         let trailingPad: CGFloat
         /// 본문과의 거리.
         let gap: CGFloat
-        /// 자동 내어쓰기 전진량 — 라벨 + 뒤 여백 + 거리. 앞 여백은 첫 줄 들여쓰기에
-        /// 이미 들어가므로 여기서 다시 세지 않는다.
+        /// 실제로 방출하는 거리 빈칸의 폭 — 뒤 여백 + 거리를 0 아래로 내리지 않는다
+        /// (음수 너비 보정값이 거리보다 크면 라벨 바로 뒤에 본문이 온다).
+        let gapSpaceWidth: CGFloat
+        /// 자동 내어쓰기 전진량 — 라벨 + 실제 거리 빈칸 폭. 앞 여백은 첫 줄 들여쓰기에
+        /// 이미 들어가고, 빈칸 폭과 같은 클램프를 써야 첫 줄 본문과 둘째 줄이 맞는다.
         let headIndent: CGFloat
 
         /// - Parameters:
@@ -215,7 +217,8 @@ extension HwpTextRunBuilder {
             case .hwpUnit: HwpUnits.points(fromHwpUnit16: info?.textOffset ?? 0)
             case .percent, nil: fontSize * CGFloat(info?.textOffset ?? 50) / 100
             }
-            headIndent = max(0, labelWidth + trailingPad + gap)
+            gapSpaceWidth = max(0, trailingPad + gap)
+            headIndent = labelWidth + gapSpaceWidth
         }
     }
 }
