@@ -18,26 +18,23 @@ public extension HwpParagraphLayout {
     /// 바꾸는 범위는 조각의 **첫 CT 문단**(첫 문단 구분자까지)뿐이다 — 한 줄 끝(코드
     /// 10, `\n`)이나 본문의 U+2029 뒤는 측정에서도 CT 문단이 새로 시작해
     /// `firstLineHeadIndent`에 놓이므로 원래 스타일을 유지해야 줄바꿈이 같다. 같은
-    /// 이유로 조각이 문단 구분자 바로 뒤에서 시작하면 첫 줄도 원래대로 둔다. 경계는
-    /// `NSString.getParagraphStart(_:end:contentsEnd:for:)`의 문단 정의(LF·CR·CRLF·
-    /// U+2029)로 찾아 CoreText와 같다 — `\n`만 보면 U+2029 뒤 줄까지 보정돼 줄 수가
-    /// 갈린다. 문단 첫머리 조각, 두 들여쓰기가 같은 문단, 스타일 없는 문자열은 그대로
-    /// 잘라 돌려준다.
+    /// 이유로 조각이 문단 구분자 바로 뒤에서 시작하면 첫 줄도 원래대로 둔다. 경계의
+    /// 문단 정의는 `NSString.getParagraphStart`·CoreText와 같은 LF·CR·CRLF·U+2029다 —
+    /// `\n`만 보면 U+2029 뒤 줄까지 보정돼 줄 수가 갈린다. 문단 첫머리 조각, 두
+    /// 들여쓰기가 같은 문단, 스타일 없는 문자열은 그대로 잘라 돌려준다.
+    ///
+    /// **비용은 조각 길이에 비례한다.** 직전 글자 하나로 문단 시작 여부를 판정하고
+    /// 첫 구분자는 조각 안에서만 찾는다 — `getParagraphStart`처럼 원문에서 앞뒤
+    /// 구분자를 찾으면 줄바꿈 없는 긴 문단에서 조각마다 원문 전체를 훑어 분할 비용이
+    /// 이차로 는다(리뷰 실측: 3,000자 조각으로 500만 자를 나누면 20초). 들여쓰기가
+    /// 같은 문단은 탐색 전에 돌아간다.
     static func continuationFragment(
         of attributedString: NSAttributedString, range: NSRange
     ) -> NSAttributedString {
         let fragment = attributedString.attributedSubstring(from: range)
         let string = attributedString.string as NSString
-        var paragraphStart = 0
-        var paragraphEnd = 0
-        if fragment.length > 0 {
-            string.getParagraphStart(
-                &paragraphStart, end: &paragraphEnd, contentsEnd: nil,
-                for: NSRange(location: range.location, length: 0)
-            )
-        }
         guard range.location > 0, fragment.length > 0,
-              paragraphStart < range.location,
+              !isParagraphSeparator(string.character(at: range.location - 1)),
               let value = fragment.attribute(
                   kCTParagraphStyleAttributeName as NSAttributedString.Key, at: 0,
                   effectiveRange: nil
@@ -48,8 +45,9 @@ public extension HwpParagraphLayout {
         let head = floatValue(.headIndent, of: style)
         guard abs(firstLine - head) > 0.001 else { return fragment }
 
-        // 첫 CT 문단 = 조각 시작부터 그 문단의 구분자(포함)까지, 조각 끝이 먼저면 거기까지.
-        let firstParagraphLength = min(paragraphEnd, NSMaxRange(range)) - range.location
+        // 첫 CT 문단 = 조각 시작부터 조각 안 첫 구분자(포함, CRLF는 둘 다)까지 —
+        // 구분자가 없으면 조각 전체.
+        let firstParagraphLength = firstParagraphEnd(in: fragment.string as NSString)
         let mutable = NSMutableAttributedString(attributedString: fragment)
         mutable.addAttribute(
             kCTParagraphStyleAttributeName as NSAttributedString.Key,
@@ -113,6 +111,29 @@ public extension HwpParagraphLayout {
             ))
         }
         return CTParagraphStyleCreate(settings, settings.count)
+    }
+
+    /// `NSString.getParagraphStart`·CoreText의 문단 구분자 — LF·CR·U+2029 (CRLF는 둘의
+    /// 연속). U+2028·U+0085는 줄 구분자라 문단 스타일이 다시 걸리지 않는다.
+    private static func isParagraphSeparator(_ unit: unichar) -> Bool {
+        unit == 0x0A || unit == 0x0D || unit == 0x2029
+    }
+
+    /// 조각 안 첫 CT 문단의 끝(구분자 포함) — 구분자가 없으면 조각 길이. 조각만
+    /// 훑으므로 비용이 조각 길이에 비례한다.
+    private static func firstParagraphEnd(in fragment: NSString) -> Int {
+        var index = 0
+        while index < fragment.length {
+            let unit = fragment.character(at: index)
+            index += 1
+            if unit == 0x0D, index < fragment.length, fragment.character(at: index) == 0x0A {
+                return index + 1
+            }
+            if isParagraphSeparator(unit) {
+                return index
+            }
+        }
+        return fragment.length
     }
 
     private static func allocated<T>(_ value: T) -> UnsafeMutablePointer<T> {

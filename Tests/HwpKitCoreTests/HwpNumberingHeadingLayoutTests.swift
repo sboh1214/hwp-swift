@@ -231,6 +231,37 @@ import XCTest
             try Self.assertContinuationParity(separator: "\u{2029}")
         }
 
+        /// CR·CRLF도 CoreText 문단 구분자다(HWP 조판 문자열에는 코드 13이 접혀 나오지
+        /// 않지만 정의는 같아야 한다) — CRLF 뒤·CR 뒤에서 시작하는 조각은 원래 스타일,
+        /// 조각 안 CRLF는 두 글자를 모두 첫 CT 문단에 넣는다.
+        func testContinuationFragmentUsesCoreTextParagraphSeparators() throws {
+            let styled = try Support.build("가나", runs: [(0, 0)])
+            let style = try XCTUnwrap(styled.attribute(
+                kCTParagraphStyleAttributeName as NSAttributedString.Key, at: 0, effectiveRange: nil
+            ))
+            let hanging = Support.styleValue(.headIndent, in: styled)
+            let text = NSAttributedString(string: "aaa\r\nbbb\rccc", attributes: [
+                kCTParagraphStyleAttributeName as NSAttributedString.Key: style,
+            ])
+
+            let insideCRLF = HwpParagraphLayout.continuationFragment(
+                of: text, range: NSRange(location: 1, length: text.length - 1)
+            )
+            expect(Support.styleValue(.firstLineHeadIndent, in: insideCRLF)) == hanging
+            // "aa\r\n" 네 글자가 첫 CT 문단, 그 뒤 "b"부터는 원래 스타일.
+            let lineFeed = insideCRLF.attributedSubstring(from: NSRange(location: 3, length: 1))
+            expect(Support.styleValue(.firstLineHeadIndent, in: lineFeed)) == hanging
+            let afterCRLF = insideCRLF.attributedSubstring(from: NSRange(location: 4, length: 1))
+            expect(Support.styleValue(.firstLineHeadIndent, in: afterCRLF)) == 0
+
+            for start in [5, 9] { // CRLF 바로 뒤, CR 바로 뒤
+                let fragment = HwpParagraphLayout.continuationFragment(
+                    of: text, range: NSRange(location: start, length: text.length - start)
+                )
+                expect(Support.styleValue(.firstLineHeadIndent, in: fragment)) == 0
+            }
+        }
+
         private static func assertContinuationParity(
             separator: String, file: FileString = #file, line: UInt = #line
         ) throws {
