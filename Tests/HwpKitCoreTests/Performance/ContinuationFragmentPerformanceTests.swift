@@ -36,13 +36,14 @@ import XCTest
             let clock = ContinuousClock()
             let start = clock.now
             var corrected = 0
+            var fragments = 0
             var location = 0
             while location < body.length {
                 let range = NSRange(location: location, length: min(fragmentLength, body.length - location))
                 let fragment = HwpParagraphLayout.continuationFragment(of: body, range: range)
-                if fragment.attribute(
-                    kCTParagraphStyleAttributeName as NSAttributedString.Key, at: 0, effectiveRange: nil
-                ) != nil, location > 0 {
+                fragments += 1
+                // 실제로 보정된 조각만 센다 — 첫 줄 들여쓰기가 둘째 줄 값(20pt)으로 바뀐 것.
+                if Self.firstLineHeadIndent(of: fragment) == 20 {
                     corrected += 1
                 }
                 location += fragmentLength
@@ -54,10 +55,25 @@ import XCTest
                 "HWP_PERF continuation fragment: chars=\(characterCount) "
                     + "time=\(String(format: "%.3f", seconds))s"
             )
-            expect(corrected) == characterCount / fragmentLength - 1
+            // 마지막 짧은 조각까지 센다 (올림 나눗셈) — 첫 조각만 보정 대상이 아니다.
+            let expectedFragments = (characterCount + fragmentLength - 1) / fragmentLength
+            expect(fragments) == expectedFragments
+            expect(corrected) == expectedFragments - 1
             // 실측(2026-09-06 로컬): 300만 자 약 0.1s. 원문 전수 탐색 구현은 같은 입력에서
             // 약 7초(이차 증가)다.
             expect(seconds) < (full ? 5.0 : 3.0)
+        }
+
+        private static func firstLineHeadIndent(of fragment: NSAttributedString) -> CGFloat {
+            guard let value = fragment.attribute(
+                kCTParagraphStyleAttributeName as NSAttributedString.Key, at: 0, effectiveRange: nil
+            ) else { return -1 }
+            var indent: CGFloat = -1
+            CTParagraphStyleGetValueForSpecifier(
+                value as! CTParagraphStyle, // swiftlint:disable:this force_cast
+                .firstLineHeadIndent, MemoryLayout<CGFloat>.size, &indent
+            )
+            return indent
         }
     }
 #endif
