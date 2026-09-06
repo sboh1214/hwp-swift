@@ -169,6 +169,35 @@ import XCTest
                 .filter { $0.contains { $0 != "\u{FFFC}" } }
         }
 
+        /// 정의에 닿았어도 그 수준의 형식 슬롯이 없으면(확장 형식 없는 정의의 8수준)
+        /// 번호는 세어지되 라벨이 비어 아무것도 그려지지 않으므로 "(8수준 형식 없음)"
+        /// 진단이 남는다. 형식 슬롯이 빈 문자열인 수준은 빈 라벨이 맞아 진단도 라벨도
+        /// 없다.
+        func testMissingFormatSlotKeepsADiagnosticButEmptyFormatDoesNot() async throws {
+            let paginator = HwpSynthetic.outlinePaginator(
+                bodyParagraphs: [
+                    try HwpSynthetic.styledParagraph("8수준", paraShapeId: 1),
+                    try HwpSynthetic.styledParagraph("2수준 빈 형식", paraShapeId: 2),
+                    try HwpSynthetic.styledParagraph("1수준", paraShapeId: 3),
+                ],
+                index: HwpSynthetic.outlineIndex(
+                    paraShapes: [
+                        1: HwpSynthetic.outlineParaShape(levelRawValue: 7),
+                        2: HwpSynthetic.outlineParaShape(levelRawValue: 1),
+                        3: HwpSynthetic.outlineParaShape(levelRawValue: 0),
+                    ],
+                    numberings: [0: HwpSynthetic.numberingDefinition(formats: ["^1.", ""])]
+                )
+            )
+
+            _ = await paginator.totalPages()
+            let hints = await paginator.unsupportedElements().map(\.hint)
+            expect(hints) == ["개요 번호 문단 머리 (8수준 형식 없음)"]
+            // 8수준이 먼저 오면 1-7수준은 시작 번호로 매겨진 것으로 치므로 다음 1수준은 2다.
+            let texts = try await Self.blockTexts(of: paginator)
+            expect(texts) == ["8수준", "2수준 빈 형식", "2. 1수준"]
+        }
+
         /// 구역 정의의 참조가 0이면 "참조 없음", 정의 밖이면 댕글링으로 보고한다.
         func testSectionReferenceGapsAreReportedDistinctly() async throws {
             for (outlineNumberingId, hint) in [

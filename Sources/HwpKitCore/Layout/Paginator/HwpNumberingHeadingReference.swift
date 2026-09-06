@@ -96,14 +96,25 @@ struct HwpNumberingHeadingReference: Equatable {
     /// 문단(순회 상한·취소 `isTruncated`)뿐이다. 참조가 없거나 댕글링이면 라벨을
     /// 만들 정의 자체가 없으므로 그 사실을 적는다.
     var unsupportedHint: String {
-        let subject = switch kind {
-        case .outline: "개요 번호 문단 머리"
-        case .numbering: "번호 매기기 문단 머리"
-        }
-        return switch definition {
+        switch definition {
         case .resolved: "\(subject) (미렌더)"
         case .none: "\(subject) (번호 정의 참조 없음)"
         case let .dangling(id): "\(subject) (없는 번호 정의 \(id) 참조)"
+        }
+    }
+
+    /// 정의에는 닿았는데 이 수준의 형식 슬롯이 없을 때(`format(in:)`가 nil — 확장
+    /// 형식이 없는 5.0 저장본의 8수준 이상)의 진단 문자열. 번호는 세어지지만 라벨
+    /// 문자열이 비어 아무것도 그려지지 않으므로, 형식이 **비어 있는** 슬롯(한글에서
+    /// 서식을 지운 것 — 빈 라벨이 맞다)과 갈라 조용히 사라지지 않게 적는다 (#154).
+    var missingFormatHint: String {
+        "\(subject) (\(level)수준 형식 없음)"
+    }
+
+    private var subject: String {
+        switch kind {
+        case .outline: "개요 번호 문단 머리"
+        case .numbering: "번호 매기기 문단 머리"
         }
     }
 }

@@ -1638,10 +1638,13 @@ private extension HwpPaginator {
     /// 개요(머리 종류 1)/번호(2) 문단 머리의 생성 라벨은 numbering 정의에 있고
     /// PARA_TEXT에 없다 — 라벨 문자열은 `paragraphNumbering`이 만들고(#153)
     /// `HwpTextRunBuilder.appendNumberingHeading`이 문단 앞에 전치하므로(#154)
-    /// 번호가 있는 문단은 보고하지 않는다. 남는 것은 번호를 만들지 못한 문단이다 —
-    /// 참조가 없거나 댕글링이면 그 사실을, 정의에 닿았는데도 번호가 없으면(순회
-    /// 상한·취소로 `isTruncated`) "(미렌더)"를 적어 번호가 조용히 사라지지 않게
-    /// 한다. 글머리표(3)는 appendBulletHeading이 렌더하므로 제외 (#1).
+    /// 번호가 있고 그 수준의 형식 슬롯이 있는 문단은 보고하지 않는다 — 슬롯이 빈
+    /// 문자열이면 빈 라벨이 한글과 같은 결과다. 남는 것은 라벨이 나오지 못한 문단이다
+    /// — 참조가 없거나 댕글링이면 그 사실을, 정의에 닿았는데 그 수준의 형식 슬롯
+    /// 자체가 없으면(확장 형식 없는 5.0 저장본의 8수준 이상 — 번호는 세지만 라벨이
+    /// 빈다) "(N수준 형식 없음)"을, 정의·슬롯이 있는데도 번호가 없으면(순회 상한·
+    /// 취소로 `isTruncated`) "(미렌더)"를 적어 번호가 조용히 사라지지 않게 한다.
+    /// 글머리표(3)는 appendBulletHeading이 렌더하므로 제외 (#1).
     ///
     /// 참조 해석은 `HwpNumberingHeadingReference`다 (#152) — 개요는 문단 모양이
     /// 아니라 **현재 구역 정의**의 `numberParaShapeId`를 따르므로, 종전의
@@ -1653,16 +1656,20 @@ private extension HwpPaginator {
         from paragraph: CoreHwp.HwpParagraph,
         page: Int
     ) {
-        guard currentParagraphNumber == nil,
-              let paraShape = index.paraShape(
-                  id: UInt32(paragraph.paraHeader.paraShapeId)
-              ), let reference = HwpNumberingHeadingReference.resolve(
-                  paraShape: paraShape, sectionDef: currentSectionDef, index: index
-              ) else { return }
+        guard let paraShape = index.paraShape(
+            id: UInt32(paragraph.paraHeader.paraShapeId)
+        ), let reference = HwpNumberingHeadingReference.resolve(
+            paraShape: paraShape, sectionDef: currentSectionDef, index: index
+        ) else { return }
+        let hasFormat = reference.format(in: index) != nil
+        if hasFormat, currentParagraphNumber != nil {
+            return
+        }
+        let missingFormat = !hasFormat && reference.numbering(in: index) != nil
         collectedUnsupported.append(HwpUnsupportedElement(
             kind: .placeholder,
             page: page,
-            hint: reference.unsupportedHint
+            hint: missingFormat ? reference.missingFormatHint : reference.unsupportedHint
         ))
     }
 

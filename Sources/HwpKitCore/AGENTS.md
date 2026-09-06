@@ -124,9 +124,12 @@ CoreHwp.HwpFile
 뷰어 노출을 붙일 때 두 채널을 합치지 말 것.
 
 **번호 문단 머리 진단** (#152): 개요(문단 머리 종류 1)·번호 매기기(종류 2)의
-생성 라벨은 #154가 그리므로 `collectUnsupportedNumberingHeading`은 **번호를
-만들지 못한 문단**만 보고한다 — 참조 없음·댕글링은 그 사실을, 정의에 닿았는데
-번호가 없으면(순회 상한·취소로 `isTruncated`) "(미렌더)"를. 정의 참조는
+생성 라벨은 #154가 그리므로 `collectUnsupportedNumberingHeading`은 **라벨이 나오지
+못한 문단**만 보고한다 — 참조 없음·댕글링은 그 사실을, 정의에 닿았는데 그 수준의
+형식 슬롯 자체가 없으면(확장 형식 없는 5.0 저장본의 8수준 이상 — 번호는 세지만
+라벨이 빈다) "(N수준 형식 없음)"을, 정의·슬롯이 있는데도 번호가 없으면(순회 상한·
+취소로 `isTruncated`) "(미렌더)"를. 형식 슬롯이 **빈 문자열**인 수준은 빈 라벨이
+한글과 같은 결과라 보고하지 않는다. 정의 참조는
 `Paginator/HwpNumberingHeadingReference`
 가 푼다 — **개요는 문단 모양이 아니라 현재 구역 정의의 `numberParaShapeId`**
 (1-based)이고 번호 매기기만 `paraShape.numberingOrBulletId`다. 실문서 개요
