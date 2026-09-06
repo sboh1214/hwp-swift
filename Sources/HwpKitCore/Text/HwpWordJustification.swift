@@ -55,12 +55,22 @@ public enum HwpWordJustification {
         let targetWidth = targetWidth(style: style, availableWidth: availableWidth)
         guard targetWidth > 1 else { return nil }
 
-        // 뒤쪽 공백을 제외한 본문 범위에서 늘릴 공백 위치를 모은다
-        let spaceOffsets = stretchableSpaceOffsets(in: string, range: nsRange)
-        guard !spaceOffsets.isEmpty else { return nil }
+        // 뒤쪽 공백을 제외한 본문 범위에서 늘릴 공백 위치를 모은다. 문단 번호
+        // 라벨의 거리 빈칸(`numberingLabel` 표식, #154)은 단어 간격이 아니라 정의가
+        // 정한 거리라 늘리지 않는다 — 늘리면 첫 줄 본문 시작이 자동 내어쓰기로 맞춘
+        // 둘째 줄보다 오른쪽으로 튄다.
+        let substring = attributedString.attributedSubstring(from: nsRange)
+        let (spaceOffsets, excludedLabelSpaces) = stretchableSpaceOffsets(
+            in: string, range: nsRange, attributedString: attributedString
+        )
+        guard !spaceOffsets.isEmpty else {
+            // 늘릴 빈칸이 라벨 빈칸뿐이면 CT가 프레임 줄을 글자 사이로 벌리며 그
+            // 빈칸도 늘리므로, 벌리지 않은 단독 조판 줄로 바꾼다.
+            return excludedLabelSpaces
+                ? (line: CTLineCreateWithAttributedString(substring), xOffset: 0) : nil
+        }
 
         // 자연 폭 (문단 스타일 정렬은 CTLine 단독 조판에 적용되지 않는다)
-        let substring = attributedString.attributedSubstring(from: nsRange)
         let naturalLine = CTLineCreateWithAttributedString(substring)
         let naturalWidth = CGFloat(CTLineGetTypographicBounds(naturalLine, nil, nil, nil))
             - CGFloat(CTLineGetTrailingWhitespaceWidth(naturalLine))
@@ -147,11 +157,13 @@ public enum HwpWordJustification {
         return alignment
     }
 
-    /// 뒤쪽 공백을 제외한 줄 본문에서 늘릴 공백의 줄-내 오프셋 목록
+    /// 뒤쪽 공백을 제외한 줄 본문에서 늘릴 공백의 줄-내 오프셋 목록과, 라벨 빈칸을
+    /// 제외했는지.
     private static func stretchableSpaceOffsets(
         in string: NSString,
-        range: NSRange
-    ) -> [Int] {
+        range: NSRange,
+        attributedString: NSAttributedString
+    ) -> (offsets: [Int], excludedLabelSpaces: Bool) {
         var contentLength = range.length
         while contentLength > 0,
               isStretchableSpace(string.character(at: range.location + contentLength - 1))
@@ -159,12 +171,20 @@ public enum HwpWordJustification {
             contentLength -= 1
         }
         var offsets: [Int] = []
+        var excluded = false
         for offset in 0 ..< contentLength
             where isStretchableSpace(string.character(at: range.location + offset))
         {
+            if attributedString.attribute(
+                HwpAttributedStringKey.numberingLabel, at: range.location + offset,
+                effectiveRange: nil
+            ) != nil {
+                excluded = true
+                continue
+            }
             offsets.append(offset)
         }
-        return offsets
+        return (offsets, excluded)
     }
 
     /// 늘릴 수 있는 공백: U+0020 (한글 문서의 단어 간격)

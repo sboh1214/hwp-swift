@@ -90,10 +90,11 @@ struct HwpNumberingHeadingReference: Equatable {
 
     /// `unsupportedElements()`에 실을 진단 문자열.
     ///
-    /// 정의에 닿은 문단은 종전 문구 "(미렌더)"를 그대로 쓴다 — 라벨 문자열은
-    /// `HwpParagraphNumbering`이 만들지만(#153) 렌더러가 아직 그리지 않는다는
-    /// 뜻이고 #154가 렌더한 문단을 여기서 뺀다. 참조가
-    /// 없거나 댕글링이면 라벨을 만들 정의 자체가 없으므로 그 사실을 적는다.
+    /// 정의에 닿은 문단의 문구는 "(미렌더)"다 — 라벨은 `HwpParagraphNumbering`이
+    /// 만들고(#153) 조판이 전치하므로(#154) `HwpPaginator`는 번호가 있는 문단을
+    /// 보고하지 않는다; 이 문구가 실제로 실리는 것은 정의에 닿았는데 번호가 없는
+    /// 문단(순회 상한·취소 `isTruncated`)뿐이다. 참조가 없거나 댕글링이면 라벨을
+    /// 만들 정의 자체가 없으므로 그 사실을 적는다.
     var unsupportedHint: String {
         let subject = switch kind {
         case .outline: "개요 번호 문단 머리"

@@ -34,7 +34,8 @@ public actor HwpPaginator {
     /// 문서 순서로 생성한 문단 번호·개요 번호 (#153). 조판과 무관한 순수 함수의
     /// 결과라 init에서 한 번 만들고 이후 바뀌지 않는다 — 불변 `Sendable` 값이라
     /// actor 밖에서도 동기로 읽는다(라벨 렌더 #154의 조판 문자열 조립·복사·
-    /// 접근성은 actor 격리 밖 동기 코드다). 화면에는 아직 그리지 않는다.
+    /// 접근성은 actor 격리 밖 동기 코드다). 최상위 문단의 라벨은 `measuredParagraph`가
+    /// `currentParagraphNumber`로 꺼내 조판 문자열 앞에 전치한다 (#154).
     ///
     /// init의 동기 순회라 조판의 쪽 단위 지연·취소 관찰 밖이므로 순회 쪽이 스스로
     /// 유계다 — 걸음 수(`HwpParagraphNumbering.maximumVisitedNodes` — 문단과 컨트롤)·항목
@@ -691,8 +692,10 @@ private extension HwpPaginator {
         {
             return (memo.attributedString, memo.paragraphFrame)
         }
-        let attributedString = textRunBuilder()
-            .build(paragraph: paragraph, controlReplacements: replacements)
+        let attributedString = textRunBuilder().build(
+            paragraph: paragraph, controlReplacements: replacements,
+            number: currentParagraphNumber
+        )
         let paragraphFrame: HwpParagraphFrame = if absoluteCachePlacer.canSkipMeasurement(
             for: paragraph,
             attributedString: attributedString,
@@ -703,6 +706,16 @@ private extension HwpPaginator {
             try await layout(paragraph, attributedString: attributedString)
         }
         return (attributedString, paragraphFrame)
+    }
+
+    /// 문단 커서가 가리키는 최상위 문단의 문단 번호·개요 번호 (#154) — 라벨 전치
+    /// (`measuredParagraph`)와 진단 제외(`collectUnsupportedNumberingHeading`)가 같은
+    /// 값을 본다. 둘 다 `advanceParagraph()` 앞에서 불리므로 같은 열쇠다. 컨테이너
+    /// 문단(표 셀·글상자·각주·머리말)은 측정기가 경로를 나르지 않아 라벨이 없다.
+    var currentParagraphNumber: HwpParagraphNumber? {
+        paragraphNumbering.number(for: HwpParagraphKey(
+            sectionIndex: nextSectionIndex, paragraphIndex: nextParagraphIndex
+        ))
     }
 
     /// 문서 끝 처리 — 밴드를 닫고 마지막 본문 페이지를 확정한 뒤, 남은 미주는
@@ -1619,9 +1632,12 @@ private extension HwpPaginator {
     }
 
     /// 개요(머리 종류 1)/번호(2) 문단 머리의 생성 라벨은 numbering 정의에 있고
-    /// PARA_TEXT에 없다 — 라벨 문자열은 `paragraphNumbering`이 만들지만(#153)
-    /// 렌더러가 아직 그리지 않으므로, 번호가 조용히 사라지지 않게 unsupported로
-    /// 보고한다. 글머리표(3)는 appendBulletHeading이 렌더하므로 제외 (#1).
+    /// PARA_TEXT에 없다 — 라벨 문자열은 `paragraphNumbering`이 만들고(#153)
+    /// `HwpTextRunBuilder.appendNumberingHeading`이 문단 앞에 전치하므로(#154)
+    /// 번호가 있는 문단은 보고하지 않는다. 남는 것은 번호를 만들지 못한 문단이다 —
+    /// 참조가 없거나 댕글링이면 그 사실을, 정의에 닿았는데도 번호가 없으면(순회
+    /// 상한·취소로 `isTruncated`) "(미렌더)"를 적어 번호가 조용히 사라지지 않게
+    /// 한다. 글머리표(3)는 appendBulletHeading이 렌더하므로 제외 (#1).
     ///
     /// 참조 해석은 `HwpNumberingHeadingReference`다 (#152) — 개요는 문단 모양이
     /// 아니라 **현재 구역 정의**의 `numberParaShapeId`를 따르므로, 종전의
@@ -1633,11 +1649,12 @@ private extension HwpPaginator {
         from paragraph: CoreHwp.HwpParagraph,
         page: Int
     ) {
-        guard let paraShape = index.paraShape(
-            id: UInt32(paragraph.paraHeader.paraShapeId)
-        ), let reference = HwpNumberingHeadingReference.resolve(
-            paraShape: paraShape, sectionDef: currentSectionDef, index: index
-        ) else { return }
+        guard currentParagraphNumber == nil,
+              let paraShape = index.paraShape(
+                  id: UInt32(paragraph.paraHeader.paraShapeId)
+              ), let reference = HwpNumberingHeadingReference.resolve(
+                  paraShape: paraShape, sectionDef: currentSectionDef, index: index
+              ) else { return }
         collectedUnsupported.append(HwpUnsupportedElement(
             kind: .placeholder,
             page: page,
@@ -1647,8 +1664,8 @@ private extension HwpPaginator {
 
     /// 개요·책갈피 탐색 목록 수집 (#77). `collectUnsupported`와 같은 자리에서
     /// 같은 두 페이지 값을 쓴다 — 문단 머리는 문단이 **시작한** 쪽(`firstPage`),
-    /// 컨트롤은 배치가 **끝난** 쪽. 같은 개요 문단이 미지원 목록(생성 라벨
-    /// 미렌더 진단)과 탐색 목록에 동시에 뜨는 것은 의도다
+    /// 컨트롤은 배치가 **끝난** 쪽. 탐색 목록은 라벨 전치·미지원 신고와 독립이라
+    /// 번호를 만들지 못한 개요 문단은 신고와 탐색 목록에 함께 뜬다
     /// (`HwpOutlineCollector.collectHeading` doc-comment 참조).
     func collectOutline(from paragraph: CoreHwp.HwpParagraph, firstPage: Int) {
         // 상한에 걸린 쪽은 끝내 캐시되지 않는데 문단 배치는 한 쪽 더 진행되므로,

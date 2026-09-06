@@ -41,7 +41,10 @@ public struct HwpParaHeadInfo: HwpPrimitive {
     /// 본문과의 거리 `HWPUNIT16` — 단위는 `textOffsetType`이 정한다
     /// (비율이면 글자 크기에 대한 %, 실측 기본값 50).
     public var textOffset: HWPUNIT16
-    /// 글자 모양 아이디 참조 `INT32` — -1이면 바탕글 모양이다.
+    /// 글자 모양 아이디 참조 `INT32` — -1이면 정의에 글자 모양이 없다. 그때 한글은
+    /// **문단 맨 마지막 글자의 글자 모양**을 따른다(한컴 도움말 "개요 번호의 글자
+    /// 모양은 개요 문단의 맨 마지막 글자의 글자 모양을 따라갑니다") — 스펙 문구의
+    /// "바탕글"이 아니다 (#154, `HwpTextRunBuilder.appendNumberingHeading`).
     public var charShapeId: Int32
 
     public init(

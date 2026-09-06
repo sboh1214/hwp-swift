@@ -72,8 +72,9 @@ import XCTest
         }
 
         /// 같은 문단이 미지원 목록과 탐색 목록에 **동시에** 뜨는 것은 의도다 —
-        /// 개요를 탐색 대상으로 승격시켜도 생성 라벨을 렌더하게 되는 것은 아니다.
-        func testHeadingIsReportedBothAsOutlineAndAsUnrenderedLabel() async throws {
+        /// 개요 탐색 목록과 라벨 전치(#154)는 독립이다 — 같은 문단이 탐색 목록에
+        /// 오르고 조판 문자열 앞에 라벨을 받되, 진단은 남지 않는다.
+        func testHeadingIsListedInOutlineAndRenderedWithItsLabel() async throws {
             let paginator = HwpSynthetic.outlinePaginator(
                 bodyParagraphs: [try HwpSynthetic.styledParagraph("번호 정의 있는 개요", paraShapeId: 1)],
                 index: HwpSynthetic.outlineIndex(
@@ -90,7 +91,11 @@ import XCTest
 
             expect(outline.map(\.title)) == ["번호 정의 있는 개요"]
             expect(outline.map(\.level)) == [2]
-            expect(unsupported.map(\.hint)).to(contain("개요 번호 문단 머리 (미렌더)"))
+            expect(unsupported.map(\.hint)).to(beEmpty())
+            let page = try await paginator.page(at: 0)
+            let texts = (page?.blocks.compactMap { $0.attributedString?.string } ?? [])
+                .filter { $0.contains { $0 != "\u{FFFC}" } } // 구역 정의 문단 제외
+            expect(texts) == ["1. 번호 정의 있는 개요"]
         }
 
         /// 스타일 이름 폴백은 대안이 아니라 상시 병행 경로다 — `개요 8` 이상

@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreText
 import Foundation
 @testable import HwpKit
 import HwpKitCore
@@ -265,24 +266,38 @@ final class FixtureObjectRenderTests: XCTestCase {
         )
     }
 
-    // MARK: - legacy-common-control-property (개요 번호 진단, #152)
+    // MARK: - legacy-common-control-property (개요 번호 라벨, #152·#154)
 
-    /// 개요 문단 1,944개가 전부 "개요 번호 문단 머리 (미렌더)"로 보고된다 — 종전
-    /// 진단은 문단 모양의 참조(전부 0)에 걸려 한 건도 내지 못했다. 진단 건수는
-    /// 문단 단위라 감지한 문단 수와 같고 (`HwpNumberingHeadingFixtureTests`의
-    /// 조판 없는 집계와 같은 1,944), 첫 건은 문서 순서 13쪽(인쇄 1쪽)이다.
-    func testLegacyOutlineHeadingsAreReportedAsUnrenderedLabels() async throws {
-        _ = try await legacyPage(index: 0)
+    /// 개요 문단 1,944개가 라벨을 받아 그려지므로(#154) 종전 "(미렌더)" 진단
+    /// 1,944건은 한 건도 남지 않는다. 문서 순서 13쪽(인쇄 1쪽)의 세 표제가 이슈
+    /// #151이 적은 `I.`·`1.`·`가.`로 시작하고, 1수준 제목 띠의 라벨은 제목과 같은
+    /// 글꼴 크기(12pt 굵은 윤고딕 — 문단 마지막 글자 모양)다.
+    func testLegacyOutlineHeadingsRenderTheirLabels() async throws {
+        let page = try await legacyPage(index: 12)
         let document = try XCTUnwrap(Self.legacyDocument)
         let headingHints = document.unsupportedElements.filter { $0.hint.contains("번호 문단 머리") }
+        expect(headingHints).to(beEmpty())
 
-        expect(headingHints.count) == 1944
-        expect(Set(headingHints.map(\.hint))) == ["개요 번호 문단 머리 (미렌더)"]
-        expect(headingHints.first?.page) == 13
-        expect(headingHints.allSatisfy { $0.kind == .placeholder }) == true
-        expect(headingHints.map(\.page).allSatisfy { (1 ... 1030).contains($0) }) == true
-        // 쪽은 문서 순서로 단조다 — 문단이 시작한 쪽을 실었다는 증거.
-        expect(headingHints.map(\.page)) == headingHints.map(\.page).sorted()
+        let texts = page.blocks.compactMap { $0.attributedString?.string }
+        expect(texts.contains { $0.hasPrefix("I. 대한민국헌법 제정의 유래") }) == true
+        expect(texts.contains { $0.hasPrefix("1. 대한민국헌법의 전사(前史)") }) == true
+        expect(texts.contains { $0.hasPrefix("가. 대한민국임시정부 헌법") }) == true
+
+        let title = try XCTUnwrap(page.blocks.first {
+            $0.attributedString?.string.hasPrefix("I. ") == true
+        }?.attributedString)
+        expect(Self.fontSize(at: 0, in: title)) == 12
+        expect(Self.fontSize(at: 3, in: title)) == 12
+        expect(title.attribute(HwpAttributedStringKey.numberingLabel, at: 0, effectiveRange: nil))
+            .notTo(beNil())
+    }
+
+    private static func fontSize(at location: Int, in attributed: NSAttributedString) -> CGFloat? {
+        let value = attributed.attribute(
+            kCTFontAttributeName as NSAttributedString.Key, at: location, effectiveRange: nil
+        )
+        guard let value, CFGetTypeID(value as CFTypeRef) == CTFontGetTypeID() else { return nil }
+        return CTFontGetSize(value as! CTFont) // swiftlint:disable:this force_cast
     }
 
     // MARK: - legacy-common-control-property (각주 안 개체, #94)

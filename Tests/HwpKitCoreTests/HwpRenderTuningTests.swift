@@ -15,6 +15,10 @@ final class HwpRenderTuningTests: XCTestCase {
         expect(HwpRenderTuning.Text.shadowOffsetScale) == 1.5
     }
 
+    func testNumberingTuningValues() {
+        expect(HwpRenderTuning.Numbering.fixedWidthEmRatio) == 1.5
+    }
+
     func testEquationTuningValues() {
         expect(HwpRenderTuning.Equation.glyphScale) == 0.885
     }
