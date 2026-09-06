@@ -4,7 +4,7 @@ import Foundation
 
 // 문단의 이어지는 조각(쪽·단 경계 뒤 부분 문자열)의 문단 스타일 (#154 리뷰)
 
-public extension HwpParagraphLayout {
+extension HwpParagraphLayout {
     /// 문단 조판 문자열의 `range` 조각 — 문단 첫머리가 아닌 **이어지는 조각**이면 첫 줄
     /// 들여쓰기를 둘째 줄 들여쓰기로 맞춘 문단 스타일 사본을 첫 CT 문단에 단다.
     ///

@@ -989,7 +989,9 @@ private extension HwpPaginator {
             runs: runs,
             rawTotal: rawTotal,
             attributedLength: attributedString.length,
-            lines: paragraphFrame.lines
+            lines: paragraphFrame.lines,
+            // 생성 라벨(#154)은 WCHAR 스트림에 없으므로 본문만 비례 환산한다.
+            prefixLength: HwpTextRunBuilder.numberingLabelLength(of: attributedString)
         ) else { return false }
 
         for (runIndex, run) in runs.enumerated() {

@@ -108,11 +108,12 @@ import XCTest
             let value = attributed.attribute(
                 kCTFontAttributeName as NSAttributedString.Key, at: location, effectiveRange: nil
             )
-            guard let value, CFGetTypeID(value as CFTypeRef) == CTFontGetTypeID() else {
-                return nil
-            }
-            // swiftlint:disable:next force_cast
-            return (value as! CTFont)
+            // CF 타입에 `as!`를 쓰면 SwiftFormat이 `as?`로 바꿔 컴파일이 막힌다 —
+            // 루트 AGENTS.md의 `CFGetTypeID` + `unsafeBitCast` 패턴.
+            guard let value else { return nil }
+            let reference = value as CFTypeRef
+            guard CFGetTypeID(reference) == CTFontGetTypeID() else { return nil }
+            return unsafeBitCast(reference, to: CTFont.self)
         }
 
         static func kern(at location: Int, in attributed: NSAttributedString) -> CGFloat {
@@ -138,7 +139,9 @@ import XCTest
                 kCTParagraphStyleAttributeName as NSAttributedString.Key, at: 0, effectiveRange: nil
             )
             guard let value else { return .nan }
-            let style = value as! CTParagraphStyle // swiftlint:disable:this force_cast
+            let reference = value as CFTypeRef
+            guard CFGetTypeID(reference) == CTParagraphStyleGetTypeID() else { return .nan }
+            let style = unsafeBitCast(reference, to: CTParagraphStyle.self)
             var result: CGFloat = 0
             CTParagraphStyleGetValueForSpecifier(
                 style, specifier, MemoryLayout<CGFloat>.size, &result

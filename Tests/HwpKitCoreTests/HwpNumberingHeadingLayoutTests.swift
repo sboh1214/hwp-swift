@@ -262,6 +262,43 @@ import XCTest
             }
         }
 
+        /// 다단 캐시 run의 단 경계는 원본 WCHAR 위치를 조판 인덱스로 비례 환산하는데,
+        /// 전치된 라벨은 스트림에 없으므로 접두를 뺀 본문 길이에만 환산하고 접두를
+        /// 더해야 한다 — 전체 길이로 환산하면 경계가 앞으로 당겨져 이웃 줄에 스냅된다.
+        func testColumnRunBoundariesSkipTheGeneratedLabelPrefix() throws {
+            let paragraph = try HwpSynthetic.splitParagraphWithNoteMarkers(
+                lines: [(characters: 50, marker: false), (characters: 50, marker: false)],
+                segments: [
+                    (location: 1000, height: 1000, textStart: 0),
+                    (location: 0, height: 1000, textStart: 50),
+                ]
+            )
+            let runs = try XCTUnwrap(HwpAbsoluteCachePlacer.cacheRuns(for: paragraph))
+            expect(runs.count) == 2
+            // 조판 문자열 110자 = 라벨 접두 10 + 본문 100. CT 줄 시작은 0·55·60이라
+            // 접두를 무시한 환산(0.5 × 110 = 55)과 접두를 뺀 환산(10 + 0.5 × 100 = 60)이
+            // 서로 다른 줄에 스냅된다.
+            let lines = [0, 55, 60].map {
+                HwpLineFrame(
+                    origin: .zero, width: 100, baseline: 10,
+                    attributedRange: NSRange(location: $0, length: 5)
+                )
+            }
+            let ignoringPrefix = HwpAbsoluteCachePlacer.columnRunBoundaries(
+                runs: runs, rawTotal: 100, attributedLength: 110, lines: lines
+            )
+            expect(ignoringPrefix) == [0, 55, 110]
+            let withPrefix = HwpAbsoluteCachePlacer.columnRunBoundaries(
+                runs: runs, rawTotal: 100, attributedLength: 110, lines: lines, prefixLength: 10
+            )
+            expect(withPrefix) == [0, 60, 110]
+
+            let labelled = try Support.build("가나", runs: [(0, 0)])
+            expect(HwpTextRunBuilder.numberingLabelLength(of: labelled)) == 3
+            let plain = try Support.build("가나", runs: [(0, 0)], number: nil)
+            expect(HwpTextRunBuilder.numberingLabelLength(of: plain)) == 0
+        }
+
         private static func assertContinuationParity(
             separator: String, file: FileString = #file, line: UInt = #line
         ) throws {

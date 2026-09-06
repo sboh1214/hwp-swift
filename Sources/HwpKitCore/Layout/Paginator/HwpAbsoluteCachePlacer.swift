@@ -311,17 +311,26 @@ struct HwpAbsoluteCachePlacer {
     /// 인덱스로 비례 환산한 뒤 CT 라인 시작에 스냅한 단 경계 목록
     /// ([0, …, attributedLength]) — 컨트롤 문자 (스트림 8 WCHAR ↔ 마커 1자)의
     /// 오차는 라인 스냅이 흡수한다. 스냅 후 비단조면 nil (CT 폴백).
+    ///
+    /// `prefixLength`는 조판 문자열 앞에 전치된 생성 문자열(문단 번호·개요 번호
+    /// 라벨 + 거리 빈칸, #154)의 길이다 — 원본 WCHAR 스트림에 대응 위치가 없으므로
+    /// 비례 환산은 그 뒤의 본문 길이에만 걸고 결과에 접두 길이를 더한다. 전체 길이로
+    /// 환산하면 경계가 `접두 길이 × (1 − 스트림 비율)`만큼 앞으로 당겨져 라인 스냅이
+    /// 이웃 줄로 튈 수 있다.
     static func columnRunBoundaries(
         runs: [[CoreHwp.HwpParaLineSegInternal]],
         rawTotal: UInt32,
         attributedLength: Int,
-        lines: [HwpLineFrame]
+        lines: [HwpLineFrame],
+        prefixLength: Int = 0
     ) -> [Int]? {
+        let prefix = max(0, min(prefixLength, attributedLength))
         var boundaries = [0]
         for run in runs.dropFirst() {
             guard let first = run.first else { return nil }
-            let proportional = Double(first.textStartingIndex) / Double(rawTotal)
-                * Double(attributedLength)
+            let proportional = Double(prefix)
+                + Double(first.textStartingIndex) / Double(rawTotal)
+                * Double(attributedLength - prefix)
             boundaries.append(snapToLineStart(
                 Int(proportional.rounded()),
                 lines: lines

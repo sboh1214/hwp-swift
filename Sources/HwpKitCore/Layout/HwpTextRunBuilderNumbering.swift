@@ -127,6 +127,19 @@ extension HwpTextRunBuilder {
         }
     }
 
+    /// 조판 문자열 첫머리에 전치된 번호 라벨(라벨 글자 + 거리 빈칸)의 길이 — 표식
+    /// (`numberingLabel`)이 없으면 0. 원본 WCHAR 위치와 조판 인덱스를 비례 환산하는
+    /// 곳(`HwpAbsoluteCachePlacer.columnRunBoundaries`)이 접두를 빼고 계산하는 데 쓴다.
+    static func numberingLabelLength(of attributedString: NSAttributedString) -> Int {
+        guard attributedString.length > 0 else { return 0 }
+        var range = NSRange(location: NSNotFound, length: 0)
+        let marked = attributedString.attribute(
+            HwpAttributedStringKey.numberingLabel, at: 0,
+            longestEffectiveRange: &range, in: NSRange(location: 0, length: attributedString.length)
+        )
+        return marked != nil && range.location == 0 ? range.length : 0
+    }
+
     /// 라벨의 글자 모양 id — 정의의 `charShapeId`가 사전에 실재하면 그것, 아니면
     /// (-1 또는 없는 id) 문단 맨 마지막 글자의 글자 모양(한컴 도움말). 글머리표
     /// (`appendBulletHeading`)는 첫 글자 모양을 쓰지만 개요 번호의 규칙은 마지막이다.

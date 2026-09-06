@@ -68,9 +68,11 @@ import XCTest
             guard let value = fragment.attribute(
                 kCTParagraphStyleAttributeName as NSAttributedString.Key, at: 0, effectiveRange: nil
             ) else { return -1 }
+            let reference = value as CFTypeRef
+            guard CFGetTypeID(reference) == CTParagraphStyleGetTypeID() else { return -1 }
             var indent: CGFloat = -1
             CTParagraphStyleGetValueForSpecifier(
-                value as! CTParagraphStyle, // swiftlint:disable:this force_cast
+                unsafeBitCast(reference, to: CTParagraphStyle.self),
                 .firstLineHeadIndent, MemoryLayout<CGFloat>.size, &indent
             )
             return indent

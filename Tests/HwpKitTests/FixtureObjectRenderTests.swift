@@ -296,8 +296,10 @@ final class FixtureObjectRenderTests: XCTestCase {
         let value = attributed.attribute(
             kCTFontAttributeName as NSAttributedString.Key, at: location, effectiveRange: nil
         )
-        guard let value, CFGetTypeID(value as CFTypeRef) == CTFontGetTypeID() else { return nil }
-        return CTFontGetSize(value as! CTFont) // swiftlint:disable:this force_cast
+        guard let value else { return nil }
+        let reference = value as CFTypeRef
+        guard CFGetTypeID(reference) == CTFontGetTypeID() else { return nil }
+        return CTFontGetSize(unsafeBitCast(reference, to: CTFont.self))
     }
 
     // MARK: - legacy-common-control-property (각주 안 개체, #94)
