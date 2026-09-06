@@ -55,8 +55,11 @@
   한글.app이 저장한 `numbering-sequence` 픽스처 쌍(정의 6종·구역 3개·표 셀 번호,
   라벨은 같은 세션의 복사 텍스트로 대조)을 추가했고, 헌법주석의 1수준 표제
   280개는 그 문서가 실은 생성 목차와 번호·제목이 일치하며 개요 문단 1,944개
-  전체의 라벨은 스냅샷으로 잠갔습니다. 화면·PDF·복사 텍스트에 번호를 넣는 것은
-  #154입니다.
+  전체의 라벨은 스냅샷으로 잠갔습니다. 조작 문서가 문서를 여는 순간 메모리를
+  삼키지 못하게 라벨 하나는 `HwpParagraphNumber.textUnitCeiling`(512 UTF-16 단위)
+  에서 스칼라 경계로 끊고, 문서 전체는 `HwpParagraphNumbering.maximumDocumentEntries`
+  (20,000)에서 멈추며 `isTruncated`로 알립니다. 화면·PDF·복사 텍스트에 번호를 넣는
+  것은 #154입니다.
 
 ### Breaking Changes
 

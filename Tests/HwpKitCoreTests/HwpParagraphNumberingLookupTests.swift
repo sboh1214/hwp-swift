@@ -95,8 +95,82 @@ import XCTest
             }
             expect(first.count) == 3
             expect(first.entries.map(\.path)) == first.paths
+            expect(first.isTruncated) == false
             expect(HwpParagraphNumbering.empty.count) == 0
+            expect(HwpParagraphNumbering.empty.isTruncated) == false
             expect(HwpParagraphNumbering.empty.number(at: Self.top(0))).to(beNil())
+        }
+
+        // MARK: - 상한
+
+        /// 라벨은 만드는 도중 `textUnitCeiling`에서 멈춘다 — 형식 문자열은 WORD 길이만큼
+        /// 길 수 있어 지시자를 수만 번 적은 정의 하나로 문단마다 수 MB 라벨이 생기고,
+        /// 시작 번호를 접는 것만으로는(로마 대문자 65,535 = 70자) 막히지 않는다.
+        func testLabelsStopAtTheUnitCeilingWhileBeingBuilt() throws {
+            let repeated = String(repeating: "^1", count: 3000)
+            let numbering = HwpSynthetic.generateNumbering(
+                [try Self.paragraph("긴 라벨", shape: 11), try Self.paragraph("둘째", shape: 11)],
+                numberings: [0: HwpSynthetic.numberingDefinition(
+                    formats: [repeated, "^2.", "^3.", "(^4)", "(^5)", "^6)", "^7)"],
+                    numberFormats: [2], startingIndex: 1,
+                    startingIndexArray: [UInt32.max, 1, 1, 1, 1, 1, 1]
+                )]
+            )
+            let ceiling = HwpParagraphNumber.textUnitCeiling
+            let labels = numbering.entries.map(\.number.text)
+            expect(labels.map(\.utf16.count)) == [ceiling, ceiling]
+            // 온전한 라벨의 접두다 — 로마 숫자 조각이 그대로 이어진다.
+            let roman = HwpNumberFormat.string(for: 65535, shape: 2)
+            expect(labels[0].hasPrefix(roman + roman)) == true
+            expect(numbering.entries.map(\.number.number)) == [65535, 65536]
+        }
+
+        /// 천장은 유니코드 스칼라 경계에서 끊는다 — 대리 쌍이 쪼개져 U+FFFD가 생기지
+        /// 않고 결과는 언제나 원문의 접두다.
+        func testLabelCeilingDoesNotSplitSurrogatePairs() throws {
+            let ceiling = HwpParagraphNumber.textUnitCeiling
+            // 2단위 이모지만으로 천장을 하나 넘기면 마지막 이모지는 통째로 빠진다.
+            let emoji = String(repeating: "😀", count: ceiling / 2 + 1)
+            let numbering = HwpSynthetic.generateNumbering(
+                [try Self.paragraph("이모지", shape: 11)],
+                numberings: [0: HwpSynthetic.numberingDefinition(
+                    formats: [emoji + "^1", "^2.", "^3.", "(^4)", "(^5)", "^6)", "^7)"]
+                )]
+            )
+            let label = try XCTUnwrap(numbering.entries.first?.number.text)
+            expect(label.utf16.count) == ceiling
+            expect(label.unicodeScalars.contains("\u{FFFD}")) == false
+            expect(label.unicodeScalars.allSatisfy { $0 == "😀" }) == true
+            expect(emoji.hasPrefix(label)) == true
+            // 천장 안에 드는 라벨은 손대지 않는다 — 실물의 가장 긴 형식도 여기 든다.
+            let short = HwpSynthetic.generateNumbering(
+                [try Self.paragraph("짧은", shape: 11)],
+                numberings: [0: HwpSynthetic.numberingDefinition(formats: ["제^1장 ^n.", "^2."])]
+            )
+            expect(short.entries.first?.number.text) == "제1장 1."
+        }
+
+        /// 문서 전체 항목 상한 — 걸리면 뒤쪽 번호 문단은 버리고 `isTruncated`로 알리며
+        /// 순회도 멈춘다. 상한 안이면 플래그가 서지 않는다.
+        func testDocumentEntryLimitDropsTrailingParagraphsAndFlagsIt() throws {
+            let paragraphs = try (1 ... 5).map { try Self.paragraph("\($0)", shape: 11) }
+            let section = HwpSynthetic.numberingSection(paragraphs: paragraphs)
+            let index = HwpSynthetic.numberingIndex(
+                numberings: [0: HwpSynthetic.numberingDefinition()]
+            )
+            let truncated = HwpParagraphNumbering.generate(
+                sections: [section], index: index, maximumEntries: 3
+            )
+            expect(truncated.isTruncated) == true
+            expect(truncated.entries.map(\.number.text)) == ["1.", "2.", "3."]
+            expect(truncated.number(at: Self.top(4))).to(beNil())
+
+            let exact = HwpParagraphNumbering.generate(
+                sections: [section], index: index, maximumEntries: 5
+            )
+            expect(exact.isTruncated) == false
+            expect(exact.count) == 5
+            expect(HwpParagraphNumbering.maximumDocumentEntries) == 20000
         }
 
         /// 조판기는 init에서 같은 표를 만들어 둔다 — 조판 전에 물어도 전체다.

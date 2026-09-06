@@ -46,9 +46,22 @@ public struct HwpParagraphNumbering: Sendable, Hashable {
     public let numbers: [HwpParagraphPath: HwpParagraphNumber]
     /// 번호가 붙은 문단의 경로 — 문서 순서.
     public let paths: [HwpParagraphPath]
+    /// 항목 상한(`maximumDocumentEntries`)에 걸려 **뒤쪽 번호 문단을 버렸는가**.
+    /// 표만 보면 완전한 것과 구별되지 않으므로 알린다 — 탐색 목록의
+    /// `HwpDocumentMetadata.isOutlineTruncated`와 같은 이유다.
+    public let isTruncated: Bool
+
+    /// 한 문서가 가질 수 있는 번호 문단 수의 상한. 항목마다 경로·수준별 번호·
+    /// 라벨(최대 `HwpParagraphNumber.textUnitCeiling`)이 문서 수명 내내 상주하므로
+    /// 병적 입력이 표만으로 메모리를 고갈시키지 못하게 자른다 — 쪽 상한
+    /// (`HwpPaginator.maximumDocumentPages`)이 대신하지 못하는 것은 0-높이 문단이
+    /// 쪽을 늘리지 않고도 무한히 이어질 수 있어서다. 실측 최대는 헌법주석의
+    /// 1,944개이므로 탐색 목록(`HwpOutlineCollector.maximumDocumentItems`)과 같은
+    /// 10배 여유를 둔다. 상한에서 라벨이 512단위씩이어도 약 20MB다.
+    public static let maximumDocumentEntries = 20000
 
     /// 번호가 하나도 없는 표.
-    public static let empty = HwpParagraphNumbering(numbers: [:], paths: [])
+    public static let empty = HwpParagraphNumbering(numbers: [:], paths: [], isTruncated: false)
 
     /// 경로의 문단에 붙은 번호.
     public func number(at path: HwpParagraphPath) -> HwpParagraphNumber? {
@@ -80,9 +93,21 @@ public struct HwpParagraphNumbering: Sendable, Hashable {
         sections: [CoreHwp.HwpSection],
         index: HwpIndex
     ) -> HwpParagraphNumbering {
-        var walker = Walker(sections: sections, index: index)
+        generate(sections: sections, index: index, maximumEntries: maximumDocumentEntries)
+    }
+
+    /// 항목 상한을 재정의하는 생성 — 테스트가 절단 경로를 작은 문서로 재현한다
+    /// (`HwpOutlineCollector.maximumItems`와 같은 관례).
+    static func generate(
+        sections: [CoreHwp.HwpSection],
+        index: HwpIndex,
+        maximumEntries: Int
+    ) -> HwpParagraphNumbering {
+        var walker = Walker(sections: sections, index: index, maximumEntries: maximumEntries)
         walker.walk()
-        return HwpParagraphNumbering(numbers: walker.numbers, paths: walker.paths)
+        return HwpParagraphNumbering(
+            numbers: walker.numbers, paths: walker.paths, isTruncated: walker.didReachEntryLimit
+        )
     }
 }
 
@@ -92,8 +117,12 @@ private extension HwpParagraphNumbering {
     struct Walker {
         let sections: [CoreHwp.HwpSection]
         let index: HwpIndex
+        let maximumEntries: Int
         var numbers: [HwpParagraphPath: HwpParagraphNumber] = [:]
         var paths: [HwpParagraphPath] = []
+        /// 상한에 걸려 버린 번호 문단이 있는가. 걸린 뒤로는 순회도 멈춘다 — 세지
+        /// 않을 문단을 걷는 것은 시간만 쓴다.
+        var didReachEntryLimit = false
         /// 현재 구역 정의 — 조판(`HwpPaginator.currentSectionDef`)과 같은 규칙으로
         /// 문서의 첫 구역 정의에서 시작해 구역 정의를 만날 때마다 바뀐다.
         var currentSectionDef: CoreHwp.HwpSectionDef?
@@ -104,9 +133,10 @@ private extension HwpParagraphNumbering {
         var outlineCounter = HwpNumberingCounter()
         var numberingCounter = HwpNumberingCounter()
 
-        init(sections: [CoreHwp.HwpSection], index: HwpIndex) {
+        init(sections: [CoreHwp.HwpSection], index: HwpIndex, maximumEntries: Int) {
             self.sections = sections
             self.index = index
+            self.maximumEntries = maximumEntries
             if let first = HwpPaginator.firstSectionDef(for: sections) {
                 beginSection(first)
             }
@@ -115,6 +145,7 @@ private extension HwpParagraphNumbering {
         mutating func walk() {
             for (sectionIndex, section) in sections.enumerated() {
                 for (paragraphIndex, paragraph) in section.paragraph.enumerated() {
+                    guard !didReachEntryLimit else { return }
                     if let sectionDef = HwpPaginator.sectionDef(in: paragraph) {
                         if didSkipFirstSectionDef {
                             beginSection(sectionDef)
@@ -145,6 +176,7 @@ private extension HwpParagraphNumbering {
             for (controlIndex, control) in (paragraph.ctrlHeaderArray ?? []).enumerated() {
                 let children = HwpPaginator.childParagraphs(of: control)
                 for (childIndex, (child, _)) in children.enumerated() {
+                    guard !didReachEntryLimit else { return }
                     visit(child, path: path.appending(
                         controlIndex: controlIndex, childIndex: childIndex
                     ))
@@ -173,6 +205,12 @@ private extension HwpParagraphNumbering {
                 levels = numberingCounter.number(
                     level: reference.level, definitionIndex: definitionIndex, definition: definition
                 )
+            }
+            // 상한 검사는 항목을 실제로 담는 지점이어야 플래그가 "버린 것이 있다"를
+            // 뜻한다 — 번호가 없는 문단은 위 guard에서 이미 돌아갔다.
+            guard paths.count < maximumEntries else {
+                didReachEntryLimit = true
+                return
             }
             let number = HwpParagraphNumber(
                 kind: kind,

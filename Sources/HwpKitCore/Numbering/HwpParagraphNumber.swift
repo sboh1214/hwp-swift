@@ -22,8 +22,16 @@ public struct HwpParagraphNumber: Hashable, Sendable {
     /// 저장하지 않는다 (같은 문단을 나타내는 두 값이 수준만 달라 어긋날 길이 없다).
     public let numbers: [Int]
     /// 번호 형식으로 조립한 라벨. 형식 슬롯이 비어 있으면 빈 문자열이다 —
-    /// 번호는 세어지되 보일 글자가 없다.
+    /// 번호는 세어지되 보일 글자가 없다. `textUnitCeiling`을 넘는 라벨은 스칼라
+    /// 경계에서 잘린 접두다.
     public let text: String
+
+    /// 라벨 하나의 상한 (UTF-16 단위). 실제 라벨은 `^n` 경로가 10수준 로마
+    /// 숫자여도 200단위를 넘지 않는다 — 이 값은 표시 상한이 아니라, 형식 문자열
+    /// (표 38 WORD 길이, 최대 65,535 단위)에 지시자를 수만 번 적은 조작 문서가
+    /// 문단마다 수 MB 라벨을 만들어 문서를 여는 순간 메모리를 삼키지 못하게 하는
+    /// 안전판이다. 문서 전체 상한은 `HwpParagraphNumbering.maximumDocumentEntries`.
+    public static let textUnitCeiling = 512
 
     public init(kind: Kind, definitionIndex: UInt32, numbers: [Int], text: String) {
         self.kind = kind
