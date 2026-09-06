@@ -58,8 +58,9 @@
   전체의 라벨은 스냅샷으로 잠갔습니다. 조작 문서가 문서를 여는 순간 메모리를
   삼키지 못하게 라벨 하나는 `HwpParagraphNumber.textUnitCeiling`(512 UTF-16 단위)
   에서 스칼라 경계로 끊고, 문서 전체는 `HwpParagraphNumbering.maximumDocumentEntries`
-  (20,000)에서 멈추며 `isTruncated`로 알립니다. 화면·PDF·복사 텍스트에 번호를 넣는
-  것은 #154입니다.
+  (20,000)와 걷는 문단 수 `maximumVisitedParagraphs`(500,000)에서 멈추며 취소된
+  로드도 걷다 말고 `isTruncated`로 알립니다. 형식 분해는 정의·수준마다 한 번입니다.
+  화면·PDF·복사 텍스트에 번호를 넣는 것은 #154입니다.
 
 ### Breaking Changes
 

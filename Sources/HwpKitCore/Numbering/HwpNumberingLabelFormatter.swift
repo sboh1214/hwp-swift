@@ -13,20 +13,36 @@ import Foundation
 /// 자리는 유니코드 스칼라 경계라 대리 쌍이 쪼개지지 않고, 결과는 언제나 온전한
 /// 라벨의 접두다.
 enum HwpNumberingLabelFormatter {
-    /// - Parameters:
-    ///   - definition: 번호 정의 — 수준별 형식(`format(forLevel:)`)과 번호 모양을 준다.
-    ///   - level: 이 문단의 수준 (1-10).
-    ///   - numbers: 1수준부터 `level`까지의 번호 (`HwpNumberingCounter.number`).
-    ///     참조한 수준이 이 배열 밖(문단 수준보다 깊은 `^9` 등)이면 그 수준의 시작
-    ///     번호를 쓴다.
+    /// 형식을 그 자리에서 분해하는 편의 진입점 — 한 번 부르는 자리(테스트) 전용이다.
+    /// 문단마다 부르는 순회는 `HwpNumberingPatternCache`로 분해 결과를 메모해
+    /// `text(pattern:definition:level:numbers:)`에 넘긴다.
     static func text(
         definition: CoreHwp.HwpNumbering,
         level: Int,
         numbers: [Int]
     ) -> String {
-        guard let format = definition.format(forLevel: level) else { return "" }
+        text(
+            pattern: definition.format(forLevel: level)?.pattern,
+            definition: definition, level: level, numbers: numbers
+        )
+    }
+
+    /// - Parameters:
+    ///   - pattern: 이 수준의 형식을 분해한 토큰 — 형식 슬롯이 없으면 nil(빈 라벨).
+    ///   - definition: 번호 정의 — 수준별 번호 모양과 시작 번호를 준다.
+    ///   - level: 이 문단의 수준 (1-10).
+    ///   - numbers: 1수준부터 `level`까지의 번호 (`HwpNumberingCounter.number`).
+    ///     참조한 수준이 이 배열 밖(문단 수준보다 깊은 `^9` 등)이면 그 수준의 시작
+    ///     번호를 쓴다.
+    static func text(
+        pattern: HwpNumberingFormatPattern?,
+        definition: CoreHwp.HwpNumbering,
+        level: Int,
+        numbers: [Int]
+    ) -> String {
+        guard let pattern else { return "" }
         var builder = BoundedBuilder(ceiling: HwpParagraphNumber.textUnitCeiling)
-        for token in format.pattern.tokens {
+        for token in pattern.tokens {
             let fits = switch token {
             case let .literal(literal):
                 builder.append(literal)

@@ -35,6 +35,10 @@ public actor HwpPaginator {
     /// 결과라 init에서 한 번 만들고 이후 바뀌지 않는다 — 불변 `Sendable` 값이라
     /// actor 밖에서도 동기로 읽는다(라벨 렌더 #154의 조판 문자열 조립·복사·
     /// 접근성은 actor 격리 밖 동기 코드다). 화면에는 아직 그리지 않는다.
+    ///
+    /// init의 동기 순회라 조판의 쪽 단위 지연·취소 관찰 밖이므로 순회 쪽이 스스로
+    /// 유계다 — 걷는 문단 수(`HwpParagraphNumbering.maximumVisitedParagraphs`)·항목
+    /// 수·라벨 길이에 상한이 있고, 감싼 Task가 취소되면 걷다 만다(`isTruncated`).
     public nonisolated let paragraphNumbering: HwpParagraphNumbering
 
     /// 문서 전역 페이지 상한 — 쪽 나누기 문단·별개 표가 다수면 표당 세그먼트

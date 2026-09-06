@@ -173,6 +173,82 @@ import XCTest
             expect(HwpParagraphNumbering.maximumDocumentEntries) == 20000
         }
 
+        /// 걷는 문단 수에도 상한이 있다 — 항목 상한은 번호 문단에서만 줄어들어 번호
+        /// 없는 문단이 수백만 개면 순회 자체가 문서를 여는 시간을 삼킨다. 상한 뒤의
+        /// 번호 문단은 버리고 `isTruncated`로 알린다.
+        func testVisitedParagraphLimitStopsTheWalkAndFlagsIt() throws {
+            var paragraphs = try (1 ... 6).map { try Self.paragraph("본문 \($0)", shape: 9) }
+            paragraphs.append(try Self.paragraph("상한 뒤 번호", shape: 11))
+            let section = HwpSynthetic.numberingSection(paragraphs: paragraphs)
+            let index = HwpSynthetic.numberingIndex(
+                numberings: [0: HwpSynthetic.numberingDefinition()]
+            )
+            // 구역 첫 문단(구역 정의)까지 8문단 — 상한 4는 번호 문단 앞에서 멈춘다.
+            let truncated = HwpParagraphNumbering.generate(
+                sections: [section], index: index,
+                maximumEntries: HwpParagraphNumbering.maximumDocumentEntries,
+                maximumVisitedParagraphs: 4
+            )
+            expect(truncated.isTruncated) == true
+            expect(truncated.count) == 0
+
+            let whole = HwpParagraphNumbering.generate(
+                sections: [section], index: index,
+                maximumEntries: HwpParagraphNumbering.maximumDocumentEntries,
+                maximumVisitedParagraphs: 8
+            )
+            expect(whole.isTruncated) == false
+            expect(whole.entries.map(\.number.text)) == ["1."]
+            expect(HwpParagraphNumbering.maximumVisitedParagraphs) == 500_000
+        }
+
+        /// 감싼 Task가 취소되면 걷다 만다 — 순회는 `HwpPaginator.init`의 동기 경로라
+        /// 조판의 취소 관찰 밖이고, 취소된 로드의 표는 조판기와 함께 버려진다.
+        func testCancelledTaskStopsTheWalk() async throws {
+            let paragraphs = try (1 ... 3).map { try Self.paragraph("\($0)", shape: 11) }
+            let section = HwpSynthetic.numberingSection(paragraphs: paragraphs)
+            let index = HwpSynthetic.numberingIndex(
+                numberings: [0: HwpSynthetic.numberingDefinition()]
+            )
+            let task = Task {
+                // 취소가 먼저 관찰되도록 취소 가능한 대기 뒤에 생성한다.
+                try? await Task.sleep(for: .seconds(10))
+                return HwpParagraphNumbering.generate(sections: [section], index: index)
+            }
+            task.cancel()
+            let cancelled = await task.value
+            expect(cancelled.isTruncated) == true
+            expect(cancelled.count) == 0
+            // 취소되지 않은 Task에서는 전부 센다.
+            let whole = await Task { HwpParagraphNumbering.generate(sections: [section], index: index) }.value
+            expect(whole.isTruncated) == false
+            expect(whole.count) == 3
+        }
+
+        /// 형식 분해는 정의·수준마다 한 번이다 — 65,535단위 형식을 참조하는 문단이 아무리
+        /// 많아도 문단마다 다시 분해하지 않는다.
+        func testPatternsAreParsedOncePerDefinitionAndLevel() {
+            var cache = HwpNumberingPatternCache()
+            let definition = HwpSynthetic.numberingDefinition(
+                formats: [String(repeating: "^1", count: 30000), "^2.", "^3.", "(^4)", "(^5)", "^6)", "^7)"]
+            )
+            for _ in 0 ..< 1000 {
+                let pattern = cache.pattern(definitionIndex: 0, level: 1, definition: definition)
+                expect(pattern?.tokens.count) == 30000
+            }
+            expect(cache.parseCount) == 1
+            expect(cache.pattern(definitionIndex: 0, level: 2, definition: definition)?.tokens)
+                == [.level(2), .literal(".")]
+            // 형식 슬롯이 없는 수준(8, 확장 배열 없음)도 nil을 메모한다.
+            expect(cache.pattern(definitionIndex: 0, level: 8, definition: definition)).to(beNil())
+            expect(cache.pattern(definitionIndex: 0, level: 8, definition: definition)).to(beNil())
+            expect(cache.parseCount) == 3
+            // 다른 정의는 따로 센다.
+            expect(cache.pattern(definitionIndex: 1, level: 1, definition: definition)?.tokens.count)
+                == 30000
+            expect(cache.parseCount) == 4
+        }
+
         /// 조판기는 init에서 같은 표를 만들어 둔다 — 조판 전에 물어도 전체다.
         func testPaginatorExposesTheSameTableBeforeAndAfterPagination() async throws {
             let definition = HwpSynthetic.numberingDefinition(numberFormats: [2, 8, 0, 8, 0, 8, 0])

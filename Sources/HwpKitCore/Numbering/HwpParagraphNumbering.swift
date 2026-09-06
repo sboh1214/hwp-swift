@@ -46,9 +46,11 @@ public struct HwpParagraphNumbering: Sendable, Hashable {
     public let numbers: [HwpParagraphPath: HwpParagraphNumber]
     /// 번호가 붙은 문단의 경로 — 문서 순서.
     public let paths: [HwpParagraphPath]
-    /// 항목 상한(`maximumDocumentEntries`)에 걸려 **뒤쪽 번호 문단을 버렸는가**.
-    /// 표만 보면 완전한 것과 구별되지 않으므로 알린다 — 탐색 목록의
-    /// `HwpDocumentMetadata.isOutlineTruncated`와 같은 이유다.
+    /// 순회가 끝까지 가지 못해 **뒤쪽 번호 문단을 버렸는가** — 항목 상한
+    /// (`maximumDocumentEntries`)이나 방문 문단 상한(`maximumVisitedParagraphs`)에
+    /// 걸렸거나, 생성을 감싼 Task가 취소됐다. 표만 보면 완전한 것과 구별되지
+    /// 않으므로 알린다 — 탐색 목록의 `HwpDocumentMetadata.isOutlineTruncated`와 같은
+    /// 이유다.
     public let isTruncated: Bool
 
     /// 한 문서가 가질 수 있는 번호 문단 수의 상한. 항목마다 경로·수준별 번호·
@@ -59,6 +61,14 @@ public struct HwpParagraphNumbering: Sendable, Hashable {
     /// 1,944개이므로 탐색 목록(`HwpOutlineCollector.maximumDocumentItems`)과 같은
     /// 10배 여유를 둔다. 상한에서 라벨이 512단위씩이어도 약 20MB다.
     public static let maximumDocumentEntries = 20000
+
+    /// 한 문서에서 **걸어 보는** 문단 수(최상위 + 컨테이너 안)의 상한. 항목 상한은
+    /// 번호가 붙는 문단에서만 줄어들므로, 번호 없는 문단이 수백만 개인 문서는 그
+    /// 상한과 무관하게 순회 자체가 문서를 여는 시간을 삼킨다 — 이 순회는
+    /// `HwpPaginator.init`에서 동기로 돌고 조판의 쪽 단위 지연·취소 관찰 밖이다.
+    /// 실측 최대는 헌법주석의 14,660개(컨테이너 문단 포함)이므로 약 30배 여유를
+    /// 두되, 걷는 비용이 문단당 사전 조회 몇 번이라 상한에서도 1초 안이다.
+    public static let maximumVisitedParagraphs = 500_000
 
     /// 번호가 하나도 없는 표.
     public static let empty = HwpParagraphNumbering(numbers: [:], paths: [], isTruncated: false)
@@ -96,17 +106,23 @@ public struct HwpParagraphNumbering: Sendable, Hashable {
         generate(sections: sections, index: index, maximumEntries: maximumDocumentEntries)
     }
 
-    /// 항목 상한을 재정의하는 생성 — 테스트가 절단 경로를 작은 문서로 재현한다
+    /// 상한을 재정의하는 생성 — 테스트가 절단 경로를 작은 문서로 재현한다
     /// (`HwpOutlineCollector.maximumItems`와 같은 관례).
     static func generate(
         sections: [CoreHwp.HwpSection],
         index: HwpIndex,
-        maximumEntries: Int
+        maximumEntries: Int,
+        maximumVisitedParagraphs: Int = maximumVisitedParagraphs
     ) -> HwpParagraphNumbering {
-        var walker = Walker(sections: sections, index: index, maximumEntries: maximumEntries)
+        var walker = Walker(
+            sections: sections,
+            index: index,
+            maximumEntries: maximumEntries,
+            maximumVisitedParagraphs: maximumVisitedParagraphs
+        )
         walker.walk()
         return HwpParagraphNumbering(
-            numbers: walker.numbers, paths: walker.paths, isTruncated: walker.didReachEntryLimit
+            numbers: walker.numbers, paths: walker.paths, isTruncated: walker.didStop
         )
     }
 }
@@ -118,11 +134,20 @@ private extension HwpParagraphNumbering {
         let sections: [CoreHwp.HwpSection]
         let index: HwpIndex
         let maximumEntries: Int
+        let maximumVisitedParagraphs: Int
         var numbers: [HwpParagraphPath: HwpParagraphNumber] = [:]
         var paths: [HwpParagraphPath] = []
-        /// 상한에 걸려 버린 번호 문단이 있는가. 걸린 뒤로는 순회도 멈춘다 — 세지
-        /// 않을 문단을 걷는 것은 시간만 쓴다.
-        var didReachEntryLimit = false
+        /// 정의·수준별 형식 분해 메모 — 문단마다 65,535단위 형식을 다시 분해하지 않는다.
+        var patterns = HwpNumberingPatternCache()
+        /// 지금까지 걸어 본 문단 수(번호 유무와 무관).
+        var visitedParagraphs = 0
+        /// 순회를 끝까지 가지 못하고 멈췄는가 — 항목 상한·방문 상한·Task 취소.
+        /// 멈춘 뒤로는 걷지 않는다 — 세지 않을 문단을 걷는 것은 시간만 쓴다.
+        var didStop = false
+
+        /// 취소를 살피는 주기(문단 수). 조판의 `yieldBatchSize`처럼 매 문단이 아니라
+        /// 묶음마다 본다 — `Task.isCancelled`는 값싼 읽기지만 문단당 일이 그보다 작다.
+        static let cancellationCheckInterval = 256
         /// 현재 구역 정의 — 조판(`HwpPaginator.currentSectionDef`)과 같은 규칙으로
         /// 문서의 첫 구역 정의에서 시작해 구역 정의를 만날 때마다 바뀐다.
         var currentSectionDef: CoreHwp.HwpSectionDef?
@@ -133,10 +158,16 @@ private extension HwpParagraphNumbering {
         var outlineCounter = HwpNumberingCounter()
         var numberingCounter = HwpNumberingCounter()
 
-        init(sections: [CoreHwp.HwpSection], index: HwpIndex, maximumEntries: Int) {
+        init(
+            sections: [CoreHwp.HwpSection],
+            index: HwpIndex,
+            maximumEntries: Int,
+            maximumVisitedParagraphs: Int
+        ) {
             self.sections = sections
             self.index = index
             self.maximumEntries = maximumEntries
+            self.maximumVisitedParagraphs = maximumVisitedParagraphs
             if let first = HwpPaginator.firstSectionDef(for: sections) {
                 beginSection(first)
             }
@@ -145,7 +176,7 @@ private extension HwpParagraphNumbering {
         mutating func walk() {
             for (sectionIndex, section) in sections.enumerated() {
                 for (paragraphIndex, paragraph) in section.paragraph.enumerated() {
-                    guard !didReachEntryLimit else { return }
+                    guard !didStop else { return }
                     if let sectionDef = HwpPaginator.sectionDef(in: paragraph) {
                         if didSkipFirstSectionDef {
                             beginSection(sectionDef)
@@ -170,13 +201,25 @@ private extension HwpParagraphNumbering {
         }
 
         /// 문단 하나에 번호를 매기고 컨테이너 안 문단으로 내려간다. 재귀는 파스
-        /// 시점 중첩 한도로 유한하다.
+        /// 시점 중첩 한도로 유한하다. 걷는 문단 수가 상한에 닿거나 감싼 Task가
+        /// 취소되면 멈춘다 — 이 순회는 `HwpPaginator.init`에서 동기로 돌아 조판의
+        /// 문단 단위 취소 관찰 밖이므로 여기서 직접 살핀다(취소된 로드의 표는 어차피
+        /// 조판기와 함께 버려진다).
         mutating func visit(_ paragraph: CoreHwp.HwpParagraph, path: HwpParagraphPath) {
+            if visitedParagraphs.isMultiple(of: Self.cancellationCheckInterval), Task.isCancelled {
+                didStop = true
+                return
+            }
+            guard visitedParagraphs < maximumVisitedParagraphs else {
+                didStop = true
+                return
+            }
+            visitedParagraphs += 1
             number(paragraph, path: path)
             for (controlIndex, control) in (paragraph.ctrlHeaderArray ?? []).enumerated() {
                 let children = HwpPaginator.childParagraphs(of: control)
                 for (childIndex, (child, _)) in children.enumerated() {
-                    guard !didReachEntryLimit else { return }
+                    guard !didStop else { return }
                     visit(child, path: path.appending(
                         controlIndex: controlIndex, childIndex: childIndex
                     ))
@@ -209,7 +252,7 @@ private extension HwpParagraphNumbering {
             // 상한 검사는 항목을 실제로 담는 지점이어야 플래그가 "버린 것이 있다"를
             // 뜻한다 — 번호가 없는 문단은 위 guard에서 이미 돌아갔다.
             guard paths.count < maximumEntries else {
-                didReachEntryLimit = true
+                didStop = true
                 return
             }
             let number = HwpParagraphNumber(
@@ -217,6 +260,10 @@ private extension HwpParagraphNumbering {
                 definitionIndex: definitionIndex,
                 numbers: levels,
                 text: HwpNumberingLabelFormatter.text(
+                    pattern: patterns.pattern(
+                        definitionIndex: definitionIndex, level: levels.count,
+                        definition: definition
+                    ),
                     definition: definition, level: levels.count, numbers: levels
                 )
             )
