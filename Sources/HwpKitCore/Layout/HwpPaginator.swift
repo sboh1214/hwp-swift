@@ -442,12 +442,14 @@ extension HwpPaginator {
     nonisolated static func sectionDef(
         in paragraph: CoreHwp.HwpParagraph
     ) -> CoreHwp.HwpSectionDef? {
-        paragraph.ctrlHeaderArray?.compactMap { ctrl in
+        // 첫 구역 정의에서 멈춘다 — `compactMap(...).first`는 배열 전체를 훑고
+        // 중간 배열까지 만든다.
+        for ctrl in paragraph.ctrlHeaderArray ?? [] {
             if case let .section(sectionDef) = ctrl {
                 return sectionDef
             }
-            return nil
-        }.first
+        }
+        return nil
     }
 }
 

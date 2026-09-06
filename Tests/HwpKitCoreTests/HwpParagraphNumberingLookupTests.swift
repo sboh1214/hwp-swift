@@ -232,6 +232,52 @@ import XCTest
             expect(whole.entries.map(\.number.text)) == ["1."]
         }
 
+        /// 구역 정의 탐색도 걸음이다 — 구역 정의가 컨트롤 배열 뒤쪽에 있거나 아예 없으면
+        /// 그 앞의 컨트롤을 전부 봐야 하는데, 그 탐색이 예산 밖이면 책갈피 수백만 개를
+        /// 품은 문단이 상한과 취소를 지나친다. init의 첫 구역 정의 사전 탐색도 같은
+        /// 상한 안이다.
+        func testSectionDefinitionLookupIsChargedToTheWalkBudget() throws {
+            let bookmarks = (0 ..< 1000).map { HwpSynthetic.bookmarkControl("b\($0)") }
+            let index = HwpSynthetic.numberingIndex(
+                numberings: [0: HwpSynthetic.numberingDefinition()]
+            )
+            // 구역 정의가 책갈피 1,000개 뒤에 있는 문서 — 문단(1) + 컨트롤 1,001 + 번호 문단(1).
+            let late = HwpSynthetic.section(
+                firstParagraphControls: bookmarks + [.section(HwpSynthetic.sectionDef())],
+                bodyParagraphs: [try Self.paragraph("늦은 구역 정의 뒤 번호", shape: 11)]
+            )
+            let cut = HwpParagraphNumbering.generate(
+                sections: [late], index: index,
+                maximumEntries: HwpParagraphNumbering.maximumDocumentEntries,
+                maximumVisitedNodes: 500
+            )
+            expect(cut.isTruncated) == true
+            expect(cut.count) == 0
+            let whole = HwpParagraphNumbering.generate(
+                sections: [late], index: index,
+                maximumEntries: HwpParagraphNumbering.maximumDocumentEntries,
+                maximumVisitedNodes: 1003
+            )
+            expect(whole.isTruncated) == false
+            expect(whole.entries.map(\.number.text)) == ["1."]
+
+            // 구역 정의가 아예 없는 문서 — 사전 탐색이 끝까지 가므로 그 상한도 걸음 상한이다.
+            let absent = HwpSynthetic.section(
+                firstParagraphControls: bookmarks,
+                bodyParagraphs: [try Self.paragraph("구역 정의 없는 번호", shape: 11)]
+            )
+            let exhausted = HwpParagraphNumbering.generate(
+                sections: [absent], index: index,
+                maximumEntries: HwpParagraphNumbering.maximumDocumentEntries,
+                maximumVisitedNodes: 400
+            )
+            expect(exhausted.isTruncated) == true
+            expect(exhausted.count) == 0
+            let numbered = HwpParagraphNumbering.generate(sections: [absent], index: index)
+            expect(numbered.isTruncated) == false
+            expect(numbered.entries.map(\.number.text)) == ["1."]
+        }
+
         /// 감싼 Task가 취소되면 걷다 만다 — 순회는 `HwpPaginator.init`의 동기 경로라
         /// 조판의 취소 관찰 밖이고, 취소된 로드의 표는 조판기와 함께 버려진다.
         func testCancelledTaskStopsTheWalk() async throws {

@@ -132,6 +132,13 @@ public struct HwpParagraphNumbering: Sendable, Hashable {
 // MARK: - 순회
 
 private extension HwpParagraphNumbering {
+    /// `Walker.firstSectionDef`의 결과 — 찾았거나, 문서에 없거나, 찾다가 상한·취소에 걸렸다.
+    enum FirstSectionDefLookup {
+        case found(CoreHwp.HwpSectionDef)
+        case none
+        case exhausted
+    }
+
     struct Walker {
         let sections: [CoreHwp.HwpSection]
         let index: HwpIndex
@@ -168,22 +175,56 @@ private extension HwpParagraphNumbering {
             self.index = index
             self.maximumEntries = maximumEntries
             self.maximumVisitedNodes = maximumVisitedNodes
-            if let first = HwpPaginator.firstSectionDef(for: sections) {
+            switch Self.firstSectionDef(in: sections, maximumInspectedNodes: maximumVisitedNodes) {
+            case let .found(first):
                 beginSection(first)
+            case .none:
+                break
+            case .exhausted:
+                // 첫 구역 정의를 찾다 상한이나 취소에 걸렸다 — 문서가 병적이거나 로드가
+                // 버려진 것이라 순회를 시작하지 않는다.
+                didStop = true
             }
+        }
+
+        /// 문서의 첫 구역 정의를 찾되 본 노드(문단·컨트롤) 수를 `maximumInspectedNodes`
+        /// 안으로 묶고 취소도 살핀다. 조판의 `HwpPaginator.firstSectionDef`와 같은
+        /// 술어(첫 문단부터 차례로, 문단 안에서는 첫 구역 정의)지만 그쪽은 컨트롤
+        /// 배열을 끝까지 훑는다 — 구역 정의가 없거나 늦은 문서에서 책갈피 수백만 개를
+        /// 품은 문단 하나가 예산 밖에서 통째로 읽히지 않게 여기서는 따로 센다
+        /// (순회 걸음과 합치지 않는다 — 같은 노드를 순회가 다시 밟으므로 합치면
+        /// 상한이 두 번 깎인다; 대신 이 탐색 자체가 상한 하나만큼이다).
+        static func firstSectionDef(
+            in sections: [CoreHwp.HwpSection],
+            maximumInspectedNodes: Int
+        ) -> FirstSectionDefLookup {
+            var inspected = 0
+            func inspect() -> Bool {
+                if inspected.isMultiple(of: cancellationCheckInterval), Task.isCancelled {
+                    return false
+                }
+                guard inspected < maximumInspectedNodes else { return false }
+                inspected += 1
+                return true
+            }
+            for section in sections {
+                for paragraph in section.paragraph {
+                    guard inspect() else { return .exhausted }
+                    for control in paragraph.ctrlHeaderArray ?? [] {
+                        guard inspect() else { return .exhausted }
+                        if case let .section(sectionDef) = control {
+                            return .found(sectionDef)
+                        }
+                    }
+                }
+            }
+            return .none
         }
 
         mutating func walk() {
             for (sectionIndex, section) in sections.enumerated() {
                 for (paragraphIndex, paragraph) in section.paragraph.enumerated() {
                     guard !didStop else { return }
-                    if let sectionDef = HwpPaginator.sectionDef(in: paragraph) {
-                        if didSkipFirstSectionDef {
-                            beginSection(sectionDef)
-                        } else {
-                            didSkipFirstSectionDef = true
-                        }
-                    }
                     visit(paragraph, path: HwpParagraphPath(
                         sectionIndex: sectionIndex, paragraphIndex: paragraphIndex
                     ))
@@ -221,11 +262,24 @@ private extension HwpParagraphNumbering {
 
         /// 문단 하나에 번호를 매기고 컨테이너 안 문단으로 내려간다. 재귀는 파스
         /// 시점 중첩 한도로 유한하고, 걸음 예산(`step`)이 문단·컨트롤마다 줄어든다.
+        ///
+        /// 최상위 문단은 번호를 매기기 **전에** 구역 정의를 찾는다(구역 첫 문단 자신이
+        /// 새 구역의 정의로 세어진다). 그 탐색도 걸음이다 — 첫 구역 정의까지 본
+        /// 컨트롤 수(`inspected`)를 세어 두고 자식 순회에서는 그만큼 다시 깎지 않아
+        /// 컨트롤 하나가 한 걸음이다. 조판의 `sectionDef(in:)`처럼 배열을 끝까지
+        /// 훑는 조회를 예산 밖에서 부르면 책갈피 수백만 개를 품은 문단이 상한과
+        /// 취소를 지나친다.
         mutating func visit(_ paragraph: CoreHwp.HwpParagraph, path: HwpParagraphPath) {
             guard step() else { return }
+            let controls = paragraph.ctrlHeaderArray ?? []
+            guard let inspected = path.isTopLevel ? applySectionDef(in: controls) : 0 else {
+                return
+            }
             number(paragraph, path: path)
-            for (controlIndex, control) in (paragraph.ctrlHeaderArray ?? []).enumerated() {
-                guard step() else { return }
+            for (controlIndex, control) in controls.enumerated() {
+                if controlIndex >= inspected {
+                    guard step() else { return }
+                }
                 // 자식 목록은 게으르게 연다 — 컨테이너 하나가 상한보다 많은 문단을
                 // 품어도 배열로 펼치기 전에 상한·취소에서 멈춘다.
                 let children = HwpPaginator.childParagraphSequence(of: control)
@@ -236,6 +290,25 @@ private extension HwpParagraphNumbering {
                     ))
                 }
             }
+        }
+
+        /// 최상위 문단의 컨트롤을 첫 구역 정의까지 걸음으로 세며 본다 — 찾으면 그
+        /// 구역을 시작하고(문서의 첫 정의는 init에서 이미 적용했으니 건너뛴다) 본
+        /// 컨트롤 수를 돌려준다. 걸음 상한·취소에 걸리면 nil.
+        mutating func applySectionDef(in controls: [CoreHwp.HwpCtrlId]) -> Int? {
+            var inspected = 0
+            for control in controls {
+                guard step() else { return nil }
+                inspected += 1
+                guard case let .section(sectionDef) = control else { continue }
+                if didSkipFirstSectionDef {
+                    beginSection(sectionDef)
+                } else {
+                    didSkipFirstSectionDef = true
+                }
+                break
+            }
+            return inspected
         }
 
         mutating func number(_ paragraph: CoreHwp.HwpParagraph, path: HwpParagraphPath) {
