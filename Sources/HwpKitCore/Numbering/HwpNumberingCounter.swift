@@ -1,63 +1,73 @@
 import CoreHwp
 import Foundation
 
-/// 문단 번호·개요 번호의 **카운터** — 한 종류(개요 또는 번호 매기기)의
-/// 수준별 현재 번호와 그 값이 어느 정의로 세어졌는지를 든다 (#153).
+/// 문단 번호·개요 번호의 **카운터** — 한 종류(개요 또는 번호 매기기)의 정의별
+/// 수준 번호 상태 (#153).
 ///
-/// 규칙은 한컴 도움말의 두 대화상자를 따른다 (`HwpNumbering.continuesPreviousList`
-/// 참조). 상위 수준을 매기면 그 아래 수준은 비워지고(다음에 그 수준이 나오면
-/// 시작 번호부터), 같은 수준은 1씩 는다. 정의가 바뀌는 자리는 종류마다 다르다 —
-/// 개요는 **구역 시작**(`beginSection`), 번호 매기기는 **정의가 다른 번호 문단**
-/// (`number(level:definition:)`이 스스로 감지) — 이고 그때 새 정의의 시작 번호
-/// 방식이 새 번호(전부 비움)인지 이어 매기기(그대로 둠)인지를 정한다.
+/// 규칙은 한글.app 12.30 실측(2026-09-06, `numbering-sequence` 픽스처 쌍)이다.
+/// - **정의마다 목록이 하나다.** 같은 정의의 문단은 사이에 본문·다른 정의의
+///   목록·구역 경계·표가 끼어도 자기 번호를 잇는다(실측: 정의 3의 목록이
+///   구역을 넘어 `4.`·`5.`, 표 셀의 정의 6 목록 `9.`·`10.`을 지나 `6.`, 그 뒤
+///   정의 6이 `11.`).
+/// - **정의의 첫 문단**에서만 시작 번호 방식을 본다: `continuesPreviousList`
+///   (시작 번호 0)면 같은 종류에서 **직전에 쓰인 정의의 번호를 물려받고**
+///   (개요 "앞 구역의 개요 번호에 이어서" — 구역 나누기가 만든 정의 4가 앞
+///   구역의 `가.`·`1.` 뒤를 `나.`·`2.`로 이었다; 번호 매기기 "앞 번호 목록에
+///   이어"), 아니면 수준별 시작 번호에서 새로 센다.
+/// - 상위 수준을 매기면 그 아래 수준은 비워지고, **건너뛴 상위 수준은 시작
+///   번호로 매겨진 것으로 친다** — 1수준 뒤에 바로 3수준이 오면 2수준은 시작
+///   번호가 되고, 다음 2수준 문단은 그다음 번호다(실측: `1.` → 3수준 `1)` →
+///   2수준 `나.`).
 ///
-/// 비워진 수준이 다수준 형식·`^n` 경로에 참조되면 시작 번호를 보인다 —
-/// 한글.app 개요 번호 모양 대화상자의 미리보기가 모든 수준을 시작 번호로
-/// 그리는 것에 맞췄다(2수준 없이 3수준이 오는 실물은 없어 한글.app 실측은
-/// 아직이다).
+/// 비워진 하위 수준이 형식에 참조되면(문단 수준보다 깊은 `^9` 등) 시작 번호를
+/// 보인다 — 한글 대화상자 미리보기 규약이고 실물은 없다.
 struct HwpNumberingCounter {
-    /// 수준(1-10)별 현재 번호. nil은 마지막 비움 뒤 아직 매겨지지 않은 수준.
-    private var numbers: [Int?] = Array(repeating: nil, count: HwpNumberingCounter.levelCount)
-    /// 마지막으로 번호를 낸 정의 — 번호 매기기의 정의 교체 감지용.
+    /// 정의(`HwpIndex.numbering(id:)`의 0-based 키) → 수준(1-10)별 현재 번호.
+    /// nil은 마지막 비움 뒤 아직 매겨지지 않은 수준.
+    private var states: [UInt32: [Int?]] = [:]
+    /// 마지막으로 번호를 낸 정의 — 새 정의가 이어 받을 상대.
     private(set) var definitionIndex: UInt32?
 
     static let levelCount = 10
 
-    /// 새 구역이 시작한다 — 개요 카운터 전용. 구역 정의가 가리키는 정의가 새
-    /// 번호로 시작하면 전부 비우고, 이어 매기기면 앞 구역의 번호를 그대로 둔다.
+    /// 새 구역이 시작한다 — 개요 카운터 전용. 구역 정의가 가리키는 정의를 활성화해
+    /// 처음 쓰이는 정의면 시작 번호 방식대로 앞 정의의 번호를 물려받거나 새로 센다.
     mutating func beginSection(definitionIndex: UInt32, definition: CoreHwp.HwpNumbering) {
-        if !definition.continuesPreviousList {
-            reset()
-        }
-        self.definitionIndex = definitionIndex
+        activate(definitionIndex, definition)
     }
 
     /// 수준 `level`의 문단에 번호를 매기고 1수준부터 그 수준까지의 번호를 돌려준다.
-    ///
-    /// 정의가 마지막 번호의 정의와 다르면 정의 교체다 — 새 정의가 새 번호로
-    /// 시작하면 먼저 전부 비운다(번호 매기기의 "새 번호 목록 시작"이 만드는 새
-    /// 정의로 넘어가는 자리; 같은 새 번호 정의로 되돌아올 때도 다시 세는지는
-    /// 실측 전이다). 개요는 한 구역 안에서 정의가 바뀌지 않으므로 이 분기는
-    /// `beginSection`과 같은 결과를 낸다.
     mutating func number(
         level: Int,
         definitionIndex: UInt32,
         definition: CoreHwp.HwpNumbering
     ) -> [Int] {
+        activate(definitionIndex, definition)
         let clamped = min(max(level, 1), Self.levelCount)
-        if definitionIndex != self.definitionIndex, !definition.continuesPreviousList {
-            reset()
+        var numbers = states[definitionIndex] ?? Self.fresh
+        // 건너뛴 상위 수준은 시작 번호로 매겨진 것으로 친다.
+        for upper in 0 ..< clamped - 1 where numbers[upper] == nil {
+            numbers[upper] = definition.startingNumber(forLevel: upper + 1)
         }
-        self.definitionIndex = definitionIndex
         let slot = clamped - 1
         numbers[slot] = (numbers[slot] ?? definition.startingNumber(forLevel: clamped) - 1) + 1
         for deeper in numbers.indices where deeper > slot {
             numbers[deeper] = nil
         }
+        states[definitionIndex] = numbers
         return (1 ... clamped).map { numbers[$0 - 1] ?? definition.startingNumber(forLevel: $0) }
     }
 
-    private mutating func reset() {
-        numbers = Array(repeating: nil, count: Self.levelCount)
+    /// 정의를 현재 정의로 삼는다. 처음 쓰이는 정의는 시작 번호 방식대로 직전
+    /// 정의의 번호를 물려받거나(이어 매기기) 빈 상태(새 번호)에서 시작한다.
+    private mutating func activate(_ index: UInt32, _ definition: CoreHwp.HwpNumbering) {
+        if states[index] == nil {
+            let inherited = definition.continuesPreviousList
+                ? definitionIndex.flatMap { states[$0] } : nil
+            states[index] = inherited ?? Self.fresh
+        }
+        definitionIndex = index
     }
+
+    private static let fresh: [Int?] = Array(repeating: nil, count: levelCount)
 }

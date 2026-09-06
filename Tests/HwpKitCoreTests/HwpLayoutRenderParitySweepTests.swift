@@ -153,10 +153,11 @@ import XCTest
         // MARK: - 실측 핀
 
         // 2026-09-05 `underline-above` 픽스처 추가로 문단 1·대조 2(폭 2종) 증가,
-        // 같은 날 `outline-numbering`(#152) 추가로 문단 7·대조 14 증가.
-        private static let expectedFixtureVisited = 145
-        private static let expectedFixtureMeasured = 276
-        private static let expectedFixtureContainers = 50
+        // 같은 날 `outline-numbering`(#152) 추가로 문단 7·대조 14 증가, 2026-09-06
+        // `numbering-sequence`(#153, 구역 3·표 셀 2) 추가로 문단 22·대조 44·컨테이너 2 증가.
+        private static let expectedFixtureVisited = 167
+        private static let expectedFixtureMeasured = 320
+        private static let expectedFixtureContainers = 52
         private static let minimumFixtureMultiLine = 60
         private static let maximumFixtureSharedCoreSkips = 5
         private static let expectedLegacyVisited = 14659

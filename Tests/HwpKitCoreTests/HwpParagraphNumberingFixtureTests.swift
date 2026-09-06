@@ -7,11 +7,13 @@ import XCTest
 #if canImport(CoreText)
     /// 문단 번호·개요 번호 생성의 **실측 핀** (#153).
     ///
-    /// 오라클은 셋이다. 헌법주석(`legacy-common-control-property`)은 본문 첫머리에
+    /// 오라클은 넷이다. 헌법주석(`legacy-common-control-property`)은 본문 첫머리에
     /// 한글이 만든 **목차**(구역 0 문단 50-377)를 실어 41개 구역의 1수준 표제 280개가
     /// `I.`·`II.`… 어느 번호를 받는지 적어 두었고, 한글.app이 저장한
     /// `outline-numbering` 쌍은 미리보기 이미지(PrvImage)에 `I.`·`가.`·`1)`·`1.`·`2.`
-    /// 라벨을 그려 두었으며, 1,944개 전체 문자열은 커밋된 스냅샷으로 잠근다
+    /// 라벨을 그려 두었으며, `numbering-sequence` 쌍은 정의 6종·구역 3개·표 셀의
+    /// 라벨 20개를 같은 세션의 복사 텍스트로 남겼고, 1,944개 전체 문자열은 커밋된
+    /// 스냅샷으로 잠근다
     /// (`RECORD_NUMBERING_SNAPSHOTS=1 swift test --filter HwpParagraphNumberingFixture`
     /// 로 재기록 — 레코딩 뒤 의도적으로 실패한다).
     final class HwpParagraphNumberingFixtureTests: XCTestCase {
@@ -186,7 +188,7 @@ import XCTest
                     guard FileManager.default.fileExists(atPath: url.path) else { return nil }
                     return try JSONDecoder().decode(HwpxPairManifest.self, from: Data(contentsOf: url))
                 }
-            expect(manifests.count) >= 12
+            expect(manifests.count) >= 13
             var numbered = 0
             for manifest in manifests {
                 guard let pairId = manifest.sourceHwpFixture else {
@@ -197,8 +199,9 @@ import XCTest
                 expect(hwpx).to(equal(hwp), description: manifest.id)
                 numbered += hwp.count
             }
-            // 쌍 가운데 번호 문단을 가진 것은 `outline-numbering`(5)뿐이다.
-            expect(numbered) == 5
+            // 쌍 가운데 번호 문단을 가진 것은 `outline-numbering`(5)과
+            // `numbering-sequence`(20)다.
+            expect(numbered) == 25
         }
 
         /// `outline-numbering` 둘째 정의의 9·10수준 형식 — 한글.app 12.30 개요 번호 모양
@@ -219,6 +222,54 @@ import XCTest
                 // 같은 정의의 3수준 형식 `^3)`은 문단 수준보다 얕은 참조가 없으니 그대로다.
                 expect(HwpNumberingLabelFormatter.text(definition: custom, level: 3, numbers: [2, 3, 4]))
                     == "4)"
+            }
+        }
+
+        /// `numbering-sequence` — 한글.app 12.30이 그린 라벨(같은 세션에서 모두 선택 ·
+        /// 복사하기로 받은 텍스트)과 문단마다 같다. 정의별 목록·시작 번호 0의 이어
+        /// 받기·수준별 배열 우선·건너뛴 수준·구역 경계·표 셀 순서를 한 문서로 잠근다.
+        func testNumberingSequenceFixtureMatchesTheHancomCopiedLabels() throws {
+            let expected: [(path: String, text: String, title: String)] = [
+                ("s0/p1", "1.", "Outline one"), ("s0/p2", "가.", "Outline one-one"),
+                ("s0/p3", "1.", "Numbered A one"), ("s0/p4", "2.", "Numbered A two"),
+                ("s1/p0", "3.", "Numbered A three"), ("s1/p1", "나.", "Outline two"),
+                ("s1/p2", "가)", "Outline two-one-one"), ("s1/p3", "1.", "Numbered B five"),
+                ("s1/p4", "1)", "Numbered B five-x-one"), ("s1/p5", "나.", "Numbered B five-one"),
+                ("s1/p6", "2.", "Numbered B six"), ("s1/p7", "3.", "Numbered A continue"),
+                ("s1/p8", "2.", "Outline three"), ("s2/p0", "7.", "Section three outline"),
+                ("s2/p1", "4.", "Section three numbered"), ("s2/p2", "5.", ""),
+                ("s2/p2/c0/n0", "9.", "Cell one"), ("s2/p2/c0/n1", "10.", "Cell two"),
+                ("s2/p3", "6.", "After table numbered"), ("s2/p4", "11.", "Numbered restart nine"),
+            ]
+            for hwpx in [false, true] {
+                let file = try Self.fixture("numbering-sequence", hwpx: hwpx)
+                let numbering = Self.numbering(of: file)
+                let format = hwpx ? "HWPX" : "HWP"
+                expect(numbering.paths.map(\.description)).to(
+                    equal(expected.map(\.path)), description: format
+                )
+                expect(numbering.entries.map(\.number.text)).to(
+                    equal(expected.map(\.text)), description: format
+                )
+                for (entry, expectation) in zip(numbering.entries, expected) {
+                    var paragraph = file.displaySectionArray[entry.path.paragraph.sectionIndex]
+                        .paragraph[entry.path.paragraph.paragraphIndex]
+                    for step in entry.path.steps {
+                        let control = paragraph.ctrlHeaderArray?[step.controlIndex]
+                        paragraph = HwpPaginator.childParagraphs(of: try XCTUnwrap(control))[step.childIndex].0
+                    }
+                    expect(Self.title(of: paragraph)).to(
+                        equal(expectation.title), description: "\(format) \(entry.path)"
+                    )
+                }
+                // 정의별 목록 — 정의 3(목록 B)은 정의 6(셀)의 목록을 사이에 두고 잇는다.
+                expect(numbering.entries.map(\.number.definitionIndex)) == [
+                    0, 0, 1, 1, 1, 3, 3, 2, 2, 2, 2, 2, 3, 4, 2, 2, 5, 5, 2, 5,
+                ]
+                expect(numbering.entries.map(\.number.numbers)) == [
+                    [1], [1, 1], [1], [2], [3], [1, 2], [1, 2, 1, 1], [1], [1, 1, 1], [1, 2],
+                    [2], [3], [2], [7], [4], [5], [9], [10], [6], [11],
+                ]
             }
         }
 

@@ -29,7 +29,8 @@ import XCTest
         // MARK: - 수준
 
         /// 같은 수준은 1씩 늘고, 상위 수준이 늘면 하위 수준은 시작 번호로 돌아간다.
-        /// 다수준 형식은 매겨지지 않은 상위 수준을 시작 번호로 보인다.
+        /// 건너뛴 상위 수준은 시작 번호로 매겨진 것으로 쳐서(한글.app 실측) 다수준
+        /// 형식에 시작 번호로 보이고, 그다음 그 수준의 문단은 그다음 번호다.
         func testLevelsIncrementAndDeeperLevelsResetWhenAnUpperLevelAdvances() throws {
             let definition = HwpSynthetic.numberingDefinition(
                 formats: ["^1.", "^1.^2", "^1.^2.^3", "(^4)", "(^5)", "^6)", "^7)"]
@@ -47,10 +48,10 @@ import XCTest
             )
 
             expect(Self.texts(numbering)) == [
-                "1.", "1.1", "1.1.1", "1.1.2", "1.2", "1.2.1", "2.", "2.1.1", "2.1",
+                "1.", "1.1", "1.1.1", "1.1.2", "1.2", "1.2.1", "2.", "2.1.1", "2.2",
             ]
             expect(numbering.entries.map(\.number.numbers)) == [
-                [1], [1, 1], [1, 1, 1], [1, 1, 2], [1, 2], [1, 2, 1], [2], [2, 1, 1], [2, 1],
+                [1], [1, 1], [1, 1, 1], [1, 1, 2], [1, 2], [1, 2, 1], [2], [2, 1, 1], [2, 2],
             ]
             expect(numbering.entries.map(\.number.level)) == [1, 2, 3, 3, 2, 3, 1, 3, 2]
             expect(numbering.entries.allSatisfy { $0.number.kind == .outline }) == true
@@ -100,9 +101,12 @@ import XCTest
             expect(numbering.number(at: Self.top(4))).to(beNil())
         }
 
-        /// 정의가 바뀌는 번호 문단에서 새 정의의 시작 번호 방식을 본다 — 새 번호면
-        /// 그 정의의 시작 번호부터, 이어 매기기면 앞 목록을 잇는다.
-        func testSwitchingDefinitionsRestartsOrContinuesByTheNewDefinitionsStartMode() throws {
+        /// 정의마다 목록이 하나다 — 정의의 첫 문단에서만 시작 번호 방식을 본다(새
+        /// 번호면 시작 번호부터, 이어 매기기면 직전 정의의 번호를 물려받는다). 다른
+        /// 정의의 목록을 지나 같은 정의로 돌아오면 자기 번호를 잇는다 (한글.app 실측
+        /// `numbering-sequence`: 정의 3의 `5.`·`6.`이 정의 6의 `9.`·`10.`을 사이에 두고
+        /// 이어지고 정의 6은 `11.`).
+        func testEachDefinitionKeepsItsOwnListAndInheritsOnlyOnFirstUse() throws {
             let numbering = HwpSynthetic.generateNumbering(
                 [
                     try Self.paragraph("A1", shape: 11), try Self.paragraph("A2", shape: 11),
@@ -119,7 +123,7 @@ import XCTest
                     ),
                 ]
             )
-            expect(Self.texts(numbering)) == ["1.", "2.", "5.", "6.", "(7)", "(8)", "1.", "(2)"]
+            expect(Self.texts(numbering)) == ["1.", "2.", "5.", "6.", "(7)", "(8)", "3.", "(9)"]
             expect(numbering.entries.map(\.number.definitionIndex)) == [0, 0, 1, 1, 2, 2, 0, 2]
         }
 
@@ -140,9 +144,10 @@ import XCTest
             expect(numbering.entries.map(\.number.numbers)) == [[5], [5, 3], [5, 4], [6], [6, 3]]
         }
 
-        /// 매겨지지 않은 상위 수준이 형식에 참조되면 그 수준의 **시작 번호**를 보인다 —
-        /// 1이 아닌 시작 번호로 하드코딩 1과 구분한다 (한글.app 실측 전 핀).
-        func testUnnumberedUpperLevelsShowTheirStartingNumbers() throws {
+        /// 건너뛴 상위 수준은 그 수준의 **시작 번호**로 매겨진 것으로 친다 — 1이 아닌
+        /// 시작 번호로 하드코딩 1과 구분하고, 다음 그 수준 문단은 그다음 번호다
+        /// (한글.app 실측: `1.` → 3수준 `1)` → 2수준 `나.`).
+        func testSkippedUpperLevelsCountFromTheirStartingNumbers() throws {
             let numbering = HwpSynthetic.generateNumbering(
                 [
                     try Self.paragraph("1", shape: 1), try Self.paragraph("1.5.1", shape: 3),
@@ -153,8 +158,8 @@ import XCTest
                     startingIndexArray: [1, 5, 1, 1, 1, 1, 1]
                 )]
             )
-            expect(Self.texts(numbering)) == ["1.", "1.5.1", "1.5", "1.5.1"]
-            expect(numbering.entries.map(\.number.numbers)) == [[1], [1, 5, 1], [1, 5], [1, 5, 1]]
+            expect(Self.texts(numbering)) == ["1.", "1.5.1", "1.6", "1.6.1"]
+            expect(numbering.entries.map(\.number.numbers)) == [[1], [1, 5, 1], [1, 6], [1, 6, 1]]
         }
 
         /// 조작 문서의 32비트 시작 번호는 65,535로 접힌다 — 로마 숫자 모양의 라벨 길이가
@@ -176,8 +181,9 @@ import XCTest
 
         // MARK: - 구역 경계
 
-        /// 개요는 구역 시작에서 구역 정의의 정의를 본다 — 새 번호면 다시 세고, 이어
-        /// 매기기면 앞 구역의 번호를 잇는다. 정의가 같아도 같다.
+        /// 개요는 구역 시작에서 구역 정의의 정의를 활성화한다 — 처음 쓰이는 정의가 새
+        /// 번호면 다시 세고 이어 매기기면 앞 구역의 번호를 물려받으며, 이미 쓰인 정의는
+        /// 자기 번호를 잇는다(같은 정의를 두 구역이 가리키면 이어진다).
         func testOutlineRestartsOrContinuesAtSectionStartByTheSectionDefinition() throws {
             func section(outlineNumberingId: UInt16, titles: [String]) throws -> HwpSection {
                 HwpSynthetic.numberingSection(
@@ -192,19 +198,19 @@ import XCTest
             let numbering = HwpParagraphNumbering.generate(
                 sections: [
                     try section(outlineNumberingId: 1, titles: ["1", "2"]),
-                    try section(outlineNumberingId: 1, titles: ["1 (같은 정의, 새 번호)"]),
+                    try section(outlineNumberingId: 1, titles: ["3 (같은 정의 — 이어진다)"]),
                     try section(outlineNumberingId: 2, titles: ["2) 이어", "3) 이어"]),
-                    try section(outlineNumberingId: 1, titles: ["1 새 번호"]),
+                    try section(outlineNumberingId: 1, titles: ["4 (정의 1의 목록을 잇는다)"]),
                 ],
                 index: HwpSynthetic.numberingIndex(numberings: [0: restart, 1: continued])
             )
-            expect(Self.texts(numbering)) == ["1.", "2.", "1.", "2)", "3)", "1."]
+            expect(Self.texts(numbering)) == ["1.", "2.", "3.", "4)", "5)", "4."]
             expect(numbering.paths.map(\.paragraph.sectionIndex)) == [0, 0, 1, 2, 2, 3]
         }
 
-        /// 번호 매기기 카운터는 구역 시작을 보지 않는다 — 구역 정의가 새 번호 개요
-        /// 정의를 가리켜도 번호 목록은 구역을 넘어 잇고, 정의가 바뀌는 번호 문단에서만
-        /// 다시 센다 (도움말의 "앞 번호 목록에 이어"; 실측 전 핀).
+        /// 번호 매기기 카운터는 구역 시작을 보지 않는다 — 번호 목록은 구역을 넘어 잇고
+        /// (한글.app 실측 `numbering-sequence`: `3.` → 구역 경계 → `4.`), 새 정의의 첫
+        /// 문단에서만 새로 세거나 물려받는다.
         func testNumberingListContinuesAcrossSectionsUnlikeOutline() throws {
             let numbering = HwpParagraphNumbering.generate(
                 sections: [
@@ -227,7 +233,7 @@ import XCTest
                     ),
                 ])
             )
-            expect(Self.texts(numbering)) == ["1.", "2.", "1.", "3.", "1.", "1)", "(2)"]
+            expect(Self.texts(numbering)) == ["1.", "2.", "1.", "3.", "2.", "1)", "(2)"]
             expect(numbering.paths.map(\.paragraph.sectionIndex)) == [0, 0, 0, 1, 1, 1, 1]
         }
 
@@ -314,9 +320,10 @@ import XCTest
                 ],
                 numberings: [0: HwpSynthetic.numberingDefinition(extendedFormats: ["", "^9", "^n"])]
             )
-            expect(Self.texts(numbering)) == ["", "", "1.", ""]
+            // 8수준이 먼저 오면 1-7수준은 시작 번호로 매겨진 것으로 치므로 다음 1수준은 2다.
+            expect(Self.texts(numbering)) == ["", "", "2.", ""]
             expect(numbering.entries.map(\.number.level)) == [8, 8, 1, 8]
-            expect(numbering.entries.map(\.number.number)) == [1, 2, 1, 1]
+            expect(numbering.entries.map(\.number.number)) == [1, 2, 2, 1]
 
             let withoutExtended = HwpSynthetic.generateNumbering(
                 [try Self.paragraph("8수준 (확장 배열 없음)", shape: 18)],

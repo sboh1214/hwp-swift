@@ -65,23 +65,44 @@ final class NumberingStartingNumberTests: XCTestCase {
         expect(numbering.startingNumber(forLevel: 11)) == 1
     }
 
-    /// 1수준은 정의 전체 시작 번호와 수준별 값 중 큰 쪽이다 — 새 번호 N이 어느
-    /// 자리에 적혀도 같은 결과다. 2수준부터는 정의 전체 값을 보지 않는다.
-    func testLevelOneTakesTheLargerOfTheTwoStartFields() {
+    /// 수준별 배열이 있으면 배열이 이긴다 — 한글.app이 목록의 모양을 바꾸면 배열만
+    /// 1로 되돌리고 `startingIndex`에 옛 새 번호를 남기는데 화면은 1부터다
+    /// (`numbering-sequence` 정의 3: `start=5`, 배열 [1, …] → `1.`). 배열이 없는
+    /// 저장본에서만 `startingIndex`가 1수준 시작 번호다.
+    func testLevelOneFollowsThePerLevelArrayWhenPresent() {
         func levelOne(_ startingIndex: UInt16, _ array: [UInt32]? = nil) -> Int {
             Self.definition(startingIndex: startingIndex, startingIndexArray: array)
                 .startingNumber(forLevel: 1)
         }
-        expect(levelOne(5, [1, 1])) == 5
+        expect(levelOne(5, [1, 1])) == 1
         expect(levelOne(1, [5, 1])) == 5
         expect(levelOne(5, [5, 1])) == 5
+        expect(levelOne(5, [0, 1])) == 1
         expect(levelOne(5)) == 5
+        expect(levelOne(0)) == 1
         expect(Self.definition(startingIndex: 5).startingNumber(forLevel: 2)) == 1
         expect(
             Self.definition(startingIndex: 5, startingIndexArray: [1, 4]).startingNumber(forLevel: 2)
         ) == 4
         expect(Self.definition(startingIndex: 1).continuesPreviousList) == false
         expect(Self.definition(startingIndex: 5).continuesPreviousList) == false
+    }
+
+    /// 한글.app 12.30이 저장한 `numbering-sequence` 쌍의 정의 6개 — 새 번호 N은
+    /// `startingIndex`와 배열의 첫 값에 함께 적히고(7·9), 구역 나누기가 만든 정의와
+    /// 문단 번호 적용이 만든 정의는 0(이어 매기기)이다.
+    func testHancomSequenceFixtureStoresNewNumbersInBothFields() throws {
+        for hwp in [
+            try openHwp(#file, "numbering-sequence"), try openHwpx(#file, "numbering-sequence"),
+        ] {
+            let definitions = hwp.docInfo.idMappings.numberingArray
+            expect(definitions.map(\.startingIndex)) == [0, 0, 5, 0, 7, 9]
+            expect(definitions.map { $0.startingIndexArray?.first }) == [1, 1, 1, 1, 7, 9]
+            expect(definitions.map(\.continuesPreviousList)) == [
+                true, true, false, true, false, false,
+            ]
+            expect(definitions.map { $0.startingNumber(forLevel: 1) }) == [1, 1, 1, 1, 7, 9]
+        }
     }
 
     /// 수준별 값은 UINT32지만 65,535로 접는다 — 정의 전체 시작 번호(UINT16)와 한글의

@@ -145,6 +145,15 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   12.30.0 build 6446으로 2026-09-05에 저장. 표 39 문단 머리 정보의 정렬·거리 종류
   비기본값과 구역 정의의 개요 번호 참조(`numberParaShapeId` 2), 문단 번호(종류 2)
   문단의 실물 근거 (#152). HWPX 쌍은 `HwpxFixtures/outline-numbering`.
+- `numbering-sequence`: `plain-text-minimal` 사본에 개요 1·2·4수준, 본문 문단 사이의
+  문단 번호 목록, 새 번호 목록 시작 5 뒤 모양을 바꾼 목록(3수준 건너뜀), 구역
+  나누기 2회(둘째 구역은 앞 구역의 개요 번호에 이어서, 셋째 구역은 새 번호로 시작
+  7), 1×2 표의 셀 문단 번호, 새 번호 목록 시작 9를 넣어 Hancom Office HWP for macOS
+  12.30.0 build 6446으로 2026-09-06에 저장. 문단 번호·개요 번호 **생성 규칙**의
+  실측 오라클 — 정의별 목록, 시작 번호 0의 이어 받기, 수준별 시작 번호 배열 우선,
+  건너뛴 수준의 암묵 매김, 구역·표 셀을 지나는 이어 매기기 (#153). 한글.app이 그린
+  라벨은 fixture README의 표와 `HwpParagraphNumberingFixtureTests`에 있다. HWPX 쌍은
+  `HwpxFixtures/numbering-sequence`.
 - `track-changes`: WordprocessingML tracked changes DOCX를 Hancom Office HWP for macOS
   12.30.0 build 6382에서 열고 HWP로 저장. FileHeader, 본문/preview,
   DocumentProperties, DocInfo id mappings를 manifest로 검증.
