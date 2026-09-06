@@ -44,6 +44,26 @@ public struct HwpTableLayout {
         sizeResolver: HwpObjectSizeResolver? = nil,
         clampToAvailableWidth: Bool = true
     ) -> Result<HwpTableFrame, HwpUnsupportedElement> {
+        layout(
+            table: table, availableWidth: availableWidth, index: index, depth: depth,
+            sizeResolver: sizeResolver, clampToAvailableWidth: clampToAvailableWidth,
+            numbering: nil
+        )
+    }
+
+    /// 셀 문단의 문단 번호·개요 번호 열쇠(#158)까지 받는 모듈 내부용 레이아웃 —
+    /// `numbering`은 이 표 컨트롤을 품은 문단의 열쇠에서 내려온 것이고, 셀 문단은
+    /// `cellArray` 순서의 접두 합으로 자기 경로를 얻는다(`HwpNumberingScope.TableCells`).
+    /// 공개 진입점은 열쇠 없이(라벨 없이) 조판한다.
+    func layout(
+        table: CoreHwp.HwpTable,
+        availableWidth: CGFloat,
+        index: HwpIndex,
+        depth: Int = 0,
+        sizeResolver: HwpObjectSizeResolver? = nil,
+        clampToAvailableWidth: Bool = true,
+        numbering: HwpNumberingScope.Container?
+    ) -> Result<HwpTableFrame, HwpUnsupportedElement> {
         let property = table.tableProperty
         guard let grid = Self.grid(of: table) else {
             return .success(emptyFrame(availableWidth: availableWidth))
@@ -57,7 +77,8 @@ public struct HwpTableLayout {
         )
         let metrics = TableMetrics(property: property)
         let context = LayoutContext(
-            table: table, metrics: metrics, index: index, depth: depth, sizeResolver: sizeResolver
+            table: table, metrics: metrics, index: index, depth: depth, sizeResolver: sizeResolver,
+            numbering: numbering?.tableCells(of: table)
         )
         let columnWidths = resolvedColumnWidths(
             table: table,
@@ -129,6 +150,8 @@ extension HwpTableLayout {
         let depth: Int
         /// 상대 크기 기준 해석기 (paginator 페이지/단 기하) — 없으면 절대값 해석
         let sizeResolver: HwpObjectSizeResolver?
+        /// 셀 문단의 문단 번호·개요 번호 열쇠 (#158) — 없으면 라벨 없이 조판한다.
+        let numbering: HwpNumberingScope.TableCells?
     }
 
     /// 셀 4방향 안쪽 여백 (pt)
@@ -158,6 +181,10 @@ extension HwpTableLayout {
     struct PlacedCellContent {
         let paragraph: CoreHwp.HwpParagraph
         let frame: HwpParagraphFrame
+        /// 이 문단의 번호 열쇠 (#158) — 측정(`measuredCellContents`)이 라벨을 붙여
+        /// 잰 그 번호로 배치(`laidOutContents`)가 같은 문자열을 다시 만들고, 문단
+        /// 안 글상자·중첩 표는 여기서 한 겹 더 내려간다.
+        let numbering: HwpNumberingScope?
         let nestedTables: [PlacedNestedTable]
 
         var totalHeight: CGFloat {
@@ -259,6 +286,7 @@ extension HwpTableLayout {
             placedCell(
                 for: accepted.cell,
                 at: accepted.placement,
+                cellIndex: accepted.index,
                 context: context,
                 columnWidths: columnWidths
             )
@@ -278,20 +306,21 @@ extension HwpTableLayout {
     /// 배치 규칙(주소·occupancy·예산)이 **실제로 받아들이는 셀만** 원본 순서대로.
     /// 프레임을 만들지 않으므로 탐색 목록 순회도 같은 술어를 쓸 수 있다 —
     /// `cellArray`를 그대로 걸으면 배치되지 못한 셀의 앵커가 목록에 올라 누르면
-    /// 아무것도 없는 자리로 간다.
+    /// 아무것도 없는 자리로 간다. `index`는 `cellArray` 서수다 — 셀 문단의 번호
+    /// 경로(#158)가 이 서수의 접두 합이라 값이 같은 셀로는 가를 수 없다.
     func acceptedCells(
         of table: CoreHwp.HwpTable,
         rowCount: Int,
         columnCount: Int
-    ) -> [(cell: CoreHwp.HwpTableCell, placement: Placement)] {
-        var accepted: [(cell: CoreHwp.HwpTableCell, placement: Placement)] = []
+    ) -> [(index: Int, cell: CoreHwp.HwpTableCell, placement: Placement)] {
+        var accepted: [(index: Int, cell: CoreHwp.HwpTableCell, placement: Placement)] = []
         var occupied = Set<GridPosition>()
         // fallback 자동 배치 커서 — 매 셀마다 (0,0)부터 재스캔하지 않게 (#4)
         var nextFallbackIndex = 0
         // 누적 occupancy 채우기 예산 (격자 크기) — 겹침 병적 입력 방어 (#14)
         var fillBudget = rowCount * columnCount
 
-        for cell in table.cellArray {
+        for (cellIndex, cell) in table.cellArray.enumerated() {
             guard let placement = placement(
                 for: cell,
                 rowCount: rowCount,
@@ -300,7 +329,7 @@ extension HwpTableLayout {
                 nextFallbackIndex: &nextFallbackIndex,
                 fillBudget: &fillBudget
             ) else { continue }
-            accepted.append((cell, placement))
+            accepted.append((cellIndex, cell, placement))
         }
         return accepted
     }
@@ -324,9 +353,11 @@ extension HwpTableLayout {
     }
 
     /// 셀 하나의 문단/중첩 표 콘텐츠를 레이아웃해 PlacedCell로 만든다.
+    /// `cellIndex`는 `cellArray` 서수 — 셀 문단의 번호 경로 열쇠다 (#158).
     func placedCell(
         for cell: CoreHwp.HwpTableCell,
         at placement: Placement,
+        cellIndex: Int,
         context: LayoutContext,
         columnWidths: [CGFloat]
     ) -> PlacedCell {
@@ -347,6 +378,7 @@ extension HwpTableLayout {
 
         let measured = measuredCellContents(
             of: cell,
+            cellIndex: cellIndex,
             innerWidth: innerWidth,
             measurer: measurer,
             context: context
@@ -418,7 +450,8 @@ extension HwpTableLayout {
                 height: content.frame.totalHeight - spacingBefore
             )
             let collected = collector.objects(
-                in: content.paragraph, frame: content.frame, paragraphRect: rect
+                in: content.paragraph, frame: content.frame, paragraphRect: rect,
+                numbering: content.numbering
             )
             if let floatingBottom = collected.floatingBottom {
                 bottom = max(bottom, floatingBottom)
@@ -431,22 +464,32 @@ extension HwpTableLayout {
 
     /// 셀 문단들을 측정한다. 셀 높이는 한글 라인 캐시를 우선한다 (각주와 동일
     /// 철학) — 폰트 대체로 CT 줄 수가 부풀어 row가 한글보다 커지는 것을 막는다.
+    /// 번호 라벨(#158)은 여기서 붙여 잰 문자열이 배치(`laidOutContents`)에서도 같은
+    /// 번호로 다시 만들어지므로 재측정 문단의 줄바꿈·높이가 배치와 같고, 캐시 높이를
+    /// 쓰는 문단은 라벨과 무관하게 저작 높이를 유지한다.
     private func measuredCellContents(
         of cell: CoreHwp.HwpTableCell,
+        cellIndex: Int,
         innerWidth: CGFloat,
         measurer: HwpParagraphMeasurer,
         context: LayoutContext
     ) -> (contents: [PlacedCellContent], allCached: Bool) {
         var contents: [PlacedCellContent] = []
         var allCached = !cell.paragraphArray.isEmpty
-        for paragraph in cell.paragraphArray {
+        for (paragraphIndex, paragraph) in cell.paragraphArray.enumerated() {
+            let numbering = context.numbering?.paragraph(
+                cellIndex: cellIndex, paragraphIndex: paragraphIndex
+            )
             // 문단 위 간격 절반: CT는 프레임 첫 문단에 paragraphSpacingBefore를
             // 적용하지 않으므로 (셀은 문단별 개별 조판) 항상 직접 더한다.
             // 렌더 배치에서 같은 값만큼 문단 상단을 내린다 (noori 부제 실물)
             let measured = measurer.measure(
                 paragraph,
                 width: innerWidth,
-                options: .init(preferCachedHeight: true, addHalfSpacingBefore: true)
+                options: .init(
+                    preferCachedHeight: true, addHalfSpacingBefore: true,
+                    number: numbering?.number
+                )
             )
             if !measured.usedCachedHeight {
                 allCached = false
@@ -454,10 +497,12 @@ extension HwpTableLayout {
             contents.append(PlacedCellContent(
                 paragraph: paragraph,
                 frame: measured.frame,
+                numbering: numbering,
                 nestedTables: nestedTableFrames(
                     in: paragraph,
                     innerWidth: innerWidth,
-                    context: context
+                    context: context,
+                    numbering: numbering
                 )
             ))
         }
@@ -465,10 +510,12 @@ extension HwpTableLayout {
     }
 
     /// 셀 문단에 붙은 중첩 표들을 재귀 레이아웃한다 (깊이 상한 초과분은 생략).
+    /// `numbering`은 그 셀 문단의 열쇠 — 중첩 표 셀 문단은 한 겹 더 내려간다 (#158).
     func nestedTableFrames(
         in paragraph: CoreHwp.HwpParagraph,
         innerWidth: CGFloat,
-        context: LayoutContext
+        context: LayoutContext,
+        numbering: HwpNumberingScope? = nil
     ) -> [PlacedNestedTable] {
         guard context.depth < Self.maximumNestingDepth,
               let ctrls = paragraph.ctrlHeaderArray
@@ -478,7 +525,8 @@ extension HwpTableLayout {
             guard case let .success(frame) = layout(
                 table: nested, availableWidth: innerWidth, index: context.index,
                 depth: context.depth + 1,
-                sizeResolver: context.sizeResolver?.withParagraphWidth(innerWidth)
+                sizeResolver: context.sizeResolver?.withParagraphWidth(innerWidth),
+                numbering: numbering?.container(controlIndex: controlIndex)
             ) else { return nil }
             return PlacedNestedTable(
                 instanceId: nested.commonCtrlProperty.instanceId,

@@ -89,8 +89,9 @@ public struct HwpTextRunBuilder {
     ///
     /// number: 이 문단에 생성된 문단 번호·개요 번호 (#154) — 라벨을 문단 앞에
     /// 전치한다 (`appendParagraphHeading`). 최상위 문단은 `HwpPaginator`가
-    /// `paragraphNumbering`에서 찾아 넘기고, 경로를 나르지 않는 호출부(컨테이너
-    /// 문단·메모)는 nil이라 글머리표만 전치된다.
+    /// `paragraphNumbering`에서 찾아 넘기고, 컨테이너 안 문단은 조판 경로가
+    /// `HwpNumberingScope`로 위치 경로를 풀어 넘긴다 (#158). 열쇠를 나르지 않는
+    /// 호출부(메모·공개 레이아웃 진입점)는 nil이라 글머리표만 전치된다.
     public func build(
         paragraph: CoreHwp.HwpParagraph,
         controlReplacements: [Int: HwpControlMarkerReplacement] = [:],

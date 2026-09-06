@@ -50,6 +50,12 @@ struct HwpParagraphMeasurer {
         /// paragraphSpacingBefore를 적용하지 않으므로, 문단별 개별 조판인 셀은
         /// 직접 더한다. 렌더 배치에서 같은 값만큼 문단 상단을 내린다).
         var addHalfSpacingBefore = false
+        /// 이 문단의 문단 번호·개요 번호 (#158) — 라벨을 조판 문자열 앞에 전치한다
+        /// (`HwpTextRunBuilder.build(number:)`). 컨테이너 안 문단은 호출부가
+        /// `HwpNumberingScope`로 경로를 풀어 넘기고, 나르지 않으면 글머리표만 본다.
+        /// 측정과 배치가 **같은 번호**로 같은 문자열을 만들어야 줄바꿈·높이가
+        /// 갈리지 않는다.
+        var number: HwpParagraphNumber?
     }
 
     struct Result {
@@ -70,8 +76,11 @@ struct HwpParagraphMeasurer {
             sizeResolver: sizeResolver,
             attributeCache: attributeCache
         )
-        let attributed = builder
-            .build(paragraph: paragraph, controlReplacements: options.controlReplacements)
+        let attributed = builder.build(
+            paragraph: paragraph,
+            controlReplacements: options.controlReplacements,
+            number: options.number
+        )
         let paraShape = index.paraShapeOrDefault(for: paragraph)
         // 탭 스톱은 인자로 넘기지 않는다 — `build`의 `attachParagraphStyle`이
         // 같은 paraShape·같은 탭으로 만든 스타일을 이미 문자열에 실었고,

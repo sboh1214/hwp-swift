@@ -9,7 +9,7 @@ extension HwpTextRunBuilder {
     /// 문단 머리를 조판 문자열 앞에 전치한다 — 글머리표(표 44 heading 3)는
     /// `appendBulletHeading`, 개요(1)·번호 매기기(2)는 `HwpParagraphNumbering`이
     /// 문서 순서로 만든 번호(`number`)의 라벨이다. `number`가 없으면(번호 문단이
-    /// 아니거나 조판기가 경로를 나르지 않는 컨테이너 문단) 글머리표만 본다.
+    /// 아니거나 호출부가 번호 열쇠를 나르지 않는 문단 — 메모 등) 글머리표만 본다.
     func appendParagraphHeading(
         for paragraph: CoreHwp.HwpParagraph,
         number: HwpParagraphNumber?,

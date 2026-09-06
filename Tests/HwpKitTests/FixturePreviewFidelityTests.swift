@@ -82,7 +82,8 @@ final class FixturePreviewFidelityTests: XCTestCase {
         // 개요·문단 번호 라벨을 그린 뒤(#154) 라벨 없던 0.0005에서 내려왔다 — 1수준
         // 오른쪽 정렬·HWPUNIT 거리·자동 내어쓰기 해제까지 PrvImage와 같은 자리다
         "outline-numbering": 0.001, // 실측 0.0004 (2026-09-06)
-        // 같은 이유 — 표 셀의 `9.`·`10.`은 컨테이너 문단이라 아직 라벨이 없다 (#151 후속)
+        // 같은 이유 — 3쪽 표 셀의 `9.`·`10.`도 #158부터 그리지만 PrvImage는 1쪽뿐이라
+        // 이 값은 그대로다 (셀 라벨은 `FixtureNumberingLabelRenderTests`가 핀한다)
         "numbering-sequence": 0.001, // 실측 0.0003 (2026-09-06, 라벨 전 0.0004)
         "공공누리": 0.004, // 실측 0.0028 (저해상 GIF)
         "문서이력관리": 0.001, // 실측 0.0000

@@ -667,7 +667,7 @@ private extension HwpPaginator {
         measureMemo = nil
         collectParagraphFootnotesUnlessPlacedPerFragment(paragraph)
         collectMemos(from: paragraph)
-        appendControlBlocks(from: paragraph)
+        appendControlBlocks(from: paragraph, numbering: currentParagraphScope)
         collectUnsupported(from: paragraph, firstPage: paragraphFirstPage)
         collectOutline(from: paragraph, firstPage: paragraphFirstPage)
         advanceParagraph()
@@ -710,12 +710,22 @@ private extension HwpPaginator {
 
     /// 문단 커서가 가리키는 최상위 문단의 문단 번호·개요 번호 (#154) — 라벨 전치
     /// (`measuredParagraph`)와 진단 제외(`collectUnsupportedNumberingHeading`)가 같은
-    /// 값을 본다. 둘 다 `advanceParagraph()` 앞에서 불리므로 같은 열쇠다. 컨테이너
-    /// 문단(표 셀·글상자·각주·머리말)은 측정기가 경로를 나르지 않아 라벨이 없다.
+    /// 값을 본다. 둘 다 `advanceParagraph()` 앞에서 불리므로 같은 열쇠다.
     var currentParagraphNumber: HwpParagraphNumber? {
-        paragraphNumbering.number(for: HwpParagraphKey(
-            sectionIndex: nextSectionIndex, paragraphIndex: nextParagraphIndex
-        ))
+        currentParagraphScope.number
+    }
+
+    /// 문단 커서가 가리키는 최상위 문단의 번호 열쇠 (#158) — 컨테이너 문단(표 셀·
+    /// 글상자·각주·미주·머리말/꼬리말)은 여기서 컨트롤 서수·자식 서수를 이어 붙여
+    /// 내려간다(`appendControlBlocks`·`walkUnsupported`·각주 수집·쪽 크롬 등록).
+    /// `advanceParagraph()` 앞에서만 유효하다.
+    var currentParagraphScope: HwpNumberingScope {
+        HwpNumberingScope(
+            numbering: paragraphNumbering,
+            path: HwpParagraphPath(
+                sectionIndex: nextSectionIndex, paragraphIndex: nextParagraphIndex
+            )
+        )
     }
 
     /// 문서 끝 처리 — 밴드를 닫고 마지막 본문 페이지를 확정한 뒤, 남은 미주는
@@ -1580,10 +1590,12 @@ private extension HwpPaginator {
     func collectUnsupported(from paragraph: CoreHwp.HwpParagraph, firstPage: Int) {
         // 번호/개요 마커는 문단 첫 페이지 첫 줄에 속하므로 firstPage로 보고하고,
         // 컨트롤은 현재 배치 페이지 기준으로 보고한다 (#3).
-        collectUnsupportedNumberingHeading(from: paragraph, page: firstPage)
+        collectUnsupportedNumberingHeading(
+            from: paragraph, page: firstPage, number: currentParagraphNumber
+        )
         collectRecoveredParseFailures(from: paragraph, page: firstPage)
         guard let ctrls = paragraph.ctrlHeaderArray else { return }
-        walkUnsupported(ctrls: ctrls, page: cachedPages.count + 1)
+        walkUnsupported(ctrls: ctrls, page: cachedPages.count + 1, numbering: currentParagraphScope)
     }
 
     /// recover 모드(`HwpLoadOptions.recoverPartialContent`)가 남긴 placeholder를
@@ -1654,9 +1666,17 @@ private extension HwpPaginator {
     /// 1,944개, 그 값이 전부 0)이 한 건도 잡히지 않았다. 집계 단위는 문단이고
     /// 쪽은 문단이 시작한 쪽이다. `currentSectionDef`는 `applySectionDef`가 이
     /// 문단 처리 앞에서 세우므로 구역 첫 문단도 자기 구역의 정의를 본다.
+    ///
+    /// `number`는 이 문단에 생성된 번호 — 최상위는 `currentParagraphNumber`, 컨테이너
+    /// 안 문단은 `walkUnsupported`가 경로로 찾아 넘긴다 (#158). 컨테이너 문단의
+    /// 개요 정의도 현재 구역의 것이다(생성기와 같은 규칙). 컨테이너 안 문단의 쪽은
+    /// 문단이 시작한 쪽이 아니라 컨트롤 진단과 같은 **컨테이너를 배치한 뒤의 현재
+    /// 쪽**(`walkUnsupported`의 `page`)이다 — 컨테이너 문단에는 별도의 시작 쪽 기록이
+    /// 없다.
     private func collectUnsupportedNumberingHeading(
         from paragraph: CoreHwp.HwpParagraph,
-        page: Int
+        page: Int,
+        number: HwpParagraphNumber?
     ) {
         guard let paraShape = index.paraShape(
             id: UInt32(paragraph.paraHeader.paraShapeId)
@@ -1664,7 +1684,7 @@ private extension HwpPaginator {
             paraShape: paraShape, sectionDef: currentSectionDef, index: index
         ) else { return }
         let hasFormat = reference.format(in: index) != nil
-        if hasFormat, currentParagraphNumber != nil {
+        if hasFormat, number != nil {
             return
         }
         let missingFormat = !hasFormat && reference.numbering(in: index) != nil
@@ -1700,13 +1720,18 @@ private extension HwpPaginator {
         )
     }
 
+    /// `numbering`은 이 컨트롤들을 품은 문단의 번호 열쇠 (#158) — 컨테이너 안
+    /// 문단마다 경로로 번호를 찾아 번호 문단 머리 진단(`collectUnsupportedNumberingHeading`)
+    /// 을 같은 규칙으로 적용한다. 자식 서수는 컨트롤 없는 문단도 차지하므로
+    /// `ctrlHeaderArray` 필터 **앞**에서 센다.
     func walkUnsupported(
         ctrls: [CoreHwp.HwpCtrlId],
         page: Int,
         tableDepth: Int = 0,
-        containerDepth: Int = 0
+        containerDepth: Int = 0,
+        numbering: HwpNumberingScope? = nil
     ) {
-        for ctrl in ctrls {
+        for (controlIndex, ctrl) in ctrls.enumerated() {
             if let element = unsupportedDetector.classify(ctrl: ctrl, page: page) {
                 collectedUnsupported.append(element)
             }
@@ -1741,13 +1766,17 @@ private extension HwpPaginator {
                 ))
                 continue
             }
-            for nested in children {
+            let container = numbering?.container(controlIndex: controlIndex)
+            for (childIndex, nested) in children.enumerated() {
+                let scope = container?.paragraph(childIndex: childIndex)
+                collectUnsupportedNumberingHeading(from: nested, page: page, number: scope?.number)
                 guard let nestedCtrls = nested.ctrlHeaderArray else { continue }
                 walkUnsupported(
                     ctrls: nestedCtrls,
                     page: page,
                     tableDepth: isTable ? tableDepth + 1 : tableDepth,
-                    containerDepth: containerDepth + 1
+                    containerDepth: containerDepth + 1,
+                    numbering: scope
                 )
             }
         }
@@ -1922,29 +1951,35 @@ private extension HwpPaginator {
     /// depth는 컨테이너 안 컨테이너 재귀 제한 (표 안 글상자 등).
     /// 셀 안 중첩 표는 HwpTableLayout이 이미 셀 안에 재귀 배치했으므로
     /// 별도 블록으로 방출하지 않는다.
+    /// `numbering`은 이 문단의 번호 열쇠 (#158) — 표 셀·글상자·각주·머리말 안 문단이
+    /// 컨트롤 서수·자식 서수로 자기 번호를 찾아 라벨을 전치한다. 최상위는
+    /// `currentParagraphScope`, 중첩은 `appendNestedControlBlocks`가 내려 준다.
     func appendControlBlocks(
         from paragraph: CoreHwp.HwpParagraph,
         depth: Int = 0,
-        container: ContainerContext = .none
+        container: ContainerContext = .none,
+        numbering: HwpNumberingScope? = nil
     ) {
         guard let ctrls = paragraph.ctrlHeaderArray else { return }
         for (ctrlIndex, ctrl) in ctrls.enumerated() {
             // 줄 중간 앵커 문맥은 본문 문단 (depth 0)에서만 유효하다.
             let anchorIndex = depth == 0 ? ctrlIndex : nil
+            let children = numbering?.container(controlIndex: ctrlIndex)
             // 컨테이너 안 개체 (그림/도형/글상자)는 컨테이너 레이아웃이 이미
             // 콘텐츠로 배치했다 — 페이지 흐름 블록으로 다시 방출하면 컨테이너
             // 밖 좌표에 그려지고 흐름을 밀어낸다 (noori 실측 3쪽).
             if container != .none, Self.rendersInsideContainer(ctrl, container: container) {
                 // 렌더된 컨트롤이라도 자식 문단의 미수집 컨트롤 (글상자 안
                 // 글상자 등)은 흐름 폴백을 유지한다.
-                appendNestedControlBlocks(of: ctrl, depth: depth)
+                appendNestedControlBlocks(of: ctrl, depth: depth, numbering: children)
                 continue
             }
             appendControlBlock(
                 ctrl,
                 anchorIndex: anchorIndex,
                 depth: depth,
-                container: container
+                container: container,
+                numbering: children
             )
         }
     }
@@ -1969,21 +2004,23 @@ private extension HwpPaginator {
         _ ctrl: CoreHwp.HwpCtrlId,
         anchorIndex: Int?,
         depth: Int,
-        container: ContainerContext
+        container: ContainerContext,
+        numbering: HwpNumberingScope.Container?
     ) {
         switch ctrl {
         case let .table(table):
             if container != .tableCell {
-                appendTableBlocks(table, controlIndex: anchorIndex)
+                appendTableBlocks(table, controlIndex: anchorIndex, numbering: numbering)
             }
-            appendNestedControlBlocks(of: ctrl, depth: depth)
+            appendNestedControlBlocks(of: ctrl, depth: depth, numbering: numbering)
         case let .genShapeObject(genShape):
             appendShapeObjectBlocks(
                 components: genShape.shapeComponentArray,
                 commonProperty: genShape.commonCtrlProperty,
-                controlIndex: anchorIndex
+                controlIndex: anchorIndex,
+                numbering: numbering
             )
-            appendNestedControlBlocks(of: ctrl, depth: depth)
+            appendNestedControlBlocks(of: ctrl, depth: depth, numbering: numbering)
         case let .shape(shape),
              let .line(shape),
              let .rectangle(shape),
@@ -2003,12 +2040,13 @@ private extension HwpPaginator {
                     components: shape.shapeComponentArray,
                     commonProperty: shape.commonCtrlProperty
                         ?? CoreHwp.HwpCommonCtrlProperty(),
-                    controlIndex: anchorIndex
+                    controlIndex: anchorIndex,
+                    numbering: numbering
                 )
             }
-            appendNestedControlBlocks(of: ctrl, depth: depth)
+            appendNestedControlBlocks(of: ctrl, depth: depth, numbering: numbering)
         case .header, .footer, .pageNumberPosition, .pageHide:
-            pageChrome.register(ctrl)
+            pageChrome.register(ctrl, numbering: numbering)
         case .footnote, .endnote:
             // 각주/미주는 collectFootnotes(from:depth:)가 컨트롤 블록 방출 전에
             // 수집한다 (참조 위치 페이지 귀속).
@@ -2027,7 +2065,13 @@ private extension HwpPaginator {
     }
 
     /// 컨테이너 문단 안에 중첩된 컨트롤 (표 셀 안 글상자/이미지 등)을 재귀 방출한다.
-    func appendNestedControlBlocks(of ctrl: CoreHwp.HwpCtrlId, depth: Int) {
+    /// `numbering`은 이 컨트롤이 품은 문단들의 번호 열쇠 (#158) — 자식 서수는
+    /// 컨트롤 없는 문단도 차지하므로 `ctrlHeaderArray` 필터 **앞**에서 센다.
+    func appendNestedControlBlocks(
+        of ctrl: CoreHwp.HwpCtrlId,
+        depth: Int,
+        numbering: HwpNumberingScope.Container? = nil
+    ) {
         guard depth < Self.maximumContainerDepth else { return }
         let container: ContainerContext = if case .table = ctrl {
             .tableCell
@@ -2038,14 +2082,24 @@ private extension HwpPaginator {
         } else {
             .none
         }
-        for (nested, _) in Self.childParagraphs(of: ctrl) where nested.ctrlHeaderArray != nil {
-            appendControlBlocks(from: nested, depth: depth + 1, container: container)
+        for (childIndex, (nested, _)) in Self.childParagraphs(of: ctrl).enumerated()
+            where nested.ctrlHeaderArray != nil
+        {
+            appendControlBlocks(
+                from: nested, depth: depth + 1, container: container,
+                numbering: numbering?.paragraph(childIndex: childIndex)
+            )
         }
     }
 
     // MARK: 표
 
-    func appendTableBlocks(_ table: CoreHwp.HwpTable, controlIndex: Int? = nil) {
+    /// `numbering`은 이 표 컨트롤이 품은 셀 문단들의 번호 열쇠 (#158).
+    func appendTableBlocks(
+        _ table: CoreHwp.HwpTable,
+        controlIndex: Int? = nil,
+        numbering: HwpNumberingScope.Container? = nil
+    ) {
         // 글 앞/뒤로 표는 appendFloatingTableIfNeeded가 흐름 밖에 통째로
         // 배치하므로 저작 폭 (예: 종이 100%)을 단 폭으로 자르지 않는다.
         let info = table.commonCtrlProperty.propertyInfo
@@ -2055,7 +2109,8 @@ private extension HwpPaginator {
             index: index,
             sizeResolver: objectSizeResolver,
             clampToAvailableWidth: info.treatAsChar
-                || HwpParagraphObjectCollector.consumesFlow(info)
+                || HwpParagraphObjectCollector.consumesFlow(info),
+            numbering: numbering
         )
         switch result {
         case let .failure(element):
@@ -2084,7 +2139,8 @@ private extension HwpPaginator {
                 table: table,
                 instanceId: table.commonCtrlProperty.instanceId,
                 pageBreakMode: table.tableProperty.pageBreakMode,
-                headerRowCount: HwpTableSplitter.repeatingHeaderRowCount(of: table)
+                headerRowCount: HwpTableSplitter.repeatingHeaderRowCount(of: table),
+                numbering: numbering
             )
         }
     }
@@ -2152,13 +2208,16 @@ private extension HwpPaginator {
         table: CoreHwp.HwpTable? = nil,
         instanceId: UInt32,
         pageBreakMode: CoreHwp.HwpTableProperty.HwpTablePageBreakMode = .split,
-        headerRowCount: Int = 0
+        headerRowCount: Int = 0,
+        numbering: HwpNumberingScope.Container? = nil
     ) {
         guard !frame.rows.isEmpty else { return }
 
         // 셀 각주 수집용 시작 행 인덱스를 표당 한 번만 만든다 (세그먼트마다
         // 전수 스캔 방지, #15; fallback 셀도 실제 행에 귀속, #23).
         let cellsByRow = table.map { HwpTableLayout.cellRowIndex(for: $0) } ?? [:]
+        // 셀 각주 문단의 번호 열쇠 — 셀 서수 접두 합도 표당 한 번 (#158).
+        let cellNumbering = table.flatMap { table in numbering?.tableCells(of: table) }
 
         if pageBreakMode == .none {
             let tableHeight = frame.rows.reduce(CGFloat(0)) { max($0, $1.rowFrame.maxY) }
@@ -2166,7 +2225,9 @@ private extension HwpPaginator {
                 advanceColumn()
             }
             if table != nil {
-                collectTableCellFootnotes(cellsByRow: cellsByRow, rows: nil)
+                collectTableCellFootnotes(
+                    cellsByRow: cellsByRow, rows: nil, numbering: cellNumbering
+                )
             }
             appendTableSegmentBlock(rows: frame.rows, original: frame, instanceId: instanceId)
             return
@@ -2233,28 +2294,12 @@ private extension HwpPaginator {
             }
 
             // 후보 행의 셀 각주 예약 높이를 미리 반영해 세그먼트를 맞춘다 (#6).
-            // 각주 예약 후 최소 행조차 안 들어가면 remaining을 되돌리지 않고
-            // 새 페이지로 이월한다 — 각주가 이미 claim한 공간에 행을 밀어넣어
-            // 각주 영역과 겹치지 않게 한다 (#11). 셀 각주가 없으면 no-op.
             if table != nil {
-                var notes = anticipatedNotesForNextSegment(
-                    cellsByRow: cellsByRow, remainingRows: rows[cursor...],
-                    remaining: remaining, highestCollectedRow: highestCollectedRow
+                remaining = remainingAfterCellNotes(
+                    remaining, rows: rows[cursor...], headerAllowance: headerAllowance,
+                    cellsByRow: cellsByRow, highestCollectedRow: highestCollectedRow,
+                    numbering: cellNumbering
                 )
-                if notes > 0,
-                   remaining - notes < HwpTableSplitter.minimumRowHeight(rows[cursor...]),
-                   contentHeightUsed > 0
-                {
-                    advanceColumn()
-                    remaining = effectiveContentHeight - headerAllowance
-                    notes = anticipatedNotesForNextSegment(
-                        cellsByRow: cellsByRow, remainingRows: rows[cursor...],
-                        remaining: remaining, highestCollectedRow: highestCollectedRow
-                    )
-                }
-                if notes > 0 {
-                    remaining = max(1, remaining - notes)
-                }
             }
 
             let fill = HwpTableSplitter.fillSegment(rows: rows[cursor...], remaining: remaining)
@@ -2276,7 +2321,10 @@ private extension HwpPaginator {
                 if let maxRow = rowIndexes.max() {
                     let startRow = max(rowIndexes.min() ?? maxRow, highestCollectedRow + 1)
                     if startRow <= maxRow {
-                        collectTableCellFootnotes(cellsByRow: cellsByRow, rows: startRow ... maxRow)
+                        collectTableCellFootnotes(
+                            cellsByRow: cellsByRow, rows: startRow ... maxRow,
+                            numbering: cellNumbering
+                        )
                         highestCollectedRow = maxRow
                     }
                 }
@@ -2297,6 +2345,37 @@ private extension HwpPaginator {
         if cursor < rows.count, let table {
             truncatedTableRowLimits[instanceId, default: []].append((table, highestEmittedRow + 1))
         }
+    }
+
+    /// 후보 행의 셀 각주 예약 높이를 반영한 남은 높이 (#6). 각주 예약 후 최소 행조차
+    /// 안 들어가면 remaining을 되돌리지 않고 새 페이지로 이월한다 — 각주가 이미 claim한
+    /// 공간에 행을 밀어넣어 각주 영역과 겹치지 않게 한다 (#11). 셀 각주가 없으면 값
+    /// 그대로다. 예약은 수집과 같은 번호 열쇠로 잰다 (#158).
+    private func remainingAfterCellNotes(
+        _ remaining: CGFloat,
+        rows: ArraySlice<HwpTableRowFrame>,
+        headerAllowance: CGFloat,
+        cellsByRow: [Int: [(index: Int, cell: CoreHwp.HwpTableCell)]],
+        highestCollectedRow: Int,
+        numbering: HwpNumberingScope.TableCells?
+    ) -> CGFloat {
+        var remaining = remaining
+        var notes = anticipatedNotesForNextSegment(
+            cellsByRow: cellsByRow, remainingRows: rows,
+            remaining: remaining, highestCollectedRow: highestCollectedRow, numbering: numbering
+        )
+        if notes > 0,
+           remaining - notes < HwpTableSplitter.minimumRowHeight(rows),
+           contentHeightUsed > 0
+        {
+            advanceColumn()
+            remaining = effectiveContentHeight - headerAllowance
+            notes = anticipatedNotesForNextSegment(
+                cellsByRow: cellsByRow, remainingRows: rows,
+                remaining: remaining, highestCollectedRow: highestCollectedRow, numbering: numbering
+            )
+        }
+        return notes > 0 ? max(1, remaining - notes) : remaining
     }
 
     /// 세그먼트 표 프레임 산출 (제목 줄 반복 포함)은 HwpTableSplitter에 위임하고,
@@ -2334,10 +2413,12 @@ private extension HwpPaginator {
 
     // MARK: 개체 (글상자/도형/그림)
 
+    /// `numbering`은 이 개체 컨트롤이 품은 글상자 문단들의 번호 열쇠 (#158).
     func appendShapeObjectBlocks(
         components: [CoreHwp.HwpShapeComponent],
         commonProperty: CoreHwp.HwpCommonCtrlProperty,
-        controlIndex: Int? = nil
+        controlIndex: Int? = nil,
+        numbering: HwpNumberingScope.Container? = nil
     ) {
         let size = objectSize(commonProperty: commonProperty, components: components)
 
@@ -2346,7 +2427,8 @@ private extension HwpPaginator {
             commonProperty: commonProperty,
             fallbackWidth: currentPageGeometry.contentFrame.width,
             index: index,
-            sizeResolver: objectSizeResolver
+            sizeResolver: objectSizeResolver,
+            numbering: numbering
         ) {
             appendAnchoredBlock(
                 kind: .textbox,
@@ -3000,6 +3082,8 @@ private extension HwpPaginator {
 
     /// includeTableCells: 표 셀 안 각주 포함 여부 (HwpFootnoteCoordinator 참조)
     /// ordinals: 이 페이지 조각에 실린 top-level 컨트롤 서수 범위 (#95, nil = 전체)
+    /// 문단 커서가 가리키는 문단의 각주를 걷는다 — 번호 열쇠는 `currentParagraphScope`
+    /// 라 `advanceParagraph()` 앞에서만 부른다 (#158).
     func collectFootnotes(
         from paragraph: CoreHwp.HwpParagraph,
         includeTableCells: Bool = true,
@@ -3012,7 +3096,8 @@ private extension HwpPaginator {
             ordinals: ordinals,
             collectsNested: collectsNested,
             environment: noteEnvironment,
-            childParagraphs: Self.childParagraphs(of:)
+            childParagraphs: Self.childParagraphs(of:),
+            numbering: currentParagraphScope
         )
     }
 
@@ -3020,26 +3105,30 @@ private extension HwpPaginator {
     /// cellsByRow는 HwpTableLayout.cellRowIndex — 세그먼트마다 전수 스캔 방지 (#15)
     func collectTableCellFootnotes(
         cellsByRow: [Int: [(index: Int, cell: CoreHwp.HwpTableCell)]],
-        rows: ClosedRange<Int>?
+        rows: ClosedRange<Int>?,
+        numbering: HwpNumberingScope.TableCells? = nil
     ) {
         footnoteCoordinator.collectTableCellFootnotes(
             cellsByRow: cellsByRow,
             rows: rows,
             environment: noteEnvironment,
-            childParagraphs: Self.childParagraphs(of:)
+            childParagraphs: Self.childParagraphs(of:),
+            numbering: numbering
         )
     }
 
     /// 표 세그먼트 크기 산정 전 후보 행의 셀 각주 예약 높이 (HwpFootnoteCoordinator 참조)
     func anticipatedTableCellFootnoteHeight(
         cellsByRow: [Int: [(index: Int, cell: CoreHwp.HwpTableCell)]],
-        rows: ClosedRange<Int>
+        rows: ClosedRange<Int>,
+        numbering: HwpNumberingScope.TableCells? = nil
     ) -> CGFloat {
         footnoteCoordinator.anticipatedTableCellFootnoteHeight(
             cellsByRow: cellsByRow,
             rows: rows,
             environment: noteEnvironment,
-            childParagraphs: Self.childParagraphs(of:)
+            childParagraphs: Self.childParagraphs(of:),
+            numbering: numbering
         )
     }
 
@@ -3049,14 +3138,17 @@ private extension HwpPaginator {
         cellsByRow: [Int: [(index: Int, cell: CoreHwp.HwpTableCell)]],
         remainingRows: ArraySlice<HwpTableRowFrame>,
         remaining: CGFloat,
-        highestCollectedRow: Int
+        highestCollectedRow: Int,
+        numbering: HwpNumberingScope.TableCells?
     ) -> CGFloat {
         let trial = HwpTableSplitter.fillSegment(rows: remainingRows, remaining: remaining)
         let rows = trial.segment.flatMap(\.cells).map(\.row)
         guard let maxRow = rows.max() else { return 0 }
         let startRow = max(rows.min() ?? maxRow, highestCollectedRow + 1)
         guard startRow <= maxRow else { return 0 }
-        return anticipatedTableCellFootnoteHeight(cellsByRow: cellsByRow, rows: startRow ... maxRow)
+        return anticipatedTableCellFootnoteHeight(
+            cellsByRow: cellsByRow, rows: startRow ... maxRow, numbering: numbering
+        )
     }
 
     // MARK: 미주 (문서/구역 끝)
@@ -3075,8 +3167,9 @@ private extension HwpPaginator {
         // 구분선 오버헤드 없이 실제 배치 높이만 본다).
         if let first = pendingEndnotes.first,
            currentColumnFrame.minY > currentPageGeometry.contentFrame.minY,
-           measuredFootnoteHeight(of: first.paragraph, number: first.number)
-           > effectiveContentHeight
+           measuredFootnoteHeight(
+               of: first.paragraph, number: first.number, numbering: first.numbering
+           ) > effectiveContentHeight
         {
             cacheCurrentPage()
         }
@@ -3136,20 +3229,27 @@ private extension HwpPaginator {
 
     /// 이 문단이 페이지에 추가될 때 각주 영역이 요구할 높이 (커밋 전 예측용,
     /// HwpFootnoteCoordinator 참조)
+    /// 번호 열쇠는 문단 커서의 것이라 `advanceParagraph()` 앞에서만 부른다 (#158).
     func anticipatedFootnoteHeight(for paragraph: CoreHwp.HwpParagraph) -> CGFloat {
         footnoteCoordinator.anticipatedFootnoteHeight(
             for: paragraph,
             environment: noteEnvironment,
-            childParagraphs: Self.childParagraphs(of:)
+            childParagraphs: Self.childParagraphs(of:),
+            numbering: currentParagraphScope
         )
     }
 
     /// 각주 문단 높이 측정 (라인 캐시 우선, HwpFootnoteCoordinator 참조)
-    func measuredFootnoteHeight(of paragraph: CoreHwp.HwpParagraph, number: Int) -> CGFloat {
+    func measuredFootnoteHeight(
+        of paragraph: CoreHwp.HwpParagraph,
+        number: Int,
+        numbering: HwpNumberingScope? = nil
+    ) -> CGFloat {
         footnoteCoordinator.measuredFootnoteHeight(
             of: paragraph,
             number: number,
-            environment: noteEnvironment
+            environment: noteEnvironment,
+            numbering: numbering
         )
     }
 

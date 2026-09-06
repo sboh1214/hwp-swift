@@ -29,37 +29,60 @@ final class FixtureNumberingLabelRenderTests: XCTestCase {
         text.attribute(HwpAttributedStringKey.numberingLabel, at: 0, effectiveRange: nil) != nil
     }
 
-    /// 문서 순서의 라벨 목록 — 라벨 표식이 붙은 블록의 라벨 글자(빈칸 제외).
+    /// 문서 순서의 라벨 목록 — 라벨 표식이 붙은 텍스트 단위(본문 블록과 표 셀·글상자·
+    /// 각주 안 문단, #158)의 라벨 글자(빈칸 제외). 렌더와 같은 walker로 걷는다.
     private static func labels(in document: HwpDocument) -> [String] {
-        document.pages.flatMap(\.blocks).compactMap { block -> String? in
-            guard let text = block.attributedString, text.length > 0 else { return nil }
-            var range = NSRange(location: NSNotFound, length: 0)
-            let marked = text.attribute(
-                HwpAttributedStringKey.numberingLabel, at: 0,
-                longestEffectiveRange: &range, in: NSRange(location: 0, length: text.length)
-            )
-            guard marked != nil else { return nil }
-            return (text.string as NSString).substring(with: range)
-                .trimmingCharacters(in: .whitespaces)
+        var labels: [String] = []
+        for block in document.pages.flatMap(\.blocks) where block.role == .body {
+            HwpBlockContentWalker.walkText(block: block) { text, _, _ in
+                guard text.length > 0 else { return }
+                var range = NSRange(location: NSNotFound, length: 0)
+                let marked = text.attribute(
+                    HwpAttributedStringKey.numberingLabel, at: 0,
+                    longestEffectiveRange: &range, in: NSRange(location: 0, length: text.length)
+                )
+                guard marked != nil else { return }
+                labels.append((text.string as NSString).substring(with: range)
+                    .trimmingCharacters(in: .whitespaces))
+            }
         }
+        return labels
     }
 
-    /// `numbering-sequence` 쌍: 최상위 문단 18개의 라벨이 한글.app 복사 텍스트
-    /// (픽스처 README의 표)와 같은 순서·같은 글자로 쪽에 실린다 — HWP·HWPX 동일.
-    /// 표 셀의 `9.`·`10.`은 컨테이너 문단이라 아직 라벨이 없다(#151 후속).
+    /// `numbering-sequence` 쌍: 문단 20개의 라벨이 한글.app 복사 텍스트(픽스처 README의
+    /// 표)와 같은 순서·같은 글자로 쪽에 실린다 — HWP·HWPX 동일. 3쪽 표 셀의 `9.`·`10.`
+    /// (#158)은 표를 품은 문단 `5.` 뒤·표 뒤 문단 `6.` 앞이다. 셀 라벨은 화면(paint
+    /// list = PDF)·복사 텍스트·접근성 낭독에 함께 실린다.
     func testNumberingSequenceLabelsMatchHancomInBothFormats() async throws {
         let expected = [
             "1.", "가.", "1.", "2.", "3.", "나.", "가)", "1.", "1)", "나.", "2.", "3.", "2.",
-            "7.", "4.", "5.", "6.", "11.",
+            "7.", "4.", "5.", "9.", "10.", "6.", "11.",
         ]
         for hwpx in [false, true] {
+            let format = hwpx ? "HWPX" : "HWP"
             let document = try await Self.load("numbering-sequence", hwpx: hwpx)
-            expect(Self.labels(in: document)).to(
-                equal(expected), description: hwpx ? "HWPX" : "HWP"
-            )
+            expect(Self.labels(in: document)).to(equal(expected), description: format)
             let headingHints = document.unsupportedElements.map(\.hint)
-                .filter { $0.contains("번호 문단 머리") }
-            expect(headingHints).to(beEmpty(), description: hwpx ? "HWPX" : "HWP")
+                .filter { $0.contains("문단 머리") }
+            expect(headingHints).to(beEmpty(), description: format)
+
+            let painted = FixtureText.extractFromPaintList(document)
+                .components(separatedBy: "\n")
+            expect(painted).to(contain("9. Cell one", "10. Cell two"), description: format)
+            let geometry = HwpSelectionGeometry(document: document)
+            let selection = try XCTUnwrap(geometry.documentSelection())
+            let copied = geometry.plainText(for: selection).components(separatedBy: .newlines)
+            expect(copied).to(
+                contain("5. ", "9. Cell one", "10. Cell two", "6. After table numbered"),
+                description: format
+            )
+            let cellPage = try XCTUnwrap(document.pages.first { page in
+                page.blocks.contains { $0.kind == .table }
+            })
+            let spoken = HwpAccessibilityContent.pageUnits(
+                page: cellPage, bodyUnits: HwpSelectableText.units(in: cellPage)
+            ).map(\.label)
+            expect(spoken).to(contain("9. Cell one", "10. Cell two"), description: format)
         }
     }
 
