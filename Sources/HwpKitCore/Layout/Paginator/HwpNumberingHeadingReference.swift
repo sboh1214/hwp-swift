@@ -16,6 +16,7 @@ import Foundation
 /// 진단 문자열(`unsupportedHint`)의 집계 단위는 **문단**이다 — 문단마다 한 건이고
 /// 쪽은 그 문단이 시작한 쪽이다 (`HwpPaginator.collectUnsupportedNumberingHeading`).
 /// 글머리표(종류 3)는 `appendBulletHeading`이 그리므로 대상이 아니다(nil).
+/// 번호 문자열 생성(`HwpParagraphNumbering`, #153)도 같은 해석으로 정의를 찾는다.
 struct HwpNumberingHeadingReference: Equatable {
     /// 문단 머리 종류 (표 44 bit 23-24).
     enum Kind: Equatable {
@@ -89,8 +90,9 @@ struct HwpNumberingHeadingReference: Equatable {
 
     /// `unsupportedElements()`에 실을 진단 문자열.
     ///
-    /// 정의에 닿은 문단은 종전 문구 "(미렌더)"를 그대로 쓴다 — 라벨을 렌더러가
-    /// 아직 만들지 않는다는 뜻이고 #154가 렌더한 문단을 여기서 뺀다. 참조가
+    /// 정의에 닿은 문단은 종전 문구 "(미렌더)"를 그대로 쓴다 — 라벨 문자열은
+    /// `HwpParagraphNumbering`이 만들지만(#153) 렌더러가 아직 그리지 않는다는
+    /// 뜻이고 #154가 렌더한 문단을 여기서 뺀다. 참조가
     /// 없거나 댕글링이면 라벨을 만들 정의 자체가 없으므로 그 사실을 적는다.
     var unsupportedHint: String {
         let subject = switch kind {

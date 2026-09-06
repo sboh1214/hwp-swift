@@ -58,10 +58,10 @@ HWPX(OCF ZIP + OWPML XML, KS X 6101)를 **기존 `Hwp*` 모델로 변환 파싱*
 
 ## 1차 범위 밖 (미해석 강등 — 진단으로 보고됨)
 
-번호 매기기 라벨(정의는 #133, 문단 머리 정보·형식 분해·구역의 개요 번호
-참조는 #152에서 승격됐고 자동 번호 카운터·수준 승계·렌더가 HWP 경로에도
-없다 — 두 포맷 공통 격차라 `HwpPaginator`가 "(미렌더)"로 보고만 한다,
-#153·#154), 각주/미주·머리말/꼬리말
+번호 매기기 라벨 렌더(정의는 #133, 문단 머리 정보·형식 분해·구역의 개요 번호
+참조는 #152, 자동 번호 카운터·수준 승계·라벨 문자열은 #153의
+`HwpParagraphNumbering`(HwpKitCore)이 두 포맷 공통으로 만들고, 그리는 것만
+#154 — 그때까지 `HwpPaginator`가 "(미렌더)"로 보고한다), 각주/미주·머리말/꼬리말
 내용(`.notImplemented`), 도형(line/rect/…)·수식·글상자
 (`.notImplemented`; `hp:default` fallback 없이 `hp:chart`만 오는 문서도 여기 —
 OLE 개체 `hp:ole`은 #134에서 승격됐다), 자동 번호·새 번호·홀/짝수 조정
@@ -120,6 +120,13 @@ HWP 쌍 manifest `pageNumberPositions[0]`과 payload 바이트 동일. (2) 2026-
 `hh:heading`을 표 44 bit 23-24(머리 종류)·bit 25-27(수준)과 1-based
 `numberingOrBulletId`로 이미 옮겼고, 비어 있던 것은 정의 배열뿐이라 조판이
 게이트를 지나고도 `HwpIndex`에서 정의를 못 찾아 아무것도 그리지 않았다.
+수준 필드는 3비트라 저장값 0-7(1-8수준)만 담긴다 — `hh:heading@level`이 그
+밖(9·10수준)이고 머리 종류가 있으면 `& 0b111`로 접지 않고 **머리 종류 없음**으로
+접은 뒤 `heading@level=<값>` 진단 레코드를 남긴다(#153). 그대로 접으면 9수준이
+1수준으로 읽혀 번호 생성이 그럴듯하지만 틀린 라벨을 만들고, 한글 자신도
+바이너리에서 그 수준을 머리 없음으로 저장한다(헌법주석의 `개요 8`·`개요 9` 스타일
+문단 모양이 `headingType == 0`). 탐색 목록은 스타일 이름 폴백으로 그 문단을 여전히
+잡는다.
 
 두 가족은 자식 `hh:paraHead`(표 39 문단 머리 정보 12바이트)를 공유한다. 스펙은
 항목 4개(속성 UINT32 · 너비 보정값 HWPUNIT16 · 본문과의 거리 HWPUNIT16 · 글자
@@ -192,7 +199,7 @@ HWP 쌍과 **바이트 동일**하고, 글머리표는 `info` `08 00 00 00 00 00
 필드는 5.1.0.0 이상에만 있고 HWP 쌍은 5.0.3.4라 배열 자체가 없으므로 **등가
 투영에서 수준 개수를 비교하면 안 된다**. 가드는 `HwpxNumberingMapperTests`
 (비트·센티널·슬롯·상한·강등)·`HwpxHwpEquivalenceTests`(정의 축과 문단 머리 축 —
-번호 정의는 12쌍 전부에서 비어 있지 않고 글머리표는 noori 1쌍뿐이다)·
+번호 정의는 13쌍 전부에서 비어 있지 않고 글머리표는 noori 1쌍뿐이다)·
 `HwpxFixtureRenderTests.testHwpxBulletHeadingsMatchHwpPairs`(선행 `- ` 줄 등식과
 noori 직접 핀)·noori HWPX manifest의 `numberingCount` 2·`bulletCount` 1이다.
 

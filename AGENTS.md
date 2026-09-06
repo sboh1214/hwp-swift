@@ -292,6 +292,7 @@ HWP_HANCOM_FONTS=1 swift test                  # 한컴오피스 번들 폰트 o
 RECORD_RENDER_HASHES=1 swift test --filter FixtureRenderHash     # 렌더 픽셀 해시 기준선 레코딩 (Snapshots/ — gitignore, 이 머신·현재 폰트 모드 전용)
 RECORD_BLOCK_SNAPSHOTS=1 swift test --filter FixtureBlockLayout  # 블록 좌표 스냅샷 재생성 (기준선은 커밋 대상 — diff 리뷰 필수)
 RECORD_RENDER_GOLDENS=1 swift test --filter FixtureRenderGolden  # 결정론 잉크 그리드 골든 재기록 (기준선은 커밋 대상 — diff 리뷰 필수)
+RECORD_NUMBERING_SNAPSHOTS=1 swift test --filter HwpParagraphNumberingFixture  # 문단 번호·개요 번호 라벨 스냅샷 재기록 (기준선은 커밋 대상 — diff 리뷰 필수, 레코딩 뒤 의도적으로 실패)
 xcodebuild test -scheme Hwp-Swift-Package -destination 'platform=iOS Simulator,name=iPhone 17 Pro'  # iOS 테스트 (#if os(iOS) 코드는 여기서만 실행)
 swiftformat .                                  # 포맷
 swiftformat --lint .                           # CI lint 체크
@@ -586,7 +587,11 @@ noori p2에서 비영 셀의 30%까지 지워도 양쪽 통과).
   `HwpNumberingHeadingReference`가 그쪽을 푼다 (`Sources/HwpKitCore/AGENTS.md`).
 - 같은 개요 문단이 **미지원 목록과 탐색 목록에 동시에** 뜨는 것은 의도다 —
   개요를 탐색 대상으로 승격시켜도 생성 라벨을 렌더하게 되는 것은 아니므로
-  "번호가 조용히 사라진다"는 신고는 유지되어야 한다.
+  "번호가 조용히 사라진다"는 신고는 유지되어야 한다. 라벨 문자열 자체는
+  #153부터 `HwpParagraphNumbering`(`Sources/HwpKitCore/Numbering/`)이 조판과
+  무관하게 만든다 — 탐색 목록의 스타일 이름 폴백(`개요 N`)은 **번호의 규칙이
+  아니다**: noori의 표 셀 안 `개요 3` 문단 4개는 머리 종류가 0·3이라 번호가 없다
+  (`Sources/HwpKitCore/AGENTS.md` "문단 번호·개요 번호 생성").
 - **쪽 기준이 둘이다.** 개요는 문단의 **첫 조각이 놓인** 쪽
   (`currentParagraphFirstPlacedPage`), 책갈피는 **호스트 문단의 배치가 끝난**
   쪽(진단 `walkUnsupported`와 같은 기준). 개요에 배치 후 값을 쓰면 쪽 경계를
@@ -613,7 +618,7 @@ noori p2에서 비영 셀의 30%까지 지워도 양쪽 통과).
 - **두 종류의 스코프가 다르다.** 개요는 **최상위 본문 문단만**이다 — 문서의
   목차는 본문 흐름의 제목 계층이지 개체 안 텍스트가 아니고, 실측도 그쪽이다
   (헌법주석의 개요 1,944개는 전부 최상위 본문; `noori`의 개요 4개는 전부
-  표/글상자 안이라 목차 항목이 아니다). 책갈피는 앵커라 어디에 놓이든
+  표 셀 안이라 목차 항목이 아니다). 책갈피는 앵커라 어디에 놓이든
   목적지이므로 **검색과 같은 스코프**(`role == .body`)로 모은다: 머리말/꼬리말은
   빠지고 각주·표 셀·글상자·중첩 표는 들어온다. 모델을 걷는 것이라 여러 쪽에
   걸친 표에서도 셀은 한 번만 순회된다.

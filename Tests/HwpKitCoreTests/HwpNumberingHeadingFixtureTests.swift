@@ -36,24 +36,15 @@ import XCTest
             var sectionReferenceIds: [UInt16] = []
         }
 
-        /// 문단에 붙은 첫 구역 정의 — `HwpPaginator.sectionDef(in:)`과 같은 술어다.
-        /// 헌법주석은 구역 1부터 단 정의가 앞서 첫 컨트롤이 구역 정의가 아니다.
-        private func sectionDef(in paragraph: CoreHwp.HwpParagraph) -> CoreHwp.HwpSectionDef? {
-            for ctrl in paragraph.ctrlHeaderArray ?? [] {
-                if case let .section(sectionDef) = ctrl {
-                    return sectionDef
-                }
-            }
-            return nil
-        }
-
         private func walk(_ file: CoreHwp.HwpFile) -> Walk {
             let index = HwpIndex(from: file)
             var walk = Walk()
             for section in file.displaySectionArray {
                 var sectionDef: CoreHwp.HwpSectionDef?
                 for paragraph in section.paragraph {
-                    if let found = self.sectionDef(in: paragraph) {
+                    // 조판·번호 생성과 같은 술어 — 헌법주석은 구역 1부터 단 정의가
+                    // 앞서 첫 컨트롤이 구역 정의가 아니다.
+                    if let found = HwpPaginator.sectionDef(in: paragraph) {
                         sectionDef = found
                         walk.sectionReferenceIds.append(found.numberParaShapeId)
                     }
@@ -116,7 +107,6 @@ import XCTest
                 let format = try XCTUnwrap(reference.format(in: index))
                 expect(format.format) == expectedFormats[reference.level - 1]
                 expect(format.pattern.referencedLevels) == [reference.level]
-                expect(format.pattern.isSupported) == true
                 let info = try XCTUnwrap(format.paraHeadInfo)
                 expect(info.numberFormat) == [2, 0, 8, 0, 8, 0, 8][reference.level - 1]
                 expect(info.useInstWidth) == true

@@ -18,8 +18,8 @@ import Foundation
    `.level`은 1-9뿐이고, 10수준은 자기 번호를 숫자 참조로 적을 수 없다.
  - `^n`은 1수준부터 **그 정의 수준까지**의 번호를 각 수준의 번호 모양으로
    `.`로 이어 붙인 경로다 (10수준에서 `I.가.1.가.1.가.①.㉮.ㄱ.i`), `^N`은 그
-   뒤에 마침표를 하나 더 찍는다. 렌더는 아직 지원하지 않는다 —
-   `.levelPath`로 구분만 하고 `isSupported`가 거짓이 된다 (#153).
+   뒤에 마침표를 하나 더 찍는다. 문자열 조립은 HwpKitCore의
+   `HwpParagraphNumbering`이 한다 (#153).
  - 그 밖의 캐럿은 지시자가 아니라 **다음 글자와 함께** 문자 그대로 그려진다
    (`^0)`→`^0)`, `^x^^)`→`^x^^)`, `^^1)`→`^^1)`, `^^^1)`→`^^I)`, `^a^1)`→`^aI)`,
    끝의 `^`는 혼자). 캐럿이 짝을 이룬 뒤에야 다음 캐럿이 지시자가 되므로
@@ -30,7 +30,7 @@ import Foundation
    `^^n)` 문자 그대로다.
 
  분해는 순수 함수라 문서 순서·카운터와 무관하다 — 문단별 번호 문자열 조립은
- #153이 이 토큰 위에서 한다.
+ HwpKitCore의 `HwpParagraphNumbering`이 이 토큰 위에서 한다 (#153).
  */
 public struct HwpNumberingFormatPattern: HwpPrimitive {
     /// 형식 문자열의 조각 하나.
@@ -41,7 +41,7 @@ public struct HwpNumberingFormatPattern: HwpPrimitive {
         /// 수준 1-9의 번호 자리 — `^1`…`^9`. 캐럿은 숫자 한 자리만 먹는다.
         case level(Int)
         /// 레벨 경로 — `^n`(1.1.1) 또는 마침표를 하나 더 찍는 `^N`(1.1.1.).
-        /// 스펙에는 있으나 아직 지원하지 않는다.
+        /// 1수준부터 그 정의 수준까지를 각 수준의 번호 모양으로 잇는다.
         case levelPath(trailingPeriod: Bool)
     }
 
@@ -66,23 +66,23 @@ public struct HwpNumberingFormatPattern: HwpPrimitive {
         }
     }
 
-    /// 모든 토큰이 문자 조각이거나 수준 참조인가 — 거짓이면(레벨 경로) 렌더가
-    /// 번호를 만들지 않고 진단으로 남겨야 한다.
-    public var isSupported: Bool {
-        tokens.allSatisfy { token in
-            switch token {
-            case .literal, .level:
-                true
-            case .levelPath:
-                false
-            }
-        }
-    }
-
     /// 형식 문자열을 분해한다.
-    public static func parse(_ format: String) -> HwpNumberingFormatPattern {
+    ///
+    /// `unitCeiling`을 주면 **출력이 그 UTF-16 단위를 채우고도 남을 접두**에서
+    /// 멈춘다 — 수준 참조·레벨 경로 토큰은 적어도 1단위를, 문자 조각은 그 스칼라
+    /// 폭만큼을 내므로, 보장된 출력 단위가 천장에 닿는 순간 나머지 형식은 어떤
+    /// 라벨에도 보이지 않는다. 형식은 표 38의 WORD 길이(65,535 단위)까지 길 수
+    /// 있어 전부 분해하면 토큰 배열이 입력의 몇 배로 부풀고, 정의마다 그 배열을
+    /// 들면 DocInfo 입력 상한 안에서도 GB 단위가 된다(#153 리뷰). 결과는 언제나
+    /// 전체 분해의 접두이고, 마지막 문자 조각만 짧을 수 있다. nil이면 전부
+    /// 분해한다.
+    public static func parse(
+        _ format: String,
+        unitCeiling: Int? = nil
+    ) -> HwpNumberingFormatPattern {
         var tokens: [Token] = []
         var literal = String.UnicodeScalarView()
+        var guaranteedUnits = 0
         func flushLiteral() {
             if !literal.isEmpty {
                 tokens.append(.literal(String(literal)))
@@ -94,31 +94,41 @@ public struct HwpNumberingFormatPattern: HwpPrimitive {
         // 숫자 뒤에 결합 문자가 와도(`^1\u{0301}`) 지시자다. Character 단위로 돌면
         // `1` + U+0301이 한 클러스터로 붙어 `"1"`과 달라져 지시자를 놓친다. 지시자
         // 글자가 전부 BMP ASCII라 스칼라 스캔은 UTF-16 스캔과 결과가 같다.
-        let scalars: [Unicode.Scalar] = Array(format.unicodeScalars)
-        var index = 0
-        while index < scalars.count {
+        // 스칼라 뷰를 **배열로 펼치지 않고** 인덱스로 한 칸 앞을 본다 — 펼치면
+        // 천장이 있어도 65,535단위 형식 전체를 호출마다 복사·디코드한다.
+        let scalars = format.unicodeScalars
+        var index = scalars.startIndex
+        while index < scalars.endIndex {
+            if let unitCeiling, guaranteedUnits >= unitCeiling {
+                break
+            }
             let scalar = scalars[index]
-            let next: Unicode.Scalar? = index + 1 < scalars.count ? scalars[index + 1] : nil
+            let nextIndex = scalars.index(after: index)
+            let next: Unicode.Scalar? = nextIndex < scalars.endIndex ? scalars[nextIndex] : nil
             guard scalar == "^" else {
                 literal.append(scalar)
-                index += 1
+                guaranteedUnits += UTF16.width(scalar)
+                index = nextIndex
                 continue
             }
             if let token = directive(after: next) {
                 flushLiteral()
                 tokens.append(token)
-                index += 2
+                guaranteedUnits += 1
+                index = scalars.index(after: nextIndex)
                 continue
             }
             // 지시자가 아닌 캐럿은 다음 글자를 **함께** 소비해 문자 그대로 남긴다 —
             // 한글.app 실측 `^^1)` → `^^1)`(둘째 캐럿이 1을 먹지 않는다),
             // `^^^1)` → `^^I)`, `^a^1)` → `^aI)`. 끝의 캐럿은 혼자 남는다.
             literal.append(scalar)
+            guaranteedUnits += 1
             if let next {
                 literal.append(next)
-                index += 2
+                guaranteedUnits += UTF16.width(next)
+                index = scalars.index(after: nextIndex)
             } else {
-                index += 1
+                index = nextIndex
             }
         }
         flushLiteral()
@@ -144,6 +154,12 @@ public extension HwpNumberingFormat {
     /// `format`을 문자 조각과 수준 참조로 분해한 결과.
     var pattern: HwpNumberingFormatPattern {
         HwpNumberingFormatPattern.parse(format)
+    }
+
+    /// 출력이 `unitCeiling` UTF-16 단위를 채우고도 남을 접두만 분해한 결과
+    /// (`HwpNumberingFormatPattern.parse(_:unitCeiling:)`).
+    func pattern(unitCeiling: Int) -> HwpNumberingFormatPattern {
+        HwpNumberingFormatPattern.parse(format, unitCeiling: unitCeiling)
     }
 }
 

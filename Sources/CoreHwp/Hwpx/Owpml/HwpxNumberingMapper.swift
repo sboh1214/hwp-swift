@@ -10,9 +10,10 @@ import Foundation
 ///
 /// 조판이 실제로 읽는 것은 `HwpBullet.char` 하나다
 /// (`HwpTextRunBuilder.appendBulletHeading`이 `char + " "`를 문단 앞에 전치).
-/// 번호 문단 머리의 라벨은 HWP 경로에도 없다 — 형식 분해(`HwpNumberingFormatPattern`)
-/// 와 정의 참조 해석은 #152에서 들어왔고 자동 번호 카운터·수준 승계·렌더는
-/// #153·#154 몫이라, `numberingArray` 승격의 성과는 모델·등가·진단까지다.
+/// 번호 문단 머리의 라벨은 두 포맷 공통으로 아직 그리지 않는다 — 형식 분해
+/// (`HwpNumberingFormatPattern`)와 정의 참조 해석은 #152, 자동 번호 카운터·수준
+/// 승계·라벨 문자열은 #153(`HwpParagraphNumbering`, HwpKitCore — HWPX 쌍 등가는
+/// `HwpParagraphNumberingFixtureTests`)에서 들어왔고 렌더만 #154 몫이다.
 ///
 /// 표 39 문단 머리 정보 12바이트는 `HwpParaHeadInfo`로 합성한다 — 바이너리
 /// 파서가 같은 타입으로 디코드하므로 배치가 한 곳(`HwpParaHeadInfo.bytes`)에만

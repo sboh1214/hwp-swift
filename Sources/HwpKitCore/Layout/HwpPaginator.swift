@@ -31,6 +31,15 @@ public actor HwpPaginator {
     private var trackChangeParagraphIds: Set<UInt32> = []
     private var contentHeightUsed: CGFloat = 0
     private var didFinishPagination = false
+    /// 문서 순서로 생성한 문단 번호·개요 번호 (#153). 조판과 무관한 순수 함수의
+    /// 결과라 init에서 한 번 만들고 이후 바뀌지 않는다 — 불변 `Sendable` 값이라
+    /// actor 밖에서도 동기로 읽는다(라벨 렌더 #154의 조판 문자열 조립·복사·
+    /// 접근성은 actor 격리 밖 동기 코드다). 화면에는 아직 그리지 않는다.
+    ///
+    /// init의 동기 순회라 조판의 쪽 단위 지연·취소 관찰 밖이므로 순회 쪽이 스스로
+    /// 유계다 — 걸음 수(`HwpParagraphNumbering.maximumVisitedNodes` — 문단과 컨트롤)·항목
+    /// 수·라벨 길이에 상한이 있고, 감싼 Task가 취소되면 걷다 만다(`isTruncated`).
+    public nonisolated let paragraphNumbering: HwpParagraphNumbering
 
     /// 문서 전역 페이지 상한 — 쪽 나누기 문단·별개 표가 다수면 표당 세그먼트
     /// 상한(maximumTableSegments)만으로는 총 페이지가 무제한이라, 작은 레코드
@@ -266,6 +275,7 @@ public actor HwpPaginator {
         )
         absoluteCachePlacer = HwpAbsoluteCachePlacer(sections: sections)
         outlineCollector = HwpOutlineCollector(index: index)
+        paragraphNumbering = HwpParagraphNumbering.generate(sections: sections, index: index)
         currentPageGeometry = Self.initialGeometry(for: sections)
         currentSectionDef = Self.firstSectionDef(for: sections)
         // init에서는 계산 프로퍼티 (actor-isolated) 대신 저장소에 직접 쓴다.
@@ -363,13 +373,26 @@ extension HwpPaginator {
     nonisolated static func childParagraphs(
         of ctrl: CoreHwp.HwpCtrlId
     ) -> [(CoreHwp.HwpParagraph, HwpBlockKind)] {
+        Array(childParagraphSequence(of: ctrl))
+    }
+
+    /// `childParagraphs(of:)`의 **게으른** 원본 — 같은 순서·같은 분기이고 배열
+    /// 버전은 이것을 펼친 것이다. 컨테이너 하나가 문단 수십만 개를 품어도 순회가
+    /// 상한이나 취소에서 멈추면 그 뒤 문단은 꺼내지 않는다 — 배열로 펼치면 상한을
+    /// 보기도 전에 전체를 복사한다(번호 생성 `HwpParagraphNumbering`, #153).
+    /// 새 컨테이너는 **여기에** 분기를 더한다.
+    nonisolated static func childParagraphSequence(
+        of ctrl: CoreHwp.HwpCtrlId
+    ) -> AnySequence<(CoreHwp.HwpParagraph, HwpBlockKind)> {
         switch ctrl {
         case let .header(list), let .footer(list):
-            list.listArray.flatMap(\.paragraphArray).map { ($0, HwpBlockKind.text) }
+            AnySequence(list.listArray.lazy.flatMap(\.paragraphArray).map { ($0, HwpBlockKind.text) })
         case let .footnote(list), let .endnote(list):
-            list.listArray.flatMap(\.paragraphArray).map { ($0, HwpBlockKind.footnote) }
+            AnySequence(
+                list.listArray.lazy.flatMap(\.paragraphArray).map { ($0, HwpBlockKind.footnote) }
+            )
         case let .table(table):
-            table.cellArray.flatMap(\.paragraphArray).map { ($0, HwpBlockKind.table) }
+            AnySequence(table.cellArray.lazy.flatMap(\.paragraphArray).map { ($0, HwpBlockKind.table) })
         case let .shape(shape),
              let .line(shape),
              let .rectangle(shape),
@@ -382,29 +405,55 @@ extension HwpPaginator {
              let .picture(shape),
              let .ole(shape),
              let .container(shape):
-            shape.shapeComponentArray
-                .flatMap(\.textBoxListArray)
-                .flatMap(\.paragraphArray)
-                .map { ($0, HwpBlockKind.textbox) }
+            AnySequence(
+                shape.shapeComponentArray.lazy
+                    .flatMap(\.textBoxListArray)
+                    .flatMap(\.paragraphArray)
+                    .map { ($0, HwpBlockKind.textbox) }
+            )
         case let .genShapeObject(genShape):
-            genShape.shapeComponentArray
-                .flatMap(\.textBoxListArray)
-                .flatMap(\.paragraphArray)
-                .map { ($0, HwpBlockKind.textbox) }
+            AnySequence(
+                genShape.shapeComponentArray.lazy
+                    .flatMap(\.textBoxListArray)
+                    .flatMap(\.paragraphArray)
+                    .map { ($0, HwpBlockKind.textbox) }
+            )
         default:
-            []
+            AnySequence([])
         }
     }
 }
 
-private extension HwpPaginator {
-    static func firstSectionDef(for sections: [CoreHwp.HwpSection]) -> CoreHwp.HwpSectionDef? {
+/// 구역 정의 술어 — 조판·번호 생성(`HwpParagraphNumbering`)·픽스처 테스트가 같은
+/// 정의를 쓴다. actor 상태를 읽지 않는 순수 함수라 `nonisolated static`이다.
+extension HwpPaginator {
+    /// 문서의 첫 구역 정의 — 첫 문단에 없어도 문단을 차례로 훑어 찾는다.
+    nonisolated static func firstSectionDef(
+        for sections: [CoreHwp.HwpSection]
+    ) -> CoreHwp.HwpSectionDef? {
         sections.lazy
             .flatMap(\.paragraph)
             .compactMap { sectionDef(in: $0) }
             .first
     }
 
+    /// 문단에 붙은 첫 구역 정의. 헌법주석은 구역 1부터 단 정의가 앞서 첫 컨트롤이
+    /// 구역 정의가 아니므로 컨트롤 배열 전체를 본다.
+    nonisolated static func sectionDef(
+        in paragraph: CoreHwp.HwpParagraph
+    ) -> CoreHwp.HwpSectionDef? {
+        // 첫 구역 정의에서 멈춘다 — `compactMap(...).first`는 배열 전체를 훑고
+        // 중간 배열까지 만든다.
+        for ctrl in paragraph.ctrlHeaderArray ?? [] {
+            if case let .section(sectionDef) = ctrl {
+                return sectionDef
+            }
+        }
+        return nil
+    }
+}
+
+private extension HwpPaginator {
     static func initialGeometry(for sections: [CoreHwp.HwpSection]) -> HwpPageGeometry {
         let sectionDef = firstSectionDef(for: sections) ?? CoreHwp.HwpSectionDef()
         return HwpPageGeometry.compute(pageDef: sectionDef.pageDef, sectionDef: sectionDef)
@@ -413,15 +462,6 @@ private extension HwpPaginator {
     static func initialNoteNumber(startingNumber: UInt16?) -> Int {
         let starting = Int(startingNumber ?? 1)
         return starting > 0 ? starting : 1
-    }
-
-    static func sectionDef(in paragraph: CoreHwp.HwpParagraph) -> CoreHwp.HwpSectionDef? {
-        paragraph.ctrlHeaderArray?.compactMap { ctrl in
-            if case let .section(sectionDef) = ctrl {
-                return sectionDef
-            }
-            return nil
-        }.first
     }
 
     static func columnDef(in paragraph: CoreHwp.HwpParagraph) -> CoreHwp.HwpColumn? {
@@ -1579,9 +1619,9 @@ private extension HwpPaginator {
     }
 
     /// 개요(머리 종류 1)/번호(2) 문단 머리의 생성 라벨은 numbering 정의에 있고
-    /// PARA_TEXT에 없다 — 렌더러가 아직 그 라벨을 만들지 않으므로, 번호가
-    /// 조용히 사라지지 않게 unsupported로 보고한다. 글머리표(3)는
-    /// appendBulletHeading이 렌더하므로 제외 (#1).
+    /// PARA_TEXT에 없다 — 라벨 문자열은 `paragraphNumbering`이 만들지만(#153)
+    /// 렌더러가 아직 그리지 않으므로, 번호가 조용히 사라지지 않게 unsupported로
+    /// 보고한다. 글머리표(3)는 appendBulletHeading이 렌더하므로 제외 (#1).
     ///
     /// 참조 해석은 `HwpNumberingHeadingReference`다 (#152) — 개요는 문단 모양이
     /// 아니라 **현재 구역 정의**의 `numberParaShapeId`를 따르므로, 종전의
