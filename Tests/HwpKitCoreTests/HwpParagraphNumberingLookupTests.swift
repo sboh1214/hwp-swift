@@ -320,12 +320,9 @@ import XCTest
             _ = await paginator.totalPages()
             let after = paginator.paragraphNumbering
             expect(after) == expected
-            // 진단은 그대로 "(미렌더)"다 — 라벨은 아직 그리지 않는다 (#154).
+            // 번호가 있는 문단은 라벨을 그리므로 진단이 없다 (#154).
             let hints = await paginator.unsupportedElements().map(\.hint)
-            expect(hints) == [
-                "개요 번호 문단 머리 (미렌더)", "개요 번호 문단 머리 (미렌더)",
-                "번호 매기기 문단 머리 (미렌더)",
-            ]
+            expect(hints).to(beEmpty())
         }
 
         /// 컨테이너 자식은 게으른 원본(`childParagraphSequence`)과 배열

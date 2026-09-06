@@ -86,9 +86,15 @@ public struct HwpTextRunBuilder {
     /// controlReplacements: extended 컨트롤 ordinal (controlIndex) → 마커 대신
     /// 방출할 텍스트. 각주 참조 번호 (본문)와 자동 번호 (각주 문단 첫머리) 치환에
     /// 쓴다. 치환된 run은 폭 0 예약 대신 실제 글리프 폭을 차지한다.
+    ///
+    /// number: 이 문단에 생성된 문단 번호·개요 번호 (#154) — 라벨을 문단 앞에
+    /// 전치한다 (`appendParagraphHeading`). 최상위 문단은 `HwpPaginator`가
+    /// `paragraphNumbering`에서 찾아 넘기고, 경로를 나르지 않는 호출부(컨테이너
+    /// 문단·메모)는 nil이라 글머리표만 전치된다.
     public func build(
         paragraph: CoreHwp.HwpParagraph,
         controlReplacements: [Int: HwpControlMarkerReplacement] = [:],
+        number: HwpParagraphNumber? = nil,
         maxCharacters: Int = .max
     ) -> NSAttributedString {
         // 입력 문자를 상한까지만 처리해 거대 문단 build 비용을 제한한다 (메모 표시
@@ -97,10 +103,11 @@ public struct HwpTextRunBuilder {
         // 잘리지 않은 문단만 빈 문단 앵커 후보다 (#145) — 상한으로 잘린 결과는
         // 종전대로 빈 채로 둔다 (`finishBuild`).
         let isWhole = units.count == (paragraph.paraText?.charArray.count ?? 0)
-        guard !units.isEmpty else { return finishBuild(.init(), paragraph: paragraph, whole: isWhole) }
-
+        // 문단 머리는 글자가 없는 문단(PARA_TEXT 없음)에도 붙는다 — 번호는 문단
+        // 모양·구역 정의로 매겨지므로(#154) 빈 개요 줄도 라벨을 받아야 한다.
         let output = NSMutableAttributedString()
-        appendBulletHeading(for: paragraph, to: output)
+        appendParagraphHeading(for: paragraph, number: number, to: output)
+        guard !units.isEmpty else { return finishBuild(output, paragraph: paragraph, whole: isWhole) }
         // 글자 모양/변경추적/메모 앵커를 문자마다 처음부터 재스캔하면 문단당
         // O(문자×run)이 된다 — position(wcharPosition)이 단조 증가하므로 각
         // 커서를 앞으로만 밀어 sweep한다 (#10, #11). 결과는 전수 스캔과 동일.

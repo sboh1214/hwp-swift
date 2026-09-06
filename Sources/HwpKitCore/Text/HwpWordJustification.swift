@@ -55,12 +55,29 @@ public enum HwpWordJustification {
         let targetWidth = targetWidth(style: style, availableWidth: availableWidth)
         guard targetWidth > 1 else { return nil }
 
-        // 뒤쪽 공백을 제외한 본문 범위에서 늘릴 공백 위치를 모은다
-        let spaceOffsets = stretchableSpaceOffsets(in: string, range: nsRange)
-        guard !spaceOffsets.isEmpty else { return nil }
+        // 뒤쪽 공백을 제외한 본문 범위에서 늘릴 공백 위치를 모은다. 문단 번호
+        // 라벨의 거리 빈칸(`numberingLabel` 표식, #154)은 단어 간격이 아니라 정의가
+        // 정한 거리라 늘리지 않는다 — 늘리면 첫 줄 본문 시작이 자동 내어쓰기로 맞춘
+        // 둘째 줄보다 오른쪽으로 튄다.
+        let substring = attributedString.attributedSubstring(from: nsRange)
+        let (spaceOffsets, excludedLabelSpaces) = stretchableSpaceOffsets(
+            in: string, range: nsRange, attributedString: attributedString
+        )
+        // 늘릴 곳: 단어 간격이 있으면 빈칸, 라벨 빈칸뿐이면 본문 글자 사이 (CT의
+        // 프레임 정렬은 라벨 빈칸까지 늘리므로 한글처럼 글자 사이만 균등하게
+        // 벌린다). 라벨도 빈칸도 없는 줄은 CT 기본 정렬 그대로다.
+        let stretchRanges: [NSRange]
+        if spaceOffsets.isEmpty {
+            guard excludedLabelSpaces else { return nil }
+            stretchRanges = interCharacterRanges(in: substring)
+            guard !stretchRanges.isEmpty else {
+                return (line: CTLineCreateWithAttributedString(substring), xOffset: 0)
+            }
+        } else {
+            stretchRanges = spaceOffsets.map { NSRange(location: $0, length: 1) }
+        }
 
         // 자연 폭 (문단 스타일 정렬은 CTLine 단독 조판에 적용되지 않는다)
-        let substring = attributedString.attributedSubstring(from: nsRange)
         let naturalLine = CTLineCreateWithAttributedString(substring)
         let naturalWidth = CGFloat(CTLineGetTypographicBounds(naturalLine, nil, nil, nil))
             - CGFloat(CTLineGetTrailingWhitespaceWidth(naturalLine))
@@ -68,25 +85,45 @@ public enum HwpWordJustification {
         guard extra > 0.25 else { return nil }
 
         let kernPerSpace = distributes
-            ? extra / CGFloat(spaceOffsets.count + 1)
-            : extra / CGFloat(spaceOffsets.count)
+            ? extra / CGFloat(stretchRanges.count + 1)
+            : extra / CGFloat(stretchRanges.count)
         let mutable = NSMutableAttributedString(attributedString: substring)
         let kernKey = kCTKernAttributeName as NSAttributedString.Key
-        for offset in spaceOffsets {
+        for range in stretchRanges {
             // 기존 kern (고정 공백 폭 보정)에 가산 — 교체하면 배분이 기존
             // kern 합만큼 상쇄되어 양쪽 정렬이 무효가 된다 (CCL 실측)
-            let existing = (mutable.attribute(kernKey, at: offset, effectiveRange: nil)
+            let existing = (mutable.attribute(kernKey, at: range.location, effectiveRange: nil)
                 as? NSNumber)?.doubleValue ?? 0
             mutable.addAttribute(
-                kernKey,
-                value: NSNumber(value: existing + Double(kernPerSpace)),
-                range: NSRange(location: offset, length: 1)
+                kernKey, value: NSNumber(value: existing + Double(kernPerSpace)), range: range
             )
         }
         return (
             line: CTLineCreateWithAttributedString(mutable),
             xOffset: distributes ? kernPerSpace / 2 : 0
         )
+    }
+
+    /// 라벨 빈칸만 있는 줄의 글자 사이 벌림 자리 — 라벨 범위(`numberingLabel`)와
+    /// 뒤쪽 공백을 뺀 본문의 글자(결합 문자 단위)마다 그 범위, 마지막 글자는 제외
+    /// (마지막 글자 뒤 kern은 줄 폭 밖으로 나간다).
+    private static func interCharacterRanges(in substring: NSAttributedString) -> [NSRange] {
+        let string = substring.string as NSString
+        var contentLength = substring.length
+        while contentLength > 0, isStretchableSpace(string.character(at: contentLength - 1)) {
+            contentLength -= 1
+        }
+        var ranges: [NSRange] = []
+        string.enumerateSubstrings(
+            in: NSRange(location: 0, length: contentLength),
+            options: [.byComposedCharacterSequences, .substringNotRequired]
+        ) { _, range, _, _ in
+            guard substring.attribute(
+                HwpAttributedStringKey.numberingLabel, at: range.location, effectiveRange: nil
+            ) == nil else { return }
+            ranges.append(range)
+        }
+        return Array(ranges.dropLast())
     }
 
     /// 오른쪽 여백 (tailIndent ≤ 0 = 오른쪽 끝에서의 오프셋)만큼 줄 폭을 줄인다
@@ -147,11 +184,13 @@ public enum HwpWordJustification {
         return alignment
     }
 
-    /// 뒤쪽 공백을 제외한 줄 본문에서 늘릴 공백의 줄-내 오프셋 목록
+    /// 뒤쪽 공백을 제외한 줄 본문에서 늘릴 공백의 줄-내 오프셋 목록과, 라벨 빈칸을
+    /// 제외했는지.
     private static func stretchableSpaceOffsets(
         in string: NSString,
-        range: NSRange
-    ) -> [Int] {
+        range: NSRange,
+        attributedString: NSAttributedString
+    ) -> (offsets: [Int], excludedLabelSpaces: Bool) {
         var contentLength = range.length
         while contentLength > 0,
               isStretchableSpace(string.character(at: range.location + contentLength - 1))
@@ -159,12 +198,20 @@ public enum HwpWordJustification {
             contentLength -= 1
         }
         var offsets: [Int] = []
+        var excluded = false
         for offset in 0 ..< contentLength
             where isStretchableSpace(string.character(at: range.location + offset))
         {
+            if attributedString.attribute(
+                HwpAttributedStringKey.numberingLabel, at: range.location + offset,
+                effectiveRange: nil
+            ) != nil {
+                excluded = true
+                continue
+            }
             offsets.append(offset)
         }
-        return offsets
+        return (offsets, excluded)
     }
 
     /// 늘릴 수 있는 공백: U+0020 (한글 문서의 단어 간격)

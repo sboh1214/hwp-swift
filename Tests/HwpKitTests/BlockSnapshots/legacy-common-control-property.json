@@ -356,8 +356,8 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 17,
-          "textPrefix" : "Yick Wo판"
+          "textLength" : 21,
+          "textPrefix" : "(다) Yick"
         },
         {
           "frame" : [
@@ -412,8 +412,8 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 24,
-          "textPrefix" : "Plessy판결"
+          "textLength" : 28,
+          "textPrefix" : "(2) Ples"
         },
         {
           "frame" : [
@@ -468,8 +468,8 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 4,
-          "textPrefix" : "사실관계"
+          "textLength" : 8,
+          "textPrefix" : "(가) 사실관계"
         },
         {
           "frame" : [
@@ -613,8 +613,8 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 16,
-          "textPrefix" : "검열금지(사전억"
+          "textLength" : 20,
+          "textPrefix" : "(나) 검열금지"
         },
         {
           "frame" : [
@@ -772,8 +772,8 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 4,
-          "textPrefix" : "현행헌법"
+          "textLength" : 7,
+          "textPrefix" : "다. 현행헌법"
         },
         {
           "frame" : [
@@ -927,8 +927,8 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 9,
-          "textPrefix" : "집회․결사의 자"
+          "textLength" : 12,
+          "textPrefix" : "2. 집회․결사"
         },
         {
           "frame" : [
@@ -1175,8 +1175,8 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 27,
-          "textPrefix" : "헌법 제27조가"
+          "textLength" : 30,
+          "textPrefix" : "5. 헌법 제2"
         },
         {
           "frame" : [
@@ -1362,8 +1362,8 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 12,
-          "textPrefix" : "재판청구권의 법"
+          "textLength" : 16,
+          "textPrefix" : "II. 재판청구"
         },
         {
           "frame" : [
@@ -1390,8 +1390,8 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 2,
-          "textPrefix" : "개설"
+          "textLength" : 5,
+          "textPrefix" : "1. 개설"
         },
         {
           "frame" : [
@@ -1446,8 +1446,8 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 15,
-          "textPrefix" : "주관적 공권성과"
+          "textLength" : 18,
+          "textPrefix" : "2. 주관적 공"
         },
         {
           "frame" : [
@@ -1474,8 +1474,8 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 7,
-          "textPrefix" : "주관적 공권성"
+          "textLength" : 10,
+          "textPrefix" : "가. 주관적 공"
         },
         {
           "frame" : [
@@ -1661,8 +1661,8 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 25,
-          "textPrefix" : "법적 효력에 따"
+          "textLength" : 28,
+          "textPrefix" : "다. 법적 효력"
         },
         {
           "frame" : [
@@ -1918,8 +1918,8 @@
           "kind" : "text",
           "payload" : "none",
           "role" : "body",
-          "textLength" : 4,
-          "textPrefix" : "외국문헌"
+          "textLength" : 7,
+          "textPrefix" : "2. 외국문헌"
         },
         {
           "frame" : [

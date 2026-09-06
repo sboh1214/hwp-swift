@@ -65,4 +65,20 @@ public enum HwpAttributedStringKey {
     /// 문자 자체는 빈칸이라 사용자가 입력한 공백과 구별되지 않으므로, 장식
     /// 제거·복사 제외·검색 제외는 이 표식으로만 판정한다.
     public static let emptyLineAnchor = NSAttributedString.Key("hwp.emptyLineAnchor")
+    /// 문단 번호·개요 번호 **라벨** 표식 (NSNumber true, #154) —
+    /// `HwpTextRunBuilder.appendNumberingHeading`이 문단 앞에 전치한 라벨 글자와
+    /// 번호 너비 여백·본문과의 거리를 내는 빈칸에 붙는다. 라벨은 PARA_TEXT에 없는
+    /// 생성 문자열이라 원본 WCHAR 위치가 없다 — 복사 텍스트에는 넣고(한글.app
+    /// 실측: 자동 번호 라벨도 복사된다) 라벨을 가려야 하는 소비자는 이 표식으로
+    /// 판정한다.
+    public static let numberingLabel = NSAttributedString.Key("hwp.numberingLabel")
+    /// 라벨의 자동 내어쓰기 전진량 (pt, NSNumber, #154) — 라벨 폭 + 번호 너비의
+    /// 뒤 여백 + 본문과의 거리(앞 여백은 `numberingFirstLineInset`이 첫 줄 들여쓰기로
+    /// 낸다). 문단 머리 정보의 `autoIndent`가 켜진 라벨 범위에만 붙고
+    /// `HwpParagraphLayout.ParagraphMetrics`가 둘째 줄부터의 `headIndent`에 더한다.
+    public static let numberingHeadIndent = NSAttributedString.Key("hwp.numberingHeadIndent")
+    /// 라벨 앞의 번호 너비 여백 (pt, NSNumber, #154) — 가운데·오른쪽 정렬로 번호 너비
+    /// 안에서 라벨이 밀려난 폭. 글자를 넣지 않고 첫 줄 들여쓰기(`firstLineHeadIndent`)로
+    /// 낸다 — 앞에 빈칸을 넣으면 복사 텍스트가 빈칸으로 시작해 한글.app과 달라진다.
+    public static let numberingFirstLineInset = NSAttributedString.Key("hwp.numberingFirstLineInset")
 }

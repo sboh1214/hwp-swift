@@ -90,19 +90,31 @@ struct HwpNumberingHeadingReference: Equatable {
 
     /// `unsupportedElements()`에 실을 진단 문자열.
     ///
-    /// 정의에 닿은 문단은 종전 문구 "(미렌더)"를 그대로 쓴다 — 라벨 문자열은
-    /// `HwpParagraphNumbering`이 만들지만(#153) 렌더러가 아직 그리지 않는다는
-    /// 뜻이고 #154가 렌더한 문단을 여기서 뺀다. 참조가
-    /// 없거나 댕글링이면 라벨을 만들 정의 자체가 없으므로 그 사실을 적는다.
+    /// 정의에 닿은 문단의 문구는 "(미렌더)"다 — 라벨은 `HwpParagraphNumbering`이
+    /// 만들고(#153) 조판이 전치하므로(#154) `HwpPaginator`는 번호가 있는 문단을
+    /// 보고하지 않는다; 이 문구가 실제로 실리는 것은 정의에 닿았는데 번호가 없는
+    /// 문단(순회 상한·취소 `isTruncated`)뿐이다. 참조가 없거나 댕글링이면 라벨을
+    /// 만들 정의 자체가 없으므로 그 사실을 적는다.
     var unsupportedHint: String {
-        let subject = switch kind {
-        case .outline: "개요 번호 문단 머리"
-        case .numbering: "번호 매기기 문단 머리"
-        }
-        return switch definition {
+        switch definition {
         case .resolved: "\(subject) (미렌더)"
         case .none: "\(subject) (번호 정의 참조 없음)"
         case let .dangling(id): "\(subject) (없는 번호 정의 \(id) 참조)"
+        }
+    }
+
+    /// 정의에는 닿았는데 이 수준의 형식 슬롯이 없을 때(`format(in:)`가 nil — 확장
+    /// 형식이 없는 5.0 저장본의 8수준 이상)의 진단 문자열. 번호는 세어지지만 라벨
+    /// 문자열이 비어 아무것도 그려지지 않으므로, 형식이 **비어 있는** 슬롯(한글에서
+    /// 서식을 지운 것 — 빈 라벨이 맞다)과 갈라 조용히 사라지지 않게 적는다 (#154).
+    var missingFormatHint: String {
+        "\(subject) (\(level)수준 형식 없음)"
+    }
+
+    private var subject: String {
+        switch kind {
+        case .outline: "개요 번호 문단 머리"
+        case .numbering: "번호 매기기 문단 머리"
         }
     }
 }

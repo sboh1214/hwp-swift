@@ -131,8 +131,9 @@ import XCTest
 
         // MARK: - 조판 진단
 
-        /// 진단의 집계 단위는 문단이다 — 개요 문단마다 한 건, 쪽은 문단이 시작한 쪽.
-        func testEachOutlineParagraphYieldsOneDiagnosticOnItsFirstPage() async throws {
+        /// 정의에 닿은 개요 문단은 라벨을 그리므로(#154) 진단이 없다 — 종전의
+        /// "(미렌더)" 한 건은 라벨 전치로 바뀌었고 탐색 목록은 그대로다.
+        func testEachOutlineParagraphRendersItsLabelInsteadOfADiagnostic() async throws {
             let shapes = Dictionary(uniqueKeysWithValues: (UInt32(0) ... 2).map { level in
                 (level + 1, HwpSynthetic.outlineParaShape(levelRawValue: level))
             })
@@ -153,13 +154,48 @@ import XCTest
             let unsupported = await paginator.unsupportedElements()
             let outline = await paginator.outline()
 
-            expect(unsupported.map(\.hint)) == Array(
-                repeating: "개요 번호 문단 머리 (미렌더)", count: 3
+            expect(unsupported.map(\.hint)).to(beEmpty())
+            expect(outline.count) == 3
+            // 라벨 = 정의 형식(`^1.`·`^2.`·`^3.`)에 수준별 첫 번호 — 본문 문단은 없다.
+            let texts = try await Self.blockTexts(of: paginator)
+            expect(texts) == ["1. 제목 0", "1. 제목 1", "1. 제목 2", "본문"]
+        }
+
+        /// 첫 쪽 블록의 조판 문자열 — 라벨 전치를 본문 문단과 함께 본다.
+        static func blockTexts(of paginator: HwpPaginator) async throws -> [String] {
+            let page = try await paginator.page(at: 0)
+            // 구역 정의 문단(컨트롤 마커뿐)은 뺀다.
+            return (page?.blocks.compactMap { $0.attributedString?.string } ?? [])
+                .filter { $0.contains { $0 != "\u{FFFC}" } }
+        }
+
+        /// 정의에 닿았어도 그 수준의 형식 슬롯이 없으면(확장 형식 없는 정의의 8수준)
+        /// 번호는 세어지되 라벨이 비어 아무것도 그려지지 않으므로 "(8수준 형식 없음)"
+        /// 진단이 남는다. 형식 슬롯이 빈 문자열인 수준은 빈 라벨이 맞아 진단도 라벨도
+        /// 없다.
+        func testMissingFormatSlotKeepsADiagnosticButEmptyFormatDoesNot() async throws {
+            let paginator = HwpSynthetic.outlinePaginator(
+                bodyParagraphs: [
+                    try HwpSynthetic.styledParagraph("8수준", paraShapeId: 1),
+                    try HwpSynthetic.styledParagraph("2수준 빈 형식", paraShapeId: 2),
+                    try HwpSynthetic.styledParagraph("1수준", paraShapeId: 3),
+                ],
+                index: HwpSynthetic.outlineIndex(
+                    paraShapes: [
+                        1: HwpSynthetic.outlineParaShape(levelRawValue: 7),
+                        2: HwpSynthetic.outlineParaShape(levelRawValue: 1),
+                        3: HwpSynthetic.outlineParaShape(levelRawValue: 0),
+                    ],
+                    numberings: [0: HwpSynthetic.numberingDefinition(formats: ["^1.", ""])]
+                )
             )
-            expect(unsupported.map(\.page)) == [1, 1, 1]
-            expect(unsupported.allSatisfy { $0.kind == .placeholder }) == true
-            // 진단 건수 = 감지한 개요 문단 수 = 탐색 목록 항목 수.
-            expect(unsupported.count) == outline.count
+
+            _ = await paginator.totalPages()
+            let hints = await paginator.unsupportedElements().map(\.hint)
+            expect(hints) == ["개요 번호 문단 머리 (8수준 형식 없음)"]
+            // 8수준이 먼저 오면 1-7수준은 시작 번호로 매겨진 것으로 치므로 다음 1수준은 2다.
+            let texts = try await Self.blockTexts(of: paginator)
+            expect(texts) == ["8수준", "2수준 빈 형식", "2. 1수준"]
         }
 
         /// 구역 정의의 참조가 0이면 "참조 없음", 정의 밖이면 댕글링으로 보고한다.
@@ -182,8 +218,8 @@ import XCTest
             }
         }
 
-        /// 번호 매기기 문단은 종전대로 문단 모양의 참조를 보고하되, 참조 0도 이제
-        /// 조용히 지나가지 않는다.
+        /// 번호 매기기 문단은 문단 모양의 참조를 따른다 — 정의에 닿으면 라벨을
+        /// 그리고(#154), 참조 0은 조용히 지나가지 않고 진단으로 남는다.
         func testNumberingParagraphsReportTheirOwnReference() async throws {
             let paginator = HwpSynthetic.outlinePaginator(
                 bodyParagraphs: [
@@ -207,10 +243,9 @@ import XCTest
 
             _ = await paginator.totalPages()
             let hints = await paginator.unsupportedElements().map(\.hint)
-            expect(hints) == [
-                "번호 매기기 문단 머리 (미렌더)",
-                "번호 매기기 문단 머리 (번호 정의 참조 없음)",
-            ]
+            expect(hints) == ["번호 매기기 문단 머리 (번호 정의 참조 없음)"]
+            let texts = try await Self.blockTexts(of: paginator)
+            expect(texts) == ["1. 번호 1", "번호 0"]
         }
 
         /// 구역마다 참조가 다르면 각 구역의 문단이 자기 구역의 정의를 본다 —
@@ -244,12 +279,13 @@ import XCTest
 
             _ = await paginator.totalPages()
             let hints = await paginator.unsupportedElements().map(\.hint)
+            // 첫 구역의 두 문단은 둘째 정의로 라벨을 그리고(#154), 댕글링 구역만 남는다.
             expect(hints) == [
-                "개요 번호 문단 머리 (미렌더)",
-                "개요 번호 문단 머리 (미렌더)",
                 "개요 번호 문단 머리 (없는 번호 정의 9 참조)",
                 "개요 번호 문단 머리 (없는 번호 정의 9 참조)",
             ]
+            let texts = try await Self.blockTexts(of: paginator)
+            expect(texts.filter { $0.hasPrefix("1. ") || $0.hasPrefix("2. ") }.count) == 2
         }
     }
 #endif

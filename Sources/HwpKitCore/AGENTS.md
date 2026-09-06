@@ -124,8 +124,13 @@ CoreHwp.HwpFile
 뷰어 노출을 붙일 때 두 채널을 합치지 말 것.
 
 **번호 문단 머리 진단** (#152): 개요(문단 머리 종류 1)·번호 매기기(종류 2)의
-생성 라벨은 아직 렌더하지 않으므로 `collectUnsupportedNumberingHeading`이
-문단마다 "(미렌더)"로 보고한다. 정의 참조는 `Paginator/HwpNumberingHeadingReference`
+생성 라벨은 #154가 그리므로 `collectUnsupportedNumberingHeading`은 **라벨이 나오지
+못한 문단**만 보고한다 — 참조 없음·댕글링은 그 사실을, 정의에 닿았는데 그 수준의
+형식 슬롯 자체가 없으면(확장 형식 없는 5.0 저장본의 8수준 이상 — 번호는 세지만
+라벨이 빈다) "(N수준 형식 없음)"을, 정의·슬롯이 있는데도 번호가 없으면(순회 상한·
+취소로 `isTruncated`) "(미렌더)"를. 형식 슬롯이 **빈 문자열**인 수준은 빈 라벨이
+한글과 같은 결과라 보고하지 않는다. 정의 참조는
+`Paginator/HwpNumberingHeadingReference`
 가 푼다 — **개요는 문단 모양이 아니라 현재 구역 정의의 `numberParaShapeId`**
 (1-based)이고 번호 매기기만 `paraShape.numberingOrBulletId`다. 실문서 개요
 paraShape의 그 값은 전부 0이라 (헌법주석 1,944문단) 종전 `> 0` 게이트로는 한
@@ -134,9 +139,73 @@ paraShape의 그 값은 전부 0이라 (헌법주석 1,944문단) 종전 `> 0` �
 없음)", 정의 배열 밖은 "(없는 번호 정의 N 참조)"로 문구를 가른다 — 빈 문서
 기본값 1을 지어내지 않는다(`sectionDef == nil`이면 참조 없음). 집계 단위는
 문단이고 쪽은 문단이 시작한 쪽이다 (헌법주석 1,944건, 첫 건 13쪽 —
-`FixtureObjectRenderTests`; 조판 없는 집계는 `HwpNumberingHeadingFixtureTests` —
-개요와 번호 매기기가 서로 다른 정의에 닿는 실물은 한글.app으로 만든
-`outline-numbering` 쌍뿐이다). #154가 라벨을 실제로 그린 문단을 이 진단에서 뺀다.
+`FixtureObjectRenderTests`가 라벨 렌더 뒤 0건을 핀한다; 조판 없는 집계는
+`HwpNumberingHeadingFixtureTests` — 개요와 번호 매기기가 서로 다른 정의에 닿는
+실물은 한글.app으로 만든 `outline-numbering` 쌍뿐이다).
+
+**문단 번호·개요 번호 라벨 렌더** (#154, `HwpTextRunBuilderNumbering.swift`):
+`HwpPaginator.measuredParagraph`가 최상위 문단마다 `currentParagraphNumber`
+(`paragraphNumbering`의 위치 열쇠 조회)를 `build(number:)`로 넘기고,
+`appendNumberingHeading`이 글머리표 선례(`appendBulletHeading`)처럼 조판 문자열
+**앞에** `라벨 + 빈칸`을 전치한다 — 라벨 글자는 본문과 같은 chunk 경로를
+**글자마다** 지나(`accumulate`는 호출 단위로 첫 스칼라의 스크립트를 판정하므로
+`(나)`를 통째로 넘기면 `(`의 영문 슬롯이 `나`까지 덮는다) 스크립트 슬롯·장평·
+자간·장식이 같은 규칙이고, 거리 빈칸은 본문 빈칸과 같은 `.english` 슬롯이다.
+라벨 범위에는 `HwpAttributedStringKey.numberingLabel` 표식이 붙는다(복사·낭독·
+검색에는 그대로 실린다 — 한글.app도 자동 번호 라벨을 복사 텍스트에 넣는다).
+양쪽 정렬의 단어 간격 벌림(`HwpWordJustification`)은 이 표식이 붙은 빈칸을
+늘리지 않는다 — 거리는 정의가 정한 값이고, 늘리면 첫 줄 본문 시작이 자동
+내어쓰기로 맞춘 둘째 줄보다 오른쪽으로 튄다(글머리표의 빈칸은 표식이 없어
+종전대로 늘어난다). 빈칸이 라벨 빈칸뿐인 줄(빈칸 없는 한글 본문)은 CT의 프레임
+정렬이 라벨 빈칸까지 늘리므로 본문 글자 사이(결합 문자 단위, 마지막 글자 제외)에
+여분을 균등 배분해 줄 폭을 채운다. 접근성(`HwpAccessibilityContent`)은 낭독
+문자열에 라벨을 넣되 개요 제목 대조는 라벨을 뗀 본문으로 한다 — 제목 수집
+(`HwpOutlineCollector.titleUnits`)은 PARA_TEXT만 담아 라벨이 없다. 표 39 문단 머리
+정보의 해석은 한컴 도움말과 한글.app 12.30 실측(2026-09-06)이다:
+- **글자 모양**: 정의 `charShapeId`가 실재하면 그것, -1이면 **문단 맨 마지막
+  글자의 글자 모양**(도움말 "개요 번호의 글자 모양은 개요 문단의 맨 마지막
+  글자의 글자 모양을 따라갑니다") — 스펙 주석의 "바탕글"이 아니다. 헌법주석
+  개요 1,944문단은 바탕글(휴먼명조 10pt)과 달리 수준별 굵은 글꼴이라 두 해석이
+  갈리고, 실물 13쪽의 제목 띠는 라벨이 제목과 같은 12pt 굵은 글꼴이다.
+- **번호 너비**: 자릿수 맞춤(`useInstWidth`)이면 라벨 실제 폭 + 너비 보정값,
+  해제면 **글자 크기 × 1.5 + 너비 보정값**(라벨이 더 넓으면 라벨 폭;
+  `NumberingHeadingMetrics.fixedWidthEmRatio`) — `outline-numbering` 1수준(오른쪽
+  정렬·보정 2pt)의 라벨이 10pt에서 여백 안쪽 10.8pt, 20pt에서 20.0pt에 놓여
+  글자 크기에 비례하고 보정값은 그대로 더해진다.
+- **정렬**: 번호 너비 안 왼쪽·가운데·오른쪽. 라벨 뒤 남은 폭은 거리 빈칸의
+  kern에, **앞 남은 폭은 첫 줄 들여쓰기**(`numberingFirstLineInset`)에 더한다 —
+  글자를 넣으면 복사 텍스트가 빈칸으로 시작한다.
+- **본문과의 거리**: 비율이면 라벨 글자 크기의 %(헌법주석·기본 정의 전부 50% =
+  0.5em), HWPUNIT이면 절대값(`outline-numbering` 1수준 10pt). 빈칸 한 자의 kern으로
+  낸다 — `applyFixedSpaceWidth`의 0.5em 규칙은 `append`를 거치지 않으므로 이
+  kern이 유일한 폭 근거다.
+- **자동 내어쓰기**(`autoIndent`): 라벨 + 실제로 방출한 거리 빈칸 폭(`gapSpaceWidth`
+  = max(0, 뒤 여백 + 거리) — 음수 너비 보정값이 거리를 삼키면 0)을
+  `numberingHeadIndent`로 실어 `ParagraphMetrics`가 둘째 줄부터의 `headIndent`를 첫 줄
+  본문 시작에 맞춘다(실측: 3수준 두 줄 문단의 둘째 줄이 본문 시작과 같은 x). 해제면
+  둘째 줄은 문단 왼쪽 여백에 남는다(실측: 1수준). **이어지는 조각**(쪽·단 경계 뒤
+  부분 문자열 — `HwpPaginator`의 쪽 분할·단 run·`HwpAbsoluteCachePlacer`·
+  `HwpColumnBandController`·`HwpTableSplitter`)은 독립 CT 프레임으로 다시 조판되므로
+  `HwpParagraphLayout.continuationFragment`가 문단 스타일의 `firstLineHeadIndent`를
+  `headIndent`로 바꿔 단다 — 한글은 이어지는 쪽의 첫 줄을 문단 첫 줄로 취급하지 않고,
+  측정은 문단 전체를 한 프레임으로 재 그 줄들을 이미 `headIndent`에 두었다(들여쓰기
+  문단 전반에 걸친 규칙이라 번호 문단만의 것이 아니다). 바꾸는 범위는 조각의 **첫
+  CT 문단**(첫 문단 구분자까지)뿐이고 조각이 문단 구분자 바로 뒤에서 시작하면 첫
+  줄도 그대로다 — 한 줄 끝(코드 10, `\n`)이나 본문 U+2029 뒤는 측정에서도 CT 문단이
+  새로 시작해 `firstLineHeadIndent`에 놓이므로, 조각 전체를 바꾸면 그 뒤 줄들이
+  측정과 다른 폭으로 접혀 줄 수가 갈린다(측정·렌더 공유 줄바꿈 규약). 경계는
+  `NSString.getParagraphStart`의 문단 정의(LF·CR·CRLF·U+2029)로 CoreText와 같게
+  찾는다 — U+2028·U+0085는 CT가 줄 구분자로만 봐 첫 줄 들여쓰기가 다시 걸리지 않는다.
+실물 대조는 `outline-numbering`(7줄 전부 라벨·본문 x가 한글.app과 0.5pt 이내)과
+헌법주석 13쪽(`1.` 라벨·본문 0.2pt 이내, 제목 띠 가운데 정렬 동일)이고, 가드는
+`HwpNumberingHeadingRenderTests`(합성)·`FixtureNumberingLabelRenderTests`(실물 —
+`numbering-sequence` 쌍 18개 라벨, 복사 텍스트, 헌법주석의 "라벨로 줄이 느는
+문단" 핀)다. 라벨이 절대 캐시 한 줄 문단을 slight-overflow 허용폭(6%) 밖으로
+밀면 두 줄로 접혀 다음 문단과 겹치는데 쪽 수는 캐시 y로 정해져 1,030쪽 핀이
+못 잡는다 — 실폰트(시스템·한컴) 모드 0건, Menlo 결정론 폰트 1건(`(나) Keyishian
+v. Board of Regents…`)을 핀했다. **컨테이너 문단**(표 셀·글상자·각주·머리말)은
+`HwpParagraphNumbering`이 세지만 측정기(`HwpParagraphMeasurer`·표·글상자·각주·쪽
+크롬)가 경로를 나르지 않아 라벨도 진단도 없다 — #151 후속.
 
 **문단 번호·개요 번호 생성** (#153, `Numbering/`): `HwpParagraphNumbering.generate`
 가 구역 배열을 **조판과 무관하게** 한 번 훑어 문단마다 `HwpParagraphNumber`(종류·
@@ -289,7 +358,9 @@ CT 측정보다 우선한다 — 폰트 대체로 줄 수가 부풀어 배치가
 밴드가 비어 있고 라인 캐시가 단별 run (loc 리셋 = 단 경계)을 주면
 `placeCachedColumnRuns`가 한글의 단별 텍스트 배분을 그대로 재현한다 —
 비등폭 단은 라인 수가 아니라 textStartingIndex 글자 위치 비례 (CT 라인
-스냅)로 나뉜다. 캐시가 없으면 라인 단위로 단을 채우고, 본문 텍스트가 첫
+스냅)로 나뉜다. 비례 환산은 조판 문자열 앞에 전치된 생성 라벨(#154,
+`HwpTextRunBuilder.numberingLabelLength`)을 뺀 본문 길이에만 걸고 접두를
+더한다 — 라벨은 WCHAR 스트림에 없어 전체 길이로 환산하면 경계가 앞으로 당겨진다. 캐시가 없으면 라인 단위로 단을 채우고, 본문 텍스트가 첫
 단에만 있으면 밴드를 닫을 때 라인 단위로 균형 재배치한다. 단이 차면
 다음 단, 마지막 단이 차면 새 페이지 (`advanceColumn`).
 

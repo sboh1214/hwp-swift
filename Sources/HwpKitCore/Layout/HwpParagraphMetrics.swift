@@ -84,6 +84,23 @@ extension HwpParagraphLayout {
                 firstLineHeadIndent = marginLeft
                 headIndent = marginLeft - indent
             }
+            // 번호 라벨의 자동 내어쓰기 (#154): 둘째 줄부터를 첫 줄의 본문 시작
+            // (라벨 + 본문과의 거리 뒤)에 맞춘다 — 한컴 도움말 "번호가 차지하는
+            // 너비만큼 자동으로 문단을 내어쓰기하여 본문의 세로 위치를 가지런히
+            // 맞춥니다". 표 43 들여쓰기가 양수면 라벨이 그 뒤에서 시작하므로 거기서
+            // 재고, 음수(수동 내어쓰기)면 그 위에 더한다.
+            // 번호 너비 안 정렬로 라벨 앞에 남는 폭은 첫 줄 들여쓰기다 (실측: 오른쪽
+            // 정렬 1수준의 둘째 줄은 여백에서 시작한다 — 라벨만 밀린다).
+            if let inset = attributedString.flatMap({
+                Self.numberingValue(HwpAttributedStringKey.numberingFirstLineInset, in: $0)
+            }) {
+                firstLineHeadIndent += inset
+            }
+            if let hanging = attributedString.flatMap({
+                Self.numberingValue(HwpAttributedStringKey.numberingHeadIndent, in: $0)
+            }) {
+                headIndent = max(firstLineHeadIndent, headIndent) + hanging
+            }
             tailIndent = -HwpUnits.points(fromHwpUnit: paraShape.marginRight) / 2
             // 문단 간격도 표 43 여백 계열과 같은 1/2 단위 (noori 제목 3행
             // spTop=1200 → 6pt가 실물 간격에 부합)
@@ -122,6 +139,18 @@ extension HwpParagraphLayout {
                 height = max(height, minimumLineHeight)
             }
             return height
+        }
+
+        /// 문단 앞 번호 라벨의 pt 값 표식(자동 내어쓰기 전진량·첫 줄 여백) — 라벨은
+        /// 언제나 조판 문자열의 첫머리라 첫 글자의 속성만 본다
+        /// (`HwpTextRunBuilder.appendNumberingHeading`).
+        static func numberingValue(
+            _ key: NSAttributedString.Key, in attributedString: NSAttributedString
+        ) -> CGFloat? {
+            guard attributedString.length > 0,
+                  let value = attributedString.attribute(key, at: 0, effectiveRange: nil) as? NSNumber
+            else { return nil }
+            return CGFloat(value.doubleValue)
         }
 
         /// 문자열 run들의 최대 글꼴 크기 (비율 줄 간격의 기준 글자 크기)

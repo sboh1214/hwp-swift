@@ -43,6 +43,19 @@ public enum HwpRenderTuning {
         public static let shadowOffsetScale: Double = 1.5
     }
 
+    /// 문단 번호·개요 번호 라벨 (#154)
+    public enum Numbering {
+        /// 번호 너비를 자릿수에 맞추지 않는(`useInstWidth` 해제) 정의의 번호
+        /// 너비 = 라벨 글자 크기 × 이 배율 + 너비 보정값
+        /// (`HwpTextRunBuilder.NumberingHeadingMetrics`).
+        /// 실측: 한글.app 12.30 (2026-09-06) `outline-numbering` 1수준 `I.`
+        /// (오른쪽 정렬·보정 2pt·거리 10pt) — 라벨이 문단 여백에서 10pt일 때
+        /// 10.8pt, 20pt일 때 20.0pt 안쪽에 놓여 너비가 글자 크기에 비례하고
+        /// 보정값은 그대로 더해진다. 검증: 같은 픽스처의 PrvImage fidelity +
+        /// 실물 대조 (`FixtureNumberingLabelRenderTests`).
+        public static let fixedWidthEmRatio: CGFloat = 1.5
+    }
+
     /// 수식 (eqed) 근사 조판
     public enum Equation {
         /// 한글.app은 수식 글리프를 선언 크기의 ~88.5%로 조판한다.

@@ -76,11 +76,15 @@ public enum HwpAccessibilityContent {
 
         let body = bodyUnits.compactMap { unit -> HwpAccessibilityUnit? in
             guard let label = accessibilityLabel(unit.attributedString.string) else { return nil }
+            // 낭독에는 문단 번호·개요 번호 라벨(#154)을 넣되, 제목 대조는 라벨을
+            // 뗀 본문으로 한다 — 개요 제목(`HwpOutlineCollector.titleUnits`)은
+            // PARA_TEXT만 담아 라벨이 없다.
+            let titleCandidate = accessibilityLabel(withoutNumberingLabel(unit.attributedString))
             return HwpAccessibilityUnit(
                 kind: .body,
                 label: label,
                 rect: unit.rect,
-                isHeading: isHeading(label: label, titles: headingTitles)
+                isHeading: isHeading(label: titleCandidate ?? label, titles: headingTitles)
             )
         }
         return headerChrome + body + footerChrome
@@ -145,6 +149,19 @@ public enum HwpAccessibilityContent {
             }
             return collapsed.count < title.count && title.hasPrefix(collapsed)
         }
+    }
+
+    /// 조판 문자열 첫머리의 문단 번호·개요 번호 라벨(`numberingLabel` 표식, 라벨
+    /// 글자 + 거리 빈칸)을 뗀 평문 — 라벨이 없으면 전체.
+    static func withoutNumberingLabel(_ attributed: NSAttributedString) -> String {
+        guard attributed.length > 0 else { return "" }
+        var range = NSRange(location: 0, length: 0)
+        let marked = attributed.attribute(
+            HwpAttributedStringKey.numberingLabel, at: 0,
+            longestEffectiveRange: &range, in: NSRange(location: 0, length: attributed.length)
+        )
+        guard marked != nil, range.location == 0 else { return attributed.string }
+        return (attributed.string as NSString).substring(from: range.length)
     }
 
     /// 제목 수집 (`HwpOutlineCollector.titleUnits` + `collapsedWhitespace`) 과
