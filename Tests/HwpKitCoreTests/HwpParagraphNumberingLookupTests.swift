@@ -225,55 +225,47 @@ import XCTest
             expect(whole.count) == 3
         }
 
-        /// 형식 분해는 정의·수준마다 한 번이다 — 65,535단위 형식을 참조하는 문단이 아무리
-        /// 많아도 문단마다 다시 분해하지 않는다.
-        func testPatternsAreParsedOncePerDefinitionAndLevel() {
-            var cache = HwpNumberingPatternCache()
-            let definition = HwpSynthetic.numberingDefinition(
-                formats: [String(repeating: "^1", count: 30000), "^2.", "^3.", "(^4)", "(^5)", "^6)", "^7)"]
+        /// 컨테이너 자식은 게으른 원본(`childParagraphSequence`)과 배열
+        /// (`childParagraphs`)이 같은 순서·같은 종류다 — 순회는 게으른 쪽을 써 상한·
+        /// 취소에서 멈추면 그 뒤 문단을 꺼내지 않는다.
+        func testLazyChildSequenceMatchesTheArrayTraversal() throws {
+            let table = HwpSynthetic.table(
+                cellWidth: 20000, rowHeights: [2000, 2000],
+                cellParagraphs: [
+                    [[try Self.paragraph("a", shape: 11), try Self.paragraph("b", shape: 9)],
+                     [try Self.paragraph("c", shape: 11)]],
+                    [[try Self.paragraph("d", shape: 11)], []],
+                ]
             )
-            for _ in 0 ..< 1000 {
-                let pattern = cache.pattern(definitionIndex: 0, level: 1, definition: definition)
-                expect(pattern?.tokens.count) == 30000
+            var textbox = try HwpSynthetic.inlineTextboxObject(width: 5000, height: 2000, text: "x")
+            textbox.shapeComponentArray[0].textBoxListArray[0].paragraphArray = [
+                try Self.paragraph("e", shape: 11), try Self.paragraph("f", shape: 1),
+            ]
+            let note = try XCTUnwrap(HwpSynthetic.noteControl(
+                .footnote, paragraphs: [try Self.paragraph("g", shape: 11)]
+            ))
+            for control in [CoreHwp.HwpCtrlId.table(table), .genShapeObject(textbox), note] {
+                let lazy = Array(HwpPaginator.childParagraphSequence(of: control))
+                let eager = HwpPaginator.childParagraphs(of: control)
+                expect(lazy.map(\.0)) == eager.map(\.0)
+                expect(lazy.map(\.1)) == eager.map(\.1)
             }
-            expect(cache.parseCount) == 1
-            expect(cache.pattern(definitionIndex: 0, level: 2, definition: definition)?.tokens)
-                == [.level(2), .literal(".")]
-            // 형식 슬롯이 없는 수준(8, 확장 배열 없음)도 nil을 메모한다.
-            expect(cache.pattern(definitionIndex: 0, level: 8, definition: definition)).to(beNil())
-            expect(cache.pattern(definitionIndex: 0, level: 8, definition: definition)).to(beNil())
-            expect(cache.parseCount) == 3
-            // 다른 정의는 따로 센다.
-            expect(cache.pattern(definitionIndex: 1, level: 1, definition: definition)?.tokens.count)
-                == 30000
-            expect(cache.parseCount) == 4
-        }
+            expect(Array(HwpPaginator.childParagraphSequence(of: HwpSynthetic.bookmarkControl("b")))
+                .isEmpty) == true
 
-        /// 조판기는 init에서 같은 표를 만들어 둔다 — 조판 전에 물어도 전체다.
-        func testPaginatorExposesTheSameTableBeforeAndAfterPagination() async throws {
-            let definition = HwpSynthetic.numberingDefinition(numberFormats: [2, 8, 0, 8, 0, 8, 0])
-            let paragraphs = [
-                try Self.paragraph("I", shape: 1), try Self.paragraph("가", shape: 2),
-                try Self.paragraph("1", shape: 11),
-            ]
-            let index = HwpSynthetic.numberingIndex(numberings: [0: definition])
-            let paginator = HwpSynthetic.outlinePaginator(bodyParagraphs: paragraphs, index: index)
-            let expected = HwpSynthetic.generateNumbering(paragraphs, numberings: [0: definition])
-
-            // 불변 `Sendable` 값이라 actor 격리 없이 동기로 읽는다.
-            let before = paginator.paragraphNumbering
-            expect(before) == expected
-            // 번호 매기기도 같은 정의(1수준 로마 대문자)를 쓰되 카운터는 따로다.
-            expect(before.entries.map(\.number.text)) == ["I.", "가.", "I."]
-            _ = await paginator.totalPages()
-            let after = paginator.paragraphNumbering
-            expect(after) == expected
-            // 진단은 그대로 "(미렌더)"다 — 라벨은 아직 그리지 않는다 (#154).
-            let hints = await paginator.unsupportedElements().map(\.hint)
-            expect(hints) == [
-                "개요 번호 문단 머리 (미렌더)", "개요 번호 문단 머리 (미렌더)",
-                "번호 매기기 문단 머리 (미렌더)",
-            ]
+            // 상한이 셀 하나에서 걸리면 그 뒤 셀 문단은 세지 않는다.
+            var host = try Self.paragraph("표", shape: 9)
+            host.ctrlHeaderArray = [.table(table)]
+            let numbering = HwpParagraphNumbering.generate(
+                sections: [HwpSynthetic.numberingSection(paragraphs: [host])],
+                index: HwpSynthetic.numberingIndex(
+                    numberings: [0: HwpSynthetic.numberingDefinition()]
+                ),
+                maximumEntries: HwpParagraphNumbering.maximumDocumentEntries,
+                maximumVisitedParagraphs: 3
+            )
+            expect(numbering.isTruncated) == true
+            expect(numbering.entries.map(\.number.text)) == ["1."]
         }
     }
 #endif

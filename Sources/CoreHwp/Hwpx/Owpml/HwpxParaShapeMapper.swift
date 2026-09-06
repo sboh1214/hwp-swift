@@ -6,8 +6,27 @@ import Foundation
 /// (표 44) 여기서 bit를 재합성한다 — `HwpParaShapeProperty1`의 파생 접근자
 /// (`alignmentRawValue` 등)와 조판기가 그 bit를 읽기 때문이다.
 enum HwpxParaShapeMapper {
+    /// 표 44 bit 25-27이 담는 문단 수준 저장값(0-기반)의 상한 — 사람이 읽는 8수준.
+    static let maximumHeadingLevelRawValue = 7
+
+    /// 3비트에 담기지 않는 `hh:heading@level`의 진단 payload 접두 —
+    /// `secPr@outlineShapeIDRef=`와 같은 `요소@속성=값` 꼴이다.
+    static let headingLevelDiagnosticPrefix = "heading@level="
+
     /// `hh:paraPr` 하나 → `HwpParaShape`.
-    static func mapParaShape(_ node: HwpxXMLNode, tables: HwpxIdTables) -> HwpParaShape {
+    ///
+    /// 문단 머리 수준은 HWP5 표 44의 3비트 필드라 0-7(1-8수준)만 담긴다. OWPML은
+    /// `hh:heading@level`을 그보다 크게 적을 수 있는데(9·10수준), 그대로 `& 0b111`로
+    /// 접으면 9수준이 1수준으로 읽혀 번호 생성(#153)이 그럴듯하지만 틀린 라벨을
+    /// 만든다. 한글 자신도 바이너리에서 그 수준을 머리 종류 **없음**으로 저장하므로
+    /// (헌법주석의 `개요 8`·`개요 9` 스타일 문단 모양이 `headingType == 0`) 같은
+    /// 값으로 접고, 접었다는 사실을 진단 레코드로 남긴다 — 탐색 목록은 스타일
+    /// 이름(`개요 N`) 폴백으로 그 문단을 여전히 잡는다.
+    static func mapParaShape(
+        _ node: HwpxXMLNode,
+        tables: HwpxIdTables,
+        diagnostics: inout [HwpUnknownRecord]
+    ) -> HwpParaShape {
         let align = node.headFirstChild(named: "align")
         let heading = node.headFirstChild(named: "heading")
         let margin = node.headFirstChild(named: "margin")
@@ -24,12 +43,11 @@ enum HwpxParaShapeMapper {
             ? rawLineSpacingValue
             : Int32(clamping: Int64(rawLineSpacingValue) * 2)
 
-        let headingType = Self.headingTypes[heading?.attribute("type") ?? "NONE"] ?? 0
+        let (headingType, headingLevel) = Self.headingFields(heading, diagnostics: &diagnostics)
         var property1 = lineSpacingKind.rawValue & 0b11
         property1 |= (Self.alignments[align?.attribute("horizontal") ?? "JUSTIFY"] ?? 0) << 2
         property1 |= (headingType & 0b11) << 23
-        property1 |= (UInt32(clamping: heading?.intAttribute("level", default: 0) ?? 0)
-            & 0b111) << 25
+        property1 |= (UInt32(clamping: headingLevel) & 0b111) << 25
         if border?.boolAttribute("connect") == true {
             property1 |= 1 << 28
         }
@@ -160,6 +178,25 @@ extension HwpxParaShapeMapper {
     ]
 
     /// 표 44 bit 23-24 문단 머리 종류: 0 없음, 1 개요, 2 번호, 3 글머리표.
+    /// `hh:heading`의 머리 종류와 저장 수준. 3비트 밖 수준은 머리 종류 없음(0·0)으로
+    /// 접고 진단을 남긴다 — 머리 종류가 없으면 수준은 뜻이 없어 접지 않는다.
+    static func headingFields(
+        _ heading: HwpxXMLNode?,
+        diagnostics: inout [HwpUnknownRecord]
+    ) -> (type: UInt32, level: Int) {
+        let type = headingTypes[heading?.attribute("type") ?? "NONE"] ?? 0
+        let level = heading?.intAttribute("level", default: 0) ?? 0
+        guard type != 0, !(0 ... maximumHeadingLevelRawValue).contains(level) else {
+            return (type, level)
+        }
+        diagnostics.append(HwpUnknownRecord(
+            tagId: hwpxSyntheticTagId,
+            level: 0,
+            payload: Data((headingLevelDiagnosticPrefix + String(level)).utf8)
+        ))
+        return (0, 0)
+    }
+
     static let headingTypes: [String: UInt32] = [
         "NONE": 0, "OUTLINE": 1, "NUMBER": 2, "BULLET": 3,
     ]

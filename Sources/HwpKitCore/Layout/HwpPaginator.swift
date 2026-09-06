@@ -373,13 +373,26 @@ extension HwpPaginator {
     nonisolated static func childParagraphs(
         of ctrl: CoreHwp.HwpCtrlId
     ) -> [(CoreHwp.HwpParagraph, HwpBlockKind)] {
+        Array(childParagraphSequence(of: ctrl))
+    }
+
+    /// `childParagraphs(of:)`의 **게으른** 원본 — 같은 순서·같은 분기이고 배열
+    /// 버전은 이것을 펼친 것이다. 컨테이너 하나가 문단 수십만 개를 품어도 순회가
+    /// 상한이나 취소에서 멈추면 그 뒤 문단은 꺼내지 않는다 — 배열로 펼치면 상한을
+    /// 보기도 전에 전체를 복사한다(번호 생성 `HwpParagraphNumbering`, #153).
+    /// 새 컨테이너는 **여기에** 분기를 더한다.
+    nonisolated static func childParagraphSequence(
+        of ctrl: CoreHwp.HwpCtrlId
+    ) -> AnySequence<(CoreHwp.HwpParagraph, HwpBlockKind)> {
         switch ctrl {
         case let .header(list), let .footer(list):
-            list.listArray.flatMap(\.paragraphArray).map { ($0, HwpBlockKind.text) }
+            AnySequence(list.listArray.lazy.flatMap(\.paragraphArray).map { ($0, HwpBlockKind.text) })
         case let .footnote(list), let .endnote(list):
-            list.listArray.flatMap(\.paragraphArray).map { ($0, HwpBlockKind.footnote) }
+            AnySequence(
+                list.listArray.lazy.flatMap(\.paragraphArray).map { ($0, HwpBlockKind.footnote) }
+            )
         case let .table(table):
-            table.cellArray.flatMap(\.paragraphArray).map { ($0, HwpBlockKind.table) }
+            AnySequence(table.cellArray.lazy.flatMap(\.paragraphArray).map { ($0, HwpBlockKind.table) })
         case let .shape(shape),
              let .line(shape),
              let .rectangle(shape),
@@ -392,17 +405,21 @@ extension HwpPaginator {
              let .picture(shape),
              let .ole(shape),
              let .container(shape):
-            shape.shapeComponentArray
-                .flatMap(\.textBoxListArray)
-                .flatMap(\.paragraphArray)
-                .map { ($0, HwpBlockKind.textbox) }
+            AnySequence(
+                shape.shapeComponentArray.lazy
+                    .flatMap(\.textBoxListArray)
+                    .flatMap(\.paragraphArray)
+                    .map { ($0, HwpBlockKind.textbox) }
+            )
         case let .genShapeObject(genShape):
-            genShape.shapeComponentArray
-                .flatMap(\.textBoxListArray)
-                .flatMap(\.paragraphArray)
-                .map { ($0, HwpBlockKind.textbox) }
+            AnySequence(
+                genShape.shapeComponentArray.lazy
+                    .flatMap(\.textBoxListArray)
+                    .flatMap(\.paragraphArray)
+                    .map { ($0, HwpBlockKind.textbox) }
+            )
         default:
-            []
+            AnySequence([])
         }
     }
 }

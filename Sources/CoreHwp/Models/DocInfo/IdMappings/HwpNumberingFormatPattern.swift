@@ -67,9 +67,22 @@ public struct HwpNumberingFormatPattern: HwpPrimitive {
     }
 
     /// 형식 문자열을 분해한다.
-    public static func parse(_ format: String) -> HwpNumberingFormatPattern {
+    ///
+    /// `unitCeiling`을 주면 **출력이 그 UTF-16 단위를 채우고도 남을 접두**에서
+    /// 멈춘다 — 수준 참조·레벨 경로 토큰은 적어도 1단위를, 문자 조각은 그 스칼라
+    /// 폭만큼을 내므로, 보장된 출력 단위가 천장에 닿는 순간 나머지 형식은 어떤
+    /// 라벨에도 보이지 않는다. 형식은 표 38의 WORD 길이(65,535 단위)까지 길 수
+    /// 있어 전부 분해하면 토큰 배열이 입력의 몇 배로 부풀고, 정의마다 그 배열을
+    /// 들면 DocInfo 입력 상한 안에서도 GB 단위가 된다(#153 리뷰). 결과는 언제나
+    /// 전체 분해의 접두이고, 마지막 문자 조각만 짧을 수 있다. nil이면 전부
+    /// 분해한다.
+    public static func parse(
+        _ format: String,
+        unitCeiling: Int? = nil
+    ) -> HwpNumberingFormatPattern {
         var tokens: [Token] = []
         var literal = String.UnicodeScalarView()
+        var guaranteedUnits = 0
         func flushLiteral() {
             if !literal.isEmpty {
                 tokens.append(.literal(String(literal)))
@@ -84,16 +97,21 @@ public struct HwpNumberingFormatPattern: HwpPrimitive {
         let scalars: [Unicode.Scalar] = Array(format.unicodeScalars)
         var index = 0
         while index < scalars.count {
+            if let unitCeiling, guaranteedUnits >= unitCeiling {
+                break
+            }
             let scalar = scalars[index]
             let next: Unicode.Scalar? = index + 1 < scalars.count ? scalars[index + 1] : nil
             guard scalar == "^" else {
                 literal.append(scalar)
+                guaranteedUnits += UTF16.width(scalar)
                 index += 1
                 continue
             }
             if let token = directive(after: next) {
                 flushLiteral()
                 tokens.append(token)
+                guaranteedUnits += 1
                 index += 2
                 continue
             }
@@ -101,8 +119,10 @@ public struct HwpNumberingFormatPattern: HwpPrimitive {
             // 한글.app 실측 `^^1)` → `^^1)`(둘째 캐럿이 1을 먹지 않는다),
             // `^^^1)` → `^^I)`, `^a^1)` → `^aI)`. 끝의 캐럿은 혼자 남는다.
             literal.append(scalar)
+            guaranteedUnits += 1
             if let next {
                 literal.append(next)
+                guaranteedUnits += UTF16.width(next)
                 index += 2
             } else {
                 index += 1
@@ -131,6 +151,12 @@ public extension HwpNumberingFormat {
     /// `format`을 문자 조각과 수준 참조로 분해한 결과.
     var pattern: HwpNumberingFormatPattern {
         HwpNumberingFormatPattern.parse(format)
+    }
+
+    /// 출력이 `unitCeiling` UTF-16 단위를 채우고도 남을 접두만 분해한 결과
+    /// (`HwpNumberingFormatPattern.parse(_:unitCeiling:)`).
+    func pattern(unitCeiling: Int) -> HwpNumberingFormatPattern {
+        HwpNumberingFormatPattern.parse(format, unitCeiling: unitCeiling)
     }
 }
 

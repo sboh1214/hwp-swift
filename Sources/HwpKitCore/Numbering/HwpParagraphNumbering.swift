@@ -137,8 +137,6 @@ private extension HwpParagraphNumbering {
         let maximumVisitedParagraphs: Int
         var numbers: [HwpParagraphPath: HwpParagraphNumber] = [:]
         var paths: [HwpParagraphPath] = []
-        /// 정의·수준별 형식 분해 메모 — 문단마다 65,535단위 형식을 다시 분해하지 않는다.
-        var patterns = HwpNumberingPatternCache()
         /// 지금까지 걸어 본 문단 수(번호 유무와 무관).
         var visitedParagraphs = 0
         /// 순회를 끝까지 가지 못하고 멈췄는가 — 항목 상한·방문 상한·Task 취소.
@@ -217,7 +215,9 @@ private extension HwpParagraphNumbering {
             visitedParagraphs += 1
             number(paragraph, path: path)
             for (controlIndex, control) in (paragraph.ctrlHeaderArray ?? []).enumerated() {
-                let children = HwpPaginator.childParagraphs(of: control)
+                // 자식 목록은 게으르게 연다 — 컨테이너 하나가 상한보다 많은 문단을
+                // 품어도 배열로 펼치기 전에 상한·취소에서 멈춘다.
+                let children = HwpPaginator.childParagraphSequence(of: control)
                 for (childIndex, (child, _)) in children.enumerated() {
                     guard !didStop else { return }
                     visit(child, path: path.appending(
@@ -260,10 +260,6 @@ private extension HwpParagraphNumbering {
                 definitionIndex: definitionIndex,
                 numbers: levels,
                 text: HwpNumberingLabelFormatter.text(
-                    pattern: patterns.pattern(
-                        definitionIndex: definitionIndex, level: levels.count,
-                        definition: definition
-                    ),
                     definition: definition, level: levels.count, numbers: levels
                 )
             )

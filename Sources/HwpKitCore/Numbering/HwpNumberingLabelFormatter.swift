@@ -12,23 +12,31 @@ import Foundation
 /// 천장에서 멈춘다 — 다 만든 뒤 자르면 그 순간 이미 메모리를 삼킨다. 자르는
 /// 자리는 유니코드 스칼라 경계라 대리 쌍이 쪼개지지 않고, 결과는 언제나 온전한
 /// 라벨의 접두다.
+///
+/// 입력 쪽도 같은 천장으로 자른다 — 형식 분해(`pattern(unitCeiling:)`)는 출력이
+/// 천장을 채우고도 남을 접두에서 멈추므로, 문단마다 분해해도 일은 형식 길이가
+/// 아니라 천장에 비례하고 토큰 배열을 정의마다 들고 있을 필요가 없다(정의 수십
+/// 개의 65,535단위 형식을 전부 분해해 메모하면 그 배열만 GB 단위다).
 enum HwpNumberingLabelFormatter {
-    /// 형식을 그 자리에서 분해하는 편의 진입점 — 한 번 부르는 자리(테스트) 전용이다.
-    /// 문단마다 부르는 순회는 `HwpNumberingPatternCache`로 분해 결과를 메모해
-    /// `text(pattern:definition:level:numbers:)`에 넘긴다.
+    /// - Parameters:
+    ///   - definition: 번호 정의 — 수준별 형식(`format(forLevel:)`)과 번호 모양을 준다.
+    ///   - level: 이 문단의 수준 (1-10).
+    ///   - numbers: 1수준부터 `level`까지의 번호 (`HwpNumberingCounter.number`).
     static func text(
         definition: CoreHwp.HwpNumbering,
         level: Int,
         numbers: [Int]
     ) -> String {
         text(
-            pattern: definition.format(forLevel: level)?.pattern,
+            pattern: definition.format(forLevel: level)?
+                .pattern(unitCeiling: HwpParagraphNumber.textUnitCeiling),
             definition: definition, level: level, numbers: numbers
         )
     }
 
     /// - Parameters:
     ///   - pattern: 이 수준의 형식을 분해한 토큰 — 형식 슬롯이 없으면 nil(빈 라벨).
+    ///     천장 밖 토큰은 어차피 읽히지 않으므로 천장으로 자른 접두면 충분하다.
     ///   - definition: 번호 정의 — 수준별 번호 모양과 시작 번호를 준다.
     ///   - level: 이 문단의 수준 (1-10).
     ///   - numbers: 1수준부터 `level`까지의 번호 (`HwpNumberingCounter.number`).

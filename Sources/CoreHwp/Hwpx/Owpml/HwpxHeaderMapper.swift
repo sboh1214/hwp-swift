@@ -597,8 +597,11 @@ private extension HwpxHeaderMapper {
                 reason: "paraPr definitions exceed the 65,536-entry reference space"
             )
         }
-        mapping.idMappings.paraShapeArray = paraPrs
-            .map { HwpxParaShapeMapper.mapParaShape($0, tables: mapping.idTables) }
+        mapping.idMappings.paraShapeArray = paraPrs.map {
+            HwpxParaShapeMapper.mapParaShape(
+                $0, tables: mapping.idTables, diagnostics: &mapping.unknownRecords
+            )
+        }
         for paraPr in paraPrs {
             mapping.demoteUnconsumed(
                 in: paraPr,

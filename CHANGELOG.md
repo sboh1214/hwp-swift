@@ -59,7 +59,9 @@
   삼키지 못하게 라벨 하나는 `HwpParagraphNumber.textUnitCeiling`(512 UTF-16 단위)
   에서 스칼라 경계로 끊고, 문서 전체는 `HwpParagraphNumbering.maximumDocumentEntries`
   (20,000)와 걷는 문단 수 `maximumVisitedParagraphs`(500,000)에서 멈추며 취소된
-  로드도 걷다 말고 `isTruncated`로 알립니다. 형식 분해는 정의·수준마다 한 번입니다.
+  로드도 걷다 말고 `isTruncated`로 알립니다. 형식 분해도 출력 천장까지만 합니다
+  (`HwpNumberingFormatPattern.parse(_:unitCeiling:)`). HWPX의 `hh:heading@level`이
+  3비트 밖(9·10수준)이면 머리 종류 없음으로 접고 `parseDiagnostics()`에 남깁니다.
   화면·PDF·복사 텍스트에 번호를 넣는 것은 #154입니다.
 
 ### Breaking Changes

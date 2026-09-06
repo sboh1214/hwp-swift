@@ -152,6 +152,34 @@ final class NumberingFormatPatternTests: XCTestCase {
         expect(mixed.referencedLevels) == [1]
     }
 
+    /// 천장을 주면 출력이 그 단위를 채우고도 남을 접두에서 멈춘다 — 토큰은 적어도
+    /// 1단위, 문자 조각은 스칼라 폭만큼을 보장하므로 3만 개 지시자도 천장만큼만
+    /// 분해한다. 결과는 전체 분해의 접두이고 마지막 문자 조각만 짧을 수 있다.
+    func testUnitCeilingStopsParsingAtAPrefixThatFillsTheOutput() {
+        let repeated = String(repeating: "^1", count: 30000)
+        let bounded = HwpNumberingFormatPattern.parse(repeated, unitCeiling: 512)
+        expect(bounded.tokens.count) == 512
+        expect(bounded.tokens.allSatisfy { $0 == .level(1) }) == true
+        expect(HwpNumberingFormatPattern.parse(repeated).tokens.count) == 30000
+
+        // 문자 조각은 스칼라 단위로 폭을 센다 — 2단위 이모지 256개에서 멈추고
+        // 뒤의 지시자는 아예 분해하지 않는다.
+        let emoji = String(repeating: "😀", count: 300) + "^1"
+        let literal = HwpNumberingFormatPattern.parse(emoji, unitCeiling: 512)
+        expect(literal.tokens) == [.literal(String(repeating: "😀", count: 256))]
+        expect(HwpNumberingFormatPattern.parse(emoji).tokens) == [
+            .literal(String(repeating: "😀", count: 300)), .level(1),
+        ]
+        // 접두 성질 — 천장 안에 드는 형식은 전부 분해와 같다.
+        let short = "제^1장 ^n."
+        expect(HwpNumberingFormatPattern.parse(short, unitCeiling: 512))
+            == HwpNumberingFormatPattern.parse(short)
+        let full = HwpNumberingFormatPattern.parse("^1.^2.^3", unitCeiling: 3).tokens
+        expect(full) == [.level(1), .literal("."), .level(2)]
+        expect(HwpNumberingFormat(property: [], formatLength: 0, format: "^1^2")
+            .pattern(unitCeiling: 1).tokens) == [.level(1)]
+    }
+
     /// 인접한 문자는 하나의 조각으로 합치고 빈 형식은 빈 토큰이다.
     func testLiteralsMergeAndEmptyFormatHasNoTokens() {
         expect(HwpNumberingFormatPattern.parse("가나다").tokens) == [.literal("가나다")]
