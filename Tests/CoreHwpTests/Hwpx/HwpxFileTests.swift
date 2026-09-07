@@ -338,21 +338,56 @@ final class HwpxFileTests: XCTestCase {
         xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">\
         <hp:p id="1" paraPrIDRef="0" styleIDRef="0">\
         <hp:run charPrIDRef="0"><hp:secPr id=""/>\
-        <hp:ctrl><hp:newNum id="9"/></hp:ctrl><hp:t>가</hp:t>\
+        <hp:ctrl><hp:pageNumCtrl pageStartsOn="BOTH"/></hp:ctrl><hp:t>가</hp:t>\
         </hp:run></hp:p></hs:sec>
         """
         let hwp = try HwpFile(fromData: makeArchive(sectionXML: section))
 
         let diagnostics = hwp.parseDiagnostics()
-        // 새 번호 지정 강등: notImplementedControl(실제 4CC)과 합성 tagId(0)의
+        // 홀/짝수 조정 강등: notImplementedControl(실제 4CC)과 합성 tagId(0)의
         // unknownRecord 쌍으로 이중 보고된다. 머리말·꼬리말은 #167에서, 각주·
-        // 미주와 자동 번호는 #168에서 typed 승격돼 더 이상 이 경로를 타지 않는다.
+        // 미주와 자동 번호는 #168에서, 새 번호·쪽 감추기·책갈피·찾아보기 표식은
+        // #169에서 typed 승격돼 더 이상 이 경로를 타지 않는다 —
+        // `hp:pageNumCtrl`이 `sectionAttachments`에 남은 유일한 강등 요소다.
         expect(diagnostics.contains { diagnostic in
             diagnostic.kind == .notImplementedControl
-                && diagnostic.ctrlId == HwpOtherCtrlId.newNumber.rawValue
+                && diagnostic.ctrlId == HwpOtherCtrlId.pageCT.rawValue
         }) == true
         expect(diagnostics.contains { diagnostic in
             diagnostic.kind == .unknownRecord && diagnostic.tagId == hwpxSyntheticTagId
+        }) == true
+    }
+
+    /// 승격한 컨트롤이 **소비한 자식 안의** 미지 요소도 진단에 남아야 한다 —
+    /// `hp:indexmark`는 `hp:firstKey`/`hp:secondKey`의 텍스트만 읽으므로, 그
+    /// 안의 낯선 요소는 강등 경로가 서브트리째 남기던 것이다 (#169). 소비 판정이
+    /// 요소 단위라 그냥 두면 승격이 정보를 잃는 방향이 된다.
+    func testParseDiagnosticsReportUnknownChildrenInsideConsumedIndexmarkKeys() throws {
+        let section = """
+        <hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" \
+        xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">\
+        <hp:p id="1" paraPrIDRef="0" styleIDRef="0">\
+        <hp:run charPrIDRef="0"><hp:secPr id=""/>\
+        <hp:ctrl><hp:indexmark><hp:firstKey>가<hp:futureKeyChild/></hp:firstKey>\
+        </hp:indexmark></hp:ctrl><hp:t>가</hp:t>\
+        </hp:run></hp:p></hs:sec>
+        """
+        let hwp = try HwpFile(fromData: makeArchive(sectionXML: section))
+
+        // 찾아보기 표식 자체는 typed 승격이라 notImplementedControl이 아니다.
+        let diagnostics = hwp.parseDiagnostics()
+        expect(diagnostics.contains { diagnostic in
+            diagnostic.kind == .notImplementedControl
+                && diagnostic.ctrlId == HwpOtherCtrlId.indexmark.rawValue
+        }) == false
+        // 키 안의 미지 요소는 합성 tagId(0)로, 그 컨트롤의 미지 자식 자리에
+        // 보고된다 (요소 이름은 record payload에 있고 진단은 경로·tagId만 싣는다 —
+        // 이름까지 잠그는 것은 `HwpxSectionMarkMapperTests`의 몫이다).
+        // 승격 전에는 이 문서의 유일한 진단이 강등된 indexmark였고, 지금은 이
+        // 한 건뿐이다 — 고치기 전에는 아예 없었다.
+        expect(diagnostics.map(\.path)) == ["section[0].paragraph[0].ctrl[1].unknownChild[0]"]
+        expect(diagnostics.allSatisfy {
+            $0.kind == .unknownRecord && $0.tagId == hwpxSyntheticTagId
         }) == true
     }
 

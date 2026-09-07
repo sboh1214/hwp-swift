@@ -118,6 +118,43 @@ final class HwpxHwpEquivalenceTests: XCTestCase {
         expect(hwpxProjection.noteShapes) == hwpProjection.noteShapes
     }
 
+    /// 구역 부속 표식 축이 **비어 있지 않게** 성립하는지 직접 핀한다 (#169).
+    /// 등식만 두면 두 포맷이 함께 `notImplemented`로 접혀도 통과한다 — 승격 전
+    /// HWPX는 넷 다 강등이라 `kind`가 전부 `"notImplemented"`였다.
+    func testSectionMarkPairProjectsTypedMarksOnBothFormats() throws {
+        let hwp = try HwpFile(
+            fromPath: FixtureLoader.load(id: "section-marks").documentURL.path
+        )
+        let hwpx = try HwpFile(
+            fromPath: HwpxFixtureLoader.load(id: "section-marks").documentURL.path
+        )
+        let hwpProjection = DocumentEquivalenceProjection(of: hwp)
+        let hwpxProjection = DocumentEquivalenceProjection(of: hwpx)
+
+        let marks = hwpxProjection.sectionMarks
+        expect(marks.map(\.kind)) == [
+            "indexmark", "pageHide", "newNumber",
+            "pageHide", "newNumber",
+            "indexmark", "newNumber", "bookmark",
+        ]
+        // 새 번호·쪽 감추기는 코드 21, 책갈피·찾아보기 표식은 22다 —
+        // 18은 자동 번호 전용이고 승격 전 강등 표는 `newNum`을 18로 적고 있었다.
+        expect(marks.map(\.controlCharacterCode)) == [22, 21, 21, 21, 21, 22, 21, 22]
+        // 두 표본이 표 145의 여섯 비트를 나눠 덮는다 (0x29 = 머리말·테두리·쪽 번호,
+        // 0x16 = 꼬리말·바탕쪽·배경).
+        expect(marks.compactMap(\.pageHideMask)) == [0x29, 0x16]
+        // 번호 종류 PAGE(0)·PICTURE(3)·FOOTNOTE(1)과 시작 번호.
+        expect(marks.compactMap(\.newNumberKind)) == [0, 3, 1]
+        expect(marks.compactMap(\.newNumberValue)) == [9, 5, 7]
+        expect(marks.compactMap(\.bookmarkName)) == ["표식 A1"]
+        expect(marks.compactMap(\.indexmarkText)) == ["본문", "색인둘본문"]
+        // 책갈피 이름은 컨트롤 payload가 아니라 CTRL_DATA ParameterSet(0x021B)에 있다.
+        expect(marks.last?.rawPayload) == [0x6D, 0x6B, 0x6F, 0x62]
+        expect(marks.last?.ctrlDataPayloads.first?.prefix(12).map { $0 })
+            == [0x1B, 0x02, 0x01, 0x00, 0x00, 0x00, 0x00, 0x40, 0x01, 0x00, 0x05, 0x00]
+        expect(marks) == hwpProjection.sectionMarks
+    }
+
     /// 구역별 개요 번호 참조 축이 **구역마다** 성립하는지 직접 핀한다 (#152) —
     /// multi-section 쌍은 두 구역이 서로 다른 정의(1·2)를 가리킨다. HWPX id를
     /// 숫자 그대로 실으면 여기서는 우연히 맞으므로, 조작 대조는
@@ -151,7 +188,7 @@ final class HwpxHwpEquivalenceTests: XCTestCase {
             )
             comparedCount += 1
         }
-        expect(comparedCount) >= 14
+        expect(comparedCount) >= 15
     }
 }
 
@@ -292,6 +329,10 @@ struct DocumentEquivalenceProjection {
     /// 구역별 각주·미주 모양 (구역마다 각주·미주 순서로 둘) — `hp:footNotePr`·
     /// `hp:endNotePr`가 승격돼야 HWP 쌍과 같은 값이 선다 (#168).
     let noteShapes: [NoteShape]
+    /// 새 번호 지정·쪽 감추기·책갈피·찾아보기 표식 (#169) — 강등 상태면 넷 다
+    /// `kind == "notImplemented"`로 접혀 등식이 깨진다. 제어 문자 코드까지
+    /// 싣는 유일한 축이다 (`nwno`는 18이 아니라 21이다).
+    let sectionMarks: [SectionMark]
 
     init(of file: HwpFile) {
         sectionCount = file.sectionArray.count
@@ -369,6 +410,7 @@ struct DocumentEquivalenceProjection {
         }
         notes = Self.notes(of: file)
         noteShapes = Self.noteShapes(of: file)
+        sectionMarks = Self.sectionMarks(of: file)
     }
 
     /// 문단 머리를 문서 순서(표 셀 재귀 포함)로 모은다 — noori의 글머리표
@@ -541,6 +583,9 @@ struct DocumentEquivalenceProjection {
         expect(notes).to(equal(other.notes), description: "\(fixtureId) notes")
         expect(noteShapes).to(
             equal(other.noteShapes), description: "\(fixtureId) noteShapes"
+        )
+        expect(sectionMarks).to(
+            equal(other.sectionMarks), description: "\(fixtureId) sectionMarks"
         )
     }
 }

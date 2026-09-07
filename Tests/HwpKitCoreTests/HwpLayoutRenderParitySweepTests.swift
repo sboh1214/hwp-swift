@@ -154,9 +154,11 @@ import XCTest
 
         // 2026-09-05 `underline-above` 픽스처 추가로 문단 1·대조 2(폭 2종) 증가,
         // 같은 날 `outline-numbering`(#152) 추가로 문단 7·대조 14 증가, 2026-09-06
-        // `numbering-sequence`(#153, 구역 3·표 셀 2) 추가로 문단 22·대조 44·컨테이너 2 증가.
-        private static let expectedFixtureVisited = 167
-        private static let expectedFixtureMeasured = 320
+        // `numbering-sequence`(#153, 구역 3·표 셀 2) 추가로 문단 22·대조 44·컨테이너 2 증가,
+        // 2026-09-08 `section-marks`(#169, 3쪽 5문단) 추가로 문단 5·대조 10 증가
+        // (컨테이너는 표·글상자가 없어 그대로다).
+        private static let expectedFixtureVisited = 172
+        private static let expectedFixtureMeasured = 330
         private static let expectedFixtureContainers = 52
         private static let minimumFixtureMultiLine = 60
         private static let maximumFixtureSharedCoreSkips = 5

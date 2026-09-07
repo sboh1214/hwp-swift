@@ -59,10 +59,17 @@ HWPX(OCF ZIP + OWPML XML, KS X 6101)를 **기존 `Hwp*` 모델로 변환 파싱*
 ## 1차 범위 밖 (미해석 강등 — 진단으로 보고됨)
 
 도형(line/rect/…)·수식·글상자(`.notImplemented`; `hp:default` fallback 없이
-`hp:chart`만 오는 문서도 여기 — OLE 개체 `hp:ole`은 #134에서 승격됐다), 새 번호·
-홀/짝수 조정(`nwno`·`pgct` — HWPX 픽스처에 사례 없음), 형광펜·변경 추적
-표식(zero-width 진단), 그러데이션/이미지 채우기, 명시 탭 정지, 쪽 테두리.
+`hp:chart`만 오는 문서도 여기 — OLE 개체 `hp:ole`은 #134에서 승격됐다),
+홀/짝수 조정(`hp:pageNumCtrl` → `pgct`), 형광펜·변경 추적 표식(zero-width 진단),
+그러데이션/이미지 채우기, 명시 탭 정지, 쪽 테두리.
 승격 시 대응 요소를 `HwpxControlMapper` 분류표에서 옮긴다.
+
+**구역 부속 컨트롤 중 남은 강등은 `hp:pageNumCtrl` 하나다** (#163의 세 단계가
+#167 머리말·꼬리말, #168 각주·미주·자동 번호, #169 새 번호·쪽 감추기·책갈피·
+찾아보기 표식으로 끝났다). `pgct`는 바이너리 쪽에 표 146의 typed 모델이 없고
+저장소 실물 36종에 사례가 0건이라 payload를 지어내야 하며, 승격해도
+`HwpUnsupportedDetector`가 여전히 "알 수 없음: pageCT"를 낸다 — 실물 표본이
+생길 때 함께 다룬다. `HwpxFileTests`의 강등 진단 핀이 이 요소를 쓴다.
 
 **머리말·꼬리말은 #167에서 승격됐다** (`HwpxHeaderFooterMapper`). `hp:header`·
 `hp:footer` → `.header`/`.footer(HwpListControl)`이고 조판(`HwpPageChromeBuilder`)이
@@ -102,6 +109,76 @@ HWPX(OCF ZIP + OWPML XML, KS X 6101)를 **기존 `Hwp*` 모델로 변환 파싱*
 단선)으로 그린다 (#136). 그래서 등가 투영은 밑줄 종류를 비교하되 raw 2만
 없음으로 접는다 — 진짜 '글자 위'는 raw 3 ↔ `type="TOP"`으로 같은 `.above`에
 모인다 (#149, `underline-above` 쌍).
+
+## 구역 부속 표식 (`hp:newNum`·`hp:pageHiding`·`hp:bookmark`·`hp:indexmark`, #169)
+
+`HwpxSectionMarkMapper`가 넷을 `.newNumber`/`.pageHide`/`.bookmark`/`.indexmark
+(HwpOtherControl)`로 옮긴다. 강등 상태에서는 조판이 **쪽 번호를 되돌리지도
+감추지도 못했다** — `HwpPaginator.applyNewNumbers`와
+`HwpPageChromeBuilder.pageHideMask`가 typed 컨트롤만 보기 때문이다
+(`section-marks` 쌍 실측: 강등 HWPX가 `1·2·3`, HWP 쌍이 `(감춤)·9·10`).
+
+**제어 문자 코드는 새 번호·쪽 감추기 21, 책갈피·찾아보기 표식 22다.** 코드 18은
+자동 번호(`atno`) 전용이고, 승격 전 강등 표는 `newNum`을 18로 적고 있었다 —
+저장소 실물 36종 전수 집계가 `atno` 3,436건 전부 18 · `nwno` 41건 전부 21로
+갈린다. 기존 텍스트 축은 제어 문자를 전부 걸러내고 `controlMask`에는 소비자가
+없어 이 오기를 잡을 축이 없었다 —
+`HwpxHwpEquivalenceSectionMarkProjection`의 `sectionMarks`가 그 자리를 메운다.
+
+payload는 전부 **합성해서 바이너리 로더에 태운다**(`HwpOtherControl.init`) —
+typed 뷰와 로드 옵션 게이트를 한 번에 얻는 #167·#168과 같은 규약이다.
+
+| 요소 | payload | 비고 |
+|---|---|---|
+| `hp:newNum` | 4CC + 속성 UINT32 + 번호 UINT16 = **10바이트** | 16바이트 이상(= trailing 12바이트)이면 레거시 `numberingInfo` 오버레이가 실물에 없는 뷰를 만든다 |
+| `hp:pageHiding` | 4CC + 마스크 UINT32 = **8바이트** | 여섯 불리언 → 표 145 bits 0-5 |
+| `hp:bookmark` | 4CC **4바이트** + `CTRL_DATA` 자식 | 이름은 ParameterSet `0x021B`(item id `0x4000_0000`, type 1) |
+| `hp:indexmark` | 4CC + (길이 WORD + WCHAR)×2 + UINT32 | 마지막 UINT32는 한글 12.30이 -1, 레거시가 0 |
+
+**쪽 감추기 실측이 확정하는 것은 3+3 분할까지다.** `section-marks`의 두 표본이
+서로의 여집합이라(`0x29` = 머리말·쪽 테두리·쪽 번호, `0x16` = 꼬리말·바탕쪽·쪽 배경)
+여섯 이름이 두 삼중항 {0,3,5}·{1,2,4}로 갈리는 것은 정해지고, 레거시 문서의 `0x20`
+표본 35건이 그 중 `hidePageNum = bit 5`를 못박는다. **삼중항 안의 배정은 실측이
+아니다** — 두 표본은 어떤 내부 치환에도 같은 두 값을 내므로 `hideHeader`는 {0, 3},
+`hideFooter`는 {1, 2, 4}까지만 좁혀진다. 코드가 쓰는 배정의 근거는 한컴 공개 모델
+`OWPML/Class/Para/pageHiding.cpp`의 속성 나열과 표 132를 옮긴
+`HwpSectionDefProperty`의 bits 0-5가 일치한다는 대조다. 하필 조판이 읽는 bit 0·1이
+그 미확정 자리이므로, 한 비트만 켠 표본(`머리말`만 등)을 만들면 그때 닫힌다.
+
+**`TOTAL_PAGE`는 승격하지 않는다.** `HwpAutoNumberKind`가 0-5뿐이라 `.page`로
+접히는데, 새 번호의 `.page`는 `pendingPageNumber`를 갈아 **그 뒤 모든 쪽**의
+번호를 바꾼다 — 강등 상태에는 없던 오작동이다. `autoNumberKinds`에 없는 이름은
+자리(코드·4CC)만 지키는 강등 앵커로 되돌린다 (#168 `hp:autoNum`과 같은 규약).
+길이 WORD를 넘는 책갈피·찾아보기 이름도 같은 방식으로 강등한다 — `WORD(count)`가
+트랩하고(P1), 던지면 구역 첫 문단(복구 대상이 아닌 자리)에서 문서 전체가 파싱
+실패가 되기 때문이다.
+
+**소비한 자식 **안의** 미지 요소도 실어야 한다** — `hp:indexmark`는
+`hp:firstKey`/`hp:secondKey`의 텍스트만 읽는데 소비 판정은 요소 단위라, 그냥 두면
+`<hp:firstKey>키<ext:future/></hp:firstKey>`의 `future`가 진단에서 통째로 사라진다
+(강등 경로의 `syntheticUnknownRecord`는 서브트리째 남겼으므로 **승격이 정보를 잃는
+방향**이 된다). 선택한 키 노드의 `unconsumedChildRecords`를 컨트롤의
+`unknownChildren`에 더한다 — `HwpxFootnoteMapper`가 `hp:autoNumFormat`에 쓰는 규약과
+같다. 다른 셋은 `consumed`가 비어 있어 이 함정이 없다.
+
+**미실측**: (1) 쪽 감추기 삼중항 안의 비트 배정(위), (2) `hp:indexmark`의
+`hp:secondKey` — 한글 macOS 12.30에 찾아보기 표식 대화상자가 없어 두 번째 키워드를
+만들 수 없다. 첫 키워드와 같은 (길이 + WCHAR) 꼴로 이어 붙이고 합성 입력으로만
+잠갔다. (3) 문자열 뒤 UINT32의 의미 — 한글 12.30이 -1, 레거시 문서 35건이 0을 쓴다.
+OWPML에 대응 속성이 없어 XML에서 복원할 수 없으므로 최신 저작기 값을 고정했고,
+등가 축은 그 4바이트만 정규화해 비교한다(레거시 저작 쌍이 들어와도 거짓 실패하지
+않게).
+
+가드: `HwpxSectionMarkMapperTests`(비트·기본값·강등·게이트·진단),
+`HwpxHwpEquivalenceTests`(`sectionMarks` 축 + `section-marks` 직접 핀),
+`HwpxFixtureRenderTests`의 `testHwpxPageChromeMatchesHwpPairs`(쪽 크롬
+`[[], ["- 9 -"], ["- 10 -"]]` 직접 핀)와 `testHwpxBookmarkOutlineMatchesHwpPairs`
+(탐색 목록 `["표식 A1"]`).
+
+`FixturePreviewFidelityTests`의 `section-marks` 임계는 **이 승격의 가드가 아니다** —
+그 스위트는 `Fixtures/`(바이너리 `.hwp`)만 열고 `HWP_SNAPSHOT_TESTS=1` opt-in이라
+CI에서 돌지 않으며, 잉크 그리드가 쪽 번호 다섯 글자에 둔감하다(실측: 감추기를 지워도
+MAE 0.0002 → 0.0002, 임계 0.001). 새 픽스처마다 요구되는 임계 항목일 뿐이다.
 
 ## 각주·미주 (`hp:footNote`·`hp:endNote`·`hp:autoNum`, #168)
 
