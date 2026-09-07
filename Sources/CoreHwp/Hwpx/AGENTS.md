@@ -58,10 +58,9 @@ HWPX(OCF ZIP + OWPML XML, KS X 6101)를 **기존 `Hwp*` 모델로 변환 파싱*
 
 ## 1차 범위 밖 (미해석 강등 — 진단으로 보고됨)
 
-각주/미주 내용(`.notImplemented` — #168), 도형(line/rect/…)·수식·글상자
-(`.notImplemented`; `hp:default` fallback 없이 `hp:chart`만 오는 문서도 여기 —
-OLE 개체 `hp:ole`은 #134에서 승격됐다), 자동 번호·새 번호·홀/짝수 조정
-(`atno`·`nwno`·`pgct` — HWPX 픽스처 10종에 사례 없음), 형광펜·변경 추적
+도형(line/rect/…)·수식·글상자(`.notImplemented`; `hp:default` fallback 없이
+`hp:chart`만 오는 문서도 여기 — OLE 개체 `hp:ole`은 #134에서 승격됐다), 새 번호·
+홀/짝수 조정(`nwno`·`pgct` — HWPX 픽스처에 사례 없음), 형광펜·변경 추적
 표식(zero-width 진단), 그러데이션/이미지 채우기, 명시 탭 정지, 쪽 테두리.
 승격 시 대응 요소를 `HwpxControlMapper` 분류표에서 옮긴다.
 
@@ -103,6 +102,116 @@ OLE 개체 `hp:ole`은 #134에서 승격됐다), 자동 번호·새 번호·홀/
 단선)으로 그린다 (#136). 그래서 등가 투영은 밑줄 종류를 비교하되 raw 2만
 없음으로 접는다 — 진짜 '글자 위'는 raw 3 ↔ `type="TOP"`으로 같은 `.above`에
 모인다 (#149, `underline-above` 쌍).
+
+## 각주·미주 (`hp:footNote`·`hp:endNote`·`hp:autoNum`, #168)
+
+`HwpxFootnoteMapper`가 각주·미주를 `.footnote`/`.endnote(HwpListControl)`(제어
+문자 코드 17)로, 그 본문 문단 안 `hp:autoNum`을 `.autoNumber(HwpOtherControl)`
+(코드 18)로 승격한다. `HwpxFootnoteShapeMapper`는 구역의 `hp:footNotePr`·
+`hp:endNotePr`를 `HwpSectionDef.footNoteShape`·`endNoteShape`(표 133·134)로 옮긴다.
+
+강등 상태에서는 **본문이 통째로 사라졌다** — 미지 요소 강등이 요소 이름만
+payload로 담아 `hp:t` 텍스트가 모델에 남지 않는다. **`hp:autoNum` 동반 승격은
+선택이 아니다**: 본문 위 첨자 참조 번호는 컨트롤 종류만 보는 경로
+(`HwpFootnoteCoordinatorPlacement`)에서 나오지만, 각주 영역 본문 첫머리의 번호
+라벨은 `HwpTextRunBuilder.autoNumberReplacements`가 `.autoNumber`의
+`autoNumberInfo`를 찾아야 만들어진다.
+
+**payload 게이트는 슬롯마다 다르고 전부 바이너리 로더가 정한다.** 컨트롤 헤더와
+리스트 헤더는 `HwpListControl.load`가 ctrl id와 무관하게 `decoupledPayload`를
+쓰므로 **양 모드 보존**이다 — 되읽는 소비자가 없다고 `preservedPayload`로 접으면
+바이너리가 들고 있는 바이트를 HWPX만 비우는 반대 방향 격차가 된다. `atno`는
+반대로 `HwpOtherControl`이 raw만 게이트하고 typed 뷰(`autoNumberInfo`)는 **게이트
+전 원본**에서 만들므로, HWPX도 합성 payload를 그 로더에 태워 `.viewer`에서 raw는
+비고 번호는 사는 비대칭을 그대로 재현한다.
+
+**각주 모양은 payload 합성이 사실상 필수다.** 조판이 보는 구분선 값은 typed
+필드가 아니라 `HwpFootnoteShape.dividerInfo`, 즉 `rawPayload`의 재디코드다.
+비워 두면 `dividerInfo`가 nil이라 HWP 쌍이 0.34pt 구분선을 그리는 자리에서
+HWPX만 튜닝 폴백 1.0pt를 그린다. 게다가 `HwpFootnoteShape.init(_:)`은 구분선
+길이를 스펙 표 133 그대로 **HWPUNIT16(2바이트)** 로 읽지만 실저장본은 4바이트라
+typed 저장 필드 일곱이 실물에서 통째로 오정렬돼 있다 — 같은 payload를 같은
+로더(`HwpFootnoteShape.load`)에 태워야 그 오정렬까지 HWP 쌍과 똑같아진다.
+(`HwpSectionDef()`의 각주·미주 기본값 `-1, -1` · `12280, 224`가 그 2바이트
+오독의 화석이다: 4바이트로 이어 붙이면 -1과 14,692,344로 실물과 같다.)
+
+실측 근거는 `footnote-endnote` 변환 쌍 둘이다. (1) 기본값 표본 — HWP 쌍의
+컨트롤 헤더 20바이트·리스트 헤더 16바이트·`atno` 16바이트·FOOTNOTE_SHAPE
+28바이트가 우리 합성과 **바이트 동일**하다(머리말·꼬리말의 12/34바이트와
+다르다는 데 주의). (2) 2026-09-07 한글.app 12.30.0 미주 모양 대화상자로 만든
+비기본값 쌍 — `type="CIRCLED_HANGUL_JAMO" prefixChar="[" suffixChar="]"
+supscript="1"` · `numbering type="ON_SECTION" newNum="3"` ·
+`placement place="END_OF_SECTION"` ↔ property **0x150B** · 시작 번호 3 ·
+앞 0x5B · 뒤 0x5D. 즉 bits 0-7 번호 모양(표 134) · bits 8-9 배치 ·
+bits 10-11 번호 매김 · bit 12 위 첨자가 확정됐고, 같은 문서의
+`<hp:endNote flag="11" number="3" prefixChar="91" suffixChar="93" instId="…">`가
+20바이트의 오프셋 8-9(앞 장식)·12-15(`flag`)를 확정했다.
+
+**`@suffixChar`는 이름이 같아도 인코딩이 다르다** — `hp:footNote`/`hp:endNote`의
+것은 10진 코드포인트 문자열("41")이고 `hp:autoNumFormat`의 것은 리터럴 문자(")")다.
+하나의 읽기로 뭉뚱그리면 `)`가 0으로, 41이 문자 '4'로 접힌다. 열거 변환기는
+재사용한다 — `hp:noteLine@type`은 `HwpxCharShapeMapper.lineShapeIndex`(같은 OWPML
+`LINETYPE2`를 `hh:underline@shape`·`hh:strikeout@shape`와 공유한다), `@width`는
+`HwpxParaShapeMapper.thicknessIndex`, `hp:autoNumFormat@type`은
+`HwpxNumberFormatMapper`다. 종류 > 17이나 굵기 > 15를 실으면 `dividerInfo`의 wide
+유효성 게이트가 깨져 narrow로 폴백하고 여백·색이 통째로 오염되므로 두 변환기의
+상한을 벗어나면 안 된다.
+
+**열거 이름과 생략 기본값의 정본은 한컴 공개 OWPML 모델이다**(`OWPML/Class/enumdef.h`의
+직렬화 표와 각 클래스 생성자, `OWPML/Base/Util.cpp`의 `GetAttribute`). 실측만으로는
+기본값 문서가 전부 0이라 드러나지 않는 자리가 둘 있었다.
+- **이름**: 각주 다단 배열의 셋째 값은 `RIGHT_MOST_COLUMN`(`RIGHT_COLUMN`이 아니다),
+  `LINETYPE2`의 3D 넷은 `THICK3D`·`THICKREV3D`·`3D`·`REV3D`다. 지어낸 이름을 쓰면
+  정상 입력이 조용히 0으로 접힌다.
+- **생략 기본값**: `GetAttribute`는 속성이 없거나 열거 이름이 표에 없으면 값을
+  건드리지 않고 false만 돌려주므로 **생성자가 세운 값이 남는다**. `CNoteSpacing()`은
+  `betweenNotes` 850·`belowLine` 567·`aboveLine` 567, `CNoteLine()`은 길이 0·`SOLID`·
+  `0.12 mm`·검정, `CFNNumbering()`/`CENNumbering()`은 시작 번호 1,
+  `CAutoNumNewNumType()`은 번호 1·`ANT_PAGE`, `CAutoNumFormatType()`은 `DIGIT`·위 첨자
+  없음, `CFNPlacement()`/`CENPlacement()`는 0, `color="none"`은 **흰색**(0xFFFFFFFF)이다.
+  0으로 접으면 `HwpFootnoteLayout.dividerMetrics`가 그 값을 그대로 써서 **구분선 위·
+  아래 여백과 주석 사이 간격이 0**이 된다. 종류·굵기는 그렇지 않다 — `DividerMetrics`에
+  종류 필드가 없고 굵기도 `max(0.5, …)`에 흡수돼 렌더가 같으므로, 그 둘을 맞추는 실익은
+  HWP 쌍과의 payload 동등성과 wide 유효성 게이트다. **명시된 0은 보존한다** — 기본값은
+  속성이 아예 없을 때만 쓴다. 참조 생성자 값이 한글이 **저장하는** 값(각주 aboveLine
+  850·belowLine 567·betweenNotes 283)과 다른 것은 그대로 둔다: 생략된 문서를 한글이
+  읽을 때 쓰는 값이 생성자 쪽이다(payload 자체가 없어 `dividerInfo`가 nil인 경로의
+  폴백은 `HwpRenderTuning`이 따로 갖고 있고 그쪽이 저장값에 맞춰져 있다).
+
+**`numType="TOTAL_PAGE"`는 일부러 강등에 남긴다.** OWPML `AUTONUMTYPE`에는 전체 쪽수
+(값 6)가 있는데 HWP5 표 143 쪽 `HwpAutoNumberKind`는 0-5뿐이라 `kind`가 그것을
+`.page`로 접는다. 승격하면 `HwpPageChromeBuilder`가 그 자리에 논리 쪽 번호를 그려
+"1 / 3" 머리말이 "1 / 1"이 된다 — 강등 상태에는 없던 **틀린 숫자**다. 미지 이름도
+같은 이유로 강등하며, 자리(코드 18)와 4CC는 그대로라 WCHAR/ctrl 슬롯 정렬은 유지된다.
+
+**이 가드는 XML 이름 단계라 바이너리 경로에는 닿지 않는다** — 같은 문서의 `.hwp`는
+표 143 raw 6이 그대로 `.page`로 접혀 여전히 현재 쪽 번호를 그린다. 근본 해결은
+`HwpAutoNumberKind`에 값 6을 더하는 것이고, 소비처 넷이 전부 `kind == .page` 게이트라
+그것만으로 두 경로가 함께 닫힌다. 다만 공개 열거이고 `HwpPaginator.applyNewNumbers`의
+exhaustive switch(`case .picture, .table, .equation`)가 함께 바뀌어야 해서 각주 승격과
+분리했다 — 그때 이 강등 분기를 지우고 `autoNumberKinds`에 `TOTAL_PAGE`를 되돌려 넣으면
+승격·왕복·진단이 모두 살아난다.
+
+**미실측**: `hp:numbering@type`의 `ON_PAGE`(쪽마다 새로 — 미주 모양 대화상자에 그
+항목이 없다. 값 2는 한컴 `g_FNNumberingTypeList`가 정본), 각주 쪽
+`hp:placement@place`의 `EACH_COLUMN` 외 값(조판이 각주 다단 배열을 아직 쓰지 않아
+렌더 격차는 없다), `@beneathText`가 놓이는 자리(표 134가 위 첨자 **바로 다음 줄**에
+적은 항목이라 bit 13으로 실었다 — 실물은 `beneathText="0"`뿐이고 읽는 소비자도 없어
+왕복 충실도 몫이다), `hp:noteLine@length`의 유한값 의미(HWP 쌍과
+바이트가 같아 매핑은 안전하지만 14,692,344가 한글 대화상자의 "사용자 150.0mm"와 어떤
+산식으로 이어지는지는 확정하지 못했다).
+
+**후속 확인 대상**: `HwpxCharShapeMapper.lineShapes`는 `DASH`↔2·`DOT`↔3인데 한컴
+`g_LineTypeList2`의 나열 순서는 `LT2_DOT`(2)·`LT2_DASH`(3)로 반대다(HWP5 표 25도 2가
+긴 점선·3이 점선). 코퍼스 실물이 `NONE`·`SOLID`뿐이라 이번에는 건드리지 않았다 —
+점선 밑줄 쌍을 만들어 확인할 것.
+
+가드: `HwpxFootnoteMapperTests`(승격·앵커 코드·표 143 비트·게이트 비대칭·합성
+바이트·강등표 이탈), `HwpxFootnoteShapeMapperTests`(28바이트·`dividerInfo`·
+property 비트 실측 표본·양 모드 보존·부재 시 무변경),
+`HwpxHwpEquivalenceTests`(`notes`·`noteShapes` 축 + 공허 방지 직접 핀),
+`HwpxFixtureRenderTests.testHwpxFootnoteBlocksMatchHwpPairs`(HWP 쌍 텍스트·좌표
+등식 + `1) CoreHwp footnote fixture`·`1) CoreHwp endnote fixture` 직접 핀).
 
 ## 쪽 번호 위치 (`hp:pageNum` → `pgnp`, #135)
 

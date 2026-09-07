@@ -210,14 +210,26 @@ extension HwpxCharShapeMapper {
         }
     }
 
-    /// OWPML 선 모양 이름 → HWP5 표 27 계열 index (밑줄·취소선·외곽선 공용).
+    /// OWPML `LINETYPE2` 이름 → HWP5 표 27 계열 index (밑줄·취소선·각주 구분선
+    /// 공용 — `hh:underline@shape`·`hh:strikeout@shape`·`hp:noteLine@type`이 한컴
+    /// 모델에서 모두 `g_LineTypeList2`를 쓴다).
+    ///
+    /// 3D 넷의 이름은 한컴 공개 모델의 직렬화 표(`OWPML/Class/enumdef.h`의
+    /// `g_LineTypeList2`)가 정본이다 — `THICK3D`·`THICKREV3D`·`3D`·`REV3D`이고,
+    /// 밑줄 표기(`THICK_3D` 등)를 지어내 쓰면 실물 문서의 3D 선이 조용히 0(없음)이
+    /// 된다. 외곽선(`hh:outline@type`)만은 다른 열거(`LINETYPE1`)라
+    /// `outlineTypes`가 따로 있다.
+    ///
+    /// **미확인**: 이 표는 `DASH`↔2·`DOT`↔3인데 한컴 모델의 나열 순서는
+    /// `LT2_DOT`(2)·`LT2_DASH`(3)로 반대다. HWP5 표 25도 2가 긴 점선·3이 점선이라
+    /// 어느 쪽이 맞는지는 점선 밑줄 실물 쌍으로 확인해야 한다 — 코퍼스에 실물이
+    /// `NONE`·`SOLID`뿐이라 이번에는 건드리지 않았다.
     static let lineShapes: [String: Int] = [
         "NONE": 0, "SOLID": 1, "DASH": 2, "DOT": 3, "DASH_DOT": 4,
         "DASH_DOT_DOT": 5, "LONG_DASH": 6, "CIRCLE": 7, "DOUBLE_SLIM": 8,
         "SLIM_THICK": 9, "THICK_SLIM": 10, "SLIM_THICK_SLIM": 11,
-        "WAVE": 12, "DOUBLEWAVE": 13, "THICK_3D": 14,
-        "THICK_3D_REVERSE_LIGHTING": 15, "SOLID_3D": 16,
-        "SOLID_3D_REVERSE_LIGHTING": 17,
+        "WAVE": 12, "DOUBLEWAVE": 13, "THICK3D": 14,
+        "THICKREV3D": 15, "3D": 16, "REV3D": 17,
     ]
 
     static func lineShapeIndex(_ name: String?, default defaultValue: Int) -> Int {

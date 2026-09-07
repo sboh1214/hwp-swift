@@ -338,18 +338,18 @@ final class HwpxFileTests: XCTestCase {
         xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">\
         <hp:p id="1" paraPrIDRef="0" styleIDRef="0">\
         <hp:run charPrIDRef="0"><hp:secPr id=""/>\
-        <hp:ctrl><hp:footNote id="9"/></hp:ctrl><hp:t>가</hp:t>\
+        <hp:ctrl><hp:newNum id="9"/></hp:ctrl><hp:t>가</hp:t>\
         </hp:run></hp:p></hs:sec>
         """
         let hwp = try HwpFile(fromData: makeArchive(sectionXML: section))
 
         let diagnostics = hwp.parseDiagnostics()
-        // 각주 강등: notImplementedControl(실제 4CC)과 합성 tagId(0)의
-        // unknownRecord 쌍으로 이중 보고된다. 머리말·꼬리말은 #167에서
-        // typed 승격돼 더 이상 이 경로를 타지 않는다.
+        // 새 번호 지정 강등: notImplementedControl(실제 4CC)과 합성 tagId(0)의
+        // unknownRecord 쌍으로 이중 보고된다. 머리말·꼬리말은 #167에서, 각주·
+        // 미주와 자동 번호는 #168에서 typed 승격돼 더 이상 이 경로를 타지 않는다.
         expect(diagnostics.contains { diagnostic in
             diagnostic.kind == .notImplementedControl
-                && diagnostic.ctrlId == HwpOtherCtrlId.footnote.rawValue
+                && diagnostic.ctrlId == HwpOtherCtrlId.newNumber.rawValue
         }) == true
         expect(diagnostics.contains { diagnostic in
             diagnostic.kind == .unknownRecord && diagnostic.tagId == hwpxSyntheticTagId

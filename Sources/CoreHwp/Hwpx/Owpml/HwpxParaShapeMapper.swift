@@ -218,11 +218,16 @@ extension HwpxParaShapeMapper {
     }
 
     /// `width="0.12 mm"` → 표 26 굵기 index (최근접 값).
-    static func thicknessIndex(of width: String?) -> UInt8 {
+    ///
+    /// 생략·숫자로 못 읽는 값은 `default:`로 접는다. 한컴 `GetAttribute`는 이름이
+    /// 표(`g_LineWithList`)에 없으면 값을 건드리지 않아 **호출 클래스의 생성자
+    /// 값**이 남으므로, 그 값을 아는 호출부는 넘겨야 참조와 같아진다
+    /// (`hp:noteLine@width`는 `CNoteLine()`의 `LWT_0_12` = index 1).
+    static func thicknessIndex(of width: String?, default defaultValue: UInt8 = 0) -> UInt8 {
         guard let width,
               let value = Double(width.split(separator: " ").first ?? "")
         else {
-            return 0
+            return defaultValue
         }
         let table = HwpBorderFill.borderThicknessMillimeters
         var best = 0

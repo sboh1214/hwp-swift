@@ -88,6 +88,36 @@ final class HwpxHwpEquivalenceTests: XCTestCase {
         expect(hwpxProjection.sectionOutlineNumberingIds) == [2]
     }
 
+    /// 각주·미주 축이 **비어 있지 않게** 성립하는지 직접 핀한다 (#168).
+    /// 등식만 두면 두 포맷이 함께 비어도 통과한다 — 승격 전 HWPX는 각주·미주
+    /// 컨트롤이 `.notImplemented`라 배열이 비어 있었다.
+    func testFootnotePairProjectsNoteBodiesAndShapesOnBothFormats() throws {
+        let hwp = try HwpFile(
+            fromPath: FixtureLoader.load(id: "footnote-endnote").documentURL.path
+        )
+        let hwpx = try HwpFile(
+            fromPath: HwpxFixtureLoader.load(id: "footnote-endnote").documentURL.path
+        )
+        let hwpProjection = DocumentEquivalenceProjection(of: hwp)
+        let hwpxProjection = DocumentEquivalenceProjection(of: hwpx)
+
+        // 문서 순서: 미주가 먼저, 각주가 뒤다 (본문 "Cor" 뒤 미주 앵커).
+        expect(hwpxProjection.notes.count) == 2
+        expect(hwpxProjection.notes.map(\.isEndnote)) == [true, false]
+        expect(hwpxProjection.notes.map(\.text))
+            == [" CoreHwp endnote fixture", " CoreHwp footnote fixture"]
+        // 번호 라벨의 근원 — autoNum이 함께 승격되지 않으면 nil이라 각주 본문에
+        // 번호가 그려지지 않는다.
+        expect(hwpxProjection.notes.map(\.autoNumberKind)) == [2, 1]
+        expect(hwpxProjection.notes) == hwpProjection.notes
+
+        // 구역 각주·미주 모양 — 미주 구분선 길이만 유한값(14,692,344)이다.
+        expect(hwpxProjection.noteShapes.count) == 2
+        expect(hwpxProjection.noteShapes.first?.dividerLength).to(beNil())
+        expect(hwpxProjection.noteShapes.last?.dividerLength) == 14_692_344
+        expect(hwpxProjection.noteShapes) == hwpProjection.noteShapes
+    }
+
     /// 구역별 개요 번호 참조 축이 **구역마다** 성립하는지 직접 핀한다 (#152) —
     /// multi-section 쌍은 두 구역이 서로 다른 정의(1·2)를 가리킨다. HWPX id를
     /// 숫자 그대로 실으면 여기서는 우연히 맞으므로, 조작 대조는
@@ -121,7 +151,7 @@ final class HwpxHwpEquivalenceTests: XCTestCase {
             )
             comparedCount += 1
         }
-        expect(comparedCount) >= 12
+        expect(comparedCount) >= 14
     }
 }
 
@@ -256,6 +286,12 @@ struct DocumentEquivalenceProjection {
     /// (2)에서 갈린다. 구역 첫 문단의 첫 `.section` 컨트롤을 본다 — 헌법주석처럼
     /// 단 정의가 앞서는 저장본도 있어 첫 컨트롤만 보면 안 된다.
     let sectionOutlineNumberingIds: [UInt16]
+    /// 각주·미주 본문 — HWPX `hp:footNote`·`hp:endNote`·`hp:autoNum`이 승격돼야
+    /// HWP 쌍과 같은 배열이 선다 (#168). 강등 상태면 HWPX 쪽이 비어 등식이 깨진다.
+    let notes: [Note]
+    /// 구역별 각주·미주 모양 (구역마다 각주·미주 순서로 둘) — `hp:footNotePr`·
+    /// `hp:endNotePr`가 승격돼야 HWP 쌍과 같은 값이 선다 (#168).
+    let noteShapes: [NoteShape]
 
     init(of file: HwpFile) {
         sectionCount = file.sectionArray.count
@@ -331,6 +367,8 @@ struct DocumentEquivalenceProjection {
                 return nil
             }.first
         }
+        notes = Self.notes(of: file)
+        noteShapes = Self.noteShapes(of: file)
     }
 
     /// 문단 머리를 문서 순서(표 셀 재귀 포함)로 모은다 — noori의 글머리표
@@ -499,6 +537,10 @@ struct DocumentEquivalenceProjection {
         expect(sectionOutlineNumberingIds).to(
             equal(other.sectionOutlineNumberingIds),
             description: "\(fixtureId) sectionOutlineNumberingIds"
+        )
+        expect(notes).to(equal(other.notes), description: "\(fixtureId) notes")
+        expect(noteShapes).to(
+            equal(other.noteShapes), description: "\(fixtureId) noteShapes"
         )
     }
 }
