@@ -125,17 +125,24 @@ struct HwpParagraphObjectCollector {
                   Self.collectible(components, collectsTextboxes: collectsTextboxes)
             else { continue }
             let marker = collected.marker
-            for (componentIndex, component) in components.enumerated() {
+            // 글상자 문단의 번호 경로 서수는 앞선 요소들의 글상자 문단 수를 더한 값
+            // (`HwpNumberingScope.textboxChildOffset`과 같은 접두 합) — 요소마다 앞선
+            // 요소 전체를 다시 더하면 요소 N개짜리 개체 하나가 O(N²)이라(리뷰 실측: 요소
+            // 8,000개 7.5초) 반복문에서 누적한다. 번호나 글상자가 없는 요소도 이 합을
+            // 지나므로 상수 비용이어야 한다.
+            var componentOffset = 0
+            for component in components {
                 collect(
                     component: component,
                     commonProperty: commonProperty,
                     placement: placement,
-                    componentOffset: HwpNumberingScope.textboxChildOffset(
-                        components: components, componentIndex: componentIndex
-                    ),
+                    componentOffset: componentOffset,
                     state: &state,
                     into: &collected
                 )
+                componentOffset += component.textBoxListArray.reduce(0) {
+                    $0 + $1.paragraphArray.count
+                }
             }
             noteContainerFloor(
                 commonProperty, placement: placement, since: marker, into: &collected
