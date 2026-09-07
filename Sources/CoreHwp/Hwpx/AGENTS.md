@@ -58,13 +58,24 @@ HWPX(OCF ZIP + OWPML XML, KS X 6101)를 **기존 `Hwp*` 모델로 변환 파싱*
 
 ## 1차 범위 밖 (미해석 강등 — 진단으로 보고됨)
 
-각주/미주·머리말/꼬리말
-내용(`.notImplemented`), 도형(line/rect/…)·수식·글상자
+각주/미주 내용(`.notImplemented` — #168), 도형(line/rect/…)·수식·글상자
 (`.notImplemented`; `hp:default` fallback 없이 `hp:chart`만 오는 문서도 여기 —
 OLE 개체 `hp:ole`은 #134에서 승격됐다), 자동 번호·새 번호·홀/짝수 조정
 (`atno`·`nwno`·`pgct` — HWPX 픽스처 10종에 사례 없음), 형광펜·변경 추적
 표식(zero-width 진단), 그러데이션/이미지 채우기, 명시 탭 정지, 쪽 테두리.
 승격 시 대응 요소를 `HwpxControlMapper` 분류표에서 옮긴다.
+
+**머리말·꼬리말은 #167에서 승격됐다** (`HwpxHeaderFooterMapper`). `hp:header`·
+`hp:footer` → `.header`/`.footer(HwpListControl)`이고 조판(`HwpPageChromeBuilder`)이
+읽는 값은 적용 범위와 리스트 문단 둘뿐이다. 적용 범위는 컨트롤 헤더 payload를
+**되읽어** 얻으므로(`headerFooterApplyScope`가 오프셋 4의 UINT32 하위 2비트,
+표 141) payload 합성이 렌더 필수이고, 바이너리 `HwpListControl.load`와 같이
+`decoupledPayload`로 **양 모드 보존**한다 — `preservedPayload` 게이트를 쓰면
+`.viewer`에서 홀·짝수 머리말이 전부 양쪽으로 그려진다. `applyPageType`은
+`BOTH`·`EVEN`·`ODD`이고 생략·미지 이름은 양쪽으로 접는다(범위를 추측해 쪽을
+건너뛰면 머리말이 통째로 사라진다). 실물 구조는 `header-footer` 변환 쌍이
+정본이다 — `hp:subList@vertAlign`이 머리말 `TOP`·꼬리말 `BOTTOM`이고, 문단 안
+`hp:linesegarray`도 본문과 같은 경로로 매핑돼 조판 캐시가 살아난다.
 
 2026-09-02 한글.app 12.30.0 나란히 육안 대조(변환 쌍 10종 13쪽, 한컴 폰트
 모드): 쪽수 10종 전부 일치, 표·그림·다단·글자 장식·쪽나눔 일치. HWPX
