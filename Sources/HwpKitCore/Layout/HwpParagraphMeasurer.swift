@@ -61,8 +61,9 @@ struct HwpParagraphMeasurer {
     struct Result {
         let attributed: NSAttributedString
         let frame: HwpParagraphFrame
-        /// 라인 캐시 높이를 썼는지 (표 셀의 allCached 집계용)
-        let usedCachedHeight: Bool
+        /// 라인 캐시 높이를 썼으면 그 줄 상자 범위 — 표 셀이 저작 높이의 하한을
+        /// 재는 데 쓴다 (#160). CT 측정 높이를 썼으면 nil.
+        let cachedLineExtent: HwpParagraphLayout.CachedLineExtent?
     }
 
     func measure(
@@ -106,24 +107,24 @@ struct HwpParagraphMeasurer {
         let spacingAfter = options.addHalfSpacingBefore
             ? HwpUnits.points(fromHwpUnit: paraShape.paragraphSpacingBottom) / 2
             : 0
-        var usedCachedHeight = false
+        var cachedLineExtent: HwpParagraphLayout.CachedLineExtent?
         // 캐시 높이는 라인 범위만 담으므로 CT 경로(totalHeight = before + lines +
         // after)와 같아지도록 양쪽 간격을 더한다 — 표 셀(addHalfSpacingBefore)만.
         // 각주는 이어지는 문단이 간격 없이 붙는 실측 규약이라 캐시 높이 그대로 둔다.
         // 비-캐시 경로는 totalHeight가 이미 간격을 포함한다 (P2).
         if options.preferCachedHeight,
-           let cachedHeight = HwpParagraphLayout.cachedParagraphHeight(paragraph)
+           let extent = HwpParagraphLayout.cachedLineExtent(paragraph)
         {
             frame = HwpParagraphFrame(
-                totalHeight: cachedHeight + spacingBefore + spacingAfter,
+                totalHeight: extent.advanceHeight + spacingBefore + spacingAfter,
                 lines: frame.lines
             )
-            usedCachedHeight = true
+            cachedLineExtent = extent
         }
         return Result(
             attributed: attributed,
             frame: frame,
-            usedCachedHeight: usedCachedHeight
+            cachedLineExtent: cachedLineExtent
         )
     }
 }

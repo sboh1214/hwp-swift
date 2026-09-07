@@ -71,20 +71,49 @@ public struct HwpParagraphLayout {
     public static func cachedParagraphHeight(
         _ paragraph: CoreHwp.HwpParagraph
     ) -> CGFloat? {
+        cachedLineExtent(paragraph)?.advanceHeight
+    }
+
+    /// 유효한 라인 캐시의 줄 상자 범위 (HWPUNIT, 저장된 좌표계 그대로).
+    ///
+    /// `cachedParagraphHeight`(문단 전진량 = `advanceHeight`)와 표 셀 높이 (#160,
+    /// `HwpTableLayout.cachedLineBoxHeight`)가 **같은 유효성 검사**를 나눠 쓴다 —
+    /// 줄 위치가 순서대로 증가하고 줄 높이가 음수가 아니며 전진량이 0보다 클
+    /// 때만 값이 있다.
+    struct CachedLineExtent: Equatable {
+        /// 첫 줄의 세로 위치
+        let top: Int
+        /// 마지막 줄 **상자**의 아래 — 줄 간격을 뺀 `lineLocation + lineHeight`의 최댓값.
+        /// 표 셀의 하한은 여기까지다 (마지막 줄의 줄 간격은 셀 높이에 들지 않는다).
+        let bottom: Int
+        /// 줄 간격까지 더한 전진량의 끝 (`HwpAbsoluteCachePlacer.lineBottom`의 최댓값).
+        let spacedBottom: Int
+
+        /// 첫 줄 위 ~ 마지막 줄 전진량 끝 (pt, 최소 1) — 문단 높이.
+        var advanceHeight: CGFloat {
+            max(1, HwpUnits.points(fromHwpUnit: Int32(clamping: spacedBottom - top)))
+        }
+    }
+
+    static func cachedLineExtent(
+        _ paragraph: CoreHwp.HwpParagraph
+    ) -> CachedLineExtent? {
         let segments = paragraph.paraLineSeg.paraLineSegInternalArray
         guard !segments.isEmpty else { return nil }
         var previous = Int32.min
         var top = Int.max
         var bottom = Int.min
+        var spacedBottom = Int.min
         for segment in segments {
             guard segment.lineLocation > previous, segment.lineHeight >= 0 else { return nil }
             previous = segment.lineLocation
             // 미신뢰 캐시의 Int32 덧셈 트랩 방지 — Int로 넓혀 누적한다.
             top = min(top, Int(segment.lineLocation))
-            bottom = max(bottom, HwpAbsoluteCachePlacer.lineBottom(of: segment))
+            bottom = max(bottom, Int(segment.lineLocation) + Int(segment.lineHeight))
+            spacedBottom = max(spacedBottom, HwpAbsoluteCachePlacer.lineBottom(of: segment))
         }
-        guard bottom > top else { return nil }
-        return max(1, HwpUnits.points(fromHwpUnit: Int32(clamping: bottom - top)))
+        guard spacedBottom > top else { return nil }
+        return CachedLineExtent(top: top, bottom: bottom, spacedBottom: spacedBottom)
     }
 
     /// paraShape로 측정/렌더 공용 CTParagraphStyle을 만든다.

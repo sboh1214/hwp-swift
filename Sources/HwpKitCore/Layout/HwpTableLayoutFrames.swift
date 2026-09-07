@@ -7,11 +7,16 @@ import Foundation
 
 extension HwpTableLayout {
     /// 행 높이 = max(저작된 셀 높이, 콘텐츠 높이). span 셀은 마지막 행에 나머지를 반영.
-    /// 셀 문단 전부가 라인 캐시로 측정된 셀은 저작된 높이 (표 80 = 한글 계산값)를
-    /// 그대로 신뢰한다 — 캐시 합 + 여백 근사가 저작 높이를 살짝 넘겨 표가
-    /// 부풀면 페이지 분할이 한글과 어긋난다 (헌법주석 실측).
+    /// 셀 문단 전부가 라인 캐시로 측정된 셀은 저작된 높이 (표 80)를 신뢰한다 —
+    /// 캐시 합 + 여백 근사가 저작 높이를 살짝 넘겨 표가 부풀면 페이지 분할이
+    /// 한글과 어긋난다 (헌법주석 실측). 단 저작 높이가 캐시 줄 상자를 쌓은 높이 +
+    /// 위아래 여백(`cachedCellHeight`)보다 **작으면** 그 값으로 올린다 — 한글은
+    /// 셀을 줄 상자보다 작게 그리지 않는다 (#160: 한컴오피스 한글 12.30 macOS는
+    /// `표 만들기` 셀의 높이를 내용과 무관하게 여백 합 282 HWPUNIT로 저장해 행이
+    /// 2.82pt로 접혔다; 한글은 줄 1000 + 282 = 12.82pt). 줄 간격까지 든
+    /// `contentHeight`(18.82pt)로 올리면 정상 셀도 부푼다.
     ///
-    /// 단, 떠 있는 개체 (글자처럼 취급 아님)는 줄 캐시에도 저작 높이에도 없어
+    /// 떠 있는 개체 (글자처럼 취급 아님)는 줄 캐시에도 저작 높이에도 없어
     /// 그 신뢰가 성립하지 않는다 — 별도 하한으로 얹는다 (#91,
     /// `HwpTableLayout.floatingObjectHeight`).
     func resolvedRowHeights(
@@ -24,9 +29,11 @@ extension HwpTableLayout {
             // 작은 문서가 페이지 단위 절단으로 수만 페이지를 만든다 (#6).
             // 실제 셀은 이 한도를 한참 밑돌아 렌더 불변. 개체 크기도 같은
             // UInt32라 하한을 얹은 뒤에 상한한다.
-            let raw = cell.hasCachedContent && cell.authoredHeight > 0
-                ? cell.authoredHeight
-                : max(cell.contentHeight, cell.authoredHeight)
+            let raw: CGFloat = if let cached = cell.cachedCellHeight, cell.authoredHeight > 0 {
+                max(cell.authoredHeight, cached)
+            } else {
+                max(cell.contentHeight, cell.authoredHeight)
+            }
             return min(max(raw, cell.floatingObjectHeight), HwpTableLayout.maximumCellHeight)
         }
         var heights = [CGFloat](repeating: 0, count: rowCount)
@@ -41,6 +48,32 @@ extension HwpTableLayout {
             }
         }
         return heights.map { $0 > 0 ? $0 : defaultHeight }
+    }
+
+    /// 라인 캐시가 담는 셀 콘텐츠 높이 (pt, 여백 제외) — 셀 문단의 측정 높이
+    /// (캐시 전진량 + 문단 위/아래 간격)를 배치(`laidOutContents`)와 같은 순서로
+    /// 쌓고 마지막 줄의 줄 간격만 뺀다. 즉 배치가 그리는 마지막 줄 **상자**의
+    /// 아래다. 한글도 셀을 거기(+ 위아래 안쪽 여백)까지 그린다 (실측:
+    /// numbering-sequence 3쪽 1줄 셀 1000 + 여백 282 = 표 공통 속성 height 1282 =
+    /// 한글.app 12.81pt, 새 표 2문단 셀 1000+600+1000 = 2600 + 282 = 2882 — 표 공통
+    /// 속성 height 8964가 행 높이 합이다). 줄 간격까지 더한 `contentHeight`로
+    /// 잡으면 정상 셀까지 부푼다 (#160).
+    ///
+    /// 실물 셀 문단의 `lineLocation`은 셀 안에서 문단을 넘어 누적되고(헌법주석
+    /// 5문단 셀 0·1300·…·10400, noori 4문단 셀 0·2700·6000·9000, 새 표 0·1600) 그
+    /// 범위가 이 합과 같다 — 캐시 위치가 아니라 측정 높이를 쌓는 것은 배치와
+    /// 같은 산술이어야 하한이 그려진 글자를 실제로 담기 때문이다 (첫 문단의 문단
+    /// 위 간격, 누적이 깨진 캐시 — 헌법주석 s22/p201/c16의 셋째 문단이 0으로
+    /// 되돌아간다). 중첩 표는 세지 않는다 — 저작 높이가 담는 몫이다. 어느
+    /// 문단이든 캐시가 없으면 nil — 그 셀은 CT 측정(`contentHeight`)이 맡는다.
+    static func cachedLineBoxHeight(of contents: [PlacedCellContent]) -> CGFloat? {
+        guard let last = contents.last?.cachedLineExtent,
+              contents.allSatisfy({ $0.cachedLineExtent != nil })
+        else { return nil }
+        let trailingSpacing = HwpUnits.points(
+            fromHwpUnit: Int32(clamping: last.spacedBottom - last.bottom)
+        )
+        return max(0, contents.reduce(CGFloat(0)) { $0 + $1.frame.totalHeight } - trailingSpacing)
     }
 
     func rows(
