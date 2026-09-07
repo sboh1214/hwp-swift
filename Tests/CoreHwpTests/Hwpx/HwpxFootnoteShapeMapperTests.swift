@@ -112,6 +112,92 @@ final class HwpxFootnoteShapeMapperTests: XCTestCase {
         expect(def.footNoteShape.dividerInfo).toNot(beNil())
     }
 
+    /// 생략 속성·생략 요소의 기본값은 한컴 참조 모델 생성자에서 온다 —
+    /// `CNoteSpacing()`은 850/567/567, `CNoteLine()`은 길이 0·SOLID·0.12 mm,
+    /// `CFNNumbering()`은 시작 번호 1이다. 0으로 접으면 `HwpFootnoteLayout`이 그
+    /// 값을 그대로 써서 **구분선 여백과 주석 사이 간격이 0**이 된다 (종류·굵기는
+    /// 조판이 읽지 않으므로 payload 동등성 몫이다).
+    func testOmittedNoteSpacingAndLineUseReferenceDefaults() throws {
+        let shape = try sectionDef("<hp:footNotePr/>").footNoteShape
+        let divider = try XCTUnwrap(shape.dividerInfo)
+        expect(divider.marginTop) == 567
+        expect(divider.marginBottom) == 567
+        expect(divider.spacingBetweenNotes) == 850
+        expect(divider.length).to(beNil()) // 참조 기본값 0 = 자동
+        expect(divider.type) == 1 // LT2_SOLID
+        expect(divider.thickness) == 1 // LWT_0_12
+        expect(shape.startingNumber) == 1
+    }
+
+    /// **명시된 0은 보존한다** — 기본값은 속성이 아예 없을 때만 쓴다. 둘을 뭉치면
+    /// 저작자가 0으로 지운 간격이 참조 기본값으로 되살아난다.
+    func testExplicitZeroSpacingIsPreservedOverReferenceDefaults() throws {
+        let shape = try sectionDef("""
+        <hp:footNotePr>\
+        <hp:noteSpacing betweenNotes="0" belowLine="0" aboveLine="0"/>\
+        </hp:footNotePr>
+        """).footNoteShape
+        let divider = try XCTUnwrap(shape.dividerInfo)
+        expect(divider.marginTop) == 0
+        expect(divider.marginBottom) == 0
+        expect(divider.spacingBetweenNotes) == 0
+    }
+
+    /// 각주 다단 배열의 셋째 값은 한컴 직렬화 이름이 `RIGHT_MOST_COLUMN`이다 —
+    /// `RIGHT_COLUMN`으로 적으면 정상 입력이 0(각 단마다)으로 접힌다.
+    func testFootnoteColumnPlacementUsesOfficialEnumName() throws {
+        let notePr = "<hp:footNotePr><hp:placement place=\"RIGHT_MOST_COLUMN\"/></hp:footNotePr>"
+        let placementShape = try sectionDef(notePr).footNoteShape
+        expect((placementShape.property >> 8) & 0b11) == 2
+        expect(HwpxFootnoteShapeMapper.placements["MERGED_COLUMN"]) == 1
+    }
+
+    /// `hp:noteLine@type`은 `hh:underline@shape`와 같은 OWPML `LINETYPE2`다 —
+    /// 3D 넷의 공식 이름을 모르면 실물 문서의 구분선 종류가 0(없음)이 된다.
+    func testNoteLineRecognizesOfficialThreeDimensionalLineNames() throws {
+        let notePr = "<hp:footNotePr><hp:noteLine type=\"THICK3D\"/></hp:footNotePr>"
+        let lineShape = try sectionDef(notePr).footNoteShape
+        expect(try XCTUnwrap(lineShape.dividerInfo).type) == 14
+        expect(HwpxCharShapeMapper.lineShapes["THICKREV3D"]) == 15
+        expect(HwpxCharShapeMapper.lineShapes["3D"]) == 16
+        expect(HwpxCharShapeMapper.lineShapes["REV3D"]) == 17
+    }
+
+    /// `color="none"`을 한컴 `GetAttribute`는 **흰색**(0xFFFFFFFF)으로 읽는다 —
+    /// `colorAttribute`가 `#` 접두 없는 값을 nil로 돌려주므로 호출부가 막지 않으면
+    /// 흰 구분선이 검정으로 뒤집힌다.
+    func testNoneDividerColorMapsToWhiteNotBlack() throws {
+        let notePr = "<hp:footNotePr><hp:noteLine color=\"none\"/></hp:footNotePr>"
+        let noneShape = try sectionDef(notePr).footNoteShape
+        let divider = try XCTUnwrap(noneShape.dividerInfo)
+        expect(divider.color) == HwpColor(red: 255, green: 255, blue: 255)
+        // 속성 생략은 생성자 값 `m_cColor(0x000000)`이다.
+        let omitted = try sectionDef("<hp:footNotePr><hp:noteLine/></hp:footNotePr>")
+        expect(try XCTUnwrap(omitted.footNoteShape.dividerInfo).color)
+            == HwpColor(red: 0, green: 0, blue: 0)
+    }
+
+    /// 숫자로 읽히지 않는 굵기도 참조 기본값(0.12 mm)으로 접어야 한다 —
+    /// `thicknessIndex`는 파싱 실패에 index 0(0.1 mm)을 돌려주므로 생략만 막으면
+    /// `width="0.12mm"`(공백 없음) 같은 값이 조용히 다른 굵기가 된다.
+    func testUnreadableDividerWidthFallsBackToReferenceDefault() throws {
+        let notePr = "<hp:footNotePr><hp:noteLine width=\"0.12mm\"/></hp:footNotePr>"
+        let widthShape = try sectionDef(notePr).footNoteShape
+        let divider = try XCTUnwrap(widthShape.dividerInfo)
+        expect(divider.thickness) == 1 // LWT_0_12
+    }
+
+    /// `beneathText`(텍스트에 이어 바로 출력)는 표 134가 위 첨자 바로 다음 줄에
+    /// 적은 항목이라 bit 13에 싣는다 — 읽는 소비자는 없지만 컨트롤 헤더의
+    /// `flag`·`instId`와 같이 실물이 담은 값을 합성에서 잃지 않는다.
+    func testBeneathTextIsCarriedInPropertyBitThirteen() throws {
+        let notePr = "<hp:footNotePr><hp:placement beneathText=\"1\"/></hp:footNotePr>"
+        let beneath = try sectionDef(notePr).footNoteShape
+        expect((beneath.property >> 13) & 1) == 1
+        let plain = try sectionDef(Self.realFootNotePr).footNoteShape
+        expect((plain.property >> 13) & 1) == 0
+    }
+
     /// 요소가 없으면 손대지 않는다 — 값을 지어내면 없던 구분선 설정이 생긴다.
     func testAbsentNotePropertiesKeepBlankDocumentDefaults() throws {
         let def = try sectionDef("")

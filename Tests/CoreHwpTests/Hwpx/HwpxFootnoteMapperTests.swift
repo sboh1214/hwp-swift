@@ -220,6 +220,69 @@ final class HwpxFootnoteMapperTests: XCTestCase {
             == ["riddle"]
     }
 
+    /// `numType="TOTAL_PAGE"`(OWPML `ANT_TOTAL_PAGE` = 6)는 표 143 종류가 0-5뿐이라
+    /// 승격하면 `HwpAutoNumberKind`가 `.page`로 접고 `HwpPageChromeBuilder`가 그
+    /// 자리에 **현재 쪽 번호**를 그린다 — "1 / 3" 머리말이 "1 / 1"이 된다.
+    /// 강등 앵커로 되돌려 틀린 숫자 대신 진단을 남긴다.
+    func testTotalPageAutoNumberStaysDegradedInsteadOfBecomingPageNumber() throws {
+        let body = HwpxSectionFixture.blankBody + """
+        <hp:p><hp:run charPrIDRef="7">\
+        <hp:ctrl><hp:autoNum num="1" numType="PAGE"/></hp:ctrl>\
+        <hp:t> / </hp:t>\
+        <hp:ctrl><hp:autoNum num="2" numType="TOTAL_PAGE"/></hp:ctrl>\
+        </hp:run></hp:p>
+        """
+        let ctrls = try controls(of: try mapSection(body))
+        guard ctrls.count == 2 else {
+            return fail("Expected two auto-number anchors, got \(ctrls)")
+        }
+        // 쪽 번호는 승격된다 — 과잉 강등이 아님을 함께 잠근다.
+        guard case let .autoNumber(page) = ctrls[0] else {
+            return fail("Expected .autoNumber for PAGE, got \(ctrls[0])")
+        }
+        expect(page.autoNumberInfo?.kind) == HwpAutoNumberKind.page
+
+        guard case let .notImplemented(total) = ctrls[1] else {
+            return fail("Expected .notImplemented for TOTAL_PAGE, got \(ctrls[1])")
+        }
+        // 자리(코드 18)와 4CC는 그대로여야 WCHAR/ctrl 슬롯 정렬이 유지된다.
+        expect(total.ctrlId) == HwpOtherCtrlId.autoNumber.rawValue
+        let chars = try XCTUnwrap(mapSection(body).paragraph[1].paraText?.charArray)
+        expect(chars.filter { $0.type == .extended }.map(\.value)) == [18, 18]
+        expect(total.unknownChildren.map { String(bytes: $0.payload, encoding: .utf8) })
+            == ["autoNum"]
+    }
+
+    /// 미지 `numType`도 같은 이유로 강등한다 — 0으로 접으면 쪽 번호가 아닌
+    /// 컨트롤이 쪽 번호로 그려진다.
+    func testUnknownAutoNumberKindIsDegraded() throws {
+        let body = HwpxSectionFixture.blankBody + """
+        <hp:p><hp:run charPrIDRef="7">\
+        <hp:ctrl><hp:autoNum num="1" numType="MYSTERY"/></hp:ctrl>\
+        </hp:run></hp:p>
+        """
+        let ctrls = try controls(of: try mapSection(body))
+        guard case .notImplemented = ctrls[0] else {
+            return fail("Expected .notImplemented, got \(ctrls[0])")
+        }
+        expect(HwpxFootnoteMapper.autoNumberKinds["TOTAL_PAGE"]).to(beNil())
+    }
+
+    /// 생략 속성의 기본값은 한컴 참조 모델 생성자에서 온다 —
+    /// `CAutoNumNewNumType()`은 `m_nNum(1)`·`m_uNumType(ANT_PAGE)`이다.
+    func testOmittedAutoNumberAttributesUseReferenceDefaults() throws {
+        let body = HwpxSectionFixture.blankBody + """
+        <hp:p><hp:run charPrIDRef="7">\
+        <hp:ctrl><hp:autoNum/></hp:ctrl></hp:run></hp:p>
+        """
+        let ctrls = try controls(of: try mapSection(body))
+        guard case let .autoNumber(auto) = ctrls[0] else {
+            return fail("Expected .autoNumber, got \(ctrls[0])")
+        }
+        expect(auto.autoNumberInfo?.kind) == HwpAutoNumberKind.page
+        expect(auto.autoNumberInfo?.number) == 1
+    }
+
     /// 분류표 규약: 승격한 요소는 강등 표에서 빠져야 두 경로가 갈리지 않는다.
     /// `newNum`은 같은 코드 18이지만 표 144의 다른 payload라 그대로 남는다 (#169).
     func testPromotedElementsLeaveTheDegradeTable() {

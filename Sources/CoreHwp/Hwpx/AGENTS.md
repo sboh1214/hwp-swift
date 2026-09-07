@@ -150,19 +150,54 @@ bits 10-11 번호 매김 · bit 12 위 첨자가 확정됐고, 같은 문서의
 **`@suffixChar`는 이름이 같아도 인코딩이 다르다** — `hp:footNote`/`hp:endNote`의
 것은 10진 코드포인트 문자열("41")이고 `hp:autoNumFormat`의 것은 리터럴 문자(")")다.
 하나의 읽기로 뭉뚱그리면 `)`가 0으로, 41이 문자 '4'로 접힌다. 열거 변환기는
-재사용한다 — `hp:noteLine@type`은 `HwpxCharShapeMapper.lineShapeIndex`(표 27
-이름표가 표 25와 index 동일), `@width`는 `HwpxParaShapeMapper.thicknessIndex`,
-`hp:autoNumFormat@type`은 `HwpxNumberFormatMapper`다. 종류 > 17이나 굵기 > 15를
-실으면 `dividerInfo`의 wide 유효성 게이트가 깨져 narrow로 폴백하고 여백·색이
-통째로 오염되므로 두 변환기의 상한을 벗어나면 안 된다.
+재사용한다 — `hp:noteLine@type`은 `HwpxCharShapeMapper.lineShapeIndex`(같은 OWPML
+`LINETYPE2`를 `hh:underline@shape`·`hh:strikeout@shape`와 공유한다), `@width`는
+`HwpxParaShapeMapper.thicknessIndex`, `hp:autoNumFormat@type`은
+`HwpxNumberFormatMapper`다. 종류 > 17이나 굵기 > 15를 실으면 `dividerInfo`의 wide
+유효성 게이트가 깨져 narrow로 폴백하고 여백·색이 통째로 오염되므로 두 변환기의
+상한을 벗어나면 안 된다.
 
-**미실측**: `hp:numbering@type`의 `ON_PAGE`(쪽마다 새로 — 미주 모양 대화상자에
-그 항목이 없다), 각주 쪽 `hp:placement@place`의 `EACH_COLUMN` 외 값(조판이 각주
-다단 배열을 아직 쓰지 않아 렌더 격차는 없다), `@beneathText`(대응 비트가 코드에
-없어 옮기지 않는다 — 자식이 아니라 속성이라 진단에도 남지 않는다),
-`hp:noteLine@length`의 유한값 의미(HWP 쌍과 바이트가 같아 매핑은 안전하지만
-14,692,344가 한글 대화상자의 "사용자 150.0mm"와 어떤 산식으로 이어지는지는
-확정하지 못했다).
+**열거 이름과 생략 기본값의 정본은 한컴 공개 OWPML 모델이다**(`OWPML/Class/enumdef.h`의
+직렬화 표와 각 클래스 생성자, `OWPML/Base/Util.cpp`의 `GetAttribute`). 실측만으로는
+기본값 문서가 전부 0이라 드러나지 않는 자리가 둘 있었다.
+- **이름**: 각주 다단 배열의 셋째 값은 `RIGHT_MOST_COLUMN`(`RIGHT_COLUMN`이 아니다),
+  `LINETYPE2`의 3D 넷은 `THICK3D`·`THICKREV3D`·`3D`·`REV3D`다. 지어낸 이름을 쓰면
+  정상 입력이 조용히 0으로 접힌다.
+- **생략 기본값**: `GetAttribute`는 속성이 없거나 열거 이름이 표에 없으면 값을
+  건드리지 않고 false만 돌려주므로 **생성자가 세운 값이 남는다**. `CNoteSpacing()`은
+  `betweenNotes` 850·`belowLine` 567·`aboveLine` 567, `CNoteLine()`은 길이 0·`SOLID`·
+  `0.12 mm`·검정, `CFNNumbering()`/`CENNumbering()`은 시작 번호 1,
+  `CAutoNumNewNumType()`은 번호 1·`ANT_PAGE`, `CAutoNumFormatType()`은 `DIGIT`·위 첨자
+  없음, `CFNPlacement()`/`CENPlacement()`는 0, `color="none"`은 **흰색**(0xFFFFFFFF)이다.
+  0으로 접으면 `HwpFootnoteLayout.dividerMetrics`가 그 값을 그대로 써서 **구분선 위·
+  아래 여백과 주석 사이 간격이 0**이 된다. 종류·굵기는 그렇지 않다 — `DividerMetrics`에
+  종류 필드가 없고 굵기도 `max(0.5, …)`에 흡수돼 렌더가 같으므로, 그 둘을 맞추는 실익은
+  HWP 쌍과의 payload 동등성과 wide 유효성 게이트다. **명시된 0은 보존한다** — 기본값은
+  속성이 아예 없을 때만 쓴다. 참조 생성자 값이 한글이 **저장하는** 값(각주 aboveLine
+  850·belowLine 567·betweenNotes 283)과 다른 것은 그대로 둔다: 생략된 문서를 한글이
+  읽을 때 쓰는 값이 생성자 쪽이다(payload 자체가 없어 `dividerInfo`가 nil인 경로의
+  폴백은 `HwpRenderTuning`이 따로 갖고 있고 그쪽이 저장값에 맞춰져 있다).
+
+**`numType="TOTAL_PAGE"`는 일부러 강등에 남긴다.** OWPML `AUTONUMTYPE`에는 전체 쪽수
+(값 6)가 있는데 HWP5 표 143 쪽 `HwpAutoNumberKind`는 0-5뿐이라 `kind`가 그것을
+`.page`로 접는다. 승격하면 `HwpPageChromeBuilder`가 그 자리에 논리 쪽 번호를 그려
+"1 / 3" 머리말이 "1 / 1"이 된다 — 강등 상태에는 없던 **틀린 숫자**다. 미지 이름도
+같은 이유로 강등하며, 자리(코드 18)와 4CC는 그대로라 WCHAR/ctrl 슬롯 정렬은 유지된다.
+총 쪽수 조판을 구현하면 그때 승격한다.
+
+**미실측**: `hp:numbering@type`의 `ON_PAGE`(쪽마다 새로 — 미주 모양 대화상자에 그
+항목이 없다. 값 2는 한컴 `g_FNNumberingTypeList`가 정본), 각주 쪽
+`hp:placement@place`의 `EACH_COLUMN` 외 값(조판이 각주 다단 배열을 아직 쓰지 않아
+렌더 격차는 없다), `@beneathText`가 놓이는 자리(표 134가 위 첨자 **바로 다음 줄**에
+적은 항목이라 bit 13으로 실었다 — 실물은 `beneathText="0"`뿐이고 읽는 소비자도 없어
+왕복 충실도 몫이다), `hp:noteLine@length`의 유한값 의미(HWP 쌍과
+바이트가 같아 매핑은 안전하지만 14,692,344가 한글 대화상자의 "사용자 150.0mm"와 어떤
+산식으로 이어지는지는 확정하지 못했다).
+
+**후속 확인 대상**: `HwpxCharShapeMapper.lineShapes`는 `DASH`↔2·`DOT`↔3인데 한컴
+`g_LineTypeList2`의 나열 순서는 `LT2_DOT`(2)·`LT2_DASH`(3)로 반대다(HWP5 표 25도 2가
+긴 점선·3이 점선). 코퍼스 실물이 `NONE`·`SOLID`뿐이라 이번에는 건드리지 않았다 —
+점선 밑줄 쌍을 만들어 확인할 것.
 
 가드: `HwpxFootnoteMapperTests`(승격·앵커 코드·표 143 비트·게이트 비대칭·합성
 바이트·강등표 이탈), `HwpxFootnoteShapeMapperTests`(28바이트·`dividerInfo`·

@@ -161,16 +161,37 @@ enum HwpxFootnoteMapper {
 extension HwpxFootnoteMapper {
     /// 제어 문자 코드 18(자동 번호) 앵커 + typed 컨트롤.
     ///
+    /// **표 143이 담지 못하는 번호 종류는 승격하지 않는다.** OWPML
+    /// `AUTONUMTYPE`에는 `TOTAL_PAGE`(전체 쪽수, 값 6)가 있는데 HWP5 쪽
+    /// `HwpAutoNumberKind`는 0-5뿐이라 `kind`가 그 값을 **`.page`로 접는다**.
+    /// 그대로 승격하면 `HwpPageChromeBuilder`가 그 자리에 논리 쪽 번호를 그려
+    /// "1 / 3" 머리말이 "1 / 1"이 된다 — 강등 상태에는 없던 **틀린 숫자**다.
+    /// 그래서 미지 이름과 함께 강등 앵커로 되돌린다: 자리(코드 18)와 4CC는
+    /// 그대로라 WCHAR/ctrl 슬롯 정렬이 유지되고 `parseDiagnostics()`가 요소
+    /// 이름까지 보고한다. 총 쪽수 조판을 구현하면 그때 승격한다.
+    ///
     /// `hp:newNum`(새 번호 지정)은 같은 코드를 쓰지만 표 144의 다른 payload라
     /// 이번 승격 범위 밖이다 (#169) — `sectionAttachments`에 남는다.
     static func autoNumberAnchor(
         _ node: HwpxXMLNode,
         context: HwpxMappingContext
     ) throws -> HwpxRunChildAction {
-        .anchor(
+        let fourCC = HwpOtherCtrlId.autoNumber.rawValue
+        // 생략은 참조 모델 기본값 `ANT_PAGE`다 (`CAutoNumNewNumType`의
+        // `m_uNumType(ANT_PAGE)` — `GetAttribute`는 속성 부재 시 값을 건드리지 않는다).
+        guard let kind = autoNumberKinds[node.attribute("numType") ?? "PAGE"] else {
+            return .anchor(
+                code: 18,
+                fourCC: fourCC,
+                ctrl: HwpxControlMapper.degradedControl(
+                    fourCC: fourCC, element: node, maxDepth: context.unknownDepthLimit
+                )
+            )
+        }
+        return .anchor(
             code: 18,
-            fourCC: HwpOtherCtrlId.autoNumber.rawValue,
-            ctrl: .autoNumber(try mapAutoNumber(node, context: context))
+            fourCC: fourCC,
+            ctrl: .autoNumber(try mapAutoNumber(node, kind: kind, context: context))
         )
     }
 
@@ -183,10 +204,11 @@ extension HwpxFootnoteMapper {
     /// 만들므로, 직접 세우면 `.viewer`에서 번호 라벨이 사라지는 비대칭이 생긴다.
     static func mapAutoNumber(
         _ node: HwpxXMLNode,
+        kind: UInt32,
         context: HwpxMappingContext
     ) throws -> HwpOtherControl {
         let format = node.paragraphFirstChild(named: "autoNumFormat")
-        var property = autoNumberKinds[node.attribute("numType") ?? "PAGE"] ?? 0
+        var property = kind
         property |= UInt32(HwpxNumberFormatMapper.code(for: format?.attribute("type")) & 0xFF) << 4
         if format?.boolAttribute("supscript") == true {
             property |= 1 << 12
@@ -195,7 +217,8 @@ extension HwpxFootnoteMapper {
         var payload = Data(capacity: 16)
         payload.appendHwpxLittleEndian(HwpOtherCtrlId.autoNumber.rawValue)
         payload.appendHwpxLittleEndian(property)
-        payload.appendHwpxLittleEndian(node.uint16Attribute("num", default: 0))
+        // 생략은 참조 모델 기본값 1이다 (`CAutoNumNewNumType`의 `m_nNum(1)`).
+        payload.appendHwpxLittleEndian(node.uint16Attribute("num", default: 1))
         payload.appendHwpxLittleEndian(literalWchar(format?.attribute("userChar")))
         payload.appendHwpxLittleEndian(literalWchar(format?.attribute("prefixChar")))
         payload.appendHwpxLittleEndian(literalWchar(format?.attribute("suffixChar")))
@@ -218,10 +241,13 @@ extension HwpxFootnoteMapper {
         return control
     }
 
-    /// `hp:autoNum numType` → 표 143 bits 0-3. 실측은 `FOOTNOTE`↔1·`ENDNOTE`↔2이고
-    /// 나머지는 `HwpAutoNumberKind` 나열 순서를 따랐다. 미지 이름은 0(쪽 번호)으로
-    /// 접는다 — 각주·미주가 아닌 종류는 번호 치환 대상이 아니라서, 모르는 값을
-    /// 각주로 넘겨 없던 번호를 지어내는 것보다 안전하다.
+    /// `hp:autoNum numType` → 표 143 bits 0-3. 이름과 값은 한컴 공개 OWPML 모델의
+    /// 직렬화 표(`OWPML/Class/enumdef.h`의 `AUTONUMTYPE`·`g_AutoNumTypeList`)이고,
+    /// `FOOTNOTE`↔1·`ENDNOTE`↔2는 `footnote-endnote` 쌍의 실측이기도 하다.
+    ///
+    /// **`TOTAL_PAGE`(값 6)는 일부러 빠져 있다** — HWP5 `HwpAutoNumberKind`가
+    /// 0-5뿐이라 실으면 `.page`로 접혀 전체 쪽수 자리에 현재 쪽 번호가 그려진다.
+    /// 여기 없는 이름은 `autoNumberAnchor`가 강등 앵커로 되돌린다.
     static let autoNumberKinds: [String: UInt32] = [
         "PAGE": 0, "FOOTNOTE": 1, "ENDNOTE": 2,
         "PICTURE": 3, "TABLE": 4, "EQUATION": 5,
