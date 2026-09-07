@@ -1,0 +1,56 @@
+{
+  "id": "section-marks",
+  "generationTool": "한컴오피스 한글 12.30.0 (6446) macOS",
+  "source": "HWP 쌍 section-marks와 같은 편집 세션에서 파일 > 다른 이름으로 저장하기 > 한글 표준 문서 (*.hwpx)로 저장 (Claude Computer Use GUI 자동화)",
+  "owpmlVersion": "5.1.1.0",
+  "sourceHwpFixture": "section-marks",
+  "features": [
+    "hwpx",
+    "derived-from-hwp",
+    "paragraph-text",
+    "page-number",
+    "new-number",
+    "page-hide",
+    "bookmark",
+    "indexmark",
+    "doc-info",
+    "doc-properties",
+    "styles",
+    "preview-text",
+    "preview-image"
+  ],
+  "expectations": {
+    "binDataCount": 0,
+    "borderFillCount": 2,
+    "bulletCount": 0,
+    "charShapeCount": 7,
+    "faceNamesKorean": [
+      "함초롬돋움",
+      "함초롬바탕"
+    ],
+    "numberingCount": 1,
+    "pageCount": 3,
+    "pageCountSource": "한글.app 12.30.0 상태 표시줄 실측 (2026-09-08, \"10/3쪽\" — 새 번호 지정 때문에 인쇄 번호가 10이다) = HWP 쌍 쪽수",
+    "pageDef": {
+      "height": 84186,
+      "marginBottom": 4252,
+      "marginLeft": 8504,
+      "marginRight": 8504,
+      "marginTop": 5668,
+      "width": 59528
+    },
+    "paraShapeCount": 20,
+    "sectionCount": 1,
+    "sectionParagraphCounts": [
+      5
+    ],
+    "styleCount": 22,
+    "tabDefCount": 3,
+    "visibleTextContains": [
+      "구역 부속 표식 견본",
+      "둘째 쪽 본문",
+      "셋째 쪽 본문",
+      "색인둘본문"
+    ]
+  }
+}

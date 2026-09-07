@@ -80,9 +80,16 @@ enum HwpxControlMapper {
         case "autoNum":
             // 자동 번호(표 142) — 각주·미주 본문 첫머리의 번호 라벨이 이
             // 컨트롤의 `autoNumberInfo`에서 나온다. 각주만 승격하면 번호 없는
-            // 각주가 되므로 같은 범위다 (#168). `newNum`은 코드가 같아도
-            // 표 144의 다른 payload라 강등에 남는다 (#169).
+            // 각주가 되므로 같은 범위다 (#168). 코드 18은 자동 번호 전용이다 —
+            // 새 번호(`newNum`)는 표 144의 다른 payload이자 **코드 21**이고
+            // #169에서 따로 승격했다.
             return try HwpxFootnoteMapper.autoNumberAnchor(node, context: context)
+        case "newNum", "pageHiding", "bookmark", "indexmark":
+            // 새 번호 지정(표 144)·쪽 감추기(표 145)는 코드 21, 책갈피·찾아보기
+            // 표식은 코드 22 — 구역 부속 컨트롤의 마지막 typed 승격이다 (#169).
+            // 강등 상태에서는 조판이 쪽 번호를 되돌리지도(`applyNewNumbers`),
+            // 크롬을 감추지도(`pageHideMask`) 못해 HWP 쌍과 다른 쪽이 나온다.
+            return try HwpxSectionMarkMapper.anchor(node, context: context)
         case "tbl":
             return .anchor(
                 code: 11,
@@ -167,14 +174,16 @@ enum HwpxControlMapper {
 
     /// 개체가 아닌 구역 부속 컨트롤 중 미구현 강등 대상 — (제어 문자 코드, 4CC).
     /// 코드 16의 `header`·`footer`(#167), 코드 17의 `footNote`·`endNote`와 코드
-    /// 18의 `autoNum`(#168), 코드 21의 `pageNum`(#135)은 위에서 typed 매핑으로
-    /// 승격됐다.
+    /// 18의 `autoNum`(#168), 코드 21의 `pageNum`(#135), 코드 21의 `newNum`·
+    /// `pageHiding`과 코드 22의 `bookmark`·`indexmark`(#169)는 위에서 typed
+    /// 매핑으로 승격됐다.
+    ///
+    /// **`pageNumCtrl`(홀/짝수 조정, `pgct`)만 남는다** — 바이너리 쪽에 표 146의
+    /// typed 모델이 없고 저장소 실물 36종에 사례가 0건이라 payload를 지어내야
+    /// 하며, 승격해도 `HwpUnsupportedDetector`가 여전히 "알 수 없음: pageCT"를
+    /// 낸다. 실물 표본이 생기면 그때 함께 다룬다.
     static let sectionAttachments: [String: (code: UInt16, fourCC: UInt32)] = [
-        "newNum": (18, HwpOtherCtrlId.newNumber.rawValue),
         "pageNumCtrl": (21, HwpOtherCtrlId.pageCT.rawValue),
-        "pageHiding": (21, HwpOtherCtrlId.pageHide.rawValue),
-        "bookmark": (22, HwpOtherCtrlId.bookmark.rawValue),
-        "indexmark": (22, HwpOtherCtrlId.indexmark.rawValue),
     ]
 
     /// `hp:fieldBegin type` → HWP5 필드 4CC. 미지 유형은 `%unk`.

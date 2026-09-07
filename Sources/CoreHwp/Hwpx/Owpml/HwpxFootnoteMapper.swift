@@ -177,8 +177,10 @@ extension HwpxFootnoteMapper {
     /// 바뀌어야 해서 각주 승격과 분리했다. 그때 이 분기를 지우고
     /// `autoNumberKinds`에 `TOTAL_PAGE`를 되돌려 넣으면 두 경로가 함께 닫힌다.
     ///
-    /// `hp:newNum`(새 번호 지정)은 같은 코드를 쓰지만 표 144의 다른 payload라
-    /// 이번 승격 범위 밖이다 (#169) — `sectionAttachments`에 남는다.
+    /// `hp:newNum`(새 번호 지정)은 표 143 번호 종류를 공유하지만 payload도
+    /// (표 144, 10바이트) 제어 문자 코드도(21 — 18은 자동 번호 전용) 다르다.
+    /// `HwpxSectionMarkMapper`가 #169에서 따로 승격했고 `autoNumberKinds`를
+    /// 그쪽과 공유한다.
     static func autoNumberAnchor(
         _ node: HwpxXMLNode,
         context: HwpxMappingContext

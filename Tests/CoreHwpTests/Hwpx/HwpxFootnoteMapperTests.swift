@@ -284,11 +284,13 @@ final class HwpxFootnoteMapperTests: XCTestCase {
     }
 
     /// 분류표 규약: 승격한 요소는 강등 표에서 빠져야 두 경로가 갈리지 않는다.
-    /// `newNum`은 같은 코드 18이지만 표 144의 다른 payload라 그대로 남는다 (#169).
+    /// `newNum`도 #169에서 승격됐고 **코드 21**을 쓴다 — 코드 18은 자동 번호
+    /// (`atno`) 전용이라 두 이름이 같은 코드를 공유하지 않는다.
     func testPromotedElementsLeaveTheDegradeTable() {
         expect(HwpxControlMapper.sectionAttachments["footNote"]).to(beNil())
         expect(HwpxControlMapper.sectionAttachments["endNote"]).to(beNil())
         expect(HwpxControlMapper.sectionAttachments["autoNum"]).to(beNil())
-        expect(HwpxControlMapper.sectionAttachments["newNum"]?.code) == 18
+        expect(HwpxControlMapper.sectionAttachments["newNum"]).to(beNil())
+        expect(HwpxSectionMarkMapper.marks["newNum"]?.code) == 21
     }
 }

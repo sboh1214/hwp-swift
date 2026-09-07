@@ -15,7 +15,7 @@ final class HwpxFixtureRenderTests: XCTestCase {
     /// manifest `expectations.pageCount`(출처는 `pageCountSource`)와 실제 렌더
     /// 쪽수가 정확히 일치해야 한다.
     ///
-    /// 핀은 **파싱 가능한 픽스처 전부**에 강제한다 — 하한(`>= 14`)만 두면
+    /// 핀은 **파싱 가능한 픽스처 전부**에 강제한다 — 하한(`>= 15`)만 두면
     /// `pageCount` 없는 새 픽스처가 조판 캐시 회귀 가드에서 조용히 빠진다.
     /// 등식만 두면 반대로 픽스처가 전부 유실돼도 0 == 0으로 통과하므로 하한도
     /// 남긴다. `expectedError` 픽스처(암호·배포용·DRM)는 HWP 하니스가 35종 중
@@ -25,7 +25,7 @@ final class HwpxFixtureRenderTests: XCTestCase {
         let parseable = fixtures.filter { !$0.hasExpectedError }
         let withPageCount = parseable.filter { $0.expectedPageCount != nil }
         // 픽스처 유실 가드 — 변환 쌍 14종
-        expect(fixtures.count) >= 14
+        expect(fixtures.count) >= 15
         // 파싱 가능한 픽스처는 전부 pageCount 핀이 있어야 한다 (AGENTS.md "HWPX 픽스처 추가")
         expect(withPageCount.count) == parseable.count
         for fixture in withPageCount {
@@ -94,7 +94,7 @@ final class HwpxFixtureRenderTests: XCTestCase {
         }
 
         // 비교 가능한 변환 쌍 14종 — 하한은 유실 가드
-        expect(comparedCount) >= 14
+        expect(comparedCount) >= 15
         if !failures.isEmpty {
             fail("HWP↔HWPX page count mismatches (\(failures.count)):\n" +
                 failures.joined(separator: "\n"))
@@ -104,8 +104,11 @@ final class HwpxFixtureRenderTests: XCTestCase {
     /// 쪽 크롬(머리말/꼬리말/쪽 번호) 블록 텍스트가 HWP 쌍과 같아야 한다 —
     /// HWPX `hp:pageNum`이 typed 승격돼야 noori 꼬리 쪽 번호가 서고 (#135),
     /// `hp:header`·`hp:footer`가 승격돼야 header-footer 쌍의 머리말·꼬리말이
-    /// 선다 (#167). 14쌍 중 쪽 크롬을 가진 문서는 그 둘뿐이라 나머지는 빈 배열
-    /// 등식이고, 둘은 직접 핀한다 — 등식만 두면 양쪽이 함께 비어도 통과한다.
+    /// 선다 (#167). `hp:pageHiding`·`hp:newNum`이 승격돼야 section-marks 쌍의
+    /// 1쪽 번호가 감춰지고 2·3쪽이 9·10으로 다시 매겨진다 (#169 — 강등 상태는
+    /// `["- 1 -"], ["- 2 -"], ["- 3 -"]`였다). 15쌍 중 쪽 크롬을 가진 문서는 그
+    /// 셋뿐이라 나머지는 빈 배열 등식이고, 셋은 직접 핀한다 — 등식만 두면
+    /// 양쪽이 함께 비어도 통과한다.
     func testHwpxPageChromeMatchesHwpPairs() async throws {
         let hwpxFixtures = try FixtureRoot.loadAllHwpxFixtures(from: #file)
         let hwpFixtures = try FixtureRoot.loadAllFixtures(from: #file)
@@ -116,6 +119,7 @@ final class HwpxFixtureRenderTests: XCTestCase {
         var comparedCount = 0
         var nooriChrome: [[String]]?
         var headerFooterChrome: [[String]]?
+        var sectionMarkChrome: [[String]]?
         for fixture in hwpxFixtures where !fixture.hasExpectedError {
             guard let pairID = fixture.sourceHwpFixture, let pair = hwpByID[pairID],
                   !pair.hasExpectedError
@@ -135,14 +139,20 @@ final class HwpxFixtureRenderTests: XCTestCase {
                 if fixture.id == "header-footer" {
                     headerFooterChrome = hwpxChrome
                 }
+                if fixture.id == "section-marks" {
+                    sectionMarkChrome = hwpxChrome
+                }
             } catch {
                 failures.append("[\(fixture.id)] load threw: \(error)")
             }
         }
 
-        expect(comparedCount) >= 14
+        expect(comparedCount) >= 15
         expect(nooriChrome) == [["1"], ["2"], ["3"]]
         expect(headerFooterChrome) == [["CoreHwp header fixture", "CoreHwp footer fixture"]]
+        // 1쪽은 쪽 감추기(0x29 = 머리말·쪽 테두리·쪽 번호)로 번호가 없고,
+        // 2쪽은 새 번호 9, 3쪽은 그 뒤를 이어 10이다.
+        expect(sectionMarkChrome) == [[], ["- 9 -"], ["- 10 -"]]
         if !failures.isEmpty {
             fail("HWP↔HWPX page chrome mismatches (\(failures.count)):\n" +
                 failures.joined(separator: "\n"))
@@ -195,7 +205,7 @@ final class HwpxFixtureRenderTests: XCTestCase {
             }
         }
 
-        expect(comparedCount) >= 14
+        expect(comparedCount) >= 15
         expect(chartHwpxCount) == 1
         expect(chartHwpCount) == 1
         expect(chartHints) == ["OLE"]
@@ -249,7 +259,7 @@ final class HwpxFixtureRenderTests: XCTestCase {
             }
         }
 
-        expect(comparedCount) >= 14
+        expect(comparedCount) >= 15
         // 두 문단은 표 셀 안이라 `page.blocks`에는 잡히지 않는다 — 추출은
         // 페인트 리스트여야 한다. 본문 자체가 `-`로 끝나므로 `contains("-")`
         // 검사는 무의미하고, 선행 `- `를 문자열로 직접 핀한다.
@@ -330,7 +340,7 @@ final class HwpxFixtureRenderTests: XCTestCase {
             }
         }
 
-        expect(comparedCount) >= 14
+        expect(comparedCount) >= 15
         // 1쪽에 각주, 2쪽에 미주. 선두 `1)`가 각주 본문 문단 안 `hp:autoNum`이
         // 만드는 번호 라벨이다 — autoNum이 강등되면 그 자리가 빈다.
         expect(noteTexts) == [["1) CoreHwp footnote fixture"], ["1) CoreHwp endnote fixture"]]
@@ -338,6 +348,56 @@ final class HwpxFixtureRenderTests: XCTestCase {
             fail("HWP↔HWPX footnote mismatches (\(failures.count)):\n" +
                 failures.joined(separator: "\n"))
         }
+    }
+
+    /// 책갈피가 **탐색 목록**(`metadata.outline`)에 나와야 한다 (#169의 검증 항목) —
+    /// `hp:bookmark`가 승격돼야 `HwpOutlineCollector`가 `.bookmark` 컨트롤에서
+    /// 이름을 읽는다. 강등 상태에서는 목록이 비어 HWP 쌍과 갈린다.
+    func testHwpxBookmarkOutlineMatchesHwpPairs() async throws {
+        let hwpxFixtures = try FixtureRoot.loadAllHwpxFixtures(from: #file)
+        let hwpFixtures = try FixtureRoot.loadAllFixtures(from: #file)
+        let hwpByID = Dictionary(uniqueKeysWithValues: hwpFixtures.map { ($0.id, $0) })
+        let loader = HwpDocumentLoader(fontResolver: .testDeterministic)
+
+        var failures: [String] = []
+        var comparedCount = 0
+        var sectionMarkBookmarks: [String]?
+        for fixture in hwpxFixtures where !fixture.hasExpectedError {
+            guard let pairID = fixture.sourceHwpFixture, let pair = hwpByID[pairID],
+                  !pair.hasExpectedError
+            else { continue }
+            comparedCount += 1
+            do {
+                let hwpx = try await loader.load(from: fixture.documentURL)
+                let hwp = try await loader.load(from: pair.documentURL)
+                let hwpxBookmarks = Self.bookmarkTitles(of: hwpx)
+                let hwpBookmarks = Self.bookmarkTitles(of: hwp)
+                if hwpxBookmarks != hwpBookmarks {
+                    failures.append(
+                        "[\(fixture.id)] hwpx bookmarks \(hwpxBookmarks)"
+                            + " != hwp \(hwpBookmarks)"
+                    )
+                }
+                if fixture.id == "section-marks" {
+                    sectionMarkBookmarks = hwpxBookmarks
+                }
+            } catch {
+                failures.append("[\(fixture.id)] load threw: \(error)")
+            }
+        }
+
+        expect(comparedCount) >= 15
+        // 15쌍 중 책갈피를 가진 문서는 section-marks뿐이라 나머지는 빈 배열
+        // 등식이다 — 직접 핀이 없으면 양쪽이 함께 비어도 통과한다.
+        expect(sectionMarkBookmarks) == ["표식 A1"]
+        if !failures.isEmpty {
+            fail("HWP↔HWPX bookmark outline mismatches (\(failures.count)):\n" +
+                failures.joined(separator: "\n"))
+        }
+    }
+
+    private static func bookmarkTitles(of document: HwpDocument) -> [String] {
+        document.metadata.outline.bookmarks.map(\.title)
     }
 
     private static func footnoteTexts(of document: HwpDocument) -> [[String]] {
@@ -371,7 +431,7 @@ final class HwpxFixtureRenderTests: XCTestCase {
     func testHwpxFixturesRenderExpectedText() async throws {
         let fixtures = try FixtureRoot.loadAllHwpxFixtures(from: #file)
         let withText = fixtures.filter { !$0.hasExpectedError && !$0.expectedVisibleText.isEmpty }
-        expect(withText.count) >= 12
+        expect(withText.count) >= 13
 
         var failures: [String] = []
         for fixture in withText {

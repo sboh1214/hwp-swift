@@ -154,6 +154,13 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   건너뛴 수준의 암묵 매김, 구역·표 셀을 지나는 이어 매기기 (#153). 한글.app이 그린
   라벨은 fixture README의 표와 `HwpParagraphNumberingFixtureTests`에 있다. HWPX 쌍은
   `HwpxFixtures/numbering-sequence`.
+- `section-marks`: 빈 문서에 쪽 번호 매기기(가운데 위), 쪽 감추기 2종(머리말+쪽
+  테두리+쪽 번호 / 꼬리말+바탕쪽+쪽 배경), 새 번호로 시작 3종(쪽 9·그림 5·각주 7),
+  책갈피 1개, 찾아보기 표식 2개를 넣고 쪽 나누기로 3쪽을 만들어 Hancom Office HWP
+  for macOS 12.30.0 build 6446으로 2026-09-08에 저장. 구역 부속 표식 네 종류의 실물
+  근거다 (#169) — 쪽 감추기 두 표본이 서로의 여집합이라 표 145의 여섯 비트를 전부
+  확정하고, 새 번호 세 표본이 제어 문자 코드 **21**(18이 아니다)과 번호 종류
+  PAGE·PICTURE·FOOTNOTE를 잠근다. HWPX 쌍은 `HwpxFixtures/section-marks`.
 - `track-changes`: WordprocessingML tracked changes DOCX를 Hancom Office HWP for macOS
   12.30.0 build 6382에서 열고 HWP로 저장. FileHeader, 본문/preview,
   DocumentProperties, DocInfo id mappings를 manifest로 검증.

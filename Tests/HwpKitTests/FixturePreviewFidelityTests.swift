@@ -85,6 +85,9 @@ final class FixturePreviewFidelityTests: XCTestCase {
         // 같은 이유 — 3쪽 표 셀의 `9.`·`10.`도 #158부터 그리지만 PrvImage는 1쪽뿐이라
         // 이 값은 그대로다 (셀 라벨은 `FixtureNumberingLabelRenderTests`가 핀한다)
         "numbering-sequence": 0.001, // 실측 0.0003 (2026-09-06, 라벨 전 0.0004)
+        // 1쪽은 쪽 감추기(0x29)가 쪽 번호를 지운 상태다 — PrvImage에도 번호가 없으므로
+        // 승격이 감추기를 무시하면 이 값이 올라간다 (#169)
+        "section-marks": 0.001, // 실측 0.0002 (2026-09-08)
         "공공누리": 0.004, // 실측 0.0028 (저해상 GIF)
         "문서이력관리": 0.001, // 실측 0.0000
         "변경내용추적": 0.001, // 실측 0.0000
