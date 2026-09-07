@@ -95,8 +95,9 @@ enum HwpxSecPrMapper {
             of: ["pagePr", "startNum", "visibility"], in: HwpxNamespace.paragraph,
             maxDepth: maxDepth
         )
-        // 소비 래퍼 안 미지 자식 — pagePr는 margin만, margin·startNum은
-        // 속성만 읽는다.
+        // 소비 래퍼 안 미지 자식 — pagePr는 margin만, margin·startNum·visibility는
+        // 속성만 읽는다. 래퍼를 소비 목록에 넣으면 그 서브트리가 위 순회에서
+        // 빠지므로, 안쪽 미지 자식은 여기서 따로 걷어야 진단에서 사라지지 않는다.
         if let pagePr = secPr.paragraphFirstChild(named: "pagePr") {
             sectionDef.unknownChildren += pagePr.unconsumedChildRecords(
                 consumed: ["margin"], in: HwpxNamespace.paragraph, maxDepth: maxDepth
@@ -115,6 +116,11 @@ enum HwpxSecPrMapper {
                 consumed: [], maxDepth: maxDepth
             )
         }
+        if let visibility = secPr.paragraphFirstChild(named: "visibility") {
+            sectionDef.unknownChildren += visibility.unconsumedChildRecords(
+                consumed: [], maxDepth: maxDepth
+            )
+        }
         return sectionDef
     }
 
@@ -125,6 +131,9 @@ enum HwpxSecPrMapper {
     /// 머리말·꼬리말·쪽 번호 셋을 표 145 마스크(0x01·0x02·0x20)로 환산해 구역
     /// 첫 쪽에 한 번 쓴다. 나머지 속성(`border`·`fill` 열거·`showLineNumber`)은
     /// 대응 소비자가 없어 옮기지 않는다 — 자식이 아니라 속성이라 진단에도 남지 않는다.
+    ///
+    /// **속성만 읽는다** — 이 요소는 `mapSectionDef`의 소비 목록에 들어가 위 순회에서
+    /// 빠지므로, 안쪽 미지 자식은 호출부가 `startNum`과 같은 자리에서 따로 걷는다.
     static func applyFirstPageVisibility(
         _ visibility: HwpxXMLNode?,
         to sectionDef: inout HwpSectionDef
