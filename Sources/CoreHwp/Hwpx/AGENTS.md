@@ -75,7 +75,21 @@ OLE 개체 `hp:ole`은 #134에서 승격됐다), 자동 번호·새 번호·홀/
 `BOTH`·`EVEN`·`ODD`이고 생략·미지 이름은 양쪽으로 접는다(범위를 추측해 쪽을
 건너뛰면 머리말이 통째로 사라진다). 실물 구조는 `header-footer` 변환 쌍이
 정본이다 — `hp:subList@vertAlign`이 머리말 `TOP`·꼬리말 `BOTTOM`이고, 문단 안
-`hp:linesegarray`도 본문과 같은 경로로 매핑돼 조판 캐시가 살아난다.
+`hp:linesegarray`도 본문과 같은 경로로 모델에 실린다 — 다만 쪽 크롬은 그 캐시를
+쓰지 않고 CT로 다시 조판한다(`HwpPageChromeBuilder.layoutBandBlocks`, 바이너리
+경로도 같다).
+
+`hp:visibility`의 `hideFirstHeader`·`hideFirstFooter`·`hideFirstMasterPage`·
+`hideFirstPageNum`을 구역 정의 속성(표 132 bits 0·1·2·5)으로 함께 옮긴다 — 승격
+뒤에는 이 플래그가 없으면 감춰야 할 구역 첫 쪽에도 머리말이 그려진다. `border`·
+`fill` 열거와 `showLineNumber`는 대응 소비자가 없어 옮기지 않는다.
+
+**미실측**: `applyPageType`의 `EVEN`·`ODD`와 속성 생략 경로는 실물이 없다
+(저장소의 유일한 실물은 `BOTH`). 표 141 나열 순서를 따랐고 합성 입력으로만 잠갔다.
+
+가드: `HwpxHeaderFooterMapperTests`(매핑·payload 모양·보존 게이트·진단),
+`HwpPageChromeApplyScopeTests`(홀·짝수 범위가 실제로 쪽을 가르는지),
+`HwpxFixtureRenderTests.testHwpxPageChromeMatchesHwpPairs`(HWP 쌍 등식 + 직접 핀).
 
 2026-09-02 한글.app 12.30.0 나란히 육안 대조(변환 쌍 10종 13쪽, 한컴 폰트
 모드): 쪽수 10종 전부 일치, 표·그림·다단·글자 장식·쪽나눔 일치. HWPX

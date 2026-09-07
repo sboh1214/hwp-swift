@@ -24,7 +24,7 @@ final class HwpxFixtureRenderTests: XCTestCase {
         let fixtures = try FixtureRoot.loadAllHwpxFixtures(from: #file)
         let parseable = fixtures.filter { !$0.hasExpectedError }
         let withPageCount = parseable.filter { $0.expectedPageCount != nil }
-        // 픽스처 유실 가드 — 변환 쌍 12종
+        // 픽스처 유실 가드 — 변환 쌍 13종
         expect(fixtures.count) >= 13
         // 파싱 가능한 픽스처는 전부 pageCount 핀이 있어야 한다 (AGENTS.md "HWPX 픽스처 추가")
         expect(withPageCount.count) == parseable.count
@@ -151,7 +151,7 @@ final class HwpxFixtureRenderTests: XCTestCase {
 
     /// 내장 차트 블록(`.chart` payload) 수가 HWP 쌍과 같아야 한다 — HWPX `hp:ole`이
     /// `.ole`로 typed 승격돼야 `HwpPaginator.chartFrame`이 chart 쌍의 차트를 그린다
-    /// (#134). 12쌍 중 차트를 가진 문서는 chart뿐이라 나머지는 0 == 0 등식이고,
+    /// (#134). 13쌍 중 차트를 가진 문서는 chart뿐이라 나머지는 0 == 0 등식이고,
     /// chart는 1로 직접 핀한다 — 등식만 두면 양쪽이 함께 0이어도 통과하기 때문이다.
     /// 미지원 힌트도 HWP 쌍과 같은 "OLE"여야 한다 (`HwpUnsupportedDetector`가
     /// `.ole` 컨트롤과 gso의 OLE 개체 요소에 같은 힌트를 낸다 — 근사 렌더라 힌트는
@@ -195,7 +195,7 @@ final class HwpxFixtureRenderTests: XCTestCase {
             }
         }
 
-        expect(comparedCount) >= 12
+        expect(comparedCount) >= 13
         expect(chartHwpxCount) == 1
         expect(chartHwpCount) == 1
         expect(chartHints) == ["OLE"]
@@ -249,7 +249,7 @@ final class HwpxFixtureRenderTests: XCTestCase {
             }
         }
 
-        expect(comparedCount) >= 12
+        expect(comparedCount) >= 13
         // 두 문단은 표 셀 안이라 `page.blocks`에는 잡히지 않는다 — 추출은
         // 페인트 리스트여야 한다. 본문 자체가 `-`로 끝나므로 `contains("-")`
         // 검사는 무의미하고, 선행 `- `를 문자열로 직접 핀한다.
@@ -265,7 +265,7 @@ final class HwpxFixtureRenderTests: XCTestCase {
 
     /// 글머리표 라벨(`문자 + 공백`)이 앞에 붙은 줄만 문서 순서로 모은다.
     ///
-    /// 라벨 문자는 픽스처 12종의 유일한 실물인 `-`로 한정한다. `□`·`o` 같은
+    /// 라벨 문자는 픽스처 13종의 유일한 실물인 `-`로 한정한다. `□`·`o` 같은
     /// 다른 기호는 noori 본문 문단이 **글자 그대로** 쓰고 있어(문단 머리가
     /// 아니다) 넓히면 본문이 딸려 들어온다.
     ///

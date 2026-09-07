@@ -71,6 +71,10 @@ final class HwpxHeaderFooterMapperTests: XCTestCase {
         let section = try mapSection(headerFooterBody())
         let chars = try XCTUnwrap(section.paragraph[1].paraText?.charArray)
         expect(chars.map(\.value)) == [16, 16, 13]
+        // 짝 불변식: extended 문자 수 == ctrl 슬롯 수. 하나만 어긋나도
+        // `HwpTextRunBuilder`의 서수 인덱싱이 다른 컨트롤을 집는다.
+        let extendedCount = chars.filter { $0.type == .extended }.count
+        expect(extendedCount) == section.paragraph[1].ctrlHeaderArray?.count
     }
 
     /// 적용 범위(표 141 bits 0-1)는 payload를 되읽어 얻는다.
@@ -136,9 +140,10 @@ final class HwpxHeaderFooterMapperTests: XCTestCase {
         expect(header.listArray.first?.header.paragraphCount) == 0
     }
 
-    /// 미지 자식은 진단으로 남는다 — 승격이 "미해석 강등은 진단으로 보고됨"
-    /// 규약을 깨지 않아야 한다.
-    func testUnknownChildrenAreReportedAsDiagnostics() throws {
+    /// 미지 자식은 **이름까지** 보존돼 진단으로 남는다 — 승격이 "미해석 강등은
+    /// 진단으로 보고됨" 규약을 깨지 않아야 한다. 이름을 보지 않으면 `consumed:`
+    /// 목록이 틀려 소비돼야 할 자식이 진단에 섞여도 통과한다.
+    func testUnknownChildrenKeepElementNames() throws {
         let body = HwpxSectionFixture.blankBody + """
         <hp:p><hp:run charPrIDRef="7">\
         <hp:ctrl><hp:header id="1" applyPageType="BOTH">\
@@ -152,7 +157,51 @@ final class HwpxHeaderFooterMapperTests: XCTestCase {
         guard case let .header(header) = ctrls[0] else {
             return fail("Expected .header, got \(ctrls)")
         }
-        expect(header.unknownChildren).toNot(beEmpty())
-        expect(header.listArray.first?.headerUnknownChildren).toNot(beEmpty())
+        // subList는 소비되므로 헤더 쪽 미지 자식은 mystery 하나뿐이어야 한다.
+        expect(header.unknownChildren.map { String(bytes: $0.payload, encoding: .utf8) })
+            == ["mystery"]
+        expect(
+            header.listArray.first?.headerUnknownChildren
+                .map { String(bytes: $0.payload, encoding: .utf8) }
+        ) == ["enigma"]
+    }
+
+    /// 둘째 `hp:subList`는 읽히지 않으므로 진단으로 강등해야 한다 — 이름 단위
+    /// 소비 표시라 그대로 두면 값도 진단도 없이 사라진다.
+    func testDuplicateSubListIsDemotedToDiagnostics() throws {
+        let body = HwpxSectionFixture.blankBody + """
+        <hp:p><hp:run charPrIDRef="7">\
+        <hp:ctrl><hp:header id="1" applyPageType="BOTH">\
+        <hp:subList id=""><hp:p><hp:run charPrIDRef="2"><hp:t>가</hp:t></hp:run></hp:p></hp:subList>\
+        <hp:subList id=""><hp:p><hp:run charPrIDRef="2"><hp:t>나</hp:t></hp:run></hp:p></hp:subList>\
+        </hp:header></hp:ctrl>\
+        </hp:run></hp:p>
+        """
+        let ctrls = try controls(of: try mapSection(body))
+        guard case let .header(header) = ctrls[0] else {
+            return fail("Expected .header, got \(ctrls)")
+        }
+        // 첫 subList만 리스트가 되고 둘째는 진단으로 남는다.
+        expect(header.listArray.count) == 1
+        expect(header.unknownChildren.map { String(bytes: $0.payload, encoding: .utf8) })
+            == ["subList"]
+    }
+
+    /// 합성 payload는 바이너리 실물과 같은 모양이어야 한다 — 컨트롤 헤더
+    /// 12바이트(4CC + 속성 + `hp:header@id`), 리스트 헤더 34바이트(문단 수 +
+    /// 속성 + textWidth·textHeight + 0). `header-footer` HWP 쌍 실측.
+    func testSynthesizedPayloadsMatchBinaryShape() throws {
+        let section = try mapSection(headerFooterBody())
+        let ctrls = try controls(of: section)
+        guard case let .header(header) = ctrls[0] else {
+            return fail("Expected .header, got \(ctrls)")
+        }
+        expect(header.header.rawPayload.count) == 12
+        expect(Array(header.header.rawPayload.suffix(4))) == [1, 0, 0, 0]
+        let list = try XCTUnwrap(header.listArray.first)
+        expect(list.headerRawPayload.count) == 34
+        // trailing 26바이트의 앞 두 UINT32 = textWidth 42520 · textHeight 4252.
+        expect(list.header.rawTrailingWords?.prefix(4).map(Int.init))
+            == [42520, 0, 4252, 0]
     }
 }

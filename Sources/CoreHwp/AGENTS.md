@@ -160,9 +160,10 @@ HWPX(OWPML, `.hwpx`)는 **변환 파싱**으로 읽습니다 — `HwpFile`의 pu
 3종이 파일 선두 바이트로 OLE/ZIP을 자동 감지해, ZIP이면 `Sources/CoreHwp/Hwpx/`
 파이프라인이 OWPML XML을 같은 `Hwp*` 모델로 합성합니다 (별도 모델·별도 public
 타입 없음, 상세 규약은 `Hwpx/AGENTS.md`). 1차 범위는 본문 텍스트·글자/문단
-모양·스타일·구역/쪽 설정·단·표·그림·쪽 번호 위치·OLE 개체(내장 차트)·문단
-번호와 글머리표 정의(라벨 생성·렌더는 HwpKitCore #153·#154)이고, 그 밖의
-요소(각주·머리말 내용·도형·수식 등)는 실제 4CC를 실은 `.notImplemented`와 합성
+모양·스타일·구역/쪽 설정·단·표·그림·쪽 번호 위치·머리말/꼬리말(#167)·OLE
+개체(내장 차트)·문단 번호와 글머리표 정의(라벨 생성·렌더는 HwpKitCore
+#153·#154)이고, 그 밖의 요소(각주 내용·도형·수식 등)는 실제 4CC를 실은
+`.notImplemented`와 합성
 tagId(0)의
 `unknownRecords`로 강등되어 `parseDiagnostics()`에 보고됩니다. 같은 문서의
 HWP↔HWPX 파싱 등가는 `Tests/CoreHwpTests/FixtureHarness/Hwpx/`의

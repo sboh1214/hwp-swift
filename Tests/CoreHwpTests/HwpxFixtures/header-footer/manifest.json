@@ -12,7 +12,8 @@
     "doc-info",
     "doc-properties",
     "styles",
-    "preview-text"
+    "preview-text",
+    "preview-image"
   ],
   "expectations": {
     "binDataCount": 0,
@@ -25,7 +26,7 @@
     ],
     "numberingCount": 1,
     "pageCount": 1,
-    "pageCountSource": "HwpKit 렌더 (.testDeterministic) = HWP 쌍 쪽수 (머리말·꼬리말은 쪽 크롬이라 쪽 수를 늘리지 않는다)",
+    "pageCountSource": "HwpKit 렌더 (.testDeterministic) = HWP 쌍 쪽수 — 한글.app 상태 표시줄 실측 확인 대기 (HWP 쌍 manifest와 같은 상태)",
     "pageDef": {
       "height": 84186,
       "marginBottom": 4252,
@@ -42,7 +43,9 @@
     "styleCount": 22,
     "tabDefCount": 3,
     "visibleTextContains": [
-      "Hello CoreHwp plain text fixture."
+      "Hello CoreHwp plain text fixture.",
+      "CoreHwp header fixture",
+      "CoreHwp footer fixture"
     ]
   }
 }
