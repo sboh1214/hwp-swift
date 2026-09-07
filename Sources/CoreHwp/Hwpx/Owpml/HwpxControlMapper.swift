@@ -62,6 +62,13 @@ enum HwpxControlMapper {
             // typed 승격. 조판이 `.pageNumberPosition`만 등록하므로 강등 상태로는
             // 쪽 번호가 그려지지 않는다 (#135).
             return HwpxPageNumberMapper.anchor(node, context: context)
+        case "header", "footer":
+            // 머리말·꼬리말(표 140·141) — 구역 부속 컨트롤(코드 16)의 typed 승격.
+            // 조판(`HwpPageChromeBuilder`)이 `.header`/`.footer`만 활성 밴드로
+            // 받으므로 강등 상태로는 매 쪽에서 통째로 빠진다 (#167).
+            return try HwpxHeaderFooterMapper.anchor(
+                node, isFooter: node.localName == "footer", context: context
+            )
         case "tbl":
             return .anchor(
                 code: 11,
@@ -145,10 +152,9 @@ enum HwpxControlMapper {
     ]
 
     /// 개체가 아닌 구역 부속 컨트롤 중 미구현 강등 대상 — (제어 문자 코드, 4CC).
-    /// 같은 코드 21의 `pageNum`은 위에서 typed 매핑으로 승격됐다.
+    /// 코드 16의 `header`·`footer`(#167)와 코드 21의 `pageNum`(#135)은 위에서
+    /// typed 매핑으로 승격됐다.
     static let sectionAttachments: [String: (code: UInt16, fourCC: UInt32)] = [
-        "header": (16, HwpOtherCtrlId.header.rawValue),
-        "footer": (16, HwpOtherCtrlId.footer.rawValue),
         "footNote": (17, HwpOtherCtrlId.footnote.rawValue),
         "endNote": (17, HwpOtherCtrlId.endnote.rawValue),
         "autoNum": (18, HwpOtherCtrlId.autoNumber.rawValue),

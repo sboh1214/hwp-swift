@@ -78,21 +78,26 @@ enum HwpxSecPrMapper {
             sectionDef.tableStartNumber = startNum.uint16Attribute("tbl", default: 0)
             sectionDef.equationNumber = startNum.uint16Attribute("equation", default: 0)
         }
+        // 구역 첫 쪽 감추기 — 아래 `applyFirstPageVisibility` 참조.
+        applyFirstPageVisibility(
+            secPr.paragraphFirstChild(named: "visibility"), to: &sectionDef
+        )
         // 각주/미주 모양·쪽 테두리는 1차 범위 밖 — 빈 문서 기본값을 유지하되,
         // 버려지는 자식은 진단으로 강등해야 "미해석 강등은 진단으로 보고됨"
         // 규약이 지켜진다 (tabPr의 tabItem 강등과 같은 채널).
         sectionDef.unknownChildren = referenceDiagnostics + secPr.unconsumedChildRecords(
-            consumed: ["pagePr", "startNum"], in: HwpxNamespace.paragraph,
+            consumed: ["pagePr", "startNum", "visibility"], in: HwpxNamespace.paragraph,
             maxDepth: maxDepth
         )
         // 둘 다 단일 조회라 둘째 등장부터는 읽히지 않는다 — 소비 표시가
         // 이름 단위라 그대로 두면 값도 진단도 없이 사라진다.
         sectionDef.unknownChildren += secPr.duplicateSingletonRecords(
-            of: ["pagePr", "startNum"], in: HwpxNamespace.paragraph,
+            of: ["pagePr", "startNum", "visibility"], in: HwpxNamespace.paragraph,
             maxDepth: maxDepth
         )
-        // 소비 래퍼 안 미지 자식 — pagePr는 margin만, margin·startNum은
-        // 속성만 읽는다.
+        // 소비 래퍼 안 미지 자식 — pagePr는 margin만, margin·startNum·visibility는
+        // 속성만 읽는다. 래퍼를 소비 목록에 넣으면 그 서브트리가 위 순회에서
+        // 빠지므로, 안쪽 미지 자식은 여기서 따로 걷어야 진단에서 사라지지 않는다.
         if let pagePr = secPr.paragraphFirstChild(named: "pagePr") {
             sectionDef.unknownChildren += pagePr.unconsumedChildRecords(
                 consumed: ["margin"], in: HwpxNamespace.paragraph, maxDepth: maxDepth
@@ -111,7 +116,49 @@ enum HwpxSecPrMapper {
                 consumed: [], maxDepth: maxDepth
             )
         }
+        if let visibility = secPr.paragraphFirstChild(named: "visibility") {
+            sectionDef.unknownChildren += visibility.unconsumedChildRecords(
+                consumed: [], maxDepth: maxDepth
+            )
+        }
         return sectionDef
+    }
+
+    /// 구역 첫 쪽 감추기(`hp:visibility`) → 표 132 bits 0·1·2·5.
+    ///
+    /// 머리말·꼬리말이 typed 승격된 뒤(#167) 이 플래그가 없으면 감춰야 할 첫 쪽에도
+    /// 머리말이 그려진다. 조판은 `HwpPageChromeBuilder.applySectionHideFlags`가
+    /// 머리말·꼬리말·쪽 번호 셋을 표 145 마스크(0x01·0x02·0x20)로 환산해 구역
+    /// 첫 쪽에 한 번 쓴다. 나머지 속성(`border`·`fill` 열거·`showLineNumber`)은
+    /// 대응 소비자가 없어 옮기지 않는다 — 자식이 아니라 속성이라 진단에도 남지 않는다.
+    ///
+    /// **속성만 읽는다** — 이 요소는 `mapSectionDef`의 소비 목록에 들어가 위 순회에서
+    /// 빠지므로, 안쪽 미지 자식은 호출부가 `startNum`과 같은 자리에서 따로 걷는다.
+    static func applyFirstPageVisibility(
+        _ visibility: HwpxXMLNode?,
+        to sectionDef: inout HwpSectionDef
+    ) {
+        guard let visibility else { return }
+        var mask: UInt32 = 0
+        if visibility.boolAttribute("hideFirstHeader") {
+            mask |= 1 << 0
+        }
+        if visibility.boolAttribute("hideFirstFooter") {
+            mask |= 1 << 1
+        }
+        if visibility.boolAttribute("hideFirstMasterPage") {
+            mask |= 1 << 2
+        }
+        if visibility.boolAttribute("hideFirstPageNum") {
+            mask |= 1 << 5
+        }
+        sectionDef.property |= mask
+        // 표현이 셋이다 — property·파생 필드·propertyInfo.rawValue.
+        sectionDef.propertyInfo.hideHeader = mask & (1 << 0) != 0
+        sectionDef.propertyInfo.hideFooter = mask & (1 << 1) != 0
+        sectionDef.propertyInfo.hideMasterPage = mask & (1 << 2) != 0
+        sectionDef.propertyInfo.hidePageNumberPosition = mask & (1 << 5) != 0
+        sectionDef.propertyInfo.rawValue = sectionDef.property
     }
 
     static func mapColumn(_ colPr: HwpxXMLNode, maxDepth: Int) -> HwpColumn {

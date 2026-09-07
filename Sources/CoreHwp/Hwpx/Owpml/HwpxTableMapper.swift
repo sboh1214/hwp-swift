@@ -249,7 +249,11 @@ private extension HwpxTableMapper {
     static let pageBreakModes: [String: Int] = [
         "NONE": 0, "CELL": 2, "TABLE": 1,
     ]
+}
 
+extension HwpxTableMapper {
+    /// OWPML `vertAlign` → 표 89 세로 정렬. 표 셀과 머리말·꼬리말
+    /// (`HwpxHeaderFooterMapper`)이 같은 어휘를 쓰므로 한 곳에 둔다.
     static let verticalAlignments: [String: HwpListHeaderVerticalAlignment] = [
         "TOP": .top, "CENTER": .center, "BOTTOM": .bottom,
     ]

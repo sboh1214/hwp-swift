@@ -301,7 +301,7 @@ final class HwpxSectionMapperTests: XCTestCase {
         expect(chars[0].inlineControl?.rawControlId) == HwpFieldCtrlId.hyperLink.rawValue
     }
 
-    func testObjectElementsPromoteOleAndKeepChartAndHeaderDegraded() throws {
+    func testObjectElementsPromoteOleAndHeaderAndKeepChartDegraded() throws {
         let section = try mapSection(
             HwpxSectionFixture.blankBody + """
             <hp:p><hp:run charPrIDRef="7">\
@@ -326,9 +326,9 @@ final class HwpxSectionMapperTests: XCTestCase {
         }
         guard case let .ole(ole) = ctrls[0],
               case let .notImplemented(chart) = ctrls[1],
-              case let .notImplemented(header) = ctrls[2]
+              case let .header(header) = ctrls[2]
         else {
-            return fail("Expected .ole + two .notImplemented, got \(ctrls)")
+            return fail("Expected .ole + .notImplemented + .header, got \(ctrls)")
         }
         // <hp:ole>은 typed 승격됐다 (#134) — manifest 참조가 없는 합성 문서라
         // BinData id는 0으로 접힌다.
@@ -339,7 +339,12 @@ final class HwpxSectionMapperTests: XCTestCase {
         expect(chart.ctrlId) == HwpCommonCtrlId.ole.rawValue
         // 4CC는 같아도 요소 이름은 payload에 남아 진단에서 갈린다.
         expect(String(bytes: chart.rawPayload, encoding: .utf8)) == "chart"
-        expect(header.ctrlId) == HwpOtherCtrlId.header.rawValue
+        // 머리말은 typed 승격됐다 (#167) — 자식 없는 합성 요소라 리스트는
+        // 비지만, 적용 범위를 읽을 수 있게 헤더 payload는 채워진다.
+        expect(header.header.ctrlId) == HwpOtherCtrlId.header.rawValue
+        expect(header.headerFooterApplyScope) == .bothPages
+        expect(header.listArray.count) == 1
+        expect(header.listArray.first?.paragraphArray).to(beEmpty())
         // 분류 가능한 요소는 위치가 확실하므로 lineseg가 유지된다.
         expect(paragraph.paraLineSeg.paraLineSegInternalArray.count) == 1
     }
