@@ -275,7 +275,7 @@ final class FixtureObjectRenderTests: XCTestCase {
     func testLegacyOutlineHeadingsRenderTheirLabels() async throws {
         let page = try await legacyPage(index: 12)
         let document = try XCTUnwrap(Self.legacyDocument)
-        let headingHints = document.unsupportedElements.filter { $0.hint.contains("번호 문단 머리") }
+        let headingHints = document.unsupportedElements.filter { $0.hint.contains("문단 머리") }
         expect(headingHints).to(beEmpty())
 
         let texts = page.blocks.compactMap { $0.attributedString?.string }

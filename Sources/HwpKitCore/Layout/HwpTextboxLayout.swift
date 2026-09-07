@@ -110,8 +110,34 @@ public struct HwpTextboxLayout {
         index: HwpIndex,
         sizeResolver: HwpObjectSizeResolver? = nil
     ) -> HwpTextboxFrame? {
-        guard let component = Self.renderedTextboxComponent(of: components)
+        layout(
+            components: components, commonProperty: commonProperty,
+            fallbackWidth: fallbackWidth, index: index, sizeResolver: sizeResolver,
+            numbering: nil
+        )
+    }
+
+    /// 글상자 문단의 문단 번호·개요 번호 열쇠(#158)까지 받는 모듈 내부용 레이아웃.
+    /// `numbering`은 이 개체 컨트롤을 품은 문단의 열쇠에서 내려온 것이고, 글상자
+    /// 문단의 자식 서수는 개체 요소 → 리스트 → 문단 순으로 펼친 평면 서수다
+    /// (`HwpPaginator.childParagraphSequence`). `childOffset`은 `components`가 개체의
+    /// 일부(컨테이너 수집기가 요소 하나씩 넘길 때)일 때 그 앞 요소들의 글상자 문단
+    /// 수다. 공개 진입점은 열쇠 없이(라벨 없이) 조판한다.
+    func layout(
+        components: [CoreHwp.HwpShapeComponent],
+        commonProperty: CoreHwp.HwpCommonCtrlProperty,
+        fallbackWidth: CGFloat,
+        index: HwpIndex,
+        sizeResolver: HwpObjectSizeResolver? = nil,
+        numbering: HwpNumberingScope.Container?,
+        childOffset: Int = 0
+    ) -> HwpTextboxFrame? {
+        guard let componentIndex = Self.renderedTextboxComponentIndex(of: components)
         else { return nil }
+        let component = components[componentIndex]
+        let firstChildIndex = childOffset + HwpNumberingScope.textboxChildOffset(
+            components: components, componentIndex: componentIndex
+        )
 
         let info = commonProperty.propertyInfo
         let outerWidth = HwpObjectSizeResolver.width(
@@ -133,7 +159,9 @@ public struct HwpTextboxLayout {
             insets: insets,
             wrapWidth: wrapWidth,
             index: index,
-            sizeResolver: sizeResolver
+            sizeResolver: sizeResolver,
+            numbering: numbering,
+            firstChildIndex: firstChildIndex
         )
 
         // 콘텐츠 하단은 문단뿐 아니라 그림/도형 자식의 extent도 포함해야
@@ -180,7 +208,9 @@ public struct HwpTextboxLayout {
         insets: TextInsets,
         wrapWidth: CGFloat,
         index: HwpIndex,
-        sizeResolver: HwpObjectSizeResolver?
+        sizeResolver: HwpObjectSizeResolver?,
+        numbering: HwpNumberingScope.Container?,
+        firstChildIndex: Int
     ) -> LaidOutTextboxContents {
         // 글상자는 라인 캐시 높이를 쓰지 않는다 — CT 측정 그대로 (픽셀 정합)
         // '문단' 기준 개체는 글상자 안에서 wrap 폭을 기준으로 해석한다 (#2)
@@ -200,9 +230,15 @@ public struct HwpTextboxLayout {
         )
         var contents = LaidOutTextboxContents()
         var contentY = insets.top
+        // 글상자 문단의 번호 경로 서수 — 리스트를 지나며 이어 센다 (#158).
+        var childIndex = firstChildIndex
         for list in component.textBoxListArray {
             for paragraph in list.paragraphArray {
-                let measured = measurer.measure(paragraph, width: wrapWidth)
+                let scope = numbering?.paragraph(childIndex: childIndex)
+                childIndex += 1
+                let measured = measurer.measure(
+                    paragraph, width: wrapWidth, options: .init(number: scope?.number)
+                )
                 let rect = CGRect(
                     x: insets.left,
                     y: contentY,
@@ -218,7 +254,8 @@ public struct HwpTextboxLayout {
                 ))
                 let collected = collector.objects(
                     in: paragraph, frame: measured.frame, paragraphRect: rect,
-                    firstSourceOrder: contents.images.count + contents.shapes.count
+                    firstSourceOrder: contents.images.count + contents.shapes.count,
+                    numbering: scope
                 )
                 contents.images.append(contentsOf: collected.images)
                 contents.shapes.append(contentsOf: collected.shapes)

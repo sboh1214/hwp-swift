@@ -82,15 +82,32 @@ public struct HwpFootnoteLayout {
         /// 재조판된다 (본문 겹침·없던 페이지 절단). 예약이 쓴 값을 그대로 실어
         /// 배치까지 들고 간다 — 예약 ≡ 배치의 **시간 축**이다.
         public let sizeResolver: HwpObjectSizeResolver?
+        /// 이 문단의 문단 번호·개요 번호 열쇠 (#158) — 수집기가 컨트롤 서수와 리스트
+        /// 서수로 풀어 싣는다. 예약(`HwpFootnoteCoordinator`)과 배치(`measureNote`)가
+        /// 같은 열쇠로 같은 라벨을 붙여야 높이가 갈리지 않는다. 공개 init은 nil이다.
+        let numbering: HwpNumberingScope?
 
         public init(
             paragraph: CoreHwp.HwpParagraph,
             number: Int,
             sizeResolver: HwpObjectSizeResolver? = nil
         ) {
+            self.init(
+                paragraph: paragraph, number: number, sizeResolver: sizeResolver,
+                numbering: nil
+            )
+        }
+
+        init(
+            paragraph: CoreHwp.HwpParagraph,
+            number: Int,
+            sizeResolver: HwpObjectSizeResolver?,
+            numbering: HwpNumberingScope?
+        ) {
             self.paragraph = paragraph
             self.number = number
             self.sizeResolver = sizeResolver
+            self.numbering = numbering
         }
     }
 
@@ -429,12 +446,14 @@ extension HwpFootnoteLayout {
         width: CGFloat,
         index: HwpIndex,
         footnoteShape: CoreHwp.HwpFootnoteShape?,
-        sizeResolver: HwpObjectSizeResolver?
+        sizeResolver: HwpObjectSizeResolver?,
+        numbering: HwpNumberingScope? = nil
     ) -> NoteMeasurement {
         let noteResolver = sizeResolver?.forFootnoteArea(width: width)
         // 각주 첫머리의 자동 번호 (ext18) 마커를 번호 문자열로 치환한다 (번호는
         // paginator가 부여한 문서 순서 번호 — 본문 참조와 동일 소스). 스택
         // 높이는 한글 라인 캐시를 우선한다 (본문 절대 캐시와 동일 철학).
+        // 문단 번호·개요 번호 라벨(#158)은 자동 번호 앞에 전치된다.
         let measured = HwpParagraphMeasurer(
             index: index,
             fontResolver: fontResolver,
@@ -450,7 +469,8 @@ extension HwpFootnoteLayout {
                     number: number,
                     footnoteShape: footnoteShape
                 ),
-                preferCachedHeight: true
+                preferCachedHeight: true,
+                number: numbering?.number
             )
         )
         // 각주 문단에 붙은 개체 (그림/도형/글상자/표)는 각주 영역 안 콘텐츠다 —
@@ -473,7 +493,8 @@ extension HwpFootnoteLayout {
                 frame: measured.frame,
                 paragraphRect: Self.paragraphRect(
                     width: width, textHeight: measured.frame.totalHeight
-                )
+                ),
+                numbering: numbering
             )
         )
     }
@@ -541,7 +562,8 @@ private extension HwpFootnoteLayout {
                     footnoteShape: footnoteShape,
                     // 수집 시점 해석기를 우선한다 — 인자는 그것이 없는 호출
                     // (테스트·직접 배치) 의 폴백이다 (R44 #1).
-                    sizeResolver: input.sizeResolver ?? sizeResolver
+                    sizeResolver: input.sizeResolver ?? sizeResolver,
+                    numbering: input.numbering
                 )
             )
         }

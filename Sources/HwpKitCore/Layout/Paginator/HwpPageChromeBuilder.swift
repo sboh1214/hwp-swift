@@ -11,8 +11,8 @@ struct HwpPageChromeBuilder {
         /// 구역의 활성 머리말/꼬리말 (적용 범위별, 표 141).
         /// 컨트롤을 만난 이후의 모든 페이지에 반복 방출되며, 같은 범위의
         /// 새 컨트롤이 나오면 교체된다.
-        var activeHeaders: [CoreHwp.HwpHeaderFooterApplyScope: CoreHwp.HwpListControl] = [:]
-        var activeFooters: [CoreHwp.HwpHeaderFooterApplyScope: CoreHwp.HwpListControl] = [:]
+        var activeHeaders: [CoreHwp.HwpHeaderFooterApplyScope: Band] = [:]
+        var activeFooters: [CoreHwp.HwpHeaderFooterApplyScope: Band] = [:]
         /// 활성 쪽 번호 위치 (pgNumPos, 표 147/148). 컨트롤을 만난 페이지부터
         /// 모든 페이지에 쪽 번호를 방출하며, 새 컨트롤이 나오면 교체된다
         /// (머리말처럼 구역을 넘어도 유지 — 한글의 동작).
@@ -28,10 +28,29 @@ struct HwpPageChromeBuilder {
         var bandBlocksCache: [BandBlocksKey: [AnyHwpBlock]] = [:]
     }
 
-    /// 밴드 블록 캐시 키: 같은 컨트롤 + 같은 밴드 프레임이면 매 페이지 재조판하지 않는다.
+    /// 활성 머리말/꼬리말 하나 — 리스트 컨트롤과, 그 문단들의 문단 번호·개요 번호
+    /// (#158). 번호는 등록 시점에 컨트롤 서수·리스트 서수로 풀어 두고(리스트를
+    /// 펼친 평면 서수 = `HwpPaginator.childParagraphSequence`) 쪽마다 같은 값을
+    /// 전치한다 — 머리말은 쪽마다 반복 조판되지만 번호 표는 문서 순서 한 번의
+    /// 순회라 반복해도 늘지 않는다.
+    struct Band {
+        let list: CoreHwp.HwpListControl
+        let numbers: [HwpParagraphNumber?]
+
+        init(list: CoreHwp.HwpListControl, numbering: HwpNumberingScope.Container?) {
+            self.list = list
+            let count = list.listArray.reduce(0) { $0 + $1.paragraphArray.count }
+            numbers = (0 ..< count).map { numbering?.number(childIndex: $0) }
+        }
+    }
+
+    /// 밴드 블록 캐시 키: 같은 컨트롤 + 같은 번호 + 같은 밴드 프레임이면 매 페이지
+    /// 재조판하지 않는다. 번호가 키에 있는 것은 값이 같은 두 머리말 컨트롤이 다른
+    /// 자리에서 다른 번호를 받을 수 있어서다 (#158).
     struct BandBlocksKey: Hashable {
         let isHeader: Bool
         let list: CoreHwp.HwpListControl
+        let numbers: [HwpParagraphNumber?]
         let bandX: Int
         let bandY: Int
         let bandWidth: Int
@@ -58,13 +77,20 @@ struct HwpPageChromeBuilder {
 
     /// 페이지 크롬 (머리말/꼬리말/쪽 번호 위치/쪽 감추기) 컨트롤을 활성 상태로
     /// 등록한다. 감추기 (표 145)는 컨트롤이 놓인 문단이 확정되는 페이지에만
-    /// 적용된다.
-    mutating func register(_ ctrl: CoreHwp.HwpCtrlId) {
+    /// 적용된다. `numbering`은 이 컨트롤이 품은 문단들의 번호 열쇠 (#158).
+    mutating func register(
+        _ ctrl: CoreHwp.HwpCtrlId,
+        numbering: HwpNumberingScope.Container? = nil
+    ) {
         switch ctrl {
         case let .header(list):
-            state.activeHeaders[list.headerFooterApplyScope] = list
+            state.activeHeaders[list.headerFooterApplyScope] = Band(
+                list: list, numbering: numbering
+            )
         case let .footer(list):
-            state.activeFooters[list.headerFooterApplyScope] = list
+            state.activeFooters[list.headerFooterApplyScope] = Band(
+                list: list, numbering: numbering
+            )
         case let .pageNumberPosition(position):
             state.activePageNumberPosition = position
         case let .pageHide(other):
@@ -121,9 +147,9 @@ struct HwpPageChromeBuilder {
     /// 페이지 번호(1-based)와 적용 범위(표 141)에 맞는 활성 머리말/꼬리말을 고른다.
     /// 짝수/홀수 전용이 양쪽보다 우선한다.
     func resolvedBand(
-        from bands: [CoreHwp.HwpHeaderFooterApplyScope: CoreHwp.HwpListControl],
+        from bands: [CoreHwp.HwpHeaderFooterApplyScope: Band],
         pageNumber: Int
-    ) -> CoreHwp.HwpListControl? {
+    ) -> Band? {
         let parity: CoreHwp.HwpHeaderFooterApplyScope = pageNumber.isMultiple(of: 2)
             ? .evenPagesOnly
             : .oddPagesOnly
@@ -164,16 +190,17 @@ struct HwpPageChromeBuilder {
     }
 
     private mutating func bandBlocks(
-        _ list: CoreHwp.HwpListControl,
-        band: CGRect?,
+        _ band: Band,
+        band bandRect: CGRect?,
         isHeader: Bool,
         pageNumber: Int,
         geometry: HwpPageGeometry
     ) -> [AnyHwpBlock] {
+        let list = band.list
         let paragraphs = list.listArray.flatMap(\.paragraphArray)
         guard !paragraphs.isEmpty else { return [] }
         let contentFrame = geometry.contentFrame
-        let bandFrame: CGRect = band ?? CGRect(
+        let bandFrame: CGRect = bandRect ?? CGRect(
             x: contentFrame.minX,
             y: isHeader ? max(0, contentFrame.minY - 20) : contentFrame.maxY,
             width: contentFrame.width,
@@ -193,6 +220,7 @@ struct HwpPageChromeBuilder {
         let cacheKey = BandBlocksKey(
             isHeader: isHeader,
             list: list,
+            numbers: band.numbers,
             bandX: Int(bandFrame.minX * 100),
             bandY: Int(bandFrame.minY * 100),
             bandWidth: Int(bandFrame.width * 100)
@@ -203,6 +231,7 @@ struct HwpPageChromeBuilder {
 
         let blocks = layoutBandBlocks(
             paragraphs: paragraphs,
+            numbers: band.numbers,
             bandFrame: bandFrame,
             pageNumber: pageNumber
         )
@@ -213,9 +242,11 @@ struct HwpPageChromeBuilder {
     }
 
     /// 밴드 프레임 안에 문단들을 위에서 아래로 조판한 텍스트 블록을 만든다.
-    /// 자동 쪽 번호 (atno kind 0) 마커는 논리 쪽 번호 문자열로 치환한다.
+    /// 자동 쪽 번호 (atno kind 0) 마커는 논리 쪽 번호 문자열로 치환하고, 문단
+    /// 번호·개요 번호 라벨(#158)은 `numbers`(문단 서수별)로 전치한다.
     private func layoutBandBlocks(
         paragraphs: [CoreHwp.HwpParagraph],
+        numbers: [HwpParagraphNumber?],
         bandFrame: CGRect,
         pageNumber: Int
     ) -> [AnyHwpBlock] {
@@ -225,7 +256,7 @@ struct HwpPageChromeBuilder {
         let paragraphLayout = HwpParagraphLayout()
         var cursorY = bandFrame.minY
         var blocks: [AnyHwpBlock] = []
-        for paragraph in paragraphs {
+        for (paragraphIndex, paragraph) in paragraphs.enumerated() {
             var replacements: [Int: HwpControlMarkerReplacement] = [:]
             for (ctrlIndex, ctrl) in (paragraph.ctrlHeaderArray ?? []).enumerated() {
                 guard case let .autoNumber(other) = ctrl,
@@ -242,7 +273,8 @@ struct HwpPageChromeBuilder {
             }
             let attributed = builder.build(
                 paragraph: paragraph,
-                controlReplacements: replacements
+                controlReplacements: replacements,
+                number: numbers.indices.contains(paragraphIndex) ? numbers[paragraphIndex] : nil
             )
             guard !HwpTextRunBuilder.isEmptyParagraphAnchor(attributed) else {
                 // 빈 문단은 그릴 글자가 없어 블록을 만들지 않지만 **한 줄을

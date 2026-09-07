@@ -254,8 +254,12 @@ extension HwpTableLayout {
                 width: innerWidth,
                 height: content.frame.totalHeight - spacingBefore
             )
+            // 측정(`measuredCellContents`)이 붙인 그 번호로 같은 문자열을 만든다 —
+            // 라벨이 한쪽에만 붙으면 줄바꿈·높이가 갈린다 (#158).
             paragraphs.append(HwpLaidOutParagraph(
-                attributedString: textBuilder.build(paragraph: content.paragraph),
+                attributedString: textBuilder.build(
+                    paragraph: content.paragraph, number: content.numbering?.number
+                ),
                 frame: content.frame,
                 rect: rect,
                 paragraphId: content.paragraph.paraHeader.paraId,
@@ -263,7 +267,8 @@ extension HwpTableLayout {
             ))
             let collected = collector.objects(
                 in: content.paragraph, frame: content.frame,
-                paragraphRect: rect, firstSourceOrder: objects.count
+                paragraphRect: rect, firstSourceOrder: objects.count,
+                numbering: content.numbering
             )
             objects.images.append(contentsOf: collected.images)
             objects.shapes.append(contentsOf: collected.shapes)

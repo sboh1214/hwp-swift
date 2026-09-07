@@ -60,13 +60,17 @@ struct HwpFootnoteCoordinator {
         /// 높이를 바꾼다. 구역이 번호를 재시작하면 (문단, 번호, 폭, 해석기) 가
         /// 모두 같으면서 모양만 다른 재사용이 살아난다.
         let footnoteShape: CoreHwp.HwpFootnoteShape?
+        /// 문단 번호·개요 번호 라벨(#158)도 첫 줄 폭을 바꾼다 — 번호는 위치 경로의
+        /// 함수(불변 표)라 경로가 키다. 같은 문단 값이 다른 자리에서 다른 번호를
+        /// 받을 수 있으므로 문단 값만으로는 재사용을 가를 수 없다.
+        let numberingPath: HwpParagraphPath?
     }
 
-    private let index: HwpIndex
+    let index: HwpIndex
     private let fontResolver: HwpFontResolver
     /// 글자 모양별 속성 캐시 (소유는 `HwpPaginator`) — 각주 측정도 본문과 공유한다.
     private let attributeCache: HwpTextAttributeCache?
-    private let footnoteLayout: HwpFootnoteLayout
+    let footnoteLayout: HwpFootnoteLayout
 
     /// 이 페이지에 배치할 각주 (문단 + 문서 순서 번호)
     var pendingFootnotes: [HwpFootnoteLayout.Input] = []
@@ -97,6 +101,8 @@ struct HwpFootnoteCoordinator {
     private struct DeferredNote {
         let paragraphs: [CoreHwp.HwpParagraph]
         let number: Int
+        /// 문단마다의 번호 열쇠 (#158) — 미룬 배치도 같은 라벨을 붙인다.
+        let numbering: [HwpNumberingScope?]
     }
 
     init(
@@ -128,6 +134,9 @@ struct HwpFootnoteCoordinator {
     /// 각주를 앞 조각에서 걷으면 각주와 그것을 그리는 컨테이너가 갈린다. 마지막
     /// 조각에서는 서수 범위와 **무관하게** 전체 컨트롤을 훑는다 (앞 범위의
     /// 컨테이너도 그 페이지에 그려지므로 범위로 자르면 그 각주가 유실된다).
+    ///
+    /// numbering: 이 문단의 문단 번호·개요 번호 열쇠 (#158) — 각주·미주 문단과 그 안
+    /// 컨테이너 문단이 컨트롤 서수·자식 서수로 자기 번호를 찾는다. nil이면 라벨 없다.
     mutating func collectFootnotes(
         from paragraph: CoreHwp.HwpParagraph,
         depth: Int = 0,
@@ -135,27 +144,34 @@ struct HwpFootnoteCoordinator {
         ordinals: Range<Int>? = nil,
         collectsNested: Bool = true,
         environment: Environment,
-        childParagraphs: ChildParagraphs
+        childParagraphs: ChildParagraphs,
+        numbering: HwpNumberingScope? = nil
     ) {
         guard let ctrls = paragraph.ctrlHeaderArray else { return }
-        func collectDirectNote(_ ctrl: CoreHwp.HwpCtrlId) {
+        func collectDirectNote(_ ctrl: CoreHwp.HwpCtrlId, ordinal: Int) {
+            let container = numbering?.container(controlIndex: ordinal)
             switch ctrl {
             case let .footnote(list):
-                collectFootnotes(list, environment: environment)
+                collectFootnotes(list, environment: environment, numbering: container)
             case let .endnote(list):
-                collectEndnotes(list)
+                collectEndnotes(list, numbering: container)
             default:
                 break
             }
         }
-        func walkChildren(of ctrl: CoreHwp.HwpCtrlId) {
-            for (nested, _) in childParagraphs(ctrl) where nested.ctrlHeaderArray != nil {
+        func walkChildren(of ctrl: CoreHwp.HwpCtrlId, ordinal: Int) {
+            let container = numbering?.container(controlIndex: ordinal)
+            // 자식 서수는 필터 **앞**에서 센다 — 컨트롤 없는 문단도 서수를 차지한다.
+            for (childIndex, (nested, _)) in childParagraphs(ctrl).enumerated()
+                where nested.ctrlHeaderArray != nil
+            {
                 collectFootnotes(
                     from: nested,
                     depth: depth + 1,
                     includeTableCells: includeTableCells,
                     environment: environment,
-                    childParagraphs: childParagraphs
+                    childParagraphs: childParagraphs,
+                    numbering: container?.paragraph(childIndex: childIndex)
                 )
             }
         }
@@ -179,7 +195,7 @@ struct HwpFootnoteCoordinator {
         func deferNestedNotes(of ctrl: CoreHwp.HwpCtrlId, ordinal: Int) {
             let outer = deferralSink
             deferralSink = ordinal
-            walkChildren(of: ctrl)
+            walkChildren(of: ctrl, ordinal: ordinal)
             deferralSink = outer
         }
         // 쪽마다 새로 시작 (표 134 numberingMode 2) 하면 번호가 **그려질 쪽**의
@@ -195,13 +211,13 @@ struct HwpFootnoteCoordinator {
         if let ordinals, !collectsNested {
             for ordinal in ordinals where ctrls.indices.contains(ordinal) {
                 let ctrl = ctrls[ordinal]
-                collectDirectNote(ctrl)
+                collectDirectNote(ctrl, ordinal: ordinal)
                 guard depth < 3 else { continue }
                 if !includeTableCells, case .table = ctrl {
                     continue
                 }
                 if isPlacedByThisFragment(ctrl) {
-                    walkChildren(of: ctrl)
+                    walkChildren(of: ctrl, ordinal: ordinal)
                 } else if !restartsNumberingPerPage {
                     deferNestedNotes(of: ctrl, ordinal: ordinal)
                 }
@@ -211,7 +227,7 @@ struct HwpFootnoteCoordinator {
         for (ordinal, ctrl) in ctrls.enumerated() {
             let inFragment = depth > 0 || (ordinals?.contains(ordinal) ?? true)
             if inFragment {
-                collectDirectNote(ctrl)
+                collectDirectNote(ctrl, ordinal: ordinal)
             }
             guard depth < 3 else { continue }
             if !includeTableCells, case .table = ctrl {
@@ -227,25 +243,30 @@ struct HwpFootnoteCoordinator {
             // ·도형)는 이 조각이 안 그리므로 마지막 조각 몫이다.
             guard isPlacedByThisFragment(ctrl) ? inFragment : collectsNested
             else { continue }
-            walkChildren(of: ctrl)
+            walkChildren(of: ctrl, ordinal: ordinal)
         }
     }
 
     /// 표 셀 각주를 수집한다. rows가 nil이면 전체, 아니면 해당 grid 행만
     /// (행 주소 없는 셀은 첫 세그먼트에서 수집).
+    /// numbering: 이 표의 셀 문단 열쇠 (#158) — `cellArray` 서수와 문단 서수로 푼다.
     mutating func collectTableCellFootnotes(
         cellsByRow: [Int: [(index: Int, cell: CoreHwp.HwpTableCell)]],
         rows: ClosedRange<Int>?,
         environment: Environment,
-        childParagraphs: ChildParagraphs
+        childParagraphs: ChildParagraphs,
+        numbering: HwpNumberingScope.TableCells? = nil
     ) {
-        for cell in Self.cellsInRows(cellsByRow, rows: rows) {
-            for paragraph in cell.paragraphArray {
+        for (cellIndex, cell) in Self.cellsInRows(cellsByRow, rows: rows) {
+            for (paragraphIndex, paragraph) in cell.paragraphArray.enumerated() {
                 collectFootnotes(
                     from: paragraph,
                     depth: 1,
                     environment: environment,
-                    childParagraphs: childParagraphs
+                    childParagraphs: childParagraphs,
+                    numbering: numbering?.paragraph(
+                        cellIndex: cellIndex, paragraphIndex: paragraphIndex
+                    )
                 )
             }
         }
@@ -256,22 +277,24 @@ struct HwpFootnoteCoordinator {
     private static func cellsInRows(
         _ cellsByRow: [Int: [(index: Int, cell: CoreHwp.HwpTableCell)]],
         rows: ClosedRange<Int>?
-    ) -> [CoreHwp.HwpTableCell] {
+    ) -> [(index: Int, cell: CoreHwp.HwpTableCell)] {
         let orderedRows = rows.map(Array.init) ?? cellsByRow.keys.sorted()
         // 원래 cellArray 인덱스로 재정렬해 문서 순서(=각주 번호 순서)를 정확히
         // 복원한다 — 행 우선 저장이 아니어도 기존 전수 스캔과 동일한 순서.
         return orderedRows
             .flatMap { cellsByRow[$0] ?? [] }
             .sorted { $0.index < $1.index }
-            .map(\.cell)
     }
 
     private mutating func collectFootnotes(
         _ list: CoreHwp.HwpListControl,
-        environment: Environment
+        environment: Environment,
+        numbering: HwpNumberingScope.Container?
     ) {
         let paragraphs = list.listArray.flatMap(\.paragraphArray)
         guard !paragraphs.isEmpty else { return }
+        // 각주 문단의 번호 경로 서수는 리스트를 펼친 평면 서수다 (#158).
+        let scopes = paragraphs.indices.map { numbering?.paragraph(childIndex: $0) }
         // 번호는 각주 컨트롤당 하나다 (한글과 동일). 여러 문단짜리 각주는
         // 같은 번호를 공유하고 첫 문단의 ext18 마커만 번호로 치환된다.
         let number = footnoteCounter
@@ -280,11 +303,13 @@ struct HwpFootnoteCoordinator {
         // 미루는 것은 배치뿐이다 (예약도 배치와 함께 그 페이지에서 잡힌다).
         if let sink = deferralSink {
             deferredNestedFootnotes[sink, default: []].append(
-                DeferredNote(paragraphs: paragraphs, number: number)
+                DeferredNote(paragraphs: paragraphs, number: number, numbering: scopes)
             )
             return
         }
-        appendPendingFootnote(paragraphs: paragraphs, number: number, environment: environment)
+        appendPendingFootnote(
+            paragraphs: paragraphs, number: number, environment: environment, numbering: scopes
+        )
     }
 
     /// 각주 하나를 이 페이지 스택에 올린다 — 수집 시점과 미룬 배치가 **같은
@@ -294,25 +319,30 @@ struct HwpFootnoteCoordinator {
     private mutating func appendPendingFootnote(
         paragraphs: [CoreHwp.HwpParagraph],
         number: Int,
-        environment: Environment
+        environment: Environment,
+        numbering: [HwpNumberingScope?]
     ) {
         let isFirstOnPage = pendingFootnotes.isEmpty
         let metrics = footnoteReservationMetrics(environment: environment)
         footnoteReservedHeight += isFirstOnPage
             ? metrics.separatorOverhead
             : metrics.spacingBetweenNotes
-        for paragraph in paragraphs {
+        for (paragraphIndex, paragraph) in paragraphs.enumerated() {
+            let scope = numbering.indices.contains(paragraphIndex) ? numbering[paragraphIndex] : nil
             // 바로 아래 예약이 쓰는 해석기를 그대로 실어 배치까지 들고 간다 —
             // 배치 시점에 다시 읽으면 그 사이 단이 바뀌었을 때 갈린다 (R44 #1).
+            // 번호 열쇠도 같이 실어 배치가 예약과 같은 라벨을 붙인다 (#158).
             pendingFootnotes.append(HwpFootnoteLayout.Input(
                 paragraph: paragraph,
                 number: number,
-                sizeResolver: environment.sizeResolver
+                sizeResolver: environment.sizeResolver,
+                numbering: scope
             ))
             footnoteReservedHeight += measuredFootnoteHeight(
                 of: paragraph,
                 number: number,
-                environment: environment
+                environment: environment,
+                numbering: scope
             )
         }
     }
@@ -328,7 +358,8 @@ struct HwpFootnoteCoordinator {
         }
         for note in deferred {
             appendPendingFootnote(
-                paragraphs: note.paragraphs, number: note.number, environment: environment
+                paragraphs: note.paragraphs, number: note.number, environment: environment,
+                numbering: note.numbering
             )
         }
         return true
@@ -344,15 +375,20 @@ struct HwpFootnoteCoordinator {
 
     /// 미주는 페이지 하단이 아니라 문서/구역 끝에 모아 배치한다 (표 134 bits 8-9).
     /// 각주와 별도 카운터를 쓴다.
-    private mutating func collectEndnotes(_ list: CoreHwp.HwpListControl) {
+    private mutating func collectEndnotes(
+        _ list: CoreHwp.HwpListControl,
+        numbering: HwpNumberingScope.Container?
+    ) {
         let paragraphs = list.listArray.flatMap(\.paragraphArray)
         guard !paragraphs.isEmpty else { return }
         let number = endnoteCounter
         endnoteCounter += 1
-        for paragraph in paragraphs {
+        for (paragraphIndex, paragraph) in paragraphs.enumerated() {
             pendingEndnotes.append(HwpFootnoteLayout.Input(
                 paragraph: paragraph,
-                number: number
+                number: number,
+                sizeResolver: nil,
+                numbering: numbering?.paragraph(childIndex: paragraphIndex)
             ))
         }
     }
@@ -396,7 +432,8 @@ extension HwpFootnoteCoordinator {
             total += measuredFootnoteHeight(
                 of: input.paragraph,
                 number: input.number,
-                environment: input.sizeResolver.map(environment.withSizeResolver) ?? environment
+                environment: input.sizeResolver.map(environment.withSizeResolver) ?? environment,
+                numbering: input.numbering
             )
             previousNumber = input.number
         }
@@ -406,10 +443,12 @@ extension HwpFootnoteCoordinator {
     /// 이 문단이 페이지에 추가될 때 각주 영역이 요구할 높이 (커밋 전 예측용).
     /// 컨테이너 (표 셀 등) 안 각주도 포함하며, 미주는 페이지 하단 영역을
     /// 쓰지 않으므로 계산에서 제외한다.
+    /// numbering: 이 문단의 번호 열쇠 (#158) — 예약이 수집과 같은 라벨로 재야 한다.
     mutating func anticipatedFootnoteHeight(
         for paragraph: CoreHwp.HwpParagraph,
         environment: Environment,
-        childParagraphs: ChildParagraphs
+        childParagraphs: ChildParagraphs,
+        numbering: HwpNumberingScope? = nil
     ) -> CGFloat {
         // collectFootnotes가 부여할 번호와 같은 순서의 미리보기 카운터
         var preview = footnoteCounter
@@ -417,7 +456,8 @@ extension HwpFootnoteCoordinator {
             for: paragraph,
             preview: &preview,
             environment: environment,
-            childParagraphs: childParagraphs
+            childParagraphs: childParagraphs,
+            numbering: numbering
         )
         guard body > 0 else { return 0 }
         // 배치와 동형: 새 노트 수만큼의 경계 간격 (페이지 첫 노트는 경계가
@@ -436,17 +476,21 @@ extension HwpFootnoteCoordinator {
         cellsByRow: [Int: [(index: Int, cell: CoreHwp.HwpTableCell)]],
         rows: ClosedRange<Int>,
         environment: Environment,
-        childParagraphs: ChildParagraphs
+        childParagraphs: ChildParagraphs,
+        numbering: HwpNumberingScope.TableCells? = nil
     ) -> CGFloat {
         var preview = footnoteCounter
         var body: CGFloat = 0
-        for cell in Self.cellsInRows(cellsByRow, rows: rows) {
-            for paragraph in cell.paragraphArray {
+        for (cellIndex, cell) in Self.cellsInRows(cellsByRow, rows: rows) {
+            for (paragraphIndex, paragraph) in cell.paragraphArray.enumerated() {
                 body += anticipatedFootnoteBodyHeight(
                     for: paragraph,
                     preview: &preview,
                     environment: environment,
-                    childParagraphs: childParagraphs
+                    childParagraphs: childParagraphs,
+                    numbering: numbering?.paragraph(
+                        cellIndex: cellIndex, paragraphIndex: paragraphIndex
+                    )
                 )
             }
         }
@@ -463,11 +507,13 @@ extension HwpFootnoteCoordinator {
         depth: Int = 0,
         preview: inout Int,
         environment: Environment,
-        childParagraphs: ChildParagraphs
+        childParagraphs: ChildParagraphs,
+        numbering: HwpNumberingScope?
     ) -> CGFloat {
         guard let ctrls = paragraph.ctrlHeaderArray else { return 0 }
         var total: CGFloat = 0
-        for ctrl in ctrls {
+        for (ordinal, ctrl) in ctrls.enumerated() {
+            let container = numbering?.container(controlIndex: ordinal)
             if case let .footnote(list) = ctrl {
                 let paragraphs = list.listArray.flatMap(\.paragraphArray)
                 if !paragraphs.isEmpty {
@@ -475,11 +521,12 @@ extension HwpFootnoteCoordinator {
                     preview += 1
                     // 같은 컨트롤의 문단은 간격 없이 이어진다 — 노트 경계
                     // 간격은 anticipatedFootnoteHeight가 노트 수로 계산한다
-                    total += paragraphs.reduce(0) {
-                        $0 + measuredFootnoteHeight(
-                            of: $1,
+                    for (paragraphIndex, noteParagraph) in paragraphs.enumerated() {
+                        total += measuredFootnoteHeight(
+                            of: noteParagraph,
                             number: number,
-                            environment: environment
+                            environment: environment,
+                            numbering: container?.paragraph(childIndex: paragraphIndex)
                         )
                     }
                 }
@@ -489,23 +536,29 @@ extension HwpFootnoteCoordinator {
             if case .table = ctrl {
                 continue
             }
-            for (nested, _) in childParagraphs(ctrl) where nested.ctrlHeaderArray != nil {
+            for (childIndex, (nested, _)) in childParagraphs(ctrl).enumerated()
+                where nested.ctrlHeaderArray != nil
+            {
                 total += anticipatedFootnoteBodyHeight(
                     for: nested,
                     depth: depth + 1,
                     preview: &preview,
                     environment: environment,
-                    childParagraphs: childParagraphs
+                    childParagraphs: childParagraphs,
+                    numbering: container?.paragraph(childIndex: childIndex)
                 )
             }
         }
         return total
     }
 
+    /// numbering: 이 각주 문단의 번호 열쇠 (#158) — 배치(`HwpFootnoteLayout.measure`)가
+    /// `Input.numbering`으로 같은 라벨을 붙이므로 예약도 같은 열쇠로 잰다.
     mutating func measuredFootnoteHeight(
         of paragraph: CoreHwp.HwpParagraph,
         number: Int,
-        environment: Environment
+        environment: Environment,
+        numbering: HwpNumberingScope? = nil
     ) -> CGFloat {
         // 개체 없는 각주 (대다수) 는 라인 캐시만으로 끝낸다 — CT 조판을 건너뛰는
         // 이 빠른 길이 대형 문서 로드 시간을 좌우한다 (헌법주석 1,030쪽).
@@ -513,11 +566,11 @@ extension HwpFootnoteCoordinator {
             in: paragraph, collectsTextboxes: true, collectsTables: true
         ) else {
             return measuredFootnoteTextHeight(
-                of: paragraph, number: number, environment: environment
+                of: paragraph, number: number, environment: environment, numbering: numbering
             )
         }
         return measuredNoteBlockHeight(
-            of: paragraph, number: number, environment: environment
+            of: paragraph, number: number, environment: environment, numbering: numbering
         )
     }
 
@@ -528,7 +581,8 @@ extension HwpFootnoteCoordinator {
     private mutating func measuredNoteBlockHeight(
         of paragraph: CoreHwp.HwpParagraph,
         number: Int,
-        environment: Environment
+        environment: Environment,
+        numbering: HwpNumberingScope?
     ) -> CGFloat {
         let width = environment.contentWidth
         let key = FootnoteHeightKey(
@@ -536,7 +590,8 @@ extension HwpFootnoteCoordinator {
             widthCenti: Int(width * 100),
             number: number,
             sizeResolver: environment.sizeResolver?.forFootnoteArea(width: width),
-            footnoteShape: environment.footnoteShape
+            footnoteShape: environment.footnoteShape,
+            numberingPath: numbering?.path
         )
         if let cached = footnoteBlockHeightCache[key] {
             return cached
@@ -547,7 +602,8 @@ extension HwpFootnoteCoordinator {
             width: width,
             index: index,
             footnoteShape: environment.footnoteShape,
-            sizeResolver: environment.sizeResolver
+            sizeResolver: environment.sizeResolver,
+            numbering: numbering
         ).blockHeight
         footnoteBlockHeightCache[key] = height
         return height
@@ -558,7 +614,8 @@ extension HwpFootnoteCoordinator {
     private mutating func measuredFootnoteTextHeight(
         of paragraph: CoreHwp.HwpParagraph,
         number: Int,
-        environment: Environment
+        environment: Environment,
+        numbering: HwpNumberingScope?
     ) -> CGFloat {
         if let cachedHeight = HwpParagraphLayout.cachedParagraphHeight(paragraph) {
             return cachedHeight
@@ -570,7 +627,8 @@ extension HwpFootnoteCoordinator {
             widthCenti: Int(width * 100),
             number: number,
             sizeResolver: sizeResolver,
-            footnoteShape: environment.footnoteShape
+            footnoteShape: environment.footnoteShape,
+            numberingPath: numbering?.path
         )
         if let cached = footnoteHeightCache[key] {
             return cached
@@ -585,115 +643,17 @@ extension HwpFootnoteCoordinator {
         .measure(
             paragraph,
             width: width,
-            options: .init(controlReplacements: HwpTextRunBuilder.autoNumberReplacements(
-                in: paragraph,
-                number: number,
-                footnoteShape: environment.footnoteShape
-            ))
+            options: .init(
+                controlReplacements: HwpTextRunBuilder.autoNumberReplacements(
+                    in: paragraph,
+                    number: number,
+                    footnoteShape: environment.footnoteShape
+                ),
+                number: numbering?.number
+            )
         )
         let height = max(1, measured.frame.totalHeight)
         footnoteHeightCache[key] = height
         return height
-    }
-}
-
-// MARK: - 번호 미리보기 / 배치 계산
-
-extension HwpFootnoteCoordinator {
-    /// 본문 문단의 extended 마커 치환: 각주/미주 참조 위치 (ext17)에는
-    /// 위 첨자 번호를, 자동 쪽 번호 (atno kind 0)에는 논리 쪽 번호를 넣는다.
-    /// 번호 미리보기는 collectFootnotes/collectEndnotes가 부여할 값과 같은
-    /// 순서로 계산한다 (컨트롤당 1씩 증가).
-    func noteReferenceReplacements(
-        for paragraph: CoreHwp.HwpParagraph,
-        footnoteShape: CoreHwp.HwpFootnoteShape?,
-        endnoteShape: CoreHwp.HwpFootnoteShape?,
-        pageNumber: Int,
-        ordinals: Range<Int>? = nil
-    ) -> [Int: HwpControlMarkerReplacement] {
-        guard let ctrls = paragraph.ctrlHeaderArray else { return [:] }
-        var replacements: [Int: HwpControlMarkerReplacement] = [:]
-        var footnotePreview = footnoteCounter
-        var endnotePreview = endnoteCounter
-        // 조각 범위 밖 컨트롤은 미리보기도 **증가시키지 않는다** (#95): 앞 조각의
-        // 몫은 이미 카운터에 반영됐고 뒤 조각의 몫은 아직 아니라, 범위 안만 세어야
-        // 수집이 부여할 번호와 같아진다. 그래서 **범위만 훑어도 결과가 같고**,
-        // 조각마다 전수 순회하지 않으므로 O(run × 컨트롤)이 되지 않는다.
-        for ctrlIndex in ordinals ?? (0 ..< ctrls.count)
-            where ctrls.indices.contains(ctrlIndex)
-        {
-            switch ctrls[ctrlIndex] {
-            case .footnote:
-                replacements[ctrlIndex] = HwpControlMarkerReplacement(
-                    text: HwpTextRunBuilder.noteNumberText(
-                        number: footnotePreview,
-                        footnoteShape: footnoteShape
-                    ),
-                    isSuperscript: true
-                )
-                footnotePreview += 1
-            case .endnote:
-                replacements[ctrlIndex] = HwpControlMarkerReplacement(
-                    text: HwpTextRunBuilder.noteNumberText(
-                        number: endnotePreview,
-                        footnoteShape: endnoteShape
-                    ),
-                    isSuperscript: true
-                )
-                endnotePreview += 1
-            case let .autoNumber(other):
-                if let info = other.autoNumberInfo, info.kind == .page {
-                    replacements[ctrlIndex] = HwpControlMarkerReplacement(
-                        text: HwpNumberFormat.string(
-                            for: pageNumber,
-                            shape: info.numberShapeRawValue
-                        )
-                    )
-                }
-            default:
-                continue
-            }
-        }
-        return replacements
-    }
-
-    // MARK: 배치 계산 (블록 방출·pending 소비는 paginator — 부수효과 경계)
-
-    /// 대기 각주의 페이지 하단 배치를 계산한다 (HwpFootnoteLayout.place 위임).
-    /// pendingFootnotes 소비 (overflow 반영)와 블록 방출은 호출자 몫.
-    func placePendingFootnotes(
-        onPage geometry: HwpPageGeometry,
-        footnoteShape: CoreHwp.HwpFootnoteShape?,
-        limitsAreaToHalfContent: Bool,
-        sizeResolver: HwpObjectSizeResolver? = nil
-    ) -> HwpFootnoteLayout.Placement {
-        footnoteLayout.place(
-            footnotes: pendingFootnotes,
-            onPage: geometry,
-            index: index,
-            footnoteShape: footnoteShape,
-            limitsAreaToHalfContent: limitsAreaToHalfContent,
-            sizeResolver: sizeResolver
-        )
-    }
-
-    /// 대기 미주의 흐름 배치를 계산한다 (HwpFootnoteLayout.placeFlow 위임).
-    /// pendingEndnotes 소비 (overflow 반영)와 블록 방출은 호출자 몫.
-    func placePendingEndnotes(
-        from startY: CGFloat,
-        in columnFrame: CGRect,
-        endnoteShape: CoreHwp.HwpFootnoteShape?,
-        drawSeparator: Bool,
-        sizeResolver: HwpObjectSizeResolver? = nil
-    ) -> HwpFootnoteLayout.FlowPlacement {
-        footnoteLayout.placeFlow(
-            footnotes: pendingEndnotes,
-            from: startY,
-            in: columnFrame,
-            index: index,
-            footnoteShape: endnoteShape,
-            drawSeparator: drawSeparator,
-            sizeResolver: sizeResolver
-        )
     }
 }

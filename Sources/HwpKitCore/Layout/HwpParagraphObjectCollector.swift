@@ -89,11 +89,14 @@ struct HwpParagraphObjectCollector {
         var sourceOrder: Int
     }
 
+    /// `numbering`은 이 문단의 번호 열쇠 (#158) — 수집하는 글상자·표 안 문단이 한 겹
+    /// 아래 경로로 자기 번호를 찾는다. 없으면 그 안 문단은 라벨 없이 조판된다.
     func objects(
         in paragraph: CoreHwp.HwpParagraph,
         frame: HwpParagraphFrame,
         paragraphRect: CGRect,
-        firstSourceOrder: Int = 0
+        firstSourceOrder: Int = 0,
+        numbering: HwpNumberingScope? = nil
     ) -> Objects {
         var collected = Objects()
         var state = CollectState(cursorX: paragraphRect.minX, sourceOrder: firstSourceOrder)
@@ -104,7 +107,8 @@ struct HwpParagraphObjectCollector {
                 ),
                 paragraphRect: paragraphRect,
                 controlIndex: controlIndex,
-                paragraphId: paragraph.paraHeader.paraId
+                paragraphId: paragraph.paraHeader.paraId,
+                numbering: numbering?.container(controlIndex: controlIndex)
             )
             if collectsTables, case let .table(nested) = ctrl {
                 let marker = collected.marker
@@ -121,14 +125,24 @@ struct HwpParagraphObjectCollector {
                   Self.collectible(components, collectsTextboxes: collectsTextboxes)
             else { continue }
             let marker = collected.marker
+            // 글상자 문단의 번호 경로 서수는 앞선 요소들의 글상자 문단 수를 더한 값
+            // (`HwpNumberingScope.textboxChildOffset`과 같은 접두 합) — 요소마다 앞선
+            // 요소 전체를 다시 더하면 요소 N개짜리 개체 하나가 O(N²)이라(리뷰 실측: 요소
+            // 8,000개 7.5초) 반복문에서 누적한다. 번호나 글상자가 없는 요소도 이 합을
+            // 지나므로 상수 비용이어야 한다.
+            var componentOffset = 0
             for component in components {
                 collect(
                     component: component,
                     commonProperty: commonProperty,
                     placement: placement,
+                    componentOffset: componentOffset,
                     state: &state,
                     into: &collected
                 )
+                componentOffset += component.textBoxListArray.reduce(0) {
+                    $0 + $1.paragraphArray.count
+                }
             }
             noteContainerFloor(
                 commonProperty, placement: placement, since: marker, into: &collected
@@ -183,7 +197,8 @@ struct HwpParagraphObjectCollector {
             // 흐름 경로 (`HwpPaginator`) 와 같은 술어다 — 비흐름 오버레이
             // (글 뒤로·글 앞으로) 는 저작 폭을 지킨다 (R43 #1). 기본값 true를
             // 그대로 두면 한글이 줄이지 않는 표를 우리만 줄인다.
-            clampToAvailableWidth: info.treatAsChar || Self.consumesFlow(info)
+            clampToAvailableWidth: info.treatAsChar || Self.consumesFlow(info),
+            numbering: placement.numbering
         ) else { return nil }
         let size = frame.outerFrame.size
         let rect = CGRect(
@@ -235,6 +250,8 @@ struct HwpParagraphObjectCollector {
         /// 다시 시작하므로 문단 id와 **쌍**으로만 유일하다 (R51 #1).
         let controlIndex: Int
         let paragraphId: UInt32
+        /// 이 컨트롤이 품은 문단들의 번호 열쇠 (#158) — 글상자·표 레이아웃에 넘긴다.
+        let numbering: HwpNumberingScope.Container?
 
         func origin(cursorX: CGFloat) -> CGPoint {
             anchor?.origin ?? CGPoint(x: cursorX, y: paragraphRect.minY)
@@ -242,10 +259,13 @@ struct HwpParagraphObjectCollector {
     }
 
     /// 컴포넌트 하나를 종류별 (그림 → 글상자 → 도형)로 수집한다.
+    /// `componentOffset`은 이 요소 앞 요소들의 글상자 문단 수 — 글상자 문단의
+    /// 번호 경로 서수가 개체 전체를 펼친 서수라서다 (#158).
     private func collect(
         component: CoreHwp.HwpShapeComponent,
         commonProperty: CoreHwp.HwpCommonCtrlProperty?,
         placement: Placement,
+        componentOffset: Int,
         state: inout CollectState,
         into collected: inout Objects
     ) {
@@ -283,6 +303,7 @@ struct HwpParagraphObjectCollector {
                 component: component,
                 commonProperty: commonProperty,
                 placement: placement,
+                componentOffset: componentOffset,
                 state: state
             ) else { return }
             collected.textboxes.append(textbox)
@@ -441,6 +462,7 @@ private extension HwpParagraphObjectCollector {
         component: CoreHwp.HwpShapeComponent,
         commonProperty: CoreHwp.HwpCommonCtrlProperty?,
         placement: Placement,
+        componentOffset: Int,
         state: CollectState
     ) -> HwpCellTextbox? {
         // 흐름 경로 (appendShapeObjectBlocks 호출부)와 동일한 기본 property
@@ -454,7 +476,11 @@ private extension HwpParagraphObjectCollector {
             commonProperty: property,
             fallbackWidth: placement.paragraphRect.width,
             index: index,
-            sizeResolver: sizeResolver
+            sizeResolver: sizeResolver,
+            // 요소 하나만 넘기므로 그 요소 앞 글상자 문단 수를 서수에 더해야
+            // 개체 전체를 펼친 `childParagraphSequence`의 서수와 맞는다 (#158).
+            numbering: placement.numbering,
+            childOffset: componentOffset
         ) else { return nil }
         let size = frame.outerFrame.size
         return HwpCellTextbox(

@@ -199,13 +199,63 @@ paraShape의 그 값은 전부 0이라 (헌법주석 1,944문단) 종전 `> 0` �
 실물 대조는 `outline-numbering`(7줄 전부 라벨·본문 x가 한글.app과 0.5pt 이내)과
 헌법주석 13쪽(`1.` 라벨·본문 0.2pt 이내, 제목 띠 가운데 정렬 동일)이고, 가드는
 `HwpNumberingHeadingRenderTests`(합성)·`FixtureNumberingLabelRenderTests`(실물 —
-`numbering-sequence` 쌍 18개 라벨, 복사 텍스트, 헌법주석의 "라벨로 줄이 느는
-문단" 핀)다. 라벨이 절대 캐시 한 줄 문단을 slight-overflow 허용폭(6%) 밖으로
-밀면 두 줄로 접혀 다음 문단과 겹치는데 쪽 수는 캐시 y로 정해져 1,030쪽 핀이
-못 잡는다 — 실폰트(시스템·한컴) 모드 0건, Menlo 결정론 폰트 1건(`(나) Keyishian
-v. Board of Regents…`)을 핀했다. **컨테이너 문단**(표 셀·글상자·각주·머리말)은
-`HwpParagraphNumbering`이 세지만 측정기(`HwpParagraphMeasurer`·표·글상자·각주·쪽
-크롬)가 경로를 나르지 않아 라벨도 진단도 없다 — #151 후속.
+`numbering-sequence` 쌍 20개 라벨(표 셀 2개 포함), 복사 텍스트, 헌법주석의 "라벨로
+줄이 느는 문단" 핀)다. 라벨이 절대 캐시 한 줄 문단을 slight-overflow 허용폭(6%)
+밖으로 밀면 두 줄로 접혀 다음 문단과 겹치는데 쪽 수는 캐시 y로 정해져 1,030쪽
+핀이 못 잡는다 — 실폰트(시스템·한컴) 모드 0건, Menlo 결정론 폰트 1건(`(나) Keyishian
+v. Board of Regents…`)을 핀했다.
+
+**컨테이너 안 문단의 라벨** (#158, `Numbering/HwpNumberingScope.swift`): 표 셀·
+글상자·각주·미주·머리말/꼬리말 안 문단도 같은 `build(number:)`로 라벨을 받는다.
+번호는 #153의 표를 그대로 읽고, 열쇠는 `HwpNumberingScope`(번호 표 + 문단의
+위치 경로) → `container(controlIndex:)`(컨트롤이 품은 자식 문단들의 열쇠) →
+`paragraph(childIndex:)`로 한 겹씩 내려간다. **자식 서수는 번호 생성기가 쓴
+`childParagraphSequence(of:)`의 평면 서수**인데 컨테이너 레이아웃은 셀·개체 요소·
+리스트 단위로 문단을 열므로 접두 합으로 복원한다 — 표는 `TableCells`(`cellArray`
+서수별 앞선 셀들의 문단 수, `acceptedCells`가 그 서수를 함께 돌려준다), 개체는
+`textboxChildOffset`(앞선 요소들의 글상자 문단 수 — 셀 안 개체는 수집기가 요소를
+하나씩 넘기므로 `childOffset`으로 더한다), 리스트는 펼친 서수. 두 순회가 같은
+경로를 내는지는 `HwpNumberingScopeTests`가 컨테이너 종류마다 잠근다. 자식 서수는
+컨트롤 없는 문단도 차지하므로 `where nested.ctrlHeaderArray != nil` 필터는 항상
+`enumerated()` **뒤**에 둔다(`appendNestedControlBlocks`·`walkUnsupported`·각주
+수집·예약 네 곳). 최상위 열쇠는 `HwpPaginator.currentParagraphScope`(문단 커서라
+`advanceParagraph()` 앞에서만 유효)이고, `appendControlBlocks`·`walkUnsupported`·
+`collectFootnotes`·`anticipatedFootnoteHeight`·`pageChrome.register`가 거기서
+출발한다. 공개 진입점(`HwpTableLayout.layout`·`HwpTextboxLayout.layout`·
+`HwpFootnoteLayout.Input.init`)은 열쇠 없이(라벨 없이) 조판하고 모듈 내부
+오버로드만 열쇠를 받는다 — 새 공개 심볼은 두지 않았다.
+- **측정 ≡ 배치**: 라벨은 첫 줄 폭을 바꾸므로 한쪽에만 붙으면 줄바꿈·높이가
+  갈린다. 표 셀은 `measuredCellContents`가 붙여 잰 번호를 `PlacedCellContent.
+  numbering`에 실어 `laidOutContents`의 둘째 build와 개체 수집기(글상자·중첩 표)가
+  같은 것을 쓴다(캐시 높이를 쓰는 셀은 라벨과 무관하게 저작 높이 그대로). 각주는
+  `HwpFootnoteLayout.Input.numbering`을 수집 시점에 실어 예약(`measuredFootnoteHeight`
+  — `FootnoteHeightKey.numberingPath`가 키, 같은 문단 값이 다른 자리에서 다른
+  번호를 받을 수 있어 문단 값만으로는 못 가른다)과 배치(`measureNote`)가 같은
+  라벨을 붙이고, 미룬 컨테이너 각주(`DeferredNote.numbering`)도 같다. 머리말/
+  꼬리말은 등록 시점에 문단별 번호를 `Band.numbers`로 풀어 두고 쪽마다 같은
+  값을 전치하며 `BandBlocksKey.numbers`가 캐시 키에 든다(값이 같은 두 컨트롤이
+  다른 자리에서 다른 번호를 받을 수 있다). 번호 표(20,000항목 사전)를 키에
+  넣지 않는다 — 경로·번호 값만 해시한다.
+- **이어지는 조각**: 표가 쪽을 넘어 셀 문단이 잘리면 `HwpTableSplitter`의
+  `continuationFragment`가 라벨 접두를 첫 조각에만 남긴다(가드
+  `HwpContainerNumberingRenderTests`).
+- **진단**: `collectUnsupportedNumberingHeading(from:page:number:)`을
+  `walkUnsupported`가 컨테이너 안 문단마다 경로로 찾은 번호와 함께 부른다 —
+  참조 없음·댕글링·수준 형식 없음·순회 상한을 최상위와 같은 문구로 가른다.
+  쪽은 최상위 문단과 달리 "문단이 시작한 쪽"이 아니라 컨트롤 진단과 같은
+  **컨테이너를 배치한 뒤의 현재 쪽**이다(컨테이너 문단엔 시작 쪽 기록이 없다).
+  깊이 상한에 걸려 `continue`하는 컨테이너(중첩 표 3 초과·컨테이너 3 초과)의
+  문단은 그 컨테이너 진단이 대신한다.
+- **실측(한글.app 12.30, 2026-09-07, `numbering-sequence` 사본 3쪽)**: 셀 테두리
+  기준 `9.`·`10.` 라벨 잉크와 `Cell` 본문 시작이 0.2pt 이내로 같다(한컴 폰트
+  모드, `screencapture -l` + 잉크 투영). **같은 대조에서 드러난 기존 격차 2건**
+  (번호와 무관, main도 동일): ① 이 표의 셀 저작 높이가 282 HWPUNIT(2.82pt)인데
+  `resolvedRowHeights`가 캐시 셀의 저작 높이를 그대로 믿어 행이 2.82pt로 접혀
+  셀 글자가 다음 문단과 겹친다 — 한글은 줄 높이 10pt + 안쪽 여백 1.41×2 =
+  12.82pt(표 공통 속성 height 1282)로 그린다. ② 자리 차지(위·아래 배치) 표를
+  품은 문단의 본문 줄을 한글은 표 **아래**에 두는데 우리는 문단 줄 뒤에 표를
+  방출한다. 둘 다 후속 이슈 몫이다. 글상자·각주·미주·머리말/꼬리말의 번호
+  문단은 실물 픽스처가 없어 합성 입력으로만 잠갔다.
 
 **문단 번호·개요 번호 생성** (#153, `Numbering/`): `HwpParagraphNumbering.generate`
 가 구역 배열을 **조판과 무관하게** 한 번 훑어 문단마다 `HwpParagraphNumber`(종류·
@@ -819,8 +869,10 @@ paraShape와 같은 값**이어야 한다.
 1. `Model/HwpBlock.swift` 의 `HwpBlockKind` + `Model/HwpBlockPayload.swift` 에 payload case 추가
 2. `Layout/HwpPaginator.swift`: `childParagraphs(of:)` (모델 문단 순회) 와
    `appendControlBlocks(from:depth:)` (렌더) 양쪽에 추가. 전자는 진단 walk 전용이
-   아니다 — 탐색 목록 수집 (#77)·메모 복구 진단·중첩 블록 방출·각주 코디네이터가
-   모두 그 하나를 쓴다. **`nonisolated static`인 이유는 actor 밖 소비자 때문이다**:
+   아니다 — 탐색 목록 수집 (#77)·메모 복구 진단·중첩 블록 방출·각주 코디네이터·
+   번호 생성(#153)이 모두 그 하나를 쓴다. 새 컨테이너의 레이아웃이 문단을
+   평면 순서와 다른 단위로 열면 `HwpNumberingScope`에 그 단위의 접두 합을 더하고
+   `HwpNumberingScopeTests`에 대조를 추가한다 (#158). **`nonisolated static`인 이유는 actor 밖 소비자 때문이다**:
    등가 스윕 가드 (`HwpLayoutRenderParitySweepTests`, #80) 가 조판 없이 문단 트리만
    훑으려고 직접 부른다 (분기를 복제하면 새 컨테이너가 추가될 때 그 가드만 조용히
    그것을 못 본다). 그래서 여기에 컨테이너를 더하면 그 스윕의 **구조 핀**
