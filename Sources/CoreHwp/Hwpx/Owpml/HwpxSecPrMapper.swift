@@ -8,8 +8,8 @@ import Foundation
 /// 지오메트리의 전부다.
 enum HwpxSecPrMapper {
     static func mapSectionDef(
-        _ secPr: HwpxXMLNode, tables: HwpxIdTables, maxDepth: Int
-    ) -> HwpSectionDef {
+        _ secPr: HwpxXMLNode, tables: HwpxIdTables, options: HwpLoadOptions, maxDepth: Int
+    ) throws -> HwpSectionDef {
         var sectionDef = HwpSectionDef()
 
         if let pagePr = secPr.paragraphFirstChild(named: "pagePr") {
@@ -82,47 +82,98 @@ enum HwpxSecPrMapper {
         applyFirstPageVisibility(
             secPr.paragraphFirstChild(named: "visibility"), to: &sectionDef
         )
-        // 각주/미주 모양·쪽 테두리는 1차 범위 밖 — 빈 문서 기본값을 유지하되,
-        // 버려지는 자식은 진단으로 강등해야 "미해석 강등은 진단으로 보고됨"
-        // 규약이 지켜진다 (tabPr의 tabItem 강등과 같은 채널).
+        // 각주·미주 모양 — 아래 `applyNoteShapes` 참조.
+        try applyNoteShapes(secPr, options: options, to: &sectionDef)
+        // 쪽 테두리는 1차 범위 밖 — 빈 문서 기본값을 유지하되, 버려지는 자식은
+        // 진단으로 강등해야 "미해석 강등은 진단으로 보고됨" 규약이 지켜진다
+        // (tabPr의 tabItem 강등과 같은 채널).
         sectionDef.unknownChildren = referenceDiagnostics + secPr.unconsumedChildRecords(
-            consumed: ["pagePr", "startNum", "visibility"], in: HwpxNamespace.paragraph,
+            consumed: Set(Self.consumedChildren), in: HwpxNamespace.paragraph,
             maxDepth: maxDepth
         )
-        // 둘 다 단일 조회라 둘째 등장부터는 읽히지 않는다 — 소비 표시가
+        // 전부 단일 조회라 둘째 등장부터는 읽히지 않는다 — 소비 표시가
         // 이름 단위라 그대로 두면 값도 진단도 없이 사라진다.
         sectionDef.unknownChildren += secPr.duplicateSingletonRecords(
-            of: ["pagePr", "startNum", "visibility"], in: HwpxNamespace.paragraph,
-            maxDepth: maxDepth
+            of: Self.consumedChildren, in: HwpxNamespace.paragraph, maxDepth: maxDepth
         )
-        // 소비 래퍼 안 미지 자식 — pagePr는 margin만, margin·startNum·visibility는
-        // 속성만 읽는다. 래퍼를 소비 목록에 넣으면 그 서브트리가 위 순회에서
-        // 빠지므로, 안쪽 미지 자식은 여기서 따로 걷어야 진단에서 사라지지 않는다.
+        sectionDef.unknownChildren += consumedWrapperDiagnostics(secPr, maxDepth: maxDepth)
+        return sectionDef
+    }
+
+    /// `hp:footNotePr`·`hp:endNotePr` → 구역의 각주·미주 모양 (표 133, #168).
+    ///
+    /// 요소가 없으면 손대지 않는다 — 빈 문서 기본값을 유지해야 값을 지어내지
+    /// 않는다. 승격 전에는 두 요소가 통째로 진단 강등돼 번호 모양·장식 문자·
+    /// 시작 번호·미주 배치가 기본값에 고정됐고, `rawPayload`가 비어
+    /// `HwpFootnoteShape.dividerInfo`가 nil이라 구분선까지 튜닝 폴백으로
+    /// 떨어졌다 (HWP 쌍 0.34pt ↔ HWPX 1.0pt).
+    static func applyNoteShapes(
+        _ secPr: HwpxXMLNode,
+        options: HwpLoadOptions,
+        to sectionDef: inout HwpSectionDef
+    ) throws {
+        if let shape = try HwpxFootnoteShapeMapper.map(
+            secPr.paragraphFirstChild(named: "footNotePr"), options: options
+        ) {
+            sectionDef.footNoteShape = shape
+        }
+        if let shape = try HwpxFootnoteShapeMapper.map(
+            secPr.paragraphFirstChild(named: "endNotePr"), options: options
+        ) {
+            sectionDef.endNoteShape = shape
+        }
+    }
+
+    /// 소비 래퍼 안 미지 자식 — pagePr는 margin만, margin·startNum·visibility는
+    /// 속성만, footNotePr·endNotePr는 다섯 자식의 속성만 읽는다. 래퍼를 소비
+    /// 목록에 넣으면 그 서브트리가 위 순회에서 빠지므로, 안쪽 미지 자식은
+    /// 여기서 따로 걷어야 진단에서 사라지지 않는다.
+    static func consumedWrapperDiagnostics(
+        _ secPr: HwpxXMLNode, maxDepth: Int
+    ) -> [HwpUnknownRecord] {
+        var records: [HwpUnknownRecord] = []
         if let pagePr = secPr.paragraphFirstChild(named: "pagePr") {
-            sectionDef.unknownChildren += pagePr.unconsumedChildRecords(
+            records += pagePr.unconsumedChildRecords(
                 consumed: ["margin"], in: HwpxNamespace.paragraph, maxDepth: maxDepth
             )
-            sectionDef.unknownChildren += pagePr.duplicateSingletonRecords(
+            records += pagePr.duplicateSingletonRecords(
                 of: ["margin"], in: HwpxNamespace.paragraph, maxDepth: maxDepth
             )
             if let margin = pagePr.paragraphFirstChild(named: "margin") {
-                sectionDef.unknownChildren += margin.unconsumedChildRecords(
-                    consumed: [], maxDepth: maxDepth
-                )
+                records += margin.unconsumedChildRecords(consumed: [], maxDepth: maxDepth)
             }
         }
-        if let startNum = secPr.paragraphFirstChild(named: "startNum") {
-            sectionDef.unknownChildren += startNum.unconsumedChildRecords(
-                consumed: [], maxDepth: maxDepth
-            )
+        for name in ["startNum", "visibility"] {
+            guard let node = secPr.paragraphFirstChild(named: name) else { continue }
+            records += node.unconsumedChildRecords(consumed: [], maxDepth: maxDepth)
         }
-        if let visibility = secPr.paragraphFirstChild(named: "visibility") {
-            sectionDef.unknownChildren += visibility.unconsumedChildRecords(
-                consumed: [], maxDepth: maxDepth
+        for name in ["footNotePr", "endNotePr"] {
+            guard let node = secPr.paragraphFirstChild(named: name) else { continue }
+            records += node.unconsumedChildRecords(
+                consumed: Set(Self.consumedNoteShapeChildren), in: HwpxNamespace.paragraph,
+                maxDepth: maxDepth
             )
+            records += node.duplicateSingletonRecords(
+                of: Self.consumedNoteShapeChildren, in: HwpxNamespace.paragraph,
+                maxDepth: maxDepth
+            )
+            for child in Self.consumedNoteShapeChildren {
+                records += node.paragraphFirstChild(named: child)?
+                    .unconsumedChildRecords(consumed: [], maxDepth: maxDepth) ?? []
+            }
         }
-        return sectionDef
+        return records
     }
+
+    /// `hp:secPr`에서 값을 읽어 소비하는 자식 요소 — 진단 강등 대상에서 뺀다.
+    static let consumedChildren = [
+        "pagePr", "startNum", "visibility", "footNotePr", "endNotePr",
+    ]
+
+    /// `hp:footNotePr`·`hp:endNotePr`에서 값을 읽어 소비하는 자식 요소.
+    static let consumedNoteShapeChildren = [
+        "autoNumFormat", "noteLine", "noteSpacing", "numbering", "placement",
+    ]
 
     /// 구역 첫 쪽 감추기(`hp:visibility`) → 표 132 bits 0·1·2·5.
     ///

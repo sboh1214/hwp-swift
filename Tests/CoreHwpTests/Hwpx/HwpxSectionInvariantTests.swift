@@ -274,8 +274,8 @@ final class HwpxSectionInvariantTests: XCTestCase {
         <hp:startNum page="0"><hp:startNumExtra/></hp:startNum>\
         </hp:secPr>
         """
-        let sectionDef = HwpxSecPrMapper.mapSectionDef(
-            try parse(xml), tables: HwpxIdTables(),
+        let sectionDef = try HwpxSecPrMapper.mapSectionDef(
+            try parse(xml), tables: HwpxIdTables(), options: .default,
             maxDepth: HwpReadLimits.default.maxNestingDepth
         )
 
@@ -298,8 +298,8 @@ final class HwpxSectionInvariantTests: XCTestCase {
         <hp:pagePr width="59528" height="84186"/>\
         </hp:secPr>
         """
-        let sectionDef = HwpxSecPrMapper.mapSectionDef(
-            try parse(xml), tables: HwpxIdTables(),
+        let sectionDef = try HwpxSecPrMapper.mapSectionDef(
+            try parse(xml), tables: HwpxIdTables(), options: .default,
             maxDepth: HwpReadLimits.default.maxNestingDepth
         )
 

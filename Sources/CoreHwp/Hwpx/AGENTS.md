@@ -58,10 +58,9 @@ HWPX(OCF ZIP + OWPML XML, KS X 6101)를 **기존 `Hwp*` 모델로 변환 파싱*
 
 ## 1차 범위 밖 (미해석 강등 — 진단으로 보고됨)
 
-각주/미주 내용(`.notImplemented` — #168), 도형(line/rect/…)·수식·글상자
-(`.notImplemented`; `hp:default` fallback 없이 `hp:chart`만 오는 문서도 여기 —
-OLE 개체 `hp:ole`은 #134에서 승격됐다), 자동 번호·새 번호·홀/짝수 조정
-(`atno`·`nwno`·`pgct` — HWPX 픽스처 10종에 사례 없음), 형광펜·변경 추적
+도형(line/rect/…)·수식·글상자(`.notImplemented`; `hp:default` fallback 없이
+`hp:chart`만 오는 문서도 여기 — OLE 개체 `hp:ole`은 #134에서 승격됐다), 새 번호·
+홀/짝수 조정(`nwno`·`pgct` — HWPX 픽스처에 사례 없음), 형광펜·변경 추적
 표식(zero-width 진단), 그러데이션/이미지 채우기, 명시 탭 정지, 쪽 테두리.
 승격 시 대응 요소를 `HwpxControlMapper` 분류표에서 옮긴다.
 
@@ -103,6 +102,74 @@ OLE 개체 `hp:ole`은 #134에서 승격됐다), 자동 번호·새 번호·홀/
 단선)으로 그린다 (#136). 그래서 등가 투영은 밑줄 종류를 비교하되 raw 2만
 없음으로 접는다 — 진짜 '글자 위'는 raw 3 ↔ `type="TOP"`으로 같은 `.above`에
 모인다 (#149, `underline-above` 쌍).
+
+## 각주·미주 (`hp:footNote`·`hp:endNote`·`hp:autoNum`, #168)
+
+`HwpxFootnoteMapper`가 각주·미주를 `.footnote`/`.endnote(HwpListControl)`(제어
+문자 코드 17)로, 그 본문 문단 안 `hp:autoNum`을 `.autoNumber(HwpOtherControl)`
+(코드 18)로 승격한다. `HwpxFootnoteShapeMapper`는 구역의 `hp:footNotePr`·
+`hp:endNotePr`를 `HwpSectionDef.footNoteShape`·`endNoteShape`(표 133·134)로 옮긴다.
+
+강등 상태에서는 **본문이 통째로 사라졌다** — 미지 요소 강등이 요소 이름만
+payload로 담아 `hp:t` 텍스트가 모델에 남지 않는다. **`hp:autoNum` 동반 승격은
+선택이 아니다**: 본문 위 첨자 참조 번호는 컨트롤 종류만 보는 경로
+(`HwpFootnoteCoordinatorPlacement`)에서 나오지만, 각주 영역 본문 첫머리의 번호
+라벨은 `HwpTextRunBuilder.autoNumberReplacements`가 `.autoNumber`의
+`autoNumberInfo`를 찾아야 만들어진다.
+
+**payload 게이트는 슬롯마다 다르고 전부 바이너리 로더가 정한다.** 컨트롤 헤더와
+리스트 헤더는 `HwpListControl.load`가 ctrl id와 무관하게 `decoupledPayload`를
+쓰므로 **양 모드 보존**이다 — 되읽는 소비자가 없다고 `preservedPayload`로 접으면
+바이너리가 들고 있는 바이트를 HWPX만 비우는 반대 방향 격차가 된다. `atno`는
+반대로 `HwpOtherControl`이 raw만 게이트하고 typed 뷰(`autoNumberInfo`)는 **게이트
+전 원본**에서 만들므로, HWPX도 합성 payload를 그 로더에 태워 `.viewer`에서 raw는
+비고 번호는 사는 비대칭을 그대로 재현한다.
+
+**각주 모양은 payload 합성이 사실상 필수다.** 조판이 보는 구분선 값은 typed
+필드가 아니라 `HwpFootnoteShape.dividerInfo`, 즉 `rawPayload`의 재디코드다.
+비워 두면 `dividerInfo`가 nil이라 HWP 쌍이 0.34pt 구분선을 그리는 자리에서
+HWPX만 튜닝 폴백 1.0pt를 그린다. 게다가 `HwpFootnoteShape.init(_:)`은 구분선
+길이를 스펙 표 133 그대로 **HWPUNIT16(2바이트)** 로 읽지만 실저장본은 4바이트라
+typed 저장 필드 일곱이 실물에서 통째로 오정렬돼 있다 — 같은 payload를 같은
+로더(`HwpFootnoteShape.load`)에 태워야 그 오정렬까지 HWP 쌍과 똑같아진다.
+(`HwpSectionDef()`의 각주·미주 기본값 `-1, -1` · `12280, 224`가 그 2바이트
+오독의 화석이다: 4바이트로 이어 붙이면 -1과 14,692,344로 실물과 같다.)
+
+실측 근거는 `footnote-endnote` 변환 쌍 둘이다. (1) 기본값 표본 — HWP 쌍의
+컨트롤 헤더 20바이트·리스트 헤더 16바이트·`atno` 16바이트·FOOTNOTE_SHAPE
+28바이트가 우리 합성과 **바이트 동일**하다(머리말·꼬리말의 12/34바이트와
+다르다는 데 주의). (2) 2026-09-07 한글.app 12.30.0 미주 모양 대화상자로 만든
+비기본값 쌍 — `type="CIRCLED_HANGUL_JAMO" prefixChar="[" suffixChar="]"
+supscript="1"` · `numbering type="ON_SECTION" newNum="3"` ·
+`placement place="END_OF_SECTION"` ↔ property **0x150B** · 시작 번호 3 ·
+앞 0x5B · 뒤 0x5D. 즉 bits 0-7 번호 모양(표 134) · bits 8-9 배치 ·
+bits 10-11 번호 매김 · bit 12 위 첨자가 확정됐고, 같은 문서의
+`<hp:endNote flag="11" number="3" prefixChar="91" suffixChar="93" instId="…">`가
+20바이트의 오프셋 8-9(앞 장식)·12-15(`flag`)를 확정했다.
+
+**`@suffixChar`는 이름이 같아도 인코딩이 다르다** — `hp:footNote`/`hp:endNote`의
+것은 10진 코드포인트 문자열("41")이고 `hp:autoNumFormat`의 것은 리터럴 문자(")")다.
+하나의 읽기로 뭉뚱그리면 `)`가 0으로, 41이 문자 '4'로 접힌다. 열거 변환기는
+재사용한다 — `hp:noteLine@type`은 `HwpxCharShapeMapper.lineShapeIndex`(표 27
+이름표가 표 25와 index 동일), `@width`는 `HwpxParaShapeMapper.thicknessIndex`,
+`hp:autoNumFormat@type`은 `HwpxNumberFormatMapper`다. 종류 > 17이나 굵기 > 15를
+실으면 `dividerInfo`의 wide 유효성 게이트가 깨져 narrow로 폴백하고 여백·색이
+통째로 오염되므로 두 변환기의 상한을 벗어나면 안 된다.
+
+**미실측**: `hp:numbering@type`의 `ON_PAGE`(쪽마다 새로 — 미주 모양 대화상자에
+그 항목이 없다), 각주 쪽 `hp:placement@place`의 `EACH_COLUMN` 외 값(조판이 각주
+다단 배열을 아직 쓰지 않아 렌더 격차는 없다), `@beneathText`(대응 비트가 코드에
+없어 옮기지 않는다 — 자식이 아니라 속성이라 진단에도 남지 않는다),
+`hp:noteLine@length`의 유한값 의미(HWP 쌍과 바이트가 같아 매핑은 안전하지만
+14,692,344가 한글 대화상자의 "사용자 150.0mm"와 어떤 산식으로 이어지는지는
+확정하지 못했다).
+
+가드: `HwpxFootnoteMapperTests`(승격·앵커 코드·표 143 비트·게이트 비대칭·합성
+바이트·강등표 이탈), `HwpxFootnoteShapeMapperTests`(28바이트·`dividerInfo`·
+property 비트 실측 표본·양 모드 보존·부재 시 무변경),
+`HwpxHwpEquivalenceTests`(`notes`·`noteShapes` 축 + 공허 방지 직접 핀),
+`HwpxFixtureRenderTests.testHwpxFootnoteBlocksMatchHwpPairs`(HWP 쌍 텍스트·좌표
+등식 + `1) CoreHwp footnote fixture`·`1) CoreHwp endnote fixture` 직접 핀).
 
 ## 쪽 번호 위치 (`hp:pageNum` → `pgnp`, #135)
 

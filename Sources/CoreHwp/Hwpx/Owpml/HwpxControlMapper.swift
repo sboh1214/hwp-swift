@@ -34,8 +34,9 @@ enum HwpxControlMapper {
             return .anchor(
                 code: 2,
                 fourCC: HwpOtherCtrlId.section.rawValue,
-                ctrl: .section(HwpxSecPrMapper.mapSectionDef(
-                    node, tables: context.idTables, maxDepth: context.unknownDepthLimit
+                ctrl: .section(try HwpxSecPrMapper.mapSectionDef(
+                    node, tables: context.idTables, options: context.options,
+                    maxDepth: context.unknownDepthLimit
                 ))
             )
         case "colPr":
@@ -69,6 +70,19 @@ enum HwpxControlMapper {
             return try HwpxHeaderFooterMapper.anchor(
                 node, isFooter: node.localName == "footer", context: context
             )
+        case "footNote", "endNote":
+            // 각주·미주(표 138) — 구역 부속 컨트롤(코드 17)의 typed 승격.
+            // `HwpFootnoteCoordinator`가 `.footnote`/`.endnote`에서만 주석을
+            // 모으므로 강등 상태로는 본문이 통째로 사라진다 (#168).
+            return try HwpxFootnoteMapper.anchor(
+                node, isEndnote: node.localName == "endNote", context: context
+            )
+        case "autoNum":
+            // 자동 번호(표 142) — 각주·미주 본문 첫머리의 번호 라벨이 이
+            // 컨트롤의 `autoNumberInfo`에서 나온다. 각주만 승격하면 번호 없는
+            // 각주가 되므로 같은 범위다 (#168). `newNum`은 코드가 같아도
+            // 표 144의 다른 payload라 강등에 남는다 (#169).
+            return try HwpxFootnoteMapper.autoNumberAnchor(node, context: context)
         case "tbl":
             return .anchor(
                 code: 11,
@@ -152,12 +166,10 @@ enum HwpxControlMapper {
     ]
 
     /// 개체가 아닌 구역 부속 컨트롤 중 미구현 강등 대상 — (제어 문자 코드, 4CC).
-    /// 코드 16의 `header`·`footer`(#167)와 코드 21의 `pageNum`(#135)은 위에서
-    /// typed 매핑으로 승격됐다.
+    /// 코드 16의 `header`·`footer`(#167), 코드 17의 `footNote`·`endNote`와 코드
+    /// 18의 `autoNum`(#168), 코드 21의 `pageNum`(#135)은 위에서 typed 매핑으로
+    /// 승격됐다.
     static let sectionAttachments: [String: (code: UInt16, fourCC: UInt32)] = [
-        "footNote": (17, HwpOtherCtrlId.footnote.rawValue),
-        "endNote": (17, HwpOtherCtrlId.endnote.rawValue),
-        "autoNum": (18, HwpOtherCtrlId.autoNumber.rawValue),
         "newNum": (18, HwpOtherCtrlId.newNumber.rawValue),
         "pageNumCtrl": (21, HwpOtherCtrlId.pageCT.rawValue),
         "pageHiding": (21, HwpOtherCtrlId.pageHide.rawValue),
