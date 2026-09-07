@@ -118,7 +118,7 @@ enum HwpxFootnoteShapeMapper {
     static let lengthDefault: Int32 = 0
     static let newNumDefault: UInt16 = 1
     static let lineTypeDefault = 1 // LT2_SOLID
-    static let lineWidthDefault = "0.12 mm" // LWT_0_12
+    static let lineWidthDefault: UInt8 = 1 // LWT_0_12 = 0.12 mm
 
     /// 표 134 속성 — bits 0-7 번호 모양 · bits 8-9 배치 · bits 10-11 번호 매김 ·
     /// bit 12 위 첨자 · bit 13 텍스트에 이어 바로 출력.
@@ -151,17 +151,17 @@ enum HwpxFootnoteShapeMapper {
     /// `LINEWIDTHTYPE`과 같은 표 26 index).
     ///
     /// 생략·읽을 수 없는 값은 참조 모델 생성자 값(SOLID·0.12 mm)으로 접어 한컴
-    /// `GetAttribute`와 같은 동작을 만든다. 두 변환기의 실패 처리가 달라 굵기는
-    /// 호출부가 막아야 한다 — `lineShapeIndex`는 이름이 표에 없으면 `default:`를
-    /// 쓰지만 `thicknessIndex`는 **숫자로 못 읽으면 index 0(0.1 mm)** 을 돌려주므로,
-    /// 파싱 가능성을 먼저 확인하지 않으면 `width="0.12mm"`(공백 없음) 같은 값이
-    /// 조용히 다른 굵기가 된다.
+    /// `GetAttribute`와 같은 동작을 만든다 — 두 변환기 모두 `default:`를 받으므로
+    /// 호출부가 그 값을 넘긴다. 기본 `default:` 0에 맡기면 `width="0.12mm"`(공백
+    /// 없음) 같은 값이 조용히 0.1 mm가 된다.
     private static func dividerLineBytes(_ line: HwpxXMLNode?) -> Data {
         var bytes = Data(capacity: 6)
         bytes.append(UInt8(clamping: HwpxCharShapeMapper.lineShapeIndex(
             line?.attribute("type"), default: lineTypeDefault
         )))
-        bytes.append(HwpxParaShapeMapper.thicknessIndex(of: readableWidth(line)))
+        bytes.append(HwpxParaShapeMapper.thicknessIndex(
+            of: line?.attribute("width"), default: lineWidthDefault
+        ))
         // `color="none"`은 한컴 `GetAttribute`가 **흰색**(0xFFFFFFFF)으로 읽는다 —
         // `colorAttribute`는 `#` 접두가 없으면 nil이라 그대로 두면 흰 구분선이
         // 검정으로 뒤집힌다. 속성 자체의 생략은 생성자 값 `m_cColor(0x000000)`이다.
@@ -169,16 +169,6 @@ enum HwpxFootnoteShapeMapper {
             ?? (line?.attribute("color")?.lowercased() == "none" ? HwpColor(255, 255, 255) : nil)
         bytes += HwpxParaShapeMapper.colorrefBytes(color ?? HwpColor())
         return bytes
-    }
-
-    /// `thicknessIndex`가 숫자로 읽을 수 있는 굵기 문자열 — 아니면 참조 기본값.
-    private static func readableWidth(_ line: HwpxXMLNode?) -> String {
-        guard let width = line?.attribute("width"),
-              Double(width.split(separator: " ").first ?? "") != nil
-        else {
-            return lineWidthDefault
-        }
-        return width
     }
 
     /// HWPUNIT 여백을 표 133의 HWPUNIT16 자리에 싣는다. 속성이 없으면 참조 모델

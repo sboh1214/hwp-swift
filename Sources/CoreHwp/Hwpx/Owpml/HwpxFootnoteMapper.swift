@@ -168,7 +168,14 @@ extension HwpxFootnoteMapper {
     /// "1 / 3" 머리말이 "1 / 1"이 된다 — 강등 상태에는 없던 **틀린 숫자**다.
     /// 그래서 미지 이름과 함께 강등 앵커로 되돌린다: 자리(코드 18)와 4CC는
     /// 그대로라 WCHAR/ctrl 슬롯 정렬이 유지되고 `parseDiagnostics()`가 요소
-    /// 이름까지 보고한다. 총 쪽수 조판을 구현하면 그때 승격한다.
+    /// 이름까지 보고한다.
+    ///
+    /// **이 가드는 XML 이름 단계라 바이너리 경로에는 닿지 않는다** — 같은 문서의
+    /// `.hwp`는 표 143 raw 6이 그대로 `.page`로 접혀 여전히 현재 쪽 번호를
+    /// 그린다. 근본 해결은 `HwpAutoNumberKind`에 값 6을 더하는 것인데, 공개
+    /// 열거이고 `HwpPaginator.applyNewNumbers`의 exhaustive switch가 함께
+    /// 바뀌어야 해서 각주 승격과 분리했다. 그때 이 분기를 지우고
+    /// `autoNumberKinds`에 `TOTAL_PAGE`를 되돌려 넣으면 두 경로가 함께 닫힌다.
     ///
     /// `hp:newNum`(새 번호 지정)은 같은 코드를 쓰지만 표 144의 다른 payload라
     /// 이번 승격 범위 밖이다 (#169) — `sectionAttachments`에 남는다.

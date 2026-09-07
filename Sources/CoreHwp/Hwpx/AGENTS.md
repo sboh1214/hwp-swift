@@ -183,7 +183,14 @@ bits 10-11 번호 매김 · bit 12 위 첨자가 확정됐고, 같은 문서의
 `.page`로 접는다. 승격하면 `HwpPageChromeBuilder`가 그 자리에 논리 쪽 번호를 그려
 "1 / 3" 머리말이 "1 / 1"이 된다 — 강등 상태에는 없던 **틀린 숫자**다. 미지 이름도
 같은 이유로 강등하며, 자리(코드 18)와 4CC는 그대로라 WCHAR/ctrl 슬롯 정렬은 유지된다.
-총 쪽수 조판을 구현하면 그때 승격한다.
+
+**이 가드는 XML 이름 단계라 바이너리 경로에는 닿지 않는다** — 같은 문서의 `.hwp`는
+표 143 raw 6이 그대로 `.page`로 접혀 여전히 현재 쪽 번호를 그린다. 근본 해결은
+`HwpAutoNumberKind`에 값 6을 더하는 것이고, 소비처 넷이 전부 `kind == .page` 게이트라
+그것만으로 두 경로가 함께 닫힌다. 다만 공개 열거이고 `HwpPaginator.applyNewNumbers`의
+exhaustive switch(`case .picture, .table, .equation`)가 함께 바뀌어야 해서 각주 승격과
+분리했다 — 그때 이 강등 분기를 지우고 `autoNumberKinds`에 `TOTAL_PAGE`를 되돌려 넣으면
+승격·왕복·진단이 모두 살아난다.
 
 **미실측**: `hp:numbering@type`의 `ON_PAGE`(쪽마다 새로 — 미주 모양 대화상자에 그
 항목이 없다. 값 2는 한컴 `g_FNNumberingTypeList`가 정본), 각주 쪽
