@@ -129,6 +129,26 @@ final class HwpxSectionMarkMapperTests: XCTestCase {
         }
     }
 
+    /// **번호 값도 종류와 같은 잣대다.** `@num`이 있는데 UINT16으로 읽히지 않으면
+    /// (음수·65,535 초과·비수치) 선택 속성 규약의 기본값 1이 하필 "쪽 번호를 1부터
+    /// 다시"라 그 뒤 모든 쪽이 다시 매겨진다 — 강등 상태에는 없던 오작동이므로
+    /// 강등 앵커로 되돌린다. 값이 **아예 없을** 때만 참조 모델 기본값 1이다.
+    func testUnreadableNewNumberValuesFallBackToTheDegradedAnchor() throws {
+        for raw in ["-1", "70000", "abc", ""] {
+            let section = try mapSection(markBody(
+                "<hp:ctrl><hp:newNum num=\"\(raw)\" numType=\"PAGE\"/></hp:ctrl>"
+            ))
+            let chars = try XCTUnwrap(section.paragraph[1].paraText?.charArray)
+            expect(chars.filter { $0.type == .extended }.map(\.value)).to(
+                equal([21]), description: raw
+            )
+            guard case let .notImplemented(header) = try controls(of: section)[0] else {
+                return fail("Expected .notImplemented for num=\(raw)")
+            }
+            expect(header.ctrlId) == HwpOtherCtrlId.newNumber.rawValue
+        }
+    }
+
     /// 참조 모델은 `hp:newNum`에도 `hp:autoNumFormat` 자식을 등록하지만 표 144에는
     /// 그 자리가 없다 — 소비하지 않고 미지 자식으로 남겨 진단에 보고한다.
     func testNewNumberKeepsAutoNumberFormatChildAsUnknownRecord() throws {

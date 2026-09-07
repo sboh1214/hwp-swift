@@ -82,7 +82,14 @@ extension DocumentEquivalenceProjection {
         case let .indexmark(control):
             sectionMark(
                 kind: "indexmark", code: code, control: control,
-                indexmarkText: control.indexmarkInfo?.text
+                indexmarkText: control.indexmarkInfo?.text,
+                // 마지막 UINT32는 **저작기 버전 흔적**이다 — 한글 12.30이 -1을,
+                // 레거시 문서 35건이 0을 쓴다. OWPML에 대응 속성이 없어 XML에서
+                // 복원할 수 없으므로 매퍼가 최신 저작기 값을 고정하고, 이 축은
+                // 그 4바이트만 0으로 접어 비교한다. 접지 않으면 레거시 저작
+                // 쌍을 나중에 넣을 때 내용은 같은데 등식이 깨진다. 길이·키워드·
+                // 두 번째 키워드 자리는 그대로 바이트 비교된다.
+                normalizingTrailingWord: true
             )
         case let .notImplemented(header):
             demotedSectionMark(header: header, code: code)
@@ -99,9 +106,14 @@ extension DocumentEquivalenceProjection {
         newNumberValue: UInt16? = nil,
         pageHideMask: UInt32? = nil,
         bookmarkName: String? = nil,
-        indexmarkText: String? = nil
+        indexmarkText: String? = nil,
+        normalizingTrailingWord: Bool = false
     ) -> SectionMark {
-        SectionMark(
+        var payload = [UInt8](control.rawPayload)
+        if normalizingTrailingWord, payload.count >= 4 {
+            payload.replaceSubrange(payload.count - 4 ..< payload.count, with: [0, 0, 0, 0])
+        }
+        return SectionMark(
             kind: kind,
             controlCharacterCode: code,
             newNumberKind: newNumberKind,
@@ -109,7 +121,7 @@ extension DocumentEquivalenceProjection {
             pageHideMask: pageHideMask,
             bookmarkName: bookmarkName,
             indexmarkText: indexmarkText,
-            rawPayload: [UInt8](control.rawPayload),
+            rawPayload: payload,
             ctrlDataPayloads: control.ctrlDataRecords.map { [UInt8]($0.rawPayload) }
         )
     }

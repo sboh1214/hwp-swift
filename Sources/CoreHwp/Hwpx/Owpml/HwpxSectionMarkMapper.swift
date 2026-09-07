@@ -28,12 +28,18 @@ import Foundation
 /// <hp:indexmark><hp:firstKey>본문</hp:firstKey></hp:indexmark>
 /// ```
 ///
-/// **쪽 감추기 두 표본이 표 145의 여섯 비트를 전부 확정한다** — 하나가
+/// **쪽 감추기 실측이 확정하는 것은 3+3 분할까지다.** 하나가
 /// `머리말+쪽 테두리+쪽 번호`(0x29 = bits 0·3·5), 다른 하나가
-/// `꼬리말+바탕쪽+쪽 배경`(0x16 = bits 1·2·4)이라 서로의 여집합이다. 비트 순서는
-/// 한컴 공개 모델이 적은 속성 순서(`pageHiding.cpp`의 hideHeader→hidePageNum)와도,
-/// 표 132를 옮긴 `HwpSectionDefProperty`의 bits 0-5와도 같다. 저장소의 실물
-/// `.hwp` 3건이 전부 0x20뿐이라 그 전에는 bit 5 말고는 추론이었다.
+/// `꼬리말+바탕쪽+쪽 배경`(0x16 = bits 1·2·4)이라 서로의 여집합이므로 여섯 이름이
+/// 두 삼중항으로 갈리는 것은 정해지고, 레거시 문서의 0x20 표본 35건이 그 중
+/// `hidePageNum = bit 5`를 못박는다. **삼중항 안의 배정은 실측이 아니다** —
+/// 두 표본은 어떤 내부 치환에도 같은 0x29·0x16을 내므로, `hideHeader`는 아직
+/// {0, 3}, `hideFooter`는 {1, 2, 4}까지만 좁혀진다. 지금 코드가 쓰는 배정의
+/// 근거는 한컴 공개 모델이 적은 속성 순서(`pageHiding.cpp`의
+/// hideHeader→hidePageNum)와 표 132를 옮긴 `HwpSectionDefProperty`의 bits 0-5가
+/// 일치한다는 것이고, 그 둘을 대조한 결과다. 조판이 실제로 읽는 bit 0·1이
+/// 하필 미확정 자리이므로, 한 비트만 켠 표본(`머리말`만 등)을 만들면 그때
+/// 완전히 닫힌다.
 ///
 /// **`nwno`의 제어 문자 코드는 18이 아니라 21이다** — 코드 18은 자동 번호(`atno`)
 /// 전용이고 새 번호는 쪽 컨트롤 가족(21)이다. 저장소 실물 36종 전수 집계가
@@ -126,9 +132,12 @@ enum HwpxSectionMarkMapper {
     /// 크다. 강등 상태에는 아예 없던 오작동이므로 `autoNumberKinds`에 없는
     /// 이름은 강등으로 되돌린다.
     ///
-    /// 생략 기본값은 한컴 공개 모델의 생성자 값이다 — `hp:autoNum`과 같은 클래스
-    /// (`CAutoNumNewNumType`)라 `m_nNum(1)`·`m_uNumType(ANT_PAGE)`이고,
-    /// `GetAttribute`는 속성이 없으면 값을 건드리지 않는다.
+    /// **번호 값도 같은 이유로 강등한다.** `@num`이 **아예 없으면** 한컴 공개 모델의
+    /// 생성자 값 1이 정답이지만(`CAutoNumNewNumType`의 `m_nNum(1)`, `GetAttribute`는
+    /// 속성이 없으면 값을 건드리지 않는다), **있는데 UINT16으로 읽히지 않으면**
+    /// (음수·65,535 초과·비수치) 선택 속성 규약대로 기본값 1로 접히는 것이
+    /// 하필 "쪽 번호를 1부터 다시" 라는 의미다 — 종류를 못 읽었을 때와 똑같이 그
+    /// 뒤 모든 쪽이 다시 매겨진다. 부재와 오류를 갈라, 오류는 강등으로 되돌린다.
     ///
     /// 모델이 `hp:autoNumFormat` 자식을 등록하지만 표 144에는 그 자리가 없다 —
     /// 소비하지 않고 미지 자식으로 남겨 진단에 보고한다(실물 쌍에는 없다).
@@ -141,12 +150,23 @@ enum HwpxSectionMarkMapper {
         ] else {
             return nil
         }
+        guard let number = numberValue(node) else {
+            return nil
+        }
 
         var payload = Data(capacity: 10)
         payload.appendHwpxLittleEndian(HwpOtherCtrlId.newNumber.rawValue)
         payload.appendHwpxLittleEndian(kind)
-        payload.appendHwpxLittleEndian(node.uint16Attribute("num", default: 1))
+        payload.appendHwpxLittleEndian(number)
         return try loaded(payload, node: node, consumed: [], context: context)
+    }
+
+    /// `hp:newNum@num` — 부재는 참조 모델 기본값 1, 해석 불가는 nil(강등)이다.
+    private static func numberValue(_ node: HwpxXMLNode) -> UInt16? {
+        guard let raw = node.attribute("num") else {
+            return 1
+        }
+        return UInt16(raw)
     }
 
     // MARK: - 쪽 감추기 (`hp:pageHiding` → `pghd`, 표 145)

@@ -85,8 +85,11 @@ final class FixturePreviewFidelityTests: XCTestCase {
         // 같은 이유 — 3쪽 표 셀의 `9.`·`10.`도 #158부터 그리지만 PrvImage는 1쪽뿐이라
         // 이 값은 그대로다 (셀 라벨은 `FixtureNumberingLabelRenderTests`가 핀한다)
         "numbering-sequence": 0.001, // 실측 0.0003 (2026-09-06, 라벨 전 0.0004)
-        // 1쪽은 쪽 감추기(0x29)가 쪽 번호를 지운 상태다 — PrvImage에도 번호가 없으므로
-        // 승격이 감추기를 무시하면 이 값이 올라간다 (#169)
+        // 1쪽은 쪽 감추기(0x29)가 쪽 번호를 지운 상태이고 PrvImage에도 번호가 없다.
+        // **HWPX 승격(#169)의 가드는 아니다** — 이 스위트는 바이너리 `.hwp`만 열고,
+        // 그 경로는 승격 전에도 `pghd`를 typed로 읽었다. 잉크 그리드도 쪽 번호
+        // 다섯 글자에 둔감하다(감추기를 지운 사본 실측 0.0002 → 0.0002). 승격을
+        // 지키는 것은 `HwpxFixtureRenderTests.testHwpxPageChromeMatchesHwpPairs`다.
         "section-marks": 0.001, // 실측 0.0002 (2026-09-08)
         "공공누리": 0.004, // 실측 0.0028 (저해상 GIF)
         "문서이력관리": 0.001, // 실측 0.0000

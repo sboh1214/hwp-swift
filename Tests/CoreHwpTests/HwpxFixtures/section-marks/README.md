@@ -19,9 +19,12 @@ HWP fixture `section-marks`(`Tests/CoreHwpTests/Fixtures/section-marks/document.
 <hp:ctrl><hp:pageHiding hideHeader="0" hideFooter="1" hideMasterPage="1"
                         hideBorder="0" hideFill="1" hidePageNum="0"/></hp:ctrl>
 <hp:ctrl><hp:newNum num="5" numType="PICTURE"/></hp:ctrl>
+<hp:ctrl><hp:indexmark><hp:firstKey>색인둘본문</hp:firstKey></hp:indexmark></hp:ctrl>
 <hp:ctrl><hp:newNum num="7" numType="FOOTNOTE"/></hp:ctrl>
 <hp:ctrl><hp:bookmark name="표식 A1"/></hp:ctrl>
 ```
+
+문서 순서로 표식 8개다 — 찾아보기 표식 2 · 쪽 감추기 2 · 새 번호 3 · 책갈피 1.
 
 HWP 쌍의 컨트롤 payload와 **바이트 단위로 같다**:
 
@@ -33,7 +36,8 @@ HWP 쌍의 컨트롤 payload와 **바이트 단위로 같다**:
 | `hp:bookmark` | 컨트롤 `6D 6B 6F 62` + CTRL_DATA `1B 02 01 00 00 00 00 40 01 00 05 00` + 이름 |
 
 쪽 감추기 두 표본이 서로의 여집합(`0x29` bits 0·3·5 / `0x16` bits 1·2·4)이라 표 145의
-여섯 비트가 한 가지로 정해진다. 새 번호의 제어 문자 코드는 **21**이다 — 18은 자동
+여섯 이름이 두 삼중항으로 갈리는 것까지 정해진다 — 삼중항 **안의** 배정은 이 표본으로
+정해지지 않는다(HWP 쌍 README 참조). 새 번호의 제어 문자 코드는 **21**이다 — 18은 자동
 번호(`atno`) 전용이고, 승격 전 강등 표는 18로 적고 있었다.
 
 ## 재생성
