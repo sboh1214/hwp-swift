@@ -231,19 +231,28 @@ enum HwpxSectionMarkMapper {
     ///
     /// 키워드는 속성이 아니라 자식 요소의 텍스트다 (`hp:firstKey`·`hp:secondKey`,
     /// 한컴 공개 모델 `indexmark.cpp`는 속성을 하나도 읽지 않는다).
+    ///
+    /// **키 요소 **안의** 미지 자식도 따로 실어야 한다.** 소비 판정이 요소 단위라
+    /// `firstKey`/`secondKey`를 소비 목록에 넣는 순간 그 서브트리가 통째로
+    /// 진단에서 빠지는데, 우리가 실제로 읽는 것은 텍스트뿐이다 — 강등 경로는
+    /// `syntheticUnknownRecord`가 서브트리째 남겼으므로 승격이 정보를 잃는
+    /// 방향이 된다. `HwpxFootnoteMapper`가 `hp:autoNumFormat`에 쓰는 규약과 같다.
     private static func indexmark(
         _ node: HwpxXMLNode,
         context: HwpxMappingContext
     ) throws -> HwpOtherControl? {
         let keys = ["firstKey", "secondKey"]
+        var keyNodes: [HwpxXMLNode] = []
         var units: [[UInt16]] = []
         for key in keys {
-            guard let keyUnits = wcharUnits(
-                node.paragraphFirstChild(named: key)?.text ?? ""
-            ) else {
+            let keyNode = node.paragraphFirstChild(named: key)
+            guard let keyUnits = wcharUnits(keyNode?.text ?? "") else {
                 return nil
             }
             units.append(keyUnits)
+            if let keyNode {
+                keyNodes.append(keyNode)
+            }
         }
 
         var payload = Data(capacity: 12 + units.reduce(0) { $0 + $1.count * 2 })
@@ -255,7 +264,14 @@ enum HwpxSectionMarkMapper {
             }
         }
         payload.appendHwpxLittleEndian(UInt32.max)
-        return try loaded(payload, node: node, consumed: keys, context: context)
+
+        var control = try loaded(payload, node: node, consumed: keys, context: context)
+        for keyNode in keyNodes {
+            control.unknownChildren += keyNode.unconsumedChildRecords(
+                consumed: [], maxDepth: context.unknownDepthLimit
+            )
+        }
+        return control
     }
 
     // MARK: - 공통

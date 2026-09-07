@@ -153,6 +153,14 @@ typed 뷰와 로드 옵션 게이트를 한 번에 얻는 #167·#168과 같은 �
 트랩하고(P1), 던지면 구역 첫 문단(복구 대상이 아닌 자리)에서 문서 전체가 파싱
 실패가 되기 때문이다.
 
+**소비한 자식 **안의** 미지 요소도 실어야 한다** — `hp:indexmark`는
+`hp:firstKey`/`hp:secondKey`의 텍스트만 읽는데 소비 판정은 요소 단위라, 그냥 두면
+`<hp:firstKey>키<ext:future/></hp:firstKey>`의 `future`가 진단에서 통째로 사라진다
+(강등 경로의 `syntheticUnknownRecord`는 서브트리째 남겼으므로 **승격이 정보를 잃는
+방향**이 된다). 선택한 키 노드의 `unconsumedChildRecords`를 컨트롤의
+`unknownChildren`에 더한다 — `HwpxFootnoteMapper`가 `hp:autoNumFormat`에 쓰는 규약과
+같다. 다른 셋은 `consumed`가 비어 있어 이 함정이 없다.
+
 **미실측**: (1) 쪽 감추기 삼중항 안의 비트 배정(위), (2) `hp:indexmark`의
 `hp:secondKey` — 한글 macOS 12.30에 찾아보기 표식 대화상자가 없어 두 번째 키워드를
 만들 수 없다. 첫 키워드와 같은 (길이 + WCHAR) 꼴로 이어 붙이고 합성 입력으로만

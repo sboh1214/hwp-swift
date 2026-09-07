@@ -255,6 +255,27 @@ final class HwpxSectionMarkMapperTests: XCTestCase {
             == [0x01, 0x00, 0x98, 0xB0, 0xFF, 0xFF, 0xFF, 0xFF]
     }
 
+    /// 키 요소 **안의** 미지 자식이 진단에서 사라지면 안 된다 — 소비 판정이
+    /// 요소 단위라 `firstKey`/`secondKey`를 소비하면 서브트리가 통째로 빠지는데,
+    /// 우리가 읽는 것은 텍스트뿐이다. 강등 경로는 `syntheticUnknownRecord`가
+    /// `indexmark › firstKey › future`를 서브트리째 남겼으므로, 승격이 그것을
+    /// 잃으면 정보가 줄어드는 방향이다.
+    func testIndexmarkKeepsUnknownChildrenInsideItsKeys() throws {
+        guard case let .indexmark(control) = try mark("""
+        <hp:ctrl><hp:indexmark>\
+        <hp:firstKey>가<hp:futureA/></hp:firstKey>\
+        <hp:secondKey>나<hp:futureB/></hp:secondKey>\
+        </hp:indexmark></hp:ctrl>
+        """) else {
+            return fail("Expected .indexmark")
+        }
+        // 텍스트는 그대로 읽고(자식이 있어도 키워드는 텍스트 조각의 연결이다),
+        expect(control.indexmarkInfo?.text) == "가"
+        // 두 키 안의 미지 요소는 컨트롤의 미지 자식으로 올라온다.
+        expect(control.unknownChildren.compactMap { String(bytes: $0.payload, encoding: .utf8) })
+            == ["futureA", "futureB"]
+    }
+
     // MARK: - 안전
 
     /// 길이 WORD에 담기지 않는 문자열은 **트랩 대신 강등**이다 (P1) — 길이만
