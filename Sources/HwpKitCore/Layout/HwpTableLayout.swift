@@ -185,6 +185,10 @@ extension HwpTableLayout {
         /// 잰 그 번호로 배치(`laidOutContents`)가 같은 문자열을 다시 만들고, 문단
         /// 안 글상자·중첩 표는 여기서 한 겹 더 내려간다.
         let numbering: HwpNumberingScope?
+        /// 측정이 라인 캐시 높이를 썼을 때 그 줄 상자 범위 (#160) — 셀 높이의
+        /// 하한(`cachedLineBoxHeight`)이 마지막 줄의 줄 간격을 이 값으로 뺀다.
+        /// CT 측정 문단은 nil.
+        let cachedLineExtent: HwpParagraphLayout.CachedLineExtent?
         let nestedTables: [PlacedNestedTable]
 
         var totalHeight: CGFloat {
@@ -205,10 +209,11 @@ extension HwpTableLayout {
         /// 개체가 없으면 0. 줄 캐시도 저작 높이도 이 개체를 담지 않으므로 아래
         /// 두 값과 별개의 하한으로 쓴다 (#91).
         let floatingObjectHeight: CGFloat
-        /// 셀 문단 전부가 라인 캐시 높이로 측정되었는지 — 참이면 저작된 셀
-        /// 높이 (표 80 = 한글 계산값)를 그대로 신뢰한다 (헌법주석 실측:
-        /// 캐시 합 + 여백이 저작 높이를 넘겨 표가 부풀면 페이지가 밀린다)
-        let hasCachedContent: Bool
+        /// 라인 캐시가 담는 셀 높이 (pt, 위아래 안쪽 여백 포함) — 셀 문단 전부가
+        /// 캐시로 측정됐을 때만 있고, 그때 저작된 셀 높이 (표 80)를 신뢰하되 이
+        /// 값을 하한으로 둔다 (#160, `HwpTableLayout.cachedLineBoxHeight`). 어느
+        /// 문단이든 CT로 다시 조판했으면 nil — `contentHeight`가 맡는다.
+        let cachedCellHeight: CGFloat?
         let cell: CoreHwp.HwpTableCell
         let contents: [PlacedCellContent]
     }
@@ -376,14 +381,13 @@ extension HwpTableLayout {
             attributeCache: attributeCache
         )
 
-        let measured = measuredCellContents(
+        let contents = measuredCellContents(
             of: cell,
             cellIndex: cellIndex,
             innerWidth: innerWidth,
             measurer: measurer,
             context: context
         )
-        let contents = measured.contents
         let contentHeight = contents.reduce(CGFloat(0)) { $0 + $1.totalHeight }
             + margins.top + margins.bottom
         let authoredHeight = cell.header.cellProperty.map {
@@ -403,7 +407,9 @@ extension HwpTableLayout {
                 margins: margins,
                 context: context
             ),
-            hasCachedContent: measured.allCached,
+            cachedCellHeight: Self.cachedLineBoxHeight(of: contents).map {
+                $0 + margins.top + margins.bottom
+            },
             cell: cell,
             contents: contents
         )
@@ -464,6 +470,7 @@ extension HwpTableLayout {
 
     /// 셀 문단들을 측정한다. 셀 높이는 한글 라인 캐시를 우선한다 (각주와 동일
     /// 철학) — 폰트 대체로 CT 줄 수가 부풀어 row가 한글보다 커지는 것을 막는다.
+    /// 문단마다 캐시를 썼는지는 `PlacedCellContent.cachedLineExtent`가 나른다.
     /// 번호 라벨(#158)은 여기서 붙여 잰 문자열이 배치(`laidOutContents`)에서도 같은
     /// 번호로 다시 만들어지므로 재측정 문단의 줄바꿈·높이가 배치와 같고, 캐시 높이를
     /// 쓰는 문단은 라벨과 무관하게 저작 높이를 유지한다.
@@ -473,9 +480,8 @@ extension HwpTableLayout {
         innerWidth: CGFloat,
         measurer: HwpParagraphMeasurer,
         context: LayoutContext
-    ) -> (contents: [PlacedCellContent], allCached: Bool) {
+    ) -> [PlacedCellContent] {
         var contents: [PlacedCellContent] = []
-        var allCached = !cell.paragraphArray.isEmpty
         for (paragraphIndex, paragraph) in cell.paragraphArray.enumerated() {
             let numbering = context.numbering?.paragraph(
                 cellIndex: cellIndex, paragraphIndex: paragraphIndex
@@ -491,13 +497,11 @@ extension HwpTableLayout {
                     number: numbering?.number
                 )
             )
-            if !measured.usedCachedHeight {
-                allCached = false
-            }
             contents.append(PlacedCellContent(
                 paragraph: paragraph,
                 frame: measured.frame,
                 numbering: numbering,
+                cachedLineExtent: measured.cachedLineExtent,
                 nestedTables: nestedTableFrames(
                     in: paragraph,
                     innerWidth: innerWidth,
@@ -506,7 +510,7 @@ extension HwpTableLayout {
                 )
             ))
         }
-        return (contents, allCached)
+        return contents
     }
 
     /// 셀 문단에 붙은 중첩 표들을 재귀 레이아웃한다 (깊이 상한 초과분은 생략).
