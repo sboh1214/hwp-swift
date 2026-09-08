@@ -37,6 +37,32 @@ final class HwpDecorationLineGeometryTests: XCTestCase {
         let bytesPerRow: Int
     }
 
+    /// 조건에 맞는 픽셀이 3개를 넘는 행들의 잉크 가중 중심 (pt, 위에서부터).
+    private static func rowCenter(
+        _ raster: Raster,
+        where match: (UInt8, UInt8, UInt8) -> Bool
+    ) -> CGFloat? {
+        var weighted = 0.0
+        var total = 0.0
+        for y in 0 ..< raster.pixelHeight {
+            var count = 0
+            for x in 0 ..< raster.pixelWidth {
+                let offset = y * raster.bytesPerRow + x * 4
+                if match(
+                    raster.data[offset], raster.data[offset + 1], raster.data[offset + 2]
+                ) {
+                    count += 1
+                }
+            }
+            guard count > 2 else { continue }
+            weighted += Double(y) * Double(count)
+            total += Double(count)
+        }
+        guard total > 0 else { return nil }
+        // 픽셀 중심 보정: 행 y가 덮는 구간은 [y, y+1)이다.
+        return (CGFloat(weighted / total) + 0.5) / scale
+    }
+
     /// 크기만 다른 두 run("AA " 작게 + "BB" 크게)을 한 줄에 그린 래스터.
     private func render(
         attributes: (CGFloat, CGColor) -> [NSAttributedString.Key: Any]
@@ -50,7 +76,10 @@ final class HwpDecorationLineGeometryTests: XCTestCase {
         text.append(NSAttributedString(
             string: "BB", attributes: attributes(Self.largeSize, magenta)
         ))
+        return try render(text: text)
+    }
 
+    private func render(text: NSAttributedString) throws -> Raster {
         let width = 240.0
         let height = 120.0
         let layer = HwpPageLayer()
@@ -92,34 +121,9 @@ final class HwpDecorationLineGeometryTests: XCTestCase {
         attributes: (CGFloat, CGColor) -> [NSAttributedString.Key: Any]
     ) throws -> Probe {
         let raster = try render(attributes: attributes)
-        let data = raster.data
-        let pixelWidth = raster.pixelWidth
-        let pixelHeight = raster.pixelHeight
-        let bytesPerRow = raster.bytesPerRow
-
-        func center(where match: (UInt8, UInt8, UInt8) -> Bool) throws -> CGFloat {
-            var weighted = 0.0
-            var total = 0.0
-            for y in 0 ..< pixelHeight {
-                var count = 0
-                for x in 0 ..< pixelWidth {
-                    let offset = y * bytesPerRow + x * 4
-                    if match(data[offset], data[offset + 1], data[offset + 2]) {
-                        count += 1
-                    }
-                }
-                guard count > 2 else { continue }
-                weighted += Double(y) * Double(count)
-                total += Double(count)
-            }
-            let found = try XCTUnwrap(total > 0 ? weighted / total : nil)
-            // 픽셀 중심 보정: 행 y가 덮는 구간은 [y, y+1)이다.
-            return (CGFloat(found) + 0.5) / Self.scale
-        }
-
-        return Probe(
-            small: try center { $0 < 100 && $1 > 150 && $2 > 150 },
-            large: try center { $0 > 150 && $1 < 100 && $2 > 150 }
+        return try Probe(
+            small: XCTUnwrap(Self.rowCenter(raster) { $0 < 100 && $1 > 150 && $2 > 150 }),
+            large: XCTUnwrap(Self.rowCenter(raster) { $0 > 150 && $1 < 100 && $2 > 150 })
         )
     }
 
@@ -179,6 +183,55 @@ final class HwpDecorationLineGeometryTests: XCTestCase {
             * (Self.largeSize - Self.smallSize)
         expect(probe.rise).to(beCloseTo(expected, within: 0.2))
         expect(expected).to(beCloseTo(17.4, within: 0.001))
+    }
+
+    /// 키 큰 인라인 개체가 섞인 줄에서도 '글자 위' 밑줄은 취소선과 같은
+    /// 베이스라인을 기준으로 놓인다 — 둘의 간격은 항상 `(0.87 − 0.35) × 크기`다.
+    ///
+    /// 밑줄 '글자 아래'만 `underlineReturnDrop`으로 되돌린 원점을 쓴다 (실물은
+    /// 밑줄을 개체 하단에 남긴다). 그 되돌림을 위쪽 밑줄에도 적용하면 선이
+    /// 개체 ascent의 15%만큼 내려가 글자 **아래**로 떨어진다 (100pt 개체 + 10pt
+    /// 글자에서 베이스라인 위 8.7pt 대신 아래 6.3pt).
+    func testAboveUnderlineIgnoresInlineObjectReturnDrop() throws {
+        let size: CGFloat = 10
+        let text = NSMutableAttributedString(string: "AA ", attributes: [
+            kCTFontAttributeName as NSAttributedString.Key: CTFontCreateWithName(
+                "Menlo" as CFString, size, nil
+            ),
+            HwpAttributedStringKey.underlineAboveStyle: NSNumber(value: 1),
+            HwpAttributedStringKey.underlineColor: CGColor(red: 0, green: 1, blue: 1, alpha: 1),
+            HwpAttributedStringKey.strikethroughStyle: NSNumber(value: 1),
+            HwpAttributedStringKey.strikethroughColor: CGColor(
+                red: 1, green: 0, blue: 1, alpha: 1
+            ),
+        ])
+        // 높이 100pt 인라인 개체 — 줄 베이스라인을 끌어올려 되돌림을 켠다.
+        var callbacks = CTRunDelegateCallbacks(
+            version: kCTRunDelegateVersion1,
+            dealloc: { _ in },
+            getAscent: { _ in 100 },
+            getDescent: { _ in 0 },
+            getWidth: { _ in 40 }
+        )
+        let delegate = try XCTUnwrap(CTRunDelegateCreate(&callbacks, nil))
+        text.append(NSAttributedString(string: "\u{FFFC}", attributes: [
+            kCTFontAttributeName as NSAttributedString.Key: CTFontCreateWithName(
+                "Menlo" as CFString, size, nil
+            ),
+            kCTRunDelegateAttributeName as NSAttributedString.Key: delegate,
+        ]))
+
+        let raster = try render(text: text)
+        let above = try XCTUnwrap(
+            Self.rowCenter(raster) { $0 < 100 && $1 > 150 && $2 > 150 }, "위쪽 밑줄"
+        )
+        let strike = try XCTUnwrap(
+            Self.rowCenter(raster) { $0 > 150 && $1 < 100 && $2 > 150 }, "취소선"
+        )
+        let expected = (HwpRenderTuning.Text.underlineAboveCenterRatio
+            - HwpRenderTuning.Text.strikethroughCenterRatio) * size
+        expect(strike - above).to(beCloseTo(expected, within: 0.2))
+        expect(expected).to(beCloseTo(5.2, within: 0.001))
     }
 
     /// 밑줄 '글자 아래'는 이번 수정의 대상이 아니다 — 베이스라인 아래 0.20em이

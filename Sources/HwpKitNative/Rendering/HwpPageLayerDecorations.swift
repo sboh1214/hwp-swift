@@ -32,7 +32,10 @@ extension HwpPageLayer {
         }
 
         // 키 큰 인라인 개체 줄에서 밑줄은 올라간 베이스라인이 아니라 개체
-        // 하단 (lift 전 위치)에 남는다 (공공누리 실물)
+        // 하단 (lift 전 위치)에 남는다 (공공누리 실물). **글자 아래 밑줄에만**
+        // 해당한다 — 되돌림을 글자 위 밑줄에 적용하면 선이 개체 ascent의 15%만큼
+        // 내려가 글자 아래로 떨어진다 (100pt 개체 + 10pt 글자에서 위 8.7pt 대신
+        // 아래 6.3pt). 나머지 장식과 같이 올라간 베이스라인을 그대로 쓴다.
         let underlineOrigin = CGPoint(
             x: origin.x,
             y: origin.y - HwpPageLayer.underlineReturnDrop(of: line)
@@ -40,6 +43,7 @@ extension HwpPageLayer {
         for run in runs {
             // 밑줄은 CT 대신 항상 직접 (실물 헤어라인 두께 정합)
             drawUnderlineIfNeeded(run, lineOrigin: underlineOrigin, in: ctx)
+            drawAboveUnderlineIfNeeded(run, lineOrigin: origin, in: ctx)
             drawStrikethroughIfNeeded(run, lineOrigin: origin, in: ctx)
             drawEmphasisIfNeeded(run, lineOrigin: origin, in: ctx)
             drawTrackInsertUnderlineIfNeeded(run, lineOrigin: origin, in: ctx)
@@ -302,22 +306,39 @@ extension HwpPageLayer {
         ))
     }
 
-    /// CTRunDraw 경로에서 밑줄을 직접 그린다 (CTLineDraw만 밑줄을 지원).
-    /// 밑줄 종류 '글자 위'(표 35 값 3)도 같은 헤어라인을 베이스라인 위에 그린다.
+    /// CTRunDraw 경로에서 밑줄 '글자 아래'를 직접 그린다 (CTLineDraw만 밑줄을 지원).
+    /// **되돌린 원점**(`underlineReturnDrop`)을 받는다 — 키 큰 인라인 개체 줄에서
+    /// 실물이 밑줄을 개체 하단에 남기기 때문이다.
     func drawUnderlineIfNeeded(_ run: CTRun, lineOrigin: CGPoint, in ctx: CGContext) {
         let attributes = runAttributes(run)
-        let isAbove = attributes[HwpAttributedStringKey.underlineAboveStyle] != nil
-        guard isAbove || attributes[HwpAttributedStringKey.underlineStyle] != nil
-        else { return }
-        let bounds = runBounds(of: run, lineOrigin: lineOrigin)
-        let size = runFont(attributes).map(CTFontGetSize) ?? 10
+        guard attributes[HwpAttributedStringKey.underlineStyle] != nil else { return }
         // 실물 밑줄은 헤어라인 (줄 높이의 ~2.3%), 한글 글리프 바닥 잉크
-        // 바로 아래 — 폰트 underlinePosition은 잉크를 관통한다 (라운드 7 실측).
-        // '글자 위'는 글자 크기의 0.87배 위 (#136 실측).
+        // 바로 아래 — 폰트 underlinePosition은 잉크를 관통한다 (라운드 7 실측)
+        let size = runFont(attributes).map(CTFontGetSize) ?? 10
+        fillUnderline(run, lineOrigin: lineOrigin, center: -size * 0.20, in: ctx)
+    }
+
+    /// 밑줄 '글자 위'(표 33 값 3) — 글자 크기의 0.87배 위 (#136 실측).
+    /// 되돌림 없는 **줄 원점**을 받는다: 되돌림은 아래쪽 밑줄을 개체 하단에
+    /// 남기기 위한 보정이라, 위쪽 선에 적용하면 글자 아래로 떨어진다.
+    func drawAboveUnderlineIfNeeded(_ run: CTRun, lineOrigin: CGPoint, in ctx: CGContext) {
+        let attributes = runAttributes(run)
+        guard attributes[HwpAttributedStringKey.underlineAboveStyle] != nil else { return }
+        let size = runFont(attributes).map(CTFontGetSize) ?? 10
+        let center = size * HwpRenderTuning.Text.underlineAboveCenterRatio
+        fillUnderline(run, lineOrigin: lineOrigin, center: center, in: ctx)
+    }
+
+    /// 밑줄 헤어라인 한 줄 — `center`는 `lineOrigin` 기준 세로 위치 (양수 = 위).
+    private func fillUnderline(
+        _ run: CTRun,
+        lineOrigin: CGPoint,
+        center: CGFloat,
+        in ctx: CGContext
+    ) {
+        let attributes = runAttributes(run)
+        let bounds = runBounds(of: run, lineOrigin: lineOrigin)
         let thickness: CGFloat = 0.4
-        let center = isAbove
-            ? size * HwpRenderTuning.Text.underlineAboveCenterRatio
-            : -size * 0.20
         let color = attributes[HwpAttributedStringKey.underlineColor]
             ?? attributes[kCTForegroundColorAttributeName as NSAttributedString.Key]
         setDecorationFillColor(color, in: ctx)
