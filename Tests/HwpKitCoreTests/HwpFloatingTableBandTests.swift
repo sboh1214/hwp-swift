@@ -37,7 +37,8 @@ import XCTest
             treatAsChar: Bool = false,
             textWrap: CoreHwp.HwpCommonCtrlTextWrap = .topAndBottom,
             verticalRelativeTo: CoreHwp.HwpCommonCtrlVerticalRelativeTo = .paragraph,
-            verticalOffset: Int32 = 0
+            verticalOffset: Int32 = 0,
+            cellSpacing: CoreHwp.HWPUNIT16 = 0
         ) throws -> CoreHwp.HwpParagraph {
             var host = try cached("", at: location)
             var paraText = CoreHwp.HwpParaText()
@@ -47,6 +48,7 @@ import XCTest
                 HwpSynthetic.table(
                     cellWidth: 20000,
                     rowHeights: [rowHeight],
+                    cellSpacing: cellSpacing,
                     cellParagraphs: [[[try HwpSynthetic.textParagraph("셀")]]]
                 ),
                 treatAsChar: treatAsChar,
@@ -64,12 +66,19 @@ import XCTest
             hostLocation: Int32,
             host: CoreHwp.HwpParagraph? = nil,
             index: HwpIndex = HwpIndex(from: CoreHwp.HwpFile()),
-            precedingParaShapeId: UInt16? = nil
+            precedingParaShapeId: UInt16? = nil,
+            precedingIsCached: Bool = true
         ) throws -> HwpPaginator {
+            let preceding: CoreHwp.HwpParagraph = if precedingIsCached {
+                try cached("앞 문단", at: 1600, paraShapeId: precedingParaShapeId)
+            } else {
+                // 캐시 없는 문단 — 같은 문서 안에서도 흐름 배치를 탄다.
+                try HwpSynthetic.styledParagraph("앞 문단", paraShapeId: precedingParaShapeId ?? 0)
+            }
             let section = HwpSynthetic.section(
                 firstParagraphControls: [.section(HwpSynthetic.sectionDef())],
                 bodyParagraphs: [
-                    try cached("앞 문단", at: 1600, paraShapeId: precedingParaShapeId),
+                    preceding,
                     try host ?? tableHost(at: hostLocation),
                     try cached("뒤 문단", at: hostLocation + 1600),
                 ]
@@ -246,6 +255,54 @@ import XCTest
             let table = try XCTUnwrap(blocks.first { $0.kind == .table })
             let hostBlock = try XCTUnwrap(blocks.first { $0.text == "\u{FFFC}" })
             expect(table.frame.minY).to(beGreaterThanOrEqualTo(hostBlock.frame.maxY - 0.01))
+        }
+
+        /// **앞 문단이 흐름 배치**됐으면 그 아래 간격은 이미 커서가 소비했다 — 또 빼면
+        /// 같은 여백이 두 번 빠져 유효한 띠가 좁다고 오판되고, 표가 글줄 뒤로 밀려
+        /// 절대 캐시로 고정된 뒷 문단을 덮는다.
+        func testFlowPlacedPredecessorSpacingIsNotSubtractedTwice() async throws {
+            // 앞 문단(캐시 없음) 아래 간격 4000 HWPUNIT = 20pt. 캐시 간격 48pt는
+            // 표 30 + 여백 5.66 = 35.66pt를 담고도 남는다.
+            let index = HwpSynthetic.outlineIndex(paraShapes: [
+                7: CoreHwp.HwpParaShape(
+                    property1: 0, marginLeft: 0, paragraphSpacingBottom: 4000, tabDefId: 0
+                ),
+            ])
+            let blocks = try await Self.blocks(of: try Self.paginator(
+                hostLocation: 10000, index: index,
+                precedingParaShapeId: 7, precedingIsCached: false
+            ))
+            let table = try XCTUnwrap(blocks.first { $0.kind == .table })
+            let before = try XCTUnwrap(blocks.first { $0.text == "앞 문단" })
+            let hostBlock = try XCTUnwrap(blocks.first { $0.text == "\u{FFFC}" })
+            // 흐름 블록이 아래 간격까지 소비했으므로 띠는 그 블록 하단부터다.
+            expect(table.frame.minY).to(beCloseTo(before.frame.maxY + 2.83, within: 0.01))
+            expect(table.frame.maxY).to(beLessThanOrEqualTo(hostBlock.frame.minY + 0.01))
+            for block in blocks where block.kind != .table {
+                expect(table.frame.intersects(block.frame.insetBy(dx: 0, dy: 0.01)))
+                    .to(beFalse(), description: block.text)
+            }
+        }
+
+        /// 띠 적합성은 **실제로 방출하는 높이**로 잰다 — `cellSpacing`이 있는 표는
+        /// `rowFrame.maxY` 최댓값이 선행 간격 한 칸을 더 담아, 방출되는 블록이 들어가는
+        /// 띠를 거부하고 표를 글줄 뒤로 보내 뒷 문단을 덮는다.
+        func testBandFitUsesTheEmittedHeightForSpacedTables() async throws {
+            // 간격 36pt 띠 · 표 방출 높이 30pt + 여백 5.66pt = 35.66pt는 들어간다.
+            // cellSpacing 283이 판정에만 더해지면 38.49pt가 돼 거부된다.
+            let host = try Self.tableHost(at: 6800, cellSpacing: 283)
+            let blocks = try await Self.blocks(of: try Self.paginator(
+                hostLocation: 6800, host: host
+            ))
+            let table = try XCTUnwrap(blocks.first { $0.kind == .table })
+            let before = try XCTUnwrap(blocks.first { $0.text == "앞 문단" })
+            let hostBlock = try XCTUnwrap(blocks.first { $0.text == "\u{FFFC}" })
+            expect(table.frame.minY).to(beCloseTo(before.frame.maxY + 2.83, within: 0.01))
+            expect(table.frame.maxY).to(beLessThanOrEqualTo(hostBlock.frame.minY + 0.01))
+            for block in blocks where block.kind != .table {
+                expect(table.frame.intersects(block.frame.insetBy(dx: 0, dy: 0.01)))
+                    .to(beFalse(), description: block.text)
+            }
         }
 
         /// 문서가 절대 캐시 모드여도 **이 문단**이 캐시 없이 흐름 배치됐으면 판정하지

@@ -672,14 +672,7 @@ private extension HwpPaginator {
         currentParagraphMargins = paragraphMargins(of: paragraph)
 
         let widthCenti = Int((currentColumnFrame.width * 100).rounded())
-        // 구역·단 정의를 반영한 뒤의 흐름 위치가 이 문단이 시작하는 자리다 (#161).
-        paragraphEntryFlow = ParagraphEntryFlow(
-            top: currentColumnFrame.minY + contentHeightUsed,
-            pageIndex: cachedPages.count,
-            columnFrame: currentColumnFrame,
-            authoredSpacingTop: authoredBeforeGap(of: paragraph),
-            precedingSpacingBottom: lastPlacedSpacingBottom
-        )
+        beginParagraphEntryFlow(for: paragraph)
         let replacements = noteReferenceReplacements(for: paragraph)
         let measured = try await measuredParagraph(
             paragraph,
@@ -709,8 +702,7 @@ private extension HwpPaginator {
             return .yieldToCaller
         }
         measureMemo = nil
-        // 다음 문단의 띠 계산이 이 문단의 저작 아래 간격을 뺀다 (#161).
-        lastPlacedSpacingBottom = authoredAfterGap(of: paragraph)
+        recordSpacingBottomForNextBand(of: paragraph)
         collectParagraphFootnotesUnlessPlacedPerFragment(paragraph)
         collectMemos(from: paragraph)
         appendControlBlocks(from: paragraph, numbering: currentParagraphScope)
@@ -2252,6 +2244,28 @@ private extension HwpPaginator {
         return true
     }
 
+    /// 문단 진입 시점의 흐름 위치·페이지·단을 잡아 둔다 — 자리 차지 표의 띠 판정
+    /// 기준점이다 (#161). 구역·단 정의를 반영한 **뒤**에 불러야 한다.
+    func beginParagraphEntryFlow(for paragraph: CoreHwp.HwpParagraph) {
+        paragraphEntryFlow = ParagraphEntryFlow(
+            top: currentColumnFrame.minY + contentHeightUsed,
+            pageIndex: cachedPages.count,
+            columnFrame: currentColumnFrame,
+            authoredSpacingTop: authoredBeforeGap(of: paragraph),
+            precedingSpacingBottom: lastPlacedSpacingBottom
+        )
+    }
+
+    /// 다음 문단의 띠 계산에 넘길 저작 아래 간격 — **이 문단을 캐시로 배치했을 때만**
+    /// 넘긴다 (#161). 흐름 배치는 `paragraphHeight`(= `totalHeight`, CT가
+    /// `paragraphSpacing`으로 담는다)로 커서를 전진시켜 그 여백을 이미 소비했으므로,
+    /// 넘기면 같은 몫이 두 번 빠져 유효한 띠가 좁다고 오판된다.
+    func recordSpacingBottomForNextBand(of paragraph: CoreHwp.HwpParagraph) {
+        lastPlacedSpacingBottom = paragraphEntryFlow?.placedFromCache == true
+            ? authoredAfterGap(of: paragraph)
+            : 0
+    }
+
     /// 저작 문단 위 간격 (표 43 `paragraphSpacingTop`의 절반, pt). 흐름 배치는 텍스트
     /// 앞에서 커서로 소비하고(`placeFlowParagraph`), 절대 캐시 배치는 한글이 준 줄
     /// 위치에 이미 담겨 있다 — 띠 판정은 후자에서 이 몫을 빼야 한다 (#161).
@@ -2356,7 +2370,14 @@ private extension HwpPaginator {
         else { return nil }
         let topMargin = max(0, HwpUnits.points(fromHwpUnit16: property.marginArray[2]))
         let bottomMargin = max(0, HwpUnits.points(fromHwpUnit16: property.marginArray[3]))
-        let height = frame.rows.reduce(CGFloat(0)) { max($0, $1.rowFrame.maxY) }
+        // 적합성은 **실제로 방출할 블록 높이**로 잰다 — `appendTableSegmentBlock`과 같은
+        // `segmentFrame`을 쓴다. `rowFrame.maxY` 최댓값은 셀 간격(표 76 `cellSpacing`)이
+        // 있는 표에서 첫 행 앞 간격 한 칸을 더 담는데 방출은 그것을 0으로 정규화하므로,
+        // 그대로 쓰면 들어가는 표를 거부해 글줄 뒤로 보내고 뒷 내용을 덮는다.
+        guard let emitted = HwpTableSplitter.segmentFrame(
+            rows: frame.rows, original: frame, repeatedHeaderRows: []
+        ) else { return nil }
+        let height = emitted.outerFrame.height
         // 띠는 저작 문단 간격 **뒤**에서 시작한다 — 앞 문단의 아래 간격과 이 문단의 위
         // 간격은 둘 다 문단이 의도한 여백이고 캐시 줄 위치에 이미 들어 있다. 같은 문단의
         // 앞 표가 쓴 자리가 있으면 그 아래부터다.

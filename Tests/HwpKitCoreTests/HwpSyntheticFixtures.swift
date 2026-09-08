@@ -422,6 +422,7 @@ extension HwpSynthetic {
         rowHeights: [UInt32],
         property: UInt32 = 2,
         headerRowCount: Int = 0,
+        cellSpacing: CoreHwp.HWPUNIT16 = 0,
         cellParagraphs: [[[CoreHwp.HwpParagraph]]]
     ) -> CoreHwp.HwpTable {
         let rowCount = cellParagraphs.count
@@ -450,7 +451,7 @@ extension HwpSynthetic {
                 property: property,
                 rowCount: UInt16(rowCount),
                 columnCount: UInt16(columnCount),
-                cellSpacing: 0,
+                cellSpacing: cellSpacing,
                 leftInnerMargin: 0,
                 rightInnerMargin: 0,
                 topInnerMargin: 0,
