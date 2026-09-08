@@ -35,7 +35,8 @@ public enum HwpAttributedStringKey {
     public static let underlineStyle = NSAttributedString.Key("hwp.underlineStyle")
     /// 밑줄 '글자 위' 여부 (표 35 밑줄 종류 3) — 같은 헤어라인을 베이스라인
     /// **위** `underlineAboveCenterRatio`에 그린다 (#136). 색은
-    /// `underlineColor`를 공유한다.
+    /// `underlineColor`를 공유한다. RTF 복사에는 싣지 않는다 (윗줄 속성이 없어
+    /// 표준 밑줄로 바꾸면 위치가 뒤집힌다 — `HwpSelectionRTF` 주석).
     public static let underlineAboveStyle = NSAttributedString.Key("hwp.underlineAboveStyle")
     /// 상대크기 적용 전 기본 글자 크기 (pt) — % 줄 간격의 기준
     public static let baseFontSize = NSAttributedString.Key("hwp.baseFontSize")
