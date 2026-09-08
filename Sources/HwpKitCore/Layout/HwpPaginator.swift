@@ -120,6 +120,10 @@ public actor HwpPaginator {
         let top: CGFloat
         let pageIndex: Int
         let columnFrame: CGRect
+        /// 저작 문단 위 간격 (pt, `beforeGap`과 같은 값) — 절대 캐시 배치는 이 몫을
+        /// 커서로 소비하지 않고 **캐시 줄 위치에 이미 담아** 두므로, 띠에서 빼지 않으면
+        /// 문단이 의도한 여백을 표 자리로 오인한다.
+        let authoredSpacingTop: CGFloat
         /// 이 문단이 **실제로** 절대 캐시 경로로 배치됐는지 — `absoluteCacheMode`는
         /// 문서 전체 판정이라 캐시가 없는 문단은 같은 문서에서도 흐름 배치된다
         /// (`placeParagraphText`의 `cacheRuns` 분기). 그런 문단의 간격은 한글이 표에
@@ -128,6 +132,9 @@ public actor HwpPaginator {
         /// 이 문단에서 앞선 띠 표가 소비한 자리 (`contentHeightUsed` 값) — 같은 문단에
         /// 표가 여럿이면 다음 표는 그 아래 남은 띠만 본다. nil이면 아직 아무도 안 썼다.
         var bandUsed: CGFloat?
+        /// 이 문단의 앞선 표가 **글줄 자리**(흐름 분할·줄 안 앵커)로 갔는지 — 그 뒤 표를
+        /// 띠로 되감으면 뒤 표가 앞 표보다 위에 그려져 문서 순서가 뒤집힌다.
+        var bandClosed = false
     }
 
     private var paragraphEntryFlow: ParagraphEntryFlow?
@@ -660,7 +667,8 @@ private extension HwpPaginator {
         paragraphEntryFlow = ParagraphEntryFlow(
             top: currentColumnFrame.minY + contentHeightUsed,
             pageIndex: cachedPages.count,
-            columnFrame: currentColumnFrame
+            columnFrame: currentColumnFrame,
+            authoredSpacingTop: authoredBeforeGap(of: paragraph)
         )
         let replacements = noteReferenceReplacements(for: paragraph)
         let measured = try await measuredParagraph(
@@ -909,9 +917,7 @@ private extension HwpPaginator {
         // 문단-앞 간격은 paragraphHeight에 포함되지만 CoreText는 각 블록(별도
         // 프레임의 첫 문단)에 paragraphSpacingBefore를 렌더하지 않는다 — 모든 배치
         // 경로(다단·초과 조각·단일 블록)가 텍스트 앞에서 커서로 소비한다 (P1, #1).
-        let beforeGap = index.paraShape(for: paragraph).map {
-            max(0, HwpUnits.points(fromHwpUnit: $0.paragraphSpacingTop) / 2)
-        } ?? 0
+        let beforeGap = authoredBeforeGap(of: paragraph)
         if columnFrames.count > 1 {
             placeMultiColumnParagraph(
                 paragraph,
@@ -2155,6 +2161,8 @@ private extension HwpPaginator {
             if table.commonCtrlProperty.propertyInfo.treatAsChar,
                appendInlineAnchoredTable(frame, table: table, controlIndex: controlIndex)
             {
+                // 줄 안에 놓인 표 뒤의 표를 띠로 되감으면 문서 순서가 뒤집힌다 (#161).
+                paragraphEntryFlow?.bandClosed = true
                 return
             }
             // 글 앞/뒤로 표는 흐름 소비·페이지 분할 없이 기준+오프셋에 통째로
@@ -2168,6 +2176,9 @@ private extension HwpPaginator {
             ) {
                 return
             }
+            // 흐름(글줄 뒤)으로 간 표 뒤에는 띠를 닫는다 — 뒤 표가 그 위로 되감기면
+            // 문서 순서와 그리는 순서가 뒤집힌다 (#161).
+            paragraphEntryFlow?.bandClosed = true
             appendTableSegments(
                 frame,
                 table: table,
@@ -2227,6 +2238,15 @@ private extension HwpPaginator {
             commonProperty: table.commonCtrlProperty
         )
         return true
+    }
+
+    /// 저작 문단 위 간격 (표 43 `paragraphSpacingTop`의 절반, pt). 흐름 배치는 텍스트
+    /// 앞에서 커서로 소비하고(`placeFlowParagraph`), 절대 캐시 배치는 한글이 준 줄
+    /// 위치에 이미 담겨 있다 — 띠 판정은 후자에서 이 몫을 빼야 한다 (#161).
+    func authoredBeforeGap(of paragraph: CoreHwp.HwpParagraph) -> CGFloat {
+        index.paraShape(for: paragraph).map {
+            max(0, HwpUnits.points(fromHwpUnit: $0.paragraphSpacingTop) / 2)
+        } ?? 0
     }
 
     /// 자리 차지 표가 놓일 띠 — 문단 진입 흐름 위치 기준 오프셋과 아래 바깥 여백.
@@ -2299,21 +2319,27 @@ private extension HwpPaginator {
         frame: HwpTableFrame
     ) -> FloatingTableBand? {
         let info = property.propertyInfo
+        // 실측한 것은 **자리 차지**(위·아래 배치)뿐이다 — 어울림(`square`)은 한글이 표
+        // 옆으로 글을 흘리므로 같은 띠 규칙이 성립하는지 알 수 없다 (`consumesFlow`는
+        // 둘과 미지 값(nil)을 함께 담으므로 그것으로 게이트하면 안 된다).
         guard !info.treatAsChar,
-              HwpParagraphObjectCollector.consumesFlow(info),
+              info.textWrap == .topAndBottom,
               info.verticalRelativeTo == .paragraph,
               property.verticalOffset == 0,
               property.marginArray.count == 4,
               let entry = paragraphEntryFlow,
               entry.placedFromCache,
+              !entry.bandClosed,
               entry.pageIndex == cachedPages.count,
               entry.columnFrame == currentColumnFrame
         else { return nil }
         let topMargin = max(0, HwpUnits.points(fromHwpUnit16: property.marginArray[2]))
         let bottomMargin = max(0, HwpUnits.points(fromHwpUnit16: property.marginArray[3]))
         let height = frame.rows.reduce(CGFloat(0)) { max($0, $1.rowFrame.maxY) }
-        // 같은 문단의 앞 표가 이미 쓴 자리 아래부터가 남은 띠다.
-        let bandTop = entry.bandUsed.map { currentColumnFrame.minY + $0 } ?? entry.top
+        // 띠는 저작 문단 위 간격 **뒤**에서 시작한다 (그 몫은 문단이 의도한 여백이고
+        // 캐시 줄 위치에 이미 들어 있다). 같은 문단의 앞 표가 쓴 자리가 있으면 그 아래부터다.
+        let bandTop = entry.bandUsed.map { currentColumnFrame.minY + $0 }
+            ?? (entry.top + entry.authoredSpacingTop)
         let gap = paragraphAnchorTop - bandTop
         guard gap + Self.floatingBandTolerance >= height + topMargin + bottomMargin else {
             return nil

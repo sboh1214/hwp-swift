@@ -172,6 +172,55 @@ import XCTest
                 .to(beGreaterThanOrEqualTo(hostBlock.frame.maxY - 0.01))
         }
 
+        /// 어울림(`square`) 표는 띠 대상이 아니다 — 한글은 그 표 **옆**으로 글을 흘리므로
+        /// 위·아래 배치의 띠 규칙을 실측한 적이 없다 (`consumesFlow`는 둘을 함께 담는다).
+        func testSquareWrapTableIsNotBanded() async throws {
+            let host = try Self.tableHost(at: 10000, textWrap: .square)
+            let blocks = try await Self.blocks(of: try Self.paginator(
+                hostLocation: 10000, host: host
+            ))
+            let table = try XCTUnwrap(blocks.first { $0.kind == .table })
+            let hostBlock = try XCTUnwrap(blocks.first { $0.text == "\u{FFFC}" })
+            expect(table.frame.minY).to(beGreaterThanOrEqualTo(hostBlock.frame.maxY - 0.01))
+        }
+
+        /// 앞선 표가 띠에 못 들어가 흐름(글줄 뒤)으로 갔으면, 그 뒤 표는 남은 띠를 쓰지
+        /// 않는다 — 쓰면 뒤 표가 앞 표보다 **위에** 그려져 문서 순서가 뒤집힌다.
+        func testTableAfterAFlowFallbackDoesNotRewindIntoTheBand() async throws {
+            // 첫 표 65pt + 여백 5.66 > 띠 68pt → 흐름으로. 둘째 표 30pt는 띠에 들어간다.
+            var host = try Self.tableHost(at: 10000, rowHeight: 6500)
+            let second = try Self.tableHost(at: 10000, rowHeight: 3000)
+            host.ctrlHeaderArray = (host.ctrlHeaderArray ?? []) + (second.ctrlHeaderArray ?? [])
+            let blocks = try await Self.blocks(of: try Self.paginator(
+                hostLocation: 10000, host: host
+            ))
+            let tables = blocks.filter { $0.kind == .table }
+            expect(tables.count).to(equal(2))
+            guard tables.count == 2 else { return }
+            // 문서 순서 = 그리는 순서: 둘째 표가 첫째 표보다 위로 가면 안 된다.
+            expect(tables[1].frame.minY)
+                .to(beGreaterThanOrEqualTo(tables[0].frame.minY - 0.01))
+        }
+
+        /// 저작 문단 위 간격은 캐시 줄 위치에 이미 들어 있다 — 그 몫까지 표 자리로 세면
+        /// 문단이 의도한 여백에 표가 들어간다. 간격을 뺀 나머지가 띠다.
+        func testAuthoredParagraphSpacingIsNotCountedAsBand() async throws {
+            // 간격 13600 HWPUNIT → beforeGap 68pt = 캐시 간격 전부. 남는 띠는 0이다.
+            let index = HwpSynthetic.outlineIndex(paraShapes: [
+                7: CoreHwp.HwpParaShape(
+                    property1: 0, marginLeft: 0, paragraphSpacingTop: 13600, tabDefId: 0
+                ),
+            ])
+            var host = try Self.tableHost(at: 10000)
+            host.paraHeader = try HwpSynthetic.outlineParaHeader(paraShapeId: 7, paraStyleId: 0)
+            let blocks = try await Self.blocks(of: try Self.paginator(
+                hostLocation: 10000, host: host, index: index
+            ))
+            let table = try XCTUnwrap(blocks.first { $0.kind == .table })
+            let hostBlock = try XCTUnwrap(blocks.first { $0.text == "\u{FFFC}" })
+            expect(table.frame.minY).to(beGreaterThanOrEqualTo(hostBlock.frame.maxY - 0.01))
+        }
+
         /// 문서가 절대 캐시 모드여도 **이 문단**이 캐시 없이 흐름 배치됐으면 판정하지
         /// 않는다 — 그 간격은 한글이 표에 내준 띠가 아니라 문단 위 간격이다.
         func testFlowPlacedParagraphInAnAbsoluteCacheDocumentIsNotBanded() async throws {
