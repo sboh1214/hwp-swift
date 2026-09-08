@@ -194,11 +194,12 @@ final class HwpxHwpEquivalenceTests: XCTestCase {
 
 /// 포맷 무관 문서 투영 — `HwpFile`만으로 만든다.
 struct DocumentEquivalenceProjection {
-    /// 밑줄 종류는 스펙 미정의 값 2(`undefined2`)만 없음으로 접어 비교한다 —
+    /// 밑줄 종류는 '글자 가운데'(값 2, `center`)만 없음으로 접어 비교한다 —
     /// 취소선 견본(CharShape·CharShapeProperty [18])이 HWP5에서는 그 값을 취소선
-    /// 비트와 함께 갖는데 한글.app의 HWPX 저장본은 밑줄 없음 + `strikeout`으로
-    /// 적기 때문이다 (#136). 나머지 값(없음·글자 아래·글자 위 = 3)은 두 포맷이
-    /// 같은 케이스로 모여야 한다 (#149 — `underline-above` 쌍).
+    /// 비트와 함께 갖는데(취소선의 레거시 이중 기록) 한글.app의 HWPX 저장본은
+    /// 밑줄 없음 + `strikeout`으로 접어 적기 때문이다 (#136). 두 저장본은 렌더도
+    /// 같은 한 줄이다. 나머지 값(없음·글자 아래·글자 위 = 3)은 두 포맷이 같은
+    /// 케이스로 모여야 한다 (#149 — `underline-above` 쌍).
     struct ResolvedRun: Equatable {
         let baseSize: Int32
         let isBold: Bool
@@ -520,7 +521,7 @@ struct DocumentEquivalenceProjection {
                     isBold: shape.property.isBold,
                     isItalic: shape.property.isItalic,
                     faceColor: shape.faceColor,
-                    underlineType: underlineType == .undefined2 ? .none : underlineType
+                    underlineType: underlineType == .center ? .none : underlineType
                 )
                 if runs.last != run {
                     runs.append(run)

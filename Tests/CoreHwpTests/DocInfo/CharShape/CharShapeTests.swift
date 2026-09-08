@@ -41,7 +41,7 @@ final class CharShapeTests: XCTestCase {
         expect(array[16].property.isSubscript) == true
         expect(array[18].property.rawValue) == 262_152
         // raw 2 — 스펙 미정의 값. 글자 위(3)가 아니다 (#149).
-        expect(array[18].property.underlineType) == .undefined2
+        expect(array[18].property.underlineType) == .center
         expect(array[18].property.strikethrough) == 1
         expect(array[19].property.emphasisType) == .filledCircle
         expect(array[20].property.doesAdjustBlank) == true

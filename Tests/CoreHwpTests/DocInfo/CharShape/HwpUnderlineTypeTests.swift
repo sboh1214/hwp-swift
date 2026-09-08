@@ -13,7 +13,7 @@ final class HwpUnderlineTypeTests: XCTestCase {
     /// 전체, 곧 문서 전체가 거부된다.
     func testEveryTwoBitRawValueHasACase() throws {
         let expected: [(raw: UInt32, type: HwpUnderlineType)] = [
-            (0, .none), (1, .under), (2, .undefined2), (3, .above),
+            (0, .none), (1, .under), (2, .center), (3, .above),
         ]
         for (raw, type) in expected {
             let property = try HwpCharShapeProperty.load(raw << 2)
@@ -27,7 +27,7 @@ final class HwpUnderlineTypeTests: XCTestCase {
     /// typed 필드 → bit field 재합성이 스펙 값(글자 위 = 3)을 그대로 적는다 —
     /// HWPX 매퍼가 이 경로로 `rawValue`를 만든다.
     func testSynthesizedRawValueRoundTripsEveryUnderlineType() throws {
-        for type in [HwpUnderlineType.none, .under, .undefined2, .above] {
+        for type in [HwpUnderlineType.none, .under, .center, .above] {
             var property = HwpCharShapeProperty()
             property.underlineType = type
             let raw = property.synthesizedRawValue
@@ -95,15 +95,16 @@ final class HwpUnderlineTypeTests: XCTestCase {
         expect(try HwpCharShapeProperty.load(property.rawValue).underlineType) == .above
     }
 
-    /// 취소선 견본의 밑줄 종류 raw 2는 글자 위가 아니다 — 두 픽스처 모두 같은
-    /// 값(`0x40008` = 밑줄 종류 2 + 취소선 1)이고 한글.app의 HWPX 재저장본은
-    /// 밑줄 없음(`NONE`) + `strikeout`이다. 케이스는 값을 보존만 한다.
-    func testStrikethroughSamplesKeepUndefinedRawTwo() throws {
+    /// 취소선 견본의 밑줄 종류 raw 2는 글자 위가 아니라 '글자 가운데'(`center`)다
+    /// — 두 픽스처 모두 같은 값(`0x40008` = 밑줄 종류 2 + 취소선 1)이고,
+    /// 한글.app의 HWPX 재저장본은 그 조합을 밑줄 없음(`NONE`) + `strikeout`으로
+    /// 접는다. 곧 두 저장본은 같은 한 줄을 뜻한다 (#136).
+    func testStrikethroughSamplesKeepCenterRawTwo() throws {
         for id in ["CharShape", "CharShapeProperty"] {
             let hwp = try openHwp(#file, id)
             let property = hwp.docInfo.idMappings.charShapeArray[18].property
             expect(property.rawValue).to(equal(0x0004_0008), description: id)
-            expect(property.underlineType).to(equal(.undefined2), description: id)
+            expect(property.underlineType).to(equal(.center), description: id)
             expect(property.strikethrough).to(equal(1), description: id)
 
             let hwpx = try openHwpx(#file, id)

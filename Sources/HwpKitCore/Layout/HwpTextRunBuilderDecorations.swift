@@ -6,27 +6,49 @@ import Foundation
 // 글자 장식 속성 (표 33) — HwpTextRunBuilder.attributes의 장식 부분
 
 extension HwpTextRunBuilder {
+    /// 밑줄·취소선 — 셋 다 렌더러가 직접 그리는 헤어라인이다.
+    ///
+    /// 밑줄 종류 (표 33 bit 2~3): 1 = 글자 아래, 2 = 글자 가운데, 3 = 글자 위.
+    /// **2는 취소선과 같은 선**이다 (한컴 공개 OWPML 모델 `ULT_CENTER`,
+    /// hwplib `UnderLineSort.Middle`) — 한글.app은 취소선 비트만 켠 문서와 종류
+    /// 2만 켠 문서를 같은 자리에 한 줄로 그리고, 둘 다 켜져 있어도 한 줄만
+    /// 그린다 (2026-09-08 PDF 실측, #136). 그래서 취소선 분기에 합류시키고
+    /// 밑줄 쪽은 위/아래만 가른다.
+    ///
+    /// CT 밑줄은 두껍다 (실물 헤어라인 대비 3-4배) — 전용 키로 넘겨
+    /// `HwpPageLayer`가 0.4pt로 직접 그린다.
+    func applyLineDecorations(
+        to attributes: inout [NSAttributedString.Key: Any],
+        shape: CoreHwp.HwpCharShape
+    ) {
+        switch shape.property.underlineType {
+        case .under:
+            attributes[HwpAttributedStringKey.underlineStyle] = NSNumber(value: 1)
+            attributes[HwpAttributedStringKey.underlineColor] = shape.underlineColor.cgColor
+        case .above:
+            attributes[HwpAttributedStringKey.underlineAboveStyle] = NSNumber(value: 1)
+            attributes[HwpAttributedStringKey.underlineColor] = shape.underlineColor.cgColor
+        case .center, CoreHwp.HwpUnderlineType.none:
+            break
+        }
+        let isCenterLine = shape.property.underlineType == .center
+        guard shape.property.strikethrough != 0 || isCenterLine else { return }
+        attributes[HwpAttributedStringKey.strikethroughStyle] = NSNumber(value: 1)
+        // 둘 다 켜져 있으면 한글이 그리는 한 줄의 색은 **밑줄 색**이다 (실측:
+        // 종류 2 + 취소선을 서로 다른 색으로 합성한 문서에서 밑줄 색만 나온다).
+        // 취소선 색 필드가 없는 구버전 저장본은 글자 색으로 떨어진다.
+        attributes[HwpAttributedStringKey.strikethroughColor] = isCenterLine
+            ? shape.underlineColor.cgColor
+            : (shape.strikethroughColor ?? shape.faceColor).cgColor
+    }
+
     /// 글자 장식 (표 33): 밑줄/취소선/음영/그림자/외곽선/첨자 속성.
     func applyShapeDecorations(
         to attributes: inout [NSAttributedString.Key: Any],
         shape: CoreHwp.HwpCharShape,
         size: CGFloat
     ) {
-        // 밑줄 종류 1(글자 아래)만 밑줄로 그린다. 3(글자 위)은 선 위치 실측
-        // 전이라 아직 그리지 않는다 (#149 — #136과 함께). 2(`undefined2`)는
-        // 스펙 미정의 값이라 보존만 한다: CharShape 실물 취소선 색 행이 취소선
-        // 비트와 함께 그 값을 갖고, 한글은 시안 취소선 단선만 표시한다.
-        if shape.property.underlineType == .under {
-            // CT 밑줄은 두껍다 (실물 헤어라인 대비 3-4배) — 렌더러가
-            // 직접 0.4pt 헤어라인으로 그린다 (전용 키)
-            attributes[HwpAttributedStringKey.underlineStyle] = NSNumber(value: 1)
-            attributes[HwpAttributedStringKey.underlineColor] = shape.underlineColor.cgColor
-        }
-        if shape.property.strikethrough != 0 {
-            attributes[HwpAttributedStringKey.strikethroughStyle] = NSNumber(value: 1)
-            attributes[HwpAttributedStringKey.strikethroughColor] =
-                (shape.strikethroughColor ?? shape.faceColor).cgColor
-        }
+        applyLineDecorations(to: &attributes, shape: shape)
         // 음영 — 흰색은 "없음" (한글 기본값)
         let shade = shape.shadeColor
         if shade.red != 255 || shade.green != 255 || shade.blue != 255 {

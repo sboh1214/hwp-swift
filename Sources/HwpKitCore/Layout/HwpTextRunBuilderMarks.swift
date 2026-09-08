@@ -17,6 +17,9 @@ extension HwpTextRunBuilder {
         if mark == 17 {
             attributes[HwpAttributedStringKey.strikethroughStyle] = NSNumber(value: 1)
             attributes[HwpAttributedStringKey.strikethroughColor] = red
+            // 변경 추적 삭제선은 한글이 일반 취소선보다 조금 낮게 그린다
+            // (실측 0.29em vs 0.35em, #136) — 렌더러가 표식으로 가른다.
+            attributes[HwpAttributedStringKey.trackChangeStrikethrough] = NSNumber(value: 1)
         } else {
             // CT 밑줄은 폰트 밑줄 위치 (얕음) — 한글 실물은 베이스라인에서
             // 반 x-height가량 아래 (track-changes 실측). 렌더러가 직접 그린다.

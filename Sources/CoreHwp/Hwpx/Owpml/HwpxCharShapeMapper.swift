@@ -248,8 +248,13 @@ extension HwpxCharShapeMapper {
         "DASH_DOT_DOT": .twoDotsOneLine,
     ]
 
+    /// OWPML `UnderlineType` → 표 33 밑줄 종류. 이름·값의 정본은 한컴 공개
+    /// 모델의 `g_UnderlineTypeList`(`ULT_NONE`·`ULT_BOTTOM`·`ULT_CENTER`·
+    /// `ULT_TOP`)다. `CENTER`가 빠져 있으면 그 밑줄이 조용히 없음이 된다 —
+    /// 한글.app은 취소선 견본을 HWPX로 접어 쓰므로 코퍼스에 실물이 없지만,
+    /// 열거에 있는 값을 버리지 않는다 (#136).
     static let underlineTypes: [String: HwpUnderlineType] = [
-        "NONE": .none, "BOTTOM": .under, "TOP": .above,
+        "NONE": .none, "BOTTOM": .under, "CENTER": .center, "TOP": .above,
     ]
 
     static let shadowTypes: [String: HwpShadowType] = [

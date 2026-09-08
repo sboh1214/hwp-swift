@@ -41,6 +41,33 @@ public enum HwpRenderTuning {
         /// 실측: CharShapeProperty 실물 — 10% 선언 → ~15% 실측.
         /// 검증: fidelity 전수 + 실물 대조.
         public static let shadowOffsetScale: Double = 1.5
+
+        /// 취소선(밑줄 종류 '글자 가운데' 포함) 중심의 베이스라인 위 높이 =
+        /// 글자 크기 × 이 배율.
+        /// 실측: 한글.app 12.30.0 (2026-09-08) `CharShape` 쌍을 PDF로 내보내
+        /// 벡터 좌표를 읽었다 — 5·10·15·20·40·60·100pt에서 베이스라인 대비
+        /// +1.80/3.60/5.28/7.08/14.04/21.00/35.04pt (0.350~0.360, 장치 좌표
+        /// 0.12pt 양자화). 함초롬바탕·함초롬돋움·Apple SD 산돌고딕 Neo가 같은
+        /// 값이라 폰트 지표가 아니라 글자 크기 비례다. **HWP와 HWPX가 같은
+        /// 값**이다 (#136).
+        /// 검증: `FixtureDecorationLineRenderTests` 픽셀 핀 + fidelity 전수.
+        public static let strikethroughCenterRatio: CGFloat = 0.35
+
+        /// 밑줄 '글자 위'(표 35 밑줄 종류 3) 중심의 베이스라인 위 높이 =
+        /// 글자 크기 × 이 배율.
+        /// 실측: 같은 세션의 `underline-above` 쌍 — 10/40/100pt에서
+        /// +8.76/34.68/86.88pt (0.867~0.876). 함초롬돋움도 같은 값이다 (#136).
+        /// 검증: `FixtureDecorationLineRenderTests` 픽셀 핀 + fidelity 전수.
+        public static let underlineAboveCenterRatio: CGFloat = 0.87
+
+        /// 변경 추적 삭제선 중심의 베이스라인 위 높이 = 글자 크기 × 이 배율.
+        /// 일반 취소선(`strikethroughCenterRatio`)과 다른 값이다 — 한글은 변경
+        /// 추적 표시를 따로 그린다.
+        /// 실측: 같은 세션의 `track-changes` 실물 — 기준 크기 10pt(영문 상대
+        /// 크기 80% → 실효 8pt)에서 +2.40pt, 40pt(실효 32pt)에서 +9.24pt
+        /// (0.303·0.292, 두 표본 잔차 ≤0.11pt).
+        /// 검증: `FixtureDecorationLineRenderTests` 픽셀 핀 + fidelity 전수.
+        public static let trackChangeStrikethroughCenterRatio: CGFloat = 0.29
     }
 
     /// 문단 번호·개요 번호 라벨 (#154)

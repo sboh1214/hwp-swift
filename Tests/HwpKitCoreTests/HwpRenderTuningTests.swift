@@ -13,6 +13,9 @@ final class HwpRenderTuningTests: XCTestCase {
         expect(HwpRenderTuning.Text.slightOverflowWidthRatio) == 1.06
         expect(HwpRenderTuning.Text.syntheticBoldStrokeWidth) == -3.5
         expect(HwpRenderTuning.Text.shadowOffsetScale) == 1.5
+        expect(HwpRenderTuning.Text.strikethroughCenterRatio) == 0.35
+        expect(HwpRenderTuning.Text.underlineAboveCenterRatio) == 0.87
+        expect(HwpRenderTuning.Text.trackChangeStrikethroughCenterRatio) == 0.29
     }
 
     func testNumberingTuningValues() {

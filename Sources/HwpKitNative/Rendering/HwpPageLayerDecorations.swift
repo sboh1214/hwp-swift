@@ -277,39 +277,53 @@ extension HwpPageLayer {
         ))
     }
 
-    /// 취소선 (CT 미지원 — 항상 직접)
+    /// 취소선 — 밑줄 종류 '글자 가운데'(표 35 값 2)와 변경 추적 삭제선도 이 선을
+    /// 공유한다 (CT 미지원 — 항상 직접).
     func drawStrikethroughIfNeeded(_ run: CTRun, lineOrigin: CGPoint, in ctx: CGContext) {
         let attributes = runAttributes(run)
         guard attributes[HwpAttributedStringKey.strikethroughStyle] != nil else { return }
         let color = attributes[HwpAttributedStringKey.strikethroughColor]
             ?? attributes[kCTForegroundColorAttributeName as NSAttributedString.Key]
         let bounds = runBounds(of: run, lineOrigin: lineOrigin)
-        let xHeight = runFont(attributes).map(CTFontGetXHeight) ?? bounds.height * 0.4
+        let size = runFont(attributes).map(CTFontGetSize) ?? 10
+        // 한글은 글꼴 지표가 아니라 글자 크기에 비례해 그린다 (#136 실측) —
+        // 폰트의 x-height 절반은 라틴 취소선 위치라 한글 글리프에서 낮게 보였다.
+        let ratio = attributes[HwpAttributedStringKey.trackChangeStrikethrough] != nil
+            ? HwpRenderTuning.Text.trackChangeStrikethroughCenterRatio
+            : HwpRenderTuning.Text.strikethroughCenterRatio
         setDecorationFillColor(color, in: ctx)
         // 실물 취소선도 밑줄과 같은 헤어라인 (라운드 8 실측 ~0.45pt)
+        let thickness: CGFloat = 0.4
         ctx.fill(CGRect(
             x: bounds.minX,
-            y: lineOrigin.y + xHeight / 2,
+            y: lineOrigin.y + size * ratio - thickness / 2,
             width: bounds.width,
-            height: 0.4
+            height: thickness
         ))
     }
 
     /// CTRunDraw 경로에서 밑줄을 직접 그린다 (CTLineDraw만 밑줄을 지원).
+    /// 밑줄 종류 '글자 위'(표 35 값 3)도 같은 헤어라인을 베이스라인 위에 그린다.
     func drawUnderlineIfNeeded(_ run: CTRun, lineOrigin: CGPoint, in ctx: CGContext) {
         let attributes = runAttributes(run)
-        guard attributes[HwpAttributedStringKey.underlineStyle] != nil else { return }
+        let isAbove = attributes[HwpAttributedStringKey.underlineAboveStyle] != nil
+        guard isAbove || attributes[HwpAttributedStringKey.underlineStyle] != nil
+        else { return }
         let bounds = runBounds(of: run, lineOrigin: lineOrigin)
         let size = runFont(attributes).map(CTFontGetSize) ?? 10
         // 실물 밑줄은 헤어라인 (줄 높이의 ~2.3%), 한글 글리프 바닥 잉크
-        // 바로 아래 — 폰트 underlinePosition은 잉크를 관통한다 (라운드 7 실측)
+        // 바로 아래 — 폰트 underlinePosition은 잉크를 관통한다 (라운드 7 실측).
+        // '글자 위'는 글자 크기의 0.87배 위 (#136 실측).
         let thickness: CGFloat = 0.4
+        let center = isAbove
+            ? size * HwpRenderTuning.Text.underlineAboveCenterRatio
+            : -size * 0.20
         let color = attributes[HwpAttributedStringKey.underlineColor]
             ?? attributes[kCTForegroundColorAttributeName as NSAttributedString.Key]
         setDecorationFillColor(color, in: ctx)
         ctx.fill(CGRect(
             x: bounds.minX,
-            y: lineOrigin.y - size * 0.20 - thickness / 2,
+            y: lineOrigin.y + center - thickness / 2,
             width: bounds.width,
             height: thickness
         ))
