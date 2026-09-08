@@ -239,6 +239,42 @@ final class HwpDecorationLineGeometryTests: XCTestCase {
         expect(expected).to(beCloseTo(5.2, within: 0.001))
     }
 
+    /// 첨자로 글꼴이 줄어도 '글자 위' 밑줄은 **줄기 전 크기**로 그린다 — 한글이
+    /// 이 선만 기본 크기를 유지하기 때문이다 (2026-09-09 실측). 같은 run의
+    /// 취소선은 반대로 줄어든 글꼴 크기를 따르므로, 두 선의 간격이 두 기준을
+    /// 한꺼번에 고정한다.
+    func testAboveUnderlineKeepsPreScriptSize() throws {
+        let preScript: CGFloat = 10
+        let shrunk = preScript * 0.67 // HwpTextRunBuilder.superscriptScale
+        let text = NSAttributedString(string: "AA", attributes: [
+            kCTFontAttributeName as NSAttributedString.Key: CTFontCreateWithName(
+                "Menlo" as CFString, shrunk, nil
+            ),
+            HwpAttributedStringKey.spaceTargetSize: NSNumber(value: Double(preScript)),
+            HwpAttributedStringKey.underlineAboveStyle: NSNumber(value: 1),
+            HwpAttributedStringKey.underlineColor: CGColor(red: 0, green: 1, blue: 1, alpha: 1),
+            HwpAttributedStringKey.strikethroughStyle: NSNumber(value: 1),
+            HwpAttributedStringKey.strikethroughColor: CGColor(
+                red: 1, green: 0, blue: 1, alpha: 1
+            ),
+        ])
+
+        let raster = try render(text: text)
+        let above = try XCTUnwrap(
+            Self.rowCenter(raster) { $0 < 100 && $1 > 150 && $2 > 150 }, "위쪽 밑줄"
+        )
+        let strike = try XCTUnwrap(
+            Self.rowCenter(raster) { $0 > 150 && $1 < 100 && $2 > 150 }, "취소선"
+        )
+        // 둘 다 베이스라인 **위**라 간격은 두 높이의 차다.
+        let expected = HwpRenderTuning.Text.underlineAboveCenterRatio * preScript
+            - HwpRenderTuning.Text.strikethroughCenterRatio * shrunk
+        expect(strike - above).to(beCloseTo(expected, within: 0.2))
+        // 위 밑줄까지 줄어든 글꼴 크기로 그리면 8.7이 5.83으로 내려가 간격이
+        // 6.355 → 3.484로 좁아진다.
+        expect(expected).to(beCloseTo(6.355, within: 0.001))
+    }
+
     /// 밑줄 '글자 아래'는 이번 수정의 대상이 아니다 — 베이스라인 아래 0.20em이
     /// 그대로인지 확인한다 (큰 글자일수록 **아래로** 간다).
     func testBelowUnderlineKeepsItsRatio() throws {

@@ -326,14 +326,31 @@ extension HwpPageLayer {
     }
 
     /// 밑줄 '글자 위'(표 33 값 3) — 글자 크기의 0.87배 위 (#136 실측).
+    ///
     /// 되돌림 없는 **줄 원점**을 받는다: 되돌림은 아래쪽 밑줄을 개체 하단에
     /// 남기기 위한 보정이라, 위쪽 선에 적용하면 글자 아래로 떨어진다.
+    ///
+    /// 크기는 **첨자로 줄기 전 값**(`spaceTargetSize`, 상대크기는 반영하고 첨자
+    /// 축소만 뺀 글자 크기)을 쓴다. 한글은 첨자 run에서도 이 선만 기본 크기로
+    /// 그린다 (2026-09-09 실측: 9.96 → 6.36pt로 줄어든 첨자 글리프에서도 선이
+    /// 원래 베이스라인 위 8.76pt = 10pt의 0.87배 자리에 그대로 남는다). 같은
+    /// 줄의 취소선은 반대로 줄어든 크기를 따르므로 (`drawStrikethroughIfNeeded`)
+    /// 두 선의 기준이 다르다.
     func drawAboveUnderlineIfNeeded(_ run: CTRun, lineOrigin: CGPoint, in ctx: CGContext) {
         let attributes = runAttributes(run)
         guard attributes[HwpAttributedStringKey.underlineAboveStyle] != nil else { return }
-        let size = runFont(attributes).map(CTFontGetSize) ?? 10
+        let size = preScriptFontSize(attributes)
         let center = size * HwpRenderTuning.Text.underlineAboveCenterRatio
         fillUnderline(run, lineOrigin: lineOrigin, center: center, in: ctx)
+    }
+
+    /// 첨자 축소 전 글자 크기 (pt). 조판이 모든 run에 싣는 `spaceTargetSize`가
+    /// 그 값이고, 없으면 run 글꼴 크기로 떨어진다.
+    private func preScriptFontSize(_ attributes: [NSAttributedString.Key: Any]) -> CGFloat {
+        if let size = attributes[HwpAttributedStringKey.spaceTargetSize] as? NSNumber {
+            return CGFloat(size.doubleValue)
+        }
+        return runFont(attributes).map(CTFontGetSize) ?? 10
     }
 
     /// 밑줄 헤어라인 한 줄 — `center`는 `lineOrigin` 기준 세로 위치 (양수 = 위).
