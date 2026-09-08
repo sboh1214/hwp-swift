@@ -54,7 +54,8 @@ import XCTest
         /// `hostLocation`이 앞 문단이 끝난 자리(3200)에서 얼마나 떨어졌는지가 띠다.
         private static func paginator(
             hostLocation: Int32,
-            host: CoreHwp.HwpParagraph? = nil
+            host: CoreHwp.HwpParagraph? = nil,
+            index: HwpIndex = HwpIndex(from: CoreHwp.HwpFile())
         ) throws -> HwpPaginator {
             let section = HwpSynthetic.section(
                 firstParagraphControls: [.section(HwpSynthetic.sectionDef())],
@@ -66,7 +67,7 @@ import XCTest
             )
             return HwpPaginator(
                 sections: [section],
-                index: HwpIndex(from: CoreHwp.HwpFile()),
+                index: index,
                 fontResolver: .testDeterministic
             )
         }
@@ -142,6 +143,49 @@ import XCTest
             let host = try Self.tableHost(at: 10000, verticalOffset: 500)
             let blocks = try await Self.blocks(of: try Self.paginator(
                 hostLocation: 10000, host: host
+            ))
+            let table = try XCTUnwrap(blocks.first { $0.kind == .table })
+            let hostBlock = try XCTUnwrap(blocks.first { $0.text == "\u{FFFC}" })
+            expect(table.frame.minY).to(beGreaterThanOrEqualTo(hostBlock.frame.maxY - 0.01))
+        }
+
+        /// 한 문단에 조건을 만족하는 표가 둘이면 띠를 **나눠** 쓴다 — 둘째 표는 첫째
+        /// 표 아래(여백 포함)에서 시작하고, 남은 띠에 안 들어가면 종전 흐름 배치로 간다.
+        func testSecondTableInTheSameParagraphDoesNotReuseTheBand() async throws {
+            var host = try Self.tableHost(at: 10000)
+            let second = try Self.tableHost(at: 10000)
+            host.ctrlHeaderArray = (host.ctrlHeaderArray ?? []) + (second.ctrlHeaderArray ?? [])
+            let blocks = try await Self.blocks(of: try Self.paginator(
+                hostLocation: 10000, host: host
+            ))
+            let tables = blocks.filter { $0.kind == .table }
+            expect(tables.count).to(equal(2))
+            guard tables.count == 2 else { return }
+            // 두 표가 같은 자리에 겹치지 않는다.
+            expect(tables[0].frame.intersects(tables[1].frame.insetBy(dx: 0, dy: 0.01)))
+                .to(beFalse())
+            // 첫 표만 띠에 들어간다 (30 + 2.83 × 2 = 35.66pt짜리 둘은 68pt 띠에 못 든다).
+            let hostBlock = try XCTUnwrap(blocks.first { $0.text == "\u{FFFC}" })
+            let before = try XCTUnwrap(blocks.first { $0.text == "앞 문단" })
+            expect(tables[0].frame.minY).to(beCloseTo(before.frame.maxY + 2.83, within: 0.01))
+            expect(tables[1].frame.minY)
+                .to(beGreaterThanOrEqualTo(hostBlock.frame.maxY - 0.01))
+        }
+
+        /// 문서가 절대 캐시 모드여도 **이 문단**이 캐시 없이 흐름 배치됐으면 판정하지
+        /// 않는다 — 그 간격은 한글이 표에 내준 띠가 아니라 문단 위 간격이다.
+        func testFlowPlacedParagraphInAnAbsoluteCacheDocumentIsNotBanded() async throws {
+            // 문단 위 간격 8000 HWPUNIT → beforeGap 40pt > 표 30 + 여백 5.66pt
+            let index = HwpSynthetic.outlineIndex(paraShapes: [
+                7: CoreHwp.HwpParaShape(
+                    property1: 0, marginLeft: 0, paragraphSpacingTop: 8000, tabDefId: 0
+                ),
+            ])
+            var host = try Self.tableHost(at: 10000)
+            host.paraLineSeg.paraLineSegInternalArray = [] // 캐시 없음 → 흐름 배치
+            host.paraHeader = try HwpSynthetic.outlineParaHeader(paraShapeId: 7, paraStyleId: 0)
+            let blocks = try await Self.blocks(of: try Self.paginator(
+                hostLocation: 10000, host: host, index: index
             ))
             let table = try XCTUnwrap(blocks.first { $0.kind == .table })
             let hostBlock = try XCTUnwrap(blocks.first { $0.text == "\u{FFFC}" })
