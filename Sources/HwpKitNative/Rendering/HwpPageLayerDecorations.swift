@@ -40,6 +40,13 @@ extension HwpPageLayer {
             x: origin.x,
             y: origin.y - HwpPageLayer.underlineReturnDrop(of: line)
         )
+        // 장식은 글리프가 아니라 **줄 원점**을 기준으로 그린다 — `drawRun`이
+        // `glyphBaselineOffset`(글자 위치·첨자)으로 글리프만 옮겨도 선은 제자리다.
+        // 한글.app도 글자 위치에서는 그렇다 (2026-09-09 실측: `hh:offset` 50으로
+        // 글리프가 5pt 내려가도 취소선·아래 밑줄·위 밑줄이 모두 같은 y에 남았다).
+        // 첨자는 예외라 별건이다 — 한글은 첨자 run의 취소선만 올라간 베이스라인을
+        // 따라가고 줄어든 크기로 그리는데(6.36pt 글리프에서 +2.28pt) 우리는
+        // 제자리에 그린다. 위쪽 밑줄은 한글도 제자리 + 기본 크기다.
         for run in runs {
             // 밑줄은 CT 대신 항상 직접 (실물 헤어라인 두께 정합)
             drawUnderlineIfNeeded(run, lineOrigin: underlineOrigin, in: ctx)

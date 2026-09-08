@@ -81,6 +81,23 @@ final class HwpUnderlineTypeTests: XCTestCase {
         expect(shapes[7].underlineColor) == HwpColor(0, 0, 0)
     }
 
+    /// `CENTER`(한컴 공개 모델 `ULT_CENTER`)도 열거에 있는 값이라 `.center`(2)로
+    /// 간다 — 매핑 표에서 빠지면 그 밑줄이 조용히 '없음'이 돼 한쪽 포맷에서만
+    /// 선이 사라진다 (#136). 취소선 비트가 없으므로 등가 투영도 이 값을 접지
+    /// 않고 그대로 비교한다.
+    func testHeaderMapperMapsUnderlineCenterToCenter() throws {
+        let xml = HwpxHeaderFixture.headerXML.replacingOccurrences(
+            of: "<hh:underline type=\"BOTTOM\"",
+            with: "<hh:underline type=\"CENTER\""
+        )
+        let (docInfo, _) = try HwpxHeaderFixture.mapHeader(xml)
+        let property = docInfo.idMappings.charShapeArray[0].property
+
+        expect(property.underlineType) == .center
+        expect((property.rawValue >> 2) & 0b11) == 2
+        expect(try HwpCharShapeProperty.load(property.rawValue).underlineType) == .center
+    }
+
     /// 합성 header.xml에서도 `TOP`이 `.above`(3)로, `BOTTOM`이 `.under`(1)로 간다.
     func testHeaderMapperMapsUnderlineTopToAbove() throws {
         let xml = HwpxHeaderFixture.headerXML.replacingOccurrences(

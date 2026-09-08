@@ -192,22 +192,42 @@ final class HwpxHwpEquivalenceTests: XCTestCase {
     }
 }
 
+/// 밑줄 종류는 **'글자 가운데' + 취소선 비트**(취소선의 레거시 이중 기록)
+/// 조합만 없음으로 접어 비교한다 — 취소선 견본(CharShape·CharShapeProperty
+/// [18])이 HWP5에서는 그 조합인데 한글.app의 HWPX 저장본은 밑줄 없음 +
+/// `strikeout`으로 접어 적기 때문이다 (#136). 두 저장본은 렌더도 같은 한 줄이다.
+///
+/// **취소선 비트 없는 순수 '글자 가운데'는 접지 않는다**: `.center`는 이제
+/// 그 자체로 선을 그리는 값이라(HWPX `type="CENTER"`), 무조건 접으면 매핑이
+/// 빠지거나 틀려 한쪽만 선이 사라져도 이 스위트가 통과한다. 접는 근거인
+/// 취소선 비트를 함께 실어 그 구멍을 막는다.
+///
+/// 나머지 값(없음·글자 아래·글자 위 = 3)은 두 포맷이 같은 케이스로 모여야
+/// 한다 (#149 — `underline-above` 쌍).
+struct ResolvedRun: Equatable {
+    let baseSize: Int32
+    let isBold: Bool
+    let isItalic: Bool
+    let faceColor: HwpColor
+    let underlineType: HwpUnderlineType
+    /// 표 33 취소선 여부 (3비트) — 위 접기의 근거이자, 두 포맷이 같은 선을
+    /// 그리는지 보는 축이다.
+    let strikethrough: Int
+}
+
+/// 등가 비교용 밑줄 종류 — **레거시 이중 기록(글자 가운데 + 취소선 비트)만**
+/// 없음으로 접는다 (#136). 취소선 비트 없는 순수 '글자 가운데'는 그대로 둬야
+/// HWPX `type="CENTER"` 매핑이 빠지거나 틀린 회귀를 등가 스위트가 잡는다.
+private func equivalenceUnderlineType(
+    of property: HwpCharShapeProperty
+) -> HwpUnderlineType {
+    property.underlineType == .center && property.strikethrough != 0
+        ? .none
+        : property.underlineType
+}
+
 /// 포맷 무관 문서 투영 — `HwpFile`만으로 만든다.
 struct DocumentEquivalenceProjection {
-    /// 밑줄 종류는 '글자 가운데'(값 2, `center`)만 없음으로 접어 비교한다 —
-    /// 취소선 견본(CharShape·CharShapeProperty [18])이 HWP5에서는 그 값을 취소선
-    /// 비트와 함께 갖는데(취소선의 레거시 이중 기록) 한글.app의 HWPX 저장본은
-    /// 밑줄 없음 + `strikeout`으로 접어 적기 때문이다 (#136). 두 저장본은 렌더도
-    /// 같은 한 줄이다. 나머지 값(없음·글자 아래·글자 위 = 3)은 두 포맷이 같은
-    /// 케이스로 모여야 한다 (#149 — `underline-above` 쌍).
-    struct ResolvedRun: Equatable {
-        let baseSize: Int32
-        let isBold: Bool
-        let isItalic: Bool
-        let faceColor: HwpColor
-        let underlineType: HwpUnderlineType
-    }
-
     struct PageGeometry: Equatable {
         let width: UInt32
         let height: UInt32
@@ -515,13 +535,13 @@ struct DocumentEquivalenceProjection {
                 else {
                     continue
                 }
-                let underlineType = shape.property.underlineType
                 let run = ResolvedRun(
                     baseSize: shape.baseSize,
                     isBold: shape.property.isBold,
                     isItalic: shape.property.isItalic,
                     faceColor: shape.faceColor,
-                    underlineType: underlineType == .center ? .none : underlineType
+                    underlineType: equivalenceUnderlineType(of: shape.property),
+                    strikethrough: shape.property.strikethrough
                 )
                 if runs.last != run {
                     runs.append(run)
