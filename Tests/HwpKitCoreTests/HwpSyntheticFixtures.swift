@@ -492,7 +492,8 @@ extension HwpSynthetic {
         treatAsChar: Bool = true,
         verticalRelativeTo: CoreHwp.HwpCommonCtrlVerticalRelativeTo = .paragraph,
         verticalOffset: Int32 = 0,
-        textWrap: CoreHwp.HwpCommonCtrlTextWrap = .topAndBottom
+        textWrap: CoreHwp.HwpCommonCtrlTextWrap = .topAndBottom,
+        margins: [CoreHwp.HWPUNIT16] = [0, 0, 0, 0]
     ) -> CoreHwp.HwpTable {
         var placed = table
         var info = placed.commonCtrlProperty.propertyInfo
@@ -503,6 +504,9 @@ extension HwpSynthetic {
         info.textWrap = textWrap
         placed.commonCtrlProperty.propertyInfo = info
         placed.commonCtrlProperty.verticalOffset = UInt32(bitPattern: verticalOffset)
+        // 개체 바깥 4방향 여백 (왼쪽/오른쪽/위쪽/아래쪽) — 자리 차지 표의 띠
+        // 판정이 위·아래 몫을 읽는다 (#161).
+        placed.commonCtrlProperty.marginArray = margins
         return placed
     }
 
