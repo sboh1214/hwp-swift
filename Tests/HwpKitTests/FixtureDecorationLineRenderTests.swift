@@ -116,23 +116,28 @@ final class FixtureDecorationLineRenderTests: XCTestCase {
             pixelHeight: pixelHeight,
             unresolvedImages: .fail
         )
-        let bytesPerRow = pixelWidth * 4
-        var data = [UInt8](repeating: 0, count: bytesPerRow * pixelHeight)
-        let context = try XCTUnwrap(data.withUnsafeMutableBytes { buffer in
-            CGContext(
-                data: buffer.baseAddress,
-                width: pixelWidth,
-                height: pixelHeight,
-                bitsPerComponent: 8,
-                bytesPerRow: bytesPerRow,
-                space: CGColorSpaceCreateDeviceRGB(),
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-            )
-        })
+        // 픽셀 버퍼는 CGContext가 소유하게 둔다 (`data: nil`) — Array의
+        // `withUnsafeMutableBytes` 포인터는 클로저 안에서만 유효해서, 그 포인터로
+        // 만든 컨텍스트에 밖에서 그리면 미정의 동작이다.
+        let context = try XCTUnwrap(CGContext(
+            data: nil,
+            width: pixelWidth,
+            height: pixelHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
         context.draw(
             image,
             in: CGRect(x: 0, y: 0, width: CGFloat(pixelWidth), height: CGFloat(pixelHeight))
         )
+        // 행 보폭은 CG가 정렬에 맞춰 정하므로 되읽어 쓴다.
+        let bytesPerRow = context.bytesPerRow
+        let pixels = try XCTUnwrap(context.data)
+        let data = [UInt8](UnsafeRawBufferPointer(
+            start: pixels, count: bytesPerRow * pixelHeight
+        ))
         return Raster(
             pixelWidth: pixelWidth, pixelHeight: pixelHeight,
             bytesPerRow: bytesPerRow, data: data
