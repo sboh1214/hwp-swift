@@ -16,9 +16,17 @@ import XCTest
     final class HwpFloatingTableBandTests: XCTestCase {
         /// 캐시 줄 하나짜리 문단 (단위 HWPUNIT — 줄 높이 1000 + 줄 간격 600 = 16pt 전진)
         private static func cached(
-            _ text: String, at location: Int32
+            _ text: String, at location: Int32, paraShapeId: UInt16? = nil
         ) throws -> CoreHwp.HwpParagraph {
-            try HwpSynthetic.lineSegParagraph(text, segments: [(location: location, height: 1000)])
+            var paragraph = try HwpSynthetic.lineSegParagraph(
+                text, segments: [(location: location, height: 1000)]
+            )
+            if let paraShapeId {
+                paragraph.paraHeader = try HwpSynthetic.outlineParaHeader(
+                    paraShapeId: paraShapeId, paraStyleId: 0
+                )
+            }
+            return paragraph
         }
 
         /// 캐시 줄 하나 + 자리 차지 표 컨트롤을 품은 문단 (본문은 컨트롤 문자뿐)
@@ -55,12 +63,13 @@ import XCTest
         private static func paginator(
             hostLocation: Int32,
             host: CoreHwp.HwpParagraph? = nil,
-            index: HwpIndex = HwpIndex(from: CoreHwp.HwpFile())
+            index: HwpIndex = HwpIndex(from: CoreHwp.HwpFile()),
+            precedingParaShapeId: UInt16? = nil
         ) throws -> HwpPaginator {
             let section = HwpSynthetic.section(
                 firstParagraphControls: [.section(HwpSynthetic.sectionDef())],
                 bodyParagraphs: [
-                    try cached("앞 문단", at: 1600),
+                    try cached("앞 문단", at: 1600, paraShapeId: precedingParaShapeId),
                     try host ?? tableHost(at: hostLocation),
                     try cached("뒤 문단", at: hostLocation + 1600),
                 ]
@@ -215,6 +224,24 @@ import XCTest
             host.paraHeader = try HwpSynthetic.outlineParaHeader(paraShapeId: 7, paraStyleId: 0)
             let blocks = try await Self.blocks(of: try Self.paginator(
                 hostLocation: 10000, host: host, index: index
+            ))
+            let table = try XCTUnwrap(blocks.first { $0.kind == .table })
+            let hostBlock = try XCTUnwrap(blocks.first { $0.text == "\u{FFFC}" })
+            expect(table.frame.minY).to(beGreaterThanOrEqualTo(hostBlock.frame.maxY - 0.01))
+        }
+
+        /// **앞 문단**의 저작 아래 여백도 캐시 간격에 들어 있다 — 절대 캐시 블록 높이는
+        /// 줄 위치·높이만으로 만들어져 그 몫을 담지 않으므로, 빼지 않으면 앞 문단이
+        /// 의도한 여백을 표 자리로 오인한다.
+        func testPrecedingParagraphBottomSpacingIsNotCountedAsBand() async throws {
+            // 앞 문단 아래 간격 13600 HWPUNIT → 68pt = 캐시 간격 전부. 남는 띠는 0이다.
+            let index = HwpSynthetic.outlineIndex(paraShapes: [
+                7: CoreHwp.HwpParaShape(
+                    property1: 0, marginLeft: 0, paragraphSpacingBottom: 13600, tabDefId: 0
+                ),
+            ])
+            let blocks = try await Self.blocks(of: try Self.paginator(
+                hostLocation: 10000, index: index, precedingParaShapeId: 7
             ))
             let table = try XCTUnwrap(blocks.first { $0.kind == .table })
             let hostBlock = try XCTUnwrap(blocks.first { $0.text == "\u{FFFC}" })
