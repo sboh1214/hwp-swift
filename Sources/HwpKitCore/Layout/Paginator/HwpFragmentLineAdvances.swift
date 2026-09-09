@@ -37,4 +37,15 @@ struct HwpFragmentLineAdvances {
         guard strictlyIncreasing, index > 0, index < lines.count else { return 0 }
         return max(0, lines[index].baseline - lines[index - 1].baseline)
     }
+
+    /// 줄 `boundary` 앞에서 끊긴 조각이 단에서 **실제로 차지하는** 높이 — 누적 전진량
+    /// (조각 첫 줄 초과분 포함)에서 마지막 전진량에 실린 다음 조각 첫 줄의 몫을 뺀다.
+    ///
+    /// 적합 판정과 방출 높이가 반드시 이 한 식을 써야 한다 (PR 리뷰): 판정만 보정 없는
+    /// 전진량으로 재면 키 큰 개체 줄 **앞**의 평범한 줄이 실제로는 들어가는데도 거절돼
+    /// 단이 그 줄만큼 빈다 — 전진량은 baseline 간격이라 다음 줄의 ascent를 통째로
+    /// 싣는데(100pt 표 줄이면 약 90pt), 그 몫은 경계에서 뒤 조각으로 넘어간다.
+    func chargedHeight(_ takenHeight: CGFloat, endingBefore boundary: Int) -> CGFloat {
+        takenHeight - ascentExcess(startingAt: boundary)
+    }
 }

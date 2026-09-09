@@ -184,7 +184,11 @@ public actor HwpPaginator {
     /// 쪽·단에 걸친 문단은 앞 조각의 줄 앵커가 있는 개체를 그 조각이 확정되기 전에
     /// 놓으므로, 배치 뒤 문단 단위 방출(`appendControlBlocks`)이 이 서수를 건너뛰어야
     /// 같은 개체가 두 번 그려지지 않는다. placeParagraphText가 매 호출 비운다.
-    private var inlineControlsPlacedPerFragment: Set<Int> = []
+    ///
+    /// 값은 **그 조각의 1-기반 쪽**이다 (PR 리뷰) — 진단(`walkUnsupported`)은 문단이
+    /// 끝난 뒤 `cachedPages.count + 1`(= 마지막 조각의 쪽)로 보고하는데, 앞 조각에 놓은
+    /// 개체는 그 값이 실제로 그려진 쪽이 아니다. 서수만 남기면 그 사실이 사라진다.
+    private var inlineControlsPlacedPerFragment: [Int: Int] = [:]
     /// 각주 번호 — 저장은 footnoteCoordinator
     private var footnoteCounter: Int {
         get { footnoteCoordinator.footnoteCounter }
@@ -848,7 +852,7 @@ private extension HwpPaginator {
         // 초기화해 앞 문단의 값이 새지 않게 한다. 미룬 컨테이너 각주 버퍼도
         // 열쇠(컨트롤 서수)가 문단 안에서만 유일해 같이 비운다.
         collectedFootnotesDuringPlacement = false
-        inlineControlsPlacedPerFragment = []
+        inlineControlsPlacedPerFragment = [:]
         footnoteCoordinator.resetDeferredNestedFootnotes()
         // 변경 추적 문단이면 배치 전에 paraId를 기록한다 — 배치 중 페이지가
         // 캐시될 때마다 (절대 캐시 run·advanceColumn) 그 조각이 막대를 받게 (#7).
@@ -1597,8 +1601,13 @@ private extension HwpPaginator {
                 - contentHeightUsed
             var takeCount = 0
             var takenHeight = advances.ascentExcess(startingAt: lineIndex)
+            // 적합 판정은 방출 높이와 **같은 식**을 쓴다 (`chargedHeight`) — 보정 없는
+            // 전진량으로 재면 개체 줄 앞의 평범한 줄이 들어가는데도 거절된다 (PR 리뷰).
             while lineIndex + takeCount < lines.count,
-                  takenHeight + advances.advance(lineIndex + takeCount) <= available
+                  advances.chargedHeight(
+                      takenHeight + advances.advance(lineIndex + takeCount),
+                      endingBefore: lineIndex + takeCount + 1
+                  ) <= available
             {
                 takenHeight += advances.advance(lineIndex + takeCount)
                 takeCount += 1
@@ -1647,7 +1656,7 @@ private extension HwpPaginator {
                 lines[lineIndex ..< lineIndex + takeCount],
                 of: paragraphFrame,
                 // 마지막 전진량에 실린 다음 조각 첫 줄의 ascent 초과분은 그 조각 몫이다.
-                height: takenHeight - advances.ascentExcess(startingAt: lineIndex + takeCount),
+                height: advances.chargedHeight(takenHeight, endingBefore: lineIndex + takeCount),
                 attributedString: attributedString,
                 paragraphId: paragraphId,
                 hyperlinkURL: takeCount == lines.count ? hyperlinkURL : fragmentURL,
@@ -1796,7 +1805,12 @@ private extension HwpPaginator {
         )
         collectRecoveredParseFailures(from: paragraph, page: firstPage)
         guard let ctrls = paragraph.ctrlHeaderArray else { return }
-        walkUnsupported(ctrls: ctrls, page: cachedPages.count + 1, numbering: currentParagraphScope)
+        walkUnsupported(
+            ctrls: ctrls,
+            page: cachedPages.count + 1,
+            placedPages: inlineControlsPlacedPerFragment,
+            numbering: currentParagraphScope
+        )
     }
 
     /// recover 모드(`HwpLoadOptions.recoverPartialContent`)가 남긴 placeholder를
@@ -1928,11 +1942,18 @@ private extension HwpPaginator {
     func walkUnsupported(
         ctrls: [CoreHwp.HwpCtrlId],
         page: Int,
+        placedPages: [Int: Int] = [:],
         tableDepth: Int = 0,
         containerDepth: Int = 0,
         numbering: HwpNumberingScope? = nil
     ) {
         for (controlIndex, ctrl) in ctrls.enumerated() {
+            // 앞 조각과 함께 놓인 개체는 문단 끝의 `page`(마지막 조각)가 아니라 그때
+            // 기록한 쪽에 그려져 있다 (PR 리뷰) — 진단의 쪽이 렌더 쪽을 가리켜야
+            // 사용자가 그 개체를 찾아갈 수 있다. 이 값은 그 개체의 **자식** 진단에도
+            // 그대로 이어진다 (안 내용은 개체와 같은 쪽에 그려진다). 맵 자체는 재귀에
+            // 넘기지 않는다 — 서수 공간이 문단 최상위 컨트롤 기준이라서다.
+            let page = placedPages[controlIndex] ?? page
             if let element = unsupportedDetector.classify(ctrl: ctrl, page: page) {
                 collectedUnsupported.append(element)
             }
@@ -2163,14 +2184,14 @@ private extension HwpPaginator {
         depth: Int = 0,
         container: ContainerContext = .none,
         numbering: HwpNumberingScope? = nil,
-        skipping: Set<Int> = []
+        skipping: [Int: Int] = [:]
     ) {
         guard let ctrls = paragraph.ctrlHeaderArray else { return }
         for (ctrlIndex, ctrl) in ctrls.enumerated() {
             // 줄 중간 앵커 문맥은 본문 문단 (depth 0)에서만 유효하다.
             let anchorIndex = depth == 0 ? ctrlIndex : nil
             let children = numbering?.container(controlIndex: ctrlIndex)
-            if skipping.contains(ctrlIndex) {
+            if skipping[ctrlIndex] != nil {
                 appendNestedControlBlocks(of: ctrl, depth: depth, numbering: children)
                 continue
             }
@@ -2225,7 +2246,7 @@ private extension HwpPaginator {
         let numbering = currentParagraphScope
         for ordinal in inlineAnchoredControlOrdinals()
             where ctrls.indices.contains(ordinal)
-            && !inlineControlsPlacedPerFragment.contains(ordinal)
+            && inlineControlsPlacedPerFragment[ordinal] == nil
             && Self.isTreatAsChar(ctrls[ordinal])
             && !Self.containsNotes(ctrls[ordinal])
         {
@@ -2234,7 +2255,11 @@ private extension HwpPaginator {
                 controlIndex: ordinal,
                 numbering: numbering.container(controlIndex: ordinal)
             ) {
-                inlineControlsPlacedPerFragment.insert(ordinal)
+                // 이 시점의 `cachedPages.count + 1`이 곧 이 조각의 쪽이다 — 흐름 분할은
+                // `advanceColumn` **전**에, 절대 캐시 run은 다음 반복 머리의
+                // `cacheCurrentPage` **전**에 여기를 부르고, 줄 안 배치 경로는 쪽을
+                // 확정하지 않으므로 그 사이에 밀리지 않는다.
+                inlineControlsPlacedPerFragment[ordinal] = cachedPages.count + 1
             }
         }
     }

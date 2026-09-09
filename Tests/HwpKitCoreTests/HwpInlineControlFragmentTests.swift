@@ -15,6 +15,11 @@ import XCTest
     final class HwpInlineControlFragmentTests: XCTestCase {
         // MARK: 합성 입력
 
+        /// 절대 캐시 문서를 만들어 모든 쪽을 낸다 (`InlineControlFragmentSupport`).
+        private static func pages(host: CoreHwp.HwpParagraph) async throws -> [HwpPage] {
+            try await pages(of: try InlineControlFragmentSupport.absolutePaginator(host: host))
+        }
+
         private static func inlineTable(instanceId: UInt32) throws -> CoreHwp.HwpCtrlId {
             try InlineControlFragmentSupport.inlineTable(instanceId: instanceId)
         }
@@ -31,59 +36,16 @@ import XCTest
             try await InlineControlFragmentSupport.pages(of: paginator)
         }
 
-        private static func splitHost(
-            controls: [CoreHwp.HwpCtrlId]
-        ) throws -> CoreHwp.HwpParagraph {
-            var host = try HwpSynthetic.splitParagraphWithControlMarkers(
-                lines: [
-                    (characters: 5, marker: true),
-                    (characters: 5, marker: false),
-                    (characters: 5, marker: true),
-                ],
-                segments: [
-                    (location: 2720, height: 1500, textStart: 0),
-                    (location: 4820, height: 1500, textStart: 14),
-                    // location이 줄어드는 지점이 한글의 페이지 절단점 (run 1)
-                    (location: 2720, height: 1500, textStart: 28),
-                ],
-                markerCode: 11
-            )
-            host.ctrlHeaderArray = controls
-            return host
-        }
-
-        /// 절대 캐시 문서 — 본문 뒤에 캐시 문단 둘을 더해 절대 모드 감지(첫 loc > 0인
-        /// 캐시 문단 다수)를 만족시킨다. 둘째 쪽의 뒤 문단은 run 1 바로 아래(4820)다.
-        private static func absolutePaginator(
-            host: CoreHwp.HwpParagraph
-        ) throws -> HwpPaginator {
-            let tail = try (0 ..< 2).map { index in
-                try HwpSynthetic.lineSegParagraph(
-                    "뒤 문단 \(index)",
-                    segments: [(location: Int32(4820 + index * 2100), height: 1500)]
-                )
-            }
-            let section = HwpSynthetic.section(
-                firstParagraphControls: [.section(HwpSynthetic.sectionDef())],
-                bodyParagraphs: [host] + tail
-            )
-            return HwpPaginator(
-                sections: [section],
-                index: HwpIndex(from: CoreHwp.HwpFile()),
-                fontResolver: .testDeterministic
-            )
-        }
-
         // MARK: 절대 캐시 (쪽 경계)
 
         /// 앞 조각의 표는 앞 쪽의 조각 줄 안에, 뒤 조각의 표는 뒤 쪽의 조각 줄 안에 —
         /// 각각 한 번씩만 놓이고 뒤 문단과 겹치지 않는다.
         func testEachFragmentPlacesItsOwnInlineTable() async throws {
-            let host = try Self.splitHost(controls: [
+            let host = try InlineControlFragmentSupport.splitHost(controls: [
                 try Self.inlineTable(instanceId: 1),
                 try Self.inlineTable(instanceId: 2),
             ])
-            let pages = try await Self.pages(of: try Self.absolutePaginator(host: host))
+            let pages = try await Self.pages(host: host)
             expect(pages.count) == 2
             guard pages.count == 2 else { return }
 
@@ -114,7 +76,7 @@ import XCTest
 
         /// 표가 아닌 글자처럼 취급 개체(도형)도 같은 앵커 경로(`appendInlineAnchoredBlock`)다.
         func testEachFragmentPlacesItsOwnInlineShapeObject() async throws {
-            let host = try Self.splitHost(controls: [
+            let host = try InlineControlFragmentSupport.splitHost(controls: [
                 .genShapeObject(HwpSynthetic.inlineShapeObject(
                     width: 6000, height: 1000, instanceId: 11
                 )),
@@ -122,7 +84,7 @@ import XCTest
                     width: 6000, height: 1000, instanceId: 12
                 )),
             ])
-            let pages = try await Self.pages(of: try Self.absolutePaginator(host: host))
+            let pages = try await Self.pages(host: host)
             expect(pages.count) == 2
             guard pages.count == 2 else { return }
 
@@ -144,11 +106,11 @@ import XCTest
         /// 취급 판정과 방출이 별도 갈래이고, 그 갈래가 조각 경로에서 빠지면 도형이
         /// 앵커를 잃고 마지막 조각 뒤 흐름 위치로 간다.
         func testEachFragmentPlacesItsOwnInlineShapeControl() async throws {
-            let host = try Self.splitHost(controls: [
+            let host = try InlineControlFragmentSupport.splitHost(controls: [
                 InlineControlFragmentSupport.inlineRectangle(instanceId: 21),
                 InlineControlFragmentSupport.inlineRectangle(instanceId: 22),
             ])
-            let pages = try await Self.pages(of: try Self.absolutePaginator(host: host))
+            let pages = try await Self.pages(host: host)
             expect(pages.count) == 2
             guard pages.count == 2 else { return }
 
@@ -173,12 +135,12 @@ import XCTest
         /// 마커가 없는 컨트롤(어느 조각의 줄에도 앵커가 없다)은 종전대로 마지막 조각 뒤
         /// 문단 단위 방출이 한 번만 놓는다 — 앞 조각이 가로채지도, 두 번 그리지도 않는다.
         func testControlWithoutMarkerIsPlacedOnceAfterTheLastFragment() async throws {
-            let host = try Self.splitHost(controls: [
+            let host = try InlineControlFragmentSupport.splitHost(controls: [
                 try Self.inlineTable(instanceId: 1),
                 try Self.inlineTable(instanceId: 2),
                 try Self.inlineTable(instanceId: 3),
             ])
-            let pages = try await Self.pages(of: try Self.absolutePaginator(host: host))
+            let pages = try await Self.pages(host: host)
             expect(pages.count) == 2
             guard pages.count == 2 else { return }
 
@@ -207,7 +169,7 @@ import XCTest
                 try Self.inlineTable(instanceId: 1),
                 try Self.inlineTable(instanceId: 2),
             ]
-            let pages = try await Self.pages(of: try Self.absolutePaginator(host: host))
+            let pages = try await Self.pages(host: host)
             expect(pages.count) == 1
             guard let page = pages.first else { return }
             let hostBlock = try XCTUnwrap(Self.hostFragment(on: page))
@@ -243,11 +205,11 @@ import XCTest
                 headerUnknownChildren: [],
                 paragraphArray: [noteHost]
             )]
-            let host = try Self.splitHost(controls: [
+            let host = try InlineControlFragmentSupport.splitHost(controls: [
                 .genShapeObject(textbox),
                 try Self.inlineTable(instanceId: 2),
             ])
-            let pages = try await Self.pages(of: try Self.absolutePaginator(host: host))
+            let pages = try await Self.pages(host: host)
             expect(pages.count) == 2
             guard pages.count == 2 else { return }
 
@@ -293,11 +255,11 @@ import XCTest
                 headerUnknownChildren: [],
                 paragraphArray: [wrapper]
             )]
-            let host = try Self.splitHost(controls: [
+            let host = try InlineControlFragmentSupport.splitHost(controls: [
                 .genShapeObject(textbox),
                 try Self.inlineTable(instanceId: 2),
             ])
-            let pages = try await Self.pages(of: try Self.absolutePaginator(host: host))
+            let pages = try await Self.pages(host: host)
             expect(pages.count) == 2
             guard pages.count == 2 else { return }
 
@@ -318,17 +280,54 @@ import XCTest
             expect(Self.objectBlocks(on: pages[1], instanceId: 2).count) == 1
         }
 
+        /// 앞 조각과 함께 놓인 **미지원** 개체의 진단 쪽은 그 조각의 쪽이다 — 문단이 끝난
+        /// 뒤 보고하는 `cachedPages.count + 1`(마지막 조각의 쪽)을 그대로 쓰면 사용자가
+        /// 개체를 찾아갈 수 없는 쪽 번호가 나온다 (PR 리뷰).
+        func testUnsupportedObjectReportsThePageItsFragmentWasPlacedOn() async throws {
+            let object = HwpSynthetic.inlineShapeObject(width: 6000, height: 1000, instanceId: 31)
+            var component = object.shapeComponentArray[0]
+            component.oleArray = [CoreHwp.HwpShapeComponentOLE(
+                rawPayload: Data(), binaryDataId: nil, rawTrailing: nil, unknownChildren: []
+            )]
+            let ole = CoreHwp.HwpShapeControl(
+                ctrlId: .ole,
+                commonCtrlProperty: object.commonCtrlProperty,
+                rawPayload: Data(),
+                rawTrailing: Data(),
+                shapeComponentArray: [component],
+                eqEditArray: [],
+                eqEditRecords: [],
+                ctrlDataRecords: [],
+                unknownChildren: []
+            )
+            let host = try InlineControlFragmentSupport.splitHost(controls: [
+                .ole(ole),
+                try Self.inlineTable(instanceId: 2),
+            ])
+            let paginator = try InlineControlFragmentSupport.absolutePaginator(host: host)
+            let pages = try await Self.pages(of: paginator)
+            expect(pages.count) == 2
+            guard pages.count == 2 else { return }
+            // 전제: OLE는 앞 쪽 조각의 줄 안에 실제로 놓였다.
+            expect(Self.objectBlocks(on: pages[0], instanceId: 31).count) == 1
+            expect(Self.objectBlocks(on: pages[1], instanceId: 31)).to(beEmpty())
+
+            let unsupported = await paginator.unsupportedElements()
+            let olePages = unsupported.filter { $0.hint.contains("OLE") }.map(\.page)
+            expect(olePages) == [1]
+        }
+
         /// BinData가 없는 글자처럼 취급 그림은 흐름 자리표시자로 폴백하므로 조각에서 놓지
         /// 않는다 — 조각 사이에서 흐름 블록이 쪽을 넘기면 절대 캐시 run 루프가 빈 쪽을
         /// 만든다. 종전대로 마지막 조각 뒤에 자리표시자를 한 번만 낸다.
         func testPictureWithoutDataIsNotPlacedPerFragment() async throws {
-            let host = try Self.splitHost(controls: [
+            let host = try InlineControlFragmentSupport.splitHost(controls: [
                 .genShapeObject(HwpSynthetic.inlinePictureObject(
                     width: 6000, height: 1000, binItemId: 9, instanceId: 31
                 )),
                 try Self.inlineTable(instanceId: 2),
             ])
-            let pages = try await Self.pages(of: try Self.absolutePaginator(host: host))
+            let pages = try await Self.pages(host: host)
             expect(pages.count) == 2
             guard pages.count == 2 else { return }
 
@@ -363,11 +362,11 @@ import XCTest
             }
             noteTable.cellArray[0].paragraphArray = [cell]
             // 첫 줄의 표는 조각에서 놓고, 셋째 줄(마지막 조각)의 표는 각주를 품는다.
-            let host = try Self.splitHost(controls: [
+            let host = try InlineControlFragmentSupport.splitHost(controls: [
                 try Self.inlineTable(instanceId: 1),
                 .table(noteTable),
             ])
-            let pages = try await Self.pages(of: try Self.absolutePaginator(host: host))
+            let pages = try await Self.pages(host: host)
             expect(pages.count) == 2
             guard pages.count == 2 else { return }
 
