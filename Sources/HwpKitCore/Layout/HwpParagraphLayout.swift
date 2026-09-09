@@ -196,6 +196,10 @@ public struct HwpParagraphLayout {
                 + lineHeight
                 + trailingSpacing
                 + paragraphMetrics.paragraphSpacing
+            // 원점 x는 0 그대로다 — 렌더러의 정렬 오프셋을 여기 얹으면 단 폭과 같은
+            // 글자처럼 취급 표(noori 1쪽, 마커 폭이 단 폭을 0.4pt 넘는다)가 가운데 정렬
+            // 오프셋만큼 단 왼쪽 밖으로 밀린다 (한글은 단 왼쪽 끝). 조각 접기
+            // (`fragmentLineFramesAsDrawn`)만 렌더러 오프셋을 따른다.
             let lineFrame = HwpLineFrame(
                 origin: .zero,
                 width: CGFloat(CTLineGetTypographicBounds(overflow.line, nil, nil, nil)),
@@ -311,35 +315,6 @@ private extension HwpParagraphLayout {
         }
 
         return (lineFrames, totalLineHeight)
-    }
-
-    /// 라인의 run에서 컨트롤 마커 (hwp.controlIndex attribute) 위치를 추출한다.
-    func inlineAnchors(in line: CTLine) -> [HwpInlineAnchor] {
-        guard let runs = CTLineGetGlyphRuns(line) as? [CTRun] else { return [] }
-        var anchors: [HwpInlineAnchor] = []
-        for run in runs {
-            let attributes = CTRunGetAttributes(run) as NSDictionary
-            guard let number = attributes[HwpAttributedStringKey.controlIndex] as? NSNumber
-            else { continue }
-            let range = CTRunGetStringRange(run)
-            let xOffset = CTLineGetOffsetForStringIndex(line, range.location, nil)
-            var ascent: CGFloat = 0
-            var descent: CGFloat = 0
-            let width = CGFloat(CTRunGetTypographicBounds(
-                run,
-                CFRange(location: 0, length: 0),
-                &ascent,
-                &descent,
-                nil
-            ))
-            anchors.append(HwpInlineAnchor(
-                controlIndex: number.intValue,
-                xOffset: xOffset,
-                ascent: ascent,
-                width: width
-            ))
-        }
-        return anchors
     }
 
     struct StyleValuePointers {

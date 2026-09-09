@@ -291,28 +291,11 @@ public enum HwpDrawnTextLayout {
             )
         else { return nil }
         let line = overflow.line
-        let naturalWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
         let ascent = overflow.ascent
         let descent = overflow.descent
-        var offsetX: CGFloat = 0
-        if let style = attributedString.attribute(
-            kCTParagraphStyleAttributeName as NSAttributedString.Key,
-            at: 0, effectiveRange: nil
-        ), CFGetTypeID(style as CFTypeRef) == CTParagraphStyleGetTypeID() {
-            var alignment = CTTextAlignment.natural
-            let paragraphStyle = style as! CTParagraphStyle // swiftlint:disable:this force_cast
-            CTParagraphStyleGetValueForSpecifier(
-                paragraphStyle, .alignment,
-                MemoryLayout<CTTextAlignment>.size, &alignment
-            )
-            if alignment == .center {
-                offsetX = (lineWidth - naturalWidth) / 2
-            } else if alignment == .right {
-                // 우측 정렬 overflow 줄은 오른쪽 끝을 맞추기 위해 음수 오프셋 —
-                // x=0 시작이면 잉크가 왼쪽으로 밀린다 (#3).
-                offsetX = lineWidth - naturalWidth
-            }
-        }
+        let offsetX = slightOverflowAlignmentOffset(
+            attributedString: attributedString, lineWidth: lineWidth, line: line
+        )
         return HwpDrawnLine(
             line: line,
             stringRange: NSRange(location: 0, length: attributedString.length),
@@ -323,6 +306,34 @@ public enum HwpDrawnTextLayout {
             ascent: ascent,
             descent: descent
         )
+    }
+
+    /// slight-overflow 한 줄의 가로 오프셋 — 가운데 정렬은 초과분을 좌우로 반씩,
+    /// 오른쪽 정렬은 오른쪽 끝을 맞추기 위해 음수 오프셋(x=0 시작이면 잉크가 왼쪽으로
+    /// 밀린다, #3). 렌더(`slightOverflowSingleLine`)와 접힌 조각의 한 줄 앵커
+    /// (`HwpParagraphLayout.fragmentLineFramesAsDrawn`)가 같은 산식을 써야 개체 앵커
+    /// x가 그려진 글자와 맞는다.
+    static func slightOverflowAlignmentOffset(
+        attributedString: NSAttributedString,
+        lineWidth: CGFloat,
+        line: CTLine
+    ) -> CGFloat {
+        guard let style = attributedString.attribute(
+            kCTParagraphStyleAttributeName as NSAttributedString.Key,
+            at: 0, effectiveRange: nil
+        ), CFGetTypeID(style as CFTypeRef) == CTParagraphStyleGetTypeID() else { return 0 }
+        let naturalWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+        var alignment = CTTextAlignment.natural
+        let paragraphStyle = style as! CTParagraphStyle // swiftlint:disable:this force_cast
+        CTParagraphStyleGetValueForSpecifier(
+            paragraphStyle, .alignment,
+            MemoryLayout<CTTextAlignment>.size, &alignment
+        )
+        switch alignment {
+        case .center: return (lineWidth - naturalWidth) / 2
+        case .right: return lineWidth - naturalWidth
+        default: return 0
+        }
     }
 
     /// 한글 줄 모델은 텍스트든 개체든 베이스라인을 칸 높이의 앵커 비율

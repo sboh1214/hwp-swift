@@ -278,6 +278,11 @@ struct HwpAbsoluteCachePlacer {
 
     /// 여러 run으로 나뉜 (여러 페이지에 걸친) 문단의 run별 텍스트 조각.
     /// CT 라인을 세그먼트 수에 비례해 배분한다 (같은 폭이라 대개 1:1).
+    ///
+    /// 조각의 줄 프레임도 함께 돌려준다 — 조각 문자열·조각 첫 줄 기준으로 되돌린
+    /// 것(`HwpParagraphLayout.fragmentLineFrames`)이라 조각 블록의 줄 앵커 문맥이
+    /// 된다 (#164). 종전엔 여러 run이면 빈 배열을 돌려 앞 조각의 글자처럼 취급
+    /// 표가 앵커를 잃고 흐름 위치로 갔다.
     static func runAttributedSlice(
         runIndex: Int,
         runShare: RunShare,
@@ -302,7 +307,10 @@ struct HwpAbsoluteCachePlacer {
             NSUnionRange($0, $1.attributedRange)
         }
         // 둘째 run부터는 이어지는 조각 — 첫 줄 들여쓰기를 둘째 줄에 맞춘다.
-        return (HwpParagraphLayout.continuationFragment(of: attributedString, range: range), [])
+        return (
+            HwpParagraphLayout.continuationFragment(of: attributedString, range: range),
+            HwpParagraphLayout.fragmentLineFrames(slice, range: range)
+        )
     }
 
     // MARK: 다단 캐시 단 경계

@@ -180,6 +180,15 @@ public actor HwpPaginator {
     /// 문단 단위 수집을 건너뛰어야 이중 수집(번호 중복)이 되지 않는다.
     /// placeParagraphText가 매 호출 초기화하고 절대 캐시 경로만 켠다.
     private var collectedFootnotesDuringPlacement = false
+    /// 이번 배치가 **조각의 쪽에 이미 놓은** 글자처럼 취급 컨트롤의 서수 (#164).
+    /// 쪽·단에 걸친 문단은 앞 조각의 줄 앵커가 있는 개체를 그 조각이 확정되기 전에
+    /// 놓으므로, 배치 뒤 문단 단위 방출(`appendControlBlocks`)이 이 서수를 건너뛰어야
+    /// 같은 개체가 두 번 그려지지 않는다. placeParagraphText가 매 호출 비운다.
+    ///
+    /// 값은 **그 조각의 1-기반 쪽**이다 (PR 리뷰) — 진단(`walkUnsupported`)은 문단이
+    /// 끝난 뒤 `cachedPages.count + 1`(= 마지막 조각의 쪽)로 보고하는데, 앞 조각에 놓은
+    /// 개체는 그 값이 실제로 그려진 쪽이 아니다. 서수만 남기면 그 사실이 사라진다.
+    private var inlineControlsPlacedPerFragment: [Int: Int] = [:]
     /// 각주 번호 — 저장은 footnoteCoordinator
     private var footnoteCounter: Int {
         get { footnoteCoordinator.footnoteCounter }
@@ -705,7 +714,11 @@ private extension HwpPaginator {
         recordSpacingBottomForNextBand(of: paragraph)
         collectParagraphFootnotesUnlessPlacedPerFragment(paragraph)
         collectMemos(from: paragraph)
-        appendControlBlocks(from: paragraph, numbering: currentParagraphScope)
+        appendControlBlocks(
+            from: paragraph,
+            numbering: currentParagraphScope,
+            skipping: inlineControlsPlacedPerFragment
+        )
         collectUnsupported(from: paragraph, firstPage: paragraphFirstPage)
         collectOutline(from: paragraph, firstPage: paragraphFirstPage)
         advanceParagraph()
@@ -839,6 +852,7 @@ private extension HwpPaginator {
         // 초기화해 앞 문단의 값이 새지 않게 한다. 미룬 컨테이너 각주 버퍼도
         // 열쇠(컨트롤 서수)가 문단 안에서만 유일해 같이 비운다.
         collectedFootnotesDuringPlacement = false
+        inlineControlsPlacedPerFragment = [:]
         footnoteCoordinator.resetDeferredNestedFootnotes()
         // 변경 추적 문단이면 배치 전에 paraId를 기록한다 — 배치 중 페이지가
         // 캐시될 때마다 (절대 캐시 run·advanceColumn) 그 조각이 막대를 받게 (#7).
@@ -951,8 +965,10 @@ private extension HwpPaginator {
                 paragraphHeight: paragraphHeight,
                 hyperlinkURL: hyperlinkURL(in: paragraph),
                 paragraphId: paragraph.paraHeader.paraId,
+                paraShape: index.paraShapeOrDefault(for: paragraph),
                 reservedFootnoteHeight: anticipatedFootnotes,
-                beforeGap: beforeGap
+                beforeGap: beforeGap,
+                onFragmentPlaced: { appendInlineControlBlocksForCurrentFragment(from: paragraph) }
             )
             updateBandTrailingSpacing(for: paragraph)
             return true
@@ -997,8 +1013,10 @@ private extension HwpPaginator {
             paragraphHeight: paragraphHeight,
             hyperlinkURL: hyperlinkURL(in: paragraph),
             paragraphId: paragraph.paraHeader.paraId,
+            paraShape: index.paraShapeOrDefault(for: paragraph),
             reservedFootnoteHeight: anticipatedFootnotes,
-            beforeGap: beforeGap
+            beforeGap: beforeGap,
+            onFragmentPlaced: { appendInlineControlBlocksForCurrentFragment(from: paragraph) }
         )
         updateBandTrailingSpacing(for: paragraph)
     }
@@ -1040,6 +1058,9 @@ private extension HwpPaginator {
             prefixLength: HwpTextRunBuilder.numberingLabelLength(of: attributedString)
         ) else { return false }
 
+        // 문단은 첫 단 폭으로 재어졌다 (`columnIndex == 0` 가드) — 뒤 단이 그보다
+        // 넓거나 좁으면 조각을 그 단 기하로 다시 푼다.
+        let measuredWidth = columnFrames.first?.width ?? currentColumnFrame.width
         for (runIndex, run) in runs.enumerated() {
             guard let firstSegment = run.first else { return false }
             var runBottom = Int(firstSegment.lineLocation)
@@ -1049,22 +1070,43 @@ private extension HwpPaginator {
             let start = boundaries[runIndex]
             let length = max(0, boundaries[runIndex + 1] - start)
             guard length > 0 else { continue }
+            let range = NSRange(location: start, length: length)
             columnIndex = runIndex
             contentHeightUsed = 0
             paragraphAnchorTop = currentColumnFrame.minY
             // 둘째 단부터는 이어지는 조각이라 첫 줄 들여쓰기를 둘째 줄에 맞춘다.
             let fragment = HwpParagraphLayout.continuationFragment(
-                of: attributedString, range: NSRange(location: start, length: length)
+                of: attributedString, range: range
+            )
+            // 이 단에 놓이는 줄 (경계는 CT 줄 시작에 스냅돼 있다) — 조각 기준으로
+            // 되돌려 줄 앵커 문맥으로 쓴다 (#164). 줄은 첫 단 폭으로 측정됐으므로 단 폭이
+            // 다르면(비등폭 단, Column 픽스처) 목적 단 폭으로 다시 조판한 줄을 쓴다.
+            let runLines = paragraphFrame.lines.filter {
+                NSLocationInRange($0.attributedRange.location, range)
+            }
+            let fragmentText = placedFragment(
+                runIndex < runs.count - 1
+                    ? HwpTableSplitter.markedAsContinuedFragment(fragment) : fragment,
+                measuredWidth: measuredWidth
             )
             appendBlock(
                 height: max(1, HwpUnits.points(
                     fromHwpUnit: Int32(clamping: runBottom - Int(firstSegment.lineLocation))
                 )),
-                attributedString: runIndex < runs.count - 1
-                    ? HwpTableSplitter.markedAsContinuedFragment(fragment) : fragment,
+                attributedString: fragmentText,
                 hyperlinkURL: hyperlinkURL(in: paragraph),
-                paragraphId: paragraph.paraHeader.paraId
+                paragraphId: paragraph.paraHeader.paraId,
+                anchorLines: fragmentAnchorLines(
+                    runLines[...], range: range, fragment: fragmentText,
+                    paraShape: index.paraShapeOrDefault(for: paragraph),
+                    measuredWidth: measuredWidth
+                )
             )
+            // 앞 단의 줄에 앵커가 있는 글자처럼 취급 개체는 그 단에 지금 놓는다 (#164) —
+            // 마지막 단의 문맥만 남으면 앞 단의 개체가 앵커를 잃고 흐름 위치로 간다.
+            if runIndex < runs.count - 1 {
+                appendInlineControlBlocksForCurrentFragment(from: paragraph)
+            }
         }
         updateBandTrailingSpacing(for: paragraph)
         return true
@@ -1129,12 +1171,17 @@ private extension HwpPaginator {
                 height, runs: runs, run: run, slice: sliceText, frame: paragraphFrame
             )
             paragraphAnchorTop = currentColumnFrame.minY + contentHeightUsed
+            // 여러 run이면 `slice.lines`는 조각 기준 줄이라 앵커 문맥으로만 쓴다.
             appendBlock(
                 height: height,
                 attributedString: sliceText,
                 hyperlinkURL: hyperlinkURL(in: paragraph),
                 paragraphId: paragraph.paraHeader.paraId,
-                lines: slice.lines
+                lines: runs.count == 1 ? slice.lines : [],
+                anchorLines: runs.count == 1 ? [] : renumberedAnchorLines(
+                    of: slice.text, lines: slice.lines,
+                    renumbered: sliceText, paragraph: paragraph
+                )
             )
             lastAbsoluteCacheLoc = run.last?.lineLocation ?? runFirst
             collectFragmentFootnotes(
@@ -1142,6 +1189,11 @@ private extension HwpPaginator {
                 ordinals: ordinalRanges?[runIndex],
                 collectsNested: runIndex == runs.count - 1
             )
+            // 앞 조각의 줄에 앵커가 있는 글자처럼 취급 개체는 이 쪽이 확정되기 전에
+            // 놓는다 (#164). 마지막 조각은 종전대로 문단 단위 방출이 맡는다.
+            if runIndex < runs.count - 1 {
+                appendInlineControlBlocksForCurrentFragment(from: paragraph)
+            }
         }
         collectedFootnotesDuringPlacement = ordinalRanges != nil
         return true
@@ -1205,6 +1257,32 @@ private extension HwpPaginator {
         return slices
     }
 
+    /// 재매김된 조각의 앵커 줄 (PR 리뷰). `slice.lines`는 번호를 다시 쓰기 **전** 문자열로
+    /// 잰 것이라, 번호 폭이 바뀌면 (10) → 9)) 그 마커 **뒤**의 글자처럼 취급 개체가 옛 x·
+    /// 옛 줄에 남는다 — 편집이 있었으면 재매김된 문자열을 같은 단 폭으로 다시 조판해
+    /// 앵커를 뽑는다 (비등폭 단 이월의 `fragmentAnchorLines`와 같은 처방).
+    ///
+    /// 술어가 **인스턴스 동일성**인 것은 우연이 아니라 계약이다 —
+    /// `HwpTextRunBuilder.renumberingNoteMarkers`는 바꿀 것이 없으면 입력을 그대로
+    /// 돌려준다. 번호가 이어지는 문서(코퍼스 전부)에서는 이 갈래가 발동하지 않아
+    /// 렌더가 불변이고 조판 비용도 0이다.
+    ///
+    /// 재조판은 조각을 **홀로** 재므로 중간 조각의 첫 줄에도 첫 줄 들여쓰기가 걸리는
+    /// 근사를 안는다 — 옛 번호로 잰 줄(확실히 어긋난다)과의 교환이라 순 개선이다.
+    private func renumberedAnchorLines(
+        of original: NSAttributedString,
+        lines: [HwpLineFrame],
+        renumbered: NSAttributedString,
+        paragraph: CoreHwp.HwpParagraph
+    ) -> [HwpLineFrame] {
+        guard renumbered !== original else { return lines }
+        return HwpParagraphLayout().layout(
+            attributedString: renumbered,
+            paraShape: index.paraShapeOrDefault(for: paragraph),
+            columnWidth: currentColumnFrame.width
+        ).lines
+    }
+
     /// 조각의 각주/미주 참조 마커를 **그 조각이 실릴 페이지의 번호**로 다시 쓴다.
     ///
     /// 마커 번호는 조판 전에 문단 단위로 한 번 구워지는데, "쪽마다 새로 시작"
@@ -1218,11 +1296,16 @@ private extension HwpPaginator {
     ///
     /// **남는 근사**: 조판 (`paragraphFrame`) 과 슬라이스는 옛 번호로 이미 끝난
     /// 뒤라, 번호 폭이 바뀌면 (9) → 10)) 그 조각 **안**의 줄바꿈이 조판 당시와
-    /// 달라질 수 있다. 조각 **소속**은 문자 범위로 고정돼 텍스트가 다른 쪽으로
-    /// 새지는 않는다. 근본 해결은 순환이다 — 번호는 실릴 쪽이 정해져야 알 수
-    /// 있고, 그 쪽은 배치가, 배치는 조판이 끝나야 안다. 고정점 반복을 새로
-    /// 들이는 값이 모드 2 문서 (코퍼스 0건) 하나에 비해 크다. 가드:
-    /// `testRenumberingKeepsMarkerAndNoteInSyncWhenWidthChanges` (번호 정합만).
+    /// 달라질 수 있다 — 조각의 **높이**(캐시 몫)와 **소속**(문자 범위로 고정)이
+    /// 그 축이다. 텍스트가 다른 쪽으로 새지는 않는다. 근본 해결은 순환이다 —
+    /// 번호는 실릴 쪽이 정해져야 알 수 있고, 그 쪽은 배치가, 배치는 조판이 끝나야
+    /// 안다. 고정점 반복을 새로 들이는 값이 모드 2 문서 (코퍼스 0건) 하나에 비해 크다.
+    ///
+    /// **개체 앵커 축만은 닫혀 있다** (PR 리뷰): 편집이 있으면 배치가 재매김된 조각을
+    /// 다시 조판해 앵커를 뽑으므로 (`renumberedAnchorLines`) 마커 뒤 개체가 옛 x·옛
+    /// 줄에 남지 않는다. 여기는 순환이 아니다 — 번호는 이 시점에 이미 정해져 있다.
+    /// 가드: `testRenumberingKeepsMarkerAndNoteInSyncWhenWidthChanges` (번호 정합),
+    /// `HwpFootnoteRenumberAnchorTests` (앵커 정합).
     private func renumberedNoteMarkers(
         in slice: NSAttributedString,
         paragraph: CoreHwp.HwpParagraph,
@@ -1365,12 +1448,17 @@ private extension HwpPaginator {
         }
     }
 
+    /// `lines`는 온전한 (분할되지 않은) 문단 블록의 줄 — 줄 앵커 문맥과 다단 균형
+    /// 재배치(`bandTextBlocks`)가 함께 읽는다. `anchorLines`는 쪽·단에 걸친 **조각**의
+    /// 조각 기준 줄 프레임(`HwpParagraphLayout.fragmentLineFrames`)으로 줄 앵커 문맥에만
+    /// 쓴다 (#164) — 균형 재배치 단위는 종전대로 조각 블록 통째다.
     func appendBlock(
         height: CGFloat,
         attributedString: NSAttributedString,
         hyperlinkURL: String? = nil,
         paragraphId: UInt32? = nil,
-        lines: [HwpLineFrame] = []
+        lines: [HwpLineFrame] = [],
+        anchorLines: [HwpLineFrame] = []
     ) {
         // 문단의 첫 콘텐츠가 페이지에 놓이는 지금 보류된 쪽 번호 리셋을 확정한다 —
         // 열/쪽에 걸친 조각이 캐시되기 전에 적용해야 시작 페이지가 새 번호를
@@ -1409,8 +1497,14 @@ private extension HwpPaginator {
             )
         ))
         bandTextBlocks.append((currentBlocks.count - 1, lines))
-        // 줄 중간 앵커 기준은 라인 정보가 온전한 (분할되지 않은) 문단 블록만.
-        currentParagraphContext = lines.isEmpty ? nil : (frame, lines)
+        // 줄 중간 앵커 기준: 온전한 문단 블록의 줄, 또는 조각 기준으로 되돌린 조각의 줄 —
+        // 렌더러가 조각을 한 줄로 접으면 앵커도 그 한 줄에서 찾는다.
+        let contextLines = anchorLines.isEmpty
+            ? lines
+            : HwpParagraphLayout.fragmentLineFramesAsDrawn(
+                anchorLines, fragment: immutable, columnWidth: frame.width
+            )
+        currentParagraphContext = contextLines.isEmpty ? nil : (frame, contextLines)
         contentHeightUsed += height
         markBandUsage()
     }
@@ -1432,16 +1526,24 @@ private extension HwpPaginator {
     }
 
     /// reservedFootnoteHeight는 이 문단이 만들 각주 예약분 (본문/각주 겹침 방지).
+    /// `onFragmentPlaced`는 마지막이 아닌 조각을 놓은 직후, 단·쪽을 넘기기 **전**에
+    /// 불린다 — 그 조각의 줄 앵커가 있는 개체를 그 단·쪽에 놓을 기회다 (#164).
+    /// `paraShape`는 조각의 줄 앵커를 목적 단 폭으로 다시 조판할 때 쓴다 — 줄은 이 함수에
+    /// 들어올 때의 단 폭으로 측정됐고, 비등폭 단으로 이월된 조각은 렌더가 그 단 폭으로
+    /// 다시 줄바꿈한다.
     func appendParagraphAcrossColumns(
         attributedString: NSAttributedString,
         paragraphFrame: HwpParagraphFrame,
         paragraphHeight: CGFloat,
         hyperlinkURL: String?,
         paragraphId: UInt32?,
+        paraShape: CoreHwp.HwpParaShape = CoreHwp.HwpParaShape(),
         reservedFootnoteHeight: CGFloat = 0,
-        beforeGap: CGFloat = 0
+        beforeGap: CGFloat = 0,
+        onFragmentPlaced: () -> Void = {}
     ) {
         let lines = paragraphFrame.lines
+        let measuredWidth = currentColumnFrame.width
         let usableHeight = max(1, effectiveContentHeight - reservedFootnoteHeight)
         // 조각들은 독립 CT 프레임이라 문단-앞 간격이 렌더되지 않는다 — 첫 조각
         // 앞에서 커서로 소비하고 이후 산술은 텍스트 몫(textHeight)만 쓴다 (#1).
@@ -1490,31 +1592,24 @@ private extension HwpPaginator {
             return
         }
 
-        // 라인별 실제 전진량(origin.y 델타)으로 조각을 나눈다 — 평균
-        // (textHeight/개수)은 문단 간격까지 라인에 배분해 혼합 높이/간격
-        // 문단을 잘못된 라인에서 절단한다 (#3). 마지막 라인이 잔여(간격 포함)를
-        // 흡수해 조각 높이 총합 = textHeight를 보존한다. origin이 비단조면
-        // 평균으로 폴백한다 (#4와 동일).
-        let strictlyIncreasing = zip(lines, lines.dropFirst())
-            .allSatisfy { $0.origin.y < $1.origin.y }
-        let averageLineHeight = textHeight / CGFloat(lines.count)
-        func lineAdvance(_ index: Int) -> CGFloat {
-            guard strictlyIncreasing else { return max(1, averageLineHeight) }
-            if index + 1 < lines.count {
-                return max(1, lines[index + 1].origin.y - lines[index].origin.y)
-            }
-            return max(1, textHeight - lines[index].origin.y)
-        }
+        // 라인별 실제 전진량(origin.y 델타)으로 조각을 나눈다 — 산식과 조각 첫 줄
+        // ascent 초과분(#164 리뷰)은 `HwpFragmentLineAdvances`.
+        let advances = HwpFragmentLineAdvances(lines: lines, textHeight: textHeight)
         var lineIndex = 0
         while lineIndex < lines.count {
             let available = max(1, effectiveContentHeight - reservedFootnoteHeight)
                 - contentHeightUsed
             var takeCount = 0
-            var takenHeight: CGFloat = 0
+            var takenHeight = advances.ascentExcess(startingAt: lineIndex)
+            // 적합 판정은 방출 높이와 **같은 식**을 쓴다 (`chargedHeight`) — 보정 없는
+            // 전진량으로 재면 개체 줄 앞의 평범한 줄이 들어가는데도 거절된다 (PR 리뷰).
             while lineIndex + takeCount < lines.count,
-                  takenHeight + lineAdvance(lineIndex + takeCount) <= available
+                  advances.chargedHeight(
+                      takenHeight + advances.advance(lineIndex + takeCount),
+                      endingBefore: lineIndex + takeCount + 1
+                  ) <= available
             {
-                takenHeight += lineAdvance(lineIndex + takeCount)
+                takenHeight += advances.advance(lineIndex + takeCount)
                 takeCount += 1
             }
             // 빈 단(gap만 charge)에서 gap+첫 줄이 안 맞는 초과 문단은 gap을 무르고
@@ -1526,7 +1621,8 @@ private extension HwpPaginator {
                     contentHeightUsed = 0
                     paragraphAnchorTop = currentColumnFrame.minY
                 }
-                takenHeight = lineAdvance(lineIndex)
+                takenHeight = advances.ascentExcess(startingAt: lineIndex)
+                    + advances.advance(lineIndex)
                 takeCount = 1
             }
             if takeCount <= 0 {
@@ -1549,36 +1645,119 @@ private extension HwpPaginator {
                 // 빈 단보다 크면 진행 보장을 위해 flush 배치한다. 단 이동이 페이지를
                 // 넘기면 각주 예약이 바뀌므로 usable을 재계산하고 (R55 #4), gap을
                 // 물리면 .paragraph 기준 개체의 anchor도 함께 내린다 (R55 #5).
+                // "첫 줄"의 크기는 적합 판정·방출과 **같은 출처**인 `chargedHeight`다
+                // (PR 리뷰) — 보정 없는 전진량은 baseline 간격이라 다음 줄(개체 줄)의
+                // ascent를 통째로 실어, 실제로는 들어가는 gap을 거절하고 문단을 새 단
+                // top에 붙여 놓는다.
                 let usableAfterAdvance = max(1, effectiveContentHeight - reservedFootnoteHeight)
-                if lineIndex == 0, beforeGap + lineAdvance(0) <= usableAfterAdvance {
+                if lineIndex == 0,
+                   beforeGap + advances.chargedHeight(advances.advance(0), endingBefore: 1)
+                   <= usableAfterAdvance
+                {
                     contentHeightUsed += beforeGap
                     paragraphAnchorTop = currentColumnFrame.minY + contentHeightUsed
                 }
                 continue
             }
-            let slice = lines[lineIndex ..< lineIndex + takeCount]
-            let range = slice.dropFirst().reduce(slice[slice.startIndex].attributedRange) {
-                NSUnionRange($0, $1.attributedRange)
-            }
-            let isWholeParagraph = takeCount == lines.count
-            appendBlock(
-                height: takenHeight,
-                // 이어지는 조각은 첫 줄 들여쓰기를 둘째 줄에 맞춘다 (`continuationFragment`).
-                attributedString: HwpParagraphLayout.continuationFragment(
-                    of: attributedString, range: range
-                ),
-                hyperlinkURL: isWholeParagraph ? hyperlinkURL : fragmentURL,
+            appendLineSliceBlock(
+                lines[lineIndex ..< lineIndex + takeCount],
+                of: paragraphFrame,
+                // 마지막 전진량에 실린 다음 조각 첫 줄의 ascent 초과분은 그 조각 몫이다.
+                height: advances.chargedHeight(takenHeight, endingBefore: lineIndex + takeCount),
+                attributedString: attributedString,
                 paragraphId: paragraphId,
-                lines: isWholeParagraph ? lines : []
+                hyperlinkURL: takeCount == lines.count ? hyperlinkURL : fragmentURL,
+                paraShape: paraShape,
+                measuredWidth: measuredWidth
             )
             lineIndex += takeCount
             if lineIndex < lines.count {
+                onFragmentPlaced()
                 advanceColumn()
                 if didFinishPagination {
                     return
                 }
             }
         }
+    }
+
+    /// 문단 줄 가운데 `slice`만 담은 블록을 놓는다 (`appendParagraphAcrossColumns`의 조각).
+    /// 문단 전체면 온전한 줄 목록을, 조각이면 조각 기준 줄(`fragmentLineFrames`)을 앵커
+    /// 문맥으로 준다 (#164). 이어지는 조각은 첫 줄 들여쓰기를 둘째 줄에 맞춘다
+    /// (`continuationFragment`). 이 블록의 단 폭이 줄을 잰 폭(`measuredWidth`)과 다르면
+    /// 앵커 문맥은 목적 단 폭으로 다시 조판한 줄이다 (문단 전체를 옮긴 경우도 같다 —
+    /// `lines`는 균형 재배치 몫이라 그대로 둔다).
+    private func appendLineSliceBlock(
+        _ slice: ArraySlice<HwpLineFrame>,
+        of paragraphFrame: HwpParagraphFrame,
+        height: CGFloat,
+        attributedString: NSAttributedString,
+        paragraphId: UInt32?,
+        hyperlinkURL: String?,
+        paraShape: CoreHwp.HwpParaShape,
+        measuredWidth: CGFloat
+    ) {
+        let range = slice.dropFirst().reduce(slice[slice.startIndex].attributedRange) {
+            NSUnionRange($0, $1.attributedRange)
+        }
+        let isWholeParagraph = slice.count == paragraphFrame.lines.count
+        let sameWidth = abs(currentColumnFrame.width - measuredWidth) < 0.5
+        let fragment = placedFragment(
+            HwpParagraphLayout.continuationFragment(of: attributedString, range: range),
+            measuredWidth: measuredWidth
+        )
+        appendBlock(
+            height: height,
+            attributedString: fragment,
+            hyperlinkURL: hyperlinkURL,
+            paragraphId: paragraphId,
+            lines: isWholeParagraph ? paragraphFrame.lines : [],
+            anchorLines: isWholeParagraph && sameWidth
+                ? []
+                : fragmentAnchorLines(
+                    slice, range: range, fragment: fragment,
+                    paraShape: paraShape, measuredWidth: measuredWidth
+                )
+        )
+    }
+
+    /// 조각이 실제로 놓이는 단의 기하로 푼 조각 문자열 (#164 리뷰). 단 폭이 줄을 잰
+    /// 폭과 같으면 그대로고, 다르면 단 폭에 딸린 예약 폭('단'·'문단' 기준 개체)을 목적
+    /// 단으로 다시 푼 사본이다 — 예약을 그대로 두면 문단을 처음 잰 단의 폭이 남아,
+    /// 놓이는 단으로 크기를 푸는 paint(`objectSize`)와 갈려 개체가 뒤 글자를 덮는다.
+    ///
+    /// 렌더 문자열과 앵커 문맥(`fragmentAnchorLines`)이 **같은 사본**이어야 마커 x가
+    /// 그려진 자리와 맞으므로, 다시 조판하기 전에 여기서 한 번 갈아 둘 다에 넘긴다.
+    private func placedFragment(
+        _ fragment: NSAttributedString,
+        measuredWidth: CGFloat
+    ) -> NSAttributedString {
+        guard abs(currentColumnFrame.width - measuredWidth) >= 0.5 else { return fragment }
+        return HwpInlineObjectReservation.rescaledForColumn(
+            fragment, resolver: objectSizeResolver
+        )
+    }
+
+    /// 조각의 줄 앵커 문맥 (#164 리뷰): 조각이 놓이는 단의 폭이 줄을 잰 폭과 같으면 측정한
+    /// 줄을 조각 기준으로 되돌린 것이고, 다르면(비등폭 단으로 이월) 렌더러가 그 단 폭으로
+    /// 다시 줄바꿈하므로 조각 문자열을 목적 단 폭으로 다시 조판한 줄이다 — 첫 단 폭의
+    /// 줄로 앵커를 잡으면 마커가 다른 줄·다른 x에 놓여 개체가 글자를 덮는다. 다시 조판한
+    /// 줄은 이미 조각 기준(범위 0부터, 첫 줄 델타 0)이다.
+    private func fragmentAnchorLines(
+        _ slice: ArraySlice<HwpLineFrame>,
+        range: NSRange,
+        fragment: NSAttributedString,
+        paraShape: CoreHwp.HwpParaShape,
+        measuredWidth: CGFloat
+    ) -> [HwpLineFrame] {
+        guard abs(currentColumnFrame.width - measuredWidth) >= 0.5 else {
+            return HwpParagraphLayout.fragmentLineFrames(slice, range: range)
+        }
+        return HwpParagraphLayout().layout(
+            attributedString: fragment,
+            paraShape: paraShape,
+            columnWidth: currentColumnFrame.width
+        ).lines
     }
 
     func hyperlinkURL(in paragraph: CoreHwp.HwpParagraph) -> String? {
@@ -1633,7 +1812,15 @@ private extension HwpPaginator {
         )
         collectRecoveredParseFailures(from: paragraph, page: firstPage)
         guard let ctrls = paragraph.ctrlHeaderArray else { return }
-        walkUnsupported(ctrls: ctrls, page: cachedPages.count + 1, numbering: currentParagraphScope)
+        walkUnsupported(
+            ctrls: ctrls,
+            pages: UnsupportedPageContext(
+                page: cachedPages.count + 1,
+                flowPage: cachedPages.count + 1,
+                placedPages: inlineControlsPlacedPerFragment
+            ),
+            numbering: currentParagraphScope
+        )
     }
 
     /// recover 모드(`HwpLoadOptions.recoverPartialContent`)가 남긴 placeholder를
@@ -1758,18 +1945,60 @@ private extension HwpPaginator {
         )
     }
 
+    /// 진단 순회가 나르는 쪽 문맥 — 컨트롤이 **어디에 그려지는가**로 쪽이 갈린다
+    /// (PR 리뷰). 인자 여럿 대신 한 값으로 묶어 재귀가 셋을 함께 내린다.
+    struct UnsupportedPageContext {
+        /// 부모 컨테이너(최상위는 문단)가 그려진 쪽 — 컨테이너가 콘텐츠로 그리는
+        /// 자손의 쪽이기도 하다.
+        var page: Int
+        /// 컨테이너가 소비하지 않아 문단 끝 흐름으로 나가는 컨트롤의 쪽.
+        /// `collectUnsupported`가 `appendControlBlocks` **뒤에** 돌므로 그 시점의
+        /// `cachedPages.count + 1`이 곧 폴백이 놓인 쪽이다.
+        var flowPage: Int
+        /// 조각과 함께 놓인 **최상위** 컨트롤 서수 → 그 조각의 쪽.
+        var placedPages: [Int: Int] = [:]
+        /// 부모 컨테이너 문맥 (최상위는 `.none`).
+        var parentContainer: HwpPaginator.ContainerContext = .none
+
+        /// `ordinal`번째 컨트롤이 실제로 그려진 쪽.
+        func page(of ctrl: CoreHwp.HwpCtrlId, ordinal: Int) -> Int {
+            if let placed = placedPages[ordinal] {
+                return placed
+            }
+            return HwpPaginator.rendersInsideParent(ctrl, container: parentContainer)
+                ? page : flowPage
+        }
+
+        /// `ctrl` 안 문단을 훑을 때의 문맥 — 서수 공간이 바뀌므로 `placedPages`는 비운다.
+        func inside(_ ctrl: CoreHwp.HwpCtrlId, page: Int) -> Self {
+            Self(
+                page: page,
+                flowPage: flowPage,
+                placedPages: [:],
+                parentContainer: HwpPaginator.containerContext(of: ctrl)
+            )
+        }
+    }
+
     /// `numbering`은 이 컨트롤들을 품은 문단의 번호 열쇠 (#158) — 컨테이너 안
     /// 문단마다 경로로 번호를 찾아 번호 문단 머리 진단(`collectUnsupportedNumberingHeading`)
     /// 을 같은 규칙으로 적용한다. 자식 서수는 컨트롤 없는 문단도 차지하므로
     /// `ctrlHeaderArray` 필터 **앞**에서 센다.
     func walkUnsupported(
         ctrls: [CoreHwp.HwpCtrlId],
-        page: Int,
+        pages: UnsupportedPageContext,
         tableDepth: Int = 0,
         containerDepth: Int = 0,
         numbering: HwpNumberingScope? = nil
     ) {
         for (controlIndex, ctrl) in ctrls.enumerated() {
+            // 앞 조각과 함께 놓인 개체는 문단 끝의 쪽(마지막 조각)이 아니라 그때 기록한
+            // 쪽에 그려져 있다 (PR 리뷰) — 진단의 쪽이 렌더 쪽을 가리켜야 사용자가 그
+            // 개체를 찾아갈 수 있다. 그 쪽은 **컨테이너가 콘텐츠로 그리는 자손**에만
+            // 이어진다 (`rendersInsideParent`) — 컨테이너가 소비하지 않는 중첩 컨트롤
+            // (OLE·수식·oleArray 품은 도형)은 `appendControlBlocks`가 마지막 조각 뒤
+            // 흐름에 내므로 그 쪽은 `flowPage`다 (AGENTS.md "조각의 줄 앵커").
+            let page = pages.page(of: ctrl, ordinal: controlIndex)
             if let element = unsupportedDetector.classify(ctrl: ctrl, page: page) {
                 collectedUnsupported.append(element)
             }
@@ -1811,7 +2040,7 @@ private extension HwpPaginator {
                 guard let nestedCtrls = nested.ctrlHeaderArray else { continue }
                 walkUnsupported(
                     ctrls: nestedCtrls,
-                    page: page,
+                    pages: pages.inside(ctrl, page: page),
                     tableDepth: isTable ? tableDepth + 1 : tableDepth,
                     containerDepth: containerDepth + 1,
                     numbering: scope
@@ -1992,17 +2221,25 @@ private extension HwpPaginator {
     /// `numbering`은 이 문단의 번호 열쇠 (#158) — 표 셀·글상자·각주·머리말 안 문단이
     /// 컨트롤 서수·자식 서수로 자기 번호를 찾아 라벨을 전치한다. 최상위는
     /// `currentParagraphScope`, 중첩은 `appendNestedControlBlocks`가 내려 준다.
+    /// `skipping`은 조각의 쪽에 이미 놓은 최상위 컨트롤 서수 (#164,
+    /// `inlineControlsPlacedPerFragment`) — 개체 자체를 다시 내면 두 번 그려지므로, 그 안
+    /// 문단의 미수집 컨트롤 흐름 폴백(`appendNestedControlBlocks`)만 종전 시점에 낸다.
     func appendControlBlocks(
         from paragraph: CoreHwp.HwpParagraph,
         depth: Int = 0,
         container: ContainerContext = .none,
-        numbering: HwpNumberingScope? = nil
+        numbering: HwpNumberingScope? = nil,
+        skipping: [Int: Int] = [:]
     ) {
         guard let ctrls = paragraph.ctrlHeaderArray else { return }
         for (ctrlIndex, ctrl) in ctrls.enumerated() {
             // 줄 중간 앵커 문맥은 본문 문단 (depth 0)에서만 유효하다.
             let anchorIndex = depth == 0 ? ctrlIndex : nil
             let children = numbering?.container(controlIndex: ctrlIndex)
+            if skipping[ctrlIndex] != nil {
+                appendNestedControlBlocks(of: ctrl, depth: depth, numbering: children)
+                continue
+            }
             // 컨테이너 안 개체 (그림/도형/글상자)는 컨테이너 레이아웃이 이미
             // 콘텐츠로 배치했다 — 페이지 흐름 블록으로 다시 방출하면 컨테이너
             // 밖 좌표에 그려지고 흐름을 밀어낸다 (noori 실측 3쪽).
@@ -2020,6 +2257,217 @@ private extension HwpPaginator {
                 numbering: children
             )
         }
+    }
+
+    /// 방금 놓인 **조각**의 줄에 앵커가 있는 글자처럼 취급 컨트롤을 그 조각의 쪽·단에
+    /// 지금 놓는다 (#164).
+    ///
+    /// 쪽·단에 걸친 문단의 컨트롤은 문단의 모든 조각이 놓인 뒤 한 번에 방출된다 —
+    /// 그때 앞 조각의 쪽은 이미 확정돼 (`cacheCurrentPage`가 줄 문맥을 비운다) 앵커를
+    /// 못 찾은 표·개체가 마지막 조각 뒤 흐름 위치로 갔고, 절대 캐시 모드에서는 다음
+    /// 문단이 캐시 y에 놓이므로 그 자리와 겹쳤다 (헌법주석 667쪽의 인용 표 3개).
+    ///
+    /// 여기서 놓는 것은 **이 조각의 줄에 앵커가 있는** 글자처럼 취급 컨트롤뿐이다 —
+    /// 줄 안 자리가 곧 그 개체의 자리라 조각과 함께 확정할 수 있다. 앵커 없는 글자처럼
+    /// 취급 개체(CT 줄 상한 밖·마커 없는 컨트롤), 자리 차지·글 앞뒤 개체, 쪽 크롬은
+    /// 종전대로 마지막 조각 뒤 `appendControlBlocks`가 맡는다. 자리 차지 표를 조각별로
+    /// 흘리면 앞 조각의 쪽 끝에서 넘쳐 한글에 없는 쪽이 생길 수 있는데, 코퍼스에 그
+    /// 저작이 없어 (다중 run 문단의 컨트롤은 각주·찾아보기·이 글자처럼 취급 표 3개뿐)
+    /// 한글의 자리를 실측할 수 없다. 놓은 서수는 `inlineControlsPlacedPerFragment`에
+    /// 남겨 마지막 방출이 건너뛴다.
+    ///
+    /// 순회는 **이 조각의 앵커**(조각 줄에 그려진 마커)만 돈다 — 조각마다 컨트롤 전부를
+    /// 훑으면 O(run × 컨트롤)이라 run·컨트롤이 각 10,000인 조작 문서가 페이지네이션을
+    /// 세운다 (#95의 각주 조각 순회와 같은 이유). 앵커 합은 마커 수를 넘지 않는다.
+    ///
+    /// 두 가지는 조각에서 놓지 않고 마지막 조각 뒤로 남긴다: (1) 안에 각주·미주를 품은
+    /// 개체 — 그 노트는 조각 단위 각주 귀속(#95)이 마지막 조각에서 걷어 그 쪽에 싣도록
+    /// 미루므로, 개체만 앞 쪽에 놓으면 참조와 각주가 다른 쪽에 갈린다. (2) 줄 안 배치가
+    /// 성립하지 않아 흐름 폴백으로 가는 개체(`appendInlineControlBlock` false) — 흐름
+    /// 블록은 쪽·단을 넘길 수 있고, 조각 사이에서 넘기면 절대 캐시 run 루프가 다음
+    /// 반복 머리에서 거의 빈 쪽을 확정한다.
+    private func appendInlineControlBlocksForCurrentFragment(from paragraph: CoreHwp.HwpParagraph) {
+        guard let ctrls = paragraph.ctrlHeaderArray, currentParagraphContext != nil else { return }
+        let numbering = currentParagraphScope
+        for ordinal in inlineAnchoredControlOrdinals()
+            where ctrls.indices.contains(ordinal)
+            && inlineControlsPlacedPerFragment[ordinal] == nil
+            && Self.isTreatAsChar(ctrls[ordinal])
+            && !Self.containsNotes(ctrls[ordinal])
+        {
+            if appendInlineControlBlock(
+                ctrls[ordinal],
+                controlIndex: ordinal,
+                numbering: numbering.container(controlIndex: ordinal)
+            ) {
+                // 이 시점의 `cachedPages.count + 1`이 곧 이 조각의 쪽이다 — 흐름 분할은
+                // `advanceColumn` **전**에, 절대 캐시 run은 다음 반복 머리의
+                // `cacheCurrentPage` **전**에 여기를 부르고, 줄 안 배치 경로는 쪽을
+                // 확정하지 않으므로 그 사이에 밀리지 않는다.
+                inlineControlsPlacedPerFragment[ordinal] = cachedPages.count + 1
+            }
+        }
+    }
+
+    /// 글자처럼 취급 컨트롤의 **줄 안 배치만** 시도한다 (#164) — 표 레이아웃 실패의
+    /// 자리표시자, 데이터 없는 그림의 자리표시자, 안 문단의 중첩 컨트롤 흐름 방출처럼
+    /// 흐름 커서를 움직이는 방출은 하지 않고 false를 돌려 마지막 조각 뒤 문단 단위
+    /// 방출(`appendControlBlocks`)에 맡긴다. 중첩 컨트롤은 놓은 개체라도 그쪽이 낸다
+    /// (`skipping` 분기). 앵커는 호출자가 이미 확인했으므로 여기서 내는 블록은 전부
+    /// `appendInlineAnchoredTable`·`appendInlineAnchoredBlock`의 줄 안 블록이다.
+    private func appendInlineControlBlock(
+        _ ctrl: CoreHwp.HwpCtrlId,
+        controlIndex: Int,
+        numbering: HwpNumberingScope.Container?
+    ) -> Bool {
+        switch ctrl {
+        case let .table(table):
+            return appendInlineTableBlock(table, controlIndex: controlIndex, numbering: numbering)
+        case let .genShapeObject(genShape):
+            return appendInlineShapeObjectBlocks(
+                components: genShape.shapeComponentArray,
+                commonProperty: genShape.commonCtrlProperty,
+                controlIndex: controlIndex,
+                numbering: numbering
+            )
+        case let .shape(shape),
+             let .line(shape),
+             let .rectangle(shape),
+             let .ellipse(shape),
+             let .arc(shape),
+             let .polygon(shape),
+             let .curve(shape),
+             let .equation(shape),
+             let .equationLegacy(shape),
+             let .picture(shape),
+             let .ole(shape),
+             let .container(shape):
+            if appendEquationBlock(shape, controlIndex: controlIndex) {
+                return true
+            }
+            return appendInlineShapeObjectBlocks(
+                components: shape.shapeComponentArray,
+                commonProperty: shape.commonCtrlProperty ?? CoreHwp.HwpCommonCtrlProperty(),
+                controlIndex: controlIndex,
+                numbering: numbering
+            )
+        default:
+            return false
+        }
+    }
+
+    /// 글자처럼 취급 표의 줄 안 블록 — 레이아웃이 실패하면 (자리표시자 폴백) 놓지 않는다.
+    private func appendInlineTableBlock(
+        _ table: CoreHwp.HwpTable,
+        controlIndex: Int,
+        numbering: HwpNumberingScope.Container?
+    ) -> Bool {
+        guard case let .success(frame) = layoutTable(table, numbering: numbering),
+              appendInlineAnchoredTable(frame, table: table, controlIndex: controlIndex)
+        else { return false }
+        // 줄 안에 놓인 표 뒤의 표를 띠로 되감으면 문서 순서가 뒤집힌다 (#161).
+        paragraphEntryFlow?.bandClosed = true
+        return true
+    }
+
+    /// 글자처럼 취급 개체의 줄 안 블록들 — 그림 요소가 하나라도 BinData를 못 찾으면
+    /// (`appendImageBlock`이 흐름 자리표시자를 내므로) 아무것도 내지 않고 false다.
+    /// 나머지(글상자·차트·도형)는 앵커가 있으니 전부 줄 안 배치다.
+    private func appendInlineShapeObjectBlocks(
+        components: [CoreHwp.HwpShapeComponent],
+        commonProperty: CoreHwp.HwpCommonCtrlProperty,
+        controlIndex: Int,
+        numbering: HwpNumberingScope.Container?
+    ) -> Bool {
+        let picturesHaveData = components.allSatisfy { component in
+            guard let picture = component.pictureArray.first else { return true }
+            let binItemId = picture.pictureProperty.map { UInt32($0.binItemId) }
+                ?? picture.binaryDataId.map(UInt32.init)
+            return binItemId.map { imageStore.data(forBinItemId: $0) != nil } ?? false
+        }
+        guard picturesHaveData else { return false }
+        appendShapeObjectBlocks(
+            components: components,
+            commonProperty: commonProperty,
+            controlIndex: controlIndex,
+            numbering: numbering
+        )
+        return true
+    }
+
+    /// 컨트롤이 품은 문단(셀·글상자·자식) 어딘가에 각주·미주가 있는지 — 깊이 상한은
+    /// 컨테이너 재귀 상한과 같다. 조각별 배치가 이런 개체를 마지막 조각 뒤로 남긴다.
+    nonisolated static func containsNotes(_ ctrl: CoreHwp.HwpCtrlId, depth: Int = 0) -> Bool {
+        guard depth < maximumContainerDepth else { return false }
+        for (nested, _) in childParagraphSequence(of: ctrl) {
+            for child in nested.ctrlHeaderArray ?? [] {
+                switch child {
+                case .footnote, .endnote:
+                    return true
+                default:
+                    if containsNotes(child, depth: depth + 1) {
+                        return true
+                    }
+                }
+            }
+        }
+        return false
+    }
+
+    /// 글자처럼 취급(표 70 `treatAsChar`) 컨트롤인지 — `appendControlBlock`이 개체
+    /// 경로로 보내는 종류만 본다 (표·묶음 개체·도형·그림·수식·OLE).
+    static func isTreatAsChar(_ ctrl: CoreHwp.HwpCtrlId) -> Bool {
+        switch ctrl {
+        case let .table(table):
+            table.commonCtrlProperty.propertyInfo.treatAsChar
+        case let .genShapeObject(genShape):
+            genShape.commonCtrlProperty.propertyInfo.treatAsChar
+        case let .shape(shape),
+             let .line(shape),
+             let .rectangle(shape),
+             let .ellipse(shape),
+             let .arc(shape),
+             let .polygon(shape),
+             let .curve(shape),
+             let .equation(shape),
+             let .equationLegacy(shape),
+             let .picture(shape),
+             let .ole(shape),
+             let .container(shape):
+            shape.commonCtrlProperty?.propertyInfo.treatAsChar ?? false
+        default:
+            false
+        }
+    }
+
+    /// `ctrl`이 품은 문단의 컨테이너 문맥 — 방출(`appendNestedControlBlocks`)과
+    /// 진단(`walkUnsupported`)이 **같은 함수**를 봐야 두 축이 갈리지 않는다 (R29 #1).
+    static func containerContext(of ctrl: CoreHwp.HwpCtrlId) -> ContainerContext {
+        if case .table = ctrl {
+            .tableCell
+        } else if let (_, components) = HwpParagraphObjectCollector.handledControl(ctrl),
+                  components.contains(where: { !$0.textBoxListArray.isEmpty })
+        {
+            .textbox
+        } else {
+            .none
+        }
+    }
+
+    /// 이 컨트롤이 **부모 컨테이너 안에** 그려지는가 — 그렇다면 부모의 쪽이 곧 이
+    /// 컨트롤의 쪽이고, 아니면 문단 끝 흐름 폴백의 쪽이다 (진단 쪽 판정, PR 리뷰).
+    ///
+    /// `appendControlBlocks`의 흐름 억제 분기 **둘**과 같은 술어여야 한다: 셀 안 중첩
+    /// 표(`appendControlBlock`의 `container != .tableCell` 가드 — `handledControl`에
+    /// `.table`이 없어 아래 술어만으로는 잡히지 않는다)와 `rendersInsideContainer`.
+    static func rendersInsideParent(
+        _ ctrl: CoreHwp.HwpCtrlId,
+        container: ContainerContext
+    ) -> Bool {
+        if case .table = ctrl {
+            return container == .tableCell
+        }
+        return rendersInsideContainer(ctrl, container: container)
     }
 
     /// 컨테이너 레이아웃 (HwpTableLayout/HwpTextboxLayout)이 컨테이너
@@ -2111,15 +2559,7 @@ private extension HwpPaginator {
         numbering: HwpNumberingScope.Container? = nil
     ) {
         guard depth < Self.maximumContainerDepth else { return }
-        let container: ContainerContext = if case .table = ctrl {
-            .tableCell
-        } else if let (_, components) = HwpParagraphObjectCollector.handledControl(ctrl),
-                  components.contains(where: { !$0.textBoxListArray.isEmpty })
-        {
-            .textbox
-        } else {
-            .none
-        }
+        let container = Self.containerContext(of: ctrl)
         for (childIndex, (nested, _)) in Self.childParagraphs(of: ctrl).enumerated()
             where nested.ctrlHeaderArray != nil
         {
@@ -2138,19 +2578,7 @@ private extension HwpPaginator {
         controlIndex: Int? = nil,
         numbering: HwpNumberingScope.Container? = nil
     ) {
-        // 글 앞/뒤로 표는 appendFloatingTableIfNeeded가 흐름 밖에 통째로
-        // 배치하므로 저작 폭 (예: 종이 100%)을 단 폭으로 자르지 않는다.
-        let info = table.commonCtrlProperty.propertyInfo
-        let result = tableLayout.layout(
-            table: table,
-            availableWidth: currentColumnFrame.width,
-            index: index,
-            sizeResolver: objectSizeResolver,
-            clampToAvailableWidth: info.treatAsChar
-                || HwpParagraphObjectCollector.consumesFlow(info),
-            numbering: numbering
-        )
-        switch result {
+        switch layoutTable(table, numbering: numbering) {
         case let .failure(element):
             collectedUnsupported.append(HwpUnsupportedElement(
                 kind: element.kind,
@@ -2165,6 +2593,14 @@ private extension HwpPaginator {
             if table.commonCtrlProperty.propertyInfo.treatAsChar,
                appendInlineAnchoredTable(frame, table: table, controlIndex: controlIndex)
             {
+                // 줄 안에 놓인 표의 셀 각주는 표가 그려지는 이 쪽에 담는다 — 띠·세그먼트
+                // 경로와 같은 규약이다 (#164 리뷰). 문단 단위 수집은 표 셀을 건너뛰므로
+                // (`includeTableCells: false`) 여기서 담지 않으면 그 각주가 통째로 빠진다.
+                collectTableCellFootnotes(
+                    cellsByRow: HwpTableLayout.cellRowIndex(for: table),
+                    rows: nil,
+                    numbering: numbering?.tableCells(of: table)
+                )
                 // 줄 안에 놓인 표 뒤의 표를 띠로 되감으면 문서 순서가 뒤집힌다 (#161).
                 paragraphEntryFlow?.bandClosed = true
                 return
@@ -2192,6 +2628,25 @@ private extension HwpPaginator {
                 numbering: numbering
             )
         }
+    }
+
+    /// 본문 표의 레이아웃 — `appendTableBlocks`와 조각별 줄 안 배치(#164)가 같은 입력으로
+    /// 부른다. 글 앞/뒤로 표는 appendFloatingTableIfNeeded가 흐름 밖에 통째로 배치하므로
+    /// 저작 폭 (예: 종이 100%)을 단 폭으로 자르지 않는다.
+    private func layoutTable(
+        _ table: CoreHwp.HwpTable,
+        numbering: HwpNumberingScope.Container?
+    ) -> Result<HwpTableFrame, HwpUnsupportedElement> {
+        let info = table.commonCtrlProperty.propertyInfo
+        return tableLayout.layout(
+            table: table,
+            availableWidth: currentColumnFrame.width,
+            index: index,
+            sizeResolver: objectSizeResolver,
+            clampToAvailableWidth: info.treatAsChar
+                || HwpParagraphObjectCollector.consumesFlow(info),
+            numbering: numbering
+        )
     }
 
     /// 글자처럼 취급 표를 앵커 라인 위치에 배치한다. 앵커가 없으면 false
@@ -3115,6 +3570,13 @@ private extension HwpPaginator {
     func inlineAnchorPosition(for controlIndex: Int?) -> CGPoint? {
         guard let controlIndex, currentParagraphContext != nil else { return nil }
         return inlineAnchorMap()[controlIndex]
+    }
+
+    /// 방금 놓인 문단 블록(조각)의 줄에 앵커가 있는 컨트롤 서수 — 문서 순서(오름차순).
+    /// 조각별 글자처럼 취급 개체 배치(#164)가 이것만 돌아 컨트롤 전수 순회를 피한다.
+    func inlineAnchoredControlOrdinals() -> [Int] {
+        guard currentParagraphContext != nil else { return [] }
+        return inlineAnchorMap().keys.sorted()
     }
 
     /// controlIndex → 앵커 좌표 맵을 컨텍스트당 한 번 만들고 캐시한다 (#12).
