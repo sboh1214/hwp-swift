@@ -8,8 +8,9 @@ import QuartzCore
 
 extension HwpPageLayer {
     /// 줄 하나를 run 단위로 그린다: 음영 배경 → 글리프 (그림자/양각 포함) →
-    /// 취소선/강조점. 밑줄은 CTLineDraw가 그리므로 그림자·양각이 없으면
-    /// CTLineDraw 유지.
+    /// 취소선/강조점. 글리프는 run 하나하나가 다르게 그려질 이유(그림자·양각·
+    /// 글자 위치·한 줄 끝 표식)가 없으면 CTLineDraw 한 번으로, 있으면 run마다
+    /// 그린다 (`drawRun`). 밑줄·취소선 같은 선은 어느 경로든 아래에서 직접 그린다.
     func drawDecoratedLine(_ line: CTLine, origin: CGPoint, in ctx: CGContext) {
         guard let runs = CTLineGetGlyphRuns(line) as? [CTRun], !runs.isEmpty else { return }
 
@@ -22,6 +23,7 @@ extension HwpPageLayer {
             return attributes[HwpAttributedStringKey.shadowColor] != nil
                 || attributes[HwpAttributedStringKey.reliefStyle] != nil
                 || attributes[HwpAttributedStringKey.glyphBaselineOffset] != nil
+                || attributes[HwpAttributedStringKey.lineBreak] != nil
         }
         if needsPerRunDrawing {
             for run in runs {
@@ -157,9 +159,23 @@ extension HwpPageLayer {
 
     /// run 하나를 그림자/양각 설정과 함께 그린다
     func drawRun(_ run: CTRun, origin: CGPoint, in ctx: CGContext) {
+        let attributes = runAttributes(run)
+        // 한 줄 끝(10) run은 줄 나눔만 하고 글리프는 그리지 않는다 (#146) — 한컴
+        // 번들의 HY 계열 폰트는 U+000A에 잉크 있는 글리프(진행 폭 1em)를 가져,
+        // 그대로 그리면 Shift+Enter 자리마다 조판 부호가 보인다. 장식은 조판이
+        // 이미 떼어 냈으므로 (`HwpTextRunBuilder.appendLineBreak`) 글리프만 건너뛴다.
+        guard attributes[HwpAttributedStringKey.lineBreak] == nil else { return }
         ctx.saveGState()
         defer { ctx.restoreGState() }
-        let attributes = runAttributes(run)
+        // CTRunDraw는 run의 텍스트 매트릭스를 **적용하지 않는다** — 조판이 장평
+        // (`faceScaleX`)과 기울임 근사를 CTFont 매트릭스로 싣고 CoreText가 그것을
+        // run 텍스트 매트릭스로 옮겨 두는데, CTLineDraw는 그 매트릭스로 그리고
+        // CTRunDraw는 컨텍스트의 텍스트 매트릭스를 그대로 쓴다. 안 맞추면 장평 95%
+        // 줄이 이 경로에서만 5% 넓게 그려진다 (legacy 각주 실측: 잉크 +8.5%).
+        // 텍스트 매트릭스는 그래픽 상태에 들지 않으므로 restoreGState가 되돌리지
+        // 않는다 — 다음 CTLineDraw를 위해 직접 항등으로 돌린다.
+        ctx.textMatrix = CTRunGetTextMatrix(run)
+        defer { ctx.textMatrix = .identity }
         var origin = origin
         if let shift = (attributes[HwpAttributedStringKey.glyphBaselineOffset] as? NSNumber) {
             // 글자 위치 (표 33): 줄 배치는 그대로, 글리프만 세로 이동

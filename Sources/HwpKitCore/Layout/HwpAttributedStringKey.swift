@@ -75,6 +75,14 @@ public enum HwpAttributedStringKey {
     /// 문자 자체는 빈칸이라 사용자가 입력한 공백과 구별되지 않으므로, 장식
     /// 제거·복사 제외·검색 제외는 이 표식으로만 판정한다.
     public static let emptyLineAnchor = NSAttributedString.Key("hwp.emptyLineAnchor")
+    /// 한 줄 끝(코드 10) run 표식 (NSNumber true, #146) —
+    /// `HwpTextRunBuilder.appendLineBreak`가 낸 U+000A 한 글자에 붙는다. 그 run은
+    /// 줄 나눔과 줄 높이(글꼴·`baseFontSize`)에만 참여하고 **글리프는 그리지
+    /// 않는다** — 렌더러(`HwpPageLayer.drawRun`)가 이 표식의 run을 건너뛴다. 한컴
+    /// 번들의 HY 계열 폰트가 U+000A에 잉크 있는 글리프를 갖고 있어, 그대로 그리면
+    /// Shift+Enter 자리마다 조판 부호가 보였다. 글자 자체는 원문 그대로 U+000A라
+    /// 복사·낭독·검색은 표식과 무관하게 종전과 같다.
+    public static let lineBreak = NSAttributedString.Key("hwp.lineBreak")
     /// 문단 번호·개요 번호 **라벨** 표식 (NSNumber true, #154) —
     /// `HwpTextRunBuilder.appendNumberingHeading`이 문단 앞에 전치한 라벨 글자와
     /// 번호 너비 여백·본문과의 거리를 내는 빈칸에 붙는다. 라벨은 PARA_TEXT에 없는

@@ -386,6 +386,8 @@ extension HwpTextRunBuilder {
     /// 빈 줄 앵커(빈칸)를 넣는다 — `emittedText` 참조.
     ///
     /// **한 줄 끝(10)은 남긴다** — 의도된 줄 나눔이라 U+000A로 조판되어야 한다.
+    /// 다만 그 글자도 라틴 슬롯 폰트로 조판되면 HY 계열에서 잉크가 보이므로,
+    /// 글리프를 그리지 않는 표식 run으로 낸다 (#146, `appendLineBreak`).
     static func controlText(_ unit: UInt16) -> String? {
         switch unit {
         case 13, 24:

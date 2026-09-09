@@ -6,9 +6,10 @@ import Nimble
 import XCTest
 
 #if canImport(CoreText)
-    /// 제어 문자 조판 계약 — `HwpTextRunBuilderMarks.swift`의 짝이다.
-    /// 묶음/고정폭 빈칸(30·31)·하이픈(24)·문단 끝(13)과 그 빈 줄 앵커,
-    /// 그리고 앵커가 사용자 입력 빈칸과 구별되는지를 잠근다.
+    /// 제어 문자 조판 계약 — `HwpTextRunBuilderMarks.swift`·
+    /// `HwpTextRunBuilderLineBreak.swift`의 짝이다. 묶음/고정폭 빈칸(30·31)·
+    /// 하이픈(24)·문단 끝(13)과 그 빈 줄 앵커, 앵커가 사용자 입력 빈칸과 구별되는지,
+    /// 그리고 한 줄 끝(10)의 글리프 없는 표식 run(#146)을 잠근다.
     ///
     /// 헬퍼(`paragraph`·`charShape`·`builder`)는 `HwpTextRunBuilderTests`의
     /// 확장에 있으므로 같은 타입의 확장으로 둔다 — 픽스처를 복제하지 않는다.
@@ -78,6 +79,166 @@ import XCTest
             )
             expect(frame.lines.count) == 2
             expect(foldedFrame.lines.count) == 1
+        }
+
+        func testLineBreakRunIsMarkedAndCarriesNoDecoration() throws {
+            // 한 줄 끝(10)은 U+000A 한 글자로 남되 글리프를 그리지 않는 표식 run이다
+            // (#146) — 한컴 번들의 HY 계열 폰트는 그 코드에 잉크 있는 글리프를 가져,
+            // 라틴 슬롯 폰트로 조판되던 종전에는 Shift+Enter 자리마다 조판 부호가
+            // 보였다. 장식은 run 폭에 그려지므로 (`HwpPageLayerDecorations.runBounds`)
+            // 함께 떼어 낸다 — 진행 폭이 1em인 폰트에서 줄 끝에 밑줄 토막이 남는다.
+            let paragraph = paragraph(text: "가\u{0A}나\u{0D}", runs: [(0, 0)])
+            let underlined = try charShape(property: 1 << 2)
+            let result = builder(shapes: [0: underlined]).build(paragraph: paragraph)
+
+            expect(result.string) == "가\u{0A}나"
+            let lineBreak = result.attributes(at: 1, effectiveRange: nil)
+            expect(lineBreak[HwpAttributedStringKey.lineBreak]).notTo(beNil())
+            // 줄 높이를 정하는 글꼴·기준 크기는 남고 장식 키는 하나도 없다.
+            expect(lineBreak[kCTFontAttributeName as NSAttributedString.Key]).notTo(beNil())
+            expect(lineBreak[HwpAttributedStringKey.baseFontSize]).notTo(beNil())
+            expect(lineBreak[HwpAttributedStringKey.underlineStyle]).to(beNil())
+            expect(lineBreak[HwpAttributedStringKey.underlineColor]).to(beNil())
+            // 표식은 그 한 글자에만 붙고 양옆 글자의 장식은 그대로다.
+            for location in [0, 2] {
+                let neighbor = result.attributes(at: location, effectiveRange: nil)
+                expect(neighbor[HwpAttributedStringKey.lineBreak]).to(beNil())
+                expect(neighbor[HwpAttributedStringKey.underlineStyle]).notTo(beNil())
+            }
+        }
+
+        func testLoneSurrogateBeforeLineBreakStaysOutsideTheMarkedRun() throws {
+            // 짝 없는 상위 서로게이트 뒤에 한 줄 끝이 오면 `string(from:)`이 잔여
+            // U+FFFD와 U+000A를 한 텍스트로 낸다 — 앞부분은 일반 chunk로 가고 표식은
+            // 한 줄 끝 한 글자에만 붙어야 한다. Swift 문자열에는 홀 서로게이트를
+            // 넣을 수 없어 WCHAR 배열을 직접 만든다.
+            var paragraph = paragraph(text: "", runs: [(0, 0)])
+            var paraText = CoreHwp.HwpParaText()
+            paraText.charArray = [0xD83D, 0x0A, 0xAC00, 0x0D].map {
+                CoreHwp.HwpChar(type: .char, value: $0)
+            }
+            paragraph.paraText = paraText
+            let result = builder(shapes: [0: try charShape()]).build(paragraph: paragraph)
+
+            expect(result.string) == "\u{FFFD}\u{0A}가"
+            expect(result.attribute(HwpAttributedStringKey.lineBreak, at: 0, effectiveRange: nil))
+                .to(beNil())
+            expect(result.attribute(HwpAttributedStringKey.lineBreak, at: 1, effectiveRange: nil))
+                .notTo(beNil())
+            expect(result.attribute(HwpAttributedStringKey.lineBreak, at: 2, effectiveRange: nil))
+                .to(beNil())
+        }
+
+        func testLineBreakInheritsThePrecedingRunScriptSlot() throws {
+            // 한 줄 끝의 글꼴은 `HwpScript.detect` 기본값(영문 슬롯)이 아니라 **직전
+            // run의 스크립트 슬롯**이다 — 본문과 다른 폰트가 줄에 섞이면 CTLine
+            // ascent가 그 폰트 기준으로 부푼다 (#137이 문단 끝 코드에서 겪은 축).
+            // 영문 슬롯 장평만 80%로 줘 두 슬롯의 CTFont가 갈리게 한다.
+            let shape = try charShape(faceScaleX: [100, 80, 100, 100, 100, 100, 100])
+            let afterKorean = builder(shapes: [0: shape])
+                .build(paragraph: paragraph(text: "가\u{0A}나\u{0D}", runs: [(0, 0)]))
+            let afterLatin = builder(shapes: [0: shape])
+                .build(paragraph: paragraph(text: "a\u{0A}나\u{0D}", runs: [(0, 0)]))
+            expect(self.sameFont(afterKorean, 1, afterKorean, 0)) == true
+            expect(self.sameFont(afterLatin, 1, afterLatin, 0)) == true
+            // 두 슬롯이 실제로 다른 글꼴이어야 위 두 단언이 뜻을 갖는다.
+            expect(self.sameFont(afterKorean, 0, afterLatin, 0)) == false
+
+            // 직전 run이 없는 문단 첫 글자는 한글 슬롯이다 — 빈 문단 앵커와 같은 선택.
+            let leading = builder(shapes: [0: shape])
+                .build(paragraph: paragraph(text: "\u{0A}가\u{0D}", runs: [(0, 0)]))
+            expect(self.sameFont(leading, 0, leading, 1)) == true
+        }
+
+        func testLineBreakKeepsLineBreakingAndLineGeometry() throws {
+            // 표식 run이 줄 나눔·줄 기하를 바꾸면 안 된다: 한 줄 끝이 든 첫 줄은 그
+            // 글자를 뺀 한 줄 문단과 프레임(원점·베이스라인·폭)이 같고, 둘째 줄이 그
+            // 아래에 생긴다. CoreText는 개행 글리프를 줄 폭에 넣지 않으므로 (실측:
+            // HY울릉도M 15pt에서 "구 분"과 "구 분\n"의 typographic 폭이 같다) 진행
+            // 폭이 1em인 폰트에서도 성립한다.
+            let shapes: [UInt32: CoreHwp.HwpCharShape] = [0: try charShape()]
+            let broken = builder(shapes: shapes)
+                .build(paragraph: paragraph(text: "구 분\u{0A}다음 줄\u{0D}", runs: [(0, 0)]))
+            let single = builder(shapes: shapes)
+                .build(paragraph: paragraph(text: "구 분\u{0D}", runs: [(0, 0)]))
+            let layout = HwpParagraphLayout()
+            let brokenFrame = layout.layout(
+                attributedString: broken, paraShape: CoreHwp.HwpParaShape(), columnWidth: 300
+            )
+            let singleFrame = layout.layout(
+                attributedString: single, paraShape: CoreHwp.HwpParaShape(), columnWidth: 300
+            )
+            expect(brokenFrame.lines.count) == 2
+            expect(singleFrame.lines.count) == 1
+            let first = brokenFrame.lines[0]
+            let only = singleFrame.lines[0]
+            expect(first.origin.x) == only.origin.x
+            expect(first.origin.y) == only.origin.y
+            expect(first.baseline) == only.baseline
+            expect(first.width) == only.width
+            expect(first.attributedRange.location) == 0
+            expect(first.attributedRange.length) == 4
+            expect(brokenFrame.lines[1].origin.y > first.origin.y) == true
+        }
+
+        func testLineBreakDoesNotShiftRightAlignedLines() throws {
+            // 오른쪽 정렬에서 개행 글리프의 진행 폭이 줄 위치에 끼면 첫 줄이 왼쪽으로
+            // 밀린다 — 한 줄 끝이 든 첫 줄의 원점 x는 그 글자를 뺀 한 줄 문단과 같다.
+            // 문단 모양 속성1 bits 2-4 = 정렬 (2 오른쪽).
+            let rightAligned = CoreHwp.HwpParaShape(
+                property1: 2 << 2, marginLeft: 0, lineSpacing: 160, tabDefId: 0, lineSpacing2: 160
+            )
+            let textBuilder = HwpTextRunBuilder(
+                index: HwpIndex(
+                    charShapes: [0: try charShape()],
+                    paraShapes: [0: rightAligned],
+                    borderFills: [:], tabDefs: [:], styles: [:], bullets: [:], numberings: [:],
+                    binData: [:], faceNamesKorean: [:], faceNamesEnglish: [:],
+                    faceNamesChinese: [:], faceNamesJapanese: [:], faceNamesEtc: [:],
+                    faceNamesSymbol: [:], faceNamesUser: [:]
+                ),
+                fontResolver: .testDeterministic
+            )
+            let broken = textBuilder
+                .build(paragraph: paragraph(text: "구 분\u{0A}다음 줄\u{0D}", runs: [(0, 0)]))
+            let single = textBuilder
+                .build(paragraph: paragraph(text: "구 분\u{0D}", runs: [(0, 0)]))
+            let layout = HwpParagraphLayout()
+            let brokenFrame = layout.layout(
+                attributedString: broken, paraShape: rightAligned, columnWidth: 300
+            )
+            let singleFrame = layout.layout(
+                attributedString: single, paraShape: rightAligned, columnWidth: 300
+            )
+            expect(brokenFrame.lines.count) == 2
+            expect(singleFrame.lines.count) == 1
+            let first = brokenFrame.lines[0]
+            let only = singleFrame.lines[0]
+            // 오른쪽 정렬이 실제로 걸렸는지 — 원점이 단 왼쪽이 아니어야 한다.
+            expect(only.origin.x).to(beGreaterThan(100))
+            expect(first.origin.x) == only.origin.x
+        }
+
+        /// 두 자리의 CTFont가 같은가 — `CFEqual`은 매트릭스(장평)까지 본다. CF 타입은
+        /// `as?`가 "항상 성공" 에러라 루트 AGENTS.md의 `CFGetTypeID` + `unsafeBitCast`
+        /// 패턴으로 꺼낸다 (`HwpNumberingHeadingRenderTests.font(at:in:)`와 같다).
+        func sameFont(
+            _ lhs: NSAttributedString, _ lhsLocation: Int,
+            _ rhs: NSAttributedString, _ rhsLocation: Int
+        ) -> Bool {
+            guard let lhsFont = runFont(at: lhsLocation, in: lhs),
+                  let rhsFont = runFont(at: rhsLocation, in: rhs)
+            else { return false }
+            return CFEqual(lhsFont, rhsFont)
+        }
+
+        func runFont(at location: Int, in attributed: NSAttributedString) -> CTFont? {
+            guard let value = attributed.attribute(
+                kCTFontAttributeName as NSAttributedString.Key, at: location, effectiveRange: nil
+            ) else { return nil }
+            let reference = value as CFTypeRef
+            guard CFGetTypeID(reference) == CTFontGetTypeID() else { return nil }
+            return unsafeBitCast(reference, to: CTFont.self)
         }
 
         func testEmptyLastLineAnchorCarriesNoDecoration() throws {
