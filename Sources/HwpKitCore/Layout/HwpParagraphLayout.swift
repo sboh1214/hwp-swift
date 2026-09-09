@@ -313,35 +313,6 @@ private extension HwpParagraphLayout {
         return (lineFrames, totalLineHeight)
     }
 
-    /// 라인의 run에서 컨트롤 마커 (hwp.controlIndex attribute) 위치를 추출한다.
-    func inlineAnchors(in line: CTLine) -> [HwpInlineAnchor] {
-        guard let runs = CTLineGetGlyphRuns(line) as? [CTRun] else { return [] }
-        var anchors: [HwpInlineAnchor] = []
-        for run in runs {
-            let attributes = CTRunGetAttributes(run) as NSDictionary
-            guard let number = attributes[HwpAttributedStringKey.controlIndex] as? NSNumber
-            else { continue }
-            let range = CTRunGetStringRange(run)
-            let xOffset = CTLineGetOffsetForStringIndex(line, range.location, nil)
-            var ascent: CGFloat = 0
-            var descent: CGFloat = 0
-            let width = CGFloat(CTRunGetTypographicBounds(
-                run,
-                CFRange(location: 0, length: 0),
-                &ascent,
-                &descent,
-                nil
-            ))
-            anchors.append(HwpInlineAnchor(
-                controlIndex: number.intValue,
-                xOffset: xOffset,
-                ascent: ascent,
-                width: width
-            ))
-        }
-        return anchors
-    }
-
     struct StyleValuePointers {
         let alignment: UnsafeMutablePointer<CTTextAlignment>
         let firstLineHeadIndent: UnsafeMutablePointer<CGFloat>

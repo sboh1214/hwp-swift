@@ -47,15 +47,27 @@ enum HwpSynthetic {
     }
 
     /// 페이지에 걸친 (캐시 run 여러 개) 문단 + 줄 안 각주 참조 마커 (#95).
-    ///
-    /// `lines`는 줄마다 (평문 글자 수, 줄 끝 각주 참조 마커 유무)다. 줄 사이에
-    /// 줄바꿈 문자(10)를 넣어 **CT 줄 수를 폰트와 무관하게 고정한다** — 각주
-    /// 귀속이 그려진 조각을 근거로 나뉘므로 (`controlOrdinalRanges`) 줄 수가
-    /// 흔들리면 조각 경계도 흔들려 테스트가 기기마다 갈린다. `segments`의
-    /// `location`이 줄어드는 지점이 한글의 페이지 절단점이다.
+    /// `splitParagraphWithControlMarkers`의 각주 참조(코드 17) 형태.
     static func splitParagraphWithNoteMarkers(
         lines: [(characters: Int, marker: Bool)],
         segments: [(location: Int32, height: Int32, textStart: UInt32)]
+    ) throws -> CoreHwp.HwpParagraph {
+        try splitParagraphWithControlMarkers(lines: lines, segments: segments, markerCode: 17)
+    }
+
+    /// 줄 끝에 extended 컨트롤 문자를 둔 여러 줄 문단 (#95·#164).
+    ///
+    /// `lines`는 줄마다 (평문 글자 수, 줄 끝 컨트롤 마커 유무)다. 줄 사이에
+    /// 줄바꿈 문자(10)를 넣어 **CT 줄 수를 폰트와 무관하게 고정한다** — 각주
+    /// 귀속·개체 앵커가 그려진 조각을 근거로 나뉘므로 (`controlOrdinalRanges`·
+    /// 조각 줄 앵커) 줄 수가 흔들리면 조각 경계도 흔들려 테스트가 기기마다
+    /// 갈린다. `segments`의 `location`이 줄어드는 지점이 한글의 페이지 절단점이고,
+    /// 비어 있으면 라인 캐시 없는 문단(CT 흐름 배치)이다. `markerCode`는 컨트롤
+    /// 문자 코드 — 17은 각주 참조, 11은 표·개체.
+    static func splitParagraphWithControlMarkers(
+        lines: [(characters: Int, marker: Bool)],
+        segments: [(location: Int32, height: Int32, textStart: UInt32)],
+        markerCode: CoreHwp.WCHAR
     ) throws -> CoreHwp.HwpParagraph {
         var paragraph = CoreHwp.HwpParagraph()
         var paraText = CoreHwp.HwpParaText()
@@ -68,11 +80,15 @@ enum HwpSynthetic {
                 repeating: CoreHwp.HwpChar(type: .char, value: 0xAC00), count: line.characters
             )
             if line.marker {
-                chars.append(CoreHwp.HwpChar(type: .extended, value: 17))
+                chars.append(CoreHwp.HwpChar(type: .extended, value: markerCode))
             }
         }
         paraText.charArray = chars
         paragraph.paraText = paraText
+        guard !segments.isEmpty else {
+            paragraph.paraLineSeg.paraLineSegInternalArray = []
+            return paragraph
+        }
 
         var payload = Data()
         for segment in segments {
@@ -119,9 +135,13 @@ enum HwpSynthetic {
     /// 라인 세그먼트 캐시 (textStartingIndex/width까지 지정): 단 경계
     /// (loc 리셋 + width 변화)를 담은 다단 배분 캐시를 만든다.
     /// paraHeader.charCount도 텍스트 길이로 채운다 (단 배분의 비례 환산 분모).
+    ///
+    /// `charCount`는 헤더의 WCHAR 수 — 호출부가 `paraText`를 컨트롤 문자가 든 것으로
+    /// 바꿀 때 그 스트림 길이(컨트롤 문자는 8)를 준다. nil이면 `text`의 길이다.
     static func columnCacheParagraph(
         _ text: String,
-        segments: [ColumnCacheSegment]
+        segments: [ColumnCacheSegment],
+        charCount: UInt32? = nil
     ) throws -> CoreHwp.HwpParagraph {
         var paragraph = try textParagraph(text)
         var payload = Data()
@@ -138,7 +158,7 @@ enum HwpSynthetic {
         }
         paragraph.paraLineSeg = try CoreHwp.HwpParaLineSeg.load(payload)
         var headerPayload = Data()
-        withUnsafeBytes(of: UInt32(text.utf16.count).littleEndian) {
+        withUnsafeBytes(of: (charCount ?? UInt32(text.utf16.count)).littleEndian) {
             headerPayload.append(contentsOf: $0)
         }
         withUnsafeBytes(of: UInt32(0).littleEndian) { headerPayload.append(contentsOf: $0) }

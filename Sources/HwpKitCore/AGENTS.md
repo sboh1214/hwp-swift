@@ -67,7 +67,9 @@ CoreHwp.HwpFile
 - `HwpFootnoteCoordinator` — 각주/미주 수집·측정·예약. 카운터·pending·예약 높이·측정 캐시 소유
 - `HwpTableSplitter` — 표 페이지 분할 플랜 (row 세그먼트·절단 기하). 상태 없는 순수 enum
 - `HwpAbsoluteCachePlacer` — 절대 라인 캐시 배치 산식 + 모드·마지막 loc·stale 보정 상태.
-  run별 컨트롤 서수 범위 (`controlOrdinalRanges`) 도 여기서 나온다 — 조각 단위 각주 귀속의 입력 (#95)
+  run별 컨트롤 서수 범위 (`controlOrdinalRanges`) 도 여기서 나온다 — 조각 단위 각주 귀속의 입력 (#95).
+  `runAttributedSlice`는 조각 텍스트와 **조각 기준 줄 프레임**(`fragmentLineFrames`)을 함께 낸다 —
+  조각별 글자처럼 취급 개체 배치의 앵커 문맥 (#164)
 - `HwpOutlineCollector` — 개요·책갈피 탐색 목록 수집 (#77). 문단 수준 비트 →
   스타일 이름 폴백 2단, 제목 정규화, 본문 한정 책갈피 순회. 근거와 함정은 루트
   `AGENTS.md`의 "개요·책갈피 탐색 (#77)"
@@ -1352,21 +1354,58 @@ paraShape와 같은 값**이어야 한다.
   고정점까지 반복하되 pass 상한(32)을 두고, 초과하면 미정렬 `cutY`로 폴백한다
   (엇갈린 라인 그리드로 pass당 0.5pt씩만 내려가는 조작 문서의 로드 지연 차단)
 - 페이지/단 경계로 분할된 문단의 컨트롤은 마지막 조각 처리 후 방출된다 —
-  메모와 treatAsChar 개체가 그것이다 (개체는 흐름 폴백). **직접 각주만 예외**로
-  조각 단위 귀속을 받는다 (#95, 위 각주 항목) — 그것도 **절대 캐시 run 경로
-  한정**이고, 컨테이너 안 각주는 그 컨트롤과 함께 마지막 조각으로 간다. 근본 원인: 컨트롤 수집 (collectMemos/appendControlBlocks)이
-  placeParagraphText 뒤에 오는데 앞 조각 페이지는 cacheCurrentPage에서
-  paintList까지 확정돼 사후 귀속이 불가능하다. 각주가 먼저 풀린 것은 절대 캐시
-  run이 조각 경계를 **원본 WCHAR 위치** (`textStartingIndex`) 로 직접 주기
-  때문이다 — 흐름 분할 (`appendParagraphAcrossColumns`) 과 단 밴드는 경계가 CT
-  라인 인덱스·attributed 범위라 원본 위치로 되돌리는 환산이 필요하고
-  (`columnRunBoundaries`의 비례 환산이 그 선례인데 라인 스냅으로 오차를 흡수하는
-  근사다), 코퍼스에 그 경로 + 각주 사례가 0건이라 근사의 옳고 그름을 증명할
-  수단이 없다. 나머지 컨트롤의 조각 단위 방출은 여전히 후속 과제 — 조각 라인
-  origin이 rebase되지 않아 (base-relative delta 규약) inlineAnchorMap 산식도
-  함께 바꿔야 한다
-- treatAsChar 줄 중간 앵커는 분할되지 않은 문단 블록에서만 동작한다
-  (다단에서 라인 분할된 문단의 개체는 흐름 위치 폴백)
+  메모, 앵커 없는 treatAsChar 개체, 자리 차지·글 앞뒤 개체, 쪽 크롬이 그것이다.
+  **예외 둘**: 직접 각주는 조각 단위 귀속을 받고 (#95, 위 각주 항목 — **절대 캐시
+  run 경로 한정**, 컨테이너 안 각주는 그 컨트롤과 함께 마지막 조각으로 간다),
+  **줄 앵커가 있는 treatAsChar 개체는 그 조각의 쪽·단에 조각과 함께 놓인다** (#164
+  — 절대 캐시 run·흐름 분할·다단 캐시 run 세 경로 모두). 근본 원인: 컨트롤 수집
+  (collectMemos/appendControlBlocks)이 placeParagraphText 뒤에 오는데 앞 조각
+  페이지는 cacheCurrentPage에서 paintList까지 확정돼 사후 귀속이 불가능하다.
+  각주가 먼저 풀린 것은 절대 캐시 run이 조각 경계를 **원본 WCHAR 위치**
+  (`textStartingIndex`) 로 직접 주기 때문이다 — 흐름 분할
+  (`appendParagraphAcrossColumns`) 과 단 밴드는 경계가 CT 라인 인덱스·attributed
+  범위라 원본 위치로 되돌리는 환산이 필요하고 (`columnRunBoundaries`의 비례
+  환산이 그 선례인데 라인 스냅으로 오차를 흡수하는 근사다), 코퍼스에 그 경로 +
+  각주 사례가 0건이라 근사의 옳고 그름을 증명할 수단이 없다. 자리 차지 표의 조각
+  단위 방출은 여전히 후속 과제 — 앞 조각 쪽 끝에서 흘리면 한글에 없는 쪽이 생길
+  수 있고 코퍼스에 그 저작이 없다 (헌법주석 다중 run 문단 648개의 컨트롤은
+  각주·찾아보기·s24/p490의 treatAsChar 표 3개뿐)
+- **조각의 줄 앵커** (#164): 조각 블록은 `appendBlock(anchorLines:)`로 **조각 기준**
+  줄 프레임(`HwpParagraphLayout.fragmentLineFrames` — 문자열 범위는 조각 문자열
+  기준, 원점 y는 조각 첫 줄 기준 델타)을 받아 `currentParagraphContext`가 되고,
+  `bandTextBlocks`(다단 균형 재배치)에는 종전대로 빈 줄 목록을 준다 — 재배치
+  단위를 바꾸지 않기 위해서다. 조각을 놓은 직후 (쪽·단을 넘기기 **전**)
+  `appendInlineControlBlocksForCurrentFragment`가 그 조각의 앵커 맵에 있는
+  treatAsChar 컨트롤만 놓고 서수를 `inlineControlsPlacedPerFragment`에 남기며,
+  배치 뒤 `appendControlBlocks(skipping:)`이 그 서수의 개체는 건너뛰고 **그 안
+  문단의 중첩 컨트롤 흐름 폴백(`appendNestedControlBlocks`)만 종전 시점에 낸다**.
+  조각에서 내는 것은 `appendInlineControlBlock`의 **줄 안 블록뿐**이다 — 표
+  레이아웃 실패·데이터 없는 그림의 자리표시자, 중첩 컨트롤 흐름 방출처럼 흐름
+  커서를 움직이는 폴백은 조각 사이에서 쪽·단을 넘겨 절대 캐시 run 루프가 다음
+  반복 머리에서 거의 빈 쪽을 확정하므로 false로 마지막 조각 뒤에 맡긴다.
+  **안에 각주·미주를 품은 개체(`containsNotes`)도 조각에서 놓지 않는다** — 그
+  노트는 조각 단위 각주 귀속이 마지막 조각에서 걷어 그 쪽에 싣도록 미루므로
+  (`deferNestedNotes`), 개체만 앞 쪽에 두면 참조와 각주가 다른 쪽에 갈린다.
+  다단 캐시 run은 줄을 첫 단 폭으로 재므로 **단 폭이 같을 때만** 앵커 문맥을
+  준다 (비등폭 단의 뒤 단은 종전대로 흐름 폴백). 마지막 조각은 종전대로 문단
+  단위 방출이 맡는다 — 단일 run 문단의 블록 순서가 불변이다. 같은 리뷰가 잡은
+  인접 결함 셋도 함께 고쳤다: ① 줄 안 배치 경로(`appendInlineAnchoredTable`)는
+  **셀 각주를 담지 않았다** — 문단 단위 수집이 표 셀을 건너뛰므로(`includeTableCells:
+  false`) 그 각주가 통째로 빠졌고, 조각 문맥이 생기자 마지막 조각의 표가 흐름
+  폴백(담았다) 대신 이 경로로 오게 됐다 → 띠·세그먼트 경로처럼 담는다 (코퍼스의
+  글자처럼 취급 표·개체엔 셀/글상자 각주가 0건). ② 흐름 분할 조각의 **첫 줄
+  ascent 초과분**(`ascentExcess`): 전진량이 baseline 간격이라 줄 k의 ascent가 줄
+  k−1의 전진량에 실려 앞 조각이 가져가는데 조각은 독립 프레임이라 첫 줄 ascent를
+  자기 상단에서 내린다 — 첫 줄이 큰 개체 줄인 조각이 짧게 재어져 뒤 문단이 개체
+  위에 놓였다. 그 몫을 앞 조각에서 빼고 뒤 조각에 더한다(합 불변, 균등 줄은 0).
+  ③ 렌더러가 조각을 slight-overflow **한 줄로 접으면**(`HwpDrawnTextLayout.
+  slightOverflowLineMetrics` — 문단에서는 다음 줄로 넘어간 좁은 마커가 조각
+  혼자서는 한 줄에 든다) 앵커도 그 한 줄에서 찾는다(`fragmentLineFramesAsDrawn`,
+  `inlineAnchors(in:)`를 측정과 공유). `HwpTableSplitter.paragraphFragment`는 원점을 되돌리지 않는데
+  (`lineAdvances`는 델타만 읽는다) 앵커 산식은 절댓값이라 여기서는 되돌려야 한다.
+  절대 캐시 모드의 조각 텍스트 분할은 CT 줄을 캐시 세그먼트 수에 비례해 나누는
+  근사이므로, 앵커를 보존해도 표의 줄 위치는 CT 줄 피치를 따른다 (헌법주석
+  s24/p490 실측: 결정론 폰트 −14.7pt·한컴 폰트 +3.6pt — 줄 피치 축, #180)
 - 그림 효과 중 PATTERN8x8 (효과 4)은 미지원 — 원본으로 렌더
 - 글자 장식: 밑줄/취소선/음영/그림자/외곽선/양각·음각/강조점/첨자 렌더.
   양각·음각은 밝은/어두운 오프셋 사본 3-pass 근사, 강조점은 항상 채운 점
@@ -1416,7 +1455,8 @@ paraShape와 같은 값**이어야 한다.
 - 단 종류 (일반/배분/평행)와 맞쪽 방향은 미세분화 — 밴드가 닫힐 때 항상 배분,
   방향은 왼쪽/오른쪽만; 다단·흐름 분할로 페이지에 걸친 문단의 각주는 여전히
   마지막 조각의 페이지에 귀속된다 (#95의 조각 단위 귀속은 절대 캐시 run 한정 —
-  위 "페이지/단 경계로 분할된 문단의 컨트롤" 항목의 환산 문제)
+  위 "페이지/단 경계로 분할된 문단의 컨트롤" 항목의 환산 문제; 줄 앵커가 있는
+  treatAsChar 개체는 세 경로 모두 조각과 함께 간다, #164)
 - `HwpPaginator`는 재진입 actor다 (base부터): `page(at:)`를 병렬로 직접 부르면
   같은 문단이 중복 배치될 수 있다 — `HwpDocumentActor.buildDocument`처럼
   순차 호출을 유지할 것

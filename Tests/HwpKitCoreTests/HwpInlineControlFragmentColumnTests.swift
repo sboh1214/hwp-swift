@@ -1,0 +1,245 @@
+import CoreGraphics
+@testable import CoreHwp
+import Foundation
+@testable import HwpKitCore
+import Nimble
+import XCTest
+
+#if canImport(CoreText)
+    /// `HwpInlineControlFragmentTests`·`HwpInlineControlFragmentColumnTests` 공용 입력·조회 (#164).
+    enum InlineControlFragmentSupport {
+        /// 높이는 HWPUNIT (기본 1000 = 10pt).
+        static func inlineTable(
+            instanceId: UInt32, height: UInt32 = 1000
+        ) throws -> CoreHwp.HwpCtrlId {
+            var table = HwpSynthetic.table(
+                cellWidth: 6000, rowHeights: [height],
+                cellParagraphs: [[[try HwpSynthetic.textParagraph("셀")]]]
+            )
+            table.commonCtrlProperty.width = 6000
+            table.commonCtrlProperty.height = height
+            table.commonCtrlProperty.instanceId = instanceId
+            var info = CoreHwp.HwpCommonCtrlPropertyInfo()
+            info.treatAsChar = true
+            // 한글은 고정 크기 개체에 크기 기준 '절대값'을 저장한다 — 기본값(.paper)이면
+            // width/height가 퍼센트로 해석된다.
+            info.widthRelativeToRawValue = 4
+            info.widthRelativeTo = .absolute
+            info.heightRelativeToRawValue = 2
+            info.heightRelativeTo = .absolute
+            table.commonCtrlProperty.propertyInfo = info
+            return .table(table)
+        }
+
+        static func objectBlocks(on page: HwpPage, instanceId: UInt32) -> [AnyHwpBlock] {
+            page.blocks.filter { $0.source?.controlInstanceId == instanceId }
+        }
+
+        /// 그 쪽에 놓인 본문 문단(구역 첫 문단 다음, 서수 1)의 텍스트 블록 — 문단 조각.
+        /// 구역 첫 문단도 구역·단 정의 마커(U+FFFC)를 품으므로 마커로는 가르지 못한다.
+        static func hostFragment(on page: HwpPage) -> AnyHwpBlock? {
+            page.blocks.first {
+                $0.kind == .text && $0.source?.sectionIndex == 0 && $0.source?.paragraphIndex == 1
+            }
+        }
+
+        static func pages(of paginator: HwpPaginator) async throws -> [HwpPage] {
+            var pages: [HwpPage] = []
+            var pageIndex = 0
+            while let page = try await paginator.page(at: pageIndex) {
+                pages.append(page)
+                pageIndex += 1
+            }
+            return pages
+        }
+    }
+
+    /// 다단 캐시 run(단 경계)의 조각별 글자처럼 취급 표 배치와 조각 줄 프레임 (#164) —
+    /// 쪽 경계(절대 캐시·흐름 분할)는 `HwpInlineControlFragmentTests`.
+    final class HwpInlineControlFragmentColumnTests: XCTestCase {
+        private static func inlineTable(instanceId: UInt32) throws -> CoreHwp.HwpCtrlId {
+            try InlineControlFragmentSupport.inlineTable(instanceId: instanceId)
+        }
+
+        private static func objectBlocks(on page: HwpPage, instanceId: UInt32) -> [AnyHwpBlock] {
+            InlineControlFragmentSupport.objectBlocks(on: page, instanceId: instanceId)
+        }
+
+        // MARK: 다단 캐시 run (단 경계)
+
+        /// 한글 캐시가 단별 run으로 나눈 문단(`placeCachedColumnRuns`)의 앞 단 표는 앞 단의
+        /// 조각 줄 안에 놓인다 — 마지막 단의 문맥만 남으면 앞 단의 표가 앵커를 잃고 마지막
+        /// 단 블록 뒤 흐름 위치로 갔다.
+        func testCachedColumnRunsPlaceInlineTableInItsColumn() async throws {
+            let prefix = "word0 word1 "
+            let suffix = (2 ..< 18).map { "word\($0)" }.joined(separator: " ")
+            let text = prefix + "X" + suffix
+            // 컨트롤 문자는 WCHAR 스트림에서 8이라 헤더 글자 수도 그만큼 늘린다.
+            let streamCount = UInt32(prefix.utf16.count + 8 + suffix.utf16.count)
+            let boundary = streamCount / 3
+            var paragraph = try HwpSynthetic.columnCacheParagraph(text, segments: [
+                .init(textIndex: 0, location: 0, height: 1500, width: 13416),
+                .init(textIndex: boundary / 2, location: 2552, height: 1500, width: 13416),
+                .init(textIndex: boundary, location: 0, height: 1500, width: 26837),
+                .init(textIndex: boundary + 20, location: 2552, height: 1500, width: 26837),
+            ], charCount: streamCount)
+            paragraph.paraText = HwpSynthetic.paragraphWithInlineControl(
+                prefix: prefix, suffix: suffix
+            ).paraText
+            // 표는 마커 서수 0에 맞춰 첫 컨트롤이어야 한다 — 단 정의는 마커가 없다.
+            paragraph.ctrlHeaderArray = [
+                try Self.inlineTable(instanceId: 5),
+                .column(HwpSynthetic.column(count: 2, widths: [10339, 20682], gaps: [1747, 0])),
+            ]
+            let section = HwpSynthetic.section(
+                firstParagraphControls: [.section(HwpSynthetic.sectionDef())],
+                bodyParagraphs: [paragraph]
+            )
+            let paginator = HwpPaginator(
+                sections: [section],
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+            let rendered = try await paginator.page(at: 0)
+            let page = try XCTUnwrap(rendered)
+
+            let columns = page.blocks
+                .filter { $0.kind == .text && $0.attributedString?.string.contains("word") == true }
+                .sorted { $0.frame.minX < $1.frame.minX }
+            expect(columns.count) == 2
+            guard columns.count == 2 else { return }
+            let table = try XCTUnwrap(Self.objectBlocks(on: page, instanceId: 5).first)
+            // 표는 왼쪽 단(첫 run) 블록 안에 있다 — 오른쪽 단 블록 뒤가 아니다.
+            expect(table.frame.minX).to(beGreaterThanOrEqualTo(columns[0].frame.minX - 0.01))
+            expect(table.frame.minX) < columns[1].frame.minX
+            expect(table.frame.minY).to(beGreaterThanOrEqualTo(columns[0].frame.minY - 0.01))
+            expect(table.frame.maxY).to(beLessThanOrEqualTo(columns[0].frame.maxY + 0.01))
+            expect(Self.objectBlocks(on: page, instanceId: 5).count) == 1
+        }
+
+        /// 비등폭 단의 뒤 단은 첫 단 폭으로 잰 줄과 다르게 조판되므로 앵커 문맥을 주지
+        /// 않는다 — 뒤 단의 표는 종전대로 마지막 run 블록 뒤 흐름 위치로 한 번만 간다.
+        func testCachedColumnRunsSkipAnchorsInAColumnOfDifferentWidth() async throws {
+            let prefix = (0 ..< 14).map { "word\($0)" }.joined(separator: " ") + " "
+            let suffix = (14 ..< 18).map { "word\($0)" }.joined(separator: " ")
+            let text = prefix + "X" + suffix
+            let streamCount = UInt32(prefix.utf16.count + 8 + suffix.utf16.count)
+            let boundary = streamCount / 3
+            var paragraph = try HwpSynthetic.columnCacheParagraph(text, segments: [
+                .init(textIndex: 0, location: 0, height: 1500, width: 13416),
+                .init(textIndex: boundary / 2, location: 2552, height: 1500, width: 13416),
+                .init(textIndex: boundary, location: 0, height: 1500, width: 26837),
+                .init(textIndex: boundary + 20, location: 2552, height: 1500, width: 26837),
+            ], charCount: streamCount)
+            paragraph.paraText = HwpSynthetic.paragraphWithInlineControl(
+                prefix: prefix, suffix: suffix
+            ).paraText
+            paragraph.ctrlHeaderArray = [
+                try Self.inlineTable(instanceId: 6),
+                .column(HwpSynthetic.column(count: 2, widths: [10339, 20682], gaps: [1747, 0])),
+            ]
+            let section = HwpSynthetic.section(
+                firstParagraphControls: [.section(HwpSynthetic.sectionDef())],
+                bodyParagraphs: [paragraph]
+            )
+            let paginator = HwpPaginator(
+                sections: [section],
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+            let rendered = try await paginator.page(at: 0)
+            let page = try XCTUnwrap(rendered)
+            let columns = page.blocks
+                .filter { $0.kind == .text && $0.attributedString?.string.contains("word") == true }
+                .sorted { $0.frame.minX < $1.frame.minX }
+            expect(columns.count) == 2
+            guard columns.count == 2 else { return }
+            // 마커는 뒤 단(넓은 단) 텍스트에 있다.
+            expect(columns[1].attributedString?.string.contains("\u{FFFC}")) == true
+            let table = try XCTUnwrap(Self.objectBlocks(on: page, instanceId: 6).first)
+            expect(Self.objectBlocks(on: page, instanceId: 6).count) == 1
+            expect(table.frame.minY).to(beGreaterThanOrEqualTo(columns[1].frame.maxY - 0.01))
+        }
+
+        // MARK: 조각 줄 프레임
+
+        /// 조각 줄은 문자열 범위를 조각 기준으로, 원점 y를 조각 첫 줄 기준 델타로 되돌린다.
+        func testFragmentLineFramesRebaseRangesAndOrigins() {
+            let lines = [
+                HwpLineFrame(
+                    origin: CGPoint(x: 0, y: 0), width: 100, baseline: 12,
+                    attributedRange: NSRange(location: 0, length: 10)
+                ),
+                HwpLineFrame(
+                    origin: CGPoint(x: 0, y: 16), width: 100, baseline: 12,
+                    attributedRange: NSRange(location: 10, length: 10),
+                    inlineAnchors: [
+                        HwpInlineAnchor(controlIndex: 0, xOffset: 5, ascent: 8, width: 6),
+                    ]
+                ),
+                HwpLineFrame(
+                    origin: CGPoint(x: 3, y: 32), width: 100, baseline: 12,
+                    attributedRange: NSRange(location: 20, length: 10)
+                ),
+            ]
+            let fragment = HwpParagraphLayout.fragmentLineFrames(
+                lines[1...], range: NSRange(location: 10, length: 20)
+            )
+            expect(fragment.count) == 2
+            expect(fragment.map(\.origin.y)) == [0, 16]
+            expect(fragment.map(\.origin.x)) == [0, 3]
+            expect(fragment.map(\.attributedRange.location)) == [0, 10]
+            expect(fragment.map(\.attributedRange.length)) == [10, 10]
+            expect(fragment.map(\.baseline)) == [12, 12]
+            expect(fragment[0].inlineAnchors.map(\.controlIndex)) == [0]
+            let empty = HwpParagraphLayout.fragmentLineFrames(
+                [], range: NSRange(location: 0, length: 0)
+            )
+            expect(empty).to(beEmpty())
+        }
+
+        /// 조각이 혼자서는 slight-overflow 한 줄에 들어가면 (문단에서는 다음 줄로 넘어간
+        /// 좁은 마커) 렌더러가 한 줄로 그리므로 앵커도 그 한 줄에서 찾는다.
+        func testFragmentAnchorLinesCollapseWhenTheRendererDrawsOneLine() throws {
+            let index = HwpIndex(from: CoreHwp.HwpFile())
+            var paragraph = HwpSynthetic.paragraphWithInlineControl(
+                prefix: String(repeating: "가", count: 20), suffix: ""
+            )
+            paragraph.ctrlHeaderArray = [try Self.inlineTable(instanceId: 1)]
+            let fragment = HwpTextRunBuilder(
+                index: index, fontResolver: .testDeterministic, attributeCache: nil
+            ).build(paragraph: paragraph)
+            let natural = CGFloat(CTLineGetTypographicBounds(
+                CTLineCreateWithAttributedString(fragment), nil, nil, nil
+            ))
+            // 자연 폭이 단 폭의 1.03배 — 렌더러의 한 줄 허용치(1.06배) 안이다.
+            let columnWidth = natural / 1.03
+            let twoLines = [
+                HwpLineFrame(
+                    origin: .zero, width: columnWidth, baseline: 10,
+                    attributedRange: NSRange(location: 0, length: 20)
+                ),
+                HwpLineFrame(
+                    origin: CGPoint(x: 0, y: 16), width: 60, baseline: 10,
+                    attributedRange: NSRange(location: 20, length: 1),
+                    inlineAnchors: [
+                        HwpInlineAnchor(controlIndex: 0, xOffset: 0, ascent: 10, width: 60),
+                    ]
+                ),
+            ]
+            let drawn = HwpParagraphLayout.fragmentLineFramesAsDrawn(
+                twoLines, fragment: fragment, columnWidth: columnWidth
+            )
+            expect(drawn.count) == 1
+            expect(drawn.first?.attributedRange) == NSRange(location: 0, length: 21)
+            expect(drawn.first?.inlineAnchors.map(\.controlIndex)) == [0]
+            // 마커는 한 줄의 끝 — 글자 20개 뒤, 표 폭 60pt 앞에 있다.
+            expect(drawn.first?.inlineAnchors.first?.xOffset ?? 0)
+                .to(beCloseTo(natural - 60, within: 1))
+            // 넉넉한 단에서는 (한 줄 접힘이 아니므로) 원래 줄을 그대로 돌려준다.
+            expect(HwpParagraphLayout.fragmentLineFramesAsDrawn(
+                twoLines, fragment: fragment, columnWidth: natural * 2
+            ).count) == 2
+        }
+    }
+#endif
