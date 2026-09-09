@@ -111,8 +111,14 @@ CharShape 취소선 견본은 두 포맷의 기록이 다르다 — HWP는 취�
 (#136). 2026-09-02 육안 대조 기록의 ".hwp는 아래 단선, .hwpx는 가운데"는 재현되지
 않았다. 우리도 두 포맷을 같은 한 줄로 그린다: 취소선 비트와 밑줄 종류 '글자
 가운데'는 같은 선으로 합류하고, 둘 다 켜져 있으면 색은 밑줄 색이 이긴다(합성
-문서로 실측). 등가 투영은 밑줄 종류를 비교하되 raw 2만 없음으로 접는다 — 진짜
-'글자 위'는 raw 3 ↔ `type="TOP"`으로 같은 `.above`에 모인다 (#149,
+문서로 실측). 등가 투영은 밑줄 종류를 비교하되 **raw 2 + 취소선 비트** 조합만
+없음으로 접는다 — 그 조합이 곧 위의 레거시 이중 기록이고, 접기의 근거인 취소선
+비트도 `ResolvedRun`에 함께 싣는다. **취소선 비트 없는 순수 raw 2는 접지 않는다**:
+`.center`는 그 자체로 선을 그리는 값이라, 무조건 접으면 HWPX `type="CENTER"` 매핑이
+빠지거나 틀려 한쪽만 선이 사라져도 등가 스위트가 통과한다. 코퍼스에 순수 raw 2
+실물이 없어 그 회귀는 합성 header.xml 테스트
+(`HwpUnderlineTypeTests.testHeaderMapperMapsUnderlineCenterToCenter`)가 잡는다.
+진짜 '글자 위'는 raw 3 ↔ `type="TOP"`으로 같은 `.above`에 모인다 (#149,
 `underline-above` 쌍).
 
 ## 구역 부속 표식 (`hp:newNum`·`hp:pageHiding`·`hp:bookmark`·`hp:indexmark`, #169)

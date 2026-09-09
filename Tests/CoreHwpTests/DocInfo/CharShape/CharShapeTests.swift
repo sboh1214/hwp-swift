@@ -40,7 +40,8 @@ final class CharShapeTests: XCTestCase {
         expect(array[15].property.isSuperscript) == true
         expect(array[16].property.isSubscript) == true
         expect(array[18].property.rawValue) == 262_152
-        // raw 2 — 스펙 미정의 값. 글자 위(3)가 아니다 (#149).
+        // raw 2 = 글자 가운데(한컴 공개 모델 `ULT_CENTER`) — 글자 위(3)가
+        // 아니고, 취소선 비트와 함께 쓰이는 취소선의 레거시 이중 기록이다 (#149·#136).
         expect(array[18].property.underlineType) == .center
         expect(array[18].property.strikethrough) == 1
         expect(array[19].property.emphasisType) == .filledCircle
