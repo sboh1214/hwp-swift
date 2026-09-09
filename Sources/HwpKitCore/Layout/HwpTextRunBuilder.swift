@@ -358,6 +358,14 @@ extension HwpTextRunBuilder {
         paragraph: CoreHwp.HwpParagraph,
         to output: NSMutableAttributedString
     ) {
+        // 한 줄 끝(10)은 글리프 없는 전용 run이다 (#146) — `HwpTextRunBuilderLineBreak`.
+        if Self.endsWithLineBreak(text) {
+            splitLineBreak(
+                text, shapeId: shapeId, trackMark: trackMark, memoAnchor: memoAnchor,
+                into: &chunk, paragraph: paragraph, to: output
+            )
+            return
+        }
         // 형식 문자(Cf)·결합 마크(M*)는 단독 스크립트가 없고 앞 글자와 한
         // 글리프로 결합하는 문자다 — 직전 스크립트를 상속해 같은 폰트 run에
         // 남겨야 CoreText가 이모지 ZWJ 시퀀스·아랍 결합열을 형성한다 (#4).

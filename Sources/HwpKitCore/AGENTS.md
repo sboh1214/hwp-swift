@@ -805,6 +805,30 @@ p2 두 쪽만 갈려 재기록했다).
   재사용, 미해결 id 64개 → 항목 1개, 상한 초과 시 삽입 중단 + 결과 불변) —
   캐시를 건드리면 `hitCount`/`missCount`/`entryCount` (테스트 전용 관측점) 로
   단언할 것
+- **한 줄 끝(코드 10)은 글리프 없는 표식 run이다** (#146,
+  `HwpTextRunBuilderLineBreak`). U+000A는 CoreText의 하드 개행이자 복사 문자열의
+  줄 나눔이라 문단 끝(13)처럼 접을 수 없는데, 그 글자가 `HwpScript.detect` 기본값
+  (영문)으로 **라틴 슬롯 폰트**에 조판되면 두 폐해가 난다: ① 한컴 번들의 HY 계열
+  (HY울릉도M·HYnamM 등)은 U+000A에 잉크 있는 글리프(진행 폭 1em)를 가져 Shift+Enter
+  자리마다 조판 부호가 보이고, ② 본문과 다른 폰트가 줄에 섞여 CTLine ascent가 그
+  폰트 기준으로 바뀐다 (#137이 문단 끝에서 겪은 축 — 한글은 한 줄 끝을 아예 그리지
+  않으며 줄 높이도 폰트가 아니라 글자 크기로 정한다: 2026-09-09 실측, 여백만 지정
+  0에서도 모든 줄이 `vertsize=1500`·`baseline=1275`). 그래서 `accumulate`가 이
+  글자를 `splitLineBreak`로 갈라 (a) `HwpAttributedStringKey.lineBreak` 표식을 달고
+  렌더러(`HwpPageLayer.drawRun`)가 그 run의 글리프를 건너뛰며, (b) 글꼴은 **직전
+  run의 스크립트 슬롯**을 물려받아 (없으면 한글 슬롯 — 빈 문단 앵커와 같은 선택)
+  줄에 새 폰트를 들이지 않고, (c) 속성은 허용 목록(글꼴·`baseFontSize`·글자 색)으로
+  깎아 밑줄·취소선·음영·변경 추적 표시가 run 폭에 그려지지 않게 한다. 투명 글자색으로
+  감추지 않는 이유는 그 색이 복사 RTF와 PDF에 그대로 실리기 때문이다. 글자 자체는
+  U+000A 그대로라 복사·낭독·검색·캐럿은 표식과 무관하게 종전과 같다. CoreText는 개행
+  글리프를 줄 폭(`CTLineGetTypographicBounds`)에 넣지 않으므로 어느 폰트에서도 줄
+  나눔·정렬은 그대로다. 남는 것은 **폰트 구성이 다른 줄 사이의 ±1pt 피치 드리프트**
+  (CT가 min=max 줄 높이 안에서 ascent/descent를 정수로 나누는 방식이 폰트마다 달라
+  17/7·18/6으로 갈린다)인데, 이것은 한 줄 끝이 없는 줄에서도 같은 크기로 나는
+  기존 축이다 — 한 줄 끝 run이 물려받기를 하므로 그 줄은 이제 한 줄 끝이 없는 줄과
+  정확히 같은 구성이 된다. 가드는 `HwpTextRunBuilderControlCharacterTests`의
+  `testLineBreak*` 4종과 `HwpPageLayerLineBreakTests` (렌더러 skip · 한컴 폰트 opt-in
+  실물 재현)
 - 실측 튜닝 상수는 `Tuning/HwpRenderTuning.swift` 에 근거 주석과 함께 —
   값 변경은 fidelity 전수 + 블록 스냅샷 + 실물 대조 필수 (값 핀:
   `HwpRenderTuningTests`). 차트 투영 기하 (`HwpChartPainter`)는 예외로 in-place

@@ -142,6 +142,32 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
 
 선택·검색 하이라이트 오버레이 (`CAShapeLayer`) 는 그 일괄 갱신 대상이 아니라 `updateHighlightOverlays` 가 **매 호출** 부모 페이지 레이어의 `contentsScale` 을 물려준다 — 벡터 path 라 페이지와 다른 배율로 래스터하면 확대에서 가장자리가 뭉개진다. **물려받기만 하므로 배율 갱신이 오버레이를 다시 칠해 줘야 한다** (`updateLayerContentsScale` 이 선택·검색 갱신을 함께 부른다, #75 리뷰): 줌 종료는 페이지 레이어 배율만 바꾸고, macOS 는 가시 범위가 같으면 `clipViewBoundsDidChange` 가 조기 반환하며 iOS 는 `scrollViewDidZoom` 이 **배율 갱신보다 먼저** 오버레이를 칠하므로, 그 두 줄이 없으면 하이라이트가 옛 배율로 남아 흐려진다. 가드는 양 플랫폼의 `testOverlayScaleFollowsPageLayerAfterScaleChange`.
 
+## 텍스트 줄 그리기 (HwpPageLayerDecorations)
+
+- 글리프는 두 경로 중 하나다: run 하나하나가 다르게 그려질 이유가 없으면
+  `CTLineDraw` 한 번, 있으면 run마다 `CTRunDraw` (`drawRun`). 갈래를 정하는 속성은
+  넷 — 그림자(`shadowColor`)·양각(`reliefStyle`)·글자 위치(`glyphBaselineOffset`)·
+  **한 줄 끝 표식(`lineBreak`, #146)**. 두 경로는 같은 글리프 위치를 그리므로 픽셀이
+  같아야 한다 (`HwpPageLayerLineBreakTests`가 표식 줄의 다른 run 잉크가 CTLineDraw
+  경로와 같음을 잠근다). run 단위 경로에 새 조건을 더할 때는 `needsPerRunDrawing`과
+  `drawRun` 둘을 함께 고칠 것.
+- **`drawRun`은 run의 텍스트 매트릭스를 직접 적용한다** (`CTRunGetTextMatrix`, #146).
+  조판이 장평(`faceScaleX`)과 기울임 근사를 CTFont 매트릭스로 싣고 CoreText가 그것을
+  run 텍스트 매트릭스로 옮겨 두는데, CTLineDraw는 그 매트릭스로 그리고 **CTRunDraw는
+  컨텍스트의 텍스트 매트릭스를 그대로 쓴다**. 이 한 줄이 없던 시절 run 단위 경로
+  (그림자·양각·글자 위치 줄)는 장평 95% 글꼴을 본래 폭으로 그렸다 (legacy 각주 실측:
+  잉크 +8.5%) — 그 경로가 드물어 묻혀 있던 것이 한 줄 끝 표식으로 흔해지면서
+  드러났다. 텍스트 매트릭스는 그래픽 상태에 들지 않으므로 `restoreGState`가 되돌리지
+  않는다 — `drawRun`이 끝에 항등으로 직접 돌려 다음 CTLineDraw를 지킨다. 가드는
+  `HwpPageLayerLineBreakTests.testPerRunDrawingKeepsTheRunTextMatrix`(장평 80% 글꼴의
+  두 경로 픽셀 동치).
+- **한 줄 끝(코드 10) 표식 run은 글리프를 건너뛴다.** 조판(`HwpTextRunBuilder.appendLineBreak`)이
+  U+000A 한 글자에 `HwpAttributedStringKey.lineBreak`를 달아 보내고 장식 속성은 이미
+  떼어 냈으므로, 여기서는 `drawRun` 첫머리의 guard 하나가 전부다. 이 guard가 빠지면
+  한컴 번들 HY 계열 폰트(U+000A에 잉크 있는 글리프, 진행 폭 1em)에서 Shift+Enter
+  자리마다 조판 부호가 다시 그려진다. 선 장식(밑줄·취소선·강조점·탭 리더)은 경로와
+  무관하게 아래에서 직접 그리며, 표식 run은 장식 키가 없어 자연히 빠진다.
+
 ## 줄 배치 캐시 (HwpPageLayer)
 
 `.drawText` 조판 결과 (`HwpDrawnTextLayout.lines`) 를 레이어 인스턴스 안에 캐시한다 — 재드로마다 framesetter 를 다시 돌리지 않는다. 재드로는 흔하다: contentsScale 변경 (핀치 줌 종료·Retina), bounds 변경 (`needsDisplayOnBoundsChange`), 이미지 디코딩 완료·디퍼드 용량 확보 콜백. 줄 기하는 pt 단위라 이 중 **어느 것도 캐시를 무효화하지 않는다** — 그게 이 캐시의 요점이다. `drawText` 는 조회 (`cachedDrawnLines`) · 순수 조판 (`typesetLines`) · 렌더 (`drawTextLines`) 셋으로 쪼개져 있어, 배치가 `pageHeight`·`bounds`·`contentsScale` 과 무관하다는 사실이 구조로 드러난다.
