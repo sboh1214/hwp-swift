@@ -196,6 +196,10 @@ public struct HwpParagraphLayout {
                 + lineHeight
                 + trailingSpacing
                 + paragraphMetrics.paragraphSpacing
+            // 원점 x는 0 그대로다 — 렌더러의 정렬 오프셋을 여기 얹으면 단 폭과 같은
+            // 글자처럼 취급 표(noori 1쪽, 마커 폭이 단 폭을 0.4pt 넘는다)가 가운데 정렬
+            // 오프셋만큼 단 왼쪽 밖으로 밀린다 (한글은 단 왼쪽 끝). 조각 접기
+            // (`fragmentLineFramesAsDrawn`)만 렌더러 오프셋을 따른다.
             let lineFrame = HwpLineFrame(
                 origin: .zero,
                 width: CGFloat(CTLineGetTypographicBounds(overflow.line, nil, nil, nil)),

@@ -124,5 +124,57 @@ import XCTest
             expect(followerBlock.frame.minY).to(beGreaterThanOrEqualTo(fragment.frame.maxY - 0.01))
             expect(followerBlock.frame.minY).to(beGreaterThanOrEqualTo(table.frame.maxY - 0.01))
         }
+
+        /// 라인 캐시 없는 문단이 비등폭 단(134.16 → 268.37pt)으로 이월되면 렌더러는 뒤
+        /// 단 폭으로 다시 줄바꿈하므로, 조각의 앵커도 그 단 폭으로 다시 조판한 줄에서
+        /// 찾는다 — 첫 단 폭의 줄로 잡으면 마커가 다른 줄·다른 x에 놓여 표가 글자를 덮는다.
+        func testFlowSplitAnchorsFollowTheDestinationColumnWidth() async throws {
+            let prefix = (0 ..< 40).map { "word\($0)" }.joined(separator: " ") + " "
+            let suffix = " " + (40 ..< 46).map { "word\($0)" }.joined(separator: " ")
+            var paragraph = HwpSynthetic.paragraphWithInlineControl(prefix: prefix, suffix: suffix)
+            paragraph.ctrlHeaderArray = [
+                try Self.inlineTable(instanceId: 7),
+                .column(HwpSynthetic.column(count: 2, widths: [10339, 20682], gaps: [1747, 0])),
+            ]
+            // 본문 200pt: 좁은 첫 단(134pt, 줄당 세 단어)은 줄 열하나(33단어)라 마커는 넓은
+            // 둘째 단으로 넘어간다.
+            let section = HwpSynthetic.section(
+                firstParagraphControls: [
+                    .section(HwpSynthetic.sectionDef(pageHeight: 9920 + 20000)),
+                ],
+                bodyParagraphs: [paragraph]
+            )
+            let paginator = HwpPaginator(
+                sections: [section],
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+            let pages = try await Self.pages(of: paginator)
+            let tablePage = try XCTUnwrap(pages.firstIndex {
+                !Self.objectBlocks(on: $0, instanceId: 7).isEmpty
+            })
+            let page = pages[tablePage]
+            let table = try XCTUnwrap(Self.objectBlocks(on: page, instanceId: 7).first)
+            let host = try XCTUnwrap(page.blocks.first {
+                $0.kind == .text && $0.attributedString?.string.contains("\u{FFFC}") == true
+                    && $0.source?.paragraphIndex == 1
+            })
+            // 마커가 든 조각은 넓은 단(268.37pt)에 있고, 표는 그 조각 블록 안 **그려지는
+            // 마커의 줄**에 있다 — 첫 단 폭의 줄로 잡으면 단 왼쪽 끝(x 241.87)의 다음 줄에
+            // 놓여 글자를 덮었다. x는 양쪽 정렬 재조판 몫만큼 갈릴 수 있어 줄 안 위치로만 본다.
+            expect(host.frame.width).to(beCloseTo(268.37, within: 0.5))
+            expect(table.frame.minY).to(beGreaterThanOrEqualTo(host.frame.minY - 0.01))
+            expect(table.frame.maxY).to(beLessThanOrEqualTo(host.frame.maxY + 0.01))
+            let drawn = try XCTUnwrap(InlineControlFragmentSupport.drawnMarker(
+                in: try XCTUnwrap(host.attributedString),
+                origin: host.frame.origin,
+                lineWidth: host.frame.width,
+                controlIndex: 0
+            ))
+            expect(table.frame.minY).to(beCloseTo(drawn.baselineY - 10, within: 2))
+            expect(table.frame.minX).to(beGreaterThan(host.frame.minX + 20))
+            expect(table.frame.minX).to(beLessThanOrEqualTo(drawn.x + 0.5))
+            expect(pages.flatMap { Self.objectBlocks(on: $0, instanceId: 7) }.count) == 1
+        }
     }
 #endif

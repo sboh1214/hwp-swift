@@ -56,13 +56,34 @@ extension HwpParagraphLayout {
                   attributedString: fragment, lineWidth: max(1, columnWidth)
               )
         else { return frames }
-        return [HwpLineFrame(
-            origin: .zero,
+        return [slightOverflowLineFrame(
+            overflow, attributedString: fragment, columnWidth: max(1, columnWidth)
+        )]
+    }
+
+    /// 접힌 조각의 slight-overflow 한 줄 프레임. 원점 x는 렌더러
+    /// (`HwpDrawnTextLayout.slightOverflowSingleLine`)가 가운데·오른쪽 정렬에 주는 가로
+    /// 오프셋이다 — 0으로 두면 오른쪽 정렬 조각의 개체 앵커가 그려진 글자보다 초과분만큼
+    /// 오른쪽에 놓여 단 경계를 넘는다 (PR 리뷰). 측정의 한 줄 분기(`layout`)는 원점 0을
+    /// 유지한다 — 단 폭과 같은 글자처럼 취급 표의 마커가 단 폭을 살짝 넘어 가운데
+    /// 정렬 오프셋으로 단 밖에 밀리는 실물(noori 1쪽)이 있어서다.
+    static func slightOverflowLineFrame(
+        _ overflow: HwpDrawnTextLayout.SlightOverflowLine,
+        attributedString: NSAttributedString,
+        columnWidth: CGFloat
+    ) -> HwpLineFrame {
+        HwpLineFrame(
+            origin: CGPoint(
+                x: HwpDrawnTextLayout.slightOverflowAlignmentOffset(
+                    attributedString: attributedString, lineWidth: columnWidth, line: overflow.line
+                ),
+                y: 0
+            ),
             width: CGFloat(CTLineGetTypographicBounds(overflow.line, nil, nil, nil)),
             baseline: overflow.ascent,
-            attributedRange: NSRange(location: 0, length: fragment.length),
+            attributedRange: NSRange(location: 0, length: attributedString.length),
             inlineAnchors: HwpParagraphLayout().inlineAnchors(in: overflow.line)
-        )]
+        )
     }
 }
 

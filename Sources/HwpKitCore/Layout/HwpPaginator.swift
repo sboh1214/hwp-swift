@@ -961,6 +961,7 @@ private extension HwpPaginator {
                 paragraphHeight: paragraphHeight,
                 hyperlinkURL: hyperlinkURL(in: paragraph),
                 paragraphId: paragraph.paraHeader.paraId,
+                paraShape: index.paraShapeOrDefault(for: paragraph),
                 reservedFootnoteHeight: anticipatedFootnotes,
                 beforeGap: beforeGap,
                 onFragmentPlaced: { appendInlineControlBlocksForCurrentFragment(from: paragraph) }
@@ -1008,6 +1009,7 @@ private extension HwpPaginator {
             paragraphHeight: paragraphHeight,
             hyperlinkURL: hyperlinkURL(in: paragraph),
             paragraphId: paragraph.paraHeader.paraId,
+            paraShape: index.paraShapeOrDefault(for: paragraph),
             reservedFootnoteHeight: anticipatedFootnotes,
             beforeGap: beforeGap,
             onFragmentPlaced: { appendInlineControlBlocksForCurrentFragment(from: paragraph) }
@@ -1070,26 +1072,25 @@ private extension HwpPaginator {
                 of: attributedString, range: range
             )
             // 이 단에 놓이는 줄 (경계는 CT 줄 시작에 스냅돼 있다) — 조각 기준으로
-            // 되돌려 줄 앵커 문맥으로 쓴다 (#164). 줄은 첫 단 폭으로 측정됐으므로 **단
-            // 폭이 같을 때만**이다 — 비등폭 단(Column 픽스처)의 뒤 단은 렌더가 그 단
-            // 폭으로 다시 조판해 줄바꿈이 갈리므로, 첫 단 폭의 줄로 앵커를 잡으면
-            // 엉뚱한 줄에 놓인다. 그때는 종전대로 문맥 없이 (흐름 폴백) 둔다.
-            let measuredWidth = columnFrames.first?.width ?? currentColumnFrame.width
-            let sameWidth = abs(currentColumnFrame.width - measuredWidth) < 0.5
-            let runLines = sameWidth
-                ? paragraphFrame.lines.filter {
-                    NSLocationInRange($0.attributedRange.location, range)
-                }
-                : []
+            // 되돌려 줄 앵커 문맥으로 쓴다 (#164). 줄은 첫 단 폭으로 측정됐으므로 단 폭이
+            // 다르면(비등폭 단, Column 픽스처) 목적 단 폭으로 다시 조판한 줄을 쓴다.
+            let runLines = paragraphFrame.lines.filter {
+                NSLocationInRange($0.attributedRange.location, range)
+            }
+            let fragmentText = runIndex < runs.count - 1
+                ? HwpTableSplitter.markedAsContinuedFragment(fragment) : fragment
             appendBlock(
                 height: max(1, HwpUnits.points(
                     fromHwpUnit: Int32(clamping: runBottom - Int(firstSegment.lineLocation))
                 )),
-                attributedString: runIndex < runs.count - 1
-                    ? HwpTableSplitter.markedAsContinuedFragment(fragment) : fragment,
+                attributedString: fragmentText,
                 hyperlinkURL: hyperlinkURL(in: paragraph),
                 paragraphId: paragraph.paraHeader.paraId,
-                anchorLines: HwpParagraphLayout.fragmentLineFrames(runLines[...], range: range)
+                anchorLines: fragmentAnchorLines(
+                    runLines[...], range: range, fragment: fragmentText,
+                    paraShape: index.paraShapeOrDefault(for: paragraph),
+                    measuredWidth: columnFrames.first?.width ?? currentColumnFrame.width
+                )
             )
             // 앞 단의 줄에 앵커가 있는 글자처럼 취급 개체는 그 단에 지금 놓는다 (#164) —
             // 마지막 단의 문맥만 남으면 앞 단의 개체가 앵커를 잃고 흐름 위치로 간다.
@@ -1483,17 +1484,22 @@ private extension HwpPaginator {
     /// reservedFootnoteHeight는 이 문단이 만들 각주 예약분 (본문/각주 겹침 방지).
     /// `onFragmentPlaced`는 마지막이 아닌 조각을 놓은 직후, 단·쪽을 넘기기 **전**에
     /// 불린다 — 그 조각의 줄 앵커가 있는 개체를 그 단·쪽에 놓을 기회다 (#164).
+    /// `paraShape`는 조각의 줄 앵커를 목적 단 폭으로 다시 조판할 때 쓴다 — 줄은 이 함수에
+    /// 들어올 때의 단 폭으로 측정됐고, 비등폭 단으로 이월된 조각은 렌더가 그 단 폭으로
+    /// 다시 줄바꿈한다.
     func appendParagraphAcrossColumns(
         attributedString: NSAttributedString,
         paragraphFrame: HwpParagraphFrame,
         paragraphHeight: CGFloat,
         hyperlinkURL: String?,
         paragraphId: UInt32?,
+        paraShape: CoreHwp.HwpParaShape = CoreHwp.HwpParaShape(),
         reservedFootnoteHeight: CGFloat = 0,
         beforeGap: CGFloat = 0,
         onFragmentPlaced: () -> Void = {}
     ) {
         let lines = paragraphFrame.lines
+        let measuredWidth = currentColumnFrame.width
         let usableHeight = max(1, effectiveContentHeight - reservedFootnoteHeight)
         // 조각들은 독립 CT 프레임이라 문단-앞 간격이 렌더되지 않는다 — 첫 조각
         // 앞에서 커서로 소비하고 이후 산술은 텍스트 몫(textHeight)만 쓴다 (#1).
@@ -1542,40 +1548,19 @@ private extension HwpPaginator {
             return
         }
 
-        // 라인별 실제 전진량(origin.y 델타)으로 조각을 나눈다 — 평균
-        // (textHeight/개수)은 문단 간격까지 라인에 배분해 혼합 높이/간격
-        // 문단을 잘못된 라인에서 절단한다 (#3). 마지막 라인이 잔여(간격 포함)를
-        // 흡수해 조각 높이 총합 = textHeight를 보존한다. origin이 비단조면
-        // 평균으로 폴백한다 (#4와 동일).
-        let strictlyIncreasing = zip(lines, lines.dropFirst())
-            .allSatisfy { $0.origin.y < $1.origin.y }
-        let averageLineHeight = textHeight / CGFloat(lines.count)
-        func lineAdvance(_ index: Int) -> CGFloat {
-            guard strictlyIncreasing else { return max(1, averageLineHeight) }
-            if index + 1 < lines.count {
-                return max(1, lines[index + 1].origin.y - lines[index].origin.y)
-            }
-            return max(1, textHeight - lines[index].origin.y)
-        }
-        /// 조각 첫 줄의 ascent 초과분 (#164 리뷰): 전진량은 baseline 간격이라 줄 k의 ascent는
-        /// 줄 k−1의 전진량에 실려 앞 조각이 가져가는데, 조각은 독립 프레임으로 그려져 첫 줄
-        /// ascent를 자기 상단에서 내린다. 줄 안 개체(run delegate ascent = 개체 높이)로 첫
-        /// 줄이 큰 조각은 그만큼 짧게 재어 뒤 문단이 그 위에 놓이므로, 그 몫을 앞 조각에서
-        /// 빼고 이 조각에 더한다 — 조각 높이 합은 그대로다. 균등 줄은 0이라 불변.
-        func ascentExcess(startingAt index: Int) -> CGFloat {
-            guard strictlyIncreasing, index > 0, index < lines.count else { return 0 }
-            return max(0, lines[index].baseline - lines[index - 1].baseline)
-        }
+        // 라인별 실제 전진량(origin.y 델타)으로 조각을 나눈다 — 산식과 조각 첫 줄
+        // ascent 초과분(#164 리뷰)은 `HwpFragmentLineAdvances`.
+        let advances = HwpFragmentLineAdvances(lines: lines, textHeight: textHeight)
         var lineIndex = 0
         while lineIndex < lines.count {
             let available = max(1, effectiveContentHeight - reservedFootnoteHeight)
                 - contentHeightUsed
             var takeCount = 0
-            var takenHeight = ascentExcess(startingAt: lineIndex)
+            var takenHeight = advances.ascentExcess(startingAt: lineIndex)
             while lineIndex + takeCount < lines.count,
-                  takenHeight + lineAdvance(lineIndex + takeCount) <= available
+                  takenHeight + advances.advance(lineIndex + takeCount) <= available
             {
-                takenHeight += lineAdvance(lineIndex + takeCount)
+                takenHeight += advances.advance(lineIndex + takeCount)
                 takeCount += 1
             }
             // 빈 단(gap만 charge)에서 gap+첫 줄이 안 맞는 초과 문단은 gap을 무르고
@@ -1587,7 +1572,8 @@ private extension HwpPaginator {
                     contentHeightUsed = 0
                     paragraphAnchorTop = currentColumnFrame.minY
                 }
-                takenHeight = ascentExcess(startingAt: lineIndex) + lineAdvance(lineIndex)
+                takenHeight = advances.ascentExcess(startingAt: lineIndex)
+                    + advances.advance(lineIndex)
                 takeCount = 1
             }
             if takeCount <= 0 {
@@ -1611,7 +1597,7 @@ private extension HwpPaginator {
                 // 넘기면 각주 예약이 바뀌므로 usable을 재계산하고 (R55 #4), gap을
                 // 물리면 .paragraph 기준 개체의 anchor도 함께 내린다 (R55 #5).
                 let usableAfterAdvance = max(1, effectiveContentHeight - reservedFootnoteHeight)
-                if lineIndex == 0, beforeGap + lineAdvance(0) <= usableAfterAdvance {
+                if lineIndex == 0, beforeGap + advances.advance(0) <= usableAfterAdvance {
                     contentHeightUsed += beforeGap
                     paragraphAnchorTop = currentColumnFrame.minY + contentHeightUsed
                 }
@@ -1621,10 +1607,12 @@ private extension HwpPaginator {
                 lines[lineIndex ..< lineIndex + takeCount],
                 of: paragraphFrame,
                 // 마지막 전진량에 실린 다음 조각 첫 줄의 ascent 초과분은 그 조각 몫이다.
-                height: takenHeight - ascentExcess(startingAt: lineIndex + takeCount),
+                height: takenHeight - advances.ascentExcess(startingAt: lineIndex + takeCount),
                 attributedString: attributedString,
                 paragraphId: paragraphId,
-                hyperlinkURL: takeCount == lines.count ? hyperlinkURL : fragmentURL
+                hyperlinkURL: takeCount == lines.count ? hyperlinkURL : fragmentURL,
+                paraShape: paraShape,
+                measuredWidth: measuredWidth
             )
             lineIndex += takeCount
             if lineIndex < lines.count {
@@ -1640,30 +1628,60 @@ private extension HwpPaginator {
     /// 문단 줄 가운데 `slice`만 담은 블록을 놓는다 (`appendParagraphAcrossColumns`의 조각).
     /// 문단 전체면 온전한 줄 목록을, 조각이면 조각 기준 줄(`fragmentLineFrames`)을 앵커
     /// 문맥으로 준다 (#164). 이어지는 조각은 첫 줄 들여쓰기를 둘째 줄에 맞춘다
-    /// (`continuationFragment`).
+    /// (`continuationFragment`). 이 블록의 단 폭이 줄을 잰 폭(`measuredWidth`)과 다르면
+    /// 앵커 문맥은 목적 단 폭으로 다시 조판한 줄이다 (문단 전체를 옮긴 경우도 같다 —
+    /// `lines`는 균형 재배치 몫이라 그대로 둔다).
     private func appendLineSliceBlock(
         _ slice: ArraySlice<HwpLineFrame>,
         of paragraphFrame: HwpParagraphFrame,
         height: CGFloat,
         attributedString: NSAttributedString,
         paragraphId: UInt32?,
-        hyperlinkURL: String?
+        hyperlinkURL: String?,
+        paraShape: CoreHwp.HwpParaShape,
+        measuredWidth: CGFloat
     ) {
         let range = slice.dropFirst().reduce(slice[slice.startIndex].attributedRange) {
             NSUnionRange($0, $1.attributedRange)
         }
         let isWholeParagraph = slice.count == paragraphFrame.lines.count
+        let fragment = HwpParagraphLayout.continuationFragment(of: attributedString, range: range)
+        let sameWidth = abs(currentColumnFrame.width - measuredWidth) < 0.5
         appendBlock(
             height: height,
-            attributedString: HwpParagraphLayout.continuationFragment(
-                of: attributedString, range: range
-            ),
+            attributedString: fragment,
             hyperlinkURL: hyperlinkURL,
             paragraphId: paragraphId,
             lines: isWholeParagraph ? paragraphFrame.lines : [],
-            anchorLines: isWholeParagraph
-                ? [] : HwpParagraphLayout.fragmentLineFrames(slice, range: range)
+            anchorLines: isWholeParagraph && sameWidth
+                ? []
+                : fragmentAnchorLines(
+                    slice, range: range, fragment: fragment,
+                    paraShape: paraShape, measuredWidth: measuredWidth
+                )
         )
+    }
+
+    /// 조각의 줄 앵커 문맥 (#164 리뷰): 조각이 놓이는 단의 폭이 줄을 잰 폭과 같으면 측정한
+    /// 줄을 조각 기준으로 되돌린 것이고, 다르면(비등폭 단으로 이월) 렌더러가 그 단 폭으로
+    /// 다시 줄바꿈하므로 조각 문자열을 목적 단 폭으로 다시 조판한 줄이다 — 첫 단 폭의
+    /// 줄로 앵커를 잡으면 마커가 다른 줄·다른 x에 놓여 개체가 글자를 덮는다. 다시 조판한
+    /// 줄은 이미 조각 기준(범위 0부터, 첫 줄 델타 0)이다.
+    private func fragmentAnchorLines(
+        _ slice: ArraySlice<HwpLineFrame>,
+        range: NSRange,
+        fragment: NSAttributedString,
+        paraShape: CoreHwp.HwpParaShape,
+        measuredWidth: CGFloat
+    ) -> [HwpLineFrame] {
+        guard abs(currentColumnFrame.width - measuredWidth) >= 0.5 else {
+            return HwpParagraphLayout.fragmentLineFrames(slice, range: range)
+        }
+        return HwpParagraphLayout().layout(
+            attributedString: fragment,
+            paraShape: paraShape,
+            columnWidth: currentColumnFrame.width
+        ).lines
     }
 
     func hyperlinkURL(in paragraph: CoreHwp.HwpParagraph) -> String? {
