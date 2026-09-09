@@ -49,6 +49,7 @@ final class FixturePreviewFidelityTests: XCTestCase {
         "2014VP": 0.001, // 실측 0.0000 (빈 페이지)
         "BinData": 0.002, // 실측 0.0014 (2× 줌 보정 후)
         "CCL": 0.0033, // 실측 0.0023 (저해상 GIF)
+        // 취소선 위치를 한글 PDF 실측(0.35em)으로 옮겨도(#136) 이 그리드는 둔감하다
         "CharShape": 0.001, // 실측 0.0004 (2026-07-10 상대크기·장평·음영·그림자·취소선 렌더 반영)
         "CharShapeProperty": 0.001, // 실측 0.0003
         "Column": 0.0034, // 실측 0.0024 (다단 배분 + 양쪽 정렬 잔차)
@@ -77,8 +78,9 @@ final class FixturePreviewFidelityTests: XCTestCase {
         "plain-text-minimal": 0.001, // 실측 0.0003
         "text-box": 0.001, // 실측 0.0002
         "track-changes": 0.001, // 실측 0.0002
-        // PrvImage에는 한글.app이 그린 글자 위 밑줄이 있고 우리는 아직 안 그린다 (#149)
-        "underline-above": 0.001, // 실측 0.0006 (2026-09-05)
+        // 글자 위 밑줄을 그린 뒤(#136) 안 그리던 0.0006에서 내려왔다 — PrvImage의
+        // 한글.app 밑줄과 같은 자리다
+        "underline-above": 0.001, // 실측 0.0005 (2026-09-08)
         // 개요·문단 번호 라벨을 그린 뒤(#154) 라벨 없던 0.0005에서 내려왔다 — 1수준
         // 오른쪽 정렬·HWPUNIT 거리·자동 내어쓰기 해제까지 PrvImage와 같은 자리다
         "outline-numbering": 0.001, // 실측 0.0004 (2026-09-06)

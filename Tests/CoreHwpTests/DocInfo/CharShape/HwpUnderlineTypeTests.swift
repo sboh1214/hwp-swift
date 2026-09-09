@@ -13,7 +13,7 @@ final class HwpUnderlineTypeTests: XCTestCase {
     /// 전체, 곧 문서 전체가 거부된다.
     func testEveryTwoBitRawValueHasACase() throws {
         let expected: [(raw: UInt32, type: HwpUnderlineType)] = [
-            (0, .none), (1, .under), (2, .undefined2), (3, .above),
+            (0, .none), (1, .under), (2, .center), (3, .above),
         ]
         for (raw, type) in expected {
             let property = try HwpCharShapeProperty.load(raw << 2)
@@ -27,7 +27,7 @@ final class HwpUnderlineTypeTests: XCTestCase {
     /// typed 필드 → bit field 재합성이 스펙 값(글자 위 = 3)을 그대로 적는다 —
     /// HWPX 매퍼가 이 경로로 `rawValue`를 만든다.
     func testSynthesizedRawValueRoundTripsEveryUnderlineType() throws {
-        for type in [HwpUnderlineType.none, .under, .undefined2, .above] {
+        for type in [HwpUnderlineType.none, .under, .center, .above] {
             var property = HwpCharShapeProperty()
             property.underlineType = type
             let raw = property.synthesizedRawValue
@@ -81,6 +81,23 @@ final class HwpUnderlineTypeTests: XCTestCase {
         expect(shapes[7].underlineColor) == HwpColor(0, 0, 0)
     }
 
+    /// `CENTER`(한컴 공개 모델 `ULT_CENTER`)도 열거에 있는 값이라 `.center`(2)로
+    /// 간다 — 매핑 표에서 빠지면 그 밑줄이 조용히 '없음'이 돼 한쪽 포맷에서만
+    /// 선이 사라진다 (#136). 취소선 비트가 없으므로 등가 투영도 이 값을 접지
+    /// 않고 그대로 비교한다.
+    func testHeaderMapperMapsUnderlineCenterToCenter() throws {
+        let xml = HwpxHeaderFixture.headerXML.replacingOccurrences(
+            of: "<hh:underline type=\"BOTTOM\"",
+            with: "<hh:underline type=\"CENTER\""
+        )
+        let (docInfo, _) = try HwpxHeaderFixture.mapHeader(xml)
+        let property = docInfo.idMappings.charShapeArray[0].property
+
+        expect(property.underlineType) == .center
+        expect((property.rawValue >> 2) & 0b11) == 2
+        expect(try HwpCharShapeProperty.load(property.rawValue).underlineType) == .center
+    }
+
     /// 합성 header.xml에서도 `TOP`이 `.above`(3)로, `BOTTOM`이 `.under`(1)로 간다.
     func testHeaderMapperMapsUnderlineTopToAbove() throws {
         let xml = HwpxHeaderFixture.headerXML.replacingOccurrences(
@@ -95,15 +112,16 @@ final class HwpUnderlineTypeTests: XCTestCase {
         expect(try HwpCharShapeProperty.load(property.rawValue).underlineType) == .above
     }
 
-    /// 취소선 견본의 밑줄 종류 raw 2는 글자 위가 아니다 — 두 픽스처 모두 같은
-    /// 값(`0x40008` = 밑줄 종류 2 + 취소선 1)이고 한글.app의 HWPX 재저장본은
-    /// 밑줄 없음(`NONE`) + `strikeout`이다. 케이스는 값을 보존만 한다.
-    func testStrikethroughSamplesKeepUndefinedRawTwo() throws {
+    /// 취소선 견본의 밑줄 종류 raw 2는 글자 위가 아니라 '글자 가운데'(`center`)다
+    /// — 두 픽스처 모두 같은 값(`0x40008` = 밑줄 종류 2 + 취소선 1)이고,
+    /// 한글.app의 HWPX 재저장본은 그 조합을 밑줄 없음(`NONE`) + `strikeout`으로
+    /// 접는다. 곧 두 저장본은 같은 한 줄을 뜻한다 (#136).
+    func testStrikethroughSamplesKeepCenterRawTwo() throws {
         for id in ["CharShape", "CharShapeProperty"] {
             let hwp = try openHwp(#file, id)
             let property = hwp.docInfo.idMappings.charShapeArray[18].property
             expect(property.rawValue).to(equal(0x0004_0008), description: id)
-            expect(property.underlineType).to(equal(.undefined2), description: id)
+            expect(property.underlineType).to(equal(.center), description: id)
             expect(property.strikethrough).to(equal(1), description: id)
 
             let hwpx = try openHwpx(#file, id)

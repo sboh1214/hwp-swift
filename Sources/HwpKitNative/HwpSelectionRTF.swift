@@ -70,7 +70,16 @@ enum HwpSelectionRTF {
         _ attributes: [NSAttributedString.Key: Any]
     ) -> [NSAttributedString.Key: Any] {
         var normalized = attributes
-        // hwp.* 명시 변환 — 접두사 일괄 제거 전에 값을 표준 키로 옮긴다
+        // hwp.* 명시 변환 — 접두사 일괄 제거 전에 값을 표준 키로 옮긴다.
+        //
+        // 밑줄 '글자 위'(`underlineAboveStyle`, #136)는 **일부러 옮기지 않는다**:
+        // RTF에도 NSAttributedString에도 윗줄 속성이 없어 표준 밑줄로 옮기면 선이
+        // 글자 아래로 뒤집혀 붙는다 — 잃는 것보다 나쁜 오표현이다. 한글.app도 같은
+        // 선택을 한다 (2026-09-09 실측): `underline-above` 문서를 복사한 클립보드
+        // RTF에 `\ul` 계열·`\chbrdr`가 0건인데, 같은 앱이 `CharShape`의 아래쪽
+        // 밑줄은 `\ul\ulc3`(색 포함), 취소선은 `\strike`로 실어 보낸다. 곧 RTF가
+        // 표현 못 하는 장식이라 버리는 것이지 빠뜨린 것이 아니다
+        // (`HwpSelectionRTFTests.testAboveUnderlineIsDroppedLikeHancom`이 고정).
         if attributes[HwpAttributedStringKey.underlineStyle] != nil {
             normalized[.underlineStyle] = NSNumber(value: NSUnderlineStyle.single.rawValue)
             if let color = cgColor(attributes[HwpAttributedStringKey.underlineColor]) {

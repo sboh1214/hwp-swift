@@ -101,6 +101,24 @@ final class HwpSelectionRTFTests: XCTestCase {
         expect(normalized[HwpAttributedStringKey.underlineColor]).to(beNil())
     }
 
+    /// 밑줄 '글자 위'(#136)는 표준 밑줄로 **승격하지 않는다** — RTF·
+    /// NSAttributedString에 윗줄 속성이 없어 옮기면 선이 글자 아래로 뒤집힌다.
+    /// 한글.app도 같은 선택을 한다 (2026-09-09 실측: `underline-above` 복사본의
+    /// RTF에 `\ul` 계열 0건, 같은 앱의 아래쪽 밑줄은 `\ul\ulc3`·취소선은 `\strike`).
+    /// 색만 남기지도 않는다 — 선이 없는데 밑줄 색만 붙으면 의미가 없다.
+    func testAboveUnderlineIsDroppedLikeHancom() {
+        let normalized = HwpSelectionRTF.normalizedAttributes([
+            HwpAttributedStringKey.underlineAboveStyle: NSNumber(value: 1),
+            HwpAttributedStringKey.underlineColor: blue,
+        ])
+
+        expect(normalized[.underlineStyle]).to(beNil())
+        expect(normalized[.underlineColor]).to(beNil())
+        expect(normalized[.strikethroughStyle]).to(beNil())
+        expect(normalized[HwpAttributedStringKey.underlineAboveStyle]).to(beNil())
+        expect(normalized[HwpAttributedStringKey.underlineColor]).to(beNil())
+    }
+
     func testHyperlinkPromotesToLinkAndInvalidURLDropsOnlyTheLink() {
         let promoted = HwpSelectionRTF.normalizedAttributes([
             HwpAttributedStringKey.hyperlink: "https://example.com/a",

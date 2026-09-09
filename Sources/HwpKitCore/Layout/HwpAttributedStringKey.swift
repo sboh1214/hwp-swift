@@ -16,6 +16,11 @@ public enum HwpAttributedStringKey {
     /// 취소선 여부 — NSStrikethrough 키를 쓰면 CTLineDraw가 자체로 한 번 더
     /// 그려 이중선이 된다 (CharShape 실물 대조 2026-07-10)
     public static let strikethroughStyle = NSAttributedString.Key("hwp.strikethroughStyle")
+    /// 변경 추적 삭제선 표식 (NSNumber != 0) — 같은 취소선 경로로 그리되 한글이
+    /// 변경 추적 표시에만 쓰는 다른 높이
+    /// (`HwpRenderTuning.Text.trackChangeStrikethroughCenterRatio`)를 쓴다 (#136)
+    public static let trackChangeStrikethrough =
+        NSAttributedString.Key("hwp.trackChangeStrikethrough")
     /// 양각/음각 (NSNumber: 1 양각, 2 음각) — 밝은/어두운 오프셋 사본 3-pass
     public static let reliefStyle = NSAttributedString.Key("hwp.reliefStyle")
     /// 양각/음각 run의 실제 글자색 (CGColor) — 글리프 자체는
@@ -26,8 +31,13 @@ public enum HwpAttributedStringKey {
     /// 글자 위치 (표 33 location) — 줄 안 세로 오프셋 (pt, 양수 = 위).
     /// kCTBaselineOffset은 CTFramesetter가 무시하므로 직접 그린다.
     public static let glyphBaselineOffset = NSAttributedString.Key("hwp.glyphBaselineOffset")
-    /// 밑줄 여부 — CT 밑줄 대신 렌더러가 0.4pt 헤어라인으로 직접 그린다
+    /// 밑줄 여부 (글자 아래) — CT 밑줄 대신 렌더러가 0.4pt 헤어라인으로 직접 그린다
     public static let underlineStyle = NSAttributedString.Key("hwp.underlineStyle")
+    /// 밑줄 '글자 위' 여부 (표 35 밑줄 종류 3) — 같은 헤어라인을 베이스라인
+    /// **위** `underlineAboveCenterRatio`에 그린다 (#136). 색은
+    /// `underlineColor`를 공유한다. RTF 복사에는 싣지 않는다 (윗줄 속성이 없어
+    /// 표준 밑줄로 바꾸면 위치가 뒤집힌다 — `HwpSelectionRTF` 주석).
+    public static let underlineAboveStyle = NSAttributedString.Key("hwp.underlineAboveStyle")
     /// 상대크기 적용 전 기본 글자 크기 (pt) — % 줄 간격의 기준
     public static let baseFontSize = NSAttributedString.Key("hwp.baseFontSize")
     /// 고정 공백 폭 (0.5em)의 기준 크기 — 상대크기는 반영, 첨자 축소는
