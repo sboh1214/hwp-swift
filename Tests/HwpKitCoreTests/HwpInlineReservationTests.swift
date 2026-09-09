@@ -63,6 +63,49 @@ import XCTest
                 .to(beCloseTo(Self.reservedAscent(of: built, controlIndex: 0) ?? -1, within: 0.01))
         }
 
+        /// **잇달아 있는** 마커도 개체마다 자기 치수를 지킨다 — `enumerateAttribute`가 크기
+        /// 기준이 같은 이웃 마커를 한 범위로 합치므로, 범위 첫 마커의 치수를 통째로 얹으면
+        /// 뒤 개체의 예약 폭·높이가 덮인다 (PR 리뷰).
+        func testAdjacentColumnRelativeReservationsKeepTheirOwnSize() {
+            var paragraph = HwpSynthetic.paragraphWithInlineControl(prefix: "가", suffix: "나")
+            // 가 + 마커 + 마커 + 나 — 두 마커가 인접한 run이 된다.
+            paragraph.paraText?.charArray.insert(
+                CoreHwp.HwpChar(type: .extended, value: 11), at: 1
+            )
+            paragraph.ctrlHeaderArray = [
+                .genShapeObject(HwpSynthetic.columnRelativeInlineObject(
+                    widthPercent: 5000, heightPercent: 100
+                )),
+                .genShapeObject(HwpSynthetic.columnRelativeInlineObject(
+                    widthPercent: 7500, heightPercent: 300
+                )),
+            ]
+            let built = HwpTextRunBuilder(
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic,
+                sizeResolver: Self.resolver(columnWidth: 100),
+                attributeCache: nil
+            ).build(paragraph: paragraph)
+            // 두 마커가 실제로 이웃해 있어야 병합 조건을 태운다 (표식이 갈리면 무의미해진다).
+            expect(built.string).to(contain("\u{FFFC}\u{FFFC}"))
+            expect(Self.reservedWidth(of: built, controlIndex: 0)).to(beCloseTo(50, within: 0.01))
+            expect(Self.reservedWidth(of: built, controlIndex: 1)).to(beCloseTo(75, within: 0.01))
+
+            let rescaled = HwpInlineObjectReservation.rescaledForColumn(
+                built, resolver: Self.resolver(columnWidth: 200)
+            )
+            expect(Self.reservedWidth(of: rescaled, controlIndex: 0))
+                .to(beCloseTo(100, within: 0.01))
+            // 앞 마커의 100pt로 덮이지 않는다 — 자기 기준(75%)으로 풀린 150pt다.
+            expect(Self.reservedWidth(of: rescaled, controlIndex: 1))
+                .to(beCloseTo(150, within: 0.01))
+            // 예약 높이도 마커마다 그대로다 (쪽 기준 1%·3% = 7pt·21pt).
+            expect(Self.reservedAscent(of: rescaled, controlIndex: 0))
+                .to(beCloseTo(7, within: 0.01))
+            expect(Self.reservedAscent(of: rescaled, controlIndex: 1))
+                .to(beCloseTo(21, within: 0.01))
+        }
+
         /// 다시 풀 마커가 없으면 사본을 뜨지 않는다 — 조각마다 문자열을 복사하지 않는다.
         func testReservationRescaleKeepsStringWhenNothingIsColumnRelative() {
             var paragraph = HwpSynthetic.paragraphWithInlineControl(prefix: "가", suffix: "나")

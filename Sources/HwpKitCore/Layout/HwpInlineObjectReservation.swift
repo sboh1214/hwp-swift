@@ -76,7 +76,8 @@ enum HwpInlineObjectReservation {
     /// 그려진 자리와 맞는다.
     ///
     /// 높이는 다시 풀지 않는다 — 폭과 달리 높이 기준(표 70)엔 '단'이 없어
-    /// (종이·쪽·절대) 단 폭과 무관하다.
+    /// (종이·쪽·절대) 단 폭과 무관하다. 다만 delegate는 폭·높이를 함께 나르므로 마커가
+    /// 이미 실어 둔 예약 높이(`inlineObjectHeight`)를 **그 마커에서** 다시 읽어 얹는다.
     static func rescaledForColumn(
         _ string: NSAttributedString,
         resolver: HwpObjectSizeResolver
@@ -86,35 +87,50 @@ enum HwpInlineObjectReservation {
             HwpAttributedStringKey.inlineObjectWidthBasis,
             in: NSRange(location: 0, length: string.length)
         ) { value, range, _ in
-            guard let basisValue = value as? NSNumber,
-                  let basis = CoreHwp.HwpCommonCtrlObjectWidthRelativeTo(
-                      rawValue: basisValue.intValue
-                  ),
-                  let raw = string.attribute(
-                      HwpAttributedStringKey.inlineObjectWidthRaw,
-                      at: range.location, effectiveRange: nil
-                  ) as? NSNumber,
-                  let delegate = runDelegate(
-                      width: resolver.width(raw.uint32Value, basis: basis),
-                      height: reservedHeight(of: string, at: range.location)
-                  )
-            else { return }
-            let target = rescaled ?? NSMutableAttributedString(attributedString: string)
-            rescaled = target
-            target.addAttribute(
-                kCTRunDelegateAttributeName as NSAttributedString.Key,
-                value: delegate,
-                range: range
-            )
+            guard value != nil else { return }
+            // `enumerateAttribute`는 값이 같은 이웃 run을 **한 범위로 합친다** — 크기 기준이
+            // 같은 마커가 잇달아 있으면(연속 개체) 한 범위로 온다. 그래서 글자 단위로
+            // 되짚어 개체마다 자기 치수를 지킨다 (PR 리뷰: 범위 첫 마커의 치수를 통째로
+            // 얹어 뒤 개체의 예약 폭·높이를 덮었다). 되짚기의 근거는 **폭 열쇠를 나르는
+            // 글자가 U+FFFC 한 글자**라는 것이고, 그 불변식은 마커 방출·열쇠 부착이
+            // `HwpTextRunBuilder`의 컨트롤 마커 방출 한 곳뿐이라는 데서 온다 — 마커를 여러
+            // 글자로 바꾸는 변경이 오면 여기도 함께 손봐야 한다.
+            for location in range.location ..< NSMaxRange(range) {
+                guard let delegate = resolvedDelegate(
+                    of: string, at: location, resolver: resolver
+                ) else { continue }
+                let target = rescaled ?? NSMutableAttributedString(attributedString: string)
+                rescaled = target
+                target.addAttribute(
+                    kCTRunDelegateAttributeName as NSAttributedString.Key,
+                    value: delegate,
+                    range: NSRange(location: location, length: 1)
+                )
+            }
         }
         return rescaled ?? string
     }
 
-    /// 마커가 예약한 줄 공간 높이 — 빌더가 `inlineObjectHeight`로 실어 둔 값이다.
-    private static func reservedHeight(of string: NSAttributedString, at location: Int) -> CGFloat {
-        guard let height = string.attribute(
-            HwpAttributedStringKey.inlineObjectHeight, at: location, effectiveRange: nil
-        ) as? NSNumber else { return 0 }
-        return CGFloat(height.doubleValue)
+    /// 마커 한 글자의 예약을 `resolver` 기하로 다시 푼 run delegate — 폭 열쇠가 온전하지
+    /// 않으면 nil(그 마커는 그대로 둔다). 높이는 빌더가 실어 둔 `inlineObjectHeight`다.
+    private static func resolvedDelegate(
+        of string: NSAttributedString,
+        at location: Int,
+        resolver: HwpObjectSizeResolver
+    ) -> CTRunDelegate? {
+        let attributes = string.attributes(at: location, effectiveRange: nil)
+        guard let basisValue = attributes[
+            HwpAttributedStringKey.inlineObjectWidthBasis
+        ] as? NSNumber,
+            let basis = CoreHwp.HwpCommonCtrlObjectWidthRelativeTo(
+                rawValue: basisValue.intValue
+            ),
+            let raw = attributes[HwpAttributedStringKey.inlineObjectWidthRaw] as? NSNumber
+        else { return nil }
+        let height = attributes[HwpAttributedStringKey.inlineObjectHeight] as? NSNumber
+        return runDelegate(
+            width: resolver.width(raw.uint32Value, basis: basis),
+            height: height.map { CGFloat($0.doubleValue) } ?? 0
+        )
     }
 }
