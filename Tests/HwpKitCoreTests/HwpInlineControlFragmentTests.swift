@@ -139,6 +139,37 @@ import XCTest
             expect(pages.flatMap { Self.objectBlocks(on: $0, instanceId: 12) }.count) == 1
         }
 
+        /// 도형 컨트롤(`HwpShapeControl` — 사각형·타원·그림·수식 계열)도 조각별로 자기
+        /// 줄 안에 놓인다. 묶음 개체와 달리 이쪽은 공통 속성이 optional이라 글자처럼
+        /// 취급 판정과 방출이 별도 갈래이고, 그 갈래가 조각 경로에서 빠지면 도형이
+        /// 앵커를 잃고 마지막 조각 뒤 흐름 위치로 간다.
+        func testEachFragmentPlacesItsOwnInlineShapeControl() async throws {
+            let host = try Self.splitHost(controls: [
+                InlineControlFragmentSupport.inlineRectangle(instanceId: 21),
+                InlineControlFragmentSupport.inlineRectangle(instanceId: 22),
+            ])
+            let pages = try await Self.pages(of: try Self.absolutePaginator(host: host))
+            expect(pages.count) == 2
+            guard pages.count == 2 else { return }
+
+            let first = try XCTUnwrap(Self.objectBlocks(on: pages[0], instanceId: 21).first)
+            let firstHost = try XCTUnwrap(Self.hostFragment(on: pages[0]))
+            let second = try XCTUnwrap(Self.objectBlocks(on: pages[1], instanceId: 22).first)
+            let secondHost = try XCTUnwrap(Self.hostFragment(on: pages[1]))
+            expect(first.kind) == .shape
+            expect(second.kind) == .shape
+            // 각 도형은 자기 조각의 줄 안에 있다 — 조각 블록의 세로 범위를 벗어나지 않는다.
+            expect(first.frame.minY).to(beGreaterThanOrEqualTo(firstHost.frame.minY - 0.01))
+            expect(first.frame.maxY).to(beLessThanOrEqualTo(firstHost.frame.maxY + 0.01))
+            expect(second.frame.minY).to(beGreaterThanOrEqualTo(secondHost.frame.minY - 0.01))
+            expect(second.frame.maxY).to(beLessThanOrEqualTo(secondHost.frame.maxY + 0.01))
+            // 앞 조각의 도형이 뒤 쪽으로 새거나 두 번 그려지지 않는다.
+            expect(Self.objectBlocks(on: pages[1], instanceId: 21)).to(beEmpty())
+            expect(Self.objectBlocks(on: pages[0], instanceId: 22)).to(beEmpty())
+            expect(pages.flatMap { Self.objectBlocks(on: $0, instanceId: 21) }.count) == 1
+            expect(pages.flatMap { Self.objectBlocks(on: $0, instanceId: 22) }.count) == 1
+        }
+
         /// 마커가 없는 컨트롤(어느 조각의 줄에도 앵커가 없다)은 종전대로 마지막 조각 뒤
         /// 문단 단위 방출이 한 번만 놓는다 — 앞 조각이 가로채지도, 두 번 그리지도 않는다.
         func testControlWithoutMarkerIsPlacedOnceAfterTheLastFragment() async throws {
@@ -233,6 +264,56 @@ import XCTest
             expect(notes[0]).to(beEmpty())
             expect(notes[1].count) == 1
             expect(notes[1].first).to(contain("글상자 각주"))
+            // 각주 없는 표는 여전히 자기 조각에 놓인다.
+            expect(Self.objectBlocks(on: pages[1], instanceId: 2).count) == 1
+        }
+
+        /// 각주가 **한 겹 더 안쪽**(글상자 안 표의 셀)에 있어도 조각에서 놓지 않는다 —
+        /// 노트 탐지가 중첩 컨트롤을 타고 내려가지 않으면 개체만 앞 쪽에 놓여 참조와
+        /// 각주가 다른 쪽으로 갈린다. 바로 안쪽만 보는 판정으로는 못 잡는 경계다.
+        func testObjectWithDeeplyNestedFootnoteStaysWithTheLastFragment() async throws {
+            var noteHost = try HwpSynthetic.textParagraph("셀 안")
+            noteHost.paraText?.charArray.append(CoreHwp.HwpChar(type: .extended, value: 17))
+            noteHost.ctrlHeaderArray = [.footnote(HwpSynthetic.listControl(
+                ctrlId: .footnote,
+                paragraphs: [HwpSynthetic.noteParagraph(
+                    " 깊은 각주",
+                    autoNumber: HwpSynthetic.autoNumberControl(kind: 1, decorationTail: ")")
+                )]
+            ))]
+            // 글상자 문단은 각주가 아니라 **표**를 품는다 — 그 표의 셀에 각주가 있다.
+            var wrapper = try HwpSynthetic.textParagraph("바깥")
+            wrapper.ctrlHeaderArray = [.table(HwpSynthetic.table(
+                cellWidth: 3000, rowHeights: [500], cellParagraphs: [[[noteHost]]]
+            ))]
+            var textbox = HwpSynthetic.inlineShapeObject(width: 6000, height: 1000, instanceId: 41)
+            textbox.shapeComponentArray[0].textBoxListArray = [CoreHwp.HwpListControlList(
+                header: CoreHwp.HwpListHeader(),
+                headerRawPayload: Data(),
+                headerUnknownChildren: [],
+                paragraphArray: [wrapper]
+            )]
+            let host = try Self.splitHost(controls: [
+                .genShapeObject(textbox),
+                try Self.inlineTable(instanceId: 2),
+            ])
+            let pages = try await Self.pages(of: try Self.absolutePaginator(host: host))
+            expect(pages.count) == 2
+            guard pages.count == 2 else { return }
+
+            // 앞 조각 줄에 앵커가 있어도 마지막 조각 뒤로 미뤄진다.
+            expect(Self.objectBlocks(on: pages[0], instanceId: 41)).to(beEmpty())
+            let textboxBlock = try XCTUnwrap(Self.objectBlocks(on: pages[1], instanceId: 41).first)
+            let secondHost = try XCTUnwrap(Self.hostFragment(on: pages[1]))
+            expect(textboxBlock.frame.minY).to(beGreaterThanOrEqualTo(secondHost.frame.maxY - 0.01))
+            // 두 겹 안쪽의 각주도 개체와 같은 쪽에 실린다.
+            let notes = pages.map { page in
+                page.blocks.filter { $0.kind == .footnote }
+                    .compactMap { $0.attributedString?.string }
+            }
+            expect(notes[0]).to(beEmpty())
+            expect(notes[1].count) == 1
+            expect(notes[1].first).to(contain("깊은 각주"))
             // 각주 없는 표는 여전히 자기 조각에 놓인다.
             expect(Self.objectBlocks(on: pages[1], instanceId: 2).count) == 1
         }

@@ -92,6 +92,26 @@ import XCTest
             return reserved
         }
 
+        /// 묶음 개체(`.genShapeObject`)가 아닌 **도형 컨트롤**(`HwpShapeControl`) 형태의
+        /// 글자처럼 취급 개체 — 판정(`isTreatAsChar`)과 방출(`appendInlineControlBlock`)
+        /// 모두 묶음 개체와 다른 갈래를 탄다.
+        static func inlineRectangle(instanceId: UInt32) -> CoreHwp.HwpCtrlId {
+            let object = HwpSynthetic.inlineShapeObject(
+                width: 6000, height: 1000, instanceId: instanceId
+            )
+            return .rectangle(CoreHwp.HwpShapeControl(
+                ctrlId: .rectangle,
+                commonCtrlProperty: object.commonCtrlProperty,
+                rawPayload: Data(),
+                rawTrailing: Data(),
+                shapeComponentArray: object.shapeComponentArray,
+                eqEditArray: [],
+                eqEditRecords: [],
+                ctrlDataRecords: [],
+                unknownChildren: []
+            ))
+        }
+
         /// 오른쪽 정렬 문단 모양 — 속성1 bit 2-4 = 2.
         static func rightAlignedParaShape() -> CoreHwp.HwpParaShape {
             CoreHwp.HwpParaShape(
