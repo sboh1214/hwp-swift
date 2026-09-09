@@ -46,12 +46,18 @@ extension HwpParagraphLayout {
     /// 한 줄 술어를 따로 적용하므로 — 문단에서는 다음 줄로 넘어간 좁은 개체 마커가 조각
     /// 혼자서는 한 줄에 들어갈 수 있다 — 둘이 갈리면 개체가 그려지지 않는 둘째 줄 자리에
     /// 놓인다. 접히면 측정의 한 줄 분기(`layout`)와 같은 줄 프레임 하나를 만든다.
+    ///
+    /// 줄이 **이미 하나**여도 지나쳐선 안 된다 (PR 리뷰): 목적 단 폭으로 다시 조판한 조각
+    /// (`HwpPaginator.fragmentAnchorLines`)이 한 줄이면 그 줄은 측정의 한 줄 분기가 낸
+    /// 것이라 원점 x가 0인데, 렌더러는 같은 줄에 정렬 오프셋을 준다 — 오른쪽 정렬 조각의
+    /// 앵커가 초과분만큼 오른쪽으로 밀려 표가 단 경계를 넘었다. 접기 술어가 nil이면
+    /// (넉넉한 줄) 어차피 원본을 돌려주므로, 한 줄 조각도 같은 술어에 태우면 된다.
     static func fragmentLineFramesAsDrawn(
         _ frames: [HwpLineFrame],
         fragment: NSAttributedString,
         columnWidth: CGFloat
     ) -> [HwpLineFrame] {
-        guard frames.count > 1,
+        guard !frames.isEmpty,
               let overflow = HwpDrawnTextLayout.slightOverflowLineMetrics(
                   attributedString: fragment, lineWidth: max(1, columnWidth)
               )

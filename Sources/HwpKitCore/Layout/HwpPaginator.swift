@@ -1054,6 +1054,9 @@ private extension HwpPaginator {
             prefixLength: HwpTextRunBuilder.numberingLabelLength(of: attributedString)
         ) else { return false }
 
+        // 문단은 첫 단 폭으로 재어졌다 (`columnIndex == 0` 가드) — 뒤 단이 그보다
+        // 넓거나 좁으면 조각을 그 단 기하로 다시 푼다.
+        let measuredWidth = columnFrames.first?.width ?? currentColumnFrame.width
         for (runIndex, run) in runs.enumerated() {
             guard let firstSegment = run.first else { return false }
             var runBottom = Int(firstSegment.lineLocation)
@@ -1077,8 +1080,11 @@ private extension HwpPaginator {
             let runLines = paragraphFrame.lines.filter {
                 NSLocationInRange($0.attributedRange.location, range)
             }
-            let fragmentText = runIndex < runs.count - 1
-                ? HwpTableSplitter.markedAsContinuedFragment(fragment) : fragment
+            let fragmentText = placedFragment(
+                runIndex < runs.count - 1
+                    ? HwpTableSplitter.markedAsContinuedFragment(fragment) : fragment,
+                measuredWidth: measuredWidth
+            )
             appendBlock(
                 height: max(1, HwpUnits.points(
                     fromHwpUnit: Int32(clamping: runBottom - Int(firstSegment.lineLocation))
@@ -1089,7 +1095,7 @@ private extension HwpPaginator {
                 anchorLines: fragmentAnchorLines(
                     runLines[...], range: range, fragment: fragmentText,
                     paraShape: index.paraShapeOrDefault(for: paragraph),
-                    measuredWidth: columnFrames.first?.width ?? currentColumnFrame.width
+                    measuredWidth: measuredWidth
                 )
             )
             // 앞 단의 줄에 앵커가 있는 글자처럼 취급 개체는 그 단에 지금 놓는다 (#164) —
@@ -1645,8 +1651,11 @@ private extension HwpPaginator {
             NSUnionRange($0, $1.attributedRange)
         }
         let isWholeParagraph = slice.count == paragraphFrame.lines.count
-        let fragment = HwpParagraphLayout.continuationFragment(of: attributedString, range: range)
         let sameWidth = abs(currentColumnFrame.width - measuredWidth) < 0.5
+        let fragment = placedFragment(
+            HwpParagraphLayout.continuationFragment(of: attributedString, range: range),
+            measuredWidth: measuredWidth
+        )
         appendBlock(
             height: height,
             attributedString: fragment,
@@ -1659,6 +1668,23 @@ private extension HwpPaginator {
                     slice, range: range, fragment: fragment,
                     paraShape: paraShape, measuredWidth: measuredWidth
                 )
+        )
+    }
+
+    /// 조각이 실제로 놓이는 단의 기하로 푼 조각 문자열 (#164 리뷰). 단 폭이 줄을 잰
+    /// 폭과 같으면 그대로고, 다르면 단 폭에 딸린 예약 폭('단'·'문단' 기준 개체)을 목적
+    /// 단으로 다시 푼 사본이다 — 예약을 그대로 두면 문단을 처음 잰 단의 폭이 남아,
+    /// 놓이는 단으로 크기를 푸는 paint(`objectSize`)와 갈려 개체가 뒤 글자를 덮는다.
+    ///
+    /// 렌더 문자열과 앵커 문맥(`fragmentAnchorLines`)이 **같은 사본**이어야 마커 x가
+    /// 그려진 자리와 맞으므로, 다시 조판하기 전에 여기서 한 번 갈아 둘 다에 넘긴다.
+    private func placedFragment(
+        _ fragment: NSAttributedString,
+        measuredWidth: CGFloat
+    ) -> NSAttributedString {
+        guard abs(currentColumnFrame.width - measuredWidth) >= 0.5 else { return fragment }
+        return HwpInlineObjectReservation.rescaledForColumn(
+            fragment, resolver: objectSizeResolver
         )
     }
 

@@ -4,38 +4,6 @@ import CoreText
 import Foundation
 import OSLog
 
-/// treatAsChar 개체의 줄 공간 예약 값 (CTRunDelegate refCon)
-private final class HwpInlineObjectMetrics {
-    let width: CGFloat
-    let ascent: CGFloat
-
-    init(width: CGFloat, ascent: CGFloat) {
-        self.width = width
-        self.ascent = ascent
-    }
-}
-
-/// treatAsChar 개체 크기만큼 줄 공간을 예약하는 CTRunDelegate를 만든다.
-private func makeInlineObjectRunDelegate(width: CGFloat, height: CGFloat) -> CTRunDelegate? {
-    let metrics = HwpInlineObjectMetrics(width: width, ascent: height)
-    var callbacks = CTRunDelegateCallbacks(
-        version: kCTRunDelegateVersion1,
-        dealloc: { pointer in
-            Unmanaged<HwpInlineObjectMetrics>.fromOpaque(pointer).release()
-        },
-        getAscent: { pointer in
-            Unmanaged<HwpInlineObjectMetrics>.fromOpaque(pointer)
-                .takeUnretainedValue().ascent
-        },
-        getDescent: { _ in 0 },
-        getWidth: { pointer in
-            Unmanaged<HwpInlineObjectMetrics>.fromOpaque(pointer)
-                .takeUnretainedValue().width
-        }
-    )
-    return CTRunDelegateCreate(&callbacks, Unmanaged.passRetained(metrics).toOpaque())
-}
-
 /// extended 컨트롤 마커 (U+FFFC) 대신 렌더할 텍스트 (각주 참조/자동 번호 등)
 public struct HwpControlMarkerReplacement: Sendable, Hashable {
     public let text: String
@@ -467,23 +435,29 @@ extension HwpTextRunBuilder {
             return
         }
 
-        // 마커 전용 값 (controlIndex·inlineObjectHeight·run delegate)은 캐시된 사전의
-        // 사본에만 붙는다 — 개체 크기가 controlIndex마다 다르므로 캐시에 넣으면 안 된다.
+        // 마커 전용 값 (controlIndex·inlineObjectHeight·예약 폭 열쇠·run delegate)은
+        // 캐시된 사전의 사본에만 붙는다 — 개체 크기가 controlIndex마다 다르므로
+        // 캐시에 넣으면 안 된다.
         var markerAttributes = attributes(for: resolved, script: .english)
         var size = CGSize.zero
         if let controlIndex {
             markerAttributes[HwpAttributedStringKey.controlIndex] = NSNumber(value: controlIndex)
-            size = inlineObjectSize(controlIndex: controlIndex, paragraph: paragraph)
-                ?? .zero
+            let reservation = inlineObjectReservation(
+                controlIndex: controlIndex, paragraph: paragraph
+            )
+            size = reservation?.size ?? .zero
             if size.height > 0 {
                 markerAttributes[HwpAttributedStringKey.inlineObjectHeight] = NSNumber(
                     value: Double(size.height)
                 )
             }
+            for (key, value) in reservation?.widthKeyAttributes ?? [:] {
+                markerAttributes[key] = value
+            }
         }
         // 개체가 아닌 마커 (필드 시작/끝·메모 앵커 등)도 폭 0 delegate를 달아
         // U+FFFC tofu 글리프가 보이지 않게 한다 (한글.app: 무형 문자)
-        if let delegate = makeInlineObjectRunDelegate(
+        if let delegate = HwpInlineObjectReservation.runDelegate(
             width: size.width,
             height: size.height
         ) {

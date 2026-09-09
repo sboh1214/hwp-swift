@@ -71,6 +71,27 @@ import XCTest
             return nil
         }
 
+        /// 마커(U+FFFC, `controlIndex`)가 줄에서 차지하는 예약 폭 — run delegate가 낸다.
+        /// 그려지는 개체 블록의 폭과 같아야 개체가 뒤 글자를 덮지 않는다.
+        static func reservedMarkerWidth(
+            in attributedString: NSAttributedString,
+            controlIndex: Int
+        ) -> CGFloat? {
+            var reserved: CGFloat?
+            attributedString.enumerateAttribute(
+                HwpAttributedStringKey.controlIndex,
+                in: NSRange(location: 0, length: attributedString.length)
+            ) { value, range, stop in
+                guard (value as? NSNumber)?.intValue == controlIndex else { return }
+                let line = CTLineCreateWithAttributedString(
+                    attributedString.attributedSubstring(from: range)
+                )
+                reserved = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+                stop.pointee = true
+            }
+            return reserved
+        }
+
         /// 오른쪽 정렬 문단 모양 — 속성1 bit 2-4 = 2.
         static func rightAlignedParaShape() -> CoreHwp.HwpParaShape {
             CoreHwp.HwpParaShape(
@@ -212,8 +233,63 @@ import XCTest
             expect(table.frame.minY).to(beCloseTo(drawn.baselineY - 10, within: 2))
         }
 
-        // MARK: 조각 줄 프레임
+        /// 단 기준 상대 크기 개체가 폭이 다른 단으로 이월되면 예약 폭도 그 단으로 다시
+        /// 푼다 — 처음 잰 단의 예약(단 너비 50% = 67.08pt)이 남으면 목적 단으로 크기를
+        /// 푸는 paint(134.19pt)와 갈려 개체가 뒤 글자를 67pt 덮는다 (PR 리뷰).
+        func testCachedColumnRunsRescaleColumnRelativeReservation() async throws {
+            let prefix = (0 ..< 14).map { "word\($0)" }.joined(separator: " ") + " "
+            let suffix = (14 ..< 18).map { "word\($0)" }.joined(separator: " ")
+            let text = prefix + "X" + suffix
+            let streamCount = UInt32(prefix.utf16.count + 8 + suffix.utf16.count)
+            let boundary = streamCount / 3
+            var paragraph = try HwpSynthetic.columnCacheParagraph(text, segments: [
+                .init(textIndex: 0, location: 0, height: 1500, width: 13416),
+                .init(textIndex: boundary / 2, location: 2552, height: 1500, width: 13416),
+                .init(textIndex: boundary, location: 0, height: 1500, width: 26837),
+                .init(textIndex: boundary + 20, location: 2552, height: 1500, width: 26837),
+            ], charCount: streamCount)
+            paragraph.paraText = HwpSynthetic.paragraphWithInlineControl(
+                prefix: prefix, suffix: suffix
+            ).paraText
+            paragraph.ctrlHeaderArray = [
+                .genShapeObject(HwpSynthetic.columnRelativeInlineObject(
+                    widthPercent: 5000, heightPercent: 200, instanceId: 8
+                )),
+                .column(HwpSynthetic.column(count: 2, widths: [10339, 20682], gaps: [1747, 0])),
+            ]
+            let section = HwpSynthetic.section(
+                firstParagraphControls: [.section(HwpSynthetic.sectionDef())],
+                bodyParagraphs: [paragraph]
+            )
+            let paginator = HwpPaginator(
+                sections: [section],
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+            let rendered = try await paginator.page(at: 0)
+            let page = try XCTUnwrap(rendered)
+            let columns = page.blocks
+                .filter { $0.kind == .text && $0.attributedString?.string.contains("word") == true }
+                .sorted { $0.frame.minX < $1.frame.minX }
+            expect(columns.count) == 2
+            guard columns.count == 2 else { return }
+            // 마커는 넓은 뒤 단 조각에 있다 — 예약을 다시 풀 자리다.
+            let wide = columns[1]
+            expect(wide.frame.width).to(beCloseTo(268.37, within: 0.05))
+            let object = try XCTUnwrap(Self.objectBlocks(on: page, instanceId: 8).first)
+            let reserved = try XCTUnwrap(InlineControlFragmentSupport.reservedMarkerWidth(
+                in: try XCTUnwrap(wide.attributedString), controlIndex: 0
+            ))
+            // 예약 = 그려지는 폭 = 뒤 단의 50% (앞 단의 50%인 67.08pt가 아니다).
+            expect(object.frame.width).to(beCloseTo(wide.frame.width / 2, within: 0.05))
+            expect(reserved).to(beCloseTo(object.frame.width, within: 0.05))
+            expect(object.frame.maxX).to(beLessThanOrEqualTo(wide.frame.maxX + 0.01))
+        }
+    }
 
+    /// 쪽·단 경계로 나뉜 문단 조각의 줄 프레임 (`HwpParagraphFragmentLines`) — 조각 기준
+    /// 되돌리기와, 렌더러가 한 줄로 접을 때의 앵커·정렬 오프셋 (#164).
+    final class HwpParagraphFragmentLinesTests: XCTestCase {
         /// 조각 줄은 문자열 범위를 조각 기준으로, 원점 y를 조각 첫 줄 기준 델타로 되돌린다.
         func testFragmentLineFramesRebaseRangesAndOrigins() {
             let lines = [
@@ -256,7 +332,9 @@ import XCTest
             var paragraph = HwpSynthetic.paragraphWithInlineControl(
                 prefix: String(repeating: "가", count: 20), suffix: ""
             )
-            paragraph.ctrlHeaderArray = [try Self.inlineTable(instanceId: 1)]
+            paragraph.ctrlHeaderArray = [
+                try InlineControlFragmentSupport.inlineTable(instanceId: 1),
+            ]
             let fragment = HwpTextRunBuilder(
                 index: index, fontResolver: .testDeterministic, attributeCache: nil
             ).build(paragraph: paragraph)
@@ -300,7 +378,9 @@ import XCTest
             var paragraph = HwpSynthetic.paragraphWithInlineControl(
                 prefix: String(repeating: "가", count: 20), suffix: ""
             )
-            paragraph.ctrlHeaderArray = [try Self.inlineTable(instanceId: 1)]
+            paragraph.ctrlHeaderArray = [
+                try InlineControlFragmentSupport.inlineTable(instanceId: 1),
+            ]
             let built = HwpTextRunBuilder(
                 index: index, fontResolver: .testDeterministic, attributeCache: nil
             ).build(paragraph: paragraph)
@@ -344,6 +424,55 @@ import XCTest
             expect(line.origin.x + anchor.xOffset).to(beCloseTo(marker.x, within: 0.01))
             // 표(60pt)의 오른쪽 끝이 단 폭을 넘지 않는다.
             expect(line.origin.x + anchor.xOffset + 60).to(beLessThanOrEqualTo(columnWidth + 0.01))
+        }
+
+        /// 목적 단 폭으로 다시 조판한 조각이 **이미 한 줄**이어도 렌더러의 정렬 오프셋을
+        /// 따라야 한다 — 측정의 한 줄 분기가 낸 원점 0을 그대로 두면 오른쪽 정렬 조각의
+        /// 앵커가 초과분만큼 오른쪽에 놓여 표가 단 경계를 넘는다 (PR 리뷰).
+        func testSingleFrameFragmentAnchorFollowsRightAlignment() throws {
+            let index = HwpIndex(from: CoreHwp.HwpFile())
+            var paragraph = HwpSynthetic.paragraphWithInlineControl(
+                prefix: String(repeating: "가", count: 20), suffix: ""
+            )
+            paragraph.ctrlHeaderArray = [
+                try InlineControlFragmentSupport.inlineTable(instanceId: 1),
+            ]
+            let shape = InlineControlFragmentSupport.rightAlignedParaShape()
+            let built = HwpTextRunBuilder(
+                index: index, fontResolver: .testDeterministic, attributeCache: nil
+            ).build(paragraph: paragraph)
+            let fragment = NSMutableAttributedString(attributedString: built)
+            fragment.addAttribute(
+                kCTParagraphStyleAttributeName as NSAttributedString.Key,
+                value: HwpParagraphLayout.paragraphStyle(for: shape, attributedString: built),
+                range: NSRange(location: 0, length: fragment.length)
+            )
+            let natural = CGFloat(CTLineGetTypographicBounds(
+                CTLineCreateWithAttributedString(fragment), nil, nil, nil
+            ))
+            let columnWidth = natural / 1.03
+            // `fragmentAnchorLines`의 비등폭 분기와 같은 재조판 — 한 줄이 나온다.
+            let relaid = HwpParagraphLayout().layout(
+                attributedString: fragment, paraShape: shape, columnWidth: columnWidth
+            ).lines
+            expect(relaid.count) == 1
+            expect(relaid.first?.origin.x).to(beCloseTo(0, within: 0.01))
+            let drawn = HwpParagraphLayout.fragmentLineFramesAsDrawn(
+                relaid, fragment: fragment, columnWidth: columnWidth
+            )
+            let line = try XCTUnwrap(drawn.first)
+            expect(drawn.count) == 1
+            expect(line.origin.x).to(beCloseTo(columnWidth - natural, within: 0.01))
+            let anchor = try XCTUnwrap(line.inlineAnchors.first)
+            let marker = try XCTUnwrap(InlineControlFragmentSupport.drawnMarker(
+                in: fragment, origin: .zero, lineWidth: columnWidth, controlIndex: 0
+            ))
+            expect(line.origin.x + anchor.xOffset).to(beCloseTo(marker.x, within: 0.01))
+            expect(line.origin.x + anchor.xOffset + 60).to(beLessThanOrEqualTo(columnWidth + 0.01))
+            // 넉넉한 단은 접기 술어가 nil이라 한 줄 입력도 그대로 돌려준다.
+            expect(HwpParagraphLayout.fragmentLineFramesAsDrawn(
+                relaid, fragment: fragment, columnWidth: natural * 2
+            ).first?.origin.x).to(beCloseTo(0, within: 0.01))
         }
     }
 #endif

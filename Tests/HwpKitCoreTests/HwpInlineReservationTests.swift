@@ -31,6 +31,110 @@ import XCTest
             expect(collected.floatingBottom).to(beNil())
         }
 
+        /// 단 기준 상대 크기 개체의 예약 폭은 목적 단 기하로 다시 풀린다 — 절대 크기
+        /// 개체는 그대로다 (`HwpInlineObjectReservation.rescaledForColumn`, #164 리뷰).
+        func testColumnRelativeReservationRescalesToDestinationColumn() {
+            var paragraph = HwpSynthetic.paragraphWithInlineControl(prefix: "가", suffix: "나")
+            paragraph.paraText?.charArray.append(CoreHwp.HwpChar(type: .extended, value: 11))
+            paragraph.ctrlHeaderArray = [
+                .genShapeObject(HwpSynthetic.columnRelativeInlineObject(
+                    widthPercent: 5000, heightPercent: 100
+                )),
+                .genShapeObject(HwpSynthetic.inlineShapeObject(width: 3000, height: 1000)),
+            ]
+            let built = HwpTextRunBuilder(
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic,
+                sizeResolver: Self.resolver(columnWidth: 100),
+                attributeCache: nil
+            ).build(paragraph: paragraph)
+            expect(Self.reservedWidth(of: built, controlIndex: 0)).to(beCloseTo(50, within: 0.01))
+
+            let rescaled = HwpInlineObjectReservation.rescaledForColumn(
+                built, resolver: Self.resolver(columnWidth: 200)
+            )
+            expect(Self.reservedWidth(of: rescaled, controlIndex: 0))
+                .to(beCloseTo(100, within: 0.01))
+            // 절대 크기 개체(3000 HWPUNIT = 30pt)는 단 폭과 무관하다.
+            expect(Self.reservedWidth(of: rescaled, controlIndex: 1))
+                .to(beCloseTo(30, within: 0.01))
+            // 예약 높이는 폭과 달리 '단' 기준이 없어 그대로다 (표 70).
+            expect(Self.reservedAscent(of: rescaled, controlIndex: 0))
+                .to(beCloseTo(Self.reservedAscent(of: built, controlIndex: 0) ?? -1, within: 0.01))
+        }
+
+        /// 다시 풀 마커가 없으면 사본을 뜨지 않는다 — 조각마다 문자열을 복사하지 않는다.
+        func testReservationRescaleKeepsStringWhenNothingIsColumnRelative() {
+            var paragraph = HwpSynthetic.paragraphWithInlineControl(prefix: "가", suffix: "나")
+            paragraph.ctrlHeaderArray = [
+                .genShapeObject(HwpSynthetic.inlineShapeObject(width: 3000, height: 1000)),
+            ]
+            let built = HwpTextRunBuilder(
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic,
+                sizeResolver: Self.resolver(columnWidth: 100),
+                attributeCache: nil
+            ).build(paragraph: paragraph)
+            expect(HwpInlineObjectReservation.rescaledForColumn(
+                built, resolver: Self.resolver(columnWidth: 200)
+            )) === built
+        }
+
+        private static func resolver(columnWidth: CGFloat) -> HwpObjectSizeResolver {
+            HwpObjectSizeResolver(
+                paperSize: CGSize(width: 595, height: 842),
+                contentSize: CGSize(width: 425, height: 700),
+                columnWidth: columnWidth
+            )
+        }
+
+        /// controlIndex 마커가 줄에서 차지하는 폭 (run delegate 예약).
+        private static func reservedWidth(
+            of attributedString: NSAttributedString,
+            controlIndex: Int
+        ) -> CGFloat? {
+            marker(of: attributedString, controlIndex: controlIndex).map {
+                CGFloat(CTLineGetTypographicBounds(
+                    CTLineCreateWithAttributedString(
+                        attributedString.attributedSubstring(from: $0)
+                    ),
+                    nil, nil, nil
+                ))
+            }
+        }
+
+        private static func reservedAscent(
+            of attributedString: NSAttributedString,
+            controlIndex: Int
+        ) -> CGFloat? {
+            guard let range = marker(of: attributedString, controlIndex: controlIndex)
+            else { return nil }
+            var ascent: CGFloat = 0
+            _ = CTLineGetTypographicBounds(
+                CTLineCreateWithAttributedString(
+                    attributedString.attributedSubstring(from: range)
+                ),
+                &ascent, nil, nil
+            )
+            return ascent
+        }
+
+        private static func marker(
+            of attributedString: NSAttributedString,
+            controlIndex: Int
+        ) -> NSRange? {
+            var found: NSRange?
+            attributedString.enumerateAttribute(
+                HwpAttributedStringKey.controlIndex,
+                in: NSRange(location: 0, length: attributedString.length)
+            ) { value, range, stop in
+                guard (value as? NSNumber)?.intValue == controlIndex else { return }
+                found = range
+                stop.pointee = true
+            }
+            return found
+        }
+
         /// 300pt 개체 하나를 `reservedAscent`만큼만 예약한 줄에 앵커로 단다.
         private func collect(
             reservedAscent: CGFloat

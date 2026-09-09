@@ -154,7 +154,7 @@ struct HwpParagraphObjectCollector {
     /// 컨테이너 높이 하한을 기록한다 — 줄이 **안 담은** 개체(`raisesContainerFloor`)는
     /// 통째로, 담았다고 본 개체는 **예약 상자를 넘친 만큼만** (R65).
     ///
-    /// 예약은 저작 치수다 (`inlineObjectSize` → 표 69 공통 속성). 표·글상자의 실제
+    /// 예약은 저작 치수다 (`inlineObjectReservation` → 표 69 공통 속성). 표·글상자의 실제
     /// 높이는 **내용**이 정하므로 예약보다 크게 조판될 수 있고, 그때 줄은 그 초과분을
     /// 안 담는다 — `reservesSpace`(예약 > 0)만 보면 "줄이 담았다"로 접어 개체가 다음
     /// 각주·행 위로 흘러나간다. #91이 저작 셀 높이에서 겪은 것과 같은 함정이다.
@@ -228,7 +228,7 @@ struct HwpParagraphObjectCollector {
     ///
     /// 예약이 0인 앵커가 실재한다: run builder는 U+FFFC + `controlIndex`를 늘 심고
     /// tofu 글리프를 감추려 폭 0 run delegate를 달므로, 예약 크기를 못 구한 개체
-    /// (`inlineObjectSize`가 nil — 공통 속성이 없는 레거시 도형) 도 앵커를 얻는다.
+    /// (`inlineObjectReservation`가 nil — 공통 속성이 없는 레거시 도형) 도 앵커를 얻는다.
     /// 위치만 보면 "줄이 담았다"로 오해한다 (R53).
     struct LineAnchor {
         let origin: CGPoint
