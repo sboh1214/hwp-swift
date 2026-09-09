@@ -180,6 +180,10 @@ public actor HwpPaginator {
     /// 문단 단위 수집을 건너뛰어야 이중 수집(번호 중복)이 되지 않는다.
     /// placeParagraphText가 매 호출 초기화하고 절대 캐시 경로만 켠다.
     private var collectedFootnotesDuringPlacement = false
+    /// 절대 캐시 run 블록의 마지막 줄 **줄 간격** 몫 (`currentBlocks` 인덱스별, #165) —
+    /// 각주 이어짐 판정의 본문 하한은 마지막 줄 상자 아래다 (한글 실측). 블록 프레임은
+    /// 전진량(줄 간격 포함)이라 그 차를 따로 둔다. 쪽이 확정되면 비운다.
+    private var absoluteRunTrailingSpacings: [Int: CGFloat] = [:]
     /// 이번 배치가 **조각의 쪽에 이미 놓은** 글자처럼 취급 컨트롤의 서수 (#164).
     /// 쪽·단에 걸친 문단은 앞 조각의 줄 앵커가 있는 개체를 그 조각이 확정되기 전에
     /// 놓으므로, 배치 뒤 문단 단위 방출(`appendControlBlocks`)이 이 서수를 건너뛰어야
@@ -1137,14 +1141,21 @@ private extension HwpPaginator {
         // 반복 머리의 cacheCurrentPage가 그 페이지를 확정하며 각주를 배치한다.
         // 경계를 못 믿으면 (서수 불일치) nil이라 호출자가 문단 전체를 마지막
         // 조각 페이지에 귀속시키는 기존 동작으로 폴백한다.
+        // 캐시(한글의 절단점)가 더 앞 조각이라 하면 그쪽을 따른다 (#165) — 늦은 귀속은
+        // 각주 이어짐과 만나 뒤 쪽으로 연쇄한다 (`earliestOrdinalRanges`).
         let slices = absoluteRunSlices(
             runs: runs,
             attributedString: attributedString,
             lines: paragraphFrame.lines
         )
-        let ordinalRanges = HwpAbsoluteCachePlacer.controlOrdinalRanges(
-            slices: slices.map(\.text),
-            controlCount: paragraph.ctrlHeaderArray?.count ?? 0
+        let controlCount = paragraph.ctrlHeaderArray?.count ?? 0
+        let ordinalRanges = HwpAbsoluteCachePlacer.earliestOrdinalRanges(
+            HwpAbsoluteCachePlacer.controlOrdinalRanges(
+                slices: slices.map(\.text), controlCount: controlCount
+            ),
+            HwpAbsoluteCachePlacer.cachedControlOrdinalRanges(
+                runs: runs, paragraph: paragraph, controlCount: controlCount
+            )
         )
         // 조각에 걸쳐 그려진 마커는 조각마다 **일부**만 갖는다 — 그 일부를 완전한
         // 번호로 바꾸면 다음 쪽에 남은 나머지와 합쳐 깨진다 (번호가 그대로여도).
@@ -1183,6 +1194,7 @@ private extension HwpPaginator {
                     renumbered: sliceText, paragraph: paragraph
                 )
             )
+            recordAbsoluteRunTrailingSpacing(run: run, firstLocation: runFirst, blockHeight: height)
             lastAbsoluteCacheLoc = run.last?.lineLocation ?? runFirst
             collectFragmentFootnotes(
                 from: paragraph,
@@ -1363,6 +1375,33 @@ private extension HwpPaginator {
             columnTop: currentColumnFrame.minY,
             contentBottom: currentPageGeometry.contentFrame.maxY
         )
+    }
+
+    /// 방금 놓은 절대 캐시 run 블록의 마지막 줄 줄 간격 몫을 기록한다 (#165) — 블록
+    /// 아래(전진량)와 마지막 줄 상자 아래의 차. 하단 경계에 잘린 블록은 잘린 만큼만 남는다.
+    private func recordAbsoluteRunTrailingSpacing(
+        run: [CoreHwp.HwpParaLineSegInternal],
+        firstLocation: Int32,
+        blockHeight: CGFloat
+    ) {
+        let inkBottom = run.reduce(Int(firstLocation)) {
+            max($0, Int($1.lineLocation) + Int(max(0, $1.lineHeight)))
+        }
+        let inkHeight = max(
+            1, HwpUnits.points(fromHwpUnit: Int32(clamping: inkBottom - Int(firstLocation)))
+        )
+        absoluteRunTrailingSpacings[currentBlocks.count - 1] = max(0, blockHeight - inkHeight)
+    }
+
+    /// 이 쪽 본문이 각주 영역에 남긴 하한 (#165) — 캐시 run 블록은 마지막 줄 **상자**
+    /// 아래 (줄 간격 제외, 한글 실측), 그 밖의 본문 블록(표·개체·흐름 문단)은 프레임
+    /// 아래. 본문 블록이 없으면 nil (이월 드레인의 빈 쪽). 크롬·변경 막대를 붙이기
+    /// **전에** 재야 한다 — 막대는 텍스트 블록 프레임(전진량)을 그대로 따른다.
+    private func footnoteBodyBottom() -> CGFloat? {
+        currentBlocks.enumerated().compactMap { offset, block -> CGFloat? in
+            guard block.role == .body, block.kind != .footnote else { return nil }
+            return block.frame.maxY - (absoluteRunTrailingSpacings[offset] ?? 0)
+        }.max()
     }
 
     /// 문단에 붙은 구역 정의를 현재 페이지 지오메트리에 반영한다.
@@ -3915,20 +3954,19 @@ private extension HwpPaginator {
 
     /// 대기 중인 각주를 페이지 하단에 배치한다. 영역(콘텐츠 절반 상한)을
     /// 넘는 각주는 pendingFootnotes에 남겨 다음 페이지로 이월한다.
-    func appendPendingFootnotes() {
+    ///
+    /// bodyBottom: 절대 캐시 모드에서 본문이 남긴 하한 (#165). 본문 y는 캐시로
+    /// 고정돼 있으므로 각주는 그 아래 자리에 한글의 이어짐 규칙으로 싣는다 — 안
+    /// 들어가는 각주는 줄 캐시의 분할 지점에서 나눠 다음 쪽 첫 각주로 잇고 (한글이
+    /// 그렇게 저장했다), 분할 지점이 없으면 통째로 옮긴다. 절반 상한은 두지 않는다.
+    func appendPendingFootnotes(bodyBottom: CGFloat? = nil) {
         guard !pendingFootnotes.isEmpty else { return }
-        // 절대 캐시 모드에서 본문 y는 캐시로 고정된다. 한글의 본문 절단점은
-        // 이미 그 페이지 각주 공간을 반영하므로, 각주는 페이지 하단 기준으로
-        // 그대로 쌓는다 — 하한을 강제해 이월시키면 한글에 없는 각주 전용
-        // 페이지가 연쇄로 생긴다 (헌법주석 실측 1,031 → 1,054).
-        // 절대 캐시 모드에선 절반 상한도 두지 않는다 — 한글이 확정한 페이지의
-        // 각주는 참조 페이지에 전부 둔다 (이월 예약이 한글에 없는 페이지
-        // 절단을 만든다 — 헌법주석 p485 실측 1,031 → 1,030).
         let placement = footnoteCoordinator.placePendingFootnotes(
             onPage: currentPageGeometry,
             footnoteShape: currentSectionDef?.footNoteShape,
             limitsAreaToHalfContent: !absoluteCacheMode,
-            sizeResolver: objectSizeResolver
+            sizeResolver: objectSizeResolver,
+            bodyBottom: bodyBottom
         )
         for block in placement.blocks {
             currentBlocks.append(AnyHwpBlock(
@@ -3954,6 +3992,8 @@ private extension HwpPaginator {
             didFinishPagination = true
             return
         }
+        // 각주 이어짐 판정의 본문 하한 (#165) — 크롬·변경 막대를 붙이기 전의 본문만.
+        let footnoteBodyBottom = absoluteCacheMode ? footnoteBodyBottom() : nil
         // 변경 추적 문단의 이 페이지 조각마다 변경 막대를 방출한다 — 페이지 걸친
         // 문단의 앞 조각도 자기 페이지에서 막대를 받는다 (#7).
         emitTrackChangeBars()
@@ -3963,7 +4003,7 @@ private extension HwpPaginator {
             geometry: currentPageGeometry
         )
         nextLogicalPageNumber += 1
-        appendPendingFootnotes()
+        appendPendingFootnotes(bodyBottom: footnoteBodyBottom)
         let pageIndex = cachedPages.count
         let page = HwpPage(
             size: currentPageGeometry.pageSize,
@@ -3990,6 +4030,7 @@ private extension HwpPaginator {
             memoPanel: memoPanel
         )
         currentBlocks = []
+        absoluteRunTrailingSpacings = [:]
         // 페이지가 넘어가면 이전 페이지 문단의 줄 앵커 좌표는 무효다.
         currentParagraphContext = nil
         // 새 페이지: 절대 캐시 loc 추적과 stale 캐시 보정을 리셋한다.

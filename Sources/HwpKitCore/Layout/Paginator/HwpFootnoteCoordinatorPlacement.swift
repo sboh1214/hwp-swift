@@ -70,11 +70,13 @@ extension HwpFootnoteCoordinator {
 
     /// 대기 각주의 페이지 하단 배치를 계산한다 (HwpFootnoteLayout.place 위임).
     /// pendingFootnotes 소비 (overflow 반영)와 블록 방출은 호출자 몫.
+    /// bodyBottom: 절대 캐시 모드에서 본문이 남긴 하한 (#165, `HwpFootnoteLayout.place`).
     func placePendingFootnotes(
         onPage geometry: HwpPageGeometry,
         footnoteShape: CoreHwp.HwpFootnoteShape?,
         limitsAreaToHalfContent: Bool,
-        sizeResolver: HwpObjectSizeResolver? = nil
+        sizeResolver: HwpObjectSizeResolver? = nil,
+        bodyBottom: CGFloat? = nil
     ) -> HwpFootnoteLayout.Placement {
         footnoteLayout.place(
             footnotes: pendingFootnotes,
@@ -82,7 +84,8 @@ extension HwpFootnoteCoordinator {
             index: index,
             footnoteShape: footnoteShape,
             limitsAreaToHalfContent: limitsAreaToHalfContent,
-            sizeResolver: sizeResolver
+            sizeResolver: sizeResolver,
+            bodyBottom: bodyBottom
         )
     }
 

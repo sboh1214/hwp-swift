@@ -64,6 +64,10 @@ struct HwpFootnoteCoordinator {
         /// 함수(불변 표)라 경로가 키다. 같은 문단 값이 다른 자리에서 다른 번호를
         /// 받을 수 있으므로 문단 값만으로는 재사용을 가를 수 없다.
         let numberingPath: HwpParagraphPath?
+        /// 각주의 마지막 문단인지 (#165) — 마지막 줄의 줄 간격을 세지 않는 자리라 값이 다르다.
+        let noteEnd: Bool
+        /// 앞 쪽에 이미 실린 줄 수 (#165) — 이어지는 조각은 그 뒤 줄만 잰다.
+        let placedLineCount: Int
     }
 
     let index: HwpIndex
@@ -342,7 +346,8 @@ struct HwpFootnoteCoordinator {
                 of: paragraph,
                 number: number,
                 environment: environment,
-                numbering: scope
+                numbering: scope,
+                isNoteEnd: paragraphIndex == paragraphs.count - 1
             )
         }
     }
@@ -421,21 +426,22 @@ extension HwpFootnoteCoordinator {
         guard !inputs.isEmpty else { return 0 }
         let metrics = footnoteReservationMetrics(environment: environment)
         var total = metrics.separatorOverhead
-        var previousNumber: Int?
-        for input in inputs {
-            if let previousNumber, previousNumber != input.number {
+        for (index, input) in inputs.enumerated() {
+            if index > 0, inputs[index - 1].number != input.number {
                 total += metrics.spacingBetweenNotes
             }
             // 배치(`HwpFootnoteLayout.measure`)가 `input.sizeResolver`를 쓰므로
             // 재예약도 같은 값으로 재야 한다 — 현재 environment로 재면 그 사이
             // 단·구역 기하가 바뀐 문서에서 예약과 배치가 갈린다 (R45 #1).
+            // 이어지는 조각(#165)은 앞 쪽에 실린 줄 뒤만 잰다 — 배치와 같은 산식.
             total += measuredFootnoteHeight(
                 of: input.paragraph,
                 number: input.number,
                 environment: input.sizeResolver.map(environment.withSizeResolver) ?? environment,
-                numbering: input.numbering
+                numbering: input.numbering,
+                isNoteEnd: index == inputs.count - 1 || inputs[index + 1].number != input.number,
+                placedLineCount: input.placedLineCount
             )
-            previousNumber = input.number
         }
         return total
     }
@@ -526,7 +532,8 @@ extension HwpFootnoteCoordinator {
                             of: noteParagraph,
                             number: number,
                             environment: environment,
-                            numbering: container?.paragraph(childIndex: paragraphIndex)
+                            numbering: container?.paragraph(childIndex: paragraphIndex),
+                            isNoteEnd: paragraphIndex == paragraphs.count - 1
                         )
                     }
                 }
@@ -554,11 +561,16 @@ extension HwpFootnoteCoordinator {
 
     /// numbering: 이 각주 문단의 번호 열쇠 (#158) — 배치(`HwpFootnoteLayout.measure`)가
     /// `Input.numbering`으로 같은 라벨을 붙이므로 예약도 같은 열쇠로 잰다.
+    /// isNoteEnd: 각주의 마지막 문단 — 마지막 줄의 줄 간격을 세지 않는다 (#165, 배치의
+    /// `NoteMeasurement.stackingHeight`와 같은 산식). placedLineCount: 이어지는 조각의
+    /// 앞 쪽에 실린 줄 수.
     mutating func measuredFootnoteHeight(
         of paragraph: CoreHwp.HwpParagraph,
         number: Int,
         environment: Environment,
-        numbering: HwpNumberingScope? = nil
+        numbering: HwpNumberingScope? = nil,
+        isNoteEnd: Bool = false,
+        placedLineCount: Int = 0
     ) -> CGFloat {
         // 개체 없는 각주 (대다수) 는 라인 캐시만으로 끝낸다 — CT 조판을 건너뛰는
         // 이 빠른 길이 대형 문서 로드 시간을 좌우한다 (헌법주석 1,030쪽).
@@ -566,11 +578,13 @@ extension HwpFootnoteCoordinator {
             in: paragraph, collectsTextboxes: true, collectsTables: true
         ) else {
             return measuredFootnoteTextHeight(
-                of: paragraph, number: number, environment: environment, numbering: numbering
+                of: paragraph, number: number, environment: environment, numbering: numbering,
+                isNoteEnd: isNoteEnd, placedLineCount: placedLineCount
             )
         }
         return measuredNoteBlockHeight(
-            of: paragraph, number: number, environment: environment, numbering: numbering
+            of: paragraph, number: number, environment: environment, numbering: numbering,
+            isNoteEnd: isNoteEnd, placedLineCount: placedLineCount
         )
     }
 
@@ -582,7 +596,9 @@ extension HwpFootnoteCoordinator {
         of paragraph: CoreHwp.HwpParagraph,
         number: Int,
         environment: Environment,
-        numbering: HwpNumberingScope?
+        numbering: HwpNumberingScope?,
+        isNoteEnd: Bool,
+        placedLineCount: Int
     ) -> CGFloat {
         let width = environment.contentWidth
         let key = FootnoteHeightKey(
@@ -591,7 +607,9 @@ extension HwpFootnoteCoordinator {
             number: number,
             sizeResolver: environment.sizeResolver?.forFootnoteArea(width: width),
             footnoteShape: environment.footnoteShape,
-            numberingPath: numbering?.path
+            numberingPath: numbering?.path,
+            noteEnd: isNoteEnd,
+            placedLineCount: placedLineCount
         )
         if let cached = footnoteBlockHeightCache[key] {
             return cached
@@ -603,22 +621,28 @@ extension HwpFootnoteCoordinator {
             index: index,
             footnoteShape: environment.footnoteShape,
             sizeResolver: environment.sizeResolver,
-            numbering: numbering
-        ).blockHeight
+            numbering: numbering,
+            placedLineCount: placedLineCount
+        ).stackingHeight(isNoteEnd: isNoteEnd)
         footnoteBlockHeightCache[key] = height
         return height
     }
 
     /// 각주 문단의 **텍스트** 높이 — 배치 (HwpFootnoteLayout.measure)와 같은
-    /// 기준: 라인 캐시 우선.
+    /// 기준: 라인 캐시 우선. 쪽에 걸친 문단(세로 위치 리셋)도 쪽 몫의 합으로 잰다 (#165).
     private mutating func measuredFootnoteTextHeight(
         of paragraph: CoreHwp.HwpParagraph,
         number: Int,
         environment: Environment,
-        numbering: HwpNumberingScope?
+        numbering: HwpNumberingScope?,
+        isNoteEnd: Bool,
+        placedLineCount: Int
     ) -> CGFloat {
-        if let cachedHeight = HwpParagraphLayout.cachedParagraphHeight(paragraph) {
-            return cachedHeight
+        if let lines = HwpFootnoteCacheLines.lines(of: paragraph) {
+            let range = min(placedLineCount, lines.count) ..< lines.count
+            let height = HwpFootnoteCacheLines.height(of: lines, in: range)
+                - (isNoteEnd ? HwpFootnoteCacheLines.trailingSpacing(of: lines, in: range) : 0)
+            return max(1, height)
         }
         let width = environment.contentWidth
         let sizeResolver = environment.sizeResolver?.forFootnoteArea(width: width)
@@ -628,7 +652,9 @@ extension HwpFootnoteCoordinator {
             number: number,
             sizeResolver: sizeResolver,
             footnoteShape: environment.footnoteShape,
-            numberingPath: numbering?.path
+            numberingPath: numbering?.path,
+            noteEnd: false,
+            placedLineCount: 0
         )
         if let cached = footnoteHeightCache[key] {
             return cached

@@ -151,13 +151,29 @@ import XCTest
             }
         }
 
-        /// 캐시가 주장하는 절단 위치 (textStartingIndex) 가 그려진 조각과 어긋나도
-        /// 각주는 참조가 **그려진** 페이지를 따른다 — 폰트 대체·stale 캐시로 CT 줄
-        /// 배분이 캐시와 갈리는 문단이 그렇다. 원본 WCHAR 위치로 나누면 뒤 조각의
-        /// 각주가 앞 페이지로 가, 그 쪽에 참조 없는 각주가 뜬다.
-        func testAttributionFollowsDrawnSliceNotCacheTextIndex() async throws {
+        /// 캐시가 주장하는 절단 위치 (textStartingIndex) 가 그려진 조각보다 **앞**이면
+        /// 각주는 캐시 — 한글의 절단점 — 를 따른다 (#165). 폰트 대체로 CT 줄바꿈이 한글보다
+        /// 늦어 마커가 다음 조각으로 밀린 문단이 그렇다. 그려진 조각을 따르면 그 각주가
+        /// 한글이 이미 다른 각주로 채운 다음 쪽을 넘치게 하고, 넘침이 이어짐으로 뒤 쪽에
+        /// 연쇄해 한글에 없는 쪽을 만든다 (헌법주석 실측: 21건이 8쪽을 늘렸다). 참조
+        /// 마커는 그려진 조각에 남으므로 이 쪽엔 참조 없는 각주가 뜬다 — 연쇄보다 낫다.
+        func testAttributionFollowsCacheWhenItClaimsAnEarlierFragment() async throws {
             // 마지막 세그먼트가 두 마커보다 뒤라고 주장한다 (그리기는 그대로 2:1 분할)
             let paginator = try paginate(splitHostParagraph(lastSegmentTextStart: 30))
+            let first = try await paginator.page(at: 0)
+            let second = try await paginator.page(at: 1)
+
+            expect(self.noteTexts(on: first).count) == 2
+            expect(self.noteTexts(on: first).first).to(contain("앞 조각"))
+            expect(self.noteTexts(on: first).last).to(contain("뒤 조각"))
+            expect(self.noteTexts(on: second)).to(beEmpty())
+        }
+
+        /// 반대로 캐시가 그려진 조각보다 **뒤**라고 주장하면 그려진 조각을 따른다 —
+        /// 그 쪽에 참조가 있고, 앞 조각 귀속은 연쇄를 만들지 않는다.
+        func testAttributionFollowsDrawnSliceWhenCacheClaimsALaterFragment() async throws {
+            // 마지막 세그먼트가 문단 첫 글자에서 시작한다고 주장한다 (두 마커 모두 뒤 조각)
+            let paginator = try paginate(splitHostParagraph(lastSegmentTextStart: 0))
             let first = try await paginator.page(at: 0)
             let second = try await paginator.page(at: 1)
 

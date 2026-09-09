@@ -86,6 +86,10 @@ public struct HwpFootnoteLayout {
         /// 서수로 풀어 싣는다. 예약(`HwpFootnoteCoordinator`)과 배치(`measureNote`)가
         /// 같은 열쇠로 같은 라벨을 붙여야 높이가 갈리지 않는다. 공개 init은 nil이다.
         let numbering: HwpNumberingScope?
+        /// 앞 쪽들에 이미 실린 이 문단의 캐시 줄 수 (#165) — 0이면 문단 처음부터다.
+        /// 이어지는 조각은 그 뒤 줄만 재고 그리며 번호 라벨을 반복하지 않는다
+        /// (`HwpFootnoteContinuation.swift`). 공개 init은 0이다.
+        let placedLineCount: Int
 
         public init(
             paragraph: CoreHwp.HwpParagraph,
@@ -102,12 +106,14 @@ public struct HwpFootnoteLayout {
             paragraph: CoreHwp.HwpParagraph,
             number: Int,
             sizeResolver: HwpObjectSizeResolver?,
-            numbering: HwpNumberingScope?
+            numbering: HwpNumberingScope?,
+            placedLineCount: Int = 0
         ) {
             self.paragraph = paragraph
             self.number = number
             self.sizeResolver = sizeResolver
             self.numbering = numbering
+            self.placedLineCount = placedLineCount
         }
     }
 
@@ -141,18 +147,13 @@ public struct HwpFootnoteLayout {
         ).blocks
     }
 
-    /// 각주 영역(콘텐츠 절반 상한)에 들어가는 만큼 배치하고 나머지는 이월로 돌려준다.
-    /// 진행 보장을 위해 첫 각주는 영역보다 커도 항상 배치한다.
-    /// limitsAreaToHalfContent: 흐름 조판에선 콘텐츠 절반 상한 (한글 기본 동작).
-    /// 절대 캐시 모드에선 false — 한글이 이미 확정한 페이지의 각주는 참조
-    /// 페이지에 전부 둔다 (이월하면 다음 페이지 예약이 한글에 없는 페이지
-    /// 절단을 만든다 — 헌법주석 p485 실측).
     /// 예약 기하 — paginator가 본문 배치 전에 각주 영역 높이를 예측할 때
     /// 실제 배치 (place의 스택 산식)와 동형이 되도록 노출한다:
-    /// 예약 = Σ 각주 높이 + spacingBetweenNotes × (노트 경계 수)
-    ///       + separatorOverhead (페이지 첫 각주만).
+    /// 예약 = Σ 각주 높이 (각주 마지막 줄의 줄 간격 제외)
+    ///       + spacingBetweenNotes × (노트 경계 수) + separatorOverhead (페이지 첫 각주만).
     public struct ReservationMetrics {
-        /// 구분선 위 여백 + 아래 여백 + 선 두께 (place의 stackHeight와 동일)
+        /// 구분선 위 여백 + 아래 여백 (place의 stackHeight와 동일). 선 두께는 세지 않는다 —
+        /// 한글은 선을 위 여백 끝에 가운데 맞춰 긋고 아래 여백을 선 가운데부터 잰다 (#165 실측).
         public let separatorOverhead: CGFloat
         /// 서로 다른 번호의 노트 사이 간격 (같은 번호의 이어지는 문단은 0)
         public let spacingBetweenNotes: CGFloat
@@ -167,18 +168,28 @@ public struct HwpFootnoteLayout {
             contentWidth: contentWidth
         )
         return ReservationMetrics(
-            separatorOverhead: divider.marginTop + divider.marginBottom + divider.thickness,
+            separatorOverhead: divider.marginTop + divider.marginBottom,
             spacingBetweenNotes: divider.betweenNotes
         )
     }
 
+    /// 각주 영역에 들어가는 만큼 배치하고 나머지는 이월로 돌려준다.
+    ///
+    /// limitsAreaToHalfContent: 흐름 조판에선 콘텐츠 절반 상한 (한글 기본 동작) — 넘는
+    /// 각주는 통째로 이월하되 진행 보장을 위해 첫 각주는 영역보다 커도 항상 배치한다.
+    /// 절대 캐시 모드에선 false — 본문이 남긴 자리(`bodyBottom` 아래)에 한글의 이어짐
+    /// 규칙으로 싣는다: 안 들어가는 각주는 줄 캐시의 분할 지점에서 나눠 다음 쪽 첫 각주로
+    /// 잇고, 분할 지점이 없으면 통째로 옮긴다 (#165, `HwpFootnoteContinuation.swift`).
+    /// bodyBottom: 이 쪽 본문의 하한 (마지막 줄 **상자** 아래, 줄 간격 제외) — nil이면
+    /// 본문 없는 쪽 (이월 드레인) 이라 콘텐츠 전체가 자리다.
     public func place(
         footnotes: [Input],
         onPage geometry: HwpPageGeometry,
         index: HwpIndex,
         footnoteShape: CoreHwp.HwpFootnoteShape? = nil,
         limitsAreaToHalfContent: Bool = true,
-        sizeResolver: HwpObjectSizeResolver? = nil
+        sizeResolver: HwpObjectSizeResolver? = nil,
+        bodyBottom: CGFloat? = nil
     ) -> Placement {
         guard !footnotes.isEmpty else { return Placement(blocks: [], overflow: []) }
 
@@ -197,56 +208,63 @@ public struct HwpFootnoteLayout {
             sizeResolver: sizeResolver
         )
 
-        // 페이지 하단에서 위로 필요한 만큼 확보하되 콘텐츠 절반을 넘지 않는다.
-        // 같은 각주 컨트롤의 이어지는 문단 사이에는 간격이 없다 (stackBlocks와 동일).
-        var notesHeight: CGFloat = 0
-        var previousNumber: Int?
-        for note in measured {
-            if previousNumber != nil, previousNumber != note.input.number {
-                notesHeight += divider.betweenNotes
-            }
-            notesHeight += note.blockHeight
-            previousNumber = note.input.number
-        }
-        let stackHeight = notesHeight + divider.marginTop + divider.marginBottom
-            + divider.thickness
-        let areaHeight = limitsAreaToHalfContent
-            ? min(contentFrame.height / 2, stackHeight)
-            : stackHeight
-        // 각주 영역 상단은 본문 상단 아래로 내려오지 못한다 (#95). 상한 없는
-        // 배치 (절대 캐시 모드)에서 스택이 콘텐츠 높이를 넘으면 maxY − 높이가
-        // contentFrame.minY보다 작아지고, 심하면 음수가 돼 각주 앞부분이 종이
-        // 밖으로 잘려 **사라진다** (헌법주석 실측: 5쪽, 최악 −217.6pt).
-        // 아래로 밀어내는 클램프라 이월이 생기지 않으므로 (stackFrame이 스택을
-        // 그대로 담는다) 한글에 없는 각주 전용 페이지가 연쇄하지 않는다 — 강제
-        // 이월이 그 페이지를 만든다 (실측 1,035쪽, `Sources/HwpKitCore/AGENTS.md`).
-        // 절반 상한 모드는 areaHeight ≤ 콘텐츠/2라 이 클램프가 무동작이다.
-        let areaTop = max(contentFrame.minY, contentFrame.maxY - areaHeight)
-
-        let separatorLine = CGRect(
-            x: contentFrame.minX,
-            y: areaTop + divider.marginTop,
-            width: divider.length,
-            height: max(0.5, divider.thickness)
-        )
-
-        // 상한 없는 배치는 이월 없이 전부 페이지 하단 영역에 쌓는다
-        let stackFrame = limitsAreaToHalfContent
-            ? contentFrame
-            : CGRect(
-                x: contentFrame.minX,
-                y: contentFrame.minY,
-                width: contentFrame.width,
-                height: max(contentFrame.height, areaTop + areaHeight - contentFrame.minY)
+        // 절대 캐시 모드 (상한 없음): 본문 아래 자리에 맞춰 싣고 넘치는 몫은 한글의 분할
+        // 지점에서 나눠 다음 쪽으로 잇는다 (#165).
+        if !limitsAreaToHalfContent {
+            return placeBelowBody(
+                measured: measured, bodyBottom: bodyBottom, onPage: geometry, divider: divider
             )
+        }
+
+        // 페이지 하단에서 위로 필요한 만큼 확보하되 콘텐츠 절반을 넘지 않는다.
+        // 같은 각주 컨트롤의 이어지는 문단 사이에는 간격이 없고 (stackBlocks와 동일)
+        // 각주 마지막 줄의 줄 간격은 세지 않는다 (#165 실측).
+        let stackHeight = Self.stackedHeight(of: measured, betweenNotes: divider.betweenNotes)
+            + divider.marginTop + divider.marginBottom
+        let areaHeight = min(contentFrame.height / 2, stackHeight)
+        // 각주 영역 상단은 본문 상단 아래로 내려오지 못한다 (#95) — 절반 상한 모드는
+        // areaHeight ≤ 콘텐츠/2라 이 클램프가 무동작이다.
+        let areaTop = max(contentFrame.minY, contentFrame.maxY - areaHeight)
+        let separatorLine = Self.separatorLine(
+            areaTop: areaTop, divider: divider, contentFrame: contentFrame
+        )
         let stacked = stackBlocks(
             measured: measured,
-            from: separatorLine.maxY + divider.marginBottom,
-            in: stackFrame,
+            from: areaTop + divider.marginTop + divider.marginBottom,
+            in: contentFrame,
             separatorLine: separatorLine,
             divider: divider
         )
         return Placement(blocks: stacked.blocks, overflow: stacked.overflow)
+    }
+
+    /// 각주 항목들의 스택 높이 — 항목 높이 (각주 마지막 항목은 마지막 줄 줄 간격 제외)
+    /// + 서로 다른 번호 사이의 간격. 예약(`HwpFootnoteCoordinator`)이 같은 산식을 쓴다.
+    static func stackedHeight(of measured: [MeasuredFootnote], betweenNotes: CGFloat) -> CGFloat {
+        var total: CGFloat = 0
+        for (index, note) in measured.enumerated() {
+            if index > 0, measured[index - 1].input.number != note.input.number {
+                total += betweenNotes
+            }
+            let isNoteEnd = index == measured.count - 1
+                || measured[index + 1].input.number != note.input.number
+            total += note.measurement.stackingHeight(isNoteEnd: isNoteEnd)
+        }
+        return total
+    }
+
+    /// 구분선 rect — 위 여백 끝에 **가운데** 맞춘다 (한글 실측: 첫 각주 줄 위 = 선 가운데
+    /// + 아래 여백). 두께는 그리기용 하한 0.5pt.
+    static func separatorLine(
+        areaTop: CGFloat, divider: DividerMetrics, contentFrame: CGRect
+    ) -> CGRect {
+        let thickness = max(0.5, divider.thickness)
+        return CGRect(
+            x: contentFrame.minX,
+            y: areaTop + divider.marginTop - thickness / 2,
+            width: divider.length,
+            height: thickness
+        )
     }
 
     /// 흐름 배치 결과: 배치된 블록, 이월 입력, 다음 흐름 y
@@ -292,13 +310,10 @@ public struct HwpFootnoteLayout {
         var cursorY = startY
         var separatorLine = CGRect(x: columnFrame.minX, y: startY, width: 0, height: 0)
         if drawSeparator {
-            separatorLine = CGRect(
-                x: columnFrame.minX,
-                y: cursorY + divider.marginTop,
-                width: divider.length,
-                height: max(0.5, divider.thickness)
+            separatorLine = Self.separatorLine(
+                areaTop: cursorY, divider: divider, contentFrame: columnFrame
             )
-            cursorY = separatorLine.maxY + divider.marginBottom
+            cursorY += divider.marginTop + divider.marginBottom
         }
 
         let stacked = stackBlocks(
@@ -317,7 +332,8 @@ public struct HwpFootnoteLayout {
 
     /// 측정 끝난 각주들을 frame 폭으로 위에서 아래로 쌓는다.
     /// frame.maxY를 넘는 입력은 overflow로 돌려주되, 진행 보장을 위해
-    /// 첫 블록은 항상 배치한다.
+    /// 첫 블록은 항상 배치한다. 블록 산식은 절대 캐시 모드 (`placeBelowBody`)와
+    /// 같은 `footnoteBlock(for:)`이다.
     private func stackBlocks(
         measured: [MeasuredFootnote],
         from startY: CGFloat,
@@ -335,40 +351,17 @@ public struct HwpFootnoteLayout {
             if let previousNumber, previousNumber == note.input.number {
                 cursorY -= divider.betweenNotes
             }
-            let blockHeight = note.blockHeight
+            let isNoteEnd = noteIndex == measured.count - 1
+                || measured[noteIndex + 1].input.number != note.input.number
+            let entry = StackEntry(measured: note, lineRange: nil, isNoteEnd: isNoteEnd)
+            let blockHeight = note.measurement.stackingHeight(isNoteEnd: isNoteEnd)
             if !blocks.isEmpty, cursorY + blockHeight > frame.maxY + 0.5 {
                 overflow = measured[noteIndex...].map(\.input)
                 break
             }
             previousNumber = note.input.number
-            blocks.append(HwpFootnoteBlock(
-                frame: CGRect(
-                    x: frame.minX,
-                    y: cursorY,
-                    width: frame.width,
-                    height: blockHeight
-                ),
-                paragraphs: [HwpLaidOutParagraph(
-                    attributedString: note.attributed,
-                    frame: note.frame,
-                    // 문단 rect는 **문단 자신의** 텍스트 높이다 — 떠 있는 개체가
-                    // 블록을 키운 몫까지 문단이 흡수하면 문단-레벨 링크 폴백
-                    // (`HwpHitTester.spanAwareHyperlinkURL`)이 개체 아래 빈
-                    // 영역까지 자기 URL로 claim한다 (R39 #2). 컨테이너가 개체를
-                    // 담는 높이는 블록 frame (blockHeight) 몫이다.
-                    rect: CGRect(x: 0, y: 0, width: frame.width, height: note.textRectHeight),
-                    paragraphId: note.input.paragraph.paraHeader.paraId,
-                    hyperlinkURL: note.input.paragraph.hyperlinkURL
-                )],
-                number: note.input.number,
-                separatorLine: separatorLine,
-                separatorColor: divider.color,
-                // 개체는 measure가 문단-로컬 (0, 0) 기준으로 수집했고, 문단 rect도
-                // 블록-로컬 (0, 0)이라 그대로 블록-로컬 좌표다 (#94).
-                images: note.objects.images,
-                shapes: note.objects.shapes,
-                textboxes: note.objects.textboxes,
-                nestedTables: note.objects.nestedTables
+            blocks.append(Self.footnoteBlock(
+                for: entry, at: cursorY, in: frame, separatorLine: separatorLine, divider: divider
             ))
             cursorY += blockHeight + divider.betweenNotes
         }
@@ -376,7 +369,7 @@ public struct HwpFootnoteLayout {
     }
 
     /// 높이 계산이 끝난 각주 문단 (+ 그 문단에 붙은 개체, 문단-로컬 rect)
-    private struct MeasuredFootnote {
+    struct MeasuredFootnote {
         let input: Input
         let measurement: NoteMeasurement
 
@@ -410,6 +403,13 @@ extension HwpFootnoteLayout {
         let attributed: NSAttributedString
         let frame: HwpParagraphFrame
         let objects: HwpParagraphObjectCollector.Objects
+        /// 문단 줄 캐시 (#165) — 분할 지점·조각 높이의 근거. 캐시가 없으면 nil.
+        let cacheLines: [HwpFootnoteCacheLine]?
+        /// 앞 쪽에 이미 실린 줄 수 — `attributed`·`frame`은 그 뒤 조각이다.
+        let placedLineCount: Int
+        /// 텍스트 높이가 캐시에서 왔을 때 마지막 줄의 줄 간격 — 각주 끝·쪽 끝에서 세지
+        /// 않는다 (각주 사이 여백이 대체하고, 쪽 끝은 줄 상자 아래가 본문 하단에 닿는다).
+        let trailingLineSpacing: CGFloat
 
         /// 문단 rect 높이 — **문단 자신의** 텍스트 높이. 블록 높이와 달리 개체
         /// 성장분을 포함하지 않는다 (R39 #2).
@@ -431,6 +431,32 @@ extension HwpFootnoteLayout {
         var blockHeight: CGFloat {
             Swift.max(textRectHeight, objects.floatingBottom ?? 0)
         }
+
+        /// 스택에서 차지하는 높이 — 각주의 마지막 항목이면 마지막 줄의 줄 간격을 뺀다
+        /// (#165 실측). 문단 rect(`textRectHeight`)는 그대로 둔다 — CT가 그 안에 줄을
+        /// 놓으므로 줄 간격 몫을 잘라 내면 대체 폰트의 마지막 줄이 프레임 밖으로 떨어진다.
+        func stackingHeight(isNoteEnd: Bool) -> CGFloat {
+            let text = isNoteEnd ? textRectHeight - trailingLineSpacing : textRectHeight
+            return Swift.max(1, Swift.max(text, objects.floatingBottom ?? 0))
+        }
+
+        /// 쪽 끝에서 나뉜 앞 몫 (남은 줄 기준 `range`) 의 텍스트 높이 — 마지막 줄 전진량까지.
+        func headTextHeight(lines range: Range<Int>) -> CGFloat {
+            guard let cacheLines else { return textRectHeight }
+            return Swift.max(1, HwpFootnoteCacheLines.height(of: cacheLines, in: shifted(range)))
+        }
+
+        /// 앞 몫의 스택 높이 — 마지막 줄 상자까지 (그 줄의 줄 간격 제외).
+        func headHeight(lines range: Range<Int>) -> CGFloat {
+            guard let cacheLines else { return stackingHeight(isNoteEnd: true) }
+            let text = HwpFootnoteCacheLines.height(of: cacheLines, in: shifted(range))
+                - HwpFootnoteCacheLines.trailingSpacing(of: cacheLines, in: shifted(range))
+            return Swift.max(1, Swift.max(text, objects.floatingBottom ?? 0))
+        }
+
+        private func shifted(_ range: Range<Int>) -> Range<Int> {
+            (range.lowerBound + placedLineCount) ..< (range.upperBound + placedLineCount)
+        }
     }
 
     /// 각주 문단 하나를 재고 그 문단에 붙은 개체를 문단-로컬 rect로 수집한다.
@@ -440,6 +466,9 @@ extension HwpFootnoteLayout {
     /// 한글에 없는 페이지 절단이 생긴다 (#94, R39 #1). 특히 줄 앵커 유무가 개체
     /// 높이 하한을 가르므로 (`escapesLineBox`) 양쪽이 **같은 프레임**을 봐야
     /// 한다 — 예약이 줄 없는 프레임으로 따로 재던 것이 R40 #1의 원인이었다.
+    ///
+    /// placedLineCount: 앞 쪽들에 이미 실린 캐시 줄 수 (#165) — 0보다 크면 그 뒤 줄만
+    /// 재고 조각 문자열을 만든다 (개체는 첫 조각 몫이라 수집하지 않는다).
     func measureNote(
         _ paragraph: CoreHwp.HwpParagraph,
         number: Int,
@@ -447,7 +476,8 @@ extension HwpFootnoteLayout {
         index: HwpIndex,
         footnoteShape: CoreHwp.HwpFootnoteShape?,
         sizeResolver: HwpObjectSizeResolver?,
-        numbering: HwpNumberingScope? = nil
+        numbering: HwpNumberingScope? = nil,
+        placedLineCount: Int = 0
     ) -> NoteMeasurement {
         let noteResolver = sizeResolver?.forFootnoteArea(width: width)
         // 각주 첫머리의 자동 번호 (ext18) 마커를 번호 문자열로 치환한다 (번호는
@@ -473,6 +503,28 @@ extension HwpFootnoteLayout {
                 number: numbering?.number
             )
         )
+        let cacheLines = HwpFootnoteCacheLines.lines(of: paragraph)
+        // 이어지는 조각 (#165): 앞 쪽에 실린 줄 뒤만 재고 그린다.
+        if let cacheLines, placedLineCount > 0 {
+            let range = min(placedLineCount, cacheLines.count) ..< cacheLines.count
+            let fragment = Self.fragment(
+                of: measured.attributed, lines: measured.frame.lines,
+                cacheLineCount: cacheLines.count, cacheRange: range
+            )
+            return NoteMeasurement(
+                attributed: fragment.attributed,
+                frame: HwpParagraphFrame(
+                    totalHeight: HwpFootnoteCacheLines.height(of: cacheLines, in: range),
+                    lines: fragment.lines
+                ),
+                objects: HwpParagraphObjectCollector.Objects(),
+                cacheLines: cacheLines,
+                placedLineCount: placedLineCount,
+                trailingLineSpacing: HwpFootnoteCacheLines.trailingSpacing(
+                    of: cacheLines, in: range
+                )
+            )
+        }
         // 각주 문단에 붙은 개체 (그림/도형/글상자/표)는 각주 영역 안 콘텐츠다 —
         // 페이지 흐름 블록으로 방출하면 각주 밖에 그려진다 (#94). 표 셀과 같은
         // 수집기를 쓰되 표까지 담는다: 셀은 `PlacedCellContent.nestedTables`가
@@ -485,22 +537,37 @@ extension HwpFootnoteLayout {
             attributeCache: attributeCache,
             collectsTables: true
         )
+        let objects = collector.objects(
+            in: paragraph,
+            frame: measured.frame,
+            paragraphRect: Self.paragraphRect(
+                width: width, textHeight: measured.frame.totalHeight
+            ),
+            numbering: numbering
+        )
+        // 쪽에 걸친 문단 (세로 위치 리셋) 은 `cachedLineExtent`가 거부해 CT 높이로
+        // 떨어진다 — 쪽 몫의 합이 한글 높이다 (#165). 단조 캐시는 두 산식이 같다.
+        var frame = measured.frame
+        if let cacheLines, measured.cachedLineExtent == nil {
+            frame = HwpParagraphFrame(
+                totalHeight: HwpFootnoteCacheLines.height(of: cacheLines, in: cacheLines.indices),
+                lines: frame.lines
+            )
+        }
         return NoteMeasurement(
             attributed: measured.attributed,
-            frame: measured.frame,
-            objects: collector.objects(
-                in: paragraph,
-                frame: measured.frame,
-                paragraphRect: Self.paragraphRect(
-                    width: width, textHeight: measured.frame.totalHeight
-                ),
-                numbering: numbering
-            )
+            frame: frame,
+            objects: objects,
+            cacheLines: cacheLines,
+            placedLineCount: 0,
+            trailingLineSpacing: cacheLines.map {
+                HwpFootnoteCacheLines.trailingSpacing(of: $0, in: $0.indices)
+            } ?? 0
         )
     }
 
     /// 각주 모양에서 해석한 구분선 지오메트리 (point 단위)
-    private struct DividerMetrics {
+    struct DividerMetrics {
         let marginTop: CGFloat
         let marginBottom: CGFloat
         let betweenNotes: CGFloat
@@ -563,7 +630,8 @@ private extension HwpFootnoteLayout {
                     // 수집 시점 해석기를 우선한다 — 인자는 그것이 없는 호출
                     // (테스트·직접 배치) 의 폴백이다 (R44 #1).
                     sizeResolver: input.sizeResolver ?? sizeResolver,
-                    numbering: input.numbering
+                    numbering: input.numbering,
+                    placedLineCount: input.placedLineCount
                 )
             )
         }

@@ -143,8 +143,12 @@ final class HwpFootnoteLayoutTests: XCTestCase {
 
     /// 라인 캐시가 있는 각주는 CT 재측정 대신 한글이 계산한 높이를 쓴다
     /// (헌법주석 실측: 한자 다수 각주가 CT에서 2줄로 부풀던 회귀 가드).
+    ///
+    /// 문단 rect는 줄 전진량(h + sp)이고 블록 프레임은 각주 끝에서 마지막 줄의 줄
+    /// 간격을 뺀 줄 **상자**까지다 (#165 한글 실측 — 각주 사이 여백이 그 간격을
+    /// 대체하고 쪽 끝은 줄 상자 아래가 본문 하단에 닿는다).
     func testFootnoteHeightPrefersLineSegCache() throws {
-        // 캐시: 1줄 h 900 + sp 600 (lineSegParagraph 헬퍼 고정값) → 15pt
+        // 캐시: 1줄 h 900 + sp 600 (lineSegParagraph 헬퍼 고정값) → 텍스트 15pt, 상자 9pt
         let paragraph = try HwpSynthetic.lineSegParagraph(
             "각주 본문 텍스트",
             segments: [(location: 0, height: 900)]
@@ -155,7 +159,8 @@ final class HwpFootnoteLayoutTests: XCTestCase {
             index: index
         )
         expect(result.count) == 1
-        expect(result.first?.frame.height).to(beCloseTo(15, within: 0.1))
+        expect(result.first?.paragraphs.first?.rect.height).to(beCloseTo(15, within: 0.1))
+        expect(result.first?.frame.height).to(beCloseTo(9, within: 0.1))
     }
 
     /// 같은 각주 컨트롤 (같은 번호)의 이어지는 문단은 간격 없이 붙는다

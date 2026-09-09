@@ -126,6 +126,68 @@ struct HwpAbsoluteCachePlacer {
         return ranges
     }
 
+    /// **캐시가 주장하는** 조각별 컨트롤 서수 범위 (#165) — run 첫 세그먼트의
+    /// `textStartingIndex`(원본 WCHAR 위치)와 컨트롤 문자의 WCHAR 위치(글자 1·컨트롤 8)로
+    /// 나눈다. 한글이 저장한 절단점이라 폰트 대체와 무관하게 한글의 귀속 그대로다.
+    /// 서수 ↔ 컨트롤 배열이 어긋난 문단(extended 문자 수 ≠ 컨트롤 수)은 나누지 않는다.
+    static func cachedControlOrdinalRanges(
+        runs: [[CoreHwp.HwpParaLineSegInternal]],
+        paragraph: CoreHwp.HwpParagraph,
+        controlCount: Int
+    ) -> [Range<Int>]? {
+        guard runs.count > 1, controlCount > 0, let chars = paragraph.paraText?.charArray else {
+            return nil
+        }
+        var offsets: [Int] = []
+        var offset = 0
+        for char in chars {
+            if char.type == .extended {
+                offsets.append(offset)
+            }
+            offset += char.type == .char ? 1 : 8
+        }
+        guard offsets.count == controlCount else { return nil }
+        var ranges: [Range<Int>] = []
+        var cursor = 0
+        for runIndex in runs.indices {
+            let end: Int
+            if runIndex == runs.count - 1 {
+                end = controlCount
+            } else {
+                guard let nextStart = runs[runIndex + 1].first.map({ Int($0.textStartingIndex) })
+                else { return nil }
+                end = offsets.firstIndex { $0 >= nextStart } ?? controlCount
+            }
+            ranges.append(cursor ..< max(cursor, end))
+            cursor = max(cursor, end)
+        }
+        return ranges
+    }
+
+    /// 그려진 조각(`controlOrdinalRanges`)과 캐시(`cachedControlOrdinalRanges`) 가운데
+    /// **앞쪽** 귀속 (#165). 각주는 참조가 놓인 쪽에 실리되, 폰트 대체로 CT 줄바꿈이
+    /// 한글보다 늦어 마커가 다음 조각으로 밀린 문단은 캐시(한글의 절단점)를 따른다 —
+    /// 늦게 귀속된 각주는 한글이 이미 다른 각주로 채운 다음 쪽을 넘치게 하고, 넘침이
+    /// 이어짐으로 뒤 쪽에 연쇄해 한글에 없는 쪽을 만든다 (헌법주석 실측: 21건이 8쪽을
+    /// 늘렸다). 반대 방향(캐시가 더 늦음)은 그려진 조각을 따른다 — 그 쪽엔 참조가 있다.
+    /// 한쪽만 있으면 그것을, 둘 다 없으면 nil (문단 단위 귀속 폴백).
+    static func earliestOrdinalRanges(
+        _ drawn: [Range<Int>]?, _ cached: [Range<Int>]?
+    ) -> [Range<Int>]? {
+        guard let drawn, let cached, drawn.count == cached.count else { return drawn ?? cached }
+        var ranges: [Range<Int>] = []
+        var cursor = 0
+        for index in drawn.indices {
+            // 범위 끝은 "이 조각까지 귀속된 컨트롤 수"다 — 앞쪽 귀속은 그 수가 큰 쪽이다.
+            let end = index == drawn.count - 1
+                ? drawn[index].upperBound
+                : max(drawn[index].upperBound, cached[index].upperBound)
+            ranges.append(cursor ..< max(cursor, end))
+            cursor = max(cursor, end)
+        }
+        return ranges
+    }
+
     /// **두 조각 이상에 걸쳐 그려진** 마커 서수 (#95 리뷰).
     ///
     /// CT가 번호 문자열 중간에서 줄을 나누면 (좁은 단·긴 번호) 각 조각이 마커의

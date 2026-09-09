@@ -37,13 +37,15 @@ final class FixtureFootnoteOverlapTests: XCTestCase {
         let worstIntrusion: CGFloat
     }
 
-    /// `legacy-common-control-property`(헌법주석)만 0이 아니다. 남은 원인은 한글의
-    /// **각주 이어짐** — 한 페이지 각주가 본문이 남긴 자리를 넘으면 한글은 다음
-    /// 쪽에 이어 싣는데 우리는 그 페이지에 전부 쌓는다. 강제 이월은 한글에 없는
-    /// 각주 전용 페이지를 만들어 1,030쪽 실측을 깬다 (2026-08-03 실측: 각주 영역
-    /// 상단을 본문 하단에 맞추고 넘침을 이월하면 겹침 0쪽 / **1,035쪽**, 각주 전용
-    /// 페이지 485·486·669·1034) — 착수 전 한글.app 실측이 필요하다
-    /// (`Sources/HwpKitCore/AGENTS.md` 각주 항목).
+    /// **전 픽스처 0이다** (#165). 헌법주석만 366쪽·7,542pt·최대 353pt가 남아 있었는데
+    /// 원인은 한글의 **각주 이어짐**이었다 — 한 페이지 각주가 본문이 남긴 자리를 넘으면
+    /// 한글은 줄 캐시의 분할 지점에서 나눠 다음 쪽에 잇거나 통째로 옮기는데 우리는 그
+    /// 페이지에 전부 쌓았다. 한글 12.30 PDF 1,030쪽 전수 대조로 규칙을 확정해
+    /// (`HwpFootnoteContinuation.swift`) 절대 캐시 모드가 그대로 따르자 겹침이 0쪽이
+    /// 됐고 쪽수는 1,030 그대로다 (2026-09-10). 2026-08-03의 "강제 이월 → 1,035쪽"
+    /// 실험이 실패한 이유는 이어짐이 아니라 **귀속**이었다 — 폰트 대체로 참조가 한글보다
+    /// 뒤 쪽에 귀속된 각주가 그 쪽을 넘치게 하고 넘침이 뒤 쪽으로 연쇄했다
+    /// (`HwpAbsoluteCachePlacer.earliestOrdinalRanges`).
     ///
     /// **세 축을 같이 잠근다.** #95 수정 전후 실측 (deterministic resolver):
     /// 쪽수 362 → 368, 총 침범 14,707 → 6,917pt, 최대 470.5 → 353.0pt. 쪽수가
@@ -70,11 +72,7 @@ final class FixtureFootnoteOverlapTests: XCTestCase {
     /// 달랐기 때문이고, `testDeterministic`에 캐스케이드를 고정한 뒤 그 축이
     /// 닫혔다 (`HwpFontResolver.fallbackCascade`). 플랫폼별로 예산을 벌려 둘
     /// 이유가 사라졌으므로 관측값에 반올림 여유만 둔다.
-    private static let budgets: [String: OverlapBudget] = [
-        "legacy-common-control-property": OverlapBudget(
-            pages: 366, totalIntrusion: 7545, worstIntrusion: 354
-        ),
-    ]
+    private static let budgets: [String: OverlapBudget] = [:]
 
     /// 각주가 없거나 겹치지 않는 픽스처의 예산 — 전부 0이어야 한다.
     private static let cleanBudget = OverlapBudget(
@@ -82,15 +80,10 @@ final class FixtureFootnoteOverlapTests: XCTestCase {
     )
 
     /// 각주 스택이 본문 프레임 **하단**을 넘는 양 (#95 리뷰). 상단 클램프가
-    /// 콘텐츠 높이를 넘는 스택을 아래로 밀어내면서 생긴 빚이고, 옳은 답은 각주
-    /// 이어짐이다. 실측 (2026-08-03, 결정론 폰트): 헌법주석 1쪽·총 4pt·최대
-    /// 3.5pt @p78, 종이 밖은 0쪽. 조각 단위 귀속 전에는 거대 스택이 마지막
-    /// 조각에 몰려 훨씬 컸다 — 각주가 참조 쪽으로 흩어지며 이 빚도 함께 줄었다.
-    private static let bottomBudgets: [String: OverlapBudget] = [
-        "legacy-common-control-property": OverlapBudget(
-            pages: 1, totalIntrusion: 5, worstIntrusion: 4
-        ),
-    ]
+    /// 콘텐츠 높이를 넘는 스택을 아래로 밀어내면서 생긴 빚이었고 (2026-08-03 실측:
+    /// 헌법주석 1쪽·최대 3.5pt @p78), 각주 이어짐 (#165) 으로 0이 됐다 — 스택은
+    /// 본문 아래 자리에 맞춰 바닥 정렬되고 마지막 줄 상자가 본문 하단에 닿는다.
+    private static let bottomBudgets: [String: OverlapBudget] = [:]
 
     /// 세 축을 **한 순회**에서 잰다 (#95 리뷰 반영). 코퍼스를 두 번 조판하면
     /// 1,030쪽 픽스처 때문에 기본 `swift test`·CI 애플 잡마다 18초가 그대로 더
@@ -102,11 +95,10 @@ final class FixtureFootnoteOverlapTests: XCTestCase {
     /// 종이 밖으로 잘려 사라졌다 (수정 전 실측: 헌법주석 5쪽, 최악 렌더 인덱스
     /// 79의 −217.6pt).
     ///
-    /// 본문 프레임 **하단**을 넘는 것은 불변식이 아니라 **빚**이다 — 위 클램프가
-    /// 초과분을 아래로 밀어내기 때문이고, 옳은 답은 각주 이어짐이다 (미구현).
-    /// 자르면 각주가 사라지고, 강제 이월은 한글에 없는 각주 전용 페이지를 만든다
-    /// (1,030 → 1,035쪽). 종이 안에 머무는 한 아래 여백을 침범할 뿐이라 예산으로
-    /// 두되, 종이를 넘는 순간 불변식 위반이다.
+    /// 본문 프레임 **하단**을 넘는 것은 불변식이 아니라 예산이다 — 빈 쪽에도 안
+    /// 들어가는 분할 지점 없는 각주는 진행 보장으로 그대로 실려 (한글에 없는 형상)
+    /// 위 클램프가 초과분을 아래로 밀어내기 때문이다. 코퍼스엔 없어 예산은 0이고,
+    /// 종이를 넘는 순간 불변식 위반이다.
     func testFootnoteStackStaysBelowBodyAndInsideThePage() async throws {
         var overlapFailures: [String] = []
         var bottomFailures: [String] = []
