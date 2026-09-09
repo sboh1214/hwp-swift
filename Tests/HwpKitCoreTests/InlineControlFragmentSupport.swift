@@ -11,11 +11,13 @@ import XCTest
     enum InlineControlFragmentSupport {
         /// 높이는 HWPUNIT (기본 1000 = 10pt).
         static func inlineTable(
-            instanceId: UInt32, height: UInt32 = 1000
+            instanceId: UInt32,
+            height: UInt32 = 1000,
+            cell: CoreHwp.HwpParagraph? = nil
         ) throws -> CoreHwp.HwpCtrlId {
             var table = HwpSynthetic.table(
                 cellWidth: 6000, rowHeights: [height],
-                cellParagraphs: [[[try HwpSynthetic.textParagraph("셀")]]]
+                cellParagraphs: [[[try cell ?? HwpSynthetic.textParagraph("셀")]]]
             )
             table.commonCtrlProperty.width = 6000
             table.commonCtrlProperty.height = height
@@ -30,6 +32,21 @@ import XCTest
             info.heightRelativeTo = .absolute
             table.commonCtrlProperty.propertyInfo = info
             return .table(table)
+        }
+
+        /// OLE 컴포넌트를 품은 도형 — `HwpParagraphObjectCollector.collectible`이
+        /// `oleArray` 때문에 false라 컨테이너가 안 그리고 문단 끝 흐름 폴백으로 나간다.
+        /// 진단은 "OLE"로 잡힌다.
+        static func oleShape(instanceId: UInt32) -> CoreHwp.HwpCtrlId {
+            var object = HwpSynthetic.inlineShapeObject(
+                width: 3000, height: 500, instanceId: instanceId
+            )
+            var component = object.shapeComponentArray[0]
+            component.oleArray = [CoreHwp.HwpShapeComponentOLE(
+                rawPayload: Data(), binaryDataId: nil, rawTrailing: nil, unknownChildren: []
+            )]
+            object.shapeComponentArray[0] = component
+            return .genShapeObject(object)
         }
 
         static func objectBlocks(on page: HwpPage, instanceId: UInt32) -> [AnyHwpBlock] {

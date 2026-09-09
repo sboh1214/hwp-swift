@@ -280,43 +280,6 @@ import XCTest
             expect(Self.objectBlocks(on: pages[1], instanceId: 2).count) == 1
         }
 
-        /// 앞 조각과 함께 놓인 **미지원** 개체의 진단 쪽은 그 조각의 쪽이다 — 문단이 끝난
-        /// 뒤 보고하는 `cachedPages.count + 1`(마지막 조각의 쪽)을 그대로 쓰면 사용자가
-        /// 개체를 찾아갈 수 없는 쪽 번호가 나온다 (PR 리뷰).
-        func testUnsupportedObjectReportsThePageItsFragmentWasPlacedOn() async throws {
-            let object = HwpSynthetic.inlineShapeObject(width: 6000, height: 1000, instanceId: 31)
-            var component = object.shapeComponentArray[0]
-            component.oleArray = [CoreHwp.HwpShapeComponentOLE(
-                rawPayload: Data(), binaryDataId: nil, rawTrailing: nil, unknownChildren: []
-            )]
-            let ole = CoreHwp.HwpShapeControl(
-                ctrlId: .ole,
-                commonCtrlProperty: object.commonCtrlProperty,
-                rawPayload: Data(),
-                rawTrailing: Data(),
-                shapeComponentArray: [component],
-                eqEditArray: [],
-                eqEditRecords: [],
-                ctrlDataRecords: [],
-                unknownChildren: []
-            )
-            let host = try InlineControlFragmentSupport.splitHost(controls: [
-                .ole(ole),
-                try Self.inlineTable(instanceId: 2),
-            ])
-            let paginator = try InlineControlFragmentSupport.absolutePaginator(host: host)
-            let pages = try await Self.pages(of: paginator)
-            expect(pages.count) == 2
-            guard pages.count == 2 else { return }
-            // 전제: OLE는 앞 쪽 조각의 줄 안에 실제로 놓였다.
-            expect(Self.objectBlocks(on: pages[0], instanceId: 31).count) == 1
-            expect(Self.objectBlocks(on: pages[1], instanceId: 31)).to(beEmpty())
-
-            let unsupported = await paginator.unsupportedElements()
-            let olePages = unsupported.filter { $0.hint.contains("OLE") }.map(\.page)
-            expect(olePages) == [1]
-        }
-
         /// BinData가 없는 글자처럼 취급 그림은 흐름 자리표시자로 폴백하므로 조각에서 놓지
         /// 않는다 — 조각 사이에서 흐름 블록이 쪽을 넘기면 절대 캐시 run 루프가 빈 쪽을
         /// 만든다. 종전대로 마지막 조각 뒤에 자리표시자를 한 번만 낸다.
@@ -381,6 +344,111 @@ import XCTest
             expect(notes[0]).to(beEmpty())
             expect(notes[1].count) == 1
             expect(notes[1].first).to(contain("셀 각주"))
+        }
+    }
+
+    /// 미지원 진단이 보고하는 **쪽**이 그 블록이 실제로 그려진 쪽인지 (#164 PR 리뷰).
+    /// 조각과 함께 놓인 개체는 그 조각의 쪽, 컨테이너가 소비하지 않아 문단 끝 흐름으로
+    /// 나가는 중첩 컨트롤은 마지막 조각의 쪽이다.
+    final class HwpFragmentUnsupportedPageTests: XCTestCase {
+        private static func pages(host: CoreHwp.HwpParagraph) async throws -> [HwpPage] {
+            try await InlineControlFragmentSupport.pages(
+                of: try InlineControlFragmentSupport.absolutePaginator(host: host)
+            )
+        }
+
+        private static func objectBlocks(on page: HwpPage, instanceId: UInt32) -> [AnyHwpBlock] {
+            InlineControlFragmentSupport.objectBlocks(on: page, instanceId: instanceId)
+        }
+
+        private static func inlineTable(
+            instanceId: UInt32, cell: CoreHwp.HwpParagraph? = nil
+        ) throws -> CoreHwp.HwpCtrlId {
+            try InlineControlFragmentSupport.inlineTable(instanceId: instanceId, cell: cell)
+        }
+
+        /// 앞 조각과 함께 놓인 **미지원** 개체의 진단 쪽은 그 조각의 쪽이다 — 문단이 끝난
+        /// 뒤 보고하는 `cachedPages.count + 1`(마지막 조각의 쪽)을 그대로 쓰면 사용자가
+        /// 개체를 찾아갈 수 없는 쪽 번호가 나온다 (PR 리뷰).
+        func testUnsupportedObjectReportsThePageItsFragmentWasPlacedOn() async throws {
+            let object = HwpSynthetic.inlineShapeObject(width: 6000, height: 1000, instanceId: 31)
+            var component = object.shapeComponentArray[0]
+            component.oleArray = [CoreHwp.HwpShapeComponentOLE(
+                rawPayload: Data(), binaryDataId: nil, rawTrailing: nil, unknownChildren: []
+            )]
+            let ole = CoreHwp.HwpShapeControl(
+                ctrlId: .ole,
+                commonCtrlProperty: object.commonCtrlProperty,
+                rawPayload: Data(),
+                rawTrailing: Data(),
+                shapeComponentArray: [component],
+                eqEditArray: [],
+                eqEditRecords: [],
+                ctrlDataRecords: [],
+                unknownChildren: []
+            )
+            let host = try InlineControlFragmentSupport.splitHost(controls: [
+                .ole(ole),
+                try Self.inlineTable(instanceId: 2),
+            ])
+            let paginator = try InlineControlFragmentSupport.absolutePaginator(host: host)
+            let pages = try await InlineControlFragmentSupport.pages(of: paginator)
+            expect(pages.count) == 2
+            guard pages.count == 2 else { return }
+            // 전제: OLE는 앞 쪽 조각의 줄 안에 실제로 놓였다.
+            expect(Self.objectBlocks(on: pages[0], instanceId: 31).count) == 1
+            expect(Self.objectBlocks(on: pages[1], instanceId: 31)).to(beEmpty())
+
+            let unsupported = await paginator.unsupportedElements()
+            let olePages = unsupported.filter { $0.hint.contains("OLE") }.map(\.page)
+            expect(olePages) == [1]
+        }
+
+        /// 조각과 함께 놓인 개체 **안**의 컨트롤이라도, 컨테이너가 소비하지 않아 문단 끝
+        /// 흐름 폴백으로 나가는 것(OLE·수식)은 그 폴백이 놓인 **마지막 조각의 쪽**으로
+        /// 보고해야 한다 — 부모의 쪽을 물려주면 진단이 블록 없는 쪽을 가리킨다 (PR 리뷰).
+        func testNestedFlowFallbackReportsThePageItRendersOn() async throws {
+            var cell = try HwpSynthetic.textParagraph("셀")
+            cell.ctrlHeaderArray = [InlineControlFragmentSupport.oleShape(instanceId: 51)]
+            let host = try InlineControlFragmentSupport.splitHost(controls: [
+                try Self.inlineTable(instanceId: 5, cell: cell),
+                try Self.inlineTable(instanceId: 2),
+            ])
+            let paginator = try InlineControlFragmentSupport.absolutePaginator(host: host)
+            let pages = try await InlineControlFragmentSupport.pages(of: paginator)
+            expect(pages.count) == 2
+            guard pages.count == 2 else { return }
+            // 전제: 부모 표는 앞 쪽 조각에, 중첩 OLE 블록은 뒤 쪽 흐름에 있다.
+            expect(Self.objectBlocks(on: pages[0], instanceId: 5).count) == 1
+            expect(Self.objectBlocks(on: pages[0], instanceId: 51)).to(beEmpty())
+            expect(Self.objectBlocks(on: pages[1], instanceId: 51).count) == 1
+
+            let unsupported = await paginator.unsupportedElements()
+            expect(unsupported.filter { $0.hint.contains("OLE") }.map(\.page)) == [2]
+        }
+
+        /// 반대쪽 대조: 컨테이너가 **콘텐츠로 그리는** 자손은 부모와 같은 쪽에 있으므로
+        /// 부모의 쪽을 물려받아야 한다 — 상속을 통째로 끊으면 이쪽이 틀어진다.
+        func testNestedObjectDrawnInsideTheContainerKeepsTheParentPage() async throws {
+            var cell = try HwpSynthetic.textParagraph("셀")
+            // 차트 컴포넌트는 oleArray가 비어 `collectible`을 통과해 셀 안에 그려진다.
+            var chart = HwpSynthetic.inlineShapeObject(width: 3000, height: 500, instanceId: 61)
+            chart.shapeComponentArray[0].chartDataArray = [CoreHwp.HwpShapeComponentChartData(
+                rawPayload: Data(), unknownChildren: []
+            )]
+            cell.ctrlHeaderArray = [.genShapeObject(chart)]
+            let host = try InlineControlFragmentSupport.splitHost(controls: [
+                try Self.inlineTable(instanceId: 6, cell: cell),
+                try Self.inlineTable(instanceId: 2),
+            ])
+            let paginator = try InlineControlFragmentSupport.absolutePaginator(host: host)
+            let pages = try await InlineControlFragmentSupport.pages(of: paginator)
+            expect(pages.count) == 2
+            guard pages.count == 2 else { return }
+            expect(Self.objectBlocks(on: pages[0], instanceId: 6).count) == 1
+
+            let unsupported = await paginator.unsupportedElements()
+            expect(unsupported.filter { $0.hint.contains("차트") }.map(\.page)) == [1]
         }
     }
 #endif

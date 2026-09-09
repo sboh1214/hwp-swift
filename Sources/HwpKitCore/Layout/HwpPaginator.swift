@@ -1807,8 +1807,11 @@ private extension HwpPaginator {
         guard let ctrls = paragraph.ctrlHeaderArray else { return }
         walkUnsupported(
             ctrls: ctrls,
-            page: cachedPages.count + 1,
-            placedPages: inlineControlsPlacedPerFragment,
+            pages: UnsupportedPageContext(
+                page: cachedPages.count + 1,
+                flowPage: cachedPages.count + 1,
+                placedPages: inlineControlsPlacedPerFragment
+            ),
             numbering: currentParagraphScope
         )
     }
@@ -1935,25 +1938,60 @@ private extension HwpPaginator {
         )
     }
 
+    /// 진단 순회가 나르는 쪽 문맥 — 컨트롤이 **어디에 그려지는가**로 쪽이 갈린다
+    /// (PR 리뷰). 인자 여럿 대신 한 값으로 묶어 재귀가 셋을 함께 내린다.
+    struct UnsupportedPageContext {
+        /// 부모 컨테이너(최상위는 문단)가 그려진 쪽 — 컨테이너가 콘텐츠로 그리는
+        /// 자손의 쪽이기도 하다.
+        var page: Int
+        /// 컨테이너가 소비하지 않아 문단 끝 흐름으로 나가는 컨트롤의 쪽.
+        /// `collectUnsupported`가 `appendControlBlocks` **뒤에** 돌므로 그 시점의
+        /// `cachedPages.count + 1`이 곧 폴백이 놓인 쪽이다.
+        var flowPage: Int
+        /// 조각과 함께 놓인 **최상위** 컨트롤 서수 → 그 조각의 쪽.
+        var placedPages: [Int: Int] = [:]
+        /// 부모 컨테이너 문맥 (최상위는 `.none`).
+        var parentContainer: HwpPaginator.ContainerContext = .none
+
+        /// `ordinal`번째 컨트롤이 실제로 그려진 쪽.
+        func page(of ctrl: CoreHwp.HwpCtrlId, ordinal: Int) -> Int {
+            if let placed = placedPages[ordinal] {
+                return placed
+            }
+            return HwpPaginator.rendersInsideParent(ctrl, container: parentContainer)
+                ? page : flowPage
+        }
+
+        /// `ctrl` 안 문단을 훑을 때의 문맥 — 서수 공간이 바뀌므로 `placedPages`는 비운다.
+        func inside(_ ctrl: CoreHwp.HwpCtrlId, page: Int) -> Self {
+            Self(
+                page: page,
+                flowPage: flowPage,
+                placedPages: [:],
+                parentContainer: HwpPaginator.containerContext(of: ctrl)
+            )
+        }
+    }
+
     /// `numbering`은 이 컨트롤들을 품은 문단의 번호 열쇠 (#158) — 컨테이너 안
     /// 문단마다 경로로 번호를 찾아 번호 문단 머리 진단(`collectUnsupportedNumberingHeading`)
     /// 을 같은 규칙으로 적용한다. 자식 서수는 컨트롤 없는 문단도 차지하므로
     /// `ctrlHeaderArray` 필터 **앞**에서 센다.
     func walkUnsupported(
         ctrls: [CoreHwp.HwpCtrlId],
-        page: Int,
-        placedPages: [Int: Int] = [:],
+        pages: UnsupportedPageContext,
         tableDepth: Int = 0,
         containerDepth: Int = 0,
         numbering: HwpNumberingScope? = nil
     ) {
         for (controlIndex, ctrl) in ctrls.enumerated() {
-            // 앞 조각과 함께 놓인 개체는 문단 끝의 `page`(마지막 조각)가 아니라 그때
-            // 기록한 쪽에 그려져 있다 (PR 리뷰) — 진단의 쪽이 렌더 쪽을 가리켜야
-            // 사용자가 그 개체를 찾아갈 수 있다. 이 값은 그 개체의 **자식** 진단에도
-            // 그대로 이어진다 (안 내용은 개체와 같은 쪽에 그려진다). 맵 자체는 재귀에
-            // 넘기지 않는다 — 서수 공간이 문단 최상위 컨트롤 기준이라서다.
-            let page = placedPages[controlIndex] ?? page
+            // 앞 조각과 함께 놓인 개체는 문단 끝의 쪽(마지막 조각)이 아니라 그때 기록한
+            // 쪽에 그려져 있다 (PR 리뷰) — 진단의 쪽이 렌더 쪽을 가리켜야 사용자가 그
+            // 개체를 찾아갈 수 있다. 그 쪽은 **컨테이너가 콘텐츠로 그리는 자손**에만
+            // 이어진다 (`rendersInsideParent`) — 컨테이너가 소비하지 않는 중첩 컨트롤
+            // (OLE·수식·oleArray 품은 도형)은 `appendControlBlocks`가 마지막 조각 뒤
+            // 흐름에 내므로 그 쪽은 `flowPage`다 (AGENTS.md "조각의 줄 앵커").
+            let page = pages.page(of: ctrl, ordinal: controlIndex)
             if let element = unsupportedDetector.classify(ctrl: ctrl, page: page) {
                 collectedUnsupported.append(element)
             }
@@ -1995,7 +2033,7 @@ private extension HwpPaginator {
                 guard let nestedCtrls = nested.ctrlHeaderArray else { continue }
                 walkUnsupported(
                     ctrls: nestedCtrls,
-                    page: page,
+                    pages: pages.inside(ctrl, page: page),
                     tableDepth: isTable ? tableDepth + 1 : tableDepth,
                     containerDepth: containerDepth + 1,
                     numbering: scope
@@ -2395,6 +2433,36 @@ private extension HwpPaginator {
         }
     }
 
+    /// `ctrl`이 품은 문단의 컨테이너 문맥 — 방출(`appendNestedControlBlocks`)과
+    /// 진단(`walkUnsupported`)이 **같은 함수**를 봐야 두 축이 갈리지 않는다 (R29 #1).
+    static func containerContext(of ctrl: CoreHwp.HwpCtrlId) -> ContainerContext {
+        if case .table = ctrl {
+            .tableCell
+        } else if let (_, components) = HwpParagraphObjectCollector.handledControl(ctrl),
+                  components.contains(where: { !$0.textBoxListArray.isEmpty })
+        {
+            .textbox
+        } else {
+            .none
+        }
+    }
+
+    /// 이 컨트롤이 **부모 컨테이너 안에** 그려지는가 — 그렇다면 부모의 쪽이 곧 이
+    /// 컨트롤의 쪽이고, 아니면 문단 끝 흐름 폴백의 쪽이다 (진단 쪽 판정, PR 리뷰).
+    ///
+    /// `appendControlBlocks`의 흐름 억제 분기 **둘**과 같은 술어여야 한다: 셀 안 중첩
+    /// 표(`appendControlBlock`의 `container != .tableCell` 가드 — `handledControl`에
+    /// `.table`이 없어 아래 술어만으로는 잡히지 않는다)와 `rendersInsideContainer`.
+    static func rendersInsideParent(
+        _ ctrl: CoreHwp.HwpCtrlId,
+        container: ContainerContext
+    ) -> Bool {
+        if case .table = ctrl {
+            return container == .tableCell
+        }
+        return rendersInsideContainer(ctrl, container: container)
+    }
+
     /// 컨테이너 레이아웃 (HwpTableLayout/HwpTextboxLayout)이 컨테이너
     /// 콘텐츠로 이미 배치한 컨트롤인지 —
     /// HwpParagraphObjectCollector.collectible과 반드시 일치 (R29 #1).
@@ -2484,15 +2552,7 @@ private extension HwpPaginator {
         numbering: HwpNumberingScope.Container? = nil
     ) {
         guard depth < Self.maximumContainerDepth else { return }
-        let container: ContainerContext = if case .table = ctrl {
-            .tableCell
-        } else if let (_, components) = HwpParagraphObjectCollector.handledControl(ctrl),
-                  components.contains(where: { !$0.textBoxListArray.isEmpty })
-        {
-            .textbox
-        } else {
-            .none
-        }
+        let container = Self.containerContext(of: ctrl)
         for (childIndex, (nested, _)) in Self.childParagraphs(of: ctrl).enumerated()
             where nested.ctrlHeaderArray != nil
         {
