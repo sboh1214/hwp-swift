@@ -107,6 +107,28 @@ import XCTest
             }
         }
 
+        func testLoneSurrogateBeforeLineBreakStaysOutsideTheMarkedRun() throws {
+            // 짝 없는 상위 서로게이트 뒤에 한 줄 끝이 오면 `string(from:)`이 잔여
+            // U+FFFD와 U+000A를 한 텍스트로 낸다 — 앞부분은 일반 chunk로 가고 표식은
+            // 한 줄 끝 한 글자에만 붙어야 한다. Swift 문자열에는 홀 서로게이트를
+            // 넣을 수 없어 WCHAR 배열을 직접 만든다.
+            var paragraph = paragraph(text: "", runs: [(0, 0)])
+            var paraText = CoreHwp.HwpParaText()
+            paraText.charArray = [0xD83D, 0x0A, 0xAC00, 0x0D].map {
+                CoreHwp.HwpChar(type: .char, value: $0)
+            }
+            paragraph.paraText = paraText
+            let result = builder(shapes: [0: try charShape()]).build(paragraph: paragraph)
+
+            expect(result.string) == "\u{FFFD}\u{0A}가"
+            expect(result.attribute(HwpAttributedStringKey.lineBreak, at: 0, effectiveRange: nil))
+                .to(beNil())
+            expect(result.attribute(HwpAttributedStringKey.lineBreak, at: 1, effectiveRange: nil))
+                .notTo(beNil())
+            expect(result.attribute(HwpAttributedStringKey.lineBreak, at: 2, effectiveRange: nil))
+                .to(beNil())
+        }
+
         func testLineBreakInheritsThePrecedingRunScriptSlot() throws {
             // 한 줄 끝의 글꼴은 `HwpScript.detect` 기본값(영문 슬롯)이 아니라 **직전
             // run의 스크립트 슬롯**이다 — 본문과 다른 폰트가 줄에 섞이면 CTLine
@@ -197,18 +219,26 @@ import XCTest
             expect(first.origin.x) == only.origin.x
         }
 
-        /// 두 자리의 CTFont가 같은가 — CF 타입은 `as? CTFont`가 "항상 성공" 경고라 강제
-        /// 캐스트로 꺼내 `CFEqual`로 비교한다 (매트릭스까지 본다).
+        /// 두 자리의 CTFont가 같은가 — `CFEqual`은 매트릭스(장평)까지 본다. CF 타입은
+        /// `as?`가 "항상 성공" 에러라 루트 AGENTS.md의 `CFGetTypeID` + `unsafeBitCast`
+        /// 패턴으로 꺼낸다 (`HwpNumberingHeadingRenderTests.font(at:in:)`와 같다).
         func sameFont(
             _ lhs: NSAttributedString, _ lhsLocation: Int,
             _ rhs: NSAttributedString, _ rhsLocation: Int
         ) -> Bool {
-            let key = kCTFontAttributeName as NSAttributedString.Key
-            // swiftlint:disable force_cast
-            let lhsFont = lhs.attribute(key, at: lhsLocation, effectiveRange: nil) as! CTFont
-            let rhsFont = rhs.attribute(key, at: rhsLocation, effectiveRange: nil) as! CTFont
-            // swiftlint:enable force_cast
+            guard let lhsFont = runFont(at: lhsLocation, in: lhs),
+                  let rhsFont = runFont(at: rhsLocation, in: rhs)
+            else { return false }
             return CFEqual(lhsFont, rhsFont)
+        }
+
+        func runFont(at location: Int, in attributed: NSAttributedString) -> CTFont? {
+            guard let value = attributed.attribute(
+                kCTFontAttributeName as NSAttributedString.Key, at: location, effectiveRange: nil
+            ) else { return nil }
+            let reference = value as CFTypeRef
+            guard CFGetTypeID(reference) == CTFontGetTypeID() else { return nil }
+            return unsafeBitCast(reference, to: CTFont.self)
         }
 
         func testEmptyLastLineAnchorCarriesNoDecoration() throws {
