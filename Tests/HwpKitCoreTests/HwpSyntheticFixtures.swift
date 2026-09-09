@@ -69,6 +69,19 @@ enum HwpSynthetic {
         segments: [(location: Int32, height: Int32, textStart: UInt32)],
         markerCode: CoreHwp.WCHAR
     ) throws -> CoreHwp.HwpParagraph {
+        try splitParagraphWithMixedMarkers(
+            lines: lines.map { ($0.characters, $0.marker ? [markerCode] : []) },
+            segments: segments
+        )
+    }
+
+    /// 줄마다 **여러 종류**의 컨트롤 문자를 둘 수 있는 변형 — 한 줄에 각주 참조(17)와
+    /// 개체(11)를 나란히 두어야 하는 형상용이다. 마커는 적은 순서대로 줄 끝에 붙고,
+    /// 그 순서가 곧 컨트롤 서수 순서다.
+    static func splitParagraphWithMixedMarkers(
+        lines: [(characters: Int, markers: [CoreHwp.WCHAR])],
+        segments: [(location: Int32, height: Int32, textStart: UInt32)]
+    ) throws -> CoreHwp.HwpParagraph {
         var paragraph = CoreHwp.HwpParagraph()
         var paraText = CoreHwp.HwpParaText()
         var chars: [CoreHwp.HwpChar] = []
@@ -79,8 +92,8 @@ enum HwpSynthetic {
             chars += Array(
                 repeating: CoreHwp.HwpChar(type: .char, value: 0xAC00), count: line.characters
             )
-            if line.marker {
-                chars.append(CoreHwp.HwpChar(type: .extended, value: markerCode))
+            for marker in line.markers {
+                chars.append(CoreHwp.HwpChar(type: .extended, value: marker))
             }
         }
         paraText.charArray = chars

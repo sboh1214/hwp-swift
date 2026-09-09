@@ -1174,7 +1174,10 @@ private extension HwpPaginator {
                 hyperlinkURL: hyperlinkURL(in: paragraph),
                 paragraphId: paragraph.paraHeader.paraId,
                 lines: runs.count == 1 ? slice.lines : [],
-                anchorLines: runs.count == 1 ? [] : slice.lines
+                anchorLines: runs.count == 1 ? [] : renumberedAnchorLines(
+                    of: slice.text, lines: slice.lines,
+                    renumbered: sliceText, paragraph: paragraph
+                )
             )
             lastAbsoluteCacheLoc = run.last?.lineLocation ?? runFirst
             collectFragmentFootnotes(
@@ -1250,6 +1253,32 @@ private extension HwpPaginator {
         return slices
     }
 
+    /// 재매김된 조각의 앵커 줄 (PR 리뷰). `slice.lines`는 번호를 다시 쓰기 **전** 문자열로
+    /// 잰 것이라, 번호 폭이 바뀌면 (10) → 9)) 그 마커 **뒤**의 글자처럼 취급 개체가 옛 x·
+    /// 옛 줄에 남는다 — 편집이 있었으면 재매김된 문자열을 같은 단 폭으로 다시 조판해
+    /// 앵커를 뽑는다 (비등폭 단 이월의 `fragmentAnchorLines`와 같은 처방).
+    ///
+    /// 술어가 **인스턴스 동일성**인 것은 우연이 아니라 계약이다 —
+    /// `HwpTextRunBuilder.renumberingNoteMarkers`는 바꿀 것이 없으면 입력을 그대로
+    /// 돌려준다. 번호가 이어지는 문서(코퍼스 전부)에서는 이 갈래가 발동하지 않아
+    /// 렌더가 불변이고 조판 비용도 0이다.
+    ///
+    /// 재조판은 조각을 **홀로** 재므로 중간 조각의 첫 줄에도 첫 줄 들여쓰기가 걸리는
+    /// 근사를 안는다 — 옛 번호로 잰 줄(확실히 어긋난다)과의 교환이라 순 개선이다.
+    private func renumberedAnchorLines(
+        of original: NSAttributedString,
+        lines: [HwpLineFrame],
+        renumbered: NSAttributedString,
+        paragraph: CoreHwp.HwpParagraph
+    ) -> [HwpLineFrame] {
+        guard renumbered !== original else { return lines }
+        return HwpParagraphLayout().layout(
+            attributedString: renumbered,
+            paraShape: index.paraShapeOrDefault(for: paragraph),
+            columnWidth: currentColumnFrame.width
+        ).lines
+    }
+
     /// 조각의 각주/미주 참조 마커를 **그 조각이 실릴 페이지의 번호**로 다시 쓴다.
     ///
     /// 마커 번호는 조판 전에 문단 단위로 한 번 구워지는데, "쪽마다 새로 시작"
@@ -1263,11 +1292,16 @@ private extension HwpPaginator {
     ///
     /// **남는 근사**: 조판 (`paragraphFrame`) 과 슬라이스는 옛 번호로 이미 끝난
     /// 뒤라, 번호 폭이 바뀌면 (9) → 10)) 그 조각 **안**의 줄바꿈이 조판 당시와
-    /// 달라질 수 있다. 조각 **소속**은 문자 범위로 고정돼 텍스트가 다른 쪽으로
-    /// 새지는 않는다. 근본 해결은 순환이다 — 번호는 실릴 쪽이 정해져야 알 수
-    /// 있고, 그 쪽은 배치가, 배치는 조판이 끝나야 안다. 고정점 반복을 새로
-    /// 들이는 값이 모드 2 문서 (코퍼스 0건) 하나에 비해 크다. 가드:
-    /// `testRenumberingKeepsMarkerAndNoteInSyncWhenWidthChanges` (번호 정합만).
+    /// 달라질 수 있다 — 조각의 **높이**(캐시 몫)와 **소속**(문자 범위로 고정)이
+    /// 그 축이다. 텍스트가 다른 쪽으로 새지는 않는다. 근본 해결은 순환이다 —
+    /// 번호는 실릴 쪽이 정해져야 알 수 있고, 그 쪽은 배치가, 배치는 조판이 끝나야
+    /// 안다. 고정점 반복을 새로 들이는 값이 모드 2 문서 (코퍼스 0건) 하나에 비해 크다.
+    ///
+    /// **개체 앵커 축만은 닫혀 있다** (PR 리뷰): 편집이 있으면 배치가 재매김된 조각을
+    /// 다시 조판해 앵커를 뽑으므로 (`renumberedAnchorLines`) 마커 뒤 개체가 옛 x·옛
+    /// 줄에 남지 않는다. 여기는 순환이 아니다 — 번호는 이 시점에 이미 정해져 있다.
+    /// 가드: `testRenumberingKeepsMarkerAndNoteInSyncWhenWidthChanges` (번호 정합),
+    /// `HwpFootnoteRenumberAnchorTests` (앵커 정합).
     private func renumberedNoteMarkers(
         in slice: NSAttributedString,
         paragraph: CoreHwp.HwpParagraph,
