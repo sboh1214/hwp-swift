@@ -179,6 +179,55 @@ import XCTest
             expect(table.frame.minY).to(beCloseTo(second.frame.minY, within: 0.01))
         }
 
+        /// 부분적으로 찬 단에서 시작한 문단이 통째로 다음 단으로 옮겨 갈 때, 문단 위
+        /// 간격을 유지할지도 **첫 줄이 실제로 차지하는 높이**로 재야 한다 (PR 리뷰) —
+        /// 보정 없는 전진량은 다음 줄(개체 줄)의 ascent를 통째로 실어, 들어가는 간격을
+        /// 거절하고 문단을 새 단 top에 붙여 놓는다.
+        func testMovedParagraphKeepsItsBeforeGapWhenTheNextLineHoldsATallObject() async throws {
+            // 문단 위 간격 4000 HWPUNIT → beforeGap 20pt (저작값의 절반).
+            let index = HwpSynthetic.outlineIndex(paraShapes: [
+                7: CoreHwp.HwpParaShape(
+                    property1: 0, marginLeft: 0, paragraphSpacingTop: 4000, tabDefId: 0
+                ),
+            ])
+            // 앞 문단이 첫 단을 채워 잔여가 한 줄보다 작게 만든다 — 그래야 호스트가
+            // `takeCount == 0`으로 통째 이동한다 (빈 단이면 강제 한 줄 분기가 선점한다).
+            let filler = try HwpSynthetic.splitParagraphWithControlMarkers(
+                lines: Array(repeating: (characters: 5, marker: false), count: 3),
+                segments: [], markerCode: 11
+            )
+            var host = try HwpSynthetic.splitParagraphWithControlMarkers(
+                lines: [(characters: 5, marker: false), (characters: 5, marker: true)]
+                    + Array(repeating: (characters: 5, marker: false), count: 2),
+                segments: [], markerCode: 11
+            )
+            host.paraHeader = try HwpSynthetic.outlineParaHeader(paraShapeId: 7, paraStyleId: 0)
+            host.ctrlHeaderArray = [
+                try InlineControlFragmentSupport.inlineTable(instanceId: 9, height: 5000),
+            ]
+            // 본문 60pt: 간격 20pt + 첫 줄의 전진량(약 57pt = 다음 줄 50pt 표의 ascent
+            // 포함)은 안 들어가지만, 간격 + 첫 줄 자기 높이(약 17pt)는 들어간다.
+            let section = HwpSynthetic.section(
+                firstParagraphControls: [
+                    .section(HwpSynthetic.sectionDef(pageHeight: 9920 + 6000)),
+                    .column(HwpSynthetic.column(count: 2)),
+                ],
+                bodyParagraphs: [filler, host]
+            )
+            let pages = try await Self.pages(of: HwpPaginator(
+                sections: [section], index: index, fontResolver: .testDeterministic
+            ))
+            let fragments = pages.flatMap { page in
+                page.blocks.filter { $0.kind == .text && $0.source?.paragraphIndex == 2 }
+            }
+            let first = try XCTUnwrap(fragments.first)
+            let columnTop = try XCTUnwrap(
+                pages.flatMap { $0.blocks.filter { $0.kind == .text } }.map(\.frame.minY).min()
+            )
+            // 새 단 top에 붙지 않고 저작 간격 20pt만큼 내려앉는다.
+            expect(first.frame.minY).to(beCloseTo(columnTop + 20, within: 0.01))
+        }
+
         /// 반대 방향(**넓은 단 → 좁은 단**)의 계약 고정 (PR 리뷰). 좁은 단에서는 줄이 늘어
         /// 글자가 조각 블록 아래로 넘치는데, 그 줄의 개체도 함께 내려가는 것이 **옳다** —
         /// 개체는 자기 글리프가 그려지는 줄·x에 있어야 한다. 넘침 자체는 조각 높이가 진입

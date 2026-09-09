@@ -1645,8 +1645,15 @@ private extension HwpPaginator {
                 // 빈 단보다 크면 진행 보장을 위해 flush 배치한다. 단 이동이 페이지를
                 // 넘기면 각주 예약이 바뀌므로 usable을 재계산하고 (R55 #4), gap을
                 // 물리면 .paragraph 기준 개체의 anchor도 함께 내린다 (R55 #5).
+                // "첫 줄"의 크기는 적합 판정·방출과 **같은 출처**인 `chargedHeight`다
+                // (PR 리뷰) — 보정 없는 전진량은 baseline 간격이라 다음 줄(개체 줄)의
+                // ascent를 통째로 실어, 실제로는 들어가는 gap을 거절하고 문단을 새 단
+                // top에 붙여 놓는다.
                 let usableAfterAdvance = max(1, effectiveContentHeight - reservedFootnoteHeight)
-                if lineIndex == 0, beforeGap + advances.advance(0) <= usableAfterAdvance {
+                if lineIndex == 0,
+                   beforeGap + advances.chargedHeight(advances.advance(0), endingBefore: 1)
+                   <= usableAfterAdvance
+                {
                     contentHeightUsed += beforeGap
                     paragraphAnchorTop = currentColumnFrame.minY + contentHeightUsed
                 }
