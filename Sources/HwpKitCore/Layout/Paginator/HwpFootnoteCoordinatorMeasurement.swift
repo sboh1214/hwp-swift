@@ -26,6 +26,12 @@ extension HwpFootnoteCoordinator {
 
     /// 이월된 각주 입력들이 새 페이지에서 예약할 높이 — 배치 (place)와
     /// 동형: Σ 높이 + 노트 경계마다 간격 + 구분선 오버헤드.
+    ///
+    /// **다음 쪽에 실릴 조각까지만** 더한다 (#165 리뷰): 분할 지점이 여러 쪽에 걸친 각주의 남은
+    /// 전부를 더하면 예약이 쪽 높이를 넘어 `effectiveContentHeight`가 1pt로 무너지고, 캐시
+    /// 없는 흐름 문단·표가 자리가 남아도 다음 쪽으로 밀린다 — 배치(`stackPlan`)는 그 쪽에
+    /// 첫 분할 지점까지의 앞 조각만 싣고 그 뒤 각주는 넘기므로, 예약도 그 조각에서 멈춘다
+    /// (한글도 그 쪽에 그 조각만 놓았다 — 분할 지점이 곧 한글의 쪽 경계다).
     mutating func reservedFootnoteHeight(
         for inputs: HwpFootnoteLayout.PendingNotes,
         environment: Environment,
@@ -34,9 +40,9 @@ extension HwpFootnoteCoordinator {
         guard !inputs.isEmpty else { return 0 }
         let metrics = footnoteReservationMetrics(environment: environment)
         var total = metrics.separatorOverhead
-        // 개체 판정은 **각주 단위** (#165 리뷰) — 배치와 같은 범위를 본다. 같은 각주의 문단은
-        // 잇닿아 있으므로 각주가 바뀌는 자리에서 그 이웃만 훑는다 — 전부를 먼저 훑으면 `limit`에
-        // 멈추는 뜻이 없다.
+        // 개체 판정은 **각주 단위** (#165 리뷰) — 배치와 같은 범위를 본다. 수집 시점의 사실
+        // (`Input.noteFacts`)이 있으면 그것이고, 없으면 각주가 바뀌는 자리에서 그 이웃만 훑는다
+        // — 전부를 먼저 훑으면 `limit`에 멈추는 뜻이 없다.
         var noteCarriesObjects = false
         var index = inputs.startIndex
         while index < inputs.endIndex, total <= limit {
@@ -47,14 +53,8 @@ extension HwpFootnoteCoordinator {
                 if index > inputs.startIndex {
                     total += metrics.spacingBetweenNotes
                 }
-                var probe = index
-                noteCarriesObjects = false
-                while probe < inputs.endIndex, inputs[probe].noteId == input.noteId, !noteCarriesObjects {
-                    noteCarriesObjects = HwpParagraphObjectCollector.hasCollectibleObject(
-                        in: inputs[probe].paragraph, collectsTextboxes: true, collectsTables: true
-                    )
-                    probe = inputs.index(after: probe)
-                }
+                noteCarriesObjects = input.noteFacts?.carriesObjects
+                    ?? Self.noteCarriesObjects(in: inputs, from: index)
             }
             // 배치(`HwpFootnoteLayout.measure`)가 `input.sizeResolver`를 쓰므로
             // 재예약도 같은 값으로 재야 한다 — 현재 environment로 재면 그 사이
@@ -65,22 +65,49 @@ extension HwpFootnoteCoordinator {
             if let measured = input.measuredShape {
                 noteEnvironment = noteEnvironment.withFootnoteShape(measured.footnoteShape)
             }
+            // 개체를 담은 각주는 나뉘지 않는다 — 그 밖의 문단은 남은 줄의 첫 분할 지점까지만.
+            let cacheLines = noteCarriesObjects ? nil
+                : input.sourceLayout?.cacheLines ?? HwpFootnoteCacheLines.lines(of: input.paragraph)
+            let firstBreak = cacheLines.flatMap {
+                HwpFootnoteCacheLines.firstPageBreak(in: $0, after: input.placedLineCount)
+            }
+            let isNoteEnd = next == inputs.endIndex || inputs[next].noteId != input.noteId
             total += measuredFootnoteHeight(
                 of: input.paragraph,
                 number: input.number,
                 environment: noteEnvironment,
                 numbering: input.numbering,
-                isNoteEnd: next == inputs.endIndex || inputs[next].noteId != input.noteId,
+                isNoteEnd: isNoteEnd || firstBreak != nil,
                 placedLineCount: input.placedLineCount,
                 noteCarriesObjects: noteCarriesObjects,
                 // 이월 입력이 나른 원본 조판(줄 캐시·남은 높이 누적표)을 그대로 쓴다 (#165
                 // 리뷰) — 쪽마다 줄 캐시를 다시 만들고 남은 줄을 다 더하면 이월이 길게
                 // 이어지는 문단에서 쪽 수 × 줄 수의 일이다.
-                sourceLayout: input.sourceLayout
+                sourceLayout: input.sourceLayout,
+                lineLimit: firstBreak.map { $0 - input.placedLineCount }
             )
+            if firstBreak != nil {
+                break
+            }
             index = next
         }
         return total
+    }
+
+    /// `start`에서 시작하는 각주의 개체 유무 — 수집 시점 사실이 없는 입력(공개 API)의 폴백.
+    private static func noteCarriesObjects(
+        in inputs: HwpFootnoteLayout.PendingNotes, from start: Int
+    ) -> Bool {
+        var probe = start
+        while probe < inputs.endIndex, inputs[probe].noteId == inputs[start].noteId {
+            if HwpParagraphObjectCollector.hasCollectibleObject(
+                in: inputs[probe].paragraph, collectsTextboxes: true, collectsTables: true
+            ) {
+                return true
+            }
+            probe = inputs.index(after: probe)
+        }
+        return false
     }
 
     /// 이 문단이 페이지에 추가될 때 각주 영역이 요구할 높이 (커밋 전 예측용).
@@ -208,7 +235,8 @@ extension HwpFootnoteCoordinator {
     /// `NoteMeasurement.stackingHeight`와 같은 산식). placedLineCount: 이어지는 조각의
     /// 앞 쪽에 실린 줄 수.
     /// sourceLayout: 이월 입력이 나른 원본 조판 — 있으면 줄 캐시를 문단에서 다시 만들지 않고
-    /// 남은 줄의 높이도 누적표로 읽는다.
+    /// 남은 줄의 높이도 누적표로 읽는다. lineLimit: 남은 줄 중 앞 몇 줄만 셀지 (다음 쪽에 실릴
+    /// 조각, #165 리뷰) — nil이면 끝까지.
     mutating func measuredFootnoteHeight(
         of paragraph: CoreHwp.HwpParagraph,
         number: Int,
@@ -217,7 +245,8 @@ extension HwpFootnoteCoordinator {
         isNoteEnd: Bool = false,
         placedLineCount: Int = 0,
         noteCarriesObjects: Bool = false,
-        sourceLayout: HwpFootnoteLayout.SourceLayout? = nil
+        sourceLayout: HwpFootnoteLayout.SourceLayout? = nil,
+        lineLimit: Int? = nil
     ) -> CGFloat {
         // 개체 없는 각주 (대다수) 는 라인 캐시만으로 끝낸다 — CT 조판을 건너뛰는
         // 이 빠른 길이 대형 문서 로드 시간을 좌우한다 (헌법주석 1,030쪽).
@@ -230,7 +259,8 @@ extension HwpFootnoteCoordinator {
         ) else {
             return measuredFootnoteTextHeight(
                 of: paragraph, number: number, environment: environment, numbering: numbering,
-                isNoteEnd: isNoteEnd, placedLineCount: placedLineCount, sourceLayout: sourceLayout
+                isNoteEnd: isNoteEnd, placedLineCount: placedLineCount, sourceLayout: sourceLayout,
+                lineLimit: lineLimit
             )
         }
         return measuredNoteBlockHeight(
@@ -292,13 +322,18 @@ extension HwpFootnoteCoordinator {
         numbering: HwpNumberingScope?,
         isNoteEnd: Bool,
         placedLineCount: Int,
-        sourceLayout: HwpFootnoteLayout.SourceLayout?
+        sourceLayout: HwpFootnoteLayout.SourceLayout?,
+        lineLimit: Int? = nil
     ) -> CGFloat {
         if let lines = sourceLayout?.cacheLines ?? HwpFootnoteCacheLines.lines(of: paragraph) {
-            let range = min(placedLineCount, lines.count) ..< lines.count
+            let start = min(placedLineCount, lines.count)
+            let range = start ..< (lineLimit.map { min(lines.count, start + max(0, $0)) } ?? lines.count)
             // 이월 입력은 남은 높이를 누적표로 읽는다 — 배치(`continuationMeasurement`)와 같은 값.
-            let height = sourceLayout?.remainingHeight(from: range.lowerBound)
+            // 앞 조각만 셀 때는 그 범위의 합이다 (`headHeight`와 같은 산식).
+            let height = lineLimit == nil
+                ? sourceLayout?.remainingHeight(from: start)
                 ?? HwpFootnoteCacheLines.height(of: lines, in: range)
+                : HwpFootnoteCacheLines.height(of: lines, in: range)
             return max(1, height
                 - (isNoteEnd ? HwpFootnoteCacheLines.trailingSpacing(of: lines, in: range) : 0))
         }

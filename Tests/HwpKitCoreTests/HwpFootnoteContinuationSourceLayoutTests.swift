@@ -319,5 +319,111 @@ import XCTest
             expect(Support.text(try XCTUnwrap(next.blocks.first))).to(contain("넷째 줄"))
             expect(next.blocks.count) == 4
         }
+
+        /// 이월 각주의 예약은 **다음 쪽에 실릴 조각**만이다 (#165 리뷰). 분할 지점이 여러 쪽에
+        /// 걸친 각주의 남은 전부를 예약하면 `effectiveContentHeight`가 1pt로 무너져, 캐시 없는
+        /// 흐름 문단이 자리가 남아도 다음 쪽으로 밀린다 — 배치는 그 쪽에 첫 조각만 싣는다.
+        func testCarriedReservationCoversOnlyTheNextFragment() async throws {
+            // 100줄 각주, 20줄마다 쪽 리셋 — 다섯 조각. 첫 쪽 15pt엔 앞 조각도 못 들어가 통째로 이월.
+            let note = try Support.note(
+                lines: (1 ... 100).map { "줄 \($0)" },
+                locations: (0 ..< 100).map { Int32($0 % 20) * 1172 }
+            )
+            let host = try Support.host(at: Support.hostLocation(leaving: 15), notes: [[note]])
+            // 둘째 쪽: 캐시 문단 하나 + 캐시 **없는** 흐름 문단 하나 — 흐름 문단은 예약을 본다.
+            let flow = try HwpSynthetic.textParagraph("흐름 문단")
+            let paginator = Support.paginate([host] + (try Support.nextPageBody()) + [flow])
+            var pages: [HwpPage] = []
+            var index = 0
+            while let page = try await paginator.page(at: index) {
+                pages.append(page)
+                index += 1
+            }
+            let flowPage = try XCTUnwrap(pages.firstIndex { page in
+                page.blocks.contains { ($0.attributedString?.string ?? "").contains("흐름 문단") }
+            })
+            // 다음 조각(20줄 ≈ 231pt)만 예약하면 둘째 쪽에 자리가 남아 흐름 문단이 거기 실린다.
+            expect(flowPage) == 1
+            // 그 쪽의 각주는 첫 조각뿐이고 흐름 문단 아래에 있다.
+            let notes = Support.footnoteBlocks(on: pages[1])
+            expect(notes.count) == 1
+            let flowBlock = try XCTUnwrap(pages[1].blocks.first {
+                ($0.attributedString?.string ?? "").contains("흐름 문단")
+            })
+            expect(try XCTUnwrap(notes.first).separatorLine.minY) >= flowBlock.frame.maxY - 0.01
+        }
+
+        /// 공개 `place`로 쪽을 넘기는 호출자: 잰 뒤 **통째로** 넘어간 각주도 처음 잰 쪽의 모양을
+        /// 나른다 (#165 리뷰) — 이월 목록이 처음 본 모양을 각인(`PendingNotes.stamp`)해 다음 쪽의
+        /// 다른 모양을 새로 채택하지 않는다. 나뉜 조각(`appendHead`)만 각인하던 비대칭을 없앴다.
+        func testWholeOverflowKeepsTheShapeItWasFirstMeasuredWith() throws {
+            // 자동 번호 컨트롤에 장식이 없어야 구역 각주 모양의 장식이 라벨에 쓰인다.
+            var note = HwpSynthetic.noteParagraph(
+                " " + (1 ... 8).map { "줄 \($0)" }.joined(separator: "\n"),
+                autoNumber: HwpSynthetic.autoNumberControl(kind: 1)
+            )
+            note.paraLineSeg = try CoreHwp.HwpParaLineSeg.load(
+                Support.lineSegPayload(Support.noteLines((0 ..< 8).map { Int32($0) * 1172 }))
+            )
+            let layout = HwpFootnoteLayout(fontResolver: .testDeterministic)
+            let index = HwpIndex(from: CoreHwp.HwpFile())
+            let geometry = Support.geometry(contentWidth: 451)
+            let first = Support.footnoteShape(head: "《", tail: "》")
+            let second = Support.footnoteShape(head: "[", tail: "]")
+            // 첫 쪽: 5pt 자리 — 분할 지점이 없어 통째로 넘어간다 (잰 뒤에).
+            let overflowed = layout.place(
+                footnotes: [HwpFootnoteLayout.Input(paragraph: note, number: 1)],
+                onPage: geometry, index: index, footnoteShape: first,
+                limitsAreaToHalfContent: false, bodyBottom: geometry.contentFrame.maxY - 5
+            )
+            expect(overflowed.blocks).to(beEmpty())
+            expect(overflowed.overflow.first?.measuredShape?.footnoteShape?.decorationHeadRawValue)
+                == first.decorationHeadRawValue
+            // 둘째 쪽: 다른 모양을 주어도 라벨은 처음 잰 모양이다.
+            let placed = layout.place(
+                footnotes: overflowed.overflow, onPage: geometry, index: index, footnoteShape: second,
+                limitsAreaToHalfContent: false
+            )
+            let text = Support.text(try XCTUnwrap(placed.blocks.first))
+            expect(text).to(contain("《1》"))
+            expect(text).toNot(contain("[1]"))
+        }
+
+        /// 수집 시점의 사실(`Input.noteFacts`)이 있으면 각주의 끝과 개체 유무를 훑지 않고 준다
+        /// (#165 리뷰) — 없는 공개 API 입력은 식별자·술어를 훑어 같은 답을 낸다.
+        func testNoteFactsAnswerGroupEndAndObjectsWithoutScanning() throws {
+            let paragraphs = try (1 ... 4).map { number in
+                try Support.notePlainParagraph("문단 \(number)", locations: [0])
+            }
+            var withObject = paragraphs[2]
+            withObject.ctrlHeaderArray = [.genShapeObject(HwpSynthetic.floatingShapeObject(
+                width: 1000, height: 1000, textWrap: .inFrontOfText
+            ))]
+            let group = [paragraphs[0], paragraphs[1], withObject, paragraphs[3]]
+            func notes(withFacts: Bool) -> HwpFootnoteLayout.MeasuredNotes {
+                let inputs = group.enumerated().map { offset, paragraph in
+                    HwpFootnoteLayout.Input(
+                        paragraph: paragraph, number: 1, sizeResolver: nil, numbering: nil,
+                        noteId: offset < 3 ? 7 : 8,
+                        noteFacts: withFacts ? .init(
+                            paragraphsAfter: offset < 3 ? 2 - offset : 0,
+                            carriesObjects: offset < 3
+                        ) : nil
+                    )
+                }
+                return HwpFootnoteLayout.MeasuredNotes(
+                    inputs: .init(inputs[...]), footnoteShape: nil
+                ) { _, _ in fatalError("잰 적 없어야 한다") }
+            }
+            for withFacts in [true, false] {
+                let measured = notes(withFacts: withFacts)
+                expect(measured.groupEnd(from: 0)) == 3
+                expect(measured.groupEnd(from: 1)) == 3
+                expect(measured.groupEnd(from: 3)) == 4
+                expect(measured.carriesObjects(at: 0)) == true
+                expect(measured.carriesObjects(at: 1)) == true
+                expect(measured.carriesObjects(at: 3)) == false
+            }
+        }
     }
 #endif

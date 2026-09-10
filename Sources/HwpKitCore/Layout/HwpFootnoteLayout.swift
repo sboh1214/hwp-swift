@@ -70,10 +70,22 @@ public struct HwpFootnoteLayout {
         /// 앞 쪽이 잰 문단 **전체**의 조판 (#165 리뷰) — 이어지는 조각은 원본에서 잘라 내므로
         /// 같은 폭이면 다시 조판하지 않는다 (`SourceLayout`). 이월 입력에만 실린다.
         let sourceLayout: SourceLayout?
+        /// 이 각주(문단 묶음)에 대해 수집 시점에 확정한 사실 (#165 리뷰) — 묶음의 끝과 개체
+        /// 유무를 쪽마다 남은 문단을 훑어 다시 알아내지 않게 한다 (문단 N개짜리 각주가 문단마다
+        /// 쪽을 넘기면 그 훑기가 쪽 수 × N이다). 공개 init은 nil이라 그때는 훑는다.
+        let noteFacts: NoteFacts?
 
         /// 처음 잰 각주 모양의 확정 표식 — 값이 nil이어도 "기본 모양으로 잼"이다.
         struct MeasuredShape {
             let footnoteShape: CoreHwp.HwpFootnoteShape?
+        }
+
+        /// 같은 각주 안에서 이 문단 **뒤에** 남은 문단 수와, 각주가 그릴 개체를 담는지
+        /// (`hasCollectibleObject`, 각주 단위). 나뉜 문단의 이월 입력도 그대로 물려받는다 —
+        /// 그 문단은 같은 자리에 남는다.
+        struct NoteFacts {
+            let paragraphsAfter: Int
+            let carriesObjects: Bool
         }
 
         /// - Parameter noteId: 각주 하나를 가르는 식별자. 생략하면 표시 번호를 쓴다 —
@@ -102,7 +114,8 @@ public struct HwpFootnoteLayout {
             placedLength: Int = 0,
             noteId: Int,
             measuredShape: MeasuredShape? = nil,
-            sourceLayout: SourceLayout? = nil
+            sourceLayout: SourceLayout? = nil,
+            noteFacts: NoteFacts? = nil
         ) {
             self.paragraph = paragraph
             self.number = number
@@ -113,6 +126,7 @@ public struct HwpFootnoteLayout {
             self.noteId = noteId
             self.measuredShape = measuredShape
             self.sourceLayout = sourceLayout
+            self.noteFacts = noteFacts
         }
 
         /// 처음 잰 각주 모양을 **확정**한 사본 — 기본 모양(nil)으로 잰 것도 확정이다.
@@ -122,7 +136,7 @@ public struct HwpFootnoteLayout {
                 numbering: numbering, placedLineCount: placedLineCount,
                 placedLength: placedLength, noteId: noteId,
                 measuredShape: MeasuredShape(footnoteShape: shape),
-                sourceLayout: sourceLayout
+                sourceLayout: sourceLayout, noteFacts: noteFacts
             )
         }
     }
@@ -248,10 +262,16 @@ public struct HwpFootnoteLayout {
         )
 
         // 절대 캐시 모드 (상한 없음): 본문 아래 자리에 맞춰 싣고 넘치는 몫은 한글의 분할
-        // 지점에서 나눠 다음 쪽으로 잇는다 (#165).
+        // 지점에서 나눠 다음 쪽으로 잇는다 (#165). 이월은 처음 본 모양을 각인해 돌려준다
+        // (`PendingNotes.stampingUnmeasured`, #165 리뷰) — 잰 뒤 통째로 넘어간 각주도 다음
+        // 쪽의 모양을 새로 채택하지 않는다.
         if !limitsAreaToHalfContent {
-            return placeBelowBody(
+            let placement = placeBelowBody(
                 notes: notes, bodyBottom: bodyBottom, onPage: geometry, divider: divider
+            )
+            return PendingPlacement(
+                blocks: placement.blocks,
+                overflow: placement.overflow.stampingUnmeasured(with: footnoteShape)
             )
         }
 
@@ -277,7 +297,9 @@ public struct HwpFootnoteLayout {
             separatorLine: separatorLine,
             divider: divider
         )
-        return PendingPlacement(blocks: stacked.blocks, overflow: stacked.overflow)
+        return PendingPlacement(
+            blocks: stacked.blocks, overflow: stacked.overflow.stampingUnmeasured(with: footnoteShape)
+        )
     }
 
     /// 각주 항목들의 스택 높이 — 항목 높이 (각주 마지막 항목은 마지막 줄 줄 간격 제외)
@@ -400,12 +422,17 @@ public struct HwpFootnoteLayout {
             cursorY += divider.marginTop + divider.marginBottom
         }
 
-        return stackBlocks(
+        let stacked = stackBlocks(
             notes: notes,
             from: cursorY,
             in: columnFrame,
             separatorLine: separatorLine,
             divider: divider
+        )
+        return PendingFlowPlacement(
+            blocks: stacked.blocks,
+            overflow: stacked.overflow.stampingUnmeasured(with: footnoteShape),
+            bottom: stacked.bottom
         )
     }
 

@@ -355,7 +355,13 @@ struct HwpFootnoteCoordinator {
                 // 각주 모양도 수집 시점에 **각인**한다 (#165 리뷰) — 바로 아래 예약이 이 모양으로
                 // 재고, 배치는 각인된 모양을 쓰므로 예약 ≡ 배치다. 배치가 쪽마다 대기 각주 전부에
                 // 각인하던 일(쪽 수 × N)도 없어진다. 기본 모양(nil)도 확정이다.
-                measuredShape: .init(footnoteShape: environment.footnoteShape)
+                measuredShape: .init(footnoteShape: environment.footnoteShape),
+                // 각주의 끝과 개체 유무도 여기서 확정한다 (#165 리뷰) — 배치·예약이 쪽마다 남은
+                // 문단을 훑어 다시 알아내지 않는다.
+                noteFacts: .init(
+                    paragraphsAfter: paragraphs.count - 1 - paragraphIndex,
+                    carriesObjects: noteCarriesObjects
+                )
             ))
             footnoteReservedHeight += measuredFootnoteHeight(
                 of: paragraph,
@@ -406,13 +412,22 @@ struct HwpFootnoteCoordinator {
         endnoteCounter += 1
         noteSequence += 1
         let noteId = noteSequence
+        let noteCarriesObjects = paragraphs.contains {
+            HwpParagraphObjectCollector.hasCollectibleObject(
+                in: $0, collectsTextboxes: true, collectsTables: true
+            )
+        }
         for (paragraphIndex, paragraph) in paragraphs.enumerated() {
             pendingEndnotes.append(HwpFootnoteLayout.Input(
                 paragraph: paragraph,
                 number: number,
                 sizeResolver: nil,
                 numbering: numbering?.paragraph(childIndex: paragraphIndex),
-                noteId: noteId
+                noteId: noteId,
+                noteFacts: .init(
+                    paragraphsAfter: paragraphs.count - 1 - paragraphIndex,
+                    carriesObjects: noteCarriesObjects
+                )
             ))
         }
     }

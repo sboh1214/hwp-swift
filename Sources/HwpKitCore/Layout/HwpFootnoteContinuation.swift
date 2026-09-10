@@ -394,11 +394,7 @@ extension HwpFootnoteLayout {
     /// 둘이 한 각주가 돼 사이 여백이 사라지고 (앞 조각이 각주의 끝이 아니게 돼) 마지막 줄
     /// 간격이 높이에 남으며, 하나가 안 들어가면 다른 하나까지 다음 쪽으로 밀린다.
     private static func noteGroup(in notes: MeasuredNotes, from start: Int) -> Range<Int> {
-        var end = start + 1
-        while end < notes.count, notes.noteId(at: end) == notes.noteId(at: start) {
-            end += 1
-        }
-        return start ..< end
+        start ..< notes.groupEnd(from: start)
     }
 
     /// 각주(문단 묶음)의 스택 높이 — `limit`을 넘으면 거기서 멈춘 부분 합을 준다 (넘었다는
@@ -516,7 +512,8 @@ extension HwpFootnoteLayout {
             measuredShape: carried.measuredShape,
             // 문단 전체의 조판도 나른다 (#165 리뷰) — 다음 쪽이 같은 폭이면 다시 조판하지
             // 않는다. 쪽마다 문단 전체를 CT로 다시 조판하면 쪽 수 × 줄 수의 일이다.
-            sourceLayout: splitNote.measurement.carriedSourceLayout()
+            sourceLayout: splitNote.measurement.carriedSourceLayout(),
+            noteFacts: carried.noteFacts
         ))
     }
 }

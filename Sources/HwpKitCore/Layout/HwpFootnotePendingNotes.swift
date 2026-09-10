@@ -18,15 +18,22 @@ extension HwpFootnoteLayout {
         private(set) var storage: ArraySlice<Input>
         /// 저장소 첫 항목을 대신하는 이월 조각 입력 — 저장소가 비면 뜻이 없다.
         private(set) var head: Input?
+        /// 아직 모양을 각인하지 않은 항목이 나르는 **처음 본 쪽의** 각주 모양 (#165 리뷰) —
+        /// 항목마다 각인해 두면 쪽 수 × N의 복사라 목록이 하나로 들고 읽을 때 입힌다. 공개
+        /// API 입력이 잰 뒤 통째로 넘어가도 처음 잰 모양이 유지된다 (페이지네이터 입력은 수집
+        /// 시점에 각인돼 있어 이 값이 쓰이지 않는다).
+        private(set) var stamp: Input.MeasuredShape?
 
         init() {
             storage = []
             head = nil
+            stamp = nil
         }
 
-        init(_ storage: ArraySlice<Input>, head: Input? = nil) {
+        init(_ storage: ArraySlice<Input>, head: Input? = nil, stamp: Input.MeasuredShape? = nil) {
             self.storage = storage
             self.head = storage.isEmpty ? nil : head
+            self.stamp = stamp
         }
 
         init(arrayLiteral elements: Input...) {
@@ -42,23 +49,33 @@ extension HwpFootnoteLayout {
         }
 
         subscript(position: Int) -> Input {
-            if position == 0, let head {
-                return head
+            let input: Input = if position == 0, let head {
+                head
+            } else {
+                storage[storage.startIndex + position]
             }
-            return storage[storage.startIndex + position]
+            guard input.measuredShape == nil, let stamp else { return input }
+            return input.withMeasuredShape(stamp.footnoteShape)
         }
 
         /// `start`부터의 남은 목록 — 저장소는 같은 슬라이스고 머리는 `start == 0`일 때만 남는다.
         func remaining(from start: Int) -> PendingNotes {
             let clamped = Swift.min(Swift.max(0, start), storage.count)
             return PendingNotes(
-                storage[(storage.startIndex + clamped)...], head: clamped == 0 ? head : nil
+                storage[(storage.startIndex + clamped)...],
+                head: clamped == 0 ? head : nil,
+                stamp: stamp
             )
         }
 
         /// 첫 항목을 `input`으로 대신한 사본 — 꼬리는 복사하지 않는다.
         func replacingFirst(with input: Input) -> PendingNotes {
-            PendingNotes(storage, head: input)
+            PendingNotes(storage, head: input, stamp: stamp)
+        }
+
+        /// 아직 각인이 없으면 `shape`를 처음 본 모양으로 삼은 사본 — 이월을 돌려주는 쪽이 부른다.
+        func stampingUnmeasured(with shape: CoreHwp.HwpFootnoteShape?) -> PendingNotes {
+            PendingNotes(storage, head: head, stamp: stamp ?? Input.MeasuredShape(footnoteShape: shape))
         }
 
         mutating func append(_ input: Input) {
@@ -68,6 +85,7 @@ extension HwpFootnoteLayout {
         mutating func removeAll() {
             storage = []
             head = nil
+            stamp = nil
         }
 
         /// 공개 경계용 배열
@@ -159,6 +177,20 @@ extension HwpFootnoteLayout {
             inputs.remaining(from: start)
         }
 
+        /// `start`에서 시작하는 각주(같은 `noteId`의 잇닿은 문단)의 끝 (열린 상한). 수집 시점의
+        /// 사실(`Input.noteFacts`)이 있으면 O(1)이고, 없으면(공개 API) 식별자를 훑는다 (#165 리뷰
+        /// — 문단 N개짜리 각주가 문단마다 쪽을 넘기면 쪽마다 남은 문단을 훑는 것도 쪽 수 × N).
+        func groupEnd(from start: Int) -> Int {
+            if let facts = inputs[start].noteFacts {
+                return Swift.min(inputs.count, start + 1 + facts.paragraphsAfter)
+            }
+            var end = start + 1
+            while end < inputs.count, noteId(at: end) == noteId(at: start) {
+                end += 1
+            }
+            return end
+        }
+
         /// 개체 판정은 **각주 단위**다 (#165 리뷰) — 분할 금지와 CT 높이 보존의 범위를
         /// 맞춘다. 문단 단위로 보면 개체 없는 앞 문단만 캐시 합으로 줄어 뒤 문단의 그림이
         /// 그 문단의 마지막 글줄 위로 올라온다. 술어는 **수집 대상 전체**를 본다
@@ -170,6 +202,10 @@ extension HwpFootnoteLayout {
             let target = noteId(at: offset)
             if let known = carrying[target] {
                 return known
+            }
+            if let facts = inputs[offset].noteFacts {
+                carrying[target] = facts.carriesObjects
+                return facts.carriesObjects
             }
             var carries = false
             var low = offset

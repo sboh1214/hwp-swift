@@ -453,9 +453,10 @@ public typealias HwpShapeArcDetail = HwpShapeEllipseDetail
  (hwplib `ForControlPolygon.shapeComponentPolygon`이 `readSInt4`; 헌법주석 픽스처의 유일한
  다각형 `02 00 00 00 | 0,0 | 283,283 | 00 00 00 00`은 4 byte로 읽어야 283×283 상자 안의
  대각선이고, 2 byte로 읽으면 둘째 점이 `0x011B0000`(18,546,688 HWPUNIT)이 돼 쪽 전체를
- 가로지르는 선이 됐다). 구분선 길이(`HwpFootnoteDividerInfo`)와 같은 부류의 폭 차이라 같은
- 규약을 따른다: 4 byte(wide) 해석을 우선하고, wide가 무효인 malformed 레코드만 2 byte(narrow)로
- 폴백한다.
+ 가로지르는 선이 됐다). **2 byte 폴백은 두지 않는다** (PR 리뷰): 두 해석은 구조로 가를 수
+ 없어 — 첫 x의 아래 16 bit가 0이면 (x = 0이 흔하다) 앞 4 byte가 같은 개수로 읽혀 2 byte
+ 레코드가 4 byte로, 뒤가 잘린 4 byte 레코드는 2 byte로 통과해 좌표가 이웃 필드의 반쪽끼리
+ 붙는다 — hwplib처럼 4 byte만 읽고 안 맞는 레코드는 nil이다.
  */
 public struct HwpShapePolygonDetail: HwpPrimitive {
     public var points: [HwpShapePoint]
@@ -465,28 +466,22 @@ public struct HwpShapePolygonDetail: HwpPrimitive {
     }
 
     static func decode(from data: Data) -> HwpShapePolygonDetail? {
-        decode(from: data, countByteCount: 4) ?? decode(from: data, countByteCount: 2)
-    }
-
-    private static func decode(from data: Data, countByteCount: Int) -> HwpShapePolygonDetail? {
-        guard let (count, cursor) = HwpShapePointList.count(in: data, byteCount: countByteCount),
+        guard let (count, cursor) = HwpShapePointList.count(in: data),
               let points = HwpShapePointList.points(in: data, count: count, at: cursor)
         else { return nil }
         return HwpShapePolygonDetail(points: points)
     }
 }
 
-/// 다각형·곡선 세부의 공통 조각 — 점 개수 필드(2/4 byte)와 (x, y) INT32 쌍 목록.
+/// 다각형·곡선 세부의 공통 조각 — 4 byte 점 개수 필드와 (x, y) INT32 쌍 목록.
 enum HwpShapePointList {
     /// 점 개수와 점 목록 시작 offset. 개수가 0 이하거나 필드가 없으면 nil.
-    static func count(in data: Data, byteCount: Int) -> (count: Int, cursor: Int)? {
-        guard data.count >= byteCount else { return nil }
+    static func count(in data: Data) -> (count: Int, cursor: Int)? {
+        guard data.count >= 4 else { return nil }
         do {
-            let count = byteCount == 4
-                ? Int(try data.readLittleEndianInt32(at: 0))
-                : Int(try data.readLittleEndianInt16(at: 0))
+            let count = Int(try data.readLittleEndianInt32(at: 0))
             guard count > 0 else { return nil }
-            return (count, byteCount)
+            return (count, 4)
         } catch {
             return nil
         }
@@ -519,13 +514,9 @@ public struct HwpShapeCurveDetail: HwpPrimitive {
     }
 
     /// 점 개수 필드는 다각형과 같이 **4 byte**다 (hwplib `ForControlCurve.shapeComponentCurve`가
-    /// `readSInt4` — 뒤에 4 byte를 건너뛴다). 4 byte 해석이 무효인 레코드만 2 byte로 폴백.
+    /// `readSInt4` — 뒤에 4 byte를 건너뛴다). 2 byte 폴백은 두지 않는다 (다각형과 같은 이유).
     static func decode(from data: Data) -> HwpShapeCurveDetail? {
-        decode(from: data, countByteCount: 4) ?? decode(from: data, countByteCount: 2)
-    }
-
-    private static func decode(from data: Data, countByteCount: Int) -> HwpShapeCurveDetail? {
-        guard let (count, cursor) = HwpShapePointList.count(in: data, byteCount: countByteCount),
+        guard let (count, cursor) = HwpShapePointList.count(in: data),
               let points = HwpShapePointList.points(in: data, count: count, at: cursor),
               data.count >= cursor + count * 8 + max(0, count - 1)
         else { return nil }
