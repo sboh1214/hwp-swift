@@ -30,5 +30,8 @@ extension HwpFootnoteCoordinator {
         let noteEnd: Bool
         /// 앞 쪽에 이미 실린 줄 수 (#165) — 이어지는 조각은 그 뒤 줄만 잰다.
         let placedLineCount: Int
+        /// 이 **각주**가 개체를 담는지 (#165 리뷰) — 담으면 전 문단이 CT 높이로 재어지므로
+        /// 같은 문단이라도 값이 다르다.
+        let noteCarriesObjects: Bool
     }
 }

@@ -126,6 +126,17 @@ import XCTest
             block.paragraphs.map(\.attributedString.string).joined()
         }
 
+        /// 앞·뒤 장식 문자만 지정한 각주 모양 — 구역마다 번호 라벨이 달라지는 문서를
+        /// 재현한다. 구분선 값은 건드리지 않아 기본 여백이 그대로 쓰인다.
+        static func footnoteShape(
+            head: Character?, tail: Character?
+        ) -> CoreHwp.HwpFootnoteShape {
+            var shape = CoreHwp.HwpSectionDef().footNoteShape
+            shape.decorationHeadRawValue = head?.utf16.first ?? 0
+            shape.decorationTailRawValue = tail?.utf16.first ?? 0
+            return shape
+        }
+
         /// 지정 폭의 A4 쪽 기하 (단위 테스트용) — 구역이 바뀌며 폭이 달라지는 문서를
         /// 페이지네이터 없이 재현한다.
         static func geometry(contentWidth: CGFloat) -> HwpPageGeometry {
@@ -456,6 +467,129 @@ import XCTest
             expect(blocks[1].frame.minY - blocks[0].frame.maxY).to(beCloseTo(
                 HwpRenderTuning.Footnote.dividerDefaultSpacingBetweenNotes, within: 0.01
             ))
+        }
+
+        /// 구역이 바뀌어 **번호 장식**이 달라져도 소비한 문자 경계가 보존돼야 한다
+        /// (#165 리뷰). 이어지는 조각은 그 쪽 구역의 각주 모양으로 문자열을 다시 만드는데,
+        /// 라벨 길이가 달라지면 본문 글자 위치가 통째로 밀려 앞 쪽이 그린 마지막 글자와
+        /// 다른 자리에서 이어진다 — 폭이 같아도 글자가 잘린다.
+        func testContinuationKeepsConsumedTextAcrossAShapeChange() throws {
+            let words = (1 ... 60).map { "word\($0)" }.joined(separator: " ")
+            var paragraph = HwpSynthetic.noteParagraph(
+                " " + words,
+                // 장식을 안 실은 자동 번호 — 라벨이 **구역 각주 모양**을 따른다.
+                autoNumber: HwpSynthetic.autoNumberControl(kind: 1)
+            )
+            paragraph.paraLineSeg = try CoreHwp.HwpParaLineSeg.load(
+                Support.lineSegPayload(Support.noteLines([0, 1172, 2344, 0, 1172, 2344]))
+            )
+            let input = HwpFootnoteLayout.Input(paragraph: paragraph, number: 1)
+            let layout = HwpFootnoteLayout(fontResolver: .testDeterministic)
+            let index = HwpIndex(from: CoreHwp.HwpFile())
+            let page = Support.geometry(contentWidth: 451)
+            let decorated = Support.footnoteShape(head: "(", tail: ")")
+            let plain = Support.footnoteShape(head: nil, tail: nil)
+
+            let whole = layout.place(
+                footnotes: [input], onPage: page, index: index,
+                footnoteShape: decorated, limitsAreaToHalfContent: false
+            )
+            let full = Support.text(try XCTUnwrap(whole.blocks.first))
+            // 앞 세 줄(32.44pt)은 들어가고 전체(67.6pt)는 안 들어가는 자리에서 나눈다.
+            let split = layout.place(
+                footnotes: [input], onPage: page, index: index,
+                footnoteShape: decorated, limitsAreaToHalfContent: false,
+                bodyBottom: page.contentFrame.maxY - 54.2
+            )
+            let head = Support.text(try XCTUnwrap(split.blocks.first))
+            expect(split.overflow.count) == 1
+            // 이월분은 **장식 없는** 구역에서 다시 조판된다.
+            let carried = layout.place(
+                footnotes: split.overflow, onPage: page, index: index,
+                footnoteShape: plain, limitsAreaToHalfContent: false
+            )
+            let tail = Support.text(try XCTUnwrap(carried.blocks.first))
+
+            expect(full.hasPrefix(head)) == true
+            expect(full.hasSuffix(tail)) == true
+            expect(head.count + tail.count) == full.count
+        }
+
+        /// 개체가 **뒤 문단**에 붙은 각주도 통째로 CT 높이를 쓴다 (#165 리뷰). 분할 금지는
+        /// 각주 단위인데 높이 보존이 문단 단위면, 앞 문단이 캐시 합으로 줄어 그 문단의 마지막
+        /// 글줄 위로 뒤 문단의 그림이 올라온다.
+        func testObjectInALaterParagraphKeepsEveryParagraphOnCTHeight() throws {
+            let text = try Support.note(
+                lines: ["첫째 줄", "둘째 줄", "셋째 줄", "넷째 줄"], locations: [0, 1172, 0, 1172]
+            )
+            var picture = CoreHwp.HwpParagraph()
+            var paraText = CoreHwp.HwpParaText()
+            paraText.charArray = "그림 ".utf16.map { CoreHwp.HwpChar(type: .char, value: $0) }
+                + [CoreHwp.HwpChar(type: .extended, value: 11)]
+            picture.paraText = paraText
+            picture.ctrlHeaderArray = [
+                .genShapeObject(HwpSynthetic.inlineShapeObject(width: 2000, height: 3000)),
+            ]
+            picture.paraLineSeg = try CoreHwp.HwpParaLineSeg.load(
+                Support.lineSegPayload(Support.noteLines([0]))
+            )
+            let layout = HwpFootnoteLayout(fontResolver: .testDeterministic)
+            let placement = layout.place(
+                footnotes: [
+                    HwpFootnoteLayout.Input(paragraph: text, number: 1),
+                    HwpFootnoteLayout.Input(paragraph: picture, number: 1),
+                ],
+                onPage: Support.geometry(contentWidth: 451),
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                limitsAreaToHalfContent: false
+            )
+            expect(placement.blocks.count) == 2
+            let first = try XCTUnwrap(placement.blocks.first)
+            // 네 줄 × 16pt — 캐시 합 46.88pt로 줄면 넷째 줄이 그림 아래로 밀린다.
+            expect(first.frame.height).to(beCloseTo(64, within: 1))
+            expect(placement.blocks[1].frame.minY).to(beCloseTo(first.frame.maxY, within: 0.01))
+        }
+
+        /// 표시 번호가 같은 서로 다른 각주는 **식별자 없이는** 한 각주로 묶인다 (#165 리뷰) —
+        /// 남은 자리에 들어가는 이월 조각까지 새 각주와 함께 다음 쪽으로 밀린다.
+        func testNotesSharingADisplayNumberMergeWithoutAnIdentity() throws {
+            let layout = HwpFootnoteLayout(fontResolver: .testDeterministic)
+            let index = HwpIndex(from: CoreHwp.HwpFile())
+            let page = Support.geometry(contentWidth: 451)
+            let split = try Support.note(lines: ["첫째 줄", "둘째 줄"], locations: [0, 0])
+            // 캐시 없는 새 각주 — 나눌 지점이 없어 그룹이 통째로 밀린다.
+            let fresh = HwpSynthetic.noteParagraph(
+                " 새 각주",
+                autoNumber: HwpSynthetic.autoNumberControl(kind: 1, decorationTail: ")")
+            )
+            let first = layout.place(
+                footnotes: [HwpFootnoteLayout.Input(paragraph: split, number: 1)],
+                onPage: page, index: index, limitsAreaToHalfContent: false,
+                bodyBottom: page.contentFrame.maxY - 29.2
+            )
+            let carried = try XCTUnwrap(first.overflow.first)
+
+            // 이월 조각 9.0pt는 남은 12pt에 들어가지만, 같은 번호라 새 각주와 한 그룹이 된다.
+            let merged = layout.place(
+                footnotes: [carried, HwpFootnoteLayout.Input(paragraph: fresh, number: 1)],
+                onPage: page, index: index, limitsAreaToHalfContent: false,
+                bodyBottom: page.contentFrame.maxY - 26.2
+            )
+            expect(merged.blocks).to(beEmpty())
+            expect(merged.overflow.count) == 2
+
+            // 식별자를 주면 서로 다른 각주로 갈려 이월 조각이 남은 자리에 실린다.
+            let distinct = layout.place(
+                footnotes: [
+                    carried,
+                    HwpFootnoteLayout.Input(paragraph: fresh, number: 1, noteId: 2),
+                ],
+                onPage: page, index: index, limitsAreaToHalfContent: false,
+                bodyBottom: page.contentFrame.maxY - 26.2
+            )
+            expect(distinct.blocks.count) == 1
+            expect(Support.text(try XCTUnwrap(distinct.blocks.first))).to(contain("둘째 줄"))
+            expect(distinct.overflow.count) == 1
         }
 
         /// 진행 보장 — 빈 쪽에도 안 들어가는 각주 (분할 지점 없음) 는 참조 쪽에 그대로
