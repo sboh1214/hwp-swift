@@ -195,5 +195,42 @@ import XCTest
                 .filter { !Support.text($0).contains("미주") }
             expect(allFootnotes.count) == 3
         }
+
+        /// 빈 쪽에도 안 들어가 진행 보장으로 실린 거대 각주는 영역 상단이 본문 상단에
+        /// 클램프되는데, 위 여백보다 굵은 구분선은 획 반 두께가 그 위로 나간다 (#165 리뷰).
+        /// 획까지 본문 상단 아래에 있어야 머리말·위 여백으로 새지 않는다.
+        func testThickSeparatorStaysInsideTheClampedArea() throws {
+            // 위 여백 0·아래 여백 850·굵기 index 15 (5mm = 14.17pt) 인 구분선 모양.
+            var shape = CoreHwp.HwpFootnoteShape(
+                dividerLength: 0, dividerMarginTop: 0, dividerType: 0, dividerThickness: 15
+            )
+            var payload = Data(count: 12)
+            withUnsafeBytes(of: Int32(0).littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: Int16(0).littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: Int16(850).littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: Int16(283).littleEndian) { payload.append(contentsOf: $0) }
+            payload.append(contentsOf: [0, 15])
+            withUnsafeBytes(of: UInt32(0).littleEndian) { payload.append(contentsOf: $0) }
+            shape.rawPayload = payload
+            expect(shape.dividerInfo?.thickness) == 15
+            expect(shape.dividerInfo?.marginTop) == 0
+
+            // 70줄(820pt)은 698pt 쪽에 안 들어가고 분할 지점도 없다 — 진행 보장으로 실린다.
+            let note = try Support.note(
+                lines: (1 ... 70).map { "줄 \($0)" }, locations: (0 ..< 70).map { Int32($0) * 1172 }
+            )
+            let layout = HwpFootnoteLayout(fontResolver: .testDeterministic)
+            let geometry = Support.geometry(contentWidth: 451)
+            let placement = layout.place(
+                footnotes: [HwpFootnoteLayout.Input(paragraph: note, number: 1)],
+                onPage: geometry, index: HwpIndex(from: CoreHwp.HwpFile()), footnoteShape: shape,
+                limitsAreaToHalfContent: false, bodyBottom: geometry.contentFrame.maxY - 15
+            )
+            let block = try XCTUnwrap(placement.blocks.first)
+            expect(block.separatorLine.height).to(beCloseTo(14.17, within: 0.01))
+            expect(block.separatorLine.minY) >= geometry.contentFrame.minY - 0.001
+            // 첫 줄은 여전히 선 가운데 + 아래 여백 뒤에서 시작한다.
+            expect(block.frame.minY).to(beCloseTo(block.separatorLine.midY + 8.5, within: 0.01))
+        }
     }
 #endif

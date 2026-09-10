@@ -24,13 +24,32 @@ import XCTest
             (0 ..< 40).map { Int32($0 % 7) * 1172 },
         ]
 
+        /// 줄 높이가 섞인 캐시 — 고정 피치보다 큰 줄이 앞에 있어 그 전진량 끝이 마지막 줄
+        /// 아래까지 내려오는 표본 (`(location, height, spacing)`).
+        private static let mixedSamples: [[(location: Int32, height: Int32, spacing: Int32)]] = [
+            [(0, 3000, 272), (1172, 900, 272)],
+            [(0, 900, 272), (1172, 3000, 272), (2344, 900, 272), (0, 900, 272), (1172, 900, 272)],
+            [(0, 900, 272), (1172, 900, 0), (2344, 5000, 272), (3516, 900, 272), (0, 4000, 272), (1172, 900, 272)],
+        ]
+
+        private static func paragraph(
+            _ lines: [(location: Int32, height: Int32, spacing: Int32)]
+        ) throws -> CoreHwp.HwpParagraph {
+            var paragraph = HwpSynthetic.noteParagraph(
+                " " + lines.indices.map { "줄 \($0)" }.joined(separator: "\n"),
+                autoNumber: HwpSynthetic.autoNumberControl(kind: 1, decorationTail: ")")
+            )
+            paragraph.paraLineSeg = try CoreHwp.HwpParaLineSeg.load(Support.lineSegPayload(lines))
+            return paragraph
+        }
+
         /// `remainingHeights[i]`는 `height(of:in: i ..< count)`와 같다 — 이월 입력이 쪽마다
         /// 남은 줄을 다 더하지 않고 이 표 하나로 남은 높이를 읽는다.
         func testRemainingHeightsMatchTheRangeHeightFromEveryLine() throws {
-            for sample in Self.samples {
-                let paragraph = try Support.note(
-                    lines: sample.map { "줄 \($0)" }, locations: sample
-                )
+            let paragraphs = try Self.samples.map {
+                try Support.note(lines: $0.map { "줄 \($0)" }, locations: $0)
+            } + Self.mixedSamples.map(Self.paragraph)
+            for paragraph in paragraphs {
                 let lines = try XCTUnwrap(HwpFootnoteCacheLines.lines(of: paragraph))
                 let layout = HwpFootnoteLayout.SourceLayout(
                     width: 300, attributed: NSAttributedString(string: ""), lines: [],
@@ -44,6 +63,27 @@ import XCTest
                         ))
                 }
             }
+        }
+
+        /// 쪽 몫의 높이는 마지막 줄이 아니라 전진량 끝의 **최댓값**까지다 (#165 리뷰) — 정본
+        /// `cachedLineExtent`와 같은 정의. 고정 피치보다 큰 앞 줄(3000)이 마지막 줄(1172+900+272
+        /// = 2344) 아래 3272까지 내려오면 높이는 32.72pt다; 마지막 줄만 보면 23.44pt라 25pt
+        /// 자리에 들여 본문 위에 놓는다.
+        func testRunHeightReachesTheTallestEarlierLine() async throws {
+            let lines = try XCTUnwrap(HwpFootnoteCacheLines.lines(of: Self.paragraph(Self.mixedSamples[0])))
+            expect(HwpFootnoteCacheLines.height(of: lines, in: 0 ..< 2)).to(beCloseTo(32.72, within: 0.001))
+            expect(HwpFootnoteCacheLines.remainingHeights(of: lines)) == [3272, 2344 - 1172]
+
+            let note = try Self.paragraph(Self.mixedSamples[0])
+            let host = try Support.host(at: Support.hostLocation(leaving: 25), notes: [[note]])
+            let paginator = Support.paginate([host] + (try Support.nextPageBody()))
+            let firstPage = try await paginator.page(at: 0)
+            let secondPage = try await paginator.page(at: 1)
+            // 25pt 자리엔 32.72pt 각주가 못 들어간다 — 분할 지점도 없어 통째로 다음 쪽이다.
+            expect(Support.footnoteBlocks(on: firstPage)).to(beEmpty())
+            expect(Support.footnoteBlocks(on: secondPage).count) == 1
+            expect(try XCTUnwrap(Support.footnoteBlocks(on: secondPage).first).frame.height)
+                .to(beCloseTo(32.72 - 2.72, within: 0.01))
         }
 
         /// `firstPageBreak(in:after:)`는 남은 줄을 떠서 모은 분할 지점의 첫 항목과 같다.

@@ -81,21 +81,28 @@ enum HwpFootnoteCacheLines {
         return nil
     }
 
-    /// 줄 범위의 높이 (pt) — 같은 쪽 안은 첫 줄 위부터 마지막 줄 전진량 끝까지
-    /// (`HwpParagraphLayout.CachedLineExtent.advanceHeight`와 같은 정의), 범위가 쪽을
-    /// 넘으면 쪽 몫의 합.
+    /// 줄 범위의 높이 (pt) — 같은 쪽 안은 첫 줄 위부터 전진량 끝의 **최댓값**까지
+    /// (`HwpParagraphLayout.CachedLineExtent.advanceHeight`와 같은 정의 — 그 정본도 모든
+    /// 세그먼트의 최댓값을 잡는다), 범위가 쪽을 넘으면 쪽 몫의 합.
+    ///
+    /// 마지막 줄의 전진량 끝만 보면 안 된다 (#165 리뷰): 줄 간격이 고정값이라 피치가 글자
+    /// 상자보다 짧거나 줄 높이가 섞이면 앞의 큰 줄이 마지막 줄 아래까지 내려오는데, 그
+    /// 몫을 빼고 재면 스택 계획이 실제로 안 들어가는 각주·앞 조각을 들여 본문 위에 놓는다.
     static func height(of lines: [HwpFootnoteCacheLine], in range: Range<Int>) -> CGFloat {
         let clamped = range.clamped(to: lines.indices)
         guard !clamped.isEmpty else { return 0 }
         var total = 0
         var runStart = clamped.lowerBound
-        for index in clamped where index > clamped.lowerBound
-            && lines[index].location <= lines[index - 1].location
-        {
-            total += lines[index - 1].spacedBottom - lines[runStart].location
-            runStart = index
+        var runBottom = Int.min
+        for index in clamped {
+            if index > clamped.lowerBound, lines[index].location <= lines[index - 1].location {
+                total += runBottom - lines[runStart].location
+                runStart = index
+                runBottom = Int.min
+            }
+            runBottom = max(runBottom, lines[index].spacedBottom)
         }
-        total += lines[clamped.upperBound - 1].spacedBottom - lines[runStart].location
+        total += runBottom - lines[runStart].location
         return HwpUnits.points(fromHwpUnit: Int32(clamping: max(0, total)))
     }
 
@@ -103,7 +110,21 @@ enum HwpFootnoteCacheLines {
     static func trailingSpacing(of lines: [HwpFootnoteCacheLine], in range: Range<Int>) -> CGFloat {
         let clamped = range.clamped(to: lines.indices)
         guard let last = clamped.last else { return 0 }
-        return HwpUnits.points(fromHwpUnit: Int32(clamping: lines[last].spacing))
+        // 범위 마지막 쪽 몫의 전진량 끝 최댓값과 줄 **상자** 아래 최댓값의 차 — 줄이 고르면
+        // 마지막 줄의 줄 간격이고, 앞의 큰 줄이 몫의 아래를 정하면 (#165 리뷰) 그 줄의 몫이다.
+        // `height(of:in:)`가 그 최댓값까지 재므로 둘을 합치면 상자 아래가 나온다.
+        var spacedBottom = Int.min
+        var boxBottom = Int.min
+        var index = last
+        while index >= clamped.lowerBound {
+            spacedBottom = max(spacedBottom, lines[index].spacedBottom)
+            boxBottom = max(boxBottom, lines[index].location + lines[index].height)
+            if index > clamped.lowerBound, lines[index].location <= lines[index - 1].location {
+                break
+            }
+            index -= 1
+        }
+        return HwpUnits.points(fromHwpUnit: Int32(clamping: max(0, spacedBottom - boxBottom)))
     }
 
     /// 각 줄부터 문단 끝까지의 높이 (HWPUNIT) — `height(of:in:)`를 뒤에서부터 한 번에 누적한
@@ -111,17 +132,21 @@ enum HwpFootnoteCacheLines {
     /// 리뷰). 이월이 쪽마다 남은 줄을 다 더하면 쪽 수 × 줄 수의 일이라 원본 조판에 실어 나른다.
     static func remainingHeights(of lines: [HwpFootnoteCacheLine]) -> [Int] {
         var heights = [Int](repeating: 0, count: lines.count)
+        // 이 줄이 속한 쪽 몫 뒤의 몫들의 합, 그 몫 안에서 이 줄부터 끝까지의 전진량 끝 최댓값
+        var afterRun = 0
+        var runBottom = Int.min
         var index = lines.count - 1
         while index >= 0 {
             let line = lines[index]
             let next = index + 1
             if next == lines.count || lines[next].location <= line.location {
-                // 쪽 몫의 마지막 줄 — 자기 전진량까지가 이 몫이고 그 뒤는 다음 몫의 합
-                heights[index] = line.spacedBottom - line.location
-                    + (next < lines.count ? heights[next] : 0)
+                // 쪽 몫의 마지막 줄 — 뒤 몫의 합을 확정하고 새 몫을 시작한다
+                afterRun = next < lines.count ? heights[next] : 0
+                runBottom = line.spacedBottom
             } else {
-                heights[index] = heights[next] + (lines[next].location - line.location)
+                runBottom = max(runBottom, line.spacedBottom)
             }
+            heights[index] = runBottom - line.location + afterRun
             index -= 1
         }
         return heights
@@ -307,7 +332,7 @@ extension HwpFootnoteLayout {
     /// - fullPage: 빈 쪽의 같은 자리 — 진행 보장 하한
     /// - emptyPage: 본문이 없는 쪽 (이월 드레인) — 첫 각주는 크기와 무관하게 싣는다
     static func stackPlan(
-        measured: [MeasuredFootnote],
+        notes: MeasuredNotes,
         available: CGFloat,
         fullPage: CGFloat,
         betweenNotes: CGFloat,
@@ -315,18 +340,20 @@ extension HwpFootnoteLayout {
     ) -> StackPlan {
         var plan = StackPlan()
         var index = 0
-        while index < measured.count {
-            let group = noteGroup(in: measured, from: index)
+        // 각주는 이 순서로만 재진다 (`MeasuredNotes`, #165 리뷰) — 처음 안 들어가는 각주에서
+        // 멈추므로 뒤에 남은 각주는 재지 않고 이월된다.
+        while index < notes.count {
+            let group = noteGroup(in: notes, from: index)
             let gap = plan.entries.isEmpty ? 0 : betweenNotes
-            let noteHeight = groupHeight(measured, group)
+            let noteHeight = groupHeight(notes, group)
             if plan.stackedHeight + gap + noteHeight <= available + fitTolerance {
-                appendWhole(group, of: measured, to: &plan, gap: gap, height: noteHeight)
+                appendWhole(group, of: notes, to: &plan, gap: gap, height: noteHeight)
                 index = group.upperBound
                 continue
             }
             // 통째로 안 들어간다 — 캐시에 분할 지점이 있으면 그 앞 몫을 재 본다.
-            if let split = splitPoint(in: measured, group: group) {
-                let head = headEntries(group, of: measured, gap: gap, split: split)
+            if let split = splitPoint(in: notes, group: group) {
+                let head = headEntries(group, of: notes, gap: gap, split: split)
                 // 앞 조각 **전체**가 들어가야 나눈다 (#165 리뷰). 첫 줄만 보고 나누면 분할
                 // 지점까지의 줄이 전부 방출돼 스택이 자리를 넘고, 바닥 정렬이 그 스택을 본문
                 // 위로 올린다 — 캐시가 저작된 자리보다 우리 본문 하한이 낮을 때 (stale 보정,
@@ -336,17 +363,17 @@ extension HwpFootnoteLayout {
                 if plan.stackedHeight + head.height <= available + fitTolerance
                     || plan.entries.isEmpty && (emptyPage || head.height > fullPage)
                 {
-                    appendHead(head, of: measured, to: &plan, split: split)
+                    appendHead(head, of: notes, to: &plan, split: split)
                     return plan
                 }
             } else if plan.entries.isEmpty, emptyPage || noteHeight > fullPage {
                 // 진행 보장: 이 쪽에 아무것도 없는데 빈 쪽에도 안 들어가는 (또는 빈 쪽
                 // 자체인) 각주는 그대로 싣는다 — 넘기면 영영 못 싣는다.
-                appendWhole(group, of: measured, to: &plan, gap: gap, height: noteHeight)
+                appendWhole(group, of: notes, to: &plan, gap: gap, height: noteHeight)
                 index = group.upperBound
                 continue
             }
-            plan.overflow = measured[group.lowerBound...].map(\.input)
+            plan.overflow = notes.inputs(from: group.lowerBound)
             return plan
         }
         return plan
@@ -358,34 +385,34 @@ extension HwpFootnoteLayout {
     /// (표 134 모드 2) 이월된 각주와 그 쪽의 새 각주가 같은 번호를 갖는데, 번호로 묶으면
     /// 둘이 한 각주가 돼 사이 여백이 사라지고 (앞 조각이 각주의 끝이 아니게 돼) 마지막 줄
     /// 간격이 높이에 남으며, 하나가 안 들어가면 다른 하나까지 다음 쪽으로 밀린다.
-    private static func noteGroup(in measured: [MeasuredFootnote], from start: Int) -> Range<Int> {
+    private static func noteGroup(in notes: MeasuredNotes, from start: Int) -> Range<Int> {
         var end = start + 1
-        while end < measured.count, measured[end].input.noteId == measured[start].input.noteId {
+        while end < notes.count, notes.noteId(at: end) == notes.noteId(at: start) {
             end += 1
         }
         return start ..< end
     }
 
-    private static func groupHeight(_ measured: [MeasuredFootnote], _ group: Range<Int>) -> CGFloat {
+    private static func groupHeight(_ notes: MeasuredNotes, _ group: Range<Int>) -> CGFloat {
         group.reduce(0) { total, index in
-            total + measured[index].measurement.stackingHeight(isNoteEnd: index == group.upperBound - 1)
+            total + notes[index].measurement.stackingHeight(isNoteEnd: index == group.upperBound - 1)
         }
     }
 
     /// 각주 안 첫 쪽 분할 지점 — (항목 인덱스, 그 항목에서 이 쪽에 싣는 줄 수).
     /// 앞 문단의 마지막 줄보다 위치가 낮게 시작하는 뒤 문단은 통째로 다음 쪽이다 (줄 수 0).
     private static func splitPoint(
-        in measured: [MeasuredFootnote], group: Range<Int>
+        in notes: MeasuredNotes, group: Range<Int>
     ) -> (index: Int, lineCount: Int)? {
         // 개체를 담은 각주는 나누지 않는다 (#165 리뷰, `NoteMeasurement.carriesObjects`) —
         // 통째로 다음 쪽에 옮긴다.
-        guard !group.contains(where: { measured[$0].measurement.carriesObjects }) else {
+        guard !group.contains(where: { notes[$0].measurement.carriesObjects }) else {
             return nil
         }
         var previousBottom: Int?
         for index in group {
             // 캐시 없는 문단은 분할 근거가 없다 — 그 뒤 문단과의 위치 비교도 끊는다.
-            let measurement = measured[index].measurement
+            let measurement = notes[index].measurement
             guard let lines = measurement.cacheLines else {
                 previousBottom = nil
                 continue
@@ -406,12 +433,12 @@ extension HwpFootnoteLayout {
     }
 
     private static func appendWhole(
-        _ group: Range<Int>, of measured: [MeasuredFootnote],
+        _ group: Range<Int>, of notes: MeasuredNotes,
         to plan: inout StackPlan, gap: CGFloat, height: CGFloat
     ) {
         for index in group {
             plan.entries.append(StackEntry(
-                measured: measured[index], lineRange: nil, isNoteEnd: index == group.upperBound - 1
+                measured: notes[index], lineRange: nil, isNoteEnd: index == group.upperBound - 1
             ))
         }
         plan.stackedHeight += gap + height
@@ -420,16 +447,16 @@ extension HwpFootnoteLayout {
     /// 분할 지점 앞 몫 — 스택에 실릴 항목과 그 높이 (앞 각주와의 여백 포함). 싣기 전에
     /// 들어맞는지 재는 데 쓰므로 `appendHead`와 같은 값이어야 한다.
     private static func headEntries(
-        _ group: Range<Int>, of measured: [MeasuredFootnote],
+        _ group: Range<Int>, of notes: MeasuredNotes,
         gap: CGFloat, split: (index: Int, lineCount: Int)
     ) -> (entries: [StackEntry], height: CGFloat) {
         var entries: [StackEntry] = []
         var height = gap
         for index in group.lowerBound ..< split.index {
-            entries.append(StackEntry(measured: measured[index], lineRange: nil, isNoteEnd: false))
-            height += measured[index].measurement.stackingHeight(isNoteEnd: false)
+            entries.append(StackEntry(measured: notes[index], lineRange: nil, isNoteEnd: false))
+            height += notes[index].measurement.stackingHeight(isNoteEnd: false)
         }
-        let splitNote = measured[split.index]
+        let splitNote = notes[split.index]
         if split.lineCount > 0 {
             let range = 0 ..< split.lineCount
             entries.append(StackEntry(measured: splitNote, lineRange: range, isNoteEnd: true))
@@ -446,12 +473,12 @@ extension HwpFootnoteLayout {
 
     /// 분할 지점 앞 몫을 싣고 나머지(분할 문단의 남은 줄 + 뒤 항목 전부)를 이월로 돌린다.
     private static func appendHead(
-        _ head: (entries: [StackEntry], height: CGFloat), of measured: [MeasuredFootnote],
+        _ head: (entries: [StackEntry], height: CGFloat), of notes: MeasuredNotes,
         to plan: inout StackPlan, split: (index: Int, lineCount: Int)
     ) {
         plan.entries += head.entries
         plan.stackedHeight += head.height
-        let splitNote = measured[split.index]
+        let splitNote = notes[split.index]
         var overflow: [Input] = []
         let carried = splitNote.input
         overflow.append(Input(
@@ -473,7 +500,7 @@ extension HwpFootnoteLayout {
             // 않는다. 쪽마다 문단 전체를 CT로 다시 조판하면 쪽 수 × 줄 수의 일이다.
             sourceLayout: splitNote.measurement.carriedSourceLayout()
         ))
-        overflow += measured[(split.index + 1)...].map(\.input)
+        overflow += notes.inputs(from: split.index + 1)
         plan.overflow = overflow
     }
 }
@@ -500,7 +527,7 @@ extension HwpFootnoteLayout {
     /// 본문 아래 자리에 맞춰 싣는 절대 캐시 모드 배치 (#165) — 계획(`stackPlan`)을 바닥
     /// 정렬로 쌓는다. 각주 영역 상단은 본문 상단 아래로 못 내려온다 (#95 클램프 유지).
     func placeBelowBody(
-        measured: [MeasuredFootnote],
+        notes: MeasuredNotes,
         bodyBottom: CGFloat?,
         onPage geometry: HwpPageGeometry,
         divider: DividerMetrics
@@ -508,7 +535,7 @@ extension HwpFootnoteLayout {
         let contentFrame = geometry.contentFrame
         let overhead = divider.marginTop + divider.marginBottom
         let plan = Self.stackPlan(
-            measured: measured,
+            notes: notes,
             available: contentFrame.maxY - (bodyBottom ?? contentFrame.minY) - overhead,
             fullPage: contentFrame.height - overhead,
             betweenNotes: divider.betweenNotes,
@@ -517,7 +544,14 @@ extension HwpFootnoteLayout {
         guard !plan.entries.isEmpty else {
             return Placement(blocks: [], overflow: plan.overflow)
         }
-        let areaTop = max(contentFrame.minY, contentFrame.maxY - (plan.stackedHeight + overhead))
+        // 클램프는 구분선의 **획**까지 본문 상단 아래에 둔다 (#165 리뷰): 선은 위 여백 끝에
+        // 가운데 맞춰 그어지므로 (`separatorLine`) 위 여백이 획 반 두께보다 좁으면 그만큼
+        // 영역 위로 나간다 — 빈 쪽에도 안 들어가 진행 보장으로 실린 거대 각주에서 그 몫이
+        // 머리말·위 여백으로 새지 않게 그만큼 내려 잡는다 (클램프가 무동작인 쪽은 그대로).
+        let areaTop = max(
+            contentFrame.minY + Self.separatorOverhang(divider),
+            contentFrame.maxY - (plan.stackedHeight + overhead)
+        )
         let separatorLine = Self.separatorLine(
             areaTop: areaTop, divider: divider, contentFrame: contentFrame
         )

@@ -209,8 +209,8 @@ public struct HwpFootnoteLayout {
             contentWidth: contentFrame.width
         )
 
-        // 각 블록 높이를 먼저 계산한다.
-        let measured = measure(
+        // 블록 높이는 스택이 보는 순서대로 **필요할 때** 잰다 (#165 리뷰, `MeasuredNotes`).
+        let notes = measuredNotes(
             footnotes,
             index: index,
             width: contentFrame.width,
@@ -222,16 +222,19 @@ public struct HwpFootnoteLayout {
         // 지점에서 나눠 다음 쪽으로 잇는다 (#165).
         if !limitsAreaToHalfContent {
             return placeBelowBody(
-                measured: measured, bodyBottom: bodyBottom, onPage: geometry, divider: divider
+                notes: notes, bodyBottom: bodyBottom, onPage: geometry, divider: divider
             )
         }
 
         // 페이지 하단에서 위로 필요한 만큼 확보하되 콘텐츠 절반을 넘지 않는다.
         // 같은 각주 컨트롤의 이어지는 문단 사이에는 간격이 없고 (stackBlocks와 동일)
-        // 각주 마지막 줄의 줄 간격은 세지 않는다 (#165 실측).
-        let stackHeight = Self.stackedHeight(of: measured, betweenNotes: divider.betweenNotes)
-            + divider.marginTop + divider.marginBottom
-        let areaHeight = min(contentFrame.height / 2, stackHeight)
+        // 각주 마지막 줄의 줄 간격은 세지 않는다 (#165 실측). 절반을 넘은 뒤의 각주는
+        // 재지 않는다 — 상한이 정해지면 그 값은 더 필요 없다.
+        let halfContent = contentFrame.height / 2
+        let stackHeight = Self.stackedHeight(
+            of: notes, betweenNotes: divider.betweenNotes, upTo: halfContent
+        ) + divider.marginTop + divider.marginBottom
+        let areaHeight = min(halfContent, stackHeight)
         // 각주 영역 상단은 본문 상단 아래로 내려오지 못한다 (#95) — 절반 상한 모드는
         // areaHeight ≤ 콘텐츠/2라 이 클램프가 무동작이다.
         let areaTop = max(contentFrame.minY, contentFrame.maxY - areaHeight)
@@ -239,7 +242,7 @@ public struct HwpFootnoteLayout {
             areaTop: areaTop, divider: divider, contentFrame: contentFrame
         )
         let stacked = stackBlocks(
-            measured: measured,
+            notes: notes,
             from: areaTop + divider.marginTop + divider.marginBottom,
             in: contentFrame,
             separatorLine: separatorLine,
@@ -250,15 +253,18 @@ public struct HwpFootnoteLayout {
 
     /// 각주 항목들의 스택 높이 — 항목 높이 (각주 마지막 항목은 마지막 줄 줄 간격 제외)
     /// + 서로 다른 번호 사이의 간격. 예약(`HwpFootnoteCoordinator`)이 같은 산식을 쓴다.
-    static func stackedHeight(of measured: [MeasuredFootnote], betweenNotes: CGFloat) -> CGFloat {
+    /// `limit`을 넘으면 거기서 멈춘다 (넘었다는 사실만 필요한 호출자가 뒤 각주를 재지 않게).
+    static func stackedHeight(
+        of notes: MeasuredNotes, betweenNotes: CGFloat, upTo limit: CGFloat = .infinity
+    ) -> CGFloat {
         var total: CGFloat = 0
-        for (index, note) in measured.enumerated() {
-            if index > 0, measured[index - 1].input.noteId != note.input.noteId {
+        for index in 0 ..< notes.count where total <= limit {
+            if index > 0, notes.noteId(at: index - 1) != notes.noteId(at: index) {
                 total += betweenNotes
             }
-            let isNoteEnd = index == measured.count - 1
-                || measured[index + 1].input.noteId != note.input.noteId
-            total += note.measurement.stackingHeight(isNoteEnd: isNoteEnd)
+            let isNoteEnd = index == notes.count - 1
+                || notes.noteId(at: index + 1) != notes.noteId(at: index)
+            total += notes[index].measurement.stackingHeight(isNoteEnd: isNoteEnd)
         }
         return total
     }
@@ -275,6 +281,12 @@ public struct HwpFootnoteLayout {
             width: divider.length,
             height: thickness
         )
+    }
+
+    /// 구분선 획이 각주 영역 위(`areaTop`)로 나가는 몫 — 위 여백이 획 반 두께보다 좁을 때만
+    /// 0보다 크다 (`separatorLine`과 같은 두께 하한).
+    static func separatorOverhang(_ divider: DividerMetrics) -> CGFloat {
+        max(0, max(0.5, divider.thickness) / 2 - divider.marginTop)
     }
 
     /// 흐름 배치 결과: 배치된 블록, 이월 입력, 다음 흐름 y
@@ -309,7 +321,7 @@ public struct HwpFootnoteLayout {
             from: footnoteShape?.dividerInfo,
             contentWidth: columnFrame.width
         )
-        let measured = measure(
+        let notes = measuredNotes(
             footnotes,
             index: index,
             width: columnFrame.width,
@@ -327,7 +339,7 @@ public struct HwpFootnoteLayout {
         }
 
         let stacked = stackBlocks(
-            measured: measured,
+            notes: notes,
             from: cursorY,
             in: columnFrame,
             separatorLine: separatorLine,
@@ -340,12 +352,13 @@ public struct HwpFootnoteLayout {
         )
     }
 
-    /// 측정 끝난 각주들을 frame 폭으로 위에서 아래로 쌓는다.
+    /// 각주들을 frame 폭으로 위에서 아래로 쌓는다 — 측정은 쌓는 순서대로 필요할 때
+    /// (`MeasuredNotes`), 넘친 뒤의 각주는 재지 않는다.
     /// frame.maxY를 넘는 입력은 overflow로 돌려주되, 진행 보장을 위해
     /// 첫 블록은 항상 배치한다. 블록 산식은 절대 캐시 모드 (`placeBelowBody`)와
     /// 같은 `footnoteBlock(for:)`이다.
     private func stackBlocks(
-        measured: [MeasuredFootnote],
+        notes: MeasuredNotes,
         from startY: CGFloat,
         in frame: CGRect,
         separatorLine: CGRect,
@@ -355,18 +368,19 @@ public struct HwpFootnoteLayout {
         var overflow: [Input] = []
         var cursorY = startY
         var previousNoteId: Int?
-        for (noteIndex, note) in measured.enumerated() {
+        for noteIndex in 0 ..< notes.count {
+            let note = notes[noteIndex]
             // 같은 각주 컨트롤의 이어지는 문단은 간격 없이 붙인다
             // (헌법주석 실측: 한 각주의 문단 캐시 loc이 연속 — 내부 간격 0).
             if let previousNoteId, previousNoteId == note.input.noteId {
                 cursorY -= divider.betweenNotes
             }
-            let isNoteEnd = noteIndex == measured.count - 1
-                || measured[noteIndex + 1].input.noteId != note.input.noteId
+            let isNoteEnd = noteIndex == notes.count - 1
+                || notes.noteId(at: noteIndex + 1) != note.input.noteId
             let entry = StackEntry(measured: note, lineRange: nil, isNoteEnd: isNoteEnd)
             let blockHeight = note.measurement.stackingHeight(isNoteEnd: isNoteEnd)
             if !blocks.isEmpty, cursorY + blockHeight > frame.maxY + 0.5 {
-                overflow = measured[noteIndex...].map(\.input)
+                overflow = notes.inputs(from: noteIndex)
                 break
             }
             previousNoteId = note.input.noteId
@@ -452,54 +466,108 @@ extension HwpFootnoteLayout {
 
 // MARK: - 문단 측정 + 개체 수집
 
-private extension HwpFootnoteLayout {
-    private func measure(
+extension HwpFootnoteLayout {
+    /// 이 쪽에 실을 후보 각주들의 **지연** 측정 (#165 리뷰). 쪽마다 대기 각주 전부를 재면
+    /// 독립 각주 N개가 쪽마다 몇 개씩만 실리는 이월에서 쪽 수 × N의 CT 조판이 된다 (실측,
+    /// 디버그 빌드: 55줄 각주 100개·101쪽 41.5s, 200개 165.4s — 2배에 4배). 스택 계획은
+    /// 순서대로 보다가 처음 안 들어가는 각주에서 멈추므로, 그때까지 본 각주만 재면 전체
+    /// 일이 각주 수에 비례한다. 잰 값은 이 쪽 안에서만 보관한다 — 이월은 `Input`이 나른다.
+    ///
+    /// 입력은 만들 때 각주 모양을 **각인**한다 (`Input.withMeasuredShape`) — 재지 않고
+    /// 이월되는 각주도 종전(전부 재던 때)과 같은 모양을 나른다.
+    final class MeasuredNotes {
+        /// 모양을 각인한 입력 — 이월은 이 값을 나른다.
+        let inputs: [Input]
+        private var cache: [MeasuredFootnote?]
+        private var carrying: [Int: Bool] = [:]
+        private let measure: (Input, Bool) -> NoteMeasurement
+
+        init(inputs: [Input], measure: @escaping (Input, Bool) -> NoteMeasurement) {
+            self.inputs = inputs
+            cache = Array(repeating: nil, count: inputs.count)
+            self.measure = measure
+        }
+
+        var count: Int {
+            inputs.count
+        }
+
+        func noteId(at index: Int) -> Int {
+            inputs[index].noteId
+        }
+
+        /// `index`의 각주를 (처음이면) 재서 준다.
+        subscript(index: Int) -> MeasuredFootnote {
+            if let measured = cache[index] {
+                return measured
+            }
+            let input = inputs[index]
+            let measured = MeasuredFootnote(
+                input: input, measurement: measure(input, carriesObjects(noteId: input.noteId))
+            )
+            cache[index] = measured
+            return measured
+        }
+
+        /// `start`부터의 입력 — 재지 않은 각주도 각인된 모양으로 이월된다.
+        func inputs(from start: Int) -> [Input] {
+            Array(inputs[min(start, inputs.count)...])
+        }
+
+        /// 개체 판정은 **각주 단위**다 (#165 리뷰) — 분할 금지와 CT 높이 보존의 범위를
+        /// 맞춘다. 문단 단위로 보면 개체 없는 앞 문단만 캐시 합으로 줄어 뒤 문단의 그림이
+        /// 그 문단의 마지막 글줄 위로 올라온다. 술어는 **수집 대상 전체**를 본다
+        /// (`hasCollectibleObject`) — 하한 술어로 보면 글 앞으로 그림이 빠져 예약과 갈린다.
+        /// 같은 각주의 문단은 잇닿아 있으므로 그 범위만 훑고 각주별로 한 번만 판정한다.
+        private func carriesObjects(noteId: Int) -> Bool {
+            if let known = carrying[noteId] {
+                return known
+            }
+            let carries = inputs.contains {
+                $0.noteId == noteId && HwpParagraphObjectCollector.hasCollectibleObject(
+                    in: $0.paragraph, collectsTextboxes: true, collectsTables: true
+                )
+            }
+            carrying[noteId] = carries
+            return carries
+        }
+    }
+
+    /// 후보 각주들의 지연 측정기 — 실제 측정은 `measureNote` 한 함수다 (예약과 공유).
+    func measuredNotes(
         _ footnotes: [Input],
         index: HwpIndex,
         width: CGFloat,
         footnoteShape: CoreHwp.HwpFootnoteShape? = nil,
         sizeResolver: HwpObjectSizeResolver? = nil
-    ) -> [MeasuredFootnote] {
-        // 개체 판정은 **각주 단위**다 (#165 리뷰) — 분할 금지와 CT 높이 보존의 범위를
-        // 맞춘다. 문단 단위로 보면 개체 없는 앞 문단만 캐시 합으로 줄어 뒤 문단의 그림이
-        // 그 문단의 마지막 글줄 위로 올라온다. 술어는 **수집 대상 전체**를 본다
-        // (`hasCollectibleObject`) — 하한 술어로 보면 글 앞으로 그림이 빠져 예약과 갈린다.
-        let carrying = Set(
-            footnotes.lazy
-                .filter {
-                    HwpParagraphObjectCollector.hasCollectibleObject(
-                        in: $0.paragraph, collectsTextboxes: true, collectsTables: true
-                    )
-                }
-                .map(\.noteId)
-        )
-        return footnotes.map { input in
-            // 각주 모양은 **처음 잰 것**을 들고 간다 (#165 리뷰) — 인자는 아직 안 잰 입력의
-            // 첫 측정에만 쓰이고, 각인해 두면 이월 입력이 스스로 그 모양을 나른다. 기본
-            // 모양(nil)으로 잰 것도 확정이라 다음 쪽의 인자를 다시 채택하지 않는다.
-            let shape = input.measuredShape.map(\.footnoteShape) ?? footnoteShape
-            let resolved = input.withMeasuredShape(shape)
-            return MeasuredFootnote(
-                input: resolved,
-                measurement: measureNote(
-                    resolved.paragraph,
-                    number: resolved.number,
-                    width: width,
-                    index: index,
-                    footnoteShape: shape,
-                    // 수집 시점 해석기를 우선한다 — 인자는 그것이 없는 호출
-                    // (테스트·직접 배치) 의 폴백이다 (R44 #1).
-                    sizeResolver: resolved.sizeResolver ?? sizeResolver,
-                    numbering: resolved.numbering,
-                    placedLineCount: resolved.placedLineCount,
-                    placedLength: resolved.placedLength,
-                    noteCarriesObjects: carrying.contains(resolved.noteId),
-                    sourceLayout: resolved.sourceLayout
-                )
+    ) -> MeasuredNotes {
+        // 각주 모양은 **처음 잰 것**을 들고 간다 (#165 리뷰) — 인자는 아직 안 잰 입력의
+        // 첫 측정에만 쓰이고, 각인해 두면 이월 입력이 스스로 그 모양을 나른다. 기본
+        // 모양(nil)으로 잰 것도 확정이라 다음 쪽의 인자를 다시 채택하지 않는다.
+        let resolved = footnotes.map { input in
+            input.withMeasuredShape(input.measuredShape.map(\.footnoteShape) ?? footnoteShape)
+        }
+        return MeasuredNotes(inputs: resolved) { input, noteCarriesObjects in
+            self.measureNote(
+                input.paragraph,
+                number: input.number,
+                width: width,
+                index: index,
+                footnoteShape: input.measuredShape?.footnoteShape,
+                // 수집 시점 해석기를 우선한다 — 인자는 그것이 없는 호출
+                // (테스트·직접 배치) 의 폴백이다 (R44 #1).
+                sizeResolver: input.sizeResolver ?? sizeResolver,
+                numbering: input.numbering,
+                placedLineCount: input.placedLineCount,
+                placedLength: input.placedLength,
+                noteCarriesObjects: noteCarriesObjects,
+                sourceLayout: input.sourceLayout
             )
         }
     }
+}
 
+private extension HwpFootnoteLayout {
     /// 개체 수집에 쓰는 문단-로컬 rect. `stackBlocks`의 문단 rect와 원점이 같아야
     /// 수집 좌표가 곧 블록-로컬 좌표다. 높이는 **텍스트 높이**를 쓴다 — 블록
     /// 높이는 이 수집 결과에서 나오므로 순환을 피하고, 예약 경로

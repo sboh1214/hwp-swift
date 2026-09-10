@@ -618,10 +618,23 @@ private extension HwpPaginator {
     /// currentBlocks 재작성 적용은 여기서 한다.
     func rebalanceColumnBand() {
         guard let plan = band.rebalancePlan(currentBlocks: currentBlocks) else { return }
-        currentBlocks = currentBlocks.enumerated()
-            .filter { !plan.replacedBlockIndices.contains($0.offset) }
-            .map(\.element)
-        currentBlocks.append(contentsOf: plan.newBlocks)
+        // 블록 배열을 다시 쓰면 블록 인덱스를 열쇠로 둔 부속 정보도 함께 옮긴다 (#165 리뷰,
+        // `absoluteRunTrailingSpacings`). 오늘은 무동작이다 — 캐시 run 블록은 1단 밴드에만
+        // 놓이고 (`placeAbsoluteCachedParagraph`는 `columnFrames.count <= 1`) 재배치는 다단
+        // 밴드의 꼬리 블록만 갈아 끼우므로 앞 블록의 인덱스가 밀리지 않는다 — 그러나 위치
+        // 열쇠가 배열 재작성과 따로 놀면 그 전제가 바뀔 때 다른 블록의 줄 간격을 빼게 된다.
+        var kept: [AnyHwpBlock] = []
+        var remapped: [Int: CGFloat] = [:]
+        for (offset, block) in currentBlocks.enumerated()
+            where !plan.replacedBlockIndices.contains(offset)
+        {
+            if let spacing = absoluteRunTrailingSpacings[offset] {
+                remapped[kept.count] = spacing
+            }
+            kept.append(block)
+        }
+        currentBlocks = kept + plan.newBlocks
+        absoluteRunTrailingSpacings = remapped
         bandUsedBottom = plan.maxBottom
     }
 
