@@ -27,7 +27,7 @@ extension HwpFootnoteCoordinator {
     /// 이월된 각주 입력들이 새 페이지에서 예약할 높이 — 배치 (place)와
     /// 동형: Σ 높이 + 노트 경계마다 간격 + 구분선 오버헤드.
     mutating func reservedFootnoteHeight(
-        for inputs: ArraySlice<HwpFootnoteLayout.Input>,
+        for inputs: HwpFootnoteLayout.PendingNotes,
         environment: Environment,
         upTo limit: CGFloat = .infinity
     ) -> CGFloat {

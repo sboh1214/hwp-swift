@@ -73,7 +73,7 @@ import XCTest
                 captured: HwpObjectSizeResolver, current: HwpObjectSizeResolver
             ) -> CGFloat {
                 coordinator.reservedFootnoteHeight(
-                    for: [.init(paragraph: note, number: 1, sizeResolver: captured)],
+                    for: .init([.init(paragraph: note, number: 1, sizeResolver: captured)]),
                     environment: .init(
                         contentWidth: geometry.contentFrame.width,
                         footnoteShape: nil,

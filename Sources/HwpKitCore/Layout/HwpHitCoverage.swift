@@ -134,6 +134,9 @@ extension HwpHitTester {
                 onNestedTable: addNestedTable
             )
         case let .textbox(textbox):
+            // 최상위 글상자의 **자기** 테두리도 든다 (#165 리뷰): `textboxCommands`가 프레임 경로
+            // 중앙에 긋으므로 (`effectiveBorderWidth`) 절반이 밖이다 — 셀 글상자와 같은 규칙.
+            rects.append(strokeBounds(block.frame, borderWidth: textbox.effectiveBorderWidth))
             addTextboxChildren(textbox, offset: origin)
         case let .shape(geometry):
             // 최상위 도형 블록도 셀 도형과 같다 (#165 리뷰): `shapeCommands`가 경로를 프레임

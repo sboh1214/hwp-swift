@@ -89,7 +89,7 @@ public actor HwpPaginator {
     /// id로 버킷만 좁히고 표 값으로 확정하는 근거는 `truncatedRowLimit(of:)`.
     private var truncatedTableRowLimits: [UInt32: [(table: CoreHwp.HwpTable, rowLimit: Int)]] = [:]
     /// 이 페이지에 배치할 각주 (문단 + 문서 순서 번호) — 저장은 footnoteCoordinator
-    private var pendingFootnotes: ArraySlice<HwpFootnoteLayout.Input> {
+    private var pendingFootnotes: HwpFootnoteLayout.PendingNotes {
         get { footnoteCoordinator.pendingFootnotes }
         set { footnoteCoordinator.pendingFootnotes = newValue }
     }
@@ -97,7 +97,7 @@ public actor HwpPaginator {
     /// 이 페이지에 표시할 메모 (댓글) 풍선 (한글.app 편집 뷰 오른쪽 패널)
     private var pendingMemoBalloons: [HwpMemoPanelPainter.Balloon] = []
     /// 문서/구역 끝에 배치할 미주 (표 134 bits 8-9) — 저장은 footnoteCoordinator
-    private var pendingEndnotes: ArraySlice<HwpFootnoteLayout.Input> {
+    private var pendingEndnotes: HwpFootnoteLayout.PendingNotes {
         get { footnoteCoordinator.pendingEndnotes }
         set { footnoteCoordinator.pendingEndnotes = newValue }
     }
@@ -3980,7 +3980,7 @@ private extension HwpPaginator {
     /// 쪽 콘텐츠 높이를 넘으면 거기서 멈춘다 (#165 리뷰) — 읽는 쪽(`effectiveContentHeight`·
     /// `applyColumnDef`의 `usableBottom`)은 그 높이에서 포화하므로 값이 더 커도 같고, 대기
     /// 각주 N개를 쪽마다 끝까지 더하면 쪽 수 × N이다.
-    func reservedFootnoteHeight(for inputs: ArraySlice<HwpFootnoteLayout.Input>) -> CGFloat {
+    func reservedFootnoteHeight(for inputs: HwpFootnoteLayout.PendingNotes) -> CGFloat {
         footnoteCoordinator.reservedFootnoteHeight(
             for: inputs, environment: noteEnvironment,
             upTo: currentPageGeometry.contentFrame.height

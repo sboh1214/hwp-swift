@@ -286,6 +286,53 @@ import XCTest
             expect(block.separatorLine.minY) >= geometry.contentFrame.minY - 0.001
         }
 
+        /// 획 몫은 본문 하한 **아래**에서도 뺀다 (#165 리뷰): 위 여백이 획 반 두께보다 좁으면 선이
+        /// 영역 상단 위로 나가므로, 본문 하한에 딱 붙은 스택은 그 몫만큼 본문 마지막 줄을 긋는다.
+        func testSeparatorOverhangIsReservedBelowTheBody() throws {
+            let shape = try Self.thickDividerShape()
+            // 30줄(348.88)+9줄(102.76)+사이 여백 2.83 = 454.47 — 본문 하한 303 아래 자리 458.5엔
+            // 들어가고 획 몫(7.09)을 뺀 451.4엔 안 들어간다.
+            let notes = try [(1, 30), (2, 9)].map { number, lines in
+                try Support.note(
+                    lines: (1 ... lines).map { "각주 \(number) 줄 \($0)" },
+                    locations: (0 ..< lines).map { Int32($0) * 1172 }
+                )
+            }
+            let layout = HwpFootnoteLayout(fontResolver: .testDeterministic)
+            let geometry = Support.geometry(contentWidth: 451)
+            let bodyBottom = geometry.contentFrame.minY + 231
+            let placement = layout.place(
+                footnotes: notes.enumerated().map { offset, note in
+                    HwpFootnoteLayout.Input(paragraph: note, number: offset + 1)
+                },
+                onPage: geometry, index: HwpIndex(from: CoreHwp.HwpFile()), footnoteShape: shape,
+                limitsAreaToHalfContent: false, bodyBottom: bodyBottom
+            )
+            expect(placement.blocks.count) == 1
+            expect(placement.overflow.count) == 1
+            let block = try XCTUnwrap(placement.blocks.first)
+            expect(block.separatorLine.minY) >= bodyBottom - 0.001
+            expect(block.frame.maxY) <= geometry.contentFrame.maxY + 0.01
+        }
+
+        /// 최상위 글상자의 자기 테두리도 프레임 경로 중앙에 그어져 절반이 밖이다 (#165 리뷰).
+        func testPaintedBoundsIncludeTopLevelTextboxBorder() {
+            let frame = CGRect(x: 100, y: 100, width: 120, height: 40)
+            let textbox = HwpTextboxFrame(
+                outerFrame: CGRect(origin: .zero, size: frame.size), paragraphs: [],
+                borderColor: HwpRGBColor(red: 0, green: 0, blue: 0), borderWidth: 6, fillColor: nil
+            )
+            let block = AnyHwpBlock(frame: frame, kind: .textbox, payload: .textbox(textbox))
+            expect(HwpHitTester.paintedObjectBounds(of: block).maxY).to(beCloseTo(frame.maxY + 3, within: 0.001))
+            let plain = HwpTextboxFrame(
+                outerFrame: CGRect(origin: .zero, size: frame.size), paragraphs: [],
+                borderColor: nil, borderWidth: 0, fillColor: nil
+            )
+            expect(HwpHitTester.paintedObjectBounds(of: AnyHwpBlock(
+                frame: frame, kind: .textbox, payload: .textbox(plain)
+            ))) == frame
+        }
+
         /// 위 여백 0·아래 여백 850·굵기 index 15 (5mm = 14.17pt) 인 구분선 모양 —
         /// `dividerInfo`는 rawPayload를 다시 디코딩하므로 28바이트를 직접 조립한다.
         static func thickDividerShape() throws -> CoreHwp.HwpFootnoteShape {

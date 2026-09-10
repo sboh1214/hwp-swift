@@ -317,9 +317,9 @@ extension HwpFootnoteLayout {
 
     struct StackPlan {
         var entries: [StackEntry] = []
-        /// 다음 쪽으로 넘기는 입력 — 입력 저장소의 슬라이스 (복사 없음, #165 리뷰). 앞 조각을
-        /// 나눈 쪽만 그 조각의 이월 입력을 머리에 붙인 새 배열이다.
-        var overflow: ArraySlice<Input> = []
+        /// 다음 쪽으로 넘기는 입력 — 대기 목록의 남은 몫 (복사 없음, #165 리뷰). 앞 조각을
+        /// 나눈 쪽은 그 조각의 이월 입력이 첫 항목을 대신한다 (`PendingNotes.head`).
+        var overflow = PendingNotes()
         /// 항목 높이와 각주 사이 여백의 합 (구분선 여백 제외)
         var stackedHeight: CGFloat = 0
     }
@@ -347,7 +347,11 @@ extension HwpFootnoteLayout {
         while index < notes.count {
             let group = noteGroup(in: notes, from: index)
             let gap = plan.entries.isEmpty ? 0 : betweenNotes
-            let noteHeight = groupHeight(notes, group)
+            // 각주 높이는 빈 쪽 자리를 넘는 순간까지만 잰다 (#165 리뷰): 문단 N개짜리 각주가
+            // 문단마다 쪽을 넘기면 통째 판정을 위해 남은 문단 전부를 재는 것이 쪽 수 × N의 CT
+            // 조판이다. 넘은 뒤엔 "안 들어간다"와 "빈 쪽에도 안 들어간다" 판정만 필요하고 둘
+            // 다 넘었다는 사실로 충분하다 — 그래서 실제로 싣는 진행 보장 분기만 끝까지 잰다.
+            let noteHeight = groupHeight(notes, group, upTo: fullPage + fitTolerance)
             if plan.stackedHeight + gap + noteHeight <= available + fitTolerance {
                 appendWhole(group, of: notes, to: &plan, gap: gap, height: noteHeight)
                 index = group.upperBound
@@ -370,8 +374,10 @@ extension HwpFootnoteLayout {
                 }
             } else if plan.entries.isEmpty, emptyPage || noteHeight > fullPage {
                 // 진행 보장: 이 쪽에 아무것도 없는데 빈 쪽에도 안 들어가는 (또는 빈 쪽
-                // 자체인) 각주는 그대로 싣는다 — 넘기면 영영 못 싣는다.
-                appendWhole(group, of: notes, to: &plan, gap: gap, height: noteHeight)
+                // 자체인) 각주는 그대로 싣는다 — 넘기면 영영 못 싣는다. 높이는 끝까지 잰
+                // 값이어야 한다 (위에서 멈춘 합은 부분 합이다).
+                let wholeHeight = groupHeight(notes, group, upTo: .infinity)
+                appendWhole(group, of: notes, to: &plan, gap: gap, height: wholeHeight)
                 index = group.upperBound
                 continue
             }
@@ -395,10 +401,17 @@ extension HwpFootnoteLayout {
         return start ..< end
     }
 
-    private static func groupHeight(_ notes: MeasuredNotes, _ group: Range<Int>) -> CGFloat {
-        group.reduce(0) { total, index in
-            total + notes[index].measurement.stackingHeight(isNoteEnd: index == group.upperBound - 1)
+    /// 각주(문단 묶음)의 스택 높이 — `limit`을 넘으면 거기서 멈춘 부분 합을 준다 (넘었다는
+    /// 사실만 필요한 호출자가 뒤 문단을 재지 않게).
+    private static func groupHeight(
+        _ notes: MeasuredNotes, _ group: Range<Int>, upTo limit: CGFloat
+    ) -> CGFloat {
+        var total: CGFloat = 0
+        for index in group {
+            guard total <= limit else { break }
+            total += notes[index].measurement.stackingHeight(isNoteEnd: index == group.upperBound - 1)
         }
+        return total
     }
 
     /// 각주 안 첫 쪽 분할 지점 — (항목 인덱스, 그 항목에서 이 쪽에 싣는 줄 수).
@@ -406,22 +419,23 @@ extension HwpFootnoteLayout {
     private static func splitPoint(
         in notes: MeasuredNotes, group: Range<Int>
     ) -> (index: Int, lineCount: Int)? {
-        // 개체를 담은 각주는 나누지 않는다 (#165 리뷰, `NoteMeasurement.carriesObjects`) —
-        // 통째로 다음 쪽에 옮긴다.
-        guard !group.contains(where: { notes[$0].measurement.carriesObjects }) else {
+        // 개체를 담은 각주는 나누지 않는다 (#165 리뷰) — 통째로 다음 쪽에 옮긴다. 판정은
+        // 측정 없이 술어로 한다 (`MeasuredNotes.carriesObjects(at:)`, 측정의 `carriesObjects`와
+        // 같은 답): 문단마다 재면 문단 N개짜리 각주가 문단마다 쪽을 넘길 때 쪽 수 × N이다.
+        guard !notes.carriesObjects(at: group.lowerBound) else {
             return nil
         }
         var previousBottom: Int?
         for index in group {
-            // 캐시 없는 문단은 분할 근거가 없다 — 그 뒤 문단과의 위치 비교도 끊는다.
-            let measurement = notes[index].measurement
-            guard let lines = measurement.cacheLines else {
+            // 캐시 없는 문단은 분할 근거가 없다 — 그 뒤 문단과의 위치 비교도 끊는다. 줄 캐시도
+            // 측정 없이 받는다 (`cacheLines(at:)`, 측정과 같은 출처).
+            guard let lines = notes.cacheLines(at: index) else {
                 previousBottom = nil
                 continue
             }
             // 남은 줄은 인덱스로만 본다 (#165 리뷰) — 쪽마다 남은 줄을 배열로 뜨면 이월이
             // 길게 이어지는 문단에서 쪽 수 × 줄 수의 복사가 된다.
-            let start = measurement.placedLineCount
+            let start = notes.input(at: index).placedLineCount
             guard start < lines.count else { continue }
             if let previousBottom, index > group.lowerBound, lines[start].location < previousBottom {
                 return (index, 0)
@@ -481,11 +495,11 @@ extension HwpFootnoteLayout {
         plan.entries += head.entries
         plan.stackedHeight += head.height
         let splitNote = notes[split.index]
-        var overflow: [Input] = []
         let carried = splitNote.input
-        // 나눈 문단의 이월 입력을 머리에 붙이므로 여기만 남은 입력을 배열로 뜬다 — 문단 하나의
-        // 이어짐이라 뒤에 남은 각주 수와 무관하게 쪽마다 한 번이다.
-        overflow.append(Input(
+        // 나눈 문단의 이월 입력은 남은 목록의 첫 항목을 **대신**한다 (`PendingNotes.head`, #165
+        // 리뷰) — 꼬리를 복사해 앞에 붙이면 앞 문단이 여러 쪽에 걸쳐 이어지는 동안 뒤에 남은
+        // 각주 수만큼의 복사가 쪽마다 되풀이된다.
+        plan.overflow = notes.inputs(from: split.index).replacingFirst(with: Input(
             paragraph: carried.paragraph,
             number: carried.number,
             sizeResolver: carried.sizeResolver,
@@ -504,8 +518,6 @@ extension HwpFootnoteLayout {
             // 않는다. 쪽마다 문단 전체를 CT로 다시 조판하면 쪽 수 × 줄 수의 일이다.
             sourceLayout: splitNote.measurement.carriedSourceLayout()
         ))
-        overflow += notes.inputs(from: split.index + 1)
-        plan.overflow = overflow[...]
     }
 }
 
@@ -540,11 +552,15 @@ extension HwpFootnoteLayout {
         let overhead = divider.marginTop + divider.marginBottom
         // 영역 상단의 하한은 구분선 획까지 담은 자리다 (#165 리뷰) — 아래 클램프와 **같은**
         // 값을 자리에도 써야, 자리에 꼭 맞게 들어간 스택이 클램프에 밀려 본문 하단 밖으로
-        // 나가지 않는다 (획 반 두께 − 위 여백 만큼). 본문이 있으면 본문 하한이 그보다 아래다.
-        let areaFloor = contentFrame.minY + Self.separatorOverhang(divider)
+        // 나가지 않는다 (획 반 두께 − 위 여백 만큼). 본문이 있으면 그 하한 **아래**에 같은
+        // 몫을 둔다 (#165 리뷰): 위 여백이 획 반 두께보다 좁으면 선이 영역 상단 위로 나가므로,
+        // 본문 하한에 딱 붙은 스택은 그 몫만큼 본문의 마지막 줄을 긋는다.
+        let overhang = Self.separatorOverhang(divider)
+        let areaFloor = contentFrame.minY + overhang
         let plan = Self.stackPlan(
             notes: notes,
-            available: contentFrame.maxY - max(bodyBottom ?? areaFloor, areaFloor) - overhead,
+            available: contentFrame.maxY - max((bodyBottom ?? contentFrame.minY) + overhang, areaFloor)
+                - overhead,
             fullPage: contentFrame.maxY - areaFloor - overhead,
             betweenNotes: divider.betweenNotes,
             emptyPage: bodyBottom == nil

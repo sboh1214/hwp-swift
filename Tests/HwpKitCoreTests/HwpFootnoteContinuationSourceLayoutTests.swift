@@ -243,5 +243,81 @@ import XCTest
             let confirmed = try XCTUnwrap(plain.pendingFootnotes.first?.measuredShape)
             expect(confirmed.footnoteShape).to(beNil())
         }
+
+        /// 문단 N개짜리 각주가 문단마다 쪽을 넘길 때 스택 계획은 이 쪽에 실을 문단과 그 다음
+        /// 문단만 잰다 (#165 리뷰) — 통째 판정을 위해 남은 문단을 전부 재면 쪽 수 × N의 CT
+        /// 조판이고, 분할 지점 탐색은 줄 캐시·개체 판정만 필요해 측정을 거치지 않는다.
+        func testStackPlanMeasuresOnlyTheParagraphsItPlaces() throws {
+            // 문단 20개, 각 55줄(≈645pt) — 모두 위치 0에서 시작해 문단마다 쪽이 갈린다.
+            let lines = 55
+            var paragraphs = [try Support.note(
+                lines: (1 ... lines).map { "문단 1 줄 \($0)" },
+                locations: (0 ..< lines).map { Int32($0) * 1172 }
+            )]
+            for number in 2 ... 20 {
+                paragraphs.append(try Support.notePlainParagraph(
+                    (1 ... lines).map { "문단 \(number) 줄 \($0)" }.joined(separator: "\n"),
+                    locations: (0 ..< lines).map { Int32($0) * 1172 }
+                ))
+            }
+            let layout = HwpFootnoteLayout(fontResolver: .testDeterministic)
+            let index = HwpIndex(from: CoreHwp.HwpFile())
+            let inputs = HwpFootnoteLayout.PendingNotes(paragraphs.map {
+                HwpFootnoteLayout.Input(paragraph: $0, number: 1, sizeResolver: nil, numbering: nil, noteId: 1)
+            }[...])
+            var measuredOffsets: [Int] = []
+            let notes = HwpFootnoteLayout.MeasuredNotes(inputs: inputs, footnoteShape: nil) { input, carries in
+                measuredOffsets.append(input.paragraph.paraText?.charArray.count ?? -1)
+                return layout.measureNote(
+                    input.paragraph, number: input.number, width: 451, index: index,
+                    footnoteShape: nil, sizeResolver: nil, noteCarriesObjects: carries
+                )
+            }
+            let plan = HwpFootnoteLayout.stackPlan(
+                notes: notes, available: 682, fullPage: 682, betweenNotes: 2.83, emptyPage: false
+            )
+            // 첫 문단만 실리고 (둘째 문단은 0에서 다시 시작) 나머지는 이월된다.
+            expect(plan.entries.count) == 1
+            expect(plan.overflow.count) == 19
+            // 잰 문단은 통째 판정이 빈 쪽 자리를 넘긴 둘째 문단까지 — 20개가 아니다.
+            expect(measuredOffsets.count) <= 2
+        }
+
+        /// 쪽 끝에서 나뉜 문단의 이월 입력은 남은 목록의 **첫 항목을 대신**하고 꼬리는 같은
+        /// 저장소다 (#165 리뷰) — 뒤에 남은 각주를 쪽마다 복사하지 않는다.
+        func testSplitOverflowReplacesTheHeadWithoutCopyingTheTail() throws {
+            let splittable = try Support.note(
+                lines: ["첫째 줄", "둘째 줄", "셋째 줄", "넷째 줄", "다섯째 줄"],
+                locations: [0, 1172, 2344, 0, 1172]
+            )
+            let others = try (2 ... 4).map { number in
+                try Support.note(lines: ["각주 \(number)"], locations: [0])
+            }
+            let inputs = HwpFootnoteLayout.PendingNotes(([splittable] + others).enumerated().map {
+                HwpFootnoteLayout.Input(paragraph: $1, number: $0 + 1)
+            }[...])
+            let layout = HwpFootnoteLayout(fontResolver: .testDeterministic)
+            let geometry = Support.geometry(contentWidth: 451)
+            let placement = layout.placePending(
+                footnotes: inputs, onPage: geometry, index: HwpIndex(from: CoreHwp.HwpFile()),
+                limitsAreaToHalfContent: false, bodyBottom: geometry.contentFrame.maxY - 50
+            )
+            expect(placement.blocks.count) == 1
+            expect(placement.overflow.count) == 4
+            let head = try XCTUnwrap(placement.overflow.head)
+            expect(head.placedLineCount) == 3
+            expect(placement.overflow.first?.placedLineCount) == 3
+            // 꼬리는 원래 저장소의 같은 자리다 — 새 배열이 아니다.
+            expect(placement.overflow.storage.startIndex) == inputs.storage.startIndex
+            expect(placement.overflow.storage.count) == 4
+            expect(placement.overflow.map(\.number)) == [1, 2, 3, 4]
+            // 다음 쪽에서 이어지는 조각이 첫 항목으로 실린다.
+            let next = layout.placePending(
+                footnotes: placement.overflow, onPage: geometry,
+                index: HwpIndex(from: CoreHwp.HwpFile()), limitsAreaToHalfContent: false
+            )
+            expect(Support.text(try XCTUnwrap(next.blocks.first))).to(contain("넷째 줄"))
+            expect(next.blocks.count) == 4
+        }
     }
 #endif
