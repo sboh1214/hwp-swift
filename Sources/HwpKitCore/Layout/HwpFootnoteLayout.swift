@@ -55,13 +55,23 @@ public struct HwpFootnoteLayout {
         /// 이월된 각주와 새 각주가 한 각주로 합쳐져 사이 여백이 사라지고 앞 조각의 마지막
         /// 줄 간격이 높이에 남는다. 공개 init은 표시 번호를 그대로 쓴다.
         let noteId: Int
-        /// 이 각주를 **처음 잰 구역**의 각주 모양 (#165 리뷰). 번호 라벨은 구역 각주
-        /// 모양의 장식 문자·번호 모양을 따르므로, 구역이 바뀐 쪽에서 다시 만들면 라벨
-        /// 길이가 달라져 조판 문자열이 통째로 밀린다 — `placedLength`가 가리키는 자리가
-        /// 어긋나 이어지는 글자가 잘린다. 예약도 이 모양으로 쟀으므로 배치와 같은 값을
+        /// 이 각주를 **처음 잰** 각주 모양 (#165 리뷰). 번호 라벨은 구역 각주 모양의
+        /// 장식 문자·번호 모양을 따르므로, 구역이 바뀐 쪽에서 다시 만들면 라벨 길이가
+        /// 달라져 조판 문자열이 통째로 밀린다 — `placedLength`가 가리키는 자리가 어긋나
+        /// 이어지는 글자가 잘리거나 겹친다. 예약도 이 모양으로 쟀으므로 배치와 같은 값을
         /// 써야 예약 ≡ 배치가 성립한다 (`sizeResolver`와 같은 이유·같은 규약, R44 #1).
-        /// `measure`가 처음 잰 값을 채워 이월 입력에 실어 보낸다.
-        let footnoteShape: CoreHwp.HwpFootnoteShape?
+        ///
+        /// `nil`은 **아직 재지 않은** 상태다. 잰 결과가 기본 모양(구역 모양 없음)이면
+        /// `MeasuredShape(footnoteShape: nil)`로 **확정된** 상태다 — 둘을 같은 nil로 두면
+        /// 기본 모양으로 잰 이월 입력이 다음 쪽의 모양을 새로 채택해 문자열이 밀린다
+        /// (실측: `1` → `(1)`에서 앞 조각의 마지막 두 글자가 겹쳐 그려짐). `measure`가
+        /// 처음 잰 값을 채워 이월 입력에 실어 보낸다.
+        let measuredShape: MeasuredShape?
+
+        /// 처음 잰 각주 모양의 확정 표식 — 값이 nil이어도 "기본 모양으로 잼"이다.
+        struct MeasuredShape {
+            let footnoteShape: CoreHwp.HwpFootnoteShape?
+        }
 
         /// - Parameter noteId: 각주 하나를 가르는 식별자. 생략하면 표시 번호를 쓴다 —
         ///   쪽마다 번호를 새로 시작하는 문서(표 134 모드 2)에서 이월 조각과 새 각주가
@@ -88,7 +98,7 @@ public struct HwpFootnoteLayout {
             placedLineCount: Int = 0,
             placedLength: Int = 0,
             noteId: Int,
-            footnoteShape: CoreHwp.HwpFootnoteShape? = nil
+            measuredShape: MeasuredShape? = nil
         ) {
             self.paragraph = paragraph
             self.number = number
@@ -97,15 +107,16 @@ public struct HwpFootnoteLayout {
             self.placedLineCount = placedLineCount
             self.placedLength = placedLength
             self.noteId = noteId
-            self.footnoteShape = footnoteShape
+            self.measuredShape = measuredShape
         }
 
-        /// 각주 모양만 채운 사본 — 처음 잰 구역의 모양을 이월 입력에 실어 보낸다.
-        func withFootnoteShape(_ shape: CoreHwp.HwpFootnoteShape?) -> Input {
+        /// 처음 잰 각주 모양을 **확정**한 사본 — 기본 모양(nil)으로 잰 것도 확정이다.
+        func withMeasuredShape(_ shape: CoreHwp.HwpFootnoteShape?) -> Input {
             Input(
                 paragraph: paragraph, number: number, sizeResolver: sizeResolver,
                 numbering: numbering, placedLineCount: placedLineCount,
-                placedLength: placedLength, noteId: noteId, footnoteShape: shape
+                placedLength: placedLength, noteId: noteId,
+                measuredShape: MeasuredShape(footnoteShape: shape)
             )
         }
     }
@@ -445,20 +456,23 @@ private extension HwpFootnoteLayout {
     ) -> [MeasuredFootnote] {
         // 개체 판정은 **각주 단위**다 (#165 리뷰) — 분할 금지와 CT 높이 보존의 범위를
         // 맞춘다. 문단 단위로 보면 개체 없는 앞 문단만 캐시 합으로 줄어 뒤 문단의 그림이
-        // 그 문단의 마지막 글줄 위로 올라온다.
+        // 그 문단의 마지막 글줄 위로 올라온다. 술어는 **수집 대상 전체**를 본다
+        // (`hasCollectibleObject`) — 하한 술어로 보면 글 앞으로 그림이 빠져 예약과 갈린다.
         let carrying = Set(
             footnotes.lazy
                 .filter {
-                    HwpParagraphObjectCollector.hasFloatingObject(
+                    HwpParagraphObjectCollector.hasCollectibleObject(
                         in: $0.paragraph, collectsTextboxes: true, collectsTables: true
                     )
                 }
                 .map(\.noteId)
         )
         return footnotes.map { input in
-            // 각주 모양은 **처음 잰 구역의 것**을 들고 간다 (#165 리뷰) — 인자는 그것이
-            // 없는 첫 측정의 폴백이고, 각인해 두면 이월 입력이 스스로 그 모양을 나른다.
-            let resolved = input.withFootnoteShape(input.footnoteShape ?? footnoteShape)
+            // 각주 모양은 **처음 잰 것**을 들고 간다 (#165 리뷰) — 인자는 아직 안 잰 입력의
+            // 첫 측정에만 쓰이고, 각인해 두면 이월 입력이 스스로 그 모양을 나른다. 기본
+            // 모양(nil)으로 잰 것도 확정이라 다음 쪽의 인자를 다시 채택하지 않는다.
+            let shape = input.measuredShape.map(\.footnoteShape) ?? footnoteShape
+            let resolved = input.withMeasuredShape(shape)
             return MeasuredFootnote(
                 input: resolved,
                 measurement: measureNote(
@@ -466,7 +480,7 @@ private extension HwpFootnoteLayout {
                     number: resolved.number,
                     width: width,
                     index: index,
-                    footnoteShape: resolved.footnoteShape,
+                    footnoteShape: shape,
                     // 수집 시점 해석기를 우선한다 — 인자는 그것이 없는 호출
                     // (테스트·직접 배치) 의 폴백이다 (R44 #1).
                     sizeResolver: resolved.sizeResolver ?? sizeResolver,

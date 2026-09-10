@@ -355,9 +355,9 @@ extension HwpFootnoteLayout {
                 ? splitNote.measurement.consumedLength(placing: 0 ..< split.lineCount)
                 : carried.placedLength,
             noteId: carried.noteId,
-            // 처음 잰 구역의 각주 모양을 그대로 나른다 (#165 리뷰) — 다음 쪽 구역의
-            // 라벨 길이가 다르면 `placedLength`가 가리키는 자리가 어긋난다.
-            footnoteShape: carried.footnoteShape
+            // 처음 잰 각주 모양(기본 모양으로 잰 확정 상태 포함)을 그대로 나른다 (#165
+            // 리뷰) — 다음 쪽의 라벨 길이가 다르면 `placedLength`가 가리키는 자리가 어긋난다.
+            measuredShape: carried.measuredShape
         ))
         overflow += measured[(split.index + 1)...].map(\.input)
         plan.overflow = overflow

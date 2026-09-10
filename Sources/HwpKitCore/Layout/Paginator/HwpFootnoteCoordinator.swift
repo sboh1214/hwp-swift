@@ -329,7 +329,7 @@ struct HwpFootnoteCoordinator {
         // 개체 판정은 **각주 단위**다 (#165 리뷰) — 예약이 배치(`HwpFootnoteLayout.measure`)와
         // 같은 범위를 봐야 개체를 담은 각주의 앞 문단 높이가 갈리지 않는다.
         let noteCarriesObjects = paragraphs.contains {
-            HwpParagraphObjectCollector.hasFloatingObject(
+            HwpParagraphObjectCollector.hasCollectibleObject(
                 in: $0, collectsTextboxes: true, collectsTables: true
             )
         }

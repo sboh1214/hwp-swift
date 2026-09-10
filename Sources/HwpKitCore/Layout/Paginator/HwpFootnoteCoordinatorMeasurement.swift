@@ -37,7 +37,7 @@ extension HwpFootnoteCoordinator {
         let carrying = Set(
             inputs.lazy
                 .filter {
-                    HwpParagraphObjectCollector.hasFloatingObject(
+                    HwpParagraphObjectCollector.hasCollectibleObject(
                         in: $0.paragraph, collectsTextboxes: true, collectsTables: true
                     )
                 }
@@ -53,8 +53,8 @@ extension HwpFootnoteCoordinator {
             // 이어지는 조각(#165)은 앞 쪽에 실린 줄 뒤만 잰다 — 배치와 같은 산식.
             var noteEnvironment = input.sizeResolver.map(environment.withSizeResolver)
                 ?? environment
-            if let shape = input.footnoteShape {
-                noteEnvironment = noteEnvironment.withFootnoteShape(shape)
+            if let measured = input.measuredShape {
+                noteEnvironment = noteEnvironment.withFootnoteShape(measured.footnoteShape)
             }
             total += measuredFootnoteHeight(
                 of: input.paragraph,
@@ -150,7 +150,7 @@ extension HwpFootnoteCoordinator {
                     let number = preview
                     preview += 1
                     let noteCarriesObjects = paragraphs.contains {
-                        HwpParagraphObjectCollector.hasFloatingObject(
+                        HwpParagraphObjectCollector.hasCollectibleObject(
                             in: $0, collectsTextboxes: true, collectsTables: true
                         )
                     }
@@ -207,8 +207,9 @@ extension HwpFootnoteCoordinator {
         // 이 빠른 길이 대형 문서 로드 시간을 좌우한다 (헌법주석 1,030쪽).
         // **개체를 담은 각주는 그 문단이 개체를 안 담아도** 이 길로 가지 않는다 (#165
         // 리뷰): 그런 각주는 전 문단이 CT 높이로 배치되므로 캐시 합을 돌려주면 예약이
-        // 배치와 갈린다.
-        guard noteCarriesObjects || HwpParagraphObjectCollector.hasFloatingObject(
+        // 배치와 갈린다. 판정은 배치와 같은 **수집 대상 전체** 술어다 — 하한 술어
+        // (`hasFloatingObject`)는 글 앞으로 그림을 빼 같은 각주를 다르게 본다.
+        guard noteCarriesObjects || HwpParagraphObjectCollector.hasCollectibleObject(
             in: paragraph, collectsTextboxes: true, collectsTables: true
         ) else {
             return measuredFootnoteTextHeight(
