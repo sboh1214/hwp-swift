@@ -425,5 +425,70 @@ import XCTest
                 expect(measured.carriesObjects(at: 3)) == false
             }
         }
+
+        /// 문단 경계에서 쪽이 갈리는 각주(뒤 문단이 앞 문단의 마지막 줄보다 위에서 시작)도 예약은
+        /// 앞 문단까지다 (#165 리뷰) — `splitPoint`와 같은 두 번째 분할 지점. 문단 안 리셋만 보면
+        /// 남은 문단 전부를 예약해 흐름 문단이 밀린다.
+        func testCarriedReservationStopsAtAParagraphBoundaryReset() async throws {
+            // 20줄 문단 다섯 개, 모두 0에서 시작 — 문단마다 쪽이 갈린다.
+            var paragraphs = [try Support.note(
+                lines: (1 ... 20).map { "문단 1 줄 \($0)" }, locations: (0 ..< 20).map { Int32($0) * 1172 }
+            )]
+            for number in 2 ... 5 {
+                paragraphs.append(try Support.notePlainParagraph(
+                    (1 ... 20).map { "문단 \(number) 줄 \($0)" }.joined(separator: "\n"),
+                    locations: (0 ..< 20).map { Int32($0) * 1172 }
+                ))
+            }
+            let host = try Support.host(at: Support.hostLocation(leaving: 15), notes: [paragraphs])
+            let flow = try HwpSynthetic.textParagraph("흐름 문단")
+            let paginator = Support.paginate([host] + (try Support.nextPageBody()) + [flow])
+            var pages: [HwpPage] = []
+            var index = 0
+            while let page = try await paginator.page(at: index) {
+                pages.append(page)
+                index += 1
+            }
+            let flowPage = try XCTUnwrap(pages.firstIndex { page in
+                page.blocks.contains { ($0.attributedString?.string ?? "").contains("흐름 문단") }
+            })
+            expect(flowPage) == 1
+            expect(Support.footnoteBlocks(on: pages[1]).count) == 1
+        }
+
+        /// CT 줄이 캐시 줄보다 적으면 짧은 쪽 몫의 양 끝이 같은 CT 줄로 환산돼 빈 조각이 된다
+        /// (#165 리뷰) — 그런 경계는 줄 안 글자 위치로 보간해 쪽 몫마다 글이 있고, 전체 글은
+        /// 쪽 몫 순서대로 한 번씩 나온다 (한글이 세 쪽에 이어 놓은 구조 그대로).
+        func testHeadFragmentsNeverComeOutEmpty() throws {
+            // 캐시 5줄(쪽 몫 [0,2)·[2,4)·[4,5))인데 글은 CT 한 줄이다.
+            var note = HwpSynthetic.noteParagraph(
+                " 짧은 글이 여기에 있다",
+                autoNumber: HwpSynthetic.autoNumberControl(kind: 1, decorationTail: ")")
+            )
+            note.paraLineSeg = try CoreHwp.HwpParaLineSeg.load(
+                Support.lineSegPayload(Support.noteLines([0, 1172, 0, 1172, 0]))
+            )
+            let layout = HwpFootnoteLayout(fontResolver: .testDeterministic)
+            let index = HwpIndex(from: CoreHwp.HwpFile())
+            let geometry = Support.geometry(contentWidth: 451)
+            // 두 줄 몫(20.72pt)은 들어가고 전체(55.88pt)는 안 들어가는 자리 — 첫 몫에서 나뉜다.
+            var pending: [HwpFootnoteLayout.Input] = [.init(paragraph: note, number: 1)]
+            var texts: [String] = []
+            var pagesUsed = 0
+            while !pending.isEmpty, pagesUsed < 6 {
+                let placement = layout.place(
+                    footnotes: pending, onPage: geometry, index: index,
+                    limitsAreaToHalfContent: false,
+                    bodyBottom: geometry.contentFrame.maxY - Support.overhead - 23
+                )
+                texts += placement.blocks.map(Support.text)
+                pending = placement.overflow
+                pagesUsed += 1
+            }
+            expect(pending).to(beEmpty())
+            expect(texts.count) == 3
+            expect(texts.allSatisfy { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) == true
+            expect(texts.joined()) == "1) 짧은 글이 여기에 있다"
+        }
     }
 #endif

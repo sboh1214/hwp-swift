@@ -3918,11 +3918,19 @@ private extension HwpPaginator {
 
         // 첫 미주가 남은 공간에 안 들어가면 새 페이지에서 시작한다
         // (미주는 구분선을 그리지 않으므로 — 아래 drawSeparator = false —
-        // 구분선 오버헤드 없이 실제 배치 높이만 본다).
+        // 구분선 오버헤드 없이 실제 배치 높이만 본다). 높이는 배치(`stackBlocks`)와 **같은
+        // 산식**이어야 한다 (#165 리뷰): 첫 문단이 그 미주의 끝이면 마지막 줄의 줄 간격을 빼고,
+        // 개체 판정은 미주 단위이며, 라벨은 미주 모양으로 — 줄 간격만큼 크게 재면 들어가는
+        // 미주를 새 쪽으로 옮긴다.
         if let first = pendingEndnotes.first,
            currentColumnFrame.minY > currentPageGeometry.contentFrame.minY,
-           measuredFootnoteHeight(
-               of: first.paragraph, number: first.number, numbering: first.numbering
+           footnoteCoordinator.measuredFootnoteHeight(
+               of: first.paragraph,
+               number: first.number,
+               environment: noteEnvironment.withFootnoteShape(currentSectionDef?.endNoteShape),
+               numbering: first.numbering,
+               isNoteEnd: pendingEndnotes.count == 1 || pendingEndnotes[1].noteId != first.noteId,
+               noteCarriesObjects: first.noteFacts?.carriesObjects ?? false
            ) > effectiveContentHeight
         {
             cacheCurrentPage()

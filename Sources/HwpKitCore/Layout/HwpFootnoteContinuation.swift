@@ -153,156 +153,6 @@ enum HwpFootnoteCacheLines {
     }
 }
 
-// MARK: - 원본 조판 이월
-
-extension HwpFootnoteLayout {
-    /// 이월 입력이 나르는 문단 **전체**의 조판 (#165 리뷰) — 이어지는 조각은 원본에서 잘라
-    /// 내므로 원본이 있으면 CT 조판을 건너뛴다. 쪽마다 문단 전체를 다시 조판하면 이월이 길게
-    /// 이어지는 문단에서 쪽 수 × 줄 수의 일이 된다 (실측, 디버그 빌드: 2,000줄·99쪽 합성
-    /// 각주 29.9s → 0.7s, 32,000줄·1,599쪽 10.6s — 쪽 수에 비례). 폭이 다르면 (구역이 바뀐
-    /// 쪽) 줄 나눔이 달라지므로 다시 조판한다 — 줄 캐시는 문단의 것이라 폭과 무관하게 그대로
-    /// 쓴다. 남은 줄의 높이 누적표(`remainingHeights`)도 같이 나른다.
-    struct SourceLayout {
-        /// 이 조판을 만든 각주 영역 폭
-        let width: CGFloat
-        let attributed: NSAttributedString
-        let lines: [HwpLineFrame]
-        let cacheLines: [HwpFootnoteCacheLine]
-        /// 각 캐시 줄부터 문단 끝까지의 높이 (HWPUNIT, `HwpFootnoteCacheLines.remainingHeights`)
-        /// — 남은 줄의 높이를 쪽마다 남은 줄을 다 더하지 않고 한 번에 읽는다.
-        let remainingHeights: [Int]
-
-        init(
-            width: CGFloat, attributed: NSAttributedString, lines: [HwpLineFrame],
-            cacheLines: [HwpFootnoteCacheLine]
-        ) {
-            self.width = width
-            self.attributed = attributed
-            self.lines = lines
-            self.cacheLines = cacheLines
-            remainingHeights = HwpFootnoteCacheLines.remainingHeights(of: cacheLines)
-        }
-
-        /// `start`부터 끝까지 남은 줄의 높이 (pt) —
-        /// `HwpFootnoteCacheLines.height(of: cacheLines, in: start ..< cacheLines.count)`와 같은 값.
-        func remainingHeight(from start: Int) -> CGFloat {
-            guard start >= 0, start < remainingHeights.count else { return 0 }
-            return HwpUnits.points(fromHwpUnit: Int32(clamping: max(0, remainingHeights[start])))
-        }
-    }
-}
-
-// MARK: - 조각 문자열
-
-extension HwpFootnoteLayout {
-    /// 각주 문단 조각의 조판 문자열과 줄 프레임.
-    struct Fragment {
-        let attributed: NSAttributedString
-        let lines: [HwpLineFrame]
-        /// 이 조각이 **원본 조판 문자열**에서 차지한 범위 — 그 끝이 다음 쪽 조각의 시작
-        /// 문자 위치다 (#165 리뷰, `Input.placedLength`).
-        let sourceRange: NSRange
-    }
-
-    /// 캐시 줄 범위에 해당하는 CT 줄 조각 — 캐시 줄 수와 CT 줄 수가 다르면 (폰트 대체)
-    /// 비례로 대응시킨다 (`HwpAbsoluteCachePlacer.runAttributedSlice`와 같은 근사).
-    /// 이어지는 조각은 첫 줄 들여쓰기를 둘째 줄에 맞춘다 (한글 실측: 이어지는 줄은
-    /// 내어쓰기 자리에서 시작).
-    ///
-    /// `placedLength`: 앞 쪽이 **실제로 그린** 문자 길이 (#165 리뷰). 구역이 바뀌어 폭이
-    /// 달라지면 줄 나눔이 달라 비례 환산이 앞 쪽의 마지막 글자와 다른 자리를 가리키므로,
-    /// 이어지는 조각은 이 문자 위치를 경계로 삼는다. 폭이 그대로면 비례 환산 결과가 곧
-    /// 그 위치라 값이 같다 (코퍼스 불변).
-    static func fragment(
-        of attributed: NSAttributedString,
-        lines: [HwpLineFrame],
-        cacheLineCount: Int,
-        cacheRange: Range<Int>,
-        startingAt placedLength: Int = 0
-    ) -> Fragment {
-        let empty = Fragment(
-            attributed: NSAttributedString(string: ""), lines: [],
-            sourceRange: NSRange(location: placedLength, length: 0)
-        )
-        guard !lines.isEmpty, cacheLineCount > 0, !cacheRange.isEmpty else { return empty }
-        func ctIndex(_ cacheIndex: Int) -> Int {
-            guard cacheIndex < cacheLineCount else { return lines.count }
-            let proportional = Double(cacheIndex) / Double(cacheLineCount) * Double(lines.count)
-            return min(lines.count, Int(proportional.rounded()))
-        }
-        let isContinuation = cacheRange.lowerBound > 0
-        let end = max(ctIndex(cacheRange.lowerBound), ctIndex(cacheRange.upperBound))
-        // 이어지는 조각은 경계 문자를 **담은** 줄부터 시작한다 (폭이 그대로면 그 줄이 곧
-        // 비례 환산 결과다). 그 줄이 경계보다 앞에서 시작하면 앞부분은 이미 그려졌으므로
-        // 문자 범위에서 잘라 낸다.
-        let start = isContinuation && placedLength > 0
-            ? min(end, firstLineIndex(in: lines, endingAfter: placedLength))
-            : ctIndex(cacheRange.lowerBound)
-        guard start < end else { return empty }
-        let slice = lines[start ..< end]
-        let lineRange = slice.dropFirst().reduce(slice[start].attributedRange) {
-            NSUnionRange($0, $1.attributedRange)
-        }
-        let clipped = max(lineRange.location, min(placedLength, NSMaxRange(lineRange)))
-        let range = isContinuation
-            ? NSRange(location: clipped, length: NSMaxRange(lineRange) - clipped)
-            : lineRange
-        let text = isContinuation
-            ? HwpParagraphLayout.continuationFragment(of: attributed, range: range)
-            : attributed.attributedSubstring(from: range)
-        // 뒤에 이월분이 남는 조각은 **이어짐 표식**을 단다 (PR 리뷰) — 다른 쪽 분할 경로
-        // (`HwpTableSplitter`·다단 run)와 같은 마커다. 컨테이너 문단은 위치 열쇠가 없어
-        // 복사(`HwpSelectionGeometry.joinsWithPrevious`)가 이 표식으로 조각을 잇고, 양쪽
-        // 정렬(`HwpWordJustification`)은 이 표식으로 조각 끝 줄이 문단의 마지막 줄이 아님을
-        // 안다. 없으면 복사에 헛 문단 부호가 끼고 조각 끝 줄이 벌려지지 않는다.
-        let continues = cacheRange.upperBound < cacheLineCount
-        return Fragment(
-            attributed: continues ? HwpTableSplitter.markedAsContinuedFragment(text) : text,
-            lines: fragmentLines(slice, range: range, dropping: range.location - lineRange.location),
-            sourceRange: range
-        )
-    }
-
-    /// 문자 위치 `length`를 넘어 끝나는 첫 줄의 인덱스 (없으면 `lines.count`). 줄의 문자
-    /// 범위는 단조 증가하므로 이분 탐색한다 (#165 리뷰) — 앞에서부터 훑으면 이월이 길게
-    /// 이어지는 문단에서 쪽마다 이미 실린 줄을 다시 세어 쪽 수 × 줄 수가 된다.
-    private static func firstLineIndex(
-        in lines: [HwpLineFrame], endingAfter length: Int
-    ) -> Int {
-        var low = 0
-        var high = lines.count
-        while low < high {
-            let middle = (low + high) / 2
-            if NSMaxRange(lines[middle].attributedRange) > length {
-                high = middle
-            } else {
-                low = middle + 1
-            }
-        }
-        return low
-    }
-
-    /// 조각 줄 프레임 — 첫 줄이 경계보다 앞에서 시작하면 (폭이 바뀐 이월) 그 몫을 잘라
-    /// 문자 범위를 조각 기준으로 맞춘다. 잘린 줄의 기하와 앵커는 **앞 쪽 폭 기준**이라
-    /// 근사다 — 개체를 담은 각주는 나누지 않으므로 (`carriesObjects`) 앵커는 버린다.
-    private static func fragmentLines(
-        _ slice: ArraySlice<HwpLineFrame>, range: NSRange, dropping drop: Int
-    ) -> [HwpLineFrame] {
-        var frames = HwpParagraphLayout.fragmentLineFrames(slice, range: range)
-        guard drop > 0, let first = frames.first else { return frames }
-        frames[0] = HwpLineFrame(
-            origin: first.origin,
-            width: first.width,
-            baseline: first.baseline,
-            attributedRange: NSRange(
-                location: 0, length: max(0, first.attributedRange.length - drop)
-            ),
-            inlineAnchors: []
-        )
-        return frames
-    }
-}
-
 // MARK: - 절대 캐시 모드 배치
 
 extension HwpFootnoteLayout {
@@ -492,6 +342,18 @@ extension HwpFootnoteLayout {
         plan.stackedHeight += head.height
         let splitNote = notes[split.index]
         let carried = splitNote.input
+        // 다음 쪽 조각은 이 쪽이 **실제로 그린** 글자 다음부터다 (#165 리뷰) — 폭이
+        // 달라지는 구역으로 넘어가도 경계가 흔들리지 않는다.
+        let placedLength = split.lineCount > 0
+            ? splitNote.measurement.consumedLength(placing: 0 ..< split.lineCount)
+            : carried.placedLength
+        // 글이 다 그려졌으면 남은 캐시 줄은 실을 글이 없다 (#165 리뷰): CT 줄이 캐시 줄보다
+        // 적어 앞 조각이 뒤 몫의 글까지 담으면, 남은 몫을 이월해도 구분선과 빈 자리뿐이다 —
+        // 이 문단은 여기서 끝이고 뒤 항목만 넘긴다.
+        if split.lineCount > 0, placedLength >= splitNote.measurement.sourceAttributed.length {
+            plan.overflow = notes.inputs(from: split.index + 1)
+            return
+        }
         // 나눈 문단의 이월 입력은 남은 목록의 첫 항목을 **대신**한다 (`PendingNotes.head`, #165
         // 리뷰) — 꼬리를 복사해 앞에 붙이면 앞 문단이 여러 쪽에 걸쳐 이어지는 동안 뒤에 남은
         // 각주 수만큼의 복사가 쪽마다 되풀이된다.
@@ -501,11 +363,7 @@ extension HwpFootnoteLayout {
             sizeResolver: carried.sizeResolver,
             numbering: carried.numbering,
             placedLineCount: carried.placedLineCount + split.lineCount,
-            // 다음 쪽 조각은 이 쪽이 **실제로 그린** 글자 다음부터다 (#165 리뷰) — 폭이
-            // 달라지는 구역으로 넘어가도 경계가 흔들리지 않는다.
-            placedLength: split.lineCount > 0
-                ? splitNote.measurement.consumedLength(placing: 0 ..< split.lineCount)
-                : carried.placedLength,
+            placedLength: placedLength,
             noteId: carried.noteId,
             // 처음 잰 각주 모양(기본 모양으로 잰 확정 상태 포함)을 그대로 나른다 (#165
             // 리뷰) — 다음 쪽의 라벨 길이가 다르면 `placedLength`가 가리키는 자리가 어긋난다.

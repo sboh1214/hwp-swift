@@ -31,7 +31,9 @@ extension HwpFootnoteCoordinator {
     /// 전부를 더하면 예약이 쪽 높이를 넘어 `effectiveContentHeight`가 1pt로 무너지고, 캐시
     /// 없는 흐름 문단·표가 자리가 남아도 다음 쪽으로 밀린다 — 배치(`stackPlan`)는 그 쪽에
     /// 첫 분할 지점까지의 앞 조각만 싣고 그 뒤 각주는 넘기므로, 예약도 그 조각에서 멈춘다
-    /// (한글도 그 쪽에 그 조각만 놓았다 — 분할 지점이 곧 한글의 쪽 경계다).
+    /// (한글도 그 쪽에 그 조각만 놓았다 — 분할 지점이 곧 한글의 쪽 경계다). 분할 지점은
+    /// `splitPoint`와 **같은 둘**이다: 문단 안의 세로 위치 리셋, 그리고 앞 문단의 마지막 줄보다
+    /// 위에서 시작하는 뒤 문단 (그 문단부터 통째로 다음 쪽).
     mutating func reservedFootnoteHeight(
         for inputs: HwpFootnoteLayout.PendingNotes,
         environment: Environment,
@@ -44,6 +46,9 @@ extension HwpFootnoteCoordinator {
         // (`Input.noteFacts`)이 있으면 그것이고, 없으면 각주가 바뀌는 자리에서 그 이웃만 훑는다
         // — 전부를 먼저 훑으면 `limit`에 멈추는 뜻이 없다.
         var noteCarriesObjects = false
+        // 같은 각주 안 앞 문단의 남은 마지막 줄 전진량 끝 — 뒤 문단이 그보다 위에서 시작하면
+        // 문단 경계가 쪽 경계다 (`splitPoint`와 같은 판정). 캐시 없는 문단은 비교를 끊는다.
+        var previousBottom: Int?
         var index = inputs.startIndex
         while index < inputs.endIndex, total <= limit {
             let input = inputs[index]
@@ -55,6 +60,7 @@ extension HwpFootnoteCoordinator {
                 }
                 noteCarriesObjects = input.noteFacts?.carriesObjects
                     ?? Self.noteCarriesObjects(in: inputs, from: index)
+                previousBottom = nil
             }
             // 배치(`HwpFootnoteLayout.measure`)가 `input.sizeResolver`를 쓰므로
             // 재예약도 같은 값으로 재야 한다 — 현재 environment로 재면 그 사이
@@ -68,8 +74,19 @@ extension HwpFootnoteCoordinator {
             // 개체를 담은 각주는 나뉘지 않는다 — 그 밖의 문단은 남은 줄의 첫 분할 지점까지만.
             let cacheLines = noteCarriesObjects ? nil
                 : input.sourceLayout?.cacheLines ?? HwpFootnoteCacheLines.lines(of: input.paragraph)
-            let firstBreak = cacheLines.flatMap {
-                HwpFootnoteCacheLines.firstPageBreak(in: $0, after: input.placedLineCount)
+            var firstBreak: Int?
+            if let lines = cacheLines {
+                let start = min(input.placedLineCount, lines.count)
+                if start < lines.count {
+                    if let previousBottom, !startsNote, lines[start].location < previousBottom {
+                        // 이 문단부터 다음 쪽이다 (#165 리뷰) — 앞 문단까지만 예약한다.
+                        break
+                    }
+                    firstBreak = HwpFootnoteCacheLines.firstPageBreak(in: lines, after: start)
+                    previousBottom = lines[lines.count - 1].spacedBottom
+                }
+            } else {
+                previousBottom = nil
             }
             let isNoteEnd = next == inputs.endIndex || inputs[next].noteId != input.noteId
             total += measuredFootnoteHeight(
