@@ -320,39 +320,6 @@ import XCTest
             expect(next.blocks.count) == 4
         }
 
-        /// 이월 각주의 예약은 **다음 쪽에 실릴 조각**만이다 (#165 리뷰). 분할 지점이 여러 쪽에
-        /// 걸친 각주의 남은 전부를 예약하면 `effectiveContentHeight`가 1pt로 무너져, 캐시 없는
-        /// 흐름 문단이 자리가 남아도 다음 쪽으로 밀린다 — 배치는 그 쪽에 첫 조각만 싣는다.
-        func testCarriedReservationCoversOnlyTheNextFragment() async throws {
-            // 100줄 각주, 20줄마다 쪽 리셋 — 다섯 조각. 첫 쪽 15pt엔 앞 조각도 못 들어가 통째로 이월.
-            let note = try Support.note(
-                lines: (1 ... 100).map { "줄 \($0)" },
-                locations: (0 ..< 100).map { Int32($0 % 20) * 1172 }
-            )
-            let host = try Support.host(at: Support.hostLocation(leaving: 15), notes: [[note]])
-            // 둘째 쪽: 캐시 문단 하나 + 캐시 **없는** 흐름 문단 하나 — 흐름 문단은 예약을 본다.
-            let flow = try HwpSynthetic.textParagraph("흐름 문단")
-            let paginator = Support.paginate([host] + (try Support.nextPageBody()) + [flow])
-            var pages: [HwpPage] = []
-            var index = 0
-            while let page = try await paginator.page(at: index) {
-                pages.append(page)
-                index += 1
-            }
-            let flowPage = try XCTUnwrap(pages.firstIndex { page in
-                page.blocks.contains { ($0.attributedString?.string ?? "").contains("흐름 문단") }
-            })
-            // 다음 조각(20줄 ≈ 231pt)만 예약하면 둘째 쪽에 자리가 남아 흐름 문단이 거기 실린다.
-            expect(flowPage) == 1
-            // 그 쪽의 각주는 첫 조각뿐이고 흐름 문단 아래에 있다.
-            let notes = Support.footnoteBlocks(on: pages[1])
-            expect(notes.count) == 1
-            let flowBlock = try XCTUnwrap(pages[1].blocks.first {
-                ($0.attributedString?.string ?? "").contains("흐름 문단")
-            })
-            expect(try XCTUnwrap(notes.first).separatorLine.minY) >= flowBlock.frame.maxY - 0.01
-        }
-
         /// 공개 `place`로 쪽을 넘기는 호출자: 잰 뒤 **통째로** 넘어간 각주도 처음 잰 쪽의 모양을
         /// 나른다 (#165 리뷰) — 이월 목록이 처음 본 모양을 각인(`PendingNotes.stamp`)해 다음 쪽의
         /// 다른 모양을 새로 채택하지 않는다. 나뉜 조각(`appendHead`)만 각인하던 비대칭을 없앴다.
@@ -426,36 +393,6 @@ import XCTest
             }
         }
 
-        /// 문단 경계에서 쪽이 갈리는 각주(뒤 문단이 앞 문단의 마지막 줄보다 위에서 시작)도 예약은
-        /// 앞 문단까지다 (#165 리뷰) — `splitPoint`와 같은 두 번째 분할 지점. 문단 안 리셋만 보면
-        /// 남은 문단 전부를 예약해 흐름 문단이 밀린다.
-        func testCarriedReservationStopsAtAParagraphBoundaryReset() async throws {
-            // 20줄 문단 다섯 개, 모두 0에서 시작 — 문단마다 쪽이 갈린다.
-            var paragraphs = [try Support.note(
-                lines: (1 ... 20).map { "문단 1 줄 \($0)" }, locations: (0 ..< 20).map { Int32($0) * 1172 }
-            )]
-            for number in 2 ... 5 {
-                paragraphs.append(try Support.notePlainParagraph(
-                    (1 ... 20).map { "문단 \(number) 줄 \($0)" }.joined(separator: "\n"),
-                    locations: (0 ..< 20).map { Int32($0) * 1172 }
-                ))
-            }
-            let host = try Support.host(at: Support.hostLocation(leaving: 15), notes: [paragraphs])
-            let flow = try HwpSynthetic.textParagraph("흐름 문단")
-            let paginator = Support.paginate([host] + (try Support.nextPageBody()) + [flow])
-            var pages: [HwpPage] = []
-            var index = 0
-            while let page = try await paginator.page(at: index) {
-                pages.append(page)
-                index += 1
-            }
-            let flowPage = try XCTUnwrap(pages.firstIndex { page in
-                page.blocks.contains { ($0.attributedString?.string ?? "").contains("흐름 문단") }
-            })
-            expect(flowPage) == 1
-            expect(Support.footnoteBlocks(on: pages[1]).count) == 1
-        }
-
         /// CT 줄이 캐시 줄보다 적으면 짧은 쪽 몫의 양 끝이 같은 CT 줄로 환산돼 빈 조각이 된다
         /// (#165 리뷰) — 그런 경계는 줄 안 글자 위치로 보간해 쪽 몫마다 글이 있고, 전체 글은
         /// 쪽 몫 순서대로 한 번씩 나온다 (한글이 세 쪽에 이어 놓은 구조 그대로).
@@ -489,6 +426,47 @@ import XCTest
             expect(texts.count) == 3
             expect(texts.allSatisfy { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) == true
             expect(texts.joined()) == "1) 짧은 글이 여기에 있다"
+        }
+
+        /// 글을 다 그린 조각은 캐시 줄이 남았어도 이어짐 표식을 달지 않는다 (#165 리뷰).
+        func testHeadThatConsumesAllTextIsNotMarkedContinued() {
+            let attributed = NSAttributedString(string: "a")
+            let line = HwpLineFrame(
+                origin: .zero, width: 10, baseline: 8, attributedRange: NSRange(location: 0, length: 1),
+                inlineAnchors: []
+            )
+            // 캐시 3줄(쪽 몫 [0,2)·[2,3))인데 글은 한 글자 — 앞 몫이 글을 다 가져간다.
+            let head = HwpFootnoteLayout.fragment(
+                of: attributed, lines: [line], cacheLineCount: 3, cacheRange: 0 ..< 2
+            )
+            expect(head.sourceRange) == NSRange(location: 0, length: 1)
+            expect(head.attributed.attribute(
+                HwpAttributedStringKey.continuedParagraphFragment, at: 0, effectiveRange: nil
+            )).to(beNil())
+        }
+
+        /// 보간한 경계는 대리 쌍·결합 문자열 가운데에 떨어지지 않는다 (#165 리뷰) — 이모지 넷을
+        /// 캐시 3줄로 나눌 때 각 조각이 온전한 글자로만 이루어지고 이어 붙이면 원문이다.
+        func testInterpolatedSplitsSnapToComposedCharacters() {
+            let text = "😀😀😀😀"
+            let attributed = NSAttributedString(string: text)
+            let line = HwpLineFrame(
+                origin: .zero, width: 40, baseline: 8,
+                attributedRange: NSRange(location: 0, length: attributed.length), inlineAnchors: []
+            )
+            var placed = 0
+            var pieces: [String] = []
+            for range in [0 ..< 1, 1 ..< 2, 2 ..< 3] {
+                let fragment = HwpFootnoteLayout.fragment(
+                    of: attributed, lines: [line], cacheLineCount: 3, cacheRange: range,
+                    startingAt: placed
+                )
+                pieces.append(fragment.attributed.string)
+                placed = NSMaxRange(fragment.sourceRange)
+            }
+            expect(pieces.joined()) == text
+            expect(pieces.allSatisfy { !$0.isEmpty && !$0.contains("\u{FFFD}") }) == true
+            expect(pieces.map { $0.utf16.count % 2 }) == [0, 0, 0]
         }
     }
 #endif

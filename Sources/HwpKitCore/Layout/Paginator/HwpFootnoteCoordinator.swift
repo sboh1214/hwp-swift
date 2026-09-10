@@ -73,6 +73,10 @@ struct HwpFootnoteCoordinator {
     var pendingEndnotes = HwpFootnoteLayout.PendingNotes()
     /// 각주 영역이 차지할 높이 (본문 overflow 검사에 반영)
     var footnoteReservedHeight: CGFloat = 0
+    /// 이 쪽의 예약이 어떤 각주의 분할 지점에서 멈췄는지 (#165 리뷰) — 그 뒤에 수집되는 각주는
+    /// 이 쪽에 실리지 않으므로 예약을 더하지 않는다 (배치는 나눈 조각 뒤의 각주를 모두 넘긴다).
+    /// 쪽을 확정하며 이월 예약을 다시 잴 때(`reservedFootnoteHeight(for:)`) 새로 정해진다.
+    var reservationStopsAtSplit = false
     var footnoteCounter = 0
     /// 미주 번호 (각주와 별도 카운터, endNoteShape.startingNumber부터)
     var endnoteCounter = 0
@@ -338,9 +342,21 @@ struct HwpFootnoteCoordinator {
         }
         let isFirstOnPage = pendingFootnotes.isEmpty
         let metrics = footnoteReservationMetrics(environment: environment)
-        footnoteReservedHeight += isFirstOnPage
-            ? metrics.separatorOverhead
-            : metrics.spacingBetweenNotes
+        // 예약은 **이 쪽에 실릴 조각**까지다 (#165 리뷰, `fragmentShares` — 이월 예약과 같은
+        // 판정): 줄 캐시가 여러 쪽에 걸친 각주의 전부를 더하면 `effectiveContentHeight`가
+        // 무너져 뒤의 캐시 없는 흐름 문단이 다음 쪽으로 밀리는데, 배치는 첫 조각만 싣는다.
+        // 앞 각주가 이미 나뉘었으면 이 각주는 이 쪽에 실리지 않는다.
+        let shares = reservationStopsAtSplit ? [] : Self.fragmentShares(
+            count: paragraphs.count, splits: !noteCarriesObjects
+        ) { (lines: HwpFootnoteCacheLines.lines(of: paragraphs[$0]), placedLineCount: 0) }
+        if !shares.isEmpty {
+            footnoteReservedHeight += isFirstOnPage
+                ? metrics.separatorOverhead
+                : metrics.spacingBetweenNotes
+        }
+        if shares.count < paragraphs.count || shares.last?.endsPage == true {
+            reservationStopsAtSplit = true
+        }
         for (paragraphIndex, paragraph) in paragraphs.enumerated() {
             let scope = numbering.indices.contains(paragraphIndex) ? numbering[paragraphIndex] : nil
             // 바로 아래 예약이 쓰는 해석기를 그대로 실어 배치까지 들고 간다 —
@@ -363,13 +379,15 @@ struct HwpFootnoteCoordinator {
                     carriesObjects: noteCarriesObjects
                 )
             ))
+            guard shares.indices.contains(paragraphIndex) else { continue }
             footnoteReservedHeight += measuredFootnoteHeight(
                 of: paragraph,
                 number: number,
                 environment: environment,
                 numbering: scope,
-                isNoteEnd: paragraphIndex == paragraphs.count - 1,
-                noteCarriesObjects: noteCarriesObjects
+                isNoteEnd: paragraphIndex == paragraphs.count - 1 || shares[paragraphIndex].endsPage,
+                noteCarriesObjects: noteCarriesObjects,
+                lineLimit: shares[paragraphIndex].lineLimit
             )
         }
     }

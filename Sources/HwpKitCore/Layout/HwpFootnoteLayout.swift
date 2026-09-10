@@ -185,6 +185,9 @@ public struct HwpFootnoteLayout {
     public struct ReservationMetrics {
         /// 구분선 위 여백 + 아래 여백 (place의 stackHeight와 동일). 선 두께는 세지 않는다 —
         /// 한글은 선을 위 여백 끝에 가운데 맞춰 긋고 아래 여백을 선 가운데부터 잰다 (#165 실측).
+        /// 다만 획이 위 여백을 넘는 몫(`separatorOverhang` — 위 여백 < 획 반 두께일 때만 0보다
+        /// 크다)은 센다 (#165 리뷰): 배치가 그 몫을 자리에서 빼므로 (`placeBelowBody`의
+        /// `areaFloor`·본문 하한) 예약이 같은 몫을 빼야 본문이 그 자리를 먹어 조각이 밀리지 않는다.
         public let separatorOverhead: CGFloat
         /// 서로 다른 번호의 노트 사이 간격 (같은 번호의 이어지는 문단은 0)
         public let spacingBetweenNotes: CGFloat
@@ -199,7 +202,8 @@ public struct HwpFootnoteLayout {
             contentWidth: contentWidth
         )
         return ReservationMetrics(
-            separatorOverhead: divider.marginTop + divider.marginBottom,
+            separatorOverhead: divider.marginTop + divider.marginBottom
+                + Self.separatorOverhang(divider),
             spacingBetweenNotes: divider.betweenNotes
         )
     }

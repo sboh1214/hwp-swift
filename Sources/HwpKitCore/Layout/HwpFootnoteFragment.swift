@@ -122,10 +122,16 @@ extension HwpFootnoteLayout {
             }
             range = NSRange(location: startChar, length: NSMaxRange(lineRange) - startChar)
         } else {
-            // 끝 경계를 글자 위치로 — 최소 한 글자는 싣고 문단 끝을 넘지 않는다.
+            // 끝 경계를 글자 위치로 — 최소 한 글자(합성 문자 단위)는 싣고 문단 끝을 넘지 않는다.
+            // 보간한 UTF-16 위치가 대리 쌍·결합 문자열 가운데에 떨어지면 두 쪽에 반쪽씩 그려지므로
+            // (#165 리뷰) 합성 문자 경계로 맞춘다 — 다음 조각의 시작(`placedLength`)도 이 값이다.
             let endChar = cacheRange.upperBound >= cacheLineCount
                 ? attributed.length
-                : min(attributed.length, max(charOffset(cacheRange.upperBound), startChar + 1))
+                : composedBoundary(
+                    in: attributed.string as NSString,
+                    near: min(attributed.length, charOffset(cacheRange.upperBound)),
+                    after: startChar
+                )
             guard endChar > startChar else { return empty }
             range = NSRange(location: startChar, length: endChar - startChar)
             let lastLine = min(lines.count - 1, firstLineIndex(in: lines, endingAfter: endChar - 1))
@@ -141,12 +147,31 @@ extension HwpFootnoteLayout {
         // 복사(`HwpSelectionGeometry.joinsWithPrevious`)가 이 표식으로 조각을 잇고, 양쪽
         // 정렬(`HwpWordJustification`)은 이 표식으로 조각 끝 줄이 문단의 마지막 줄이 아님을
         // 안다. 없으면 복사에 헛 문단 부호가 끼고 조각 끝 줄이 벌려지지 않는다.
-        let continues = cacheRange.upperBound < cacheLineCount
+        // 글을 다 그린 조각은 캐시 줄이 남았어도 문단의 끝이다 (#165 리뷰) — 남은 몫은 넘기지
+        // 않으므로(`appendHead`) 표식을 달면 양쪽 정렬이 진짜 마지막 줄을 벌리고 복사가 다음
+        // 문단에 개행 없이 잇는다.
+        let continues = cacheRange.upperBound < cacheLineCount && NSMaxRange(range) < attributed.length
         return Fragment(
             attributed: continues ? HwpTableSplitter.markedAsContinuedFragment(text) : text,
             lines: fragmentLines(slice, range: range),
             sourceRange: range
         )
+    }
+
+    /// `offset` 근처의 합성 문자 경계 — 그 자리를 담은 합성 문자열의 시작으로 물리되, 그러면
+    /// `after`를 넘지 못할 때는 그 문자열의 끝으로 민다 (최소 한 문자는 나아간다).
+    private static func composedBoundary(in string: NSString, near offset: Int, after start: Int) -> Int {
+        guard start < string.length else { return string.length }
+        // 최소 진행: `start`의 합성 문자 하나 — `start + 1`은 대리 쌍을 가를 수 있다.
+        let minimum = NSMaxRange(string.rangeOfComposedCharacterSequence(at: start))
+        guard offset > minimum, offset < string.length else {
+            return min(string.length, max(offset, minimum))
+        }
+        let sequence = string.rangeOfComposedCharacterSequence(at: offset)
+        if sequence.location == offset {
+            return offset
+        }
+        return sequence.location >= minimum ? sequence.location : NSMaxRange(sequence)
     }
 
     /// 문자 위치 `length`를 넘어 끝나는 첫 줄의 인덱스 (없으면 `lines.count`). 줄의 문자

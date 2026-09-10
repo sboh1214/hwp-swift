@@ -24,6 +24,62 @@ extension HwpFootnoteCoordinator {
         )
     }
 
+    /// 각주 한 개의 문단들 중 **이 쪽(또는 다음 쪽)에 실릴 조각**의 문단별 몫 (#165 리뷰) —
+    /// 배치(`stackPlan`·`splitPoint`)와 같은 두 분할 지점에서 멈춘다: 문단 안의 세로 위치 리셋
+    /// (그 문단은 리셋 앞 줄까지, `lineLimit`), 그리고 앞 문단의 남은 마지막 줄보다 위에서
+    /// 시작하는 뒤 문단 (그 문단부터 다음 쪽이라 **앞 문단이 쪽 끝**이다 — `endsPage`, 마지막
+    /// 줄의 줄 간격을 빼는 자리). 뒤 문단을 먼저 보고 앞 문단의 몫을 정하므로 사후 보정이
+    /// 없다. 개체를 담은 각주는 나뉘지 않으므로 전 문단이 통째다. 캐시 없는 문단은 통째이고
+    /// 그 뒤 문단과의 위치 비교를 끊는다.
+    struct FragmentShare {
+        /// 이 문단의 남은 줄 중 앞 몇 줄만 셀지 — nil이면 끝까지
+        let lineLimit: Int?
+        /// 이 문단이 쪽 끝인지 (자기 안의 리셋 또는 뒤 문단의 리셋)
+        let endsPage: Bool
+    }
+
+    /// 문단 `count`개의 (줄 캐시, 앞 쪽에 실린 줄 수)를 **필요한 만큼만** 받아 실릴 조각의 몫을
+    /// 낸다 — 배열 길이가 문단 수보다 짧으면 그 뒤 문단은 다음 쪽이다. 문단을 미리 다 받지 않는
+    /// 것은 문단 N개짜리 각주가 문단마다 쪽을 넘길 때 줄 캐시 조회가 쪽 수 × N이 되지 않게다.
+    static func fragmentShares(
+        count: Int,
+        splits: Bool,
+        paragraph: (Int) -> (lines: [HwpFootnoteCacheLine]?, placedLineCount: Int)
+    ) -> [FragmentShare] {
+        guard splits else {
+            return (0 ..< max(0, count)).map { _ in FragmentShare(lineLimit: nil, endsPage: false) }
+        }
+        var shares: [FragmentShare] = []
+        var previousBottom: Int?
+        for index in 0 ..< max(0, count) {
+            let paragraph = paragraph(index)
+            guard let lines = paragraph.lines else {
+                previousBottom = nil
+                shares.append(FragmentShare(lineLimit: nil, endsPage: false))
+                continue
+            }
+            let start = min(paragraph.placedLineCount, lines.count)
+            guard start < lines.count else {
+                shares.append(FragmentShare(lineLimit: nil, endsPage: false))
+                continue
+            }
+            if let previousBottom, index > 0, lines[start].location < previousBottom {
+                // 이 문단부터 다음 쪽 — 바로 앞 몫이 쪽 끝이다.
+                if let last = shares.indices.last {
+                    shares[last] = FragmentShare(lineLimit: shares[last].lineLimit, endsPage: true)
+                }
+                return shares
+            }
+            if let firstBreak = HwpFootnoteCacheLines.firstPageBreak(in: lines, after: start) {
+                shares.append(FragmentShare(lineLimit: firstBreak - start, endsPage: true))
+                return shares
+            }
+            shares.append(FragmentShare(lineLimit: nil, endsPage: false))
+            previousBottom = lines[lines.count - 1].spacedBottom
+        }
+        return shares
+    }
+
     /// 이월된 각주 입력들이 새 페이지에서 예약할 높이 — 배치 (place)와
     /// 동형: Σ 높이 + 노트 경계마다 간격 + 구분선 오버헤드.
     ///
@@ -31,84 +87,81 @@ extension HwpFootnoteCoordinator {
     /// 전부를 더하면 예약이 쪽 높이를 넘어 `effectiveContentHeight`가 1pt로 무너지고, 캐시
     /// 없는 흐름 문단·표가 자리가 남아도 다음 쪽으로 밀린다 — 배치(`stackPlan`)는 그 쪽에
     /// 첫 분할 지점까지의 앞 조각만 싣고 그 뒤 각주는 넘기므로, 예약도 그 조각에서 멈춘다
-    /// (한글도 그 쪽에 그 조각만 놓았다 — 분할 지점이 곧 한글의 쪽 경계다). 분할 지점은
-    /// `splitPoint`와 **같은 둘**이다: 문단 안의 세로 위치 리셋, 그리고 앞 문단의 마지막 줄보다
-    /// 위에서 시작하는 뒤 문단 (그 문단부터 통째로 다음 쪽).
+    /// (한글도 그 쪽에 그 조각만 놓았다 — 분할 지점이 곧 한글의 쪽 경계다). 분할 지점의 판정과
+    /// 쪽 끝 문단의 줄 간격 제외는 `fragmentShares`가 배치와 같게 정한다. 멈춘 자리는
+    /// `reservationStopsAtSplit`에 남겨 그 쪽에서 새로 수집되는 각주가 예약을 더하지 않게 한다.
     mutating func reservedFootnoteHeight(
         for inputs: HwpFootnoteLayout.PendingNotes,
         environment: Environment,
         upTo limit: CGFloat = .infinity
     ) -> CGFloat {
+        reservationStopsAtSplit = false
         guard !inputs.isEmpty else { return 0 }
         let metrics = footnoteReservationMetrics(environment: environment)
         var total = metrics.separatorOverhead
-        // 개체 판정은 **각주 단위** (#165 리뷰) — 배치와 같은 범위를 본다. 수집 시점의 사실
-        // (`Input.noteFacts`)이 있으면 그것이고, 없으면 각주가 바뀌는 자리에서 그 이웃만 훑는다
-        // — 전부를 먼저 훑으면 `limit`에 멈추는 뜻이 없다.
-        var noteCarriesObjects = false
-        // 같은 각주 안 앞 문단의 남은 마지막 줄 전진량 끝 — 뒤 문단이 그보다 위에서 시작하면
-        // 문단 경계가 쪽 경계다 (`splitPoint`와 같은 판정). 캐시 없는 문단은 비교를 끊는다.
-        var previousBottom: Int?
         var index = inputs.startIndex
         while index < inputs.endIndex, total <= limit {
-            let input = inputs[index]
-            let next = inputs.index(after: index)
-            let startsNote = index == inputs.startIndex || inputs[inputs.index(before: index)].noteId != input.noteId
-            if startsNote {
-                if index > inputs.startIndex {
-                    total += metrics.spacingBetweenNotes
+            let first = inputs[index]
+            // 개체 판정은 **각주 단위** (#165 리뷰) — 배치와 같은 범위를 본다. 수집 시점의 사실
+            // (`Input.noteFacts`)이 있으면 그것이고, 없으면 그 이웃만 훑는다.
+            let noteCarriesObjects = first.noteFacts?.carriesObjects
+                ?? Self.noteCarriesObjects(in: inputs, from: index)
+            let groupEnd = first.noteFacts.map { min(inputs.endIndex, index + 1 + $0.paragraphsAfter) }
+                ?? Self.noteEnd(in: inputs, from: index)
+            if index > inputs.startIndex {
+                total += metrics.spacingBetweenNotes
+            }
+            let groupCount = groupEnd - index
+            let shares = Self.fragmentShares(count: groupCount, splits: !noteCarriesObjects) { offset in
+                let input = inputs[index + offset]
+                return (
+                    lines: input.sourceLayout?.cacheLines
+                        ?? HwpFootnoteCacheLines.lines(of: input.paragraph),
+                    placedLineCount: input.placedLineCount
+                )
+            }
+            for (offset, share) in shares.enumerated() where total <= limit {
+                let input = inputs[index + offset]
+                // 배치(`HwpFootnoteLayout.measure`)가 `input.sizeResolver`를 쓰므로
+                // 재예약도 같은 값으로 재야 한다 — 현재 environment로 재면 그 사이
+                // 단·구역 기하가 바뀐 문서에서 예약과 배치가 갈린다 (R45 #1).
+                // 이어지는 조각(#165)은 앞 쪽에 실린 줄 뒤만 잰다 — 배치와 같은 산식.
+                var noteEnvironment = input.sizeResolver.map(environment.withSizeResolver)
+                    ?? environment
+                if let measured = input.measuredShape {
+                    noteEnvironment = noteEnvironment.withFootnoteShape(measured.footnoteShape)
                 }
-                noteCarriesObjects = input.noteFacts?.carriesObjects
-                    ?? Self.noteCarriesObjects(in: inputs, from: index)
-                previousBottom = nil
+                total += measuredFootnoteHeight(
+                    of: input.paragraph,
+                    number: input.number,
+                    environment: noteEnvironment,
+                    numbering: input.numbering,
+                    isNoteEnd: offset == groupCount - 1 || share.endsPage,
+                    placedLineCount: input.placedLineCount,
+                    noteCarriesObjects: noteCarriesObjects,
+                    // 이월 입력이 나른 원본 조판(줄 캐시·남은 높이 누적표)을 그대로 쓴다 (#165
+                    // 리뷰) — 쪽마다 줄 캐시를 다시 만들고 남은 줄을 다 더하면 이월이 길게
+                    // 이어지는 문단에서 쪽 수 × 줄 수의 일이다.
+                    sourceLayout: input.sourceLayout,
+                    lineLimit: share.lineLimit
+                )
             }
-            // 배치(`HwpFootnoteLayout.measure`)가 `input.sizeResolver`를 쓰므로
-            // 재예약도 같은 값으로 재야 한다 — 현재 environment로 재면 그 사이
-            // 단·구역 기하가 바뀐 문서에서 예약과 배치가 갈린다 (R45 #1).
-            // 이어지는 조각(#165)은 앞 쪽에 실린 줄 뒤만 잰다 — 배치와 같은 산식.
-            var noteEnvironment = input.sizeResolver.map(environment.withSizeResolver)
-                ?? environment
-            if let measured = input.measuredShape {
-                noteEnvironment = noteEnvironment.withFootnoteShape(measured.footnoteShape)
-            }
-            // 개체를 담은 각주는 나뉘지 않는다 — 그 밖의 문단은 남은 줄의 첫 분할 지점까지만.
-            let cacheLines = noteCarriesObjects ? nil
-                : input.sourceLayout?.cacheLines ?? HwpFootnoteCacheLines.lines(of: input.paragraph)
-            var firstBreak: Int?
-            if let lines = cacheLines {
-                let start = min(input.placedLineCount, lines.count)
-                if start < lines.count {
-                    if let previousBottom, !startsNote, lines[start].location < previousBottom {
-                        // 이 문단부터 다음 쪽이다 (#165 리뷰) — 앞 문단까지만 예약한다.
-                        break
-                    }
-                    firstBreak = HwpFootnoteCacheLines.firstPageBreak(in: lines, after: start)
-                    previousBottom = lines[lines.count - 1].spacedBottom
-                }
-            } else {
-                previousBottom = nil
-            }
-            let isNoteEnd = next == inputs.endIndex || inputs[next].noteId != input.noteId
-            total += measuredFootnoteHeight(
-                of: input.paragraph,
-                number: input.number,
-                environment: noteEnvironment,
-                numbering: input.numbering,
-                isNoteEnd: isNoteEnd || firstBreak != nil,
-                placedLineCount: input.placedLineCount,
-                noteCarriesObjects: noteCarriesObjects,
-                // 이월 입력이 나른 원본 조판(줄 캐시·남은 높이 누적표)을 그대로 쓴다 (#165
-                // 리뷰) — 쪽마다 줄 캐시를 다시 만들고 남은 줄을 다 더하면 이월이 길게
-                // 이어지는 문단에서 쪽 수 × 줄 수의 일이다.
-                sourceLayout: input.sourceLayout,
-                lineLimit: firstBreak.map { $0 - input.placedLineCount }
-            )
-            if firstBreak != nil {
+            if shares.count < groupCount || shares.last?.endsPage == true {
+                reservationStopsAtSplit = true
                 break
             }
-            index = next
+            index = groupEnd
         }
         return total
+    }
+
+    /// `start`에서 시작하는 각주의 끝 (열린 상한) — 수집 시점 사실이 없는 입력(공개 API)의 폴백.
+    private static func noteEnd(in inputs: HwpFootnoteLayout.PendingNotes, from start: Int) -> Int {
+        var end = inputs.index(after: start)
+        while end < inputs.endIndex, inputs[end].noteId == inputs[start].noteId {
+            end = inputs.index(after: end)
+        }
+        return end
     }
 
     /// `start`에서 시작하는 각주의 개체 유무 — 수집 시점 사실이 없는 입력(공개 API)의 폴백.
