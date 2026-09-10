@@ -1425,13 +1425,17 @@ private extension HwpPaginator {
     }
 
     /// 이 쪽 본문이 각주 영역에 남긴 하한 (#165) — 캐시 run 블록은 마지막 줄 **상자**
-    /// 아래 (줄 간격 제외, 한글 실측), 그 밖의 본문 블록(표·개체·흐름 문단)은 프레임
-    /// 아래. 본문 블록이 없으면 nil (이월 드레인의 빈 쪽). 크롬·변경 막대를 붙이기
-    /// **전에** 재야 한다 — 막대는 텍스트 블록 프레임(전진량)을 그대로 따른다.
+    /// 아래 (줄 간격 제외, 한글 실측), 그 밖의 본문 블록(표·개체·흐름 문단)은 **그려지는**
+    /// 하한 (`HwpHitTester.paintedObjectBounds`, #165 리뷰): 표·글상자의 오버레이·쪽
+    /// 기준 자식은 프레임을 키우지 않고 그 아래로 그려지므로 프레임만 보면 각주 스택이
+    /// 그 개체를 덮는다 — 겹침 가드가 재는 자와 같아야 한다. 본문 블록이 없으면 nil
+    /// (이월 드레인의 빈 쪽). 크롬·변경 막대를 붙이기 **전에** 재야 한다 — 막대는
+    /// 텍스트 블록 프레임(전진량)을 그대로 따른다.
     private func footnoteBodyBottom() -> CGFloat? {
         currentBlocks.enumerated().compactMap { offset, block -> CGFloat? in
             guard block.role == .body, block.kind != .footnote else { return nil }
-            return block.frame.maxY - (absoluteRunTrailingSpacings[offset] ?? 0)
+            return HwpHitTester.paintedObjectBounds(of: block).maxY
+                - (absoluteRunTrailingSpacings[offset] ?? 0)
         }.max()
     }
 

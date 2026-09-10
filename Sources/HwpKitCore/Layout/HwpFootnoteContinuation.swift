@@ -232,17 +232,24 @@ extension HwpFootnoteLayout {
                 index = group.upperBound
                 continue
             }
-            // 통째로 안 들어간다 — 첫 줄이 들어가고 캐시에 분할 지점이 있으면 거기서 나눈다.
-            if let split = splitPoint(in: measured, group: group),
-               plan.stackedHeight + gap + firstLineHeight(measured[group.lowerBound])
-               <= available + fitTolerance
-            {
-                appendHead(group, of: measured, to: &plan, gap: gap, split: split)
-                return plan
-            }
-            // 진행 보장: 이 쪽에 아무것도 없는데 빈 쪽에도 안 들어가는 (또는 빈 쪽 자체인)
-            // 각주는 그대로 싣는다 — 넘기면 영영 못 싣는다.
-            if plan.entries.isEmpty, emptyPage || noteHeight > fullPage {
+            // 통째로 안 들어간다 — 캐시에 분할 지점이 있으면 그 앞 몫을 재 본다.
+            if let split = splitPoint(in: measured, group: group) {
+                let head = headEntries(group, of: measured, gap: gap, split: split)
+                // 앞 조각 **전체**가 들어가야 나눈다 (#165 리뷰). 첫 줄만 보고 나누면 분할
+                // 지점까지의 줄이 전부 방출돼 스택이 자리를 넘고, 바닥 정렬이 그 스택을 본문
+                // 위로 올린다 — 캐시가 저작된 자리보다 우리 본문 하한이 낮을 때 (stale 보정,
+                // 그려지는 자손) 생긴다. 안 들어가면 통째로 다음 쪽이다. 진행 보장은 앞
+                // 조각에도 같다: 이 쪽이 비었는데 빈 쪽에도 안 들어가는 (또는 빈 쪽 자체인)
+                // 앞 조각은 그대로 싣는다.
+                if plan.stackedHeight + head.height <= available + fitTolerance
+                    || plan.entries.isEmpty && (emptyPage || head.height > fullPage)
+                {
+                    appendHead(head, of: measured, to: &plan, split: split)
+                    return plan
+                }
+            } else if plan.entries.isEmpty, emptyPage || noteHeight > fullPage {
+                // 진행 보장: 이 쪽에 아무것도 없는데 빈 쪽에도 안 들어가는 (또는 빈 쪽
+                // 자체인) 각주는 그대로 싣는다 — 넘기면 영영 못 싣는다.
                 appendWhole(group, of: measured, to: &plan, gap: gap, height: noteHeight)
                 index = group.upperBound
                 continue
@@ -271,14 +278,6 @@ extension HwpFootnoteLayout {
         group.reduce(0) { total, index in
             total + measured[index].measurement.stackingHeight(isNoteEnd: index == group.upperBound - 1)
         }
-    }
-
-    /// 각주 첫 줄의 상자 높이 — 한 줄만 들어가도 나누는 한글의 기준.
-    private static func firstLineHeight(_ note: MeasuredFootnote) -> CGFloat {
-        guard let lines = note.measurement.cacheLines,
-              note.measurement.placedLineCount < lines.count
-        else { return note.measurement.stackingHeight(isNoteEnd: true) }
-        return HwpUnits.points(fromHwpUnit: Int32(clamping: lines[note.measurement.placedLineCount].height))
     }
 
     /// 각주 안 첫 쪽 분할 지점 — (항목 인덱스, 그 항목에서 이 쪽에 싣는 줄 수).
@@ -324,29 +323,41 @@ extension HwpFootnoteLayout {
         plan.stackedHeight += gap + height
     }
 
-    /// 분할 지점 앞 몫을 싣고 나머지(분할 문단의 남은 줄 + 뒤 항목 전부)를 이월로 돌린다.
-    private static func appendHead(
+    /// 분할 지점 앞 몫 — 스택에 실릴 항목과 그 높이 (앞 각주와의 여백 포함). 싣기 전에
+    /// 들어맞는지 재는 데 쓰므로 `appendHead`와 같은 값이어야 한다.
+    private static func headEntries(
         _ group: Range<Int>, of measured: [MeasuredFootnote],
-        to plan: inout StackPlan, gap: CGFloat, split: (index: Int, lineCount: Int)
-    ) {
+        gap: CGFloat, split: (index: Int, lineCount: Int)
+    ) -> (entries: [StackEntry], height: CGFloat) {
+        var entries: [StackEntry] = []
         var height = gap
         for index in group.lowerBound ..< split.index {
-            plan.entries.append(StackEntry(measured: measured[index], lineRange: nil, isNoteEnd: false))
+            entries.append(StackEntry(measured: measured[index], lineRange: nil, isNoteEnd: false))
             height += measured[index].measurement.stackingHeight(isNoteEnd: false)
         }
         let splitNote = measured[split.index]
         if split.lineCount > 0 {
             let range = 0 ..< split.lineCount
-            plan.entries.append(StackEntry(measured: splitNote, lineRange: range, isNoteEnd: true))
+            entries.append(StackEntry(measured: splitNote, lineRange: range, isNoteEnd: true))
             height += splitNote.measurement.headHeight(lines: range)
-        } else if split.index > group.lowerBound, let last = plan.entries.indices.last {
+        } else if let last = entries.indices.last {
             // 뒤 문단이 통째로 넘어가면 앞 문단이 이 쪽의 마지막 줄이다.
-            let entry = plan.entries[last]
-            plan.entries[last] = StackEntry(measured: entry.measured, lineRange: nil, isNoteEnd: true)
+            let entry = entries[last]
+            entries[last] = StackEntry(measured: entry.measured, lineRange: nil, isNoteEnd: true)
             height -= entry.measured.measurement.stackingHeight(isNoteEnd: false)
             height += entry.measured.measurement.stackingHeight(isNoteEnd: true)
         }
-        plan.stackedHeight += height
+        return (entries, height)
+    }
+
+    /// 분할 지점 앞 몫을 싣고 나머지(분할 문단의 남은 줄 + 뒤 항목 전부)를 이월로 돌린다.
+    private static func appendHead(
+        _ head: (entries: [StackEntry], height: CGFloat), of measured: [MeasuredFootnote],
+        to plan: inout StackPlan, split: (index: Int, lineCount: Int)
+    ) {
+        plan.entries += head.entries
+        plan.stackedHeight += head.height
+        let splitNote = measured[split.index]
         var overflow: [Input] = []
         let carried = splitNote.input
         overflow.append(Input(

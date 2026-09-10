@@ -214,76 +214,12 @@ final class FixtureFootnoteOverlapTests: XCTestCase {
     /// 종이를 넘는 각주 자손도, 각주가 덮는 본문 자손도 놓친다. 그래서 각주뿐
     /// 아니라 **본문 블록에도** 같은 자를 댄다.
     ///
-    /// 순회는 페인트와 같은 walker로 받는다 (R41) — `HwpHitTester.paintedRects`의
-    /// 분기(각주·표·글상자)를 그대로 따르되 문단 텍스트만 뺀다: 자격 영역의
-    /// `textBounds`는 폰트 메트릭 여유를 더한 **상위집합**이라 모든 블록이 몇
-    /// pt씩 부풀어 이 기하 축을 무의미하게 만든다. 텍스트는 블록 프레임이 담는다.
+    /// 정의는 레이아웃과 **공유한다** (#165 리뷰): 각주 자리를 재는 본문 하한
+    /// (`HwpPaginator.footnoteBodyBottom`)이 이 자와 다르면 — 프레임만 보면 — 표 아래로
+    /// 그려진 개체 위에 각주 스택이 놓이고 이 가드만 그것을 잡는다. 텍스트를 빼는
+    /// 까닭(자격 영역 `textBounds`의 폰트 메트릭 여유)은 그 정의에 적혀 있다.
     private static func paintedBounds(of block: AnyHwpBlock) -> CGRect {
-        var bounds = block.frame
-        let origin = block.frame.origin
-        func addRect(_ rect: CGRect) {
-            bounds = bounds.union(rect)
-        }
-        func addCell(_: HwpTableCellFrame, _ rect: CGRect) {
-            addRect(rect)
-        }
-        /// 테두리 stroke는 경로 중앙에 그어져 폭의 절반이 rect 밖이다 (R61)
-        func addImage(_ image: HwpCellImage, _ rect: CGRect) {
-            addRect(HwpHitTester.strokeBounds(rect, borderWidth: image.borderWidth))
-        }
-        /// 도형 경로는 rect를 넘을 수 있어 paintedRect가 칠 영역을 소유한다 (R63)
-        func addShape(_ shape: HwpCellShape, _ rect: CGRect) {
-            addRect(shape.paintedRect.offsetBy(
-                dx: rect.minX - shape.rect.minX, dy: rect.minY - shape.rect.minY
-            ))
-        }
-        /// 글상자 안 그림·도형도 클립 없이 그려진다 (R46 #1)
-        func addTextboxChildren(_ textbox: HwpTextboxFrame, offset: CGPoint) {
-            for child in textbox.images.map(\.paintedRect)
-                + textbox.shapes.map(\.paintedRect)
-            {
-                addRect(child.offsetBy(dx: offset.x, dy: offset.y))
-            }
-        }
-        func addTextbox(_ textbox: HwpCellTextbox, _ rect: CGRect) {
-            addRect(HwpHitTester.strokeBounds(
-                rect, borderWidth: textbox.textbox.effectiveBorderWidth
-            ))
-            addTextboxChildren(textbox.textbox, offset: rect.origin)
-        }
-        func addNestedTable(_: HwpNestedTableFrame, _ rect: CGRect) {
-            addRect(rect)
-        }
-        let ignoreText: (NSAttributedString, CGRect, UInt32?) -> Void = { _, _, _ in }
-        switch block.payload {
-        case let .footnote(footnote):
-            HwpBlockContentWalker.walkFootnote(
-                footnote,
-                origin: origin,
-                onParagraphText: ignoreText,
-                onCellStart: addCell,
-                onCellImage: addImage,
-                onCellShape: addShape,
-                onCellTextbox: addTextbox,
-                onNestedTable: addNestedTable
-            )
-        case let .table(table):
-            HwpBlockContentWalker.walkTable(
-                table,
-                origin: origin,
-                onCellStart: addCell,
-                onParagraphText: ignoreText,
-                onCellImage: addImage,
-                onCellShape: addShape,
-                onCellTextbox: addTextbox,
-                onNestedTable: addNestedTable
-            )
-        case let .textbox(textbox):
-            addTextboxChildren(textbox, offset: origin)
-        default:
-            break
-        }
-        return bounds
+        HwpHitTester.paintedObjectBounds(of: block)
     }
 
     /// 이 페이지 본문이 **그리는** 최하단 — 잉크가 없는 블록은 세지 않는다.
