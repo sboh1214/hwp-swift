@@ -1160,6 +1160,10 @@ private extension HwpPaginator {
         // 조각에 걸쳐 그려진 마커는 조각마다 **일부**만 갖는다 — 그 일부를 완전한
         // 번호로 바꾸면 다음 쪽에 남은 나머지와 합쳐 깨진다 (번호가 그대로여도).
         let splitMarkers = HwpAbsoluteCachePlacer.ordinalsSpanningSlices(slices.map(\.text))
+        // 앞 조각이 가져간 각주의 참조 마커는 **뒤 조각에** 그려질 수 있다 (#165의 캐시
+        // 귀속) — 그 조각의 재매김 범위에는 없으므로, 수집이 확정한 번호를 들고 가
+        // 실제로 그 마커가 나오는 조각에서 적용한다 (아래 `renumberedNoteMarkers`).
+        var carriedNoteNumbers: [Int: HwpControlMarkerReplacement] = [:]
         for (runIndex, run) in runs.enumerated() {
             if runIndex > 0 {
                 cacheCurrentPage()
@@ -1172,7 +1176,8 @@ private extension HwpPaginator {
                 in: slice.text,
                 paragraph: paragraph,
                 ordinals: ordinalRanges?[runIndex],
-                skipping: splitMarkers
+                skipping: splitMarkers,
+                carrying: &carriedNoteNumbers
             )
             // appendBlock은 columnFrame.minY + contentHeightUsed에 배치하므로
             // 한글이 준 절대 y (+ stale 캐시 보정)로 커서를 옮긴다.
@@ -1318,27 +1323,38 @@ private extension HwpPaginator {
     /// 줄에 남지 않는다. 여기는 순환이 아니다 — 번호는 이 시점에 이미 정해져 있다.
     /// 가드: `testRenumberingKeepsMarkerAndNoteInSyncWhenWidthChanges` (번호 정합),
     /// `HwpFootnoteRenumberAnchorTests` (앵커 정합).
+    /// `carrying`: 앞 조각들에서 확정한 각주 번호 (#165 리뷰). 조각 귀속이 캐시를 따라
+    /// 마커보다 **앞선** 조각으로 갈 수 있으므로 (`earliestOrdinalRanges`), 이 조각의
+    /// 서수 범위만 보면 뒤에 그려진 마커가 문단 조판 때 구워진 옛 번호로 남는다 — 쪽마다
+    /// 번호를 새로 시작하는 문서 (표 134 모드 2) 에서 참조와 각주가 어긋난다. 범위에서
+    /// 계산한 번호를 여기 쌓아 두고, 그 마커가 실제로 나오는 조각에서 적용한다.
+    /// 마커는 조각 하나에만 있으므로 (걸친 서수는 `splitMarkers`가 뺀다) 누적해도
+    /// 같은 마커가 두 번 바뀌지 않는다.
     private func renumberedNoteMarkers(
         in slice: NSAttributedString,
         paragraph: CoreHwp.HwpParagraph,
         ordinals: Range<Int>?,
-        skipping splitMarkers: Set<Int>
+        skipping splitMarkers: Set<Int>,
+        carrying carried: inout [Int: HwpControlMarkerReplacement]
     ) -> NSAttributedString {
-        guard let ordinals, !ordinals.isEmpty,
-              let ctrls = paragraph.ctrlHeaderArray
-        else { return slice }
-        let noteReplacements = noteReferenceReplacements(for: paragraph, ordinals: ordinals)
-            .filter { ordinal, _ in
-                guard !splitMarkers.contains(ordinal),
-                      ctrls.indices.contains(ordinal) else { return false }
-                return switch ctrls[ordinal] {
-                case .footnote, .endnote: true
-                default: false
-                }
-            }
-        return HwpTextRunBuilder.renumberingNoteMarkers(
-            in: slice, replacements: noteReplacements
-        )
+        guard let ctrls = paragraph.ctrlHeaderArray else { return slice }
+        if let ordinals, !ordinals.isEmpty {
+            // 자동 쪽 번호는 쌓지 않는다 — 쪽마다 값이 달라 뒤 조각에 나르면 옛 쪽 번호가
+            // 그려진다. 각주·미주 참조만 남긴다.
+            carried.merge(
+                noteReferenceReplacements(for: paragraph, ordinals: ordinals)
+                    .filter { ordinal, _ in
+                        guard !splitMarkers.contains(ordinal),
+                              ctrls.indices.contains(ordinal) else { return false }
+                        return switch ctrls[ordinal] {
+                        case .footnote, .endnote: true
+                        default: false
+                        }
+                    }
+            ) { _, fresh in fresh }
+        }
+        guard !carried.isEmpty else { return slice }
+        return HwpTextRunBuilder.renumberingNoteMarkers(in: slice, replacements: carried)
     }
 
     /// stale 캐시 (캐시 줄 높이 < 선언 글자 크기) 보정된 run 높이.

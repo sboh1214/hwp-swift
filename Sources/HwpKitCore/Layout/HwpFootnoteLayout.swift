@@ -403,6 +403,16 @@ extension HwpFootnoteLayout {
         let attributed: NSAttributedString
         let frame: HwpParagraphFrame
         let objects: HwpParagraphObjectCollector.Objects
+        /// 문단 **전체**의 조판 문자열·줄 프레임 (#165 리뷰) — 조각 경계는 언제나 여기에
+        /// **절대** 캐시 줄 인덱스를 적용해 잰다.
+        ///
+        /// `attributed`/`frame`은 이미 잘린 조각이라, 이어지는 조각을 쪽 끝에서 다시 나눌
+        /// 때 그것을 **남은 줄 기준**으로 재환산하면 다음 쪽이 문단 전체 기준으로 다시
+        /// 계산한 경계와 반올림에서 갈린다 — 캐시 4줄·CT 5줄을 세 쪽에 나누면 가운데 줄이
+        /// 통째로 사라지고 (반대 비율이면 중복된다). 두 경로가 같은 원본·같은 인덱스를
+        /// 쓰면 그 어긋남이 원천적으로 없다.
+        let sourceAttributed: NSAttributedString
+        let sourceLines: [HwpLineFrame]
         /// 문단 줄 캐시 (#165) — 분할 지점·조각 높이의 근거. 캐시가 없으면 nil.
         let cacheLines: [HwpFootnoteCacheLine]?
         /// 앞 쪽에 이미 실린 줄 수 — `attributed`·`frame`은 그 뒤 조각이다.
@@ -432,6 +442,15 @@ extension HwpFootnoteLayout {
             Swift.max(textRectHeight, objects.floatingBottom ?? 0)
         }
 
+        /// 이 각주가 그릴 개체가 있는지 — 쪽 끝 분할 금지 술어 (#165 리뷰).
+        /// 개체 좌표는 문단 **전체** 조판 기준이고 개체는 앵커 줄이 아니라 문단에 붙어
+        /// 수집되므로, 조각으로 나누면 뒤 줄의 그림이 앞 조각에 남아 블록 밖에 그려지고
+        /// 뒤 조각은 빈다. 한글이 그런 각주를 어떻게 나누는지는 실측이 없어 (코퍼스 0건)
+        /// 통째로 옮긴다 — 유실도 오배치도 없는 쪽이다.
+        var carriesObjects: Bool {
+            objects.count > 0 || objects.floatingBottom != nil
+        }
+
         /// 스택에서 차지하는 높이 — 각주의 마지막 항목이면 마지막 줄의 줄 간격을 뺀다
         /// (#165 실측). 문단 rect(`textRectHeight`)는 그대로 둔다 — CT가 그 안에 줄을
         /// 놓으므로 줄 간격 몫을 잘라 내면 대체 폰트의 마지막 줄이 프레임 밖으로 떨어진다.
@@ -443,19 +462,24 @@ extension HwpFootnoteLayout {
         /// 쪽 끝에서 나뉜 앞 몫 (남은 줄 기준 `range`) 의 텍스트 높이 — 마지막 줄 전진량까지.
         func headTextHeight(lines range: Range<Int>) -> CGFloat {
             guard let cacheLines else { return textRectHeight }
-            return Swift.max(1, HwpFootnoteCacheLines.height(of: cacheLines, in: shifted(range)))
+            return Swift.max(1, HwpFootnoteCacheLines.height(of: cacheLines, in: absoluteLineRange(range)))
         }
 
         /// 앞 몫의 스택 높이 — 마지막 줄 상자까지 (그 줄의 줄 간격 제외).
         func headHeight(lines range: Range<Int>) -> CGFloat {
             guard let cacheLines else { return stackingHeight(isNoteEnd: true) }
-            let text = HwpFootnoteCacheLines.height(of: cacheLines, in: shifted(range))
-                - HwpFootnoteCacheLines.trailingSpacing(of: cacheLines, in: shifted(range))
+            let text = HwpFootnoteCacheLines.height(of: cacheLines, in: absoluteLineRange(range))
+                - HwpFootnoteCacheLines.trailingSpacing(of: cacheLines, in: absoluteLineRange(range))
             return Swift.max(1, Swift.max(text, objects.floatingBottom ?? 0))
         }
 
-        private func shifted(_ range: Range<Int>) -> Range<Int> {
-            (range.lowerBound + placedLineCount) ..< (range.upperBound + placedLineCount)
+        /// 남은 줄 기준 범위를 문단 **전체** 기준 캐시 줄 범위로 옮긴다 (#165 리뷰) —
+        /// 높이도 조각 문자열도 이 절대 인덱스 하나로만 잰다.
+        func absoluteLineRange(_ range: Range<Int>) -> Range<Int> {
+            let count = cacheLines?.count ?? 0
+            let lower = Swift.min(placedLineCount + range.lowerBound, count)
+            let upper = Swift.min(Swift.max(lower, placedLineCount + range.upperBound), count)
+            return lower ..< upper
         }
     }
 
@@ -518,6 +542,8 @@ extension HwpFootnoteLayout {
                     lines: fragment.lines
                 ),
                 objects: HwpParagraphObjectCollector.Objects(),
+                sourceAttributed: measured.attributed,
+                sourceLines: measured.frame.lines,
                 cacheLines: cacheLines,
                 placedLineCount: placedLineCount,
                 trailingLineSpacing: HwpFootnoteCacheLines.trailingSpacing(
@@ -558,6 +584,8 @@ extension HwpFootnoteLayout {
             attributed: measured.attributed,
             frame: frame,
             objects: objects,
+            sourceAttributed: measured.attributed,
+            sourceLines: measured.frame.lines,
             cacheLines: cacheLines,
             placedLineCount: 0,
             trailingLineSpacing: cacheLines.map {

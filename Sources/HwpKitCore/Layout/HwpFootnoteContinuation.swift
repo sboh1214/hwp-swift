@@ -234,6 +234,11 @@ extension HwpFootnoteLayout {
     private static func splitPoint(
         in measured: [MeasuredFootnote], group: Range<Int>
     ) -> (index: Int, lineCount: Int)? {
+        // 개체를 담은 각주는 나누지 않는다 (#165 리뷰, `NoteMeasurement.carriesObjects`) —
+        // 통째로 다음 쪽에 옮긴다.
+        guard !group.contains(where: { measured[$0].measurement.carriesObjects }) else {
+            return nil
+        }
         var previousBottom: Int?
         for index in group {
             // 캐시 없는 문단은 분할 근거가 없다 — 그 뒤 문단과의 위치 비교도 끊는다.
@@ -370,11 +375,14 @@ extension HwpFootnoteLayout {
         let textHeight: CGFloat
         let blockHeight: CGFloat
         if let range = entry.lineRange, let cacheLines = measurement.cacheLines {
+            // 경계는 **문단 전체 기준 절대 캐시 줄 인덱스**로 잰다 (#165 리뷰) — 이미 잘린
+            // 조각을 남은 줄 기준으로 다시 환산하면 다음 쪽의 `measureNote`가 원본 기준으로
+            // 계산한 경계와 반올림에서 갈려 가운데 줄이 사라지거나 겹친다.
             let fragment = Self.fragment(
-                of: measurement.attributed,
-                lines: measurement.frame.lines,
-                cacheLineCount: cacheLines.count - measurement.placedLineCount,
-                cacheRange: range
+                of: measurement.sourceAttributed,
+                lines: measurement.sourceLines,
+                cacheLineCount: cacheLines.count,
+                cacheRange: measurement.absoluteLineRange(range)
             )
             attributed = fragment.attributed
             textHeight = measurement.headTextHeight(lines: range)

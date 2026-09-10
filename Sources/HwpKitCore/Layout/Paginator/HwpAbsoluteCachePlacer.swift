@@ -156,7 +156,11 @@ struct HwpAbsoluteCachePlacer {
             } else {
                 guard let nextStart = runs[runIndex + 1].first.map({ Int($0.textStartingIndex) })
                 else { return nil }
-                end = offsets.firstIndex { $0 >= nextStart } ?? controlCount
+                // 탐색은 **이전 커서부터** 이어간다 (리뷰 지적): `offsets`는 증가 수열이라
+                // 술어가 단조라 결과 집합이 접미사고, 아래 `max(cursor, end)`가 커서
+                // 앞의 답을 어차피 접으므로 전수 탐색과 값이 같다. 처음부터 훑으면
+                // O(run 수 × 컨트롤 수)라 조작 문서(각 10,000)가 첫 쪽 생성 전에 멈춘다.
+                end = offsets[cursor...].firstIndex { $0 >= nextStart } ?? controlCount
             }
             ranges.append(cursor ..< max(cursor, end))
             cursor = max(cursor, end)

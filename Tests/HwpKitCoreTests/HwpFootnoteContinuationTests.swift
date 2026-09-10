@@ -280,6 +280,63 @@ import XCTest
             expect(blocks[2].first?.frame.height).to(beCloseTo(Self.box, within: 0.01))
         }
 
+        /// 이어지는 조각을 **다시** 나눌 때도 경계는 문단 전체 기준이다 (#165 리뷰).
+        /// 캐시 4줄·CT 5줄처럼 줄 수가 갈리면 (폰트 대체) 조각 문자열은 비례로 잘리는데,
+        /// 남은 줄 기준으로 환산한 앞 조각 경계와 다음 쪽이 문단 전체 기준으로 다시 계산한
+        /// 경계가 반올림에서 어긋나 가운데 줄이 통째로 사라진다 (반대 비율이면 중복된다).
+        func testResplitKeepsEveryLineWhenCacheAndCTLineCountsDiffer() async throws {
+            let texts = ["가나다라", "마바사아", "자차카타", "파하거너", "더러머버"]
+            let note = try Self.note(lines: texts, locations: [0, 0, 0, 1172])
+            let host = try Self.host(at: Self.hostLocation(leaving: 15), notes: [[note]])
+            let paginator = Self.paginate(
+                [host] + (try Self.nextPageBody(bottomAt: Self.hostLocation(leaving: 12)))
+            )
+
+            let totalPages = await paginator.totalPages()
+            expect(totalPages) == 3
+            let pages = try await (0 ..< 3).asyncMap { try await paginator.page(at: $0) }
+            let drawn = pages.map { page in
+                Self.footnoteBlocks(on: page).map { Self.text($0) }.joined()
+            }
+            let missing = texts.filter { line in !drawn.contains { $0.contains(line) } }
+            let duplicated = texts.filter { line in
+                drawn.filter { $0.contains(line) }.count > 1
+            }
+            expect(missing) == []
+            expect(duplicated) == []
+            // 경계는 문단 전체 기준 비례 환산이다 — 캐시 [1,2)는 CT [1,3) (round(2/4×5)=3).
+            expect(drawn[1]).to(contain("마바사아"))
+            expect(drawn[1]).to(contain("자차카타"))
+            expect(drawn[2]).to(contain("파하거너"))
+        }
+
+        /// 개체를 담은 각주는 나누지 않는다 (#165 리뷰). 개체 좌표는 문단 **전체** 조판
+        /// 기준이라 조각으로 나누면 뒤 줄의 그림이 앞 조각에 남아 블록 밖에 그려지고 뒤
+        /// 조각은 빈다. 한글이 그런 각주를 어떻게 나누는지는 실측이 없으므로 통째로 옮긴다.
+        func testNoteCarryingAnObjectMovesWholeInsteadOfSplitting() async throws {
+            var note = try Self.note(
+                lines: ["첫째 줄", "둘째 줄", "셋째 줄", "넷째 줄"],
+                locations: [0, 1172, 0, 1172]
+            )
+            note.ctrlHeaderArray = (note.ctrlHeaderArray ?? []) + [
+                .genShapeObject(HwpSynthetic.floatingShapeObject(width: 20000, height: 1000)),
+            ]
+            // 앞 두 줄(20.72pt)은 들어가고 각주 전체(44.16pt)는 안 들어가는 자리 —
+            // 개체가 없으면 캐시 분할 지점(줄 2)에서 나뉜다.
+            let host = try Self.host(at: Self.hostLocation(leaving: 25), notes: [[note]])
+            let paginator = Self.paginate([host] + (try Self.nextPageBody()))
+
+            let first = try await paginator.page(at: 0)
+            let second = try await paginator.page(at: 1)
+            expect(Self.footnoteBlocks(on: first)).to(beEmpty())
+            let moved = try XCTUnwrap(Self.footnoteBlocks(on: second).first)
+            expect(Self.text(moved)).to(contain("첫째 줄"))
+            expect(Self.text(moved)).to(contain("넷째 줄"))
+            // 개체는 옮겨진 각주 하나에만 있고 그 블록 안에 있다.
+            expect(moved.shapes.count) == 1
+            expect(moved.shapes.first?.rect.maxY) <= moved.frame.height + 0.01
+        }
+
         /// 진행 보장 — 빈 쪽에도 안 들어가는 각주 (분할 지점 없음) 는 참조 쪽에 그대로
         /// 싣는다. 넘기면 영영 못 싣고 이월 드레인이 쪽 상한까지 돈다.
         func testOversizeNoteWithoutBreakIsPlacedAnyway() async throws {
