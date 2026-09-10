@@ -152,8 +152,14 @@ extension HwpFootnoteLayout {
         let text = isContinuation
             ? HwpParagraphLayout.continuationFragment(of: attributed, range: range)
             : attributed.attributedSubstring(from: range)
+        // 뒤에 이월분이 남는 조각은 **이어짐 표식**을 단다 (PR 리뷰) — 다른 쪽 분할 경로
+        // (`HwpTableSplitter`·다단 run)와 같은 마커다. 컨테이너 문단은 위치 열쇠가 없어
+        // 복사(`HwpSelectionGeometry.joinsWithPrevious`)가 이 표식으로 조각을 잇고, 양쪽
+        // 정렬(`HwpWordJustification`)은 이 표식으로 조각 끝 줄이 문단의 마지막 줄이 아님을
+        // 안다. 없으면 복사에 헛 문단 부호가 끼고 조각 끝 줄이 벌려지지 않는다.
+        let continues = cacheRange.upperBound < cacheLineCount
         return Fragment(
-            attributed: text,
+            attributed: continues ? HwpTableSplitter.markedAsContinuedFragment(text) : text,
             lines: fragmentLines(slice, range: range, dropping: range.location - lineRange.location),
             sourceRange: range
         )

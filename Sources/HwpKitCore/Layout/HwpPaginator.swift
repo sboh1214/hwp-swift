@@ -1183,6 +1183,7 @@ private extension HwpPaginator {
             // 한글이 준 절대 y (+ stale 캐시 보정)로 커서를 옮긴다.
             contentHeightUsed = max(0, HwpUnits.points(fromHwpUnit: runFirst))
                 + absoluteCacheStaleOffset
+            let cachedHeight = height
             height = staleAdjustedHeight(
                 height, runs: runs, run: run, slice: sliceText, frame: paragraphFrame
             )
@@ -1199,7 +1200,10 @@ private extension HwpPaginator {
                     renumbered: sliceText, paragraph: paragraph
                 )
             )
-            recordAbsoluteRunTrailingSpacing(run: run, firstLocation: runFirst, blockHeight: height)
+            recordAbsoluteRunTrailingSpacing(
+                run: run, firstLocation: runFirst, blockHeight: height,
+                isStaleAdjusted: height != cachedHeight
+            )
             lastAbsoluteCacheLoc = run.last?.lineLocation ?? runFirst
             collectFragmentFootnotes(
                 from: paragraph,
@@ -1395,11 +1399,22 @@ private extension HwpPaginator {
 
     /// 방금 놓은 절대 캐시 run 블록의 마지막 줄 줄 간격 몫을 기록한다 (#165) — 블록
     /// 아래(전진량)와 마지막 줄 상자 아래의 차. 하단 경계에 잘린 블록은 잘린 만큼만 남는다.
+    ///
+    /// **stale 캐시로 CT 높이까지 커진 블록은 0이다** (PR 리뷰): 그 블록의 아래는 캐시
+    /// 전진량이 아니라 다시 조판한 CT 높이라 캐시의 줄 간격이 들어 있지 않고, 커진 몫을
+    /// "블록 아래 − 캐시 잉크"로 재면 재조판으로 늘어난 글자 높이까지 통째로 빼 본문 하한이
+    /// 캐시 잉크로 되돌아간다 — 각주 구분선이 커진 글자 위에 그어진다. CT 마지막 줄의
+    /// 상자 아래는 stale 캐시로는 알 수 없으므로 CT 높이 전체를 보수적으로 하한으로 둔다.
     private func recordAbsoluteRunTrailingSpacing(
         run: [CoreHwp.HwpParaLineSegInternal],
         firstLocation: Int32,
-        blockHeight: CGFloat
+        blockHeight: CGFloat,
+        isStaleAdjusted: Bool
     ) {
+        guard !isStaleAdjusted else {
+            absoluteRunTrailingSpacings[currentBlocks.count - 1] = 0
+            return
+        }
         let inkBottom = run.reduce(Int(firstLocation)) {
             max($0, Int($1.lineLocation) + Int(max(0, $1.lineHeight)))
         }

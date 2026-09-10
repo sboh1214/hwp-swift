@@ -14,6 +14,81 @@ import XCTest
     final class HwpFootnoteContinuationReviewTests: XCTestCase {
         private typealias Support = FootnoteContinuationSupport
 
+        /// stale 캐시(캐시 줄 높이 < 글자 크기) 문단이 쪽의 마지막 본문이면 그 블록은 CT
+        /// 높이로 커지는데, 커진 몫을 마지막 줄의 줄 간격으로 잘못 기록하면 본문 하한이
+        /// 캐시 잉크 아래로 되돌아가 각주 구분선이 커진 글자 위에 그어진다 (#165 리뷰).
+        func testStaleCacheGrowthIsNotSubtractedFromTheBodyBottom() async throws {
+            // 세 줄, 캐시 줄 높이 5pt(10pt 글자보다 작다 → stale) — CT는 48pt로 다시 조판된다.
+            var host = try HwpSynthetic.splitParagraphWithMixedMarkers(
+                lines: [
+                    (characters: 5, markers: []),
+                    (characters: 5, markers: []),
+                    (characters: 5, markers: [17]),
+                ],
+                segments: [
+                    (location: 60000, height: 500, textStart: 0),
+                    (location: 61100, height: 500, textStart: 6),
+                    (location: 62200, height: 500, textStart: 12),
+                ]
+            )
+            // 스택은 바닥 정렬이라 잘못된 하한이 드러나려면 각주가 그 자리를 다 채워야
+            // 한다 — 여덟 줄(91.04pt)은 캐시 잉크 기준 자리(101pt)엔 들어가고 CT 기준
+            // 자리(80pt)엔 안 들어간다.
+            let lines = (1 ... 8).map { "줄 \($0)" }
+            host.ctrlHeaderArray = [.footnote(HwpSynthetic.listControl(
+                ctrlId: .footnote,
+                paragraphs: [try Support.note(
+                    lines: lines, locations: (0 ..< 8).map { Int32($0 * 1172) }
+                )]
+            ))]
+            let paginator = Support.paginate([host] + (try Support.nextPageBody()))
+            let firstPage = try await paginator.page(at: 0)
+            let secondPage = try await paginator.page(at: 1)
+            let page = try XCTUnwrap(firstPage)
+            // 구역 템플릿의 빈 첫 문단이 아니라 **가장 아래** 본문 블록(host)이다.
+            let body = try XCTUnwrap(
+                page.blocks.filter { $0.kind == .text && $0.role == .body }
+                    .max { $0.frame.maxY < $1.frame.maxY }
+            )
+
+            // 블록은 CT 높이(3줄 × 16pt)로 커졌고, 이 쪽에 실린 각주의 구분선은 그 아래여야
+            // 한다 (자리가 없으면 다음 쪽으로 옮겨지는 것이 옳다).
+            expect(body.frame.height).to(beCloseTo(48, within: 1))
+            for note in Support.footnoteBlocks(on: page) {
+                expect(note.separatorLine.minY) >= body.frame.maxY - 0.01
+            }
+            expect(Support.footnoteBlocks(on: firstPage).count
+                + Support.footnoteBlocks(on: secondPage).count) == 1
+        }
+
+        /// 쪽 끝에서 나뉜 각주의 **앞 조각**은 이어짐 표식을 단다 (#165 리뷰). 컨테이너
+        /// 문단은 위치 열쇠가 없어 복사가 이 표식으로 조각을 잇고, 양쪽 정렬은 이 표식으로
+        /// 조각 끝 줄이 문단의 마지막 줄이 아님을 안다. 이어지는 조각(문단 끝)엔 없다.
+        func testSplitHeadCarriesTheContinuedFragmentMarker() async throws {
+            let note = try Support.note(
+                lines: ["첫째 줄", "둘째 줄", "셋째 줄", "넷째 줄", "다섯째 줄"],
+                locations: [0, 1172, 2344, 0, 1172]
+            )
+            let host = try Support.host(at: Support.hostLocation(leaving: 40), notes: [[note]])
+            let paginator = Support.paginate([host] + (try Support.nextPageBody()))
+            let firstPage = try await paginator.page(at: 0)
+            let secondPage = try await paginator.page(at: 1)
+            let head = try XCTUnwrap(Support.footnoteBlocks(on: firstPage).first)
+            let tail = try XCTUnwrap(Support.footnoteBlocks(on: secondPage).first)
+
+            expect(Self.isContinued(head)) == true
+            expect(Self.isContinued(tail)) == false
+        }
+
+        private static func isContinued(_ block: HwpFootnoteBlock) -> Bool {
+            guard let attributed = block.paragraphs.first?.attributedString, attributed.length > 0
+            else { return false }
+            return attributed.attribute(
+                HwpAttributedStringKey.continuedParagraphFragment,
+                at: attributed.length - 1, effectiveRange: nil
+            ) != nil
+        }
+
         /// 폭이 다른 구역으로 이월돼도 **앞 쪽이 소비한 문자 경계**가 보존돼야 한다
         /// (#165 리뷰). 이어지는 조각은 새 쪽의 폭으로 문단을 다시 조판하므로 줄 나눔이
         /// 달라진다 — 캐시 줄 인덱스를 CT 줄 수에 비례 환산한 경계는 앞 쪽이 실제로 그린
