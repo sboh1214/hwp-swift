@@ -67,6 +67,9 @@ public struct HwpFootnoteLayout {
         /// (실측: `1` → `(1)`에서 앞 조각의 마지막 두 글자가 겹쳐 그려짐). `measure`가
         /// 처음 잰 값을 채워 이월 입력에 실어 보낸다.
         let measuredShape: MeasuredShape?
+        /// 앞 쪽이 잰 문단 **전체**의 조판 (#165 리뷰) — 이어지는 조각은 원본에서 잘라 내므로
+        /// 같은 폭이면 다시 조판하지 않는다 (`SourceLayout`). 이월 입력에만 실린다.
+        let sourceLayout: SourceLayout?
 
         /// 처음 잰 각주 모양의 확정 표식 — 값이 nil이어도 "기본 모양으로 잼"이다.
         struct MeasuredShape {
@@ -98,7 +101,8 @@ public struct HwpFootnoteLayout {
             placedLineCount: Int = 0,
             placedLength: Int = 0,
             noteId: Int,
-            measuredShape: MeasuredShape? = nil
+            measuredShape: MeasuredShape? = nil,
+            sourceLayout: SourceLayout? = nil
         ) {
             self.paragraph = paragraph
             self.number = number
@@ -108,6 +112,7 @@ public struct HwpFootnoteLayout {
             self.placedLength = placedLength
             self.noteId = noteId
             self.measuredShape = measuredShape
+            self.sourceLayout = sourceLayout
         }
 
         /// 처음 잰 각주 모양을 **확정**한 사본 — 기본 모양(nil)으로 잰 것도 확정이다.
@@ -116,7 +121,8 @@ public struct HwpFootnoteLayout {
                 paragraph: paragraph, number: number, sizeResolver: sizeResolver,
                 numbering: numbering, placedLineCount: placedLineCount,
                 placedLength: placedLength, noteId: noteId,
-                measuredShape: MeasuredShape(footnoteShape: shape)
+                measuredShape: MeasuredShape(footnoteShape: shape),
+                sourceLayout: sourceLayout
             )
         }
     }
@@ -487,7 +493,8 @@ private extension HwpFootnoteLayout {
                     numbering: resolved.numbering,
                     placedLineCount: resolved.placedLineCount,
                     placedLength: resolved.placedLength,
-                    noteCarriesObjects: carrying.contains(resolved.noteId)
+                    noteCarriesObjects: carrying.contains(resolved.noteId),
+                    sourceLayout: resolved.sourceLayout
                 )
             )
         }

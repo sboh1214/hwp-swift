@@ -1431,9 +1431,16 @@ private extension HwpPaginator {
     /// 그 개체를 덮는다 — 겹침 가드가 재는 자와 같아야 한다. 본문 블록이 없으면 nil
     /// (이월 드레인의 빈 쪽). 크롬·변경 막대를 붙이기 **전에** 재야 한다 — 막대는
     /// 텍스트 블록 프레임(전진량)을 그대로 따른다.
+    ///
+    /// **미주 블록은 본문이다** (#165 리뷰): 미주는 흐름 콘텐츠라 쪽 위에서부터 놓이고
+    /// (`appendPendingEndnotes`) 이월된 각주는 그 아래 자리에 실려야 한다. 쪽 각주는 이
+    /// 하한을 잰 **뒤에** 붙으므로 (`appendPendingFootnotes`) 이 시점의 `.footnote` 종류
+    /// 블록은 전부 미주다 — 그것을 빼면 미주만 있는 쪽이 빈 쪽으로 보여 각주 스택이 쪽
+    /// 전체에 바닥 정렬되고, 진행 보장으로 놓인 미주를 덮는다 (재현: 미주 하단 104.67pt
+    /// 위 구분선 92.6pt).
     private func footnoteBodyBottom() -> CGFloat? {
         currentBlocks.enumerated().compactMap { offset, block -> CGFloat? in
-            guard block.role == .body, block.kind != .footnote else { return nil }
+            guard block.role == .body else { return nil }
             return HwpHitTester.paintedObjectBounds(of: block).maxY
                 - (absoluteRunTrailingSpacings[offset] ?? 0)
         }.max()

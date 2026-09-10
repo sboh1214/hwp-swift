@@ -67,6 +67,20 @@ enum HwpFootnoteCacheLines {
         return (1 ..< lines.count).filter { lines[$0].location <= lines[$0 - 1].location }
     }
 
+    /// `start` 뒤의 **첫** 분할 지점 (문단 전체 기준 인덱스) — 없으면 nil. 남은 줄을 복사하거나
+    /// 분할 지점을 전부 모으지 않고 이 쪽 몫만 훑으므로 (#165 리뷰) 이월이 쪽마다 반복돼도
+    /// 전체 일이 줄 수에 비례한다 — 남은 줄을 배열로 떠서 훑으면 쪽 수 × 남은 줄 수다.
+    static func firstPageBreak(in lines: [HwpFootnoteCacheLine], after start: Int) -> Int? {
+        var index = start + 1
+        while index < lines.count {
+            if lines[index].location <= lines[index - 1].location {
+                return index
+            }
+            index += 1
+        }
+        return nil
+    }
+
     /// 줄 범위의 높이 (pt) — 같은 쪽 안은 첫 줄 위부터 마지막 줄 전진량 끝까지
     /// (`HwpParagraphLayout.CachedLineExtent.advanceHeight`와 같은 정의), 범위가 쪽을
     /// 넘으면 쪽 몫의 합.
@@ -90,6 +104,66 @@ enum HwpFootnoteCacheLines {
         let clamped = range.clamped(to: lines.indices)
         guard let last = clamped.last else { return 0 }
         return HwpUnits.points(fromHwpUnit: Int32(clamping: lines[last].spacing))
+    }
+
+    /// 각 줄부터 문단 끝까지의 높이 (HWPUNIT) — `height(of:in:)`를 뒤에서부터 한 번에 누적한
+    /// 표라 `i`번째 값은 `height(of: lines, in: i ..< lines.count)`의 정수 합과 같다 (#165
+    /// 리뷰). 이월이 쪽마다 남은 줄을 다 더하면 쪽 수 × 줄 수의 일이라 원본 조판에 실어 나른다.
+    static func remainingHeights(of lines: [HwpFootnoteCacheLine]) -> [Int] {
+        var heights = [Int](repeating: 0, count: lines.count)
+        var index = lines.count - 1
+        while index >= 0 {
+            let line = lines[index]
+            let next = index + 1
+            if next == lines.count || lines[next].location <= line.location {
+                // 쪽 몫의 마지막 줄 — 자기 전진량까지가 이 몫이고 그 뒤는 다음 몫의 합
+                heights[index] = line.spacedBottom - line.location
+                    + (next < lines.count ? heights[next] : 0)
+            } else {
+                heights[index] = heights[next] + (lines[next].location - line.location)
+            }
+            index -= 1
+        }
+        return heights
+    }
+}
+
+// MARK: - 원본 조판 이월
+
+extension HwpFootnoteLayout {
+    /// 이월 입력이 나르는 문단 **전체**의 조판 (#165 리뷰) — 이어지는 조각은 원본에서 잘라
+    /// 내므로 원본이 있으면 CT 조판을 건너뛴다. 쪽마다 문단 전체를 다시 조판하면 이월이 길게
+    /// 이어지는 문단에서 쪽 수 × 줄 수의 일이 된다 (실측, 디버그 빌드: 2,000줄·99쪽 합성
+    /// 각주 29.9s → 0.7s, 32,000줄·1,599쪽 10.6s — 쪽 수에 비례). 폭이 다르면 (구역이 바뀐
+    /// 쪽) 줄 나눔이 달라지므로 다시 조판한다 — 줄 캐시는 문단의 것이라 폭과 무관하게 그대로
+    /// 쓴다. 남은 줄의 높이 누적표(`remainingHeights`)도 같이 나른다.
+    struct SourceLayout {
+        /// 이 조판을 만든 각주 영역 폭
+        let width: CGFloat
+        let attributed: NSAttributedString
+        let lines: [HwpLineFrame]
+        let cacheLines: [HwpFootnoteCacheLine]
+        /// 각 캐시 줄부터 문단 끝까지의 높이 (HWPUNIT, `HwpFootnoteCacheLines.remainingHeights`)
+        /// — 남은 줄의 높이를 쪽마다 남은 줄을 다 더하지 않고 한 번에 읽는다.
+        let remainingHeights: [Int]
+
+        init(
+            width: CGFloat, attributed: NSAttributedString, lines: [HwpLineFrame],
+            cacheLines: [HwpFootnoteCacheLine]
+        ) {
+            self.width = width
+            self.attributed = attributed
+            self.lines = lines
+            self.cacheLines = cacheLines
+            remainingHeights = HwpFootnoteCacheLines.remainingHeights(of: cacheLines)
+        }
+
+        /// `start`부터 끝까지 남은 줄의 높이 (pt) —
+        /// `HwpFootnoteCacheLines.height(of: cacheLines, in: start ..< cacheLines.count)`와 같은 값.
+        func remainingHeight(from start: Int) -> CGFloat {
+            guard start >= 0, start < remainingHeights.count else { return 0 }
+            return HwpUnits.points(fromHwpUnit: Int32(clamping: max(0, remainingHeights[start])))
+        }
     }
 }
 
@@ -137,8 +211,7 @@ extension HwpFootnoteLayout {
         // 비례 환산 결과다). 그 줄이 경계보다 앞에서 시작하면 앞부분은 이미 그려졌으므로
         // 문자 범위에서 잘라 낸다.
         let start = isContinuation && placedLength > 0
-            ? min(end, lines.firstIndex { NSMaxRange($0.attributedRange) > placedLength }
-                ?? lines.count)
+            ? min(end, firstLineIndex(in: lines, endingAfter: placedLength))
             : ctIndex(cacheRange.lowerBound)
         guard start < end else { return empty }
         let slice = lines[start ..< end]
@@ -163,6 +236,25 @@ extension HwpFootnoteLayout {
             lines: fragmentLines(slice, range: range, dropping: range.location - lineRange.location),
             sourceRange: range
         )
+    }
+
+    /// 문자 위치 `length`를 넘어 끝나는 첫 줄의 인덱스 (없으면 `lines.count`). 줄의 문자
+    /// 범위는 단조 증가하므로 이분 탐색한다 (#165 리뷰) — 앞에서부터 훑으면 이월이 길게
+    /// 이어지는 문단에서 쪽마다 이미 실린 줄을 다시 세어 쪽 수 × 줄 수가 된다.
+    private static func firstLineIndex(
+        in lines: [HwpLineFrame], endingAfter length: Int
+    ) -> Int {
+        var low = 0
+        var high = lines.count
+        while low < high {
+            let middle = (low + high) / 2
+            if NSMaxRange(lines[middle].attributedRange) > length {
+                high = middle
+            } else {
+                low = middle + 1
+            }
+        }
+        return low
     }
 
     /// 조각 줄 프레임 — 첫 줄이 경계보다 앞에서 시작하면 (폭이 바뀐 이월) 그 몫을 잘라
@@ -298,15 +390,17 @@ extension HwpFootnoteLayout {
                 previousBottom = nil
                 continue
             }
-            let remaining = Array(lines.dropFirst(measurement.placedLineCount))
-            guard let first = remaining.first else { continue }
-            if let previousBottom, index > group.lowerBound, first.location < previousBottom {
+            // 남은 줄은 인덱스로만 본다 (#165 리뷰) — 쪽마다 남은 줄을 배열로 뜨면 이월이
+            // 길게 이어지는 문단에서 쪽 수 × 줄 수의 복사가 된다.
+            let start = measurement.placedLineCount
+            guard start < lines.count else { continue }
+            if let previousBottom, index > group.lowerBound, lines[start].location < previousBottom {
                 return (index, 0)
             }
-            if let firstBreak = HwpFootnoteCacheLines.pageBreaks(in: remaining).first {
-                return (index, firstBreak)
+            if let firstBreak = HwpFootnoteCacheLines.firstPageBreak(in: lines, after: start) {
+                return (index, firstBreak - start)
             }
-            previousBottom = remaining.last?.spacedBottom
+            previousBottom = lines[lines.count - 1].spacedBottom
         }
         return nil
     }
@@ -374,7 +468,10 @@ extension HwpFootnoteLayout {
             noteId: carried.noteId,
             // 처음 잰 각주 모양(기본 모양으로 잰 확정 상태 포함)을 그대로 나른다 (#165
             // 리뷰) — 다음 쪽의 라벨 길이가 다르면 `placedLength`가 가리키는 자리가 어긋난다.
-            measuredShape: carried.measuredShape
+            measuredShape: carried.measuredShape,
+            // 문단 전체의 조판도 나른다 (#165 리뷰) — 다음 쪽이 같은 폭이면 다시 조판하지
+            // 않는다. 쪽마다 문단 전체를 CT로 다시 조판하면 쪽 수 × 줄 수의 일이다.
+            sourceLayout: splitNote.measurement.carriedSourceLayout()
         ))
         overflow += measured[(split.index + 1)...].map(\.input)
         plan.overflow = overflow

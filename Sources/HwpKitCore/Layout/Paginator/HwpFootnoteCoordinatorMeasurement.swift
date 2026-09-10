@@ -64,7 +64,11 @@ extension HwpFootnoteCoordinator {
                 isNoteEnd: index == inputs.count - 1
                     || inputs[index + 1].noteId != input.noteId,
                 placedLineCount: input.placedLineCount,
-                noteCarriesObjects: carrying.contains(input.noteId)
+                noteCarriesObjects: carrying.contains(input.noteId),
+                // 이월 입력이 나른 원본 조판(줄 캐시·남은 높이 누적표)을 그대로 쓴다 (#165
+                // 리뷰) — 쪽마다 줄 캐시를 다시 만들고 남은 줄을 다 더하면 이월이 길게
+                // 이어지는 문단에서 쪽 수 × 줄 수의 일이다.
+                sourceLayout: input.sourceLayout
             )
         }
         return total
@@ -194,6 +198,8 @@ extension HwpFootnoteCoordinator {
     /// isNoteEnd: 각주의 마지막 문단 — 마지막 줄의 줄 간격을 세지 않는다 (#165, 배치의
     /// `NoteMeasurement.stackingHeight`와 같은 산식). placedLineCount: 이어지는 조각의
     /// 앞 쪽에 실린 줄 수.
+    /// sourceLayout: 이월 입력이 나른 원본 조판 — 있으면 줄 캐시를 문단에서 다시 만들지 않고
+    /// 남은 줄의 높이도 누적표로 읽는다.
     mutating func measuredFootnoteHeight(
         of paragraph: CoreHwp.HwpParagraph,
         number: Int,
@@ -201,7 +207,8 @@ extension HwpFootnoteCoordinator {
         numbering: HwpNumberingScope? = nil,
         isNoteEnd: Bool = false,
         placedLineCount: Int = 0,
-        noteCarriesObjects: Bool = false
+        noteCarriesObjects: Bool = false,
+        sourceLayout: HwpFootnoteLayout.SourceLayout? = nil
     ) -> CGFloat {
         // 개체 없는 각주 (대다수) 는 라인 캐시만으로 끝낸다 — CT 조판을 건너뛰는
         // 이 빠른 길이 대형 문서 로드 시간을 좌우한다 (헌법주석 1,030쪽).
@@ -214,7 +221,7 @@ extension HwpFootnoteCoordinator {
         ) else {
             return measuredFootnoteTextHeight(
                 of: paragraph, number: number, environment: environment, numbering: numbering,
-                isNoteEnd: isNoteEnd, placedLineCount: placedLineCount
+                isNoteEnd: isNoteEnd, placedLineCount: placedLineCount, sourceLayout: sourceLayout
             )
         }
         return measuredNoteBlockHeight(
@@ -275,13 +282,16 @@ extension HwpFootnoteCoordinator {
         environment: Environment,
         numbering: HwpNumberingScope?,
         isNoteEnd: Bool,
-        placedLineCount: Int
+        placedLineCount: Int,
+        sourceLayout: HwpFootnoteLayout.SourceLayout?
     ) -> CGFloat {
-        if let lines = HwpFootnoteCacheLines.lines(of: paragraph) {
+        if let lines = sourceLayout?.cacheLines ?? HwpFootnoteCacheLines.lines(of: paragraph) {
             let range = min(placedLineCount, lines.count) ..< lines.count
-            let height = HwpFootnoteCacheLines.height(of: lines, in: range)
-                - (isNoteEnd ? HwpFootnoteCacheLines.trailingSpacing(of: lines, in: range) : 0)
-            return max(1, height)
+            // 이월 입력은 남은 높이를 누적표로 읽는다 — 배치(`continuationMeasurement`)와 같은 값.
+            let height = sourceLayout?.remainingHeight(from: range.lowerBound)
+                ?? HwpFootnoteCacheLines.height(of: lines, in: range)
+            return max(1, height
+                - (isNoteEnd ? HwpFootnoteCacheLines.trailingSpacing(of: lines, in: range) : 0))
         }
         let width = environment.contentWidth
         let sizeResolver = environment.sizeResolver?.forFootnoteArea(width: width)

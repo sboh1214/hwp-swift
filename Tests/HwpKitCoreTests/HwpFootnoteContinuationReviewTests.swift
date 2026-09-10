@@ -6,60 +6,13 @@ import Nimble
 import XCTest
 
 #if canImport(CoreText)
-    /// 합성 조립·페이지네이션 헬퍼 — 클래스 본문이 SwiftLint type_body_length
-    /// 상한(400줄)에 닿아 갈라 뒀다.
     /// 각주 이어짐 (#165) PR 리뷰가 잡은 경계·개체·식별·모양 결함의 재현 — 전부 수정 전에
     /// 실패했고 실물 코퍼스(헌법주석)엔 없는 형상이라 합성으로만 잠근다. 조립 헬퍼는
-    /// `FootnoteContinuationSupport`, 이어짐 규칙 자체는 `HwpFootnoteContinuationTests`.
+    /// `FootnoteContinuationSupport`, 이어짐 규칙 자체는 `HwpFootnoteContinuationTests`, 본문
+    /// 하한·앞 조각 적합 결함은 `HwpFootnoteContinuationBodyBottomTests` (클래스 본문이
+    /// SwiftLint type_body_length 상한에 닿아 갈라 뒀다).
     final class HwpFootnoteContinuationReviewTests: XCTestCase {
         private typealias Support = FootnoteContinuationSupport
-
-        /// stale 캐시(캐시 줄 높이 < 글자 크기) 문단이 쪽의 마지막 본문이면 그 블록은 CT
-        /// 높이로 커지는데, 커진 몫을 마지막 줄의 줄 간격으로 잘못 기록하면 본문 하한이
-        /// 캐시 잉크 아래로 되돌아가 각주 구분선이 커진 글자 위에 그어진다 (#165 리뷰).
-        func testStaleCacheGrowthIsNotSubtractedFromTheBodyBottom() async throws {
-            // 세 줄, 캐시 줄 높이 5pt(10pt 글자보다 작다 → stale) — CT는 48pt로 다시 조판된다.
-            var host = try HwpSynthetic.splitParagraphWithMixedMarkers(
-                lines: [
-                    (characters: 5, markers: []),
-                    (characters: 5, markers: []),
-                    (characters: 5, markers: [17]),
-                ],
-                segments: [
-                    (location: 60000, height: 500, textStart: 0),
-                    (location: 61100, height: 500, textStart: 6),
-                    (location: 62200, height: 500, textStart: 12),
-                ]
-            )
-            // 스택은 바닥 정렬이라 잘못된 하한이 드러나려면 각주가 그 자리를 다 채워야
-            // 한다 — 여덟 줄(91.04pt)은 캐시 잉크 기준 자리(101pt)엔 들어가고 CT 기준
-            // 자리(80pt)엔 안 들어간다.
-            let lines = (1 ... 8).map { "줄 \($0)" }
-            host.ctrlHeaderArray = [.footnote(HwpSynthetic.listControl(
-                ctrlId: .footnote,
-                paragraphs: [try Support.note(
-                    lines: lines, locations: (0 ..< 8).map { Int32($0 * 1172) }
-                )]
-            ))]
-            let paginator = Support.paginate([host] + (try Support.nextPageBody()))
-            let firstPage = try await paginator.page(at: 0)
-            let secondPage = try await paginator.page(at: 1)
-            let page = try XCTUnwrap(firstPage)
-            // 구역 템플릿의 빈 첫 문단이 아니라 **가장 아래** 본문 블록(host)이다.
-            let body = try XCTUnwrap(
-                page.blocks.filter { $0.kind == .text && $0.role == .body }
-                    .max { $0.frame.maxY < $1.frame.maxY }
-            )
-
-            // 블록은 CT 높이(3줄 × 16pt)로 커졌고, 이 쪽에 실린 각주의 구분선은 그 아래여야
-            // 한다 (자리가 없으면 다음 쪽으로 옮겨지는 것이 옳다).
-            expect(body.frame.height).to(beCloseTo(48, within: 1))
-            for note in Support.footnoteBlocks(on: page) {
-                expect(note.separatorLine.minY) >= body.frame.maxY - 0.01
-            }
-            expect(Support.footnoteBlocks(on: firstPage).count
-                + Support.footnoteBlocks(on: secondPage).count) == 1
-        }
 
         /// 쪽 끝에서 나뉜 각주의 **앞 조각**은 이어짐 표식을 단다 (#165 리뷰). 컨테이너
         /// 문단은 위치 열쇠가 없어 복사가 이 표식으로 조각을 잇고, 양쪽 정렬은 이 표식으로
@@ -78,87 +31,6 @@ import XCTest
 
             expect(Self.isContinued(head)) == true
             expect(Self.isContinued(tail)) == false
-        }
-
-        /// 캐시 분할 지점이 뒤에 있어도 **앞 조각 전체**가 들어가야 나눈다 (#165 리뷰).
-        /// 첫 줄만 보고 나누면 분할 지점까지의 줄이 전부 방출돼 스택이 자리를 넘고, 바닥
-        /// 정렬이 그 스택을 본문 위로 올린다 — 캐시가 저작된 자리보다 우리 본문 하한이
-        /// 낮을 때(stale 보정 등) 생긴다. 안 들어가면 통째로 다음 쪽이다.
-        func testHeadMustFitWhollyBeforeSplitting() async throws {
-            // 분할 지점이 셋째 줄 뒤 — 앞 조각 32.44pt는 15pt 자리에 못 들어간다.
-            let note = try Support.note(
-                lines: ["첫째 줄", "둘째 줄", "셋째 줄", "넷째 줄", "다섯째 줄"],
-                locations: [0, 1172, 2344, 0, 1172]
-            )
-            let host = try Support.host(at: Support.hostLocation(leaving: 15), notes: [[note]])
-            let paginator = Support.paginate([host] + (try Support.nextPageBody()))
-            let firstPage = try await paginator.page(at: 0)
-            let secondPage = try await paginator.page(at: 1)
-            let page = try XCTUnwrap(firstPage)
-            let body = try XCTUnwrap(
-                page.blocks.filter { $0.kind == .text && $0.role == .body }
-                    .max { $0.frame.maxY < $1.frame.maxY }
-            )
-            for placed in Support.footnoteBlocks(on: page) {
-                expect(placed.separatorLine.minY) >= body.frame.maxY - 0.01
-            }
-            expect(Support.footnoteBlocks(on: firstPage).count
-                + Support.footnoteBlocks(on: secondPage).count) >= 1
-            expect(Support.text(try XCTUnwrap(Support.footnoteBlocks(on: secondPage).first)))
-                .to(contain("첫째 줄"))
-        }
-
-        /// 본문 하한은 프레임이 아니라 **그려지는 범위**다 (#165 리뷰). 표 안의 글 앞으로
-        /// 개체는 행을 키우지 않고 표 아래로 그려지므로, 프레임만 보면 각주 스택이 그 개체
-        /// 위에 놓인다 — 겹침 가드(`FixtureFootnoteOverlapTests`)와 같은 정의를 쓴다.
-        func testBodyBottomIncludesPaintedDescendantsBelowTheFrame() async throws {
-            // 앞 조각(3줄, 32.44pt)은 개체 아래 자리(≈46pt)에 들어가고, 전체(102.76pt)는
-            // 표 프레임 기준 자리(≈216pt)엔 들어가지만 개체 아래엔 안 들어간다.
-            let note = try Support.note(
-                lines: (1 ... 9).map { "줄 \($0)" },
-                locations: [0, 1172, 2344, 0, 1172, 2344, 3516, 4688, 5860]
-            )
-            let noteHost = try Support.host(at: 40000, notes: [[note]])
-            var cell = try HwpSynthetic.textParagraph("셀")
-            cell.ctrlHeaderArray = [.genShapeObject(HwpSynthetic.floatingShapeObject(
-                width: 20000, height: 20000, textWrap: .inFrontOfText
-            ))]
-            var tableHost = try HwpSynthetic.lineSegParagraph(
-                "", segments: [(location: 48268, height: 1000)]
-            )
-            var paraText = CoreHwp.HwpParaText()
-            paraText.charArray = [CoreHwp.HwpChar(type: .extended, value: 11)]
-            tableHost.paraText = paraText
-            tableHost.ctrlHeaderArray = [.table(HwpSynthetic.placed(
-                HwpSynthetic.table(
-                    cellWidth: 20000, rowHeights: [3000], cellParagraphs: [[[cell]]]
-                ),
-                treatAsChar: true
-            ))]
-            let paginator = Support.paginate([noteHost, tableHost] + (try Support.nextPageBody()))
-            let firstPage = try await paginator.page(at: 0)
-            let page = try XCTUnwrap(firstPage)
-            let tableBlock = try XCTUnwrap(page.blocks.first { $0.kind == .table && $0.role == .body })
-            guard case let .table(table) = tableBlock.payload else {
-                return fail("표 블록의 payload가 없다")
-            }
-            var paintedBottom = tableBlock.frame.maxY
-            HwpBlockContentWalker.walkTable(
-                table, origin: tableBlock.frame.origin,
-                onParagraphText: { _, _, _ in },
-                onCellShape: { shape, rect in
-                    paintedBottom = max(paintedBottom, shape.paintedRect.offsetBy(
-                        dx: rect.minX - shape.rect.minX, dy: rect.minY - shape.rect.minY
-                    ).maxY)
-                }
-            )
-            // 개체가 표 프레임 아래로 그려진다는 전제부터 확인한다.
-            expect(paintedBottom) > tableBlock.frame.maxY + 100
-            let placed = Support.footnoteBlocks(on: page)
-            expect(placed.count) == 1
-            for block in placed {
-                expect(block.separatorLine.minY) >= paintedBottom - 0.01
-            }
         }
 
         private static func isContinued(_ block: HwpFootnoteBlock) -> Bool {

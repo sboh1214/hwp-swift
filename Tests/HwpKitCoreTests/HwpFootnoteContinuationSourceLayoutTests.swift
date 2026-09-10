@@ -1,0 +1,149 @@
+import CoreGraphics
+@testable import CoreHwp
+import Foundation
+@testable import HwpKitCore
+import Nimble
+import XCTest
+
+#if canImport(CoreText)
+    /// 각주 이어짐 (#165) PR 리뷰가 잡은 **쪽 수 × 줄 수** 비용의 재현 — 이월 입력이 원본
+    /// 조판(`SourceLayout`)을 나르고, 남은 줄의 분할 지점·높이를 복사 없이 읽는다. 수치는
+    /// 단언하지 않는다 (CI 러너마다 다르다); 대신 같은 값을 주는 **동치**와, 나른 원본을
+    /// 실제로 쓰는지 (다른 폭이면 다시 조판하는지) 를 잠근다. 조립 헬퍼는
+    /// `FootnoteContinuationSupport`.
+    final class HwpFootnoteContinuationSourceLayoutTests: XCTestCase {
+        private typealias Support = FootnoteContinuationSupport
+
+        /// 쪽 리셋·간격이 섞인 줄 캐시들 — 누적표와 분할 탐색의 동치 검사 표본.
+        private static let samples: [[Int32]] = [
+            [0],
+            [0, 1172, 2344],
+            [0, 1172, 2344, 0, 1172],
+            [0, 0, 1172],
+            [0, 1172, 0, 0, 1172, 2344, 3516, 0],
+            (0 ..< 40).map { Int32($0 % 7) * 1172 },
+        ]
+
+        /// `remainingHeights[i]`는 `height(of:in: i ..< count)`와 같다 — 이월 입력이 쪽마다
+        /// 남은 줄을 다 더하지 않고 이 표 하나로 남은 높이를 읽는다.
+        func testRemainingHeightsMatchTheRangeHeightFromEveryLine() throws {
+            for sample in Self.samples {
+                let paragraph = try Support.note(
+                    lines: sample.map { "줄 \($0)" }, locations: sample
+                )
+                let lines = try XCTUnwrap(HwpFootnoteCacheLines.lines(of: paragraph))
+                let layout = HwpFootnoteLayout.SourceLayout(
+                    width: 300, attributed: NSAttributedString(string: ""), lines: [],
+                    cacheLines: lines
+                )
+                for start in 0 ... lines.count {
+                    expect(layout.remainingHeight(from: start))
+                        .to(beCloseTo(
+                            HwpFootnoteCacheLines.height(of: lines, in: start ..< lines.count),
+                            within: 0.0001
+                        ))
+                }
+            }
+        }
+
+        /// `firstPageBreak(in:after:)`는 남은 줄을 떠서 모은 분할 지점의 첫 항목과 같다.
+        func testFirstPageBreakMatchesTheFirstBreakOfTheRemainingLines() throws {
+            for sample in Self.samples {
+                let paragraph = try Support.note(
+                    lines: sample.map { "줄 \($0)" }, locations: sample
+                )
+                let lines = try XCTUnwrap(HwpFootnoteCacheLines.lines(of: paragraph))
+                for start in 0 ..< lines.count {
+                    let remaining = Array(lines.dropFirst(start))
+                    let expected = HwpFootnoteCacheLines.pageBreaks(in: remaining).first.map { $0 + start }
+                    expect(HwpFootnoteCacheLines.firstPageBreak(in: lines, after: start) ?? -1)
+                        == (expected ?? -1)
+                }
+            }
+        }
+
+        /// 이월 입력은 원본 조판을 나르고, 다음 쪽은 폭이 같으면 그것을 **그대로** 쓴다 —
+        /// 나른 원본의 문자열이 조각에 나타나는 것으로 확인한다. 폭이 다르면 (구역 변경)
+        /// 문단을 다시 조판하므로 나른 원본은 쓰이지 않는다.
+        func testContinuationReusesTheCarriedLayoutOnlyAtTheSameWidth() throws {
+            let paragraph = try Support.note(
+                lines: ["첫째 줄", "둘째 줄", "셋째 줄", "넷째 줄", "다섯째 줄"],
+                locations: [0, 1172, 2344, 0, 1172]
+            )
+            let layout = HwpFootnoteLayout(fontResolver: .testDeterministic)
+            let index = HwpIndex(from: CoreHwp.HwpFile())
+            let geometry = Support.geometry(contentWidth: 451)
+            let split = layout.place(
+                footnotes: [HwpFootnoteLayout.Input(paragraph: paragraph, number: 1)],
+                onPage: geometry, index: index,
+                // 앞 세 줄(32.44pt)은 들어가고 전체(55.88pt)는 안 들어가는 자리에서 나눈다.
+                limitsAreaToHalfContent: false, bodyBottom: geometry.contentFrame.maxY - 50
+            )
+            let carried = try XCTUnwrap(split.overflow.first)
+            let source = try XCTUnwrap(carried.sourceLayout)
+            expect(source.width) == 451
+            expect(source.cacheLines.count) == 5
+            expect(source.lines.count) == 5
+
+            // 나른 원본의 글자를 같은 길이의 표식으로 바꿔 심은 뒤 같은 폭으로 재면 그 원본에서
+            // 잘라 낸 조각이 나온다 (줄 프레임의 문자 범위는 그대로라 길이를 지켜야 한다).
+            let marked = NSMutableAttributedString(attributedString: source.attributed)
+            marked.replaceCharacters(
+                in: NSRange(location: 0, length: marked.length),
+                with: String(repeating: "E", count: marked.length)
+            )
+            let planted = HwpFootnoteLayout.SourceLayout(
+                width: source.width, attributed: marked, lines: source.lines,
+                cacheLines: source.cacheLines
+            )
+            let reused = layout.measureNote(
+                paragraph, number: 1, width: 451, index: index, footnoteShape: nil,
+                sizeResolver: nil, placedLineCount: carried.placedLineCount,
+                placedLength: carried.placedLength, sourceLayout: planted
+            )
+            expect(reused.attributed.string).to(contain("EEEE"))
+            expect(reused.attributed.string).toNot(contain("다섯째"))
+            // 폭이 다르면 문단을 다시 조판한다 — 심은 원본은 버려진다.
+            let relaid = layout.measureNote(
+                paragraph, number: 1, width: 200, index: index, footnoteShape: nil,
+                sizeResolver: nil, placedLineCount: carried.placedLineCount,
+                placedLength: carried.placedLength, sourceLayout: planted
+            )
+            expect(relaid.attributed.string).to(contain("다섯째"))
+            expect(relaid.attributed.string).toNot(contain("EEEE"))
+            expect(try XCTUnwrap(relaid.sourceLayout).width) == 200
+        }
+
+        /// 이어지는 조각의 측정은 조판 문자열을 **읽을 때** 잘라 낸다 — 높이만 쓰는 스택 계획은
+        /// 원본에서 아무것도 자르지 않아야 한다. 잘라 내기가 지연인지는 원본을 나중에 바꿔도
+        /// 결과가 그때의 원본을 따르는 것으로 확인할 수 없으므로 (불변 값), 높이가 원본 문자열
+        /// 없이도 나오는지로 잠근다.
+        func testContinuationHeightNeedsNoFragmentText() throws {
+            let paragraph = try Support.note(
+                lines: ["첫째 줄", "둘째 줄", "셋째 줄", "넷째 줄", "다섯째 줄"],
+                locations: [0, 1172, 2344, 0, 1172]
+            )
+            let lines = try XCTUnwrap(HwpFootnoteCacheLines.lines(of: paragraph))
+            let layout = HwpFootnoteLayout(fontResolver: .testDeterministic)
+            let index = HwpIndex(from: CoreHwp.HwpFile())
+            // 원본 조판을 빈 값으로 심어도 높이는 캐시 누적표에서 나온다.
+            let empty = HwpFootnoteLayout.SourceLayout(
+                width: 451, attributed: NSAttributedString(string: ""), lines: [],
+                cacheLines: lines
+            )
+            let measured = layout.measureNote(
+                paragraph, number: 1, width: 451, index: index, footnoteShape: nil,
+                sizeResolver: nil, placedLineCount: 3, placedLength: 0, sourceLayout: empty
+            )
+            expect(measured.textRectHeight).to(beCloseTo(
+                HwpFootnoteCacheLines.height(of: lines, in: 3 ..< 5), within: 0.0001
+            ))
+            expect(measured.stackingHeight(isNoteEnd: true)).to(beCloseTo(
+                HwpFootnoteCacheLines.height(of: lines, in: 3 ..< 5)
+                    - HwpFootnoteCacheLines.trailingSpacing(of: lines, in: 3 ..< 5),
+                within: 0.0001
+            ))
+            expect(measured.attributed.length) == 0
+        }
+    }
+#endif
