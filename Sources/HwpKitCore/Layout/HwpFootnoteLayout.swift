@@ -133,6 +133,13 @@ public struct HwpFootnoteLayout {
         public let overflow: [Input]
     }
 
+    /// 페이지네이터용 배치 결과 — 이월은 입력 저장소의 **슬라이스**다 (#165 리뷰): 대기 각주를
+    /// 쪽마다 새 배열로 뜨면 그 복사가 쪽 수 × N이라 공개 경계(`Placement`)에서만 배열로 만든다.
+    struct PendingPlacement {
+        let blocks: [HwpFootnoteBlock]
+        let overflow: ArraySlice<Input>
+    }
+
     /// 페이지 하단에 배치할 각주 블록들을 계산한다.
     ///
     /// - Parameters:
@@ -201,7 +208,29 @@ public struct HwpFootnoteLayout {
         sizeResolver: HwpObjectSizeResolver? = nil,
         bodyBottom: CGFloat? = nil
     ) -> Placement {
-        guard !footnotes.isEmpty else { return Placement(blocks: [], overflow: []) }
+        let placement = placePending(
+            footnotes: footnotes[...],
+            onPage: geometry,
+            index: index,
+            footnoteShape: footnoteShape,
+            limitsAreaToHalfContent: limitsAreaToHalfContent,
+            sizeResolver: sizeResolver,
+            bodyBottom: bodyBottom
+        )
+        return Placement(blocks: placement.blocks, overflow: Array(placement.overflow))
+    }
+
+    /// `place`의 슬라이스 판 — 페이지네이터가 대기 각주 저장소를 복사 없이 넘기고 받는다.
+    func placePending(
+        footnotes: ArraySlice<Input>,
+        onPage geometry: HwpPageGeometry,
+        index: HwpIndex,
+        footnoteShape: CoreHwp.HwpFootnoteShape? = nil,
+        limitsAreaToHalfContent: Bool = true,
+        sizeResolver: HwpObjectSizeResolver? = nil,
+        bodyBottom: CGFloat? = nil
+    ) -> PendingPlacement {
+        guard !footnotes.isEmpty else { return PendingPlacement(blocks: [], overflow: []) }
 
         let contentFrame = geometry.contentFrame
         let divider = dividerMetrics(
@@ -248,7 +277,7 @@ public struct HwpFootnoteLayout {
             separatorLine: separatorLine,
             divider: divider
         )
-        return Placement(blocks: stacked.blocks, overflow: stacked.overflow)
+        return PendingPlacement(blocks: stacked.blocks, overflow: stacked.overflow)
     }
 
     /// 각주 항목들의 스택 높이 — 항목 높이 (각주 마지막 항목은 마지막 줄 줄 간격 제외)
@@ -296,6 +325,13 @@ public struct HwpFootnoteLayout {
         public let bottom: CGFloat
     }
 
+    /// 페이지네이터용 흐름 배치 결과 — 이월은 슬라이스 (`PendingPlacement`와 같은 이유).
+    struct PendingFlowPlacement {
+        let blocks: [HwpFootnoteBlock]
+        let overflow: ArraySlice<Input>
+        let bottom: CGFloat
+    }
+
     /// 미주처럼 흐름 위치에서 아래로 쌓는 배치 (문서/구역 끝).
     ///
     /// - Parameters:
@@ -314,8 +350,32 @@ public struct HwpFootnoteLayout {
         drawSeparator: Bool = true,
         sizeResolver: HwpObjectSizeResolver? = nil
     ) -> FlowPlacement {
+        let placement = placePendingFlow(
+            footnotes: footnotes[...],
+            from: startY,
+            in: columnFrame,
+            index: index,
+            footnoteShape: footnoteShape,
+            drawSeparator: drawSeparator,
+            sizeResolver: sizeResolver
+        )
+        return FlowPlacement(
+            blocks: placement.blocks, overflow: Array(placement.overflow), bottom: placement.bottom
+        )
+    }
+
+    /// `placeFlow`의 슬라이스 판 — 페이지네이터가 대기 미주 저장소를 복사 없이 넘기고 받는다.
+    func placePendingFlow(
+        footnotes: ArraySlice<Input>,
+        from startY: CGFloat,
+        in columnFrame: CGRect,
+        index: HwpIndex,
+        footnoteShape: CoreHwp.HwpFootnoteShape? = nil,
+        drawSeparator: Bool = true,
+        sizeResolver: HwpObjectSizeResolver? = nil
+    ) -> PendingFlowPlacement {
         guard !footnotes.isEmpty else {
-            return FlowPlacement(blocks: [], overflow: [], bottom: startY)
+            return PendingFlowPlacement(blocks: [], overflow: [], bottom: startY)
         }
         let divider = dividerMetrics(
             from: footnoteShape?.dividerInfo,
@@ -338,17 +398,12 @@ public struct HwpFootnoteLayout {
             cursorY += divider.marginTop + divider.marginBottom
         }
 
-        let stacked = stackBlocks(
+        return stackBlocks(
             notes: notes,
             from: cursorY,
             in: columnFrame,
             separatorLine: separatorLine,
             divider: divider
-        )
-        return FlowPlacement(
-            blocks: stacked.blocks,
-            overflow: stacked.overflow,
-            bottom: stacked.bottom
         )
     }
 
@@ -363,9 +418,9 @@ public struct HwpFootnoteLayout {
         in frame: CGRect,
         separatorLine: CGRect,
         divider: DividerMetrics
-    ) -> FlowPlacement {
+    ) -> PendingFlowPlacement {
         var blocks: [HwpFootnoteBlock] = []
-        var overflow: [Input] = []
+        var overflow: ArraySlice<Input> = []
         var cursorY = startY
         var previousNoteId: Int?
         for noteIndex in 0 ..< notes.count {
@@ -389,7 +444,7 @@ public struct HwpFootnoteLayout {
             ))
             cursorY += blockHeight + divider.betweenNotes
         }
-        return FlowPlacement(blocks: blocks, overflow: overflow, bottom: cursorY)
+        return PendingFlowPlacement(blocks: blocks, overflow: overflow, bottom: cursorY)
     }
 
     /// 높이 계산이 끝난 각주 문단 (+ 그 문단에 붙은 개체, 문단-로컬 rect)
@@ -473,18 +528,28 @@ extension HwpFootnoteLayout {
     /// 순서대로 보다가 처음 안 들어가는 각주에서 멈추므로, 그때까지 본 각주만 재면 전체
     /// 일이 각주 수에 비례한다. 잰 값은 이 쪽 안에서만 보관한다 — 이월은 `Input`이 나른다.
     ///
-    /// 입력은 만들 때 각주 모양을 **각인**한다 (`Input.withMeasuredShape`) — 재지 않고
-    /// 이월되는 각주도 종전(전부 재던 때)과 같은 모양을 나른다.
+    /// 입력은 **슬라이스**로 받아 그대로 나른다 (#165 리뷰): 쪽마다 대기 각주를 새 배열로
+    /// 뜨면 (`Array(suffix)`) 그 복사·retain 몫이 다시 쪽 수 × N이다 — 이월(`inputs(from:)`)도
+    /// 같은 저장소의 슬라이스라 복사가 없다. 잰 값은 오프셋별 사전이라 안 잰 각주엔 비용이 없다.
+    ///
+    /// 각주 모양은 입력이 **각인**해 온 것을 쓴다 (`Input.measuredShape` — 페이지네이터는
+    /// 수집 시점에, 공개 API 입력은 처음 잴 때 이 쪽의 모양으로). 재지 않고 이월된 공개 API
+    /// 입력은 다음 호출의 모양으로 잰다.
     final class MeasuredNotes {
-        /// 모양을 각인한 입력 — 이월은 이 값을 나른다.
-        let inputs: [Input]
-        private var cache: [MeasuredFootnote?]
+        /// 이 쪽의 후보 입력 — 호출자 저장소의 슬라이스.
+        let inputs: ArraySlice<Input>
+        private let footnoteShape: CoreHwp.HwpFootnoteShape?
+        private var cache: [Int: MeasuredFootnote] = [:]
         private var carrying: [Int: Bool] = [:]
         private let measure: (Input, Bool) -> NoteMeasurement
 
-        init(inputs: [Input], measure: @escaping (Input, Bool) -> NoteMeasurement) {
+        init(
+            inputs: ArraySlice<Input>,
+            footnoteShape: CoreHwp.HwpFootnoteShape?,
+            measure: @escaping (Input, Bool) -> NoteMeasurement
+        ) {
             self.inputs = inputs
-            cache = Array(repeating: nil, count: inputs.count)
+            self.footnoteShape = footnoteShape
             self.measure = measure
         }
 
@@ -492,62 +557,71 @@ extension HwpFootnoteLayout {
             inputs.count
         }
 
-        func noteId(at index: Int) -> Int {
-            inputs[index].noteId
+        func noteId(at offset: Int) -> Int {
+            inputs[inputs.startIndex + offset].noteId
         }
 
-        /// `index`의 각주를 (처음이면) 재서 준다.
-        subscript(index: Int) -> MeasuredFootnote {
-            if let measured = cache[index] {
+        /// `offset`의 각주를 (처음이면) 재서 준다 — 아직 모양을 각인하지 않은 입력은 이 쪽의
+        /// 모양으로 확정한다 (기본 모양 nil도 확정, `Input.measuredShape`).
+        subscript(offset: Int) -> MeasuredFootnote {
+            if let measured = cache[offset] {
                 return measured
             }
-            let input = inputs[index]
+            let raw = inputs[inputs.startIndex + offset]
+            let input = raw.measuredShape == nil ? raw.withMeasuredShape(footnoteShape) : raw
             let measured = MeasuredFootnote(
-                input: input, measurement: measure(input, carriesObjects(noteId: input.noteId))
+                input: input, measurement: measure(input, carriesObjects(at: offset))
             )
-            cache[index] = measured
+            cache[offset] = measured
             return measured
         }
 
-        /// `start`부터의 입력 — 재지 않은 각주도 각인된 모양으로 이월된다.
-        func inputs(from start: Int) -> [Input] {
-            Array(inputs[min(start, inputs.count)...])
+        /// `start`부터의 입력 — 같은 저장소의 슬라이스라 복사가 없다.
+        func inputs(from start: Int) -> ArraySlice<Input> {
+            inputs[(inputs.startIndex + min(start, inputs.count))...]
         }
 
         /// 개체 판정은 **각주 단위**다 (#165 리뷰) — 분할 금지와 CT 높이 보존의 범위를
         /// 맞춘다. 문단 단위로 보면 개체 없는 앞 문단만 캐시 합으로 줄어 뒤 문단의 그림이
         /// 그 문단의 마지막 글줄 위로 올라온다. 술어는 **수집 대상 전체**를 본다
         /// (`hasCollectibleObject`) — 하한 술어로 보면 글 앞으로 그림이 빠져 예약과 갈린다.
-        /// 같은 각주의 문단은 잇닿아 있으므로 그 범위만 훑고 각주별로 한 번만 판정한다.
-        private func carriesObjects(noteId: Int) -> Bool {
-            if let known = carrying[noteId] {
+        /// 같은 각주의 문단은 잇닿아 있으므로 **그 이웃만** 훑고 각주별로 한 번만 판정한다
+        /// — 전체를 훑으면 쪽에 실리는 각주 수 × N이다.
+        private func carriesObjects(at offset: Int) -> Bool {
+            let target = noteId(at: offset)
+            if let known = carrying[target] {
                 return known
             }
-            let carries = inputs.contains {
-                $0.noteId == noteId && HwpParagraphObjectCollector.hasCollectibleObject(
-                    in: $0.paragraph, collectsTextboxes: true, collectsTables: true
-                )
+            var carries = false
+            var low = offset
+            while low > 0, noteId(at: low - 1) == target {
+                low -= 1
             }
-            carrying[noteId] = carries
+            var index = low
+            while index < inputs.count, noteId(at: index) == target, !carries {
+                carries = HwpParagraphObjectCollector.hasCollectibleObject(
+                    in: inputs[inputs.startIndex + index].paragraph,
+                    collectsTextboxes: true, collectsTables: true
+                )
+                index += 1
+            }
+            carrying[target] = carries
             return carries
         }
     }
 
     /// 후보 각주들의 지연 측정기 — 실제 측정은 `measureNote` 한 함수다 (예약과 공유).
+    /// 각주 모양은 **처음 잰 것**을 들고 간다 (#165 리뷰) — 인자는 아직 각인하지 않은 입력의
+    /// 첫 측정에만 쓰이고, 각인해 두면 이월 입력이 스스로 그 모양을 나른다. 기본 모양(nil)으로
+    /// 잰 것도 확정이라 다음 쪽의 인자를 다시 채택하지 않는다.
     func measuredNotes(
-        _ footnotes: [Input],
+        _ footnotes: ArraySlice<Input>,
         index: HwpIndex,
         width: CGFloat,
         footnoteShape: CoreHwp.HwpFootnoteShape? = nil,
         sizeResolver: HwpObjectSizeResolver? = nil
     ) -> MeasuredNotes {
-        // 각주 모양은 **처음 잰 것**을 들고 간다 (#165 리뷰) — 인자는 아직 안 잰 입력의
-        // 첫 측정에만 쓰이고, 각인해 두면 이월 입력이 스스로 그 모양을 나른다. 기본
-        // 모양(nil)으로 잰 것도 확정이라 다음 쪽의 인자를 다시 채택하지 않는다.
-        let resolved = footnotes.map { input in
-            input.withMeasuredShape(input.measuredShape.map(\.footnoteShape) ?? footnoteShape)
-        }
-        return MeasuredNotes(inputs: resolved) { input, noteCarriesObjects in
+        MeasuredNotes(inputs: footnotes, footnoteShape: footnoteShape) { input, noteCarriesObjects in
             self.measureNote(
                 input.paragraph,
                 number: input.number,

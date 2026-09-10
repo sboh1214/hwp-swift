@@ -317,7 +317,9 @@ extension HwpFootnoteLayout {
 
     struct StackPlan {
         var entries: [StackEntry] = []
-        var overflow: [Input] = []
+        /// 다음 쪽으로 넘기는 입력 — 입력 저장소의 슬라이스 (복사 없음, #165 리뷰). 앞 조각을
+        /// 나눈 쪽만 그 조각의 이월 입력을 머리에 붙인 새 배열이다.
+        var overflow: ArraySlice<Input> = []
         /// 항목 높이와 각주 사이 여백의 합 (구분선 여백 제외)
         var stackedHeight: CGFloat = 0
     }
@@ -481,6 +483,8 @@ extension HwpFootnoteLayout {
         let splitNote = notes[split.index]
         var overflow: [Input] = []
         let carried = splitNote.input
+        // 나눈 문단의 이월 입력을 머리에 붙이므로 여기만 남은 입력을 배열로 뜬다 — 문단 하나의
+        // 이어짐이라 뒤에 남은 각주 수와 무관하게 쪽마다 한 번이다.
         overflow.append(Input(
             paragraph: carried.paragraph,
             number: carried.number,
@@ -501,7 +505,7 @@ extension HwpFootnoteLayout {
             sourceLayout: splitNote.measurement.carriedSourceLayout()
         ))
         overflow += notes.inputs(from: split.index + 1)
-        plan.overflow = overflow
+        plan.overflow = overflow[...]
     }
 }
 
@@ -531,27 +535,29 @@ extension HwpFootnoteLayout {
         bodyBottom: CGFloat?,
         onPage geometry: HwpPageGeometry,
         divider: DividerMetrics
-    ) -> Placement {
+    ) -> PendingPlacement {
         let contentFrame = geometry.contentFrame
         let overhead = divider.marginTop + divider.marginBottom
+        // 영역 상단의 하한은 구분선 획까지 담은 자리다 (#165 리뷰) — 아래 클램프와 **같은**
+        // 값을 자리에도 써야, 자리에 꼭 맞게 들어간 스택이 클램프에 밀려 본문 하단 밖으로
+        // 나가지 않는다 (획 반 두께 − 위 여백 만큼). 본문이 있으면 본문 하한이 그보다 아래다.
+        let areaFloor = contentFrame.minY + Self.separatorOverhang(divider)
         let plan = Self.stackPlan(
             notes: notes,
-            available: contentFrame.maxY - (bodyBottom ?? contentFrame.minY) - overhead,
-            fullPage: contentFrame.height - overhead,
+            available: contentFrame.maxY - max(bodyBottom ?? areaFloor, areaFloor) - overhead,
+            fullPage: contentFrame.maxY - areaFloor - overhead,
             betweenNotes: divider.betweenNotes,
             emptyPage: bodyBottom == nil
         )
         guard !plan.entries.isEmpty else {
-            return Placement(blocks: [], overflow: plan.overflow)
+            return PendingPlacement(blocks: [], overflow: plan.overflow)
         }
         // 클램프는 구분선의 **획**까지 본문 상단 아래에 둔다 (#165 리뷰): 선은 위 여백 끝에
         // 가운데 맞춰 그어지므로 (`separatorLine`) 위 여백이 획 반 두께보다 좁으면 그만큼
         // 영역 위로 나간다 — 빈 쪽에도 안 들어가 진행 보장으로 실린 거대 각주에서 그 몫이
-        // 머리말·위 여백으로 새지 않게 그만큼 내려 잡는다 (클램프가 무동작인 쪽은 그대로).
-        let areaTop = max(
-            contentFrame.minY + Self.separatorOverhang(divider),
-            contentFrame.maxY - (plan.stackedHeight + overhead)
-        )
+        // 머리말·위 여백으로 새지 않게 그만큼 내려 잡는다. 자리(`areaFloor`)가 같은 하한을
+        // 썼으므로 들어맞은 스택엔 무동작이다.
+        let areaTop = max(areaFloor, contentFrame.maxY - (plan.stackedHeight + overhead))
         let separatorLine = Self.separatorLine(
             areaTop: areaTop, divider: divider, contentFrame: contentFrame
         )
@@ -570,7 +576,7 @@ extension HwpFootnoteLayout {
             cursorY = block.frame.maxY
             previousNoteId = entry.measured.input.noteId
         }
-        return Placement(blocks: blocks, overflow: plan.overflow)
+        return PendingPlacement(blocks: blocks, overflow: plan.overflow)
     }
 
     /// 각주 블록 하나 — 통째 항목과 쪽 끝에서 나뉜 앞 몫이 같은 산식으로 프레임·문단

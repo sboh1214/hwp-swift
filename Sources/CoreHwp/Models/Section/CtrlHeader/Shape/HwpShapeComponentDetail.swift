@@ -446,7 +446,17 @@ public enum HwpShapeArcKind: UInt32, Hashable, Sendable {
 /** 호 개체 세부 (표 101, 28 byte) — 타원과 동일 필드 구성 */
 public typealias HwpShapeArcDetail = HwpShapeEllipseDetail
 
-/** 다각형 개체 세부 (표 99) */
+/**
+ 다각형 개체 세부 (표 99)
+
+ 점 개수 필드는 **4 byte**다 — 스펙 표 99는 INT16으로 적었으나 실제 저장본은 4 byte다
+ (hwplib `ForControlPolygon.shapeComponentPolygon`이 `readSInt4`; 헌법주석 픽스처의 유일한
+ 다각형 `02 00 00 00 | 0,0 | 283,283 | 00 00 00 00`은 4 byte로 읽어야 283×283 상자 안의
+ 대각선이고, 2 byte로 읽으면 둘째 점이 `0x011B0000`(18,546,688 HWPUNIT)이 돼 쪽 전체를
+ 가로지르는 선이 됐다). 구분선 길이(`HwpFootnoteDividerInfo`)와 같은 부류의 폭 차이라 같은
+ 규약을 따른다: 4 byte(wide) 해석을 우선하고, wide가 무효인 malformed 레코드만 2 byte(narrow)로
+ 폴백한다.
+ */
 public struct HwpShapePolygonDetail: HwpPrimitive {
     public var points: [HwpShapePoint]
 
@@ -455,17 +465,42 @@ public struct HwpShapePolygonDetail: HwpPrimitive {
     }
 
     static func decode(from data: Data) -> HwpShapePolygonDetail? {
-        guard data.count >= 2 else { return nil }
+        decode(from: data, countByteCount: 4) ?? decode(from: data, countByteCount: 2)
+    }
+
+    private static func decode(from data: Data, countByteCount: Int) -> HwpShapePolygonDetail? {
+        guard let (count, cursor) = HwpShapePointList.count(in: data, byteCount: countByteCount),
+              let points = HwpShapePointList.points(in: data, count: count, at: cursor)
+        else { return nil }
+        return HwpShapePolygonDetail(points: points)
+    }
+}
+
+/// 다각형·곡선 세부의 공통 조각 — 점 개수 필드(2/4 byte)와 (x, y) INT32 쌍 목록.
+enum HwpShapePointList {
+    /// 점 개수와 점 목록 시작 offset. 개수가 0 이하거나 필드가 없으면 nil.
+    static func count(in data: Data, byteCount: Int) -> (count: Int, cursor: Int)? {
+        guard data.count >= byteCount else { return nil }
         do {
-            let count = Int(try data.readLittleEndianInt16(at: 0))
-            guard count > 0, data.count >= 2 + count * 8 else { return nil }
-            let points = try (0 ..< count).map { index in
+            let count = byteCount == 4
+                ? Int(try data.readLittleEndianInt32(at: 0))
+                : Int(try data.readLittleEndianInt16(at: 0))
+            guard count > 0 else { return nil }
+            return (count, byteCount)
+        } catch {
+            return nil
+        }
+    }
+
+    static func points(in data: Data, count: Int, at cursor: Int) -> [HwpShapePoint]? {
+        guard count <= (data.count - cursor) / 8 else { return nil }
+        do {
+            return try (0 ..< count).map { index in
                 HwpShapePoint(
-                    x: try data.readLittleEndianInt32(at: 2 + index * 8),
-                    y: try data.readLittleEndianInt32(at: 6 + index * 8)
+                    x: try data.readLittleEndianInt32(at: cursor + index * 8),
+                    y: try data.readLittleEndianInt32(at: cursor + 4 + index * 8)
                 )
             }
-            return HwpShapePolygonDetail(points: points)
         } catch {
             return nil
         }
@@ -483,19 +518,20 @@ public struct HwpShapeCurveDetail: HwpPrimitive {
         self.segmentTypes = segmentTypes
     }
 
+    /// 점 개수 필드는 다각형과 같이 **4 byte**다 (hwplib `ForControlCurve.shapeComponentCurve`가
+    /// `readSInt4` — 뒤에 4 byte를 건너뛴다). 4 byte 해석이 무효인 레코드만 2 byte로 폴백.
     static func decode(from data: Data) -> HwpShapeCurveDetail? {
-        guard data.count >= 2 else { return nil }
+        decode(from: data, countByteCount: 4) ?? decode(from: data, countByteCount: 2)
+    }
+
+    private static func decode(from data: Data, countByteCount: Int) -> HwpShapeCurveDetail? {
+        guard let (count, cursor) = HwpShapePointList.count(in: data, byteCount: countByteCount),
+              let points = HwpShapePointList.points(in: data, count: count, at: cursor),
+              data.count >= cursor + count * 8 + max(0, count - 1)
+        else { return nil }
         do {
-            let count = Int(try data.readLittleEndianInt16(at: 0))
-            guard count > 0, data.count >= 2 + count * 8 + max(0, count - 1) else { return nil }
-            let points = try (0 ..< count).map { index in
-                HwpShapePoint(
-                    x: try data.readLittleEndianInt32(at: 2 + index * 8),
-                    y: try data.readLittleEndianInt32(at: 6 + index * 8)
-                )
-            }
             let segmentTypes = try (0 ..< max(0, count - 1)).map { index in
-                try data.readUInt8(at: 2 + count * 8 + index)
+                try data.readUInt8(at: cursor + count * 8 + index)
             }
             return HwpShapeCurveDetail(points: points, segmentTypes: segmentTypes)
         } catch {

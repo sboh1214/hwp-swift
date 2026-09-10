@@ -200,18 +200,7 @@ import XCTest
         /// 클램프되는데, 위 여백보다 굵은 구분선은 획 반 두께가 그 위로 나간다 (#165 리뷰).
         /// 획까지 본문 상단 아래에 있어야 머리말·위 여백으로 새지 않는다.
         func testThickSeparatorStaysInsideTheClampedArea() throws {
-            // 위 여백 0·아래 여백 850·굵기 index 15 (5mm = 14.17pt) 인 구분선 모양.
-            var shape = CoreHwp.HwpFootnoteShape(
-                dividerLength: 0, dividerMarginTop: 0, dividerType: 0, dividerThickness: 15
-            )
-            var payload = Data(count: 12)
-            withUnsafeBytes(of: Int32(0).littleEndian) { payload.append(contentsOf: $0) }
-            withUnsafeBytes(of: Int16(0).littleEndian) { payload.append(contentsOf: $0) }
-            withUnsafeBytes(of: Int16(850).littleEndian) { payload.append(contentsOf: $0) }
-            withUnsafeBytes(of: Int16(283).littleEndian) { payload.append(contentsOf: $0) }
-            payload.append(contentsOf: [0, 15])
-            withUnsafeBytes(of: UInt32(0).littleEndian) { payload.append(contentsOf: $0) }
-            shape.rawPayload = payload
+            let shape = try Self.thickDividerShape()
             expect(shape.dividerInfo?.thickness) == 15
             expect(shape.dividerInfo?.marginTop) == 0
 
@@ -231,6 +220,87 @@ import XCTest
             expect(block.separatorLine.minY) >= geometry.contentFrame.minY - 0.001
             // 첫 줄은 여전히 선 가운데 + 아래 여백 뒤에서 시작한다.
             expect(block.frame.minY).to(beCloseTo(block.separatorLine.midY + 8.5, within: 0.01))
+        }
+
+        /// 최상위 도형·그림 블록도 프레임을 넘어 칠한다 (#165 리뷰): 도형은 경로를 프레임
+        /// 원점으로 옮겨 클립 없이 긋고(회전 경로·굵은 획), 그림은 테두리를 프레임 경로 중앙에
+        /// 그어 절반이 밖이다. 본문 하한이 그 칠을 담아야 각주 스택이 그 위에 놓이지 않는다.
+        func testPaintedBoundsIncludeTopLevelShapeAndImagePaint() {
+            let frame = CGRect(x: 100, y: 100, width: 50, height: 40)
+            // 도형-로컬 경로가 프레임 아래 20pt까지 내려가고 획 6pt가 그 위에 얹힌다.
+            let path = CGMutablePath()
+            path.addLines(between: [
+                CGPoint(x: 0, y: 0), CGPoint(x: 50, y: 0), CGPoint(x: 25, y: 60),
+            ])
+            path.closeSubpath()
+            let shape = AnyHwpBlock(
+                frame: frame, kind: .shape,
+                payload: .shape(HwpShapeGeometry(
+                    path: path, fillColor: nil, strokeColor: .hwpBlack, strokeWidth: 6
+                ))
+            )
+            let shapeBounds = HwpHitTester.paintedObjectBounds(of: shape)
+            expect(shapeBounds.maxY) > frame.maxY + 20
+            expect(shapeBounds.contains(frame)) == true
+
+            let image = AnyHwpBlock(
+                frame: frame, kind: .image,
+                payload: .image(HwpImageBlockInfo(
+                    binItemId: 1, borderColor: HwpRGBColor(red: 0, green: 0, blue: 0),
+                    borderWidth: 6, style: nil
+                ))
+            )
+            expect(HwpHitTester.paintedObjectBounds(of: image).maxY).to(beCloseTo(frame.maxY + 3, within: 0.001))
+            // 텍스트 블록은 프레임 그대로다.
+            let text = AnyHwpBlock(frame: frame, kind: .text, attributedString: NSAttributedString(string: "가"))
+            expect(HwpHitTester.paintedObjectBounds(of: text)) == frame
+        }
+
+        /// 획 반 두께가 위 여백보다 굵은 구분선은 영역 상단의 하한을 그만큼 내린다 — 그 몫을
+        /// **자리**에서도 빼야 한다 (#165 리뷰). 빼지 않으면 자리에 꼭 맞게 들어간 스택이
+        /// 클램프에 밀려 본문 하단 밖으로 나간다 — 나눠 넘기거나 다음 쪽으로 옮겨야 할 각주다.
+        func testSeparatorOverhangCountsAgainstTheAvailableHeight() throws {
+            let shape = try Self.thickDividerShape()
+            // 30줄(348.88)+29줄(337.16)+사이 여백 2.83 = 688.87 — 획 몫(7.09)을 안 뺀 자리
+            // (689.0)엔 들어가고 뺀 자리(682.4)엔 안 들어간다.
+            let notes = try [(1, 30), (2, 29)].map { number, lines in
+                try Support.note(
+                    lines: (1 ... lines).map { "각주 \(number) 줄 \($0)" },
+                    locations: (0 ..< lines).map { Int32($0) * 1172 }
+                )
+            }
+            let layout = HwpFootnoteLayout(fontResolver: .testDeterministic)
+            let geometry = Support.geometry(contentWidth: 451)
+            let placement = layout.place(
+                footnotes: notes.enumerated().map { offset, note in
+                    HwpFootnoteLayout.Input(paragraph: note, number: offset + 1)
+                },
+                onPage: geometry, index: HwpIndex(from: CoreHwp.HwpFile()), footnoteShape: shape,
+                limitsAreaToHalfContent: false, bodyBottom: geometry.contentFrame.minY + 0.5
+            )
+            // 둘째 각주는 다음 쪽이고, 실린 스택은 본문 하단 안에 있다.
+            expect(placement.blocks.count) == 1
+            expect(placement.overflow.count) == 1
+            let block = try XCTUnwrap(placement.blocks.first)
+            expect(block.frame.maxY) <= geometry.contentFrame.maxY + 0.01
+            expect(block.separatorLine.minY) >= geometry.contentFrame.minY - 0.001
+        }
+
+        /// 위 여백 0·아래 여백 850·굵기 index 15 (5mm = 14.17pt) 인 구분선 모양 —
+        /// `dividerInfo`는 rawPayload를 다시 디코딩하므로 28바이트를 직접 조립한다.
+        static func thickDividerShape() throws -> CoreHwp.HwpFootnoteShape {
+            var shape = CoreHwp.HwpFootnoteShape(
+                dividerLength: 0, dividerMarginTop: 0, dividerType: 0, dividerThickness: 15
+            )
+            var payload = Data(count: 12)
+            withUnsafeBytes(of: Int32(0).littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: Int16(0).littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: Int16(850).littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: Int16(283).littleEndian) { payload.append(contentsOf: $0) }
+            payload.append(contentsOf: [0, 15])
+            withUnsafeBytes(of: UInt32(0).littleEndian) { payload.append(contentsOf: $0) }
+            shape.rawPayload = payload
+            return shape
         }
     }
 #endif

@@ -69,11 +69,15 @@ struct HwpParagraphObjectCollector {
             && !component.textBoxListArray.isEmpty
     }
 
+    /// 요소가 하나도 없는 컨트롤은 수집 대상이 아니다 (#165 리뷰): `objects()`는 요소마다
+    /// 그리므로 빈 컨트롤은 아무것도 내지 않는데, `allSatisfy`가 공허하게 참이면 그런 각주가
+    /// "개체를 담은 각주"로 판정돼 쪽 끝 분할이 막히고 CT 높이로 남는다. 흐름 경로도 요소가
+    /// 없으면 내는 것이 없어 두 경로의 답이 같다.
     static func collectible(
         _ components: [CoreHwp.HwpShapeComponent],
         collectsTextboxes: Bool
     ) -> Bool {
-        guard components.allSatisfy(\.oleArray.isEmpty) else { return false }
+        guard !components.isEmpty, components.allSatisfy(\.oleArray.isEmpty) else { return false }
         if !collectsTextboxes,
            components.contains(where: { !$0.textBoxListArray.isEmpty })
         {

@@ -63,6 +63,24 @@ public struct HwpShapeGeometry: @unchecked Sendable {
         )
     }
 
+    /// `rect`에 놓인 이 도형이 실제로 칠하는 영역 — **rect ∪ 경로 bbox ∪ stroke 경로 bbox**.
+    /// 경로는 rect로 클램프되지 않고 (R63) stroke 몫은 miter 팁까지 `strokedPath`의 bbox다
+    /// (R64). 셀 도형(`HwpCellShape.paintedRect`)과 최상위 도형 블록
+    /// (`HwpHitTester.paintedRects`, #165 리뷰)이 이 하나를 공유한다 — 경로·stroke는
+    /// 도형-로컬 좌표라 rect 원점으로 옮겨 합친다. 빈·무한 bbox는 무시한다.
+    public func paintedRect(in rect: CGRect) -> CGRect {
+        var painted = Self.union(rect, path.boundingBox, origin: rect.origin)
+        if let stroked = strokedPath {
+            painted = Self.union(painted, stroked.boundingBox, origin: rect.origin)
+        }
+        return painted
+    }
+
+    private static func union(_ base: CGRect, _ bounds: CGRect, origin: CGPoint) -> CGRect {
+        guard !bounds.isNull, !bounds.isInfinite else { return base }
+        return base.union(bounds.offsetBy(dx: origin.x, dy: origin.y))
+    }
+
     /// 페인터가 **실제로 긋는 그 선**의 경로 — 탭 판정(`ContentLayer.paints`)과
     /// 자격(`HwpCellShape.paintedRect`)이 이 하나를 공유한다 (R64).
     ///

@@ -45,8 +45,9 @@ final class ShapeComponentKindDetailDecodeTests: XCTestCase {
         expect(truncated.rectangleDetail).to(beNil())
     }
 
+    /// 점 개수는 4 byte다 (실제 저장본·hwplib) — 스펙 표 99의 INT16 표기와 다르다.
     func testPolygonDetailReadsInterleavedPointPairs() {
-        var payload = littleEndianData(Int16(3))
+        var payload = littleEndianData(Int32(3))
         payload.append(int32Payload([1, -1, 2, -2, 3, -3])) // (x,y) 쌍 3개
 
         let polygon = HwpShapeComponentPolygon(rawPayload: payload, unknownChildren: [])
@@ -58,16 +59,43 @@ final class ShapeComponentKindDetailDecodeTests: XCTestCase {
         ]
     }
 
+    /// 헌법주석 픽스처의 유일한 다각형 레코드 (24 byte) — 4 byte 개수로 읽어야 283×283 상자
+    /// 안의 대각선이다. 2 byte로 읽으면 둘째 점이 0x011B0000이 돼 쪽을 가로지르는 선이 된다.
+    func testPolygonDetailReadsTheFixtureRecordAsADiagonalInsideItsBox() {
+        let payload = Data([
+            0x02, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x1B, 0x01, 0x00, 0x00, 0x1B, 0x01, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,
+        ])
+        expect(HwpShapePolygonDetail.decode(from: payload)?.points) == [
+            HwpShapePoint(x: 0, y: 0),
+            HwpShapePoint(x: 283, y: 283),
+        ]
+    }
+
+    /// 4 byte 해석이 무효인 짧은 레코드는 2 byte 개수로 폴백한다 (구분선 길이와 같은 규약).
+    func testPolygonDetailFallsBackToNarrowCountWhenWideDoesNotFit() {
+        var payload = littleEndianData(Int16(2))
+        payload.append(int32Payload([7, 8, 9, 10]))
+        expect(HwpShapePolygonDetail.decode(from: payload)?.points) == [
+            HwpShapePoint(x: 7, y: 8),
+            HwpShapePoint(x: 9, y: 10),
+        ]
+    }
+
     func testPolygonDetailIsNilForZeroCountOrTruncatedPoints() {
+        expect(HwpShapePolygonDetail.decode(from: littleEndianData(Int32(0)))).to(beNil())
         expect(HwpShapePolygonDetail.decode(from: littleEndianData(Int16(0)))).to(beNil())
 
-        var truncated = littleEndianData(Int16(2))
-        truncated.append(Data(repeating: 0, count: 15)) // 좌표에는 16 byte 필요
+        // 좌표 두 쌍엔 16 byte가 필요하다 — 4 byte 개수(20)로도 2 byte 폴백(18)으로도 모자란 길이.
+        var truncated = littleEndianData(Int32(2))
+        truncated.append(Data(repeating: 0, count: 13))
         expect(HwpShapePolygonDetail.decode(from: truncated)).to(beNil())
     }
 
     func testCurveDetailReadsPointsAndSegmentTypes() {
-        var payload = littleEndianData(Int16(3))
+        var payload = littleEndianData(Int32(3))
         payload.append(int32Payload([0, 5, 10, 15, 20, 25])) // (x,y) 쌍 3개
         payload.append(contentsOf: [1, 0]) // segment types: curve, line
 
@@ -82,8 +110,10 @@ final class ShapeComponentKindDetailDecodeTests: XCTestCase {
     }
 
     func testCurveDetailIsNilWhenSegmentTypesAreMissing() {
-        var payload = littleEndianData(Int16(2))
-        payload.append(Data(repeating: 0, count: 16)) // 좌표만 있고 구간 종류 byte 없음
+        // 좌표 두 쌍(16)에 구간 종류 1 byte가 더 필요하다 — 4 byte 개수(21)로도 2 byte
+        // 폴백(19)으로도 모자란 18 byte.
+        var payload = littleEndianData(Int32(2))
+        payload.append(Data(repeating: 0, count: 14))
 
         expect(HwpShapeCurveDetail.decode(from: payload)).to(beNil())
     }

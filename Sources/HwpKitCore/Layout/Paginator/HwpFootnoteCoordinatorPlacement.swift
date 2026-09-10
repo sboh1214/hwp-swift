@@ -77,8 +77,8 @@ extension HwpFootnoteCoordinator {
         limitsAreaToHalfContent: Bool,
         sizeResolver: HwpObjectSizeResolver? = nil,
         bodyBottom: CGFloat? = nil
-    ) -> HwpFootnoteLayout.Placement {
-        footnoteLayout.place(
+    ) -> HwpFootnoteLayout.PendingPlacement {
+        footnoteLayout.placePending(
             footnotes: pendingFootnotes,
             onPage: geometry,
             index: index,
@@ -97,8 +97,8 @@ extension HwpFootnoteCoordinator {
         endnoteShape: CoreHwp.HwpFootnoteShape?,
         drawSeparator: Bool,
         sizeResolver: HwpObjectSizeResolver? = nil
-    ) -> HwpFootnoteLayout.FlowPlacement {
-        footnoteLayout.placeFlow(
+    ) -> HwpFootnoteLayout.PendingFlowPlacement {
+        footnoteLayout.placePendingFlow(
             footnotes: pendingEndnotes,
             from: startY,
             in: columnFrame,

@@ -310,18 +310,9 @@ public struct HwpCellShape: @unchecked Sendable, Hashable {
     /// stroke 몫은 폭의 절반이 아니라 **`strokedPath`의 bbox**로 잡는다 (R64) —
     /// miter 조인의 팁은 그보다 훨씬 멀리 (`miterLimit` 상한까지) 뻗고, 판정도 같은
     /// 경로를 보므로 절반만 넓히면 자격이 상위집합이 아니다.
+    /// 산식은 `HwpShapeGeometry.paintedRect(in:)` 하나다 — 최상위 도형 블록도 같은 값을 쓴다.
     public var paintedRect: CGRect {
-        var painted = union(rect, geometry.path.boundingBox)
-        if let stroked = geometry.strokedPath {
-            painted = union(painted, stroked.boundingBox)
-        }
-        return painted
-    }
-
-    /// 도형-로컬 bbox를 rect 좌표로 옮겨 합친다 — 빈·무한 bbox는 무시한다
-    private func union(_ base: CGRect, _ bounds: CGRect) -> CGRect {
-        guard !bounds.isNull, !bounds.isInfinite else { return base }
-        return base.union(bounds.offsetBy(dx: rect.minX, dy: rect.minY))
+        geometry.paintedRect(in: rect)
     }
 
     /// 감싼 링크 URL만 바꾼 사본 — 분할 전 해석값을 개체에 고정한다 (R58)

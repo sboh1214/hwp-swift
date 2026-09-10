@@ -54,9 +54,10 @@ extension HwpHitTester {
     /// 레이아웃의 "이 블록이 그리는 하한"이다 (#165 리뷰): 표·글상자의 오버레이·쪽
     /// 기준 자식은 컨테이너를 키우지 않고 그 아래로 그려지므로 (`HwpFootnoteObjectLayoutTests
     /// .testOverlayWrapModesDoNotGrowFootnoteBlockButStayRendered`) 프레임만 보면 각주
-    /// 스택이 그 개체 위에 놓인다. 텍스트를 빼는 이유는 자격 영역의 `textBounds`가
-    /// 폰트 메트릭 여유를 더한 **상위집합**이라 모든 블록을 몇 pt씩 부풀리기 때문 —
-    /// 텍스트는 블록 프레임이 담는다. 겹침 가드(`FixtureFootnoteOverlapTests`)도
+    /// 스택이 그 개체 위에 놓인다. 최상위 도형·그림 블록의 **자기** 칠(회전 경로·miter
+    /// 팁·테두리 절반)도 같은 이유로 든다 (#165 리뷰). 텍스트를 빼는 이유는 자격 영역의
+    /// `textBounds`가 폰트 메트릭 여유를 더한 **상위집합**이라 모든 블록을 몇 pt씩 부풀리기
+    /// 때문 — 텍스트는 블록 프레임이 담는다. 겹침 가드(`FixtureFootnoteOverlapTests`)도
     /// 같은 자를 쓴다.
     static func paintedObjectBounds(of block: AnyHwpBlock) -> CGRect {
         paintedRects(for: block, includingText: false).reduce(block.frame) { $0.union($1) }
@@ -134,6 +135,14 @@ extension HwpHitTester {
             )
         case let .textbox(textbox):
             addTextboxChildren(textbox, offset: origin)
+        case let .shape(geometry):
+            // 최상위 도형 블록도 셀 도형과 같다 (#165 리뷰): `shapeCommands`가 경로를 프레임
+            // 원점으로 옮겨 클립 없이 긋으므로 회전 경로·miter 팁이 프레임을 넘는다.
+            rects.append(geometry.paintedRect(in: block.frame))
+        case let .image(image):
+            // 최상위 그림 블록의 테두리도 프레임 경로 중앙에 그어져 (`imageCommands`) 폭의
+            // 절반이 밖이다 (R61과 같은 규칙).
+            rects.append(strokeBounds(block.frame, borderWidth: image.borderWidth))
         default:
             break
         }

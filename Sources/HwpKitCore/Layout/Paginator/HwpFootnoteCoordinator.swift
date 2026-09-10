@@ -65,9 +65,12 @@ struct HwpFootnoteCoordinator {
     let footnoteLayout: HwpFootnoteLayout
 
     /// 이 페이지에 배치할 각주 (문단 + 문서 순서 번호)
-    var pendingFootnotes: [HwpFootnoteLayout.Input] = []
+    /// 대기 각주 — 배치가 돌려준 이월 **슬라이스**를 그대로 든다 (#165 리뷰): 쪽마다 남은
+    /// 각주를 새 배열로 뜨면 그 복사가 쪽 수 × N이다. 새 각주는 뒤에 붙인다 (슬라이스 뒤에
+    /// 붙일 때만 그 남은 몫이 한 번 복사된다).
+    var pendingFootnotes: ArraySlice<HwpFootnoteLayout.Input> = []
     /// 문서/구역 끝에 배치할 미주 (표 134 bits 8-9)
-    var pendingEndnotes: [HwpFootnoteLayout.Input] = []
+    var pendingEndnotes: ArraySlice<HwpFootnoteLayout.Input> = []
     /// 각주 영역이 차지할 높이 (본문 overflow 검사에 반영)
     var footnoteReservedHeight: CGFloat = 0
     var footnoteCounter = 0
@@ -348,7 +351,11 @@ struct HwpFootnoteCoordinator {
                 number: number,
                 sizeResolver: environment.sizeResolver,
                 numbering: scope,
-                noteId: noteId
+                noteId: noteId,
+                // 각주 모양도 수집 시점에 **각인**한다 (#165 리뷰) — 바로 아래 예약이 이 모양으로
+                // 재고, 배치는 각인된 모양을 쓰므로 예약 ≡ 배치다. 배치가 쪽마다 대기 각주 전부에
+                // 각인하던 일(쪽 수 × N)도 없어진다. 기본 모양(nil)도 확정이다.
+                measuredShape: .init(footnoteShape: environment.footnoteShape)
             ))
             footnoteReservedHeight += measuredFootnoteHeight(
                 of: paragraph,

@@ -27,25 +27,34 @@ extension HwpFootnoteCoordinator {
     /// 이월된 각주 입력들이 새 페이지에서 예약할 높이 — 배치 (place)와
     /// 동형: Σ 높이 + 노트 경계마다 간격 + 구분선 오버헤드.
     mutating func reservedFootnoteHeight(
-        for inputs: [HwpFootnoteLayout.Input],
-        environment: Environment
+        for inputs: ArraySlice<HwpFootnoteLayout.Input>,
+        environment: Environment,
+        upTo limit: CGFloat = .infinity
     ) -> CGFloat {
         guard !inputs.isEmpty else { return 0 }
         let metrics = footnoteReservationMetrics(environment: environment)
         var total = metrics.separatorOverhead
-        // 개체 판정은 **각주 단위** (#165 리뷰) — 배치와 같은 범위를 본다.
-        let carrying = Set(
-            inputs.lazy
-                .filter {
-                    HwpParagraphObjectCollector.hasCollectibleObject(
-                        in: $0.paragraph, collectsTextboxes: true, collectsTables: true
-                    )
+        // 개체 판정은 **각주 단위** (#165 리뷰) — 배치와 같은 범위를 본다. 같은 각주의 문단은
+        // 잇닿아 있으므로 각주가 바뀌는 자리에서 그 이웃만 훑는다 — 전부를 먼저 훑으면 `limit`에
+        // 멈추는 뜻이 없다.
+        var noteCarriesObjects = false
+        var index = inputs.startIndex
+        while index < inputs.endIndex, total <= limit {
+            let input = inputs[index]
+            let next = inputs.index(after: index)
+            let startsNote = index == inputs.startIndex || inputs[inputs.index(before: index)].noteId != input.noteId
+            if startsNote {
+                if index > inputs.startIndex {
+                    total += metrics.spacingBetweenNotes
                 }
-                .map(\.noteId)
-        )
-        for (index, input) in inputs.enumerated() {
-            if index > 0, inputs[index - 1].noteId != input.noteId {
-                total += metrics.spacingBetweenNotes
+                var probe = index
+                noteCarriesObjects = false
+                while probe < inputs.endIndex, inputs[probe].noteId == input.noteId, !noteCarriesObjects {
+                    noteCarriesObjects = HwpParagraphObjectCollector.hasCollectibleObject(
+                        in: inputs[probe].paragraph, collectsTextboxes: true, collectsTables: true
+                    )
+                    probe = inputs.index(after: probe)
+                }
             }
             // 배치(`HwpFootnoteLayout.measure`)가 `input.sizeResolver`를 쓰므로
             // 재예약도 같은 값으로 재야 한다 — 현재 environment로 재면 그 사이
@@ -61,15 +70,15 @@ extension HwpFootnoteCoordinator {
                 number: input.number,
                 environment: noteEnvironment,
                 numbering: input.numbering,
-                isNoteEnd: index == inputs.count - 1
-                    || inputs[index + 1].noteId != input.noteId,
+                isNoteEnd: next == inputs.endIndex || inputs[next].noteId != input.noteId,
                 placedLineCount: input.placedLineCount,
-                noteCarriesObjects: carrying.contains(input.noteId),
+                noteCarriesObjects: noteCarriesObjects,
                 // 이월 입력이 나른 원본 조판(줄 캐시·남은 높이 누적표)을 그대로 쓴다 (#165
                 // 리뷰) — 쪽마다 줄 캐시를 다시 만들고 남은 줄을 다 더하면 이월이 길게
                 // 이어지는 문단에서 쪽 수 × 줄 수의 일이다.
                 sourceLayout: input.sourceLayout
             )
+            index = next
         }
         return total
     }
