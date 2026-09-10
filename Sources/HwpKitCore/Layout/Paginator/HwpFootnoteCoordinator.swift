@@ -45,31 +45,6 @@ struct HwpFootnoteCoordinator {
     /// (HwpPaginator.childParagraphs(of:) — unsupported walk/렌더 경로와 공유).
     typealias ChildParagraphs = (CoreHwp.HwpCtrlId) -> [(CoreHwp.HwpParagraph, HwpBlockKind)]
 
-    struct FootnoteHeightKey: Hashable {
-        let paragraph: CoreHwp.HwpParagraph
-        let widthCenti: Int
-        /// 자동 번호 치환 텍스트가 폭에 영향을 주므로 번호도 키에 포함한다
-        let number: Int
-        /// 상대 크기 개체가 든 문단은 줄 높이가 해석기 기하의 함수다 — 폭만
-        /// 키에 넣으면 종이/쪽 높이·단 폭만 바뀐 재사용이 살아나 예약이 배치와
-        /// 갈린다 (R39 #1). 배치 (`HwpFootnoteLayout.measure`)는 캐시가 없어
-        /// 항상 현재 기하로 재측정하므로 어긋나는 쪽은 언제나 예약이다.
-        let sizeResolver: HwpObjectSizeResolver?
-        /// `measureNote`가 받는 **모든** 입력이 키에 있어야 한다 (R54): 번호 모양
-        /// (표 134) 은 자동 번호 치환 텍스트를 바꿔 첫 줄 폭 → 줄바꿈 → 블록
-        /// 높이를 바꾼다. 구역이 번호를 재시작하면 (문단, 번호, 폭, 해석기) 가
-        /// 모두 같으면서 모양만 다른 재사용이 살아난다.
-        let footnoteShape: CoreHwp.HwpFootnoteShape?
-        /// 문단 번호·개요 번호 라벨(#158)도 첫 줄 폭을 바꾼다 — 번호는 위치 경로의
-        /// 함수(불변 표)라 경로가 키다. 같은 문단 값이 다른 자리에서 다른 번호를
-        /// 받을 수 있으므로 문단 값만으로는 재사용을 가를 수 없다.
-        let numberingPath: HwpParagraphPath?
-        /// 각주의 마지막 문단인지 (#165) — 마지막 줄의 줄 간격을 세지 않는 자리라 값이 다르다.
-        let noteEnd: Bool
-        /// 앞 쪽에 이미 실린 줄 수 (#165) — 이어지는 조각은 그 뒤 줄만 잰다.
-        let placedLineCount: Int
-    }
-
     let index: HwpIndex
     private let fontResolver: HwpFontResolver
     /// 글자 모양별 속성 캐시 (소유는 `HwpPaginator`) — 각주 측정도 본문과 공유한다.
@@ -95,6 +70,10 @@ struct HwpFootnoteCoordinator {
     /// 문서 순서대로 받아 두고 **배치만** 마지막 조각으로 미룬다. 열쇠(서수)가
     /// 문단 안에서만 유일하므로 문단마다 비운다 (`resetDeferredNestedFootnotes`).
     private var deferredNestedFootnotes: [Int: [DeferredNote]] = [:]
+    /// 각주·미주 식별자 일련번호 (#165 리뷰) — **절대 리셋하지 않는다**. 표시 번호는
+    /// 쪽마다 새로 시작할 수 있어 (표 134 모드 2) 이월된 각주와 새 각주가 같은 값을
+    /// 갖는데, 배치는 "같은 각주의 이어지는 문단"을 그 값으로 가르기 때문이다.
+    private var noteSequence = 0
     /// 지금 걷는 중인 컨테이너의 서수 — nil이 아니면 각주가 위 버퍼로 간다.
     /// 미주는 페이지 몫이 아니라 (문서·구역 끝 `placeFlow`) 이 우회로를 타지 않는다.
     private var deferralSink: Int?
@@ -105,6 +84,8 @@ struct HwpFootnoteCoordinator {
     private struct DeferredNote {
         let paragraphs: [CoreHwp.HwpParagraph]
         let number: Int
+        /// 표시 번호와 별개인 각주 식별자 (#165 리뷰)
+        let noteId: Int
         /// 문단마다의 번호 열쇠 (#158) — 미룬 배치도 같은 라벨을 붙인다.
         let numbering: [HwpNumberingScope?]
     }
@@ -303,16 +284,21 @@ struct HwpFootnoteCoordinator {
         // 같은 번호를 공유하고 첫 문단의 ext18 마커만 번호로 치환된다.
         let number = footnoteCounter
         footnoteCounter += 1
+        noteSequence += 1
+        let noteId = noteSequence
         // 카운터 증가가 sink 분기보다 **앞**이어야 한다 — 번호는 문서 순서고
         // 미루는 것은 배치뿐이다 (예약도 배치와 함께 그 페이지에서 잡힌다).
         if let sink = deferralSink {
             deferredNestedFootnotes[sink, default: []].append(
-                DeferredNote(paragraphs: paragraphs, number: number, numbering: scopes)
+                DeferredNote(
+                    paragraphs: paragraphs, number: number, noteId: noteId, numbering: scopes
+                )
             )
             return
         }
         appendPendingFootnote(
-            paragraphs: paragraphs, number: number, environment: environment, numbering: scopes
+            paragraphs: paragraphs, number: number, noteId: noteId,
+            environment: environment, numbering: scopes
         )
     }
 
@@ -323,6 +309,7 @@ struct HwpFootnoteCoordinator {
     private mutating func appendPendingFootnote(
         paragraphs: [CoreHwp.HwpParagraph],
         number: Int,
+        noteId: Int,
         environment: Environment,
         numbering: [HwpNumberingScope?]
     ) {
@@ -340,7 +327,8 @@ struct HwpFootnoteCoordinator {
                 paragraph: paragraph,
                 number: number,
                 sizeResolver: environment.sizeResolver,
-                numbering: scope
+                numbering: scope,
+                noteId: noteId
             ))
             footnoteReservedHeight += measuredFootnoteHeight(
                 of: paragraph,
@@ -363,8 +351,8 @@ struct HwpFootnoteCoordinator {
         }
         for note in deferred {
             appendPendingFootnote(
-                paragraphs: note.paragraphs, number: note.number, environment: environment,
-                numbering: note.numbering
+                paragraphs: note.paragraphs, number: note.number, noteId: note.noteId,
+                environment: environment, numbering: note.numbering
             )
         }
         return true
@@ -388,12 +376,15 @@ struct HwpFootnoteCoordinator {
         guard !paragraphs.isEmpty else { return }
         let number = endnoteCounter
         endnoteCounter += 1
+        noteSequence += 1
+        let noteId = noteSequence
         for (paragraphIndex, paragraph) in paragraphs.enumerated() {
             pendingEndnotes.append(HwpFootnoteLayout.Input(
                 paragraph: paragraph,
                 number: number,
                 sizeResolver: nil,
-                numbering: numbering?.paragraph(childIndex: paragraphIndex)
+                numbering: numbering?.paragraph(childIndex: paragraphIndex),
+                noteId: noteId
             ))
         }
     }
@@ -427,7 +418,7 @@ extension HwpFootnoteCoordinator {
         let metrics = footnoteReservationMetrics(environment: environment)
         var total = metrics.separatorOverhead
         for (index, input) in inputs.enumerated() {
-            if index > 0, inputs[index - 1].number != input.number {
+            if index > 0, inputs[index - 1].noteId != input.noteId {
                 total += metrics.spacingBetweenNotes
             }
             // 배치(`HwpFootnoteLayout.measure`)가 `input.sizeResolver`를 쓰므로
@@ -439,7 +430,8 @@ extension HwpFootnoteCoordinator {
                 number: input.number,
                 environment: input.sizeResolver.map(environment.withSizeResolver) ?? environment,
                 numbering: input.numbering,
-                isNoteEnd: index == inputs.count - 1 || inputs[index + 1].number != input.number,
+                isNoteEnd: index == inputs.count - 1
+                    || inputs[index + 1].noteId != input.noteId,
                 placedLineCount: input.placedLineCount
             )
         }

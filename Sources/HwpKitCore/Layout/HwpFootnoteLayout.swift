@@ -2,55 +2,6 @@ import CoreGraphics
 import CoreHwp
 import Foundation
 
-public struct HwpFootnoteBlock: @unchecked Sendable, Hashable {
-    /// 페이지 좌표계 (top-left origin)의 각주 영역
-    public let frame: CGRect
-    /// 각주 문단 (텍스트 + 지오메트리 + paraId)
-    public let paragraphs: [HwpLaidOutParagraph]
-    /// 각주 번호 (구역 각주 모양의 시작 번호부터 이어짐)
-    public let number: Int
-    /// 구분선 영역 (첫 각주 블록 위). 페이지 좌표계.
-    public let separatorLine: CGRect
-    /// 구분선 색
-    public let separatorColor: HwpRGBColor
-    /// 각주 문단 안 그림 (블록-로컬 rect, #94)
-    public let images: [HwpCellImage]
-    /// 각주 문단 안 도형 (블록-로컬 rect, #94)
-    public let shapes: [HwpCellShape]
-    /// 각주 문단 안 글상자 (블록-로컬 rect, #94)
-    public let textboxes: [HwpCellTextbox]
-    /// 각주 문단 안 표 (블록-로컬 rect, #94). 한글.app 실측 (헌법주석 883쪽
-    /// 각주 29): 표가 각주 영역 안에 그려지고 그 아래로 다음 각주가 이어진다.
-    public let nestedTables: [HwpNestedTableFrame]
-
-    public init(
-        frame: CGRect,
-        paragraphs: [HwpLaidOutParagraph],
-        number: Int,
-        separatorLine: CGRect,
-        separatorColor: HwpRGBColor = HwpRGBColor(red: 0, green: 0, blue: 0),
-        images: [HwpCellImage] = [],
-        shapes: [HwpCellShape] = [],
-        textboxes: [HwpCellTextbox] = [],
-        nestedTables: [HwpNestedTableFrame] = []
-    ) {
-        self.frame = frame
-        self.paragraphs = paragraphs
-        self.number = number
-        self.separatorLine = separatorLine
-        self.separatorColor = separatorColor
-        self.images = images
-        self.shapes = shapes
-        self.textboxes = textboxes
-        self.nestedTables = nestedTables
-    }
-
-    /// 하위 호환: 문단 지오메트리만 필요할 때
-    public var paragraphFrames: [HwpParagraphFrame] {
-        paragraphs.map(\.frame)
-    }
-}
-
 /// 페이지 하단 각주 영역 레이아웃.
 ///
 /// 구분선 지오메트리 (길이/여백/색)는 구역 정의의 각주 모양 (HWPTAG_FOOTNOTE_SHAPE)에서
@@ -90,6 +41,18 @@ public struct HwpFootnoteLayout {
         /// 이어지는 조각은 그 뒤 줄만 재고 그리며 번호 라벨을 반복하지 않는다
         /// (`HwpFootnoteContinuation.swift`). 공개 init은 0이다.
         let placedLineCount: Int
+        /// 앞 쪽들이 이미 **그린** 조판 문자열 길이 (#165 리뷰) — 이어지는 조각의 시작
+        /// 문자 위치다. 캐시 줄 인덱스를 CT 줄 수에 비례 환산한 경계는 구역이 바뀌어 폭이
+        /// 달라지면 (줄 나눔이 달라져) 앞 쪽이 실제로 그린 마지막 글자와 다른 자리를
+        /// 가리켜 글자가 사라지거나 겹친다 (실측: 451 → 200pt에서 7자 유실). 폭이 그대로면
+        /// 비례 환산 결과가 곧 이 위치라 동작이 같다. 공개 init은 0이다.
+        let placedLength: Int
+        /// 각주 하나의 **식별자** (#165 리뷰) — 문서 순서 일련번호라 표시 번호와 달리
+        /// 쪽마다 새로 시작해도 (표 134 모드 2) 재사용되지 않는다. 여러 문단짜리 각주는
+        /// 같은 값을 공유하고 이월된 조각도 그대로 물려받는다. 표시 번호로 그룹을 나누면
+        /// 이월된 각주와 새 각주가 한 각주로 합쳐져 사이 여백이 사라지고 앞 조각의 마지막
+        /// 줄 간격이 높이에 남는다. 공개 init은 표시 번호를 그대로 쓴다.
+        let noteId: Int
 
         public init(
             paragraph: CoreHwp.HwpParagraph,
@@ -98,7 +61,7 @@ public struct HwpFootnoteLayout {
         ) {
             self.init(
                 paragraph: paragraph, number: number, sizeResolver: sizeResolver,
-                numbering: nil
+                numbering: nil, noteId: number
             )
         }
 
@@ -107,13 +70,17 @@ public struct HwpFootnoteLayout {
             number: Int,
             sizeResolver: HwpObjectSizeResolver?,
             numbering: HwpNumberingScope?,
-            placedLineCount: Int = 0
+            placedLineCount: Int = 0,
+            placedLength: Int = 0,
+            noteId: Int
         ) {
             self.paragraph = paragraph
             self.number = number
             self.sizeResolver = sizeResolver
             self.numbering = numbering
             self.placedLineCount = placedLineCount
+            self.placedLength = placedLength
+            self.noteId = noteId
         }
     }
 
@@ -243,11 +210,11 @@ public struct HwpFootnoteLayout {
     static func stackedHeight(of measured: [MeasuredFootnote], betweenNotes: CGFloat) -> CGFloat {
         var total: CGFloat = 0
         for (index, note) in measured.enumerated() {
-            if index > 0, measured[index - 1].input.number != note.input.number {
+            if index > 0, measured[index - 1].input.noteId != note.input.noteId {
                 total += betweenNotes
             }
             let isNoteEnd = index == measured.count - 1
-                || measured[index + 1].input.number != note.input.number
+                || measured[index + 1].input.noteId != note.input.noteId
             total += note.measurement.stackingHeight(isNoteEnd: isNoteEnd)
         }
         return total
@@ -344,22 +311,22 @@ public struct HwpFootnoteLayout {
         var blocks: [HwpFootnoteBlock] = []
         var overflow: [Input] = []
         var cursorY = startY
-        var previousNumber: Int?
+        var previousNoteId: Int?
         for (noteIndex, note) in measured.enumerated() {
             // 같은 각주 컨트롤의 이어지는 문단은 간격 없이 붙인다
             // (헌법주석 실측: 한 각주의 문단 캐시 loc이 연속 — 내부 간격 0).
-            if let previousNumber, previousNumber == note.input.number {
+            if let previousNoteId, previousNoteId == note.input.noteId {
                 cursorY -= divider.betweenNotes
             }
             let isNoteEnd = noteIndex == measured.count - 1
-                || measured[noteIndex + 1].input.number != note.input.number
+                || measured[noteIndex + 1].input.noteId != note.input.noteId
             let entry = StackEntry(measured: note, lineRange: nil, isNoteEnd: isNoteEnd)
             let blockHeight = note.measurement.stackingHeight(isNoteEnd: isNoteEnd)
             if !blocks.isEmpty, cursorY + blockHeight > frame.maxY + 0.5 {
                 overflow = measured[noteIndex...].map(\.input)
                 break
             }
-            previousNumber = note.input.number
+            previousNoteId = note.input.noteId
             blocks.append(Self.footnoteBlock(
                 for: entry, at: cursorY, in: frame, separatorLine: separatorLine, divider: divider
             ))
@@ -417,6 +384,8 @@ extension HwpFootnoteLayout {
         let cacheLines: [HwpFootnoteCacheLine]?
         /// 앞 쪽에 이미 실린 줄 수 — `attributed`·`frame`은 그 뒤 조각이다.
         let placedLineCount: Int
+        /// 앞 쪽이 소비한 조판 문자열 길이 (#165 리뷰 — `Input.placedLength`)
+        let placedLength: Int
         /// 텍스트 높이가 캐시에서 왔을 때 마지막 줄의 줄 간격 — 각주 끝·쪽 끝에서 세지
         /// 않는다 (각주 사이 여백이 대체하고, 쪽 끝은 줄 상자 아래가 본문 하단에 닿는다).
         let trailingLineSpacing: CGFloat
@@ -448,7 +417,7 @@ extension HwpFootnoteLayout {
         /// 뒤 조각은 빈다. 한글이 그런 각주를 어떻게 나누는지는 실측이 없어 (코퍼스 0건)
         /// 통째로 옮긴다 — 유실도 오배치도 없는 쪽이다.
         var carriesObjects: Bool {
-            objects.count > 0 || objects.floatingBottom != nil
+            HwpFootnoteLayout.carriesObjects(objects)
         }
 
         /// 스택에서 차지하는 높이 — 각주의 마지막 항목이면 마지막 줄의 줄 간격을 뺀다
@@ -501,7 +470,8 @@ extension HwpFootnoteLayout {
         footnoteShape: CoreHwp.HwpFootnoteShape?,
         sizeResolver: HwpObjectSizeResolver?,
         numbering: HwpNumberingScope? = nil,
-        placedLineCount: Int = 0
+        placedLineCount: Int = 0,
+        placedLength: Int = 0
     ) -> NoteMeasurement {
         let noteResolver = sizeResolver?.forFootnoteArea(width: width)
         // 각주 첫머리의 자동 번호 (ext18) 마커를 번호 문자열로 치환한다 (번호는
@@ -533,7 +503,8 @@ extension HwpFootnoteLayout {
             let range = min(placedLineCount, cacheLines.count) ..< cacheLines.count
             let fragment = Self.fragment(
                 of: measured.attributed, lines: measured.frame.lines,
-                cacheLineCount: cacheLines.count, cacheRange: range
+                cacheLineCount: cacheLines.count, cacheRange: range,
+                startingAt: placedLength
             )
             return NoteMeasurement(
                 attributed: fragment.attributed,
@@ -546,6 +517,7 @@ extension HwpFootnoteLayout {
                 sourceLines: measured.frame.lines,
                 cacheLines: cacheLines,
                 placedLineCount: placedLineCount,
+                placedLength: placedLength,
                 trailingLineSpacing: HwpFootnoteCacheLines.trailingSpacing(
                     of: cacheLines, in: range
                 )
@@ -573,12 +545,27 @@ extension HwpFootnoteLayout {
         )
         // 쪽에 걸친 문단 (세로 위치 리셋) 은 `cachedLineExtent`가 거부해 CT 높이로
         // 떨어진다 — 쪽 몫의 합이 한글 높이다 (#165). 단조 캐시는 두 산식이 같다.
+        //
+        // **개체를 담은 각주는 예외다** (#165 리뷰): 그 합은 한글이 **두 쪽에 나눠** 그린
+        // 높이인데 개체를 담은 각주는 나누지 않고 한 쪽에 통째로 그리므로
+        // (`carriesObjects`), 그 합으로 낮추면 CT 좌표로 수집한 개체를 블록이 담지 못해
+        // 다음 각주와 겹친다 (실측: 블록 44.16pt에 개체 하단 79.35pt). 개체를 놓은
+        // 좌표계인 CT 높이를 그대로 두고, 그 높이엔 없는 캐시 마지막 줄 간격도 빼지 않는다.
         var frame = measured.frame
+        var trailingSpacing = cacheLines.map {
+            HwpFootnoteCacheLines.trailingSpacing(of: $0, in: $0.indices)
+        } ?? 0
         if let cacheLines, measured.cachedLineExtent == nil {
-            frame = HwpParagraphFrame(
-                totalHeight: HwpFootnoteCacheLines.height(of: cacheLines, in: cacheLines.indices),
-                lines: frame.lines
-            )
+            if Self.carriesObjects(objects) {
+                trailingSpacing = 0
+            } else {
+                frame = HwpParagraphFrame(
+                    totalHeight: HwpFootnoteCacheLines.height(
+                        of: cacheLines, in: cacheLines.indices
+                    ),
+                    lines: frame.lines
+                )
+            }
         }
         return NoteMeasurement(
             attributed: measured.attributed,
@@ -588,10 +575,14 @@ extension HwpFootnoteLayout {
             sourceLines: measured.frame.lines,
             cacheLines: cacheLines,
             placedLineCount: 0,
-            trailingLineSpacing: cacheLines.map {
-                HwpFootnoteCacheLines.trailingSpacing(of: $0, in: $0.indices)
-            } ?? 0
+            placedLength: 0,
+            trailingLineSpacing: trailingSpacing
         )
+    }
+
+    /// 이 각주가 그릴 개체가 있는지 — 쪽 끝 분할 금지·CT 높이 보존 술어 (#165 리뷰).
+    static func carriesObjects(_ objects: HwpParagraphObjectCollector.Objects) -> Bool {
+        objects.count > 0 || objects.floatingBottom != nil
     }
 
     /// 각주 모양에서 해석한 구분선 지오메트리 (point 단위)
@@ -659,7 +650,8 @@ private extension HwpFootnoteLayout {
                     // (테스트·직접 배치) 의 폴백이다 (R44 #1).
                     sizeResolver: input.sizeResolver ?? sizeResolver,
                     numbering: input.numbering,
-                    placedLineCount: input.placedLineCount
+                    placedLineCount: input.placedLineCount,
+                    placedLength: input.placedLength
                 )
             )
         }
@@ -676,16 +668,5 @@ private extension HwpFootnoteLayout {
     func points(fromHwpUnit16 value: Int16?, fallback: CGFloat) -> CGFloat {
         guard let value else { return fallback }
         return HwpUnits.points(fromHwpUnit16: value)
-    }
-}
-
-public extension HwpFootnoteBlock {
-    /// 각주가 하이퍼링크를 품는지 — 블록-레벨 폴백의 게이트 (R61)
-    var hasHyperlink: Bool {
-        paragraphs.contains { $0.hasHyperlink }
-            || images.contains { $0.wrapperURL != nil }
-            || shapes.contains { $0.wrapperURL != nil }
-            || textboxes.contains { $0.wrapperURL != nil || $0.textbox.hasHyperlink }
-            || nestedTables.contains { $0.wrapperURL != nil || $0.table.hasHyperlink }
     }
 }

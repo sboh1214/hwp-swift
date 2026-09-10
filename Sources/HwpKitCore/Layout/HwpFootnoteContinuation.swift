@@ -100,42 +100,83 @@ extension HwpFootnoteLayout {
     struct Fragment {
         let attributed: NSAttributedString
         let lines: [HwpLineFrame]
+        /// 이 조각이 **원본 조판 문자열**에서 차지한 범위 — 그 끝이 다음 쪽 조각의 시작
+        /// 문자 위치다 (#165 리뷰, `Input.placedLength`).
+        let sourceRange: NSRange
     }
 
     /// 캐시 줄 범위에 해당하는 CT 줄 조각 — 캐시 줄 수와 CT 줄 수가 다르면 (폰트 대체)
     /// 비례로 대응시킨다 (`HwpAbsoluteCachePlacer.runAttributedSlice`와 같은 근사).
     /// 이어지는 조각은 첫 줄 들여쓰기를 둘째 줄에 맞춘다 (한글 실측: 이어지는 줄은
     /// 내어쓰기 자리에서 시작).
+    ///
+    /// `placedLength`: 앞 쪽이 **실제로 그린** 문자 길이 (#165 리뷰). 구역이 바뀌어 폭이
+    /// 달라지면 줄 나눔이 달라 비례 환산이 앞 쪽의 마지막 글자와 다른 자리를 가리키므로,
+    /// 이어지는 조각은 이 문자 위치를 경계로 삼는다. 폭이 그대로면 비례 환산 결과가 곧
+    /// 그 위치라 값이 같다 (코퍼스 불변).
     static func fragment(
         of attributed: NSAttributedString,
         lines: [HwpLineFrame],
         cacheLineCount: Int,
-        cacheRange: Range<Int>
+        cacheRange: Range<Int>,
+        startingAt placedLength: Int = 0
     ) -> Fragment {
-        guard !lines.isEmpty, cacheLineCount > 0, !cacheRange.isEmpty else {
-            return Fragment(attributed: NSAttributedString(string: ""), lines: [])
-        }
+        let empty = Fragment(
+            attributed: NSAttributedString(string: ""), lines: [],
+            sourceRange: NSRange(location: placedLength, length: 0)
+        )
+        guard !lines.isEmpty, cacheLineCount > 0, !cacheRange.isEmpty else { return empty }
         func ctIndex(_ cacheIndex: Int) -> Int {
             guard cacheIndex < cacheLineCount else { return lines.count }
             let proportional = Double(cacheIndex) / Double(cacheLineCount) * Double(lines.count)
             return min(lines.count, Int(proportional.rounded()))
         }
-        let start = ctIndex(cacheRange.lowerBound)
-        let end = max(start, ctIndex(cacheRange.upperBound))
-        guard start < end else {
-            return Fragment(attributed: NSAttributedString(string: ""), lines: [])
-        }
+        let isContinuation = cacheRange.lowerBound > 0
+        let end = max(ctIndex(cacheRange.lowerBound), ctIndex(cacheRange.upperBound))
+        // 이어지는 조각은 경계 문자를 **담은** 줄부터 시작한다 (폭이 그대로면 그 줄이 곧
+        // 비례 환산 결과다). 그 줄이 경계보다 앞에서 시작하면 앞부분은 이미 그려졌으므로
+        // 문자 범위에서 잘라 낸다.
+        let start = isContinuation && placedLength > 0
+            ? min(end, lines.firstIndex { NSMaxRange($0.attributedRange) > placedLength }
+                ?? lines.count)
+            : ctIndex(cacheRange.lowerBound)
+        guard start < end else { return empty }
         let slice = lines[start ..< end]
-        let range = slice.dropFirst().reduce(slice[start].attributedRange) {
+        let lineRange = slice.dropFirst().reduce(slice[start].attributedRange) {
             NSUnionRange($0, $1.attributedRange)
         }
-        let text = cacheRange.lowerBound > 0
+        let clipped = max(lineRange.location, min(placedLength, NSMaxRange(lineRange)))
+        let range = isContinuation
+            ? NSRange(location: clipped, length: NSMaxRange(lineRange) - clipped)
+            : lineRange
+        let text = isContinuation
             ? HwpParagraphLayout.continuationFragment(of: attributed, range: range)
             : attributed.attributedSubstring(from: range)
         return Fragment(
             attributed: text,
-            lines: HwpParagraphLayout.fragmentLineFrames(slice, range: range)
+            lines: fragmentLines(slice, range: range, dropping: range.location - lineRange.location),
+            sourceRange: range
         )
+    }
+
+    /// 조각 줄 프레임 — 첫 줄이 경계보다 앞에서 시작하면 (폭이 바뀐 이월) 그 몫을 잘라
+    /// 문자 범위를 조각 기준으로 맞춘다. 잘린 줄의 기하와 앵커는 **앞 쪽 폭 기준**이라
+    /// 근사다 — 개체를 담은 각주는 나누지 않으므로 (`carriesObjects`) 앵커는 버린다.
+    private static func fragmentLines(
+        _ slice: ArraySlice<HwpLineFrame>, range: NSRange, dropping drop: Int
+    ) -> [HwpLineFrame] {
+        var frames = HwpParagraphLayout.fragmentLineFrames(slice, range: range)
+        guard drop > 0, let first = frames.first else { return frames }
+        frames[0] = HwpLineFrame(
+            origin: first.origin,
+            width: first.width,
+            baseline: first.baseline,
+            attributedRange: NSRange(
+                location: 0, length: max(0, first.attributedRange.length - drop)
+            ),
+            inlineAnchors: []
+        )
+        return frames
     }
 }
 
@@ -206,10 +247,15 @@ extension HwpFootnoteLayout {
         return plan
     }
 
-    /// 같은 번호의 이어지는 항목 범위 — 여러 문단짜리 각주 하나.
+    /// 같은 각주의 이어지는 항목 범위 — 여러 문단짜리 각주 하나.
+    ///
+    /// 표시 번호가 아니라 **식별자**로 가른다 (#165 리뷰): 쪽마다 번호를 새로 시작하면
+    /// (표 134 모드 2) 이월된 각주와 그 쪽의 새 각주가 같은 번호를 갖는데, 번호로 묶으면
+    /// 둘이 한 각주가 돼 사이 여백이 사라지고 (앞 조각이 각주의 끝이 아니게 돼) 마지막 줄
+    /// 간격이 높이에 남으며, 하나가 안 들어가면 다른 하나까지 다음 쪽으로 밀린다.
     private static func noteGroup(in measured: [MeasuredFootnote], from start: Int) -> Range<Int> {
         var end = start + 1
-        while end < measured.count, measured[end].input.number == measured[start].input.number {
+        while end < measured.count, measured[end].input.noteId == measured[start].input.noteId {
             end += 1
         }
         return start ..< end
@@ -302,10 +348,32 @@ extension HwpFootnoteLayout {
             number: carried.number,
             sizeResolver: carried.sizeResolver,
             numbering: carried.numbering,
-            placedLineCount: carried.placedLineCount + split.lineCount
+            placedLineCount: carried.placedLineCount + split.lineCount,
+            // 다음 쪽 조각은 이 쪽이 **실제로 그린** 글자 다음부터다 (#165 리뷰) — 폭이
+            // 달라지는 구역으로 넘어가도 경계가 흔들리지 않는다.
+            placedLength: split.lineCount > 0
+                ? splitNote.measurement.consumedLength(placing: 0 ..< split.lineCount)
+                : carried.placedLength,
+            noteId: carried.noteId
         ))
         overflow += measured[(split.index + 1)...].map(\.input)
         plan.overflow = overflow
+    }
+}
+
+extension HwpFootnoteLayout.NoteMeasurement {
+    /// 남은 줄 기준 `range`를 이 쪽에 그리면 소비되는 조판 문자열 길이 (#165 리뷰) —
+    /// 다음 쪽 조각의 시작 문자 위치다. 방출(`footnoteBlock`)과 **같은 조각 계산**을
+    /// 쓰므로 실제로 그려진 경계와 어긋나지 않는다.
+    func consumedLength(placing range: Range<Int>) -> Int {
+        guard let cacheLines else { return placedLength }
+        return NSMaxRange(HwpFootnoteLayout.fragment(
+            of: sourceAttributed,
+            lines: sourceLines,
+            cacheLineCount: cacheLines.count,
+            cacheRange: absoluteLineRange(range),
+            startingAt: placedLength
+        ).sourceRange)
     }
 }
 
@@ -338,9 +406,9 @@ extension HwpFootnoteLayout {
         )
         var blocks: [HwpFootnoteBlock] = []
         var cursorY = areaTop + overhead
-        var previousNumber: Int?
+        var previousNoteId: Int?
         for entry in plan.entries {
-            if let previousNumber, previousNumber != entry.measured.input.number {
+            if let previousNoteId, previousNoteId != entry.measured.input.noteId {
                 cursorY += divider.betweenNotes
             }
             let block = Self.footnoteBlock(
@@ -349,7 +417,7 @@ extension HwpFootnoteLayout {
             )
             blocks.append(block)
             cursorY = block.frame.maxY
-            previousNumber = entry.measured.input.number
+            previousNoteId = entry.measured.input.noteId
         }
         return Placement(blocks: blocks, overflow: plan.overflow)
     }
@@ -382,7 +450,8 @@ extension HwpFootnoteLayout {
                 of: measurement.sourceAttributed,
                 lines: measurement.sourceLines,
                 cacheLineCount: cacheLines.count,
-                cacheRange: measurement.absoluteLineRange(range)
+                cacheRange: measurement.absoluteLineRange(range),
+                startingAt: measurement.placedLength
             )
             attributed = fragment.attributed
             textHeight = measurement.headTextHeight(lines: range)
