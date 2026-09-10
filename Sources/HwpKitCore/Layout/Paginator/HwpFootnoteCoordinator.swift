@@ -18,15 +18,22 @@ struct HwpFootnoteCoordinator {
         /// 예약(measuredFootnoteHeight)과 배치(HwpFootnoteLayout.place)가 같은
         /// 기준을 써야 떠 있는 개체 하한이 갈리지 않는다 (#94).
         let sizeResolver: HwpObjectSizeResolver?
+        /// 배치가 줄 캐시의 분할 지점에서 각주를 나눠 다음 쪽에 잇는지 (#165 리뷰) — 절대 캐시
+        /// 모드(`placeBelowBody`)만 그렇다. 흐름 모드의 절반 상한 배치(`stackBlocks`)는 각주를
+        /// 통째로 놓으므로 예약도 통째여야 한다: 첫 조각만 예약하면 본문이 그 자리를 먹은 뒤
+        /// 진행 보장으로 놓인 통째 블록이 본문 위나 쪽 밖으로 나간다.
+        let continuesAtCacheBreaks: Bool
 
         init(
             contentWidth: CGFloat,
             footnoteShape: CoreHwp.HwpFootnoteShape?,
-            sizeResolver: HwpObjectSizeResolver? = nil
+            sizeResolver: HwpObjectSizeResolver? = nil,
+            continuesAtCacheBreaks: Bool = false
         ) {
             self.contentWidth = contentWidth
             self.footnoteShape = footnoteShape
             self.sizeResolver = sizeResolver
+            self.continuesAtCacheBreaks = continuesAtCacheBreaks
         }
 
         /// 해석기만 바꾼 사본 — 이월 각주를 재예약할 때 그 각주를 **수집할 때
@@ -36,7 +43,8 @@ struct HwpFootnoteCoordinator {
             Environment(
                 contentWidth: contentWidth,
                 footnoteShape: footnoteShape,
-                sizeResolver: resolver
+                sizeResolver: resolver,
+                continuesAtCacheBreaks: continuesAtCacheBreaks
             )
         }
 
@@ -47,7 +55,8 @@ struct HwpFootnoteCoordinator {
             Environment(
                 contentWidth: contentWidth,
                 footnoteShape: shape,
-                sizeResolver: sizeResolver
+                sizeResolver: sizeResolver,
+                continuesAtCacheBreaks: continuesAtCacheBreaks
             )
         }
     }
@@ -345,9 +354,11 @@ struct HwpFootnoteCoordinator {
         // 예약은 **이 쪽에 실릴 조각**까지다 (#165 리뷰, `fragmentShares` — 이월 예약과 같은
         // 판정): 줄 캐시가 여러 쪽에 걸친 각주의 전부를 더하면 `effectiveContentHeight`가
         // 무너져 뒤의 캐시 없는 흐름 문단이 다음 쪽으로 밀리는데, 배치는 첫 조각만 싣는다.
-        // 앞 각주가 이미 나뉘었으면 이 각주는 이 쪽에 실리지 않는다.
+        // 앞 각주가 이미 나뉘었으면 이 각주는 이 쪽에 실리지 않는다. 나누는 것은 절대 캐시
+        // 모드의 배치뿐이다 (`Environment.continuesAtCacheBreaks`) — 흐름 모드는 통째다.
         let shares = reservationStopsAtSplit ? [] : Self.fragmentShares(
-            count: paragraphs.count, splits: !noteCarriesObjects
+            count: paragraphs.count,
+            splits: !noteCarriesObjects && environment.continuesAtCacheBreaks
         ) { (lines: HwpFootnoteCacheLines.lines(of: paragraphs[$0]), placedLineCount: 0) }
         if !shares.isEmpty {
             footnoteReservedHeight += isFirstOnPage

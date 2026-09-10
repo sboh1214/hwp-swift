@@ -96,7 +96,10 @@ import XCTest
             var coordinator = HwpFootnoteCoordinator(
                 index: HwpIndex(from: CoreHwp.HwpFile()), fontResolver: .testDeterministic
             )
-            let environment = HwpFootnoteCoordinator.Environment(contentWidth: 451, footnoteShape: nil)
+            // 절대 캐시 모드의 이월 예약 — 흐름 모드는 나누지 않으므로 통째다.
+            let environment = HwpFootnoteCoordinator.Environment(
+                contentWidth: 451, footnoteShape: nil, continuesAtCacheBreaks: true
+            )
             let reserved = coordinator.reservedFootnoteHeight(
                 for: [
                     .init(paragraph: first, number: 1, sizeResolver: nil, numbering: nil, noteId: 1),
@@ -131,6 +134,60 @@ import XCTest
             if let flowBlock, let note = notes.first {
                 expect(note.separatorLine.minY) >= flowBlock.frame.maxY - 0.01
             }
+        }
+
+        /// 조각 예약은 **절대 캐시 모드**에서만이다 (#165 리뷰): 흐름 모드의 절반 상한 배치는
+        /// 각주를 통째로 놓으므로 첫 조각만 예약하면 본문이 그 자리를 먹은 뒤 통째 블록이 본문
+        /// 위나 쪽 밖으로 나간다. 같은 각주라도 환경의 이어짐 여부로 예약이 갈린다.
+        func testFragmentReservationAppliesOnlyWhenPlacementContinuesAtCacheBreaks() throws {
+            // 40줄, 20줄마다 리셋 — 절대 캐시 모드에선 첫 20줄, 흐름 모드에선 40줄 전부.
+            let note = try Support.note(
+                lines: (1 ... 40).map { "줄 \($0)" }, locations: (0 ..< 40).map { Int32($0 % 20) * 1172 }
+            )
+            let host = try Support.host(at: 1500, notes: [[note]])
+            func reserved(continues: Bool) -> (collected: CGFloat, anticipated: CGFloat) {
+                var coordinator = HwpFootnoteCoordinator(
+                    index: HwpIndex(from: CoreHwp.HwpFile()), fontResolver: .testDeterministic
+                )
+                let environment = HwpFootnoteCoordinator.Environment(
+                    contentWidth: 400, footnoteShape: nil, continuesAtCacheBreaks: continues
+                )
+                let anticipated = coordinator.anticipatedFootnoteHeight(
+                    for: host, environment: environment, childParagraphs: { _ in [] }
+                )
+                coordinator.collectFootnotes(
+                    from: host, environment: environment, childParagraphs: { _ in [] }
+                )
+                return (coordinator.footnoteReservedHeight, anticipated)
+            }
+            let fragment = Support.overhead + 19 * 11.72 + 9 // 첫 20줄 (쪽 끝: 마지막 줄 상자까지)
+            let whole = Support.overhead + 2 * (19 * 11.72 + 9) + 2.72 // 두 몫의 합, 마지막 줄 간격 제외
+            let absolute = reserved(continues: true)
+            expect(absolute.collected).to(beCloseTo(fragment, within: 0.01))
+            expect(absolute.anticipated).to(beCloseTo(fragment, within: 0.01))
+            let flow = reserved(continues: false)
+            expect(flow.collected).to(beCloseTo(whole, within: 0.01))
+            expect(flow.anticipated).to(beCloseTo(whole, within: 0.01))
+        }
+
+        /// 예약이 이미 분할 지점에서 멈춘 쪽의 예측은 0이다 (#165 리뷰) — 그 뒤 각주는 이 쪽에
+        /// 실리지 않는데 전부를 더하면 첫 조각 옆에 들어가는 문단이 다른 쪽으로 밀린다.
+        func testPreflightReservesNothingAfterASplitOnThePage() throws {
+            let note = try Support.note(lines: ["줄 1", "줄 2"], locations: [0, 1172])
+            let host = try Support.host(at: 1500, notes: [[note]])
+            var coordinator = HwpFootnoteCoordinator(
+                index: HwpIndex(from: CoreHwp.HwpFile()), fontResolver: .testDeterministic
+            )
+            let environment = HwpFootnoteCoordinator.Environment(
+                contentWidth: 400, footnoteShape: nil, continuesAtCacheBreaks: true
+            )
+            expect(coordinator.anticipatedFootnoteHeight(
+                for: host, environment: environment, childParagraphs: { _ in [] }
+            )) > 0
+            coordinator.reservationStopsAtSplit = true
+            expect(coordinator.anticipatedFootnoteHeight(
+                for: host, environment: environment, childParagraphs: { _ in [] }
+            )) == 0
         }
     }
 #endif

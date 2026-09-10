@@ -112,7 +112,10 @@ extension HwpFootnoteCoordinator {
                 total += metrics.spacingBetweenNotes
             }
             let groupCount = groupEnd - index
-            let shares = Self.fragmentShares(count: groupCount, splits: !noteCarriesObjects) { offset in
+            let shares = Self.fragmentShares(
+                count: groupCount,
+                splits: !noteCarriesObjects && environment.continuesAtCacheBreaks
+            ) { offset in
                 let input = inputs[index + offset]
                 return (
                     lines: input.sourceLayout?.cacheLines
@@ -184,29 +187,47 @@ extension HwpFootnoteCoordinator {
     /// 컨테이너 (표 셀 등) 안 각주도 포함하며, 미주는 페이지 하단 영역을
     /// 쓰지 않으므로 계산에서 제외한다.
     /// numbering: 이 문단의 번호 열쇠 (#158) — 예약이 수집과 같은 라벨로 재야 한다.
+    /// 예측 순회 상태 — 번호 미리보기와, **이 쪽에 실리는** 각주 수 (`fragmentShares`가
+    /// 분할 지점에서 멈춘 뒤의 각주는 실리지 않으므로 세지 않는다, #165 리뷰).
+    struct PreflightState {
+        var preview: Int
+        var landed = 0
+        var stopped: Bool
+    }
+
     mutating func anticipatedFootnoteHeight(
         for paragraph: CoreHwp.HwpParagraph,
         environment: Environment,
         childParagraphs: ChildParagraphs,
         numbering: HwpNumberingScope? = nil
     ) -> CGFloat {
-        // collectFootnotes가 부여할 번호와 같은 순서의 미리보기 카운터
-        var preview = footnoteCounter
+        // collectFootnotes가 부여할 번호와 같은 순서의 미리보기 카운터. 예약이 이미 분할
+        // 지점에서 멈춘 쪽이면 새 각주는 이 쪽에 실리지 않는다 (`appendPendingFootnote`와 같다).
+        var state = PreflightState(preview: footnoteCounter, stopped: reservationStopsAtSplit)
         let body = anticipatedFootnoteBodyHeight(
             for: paragraph,
-            preview: &preview,
+            state: &state,
             environment: environment,
             childParagraphs: childParagraphs,
             numbering: numbering
         )
-        guard body > 0 else { return 0 }
-        // 배치와 동형: 새 노트 수만큼의 경계 간격 (페이지 첫 노트는 경계가
-        // 하나 적다) + 페이지 첫 각주면 구분선 오버헤드.
-        let metrics = footnoteReservationMetrics(environment: environment)
-        let newNotes = preview - footnoteCounter
-        let boundaries = max(0, pendingFootnotes.isEmpty ? newNotes - 1 : newNotes)
+        return Self.preflightTotal(
+            body: body, landed: state.landed,
+            metrics: footnoteReservationMetrics(environment: environment),
+            firstOnPage: pendingFootnotes.isEmpty
+        )
+    }
+
+    /// 배치와 동형: 실리는 노트 수만큼의 경계 간격 (페이지 첫 노트는 경계가 하나 적다) +
+    /// 페이지 첫 각주면 구분선 오버헤드.
+    private static func preflightTotal(
+        body: CGFloat, landed: Int,
+        metrics: HwpFootnoteLayout.ReservationMetrics, firstOnPage: Bool
+    ) -> CGFloat {
+        guard body > 0, landed > 0 else { return 0 }
+        let boundaries = max(0, firstOnPage ? landed - 1 : landed)
         return body + metrics.spacingBetweenNotes * CGFloat(boundaries)
-            + (pendingFootnotes.isEmpty ? metrics.separatorOverhead : 0)
+            + (firstOnPage ? metrics.separatorOverhead : 0)
     }
 
     /// 주어진 grid 행 범위의 셀 각주가 예약할 높이 — pending/reserved/counter를
@@ -219,13 +240,13 @@ extension HwpFootnoteCoordinator {
         childParagraphs: ChildParagraphs,
         numbering: HwpNumberingScope.TableCells? = nil
     ) -> CGFloat {
-        var preview = footnoteCounter
+        var state = PreflightState(preview: footnoteCounter, stopped: reservationStopsAtSplit)
         var body: CGFloat = 0
         for (cellIndex, cell) in Self.cellsInRows(cellsByRow, rows: rows) {
             for (paragraphIndex, paragraph) in cell.paragraphArray.enumerated() {
                 body += anticipatedFootnoteBodyHeight(
                     for: paragraph,
-                    preview: &preview,
+                    state: &state,
                     environment: environment,
                     childParagraphs: childParagraphs,
                     numbering: numbering?.paragraph(
@@ -234,18 +255,17 @@ extension HwpFootnoteCoordinator {
                 )
             }
         }
-        guard body > 0 else { return 0 }
-        let metrics = footnoteReservationMetrics(environment: environment)
-        let newNotes = preview - footnoteCounter
-        let boundaries = max(0, pendingFootnotes.isEmpty ? newNotes - 1 : newNotes)
-        return body + metrics.spacingBetweenNotes * CGFloat(boundaries)
-            + (pendingFootnotes.isEmpty ? metrics.separatorOverhead : 0)
+        return Self.preflightTotal(
+            body: body, landed: state.landed,
+            metrics: footnoteReservationMetrics(environment: environment),
+            firstOnPage: pendingFootnotes.isEmpty
+        )
     }
 
     private mutating func anticipatedFootnoteBodyHeight(
         for paragraph: CoreHwp.HwpParagraph,
         depth: Int = 0,
-        preview: inout Int,
+        state: inout PreflightState,
         environment: Environment,
         childParagraphs: ChildParagraphs,
         numbering: HwpNumberingScope?
@@ -257,23 +277,37 @@ extension HwpFootnoteCoordinator {
             if case let .footnote(list) = ctrl {
                 let paragraphs = list.listArray.flatMap(\.paragraphArray)
                 if !paragraphs.isEmpty {
-                    let number = preview
-                    preview += 1
+                    let number = state.preview
+                    state.preview += 1
                     let noteCarriesObjects = paragraphs.contains {
                         HwpParagraphObjectCollector.hasCollectibleObject(
                             in: $0, collectsTextboxes: true, collectsTables: true
                         )
                     }
+                    // 예측도 수집(`appendPendingFootnote`)과 같은 조각까지다 (#165 리뷰): 줄
+                    // 캐시가 여러 쪽에 걸친 각주의 전부를 더하면 첫 조각 옆에 들어가는 문단이
+                    // 다른 쪽으로 밀린다. 앞 각주가 나뉜 뒤의 각주는 이 쪽에 실리지 않는다.
+                    let shares = state.stopped ? [] : Self.fragmentShares(
+                        count: paragraphs.count,
+                        splits: !noteCarriesObjects && environment.continuesAtCacheBreaks
+                    ) { (lines: HwpFootnoteCacheLines.lines(of: paragraphs[$0]), placedLineCount: 0) }
+                    if !shares.isEmpty {
+                        state.landed += 1
+                    }
+                    if shares.count < paragraphs.count || shares.last?.endsPage == true {
+                        state.stopped = true
+                    }
                     // 같은 컨트롤의 문단은 간격 없이 이어진다 — 노트 경계
                     // 간격은 anticipatedFootnoteHeight가 노트 수로 계산한다
-                    for (paragraphIndex, noteParagraph) in paragraphs.enumerated() {
+                    for (paragraphIndex, share) in shares.enumerated() {
                         total += measuredFootnoteHeight(
-                            of: noteParagraph,
+                            of: paragraphs[paragraphIndex],
                             number: number,
                             environment: environment,
                             numbering: container?.paragraph(childIndex: paragraphIndex),
-                            isNoteEnd: paragraphIndex == paragraphs.count - 1,
-                            noteCarriesObjects: noteCarriesObjects
+                            isNoteEnd: paragraphIndex == paragraphs.count - 1 || share.endsPage,
+                            noteCarriesObjects: noteCarriesObjects,
+                            lineLimit: share.lineLimit
                         )
                     }
                 }
@@ -289,7 +323,7 @@ extension HwpFootnoteCoordinator {
                 total += anticipatedFootnoteBodyHeight(
                     for: nested,
                     depth: depth + 1,
-                    preview: &preview,
+                    state: &state,
                     environment: environment,
                     childParagraphs: childParagraphs,
                     numbering: container?.paragraph(childIndex: childIndex)

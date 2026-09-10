@@ -3830,7 +3830,10 @@ private extension HwpPaginator {
         HwpFootnoteCoordinator.Environment(
             contentWidth: currentPageGeometry.contentFrame.width,
             footnoteShape: currentSectionDef?.footNoteShape,
-            sizeResolver: objectSizeResolver
+            sizeResolver: objectSizeResolver,
+            // 절대 캐시 모드만 각주를 분할 지점에서 나눠 잇는다 (`appendPendingFootnotes`의
+            // `limitsAreaToHalfContent: !absoluteCacheMode`와 같은 판정).
+            continuesAtCacheBreaks: absoluteCacheMode
         )
     }
 
