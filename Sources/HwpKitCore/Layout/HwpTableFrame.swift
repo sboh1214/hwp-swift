@@ -235,7 +235,8 @@ public struct HwpTableCellFrame: @unchecked Sendable, Hashable {
                     frame: paragraph.frame,
                     rect: paragraph.rect.offsetBy(dx: 0, dy: deltaY),
                     paragraphId: paragraph.paragraphId,
-                    hyperlinkURL: paragraph.hyperlinkURL
+                    hyperlinkURL: paragraph.hyperlinkURL,
+                    heightIsMeasured: paragraph.heightIsMeasured
                 )
             },
             borders: borders,

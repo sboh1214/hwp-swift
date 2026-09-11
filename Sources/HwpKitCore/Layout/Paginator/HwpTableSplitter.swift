@@ -190,7 +190,8 @@ enum HwpTableSplitter {
             frame: paragraph.frame,
             rect: paragraph.rect,
             paragraphId: paragraph.paragraphId,
-            hyperlinkURL: paragraph.hyperlinkURL
+            hyperlinkURL: paragraph.hyperlinkURL,
+            heightIsMeasured: paragraph.heightIsMeasured
         )
     }
 
@@ -396,10 +397,13 @@ enum HwpTableSplitter {
         }
 
         let topHeight = accumulated
+        // 위 조각의 높이는 측정 줄 전진량 합이고, 아래 조각은 잔여를 흡수한 마지막 줄을
+        // 담으므로 문단 높이의 출처(`heightIsMeasured`)를 물려받는다 (#166).
         let top = paragraphFragment(
             of: paragraph,
             lines: lines[..<topCount],
-            rect: CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: topHeight)
+            rect: CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: topHeight),
+            heightIsMeasured: true
         )
         let bottom = paragraphFragment(
             of: paragraph,
@@ -409,7 +413,8 @@ enum HwpTableSplitter {
                 y: rect.minY + topHeight,
                 width: rect.width,
                 height: rect.height - topHeight
-            )
+            ),
+            heightIsMeasured: paragraph.heightIsMeasured
         )
         return (top, bottom)
     }
@@ -430,10 +435,13 @@ enum HwpTableSplitter {
 
     /// 지정한 라인들만 담은 하위 문단을 만든다. 라인 range는 하위 문자열 기준으로
     /// 재기준화해 (다중 페이지 row에서) 이후 분할에서도 라인 정보를 쓸 수 있게 한다.
+    /// `heightIsMeasured`는 `rect.height`가 측정 줄 전진량에서 왔는지 — 그럴 때만 측정
+    /// 줄 조각 표식을 달고(#166), 하위 문단에도 그 출처를 실어 다시 나뉠 때 같은 판정을 한다.
     private static func paragraphFragment(
         of paragraph: HwpLaidOutParagraph,
         lines: ArraySlice<HwpLineFrame>,
-        rect: CGRect
+        rect: CGRect,
+        heightIsMeasured: Bool
     ) -> HwpLaidOutParagraph {
         let range = lines.dropFirst().reduce(lines[lines.startIndex].attributedRange) {
             NSUnionRange($0, $1.attributedRange)
@@ -451,8 +459,15 @@ enum HwpTableSplitter {
             )
         }
         // 문단 첫머리가 아닌 조각은 이어지는 조각 — 첫 줄 들여쓰기를 둘째 줄에 맞춘다.
-        let sub = HwpParagraphLayout.continuationFragment(
-            of: paragraph.attributedString, range: range
+        // 조각 높이가 측정한 줄 전진량(`lineAdvances`)이면 렌더러가 그 줄 수 그대로
+        // 그려야 한다 — 측정 줄 조각 표식 (#166). 저장본 줄 캐시 높이의 잔여를 담은
+        // 조각은 캐시 줄 수가 오라클이라 종전대로 둔다. 셀 폭은 쪽이 바뀌어도 같다.
+        let sub = HwpParagraphLayout.measuredLineFragment(
+            HwpParagraphLayout.continuationFragment(of: paragraph.attributedString, range: range),
+            heightIsMeasured: heightIsMeasured,
+            measuredLineCount: lines.count,
+            measuredWidth: rect.width,
+            columnWidth: rect.width
         )
         let continued = range.location + range.length < paragraph.attributedString.length
         return HwpLaidOutParagraph(
@@ -460,7 +475,8 @@ enum HwpTableSplitter {
             frame: HwpParagraphFrame(totalHeight: rect.height, lines: rebased),
             rect: rect,
             paragraphId: paragraph.paragraphId,
-            hyperlinkURL: paragraph.hyperlinkURL
+            hyperlinkURL: paragraph.hyperlinkURL,
+            heightIsMeasured: heightIsMeasured
         )
     }
 }

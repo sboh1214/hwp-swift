@@ -167,6 +167,27 @@ public struct HwpParagraphLayout {
         columnWidth: CGFloat,
         maxLineFrames: Int = HwpParagraphLayout.maximumLineFrames
     ) -> HwpParagraphFrame {
+        layout(
+            attributedString: attributedString, paraShape: paraShape, columnWidth: columnWidth,
+            maxLineFrames: maxLineFrames, metricsReference: nil
+        )
+    }
+
+    /// `metricsReference`는 문단 지표(`ParagraphMetrics` — 비율 줄 간격의 강제 줄 높이,
+    /// 인라인 개체 유무에 따른 줄 뒤 간격)를 뽑을 문자열이다. 문단의 **조각**을 다시 잴 때
+    /// (`HwpPaginator.remeasureRemainderIfNeeded`·`HwpColumnBandController.rebalancedFragment`)
+    /// 문단 전체 문자열을 넘긴다 — CT 줄 원점은 문자열에 부착된 문단 스타일(문단 전체의 최대
+    /// 글자 크기로 만든 min/max 줄 높이)을 따르는데, 마지막 줄 높이와 줄 뒤 간격만 조각
+    /// 부분 문자열로 다시 구하면 큰 글자가 앞 조각에만 있는 문단(20pt 한 단어로 시작하는
+    /// 10pt 본문, 160%)의 나머지 마지막 줄이 32pt가 아니라 16pt로 재어져 상자가 짧아진다.
+    /// nil이면 `attributedString` 자신이다.
+    func layout(
+        attributedString: NSAttributedString,
+        paraShape: CoreHwp.HwpParaShape,
+        columnWidth: CGFloat,
+        maxLineFrames: Int = HwpParagraphLayout.maximumLineFrames,
+        metricsReference: NSAttributedString?
+    ) -> HwpParagraphFrame {
         // 빈 문자열은 높이 0이다 — 글꼴도 `hwp.baseFontSize`도 없어 `.percent`
         // 줄 간격이 줄 높이를 낼 수 없다. 빈 **문단**은 여기 오지 않는다: 빌더가
         // 첫 글자 모양·문단 스타일을 실은 빈 문단 앵커(#145)를 내므로 실물의
@@ -178,7 +199,7 @@ public struct HwpParagraphLayout {
 
         let paragraphMetrics = ParagraphMetrics(
             paraShape: paraShape,
-            attributedString: attributedString
+            attributedString: metricsReference ?? attributedString
         )
 
         // slight-overflow 한 줄 (렌더와 같은 술어): 렌더가 한 줄로 그리는

@@ -16,19 +16,27 @@ public struct HwpLaidOutParagraph: @unchecked Sendable {
     /// 이 문단을 감싸는 하이퍼링크(%hlk) URL — 표 셀/글상자 안 링크를 히트
     /// 테스트가 찾을 수 있게 컨테이너 문단에 실어 나른다 (없으면 nil).
     public let hyperlinkURL: String?
+    /// `rect.height`가 `frame.lines`의 측정 전진량에서 왔는지 (#166). 표 셀 문단은
+    /// 저장본 줄 캐시가 유효하면 높이가 캐시 값이고 줄만 CT라(`HwpParagraphMeasurer`의
+    /// `preferCachedHeight`) false다 — 행 분할(`HwpTableSplitter.slicedParagraph`)이 마지막
+    /// 줄을 담은 조각의 높이를 그 잔여로 잡으므로, 그 조각에는 측정 줄 조각 표식을 달지
+    /// 않는다. 기하 복사(세로 정렬·오프셋·클론 표식)는 이 값을 그대로 옮겨야 한다.
+    public let heightIsMeasured: Bool
 
     public init(
         attributedString: NSAttributedString,
         frame: HwpParagraphFrame,
         rect: CGRect,
         paragraphId: UInt32,
-        hyperlinkURL: String? = nil
+        hyperlinkURL: String? = nil,
+        heightIsMeasured: Bool = true
     ) {
         self.attributedString = NSAttributedString(attributedString: attributedString)
         self.frame = frame
         self.rect = rect
         self.paragraphId = paragraphId
         self.hyperlinkURL = hyperlinkURL
+        self.heightIsMeasured = heightIsMeasured
     }
 }
 
@@ -52,6 +60,7 @@ extension HwpLaidOutParagraph: Hashable {
             && lhs.rect == rhs.rect
             && lhs.frame == rhs.frame
             && lhs.hyperlinkURL == rhs.hyperlinkURL
+            && lhs.heightIsMeasured == rhs.heightIsMeasured
             && HwpTextIdentity.isIdentical(
                 lhs.attributedString.string, rhs.attributedString.string
             )
@@ -65,6 +74,7 @@ extension HwpLaidOutParagraph: Hashable {
         hasher.combine(rect.size.width)
         hasher.combine(rect.size.height)
         hasher.combine(hyperlinkURL)
+        hasher.combine(heightIsMeasured)
         hasher.combine(attributedString.string)
         hasher.combine(isRepeatedTableHeaderClone)
     }

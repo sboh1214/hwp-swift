@@ -99,4 +99,18 @@ public enum HwpAttributedStringKey {
     /// 안에서 라벨이 밀려난 폭. 글자를 넣지 않고 첫 줄 들여쓰기(`firstLineHeadIndent`)로
     /// 낸다 — 앞에 빈칸을 넣으면 복사 텍스트가 빈칸으로 시작해 한글.app과 달라진다.
     public static let numberingFirstLineInset = NSAttributedString.Key("hwp.numberingFirstLineInset")
+    /// 문단 전체를 잰 줄에서 잘라낸 **조각** 표식 (NSNumber true, #166) — 쪽·단 경계
+    /// 흐름 분할(`HwpPaginator.appendLineSliceBlock`)·표 행 분할(`HwpTableSplitter`)·
+    /// 다단 균형 재배치(`HwpColumnBandController`)가 **측정한 줄 전진량**으로 높이를 잡아
+    /// 놓는 조각 문자열 **전체**에 붙는다 (`HwpParagraphLayout.measuredLineFragment`).
+    /// 그 블록의 높이는 문단 전체 측정의 줄바꿈에서 왔으므로 렌더러는 같은 줄바꿈을 그려야
+    /// 한다 — 문단 단위 한 줄 넘침 허용 규칙(`HwpDrawnTextLayout.slightOverflowLineMetrics`)을
+    /// 조각 문자열에 다시 적용하면, 문단 전체로는 접히지 않던 두 줄이 조각만으로는 허용
+    /// 배율 안에 들어 한 줄로 접히고 조각 아래에 그 줄만큼 빈 공간이 남는다. 한글이 저장한
+    /// 높이를 따르는 조각(절대 캐시 run·다단 캐시 run·각주 이어짐)에는 붙이지 않는다 —
+    /// 그쪽 높이는 측정 줄이 아니라 캐시라 접힘이 캐시 줄 수와 맞는 쪽일 수도 있다.
+    /// `continuedParagraphFragment`(다음 단·쪽으로 **이어지는** 조각의 끝 글자)와 다른
+    /// 축이다 — 그쪽은 문단의 마지막 조각엔 없다.
+    public static let measuredLineFragment =
+        NSAttributedString.Key("hwp.measuredLineFragment")
 }

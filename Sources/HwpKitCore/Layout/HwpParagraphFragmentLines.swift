@@ -47,6 +47,10 @@ extension HwpParagraphLayout {
     /// 혼자서는 한 줄에 들어갈 수 있다 — 둘이 갈리면 개체가 그려지지 않는 둘째 줄 자리에
     /// 놓인다. 접히면 측정의 한 줄 분기(`layout`)와 같은 줄 프레임 하나를 만든다.
     ///
+    /// 접힘은 이제 **한글이 저장한 높이로 놓인 조각**(절대 캐시 run·다단 캐시 run)에만
+    /// 남는다 — 측정한 줄 높이로 놓인 조각은 `measuredLineFragment` 표식으로 렌더러가
+    /// 접지 않으므로(#166) 이 술어가 nil이라 원본 줄을 그대로 돌려준다.
+    ///
     /// 줄이 **이미 하나**여도 지나쳐선 안 된다 (PR 리뷰): 목적 단 폭으로 다시 조판한 조각
     /// (`HwpPaginator.fragmentAnchorLines`)이 한 줄이면 그 줄은 측정의 한 줄 분기가 낸
     /// 것이라 원점 x가 0인데, 렌더러는 같은 줄에 정렬 오프셋을 준다 — 오른쪽 정렬 조각의
@@ -90,6 +94,92 @@ extension HwpParagraphLayout {
             attributedRange: NSRange(location: 0, length: attributedString.length),
             inlineAnchors: HwpParagraphLayout().inlineAnchors(in: overflow.line)
         )
+    }
+}
+
+// MARK: - 측정한 줄로 놓이는 조각 문자열 (#166)
+
+extension HwpParagraphLayout {
+    /// 조각 문자열(`continuationFragment`와 개체 예약 재해석까지 마친 것)에 **측정 줄 조각 표식**
+    /// (`HwpAttributedStringKey.measuredLineFragment`)을 달지 판정해 조각 전체에 단다. 표식이
+    /// 이미 있던 문자열은 먼저 벗긴다 — 표식을 단 블록을 다시 나누는 경로(다단 균형 재배치·
+    /// 표의 다중 쪽 분할)가 있어 조각마다 새로 판정해야 한다.
+    ///
+    /// 이 조각을 놓는 블록의 높이가 `measuredWidth` 폭에서 잰 줄 `measuredLineCount`개의
+    /// 전진량 합(쪽·단 경계 흐름 분할 `HwpPaginator.appendLineSliceBlock`·표 행 분할
+    /// `HwpTableSplitter.paragraphFragment`·다단 균형 재배치
+    /// `HwpColumnBandController.balancedBlocks`)일 때만(`heightIsMeasured`) 표식이 뜻을 갖는다 —
+    /// 렌더러가 조각 혼자 한 줄 넘침 허용 배율 안에 든다고 한 줄로 접으면 측정 줄 수와 갈려
+    /// 블록 아래가 빈다. 표식을 단 조각은 렌더러(`HwpDrawnTextLayout.lines`)와 조각 재측정
+    /// (`layout`)이 모두 문단 단위 한 줄 규칙을 건너뛴다. 저장본 줄 캐시 높이의 잔여를 담은
+    /// 조각은 캐시 줄 수가 오라클이라 달지 않는다(호출부가 `heightIsMeasured`로 가른다).
+    ///
+    /// **한 줄 조각(`measuredLineCount ≤ 1`)에는 달지 않는다.** 문단 전체 블록의 한 줄은 그
+    /// 규칙으로 접혀 잰 것일 수 있어 표식이 두 줄로 되돌리고, 문단에서 잘라낸 한 줄은 잰 폭에
+    /// 들어가므로 좁지 않은 단에서는 표식이 렌더를 바꾸지 못한다.
+    ///
+    /// 측정 높이 조각은 폭이 다른 단으로 옮겨지면 호출부(흐름 분할 `HwpFragmentRemainder`·
+    /// 균형 재배치 `rebalancedFragment`)가 그 단 폭으로 다시 재어 오므로 `columnWidth`가 잰
+    /// 폭과 같다 — 표식은 접힘만 막을 뿐 CT가 넓은 폭에서 줄을 합치는 것은 막지 못해, 다시
+    /// 재지 않으면 잰 높이의 상자 아래가 빈다 (PR 리뷰). 잰 폭과 다른 단에 오는 것은 캐시
+    /// 높이 문단의 조각뿐이다: **놓이는 단 폭이 잰 폭보다 좁지 않으면 그대로 단다** — CT
+    /// 줄바꿈은 폭이 넓어져도 줄이 늘지 않아 그려지는 줄 수가 측정 줄 수를 넘지 않는다(합쳐져
+    /// 아래가 빌 수는 있다 — 한글이 잰 높이를 따르는 축). **좁아진 단이면 폭 비교에 허용
+    /// 오차를 두지 않고 실제로 줄바꿈해 본다** (PR 리뷰): 단 폭은 HWPUNIT 단위로 저작돼 0.5pt
+    /// 안에서도 잰 폭에 꼭 맞던 줄이 다시 나뉜다. 렌더러가 이 폭에서 조각을 한 줄로 접을 때만
+    /// 표식이 뜻이 있고, 표식을 단 조각이 접지 않고 그려지는 줄 수가 측정 줄 수를 넘지 않을
+    /// 때만 단다 — 넘으면 종전 접힘(가로 6% 이내 넘침)이 상자를 세로로 넘치는 것보다 낫다.
+    /// 이 확인은 좁아진 단의 접힘 대상 조각(자연 폭이 그 폭의 1.06배 안)에서만 조판 한 번이다.
+    static func measuredLineFragment(
+        _ fragment: NSAttributedString,
+        heightIsMeasured: Bool,
+        measuredLineCount: Int,
+        measuredWidth: CGFloat,
+        columnWidth: CGFloat
+    ) -> NSAttributedString {
+        let base = strippingMeasuredLineMarker(fragment)
+        guard heightIsMeasured, measuredLineCount > 1, base.length > 0 else { return base }
+        let marked = markedAsMeasuredLineFragment(base)
+        guard columnWidth < measuredWidth else { return marked }
+        let width = max(1, columnWidth)
+        guard HwpDrawnTextLayout.slightOverflowLineMetrics(
+            attributedString: base, lineWidth: width
+        ) != nil else { return base }
+        let drawnLineCount = HwpDrawnTextLayout.lines(
+            attributedString: marked, origin: .zero, lineWidth: width
+        ).count
+        return drawnLineCount <= measuredLineCount ? marked : base
+    }
+
+    /// 표식을 **무조건** 단 사본 — 판정 없이 문단 단위 한 줄 규칙만 끈다. 문단 머리가 아닌
+    /// 조각을 목적 단 폭으로 다시 잴 때(`HwpPaginator.remeasureRemainderIfNeeded`·
+    /// `HwpColumnBandController.rebalancedFragment`) 쓴다 — 조각을 문단처럼 재면 한 줄 넘침
+    /// 규칙이 조각을 접어 한글의 줄바꿈(그 폭에서 두 줄)과 갈린다. 문단 머리부터 통째로 옮긴
+    /// 나머지는 문단이므로 표식 없이 재어 그 규칙을 따른다.
+    static func markedAsMeasuredLineFragment(_ fragment: NSAttributedString) -> NSAttributedString {
+        guard fragment.length > 0 else { return fragment }
+        let marked = NSMutableAttributedString(attributedString: fragment)
+        marked.addAttribute(
+            HwpAttributedStringKey.measuredLineFragment,
+            value: NSNumber(value: true),
+            range: NSRange(location: 0, length: marked.length)
+        )
+        return marked
+    }
+
+    /// 측정 줄 조각 표식을 벗긴 문자열 — 표식은 조각 전체에 붙으므로 첫 글자로 판정한다.
+    static func strippingMeasuredLineMarker(
+        _ attributedString: NSAttributedString
+    ) -> NSAttributedString {
+        guard HwpDrawnTextLayout.isMeasuredLineFragment(attributedString) else {
+            return attributedString
+        }
+        let stripped = NSMutableAttributedString(attributedString: attributedString)
+        stripped.removeAttribute(
+            HwpAttributedStringKey.measuredLineFragment,
+            range: NSRange(location: 0, length: stripped.length)
+        )
+        return stripped
     }
 }
 

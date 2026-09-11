@@ -253,6 +253,13 @@ public enum HwpDrawnTextLayout {
     /// 이내로 폭을 넘는 한 줄인지 — 렌더 (slightOverflowSingleLine)와 측정
     /// (`HwpParagraphLayout.layout`)이 이 술어를 공유해 "측정은 2줄 ↔ 렌더는
     /// 1줄" 어긋남 (문단 높이·페이지 절단 vs 실제 잉크)을 구조적으로 막는다.
+    ///
+    /// **문단 전체**의 규칙이다 — 문단을 잰 줄에서 잘라낸 조각
+    /// (`HwpAttributedStringKey.measuredLineFragment`)에는 적용하지 않는다 (#166). 조각
+    /// 블록의 높이는 문단 전체 측정의 줄바꿈에서 왔는데, 문단 전체로는 접히지 않던 두
+    /// 줄이 조각만으로는 허용 배율 안에 들 수 있어 여기서 접으면 측정은 2줄 ↔ 렌더는
+    /// 1줄이 되고 조각 아래가 빈다. 측정(`layout`)도 같은 술어를 쓰므로 조각을 다시
+    /// 재는 경로(비등폭 단 이월의 `HwpPaginator.fragmentAnchorLines`)와 렌더가 같이 간다.
     public static func slightOverflowLineMetrics(
         attributedString: NSAttributedString,
         lineWidth: CGFloat
@@ -263,6 +270,7 @@ public enum HwpDrawnTextLayout {
         // contains("\n")(전체 스캔) 앞에 둬 거대 문자열 materialize도 피한다 (R50 #1).
         guard attributedString.length > 0,
               attributedString.length <= HwpParagraphLayout.maximumLineFrames,
+              !isMeasuredLineFragment(attributedString),
               !attributedString.string.contains("\n")
         else { return nil }
         let line = CTLineCreateWithAttributedString(attributedString)
@@ -276,6 +284,17 @@ public enum HwpDrawnTextLayout {
               naturalWidth <= lineWidth * HwpRenderTuning.Text.slightOverflowWidthRatio
         else { return nil }
         return SlightOverflowLine(line: line, ascent: ascent, descent: descent, leading: leading)
+    }
+
+    /// 문단 전체를 잰 줄에서 잘라낸 조각인지 (#166). 표식은 조각 문자열 전체에
+    /// 붙으므로(`HwpParagraphLayout.measuredLineFragment`) 첫 글자만 본다 — 조각을
+    /// 다시 자르거나(표 다중 쪽 분할) 마커를 번호로 바꾸는(`renumberingNoteMarkers`,
+    /// 바뀐 글자의 속성을 물려받는다) 뒤 가공도 첫 글자의 표식을 보존한다.
+    static func isMeasuredLineFragment(_ attributedString: NSAttributedString) -> Bool {
+        guard attributedString.length > 0 else { return false }
+        return attributedString.attribute(
+            HwpAttributedStringKey.measuredLineFragment, at: 0, effectiveRange: nil
+        ) != nil
     }
 
     /// 폭을 허용 배율 이내로 넘는 개행 없는 한 줄 문단이면 줄바꿈 없이
