@@ -175,7 +175,7 @@ enum HwpxSecPrMapper {
         "autoNumFormat", "noteLine", "noteSpacing", "numbering", "placement",
     ]
 
-    /// 구역 첫 쪽 감추기(`hp:visibility`) → 표 132 bits 0·1·2·5.
+    /// 구역 첫 쪽 감추기(`hp:visibility`) → 표 130 bits 0·1·2·5.
     ///
     /// 머리말·꼬리말이 typed 승격된 뒤(#167) 이 플래그가 없으면 감춰야 할 첫 쪽에도
     /// 머리말이 그려진다. 조판은 `HwpPageChromeBuilder.applySectionHideFlags`가

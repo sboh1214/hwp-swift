@@ -5,7 +5,7 @@ import Nimble
 import XCTest
 
 #if canImport(CoreText)
-    /// 구역 정의 (표 132)의 감추기 플래그는 pageHide 컨트롤 (표 145)과 같은
+    /// 구역 정의 (표 130)의 감추기 플래그는 pageHide 컨트롤 (표 145)과 같은
     /// 효과로 크롬을 억제하되, 구역의 **첫 쪽**에만 적용된다
     /// (HwpSectionDefProperty 문서) — 2쪽부터는 되살아난다 (R70 #2, R71 #1).
     final class HwpSectionChromeHidingTests: XCTestCase {

@@ -86,7 +86,7 @@ HWPX(OCF ZIP + OWPML XML, KS X 6101)를 **기존 `Hwp*` 모델로 변환 파싱*
 경로도 같다).
 
 `hp:visibility`의 `hideFirstHeader`·`hideFirstFooter`·`hideFirstMasterPage`·
-`hideFirstPageNum`을 구역 정의 속성(표 132 bits 0·1·2·5)으로 함께 옮긴다 — 승격
+`hideFirstPageNum`을 구역 정의 속성(표 130 bits 0·1·2·5)으로 함께 옮긴다 — 승격
 뒤에는 이 플래그가 없으면 감춰야 할 구역 첫 쪽에도 머리말이 그려진다. `border`·
 `fill` 열거와 `showLineNumber`는 대응 소비자가 없어 옮기지 않는다.
 
@@ -183,7 +183,7 @@ typed 뷰와 로드 옵션 게이트를 한 번에 얻는 #167·#168과 같은 �
 표본 35건이 그 중 `hidePageNum = bit 5`를 못박는다. **삼중항 안의 배정은 실측이
 아니다** — 두 표본은 어떤 내부 치환에도 같은 두 값을 내므로 `hideHeader`는 {0, 3},
 `hideFooter`는 {1, 2, 4}까지만 좁혀진다. 코드가 쓰는 배정의 근거는 한컴 공개 모델
-`OWPML/Class/Para/pageHiding.cpp`의 속성 나열과 표 132를 옮긴
+`OWPML/Class/Para/pageHiding.cpp`의 속성 나열과 표 130를 옮긴
 `HwpSectionDefProperty`의 bits 0-5가 일치한다는 대조다. 하필 조판이 읽는 bit 0·1이
 그 미확정 자리이므로, 한 비트만 켠 표본(`머리말`만 등)을 만들면 그때 닫힌다.
 

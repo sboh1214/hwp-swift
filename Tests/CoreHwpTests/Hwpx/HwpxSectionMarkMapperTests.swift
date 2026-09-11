@@ -167,7 +167,7 @@ final class HwpxSectionMarkMapperTests: XCTestCase {
     /// 여섯 불리언 → 표 145 bits 0-5. 실물 쌍은 두 마스크(0x29·0x16)로만 덮으므로
     /// 비트별 대응은 여기서 하나씩 잠근다. 이름과 순서는 한컴 공개 모델
     /// `pageHiding.cpp`의 나열이고, 조판이 읽는 값(0x01 머리말·0x02 꼬리말·
-    /// 0x20 쪽 번호)은 `HwpPageChromeBuilder`의 표 132 환산과도 일치한다.
+    /// 0x20 쪽 번호)은 `HwpPageChromeBuilder`의 표 130 환산과도 일치한다.
     func testPageHidingBooleansMapToTableOneFortyFiveBits() throws {
         let expected: [(String, UInt32)] = [
             ("hideHeader", 0x01), ("hideFooter", 0x02), ("hideMasterPage", 0x04),

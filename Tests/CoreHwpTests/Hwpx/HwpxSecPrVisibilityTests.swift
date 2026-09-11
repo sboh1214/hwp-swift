@@ -3,7 +3,7 @@ import Foundation
 import Nimble
 import XCTest
 
-/// 구역 첫 쪽 감추기 `hp:visibility` → 표 132 bits 0·1·2·5 (#167).
+/// 구역 첫 쪽 감추기 `hp:visibility` → 표 130 bits 0·1·2·5 (#167).
 ///
 /// 머리말·꼬리말이 typed 승격된 뒤로는 이 플래그가 조판에 닿는다 —
 /// `HwpPageChromeBuilder.applySectionHideFlags`가 머리말·꼬리말·쪽 번호를
