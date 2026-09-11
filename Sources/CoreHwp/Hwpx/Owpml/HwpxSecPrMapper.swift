@@ -322,13 +322,20 @@ private extension HwpxSecPrMapper {
         "LEFT_ONLY": 0b000, "LEFT_RIGHT": 0b010, "TOP_BOTTOM": 0b100,
     ]
 
-    /// `hp:startNum pageStartsOn` → 구역 정의 속성 bits 20-21의 값.
+    /// `hp:startNum pageStartsOn` → 구역 정의 속성(표 130) bits 20-21의 값.
     ///
-    /// 코퍼스는 `BOTH`(11건)만 쓰므로 나머지 두 값은 **실물 대조 전**이다 —
-    /// HWP5 표의 나열 순서(양쪽·홀수쪽·짝수쪽)를 따랐다. 홀수/짝수 시작
-    /// 문서를 얻으면 그 값부터 확인할 것.
+    /// **`EVEN`이 1, `ODD`가 2다** — 한글이 실제로 저장하는 값이다 (#173). 한글
+    /// 12.30.0 macOS의 `쪽 > 구역 설정... > 종류`를 홀수로 저장한 HWP는 property
+    /// `0x200000`(bits 20-21 = 2), 짝수는 `0x100000`(= 1)이고, 같은 편집
+    /// 세션에서 저장한 HWPX는 각각 `ODD`·`EVEN`이다 (`section-page-starts-on`
+    /// 쌍, 2026-09-11 실측). 한컴 공개 모델의 직렬화 표(`enumdef.h`
+    /// `STARTNUMSTARTONTYPE`: BOTH 0 · EVEN 1 · ODD 2)도 같다. 표 130은 이
+    /// 비트의 값을 적지 않아 종전 매핑이 `ODD → 1`을 가정했었다 — 스펙이 값을
+    /// 적지 않은 자리는 모델의 열거 값을 읽는다. 사용자 지정 시작 번호는
+    /// `BOTH` + `page` 속성이라 종류 비트는 0이다. 미지 이름·생략은 한컴 모델의
+    /// `GetAttribute` 규약대로 생성자 기본값 `BOTH`로 접는다.
     static let pageStartModes: [String: Int] = [
-        "BOTH": 0, "ODD": 1, "EVEN": 2,
+        "BOTH": 0, "EVEN": 1, "ODD": 2,
     ]
 
     static let columnTypes: [String: HwpColumnType] = [

@@ -93,6 +93,7 @@ final class FixturePreviewFidelityTests: XCTestCase {
         // 다섯 글자에 둔감하다(감추기를 지운 사본 실측 0.0002 → 0.0002). 승격을
         // 지키는 것은 `HwpxFixtureRenderTests.testHwpxPageChromeMatchesHwpPairs`다.
         "section-marks": 0.001, // 실측 0.0002 (2026-09-08)
+        "section-page-starts-on": 0.001, // 실측 0.0001 (2026-09-11)
         "공공누리": 0.004, // 실측 0.0028 (저해상 GIF)
         "문서이력관리": 0.001, // 실측 0.0000
         "변경내용추적": 0.001, // 실측 0.0000

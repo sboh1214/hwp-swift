@@ -162,24 +162,56 @@ final class HwpxSectionInvariantTests: XCTestCase {
     func testPageStartsOnLandsInTheSectionPropertyBitField() throws {
         // 카운터만 옮기면 홀수쪽 시작이 '양쪽'으로 보고된다. raw와 파생
         // 필드가 함께 서야 둘이 어긋나지 않는다.
-        let odd = try HwpxSectionFixture.mapSection(
-            HwpxSectionFixture.blankBody.replacingOccurrences(
-                of: "pageStartsOn=\"BOTH\"", with: "pageStartsOn=\"ODD\""
+        //
+        // 값은 한글이 저장하는 대로 **EVEN 1 · ODD 2**다 (#173) — 표 130이 값을
+        // 적지 않은 자리라 ODD를 1로 가정하던 매핑은 HWP 쌍(홀수 `0x200000`·
+        // 짝수 `0x100000`)과 반대였고, 이 테스트의 기대값도 그 매핑을 그대로
+        // 베껴 실물과의 대응을 검증하지 못했다. 실물 대조는
+        // `section-page-starts-on` 쌍의 등가 축(`sectionSettings`)이 한다.
+        //
+        // 미지 이름과 속성 생략은 한컴 모델 `GetAttribute` 규약대로 생성자
+        // 기본값 `BOTH`(0)로 접는다 — 여기서도 잠가 두지 않으면 폴백 상수를
+        // 바꿔도 아무 테스트가 빨개지지 않는다.
+        for (name, expected) in [("BOTH", 0), ("EVEN", 1), ("ODD", 2), ("ODDD", 0), (nil, 0)] {
+            let attribute = name.map { "pageStartsOn=\"\($0)\" " } ?? ""
+            let label = name ?? "(생략)"
+            let section = try HwpxSectionFixture.mapSection(
+                HwpxSectionFixture.blankBody.replacingOccurrences(
+                    of: "pageStartsOn=\"BOTH\" ", with: attribute
+                )
             )
-        )
-        let sectionDef = try XCTUnwrap(oddSectionDef(in: odd))
-        expect(sectionDef.propertyInfo.newPageNumberApplyRawValue) == 1
-        expect((sectionDef.property >> 20) & 0b11) == 1
-        // 표현이 셋이다 — 바이너리는 load(property)가 셋을 함께 세운다.
-        expect(sectionDef.propertyInfo.rawValue) == sectionDef.property
-
-        // 대조군: 기본값 BOTH는 종전대로 0이다.
-        let both = try HwpxSectionFixture.mapSection(HwpxSectionFixture.blankBody)
-        let bothSectionDef = try XCTUnwrap(oddSectionDef(in: both))
-        expect(bothSectionDef.propertyInfo.newPageNumberApplyRawValue) == 0
+            let sectionDef = try XCTUnwrap(
+                firstSectionDef(in: section), "\(label) 구역 정의"
+            )
+            expect(sectionDef.propertyInfo.newPageNumberApplyRawValue)
+                .to(equal(expected), description: label)
+            expect(Int((sectionDef.property >> 20) & 0b11))
+                .to(equal(expected), description: "\(label) property bits 20-21")
+            // 표현이 셋이다 — 바이너리는 load(property)가 셋을 함께 세운다.
+            expect(sectionDef.propertyInfo.rawValue)
+                .to(equal(sectionDef.property), description: "\(label) rawValue")
+            // 다른 비트를 건드리지 않는다 — 시작 종류만 실린 값이어야 한다.
+            expect(sectionDef.property & ~(0b11 << 20)) == 0
+        }
     }
 
-    private func oddSectionDef(in section: HwpSection) -> HwpSectionDef? {
+    func testUserPageStartNumberKeepsPageStartsOnBoth() throws {
+        // 사용자 지정 시작 쪽 번호는 `BOTH` + `page` 속성이다 — 종류 비트는 0이고
+        // 번호는 `pageStartNumber`에 따로 실린다 (한글 12.30.0 `구역 설정 > 종류 =
+        // 사용자` 저장본과 같은 배치, #173).
+        let section = try HwpxSectionFixture.mapSection(
+            HwpxSectionFixture.blankBody.replacingOccurrences(
+                of: "pageStartsOn=\"BOTH\" page=\"0\"",
+                with: "pageStartsOn=\"BOTH\" page=\"7\""
+            )
+        )
+        let sectionDef = try XCTUnwrap(firstSectionDef(in: section))
+        expect(sectionDef.propertyInfo.newPageNumberApplyRawValue) == 0
+        expect((sectionDef.property >> 20) & 0b11) == 0
+        expect(sectionDef.pageStartNumber) == 7
+    }
+
+    private func firstSectionDef(in section: HwpSection) -> HwpSectionDef? {
         for ctrl in section.paragraph[0].ctrlHeaderArray ?? [] {
             if case let .section(sectionDef) = ctrl {
                 return sectionDef

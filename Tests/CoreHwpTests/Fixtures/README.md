@@ -161,6 +161,13 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   근거다 (#169) — 쪽 감추기 두 표본이 서로의 여집합이라 표 145의 여섯 비트를 전부
   확정하고, 새 번호 세 표본이 제어 문자 코드 **21**(18이 아니다)과 번호 종류
   PAGE·PICTURE·FOOTNOTE를 잠근다. HWPX 쌍은 `HwpxFixtures/section-marks`.
+- `section-page-starts-on`: 빈 문서에 구역 나누기 3회로 구역 4개를 만들고 `쪽 > 구역
+  설정... > 종류`를 이어서·홀수·짝수·사용자(시작 5)로 저장해 Hancom Office HWP for
+  macOS 12.30.0 build 6446으로 2026-09-11에 저장. 구역 정의 속성 bits 20-21의 실물
+  근거다 (#173) — 한글은 홀수를 `0x200000`(2), 짝수를 `0x100000`(1)로 저장하며 HWPX
+  `pageStartsOn`의 `ODD`·`EVEN`이 그 값으로 옮겨져야 한다. 4쪽·5문단이고 홀수·짝수
+  시작은 빈 쪽 없이 쪽 번호만 1·3·4·5로 건너뛴다. HWPX 쌍은
+  `HwpxFixtures/section-page-starts-on`.
 - `track-changes`: WordprocessingML tracked changes DOCX를 Hancom Office HWP for macOS
   12.30.0 build 6382에서 열고 HWP로 저장. FileHeader, 본문/preview,
   DocumentProperties, DocInfo id mappings를 manifest로 검증.
@@ -610,7 +617,7 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
 | blank | 검증 중 | `blank-mac2014vp`, `blank-win2018`, `blank-win2020` |
 | plain text | 검증 중: 한컴오피스 생성 최소 문서의 paragraph text record raw payload total, control-char payload prefix/suffix, char-shape/line-seg raw payload total, preview, DocInfo count 기준 | `plain-text-minimal`, `plain-text-hancom-mac2026`, `CCL`, `공공누리`, `noori` |
 | multi-paragraph | 검증 중 | `noori` |
-| multiple sections | 검증 중: 한컴오피스 생성 문서의 `BodyText` storage child 이름(`Section0`, `Section1`)과 구역별 paragraph count 기준 | `multi-section` |
+| multiple sections | 검증 중: 한컴오피스 생성 문서의 `BodyText` storage child 이름(`Section0`, `Section1`)과 구역별 paragraph count 기준. 구역 정의의 쪽 시작 종류(홀수·짝수·사용자)는 `section-page-starts-on`이 `sections[].newPageNumberApplyRawValue`·`pageStartNumber`로 잠근다 | `multi-section`, `section-page-starts-on` |
 | table | 검증 중: cell paragraph까지 recursive count 검증 | `noori` |
 | image / BinData | 검증 중: `BinData` stream과 picture component id/BinData id 연결, storage stream id/extension, stream payload prefix/suffix 검증 | `BinData`, `noori`, `CCL`, `공공누리`, `legacy-common-control-property` |
 | equation | 검증 중: 한컴오피스 생성 문서의 `eqed` shape control, `eqEdit` raw record, 수식 문자열 보존 기준 | `equation` |

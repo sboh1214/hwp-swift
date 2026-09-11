@@ -3,6 +3,13 @@ import Foundation
 struct FixtureSectionExpectations: Decodable {
     let rawPayloadLength: Int?
     let propertyRawValue: UInt32?
+    /// 표 130 bits 20-21 — 구역 나눔으로 새 쪽이 생길 때의 쪽 번호 적용 방식
+    /// (0 이어서 · 1 짝수 · 2 홀수). `propertyRawValue`가 원시 값을 잠그더라도
+    /// 파생 필드의 비트 자리까지 함께 잠가야 리더가 다른 비트를 읽는 회귀를
+    /// 잡는다 (#173).
+    let newPageNumberApplyRawValue: Int?
+    /// 사용자 지정 시작 쪽 번호 (0 = 앞 구역에 이어).
+    let pageStartNumber: UInt16?
     let pageDefPropertyRawValue: UInt32?
     let pageDefRawPayloadLength: Int?
     let pageDefRawPayloadPrefixBytes: [UInt8]?

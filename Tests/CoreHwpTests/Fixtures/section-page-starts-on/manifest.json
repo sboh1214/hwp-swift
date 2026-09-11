@@ -1,0 +1,851 @@
+{
+  "id": "section-page-starts-on",
+  "generationTool": "Hancom Office HWP for macOS 12.30.0 (build 6446)",
+  "hwpVersion": "5.1.1.0",
+  "source": "Generated locally with Hancom Office HWP on 2026-09-11 — 빈 문서에 제목과 본문 한 문단을 쓰고 구역 나누기 3회로 구역 4개를 만든 뒤 쪽 > 구역 설정... > 종류를 구역마다 이어서·홀수·짝수·사용자(시작 5)로 두고 한글 문서(*.hwp)와 한글 표준 문서(*.hwpx)로 각각 저장 (Claude Computer Use GUI 자동화)",
+  "features": [
+    "file-header",
+    "paragraph-text",
+    "multi-paragraph",
+    "multi-section"
+  ],
+  "expectations": {
+    "allControlCount": 8,
+    "allControlTypeCounts": {
+      "column": 4,
+      "section": 4
+    },
+    "allParagraphCount": 5,
+    "binaryDataCount": 0,
+    "controlCount": 8,
+    "controlTypeCounts": {
+      "column": 4,
+      "section": 4
+    },
+    "docInfoRawPayloadLength": 5087,
+    "docInfoRawPayloadPrefixBytes": [
+      16,
+      0,
+      160,
+      1,
+      4,
+      0,
+      1,
+      0
+    ],
+    "docInfoRawPayloadSuffixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "fileHeaderRawPayloadLength": 256,
+    "fileHeaderRawPayloadPrefixBytes": [
+      72,
+      87,
+      80,
+      32,
+      68,
+      111,
+      99,
+      117
+    ],
+    "fileHeaderRawPayloadSuffixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "fileHeaderReservedLength": 207,
+    "fileHeaderReservedPrefixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "fileHeaderReservedSuffixBytes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "fileHeaderVersionRawBytes": [
+      0,
+      1,
+      1,
+      5
+    ],
+    "fileLicense": {
+      "rawValue": 0
+    },
+    "fileProperty": {
+      "isCompressed": true,
+      "isDeploymentDocument": false,
+      "isEncrypted": false,
+      "rawValue": 1
+    },
+    "pageCount": 4,
+    "pageCountSource": "한글.app 12.30.0 실측 (2026-09-11, 상태 표시줄 \"5/4쪽\" — 홀수·짝수·사용자 시작으로 쪽 번호는 1·3·4·5지만 빈 쪽은 끼우지 않아 4쪽) = HwpKit 렌더 (.testDeterministic) = HWPX 쌍 쪽수",
+    "paraCharShapePayloadCount": 5,
+    "paraCharShapePayloadPrefixBytes": [
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    ],
+    "paraCharShapePayloadSuffixBytes": [
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    ],
+    "paraCharShapePayloadTotalByteCount": 40,
+    "paraHeaderPayloadCount": 5,
+    "paraHeaderPayloadPrefixBytes": [
+      [
+        28,
+        0,
+        0,
+        0,
+        4,
+        0,
+        0,
+        0
+      ],
+      [
+        10,
+        0,
+        0,
+        128,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        25,
+        0,
+        0,
+        128,
+        4,
+        0,
+        0,
+        0
+      ],
+      [
+        25,
+        0,
+        0,
+        128,
+        4,
+        0,
+        0,
+        0
+      ],
+      [
+        26,
+        0,
+        0,
+        128,
+        4,
+        0,
+        0,
+        0
+      ]
+    ],
+    "paraHeaderPayloadSuffixBytes": [
+      [
+        1,
+        0,
+        210,
+        148,
+        9,
+        186,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    ],
+    "paraHeaderPayloadTotalByteCount": 120,
+    "paraLineSegPayloadCount": 5,
+    "paraLineSegPayloadPrefixBytes": [
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        64,
+        6,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    ],
+    "paraLineSegPayloadSuffixBytes": [
+      [
+        24,
+        166,
+        0,
+        0,
+        0,
+        0,
+        6,
+        0
+      ],
+      [
+        24,
+        166,
+        0,
+        0,
+        0,
+        0,
+        6,
+        0
+      ],
+      [
+        24,
+        166,
+        0,
+        0,
+        0,
+        0,
+        6,
+        0
+      ],
+      [
+        24,
+        166,
+        0,
+        0,
+        0,
+        0,
+        6,
+        0
+      ],
+      [
+        24,
+        166,
+        0,
+        0,
+        0,
+        0,
+        6,
+        0
+      ]
+    ],
+    "paraLineSegPayloadTotalByteCount": 180,
+    "paraRangeTagCount": 0,
+    "paraRangeTagPayloadTotalByteCount": 0,
+    "paraTextPayloadCount": 8,
+    "paraTextPayloadPrefixBytes": [
+      [
+        100,
+        99,
+        101,
+        115,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        100,
+        108,
+        111,
+        99,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        100,
+        99,
+        101,
+        115,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        100,
+        108,
+        111,
+        99,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        100,
+        99,
+        101,
+        115,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        100,
+        108,
+        111,
+        99,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        100,
+        99,
+        101,
+        115,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        100,
+        108,
+        111,
+        99,
+        0,
+        0,
+        0,
+        0
+      ]
+    ],
+    "paraTextPayloadSuffixBytes": [
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        2,
+        0
+      ]
+    ],
+    "paraTextPayloadTotalByteCount": 112,
+    "paraTextRawPayloadCount": 5,
+    "paraTextRawPayloadPrefixBytes": [
+      [
+        2,
+        0,
+        100,
+        99,
+        101,
+        115,
+        0,
+        0
+      ],
+      [
+        171,
+        204,
+        248,
+        201,
+        32,
+        0,
+        108,
+        173
+      ],
+      [
+        2,
+        0,
+        100,
+        99,
+        101,
+        115,
+        0,
+        0
+      ],
+      [
+        2,
+        0,
+        100,
+        99,
+        101,
+        115,
+        0,
+        0
+      ],
+      [
+        2,
+        0,
+        100,
+        99,
+        101,
+        115,
+        0,
+        0
+      ]
+    ],
+    "paraTextRawPayloadSuffixBytes": [
+      [
+        32,
+        0,
+        172,
+        172,
+        248,
+        188,
+        13,
+        0
+      ],
+      [
+        116,
+        199,
+        180,
+        197,
+        28,
+        193,
+        13,
+        0
+      ],
+      [
+        32,
+        0,
+        64,
+        214,
+        24,
+        194,
+        13,
+        0
+      ],
+      [
+        32,
+        0,
+        221,
+        201,
+        24,
+        194,
+        13,
+        0
+      ],
+      [
+        172,
+        192,
+        169,
+        198,
+        144,
+        199,
+        13,
+        0
+      ]
+    ],
+    "paraTextRawPayloadTotalByteCount": 228,
+    "paragraphCount": 5,
+    "sectionCount": 4,
+    "sectionParagraphCounts": [
+      2,
+      1,
+      1,
+      1
+    ],
+    "sectionRawPayloadCount": 4,
+    "sectionRawPayloadPrefixBytes": [
+      [
+        66,
+        0,
+        128,
+        1,
+        28,
+        0,
+        0,
+        0
+      ],
+      [
+        66,
+        0,
+        128,
+        1,
+        25,
+        0,
+        0,
+        128
+      ],
+      [
+        66,
+        0,
+        128,
+        1,
+        25,
+        0,
+        0,
+        128
+      ],
+      [
+        66,
+        0,
+        128,
+        1,
+        26,
+        0,
+        0,
+        128
+      ]
+    ],
+    "sectionRawPayloadSuffixBytes": [
+      [
+        24,
+        166,
+        0,
+        0,
+        0,
+        0,
+        6,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    ],
+    "sectionRawPayloadTotalByteCount": 1580,
+    "sectionUnknownRecordCount": 0,
+    "sections": [
+      {
+        "newPageNumberApplyRawValue": 0,
+        "pageStartNumber": 0,
+        "propertyRawValue": 0,
+        "rawPayloadLength": 47,
+        "unknownChildCount": 0
+      },
+      {
+        "newPageNumberApplyRawValue": 2,
+        "pageStartNumber": 0,
+        "propertyRawValue": 2097152,
+        "rawPayloadLength": 47,
+        "unknownChildCount": 0
+      },
+      {
+        "newPageNumberApplyRawValue": 1,
+        "pageStartNumber": 0,
+        "propertyRawValue": 1048576,
+        "rawPayloadLength": 47,
+        "unknownChildCount": 0
+      },
+      {
+        "newPageNumberApplyRawValue": 0,
+        "pageStartNumber": 5,
+        "propertyRawValue": 0,
+        "rawPayloadLength": 47,
+        "unknownChildCount": 0
+      }
+    ],
+    "summaryLength": 481,
+    "summaryPrefixBytes": [
+      254,
+      255,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "summarySuffixBytes": [
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0
+    ],
+    "visibleTextContains": [
+      "구역 시작 종류 견본",
+      "첫째 구역 이어서",
+      "둘째 구역 홀수",
+      "셋째 구역 짝수",
+      "넷째 구역 사용자"
+    ]
+  }
+}
