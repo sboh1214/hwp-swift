@@ -54,7 +54,10 @@ import XCTest
                     attributedString: unmarked, origin: .zero, lineWidth: width
                 ).count).to(equal(1), description: "\(alignment.name): 표식 없는 조각은 접힌다")
 
-                let marked = HwpParagraphLayout.measuredLineFragment(of: whole, range: range)
+                let marked = HwpParagraphLayout.measuredLineFragment(
+                    unmarked, heightIsMeasured: true, measuredLineCount: 2,
+                    measuredWidth: width, columnWidth: width
+                )
                 expect(Support.isMarked(marked)).to(beTrue(), description: alignment.name)
                 expect(marked.attribute(
                     HwpAttributedStringKey.measuredLineFragment, at: marked.length - 1,
@@ -73,24 +76,104 @@ import XCTest
             }
         }
 
-        /// 문단 전체(`range`가 문자열 전부)는 조각이 아니라 표식이 없다 — 그 블록은 측정과
-        /// 렌더가 같은 문자열에 같은 규칙을 쓰므로 종전 동작(한 줄 넘침 허용)이 그대로다.
-        func testWholeParagraphIsNotMarked() throws {
+        /// 한 줄 조각에는 표식이 없다 — 문단 전체 블록의 한 줄은 한 줄 넘침 규칙으로 접혀 잰
+        /// 것일 수 있어(31자가 30자 폭에서 한 줄) 표식이 두 줄로 되돌리고, 잘라낸 한 줄은 잰 폭에
+        /// 들어가 표식이 렌더를 바꾸지 못한다. 캐시 높이 조각(`heightIsMeasured` false)과 빈
+        /// 조각도 표식이 없고, 표식이 있던 입력은 벗겨진다.
+        func testSingleLineFragmentIsNotMarked() throws {
             let index = HwpIndex(from: CoreHwp.HwpFile())
             let whole = HwpTextRunBuilder(index: index, fontResolver: .testDeterministic)
                 .build(paragraph: try HwpSynthetic.textParagraph(String(repeating: "가", count: 31)))
-            let full = HwpParagraphLayout.measuredLineFragment(
-                of: whole, range: NSRange(location: 0, length: whole.length)
-            )
-            expect(Support.isMarked(full)).to(beFalse())
             let width = Support.columnWidth(charactersPerLine: 30, in: whole)
-            expect(HwpDrawnTextLayout.lines(
-                attributedString: full, origin: .zero, lineWidth: width
-            ).count) == 1
-            // 빈 조각도 그대로다.
+            let shape = index.paraShapeOrDefault(for: try HwpSynthetic.textParagraph(""))
+            // 전제: 문단 전체는 한 줄 넘침 규칙으로 한 줄로 재어진다.
+            expect(HwpParagraphLayout().layout(
+                attributedString: whole, paraShape: shape, columnWidth: width
+            ).lines.count) == 1
+            for columnWidth in [width, width * 2, width - 0.4] {
+                let full = HwpParagraphLayout.measuredLineFragment(
+                    whole, heightIsMeasured: true, measuredLineCount: 1,
+                    measuredWidth: width, columnWidth: columnWidth
+                )
+                expect(Support.isMarked(full)).to(beFalse(), description: "\(columnWidth)")
+                expect(HwpDrawnTextLayout.lines(
+                    attributedString: full, origin: .zero, lineWidth: columnWidth
+                ).count).to(equal(1), description: "\(columnWidth)")
+            }
+            let premarked = NSMutableAttributedString(attributedString: whole)
+            premarked.addAttribute(
+                HwpAttributedStringKey.measuredLineFragment, value: NSNumber(value: true),
+                range: NSRange(location: 0, length: premarked.length)
+            )
+            expect(Support.isMarked(HwpParagraphLayout.measuredLineFragment(
+                premarked, heightIsMeasured: true, measuredLineCount: 1,
+                measuredWidth: width, columnWidth: width
+            ))).to(beFalse())
+            expect(Support.isMarked(HwpParagraphLayout.measuredLineFragment(
+                premarked, heightIsMeasured: false, measuredLineCount: 2,
+                measuredWidth: width, columnWidth: width
+            ))).to(beFalse())
             expect(HwpParagraphLayout.measuredLineFragment(
-                of: whole, range: NSRange(location: 0, length: 0)
+                NSAttributedString(), heightIsMeasured: true, measuredLineCount: 2,
+                measuredWidth: width, columnWidth: width
             ).length) == 0
+        }
+
+        /// 좁아진 단의 판정은 폭 허용 오차 없는 실제 줄바꿈이다 (PR 리뷰): 잰 폭(b 70자에 0.1pt
+        /// 여유)에서 "a " / "b×70 " 두 줄인 조각(뒤에 c×70 줄이 이어지는 문단의 앞 두 줄)을
+        /// **0.3pt** 좁은 단에 놓으면 렌더러는 한 줄 넘침 규칙으로 접을 수 있지만(자연 폭 73자
+        /// ≤ 1.06배), 표식을 달아 접지 않고 그리면 b 줄이 다시 나뉘어 세 줄이 되어 두 줄 상자를
+        /// 넘친다 — 그러면 표식을 달지 않는다. 0.5pt 허용 오차로 같은 폭이라 보면 이 조각에
+        /// 표식이 붙는다. 잰 폭 그대로면 줄이 늘 수 없으므로 단다.
+        func testNarrowerColumnMarksOnlyWhenTheUnfoldedLinesFitTheMeasuredCount() throws {
+            let index = HwpIndex(from: CoreHwp.HwpFile())
+            let paragraph = try HwpSynthetic.textParagraph(
+                "a " + String(repeating: "b", count: 70) + " " + String(repeating: "c", count: 70)
+            )
+            let built = HwpTextRunBuilder(index: index, fontResolver: .testDeterministic)
+                .build(paragraph: paragraph)
+            let glyph = Support.naturalWidth(
+                of: built.attributedSubstring(from: NSRange(location: 2, length: 1))
+            )
+            // 잰 폭: b 70자가 0.1pt 여유로 들어가고 "a b…"는 넘쳐 "a "가 첫 줄이 된다.
+            let measuredWidth = 70 * glyph + 0.1
+            let frame = HwpParagraphLayout().layout(
+                attributedString: built, paraShape: index.paraShapeOrDefault(for: paragraph),
+                columnWidth: measuredWidth
+            )
+            expect(frame.lines.prefix(2).map(\.attributedRange.length)) == [2, 71]
+            guard frame.lines.count >= 2 else { return }
+            let range = NSUnionRange(frame.lines[0].attributedRange, frame.lines[1].attributedRange)
+            let fragment = HwpParagraphLayout.continuationFragment(of: built, range: range)
+            let narrower = measuredWidth - 0.3
+            // 전제: 좁은 단에서 조각은 접힘 대상이고, 접지 않고 그리면 세 줄이다.
+            expect(HwpDrawnTextLayout.slightOverflowLineMetrics(
+                attributedString: fragment, lineWidth: narrower
+            )).toNot(beNil())
+            let forced = NSMutableAttributedString(attributedString: fragment)
+            forced.addAttribute(
+                HwpAttributedStringKey.measuredLineFragment, value: NSNumber(value: true),
+                range: NSRange(location: 0, length: forced.length)
+            )
+            expect(HwpDrawnTextLayout.lines(
+                attributedString: forced, origin: .zero, lineWidth: narrower
+            ).count) == 3
+            let atNarrower = HwpParagraphLayout.measuredLineFragment(
+                fragment, heightIsMeasured: true, measuredLineCount: 2,
+                measuredWidth: measuredWidth, columnWidth: narrower
+            )
+            expect(Support.isMarked(atNarrower)).to(beFalse())
+            expect(HwpDrawnTextLayout.lines(
+                attributedString: atNarrower, origin: .zero, lineWidth: narrower
+            ).count) == 1
+            let atMeasured = HwpParagraphLayout.measuredLineFragment(
+                fragment, heightIsMeasured: true, measuredLineCount: 2,
+                measuredWidth: measuredWidth, columnWidth: measuredWidth
+            )
+            expect(Support.isMarked(atMeasured)).to(beTrue())
+            expect(HwpDrawnTextLayout.lines(
+                attributedString: atMeasured, origin: .zero, lineWidth: measuredWidth
+            ).count) == 2
         }
 
         // MARK: 쪽 경계 흐름 분할
@@ -254,10 +337,12 @@ import XCTest
         static func columnWidth(
             charactersPerLine count: Int, in built: NSAttributedString
         ) -> CGFloat {
-            let advance = naturalWidth(
-                of: built.attributedSubstring(from: NSRange(location: 0, length: 1))
-            )
-            return CGFloat(count) * advance + 0.75
+            CGFloat(count) * characterAdvance(in: built) + 0.75
+        }
+
+        /// 조판 문자열 첫 글자(`가`)의 자연 폭 `a`.
+        static func characterAdvance(in built: NSAttributedString) -> CGFloat {
+            naturalWidth(of: built.attributedSubstring(from: NSRange(location: 0, length: 1)))
         }
 
         /// 여백 없는 구역 정의 — 단 폭·본문 높이를 pt로 준다 (HWPUNIT 올림).

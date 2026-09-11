@@ -218,15 +218,17 @@ struct HwpColumnBandController {
                 guard let attributed = original.attributedString else { continue }
                 // 블록 첫머리가 아닌 조각은 이어지는 조각 — 첫 줄 들여쓰기를 둘째 줄에 맞춘다.
                 // 조각 높이가 측정 줄 전진량의 합이면 렌더러가 그 줄 수 그대로 그려야 한다 —
-                // 측정 줄 조각 표식 (#166). 캐시 높이 블록의 잔여 줄을 담은 조각은 종전대로 두고,
-                // 블록 전체(단 하나에 다 들어간 문단)는 표식 없이 그대로다. 줄은 원래 블록의
-                // 단 폭으로 쟀으므로 비등폭 단으로 옮겨진 **한 줄** 조각도 표식을 달지 않는다 —
-                // 렌더러가 그 단 폭으로 다시 줄바꿈하면 두 줄이 되어 한 줄 상자를 넘친다
-                // (`HwpPaginator.appendLineSliceBlock`과 같은 규칙).
-                let sameWidth = abs(columnFrames[column].width - original.frame.width) < 0.5
-                let sub = mergedHeightIsMeasured && (sameWidth || mergedCount > 1)
-                    ? HwpParagraphLayout.measuredLineFragment(of: attributed, range: mergedRange)
-                    : HwpParagraphLayout.continuationFragment(of: attributed, range: mergedRange)
+                // 측정 줄 조각 표식 (#166). 캐시 높이 블록의 잔여 줄을 담은 조각은 종전대로
+                // 둔다. 줄은 원래 블록의 단 폭(첫 단)으로 쟀으므로 좁은 단으로 옮겨진 조각은
+                // 폭 허용 오차 없이 실제 줄바꿈으로 판정한다 (`HwpPaginator.appendLineSliceBlock`
+                // 과 같은 규칙, `measuredLineFragment`).
+                let sub = HwpParagraphLayout.measuredLineFragment(
+                    HwpParagraphLayout.continuationFragment(of: attributed, range: mergedRange),
+                    heightIsMeasured: mergedHeightIsMeasured,
+                    measuredLineCount: mergedCount,
+                    measuredWidth: original.frame.width,
+                    columnWidth: columnFrames[column].width
+                )
                 newBlocks.append(AnyHwpBlock(
                     frame: CGRect(
                         x: columnFrames[column].minX,

@@ -1820,12 +1820,11 @@ private extension HwpPaginator {
     ///
     /// 블록 높이는 누적 전진량 `takenHeight`에서 마지막 전진량에 실린 다음 조각 첫 줄의
     /// ascent 초과분을 뺀 것이다 (`chargedHeight` — 그 몫은 다음 조각의 것). 그 높이가 측정
-    /// 줄 전진량만으로 났고(`HwpFragmentLineAdvances.heightIsMeasured`) 조각이 잰 폭 그대로
-    /// 놓이거나 여러 줄이면 측정 줄 조각 표식을 단다 (`measuredLineFragment`, #166) — 블록
-    /// 높이가 측정한 줄 전진량이라 렌더러가 조각을 한 줄로 접으면 아래가 빈다. 비등폭
-    /// 단으로 이월된 **한 줄** 조각은 표식을 달지 않는다: 렌더러가 목적 단 폭으로 다시
-    /// 줄바꿈하므로 종전 접힘(가로 6% 이내 넘침)이 한 줄 높이 상자를 세로로 넘치는 것보다
-    /// 낫다 — 여러 줄 조각은 접힘이 빈 줄을 남기므로 표식이 순 개선이다.
+    /// 줄 전진량만으로 났으면(`HwpFragmentLineAdvances.heightIsMeasured`) 측정 줄 조각 표식을
+    /// 단다 (`HwpParagraphLayout.measuredLineFragment`, #166) — 블록 높이가 측정한 줄 전진량이라
+    /// 렌더러가 조각을 한 줄로 접으면 아래가 빈다. 이 단이 잰 폭보다 좁으면(비등폭 단 이월)
+    /// 렌더러가 이 단 폭으로 다시 줄바꿈하므로 그 판정은 폭 허용 오차 없이 실제 줄바꿈으로
+    /// 한다 — 앵커 문맥의 `sameWidth`(0.5pt)는 재조판 여부의 문턱이지 줄바꿈 판정이 아니다.
     private func appendLineSliceBlock(
         _ slice: ArraySlice<HwpLineFrame>,
         of paragraphFrame: HwpParagraphFrame,
@@ -1843,12 +1842,15 @@ private extension HwpPaginator {
         )
         let isWholeParagraph = slice.count == paragraphFrame.lines.count
         let sameWidth = abs(currentColumnFrame.width - placement.measuredWidth) < 0.5
-        let marksMeasuredLines = heightIsMeasured && (sameWidth || slice.count > 1)
-        let fragment = placedFragment(
-            marksMeasuredLines
-                ? HwpParagraphLayout.measuredLineFragment(of: attributedString, range: range)
-                : HwpParagraphLayout.continuationFragment(of: attributedString, range: range),
-            measuredWidth: placement.measuredWidth
+        let fragment = HwpParagraphLayout.measuredLineFragment(
+            placedFragment(
+                HwpParagraphLayout.continuationFragment(of: attributedString, range: range),
+                measuredWidth: placement.measuredWidth
+            ),
+            heightIsMeasured: heightIsMeasured,
+            measuredLineCount: slice.count,
+            measuredWidth: placement.measuredWidth,
+            columnWidth: currentColumnFrame.width
         )
         appendBlock(
             height: height,

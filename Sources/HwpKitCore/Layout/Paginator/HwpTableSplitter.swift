@@ -461,10 +461,14 @@ enum HwpTableSplitter {
         // 문단 첫머리가 아닌 조각은 이어지는 조각 — 첫 줄 들여쓰기를 둘째 줄에 맞춘다.
         // 조각 높이가 측정한 줄 전진량(`lineAdvances`)이면 렌더러가 그 줄 수 그대로
         // 그려야 한다 — 측정 줄 조각 표식 (#166). 저장본 줄 캐시 높이의 잔여를 담은
-        // 조각은 캐시 줄 수가 오라클이라 종전대로 둔다.
-        let sub = heightIsMeasured
-            ? HwpParagraphLayout.measuredLineFragment(of: paragraph.attributedString, range: range)
-            : HwpParagraphLayout.continuationFragment(of: paragraph.attributedString, range: range)
+        // 조각은 캐시 줄 수가 오라클이라 종전대로 둔다. 셀 폭은 쪽이 바뀌어도 같다.
+        let sub = HwpParagraphLayout.measuredLineFragment(
+            HwpParagraphLayout.continuationFragment(of: paragraph.attributedString, range: range),
+            heightIsMeasured: heightIsMeasured,
+            measuredLineCount: lines.count,
+            measuredWidth: rect.width,
+            columnWidth: rect.width
+        )
         let continued = range.location + range.length < paragraph.attributedString.length
         return HwpLaidOutParagraph(
             attributedString: continued ? markedAsContinuedFragment(sub) : sub,
