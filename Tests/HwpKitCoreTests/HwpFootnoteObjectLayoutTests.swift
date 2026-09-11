@@ -357,7 +357,9 @@ import XCTest
             let block = try firstBlock(of: note)
             let paragraphRect = try XCTUnwrap(block.paragraphs.first).rect
             expect(block.frame.height).to(beCloseTo(300, within: 0.5))
-            expect(paragraphRect.height).to(beCloseTo(try cachedNoteHeight(), within: 0.5))
+            // 문단 rect는 텍스트 높이 (줄 전진량) 그대로다 — 블록 프레임(각주 끝은
+            // 마지막 줄 상자까지, #165)과 달리 줄 간격 몫을 담는다.
+            expect(paragraphRect.height).to(beCloseTo(try cachedNoteTextHeight(), within: 0.5))
             expect(paragraphRect.height) < block.frame.height - 1
         }
 
@@ -498,9 +500,15 @@ import XCTest
             try HwpSynthetic.lineSegParagraph("", segments: [(location: 0, height: 1600)])
         }
 
-        /// 개체가 없는 `cachedNote()`의 각주 블록 높이 (하한 비교 기준선)
+        /// 개체가 없는 `cachedNote()`의 각주 블록 높이 (하한 비교 기준선) — 각주 끝이라
+        /// 마지막 줄의 줄 간격을 뺀 줄 상자 높이다 (#165).
         private func cachedNoteHeight() throws -> CGFloat {
             try firstBlock(of: cachedNote()).frame.height
+        }
+
+        /// 개체가 없는 `cachedNote()`의 문단 rect 높이 — 줄 전진량 (줄 간격 포함).
+        private func cachedNoteTextHeight() throws -> CGFloat {
+            try XCTUnwrap(firstBlock(of: cachedNote()).paragraphs.first).rect.height
         }
 
         /// 문단 하나짜리 각주를 배치해 첫 블록을 돌려준다.

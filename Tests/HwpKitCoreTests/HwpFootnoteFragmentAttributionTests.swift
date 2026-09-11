@@ -151,13 +151,29 @@ import XCTest
             }
         }
 
-        /// 캐시가 주장하는 절단 위치 (textStartingIndex) 가 그려진 조각과 어긋나도
-        /// 각주는 참조가 **그려진** 페이지를 따른다 — 폰트 대체·stale 캐시로 CT 줄
-        /// 배분이 캐시와 갈리는 문단이 그렇다. 원본 WCHAR 위치로 나누면 뒤 조각의
-        /// 각주가 앞 페이지로 가, 그 쪽에 참조 없는 각주가 뜬다.
-        func testAttributionFollowsDrawnSliceNotCacheTextIndex() async throws {
+        /// 캐시가 주장하는 절단 위치 (textStartingIndex) 가 그려진 조각보다 **앞**이면
+        /// 각주는 캐시 — 한글의 절단점 — 를 따른다 (#165). 폰트 대체로 CT 줄바꿈이 한글보다
+        /// 늦어 마커가 다음 조각으로 밀린 문단이 그렇다. 그려진 조각을 따르면 그 각주가
+        /// 한글이 이미 다른 각주로 채운 다음 쪽을 넘치게 하고, 넘침이 이어짐으로 뒤 쪽에
+        /// 연쇄해 한글에 없는 쪽을 만든다 (헌법주석 실측: 21건이 8쪽을 늘렸다). 참조
+        /// 마커는 그려진 조각에 남으므로 이 쪽엔 참조 없는 각주가 뜬다 — 연쇄보다 낫다.
+        func testAttributionFollowsCacheWhenItClaimsAnEarlierFragment() async throws {
             // 마지막 세그먼트가 두 마커보다 뒤라고 주장한다 (그리기는 그대로 2:1 분할)
             let paginator = try paginate(splitHostParagraph(lastSegmentTextStart: 30))
+            let first = try await paginator.page(at: 0)
+            let second = try await paginator.page(at: 1)
+
+            expect(self.noteTexts(on: first).count) == 2
+            expect(self.noteTexts(on: first).first).to(contain("앞 조각"))
+            expect(self.noteTexts(on: first).last).to(contain("뒤 조각"))
+            expect(self.noteTexts(on: second)).to(beEmpty())
+        }
+
+        /// 반대로 캐시가 그려진 조각보다 **뒤**라고 주장하면 그려진 조각을 따른다 —
+        /// 그 쪽에 참조가 있고, 앞 조각 귀속은 연쇄를 만들지 않는다.
+        func testAttributionFollowsDrawnSliceWhenCacheClaimsALaterFragment() async throws {
+            // 마지막 세그먼트가 문단 첫 글자에서 시작한다고 주장한다 (두 마커 모두 뒤 조각)
+            let paginator = try paginate(splitHostParagraph(lastSegmentTextStart: 0))
             let first = try await paginator.page(at: 0)
             let second = try await paginator.page(at: 1)
 
@@ -202,6 +218,58 @@ import XCTest
             expect(self.noteTexts(on: second).first?.hasPrefix("9)")) == true
             expect(self.bodyText(on: second)).to(contain("9)"))
             expect(self.bodyText(on: second)).toNot(contain("10)"))
+        }
+
+        // MARK: - 앞 조각 귀속과 번호 정합
+
+        /// 조각 셋 + 각주 셋 — 캐시가 마지막 run의 시작을 마커 뒤라고 주장해 셋째 각주가
+        /// **둘째** 조각에 귀속되지만 그 참조 마커는 셋째 조각에 그려진다 (#165).
+        private func threeFragmentHost(
+            lastRunTextStart: UInt32
+        ) throws -> CoreHwp.HwpParagraph {
+            var host = try HwpSynthetic.splitParagraphWithNoteMarkers(
+                lines: [
+                    (characters: 5, marker: true),
+                    (characters: 5, marker: true),
+                    (characters: 5, marker: true),
+                ],
+                segments: [
+                    (location: 6920, height: 1500, textStart: 0),
+                    (location: 4820, height: 1500, textStart: 14),
+                    (location: 2720, height: 1500, textStart: lastRunTextStart),
+                ]
+            )
+            host.ctrlHeaderArray = (1 ... 3).map { index in
+                .footnote(HwpSynthetic.listControl(
+                    ctrlId: .footnote,
+                    paragraphs: [HwpSynthetic.noteParagraph(
+                        " 각주 \(index)",
+                        autoNumber: HwpSynthetic.autoNumberControl(kind: 1, decorationTail: ")")
+                    )]
+                ))
+            }
+            return host
+        }
+
+        /// 앞 조각에 귀속된 각주의 번호가 **뒤 조각에 그려진 참조 마커**에도 닿아야 한다
+        /// (#165 리뷰). 쪽마다 번호를 새로 시작하면 (표 134 모드 2) 마커는 문단 조판 때
+        /// 구워진 옛 번호를 들고 있고, 재매김은 그 조각의 서수 범위만 훑는다 — 앞 조각이
+        /// 가져간 서수는 어느 조각의 범위에도 없어 마커가 옛 번호로 남는다.
+        func testNumberFromEarlierFragmentReachesTheMarkerDrawnLater() async throws {
+            let paginator = try paginate(
+                threeFragmentHost(lastRunTextStart: 40), footnoteNumberingMode: 2
+            )
+            let first = try await paginator.page(at: 0)
+            let second = try await paginator.page(at: 1)
+            let third = try await paginator.page(at: 2)
+
+            // 캐시가 셋째 각주를 둘째 조각으로 당겨 2쪽에 1)·2)가 함께 실린다.
+            expect(self.noteTexts(on: first).map { String($0.prefix(2)) }) == ["1)"]
+            expect(self.noteTexts(on: second).map { String($0.prefix(2)) }) == ["1)", "2)"]
+            expect(self.noteTexts(on: third)).to(beEmpty())
+            // 셋째 각주의 참조는 3쪽에 그려진다 — 수집이 확정한 2)여야 한다.
+            expect(self.bodyText(on: third)).to(contain("2)"))
+            expect(self.bodyText(on: third)).toNot(contain("3)"))
         }
 
         // MARK: - 조각별 컨트롤 서수 분할

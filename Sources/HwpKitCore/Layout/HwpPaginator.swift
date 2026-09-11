@@ -89,7 +89,7 @@ public actor HwpPaginator {
     /// id로 버킷만 좁히고 표 값으로 확정하는 근거는 `truncatedRowLimit(of:)`.
     private var truncatedTableRowLimits: [UInt32: [(table: CoreHwp.HwpTable, rowLimit: Int)]] = [:]
     /// 이 페이지에 배치할 각주 (문단 + 문서 순서 번호) — 저장은 footnoteCoordinator
-    private var pendingFootnotes: [HwpFootnoteLayout.Input] {
+    private var pendingFootnotes: HwpFootnoteLayout.PendingNotes {
         get { footnoteCoordinator.pendingFootnotes }
         set { footnoteCoordinator.pendingFootnotes = newValue }
     }
@@ -97,7 +97,7 @@ public actor HwpPaginator {
     /// 이 페이지에 표시할 메모 (댓글) 풍선 (한글.app 편집 뷰 오른쪽 패널)
     private var pendingMemoBalloons: [HwpMemoPanelPainter.Balloon] = []
     /// 문서/구역 끝에 배치할 미주 (표 134 bits 8-9) — 저장은 footnoteCoordinator
-    private var pendingEndnotes: [HwpFootnoteLayout.Input] {
+    private var pendingEndnotes: HwpFootnoteLayout.PendingNotes {
         get { footnoteCoordinator.pendingEndnotes }
         set { footnoteCoordinator.pendingEndnotes = newValue }
     }
@@ -180,6 +180,10 @@ public actor HwpPaginator {
     /// 문단 단위 수집을 건너뛰어야 이중 수집(번호 중복)이 되지 않는다.
     /// placeParagraphText가 매 호출 초기화하고 절대 캐시 경로만 켠다.
     private var collectedFootnotesDuringPlacement = false
+    /// 절대 캐시 run 블록의 마지막 줄 **줄 간격** 몫 (`currentBlocks` 인덱스별, #165) —
+    /// 각주 이어짐 판정의 본문 하한은 마지막 줄 상자 아래다 (한글 실측). 블록 프레임은
+    /// 전진량(줄 간격 포함)이라 그 차를 따로 둔다. 쪽이 확정되면 비운다.
+    private var absoluteRunTrailingSpacings: [Int: CGFloat] = [:]
     /// 이번 배치가 **조각의 쪽에 이미 놓은** 글자처럼 취급 컨트롤의 서수 (#164).
     /// 쪽·단에 걸친 문단은 앞 조각의 줄 앵커가 있는 개체를 그 조각이 확정되기 전에
     /// 놓으므로, 배치 뒤 문단 단위 방출(`appendControlBlocks`)이 이 서수를 건너뛰어야
@@ -614,10 +618,23 @@ private extension HwpPaginator {
     /// currentBlocks 재작성 적용은 여기서 한다.
     func rebalanceColumnBand() {
         guard let plan = band.rebalancePlan(currentBlocks: currentBlocks) else { return }
-        currentBlocks = currentBlocks.enumerated()
-            .filter { !plan.replacedBlockIndices.contains($0.offset) }
-            .map(\.element)
-        currentBlocks.append(contentsOf: plan.newBlocks)
+        // 블록 배열을 다시 쓰면 블록 인덱스를 열쇠로 둔 부속 정보도 함께 옮긴다 (#165 리뷰,
+        // `absoluteRunTrailingSpacings`). 오늘은 무동작이다 — 캐시 run 블록은 1단 밴드에만
+        // 놓이고 (`placeAbsoluteCachedParagraph`는 `columnFrames.count <= 1`) 재배치는 다단
+        // 밴드의 꼬리 블록만 갈아 끼우므로 앞 블록의 인덱스가 밀리지 않는다 — 그러나 위치
+        // 열쇠가 배열 재작성과 따로 놀면 그 전제가 바뀔 때 다른 블록의 줄 간격을 빼게 된다.
+        var kept: [AnyHwpBlock] = []
+        var remapped: [Int: CGFloat] = [:]
+        for (offset, block) in currentBlocks.enumerated()
+            where !plan.replacedBlockIndices.contains(offset)
+        {
+            if let spacing = absoluteRunTrailingSpacings[offset] {
+                remapped[kept.count] = spacing
+            }
+            kept.append(block)
+        }
+        currentBlocks = kept + plan.newBlocks
+        absoluteRunTrailingSpacings = remapped
         bandUsedBottom = plan.maxBottom
     }
 
@@ -1137,18 +1154,29 @@ private extension HwpPaginator {
         // 반복 머리의 cacheCurrentPage가 그 페이지를 확정하며 각주를 배치한다.
         // 경계를 못 믿으면 (서수 불일치) nil이라 호출자가 문단 전체를 마지막
         // 조각 페이지에 귀속시키는 기존 동작으로 폴백한다.
+        // 캐시(한글의 절단점)가 더 앞 조각이라 하면 그쪽을 따른다 (#165) — 늦은 귀속은
+        // 각주 이어짐과 만나 뒤 쪽으로 연쇄한다 (`earliestOrdinalRanges`).
         let slices = absoluteRunSlices(
             runs: runs,
             attributedString: attributedString,
             lines: paragraphFrame.lines
         )
-        let ordinalRanges = HwpAbsoluteCachePlacer.controlOrdinalRanges(
-            slices: slices.map(\.text),
-            controlCount: paragraph.ctrlHeaderArray?.count ?? 0
+        let controlCount = paragraph.ctrlHeaderArray?.count ?? 0
+        let ordinalRanges = HwpAbsoluteCachePlacer.earliestOrdinalRanges(
+            HwpAbsoluteCachePlacer.controlOrdinalRanges(
+                slices: slices.map(\.text), controlCount: controlCount
+            ),
+            HwpAbsoluteCachePlacer.cachedControlOrdinalRanges(
+                runs: runs, paragraph: paragraph, controlCount: controlCount
+            )
         )
         // 조각에 걸쳐 그려진 마커는 조각마다 **일부**만 갖는다 — 그 일부를 완전한
         // 번호로 바꾸면 다음 쪽에 남은 나머지와 합쳐 깨진다 (번호가 그대로여도).
         let splitMarkers = HwpAbsoluteCachePlacer.ordinalsSpanningSlices(slices.map(\.text))
+        // 앞 조각이 가져간 각주의 참조 마커는 **뒤 조각에** 그려질 수 있다 (#165의 캐시
+        // 귀속) — 그 조각의 재매김 범위에는 없으므로, 수집이 확정한 번호를 들고 가
+        // 실제로 그 마커가 나오는 조각에서 적용한다 (아래 `renumberedNoteMarkers`).
+        var carriedNoteNumbers: [Int: HwpControlMarkerReplacement] = [:]
         for (runIndex, run) in runs.enumerated() {
             if runIndex > 0 {
                 cacheCurrentPage()
@@ -1161,12 +1189,14 @@ private extension HwpPaginator {
                 in: slice.text,
                 paragraph: paragraph,
                 ordinals: ordinalRanges?[runIndex],
-                skipping: splitMarkers
+                skipping: splitMarkers,
+                carrying: &carriedNoteNumbers
             )
             // appendBlock은 columnFrame.minY + contentHeightUsed에 배치하므로
             // 한글이 준 절대 y (+ stale 캐시 보정)로 커서를 옮긴다.
             contentHeightUsed = max(0, HwpUnits.points(fromHwpUnit: runFirst))
                 + absoluteCacheStaleOffset
+            let cachedHeight = height
             height = staleAdjustedHeight(
                 height, runs: runs, run: run, slice: sliceText, frame: paragraphFrame
             )
@@ -1182,6 +1212,10 @@ private extension HwpPaginator {
                     of: slice.text, lines: slice.lines,
                     renumbered: sliceText, paragraph: paragraph
                 )
+            )
+            recordAbsoluteRunTrailingSpacing(
+                run: run, firstLocation: runFirst, blockHeight: height,
+                isStaleAdjusted: height != cachedHeight
             )
             lastAbsoluteCacheLoc = run.last?.lineLocation ?? runFirst
             collectFragmentFootnotes(
@@ -1306,27 +1340,38 @@ private extension HwpPaginator {
     /// 줄에 남지 않는다. 여기는 순환이 아니다 — 번호는 이 시점에 이미 정해져 있다.
     /// 가드: `testRenumberingKeepsMarkerAndNoteInSyncWhenWidthChanges` (번호 정합),
     /// `HwpFootnoteRenumberAnchorTests` (앵커 정합).
+    /// `carrying`: 앞 조각들에서 확정한 각주 번호 (#165 리뷰). 조각 귀속이 캐시를 따라
+    /// 마커보다 **앞선** 조각으로 갈 수 있으므로 (`earliestOrdinalRanges`), 이 조각의
+    /// 서수 범위만 보면 뒤에 그려진 마커가 문단 조판 때 구워진 옛 번호로 남는다 — 쪽마다
+    /// 번호를 새로 시작하는 문서 (표 134 모드 2) 에서 참조와 각주가 어긋난다. 범위에서
+    /// 계산한 번호를 여기 쌓아 두고, 그 마커가 실제로 나오는 조각에서 적용한다.
+    /// 마커는 조각 하나에만 있으므로 (걸친 서수는 `splitMarkers`가 뺀다) 누적해도
+    /// 같은 마커가 두 번 바뀌지 않는다.
     private func renumberedNoteMarkers(
         in slice: NSAttributedString,
         paragraph: CoreHwp.HwpParagraph,
         ordinals: Range<Int>?,
-        skipping splitMarkers: Set<Int>
+        skipping splitMarkers: Set<Int>,
+        carrying carried: inout [Int: HwpControlMarkerReplacement]
     ) -> NSAttributedString {
-        guard let ordinals, !ordinals.isEmpty,
-              let ctrls = paragraph.ctrlHeaderArray
-        else { return slice }
-        let noteReplacements = noteReferenceReplacements(for: paragraph, ordinals: ordinals)
-            .filter { ordinal, _ in
-                guard !splitMarkers.contains(ordinal),
-                      ctrls.indices.contains(ordinal) else { return false }
-                return switch ctrls[ordinal] {
-                case .footnote, .endnote: true
-                default: false
-                }
-            }
-        return HwpTextRunBuilder.renumberingNoteMarkers(
-            in: slice, replacements: noteReplacements
-        )
+        guard let ctrls = paragraph.ctrlHeaderArray else { return slice }
+        if let ordinals, !ordinals.isEmpty {
+            // 자동 쪽 번호는 쌓지 않는다 — 쪽마다 값이 달라 뒤 조각에 나르면 옛 쪽 번호가
+            // 그려진다. 각주·미주 참조만 남긴다.
+            carried.merge(
+                noteReferenceReplacements(for: paragraph, ordinals: ordinals)
+                    .filter { ordinal, _ in
+                        guard !splitMarkers.contains(ordinal),
+                              ctrls.indices.contains(ordinal) else { return false }
+                        return switch ctrls[ordinal] {
+                        case .footnote, .endnote: true
+                        default: false
+                        }
+                    }
+            ) { _, fresh in fresh }
+        }
+        guard !carried.isEmpty else { return slice }
+        return HwpTextRunBuilder.renumberingNoteMarkers(in: slice, replacements: carried)
     }
 
     /// stale 캐시 (캐시 줄 높이 < 선언 글자 크기) 보정된 run 높이.
@@ -1365,6 +1410,55 @@ private extension HwpPaginator {
         )
     }
 
+    /// 방금 놓은 절대 캐시 run 블록의 마지막 줄 줄 간격 몫을 기록한다 (#165) — 블록
+    /// 아래(전진량)와 마지막 줄 상자 아래의 차. 하단 경계에 잘린 블록은 잘린 만큼만 남는다.
+    ///
+    /// **stale 캐시로 CT 높이까지 커진 블록은 0이다** (PR 리뷰): 그 블록의 아래는 캐시
+    /// 전진량이 아니라 다시 조판한 CT 높이라 캐시의 줄 간격이 들어 있지 않고, 커진 몫을
+    /// "블록 아래 − 캐시 잉크"로 재면 재조판으로 늘어난 글자 높이까지 통째로 빼 본문 하한이
+    /// 캐시 잉크로 되돌아간다 — 각주 구분선이 커진 글자 위에 그어진다. CT 마지막 줄의
+    /// 상자 아래는 stale 캐시로는 알 수 없으므로 CT 높이 전체를 보수적으로 하한으로 둔다.
+    private func recordAbsoluteRunTrailingSpacing(
+        run: [CoreHwp.HwpParaLineSegInternal],
+        firstLocation: Int32,
+        blockHeight: CGFloat,
+        isStaleAdjusted: Bool
+    ) {
+        guard !isStaleAdjusted else {
+            absoluteRunTrailingSpacings[currentBlocks.count - 1] = 0
+            return
+        }
+        let inkBottom = run.reduce(Int(firstLocation)) {
+            max($0, Int($1.lineLocation) + Int(max(0, $1.lineHeight)))
+        }
+        let inkHeight = max(
+            1, HwpUnits.points(fromHwpUnit: Int32(clamping: inkBottom - Int(firstLocation)))
+        )
+        absoluteRunTrailingSpacings[currentBlocks.count - 1] = max(0, blockHeight - inkHeight)
+    }
+
+    /// 이 쪽 본문이 각주 영역에 남긴 하한 (#165) — 캐시 run 블록은 마지막 줄 **상자**
+    /// 아래 (줄 간격 제외, 한글 실측), 그 밖의 본문 블록(표·개체·흐름 문단)은 **그려지는**
+    /// 하한 (`HwpHitTester.paintedObjectBounds`, #165 리뷰): 표·글상자의 오버레이·쪽
+    /// 기준 자식은 프레임을 키우지 않고 그 아래로 그려지므로 프레임만 보면 각주 스택이
+    /// 그 개체를 덮는다 — 겹침 가드가 재는 자와 같아야 한다. 본문 블록이 없으면 nil
+    /// (이월 드레인의 빈 쪽). 크롬·변경 막대를 붙이기 **전에** 재야 한다 — 막대는
+    /// 텍스트 블록 프레임(전진량)을 그대로 따른다.
+    ///
+    /// **미주 블록은 본문이다** (#165 리뷰): 미주는 흐름 콘텐츠라 쪽 위에서부터 놓이고
+    /// (`appendPendingEndnotes`) 이월된 각주는 그 아래 자리에 실려야 한다. 쪽 각주는 이
+    /// 하한을 잰 **뒤에** 붙으므로 (`appendPendingFootnotes`) 이 시점의 `.footnote` 종류
+    /// 블록은 전부 미주다 — 그것을 빼면 미주만 있는 쪽이 빈 쪽으로 보여 각주 스택이 쪽
+    /// 전체에 바닥 정렬되고, 진행 보장으로 놓인 미주를 덮는다 (재현: 미주 하단 104.67pt
+    /// 위 구분선 92.6pt).
+    private func footnoteBodyBottom() -> CGFloat? {
+        currentBlocks.enumerated().compactMap { offset, block -> CGFloat? in
+            guard block.role == .body else { return nil }
+            return HwpHitTester.paintedObjectBounds(of: block).maxY
+                - (absoluteRunTrailingSpacings[offset] ?? 0)
+        }.max()
+    }
+
     /// 문단에 붙은 구역 정의를 현재 페이지 지오메트리에 반영한다.
     func applySectionDef(in paragraph: CoreHwp.HwpParagraph) {
         guard let sectionDef = Self.sectionDef(in: paragraph) else { return }
@@ -1377,6 +1471,12 @@ private extension HwpPaginator {
         // 구역은 항상 새 페이지에서 시작하므로 여기서 논리 쪽 번호를 재설정해도 안전하다.
         if sectionDef.pageStartNumber > 0 {
             nextLogicalPageNumber = Int(sectionDef.pageStartNumber)
+        }
+        // 이월 각주의 예약을 새 구역의 기하·구분선으로 다시 잰다 (#165 리뷰) — 앞 쪽을 확정하며
+        // 잰 값은 이전 구역의 폭·구분선·쪽 높이 기준이라, 새 구역 첫 쪽의 배치(새 폭·새 구분선)와
+        // 갈려 흐름 문단·표가 헛되이 밀리거나 각주 자리를 먹는다. 밴드를 열기 전에 잰다.
+        if !pendingFootnotes.isEmpty {
+            footnoteReservedHeight = reservedFootnoteHeight(for: pendingFootnotes)
         }
         // 단 정의는 구역에 종속: 새 구역의 단 컨트롤이 다시 적용하기 전까지 1단.
         currentColumnDef = nil
@@ -3736,7 +3836,10 @@ private extension HwpPaginator {
         HwpFootnoteCoordinator.Environment(
             contentWidth: currentPageGeometry.contentFrame.width,
             footnoteShape: currentSectionDef?.footNoteShape,
-            sizeResolver: objectSizeResolver
+            sizeResolver: objectSizeResolver,
+            // 절대 캐시 모드만 각주를 분할 지점에서 나눠 잇는다 (`appendPendingFootnotes`의
+            // `limitsAreaToHalfContent: !absoluteCacheMode`와 같은 판정).
+            continuesAtCacheBreaks: absoluteCacheMode
         )
     }
 
@@ -3824,11 +3927,19 @@ private extension HwpPaginator {
 
         // 첫 미주가 남은 공간에 안 들어가면 새 페이지에서 시작한다
         // (미주는 구분선을 그리지 않으므로 — 아래 drawSeparator = false —
-        // 구분선 오버헤드 없이 실제 배치 높이만 본다).
+        // 구분선 오버헤드 없이 실제 배치 높이만 본다). 높이는 배치(`stackBlocks`)와 **같은
+        // 산식**이어야 한다 (#165 리뷰): 첫 문단이 그 미주의 끝이면 마지막 줄의 줄 간격을 빼고,
+        // 개체 판정은 미주 단위이며, 라벨은 미주 모양으로 — 줄 간격만큼 크게 재면 들어가는
+        // 미주를 새 쪽으로 옮긴다.
         if let first = pendingEndnotes.first,
            currentColumnFrame.minY > currentPageGeometry.contentFrame.minY,
-           measuredFootnoteHeight(
-               of: first.paragraph, number: first.number, numbering: first.numbering
+           footnoteCoordinator.measuredFootnoteHeight(
+               of: first.paragraph,
+               number: first.number,
+               environment: noteEnvironment.withFootnoteShape(currentSectionDef?.endNoteShape),
+               numbering: first.numbering,
+               isNoteEnd: pendingEndnotes.count == 1 || pendingEndnotes[1].noteId != first.noteId,
+               noteCarriesObjects: first.noteFacts?.carriesObjects ?? false
            ) > effectiveContentHeight
         {
             cacheCurrentPage()
@@ -3882,9 +3993,15 @@ private extension HwpPaginator {
         }
     }
 
-    /// 이월된 각주 입력들이 새 페이지에서 예약할 높이 (HwpFootnoteCoordinator 참조)
-    func reservedFootnoteHeight(for inputs: [HwpFootnoteLayout.Input]) -> CGFloat {
-        footnoteCoordinator.reservedFootnoteHeight(for: inputs, environment: noteEnvironment)
+    /// 이월된 각주 입력들이 새 페이지에서 예약할 높이 (HwpFootnoteCoordinator 참조).
+    /// 쪽 콘텐츠 높이를 넘으면 거기서 멈춘다 (#165 리뷰) — 읽는 쪽(`effectiveContentHeight`·
+    /// `applyColumnDef`의 `usableBottom`)은 그 높이에서 포화하므로 값이 더 커도 같고, 대기
+    /// 각주 N개를 쪽마다 끝까지 더하면 쪽 수 × N이다.
+    func reservedFootnoteHeight(for inputs: HwpFootnoteLayout.PendingNotes) -> CGFloat {
+        footnoteCoordinator.reservedFootnoteHeight(
+            for: inputs, environment: noteEnvironment,
+            upTo: currentPageGeometry.contentFrame.height
+        )
     }
 
     /// 이 문단이 페이지에 추가될 때 각주 영역이 요구할 높이 (커밋 전 예측용,
@@ -3915,20 +4032,19 @@ private extension HwpPaginator {
 
     /// 대기 중인 각주를 페이지 하단에 배치한다. 영역(콘텐츠 절반 상한)을
     /// 넘는 각주는 pendingFootnotes에 남겨 다음 페이지로 이월한다.
-    func appendPendingFootnotes() {
+    ///
+    /// bodyBottom: 절대 캐시 모드에서 본문이 남긴 하한 (#165). 본문 y는 캐시로
+    /// 고정돼 있으므로 각주는 그 아래 자리에 한글의 이어짐 규칙으로 싣는다 — 안
+    /// 들어가는 각주는 줄 캐시의 분할 지점에서 나눠 다음 쪽 첫 각주로 잇고 (한글이
+    /// 그렇게 저장했다), 분할 지점이 없으면 통째로 옮긴다. 절반 상한은 두지 않는다.
+    func appendPendingFootnotes(bodyBottom: CGFloat? = nil) {
         guard !pendingFootnotes.isEmpty else { return }
-        // 절대 캐시 모드에서 본문 y는 캐시로 고정된다. 한글의 본문 절단점은
-        // 이미 그 페이지 각주 공간을 반영하므로, 각주는 페이지 하단 기준으로
-        // 그대로 쌓는다 — 하한을 강제해 이월시키면 한글에 없는 각주 전용
-        // 페이지가 연쇄로 생긴다 (헌법주석 실측 1,031 → 1,054).
-        // 절대 캐시 모드에선 절반 상한도 두지 않는다 — 한글이 확정한 페이지의
-        // 각주는 참조 페이지에 전부 둔다 (이월 예약이 한글에 없는 페이지
-        // 절단을 만든다 — 헌법주석 p485 실측 1,031 → 1,030).
         let placement = footnoteCoordinator.placePendingFootnotes(
             onPage: currentPageGeometry,
             footnoteShape: currentSectionDef?.footNoteShape,
             limitsAreaToHalfContent: !absoluteCacheMode,
-            sizeResolver: objectSizeResolver
+            sizeResolver: objectSizeResolver,
+            bodyBottom: bodyBottom
         )
         for block in placement.blocks {
             currentBlocks.append(AnyHwpBlock(
@@ -3954,6 +4070,8 @@ private extension HwpPaginator {
             didFinishPagination = true
             return
         }
+        // 각주 이어짐 판정의 본문 하한 (#165) — 크롬·변경 막대를 붙이기 전의 본문만.
+        let footnoteBodyBottom = absoluteCacheMode ? footnoteBodyBottom() : nil
         // 변경 추적 문단의 이 페이지 조각마다 변경 막대를 방출한다 — 페이지 걸친
         // 문단의 앞 조각도 자기 페이지에서 막대를 받는다 (#7).
         emitTrackChangeBars()
@@ -3963,7 +4081,7 @@ private extension HwpPaginator {
             geometry: currentPageGeometry
         )
         nextLogicalPageNumber += 1
-        appendPendingFootnotes()
+        appendPendingFootnotes(bodyBottom: footnoteBodyBottom)
         let pageIndex = cachedPages.count
         let page = HwpPage(
             size: currentPageGeometry.pageSize,
@@ -3990,6 +4108,7 @@ private extension HwpPaginator {
             memoPanel: memoPanel
         )
         currentBlocks = []
+        absoluteRunTrailingSpacings = [:]
         // 페이지가 넘어가면 이전 페이지 문단의 줄 앵커 좌표는 무효다.
         currentParagraphContext = nil
         // 새 페이지: 절대 캐시 loc 추적과 stale 캐시 보정을 리셋한다.

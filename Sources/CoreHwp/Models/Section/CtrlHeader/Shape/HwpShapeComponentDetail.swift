@@ -446,7 +446,18 @@ public enum HwpShapeArcKind: UInt32, Hashable, Sendable {
 /** 호 개체 세부 (표 101, 28 byte) — 타원과 동일 필드 구성 */
 public typealias HwpShapeArcDetail = HwpShapeEllipseDetail
 
-/** 다각형 개체 세부 (표 99) */
+/**
+ 다각형 개체 세부 (표 99)
+
+ 점 개수 필드는 **4 byte**다 — 스펙 표 99는 INT16으로 적었으나 실제 저장본은 4 byte다
+ (hwplib `ForControlPolygon.shapeComponentPolygon`이 `readSInt4`; 헌법주석 픽스처의 유일한
+ 다각형 `02 00 00 00 | 0,0 | 283,283 | 00 00 00 00`은 4 byte로 읽어야 283×283 상자 안의
+ 대각선이고, 2 byte로 읽으면 둘째 점이 `0x011B0000`(18,546,688 HWPUNIT)이 돼 쪽 전체를
+ 가로지르는 선이 됐다). **2 byte 폴백은 두지 않는다** (PR 리뷰): 두 해석은 구조로 가를 수
+ 없어 — 첫 x의 아래 16 bit가 0이면 (x = 0이 흔하다) 앞 4 byte가 같은 개수로 읽혀 2 byte
+ 레코드가 4 byte로, 뒤가 잘린 4 byte 레코드는 2 byte로 통과해 좌표가 이웃 필드의 반쪽끼리
+ 붙는다 — hwplib처럼 4 byte만 읽고 안 맞는 레코드는 nil이다.
+ */
 public struct HwpShapePolygonDetail: HwpPrimitive {
     public var points: [HwpShapePoint]
 
@@ -455,17 +466,36 @@ public struct HwpShapePolygonDetail: HwpPrimitive {
     }
 
     static func decode(from data: Data) -> HwpShapePolygonDetail? {
-        guard data.count >= 2 else { return nil }
+        guard let (count, cursor) = HwpShapePointList.count(in: data),
+              let points = HwpShapePointList.points(in: data, count: count, at: cursor)
+        else { return nil }
+        return HwpShapePolygonDetail(points: points)
+    }
+}
+
+/// 다각형·곡선 세부의 공통 조각 — 4 byte 점 개수 필드와 (x, y) INT32 쌍 목록.
+enum HwpShapePointList {
+    /// 점 개수와 점 목록 시작 offset. 개수가 0 이하거나 필드가 없으면 nil.
+    static func count(in data: Data) -> (count: Int, cursor: Int)? {
+        guard data.count >= 4 else { return nil }
         do {
-            let count = Int(try data.readLittleEndianInt16(at: 0))
-            guard count > 0, data.count >= 2 + count * 8 else { return nil }
-            let points = try (0 ..< count).map { index in
+            let count = Int(try data.readLittleEndianInt32(at: 0))
+            guard count > 0 else { return nil }
+            return (count, 4)
+        } catch {
+            return nil
+        }
+    }
+
+    static func points(in data: Data, count: Int, at cursor: Int) -> [HwpShapePoint]? {
+        guard count <= (data.count - cursor) / 8 else { return nil }
+        do {
+            return try (0 ..< count).map { index in
                 HwpShapePoint(
-                    x: try data.readLittleEndianInt32(at: 2 + index * 8),
-                    y: try data.readLittleEndianInt32(at: 6 + index * 8)
+                    x: try data.readLittleEndianInt32(at: cursor + index * 8),
+                    y: try data.readLittleEndianInt32(at: cursor + 4 + index * 8)
                 )
             }
-            return HwpShapePolygonDetail(points: points)
         } catch {
             return nil
         }
@@ -483,19 +513,16 @@ public struct HwpShapeCurveDetail: HwpPrimitive {
         self.segmentTypes = segmentTypes
     }
 
+    /// 점 개수 필드는 다각형과 같이 **4 byte**다 (hwplib `ForControlCurve.shapeComponentCurve`가
+    /// `readSInt4` — 뒤에 4 byte를 건너뛴다). 2 byte 폴백은 두지 않는다 (다각형과 같은 이유).
     static func decode(from data: Data) -> HwpShapeCurveDetail? {
-        guard data.count >= 2 else { return nil }
+        guard let (count, cursor) = HwpShapePointList.count(in: data),
+              let points = HwpShapePointList.points(in: data, count: count, at: cursor),
+              data.count >= cursor + count * 8 + max(0, count - 1)
+        else { return nil }
         do {
-            let count = Int(try data.readLittleEndianInt16(at: 0))
-            guard count > 0, data.count >= 2 + count * 8 + max(0, count - 1) else { return nil }
-            let points = try (0 ..< count).map { index in
-                HwpShapePoint(
-                    x: try data.readLittleEndianInt32(at: 2 + index * 8),
-                    y: try data.readLittleEndianInt32(at: 6 + index * 8)
-                )
-            }
             let segmentTypes = try (0 ..< max(0, count - 1)).map { index in
-                try data.readUInt8(at: 2 + count * 8 + index)
+                try data.readUInt8(at: cursor + count * 8 + index)
             }
             return HwpShapeCurveDetail(points: points, segmentTypes: segmentTypes)
         } catch {

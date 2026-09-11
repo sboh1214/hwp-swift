@@ -115,5 +115,54 @@ import XCTest
                 expect(endnotePage) < secondSectionPage
             }
         }
+
+        /// 구역 끝 미주의 "새 쪽" 판정은 배치와 같은 높이로 한다 (#165 리뷰): 한 문단짜리 미주는
+        /// 마지막 줄의 줄 간격을 빼면 남은 자리에 들어가는데, 그 간격을 더한 높이로 재면 들어가는
+        /// 미주를 새 쪽으로 옮긴다.
+        func testSectionEndEndnoteStaysWhenItFitsByItsNoteEndHeight() async throws {
+            // 쪽 153.2pt → 본문 자리 54pt; 구역 정의 문단과 본문 한 줄(16pt씩) 뒤 22pt가 남는다.
+            // 두 줄 미주는 줄 간격을 뺀 20.72pt론 들어가고 더한 23.44pt론 안 들어간다.
+            var sectionDef = HwpSynthetic.sectionDef(pageHeight: 15320)
+            sectionDef.endNoteShape.property = 1 << 8
+            var endnoteParagraph = HwpSynthetic.noteParagraph(
+                " 미주 첫 줄\n미주 둘째 줄",
+                autoNumber: HwpSynthetic.autoNumberControl(kind: 2, decorationTail: ")")
+            )
+            endnoteParagraph.paraLineSeg = try CoreHwp.HwpParaLineSeg.load(
+                FootnoteContinuationSupport.lineSegPayload(
+                    FootnoteContinuationSupport.noteLines([0, 1172])
+                )
+            )
+            let endnote = HwpSynthetic.listControl(ctrlId: .endnote, paragraphs: [endnoteParagraph])
+            var host = try HwpSynthetic.textParagraph("1구역 본문")
+            host.ctrlHeaderArray = [.endnote(endnote)]
+            let firstSection = HwpSynthetic.section(
+                firstParagraphControls: [.section(sectionDef), .column(CoreHwp.HwpColumn())],
+                bodyParagraphs: [host]
+            )
+            let secondSection = HwpSynthetic.section(
+                firstParagraphControls: [
+                    .section(HwpSynthetic.sectionDef(pageHeight: 15320)), .column(CoreHwp.HwpColumn()),
+                ],
+                bodyParagraphs: [try HwpSynthetic.textParagraph("2구역 본문")]
+            )
+            let paginator = HwpPaginator(
+                sections: [firstSection, secondSection],
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+            let page = try await paginator.page(at: 0)
+            let firstPage = try XCTUnwrap(page)
+            let body = try XCTUnwrap(firstPage.blocks.first {
+                $0.kind == .text && ($0.attributedString?.string ?? "").contains("1구역 본문")
+            })
+            let endnoteBlock = try XCTUnwrap(firstPage.blocks.first {
+                $0.kind == .footnote && ($0.attributedString?.string ?? "").contains("미주 첫 줄")
+            })
+            expect(endnoteBlock.frame.minY) >= body.frame.maxY - 0.01
+            expect(endnoteBlock.frame.maxY) <= firstPage.size.height - firstPage.margins.bottom + 0.01
+            let totalPages = await paginator.totalPages()
+            expect(totalPages) == 2
+        }
     }
 #endif

@@ -530,9 +530,9 @@
         {
           "frame" : [
             935,
-            6284,
+            6364,
             4082,
-            352
+            324
           ],
           "index" : 16,
           "kind" : "footnote",
@@ -544,9 +544,9 @@
         {
           "frame" : [
             935,
-            6664,
+            6717,
             4082,
-            117
+            90
           ],
           "index" : 17,
           "kind" : "footnote",
@@ -558,9 +558,9 @@
         {
           "frame" : [
             935,
-            6809,
+            6835,
             4082,
-            117
+            90
           ],
           "index" : 18,
           "kind" : "footnote",
@@ -689,9 +689,9 @@
         {
           "frame" : [
             935,
-            5534,
+            5642,
             4082,
-            370
+            342
           ],
           "index" : 8,
           "kind" : "footnote",
@@ -703,9 +703,9 @@
         {
           "frame" : [
             935,
-            5932,
+            6012,
             4082,
-            586
+            559
           ],
           "index" : 9,
           "kind" : "footnote",
@@ -717,9 +717,9 @@
         {
           "frame" : [
             935,
-            6547,
+            6599,
             4082,
-            117
+            90
           ],
           "index" : 10,
           "kind" : "footnote",
@@ -731,9 +731,9 @@
         {
           "frame" : [
             935,
-            6692,
+            6718,
             4082,
-            234
+            207
           ],
           "index" : 11,
           "kind" : "footnote",
@@ -947,9 +947,9 @@
         {
           "frame" : [
             935,
-            6692,
+            6718,
             4082,
-            234
+            207
           ],
           "index" : 5,
           "kind" : "footnote",
@@ -994,9 +994,9 @@
         {
           "frame" : [
             935,
-            3156,
+            3662,
             4082,
-            234
+            207
           ],
           "index" : 2,
           "kind" : "footnote",
@@ -1008,9 +1008,9 @@
         {
           "frame" : [
             935,
-            3418,
+            3897,
             4082,
-            352
+            324
           ],
           "index" : 3,
           "kind" : "footnote",
@@ -1022,9 +1022,9 @@
         {
           "frame" : [
             935,
-            3798,
+            4250,
             4082,
-            703
+            676
           ],
           "index" : 4,
           "kind" : "footnote",
@@ -1036,9 +1036,9 @@
         {
           "frame" : [
             935,
-            4530,
+            4954,
             4082,
-            469
+            442
           ],
           "index" : 5,
           "kind" : "footnote",
@@ -1050,9 +1050,9 @@
         {
           "frame" : [
             935,
-            5027,
+            5424,
             4082,
-            352
+            324
           ],
           "index" : 6,
           "kind" : "footnote",
@@ -1064,9 +1064,9 @@
         {
           "frame" : [
             935,
-            5407,
+            5777,
             4082,
-            117
+            90
           ],
           "index" : 7,
           "kind" : "footnote",
@@ -1078,9 +1078,9 @@
         {
           "frame" : [
             935,
-            5552,
+            5895,
             4082,
-            117
+            90
           ],
           "index" : 8,
           "kind" : "footnote",
@@ -1092,9 +1092,9 @@
         {
           "frame" : [
             935,
-            5698,
+            6013,
             4082,
-            703
+            676
           ],
           "index" : 9,
           "kind" : "footnote",
@@ -1106,9 +1106,9 @@
         {
           "frame" : [
             935,
-            6429,
+            6718,
             4082,
-            234
+            207
           ],
           "index" : 10,
           "kind" : "footnote",
@@ -1116,20 +1116,6 @@
           "role" : "body",
           "textLength" : 81,
           "textPrefix" : "21) 국민의 "
-        },
-        {
-          "frame" : [
-            935,
-            6692,
-            4082,
-            234
-          ],
-          "index" : 11,
-          "kind" : "footnote",
-          "payload" : "footnote",
-          "role" : "body",
-          "textLength" : 79,
-          "textPrefix" : "22) ‘국민의"
         }
       ],
       "page" : 721
@@ -1251,11 +1237,25 @@
         {
           "frame" : [
             935,
-            5085,
+            5307,
             4082,
-            352
+            207
           ],
           "index" : 8,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 79,
+          "textPrefix" : "22) ‘국민의"
+        },
+        {
+          "frame" : [
+            935,
+            5542,
+            4082,
+            324
+          ],
+          "index" : 9,
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
@@ -1265,11 +1265,11 @@
         {
           "frame" : [
             935,
-            5465,
+            5895,
             4082,
-            469
+            442
           ],
-          "index" : 9,
+          "index" : 10,
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
@@ -1279,11 +1279,11 @@
         {
           "frame" : [
             935,
-            5962,
+            6365,
             4082,
-            234
+            207
           ],
-          "index" : 10,
+          "index" : 11,
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
@@ -1293,15 +1293,15 @@
         {
           "frame" : [
             935,
-            6224,
+            6601,
             4082,
-            702
+            324
           ],
-          "index" : 11,
+          "index" : 12,
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 345,
+          "textLength" : 190,
           "textPrefix" : "26) 이를 헌"
         }
       ],
@@ -1536,11 +1536,25 @@
         {
           "frame" : [
             935,
-            6256,
+            6010,
             4082,
-            117
+            442
           ],
           "index" : 16,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 155,
+          "textPrefix" : "현이라고 볼 수"
+        },
+        {
+          "frame" : [
+            935,
+            6480,
+            4082,
+            90
+          ],
+          "index" : 17,
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
@@ -1550,11 +1564,11 @@
         {
           "frame" : [
             935,
-            6401,
+            6598,
             4082,
-            117
+            90
           ],
-          "index" : 17,
+          "index" : 18,
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
@@ -1564,11 +1578,11 @@
         {
           "frame" : [
             935,
-            6547,
+            6717,
             4082,
-            117
+            90
           ],
-          "index" : 18,
+          "index" : 19,
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
@@ -1578,15 +1592,15 @@
         {
           "frame" : [
             935,
-            6692,
+            6835,
             4082,
-            234
+            90
           ],
-          "index" : 19,
+          "index" : 20,
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 130,
+          "textLength" : 70,
           "textPrefix" : "30) 정종섭("
         }
       ],
@@ -1723,11 +1737,25 @@
         {
           "frame" : [
             935,
-            5311,
+            4956,
             4082,
-            599
+            442
           ],
           "index" : 9,
+          "kind" : "footnote",
+          "payload" : "footnote",
+          "role" : "body",
+          "textLength" : 216,
+          "textPrefix" : "으나 구체적인 "
+        },
+        {
+          "frame" : [
+            935,
+            5426,
+            4082,
+            569
+          ],
+          "index" : 10,
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
@@ -1737,11 +1765,11 @@
         {
           "frame" : [
             935,
-            5938,
+            6023,
             4082,
             130
           ],
-          "index" : 10,
+          "index" : 11,
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
@@ -1751,11 +1779,11 @@
         {
           "frame" : [
             935,
-            6068,
+            6153,
             4082,
-            713
+            653
           ],
-          "index" : 11,
+          "index" : 12,
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
@@ -1765,11 +1793,11 @@
         {
           "frame" : [
             935,
-            6809,
+            6835,
             4082,
-            117
+            90
           ],
-          "index" : 12,
+          "index" : 13,
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",

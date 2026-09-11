@@ -46,10 +46,31 @@ extension HwpHitTester {
     /// **컨테이너 종류를 가리지 않는다** (R62): 표·글상자 블록도 넘친 개체 위에
     /// 링크를 방출하므로 각주와 같은 자격을 받아야 방출된 링크가 눌린다.
     func paintedRects(for block: AnyHwpBlock) -> [CGRect] {
+        Self.paintedRects(for: block, includingText: true)
+    }
+
+    /// 블록 frame ∪ 자손 **개체**가 칠하는 rect — 문단 텍스트는 세지 않는다.
+    ///
+    /// 레이아웃의 "이 블록이 그리는 하한"이다 (#165 리뷰): 표·글상자의 오버레이·쪽
+    /// 기준 자식은 컨테이너를 키우지 않고 그 아래로 그려지므로 (`HwpFootnoteObjectLayoutTests
+    /// .testOverlayWrapModesDoNotGrowFootnoteBlockButStayRendered`) 프레임만 보면 각주
+    /// 스택이 그 개체 위에 놓인다. 최상위 도형·그림 블록의 **자기** 칠(회전 경로·miter
+    /// 팁·테두리 절반)도 같은 이유로 든다 (#165 리뷰). 텍스트를 빼는 이유는 자격 영역의
+    /// `textBounds`가 폰트 메트릭 여유를 더한 **상위집합**이라 모든 블록을 몇 pt씩 부풀리기
+    /// 때문 — 텍스트는 블록 프레임이 담는다. 겹침 가드(`FixtureFootnoteOverlapTests`)도
+    /// 같은 자를 쓴다.
+    static func paintedObjectBounds(of block: AnyHwpBlock) -> CGRect {
+        paintedRects(for: block, includingText: false).reduce(block.frame) { $0.union($1) }
+    }
+
+    /// 페인트가 닿는 rect 모음 — `includingText`가 false면 문단 텍스트 (표 셀·각주·
+    /// 글상자 안 문단)를 빼고 셀·그림·도형·글상자·중첩 표만 모은다.
+    private static func paintedRects(for block: AnyHwpBlock, includingText: Bool) -> [CGRect] {
         var rects: [CGRect] = []
         let origin = block.frame.origin
         func addText(_ attributed: NSAttributedString, _ rect: CGRect, _: UInt32?) {
-            rects.append(Self.textBounds(rect, of: attributed))
+            guard includingText else { return }
+            rects.append(textBounds(rect, of: attributed))
         }
         func addCell(_: HwpTableCellFrame, _ rect: CGRect) {
             rects.append(rect)
@@ -62,7 +83,7 @@ extension HwpHitTester {
         /// 테두리 stroke는 rect 밖으로 폭의 절반이 나간다 (R61/R62) — 자격이 그만큼
         /// 넓어야 보이는 선 위의 탭이 `containerHit`에 닿는다
         func addImage(_ image: HwpCellImage, _ rect: CGRect) {
-            rects.append(Self.strokeBounds(rect, borderWidth: image.borderWidth))
+            rects.append(strokeBounds(rect, borderWidth: image.borderWidth))
         }
         /// 도형은 경로가 rect를 넘을 수 있어 `paintedRect` 하나가 칠 영역을 소유한다
         /// (R63) — walker는 페이지 좌표 rect를 주므로 그 차이만큼 옮겨 받는다.
@@ -73,10 +94,8 @@ extension HwpHitTester {
         }
         func addTextboxChildren(_ textbox: HwpTextboxFrame, offset: CGPoint) {
             HwpBlockContentWalker.walkParagraphs(
-                textbox.paragraphs, offset: offset
-            ) { attributed, inner, _ in
-                rects.append(Self.textBounds(inner, of: attributed))
-            }
+                textbox.paragraphs, offset: offset, visit: addText
+            )
             // 글상자 안 그림·도형도 `textboxCommands`가 클립 없이 그린다 — 글상자
             // rect에서 멈추면 넘친 자식 위의 탭이 기각된다 (R46 #1).
             for child in textbox.images.map(\.paintedRect)
@@ -86,7 +105,7 @@ extension HwpHitTester {
             }
         }
         func addTextbox(_ textbox: HwpCellTextbox, _ rect: CGRect) {
-            rects.append(Self.strokeBounds(
+            rects.append(strokeBounds(
                 rect, borderWidth: textbox.textbox.effectiveBorderWidth
             ))
             addTextboxChildren(textbox.textbox, offset: rect.origin)
@@ -115,7 +134,18 @@ extension HwpHitTester {
                 onNestedTable: addNestedTable
             )
         case let .textbox(textbox):
+            // 최상위 글상자의 **자기** 테두리도 든다 (#165 리뷰): `textboxCommands`가 프레임 경로
+            // 중앙에 긋으므로 (`effectiveBorderWidth`) 절반이 밖이다 — 셀 글상자와 같은 규칙.
+            rects.append(strokeBounds(block.frame, borderWidth: textbox.effectiveBorderWidth))
             addTextboxChildren(textbox, offset: origin)
+        case let .shape(geometry):
+            // 최상위 도형 블록도 셀 도형과 같다 (#165 리뷰): `shapeCommands`가 경로를 프레임
+            // 원점으로 옮겨 클립 없이 긋으므로 회전 경로·miter 팁이 프레임을 넘는다.
+            rects.append(geometry.paintedRect(in: block.frame))
+        case let .image(image):
+            // 최상위 그림 블록의 테두리도 프레임 경로 중앙에 그어져 (`imageCommands`) 폭의
+            // 절반이 밖이다 (R61과 같은 규칙).
+            rects.append(strokeBounds(block.frame, borderWidth: image.borderWidth))
         default:
             break
         }
