@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreHwp
 import Foundation
 
 /// 흐름 분할(`HwpPaginator.appendParagraphAcrossColumns`)이 조각을 자를 때 쓰는 줄별
@@ -48,4 +49,27 @@ struct HwpFragmentLineAdvances {
     func chargedHeight(_ takenHeight: CGFloat, endingBefore boundary: Int) -> CGFloat {
         takenHeight - ascentExcess(startingAt: boundary)
     }
+
+    /// 줄 `boundary` 앞에서 끊긴 조각의 높이가 **측정 줄 전진량만으로** 났는지 (#166). 마지막
+    /// 줄의 전진량은 `textHeight`의 잔여라 그 줄을 담은 조각은 `textHeight`가 측정값일 때만
+    /// 그렇고, 원점이 비단조라 평균으로 폴백한 문단은 모든 조각이 `textHeight`의 몫이다.
+    func heightIsMeasured(endingBefore boundary: Int, textHeightIsMeasured: Bool) -> Bool {
+        guard strictlyIncreasing else { return textHeightIsMeasured }
+        return boundary < lines.count || textHeightIsMeasured
+    }
+}
+
+/// 흐름 분할이 조각마다 같은 값으로 쓰는 문단 단위 문맥 — 루프 밖에서 한 번 만든다.
+struct HwpFragmentPlacement {
+    let paraShape: CoreHwp.HwpParaShape
+    /// 문단 줄을 잰 단 폭 — 조각이 놓이는 단이 이와 다르면(비등폭 단 이월) 렌더러가 그 단
+    /// 폭으로 다시 줄바꿈한다.
+    let measuredWidth: CGFloat
+    /// 문단 높이가 측정값(`HwpParagraphFrame.totalHeight`)인지 — 아니면 저장본 줄 캐시
+    /// (`HwpPaginator.height(for:fallback:)`)라 마지막 줄의 전진량이 그 잔여를 흡수한다 (#166).
+    let heightIsMeasured: Bool
+    let paragraphId: UInt32?
+    /// 문단 전체 블록의 URL과 조각 블록의 URL (필드 스팬 문단은 조각에 전파하지 않는다).
+    let hyperlinkURL: String?
+    let fragmentURL: String?
 }

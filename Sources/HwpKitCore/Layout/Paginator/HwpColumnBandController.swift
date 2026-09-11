@@ -19,8 +19,11 @@ struct HwpColumnBandController {
     var columnIndex = 0
     /// 현재 밴드에서 실제 사용된 최대 하단 y — 밴드 종료 시 다음 밴드 시작점
     var bandUsedBottom: CGFloat = 0
-    /// 밴드에 들어간 본문 텍스트 블록 (밴드 종료 시 단 균형 재배치용)
-    var bandTextBlocks: [(blockIndex: Int, lines: [HwpLineFrame])] = []
+    /// 밴드에 들어간 본문 텍스트 블록 (밴드 종료 시 단 균형 재배치용).
+    /// `heightIsMeasured`는 블록 높이가 `lines`의 측정 전진량에서 왔는지 — 저장본 줄 캐시
+    /// 높이(`HwpPaginator.height(for:fallback:)`)면 false라, 잔여를 흡수하는 마지막 줄 단위의
+    /// 높이는 측정값이 아니다 (#166).
+    var bandTextBlocks: [(blockIndex: Int, lines: [HwpLineFrame], heightIsMeasured: Bool)] = []
     /// 밴드에 텍스트 외 블록(표/개체/placeholder)이 있으면 균형 재배치를 하지 않는다
     var bandHasNonTextContent = false
     /// 밴드 마지막 줄의 줄 간격 (pt). 한글은 단 정의로 밴드를 닫을 때 이만큼
@@ -110,6 +113,9 @@ struct HwpColumnBandController {
         let blockIndex: Int
         let range: NSRange
         let height: CGFloat
+        /// `height`가 측정 줄 전진량인지 — 아니면(캐시 높이 블록의 잔여·평균 폴백) 이 단위를
+        /// 담은 조각에는 측정 줄 조각 표식을 달지 않는다 (#166).
+        let heightIsMeasured: Bool
     }
 
     /// 첫 단에만 쌓인 밴드 텍스트를 라인 단위로 모든 단에 균등 재배치하는
@@ -152,17 +158,23 @@ struct HwpColumnBandController {
                     } else {
                         blockHeight - line.origin.y
                     }
+                    // 앞 줄들의 전진량은 원점 델타(측정)이고, 마지막 줄(잔여)과 평균 폴백은
+                    // 블록 높이의 출처를 따른다 (#166).
+                    let isMeasured = strictlyIncreasing && lineIndex + 1 < lines.count
+                        || entry.heightIsMeasured
                     units.append(BandLineUnit(
                         blockIndex: entry.blockIndex,
                         range: line.attributedRange,
-                        height: max(1, advance)
+                        height: max(1, advance),
+                        heightIsMeasured: isMeasured
                     ))
                 }
             } else {
                 units.append(BandLineUnit(
                     blockIndex: entry.blockIndex,
                     range: NSRange(location: 0, length: attributed.length),
-                    height: blockHeight
+                    height: blockHeight,
+                    heightIsMeasured: entry.heightIsMeasured
                 ))
             }
         }
@@ -187,6 +199,8 @@ struct HwpColumnBandController {
                 let blockIndex = units[unitIndex].blockIndex
                 var mergedRange = units[unitIndex].range
                 var mergedHeight = units[unitIndex].height
+                var mergedHeightIsMeasured = units[unitIndex].heightIsMeasured
+                var mergedCount = 1
                 unitIndex += 1
                 taken += 1
                 while unitIndex < units.count, taken < perColumn,
@@ -194,13 +208,25 @@ struct HwpColumnBandController {
                 {
                     mergedRange = NSUnionRange(mergedRange, units[unitIndex].range)
                     mergedHeight += units[unitIndex].height
+                    mergedHeightIsMeasured = mergedHeightIsMeasured
+                        && units[unitIndex].heightIsMeasured
+                    mergedCount += 1
                     unitIndex += 1
                     taken += 1
                 }
                 let original = currentBlocks[blockIndex]
                 guard let attributed = original.attributedString else { continue }
                 // 블록 첫머리가 아닌 조각은 이어지는 조각 — 첫 줄 들여쓰기를 둘째 줄에 맞춘다.
-                let sub = HwpParagraphLayout.continuationFragment(of: attributed, range: mergedRange)
+                // 조각 높이가 측정 줄 전진량의 합이면 렌더러가 그 줄 수 그대로 그려야 한다 —
+                // 측정 줄 조각 표식 (#166). 캐시 높이 블록의 잔여 줄을 담은 조각은 종전대로 두고,
+                // 블록 전체(단 하나에 다 들어간 문단)는 표식 없이 그대로다. 줄은 원래 블록의
+                // 단 폭으로 쟀으므로 비등폭 단으로 옮겨진 **한 줄** 조각도 표식을 달지 않는다 —
+                // 렌더러가 그 단 폭으로 다시 줄바꿈하면 두 줄이 되어 한 줄 상자를 넘친다
+                // (`HwpPaginator.appendLineSliceBlock`과 같은 규칙).
+                let sameWidth = abs(columnFrames[column].width - original.frame.width) < 0.5
+                let sub = mergedHeightIsMeasured && (sameWidth || mergedCount > 1)
+                    ? HwpParagraphLayout.measuredLineFragment(of: attributed, range: mergedRange)
+                    : HwpParagraphLayout.continuationFragment(of: attributed, range: mergedRange)
                 newBlocks.append(AnyHwpBlock(
                     frame: CGRect(
                         x: columnFrames[column].minX,

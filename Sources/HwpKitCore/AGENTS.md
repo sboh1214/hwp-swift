@@ -966,6 +966,58 @@ paraShape와 같은 값**이어야 한다.
 - `layout`의 `tabStops:` 인자는 이 계약과 함께 **없앴다**. 탭이 조판에 닿는
   경로가 부착본 하나로 좁혀져, 남겨 두면 조용히 무시되는 인자가 된다.
 
+### 조각의 줄 수 계약 (#166)
+
+**문단을 잰 줄로 높이를 잡아 놓은 조각은 렌더러가 그 줄 수 그대로 그린다.**
+조각 문자열 전체에 `HwpAttributedStringKey.measuredLineFragment` 표식이 붙고
+(`HwpParagraphLayout.measuredLineFragment(of:range:)` — `continuationFragment` 위에
+표식만 더한다), `slightOverflowLineMetrics`는 표식을 보면 nil을 돌려 렌더(`lines`)와
+조각 재측정(`layout`) 모두 문단 단위 한 줄 넘침 허용 규칙을 건너뛴다.
+
+- **표식을 다는 경로 = 조각 높이가 측정 줄 전진량만으로 난 경우.** 후보는 셋 — 쪽·단
+  경계 흐름 분할 `HwpPaginator.appendLineSliceBlock`, 표 행 분할
+  `HwpTableSplitter.paragraphFragment`, 다단 균형 재배치
+  `HwpColumnBandController.balancedBlocks` — 이지만 **함수가 아니라 높이 출처로 판정한다**
+  (이슈 본문 "수정 방향" 둘째 항목, PR 리뷰). 세 경로 모두 저장본 줄 캐시가 유효하면
+  문단 높이가 캐시 값(`height(for:fallback:)`·`preferCachedHeight`)이고 **마지막 줄의
+  전진량이 그 잔여**라, 마지막 줄을 담은 조각의 높이는 측정값이 아니다. 그래서
+  `HwpLaidOutParagraph.heightIsMeasured`·`bandTextBlocks`의 `heightIsMeasured`·
+  `HwpFragmentPlacement.heightIsMeasured`(문단 높이 == `paragraphFrame.totalHeight`)가
+  출처를 나르고, `HwpFragmentLineAdvances.heightIsMeasured(endingBefore:)`(마지막 줄 미포함
+  이거나 문단 높이가 측정값)·`slicedParagraph`(위 조각 참, 아래 조각은 부모 출처)·
+  `bandLineUnits`(원점 델타 단위 참, 잔여·평균 단위는 블록 출처)가 조각마다 판정한다.
+  문단 전체(`range`가 문자열 전부)는 표식이 없다 — 그 블록은 측정과 렌더가 같은
+  문자열에 같은 규칙을 쓴다.
+- **비등폭 단으로 옮겨진 한 줄 조각도 달지 않는다** (흐름 분할·균형 재배치 공통,
+  `sameWidth || 줄 수 > 1`). 그 조각의 높이는 잰 단 폭 기준이고 렌더러는 목적 단 폭으로
+  다시 줄바꿈하므로, 6% 이내로 좁아진 단에서는 표식이 한 줄을 두 줄로 만들어 한 줄 높이
+  상자를 세로로 넘친다 — 종전 접힘(가로 6% 이내 넘침)이 낫다. 여러 줄 조각은 접힘이
+  빈 줄을 남기므로 표식이 순 개선이다.
+- **달지 않는 경로 = 한글이 저장한 높이를 따르는 조각.** 절대 캐시 run
+  (`HwpAbsoluteCachePlacer.runAttributedSlice`)·다단 캐시 run(`placeCachedColumnRuns`)·
+  각주 이어짐(`HwpFootnoteFragment`), 그리고 위의 캐시 잔여 조각. 그쪽의 오라클은 캐시
+  줄 수라, 폰트 대체로 CT 줄이 캐시보다 많을 때는 접힘이 캐시와 맞는 쪽이고 반대일
+  때는 틀리는 쪽이라 종전을 유지한다 — `fragmentLineFramesAsDrawn`의 앵커 접기(#164)는
+  이 경로에만 남는다.
+- **규칙을 조각에 다시 적용하면 안 되는 이유**: 규칙은 문단 **전체**의 자연 폭 기준이다.
+  문단 전체가 접히지 않았다면 측정 줄은 둘 이상이고 조각 높이는 그 줄들의 전진량
+  합이다. 조각만 따로 접으면 "측정 2줄 ↔ 렌더 1줄"이 되어 이 규칙이 막으려던 어긋남이
+  조각에서 그대로 난다 — 이슈의 재현은 `가` 61자를 `30a + δ` 폭에 놓아 30·30·1자로
+  나눈 뒤 뒤 두 줄(31자)을 조각으로 만드는 것이고, 발생 조건은 글자 수가 아니라 조각의
+  자연 폭이 단 폭의 1.06배 안인지다 (정렬은 넘치는 방향만 바꾼다).
+- **한글 12.30 실측** (2026-09-11, 합성 HWPX): 305pt 폭·함초롬바탕 10pt에 `가` 311자
+  (한글도 31자/줄 — 글자 폭 9.77pt = 2000/2048em)를 쪽 높이 152pt에 흘리면 둘째 쪽은
+  31자 + 1자 두 줄이고 다음 문단이 그 아래 16pt 피치에 온다(재저장 `linesegarray`
+  textpos 295·326·다음 문단 vertpos 3200). 한컴 폰트 모드의 우리 렌더도 둘째 쪽
+  조각(32자)을 두 줄로 그려 잉크 띠 3개의 피치가 같다 — 세로 1.5pt 상수 오프셋은
+  첫 쪽에도 똑같이 있는 #178 베이스라인 축이다. 수정 전은 32자를 한 줄로 접어 다음
+  문단 위에 줄 하나가 비었다.
+- 가드: `HwpMeasuredLineFragmentTests` — 술어 단위(왼쪽·가운데·오른쪽 정렬)와 세
+  경로 각각의 합성 문서(표식·높이 = 줄 수 × 전진량·렌더 줄 수·마지막 줄이 상자
+  마지막 줄 자리). `HwpMeasuredLineFragmentCacheTests` — 캐시 두 줄·CT 세 줄 문단에서
+  세 경로의 잔여 조각이 무표식·한 줄 접힘을 유지하고 앞 조각은 표식, 비등폭 단 한 줄
+  조각(흐름 분할·균형 재배치)의 접힘 유지.
+
 ## 새 블록 종류 추가
 
 1. `Model/HwpBlock.swift` 의 `HwpBlockKind` + `Model/HwpBlockPayload.swift` 에 payload case 추가
@@ -1039,7 +1091,8 @@ paraShape와 같은 값**이어야 한다.
   (`HwpDrawnTextLayout.slightOverflowLineMetrics` 공유 술어)은 측정·렌더가
   같은 입력을 쓴다 — 탭 문단 줄바꿈·한 줄 문단 높이가 정의상 일치
   (가드: HwpParagraphLayoutTests.testTabParagraphMeasurementMatchesDrawnLayout,
-  픽스처 스케일은 `HwpLayoutRenderParitySweepTests`)
+  픽스처 스케일은 `HwpLayoutRenderParitySweepTests`). 단 문단을 잰 줄로 놓인
+  **조각**은 그 규칙을 건너뛴다 (#166 — 위 "조각의 줄 수 계약").
 - **각주/미주도 표 셀·글상자와 같은 컨테이너다** (#94). `HwpFootnoteBlock`이
   `images`/`shapes`/`textboxes`/`nestedTables`를 블록-로컬 rect로 들고,
   `HwpFootnoteLayout.measure`가 `HwpParagraphObjectCollector`로 수집한다

@@ -232,7 +232,8 @@ extension HwpTableLayout {
                     frame: $0.frame,
                     rect: $0.rect.offsetBy(dx: 0, dy: offset),
                     paragraphId: $0.paragraphId,
-                    hyperlinkURL: $0.hyperlinkURL
+                    hyperlinkURL: $0.hyperlinkURL,
+                    heightIsMeasured: $0.heightIsMeasured
                 )
             },
             nestedTables: contents.nestedTables.map {
@@ -296,7 +297,9 @@ extension HwpTableLayout {
                 frame: content.frame,
                 rect: rect,
                 paragraphId: content.paragraph.paraHeader.paraId,
-                hyperlinkURL: content.paragraph.hyperlinkURL
+                hyperlinkURL: content.paragraph.hyperlinkURL,
+                // 측정이 라인 캐시 높이를 썼으면 rect 높이는 캐시 값이고 줄만 CT다 (#166).
+                heightIsMeasured: content.cachedLineExtent == nil
             ))
             let collected = collector.objects(
                 in: content.paragraph, frame: content.frame,

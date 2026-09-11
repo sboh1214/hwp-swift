@@ -286,7 +286,8 @@ public struct HwpTextboxLayout {
                 frame: paragraph.frame,
                 rect: paragraph.rect.offsetBy(dx: 0, dy: offset),
                 paragraphId: paragraph.paragraphId,
-                hyperlinkURL: paragraph.hyperlinkURL
+                hyperlinkURL: paragraph.hyperlinkURL,
+                heightIsMeasured: paragraph.heightIsMeasured
             )
         }
         shifted.images = contents.images.map { $0.offsetBy(deltaX: 0, deltaY: offset) }

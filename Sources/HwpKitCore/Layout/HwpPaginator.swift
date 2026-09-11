@@ -246,7 +246,7 @@ public actor HwpPaginator {
 
     /// 밴드에 들어간 본문 텍스트 블록 (밴드 종료 시 단 균형 재배치용)
     /// — 저장은 band
-    private var bandTextBlocks: [(blockIndex: Int, lines: [HwpLineFrame])] {
+    private var bandTextBlocks: [(blockIndex: Int, lines: [HwpLineFrame], heightIsMeasured: Bool)] {
         get { band.bandTextBlocks }
         set { band.bandTextBlocks = newValue }
     }
@@ -997,7 +997,9 @@ private extension HwpPaginator {
             attributedString: attributedString,
             hyperlinkURL: hyperlinkURL(in: paragraph),
             paragraphId: paragraph.paraHeader.paraId,
-            lines: paragraphFrame.lines
+            lines: paragraphFrame.lines,
+            // 캐시 높이(`height(for:fallback:)`)를 썼으면 마지막 줄 몫은 측정값이 아니다 (#166).
+            heightIsMeasured: abs(paragraphHeight - paragraphFrame.totalHeight) < 0.01
         )
         updateBandTrailingSpacing(for: paragraph)
         return true
@@ -1208,6 +1210,7 @@ private extension HwpPaginator {
                 hyperlinkURL: hyperlinkURL(in: paragraph),
                 paragraphId: paragraph.paraHeader.paraId,
                 lines: runs.count == 1 ? slice.lines : [],
+                heightIsMeasured: false,
                 anchorLines: runs.count == 1 ? [] : renumberedAnchorLines(
                     of: slice.text, lines: slice.lines,
                     renumbered: sliceText, paragraph: paragraph
@@ -1552,12 +1555,16 @@ private extension HwpPaginator {
     /// 재배치(`bandTextBlocks`)가 함께 읽는다. `anchorLines`는 쪽·단에 걸친 **조각**의
     /// 조각 기준 줄 프레임(`HwpParagraphLayout.fragmentLineFrames`)으로 줄 앵커 문맥에만
     /// 쓴다 (#164) — 균형 재배치 단위는 종전대로 조각 블록 통째다.
+    ///
+    /// `heightIsMeasured`는 `height`가 `lines`의 측정 전진량에서 왔는지 — 저장본 줄 캐시
+    /// 높이면 false로 넘겨 균형 재배치가 잔여 줄 조각에 측정 줄 조각 표식을 달지 않게 한다 (#166).
     func appendBlock(
         height: CGFloat,
         attributedString: NSAttributedString,
         hyperlinkURL: String? = nil,
         paragraphId: UInt32? = nil,
         lines: [HwpLineFrame] = [],
+        heightIsMeasured: Bool = true,
         anchorLines: [HwpLineFrame] = []
     ) {
         // 문단의 첫 콘텐츠가 페이지에 놓이는 지금 보류된 쪽 번호 리셋을 확정한다 —
@@ -1596,7 +1603,7 @@ private extension HwpPaginator {
                 paragraphIndex: nextParagraphIndex
             )
         ))
-        bandTextBlocks.append((currentBlocks.count - 1, lines))
+        bandTextBlocks.append((currentBlocks.count - 1, lines, heightIsMeasured))
         // 줄 중간 앵커 기준: 온전한 문단 블록의 줄, 또는 조각 기준으로 되돌린 조각의 줄 —
         // 렌더러가 조각을 한 줄로 접으면 앵커도 그 한 줄에서 찾는다.
         let contextLines = anchorLines.isEmpty
@@ -1643,7 +1650,6 @@ private extension HwpPaginator {
         onFragmentPlaced: () -> Void = {}
     ) {
         let lines = paragraphFrame.lines
-        let measuredWidth = currentColumnFrame.width
         let usableHeight = max(1, effectiveContentHeight - reservedFootnoteHeight)
         // 조각들은 독립 CT 프레임이라 문단-앞 간격이 렌더되지 않는다 — 첫 조각
         // 앞에서 커서로 소비하고 이후 산술은 텍스트 몫(textHeight)만 쓴다 (#1).
@@ -1653,10 +1659,12 @@ private extension HwpPaginator {
         let startedEmpty = contentHeightUsed <= 0
         contentHeightUsed += beforeGap
         let textHeight = paragraphHeight - beforeGap
-        // 필드 스팬 문단(hyperlink attribute 보유)의 조각 블록엔 URL을 전파하지
-        // 않는다 — 링크는 조각 substring의 attribute region이 운반하고, block URL은
-        // region 없는 평문 조각 전체를 폴백 링크로 만든다 (#4).
-        let fragmentURL = containsHyperlinkFieldSpans(attributedString) ? nil : hyperlinkURL
+        // 조각마다 같은 문단 문맥 — 잰 단 폭·높이 출처·URL (`fragmentPlacement`).
+        let placement = fragmentPlacement(
+            attributedString: attributedString, paragraphFrame: paragraphFrame,
+            paragraphHeight: paragraphHeight, hyperlinkURL: hyperlinkURL,
+            paragraphId: paragraphId, paraShape: paraShape
+        )
         paragraphAnchorTop = currentColumnFrame.minY + contentHeightUsed
         guard lines.count > 1, textHeight > 0 else {
             if startedEmpty {
@@ -1687,7 +1695,8 @@ private extension HwpPaginator {
                 attributedString: attributedString,
                 hyperlinkURL: hyperlinkURL,
                 paragraphId: paragraphId,
-                lines: lines
+                lines: lines,
+                heightIsMeasured: placement.heightIsMeasured
             )
             return
         }
@@ -1762,13 +1771,10 @@ private extension HwpPaginator {
             appendLineSliceBlock(
                 lines[lineIndex ..< lineIndex + takeCount],
                 of: paragraphFrame,
-                // 마지막 전진량에 실린 다음 조각 첫 줄의 ascent 초과분은 그 조각 몫이다.
-                height: advances.chargedHeight(takenHeight, endingBefore: lineIndex + takeCount),
+                takenHeight: takenHeight,
+                advances: advances,
                 attributedString: attributedString,
-                paragraphId: paragraphId,
-                hyperlinkURL: takeCount == lines.count ? hyperlinkURL : fragmentURL,
-                paraShape: paraShape,
-                measuredWidth: measuredWidth
+                placement: placement
             )
             lineIndex += takeCount
             if lineIndex < lines.count {
@@ -1781,42 +1787,81 @@ private extension HwpPaginator {
         }
     }
 
+    /// `appendParagraphAcrossColumns`가 조각마다 같은 값으로 쓰는 문단 문맥 — 줄을 잰 단 폭은
+    /// 진입 시의 현재 단 폭이고, 높이 출처는 문단 높이가 측정값(`paragraphFrame.totalHeight`)과
+    /// 같은지로 가른다 (아니면 저장본 줄 캐시라 마지막 줄의 전진량은 캐시 잔여다, #166).
+    /// 필드 스팬 문단(hyperlink attribute 보유)의 조각 블록엔 URL을 전파하지 않는다 — 링크는
+    /// 조각 substring의 attribute region이 운반하고, block URL은 region 없는 평문 조각 전체를
+    /// 폴백 링크로 만든다 (#4).
+    private func fragmentPlacement(
+        attributedString: NSAttributedString,
+        paragraphFrame: HwpParagraphFrame,
+        paragraphHeight: CGFloat,
+        hyperlinkURL: String?,
+        paragraphId: UInt32?,
+        paraShape: CoreHwp.HwpParaShape
+    ) -> HwpFragmentPlacement {
+        HwpFragmentPlacement(
+            paraShape: paraShape,
+            measuredWidth: currentColumnFrame.width,
+            heightIsMeasured: abs(paragraphHeight - paragraphFrame.totalHeight) < 0.01,
+            paragraphId: paragraphId,
+            hyperlinkURL: hyperlinkURL,
+            fragmentURL: containsHyperlinkFieldSpans(attributedString) ? nil : hyperlinkURL
+        )
+    }
+
     /// 문단 줄 가운데 `slice`만 담은 블록을 놓는다 (`appendParagraphAcrossColumns`의 조각).
     /// 문단 전체면 온전한 줄 목록을, 조각이면 조각 기준 줄(`fragmentLineFrames`)을 앵커
-    /// 문맥으로 준다 (#164). 이어지는 조각은 첫 줄 들여쓰기를 둘째 줄에 맞춘다
-    /// (`continuationFragment`). 이 블록의 단 폭이 줄을 잰 폭(`measuredWidth`)과 다르면
-    /// 앵커 문맥은 목적 단 폭으로 다시 조판한 줄이다 (문단 전체를 옮긴 경우도 같다 —
-    /// `lines`는 균형 재배치 몫이라 그대로 둔다).
+    /// 문맥으로 준다 (#164). 이어지는 조각은 첫 줄 들여쓰기를 둘째 줄에 맞춘다. 이 블록의
+    /// 단 폭이 줄을 잰 폭(`placement.measuredWidth`)과 다르면 앵커 문맥은 목적 단 폭으로
+    /// 다시 조판한 줄이다 (문단 전체를 옮긴 경우도 같다 — `lines`는 균형 재배치 몫이라
+    /// 그대로 둔다).
+    ///
+    /// 블록 높이는 누적 전진량 `takenHeight`에서 마지막 전진량에 실린 다음 조각 첫 줄의
+    /// ascent 초과분을 뺀 것이다 (`chargedHeight` — 그 몫은 다음 조각의 것). 그 높이가 측정
+    /// 줄 전진량만으로 났고(`HwpFragmentLineAdvances.heightIsMeasured`) 조각이 잰 폭 그대로
+    /// 놓이거나 여러 줄이면 측정 줄 조각 표식을 단다 (`measuredLineFragment`, #166) — 블록
+    /// 높이가 측정한 줄 전진량이라 렌더러가 조각을 한 줄로 접으면 아래가 빈다. 비등폭
+    /// 단으로 이월된 **한 줄** 조각은 표식을 달지 않는다: 렌더러가 목적 단 폭으로 다시
+    /// 줄바꿈하므로 종전 접힘(가로 6% 이내 넘침)이 한 줄 높이 상자를 세로로 넘치는 것보다
+    /// 낫다 — 여러 줄 조각은 접힘이 빈 줄을 남기므로 표식이 순 개선이다.
     private func appendLineSliceBlock(
         _ slice: ArraySlice<HwpLineFrame>,
         of paragraphFrame: HwpParagraphFrame,
-        height: CGFloat,
+        takenHeight: CGFloat,
+        advances: HwpFragmentLineAdvances,
         attributedString: NSAttributedString,
-        paragraphId: UInt32?,
-        hyperlinkURL: String?,
-        paraShape: CoreHwp.HwpParaShape,
-        measuredWidth: CGFloat
+        placement: HwpFragmentPlacement
     ) {
         let range = slice.dropFirst().reduce(slice[slice.startIndex].attributedRange) {
             NSUnionRange($0, $1.attributedRange)
         }
+        let height = advances.chargedHeight(takenHeight, endingBefore: slice.endIndex)
+        let heightIsMeasured = advances.heightIsMeasured(
+            endingBefore: slice.endIndex, textHeightIsMeasured: placement.heightIsMeasured
+        )
         let isWholeParagraph = slice.count == paragraphFrame.lines.count
-        let sameWidth = abs(currentColumnFrame.width - measuredWidth) < 0.5
+        let sameWidth = abs(currentColumnFrame.width - placement.measuredWidth) < 0.5
+        let marksMeasuredLines = heightIsMeasured && (sameWidth || slice.count > 1)
         let fragment = placedFragment(
-            HwpParagraphLayout.continuationFragment(of: attributedString, range: range),
-            measuredWidth: measuredWidth
+            marksMeasuredLines
+                ? HwpParagraphLayout.measuredLineFragment(of: attributedString, range: range)
+                : HwpParagraphLayout.continuationFragment(of: attributedString, range: range),
+            measuredWidth: placement.measuredWidth
         )
         appendBlock(
             height: height,
             attributedString: fragment,
-            hyperlinkURL: hyperlinkURL,
-            paragraphId: paragraphId,
+            hyperlinkURL: isWholeParagraph ? placement.hyperlinkURL : placement.fragmentURL,
+            paragraphId: placement.paragraphId,
             lines: isWholeParagraph ? paragraphFrame.lines : [],
+            heightIsMeasured: placement.heightIsMeasured,
             anchorLines: isWholeParagraph && sameWidth
                 ? []
                 : fragmentAnchorLines(
                     slice, range: range, fragment: fragment,
-                    paraShape: paraShape, measuredWidth: measuredWidth
+                    paraShape: placement.paraShape, measuredWidth: placement.measuredWidth
                 )
         )
     }

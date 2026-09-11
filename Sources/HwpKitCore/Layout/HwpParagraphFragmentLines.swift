@@ -47,6 +47,10 @@ extension HwpParagraphLayout {
     /// 혼자서는 한 줄에 들어갈 수 있다 — 둘이 갈리면 개체가 그려지지 않는 둘째 줄 자리에
     /// 놓인다. 접히면 측정의 한 줄 분기(`layout`)와 같은 줄 프레임 하나를 만든다.
     ///
+    /// 접힘은 이제 **한글이 저장한 높이로 놓인 조각**(절대 캐시 run·다단 캐시 run)에만
+    /// 남는다 — 측정한 줄 높이로 놓인 조각은 `measuredLineFragment` 표식으로 렌더러가
+    /// 접지 않으므로(#166) 이 술어가 nil이라 원본 줄을 그대로 돌려준다.
+    ///
     /// 줄이 **이미 하나**여도 지나쳐선 안 된다 (PR 리뷰): 목적 단 폭으로 다시 조판한 조각
     /// (`HwpPaginator.fragmentAnchorLines`)이 한 줄이면 그 줄은 측정의 한 줄 분기가 낸
     /// 것이라 원점 x가 0인데, 렌더러는 같은 줄에 정렬 오프셋을 준다 — 오른쪽 정렬 조각의
@@ -90,6 +94,42 @@ extension HwpParagraphLayout {
             attributedRange: NSRange(location: 0, length: attributedString.length),
             inlineAnchors: HwpParagraphLayout().inlineAnchors(in: overflow.line)
         )
+    }
+}
+
+// MARK: - 측정한 줄로 놓이는 조각 문자열 (#166)
+
+extension HwpParagraphLayout {
+    /// 문단 전체를 잰 줄 가운데 `range`만 담은 조각 문자열 — 이어지는 조각의 문단 스타일
+    /// (`continuationFragment`)에 더해 **측정 줄 조각 표식**
+    /// (`HwpAttributedStringKey.measuredLineFragment`)을 조각 전체에 단다.
+    ///
+    /// 이 조각을 놓는 블록의 높이는 문단 측정의 줄 전진량 합(쪽·단 경계 흐름 분할
+    /// `HwpPaginator.appendLineSliceBlock`·표 행 분할 `HwpTableSplitter.paragraphFragment`·
+    /// 다단 균형 재배치 `HwpColumnBandController.balancedBlocks`)이라, 렌더러가 그 줄바꿈과
+    /// 다르게 그리면 블록 아래가 빈다 — 조각 혼자서는 한 줄 넘침 허용 배율 안에 들어
+    /// 한 줄로 접히는 것이 그 경우다. 표식을 단 조각은 렌더러(`HwpDrawnTextLayout.lines`)와
+    /// 조각 재측정(`layout`)이 모두 문단 단위 한 줄 규칙을 건너뛰어 측정한 줄 수 그대로
+    /// 그려진다.
+    ///
+    /// 문단 전체(`range`가 문자열 전부)는 조각이 아니므로 표식 없이 돌려준다 — 그 블록은
+    /// 측정과 렌더가 같은 문자열에 같은 규칙을 적용해 이미 일치한다. 한글이 저장한 높이로
+    /// 놓이는 조각(`HwpAbsoluteCachePlacer.runAttributedSlice`·`placeCachedColumnRuns`·각주
+    /// 이어짐, 그리고 위 세 경로에서도 줄 캐시 높이의 잔여를 담은 조각과 비등폭 단으로
+    /// 옮겨진 한 줄 조각)은 이 함수를 쓰지 않는다 — 그쪽은 `continuationFragment`뿐이다.
+    /// 호출부가 높이 출처(`heightIsMeasured`)로 가른다.
+    static func measuredLineFragment(
+        of attributedString: NSAttributedString, range: NSRange
+    ) -> NSAttributedString {
+        let fragment = continuationFragment(of: attributedString, range: range)
+        guard fragment.length > 0, range.length < attributedString.length else { return fragment }
+        let marked = NSMutableAttributedString(attributedString: fragment)
+        marked.addAttribute(
+            HwpAttributedStringKey.measuredLineFragment,
+            value: NSNumber(value: true),
+            range: NSRange(location: 0, length: marked.length)
+        )
+        return marked
     }
 }
 
