@@ -189,5 +189,40 @@ import XCTest
                 for: host, environment: environment, childParagraphs: { _ in [] }
             )) == 0
         }
+
+        /// 예약이 분할 지점에서 멈춘 쪽의 예측은 뒤 각주의 개체 술어·중첩 순회에 들어가지 않는다
+        /// (#165 리뷰) — 이어지는 각주 뒤에 흐름 문단·표를 다시 시도하는 쪽마다 되풀이되는 일이다.
+        func testStoppedPreflightDoesNotTraverseNestedContainers() throws {
+            let note = try Support.note(lines: ["줄 1"], locations: [0])
+            var host = try Support.host(at: 1500, notes: [[note]])
+            // 중첩 컨테이너(머리말)를 하나 달아 순회가 들어가는지 본다.
+            host.ctrlHeaderArray = (host.ctrlHeaderArray ?? []) + [.header(HwpSynthetic.listControl(
+                ctrlId: .header, paragraphs: [try HwpSynthetic.textParagraph("중첩")]
+            ))]
+            var coordinator = HwpFootnoteCoordinator(
+                index: HwpIndex(from: CoreHwp.HwpFile()), fontResolver: .testDeterministic
+            )
+            let environment = HwpFootnoteCoordinator.Environment(
+                contentWidth: 400, footnoteShape: nil, continuesAtCacheBreaks: true
+            )
+            var visits = 0
+            let children: HwpFootnoteCoordinator.ChildParagraphs = { ctrl in
+                visits += 1
+                if case let .header(list) = ctrl {
+                    return list.listArray.flatMap(\.paragraphArray).map { ($0, .text) }
+                }
+                return []
+            }
+            _ = coordinator.anticipatedFootnoteHeight(
+                for: host, environment: environment, childParagraphs: children
+            )
+            expect(visits) > 0
+            visits = 0
+            coordinator.reservationStopsAtSplit = true
+            expect(coordinator.anticipatedFootnoteHeight(
+                for: host, environment: environment, childParagraphs: children
+            )) == 0
+            expect(visits) == 0
+        }
     }
 #endif

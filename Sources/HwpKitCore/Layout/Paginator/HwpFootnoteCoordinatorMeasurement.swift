@@ -270,9 +270,15 @@ extension HwpFootnoteCoordinator {
         childParagraphs: ChildParagraphs,
         numbering: HwpNumberingScope?
     ) -> CGFloat {
-        guard let ctrls = paragraph.ctrlHeaderArray else { return 0 }
+        // 예약이 분할 지점에서 멈춘 뒤의 각주는 이 쪽에 실리지 않는다 — 번호도 높이도 필요
+        // 없으므로 개체 술어·중첩 순회에 들어가지 않는다 (#165 리뷰: 멈춘 예측이 뒤 각주의 문단을
+        // 전부 훑으면 이어지는 각주 뒤에 흐름 문단·표를 다시 시도하는 쪽마다 그 일을 되풀이한다).
+        guard !state.stopped, let ctrls = paragraph.ctrlHeaderArray else { return 0 }
         var total: CGFloat = 0
         for (ordinal, ctrl) in ctrls.enumerated() {
+            if state.stopped {
+                break
+            }
             let container = numbering?.container(controlIndex: ordinal)
             if case let .footnote(list) = ctrl {
                 let paragraphs = list.listArray.flatMap(\.paragraphArray)
@@ -286,8 +292,8 @@ extension HwpFootnoteCoordinator {
                     }
                     // 예측도 수집(`appendPendingFootnote`)과 같은 조각까지다 (#165 리뷰): 줄
                     // 캐시가 여러 쪽에 걸친 각주의 전부를 더하면 첫 조각 옆에 들어가는 문단이
-                    // 다른 쪽으로 밀린다. 앞 각주가 나뉜 뒤의 각주는 이 쪽에 실리지 않는다.
-                    let shares = state.stopped ? [] : Self.fragmentShares(
+                    // 다른 쪽으로 밀린다.
+                    let shares = Self.fragmentShares(
                         count: paragraphs.count,
                         splits: !noteCarriesObjects && environment.continuesAtCacheBreaks
                     ) { (lines: HwpFootnoteCacheLines.lines(of: paragraphs[$0]), placedLineCount: 0) }

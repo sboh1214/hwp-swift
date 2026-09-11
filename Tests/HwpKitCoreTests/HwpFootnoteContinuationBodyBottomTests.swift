@@ -333,6 +333,25 @@ import XCTest
             ))) == frame
         }
 
+        /// 흐름 배치(`placeFlow`)가 구분선을 그릴 때 획이 위 여백을 넘는 몫은 시작점 아래로 내린다
+        /// (#165 리뷰) — 위 여백이 획 반 두께보다 좁으면 선이 앞 내용을 긋는다.
+        func testFlowPlacementKeepsAThickSeparatorBelowTheStart() throws {
+            let shape = try HwpFootnoteContinuationBodyBottomTests.thickDividerShape()
+            let note = try Support.note(lines: ["줄 1", "줄 2"], locations: [0, 1172])
+            let layout = HwpFootnoteLayout(fontResolver: .testDeterministic)
+            let geometry = Support.geometry(contentWidth: 451)
+            let placement = layout.placeFlow(
+                footnotes: [HwpFootnoteLayout.Input(paragraph: note, number: 1)],
+                from: 100, in: geometry.contentFrame, index: HwpIndex(from: CoreHwp.HwpFile()),
+                footnoteShape: shape, drawSeparator: true
+            )
+            let block = try XCTUnwrap(placement.blocks.first)
+            expect(block.separatorLine.minY) >= 100 - 0.001
+            expect(block.separatorLine.height).to(beCloseTo(14.17, within: 0.01))
+            // 첫 줄은 선 가운데 + 아래 여백 뒤에서 시작한다.
+            expect(block.frame.minY).to(beCloseTo(block.separatorLine.midY + 8.5, within: 0.01))
+        }
+
         /// 위 여백 0·아래 여백 850·굵기 index 15 (5mm = 14.17pt) 인 구분선 모양 —
         /// `dividerInfo`는 rawPayload를 다시 디코딩하므로 28바이트를 직접 조립한다.
         static func thickDividerShape() throws -> CoreHwp.HwpFootnoteShape {

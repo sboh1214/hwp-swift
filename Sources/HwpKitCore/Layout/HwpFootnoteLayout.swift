@@ -420,6 +420,10 @@ public struct HwpFootnoteLayout {
         var cursorY = startY
         var separatorLine = CGRect(x: columnFrame.minX, y: startY, width: 0, height: 0)
         if drawSeparator {
+            // 획이 위 여백을 넘는 몫은 앞 내용 아래로 내린다 (#165 리뷰, `placeBelowBody`의
+            // `areaFloor`와 같은 몫) — 위 여백이 획 반 두께보다 좁으면 선이 `startY` 위의 앞
+            // 내용을 긋는다.
+            cursorY += Self.separatorOverhang(divider)
             separatorLine = Self.separatorLine(
                 areaTop: cursorY, divider: divider, contentFrame: columnFrame
             )

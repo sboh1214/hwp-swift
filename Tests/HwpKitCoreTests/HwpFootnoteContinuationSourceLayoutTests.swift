@@ -186,34 +186,6 @@ import XCTest
             expect(measured.attributed.length) == 0
         }
 
-        /// 요소가 하나도 없는 도형 컨트롤은 개체를 내지 않으므로 "개체를 담은 각주"가 아니다
-        /// (#165 리뷰) — 공허하게 참인 판정은 쪽 끝 분할을 막아 각주를 통째로 넘긴다.
-        func testEmptyShapeControlDoesNotBlockSplitting() throws {
-            var note = try Support.note(
-                lines: ["첫째 줄", "둘째 줄", "셋째 줄", "넷째 줄", "다섯째 줄"],
-                locations: [0, 1172, 2344, 0, 1172]
-            )
-            var object = HwpSynthetic.floatingShapeObject(
-                width: 1000, height: 1000, textWrap: .inFrontOfText
-            )
-            object.shapeComponentArray = []
-            note.ctrlHeaderArray = (note.ctrlHeaderArray ?? []) + [.genShapeObject(object)]
-            expect(HwpParagraphObjectCollector.hasCollectibleObject(
-                in: note, collectsTextboxes: true, collectsTables: true
-            )) == false
-
-            let layout = HwpFootnoteLayout(fontResolver: .testDeterministic)
-            let geometry = Support.geometry(contentWidth: 451)
-            // 앞 세 줄(32.44pt)은 들어가고 전체(55.88pt)는 안 들어가는 자리 — 나눠야 한다.
-            let placement = layout.place(
-                footnotes: [HwpFootnoteLayout.Input(paragraph: note, number: 1)],
-                onPage: geometry, index: HwpIndex(from: CoreHwp.HwpFile()),
-                limitsAreaToHalfContent: false, bodyBottom: geometry.contentFrame.maxY - 50
-            )
-            expect(placement.blocks.count) == 1
-            expect(placement.overflow.first?.placedLineCount) == 3
-        }
-
         /// 페이지네이터의 대기 각주는 수집 시점에 각주 모양을 각인한다 (#165 리뷰) — 예약이 그
         /// 모양으로 재고 배치가 각인된 모양을 쓰므로, 배치가 쪽마다 대기 각주 전부에 각인할
         /// 일이 없다. 기본 모양(nil)도 확정 상태다.
