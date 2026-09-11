@@ -188,38 +188,42 @@ extension HwpParagraphObjectCollector {
             // 관문을 지난 요소도 그릴 것이 없을 수 있다 (#165 리뷰) — `collect(component:)`가
             // 내는 조건을 값싸게 되풀이한다.
             return components.contains {
-                emitsObject($0, commonProperty: commonProperty, collectsTextboxes: collectsTextboxes)
+                emitsObject(
+                    $0, commonProperty: commonProperty, collectsTextboxes: collectsTextboxes
+                )
             }
         }
     }
 
     /// 이 요소를 `collect(component:)`가 실제로 그리는지 — 조판 없이 구조만 본다 (#165 리뷰):
-    /// 그림은 BinData 참조(`image`의 관문)와 크기, 글상자는 수집 대상인지, 도형은 세부 레코드나
-    /// 크기(`HwpShapeGeometry.build`의 관문). 크기는 `resolvedSize`처럼 공통 속성이 0이면 요소의
-    /// 현재 크기로 본다. 관문이 열려 있어도 아무것도 내지 않는 요소를 "개체를 담은 각주"로
-    /// 판정하면 쪽 끝 분할이 막혀 이어질 각주가 통째로 옮겨진다. 조판이 있어야 아는 실패
-    /// (글상자 조판 불가·퇴화 곡선)는 못 가리므로 이 판정은 그리는 쪽의 **상위집합**이다 —
-    /// 넓은 쪽은 나누지 않는 안전한 방향이다.
+    /// 그림은 BinData 참조(`image`의 관문)와 크기, 글상자는 수집 대상인지, 도형은 크기
+    /// (`shape`가 `resolvedSize`를 먼저 요구한다 — 세부 레코드가 있어도 크기가 없으면 내지
+    /// 않는다, PR 리뷰). 크기는 `resolvedSize`와 같이 축마다 공통 속성이 0이면 요소의 현재
+    /// 크기로 본다. 관문이 열려 있어도 아무것도 내지 않는 요소를 "개체를 담은 각주"로 판정하면
+    /// 쪽 끝 분할이 막혀 이어질 각주가 통째로 옮겨진다. 조판이 있어야 아는 실패 (글상자 조판
+    /// 불가·퇴화 곡선)는 못 가리므로 이 판정은 그리는 쪽의 **상위집합**이다 — 넓은 쪽은 나누지
+    /// 않는 안전한 방향이다.
     static func emitsObject(
         _ component: CoreHwp.HwpShapeComponent,
         commonProperty: CoreHwp.HwpCommonCtrlProperty?,
         collectsTextboxes: Bool
     ) -> Bool {
+        if !component.textBoxListArray.isEmpty, component.pictureArray.isEmpty {
+            return collectsTextboxes
+        }
+        // `resolvedSize`와 같은 축별 폴백 — 공통 속성이 0인 축만 요소의 현재 크기로.
         let detail = component.detail
-        let hasSize = (commonProperty.map { $0.width > 0 && $0.height > 0 } ?? false)
-            || (detail.map { $0.currentWidth > 0 && $0.currentHeight > 0 } ?? false)
+        let width = commonProperty.map { Int($0.width) } ?? 0
+        let height = commonProperty.map { Int($0.height) } ?? 0
+        let hasSize = (width > 0 || (detail?.currentWidth ?? 0) > 0)
+            && (height > 0 || (detail?.currentHeight ?? 0) > 0)
+        guard hasSize else { return false }
         if !component.pictureArray.isEmpty {
-            return hasSize && component.pictureArray.contains {
+            return component.pictureArray.contains {
                 $0.pictureProperty != nil || $0.binaryDataId != nil
             }
         }
-        if !component.textBoxListArray.isEmpty {
-            return collectsTextboxes
-        }
-        let hasShapeDetail = !component.lineArray.isEmpty || !component.rectangleArray.isEmpty
-            || !component.polygonArray.isEmpty || !component.curveArray.isEmpty
-            || !component.ellipseArray.isEmpty || !component.arcArray.isEmpty
-        return hasSize || hasShapeDetail
+        return true
     }
 
     /// 앵커를 모르는 자리의 상위집합 판정 (`hasFloatingObject` 전용).

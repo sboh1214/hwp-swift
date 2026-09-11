@@ -87,5 +87,72 @@ import XCTest
             expect(placement.blocks.count) == 1
             expect(placement.overflow.first?.placedLineCount) == 3
         }
+
+        /// 도형의 관문은 **크기**다 (PR 리뷰): `shape()`는 `resolvedSize`를 먼저 요구하므로 선·사각형
+        /// 세부 레코드가 있어도 공통 속성·요소 크기가 모두 0이면 그리지 않는다 — 그런 각주를 세부
+        /// 레코드만 보고 "개체를 담은 각주"로 판정하면 쪽 끝 분할이 막힌다. 크기는 `resolvedSize`
+        /// 처럼 **축마다** 폴백한다 — 공통 속성의 너비와 요소의 현재 높이로 크기가 서는 도형은
+        /// 그려지므로 개체다. 두 판정 모두 수집기가 실제로 내는 것과 대조한다.
+        func testShapeDetailWithoutSizeDoesNotCountAsObject() throws {
+            func note(with control: CoreHwp.HwpCtrlId) throws -> CoreHwp.HwpParagraph {
+                var note = try Support.note(
+                    lines: ["첫째 줄", "둘째 줄", "셋째 줄"], locations: [0, 1172, 2344]
+                )
+                note.ctrlHeaderArray = (note.ctrlHeaderArray ?? []) + [control]
+                return note
+            }
+            func carries(_ paragraph: CoreHwp.HwpParagraph) -> Bool {
+                HwpParagraphObjectCollector.hasCollectibleObject(
+                    in: paragraph, collectsTextboxes: true, collectsTables: true
+                )
+            }
+            // 선 세부 레코드는 있지만 크기가 없는 도형 — `resolvedSize`가 nil이라 그려지지 않는다.
+            var lineWithoutSize = HwpSynthetic.inlineShapeObject(width: 0, height: 0)
+            var component = lineWithoutSize.shapeComponentArray[0]
+            component.lineArray = [CoreHwp.HwpShapeComponentLine(
+                rawPayload: Self.littleEndian([0, 0, 1000, 1000]), unknownChildren: []
+            )]
+            lineWithoutSize.shapeComponentArray[0] = component
+            let lineNote = try note(with: .genShapeObject(lineWithoutSize))
+            expect(Self.emittedObjectCount(in: lineNote)) == 0
+            expect(carries(lineNote)) == false
+
+            // 공통 속성은 너비만, 요소는 현재 높이만 — 축마다 폴백한 크기가 서므로 그려진다.
+            var mixedAxes = HwpSynthetic.inlineShapeObject(width: 1000, height: 0)
+            var mixedComponent = mixedAxes.shapeComponentArray[0]
+            var elementPayload = Self.littleEndian([0x2464_6F24]) // ctrl id 1회
+            elementPayload.append(Data(count: 20)) // 그룹 오프셋·개수·버전·처음 크기
+            elementPayload.append(Self.littleEndian([0, 1000])) // 현재 너비 0·현재 높이 1000
+            elementPayload.append(Data(count: 14)) // 뒤집기·회전
+            mixedComponent.rawPayload = elementPayload
+            mixedAxes.shapeComponentArray[0] = mixedComponent
+            expect(mixedComponent.detail?.currentHeight) == 1000
+            let mixedNote = try note(with: .genShapeObject(mixedAxes))
+            expect(Self.emittedObjectCount(in: mixedNote)) == 1
+            expect(carries(mixedNote)) == true
+        }
+
+        /// 수집기가 실제로 내는 개체 수 — 술어(`hasCollectibleObject`)의 대조 상대.
+        private static func emittedObjectCount(in paragraph: CoreHwp.HwpParagraph) -> Int {
+            let collector = HwpParagraphObjectCollector(
+                index: HwpIndex(from: CoreHwp.HwpFile()), fontResolver: .testDeterministic,
+                sizeResolver: nil, collectsTextboxes: true, attributeCache: nil,
+                collectsTables: true
+            )
+            let objects = collector.objects(
+                in: paragraph,
+                frame: HwpParagraphFrame(totalHeight: 10, lines: []),
+                paragraphRect: CGRect(x: 0, y: 0, width: 200, height: 10)
+            )
+            return objects.shapes.count + objects.images.count + objects.textboxes.count
+        }
+
+        private static func littleEndian(_ values: [UInt32]) -> Data {
+            var data = Data()
+            for value in values {
+                withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
+            }
+            return data
+        }
     }
 #endif
