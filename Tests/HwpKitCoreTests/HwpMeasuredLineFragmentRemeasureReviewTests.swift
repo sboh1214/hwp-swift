@@ -39,10 +39,47 @@ import XCTest
         }
 
         /// 한 줄로 잰 문단이 부분 채운 단에 안 들어가 통째로 좁은 단(30자)으로 옮겨지면 그 폭으로
-        /// 다시 재어 세 줄 상자(48pt)다 — 종전에는 한 줄 상자(16pt)에 세 줄이 그려졌다.
-        func testSingleLineParagraphMovedWholeToANarrowerColumnIsRemeasured() async throws {
+        /// 다시 재어 세 줄(48pt)이 되는데, 목적 단(40pt)보다 크므로 조각 루프가 나눈다 — 좁은
+        /// 단에 두 줄(60자, 32pt), 마지막 글자는 다음 쪽 (PR 리뷰: 통째로 놓으면 여백·뒤 내용으로
+        /// 넘친다). 종전에는 한 줄 상자(16pt)에 세 줄이 그려졌다.
+        func testSingleLineParagraphMovedWholeToANarrowerColumnIsRemeasuredAndSplit() async throws {
             let first = try HwpSynthetic.textParagraph(String(repeating: "가", count: 61))
             let second = try HwpSynthetic.textParagraph(String(repeating: "나", count: 61))
+            let (paginator, widths) = try Columns.columns(
+                charactersPerLine: [61, 30], contentHeight: 40, bodyParagraphs: [first, second]
+            )
+            let pages = try await InlineControlFragmentSupport.pages(of: paginator)
+            expect(pages.count) == 2
+            guard pages.count == 2 else { return }
+            let moved = try XCTUnwrap(pages[0].blocks.first {
+                $0.attributedString?.string.contains("나") == true
+            })
+            expect(moved.attributedString?.length) == 60
+            expect(moved.frame.width).to(beCloseTo(widths[1], within: 0.01))
+            // 마지막 줄의 ascent 초과분 2pt(#164)는 다음 조각 몫이라 30 + 18 = 48pt다.
+            expect(moved.frame.height).to(beGreaterThanOrEqualTo(29.5))
+            expect(moved.frame.height).to(beLessThanOrEqualTo(32.5))
+            expect(Columns.drawnLineLengths(of: moved)) == [30, 30]
+            expect(Support.isMarked(try XCTUnwrap(moved.attributedString))).to(beTrue())
+            let rest = try XCTUnwrap(pages[1].blocks.first {
+                $0.attributedString?.string.contains("나") == true
+            })
+            expect(rest.attributedString?.length) == 1
+            expect(moved.frame.height + rest.frame.height).to(beCloseTo(48, within: 0.5))
+            expect(Columns.drawnLineLengths(of: rest)) == [1]
+        }
+
+        /// 통째로 옮겨 다시 잰 한 줄 문단은 **다시 잰 문자열**을 그린다 (PR 리뷰): 단 너비 50%
+        /// 글자처럼 취급 개체의 예약은 목적 단으로 다시 풀리므로, 원본 문자열(넓은 단의 예약)을
+        /// 그리면 예약 폭이 그려지는 개체 폭과 갈리고 좁은 단에서 줄이 늘어 한 줄 상자를 넘친다.
+        func testWholeMovedParagraphRendersTheRemeasuredReservation() async throws {
+            let first = try HwpSynthetic.textParagraph(String(repeating: "가", count: 61))
+            var second = HwpSynthetic.paragraphWithInlineControl(
+                prefix: String(repeating: "나", count: 5), suffix: ""
+            )
+            second.ctrlHeaderArray = [.genShapeObject(HwpSynthetic.columnRelativeInlineObject(
+                widthPercent: 5000, heightPercent: 200, instanceId: 4
+            ))]
             let (paginator, widths) = try Columns.columns(
                 charactersPerLine: [61, 30], contentHeight: 40, bodyParagraphs: [first, second]
             )
@@ -52,8 +89,17 @@ import XCTest
                 $0.attributedString?.string.contains("나") == true
             })
             expect(moved.frame.width).to(beCloseTo(widths[1], within: 0.01))
-            expect(moved.frame.height).to(beCloseTo(48, within: 0.5))
-            expect(Columns.drawnLineLengths(of: moved)) == [30, 30, 1]
+            let object = try XCTUnwrap(
+                InlineControlFragmentSupport.objectBlocks(on: page, instanceId: 4).first
+            )
+            let reserved = try XCTUnwrap(InlineControlFragmentSupport.reservedMarkerWidth(
+                in: try XCTUnwrap(moved.attributedString), controlIndex: 0
+            ))
+            // 예약 = 그려지는 폭 = 좁은 단의 50% (넓은 단의 50%가 아니다).
+            expect(object.frame.width).to(beCloseTo(widths[1] / 2, within: 0.05))
+            expect(reserved).to(beCloseTo(object.frame.width, within: 0.05))
+            expect(Columns.drawnLineLengths(of: moved)) == [6]
+            expect(object.frame.maxX).to(beLessThanOrEqualTo(moved.frame.maxX + 0.01))
         }
 
         /// 쪽·단 경계로 나뉜 문단의 뒤 조각 블록(줄 목록 없는 단위 하나)이 밴드 닫힘 재배치를

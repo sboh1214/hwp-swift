@@ -33,6 +33,11 @@ struct HwpColumnBandController {
         /// 블록이 문단 머리에서 시작하는지 — 쪽·단 경계로 나뉜 문단의 뒤 조각 블록은 false다.
         /// 블록 전체를 옮겨 다시 잴 때 문단(한 줄 넘침 규칙을 따른다)과 조각(건너뛴다)을 가른다.
         let startsParagraph: Bool
+        /// 다시 잴 때 문단 지표(비율 줄 간격의 강제 줄 높이 등)를 뽑을 **문단 전체** 조판
+        /// 문자열 — 뒤 조각 블록은 문단의 일부라 앞 조각에만 있던 큰 글자를 놓친다 (PR 리뷰).
+        /// nil이면 블록 문자열이 곧 문단이다. 뒤 조각 블록은 쪽의 첫 단위라 오늘의 재배치는
+        /// 그것을 다른 단으로 옮기지 않지만, 지표의 출처를 구조로 잠근다.
+        let metricsReference: NSAttributedString?
     }
 
     var bandTextBlocks: [BandTextBlock] = []
@@ -130,6 +135,7 @@ struct HwpColumnBandController {
         let heightIsMeasured: Bool
         let paraShape: CoreHwp.HwpParaShape?
         let startsParagraph: Bool
+        let metricsReference: NSAttributedString?
     }
 
     /// 같은 블록의 연속 단위를 합친 조각 — 한 단에 놓일 블록 하나.
@@ -141,6 +147,7 @@ struct HwpColumnBandController {
         var count = 1
         let paraShape: CoreHwp.HwpParaShape?
         let startsParagraph: Bool
+        let metricsReference: NSAttributedString?
 
         init(_ unit: BandLineUnit) {
             blockIndex = unit.blockIndex
@@ -149,6 +156,7 @@ struct HwpColumnBandController {
             heightIsMeasured = unit.heightIsMeasured
             paraShape = unit.paraShape
             startsParagraph = unit.startsParagraph
+            metricsReference = unit.metricsReference
         }
 
         mutating func merge(_ unit: BandLineUnit) {
@@ -209,7 +217,8 @@ struct HwpColumnBandController {
                         height: max(1, advance),
                         heightIsMeasured: isMeasured,
                         paraShape: entry.paraShape,
-                        startsParagraph: entry.startsParagraph
+                        startsParagraph: entry.startsParagraph,
+                        metricsReference: entry.metricsReference
                     ))
                 }
             } else {
@@ -219,7 +228,8 @@ struct HwpColumnBandController {
                     height: blockHeight,
                     heightIsMeasured: entry.heightIsMeasured,
                     paraShape: entry.paraShape,
-                    startsParagraph: entry.startsParagraph
+                    startsParagraph: entry.startsParagraph,
+                    metricsReference: entry.metricsReference
                 ))
             }
         }
@@ -315,20 +325,22 @@ struct HwpColumnBandController {
             // 문단 머리에서 시작하는 블록 전체(문단)는 문단 단위 한 줄 규칙을 따라 재고, 조각
             // (블록의 일부, 또는 쪽·단 경계로 나뉜 문단의 뒤 조각 블록)은 표식을 단 채로 재어
             // 그 규칙을 건너뛴다 — 조각을 접으면 한글의 줄바꿈과 갈린다. 문단 지표(마지막 줄
-            // 높이·줄 뒤 간격)는 블록 전체 문자열로 잰다.
+            // 높이·줄 뒤 간격)는 **문단 전체** 문자열(`metricsReference`, 뒤 조각 블록은 블록
+            // 문자열이 문단의 일부다)로 잰다.
             let plain = HwpParagraphLayout.strippingMeasuredLineMarker(base)
+            let paragraphText = merged.metricsReference ?? attributed
             let frame = HwpParagraphLayout().layout(
                 attributedString: isWholeBlock && merged.startsParagraph
                     ? plain : HwpParagraphLayout.markedAsMeasuredLineFragment(plain),
                 paraShape: paraShape, columnWidth: columnWidth,
-                metricsReference: attributed
+                metricsReference: paragraphText
             )
             if !frame.lines.isEmpty {
                 // 문단 위 간격은 밴드 커서가 이미 소비했고(0 하한은 `authoredBeforeGap`과 같다),
                 // 문단 아래 간격은 문단 끝을 담은 조각의 몫이다 — 원래 단위 높이도 마지막 줄
                 // 단위만 잔여(아래 간격 포함)를 흡수한다 (PR 리뷰).
                 let metrics = HwpParagraphLayout.ParagraphMetrics(
-                    paraShape: paraShape, attributedString: attributed
+                    paraShape: paraShape, attributedString: paragraphText
                 )
                 let reachesEnd = NSMaxRange(merged.range) == attributed.length
                 lineCount = frame.lines.count

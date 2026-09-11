@@ -1563,7 +1563,9 @@ private extension HwpPaginator {
     /// `paraShape`는 균형 재배치가 조각을 폭이 다른 단으로 옮길 때 그 단 폭으로 다시 재는 데
     /// 쓴다 — 측정 높이 블록만 필요하다. `startsParagraph`는 블록이 문단 머리에서 시작하는지
     /// (쪽·단 경계로 나뉜 문단의 뒤 조각 블록은 false) — 그 재측정이 블록 전체를 문단으로
-    /// 볼지 조각으로 볼지 가른다.
+    /// 볼지 조각으로 볼지 가른다. `metricsReference`는 그 재측정의 문단 지표를 뽑을 **문단
+    /// 전체** 조판 문자열이다 — 뒤 조각 블록의 문자열은 문단의 일부라 큰 글자를 놓칠 수 있다
+    /// (PR 리뷰); nil이면 블록 문자열이 곧 문단이다.
     func appendBlock(
         height: CGFloat,
         attributedString: NSAttributedString,
@@ -1573,6 +1575,7 @@ private extension HwpPaginator {
         heightIsMeasured: Bool = true,
         paraShape: CoreHwp.HwpParaShape? = nil,
         startsParagraph: Bool = true,
+        metricsReference: NSAttributedString? = nil,
         anchorLines: [HwpLineFrame] = []
     ) {
         // 문단의 첫 콘텐츠가 페이지에 놓이는 지금 보류된 쪽 번호 리셋을 확정한다 —
@@ -1614,7 +1617,7 @@ private extension HwpPaginator {
         bandTextBlocks.append(HwpColumnBandController.BandTextBlock(
             blockIndex: currentBlocks.count - 1, lines: lines,
             heightIsMeasured: heightIsMeasured, paraShape: paraShape,
-            startsParagraph: startsParagraph
+            startsParagraph: startsParagraph, metricsReference: metricsReference
         ))
         // 줄 중간 앵커 기준: 온전한 문단 블록의 줄, 또는 조각 기준으로 되돌린 조각의 줄 —
         // 렌더러가 조각을 한 줄로 접으면 앵커도 그 한 줄에서 찾는다.
@@ -1686,7 +1689,7 @@ private extension HwpPaginator {
             lines: lines, textHeight: textHeight,
             measuredWidth: currentColumnFrame.width, heightIsMeasured: placement.heightIsMeasured
         )
-        guard lines.count > 1, textHeight > 0 else {
+        if lines.count <= 1 || textHeight <= 0 {
             if startedEmpty {
                 // 빈 단: gap+text가 안 맞는 초과 문단이면 gap을 무르고 현재 단 top에
                 // flush한다 — 빈 단을 건너뛰지 않는다 (R54 #3).
@@ -1695,36 +1698,28 @@ private extension HwpPaginator {
                     paragraphAnchorTop = currentColumnFrame.minY
                 }
             } else if contentHeightUsed + textHeight > usableHeight {
-                // 부분 채운 단에 안 맞으면 다음 단으로 옮기고 새 단 top에 gap을
-                // 재적용한다 — 다중 줄·본문 경로와 일치 (R54 #2). gap+text가 빈
-                // 단보다 크면 진행 보장을 위해 flush. 단 이동이 페이지를 넘기면
-                // 각주 예약이 바뀌므로 usable을 재계산한다 (R55 #4). 이동 문단의
-                // gap은 구 단에 렌더되지 않으므로 markBandUsage 전에 무른다 —
-                // 밴드 하단이 부풀면 다음 밴드가 밀리거나 불필요한 새 페이지 (R56 #3).
-                // 폭이 다른 단이면 문단을 통째로 그 폭으로 다시 잰다 — 한 줄로 잰 문단이
-                // 좁은 단에서 여러 줄이 되면 상자도 그만큼 커야 한다 (PR 리뷰).
-                contentHeightUsed -= beforeGap
-                advanceColumn()
-                remeasureRemainderIfNeeded(
-                    &remainder, attributedString: attributedString, placement: placement
+                moveWholeParagraphToNextColumn(
+                    &remainder, attributedString: attributedString, placement: placement,
+                    beforeGap: beforeGap, reservedFootnoteHeight: reservedFootnoteHeight
                 )
-                if beforeGap + remainder.advances.textHeight
-                    <= max(1, effectiveContentHeight - reservedFootnoteHeight)
-                {
-                    contentHeightUsed += beforeGap
-                }
-                paragraphAnchorTop = currentColumnFrame.minY + contentHeightUsed
             }
-            appendBlock(
-                height: remainder.advances.textHeight,
-                attributedString: attributedString,
-                hyperlinkURL: hyperlinkURL,
-                paragraphId: paragraphId,
-                lines: remainder.lines,
-                heightIsMeasured: remainder.heightIsMeasured,
-                paraShape: paraShape
-            )
-            return
+            // 다시 재어 여러 줄이 됐으면 아래 조각 루프가 이 단부터 나눠 놓는다 (PR 리뷰) —
+            // 통째로 놓으면 목적 단보다 큰 상자가 여백·뒤 내용으로 넘친다.
+            if remainder.lines.count <= 1 {
+                appendBlock(
+                    height: remainder.advances.textHeight,
+                    // 다시 잰 문자열(목적 단으로 다시 푼 개체 예약)을 그대로 그린다 (PR 리뷰).
+                    attributedString: placedFragment(
+                        attributedString, reservedWidth: placement.reservedWidth
+                    ),
+                    hyperlinkURL: hyperlinkURL,
+                    paragraphId: paragraphId,
+                    lines: remainder.lines,
+                    heightIsMeasured: remainder.heightIsMeasured,
+                    paraShape: paraShape
+                )
+                return
+            }
         }
 
         while !remainder.isExhausted {
@@ -1798,6 +1793,33 @@ private extension HwpPaginator {
                 )
             }
         }
+    }
+
+    /// 부분 채운 단에 안 맞는 한 줄 문단을 통째로 다음 단으로 옮긴다 — 다중 줄·본문 경로와
+    /// 일치 (R54 #2). 이동 문단의 gap은 구 단에 렌더되지 않으므로 markBandUsage 전에 무른다
+    /// (밴드 하단이 부풀면 다음 밴드가 밀리거나 불필요한 새 페이지, R56 #3). 폭이 다른 단이면
+    /// 문단을 통째로 그 폭으로 다시 잰다 — 한 줄로 잰 문단이 좁은 단에서 여러 줄이 되면
+    /// 상자도 그만큼 커야 한다 (PR 리뷰). 새 단 top에는 gap+첫 줄이 들어갈 때만 gap을
+    /// 재적용한다(조각 루프의 통째 이동 규칙과 같다 — 빈 단보다 크면 진행 보장을 위해 flush).
+    /// 단 이동이 페이지를 넘기면 각주 예약이 바뀌므로 usable을 재계산한다 (R55 #4).
+    private func moveWholeParagraphToNextColumn(
+        _ remainder: inout HwpFragmentRemainder,
+        attributedString: NSAttributedString,
+        placement: HwpFragmentPlacement,
+        beforeGap: CGFloat,
+        reservedFootnoteHeight: CGFloat
+    ) {
+        contentHeightUsed -= beforeGap
+        advanceColumn()
+        remeasureRemainderIfNeeded(
+            &remainder, attributedString: attributedString, placement: placement
+        )
+        if beforeGap + remainder.firstLineChargedHeight
+            <= max(1, effectiveContentHeight - reservedFootnoteHeight)
+        {
+            contentHeightUsed += beforeGap
+        }
+        paragraphAnchorTop = currentColumnFrame.minY + contentHeightUsed
     }
 
     /// 나머지가 줄을 잰 폭과 다른 단으로 넘어왔으면 그 단 폭으로 다시 잰다 (#166 PR 리뷰,
@@ -1924,6 +1946,7 @@ private extension HwpPaginator {
             heightIsMeasured: heightIsMeasured,
             paraShape: placement.paraShape,
             startsParagraph: remainder.start == 0 && slice.startIndex == 0,
+            metricsReference: isWholeParagraph ? nil : attributedString,
             anchorLines: isWholeParagraph && sameWidth
                 ? []
                 : fragmentAnchorLines(
