@@ -252,5 +252,49 @@ import XCTest
                 origin: .zero, lineWidth: fragments[1].frame.width
             ).count) == 1
         }
+
+        /// 0.4pt 좁은 단에 이월된 두 줄 조각의 **줄 안 개체 앵커**도 바뀐 줄바꿈을 따른다 (PR
+        /// 리뷰): `가` 61자 + 글자 폭 도형 + `끝`은 넓은 단에서 31자 / 30자 + 도형 / `끝`으로
+        /// 재어지고, 뒤 조각(30자 + 도형 + `끝`)은 좁은 단에서 도형이 밀려 30자 / 도형 + `끝`으로
+        /// 그려진다. 앵커 문맥도 그 단 폭으로 다시 조판한 줄이어야 도형이 둘째 줄 첫머리(그려진
+        /// 마커 자리)에 놓인다 — 측정한 줄을 그대로 쓰면 첫 줄 끝(259.5pt 오른쪽·한 줄 위)에 남는다.
+        func testInlineObjectAnchorFollowsTheNarrowerColumnLineBreaks() async throws {
+            var paragraph = HwpSynthetic.paragraphWithInlineControl(
+                prefix: String(repeating: "가", count: 61), suffix: "끝"
+            )
+            let glyph = Support.characterAdvance(in: Self.built(paragraph))
+            let objectHeight: CGFloat = 10
+            paragraph.ctrlHeaderArray = [.genShapeObject(HwpSynthetic.inlineShapeObject(
+                width: UInt32((glyph * 100).rounded()), height: UInt32(objectHeight * 100),
+                instanceId: 3
+            ))]
+            let (paginator, narrow) = Self.unevenColumnPaginator(paragraph: paragraph, contentHeight: 40)
+            let pages = try await InlineControlFragmentSupport.pages(of: paginator)
+            expect(pages.count) == 1
+            guard let page = pages.first else { return }
+            let fragments = Self.fragments(on: page)
+            expect(fragments.map { $0.attributedString?.length }) == [31, 32]
+            guard fragments.count == 2, let tail = fragments[1].attributedString else { return }
+            expect(fragments[1].frame.width).to(beCloseTo(narrow, within: 0.01))
+            expect(Support.isMarked(tail)).to(beTrue())
+            // 렌더러: 좁은 단에서 도형 마커는 둘째 줄 첫머리로 밀린다.
+            let drawn = HwpDrawnTextLayout.lines(
+                attributedString: tail, origin: fragments[1].frame.origin,
+                lineWidth: fragments[1].frame.width
+            )
+            expect(drawn.map(\.stringRange.length)) == [30, 2]
+            let marker = try XCTUnwrap(InlineControlFragmentSupport.drawnMarker(
+                in: tail, origin: fragments[1].frame.origin,
+                lineWidth: fragments[1].frame.width, controlIndex: 0
+            ))
+            expect(marker.x).to(beCloseTo(fragments[1].frame.minX, within: 0.5))
+            // 개체는 그려진 마커 자리에 있다 — 첫 줄 끝이 아니라 둘째 줄 첫머리.
+            let object = try XCTUnwrap(
+                InlineControlFragmentSupport.objectBlocks(on: page, instanceId: 3).first
+            )
+            expect(InlineControlFragmentSupport.objectBlocks(on: page, instanceId: 3).count) == 1
+            expect(object.frame.minX).to(beCloseTo(marker.x, within: 0.5))
+            expect(object.frame.minY).to(beCloseTo(marker.baselineY - objectHeight, within: 2))
+        }
     }
 #endif

@@ -1824,7 +1824,9 @@ private extension HwpPaginator {
     /// 단다 (`HwpParagraphLayout.measuredLineFragment`, #166) — 블록 높이가 측정한 줄 전진량이라
     /// 렌더러가 조각을 한 줄로 접으면 아래가 빈다. 이 단이 잰 폭보다 좁으면(비등폭 단 이월)
     /// 렌더러가 이 단 폭으로 다시 줄바꿈하므로 그 판정은 폭 허용 오차 없이 실제 줄바꿈으로
-    /// 한다 — 앵커 문맥의 `sameWidth`(0.5pt)는 재조판 여부의 문턱이지 줄바꿈 판정이 아니다.
+    /// 한다. 앵커 문맥(`fragmentAnchorLines`)과 개체 예약(`placedFragment`)의 "같은 폭"도 같은
+    /// 정확 비교다 (PR 리뷰) — 표식이 붙어 렌더러가 이 단 폭의 줄바꿈으로 그리는 조각의 앵커를
+    /// 잰 폭의 줄로 잡으면 개체가 다른 줄·다른 x에 놓인다.
     private func appendLineSliceBlock(
         _ slice: ArraySlice<HwpLineFrame>,
         of paragraphFrame: HwpParagraphFrame,
@@ -1841,7 +1843,7 @@ private extension HwpPaginator {
             endingBefore: slice.endIndex, textHeightIsMeasured: placement.heightIsMeasured
         )
         let isWholeParagraph = slice.count == paragraphFrame.lines.count
-        let sameWidth = abs(currentColumnFrame.width - placement.measuredWidth) < 0.5
+        let sameWidth = currentColumnFrame.width == placement.measuredWidth
         let fragment = HwpParagraphLayout.measuredLineFragment(
             placedFragment(
                 HwpParagraphLayout.continuationFragment(of: attributedString, range: range),
@@ -1875,11 +1877,13 @@ private extension HwpPaginator {
     ///
     /// 렌더 문자열과 앵커 문맥(`fragmentAnchorLines`)이 **같은 사본**이어야 마커 x가
     /// 그려진 자리와 맞으므로, 다시 조판하기 전에 여기서 한 번 갈아 둘 다에 넘긴다.
+    /// "같은 폭"은 허용 오차 없는 정확 비교다 — 같은 단·등폭 단의 폭은 같은 기하에서 온
+    /// 같은 값이고, 비등폭 단은 HWPUNIT 단위로 저작돼 0.5pt 안의 차이도 실제 차이다.
     private func placedFragment(
         _ fragment: NSAttributedString,
         measuredWidth: CGFloat
     ) -> NSAttributedString {
-        guard abs(currentColumnFrame.width - measuredWidth) >= 0.5 else { return fragment }
+        guard currentColumnFrame.width != measuredWidth else { return fragment }
         return HwpInlineObjectReservation.rescaledForColumn(
             fragment, resolver: objectSizeResolver
         )
@@ -1890,6 +1894,12 @@ private extension HwpPaginator {
     /// 다시 줄바꿈하므로 조각 문자열을 목적 단 폭으로 다시 조판한 줄이다 — 첫 단 폭의
     /// 줄로 앵커를 잡으면 마커가 다른 줄·다른 x에 놓여 개체가 글자를 덮는다. 다시 조판한
     /// 줄은 이미 조각 기준(범위 0부터, 첫 줄 델타 0)이다.
+    ///
+    /// "같은 폭"은 허용 오차 없는 정확 비교다 (PR 리뷰, #166): 측정 줄 조각 표식이 붙은
+    /// 조각은 렌더러가 목적 단 폭의 줄바꿈으로 그리므로, 0.5pt 안의 차이라도 잰 폭의 줄을
+    /// 재사용하면 개체가 그려진 마커와 다른 줄에 놓인다 (0.4pt 좁은 단에서 30자 + 도형
+    /// / `끝`으로 나뉜 조각의 도형이 첫 줄 끝에 남았다). 다시 조판한 줄은 같은 문자열을 같은
+    /// 술어로 재므로 표식 유무와 무관하게 렌더러의 줄과 같다.
     private func fragmentAnchorLines(
         _ slice: ArraySlice<HwpLineFrame>,
         range: NSRange,
@@ -1897,7 +1907,7 @@ private extension HwpPaginator {
         paraShape: CoreHwp.HwpParaShape,
         measuredWidth: CGFloat
     ) -> [HwpLineFrame] {
-        guard abs(currentColumnFrame.width - measuredWidth) >= 0.5 else {
+        guard currentColumnFrame.width != measuredWidth else {
             return HwpParagraphLayout.fragmentLineFrames(slice, range: range)
         }
         return HwpParagraphLayout().layout(
