@@ -1472,6 +1472,12 @@ private extension HwpPaginator {
         if sectionDef.pageStartNumber > 0 {
             nextLogicalPageNumber = Int(sectionDef.pageStartNumber)
         }
+        // 이월 각주의 예약을 새 구역의 기하·구분선으로 다시 잰다 (#165 리뷰) — 앞 쪽을 확정하며
+        // 잰 값은 이전 구역의 폭·구분선·쪽 높이 기준이라, 새 구역 첫 쪽의 배치(새 폭·새 구분선)와
+        // 갈려 흐름 문단·표가 헛되이 밀리거나 각주 자리를 먹는다. 밴드를 열기 전에 잰다.
+        if !pendingFootnotes.isEmpty {
+            footnoteReservedHeight = reservedFootnoteHeight(for: pendingFootnotes)
+        }
         // 단 정의는 구역에 종속: 새 구역의 단 컨트롤이 다시 적용하기 전까지 1단.
         currentColumnDef = nil
         openColumnBand(top: currentPageGeometry.contentFrame.minY)

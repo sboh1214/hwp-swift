@@ -224,5 +224,63 @@ import XCTest
             )) == 0
             expect(visits) == 0
         }
+
+        /// 이월 각주가 기하·구분선이 다른 구역으로 넘어가면 예약을 새 구역으로 다시 잰다 (#165
+        /// 리뷰). 앞 쪽을 확정하며 잰 예약은 이전 구역의 구분선 여백 기준이라, 새 구역 첫 쪽에서
+        /// 배치(새 구분선)보다 작게 예약하면 흐름 문단이 각주 자리를 먹고 각주가 다음 쪽으로 밀린다.
+        func testCarriedReservationIsRefreshedForTheNewSection() async throws {
+            // 1구역: 쪽 아래 15pt 자리에 26줄(≈302pt) 각주 — 통째로 이월된다.
+            let note = try Support.note(
+                lines: (1 ... 26).map { "줄 \($0)" }, locations: (0 ..< 26).map { Int32($0) * 1172 }
+            )
+            let host = try Support.host(at: Support.hostLocation(leaving: 15), notes: [[note]])
+            // 절대 캐시 모드 감지: 첫 줄 위치가 0보다 큰 캐시 문단이 (구역 문단들보다) 다수여야 한다.
+            let leading = try [1500, 2720].map { location in
+                try HwpSynthetic.lineSegParagraph("본문", segments: [(location: Int32(location), height: 1000)])
+            }
+            let firstSection = HwpSynthetic.section(
+                firstParagraphControls: [.section(HwpSynthetic.sectionDef())],
+                bodyParagraphs: leading + [host]
+            )
+            // 2구역: 구분선 위 여백 50pt — 예약이 44.3pt 더 커야 한다 (여백 5000 + 850 vs 850 + 567).
+            var secondDef = HwpSynthetic.sectionDef()
+            secondDef.footNoteShape.rawPayload = Self.dividerPayload(marginTop: 5000, marginBottom: 850)
+            // 24줄(384pt) 흐름 문단: 자리 = 742.68 − 16(구역 문단) − 예약. 옛 예약(302 + 14.17)으론
+            // 410pt라 들어가고 새 예약(302 + 58.5)으론 366pt라 안 들어간다.
+            let flow = try HwpSynthetic.textParagraph((1 ... 24).map { "흐름 \($0)" }.joined(separator: "\n"))
+            let secondSection = HwpSynthetic.section(
+                firstParagraphControls: [.section(secondDef)], bodyParagraphs: [flow]
+            )
+            let paginator = HwpPaginator(
+                sections: [firstSection, secondSection],
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+            var pages: [HwpPage] = []
+            var index = 0
+            while let page = try await paginator.page(at: index) {
+                pages.append(page)
+                index += 1
+            }
+            // 2구역 첫 쪽(1)에 이월 각주가 실리고, 흐름 문단은 그 자리를 비켜 다음 쪽으로 간다.
+            expect(Support.footnoteBlocks(on: pages[1]).count) == 1
+            let flowPage = try XCTUnwrap(pages.firstIndex { page in
+                page.blocks.contains { ($0.attributedString?.string ?? "").contains("흐름 1") }
+            })
+            expect(flowPage) == 2
+        }
+
+        /// 구분선 여백만 지정한 각주 모양 payload (28바이트) — `dividerInfo`는 rawPayload를 다시
+        /// 디코딩한다.
+        private static func dividerPayload(marginTop: Int16, marginBottom: Int16) -> Data {
+            var payload = Data(count: 12)
+            withUnsafeBytes(of: Int32(0).littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: marginTop.littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: marginBottom.littleEndian) { payload.append(contentsOf: $0) }
+            withUnsafeBytes(of: Int16(283).littleEndian) { payload.append(contentsOf: $0) }
+            payload.append(contentsOf: [0, 0])
+            withUnsafeBytes(of: UInt32(0).littleEndian) { payload.append(contentsOf: $0) }
+            return payload
+        }
     }
 #endif
