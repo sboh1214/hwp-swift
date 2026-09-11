@@ -13,9 +13,9 @@ import XCTest
     /// 대체 폰트로 CT 줄이 하나 많을 때 접힘이 캐시 상자에 맞는 쪽이다). 앞 조각은 측정
     /// 전진량이라 표식을 단다. 입력은 한글 캐시 세 줄(48pt)·CT 네 줄(30자·30자·30자·1자)이다.
     ///
-    /// 뒤쪽은 비등폭 단 판정(PR 리뷰): 좁은 단으로 옮겨진 조각은 폭 허용 오차 없이 실제 줄바꿈으로
-    /// 판정하므로 0.4pt만 좁은 단(HWPUNIT 단위 저작에서 가능)에서도 잰 폭에 꼭 맞던 한 줄
-    /// 조각은 접힘을 유지하고, 두 줄 조각은 그려지는 줄이 측정 줄 수를 넘지 않으면 표식을 단다.
+    /// 뒤쪽은 비등폭 단(PR 리뷰): 0.4pt만 좁은 단(HWPUNIT 단위 저작에서 가능)으로 옮겨진
+    /// 측정 높이 조각은 그 단 폭으로 다시 재어 잰 폭에 꼭 맞던 31자가 30자 + 1자 두 줄 상자가
+    /// 되고, 줄 안 개체 앵커도 그 줄바꿈을 따른다.
     final class HwpMeasuredLineFragmentCacheTests: XCTestCase {
         private typealias Support = MeasuredLineFragmentSupport
 
@@ -175,58 +175,55 @@ import XCTest
                 .sorted { $0.frame.minX < $1.frame.minX }
         }
 
-        /// 좁은 뒤 단에 놓인 한 줄 조각(31자)의 계약: 표식이 없고 렌더러는 종전대로 한 줄로
-        /// 접는다 — 같은 조각에 표식을 달면 두 줄이 되어 한 줄 상자를 넘친다.
-        private static func expectNarrowSingleLineFold(
+        /// 좁은 뒤 단에 놓인 한 줄 조각(31자)의 계약: 잰 폭에 꼭 맞던 31자는 그 단에 들어가지
+        /// 않으므로 나머지를 그 단 폭으로 다시 재어 30자 + 1자 두 줄 상자(32pt)에 표식을 달고
+        /// 그린다 — 한글의 줄바꿈과 같고 가로(한 줄 접힘)·세로(한 줄 상자에 두 줄) 어느 쪽도
+        /// 넘치지 않는다. PR 리뷰 1차는 표식만 달던 때의 세로 넘침(한 줄 상자에 두 줄)을
+        /// 잡았고, 재측정(PR 리뷰 3차)이 상자를 두 줄로 키워 그 축을 닫았다.
+        private static func expectNarrowSingleLineRemeasured(
             on page: HwpPage, narrow: CGFloat, file: FileString = #filePath, line: UInt = #line
         ) {
             let fragments = Self.fragments(on: page)
             expect(file: file, line: line, fragments.map { $0.attributedString?.length }) == [31, 31]
             guard fragments.count == 2, let tail = fragments[1].attributedString else { return }
             expect(file: file, line: line, fragments[1].frame.width).to(beCloseTo(narrow, within: 0.01))
-            // 상자는 줄 하나(+ 마지막 줄 ascent 초과분 2pt, #164)라 두 줄을 그리면 넘친다.
-            expect(file: file, line: line, fragments[1].frame.height).to(beGreaterThanOrEqualTo(15.5))
-            expect(file: file, line: line, fragments[1].frame.height).to(beLessThan(31.5))
-            expect(file: file, line: line, Support.isMarked(tail)).to(beFalse())
-            expect(file: file, line: line, HwpDrawnTextLayout.lines(
-                attributedString: tail, origin: .zero, lineWidth: fragments[1].frame.width
-            ).count) == 1
-            let marked = NSMutableAttributedString(attributedString: tail)
-            marked.addAttribute(
-                HwpAttributedStringKey.measuredLineFragment, value: NSNumber(value: true),
-                range: NSRange(location: 0, length: marked.length)
+            expect(file: file, line: line, fragments[1].frame.height).to(beCloseTo(32, within: 0.5))
+            expect(file: file, line: line, Support.isMarked(tail)).to(beTrue())
+            let drawn = HwpDrawnTextLayout.lines(
+                attributedString: tail, origin: fragments[1].frame.origin,
+                lineWidth: fragments[1].frame.width
             )
-            expect(file: file, line: line, HwpDrawnTextLayout.lines(
-                attributedString: marked, origin: .zero, lineWidth: fragments[1].frame.width
-            ).count) == 2
+            expect(file: file, line: line, drawn.map(\.stringRange.length)) == [30, 1]
+            expect(file: file, line: line, (drawn.last?.baselineOrigin.y ?? 0) + (drawn.last?.descent ?? 0))
+                .to(beLessThanOrEqualTo(fragments[1].frame.maxY + 0.5))
         }
 
         /// 흐름 분할(`appendLineSliceBlock`)로 0.4pt 좁은 단에 이월된 **한 줄** 조각(캐시 없음): 본문
-        /// 40pt라 넓은 단에 구역 첫 문단과 첫 줄이 들어가고 둘째 줄이 좁은 단으로 간다 — 잰 폭에
-        /// 꼭 맞던 31자는 그 단에서 다시 나뉘므로 표식 없이 종전 접힘을 둔다 (PR 리뷰).
-        func testSingleLineFragmentCarriedToASlightlyNarrowerColumnKeepsTheFold() async throws {
+        /// 40pt라 넓은 단에 구역 첫 문단과 첫 줄이 들어가고 둘째 줄이 좁은 단으로 간다 — 그
+        /// 단 폭으로 다시 재어 두 줄 상자다.
+        func testSingleLineFragmentCarriedToASlightlyNarrowerColumnIsRemeasured() async throws {
             let paragraph = try HwpSynthetic.textParagraph(String(repeating: "가", count: 62))
             let (paginator, narrow) = Self.unevenColumnPaginator(paragraph: paragraph, contentHeight: 40)
             let pages = try await InlineControlFragmentSupport.pages(of: paginator)
             expect(pages.count) == 1
             guard let page = pages.first else { return }
-            Self.expectNarrowSingleLineFold(on: page, narrow: narrow)
+            Self.expectNarrowSingleLineRemeasured(on: page, narrow: narrow)
         }
 
         /// 다단 균형 재배치(`balancedBlocks`)로 0.4pt 좁은 단에 옮겨진 **한 줄** 조각도 같다: 본문
         /// 60pt라 문단이 넓은 단에 다 들어간 뒤 밴드를 닫으며 둘째 줄이 좁은 단으로 옮겨진다.
-        func testSingleLineUnitRebalancedIntoASlightlyNarrowerColumnKeepsTheFold() async throws {
+        func testSingleLineUnitRebalancedIntoASlightlyNarrowerColumnIsRemeasured() async throws {
             let paragraph = try HwpSynthetic.textParagraph(String(repeating: "가", count: 62))
             let (paginator, narrow) = Self.unevenColumnPaginator(paragraph: paragraph, contentHeight: 60)
             let pages = try await InlineControlFragmentSupport.pages(of: paginator)
             expect(pages.count) == 1
             guard let page = pages.first else { return }
-            Self.expectNarrowSingleLineFold(on: page, narrow: narrow)
+            Self.expectNarrowSingleLineRemeasured(on: page, narrow: narrow)
         }
 
-        /// 0.4pt 좁은 단에 이월된 **두 줄** 조각(31자 + 1자)은 그 단에서 접지 않고 그려도 30자 + 2자
-        /// 두 줄이라 표식을 단다 — 접히면 두 줄 상자에 한 줄만 그려져 아래가 빈다(#166의 증상).
-        /// 판정은 폭 비교가 아니라 실제 줄바꿈이다.
+        /// 0.4pt 좁은 단에 이월된 **두 줄** 조각(31자 + 1자)은 그 단 폭으로 다시 재어 30자 + 2자
+        /// 두 줄 상자에 표식을 달고 그린다 — 접히면 두 줄 상자에 한 줄만 그려져 아래가 빈다(#166의
+        /// 증상). 상자 높이는 다시 잰 줄바꿈의 것이다.
         func testTwoLineFragmentCarriedToASlightlyNarrowerColumnStaysMarked() async throws {
             let paragraph = try HwpSynthetic.textParagraph(String(repeating: "가", count: 63))
             let (paginator, narrow) = Self.unevenColumnPaginator(paragraph: paragraph, contentHeight: 40)
