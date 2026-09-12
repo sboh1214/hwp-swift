@@ -24,8 +24,6 @@ enum HwpLineBreaker {
     struct FrameChunk {
         let lines: [CTLine]
         let origins: [CGPoint]
-        /// 이 청크의 SuggestFrameSize 박스 높이.
-        let height: CGFloat
         /// 커밋할 줄 수 — 문자 예산으로 잘린 미완 마지막 줄은 제외한다.
         let keepCount: Int
         /// 다음 청크가 재개할 문자열 위치.
@@ -53,7 +51,7 @@ enum HwpLineBreaker {
         let probeLength = min(fullLength - startLocation, remainingLineBudget)
         guard probeLength > 0 else { return nil }
 
-        func frame(length: Int) -> (lines: [CTLine], origins: [CGPoint], height: CGFloat)? {
+        func frame(length: Int) -> (lines: [CTLine], origins: [CGPoint])? {
             let range = CFRange(location: startLocation, length: length)
             let suggested = CTFramesetterSuggestFrameSizeWithConstraints(
                 framesetter, range, nil,
@@ -68,7 +66,7 @@ enum HwpLineBreaker {
             else { return nil }
             var origins = [CGPoint](repeating: .zero, count: lines.count)
             CTFrameGetLineOrigins(created, CFRange(location: 0, length: 0), &origins)
-            return (lines, origins, height)
+            return (lines, origins)
         }
 
         guard var chunk = frame(length: probeLength) else { return nil }
@@ -105,7 +103,7 @@ enum HwpLineBreaker {
         let nextStart = lastRange.location + lastRange.length
         guard nextStart > startLocation else { return nil }
         return FrameChunk(
-            lines: chunk.lines, origins: chunk.origins, height: chunk.height,
+            lines: chunk.lines, origins: chunk.origins,
             keepCount: keepCount, nextStart: nextStart
         )
     }

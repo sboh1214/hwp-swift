@@ -31,7 +31,7 @@ public struct HwpDrawnLine {
 }
 
 /// `.drawText(attributedString:origin:lineWidth:)`의 줄 배치를 렌더러와 동일한
-/// 규칙 (slight-overflow 단일 줄, 양쪽 정렬 재조판, baselineLift)으로 계산한다.
+/// 규칙 (slight-overflow 단일 줄, 양쪽 정렬 재조판, 베이스라인 앵커)으로 계산한다.
 /// 렌더러 (`HwpPageLayer`)와 텍스트 선택이 이 함수를 공유해 지오메트리가
 /// 정의상 일치한다. 좌표는 top-down 페이지 로컬 — 렌더러가 자신의 y-up
 /// 공간으로 변환해 그린다.
@@ -67,20 +67,23 @@ public enum HwpDrawnTextLayout {
                 startLocation: startLocation, fullLength: fullLength,
                 remainingLineBudget: lineBudget - result.count, lineWidth: lineWidth
             ) else { break }
-            let framePageTop = resumeBaseline.map {
-                $0 + chunk.origins[0].y + baselineLift(of: chunk.lines[0])
-            } ?? origin.y + chunk.height
+            // 줄 상자 상단의 기준선 — 줄 k의 상자 상단은 `boxTopDatum − ctOrigin[k].y`다.
+            // CT가 줄 상자를 문단 전진량으로 타일하므로 첫 줄의 상자 상단(= 블록 상단,
+            // 이월 청크는 재개 baseline에서 그 줄 앵커를 되돌린 자리)만 맞추면 된다.
+            let boxTopDatum = resumeBaseline.map {
+                $0 - baselineAnchor(of: chunk.lines[0]) + chunk.origins[0].y
+            } ?? origin.y + chunk.origins[0].y
             for index in 0 ..< chunk.keepCount {
                 result.append(drawnLine(
                     frameLine: chunk.lines[index],
                     ctOrigin: chunk.origins[index],
                     attributedString: attributedString,
-                    origin: CGPoint(x: origin.x, y: framePageTop),
+                    origin: CGPoint(x: origin.x, y: boxTopDatum),
                     lineWidth: lineWidth
                 ))
             }
             resumeBaseline = Self.resumeBaseline(
-                after: chunk, framePageTop: framePageTop,
+                after: chunk, boxTopDatum: boxTopDatum,
                 attributedString: attributedString,
                 continuesAfterChunk: chunk.nextStart < fullLength
             )
@@ -90,8 +93,9 @@ public enum HwpDrawnTextLayout {
         return result
     }
 
-    /// `origin.y`는 이 줄이 속한 프레임 상자 상단의 top-down 페이지 y다 —
-    /// baseline = origin.y − ctOrigin.y − lift (박스 높이가 소거된 상단 침투량).
+    /// `origin.y`는 줄 상자 상단의 기준선 (`lines`의 `boxTopDatum`) 이다 —
+    /// 이 줄의 상자 상단 = origin.y − ctOrigin.y이고 baseline은 그 아래 앵커만큼이다.
+    /// **CT·글꼴의 ascent는 세로 배치에 들어오지 않는다** (#178).
     private static func drawnLine(
         frameLine: CTLine,
         ctOrigin: CGPoint,
@@ -99,7 +103,6 @@ public enum HwpDrawnTextLayout {
         origin: CGPoint,
         lineWidth: CGFloat
     ) -> HwpDrawnLine {
-        let lift = baselineLift(of: frameLine)
         let replacement = HwpWordJustification.justifiedLine(
             frameLine: frameLine,
             attributedString: attributedString,
@@ -115,7 +118,7 @@ public enum HwpDrawnTextLayout {
             stringRange: NSRange(location: range.location, length: range.length),
             baselineOrigin: CGPoint(
                 x: origin.x + ctOrigin.x + (replacement?.xOffset ?? 0),
-                y: origin.y - ctOrigin.y - lift
+                y: origin.y - ctOrigin.y + baselineAnchor(of: frameLine)
             ),
             ascent: ascent,
             descent: descent
@@ -127,16 +130,18 @@ public enum HwpDrawnTextLayout {
     /// 줄 간격까지 포함한 advance만큼 내린다 (R51 #2).
     private static func resumeBaseline(
         after chunk: HwpLineBreaker.FrameChunk,
-        framePageTop: CGFloat,
+        boxTopDatum: CGFloat,
         attributedString: NSAttributedString,
         continuesAfterChunk: Bool
     ) -> CGFloat? {
         if let dropped = chunk.droppedLineIndex {
-            return framePageTop - chunk.origins[dropped].y - baselineLift(of: chunk.lines[dropped])
+            return boxTopDatum - chunk.origins[dropped].y
+                + baselineAnchor(of: chunk.lines[dropped])
         }
         let last = chunk.keepCount - 1
         guard last >= 0 else { return nil }
-        let lastBaseline = framePageTop - chunk.origins[last].y - baselineLift(of: chunk.lines[last])
+        let lastBaseline = boxTopDatum - chunk.origins[last].y
+            + baselineAnchor(of: chunk.lines[last])
         return lastBaseline + fallbackLineAdvance(
             after: chunk.lines[last],
             attributedString: attributedString,
@@ -320,7 +325,7 @@ public enum HwpDrawnTextLayout {
             stringRange: NSRange(location: 0, length: attributedString.length),
             baselineOrigin: CGPoint(
                 x: origin.x + offsetX,
-                y: origin.y + ascent - baselineLift(of: line)
+                y: origin.y + baselineAnchor(of: line)
             ),
             ascent: ascent,
             descent: descent
@@ -353,60 +358,5 @@ public enum HwpDrawnTextLayout {
         case .right: return lineWidth - naturalWidth
         default: return 0
         }
-    }
-
-    /// 한글 줄 모델은 텍스트든 개체든 베이스라인을 칸 높이의 앵커 비율
-    /// (`HwpRenderTuning.Text.baselineAnchorRatio`) 지점에 둔다. 키 큰
-    /// 인라인 개체 (run delegate)가 있으면 개체 ascent 기준
-    /// (`HwpRenderTuning.Text.baselineLiftRatio`), 아니면 폰트 ascent 기준.
-    public static func baselineLift(of line: CTLine) -> CGFloat {
-        let metrics = lineMetrics(of: line)
-        guard metrics.maxSize > 0 else { return 0 }
-        let fontLift = max(
-            0, metrics.maxAscent - metrics.maxSize * HwpRenderTuning.Text.baselineAnchorRatio
-        )
-        guard metrics.delegateAscent > metrics.maxAscent else { return fontLift }
-        return max(fontLift, metrics.delegateAscent * HwpRenderTuning.Text.baselineLiftRatio)
-    }
-
-    /// 인라인 개체 줄에서 밑줄이 되돌아갈 양 — 실물은 밑줄을 개체 하단
-    /// (lift 전 베이스라인) 근처에 남긴다 (공공누리 실물 실측)
-    public static func underlineReturnDrop(of line: CTLine) -> CGFloat {
-        guard baselineLift(of: line) > 0 else { return 0 }
-        let metrics = lineMetrics(of: line)
-        guard metrics.delegateAscent > metrics.maxAscent, metrics.maxSize > 0
-        else { return 0 }
-        return metrics.delegateAscent * HwpRenderTuning.Text.baselineLiftRatio
-    }
-
-    private struct LineMetrics {
-        var maxSize: CGFloat = 0
-        var maxAscent: CGFloat = 0
-        var delegateAscent: CGFloat = 0
-    }
-
-    private static func lineMetrics(of line: CTLine) -> LineMetrics {
-        var metrics = LineMetrics()
-        guard let runs = CTLineGetGlyphRuns(line) as? [CTRun] else { return metrics }
-        for run in runs {
-            let attributes = CTRunGetAttributes(run) as? [NSAttributedString.Key: Any]
-            guard attributes?[kCTRunDelegateAttributeName as NSAttributedString.Key] == nil
-            else {
-                var ascent: CGFloat = 0
-                _ = CTRunGetTypographicBounds(
-                    run, CFRange(location: 0, length: 0), &ascent, nil, nil
-                )
-                metrics.delegateAscent = max(metrics.delegateAscent, ascent)
-                continue
-            }
-            guard let value = attributes?[kCTFontAttributeName as NSAttributedString.Key],
-                  CFGetTypeID(value as CFTypeRef) == CTFontGetTypeID()
-            else { continue }
-            // swiftlint:disable:next force_cast
-            let font = value as! CTFont
-            metrics.maxSize = max(metrics.maxSize, CTFontGetSize(font))
-            metrics.maxAscent = max(metrics.maxAscent, CTFontGetAscent(font))
-        }
-        return metrics
     }
 }

@@ -19,9 +19,10 @@ extension HwpParagraphLayout {
     /// (`lineAdvances`)는 델타 차이만 읽어 원점이 어디서 시작하든 같다. 여기 소비자는
     /// 절댓값을 쓰는 앵커 산식이라 되돌려야 한다.
     ///
-    /// 첫 줄의 `baseline`(그 줄 ascent)은 그대로다 — 조각의 첫 줄이 되므로 렌더
-    /// (`HwpDrawnTextLayout`)가 조각 블록 상단에서 그 ascent만큼 내려 첫 baseline을
-    /// 놓는 것과 같다.
+    /// 첫 줄의 `baseline`(그 줄 ascent)은 그대로다 — 조각의 첫 줄이 되므로 개체 앵커의
+    /// 기준점이 조각 블록 상단에서 그 ascent만큼 내려간 자리가 된다. **렌더의 글자
+    /// baseline과 같은 값이 아니다** (#178: 렌더는 블록 상단에서 줄 상자 앵커만큼
+    /// 내려간다) — 개체 앵커 축이 그 모델로 따라오지 못한 격차는 #195다.
     static func fragmentLineFrames(
         _ lines: ArraySlice<HwpLineFrame>,
         range: NSRange
