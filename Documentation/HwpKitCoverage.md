@@ -176,8 +176,8 @@ HWP_SNAPSHOT_TESTS=1 swift test --filter FixturePreviewFidelityTests
   잉크 (절대값이면 거의 백지인 페이지에서 내용이 통째로 사라져도 통과하고,
   국소를 페이지 최대 셀에서 뽑으면 저잉크 셀의 얇은 장식 소실이 묻힌다).
   macOS 전용 — iOS 시뮬레이터는 호스트 파일시스템의
-  폰트를 읽어 재현되지 않는다. 네 층의 역할 분담은 루트 AGENTS.md "렌더 가드
-  4층" 참조.
+  폰트를 읽어 재현되지 않는다. 각 층의 역할 분담은 루트 AGENTS.md "렌더 가드
+  다섯 층" 참조.
 - 페이지 수 회귀 가드: manifest `expectations.pageCount`(+`pageCountSource`)
   ↔ `FixtureRenderTests.testPageCountsMatchManifest` — 결정론 resolver로 옮겨
   CI 상시 실행 (#69).
