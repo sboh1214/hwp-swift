@@ -188,7 +188,7 @@ final class HwpxHwpEquivalenceTests: XCTestCase {
             )
             comparedCount += 1
         }
-        expect(comparedCount) >= 17
+        expect(comparedCount) >= 18
     }
 }
 
