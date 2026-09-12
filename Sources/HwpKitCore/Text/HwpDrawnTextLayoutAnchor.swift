@@ -32,41 +32,95 @@ extension HwpDrawnTextLayout {
         max(0, lineMetrics(of: line).boxHeight) * HwpRenderTuning.Text.baselineAnchorRatio
     }
 
-    /// 청크 줄들의 **줄 상자 상단** (top-down). 첫 줄은 `base`에 정확히 핀하고 (블록
-    /// 상단, 이월이면 재개 상자 상단) 나머지는 CT가 그 줄을 배치한 슬롯 상단
-    /// `CT baseline − placementAscent`를 쓴다.
+    /// 청크 줄 하나의 세로 기하 — 줄 상자 상단과 그 아래 앵커만큼 내린 baseline.
+    struct LineGeometry {
+        let boxTop: CGFloat
+        let baseline: CGFloat
+    }
+
+    /// 청크 줄들의 세로 기하 (top-down).
     ///
-    /// 첫 줄은 `placementAscent` 재구성에 기대지 않는다 — 블록 상단이 곧 첫 상자 상단인
-    /// 것이 정의이고, 그 배치 ascent는 `chunk.height − origins[0].y`로 정확히 알 수 있다.
-    /// 재구성이 하한을 넘겨 잡으면 그만큼 첫 줄이 블록 위로 올라가므로 (실제로 그 형태의
-    /// 회귀를 한 번 냈다 — 헌법주석 각주가 0.63pt 올라갔다) 조건 없이 핀한다.
-    static func boxTops(of chunk: HwpLineBreaker.FrameChunk, base: CGFloat) -> [CGFloat] {
+    /// 첫 줄 상자 상단은 `base` (블록 상단, 이월이면 재개 상자 상단) 에 조건 없이 핀한다 —
+    /// 블록 상단이 곧 첫 상자 상단인 것이 정의다. 재구성값으로 보정하면 그만큼 첫 줄이 블록
+    /// 위로 올라간다 (실제로 그 형태의 회귀를 한 번 냈다 — 헌법주석 각주 0.63pt).
+    ///
+    /// 나머지 줄은 CT 줄 origin 델타에서 **ascent 몫을 되돌린다**:
+    /// `base + (origins[0].y − origins[k].y) + ascent_0 − ascent_k`. 델타는 baseline
+    /// 간격이라 다음 줄의 ascent를 품고 있으므로 (`delta_k = descent'_k + ascent'_{k+1}`)
+    /// 그것을 그대로 상자 간격으로 쓰면 줄마다 상자가 다른 문단에서 어긋난다 — 합성 실측
+    /// (Helvetica 10pt + 60pt 개체):
+    ///
+    /// | 개체 자리 | 델타 그대로 | 이 산식 |
+    /// | --- | ---: | ---: |
+    /// | 둘째 줄 | 213.0 (개체 바닥 169.7보다 43.3pt 아래) | 160.7 (= 바닥 − 0.15em) |
+    /// | 첫 줄 | 120.5 (**첫 줄 baseline 151.0보다 위**) | 172.8 |
+    ///
+    /// 되돌릴 때 **첫 줄도 같은 추정 ascent를 쓴다** (`ascents[0]`). 정확한 배치값 `floor`를
+    /// 뺄셈 기준으로 쓰면 추정값과 섞여 균일한 문단에서도 프레임 높이 `ceil` 잔차가 남는다
+    /// (합성 실측: 여백만 0·40pt 문단 둘째 줄 +0.2pt). 같은 추정을 양쪽에 쓰면 균일한
+    /// 문단에서 정확히 소거된다.
+    static func lineGeometries(
+        of chunk: HwpLineBreaker.FrameChunk,
+        in attributedString: NSAttributedString,
+        base: CGFloat
+    ) -> [LineGeometry] {
         guard let firstOrigin = chunk.origins.first else { return [] }
         let floor = chunk.height - firstOrigin.y
-        let datum = base + floor + firstOrigin.y
-        return chunk.lines.indices.map { index in
-            index == 0
-                ? base
-                : datum - chunk.origins[index].y
-                - placementAscent(of: chunk.lines[index], floor: floor)
+        let forcedHeight = Self.forcedLineHeight(of: chunk, in: attributedString)
+        // 줄 지표는 한 번만 걷는다 — 앵커와 배치 ascent가 같은 값에서 나온다.
+        let metrics = chunk.lines.map { lineMetrics(of: $0) }
+        let ascents = chunk.lines.indices.map { index in
+            max(
+                forcedHeight > 0 ? floor : reportedAscent(of: chunk.lines[index]),
+                metrics[index].delegateAscent
+            )
         }
+        return chunk.lines.indices.map { index in
+            let boxTop = index == 0
+                ? base
+                : base + firstOrigin.y - chunk.origins[index].y + ascents[0] - ascents[index]
+            let anchor = max(0, metrics[index].boxHeight)
+                * HwpRenderTuning.Text.baselineAnchorRatio
+            return LineGeometry(boxTop: boxTop, baseline: boxTop + anchor)
+        }
+    }
+
+    /// 이 청크 문단이 강제하는 줄 높이 (min/max 중 큰 값, 없으면 0).
+    ///
+    /// 강제가 있으면 CT는 모든 줄 슬롯을 그 높이로 맞추므로 배치 ascent가 줄마다 같고,
+    /// 없으면 슬롯이 자연 높이라 줄마다 다르다 — `placementAscent`가 그 둘을 가른다.
+    private static func forcedLineHeight(
+        of chunk: HwpLineBreaker.FrameChunk, in attributedString: NSAttributedString
+    ) -> CGFloat {
+        guard let line = chunk.lines.first else { return 0 }
+        let location = CTLineGetStringRange(line).location
+        let style = HwpLineBreaker.paragraphStyle(in: attributedString, at: location)
+        let minimum = HwpLineBreaker.paragraphCGFloat(.minimumLineHeight, in: style) ?? 0
+        let maximum = HwpLineBreaker.paragraphCGFloat(.maximumLineHeight, in: style) ?? 0
+        return max(max(0, minimum), max(0, maximum))
     }
 
     /// CT가 이 줄을 **배치할 때 쓴** ascent — 줄 상자 상단을 찾는 데만 쓴다.
     ///
-    /// 기준은 **청크 첫 줄의 배치 ascent** (`floor` = `chunk.height − origins[0].y`,
-    /// 정의상 정확하다) 이고, 그보다 큰 것은 **글자처럼 취급 개체가 예약한 높이**뿐이다.
+    /// **강제 줄 높이가 있으면** (`forcedHeight > 0`) CT가 모든 슬롯을 그 높이로 맞추므로
+    /// 배치 ascent는 줄마다 같다 — 청크 첫 줄의 값 (`floor`, 정의상 정확) 을 쓴다.
+    /// 이때 `CTLineGetTypographicBounds`의 ascent를 쓰면 안 된다: CT는 클램프한 줄에
+    /// 자연 ascent와 클램프된 ascent를 섞어 보고한다 (noori 15pt·170% 문단 실측 — 같은
+    /// 25.5pt 슬롯의 세 줄이 16.05·16.05·**18.0**을 보고하고 배치는 전부 18.0이다).
+    /// 여러 글꼴이 섞인 줄은 보고값이 배치값보다 커서 (헌법주석 각주 9.63 vs 9.0) 그 줄이
+    /// 0.63pt 올라가 저장본 줄 간격 11.70pt와 갈린다.
     ///
-    /// `CTLineGetTypographicBounds`의 ascent를 쓰면 안 된다 — 그것은 배치값이 아니다.
-    /// ① 강제 줄 높이가 걸린 청크에서 CT는 줄마다 자연 ascent와 클램프된 ascent를 섞어
-    /// 보고한다 (noori 15pt·170% 문단 실측: 같은 25.5pt 슬롯의 세 줄이 16.05·16.05·**18.0**
-    /// 을 보고하고 배치는 전부 18.0이다). ② 여러 글꼴이 섞인 줄은 보고값이 하한보다
-    /// 커진다 (헌법주석 각주: 함초롬 9.63 vs 배치 9.0) — 그것을 상자 상단에 반영하면 그 줄이
-    /// 0.63pt 올라가 저장본 줄 간격 (11.70pt) 과 갈린다. 반면 개체 예약 높이는 슬롯을
-    /// 실제로 키운다: 개체 문단은 `HwpParagraphMetrics.applyLineHeight`가 min/max를 걸지
-    /// 않아 CT가 그 줄에 개체 높이만큼의 슬롯을 준다.
-    private static func placementAscent(of line: CTLine, floor: CGFloat) -> CGFloat {
-        max(floor, lineMetrics(of: line).delegateAscent)
+    /// **강제가 없으면** 슬롯이 자연 높이라 보고값이 곧 배치값이다 — 그 줄의 보고 ascent를
+    /// 쓴다. 글자처럼 취급 개체가 든 문단이 이쪽이다
+    /// (`HwpParagraphMetrics.applyLineHeight`가 개체 줄에는 min/max를 걸지 않는다).
+    ///
+    /// 어느 쪽이든 **개체가 예약한 높이**보다는 작을 수 없다 — 강제가 걸린 문단의 개체 줄은
+    /// CT가 그 줄만 넓히므로 (min만 걸려 클램프가 일어나지 않는 경우) 그 몫을 살린다.
+    /// 산식은 `lineGeometries`가 갖는다 (줄 지표를 한 번만 걷기 위해).
+    private static func reportedAscent(of line: CTLine) -> CGFloat {
+        var ascent: CGFloat = 0
+        _ = CTLineGetTypographicBounds(line, &ascent, nil, nil)
+        return ascent
     }
 
     /// 인라인 개체 줄에서 밑줄이 되돌아갈 양 — 실물은 밑줄을 개체 하단

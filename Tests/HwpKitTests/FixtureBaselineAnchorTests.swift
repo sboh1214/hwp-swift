@@ -33,6 +33,18 @@ final class FixtureBaselineAnchorTests: XCTestCase {
     /// pt 비교 허용 오차 — 누적 부동소수 잔차만 흡수한다 (실측 일치는 정확하다).
     private static let tolerance = 0.001
 
+    /// 쪽의 `drawText` 명령마다 그 블록의 줄 전체를 돌려준다.
+    private static func drawnLines(_ page: HwpPage) -> [[HwpDrawnLine]] {
+        page.paintList.commands.compactMap { command in
+            guard case let .drawText(attributedString, origin, lineWidth) = command
+            else { return nil }
+            let lines = HwpDrawnTextLayout.lines(
+                attributedString: attributedString, origin: origin, lineWidth: lineWidth
+            )
+            return lines.isEmpty ? nil : lines
+        }
+    }
+
     /// 쪽의 `drawText` 명령마다 (그 블록 상단, 첫 줄 베이스라인)을 돌려준다.
     private static func textBlocks(_ page: HwpPage) -> [(top: CGFloat, baseline: CGFloat)] {
         page.paintList.commands.compactMap { command in
@@ -72,6 +84,35 @@ final class FixtureBaselineAnchorTests: XCTestCase {
         let page = try await Self.firstPage("multi-section")
         expect(Self.textBlocks(page).map { Double($0.baseline) })
             .to(beCloseTo([107.7], within: Self.tolerance))
+    }
+
+    /// `CCL` — **키 큰 글자처럼 취급 개체가 첫 줄에 있고 문단이 줄바꿈되는** 실물이다.
+    /// 줄 캐시가 `loc=0 h=4087 baseline=3474` (CCL 로고 40.87pt 상자) 와
+    /// `loc=4687 h=1000 baseline=850` 이므로 한글의 baseline은 본문 상단 99.2pt에서
+    /// **133.94pt · 154.57pt**다.
+    ///
+    /// 첫 줄 상자가 큰 문단에서 CT 줄 origin 델타를 그대로 상자 간격으로 쓰면 둘째 줄이
+    /// **첫 줄보다, 심지어 개체 상자 바닥보다 위로** 올라간다 (그 형태의 회귀를 한 번 냈다 —
+    /// 123.70pt였다). 그래서 여기서 잠그는 것은 ① 첫 줄 baseline 정확값과 ② 둘째 줄이 개체
+    /// 상자 바닥 아래라는 것이다.
+    ///
+    /// 둘째 줄의 절댓값은 줄 **전진량** 축이라 글꼴에 딸린다 — 한글의 전진량은 상자 40.87 +
+    /// 간격 6.00 = 46.87인데 우리는 CT의 자연 슬롯을 쓰므로 결정론 글꼴에서 47.95,
+    /// 실제 함초롬에서 46.17이 된다 (#180). 그 폭까지 담는 허용 오차로 둔다.
+    func testTallInlineObjectOnTheFirstLineKeepsTheFollowingLineBelow() async throws {
+        let page = try await Self.firstPage("CCL")
+        let baselines = Self.textBlocks(page).map { Double($0.baseline) }
+        expect(baselines.count).to(beGreaterThanOrEqualTo(1))
+        let lines = try XCTUnwrap(Self.drawnLines(page).first)
+        expect(lines.count).to(equal(2))
+        guard lines.count == 2 else { return }
+        expect(Double(lines[0].baselineOrigin.y))
+            .to(beCloseTo(133.94, within: 0.01))
+        // 첫 줄 상자 바닥 = 본문 상단 99.2 + 상자 40.87. 둘째 줄은 그 아래여야 한다.
+        expect(lines[1].baselineOrigin.y).to(
+            beGreaterThan(99.2 + 40.87), description: "둘째 줄은 개체 상자 바닥 아래"
+        )
+        expect(Double(lines[1].baselineOrigin.y)).to(beCloseTo(154.57, within: 1.5))
     }
 
     /// `footnote-endnote` — 본문(10pt)과 각주 문단(9pt)이 각자의 줄 상자 앵커를 쓴다.

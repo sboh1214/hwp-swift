@@ -363,7 +363,7 @@ v. Board of Regents…`)을 핀했다.
 양자화) 차이였다.
 
 **baseline은 앵커가 정한다** — `HwpDrawnTextLayout.lines`는 줄 상자 상단
-(`boxTops(of:base:)`) 을 찾고 baseline을 그 아래 자기 앵커만큼에 둔다. 앵커는
+(`lineGeometries(of:in:base:)`) 을 찾고 baseline을 그 아래 자기 앵커만큼에 둔다. 앵커는
 `baselineAnchor(of:)` 하나가 소유한다 (`HwpDrawnTextLayoutAnchor.swift`).
 **ascent를 baseline의 기준점으로 쓰면 안 된다**: CT는 min=max 강제 줄 높이 안에서 ascent를
 다시 나눠 배치하는데 그 값을 줄 객체에 되돌려 주지 않는 경우가 있고 (함초롬 10pt·줄 간격
@@ -372,21 +372,33 @@ v. Board of Regents…`)을 핀했다.
 베이스라인이 1~2pt 내려갔고 (100% 줄은 1.7pt 올라갔다) 장식 선·선택 영역도 함께 어긋났다.
 **`vertsize`가 글꼴 지표의 함수가 아니라는 것**이 요지다.
 
-**줄 상자 상단은 세 가지를 지켜야 한다** (PR 리뷰 P1·P2):
-- 첫 줄은 블록 상단 (이월이면 재개 상자 상단) 에 **정확히** 핀한다. 첫 줄의 배치 ascent는
-  `chunk.height − origins[0].y`로 정확히 알 수 있다.
-- 나머지 줄은 CT 줄 origin 델타로 타일하되, 슬롯을 실제로 키우는 것은 **글자처럼 취급 개체가
-  예약한 높이**뿐으로 본다 (`placementAscent`). CT 줄 origin **델타**는 다음 줄의 커진
-  ascent를 이미 품고 있어 그것을 그대로 상자 간격으로 쓰면 키 큰 개체가 첫 줄이 아닌 줄에
-  있을 때 글자가 개체 바닥보다 아래로 내려간다 (합성 실측: 10pt 줄 + 60pt 개체에서 43.3pt).
-  반대로 `CTLineGetTypographicBounds`의 ascent를 쓰면 여러 글꼴이 섞인 줄이 올라간다
-  (헌법주석 각주: 보고 9.63 vs 배치 9.0 → 저장본 줄 간격 11.70pt와 0.63pt 갈린다).
+**줄 상자 상단은 네 가지를 지켜야 한다** (PR 리뷰 P1·P2 두 차례):
+- 첫 줄은 블록 상단 (이월이면 재개 상자 상단) 에 **조건 없이** 핀한다 — 블록 상단이 곧 첫
+  상자 상단인 것이 정의다. 재구성값으로 보정하면 그만큼 첫 줄이 블록 위로 올라간다
+  (헌법주석 각주 0.63pt).
+- 나머지 줄은 CT 줄 origin 델타에서 **ascent 몫을 되돌린다**
+  (`base + Δorigin + ascent₀ − ascent_k`). 델타는 baseline 간격이라 다음 줄의 ascent를
+  품고 있어 (`delta_k = descent'_k + ascent'_{k+1}`) 그대로 상자 간격으로 쓰면 줄마다 상자가
+  다른 문단에서 어긋난다 — 합성 실측 (Helvetica 10pt + 60pt 개체): 개체가 **둘째 줄**이면
+  글자가 개체 바닥보다 43.3pt 아래로, 개체가 **첫 줄**이면 둘째 줄이 첫 줄 baseline보다
+  **위로** 간다. 뒤 경우는 코퍼스에도 있다 — `CCL`(로고 상자 40.87pt + 본문 두 줄)에서
+  둘째 줄이 한글의 154.57pt 대신 123.70pt였다.
+- **배치 ascent를 `CTLineGetTypographicBounds`에서 가져오면 안 된다.** 강제 줄 높이가 걸린
+  청크에서 CT는 클램프한 줄에 자연 ascent와 클램프된 ascent를 섞어 보고한다 (noori 15pt·170%
+  문단: 같은 25.5pt 슬롯의 세 줄이 16.05·16.05·**18.0**을 보고하고 배치는 전부 18.0). 그래서
+  **강제가 있으면** 청크 첫 줄의 배치 ascent (`chunk.height − origins[0].y`) 를 모든 줄에
+  쓰고, **없으면** (개체 문단이 이쪽이다 — `applyLineHeight`가 개체 줄에 min/max를 걸지
+  않는다) 보고값을 쓴다. 어느 쪽이든 **개체 예약 높이**보다 작아지지 않는다. 되돌림의 기준은
+  `floor`가 아니라 `ascents[0]`이어야 한다 — 정확값과 추정값을 섞으면 균일한 문단에도 프레임
+  높이 `ceil` 잔차가 남는다 (여백만 0·40pt 문단 둘째 줄 +0.2pt).
 - 청크 이월은 baseline이 아니라 **상자 상단**을 넘긴다. 버린 마지막 줄은 미완이라 다음
   청크의 온전한 줄과 앵커가 다를 수 있고 (기본 크기가 경계에 걸리면 0.85 × 크기 차),
   baseline을 넘기면 그 앵커가 다음 청크에서 소거되지 않아 뒤 줄 전체가 밀린다 (합성 실측:
   10pt → 20pt 경계에서 8.5pt). 가드는 `HwpBaselineAnchorTests`의
   `testTallInlineObjectOnALaterLineKeepsTheTextInsideItsBox`·
-  `testChunkCarryoverDoesNotLeakTheIncompleteLineAnchor`.
+  `testChunkCarryoverDoesNotLeakTheIncompleteLineAnchor`와
+  `FixtureBaselineAnchorTests.testTallInlineObjectOnTheFirstLineKeepsTheFollowingLineBelow`
+  (`CCL` 실물 — 줄 캐시가 오라클이다).
 
 줄 상자 높이는 run의 `hwp.baseFontSize`(없으면 조판 글꼴 크기)와 글자처럼 취급 개체
 높이의 최대값이다. **개체 마커 run도 자기 글자 모양을 싣는다** (`appendMarker`) — run

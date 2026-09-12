@@ -67,21 +67,25 @@ public enum HwpDrawnTextLayout {
                 startLocation: startLocation, fullLength: fullLength,
                 remainingLineBudget: lineBudget - result.count, lineWidth: lineWidth
             ) else { break }
-            // 줄 상자 상단 — 첫 줄은 블록 상단 (이월이면 재개 상자 상단) 에 **정확히**
-            // 핀하고, 나머지는 CT가 그 줄을 배치한 슬롯 상단
-            // (`baseline − placementAscent`) 을 쓴다 (`boxTops(of:base:)`).
-            let boxTops = Self.boxTops(of: chunk, base: resumeBoxTop ?? origin.y)
+            // 줄 상자 상단과 baseline — 첫 줄 상자 상단은 블록 상단 (이월이면 재개 상자
+            // 상단) 에 핀하고, 나머지는 CT 슬롯을 따른다 (`lineGeometries`).
+            let geometries = Self.lineGeometries(
+                of: chunk, in: attributedString, base: resumeBoxTop ?? origin.y
+            )
             for index in 0 ..< chunk.keepCount {
                 result.append(drawnLine(
                     frameLine: chunk.lines[index],
-                    ctOrigin: chunk.origins[index],
                     attributedString: attributedString,
-                    origin: CGPoint(x: origin.x, y: boxTops[index]),
+                    placement: Placement(
+                        baseline: geometries[index].baseline,
+                        originX: origin.x,
+                        ctOriginX: chunk.origins[index].x
+                    ),
                     lineWidth: lineWidth
                 ))
             }
             resumeBoxTop = Self.resumeBoxTop(
-                after: chunk, boxTops: boxTops,
+                after: chunk, geometries: geometries,
                 attributedString: attributedString,
                 continuesAfterChunk: chunk.nextStart < fullLength
             )
@@ -91,20 +95,27 @@ public enum HwpDrawnTextLayout {
         return result
     }
 
-    /// `origin.y`는 이 줄의 **줄 상자 상단** (`lines`의 `boxTops[index]`) 이고 baseline은
-    /// 그 아래 앵커만큼이다 — CT·글꼴의 ascent는 상자 상단을 찾는 데만 쓰이고
-    /// **baseline 자체는 앵커가 정한다** (#178).
+    /// 한 줄이 놓일 자리 — `baseline`은 `lines`가 `lineGeometries`로 구한 top-down
+    /// baseline이다. CT·글꼴의 ascent는 줄 상자 상단을 찾는 데만 쓰이고 **baseline 자체는
+    /// 앵커가 정한다** (#178).
+    private struct Placement {
+        let baseline: CGFloat
+        /// 블록 원점 x
+        let originX: CGFloat
+        /// CT가 준 이 줄의 프레임 내 x (문단 들여쓰기·정렬)
+        let ctOriginX: CGFloat
+    }
+
     private static func drawnLine(
         frameLine: CTLine,
-        ctOrigin: CGPoint,
         attributedString: NSAttributedString,
-        origin: CGPoint,
+        placement: Placement,
         lineWidth: CGFloat
     ) -> HwpDrawnLine {
         let replacement = HwpWordJustification.justifiedLine(
             frameLine: frameLine,
             attributedString: attributedString,
-            availableWidth: lineWidth - ctOrigin.x
+            availableWidth: lineWidth - placement.ctOriginX
         )
         let range = CTLineGetStringRange(frameLine)
         let finalLine = replacement?.line ?? frameLine
@@ -115,8 +126,8 @@ public enum HwpDrawnTextLayout {
             line: finalLine,
             stringRange: NSRange(location: range.location, length: range.length),
             baselineOrigin: CGPoint(
-                x: origin.x + ctOrigin.x + (replacement?.xOffset ?? 0),
-                y: origin.y + baselineAnchor(of: frameLine)
+                x: placement.originX + placement.ctOriginX + (replacement?.xOffset ?? 0),
+                y: placement.baseline
             ),
             ascent: ascent,
             descent: descent
@@ -132,16 +143,16 @@ public enum HwpDrawnTextLayout {
     /// baseline을 넘기면 그 앵커가 다음 청크에서 소거되지 않아 뒤 줄 전체가 밀린다.
     private static func resumeBoxTop(
         after chunk: HwpLineBreaker.FrameChunk,
-        boxTops: [CGFloat],
+        geometries: [LineGeometry],
         attributedString: NSAttributedString,
         continuesAfterChunk: Bool
     ) -> CGFloat? {
-        if let dropped = chunk.droppedLineIndex, dropped < boxTops.count {
-            return boxTops[dropped]
+        if let dropped = chunk.droppedLineIndex, dropped < geometries.count {
+            return geometries[dropped].boxTop
         }
         let last = chunk.keepCount - 1
-        guard last >= 0, last < boxTops.count else { return nil }
-        return boxTops[last] + fallbackLineAdvance(
+        guard last >= 0, last < geometries.count else { return nil }
+        return geometries[last].boxTop + fallbackLineAdvance(
             after: chunk.lines[last],
             attributedString: attributedString,
             continuesAfterChunk: continuesAfterChunk
