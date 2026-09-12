@@ -46,10 +46,12 @@ final class HwpxHeaderMapperTests: XCTestCase {
         // borderFillIDRef="1" → 배열 오프셋 0 → 1-based 1.
         expect(first.borderFillId) == 1
         expect(first.property.underlineType) == HwpUnderlineType.under
+        // 글자선 모양은 표 25 값(실선 0)이다 — `shape="DASH"`는 2(점선),
+        // 취소선 `shape="SOLID"`는 0 (#177 `line-shapes` 쌍 실측).
         expect(first.property.underlineShape) == 2
         expect(first.underlineColor) == HwpColor(0xFF, 0x00, 0xFF)
         expect(first.property.strikethrough) == 1
-        expect(first.property.strikethroughShape) == 1
+        expect(first.property.strikethroughShape) == 0
 
         let second = charShapes[1]
         expect(second.property.isItalic) == true
@@ -63,8 +65,10 @@ final class HwpxHeaderMapperTests: XCTestCase {
 
         expect(borderFills.count) == 2
         let fancy = borderFills[1]
-        // 순서: 왼쪽/오른쪽/위쪽/아래쪽 (표 25).
-        expect(fancy.borderType) == [1, 2, 3, 1]
+        // 순서: 왼쪽/오른쪽/위쪽/아래쪽 (표 23). 테두리는 `LINETYPE2` 값 그대로라
+        // SOLID 1 · DASH 3 · DOT 2다 — 한글은 `DOT`를 긴 점선으로, `DASH`를 점선으로
+        // 그리므로 이름의 뜻으로 2·3을 바꿔 달면 실물과 어긋난다 (#177).
+        expect(fancy.borderType) == [1, 3, 2, 1]
         // 0.4mm → index 6, 0.12mm → index 1, 1.0mm → index 10, 0.1mm → 0.
         expect(fancy.borderThickness) == [6, 1, 10, 0]
         expect(fancy.borderColor[0]) == HwpColor(0xFF, 0, 0)
@@ -320,8 +324,8 @@ final class HwpxHeaderMapperTests: XCTestCase {
     }
 
     func testMapsCharacterOutlineThroughDedicatedTable() throws {
-        // 외곽선은 표 33 체계다 — 표 27 계열 lineShapes를 공유하면 THICK이
-        // .none으로 접혀 외곽선이 사라지고 DASH가 점선으로 그려진다.
+        // 외곽선은 표 33 체계다 — `LINETYPE2` 표(`HwpxLineTypeMapper`)를 공유하면
+        // THICK이 .none으로 접혀 외곽선이 사라지고 DASH가 다른 값으로 실린다.
         let withOutlines = HwpxHeaderFixture.headerXML
             .replacingOccurrences(
                 of: "<hh:bold/>",

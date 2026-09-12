@@ -82,9 +82,10 @@ private let expectedErrataItemIdentifiers: Set<String> = [
     "32",
 ]
 
+/// 항목 2(BorderLineType 열거값)는 `line-shapes` 픽스처(#177)가 1…17 전부를 잠가
+/// fixture 대기에서 빠졌다 — `border-fill-variants` 요청은 항목 1의 방향별 굵기·색 몫으로 남는다.
 private let expectedFixtureGatedItemIdentifiers: Set<String> = [
     "1",
-    "2",
     "8",
     "10",
     "17",

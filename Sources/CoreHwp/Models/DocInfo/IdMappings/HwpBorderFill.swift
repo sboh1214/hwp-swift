@@ -99,17 +99,19 @@ public extension HwpBorderFill {
 }
 
 extension HwpBorderFill {
-    /// HWPX 매퍼 전용 init — 방향 순서는 표 25(왼쪽/오른쪽/위쪽/아래쪽)다.
-    init(hwpxBorders borders: [HwpBorderLine], fillInfo: [BYTE]) {
+    /// HWPX 매퍼 전용 init — 방향 순서는 표 23(왼쪽/오른쪽/위쪽/아래쪽)이고 대각선은
+    /// `hh:diagonal`이다. 선 종류는 `HwpBorderType` raw(`LINETYPE2` 값, 실선 1), 굵기는
+    /// 표 26 index다.
+    init(hwpxBorders borders: [HwpBorderLine], diagonal: HwpBorderLine, fillInfo: [BYTE]) {
         rawPayload = Data()
         property = 0
         borderLineArray = borders
         borderType = borders.map(\.typeRawValue)
         borderThickness = borders.map(\.thickness)
         borderColor = borders.map(\.color)
-        diagonalType = 0
-        diagonalThickness = 0
-        diagonalColor = HwpColor()
+        diagonalType = diagonal.typeRawValue
+        diagonalThickness = diagonal.thickness
+        diagonalColor = diagonal.color
         self.fillInfo = fillInfo
     }
 

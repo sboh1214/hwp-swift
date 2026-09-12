@@ -204,15 +204,32 @@ final class HwpxHwpEquivalenceTests: XCTestCase {
 ///
 /// 나머지 값(없음·글자 아래·글자 위 = 3)은 두 포맷이 같은 케이스로 모여야
 /// 한다 (#149 — `underline-above` 쌍).
+///
+/// 밑줄 모양·취소선 모양(표 35 bit 4-7·26-29, 표 25 값)도 싣는다 (#177). HWPX
+/// 매퍼가 글자선에 테두리 값(실선 1)을 실던 동안 이 두 필드가 축에 없어 17쌍 전부의
+/// 격차(HWP 0 ↔ HWPX 1)가 통과했다. 밑줄 모양은 위 레거시 이중 기록에서 함께
+/// 접는다 — 한글은 취소선만 있는 글자 모양의 밑줄 모양 자리에도 취소선 모양을
+/// 베껴 적기 때문이다 (`line-shapes` 쌍 실측: 취소선 `DOT`가 밑줄 종류 2 + 밑줄
+/// 모양 1 + 취소선 모양 1).
 struct ResolvedRun: Equatable {
     let baseSize: Int32
     let isBold: Bool
     let isItalic: Bool
     let faceColor: HwpColor
     let underlineType: HwpUnderlineType
-    /// 표 33 취소선 여부 (3비트) — 위 접기의 근거이자, 두 포맷이 같은 선을
+    /// 표 25 값의 밑줄 모양 (실선 0). 레거시 이중 기록에서는 밑줄 종류와 함께 0으로 접는다.
+    let underlineShape: Int
+    /// 표 35 취소선 여부 (3비트) — 위 접기의 근거이자, 두 포맷이 같은 선을
     /// 그리는지 보는 축이다.
     let strikethrough: Int
+    /// 표 25 값의 취소선 모양 (실선 0).
+    let strikethroughShape: Int
+}
+
+/// 레거시 이중 기록(글자 가운데 + 취소선 비트) — 한글이 취소선만 있는 글자 모양을
+/// HWP5에 저장하는 꼴이고, HWPX 재저장본은 밑줄 없음 + `<hh:strikeout>`만 적는다 (#136).
+private func isLegacyStrikeoutRecord(_ property: HwpCharShapeProperty) -> Bool {
+    property.underlineType == .center && property.strikethrough != 0
 }
 
 /// 등가 비교용 밑줄 종류 — **레거시 이중 기록(글자 가운데 + 취소선 비트)만**
@@ -221,9 +238,15 @@ struct ResolvedRun: Equatable {
 private func equivalenceUnderlineType(
     of property: HwpCharShapeProperty
 ) -> HwpUnderlineType {
-    property.underlineType == .center && property.strikethrough != 0
-        ? .none
-        : property.underlineType
+    isLegacyStrikeoutRecord(property) ? .none : property.underlineType
+}
+
+/// 등가 비교용 밑줄 모양 — 레거시 이중 기록에서만 0으로 접는다 (#177). 그 밖에는
+/// 밑줄이 없는 글자 모양도 그대로 비교한다: 한글은 밑줄 없는 글자 모양에
+/// `shape="SOLID"`를 적고 바이너리에 0을 저장하므로, 실선을 0으로 옮기지 않으면
+/// 모든 글자 모양에서 등식이 깨진다 (그것이 #177의 증상이다).
+private func equivalenceUnderlineShape(of property: HwpCharShapeProperty) -> Int {
+    isLegacyStrikeoutRecord(property) ? 0 : property.underlineShape
 }
 
 /// 포맷 무관 문서 투영 — `HwpFile`만으로 만든다.
@@ -246,24 +269,6 @@ struct DocumentEquivalenceProjection {
     struct AnchorOffset: Equatable {
         let vertical: Int32
         let horizontal: Int32
-    }
-
-    /// OLE 개체 요소 하나의 포맷 무관 투영 (#134).
-    ///
-    /// **BinItem id 숫자는 넣지 않는다** — id 공간은 재저장이 재생성하고(HWPX는
-    /// manifest 등장 순서, `Hwpx/AGENTS.md`의 리맵 규약) 그래서 같은 개체가
-    /// 포맷마다 다른 번호를 받을 수 있다. 이 투영이 id 매핑 인덱스를 제외하고
-    /// 그림 축이 개수만 보는 것과 같은 이유다. 대신 참조가 실제로 닿는지와
-    /// 내장 차트 XML을 비교한다.
-    struct OleObject: Equatable {
-        /// `binaryDataId`가 BinData 스트림에 닿는가 (댕글링이면 false).
-        let resolvesBinaryData: Bool
-        /// 내장 차트 XML의 digest — 차트가 아니거나 못 읽으면 nil.
-        ///
-        /// payload 전체는 축이 아니다: chart 쌍 실측에서 CFB의
-        /// `OOXMLChartContents` 4,926바이트는 바이트 동일이지만 `Contents`
-        /// 스트림이 1바이트 다르다. 그래서 렌더가 실제로 읽는 차트 XML만 본다.
-        let chartXMLDigest: String?
     }
 
     /// 쪽 번호 위치(표 147) — HWPX `hp:pageNum`이 typed 승격돼야 HWP 쌍과
@@ -361,6 +366,15 @@ struct DocumentEquivalenceProjection {
     /// (`page`·`pic`·`tbl`·`equation`)도 함께 싣는다. 직접 핀은
     /// `HwpxHwpEquivalenceSectionSettingsTests`에 있다 (이 파일의 길이 때문).
     let sectionSettings: [SectionSettings]
+    /// 표 셀이 참조하는 테두리/배경의 선 종류·굵기와 대각선 (#177) — HWPX
+    /// `hh:borderFill`의 `@type`이 `LINETYPE2` 값 그대로(실선 1 · DOT 2 · DASH 3)로
+    /// 옮겨져야 HWP 쌍과 같다. 정의 배열이 아니라 **셀 참조를 따라간** 해석 결과를
+    /// 비교한다 — id 공간은 재저장이 재생성하므로 배열 순서 등식은 축이 아니다.
+    /// 종전에는 `tableShapes`가 셀 수·병합만 봐서 DOT/DASH가 뒤바뀐 매핑도 통과했다.
+    let cellBorders: [CellBorders?]
+    /// 단 정의의 구분선 종류·굵기·색 (#177) — `hp:colLine@type`도 테두리 축이다.
+    /// 코퍼스에 `hp:colLine`이 `line-shapes` 쌍뿐이라 그 밖의 쌍은 0 등식이다.
+    let columnDividers: [ColumnDivider]
 
     init(of file: HwpFile) {
         sectionCount = file.sectionArray.count
@@ -440,6 +454,8 @@ struct DocumentEquivalenceProjection {
         noteShapes = Self.noteShapes(of: file)
         sectionMarks = Self.sectionMarks(of: file)
         sectionSettings = Self.sectionSettings(of: file)
+        cellBorders = Self.cellBorders(of: file)
+        columnDividers = Self.columnDividers(of: file)
     }
 
     /// 문단 머리를 문서 순서(표 셀 재귀 포함)로 모은다 — noori의 글머리표
@@ -494,42 +510,6 @@ struct DocumentEquivalenceProjection {
         return walk(section.paragraph)
     }
 
-    /// OLE 개체 요소를 문서 순서로 투영한다 — BinItem 조인은 `HwpImageStore`와
-    /// 같은 규칙(binDataArray 등재 순서 + 1 → `streamId` → 스트림)이다.
-    static func oleObjects(of file: HwpFile) -> [OleObject] {
-        var streams: [UInt16: Data] = [:]
-        for stream in file.binaryDataArray {
-            guard let streamId = stream.streamId, streams[streamId] == nil else { continue }
-            streams[streamId] = stream.data
-        }
-        var payloads: [UInt32: Data] = [:]
-        for (index, entry) in file.docInfo.idMappings.binDataArray.enumerated() {
-            guard let streamId = entry.streamId, let data = streams[streamId] else { continue }
-            payloads[UInt32(index + 1)] = data
-        }
-
-        let elements = HwpxFixtureAssertions.shapeComponents(from: file).flatMap(\.oleArray)
-        return elements.map { ole -> OleObject in
-            let payload = ole.binaryDataId.flatMap { payloads[$0] }
-            let chartXML = payload.flatMap { HwpEmbeddedChart.chartXML(fromOLEPayload: $0) }
-            return OleObject(
-                resolvesBinaryData: payload != nil,
-                chartXMLDigest: chartXML.map(Self.digest)
-            )
-        }
-    }
-
-    /// FNV-1a 64비트 digest — 실패 메시지에 4,926자 차트 XML이 통째로 찍히지
-    /// 않게 하면서 내용 변화는 잡는다 (CryptoKit은 Linux에 없다).
-    static func digest(_ text: String) -> String {
-        var hash: UInt64 = 0xCBF2_9CE4_8422_2325
-        for byte in text.utf8 {
-            hash ^= UInt64(byte)
-            hash = hash &* 0x0000_0100_0000_01B3
-        }
-        return String(hash, radix: 16)
-    }
-
     /// 문단별 글자 모양 run — id가 아니라 **해석된 속성**의 인접 dedupe
     /// 수열이다. 재저장이 id를 재배열하고 동일 속성의 charPr을 합치거나
     /// 갈라도 시각 변화 지점의 수열은 같아야 한다.
@@ -549,7 +529,9 @@ struct DocumentEquivalenceProjection {
                     isItalic: shape.property.isItalic,
                     faceColor: shape.faceColor,
                     underlineType: equivalenceUnderlineType(of: shape.property),
-                    strikethrough: shape.property.strikethrough
+                    underlineShape: equivalenceUnderlineShape(of: shape.property),
+                    strikethrough: shape.property.strikethrough,
+                    strikethroughShape: shape.property.strikethroughShape
                 )
                 if runs.last != run {
                     runs.append(run)
@@ -618,6 +600,12 @@ struct DocumentEquivalenceProjection {
         )
         expect(sectionSettings).to(
             equal(other.sectionSettings), description: "\(fixtureId) sectionSettings"
+        )
+        expect(cellBorders).to(
+            equal(other.cellBorders), description: "\(fixtureId) cellBorders"
+        )
+        expect(columnDividers).to(
+            equal(other.columnDividers), description: "\(fixtureId) columnDividers"
         )
     }
 }

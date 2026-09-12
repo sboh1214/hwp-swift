@@ -152,15 +152,27 @@ final class HwpxFootnoteShapeMapperTests: XCTestCase {
         expect(HwpxFootnoteShapeMapper.placements["MERGED_COLUMN"]) == 1
     }
 
-    /// `hp:noteLine@type`은 `hh:underline@shape`와 같은 OWPML `LINETYPE2`다 —
-    /// 3D 넷의 공식 이름을 모르면 실물 문서의 구분선 종류가 0(없음)이 된다.
+    /// `hp:noteLine@type`은 `hh:underline@shape`와 같은 OWPML `LINETYPE2` 이름표지만
+    /// 값은 테두리 축(`LINETYPE2` 그대로)이다 — 3D 넷의 공식 이름을 모르면 실물
+    /// 문서의 구분선 종류가 기본값이 된다.
     func testNoteLineRecognizesOfficialThreeDimensionalLineNames() throws {
         let notePr = "<hp:footNotePr><hp:noteLine type=\"THICK3D\"/></hp:footNotePr>"
         let lineShape = try sectionDef(notePr).footNoteShape
         expect(try XCTUnwrap(lineShape.dividerInfo).type) == 14
-        expect(HwpxCharShapeMapper.lineShapes["THICKREV3D"]) == 15
-        expect(HwpxCharShapeMapper.lineShapes["3D"]) == 16
-        expect(HwpxCharShapeMapper.lineShapes["REV3D"]) == 17
+        expect(HwpxLineTypeMapper.borderLineTypes["THICKREV3D"]) == 15
+        expect(HwpxLineTypeMapper.borderLineTypes["3D"]) == 16
+        expect(HwpxLineTypeMapper.borderLineTypes["REV3D"]) == 17
+    }
+
+    /// 구분선은 글자선처럼 1을 빼지 않는다 — `line-shapes` 쌍에서 각주 `DOT`가 2,
+    /// 미주 `DASH`가 3으로 저장됐다 (#177). 글자선 표를 잘못 태우면 둘 다 한 칸씩
+    /// 밀려 HWP 쌍과 어긋난다.
+    func testNoteLineUsesBorderLineValuesNotCharacterLineShapes() throws {
+        let notePr = "<hp:footNotePr><hp:noteLine type=\"DOT\"/></hp:footNotePr>"
+            + "<hp:endNotePr><hp:noteLine type=\"DASH\"/></hp:endNotePr>"
+        let def = try sectionDef(notePr)
+        expect(try XCTUnwrap(def.footNoteShape.dividerInfo).type) == 2
+        expect(try XCTUnwrap(def.endNoteShape.dividerInfo).type) == 3
     }
 
     /// `color="none"`을 한컴 `GetAttribute`는 **흰색**(0xFFFFFFFF)으로 읽는다 —

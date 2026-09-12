@@ -20,7 +20,7 @@ rhwp sample은 보조 검증 단서로만 사용한다. CoreHwp XCTest fixture�
 | 항목 번호/제목 | PDF 근거 | CoreHwp Reader 적용 여부 | 현재 구현 상태 | 필요한 모델/enum/record/parser 변경 | 검증 가능한 fixture | rhwp samples 사용 가능 여부 | 한컴 프로그램으로 재생성 가능한지 여부 | 비적용/보류 사유 |
 |---|---|---:|---|---|---|---|---|---|
 | 1. BorderFill 직렬화/파싱 순서 | 표 23 테두리/배경 | 예 | needs Hancom fixture | 완료: `HwpBorderFill`이 실제 바이너리의 `(line_type + width + color) × 4` interleaved 순서로 읽고 `HwpBorderLine` side model을 노출한다. 필요: 4방향이 모두 다른 전용 한컴 fixture. | 있음: `text-box` Hancom fixture에서 기본 none line 확인. 보조: `noori` migrated fixture에서 non-default interleaved 색상 확인. | 없음 | 가능: 표/문단/도형 테두리를 방향별로 다르게 지정 | non-default 4방향 raw 기대값을 전용 한컴 fixture로 보강 필요 |
-| 2. BorderLineType 열거값 | 표 25 테두리선 종류 | 예 | needs Hancom fixture | 완료: `HwpBorderType`을 0=None, 1=Solid, 2=Dash, ... 기준 raw-value enum으로 정리하고 `HwpBorderLine.type`으로 노출한다. 필요: 여러 선 종류 전용 한컴 fixture. | 있음: `text-box` Hancom fixture에서 0=None 확인. 보조: `noori` migrated fixture에서 1=Solid 확인. | 없음 | 가능: 테두리 종류별 셀/문단/도형 생성 | Dash/Double/Wave 등 실제 raw 값 대응은 전용 한컴 fixture 필요 |
+| 2. BorderLineType 열거값 | 표 25 테두리선 종류 | 예 | implemented | 완료: `HwpBorderType`을 0=None, 1=Solid, 2=Dash, ... 기준 raw-value enum으로 정리하고 `HwpBorderLine.type`으로 노출한다. | 있음: `text-box` Hancom fixture에서 0=None, `noori`에서 1=Solid·8=DoubleSlim, `line-shapes`(#177, 2026-09-12)에서 1…17 전부 — 셀 테두리 17종·대각선 1·각주/미주 구분선 2·3·단 구분선 4. 한글은 2를 긴 점선(파선)으로, 3을 점선으로 그린다(`longDotLine`·`dotLine` 이름이 맞다). | 없음 | — | 글자 모양의 밑줄·취소선 모양(표 33 → 표 25)은 같은 표를 **0=Solid**로 쓴다 — `HwpxLineTypeMapper` 참조 |
 | 3. LIST_HEADER 속성 비트 위치 | 표 65 문단 리스트 헤더 | 예 | implemented | 완료. `HwpListHeader.propertyInfo`와 `HwpTableCellHeader.propertyInfo`가 bit 16~22 text direction, wrap, vertical align typed view를 노출한다. 표 셀은 실제 layout인 `UInt16 paragraphCount + UInt32 listAttr + UInt16 widthRef`로 정정했다. | 있음: `Tests/CoreHwpTests/Fixtures/noori/document.hwp`에서 `listAttr=0x00200000`(center), `0x00400000`(bottom) 보조 검증. 전용 Hancom fixture는 추가 가능. | 보조 가능: errata 문서의 `list_attr=0x00200000` 검증값 | 가능: 글상자 또는 표 셀 속성으로 세로 정렬/텍스트 방향/줄바꿈 문서 생성 | - |
 | 4. FootnoteShape 레코드 크기 | HWPTAG_FOOTNOTE_SHAPE | 예 | already correct | 추가 변경 없음. `HwpFootnoteShape`가 divider color 뒤 unknown 2바이트와 trailing payload를 보존한다. | 있음: `Tests/CoreHwpTests/Fixtures/footnote-endnote` | 보조 가능: `samples/footnote-01.hwp`, `samples/endnote-01.hwp` | 이미 있음: 한컴오피스 한글 직접 생성 fixture | - |
 | 5. PARA_HEADER char_count MSB | 표 60 문단 헤더 | 예 | already correct | 추가 변경 없음. `HwpParaHeader`가 MSB를 `isLastInList`로 분리하고 `charCount`를 마스킹한다. | 있음: 기존 실제 fixture와 paragraph stability tests | 특정 errata sample 없음 | 기존 fixture로 충분, 특수 scope 문서는 추가 가능 | 직렬화 규칙은 Reader 범위 밖 |
@@ -77,7 +77,8 @@ rhwp sample은 보조 검증 단서로만 사용한다. CoreHwp XCTest fixture�
     `Tests/CoreHwpTests/Fixtures/noori/document.hwp`는 non-default interleaved side 값의 보조 검증으로만 사용했다.
 - `HwpBorderType`
   - rhwp BorderLineType errata에 따라 `0=None`, `1=Solid` 기반 raw value를 노출한다.
-  - 검증 fixture: `Tests/CoreHwpTests/Fixtures/text-box/document.hwp` (0=None), `noori` 보조 검증 (1=Solid).
+  - 검증 fixture: `Tests/CoreHwpTests/Fixtures/text-box/document.hwp` (0=None), `noori` 보조 검증 (1=Solid),
+    `line-shapes` (1…17 전부 — 한글 12.30.0이 OWPML `LINETYPE2` 17종을 저장한 값, #177).
 - `HwpListHeader.propertyInfo` / `HwpTableCellHeader.propertyInfo`
   - 공식 PDF 표 65의 LIST_HEADER 속성 필드에 rhwp 항목 3의 bit 16~22 실측 위치를 반영했다.
   - 표 셀 `LIST_HEADER`는 `UInt16 paragraphCount + UInt32 listAttr + UInt16 widthRef`로 읽고,
@@ -141,7 +142,7 @@ fixture가 먼저 필요하다. rhwp sample은 raw 위치를 찾는 보조 자�
 
 | 제안 fixture id | errata 항목 | 한컴 생성 절차 | 구현/검증에 필요한 기대값 |
 |---|---|---|---|
-| `border-fill-variants` | 1, 2 | 새 문서에 2×2 표 또는 네모 도형을 만들고 위/아래/왼쪽/오른쪽 테두리의 선 종류, 굵기, 색을 모두 다르게 지정해 저장한다. 가능하면 Dash, Double, Wave, Solid를 포함한다. | `HwpBorderFill.borderLineArray` 4개 방향의 `typeRawValue`, `thickness`, `color`가 한컴 UI 설정과 일치해야 한다. `HwpBorderType`의 non-default raw 값은 이 fixture로 고정한다. |
+| `border-fill-variants` | 1, 2 | 새 문서에 2×2 표 또는 네모 도형을 만들고 위/아래/왼쪽/오른쪽 테두리의 선 종류, 굵기, 색을 모두 다르게 지정해 저장한다. 가능하면 Dash, Double, Wave, Solid를 포함한다. **선 종류 몫은 `line-shapes`(#177)가 17종 전부로 덮었다** — 남은 것은 방향마다 다른 굵기·색이다. | `HwpBorderFill.borderLineArray` 4개 방향의 `typeRawValue`, `thickness`, `color`가 한컴 UI 설정과 일치해야 한다. `HwpBorderType`의 non-default raw 값은 `line-shapes`로 고정됐다. |
 | `fill-alpha` | 8 | 도형을 삽입하고 단색 채우기 투명도를 0%, 중간값(예: 36%), 100% 중 하나 이상으로 지정한다. 가능하면 같은 문서에 그라데이션 채우기와 그림 채우기 투명도도 추가한다. | `HwpBorderFill.fillInfo` 또는 shape fill payload에서 추가 속성 뒤 alpha byte를 소비해야 한다. rhwp 보조값은 `Worldcup_FIFA2010_32.hwp`의 `0xA3`; 한컴 fixture에서는 fill_type bit별 alpha byte 수와 opacity 변환을 고정한다. |
 | `table-repeat-header` | 10 | 여러 쪽에 걸치는 표를 만들고 첫 행 반복/제목 셀 옵션을 켠 뒤 저장한다. 같은 파일에 옵션을 끈 표도 하나 둔다. | `HwpTableCellHeader.cellPropertyInfo.isHeader`가 true/false를 구분해야 한다. 반복 제목 행의 `listHeaderWidthRef & 0x0004 != 0` 기대값을 고정한다. |
 | `shape-shadow-fill` | 17 | 네모 도형 또는 글상자에 채우기와 그림자를 함께 지정한다. 그림자 색, X/Y offset을 명확히 다르게 지정하고 가능하면 투명도 채우기도 함께 둔다. | shape component 세부 record에서 `lineInfo -> fillInfo -> shadowInfo(16B) -> instid...` 순서를 검증한다. `shadow_type`, `shadow_color`, `offset_x`, `offset_y` typed fields와 뒤 payload 정렬을 고정한다. |

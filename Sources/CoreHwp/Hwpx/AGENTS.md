@@ -152,6 +152,56 @@ CharShape 취소선 견본은 두 포맷의 기록이 다르다 — HWP는 취�
 진짜 '글자 위'는 raw 3 ↔ `type="TOP"`으로 같은 `.above`에 모인다 (#149,
 `underline-above` 쌍).
 
+`ResolvedRun`은 **밑줄 모양·취소선 모양**(표 35 bit 4-7·26-29)도 싣는다 (#177). 한글은
+취소선만 있는 글자 모양의 밑줄 모양 자리에 취소선 모양을 베껴 적으므로(`line-shapes`
+쌍: 취소선 `DOT`가 밑줄 종류 2 + 밑줄 모양 1 + 취소선 모양 1 + 밑줄 색 = 취소선 색),
+밑줄 모양은 위 이중 기록 조합에서만 밑줄 종류와 함께 0으로 접는다. 그 밖의 글자
+모양은 밑줄이 없어도 그대로 비교한다 — 한글이 밑줄 없는 글자 모양에도
+`shape="SOLID"`를 적고 바이너리에 0을 저장하므로, 실선을 0으로 옮기지 않으면 모든
+글자 모양에서 등식이 깨진다 (그것이 #177의 증상이었다). 아래 "선 종류" 절 참조.
+
+## 선 종류 (`LINETYPE2`, #177)
+
+OWPML은 밑줄·취소선(`hh:underline@shape`·`hh:strikeout@shape`), 테두리/배경의 네 방향·
+대각선(`hh:borderFill`), 각주·미주 구분선(`hp:noteLine@type`), 단 구분선
+(`hp:colLine@type`)에 같은 이름표 `g_LineTypeList2`(NONE 0 · SOLID 1 · DOT 2 · DASH 3 ·
+DASH_DOT 4 · DASH_DOT_DOT 5 · LONG_DASH 6 · CIRCLE 7 · DOUBLE_SLIM 8 · SLIM_THICK 9 ·
+THICK_SLIM 10 · SLIM_THICK_SLIM 11 · WAVE 12 · DOUBLEWAVE 13 · THICK3D 14 · THICKREV3D 15 ·
+3D 16 · REV3D 17)를 쓰지만, HWP5는 **자리마다 값의 기준이 다르다**. 2026-09-12 한글
+12.30.0이 같은 편집 세션에서 저장한 `line-shapes` 쌍(17종을 네 자리에 모두 실은 합성
+HWPX를 한글로 열어 `.hwp`·`.hwpx`로 저장)이 확정한 것:
+
+| 자리 | HWP5 값 | 실측 |
+|---|---|---|
+| 글자 모양 밑줄·취소선 모양 (표 35 bit 4-7·26-29 → 표 25) | **`LINETYPE2 - 1`** — SOLID 0 · DOT 1 · DASH 2 · … · 3D 15 | 4비트라 REV3D(16)는 담기지 않고 한글이 **SOLID 글자 모양으로 접는다**(재저장 HWPX에도 REV3D가 없다) |
+| 테두리 네 방향·대각선, 각주·미주 구분선, 단 구분선 | **`LINETYPE2` 그대로** — NONE 0 · SOLID 1 · DOT 2 · DASH 3 · … · REV3D 17 | `HwpBorderType` raw와 같은 축(스펙 표 25 + 1). 각주 `DOT` ↔ 2, 미주 `DASH` ↔ 3, `hp:colLine DASH_DOT` ↔ 4, 대각선 `SOLID` ↔ 1 — 대각선은 스펙 표 23이 표 27(Slash·BackSlash·CrookedSlash)로 적은 바이트지만 한글은 선 종류를 저장한다(확인된 값은 없음 0·SOLID 1뿐) |
+
+`HwpxLineTypeMapper`가 두 표(`characterLineShapes`·`borderLineTypes`)를 갖고, 종전
+`HwpxCharShapeMapper.lineShapes`(테두리 값 한 표를 네 자리가 공유)는 없앴다. 종전 표는
+글자선의 실선을 1로 실어 **17쌍 전부**에서 밑줄 모양이 HWP 0 ↔ HWPX 1로 갈렸고(축이
+없어 통과), `DASH`↔2·`DOT`↔3으로 두어 테두리에서도 두 값이 뒤바뀌어 있었다.
+
+**이름과 모양이 어긋난다** — 한글은 `DOT`(글자선 1 · 테두리 2)를 **긴 점선(파선)**으로,
+`DASH`(글자선 2 · 테두리 3)를 **점선**으로 그린다(같은 세션의 PDF 내보내기: 밑줄과 셀
+왼쪽 테두리 모두). 스펙 표 25의 값(1 긴 점선 · 2 점선)과 같고 OWPML 이름만 뒤바뀐
+것이므로 `HwpBorderType.longDotLine = 2`·`.dotLine = 3`은 맞다. 표는 이름의 뜻이 아니라
+**열거 순서(값)** 를 따를 것 — #173의 교훈(스펙이 값을 안 적은 자리는 모델 열거 값)과
+같은 방향이다. 한글의 글자 모양 대화상자 밑줄 모양 팝업은 13항목(SOLID…DOUBLEWAVE)
+뿐이고 항목 이름이 없어(그림) UI 라벨로는 확정할 수 없다.
+
+미실측: 글자선 `shape="NONE"`(한글 저장본은 밑줄 없는 글자 모양에도 `SOLID`를 적는다 —
+기본값 0으로 접는다), 3D 넷의 렌더(한글은 THICK3D·THICKREV3D·3D 글자선을 흰색/무색에
+가깝게 그려 PDF에 거의 남지 않는다). 우리 렌더에서 선 모양을 읽는 곳은 표 셀 테두리의
+2중선 판정(`HwpTableFrame.borders(from:)`의 8·9·10)뿐이다 — 밑줄·취소선 모양, 단 구분선,
+대각선은 소비자가 없고 그 밖의 테두리 종류(점선·파선·물결 등)는 실선으로 그린다
+(두 포맷 공통 — 후속).
+
+가드: `HwpxLineTypeMapperTests`(두 표의 순서·`-1` 관계·REV3D 접기·대각선·단 구분선),
+`HwpxHwpEquivalenceTests`의 `resolvedRunsByParagraph`(밑줄·취소선 모양 추가)·
+`cellBorders`(셀 참조를 따라간 네 방향·대각선 종류·굵기)·`columnDividers` 축 +
+`HwpxHwpEquivalenceLineShapeTests` 직접 핀(글자선 `[0…15, 0]`·셀 `[1…17]`·단 4·주석
+`[2, 3]`), HWP 매니페스트 `charShapePropertyRawValues`·`columns[].dividerType`.
+
 ## 구역 부속 표식 (`hp:newNum`·`hp:pageHiding`·`hp:bookmark`·`hp:indexmark`, #169)
 
 `HwpxSectionMarkMapper`가 넷을 `.newNumber`/`.pageHide`/`.bookmark`/`.indexmark
@@ -269,9 +319,9 @@ bits 10-11 번호 매김 · bit 12 위 첨자가 확정됐고, 같은 문서의
 **`@suffixChar`는 이름이 같아도 인코딩이 다르다** — `hp:footNote`/`hp:endNote`의
 것은 10진 코드포인트 문자열("41")이고 `hp:autoNumFormat`의 것은 리터럴 문자(")")다.
 하나의 읽기로 뭉뚱그리면 `)`가 0으로, 41이 문자 '4'로 접힌다. 열거 변환기는
-재사용한다 — `hp:noteLine@type`은 `HwpxCharShapeMapper.lineShapeIndex`(같은 OWPML
-`LINETYPE2`를 `hh:underline@shape`·`hh:strikeout@shape`와 공유한다), `@width`는
-`HwpxParaShapeMapper.thicknessIndex`, `hp:autoNumFormat@type`은
+재사용한다 — `hp:noteLine@type`은 `HwpxLineTypeMapper.borderLineType`(테두리·단
+구분선과 같은 `LINETYPE2` 값 축 — 글자선의 `characterLineShape`처럼 1을 빼지 않는다,
+위 "선 종류" 절), `@width`는 `HwpxParaShapeMapper.thicknessIndex`, `hp:autoNumFormat@type`은
 `HwpxNumberFormatMapper`다. 종류 > 17이나 굵기 > 15를 실으면 `dividerInfo`의 wide
 유효성 게이트가 깨져 narrow로 폴백하고 여백·색이 통째로 오염되므로 두 변환기의
 상한을 벗어나면 안 된다.
@@ -285,9 +335,9 @@ bits 10-11 번호 매김 · bit 12 위 첨자가 확정됐고, 같은 문서의
 - **값**: `STARTNUMSTARTONTYPE`은 BOTH 0 · **EVEN 1 · ODD 2**이고 한글이 저장하는
   비트가 모델과 같다 (#173, `section-page-starts-on` 쌍 실측). 스펙 표 130이 이
   비트의 값을 적지 않아 종전 매핑이 `ODD → 1`을 가정한 것이 화근이었다 — 스펙이
-  값을 적지 않은 자리는 모델의 열거 값을 읽을 것. 아래 `lineShapes`(`DASH`·`DOT`)는
-  성격이 다르다: 스펙(표 25)과 모델이 같은 값에 서로 다른 이름을 붙여 실물 대조가
-  남은 자리다.
+  값을 적지 않은 자리는 모델의 열거 값을 읽을 것. `LINETYPE2`의 `DOT`·`DASH`도 같은
+  결론이었다 — 스펙(표 25)과 모델이 같은 값에 서로 다른 이름을 붙였고, 실물은 모델의
+  값(순서)을 따른다 (#177, 위 "선 종류" 절).
 - **생략 기본값**: `GetAttribute`는 속성이 없거나 열거 이름이 표에 없으면 값을
   건드리지 않고 false만 돌려주므로 **생성자가 세운 값이 남는다**. `CNoteSpacing()`은
   `betweenNotes` 850·`belowLine` 567·`aboveLine` 567, `CNoteLine()`은 길이 0·`SOLID`·
@@ -326,10 +376,9 @@ exhaustive switch(`case .picture, .table, .equation`)가 함께 바뀌어야 해
 바이트가 같아 매핑은 안전하지만 14,692,344가 한글 대화상자의 "사용자 150.0mm"와 어떤
 산식으로 이어지는지는 확정하지 못했다).
 
-**후속 확인 대상**: `HwpxCharShapeMapper.lineShapes`는 `DASH`↔2·`DOT`↔3인데 한컴
-`g_LineTypeList2`의 나열 순서는 `LT2_DOT`(2)·`LT2_DASH`(3)로 반대다(HWP5 표 25도 2가
-긴 점선·3이 점선). 코퍼스 실물이 `NONE`·`SOLID`뿐이라 이번에는 건드리지 않았다 —
-점선 밑줄 쌍을 만들어 확인할 것.
+종전에 "후속 확인 대상"으로 남겼던 `DASH`↔2·`DOT`↔3의 순서 문제는 #177에서
+`line-shapes` 쌍으로 닫았다 — 구분선은 `DOT` 2 · `DASH` 3(모델 순서)이고 글자선만
+1을 뺀다 (위 "선 종류" 절).
 
 가드: `HwpxFootnoteMapperTests`(승격·앵커 코드·표 143 비트·게이트 비대칭·합성
 바이트·강등표 이탈), `HwpxFootnoteShapeMapperTests`(28바이트·`dividerInfo`·
