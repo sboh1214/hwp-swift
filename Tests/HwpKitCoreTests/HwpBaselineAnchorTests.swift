@@ -54,6 +54,9 @@ import XCTest
             var delegateHeight: CGFloat?
             /// 개체 마커를 문자열 **끝**에 붙인다 (기본은 앞)
             var delegateAtEnd = false
+            /// 줄 높이 **하한만** 지정한다 (`.atLeast`·개체 문단의 `minimumLineHeight`).
+            /// `forcedLineHeight`와 함께 주면 이쪽이 이긴다.
+            var minimumLineHeight: CGFloat?
         }
 
         private static func attributedString(_ input: Input) -> NSAttributedString {
@@ -66,7 +69,10 @@ import XCTest
                     value: Double(baseSize)
                 )
             }
-            if let forcedLineHeight = input.forcedLineHeight {
+            if let minimum = input.minimumLineHeight {
+                attributes[kCTParagraphStyleAttributeName as NSAttributedString.Key] =
+                    paragraphStyle(minimumLineHeight: minimum)
+            } else if let forcedLineHeight = input.forcedLineHeight {
                 attributes[kCTParagraphStyleAttributeName as NSAttributedString.Key] =
                     paragraphStyle(forcedLineHeight: forcedLineHeight)
             }
@@ -88,6 +94,18 @@ import XCTest
                 }
             }
             return string
+        }
+
+        /// `.atLeast`·개체 문단의 **하한만** 지정 (`HwpParagraphMetrics`와 같은 꼴)
+        private static func paragraphStyle(minimumLineHeight: CGFloat) -> CTParagraphStyle {
+            var minimum = minimumLineHeight
+            return withUnsafeMutablePointer(to: &minimum) { pointer in
+                let settings = [CTParagraphStyleSetting(
+                    spec: .minimumLineHeight,
+                    valueSize: MemoryLayout<CGFloat>.size, value: pointer
+                )]
+                return CTParagraphStyleCreate(settings, settings.count)
+            }
         }
 
         /// 비율 줄 간격 문단의 min = max 강제 줄 높이 (`HwpParagraphMetrics`와 같은 꼴)
@@ -232,6 +250,30 @@ import XCTest
             expect(baseline).to(beLessThanOrEqualTo(objectBottom), description: "개체 바닥 위")
             // 남은 격차: 개체 바닥 − baseline은 0.15 × 개체 높이여야 하는데 측정 경로가
             // 아직 CT 보고 ascent를 기준점으로 쓴다 (#195). 그 축은 여기서 잠그지 않는다.
+        }
+
+        /// **하한만 지정한 문단을 못박힌 문단으로 보면 안 된다** (#178). `.atLeast`와 개체
+        /// 문단의 `minimumLineHeight`는 자연 높이가 하한보다 큰 줄을 그대로 두므로 줄마다
+        /// 슬롯이 다르다. 못박힌 것으로 보면 청크 첫 줄의 배치 ascent가 모든 줄에 적용돼
+        /// 보정이 소거되고, 첫 줄에 키 큰 개체가 있을 때 둘째 줄이 첫 줄 baseline보다
+        /// **위로** 올라간다 (그 형태의 회귀를 한 번 냈다 — 172.8 대신 120.5였다).
+        func testMinimumOnlyLineHeightKeepsPerLineSlots() {
+            let objectHeight: CGFloat = 60
+            let string = Self.attributedString(Input(
+                size: 10, baseSize: 10, text: "ab\ncd",
+                delegateHeight: objectHeight, minimumLineHeight: 10
+            ))
+            let blockTop: CGFloat = 100
+            let lines = HwpDrawnTextLayout.lines(
+                attributedString: string, origin: CGPoint(x: 0, y: blockTop), lineWidth: 200
+            )
+            expect(lines.count).to(equal(2))
+            guard lines.count == 2 else { return }
+            // 개체는 문자열 앞이므로 첫 줄 상자가 개체 높이다.
+            expect(lines[0].baselineOrigin.y).to(equal(blockTop + objectHeight * 0.85))
+            expect(lines[1].baselineOrigin.y).to(
+                beGreaterThan(blockTop + objectHeight), description: "둘째 줄은 개체 상자 아래"
+            )
         }
 
         /// 청크 경계에 **기본 글자 크기 변화**가 걸려도 이월이 앵커를 새지 않는다 (#178).
