@@ -362,17 +362,31 @@ v. Board of Regents…`)을 핀했다.
 베이스라인이 `lineLocation + baselineDistance`와 최대 0.10pt (한글 PDF의 0.12pt 장치
 양자화) 차이였다.
 
-**세로 배치에 글꼴·CT의 ascent는 들어오지 않는다.** `HwpDrawnTextLayout.lines`는 CT
-프레임의 줄 origin 델타로 줄 상자를 타일하고 (그 델타가 문단 스타일의 전진량이다) 첫 줄의
-상자 상단을 블록 상단에 맞춘 뒤 (이월 청크는 재개 baseline에서 그 줄 앵커를 되돌린다) 각
-줄의 baseline을 자기 상자 상단 + 자기 앵커에 둔다. 앵커는 `baselineAnchor(of:)` 하나가
-소유한다 (`HwpDrawnTextLayoutAnchor.swift`). **ascent를 기준점으로 쓰면 안 된다**: CT는
-min=max 강제 줄 높이 안에서 ascent를 다시 나눠 배치하는데 그 값을 줄 객체에 되돌려 주지
-않는 경우가 있고 (함초롬 10pt·줄 간격 130%에서 배치 11.0 vs 보고 10.70), 그 몫이 그대로
-베이스라인으로 샜다 — 종전 구현이 앵커를 폰트 ascent에서 역산해
-(`max(0, ascent − 0.85 × 크기)`) 강제 줄 높이가 걸린 줄에서 베이스라인이 1~2pt
-내려갔고 (100% 줄은 1.7pt 올라갔다) 장식 선·선택 영역도 함께 어긋났다.
+**baseline은 앵커가 정한다** — `HwpDrawnTextLayout.lines`는 줄 상자 상단
+(`boxTops(of:base:)`) 을 찾고 baseline을 그 아래 자기 앵커만큼에 둔다. 앵커는
+`baselineAnchor(of:)` 하나가 소유한다 (`HwpDrawnTextLayoutAnchor.swift`).
+**ascent를 baseline의 기준점으로 쓰면 안 된다**: CT는 min=max 강제 줄 높이 안에서 ascent를
+다시 나눠 배치하는데 그 값을 줄 객체에 되돌려 주지 않는 경우가 있고 (함초롬 10pt·줄 간격
+130%에서 배치 11.0 vs 보고 10.70), 그 몫이 그대로 베이스라인으로 샜다 — 종전 구현이 앵커를
+폰트 ascent에서 역산해 (`max(0, ascent − 0.85 × 크기)`) 강제 줄 높이가 걸린 줄에서
+베이스라인이 1~2pt 내려갔고 (100% 줄은 1.7pt 올라갔다) 장식 선·선택 영역도 함께 어긋났다.
 **`vertsize`가 글꼴 지표의 함수가 아니라는 것**이 요지다.
+
+**줄 상자 상단은 세 가지를 지켜야 한다** (PR 리뷰 P1·P2):
+- 첫 줄은 블록 상단 (이월이면 재개 상자 상단) 에 **정확히** 핀한다. 첫 줄의 배치 ascent는
+  `chunk.height − origins[0].y`로 정확히 알 수 있다.
+- 나머지 줄은 CT 줄 origin 델타로 타일하되, 슬롯을 실제로 키우는 것은 **글자처럼 취급 개체가
+  예약한 높이**뿐으로 본다 (`placementAscent`). CT 줄 origin **델타**는 다음 줄의 커진
+  ascent를 이미 품고 있어 그것을 그대로 상자 간격으로 쓰면 키 큰 개체가 첫 줄이 아닌 줄에
+  있을 때 글자가 개체 바닥보다 아래로 내려간다 (합성 실측: 10pt 줄 + 60pt 개체에서 43.3pt).
+  반대로 `CTLineGetTypographicBounds`의 ascent를 쓰면 여러 글꼴이 섞인 줄이 올라간다
+  (헌법주석 각주: 보고 9.63 vs 배치 9.0 → 저장본 줄 간격 11.70pt와 0.63pt 갈린다).
+- 청크 이월은 baseline이 아니라 **상자 상단**을 넘긴다. 버린 마지막 줄은 미완이라 다음
+  청크의 온전한 줄과 앵커가 다를 수 있고 (기본 크기가 경계에 걸리면 0.85 × 크기 차),
+  baseline을 넘기면 그 앵커가 다음 청크에서 소거되지 않아 뒤 줄 전체가 밀린다 (합성 실측:
+  10pt → 20pt 경계에서 8.5pt). 가드는 `HwpBaselineAnchorTests`의
+  `testTallInlineObjectOnALaterLineKeepsTheTextInsideItsBox`·
+  `testChunkCarryoverDoesNotLeakTheIncompleteLineAnchor`.
 
 줄 상자 높이는 run의 `hwp.baseFontSize`(없으면 조판 글꼴 크기)와 글자처럼 취급 개체
 높이의 최대값이다. **개체 마커 run도 자기 글자 모양을 싣는다** (`appendMarker`) — run

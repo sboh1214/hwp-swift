@@ -1,4 +1,5 @@
 import CoreGraphics
+@testable import CoreHwp
 import CoreText
 import Foundation
 @testable import HwpKitCore
@@ -77,6 +78,8 @@ import XCTest
             {
                 var marker = attributes
                 marker[kCTRunDelegateAttributeName as NSAttributedString.Key] = delegate
+                // 측정 경로(`inlineAnchors`)가 개체 앵커를 내려면 컨트롤 서수가 있어야 한다.
+                marker[HwpAttributedStringKey.controlIndex] = NSNumber(value: 0)
                 let markerString = NSAttributedString(string: "\u{FFFC}", attributes: marker)
                 if input.delegateAtEnd {
                     string.append(markerString)
@@ -192,49 +195,76 @@ import XCTest
                 .to(equal([108.5]))
         }
 
-        /// **줄마다 자기 상자 앵커를 쓴다** — 청크 첫 줄의 앵커를 나머지 줄에 쓰면
-        /// 키 큰 개체가 첫 줄이 아닌 줄에서 그 줄 글자·장식선이 개체 높이의 0.85배만큼
-        /// 어긋난다 (헌법주석 구역 24에 그 배치가 있다). 상자 상단은 CT 줄 origin으로
-        /// 독립 재구성해 구현 내부를 믿지 않는다.
-        func testEachLineUsesItsOwnBoxAnchor() {
+        /// 첫 줄이 아닌 줄에 키 큰 글자처럼 취급 개체가 있어도 그 줄 글자가 **개체의
+        /// 세로 구간 안에** 남는다 (헌법주석 구역 24에 그 배치가 있다).
+        ///
+        /// 줄 상자 상단은 CT가 그 줄에 준 슬롯에서 오고 (`placementAscent`), CT 줄 origin
+        /// **델타**는 다음 줄의 커진 ascent를 이미 품고 있어 그것을 상자 간격으로 쓰면
+        /// 글자가 개체보다 한참 아래로 내려간다 — 이 입력에서 42.5pt(= 0.85 × (60 − 10))
+        /// 아래이고 개체 바닥보다도 43.3pt 낮았다.
+        func testTallInlineObjectOnALaterLineKeepsTheTextInsideItsBox() {
+            let objectHeight: CGFloat = 60
             let string = Self.attributedString(Input(
-                size: 10, baseSize: 10, text: "ab\n", delegateHeight: 60, delegateAtEnd: true
+                size: 10, baseSize: 10, text: "ab\n",
+                delegateHeight: objectHeight, delegateAtEnd: true
             ))
+            let blockTop: CGFloat = 100
             let lines = HwpDrawnTextLayout.lines(
-                attributedString: string, origin: CGPoint(x: 0, y: 100), lineWidth: 200
+                attributedString: string, origin: CGPoint(x: 0, y: blockTop), lineWidth: 200
             )
             expect(lines.count).to(equal(2))
             guard lines.count == 2 else { return }
-            let origins = Self.frameLineOrigins(string, lineWidth: 200)
-            expect(origins.count).to(equal(2))
-            guard origins.count == 2 else { return }
-            // 첫 줄 상자 상단 = 블록 상단, 나머지는 CT origin 델타로 타일된다.
-            let boxTops = origins.map { 100 + origins[0].y - $0.y }
-            expect(lines[0].baselineOrigin.y - boxTops[0]).to(equal(8.5))
-            expect(lines[1].baselineOrigin.y - boxTops[1]).to(equal(51.0))
+            // 첫 줄은 블록 상단 + 자기 앵커.
+            expect(lines[0].baselineOrigin.y).to(equal(blockTop + 8.5))
+            // 개체가 놓이는 자리는 측정 경로가 정한다 (`HwpObjectAnchorGeometry`와 같은 식).
+            let frame = HwpParagraphLayout().layout(
+                attributedString: string, paraShape: CoreHwp.HwpParaShape(), columnWidth: 200
+            )
+            expect(frame.lines.count).to(equal(2))
+            expect(frame.lines.last?.inlineAnchors.count).to(equal(1))
+            guard frame.lines.count == 2,
+                  let anchor = frame.lines[1].inlineAnchors.first
+            else { return }
+            let objectBottom = blockTop + frame.lines[0].baseline + frame.lines[1].origin.y
+            let objectTop = objectBottom - anchor.ascent
+            let baseline = lines[1].baselineOrigin.y
+            expect(baseline).to(beGreaterThan(objectTop), description: "개체 상단 아래")
+            expect(baseline).to(beLessThanOrEqualTo(objectBottom), description: "개체 바닥 위")
+            // 남은 격차: 개체 바닥 − baseline은 0.15 × 개체 높이여야 하는데 측정 경로가
+            // 아직 CT 보고 ascent를 기준점으로 쓴다 (#195). 그 축은 여기서 잠그지 않는다.
         }
 
-        /// `HwpLineBreaker.nextFrameChunk`와 같은 꼴로 프레임을 만들어 CT 줄 origin을
-        /// 돌려준다 — 테스트가 구현의 청크 기하를 재사용하지 않고 직접 재구성한다.
-        private static func frameLineOrigins(
-            _ string: NSAttributedString, lineWidth: CGFloat
-        ) -> [CGPoint] {
-            let framesetter = CTFramesetterCreateWithAttributedString(string)
-            let suggested = CTFramesetterSuggestFrameSizeWithConstraints(
-                framesetter, CFRange(location: 0, length: string.length), nil,
-                CGSize(width: lineWidth, height: .greatestFiniteMagnitude), nil
+        /// 청크 경계에 **기본 글자 크기 변화**가 걸려도 이월이 앵커를 새지 않는다 (#178).
+        ///
+        /// 버린 마지막 줄은 미완이라 다음 청크에서 온전히 재조판된 줄과 앵커가 다르다
+        /// (여기서는 10pt → 20pt로 0.85 × (20 − 10) = 8.5pt). baseline을 이월하면 그 앵커가
+        /// 다음 청크에서 소거되지 않아 뒤 줄 전체가 8.5pt 밀린다 — 그래서 **상자 상단**을
+        /// 이월한다. 남는 편차는 청크마다 프레임을 다시 잡는 데서 오는 근사 몫이고
+        /// (이 입력에서 9.0pt — 종전 폰트 ascent 산식과 **같은 값**이다) 크기 변화와 무관하게
+        /// 있던 축이다. 그래서 허용 오차는 그 근사를 담되 앵커 누출(+8.5pt → 17.5pt)은
+        /// 못 담는 10.0pt다 — 이 가드가 잡는 것은 누출 하나다.
+        func testChunkCarryoverDoesNotLeakTheIncompleteLineAnchor() {
+            let string = NSMutableAttributedString(
+                attributedString: Self.attributedString(
+                    Input(size: 10, baseSize: 10, text: String(repeating: "a", count: 60))
+                )
             )
-            let height = max(ceil(suggested.height), 1)
-            let path = CGPath(
-                rect: CGRect(x: 0, y: 0, width: lineWidth, height: height), transform: nil
+            string.append(Self.attributedString(
+                Input(size: 20, baseSize: 20, text: String(repeating: "B", count: 40))
+            ))
+            let origin = CGPoint(x: 0, y: 100)
+            let uncapped = HwpDrawnTextLayout.lines(
+                attributedString: string, origin: origin, lineWidth: 120
             )
-            let frame = CTFramesetterCreateFrame(
-                framesetter, CFRange(location: 0, length: string.length), path, nil
+            let capped = HwpDrawnTextLayout.lines(
+                attributedString: string, origin: origin, lineWidth: 120, maxLineFrames: 30
             )
-            let count = (CTFrameGetLines(frame) as? [CTLine])?.count ?? 0
-            var origins = [CGPoint](repeating: .zero, count: count)
-            CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
-            return origins
+            expect(capped.count).to(equal(uncapped.count))
+            for (index, pair) in zip(capped, uncapped).enumerated() {
+                expect(pair.0.baselineOrigin.y).to(
+                    beCloseTo(pair.1.baselineOrigin.y, within: 10.0), description: "줄 \(index)"
+                )
+            }
         }
 
         /// `baselineAnchor`는 비율 상수를 그대로 쓴다 — 값 핀은

@@ -58,8 +58,8 @@ public enum HwpDrawnTextLayout {
         // 한 프레임이라 렌더 불변 (R48·R50).
         var result: [HwpDrawnLine] = []
         var startLocation = 0
-        // 이월 시 다음 청크 첫 줄이 놓일 top-down baseline. nil이면 첫 청크.
-        var resumeBaseline: CGFloat?
+        // 이월 시 다음 청크 첫 줄의 **줄 상자 상단** top-down y. nil이면 첫 청크.
+        var resumeBoxTop: CGFloat?
         while startLocation < fullLength, result.count < lineBudget {
             guard let chunk = HwpLineBreaker.nextFrameChunk(
                 framesetter: framesetter, typesetter: typesetter,
@@ -67,23 +67,21 @@ public enum HwpDrawnTextLayout {
                 startLocation: startLocation, fullLength: fullLength,
                 remainingLineBudget: lineBudget - result.count, lineWidth: lineWidth
             ) else { break }
-            // 줄 상자 상단의 기준선 — 줄 k의 상자 상단은 `boxTopDatum − ctOrigin[k].y`다.
-            // CT가 줄 상자를 문단 전진량으로 타일하므로 첫 줄의 상자 상단(= 블록 상단,
-            // 이월 청크는 재개 baseline에서 그 줄 앵커를 되돌린 자리)만 맞추면 된다.
-            let boxTopDatum = resumeBaseline.map {
-                $0 - baselineAnchor(of: chunk.lines[0]) + chunk.origins[0].y
-            } ?? origin.y + chunk.origins[0].y
+            // 줄 상자 상단 — 첫 줄은 블록 상단 (이월이면 재개 상자 상단) 에 **정확히**
+            // 핀하고, 나머지는 CT가 그 줄을 배치한 슬롯 상단
+            // (`baseline − placementAscent`) 을 쓴다 (`boxTops(of:base:)`).
+            let boxTops = Self.boxTops(of: chunk, base: resumeBoxTop ?? origin.y)
             for index in 0 ..< chunk.keepCount {
                 result.append(drawnLine(
                     frameLine: chunk.lines[index],
                     ctOrigin: chunk.origins[index],
                     attributedString: attributedString,
-                    origin: CGPoint(x: origin.x, y: boxTopDatum),
+                    origin: CGPoint(x: origin.x, y: boxTops[index]),
                     lineWidth: lineWidth
                 ))
             }
-            resumeBaseline = Self.resumeBaseline(
-                after: chunk, boxTopDatum: boxTopDatum,
+            resumeBoxTop = Self.resumeBoxTop(
+                after: chunk, boxTops: boxTops,
                 attributedString: attributedString,
                 continuesAfterChunk: chunk.nextStart < fullLength
             )
@@ -93,9 +91,9 @@ public enum HwpDrawnTextLayout {
         return result
     }
 
-    /// `origin.y`는 줄 상자 상단의 기준선 (`lines`의 `boxTopDatum`) 이다 —
-    /// 이 줄의 상자 상단 = origin.y − ctOrigin.y이고 baseline은 그 아래 앵커만큼이다.
-    /// **CT·글꼴의 ascent는 세로 배치에 들어오지 않는다** (#178).
+    /// `origin.y`는 이 줄의 **줄 상자 상단** (`lines`의 `boxTops[index]`) 이고 baseline은
+    /// 그 아래 앵커만큼이다 — CT·글꼴의 ascent는 상자 상단을 찾는 데만 쓰이고
+    /// **baseline 자체는 앵커가 정한다** (#178).
     private static func drawnLine(
         frameLine: CTLine,
         ctOrigin: CGPoint,
@@ -118,31 +116,32 @@ public enum HwpDrawnTextLayout {
             stringRange: NSRange(location: range.location, length: range.length),
             baselineOrigin: CGPoint(
                 x: origin.x + ctOrigin.x + (replacement?.xOffset ?? 0),
-                y: origin.y - ctOrigin.y + baselineAnchor(of: frameLine)
+                y: origin.y + baselineAnchor(of: frameLine)
             ),
             ascent: ascent,
             descent: descent
         )
     }
 
-    /// 이월 후 다음 청크 첫 줄이 놓일 top-down baseline. 미완 줄을 버렸으면 CT가
+    /// 이월 후 다음 청크 첫 줄이 놓일 **줄 상자 상단**. 미완 줄을 버렸으면 CT가
     /// 준 그 줄 origin으로 정확 정렬(R50 #3), 없으면(한 줄 rescue 등) 문단 스타일의
     /// 줄 간격까지 포함한 advance만큼 내린다 (R51 #2).
-    private static func resumeBaseline(
+    ///
+    /// **baseline이 아니라 상자 상단을 넘긴다** — 버린 줄은 미완이라 다음 청크에서
+    /// 온전히 재조판된 줄과 앵커가 다를 수 있고 (기본 크기가 그 경계에 걸리면 갈린다),
+    /// baseline을 넘기면 그 앵커가 다음 청크에서 소거되지 않아 뒤 줄 전체가 밀린다.
+    private static func resumeBoxTop(
         after chunk: HwpLineBreaker.FrameChunk,
-        boxTopDatum: CGFloat,
+        boxTops: [CGFloat],
         attributedString: NSAttributedString,
         continuesAfterChunk: Bool
     ) -> CGFloat? {
-        if let dropped = chunk.droppedLineIndex {
-            return boxTopDatum - chunk.origins[dropped].y
-                + baselineAnchor(of: chunk.lines[dropped])
+        if let dropped = chunk.droppedLineIndex, dropped < boxTops.count {
+            return boxTops[dropped]
         }
         let last = chunk.keepCount - 1
-        guard last >= 0 else { return nil }
-        let lastBaseline = boxTopDatum - chunk.origins[last].y
-            + baselineAnchor(of: chunk.lines[last])
-        return lastBaseline + fallbackLineAdvance(
+        guard last >= 0, last < boxTops.count else { return nil }
+        return boxTops[last] + fallbackLineAdvance(
             after: chunk.lines[last],
             attributedString: attributedString,
             continuesAfterChunk: continuesAfterChunk
