@@ -8,11 +8,10 @@ import Foundation
 /// 소유한다. 여기에는 그 규칙을 CTLine에 적용하는 산식만 둔다.
 ///
 /// **baseline은 앵커가 정한다.** `HwpDrawnTextLayout.lines`는 줄 상자 상단
-/// (`boxTops(of:base:)`) 을 찾고 각 줄의 baseline을 그 아래 자기 앵커만큼에 둔다 — 종전
+/// (`lineGeometries`) 을 찾고 각 줄의 baseline을 그 아래 자기 앵커만큼에 둔다 — 종전
 /// 구현은 CT가 강제 줄 높이 안에서 나눈 ascent를 기준점으로 써 그 몫이 베이스라인에 새어
-/// 나갔다. 상자 상단은 첫 줄을 블록 상단에 정확히 핀하고 나머지는 CT 줄 origin 델타로
-/// 타일하되 (그 델타가 문단 스타일의 전진량이다) 글자처럼 취급 개체가 예약한 높이만
-/// 슬롯을 키우는 것으로 본다 (`placementAscent`).
+/// 나갔다. 상자 상단은 첫 줄을 블록 상단에 정확히 핀하고 나머지는 CT 줄 origin 델타에서
+/// **배치 ascent 몫을 되돌려** 타일한다 (`placementAscents`).
 extension HwpDrawnTextLayout {
     /// 한글 줄 모델의 **베이스라인 앵커** — 줄 상자 상단에서 베이스라인까지의
     /// 거리 = 줄 상자 높이 × `HwpRenderTuning.Text.baselineAnchorRatio`.
@@ -44,37 +43,30 @@ extension HwpDrawnTextLayout {
     /// 블록 상단이 곧 첫 상자 상단인 것이 정의다. 재구성값으로 보정하면 그만큼 첫 줄이 블록
     /// 위로 올라간다 (실제로 그 형태의 회귀를 한 번 냈다 — 헌법주석 각주 0.63pt).
     ///
-    /// 나머지 줄은 CT 줄 origin 델타에서 **ascent 몫을 되돌린다**:
+    /// 나머지 줄은 CT 줄 origin 델타에서 **배치 ascent 몫을 되돌린다**:
     /// `base + (origins[0].y − origins[k].y) + ascent_0 − ascent_k`. 델타는 baseline
-    /// 간격이라 다음 줄의 ascent를 품고 있으므로 (`delta_k = descent'_k + ascent'_{k+1}`)
-    /// 그것을 그대로 상자 간격으로 쓰면 줄마다 상자가 다른 문단에서 어긋난다 — 합성 실측
-    /// (Helvetica 10pt + 60pt 개체):
+    /// 간격이라 다음 줄의 ascent를 품고 있으므로 (`delta_k = 앞 줄 baseline 아래 몫 +
+    /// 줄 사이 간격 + ascent_{k+1}`) 그것을 그대로 상자 간격으로 쓰면 줄마다 상자가 다른
+    /// 문단에서 어긋난다 — 합성 실측 (Helvetica 10pt + 60pt 개체):
     ///
     /// | 개체 자리 | 델타 그대로 | 이 산식 |
     /// | --- | ---: | ---: |
     /// | 둘째 줄 | 213.0 (개체 바닥 169.7보다 43.3pt 아래) | 160.7 (= 바닥 − 0.15em) |
     /// | 첫 줄 | 120.5 (**첫 줄 baseline 151.0보다 위**) | 172.8 |
     ///
-    /// 되돌릴 때 **첫 줄도 같은 추정 ascent를 쓴다** (`ascents[0]`). 정확한 배치값 `floor`를
-    /// 뺄셈 기준으로 쓰면 추정값과 섞여 균일한 문단에서도 프레임 높이 `ceil` 잔차가 남는다
-    /// (합성 실측: 여백만 0·40pt 문단 둘째 줄 +0.2pt). 같은 추정을 양쪽에 쓰면 균일한
-    /// 문단에서 정확히 소거된다.
+    /// 되돌리는 ascent는 `placementAscents`가 **정확한 배치값**으로 돌려준다. 강제 줄 높이
+    /// 종류에 따른 갈래는 그쪽이 소유하므로 여기서는 상자 상단과 앵커만 본다.
     static func lineGeometries(
         of chunk: HwpLineBreaker.FrameChunk,
         in attributedString: NSAttributedString,
         base: CGFloat
     ) -> [LineGeometry] {
         guard let firstOrigin = chunk.origins.first else { return [] }
-        let floor = chunk.height - firstOrigin.y
-        let pinnedHeight = Self.pinnedLineHeight(of: chunk, in: attributedString)
-        // 줄 지표는 한 번만 걷는다 — 앵커와 배치 ascent가 같은 값에서 나온다.
+        // 줄 지표는 한 번만 걷는다 — 앵커와 상자 높이가 같은 값에서 나온다.
         let metrics = chunk.lines.map { lineMetrics(of: $0) }
-        let ascents = chunk.lines.indices.map { index in
-            max(
-                pinnedHeight > 0 ? floor : reportedAscent(of: chunk.lines[index]),
-                metrics[index].delegateAscent
-            )
-        }
+        let ascents = Self.placementAscents(
+            of: chunk, in: attributedString, metrics: metrics
+        )
         return chunk.lines.indices.map { index in
             let boxTop = index == 0
                 ? base
@@ -85,18 +77,68 @@ extension HwpDrawnTextLayout {
         }
     }
 
+    /// 청크 각 줄의 **배치 ascent** — CT가 그 줄 슬롯 상단에서 baseline까지 내린 거리.
+    ///
+    /// `CTLineGetTypographicBounds`의 **ascent는 이 값이 아니다.** CT는 슬롯의 여분을
+    /// baseline 위에 넣으면서 그 몫을 줄 객체에 되돌려 주지 않는다 (Helvetica 10pt 자연
+    /// 조판: 보고 7.70, 배치 9.70). 2026-09-13 실측으로 배치값을 직접 재고 (프레임 높이를
+    /// 줄여 줄이 떨어지는 임계를 이분 탐색하면 CT의 실제 슬롯 경계가 나온다) 규칙을
+    /// 글꼴 4종 × 라틴·한글 × 강제 줄 높이 5종 × 개체 유무 80조합에서 대조한 결과:
+    ///
+    /// | 청크 | 줄별 보고 ascent | 첫 줄 `floor` 균일 | 델타 − 앞 줄(descent+leading) |
+    /// | --- | ---: | ---: | ---: |
+    /// | 못박힘 (min = max) | 0.0003 | **0.0003** | 0.0003 |
+    /// | 자유·상한만 | 0.50 | 0.50 | **0.0002** |
+    /// | 자유·상한만 + 개체 | 3.00 | 31.36 | **0.0002** |
+    /// | 하한만 + 개체 | 0.50 | 27.38 | **0.0003** |
+    ///
+    /// 그래서 두 갈래를 쓴다 — 어느 쪽도 보고 ascent를 쓰지 않는다:
+    /// - **못박힌 청크**는 모든 슬롯이 그 높이라 배치 ascent가 줄마다 같다 → 첫 줄의
+    ///   정확값 `floor` (`chunk.height − origins[0].y`, CT가 첫 슬롯을 프레임 상단에 붙인다).
+    /// - **나머지**는 슬롯이 줄마다 다르다 → `델타 − 앞 줄의 baseline 아래 몫 − 줄 사이
+    ///   간격`. 보고 descent + leading은 **그 줄 슬롯의 baseline 아래 몫과 같다** (같은
+    ///   실측: 못박히지 않은 40조합 전부 0.0003pt 이내).
+    ///
+    /// 못박힌 청크에서 복원식을 쓸 수 없는 이유는 그 조건에서 CT가 클램프 **전** descent를
+    /// 보고하기도 하기 때문이다 — `Column` 픽스처 실측 (Menlo 10pt·못박힘 16·줄 0에 개체
+    /// 마커): 앞 6줄은 자연값 2.36, 마지막 줄만 클램프값 5.00을 보고하는데 배치값은 전부
+    /// 5.00이다. 반대로 못박히지 않은 청크는 클램프가 없어 보고값이 배치값이다.
+    private static func placementAscents(
+        of chunk: HwpLineBreaker.FrameChunk,
+        in attributedString: NSAttributedString,
+        metrics: [LineMetrics]
+    ) -> [CGFloat] {
+        guard let firstOrigin = chunk.origins.first else { return [] }
+        let floor = chunk.height - firstOrigin.y
+        if Self.pinnedLineHeight(of: chunk, in: attributedString) > 0 {
+            // 개체가 예약한 높이보다는 작을 수 없다 (개체 문단을 못박는 경로는
+            // `HwpParagraphMetrics`에 없지만 공개 API 호출자는 만들 수 있다).
+            return chunk.lines.indices.map { max(floor, metrics[$0].delegateAscent) }
+        }
+        var ascents = [floor]
+        guard chunk.lines.count > 1 else { return ascents }
+        let text = attributedString.string as NSString
+        for index in 1 ..< chunk.lines.count {
+            let delta = chunk.origins[index - 1].y - chunk.origins[index].y
+            ascents.append(
+                delta
+                    - belowBaseline(of: chunk.lines[index - 1])
+                    - interlineGap(after: index - 1, of: chunk, in: attributedString, text: text)
+            )
+        }
+        return ascents
+    }
+
     /// 이 청크 문단이 줄 높이를 **못박았는지** (그 높이, 아니면 0).
     ///
-    /// 못박혔으면 (min = max) CT가 모든 줄 슬롯을 그 높이로 맞추므로 배치 ascent가 줄마다
-    /// 같고, 아니면 슬롯이 줄마다 다를 수 있다 — `lineGeometries`가 그 둘을 가른다.
+    /// 못박힘은 `minimumLineHeight == maximumLineHeight`이고 **둘 다 양수**인 것이다 —
+    /// 한글의 비율·고정 줄 간격이 그렇게 걸린다 (`HwpParagraphMetrics.applyLineHeight`).
     ///
-    /// **하한만 있는 것(`.atLeast`·개체 문단의 `minimumLineHeight`)은 못박은 것이 아니다.**
-    /// CT는 자연 높이가 하한보다 큰 줄을 그대로 두므로 줄마다 슬롯이 다르고, 그런 문단을
-    /// 못박힌 것으로 보면 첫 줄의 배치 ascent가 모든 줄에 적용돼 보정이 소거된다 — 하한
-    /// 10pt 문단의 첫 줄에 60pt 개체를 두면 둘째 줄이 첫 줄 baseline보다 위로 올라간다
-    /// (합성 실측: 172.8 → 120.5). 상한만 있는 경우는 `HwpParagraphMetrics`가 만들지
-    /// 않지만, 만들어지면 CT가 모든 슬롯을 그 높이 이하로 깎아 균일해지므로 못박힌 쪽으로
-    /// 본다.
+    /// **하한만·상한만은 못박은 것이 아니다.** 하한만 (`.atLeast`·개체 문단) 은 자연 높이가
+    /// 더 큰 줄을 그대로 두므로 슬롯이 줄마다 다르고, 상한만은 그 아래 높이를 전혀 건드리지
+    /// 않는다 — 무해한 상한 (`maximumLineHeight = 1000`) 을 얹었을 때 CT 원점이 그대로인데
+    /// 우리 baseline이 `[108.5, 151.9, 199.9]` → `[108.5, 175.0, 223.0]`으로 바뀌던 것이
+    /// 상한만을 못박힌 쪽으로 본 탓이었다 (10pt 첫 줄 + 40pt 후속 줄, 실측).
     private static func pinnedLineHeight(
         of chunk: HwpLineBreaker.FrameChunk, in attributedString: NSAttributedString
     ) -> CGFloat {
@@ -105,31 +147,51 @@ extension HwpDrawnTextLayout {
         let style = HwpLineBreaker.paragraphStyle(in: attributedString, at: location)
         let minimum = max(0, HwpLineBreaker.paragraphCGFloat(.minimumLineHeight, in: style) ?? 0)
         let maximum = max(0, HwpLineBreaker.paragraphCGFloat(.maximumLineHeight, in: style) ?? 0)
-        guard maximum > 0, minimum <= 0 || abs(minimum - maximum) < 0.001 else { return 0 }
+        guard minimum > 0, abs(minimum - maximum) < 0.001 else { return 0 }
         return maximum
     }
 
-    /// CT가 이 줄을 **배치할 때 쓴** ascent — 줄 상자 상단을 찾는 데만 쓴다.
+    /// 줄 슬롯에서 baseline **아래** 몫 — 보고 descent + leading (실측상 정확한 배치값).
+    private static func belowBaseline(of line: CTLine) -> CGFloat {
+        var descent: CGFloat = 0
+        var leading: CGFloat = 0
+        _ = CTLineGetTypographicBounds(line, nil, &descent, &leading)
+        return descent + leading
+    }
+
+    /// 줄 `index`와 다음 줄 **사이**에 문단 스타일이 넣은 간격 — 줄 뒤 간격
+    /// (`lineSpacingAdjustment`) 과, 그 줄이 문단을 끝내면 문단 아래·위 간격.
     ///
-    /// **줄 높이가 못박혀 있으면** (`pinnedLineHeight`) CT가 모든 슬롯을 그 높이로 맞추므로
-    /// 배치 ascent는 줄마다 같다 — 청크 첫 줄의 값 (`floor`, 정의상 정확) 을 쓴다.
-    /// 이때 `CTLineGetTypographicBounds`의 ascent를 쓰면 안 된다: CT는 클램프한 줄에
-    /// 자연 ascent와 클램프된 ascent를 섞어 보고한다 (noori 15pt·170% 문단 실측 — 같은
-    /// 25.5pt 슬롯의 세 줄이 16.05·16.05·**18.0**을 보고하고 배치는 전부 18.0이다).
-    /// 여러 글꼴이 섞인 줄은 보고값이 배치값보다 커서 (헌법주석 각주 9.63 vs 9.0) 그 줄이
-    /// 0.63pt 올라가 저장본 줄 간격 11.70pt와 갈린다.
-    ///
-    /// **못박히지 않았으면** (하한만 있거나 아무것도 없으면) 슬롯이 줄마다 다르고 보고값이
-    /// 곧 배치값이다 — 그 줄의 보고 ascent를 쓴다. 글자처럼 취급 개체가 든 문단이 이쪽이다
-    /// (`HwpParagraphMetrics.applyLineHeight`가 개체 문단에 상한을 걸지 않는다 — 하한만
-    /// 걸거나 줄 뒤 간격으로 돌린다).
-    ///
-    /// 어느 쪽이든 **개체가 예약한 높이**보다는 작을 수 없다.
-    /// 산식은 `lineGeometries`가 갖는다 (줄 지표를 한 번만 걷기 위해).
-    private static func reportedAscent(of line: CTLine) -> CGFloat {
-        var ascent: CGFloat = 0
-        _ = CTLineGetTypographicBounds(line, &ascent, nil, nil)
-        return ascent
+    /// CT는 이 몫을 **다음 줄 슬롯의 ascent 안에** 넣는다 (실측: 간격 6+4를 준 둘째 문단
+    /// 첫 줄의 배치 ascent가 9.70 → 19.70). 배치 ascent 복원에서 빼 주면 간격이 상자
+    /// **사이**에 남아 한글과 같아진다 — 한글은 줄 간격 여분을 상자 아래 `lineSpacing`으로
+    /// 적고 다음 상자를 그 아래에 둔다. 개체 문단이 바로 이 경로다
+    /// (`HwpParagraphMetrics.applyLineHeight`가 여분을 줄 뒤 간격으로 돌린다): 하한 16 +
+    /// 줄 뒤 4 문단의 상자 전진량이 정확히 20pt = 한글의 전진량이 된다.
+    private static func interlineGap(
+        after index: Int,
+        of chunk: HwpLineBreaker.FrameChunk,
+        in attributedString: NSAttributedString,
+        text: NSString
+    ) -> CGFloat {
+        let range = CTLineGetStringRange(chunk.lines[index])
+        let style = HwpLineBreaker.paragraphStyle(in: attributedString, at: range.location)
+        let adjustment = HwpLineBreaker.paragraphCGFloat(.lineSpacingAdjustment, in: style) ?? 0
+        let spacing = HwpLineBreaker.paragraphCGFloat(.paragraphSpacing, in: style) ?? 0
+        let nextLocation = CTLineGetStringRange(chunk.lines[index + 1]).location
+        let nextStyle = HwpLineBreaker.paragraphStyle(in: attributedString, at: nextLocation)
+        let before = HwpLineBreaker.paragraphCGFloat(.paragraphSpacingBefore, in: nextStyle) ?? 0
+        guard spacing != 0 || before != 0, endsParagraph(range, in: text) else { return adjustment }
+        return adjustment + spacing + before
+    }
+
+    /// 이 줄이 CT 문단을 끝내는지 — 마지막 글자가 문단 구분자 (LF·CR·U+2029) 인지.
+    /// 줄 구분자 (U+2028·U+0085) 는 문단을 끝내지 않아 문단 간격도 들어가지 않는다.
+    private static func endsParagraph(_ range: CFRange, in text: NSString) -> Bool {
+        let end = range.location + range.length
+        guard end > 0, end <= text.length else { return false }
+        let unit = text.character(at: end - 1)
+        return unit == 0x0A || unit == 0x0D || unit == 0x2029
     }
 
     /// 인라인 개체 줄에서 밑줄이 되돌아갈 양 — 실물은 밑줄을 개체 하단

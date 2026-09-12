@@ -320,4 +320,144 @@ import XCTest
                 .to(equal(10 * HwpRenderTuning.Text.baselineAnchorRatio))
         }
     }
+
+    /// 줄마다 상자 높이가 다른 문단의 **상자 상단** 계약 (#178 리뷰).
+    ///
+    /// 앵커 자체는 `HwpBaselineAnchorTests`가 잠근다. 여기서 잠그는 것은 그 앵커를 걸 자리,
+    /// 즉 CT 슬롯에서 복원한 **배치 ascent**다 — 줄 높이를 못박지 않은 문단 (`.atLeast`·
+    /// 개체 문단·공개 `HwpPaintCommand.drawText` 호출자) 은 줄마다 슬롯이 달라 여기가
+    /// 어긋나면 글자가 상자를 벗어난다.
+    ///
+    /// 오라클은 CT 자신이다 — 프레임 높이를 줄여 줄이 떨어지는 임계를 이분 탐색하면 CT의
+    /// 실제 슬롯 경계가 나온다 (2026-09-13 실측). 그 경계와 `보고 descent + leading`이
+    /// 일치하고 (보고 **ascent**는 일치하지 않는다) 문단 간격은 다음 슬롯의 ascent 안에
+    /// 들어 있어 걷어내야 한다는 것이 이 스위트가 지키는 규칙이다.
+    final class HwpLineBoxAdvanceTests: XCTestCase {
+        /// 10pt 한 줄 + 40pt 두 줄 — 줄마다 상자 높이가 다른 문단. 실물의 혼합 크기
+        /// 문단과 같은 꼴이고, 공개 `HwpPaintCommand.drawText` 호출자가 문자열을 그대로
+        /// 넘기는 경로이기도 하다.
+        private static func mixedSizeParagraph(
+            minimumLineHeight: CGFloat? = nil,
+            maximumLineHeight: CGFloat? = nil
+        ) -> NSAttributedString {
+            func attributes(_ size: CGFloat) -> [NSAttributedString.Key: Any] {
+                var attributes: [NSAttributedString.Key: Any] = [
+                    kCTFontAttributeName as NSAttributedString.Key:
+                        CTFontCreateWithName("Helvetica" as CFString, size, nil),
+                    HwpAttributedStringKey.baseFontSize: NSNumber(value: Double(size)),
+                ]
+                if let style = lineHeightStyle(
+                    minimum: minimumLineHeight, maximum: maximumLineHeight
+                ) {
+                    attributes[kCTParagraphStyleAttributeName as NSAttributedString.Key] = style
+                }
+                return attributes
+            }
+            let string = NSMutableAttributedString(string: "ab\n", attributes: attributes(10))
+            string.append(NSAttributedString(string: "cd\n", attributes: attributes(40)))
+            string.append(NSAttributedString(string: "ef", attributes: attributes(40)))
+            return string
+        }
+
+        /// 하한·상한을 골라 싣는 줄 높이 스타일 (둘 다 nil이면 스타일 없음)
+        private static func lineHeightStyle(
+            minimum: CGFloat?, maximum: CGFloat?
+        ) -> CTParagraphStyle? {
+            var values: [(CTParagraphStyleSpecifier, CGFloat)] = []
+            if let minimum {
+                values.append((.minimumLineHeight, minimum))
+            }
+            if let maximum {
+                values.append((.maximumLineHeight, maximum))
+            }
+            guard !values.isEmpty else { return nil }
+            var numbers = values.map(\.1)
+            return numbers.withUnsafeMutableBufferPointer { buffer in
+                let settings = values.indices.map { index in
+                    CTParagraphStyleSetting(
+                        spec: values[index].0,
+                        valueSize: MemoryLayout<CGFloat>.size,
+                        // swiftlint:disable:next force_unwrapping
+                        value: buffer.baseAddress! + index
+                    )
+                }
+                return CTParagraphStyleCreate(settings, settings.count)
+            }
+        }
+
+        private func baselines(_ string: NSAttributedString) -> [CGFloat] {
+            HwpDrawnTextLayout.lines(
+                attributedString: string, origin: CGPoint(x: 0, y: 100), lineWidth: 400
+            ).map(\.baselineOrigin.y)
+        }
+
+        /// **상한만 지정된 문단은 못박힌 문단이 아니다** (#178 리뷰). 상한은 그 아래 높이를
+        /// 전혀 건드리지 않으므로 CT 조판이 그대로인데, 상한만을 못박힌 쪽으로 보면 청크 첫
+        /// 줄의 배치 ascent가 모든 줄에 적용돼 상자가 어긋난다 — 이 문단에서 무해한 상한
+        /// 1000을 얹으면 baseline이 `[108.5, 151.9, 199.9]` → `[108.5, 175.0, 223.0]`으로
+        /// 바뀌었다.
+        func testNoOpMaximumLineHeightMovesNoLine() {
+            let plain = baselines(Self.mixedSizeParagraph())
+            let capped = baselines(Self.mixedSizeParagraph(maximumLineHeight: 1000))
+            expect(plain.count).to(equal(3))
+            expect(capped.map(Double.init))
+                .to(beCloseTo(plain.map(Double.init), within: 0.001))
+        }
+
+        /// **하한이 걸린 줄과 자연 높이가 더 큰 줄은 슬롯이 다르다** (#178 리뷰).
+        /// 10pt 상자에 하한 20을 걸면 한글의 전진량은 `max(상자, 하한)` = 20pt이고, 뒤따르는
+        /// 40pt 줄은 하한보다 크므로 자기 자연 슬롯을 쓴다. 줄별 **보고** ascent로 상자를
+        /// 찾던 종전 구현은 CT가 늘린 슬롯의 여분을 보고에서 빼먹어 둘째 줄 상자를 8.2pt
+        /// 아래에 뒀다.
+        func testMinimumOnlyLineHeightAdvancesShortLinesByTheMinimum() {
+            let baselines = baselines(Self.mixedSizeParagraph(minimumLineHeight: 20))
+            expect(baselines.count).to(equal(3))
+            guard baselines.count == 3 else { return }
+            // 첫 줄 상자(10pt)는 블록 상단에 핀한다.
+            expect(Double(baselines[0])).to(beCloseTo(100 + 8.5, within: 0.001))
+            // 둘째 줄 상자 상단 = 100 + max(10, 20) → baseline은 그 아래 0.85 × 40.
+            expect(Double(baselines[1])).to(beCloseTo(100 + 20 + 34, within: 0.01))
+        }
+
+        /// **문단 간격은 상자 사이에 남는다.** CT는 문단 아래·위 간격을 다음 줄 슬롯의
+        /// ascent 안에 넣으므로 (실측: 간격 6+4를 준 둘째 문단 첫 줄의 배치 ascent가
+        /// 9.70 → 19.70) 배치 ascent 복원에서 걷어내야 한다. 걷어내지 않으면 간격이 사라져
+        /// 둘째 문단이 그만큼 올라간다 — 한글은 줄 간격 여분을 상자 아래 `lineSpacing`으로
+        /// 적고 다음 상자를 그 아래에 둔다.
+        func testParagraphSpacingStaysBetweenLineBoxes() {
+            let plain = baselines(Self.twoParagraphs(spacing: 0, before: 0))
+            let spaced = baselines(Self.twoParagraphs(spacing: 6, before: 4))
+            expect(plain.count).to(equal(2))
+            expect(spaced.count).to(equal(2))
+            guard plain.count == 2, spaced.count == 2 else { return }
+            expect(Double(spaced[0])).to(beCloseTo(Double(plain[0]), within: 0.001))
+            expect(Double(spaced[1] - plain[1])).to(beCloseTo(10, within: 0.001))
+        }
+
+        /// 문단 아래·위 간격을 실은 10pt 두 문단
+        private static func twoParagraphs(spacing: CGFloat, before: CGFloat) -> NSAttributedString {
+            var values: [(CTParagraphStyleSpecifier, CGFloat)] = [
+                (.paragraphSpacing, spacing), (.paragraphSpacingBefore, before),
+            ]
+            var numbers = values.map(\.1)
+            let style = numbers.withUnsafeMutableBufferPointer { buffer in
+                let settings = values.indices.map { index in
+                    CTParagraphStyleSetting(
+                        spec: values[index].0,
+                        valueSize: MemoryLayout<CGFloat>.size,
+                        // swiftlint:disable:next force_unwrapping
+                        value: buffer.baseAddress! + index
+                    )
+                }
+                return CTParagraphStyleCreate(settings, settings.count)
+            }
+            let attributes: [NSAttributedString.Key: Any] = [
+                kCTFontAttributeName as NSAttributedString.Key:
+                    CTFontCreateWithName("Helvetica" as CFString, 10, nil),
+                HwpAttributedStringKey.baseFontSize: NSNumber(value: 10.0),
+                kCTParagraphStyleAttributeName as NSAttributedString.Key: style,
+            ]
+            return NSAttributedString(string: "ab\ncd", attributes: attributes)
+        }
+    }
 #endif
