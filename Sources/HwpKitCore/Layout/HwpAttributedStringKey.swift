@@ -31,9 +31,11 @@ public enum HwpAttributedStringKey {
     /// 글자 위치 (표 33 location) — 줄 안 세로 오프셋 (pt, 양수 = 위).
     /// kCTBaselineOffset은 CTFramesetter가 무시하므로 직접 그린다.
     public static let glyphBaselineOffset = NSAttributedString.Key("hwp.glyphBaselineOffset")
-    /// 밑줄 여부 (글자 아래) — CT 밑줄 대신 렌더러가 0.4pt 헤어라인으로 직접 그린다
+    /// 밑줄 여부 (글자 아래) — CT 밑줄 대신 렌더러가 베이스라인 아래
+    /// `underlineBelowCenterRatio`에 `decorationLineThicknessRatio` 두께로 직접
+    /// 그린다 (둘 다 글자 크기 비례, #176)
     public static let underlineStyle = NSAttributedString.Key("hwp.underlineStyle")
-    /// 밑줄 '글자 위' 여부 (표 35 밑줄 종류 3) — 같은 헤어라인을 베이스라인
+    /// 밑줄 '글자 위' 여부 (표 35 밑줄 종류 3) — 같은 두께의 선을 베이스라인
     /// **위** `underlineAboveCenterRatio`에 그린다 (#136). 색은
     /// `underlineColor`를 공유한다. RTF 복사에는 싣지 않는다 (윗줄 속성이 없어
     /// 표준 밑줄로 바꾸면 위치가 뒤집힌다 — `HwpSelectionRTF` 주석).
@@ -60,7 +62,9 @@ public enum HwpAttributedStringKey {
     public static let tabLeaderStops = NSAttributedString.Key("hwp.tabLeaderStops")
     /// 연속 그림자 — 본체에서 오프셋까지 이어지는 두꺼운 그림자
     public static let shadowContinuous = NSAttributedString.Key("hwp.shadowContinuous")
-    /// 변경 추적 삽입 밑줄 — 한글은 베이스라인 아래 ~0.22em에 그린다
+    /// 변경 추적 삽입 밑줄 (CGColor) — 베이스라인 아래
+    /// `trackChangeInsertUnderlineCenterRatio`에 `trackChangeInsertUnderlineThicknessRatio`
+    /// 두께로 그린다 (`track-changes` 실물, #176)
     public static let trackInsertUnderline = NSAttributedString.Key("hwp.trackInsertUnderline")
     /// 메모 앵커 둥근 테두리 색 (연녹 채움 위 괄호형 외곽선)
     public static let memoAnchorStroke = NSAttributedString.Key("hwp.memoAnchorStroke")

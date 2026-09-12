@@ -6,7 +6,7 @@ import Foundation
 // 글자 장식 속성 (표 33) — HwpTextRunBuilder.attributes의 장식 부분
 
 extension HwpTextRunBuilder {
-    /// 밑줄·취소선 — 셋 다 렌더러가 직접 그리는 헤어라인이다.
+    /// 밑줄·취소선 — 셋 다 렌더러가 직접 그리는 선이다.
     ///
     /// 밑줄 종류 (표 33 bit 2~3): 1 = 글자 아래, 2 = 글자 가운데, 3 = 글자 위.
     /// **2는 취소선과 같은 선**이다 (한컴 공개 OWPML 모델 `ULT_CENTER`,
@@ -15,8 +15,9 @@ extension HwpTextRunBuilder {
     /// 그린다 (2026-09-08 PDF 실측, #136). 그래서 취소선 분기에 합류시키고
     /// 밑줄 쪽은 위/아래만 가른다.
     ///
-    /// CT 밑줄은 두껍다 (실물 헤어라인 대비 3-4배) — 전용 키로 넘겨
-    /// `HwpPageLayer`가 0.4pt로 직접 그린다.
+    /// CT 밑줄은 폰트 지표(`underlinePosition`·`underlineThickness`) 위치·두께라
+    /// 실물과 갈린다 — 전용 키로 넘겨 `HwpPageLayer`가 글자 크기 비례
+    /// (`HwpRenderTuning.Text`)로 직접 그린다.
     func applyLineDecorations(
         to attributes: inout [NSAttributedString.Key: Any],
         shape: CoreHwp.HwpCharShape
