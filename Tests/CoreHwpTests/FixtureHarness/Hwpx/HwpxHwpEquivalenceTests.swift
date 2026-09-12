@@ -188,7 +188,7 @@ final class HwpxHwpEquivalenceTests: XCTestCase {
             )
             comparedCount += 1
         }
-        expect(comparedCount) >= 15
+        expect(comparedCount) >= 17
     }
 }
 
@@ -354,6 +354,13 @@ struct DocumentEquivalenceProjection {
     /// `kind == "notImplemented"`로 접혀 등식이 깨진다. 제어 문자 코드까지
     /// 싣는 유일한 축이다 (`nwno`는 18이 아니라 21이다).
     let sectionMarks: [SectionMark]
+    /// 구역별 시작 설정·첫 쪽 감추기 (#173) — `hp:startNum@pageStartsOn`의
+    /// `EVEN`·`ODD`가 표 130 bits 20-21의 1·2로 옮겨져야 HWP 쌍과 같은 값이
+    /// 선다. 매핑이 뒤집혀 있던 동안 구역 정의에서 오는 축은 용지·여백·개요
+    /// 번호 참조·주석 모양뿐이라 이 격차를 통과시켰다. 사용자 지정 시작 번호
+    /// (`page`·`pic`·`tbl`·`equation`)도 함께 싣는다. 직접 핀은
+    /// `HwpxHwpEquivalenceSectionSettingsTests`에 있다 (이 파일의 길이 때문).
+    let sectionSettings: [SectionSettings]
 
     init(of file: HwpFile) {
         sectionCount = file.sectionArray.count
@@ -432,6 +439,7 @@ struct DocumentEquivalenceProjection {
         notes = Self.notes(of: file)
         noteShapes = Self.noteShapes(of: file)
         sectionMarks = Self.sectionMarks(of: file)
+        sectionSettings = Self.sectionSettings(of: file)
     }
 
     /// 문단 머리를 문서 순서(표 셀 재귀 포함)로 모은다 — noori의 글머리표
@@ -607,6 +615,9 @@ struct DocumentEquivalenceProjection {
         )
         expect(sectionMarks).to(
             equal(other.sectionMarks), description: "\(fixtureId) sectionMarks"
+        )
+        expect(sectionSettings).to(
+            equal(other.sectionSettings), description: "\(fixtureId) sectionSettings"
         )
     }
 }

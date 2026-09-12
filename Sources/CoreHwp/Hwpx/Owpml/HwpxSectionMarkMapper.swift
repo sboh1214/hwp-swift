@@ -36,7 +36,7 @@ import Foundation
 /// 두 표본은 어떤 내부 치환에도 같은 0x29·0x16을 내므로, `hideHeader`는 아직
 /// {0, 3}, `hideFooter`는 {1, 2, 4}까지만 좁혀진다. 지금 코드가 쓰는 배정의
 /// 근거는 한컴 공개 모델이 적은 속성 순서(`pageHiding.cpp`의
-/// hideHeader→hidePageNum)와 표 132를 옮긴 `HwpSectionDefProperty`의 bits 0-5가
+/// hideHeader→hidePageNum)와 표 130를 옮긴 `HwpSectionDefProperty`의 bits 0-5가
 /// 일치한다는 것이고, 그 둘을 대조한 결과다. 조판이 실제로 읽는 bit 0·1이
 /// 하필 미확정 자리이므로, 한 비트만 켠 표본(`머리말`만 등)을 만들면 그때
 /// 완전히 닫힌다.

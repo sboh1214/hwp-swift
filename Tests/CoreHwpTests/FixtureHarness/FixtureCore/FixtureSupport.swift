@@ -309,6 +309,12 @@ private extension FixtureAssertions {
             if let propertyRawValue = expected.propertyRawValue {
                 expect(actual.property) == propertyRawValue
             }
+            if let newPageNumberApplyRawValue = expected.newPageNumberApplyRawValue {
+                expect(actual.propertyInfo.newPageNumberApplyRawValue) == newPageNumberApplyRawValue
+            }
+            if let pageStartNumber = expected.pageStartNumber {
+                expect(actual.pageStartNumber) == pageStartNumber
+            }
             assertPageDef(actual.pageDef, expected)
             assertFootnoteShapes(actual, expected)
             assertPageBorderFills(actual, expected)

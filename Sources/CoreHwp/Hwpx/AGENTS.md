@@ -86,7 +86,7 @@ HWPX(OCF ZIP + OWPML XML, KS X 6101)를 **기존 `Hwp*` 모델로 변환 파싱*
 경로도 같다).
 
 `hp:visibility`의 `hideFirstHeader`·`hideFirstFooter`·`hideFirstMasterPage`·
-`hideFirstPageNum`을 구역 정의 속성(표 132 bits 0·1·2·5)으로 함께 옮긴다 — 승격
+`hideFirstPageNum`을 구역 정의 속성(표 130 bits 0·1·2·5)으로 함께 옮긴다 — 승격
 뒤에는 이 플래그가 없으면 감춰야 할 구역 첫 쪽에도 머리말이 그려진다. `border`·
 `fill` 열거와 `showLineNumber`는 대응 소비자가 없어 옮기지 않는다.
 
@@ -96,6 +96,37 @@ HWPX(OCF ZIP + OWPML XML, KS X 6101)를 **기존 `Hwp*` 모델로 변환 파싱*
 가드: `HwpxHeaderFooterMapperTests`(매핑·payload 모양·보존 게이트·진단),
 `HwpPageChromeApplyScopeTests`(홀·짝수 범위가 실제로 쪽을 가르는지),
 `HwpxFixtureRenderTests.testHwpxPageChromeMatchesHwpPairs`(HWP 쌍 등식 + 직접 핀).
+
+**구역 시작 종류(`hp:startNum@pageStartsOn`)는 #173에서 바로잡았다.** 구역 정의
+속성(표 130) bits 20-21(구역 나눔으로 새 쪽이 생길 때의 쪽 번호 적용)로 옮기며
+**`EVEN`이 1, `ODD`가 2다**. 한글 12.30.0이 `쪽 > 구역 설정... > 종류`를 홀수로
+저장한 HWP는 property `0x200000`, 짝수는 `0x100000`이고 같은 편집 세션의 HWPX가
+각각 `ODD`·`EVEN`이다(`section-page-starts-on` 쌍 — 이어서·홀수·짝수·사용자(5)
+4구역). 표 130은 이 비트의 값을 적지 않는다 — 종전 매핑은 `ODD → 1`·`EVEN → 2`를
+가정했고(표 129가 바탕쪽을 "양 쪽, 홀수 쪽, 짝수 쪽" 순으로 나열한 것을 값으로
+옮긴 흔적), 코퍼스가 전부 `BOTH`라 합성 테스트의 기대값까지 그 가정을 베끼고
+있었다. 한컴 모델의 `STARTNUMSTARTONTYPE`(BOTH 0 · EVEN 1 · ODD 2)은 스펙이 값을
+적은 이웃 자리(표 141 머리말 적용 범위·표 146 홀/짝수 조정: 0 양쪽 · 1 짝수 · 2
+홀수)와도 같다. 사용자 지정 시작 번호는 `BOTH` + `page` 속성이라 종류 비트는 0이고
+`pageStartNumber`에 따로 실린다. 미지 이름·생략은 한컴 `GetAttribute` 규약대로
+생성자 기본값 `BOTH`(0)로 접는다.
+
+한글 12.30.0 macOS는 홀수·짝수 시작 때문에 **빈 쪽을 끼우지 않고 새 구역 첫 쪽의
+번호만 건너뛴다**(상태 표시줄 `3/4쪽`·`4/4쪽`·`5/4쪽`, PDF 내보내기도 4쪽). 조판은
+쪽 번호 시작과 관련해 `pageStartNumber`만 반영하고 bits 20-21은 읽지 않으므로
+(`HwpPaginator.applySectionDef`), 쪽 번호 매기기가 있는 문서에서는 다음 사용자 지정
+시작 번호 전까지 두 포맷 공통으로 한글보다 번호가 건너뛴 만큼 작다 — 렌더 몫의
+후속은 #185다. 텍스트 방향(bits 16-18, `hp:secPr@textDirection`)·빈 줄 감추기(bit 19,
+`hp:visibility@hideFirstEmptyLine`)·원고지 정서법(bit 22, `hp:grid@wonggojiFormat`)·
+테두리/배경 감추기(bits 3·4·8·9, `@border`·`@fill`)는 대응 소비자도 실물 표본도
+없어 아직 옮기지 않는다 — 옮길 때 등가 축 `sectionSettings`에 함께 넣는다.
+
+가드: `HwpxSectionInvariantTests.testPageStartsOnLandsInTheSectionPropertyBitField`
+(BOTH·EVEN·ODD + 미지 이름·생략 폴백, 세 표현의 동기화)·
+`testUserPageStartNumberKeepsPageStartsOnBoth`, `HwpxHwpEquivalenceTests`의
+`sectionSettings` 축과 `HwpxHwpEquivalenceSectionSettingsTests`(`section-page-starts-on`
+직접 핀 `[0, 2, 1, 0]`·`[0, 0, 0, 5]`), HWP 매니페스트 `sections[].newPageNumberApplyRawValue`·
+`pageStartNumber`.
 
 2026-09-02 한글.app 12.30.0 나란히 육안 대조(변환 쌍 10종 13쪽, 한컴 폰트
 모드): 쪽수 10종 전부 일치, 표·그림·다단·글자 장식·쪽나눔 일치. HWPX
@@ -152,7 +183,7 @@ typed 뷰와 로드 옵션 게이트를 한 번에 얻는 #167·#168과 같은 �
 표본 35건이 그 중 `hidePageNum = bit 5`를 못박는다. **삼중항 안의 배정은 실측이
 아니다** — 두 표본은 어떤 내부 치환에도 같은 두 값을 내므로 `hideHeader`는 {0, 3},
 `hideFooter`는 {1, 2, 4}까지만 좁혀진다. 코드가 쓰는 배정의 근거는 한컴 공개 모델
-`OWPML/Class/Para/pageHiding.cpp`의 속성 나열과 표 132를 옮긴
+`OWPML/Class/Para/pageHiding.cpp`의 속성 나열과 표 130를 옮긴
 `HwpSectionDefProperty`의 bits 0-5가 일치한다는 대조다. 하필 조판이 읽는 bit 0·1이
 그 미확정 자리이므로, 한 비트만 켠 표본(`머리말`만 등)을 만들면 그때 닫힌다.
 
@@ -247,10 +278,16 @@ bits 10-11 번호 매김 · bit 12 위 첨자가 확정됐고, 같은 문서의
 
 **열거 이름과 생략 기본값의 정본은 한컴 공개 OWPML 모델이다**(`OWPML/Class/enumdef.h`의
 직렬화 표와 각 클래스 생성자, `OWPML/Base/Util.cpp`의 `GetAttribute`). 실측만으로는
-기본값 문서가 전부 0이라 드러나지 않는 자리가 둘 있었다.
+기본값 문서가 전부 0이라 드러나지 않는 자리가 셋 있었다.
 - **이름**: 각주 다단 배열의 셋째 값은 `RIGHT_MOST_COLUMN`(`RIGHT_COLUMN`이 아니다),
   `LINETYPE2`의 3D 넷은 `THICK3D`·`THICKREV3D`·`3D`·`REV3D`다. 지어낸 이름을 쓰면
   정상 입력이 조용히 0으로 접힌다.
+- **값**: `STARTNUMSTARTONTYPE`은 BOTH 0 · **EVEN 1 · ODD 2**이고 한글이 저장하는
+  비트가 모델과 같다 (#173, `section-page-starts-on` 쌍 실측). 스펙 표 130이 이
+  비트의 값을 적지 않아 종전 매핑이 `ODD → 1`을 가정한 것이 화근이었다 — 스펙이
+  값을 적지 않은 자리는 모델의 열거 값을 읽을 것. 아래 `lineShapes`(`DASH`·`DOT`)는
+  성격이 다르다: 스펙(표 25)과 모델이 같은 값에 서로 다른 이름을 붙여 실물 대조가
+  남은 자리다.
 - **생략 기본값**: `GetAttribute`는 속성이 없거나 열거 이름이 표에 없으면 값을
   건드리지 않고 false만 돌려주므로 **생성자가 세운 값이 남는다**. `CNoteSpacing()`은
   `betweenNotes` 850·`belowLine` 567·`aboveLine` 567, `CNoteLine()`은 길이 0·`SOLID`·

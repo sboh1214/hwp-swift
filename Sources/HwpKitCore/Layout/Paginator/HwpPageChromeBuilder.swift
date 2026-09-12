@@ -19,7 +19,7 @@ struct HwpPageChromeBuilder {
         var activePageNumberPosition: CoreHwp.HwpPageNumberPosition?
         /// 이 페이지에서 감출 대상 (pghd, 표 145 bit field). 페이지 확정 시 초기화.
         var pageHideMask: UInt32 = 0
-        /// 구역 정의 (표 132)의 감추기 플래그를 표 145 비트로 환산한 마스크.
+        /// 구역 정의 (표 130)의 감추기 플래그를 표 145 비트로 환산한 마스크.
         /// 이 플래그는 구역의 **첫 쪽**만 감춘다 (HwpSectionDefProperty 문서:
         /// "첫 쪽의 머리말/꼬리말/바탕쪽 감춤") — 페이지 확정 시 소비해
         /// 2쪽부터는 크롬이 되살아난다.
@@ -100,7 +100,7 @@ struct HwpPageChromeBuilder {
         }
     }
 
-    /// 구역 정의 (표 132)의 감추기 플래그를 표 145 비트 (0x01 머리말 /
+    /// 구역 정의 (표 130)의 감추기 플래그를 표 145 비트 (0x01 머리말 /
     /// 0x02 꼬리말 / 0x20 쪽 번호)로 환산해 구역 마스크로 둔다. 구역의 첫 쪽에서
     /// pageHide 컨트롤 마스크와 OR로 합쳐 한 번 소비되고, 다음 구역 정의에서
     /// 다시 채워진다.

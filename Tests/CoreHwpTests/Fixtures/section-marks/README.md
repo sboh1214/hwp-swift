@@ -29,7 +29,7 @@ binary HWP fixture다. 같은 편집 세션에서 `한글 표준 문서 (*.hwpx)
 **삼중항 안의 배정은 이 표본으로 정해지지 않는다** — 내부를 어떻게 치환해도 같은
 0x29·0x16이 나오므로 `hideHeader`는 {0, 3}, `hideFooter`는 {1, 2, 4}까지만 좁혀진다.
 코드가 쓰는 배정은 HWPX 쌍의 `<hp:pageHiding hideHeader hideFooter hideMasterPage
-hideBorder hideFill hidePageNum>` 나열 순서(한컴 공개 모델과 같다)와 표 132를 옮긴
+hideBorder hideFill hidePageNum>` 나열 순서(한컴 공개 모델과 같다)와 표 130를 옮긴
 `HwpSectionDefProperty`의 bits 0-5를 대조한 결과다.
 
 **새 번호의 제어 문자 코드는 21이다** (18은 자동 번호 `atno` 전용). 세 표본이
