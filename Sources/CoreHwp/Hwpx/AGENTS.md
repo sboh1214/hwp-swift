@@ -194,7 +194,8 @@ HWPX를 한글로 열어 `.hwp`·`.hwpx`로 저장)이 확정한 것:
 가깝게 그려 PDF에 거의 남지 않는다). 우리 렌더에서 선 모양을 읽는 곳은 표 셀 테두리의
 2중선 판정(`HwpTableFrame.borders(from:)`의 8·9·10)뿐이다 — 밑줄·취소선 모양, 단 구분선,
 대각선은 소비자가 없고 그 밖의 테두리 종류(점선·파선·물결 등)는 실선으로 그린다
-(두 포맷 공통 — 후속).
+(두 포맷 공통 — #191). `line-shapes` 픽스처에서 드러난 자리 차지 표 앵커 문단의 본문
+줄 순서 격차는 #190이다.
 
 가드: `HwpxLineTypeMapperTests`(두 표의 순서·`-1` 관계·REV3D 접기·대각선·단 구분선),
 `HwpxHwpEquivalenceTests`의 `resolvedRunsByParagraph`(밑줄·취소선 모양 추가)·
