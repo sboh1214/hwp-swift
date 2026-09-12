@@ -10,7 +10,13 @@ public struct HwpCharShapeProperty {
     public var isBold: Bool
     /** 밑줄 종류 */
     public var underlineType: HwpUnderlineType
-    /** 밑줄 모양 */
+    /**
+     밑줄 모양 (표 35 bit 4~7 → 표 25: 0 실선 · 1 긴 점선 · 2 점선 · 3 -.-.-. · 4 -..-.. ·
+     5 긴 파선 · 6 원형 점선 · 7 2중선 · 8 가는+굵은 · 9 굵은+가는 · 10 가는+굵은+가는 ·
+     11 물결 · 12 물결 2중선 · 13 두꺼운 3D · 14 두꺼운 3D(광원 반대) · 15 3D 단선).
+     테두리선(`HwpBorderType`)과 달리 **실선이 0**이고 4비트라 3D 단선(광원 반대)은
+     담기지 않는다 — 한글 12.30.0 실측 (#177).
+     */
     public var underlineShape: Int
     /** 외곽선 종류 */
     public var borderlineType: HwpBorderLineType
@@ -32,7 +38,7 @@ public struct HwpCharShapeProperty {
     public var emphasisType: HwpEmphasisType
     /** 글꼴에 어울리는 빈칸 사용 여부 */
     public var doesAdjustBlank: Bool
-    /** 취소선 모양 */
+    /** 취소선 모양 (표 35 bit 26~29 → 표 25) — 값은 `underlineShape`와 같은 표다. */
     public var strikethroughShape: Int
     /** Kerning 여부 */
     public var isKerning: Bool

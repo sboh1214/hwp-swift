@@ -147,8 +147,9 @@ enum HwpxFootnoteShapeMapper {
 
     /// 종류·굵기·색 6바이트. 종류 > 17이나 굵기 > 15는 `dividerInfo`의 wide
     /// 유효성 게이트를 깨뜨려 narrow 폴백을 부르므로 두 변환기의 상한을 믿는다
-    /// (`lineShapeIndex`는 OWPML `LINETYPE2` 이름표라 0-17, `thicknessIndex`는
-    /// `LINEWIDTHTYPE`과 같은 표 26 index).
+    /// (`borderLineType`은 OWPML `LINETYPE2` 값 그대로라 0-17 — 구분선은 테두리와
+    /// 같은 축이고 글자선처럼 1을 빼지 않는다(#177 실측: DOT ↔ 2·DASH ↔ 3),
+    /// `thicknessIndex`는 `LINEWIDTHTYPE`과 같은 표 26 index).
     ///
     /// 생략·읽을 수 없는 값은 참조 모델 생성자 값(SOLID·0.12 mm)으로 접어 한컴
     /// `GetAttribute`와 같은 동작을 만든다 — 두 변환기 모두 `default:`를 받으므로
@@ -156,7 +157,7 @@ enum HwpxFootnoteShapeMapper {
     /// 없음) 같은 값이 조용히 0.1 mm가 된다.
     private static func dividerLineBytes(_ line: HwpxXMLNode?) -> Data {
         var bytes = Data(capacity: 6)
-        bytes.append(UInt8(clamping: HwpxCharShapeMapper.lineShapeIndex(
+        bytes.append(UInt8(clamping: HwpxLineTypeMapper.borderLineType(
             line?.attribute("type"), default: lineTypeDefault
         )))
         bytes.append(HwpxParaShapeMapper.thicknessIndex(

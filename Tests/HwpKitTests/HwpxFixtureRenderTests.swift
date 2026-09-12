@@ -15,17 +15,17 @@ final class HwpxFixtureRenderTests: XCTestCase {
     /// manifest `expectations.pageCount`(출처는 `pageCountSource`)와 실제 렌더
     /// 쪽수가 정확히 일치해야 한다.
     ///
-    /// 핀은 **파싱 가능한 픽스처 전부**에 강제한다 — 하한(`>= 17`)만 두면
+    /// 핀은 **파싱 가능한 픽스처 전부**에 강제한다 — 하한(`>= 18`)만 두면
     /// `pageCount` 없는 새 픽스처가 조판 캐시 회귀 가드에서 조용히 빠진다.
     /// 등식만 두면 반대로 픽스처가 전부 유실돼도 0 == 0으로 통과하므로 하한도
-    /// 남긴다. `expectedError` 픽스처(암호·배포용·DRM)는 HWP 하니스가 38종 중
-    /// 34종만 요구하는 것과 같은 이유로 분모에서 뺀다.
+    /// 남긴다. `expectedError` 픽스처(암호·배포용·DRM)는 HWP 하니스가 39종 중
+    /// 35종만 요구하는 것과 같은 이유로 분모에서 뺀다.
     func testHwpxPageCountsMatchManifest() async throws {
         let fixtures = try FixtureRoot.loadAllHwpxFixtures(from: #file)
         let parseable = fixtures.filter { !$0.hasExpectedError }
         let withPageCount = parseable.filter { $0.expectedPageCount != nil }
-        // 픽스처 유실 가드 — 변환 쌍 17종
-        expect(fixtures.count) >= 17
+        // 픽스처 유실 가드 — 변환 쌍 18종
+        expect(fixtures.count) >= 18
         // 파싱 가능한 픽스처는 전부 pageCount 핀이 있어야 한다 (AGENTS.md "HWPX 픽스처 추가")
         expect(withPageCount.count) == parseable.count
         for fixture in withPageCount {
@@ -93,8 +93,8 @@ final class HwpxFixtureRenderTests: XCTestCase {
             }
         }
 
-        // 비교 가능한 변환 쌍 17종 — 하한은 유실 가드
-        expect(comparedCount) >= 17
+        // 비교 가능한 변환 쌍 18종 — 하한은 유실 가드
+        expect(comparedCount) >= 18
         if !failures.isEmpty {
             fail("HWP↔HWPX page count mismatches (\(failures.count)):\n" +
                 failures.joined(separator: "\n"))
@@ -106,7 +106,7 @@ final class HwpxFixtureRenderTests: XCTestCase {
     /// `hp:header`·`hp:footer`가 승격돼야 header-footer 쌍의 머리말·꼬리말이
     /// 선다 (#167). `hp:pageHiding`·`hp:newNum`이 승격돼야 section-marks 쌍의
     /// 1쪽 번호가 감춰지고 2·3쪽이 9·10으로 다시 매겨진다 (#169 — 강등 상태는
-    /// `["- 1 -"], ["- 2 -"], ["- 3 -"]`였다). 17쌍 중 쪽 크롬을 가진 문서는 그
+    /// `["- 1 -"], ["- 2 -"], ["- 3 -"]`였다). 18쌍 중 쪽 크롬을 가진 문서는 그
     /// 셋뿐이라 나머지는 빈 배열 등식이고, 셋은 직접 핀한다 — 등식만 두면
     /// 양쪽이 함께 비어도 통과한다.
     func testHwpxPageChromeMatchesHwpPairs() async throws {
@@ -147,7 +147,7 @@ final class HwpxFixtureRenderTests: XCTestCase {
             }
         }
 
-        expect(comparedCount) >= 17
+        expect(comparedCount) >= 18
         expect(nooriChrome) == [["1"], ["2"], ["3"]]
         expect(headerFooterChrome) == [["CoreHwp header fixture", "CoreHwp footer fixture"]]
         // 1쪽은 쪽 감추기(0x29 = 머리말·쪽 테두리·쪽 번호)로 번호가 없고,
@@ -161,7 +161,7 @@ final class HwpxFixtureRenderTests: XCTestCase {
 
     /// 내장 차트 블록(`.chart` payload) 수가 HWP 쌍과 같아야 한다 — HWPX `hp:ole`이
     /// `.ole`로 typed 승격돼야 `HwpPaginator.chartFrame`이 chart 쌍의 차트를 그린다
-    /// (#134). 17쌍 중 차트를 가진 문서는 chart뿐이라 나머지는 0 == 0 등식이고,
+    /// (#134). 18쌍 중 차트를 가진 문서는 chart뿐이라 나머지는 0 == 0 등식이고,
     /// chart는 1로 직접 핀한다 — 등식만 두면 양쪽이 함께 0이어도 통과하기 때문이다.
     /// 미지원 힌트도 HWP 쌍과 같은 "OLE"여야 한다 (`HwpUnsupportedDetector`가
     /// `.ole` 컨트롤과 gso의 OLE 개체 요소에 같은 힌트를 낸다 — 근사 렌더라 힌트는
@@ -205,7 +205,7 @@ final class HwpxFixtureRenderTests: XCTestCase {
             }
         }
 
-        expect(comparedCount) >= 17
+        expect(comparedCount) >= 18
         expect(chartHwpxCount) == 1
         expect(chartHwpCount) == 1
         expect(chartHints) == ["OLE"]
@@ -259,7 +259,7 @@ final class HwpxFixtureRenderTests: XCTestCase {
             }
         }
 
-        expect(comparedCount) >= 17
+        expect(comparedCount) >= 18
         // 두 문단은 표 셀 안이라 `page.blocks`에는 잡히지 않는다 — 추출은
         // 페인트 리스트여야 한다. 본문 자체가 `-`로 끝나므로 `contains("-")`
         // 검사는 무의미하고, 선행 `- `를 문자열로 직접 핀한다.
@@ -275,7 +275,7 @@ final class HwpxFixtureRenderTests: XCTestCase {
 
     /// 글머리표 라벨(`문자 + 공백`)이 앞에 붙은 줄만 문서 순서로 모은다.
     ///
-    /// 라벨 문자는 픽스처 17종의 유일한 실물인 `-`로 한정한다. `□`·`o` 같은
+    /// 라벨 문자는 픽스처 18종의 유일한 실물인 `-`로 한정한다. `□`·`o` 같은
     /// 다른 기호는 noori 본문 문단이 **글자 그대로** 쓰고 있어(문단 머리가
     /// 아니다) 넓히면 본문이 딸려 들어온다.
     ///
@@ -305,7 +305,7 @@ final class HwpxFixtureRenderTests: XCTestCase {
     /// 각주·미주 블록이 HWP 쌍과 같은 자리에 같은 텍스트로 서야 한다 —
     /// `hp:footNote`·`hp:endNote`가 typed 승격돼야 조판이 주석을 모으고,
     /// `hp:autoNum`이 함께 승격돼야 본문 첫머리에 번호 라벨이 붙는다 (#168).
-    /// 17쌍 중 주석을 가진 문서는 footnote-endnote 하나뿐이라 나머지는 빈 배열
+    /// 18쌍 중 주석을 가진 문서는 footnote-endnote 하나뿐이라 나머지는 빈 배열
     /// 등식이고, 그 하나는 직접 핀한다 — 등식만 두면 양쪽이 함께 비어도 통과한다.
     func testHwpxFootnoteBlocksMatchHwpPairs() async throws {
         let hwpxFixtures = try FixtureRoot.loadAllHwpxFixtures(from: #file)
@@ -340,7 +340,7 @@ final class HwpxFixtureRenderTests: XCTestCase {
             }
         }
 
-        expect(comparedCount) >= 17
+        expect(comparedCount) >= 18
         // 1쪽에 각주, 2쪽에 미주. 선두 `1)`가 각주 본문 문단 안 `hp:autoNum`이
         // 만드는 번호 라벨이다 — autoNum이 강등되면 그 자리가 빈다.
         expect(noteTexts) == [["1) CoreHwp footnote fixture"], ["1) CoreHwp endnote fixture"]]
@@ -386,8 +386,8 @@ final class HwpxFixtureRenderTests: XCTestCase {
             }
         }
 
-        expect(comparedCount) >= 17
-        // 17쌍 중 책갈피를 가진 문서는 section-marks뿐이라 나머지는 빈 배열
+        expect(comparedCount) >= 18
+        // 18쌍 중 책갈피를 가진 문서는 section-marks뿐이라 나머지는 빈 배열
         // 등식이다 — 직접 핀이 없으면 양쪽이 함께 비어도 통과한다.
         expect(sectionMarkBookmarks) == ["표식 A1"]
         if !failures.isEmpty {
@@ -431,7 +431,7 @@ final class HwpxFixtureRenderTests: XCTestCase {
     func testHwpxFixturesRenderExpectedText() async throws {
         let fixtures = try FixtureRoot.loadAllHwpxFixtures(from: #file)
         let withText = fixtures.filter { !$0.hasExpectedError && !$0.expectedVisibleText.isEmpty }
-        expect(withText.count) >= 15
+        expect(withText.count) >= 16
 
         var failures: [String] = []
         for fixture in withText {

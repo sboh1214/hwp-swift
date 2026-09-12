@@ -22,9 +22,11 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
 1. `/Applications/한컴오피스 한글.app`(bundle
    `com.hancom.office.hwp12.mac.general`, 12.30.0 build 6446)에서
    `Fixtures/<id>/document.hwp`의 **사본**을 연다 (열람만으로 원본이 재기록될 수
-   있다 — 4단계). 새로 저작하는 쌍(`section-marks`·`section-page-starts-on`)은
-   `.hwp`와 `.hwpx`를 **같은 편집 세션에서 연달아** 저장해야 두 파일이 같은 문서가
-   된다.
+   있다 — 4단계). 새로 저작하는 쌍(`section-marks`·`section-page-starts-on`·
+   `line-shapes`)은 `.hwp`와 `.hwpx`를 **같은 편집 세션에서 연달아** 저장해야 두
+   파일이 같은 문서가 된다. 한글 GUI로 만들기 어려운 조합은 합성 HWPX를 한글로 열어
+   두 형식으로 저장해도 된다(`line-shapes` — 17종 선 모양을 네 자리에 모두 실은
+   문서, `Fixtures/line-shapes/README.md`의 절차).
 2. `파일 > 다른 이름으로 저장하기...` → 파일 형식 **한글 표준 문서 (*.hwpx)**
    → 저장. 저장본을 `HwpxFixtures/<id>/document.hwpx`로 복사한다.
 3. `manifest.json` 기대값을 갱신하고
@@ -52,7 +54,9 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
   `Fixtures/bookmark`(책갈피 1개짜리 1쪽 문서)는 그 쌍이 같은 컨트롤을 더 넓게
   덮으므로 별도 변환하지 않았다. 구역 시작 종류(홀수·짝수·사용자)는 #173에서
   `section-page-starts-on` 쌍으로 저작했다 — 코퍼스가 전부 `BOTH`라 등가 스위트가
-  잡지 못하던 `pageStartsOn` 매핑의 실물 근거다.
+  잡지 못하던 `pageStartsOn` 매핑의 실물 근거다. 선 종류(`LINETYPE2`)는 #177에서
+  `line-shapes` 쌍으로 저작했다 — 코퍼스의 글자선이 `NONE`·`SOLID`뿐이라 실선의 값
+  (글자선 0 · 테두리 1)과 `DOT`·`DASH`의 순서를 잡지 못하던 자리의 실물 근거다.
 
 ## manifest 작성 기준
 

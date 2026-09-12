@@ -288,6 +288,26 @@
   `THICKREV3D`·`3D`·`REV3D`인데 종전에는 표에 없는 이름을 써서, 그 값을 담은 문서의
   선 종류가 조용히 "없음"으로 파싱됐습니다. 각주 다단 배열의 셋째 값
   (`RIGHT_MOST_COLUMN`)도 같은 이유로 바로잡았습니다.
+- **HWPX 밑줄·취소선 모양과 테두리·구분선 종류가 한글이 저장하는 값으로 읽힙니다**
+  (#177). OWPML `LINETYPE2` 이름표 하나를 밑줄·취소선(`hh:underline@shape`·
+  `hh:strikeout@shape`), 표 테두리(`hh:borderFill`), 각주·미주 구분선(`hp:noteLine`),
+  단 구분선(`hp:colLine`)이 함께 쓰는데, HWP5 바이너리는 자리마다 값의 기준이 달라
+  같은 문서를 HWP로 열 때와 HWPX로 열 때 값이 어긋났습니다 — 글자선은 표 전체가 한 칸
+  밀려 실선(`SOLID`)이 HWP 0 대신 1로 파싱됐고, 테두리·구분선은 `DOT`·`DASH`가 서로
+  바뀌어 파싱됐습니다. 한컴오피스
+  한글 12.30이 같은 편집 세션에서 저장한 `line-shapes` 쌍(17종을 네 자리에 모두 실은
+  문서)으로 확정한 값은 글자선이 `LINETYPE2 - 1`(실선 0 · DOT 1 · DASH 2 · … · 3D 15,
+  4비트를 넘치는 `REV3D`는 한글처럼 실선으로 접음), 테두리·대각선·구분선이
+  `LINETYPE2` 그대로(실선 1 · DOT 2 · DASH 3 · … · REV3D 17)입니다. 한글은 `DOT`를 긴
+  점선(파선)으로, `DASH`를 점선으로 그리므로 이름의 뜻이 아니라 열거 순서를 따릅니다.
+  지금은 조판이 표 셀 테두리의 2중선 판정 외에는 선 모양을 읽지 않아 그리는 결과는
+  같지만, `HwpCharShapeProperty`의
+  `underlineShape`·`strikethroughShape`와 `HwpBorderFill.borderType`이 HWPX 문서에서
+  HWP와 같은 값이 됩니다. 테두리/배경의 대각선(`hh:diagonal`) 종류·굵기·색도 함께
+  옮깁니다 — 한글은 대각선을 긋지 않는 기본 테두리/배경에도 실선(1)을 저장합니다.
+  포맷 등가 비교에 밑줄·취소선 모양과 표 셀 테두리(`cellBorders`)·단 구분선
+  (`columnDividers`) 축을 더해 이 값이 어긋나면 등식이 깨지도록 했습니다 — 종전
+  비교는 밑줄 종류·취소선 여부와 셀 수·병합만 봐서 이 격차를 통과시켰습니다.
 
 ### Breaking Changes
 

@@ -168,6 +168,13 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   `pageStartsOn`의 `ODD`·`EVEN`이 그 값으로 옮겨져야 한다. 4쪽·5문단이고 홀수·짝수
   시작은 빈 쪽 없이 쪽 번호만 1·3·4·5로 건너뛴다. HWPX 쌍은
   `HwpxFixtures/section-page-starts-on`.
+- `line-shapes`: OWPML `LINETYPE2` 17종을 글자 아래 밑줄 17문단·취소선 17문단·17행 표의
+  네 방향 테두리·2단 구분선(`DASH_DOT`)·각주(`DOT`)/미주(`DASH`) 구분선에 모두 실은
+  합성 HWPX를 Hancom Office HWP for macOS 12.30.0 build 6446으로 열어 2026-09-12에
+  `.hwp`·`.hwpx`로 저장. HWPX 선 종류 이름이 HWP5의 어느 값으로 저장되는지의 실물
+  근거다 (#177) — 글자선은 `LINETYPE2 - 1`(실선 0, `REV3D`는 4비트를 넘쳐 실선으로
+  접힘), 테두리·대각선·구분선은 `LINETYPE2` 그대로(실선 1)이고 한글은 `DOT`를 긴
+  점선으로, `DASH`를 점선으로 그린다. HWPX 쌍은 `HwpxFixtures/line-shapes`.
 - `track-changes`: WordprocessingML tracked changes DOCX를 Hancom Office HWP for macOS
   12.30.0 build 6382에서 열고 HWP로 저장. FileHeader, 본문/preview,
   DocumentProperties, DocInfo id mappings를 manifest로 검증.
@@ -618,7 +625,7 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
 | plain text | 검증 중: 한컴오피스 생성 최소 문서의 paragraph text record raw payload total, control-char payload prefix/suffix, char-shape/line-seg raw payload total, preview, DocInfo count 기준 | `plain-text-minimal`, `plain-text-hancom-mac2026`, `CCL`, `공공누리`, `noori` |
 | multi-paragraph | 검증 중 | `noori` |
 | multiple sections | 검증 중: 한컴오피스 생성 문서의 `BodyText` storage child 이름(`Section0`, `Section1`)과 구역별 paragraph count 기준. 구역 정의의 쪽 시작 종류(홀수·짝수·사용자)는 `section-page-starts-on`이 `sections[].newPageNumberApplyRawValue`·`pageStartNumber`로 잠근다 | `multi-section`, `section-page-starts-on` |
-| table | 검증 중: cell paragraph까지 recursive count 검증 | `noori` |
+| table | 검증 중: cell paragraph까지 recursive count 검증. 셀 테두리 선 종류 1…17(`LINETYPE2` 값 = `HwpBorderType` raw, 표 25 + 1)과 대각선은 `line-shapes`가 HWPX 쌍과의 등가 축(`cellBorders`)으로 잠근다 | `noori`, `line-shapes` |
 | image / BinData | 검증 중: `BinData` stream과 picture component id/BinData id 연결, storage stream id/extension, stream payload prefix/suffix 검증 | `BinData`, `noori`, `CCL`, `공공누리`, `legacy-common-control-property` |
 | equation | 검증 중: 한컴오피스 생성 문서의 `eqed` shape control, `eqEdit` raw record, 수식 문자열 보존 기준 | `equation` |
 | chart | 검증 중: 한컴오피스 생성 문서의 chart OLE BinData storage child 이름, genShapeObject, `shapeComponentOle` raw record와 OLE BinData id 보존 기준 | `chart` |
@@ -628,7 +635,7 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
 | page number | 검증 중: `pgnp` control의 property, 앞/뒤 장식 문자·줄표 필드(4번째 WCHAR, `unused`), raw payload 기준. 줄표 필드가 0인 `noori`는 쪽 번호를 한글.app과 같이 "1"로 렌더한다 (#138) | `noori` |
 | large/legacy document | 검증 중: 41개 section, 14,000개 이상 nested paragraph, 7,000개 이상 control을 가진 HWP 5.0.2.2 문서 기준. 대표 fixture truncation/corruption 테스트에도 포함해 typed `HwpError` 반환을 확인 | `legacy-common-control-property` |
 | other known controls | 검증 중: `atno`, `nwno`, `pghd`, `idxm`, `tdut` raw payload/trailing bytes/unknown child records 기준. `pghd`는 raw bit field, `idxm`은 UTF-16LE 문자열 typed value까지 검증 | `legacy-common-control-property` |
-| columns | 검증 중: 다단 control과 DocInfo/document properties 기준 | `Column`, `noori` |
+| columns | 검증 중: 다단 control과 DocInfo/document properties 기준. 단 구분선 종류·굵기(`columns[].dividerType`, `DASH_DOT` = 4)는 `line-shapes`가 잠근다 | `Column`, `noori`, `line-shapes` |
 | styles | 검증 중: DocInfo style mapping count 기준 | `noori` |
 | bullets/numbering | 검증 중: DocInfo numbering/bullet mapping count 기준 | `noori` |
 | DocInfo raw records | 검증 중: `DOC_DATA`, `FORBIDDEN_CHAR`, `LAYOUT_COMPATIBILITY` 실제 fixture 기준. `MEMO_SHAPE`, `TRACK_CHANGE_CONTENT`, `TRACK_CHANGE_AUTHOR`는 `ID_MAPPINGS` child raw model까지 구현하고 `track-changes` fixture로 검증하며, content record는 kind/변경 시각, author record는 작성자 이름을 typed model로 노출. DocInfo `TRACK_CHANGE`는 `noori` fixture의 compatible document child record(`compatible-track-change-records`)로 검증. 전체 `HwpFile` 조립 경로는 `plain-text-minimal`의 실제 stream 기반 주입 테스트로 `DISTRIBUTE_DOC_DATA`와 top-level `TRACK_CHANGE` raw record 보존을 확인. 2026-06-20에 Downloads 잔여 HWP 5개를 `DISTRIBUTE_DOC_DATA = 28`, top-level `TRACK_CHANGE = 32` 기준으로 재스캔했지만 후보는 없었음. 2026-06-22 Python 표준 라이브러리 OLE/CFB scanner 재확인에서도 top-level DocInfo tag 조합은 `[16, 17, 27, 30]` 3개, `[16, 17, 30]` 1개, `[16, 17]` 1개뿐이었음. 2026-06-25 현재 Downloads HWP 5개에는 재배포 가능한 top-level `TRACK_CHANGE` 후보가 없었고, 한컴오피스 앱 번들 HWP/HWT 후보 317개 중 316개에는 tree 기준 `COMPATIBLE_DOCUMENT` child `TRACK_CHANGE = 32`가 있었지만 top-level record도 아니고 로컬 앱 resource라 fixture로 커밋하지 않음. 앱 번들의 top-level DocInfo tag 조합은 `[16, 17, 30]` 289개와 `[16, 17, 27, 30]` 28개뿐이었음. 2026-06-27 repository scanner로 local Downloads folder와 한컴오피스 앱 번들 HWP/HWT 후보 322개를 재확인한 결과 `scanned=322`, `errors=0`, `markers={}`였고, external 322개 후보의 top-level DocInfo tag 조합은 `[16, 17, 30]` 290개, `[16, 17, 27, 30]` 31개, `[16, 17]` 1개였습니다. `nested_track_change=320`이었지만 모두 compatible document child record이며, `DISTRIBUTE_DOC_DATA = 28`, top-level `TRACK_CHANGE = 32`, 실제 DRM/certDRM bit, 무수정 `PrvImage` 누락 후보는 없었음. 일부 Downloads 후보의 `TRACK_CHANGE = 32`도 level 1 compatible document child record라서 top-level fixture gap을 대체하지 않음. `DISTRIBUTE_DOC_DATA`(`distribute-doc-data`)와 재배포 가능한 top-level `TRACK_CHANGE` fixture(`top-level-track-change-records`)는 추가 필요 | `noori`, `track-changes`, `plain-text-minimal` |

@@ -386,14 +386,16 @@ private extension HwpxHeaderMapper {
 
     /// 가족 → 정의 요소 이름. `headChildren` 조회가 거른 타 vocabulary
     /// 디코이를 강등할 때 쓴다.
-    /// `hh:borderFill` 자식의 기대 vocabulary — 테두리 4종은 head, 채우기는
+    /// `hh:borderFill` 자식의 기대 vocabulary — 테두리 4종·대각선은 head, 채우기는
     /// core다 (전 픽스처 실측: 테두리 각 38건 `hh:`, fillBrush·winBrush 각
     /// 17건 `hc:`). 한쪽으로 통일하면 반드시 다른 쪽이 진단에서 오보된다.
+    /// `diagonal`은 #177부터 소비한다 — 여기 없으면 소비한 요소가 미해석으로 오보된다.
     static let borderFillChildNamespaces: [String: String] = [
         "leftBorder": HwpxNamespace.head,
         "rightBorder": HwpxNamespace.head,
         "topBorder": HwpxNamespace.head,
         "bottomBorder": HwpxNamespace.head,
+        "diagonal": HwpxNamespace.head,
         "fillBrush": HwpxNamespace.core,
     ]
 
@@ -533,8 +535,8 @@ private extension HwpxHeaderMapper {
 
     /// `hh:borderFills` 가족을 테두리/배경 배열로 옮긴다.
     ///
-    /// `mapBorderFill`은 4방향 테두리와 단색 채우기만 소비한다 — slash 계열
-    /// 테두리·그러데이션/이미지 채우기 등 미소비 자손은 진단으로 강등해야
+    /// `mapBorderFill`은 4방향 테두리·대각선과 단색 채우기만 소비한다 — slash 계열
+    /// 대각선 모양·그러데이션/이미지 채우기 등 미소비 자손은 진단으로 강등해야
     /// "미해석 강등은 진단으로 보고됨" 규약이 지켜진다.
     static func mapBorderFills(
         _ family: HwpxXMLNode,
@@ -559,7 +561,7 @@ private extension HwpxHeaderMapper {
             mapping.demoteDuplicateSingletons(
                 in: borderFill, of: Self.borderFillChildNamespaces
             )
-            for borderName in ["leftBorder", "rightBorder", "topBorder", "bottomBorder"] {
+            for borderName in ["leftBorder", "rightBorder", "topBorder", "bottomBorder", "diagonal"] {
                 if let border = borderFill.headFirstChild(named: borderName) {
                     mapping.demoteUnconsumed(in: border, consumed: [])
                 }

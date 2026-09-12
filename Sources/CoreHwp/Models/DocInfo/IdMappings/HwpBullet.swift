@@ -36,7 +36,7 @@ public struct HwpBullet {
 extension HwpBullet {
     /// HWPX(`hh:bullet`) 합성 전용 — 표 39 문단 머리 정보 12바이트를
     /// `info`(앞 8바이트)와 `headCharShapeId`(뒤 `INT32`)로 쪼개 든다.
-    /// 레코드 payload는 합성하지 않는다 (`HwpBorderFill(hwpxBorders:fillInfo:)`·
+    /// 레코드 payload는 합성하지 않는다 (`HwpBorderFill(hwpxBorders:diagonal:fillInfo:)`·
     /// `HwpFaceName(hwpxFace:substituteFace:)`와 같은 DocInfo 가족 관행 —
     /// HWPX 매니페스트에 payload 핀이 없고 등가 투영도 제외한다).
     init(hwpxInfo info: [BYTE], headCharShapeId: Int32, char: String, checkChar: String) {

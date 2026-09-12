@@ -134,22 +134,31 @@ enum HwpxParaShapeMapper {
         )
     }
 
-    /// `hh:borderFill` → `HwpBorderFill` — 4방향 테두리와 단색 채우기만
+    /// `hh:borderFill` → `HwpBorderFill` — 4방향 테두리·대각선과 단색 채우기만
     /// 해석한다 (그러데이션·이미지 채우기는 1차 범위 밖).
+    ///
+    /// 선 종류는 `LINETYPE2` 값 그대로다(`HwpxLineTypeMapper.borderLineType`, NONE 0 ·
+    /// SOLID 1 · DOT 2 · DASH 3 …). 대각선(`hh:diagonal`)도 같은 표로 읽는다 — 스펙 표 23은
+    /// 이 바이트를 "대각선 종류(표 27: Slash·BackSlash·CrookedSlash)"로 적지만 한글은
+    /// 대각선을 안 긋는 기본 테두리/배경에도 `type="SOLID"`를 적고 바이너리에 **1**을
+    /// 저장하므로(#177 `line-shapes`·noori 쌍 실측 — 확인된 값은 없음 0·SOLID 1 둘뿐),
+    /// 이 자식을 안 읽으면 HWP 쌍(1)과 HWPX(0)가 갈린다. 대각선 모양 자체(`hh:slash`·
+    /// `hh:backSlash`)는 여전히 읽지 않고 진단으로 강등한다.
     static func mapBorderFill(_ node: HwpxXMLNode) -> HwpBorderFill {
-        let borders = ["leftBorder", "rightBorder", "topBorder", "bottomBorder"]
-            .map { name -> HwpBorderLine in
-                guard let child = node.headFirstChild(named: name) else {
-                    return HwpBorderLine()
-                }
-                return HwpBorderLine(
-                    typeRawValue: UInt8(clamping: HwpxCharShapeMapper.lineShapeIndex(
-                        child.attribute("type"), default: 0
-                    )),
-                    thickness: Self.thicknessIndex(of: child.attribute("width")),
-                    color: child.colorAttribute("color") ?? HwpColor()
-                )
+        func line(named name: String) -> HwpBorderLine {
+            guard let child = node.headFirstChild(named: name) else {
+                return HwpBorderLine()
             }
+            return HwpBorderLine(
+                typeRawValue: UInt8(clamping: HwpxLineTypeMapper.borderLineType(
+                    child.attribute("type"), default: 0
+                )),
+                thickness: Self.thicknessIndex(of: child.attribute("width")),
+                color: child.colorAttribute("color") ?? HwpColor()
+            )
+        }
+        let borders = ["leftBorder", "rightBorder", "topBorder", "bottomBorder"].map(line(named:))
+        let diagonal = line(named: "diagonal")
 
         var fillInfo: [BYTE] = []
         if let brush = node.coreFirstChild(named: "fillBrush")?
@@ -166,7 +175,7 @@ enum HwpxParaShapeMapper {
             fillInfo += [0xFF, 0xFF, 0xFF, 0xFF]
         }
 
-        return HwpBorderFill(hwpxBorders: borders, fillInfo: fillInfo)
+        return HwpBorderFill(hwpxBorders: borders, diagonal: diagonal, fillInfo: fillInfo)
     }
 }
 

@@ -135,7 +135,7 @@ final class HwpxHeaderDiagnosticsTests: XCTestCase {
         )
         let (docInfo, _) = try HwpxHeaderFixture.mapHeader(withDecoy)
 
-        // SOLID(1)가 유지되고 디코이의 DOT(3)으로 덮이지 않는다.
+        // SOLID(1)가 유지되고 디코이의 DOT(2)으로 덮이지 않는다.
         // borderLineArray는 매퍼가 넣은 순서(left·right·top·bottom)다.
         let fill = docInfo.idMappings.borderFillArray[1]
         expect(fill.borderLineArray[0].typeRawValue) == 1

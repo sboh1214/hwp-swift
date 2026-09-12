@@ -243,7 +243,9 @@ enum HwpxSecPrMapper {
         column.property = property
 
         if let line = colPr.paragraphFirstChild(named: "colLine") {
-            column.dividerType = UInt8(clamping: HwpxCharShapeMapper.lineShapeIndex(
+            // 단 구분선 종류는 테두리와 같은 `LINETYPE2` 값 축이다 (#177 실측:
+            // `DASH_DOT` ↔ 4).
+            column.dividerType = UInt8(clamping: HwpxLineTypeMapper.borderLineType(
                 line.attribute("type"), default: 0
             ))
             column.dividerThickness = HwpxParaShapeMapper.thicknessIndex(
