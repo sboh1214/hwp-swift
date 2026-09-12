@@ -17,12 +17,15 @@ extension HwpTextRunBuilder {
         if mark == 17 {
             attributes[HwpAttributedStringKey.strikethroughStyle] = NSNumber(value: 1)
             attributes[HwpAttributedStringKey.strikethroughColor] = red
-            // 변경 추적 삭제선은 한글이 일반 취소선보다 조금 낮게 그린다
-            // (실측 0.29em vs 0.35em, #136) — 렌더러가 표식으로 가른다.
+            // 렌더러가 표식으로 갈라 `trackChangeStrikethroughCenterRatio`(0.29em)에
+            // 그린다 — 코퍼스의 변경 추적 실물(`track-changes`, MS Word 호환 문서)의
+            // 값이고, 네이티브 문서에서 한글은 일반 취소선과 같은 자리(0.35em)에
+            // 그린다 (#176 실측, 호환 모드 분기는 #187).
             attributes[HwpAttributedStringKey.trackChangeStrikethrough] = NSNumber(value: 1)
         } else {
-            // CT 밑줄은 폰트 밑줄 위치 (얕음) — 한글 실물은 베이스라인에서
-            // 반 x-height가량 아래 (track-changes 실측). 렌더러가 직접 그린다.
+            // 렌더러가 `trackChangeInsertUnderline*` 상수로 직접 그린다 — 삭제선과
+            // 같은 사정으로 호환 문서 실물의 값이며 네이티브 문서의 일반 밑줄과
+            // 다르다 (#176, #187).
             attributes[HwpAttributedStringKey.trackInsertUnderline] = red
         }
     }

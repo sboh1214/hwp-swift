@@ -50,7 +50,7 @@ extension HwpPageLayer {
         // 따라가고 줄어든 크기로 그리는데(6.36pt 글리프에서 +2.28pt) 우리는
         // 제자리에 그린다. 위쪽 밑줄은 한글도 제자리 + 기본 크기다.
         for run in runs {
-            // 밑줄은 CT 대신 항상 직접 (실물 헤어라인 두께 정합)
+            // 밑줄은 CT 대신 항상 직접 (CT 밑줄은 폰트 지표 위치·두께라 실물과 갈린다)
             drawUnderlineIfNeeded(run, lineOrigin: underlineOrigin, in: ctx)
             drawAboveUnderlineIfNeeded(run, lineOrigin: origin, in: ctx)
             drawStrikethroughIfNeeded(run, lineOrigin: origin, in: ctx)
@@ -283,8 +283,12 @@ extension HwpPageLayer {
         }
     }
 
-    /// 변경 추적 삽입 밑줄 — 베이스라인 아래 0.35em (한글 실물: 디센더
-    /// 아래 글리프 높이의 ~39% — 라운드 7 실측)
+    /// 변경 추적 삽입 밑줄 — 중심을 베이스라인 아래
+    /// `trackChangeInsertUnderlineCenterRatio`, 두께를
+    /// `trackChangeInsertUnderlineThicknessRatio`로 (둘 다 글자 크기 비례, #176).
+    /// 종전에는 0.75pt 사각형의 아래 모서리를 −0.35em에 두어 선 중심이 크기에
+    /// 비례하지 않았다. 두 상수는 `track-changes` 실물(MS Word 호환 문서)의 값이라
+    /// 네이티브 문서의 일반 밑줄과 갈린다 — 상수 doc-comment 참고.
     func drawTrackInsertUnderlineIfNeeded(
         _ run: CTRun,
         lineOrigin: CGPoint,
@@ -295,12 +299,15 @@ extension HwpPageLayer {
         else { return }
         let bounds = runBounds(of: run, lineOrigin: lineOrigin)
         let size = runFont(attributes).map(CTFontGetSize) ?? 10
+        let thickness = size * HwpRenderTuning.Text.trackChangeInsertUnderlineThicknessRatio
         setDecorationFillColor(color, in: ctx)
         ctx.fill(CGRect(
             x: bounds.minX,
-            y: lineOrigin.y - size * 0.35,
+            y: lineOrigin.y
+                - size * HwpRenderTuning.Text.trackChangeInsertUnderlineCenterRatio
+                - thickness / 2,
             width: bounds.width,
-            height: 0.75
+            height: thickness
         ))
     }
 
@@ -319,8 +326,9 @@ extension HwpPageLayer {
             ? HwpRenderTuning.Text.trackChangeStrikethroughCenterRatio
             : HwpRenderTuning.Text.strikethroughCenterRatio
         setDecorationFillColor(color, in: ctx)
-        // 실물 취소선도 밑줄과 같은 헤어라인 (라운드 8 실측 ~0.45pt)
-        let thickness: CGFloat = 0.4
+        // 두께도 글자 크기 비례 — 밑줄과 같은 0.04em (#176 실측: 5~100pt에서
+        // 밑줄·취소선이 같은 폭).
+        let thickness = size * HwpRenderTuning.Text.decorationLineThicknessRatio
         ctx.fill(CGRect(
             x: bounds.minX,
             y: lineOrigin.y + size * ratio - thickness / 2,
@@ -332,13 +340,21 @@ extension HwpPageLayer {
     /// CTRunDraw 경로에서 밑줄 '글자 아래'를 직접 그린다 (CTLineDraw만 밑줄을 지원).
     /// **되돌린 원점**(`underlineReturnDrop`)을 받는다 — 키 큰 인라인 개체 줄에서
     /// 실물이 밑줄을 개체 하단에 남기기 때문이다.
+    ///
+    /// 중심은 베이스라인 아래 글자 크기의 0.17배, 두께는 0.04배 (#176 실측 —
+    /// 네 글꼴·13개 크기에서 같은 비율). 폰트 `underlinePosition`(−0.075em)은
+    /// 한글 글리프 잉크를 관통하므로 쓰지 않는다.
     func drawUnderlineIfNeeded(_ run: CTRun, lineOrigin: CGPoint, in ctx: CGContext) {
         let attributes = runAttributes(run)
         guard attributes[HwpAttributedStringKey.underlineStyle] != nil else { return }
-        // 실물 밑줄은 헤어라인 (줄 높이의 ~2.3%), 한글 글리프 바닥 잉크
-        // 바로 아래 — 폰트 underlinePosition은 잉크를 관통한다 (라운드 7 실측)
         let size = runFont(attributes).map(CTFontGetSize) ?? 10
-        fillUnderline(run, lineOrigin: lineOrigin, center: -size * 0.20, in: ctx)
+        fillUnderline(
+            run,
+            lineOrigin: lineOrigin,
+            center: -size * HwpRenderTuning.Text.underlineBelowCenterRatio,
+            thickness: size * HwpRenderTuning.Text.decorationLineThicknessRatio,
+            in: ctx
+        )
     }
 
     /// 밑줄 '글자 위'(표 33 값 3) — 글자 크기의 0.87배 위 (#136 실측).
@@ -356,8 +372,13 @@ extension HwpPageLayer {
         let attributes = runAttributes(run)
         guard attributes[HwpAttributedStringKey.underlineAboveStyle] != nil else { return }
         let size = preScriptFontSize(attributes)
-        let center = size * HwpRenderTuning.Text.underlineAboveCenterRatio
-        fillUnderline(run, lineOrigin: lineOrigin, center: center, in: ctx)
+        fillUnderline(
+            run,
+            lineOrigin: lineOrigin,
+            center: size * HwpRenderTuning.Text.underlineAboveCenterRatio,
+            thickness: size * HwpRenderTuning.Text.decorationLineThicknessRatio,
+            in: ctx
+        )
     }
 
     /// 첨자 축소 전 글자 크기 (pt). 조판이 모든 run에 싣는 `spaceTargetSize`가
@@ -369,16 +390,17 @@ extension HwpPageLayer {
         return runFont(attributes).map(CTFontGetSize) ?? 10
     }
 
-    /// 밑줄 헤어라인 한 줄 — `center`는 `lineOrigin` 기준 세로 위치 (양수 = 위).
+    /// 밑줄 한 줄 — `center`는 `lineOrigin` 기준 세로 위치 (양수 = 위),
+    /// `thickness`는 선 두께 (pt). 사각형은 중심을 기준으로 위아래 반씩 나눈다.
     private func fillUnderline(
         _ run: CTRun,
         lineOrigin: CGPoint,
         center: CGFloat,
+        thickness: CGFloat,
         in ctx: CGContext
     ) {
         let attributes = runAttributes(run)
         let bounds = runBounds(of: run, lineOrigin: lineOrigin)
-        let thickness: CGFloat = 0.4
         let color = attributes[HwpAttributedStringKey.underlineColor]
             ?? attributes[kCTForegroundColorAttributeName as NSAttributedString.Key]
         setDecorationFillColor(color, in: ctx)

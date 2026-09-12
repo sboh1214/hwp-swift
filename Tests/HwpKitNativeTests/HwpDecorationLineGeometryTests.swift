@@ -6,146 +6,29 @@ import HwpKitCore
 import Nimble
 import XCTest
 
-/// 글자 장식 선(취소선·글자 위 밑줄·글자 아래 밑줄·변경 추적 삭제선)의 세로
-/// 위치가 **글자 크기에 비례**한다는 것과 그 비율을 고정한다 (#136).
+/// 글자 장식 선(취소선·글자 위/아래 밑줄·변경 추적 삭제선/삽입 밑줄)의 세로
+/// 위치와 **두께**가 **글자 크기에 비례**한다는 것과 그 비율을 고정한다 (#136, #176).
 ///
 /// 한 줄에 크기가 다른 두 run을 놓으면 베이스라인이 하나로 공유되므로, 두 선의
 /// 행 간격이 곧 `비율 × 크기 차`다 — 폰트·조판 구현과 무관하게 비율만 잰다.
-/// 절대 위치(실물 문서에서 어느 행에 떨어지는지)는
+/// 두께는 글리프가 없는 빈칸 run 위에 그린 선의 세로 잉크 합(안티앨리어싱
+/// 커버리지 합 = 면적)으로 잰다. 절대 위치(실물 문서에서 어느 행에 떨어지는지)는
 /// `FixtureDecorationLineRenderTests`가 픽스처로 잡는다.
 ///
 /// 실측 근거는 `HwpRenderTuning.Text`의 각 상수 doc-comment에 있다
-/// (한글.app 12.30.0 PDF 내보내기, 2026-09-08).
+/// (한글.app 12.30.0 PDF 내보내기, 2026-09-08·2026-09-12).
 final class HwpDecorationLineGeometryTests: XCTestCase {
-    private static let scale: CGFloat = 8
-    private static let smallSize: CGFloat = 20
-    private static let largeSize: CGFloat = 40
+    static let scale: CGFloat = 8
+    static let smallSize: CGFloat = 20
+    static let largeSize: CGFloat = 40
 
-    private struct Probe {
+    struct Probe {
         let small: CGFloat
         let large: CGFloat
         /// 위 방향(작은 크기 → 큰 크기) 이동량. 베이스라인 **위** 장식이면 양수.
         var rise: CGFloat {
             small - large
         }
-    }
-
-    private struct Raster {
-        let data: [UInt8]
-        let pixelWidth: Int
-        let pixelHeight: Int
-        let bytesPerRow: Int
-    }
-
-    /// 조건에 맞는 픽셀이 3개를 넘는 행들의 잉크 가중 중심 (pt, 위에서부터).
-    private static func rowCenter(
-        _ raster: Raster,
-        where match: (UInt8, UInt8, UInt8) -> Bool
-    ) -> CGFloat? {
-        var weighted = 0.0
-        var total = 0.0
-        for y in 0 ..< raster.pixelHeight {
-            var count = 0
-            for x in 0 ..< raster.pixelWidth {
-                let offset = y * raster.bytesPerRow + x * 4
-                if match(
-                    raster.data[offset], raster.data[offset + 1], raster.data[offset + 2]
-                ) {
-                    count += 1
-                }
-            }
-            guard count > 2 else { continue }
-            weighted += Double(y) * Double(count)
-            total += Double(count)
-        }
-        guard total > 0 else { return nil }
-        // 픽셀 중심 보정: 행 y가 덮는 구간은 [y, y+1)이다.
-        return (CGFloat(weighted / total) + 0.5) / scale
-    }
-
-    /// 크기만 다른 두 run("AA " 작게 + "BB" 크게)을 한 줄에 그린 래스터.
-    private func render(
-        attributes: (CGFloat, CGColor) -> [NSAttributedString.Key: Any]
-    ) throws -> Raster {
-        let cyan = CGColor(red: 0, green: 1, blue: 1, alpha: 1)
-        let magenta = CGColor(red: 1, green: 0, blue: 1, alpha: 1)
-        let text = NSMutableAttributedString()
-        text.append(NSAttributedString(
-            string: "AA ", attributes: attributes(Self.smallSize, cyan)
-        ))
-        text.append(NSAttributedString(
-            string: "BB", attributes: attributes(Self.largeSize, magenta)
-        ))
-        return try render(text: text)
-    }
-
-    private func render(text: NSAttributedString) throws -> Raster {
-        let width = 240.0
-        let height = 120.0
-        let layer = HwpPageLayer()
-        layer.bounds = CGRect(x: 0, y: 0, width: width, height: height)
-        layer.pageHeight = height
-        layer.paintList = HwpPaintList(commands: [
-            .fillRect(
-                rect: CGRect(x: 0, y: 0, width: width, height: height),
-                color: CGColor(red: 1, green: 1, blue: 1, alpha: 1)
-            ),
-            .drawText(attributedString: text, origin: CGPoint(x: 10, y: 20), lineWidth: 200),
-        ])
-
-        let pixelWidth = Int(width * Self.scale)
-        let pixelHeight = Int(height * Self.scale)
-        // 픽셀 버퍼는 CGContext가 소유하게 둔다 (`data: nil`) — Array의
-        // `withUnsafeMutableBytes` 포인터는 클로저 안에서만 유효해서, 그 포인터로
-        // 만든 컨텍스트에 밖에서 그리면 미정의 동작이다.
-        let context = try XCTUnwrap(CGContext(
-            data: nil,
-            width: pixelWidth,
-            height: pixelHeight,
-            bitsPerComponent: 8,
-            bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ))
-        context.scaleBy(x: Self.scale, y: Self.scale)
-        layer.draw(in: context)
-        // 행 보폭은 CG가 정렬에 맞춰 정하므로 되읽어 쓴다.
-        let bytesPerRow = context.bytesPerRow
-        let pixels = try XCTUnwrap(context.data)
-        let data = [UInt8](UnsafeRawBufferPointer(
-            start: pixels, count: bytesPerRow * pixelHeight
-        ))
-        return Raster(
-            data: data, pixelWidth: pixelWidth,
-            pixelHeight: pixelHeight, bytesPerRow: bytesPerRow
-        )
-    }
-
-    /// 두 색 선의 행 중심(pt, 위에서부터)을 돌려준다.
-    private func probe(
-        attributes: (CGFloat, CGColor) -> [NSAttributedString.Key: Any]
-    ) throws -> Probe {
-        let raster = try render(attributes: attributes)
-        return try Probe(
-            small: XCTUnwrap(Self.rowCenter(raster) { $0 < 100 && $1 > 150 && $2 > 150 }),
-            large: XCTUnwrap(Self.rowCenter(raster) { $0 > 150 && $1 < 100 && $2 > 150 })
-        )
-    }
-
-    private func strikethroughAttributes(
-        size: CGFloat, color: CGColor, trackChange: Bool = false
-    ) -> [NSAttributedString.Key: Any] {
-        var attributes: [NSAttributedString.Key: Any] = [
-            kCTFontAttributeName as NSAttributedString.Key: CTFontCreateWithName(
-                "Menlo" as CFString, size, nil
-            ),
-            HwpAttributedStringKey.strikethroughStyle: NSNumber(value: 1),
-            HwpAttributedStringKey.strikethroughColor: color,
-        ]
-        if trackChange {
-            attributes[HwpAttributedStringKey.trackChangeStrikethrough] = NSNumber(value: 1)
-        }
-        return attributes
     }
 
     /// 취소선은 베이스라인 **위** 0.35em이다 — 크기가 2배가 되면 선도 그만큼
@@ -160,8 +43,10 @@ final class HwpDecorationLineGeometryTests: XCTestCase {
         expect(expected).to(beCloseTo(7.0, within: 0.001))
     }
 
-    /// 변경 추적 삭제선은 같은 취소선 경로를 쓰되 한글이 조금 낮게 그린다
-    /// (0.29em) — 일반 취소선과 다른 비율임을 고정한다.
+    /// 변경 추적 삭제선은 같은 취소선 경로를 쓰되 `trackChangeStrikethroughCenterRatio`
+    /// (0.29em, `track-changes` 실물 = MS Word 호환 문서의 값)로 갈린다 — 일반
+    /// 취소선과 다른 비율로 그려짐을 고정한다. 네이티브 문서에서 한글은 둘을 같은
+    /// 자리에 그리므로 이 분리는 호환 모드 분기(#187)까지의 픽스처 정합이다.
     func testTrackChangeStrikethroughUsesItsOwnRatio() throws {
         let probe = try probe { size, color in
             strikethroughAttributes(size: size, color: color, trackChange: true)
@@ -275,18 +160,76 @@ final class HwpDecorationLineGeometryTests: XCTestCase {
         expect(expected).to(beCloseTo(6.355, within: 0.001))
     }
 
-    /// 밑줄 '글자 아래'는 이번 수정의 대상이 아니다 — 베이스라인 아래 0.20em이
-    /// 그대로인지 확인한다 (큰 글자일수록 **아래로** 간다).
-    func testBelowUnderlineKeepsItsRatio() throws {
+    /// 밑줄 '글자 아래'는 베이스라인 **아래** 0.17em이다 (#176) — 큰 글자일수록
+    /// 아래로 간다. 종전 0.20em은 한글보다 10pt에서 0.3pt, 40pt에서 1.2pt 낮았다.
+    func testBelowUnderlineDropsWithFontSize() throws {
         let probe = try probe { size, color in
+            belowUnderlineAttributes(size: size, color: color)
+        }
+        let expected = -HwpRenderTuning.Text.underlineBelowCenterRatio
+            * (Self.largeSize - Self.smallSize)
+        expect(probe.rise).to(beCloseTo(expected, within: 0.2))
+        expect(expected).to(beCloseTo(-3.4, within: 0.001))
+    }
+
+    /// 변경 추적 삽입 밑줄은 베이스라인 아래 0.26em이다 (#176, `track-changes`
+    /// 실물). 종전에는 사각형의 **아래 모서리**를 0.35em에 두어 중심이 크기에
+    /// 비례하지 않았다 (두 크기의 차가 0.35 × 20 = 7.0pt로 나왔다).
+    func testTrackInsertUnderlineDropsWithFontSize() throws {
+        let probe = try probe { size, color in
+            trackInsertUnderlineAttributes(size: size, color: color)
+        }
+        let expected = -HwpRenderTuning.Text.trackChangeInsertUnderlineCenterRatio
+            * (Self.largeSize - Self.smallSize)
+        expect(probe.rise).to(beCloseTo(expected, within: 0.2))
+        expect(expected).to(beCloseTo(-5.2, within: 0.001))
+    }
+
+    /// 취소선 두께는 글자 크기의 0.04배다 (#176) — 20pt 0.8pt, 40pt 1.6pt.
+    /// 종전 0.4pt 고정은 40pt에서 한글(1.56pt)의 1/4이었다.
+    func testStrikethroughThicknessScalesWithFontSize() throws {
+        let probe = try thicknessProbe { size, color in
+            strikethroughAttributes(size: size, color: color)
+        }
+        let ratio = HwpRenderTuning.Text.decorationLineThicknessRatio
+        expect(probe.small).to(beCloseTo(ratio * Self.smallSize, within: 0.05))
+        expect(probe.large).to(beCloseTo(ratio * Self.largeSize, within: 0.05))
+        expect(ratio * Self.largeSize).to(beCloseTo(1.6, within: 0.001))
+    }
+
+    /// 아래·위 밑줄도 취소선과 같은 0.04em 두께다.
+    func testUnderlineThicknessScalesWithFontSize() throws {
+        let ratio = HwpRenderTuning.Text.decorationLineThicknessRatio
+        let below = try thicknessProbe { size, color in
+            belowUnderlineAttributes(size: size, color: color)
+        }
+        expect(below.small).to(beCloseTo(ratio * Self.smallSize, within: 0.05))
+        expect(below.large).to(beCloseTo(ratio * Self.largeSize, within: 0.05))
+
+        let above = try thicknessProbe { size, color in
             [
                 kCTFontAttributeName as NSAttributedString.Key: CTFontCreateWithName(
                     "Menlo" as CFString, size, nil
                 ),
-                HwpAttributedStringKey.underlineStyle: NSNumber(value: 1),
+                HwpAttributedStringKey.underlineAboveStyle: NSNumber(value: 1),
                 HwpAttributedStringKey.underlineColor: color,
             ]
         }
-        expect(probe.rise).to(beCloseTo(-0.20 * (Self.largeSize - Self.smallSize), within: 0.2))
+        expect(above.small).to(beCloseTo(ratio * Self.smallSize, within: 0.05))
+        expect(above.large).to(beCloseTo(ratio * Self.largeSize, within: 0.05))
+        expect(ratio * Self.smallSize).to(beCloseTo(0.8, within: 0.001))
+    }
+
+    /// 변경 추적 삽입 밑줄은 일반 선보다 굵은 0.064em이다 — 20pt 1.28pt, 40pt 2.56pt.
+    /// 종전 0.75pt 고정은 40pt에서 한글(0.064em = 2.56pt)보다 가늘었다.
+    func testTrackInsertUnderlineThicknessScalesWithFontSize() throws {
+        let probe = try thicknessProbe { size, color in
+            trackInsertUnderlineAttributes(size: size, color: color)
+        }
+        let ratio = HwpRenderTuning.Text.trackChangeInsertUnderlineThicknessRatio
+        expect(probe.small).to(beCloseTo(ratio * Self.smallSize, within: 0.05))
+        expect(probe.large).to(beCloseTo(ratio * Self.largeSize, within: 0.05))
+        expect(ratio * Self.largeSize).to(beCloseTo(2.56, within: 0.001))
+        expect(ratio).to(beGreaterThan(HwpRenderTuning.Text.decorationLineThicknessRatio))
     }
 }
