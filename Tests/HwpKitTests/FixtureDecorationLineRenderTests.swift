@@ -205,27 +205,30 @@ final class FixtureDecorationLineRenderTests: XCTestCase {
             )
             centers.append(center)
 
-            // 같은 줄의 글자 잉크 (선 위 12pt 안). 밑줄은 잉크 바닥보다 아래여야
-            // 한다 — 폰트 underlinePosition(−0.075em)으로 그리면 잉크를 관통한다.
+            // 같은 줄의 글자 잉크 (선 위 12pt ~ 아래 6pt — 다음 줄 글자보다 안쪽).
+            // 밑줄은 잉크 바닥보다 아래여야 한다 — 폰트 underlinePosition(−0.075em)
+            // 으로 그리면 잉크를 관통해 띠의 바닥이 선 아래로 내려간다.
             let ink = try XCTUnwrap(
-                raster.band(in: (center - 12) ... (center - 0.6), where: Self.isDark),
+                raster.band(in: (center - 12) ... (center + 6), where: Self.isDark),
                 "\(format): 글자 잉크를 못 찾았다"
             )
             expect(ink.bottom).to(
                 beLessThan(center), description: "\(format): 선이 글자보다 아래"
             )
-            // 선 두께 (행 수): 10pt × 0.04 = 0.4pt = 1.6px → 안티앨리어싱 포함 2~3행.
+            // 선 두께: 10pt × 0.04 = 0.4pt = 1.6px — `isGreen`(커버리지 ≥ ~0.6)을
+            // 통과하는 행은 1~2행이다. 3행(0.5pt) 이상이면 두께 산식이 틀어진 것.
             let band = try XCTUnwrap(
                 raster.band(in: (center - 1) ... (center + 1), where: Self.isGreen),
                 "\(format): 밑줄 띠를 못 찾았다"
             )
-            expect(band.bottom - band.top).to(beLessThan(0.8), description: "\(format) 두께")
+            expect(band.bottom - band.top).to(beLessThan(0.5), description: "\(format) 두께")
         }
         expect(centers[0]).to(
             beCloseTo(centers[1], within: 0.01), description: "HWP와 HWPX가 같은 자리"
         )
         // 우리 렌더의 쪽 좌표 핀 (위에서부터 pt). 한글 실물은 237.5pt(베이스라인
-        // 235.8 + 1.7)로, 취소선 핀과 같은 ~1.6pt 베이스라인 격차(#178)만 남는다.
+        // 235.8 + 1.7)다. 남은 1.6pt는 이 픽스처의 취소선 핀(281.7 vs 한글 280.2)에도
+        // 같은 크기로 있는 베이스라인 격차(#178 축)라 이 선의 위치 문제가 아니다.
         expect(centers[0]).to(beCloseTo(239.1, within: 0.2))
     }
 
@@ -261,8 +264,8 @@ final class FixtureDecorationLineRenderTests: XCTestCase {
     }
 
     /// `track-changes` — 삭제선(베이스라인 위)과 삽입 밑줄(아래)이 둘 다 빨강
-    /// 한 줄씩 있고, 삭제선은 한글이 일반 취소선보다 낮게 그리는 비율(0.29em)로
-    /// 놓인다. 두 선의 간격이 그 비율의 핀이다.
+    /// 한 줄씩 있고, 이 문서(MS Word 호환 문서)에서 한글이 그리는 비율(삭제선
+    /// +0.29em·삽입 밑줄 −0.26em)로 놓인다. 두 선의 간격이 그 비율의 핀이다.
     func testTrackChangeMarksKeepTheirOwnGeometry() async throws {
         let raster = try await Self.raster("track-changes", hwpx: false)
         // 변경 추적 글자 자체도 빨강이고 왼쪽 여백엔 세로 변경 막대가 있다 —
@@ -284,7 +287,7 @@ final class FixtureDecorationLineRenderTests: XCTestCase {
         let insert = groups[1].reduce(0, +) / CGFloat(groups[1].count)
         // 삭제선은 베이스라인 위, 삽입 밑줄은 아래다. 비율 자체는
         // `HwpDecorationLineGeometryTests`가 잡고, 여기서는 실물에서의 간격을
-        // 핀한다.
+        // 핀한다. 두 비율은 이 픽스처(MS Word 호환 문서)의 값이다 (#176, #187).
         expect(insert).to(beGreaterThan(strike + 1))
         // 10pt 글자: 삭제선 +0.29em(2.9pt) + 삽입 밑줄 −0.26em(2.6pt) = 5.5pt (#176).
         // 종전 삽입 밑줄은 0.75pt 사각형의 아래 모서리가 −3.5pt라 중심이 −3.125pt,

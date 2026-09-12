@@ -81,8 +81,8 @@ public enum HwpRenderTuning {
         /// 실측: 한글.app 12.30.0 (2026-09-12, #176) `CharShape` HWPX 기반 합성
         /// 문서(`hp:linesegarray` 제거)를 PDF로 내보내 벡터 좌표를 읽었다 — 5·7·8·
         /// 10·12·13·15·20·25·30·40·60·100pt에서 베이스라인 대비 −0.84/1.08/1.32/
-        /// 1.68/2.04/2.28/2.52/3.48/4.32/5.16/6.84/10.20/17.04pt (0.155~0.176, 장치
-        /// 좌표 0.12pt 양자화; 60pt 이상은 정확히 0.170). 함초롬바탕·함초롬돋움·
+        /// 1.68/2.04/2.28/2.52/3.48/4.32/5.16/6.84/10.20/17.04pt (선언 크기 대비
+        /// 0.154~0.175, 장치 좌표 0.12pt 양자화; 60pt 이상은 정확히 0.170). 함초롬바탕·함초롬돋움·
         /// Apple SD 산돌고딕 Neo·HY울릉도M 네 글꼴이 **모든 크기에서 같은 값**이라
         /// descent·post `underlinePosition` 같은 글꼴 지표가 아니라 글자 크기
         /// 비례다. 네이티브 문서의 변경 추적 삽입 밑줄도 이 자리다 (#187 참고).
@@ -102,8 +102,9 @@ public enum HwpRenderTuning {
         public static let decorationLineThicknessRatio: CGFloat = 0.04
 
         /// 변경 추적 삽입 밑줄 중심의 베이스라인 아래 깊이 = 글자 크기 × 이 배율.
-        /// 실측: `track-changes` 실물 (2026-09-08·09-12) — 10pt·40pt에서 글리프
-        /// 대비 −0.2576em (2.04/7.92pt·8.16/31.68pt, PDF 쪽 축소 0.8배 포함). 종전
+        /// 실측: `track-changes` 실물 (2026-09-08·09-12) — 선언 10pt·40pt가 PDF
+        /// 쪽 축소로 7.92·31.68pt 글리프로 찍히고 밑줄 중심은 그 아래 2.04·8.16pt
+        /// (둘 다 −0.2576em). 종전
         /// 구현은 0.75pt 사각형의 **아래 모서리**를 −0.35em에 두어 중심이 크기에
         /// 비례하지 않았다 (10pt −0.31em·40pt −0.34em).
         /// `trackChangeStrikethroughCenterRatio`와 같은 사정으로 **MS Word 호환
@@ -116,12 +117,14 @@ public enum HwpRenderTuning {
         public static let trackChangeInsertUnderlineCenterRatio: CGFloat = 0.26
 
         /// 변경 추적 삽입 밑줄 두께 = 글자 크기 × 이 배율.
-        /// 실측: 같은 실물 — 10pt에서 0.48pt(0.0606em), 40pt에서 2.04pt(0.0644em).
-        /// 일반 선(0.04em)보다 굵다. 이것도 MS Word 호환 문서의 밑줄 두께다
-        /// (함초롬 0.064em·Apple SD 0.061em·HY울릉도M 0.049em ≈ 0.05 × 글꼴 줄
-        /// 높이, #187). 종전 0.75pt 고정은 10pt에서는 굵고 40pt에서는 가늘었다.
+        /// 실측: 같은 실물 — 글리프 7.92pt에서 0.48pt(0.0606em), 31.68pt에서
+        /// 2.04pt(0.0644em); 0.064em은 두 값을 한글의 0.12pt 장치 단위로 반올림해
+        /// 그대로 재현한다(4·17단위). 일반 선(0.04em)보다 굵다. 이것도 MS Word 호환
+        /// 문서의 밑줄 두께다 (함초롬 0.064em·Apple SD 0.061em·HY울릉도M 0.049em ≈
+        /// 0.05 × 글꼴 줄 높이, #187). 종전 0.75pt 고정은 선언 10pt(0.64pt)에서는
+        /// 굵고 40pt(2.56pt)에서는 가늘었다.
         /// 검증: `HwpDecorationLineGeometryTests` 두께 비율.
-        public static let trackChangeInsertUnderlineThicknessRatio: CGFloat = 0.065
+        public static let trackChangeInsertUnderlineThicknessRatio: CGFloat = 0.064
     }
 
     /// 문단 번호·개요 번호 라벨 (#154)

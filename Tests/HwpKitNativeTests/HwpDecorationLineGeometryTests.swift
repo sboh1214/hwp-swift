@@ -43,8 +43,10 @@ final class HwpDecorationLineGeometryTests: XCTestCase {
         expect(expected).to(beCloseTo(7.0, within: 0.001))
     }
 
-    /// 변경 추적 삭제선은 같은 취소선 경로를 쓰되 한글이 조금 낮게 그린다
-    /// (0.29em) — 일반 취소선과 다른 비율임을 고정한다.
+    /// 변경 추적 삭제선은 같은 취소선 경로를 쓰되 `trackChangeStrikethroughCenterRatio`
+    /// (0.29em, `track-changes` 실물 = MS Word 호환 문서의 값)로 갈린다 — 일반
+    /// 취소선과 다른 비율로 그려짐을 고정한다. 네이티브 문서에서 한글은 둘을 같은
+    /// 자리에 그리므로 이 분리는 호환 모드 분기(#187)까지의 픽스처 정합이다.
     func testTrackChangeStrikethroughUsesItsOwnRatio() throws {
         let probe = try probe { size, color in
             strikethroughAttributes(size: size, color: color, trackChange: true)
@@ -218,8 +220,8 @@ final class HwpDecorationLineGeometryTests: XCTestCase {
         expect(ratio * Self.smallSize).to(beCloseTo(0.8, within: 0.001))
     }
 
-    /// 변경 추적 삽입 밑줄은 일반 선보다 굵은 0.065em이다 — 20pt 1.3pt, 40pt 2.6pt.
-    /// 종전 0.75pt 고정은 40pt에서 한글(2.04pt)보다 가늘었다.
+    /// 변경 추적 삽입 밑줄은 일반 선보다 굵은 0.064em이다 — 20pt 1.28pt, 40pt 2.56pt.
+    /// 종전 0.75pt 고정은 40pt에서 한글(0.064em = 2.56pt)보다 가늘었다.
     func testTrackInsertUnderlineThicknessScalesWithFontSize() throws {
         let probe = try thicknessProbe { size, color in
             trackInsertUnderlineAttributes(size: size, color: color)
@@ -227,7 +229,7 @@ final class HwpDecorationLineGeometryTests: XCTestCase {
         let ratio = HwpRenderTuning.Text.trackChangeInsertUnderlineThicknessRatio
         expect(probe.small).to(beCloseTo(ratio * Self.smallSize, within: 0.05))
         expect(probe.large).to(beCloseTo(ratio * Self.largeSize, within: 0.05))
-        expect(ratio * Self.largeSize).to(beCloseTo(2.6, within: 0.001))
+        expect(ratio * Self.largeSize).to(beCloseTo(2.56, within: 0.001))
         expect(ratio).to(beGreaterThan(HwpRenderTuning.Text.decorationLineThicknessRatio))
     }
 }

@@ -19,7 +19,7 @@ final class HwpRenderTuningTests: XCTestCase {
         expect(HwpRenderTuning.Text.underlineBelowCenterRatio) == 0.17
         expect(HwpRenderTuning.Text.decorationLineThicknessRatio) == 0.04
         expect(HwpRenderTuning.Text.trackChangeInsertUnderlineCenterRatio) == 0.26
-        expect(HwpRenderTuning.Text.trackChangeInsertUnderlineThicknessRatio) == 0.065
+        expect(HwpRenderTuning.Text.trackChangeInsertUnderlineThicknessRatio) == 0.064
     }
 
     func testNumberingTuningValues() {
