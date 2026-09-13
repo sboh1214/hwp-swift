@@ -391,29 +391,89 @@ v. Board of Regents…`)을 핀했다.
   이분 탐색하는 것이다 — 그 임계가 CT의 실제 슬롯 경계다 (2026-09-13 실측, `p12` 프로브).
   글꼴 4종 × 라틴·한글 × 강제 줄 높이 5종 × 개체 유무 80조합의 상자 상단 최대 오차:
 
-  | 청크 | 줄별 보고 ascent | 첫 줄 `floor` 균일 | 델타 − 앞 줄(descent+leading) |
+  | 청크 | 줄별 보고 ascent | 첫 줄 `floor` 균일 | 델타 − 앞 줄 descent − 간격 |
   | --- | ---: | ---: | ---: |
   | 못박힘 (min = max) | 0.0003 | **0.0003** | 0.0003 |
   | 자유·상한만 | 0.50 | 0.50 | **0.0002** |
   | 자유·상한만 + 개체 | 3.00 | 31.36 | **0.0002** |
   | 하한만 + 개체 | 0.50 | 27.38 | **0.0003** |
 
-  그래서 `placementAscents`는 두 갈래를 쓰고 **어느 쪽도 보고 ascent를 쓰지 않는다**:
-  **못박혔으면** (min = max) 모든 슬롯이 그 높이라 청크 첫 줄의 정확값
-  (`floor` = `chunk.height − origins[0].y`) 을 모든 줄에 쓰고 (개체 예약 높이보다 작아지지
-  않는다), **아니면** `델타 − 앞 줄의 (descent + leading) − 줄 사이 간격`으로 복원한다 —
-  보고 descent + leading은 (ascent와 달리) 그 줄 슬롯의 baseline 아래 몫과 **같다**.
-  못박힌 청크에 복원식을 쓸 수 없는 이유는 그 조건에서 CT가 클램프 **전** descent를 보고하기도
-  하기 때문이다 — `Column` 실측 (Menlo 10pt·못박힘 16·줄 0에 개체 마커): 앞 6줄은 자연값
-  2.36, 마지막 줄만 클램프값 5.00을 보고하는데 배치값은 전부 5.00이다 (복원하면 2.64pt 어긋난다).
-- **줄 사이 간격은 복원에서 걷어낸다** (`interlineGap`). CT는 문단 아래·위 간격과 줄 뒤 간격
+  그래서 `placementAscents`는 **세 갈래**를 쓰고 어느 쪽도 보고 ascent를 쓰지 않는다:
+  ① **못박힌 청크** (모든 줄이 같은 높이로 min = max) 는 둘째 줄부터 슬롯이 그 높이라 청크 첫
+  줄의 정확값 (`floor` = `chunk.height − origins[0].y`) 을 모든 줄에 쓴다 (개체 예약 높이보다
+  작아지지 않는다). ② **슬롯이 균일한 것이 관찰되는 청크** (`hasUniformSlots` — 줄 상자 높이·
+  보고 descent·origin 델타가 모두 같고 개체가 없다) 도 같은 `floor`를 쓴다. ③ 나머지는
+  `델타 − 앞 줄의 descent − 줄 사이 간격`으로 복원한다.
+
+  ②가 있는 이유는 **보고 descent도 못 믿는 조건이 있기** 때문이다 — CT는 **양쪽 정렬** 줄의
+  typographic bounds에 강제 줄 높이를 적용하기 **전** 값을 담는다 (하한 15pt·Helvetica 10pt:
+  보고 descent 2.2998, 실제 배치 4.0. 정렬 다섯 종 × tailIndent × 폭 20조합 실측에서 오직
+  `.justified`만 그렇다). 한글 문단은 기본이 양쪽 정렬이므로 이 갈래가 실물을 받는다. ②는
+  보고값을 **비교에만** 쓰고 배치에는 쓰지 않아 그 조건에서도 정확하고, 덤으로 청크를 나눠도
+  자리가 같아진다 (경계마다 CT 첫 줄 슬롯 특례를 새로 타던 것이 사라진다 — Hiragino Sans
+  하한 문단 실측 15pt). **마지막 줄의 보고값은 비교에서 뺀다** — 복원식이 소비하지 않고,
+  양쪽 정렬 문단의 마지막 줄은 CT가 정렬하지 않아 지표가 다르게 나온다.
+
+  ①이 있는 이유는 **개체가 든 못박힌 청크**다 — 그 조건에서 CT가 클램프 **전** descent를
+  보고하기도 한다 (`Column` 실측, Menlo 10pt·못박힘 16·줄 0에 개체 마커: 앞 6줄은 자연값
+  2.36, 마지막 줄만 클램프값 5.00을 보고하는데 배치값은 전부 5.00 — 복원하면 2.64pt 어긋난다).
+  개체가 있으면 ②가 걸러지므로 ①이 받는다.
+- **baseline 아래 몫은 보고 `descent`를 0에서 끊은 값이다 — `leading`을 더하면 안 된다**
+  (`belowBaseline`). 상한이 슬롯을 자연 높이보다 깎으면 CT는 descent를 **음수**로 보고한다
+  (실측: Helvetica 40pt·하한 10·상한 20에서 −5.0) — 그대로 빼면 다음 줄 ascent가 그만큼
+  부풀어 상자가 위로 간다.
+  CT는 글꼴 leading을 슬롯의 baseline **위**(다음 줄 ascent 몫)에 넣는다. leading이 있는 글꼴
+  네 개 (Thonburi 0.67·GeezaPro 1.36·Mshtakan 0.42·Hiragino Sans 5.0) × 강제 줄 높이 5종
+  20조합에서 실측 배치 below가 **전부 보고 descent와 같고** `descent + leading`과는 전부
+  달랐다. 실물 영향이 있다 — **Times New Roman 0.4248·Arial 0.3271**이 leading을 갖고,
+  결정론 리졸버의 캐스케이드 멤버인 **Hiragino Sans는 5.0**이다 (`HwpFontResolver`
+  `fallbackCascade`). leading 0인 글꼴 (함초롬바탕·함초롬돋움·Apple SD Gothic Neo·Menlo·
+  Helvetica·AppleGothic·AppleMyungjo·NanumGothic) 에서는 두 값이 같아 드러나지 않는다.
+- **줄 사이 간격은 복원에서 걷어내되, 줄 간격 하한·상한을 적용한 값을 쓴다**
+  (`interlineGap`·`effectiveLineSpacing`). CT는 문단 아래·위 간격과 줄 뒤 간격
   (`lineSpacingAdjustment`) 을 **다음 줄 슬롯의 ascent 안에** 넣는다 (실측: 간격 6+4를 준 둘째
   문단 첫 줄의 배치 ascent가 9.70 → 19.70). 걷어내면 그 몫이 상자 **사이**에 남아 한글과 같아
   진다 — 한글은 줄 간격 여분을 상자 아래 `lineSpacing`으로 적고 다음 상자를 그 아래에 둔다.
   개체 문단이 그 경로다 (`applyLineHeight`가 여분을 줄 뒤 간격으로 돌린다): 하한 16 + 줄 뒤 4
-  문단의 상자 전진량이 정확히 20pt = 한글의 전진량이 된다. 가드는
-  `HwpBaselineAnchorTests.testParagraphSpacingStaysBetweenLineBoxes`.
+  문단의 상자 전진량이 정확히 20pt = 한글의 전진량이 된다.
+
+  **원시 `lineSpacingAdjustment`가 아니라 유효 간격이다** — CT는 그 값을
+  `minimumLineSpacing`·`maximumLineSpacing`으로 가둔다 (실측: 상한 4에 간격 4와 10을 준 두
+  문단의 CT 배치가 같고, 하한 8에 간격 0과 2를 준 두 문단도 같다. 하한·상한이 함께면 **상한이
+  이긴다**). 미설정 상한은 CT가 10,000,000을 돌려주므로 (명시적 0과 구분된다) 그대로 `min`에
+  넣어도 걸리지 않는다. 문단 아래·위 간격은 이 상한에 걸리지 않고 (상한 0에도 문단 간격이 남는다)
+  하한은 문단 경계에도 더해진다 (하한 9 + 문단 간격 10 → 19). **음수는 전부 0에서 끊는다** —
+  CT는 음수 문단 간격을 무시하고 (실측: −6·−2에서 슬롯 불변), 음수 줄 간격은 슬롯을 그만큼
+  줄여 이미 반영하므로 상자 사이로 또 옮기면 두 번 세어진다 (음수 하한 실측 2.0pt). 남는 근사는 CT가 글꼴에 따라 갖는
+  **자연 줄 간격**이다 (Thonburi·GeezaPro 1.0pt·Hiragino Sans 5.0pt) — 상한·하한은 그것까지
+  더한 값을 가두는데 우리는 간격 값만 가두므로, 상한·하한이 실제로 걸리고 그런 글꼴을 쓰면 그
+  몫만큼 어긋난다. `HwpParagraphMetrics`는 **못박은 문단에만** 상한을 걸고 (그쪽은 복원식을
+  쓰지 않는다) 우리 글꼴은 자연 줄 간격이 0이라 우리 경로에는 걸리지 않는다.
+
+  가드는 `HwpLineBoxAdvanceTests`의 `testParagraphSpacingStaysBetweenLineBoxes`·
+  `testLineSpacingBoundsMakeEqualCoreTextLayoutsEqual`·
+  `testFontLeadingIsNotCountedBelowTheBaseline`·
+  `testJustifiedClampedParagraphKeepsAUniformAdvance`·
+  `testChunkBudgetDoesNotMoveAUniformParagraph` (CT가 같게 조판하는 두 입력은 우리도 같게
+  그려야 한다는 불변식으로 잠근다 — 임계 오라클을 테스트 안에서 직접 쓴다). 줄 간격 경계·
+  아래쪽 몫 가드는 **혼합 크기 문단**을 쓴다 — 균일한 문단은 ② 갈래로 빠져 복원식을 타지
+  않으므로 판별력이 없다.
+
+  **남는 잔차 세 가지**(전부 실측): ① 상한·하한이 실제로 걸리면서 CT가 글꼴에 따라 갖는
+  **자연 줄 간격**이 있으면 그 몫만큼 어긋난다 (Thonburi·GeezaPro 1.0pt·Hiragino Sans 5.0pt;
+  leading 0 글꼴은 0). ② 못박은 높이가 **자연 높이보다 작으면** CT가 그 줄 슬롯만 늘려 (실측: 10pt·40pt·10pt 런을
+  20pt로 못박으면 슬롯이 20·25·15) 못박힘 갈래가 최대 11pt 어긋나고 **baseline이 역전된다**
+  (우리 108.5 → 165.0 → 148.5). 한글도 그 입력에서는 상자가 줄 상자를 넘치지만 (`vertsize`는
+  글자 크기고 전진량은 고정값이다) 전진량이 균일해 상자 상단은 100·120·140이다 — 우리는
+  131·140이다. 한글의 비율 100% 미만·작은 고정 줄 간격이 그 입력이고, 고치는 길은 못박힌
+  청크를 CT 델타가 아니라 **못박은 값으로 타일하는 것**인데 그건 측정 경로와 공유하는 전진량
+  축(#180·#192)이 소유한다 — **#198**로 등록했다. ③ 청크
+  이월의 `fallbackLineAdvance`는 보고 typographic bounds로 전진하고 문단 간격을 빼먹는다
+  (실측 18~29pt) — 문자 예산이 100,000자라 실물에서는 일어나지 않는다.
 - **하한만·상한만은 못박은 것이 아니다** (`pinnedLineHeight` = `min == max`이고 둘 다 양수).
+  판정은 **청크의 모든 줄**에 대해 같은 높이여야 한다 — 블록 문자열이 하드 개행을 품어 한
+  청크에 CT 문단이 둘 이상 들어갈 수 있고, 뒤 문단이 다른 높이로 못박으면 첫 줄의 값을 그
+  줄들에 쓸 수 없다 (실측: 20pt·28pt로 못박은 두 문단이 한 블록일 때 4.0pt).
   `.atLeast`와 개체 문단의 `minimumLineHeight`(`applyLineHeight`가 자연 높이 > 선언 줄 높이일
   때 건다)는 자연 높이가 하한보다 큰 줄을 그대로 두므로 줄마다 슬롯이 다르다. 못박힌 것으로
   보면 첫 줄의 배치 ascent가 모든 줄에 적용돼 보정이 소거되고, 첫 줄에 키 큰 개체가 있을 때
@@ -422,8 +482,8 @@ v. Board of Regents…`)을 핀했다.
   (`maximumLineHeight = 1000`) 을 얹어도 CT 조판이 그대로여야 하는데, 못박힌 쪽으로 보던 동안
   10pt 첫 줄 + 40pt 후속 줄 문단의 baseline이 `[108.5, 151.9, 199.9]` →
   `[108.5, 175.0, 223.0]`으로 바뀌었다 (공개 `HwpPaintCommand.drawText` 호출자 경로). 가드는
-  `HwpBaselineAnchorTests`의 `testMinimumOnlyLineHeightKeepsPerLineSlots`·
-  `testMinimumOnlyLineHeightAdvancesShortLinesByTheMinimum`·
+  `HwpBaselineAnchorTests.testMinimumOnlyLineHeightKeepsPerLineSlots`와
+  `HwpLineBoxAdvanceTests`의 `testMinimumOnlyLineHeightAdvancesShortLinesByTheMinimum`·
   `testNoOpMaximumLineHeightMovesNoLine`.
 
   이 갈래는 **전진량 축과 맞바꾼다**. 헌법주석 470쪽 (실물 대조를 마친 표본) 의 각주

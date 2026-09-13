@@ -49,10 +49,10 @@ extension HwpDrawnTextLayout {
     /// 줄 사이 간격 + ascent_{k+1}`) 그것을 그대로 상자 간격으로 쓰면 줄마다 상자가 다른
     /// 문단에서 어긋난다 — 합성 실측 (Helvetica 10pt + 60pt 개체):
     ///
-    /// | 개체 자리 | 델타 그대로 | 이 산식 |
+    /// | 개체 자리 | 델타 그대로 | 지금 (둘째 줄 baseline) |
     /// | --- | ---: | ---: |
-    /// | 둘째 줄 | 213.0 (개체 바닥 169.7보다 43.3pt 아래) | 160.7 (= 바닥 − 0.15em) |
-    /// | 첫 줄 | 120.5 (**첫 줄 baseline 151.0보다 위**) | 172.8 |
+    /// | 둘째 줄 | 213.0 (개체 바닥보다 43.3pt 아래) | **163.3** (개체 상자 안) |
+    /// | 첫 줄 | 120.5 (**첫 줄 baseline 151.0보다 위**) | **170.8** (개체 상자 아래) |
     ///
     /// 되돌리는 ascent는 `placementAscents`가 **정확한 배치값**으로 돌려준다. 강제 줄 높이
     /// 종류에 따른 갈래는 그쪽이 소유하므로 여기서는 상자 상단과 앵커만 본다.
@@ -85,7 +85,7 @@ extension HwpDrawnTextLayout {
     /// 줄여 줄이 떨어지는 임계를 이분 탐색하면 CT의 실제 슬롯 경계가 나온다) 규칙을
     /// 글꼴 4종 × 라틴·한글 × 강제 줄 높이 5종 × 개체 유무 80조합에서 대조한 결과:
     ///
-    /// | 청크 | 줄별 보고 ascent | 첫 줄 `floor` 균일 | 델타 − 앞 줄(descent+leading) |
+    /// | 청크 | 줄별 보고 ascent | 첫 줄 `floor` 균일 | 델타 − 앞 줄 descent − 간격 |
     /// | --- | ---: | ---: | ---: |
     /// | 못박힘 (min = max) | 0.0003 | **0.0003** | 0.0003 |
     /// | 자유·상한만 | 0.50 | 0.50 | **0.0002** |
@@ -93,11 +93,14 @@ extension HwpDrawnTextLayout {
     /// | 하한만 + 개체 | 0.50 | 27.38 | **0.0003** |
     ///
     /// 그래서 두 갈래를 쓴다 — 어느 쪽도 보고 ascent를 쓰지 않는다:
-    /// - **못박힌 청크**는 모든 슬롯이 그 높이라 배치 ascent가 줄마다 같다 → 첫 줄의
-    ///   정확값 `floor` (`chunk.height − origins[0].y`, CT가 첫 슬롯을 프레임 상단에 붙인다).
+    /// - **못박힌 청크**는 둘째 줄부터 슬롯이 그 높이로 같다 → 첫 줄의 정확값 `floor`
+    ///   (`chunk.height − origins[0].y`, CT가 첫 슬롯을 프레임 상단에 붙인다) 를 모든 줄에
+    ///   쓴다. 첫 슬롯은 CT가 0.3pt 크게 잡을 수 있는데 (실측: 130% 줄 간격 한컴 폰트 문단의
+    ///   슬롯이 13.300·13.000·13.000·13.000) 그 몫을 전진량에 싣지 않는 쪽이 한글과 맞는다
+    ///   — 한글은 같은 상자에 같은 전진량을 쓴다.
     /// - **나머지**는 슬롯이 줄마다 다르다 → `델타 − 앞 줄의 baseline 아래 몫 − 줄 사이
-    ///   간격`. 보고 descent + leading은 **그 줄 슬롯의 baseline 아래 몫과 같다** (같은
-    ///   실측: 못박히지 않은 40조합 전부 0.0003pt 이내).
+    ///   간격`. baseline 아래 몫은 보고 **descent**다 (`belowBaseline` — leading은 위쪽
+    ///   몫이라 더하지 않는다); 못박히지 않은 40조합 전부 0.0003pt 이내다.
     ///
     /// 못박힌 청크에서 복원식을 쓸 수 없는 이유는 그 조건에서 CT가 클램프 **전** descent를
     /// 보고하기도 하기 때문이다 — `Column` 픽스처 실측 (Menlo 10pt·못박힘 16·줄 0에 개체
@@ -114,6 +117,13 @@ extension HwpDrawnTextLayout {
             // 개체가 예약한 높이보다는 작을 수 없다 (개체 문단을 못박는 경로는
             // `HwpParagraphMetrics`에 없지만 공개 API 호출자는 만들 수 있다).
             return chunk.lines.indices.map { max(floor, metrics[$0].delegateAscent) }
+        }
+        // 슬롯이 **균일한 것이 관찰되면** 첫 줄의 정확값이 모든 줄의 값이다 — 보고 지표에
+        // 기대지 않으므로 CT가 클램프 전 값을 되돌려 주는 경우에도 맞고 (양쪽 정렬 문단이
+        // 그렇다: 하한 15pt·Helvetica 10pt에서 보고 descent가 자연값 2.2998, 실제 배치
+        // 4.0 — 복원하면 줄마다 1.7pt 어긋난다), 청크를 나눠도 자리가 같다.
+        if Self.hasUniformSlots(chunk, metrics: metrics) {
+            return chunk.lines.indices.map { _ in floor }
         }
         var ascents = [floor]
         guard chunk.lines.count > 1 else { return ascents }
@@ -137,26 +147,90 @@ extension HwpDrawnTextLayout {
     /// **하한만·상한만은 못박은 것이 아니다.** 하한만 (`.atLeast`·개체 문단) 은 자연 높이가
     /// 더 큰 줄을 그대로 두므로 슬롯이 줄마다 다르고, 상한만은 그 아래 높이를 전혀 건드리지
     /// 않는다 — 무해한 상한 (`maximumLineHeight = 1000`) 을 얹었을 때 CT 원점이 그대로인데
-    /// 우리 baseline이 `[108.5, 151.9, 199.9]` → `[108.5, 175.0, 223.0]`으로 바뀌던 것이
-    /// 상한만을 못박힌 쪽으로 본 탓이었다 (10pt 첫 줄 + 40pt 후속 줄, 실측).
+    /// 우리 baseline이 `[108.5, 151.9, 199.9]`에서 `[108.5, 175.0, 223.0]`으로 갈리던 것이
+    /// 상한만을 못박힌 쪽으로 본 탓이었다 (10pt 첫 줄 + 40pt 후속 줄, 실측). **둘 다 종전
+    /// 구현의 출력이다** — 지금은 두 입력이 모두 `[108.5, 146.3, 194.2]`이고 그것이 임계
+    /// 실측 슬롯 상단과 같다.
     private static func pinnedLineHeight(
         of chunk: HwpLineBreaker.FrameChunk, in attributedString: NSAttributedString
     ) -> CGFloat {
-        guard let line = chunk.lines.first else { return 0 }
-        let location = CTLineGetStringRange(line).location
-        let style = HwpLineBreaker.paragraphStyle(in: attributedString, at: location)
-        let minimum = max(0, HwpLineBreaker.paragraphCGFloat(.minimumLineHeight, in: style) ?? 0)
-        let maximum = max(0, HwpLineBreaker.paragraphCGFloat(.maximumLineHeight, in: style) ?? 0)
-        guard minimum > 0, abs(minimum - maximum) < 0.001 else { return 0 }
-        return maximum
+        var pinned: CGFloat?
+        // **청크의 모든 줄**이 같은 높이로 못박혀 있어야 한다 — 블록 문자열이 하드 개행을
+        // 품으므로 한 청크에 CT 문단이 둘 이상 들어갈 수 있고, 뒤 문단이 다른 높이로
+        // 못박으면 첫 줄의 값을 그 줄들에 쓸 수 없다 (실측: 20pt·28pt로 못박은 두 문단이
+        // 한 블록일 때 뒤 문단 줄들이 4.0pt 어긋났다).
+        for line in chunk.lines {
+            let location = CTLineGetStringRange(line).location
+            let style = HwpLineBreaker.paragraphStyle(in: attributedString, at: location)
+            let minimum = max(
+                0, HwpLineBreaker.paragraphCGFloat(.minimumLineHeight, in: style) ?? 0
+            )
+            let maximum = max(
+                0, HwpLineBreaker.paragraphCGFloat(.maximumLineHeight, in: style) ?? 0
+            )
+            guard minimum > 0, abs(minimum - maximum) < 0.001 else { return 0 }
+            if let pinned {
+                guard abs(pinned - maximum) < 0.001 else { return 0 }
+            } else {
+                pinned = maximum
+            }
+        }
+        return pinned ?? 0
     }
 
-    /// 줄 슬롯에서 baseline **아래** 몫 — 보고 descent + leading (실측상 정확한 배치값).
+    /// 청크의 CT 슬롯이 **균일한지** — 줄 상자 높이·보고 descent·줄 origin 델타가 모두
+    /// 같고 글자처럼 취급 개체가 없으면 슬롯도 같다. 그러면 첫 줄의 정확한 배치 ascent
+    /// (`floor`) 가 모든 줄의 값이므로 보고 지표를 하나도 쓰지 않는다.
+    ///
+    /// 실물 문단은 거의 다 이쪽이고 (한 문단은 보통 한 크기다) 여기가 **한글의 모델**과도
+    /// 맞는다 — 한글은 같은 상자에 같은 전진량을 쓴다. CT가 첫 줄 슬롯만 0.2~0.5pt 크게
+    /// 잡는 특례도 이 경로에서는 전진량에 새지 않는다 (합성 스윕 여백만 40pt 문단의 오차가
+    /// 12.2 → 12.0pt로 돌아온다) 그리고 청크를 나눠도 자리가 같다 (경계마다 그 특례가
+    /// 되풀이되던 것이 사라진다 — Hiragino Sans 하한 문단 실측 15pt).
+    ///
+    /// 균일하지 않으면 (줄마다 상자가 다르거나 개체가 있거나 문단 간격이 걸리면) 복원식으로
+    /// 간다 — 그쪽이 이 커밋이 고친 축이다.
+    private static func hasUniformSlots(
+        _ chunk: HwpLineBreaker.FrameChunk, metrics: [LineMetrics]
+    ) -> Bool {
+        guard chunk.lines.count > 1 else { return true }
+        let boxHeight = metrics[0].boxHeight
+        let below = belowBaseline(of: chunk.lines[0])
+        let delta = chunk.origins[0].y - chunk.origins[1].y
+        let last = chunk.lines.count - 1
+        for index in chunk.lines.indices {
+            guard metrics[index].delegateAscent == 0,
+                  abs(metrics[index].boxHeight - boxHeight) < 0.001
+            else { return false }
+            // 마지막 줄의 보고값은 비교하지 않는다 — 복원식이 소비하는 것은 앞 줄들의 몫뿐이고
+            // (마지막 줄 뒤에는 줄이 없다) **양쪽 정렬 문단의 마지막 줄은 CT가 정렬하지 않아**
+            // 지표가 다르게 나온다. 그 줄까지 비교하면 정렬된 문단이 균일 판정을 못 받는다.
+            guard index == last
+                || abs(belowBaseline(of: chunk.lines[index]) - below) < 0.001
+            else { return false }
+            guard index == 0 || abs(
+                (chunk.origins[index - 1].y - chunk.origins[index].y) - delta
+            ) < 0.001 else { return false }
+        }
+        return true
+    }
+
+    /// 줄 슬롯에서 baseline **아래** 몫 — 보고 **descent**다.
+    ///
+    /// **leading은 더하지 않는다.** CT는 글꼴 leading을 슬롯의 baseline 위쪽(다음 줄
+    /// ascent 몫)에 넣고 아래쪽에는 넣지 않는다 — 2026-09-13 임계 실측: leading이 있는
+    /// 글꼴 네 개 × 강제 줄 높이 다섯 종 20조합에서 실측 배치 below가 **전부 보고
+    /// descent와 같고** `descent + leading`과는 전부 달랐다 (Thonburi 2.2810 = d 2.2812,
+    /// d+l 2.9492 / Hiragino Sans 1.1999 = d 1.2000, d+l 6.2000). leading 0인 글꼴에서는
+    /// 두 값이 같아 구분되지 않았다 — 실물에 영향이 있다: Times New Roman 0.4248·
+    /// Arial 0.3271·Hiragino Sans 5.0(결정론 리졸버의 캐스케이드 멤버)이 leading을 갖는다.
     private static func belowBaseline(of line: CTLine) -> CGFloat {
         var descent: CGFloat = 0
-        var leading: CGFloat = 0
-        _ = CTLineGetTypographicBounds(line, nil, &descent, &leading)
-        return descent + leading
+        _ = CTLineGetTypographicBounds(line, nil, &descent, nil)
+        // 상한이 슬롯을 자연 높이보다 **깎으면** CT는 descent를 음수로 보고한다 (실측:
+        // Helvetica 40pt에 하한 10·상한 20을 걸면 −5.0). 그대로 빼면 그만큼 다음 줄
+        // ascent가 부풀어 상자가 위로 올라가므로 0에서 끊는다.
+        return max(0, descent)
     }
 
     /// 줄 `index`와 다음 줄 **사이**에 문단 스타일이 넣은 간격 — 줄 뒤 간격
@@ -176,13 +250,49 @@ extension HwpDrawnTextLayout {
     ) -> CGFloat {
         let range = CTLineGetStringRange(chunk.lines[index])
         let style = HwpLineBreaker.paragraphStyle(in: attributedString, at: range.location)
-        let adjustment = HwpLineBreaker.paragraphCGFloat(.lineSpacingAdjustment, in: style) ?? 0
-        let spacing = HwpLineBreaker.paragraphCGFloat(.paragraphSpacing, in: style) ?? 0
+        let adjustment = Self.effectiveLineSpacing(in: style)
+        // 음수 문단 간격은 CT가 무시한다 (실측: −6·−2에서 슬롯 불변) — 0으로 본다.
+        let spacing = max(0, HwpLineBreaker.paragraphCGFloat(.paragraphSpacing, in: style) ?? 0)
         let nextLocation = CTLineGetStringRange(chunk.lines[index + 1]).location
         let nextStyle = HwpLineBreaker.paragraphStyle(in: attributedString, at: nextLocation)
-        let before = HwpLineBreaker.paragraphCGFloat(.paragraphSpacingBefore, in: nextStyle) ?? 0
-        guard spacing != 0 || before != 0, endsParagraph(range, in: text) else { return adjustment }
+        let before = max(
+            0, HwpLineBreaker.paragraphCGFloat(.paragraphSpacingBefore, in: nextStyle) ?? 0
+        )
+        guard spacing > 0 || before > 0, endsParagraph(range, in: text) else { return adjustment }
         return adjustment + spacing + before
+    }
+
+    /// 줄 뒤 간격에 **줄 간격 하한·상한을 적용한** 유효 간격.
+    ///
+    /// CT는 `lineSpacingAdjustment`를 그대로 쓰지 않고 `minimumLineSpacing`·
+    /// `maximumLineSpacing`으로 가둔다 — 2026-09-13 실측 (글꼴 4종 × 간격 3종 × 경계
+    /// 5종): 상한 4에 간격 4와 10을 준 두 문단의 CT 배치가 **같고**(슬롯 16.0),
+    /// 하한 8에 간격 0·2를 준 문단도 같다(슬롯 20.0). 하한·상한이 함께 있으면 **상한이
+    /// 이긴다**(하한 8·상한 4 → 4). 미설정 상한은 CT가 10,000,000을 돌려주므로
+    /// (명시적 0과 구분된다) 그대로 `min`에 넣어도 걸리지 않는다.
+    ///
+    /// 문단 아래·위 간격은 이 상한에 **걸리지 않는다** (상한 0에도 문단 간격 10pt가
+    /// 그대로 남는다 — 실측). 하한은 줄 간격이므로 문단 경계에도 함께 붙는다
+    /// (하한 9 + 문단 간격 10 → 19).
+    ///
+    /// 남는 근사는 CT가 글꼴에 따라 갖는 **자연 줄 간격**이다 — 상한·하한은 그것까지
+    /// 더한 값을 가두는데 (Thonburi·GeezaPro 실측 1.0pt) 우리는 간격 값만 가둔다. 그래서
+    /// 상한·하한이 실제로 걸리고 그런 글꼴을 쓰면 그 몫만큼 어긋난다. leading이 0인
+    /// 글꼴 (함초롬바탕·Apple SD Gothic Neo·Menlo·Helvetica 등 실물의 대부분) 은 자연
+    /// 줄 간격이 0이라 정확하고, `HwpParagraphMetrics`는 못박은 문단에만 상한을 걸므로
+    /// (그쪽은 복원식을 쓰지 않는다) 우리 경로에는 걸리지 않는다.
+    private static func effectiveLineSpacing(in style: CTParagraphStyle?) -> CGFloat {
+        var spacing = HwpLineBreaker.paragraphCGFloat(.lineSpacingAdjustment, in: style) ?? 0
+        if let minimum = HwpLineBreaker.paragraphCGFloat(.minimumLineSpacing, in: style) {
+            spacing = max(spacing, minimum)
+        }
+        if let maximum = HwpLineBreaker.paragraphCGFloat(.maximumLineSpacing, in: style) {
+            spacing = min(spacing, maximum)
+        }
+        // **음수 간격은 걷어내지 않는다** — CT는 슬롯을 그만큼 줄여 이미 반영했으므로
+        // (실측: 줄 뒤 간격 −6에서 슬롯 12.0 → 6.0) 상자 사이로 옮기면 두 번 세어진다.
+        // 하한이 음수일 때도 같다 (하한 −2 + 간격 −6 → CT는 −2만 줄인다).
+        return max(0, spacing)
     }
 
     /// 이 줄이 CT 문단을 끝내는지 — 마지막 글자가 문단 구분자 (LF·CR·U+2029) 인지.
