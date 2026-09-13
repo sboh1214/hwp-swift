@@ -364,7 +364,9 @@ v. Board of Regents…`)을 핀했다.
 
 **baseline은 앵커가 정한다** — `HwpDrawnTextLayout.lines`는 줄 상자 상단
 (`lineGeometries(of:in:base:)`) 을 찾고 baseline을 그 아래 자기 앵커만큼에 둔다. 앵커는
-`baselineAnchor(of:)` 하나가 소유한다 (`HwpDrawnTextLayoutAnchor.swift`).
+`baselineAnchor(of:)` 하나가 소유한다 (`HwpDrawnTextLayoutAnchor.swift`) — 줄에서 읽는
+**지표 한 벌**은 `HwpDrawnTextLayoutMetrics.swift`가 소유하고 (`LineMetrics`·`lineMetrics`)
+앵커·상자 상단 복원·이월 판정·밑줄 되돌림이 그것을 공유한다.
 **ascent를 baseline의 기준점으로 쓰면 안 된다**: CT는 min=max 강제 줄 높이 안에서 ascent를
 다시 나눠 배치하는데 그 값을 줄 객체에 되돌려 주지 않는 경우가 있고 (함초롬 10pt·줄 간격
 130%에서 배치 11.0 vs 보고 10.70), 그 몫이 그대로 베이스라인으로 샜다 — 종전 구현이 앵커를
@@ -2073,7 +2075,14 @@ paraShape와 같은 값**이어야 한다.
   높이)에 남기기 때문이고, 같은
   보정을 글자 위 밑줄에 걸면 선이 개체 ascent의 15%만큼 내려가 글자 아래로 떨어진다
   (100pt 개체 + 10pt 글자에서 위 8.7pt 대신 아래 6.3pt — PR #175 리뷰 재현).
-  취소선·강조점·변경 추적 표식과 마찬가지로 위쪽 밑줄은 올라간 베이스라인을 쓴다
+  취소선·강조점·변경 추적 표식과 마찬가지로 위쪽 밑줄은 올라간 베이스라인을 쓴다.
+  **되돌림 여부는 개체가 줄 상자를 정했는지로 가른다** (PR #197 리뷰) — 개체 높이를 글꼴
+  ascent와 견주면 글자보다 낮은 개체까지 걸려, baseline이 글자 자리 그대로인 줄에서 아래
+  밑줄만 내려간다 (실측, 10pt 글자: 개체 8pt에서 1.20pt·9pt 1.35pt·9.9pt 1.49pt 아래.
+  글꼴 ascent 7.7002와 상자 높이 10 사이의 개체 전부이고, 4pt 개체는 ascent보다 낮아
+  통과하지 못했다). 상자 높이는 `max(기본 크기, 개체 높이)`라 개체가 정했다는 것은 개체
+  높이가 곧 상자 높이라는 뜻이고, 그때 되돌림이 상자 바닥과 같아진다. 가드는
+  `HwpBaselineAnchorTests.testUnderlineReturnOnlyFollowsAnObjectThatSetsTheLineBox`
 - 변경 내용 추적: 삭제된 텍스트는 BodyText가 아니라 **ViewText 스토리지**
   (표시용 본문)에 있다 — `HwpFile.displaySectionArray`가 ViewText 우선으로
   렌더 본문을 고른다 (한글.app 동작). 표식은 PARA_RANGE_TAG (kind 16 삽입 /

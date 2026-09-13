@@ -44,6 +44,16 @@ import XCTest
             ).map(\.baselineOrigin.y)
         }
 
+        /// 글자 아래 밑줄이 되돌아갈 양 (`underlineReturnDrop`).
+        private func underlineReturn(size: CGFloat, delegateHeight: CGFloat?) -> CGFloat {
+            let string = Self.attributedString(Input(
+                size: size, baseSize: size, delegateHeight: delegateHeight
+            ))
+            return HwpDrawnTextLayout.underlineReturnDrop(
+                of: CTLineCreateWithAttributedString(string)
+            )
+        }
+
         /// 한 줄 조판 입력 — 조판 문자열 빌더의 인자 묶음.
         private struct Input {
             var size: CGFloat
@@ -202,6 +212,23 @@ import XCTest
         func testShortInlineObjectLeavesTheTextLineBox() {
             expect(self.baseline(size: 20, baseSize: 20, delegateHeight: 6))
                 .to(equal([117.0]))
+        }
+
+        /// **밑줄 되돌림은 개체가 줄 상자를 정할 때만 한다** (#178 리뷰). 개체 높이를 글꼴
+        /// ascent와 견주면 글자보다 낮은 개체까지 걸려, baseline이 글자 자리 그대로인 줄에서
+        /// 글자 아래 밑줄만 내려갔다 — 10pt 글자에서 개체 8pt 1.20pt·9pt 1.35pt·9.9pt 1.49pt다
+        /// (글꼴 ascent 7.7002와 상자 높이 10 사이 전부. 4pt는 ascent보다 낮아 통과 못 했다).
+        func testUnderlineReturnOnlyFollowsAnObjectThatSetsTheLineBox() {
+            for height in [CGFloat(4), 8, 9, 9.9] {
+                expect(self.underlineReturn(size: 10, delegateHeight: height))
+                    .to(equal(0), description: "개체 \(height)pt는 상자를 정하지 않는다")
+                expect(self.baseline(size: 10, baseSize: 10, delegateHeight: height))
+                    .to(equal([108.5]), description: "개체 \(height)pt")
+            }
+            // 개체가 상자를 정하면 상자 바닥 (= 0.15 × 개체 높이) 으로 되돌린다.
+            expect(self.underlineReturn(size: 10, delegateHeight: 10)).to(equal(1.5))
+            expect(self.underlineReturn(size: 10, delegateHeight: 40)).to(equal(6))
+            expect(self.underlineReturn(size: 10, delegateHeight: nil)).to(equal(0))
         }
 
         /// 폭 0 개체 마커만 있는 줄 — 상자는 **그 마커의 글자 크기**다. 자리 차지 개체
