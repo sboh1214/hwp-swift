@@ -40,6 +40,8 @@ extension HwpDrawnTextLayout {
         let ascent: CGFloat
         /// 이 줄 슬롯의 baseline 아래 몫 — 이월 전진량 (`슬롯 = ascent + below`) 에 쓴다.
         let below: CGFloat
+        /// 이 줄의 슬롯 지표 — 이월한 ascent를 다음 청크에서 쓸 수 있는지 가른다.
+        let metrics: LineMetrics
     }
 
     /// 청크 줄들의 세로 기하 (top-down).
@@ -65,13 +67,13 @@ extension HwpDrawnTextLayout {
         of chunk: HwpLineBreaker.FrameChunk,
         in attributedString: NSAttributedString,
         base: CGFloat,
-        resumeAscent: CGFloat? = nil
+        resume: (ascent: CGFloat, metrics: LineMetrics)? = nil
     ) -> [LineGeometry] {
         guard let firstOrigin = chunk.origins.first else { return [] }
         // 줄 지표는 한 번만 걷는다 — 앵커와 상자 높이가 같은 값에서 나온다.
         let metrics = chunk.lines.map { lineMetrics(of: $0) }
         let slots = Self.placementSlots(
-            of: chunk, in: attributedString, metrics: metrics, resumeAscent: resumeAscent
+            of: chunk, in: attributedString, metrics: metrics, resume: resume
         )
         return chunk.lines.indices.map { index in
             let boxTop = index == 0
@@ -82,7 +84,8 @@ extension HwpDrawnTextLayout {
                 * HwpRenderTuning.Text.baselineAnchorRatio
             return LineGeometry(
                 boxTop: boxTop, baseline: boxTop + anchor,
-                ascent: slots.ascents[index], below: slots.belows[index]
+                ascent: slots.ascents[index], below: slots.belows[index],
+                metrics: metrics[index]
             )
         }
     }
@@ -122,7 +125,7 @@ extension HwpDrawnTextLayout {
         of chunk: HwpLineBreaker.FrameChunk,
         in attributedString: NSAttributedString,
         metrics: [LineMetrics],
-        resumeAscent: CGFloat?
+        resume: (ascent: CGFloat, metrics: LineMetrics)?
     ) -> (ascents: [CGFloat], belows: [CGFloat]) {
         guard let firstOrigin = chunk.origins.first else { return ([], []) }
         let floor = chunk.height - firstOrigin.y
@@ -137,7 +140,11 @@ extension HwpDrawnTextLayout {
         // 이월 청크는 **버린 줄의 배치 ascent**로 시작한다 — 새 프레임의 첫 슬롯은 CT가
         // 크게 잡으므로 (`floor`) 그것을 기준으로 삼으면 그 특례가 경계마다 되풀이돼 뒤 줄이
         // 밀린다 (실측: Hiragino Sans 하한 10pt 문단이 예산 20에서 33.6pt, Helvetica 12.0pt).
-        var ascents = [resumeAscent ?? floor]
+        // 이월한 ascent는 **같은 슬롯 지표**일 때만 쓴다 — 미완이던 줄이 재조판되며 큰 개체나
+        // 큰 글자를 얻으면 그 자리의 배치 ascent가 달라지고, 옛 값을 쓰면 다음 줄이 그 줄보다
+        // 위로 올라간다 (실측: 60pt 개체 줄에 14pt를 써서 역전 16건·전체 대비 42.3pt).
+        let carried = resume.flatMap { metrics[0].matchesSlot(of: $0.metrics) ? $0.ascent : nil }
+        var ascents = [carried ?? floor]
         if chunk.lines.count > 1 {
             let text = attributedString.string as NSString
             for index in 1 ..< chunk.lines.count {
@@ -147,7 +154,7 @@ extension HwpDrawnTextLayout {
                     of: chunk.lines[previous],
                     ascent: ascents[previous],
                     minimumSlot: Self.minimumSlot(
-                        of: chunk.lines[previous], in: attributedString
+                        at: previous, of: chunk, in: attributedString
                     )
                 )
                 ascents.append(
@@ -169,7 +176,7 @@ extension HwpDrawnTextLayout {
             belowBaseline(
                 of: chunk.lines[index],
                 ascent: ascents[index],
-                minimumSlot: Self.minimumSlot(of: chunk.lines[index], in: attributedString)
+                minimumSlot: Self.minimumSlot(at: index, of: chunk, in: attributedString)
             )
         }
     }
@@ -248,17 +255,28 @@ extension HwpDrawnTextLayout {
     /// 품는다) 문단마다 값이 다를 수 있다.
     ///
     /// 음수 간격을 더하는 이유는 CT가 그만큼 **슬롯 자체를 줄이기** 때문이다 — 하한 20pt에
-    /// 줄 뒤 간격 −6을 주면 슬롯이 20 → 14로 줄고 (실측: 첫 슬롯만 20, 나머지 14) 배치 ascent가
-    /// 14 → 8로 내려간다. 하한을 그대로 바닥으로 쓰면 아래 몫이 6.0 대신 12.0이 되어 둘째 줄부터
-    /// 6pt씩 밀렸다. 아래 몫 자체는 부호와 무관하게 일정하다 (하한 20에서 간격 −6·0·+4 모두
-    /// 6.0 — 실측).
+    /// 줄 뒤 간격 −6을 주면 슬롯이 20 → 14로 줄고 배치 ascent가 14 → 8로 내려간다. 하한을
+    /// 그대로 바닥으로 쓰면 아래 몫이 6.0 대신 12.0이 되어 둘째 줄부터 6pt씩 밀렸다. 아래 몫
+    /// 자체는 부호와 무관하게 일정하다 (하한 20에서 간격 −6·0·+4 모두 6.0 — 실측).
+    ///
+    /// **프레임 첫 줄은 앞에 간격이 들어가지 않아** 슬롯이 하한 그대로다 (실측: 하한 20·간격
+    /// −6에서 슬롯이 20·14·14·14). 그 줄까지 바닥을 내리면 양쪽 정렬 문단의 클램프 전 descent를
+    /// 못 받아 내 둘째 줄부터 3.7002pt 올라갔다. 그래서 **줄 앞에 실제로 들어간** 간격만 본다 —
+    /// 간격은 앞 줄의 문단 스타일이 정한다 (`interlineGap`과 같은 규약).
     private static func minimumSlot(
-        of line: CTLine, in attributedString: NSAttributedString
+        at index: Int,
+        of chunk: HwpLineBreaker.FrameChunk,
+        in attributedString: NSAttributedString
     ) -> CGFloat {
-        let location = CTLineGetStringRange(line).location
+        let location = CTLineGetStringRange(chunk.lines[index]).location
         let style = HwpLineBreaker.paragraphStyle(in: attributedString, at: location)
         let minimum = max(0, HwpLineBreaker.paragraphCGFloat(.minimumLineHeight, in: style) ?? 0)
-        return max(0, minimum + min(0, Self.effectiveLineSpacing(in: style)))
+        guard index > 0 else { return minimum }
+        let previousLocation = CTLineGetStringRange(chunk.lines[index - 1]).location
+        let previousStyle = HwpLineBreaker.paragraphStyle(
+            in: attributedString, at: previousLocation
+        )
+        return max(0, minimum + min(0, Self.effectiveLineSpacing(in: previousStyle)))
     }
 
     /// 줄 `index`와 다음 줄 **사이**에 문단 스타일이 넣은 간격 — 줄 뒤 간격
@@ -350,11 +368,23 @@ extension HwpDrawnTextLayout {
         return metrics.delegateAscent * HwpRenderTuning.Text.baselineLiftRatio
     }
 
-    private struct LineMetrics {
+    /// 줄 슬롯을 정하는 지표 — 앵커(상자 높이)와 이월 판정에 쓴다.
+    struct LineMetrics {
         /// 줄 상자 높이 (한글 줄 캐시의 `vertsize`)
         var boxHeight: CGFloat = 0
         var maxAscent: CGFloat = 0
         var delegateAscent: CGFloat = 0
+
+        /// 이월한 배치 ascent를 다음 청크 첫 줄에 써도 되는지 — 상자 높이·개체 예약·글꼴
+        /// ascent가 모두 같아야 한다. 버린 줄은 **미완**이라 다음 청크에서 온전히 재조판되며
+        /// 그때 큰 개체나 큰 글자가 그 줄에 들어올 수 있고, 그러면 그 자리의 배치 ascent가
+        /// 달라진다 (실측: 60pt 개체가 붙은 줄에 미완 줄의 14pt를 쓰면 다음 텍스트 줄이 개체
+        /// 줄보다 22.5pt 위로 올라가 겹친다).
+        func matchesSlot(of other: LineMetrics) -> Bool {
+            abs(boxHeight - other.boxHeight) < 0.001
+                && abs(maxAscent - other.maxAscent) < 0.001
+                && abs(delegateAscent - other.delegateAscent) < 0.001
+        }
     }
 
     private static func lineMetrics(of line: CTLine) -> LineMetrics {

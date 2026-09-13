@@ -248,6 +248,62 @@ import XCTest
             }
         }
 
+        /// **미완 줄의 ascent를 완성된 줄에 그대로 쓰면 안 된다** (#178 리뷰). 이월이 넘기는
+        /// 배치 ascent는 **미완이던** 줄의 값이고, 그 줄은 다음 청크에서 온전히 재조판되며 큰
+        /// 개체를 얻을 수 있다 — 하한 20pt 문단의 14pt를 60pt 개체 줄에 쓰면 다음 텍스트 줄이
+        /// 개체 줄보다 위로 올라가 겹친다 (실측: 개체 위치 × 예산 스윕에서 역전 16건, 전체 조판
+        /// 대비 최대 42.3pt). 슬롯 지표(상자 높이·개체 예약·글꼴 ascent)가 같을 때만 쓴다.
+        func testCarryoverIgnoresAStaleAscentWhenTheLineGainsAnObject() {
+            for position in [20, 28, 32, 36] {
+                let string = LineBoxFixtures.paragraphWithObject(at: position)
+                let whole = LineBoxFixtures.baselines(string, lineWidth: 80)
+                for budget in [20, 24, 28, 32] {
+                    let chunked = HwpDrawnTextLayout.lines(
+                        attributedString: string, origin: CGPoint(x: 0, y: 100),
+                        lineWidth: 80, maxLineFrames: budget
+                    ).map(\.baselineOrigin.y)
+                    let label = "개체 \(position)·예산 \(budget)"
+                    // baseline은 언제나 단조증가해야 한다 (역전 = 글자가 앞 줄 위로 올라간 것).
+                    for index in 1 ..< chunked.count {
+                        expect(chunked[index]).to(
+                            beGreaterThan(chunked[index - 1]), description: label
+                        )
+                    }
+                    guard chunked.count == whole.count else { continue }
+                    expect(chunked.map(Double.init)).to(
+                        beCloseTo(whole.map(Double.init), within: 0.01), description: label
+                    )
+                }
+            }
+        }
+
+        /// **프레임 첫 슬롯의 하한은 음수 간격으로 내리지 않는다** (#178 리뷰). CT는 첫 줄 앞에
+        /// 간격을 넣지 않으므로 첫 슬롯은 하한 그대로다 (하한 20·간격 −6에서 슬롯 20·14·14·14).
+        /// 첫 줄까지 바닥을 내리면 양쪽 정렬 문단의 클램프 전 descent를 받아 내지 못해 둘째 줄부터
+        /// 3.7002pt 올라갔다 — 정렬만 바꿔도 세로 위치가 달라져선 안 된다.
+        func testFirstSlotKeepsItsMinimumUnderNegativeLineSpacing() {
+            let specs: [(CTParagraphStyleSpecifier, CGFloat)] = [
+                (.minimumLineHeight, 20), (.lineSpacingAdjustment, -6),
+            ]
+            let natural = LineBoxFixtures.baselines(
+                LineBoxFixtures.uniformParagraph(specs: specs), lineWidth: 60
+            )
+            let justified = LineBoxFixtures.baselines(
+                LineBoxFixtures.uniformParagraph(specs: specs, justified: true), lineWidth: 60
+            )
+            expect(natural.count).to(beGreaterThan(3))
+            expect(justified.count).to(equal(natural.count))
+            guard natural.count == justified.count else { return }
+            expect(justified.map(Double.init))
+                .to(beCloseTo(natural.map(Double.init), within: 0.01))
+            // 첫 전진량은 첫 슬롯(하한 20pt)이고 그 뒤는 줄어든 슬롯(14pt)이다.
+            let gaps = zip(natural.dropFirst(), natural).map { Double($0 - $1) }
+            expect(gaps[0]).to(beCloseTo(20.0, within: 0.01))
+            expect(Array(gaps.dropFirst())).to(
+                beCloseTo(Array(repeating: 14.0, count: gaps.count - 1), within: 0.01)
+            )
+        }
+
         /// **음수 줄 간격은 슬롯 하한도 낮춘다** (#178 리뷰). 하한 20pt에 줄 뒤 간격 −6을 주면
         /// CT는 슬롯을 14pt로 줄이는데 (첫 슬롯만 20pt) 하한을 그대로 바닥으로 쓰면 아래 몫이
         /// 6.0 대신 12.0이 되어 둘째 줄부터 6pt씩 밀렸다 — 임계 실측 상자 상단은

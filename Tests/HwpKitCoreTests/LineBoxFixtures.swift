@@ -228,6 +228,28 @@ import XCTest
             return NSAttributedString(string: "ab\ncd", attributes: attributes)
         }
 
+        /// 지정 위치에 60pt 글자처럼 취급 개체가 든 하한 20pt 문단 — 청크가 그 줄을 미완으로
+        /// 버리면 다음 청크에서 개체가 그 줄에 들어온다.
+        static func paragraphWithObject(at position: Int) -> NSAttributedString {
+            let style = paragraphStyle(specs: [(.minimumLineHeight, 20)])
+            let body = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi"
+            let head = String(body.prefix(position))
+            let tail = String(body.dropFirst(position))
+            let out = NSMutableAttributedString(
+                string: head, attributes: attributes(size: 10, style: style)
+            )
+            if let delegate = HwpInlineObjectReservation.runDelegate(width: 20, height: 60) {
+                var marker = attributes(size: 10, style: style)
+                marker[kCTRunDelegateAttributeName as NSAttributedString.Key] = delegate
+                marker[HwpAttributedStringKey.controlIndex] = NSNumber(value: 0)
+                out.append(NSAttributedString(string: "\u{FFFC}", attributes: marker))
+            }
+            out.append(NSAttributedString(
+                string: tail, attributes: attributes(size: 10, style: style)
+            ))
+            return out
+        }
+
         /// 하한 20pt·양쪽 정렬 문단 — 마지막 글자만 40pt라 줄 상자가 갈린다.
         static func justifiedTailParagraph() -> NSAttributedString {
             let style = paragraphStyle(specs: [(.minimumLineHeight, 20)], justified: true)

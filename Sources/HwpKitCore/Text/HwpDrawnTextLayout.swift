@@ -60,8 +60,9 @@ public enum HwpDrawnTextLayout {
         var startLocation = 0
         // 이월 시 다음 청크 첫 줄의 **줄 상자 상단** top-down y. nil이면 첫 청크.
         var resumeBoxTop: CGFloat?
-        // 이월 시 그 줄의 **배치 ascent** — 새 프레임의 첫 슬롯 특례를 타지 않게 넘긴다.
-        var resumeAscent: CGFloat?
+        // 이월 시 그 줄의 **배치 ascent와 슬롯 지표** — 새 프레임의 첫 슬롯 특례를 타지 않게
+        // 넘기고, 재조판된 줄이 같은 슬롯인지 지표로 가른다.
+        var resumeSlot: (ascent: CGFloat, metrics: LineMetrics)?
         while startLocation < fullLength, result.count < lineBudget {
             guard let chunk = HwpLineBreaker.nextFrameChunk(
                 framesetter: framesetter, typesetter: typesetter,
@@ -73,7 +74,7 @@ public enum HwpDrawnTextLayout {
             // 상단) 에 핀하고, 나머지는 CT 슬롯을 따른다 (`lineGeometries`).
             let geometries = Self.lineGeometries(
                 of: chunk, in: attributedString, base: resumeBoxTop ?? origin.y,
-                resumeAscent: resumeAscent
+                resume: resumeSlot
             )
             for index in 0 ..< chunk.keepCount {
                 result.append(drawnLine(
@@ -93,7 +94,7 @@ public enum HwpDrawnTextLayout {
                 continuesAfterChunk: chunk.nextStart < fullLength
             )
             resumeBoxTop = resume?.boxTop
-            resumeAscent = resume?.ascent
+            resumeSlot = resume.map { (ascent: $0.ascent, metrics: $0.metrics) }
             guard chunk.nextStart > startLocation else { break }
             startLocation = chunk.nextStart
         }
@@ -160,9 +161,9 @@ public enum HwpDrawnTextLayout {
         geometries: [LineGeometry],
         attributedString: NSAttributedString,
         continuesAfterChunk: Bool
-    ) -> (boxTop: CGFloat, ascent: CGFloat?)? {
+    ) -> Resume? {
         if let dropped = chunk.droppedLineIndex, dropped < geometries.count {
-            return (geometries[dropped].boxTop, geometries[dropped].ascent)
+            return Resume(geometry: geometries[dropped])
         }
         let last = chunk.keepCount - 1
         guard last >= 0, last < geometries.count else { return nil }
@@ -170,12 +171,38 @@ public enum HwpDrawnTextLayout {
         // ascent를 넘긴다. 같은 문단이 이어지는 흔한 경우에 그 값이 곧 그 자리의 값이고, 새
         // 프레임의 첫 슬롯 특례를 타는 것보다 가깝다 (실측: Helvetica 하한 10pt 문단 예산 13의
         // 드리프트가 1.50 → 0.00pt).
-        return (geometries[last].boxTop + fallbackLineAdvance(
+        let advance = fallbackLineAdvance(
             after: geometries[last],
             line: chunk.lines[last],
             attributedString: attributedString,
             continuesAfterChunk: continuesAfterChunk
-        ), geometries[last].ascent)
+        )
+        return Resume(
+            boxTop: geometries[last].boxTop + advance,
+            ascent: geometries[last].ascent,
+            metrics: geometries[last].metrics
+        )
+    }
+
+    /// 청크 이월이 다음 청크에 넘기는 것 — 첫 줄 상자 상단과, 그 자리의 배치 ascent를 쓸 수
+    /// 있는지 가릴 슬롯 지표.
+    private struct Resume {
+        let boxTop: CGFloat
+        let ascent: CGFloat
+        let metrics: LineMetrics
+
+        init(boxTop: CGFloat, ascent: CGFloat, metrics: LineMetrics) {
+            self.boxTop = boxTop
+            self.ascent = ascent
+            self.metrics = metrics
+        }
+
+        /// 버린 줄의 기하를 그대로 넘긴다 — 그 줄은 다음 청크에서 같은 슬롯 자리에 다시 놓인다.
+        init(geometry: LineGeometry) {
+            boxTop = geometry.boxTop
+            ascent = geometry.ascent
+            metrics = geometry.metrics
+        }
     }
 
     /// 다음 청크에 조사할 origin이 없을 때 세로 advance — 그 줄의 **슬롯**

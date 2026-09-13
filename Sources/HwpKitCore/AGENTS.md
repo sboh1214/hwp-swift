@@ -451,7 +451,11 @@ v. Board of Regents…`)을 핀했다.
   줄고 배치 ascent가 14 → 8로 내려가는데, 하한 20을 그대로 바닥으로 쓰면 아래 몫이 6.0 대신
   12.0이 되어 둘째 줄부터 6pt씩 밀린다 (실측 상자 상단 100 / 120 / 134 / 148 대 잘못된
   100 / 120 / 140 / 160). 그래서 바닥은 `max(0, 하한 + min(0, 유효 간격))`이다 — 아래 몫 자체는
-  부호와 무관하게 일정하다 (하한 20에서 간격 −6·0·+4 모두 6.0). 남는 근사는 CT가 글꼴에 따라 갖는
+  부호와 무관하게 일정하다 (하한 20에서 간격 −6·0·+4 모두 6.0). **프레임 첫 줄 앞에는 간격이
+  들어가지 않으므로 그 줄의 바닥은 내리지 않는다** — 같은 실측에서 슬롯이 20·14·14·14다. 첫
+  줄까지 내리면 양쪽 정렬 문단의 클램프 전 descent를 받아 내지 못해 정렬만 바꿔도 둘째 줄부터
+  3.7002pt 올라갔다. 간격은 **앞 줄의 문단 스타일**이 정한다 (`interlineGap`과 같은 규약).
+  남는 근사는 CT가 글꼴에 따라 갖는
   **자연 줄 간격**이다 (Thonburi·GeezaPro 1.0pt·Hiragino Sans 5.0pt) — 상한·하한은 그것까지
   더한 값을 가두는데 우리는 간격 값만 가두므로, 상한·하한이 실제로 걸리고 그런 글꼴을 쓰면 그
   몫만큼 어긋난다. `HwpParagraphMetrics`는 **못박은 문단에만** 상한을 걸고 (그쪽은 복원식을
@@ -465,7 +469,10 @@ v. Board of Regents…`)을 핀했다.
   `testDifferentPinnedHeightsInOneBlockDoNotShareASlot`·
   `testNegativeLineSpacingLowersTheMinimumSlot`·
   `testChunkBudgetDoesNotMoveAUniformParagraph`·
-  `testCarryoverKeepsThePlacementAscentAcrossFrames`. **CT가 같게 조판하는 두 입력은 우리도 같게
+  `testCarryoverKeepsThePlacementAscentAcrossFrames`·
+  `testCarryoverIgnoresAStaleAscentWhenTheLineGainsAnObject`·
+  `testFirstSlotKeepsItsMinimumUnderNegativeLineSpacing`. **CT가 같게 조판하는 두 입력은 우리도
+  같게
   그려야 한다**는 불변식과, 줄을 더 붙여도 앞 줄이 움직이지 않아야 한다는 불변식으로 잠그고
   임계 오라클을 테스트 안에서 직접 쓴다.
 
@@ -509,6 +516,13 @@ v. Board of Regents…`)을 핀했다.
   경우에 그 자리의 값이다). 전진량도 보고 typographic bounds가 아니라 그 줄의 **슬롯**
   (`배치 ascent + 아래 몫`) 이다 — 보고값으로 전진하던 동안 Helvetica 하한 10pt 문단이
   12.0pt 대신 10.0pt로 전진했다.
+
+  **넘긴 ascent는 슬롯 지표가 같을 때만 쓴다** (`LineMetrics.matchesSlot`). 버린 줄은 미완이라
+  다음 청크에서 온전히 재조판되며 그때 큰 개체나 큰 글자가 그 줄에 들어올 수 있는데, 옛 값을
+  쓰면 그 줄 뒤 텍스트가 그 줄보다 **위로** 올라간다 — 실측: 하한 20pt 문단의 14pt를 60pt 개체
+  줄에 쓰면 개체 위치 × 예산 스윕에서 역전 16건, 전체 조판 대비 42.3pt. 상자 높이·개체 예약·
+  글꼴 ascent가 모두 같아야 넘긴 값을 쓰고, 아니면 그 프레임의 `floor`를 쓴다 (개체 줄의
+  `floor`는 개체 높이 그대로라 그 줄에는 그것이 정확값이다).
 - 청크 이월은 baseline이 아니라 **상자 상단**을 넘긴다. 버린 마지막 줄은 미완이라 다음
   청크의 온전한 줄과 앵커가 다를 수 있고 (기본 크기가 경계에 걸리면 0.85 × 크기 차),
   baseline을 넘기면 그 앵커가 다음 청크에서 소거되지 않아 뒤 줄 전체가 밀린다 (합성 실측:
