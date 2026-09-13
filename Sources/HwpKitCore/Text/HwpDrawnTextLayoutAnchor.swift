@@ -52,6 +52,16 @@ extension HwpDrawnTextLayout {
         let metrics: LineMetrics
         /// 그 줄 **앞에** 실제로 들어간 줄 뒤 간격 (부호 유지) — 앞 줄의 문단 스타일이 정한다
         let spacing: CGFloat
+        /// `ascent`를 부풀린 **앞 줄의 leading** — CT가 leading을 다음 줄 슬롯에 얹기 때문에
+        /// 배치 ascent에는 그 몫이 들어 있다.
+        let inflatingLeading: CGFloat
+        /// 재개할 줄 **바로 앞** 줄의 leading — 그 줄이 받을 몫이다.
+        let predecessorLeading: CGFloat
+
+        /// 이월한 ascent를 그 자리에 쓸 수 있는지 — 부풀린 몫이 같아야 한다.
+        var leadingMatches: Bool {
+            abs(inflatingLeading - predecessorLeading) < 0.001
+        }
     }
 
     /// 청크 줄들의 세로 기하 (top-down).
@@ -158,7 +168,12 @@ extension HwpDrawnTextLayout {
         // 이월한 ascent는 **같은 슬롯 지표**일 때만 쓴다 — 미완이던 줄이 재조판되며 큰 개체나
         // 큰 글자를 얻으면 그 자리의 배치 ascent가 달라지고, 옛 값을 쓰면 다음 줄이 그 줄보다
         // 위로 올라간다 (실측: 60pt 개체 줄에 14pt를 써서 역전 16건·전체 대비 42.3pt).
-        let carried = resume.flatMap { metrics[0].matchesSlot(of: $0.metrics) ? $0 : nil }
+        // 미완 줄이 **없는** 이월은 앞 줄의 값을 다음 자리에 빌려 주는 것이라 조건이 하나 더
+        // 있다 — 그 값이 받은 **leading 몫**이 이 자리의 몫과 같아야 한다 (`leadingMatches`).
+        // 이월 값은 **줄 지표가 같고** 그 값이 받은 leading 몫이 이 자리의 몫과 같을 때만 쓴다.
+        let carried = resume.flatMap {
+            metrics[0].matchesSlot(of: $0.metrics) && $0.leadingMatches ? $0 : nil
+        }
         var ascents = [carried?.ascent ?? floor]
         // 이월 ascent를 쓴 첫 줄은 **앞 청크에서 간격이 이미 적용된 자리**다 — 슬롯 하한도 그
         // 자리의 것을 써야 한다. 그 간격은 **앞 줄의 문단**이 정하므로 이월이 실어 온다

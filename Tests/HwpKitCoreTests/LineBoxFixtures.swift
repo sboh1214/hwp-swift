@@ -253,6 +253,26 @@ import XCTest
             return out
         }
 
+        /// 지정 위치의 글자만 **leading이 있는 글꼴**인 문단 — 상자 높이(앵커)는 두 run이 같게
+        /// 선언하므로 갈리는 것은 CT가 **다음 줄** 슬롯에 얹는 몫뿐이다.
+        static func paragraphWithLeadingRun(
+            at position: Int, fontName: String
+        ) -> NSAttributedString {
+            let body = String(repeating: "Lorem ipsum ", count: 8)
+            let out = NSMutableAttributedString(
+                string: String(body.prefix(position)),
+                attributes: attributes(size: 10, style: nil)
+            )
+            out.append(NSAttributedString(
+                string: "X", attributes: attributes(size: 10, style: nil, fontName: fontName)
+            ))
+            out.append(NSAttributedString(
+                string: String(body.dropFirst(position + 1)),
+                attributes: attributes(size: 10, style: nil)
+            ))
+            return out
+        }
+
         /// 지정 위치의 글자만 **기본 크기**가 다른 문단 (실제 조판 크기는 같다) — 상대크기
         /// 글자가 그렇게 조판된다. 슬롯은 같으므로 이월 ascent가 유효해야 한다.
         static func paragraphWithAnchorOnlySizeChange(

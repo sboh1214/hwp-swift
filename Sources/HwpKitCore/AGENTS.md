@@ -477,7 +477,9 @@ v. Board of Regents…`)을 핀했다.
   `testResumedSlotKeepsItsEffectiveMinimum`·
   `testCarriedAscentSurvivesAnAnchorOnlySizeChange`·
   `testResumedFloorKeepsThePrecedingParagraphSpacing`·
-  `testCarriedAdvanceUsesTheEffectiveLineSpacing`. **CT가 같게 조판하는 두 입력은 우리도
+  `testCarriedAdvanceUsesTheEffectiveLineSpacing`·
+  `HwpLineBoxCarryoverTests.testInflatedCarryIsNotReusedAtTheNextSlot`.
+  **CT가 같게 조판하는 두 입력은 우리도
   같게
   그려야 한다**는 불변식과, 줄을 더 붙여도 앞 줄이 움직이지 않아야 한다는 불변식으로 잠그고
   임계 오라클을 테스트 안에서 직접 쓴다.
@@ -506,6 +508,18 @@ v. Board of Regents…`)을 핀했다.
   `HwpBaselineAnchorTests.testMinimumOnlyLineHeightKeepsPerLineSlots`와
   `HwpLineBoxAdvanceTests`의 `testMinimumOnlyLineHeightAdvancesShortLinesByTheMinimum`·
   `testNoOpMaximumLineHeightMovesNoLine`.
+
+  **판정에서 버린 줄을 빼면 안 된다** (PR #197 리뷰를 실측으로 반증했다). 버린 줄까지 보는 덕에
+  청크의 판정이 **블록 전체의 판정과 같아진다** — 빼자고 고치면 뒤 문단이 다른 높이로 못박은
+  블록에서 앞 문단만 담은 청크가 못박힌 쪽으로 갈려 예산별로 어긋난다 (실측: 못박힘 16 → 24
+  문단이 정확히 불변(전체 대비 0.0000·임계 실측 대비 0.0002)이던 것이 **4.0000pt**로, 24 → 16 +
+  개체가 2.0 → **6.0000pt**로 벌어졌다). 리뷰가 든 증상도 재현되지 않는다 — 버린 줄의 못박은
+  높이만 24 → 16으로 바꿔도 커밋된 줄들의 baseline이 같다.
+
+  **남는 잔차**: 못박힌 문단에 **글자처럼 취급 개체**가 있고 그 블록에 다른 높이로 못박은 문단이
+  같이 있으면, 청크 판정(못박힘)과 블록 판정(못박힘 아님)이 갈려 예산 18~36에서 2.0pt 어긋난다
+  (전체 조판 쪽이 임계 실측과 맞는다). 판정을 청크가 아니라 **블록 문자열 전체**로 내리면 닫히는
+  축이라 전진량 축(#180·#192·#198)과 함께 다룬다.
 
   이 갈래는 **전진량 축과 맞바꾼다**. 헌법주석 470쪽 (실물 대조를 마친 표본) 의 각주
   문단이 하한만 걸린 개체 문단인데, 그 각주의 줄 캐시는 `h=1080·900·900`으로 한글도 줄마다
@@ -554,7 +568,24 @@ v. Board of Regents…`)을 핀했다.
   간격 10을 준 문단이 42.0pt, 상한 0에 간격 6이 42.0pt, 하한 8에 간격 0이 56.0pt 밀렸고 상한·하한
   없는 대조 문단은 0.000pt였다). 한 함수 안에서 "이 줄 뒤의 간격"이 두 정의를 갖고 있던 것이다.
 
-  **남는 잔차 (이 축)**: 이월한 ascent는 슬롯이 **간격 때문에** 갈리는 경계를 못 가른다 —
+  **이월 값이 앞 줄에서 받은 몫도 함께 본다** (`ResumedSlot.inflatingLeading`, PR #197 리뷰).
+  CT는 글꼴 leading을 **그 줄이 아니라 다음 줄** 슬롯에 얹는다 — 2026-09-14 임계 실측:
+  ascent 18.0·descent 6.0이 정확히 같고 leading만 0 대 1.7143인 글꼴 짝
+  (`AppleSDGothicNeo-Bold` 20pt 대 `ITFDevanagari-Book` 17.1429pt, 설치 글꼴에서 이런 짝이
+  1,150개다) 로 한 글자만 바꾸면 **그 글자가 든 줄의 슬롯은 24.0·배치 ascent 18.0 그대로**이고
+  **다음 줄이 26.0·20.0**이 된다. 그래서 ① 재조판된 줄이 leading이 다른 run을 얻어도 그 줄
+  자신의 배치 ascent는 그대로라 `matchesSlot`은 leading을 보지 않고, ② 미완 줄이 **없는**
+  이월은 앞 줄의 값을 다음 자리에 빌려 주는 것이므로 그 값이 받은 몫(= 그 줄 앞 줄의 leading)이
+  이 자리의 몫과 같아야 한다. ②를 보지 않는 동안 부풀려진 ascent가 경계마다 되풀이돼
+  Hiragino Sans 한 글자 문단이 예산 14에서 **20.2998pt**, 예산 16에서 10.2998pt 밀렸다
+  (지금은 예산 16 이상 1.0pt 안, 최대 4.4004pt). 넘길 몫은 한 줄 청크에서 이 청크 앞 줄의
+  것이라 들어온 이월이 실어 온다 (`predecessorLeading`).
+
+  **남는 잔차 (이 축)**: 이월을 **버리면** 그 프레임의 `floor`를 쓰는데 그 값도 앞 줄이 넘긴
+  몫을 모른다 — 줄마다 청크가 갈리는 아주 작은 예산(12·14)에서 4.4004pt가 남는다. CT가 넘기는
+  양은 leading 값 자체가 아니라 양자화된 몫이라 (실측: 보고 leading 0.7282에 실제 부풀림 2.0)
+  값으로 세울 수 없고, leading은 **달라졌는지 가리는 표식**으로만 쓴다. 또 이월한 ascent는
+  슬롯이 **간격 때문에** 갈리는 경계를 못 가른다 —
   `matchesSlot`은 글꼴·개체 지표만 보므로 간격이 −6으로 바뀌는 문단의 첫 줄(슬롯 20)에서 다음
   줄(슬롯 14)로 넘길 때 그 줄의 ascent 14를 그대로 써 8이어야 할 자리가 14가 된다. 미완 줄이
   없는 단일 줄 청크에서만 드러나고 (실측: 간격 0 → −6 두 문단, 첫 문단 62자·예산 18에서 12.0pt,

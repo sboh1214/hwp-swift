@@ -91,7 +91,7 @@ public enum HwpDrawnTextLayout {
             }
             let resume = Self.resume(
                 after: chunk, geometries: geometries,
-                attributedString: attributedString,
+                attributedString: attributedString, incoming: resumeSlot,
                 continuesAfterChunk: chunk.nextStart < fullLength
             )
             resumeBoxTop = resume?.boxTop
@@ -166,6 +166,7 @@ public enum HwpDrawnTextLayout {
         after chunk: HwpLineBreaker.FrameChunk,
         geometries: [LineGeometry],
         attributedString: NSAttributedString,
+        incoming: ResumedSlot?,
         continuesAfterChunk: Bool
     ) -> Resume? {
         let last = chunk.keepCount - 1
@@ -173,8 +174,14 @@ public enum HwpDrawnTextLayout {
         // 다음 청크 첫 줄 **앞에** 들어가는 간격은 이 청크의 마지막으로 놓은 줄이 정한다 —
         // 버린 줄을 이월하는 길에서도 그 줄 앞 줄이 곧 이 줄이다 (`dropped == keepCount`).
         let spacing = carriedLineSpacing(after: chunk.lines[last], in: attributedString)
+        // 재개할 줄이 받을 leading 몫 — 그 줄 바로 앞 줄(= 이 청크가 마지막으로 놓은 줄)의 것이다.
+        let predecessorLeading = geometries[last].metrics.maxLeading
         if let dropped = chunk.droppedLineIndex, dropped < geometries.count {
-            return Resume(geometry: geometries[dropped], spacing: spacing)
+            // 버린 줄을 그대로 다시 놓는 길이라 부풀린 몫도 같은 줄에서 온다.
+            return Resume(
+                geometry: geometries[dropped], spacing: spacing,
+                inflatingLeading: predecessorLeading, predecessorLeading: predecessorLeading
+            )
         }
         // 미완 줄이 없으면 다음 청크 첫 줄은 이 청크에 없던 줄이다 — 그래도 **이 줄의** 배치
         // ascent를 넘긴다. 같은 문단이 이어지는 흔한 경우에 그 값이 곧 그 자리의 값이고, 새
@@ -183,12 +190,20 @@ public enum HwpDrawnTextLayout {
         let advance = fallbackLineAdvance(
             after: geometries[last], spacing: spacing, continuesAfterChunk: continuesAfterChunk
         )
+        // 이 줄의 ascent를 **다음 줄 자리에** 빌려 주는 길이므로, 그 값이 받은 leading 몫
+        // (= 이 줄 앞 줄의 leading) 을 함께 넘겨 다음 자리의 몫과 견주게 한다. 앞 줄이 이
+        // 청크에 없으면 (한 줄 청크) 들어온 이월이 그 값을 실어 온다.
+        let inflatingLeading = last >= 1
+            ? geometries[last - 1].metrics.maxLeading
+            : incoming?.predecessorLeading ?? predecessorLeading
         return Resume(
             boxTop: geometries[last].boxTop + advance,
             slot: ResumedSlot(
                 ascent: geometries[last].ascent,
                 metrics: geometries[last].metrics,
-                spacing: spacing
+                spacing: spacing,
+                inflatingLeading: inflatingLeading,
+                predecessorLeading: predecessorLeading
             )
         )
     }
@@ -205,10 +220,14 @@ public enum HwpDrawnTextLayout {
         }
 
         /// 버린 줄의 기하를 그대로 넘긴다 — 그 줄은 다음 청크에서 같은 슬롯 자리에 다시 놓인다.
-        init(geometry: LineGeometry, spacing: CGFloat) {
+        init(
+            geometry: LineGeometry, spacing: CGFloat,
+            inflatingLeading: CGFloat, predecessorLeading: CGFloat
+        ) {
             boxTop = geometry.boxTop
             slot = ResumedSlot(
-                ascent: geometry.ascent, metrics: geometry.metrics, spacing: spacing
+                ascent: geometry.ascent, metrics: geometry.metrics, spacing: spacing,
+                inflatingLeading: inflatingLeading, predecessorLeading: predecessorLeading
             )
         }
     }

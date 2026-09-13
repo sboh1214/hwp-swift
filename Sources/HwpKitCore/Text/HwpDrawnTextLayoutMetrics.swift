@@ -14,6 +14,8 @@ extension HwpDrawnTextLayout {
         var boxHeight: CGFloat = 0
         var maxAscent: CGFloat = 0
         var maxDescent: CGFloat = 0
+        /// 이 줄 글꼴들의 최대 leading — CT는 이 몫을 **다음 줄** 슬롯에 얹는다 (아래 실측).
+        var maxLeading: CGFloat = 0
         var delegateAscent: CGFloat = 0
 
         /// 이월한 배치 ascent를 다음 청크 첫 줄에 써도 되는지 — **CT 슬롯을 정하는 지표**가
@@ -26,6 +28,13 @@ extension HwpDrawnTextLayout {
         /// 실제 조판 크기와 무관하게 달라질 수 있다. 경계 글자만 기본 20pt·상대크기 50%(실제
         /// 10pt)로 두면 슬롯은 그대로인데 이월 ascent가 버려져 뒤 줄이 4.8pt 올라갔다 (실측).
         /// 슬롯을 정하는 것은 **실제 글꼴 지표와 개체 예약**이다.
+        ///
+        /// **`maxLeading`도 보지 않는다** — CT는 글꼴 leading을 그 줄이 아니라 **다음 줄**
+        /// 슬롯에 얹는다 (2026-09-14 임계 실측: ascent 18.0·descent 6.0이 같고 leading만
+        /// 0 대 1.7143인 두 글꼴로 한 글자만 바꾸면, 그 글자가 든 줄의 슬롯은 24.0 그대로이고
+        /// **다음** 줄이 26.0이 된다). 그러므로 재조판된 줄이 leading이 다른 run을 얻어도 그
+        /// 줄 자신의 배치 ascent는 그대로고 이월 값은 유효하다. 다음 자리로 넘어가는 몫은
+        /// `ResumedSlot.inflatingLeading`이 가른다.
         func matchesSlot(of other: LineMetrics) -> Bool {
             abs(maxAscent - other.maxAscent) < 0.001
                 && abs(maxDescent - other.maxDescent) < 0.001
@@ -59,6 +68,7 @@ extension HwpDrawnTextLayout {
             guard let font = ctFont(in: attributes) else { continue }
             metrics.maxAscent = max(metrics.maxAscent, CTFontGetAscent(font))
             metrics.maxDescent = max(metrics.maxDescent, CTFontGetDescent(font))
+            metrics.maxLeading = max(metrics.maxLeading, CTFontGetLeading(font))
         }
         return metrics
     }
