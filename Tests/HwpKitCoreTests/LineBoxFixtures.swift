@@ -230,6 +230,29 @@ import XCTest
             return NSAttributedString(string: "ab\ncd", attributes: attributes)
         }
 
+        /// 줄 뒤 간격만 다른 두 문단 — 문단 경계 줄 앞에 들어가는 간격은 **앞 문단**의 값이라
+        /// 청크 이월이 그 경계에 걸리면 두 값이 갈린다.
+        static func twoSpacedParagraphs(
+            first: CGFloat, second: CGFloat, minimumHeights: (CGFloat, CGFloat) = (20, 20),
+            firstLength: Int = 40
+        ) -> NSAttributedString {
+            let body = String(repeating: "Lorem ipsum ", count: 12)
+            let one = paragraphStyle(specs: [
+                (.minimumLineHeight, minimumHeights.0), (.lineSpacingAdjustment, first),
+            ])
+            let two = paragraphStyle(specs: [
+                (.minimumLineHeight, minimumHeights.1), (.lineSpacingAdjustment, second),
+            ])
+            let out = NSMutableAttributedString(
+                string: String(body.prefix(firstLength)) + "\n",
+                attributes: attributes(size: 10, style: one)
+            )
+            out.append(NSAttributedString(
+                string: String(body.prefix(48)), attributes: attributes(size: 10, style: two)
+            ))
+            return out
+        }
+
         /// 지정 위치의 글자만 **기본 크기**가 다른 문단 (실제 조판 크기는 같다) — 상대크기
         /// 글자가 그렇게 조판된다. 슬롯은 같으므로 이월 ascent가 유효해야 한다.
         static func paragraphWithAnchorOnlySizeChange(

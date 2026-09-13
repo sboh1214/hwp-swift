@@ -44,6 +44,16 @@ extension HwpDrawnTextLayout {
         let metrics: LineMetrics
     }
 
+    /// 청크 이월이 다음 청크 **첫 줄**에 넘기는 슬롯 정보.
+    struct ResumedSlot {
+        /// 그 자리의 배치 ascent (새 프레임의 첫 슬롯 특례를 타지 않게 한다)
+        let ascent: CGFloat
+        /// 그 자리 줄의 슬롯 지표 — 재조판된 줄이 같은 슬롯인지 가른다
+        let metrics: LineMetrics
+        /// 그 줄 **앞에** 실제로 들어간 줄 뒤 간격 (부호 유지) — 앞 줄의 문단 스타일이 정한다
+        let spacing: CGFloat
+    }
+
     /// 청크 줄들의 세로 기하 (top-down).
     ///
     /// 첫 줄 상자 상단은 `base` (블록 상단, 이월이면 재개 상자 상단) 에 조건 없이 핀한다 —
@@ -67,7 +77,7 @@ extension HwpDrawnTextLayout {
         of chunk: HwpLineBreaker.FrameChunk,
         in attributedString: NSAttributedString,
         base: CGFloat,
-        resume: (ascent: CGFloat, metrics: LineMetrics)? = nil
+        resume: ResumedSlot? = nil
     ) -> [LineGeometry] {
         guard let firstOrigin = chunk.origins.first else { return [] }
         // 줄 지표는 한 번만 걷는다 — 앵커와 상자 높이가 같은 값에서 나온다.
@@ -125,7 +135,7 @@ extension HwpDrawnTextLayout {
         of chunk: HwpLineBreaker.FrameChunk,
         in attributedString: NSAttributedString,
         metrics: [LineMetrics],
-        resume: (ascent: CGFloat, metrics: LineMetrics)?
+        resume: ResumedSlot?
     ) -> (ascents: [CGFloat], belows: [CGFloat]) {
         guard let firstOrigin = chunk.origins.first else { return ([], []) }
         let floor = chunk.height - firstOrigin.y
@@ -137,7 +147,9 @@ extension HwpDrawnTextLayout {
             let ascents = chunk.lines.indices.map { max(floor, metrics[$0].delegateAscent) }
             return (
                 ascents,
-                Self.belows(of: chunk, in: attributedString, ascents: ascents, resumed: false)
+                Self.belows(
+                    of: chunk, in: attributedString, ascents: ascents, resumedSpacing: nil
+                )
             )
         }
         // 이월 청크는 **버린 줄의 배치 ascent**로 시작한다 — 새 프레임의 첫 슬롯은 CT가
@@ -146,11 +158,12 @@ extension HwpDrawnTextLayout {
         // 이월한 ascent는 **같은 슬롯 지표**일 때만 쓴다 — 미완이던 줄이 재조판되며 큰 개체나
         // 큰 글자를 얻으면 그 자리의 배치 ascent가 달라지고, 옛 값을 쓰면 다음 줄이 그 줄보다
         // 위로 올라간다 (실측: 60pt 개체 줄에 14pt를 써서 역전 16건·전체 대비 42.3pt).
-        let carried = resume.flatMap { metrics[0].matchesSlot(of: $0.metrics) ? $0.ascent : nil }
-        var ascents = [carried ?? floor]
+        let carried = resume.flatMap { metrics[0].matchesSlot(of: $0.metrics) ? $0 : nil }
+        var ascents = [carried?.ascent ?? floor]
         // 이월 ascent를 쓴 첫 줄은 **앞 청크에서 간격이 이미 적용된 자리**다 — 슬롯 하한도 그
-        // 자리의 것을 써야 한다 (`resumedFirstLine`).
-        let resumed = carried != nil
+        // 자리의 것을 써야 한다. 그 간격은 **앞 줄의 문단**이 정하므로 이월이 실어 온다
+        // (`minimumSlot`).
+        let resumedSpacing = carried?.spacing
         if chunk.lines.count > 1 {
             let text = attributedString.string as NSString
             for index in 1 ..< chunk.lines.count {
@@ -160,7 +173,8 @@ extension HwpDrawnTextLayout {
                     of: chunk.lines[previous],
                     ascent: ascents[previous],
                     minimumSlot: Self.minimumSlot(
-                        at: previous, of: chunk, in: attributedString, resumed: resumed
+                        at: previous, of: chunk, in: attributedString,
+                        resumedSpacing: resumedSpacing
                     )
                 )
                 ascents.append(
@@ -171,7 +185,9 @@ extension HwpDrawnTextLayout {
         }
         return (
             ascents,
-            Self.belows(of: chunk, in: attributedString, ascents: ascents, resumed: resumed)
+            Self.belows(
+                of: chunk, in: attributedString, ascents: ascents, resumedSpacing: resumedSpacing
+            )
         )
     }
 
@@ -180,14 +196,14 @@ extension HwpDrawnTextLayout {
         of chunk: HwpLineBreaker.FrameChunk,
         in attributedString: NSAttributedString,
         ascents: [CGFloat],
-        resumed: Bool
+        resumedSpacing: CGFloat?
     ) -> [CGFloat] {
         chunk.lines.indices.map { index in
             belowBaseline(
                 of: chunk.lines[index],
                 ascent: ascents[index],
                 minimumSlot: Self.minimumSlot(
-                    at: index, of: chunk, in: attributedString, resumed: resumed
+                    at: index, of: chunk, in: attributedString, resumedSpacing: resumedSpacing
                 )
             )
         }
@@ -275,11 +291,17 @@ extension HwpDrawnTextLayout {
     /// −6에서 슬롯이 20·14·14·14). 그 줄까지 바닥을 내리면 양쪽 정렬 문단의 클램프 전 descent를
     /// 못 받아 내 둘째 줄부터 3.7002pt 올라갔다. 그래서 **줄 앞에 실제로 들어간** 간격만 본다 —
     /// 간격은 앞 줄의 문단 스타일이 정한다 (`interlineGap`과 같은 규약).
+    ///
+    /// **하한은 그 줄 자신의 문단**, **간격은 앞 줄의 문단**이다 — 문단 경계 줄에서 갈린다.
+    /// 2026-09-13 임계 실측 (Helvetica 10pt·폭 70·첫 문단 4줄): 하한 20 두 문단의 슬롯이
+    /// 간격 −6 → 0에서 `20·14·14·14·[14]·20·20·20`, 0 → −6에서 `20·20·20·20·[20]·14·14·14`
+    /// 이다 — 대괄호로 표시한 경계 줄(5번째)이 **앞 문단**의 간격을 따른다. 하한이 문단마다 다른 조합
+    /// (20/−6 → 30/0 · 30/−6 → 20/0) 도 같은 규칙으로 맞는다.
     private static func minimumSlot(
         at index: Int,
         of chunk: HwpLineBreaker.FrameChunk,
         in attributedString: NSAttributedString,
-        resumed: Bool
+        resumedSpacing: CGFloat?
     ) -> CGFloat {
         let location = CTLineGetStringRange(chunk.lines[index]).location
         let style = HwpLineBreaker.paragraphStyle(in: attributedString, at: location)
@@ -292,12 +314,26 @@ extension HwpDrawnTextLayout {
             return max(0, minimum + min(0, Self.effectiveLineSpacing(in: previousStyle)))
         }
         // **진짜 첫 줄과 재개한 첫 줄을 가른다.** 이월 ascent를 쓴 줄은 앞 청크에서 간격이 이미
-        // 적용된 자리이므로 (그 ascent가 그 자리의 값이다) 하한도 간격을 반영해야 한다 — 앞 줄이
-        // 이 청크에 없으니 그 줄의 스타일을 대신 쓴다 (재개는 같은 문단이 이어지는 자리다).
-        // 하한을 초기화하면 아래 몫이 부풀어 청크마다 밀린다 (실측: 하한 20·간격 −6 12줄 문단의
-        // 마지막 baseline이 예산 20에서 328.5, 전체 조판은 268.5).
-        guard resumed else { return minimum }
-        return max(0, minimum + min(0, Self.effectiveLineSpacing(in: style)))
+        // 적용된 자리이므로 (그 ascent가 그 자리의 값이다) 하한도 간격을 반영해야 한다. 하한을
+        // 초기화하면 아래 몫이 부풀어 청크마다 밀린다 (실측: 하한 20·간격 −6 12줄 문단의 마지막
+        // baseline이 예산 20에서 328.5, 전체 조판은 268.5).
+        //
+        // 간격은 **이월이 실어 온 앞 줄의 값**이다 — 앞 줄이 이 청크에 없으므로 그 줄의 문단
+        // 스타일을 읽을 수 없고, 재개 줄 자신의 값을 쓰면 문단 경계가 이월에 걸릴 때 어긋난다
+        // (실측: 간격 −6 문단 뒤 간격 0 문단이 경계에 걸리면 예산 18·20·24·28·44에서 경계 줄부터
+        // 6.0pt 아래로 밀렸다 — 전체 조판은 임계 실측과 정확히 같다).
+        guard let resumedSpacing else { return minimum }
+        return max(0, minimum + min(0, resumedSpacing))
+    }
+
+    /// 이 줄 **뒤에** 이어지는 줄 앞에 실제로 들어가는 줄 뒤 간격 (부호 유지) — 청크 이월이
+    /// 다음 청크 첫 줄의 슬롯 하한에 쓰도록 실어 보낸다 (`minimumSlot`).
+    static func carriedLineSpacing(
+        after line: CTLine, in attributedString: NSAttributedString
+    ) -> CGFloat {
+        effectiveLineSpacing(in: HwpLineBreaker.paragraphStyle(
+            in: attributedString, at: CTLineGetStringRange(line).location
+        ))
     }
 
     /// 줄 `index`와 다음 줄 **사이**에 문단 스타일이 넣은 간격 — 줄 뒤 간격

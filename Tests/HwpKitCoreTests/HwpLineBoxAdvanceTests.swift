@@ -126,6 +126,38 @@ import XCTest
         }
 
         // 문단 아래·위 간격을 실은 10pt 두 문단
+
+        /// **이월 전진량도 유효 간격을 쓴다** (#178 리뷰). 미완 줄이 없는 이월은 그 줄의 슬롯에
+        /// 줄 뒤 간격을 더해 전진하는데, 그 간격은 `interlineGap`이 상자 사이에 남기는 값과
+        /// 같아야 한다 — 원시 `lineSpacingAdjustment`를 쓰던 동안 상한 4에 간격 10을 준 문단이
+        /// 예산 14에서 42.0pt, 하한 8에 간격 0을 준 문단이 56.0pt 밀렸다 (상한·하한이 없는
+        /// 대조 문단은 0.000pt).
+        func testCarriedAdvanceUsesTheEffectiveLineSpacing() {
+            let cases: [(String, [(CTParagraphStyleSpecifier, CGFloat)])] = [
+                ("상한4·간격10", [(.maximumLineSpacing, 4), (.lineSpacingAdjustment, 10)]),
+                ("상한0·간격6", [(.maximumLineSpacing, 0), (.lineSpacingAdjustment, 6)]),
+                ("하한8·간격0", [(.minimumLineSpacing, 8), (.lineSpacingAdjustment, 0)]),
+                ("간격4", [(.lineSpacingAdjustment, 4)]),
+            ]
+            for (label, specs) in cases {
+                let string = LineBoxFixtures.uniformParagraph(specs: specs, repeats: 10)
+                let whole = LineBoxFixtures.baselines(
+                    string, lineWidth: LineBoxFixtures.paragraphWidth
+                )
+                expect(whole.count).to(beGreaterThan(5), description: label)
+                for budget in [14, 18, 24, 40] {
+                    let chunked = HwpDrawnTextLayout.lines(
+                        attributedString: string, origin: CGPoint(x: 0, y: 100),
+                        lineWidth: LineBoxFixtures.paragraphWidth, maxLineFrames: budget
+                    ).map(\.baselineOrigin.y)
+                    guard chunked.count == whole.count else { continue }
+                    expect(chunked.map(Double.init)).to(
+                        beCloseTo(whole.map(Double.init), within: 0.01),
+                        description: "\(label)·예산 \(budget)"
+                    )
+                }
+            }
+        }
     }
 
     /// 강제 줄 높이가 걸린 문단의 **아래 몫** 계약 (#178 리뷰).
@@ -269,6 +301,35 @@ import XCTest
                 expect(chunked.map(Double.init)).to(
                     beCloseTo(whole.map(Double.init), within: 0.01), description: "예산 \(budget)"
                 )
+            }
+        }
+
+        /// **이월한 슬롯 하한은 앞 문단의 간격을 지켜야 한다** (#178 리뷰). 줄 앞에 실제로
+        /// 들어간 간격은 **앞 줄의 문단**이 정하는데 (임계 실측: 하한 20 두 문단의 슬롯이
+        /// 간격 −6 → 0에서 `20·14·14·14·14·20·20·20`) 앞 줄은 다음 청크에 없다. 재개 줄
+        /// 자신의 값을 쓰면 문단 경계가 이월에 걸릴 때 하한이 6pt 높아 아래 몫이 부풀고
+        /// 경계 줄부터 6.0pt 아래로 밀렸다 (예산 20·24·28·44). 전체 조판은 임계 실측과 같다.
+        func testResumedFloorKeepsThePrecedingParagraphSpacing() {
+            for heights in [(CGFloat(20), CGFloat(20)), (20, 30), (30, 20)] {
+                let string = LineBoxFixtures.twoSpacedParagraphs(
+                    first: -6, second: 0, minimumHeights: heights
+                )
+                let whole = LineBoxFixtures.baselines(
+                    string, lineWidth: LineBoxFixtures.paragraphWidth
+                )
+                expect(whole.count).to(beGreaterThan(5))
+                for budget in [20, 24, 28, 32, 44] {
+                    let chunked = HwpDrawnTextLayout.lines(
+                        attributedString: string, origin: CGPoint(x: 0, y: 100),
+                        lineWidth: LineBoxFixtures.paragraphWidth, maxLineFrames: budget
+                    ).map(\.baselineOrigin.y)
+                    let label = "하한 \(heights)·예산 \(budget)"
+                    expect(chunked.count).to(equal(whole.count), description: label)
+                    guard chunked.count == whole.count else { continue }
+                    expect(chunked.map(Double.init)).to(
+                        beCloseTo(whole.map(Double.init), within: 0.01), description: label
+                    )
+                }
             }
         }
 
