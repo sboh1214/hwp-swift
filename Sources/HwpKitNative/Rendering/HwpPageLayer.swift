@@ -260,7 +260,7 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
     }
 
     /// 줄 배치는 `HwpDrawnTextLayout` (렌더·텍스트 선택 공유 — slight-overflow
-    /// 단일 줄, 양쪽 정렬 재조판, baselineLift 포함)이 계산하고, 여기서는
+    /// 단일 줄, 양쪽 정렬 재조판, 베이스라인 앵커 포함)이 계산하고, 여기서는
     /// top-down 결과를 이 레이어의 y-up 텍스트 공간으로 변환해 그리기만 한다.
     /// 배치가 `pageHeight`·`bounds`·`contentsScale`에 무관하다는 것이 이 분리의
     /// 요점이다 — 줌 종료·재래스터 재드로에서 캐시가 그대로 유효하다.
