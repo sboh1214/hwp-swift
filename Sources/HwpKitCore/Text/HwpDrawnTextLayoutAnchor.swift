@@ -135,7 +135,10 @@ extension HwpDrawnTextLayout {
             // 못박힌 청크는 배치 ascent가 줄마다 같아 이월해도 자리가 같다 — 새 프레임의 첫
             // 슬롯 특례가 모든 줄에 똑같이 들어가 상자 간격에서 소거된다 (실측: 예산 무관).
             let ascents = chunk.lines.indices.map { max(floor, metrics[$0].delegateAscent) }
-            return (ascents, Self.belows(of: chunk, in: attributedString, ascents: ascents))
+            return (
+                ascents,
+                Self.belows(of: chunk, in: attributedString, ascents: ascents, resumed: false)
+            )
         }
         // 이월 청크는 **버린 줄의 배치 ascent**로 시작한다 — 새 프레임의 첫 슬롯은 CT가
         // 크게 잡으므로 (`floor`) 그것을 기준으로 삼으면 그 특례가 경계마다 되풀이돼 뒤 줄이
@@ -145,6 +148,9 @@ extension HwpDrawnTextLayout {
         // 위로 올라간다 (실측: 60pt 개체 줄에 14pt를 써서 역전 16건·전체 대비 42.3pt).
         let carried = resume.flatMap { metrics[0].matchesSlot(of: $0.metrics) ? $0.ascent : nil }
         var ascents = [carried ?? floor]
+        // 이월 ascent를 쓴 첫 줄은 **앞 청크에서 간격이 이미 적용된 자리**다 — 슬롯 하한도 그
+        // 자리의 것을 써야 한다 (`resumedFirstLine`).
+        let resumed = carried != nil
         if chunk.lines.count > 1 {
             let text = attributedString.string as NSString
             for index in 1 ..< chunk.lines.count {
@@ -154,7 +160,7 @@ extension HwpDrawnTextLayout {
                     of: chunk.lines[previous],
                     ascent: ascents[previous],
                     minimumSlot: Self.minimumSlot(
-                        at: previous, of: chunk, in: attributedString
+                        at: previous, of: chunk, in: attributedString, resumed: resumed
                     )
                 )
                 ascents.append(
@@ -163,20 +169,26 @@ extension HwpDrawnTextLayout {
                 )
             }
         }
-        return (ascents, Self.belows(of: chunk, in: attributedString, ascents: ascents))
+        return (
+            ascents,
+            Self.belows(of: chunk, in: attributedString, ascents: ascents, resumed: resumed)
+        )
     }
 
     /// 청크 줄들의 baseline 아래 몫 — 이월 전진량과 다음 줄 ascent 복원이 같은 값을 쓴다.
     private static func belows(
         of chunk: HwpLineBreaker.FrameChunk,
         in attributedString: NSAttributedString,
-        ascents: [CGFloat]
+        ascents: [CGFloat],
+        resumed: Bool
     ) -> [CGFloat] {
         chunk.lines.indices.map { index in
             belowBaseline(
                 of: chunk.lines[index],
                 ascent: ascents[index],
-                minimumSlot: Self.minimumSlot(at: index, of: chunk, in: attributedString)
+                minimumSlot: Self.minimumSlot(
+                    at: index, of: chunk, in: attributedString, resumed: resumed
+                )
             )
         }
     }
@@ -266,17 +278,26 @@ extension HwpDrawnTextLayout {
     private static func minimumSlot(
         at index: Int,
         of chunk: HwpLineBreaker.FrameChunk,
-        in attributedString: NSAttributedString
+        in attributedString: NSAttributedString,
+        resumed: Bool
     ) -> CGFloat {
         let location = CTLineGetStringRange(chunk.lines[index]).location
         let style = HwpLineBreaker.paragraphStyle(in: attributedString, at: location)
         let minimum = max(0, HwpLineBreaker.paragraphCGFloat(.minimumLineHeight, in: style) ?? 0)
-        guard index > 0 else { return minimum }
-        let previousLocation = CTLineGetStringRange(chunk.lines[index - 1]).location
-        let previousStyle = HwpLineBreaker.paragraphStyle(
-            in: attributedString, at: previousLocation
-        )
-        return max(0, minimum + min(0, Self.effectiveLineSpacing(in: previousStyle)))
+        guard index == 0 else {
+            let previousLocation = CTLineGetStringRange(chunk.lines[index - 1]).location
+            let previousStyle = HwpLineBreaker.paragraphStyle(
+                in: attributedString, at: previousLocation
+            )
+            return max(0, minimum + min(0, Self.effectiveLineSpacing(in: previousStyle)))
+        }
+        // **진짜 첫 줄과 재개한 첫 줄을 가른다.** 이월 ascent를 쓴 줄은 앞 청크에서 간격이 이미
+        // 적용된 자리이므로 (그 ascent가 그 자리의 값이다) 하한도 간격을 반영해야 한다 — 앞 줄이
+        // 이 청크에 없으니 그 줄의 스타일을 대신 쓴다 (재개는 같은 문단이 이어지는 자리다).
+        // 하한을 초기화하면 아래 몫이 부풀어 청크마다 밀린다 (실측: 하한 20·간격 −6 12줄 문단의
+        // 마지막 baseline이 예산 20에서 328.5, 전체 조판은 268.5).
+        guard resumed else { return minimum }
+        return max(0, minimum + min(0, Self.effectiveLineSpacing(in: style)))
     }
 
     /// 줄 `index`와 다음 줄 **사이**에 문단 스타일이 넣은 간격 — 줄 뒤 간격
@@ -373,16 +394,22 @@ extension HwpDrawnTextLayout {
         /// 줄 상자 높이 (한글 줄 캐시의 `vertsize`)
         var boxHeight: CGFloat = 0
         var maxAscent: CGFloat = 0
+        var maxDescent: CGFloat = 0
         var delegateAscent: CGFloat = 0
 
-        /// 이월한 배치 ascent를 다음 청크 첫 줄에 써도 되는지 — 상자 높이·개체 예약·글꼴
-        /// ascent가 모두 같아야 한다. 버린 줄은 **미완**이라 다음 청크에서 온전히 재조판되며
-        /// 그때 큰 개체나 큰 글자가 그 줄에 들어올 수 있고, 그러면 그 자리의 배치 ascent가
-        /// 달라진다 (실측: 60pt 개체가 붙은 줄에 미완 줄의 14pt를 쓰면 다음 텍스트 줄이 개체
-        /// 줄보다 22.5pt 위로 올라가 겹친다).
+        /// 이월한 배치 ascent를 다음 청크 첫 줄에 써도 되는지 — **CT 슬롯을 정하는 지표**가
+        /// 같아야 한다. 버린 줄은 **미완**이라 다음 청크에서 온전히 재조판되며 그때 큰 개체나
+        /// 큰 글자가 그 줄에 들어올 수 있고, 그러면 그 자리의 배치 ascent가 달라진다 (실측:
+        /// 60pt 개체가 붙은 줄에 미완 줄의 14pt를 쓰면 다음 텍스트 줄이 개체 줄보다 22.5pt 위로
+        /// 올라가 겹친다).
+        ///
+        /// **`boxHeight`는 보지 않는다** — 그것은 상대크기 적용 **전** 기본 크기(앵커 몫)라
+        /// 실제 조판 크기와 무관하게 달라질 수 있다. 경계 글자만 기본 20pt·상대크기 50%(실제
+        /// 10pt)로 두면 슬롯은 그대로인데 이월 ascent가 버려져 뒤 줄이 4.8pt 올라갔다 (실측).
+        /// 슬롯을 정하는 것은 **실제 글꼴 지표와 개체 예약**이다.
         func matchesSlot(of other: LineMetrics) -> Bool {
-            abs(boxHeight - other.boxHeight) < 0.001
-                && abs(maxAscent - other.maxAscent) < 0.001
+            abs(maxAscent - other.maxAscent) < 0.001
+                && abs(maxDescent - other.maxDescent) < 0.001
                 && abs(delegateAscent - other.delegateAscent) < 0.001
         }
     }
@@ -411,6 +438,7 @@ extension HwpDrawnTextLayout {
             }
             guard let font = ctFont(in: attributes) else { continue }
             metrics.maxAscent = max(metrics.maxAscent, CTFontGetAscent(font))
+            metrics.maxDescent = max(metrics.maxDescent, CTFontGetDescent(font))
         }
         return metrics
     }

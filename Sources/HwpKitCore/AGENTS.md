@@ -471,7 +471,9 @@ v. Board of Regents…`)을 핀했다.
   `testChunkBudgetDoesNotMoveAUniformParagraph`·
   `testCarryoverKeepsThePlacementAscentAcrossFrames`·
   `testCarryoverIgnoresAStaleAscentWhenTheLineGainsAnObject`·
-  `testFirstSlotKeepsItsMinimumUnderNegativeLineSpacing`. **CT가 같게 조판하는 두 입력은 우리도
+  `testFirstSlotKeepsItsMinimumUnderNegativeLineSpacing`·
+  `testResumedSlotKeepsItsEffectiveMinimum`·
+  `testCarriedAscentSurvivesAnAnchorOnlySizeChange`. **CT가 같게 조판하는 두 입력은 우리도
   같게
   그려야 한다**는 불변식과, 줄을 더 붙여도 앞 줄이 움직이지 않아야 한다는 불변식으로 잠그고
   임계 오라클을 테스트 안에서 직접 쓴다.
@@ -521,8 +523,18 @@ v. Board of Regents…`)을 핀했다.
   다음 청크에서 온전히 재조판되며 그때 큰 개체나 큰 글자가 그 줄에 들어올 수 있는데, 옛 값을
   쓰면 그 줄 뒤 텍스트가 그 줄보다 **위로** 올라간다 — 실측: 하한 20pt 문단의 14pt를 60pt 개체
   줄에 쓰면 개체 위치 × 예산 스윕에서 역전 16건, 전체 조판 대비 42.3pt. 상자 높이·개체 예약·
-  글꼴 ascent가 모두 같아야 넘긴 값을 쓰고, 아니면 그 프레임의 `floor`를 쓴다 (개체 줄의
-  `floor`는 개체 높이 그대로라 그 줄에는 그것이 정확값이다).
+  판정은 **실제 슬롯을 정하는 지표**로 한다 — 글꼴 ascent·descent와 개체 예약이 모두 같아야
+  넘긴 값을 쓰고, 아니면 그 프레임의 `floor`를 쓴다 (개체 줄의 `floor`는 개체 높이 그대로라 그
+  줄에는 그것이 정확값이다). **앵커용 기본 크기(`boxHeight`)는 보지 않는다** — 상대크기 적용
+  전 값이라 실제 조판 크기와 무관하게 달라지고, 경계 글자만 기본 20pt·상대크기 50%(실제 10pt)로
+  두면 슬롯이 같은데도 이월 값이 버려져 뒤 줄이 4.8pt 올라갔다 (실측).
+
+  **재개한 첫 줄의 슬롯 하한도 그 자리의 것이다.** 이월 ascent를 쓴 줄은 앞 청크에서 간격이
+  이미 적용된 자리이므로 `minimumSlot`이 하한을 초기화하면 안 된다 — 초기화하면 아래 몫이 부풀어
+  청크마다 밀린다 (실측: 하한 20pt·간격 −6 12줄 문단의 마지막 baseline이 전체 조판 268.5pt인데
+  예산 20에서 328.5pt, 30에서 310.5pt). 앞 줄이 이 청크에 없으니 그 줄 자신의 스타일 간격을
+  대신 쓴다 (재개는 같은 문단이 이어지는 자리다). 이월 값을 **버린** 줄은 그 프레임의 진짜 첫
+  줄이므로 하한 그대로다.
 - 청크 이월은 baseline이 아니라 **상자 상단**을 넘긴다. 버린 마지막 줄은 미완이라 다음
   청크의 온전한 줄과 앵커가 다를 수 있고 (기본 크기가 경계에 걸리면 0.85 × 크기 차),
   baseline을 넘기면 그 앵커가 다음 청크에서 소거되지 않아 뒤 줄 전체가 밀린다 (합성 실측:

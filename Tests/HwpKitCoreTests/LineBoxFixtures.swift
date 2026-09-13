@@ -162,7 +162,8 @@ import XCTest
         static func uniformParagraph(
             specs: [(CTParagraphStyleSpecifier, CGFloat)],
             fontName: String = "Helvetica",
-            justified: Bool = false
+            justified: Bool = false,
+            repeats: Int = 3
         ) -> NSAttributedString {
             var attributes: [NSAttributedString.Key: Any] = [
                 kCTFontAttributeName as NSAttributedString.Key:
@@ -193,7 +194,8 @@ import XCTest
                     }
             }
             return NSAttributedString(
-                string: String(repeating: "Lorem ipsum dolor ", count: 3), attributes: attributes
+                string: String(repeating: "Lorem ipsum dolor ", count: repeats),
+                attributes: attributes
             )
         }
 
@@ -226,6 +228,28 @@ import XCTest
                 kCTParagraphStyleAttributeName as NSAttributedString.Key: style,
             ]
             return NSAttributedString(string: "ab\ncd", attributes: attributes)
+        }
+
+        /// 지정 위치의 글자만 **기본 크기**가 다른 문단 (실제 조판 크기는 같다) — 상대크기
+        /// 글자가 그렇게 조판된다. 슬롯은 같으므로 이월 ascent가 유효해야 한다.
+        static func paragraphWithAnchorOnlySizeChange(
+            at position: Int, fontName: String
+        ) -> NSAttributedString {
+            let style = paragraphStyle(specs: [(.minimumLineHeight, 10)])
+            let body = String(repeating: "Lorem ipsum ", count: 8)
+            let out = NSMutableAttributedString(
+                string: String(body.prefix(position)),
+                attributes: attributes(size: 10, style: style, fontName: fontName)
+            )
+            out.append(NSAttributedString(
+                string: "X",
+                attributes: attributes(size: 10, baseSize: 20, style: style, fontName: fontName)
+            ))
+            out.append(NSAttributedString(
+                string: String(body.dropFirst(position + 1)),
+                attributes: attributes(size: 10, style: style, fontName: fontName)
+            ))
+            return out
         }
 
         /// 지정 위치에 60pt 글자처럼 취급 개체가 든 하한 20pt 문단 — 청크가 그 줄을 미완으로
@@ -280,12 +304,17 @@ import XCTest
         }
 
         static func attributes(
-            size: CGFloat, style: CTParagraphStyle?
+            size: CGFloat,
+            baseSize: CGFloat? = nil,
+            style: CTParagraphStyle?,
+            fontName: String = "Helvetica"
         ) -> [NSAttributedString.Key: Any] {
             var attributes: [NSAttributedString.Key: Any] = [
                 kCTFontAttributeName as NSAttributedString.Key:
-                    CTFontCreateWithName("Helvetica" as CFString, size, nil),
-                HwpAttributedStringKey.baseFontSize: NSNumber(value: Double(size)),
+                    CTFontCreateWithName(fontName as CFString, size, nil),
+                HwpAttributedStringKey.baseFontSize: NSNumber(
+                    value: Double(baseSize ?? size)
+                ),
             ]
             if let style {
                 attributes[kCTParagraphStyleAttributeName as NSAttributedString.Key] = style

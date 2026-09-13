@@ -248,6 +248,57 @@ import XCTest
             }
         }
 
+        /// **재개한 슬롯의 하한을 첫 슬롯처럼 초기화하면 안 된다** (#178 리뷰). 이월 ascent를 쓴
+        /// 줄은 앞 청크에서 간격이 이미 적용된 자리이므로 하한도 그 자리의 것이어야 한다 — 초기화
+        /// 하면 아래 몫이 부풀어 청크마다 밀린다 (실측: 하한 20pt·간격 −6 12줄 문단의 마지막
+        /// baseline이 전체 조판 268.5pt인데 예산 20에서 328.5pt).
+        func testResumedSlotKeepsItsEffectiveMinimum() {
+            let string = LineBoxFixtures.uniformParagraph(
+                specs: [(.minimumLineHeight, 20), (.lineSpacingAdjustment, -6)],
+                repeats: 12
+            )
+            let whole = LineBoxFixtures.baselines(string, lineWidth: 60)
+            expect(whole.count).to(beGreaterThan(6))
+            for budget in [20, 30, 40, 60] {
+                let chunked = HwpDrawnTextLayout.lines(
+                    attributedString: string, origin: CGPoint(x: 0, y: 100),
+                    lineWidth: 60, maxLineFrames: budget
+                ).map(\.baselineOrigin.y)
+                expect(chunked.count).to(equal(whole.count), description: "예산 \(budget)")
+                guard chunked.count == whole.count else { continue }
+                expect(chunked.map(Double.init)).to(
+                    beCloseTo(whole.map(Double.init), within: 0.01), description: "예산 \(budget)"
+                )
+            }
+        }
+
+        /// **앵커용 기본 크기만 달라졌을 때 이월 ascent를 버리면 안 된다** (#178 리뷰).
+        /// `boxHeight`는 상대크기 적용 **전** 기본 크기라 실제 조판 크기와 무관하게 달라진다 —
+        /// 경계 글자만 기본 20pt·실제 10pt로 두면 CT 슬롯은 그대로인데 이월 ascent가 버려져 뒤
+        /// 줄들이 4.8pt 올라갔다 (leading 있는 글꼴에서 첫 슬롯 특례가 그만큼이다).
+        func testCarriedAscentSurvivesAnAnchorOnlySizeChange() throws {
+            let name = try XCTUnwrap(
+                LineBoxFixtures.nameOfFontWithLeading(), "leading이 있는 글꼴이 없는 기기"
+            )
+            for position in [20, 28, 32, 40] {
+                let string = LineBoxFixtures.paragraphWithAnchorOnlySizeChange(
+                    at: position, fontName: name
+                )
+                let whole = LineBoxFixtures.baselines(string, lineWidth: 60)
+                for budget in [20, 24, 28, 32, 40] {
+                    let chunked = HwpDrawnTextLayout.lines(
+                        attributedString: string, origin: CGPoint(x: 0, y: 100),
+                        lineWidth: 60, maxLineFrames: budget
+                    ).map(\.baselineOrigin.y)
+                    guard chunked.count == whole.count else { continue }
+                    expect(chunked.map(Double.init)).to(
+                        beCloseTo(whole.map(Double.init), within: 0.01),
+                        description: "기본 크기 \(position)·예산 \(budget)"
+                    )
+                }
+            }
+        }
+
         /// **미완 줄의 ascent를 완성된 줄에 그대로 쓰면 안 된다** (#178 리뷰). 이월이 넘기는
         /// 배치 ascent는 **미완이던** 줄의 값이고, 그 줄은 다음 청크에서 온전히 재조판되며 큰
         /// 개체를 얻을 수 있다 — 하한 20pt 문단의 14pt를 60pt 개체 줄에 쓰면 다음 텍스트 줄이
