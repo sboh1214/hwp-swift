@@ -398,30 +398,28 @@ v. Board of Regents…`)을 핀했다.
   | 자유·상한만 + 개체 | 3.00 | 31.36 | **0.0002** |
   | 하한만 + 개체 | 0.50 | 27.38 | **0.0003** |
 
-  그래서 `placementAscents`는 **세 갈래**를 쓰고 어느 쪽도 보고 ascent를 쓰지 않는다:
-  ① **못박힌 청크** (모든 줄이 같은 높이로 min = max) 는 둘째 줄부터 슬롯이 그 높이라 청크 첫
-  줄의 정확값 (`floor` = `chunk.height − origins[0].y`) 을 모든 줄에 쓴다 (개체 예약 높이보다
-  작아지지 않는다). ② **슬롯이 균일한 것이 관찰되는 청크** (`hasUniformSlots` — 줄 상자 높이·
-  보고 descent·origin 델타가 모두 같고 개체가 없다) 도 같은 `floor`를 쓴다. ③ 나머지는
-  `델타 − 앞 줄의 descent − 줄 사이 간격`으로 복원한다.
+  그래서 `placementAscents`는 **두 갈래**를 쓰고 어느 쪽도 보고 ascent를 쓰지 않는다:
+  **못박혔으면** (청크의 모든 줄이 같은 높이로 min = max) 둘째 줄부터 슬롯이 그 높이라 청크 첫
+  줄의 정확값 (`floor` = `chunk.height − origins[0].y`) 을 모든 줄에 쓰고 (개체 예약 높이보다
+  작아지지 않는다), **아니면** `델타 − 앞 줄의 아래 몫 − 줄 사이 간격`으로 복원한다.
 
-  ②가 있는 이유는 **보고 descent도 못 믿는 조건이 있기** 때문이다 — CT는 **양쪽 정렬** 줄의
-  typographic bounds에 강제 줄 높이를 적용하기 **전** 값을 담는다 (하한 15pt·Helvetica 10pt:
-  보고 descent 2.2998, 실제 배치 4.0. 정렬 다섯 종 × tailIndent × 폭 20조합 실측에서 오직
-  `.justified`만 그렇다). 한글 문단은 기본이 양쪽 정렬이므로 이 갈래가 실물을 받는다. ②는
-  보고값을 **비교에만** 쓰고 배치에는 쓰지 않아 그 조건에서도 정확하고, 덤으로 청크를 나눠도
-  자리가 같아진다 (경계마다 CT 첫 줄 슬롯 특례를 새로 타던 것이 사라진다 — Hiragino Sans
-  하한 문단 실측 15pt). **마지막 줄의 보고값은 비교에서 뺀다** — 복원식이 소비하지 않고,
-  양쪽 정렬 문단의 마지막 줄은 CT가 정렬하지 않아 지표가 다르게 나온다.
+  못박힌 청크에 복원식을 쓸 수 없는 이유는 그 조건에서 CT가 클램프 **전** descent를 보고하기도
+  하면서 하한 바닥으로도 잡히지 않기 때문이다 — `Column` 실측 (Menlo 10pt·못박힘 16·줄 0에 개체
+  마커): 앞 6줄은 자연값 2.36, 마지막 줄만 클램프값 5.00을 보고하는데 배치값은 전부 5.00이다
+  (복원하면 2.64pt 어긋난다).
 
-  ①이 있는 이유는 **개체가 든 못박힌 청크**다 — 그 조건에서 CT가 클램프 **전** descent를
-  보고하기도 한다 (`Column` 실측, Menlo 10pt·못박힘 16·줄 0에 개체 마커: 앞 6줄은 자연값
-  2.36, 마지막 줄만 클램프값 5.00을 보고하는데 배치값은 전부 5.00 — 복원하면 2.64pt 어긋난다).
-  개체가 있으면 ②가 걸러지므로 ①이 받는다.
-- **baseline 아래 몫은 보고 `descent`를 0에서 끊은 값이다 — `leading`을 더하면 안 된다**
-  (`belowBaseline`). 상한이 슬롯을 자연 높이보다 깎으면 CT는 descent를 **음수**로 보고한다
-  (실측: Helvetica 40pt·하한 10·상한 20에서 −5.0) — 그대로 빼면 다음 줄 ascent가 그만큼
-  부풀어 상자가 위로 간다.
+- **baseline 아래 몫은 보고 `descent`를 두 바닥에서 끊은 값이다 — `leading`을 더하면 안 된다**
+  (`belowBaseline`). ① **강제 줄 높이 하한이 바닥을 세운다**: 슬롯은 하한보다 짧을 수 없으므로
+  아래 몫도 `하한 − 그 줄 ascent`보다 작을 수 없다. 이 바닥이 필요한 이유는 CT가 **양쪽 정렬**
+  줄의 typographic bounds에 강제 줄 높이를 적용하기 **전** descent를 담기 때문이다 (하한 20pt·
+  Helvetica 10pt: 보고 2.2998, 실제 배치 6.0 — 정렬 다섯 종 × tailIndent × 폭 20조합 실측에서
+  오직 `.justified`만 그렇다. **한글 문단은 기본이 양쪽 정렬**이라 실물이 이 조건이다). 하한이
+  실제로 걸린 줄은 슬롯이 정확히 하한이라 이 바닥이 **정확값**이고, 걸리지 않은 줄은 보고값이
+  이미 배치값이라 `max`가 보고값을 고른다 — 그래서 줄마다 상자가 다른 문단에서도 (하한 20pt
+  양쪽 정렬 문단의 마지막 글자만 40pt) 앞 줄들이 정확히 하한 간격으로 남고 청크 예산과도
+  무관해진다. 하한은 **줄마다** 읽는다 (한 청크에 CT 문단이 둘 이상 들어갈 수 있다).
+  ② 상한이 슬롯을 자연 높이보다 깎으면 CT는 descent를 **음수**로 보고한다 (실측: Helvetica
+  40pt·하한 10·상한 20에서 −5.0) — 그대로 빼면 다음 줄 ascent가 그만큼 부풀어 상자가 위로 간다.
   CT는 글꼴 leading을 슬롯의 baseline **위**(다음 줄 ascent 몫)에 넣는다. leading이 있는 글꼴
   네 개 (Thonburi 0.67·GeezaPro 1.36·Mshtakan 0.42·Hiragino Sans 5.0) × 강제 줄 높이 5종
   20조합에서 실측 배치 below가 **전부 보고 descent와 같고** `descent + leading`과는 전부
@@ -450,14 +448,15 @@ v. Board of Regents…`)을 핀했다.
   몫만큼 어긋난다. `HwpParagraphMetrics`는 **못박은 문단에만** 상한을 걸고 (그쪽은 복원식을
   쓰지 않는다) 우리 글꼴은 자연 줄 간격이 0이라 우리 경로에는 걸리지 않는다.
 
-  가드는 `HwpLineBoxAdvanceTests`의 `testParagraphSpacingStaysBetweenLineBoxes`·
+  가드는 `HwpLineBoxAdvanceTests`가 갖는다 — `testParagraphSpacingStaysBetweenLineBoxes`·
   `testLineSpacingBoundsMakeEqualCoreTextLayoutsEqual`·
   `testFontLeadingIsNotCountedBelowTheBaseline`·
   `testJustifiedClampedParagraphKeepsAUniformAdvance`·
-  `testChunkBudgetDoesNotMoveAUniformParagraph` (CT가 같게 조판하는 두 입력은 우리도 같게
-  그려야 한다는 불변식으로 잠근다 — 임계 오라클을 테스트 안에서 직접 쓴다). 줄 간격 경계·
-  아래쪽 몫 가드는 **혼합 크기 문단**을 쓴다 — 균일한 문단은 ② 갈래로 빠져 복원식을 타지
-  않으므로 판별력이 없다.
+  `testMixedSizeJustifiedParagraphKeepsTheClampedBelowBaseline`·
+  `testDifferentPinnedHeightsInOneBlockDoNotShareASlot`·
+  `testChunkBudgetDoesNotMoveAUniformParagraph`. **CT가 같게 조판하는 두 입력은 우리도 같게
+  그려야 한다**는 불변식과, 줄을 더 붙여도 앞 줄이 움직이지 않아야 한다는 불변식으로 잠그고
+  임계 오라클을 테스트 안에서 직접 쓴다.
 
   **남는 잔차 세 가지**(전부 실측): ① 상한·하한이 실제로 걸리면서 CT가 글꼴에 따라 갖는
   **자연 줄 간격**이 있으면 그 몫만큼 어긋난다 (Thonburi·GeezaPro 1.0pt·Hiragino Sans 5.0pt;
@@ -518,7 +517,11 @@ delegate 분기보다 먼저 읽어야 마커만 있는 줄 (자리 차지 개�
 전진량 오차 안이다 — 666쪽 문단은 개체가 있어 `applyLineHeight`가 상한을 못 걸고 CT 자연
 높이 17.0으로 전진하는데 한글은 10pt × 160% = 16.0이다. 첫 줄 몫만 골라 지우는 정규화
 (첫 두 상자가 같으면 둘째 줄 ascent를 쓰는 것) 를 재 봤지만 그 문단의 개체 줄을 0.38pt 더
-벌리고 문단 간격 가드를 무력화해 택하지 않았다 — 남는 수치는 전진량 축 몫이다),
+벌리고 문단 간격 가드를 무력화해 택하지 않았다. **청크 단위 "균일 슬롯" 판정으로 같은 몫을
+지우는 길도 넣었다가 되돌렸다** — 마지막 줄 글자 크기가 다르면 청크 전체가 판정에서 빠져 앞의
+양쪽 정렬 줄까지 클램프 전 descent로 복원되고 (첫 간격 20 → 16.30pt, 청크 예산에 따라 갈림),
+두 줄뿐인 청크에서는 서로 다른 못박음 높이도 균일하다고 보아 20pt 어긋났다. 판정으로 우회하지
+말고 **하한 바닥**으로 아래 몫을 바로잡는 것이 맞다 — 남는 수치는 전진량 축 몫이다),
 `.fixed`·`.atLeast`·
 `.marginOnly` 값은 여백 계열과 같은 1/2 단위인데 `HwpParagraphMetrics`가 나누지 않아
 2배로 해석된다 (#192). 한글이 실제로 내는 전진량은 고정 v → v, 최소 v → max(상자, v),
