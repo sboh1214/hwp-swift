@@ -221,6 +221,52 @@ import XCTest
         // 문자 예산이라 작은 값이 청크를 쪼갠다. 균일한 문단은 청크마다 CT 첫 줄 슬롯 특례를
         // 새로 타므로, 그 특례가 전진량에 새면 경계마다 자리가 밀린다.
 
+        /// **이월 청크가 새 프레임의 첫 슬롯 특례를 다시 타면 안 된다** (#178 리뷰). CT는 프레임
+        /// 첫 슬롯을 뒤 슬롯보다 크게 잡으므로 (leading 0 글꼴 0.3pt, Hiragino Sans 5.0pt) 이월
+        /// 때 그 값을 기준으로 복원하면 경계마다 특례가 되풀이돼 뒤 줄이 밀린다 — 실측: Hiragino
+        /// Sans 하한 10pt 문단이 예산 20에서 33.6pt, 13에서 14.4pt 어긋났다. 버린 줄의 배치
+        /// ascent를 넘기면 예산과 무관해진다.
+        func testCarryoverKeepsThePlacementAscentAcrossFrames() throws {
+            let name = try XCTUnwrap(
+                LineBoxFixtures.nameOfFontWithLeading(), "leading이 있는 글꼴이 없는 기기"
+            )
+            let string = LineBoxFixtures.uniformParagraph(
+                specs: [(.minimumLineHeight, 10)], fontName: name
+            )
+            let whole = LineBoxFixtures.baselines(string, lineWidth: 60)
+            expect(whole.count).to(beGreaterThan(4))
+            for budget in [13, 20, 40] {
+                let chunked = HwpDrawnTextLayout.lines(
+                    attributedString: string, origin: CGPoint(x: 0, y: 100),
+                    lineWidth: 60, maxLineFrames: budget
+                ).map(\.baselineOrigin.y)
+                expect(chunked.count).to(equal(whole.count), description: "예산 \(budget)")
+                guard chunked.count == whole.count else { continue }
+                expect(chunked.map(Double.init)).to(
+                    beCloseTo(whole.map(Double.init), within: 0.01), description: "예산 \(budget)"
+                )
+            }
+        }
+
+        /// **음수 줄 간격은 슬롯 하한도 낮춘다** (#178 리뷰). 하한 20pt에 줄 뒤 간격 −6을 주면
+        /// CT는 슬롯을 14pt로 줄이는데 (첫 슬롯만 20pt) 하한을 그대로 바닥으로 쓰면 아래 몫이
+        /// 6.0 대신 12.0이 되어 둘째 줄부터 6pt씩 밀렸다 — 임계 실측 상자 상단은
+        /// 100 / 119.9999 / 133.9999 / 148.0이다.
+        func testNegativeLineSpacingLowersTheMinimumSlot() {
+            let string = LineBoxFixtures.uniformParagraph(
+                specs: [(.minimumLineHeight, 20), (.lineSpacingAdjustment, -6)]
+            )
+            let baselines = LineBoxFixtures.baselines(string, lineWidth: 60)
+            expect(baselines.count).to(beGreaterThan(3))
+            guard baselines.count > 3 else { return }
+            let gaps = zip(baselines.dropFirst(), baselines).map { Double($0 - $1) }
+            // 첫 전진량은 첫 슬롯(20pt), 그 뒤는 줄어든 슬롯(14pt)이다.
+            expect(gaps[0]).to(beCloseTo(20.0, within: 0.01))
+            expect(Array(gaps.dropFirst())).to(
+                beCloseTo(Array(repeating: 14.0, count: gaps.count - 1), within: 0.01)
+            )
+        }
+
         /// 같은 문단은 **청크를 어떻게 나눠도** 같은 자리에 그려져야 한다 — `maxLineFrames`는
         /// 문자 예산이라 작은 값이 청크를 쪼갠다. 균일한 문단은 청크마다 CT 첫 줄 슬롯 특례를
         /// 새로 타므로, 그 특례가 전진량에 새면 경계마다 자리가 밀린다.

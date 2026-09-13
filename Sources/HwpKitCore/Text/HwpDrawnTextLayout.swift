@@ -60,6 +60,8 @@ public enum HwpDrawnTextLayout {
         var startLocation = 0
         // 이월 시 다음 청크 첫 줄의 **줄 상자 상단** top-down y. nil이면 첫 청크.
         var resumeBoxTop: CGFloat?
+        // 이월 시 그 줄의 **배치 ascent** — 새 프레임의 첫 슬롯 특례를 타지 않게 넘긴다.
+        var resumeAscent: CGFloat?
         while startLocation < fullLength, result.count < lineBudget {
             guard let chunk = HwpLineBreaker.nextFrameChunk(
                 framesetter: framesetter, typesetter: typesetter,
@@ -70,7 +72,8 @@ public enum HwpDrawnTextLayout {
             // 줄 상자 상단과 baseline — 첫 줄 상자 상단은 블록 상단 (이월이면 재개 상자
             // 상단) 에 핀하고, 나머지는 CT 슬롯을 따른다 (`lineGeometries`).
             let geometries = Self.lineGeometries(
-                of: chunk, in: attributedString, base: resumeBoxTop ?? origin.y
+                of: chunk, in: attributedString, base: resumeBoxTop ?? origin.y,
+                resumeAscent: resumeAscent
             )
             for index in 0 ..< chunk.keepCount {
                 result.append(drawnLine(
@@ -84,11 +87,13 @@ public enum HwpDrawnTextLayout {
                     lineWidth: lineWidth
                 ))
             }
-            resumeBoxTop = Self.resumeBoxTop(
+            let resume = Self.resume(
                 after: chunk, geometries: geometries,
                 attributedString: attributedString,
                 continuesAfterChunk: chunk.nextStart < fullLength
             )
+            resumeBoxTop = resume?.boxTop
+            resumeAscent = resume?.ascent
             guard chunk.nextStart > startLocation else { break }
             startLocation = chunk.nextStart
         }
@@ -134,57 +139,65 @@ public enum HwpDrawnTextLayout {
         )
     }
 
-    /// 이월 후 다음 청크 첫 줄이 놓일 **줄 상자 상단**. 미완 줄을 버렸으면 CT가
-    /// 준 그 줄 origin으로 정확 정렬(R50 #3), 없으면(한 줄 rescue 등) 문단 스타일의
-    /// 줄 간격까지 포함한 advance만큼 내린다 (R51 #2).
+    /// 이월 후 다음 청크 첫 줄이 놓일 **줄 상자 상단과 배치 ascent**. 미완 줄을 버렸으면 CT가
+    /// 준 그 줄 origin으로 정확 정렬(R50 #3), 없으면(한 줄 rescue 등) 그 줄 슬롯만큼 내린다.
     ///
     /// **baseline이 아니라 상자 상단을 넘긴다** — 버린 줄은 미완이라 다음 청크에서
     /// 온전히 재조판된 줄과 앵커가 다를 수 있고 (기본 크기가 그 경계에 걸리면 갈린다),
     /// baseline을 넘기면 그 앵커가 다음 청크에서 소거되지 않아 뒤 줄 전체가 밀린다.
-    private static func resumeBoxTop(
+    ///
+    /// **배치 ascent도 함께 넘긴다** — 다음 청크는 새 프레임이고 CT는 프레임 첫 슬롯을 뒤 슬롯
+    /// 보다 크게 잡으므로 (leading 0 글꼴 0.3pt, Hiragino Sans 5.0pt), 그 값을 기준으로
+    /// 복원하면 특례가 경계마다 되풀이돼 뒤 줄이 밀린다 (실측: Hiragino 하한 10pt 문단이 예산
+    /// 20에서 33.6pt, Helvetica 12.0pt). 버린 줄은 다음 청크에서 같은 슬롯 자리에 다시
+    /// 놓이므로 이 청크에서 구한 그 줄의 배치 ascent가 그 자리의 값이다. 미완 줄이 없는
+    /// (rescue·경계 일치) 이월은 이 청크 **마지막 줄**의 값을 넘긴다 — 다음 청크 첫 줄은 이
+    /// 청크에 없던 줄이지만, 같은 문단이 이어지는 흔한 경우에 그 값이 그 자리의 값이고 새
+    /// 프레임의 첫 슬롯 특례를 타는 것보다 가깝다 (실측: Helvetica 하한 10pt 문단 예산 13의
+    /// 드리프트가 1.50 → 0.00pt).
+    private static func resume(
         after chunk: HwpLineBreaker.FrameChunk,
         geometries: [LineGeometry],
         attributedString: NSAttributedString,
         continuesAfterChunk: Bool
-    ) -> CGFloat? {
+    ) -> (boxTop: CGFloat, ascent: CGFloat?)? {
         if let dropped = chunk.droppedLineIndex, dropped < geometries.count {
-            return geometries[dropped].boxTop
+            return (geometries[dropped].boxTop, geometries[dropped].ascent)
         }
         let last = chunk.keepCount - 1
         guard last >= 0, last < geometries.count else { return nil }
-        return geometries[last].boxTop + fallbackLineAdvance(
-            after: chunk.lines[last],
+        // 미완 줄이 없으면 다음 청크 첫 줄은 이 청크에 없던 줄이다 — 그래도 **이 줄의** 배치
+        // ascent를 넘긴다. 같은 문단이 이어지는 흔한 경우에 그 값이 곧 그 자리의 값이고, 새
+        // 프레임의 첫 슬롯 특례를 타는 것보다 가깝다 (실측: Helvetica 하한 10pt 문단 예산 13의
+        // 드리프트가 1.50 → 0.00pt).
+        return (geometries[last].boxTop + fallbackLineAdvance(
+            after: geometries[last],
+            line: chunk.lines[last],
             attributedString: attributedString,
             continuesAfterChunk: continuesAfterChunk
-        )
+        ), geometries[last].ascent)
     }
 
-    /// 다음 청크에 조사할 origin이 없을 때 세로 advance — typographic 높이에 문단
-    /// 스타일의 min/max 줄 높이를 적용하고, 이어지는 청크면 lineSpacingAdjustment도
-    /// 더해 uncapped 조판과 같은 줄 간격을 낸다 (R51 #2).
+    /// 다음 청크에 조사할 origin이 없을 때 세로 advance — 그 줄의 **슬롯**
+    /// (`배치 ascent + baseline 아래 몫`) 이고, 이어지는 청크면 줄 뒤 간격도 더한다 (R51 #2).
+    ///
+    /// 종전에는 `CTLineGetTypographicBounds`의 ascent + descent + leading에 min/max 줄 높이를
+    /// 적용했는데, 보고 ascent는 배치값이 아니어서 (#178) 전진량이 CT 슬롯과 달랐다 — Helvetica
+    /// 10pt·하한 10pt 문단에서 10.0pt를 내 실제 12.0pt보다 좁았다. 슬롯은 `lineGeometries`가
+    /// 이미 정확히 구해 두므로 그 값을 쓴다.
     private static func fallbackLineAdvance(
-        after line: CTLine,
+        after geometry: LineGeometry,
+        line: CTLine,
         attributedString: NSAttributedString,
         continuesAfterChunk: Bool
     ) -> CGFloat {
-        var ascent: CGFloat = 0
-        var descent: CGFloat = 0
-        var leading: CGFloat = 0
-        _ = CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
-        var advance = ascent + descent + leading
-        let style = HwpLineBreaker.paragraphStyle(
-            in: attributedString, at: CTLineGetStringRange(line).location
-        )
-        let maximum = HwpLineBreaker.paragraphCGFloat(.maximumLineHeight, in: style)
-        if let maximum, maximum > 0 {
-            advance = min(advance, maximum)
-        }
-        let minimum = HwpLineBreaker.paragraphCGFloat(.minimumLineHeight, in: style)
-        if let minimum, minimum > 0 {
-            advance = max(advance, minimum)
-        }
+        var advance = geometry.ascent + geometry.below
         if continuesAfterChunk {
-            advance += HwpLineBreaker.paragraphCGFloat(.lineSpacingAdjustment, in: style) ?? 0
+            let style = HwpLineBreaker.paragraphStyle(
+                in: attributedString, at: CTLineGetStringRange(line).location
+            )
+            let spacing = HwpLineBreaker.paragraphCGFloat(.lineSpacingAdjustment, in: style)
+            advance += max(0, spacing ?? 0)
         }
         return max(1, advance)
     }
