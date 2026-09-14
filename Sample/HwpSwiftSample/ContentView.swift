@@ -9,10 +9,16 @@ struct ContentView: View {
     // 애초에 `@State` 소유권을 옮기지 않는 것이 이 분할(#140)의 전제다.
     // 다른 파일의 extension(`ContentView+Toolbar`·`+PDFExport`·
     // `+DocumentLoading`)이 만지는 것만 `private`을 뗐다 — 같은 타입이라도
-    // `private`은 **같은 파일** 안에서만 보이기 때문이다. 타입 밖에서 쓰는 값은
-    // 하나도 없고, 아래 `search`·`isDropTargeted`·`openURL`이 `private`으로
-    // 남아 있으므로 합성 메모와이즈 이니셜라이저도 여전히 private이다
-    // (`ContentView()` 외의 생성 경로가 생기지 않는다).
+    // `private`은 **같은 파일** 안에서만 보이기 때문이다. 타입 밖에서 이 값들을
+    // 읽는 곳은 없다.
+    //
+    // 아래 `init() {}`은 그 승격의 부작용을 되돌린다. "private 프로퍼티가 하나라도
+    // 있으면 메모와이즈 이니셜라이저도 private"은 **초기값이 없을 때만** 참이다 —
+    // 초기값이 있는 private 프로퍼티는 파라미터 목록에서 아예 빠질 뿐 접근 수준을
+    // 낮추지 않는다(컴파일러 실측). 그대로 두면 `ContentView(document:…:)` 같은
+    // 27인자 이니셜라이저가 앱 타깃에 열려, 뷰가 재생성되면 되돌아갈 값을 `@State`에
+    // 씨앗으로 심는 경로가 생긴다. 이니셜라이저를 하나라도 직접 선언하면 메모와이즈
+    // 합성이 멈추므로, 생성 경로는 분리 전과 같이 `ContentView()` 하나로 남는다.
     @State var document: HwpDocument?
     @State var errorMessage: String?
     @State var showPicker = false
@@ -103,6 +109,8 @@ struct ContentView: View {
     /// 하이퍼링크를 시스템 브라우저로 여는 통로. 라이브러리는 콜백만 내고
     /// 여는 것은 앱 책임이다 (`Sources/HwpKit/AGENTS.md`).
     @Environment(\.openURL) private var openURL
+
+    init() {}
 
     /// 내보내기를 마친 뒤 할 일 — 저장 대화상자냐 인쇄냐.
     enum PDFDestination {
