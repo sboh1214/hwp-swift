@@ -349,8 +349,9 @@ import XCTest
 
             expect(ink.isEmpty) == false
             // 이 줄이 정말 양방향인지부터 확인한다 — 앞 스팬의 잉크 일부가 그 스팬 rect
-            // 오른쪽 밖에 있다 (아니면 이 테스트가 아무것도 지키지 않는다).
-            expect(ink.contains { $0.minX >= spanBox.maxX - 0.001 }) == true
+            // 오른쪽 밖에 있다 (아니면 이 테스트가 아무것도 지키지 않는다). 중심으로 본다 —
+            // 밴드는 잉크 경계라 폴백 글꼴의 왼쪽 사이드 베어링 부호에 따라 minX가 흔들린다.
+            expect(ink.contains { $0.midX >= spanBox.maxX }) == true
             // 올라간 잉크는 **전부** 앞 URL로 열린다 (뒤 스팬은 안 옮겼다).
             for rect in ink {
                 expect(self.hit(regions, CGPoint(x: rect.midX, y: rect.minY + 1))) == Self.urlA

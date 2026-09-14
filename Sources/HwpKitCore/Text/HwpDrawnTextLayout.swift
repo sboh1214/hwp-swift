@@ -305,12 +305,13 @@ public enum HwpDrawnTextLayout {
     /// 그려진 텍스트의 줄 상자들 — "이 지점에 글자가 칠해졌는가" 판정용 (R54).
     ///
     /// 선택 하이라이트(`HwpDrawnLine.selectionRect`)에 **글자 위치로 옮겨진 run마다 그
-    /// run의 가로 범위만** 더한 `paintedRects`를 쓴다 — 줄 전체 폭에 최대 오프셋을 걸면
-    /// 안 옮겨진 run 아래의 빈 띠까지 claim해 그 자리의 탭이 뒤 층의 보이는 링크를 막는다. 문단 rect를 쓰지 않는 이유는 종전과 같다 — 줄 사이
-    /// 여백과 짧은 줄의 빈 오른쪽까지 품어, 그것으로 claim하면 아무것도 안 그린 자리에서
-    /// 아래 블록의 보이는 링크를 막는다. 반대로 줄 상자만 쓰면 **그려진** 글자가 claim
-    /// 밖으로 나가 그 위의 탭이 뒤 층으로 내려간다(한글은 선택 상자를 안 옮기지만
-    /// 칠은 옮긴다 — `selectionRect`의 실측 주석).
+    /// run의 잉크 가로 범위만** 더한 `paintedRects`를 쓴다 — 줄 전체 폭에 최대 오프셋을
+    /// 걸면 안 옮겨진 run 아래의 빈 띠까지 claim해 그 자리의 탭이 뒤 층의 보이는 링크를
+    /// 막는다. 문단 rect를 쓰지 않는 이유는 종전과 같다 — 줄 사이 여백과 짧은 줄의 빈
+    /// 오른쪽까지 품어, 그것으로 claim하면 아무것도 안 그린 자리에서 아래 블록의 보이는
+    /// 링크를 막는다. 반대로 줄 상자만 쓰면 **그려진** 글자가 claim 밖으로 나가 그 위의
+    /// 탭이 뒤 층으로 내려간다(한글은 선택 상자를 안 옮기지만 칠은 옮긴다 —
+    /// `selectionRect`의 실측 주석).
     public static func textLineRegions(
         attributedString: NSAttributedString,
         origin: CGPoint,

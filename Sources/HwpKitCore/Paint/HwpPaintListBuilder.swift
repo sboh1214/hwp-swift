@@ -249,13 +249,14 @@ public struct HwpPaintListBuilder: Sendable {
 
     private func plainCommands(for block: AnyHwpBlock) -> [HwpPaintCommand] {
         let frame = block.frame
+        // 텍스트로 그릴지는 `plainText` 한 술어가 정한다 — 히트 자격(`hitEligibleFrame`)·
+        // 선택(`walkText`)이 같은 술어를 보므로 종류 목록이 갈릴 수 없다 (#200 리뷰).
+        if let plain = HwpBlockContentWalker.plainText(of: block) {
+            return [drawTextCommand(plain, in: frame)]
+        }
         switch block.kind {
         case .text, .table, .textbox, .footnote:
-            var commands: [HwpPaintCommand] = []
-            HwpBlockContentWalker.walkText(block: block) { attributed, rect, _ in
-                commands.append(drawTextCommand(attributed, in: rect))
-            }
-            return commands
+            return []
         case .image:
             return [.drawPlaceholder(rect: frame, text: "[이미지]")]
         case .shape:

@@ -176,7 +176,8 @@ public struct HwpHitTester {
         // 가지므로 payload가 있는 컨테이너 셋을 모두 그 조회 한 곳에 맡긴다 — 안쪽
         // `spanAwareHyperlinkURL`이 문단마다 스팬 우선 규칙을 그대로 지키고,
         // 블록-레벨 폴백의 게이트(R61)가 스팬 있는 블록의 전체-rect 폴백도 막는다.
-        // payload가 없는 조각 블록(`.text`·분할된 표/글상자)은 그대로 스캔을 탄다.
+        // payload가 없는 조각 블록(`.text`·분할된 표/글상자 — 현재 파지네이터가 내는 것은
+        // 수식 `.textbox`뿐)은 그대로 스캔을 탄다.
         switch block.payload {
         case .footnote, .table, .textbox:
             // 층 조회가 **먼저** 이기고, 실패했을 때만 블록-레벨 계약으로 떨어진다 (R59).
@@ -252,13 +253,14 @@ public struct HwpHitTester {
     /// 그보다 넓다: `.text`는 가로 넘침과 글자 위치가 옮긴 글리프 때문에, 그 밖은
     /// 테두리 stroke 띠 때문에 (`paintedRects`).
     ///
-    /// 그래서 `.text`만 **실제로 그 자리에 글자가 칠해졌는지**(`textPaints`)를 보고
-    /// 폴백한다 — 거기 넘친 것은 다른 개체가 아니라 블록 자신의 글자이기 때문이다 (#4).
-    /// 글자가 없는 종류는 프레임에서 멈춘다.
+    /// 그래서 텍스트로 그려지는 블록(`HwpBlockContentWalker.plainText` — 자격·방출과 같은
+    /// 술어)만 **실제로 그 자리에 글자가 칠해졌는지**(`textPaints`)를 보고 폴백한다 — 거기
+    /// 넘친 것은 다른 개체가 아니라 블록 자신의 글자이기 때문이다 (#4). 글자가 없는 종류는
+    /// 프레임에서 멈춘다.
     private func nonContainerBlockLevelURL(for block: AnyHwpBlock, at point: CGPoint) -> String? {
         guard let url = block.hyperlinkURL else { return nil }
         guard !block.frame.contains(point) else { return url }
-        guard let attributed = block.attributedString else { return nil }
+        guard let attributed = HwpBlockContentWalker.plainText(of: block) else { return nil }
         return textPaints(attributed, in: block.frame, at: point) ? url : nil
     }
 

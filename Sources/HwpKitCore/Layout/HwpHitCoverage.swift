@@ -15,25 +15,30 @@ extension HwpHitTester {
     /// 밖이면 종전처럼 기각한다. 페인트가 클립 없이 그리는 영역과 같아야
     /// "방출 ≡ 히트"가 성립한다 (AGENTS.md "하이퍼링크 방출" 짝 규약).
     ///
-    /// - `.text`: slight-overflow 한 줄 문단이 frame 폭의 허용 초과분
-    ///   (`slightOverflowWidthRatio`)만큼 좌우로 넘어 그려지고, 글자 위치
+    /// - payload 없이 텍스트로 그려지는 블록 (`HwpBlockContentWalker.plainText` —
+    ///   `.text`와 분할된 표/글상자/각주 조각): slight-overflow 한 줄 문단이 frame 폭의
+    ///   허용 초과분(`slightOverflowWidthRatio`)만큼 좌우로 넘어 그려지고, 글자 위치
     ///   (`hwp.glyphBaselineOffset`)가 큰 글리프는 **세로로도** 넘어 그려진다.
     ///   그래서 자격 영역은 `paintedRects`의 텍스트 항목과 같은 `textBounds`를 쓴다
     ///   (R56: 자격과 claim 게이트가 같은 상위집합을 공유해야 한다) — 가로만 넓히면
     ///   그 글리프 위의 탭이 rect 판정에 닿기도 전에 블록 단계에서 기각된다.
     ///   **문단 높이 자체는 넓히지 않는다** — 줄 상자는 한글과 같아야 한다.
+    ///   종류가 아니라 **방출 술어**로 가른다 (#200 리뷰): `.text`에만 주면 같은 문자열을
+    ///   같은 `plainCommands`로 그리는 조각 블록이 프레임에서 멈춰 옮겨진 링크 글리프가
+    ///   스팬 기하 확인 전에 기각된다.
+    /// - `.text`인데 그릴 문자열이 없으면 가로 여유만 (종전 동작).
     /// - `.footnote`: 각주 안 개체가 블록 폭을 넘어 그려질 수 있다 — 한글도
     ///   자르지 않는다 (헌법주석 883쪽 각주 29의 표는 오른쪽 본문 경계를
     ///   ~12.6pt 넘는다). R39 #3.
     /// - 그 외: frame 그대로 (확장 없음 = 종전 동작).
     func hitEligibleFrame(for block: AnyHwpBlock) -> CGRect {
+        if let attributed = HwpBlockContentWalker.plainText(of: block) {
+            return Self.textBounds(block.frame, of: attributed)
+        }
         switch block.kind {
         case .text:
-            guard let attributed = block.attributedString else {
-                let extra = block.frame.width * (HwpRenderTuning.Text.slightOverflowWidthRatio - 1)
-                return block.frame.insetBy(dx: -extra, dy: 0)
-            }
-            return Self.textBounds(block.frame, of: attributed)
+            let extra = block.frame.width * (HwpRenderTuning.Text.slightOverflowWidthRatio - 1)
+            return block.frame.insetBy(dx: -extra, dy: 0)
         default:
             // 컨테이너(각주·표·글상자)는 자손이 프레임을 넘어 그려진다 (R62)
             return paintedRects(for: block).reduce(block.frame) { $0.union($1) }
@@ -217,12 +222,12 @@ extension HwpHitTester {
         paragraphs.contains { textPaints($0.attributedString, in: $0.rect, at: point) }
     }
 
-    /// 문단이 이 지점에 글자를 칠했는지 — **rect 밖이면 CT 조판을 하지 않는다**.
+    /// 문단이 이 지점에 글자를 칠했는지 — **`textBounds` 밖이면 CT 조판을 하지 않는다**.
     ///
-    /// 줄 상자는 문단 rect 안이다 (가로만 slight-overflow 허용치까지 넘으므로
-    /// `hitEligibleFrame`의 `.text`와 같은 여유를 준다). 이 게이트가 없으면 탭 한
-    /// 번이 셀·문단 수만큼 framesetting을 돌린다 — `tableHit`은 셀 프레임으로
-    /// 미리 거르지 않으므로 (R44 #2) 큰 표에서 동기 탭 핸들러가 멈춘다
+    /// 칠 영역(줄 상자·옮겨진 밴드)이 문단 rect를 넘는 몫은 `textBounds`가 상위집합으로
+    /// 준다 — 자격(`hitEligibleFrame`)과 같은 여유라 자격 안이면 게이트도 통과한다 (R56).
+    /// 이 게이트가 없으면 탭 한 번이 셀·문단 수만큼 framesetting을 돌린다 — `tableHit`은
+    /// 셀 프레임으로 미리 거르지 않으므로 (R44 #2) 큰 표에서 동기 탭 핸들러가 멈춘다
     /// (R55 실측: 600셀 표 탭당 29.16ms).
     func textPaints(
         _ attributed: NSAttributedString, in rect: CGRect, at point: CGPoint
@@ -233,15 +238,6 @@ extension HwpHitTester {
         ).contains { $0.contains(point) }
     }
 
-    /// 문단 텍스트가 닿을 수 있는 **안전한 상위집합** — 자격 영역(`paintedRects`)과
-    /// claim 게이트(`textPaints`)가 이 하나를 공유해야 "자격 ⊇ 칠"이 구조적으로
-    /// 성립한다 (R56). 따로 두면 자격이 좁아 게이트의 여유가 도달 불가능해진다.
-    ///
-    /// 넘치는 축 둘: slight-overflow 한 줄은 rect 폭을 넘고 (`hitEligibleFrame`의
-    /// `.text`와 같은 여유), 캐시 높이가 대체 폰트 CT 줄보다 짧으면 아래로도
-    /// 넘는다. 후자는 값싸게 정확히 잴 수 없어 (walker 콜백에 `HwpParagraphFrame`이
-    /// 없다) 같은 여유를 세로에도 준다 — 상위집합을 넓히는 것은 과잉 claim이
-    /// 아니다. 실제 claim은 줄 상자로 정밀 판정한다.
     /// 테두리 stroke를 포함한 자격 상위집합 — CG가 경로 중앙에 긋는 폭의 절반이
     /// rect 밖이다 (`HwpCellImage.paintedRect`와 같은 규칙, R61).
     static func strokeBounds(_ rect: CGRect, borderWidth: CGFloat) -> CGRect {
@@ -249,6 +245,20 @@ extension HwpHitTester {
         return rect.insetBy(dx: -borderWidth / 2, dy: -borderWidth / 2)
     }
 
+    /// 문단 텍스트가 닿을 수 있는 **상위집합** — 자격 영역(`hitEligibleFrame`·
+    /// `paintedRects`)과 claim 게이트(`textPaints`)가 이 하나를 공유해야 "자격 ⊇ 칠"이
+    /// 구조적으로 성립한다 (R56). 따로 두면 자격이 좁아 게이트의 여유가 도달 불가능해진다.
+    ///
+    /// 넘치는 축 셋: slight-overflow 한 줄은 rect 폭을 넘고, 캐시 높이가 대체 폰트 CT
+    /// 줄보다 짧으면 아래로도 넘으며, 글자 위치가 옮긴 글리프는 그 오프셋만큼 위나 아래로
+    /// 넘는다. 둘째는 값싸게 정확히 잴 수 없어 (walker 콜백에 `HwpParagraphFrame`이 없다)
+    /// 줄 높이를 여유로 준다 — 상위집합을 넓히는 것은 과잉 claim이 아니다. 실제 claim은
+    /// 줄 상자·밴드로 정밀 판정한다 (`HwpDrawnTextLayout.textLineRegions`).
+    ///
+    /// "줄 상자 ⊂ rect ± 줄 높이"인 한에서 상위집합이다 — 남은 예외는 둘이다: 여러 줄이
+    /// 각각 캐시보다 짧아 합이 줄 높이를 넘는 문단과, 글자처럼 취급 개체가 정한 줄 상자가
+    /// 앵커 위로 0.15 × 개체 높이만큼 나가는 줄 (그 자리엔 잉크가 없다). 둘 다 이 PR 이전의
+    /// 격차다 (#200 리뷰 검증). 옮겨진 run의 잉크 오버행은 가로 여유가 글꼴 줄 높이로 덮는다.
     static func textBounds(_ rect: CGRect, of attributed: NSAttributedString) -> CGRect {
         let horizontal = rect.width * (HwpRenderTuning.Text.slightOverflowWidthRatio - 1)
         // 세로 여유는 **폰트 메트릭**에서 온다 (R65). 폭에 비례시키면 넘침의 크기와
@@ -256,16 +266,39 @@ extension HwpHitTester {
         // 나간다 — 그러면 전경 글자가 claim에 실패해 뒤 층의 감싼 링크가 이기고,
         // 블록 밖으로 그려진 링크는 아예 안 눌린다. 조판 없이 **속성만** 훑어 가장
         // 큰 줄 높이를 쓴다 (R55의 탭 지연 재발 방지 — CT 조판은 이 게이트 뒤다).
-        return rect.insetBy(dx: -horizontal, dy: -max(horizontal, maxLineHeight(of: attributed)))
+        //
+        // 여기에 **글자 위치의 최대 |오프셋|을 더한다** (#200 리뷰): `paintedRects`의 밴드는
+        // 줄 상자를 오프셋만큼 옮긴 것이라, 줄 상자가 샐 수 있는 몫(줄 높이)에 그 이동분을
+        // 더해야 상위집합이다. 줄 높이만 보면 오프셋이 그보다 큰 글리프 — 첨자(0.67배
+        // 글꼴·+0.33em)와 글자 위치(±1.0×크기)가 **누적**되는 글자 모양이나, 공개 키로
+        // 실린 큰 값 — 위의 탭이 rect 판정에 닿기도 전에 블록 단계에서 기각된다 (실측:
+        // Helvetica 10pt·줄 높이 10에서 오프셋 12부터 `hit`이 nil, 6.7pt 글꼴에 13.3이면
+        // 밴드 y 87.2…93.9가 자격 93.3…116.7 밖).
+        let lineHeight = maxLineHeight(of: attributed)
+        let glyphOffset = HwpDrawnTextLayout.maxGlyphOffsetMagnitude(in: attributed)
+        // 옮겨진 run이 있으면 **가로도** 글꼴 지표만큼 준다: 밴드는 잉크 경계라 기울임 근사
+        // (`matrix.c += 0.22`)·이탤릭 `f`의 오버행이 진행 폭(≤ rect 폭 × 1.06) 밖으로 나가는데,
+        // 그 몫은 글꼴 줄 높이 안이다 (#200 리뷰 검증: Times 10pt `fff` 자연 폭 프레임에서
+        // 잉크 110.645 vs 자격 110.207 — 방출된 링크 rect가 블록 단계에서 기각됐다). 옮겨진
+        // run이 없으면 줄 상자(진행 폭)가 claim이라 종전 여유 그대로다.
+        let overhang = glyphOffset > 0 ? lineHeight : 0
+        return rect.insetBy(
+            dx: -max(horizontal, overhang), dy: -max(horizontal, lineHeight + glyphOffset)
+        )
     }
 
     /// 이 문단이 쓸 수 있는 가장 큰 CT 줄 높이 — 조판 없이 폰트 메트릭만 본다.
     /// 캐시 높이가 대체 폰트보다 짧을 때 아래로 새는 양의 상한이다 (한 줄 기준 —
     /// 여러 줄이 각각 조금씩 짧으면 합이 이보다 클 수 있다).
+    ///
+    /// 글자 위치 몫과 **따로** 훑는다 (`enumerateAttribute` 두 번): `enumerateAttributes`
+    /// 한 번으로 합치면 run마다 사전을 브리징해 2~4배 느리다 (600셀 × 3run 0.95 → 2.07ms,
+    /// 본문 50문단 × 200run 3.25 → 11.4ms, #200 리뷰 검증 실측).
     private static func maxLineHeight(of attributed: NSAttributedString) -> CGFloat {
         var maxHeight: CGFloat = 0
         attributed.enumerateAttribute(
-            .font, in: NSRange(location: 0, length: attributed.length)
+            .font, in: NSRange(location: 0, length: attributed.length),
+            options: .longestEffectiveRangeNotRequired
         ) { value, _, _ in
             guard let value else { return }
             let ref = value as CFTypeRef
