@@ -7,12 +7,12 @@ import Foundation
 /// 히트가 "어디까지 이 블록의 것인가"를 정하는 두 축이다. **정밀도가 다르다**
 /// (R54): 자격 영역 (`hitEligibleFrame`/`paintedRects`) 은 실제 칠 영역의
 /// **상위집합**이어야 하고 — 좁으면 그 위의 탭이 `containerHit`에 닿기도 전에
-/// 기각돼 뒤 로직이 통째로 무용지물이 된다 — claim (`paintsContent`) 은 **정밀
-/// 커버리지**여야 한다 (거친 rect로 claim하면 투명한 자리까지 가져가 아래 블록의
-/// 보이는 링크를 막는다).
+/// 기각돼 뒤 로직이 통째로 무용지물이 된다 — claim (컨테이너는 `paintsContent`,
+/// 텍스트 블록은 `textPaints`) 은 **정밀 커버리지**여야 한다 (거친 rect로 claim하면
+/// 투명한 자리까지 가져가 아래 블록의 보이는 링크를 막는다).
 extension HwpHitTester {
-    /// frame 밖 가시 영역까지 포함한 히트 자격 프레임 — 이 안이면 링크만 확인하고
-    /// 밖이면 종전처럼 기각한다. 페인트가 클립 없이 그리는 영역과 같아야
+    /// frame 밖 가시 영역까지 포함한 히트 자격 프레임 — 이 안이면 링크와 칠(claim)을
+    /// 확인하고 밖이면 종전처럼 기각한다. 페인트가 클립 없이 그리는 영역과 같아야
     /// "방출 ≡ 히트"가 성립한다 (AGENTS.md "하이퍼링크 방출" 짝 규약).
     ///
     /// - payload 없이 텍스트로 그려지는 블록 (`HwpBlockContentWalker.plainText` —
@@ -167,8 +167,8 @@ extension HwpHitTester {
 
     /// 각주가 이 지점에 **실제로 칠했는가** — 자격 영역(bounding box)의 투명한
     /// 틈과 구분한다 (R54). 커버리지의 소유자는 둘뿐이다: 층은
-    /// `ContentLayer.paints`, 텍스트는 그려진 줄 상자
-    /// (`HwpDrawnTextLayout.textLineRegions` — 선택 하이라이트와 같은 정의).
+    /// `ContentLayer.paints`, 텍스트는 그려진 줄 상자 + 옮겨진 밴드
+    /// (`HwpDrawnTextLayout.textLineRegions` — 줄 상자는 선택 하이라이트와 같은 정의).
     func paintsContent(
         _ footnote: HwpFootnoteBlock, origin: CGPoint, at point: CGPoint
     ) -> Bool {
@@ -220,6 +220,84 @@ extension HwpHitTester {
         _ paragraphs: [HwpLaidOutParagraph], at point: CGPoint
     ) -> Bool {
         paragraphs.contains { textPaints($0.attributedString, in: $0.rect, at: point) }
+    }
+
+    /// 링크 없는 텍스트 블록이 이 지점에 글자를 그렸을 **가능성**이 있는가 — framesetting 없이
+    /// 판정하는 값싼 게이트다 (R55). 텍스트 블록의 자격 영역은 곧 `textBounds`라 `textPaints`의
+    /// rect 게이트가 이 경로에서는 공허하고, 그대로 두면 탭마다 자격 안 프레임 밖의 **링크 없는
+    /// 모든 이웃 문단**을 framesetting한다 (#200 리뷰 2차 검증 실측: 헌법주석 5쪽 격자 탭
+    /// 17,750건 p90 0.21 → 1.41ms, 총 7.4 → 13.9s; 800자 문단 framesetting 13~15ms).
+    /// 잉크가 프레임 밖에 놓이는 길을 축마다 속성만으로 상한한다:
+    /// - **위·아래**: 첫 줄 baseline은 프레임 상단 + 0.85 × 줄 상자 높이(`baselineAnchor`,
+    ///   줄 상자 높이 = 그 줄의 기본 글자 크기)이고 잉크는 그 위로 글꼴 ascent까지 오르므로,
+    ///   상대 크기가 큰 run(글꼴 = 기본 × 상대)이나 ascent가 0.85em을 넘는 글꼴은 프레임
+    ///   위로 `ascent − 0.85 × 기본 크기`만큼 새고(Helvetica 17/10: 4.0pt), 마지막 줄은 아래로
+    ///   `descent − 0.15 × 기본 크기`만큼 샌다(줄 간격 100%). 여기에 글자 위치가 위·아래로 옮긴
+    ///   몫(`glyphOffsetReach`)을 더한다. Helvetica 10/10은 위 0·아래 0.8pt라 각주 번호 첨자
+    ///   (+3.3pt)만 있는 본문은 위 3.3pt 띠에서만 조판한다 — 자격 띠(줄 높이 + 오프셋)를 그대로
+    ///   쓰면 헌법주석처럼 거의 모든 문단이 첨자를 품는 문서에서 문단 사이 탭마다 이웃 둘을
+    ///   framesetting한다. 캐시 높이가 대체 폰트 CT 줄보다 짧아 **줄 상자**가 새는 몫은 잉크가
+    ///   아니라 종전처럼 claim하지 않는다.
+    /// - **옆**: slight-overflow **한 줄**만 가로로 넘치므로 `slightOverflowLineMetrics`(CTLine
+    ///   하나 ~2ms, 줄 나눔 없음)가 여러 줄 문단을 거른다. 옮겨진 run이 있으면 그 잉크의 기울임
+    ///   오버행이 진행 폭 밖으로 나가므로(`textBounds`가 자격을 넓힌 그 몫) 그 여유 안은 통과시킨다.
+    static func mayPaintOutsideFrame(
+        _ attributed: NSAttributedString, frame: CGRect, at point: CGPoint
+    ) -> Bool {
+        let reach = HwpDrawnTextLayout.glyphOffsetReach(in: attributed)
+        if point.y < frame.minY || point.y >= frame.maxY {
+            let ink = verticalInkReach(of: attributed)
+            return point.y < frame.minY
+                ? point.y >= frame.minY - (ink.above + reach.above)
+                : point.y < frame.maxY + (ink.below + reach.below)
+        }
+        if reach.magnitude > 0 {
+            let overhang = maxLineHeight(of: attributed)
+            if point.x >= frame.minX - overhang, point.x < frame.maxX + overhang {
+                return true
+            }
+        }
+        return HwpDrawnTextLayout.slightOverflowLineMetrics(
+            attributedString: attributed, lineWidth: frame.width
+        ) != nil
+    }
+
+    /// 글자 위치 없이도 잉크가 프레임 위·아래로 샐 수 있는 상한 (pt, 0 이상) — 조판 없이
+    /// 글꼴 지표와 기본 글자 크기(`hwp.baseFontSize`, 없으면 글꼴 크기)만 본다. 줄 상자 높이는
+    /// 문단에서 가장 작은 기본 크기 이상이므로 그 값을 앵커 몫에 써야 상한이 유지된다.
+    static func verticalInkReach(
+        of attributed: NSAttributedString
+    ) -> (above: CGFloat, below: CGFloat) {
+        var maxAscent: CGFloat = 0
+        var maxDescent: CGFloat = 0
+        var minFontSize = CGFloat.infinity
+        attributed.enumerateAttribute(
+            .font, in: NSRange(location: 0, length: attributed.length),
+            options: .longestEffectiveRangeNotRequired
+        ) { value, _, _ in
+            guard let value else { return }
+            let ref = value as CFTypeRef
+            guard CFGetTypeID(ref) == CTFontGetTypeID() else { return }
+            let font = unsafeBitCast(ref, to: CTFont.self)
+            maxAscent = max(maxAscent, CTFontGetAscent(font))
+            maxDescent = max(maxDescent, CTFontGetDescent(font))
+            minFontSize = min(minFontSize, CTFontGetSize(font))
+        }
+        var minDeclared = CGFloat.infinity
+        attributed.enumerateAttribute(
+            HwpAttributedStringKey.baseFontSize,
+            in: NSRange(location: 0, length: attributed.length),
+            options: .longestEffectiveRangeNotRequired
+        ) { value, _, _ in
+            guard let size = (value as? NSNumber)?.doubleValue, size > 0 else { return }
+            minDeclared = min(minDeclared, CGFloat(size))
+        }
+        let box = minDeclared.isFinite ? minDeclared : (minFontSize.isFinite ? minFontSize : 0)
+        let anchor = HwpRenderTuning.Text.baselineAnchorRatio
+        return (
+            above: max(0, maxAscent - box * anchor),
+            below: max(0, maxDescent - box * (1 - anchor))
+        )
     }
 
     /// 문단이 이 지점에 글자를 칠했는지 — **`textBounds` 밖이면 CT 조판을 하지 않는다**.

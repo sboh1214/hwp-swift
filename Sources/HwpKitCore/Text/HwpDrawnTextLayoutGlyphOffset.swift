@@ -82,20 +82,39 @@ extension HwpDrawnTextLayout {
         return drawnLines.map { glyphOffsetBands(of: $0.line) }
     }
 
-    /// 조판 문자열의 가장 큰 글자 위치 |오프셋| — 자격 영역(`HwpHitTester.textBounds`)이
-    /// 옮겨진 밴드를 품도록 줄 높이에 더하는 몫이다 (#200 리뷰). `carriesGlyphOffset`과
-    /// 같은 술어(`offset != 0`)를 쓰되 조판 없이 속성 run만 훑는다.
-    static func maxGlyphOffsetMagnitude(in attributedString: NSAttributedString) -> CGFloat {
-        var magnitude: CGFloat = 0
+    /// 조판 문자열의 글자 위치가 글리프를 **위·아래로 각각** 얼마나 멀리 옮기는가 (pt, 0 이상).
+    /// 옮겨진 밴드가 줄 상자 밖으로 나가는 양이다 — 위 첨자만 있는 문단은 위로만 나간다.
+    /// `carriesGlyphOffset`과 같은 술어(`offset != 0`)를 쓰되 조판 없이 속성 run만 훑는다.
+    struct GlyphOffsetReach {
+        var above: CGFloat = 0
+        var below: CGFloat = 0
+        var magnitude: CGFloat {
+            max(above, below)
+        }
+    }
+
+    static func glyphOffsetReach(in attributedString: NSAttributedString) -> GlyphOffsetReach {
+        var reach = GlyphOffsetReach()
         attributedString.enumerateAttribute(
             HwpAttributedStringKey.glyphBaselineOffset,
             in: NSRange(location: 0, length: attributedString.length),
             options: .longestEffectiveRangeNotRequired
         ) { value, _, _ in
             guard let offset = (value as? NSNumber)?.doubleValue, offset != 0 else { return }
-            magnitude = max(magnitude, CGFloat(abs(offset)))
+            // 렌더러 규약 그대로 양수 = 위.
+            if offset > 0 {
+                reach.above = max(reach.above, CGFloat(offset))
+            } else {
+                reach.below = max(reach.below, CGFloat(-offset))
+            }
         }
-        return magnitude
+        return reach
+    }
+
+    /// 가장 큰 글자 위치 |오프셋| — 자격 영역(`HwpHitTester.textBounds`)이 옮겨진 밴드를
+    /// 품도록 줄 높이에 더하는 몫이다 (#200 리뷰).
+    static func maxGlyphOffsetMagnitude(in attributedString: NSAttributedString) -> CGFloat {
+        glyphOffsetReach(in: attributedString).magnitude
     }
 
     /// 조판 문자열에 0이 아닌 글자 위치 run이 하나라도 있는가.
@@ -137,8 +156,11 @@ extension HwpDrawnTextLayout {
     /// 자리(`홈페이지 바로가기`는 [홈페이지][ ][바로가기] 세 run이고 `CharShape` 픽스처의
     /// '글자위치 30' 줄도 HCRBatang 세 run)마다 옮겨진 링크의 낱말 사이가 히트 불가가 되고
     /// claim에 구멍이 나 뒤 층 링크가 열린다 (#200 리뷰 검증: 7.24pt 구멍). 묶음의 앞뒤 잉크
-    /// 없는 run은 버린다 — 꼬리·머리 공백과 공백뿐인 묶음은 밴드가 없다. 개체 run
-    /// (run delegate)은 옮겨지지 않으므로(개체 명령이 따로 그린다) 묶음을 끊는다.
+    /// 없는 run은 버린다 — 꼬리·머리 공백과 공백뿐인 묶음은 밴드가 없다. **렌더러가 안 그리는
+    /// run은 묶음을 끊는다**: 개체 run(run delegate)은 옮겨지지 않고(개체 명령이 따로 그린다),
+    /// 한 줄 끝 표식 run(`hwp.lineBreak`)은 `drawRun`이 글리프를 건너뛴다 (#146) — 조판은
+    /// 표식 run에 오프셋을 안 실어 주지만(`lineBreakAttributes`) 공개 키를 함께 실은 입력에서
+    /// HY 계열 폰트의 U+000A 잉크가 보이지 않는 밴드가 되면 안 된다 (#200 리뷰 2차).
     /// 합성 볼드의 stroke 확장·그림자 사본·양각 사본은 이미지 경계에 안 든다 (≤0.4pt·
     /// 그림자 오프셋·±0.7pt) — 줄 상자도 그것을 안 덮는 기존 격차라 밴드도 같은 기준이다.
     static func glyphOffsetBands(of line: CTLine) -> [GlyphOffsetBand] {
@@ -156,7 +178,8 @@ extension HwpDrawnTextLayout {
             guard let offset =
                 (attributes?[HwpAttributedStringKey.glyphBaselineOffset] as? NSNumber)?.doubleValue,
                 offset != 0,
-                attributes?[kCTRunDelegateAttributeName as NSAttributedString.Key] == nil
+                attributes?[kCTRunDelegateAttributeName as NSAttributedString.Key] == nil,
+                attributes?[HwpAttributedStringKey.lineBreak] == nil
             else {
                 close()
                 continue

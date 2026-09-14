@@ -19,8 +19,9 @@ public struct HwpHitTester {
         // 논리 배열 위치 그대로다 (선택 좌표와 정합).
         for (index, block) in AnyHwpBlock.paintOrdered(page.blocks).reversed() {
             if !block.frame.contains(point) {
-                // frame 밖에도 그려지는 가시 영역이 있으면 기각 전에 링크 rect로
-                // 확인한다 — 페인트가 그린 링크는 눌려야 한다 (#4, #94).
+                // frame 밖에도 그려지는 가시 영역이 있으면 기각 전에 링크 rect와 **칠**로
+                // 확인한다 — 페인트가 그린 링크는 눌려야 하고(#4, #94), 그려진 글자·자손은
+                // 링크가 없어도 그 블록이 claim한다 (R53).
                 guard hitEligibleFrame(for: block).contains(point) else { continue }
                 // 각주는 가림까지 살려 판정한다 — `.occluded`를 nil로 접어 아래
                 // 블록으로 내려가면 그 개체 밑에 숨은 링크가 열린다 (R45 #3).
@@ -52,27 +53,25 @@ public struct HwpHitTester {
                         return .footnote(blockIndex: index, number: footnote.number)
                     }
                 }
-                guard let url = hyperlinkURL(for: block, at: point) else { continue }
-                return .hyperlink(url: url, blockIndex: index)
+                if let url = hyperlinkURL(for: block, at: point) {
+                    return .hyperlink(url: url, blockIndex: index)
+                }
+                // 프레임 밖이라도 **이 블록의 글자가 칠해진 자리**면 링크가 없어도 이 블록이
+                // claim한다 (R53의 텍스트 축, #200 리뷰 2차): slight-overflow·글자 위치로
+                // 프레임 밖에 그려진 전경 글자 위의 탭이 그냥 내려가면 그 밑에 숨은 뒤
+                // 블록의 링크가 열린다 — 프레임 **안**에서 같은 글자가 `.text`가 되는 것과
+                // 답이 같아야 한다. 판정은 `textPaints`(줄 상자·옮겨진 밴드)라 자격 영역의
+                // 빈 띠는 종전대로 아래 블록 몫이다.
+                guard let plain = HwpBlockContentWalker.plainText(of: block),
+                      Self.mayPaintOutsideFrame(plain, frame: block.frame, at: point),
+                      textPaints(plain, in: block.frame, at: point)
+                else { continue }
+                return ownHit(for: block, index: index, at: point)
             }
             if let url = hyperlinkURL(for: block, at: point) {
                 return .hyperlink(url: url, blockIndex: index)
             }
-            switch block.kind {
-            case .text:
-                return .text(blockIndex: index, characterIndex: nil)
-            case .image:
-                return .image(blockIndex: index)
-            case .shape, .textbox:
-                return .shape(blockIndex: index)
-            case .table:
-                let position = tableGridPosition(block: block, point: point)
-                return .table(blockIndex: index, row: position.row, col: position.col)
-            case .footnote:
-                return .footnote(blockIndex: index, number: footnoteNumber(block: block))
-            case .placeholder:
-                return .placeholder(blockIndex: index, kind: block.kind)
-            }
+            return ownHit(for: block, index: index, at: point)
         }
         return nil
     }
@@ -439,5 +438,26 @@ public struct HwpHitTester {
     private func footnoteNumber(block: AnyHwpBlock) -> Int {
         guard case let .footnote(footnote) = block.payload else { return 0 }
         return footnote.number
+    }
+}
+
+extension HwpHitTester {
+    /// 링크가 아닌 이 블록 자신의 히트 — 프레임 안과, 프레임 밖 칠해진 글자 위가 같은 답을 낸다.
+    private func ownHit(for block: AnyHwpBlock, index: Int, at point: CGPoint) -> HwpHitResult {
+        switch block.kind {
+        case .text:
+            return .text(blockIndex: index, characterIndex: nil)
+        case .image:
+            return .image(blockIndex: index)
+        case .shape, .textbox:
+            return .shape(blockIndex: index)
+        case .table:
+            let position = tableGridPosition(block: block, point: point)
+            return .table(blockIndex: index, row: position.row, col: position.col)
+        case .footnote:
+            return .footnote(blockIndex: index, number: footnoteNumber(block: block))
+        case .placeholder:
+            return .placeholder(blockIndex: index, kind: block.kind)
+        }
     }
 }

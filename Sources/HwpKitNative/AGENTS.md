@@ -163,7 +163,9 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
   두 경로 픽셀 동치).
 - **한 줄 끝(코드 10) 표식 run은 글리프를 건너뛴다.** 조판(`HwpTextRunBuilder.appendLineBreak`)이
   U+000A 한 글자에 `HwpAttributedStringKey.lineBreak`를 달아 보내고 장식 속성은 이미
-  떼어 냈으므로, 여기서는 `drawRun` 첫머리의 guard 하나가 전부다. 이 guard가 빠지면
+  떼어 냈으므로, 렌더에서는 `drawRun` 첫머리의 guard 하나가 전부다 (기하 쪽 거울은
+  `HwpDrawnTextLayout.glyphOffsetBands`가 같은 술어로 표식 run의 밴드를 안 낸다 — #200
+  리뷰 2차). 이 guard가 빠지면
   한컴 번들 HY 계열 폰트(U+000A에 잉크 있는 글리프, 진행 폭 1em)에서 Shift+Enter
   자리마다 조판 부호가 다시 그려진다. 선 장식(밑줄·취소선·강조점·탭 리더)은 경로와
   무관하게 아래에서 직접 그리며, 표식 run은 장식 키가 없어 자연히 빠진다.

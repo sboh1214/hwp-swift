@@ -214,6 +214,44 @@ import XCTest
             expect(Double(bands[0].minX)).to(beGreaterThanOrEqualTo(Double(box.minX) - 0.5))
             expect(Double(bands[0].maxX)).to(beLessThanOrEqualTo(Double(box.maxX) + 0.5))
         }
+
+        /// **렌더러가 안 그리는 run은 밴드가 없다** — 한 줄 끝 표식(`hwp.lineBreak`) run은
+        /// `drawRun`이 글리프를 건너뛰므로(#146) 오프셋이 함께 실려도 그 잉크는 화면에 없다.
+        /// 표식은 글자를 가리지 않고 run 단위라 어떤 글꼴에서든 같은 규칙이다.
+        func testLineBreakMarkerRunLeavesNoBand() {
+            var marked = attributes(offset: -3)
+            marked[HwpAttributedStringKey.lineBreak] = NSNumber(value: true)
+            let string = NSMutableAttributedString(string: "A", attributes: attributes(offset: -3))
+            string.append(NSAttributedString(string: "B", attributes: marked))
+            let bands = bands(string)
+            let bare = self.bands(
+                NSAttributedString(string: "A", attributes: attributes(offset: -3))
+            )
+            // 표식이 없었다면 B의 잉크가 밴드를 넓혔다 — 아니면 이 테스트가 아무것도 안 지킨다.
+            let unmarked = NSMutableAttributedString(
+                string: "A", attributes: attributes(offset: -3)
+            )
+            unmarked.append(NSAttributedString(string: "B", attributes: attributes(offset: -3)))
+            expect(self.bands(unmarked)) != bare
+
+            expect(bands.count) == 1
+            expect(bands) == bare
+
+            // 표식이 줄 **중간**에 오면 묶음을 끊는다 — 잉크 없는 다리로 취급해 양옆을 이으면
+            // 표식의 보이지 않는 진행 폭 위가 claim된다 (R54). 실전 입력에서 표식은 줄 끝에만
+            // 오지만 공개 키 입력의 규약을 여기서 못박는다.
+            let split = NSMutableAttributedString(string: "A", attributes: attributes(offset: -3))
+            split.append(NSAttributedString(string: "B", attributes: marked))
+            split.append(NSAttributedString(string: "C", attributes: attributes(offset: -3)))
+            let splitBands = self.bands(split)
+            let splitLine = line(split)?.line
+            let markerStart = splitLine.map { CTLineGetOffsetForStringIndex($0, 1, nil) } ?? 0
+            let markerEnd = splitLine.map { CTLineGetOffsetForStringIndex($0, 2, nil) } ?? 0
+            expect(splitBands.count) == 2
+            expect(splitBands.contains {
+                $0.contains(CGPoint(x: (markerStart + markerEnd) / 2, y: $0.midY))
+            }) == false
+        }
     }
 
     /// 자격 영역은 옮겨진 글리프의 **최대 |오프셋|**만큼도 넓다 (#200 리뷰).
