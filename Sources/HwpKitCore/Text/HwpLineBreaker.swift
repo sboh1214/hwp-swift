@@ -24,7 +24,8 @@ enum HwpLineBreaker {
     struct FrameChunk {
         let lines: [CTLine]
         let origins: [CGPoint]
-        /// 이 청크의 SuggestFrameSize 박스 높이.
+        /// 이 청크의 SuggestFrameSize 박스 높이 — 첫 줄의 **배치** ascent를
+        /// `height − origins[0].y`로 얻는 데 쓴다 (`HwpDrawnTextLayoutAnchor`).
         let height: CGFloat
         /// 커밋할 줄 수 — 문자 예산으로 잘린 미완 마지막 줄은 제외한다.
         let keepCount: Int

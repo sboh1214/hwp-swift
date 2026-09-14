@@ -73,6 +73,7 @@ SwiftUI 앱에서는 보통 HwpKit의 `HwpDocumentLoader`가 이 모듈의
 - ``HwpPaintListBuilder``
 - ``HwpTextRunBuilder``
 - ``HwpParagraphLayout``
+- ``HwpDrawnTextLayout``
 - ``HwpTableLayout``
 - ``HwpPageGeometry``
 - ``HwpUnits``

@@ -12,15 +12,32 @@ import Foundation
 public enum HwpRenderTuning {
     /// 본문 텍스트 조판·장식
     public enum Text {
-        /// 한글 줄 모델의 베이스라인 앵커 비율 — 텍스트든 개체든
-        /// 베이스라인을 칸 높이의 ~0.85 지점에 둔다.
-        /// 실측: 공공누리 실물 0.859. 검증: fidelity 전수 + 실물 대조.
+        /// 한글 줄 모델의 베이스라인 앵커 비율 — 텍스트든 개체든 베이스라인을
+        /// **줄 상자 높이**의 0.85 지점에 둔다 (`HwpDrawnTextLayout.baselineAnchor`).
+        /// 줄 상자 높이는 그 줄의 **상대크기 적용 전 기본 글자 크기** (키 큰 글자처럼
+        /// 취급 개체가 있으면 그 개체 높이) 이고, 줄 간격 종류·값과 글꼴 지표는
+        /// 여기에 관여하지 않는다.
+        ///
+        /// 실측: 한글은 이 값을 줄 캐시 (`PARA_LINE_SEG`)에 직접 적는다 —
+        /// `baselineDistance ÷ lineHeight`. 한글.app 12.30.0 (2026-09-12, #178) 로
+        /// 글자 크기 8종 (5·7·10·12·15·20·30·40pt) × 줄 간격 종류 4종 (비율 100~300%·
+        /// 고정 5~30pt·여백만 0~10pt·최소 5~30pt) × 글꼴 3종 (함초롬바탕·함초롬돋움·
+        /// Apple SD 산돌고딕 Neo) × 상대크기 2종 (50·170%) 을 실은 합성 문서를 저장시켜
+        /// 얻은 34개 표본이 **전부 정확히 0.85**였고 (예: 10pt 비율 160% → `vertsize`
+        /// 1000·`baseline` 850, 상대크기 170% 줄도 같다), 코퍼스의 실물 캐시도 같다
+        /// (`noori` 1500/1275·6134/5214·300/255, 헌법주석 각주 900/765).
+        /// 같은 문서를 한글이 내보낸 PDF의 벡터 텍스트 베이스라인이
+        /// `lineLocation + baselineDistance`와 최대 0.10pt (한글 PDF의 0.12pt 장치
+        /// 양자화) 차이였다 — **한글이 그리는 자리도 이 규칙이다**.
+        ///
+        /// 검증: `HwpBaselineAnchorTests` 비율 + `FixtureBaselineAnchorTests` 캐시 대조 +
+        /// `FixtureDecorationLineRenderTests` 픽셀 핀 + fidelity 전수.
         public static let baselineAnchorRatio: CGFloat = 0.85
 
-        /// 키 큰 인라인 개체 (run delegate) 줄에서 베이스라인을 들어올리는
-        /// 개체 ascent 비율. `baselineAnchorRatio`와 상보 관계 (1 − 0.85)
-        /// 이지만 독립 실측값으로 별도 고정한다.
-        /// 실측: 공공누리 실물 (밑줄 되돌림 양도 동일 비율).
+        /// 키 큰 인라인 개체 (run delegate) 줄에서 밑줄이 되돌아갈 개체 ascent 비율
+        /// (`HwpDrawnTextLayout.underlineReturnDrop`). `baselineAnchorRatio`와 상보
+        /// 관계 (1 − 0.85) 이지만 독립 실측값으로 별도 고정한다.
+        /// 실측: 공공누리 실물 (실물은 밑줄을 개체 하단 = 상자 바닥에 남긴다).
         /// 검증: fidelity 전수 + 실물 대조.
         public static let baselineLiftRatio: CGFloat = 0.15
 

@@ -17,7 +17,9 @@ import XCTest
 /// **한글도 두 포맷을 같은 자리에 그린다**. 이슈 본문의 "한글이 .hwp는 아래
 /// 단선, .hwpx는 가운데로 그린다"는 관측은 재현되지 않았다.
 ///
-/// 여기 핀은 우리 렌더의 쪽 좌표(위에서부터 pt)다. 비율 자체는
+/// 여기 핀은 **한글 실물의 쪽 좌표**(위에서부터 pt)다 — 줄 캐시가 적어 둔 베이스라인
+/// (`lineLocation + baselineDistance`, #178)에 실측 비율을 더한 값이고, 래스터 양자화
+/// (0.25pt)와 잉크 가중 중심의 잔차만 허용 오차로 둔다. 비율 자체는
 /// `HwpDecorationLineGeometryTests`가 폰트 독립으로 잡는다. 폰트는
 /// `HwpFontResolver.testDeterministic`이라 기기 독립이다.
 final class FixtureDecorationLineRenderTests: XCTestCase {
@@ -187,8 +189,10 @@ final class FixtureDecorationLineRenderTests: XCTestCase {
         expect(centers[0]).to(
             beCloseTo(centers[1], within: 0.01), description: "HWP와 HWPX가 같은 자리"
         )
-        // 우리 렌더의 쪽 좌표 핀 (위에서부터 pt).
-        expect(centers[0]).to(beCloseTo(281.7, within: 0.2))
+        // 한글 실물의 쪽 좌표 핀 (위에서부터 pt) — 이 줄의 베이스라인은 한글 줄
+        // 캐시가 283.7pt(본문 상단 99.2 + vertpos 176.0 + baseline 8.5)로 적어 두었고
+        // 취소선은 그 위 0.35em이다. #178 전에는 우리 렌더가 281.7이었다.
+        expect(centers[0]).to(beCloseTo(280.2, within: 0.2))
     }
 
     /// `CharShape` 쌍의 "밑줄 색 #00ff00" 줄 — 밑줄 '글자 아래'가 두 포맷에서 같은
@@ -226,10 +230,10 @@ final class FixtureDecorationLineRenderTests: XCTestCase {
         expect(centers[0]).to(
             beCloseTo(centers[1], within: 0.01), description: "HWP와 HWPX가 같은 자리"
         )
-        // 우리 렌더의 쪽 좌표 핀 (위에서부터 pt). 한글 실물은 237.5pt(베이스라인
-        // 235.8 + 1.7)다. 남은 1.6pt는 이 픽스처의 취소선 핀(281.7 vs 한글 280.2)에도
-        // 같은 크기로 있는 베이스라인 격차(#178 축)라 이 선의 위치 문제가 아니다.
-        expect(centers[0]).to(beCloseTo(239.1, within: 0.2))
+        // 한글 실물의 쪽 좌표 핀 (위에서부터 pt) — 베이스라인 235.7(줄 캐시:
+        // 99.2 + 128.0 + 8.5) + 1.7이다. #178 전에는 베이스라인 격차 1.6pt가 얹혀
+        // 239.1이었다.
+        expect(centers[0]).to(beCloseTo(237.4, within: 0.2))
     }
 
     /// `underline-above` 쌍 — 밑줄 종류 3(글자 위)을 실제로 그린다. 선은 글자
@@ -260,7 +264,10 @@ final class FixtureDecorationLineRenderTests: XCTestCase {
         expect(centers[0]).to(
             beCloseTo(centers[1], within: 0.01), description: "HWP와 HWPX가 같은 자리"
         )
-        expect(centers[0]).to(beCloseTo(100.5, within: 0.3))
+        // 한글 실물: 베이스라인 107.7(줄 캐시: 99.2 + 0 + 8.5) − 8.7 = 99.0pt.
+        // 한글 PDF의 텍스트 베이스라인 실측은 107.76이라 99.06이다 (#178).
+        // 수정 전에는 100.5로 1.5pt 낮았다.
+        expect(centers[0]).to(beCloseTo(99.0, within: 0.3))
     }
 
     /// `track-changes` — 삭제선(베이스라인 위)과 삽입 밑줄(아래)이 둘 다 빨강
