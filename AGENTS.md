@@ -943,7 +943,8 @@ opt-in이다) — 축소판이 가장 먼저 그리는 쪽이 정확히 그 1쪽
 그대로 두고, CTForegroundColor는 키 개명, 기준선은
 `hwp.glyphBaselineOffset`(양수=위 — 글자위치·첨자 합산, NS 규약 일치)만
 공급원으로 옮기며 **반대 부호(HWP 원시: 양수=아래)의 CTBaselineOffset은
-버린다**, kCTParagraphStyle은 **값 재구성**(CTParagraphStyle은
+버린다**(첨자 몫만 담은 `hwp.scriptBaselineOffset`(#179)은 장식선 전용이라
+접두사 일괄 제거에 맡긴다 — 이중 적용 없음), kCTParagraphStyle은 **값 재구성**(CTParagraphStyle은
 NSParagraphStyle과 toll-free 브리지가 아니다), 밑줄(글자 아래)·취소선은 색과
 함께 명시 변환하되 **밑줄 '글자 위'(#136)는 옮기지 않는다**(RTF·
 NSAttributedString에 윗줄 속성이 없어 표준 밑줄로 바꾸면 선이 글자 아래로

@@ -23,9 +23,10 @@ import XCTest
 /// `HwpDecorationLineGeometryTests`가 폰트 독립으로 잡는다. 폰트는
 /// `HwpFontResolver.testDeterministic`이라 기기 독립이다.
 final class FixtureDecorationLineRenderTests: XCTestCase {
-    private static let scale: CGFloat = 4
+    static let scale: CGFloat = 4
 
-    private struct Raster {
+    /// 래스터·색 판정 헬퍼는 `+Script` 확장(#179)도 쓰므로 internal이다.
+    struct Raster {
         let pixelWidth: Int
         let pixelHeight: Int
         let bytesPerRow: Int
@@ -102,7 +103,7 @@ final class FixtureDecorationLineRenderTests: XCTestCase {
         }
     }
 
-    private static func raster(_ id: String, hwpx: Bool) async throws -> Raster {
+    static func raster(_ id: String, hwpx: Bool) async throws -> Raster {
         let url = FixtureRoot.url(from: #file, subdirectory: hwpx ? "HwpxFixtures" : "Fixtures")
             .appendingPathComponent(id)
             .appendingPathComponent(hwpx ? "document.hwpx" : "document.hwp")
@@ -146,19 +147,19 @@ final class FixtureDecorationLineRenderTests: XCTestCase {
         )
     }
 
-    private static func isCyan(_ red: UInt8, _ green: UInt8, _ blue: UInt8) -> Bool {
+    static func isCyan(_ red: UInt8, _ green: UInt8, _ blue: UInt8) -> Bool {
         red < 100 && green > 150 && blue > 150
     }
 
-    private static func isDark(_ red: UInt8, _ green: UInt8, _ blue: UInt8) -> Bool {
+    static func isDark(_ red: UInt8, _ green: UInt8, _ blue: UInt8) -> Bool {
         red < 110 && green < 110 && blue < 110
     }
 
-    private static func isRed(_ red: UInt8, _ green: UInt8, _ blue: UInt8) -> Bool {
+    static func isRed(_ red: UInt8, _ green: UInt8, _ blue: UInt8) -> Bool {
         red > 130 && green < 90 && blue < 90
     }
 
-    private static func isGreen(_ red: UInt8, _ green: UInt8, _ blue: UInt8) -> Bool {
+    static func isGreen(_ red: UInt8, _ green: UInt8, _ blue: UInt8) -> Bool {
         red < 100 && green > 150 && blue < 100
     }
 

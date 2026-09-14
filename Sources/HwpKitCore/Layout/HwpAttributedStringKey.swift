@@ -33,6 +33,13 @@ public enum HwpAttributedStringKey {
     /// 렌더러가 이 값으로 글리프를 직접 시프트한다 — 도입 근거였던 "CTFramesetter가
     /// kCTBaselineOffset을 무시한다"는 macOS 27.0에서 거짓이다 (`HwpTextRunBuilder`).
     public static let glyphBaselineOffset = NSAttributedString.Key("hwp.glyphBaselineOffset")
+    /// 위/아래 첨자(표 33)의 베이스라인 이동량만 (pt, 양수 = 위, #179) —
+    /// `glyphBaselineOffset`은 글자 위치와 첨자 이동의 **합**이라 둘을 가를 수 없는데,
+    /// 장식선은 둘을 다르게 따른다: 한글은 취소선·글자 가운데 밑줄을 첨자로 옮겨진
+    /// 베이스라인에 그리지만 글자 위치로 옮겨진 글리프는 따라가지 않는다 (2026-09-15
+    /// 실측, `HwpPageLayerDecorations.drawStrikethroughIfNeeded`). 글리프 그리기·기하
+    /// 질의·서식 복사는 종전대로 합산 키만 본다.
+    public static let scriptBaselineOffset = NSAttributedString.Key("hwp.scriptBaselineOffset")
     /// 밑줄 여부 (글자 아래) — CT 밑줄 대신 렌더러가 베이스라인 아래
     /// `underlineBelowCenterRatio`에 `decorationLineThicknessRatio` 두께로 직접
     /// 그린다 (둘 다 글자 크기 비례, #176)

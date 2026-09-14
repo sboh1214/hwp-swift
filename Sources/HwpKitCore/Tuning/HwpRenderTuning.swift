@@ -66,8 +66,11 @@ public enum HwpRenderTuning {
         /// +1.80/3.60/5.28/7.08/14.04/21.00/35.04pt (0.350~0.360, 장치 좌표
         /// 0.12pt 양자화). 함초롬바탕·함초롬돋움·Apple SD 산돌고딕 Neo가 같은
         /// 값이라 폰트 지표가 아니라 글자 크기 비례다. **HWP와 HWPX가 같은
-        /// 값**이다 (#136).
-        /// 검증: `FixtureDecorationLineRenderTests` 픽셀 핀 + fidelity 전수.
+        /// 값**이다 (#136). 첨자 run에서는 **첨자로 옮겨진 베이스라인** 위
+        /// 줄어든 크기 × 이 배율이다 (#179, 2026-09-15 실측: 10pt 위 첨자 6.36pt
+        /// 글리프가 4.44pt 올라가면 선은 6.60pt 위 = 4.44 + 0.35 × 6.36) — 글자
+        /// 위치(`hh:offset`)로 옮겨진 몫은 따라가지 않는다.
+        /// 검증: `FixtureDecorationLineRenderTests`(+`+Script`) 픽셀 핀 + fidelity 전수.
         public static let strikethroughCenterRatio: CGFloat = 0.35
 
         /// 밑줄 '글자 위'(표 35 밑줄 종류 3) 중심의 베이스라인 위 높이 =
@@ -103,8 +106,11 @@ public enum HwpRenderTuning {
         /// Apple SD 산돌고딕 Neo·HY울릉도M 네 글꼴이 **모든 크기에서 같은 값**이라
         /// descent·post `underlinePosition` 같은 글꼴 지표가 아니라 글자 크기
         /// 비례다. 네이티브 문서의 변경 추적 삽입 밑줄도 이 자리다 (#187 참고).
-        /// 검증: `HwpDecorationLineGeometryTests` 비율 +
-        /// `FixtureDecorationLineRenderTests` 픽셀 핀 + fidelity 전수.
+        /// 첨자 run에서도 **원래 베이스라인** 아래 **축소 전 크기** × 이 배율이다
+        /// (#179 실측: 10pt 위/아래 첨자 모두 1.68pt 아래) — 취소선과 달리 첨자
+        /// 이동을 따라가지 않는다.
+        /// 검증: `HwpDecorationLineGeometryTests`(+`+Script`) 비율 +
+        /// `FixtureDecorationLineRenderTests`(+`+Script`) 픽셀 핀 + fidelity 전수.
         public static let underlineBelowCenterRatio: CGFloat = 0.17
 
         /// 장식선(글자 아래·글자 위 밑줄, 취소선, 글자 가운데 밑줄) 두께 = 글자
@@ -114,8 +120,9 @@ public enum HwpRenderTuning {
         /// 3.96pt로, 13개 전부 `0.12pt × round(크기 / 3)` = 0.04em을 600dpi 장치
         /// 단위로 반올림한 값이다. 밑줄과 취소선이 같은 폭이고 네 글꼴이 같다.
         /// 하한은 두지 않는다 — 한글도 5pt를 0.24pt로 그린다. 종전 0.4pt 고정은
-        /// 10pt에서만 맞았다.
-        /// 검증: `HwpDecorationLineGeometryTests` 두께 비율 + fidelity 전수.
+        /// 10pt에서만 맞았다. 첨자 run에서도 **축소 전 크기** 기준이다 (#179 실측:
+        /// 10pt 첨자의 네 선 모두 0.36pt = 본문과 같음).
+        /// 검증: `HwpDecorationLineGeometryTests`(+`+Script`) 두께 비율 + fidelity 전수.
         public static let decorationLineThicknessRatio: CGFloat = 0.04
 
         /// 변경 추적 삽입 밑줄 중심의 베이스라인 아래 깊이 = 글자 크기 × 이 배율.

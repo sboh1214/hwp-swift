@@ -169,6 +169,16 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
   한컴 번들 HY 계열 폰트(U+000A에 잉크 있는 글리프, 진행 폭 1em)에서 Shift+Enter
   자리마다 조판 부호가 다시 그려진다. 선 장식(밑줄·취소선·강조점·탭 리더)은 경로와
   무관하게 아래에서 직접 그리며, 표식 run은 장식 키가 없어 자연히 빠진다.
+- **장식선의 기준은 선마다 다르다** (#136·#176·#179, 전부 한글 12.30 PDF 실측). 공통은
+  줄 원점(글자 위치로 옮겨진 글리프를 따라가지 않는다)과 두께 `spaceTargetSize`(첨자
+  축소 전 크기) × 0.04. 취소선(글자 가운데 밑줄·변경 추적 삭제선 포함)만 첨자 이동
+  (`hwp.scriptBaselineOffset`, 합산 키가 아니다)을 더하고 **줄어든** 글꼴 크기 × 비율
+  위에 놓인다; 글자 아래 밑줄은 `underlineReturnDrop`으로 되돌린 원점 − 축소 전 크기 ×
+  0.17, 글자 위 밑줄은 되돌림 없는 원점 + 축소 전 크기 × 0.87이고 둘 다 첨자 이동은
+  무시한다. 새 장식을 더할 때는 (1) 어느 원점을 받는지 (2) 첨자 키를 더하는지 (3) 크기
+  기준이 `runFont`인지 `preScriptFontSize`인지 세 축을 실측으로 정할 것 — 비율은
+  `HwpDecorationLineGeometryTests`(+`+Script`)가 폰트 독립으로, 절대 위치는
+  `FixtureDecorationLineRenderTests`(+`+Script`)가 픽스처 픽셀로 잡는다.
 
 ## 줄 배치 캐시 (HwpPageLayer)
 
