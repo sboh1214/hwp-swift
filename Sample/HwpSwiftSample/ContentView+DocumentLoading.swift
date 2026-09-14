@@ -2,8 +2,11 @@ import HwpKit
 import HwpKitCore
 import SwiftUI
 
-/// 문서를 여는 경로 넷 (#6·#126) — `fileImporter`·`onOpenURL`·드래그앤드롭·
-/// 최근 문서가 전부 `loadDocument(from:)`으로 모인다.
+/// 문서를 여는 경로 (#6·#126) — `fileImporter`·`onOpenURL`·드래그앤드롭·최근
+/// 문서·시뮬레이터 QA 자동 로드가 전부 `loadDocument(from:)`으로 모인다. 그중
+/// 드롭·최근 문서만 이 파일에 있고, 나머지 셋은 `ContentView`의 루트 body에
+/// 붙은 modifier(`.fileImporter`·`.onOpenURL`·`.task`)가 직접 부른다 — 부착
+/// 지점 자체가 계약이라 옮기지 않았다.
 ///
 /// 관측 가능한 모델 타입으로 뽑지 않고 `ContentView`의 extension으로 나눈
 /// 이유 (#140): 이 경로의 정확성이 **두 세대 카운터**에 걸려 있다.

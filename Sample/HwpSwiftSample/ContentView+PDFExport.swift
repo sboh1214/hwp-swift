@@ -78,6 +78,11 @@ extension ContentView {
         }
     }
 
+    /// 문서를 앱 임시 디렉터리에 PDF로 만든 뒤 저장 대화상자 또는 인쇄로 넘긴다.
+    ///
+    /// 먼저 컨테이너 안에 쓰고 나중에 `fileExporter`로 내보내는 순서인 이유:
+    /// 진행률·취소를 우리가 통제해야 하고 (1,030쪽이면 수 초가 걸린다),
+    /// 사용자가 고른 위치에 직접 쓰면 취소 시 부분 파일을 그 자리에 남긴다.
     func exportPDF(document: HwpDocument, then destination: PDFDestination) {
         exportTask?.cancel()
         discardExportedPDF()

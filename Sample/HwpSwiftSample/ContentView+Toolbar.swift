@@ -8,11 +8,13 @@ import SwiftUI
 /// 독립 View로 뽑지 않고 `ContentView`의 extension으로 나눈 이유 (#140):
 /// 툴바가 만지는 호스트 상태가 여덟 가지(`showPicker`·사이드바 두 값·
 /// `currentPage`·`loadProgress`·`exportProgress`·`zoomScale`·`fitZoom`)에
-/// `@FocusState`와 플랫폼 조건부 인쇄 앵커까지 더해져, 자식 뷰로 만들면
-/// 인자 열셋짜리 이니셜라이저가 생긴다. 그중 `@FocusState`는 **아래로만**
-/// 넘길 수 있고(형제로 갈라지면 Cmd+F가 조용히 죽는다) 인쇄 앵커는
+/// `@FocusState`와 플랫폼 조건부 인쇄 앵커, 문서와 콜백까지 더해져, 자식 뷰로
+/// 만들면 인자가 열 개를 넘는 이니셜라이저가 생긴다. 그중 `@FocusState`는
+/// **아래로만** 넘어간다 — 툴바와 `HwpSearchBar`가 각자 `@FocusState`를 들면
+/// Cmd+F가 조용히 죽으므로, 자식으로 뽑는다면 호스트가 같은
+/// `FocusState<Bool>.Binding`을 양쪽에 내려야 한다. 인쇄 앵커는
 /// `#if !os(macOS)`라 시그니처 자체가 플랫폼마다 갈린다. extension은 소유권도
-/// 뷰 identity도 건드리지 않으므로 그 위험이 통째로 없다.
+/// 뷰 identity도 건드리지 않으므로 그 선택지가 아예 필요 없다.
 extension ContentView {
     func toolbar(document: HwpDocument) -> some View {
         HwpDocumentToolbar {

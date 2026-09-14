@@ -25,8 +25,7 @@ repos:
         pass_filenames: true
 
       # `pass_filenames: false`라 검사 범위는 스테이지된 파일 목록이 아니라
-      # `.swiftlint.yml`의 `included`가 정한다 (`Sources`·`Tests`·`Sample`·
-      # `Package.swift`). 그래서 **어느 `.swift`를 스테이지하든 저장소 전체가
+      # `.swiftlint.yml`의 `included`가 정한다. 그래서 **어느 `.swift`를 스테이지하든 저장소 전체가
       # 검사되고**, 무관한 위치의 error 하나가 이 커밋을 막는다 — `included`에
       # 경로를 더하는 커밋이 그 경로의 error를 함께 없애야 하는 이유다 (#140).
       # 경고는 막지 않는다.
