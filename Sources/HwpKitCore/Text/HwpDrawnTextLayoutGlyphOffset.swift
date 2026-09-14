@@ -44,26 +44,6 @@ extension HwpDrawnTextLayout {
         let offset: CGFloat
     }
 
-    /// 글자 위치(`hwp.glyphBaselineOffset`, 양수 = 위)가 그 범위에서 글리프를 밀어낸
-    /// 최대 몫 — 위·아래를 따로 낸다. 없으면 둘 다 0이다.
-    ///
-    /// 한 rect로 내야 하는 자리(`hyperlinkRegions`의 스팬 rect)에서만 쓴다. 스팬 안에서
-    /// 다시 가로로 쪼개는 것은 `glyphOffsetBands`가 한다.
-    static func glyphOffsetBounds(
-        in attributedString: NSAttributedString, range: NSRange
-    ) -> (above: CGFloat, below: CGFloat) {
-        var above: CGFloat = 0
-        var below: CGFloat = 0
-        attributedString.enumerateAttribute(
-            HwpAttributedStringKey.glyphBaselineOffset, in: range
-        ) { value, _, _ in
-            guard let offset = (value as? NSNumber)?.doubleValue, offset != 0 else { return }
-            above = max(above, CGFloat(offset))
-            below = max(below, CGFloat(-offset))
-        }
-        return (above, below)
-    }
-
     /// 옮겨진 run마다 (줄 원점 기준 가로 범위, 오프셋) — 정밀 커버리지용.
     ///
     /// 가로 범위는 **글리프 위치에서** 낸다: `CTRunGetStringRange` → 문자열 인덱스로

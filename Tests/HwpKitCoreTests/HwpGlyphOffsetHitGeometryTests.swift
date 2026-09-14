@@ -33,37 +33,47 @@ import XCTest
             return NSAttributedString(string: "LINK", attributes: attributes)
         }
 
-        private func region(offset: Double?) -> CGRect {
+        private func regions(offset: Double?) -> [CGRect] {
             HwpDrawnTextLayout.hyperlinkRegions(
                 attributedString: linked(offset: offset),
                 origin: CGPoint(x: 0, y: 100),
                 lineWidth: 200
-            ).first?.rect ?? .null
+            ).map(\.rect)
         }
 
-        /// **아래로 옮긴 글리프만큼 링크 영역이 아래로 넓어진다** — 위는 그대로다
-        /// (평행이동이 아니라 합집합이라, 같은 줄의 오프셋 없는 글자도 계속 덮는다).
+        /// 줄 상자 rect는 **언제나 그대로** 나온다 — 옮긴 몫은 따로 붙는 rect다.
+        private func box(offset: Double?) -> CGRect {
+            regions(offset: offset).first ?? .null
+        }
+
+        /// **아래로 옮긴 글리프만큼 링크 영역이 아래로 넓어진다** — 줄 상자는 그대로고
+        /// 내려간 밴드가 따로 온다.
         func testDownwardGlyphOffsetGrowsHyperlinkRegionDownward() {
-            let plain = region(offset: nil)
-            let lowered = region(offset: -3)
+            let plain = box(offset: nil)
+            let lowered = regions(offset: -3)
 
             expect(plain.isNull) == false
-            expect(Double(lowered.minY)).to(beCloseTo(Double(plain.minY), within: 0.0001))
-            expect(Double(lowered.maxY - plain.maxY)).to(beCloseTo(3.0, within: 0.0001))
+            expect(lowered.first) == plain
+            expect(Double((lowered.map(\.maxY).max() ?? 0) - plain.maxY))
+                .to(beCloseTo(3.0, within: 0.0001))
+            expect(Double(lowered.map(\.minY).min() ?? 0))
+                .to(beCloseTo(Double(plain.minY), within: 0.0001))
         }
 
         /// 위로 옮기면 반대쪽이 넓어진다.
         func testUpwardGlyphOffsetGrowsHyperlinkRegionUpward() {
-            let plain = region(offset: nil)
-            let raised = region(offset: 3)
+            let plain = box(offset: nil)
+            let raised = regions(offset: 3)
 
-            expect(Double(plain.minY - raised.minY)).to(beCloseTo(3.0, within: 0.0001))
-            expect(Double(raised.maxY)).to(beCloseTo(Double(plain.maxY), within: 0.0001))
+            expect(Double(plain.minY - (raised.map(\.minY).min() ?? 0)))
+                .to(beCloseTo(3.0, within: 0.0001))
+            expect(Double(raised.map(\.maxY).max() ?? 0))
+                .to(beCloseTo(Double(plain.maxY), within: 0.0001))
         }
 
-        /// 한 줄에 오프셋이 다른 run이 섞이면 **양쪽 다** 덮는다 — 밴드를 통째로 옮기면
-        /// 오프셋 없는 run의 잉크가 오히려 밖으로 나간다.
-        func testMixedOffsetsWidenBothEdges() {
+        /// 한 줄에 오프셋이 다른 run이 섞이면 **양쪽 다** 덮되, 각 밴드는 **자기 run의
+        /// 가로 범위**만 갖는다 (#197 리뷰 3차).
+        func testMixedOffsetsSplitPerRun() {
             let mixed = NSMutableAttributedString()
             let font = CTFontCreateWithName("Helvetica" as CFString, 10, nil)
             for (text, offset) in [("UP", 4.0), ("MID", 0.0), ("DOWN", -2.0)] {
@@ -77,13 +87,57 @@ import XCTest
                 }
                 mixed.append(NSAttributedString(string: text, attributes: attributes))
             }
-            let rect = HwpDrawnTextLayout.hyperlinkRegions(
+            let rects = HwpDrawnTextLayout.hyperlinkRegions(
                 attributedString: mixed, origin: CGPoint(x: 0, y: 100), lineWidth: 200
-            ).first?.rect ?? .null
-            let plain = region(offset: nil)
+            ).map(\.rect)
+            let plain = box(offset: nil)
 
-            expect(Double(plain.minY - rect.minY)).to(beCloseTo(4.0, within: 0.0001))
-            expect(Double(rect.maxY - plain.maxY)).to(beCloseTo(2.0, within: 0.0001))
+            // 줄 상자 + 위로 4pt 밴드 + 아래로 2pt 밴드.
+            expect(rects.count) == 3
+            expect(Double(plain.minY - (rects.map(\.minY).min() ?? 0)))
+                .to(beCloseTo(4.0, within: 0.0001))
+            expect(Double((rects.map(\.maxY).max() ?? 0) - plain.maxY))
+                .to(beCloseTo(2.0, within: 0.0001))
+            // 옮긴 두 밴드는 줄 상자보다 **좁다** — 'MID'가 든 가로 범위를 안 가져간다.
+            let lineBox = rects[0]
+            for band in rects.dropFirst() {
+                expect(Double(band.width)).to(beLessThan(Double(lineBox.width)))
+            }
+        }
+
+        /// **링크 영역도 안 옮겨진 run 위의 빈 자리를 가져가지 않는다** (#197 리뷰 3차).
+        ///
+        /// 같은 URL의 'ABBBBBBBBBB'에서 A만 10pt 올리면, 종전에는 스팬 전체 폭에 최대
+        /// 오프셋이 걸려 B **위**의 빈 자리까지 이 링크가 가져갔다 — 뒤에 있는 링크가
+        /// 그 자리에서 졌다.
+        func testRaisedRunLinkAreaKeepsItsOwnColumnRange() {
+            let font = CTFontCreateWithName("Helvetica" as CFString, 10, nil)
+            let string = NSMutableAttributedString(string: "A", attributes: [
+                kCTFontAttributeName as NSAttributedString.Key: font,
+                HwpAttributedStringKey.hyperlink: Self.url,
+                HwpAttributedStringKey.glyphBaselineOffset: NSNumber(value: 10),
+            ])
+            string.append(NSAttributedString(string: "BBBBBBBBBB", attributes: [
+                kCTFontAttributeName as NSAttributedString.Key: font,
+                HwpAttributedStringKey.hyperlink: Self.url,
+            ]))
+            let rects = HwpDrawnTextLayout.hyperlinkRegions(
+                attributedString: string, origin: CGPoint(x: 0, y: 100), lineWidth: 200
+            ).map(\.rect)
+            // 기준점은 **오프셋 없는 같은 문자열**의 줄 상자에서 낸다 — 결과에서 끌어오면
+            // 구현이 rect를 부풀렸을 때 기준까지 함께 밀려 비교가 무의미해진다.
+            let plainString = NSAttributedString(string: "ABBBBBBBBBB", attributes: [
+                kCTFontAttributeName as NSAttributedString.Key: font,
+                HwpAttributedStringKey.hyperlink: Self.url,
+            ])
+            let lineBox = HwpDrawnTextLayout.hyperlinkRegions(
+                attributedString: plainString, origin: CGPoint(x: 0, y: 100), lineWidth: 200
+            ).first?.rect ?? .null
+            let aboveA = CGPoint(x: lineBox.minX + 1, y: lineBox.minY - 5)
+            let aboveB = CGPoint(x: lineBox.maxX - 2, y: lineBox.minY - 5)
+
+            expect(rects.contains { $0.contains(aboveA) }) == true
+            expect(rects.contains { $0.contains(aboveB) }) == false
         }
 
         /// **옮겨진 run의 칠 영역은 그 run의 가로 범위만 갖는다** (#197 리뷰 2차).

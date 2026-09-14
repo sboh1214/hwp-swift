@@ -300,20 +300,27 @@ public enum HwpDrawnTextLayout {
                 let minX = min(lowerX, upperX)
                 let maxX = max(lowerX, upperX)
                 guard maxX > minX else { continue }
-                // 글자 위치로 옮겨진 글리프까지 덮는다 — 방출(`HwpPaintListBuilder`)과
-                // 히트가 같은 rect를 쓰므로 밑줄 영역과 눌리는 영역이 함께 따라온다.
-                // 스팬마다 걷는 것은 한 줄에 오프셋이 다른 run이 섞이기 때문이다.
-                let offsets = glyphOffsetBounds(
-                    in: attributedString, range: NSRange(location: lower, length: upper - lower)
+                let box = CGRect(
+                    x: minX, y: drawn.baselineOrigin.y - drawn.ascent,
+                    width: maxX - minX, height: drawn.ascent + drawn.descent
                 )
-                regions.append((
-                    rect: CGRect(
-                        x: minX, y: drawn.baselineOrigin.y - drawn.ascent - offsets.above,
-                        width: maxX - minX,
-                        height: drawn.ascent + drawn.descent + offsets.above + offsets.below
-                    ),
-                    url: url
-                ))
+                regions.append((rect: box, url: url))
+                // 글자 위치로 옮겨진 글리프는 **그 run의 가로 범위만** 가진 rect를 따로
+                // 낸다 (#197 리뷰 3차). 스팬 전체 폭에 최대 오프셋을 걸면 안 옮겨진 run
+                // 위·아래의 빈 자리까지 이 링크가 가져가, 뒤에 있는 링크가 진다
+                // (`paintedRects`와 같은 R54 정밀 커버리지 규약).
+                for band in glyphOffsetBands(of: drawn.line) {
+                    let bandMinX = max(minX, drawn.baselineOrigin.x + band.minX)
+                    let bandMaxX = min(maxX, drawn.baselineOrigin.x + band.maxX)
+                    guard bandMaxX > bandMinX else { continue }
+                    regions.append((
+                        rect: CGRect(
+                            x: bandMinX, y: box.minY - band.offset,
+                            width: bandMaxX - bandMinX, height: box.height
+                        ),
+                        url: url
+                    ))
+                }
             }
         }
         return regions
