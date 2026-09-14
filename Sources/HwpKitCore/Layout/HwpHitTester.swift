@@ -223,18 +223,33 @@ public struct HwpHitTester {
     ///
     /// 게이트는 **영역이기도 하다** (R63): 방출은 이 폴백을 `block.frame`으로만 내는데
     /// 컨테이너 자격은 넘쳐 그린 자손까지 넓으므로 (R62), 그 띠에서 폴백하면 방출된 적
-    /// 없는 URL이 열린다. `.text`의 slight-overflow 띠는 반대다 — 거기 넘친 것은 다른
-    /// 개체가 아니라 **블록 자신의 글자**라 그 링크가 열려야 한다 (#4).
+    /// 없는 URL이 열린다. `.text`의 넘침 띠는 반대다 — 거기 넘친 것은 다른 개체가 아니라
+    /// **블록 자신의 글자**라 그 링크가 열려야 한다 (#4).
+    ///
+    /// 그래서 `.text`는 프레임 **밖**에서 "정말 그 글자가 거기 칠해졌는가"를 확인하고
+    /// 폴백한다 (#197 리뷰). 자격 영역은 가로 넘침뿐 아니라 세로로도 넓으므로
+    /// (글자 위치가 옮긴 글리프 + 캐시보다 큰 대체 폰트 여유, `hitEligibleFrame`),
+    /// 위치를 안 보면 **빈 띠에서 이웃 블록의 링크가 열린다** — 실측: 10pt 링크 블록을
+    /// y=100·116에 두면 위쪽 글자 위 y=107 탭이 아래쪽 URL을 열었다. 프레임 **안**은
+    /// 종전대로 조판 없이 통과시킨다 (R55의 탭당 framesetting 방지).
     private func blockLevelURL(for block: AnyHwpBlock, at point: CGPoint) -> String? {
         let hasInnerLink: Bool
         switch block.payload {
         case let .footnote(footnote): hasInnerLink = footnote.hasHyperlink
         case let .table(table): hasInnerLink = table.hasHyperlink
         case let .textbox(textbox): hasInnerLink = textbox.hasHyperlink
-        default: return block.hyperlinkURL
+        default: return textBlockLevelURL(for: block, at: point)
         }
         guard block.frame.contains(point) else { return nil }
         return hasInnerLink ? nil : block.hyperlinkURL
+    }
+
+    /// 컨테이너가 아닌 블록의 폴백 — 프레임 밖이면 실제 칠을 확인한다.
+    private func textBlockLevelURL(for block: AnyHwpBlock, at point: CGPoint) -> String? {
+        guard let url = block.hyperlinkURL else { return nil }
+        guard !block.frame.contains(point) else { return url }
+        guard let attributed = block.attributedString else { return nil }
+        return textPaints(attributed, in: block.frame, at: point) ? url : nil
     }
 
     private func tableGridPosition(block: AnyHwpBlock, point: CGPoint) -> (row: Int, col: Int) {

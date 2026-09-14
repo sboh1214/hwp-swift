@@ -8,32 +8,47 @@ import Foundation
 // CT가 대신 rect를 부풀려 주지 않는다 — 옮겨진 잉크를 덮어야 하는 쪽이 직접 걷는다.
 
 public extension HwpDrawnLine {
-    /// 잉크가 실제로 닿는 범위 — 줄 상자(`selectionRect`) **∪** 글자 위치로 옮겨진
-    /// 글리프 밴드 (top-down 페이지 좌표).
+    /// 잉크가 실제로 닿는 범위 — 줄 상자(`selectionRect`) **+ 옮겨진 run마다 그 run의
+    /// 가로 범위만** 가진 밴드 (top-down 페이지 좌표).
     ///
     /// "이 지점에 글자가 칠해졌는가"(claim)와 "링크를 눌렀는가"(히트)는 **옮겨진
     /// 글리프**를 따라야 한다 — 안 그러면 보이는 글자를 눌러도 링크가 안 열린다
     /// (실측: Helvetica 10pt 링크에 글자 위치 30이면 잉크 하단 3.000pt가 줄 상자 밖이라
     /// 하단 클릭이 `.text`로 떨어지고, 위치 100에서는 겹침이 0%가 된다).
     ///
-    /// **평행이동이 아니라 합집합**이다: 한 줄에 오프셋이 다른 run이 섞이므로 밴드를
-    /// 통째로 옮기면 오프셋 없는 이웃 run의 잉크가 오히려 밖으로 나간다.
-    var paintedRect: CGRect {
-        let offsets = HwpDrawnTextLayout.glyphOffsetBounds(of: line)
-        guard offsets.above > 0 || offsets.below > 0 else { return selectionRect }
-        var rect = selectionRect
-        rect.origin.y -= offsets.above
-        rect.size.height += offsets.above + offsets.below
-        return rect
+    /// **하나의 rect로 합치지 않는다** (#197 리뷰 2차): 줄 전체 폭에 최대 오프셋을 걸면
+    /// 안 옮겨진 run 아래의 **빈 공간까지 칠한 것으로 claim**해, 그 자리의 탭이 뒤 층의
+    /// 보이는 링크를 막는다 ('ABBBBBBBBBB'에서 A만 10pt 내리면 B 아래 빈 띠가 그렇다).
+    /// claim은 정밀 커버리지여야 한다는 규약(R54) 그대로다.
+    var paintedRects: [CGRect] {
+        let box = selectionRect
+        var rects = [box]
+        for band in HwpDrawnTextLayout.glyphOffsetBands(of: line) {
+            let x = baselineOrigin.x + band.minX
+            let width = band.maxX - band.minX
+            guard width > 0 else { continue }
+            rects.append(CGRect(
+                x: x, y: box.minY - band.offset, width: width, height: box.height
+            ))
+        }
+        return rects
     }
 }
 
 extension HwpDrawnTextLayout {
+    /// 옮겨진 run 하나의 가로 범위(줄 원점 기준)와 그 오프셋.
+    struct GlyphOffsetBand {
+        let minX: CGFloat
+        let maxX: CGFloat
+        /// 렌더러 규약 그대로 **양수 = 위**.
+        let offset: CGFloat
+    }
+
     /// 글자 위치(`hwp.glyphBaselineOffset`, 양수 = 위)가 그 범위에서 글리프를 밀어낸
     /// 최대 몫 — 위·아래를 따로 낸다. 없으면 둘 다 0이다.
     ///
-    /// 줄 상자를 **넓히는** 데만 쓴다 (`paintedRect`·`hyperlinkRegions`). 줄 상자 자체는
-    /// 한글이 글자 위치로 키우지 않으므로 그대로 둔다 (`HwpTextRunBuilder`의 실측).
+    /// 한 rect로 내야 하는 자리(`hyperlinkRegions`의 스팬 rect)에서만 쓴다. 스팬 안에서
+    /// 다시 가로로 쪼개는 것은 `glyphOffsetBands`가 한다.
     static func glyphOffsetBounds(
         in attributedString: NSAttributedString, range: NSRange
     ) -> (above: CGFloat, below: CGFloat) {
@@ -49,22 +64,34 @@ extension HwpDrawnTextLayout {
         return (above, below)
     }
 
-    /// 같은 값을 CTLine의 run 속성에서 직접 걷는다 — 원본 문자열이 없는 자리
-    /// (`HwpDrawnLine.paintedRect`)용이고, 재조판된 부분 복사본에서도 그 줄이 실제로
-    /// 그리는 run만 본다.
-    static func glyphOffsetBounds(of line: CTLine) -> (above: CGFloat, below: CGFloat) {
-        guard let runs = CTLineGetGlyphRuns(line) as? [CTRun] else { return (0, 0) }
-        var above: CGFloat = 0
-        var below: CGFloat = 0
+    /// 옮겨진 run마다 (줄 원점 기준 가로 범위, 오프셋) — 정밀 커버리지용.
+    ///
+    /// 가로 범위는 **글리프 위치에서** 낸다: `CTRunGetStringRange` → 문자열 인덱스로
+    /// 되짚으면 재조판된 부분 복사본에서 범위가 어긋나고, RTL 줄은 논리 순서와 x 순서가
+    /// 반대라 시작·끝을 뒤집는다. 위치의 최소·최대에 run 폭을 더해 **상위집합**으로 낸다.
+    static func glyphOffsetBands(of line: CTLine) -> [GlyphOffsetBand] {
+        guard let runs = CTLineGetGlyphRuns(line) as? [CTRun] else { return [] }
+        var bands: [GlyphOffsetBand] = []
         for run in runs {
             let attributes = CTRunGetAttributes(run) as? [NSAttributedString.Key: Any]
             guard let offset =
                 (attributes?[HwpAttributedStringKey.glyphBaselineOffset] as? NSNumber)?.doubleValue,
                 offset != 0
             else { continue }
-            above = max(above, CGFloat(offset))
-            below = max(below, CGFloat(-offset))
+            let count = CTRunGetGlyphCount(run)
+            guard count > 0 else { continue }
+            var positions = [CGPoint](repeating: .zero, count: count)
+            CTRunGetPositions(run, CFRange(location: 0, length: 0), &positions)
+            guard let minX = positions.map(\.x).min(), let maxX = positions.map(\.x).max()
+            else { continue }
+            // 마지막 글리프의 폭은 위치에 안 들어 있다 — run 폭을 더해 오른쪽 끝을 덮는다.
+            let width = CGFloat(CTRunGetTypographicBounds(
+                run, CFRange(location: 0, length: 0), nil, nil, nil
+            ))
+            bands.append(GlyphOffsetBand(
+                minX: minX, maxX: max(maxX, minX + width), offset: CGFloat(offset)
+            ))
         }
-        return (above, below)
+        return bands
     }
 }
