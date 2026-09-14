@@ -528,8 +528,15 @@ extension HwpTextRunBuilder {
             ),
         ]
         if location != 0 {
-            // CTFramesetter는 kCTBaselineOffset을 무시한다 — 렌더러가 직접
-            // 시프트한다 (CharShape '글자위치' 실물: 양수 값이 아래로 내려감)
+            // CharShape '글자위치' 실물: 양수 값이 아래로 내려간다. 렌더러가 이 키로
+            // 글리프를 직접 시프트한다.
+            //
+            // **이 키를 둔 근거였던 "CTFramesetter는 kCTBaselineOffset을 무시한다"는
+            // macOS 27.0에서 거짓이다** (2026-09-14 실측: CT가 글리프를 옮기고 줄 슬롯도
+            // 키운다 — `HwpDrawnTextLayoutMetrics`의 이월 판정이 그 실측 위에 있다).
+            // 그래서 지금은 CT의 시프트와 렌더러의 시프트가 상쇄돼 글자 위치가 화면에
+            // 반영되지 않는다 (래스터 실측: 오프셋 +4 & 원점 −4의 잉크 행이 무오프셋과
+            // 완전히 같다). 어느 쪽을 없앨지는 한글 실물 대조가 필요해 별건으로 둔다.
             attributes[HwpAttributedStringKey.glyphBaselineOffset] = NSNumber(
                 value: Double(-location * size / 100)
             )

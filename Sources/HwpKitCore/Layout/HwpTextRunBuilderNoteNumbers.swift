@@ -132,8 +132,10 @@ extension HwpTextRunBuilder {
                 nil
             )
         }
-        // CTFramesetter는 kCTBaselineOffset을 무시한다 — 렌더가 반영하는
-        // 커스텀 키 (drawRun 글리프 세로 이동)로 싣는다
+        // 첨자 올림은 렌더가 반영하는 커스텀 키 (drawRun 글리프 세로 이동)로 싣는다 —
+        // 도입 근거였던 "CTFramesetter는 kCTBaselineOffset을 무시한다"는 macOS 27.0에서
+        // 거짓이다 (`HwpTextRunBuilder`의 같은 자리 주석). 다만 여기서 더하는 것은 커스텀
+        // 키뿐이고 CT 키는 건드리지 않으므로, 첨자 올림 몫 자체는 상쇄되지 않는다.
         let baselineKey = HwpAttributedStringKey.glyphBaselineOffset
         let existing = (attributes[baselineKey] as? NSNumber)?.doubleValue ?? 0
         attributes[baselineKey] = NSNumber(
