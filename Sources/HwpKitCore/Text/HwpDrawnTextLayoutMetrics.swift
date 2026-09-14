@@ -35,6 +35,13 @@ extension HwpDrawnTextLayout {
         /// **다음** 줄이 26.0이 된다). 그러므로 재조판된 줄이 leading이 다른 run을 얻어도 그
         /// 줄 자신의 배치 ascent는 그대로고 이월 값은 유효하다. 다음 자리로 넘어가는 몫은
         /// `ResumedSlot.inflatingLeading`이 가른다.
+        ///
+        /// **글자 위치(`kCTBaselineOffset`)는 본다** — 그 몫이 `maxAscent`·`maxDescent`에
+        /// 이미 접혀 있다 (`lineMetrics`). leading과 달리 이것은 **그 줄 자신의** 슬롯을
+        /// 키우므로, 오프셋이 든 줄과 없는 줄을 같다고 보면 부풀려진 ascent가 다음 자리로
+        /// 넘어간다 (실측: Helvetica 10pt·하한 12pt 문단의 11번째 글자만 +2pt로 두면 예산
+        /// 12에서 뒤 줄 간격이 12.000 → 14.300이 되고 마지막 줄이 전체 조판보다 16.099pt
+        /// 내려갔다. 그중 14.000pt가 이 몫이고 나머지는 아래 `floor` 잔차다).
         func matchesSlot(of other: LineMetrics) -> Bool {
             abs(maxAscent - other.maxAscent) < 0.001
                 && abs(maxDescent - other.maxDescent) < 0.001
@@ -66,8 +73,14 @@ extension HwpDrawnTextLayout {
                 continue
             }
             guard let font = ctFont(in: attributes) else { continue }
-            metrics.maxAscent = max(metrics.maxAscent, CTFontGetAscent(font))
-            metrics.maxDescent = max(metrics.maxDescent, CTFontGetDescent(font))
+            // 글자 위치(`kCTBaselineOffset`)를 글꼴 지표에 접어 넣는다 — CT가 줄 지표를
+            // 그렇게 합성한다 (2026-09-14 실측 7/7: 줄 ascent = max(글꼴 ascent + 오프셋),
+            // 줄 descent = max(글꼴 descent − 오프셋); 양수는 위로, 음수는 아래로 슬롯을
+            // 키운다). run 단위 `CTRunGetTypographicBounds`에는 이 몫이 **없으므로**
+            // 여기서 직접 더하지 않으면 오프셋이 든 줄과 없는 줄의 지표가 같아진다.
+            let offset = baselineOffset(in: attributes)
+            metrics.maxAscent = max(metrics.maxAscent, CTFontGetAscent(font) + offset)
+            metrics.maxDescent = max(metrics.maxDescent, CTFontGetDescent(font) - offset)
             metrics.maxLeading = max(metrics.maxLeading, CTFontGetLeading(font))
         }
         return metrics
@@ -82,6 +95,17 @@ extension HwpDrawnTextLayout {
             return CGFloat(number.doubleValue)
         }
         return ctFont(in: attributes).map(CTFontGetSize)
+    }
+
+    /// run의 글자 위치 (표 33 location) — CT는 이 몫을 **줄** 지표에만 싣는다.
+    ///
+    /// 개체 run은 보지 않는다: `delegateAscent`는 개체가 예약한 높이이고 못박힌 청크의
+    /// 배치 ascent로도 쓰여, 여기에 오프셋을 더하면 판정이 아니라 기하가 바뀐다.
+    private static func baselineOffset(in attributes: [NSAttributedString.Key: Any]?) -> CGFloat {
+        guard let number = attributes?[kCTBaselineOffsetAttributeName as NSAttributedString.Key]
+            as? NSNumber
+        else { return 0 }
+        return CGFloat(number.doubleValue)
     }
 
     private static func ctFont(in attributes: [NSAttributedString.Key: Any]?) -> CTFont? {

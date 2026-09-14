@@ -581,6 +581,20 @@ v. Board of Regents…`)을 핀했다.
   (지금은 예산 16 이상 1.0pt 안, 최대 4.4004pt). 넘길 몫은 한 줄 청크에서 이 청크 앞 줄의
   것이라 들어온 이월이 실어 온다 (`predecessorLeading`).
 
+  **글자 위치(`kCTBaselineOffset`)는 반대로 그 줄 자신의 슬롯을 키우므로 지표에 접는다**
+  (PR #197 리뷰). 2026-09-14 실측(macOS 27.0): CT는 이 속성을 무시하지 않는다 — 글리프를
+  실제로 옮기고(`CTRunGetPositions`의 y), 줄 지표를 `ascent = max(글꼴 ascent + 오프셋)`·
+  `descent = max(글꼴 descent − 오프셋)`으로 합성하며(7/7 조합 일치), 프레임 높이 임계
+  이분 탐색으로 잰 **슬롯 자체**가 12.2996 → 14.2996으로 커진다. 그런데 run 단위
+  `CTRunGetTypographicBounds`에는 그 몫이 없어, `lineMetrics`가 글꼴 지표만 걷는 동안
+  오프셋이 든 줄과 없는 줄이 `boxHeight 10·maxAscent 7.7002·maxDescent 2.2998`로 **완전히
+  같게** 나왔다 — `matchesSlot`이 서로 다른 슬롯을 같다고 판정해 부풀려진 ascent가 오프셋
+  없는 다음 줄에 쓰였다(Helvetica 10pt·하한 12pt·11번째 글자만 +2pt: 예산 12에서 뒤 줄
+  간격 12.000 → 14.300, 마지막 줄 **16.099pt** 아래. 그중 14.000pt가 이 몫이고 2.099pt는
+  아래 `floor` 잔차다). 지금은 오프셋을 `maxAscent`·`maxDescent`에 접어 판정이 갈린다 —
+  **`boxHeight`에는 접지 않는다**(앵커는 상대크기 전 기본 크기라 오프셋과 무관하다).
+  `HwpLineBoxCarryoverTests`가 위치 6종 × 부호 2종 × 예산 11종을 잠근다.
+
   **남는 잔차 (이 축)**: 이월을 **버리면** 그 프레임의 `floor`를 쓰는데 그 값도 앞 줄이 넘긴
   몫을 모른다 — 줄마다 청크가 갈리는 아주 작은 예산(12·14)에서 4.4004pt가 남는다. CT가 넘기는
   양은 leading 값 자체가 아니라 양자화된 몫이라 (실측: 보고 leading 0.7282에 실제 부풀림 2.0)

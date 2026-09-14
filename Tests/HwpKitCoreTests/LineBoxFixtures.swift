@@ -365,4 +365,33 @@ import XCTest
             return attributes
         }
     }
+
+    /// 글자 위치(`kCTBaselineOffset`) 입력 — `extension`에 두는 이유는 `LineBoxFixtures`
+    /// 본문이 이미 `type_body_length` 경고선(300줄) 가까이라서다. extension 본문은 그 규칙이
+    /// 세지 않는다.
+    extension LineBoxFixtures {
+        /// 지정 위치의 글자만 **글자 위치(`kCTBaselineOffset`)**가 실린 하한 12pt 문단 —
+        /// 글꼴 지표는 두 run이 같지만 CT는 **그 줄 자신의** 슬롯을 |오프셋|만큼 키운다
+        /// (leading과 반대다). 이월 판정이 그 차이를 보지 못하면 부풀려진 ascent가 다음
+        /// 자리로 넘어간다.
+        static func paragraphWithBaselineOffsetRun(
+            at position: Int, offset: CGFloat
+        ) -> NSAttributedString {
+            let style = paragraphStyle(specs: [(.minimumLineHeight, 12)])
+            let body = String(repeating: "a", count: 100)
+            var base = attributes(size: 10, style: style)
+            let out = NSMutableAttributedString(
+                string: String(body.prefix(position)), attributes: base
+            )
+            base[kCTBaselineOffsetAttributeName as NSAttributedString.Key] =
+                NSNumber(value: Double(offset))
+            out.append(NSAttributedString(string: String(body.dropFirst(position).prefix(1)),
+                                          attributes: base))
+            base[kCTBaselineOffsetAttributeName as NSAttributedString.Key] = nil
+            out.append(NSAttributedString(
+                string: String(body.dropFirst(position + 1)), attributes: base
+            ))
+            return out
+        }
+    }
 #endif
