@@ -226,6 +226,12 @@ xcodebuild -project HwpSwiftSample.xcodeproj \
 
 두 명령 모두 `** BUILD SUCCEEDED **` 로 종료되어야 정상.
 
+샘플은 **SwiftLint 대상이기도 하다** (#140) — `.swiftlint.yml`의 `included`에
+`Sample`이 들어 있어 저장소 루트에서 인자 없이 `swiftlint`만 쳐도 함께 검사된다.
+경고는 막지 않지만 **오류(error)는 `lint` 잡과 pre-commit `swift-lint` 훅을 둘 다**
+막는다 (훅은 `pass_filenames: false`라 어떤 `.swift`를 스테이지하든 같은 범위를
+본다).
+
 ## 폴더 구조
 
 ```
@@ -234,7 +240,12 @@ Sample/
 ├── project.yml                    # xcodegen spec (편집 후 regen)
 ├── HwpSwiftSample/
 │   ├── HwpSwiftSampleApp.swift    # @main 진입점
-│   ├── ContentView.swift          # .fileImporter + HwpDocumentView + 검색·내보내기·사이드바 배선
+│   ├── ContentView.swift          # 상태·루트 body·문서 영역 (나머지는 아래 다섯 (#140))
+│   ├── ContentView+Toolbar.swift  # 툴바 행 + 사이드바 토글 버튼 (#140)
+│   ├── ContentView+PDFExport.swift    # PDF 내보내기·인쇄 상태 기계 (#74·#126)
+│   ├── ContentView+DocumentLoading.swift  # 문서 로딩·드롭·최근 문서 열기 (#6·#126)
+│   ├── EmptyState.swift           # 문서를 열기 전 화면 + 최근 문서 목록 (#126)
+│   ├── DocumentSidebar.swift      # 사이드바 축(SidebarMode)과 그 갈래 (#76·#77)
 │   ├── RecentDocuments.swift      # 보안 범위 북마크 기반 최근 문서 저장소 (#126)
 │   ├── DropOpenSupport.swift      # 드롭 provider → .hwp/.hwpx URL (플랫폼별 경로) (#126)
 │   ├── OutlineSidebar.swift       # metadata.outline만으로 만든 개요·책갈피 목록 (#77)
@@ -244,6 +255,14 @@ Sample/
 │   └── HwpSwiftSample.entitlements
 └── README.md
 ```
+
+`ContentView`를 가른 기준은 하나다 (#140): **인자 몇 개로 그려지는 UI**는
+`OutlineSidebar`·`ThumbnailSidebar`처럼 독립 `View`로 뽑고(`EmptyState`·
+`DocumentSidebar`), **여러 `@State`를 함께 만지는 상태 기계**는 `extension
+ContentView`로만 나눈다(`+Toolbar`·`+PDFExport`·`+DocumentLoading`). 후자를 자식
+뷰나 관측 객체로 옮기면 `@State` 소유권·뷰 identity·SwiftUI 갱신 주기가 함께
+바뀌는데, 이 앱의 규약(모달 겹침 회피, 세대 가드, `@FocusState` 공유, 축소판
+렌더러 보존)이 전부 거기에 걸려 있다 — 각 파일 머리 주석이 그 사유를 적는다.
 
 `project.yml`의 `packages.hwp-swift.path: ..` 가 부모 저장소 루트(`Package.swift`가 있는 위치)를 가리킴. 상대 경로이므로 저장소를 어디로 옮겨도 그대로 동작.
 
