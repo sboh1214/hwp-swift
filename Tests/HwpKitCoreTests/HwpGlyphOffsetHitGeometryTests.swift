@@ -259,6 +259,105 @@ import XCTest
         }
     }
 
+    /// **양방향 줄에서 밴드는 자기 스팬의 run 것만 가져간다** (#197 리뷰 4차).
+    ///
+    /// 스팬 rect는 양끝 오프셋을 min/max로 정규화해 내는데, 양방향 줄에서는 그 상자가
+    /// **다른 링크의 글자를 덮는다** (실측 `abc אבג`에 `abc א`·`בג` 두 링크: 앞 스팬
+    /// 상자가 0…28.313인데 뒤 스팬 글자가 18.903…28.313, 앞 스팬 자기 글자 א는 상자
+    /// 밖 28.313…33.943). 그래서 밴드를 가로로만 자르면 두 가지가 한꺼번에 어긋난다 —
+    /// 남의 옮겨진 잉크를 가져가고(뒤 링크 글자를 눌러도 앞 URL이 열린다), 자기 옮겨진
+    /// 잉크는 잘려 나간다(א를 눌러도 아무것도 안 열린다).
+    final class HwpBidiGlyphOffsetBandTests: XCTestCase {
+        private static let urlA = "https://a.example"
+        private static let urlB = "https://b.example"
+        private static let origin = CGPoint(x: 0, y: 100)
+        private static let width: CGFloat = 300
+
+        /// `abc א`(URL A) + `בג`(URL B). 히브리 글리프는 CT 폴백에 맡긴다 — 어떤 폰트가
+        /// 붙든 논리 순서와 시각 순서가 갈리는 구조는 같다.
+        private func mixed(firstOffset: Double, secondOffset: Double) -> NSAttributedString {
+            let font = CTFontCreateWithName("Helvetica" as CFString, 10, nil)
+            var first: [NSAttributedString.Key: Any] = [
+                kCTFontAttributeName as NSAttributedString.Key: font,
+                HwpAttributedStringKey.hyperlink: Self.urlA,
+            ]
+            if firstOffset != 0 {
+                first[HwpAttributedStringKey.glyphBaselineOffset] = NSNumber(value: firstOffset)
+            }
+            var second: [NSAttributedString.Key: Any] = [
+                kCTFontAttributeName as NSAttributedString.Key: font,
+                HwpAttributedStringKey.hyperlink: Self.urlB,
+            ]
+            if secondOffset != 0 {
+                second[HwpAttributedStringKey.glyphBaselineOffset] = NSNumber(value: secondOffset)
+            }
+            let string = NSMutableAttributedString(string: "abc \u{05D0}", attributes: first)
+            string.append(NSAttributedString(string: "\u{05D1}\u{05D2}", attributes: second))
+            return string
+        }
+
+        private func regions(_ string: NSAttributedString) -> [(rect: CGRect, url: String)] {
+            HwpDrawnTextLayout.hyperlinkRegions(
+                attributedString: string, origin: Self.origin, lineWidth: Self.width
+            )
+        }
+
+        private func lineBox(_ string: NSAttributedString) -> CGRect {
+            HwpDrawnTextLayout.lines(
+                attributedString: string, origin: Self.origin, lineWidth: Self.width
+            ).first?.selectionRect ?? .null
+        }
+
+        /// 옮겨진 잉크가 **실제로 있는 자리** — claim 커버리지가 오라클이다 (URL과 무관하게
+        /// 줄 상자 위로 올라간 밴드만 남긴다).
+        private func raisedInk(_ string: NSAttributedString, above box: CGRect) -> [CGRect] {
+            HwpDrawnTextLayout.textLineRegions(
+                attributedString: string, origin: Self.origin, lineWidth: Self.width
+            ).filter { $0.minY < box.minY - 0.001 }
+        }
+
+        /// 히트 규칙 그대로 — `regions.first { contains }` (`HwpHitTester`).
+        private func hit(_ regions: [(rect: CGRect, url: String)], _ point: CGPoint) -> String? {
+            regions.first { $0.rect.contains(point) }?.url
+        }
+
+        /// **남의 옮겨진 run을 가져가지 않는다** — 뒤 링크만 올리면 앞 링크에는 올라간
+        /// rect가 하나도 없어야 하고, 올라간 잉크를 누르면 뒤 URL이 열려야 한다.
+        func testRaisedRunOfAnotherLinkDoesNotJoinThisSpan() {
+            let string = mixed(firstOffset: 0, secondOffset: 10)
+            let box = lineBox(string)
+            let regions = regions(string)
+            let ink = raisedInk(string, above: box)
+
+            expect(ink.isEmpty) == false
+            // 앞 스팬에는 옮겨진 run이 하나도 없다 — 올라간 rect가 있다면 남의 것이다.
+            expect(regions.contains { $0.url == Self.urlA && $0.rect.minY < box.minY - 0.001 })
+                == false
+            for rect in ink {
+                expect(self.hit(regions, CGPoint(x: rect.midX, y: rect.minY + 1))) == Self.urlB
+            }
+        }
+
+        /// **자기 옮겨진 run은 스팬 상자 밖이어도 살린다** — 양방향이라 앞 스팬의 א가
+        /// 그 스팬 rect 오른쪽 밖에 있는데, 가로로 자르면 그 글자가 히트 불가가 된다.
+        func testOwnRaisedRunOutsideTheSpanBoxStaysHittable() {
+            let string = mixed(firstOffset: 10, secondOffset: 0)
+            let box = lineBox(string)
+            let regions = regions(string)
+            let ink = raisedInk(string, above: box)
+            let spanBox = regions.first { $0.url == Self.urlA }?.rect ?? .null
+
+            expect(ink.isEmpty) == false
+            // 이 줄이 정말 양방향인지부터 확인한다 — 앞 스팬의 잉크 일부가 그 스팬 rect
+            // 오른쪽 밖에 있다 (아니면 이 테스트가 아무것도 지키지 않는다).
+            expect(ink.contains { $0.minX >= spanBox.maxX - 0.001 }) == true
+            // 올라간 잉크는 **전부** 앞 URL로 열린다 (뒤 스팬은 안 옮겼다).
+            for rect in ink {
+                expect(self.hit(regions, CGPoint(x: rect.midX, y: rect.minY + 1))) == Self.urlA
+            }
+        }
+    }
+
     /// 넓힌 자격 영역에서 **블록 링크 폴백이 위치를 확인해야** 한다 (#197 리뷰 2차).
     ///
     /// `hitEligibleFrame`의 `.text`가 세로로도 넓어지면서(글자 위치가 옮긴 글리프를 덮기

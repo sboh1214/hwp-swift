@@ -49,6 +49,20 @@ extension HwpDrawnTextLayout {
         let maxX: CGFloat
         /// 렌더러 규약 그대로 **양수 = 위**.
         let offset: CGFloat
+        /// 이 밴드를 낸 run의 문자열 범위 — **CTLine 인덱스**다 (재조판된 부분 복사본
+        /// 기준). 링크 스팬이 자기 run의 밴드만 가려낼 때 쓴다 (#197 리뷰 4차).
+        let range: CFRange
+
+        /// 이 run이 `span` 안에 통째로 드는가 (CTLine 인덱스끼리 비교).
+        ///
+        /// 교집합이 아니라 **포함**으로 묻는다: CT는 속성이 바뀌는 자리마다 run을
+        /// 끊으므로 (실측: `abc אבג`에 링크 둘을 걸면 run이 ct[0,3)·[3,4)·[5,7)·[4,5)로
+        /// 정확히 갈린다) 정상적으로는 둘이 같지만, 혹시라도 run이 두 스팬에 걸치면
+        /// 포함이 실패해 **남의 잉크를 안 가져간다**.
+        func belongs(to span: CFRange) -> Bool {
+            range.location >= span.location
+                && range.location + range.length <= span.location + span.length
+        }
     }
 
     /// 줄별 밴드 — 링크 스팬·줄마다 다시 걷지 않게 호출자가 한 번만 받아 나눠 쓴다.
@@ -105,7 +119,8 @@ extension HwpDrawnTextLayout {
                 run, CFRange(location: 0, length: 0), nil, nil, nil
             ))
             bands.append(GlyphOffsetBand(
-                minX: minX, maxX: max(maxX, minX + width), offset: CGFloat(offset)
+                minX: minX, maxX: max(maxX, minX + width), offset: CGFloat(offset),
+                range: CTRunGetStringRange(run)
             ))
         }
         return bands
