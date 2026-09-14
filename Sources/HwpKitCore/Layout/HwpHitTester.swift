@@ -238,14 +238,24 @@ public struct HwpHitTester {
         case let .footnote(footnote): hasInnerLink = footnote.hasHyperlink
         case let .table(table): hasInnerLink = table.hasHyperlink
         case let .textbox(textbox): hasInnerLink = textbox.hasHyperlink
-        default: return textBlockLevelURL(for: block, at: point)
+        default: return nonContainerBlockLevelURL(for: block, at: point)
         }
         guard block.frame.contains(point) else { return nil }
         return hasInnerLink ? nil : block.hyperlinkURL
     }
 
-    /// 컨테이너가 아닌 블록의 폴백 — 프레임 밖이면 실제 칠을 확인한다.
-    private func textBlockLevelURL(for block: AnyHwpBlock, at point: CGPoint) -> String? {
+    /// 컨테이너가 **아닌** 블록(`.text`·`.image`·`.shape`·payload 없는 것 전부)의 폴백.
+    ///
+    /// 프레임 안은 종전대로 통과시키고, **밖**에서는 방출 영역과 맞춘다 — 블록-레벨 링크의
+    /// 방출은 `HwpPaintListBuilder`가 `.hyperlink(rect: block.frame, …)` 하나로만 내므로
+    /// (R63) 프레임 밖에서 그대로 폴백하면 paint list에 없는 URL이 열린다. 자격 영역은
+    /// 그보다 넓다: `.text`는 가로 넘침과 글자 위치가 옮긴 글리프 때문에, 그 밖은
+    /// 테두리 stroke 띠 때문에 (`paintedRects`).
+    ///
+    /// 그래서 `.text`만 **실제로 그 자리에 글자가 칠해졌는지**(`textPaints`)를 보고
+    /// 폴백한다 — 거기 넘친 것은 다른 개체가 아니라 블록 자신의 글자이기 때문이다 (#4).
+    /// 글자가 없는 종류는 프레임에서 멈춘다.
+    private func nonContainerBlockLevelURL(for block: AnyHwpBlock, at point: CGPoint) -> String? {
         guard let url = block.hyperlinkURL else { return nil }
         guard !block.frame.contains(point) else { return url }
         guard let attributed = block.attributedString else { return nil }
