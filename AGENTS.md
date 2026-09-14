@@ -913,12 +913,16 @@ opt-in이다) — 축소판이 가장 먼저 그리는 쪽이 정확히 그 1쪽
 **상하 반전을 통과시키므로** 위·아래 잉크 분포를 함께 단언한다 (PDF 가드가
 뒤집은 그리드를 대조군으로 쓰는 것과 같은 이유).
 
-**샘플은 CI에서 빌드하지 않는다** — `ci.yml`의 네 작업(`test-macos`·
-`test-ios`·`test-linux`·`lint`)과 `docs-check.yml`의 문서 빌드 중 어느
-것도 `Sample/`을 빌드하지 않으므로 샘플 배선 회귀를 감지하지 못한다. `Sample/`을
-건드리면 macOS·iOS 양쪽 `xcodebuild`를 로컬에서 돌리고,
-파일을 추가했으면 `cd Sample && xcodegen generate` 결과를 같은 커밋에 넣는다
-(프로젝트가 파일을 명시 참조한다).
+**샘플도 CI에서 빌드한다 (#140)** — `ci.yml`의 다섯 작업 중 `build-sample`이
+커밋된 `Sample/HwpSwiftSample.xcodeproj`를 macOS·iOS Simulator 두 목적지로
+빌드하고 `xcodegen generate` 결과와의 차이까지 본다. `lint` 작업도 `Sample/`을
+함께 검사한다(`.swiftlint.yml`의 `included`).
+
+그래도 두 가지는 사람 몫이다. (1) **필수 체크가 아니다** — 브랜치 ruleset의 필수
+컨텍스트는 여전히 다섯(macOS·iOS·Linux 5.9/6.3·Lint)이라 이 잡이 빨개져도 병합이
+막히지 않는다(아래 "DocC 문서 사이트"). (2) **컴파일까지만 증명한다** — 샘플에는
+테스트 타깃이 없어 배선 회귀(최근 문서·드롭·내보내기 같은 실행 시 동작)는 여전히
+로컬 실행으로 확인해야 한다.
 
 ## 선택 영역 서식 복사 (#118)
 
@@ -1149,8 +1153,9 @@ PR 리뷰를 반영하며 렌더링 코드를 수정할 때, 한글 파일 렌�
    스크래치 파일은 `.gitignore`로 제외됨. 푸시한 뒤 macOS(커버리지 포함)·
    iOS·Linux 5.9/6.3·Lint 작업의 결과를 확인한다. 브랜치의 첫 PR을 열기
    전에는 CI 실행 이력이 없으므로 특히 주의한다.
-   `Sources/**`를 건드렸으면 Docs Check(`docs-check.yml`) 결과도 확인한다. 이
-   검사는 필수 체크가 아니어서 실패해도 병합이 차단되지 않는다(아래
+   `Sources/**`를 건드렸으면 Docs Check(`docs-check.yml`), `Sample/`을
+   건드렸으면 Build Sample(`ci.yml`의 `build-sample`) 결과도 확인한다. **두
+   검사 모두 필수 체크가 아니어서** 실패해도 병합이 차단되지 않는다(아래
    "DocC 문서 사이트").
 
 원칙: **탐지는 해시, 진단은 블록 스냅샷 diff** (상호보완). 육안 재확인은
@@ -1183,7 +1188,10 @@ opt-in — **커밋된** 기준선을 쓰는 스위트는 CI에서 상시 돈다
   경로에서 제공되기 때문이다. 다시 사용하면 DocC 자산 경로가
   `/hwp-swift/...`로 고정되어 페이지가 자산을 불러오지 못한다.
 - **Docs Check는 필수 체크가 아니다.** 필수 상태 검사는 macOS, iOS, Linux
-  Swift 5.9, Linux Swift 6.3, Lint의 다섯 개다. 문서 빌드가 실패해도 병합이
+  Swift 5.9, Linux Swift 6.3, Lint의 다섯 개다 — `ci.yml`에 작업을 더해도 이
+  목록은 자동으로 늘지 않는다(필수 컨텍스트는 GitHub 브랜치 ruleset에 matrix
+  값까지 문자열로 박혀 있다). 그래서 **비필수 체크가 둘이다**: Docs Check와
+  `build-sample`(#140). 문서 빌드가 실패해도 병합이
   차단되지 않으므로 직접 확인해야 한다. `paths:` 필터도 있어
   `Sources/**`·`Package.swift`·`Package.resolved`·`.github/pages/**`·
   `.github/actions/build-docs-site/**`·`.github/workflows/docs-check.yml`·

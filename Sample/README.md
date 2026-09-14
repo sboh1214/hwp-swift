@@ -226,6 +226,12 @@ xcodebuild -project HwpSwiftSample.xcodeproj \
 
 두 명령 모두 `** BUILD SUCCEEDED **` 로 종료되어야 정상.
 
+이 두 목적지는 `ci.yml`의 `build-sample` 잡이 같은 방식으로 빌드하고, 같은 잡이
+`xcodegen generate` 결과가 커밋된 `.xcodeproj`와 어긋나지 않는지도 본다 (#140).
+**필수 체크는 아니다** — 브랜치 ruleset의 필수 컨텍스트 다섯(macOS·iOS
+Simulator·Linux 5.9·Linux 6.3·Lint)은 그대로라, 이 잡이 빨개져도 병합은 막히지
+않는다. 직접 확인해야 한다.
+
 샘플은 **SwiftLint 대상이기도 하다** (#140) — `.swiftlint.yml`의 `included`에
 `Sample`이 들어 있어 저장소 루트에서 인자 없이 `swiftlint`만 쳐도 함께 검사된다.
 경고는 막지 않지만 **오류(error)는 `lint` 잡과 pre-commit `swift-lint` 훅을 둘 다**
@@ -275,7 +281,7 @@ cd Sample
 xcodegen generate
 ```
 
-SwiftUI 소스 파일 추가/삭제는 xcodegen이 디렉터리를 자동 스캔하므로 별도 편집 없이 `xcodegen generate`만 다시 돌리면 됨 (파일 목록은 위 "폴더 구조"가 진실 원본이다 — 여기 열거를 두 번 두면 한쪽이 낡는다). **다만 생성된 `.xcodeproj`는 파일을 명시 참조하므로 재생성 결과를 같은 커밋에 넣어야 한다** — CI는 샘플을 빌드하지 않아 이 누락이 초록으로 지나간다.
+SwiftUI 소스 파일 추가/삭제는 xcodegen이 디렉터리를 자동 스캔하므로 별도 편집 없이 `xcodegen generate`만 다시 돌리면 됨 (파일 목록은 위 "폴더 구조"가 진실 원본이다 — 여기 열거를 두 번 두면 한쪽이 낡는다). **다만 생성된 `.xcodeproj`는 파일을 명시 참조하므로 재생성 결과를 같은 커밋에 넣어야 한다.** 빠뜨리면 `ci.yml`의 `build-sample` 잡이 `xcodegen generate`를 다시 돌려 그 차이를 잡는다 (#140) — 빌드만으로는 못 잡는다: 등록되지 않은 새 파일은 컴파일 대상에서 통째로 빠져 문법 오류가 있어도 빌드가 성공한다. 그 잡은 필수 체크가 아니므로 결과를 직접 본다.
 
 ## 설정 요약
 
