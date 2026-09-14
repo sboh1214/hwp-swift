@@ -9,7 +9,7 @@
 [![CI](https://github.com/sboh1214/hwp-swift/actions/workflows/ci.yml/badge.svg)](https://github.com/sboh1214/hwp-swift/actions/workflows/ci.yml)
 [![CD](https://github.com/sboh1214/hwp-swift/actions/workflows/cd.yml/badge.svg)](https://github.com/sboh1214/hwp-swift/actions/workflows/cd.yml)
 
-한글 파일을 읽기 위한 스위프트 패키지
+한글 문서 파일(.hwp·.hwpx)을 파싱하고 렌더링하는 Swift 패키지
 
 ## 설치
 
@@ -30,12 +30,12 @@ Xcode에서 ```File``` > ```Swift Packages``` > ```Add Package Dependency...``` 
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/sboh1214/hwp-swift.git", .upToNextMinor(from: "0.17.0")),
+    .package(url: "https://github.com/sboh1214/hwp-swift.git", .upToNextMinor(from: "0.18.0")),
 ],
 ```
 
 > 이 저장소는 1.0 전까지 파괴 변경을 minor 버전에 싣습니다.
-> `.upToNextMinor(from: "0.17.0")`은 `0.17.0..<0.18.0`만 허용하므로, minor 버전은
+> `.upToNextMinor(from: "0.18.0")`은 `0.18.0..<0.19.0`만 허용하므로, minor 버전은
 > [릴리스 노트](https://github.com/sboh1214/hwp-swift/releases)를 확인한 뒤 올리는 것을 권장합니다.
 
 ## 라이브러리 구조
@@ -51,8 +51,9 @@ CoreHwp는 현재 읽기 전용 binary HWP reader에 초점을 둡니다. 파싱
 HWPX(OWPML, `.hwpx`)도 읽습니다 — 같은 `HwpFile` 진입점이 파일 선두 바이트로
 HWP(OLE)/HWPX(ZIP)를 자동 감지해 동일한 문서 모델로 변환하므로, 뷰어 타깃은
 두 포맷을 구분 없이 렌더합니다. 1차 지원 범위는 본문 텍스트·글자/문단 모양·
-스타일·구역/쪽 설정·단·표·그림·쪽 번호 위치·머리말/꼬리말·OLE 개체(내장
-차트)·글머리표·문단 번호와 개요 번호이고, 그 밖의 요소는 진단
+스타일·구역/쪽 설정·단·표·그림·쪽 번호 위치·머리말/꼬리말·각주/미주·
+새 번호/쪽 감추기/책갈피/찾아보기 표식·OLE 개체(내장 차트)·글머리표·문단 번호와
+개요 번호이고, 그 밖의 요소(도형·수식·글상자·홀/짝수 조정 등)는 진단
 (`HwpFile.parseDiagnostics()`)에 남기고 건너뜁니다.
 
 자세한 reader 지원 범위는 [Sources/CoreHwp/AGENTS.md](Sources/CoreHwp/AGENTS.md),
