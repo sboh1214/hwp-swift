@@ -68,8 +68,8 @@ public enum HwpRenderTuning {
         /// 값이라 폰트 지표가 아니라 글자 크기 비례다. **HWP와 HWPX가 같은
         /// 값**이다 (#136). 첨자 run에서는 **첨자로 옮겨진 베이스라인** 위
         /// 줄어든 크기 × 이 배율이다 (#179, 2026-09-15 실측: 10pt 위 첨자 6.36pt
-        /// 글리프가 4.44pt 올라가면 선은 6.60pt 위 = 4.44 + 0.35 × 6.36) — 글자
-        /// 위치(`hh:offset`)로 옮겨진 몫은 따라가지 않는다.
+        /// 글리프가 4.32pt 올라간 표본에서 선은 6.60pt 위 = 4.32 + 0.35 × 6.36, 장치
+        /// 0.12pt 양자화) — 글자 위치(`hh:offset`)로 옮겨진 몫은 따라가지 않는다.
         /// 검증: `FixtureDecorationLineRenderTests`(+`+Script`) 픽셀 핀 + fidelity 전수.
         public static let strikethroughCenterRatio: CGFloat = 0.35
 

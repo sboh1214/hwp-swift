@@ -125,9 +125,11 @@ final class HwpDecorationLineGeometryTests: XCTestCase {
     }
 
     /// 첨자로 글꼴이 줄어도 '글자 위' 밑줄은 **줄기 전 크기**로 그린다 — 한글이
-    /// 이 선만 기본 크기를 유지하기 때문이다 (2026-09-09 실측). 같은 run의
-    /// 취소선은 반대로 줄어든 글꼴 크기를 따르므로, 두 선의 간격이 두 기준을
-    /// 한꺼번에 고정한다.
+    /// 아래·위 밑줄과 선 두께를 기본 크기로 유지하기 때문이다 (2026-09-09·09-15
+    /// 실측, #179). 같은 run의 취소선은 반대로 줄어든 글꼴 크기를 따르므로, 두 선의
+    /// 간격이 두 기준을 한꺼번에 고정한다. 이 run은 첨자 이동 키
+    /// (`scriptBaselineOffset`)를 싣지 않아 취소선이 옮겨지지 않는다 — 첨자 이동을
+    /// 실은 조합은 `+Script`가 잡는다.
     func testAboveUnderlineKeepsPreScriptSize() throws {
         let preScript: CGFloat = 10
         let shrunk = preScript * 0.67 // HwpTextRunBuilder.superscriptScale

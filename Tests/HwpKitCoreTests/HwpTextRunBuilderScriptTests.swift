@@ -57,8 +57,9 @@ import XCTest
             expect(glyph?.doubleValue).to(beCloseTo(-7.2, within: 0.0001))
         }
 
-        /// 글자 위치만 있는 run에는 첨자 키가 없다 — 값 0짜리 키를 남기면 장식선
-        /// 경로가 이유 없이 첨자 분기를 탄다.
+        /// 글자 위치만 있는 run에는 첨자 키가 없다 — "첨자 run에만 키가 있다"가 이
+        /// 키의 계약이라, 값 0짜리 키가 남으면 소비자가 첨자 run으로 오인한다(렌더러의
+        /// 산술은 0과 없음을 같게 보지만 캐시·서식 복사 같은 다른 소비자는 다를 수 있다).
         func testFaceLocationAloneCarriesNoScriptShift() throws {
             let paragraph = paragraph(text: "가", runs: [(0, 0)])
             let shape = try charShape(faceLocation: Array(repeating: 30, count: 7))

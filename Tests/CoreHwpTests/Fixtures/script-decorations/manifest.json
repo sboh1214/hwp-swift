@@ -2,7 +2,7 @@
   "id": "script-decorations",
   "generationTool": "Hancom Office HWP for macOS 12.30.0 (build 6446)",
   "hwpVersion": "5.1.1.0",
-  "source": "Generated locally with Hancom Office HWP on 2026-09-15 — plain-text-minimal의 HWPX 사본(CharShape 기반)에 위/아래 첨자 × 취소선·글자 가운데 밑줄·글자 아래 밑줄·글자 위 밑줄 8조합과 글자 위치 50 대조 3문단(취소선만·위 첨자+취소선·위 첨자+아래 밑줄)을 기준 run(검정) 사이에 빨강 대상 run으로 적어 한글에서 연 뒤 한글 문서(*.hwp)와 한글 표준 문서(*.hwpx)로 같은 편집 세션에서 각각 저장 (System Events 접근성 자동화)",
+  "source": "Generated locally with Hancom Office HWP on 2026-09-15 — CharShape의 HWPX 사본에 위/아래 첨자 × 취소선·글자 가운데 밑줄·글자 아래 밑줄·글자 위 밑줄 8조합과 글자 위치 50 대조 3문단(취소선만·위 첨자+취소선·위 첨자+아래 밑줄)을 기준 run(검정) 사이에 빨강 대상 run으로 적어 한글에서 연 뒤 한글 문서(*.hwp)와 한글 표준 문서(*.hwpx)로 같은 편집 세션에서 각각 저장 (System Events 접근성 자동화)",
   "features": [
     "char-shape-property",
     "paragraph-text",
