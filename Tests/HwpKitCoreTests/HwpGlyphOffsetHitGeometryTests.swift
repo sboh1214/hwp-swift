@@ -198,6 +198,67 @@ import XCTest
         }
     }
 
+    /// 줄별 밴드를 **한 번만 걷어 나눠 쓰는** 캐시가 제자리에 붙는지 (#197 리뷰 후속).
+    ///
+    /// `hyperlinkRegions`는 링크 스팬마다 문단의 모든 줄을 돈다 — 밴드를 (스팬 × 줄)마다
+    /// 다시 걷으면 `CTRunGetAttributes` 브리징 값을 그만큼 치른다 (실측: 40스팬 ~13줄
+    /// 1.16 → 0.74ms, 120스팬 ~40줄 4.02 → 2.91ms). 줄 캐시 옆에 같이 두되 **색인이
+    /// 어긋나면 다른 줄의 오프셋이 이 줄에 붙어** 방출된 적 없는 자리가 링크가 된다.
+    final class HwpGlyphOffsetBandCacheTests: XCTestCase {
+        private static let font = CTFontCreateWithName("Helvetica" as CFString, 10, nil)
+
+        /// 좁은 폭에서 두 줄로 갈리는, 링크가 서로 다른 두 스팬. 둘째만 옮긴다.
+        private func twoLines(offset: Double) -> NSAttributedString {
+            let string = NSMutableAttributedString(string: "AAAAAAAAAA ", attributes: [
+                kCTFontAttributeName as NSAttributedString.Key: Self.font,
+                HwpAttributedStringKey.hyperlink: "https://first.example",
+            ])
+            string.append(NSAttributedString(string: "BBBBBBBBBB", attributes: [
+                kCTFontAttributeName as NSAttributedString.Key: Self.font,
+                HwpAttributedStringKey.hyperlink: "https://second.example",
+                HwpAttributedStringKey.glyphBaselineOffset: NSNumber(value: offset),
+            ]))
+            return string
+        }
+
+        private func regions(_ string: NSAttributedString) -> [(rect: CGRect, url: String)] {
+            HwpDrawnTextLayout.hyperlinkRegions(
+                attributedString: string, origin: CGPoint(x: 0, y: 100), lineWidth: 80
+            )
+        }
+
+        /// 밴드는 **옮겨진 run이 있는 줄에만** 붙는다 — 앞 줄 링크는 줄 상자 하나뿐이다.
+        func testBandLandsOnItsOwnLineOnly() {
+            let regions = regions(twoLines(offset: 6))
+            let first = regions.filter { $0.url == "https://first.example" }.map(\.rect)
+            let second = regions.filter { $0.url == "https://second.example" }.map(\.rect)
+
+            expect(first.count) == 1
+            expect(second.count) == 2
+            // 두 스팬이 실제로 다른 줄에 있다 (아니면 이 테스트가 아무것도 안 지킨다).
+            expect(Double(second[0].minY)).to(beGreaterThan(Double(first[0].minY)))
+            // 옮긴 몫은 둘째 줄 상자 위 6pt고, 첫 줄은 그대로다.
+            expect(Double(second[0].minY - second[1].minY)).to(beCloseTo(6.0, within: 0.0001))
+            expect(regions.contains { $0.rect.minY < first[0].minY }) == false
+        }
+
+        /// 오프셋 0은 **속성이 없는 것과 같다** — 건너뛰기 판정(`carriesGlyphOffset`)과
+        /// 밴드 수집이 같은 술어를 써야 한 쪽만 0을 옮겨진 run으로 세지 않는다.
+        func testZeroOffsetMatchesNoAttribute() {
+            let zeroed = regions(twoLines(offset: 0)).map(\.rect)
+            let plain = NSMutableAttributedString(string: "AAAAAAAAAA ", attributes: [
+                kCTFontAttributeName as NSAttributedString.Key: Self.font,
+                HwpAttributedStringKey.hyperlink: "https://first.example",
+            ])
+            plain.append(NSAttributedString(string: "BBBBBBBBBB", attributes: [
+                kCTFontAttributeName as NSAttributedString.Key: Self.font,
+                HwpAttributedStringKey.hyperlink: "https://second.example",
+            ]))
+
+            expect(zeroed) == regions(plain).map(\.rect)
+        }
+    }
+
     /// 넓힌 자격 영역에서 **블록 링크 폴백이 위치를 확인해야** 한다 (#197 리뷰 2차).
     ///
     /// `hitEligibleFrame`의 `.text`가 세로로도 넓어지면서(글자 위치가 옮긴 글리프를 덮기

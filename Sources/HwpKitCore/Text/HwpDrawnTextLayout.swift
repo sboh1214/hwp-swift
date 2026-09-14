@@ -275,6 +275,11 @@ public enum HwpDrawnTextLayout {
         var regions: [(rect: CGRect, url: String)] = []
         // 하이퍼링크 속성이 있는 블록만 CT 재조판한다 (블록마다 framesetting 방지)
         var cachedLines: [HwpDrawnLine]?
+        // 밴드도 줄 캐시 옆에 같이 둔다: `glyphOffsetBands`는 줄의 CTRun을 전수로 돌며
+        // CTRunGetAttributes를 브리징하는데, 스팬마다 다시 부르면 (스팬 × 줄)만큼 값을
+        // 치른다 — 옮겨진 run이 하나도 없어도 그렇다 (실측 median: 40스팬 ~13줄
+        // 1.16 → 0.74ms, 120스팬 ~40줄 4.02 → 2.91ms).
+        var cachedBands: [[GlyphOffsetBand]]?
         attributedString.enumerateAttribute(
             HwpAttributedStringKey.hyperlink, in: NSRange(location: 0, length: length)
         ) { value, range, _ in
@@ -283,44 +288,15 @@ public enum HwpDrawnTextLayout {
                 attributedString: attributedString, origin: origin, lineWidth: lineWidth
             )
             cachedLines = drawnLines
-            for drawn in drawnLines {
-                let lineRange = drawn.stringRange
-                let lower = max(range.location, lineRange.location)
-                let upper = min(range.location + range.length, lineRange.location + lineRange.length)
-                guard upper > lower else { continue }
-                let ctRange = CTLineGetStringRange(drawn.line)
-                func offsetX(atAttributedIndex index: Int) -> CGFloat {
-                    let ctIndex = ctRange.location + (index - lineRange.location)
-                    return CTLineGetOffsetForStringIndex(drawn.line, ctIndex, nil)
-                }
-                // RTL 줄은 CT가 하위 논리 인덱스에 더 큰 x 오프셋을 줘 lower>upper가
-                // 된다 — min/max로 정규화해 링크 rect를 낸다 (#1).
-                let lowerX = drawn.baselineOrigin.x + offsetX(atAttributedIndex: lower)
-                let upperX = drawn.baselineOrigin.x + offsetX(atAttributedIndex: upper)
-                let minX = min(lowerX, upperX)
-                let maxX = max(lowerX, upperX)
-                guard maxX > minX else { continue }
-                let box = CGRect(
-                    x: minX, y: drawn.baselineOrigin.y - drawn.ascent,
-                    width: maxX - minX, height: drawn.ascent + drawn.descent
+            let bandsByLine = cachedBands ?? glyphOffsetBands(
+                ofLines: drawnLines, in: attributedString
+            )
+            cachedBands = bandsByLine
+            for (lineIndex, drawn) in drawnLines.enumerated() {
+                appendHyperlinkRects(
+                    of: drawn, spanRange: range, bands: bandsByLine[lineIndex],
+                    url: url, into: &regions
                 )
-                regions.append((rect: box, url: url))
-                // 글자 위치로 옮겨진 글리프는 **그 run의 가로 범위만** 가진 rect를 따로
-                // 낸다 (#197 리뷰 3차). 스팬 전체 폭에 최대 오프셋을 걸면 안 옮겨진 run
-                // 위·아래의 빈 자리까지 이 링크가 가져가, 뒤에 있는 링크가 진다
-                // (`paintedRects`와 같은 R54 정밀 커버리지 규약).
-                for band in glyphOffsetBands(of: drawn.line) {
-                    let bandMinX = max(minX, drawn.baselineOrigin.x + band.minX)
-                    let bandMaxX = min(maxX, drawn.baselineOrigin.x + band.maxX)
-                    guard bandMaxX > bandMinX else { continue }
-                    regions.append((
-                        rect: CGRect(
-                            x: bandMinX, y: box.minY - band.offset,
-                            width: bandMaxX - bandMinX, height: box.height
-                        ),
-                        url: url
-                    ))
-                }
             }
         }
         return regions
@@ -341,9 +317,11 @@ public enum HwpDrawnTextLayout {
         lineWidth: CGFloat
     ) -> [CGRect] {
         guard attributedString.length > 0 else { return [] }
-        return lines(
+        let drawnLines = lines(
             attributedString: attributedString, origin: origin, lineWidth: lineWidth
-        ).flatMap(\.paintedRects)
+        )
+        let bandsByLine = glyphOffsetBands(ofLines: drawnLines, in: attributedString)
+        return zip(drawnLines, bandsByLine).flatMap { $0.paintedRects(bands: $1) }
     }
 
     /// slight-overflow 한 줄의 CTLine과 타이포그래피 메트릭.
@@ -457,6 +435,62 @@ public enum HwpDrawnTextLayout {
         case .center: return (lineWidth - naturalWidth) / 2
         case .right: return lineWidth - naturalWidth
         default: return 0
+        }
+    }
+}
+
+// MARK: - 링크 스팬 rect
+
+extension HwpDrawnTextLayout {
+    /// 한 줄에서 링크 스팬이 차지하는 rect들을 `regions`에 바로 쌓는다 — 줄 상자 rect
+    /// **하나**와, 글자 위치로 옮겨진 run마다 **스팬 가로 범위로 클립한** 밴드 rect.
+    /// (배열로 돌려주면 줄마다 임시 할당이 생겨 캐시로 아낀 몫의 절반을 도로 쓴다 —
+    /// 실측 median: 120스팬 ~40줄 2.93 → 3.55ms.)
+    ///
+    /// 스팬 전체 폭에 최대 오프셋을 걸면 안 옮겨진 run 위·아래의 빈 자리까지 이 링크가
+    /// 가져가, 뒤에 있는 링크가 진다 (`paintedRects`와 같은 R54 정밀 커버리지 규약,
+    /// #197 리뷰 3차).
+    private static func appendHyperlinkRects(
+        of drawn: HwpDrawnLine,
+        spanRange: NSRange,
+        bands: [GlyphOffsetBand],
+        url: String,
+        into regions: inout [(rect: CGRect, url: String)]
+    ) {
+        let lineRange = drawn.stringRange
+        let lower = max(spanRange.location, lineRange.location)
+        let upper = min(
+            spanRange.location + spanRange.length, lineRange.location + lineRange.length
+        )
+        guard upper > lower else { return }
+        let ctRange = CTLineGetStringRange(drawn.line)
+        func offsetX(atAttributedIndex index: Int) -> CGFloat {
+            let ctIndex = ctRange.location + (index - lineRange.location)
+            return CTLineGetOffsetForStringIndex(drawn.line, ctIndex, nil)
+        }
+        // RTL 줄은 CT가 하위 논리 인덱스에 더 큰 x 오프셋을 줘 lower>upper가
+        // 된다 — min/max로 정규화해 링크 rect를 낸다 (#1).
+        let lowerX = drawn.baselineOrigin.x + offsetX(atAttributedIndex: lower)
+        let upperX = drawn.baselineOrigin.x + offsetX(atAttributedIndex: upper)
+        let minX = min(lowerX, upperX)
+        let maxX = max(lowerX, upperX)
+        guard maxX > minX else { return }
+        let box = CGRect(
+            x: minX, y: drawn.baselineOrigin.y - drawn.ascent,
+            width: maxX - minX, height: drawn.ascent + drawn.descent
+        )
+        regions.append((rect: box, url: url))
+        for band in bands {
+            let bandMinX = max(minX, drawn.baselineOrigin.x + band.minX)
+            let bandMaxX = min(maxX, drawn.baselineOrigin.x + band.maxX)
+            guard bandMaxX > bandMinX else { continue }
+            regions.append((
+                rect: CGRect(
+                    x: bandMinX, y: box.minY - band.offset,
+                    width: bandMaxX - bandMinX, height: box.height
+                ),
+                url: url
+            ))
         }
     }
 }

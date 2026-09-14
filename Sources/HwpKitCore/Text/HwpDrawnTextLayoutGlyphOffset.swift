@@ -21,9 +21,16 @@ public extension HwpDrawnLine {
     /// 보이는 링크를 막는다 ('ABBBBBBBBBB'에서 A만 10pt 내리면 B 아래 빈 띠가 그렇다).
     /// claim은 정밀 커버리지여야 한다는 규약(R54) 그대로다.
     var paintedRects: [CGRect] {
+        paintedRects(bands: HwpDrawnTextLayout.glyphOffsetBands(of: line))
+    }
+}
+
+extension HwpDrawnLine {
+    /// 밴드를 이미 걷어 둔 호출자용 (`HwpDrawnTextLayout.glyphOffsetBands(ofLines:in:)`).
+    func paintedRects(bands: [HwpDrawnTextLayout.GlyphOffsetBand]) -> [CGRect] {
         let box = selectionRect
         var rects = [box]
-        for band in HwpDrawnTextLayout.glyphOffsetBands(of: line) {
+        for band in bands {
             let x = baselineOrigin.x + band.minX
             let width = band.maxX - band.minX
             guard width > 0 else { continue }
@@ -42,6 +49,35 @@ extension HwpDrawnTextLayout {
         let maxX: CGFloat
         /// 렌더러 규약 그대로 **양수 = 위**.
         let offset: CGFloat
+    }
+
+    /// 줄별 밴드 — 링크 스팬·줄마다 다시 걷지 않게 호출자가 한 번만 받아 나눠 쓴다.
+    ///
+    /// 글자 위치 run이 **하나도 없는** 문단(대다수)은 CTRun 전수 순회 자체를 건너뛴다:
+    /// `CTRunGetAttributes`는 run마다 CFDictionary를 브리징해 오프셋이 없어도 값을
+    /// 치른다. 속성 run 한 번 훑기가 훨씬 싸다.
+    static func glyphOffsetBands(
+        ofLines drawnLines: [HwpDrawnLine], in attributedString: NSAttributedString
+    ) -> [[GlyphOffsetBand]] {
+        guard carriesGlyphOffset(attributedString) else {
+            return Array(repeating: [], count: drawnLines.count)
+        }
+        return drawnLines.map { glyphOffsetBands(of: $0.line) }
+    }
+
+    /// 조판 문자열에 0이 아닌 글자 위치 run이 하나라도 있는가.
+    private static func carriesGlyphOffset(_ attributedString: NSAttributedString) -> Bool {
+        var found = false
+        attributedString.enumerateAttribute(
+            HwpAttributedStringKey.glyphBaselineOffset,
+            in: NSRange(location: 0, length: attributedString.length),
+            options: .longestEffectiveRangeNotRequired
+        ) { value, _, stop in
+            guard let offset = (value as? NSNumber)?.doubleValue, offset != 0 else { return }
+            found = true
+            stop.pointee = true
+        }
+        return found
     }
 
     /// 옮겨진 run마다 (줄 원점 기준 가로 범위, 오프셋) — 정밀 커버리지용.
