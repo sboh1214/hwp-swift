@@ -30,7 +30,8 @@ public enum HwpAttributedStringKey {
     /// 강조점 (NSNumber != 0) — 글리프 위 가운데 점
     public static let emphasisMark = NSAttributedString.Key("hwp.emphasisMark")
     /// 글자 위치 (표 33 location) — 줄 안 세로 오프셋 (pt, 양수 = 위).
-    /// kCTBaselineOffset은 CTFramesetter가 무시하므로 직접 그린다.
+    /// 렌더러가 이 값으로 글리프를 직접 시프트한다 — 도입 근거였던 "CTFramesetter가
+    /// kCTBaselineOffset을 무시한다"는 macOS 27.0에서 거짓이다 (`HwpTextRunBuilder`).
     public static let glyphBaselineOffset = NSAttributedString.Key("hwp.glyphBaselineOffset")
     /// 밑줄 여부 (글자 아래) — CT 밑줄 대신 렌더러가 베이스라인 아래
     /// `underlineBelowCenterRatio`에 `decorationLineThicknessRatio` 두께로 직접

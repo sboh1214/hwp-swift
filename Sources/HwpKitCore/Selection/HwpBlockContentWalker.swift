@@ -41,9 +41,7 @@ public enum HwpBlockContentWalker {
             return
         case nil:
             // 본문 텍스트 (분할된 표/글상자/각주 조각 포함) — 블록 자체가 단위
-            guard [.text, .table, .textbox, .footnote].contains(block.kind),
-                  let attributed = block.attributedString, attributed.length > 0
-            else { return }
+            guard let attributed = plainText(of: block) else { return }
             visit(attributed, block.frame, block.source?.paragraphId)
         }
     }
@@ -395,5 +393,23 @@ public enum HwpBlockContentWalker {
                 ? lhs.zOrder < rhs.zOrder
                 : lhs.sourceOrder < rhs.sourceOrder
         }
+    }
+}
+
+extension HwpBlockContentWalker {
+    /// payload 없는 블록이 **블록 자체를 단위로** 텍스트로 그려질 때 그 문자열 — `.text`와
+    /// 분할된 표/글상자/각주 조각. 길이 0이면 nil (그릴 것이 없다).
+    ///
+    /// 이 술어 하나를 방출(`HwpPaintListBuilder.plainCommands`)·선택(`walkText`)·히트 자격
+    /// (`HwpHitTester.hitEligibleFrame`)·프레임 밖 claim(`hit(page:point:)`)·블록 링크 폴백
+    /// (`nonContainerBlockLevelURL`)이 공유한다 — 종류별로 따로 적으면 페인트는 텍스트로 그리는데 자격은 프레임에서 멈춰,
+    /// 프레임 밖으로 옮겨진 링크 글리프가 스팬 기하 확인 전에 기각된다 (#200 리뷰:
+    /// `.text`에만 `textBounds`를 주던 자격이 그랬다).
+    static func plainText(of block: AnyHwpBlock) -> NSAttributedString? {
+        guard block.payload == nil,
+              [.text, .table, .textbox, .footnote].contains(block.kind),
+              let attributed = block.attributedString, attributed.length > 0
+        else { return nil }
+        return attributed
     }
 }

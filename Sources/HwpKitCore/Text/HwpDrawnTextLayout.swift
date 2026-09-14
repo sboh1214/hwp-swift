@@ -17,6 +17,11 @@ public struct HwpDrawnLine {
     public let descent: CGFloat
 
     /// 줄의 선택 하이라이트 영역 (top-down 페이지 좌표)
+    ///
+    /// **글자 위치(`hwp.glyphBaselineOffset`)로 옮겨진 글리프를 따라가지 않는다** — 한글도
+    /// 그렇다 (2026-09-14 실측: `CharShape` 픽스처의 '글자위치 30' 줄만 선택하면 하이라이트
+    /// 상단이 이웃 줄들과 **같은 격자**(81px 간격)에 있고 글리프만 그 안에서 7px 내려간다).
+    /// 잉크가 닿는 범위가 필요한 쪽은 `paintedRect`다.
     public var selectionRect: CGRect {
         let width =
             CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
@@ -270,6 +275,11 @@ public enum HwpDrawnTextLayout {
         var regions: [(rect: CGRect, url: String)] = []
         // 하이퍼링크 속성이 있는 블록만 CT 재조판한다 (블록마다 framesetting 방지)
         var cachedLines: [HwpDrawnLine]?
+        // 밴드도 줄 캐시 옆에 같이 둔다: `glyphOffsetBands`는 줄의 CTRun을 전수로 돌며
+        // CTRunGetAttributes를 브리징하는데, 스팬마다 다시 부르면 (스팬 × 줄)만큼 값을
+        // 치른다 — 옮겨진 run이 하나도 없어도 그렇다 (실측 median: 40스팬 ~13줄
+        // 1.16 → 0.74ms, 120스팬 ~40줄 4.02 → 2.91ms).
+        var cachedBands: [[GlyphOffsetBand]]?
         attributedString.enumerateAttribute(
             HwpAttributedStringKey.hyperlink, in: NSRange(location: 0, length: length)
         ) { value, range, _ in
@@ -278,30 +288,15 @@ public enum HwpDrawnTextLayout {
                 attributedString: attributedString, origin: origin, lineWidth: lineWidth
             )
             cachedLines = drawnLines
-            for drawn in drawnLines {
-                let lineRange = drawn.stringRange
-                let lower = max(range.location, lineRange.location)
-                let upper = min(range.location + range.length, lineRange.location + lineRange.length)
-                guard upper > lower else { continue }
-                let ctRange = CTLineGetStringRange(drawn.line)
-                func offsetX(atAttributedIndex index: Int) -> CGFloat {
-                    let ctIndex = ctRange.location + (index - lineRange.location)
-                    return CTLineGetOffsetForStringIndex(drawn.line, ctIndex, nil)
-                }
-                // RTL 줄은 CT가 하위 논리 인덱스에 더 큰 x 오프셋을 줘 lower>upper가
-                // 된다 — min/max로 정규화해 링크 rect를 낸다 (#1).
-                let lowerX = drawn.baselineOrigin.x + offsetX(atAttributedIndex: lower)
-                let upperX = drawn.baselineOrigin.x + offsetX(atAttributedIndex: upper)
-                let minX = min(lowerX, upperX)
-                let maxX = max(lowerX, upperX)
-                guard maxX > minX else { continue }
-                regions.append((
-                    rect: CGRect(
-                        x: minX, y: drawn.baselineOrigin.y - drawn.ascent,
-                        width: maxX - minX, height: drawn.ascent + drawn.descent
-                    ),
-                    url: url
-                ))
+            let bandsByLine = cachedBands ?? glyphOffsetBands(
+                ofLines: drawnLines, in: attributedString
+            )
+            cachedBands = bandsByLine
+            for (lineIndex, drawn) in drawnLines.enumerated() {
+                appendHyperlinkRects(
+                    of: drawn, spanRange: range, bands: bandsByLine[lineIndex],
+                    url: url, into: &regions
+                )
             }
         }
         return regions
@@ -309,18 +304,25 @@ public enum HwpDrawnTextLayout {
 
     /// 그려진 텍스트의 줄 상자들 — "이 지점에 글자가 칠해졌는가" 판정용 (R54).
     ///
-    /// 선택 하이라이트와 **같은 정의** (`HwpDrawnLine.selectionRect`) 를 쓴다:
-    /// 문단 rect는 줄 사이 여백과 짧은 줄의 빈 오른쪽까지 품어, 그것으로 claim하면
-    /// 아무것도 안 그린 자리에서 아래 블록의 보이는 링크를 막는다.
+    /// 선택 하이라이트(`HwpDrawnLine.selectionRect`)에 **글자 위치로 옮겨진 run마다 그
+    /// run의 잉크 가로 범위만** 더한 `paintedRects`를 쓴다 — 줄 전체 폭에 최대 오프셋을
+    /// 걸면 안 옮겨진 run 아래의 빈 띠까지 claim해 그 자리의 탭이 뒤 층의 보이는 링크를
+    /// 막는다. 문단 rect를 쓰지 않는 이유는 종전과 같다 — 줄 사이 여백과 짧은 줄의 빈
+    /// 오른쪽까지 품어, 그것으로 claim하면 아무것도 안 그린 자리에서 아래 블록의 보이는
+    /// 링크를 막는다. 반대로 줄 상자만 쓰면 **그려진** 글자가 claim 밖으로 나가 그 위의
+    /// 탭이 뒤 층으로 내려간다(한글은 선택 상자를 안 옮기지만 칠은 옮긴다 —
+    /// `selectionRect`의 실측 주석).
     public static func textLineRegions(
         attributedString: NSAttributedString,
         origin: CGPoint,
         lineWidth: CGFloat
     ) -> [CGRect] {
         guard attributedString.length > 0 else { return [] }
-        return lines(
+        let drawnLines = lines(
             attributedString: attributedString, origin: origin, lineWidth: lineWidth
-        ).map(\.selectionRect)
+        )
+        let bandsByLine = glyphOffsetBands(ofLines: drawnLines, in: attributedString)
+        return zip(drawnLines, bandsByLine).flatMap { $0.paintedRects(bands: $1) }
     }
 
     /// slight-overflow 한 줄의 CTLine과 타이포그래피 메트릭.

@@ -523,13 +523,29 @@ extension HwpTextRunBuilder {
             kCTKernAttributeName as NSAttributedString.Key: NSNumber(
                 value: Double(spacing * size / 100)
             ),
-            kCTBaselineOffsetAttributeName as NSAttributedString.Key: NSNumber(
-                value: Double(location * size / 100)
-            ),
         ]
         if location != 0 {
-            // CTFramesetter는 kCTBaselineOffset을 무시한다 — 렌더러가 직접
-            // 시프트한다 (CharShape '글자위치' 실물: 양수 값이 아래로 내려감)
+            // 글자 위치 (표 33): **줄 배치는 그대로 두고 글리프만** 세로로 옮긴다.
+            // 그래서 조판 문자열에는 `kCTBaselineOffset`을 싣지 않고 이 커스텀 키만
+            // 남긴다 — 렌더러(`HwpPageLayerDecorations.drawRun`)가 그리기 원점을
+            // 옮기고, 부호는 이 키의 규약(양수 = 위)을 따르므로 HWP 원시 부호를
+            // 뒤집는다.
+            //
+            // **CT 키를 싣지 않는 이유는 두 가지이고 둘 다 실측이다.**
+            // ① 한글은 줄 상자를 키우지 않는다 — `CharShape` 픽스처(10pt·글자 위치 30)를
+            //    한글 12.30에서 PDF로 내보내 24배 래스터로 재면, 그 줄의 잉크만 격자에서
+            //    2.92pt 내려가고 **위아래 줄의 16.0pt 격자는 정확히 연속**이다
+            //    (자간 50 줄 710.042 = 그림자 X 줄 662.042 + 3 × 16.0). 반면 CT는 이
+            //    속성을 만나면 줄 슬롯 자체를 |오프셋|만큼 키운다 (프레임 높이 임계
+            //    이분 탐색: 12.2996 → 14.2996). 줄 상자는 줄별 기본 글자 크기가 정한다는
+            //    #178 모델과도 어긋난다.
+            // ② 부호가 반대다 — CT 규약은 양수가 **위**인데 HWP 원시값은 양수가 아래다.
+            //    CT 키만 남기면 글자 위치가 상하 반전되어 그려진다.
+            //
+            // 종전에는 두 키를 함께 실었고 "CTFramesetter는 kCTBaselineOffset을
+            // 무시한다"를 근거로 삼았는데, 그 전제가 macOS 27.0에서 거짓이라 CT의 시프트와
+            // 렌더러의 시프트가 **정확히 상쇄돼 글자 위치가 화면에 전혀 반영되지 않았다**
+            // (래스터 실측: 오프셋 +4 & 원점 −4의 잉크 행이 무오프셋과 완전히 동일).
             attributes[HwpAttributedStringKey.glyphBaselineOffset] = NSNumber(
                 value: Double(-location * size / 100)
             )

@@ -1,3 +1,4 @@
+import CoreGraphics
 @testable import CoreHwp
 import Foundation
 @testable import HwpKitCore
@@ -462,14 +463,15 @@ import XCTest
 
         func charShape(
             property: UInt32 = 0,
-            faceScaleX: [UInt8] = [100, 100, 100, 100, 100, 100, 100]
+            faceScaleX: [UInt8] = [100, 100, 100, 100, 100, 100, 100],
+            faceLocation: [Int8] = [0, 0, 0, 0, 0, 0, 0]
         ) throws -> CoreHwp.HwpCharShape {
             var data = Data()
             append(UInt16(0), count: 7, to: &data)
             data.append(contentsOf: faceScaleX)
             data.append(contentsOf: [0, 0, 0, 0, 0, 0, 0].map { UInt8(bitPattern: Int8($0)) })
             data.append(contentsOf: [100, 100, 100, 100, 100, 100, 100])
-            data.append(contentsOf: [0, 0, 0, 0, 0, 0, 0].map { UInt8(bitPattern: Int8($0)) })
+            data.append(contentsOf: faceLocation.map { UInt8(bitPattern: $0) })
             append(Int32(1200), to: &data)
             append(property, to: &data)
             data.append(UInt8(bitPattern: Int8(0)))
@@ -499,6 +501,70 @@ import XCTest
         func append(_ value: some FixedWidthInteger, to data: inout Data) {
             var littleEndian = value.littleEndian
             data.append(withUnsafeBytes(of: &littleEndian) { Data($0) })
+        }
+    }
+
+    /// 글자 위치(표 33) 계약 — `extension`에 두는 이유는 `HwpTextRunBuilderTests` 본문이 이미
+    /// `type_body_length` 경고선(300줄)에 닿아 있어서다. extension 본문은 그 규칙이 세지 않는다.
+    extension HwpTextRunBuilderTests {
+        /// **글자 위치는 글리프만 옮긴다 — 조판 문자열에 `kCTBaselineOffset`을 싣지 않는다.**
+        ///
+        /// 한글 12.30 실측(`CharShape` 픽스처 10pt·글자 위치 30을 PDF로 내보내 24배 래스터):
+        /// 그 줄의 잉크만 16.0pt 격자에서 2.92pt 내려가고 **위아래 줄의 격자는 정확히
+        /// 연속**이다. 반면 CT는 이 속성을 만나면 줄 슬롯 자체를 |오프셋|만큼 키운다
+        /// (프레임 높이 임계 이분 탐색: 12.2996 → 14.2996). 게다가 부호도 반대라
+        /// (CT 양수 = 위, HWP 원시 양수 = 아래) CT 키만 남기면 상하가 뒤집힌다.
+        ///
+        /// 종전에는 두 키를 함께 실어 CT의 시프트와 렌더러의 시프트가 **상쇄**됐다 —
+        /// 같은 픽스처를 우리 렌더러로 그리면 그 줄이 격자에서 0.000pt 움직이지 않았고,
+        /// 지금은 3.000pt 내려가 한글과 0.08pt 안에서 만난다.
+        func testFaceLocationCarriesGlyphShiftWithoutCTBaselineOffset() throws {
+            let paragraph = paragraph(text: "가", runs: [(0, 0)])
+            let shape = try charShape(faceLocation: Array(repeating: 30, count: 7))
+            let result = builder(shapes: [0: shape]).build(paragraph: paragraph)
+            let attributes = result.attributes(at: 0, effectiveRange: nil)
+
+            expect(
+                attributes[NSAttributedString.Key(kCTBaselineOffsetAttributeName as String)]
+            ).to(beNil())
+            let shift = attributes[HwpAttributedStringKey.glyphBaselineOffset] as? NSNumber
+            // 기본 12pt · 30% = 3.6pt, 부호는 렌더러 규약(양수 = 위)이라 뒤집는다.
+            expect(shift?.doubleValue).to(beCloseTo(-3.6, within: 0.0001))
+        }
+
+        /// 글자 위치가 0이면 두 키 모두 없다 — 값 0짜리 키를 남기면 렌더러의 per-run
+        /// 경로가 이유 없이 켜진다 (`needsPerRunDrawing`은 **존재 여부만** 본다).
+        func testZeroFaceLocationCarriesNoBaselineKey() throws {
+            let paragraph = paragraph(text: "가", runs: [(0, 0)])
+            let result = builder(shapes: [0: try charShape()]).build(paragraph: paragraph)
+            let attributes = result.attributes(at: 0, effectiveRange: nil)
+
+            expect(
+                attributes[NSAttributedString.Key(kCTBaselineOffsetAttributeName as String)]
+            ).to(beNil())
+            expect(attributes[HwpAttributedStringKey.glyphBaselineOffset]).to(beNil())
+        }
+
+        /// **글자 위치는 줄 배치를 건드리지 않는다** — 위 한글 실측의 격자 연속성을 조판
+        /// 수준에서 잠근다. 오프셋 값만 다른 두 문단의 baseline이 모두 같아야 한다.
+        func testFaceLocationDoesNotMoveLineBaselines() throws {
+            let text = String(repeating: "가나다라마바사아자차", count: 6)
+            let paragraph = paragraph(text: text, runs: [(0, 0)])
+            func baselines(_ location: Int8) throws -> [CGFloat] {
+                let shape = try charShape(faceLocation: Array(repeating: location, count: 7))
+                let string = builder(shapes: [0: shape]).build(paragraph: paragraph)
+                return HwpDrawnTextLayout.lines(
+                    attributedString: string, origin: CGPoint(x: 0, y: 100), lineWidth: 120
+                ).map(\.baselineOrigin.y)
+            }
+            let plain = try baselines(0)
+            expect(plain.count).to(beGreaterThan(2))
+            for location in [Int8(30), -30, 100] {
+                let shifted = try baselines(location)
+                expect(shifted.count) == plain.count
+                let drift = zip(shifted, plain).map { abs(Double($0 - $1)) }.max() ?? 0
+                expect(drift).to(beLessThan(0.0001), description: "글자 위치 \(location)")
+            }
         }
     }
 #endif

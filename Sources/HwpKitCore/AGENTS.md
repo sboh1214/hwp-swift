@@ -581,6 +581,24 @@ v. Board of Regents…`)을 핀했다.
   (지금은 예산 16 이상 1.0pt 안, 최대 4.4004pt). 넘길 몫은 한 줄 청크에서 이 청크 앞 줄의
   것이라 들어온 이월이 실어 온다 (`predecessorLeading`).
 
+  **글자 위치(`kCTBaselineOffset`)는 반대로 그 줄 자신의 슬롯을 키우므로 지표에 접는다**
+  (PR #197 리뷰). 2026-09-14 실측(macOS 27.0): CT는 이 속성을 무시하지 않는다 — 글리프를
+  실제로 옮기고(`CTRunGetPositions`의 y), 줄 지표를 `ascent = max(글꼴 ascent + 오프셋)`·
+  `descent = max(글꼴 descent − 오프셋)`으로 합성하며(7/7 조합 일치), 프레임 높이 임계
+  이분 탐색으로 잰 **슬롯 자체**가 12.2996 → 14.2996으로 커진다. 그런데 run 단위
+  `CTRunGetTypographicBounds`에는 그 몫이 없어, `lineMetrics`가 글꼴 지표만 걷는 동안
+  오프셋이 든 줄과 없는 줄이 `boxHeight 10·maxAscent 7.7002·maxDescent 2.2998`로 **완전히
+  같게** 나왔다 — `matchesSlot`이 서로 다른 슬롯을 같다고 판정해 부풀려진 ascent가 오프셋
+  없는 다음 줄에 쓰였다(Helvetica 10pt·하한 12pt·11번째 글자만 +2pt: 예산 12에서 뒤 줄
+  간격 12.000 → 14.300, 마지막 줄 **16.099pt** 아래. 그중 14.000pt가 이 몫이고 2.099pt는
+  아래 `floor` 잔차다). 지금은 오프셋을 `maxAscent`·`maxDescent`에 접어 판정이 갈린다 —
+  **`boxHeight`에는 접지 않는다**(앵커는 상대크기 전 기본 크기라 오프셋과 무관하다).
+  `HwpLineBoxCarryoverTests`가 위치 6종 × 부호 2종 × 예산 11종을 잠근다.
+  **이 접기는 외부에서 들어온 문자열을 위한 것이다** — 이 저장소의 조판 문자열은 글자
+  위치를 `glyphBaselineOffset`으로만 나르고 `kCTBaselineOffset`을 싣지 않는다(아래
+  "장식 선" 항목). 공개 `HwpPaintCommand.drawText` 호출자는 그 키를 실을 수 있으므로
+  지표는 CT가 실제로 합성하는 값과 같아야 한다.
+
   **남는 잔차 (이 축)**: 이월을 **버리면** 그 프레임의 `floor`를 쓰는데 그 값도 앞 줄이 넘긴
   몫을 모른다 — 줄마다 청크가 갈리는 아주 작은 예산(12·14)에서 4.4004pt가 남는다. CT가 넘기는
   양은 leading 값 자체가 아니라 양자화된 몫이라 (실측: 보고 leading 0.7282에 실제 부풀림 2.0)
@@ -737,7 +755,7 @@ p2 두 쪽만 갈려 재기록했다).
 - `AnyHwpBlock.payload` — 종류별 상세 결과: `.table(HwpTableFrame)` / `.textbox` / `.footnote` / `.shape(HwpShapeGeometry)` / `.image(HwpImageBlockInfo)`. payload 내부 좌표는 **블록-로컬** (footnote 의 separator 만 페이지 좌표). 개체를 담는 컨테이너 payload는 셋이고 필드가 대칭이다 — `HwpTableCellFrame`(images/shapes/textboxes/nestedTables), `HwpTextboxFrame`(images/shapes), `HwpFootnoteBlock`(images/shapes/textboxes/nestedTables, #94)
 - `AnyHwpBlock.source` — `HwpBlockSource(controlInstanceId/paragraphId)`: 편집 기능이 렌더 결과에서 CoreHwp 모델로 돌아가는 참조
 - `AnyHwpBlock.hyperlinkURL` — block-level. `HwpPaginator.hyperlinkURL(in:)` 이 top-level 및 nested paragraph 양쪽에서 추출. **각주도 이 계약을 지킨다** (R59): 층 인식 조회 (R42 #1) 가 **먼저** 이기고, 그것이 실패했을 때만 블록 URL로 폴백한다. 방출은 컨테이너 링크가 하나도 없으면 이 URL을 frame 전체로 내므로 히트에서 폴백을 빼면 밑줄만 그려지고 탭이 안 먹는다 — 반대로 폴백을 앞에 두면 각주 문단 자신의 링크가 블록 URL에 가려진다. **폴백에는 게이트가 있다** (R61): 방출은 안쪽 링크를 하나라도 내면 프레임 전체 블록 링크를 **내지 않으므로** (`appendHyperlinkCommands`의 `!emitted`), 히트도 안쪽 링크가 존재하면 폴백하지 않는다 — 안 그러면 paint list에 없는 URL이 열린다. 판정은 `hasHyperlink` (문단 속성·개체 `wrapperURL` 재귀) 로 **CT 조판 없이** 한다 (R55의 탭 지연 재발 방지); 방출보다 넓게 보고할 수는 있어도 좁게는 못 하므로 어긋나면 양쪽이 함께 침묵한다. **이 계약은 각주 전용이 아니다** (R62): `!emitted`는 payload 종류를 가리지 않으므로 표·글상자 블록도 안쪽 링크가 있으면 블록 링크를 내지 않는다 — 히트만 `block.hyperlinkURL`을 먼저 보면 셀 링크가 블록 URL에 뭉개지고(순서), 링크 없는 자리에서 방출된 적 없는 URL이 열린다(게이트). `blockLevelURL(for:at:)` 하나가 payload 셋의 `hasHyperlink`를 묶어 순서와 게이트를 함께 소유한다. **게이트는 영역이기도 하다** (R63): 방출은 이 폴백을 `block.frame`으로만 내는데 컨테이너 자격은 넘쳐 그린 자손까지 넓으므로(R62), 그 띠에서 폴백하면 방출된 적 없는 URL이 열린다 — 자격을 넓히면서 폴백 영역을 같이 좁히지 않아 난 회귀다. `.text`의 slight-overflow 띠는 반대로 폴백을 **유지**한다: 거기 넘친 것은 다른 개체가 아니라 블록 **자신의 글자**라 그 링크가 열려야 한다 (#4)
-- 하이퍼링크 방출은 **스팬 우선**이다: `%hlk` 필드 스팬이 있으면 글리프 rect로만 방출하고, 스팬이 없는 컨테이너(표/글상자/각주) 문단만 문단 rect 폴백으로 담는다. 모델의 `hyperlinkURL`은 스팬 유무와 무관하게 채워지므로 폴백 측에서 `HwpDrawnTextLayout.hyperlinkRegions`로 게이트해야 앞뒤 평문이 링크로 표시되지 않는다 (hit tester의 `spanAwareHyperlinkURL`과 같은 규약). 컨테이너 **안쪽** 컨테이너까지 내려간다 — 각주 안 글상자·표 문단도 대상이라 방출은 `HwpPaintListBuilder.footnoteParagraphGroups` + `emitTable`이, 히트는 `HwpHitTester`의 `.footnote` 케이스가 **같은 깊이**를 걸어야 한다 (#94). 한쪽만 내려가면 밑줄은 그려지는데 탭이 안 먹거나 그 반대가 된다. 깊이만이 아니라 **영역**도 같아야 한다 — 각주 안 표는 블록 폭을 넘어 그려지는데 (한글도 안 자른다) `hit(page:point:)`의 블록 기각이 `block.frame`만 보면 그 띠의 링크가 안 눌린다. `HwpHitTester.hitEligibleFrame`이 각주 개체 rect까지 합집합으로 넓혀 페인트가 그리는 영역과 맞춘다 (R39 #3). 이 넓힘도 **각주 전용이 아니다** (R62) — 표 셀 개체·글상자 자식도 프레임을 넘어 그려지고 방출은 그 개체 rect로 링크를 내므로, `paintedRects(for:)`가 payload 셋을 같은 walker로 훑어 자격을 준다. 그 합집합과 순서는 **손으로 짜지 말고 walker에서 받는다** (R41): 자격 영역은 `walkFootnote` 방문 rect를 그대로 union하되 **walker가 안 주는 자손까지 손으로 더한다** — 글상자 안 문단·그림·도형이 그것이다 (R46 #1). 중첩 표는 walker가 **자기 rect를 준 적이 없어** (셀만 넘긴다) `onNestedTable` 콜백을 더해 받는다 (R64) — 방출은 감싼 링크를 표 rect 전체로 내므로 그 여백 띠도 자격이어야 한다. 자격이 bounding box라 실제로 갈리는 곳은 **셀 bbox 밖으로 나가는 띠**뿐이지만, 그 한 자리가 감싼 링크의 탭을 통째로 막는다. 한 겹이라도 빠지면 그 위의 탭이 `containerHit`에 닿기도 전에 기각돼 뒤쪽 가림 로직이 통째로 무용지물이 된다, 탐색은 **페인트 역순** — 안쪽 표 → 글 앞으로 개체 → 문단 텍스트 → 글 뒤로 개체 순이고 개체 정렬은 `footnoteTextboxesInPaintOrder`가 준다. 순서를 저장 순서로 두면 `.inFrontOfText` 글상자가 덮은 링크가 열린다. 컨테이너 rect로 미리 거르는 `where rect.contains` 게이트도 두지 않는다 — 포함 판정은 자손 rect를 아는 안쪽 함수 몫이다. **각주는 블록 전체 스팬 스캔(`walkText`)을 타지 않고** 그 층 인식 조회에 통째로 위임한다 (R42 #1) — `walkText`는 페인트 정순이라 덮인 문단 스팬을 먼저 잡고, 스팬 경로가 주 경로라 그대로 두면 역순 규약이 사실상 무효가 된다 (층 안에서도 문단마다 `spanAwareHyperlinkURL`이 스팬 우선을 지키므로 규칙은 잃지 않는다). **각주 전용이 아니다** (R64): 표 셀·글상자도 같은 층을 가지므로 payload가 있는 컨테이너 **셋 모두**를 그 조회에 위임한다 — 안 그러면 셀 문단의 덮인 스팬이 위에 그린 개체의 링크를 이긴다. payload가 없는 조각 블록(`.text`·분할된 표/글상자)은 층이 없으니 그대로 스캔을 탄다. **개체를 감싼 링크는 개체 페이로드가 아니라 부모 문단의 스팬에 산다** (R49) — `HwpTextRunBuilder`가 필드 끝에서 `top.start ..< output.length`로 범위를 닫아 그 사이의 U+FFFC run까지 포함하기 때문이다. 그래서 층을 가림으로 접기 **전에** 그 층을 감싼 링크를 살려야 한다 — 안 그러면 개체가 자기 링크를 가린다. 구제는 **`controlIndex`로 한정**한다 (`wrapperHyperlinkURL`, R50 #1): 지점 포함만으로 고르면 그 개체가 **덮고 있을 뿐인** 다른 링크까지 살아나 가림 규약이 깨진다. 열쇠는 **(문단 `paraId`, `HwpAttributedStringKey.controlIndex`) 쌍**이고 수집 페이로드 4종이 둘 다 싣는다 — 서수는 `ctrlHeaderArray.enumerated()`라 **문단마다 0부터 다시** 시작해서, 여러 문단을 가진 셀·글상자에서는 서수만으로 유일하지 않다(앞 문단의 같은 서수 링크가 열린다, R51 #1). 두 값은 **기하 복사 헬퍼**(`withRect`/`withClip`)에서도 보존해야 한다 — 세로 정렬·표 분할이 그 경로를 지나므로 기본값으로 떨어지면 감싼 링크가 매칭에 실패한다 (R51 #2). 중첩 표만 그 헬퍼가 없어 세 곳(`HwpTableCellFrame.offsetBy`·세로 정렬·반복 제목 클론)이 손으로 재구성하며 값을 떨어뜨리고 있었다 — `HwpNestedTableFrame.withRect`/`withTable`을 만들어 관례가 아니라 타입으로 막았다 (R52). 컨테이너 층(표·글상자)의 자손이 `.occluded`를 돌려줘도 **바로 반환하지 말고** 감싼 링크를 먼저 본다 (R50 #2) — 채운 셀을 가진 표를 `%hlk`가 감싼 경우가 그것이다. **셀 안 표도 같은 구제를 받아야 한다** (R52): R48이 그것을 층 정렬에서 빼면서 `layerHit`의 구제 밖으로 나갔으므로 `tableHit`이 같은 규약을 되풀이한다. 각주 한정이 아니다 — `tableHit`은 페이지 표와 공유하므로 일반 표 셀에서도 같은 손실이 났다. 링크 없는 전경 층은 **불투명할 때만** 아래 탐색을 멈춘다 (`ContentLayer.occludes`, R42 #2) — 보이는 개체를 눌렀는데 숨은 링크가 열리면 안 되지만, 오버레이는 겹치는 것이 설계라 속 빈 장식 도형까지 막으면 그 아래 링크가 통째로 죽는다. **불투명 판정은 반드시 페인터를 보고 정한다** (R43): 글상자는 `fillColor`가 없어도 `textboxCommands`가 `.hwpWhite`로 칠하므로 **항상** 불투명하고("채우기 없음 = 투명"이 아니다), 도형은 `shapeCommands`가 `geometry.path`만 칠하므로 **경로 안쪽만** 가리며(바운딩 rect로 보면 타원 모서리의 링크가 죽는다), 표 셀은 `fillColor`가 있을 때 가린다. 그림은 알파를 알 수 없어 채워진 것으로 보되 **`clipRect` 안만** 가린다 (R45 #2 — `cellImageCommands`가 절단면 밖을 안 그린다). 알파 한 가지가 한글.app 실측으로 확정할 몫이다. 가림은 **블록 경계를 넘어서도** 유지된다 (R45 #3): `hit(page:point:)`가 frame 밖 각주를 `String?`로 받아 `.occluded`를 nil로 접으면 아래 블록으로 내려가 그 밑에 숨은 링크가 열린다. **링크도 가림도 없는 `.miss`도 같다** (R53) — 자격 영역은 bounding box라 투명한 틈까지 들지만, **칠해진 자손 위**라면 각주가 claim해야 한다 (`containerHit`은 링크와 불투명 채움만 알아 링크 없는 문단·안 채운 셀에 `.miss`를 준다). frame **안**에서 같은 텍스트가 `.footnote`가 되는 것과 답이 같아야 한다. 다만 **자격과 claim은 정밀도가 다르다** (R54): 자격 영역(`paintedRects` union)은 실제 칠 영역의 **상위집합**이어야 하고 (좁으면 그 위의 탭이 `containerHit`에 닿기도 전에 기각돼 뒤 로직이 통째로 무용지물), claim은 **정밀 커버리지**여야 한다 (거친 rect로 claim하면 클립 밖 그림·속 빈 도형·안 채운 셀의 투명한 자리까지 각주 것으로 가져가 아래 블록의 **보이는** 링크를 막는다). 그래서 커버리지의 소유자는 둘뿐이다 — 층은 `ContentLayer.paints`, 텍스트는 `HwpDrawnTextLayout.textLineRegions` (선택 하이라이트 `selectionRect`와 **같은 정의**). **층의 영역 축은 셋이고 쓰임이 다르다** (R60): `rect`는 **감싼 링크의 영역** — 방출 (`wrappedObjects`) 이 개체 rect로 링크를 내므로 히트도 그 rect 전체에서 열어야 한다 (속 빈 도형의 투명한 안쪽도 그 개체의 링크다). **rect 밖은 아니다** (R62): 자손이 부모를 넘어 그려 `.occluded`를 돌려줘도 방출은 부모 rect까지만 링크를 내므로, 가림을 이유로 rect 밖에서 부모 URL을 열면 paint list에 없는 링크가 된다 (자손 순회 자체는 그대로 무제한이다). `paints`는 **claim·가림** — 링크가 없으면 칠한 자리만 접고 투명한 안쪽은 아래 블록 몫이다 (R54 ①). 그 "칠한 자리"에는 **테두리 stroke의 바깥쪽 절반**도 든다 (R61): CG는 경로 중앙에 그으므로 (`ctx.stroke(rect)`) 폭의 절반이 rect 밖이다 — `HwpCellImage.paintedRect`·`HwpCellTextbox.paintedRect`가 그 몫을 더하고 자격 union도 같은 폭 (`strokeBounds`) 으로 넓힌다. **도형은 `paints`만 stroke 경로(`strokePaints`)로 보고 자격은 rect에서 멈춰 있었다** (R62) — 자격이 커버리지의 상위집합이 아니면 보이는 선 위의 탭이 `containerHit`에 닿기도 전에 기각되므로 자격도 `max(strokeWidth, 1)`로 같이 넓힌다. **경로 자체도 rect로 클램프되지 않는다** (R63): `HwpShapeGeometry.build`는 세부 레코드 좌표에 렌더 행렬(표 84 — 회전·확대)을 적용할 뿐이고 `shapeCommands`는 클립 없이 그리므로 회전 도형은 축정렬 rect를 넘어 칠한다. `HwpCellShape.paintedRect`가 **경로 bbox ∪ rect ∪ stroke 경로 bbox**를 혼자 소유하고 자격은 그것을 옮겨 쓴다 — 제어점까지 무는 `boundingBox`라 상위집합이 보장된다. **stroke 몫은 폭의 절반이 아니다** (R64): CG의 miter 조인은 팁을 `width/(2·sin(θ/2))`까지, `miterLimit`(10) 상한으로 폭의 **5배**까지 내보내므로 예각 도형에서 `insetBy(-w/2)`는 상위집합이 아니다. 판정(`strokePaints`)과 자격이 `HwpShapeGeometry.strokedPath` **하나**를 공유해야 보이는 팁과 눌리는 팁이 같다. 폭의 소유자도 하나여야 한다 (`HwpTextboxFrame.effectiveBorderWidth`): 페인터는 0.7pt로 끌어올려 긋는데 자격·커버리지가 저작 폭을 보면 0.3pt 테두리의 **보이는** 절반이 빠진다. `occludes`는 **자손 가림 전파**. 순서도 그 뜻대로다: 감싼 링크를 `rect`로 먼저 보고, 없을 때만 `paints`로 접는다. 셋을 하나로 합치면 방출과 갈리거나 (rect만) 투명한 자리를 뺏는다 (paints만). 표도 같다 — **셀의 칠은 채움 ∪ 칸막이**다 (R55): 안 채운 셀도 페인터 (`HwpPaintListBuilder.borderCommands`) 가 셀 안쪽에 테두리 띠 넷을 그리므로 그 선 위의 탭은 그 셀·표가 가져가고, 칸 **안**만 아래 블록 몫이다. 판정은 `HwpTableCellFrame.paints` **하나**가 소유하고 `paintsContent`·`ContentLayer.nestedTable`·`tableHit` 셋이 공유한다 — **띠 산식은 페인터와 같아야** 보이는 선과 눌리는 선이 일치한다. 텍스트 커버리지는 **rect 게이트 뒤에서만** CT 조판을 한다 (R55): `tableHit`은 셀 프레임으로 미리 거르지 않으므로 (R44 #2) 게이트가 없으면 탭 한 번이 셀·문단 수만큼 framesetting을 돌려 동기 탭 핸들러가 멈춘다 (600셀 합성 표 실측: 탭당 29.16 → 3.54ms, **8.2x**). 줄 상자는 문단 rect 안이고 가로만 slight-overflow 허용치까지 넘으므로 그 여유를 준 rect가 상위집합이다 — `spanAwareHyperlinkURL`이 링크 **속성이 있을 때만** 조판하는 것과 같은 이유의 게이트다. 그 여유는 **자격 영역도 같이** 받아야 한다 (R56): 자격이 rect 그대로면 게이트의 여유가 도달 불가능해지고, 캐시 높이가 대체 폰트 CT 줄보다 짧을 때 rect **아래**로 그려진 글자 위의 탭이 기각된다. `textBounds` 하나를 자격과 게이트가 공유한다. **세로 여유는 폰트 메트릭에서 온다** (R65): 폭에 비례시키면 넘침의 크기와 무관해 좁은 셀(폭 40pt → 2.4pt)에서 그려진 글자가 자격 밖으로 나가고, 그러면 전경 글자가 claim에 실패해 뒤 층의 감싼 링크가 이기거나 블록 밖 링크가 아예 안 눌린다. 조판 없이 `.font` 속성만 훑어 `ascent+descent+leading`의 최대를 상한으로 쓴다 (CT 조판은 이 게이트 **뒤**라 R55의 탭 지연이 재발하지 않는다). 한 줄 기준이라 여러 줄이 각각 조금씩 짧으면 합이 이보다 클 수 있다 — 남은 근사는 그 하나다. **방출도 같은 깊이여야 한다**: `%hlk`가 감싼 비 treatAsChar 개체는 마커 폭이 0이라 스팬이 rect를 못 내므로 (`hyperlinkRegions`의 `maxX > minX` 가드) `HwpPaintListBuilder`가 (문단, 서수) 열쇠로 **개체 rect** 링크를 따로 낸다 — 히트만 개체로 내려가면 밑줄 없는 자리가 눌리는 그 비대칭이 된다. 조회는 `HwpDrawnTextLayout.wrapperHyperlinkURL` **하나**를 방출과 히트가 공유한다. 방출 쪽은 그 **일괄 형태**(`wrapperHyperlinkIndex`)를 쓴다 (R63): 조회가 문단을 처음부터 훑어 그 서수의 run에서 멈추므로 개체마다 부르면 한 문단 N개체가 O(N²)고 링크가 하나도 없어도 전량 순회한다 (N=3,000 합성 실측: 1.741s → 0.020s, **87x**). 색인은 규칙을 그대로 옮겨야 한다 — 문단 안에서는 그 서수의 **첫** run만 보고, 같은 `paraId` 문단이 여럿이면 **앞 문단이 이긴다**. 둘이 갈리면 방출과 히트가 다른 URL을 여니 동치 테스트로 잠근다. 방출은 컨테이너 **재귀**로 내려간다 (`emitWrappedObjects`) — 각주·표 셀·글상자가 같은 모양이라 호출부마다 손으로 쓰면 한 곳을 빠뜨린다 (실제로 각주 안 글상자가 빠졌다, R57). **(문단, 서수) 열쇠는 표 분할을 못 건넌다** (R58): `splitCell`이 문단은 rect로 (걸치면 잘라서), 그림은 **양쪽 조각에 복사**, 도형·글상자는 midY, 중첩 표는 minY로 배정하므로 U+FFFC run이 남지 않은 조각이 생긴다. 그래서 `HwpTableCellFrame.resolvingWrapperURLs()`가 **쪼개기 전에** 해석해 개체의 `wrapperURL`에 고정하고, 히트·방출은 `wrapperURL ?? 키 조회` 순으로 본다. 이미 고정된 값은 덮지 않는다 (여러 페이지에 걸친 표는 조각이 다시 쪼개진다). 이 필드도 **복사 헬퍼가 보존해야** 한다 — R51 #2가 터졌던 그 표면이다. 이 결함은 paint list 환원으로 안 풀린다: 분할은 페이지네이션 중이고 paint list는 그 뒤라, 짝이 깨진 뒤에는 어떤 소비자도 복원할 수 없다. 그림은 저작 rect가 아니라 **`HwpCellImage.visibleRect`** (= rect ∩ clipRect) 로 낸다: 그리기는 저작 rect + CG 클립이지만 (rect를 줄이면 스케일 왜곡, R32 #2) 잘려 안 보이는 자리를 링크로 표시하면 안 된다 — 그 교집합은 히트 (`ContentLayer.occludes`) 와 **같은 프로퍼티**를 쓴다. **전경 문단의 글자도 칠해진 것**이라 링크가 없어도 글 뒤로 층보다 **먼저** claim한다 (`containerHit`) — 안 그러면 보이는 글자 위의 탭이 숨은 배경 링크를 열어 역순 규약이 깨진다. 줄 사이 여백과 짧은 줄의 빈 오른쪽은 안 칠했으므로 그대로 뒤 층으로 내려간다. **컨테이너 rect로 미리 거르는 게이트는 어디에도 두지 않는다** — 중첩 표 rect(R41 #2)·셀 프레임(R44 #2)·글상자 rect(R44 #3) 셋 다, 자손이 자기 컨테이너를 넘어 그려질 수 있어 자격 영역은 인정하는데 조회만 막히기 때문이다. rect는 **가림 판정에만** 쓰고, 재귀 결과(`.occluded` 포함)는 **버리지 말고 그대로 전파**한다. 히트의 컨테이너 순회는 `containerHit` **하나**가 각주·표 셀·글상자에 재귀로 쓰인다 — 겹마다 따로 구현하면 다음 겹에서 또 갈린다(R39~R43이 전부 그 사례였다). 그래서 셀 글상자 전용 우회로(R31 #1)도 없앴다: 남겨 두면 가림으로 nil이 된 지점에서 덮인 링크가 되살아난다
+- 하이퍼링크 방출은 **스팬 우선**이다: `%hlk` 필드 스팬이 있으면 글리프 rect로만 방출하고, 스팬이 없는 컨테이너(표/글상자/각주) 문단만 문단 rect 폴백으로 담는다. 모델의 `hyperlinkURL`은 스팬 유무와 무관하게 채워지므로 폴백 측에서 `HwpDrawnTextLayout.hyperlinkRegions`로 게이트해야 앞뒤 평문이 링크로 표시되지 않는다 (hit tester의 `spanAwareHyperlinkURL`과 같은 규약). 컨테이너 **안쪽** 컨테이너까지 내려간다 — 각주 안 글상자·표 문단도 대상이라 방출은 `HwpPaintListBuilder.footnoteParagraphGroups` + `emitTable`이, 히트는 `HwpHitTester`의 `.footnote` 케이스가 **같은 깊이**를 걸어야 한다 (#94). 한쪽만 내려가면 밑줄은 그려지는데 탭이 안 먹거나 그 반대가 된다. 깊이만이 아니라 **영역**도 같아야 한다 — 각주 안 표는 블록 폭을 넘어 그려지는데 (한글도 안 자른다) `hit(page:point:)`의 블록 기각이 `block.frame`만 보면 그 띠의 링크가 안 눌린다. `HwpHitTester.hitEligibleFrame`이 각주 개체 rect까지 합집합으로 넓혀 페인트가 그리는 영역과 맞춘다 (R39 #3). 이 넓힘도 **각주 전용이 아니다** (R62) — 표 셀 개체·글상자 자식도 프레임을 넘어 그려지고 방출은 그 개체 rect로 링크를 내므로, `paintedRects(for:)`가 payload 셋을 같은 walker로 훑어 자격을 준다. 그 합집합과 순서는 **손으로 짜지 말고 walker에서 받는다** (R41): 자격 영역은 `walkFootnote` 방문 rect를 그대로 union하되 **walker가 안 주는 자손까지 손으로 더한다** — 글상자 안 문단·그림·도형이 그것이다 (R46 #1). 중첩 표는 walker가 **자기 rect를 준 적이 없어** (셀만 넘긴다) `onNestedTable` 콜백을 더해 받는다 (R64) — 방출은 감싼 링크를 표 rect 전체로 내므로 그 여백 띠도 자격이어야 한다. 자격이 bounding box라 실제로 갈리는 곳은 **셀 bbox 밖으로 나가는 띠**뿐이지만, 그 한 자리가 감싼 링크의 탭을 통째로 막는다. 한 겹이라도 빠지면 그 위의 탭이 `containerHit`에 닿기도 전에 기각돼 뒤쪽 가림 로직이 통째로 무용지물이 된다, 탐색은 **페인트 역순** — 안쪽 표 → 글 앞으로 개체 → 문단 텍스트 → 글 뒤로 개체 순이고 개체 정렬은 `footnoteTextboxesInPaintOrder`가 준다. 순서를 저장 순서로 두면 `.inFrontOfText` 글상자가 덮은 링크가 열린다. 컨테이너 rect로 미리 거르는 `where rect.contains` 게이트도 두지 않는다 — 포함 판정은 자손 rect를 아는 안쪽 함수 몫이다. **각주는 블록 전체 스팬 스캔(`walkText`)을 타지 않고** 그 층 인식 조회에 통째로 위임한다 (R42 #1) — `walkText`는 페인트 정순이라 덮인 문단 스팬을 먼저 잡고, 스팬 경로가 주 경로라 그대로 두면 역순 규약이 사실상 무효가 된다 (층 안에서도 문단마다 `spanAwareHyperlinkURL`이 스팬 우선을 지키므로 규칙은 잃지 않는다). **각주 전용이 아니다** (R64): 표 셀·글상자도 같은 층을 가지므로 payload가 있는 컨테이너 **셋 모두**를 그 조회에 위임한다 — 안 그러면 셀 문단의 덮인 스팬이 위에 그린 개체의 링크를 이긴다. payload가 없는 조각 블록(`.text`·분할된 표/글상자)은 층이 없으니 그대로 스캔을 탄다. **개체를 감싼 링크는 개체 페이로드가 아니라 부모 문단의 스팬에 산다** (R49) — `HwpTextRunBuilder`가 필드 끝에서 `top.start ..< output.length`로 범위를 닫아 그 사이의 U+FFFC run까지 포함하기 때문이다. 그래서 층을 가림으로 접기 **전에** 그 층을 감싼 링크를 살려야 한다 — 안 그러면 개체가 자기 링크를 가린다. 구제는 **`controlIndex`로 한정**한다 (`wrapperHyperlinkURL`, R50 #1): 지점 포함만으로 고르면 그 개체가 **덮고 있을 뿐인** 다른 링크까지 살아나 가림 규약이 깨진다. 열쇠는 **(문단 `paraId`, `HwpAttributedStringKey.controlIndex`) 쌍**이고 수집 페이로드 4종이 둘 다 싣는다 — 서수는 `ctrlHeaderArray.enumerated()`라 **문단마다 0부터 다시** 시작해서, 여러 문단을 가진 셀·글상자에서는 서수만으로 유일하지 않다(앞 문단의 같은 서수 링크가 열린다, R51 #1). 두 값은 **기하 복사 헬퍼**(`withRect`/`withClip`)에서도 보존해야 한다 — 세로 정렬·표 분할이 그 경로를 지나므로 기본값으로 떨어지면 감싼 링크가 매칭에 실패한다 (R51 #2). 중첩 표만 그 헬퍼가 없어 세 곳(`HwpTableCellFrame.offsetBy`·세로 정렬·반복 제목 클론)이 손으로 재구성하며 값을 떨어뜨리고 있었다 — `HwpNestedTableFrame.withRect`/`withTable`을 만들어 관례가 아니라 타입으로 막았다 (R52). 컨테이너 층(표·글상자)의 자손이 `.occluded`를 돌려줘도 **바로 반환하지 말고** 감싼 링크를 먼저 본다 (R50 #2) — 채운 셀을 가진 표를 `%hlk`가 감싼 경우가 그것이다. **셀 안 표도 같은 구제를 받아야 한다** (R52): R48이 그것을 층 정렬에서 빼면서 `layerHit`의 구제 밖으로 나갔으므로 `tableHit`이 같은 규약을 되풀이한다. 각주 한정이 아니다 — `tableHit`은 페이지 표와 공유하므로 일반 표 셀에서도 같은 손실이 났다. 링크 없는 전경 층은 **불투명할 때만** 아래 탐색을 멈춘다 (`ContentLayer.occludes`, R42 #2) — 보이는 개체를 눌렀는데 숨은 링크가 열리면 안 되지만, 오버레이는 겹치는 것이 설계라 속 빈 장식 도형까지 막으면 그 아래 링크가 통째로 죽는다. **불투명 판정은 반드시 페인터를 보고 정한다** (R43): 글상자는 `fillColor`가 없어도 `textboxCommands`가 `.hwpWhite`로 칠하므로 **항상** 불투명하고("채우기 없음 = 투명"이 아니다), 도형은 `shapeCommands`가 `geometry.path`만 칠하므로 **경로 안쪽만** 가리며(바운딩 rect로 보면 타원 모서리의 링크가 죽는다), 표 셀은 `fillColor`가 있을 때 가린다. 그림은 알파를 알 수 없어 채워진 것으로 보되 **`clipRect` 안만** 가린다 (R45 #2 — `cellImageCommands`가 절단면 밖을 안 그린다). 알파 한 가지가 한글.app 실측으로 확정할 몫이다. 가림은 **블록 경계를 넘어서도** 유지된다 (R45 #3): `hit(page:point:)`가 frame 밖 각주를 `String?`로 받아 `.occluded`를 nil로 접으면 아래 블록으로 내려가 그 밑에 숨은 링크가 열린다. **링크도 가림도 없는 `.miss`도 같다** (R53) — 자격 영역은 bounding box라 투명한 틈까지 들지만, **칠해진 자손 위**라면 각주가 claim해야 한다 (`containerHit`은 링크와 불투명 채움만 알아 링크 없는 문단·안 채운 셀에 `.miss`를 준다). frame **안**에서 같은 텍스트가 `.footnote`가 되는 것과 답이 같아야 한다. 다만 **자격과 claim은 정밀도가 다르다** (R54): 자격 영역(`paintedRects` union)은 실제 칠 영역의 **상위집합**이어야 하고 (좁으면 그 위의 탭이 `containerHit`에 닿기도 전에 기각돼 뒤 로직이 통째로 무용지물), claim은 **정밀 커버리지**여야 한다 (거친 rect로 claim하면 클립 밖 그림·속 빈 도형·안 채운 셀의 투명한 자리까지 각주 것으로 가져가 아래 블록의 **보이는** 링크를 막는다). 그래서 커버리지의 소유자는 둘뿐이다 — 층은 `ContentLayer.paints`, 텍스트는 `HwpDrawnTextLayout.textLineRegions` (줄 상자는 선택 하이라이트 `selectionRect`와 **같은 정의**이고, 글자 위치로 옮겨진 run의 잉크 밴드가 더 붙는다 — 아래 "글자 위치" 항목). **층의 영역 축은 셋이고 쓰임이 다르다** (R60): `rect`는 **감싼 링크의 영역** — 방출 (`wrappedObjects`) 이 개체 rect로 링크를 내므로 히트도 그 rect 전체에서 열어야 한다 (속 빈 도형의 투명한 안쪽도 그 개체의 링크다). **rect 밖은 아니다** (R62): 자손이 부모를 넘어 그려 `.occluded`를 돌려줘도 방출은 부모 rect까지만 링크를 내므로, 가림을 이유로 rect 밖에서 부모 URL을 열면 paint list에 없는 링크가 된다 (자손 순회 자체는 그대로 무제한이다). `paints`는 **claim·가림** — 링크가 없으면 칠한 자리만 접고 투명한 안쪽은 아래 블록 몫이다 (R54 ①). 그 "칠한 자리"에는 **테두리 stroke의 바깥쪽 절반**도 든다 (R61): CG는 경로 중앙에 그으므로 (`ctx.stroke(rect)`) 폭의 절반이 rect 밖이다 — `HwpCellImage.paintedRect`·`HwpCellTextbox.paintedRect`가 그 몫을 더하고 자격 union도 같은 폭 (`strokeBounds`) 으로 넓힌다. **도형은 `paints`만 stroke 경로(`strokePaints`)로 보고 자격은 rect에서 멈춰 있었다** (R62) — 자격이 커버리지의 상위집합이 아니면 보이는 선 위의 탭이 `containerHit`에 닿기도 전에 기각되므로 자격도 `max(strokeWidth, 1)`로 같이 넓힌다. **경로 자체도 rect로 클램프되지 않는다** (R63): `HwpShapeGeometry.build`는 세부 레코드 좌표에 렌더 행렬(표 84 — 회전·확대)을 적용할 뿐이고 `shapeCommands`는 클립 없이 그리므로 회전 도형은 축정렬 rect를 넘어 칠한다. `HwpCellShape.paintedRect`가 **경로 bbox ∪ rect ∪ stroke 경로 bbox**를 혼자 소유하고 자격은 그것을 옮겨 쓴다 — 제어점까지 무는 `boundingBox`라 상위집합이 보장된다. **stroke 몫은 폭의 절반이 아니다** (R64): CG의 miter 조인은 팁을 `width/(2·sin(θ/2))`까지, `miterLimit`(10) 상한으로 폭의 **5배**까지 내보내므로 예각 도형에서 `insetBy(-w/2)`는 상위집합이 아니다. 판정(`strokePaints`)과 자격이 `HwpShapeGeometry.strokedPath` **하나**를 공유해야 보이는 팁과 눌리는 팁이 같다. 폭의 소유자도 하나여야 한다 (`HwpTextboxFrame.effectiveBorderWidth`): 페인터는 0.7pt로 끌어올려 긋는데 자격·커버리지가 저작 폭을 보면 0.3pt 테두리의 **보이는** 절반이 빠진다. `occludes`는 **자손 가림 전파**. 순서도 그 뜻대로다: 감싼 링크를 `rect`로 먼저 보고, 없을 때만 `paints`로 접는다. 셋을 하나로 합치면 방출과 갈리거나 (rect만) 투명한 자리를 뺏는다 (paints만). 표도 같다 — **셀의 칠은 채움 ∪ 칸막이**다 (R55): 안 채운 셀도 페인터 (`HwpPaintListBuilder.borderCommands`) 가 셀 안쪽에 테두리 띠 넷을 그리므로 그 선 위의 탭은 그 셀·표가 가져가고, 칸 **안**만 아래 블록 몫이다. 판정은 `HwpTableCellFrame.paints` **하나**가 소유하고 `paintsContent`·`ContentLayer.nestedTable`·`tableHit` 셋이 공유한다 — **띠 산식은 페인터와 같아야** 보이는 선과 눌리는 선이 일치한다. 텍스트 커버리지는 **rect 게이트 뒤에서만** CT 조판을 한다 (R55): `tableHit`은 셀 프레임으로 미리 거르지 않으므로 (R44 #2) 게이트가 없으면 탭 한 번이 셀·문단 수만큼 framesetting을 돌려 동기 탭 핸들러가 멈춘다 (600셀 합성 표 실측: 탭당 29.16 → 3.54ms, **8.2x**). 줄 상자는 문단 rect 안이고 가로만 slight-overflow 허용치까지 넘으므로 그 여유를 준 rect가 상위집합이다 — `spanAwareHyperlinkURL`이 링크 **속성이 있을 때만** 조판하는 것과 같은 이유의 게이트다. 그 여유는 **자격 영역도 같이** 받아야 한다 (R56): 자격이 rect 그대로면 게이트의 여유가 도달 불가능해지고, 캐시 높이가 대체 폰트 CT 줄보다 짧을 때 rect **아래**로 그려진 글자 위의 탭이 기각된다. `textBounds` 하나를 자격과 게이트가 공유한다. **세로 여유는 폰트 메트릭에서 온다** (R65): 폭에 비례시키면 넘침의 크기와 무관해 좁은 셀(폭 40pt → 2.4pt)에서 그려진 글자가 자격 밖으로 나가고, 그러면 전경 글자가 claim에 실패해 뒤 층의 감싼 링크가 이기거나 블록 밖 링크가 아예 안 눌린다. 조판 없이 `.font` 속성만 훑어 `ascent+descent+leading`의 최대를 상한으로 쓴다 (CT 조판은 이 게이트 **뒤**라 R55의 탭 지연이 재발하지 않는다). 한 줄 기준이라 여러 줄이 각각 조금씩 짧으면 합이 이보다 클 수 있다 — 남은 근사는 그 하나다. 글자 위치로 옮겨진 글리프는 별개의 축이라 그 **최대 |오프셋|을 더한다** (#200 리뷰 — 아래 "글자 위치" 항목). 자격은 종류가 아니라 **방출 술어**(`HwpBlockContentWalker.plainText`)로 가른다 — payload 없는 `.table`·`.textbox`·`.footnote` 조각도 `plainCommands`가 텍스트로 그리므로 `.text`와 같은 `textBounds`를 받는다. **방출도 같은 깊이여야 한다**: `%hlk`가 감싼 비 treatAsChar 개체는 마커 폭이 0이라 스팬이 rect를 못 내므로 (`hyperlinkRegions`의 `maxX > minX` 가드) `HwpPaintListBuilder`가 (문단, 서수) 열쇠로 **개체 rect** 링크를 따로 낸다 — 히트만 개체로 내려가면 밑줄 없는 자리가 눌리는 그 비대칭이 된다. 조회는 `HwpDrawnTextLayout.wrapperHyperlinkURL` **하나**를 방출과 히트가 공유한다. 방출 쪽은 그 **일괄 형태**(`wrapperHyperlinkIndex`)를 쓴다 (R63): 조회가 문단을 처음부터 훑어 그 서수의 run에서 멈추므로 개체마다 부르면 한 문단 N개체가 O(N²)고 링크가 하나도 없어도 전량 순회한다 (N=3,000 합성 실측: 1.741s → 0.020s, **87x**). 색인은 규칙을 그대로 옮겨야 한다 — 문단 안에서는 그 서수의 **첫** run만 보고, 같은 `paraId` 문단이 여럿이면 **앞 문단이 이긴다**. 둘이 갈리면 방출과 히트가 다른 URL을 여니 동치 테스트로 잠근다. 방출은 컨테이너 **재귀**로 내려간다 (`emitWrappedObjects`) — 각주·표 셀·글상자가 같은 모양이라 호출부마다 손으로 쓰면 한 곳을 빠뜨린다 (실제로 각주 안 글상자가 빠졌다, R57). **(문단, 서수) 열쇠는 표 분할을 못 건넌다** (R58): `splitCell`이 문단은 rect로 (걸치면 잘라서), 그림은 **양쪽 조각에 복사**, 도형·글상자는 midY, 중첩 표는 minY로 배정하므로 U+FFFC run이 남지 않은 조각이 생긴다. 그래서 `HwpTableCellFrame.resolvingWrapperURLs()`가 **쪼개기 전에** 해석해 개체의 `wrapperURL`에 고정하고, 히트·방출은 `wrapperURL ?? 키 조회` 순으로 본다. 이미 고정된 값은 덮지 않는다 (여러 페이지에 걸친 표는 조각이 다시 쪼개진다). 이 필드도 **복사 헬퍼가 보존해야** 한다 — R51 #2가 터졌던 그 표면이다. 이 결함은 paint list 환원으로 안 풀린다: 분할은 페이지네이션 중이고 paint list는 그 뒤라, 짝이 깨진 뒤에는 어떤 소비자도 복원할 수 없다. 그림은 저작 rect가 아니라 **`HwpCellImage.visibleRect`** (= rect ∩ clipRect) 로 낸다: 그리기는 저작 rect + CG 클립이지만 (rect를 줄이면 스케일 왜곡, R32 #2) 잘려 안 보이는 자리를 링크로 표시하면 안 된다 — 그 교집합은 히트 (`ContentLayer.occludes`) 와 **같은 프로퍼티**를 쓴다. **전경 문단의 글자도 칠해진 것**이라 링크가 없어도 글 뒤로 층보다 **먼저** claim한다 (`containerHit`) — 안 그러면 보이는 글자 위의 탭이 숨은 배경 링크를 열어 역순 규약이 깨진다. 줄 사이 여백과 짧은 줄의 빈 오른쪽은 안 칠했으므로 그대로 뒤 층으로 내려간다. **컨테이너 rect로 미리 거르는 게이트는 어디에도 두지 않는다** — 중첩 표 rect(R41 #2)·셀 프레임(R44 #2)·글상자 rect(R44 #3) 셋 다, 자손이 자기 컨테이너를 넘어 그려질 수 있어 자격 영역은 인정하는데 조회만 막히기 때문이다. rect는 **가림 판정에만** 쓰고, 재귀 결과(`.occluded` 포함)는 **버리지 말고 그대로 전파**한다. 히트의 컨테이너 순회는 `containerHit` **하나**가 각주·표 셀·글상자에 재귀로 쓰인다 — 겹마다 따로 구현하면 다음 겹에서 또 갈린다(R39~R43이 전부 그 사례였다). 그래서 셀 글상자 전용 우회로(R31 #1)도 없앴다: 남겨 두면 가림으로 nil이 된 지점에서 덮인 링크가 되살아난다
 - **랜덤 UUID identifier 금지.** equality/hash 는 `frame + kind + text + url + payload + source` 기반. 같은 문서 두 번 로드 시 동일 블록으로 인식되어야 함
 - `HwpBlockKind`: `text` / `image` / `shape` / `table` / `textbox` / `footnote` / `placeholder`
 
@@ -2093,6 +2111,161 @@ paraShape와 같은 값**이어야 한다.
   두었고 호환 모드 분기는 #187 몫이다. 덤: 변경 내용 추적 문서의 PDF 내보내기는
   쪽 전체를 ~0.8배로 줄인다(왼쪽 변경 막대 여백) — 글리프가 7.92·31.68pt로 찍혀도
   상대 크기가 아니라 쪽 축소이며 em 비율은 그대로다
+- **글자 위치(표 33)는 `glyphBaselineOffset` 한 키로만 나른다** — 조판 문자열에
+  `kCTBaselineOffset`은 싣지 않는다. 두 가지가 실측이다: ① 한글은 줄 상자를 키우지
+  않는다 (`CharShape` 픽스처 10pt·글자 위치 30을 한글 12.30 PDF로 내보내 24배 래스터로
+  재면 그 줄의 잉크만 격자에서 2.92pt 내려가고 위아래 줄의 16.0pt 격자는 정확히
+  연속이다) 는데 CT는 그 속성을 만나면 줄 슬롯을 |오프셋|만큼 키우고, ② 부호가 반대다
+  (CT 양수 = 위, HWP 원시 양수 = 아래). 종전에는 두 키를 함께 실어 CT의 시프트와
+  렌더러의 시프트가 **정확히 상쇄돼 글자 위치가 화면에 전혀 반영되지 않았다** — 같은
+  픽스처를 우리 렌더러로 그리면 그 줄이 0.000pt 움직이지 않았고, CT 키를 뺀 뒤 3.000pt
+  내려가 한글과 0.08pt 안에서 만난다. 그 근거였던 "CTFramesetter는 kCTBaselineOffset을
+  무시한다"는 macOS 27.0에서 거짓이다. 첨자(`superscriptBaselineRatio`)는 처음부터 이
+  커스텀 키만 쓰므로 영향이 없다.
+- **그 이동은 기하 질의에도 반영한다 — 단 넓히는 것이지 옮기는 것이 아니다** (#197 리뷰).
+  글리프가 실제로 움직이므로 줄 상자만 보는 rect는 **그려진 글자를 놓친다**: Helvetica
+  10pt 링크에 글자 위치 30이면 잉크 하단 3.000pt가 줄 상자 밖이라 하단 클릭이 `.text`로
+  떨어지고, 위치 100에서는 겹침이 **0%**가 된다(실측). 그래서 `HwpDrawnLine.paintedRects`
+  (= 줄 상자 + 옮겨진 run마다 **그 run의 잉크 가로 범위만** 가진 밴드)를 두고
+  `textLineRegions`(claim)와 `hyperlinkRegions`(방출 ≡ 히트)가 그것을 쓴다.
+  `hitEligibleFrame`도 payload 없이 프레임에 직접 그리는 문자열(`plainText`)이면 가로만
+  넓히던 것을 `textBounds`로 바꿔 세로 여유를 함께 준다 — 안 그러면 그 글리프 위의 탭이
+  rect 판정에 닿기도 전에 블록 단계에서 기각된다.
+  - **평행이동이 아니라 합집합**이다: 한 줄에 오프셋이 다른 run이 섞이므로 밴드를 통째로
+    옮기면 오프셋 없는 이웃 run의 잉크가 오히려 밖으로 나간다. 링크 스팬은 **그 스팬
+    자신의** 오프셋으로 넓힌다.
+  - **하나의 rect로 합치지도 않는다** (리뷰 2·3차): 줄 전체 폭에 최대 오프셋을 걸면 안
+    옮겨진 run 아래의 **빈 띠까지 claim**해 그 자리의 탭이 뒤 층의 보이는 링크를 막는다
+    ('ABBBBBBBBBB'에서 A만 10pt 내리면 B 아래가 그렇다). claim은 정밀 커버리지여야 한다는
+    R54 그대로다. 가로 범위는 run의 **잉크 경계**(`CTRunGetImageBounds`)에서 낸다 — 문자열
+    인덱스로 되짚으면 재조판된 부분 복사본에서 어긋나고 RTL은 논리 순서와 x 순서가 반대다
+    (진행 폭이 아니라 잉크인 이유는 아래 항목).
+    **`hyperlinkRegions`도 같다**: 스팬 전체 폭에 최대 오프셋을 걸면 같은 URL의 안 옮겨진
+    글자 위·아래 빈 자리를 그 링크가 가져가 **뒤에 있는 링크가 진다**. 줄 상자 rect(스팬
+    가로 범위)를 그대로 내고, **그 스팬에 속한** 옮겨진 run마다 밴드를 하나씩 더 낸다 —
+    한 스팬이 여러 rect를 내도 소비처는 `first { contains }`·`isEmpty`뿐이라 무해하고,
+    `.hyperlink` 커맨드는 아무것도 그리지 않아 시각 격차도 없다. 소속을 **가로 클립으로
+    가르려던 첫 형태는 양방향 줄에서 틀렸다** — 바로 아래 항목.
+  - **밴드는 그 스팬의 run 것만 가져간다 — 가로 클립으로는 못 가른다** (리뷰 4차, 위 항목의
+    **회귀 수정**이다: 밴드를 처음 넣은 48d7fa1은 스팬 rect를 **그 스팬 자신의** 오프셋으로
+    넓혀 옳았고, run별로 쪼갠 553f5b1이 "줄의 모든 밴드를 가로 클립"으로 바꾸면서 깨졌다).
+    스팬 rect는 양끝
+    오프셋을 min/max로 정규화해 내므로(#1) **양방향 줄에서 그 상자가 다른 링크의 글자를 덮는다**.
+    실측(`abc אבג`에 `abc א`·`בג` 두 링크, Helvetica 10pt): 앞 스팬 상자 0…28.313이 뒤 스팬 글자
+    18.903…28.313을 통째로 덮고, 앞 스팬 **자기** 글자 א는 상자 **밖** 28.313…33.943에 있다. 그래서
+    가로로만 자르면 두 가지가 한꺼번에 어긋난다 — 남의 옮겨진 잉크를 가져가고(뒤 링크만 10pt 올리면
+    올라간 잉크 위의 탭이 **앞** URL을 열었다), 자기 옮겨진 잉크는 잘려 나간다(앞 링크만 올리면 올라간
+    א 위의 탭이 아무것도 안 열었다). 밴드에 run의 **CTLine 문자열 범위**를 실어 스팬에 **포함**되는
+    run만 고르고, 고른 뒤에는 **자르지 않는다**. 교집합이 아니라 포함인 이유는 CT가 속성 경계마다 run을
+    끊기 때문이다 (실측: 그 줄의 run이 ct[0,3)·[3,4)·[5,7)·[4,5)로 정확히 갈린다 — 폰트 폴백이 한
+    스팬을 여러 run으로 쪼개도 전부 그 스팬 안이다). 혹시라도 run이 두 스팬에 걸치면 포함이 실패해
+    **남의 잉크를 안 가져간다**. 단방향 줄은 run이 늘 스팬 상자 안이라 한 자리도 안 바뀐다 (13케이스
+    대조: 단일·다중 스팬, 오프셋 혼합, 줄 넘김, 폰트 폴백, 꼬리 공백, 순수 RTL 전부 동일). 고친 뒤
+    혼합 방향 줄의 링크 밴드는 **칠 커버리지(`textLineRegions`)와 rect 단위로 일치**한다 —
+    방출 ≡ 히트 ≡ 칠. **남은 것**: 줄 상자 rect 자체의 bidi 오귀속(상자 **안** 탭은 여전히 앞 URL이
+    열린다)은 그대로다 — 밴드와 무관하게 min/max 정규화가 만든 별개의 기존 결함이고, 고치려면 스팬
+    rect를 run별로 내야 한다.
+  - **밴드는 줄마다 한 번만 걷는다** (R55의 탭 지연과 같은 축, 리뷰 후속): `hyperlinkRegions`는
+    링크 스팬마다 문단의 모든 줄을 도는데 밴드를 그 자리에서 걷으면 (스팬 × 줄)만큼
+    `CTRunGetAttributes` 브리징을 치른다 — **옮겨진 run이 하나도 없어도** 그렇다. 줄 캐시
+    (`cachedLines`) 옆에 줄별 밴드를 같이 두고, 글자 위치 run이 없는 문단(대다수)은 속성 run
+    한 번 훑기로 **CTRun 전수 순회 자체를 건너뛴다**(`glyphOffsetBands(ofLines:in:)`). 실측
+    (Helvetica 10pt, median): `hyperlinkRegions` 40스팬 ~13줄 1.16 → 0.74ms, 120스팬 ~40줄
+    4.02 → 2.91ms, 오프셋이 섞이면 1.39 → 0.89 / 4.79 → 3.39ms; `textLineRegions`도
+    ~13줄 0.61 → 0.52ms, ~40줄 2.11 → 1.86ms. 스팬 1개짜리 표 셀은 걷는 횟수가 같아
+    변화가 없다(0.034ms 그대로) — 이 비용은 **본문 문단**에서 난다. 건너뛰기 판정과 밴드
+    수집은 `offset != 0`이라는 **같은 술어**를 써야 한 쪽만 0을 옮겨진 run으로 세지 않는다.
+  - **자격을 넓혔으면 블록 링크 폴백도 같이 좁힌다** (R63의 `.text` 축, 리뷰 2차):
+    `blockLevelURL`이 `.text`에서 위치를 안 보고 URL을 돌려주면 넓어진 세로 띠가 이웃
+    블록과 겹치면서 **위쪽 글자 위의 탭이 아래쪽 블록의 링크를 연다**(실측: 10pt 링크 블록
+    y=100·116에서 y=107 탭이 아래쪽 URL). 프레임 **밖**에서는 `textPaints`로 실제 칠을
+    확인한 뒤에만 폴백한다 — 프레임 안은 종전대로 조판 없이 통과시켜 R55의 탭당
+    framesetting을 되살리지 않는다. **컨테이너가 아닌 종류 전부가 같은 게이트를 탄다**:
+    글자가 없는 `.image`·`.shape`는 프레임에서 멈춘다(자격은 테두리 stroke 띠까지 넓지만
+    방출은 `block.frame` 하나뿐이다 — 그 띠에서 폴백하면 방출된 적 없는 URL이 열린다).
+  - **선택 하이라이트(`selectionRect`)는 그대로 둔다** — 한글도 안 옮긴다 (2026-09-14
+    실측: `CharShape` 픽스처의 '글자위치 30' 줄만 선택하면 하이라이트 상단이 이웃 줄들과
+    **같은 격자**(81px 간격)에 있고 글리프만 그 안에서 7px 내려간다). 그래서 "선택
+    하이라이트와 같은 정의"였던 `textLineRegions`가 여기서 갈린다 — 보이는 상자는 줄
+    상자, 칠 커버리지는 잉크다.
+  - **밴드의 가로 범위는 잉크다 — 진행 폭이 아니다** (#200 리뷰 — `CTRunGetImageBounds(run,
+    nil, 전체)`, nil 컨텍스트면 줄 원점 기준). 진행 폭(`CTRunGetPositions` min/max +
+    `CTRunGetTypographicBounds`)은 두 가지로 틀렸다 (2026-09-14 실측, Helvetica 10pt):
+    ① **잉크 없는 진행 폭을 덮는다** — 꼬리 공백은 줄 상자(`selectionRect`)가 빼는데
+    밴드는 품어 `LINK   `의 밴드가 22.2가 아니라 30.6까지 갔고, 공백뿐인 run(줄 상자 폭
+    0)이 8.3 폭의 밴드를 냈으며, 탭(글자 모양 속성으로 방출되므로 글자 위치도 실린다)의
+    21.3 진행 폭도 들어갔다 — 그 빈 띠가 링크로 눌리고 전경 글자가 뒤 층의 보이는 링크를
+    거짓으로 가린다(R54). ② **장평(글꼴 매트릭스)이 빠진다** — `CTRunGetPositions`는 매트릭스
+    **적용 전** 좌표(0…22.2), `CTRunGetTypographicBounds`는 적용 후 폭(12.5), 이미지 경계는
+    적용 후 잉크(0.4…11.1)를 주므로 장평 50% run의 밴드가 줄 머리에서는 잉크의 두 배였고
+    **줄 중간에서는 엉뚱한 열 위에 섰다** (40자 뒤 `LINK`: 잉크 266.8…277.9인데 밴드
+    533.6…549.2 — 실제 x = a × position). 렌더러가 `ctx.textMatrix = CTRunGetTextMatrix(run)`
+    으로 positions를 run 공간에서 쓰는 것과 같은 사실이다. 기울임 근사 매트릭스의 오버행은
+    반대로 이미지 경계만 품는다. **낱말 사이는 줄 상자와 같은 기준으로 덮는다**: 시각 순서로
+    잇닿은 같은 오프셋·같은 링크의 run을 한 밴드로 묶고 사이에 낀 잉크 없는 run(공백·탭)은
+    진행 폭(`CTLineGetOffsetForStringIndex`, 매트릭스 적용 후)으로 다리를 놓는다 — run 하나
+    안의 공백만 품으면 폰트 폴백·글자 모양·스크립트 슬롯이 run을 가르는 자리(`홈페이지
+    바로가기`는 세 run, `CharShape` 픽스처 '글자위치 30' 줄도 HCRBatang 세 run)마다 옮겨진
+    링크의 낱말 사이가 히트 불가가 되고 claim에 7.24pt 구멍이 나 뒤 층 링크가 열린다(#200
+    리뷰 검증). 묶음 앞뒤의 잉크 없는 run은 버린다(꼬리·머리 공백, 공백뿐인 묶음은 밴드
+    없음). 링크가 다른 run은 묶지 않는다 — 양방향 줄에서 남의 잉크를 가져가지 않으려면
+    `belongs(to:)`가 묶음의 run 범위 **전부**를 스팬에 대야 한다. 개체 run(run delegate)은
+    `drawRun`이 아니라 개체 명령이 그려 오프셋으로 옮겨지지 않으므로 묶음을 끊는다. 밴드의
+    세로는 종전대로 줄 상자 높이를 오프셋만큼 옮긴 것이다.
+  - **자격의 세로 여유는 줄 높이 + 최대 |오프셋|이다** (#200 리뷰, `textBounds`): 밴드는
+    줄 상자를 오프셋만큼 옮긴 것이고 줄 상자 자체가 프레임 아래로 줄 높이만큼 샐 수 있으니
+    **합**이 상위집합이다. 줄 높이만 주면 오프셋이 그보다 큰 글리프 위의 탭이 rect 판정에
+    닿기도 전에 블록 단계에서 기각된다 (실측: Helvetica 10pt·줄 높이 10에서 오프셋 12부터
+    `hit`이 nil; 6.7pt 글꼴에 13.3이면 밴드 y 87.2…93.9가 자격 93.3…116.7 밖). 파싱 문서에서
+    닿는 조합이다 — 첨자(`applySuperscript`, 0.67배 글꼴·+0.33em)는 기존
+    `glyphBaselineOffset`에 **누적**하고 글자 위치는 ±1.0×크기까지다(`faceLocation`은 Int8).
+    조판 없이 속성 run을 키별로 한 번씩(`enumerateAttribute` 두 번, `longestEffectiveRange
+    NotRequired`) 훑어 줄 높이와 |오프셋|을 구해 R55의 탭당 framesetting을 되살리지 않는다 —
+    `enumerateAttributes` 한 번으로 합치면 run마다 사전을 브리징해 2~4배 느리다(600셀 × 3run
+    0.95 → 2.07ms). 옮겨진 run이 있으면 **가로 여유도** 글꼴 줄 높이로 준다: 밴드가 잉크
+    경계라 기울임 근사(`matrix.c += 0.22`)·이탤릭 `f`의 오버행이 진행 폭(rect 폭 × 1.06) 밖으로
+    나가는데(Times 10pt `fff` 자연 폭 프레임: 잉크 110.645 vs 자격 110.207) 그 몫은 줄 높이
+    안이다. `textBounds`는 `hitEligibleFrame`·컨테이너 자격(`paintedRects(for:)`의 텍스트
+    항목)·`textPaints` 게이트 셋이 공유하므로 셋이 함께 넓어진다 — 자격은 넓어도 되고 claim은
+    여전히 정밀하다.
+  - **자격은 종류가 아니라 방출 술어로 가른다** (#200 리뷰, `HwpBlockContentWalker.plainText`):
+    payload 없는 `.text`·`.table`·`.textbox`·`.footnote` 블록은 `plainCommands`가 모두
+    `block.attributedString`을 텍스트로 그리는데, 자격은 `.text`에만 `textBounds`를 주고
+    나머지는 `paintedRects(for:)`가 payload 없이 프레임으로 접혀 프레임 밖으로 옮겨진 링크
+    글리프가 스팬 기하 확인 전에 기각됐다. 방출(`plainCommands`)·선택(`walkText`의 nil
+    분기)·자격·블록 링크 폴백(`nonContainerBlockLevelURL`)이 그 술어 하나를 공유한다. 현재 파지네이터는 payload 없는 `.table`·`.footnote`를 만들지
+    않고 payload 없는 `.textbox`는 수식(eqed) 블록뿐이지만(링크 없음), `HwpHitTester`
+    주석·`walkText`가 "분할된 표/글상자 조각"을 계약으로 두므로 자격도 같은 계약을 따른다.
+  - **프레임 밖 칠해진 글자는 링크가 없어도 그 블록이 claim한다** (R53의 텍스트 축, #200 리뷰
+    2차): `hit(page:point:)`의 프레임 밖 경로가 링크만 확인하고 없으면 아래 블록으로 내려가면,
+    글자 위치·slight-overflow로 프레임 밖에 그려진 **보이는 전경 글자 위의 탭이 그 밑에 숨은 뒤
+    블록의 링크를 연다**(실측: 링크 없는 문단의 −10pt 글리프가 아래 링크 블록 프레임 안에
+    놓이면 어느 페인트 순서에서든 뒤 URL이 열렸다). 각주가 `paintsContent`로 claim하듯 텍스트
+    블록(`plainText` 술어)은 `textPaints`로 칠을 확인한 뒤 프레임 안과 같은 종류별 답
+    (`ownHit`)을 돌려준다 — 자격 영역의 빈 띠는 종전대로 아래 블록 몫이다. payload가 있는
+    표·글상자의 프레임 밖 자손 칠은 여전히 claim하지 않는다(별도 격차). **게이트는 조판
+    없이 좁힌다** (`mayPaintOutsideFrame`, R55): 텍스트 블록의 자격 영역이 곧 `textBounds`라
+    `textPaints`의 rect 게이트가 이 경로에서는 공허하고, 그대로 두면 탭마다 자격 안 프레임
+    밖의 링크 없는 모든 이웃 문단을 framesetting한다 (헌법주석 5쪽 격자 탭 17,750건 실측:
+    p90 0.21 → 1.41ms, 총 7.4 → 13.9s; 800자 문단 framesetting 13~15ms). 잉크가 프레임 밖에
+    놓이는 상한을 축마다 속성만으로 낸다 — **위·아래**는 첫 줄 baseline이 프레임 상단 +
+    0.85 × 기본 글자 크기(`baselineAnchor`)라 잉크가 `글꼴 ascent − 0.85 × 기본 크기`만큼
+    위로(상대 크기 170%의 Helvetica는 4.0pt, 10/10은 0), `descent − 0.15 × 기본 크기`만큼
+    아래로(10/10은 0.8pt) 새고 거기에 글자 위치가 옮긴 몫(`glyphOffsetReach`, 위·아래 따로 —
+    각주 번호 첨자만 있는 본문은 위 3.3pt)을 더한다(`verticalInkReach`); **옆**은
+    slight-overflow **한 줄**일 때만(`slightOverflowLineMetrics`, CTLine 하나 ~2ms) 또는
+    옮겨진 run의 기울임 오버행 여유(글꼴 줄 높이) 안일 때만. 캐시 높이가 짧아 **줄 상자**가
+    새는 몫은 잉크가 아니라 종전처럼 claim하지 않는다. 게이트 뒤 실측 p90 0.27ms·총 8.6s로
+    claim 없던 때(7.4s)에 가깝고, 첨자가 빽빽하고 링크는 없는 쪽(300~304)에서도 p99 0.30 →
+    1.10ms·max 4.6 → 6.9ms(리뷰 검증 실측)라 한 프레임 안이다. 남은 작은 격차 둘: 첨자 밴드는
+    줄 상자를 옮긴 것이라 프레임 위로 나간 몫에 잉크가 없어도 claim한다(줄 간격 100%에서 첨자
+    폭 × ≤2.7pt가 앞 문단 링크를 가린다 — 줄 상자 기준 claim(R54)의 값), 위/아래 띠의 탭은
+    첨자가 어느 줄에 있든 문단 전체를 framesetting한다.
+  - **렌더러가 안 그리는 run은 밴드를 내지 않는다** (#200 리뷰 2차): 개체 run(delegate)에 더해
+    한 줄 끝 표식 run(`hwp.lineBreak`)도 묶음을 끊는다 — `drawRun`이 그 글리프를 건너뛰므로
+    (#146) 공개 키를 함께 실은 입력에서 HY 계열 폰트의 U+000A 잉크가 보이지 않는 밴드가 되면
+    안 된다. 조판 자체는 표식 run에 오프셋을 안 싣는다(`lineBreakAttributes` 허용 목록).
+  - **문단 높이(줄 상자)는 키우지 않는다**. 넓히는 것은 자격·커버리지 영역뿐이다.
 - 장식 선은 글리프가 아니라 **줄 원점** 기준이다 — `glyphBaselineOffset`(글자 위치·
   첨자)이 글리프만 옮겨도 선은 제자리다. 글자 위치는 한글도 같다(2026-09-09 실측:
   `hh:offset` 50으로 글리프가 5pt 내려가도 세 선 모두 같은 y). **첨자는 갈린다** —
