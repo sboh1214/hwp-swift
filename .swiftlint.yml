@@ -1,12 +1,22 @@
 included: # paths to include during linting. `--path` is ignored if present.
   - Sources
   - Tests
+  # 샘플 앱도 같은 규칙으로 검사한다 (#140). CI·pre-commit은 저장소 루트에서
+  # 인자 없이 swiftlint를 돌리고, 그때 이 목록이 `--path`보다 우선하므로
+  # 여기에 없으면 `swiftlint lint Sample`로도 검사되지 않는다.
+  - Sample
   - Package.swift
 
 excluded:
   - Carthage
   - Pods
-  - .build
+  # 깊이 무관 글롭이다. `excluded` 경로는 설정 파일 디렉터리 기준이라 `.build`는
+  # 저장소 루트 하나만 가리키는데, `included`에 `Sample`이 들어온 뒤로는(#140)
+  # `Sample/.build`(로컬 `-derivedDataPath` 대상)도 덮어야 한다 — 의존성
+  # 체크아웃이 그 아래 들어오면 서드파티 소스의 error가, 특히 custom rule
+  # `no_xctassert`가, pre-commit `swift-lint` 훅을 통째로 막는다(훅은
+  # `pass_filenames: false`라 스테이지 목록과 무관하게 이 범위를 본다).
+  - "**/.build"
   # 로컬 전용 진단 스크래치 (.gitignore 대상이라 CI 체크아웃엔 없다).
   # 짧은 진단 변수명·긴 print 덤프가 본질이라 프로덕션 규칙 대상이 아니다.
   - Tests/HwpKitTests/FixturePreviewDumpScratch.swift

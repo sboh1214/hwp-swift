@@ -70,8 +70,10 @@
   반복된다 — 그 높이는 `HwpPageThumbnails.pixelHeight`에서 파생시킨다. 비율을
   손으로 계산하면 종횡비가 병적인 문서에서 렌더는 상한에서 접히는데 셀만
   1억 pt로 남는다), 현재 쪽 **자동 스크롤**(1,030쪽 목록에서는 이것이 없으면 현재 위치를
-  못 찾는다). 사이드바 상태는 불리언이 아니라 `SidebarMode?` 하나다 — 축마다
-  불리언을 두면 "둘 다 켜짐"이라는 없는 상태가 생긴다
+  못 찾는다). 사이드바 상태는 **직교하는 두 값**이다 — 어느 축을 고르고 있는가
+  (`SidebarMode`)와 지금 보이는가(`Bool`). 축마다 불리언을 두면 "둘 다 켜짐"이라는
+  없는 상태가 생기지만, 이 둘은 조합이 전부 유효하다. `SidebarMode?` 하나로 접으면
+  **감출 때 고른 축이 사라져** 다시 열 때 다른 축이 된다
 - PDF 내보내기·인쇄 — 라이브러리는 PDF 바이트까지만 만들고, 저장 패널
   (`fileExporter`)·인쇄 UI(macOS `PDFDocument.printOperation`, iOS
   `UIPrintInteractionController`)는 이 앱이 배선한다 (`PDFExportSupport.swift`)
@@ -226,6 +228,21 @@ xcodebuild -project HwpSwiftSample.xcodeproj \
 
 두 명령 모두 `** BUILD SUCCEEDED **` 로 종료되어야 정상.
 
+같은 두 플랫폼을 `ci.yml`의 `build-sample` 잡이 빌드하고, 같은 잡이
+`xcodegen generate` 결과가 커밋된 `.xcodeproj`와 어긋나지 않는지도 본다 (#140).
+**iOS 목적지는 CI 쪽이 다르다** — 러너 이미지마다 설치된 시뮬레이터가 달라
+기기명을 박지 않는 `generic/platform=iOS Simulator`를 쓴다. 위 명령의
+`name=iPhone 17 Pro`는 로컬에 그 기기가 있을 때의 편의다.
+**필수 체크는 아니다** — 브랜치 ruleset의 필수 컨텍스트 다섯(macOS·iOS
+Simulator·Linux 5.9·Linux 6.3·Lint)은 그대로라, 이 잡이 빨개져도 병합은 막히지
+않는다. 직접 확인해야 한다.
+
+샘플은 **SwiftLint 대상이기도 하다** (#140) — `.swiftlint.yml`의 `included`에
+`Sample`이 들어 있어 저장소 루트에서 인자 없이 `swiftlint`만 쳐도 함께 검사된다.
+경고는 막지 않지만 **오류(error)는 `lint` 잡과 pre-commit `swift-lint` 훅을 둘 다**
+막는다 (훅은 `pass_filenames: false`라 어떤 `.swift`를 스테이지하든 같은 범위를
+본다).
+
 ## 폴더 구조
 
 ```
@@ -234,7 +251,12 @@ Sample/
 ├── project.yml                    # xcodegen spec (편집 후 regen)
 ├── HwpSwiftSample/
 │   ├── HwpSwiftSampleApp.swift    # @main 진입점
-│   ├── ContentView.swift          # .fileImporter + HwpDocumentView + 검색·내보내기·사이드바 배선
+│   ├── ContentView.swift          # 상태·루트 body·문서 영역 (#140에서 아래로 분리)
+│   ├── ContentView+Toolbar.swift  # 툴바 행 + 사이드바 토글 버튼 (#140)
+│   ├── ContentView+PDFExport.swift    # PDF 내보내기·인쇄 상태 기계 (#74·#126)
+│   ├── ContentView+DocumentLoading.swift  # 문서 로딩·드롭·최근 문서 열기 (#6·#126)
+│   ├── EmptyState.swift           # 문서를 열기 전 화면 + 최근 문서 목록 (#126)
+│   ├── DocumentSidebar.swift      # 사이드바 축(SidebarMode)과 그 갈래 (#76·#77)
 │   ├── RecentDocuments.swift      # 보안 범위 북마크 기반 최근 문서 저장소 (#126)
 │   ├── DropOpenSupport.swift      # 드롭 provider → .hwp/.hwpx URL (플랫폼별 경로) (#126)
 │   ├── OutlineSidebar.swift       # metadata.outline만으로 만든 개요·책갈피 목록 (#77)
@@ -244,6 +266,14 @@ Sample/
 │   └── HwpSwiftSample.entitlements
 └── README.md
 ```
+
+`ContentView`를 가른 기준은 하나다 (#140): **인자 몇 개로 그려지는 UI**는
+`OutlineSidebar`·`ThumbnailSidebar`처럼 독립 `View`로 뽑고, **여러 `@State`를
+함께 만지는 상태 기계**는 `ContentView+*.swift`의 `extension`으로만 나눈다.
+어느 파일이 어느 쪽인지는 위 폴더 구조가 진실 원본이다. 후자를 자식 뷰나 관측
+객체로 옮기면 `@State` 소유권·뷰 identity·SwiftUI 갱신 주기가 함께 바뀌는데,
+이 앱의 규약(모달 겹침 회피, 세대 가드, `@FocusState` 공유, 축소판 렌더러 보존)이
+전부 거기에 걸려 있다 — 각 파일 머리 주석이 그 사유를 적는다.
 
 `project.yml`의 `packages.hwp-swift.path: ..` 가 부모 저장소 루트(`Package.swift`가 있는 위치)를 가리킴. 상대 경로이므로 저장소를 어디로 옮겨도 그대로 동작.
 
@@ -256,7 +286,7 @@ cd Sample
 xcodegen generate
 ```
 
-SwiftUI 소스 파일 추가/삭제는 xcodegen이 디렉터리를 자동 스캔하므로 별도 편집 없이 `xcodegen generate`만 다시 돌리면 됨 (파일 목록은 위 "폴더 구조"가 진실 원본이다 — 여기 열거를 두 번 두면 한쪽이 낡는다). **다만 생성된 `.xcodeproj`는 파일을 명시 참조하므로 재생성 결과를 같은 커밋에 넣어야 한다** — CI는 샘플을 빌드하지 않아 이 누락이 초록으로 지나간다.
+SwiftUI 소스 파일 추가/삭제는 xcodegen이 디렉터리를 자동 스캔하므로 별도 편집 없이 `xcodegen generate`만 다시 돌리면 됨 (파일 목록은 위 "폴더 구조"가 진실 원본이다 — 여기 열거를 두 번 두면 한쪽이 낡는다). **다만 생성된 `.xcodeproj`는 파일을 명시 참조하므로 재생성 결과를 같은 커밋에 넣어야 한다.** 빠뜨리면 `ci.yml`의 `build-sample` 잡이 `xcodegen generate`를 다시 돌려 그 차이를 잡는다 (#140) — 빌드만으로는 못 잡는다: 등록되지 않은 새 파일은 컴파일 대상에서 통째로 빠져 문법 오류가 있어도 빌드가 성공한다. 그 잡은 필수 체크가 아니므로 결과를 직접 본다.
 
 ## 설정 요약
 

@@ -21,6 +21,10 @@ pre-commit install
 ```
 
 SwiftFormat과 SwiftLint는 모든 PR에서 CI(`ci.yml`의 `lint` 잡)으로 확인됩니다.
+검사 범위는 두 도구가 다릅니다 — SwiftFormat은 저장소 전체를, SwiftLint는
+`.swiftlint.yml`의 `included`에 적힌 경로만 봅니다(그 파일이 목록의 진실 원본입니다).
+샘플 앱(`Sample/`)도 그 목록에 있으므로 함께 검사되며, 오류(error) 수준 위반은
+CI와 pre-commit 훅을 모두 실패시킵니다(경고는 실패시키지 않습니다).
 
 ## 명명법
 

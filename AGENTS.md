@@ -256,7 +256,7 @@ typed 디코더들이 그 트리를 재귀로 내려가므로(표 셀 문단·�
 - [`Utils/Protocols/`](file:///Users/sboh/Repos/hwp-swift/Sources/CoreHwp/Utils/Protocols/)의 **loader 프로토콜**은 `static load(...)`를 default 구현으로 제공하며 EOF를 강제한다 — reader에 잔여 byte가 있으면 `HwpError.bytesAreNotEOF`를 throw. 채택 측은 `init(_ reader: inout DataReader, ...)`만 작성. record 갈래는 **tag 검증까지 default가 흡수한다** — `HwpTagValidatedRecord`(`WithVersion`)를 채택하고 `static let expectedTag`만 선언하면 `load` override가 필요 없다 (#83).
 - public 타입의 **한국어 doc-comment**는 한컴 공개 문서의 절을 참조한다. 편집 시 보존할 것.
 - **`Tests/` 외부에서 `import XCTest` 금지.**
-- **SwiftFormat** (`--swiftversion 5.9 --disable hoistTry`)과 **SwiftLint**가 CI 및 `pre-commit`에서 강제됨.
+- **SwiftFormat** (`--swiftversion 5.9 --disable hoistTry`)과 **SwiftLint**가 CI 및 `pre-commit`에서 강제됨 — 다만 **적용 범위가 다르다**: SwiftFormat은 `swiftformat --lint .`이라 저장소 전체를 보고, SwiftLint는 `.swiftlint.yml`의 `included`에 적힌 경로만 본다(목록의 진실 원본은 그 파일이다 — 샘플 앱은 #140에서 들어왔다).
 
 ## 안티 패턴 (이 프로젝트 한정)
 
@@ -278,6 +278,7 @@ typed 디코더들이 그 트리를 재귀로 내려가므로(표 셀 문단·�
   타입을 실제로 검사하므로 `as!`보다 안전하기도 하다. CoreText 객체 (CTFont/CTLine/CTParagraphStyle)를 `Any`로 받아 오는 테스트 코드에서 재발하기 쉽다.
 - **CF 컬렉션의 조건 캐스트를 안전망으로 쓰기** — `CFArray`를 `as? [CTTextTab]`처럼 받으면 원소 타입을 **검사하지 않고 성공한다** (실측 2026-08-26: CTTextTab 하나 + CFString 하나를 담은 CFArray가 `as? [CTTextTab]`에 count 2로 통과). 그래서 그 캐스트 실패에 기댄 폴백은 **도달 불능**이고 이물 원소는 뒤에서 터진다. 원소마다 `CFGetTypeID`로 거를 것 — `HwpSelectionRTF`의 탭 정지 변환이 그 형태이고, #118 리뷰가 도달 불능 폴백을 거기서 잡았다. 위 `as!` 항목과 같은 계열이지만 방향이 반대다: 그쪽은 컴파일이 막히고 이쪽은 **조용히 통과**한다.
 - **폰트 바이너리 커밋** (`.ttf`/`.otf`/`.ttc`/`.woff`/`.woff2`) — 이 라이브러리는 폰트를 동봉하지 않는다 (README "폰트"). 세 겹으로 막혀 있다: `.gitignore` 확장자 패턴 → pre-commit 훅 `no-font-binaries` (`git add -f` 차단) → CI lint job의 `No font binaries` (훅 미설치 기여자·웹 UI 업로드 차단). 오픈 라이선스 폰트를 의도적으로 동봉하려면 `.gitignore`의 `!` 예외만으로는 안 된다 — 훅과 CI는 확장자만 보고 거부하므로 세 곳이 같은 예외 목록을 공유하도록 함께 고쳐야 한다. 한 번 커밋되면 history에 영구히 남으니 그 전에 라이선스를 확인할 것.
+- **최상위 디렉터리를 새로 만들고 `.swiftlint.yml`의 `included`에 넣지 않기** — `included`는 화이트리스트라 새 디렉터리가 자동으로 들어오지 않는 반면 SwiftFormat은 저장소 전체를 보므로, **한쪽만 통과하는 상태가 조용히 유지된다**. `Sample/`이 그렇게 #140까지 SwiftLint 밖에 있었고, 그 사이 쌓인 길이 제한 위반이 편입 시점에 한꺼번에 터졌다. 경로를 더할 때는 그 자리에서 `swiftlint`를 돌려 오류 0을 확인한다.
 
 ## 명령어
 
@@ -912,12 +913,19 @@ opt-in이다) — 축소판이 가장 먼저 그리는 쪽이 정확히 그 1쪽
 **상하 반전을 통과시키므로** 위·아래 잉크 분포를 함께 단언한다 (PDF 가드가
 뒤집은 그리드를 대조군으로 쓰는 것과 같은 이유).
 
-**샘플은 CI에서 빌드하지 않는다** — `ci.yml`의 네 작업(`test-macos`·
-`test-ios`·`test-linux`·`lint`)과 `docs-check.yml`의 문서 빌드 중 어느
-것도 `Sample/`을 빌드하지 않으므로 샘플 배선 회귀를 감지하지 못한다. `Sample/`을
-건드리면 macOS·iOS 양쪽 `xcodebuild`를 로컬에서 돌리고,
-파일을 추가했으면 `cd Sample && xcodegen generate` 결과를 같은 커밋에 넣는다
-(프로젝트가 파일을 명시 참조한다).
+**샘플도 CI에서 빌드한다 (#140)** — `ci.yml`의 다섯 작업 중 `build-sample`이
+커밋된 `Sample/HwpSwiftSample.xcodeproj`를 macOS·iOS Simulator 두 목적지로
+빌드하고 `xcodegen generate` 결과와의 차이까지 본다. `lint` 작업도 `Sample/`을
+함께 검사한다(`.swiftlint.yml`의 `included`).
+
+`Sample/`을 건드리면 여전히 손으로 할 것이 있다. **파일을 추가·삭제했으면
+`cd Sample && xcodegen generate` 결과를 같은 커밋에 넣는다** (프로젝트가 파일을 명시
+참조하므로, 빠뜨리면 새 파일이 컴파일 대상에서 통째로 빠진 채 로컬 빌드가 성공한다).
+그리고 두 가지가 사람 몫으로 남는다. (1) **필수 체크가 아니다** — 브랜치 ruleset의
+필수 컨텍스트는 여전히 다섯(macOS·iOS·Linux 5.9/6.3·Lint)이라 이 잡이 빨개져도 병합이
+막히지 않는다(아래 "DocC 문서 사이트"). (2) **컴파일까지만 증명한다** — 샘플에는
+테스트 타깃이 없어 배선 회귀(최근 문서·드롭·내보내기 같은 실행 시 동작)는 여전히
+로컬 실행으로 확인해야 한다.
 
 ## 선택 영역 서식 복사 (#118)
 
@@ -1148,8 +1156,9 @@ PR 리뷰를 반영하며 렌더링 코드를 수정할 때, 한글 파일 렌�
    스크래치 파일은 `.gitignore`로 제외됨. 푸시한 뒤 macOS(커버리지 포함)·
    iOS·Linux 5.9/6.3·Lint 작업의 결과를 확인한다. 브랜치의 첫 PR을 열기
    전에는 CI 실행 이력이 없으므로 특히 주의한다.
-   `Sources/**`를 건드렸으면 Docs Check(`docs-check.yml`) 결과도 확인한다. 이
-   검사는 필수 체크가 아니어서 실패해도 병합이 차단되지 않는다(아래
+   `Sources/**`를 건드렸으면 Docs Check(`docs-check.yml`), `Sample/`을
+   건드렸으면 Build Sample(`ci.yml`의 `build-sample`) 결과도 확인한다. **두
+   검사 모두 필수 체크가 아니어서** 실패해도 병합이 차단되지 않는다(아래
    "DocC 문서 사이트").
 
 원칙: **탐지는 해시, 진단은 블록 스냅샷 diff** (상호보완). 육안 재확인은
@@ -1182,7 +1191,10 @@ opt-in — **커밋된** 기준선을 쓰는 스위트는 CI에서 상시 돈다
   경로에서 제공되기 때문이다. 다시 사용하면 DocC 자산 경로가
   `/hwp-swift/...`로 고정되어 페이지가 자산을 불러오지 못한다.
 - **Docs Check는 필수 체크가 아니다.** 필수 상태 검사는 macOS, iOS, Linux
-  Swift 5.9, Linux Swift 6.3, Lint의 다섯 개다. 문서 빌드가 실패해도 병합이
+  Swift 5.9, Linux Swift 6.3, Lint의 다섯 개다 — `ci.yml`에 작업을 더해도 이
+  목록은 자동으로 늘지 않는다(필수 컨텍스트는 GitHub 브랜치 ruleset에 matrix
+  값까지 문자열로 박혀 있다). 그래서 **비필수 체크가 둘이다**: Docs Check와
+  `build-sample`(#140). 문서 빌드가 실패해도 병합이
   차단되지 않으므로 직접 확인해야 한다. `paths:` 필터도 있어
   `Sources/**`·`Package.swift`·`Package.resolved`·`.github/pages/**`·
   `.github/actions/build-docs-site/**`·`.github/workflows/docs-check.yml`·

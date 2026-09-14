@@ -132,7 +132,8 @@ jobs:
           fi
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
       - name: Run package tests on iOS Simulator
-        # #if os(iOS) 코드 (HwpDocumentUIView 계열)는 이 잡에서만 컴파일·실행된다
+        # **패키지**의 #if os(iOS) 코드 (HwpDocumentUIView 계열)는 이 잡에서만
+        # 컴파일·실행된다 (샘플 앱의 #if os(iOS)는 build-sample 잡이 본다)
         run: |
           set -o pipefail
           xcodebuild test \
@@ -160,6 +161,51 @@ jobs:
           swift --version
           swift test
 
+  build-sample:
+    name: Build (Sample app)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      # 패키지 테스트(`swift test`)는 샘플 앱을 컴파일조차 하지 않는다 — 샘플만
+      # 깨뜨리는 변경을 잡는 곳은 여기뿐이다.
+      # 스킴은 공유되어 있지 않지만 xcodebuild가 타깃마다 자동 생성하므로
+      # 신선한 체크아웃에서도 `-scheme`으로 잡힌다 (`-target`은 패키지 의존성이
+      # 풀리지 않아 쓸 수 없다).
+      - name: Build for macOS
+        run: |
+          set -o pipefail
+          xcodebuild -project Sample/HwpSwiftSample.xcodeproj \
+            -scheme HwpSwiftSample \
+            -destination 'platform=macOS' \
+            -configuration Debug build
+      # 목적지에 기기명을 박지 않는다 — 러너 이미지마다 설치된 시뮬레이터가
+      # 달라서다 (test-ios가 UDID를 동적으로 고르는 것과 같은 이유). 빌드는
+      # 부팅된 기기가 필요 없으므로 generic으로 충분하다.
+      - name: Build for iOS Simulator
+        run: |
+          set -o pipefail
+          xcodebuild -project Sample/HwpSwiftSample.xcodeproj \
+            -scheme HwpSwiftSample \
+            -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug build
+      # 빌드만으로는 **xcodegen 재생성 누락을 못 잡는다**: 생성된 pbxproj가
+      # 파일을 명시 참조하므로, 등록되지 않은 새 .swift는 컴파일 대상에서 통째로
+      # 빠져 문법 오류가 있어도 빌드가 성공한다 (실측). 그래서 재생성 결과를
+      # 따로 대조한다 — `Sample/README.md`가 "재생성 결과를 같은 커밋에 넣어야
+      # 한다"고 못박은 규율의 기계 검사다.
+      #
+      # 두 가지에 의존한다: (1) 체크아웃 디렉터리 이름 — 생성되는 로컬 패키지
+      # 참조 이름이 그 디렉터리에서 오고, Actions는 `<repo>/<repo>`에 받는다.
+      # (2) xcodegen 버전 — brew 최신을 쓰므로 생성기 출력 형식이 바뀌면 무관한
+      # PR에서도 이 스텝이 빨개진다. 그래서 이 잡은 필수 체크가 아니다.
+      - name: Check xcodegen drift
+        run: |
+          set -euo pipefail
+          brew install xcodegen
+          (cd Sample && xcodegen generate)
+          git diff --exit-code Sample/HwpSwiftSample.xcodeproj/project.pbxproj
+
   lint:
     name: Lint
     runs-on: macos-latest
@@ -181,4 +227,6 @@ jobs:
       - name: SwiftFormat
         run: swiftformat --lint .
       - name: SwiftLint
+        # 범위는 인자가 아니라 `.swiftlint.yml`의 `included`가 정한다 —
+        # `Sample/`도 거기 들어 있다 (#140).
         run: swiftlint
