@@ -16,7 +16,12 @@ extension HwpHitTester {
     /// "방출 ≡ 히트"가 성립한다 (AGENTS.md "하이퍼링크 방출" 짝 규약).
     ///
     /// - `.text`: slight-overflow 한 줄 문단이 frame 폭의 허용 초과분
-    ///   (`slightOverflowWidthRatio`)만큼 좌우로 넘어 그려진다 (#4).
+    ///   (`slightOverflowWidthRatio`)만큼 좌우로 넘어 그려지고, 글자 위치
+    ///   (`hwp.glyphBaselineOffset`)가 큰 글리프는 **세로로도** 넘어 그려진다.
+    ///   그래서 자격 영역은 `paintedRects`의 텍스트 항목과 같은 `textBounds`를 쓴다
+    ///   (R56: 자격과 claim 게이트가 같은 상위집합을 공유해야 한다) — 가로만 넓히면
+    ///   그 글리프 위의 탭이 rect 판정에 닿기도 전에 블록 단계에서 기각된다.
+    ///   **문단 높이 자체는 넓히지 않는다** — 줄 상자는 한글과 같아야 한다.
     /// - `.footnote`: 각주 안 개체가 블록 폭을 넘어 그려질 수 있다 — 한글도
     ///   자르지 않는다 (헌법주석 883쪽 각주 29의 표는 오른쪽 본문 경계를
     ///   ~12.6pt 넘는다). R39 #3.
@@ -24,8 +29,11 @@ extension HwpHitTester {
     func hitEligibleFrame(for block: AnyHwpBlock) -> CGRect {
         switch block.kind {
         case .text:
-            let extra = block.frame.width * (HwpRenderTuning.Text.slightOverflowWidthRatio - 1)
-            return block.frame.insetBy(dx: -extra, dy: 0)
+            guard let attributed = block.attributedString else {
+                let extra = block.frame.width * (HwpRenderTuning.Text.slightOverflowWidthRatio - 1)
+                return block.frame.insetBy(dx: -extra, dy: 0)
+            }
+            return Self.textBounds(block.frame, of: attributed)
         default:
             // 컨테이너(각주·표·글상자)는 자손이 프레임을 넘어 그려진다 (R62)
             return paintedRects(for: block).reduce(block.frame) { $0.union($1) }

@@ -17,6 +17,11 @@ public struct HwpDrawnLine {
     public let descent: CGFloat
 
     /// 줄의 선택 하이라이트 영역 (top-down 페이지 좌표)
+    ///
+    /// **글자 위치(`hwp.glyphBaselineOffset`)로 옮겨진 글리프를 따라가지 않는다** — 한글도
+    /// 그렇다 (2026-09-14 실측: `CharShape` 픽스처의 '글자위치 30' 줄만 선택하면 하이라이트
+    /// 상단이 이웃 줄들과 **같은 격자**(81px 간격)에 있고 글리프만 그 안에서 7px 내려간다).
+    /// 잉크가 닿는 범위가 필요한 쪽은 `paintedRect`다.
     public var selectionRect: CGRect {
         let width =
             CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
@@ -295,10 +300,17 @@ public enum HwpDrawnTextLayout {
                 let minX = min(lowerX, upperX)
                 let maxX = max(lowerX, upperX)
                 guard maxX > minX else { continue }
+                // 글자 위치로 옮겨진 글리프까지 덮는다 — 방출(`HwpPaintListBuilder`)과
+                // 히트가 같은 rect를 쓰므로 밑줄 영역과 눌리는 영역이 함께 따라온다.
+                // 스팬마다 걷는 것은 한 줄에 오프셋이 다른 run이 섞이기 때문이다.
+                let offsets = glyphOffsetBounds(
+                    in: attributedString, range: NSRange(location: lower, length: upper - lower)
+                )
                 regions.append((
                     rect: CGRect(
-                        x: minX, y: drawn.baselineOrigin.y - drawn.ascent,
-                        width: maxX - minX, height: drawn.ascent + drawn.descent
+                        x: minX, y: drawn.baselineOrigin.y - drawn.ascent - offsets.above,
+                        width: maxX - minX,
+                        height: drawn.ascent + drawn.descent + offsets.above + offsets.below
                     ),
                     url: url
                 ))
@@ -309,9 +321,12 @@ public enum HwpDrawnTextLayout {
 
     /// 그려진 텍스트의 줄 상자들 — "이 지점에 글자가 칠해졌는가" 판정용 (R54).
     ///
-    /// 선택 하이라이트와 **같은 정의** (`HwpDrawnLine.selectionRect`) 를 쓴다:
-    /// 문단 rect는 줄 사이 여백과 짧은 줄의 빈 오른쪽까지 품어, 그것으로 claim하면
-    /// 아무것도 안 그린 자리에서 아래 블록의 보이는 링크를 막는다.
+    /// 선택 하이라이트(`HwpDrawnLine.selectionRect`)에 **글자 위치로 옮겨진 글리프 밴드를
+    /// 합집합한** `paintedRect`를 쓴다. 문단 rect를 쓰지 않는 이유는 종전과 같다 — 줄 사이
+    /// 여백과 짧은 줄의 빈 오른쪽까지 품어, 그것으로 claim하면 아무것도 안 그린 자리에서
+    /// 아래 블록의 보이는 링크를 막는다. 반대로 줄 상자만 쓰면 **그려진** 글자가 claim
+    /// 밖으로 나가 그 위의 탭이 뒤 층으로 내려간다(한글은 선택 상자를 안 옮기지만
+    /// 칠은 옮긴다 — `selectionRect`의 실측 주석).
     public static func textLineRegions(
         attributedString: NSAttributedString,
         origin: CGPoint,
@@ -320,7 +335,7 @@ public enum HwpDrawnTextLayout {
         guard attributedString.length > 0 else { return [] }
         return lines(
             attributedString: attributedString, origin: origin, lineWidth: lineWidth
-        ).map(\.selectionRect)
+        ).map(\.paintedRect)
     }
 
     /// slight-overflow 한 줄의 CTLine과 타이포그래피 메트릭.
