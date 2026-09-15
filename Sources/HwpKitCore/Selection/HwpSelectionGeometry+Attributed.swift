@@ -43,11 +43,14 @@ extension HwpSelectionGeometry {
     }
 
     /// 조각 사이 개행이 입는 속성 — 그 개행은 **앞 문단의 종결자**라 앞 조각
-    /// 끝에서 **문단 스타일과 폰트만** 옮긴다. Cocoa 텍스트 시스템은 문단
+    /// 끝에서 **문단 스타일·줄 간격 규칙·폰트만** 옮긴다. Cocoa 텍스트 시스템은 문단
     /// 스타일을 종결 개행까지 적용하므로 속성 없는 개행은 RTF에서 그 문단의
     /// 정렬·들여쓰기·폰트를 통째로 잃고, 반대로 전체를 상속하면 하이퍼링크·
     /// 밑줄 같은 글자 속성이 원문에 없던 개행까지 번진다 (HYPERLINK 필드가
-    /// 문단 나눔 문자를 덮는다).
+    /// 문단 나눔 문자를 덮는다). 줄 간격 규칙(`hwp.lineSpacing`, #180)도 문단 단위
+    /// 조판 속성이라 함께 옮긴다 — 빠지면 `HwpSelectionRTF`가 CT 스타일 힌트로 떨어져
+    /// 빈 문단·개체 전용 문단·문단 부호만 복사한 개행에서 고정 5pt가 최소 5pt로 나간다
+    /// (PR 리뷰).
     ///
     /// **누적 결과에서 읽으면 안 된다** (#124 리뷰) — 개체만 있는 문단은 마커를
     /// 지운 기여가 비어, 선두면 아무 속성도 못 얻고 중간이면 **그 앞 문단**의
@@ -62,6 +65,7 @@ extension HwpSelectionGeometry {
         let previous = tail.attributes(at: tail.length - 1, effectiveRange: nil)
         let inherited = [
             kCTParagraphStyleAttributeName as NSAttributedString.Key,
+            HwpAttributedStringKey.lineSpacing,
             kCTFontAttributeName as NSAttributedString.Key,
         ]
         var attributes: [NSAttributedString.Key: Any] = [:]
