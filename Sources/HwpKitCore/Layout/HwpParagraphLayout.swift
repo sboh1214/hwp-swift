@@ -118,10 +118,13 @@ public struct HwpParagraphLayout {
 
     /// paraShape로 측정/렌더 공용 CTParagraphStyle을 만든다.
     /// HwpTextRunBuilder가 렌더 경로 (drawText 재조판)에도 같은 스타일을 부착해
-    /// 측정 레이아웃 (정렬/들여쓰기/줄간격, 인라인 앵커 x)과 일치시킨다.
+    /// 측정 레이아웃 (정렬/들여쓰기, 인라인 앵커 x)과 일치시킨다.
     ///
-    /// 비율(%) 줄 간격은 글자 크기 기준이므로 attributedString이 있어야
-    /// 정확하다 (없으면 여백만 지정과 고정값만 반영된다).
+    /// **줄 간격은 이 스타일이 나르지 않는다** — 줄 전진량은 `lineSpacingRule(for:)`가
+    /// `HwpAttributedStringKey.lineSpacing`으로 실어야 하며, 둘을 함께 다는
+    /// `attachParagraphStyle(to:paraShape:tabStops:)`를 쓰는 것이 맞다. 여기 남는 줄 높이
+    /// 지정은 서식 복사와 규칙 표식이 없는 문자열의 폴백용 힌트다 (`ParagraphMetrics`).
+    /// `attributedString`은 번호 라벨의 자동 내어쓰기 표식을 읽는 데 쓴다 (#154).
     public static func paragraphStyle(
         for paraShape: CoreHwp.HwpParaShape,
         attributedString: NSAttributedString? = nil,
@@ -134,6 +137,35 @@ public struct HwpParagraphLayout {
         return HwpParagraphLayout().ctParagraphStyle(
             from: metrics,
             property: paraShape.property1Info
+        )
+    }
+
+    /// paraShape의 줄 전진량 규칙 (표 46 종류 + 값, #180).
+    public static func lineSpacingRule(for paraShape: CoreHwp.HwpParaShape) -> HwpLineSpacingRule {
+        HwpLineSpacingRule(paraShape: paraShape)
+    }
+
+    /// 조판 문자열 전체에 문단 스타일(`kCTParagraphStyleAttributeName`)과 줄 전진량 규칙
+    /// (`HwpAttributedStringKey.lineSpacing`)을 함께 단다 — `layout`(측정)과
+    /// `HwpDrawnTextLayout.lines`(렌더)의 **입력 계약**이다. 프로덕션은
+    /// `HwpTextRunBuilder.attachParagraphStyle`이 부르고, 문자열을 직접 만드는 호출부는
+    /// 같은 paraShape로 이 함수를 불러야 두 경로가 같은 자리에 줄을 놓는다.
+    public static func attachParagraphStyle(
+        to output: NSMutableAttributedString,
+        paraShape: CoreHwp.HwpParaShape,
+        tabStops: [CTTextTab] = []
+    ) {
+        guard output.length > 0 else { return }
+        let range = NSRange(location: 0, length: output.length)
+        output.addAttribute(
+            kCTParagraphStyleAttributeName as NSAttributedString.Key,
+            value: paragraphStyle(for: paraShape, attributedString: output, tabStops: tabStops),
+            range: range
+        )
+        output.addAttribute(
+            HwpAttributedStringKey.lineSpacing,
+            value: lineSpacingRule(for: paraShape).attributeValue,
+            range: range
         )
     }
 
@@ -153,14 +185,14 @@ public struct HwpParagraphLayout {
     ///
     /// 부착은 `HwpTextRunBuilder.build`가 `attachParagraphStyle`로 자동으로 한다.
     /// 직접 문자열을 만들어 넘기는 호출부는
-    /// `HwpParagraphLayout.paragraphStyle(for:attributedString:tabStops:)`를 **같은
-    /// paraShape로** 만들어 `kCTParagraphStyleAttributeName`에 달아야 한다. 안 달면
-    /// CT 기본값(natural 정렬, 자연 줄 높이)으로 조판돼 렌더와 어긋난다.
+    /// `HwpParagraphLayout.attachParagraphStyle(to:paraShape:tabStops:)`를 **같은
+    /// paraShape로** 불러 문단 스타일과 줄 간격 규칙을 함께 달아야 한다. 안 달면
+    /// CT 기본값(natural 정렬)과 비율 100% 줄 간격으로 조판돼 렌더와 어긋난다.
     ///
-    /// `paraShape`는 부착본이 나르지 **못하는** 것에만 쓴다 — 문단 위/아래 간격,
-    /// 강제 줄 높이 클램프, 줄 여분을 줄 뒤 간격으로 돌렸는지 여부
+    /// `paraShape`는 부착본이 나르지 **못하는** 것에만 쓴다 — 문단 위/아래 간격
     /// (`ParagraphMetrics`). 그래서 스타일을 부착한 paraShape와 **같은 값**이어야
-    /// 한다.
+    /// 한다. 줄 전진량은 부착본의 줄 간격 규칙(`HwpAttributedStringKey.lineSpacing`)에서
+    /// 줄마다 낸다 (`HwpLineAdvance`).
     public func layout(
         attributedString: NSAttributedString,
         paraShape: CoreHwp.HwpParaShape,
@@ -173,14 +205,11 @@ public struct HwpParagraphLayout {
         )
     }
 
-    /// `metricsReference`는 문단 지표(`ParagraphMetrics` — 비율 줄 간격의 강제 줄 높이,
-    /// 인라인 개체 유무에 따른 줄 뒤 간격)를 뽑을 문자열이다. 문단의 **조각**을 다시 잴 때
+    /// `metricsReference`는 문단 지표(`ParagraphMetrics` — 번호 라벨 표식·문단 간격)를 뽑을
+    /// 문자열이다. 문단의 **조각**을 다시 잴 때
     /// (`HwpPaginator.remeasureRemainderIfNeeded`·`HwpColumnBandController.rebalancedFragment`)
-    /// 문단 전체 문자열을 넘긴다 — CT 줄 원점은 문자열에 부착된 문단 스타일(문단 전체의 최대
-    /// 글자 크기로 만든 min/max 줄 높이)을 따르는데, 마지막 줄 높이와 줄 뒤 간격만 조각
-    /// 부분 문자열로 다시 구하면 큰 글자가 앞 조각에만 있는 문단(20pt 한 단어로 시작하는
-    /// 10pt 본문, 160%)의 나머지 마지막 줄이 32pt가 아니라 16pt로 재어져 상자가 짧아진다.
-    /// nil이면 `attributedString` 자신이다.
+    /// 문단 전체 문자열을 넘긴다. 줄 전진량은 줄마다 그 줄의 글자로 정해지므로 (#180) 조각
+    /// 부분 문자열로 재도 문단 전체와 같은 값이 나온다. nil이면 `attributedString` 자신이다.
     func layout(
         attributedString: NSAttributedString,
         paraShape: CoreHwp.HwpParaShape,
@@ -208,14 +237,12 @@ public struct HwpParagraphLayout {
         if let overflow = HwpDrawnTextLayout.slightOverflowLineMetrics(
             attributedString: attributedString, lineWidth: max(1, columnWidth)
         ) {
-            let lineHeight = max(1, paragraphMetrics.clampedLineHeight(
-                overflow.ascent + overflow.descent + overflow.leading
-            ))
-            let trailingSpacing = paragraphMetrics.lineHeightAppliedAsSpacing
-                ? paragraphMetrics.lineSpacingAdjustment : 0
+            // 한 줄의 전진량 — 렌더(`HwpDrawnTextLayout.lines`)의 청크 줄과 같은 규칙이다.
+            let lineHeight = HwpLineAdvance.lineAdvance(
+                of: overflow.line, at: 0, in: attributedString
+            )
             let totalHeight = paragraphMetrics.paragraphSpacingBefore
                 + lineHeight
-                + trailingSpacing
                 + paragraphMetrics.paragraphSpacing
             // 원점 x는 0 그대로다 — 렌더러의 정렬 오프셋을 여기 얹으면 단 폭과 같은
             // 글자처럼 취급 표(noori 1쪽, 마커 폭이 단 폭을 0.4pt 넘는다)가 가운데 정렬
@@ -224,7 +251,7 @@ public struct HwpParagraphLayout {
             let lineFrame = HwpLineFrame(
                 origin: .zero,
                 width: CGFloat(CTLineGetTypographicBounds(overflow.line, nil, nil, nil)),
-                baseline: overflow.ascent,
+                baseline: HwpDrawnTextLayout.baselineAnchor(of: overflow.line),
                 attributedRange: NSRange(location: 0, length: attributedString.length),
                 inlineAnchors: inlineAnchors(in: overflow.line)
             )
@@ -252,12 +279,7 @@ public struct HwpParagraphLayout {
                 lineWidth: max(1, columnWidth)
             ) else { break }
             let (frameLines, frameHeight) = makeLineFrames(
-                lines: chunk.lines,
-                origins: chunk.origins,
-                keepCount: chunk.keepCount,
-                continuesAfterChunk: chunk.nextStart < fullLength,
-                metrics: paragraphMetrics,
-                yOffset: totalLineHeight
+                chunk: chunk, attributedString: attributedString, yOffset: totalLineHeight
             )
             lineFrames.append(contentsOf: frameLines)
             totalLineHeight += frameHeight
@@ -267,72 +289,48 @@ public struct HwpParagraphLayout {
         guard !lineFrames.isEmpty else {
             return HwpParagraphFrame(totalHeight: 0, lines: [])
         }
-        // 줄 여분을 줄 뒤 간격으로 돌린 경우 마지막 줄 뒤 몫도 전진량에
-        // 포함한다 (한글 캐시 lineAdvance 합과 동일)
-        let trailingSpacing = paragraphMetrics.lineHeightAppliedAsSpacing && !lineFrames.isEmpty
-            ? paragraphMetrics.lineSpacingAdjustment
-            : 0
+        // 문단 높이 = 위 간격 + 줄 전진량 합 (마지막 줄의 줄 간격 몫 포함 — 한글 캐시의
+        // `lineHeight + lineSpacing` 합과 같다) + 아래 간격.
         let totalHeight = paragraphMetrics.paragraphSpacingBefore
             + totalLineHeight
-            + trailingSpacing
             + paragraphMetrics.paragraphSpacing
         return HwpParagraphFrame(totalHeight: max(1, totalHeight), lines: lineFrames)
     }
 }
 
 private extension HwpParagraphLayout {
+    /// 청크의 커밋된 줄들의 줄 프레임 — 원점 y는 **줄 상자 상단**(문단 첫 줄 상자 상단
+    /// 기준, `yOffset`부터 전진량 누적)이고 `baseline`은 그 줄의 상자 상단 → 베이스라인
+    /// 앵커다. 전진량은 렌더(`HwpDrawnTextLayout.lineGeometries`)와 같은
+    /// `HwpLineAdvance.advances(of:in:)`에서 온다 — 마지막 커밋 줄 뒤에 다음 청크가
+    /// 이어지면 그 사이 문단 간격까지 든 값이라 청크 경계에서 위치 오차가 쌓이지 않는다.
     func makeLineFrames(
-        lines: [CTLine],
-        origins: [CGPoint],
-        keepCount: Int,
-        continuesAfterChunk: Bool,
-        metrics: ParagraphMetrics,
+        chunk: HwpLineBreaker.FrameChunk,
+        attributedString: NSAttributedString,
         yOffset: CGFloat = 0
     ) -> (frames: [HwpLineFrame], totalLineHeight: CGFloat) {
-        let referenceY = origins[0].y
+        let advances = HwpLineAdvance.advances(of: chunk, in: attributedString)
         var lineFrames: [HwpLineFrame] = []
-        lineFrames.reserveCapacity(keepCount)
+        lineFrames.reserveCapacity(chunk.keepCount)
         var totalLineHeight: CGFloat = 0
 
-        for index in 0 ..< keepCount {
-            let line = lines[index]
-            let origin = origins[index]
+        for index in 0 ..< chunk.keepCount {
+            let line = chunk.lines[index]
             let range = CTLineGetStringRange(line)
-            var ascent: CGFloat = 0
-            var descent: CGFloat = 0
-            var leading: CGFloat = 0
-            let width = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
-
-            // 강제 줄 높이 (비율/고정/최소)와 줄 사이 여백이 반영된 실제 줄 전진량은
-            // 다음 라인 origin과의 y 델타다. 마지막 커밋 줄은 다음 origin이 있으면
-            // (문자 예산으로 버린 줄) 그 델타를, 없으면(문단 끝) typographic 높이에
-            // min/max 제약을 적용해 근사한다.
-            let nextIndex = index + 1
-            if nextIndex < keepCount || (nextIndex == keepCount && keepCount < lines.count) {
-                totalLineHeight += max(1, origins[index].y - origins[nextIndex].y)
-            } else {
-                // 다음 origin이 없는 마지막 커밋 줄. 이어지는 청크면 다음 줄과의
-                // 간격(lineSpacingAdjustment)도 더해 렌더(resumeBaseline)와 높이가
-                // 맞는다 — 문단 끝 줄은 제외해 단일 청크 높이는 불변 (R51 #2).
-                var lineAdvance = metrics.clampedLineHeight(ascent + descent + leading)
-                if continuesAfterChunk {
-                    lineAdvance += metrics.lineSpacingAdjustment
-                }
-                totalLineHeight += max(1, lineAdvance)
-            }
-            let attributedRange = NSRange(
-                location: Int(range.location),
-                length: Int(range.length)
-            )
+            let width = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
             lineFrames.append(
                 HwpLineFrame(
-                    origin: CGPoint(x: origin.x, y: yOffset + referenceY - origin.y),
+                    origin: CGPoint(x: chunk.origins[index].x, y: yOffset + totalLineHeight),
                     width: width,
-                    baseline: ascent,
-                    attributedRange: attributedRange,
+                    baseline: HwpDrawnTextLayout.baselineAnchor(of: line),
+                    attributedRange: NSRange(
+                        location: Int(range.location),
+                        length: Int(range.length)
+                    ),
                     inlineAnchors: inlineAnchors(in: line)
                 )
             )
+            totalLineHeight += advances[index]
         }
 
         return (lineFrames, totalLineHeight)
@@ -346,9 +344,8 @@ private extension HwpParagraphLayout {
         let paragraphSpacingBefore: UnsafeMutablePointer<CGFloat>
         let paragraphSpacing: UnsafeMutablePointer<CGFloat>
         let lineSpacing: UnsafeMutablePointer<CGFloat>
-        let maximumLineSpacing: UnsafeMutablePointer<CGFloat>
+        let lineHeightMultiple: UnsafeMutablePointer<CGFloat>
         let minimumLineHeight: UnsafeMutablePointer<CGFloat>
-        let maximumLineHeight: UnsafeMutablePointer<CGFloat>
         /// 문서 정의 탭 스톱 (비면 nil — CT 기본 탭 유지)
         let tabStops: UnsafeMutablePointer<CFArray>?
 
@@ -359,15 +356,13 @@ private extension HwpParagraphLayout {
             tailIndent = Self.pointer(to: metrics.tailIndent)
             paragraphSpacingBefore = Self.pointer(to: metrics.paragraphSpacingBefore)
             paragraphSpacing = Self.pointer(to: metrics.paragraphSpacing)
+            // 줄 높이 힌트 셋 — 세로 배치는 `HwpAttributedStringKey.lineSpacing`의 규칙이
+            // 하고 (`HwpLineAdvance`), 이 값들은 서식 복사와 폴백에만 남는다. 상한
+            // (`maximumLineHeight`)은 두지 않는다 — CT가 그 높이에 안 들어가는 글자가 있는
+            // 줄을 놓지 않아 문단이 사라진다 (#202).
             lineSpacing = Self.pointer(to: metrics.lineSpacingAdjustment)
-            // 줄 높이를 min=max로 강제할 때 폰트 leading 가산도 캡 —
-            // 폴백 폰트의 leading이 줄 피치를 키운다 (noori +0.5pt 실측)
-            maximumLineSpacing = Self.pointer(
-                to: metrics.maximumLineHeight > 0
-                    ? metrics.lineSpacingAdjustment : CGFloat.greatestFiniteMagnitude
-            )
+            lineHeightMultiple = Self.pointer(to: metrics.lineHeightMultiple)
             minimumLineHeight = Self.pointer(to: metrics.minimumLineHeight)
-            maximumLineHeight = Self.pointer(to: metrics.maximumLineHeight)
             tabStops = metrics.tabStops.isEmpty
                 ? nil
                 : Self.pointer(to: metrics.tabStops as CFArray)
@@ -388,12 +383,10 @@ private extension HwpParagraphLayout {
             paragraphSpacing.deallocate()
             lineSpacing.deinitialize(count: 1)
             lineSpacing.deallocate()
-            maximumLineSpacing.deinitialize(count: 1)
-            maximumLineSpacing.deallocate()
+            lineHeightMultiple.deinitialize(count: 1)
+            lineHeightMultiple.deallocate()
             minimumLineHeight.deinitialize(count: 1)
             minimumLineHeight.deallocate()
-            maximumLineHeight.deinitialize(count: 1)
-            maximumLineHeight.deallocate()
             tabStops?.deinitialize(count: 1)
             tabStops?.deallocate()
         }
@@ -476,19 +469,14 @@ private extension HwpParagraphLayout {
                 value: pointers.lineSpacing
             ),
             CTParagraphStyleSetting(
-                spec: .maximumLineSpacing,
+                spec: .lineHeightMultiple,
                 valueSize: MemoryLayout<CGFloat>.size,
-                value: pointers.maximumLineSpacing
+                value: pointers.lineHeightMultiple
             ),
             CTParagraphStyleSetting(
                 spec: .minimumLineHeight,
                 valueSize: MemoryLayout<CGFloat>.size,
                 value: pointers.minimumLineHeight
-            ),
-            CTParagraphStyleSetting(
-                spec: .maximumLineHeight,
-                valueSize: MemoryLayout<CGFloat>.size,
-                value: pointers.maximumLineHeight
             ),
         ]
     }

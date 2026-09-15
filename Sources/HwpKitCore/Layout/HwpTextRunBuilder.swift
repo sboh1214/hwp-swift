@@ -238,15 +238,11 @@ extension HwpTextRunBuilder {
     ) {
         guard output.length > 0 else { return }
         let paraShape = index.paraShapeOrDefault(for: paragraph)
-        output.addAttribute(
-            kCTParagraphStyleAttributeName as NSAttributedString.Key,
-            value: HwpParagraphLayout.paragraphStyle(
-                for: paraShape,
-                attributedString: output,
-                tabStops: attributeCache?.textTabs(for: paraShape, index: index)
-                    ?? index.textTabs(for: paraShape)
-            ),
-            range: NSRange(location: 0, length: output.length)
+        HwpParagraphLayout.attachParagraphStyle(
+            to: output,
+            paraShape: paraShape,
+            tabStops: attributeCache?.textTabs(for: paraShape, index: index)
+                ?? index.textTabs(for: paraShape)
         )
         attachTabLeaders(to: output, paraShape: paraShape)
         let alignment = paraShape.property1Info.alignmentRawValue

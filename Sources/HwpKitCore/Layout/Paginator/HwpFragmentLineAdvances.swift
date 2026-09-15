@@ -3,27 +3,22 @@ import CoreHwp
 import Foundation
 
 /// 흐름 분할(`HwpPaginator.appendParagraphAcrossColumns`)이 조각을 자를 때 쓰는 줄별
-/// 전진량과 조각 첫 줄의 ascent 초과분 — 순수 계산이라 paginator 본문에서 뺐다.
+/// 전진량 — 순수 계산이라 paginator 본문에서 뺐다.
+///
+/// 줄 프레임의 `origin.y`는 **줄 상자 상단**(문단 첫 줄 상자 상단 기준)이고 전진량은 그
+/// 델타다 (#180 — 종전에는 CT baseline 델타라 조각 첫 줄의 ascent 초과분을 앞 조각에서
+/// 빼고 뒤 조각에 더하는 보정(#164)이 필요했다. 상자 상단 기준에서는 조각 상단이 곧 첫 줄
+/// 상자 상단이라 그 보정이 없다).
 struct HwpFragmentLineAdvances {
     let lines: [HwpLineFrame]
     /// 문단 텍스트 몫 높이 (문단 위 간격 제외) — 마지막 줄이 잔여(간격 포함)를 흡수한다.
     let textHeight: CGFloat
     /// 줄 원점이 단조 증가하는지 — 아니면 (캐시 열화) 평균 전진량으로 폴백한다.
     let strictlyIncreasing: Bool
-    /// 목적 단 폭으로 다시 잰 나머지(`HwpFragmentRemainder`)의 첫 줄 ascent 초과분을 낼
-    /// 기준 ascent — 앞 조각의 마지막 줄과 나머지의 마지막 줄 가운데 **작은** 것이다. 조각
-    /// 상자는 첫 줄 ascent를 빼고 마지막 줄 높이를 더한 것이라(`makeLineFrames`), 첫 줄이
-    /// 마지막 줄보다 키 크면(다시 재며 개체 줄이 첫 줄로 올라온 경우) 그 차이만큼 짧다.
-    /// 앞 조각의 마지막 줄만 기준으로 삼으면 그 줄도 개체 줄일 때 초과분이 0이 되어 상자가
-    /// 첫 줄 개체를 못 담고, 나머지의 마지막 줄만 기준으로 삼으면 그 줄이 개체 줄일 때
-    /// 같은 일이 난다 — 둘 가운데 작은 쪽을 기준으로 하면 어느 쪽 개체든 상자에 담긴다
-    /// (PR 리뷰). 문단 머리면 nil.
-    let precedingBaseline: CGFloat?
 
-    init(lines: [HwpLineFrame], textHeight: CGFloat, precedingBaseline: CGFloat? = nil) {
+    init(lines: [HwpLineFrame], textHeight: CGFloat) {
         self.lines = lines
         self.textHeight = textHeight
-        self.precedingBaseline = precedingBaseline
         strictlyIncreasing = zip(lines, lines.dropFirst())
             .allSatisfy { $0.origin.y < $1.origin.y }
     }
@@ -37,32 +32,6 @@ struct HwpFragmentLineAdvances {
             return max(1, lines[index + 1].origin.y - lines[index].origin.y)
         }
         return max(1, textHeight - lines[index].origin.y)
-    }
-
-    /// 조각 첫 줄의 ascent 초과분 (#164 리뷰): 전진량은 baseline 간격이라 줄 k의 ascent는
-    /// 줄 k−1의 전진량에 실려 앞 조각이 가져가는데, 조각은 독립 프레임으로 그려져 첫 줄
-    /// ascent를 자기 상단에서 내린다. 줄 안 개체(run delegate ascent = 개체 높이)로 첫
-    /// 줄이 큰 조각은 그만큼 짧게 재어 뒤 문단이 그 위에 놓이므로, 그 몫을 앞 조각에서
-    /// 빼고 이 조각에 더한다 — 조각 높이 합은 그대로다. 균등 줄은 0이라 불변.
-    func ascentExcess(startingAt index: Int) -> CGFloat {
-        guard strictlyIncreasing, index >= 0, index < lines.count else { return 0 }
-        // 다시 잰 나머지의 첫 줄은 `precedingBaseline` 기준 — 문단 머리(nil)면 0이다.
-        guard index > 0 else {
-            guard let precedingBaseline else { return 0 }
-            return max(0, lines[0].baseline - precedingBaseline)
-        }
-        return max(0, lines[index].baseline - lines[index - 1].baseline)
-    }
-
-    /// 줄 `boundary` 앞에서 끊긴 조각이 단에서 **실제로 차지하는** 높이 — 누적 전진량
-    /// (조각 첫 줄 초과분 포함)에서 마지막 전진량에 실린 다음 조각 첫 줄의 몫을 뺀다.
-    ///
-    /// 적합 판정과 방출 높이가 반드시 이 한 식을 써야 한다 (PR 리뷰): 판정만 보정 없는
-    /// 전진량으로 재면 키 큰 개체 줄 **앞**의 평범한 줄이 실제로는 들어가는데도 거절돼
-    /// 단이 그 줄만큼 빈다 — 전진량은 baseline 간격이라 다음 줄의 ascent를 통째로
-    /// 싣는데(100pt 표 줄이면 약 90pt), 그 몫은 경계에서 뒤 조각으로 넘어간다.
-    func chargedHeight(_ takenHeight: CGFloat, endingBefore boundary: Int) -> CGFloat {
-        takenHeight - ascentExcess(startingAt: boundary)
     }
 
     /// 줄 `boundary` 앞에서 끊긴 조각의 높이가 **측정 줄 전진량만으로** 났는지 (#166). 마지막
@@ -159,17 +128,13 @@ struct HwpFragmentRemainder {
         start == 0 && lineIndex == 0
     }
 
-    /// 다음 줄부터 `available`에 들어가는 줄 수와 그 누적 전진량(조각 첫 줄 ascent 초과분
-    /// 포함). 적합 판정은 방출 높이와 **같은 식**(`chargedHeight`)을 쓴다 — 보정 없는
-    /// 전진량으로 재면 개체 줄 앞의 평범한 줄이 들어가는데도 거절된다 (PR 리뷰).
+    /// 다음 줄부터 `available`에 들어가는 줄 수와 그 누적 전진량. 적합 판정과 방출 높이가
+    /// 같은 전진량 합을 쓴다.
     func fit(in available: CGFloat) -> (count: Int, height: CGFloat) {
         var count = 0
-        var height = advances.ascentExcess(startingAt: lineIndex)
+        var height: CGFloat = 0
         while lineIndex + count < lines.count,
-              advances.chargedHeight(
-                  height + advances.advance(lineIndex + count),
-                  endingBefore: lineIndex + count + 1
-              ) <= available
+              height + advances.advance(lineIndex + count) <= available
         {
             height += advances.advance(lineIndex + count)
             count += 1
@@ -177,15 +142,9 @@ struct HwpFragmentRemainder {
         return (count, height)
     }
 
-    /// 다음 줄 하나만 놓을 때의 누적 전진량 — 빈 단에 안 들어가도 진행 보장으로 싣는 몫.
+    /// 다음 줄 하나만 놓을 때의 전진량 — 빈 단에 안 들어가도 진행 보장으로 싣는 몫.
     var firstLineHeight: CGFloat {
-        advances.ascentExcess(startingAt: lineIndex) + advances.advance(lineIndex)
-    }
-
-    /// 문단 첫 줄이 단에서 실제로 차지하는 높이 — 다음 줄로 넘어가는 ascent 초과분을 뺀
-    /// `chargedHeight`. 문단 위 간격을 새 단에 다시 둘지 판정할 때 쓴다.
-    var firstLineChargedHeight: CGFloat {
-        advances.chargedHeight(advances.advance(0), endingBefore: 1)
+        advances.advance(lineIndex)
     }
 
     /// 아직 놓지 않은 줄들의 문자열 범위 (문단 조판 문자열 기준).
@@ -196,15 +155,10 @@ struct HwpFragmentRemainder {
     }
 
     /// 다시 잰 줄로 나머지를 바꾼다. `frame`은 `remainingRange`의 조각을 `width` 폭으로 잰
-    /// 것이고 `textHeight`는 그 텍스트 몫(문단 위 간격 제외)이다 — 첫 줄 ascent 초과분(#164)의
-    /// 기준은 앞 조각의 마지막 줄과 다시 잰 마지막 줄 가운데 작은 ascent다
-    /// (`HwpFragmentLineAdvances.precedingBaseline`).
+    /// 것이고 `textHeight`는 그 텍스트 몫(문단 위 간격 제외)이다.
     mutating func replace(
         with frame: HwpParagraphFrame, textHeight: CGFloat, width: CGFloat, range: NSRange
     ) {
-        let precedingBaseline: CGFloat? = lineIndex > 0
-            ? min(lines[lineIndex - 1].baseline, frame.lines.last?.baseline ?? .infinity)
-            : nil
         lines = frame.lines.map { line in
             HwpLineFrame(
                 origin: line.origin,
@@ -217,9 +171,7 @@ struct HwpFragmentRemainder {
                 inlineAnchors: line.inlineAnchors
             )
         }
-        advances = HwpFragmentLineAdvances(
-            lines: lines, textHeight: textHeight, precedingBaseline: precedingBaseline
-        )
+        advances = HwpFragmentLineAdvances(lines: lines, textHeight: textHeight)
         measuredWidth = width
         heightIsMeasured = true
         start = range.location

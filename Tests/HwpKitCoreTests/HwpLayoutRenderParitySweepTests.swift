@@ -300,8 +300,10 @@ import XCTest
             }
             for (line, frameLine) in zip(frame.lines, chunk.lines.prefix(chunk.keepCount)) {
                 let range = CTLineGetStringRange(frameLine)
-                var ascent: CGFloat = 0
-                let coreWidth = CGFloat(CTLineGetTypographicBounds(frameLine, &ascent, nil, nil))
+                let coreWidth = CGFloat(CTLineGetTypographicBounds(frameLine, nil, nil, nil))
+                // 측정 줄의 `baseline`은 줄 상자 상단 → 베이스라인 앵커다 (#178·#180) — 렌더가
+                // 그 줄 글자를 그리는 자리와 같은 값이어야 한다.
+                let ascent = HwpDrawnTextLayout.baselineAnchor(of: frameLine)
                 let coreRange = NSRange(location: range.location, length: range.length)
                 if line.attributedRange != coreRange {
                     stats.failures.append(
@@ -313,7 +315,7 @@ import XCTest
                 if abs(line.width - coreWidth) > 0.0001 || abs(line.baseline - ascent) > 0.0001 {
                     stats.failures.append(
                         "\(label) 측정 줄 메트릭이 공유 코어와 다르다: 폭 \(line.width) vs "
-                            + "\(coreWidth), ascent \(line.baseline) vs \(ascent)"
+                            + "\(coreWidth), 앵커 \(line.baseline) vs \(ascent)"
                     )
                     break
                 }

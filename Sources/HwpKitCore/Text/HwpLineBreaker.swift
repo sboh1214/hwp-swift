@@ -7,26 +7,22 @@ import Foundation
 /// `HwpParagraphLayout.layout`(측정)과 `HwpDrawnTextLayout.lines`(렌더)가 둘 다
 /// `nextFrameChunk`를 불러 같은 `CTFramesetterSuggestFrameSizeWithConstraints`
 /// 상자에서 같은 `CTLine` 경계를 얻는다 — 줄바꿈 사실(문자 분할·origin)이
-/// 정의상 일치한다. 그 뒤의 높이 후처리는 목적이 달라 양쪽이 각자 유지한다:
-/// 측정의 `trailingSpacing`·`clampedLineHeight`는 전진량·절단 모델이고, 렌더의
-/// raw height는 잉크 모델이다.
+/// 정의상 일치한다. 줄바꿈 뒤의 **세로 전진량**도 공유한다 — 둘 다
+/// `HwpLineAdvance.advances(of:in:)`로 줄별 상자 높이 × 줄 간격 규칙을 쌓는다 (#180).
 ///
 /// 계약 네 가지는 `Sources/HwpKitCore/AGENTS.md`("측정·렌더 공유 줄바꿈 코어")가
 /// 소유한다 — 줄 예산 절단, 미완 마지막 줄 이월, 한 시각 줄 재프레이밍,
 /// `keepCount` 하드 상한.
 ///
-/// **렌더 전용 헬퍼를 여기 넣지 말 것.** `HwpDrawnTextLayout.resumeBaseline`·
-/// `fallbackLineAdvance`는 호출자가 `lines()`뿐이고 측정은 같은 일을
-/// `HwpParagraphLayout.makeLineFrames`가 origin 델타로 자체 처리한다. 한쪽만
-/// 쓰는 멤버가 들어오면 이 타입 이름이 다시 거짓말을 한다.
+/// **한쪽만 쓰는 헬퍼를 여기 넣지 말 것.** 한쪽만 쓰는 멤버가 들어오면 이 타입 이름이
+/// 다시 거짓말을 한다.
 enum HwpLineBreaker {
     /// 한 프레임 청크의 조판 결과 — 두 루프(lines/layout)가 공유하는 경계 결정.
     struct FrameChunk {
         let lines: [CTLine]
+        /// CT가 준 줄 origin — **x만** 쓴다 (문단 들여쓰기·정렬). y는 CT 슬롯 기준이라
+        /// 세로 배치에 쓰지 않는다 (`HwpLineAdvance`).
         let origins: [CGPoint]
-        /// 이 청크의 SuggestFrameSize 박스 높이 — 첫 줄의 **배치** ascent를
-        /// `height − origins[0].y`로 얻는 데 쓴다 (`HwpDrawnTextLayoutAnchor`).
-        let height: CGFloat
         /// 커밋할 줄 수 — 문자 예산으로 잘린 미완 마지막 줄은 제외한다.
         let keepCount: Int
         /// 다음 청크가 재개할 문자열 위치.
@@ -54,7 +50,7 @@ enum HwpLineBreaker {
         let probeLength = min(fullLength - startLocation, remainingLineBudget)
         guard probeLength > 0 else { return nil }
 
-        func frame(length: Int) -> (lines: [CTLine], origins: [CGPoint], height: CGFloat)? {
+        func frame(length: Int) -> (lines: [CTLine], origins: [CGPoint])? {
             let range = CFRange(location: startLocation, length: length)
             let suggested = CTFramesetterSuggestFrameSizeWithConstraints(
                 framesetter, range, nil,
@@ -69,7 +65,7 @@ enum HwpLineBreaker {
             else { return nil }
             var origins = [CGPoint](repeating: .zero, count: lines.count)
             CTFrameGetLineOrigins(created, CFRange(location: 0, length: 0), &origins)
-            return (lines, origins, height)
+            return (lines, origins)
         }
 
         guard var chunk = frame(length: probeLength) else { return nil }
@@ -106,8 +102,7 @@ enum HwpLineBreaker {
         let nextStart = lastRange.location + lastRange.length
         guard nextStart > startLocation else { return nil }
         return FrameChunk(
-            lines: chunk.lines, origins: chunk.origins, height: chunk.height,
-            keepCount: keepCount, nextStart: nextStart
+            lines: chunk.lines, origins: chunk.origins, keepCount: keepCount, nextStart: nextStart
         )
     }
 

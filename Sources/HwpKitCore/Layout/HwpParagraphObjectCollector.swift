@@ -369,7 +369,7 @@ struct HwpParagraphObjectCollector {
     }
 
     /// controlIndex 마커의 줄 앵커 (문단 rect 기준 좌표 + 줄이 예약한 치수) —
-    /// 좌표 산식은 HwpPaginator.inlineAnchorMap과 같다 (baseline − ascent = 개체 상단).
+    /// 좌표 산식은 HwpPaginator.inlineAnchorMap과 같다 (`HwpObjectAnchorGeometry`).
     ///
     /// 예약 치수를 **버리지 않는다**: 크기 0인 앵커와 실제로 자리를 잡은 앵커는
     /// 컨테이너 높이 하한에서 갈린다 (`escapesLineBox`, R53).
@@ -378,13 +378,12 @@ struct HwpParagraphObjectCollector {
         frame: HwpParagraphFrame,
         paragraphRect: CGRect
     ) -> LineAnchor? {
-        guard let firstBaseline = frame.lines.first?.baseline else { return nil }
         for line in frame.lines {
             for anchor in line.inlineAnchors where anchor.controlIndex == controlIndex {
                 return LineAnchor(
                     origin: HwpObjectAnchorGeometry.inlineAnchorOrigin(
                         paragraphOrigin: paragraphRect.origin,
-                        firstBaseline: firstBaseline,
+                        lineBaseline: line.baseline,
                         lineOrigin: line.origin,
                         xOffset: anchor.xOffset,
                         ascent: anchor.ascent

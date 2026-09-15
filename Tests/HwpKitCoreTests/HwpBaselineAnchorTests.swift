@@ -270,13 +270,18 @@ import XCTest
             guard frame.lines.count == 2,
                   let anchor = frame.lines[1].inlineAnchors.first
             else { return }
-            let objectBottom = blockTop + frame.lines[0].baseline + frame.lines[1].origin.y
-            let objectTop = objectBottom - anchor.ascent
+            let objectTop = HwpObjectAnchorGeometry.inlineAnchorOrigin(
+                paragraphOrigin: CGPoint(x: 0, y: blockTop), lineBaseline: frame.lines[1].baseline,
+                lineOrigin: frame.lines[1].origin, xOffset: anchor.xOffset, ascent: anchor.ascent
+            ).y
+            let objectBottom = objectTop + anchor.ascent
             let baseline = lines[1].baselineOrigin.y
             expect(baseline).to(beGreaterThan(objectTop), description: "개체 상단 아래")
             expect(baseline).to(beLessThanOrEqualTo(objectBottom), description: "개체 바닥 위")
-            // 남은 격차: 개체 바닥 − baseline은 0.15 × 개체 높이여야 하는데 측정 경로가
-            // 아직 CT 보고 ascent를 기준점으로 쓴다 (#195). 그 축은 여기서 잠그지 않는다.
+            // 개체가 상자를 정한 줄이라 개체 상단 = 상자 상단이고 baseline은 그 아래 0.85 × 개체
+            // 높이 — 개체 바닥 − baseline = 0.15 × 개체 높이 (#180: 측정 줄 프레임도 상자 모델).
+            expect(objectBottom - baseline).to(beCloseTo(0.15 * objectHeight, within: 0.001))
+            expect(objectTop).to(beCloseTo(lines[1].baselineOrigin.y - 0.85 * objectHeight, within: 0.001))
         }
 
         /// **하한만 지정한 문단을 못박힌 문단으로 보면 안 된다** (#178). `.atLeast`와 개체

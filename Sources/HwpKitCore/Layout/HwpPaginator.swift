@@ -1761,13 +1761,10 @@ private extension HwpPaginator {
                 // 빈 단보다 크면 진행 보장을 위해 flush 배치한다. 단 이동이 페이지를
                 // 넘기면 각주 예약이 바뀌므로 usable을 재계산하고 (R55 #4), gap을
                 // 물리면 .paragraph 기준 개체의 anchor도 함께 내린다 (R55 #5).
-                // "첫 줄"의 크기는 적합 판정·방출과 **같은 출처**인 `chargedHeight`다
-                // (PR 리뷰) — 보정 없는 전진량은 baseline 간격이라 다음 줄(개체 줄)의
-                // ascent를 통째로 실어, 실제로는 들어가는 gap을 거절하고 문단을 새 단
-                // top에 붙여 놓는다.
+                // "첫 줄"의 크기는 적합 판정·방출과 **같은 출처**인 줄 전진량이다 (PR 리뷰).
                 let usableAfterAdvance = max(1, effectiveContentHeight - reservedFootnoteHeight)
                 if isAtParagraphStart,
-                   beforeGap + remainder.firstLineChargedHeight <= usableAfterAdvance
+                   beforeGap + remainder.firstLineHeight <= usableAfterAdvance
                 {
                     contentHeightUsed += beforeGap
                     paragraphAnchorTop = currentColumnFrame.minY + contentHeightUsed
@@ -1814,7 +1811,7 @@ private extension HwpPaginator {
         remeasureRemainderIfNeeded(
             &remainder, attributedString: attributedString, placement: placement
         )
-        if beforeGap + remainder.firstLineChargedHeight
+        if beforeGap + remainder.firstLineHeight
             <= max(1, effectiveContentHeight - reservedFootnoteHeight)
         {
             contentHeightUsed += beforeGap
@@ -1901,8 +1898,8 @@ private extension HwpPaginator {
     /// (`remeasureRemainderIfNeeded`) 여기 오는 줄은 이미 이 단 폭의 것이고, 캐시 높이 문단만
     /// 잰 폭의 줄로 온다.
     ///
-    /// 블록 높이는 누적 전진량 `takenHeight`에서 마지막 전진량에 실린 다음 조각 첫 줄의
-    /// ascent 초과분을 뺀 것이다 (`chargedHeight` — 그 몫은 다음 조각의 것). 그 높이가 측정
+    /// 블록 높이는 누적 전진량 `takenHeight`다 — 줄 프레임 원점이 줄 상자 상단이라 조각 상단이
+    /// 곧 첫 줄 상자 상단이고 뒤 조각으로 넘길 몫이 없다 (#180). 그 높이가 측정
     /// 줄 전진량만으로 났으면(`HwpFragmentLineAdvances.heightIsMeasured`) 측정 줄 조각 표식을
     /// 단다 (`HwpParagraphLayout.measuredLineFragment`, #166) — 블록 높이가 측정한 줄 전진량이라
     /// 렌더러가 조각을 한 줄로 접으면 아래가 빈다. 이 단이 잰 폭보다 좁으면(캐시 높이 문단의
@@ -1921,7 +1918,7 @@ private extension HwpPaginator {
             NSUnionRange($0, $1.attributedRange)
         }
         let advances = remainder.advances
-        let height = advances.chargedHeight(takenHeight, endingBefore: slice.endIndex)
+        let height = takenHeight
         let heightIsMeasured = advances.heightIsMeasured(
             endingBefore: slice.endIndex, textHeightIsMeasured: remainder.heightIsMeasured
         )
@@ -3807,9 +3804,9 @@ private extension HwpPaginator {
     /// 방금 배치한 문단의 라인에서 controlIndex의 U+FFFC 앵커를 찾아
     /// 개체의 페이지 좌표 (왼쪽 위)를 계산한다.
     ///
-    /// 라인 baseline의 블록 내 y = 첫 라인 baseline(= lines[0].baseline) +
-    /// 라인 origin.y (첫 baseline 기준 delta). 개체 위 = baseline - 앵커 ascent
-    /// (run delegate가 예약한 개체 높이).
+    /// 줄 프레임 origin.y는 줄 상자 상단(문단 첫 줄 상자 상단 기준)이고 `baseline`은 그
+    /// 줄의 상자 상단 → 베이스라인 앵커다. 개체 상단은 `HwpObjectAnchorGeometry.inlineAnchorOrigin`
+    /// (줄 상자 모델, #180·#195).
     func inlineAnchorPosition(for controlIndex: Int?) -> CGPoint? {
         guard let controlIndex, currentParagraphContext != nil else { return nil }
         return inlineAnchorMap()[controlIndex]
@@ -3829,9 +3826,7 @@ private extension HwpPaginator {
         if let cached = inlineAnchorCache {
             return cached
         }
-        guard let context = currentParagraphContext,
-              let firstBaseline = context.lines.first?.baseline
-        else {
+        guard let context = currentParagraphContext else {
             inlineAnchorCache = [:]
             return [:]
         }
@@ -3840,7 +3835,7 @@ private extension HwpPaginator {
             for anchor in line.inlineAnchors where map[anchor.controlIndex] == nil {
                 map[anchor.controlIndex] = HwpObjectAnchorGeometry.inlineAnchorOrigin(
                     paragraphOrigin: context.blockFrame.origin,
-                    firstBaseline: firstBaseline,
+                    lineBaseline: line.baseline,
                     lineOrigin: line.origin,
                     xOffset: anchor.xOffset,
                     ascent: anchor.ascent

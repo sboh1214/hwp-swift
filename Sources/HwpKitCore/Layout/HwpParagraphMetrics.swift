@@ -12,62 +12,26 @@ extension HwpParagraphLayout {
         var tailIndent: CGFloat
         var paragraphSpacingBefore: CGFloat
         var paragraphSpacing: CGFloat
-        /// 여백만 지정 (표 46 종류 2): 줄 사이 추가 간격 (pt)
-        var lineSpacingAdjustment: CGFloat = 0
         /// 문서 정의 탭 스톱 (표 36 탭 정의 — 위치는 표 43 계열 1/2 단위)
         var tabStops: [CTTextTab] = []
-        /// 비율/고정/최소 줄 간격의 강제 줄 높이 하한 (pt, 0 = 없음)
+
+        /// 줄 전진량 규칙 (표 46 종류 + 값) — 측정·렌더가 줄바꿈 뒤 줄마다 이 규칙으로
+        /// 전진량을 낸다 (`HwpLineAdvance`). 조판 문자열에는
+        /// `HwpAttributedStringKey.lineSpacing`으로 실린다.
+        var lineSpacingRule: HwpLineSpacingRule
+
+        /// CT 문단 스타일에 싣는 줄 높이 **힌트** — 세로 배치에는 쓰이지 않고 (전진량은
+        /// `lineSpacingRule`이 정한다) 서식 복사(`HwpSelectionRTF`)와 규칙 표식이 없는
+        /// 문자열의 폴백(`HwpLineSpacingRule.fallback`)에만 남는다.
+        ///
+        /// - 비율 → `lineHeightMultiple` (p/100). 종전에는 문단 최대 글자 크기 × 비율로
+        ///   `minimumLineHeight = maximumLineHeight`를 못박았는데, CT는 그 높이에 안 들어가는
+        ///   글자가 있으면 줄을 놓지 않아 (#202) 문단이 통째로 사라졌다.
+        /// - 고정·최소 → `minimumLineHeight` (상한은 두지 않는다 — 같은 이유).
+        /// - 여백만 → `lineSpacingAdjustment`.
+        var lineHeightMultiple: CGFloat = 0
         var minimumLineHeight: CGFloat = 0
-        /// 비율/고정 줄 간격의 강제 줄 높이 상한 (pt, 0 = 없음).
-        /// 글자처럼 취급 개체가 줄 공간을 예약한 문단은 개체가 잘리지 않게
-        /// 상한을 두지 않는다 (한글: 줄 높이 = max(글자 기준 높이, 개체 높이)).
-        var maximumLineHeight: CGFloat = 0
-
-        /// applyLineHeight가 여분을 줄 뒤 간격으로 돌렸는지 — 마지막 줄 뒤
-        /// 몫도 문단 전진량에 포함해야 한다 (한글 캐시: lineHeight+lineSpacing 합)
-        var lineHeightAppliedAsSpacing = false
-
-        /// 목표 줄 높이 적용. 한글은 줄 여분을 글자 아래에만 붙인다 (첫 줄
-        /// 글리프 상단 = 본문 상단 — plain-text/bookmark 실물 실측 +1.3mm 보정).
-        /// CT min/max 줄 높이는 여분을 위아래로 나누므로, 자연 높이보다 큰
-        /// 여분은 lineSpacingAdjustment (줄 뒤 간격)로만 준다.
-        private mutating func applyLineHeight(
-            _ lineHeight: CGFloat,
-            attributedString: NSAttributedString?
-        ) {
-            // min=max 강제가 기본 — spacing 가산은 CT가 폴백 폰트의 부풀린
-            // leading을 더해 줄 피치가 커진다 (noori 실측 +7%: 25.5→27.3pt).
-            // 인라인 개체 줄만 spacing 방식 (개체가 줄 높이를 키울 수 있게).
-            if attributedString.map(Self.hasInlineObjects(in:)) == true {
-                let natural = attributedString.map(Self.maxNaturalLineHeight(in:)) ?? 0
-                if natural > 0, lineHeight >= natural {
-                    lineSpacingAdjustment = lineHeight - natural
-                    lineHeightAppliedAsSpacing = true
-                    return
-                }
-                minimumLineHeight = lineHeight
-                return
-            }
-            minimumLineHeight = lineHeight
-            maximumLineHeight = lineHeight
-        }
-
-        /// run 폰트들의 자연 줄 높이 최대값 (ascent + descent + leading)
-        static func maxNaturalLineHeight(in attributedString: NSAttributedString) -> CGFloat {
-            var maxHeight: CGFloat = 0
-            attributedString.enumerateAttribute(
-                kCTFontAttributeName as NSAttributedString.Key,
-                in: NSRange(location: 0, length: attributedString.length)
-            ) { value, _, _ in
-                guard let value, CFGetTypeID(value as CFTypeRef) == CTFontGetTypeID()
-                else { return }
-                let font = value as! CTFont // swiftlint:disable:this force_cast
-                let height = CTFontGetAscent(font) + CTFontGetDescent(font)
-                    + CTFontGetLeading(font)
-                maxHeight = max(maxHeight, height)
-            }
-            return maxHeight
-        }
+        var lineSpacingAdjustment: CGFloat = 0
 
         init(paraShape: CoreHwp.HwpParaShape, attributedString: NSAttributedString? = nil) {
             // 표 43 여백/들여쓰기는 1/2 단위 (HWPUNIT×2)로 저장된다 — 실측:
@@ -111,34 +75,18 @@ extension HwpParagraphLayout {
                 fromHwpUnit: paraShape.paragraphSpacingBottom
             ) / 2
 
-            let value = paraShape.resolvedLineSpacingValue
-            switch paraShape.resolvedLineSpacingKind {
+            // 줄 간격 (표 44/46): 고정·최소·여백만 값도 1/2 단위다 (#192) —
+            // `HwpLineSpacingRule.init(paraShape:)`가 나눈다.
+            let rule = HwpLineSpacingRule(paraShape: paraShape)
+            lineSpacingRule = rule
+            switch rule.kind {
             case .percent:
-                // 글자에 따라(%): 줄 높이 = 글자 크기 × 값 / 100 (표 44/46 종류 0)
-                let fontSize = attributedString.map(Self.maxFontSize(in:)) ?? 0
-                guard fontSize > 0, value > 0 else { break }
-                let lineHeight = fontSize * CGFloat(value) / 100
-                applyLineHeight(lineHeight, attributedString: attributedString)
-            case .fixed:
-                let lineHeight = max(1, HwpUnits.points(fromHwpUnit: value))
-                applyLineHeight(lineHeight, attributedString: attributedString)
+                lineHeightMultiple = max(0, rule.value / 100)
+            case .fixed, .atLeast:
+                minimumLineHeight = max(0, rule.value)
             case .marginOnly:
-                lineSpacingAdjustment = max(0, HwpUnits.points(fromHwpUnit: value))
-            case .atLeast:
-                minimumLineHeight = max(0, HwpUnits.points(fromHwpUnit: value))
+                lineSpacingAdjustment = max(0, rule.value)
             }
-        }
-
-        /// 자연 줄 높이에 min/max 강제 줄 높이 제약을 적용한다 (0 = 제약 없음)
-        func clampedLineHeight(_ natural: CGFloat) -> CGFloat {
-            var height = natural
-            if maximumLineHeight > 0 {
-                height = min(height, maximumLineHeight)
-            }
-            if minimumLineHeight > 0 {
-                height = max(height, minimumLineHeight)
-            }
-            return height
         }
 
         /// 문단 앞 번호 라벨의 pt 값 표식(자동 내어쓰기 전진량·첫 줄 여백) — 라벨은
@@ -151,51 +99,6 @@ extension HwpParagraphLayout {
                   let value = attributedString.attribute(key, at: 0, effectiveRange: nil) as? NSNumber
             else { return nil }
             return CGFloat(value.doubleValue)
-        }
-
-        /// 문자열 run들의 최대 글꼴 크기 (비율 줄 간격의 기준 글자 크기)
-        static func maxFontSize(in attributedString: NSAttributedString) -> CGFloat {
-            // % 줄 간격의 기준은 상대크기 적용 전 기본 크기다 (한글 실물:
-            // 상대크기 170% 줄도 전진량이 일반 줄과 동일 — CharShape 실측).
-            var maxBase: CGFloat = 0
-            attributedString.enumerateAttribute(
-                HwpAttributedStringKey.baseFontSize,
-                in: NSRange(location: 0, length: attributedString.length)
-            ) { value, _, _ in
-                if let number = value as? NSNumber {
-                    maxBase = max(maxBase, CGFloat(number.doubleValue))
-                }
-            }
-            if maxBase > 0 {
-                return maxBase
-            }
-            var maxSize: CGFloat = 0
-            attributedString.enumerateAttribute(
-                kCTFontAttributeName as NSAttributedString.Key,
-                in: NSRange(location: 0, length: attributedString.length)
-            ) { value, _, _ in
-                guard let value, CFGetTypeID(value as CFTypeRef) == CTFontGetTypeID() else {
-                    return
-                }
-                let font = value as! CTFont // swiftlint:disable:this force_cast
-                maxSize = max(maxSize, CTFontGetSize(font))
-            }
-            return maxSize
-        }
-
-        /// 줄 공간을 예약한 (높이 > 0) 글자처럼 취급 개체 run이 있는지
-        static func hasInlineObjects(in attributedString: NSAttributedString) -> Bool {
-            var found = false
-            attributedString.enumerateAttribute(
-                HwpAttributedStringKey.inlineObjectHeight,
-                in: NSRange(location: 0, length: attributedString.length)
-            ) { value, _, stop in
-                if let number = value as? NSNumber, number.doubleValue > 0 {
-                    found = true
-                    stop.pointee = true
-                }
-            }
-            return found
         }
     }
 }

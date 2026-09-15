@@ -218,7 +218,9 @@ import XCTest
         }
 
         func testFixedLineSpacingUsesHwpUnitValue() {
-            // 표 46 종류 1 (고정값): 3600 HWPUNIT = 36pt
+            // 표 46 종류 1 (고정값): 저장값 3600은 표 43 여백 계열과 같은 1/2 단위라 18pt다
+            // (#192 — 한글 대화상자 고정 16pt가 3200으로 저장된다). 글꼴·글자 크기와 무관하게
+            // 줄마다 정확히 그 값으로 전진한다.
             var shape = paraShape()
             shape.property3 = 1
             shape.lineSpacing2 = 3600
@@ -231,11 +233,12 @@ import XCTest
 
             expect(frame.lines.count) >= 3
             let perLine = frame.totalHeight / CGFloat(frame.lines.count)
-            expect(perLine).to(beCloseTo(36, within: 1))
+            expect(perLine).to(beCloseTo(18, within: 0.001))
         }
 
         func testMarginOnlyLineSpacingAddsSpacingBetweenLines() {
-            // 표 44 종류 2 (여백만 지정, 5.0.2.5 미만 저장본): 500 HWPUNIT = 5pt 추가
+            // 표 44 종류 2 (여백만 지정, 5.0.2.5 미만 저장본): 저장값 500은 1/2 단위라 줄마다
+            // 2.5pt를 더한다 (#192). 여백만 0인 문단은 줄 상자(글자 크기 12pt)로만 전진한다.
             var plain = paraShape(property1: 2, lineSpacing: 0)
             plain.property3 = nil
             plain.lineSpacing2 = nil
@@ -257,9 +260,12 @@ import XCTest
 
             expect(plainFrame.lines.count) == spacedFrame.lines.count
             expect(plainFrame.lines.count) >= 3
-            let expectedGain = 5.0 * CGFloat(spacedFrame.lines.count - 1)
+            // 마지막 줄의 줄 간격 몫도 문단 높이에 든다 (한글 캐시의 `lineHeight + lineSpacing` 합).
+            let expectedGain = 2.5 * CGFloat(spacedFrame.lines.count)
             expect(spacedFrame.totalHeight - plainFrame.totalHeight)
-                .to(beCloseTo(expectedGain, within: 1))
+                .to(beCloseTo(expectedGain, within: 0.001))
+            expect(plainFrame.totalHeight)
+                .to(beCloseTo(12 * CGFloat(plainFrame.lines.count), within: 0.001))
         }
 
         func testLegacyProperty1PercentKindAppliesWithoutProperty3() {

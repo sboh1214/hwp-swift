@@ -166,15 +166,14 @@ import XCTest
             guard fragments.count == 2 else { return }
             let drawn = Columns.drawnLines(of: fragments[1])
             expect(drawn.count).to(beGreaterThanOrEqualTo(1))
-            // 나머지의 마지막 줄은 문단 전체의 32pt로 재어진다(조각만 보면 16pt) — 상자가 줄
-            // 피치 32pt 이상이고 그려진 마지막 줄(강제 줄 높이라 ascent 19·descent 13)이 상자에
-            // 담긴다. 앞 조각이 #164 규약으로 내준 마지막 줄 ascent 초과분(10pt)은 이 상자에 더
-            // 실리므로 정확한 높이는 여기서 고정하지 않는다.
+            // 줄 전진량은 **줄마다** 그 줄의 최대 기본 크기로 정해진다 (#180, 한글 실측: 10pt
+            // 45자 + 40pt 12자 문단의 `vertsize`가 줄별로 1000·4000·4000). 20pt 글자는 앞 조각의
+            // 첫 줄에만 있으므로 나머지 줄들은 전부 10pt × 160% = 16pt다 — 문단 전체 문자열로
+            // 지표를 잡던 종전 모델(32pt)과 달리 조각 부분 문자열로 재도 같은 값이 나온다.
             expect(fragments[1].frame.height)
-                .to(beGreaterThanOrEqualTo(CGFloat(drawn.count) * 32 - 0.5))
+                .to(beCloseTo(CGFloat(drawn.count) * 16, within: 0.001))
             let last = try XCTUnwrap(drawn.last)
-            expect(last.baselineOrigin.y + last.descent)
-                .to(beLessThanOrEqualTo(fragments[1].frame.maxY + 0.5))
+            expect(last.baselineOrigin.y).to(beCloseTo(fragments[1].frame.maxY - 16 + 8.5, within: 0.001))
         }
 
         /// 균형 재배치가 문단의 **가운데** 조각(문단 끝을 담지 않음)을 폭이 다른 단으로 옮겨
@@ -210,11 +209,11 @@ import XCTest
             expect(fragments[2].frame.height).to(beCloseTo(36, within: 0.5))
         }
 
-        /// 다시 잰 나머지의 첫 줄 ascent 초과분은 앞 조각의 마지막 줄과 나머지의 마지막 줄 가운데
-        /// **작은** ascent 기준이다 — 앞 조각의 마지막 줄만 기준으로 삼으면 그 줄도 개체 줄(ascent
-        /// 20)일 때 초과분이 0이 되어, 다시 재며 개체가 첫 줄로 올라온 나머지의 상자가 그 개체를
-        /// 못 담는다.
-        func testRemeasuredFirstLineExcessUsesTheSmallerReferenceAscent() {
+        /// 다시 잰 나머지는 줄 상자 상단 원점 그대로 이어진다 (#180) — 줄 프레임 원점이 줄
+        /// 상자 상단이라 조각 첫 줄에 ascent 초과분 보정이 없고, 첫 줄 높이·적합 판정은 그 줄의
+        /// 전진량 그대로다 (종전 CT baseline 원점 모델에서는 개체 줄이 첫 줄로 올라오면 앞
+        /// 조각·나머지 마지막 줄 가운데 작은 ascent 기준의 초과분을 더해야 했다).
+        func testRemeasuredRemainderKeepsLineBoxTopAdvances() {
             func line(_ location: Int, baseline: CGFloat, y: CGFloat) -> HwpLineFrame {
                 HwpLineFrame(
                     origin: CGPoint(x: 0, y: y), width: 100, baseline: baseline,
@@ -222,33 +221,24 @@ import XCTest
                 )
             }
             var remainder = HwpFragmentRemainder(
-                lines: [line(0, baseline: 20, y: 0), line(10, baseline: 9, y: 30), line(20, baseline: 9, y: 46)],
+                lines: [line(0, baseline: 17, y: 0), line(10, baseline: 8.5, y: 30), line(20, baseline: 8.5, y: 46)],
                 textHeight: 62, measuredWidth: 100, heightIsMeasured: true
             )
             remainder.place(1)
-            // 다시 잰 나머지: 첫 줄이 개체 줄(20), 마지막 줄은 보통 줄(9).
+            // 다시 잰 나머지: 첫 줄이 개체 줄(상자 20 → 전진량 30), 마지막 줄은 보통 줄(16).
             remainder.replace(
                 with: HwpParagraphFrame(
-                    totalHeight: 46, lines: [line(0, baseline: 20, y: 0), line(10, baseline: 9, y: 30)]
+                    totalHeight: 46, lines: [line(0, baseline: 17, y: 0), line(10, baseline: 8.5, y: 30)]
                 ),
                 textHeight: 46, width: 150, range: NSRange(location: 10, length: 20)
             )
             expect(remainder.start) == 10
             expect(remainder.lines.map(\.attributedRange.location)) == [10, 20]
-            expect(remainder.advances.ascentExcess(startingAt: 0)).to(beCloseTo(11, within: 0.001))
-            expect(remainder.advances.precedingBaseline).to(beCloseTo(9, within: 0.001))
-            // 문단 머리부터 다시 재면(아무 줄도 안 놓음) 초과분이 없다.
-            var whole = HwpFragmentRemainder(
-                lines: [line(0, baseline: 20, y: 0), line(10, baseline: 9, y: 30)],
-                textHeight: 46, measuredWidth: 100, heightIsMeasured: true
-            )
-            whole.replace(
-                with: HwpParagraphFrame(totalHeight: 30, lines: [line(0, baseline: 20, y: 0)]),
-                textHeight: 30, width: 150, range: NSRange(location: 0, length: 20)
-            )
-            expect(whole.advances.precedingBaseline).to(beNil())
-            expect(whole.advances.ascentExcess(startingAt: 0)) == 0
-            expect(whole.remeasureCount) == 1
+            expect(remainder.firstLineHeight).to(beCloseTo(30, within: 0.001))
+            expect(remainder.fit(in: 45).count) == 1
+            expect(remainder.fit(in: 46).count) == 2
+            expect(remainder.fit(in: 46).height).to(beCloseTo(46, within: 0.001))
+            expect(remainder.remeasureCount) == 1
         }
     }
 #endif
