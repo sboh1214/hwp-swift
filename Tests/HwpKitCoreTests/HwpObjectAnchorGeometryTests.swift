@@ -80,24 +80,37 @@ final class HwpObjectAnchorGeometryTests: XCTestCase {
 
     // MARK: inlineAnchorOrigin
 
-    /// 세로는 baseline − ascent = 개체 상단이고, baseline은 문단 첫 줄의
-    /// baseline에 그 줄의 origin.y를 더한 값이다.
-    func testInlineAnchorOriginUsesFirstBaselineMinusAscent() {
+    /// 세로는 줄 상자 모델이다 (#180): 개체 바닥을 그 줄의 베이스라인 앵커(상자 상단 +
+    /// `lineBaseline`)에 두되, 개체가 앵커 위 공간보다 크면 상자 상단에 붙는다.
+    func testInlineAnchorOriginPutsASmallObjectOnTheLineBaseline() {
         let origin = HwpObjectAnchorGeometry.inlineAnchorOrigin(
             paragraphOrigin: CGPoint(x: 10, y: 20),
-            firstBaseline: 12,
+            lineBaseline: 12,
             lineOrigin: CGPoint(x: 3, y: 30),
             xOffset: 5,
             ascent: 9
         )
         expect(origin.x) == 18 // 10 + 3 + 5
-        expect(origin.y) == 53 // 20 + 12 + 30 − 9
+        expect(origin.y) == 53 // 20 + 30 + (12 − 9)
+    }
+
+    /// 개체가 상자를 정한 줄(코퍼스의 전부)은 앵커 = 0.85 × 개체 높이 < 개체 높이라 개체
+    /// 상단이 곧 상자 상단이다 — 렌더가 그 줄 글자를 그리는 자리와 같은 기준.
+    func testInlineAnchorOriginPinsATallObjectToTheLineBoxTop() {
+        let origin = HwpObjectAnchorGeometry.inlineAnchorOrigin(
+            paragraphOrigin: CGPoint(x: 0, y: 100),
+            lineBaseline: 0.85 * 60,
+            lineOrigin: CGPoint(x: 0, y: 16),
+            xOffset: 0,
+            ascent: 60
+        )
+        expect(origin.y) == 116
     }
 
     func testInlineAnchorOriginAtParagraphOriginWithZeroMetrics() {
         let origin = HwpObjectAnchorGeometry.inlineAnchorOrigin(
             paragraphOrigin: .zero,
-            firstBaseline: 0,
+            lineBaseline: 0,
             lineOrigin: .zero,
             xOffset: 0,
             ascent: 0

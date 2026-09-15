@@ -84,13 +84,15 @@ import XCTest
                 .to(beGreaterThanOrEqualTo(secondHost.frame.maxY - 0.01))
         }
 
-        /// 흐름 분할에서 뒤 조각의 **첫 줄**이 큰 줄 안 개체를 품으면, 그 줄의 ascent가
-        /// 앞 조각 마지막 전진량에 실려 뒤 조각이 짧게 재어졌다 — 개체가 줄 안에 놓이면서
-        /// 조각 블록 밖으로 나가고 뒤 문단이 그 위에 놓였다. 첫 줄 ascent 초과분을 뒤
-        /// 조각으로 옮겨 블록이 개체와 줄을 다 담고, 뒤 문단은 그 아래에서 시작한다.
+        /// 흐름 분할에서 뒤 조각의 **첫 줄**이 큰 줄 안 개체를 품으면 조각 블록이 그 개체와
+        /// 줄을 다 담고, 뒤 문단은 그 아래에서 시작한다 (#164). 종전 baseline 델타 전진량에서는
+        /// 그 줄의 ascent가 앞 조각 마지막 전진량에 실려 뒤 조각이 짧게 재어졌다 — 개체가 줄
+        /// 안에 놓이면서 조각 블록 밖으로 나가고 뒤 문단이 그 위에 놓여, 첫 줄 ascent 초과분을
+        /// 뒤 조각으로 옮기는 보정이 필요했다. 지금은 조각 높이가 줄 상자 전진량의 합이라
+        /// (#180) 개체 줄의 몫(상자 100pt + 여분 6pt)이 그 줄 자신에게 청구된다.
         func testFlowSplitFragmentStartingWithTallObjectContainsIt() async throws {
-            // 평문 줄 열 개 뒤 열한째 줄에 100pt 표 — 본문 높이를 줄 열이 들어가고 표 줄로
-            // 가는 전진량은 안 들어가는 크기로 잡아 표 줄이 다음 쪽 조각의 첫 줄이 되게 한다.
+            // 평문 줄 열 개 뒤 열한째 줄에 100pt 표 — 본문 높이를 줄 열은 들어가고 표 줄은
+            // 안 들어가는 크기로 잡아 표 줄이 다음 쪽 조각의 첫 줄이 되게 한다.
             let tall = try InlineControlFragmentSupport.inlineTable(instanceId: 9, height: 10000)
             var host = try HwpSynthetic.splitParagraphWithControlMarkers(
                 lines: Array(repeating: (characters: 5, marker: false), count: 10)
@@ -101,13 +103,13 @@ import XCTest
             )
             host.ctrlHeaderArray = [tall]
             let follower = try HwpSynthetic.textParagraph("뒤 문단")
-            // 본문 270pt = 쪽 높이 − 위/아래 여백(9920): 긴 문단은 새 쪽으로 옮겨져 줄
-            // 열 개(전진량 아홉 × 17.36pt + 표 줄로 가는 전진량 약 107pt = 263pt)는 들어가고
-            // 표 줄 다음 전진량은 안 들어가며, 그 다음 쪽은 표 줄(100pt)·남은 줄 셋·뒤
-            // 문단을 다 담는다.
+            // 본문 250pt = 쪽 높이 − 위/아래 여백(9920): 긴 문단(314pt)은 새 쪽으로 옮겨져
+            // 평문 줄 열 개(10pt × 160% = 16pt씩, 160pt)는 들어가고 표 줄(상자 100pt + 글자
+            // 상자 여분 6pt = 106pt, 누적 266pt)은 안 들어가며, 그 다음 쪽은 표 줄 106pt·
+            // 남은 줄 셋 48pt·뒤 문단 16pt(합 170pt)를 다 담는다.
             let section = HwpSynthetic.section(
                 firstParagraphControls: [
-                    .section(HwpSynthetic.sectionDef(pageHeight: 9920 + 27000)),
+                    .section(HwpSynthetic.sectionDef(pageHeight: 9920 + 25000)),
                 ],
                 bodyParagraphs: [host, follower]
             )
@@ -133,10 +135,12 @@ import XCTest
             expect(followerBlock.frame.minY).to(beGreaterThanOrEqualTo(table.frame.maxY - 0.01))
         }
 
-        /// 키 큰 개체 줄 **바로 앞**의 평범한 줄은 그 개체 줄로 가는 전진량이 아니라 자기
-        /// 몫만 청구된다 — 전진량은 baseline 간격이라 다음 줄 ascent(100pt 표면 약 90pt)를
-        /// 통째로 싣고, 그 몫은 경계에서 뒤 조각으로 넘어가기 때문이다. 적합 판정이 그
-        /// 보정을 빼먹으면 들어가는 줄을 거절해 단이 그만큼 빈다 (PR 리뷰).
+        /// 키 큰 개체 줄 **바로 앞**의 평범한 줄은 자기 상자의 전진량(16pt)만 청구된다 —
+        /// 전진량이 줄 상자 상단 델타라(#180) 개체 줄의 106pt는 그 줄 자신의 몫이다. 종전
+        /// baseline 델타 전진량은 다음 줄 ascent(100pt 표면 약 90pt)를 앞 줄에 실어 경계에서
+        /// 뒤 조각으로 넘기는 보정이 필요했고, 적합 판정이 그 보정을 빼먹으면 들어가는 줄을
+        /// 거절해 단이 그만큼 비었다 (PR 리뷰). 적합 판정이 개체 줄의 상자를 앞 줄에 청구하면
+        /// 같은 증상이 되살아난다.
         func testLineBeforeATallObjectFitsWhenTransferredAscentIsAccounted() async throws {
             let tall = try InlineControlFragmentSupport.inlineTable(instanceId: 9, height: 10000)
             var host = try HwpSynthetic.splitParagraphWithControlMarkers(
@@ -147,8 +151,9 @@ import XCTest
                 markerCode: 11
             )
             host.ctrlHeaderArray = [tall]
-            // 본문 200pt: 평문 열 줄의 **청구** 높이(약 173.6pt)는 들어가지만, 표 줄로 가는
-            // 보정 전 전진량(약 263.2pt)은 안 들어간다 — 보정을 안 하면 아홉 줄에서 끊긴다.
+            // 본문 200pt: 평문 열 줄(16pt × 10 = 160pt)은 들어가지만 표 줄(106pt)까지 266pt는
+            // 안 들어간다 — 열째 줄에 표 줄의 몫을 청구하면(16 × 9 + 106 = 250pt) 아홉 줄에서
+            // 끊긴다.
             let section = HwpSynthetic.section(
                 firstParagraphControls: [
                     .section(HwpSynthetic.sectionDef(pageHeight: 9920 + 20000)),
@@ -164,15 +169,16 @@ import XCTest
             let hostPage = try XCTUnwrap(pages.firstIndex { Self.hostFragment(on: $0) != nil })
             let first = try XCTUnwrap(Self.hostFragment(on: pages[hostPage]))
             let second = try XCTUnwrap(Self.hostFragment(on: pages[hostPage + 1]))
-            // 앞 조각이 개체 줄 바로 앞의 평문 줄까지 열 줄을 담는다 — 보정 없이는 아홉
-            // 줄에서 끊겨 그 줄이 뒤 조각으로 밀리고 단이 한 줄만큼 빈다.
+            // 앞 조각이 개체 줄 바로 앞의 평문 줄까지 열 줄을 담는다 — 개체 줄의 몫을 앞
+            // 줄에 청구하면 아홉 줄에서 끊겨 그 줄이 뒤 조각으로 밀리고 단이 한 줄만큼 빈다.
             expect(Self.drawnLineCount(of: first)) == 10
             expect(Self.drawnLineCount(of: second)) == 4
-            // 조각 높이 합은 보정과 무관하게 보존된다 (초과분은 옮겨질 뿐 사라지지 않는다).
-            expect(first.frame.height + second.frame.height).to(beCloseTo(320.03, within: 0.5))
-            // 열 줄을 담고도 본문 높이(200pt) 안이다 — 보정이 단을 넘치게 하지 않는다.
+            // 조각 높이 합은 문단 텍스트 높이(16pt × 13 + 106pt = 314pt) 그대로다 — 조각
+            // 경계에서 옮겨지거나 사라지는 몫이 없다.
+            expect(first.frame.height + second.frame.height).to(beCloseTo(314, within: 0.01))
+            // 열 줄(160pt)을 담고도 본문 높이(200pt) 안이다.
             expect(first.frame.height).to(beLessThanOrEqualTo(200.01))
-            // 표는 여전히 뒤 조각의 첫 줄이다 — 보정이 개체 줄까지 끌어오지는 않는다.
+            // 표는 뒤 조각의 첫 줄이다 — 표 줄(106pt)은 앞 단에 남은 40pt에 안 들어간다.
             let table = try XCTUnwrap(
                 Self.objectBlocks(on: pages[hostPage + 1], instanceId: 9).first
             )
@@ -180,9 +186,10 @@ import XCTest
         }
 
         /// 부분적으로 찬 단에서 시작한 문단이 통째로 다음 단으로 옮겨 갈 때, 문단 위
-        /// 간격을 유지할지도 **첫 줄이 실제로 차지하는 높이**로 재야 한다 (PR 리뷰) —
-        /// 보정 없는 전진량은 다음 줄(개체 줄)의 ascent를 통째로 실어, 들어가는 간격을
-        /// 거절하고 문단을 새 단 top에 붙여 놓는다.
+        /// 간격을 유지할지는 **첫 줄 자신의 전진량**(16pt)으로 재야 한다 (PR 리뷰) — 다음
+        /// 줄(50pt 표 줄, 56pt)의 상자를 첫 줄에 실으면 들어가는 간격을 거절하고 문단을 새 단
+        /// top에 붙여 놓는다. 종전 baseline 델타 전진량은 그 ascent를 통째로 실어 보정이
+        /// 필요했고, 지금은 전진량이 줄 상자 상단 델타라(#180) 첫 줄의 몫이 곧 그 값이다.
         func testMovedParagraphKeepsItsBeforeGapWhenTheNextLineHoldsATallObject() async throws {
             // 문단 위 간격 4000 HWPUNIT → beforeGap 20pt (저작값의 절반).
             let index = HwpSynthetic.outlineIndex(paraShapes: [
@@ -190,10 +197,12 @@ import XCTest
                     property1: 0, marginLeft: 0, paragraphSpacingTop: 4000, tabDefId: 0
                 ),
             ])
-            // 앞 문단이 첫 단을 채워 잔여가 한 줄보다 작게 만든다 — 그래야 호스트가
-            // `takeCount == 0`으로 통째 이동한다 (빈 단이면 강제 한 줄 분기가 선점한다).
+            // 앞 문단 두 줄(32pt)이 구역 첫 문단(16pt) 뒤의 첫 단을 채워 잔여를 한 줄(16pt)
+            // 보다 작은 12pt로 만든다 — 그래야 호스트가 `takeCount == 0`으로 통째 이동한다
+            // (빈 단이면 강제 한 줄 분기가 선점하고, 세 줄이면 앞 문단 자신이 단에 걸쳐
+            // 갈려 호스트가 둘째 단 중간에서 시작한다).
             let filler = try HwpSynthetic.splitParagraphWithControlMarkers(
-                lines: Array(repeating: (characters: 5, marker: false), count: 3),
+                lines: Array(repeating: (characters: 5, marker: false), count: 2),
                 segments: [], markerCode: 11
             )
             var host = try HwpSynthetic.splitParagraphWithControlMarkers(
@@ -205,8 +214,9 @@ import XCTest
             host.ctrlHeaderArray = [
                 try InlineControlFragmentSupport.inlineTable(instanceId: 9, height: 5000),
             ]
-            // 본문 60pt: 간격 20pt + 첫 줄의 전진량(약 57pt = 다음 줄 50pt 표의 ascent
-            // 포함)은 안 들어가지만, 간격 + 첫 줄 자기 높이(약 17pt)는 들어간다.
+            // 본문 60pt: 간격 20pt + 첫 줄 자기 전진량 16pt = 36pt는 새 단에 들어가지만,
+            // 간격 + 다음 줄(50pt 표 줄, 56pt) = 76pt는 안 들어간다 — 첫 줄의 몫이 개체 줄
+            // 상자로 부풀면 간격이 거절된다.
             let section = HwpSynthetic.section(
                 firstParagraphControls: [
                     .section(HwpSynthetic.sectionDef(pageHeight: 9920 + 6000)),

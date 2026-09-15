@@ -40,13 +40,11 @@ import XCTest
                 columnWidth: width
             )
             expect(frame.lines.count).to(beGreaterThanOrEqualTo(3))
-            // 기본 shape는 비율 160%라 줄 전진량이 글자 크기의 1.6배로 강제된다.
-            // 스타일이 안 붙었다면 CT 자연 줄 높이(≈1.2배)로 떨어진다.
-            let expectedPitch = HwpParagraphLayout.ParagraphMetrics
-                .maxFontSize(in: built) * 1.6
-            expect(expectedPitch).to(beGreaterThan(0))
+            // 기본 shape는 비율 160%라 줄 전진량이 글자 크기(합성 글자 모양 10pt)의
+            // 1.6배다. 규칙이 안 붙었다면 비율 100%(줄 상자 = 글자 크기)로 떨어진다.
+            let expectedPitch: CGFloat = 16
             let perLine = frame.totalHeight / CGFloat(frame.lines.count)
-            expect(perLine).to(beCloseTo(expectedPitch, within: expectedPitch * 0.1))
+            expect(perLine).to(beCloseTo(expectedPitch, within: 0.001))
 
             // 그리고 그 부착본에서 측정과 렌더가 같은 줄로 갈린다.
             let drawn = HwpDrawnTextLayout.lines(
@@ -70,6 +68,9 @@ import XCTest
                 kCTParagraphStyleAttributeName as NSAttributedString.Key,
                 range: NSRange(location: 0, length: bare.length)
             )
+            bare.removeAttribute(
+                HwpAttributedStringKey.lineSpacing, range: NSRange(location: 0, length: bare.length)
+            )
 
             let shape = index.paraShapeOrDefault(for: paragraph)
             let styled = HwpParagraphLayout().layout(
@@ -80,7 +81,8 @@ import XCTest
             )
 
             expect(styled.lines.count) == unstyled.lines.count
-            // 줄바꿈은 같아도 전진량이 다르다 — 강제 줄 높이가 부착본에만 있다.
+            // 줄바꿈은 같아도 전진량이 다르다 — 줄 간격 규칙(비율 160%)이 부착본에만 있고
+            // 규칙 없는 문자열은 비율 100%로 전진한다.
             expect(unstyled.totalHeight).to(beLessThan(styled.totalHeight))
         }
 

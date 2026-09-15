@@ -72,7 +72,7 @@ extension HwpParagraphLayout {
         ]
         for specifier in [
             CTParagraphStyleSpecifier.tailIndent, .paragraphSpacingBefore, .paragraphSpacing,
-            .lineSpacingAdjustment, .maximumLineSpacing, .minimumLineHeight, .maximumLineHeight,
+            .lineSpacingAdjustment, .lineHeightMultiple, .minimumLineHeight,
         ] {
             floats.append((specifier, floatValue(specifier, of: style)))
         }

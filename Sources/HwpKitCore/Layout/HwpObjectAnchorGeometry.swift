@@ -35,18 +35,23 @@ enum HwpObjectAnchorGeometry {
 
     /// 글자처럼 취급되는 개체의 줄 앵커 좌표 — 문단 rect 원점 기준.
     ///
-    /// 세로는 **baseline − ascent = 개체 상단**이고, baseline은 문단 첫 줄의
-    /// baseline에 그 줄의 origin.y를 더한 값이다. 두 경로가 이 식을 공유한다.
+    /// 세로는 줄 상자 모델(#178·#180)을 따른다: `lineOrigin.y`는 그 줄 **상자 상단**(문단
+    /// 첫 줄 상자 상단 기준)이고 `lineBaseline`은 상자 상단에서 베이스라인 앵커까지의 거리
+    /// (`HwpDrawnTextLayout.baselineAnchor`)다. 개체 바닥은 베이스라인에 놓되 개체가
+    /// 베이스라인 위 공간보다 크면 상자 상단에 붙는다 — 개체가 상자를 정한 줄(코퍼스의
+    /// 전부)은 상자 높이 = 개체 높이라 개체 상단 = 상자 상단이고, 렌더가 그 줄 글자를 그리는
+    /// 자리(상자 상단 + 0.85 × 개체 높이)와 같은 기준이다. 두 경로가 이 식을 공유한다.
+    /// 상자보다 작은 개체의 세로 자리는 한글 실측 전이다 (#195).
     static func inlineAnchorOrigin(
         paragraphOrigin: CGPoint,
-        firstBaseline: CGFloat,
+        lineBaseline: CGFloat,
         lineOrigin: CGPoint,
         xOffset: CGFloat,
         ascent: CGFloat
     ) -> CGPoint {
         CGPoint(
             x: paragraphOrigin.x + lineOrigin.x + xOffset,
-            y: paragraphOrigin.y + firstBaseline + lineOrigin.y - ascent
+            y: paragraphOrigin.y + lineOrigin.y + max(0, lineBaseline - ascent)
         )
     }
 }

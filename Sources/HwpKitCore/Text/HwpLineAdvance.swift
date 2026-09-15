@@ -1,0 +1,234 @@
+import CoreGraphics
+import CoreHwp
+import CoreText
+import Foundation
+
+/// 한글 줄 **전진량** 규칙 — 표 46(표 44) 줄 간격 종류와 값 (#180·#192·#198).
+///
+/// 한글의 줄 상자는 줄마다 **그 줄의 상대크기 적용 전 기본 글자 크기 최댓값**이고
+/// (키 큰 글자처럼 취급 개체가 있으면 개체 높이), 전진량은 그 상자에 줄 간격 종류를
+/// 적용한 값이다. 글꼴 지표(ascent·descent·leading)는 관여하지 않는다 — 한글 12.30.0
+/// 이 저장한 줄 캐시(`PARA_LINE_SEG`)의 `vertsize`·`spacing`이 그대로 이 규칙이다
+/// (2026-09-12 스윕: 글자 크기 8종 × 종류 4종 × 글꼴 3종 × 상대크기 2종 전부).
+///
+/// | 종류 | 값 | 전진량 |
+/// | --- | --- | --- |
+/// | 비율(`percent`) | p % | 상자 + 글자 상자 × (p − 100) / 100 |
+/// | 고정(`fixed`) | v pt | v (상자보다 작으면 줄이 겹친다 — 한글도 그렇다) |
+/// | 여백만 지정(`marginOnly`) | v pt | 상자 + v |
+/// | 최소(`atLeast`) | v pt | max(상자, v) |
+///
+/// **비율의 여분은 글자 상자 기준이다** — 개체가 상자를 정한 줄에서도 `spacing`은 그 줄
+/// 글자들의 기본 크기 × (p − 100)/100이다 (실물 캐시: `CCL` 40.87pt 로고 줄의 `spacing`
+/// 600 = 10pt × 0.6, `noori` 61.34pt 그림 줄 840 = 12pt × 0.7, 627.01pt 표 줄 1052 =
+/// 15pt × 0.7, `BinData` 199.38pt 그림 줄 600). 여백만·최소·고정은 개체 줄에서 상자
+/// (= max(글자, 개체))에 그대로 적용한다 (2026-09-15 합성 실측).
+public struct HwpLineSpacingRule: Equatable, Sendable {
+    /// 표 46 줄 간격 종류 — raw 값이 표의 종류 번호다.
+    public enum Kind: Int, Sendable {
+        /// 글자에 따라(%)
+        case percent = 0
+        /// 고정값
+        case fixed = 1
+        /// 여백만 지정
+        case marginOnly = 2
+        /// 최소
+        case atLeast = 3
+    }
+
+    public let kind: Kind
+    /// `percent`면 % (예: 160), 나머지는 pt.
+    public let value: CGFloat
+
+    public init(kind: Kind, value: CGFloat) {
+        self.kind = kind
+        self.value = value
+    }
+
+    /// 문단 모양의 줄 간격 — 고정·최소·여백만 값은 표 43 여백 계열과 같은 **1/2 단위**
+    /// (HWPUNIT × 2)로 저장된다 (#192 실측: 한글 대화상자 고정 16pt → 저장값 3200,
+    /// HWPX `hp:switch`의 `HwpUnitChar` 갈래 1600 · `default` 갈래 3200 — 매퍼가 HWP
+    /// 이진 규약으로 올려 싣는다). 비율은 % 그대로다.
+    public init(paraShape: CoreHwp.HwpParaShape) {
+        let kind = Kind(rawValue: Int(paraShape.resolvedLineSpacingKind.rawValue)) ?? .percent
+        let raw = paraShape.resolvedLineSpacingValue
+        switch kind {
+        case .percent:
+            self.init(kind: .percent, value: CGFloat(raw))
+        case .fixed, .marginOnly, .atLeast:
+            self.init(kind: kind, value: HwpUnits.points(fromHwpUnit: raw) / 2)
+        }
+    }
+
+    /// 줄 하나의 전진량 (줄 상자 상단에서 다음 줄 상자 상단까지).
+    ///
+    /// - `textBoxHeight`: 그 줄 글자 run들의 기본 글자 크기 최댓값 (개체 마커 run의
+    ///   글자 모양 포함).
+    /// - `objectHeight`: 그 줄이 예약한 글자처럼 취급 개체 높이 최댓값 (없으면 0).
+    public func advance(textBoxHeight: CGFloat, objectHeight: CGFloat) -> CGFloat {
+        let text = max(0, textBoxHeight)
+        let box = max(text, max(0, objectHeight))
+        let advance: CGFloat = switch kind {
+        case .percent:
+            box + text * (value - 100) / 100
+        case .fixed:
+            value
+        case .marginOnly:
+            box + value
+        case .atLeast:
+            max(box, value)
+        }
+        // 0·음수 전진량은 줄이 같은 자리에 겹쳐 뒤 줄이 앞 줄 위로 올라간다 — 고정 0이나
+        // 비율 0은 저작 UI가 막지만 손상 문서가 실을 수 있으므로 1pt를 바닥으로 둔다.
+        return max(1, advance)
+    }
+
+    // MARK: 조판 문자열 속성
+
+    /// `HwpAttributedStringKey.lineSpacing` 값 — 종류 raw 값과 값을 담은 NSArray.
+    public var attributeValue: NSArray {
+        [NSNumber(value: kind.rawValue), NSNumber(value: Double(value))]
+    }
+
+    /// `attributeValue`의 역 — 형식이 다르면 nil.
+    public init?(attributeValue: Any?) {
+        guard let array = attributeValue as? NSArray, array.count == 2,
+              let kindNumber = array[0] as? NSNumber, let valueNumber = array[1] as? NSNumber,
+              let kind = Kind(rawValue: kindNumber.intValue)
+        else { return nil }
+        self.init(kind: kind, value: CGFloat(valueNumber.doubleValue))
+    }
+
+    /// 문자열 `location`의 줄 간격 규칙 — 조판 문자열이 실은 규칙
+    /// (`HwpAttributedStringKey.lineSpacing`, `HwpTextRunBuilder.attachParagraphStyle`)이
+    /// 있으면 그것이고, 없으면 (공개 `HwpPaintCommand.drawText` 호출자가 CT 문단 스타일만
+    /// 단 문자열) 그 스타일의 줄 높이 지정을 같은 상자 모델로 읽는다:
+    /// `lineHeightMultiple` → 비율, `minimumLineHeight` == `maximumLineHeight` > 0 → 고정,
+    /// `minimumLineHeight` > 0 → 최소, `lineSpacingAdjustment` > 0 → 여백만, 아니면 비율 100%.
+    static func rule(
+        in attributedString: NSAttributedString, at location: Int
+    ) -> HwpLineSpacingRule {
+        guard attributedString.length > 0 else { return .naturalPercent }
+        let index = min(max(location, 0), attributedString.length - 1)
+        if let rule = HwpLineSpacingRule(attributeValue: attributedString.attribute(
+            HwpAttributedStringKey.lineSpacing, at: index, effectiveRange: nil
+        )) {
+            return rule
+        }
+        return fallback(from: HwpLineBreaker.paragraphStyle(in: attributedString, at: index))
+    }
+
+    /// CT 문단 스타일만 있는 문자열의 규칙 (위 `rule(in:at:)` 참조).
+    static func fallback(from style: CTParagraphStyle?) -> HwpLineSpacingRule {
+        let multiple = HwpLineBreaker.paragraphCGFloat(.lineHeightMultiple, in: style) ?? 0
+        if multiple > 0 {
+            return HwpLineSpacingRule(kind: .percent, value: multiple * 100)
+        }
+        let minimum = max(0, HwpLineBreaker.paragraphCGFloat(.minimumLineHeight, in: style) ?? 0)
+        let maximum = max(0, HwpLineBreaker.paragraphCGFloat(.maximumLineHeight, in: style) ?? 0)
+        if minimum > 0, abs(minimum - maximum) < 0.001 {
+            return HwpLineSpacingRule(kind: .fixed, value: minimum)
+        }
+        if minimum > 0 {
+            return HwpLineSpacingRule(kind: .atLeast, value: minimum)
+        }
+        let spacing = HwpLineBreaker.paragraphCGFloat(.lineSpacingAdjustment, in: style) ?? 0
+        if spacing > 0 {
+            return HwpLineSpacingRule(kind: .marginOnly, value: spacing)
+        }
+        return .naturalPercent
+    }
+
+    /// 비율 100% — 규칙도 CT 줄 높이 지정도 없는 문자열의 기본값 (줄 상자 = 글자 크기).
+    static let naturalPercent = HwpLineSpacingRule(kind: .percent, value: 100)
+}
+
+public extension HwpAttributedStringKey {
+    /// 문단의 줄 간격 규칙 (`HwpLineSpacingRule.attributeValue`, #180) — 조판 문자열 전체에
+    /// 붙는다 (`HwpTextRunBuilder.attachParagraphStyle`). 측정(`HwpParagraphLayout.layout`)과
+    /// 렌더(`HwpDrawnTextLayout.lines`)가 **줄바꿈 뒤** 줄마다 이 규칙으로 전진량을 낸다 —
+    /// CT 문단 스타일의 줄 높이 지정은 줄바꿈과 서식 복사(`HwpSelectionRTF`)에만 쓰인다.
+    static let lineSpacing = NSAttributedString.Key("hwp.lineSpacing")
+}
+
+/// 측정과 렌더가 **공유하는** 줄 전진량 — 줄바꿈 결과(`HwpLineBreaker.FrameChunk`)의
+/// 줄마다 상자 높이(`HwpDrawnTextLayout.lineMetrics`)에 줄 간격 규칙을 적용하고, 그 줄이
+/// 문단을 끝내면 문단 사이 간격을 더한다.
+///
+/// `HwpParagraphLayout.makeLineFrames`(측정)와 `HwpDrawnTextLayout.lineGeometries`(렌더)가
+/// 둘 다 `advances(of:in:)`를 불러 같은 값을 쌓는다 — 한쪽만 바꾸면 문단 높이(쪽 나눔)와
+/// 그려지는 줄이 갈린다 (`Sources/HwpKitCore/AGENTS.md` "측정·렌더 공유 줄바꿈 코어").
+/// CT 줄 origin·슬롯은 세로 배치에 쓰지 않는다 (#178·#180: CT는 글꼴 지표로 슬롯을 잡고
+/// 못박은 높이에 안 들어가는 글자가 있으면 슬롯을 늘리거나 줄을 놓지 않는다 — #198·#202).
+enum HwpLineAdvance {
+    /// 청크의 커밋된 줄들(`0 ..< keepCount`)의 전진량 — 줄 상자 전진량 + 그 줄 뒤 문단 사이
+    /// 간격. 마지막 커밋 줄 뒤의 간격은 다음 청크 첫 줄(`chunk.nextStart`)과의 것이고,
+    /// 문자열 끝이면 0이다 (문단 자신의 아래 간격은 `HwpParagraphLayout.layout`이 더한다).
+    static func advances(
+        of chunk: HwpLineBreaker.FrameChunk,
+        in attributedString: NSAttributedString
+    ) -> [CGFloat] {
+        let text = attributedString.string as NSString
+        return (0 ..< chunk.keepCount).map { index in
+            let line = chunk.lines[index]
+            let range = CTLineGetStringRange(line)
+            let next = index + 1 < chunk.lines.count
+                ? CTLineGetStringRange(chunk.lines[index + 1]).location
+                : chunk.nextStart
+            let gap = next < attributedString.length
+                ? paragraphGap(
+                    afterLine: range, nextLocation: next, in: attributedString, text: text
+                )
+                : 0
+            return lineAdvance(of: line, at: range.location, in: attributedString) + gap
+        }
+    }
+
+    /// 줄 하나의 상자 전진량 (문단 사이 간격 제외) — slight-overflow 한 줄과 청크 줄이 같은
+    /// 산식을 쓴다.
+    static func lineAdvance(
+        of line: CTLine, at location: Int, in attributedString: NSAttributedString
+    ) -> CGFloat {
+        let metrics = HwpDrawnTextLayout.lineMetrics(of: line)
+        return HwpLineSpacingRule.rule(in: attributedString, at: location).advance(
+            textBoxHeight: metrics.textBoxHeight, objectHeight: metrics.delegateAscent
+        )
+    }
+
+    /// 줄 `range`와 다음 줄 **사이**의 문단 간격 — 줄이 CT 문단을 끝내면 (마지막 글자가
+    /// 문단 구분자) 그 문단의 아래 간격 + 다음 문단의 위 간격. 한 줄 끝(코드 10,
+    /// `HwpAttributedStringKey.lineBreak`)은 CT에는 문단 구분자지만 한글에서는 같은
+    /// 문단의 줄 나눔이라 간격이 들어가지 않는다 (2026-09-15 한글 12.30 실측: 문단
+    /// 위/아래 간격 10pt 문단의 한 줄 끝 앞뒤 줄 전진량이 16pt 그대로).
+    ///
+    /// 문자열 하나가 CT 문단을 둘 이상 품는 것은 컨테이너 블록이 문단들을 `\n`으로 이은
+    /// 경우다 (`HwpPaginator.combinedAttributedString`) — 문단마다 자기 스타일이 붙어
+    /// 있으므로 간격은 **줄 자신의 문단**(아래)과 **다음 줄의 문단**(위)에서 각각 읽는다.
+    /// 음수 간격은 0으로 본다 (CT와 같다).
+    static func paragraphGap(
+        afterLine range: CFRange,
+        nextLocation: Int,
+        in attributedString: NSAttributedString,
+        text: NSString
+    ) -> CGFloat {
+        let end = range.location + range.length
+        guard end > 0, end <= text.length, isParagraphSeparator(text.character(at: end - 1)),
+              attributedString.attribute(
+                  HwpAttributedStringKey.lineBreak, at: end - 1, effectiveRange: nil
+              ) == nil
+        else { return 0 }
+        let style = HwpLineBreaker.paragraphStyle(in: attributedString, at: range.location)
+        let nextStyle = HwpLineBreaker.paragraphStyle(in: attributedString, at: nextLocation)
+        let after = max(0, HwpLineBreaker.paragraphCGFloat(.paragraphSpacing, in: style) ?? 0)
+        let before = max(
+            0, HwpLineBreaker.paragraphCGFloat(.paragraphSpacingBefore, in: nextStyle) ?? 0
+        )
+        return after + before
+    }
+
+    /// CoreText·`NSString.getParagraphStart`의 문단 구분자 — LF·CR·U+2029. 줄 구분자
+    /// (U+2028·U+0085)는 문단을 끝내지 않는다.
+    static func isParagraphSeparator(_ unit: unichar) -> Bool {
+        unit == 0x0A || unit == 0x0D || unit == 0x2029
+    }
+}

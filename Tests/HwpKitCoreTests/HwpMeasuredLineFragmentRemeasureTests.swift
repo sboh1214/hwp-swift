@@ -35,10 +35,9 @@ import XCTest
             expect(fragments.map { $0.attributedString?.length }) == [60, 61]
             guard fragments.count == 2, let tail = fragments[1].attributedString else { return }
             expect(fragments[1].frame.width).to(beCloseTo(widths[1], within: 0.01))
-            // 한 줄 16pt + 문단 마지막 줄의 ascent 초과분 2pt(#164 — CT가 프레임 마지막 줄의
-            // ascent를 키우고, 다시 잰 첫 줄의 초과분은 앞 조각·나머지의 마지막 줄 가운데 작은
-            // ascent 기준이라 여기 실린다)다.
-            expect(fragments[1].frame.height).to(beCloseTo(18, within: 0.5))
+            // 한 줄 16pt — 줄 프레임 원점이 줄 상자 상단이라 조각 첫 줄의 ascent 초과분이
+            // 없다 (#180; 종전 CT baseline 원점 모델에서는 #164 초과분 2pt가 실려 18pt였다).
+            expect(fragments[1].frame.height).to(beCloseTo(16, within: 0.001))
             expect(Columns.drawnLineLengths(of: fragments[1])) == [61]
             expect(Support.isMarked(tail)).to(beFalse())
             let followerBlock = try XCTUnwrap(page.blocks.first {

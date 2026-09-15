@@ -234,7 +234,76 @@ final class HwpSelectionRTFTests: XCTestCase {
         expect(style.tabStops.first?.location) == 100
     }
 
+    /// 줄 간격은 조판 문자열의 규칙 표식(`hwp.lineSpacing`, #180)이 표준 문단 속성으로
+    /// 옮겨진다. CT 스타일에 남은 줄 높이 힌트(여기서는 `minimumLineHeight` 20)는 규칙이
+    /// 있으면 덮인다 — CT 힌트만으로는 고정과 최소를 가르지 못한다.
+    func testLineSpacingRuleConvertsToStandardParagraphStyle() throws {
+        for (rule, expected) in Self.lineSpacingCases {
+            let normalized = HwpSelectionRTF.normalizedAttributes([
+                .paragraphStyle: makeCTStyle(),
+                HwpAttributedStringKey.lineSpacing: rule.attributeValue,
+            ])
+            let style = try XCTUnwrap(normalized[.paragraphStyle] as? NSParagraphStyle)
+            expectLineHeights(
+                style, expected, label: "\(rule.kind) \(rule.value)", within: 0.0001
+            )
+            expect(normalized[HwpAttributedStringKey.lineSpacing]).to(beNil())
+            // 규칙과 무관한 지정자는 그대로다.
+            expect(style.alignment) == .center
+            expect(style.firstLineHeadIndent) == 12
+        }
+    }
+
+    /// 규칙 표식이 없는 문자열(CT 스타일만 단 공개 호출자)은 CT 줄 높이 지정을 그대로 옮긴다 —
+    /// `lineHeightMultiple`도 포함한다.
+    func testCoreTextOnlyStyleKeepsItsLineHeightSpecifiers() throws {
+        var multiple = CGFloat(1.3)
+        var spacing = CGFloat(2)
+        let ctStyle: CTParagraphStyle = withUnsafeMutablePointer(to: &multiple) { multiplePtr in
+            withUnsafeMutablePointer(to: &spacing) { spacingPointer in
+                CTParagraphStyleCreate([
+                    CTParagraphStyleSetting(
+                        spec: .lineHeightMultiple,
+                        valueSize: MemoryLayout<CGFloat>.size, value: multiplePtr
+                    ),
+                    CTParagraphStyleSetting(
+                        spec: .lineSpacingAdjustment,
+                        valueSize: MemoryLayout<CGFloat>.size, value: spacingPointer
+                    ),
+                ], 2)
+            }
+        }
+        let normalized = HwpSelectionRTF.normalizedAttributes([.paragraphStyle: ctStyle])
+        let style = try XCTUnwrap(normalized[.paragraphStyle] as? NSParagraphStyle)
+        let expected = LineHeights(multiple: 1.3, min: 0, max: 0, spacing: 2)
+        expectLineHeights(style, expected, label: "CT만", within: 0.0001)
+    }
+
     // MARK: - RTF 재파싱 왕복
+
+    /// 네 종류의 줄 간격이 RTF를 건너 살아남는다 (Cocoa 작성기: 비율 → `\sl384\slmult1`,
+    /// 고정 → `\sl-100`, 최소 → `\sl320`, 여백만 → `\slleading60` — 2026-09-15 실측).
+    func testRTFRoundTripPreservesLineSpacingRules() throws {
+        for (rule, expected) in Self.lineSpacingCases {
+            let source = NSAttributedString(string: "가나다\n라마바", attributes: [
+                kCTFontAttributeName as NSAttributedString.Key: boldFont,
+                .paragraphStyle: makeCTStyle(),
+                HwpAttributedStringKey.lineSpacing: rule.attributeValue,
+            ])
+            let data = try XCTUnwrap(HwpSelectionRTF.rtfData(from: source))
+            let parsed = try NSAttributedString(
+                data: data,
+                options: [.documentType: NSAttributedString.DocumentType.rtf],
+                documentAttributes: nil
+            )
+            let paragraph = try XCTUnwrap(
+                parsed.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
+            )
+            expectLineHeights(
+                paragraph, expected, label: "\(rule.kind) \(rule.value)", within: 0.01
+            )
+        }
+    }
 
     func testRTFRoundTripPreservesFontColorUnderlineAndLink() throws {
         let source = NSMutableAttributedString()
@@ -293,5 +362,38 @@ final class HwpSelectionRTFTests: XCTestCase {
         expect(paragraph.firstLineHeadIndent).to(beCloseTo(12, within: 0.1))
         // U+FFFC 미유입은 Core 층 계약(strippingControlMarkerRuns)이라
         // HwpSelectionGeometryAttributedTests가 실제 마커 입력으로 잠근다.
+    }
+}
+
+/// 줄 간격 규칙 → 표준 문단 속성 가드의 표와 헬퍼.
+private extension HwpSelectionRTFTests {
+    /// 표준 문단 속성 넷의 기대값 — 규칙 하나당 한 속성만 세워진다.
+    struct LineHeights {
+        let multiple: CGFloat
+        let min: CGFloat
+        let max: CGFloat
+        let spacing: CGFloat
+    }
+
+    /// 표 46 네 종류 → 표준 속성: 비율 → `lineHeightMultiple`, 고정 → min = max, 최소 → min,
+    /// 여백만 → `lineSpacing`.
+    static let lineSpacingCases: [(HwpLineSpacingRule, LineHeights)] = [
+        (.init(kind: .percent, value: 160), .init(multiple: 1.6, min: 0, max: 0, spacing: 0)),
+        (.init(kind: .fixed, value: 5), .init(multiple: 0, min: 5, max: 5, spacing: 0)),
+        (.init(kind: .atLeast, value: 16), .init(multiple: 0, min: 16, max: 0, spacing: 0)),
+        (.init(kind: .marginOnly, value: 3), .init(multiple: 0, min: 0, max: 0, spacing: 3)),
+    ]
+
+    func expectLineHeights(
+        _ style: NSParagraphStyle, _ expected: LineHeights, label: String, within: CGFloat
+    ) {
+        expect(style.lineHeightMultiple)
+            .to(beCloseTo(expected.multiple, within: within), description: label)
+        expect(style.minimumLineHeight)
+            .to(beCloseTo(expected.min, within: within), description: label)
+        expect(style.maximumLineHeight)
+            .to(beCloseTo(expected.max, within: within), description: label)
+        expect(style.lineSpacing)
+            .to(beCloseTo(expected.spacing, within: within), description: label)
     }
 }

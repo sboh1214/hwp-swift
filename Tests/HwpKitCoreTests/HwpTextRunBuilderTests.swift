@@ -171,7 +171,8 @@ import XCTest
                 columnWidth: 400
             ).lines
             expect(lines.first?.width).to(beCloseTo(50, within: 0.01))
-            expect(lines.first?.baseline).to(beCloseTo(30, within: 0.01))
+            // 줄 상자는 개체 높이 30pt, `baseline`은 그 상자의 앵커 0.85 × 30 (#178·#180).
+            expect(lines.first?.baseline).to(beCloseTo(25.5, within: 0.01))
         }
 
         func testHyperlinkSpansNestedFieldWithoutEarlyClosing() throws {

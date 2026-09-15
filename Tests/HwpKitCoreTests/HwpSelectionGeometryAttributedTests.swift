@@ -189,6 +189,48 @@ final class HwpSelectionGeometryAttributedTests: XCTestCase {
         return value.rawValue
     }
 
+    /// 문단을 종결하는 개행은 줄 간격 규칙(`hwp.lineSpacing`, #180)도 앞 문단에서 물려받는다
+    /// — 문단 스타일·폰트처럼 문단 단위 조판 속성이라서다. 빠지면 `HwpSelectionRTF`가 CT
+    /// 스타일 힌트(고정·최소 모두 `minimumLineHeight`)로 떨어져, 개체만 있는 문단이나
+    /// 문단 부호만 복사한 개행에서 고정 5pt가 최소 5pt로 나간다 (PR 리뷰). 글자 장식은
+    /// 종전대로 상속하지 않는다.
+    func testNewlineInheritsTheLineSpacingRuleOfItsParagraph() throws {
+        let fixed = HwpLineSpacingRule(kind: .fixed, value: 5).attributeValue
+        let percent = HwpLineSpacingRule(kind: .percent, value: 160).attributeValue
+        let markerOnly = attributed("\u{FFFC}", extra: [
+            kCTParagraphStyleAttributeName as NSAttributedString.Key: paragraphStyle(.center),
+            HwpAttributedStringKey.lineSpacing: fixed,
+        ])
+        let leading = attributed("가", extra: [
+            HwpAttributedStringKey.lineSpacing: percent,
+            HwpAttributedStringKey.underlineStyle: NSNumber(value: 1),
+        ])
+        let rows = (0 ..< 3).map {
+            CGRect(x: 50, y: 100 + CGFloat($0) * 30, width: 200, height: 20)
+        }
+        let geometry = HwpSelectionGeometry(document: makeDocument(pages: [[
+            block(leading, frame: rows[0], paragraphId: 1),
+            block(markerOnly, frame: rows[1], paragraphId: 2),
+            block(attributed("나"), frame: rows[2], paragraphId: 3),
+        ]]))
+        let selection = try XCTUnwrap(geometry.documentSelection())
+        let text = geometry.attributedText(for: selection)
+
+        expect(text.string) == "가\n\n나"
+        // 첫 개행(오프셋 1)은 '가' 문단의 비율 160, 둘째 개행(오프셋 2)은 개체 전용 문단의
+        // 고정 5 — 각각 자기 문단의 규칙이다.
+        expect(HwpLineSpacingRule(attributeValue: text.attribute(
+            HwpAttributedStringKey.lineSpacing, at: 1, effectiveRange: nil
+        ))) == HwpLineSpacingRule(kind: .percent, value: 160)
+        expect(HwpLineSpacingRule(attributeValue: text.attribute(
+            HwpAttributedStringKey.lineSpacing, at: 2, effectiveRange: nil
+        ))) == HwpLineSpacingRule(kind: .fixed, value: 5)
+        // 글자 장식(밑줄)은 여전히 개행에 번지지 않는다.
+        expect(text.attribute(
+            HwpAttributedStringKey.underlineStyle, at: 1, effectiveRange: nil
+        )).to(beNil())
+    }
+
     /// 개체만 있는 문단은 마커를 지우면 기여가 비는데, 그 문단을 종결하는 개행이
     /// 스타일을 잃으면 RTF에서 그 빈 문단의 정렬·들여쓰기·폰트가 통째로 사라진다
     /// (선두면 무속성, 중간이면 **앞 문단**의 스타일 — #124 리뷰).

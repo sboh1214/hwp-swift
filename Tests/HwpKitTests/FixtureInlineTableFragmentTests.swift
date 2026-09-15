@@ -49,7 +49,8 @@ final class FixtureInlineTableFragmentTests: XCTestCase {
         expect(fragment.frame.maxY).to(beCloseTo(692.49, within: 0.01))
         let table1 = try XCTUnwrap(Self.tables(Self.quotationTableIds[0], in: first).first)
         let table2 = try XCTUnwrap(Self.tables(Self.quotationTableIds[1], in: first).first)
-        expect(table1.frame.minY).to(beCloseTo(647.69, within: 0.01))
+        // 표 줄의 상자 상단 = 조각 상단 + 앞 세 줄의 전진량 3 × 16pt (#180 — 줄 상자 모델).
+        expect(table1.frame.minY).to(beCloseTo(646.41, within: 0.01))
         expect(table1.frame.height).to(beCloseTo(11.08, within: 0.01))
         expect(table1.frame.minX).to(beCloseTo(365.57, within: 0.01))
         expect(table2.frame.minY).to(beCloseTo(table1.frame.minY, within: 0.01))
@@ -69,7 +70,9 @@ final class FixtureInlineTableFragmentTests: XCTestCase {
         expect(fragment.frame.minY).to(beCloseTo(99.21, within: 0.01))
         expect(fragment.frame.maxY).to(beCloseTo(228.29, within: 0.01))
         let table3 = try XCTUnwrap(Self.tables(Self.quotationTableIds[2], in: second).first)
-        expect(table3.frame.minY).to(beCloseTo(164.85, within: 0.01))
+        // 뒤 조각 다섯째 줄의 상자 상단 = 99.21 + 4 × 16pt (#180). 한컴 글꼴 모드에서는 줄바꿈이
+        // 한글과 같아 앞 조각의 표 줄 상자 상단이 캐시 그대로 662.41pt다 (수정 전 666.59).
+        expect(table3.frame.minY).to(beCloseTo(163.21, within: 0.01))
         expect(table3.frame.height).to(beCloseTo(11.08, within: 0.01))
         expect(table3.frame.minX).to(beCloseTo(304.10, within: 0.01))
         expect(table3.frame.maxY).to(beLessThanOrEqualTo(fragment.frame.maxY))
