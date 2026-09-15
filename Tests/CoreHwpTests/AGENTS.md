@@ -66,7 +66,7 @@ CoreHwpTests/
 ├── Noori/
 ├── Versions/
 ├── DocInfo/{BinData,CharShape,Core,IdMappingRecords,IdMappingShapes,RawRecords,TrackChanges}/
-└── Section/Column/
+└── Section/{Column,SectionDef}/
 ```
 
 상위 폴더의 `Tests/LinuxMain.swift`는 SwiftPM Linux의 legacy 진입점이다.

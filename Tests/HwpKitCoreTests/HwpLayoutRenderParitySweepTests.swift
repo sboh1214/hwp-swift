@@ -163,9 +163,10 @@ import XCTest
         // ("underline DOUBLE_SLIM"·"strikeout DOUBLE_SLIM"이 120pt에서 slight-overflow
         // 한 줄, 실측 6 = noori 1 + numbering-sequence 3 + line-shapes 2), 2026-09-15
         // `script-decorations`(#179, 구역 1 + 첨자 × 장식선 11문단) 추가로 문단 12·대조 24
-        // 증가 (컨테이너는 그대로다).
-        private static let expectedFixtureVisited = 242
-        private static let expectedFixtureMeasured = 470
+        // 증가 (컨테이너는 그대로다), 같은 날 `section-page-number-skip`(#185, 구역 7·8문단)
+        // 추가로 문단 8·대조 16 증가 (컨테이너는 그대로다).
+        private static let expectedFixtureVisited = 250
+        private static let expectedFixtureMeasured = 486
         private static let expectedFixtureContainers = 69
         private static let minimumFixtureMultiLine = 60
         private static let maximumFixtureSharedCoreSkips = 6

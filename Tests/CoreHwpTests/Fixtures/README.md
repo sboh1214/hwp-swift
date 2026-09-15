@@ -168,6 +168,15 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   `pageStartsOn`의 `ODD`·`EVEN`이 그 값으로 옮겨져야 한다. 4쪽·5문단이고 홀수·짝수
   시작은 빈 쪽 없이 쪽 번호만 1·3·4·5로 건너뛴다. HWPX 쌍은
   `HwpxFixtures/section-page-starts-on`.
+- `section-page-number-skip`: `section-page-starts-on` 쌍의 HWPX를 바탕으로 첫 문단에 쪽
+  번호 매기기(가운데 아래, 줄표 `-`)를 넣고 구역 7개의 시작 종류를 이어서·홀수·짝수·
+  짝수·홀수·사용자(시작 9)·이어서로 둔 합성 HWPX를 Hancom Office HWP for macOS 12.30.0
+  build 6446으로 열어 2026-09-15에 `.hwp`·`.hwpx`로 저장. 구역 시작 종류가 **실제로 찍히는
+  쪽 번호**를 어떻게 건너뛰게 하는지의 실물 근거다 (#185) — 같은 세션의 PDF 내보내기가
+  물리 7쪽에 1·3·4·6·7·9·10을 찍는다(홀짝이 어긋난 자리만 1 건너뜀, 사용자 지정 번호는
+  그대로, 빈 쪽 없음). 첫 구역 짝수 시작(첫 쪽 2)과 사용자 번호 + 홀짝 동시 지정(사용자
+  번호 우선)도 같은 방법으로 확인해 README에 적었다. HWPX 쌍은
+  `HwpxFixtures/section-page-number-skip`.
 - `line-shapes`: OWPML `LINETYPE2` 17종을 글자 아래 밑줄 17문단·취소선 17문단·17행 표의
   네 방향 테두리·2단 구분선(`DASH_DOT`)·각주(`DOT`)/미주(`DASH`) 구분선에 모두 실은
   합성 HWPX를 Hancom Office HWP for macOS 12.30.0 build 6446으로 열어 2026-09-12에
@@ -633,7 +642,7 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
 | blank | 검증 중 | `blank-mac2014vp`, `blank-win2018`, `blank-win2020` |
 | plain text | 검증 중: 한컴오피스 생성 최소 문서의 paragraph text record raw payload total, control-char payload prefix/suffix, char-shape/line-seg raw payload total, preview, DocInfo count 기준 | `plain-text-minimal`, `plain-text-hancom-mac2026`, `CCL`, `공공누리`, `noori` |
 | multi-paragraph | 검증 중 | `noori` |
-| multiple sections | 검증 중: 한컴오피스 생성 문서의 `BodyText` storage child 이름(`Section0`, `Section1`)과 구역별 paragraph count 기준. 구역 정의의 쪽 시작 종류(홀수·짝수·사용자)는 `section-page-starts-on`이 `sections[].newPageNumberApplyRawValue`·`pageStartNumber`로 잠근다 | `multi-section`, `section-page-starts-on` |
+| multiple sections | 검증 중: 한컴오피스 생성 문서의 `BodyText` storage child 이름(`Section0`, `Section1`)과 구역별 paragraph count 기준. 구역 정의의 쪽 시작 종류(홀수·짝수·사용자)는 `section-page-starts-on`이 `sections[].newPageNumberApplyRawValue`·`pageStartNumber`로 잠그고, 그 종류가 쪽 번호 매기기에 찍는 번호(1·3·4·6·7·9·10)는 `section-page-number-skip`이 잠근다 (#185) | `multi-section`, `section-page-starts-on`, `section-page-number-skip` |
 | table | 검증 중: cell paragraph까지 recursive count 검증. 셀 테두리 선 종류 1…17(`LINETYPE2` 값 = `HwpBorderType` raw, 표 25 + 1)과 대각선은 `line-shapes`가 HWPX 쌍과의 등가 축(`cellBorders`)으로 잠근다 | `noori`, `line-shapes` |
 | image / BinData | 검증 중: `BinData` stream과 picture component id/BinData id 연결, storage stream id/extension, stream payload prefix/suffix 검증 | `BinData`, `noori`, `CCL`, `공공누리`, `legacy-common-control-property` |
 | equation | 검증 중: 한컴오피스 생성 문서의 `eqed` shape control, `eqEdit` raw record, 수식 문자열 보존 기준 | `equation` |
@@ -641,7 +650,7 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
 | text box | 검증 중: 한컴오피스 생성 가로 글상자의 `genShapeObject`, `rectangle` shape component, 내부 list/paragraph text, 미해석 rectangle detail raw payload 보존 기준 | `text-box` |
 | header/footer | 검증 중: 한컴오피스 생성 문서의 header/footer control count와 nested text 기준 | `header-footer` |
 | footnote/endnote | 검증 중: 한컴오피스 생성 문서의 footnote/endnote control count와 nested text 기준 | `footnote-endnote` |
-| page number | 검증 중: `pgnp` control의 property, 앞/뒤 장식 문자·줄표 필드(4번째 WCHAR, `unused`), raw payload 기준. 줄표 필드가 0인 `noori`는 쪽 번호를 한글.app과 같이 "1"로 렌더한다 (#138) | `noori` |
+| page number | 검증 중: `pgnp` control의 property, 앞/뒤 장식 문자·줄표 필드(4번째 WCHAR, `unused`), raw payload 기준. 줄표 필드가 0인 `noori`는 쪽 번호를 한글.app과 같이 "1"로 렌더한다 (#138). 구역 시작 종류(홀수·짝수)가 건너뛰는 번호는 `section-page-number-skip`이 잠근다 (#185) | `noori`, `section-marks`, `section-page-number-skip` |
 | large/legacy document | 검증 중: 41개 section, 14,000개 이상 nested paragraph, 7,000개 이상 control을 가진 HWP 5.0.2.2 문서 기준. 대표 fixture truncation/corruption 테스트에도 포함해 typed `HwpError` 반환을 확인 | `legacy-common-control-property` |
 | other known controls | 검증 중: `atno`, `nwno`, `pghd`, `idxm`, `tdut` raw payload/trailing bytes/unknown child records 기준. `pghd`는 raw bit field, `idxm`은 UTF-16LE 문자열 typed value까지 검증 | `legacy-common-control-property` |
 | columns | 검증 중: 다단 control과 DocInfo/document properties 기준. 단 구분선 종류·굵기(`columns[].dividerType`, `DASH_DOT` = 4)는 `line-shapes`가 잠근다 | `Column`, `noori`, `line-shapes` |
