@@ -28,13 +28,16 @@ import Foundation
 /// 0.8009/0.0836). 어느 표(win·hhea·typo·bbox)로도 설명되지 않던 라틴 글꼴의 밑줄
 /// 자리가 이 되풀이로 0.002em 안에서 맞는다.
 ///
-/// **CJK 판정은 OS/2 `ulUnicodeRange2`의 비트 50–58·61**(CJK 기호·히라가나·가타카나·
-/// 주음·한글 호환 자모·CJK 기타·CJK 괄호·CJK 호환·한글 음절·CJK 통합 한자)이다 —
-/// 글리프가 아니라 **비트**다. Menlo·Baskerville은 CJK 글리프가 없는데도 비트 57(CJK
-/// 호환)이 켜져 있어 CJK 갈래이고, Courier New·Times New Roman·Arial은 비트 63만
-/// 있어 그 밖이다. 같은 Courier New에 비트 57을 켠 사본은 CJK 갈래로, Menlo에서 57·
-/// 63을 끈 사본은 그 밖으로 옮겨 갔다(비트 50·58·61을 하나씩 켠 Georgia 사본은 전부
-/// CJK 갈래, 63만 켠 사본은 그 밖). 레이아웃 호환성 플래그(표 56)는 관여하지 않는다.
+/// **CJK 판정은 OS/2 `ulUnicodeRange2`의 비트 48–59·61**(OpenType 이름으로 48 CJK
+/// 기호·49 히라가나·50 가타카나·51 주음·52 한글 호환 자모·53 파스파·54 CJK 괄호·55 CJK
+/// 호환·56 한글 음절·57 비평면 0·58 페니키아·59 CJK 통합 한자·61 CJK 획/CJK 호환
+/// 한자 — 이름과 무관하게 이 자리의 비트가 하나라도 켜져 있으면 된다)이다 — 글리프가
+/// 아니라 **비트**다. Menlo·Baskerville은 CJK 글리프가 없는데도 비트 57(비평면 0)이
+/// 켜져 있어 CJK 갈래이고, Courier New·Times New Roman·Arial은 비트 62·63만 있어 그
+/// 밖이다. 같은 Courier New에 비트 57을 켠 사본은 CJK 갈래로, Menlo에서 57·63을 끈
+/// 사본(60·62 잔류)은 그 밖으로 옮겨 갔고, Georgia(비트 없음)에 48·49·50·51·53·56·
+/// 58·59·61을 하나씩 켠 사본은 전부 CJK 갈래, 60·62·63을 하나씩 켠 사본은 그 밖이다
+/// (합성 글꼴 15종, 2026-09-15/16). 레이아웃 호환성 플래그(표 56)는 관여하지 않는다.
 ///
 /// OS/2 표가 없는 글꼴(AppleMyungjo·AppleGothic)은 hhea ascent·descent를 win 지표
 /// 자리에 쓰고 CJK 비트가 없으므로 그 밖 갈래다 (실측 AppleMyungjo 0.727/0.178 =
@@ -138,12 +141,15 @@ public struct HwpMsWordLineBox: Hashable, Sendable {
         }
     }
 
-    /// OS/2 `ulUnicodeRange2`의 CJK 블록 비트 (Unicode range 50–58·61). 59(비평면 0)·
-    /// 60·62(사용자 영역)·63은 한글의 판정에 들지 않는다 — 63만 켠 Courier New·Times
-    /// New Roman·Arial·Tahoma가 그 밖 갈래다.
+    /// OS/2 `ulUnicodeRange2`의 CJK 블록 비트 (Unicode range 48–59·61 — CJK 기호부터
+    /// CJK 통합 한자까지의 연속 구간과 CJK 획/CJK 호환 한자). 60(사용자 영역)·62(알파벳
+    /// 표현형)·63(아랍 표현형 A)은 한글의 판정에 들지 않는다 — 62·63만 켠 Courier New·
+    /// Times New Roman·Arial·Tahoma와 60·62만 남긴 Menlo 사본이 그 밖 갈래다. 47 아래의
+    /// 비트는 라틴·기호 블록이라 판정에 들지 않는다(Helvetica·Monaco·Lucida Grande가
+    /// 32–47을 갖고도 그 밖).
     static let cjkUnicodeRange2Mask: UInt32 = {
         var mask: UInt32 = 0
-        for bit in 50 ... 58 {
+        for bit in 48 ... 59 {
             mask |= 1 << UInt32(bit - 32)
         }
         mask |= 1 << UInt32(61 - 32)
@@ -160,8 +166,9 @@ public struct HwpMsWordLineBox: Hashable, Sendable {
         let lineGap = hhea.flatMap { $0.int16(at: 8) }.map { CGFloat($0) / unitsPerEm } ?? 0
         if let os2 = CTFontCopyTable(font, CTFontTableTag(kCTFontTableOS2), []) as Data?,
            let winAscent = os2.uint16(at: 74), let winDescent = os2.uint16(at: 76),
-           winAscent + winDescent > 0
+           Int(winAscent) + Int(winDescent) > 0
         {
+            // 두 값은 UInt16이라 Int로 더한다 — KhmerMN처럼 합이 65,535를 넘는 글꼴이 있다.
             // OS/2: ulUnicodeRange2 46·usWinAscent 74·usWinDescent 76
             let range2 = os2.uint32(at: 46) ?? 0
             return HwpMsWordLineBox(

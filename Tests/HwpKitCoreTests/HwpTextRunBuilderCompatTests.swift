@@ -111,6 +111,50 @@ import XCTest
                 .to(beCloseTo(expected.baseline, within: 0.001))
         }
 
+        /// 모든 run이 글자 모양 id(`charShapeId`)를 싣는다 — 렌더러가 슬롯·대체 글꼴로
+        /// 쪼개진 run을 글자 모양 단위로 되묶는 열쇠다 (#187 리뷰). 문서에 없는 id의 폴백
+        /// 모양은 싣지 않고, 한글 문서도 싣는다.
+        func testRunsCarryTheirCharShapeId() throws {
+            let paragraph = paragraph(text: "가A나B", runs: [(0, 0), (1, 1), (2, 0), (3, 9)])
+            let shapes: [UInt32: CoreHwp.HwpCharShape] = [
+                0: try charShape(), 1: try charShape(property: 1 << 18),
+            ]
+            for target: CoreHwp.HwpCompatibleDocumentTarget? in [.msWord, nil] {
+                let built = builder(shapes: shapes, target: target).build(paragraph: paragraph)
+                let ids = (0 ..< built.length).map { location in
+                    (built.attribute(
+                        HwpAttributedStringKey.charShapeId, at: location, effectiveRange: nil
+                    ) as? NSNumber)?.uint32Value
+                }
+                expect(ids).to(equal([0, 1, 0, nil]), description: "\(String(describing: target))")
+            }
+        }
+
+        /// 한 줄 끝(LF)·빈 줄 앵커 표식 run도 대상 프로그램 키를 물려받는다 — 렌더러의
+        /// MS 워드 호환 줄 상자 판정이 run 단위라 표식만 남은 줄도 갈래를 알아야 하고,
+        /// 표식 run의 글꼴도 줄 상자 후보다 (#187 리뷰).
+        func testMarkerRunsKeepTheCompatibleDocumentTarget() throws {
+            let shapes: [UInt32: CoreHwp.HwpCharShape] = [0: try charShape()]
+            let lineBreak = builder(shapes: shapes, target: .msWord)
+                .build(paragraph: paragraph(text: "가\u{0A}나\u{0D}", runs: [(0, 0)]))
+            let marker = lineBreak.attributes(at: 1, effectiveRange: nil)
+            expect(marker[HwpAttributedStringKey.lineBreak]).toNot(beNil())
+            let markerTarget = marker[HwpAttributedStringKey.compatibleDocumentTarget] as? NSNumber
+            expect(markerTarget?.uint32Value) == HwpCompatibleDocumentTarget.msWord.rawValue
+            let anchor = builder(shapes: shapes, target: .msWord)
+                .build(paragraph: paragraph(text: "가\u{0A}\u{0D}", runs: [(0, 0)]))
+            expect(anchor.string) == "가\u{0A} "
+            let anchorAttributes = anchor.attributes(at: 2, effectiveRange: nil)
+            expect((anchorAttributes[HwpAttributedStringKey.compatibleDocumentTarget] as? NSNumber)?
+                .uint32Value) == HwpCompatibleDocumentTarget.msWord.rawValue
+            // 한글 문서의 표식은 키가 없다.
+            let native = builder(shapes: shapes, target: nil)
+                .build(paragraph: paragraph(text: "가\u{0A}나\u{0D}", runs: [(0, 0)]))
+            expect(native.attribute(
+                HwpAttributedStringKey.compatibleDocumentTarget, at: 1, effectiveRange: nil
+            )).to(beNil())
+        }
+
         /// 변경 추적 표식은 삽입 밑줄 색·삭제선 키만 싣고 별도 기하 키가 없다 — 두 선은
         /// 일반 밑줄·취소선과 같은 경로로 그려진다 (#187 실측).
         func testTrackChangeMarksReuseTheOrdinaryLineKeys() throws {

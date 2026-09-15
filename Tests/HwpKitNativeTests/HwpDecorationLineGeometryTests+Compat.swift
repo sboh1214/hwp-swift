@@ -24,7 +24,7 @@ extension HwpDecorationLineGeometryTests {
     private func run(
         _ fontName: String, size: CGFloat, color: CGColor,
         underline: Bool = false, above: Bool = false, strikethrough: Bool = false,
-        target: NSNumber? = HwpDecorationLineGeometryTests.msWord
+        target: NSNumber? = HwpDecorationLineGeometryTests.msWord, shape: UInt32? = nil
     ) -> [NSAttributedString.Key: Any] {
         var attributes: [NSAttributedString.Key: Any] = [
             kCTFontAttributeName as NSAttributedString.Key: CTFontCreateWithName(
@@ -34,6 +34,9 @@ extension HwpDecorationLineGeometryTests {
         ]
         if let target {
             attributes[HwpAttributedStringKey.compatibleDocumentTarget] = target
+        }
+        if let shape {
+            attributes[HwpAttributedStringKey.charShapeId] = NSNumber(value: shape)
         }
         if underline {
             attributes[HwpAttributedStringKey.underlineStyle] = NSNumber(value: 1)
@@ -174,6 +177,49 @@ extension HwpDecorationLineGeometryTests {
         // 위 방향 = 위에서부터 잰 행이 작아진다. Menlo 0.9282 vs Helvetica 0.8146 → 1.24pt.
         expect(helv - menlo).to(beCloseTo(expected, within: 0.2))
         expect(expected).to(beCloseTo(1.240, within: 0.02))
+    }
+
+    /// 취소선 run 묶기는 글자 모양 id(`charShapeId`)를 따른다 — 같은 id의 Menlo·Helvetica
+    /// run(한 글자 모양이 슬롯·대체 글꼴로 쪼개진 꼴)은 첫 run(Menlo)의 자리 한 줄이고,
+    /// id가 다르면 크기·색이 같아도 각자 자리다 (#187 리뷰: 속성 사전 비교는 양쪽 정렬
+    /// 자간·문단 끝 상자에 갈리고 글꼴만 다른 별개 글자 모양을 합쳤다).
+    func testMsWordStrikethroughGroupsRunsByCharShapeId() throws {
+        let helvetica = CTFontCreateWithName("Helvetica" as CFString, 40, nil)
+        try XCTSkipUnless(
+            (CTFontCopyPostScriptName(helvetica) as String) == "Helvetica", "Helvetica 없음"
+        )
+        let size: CGFloat = 40
+        let helveticaBox = HwpMsWordLineBox.metrics(of: helvetica).scaled(by: size)
+        let apart = HwpDecorationLineGeometry.msWordStrikethrough(
+            runBox: menloBox(size), thicknessFontSize: size
+        ).center - HwpDecorationLineGeometry.msWordStrikethrough(
+            runBox: helveticaBox, thicknessFontSize: size
+        ).center
+        let cases: [(shapes: (menlo: UInt32, helvetica: UInt32), expected: CGFloat)] = [
+            ((3, 3), 0), ((3, 4), apart),
+        ]
+        for (shapes, expected) in cases {
+            let text = NSMutableAttributedString(string: "AA ", attributes: run(
+                "Menlo", size: size, color: Self.cyan, strikethrough: true, shape: shapes.menlo
+            ))
+            // 문단 끝 상자처럼 글자 모양 안에서 달라지는 키가 있어도 묶인다.
+            var second = run(
+                "Helvetica", size: size, color: Self.magenta, strikethrough: true,
+                shape: shapes.helvetica
+            )
+            second[HwpAttributedStringKey.msWordParagraphEndBox] = [
+                NSNumber(value: 1), NSNumber(value: 1),
+            ]
+            text.append(NSAttributedString(string: "BB", attributes: second))
+            let raster = try render(text: text)
+            let menlo = try XCTUnwrap(Self.rowCenter(raster, where: Self.isCyan), "Menlo 취소선")
+            let helv = try XCTUnwrap(Self.rowCenter(raster, where: Self.isMagenta), "Helvetica 취소선")
+            expect(helv - menlo).to(
+                beCloseTo(expected, within: 0.2),
+                description: "id \(shapes.menlo)·\(shapes.helvetica)"
+            )
+        }
+        expect(apart).to(beCloseTo(1.240, within: 0.02))
     }
 
     /// 글자 위 밑줄도 줄 상자의 `ascent` 위 0.021 cell — 같은 줄의 아래 밑줄과의 간격이

@@ -14,7 +14,7 @@ import Foundation
  기하에 관여하지 않는다 (2026-09-15 한글 12.30 실측: 35개 플래그 전부/없음·개별
  `useInnerUnderline`·`useLowercaseStrikeout`이 같은 결과). 한글 2007 호환 문서
  (`hwp200X`)는 또 다른 기하(가는 고정 두께 선)를 쓰는데 실측 표본이 한 크기뿐이라
- 아직 옮기지 않았다 — 소비자는 `msWord`만 가르고 나머지는 한글 문서와 같이 다룬다.
+ 아직 옮기지 않았다(#210) — 소비자는 `msWord`만 가르고 나머지는 한글 문서와 같이 다룬다.
  */
 public enum HwpCompatibleDocumentTarget: UInt32, HwpPrimitive, CaseIterable {
     /** 한글 문서(현재 버전) — `HWP201X` */

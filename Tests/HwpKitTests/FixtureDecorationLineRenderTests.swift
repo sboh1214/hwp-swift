@@ -315,8 +315,20 @@ final class FixtureDecorationLineRenderTests: XCTestCase {
         // 결정론 resolver는 Menlo다 — 한글 실물(함초롬돋움 5.45pt)과 0.3pt 안이고, 종전
         // 상수(5.5pt)와도 가깝다. 글꼴이 바뀌면 이 값도 그 지표대로 옮겨진다.
         expect(expected).to(beCloseTo(5.136, within: 0.01))
-        // 삽입 밑줄 두께 = 0.05 cell = 0.582pt(Menlo) — 4px/pt에서 2~3행. 왼쪽 여백의
-        // 세로 변경 막대가 모든 행에 빨강을 두므로 띠가 아니라 가로로 이어진 행만 센다.
-        expect(CGFloat(groups[1].count) / Self.scale).to(beLessThan(1.0))
+        // 삽입 밑줄 두께 = 0.05 cell = 0.582pt(Menlo) — 커버리지 합으로 잰다 (종전 상수
+        // 0.064em = 0.64pt, 한글 문서 0.04em = 0.4pt와 갈린다). 2.3px라 자기 열에서 완전
+        // 커버 값을 얻고, 왼쪽 여백의 세로 변경 막대는 짧은 구간이라 가장 긴 구간에 안 든다.
+        let span = try XCTUnwrap(
+            raster.longestSpan(Int(insert * Self.scale), where: Self.isRed), "삽입 밑줄 폭"
+        )
+        let thickness = try XCTUnwrap(
+            raster.lineThickness(
+                center: insert, halfBand: 0.65,
+                columns: (span.lowerBound + 2) ..< (span.upperBound - 2)
+            ) { _, green, _ in green },
+            "삽입 밑줄 두께"
+        )
+        expect(thickness).to(beCloseTo(box.cellHeight * 0.05, within: 0.04))
+        expect(box.cellHeight * 0.05).to(beCloseTo(0.582, within: 0.005))
     }
 }

@@ -1913,15 +1913,18 @@ paraShape와 같은 값**이어야 한다.
   쌍). `HwpIndex.compatibleDocumentTarget`을 조판이 모든 run에
   `hwp.compatibleDocumentTarget`으로 싣고 렌더러가 `msWord`만 가른다 — 한글 2007 호환
   (1)·훈민정음(4)은 한글 문서 기하다 (훈민정음은 실측 일치, 한글 2007은 가는 고정 두께의
-  별도 기하이나 표본이 40pt 하나뿐이라 미반영). 레이아웃 호환성 플래그(표 56)는 관여하지
+  별도 기하이나 표본이 40pt 하나뿐이라 미반영 — #210). 레이아웃 호환성 플래그(표 56)는 관여하지
   않는다 (35개 전부/없음·개별 `useInnerUnderline`·`useLowercaseStrikeout` 모두 같은 값).
   - **글꼴 줄 상자**(`HwpMsWordLineBox`, em): OS/2 `ulUnicodeRange2`에 CJK 블록 비트
-    (50–58·61)가 있는 글꼴은 줄 상자 1.3 × (winAscent + winDescent)·베이스라인 winAscent
-    + 0.15 × 그 상자, 없는 글꼴은 winAscent + winDescent + hhea lineGap·베이스라인
-    winAscent + lineGap. **비트이지 글리프가 아니다** — Menlo·Baskerville은 CJK 글리프
-    없이 비트 57만으로 CJK 갈래, Courier New·Times New Roman·Arial은 비트 63만 있어
-    그 밖(같은 Courier New에 57을 켠 사본은 CJK 갈래로, Menlo에서 57·63을 끈 사본은
-    그 밖으로 옮겨 갔다). OS/2가 없으면(AppleMyungjo) hhea가 win 자리이고 그 밖 갈래.
+    (48–59·61 — CJK 기호부터 CJK 통합 한자까지와 CJK 획/CJK 호환 한자; 60 사용자 영역·
+    62 알파벳 표현형·63 아랍 표현형 A는 아님)가 있는 글꼴은 줄 상자 1.3 × (winAscent +
+    winDescent)·베이스라인 winAscent + 0.15 × 그 상자, 없는 글꼴은 winAscent + winDescent
+    + hhea lineGap·베이스라인 winAscent + lineGap. **비트이지 글리프가 아니다** — Menlo·
+    Baskerville은 CJK 글리프 없이 비트 57(비평면 0)만으로 CJK 갈래, Courier New·Times
+    New Roman·Arial은 비트 62·63만 있어 그 밖(같은 Courier New에 57을 켠 사본은 CJK
+    갈래로, Menlo에서 57·63을 끈 사본은 그 밖으로 옮겨 갔고, Georgia 사본에 48·49·50·
+    51·53·56·58·59·61을 하나씩 켠 것은 전부 CJK, 60·62·63은 그 밖 — 합성 글꼴 15종).
+    OS/2가 없으면(AppleMyungjo) hhea가 win 자리이고 그 밖 갈래.
     장식선 기준 상자는 줄 상자에서 되푼다: cell = 줄 상자 / 1.3, ascent = 베이스라인 −
     0.15 cell, descent = cell − ascent (CJK 갈래는 win 지표 그대로, Helvetica는 win
     0.9502/0.2251 → 0.8146/0.0895).
@@ -1933,7 +1936,9 @@ paraShape와 같은 값**이어야 한다.
     문단 마지막 글자에 `hwp.msWordParagraphEndBox`로 그 상자를 싣고 렌더러가 합친다.
   - **취소선(가운데 밑줄·삭제선 포함)은 run 단위**: run 상자의 ascent × 0.273, 두께는
     한글 문서와 같은 0.04em. 한글은 글자 모양 run의 첫 글리프 글꼴을 run 전체에 쓰므로
-    CoreText가 대체 글꼴로 쪼갠 run은 글꼴만 다른 잇닿은 run을 묶어 첫 글꼴을 쓴다.
+    조판이 모든 run에 싣는 글자 모양 id(`hwp.charShapeId`)로 슬롯·대체 글꼴에 쪼개진
+    잇닿은 run을 되묶어 첫 글꼴을 쓴다 (속성 사전 비교는 양쪽 정렬 자간·문단 끝 상자에
+    갈리고 글꼴만 다른 별개 글자 모양을 합친다 — #187 리뷰).
   - 실측 상수는 `HwpRenderTuning.Text`의 `msWord*` 5종(1.3·0.15·0.05·0.021·0.273). 이슈
     #187의 근사 −(winDescent + 두께/2)는 0.025라 함초롬 40pt에서 0.15pt 낮았다.
   - 한글의 호환 문서 **줄 상자·베이스라인 자체**(#194)는 아직 네이티브 모델로 그린다 —

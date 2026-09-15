@@ -189,8 +189,10 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
   대체 글꼴 run 포함)의 `HwpMsWordLineBox`를 글자 크기로 곱해 축별 최댓값으로 합치고,
   문단 마지막 글자가 실은 `hwp.msWordParagraphEndBox`(문단 끝 글자 = 라틴 슬롯 글꼴)도
   더한다 → 아래·위·삽입 밑줄이 줄 전체에서 한 자리·한 두께; ② `msWordStrikethroughFonts(of:)`
-  — 글꼴만 다르고 나머지 속성이 같은 잇닿은 run(대체 글꼴 분할)을 한 글자 모양 run으로
-  묶어 첫 run의 글꼴 → 취소선은 run 단위. 한글 문서(키 없음·`hwp201X`·`hwp200X`·
+  — 같은 글자 모양 id(`hwp.charShapeId`)의 잇닿은 run(슬롯·대체 글꼴 분할)을 한 글자
+  모양 run으로 묶어 첫 run의 글꼴 → 취소선은 run 단위(속성 사전 비교는 양쪽 정렬 자간·
+  문단 끝 상자에 갈린다). 줄 상자 판정은 줄의 run 하나라도 MS 워드 키를 실으면 줄 전체
+  (표식 run도 글꼴이 있으면 후보). 한글 문서(키 없음·`hwp201X`·`hwp200X`·
   `hunmin`)는 종전 글자 크기 비례 경로다. 글꼴 상자 읽기는 PostScript 이름으로 캐시된다
   (`HwpMsWordLineBox.metrics(of:)`) — 줄마다 OS/2 표를 다시 읽지 않는다.
 

@@ -262,7 +262,8 @@ extension HwpTextRunBuilder {
               let shapeId = paragraph.paraCharShape.shapeId.last
         else { return }
         let resolved = resolvedShape(id: shapeId, paragraph: paragraph)
-        let attributes = attributes(for: resolved.shape, script: .english)
+        // 캐시 경로 — 같은 글자 모양의 라틴 슬롯 사전은 본문 run이 이미 만들어 두었다.
+        let attributes = attributes(for: resolved, script: .english)
         guard let value = attributes[kCTFontAttributeName as NSAttributedString.Key],
               CFGetTypeID(value as CFTypeRef) == CTFontGetTypeID()
         else { return }
@@ -292,6 +293,9 @@ extension HwpTextRunBuilder {
     static let emptyLastLineAnchorAttributes: [NSAttributedString.Key] = [
         kCTFontAttributeName as NSAttributedString.Key,
         HwpAttributedStringKey.baseFontSize,
+        // 문서 단위 표식은 남긴다 — MS 워드 호환 줄 상자 판정이 run 단위라 앵커만 있는
+        // 줄도 갈래를 알아야 한다 (#187).
+        HwpAttributedStringKey.compatibleDocumentTarget,
     ]
 
     /// 빈 줄 앵커 run을 표식하고 장식 속성을 떼어 낸다. `build`가 앵커를 실제로

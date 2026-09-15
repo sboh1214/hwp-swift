@@ -56,7 +56,7 @@ final class HwpMsWordLineBoxTests: XCTestCase {
         expect(HwpMsWordLineBox.union([appleSD])) == appleSD
     }
 
-    /// Menlo는 CJK 글리프가 없지만 OS/2 `ulUnicodeRange2` 비트 57(CJK 호환)이 켜져 있어
+    /// Menlo는 CJK 글리프가 없지만 OS/2 `ulUnicodeRange2` 비트 57(비평면 0)이 켜져 있어
     /// CJK 갈래다 — win 0.9282/0.2358이 기준 상자 그대로다.
     func testMenloReadsAsCJKWinMetrics() {
         let font = CTFontCreateWithName("Menlo" as CFString, 10, nil)
@@ -84,16 +84,31 @@ final class HwpMsWordLineBoxTests: XCTestCase {
         expect(box.descent).to(beCloseTo(0.0895, within: 0.001))
     }
 
-    /// CJK 비트 마스크: 50–58·61만 — 62(사용자 영역)·63은 Courier New·Times New
-    /// Roman·Arial이 갖고도 그 밖 갈래다.
+    /// CJK 비트 마스크: 48–59·61만 — 60(사용자 영역)·62(알파벳 표현형)·63(아랍 표현형
+    /// A)은 Courier New·Times New Roman·Arial이 갖고도 그 밖 갈래고, 47 아래는 라틴·
+    /// 기호 블록이다 (한글 실측: Georgia 사본에 비트를 하나씩 켠 합성 글꼴).
     func testCJKMaskCoversTheMeasuredBits() {
         let mask = HwpMsWordLineBox.cjkUnicodeRange2Mask
-        for bit in [50, 51, 52, 53, 54, 55, 56, 57, 58, 61] {
+        for bit in [48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 61] {
             expect(mask & (1 << UInt32(bit - 32)) != 0).to(beTrue(), description: "\(bit)")
         }
-        for bit in [32, 45, 49, 59, 60, 62, 63] {
+        for bit in [32, 45, 46, 47, 60, 62, 63] {
             expect(mask & (1 << UInt32(bit - 32)) == 0).to(beTrue(), description: "\(bit)")
         }
+    }
+
+    /// win 합이 UInt16을 넘는 글꼴도 트랩 없이 읽는다 — macOS 기본 탑재 KhmerMN은
+    /// usWinAscent 2294 + usWinDescent 64143 = 66,437(upem 2048)이라 UInt16 덧셈이면
+    /// 산술 오버플로로 죽는다 (#187 리뷰; 크메르 글자의 대체 글꼴로 어느 문서에서든
+    /// 나올 수 있다).
+    func testWinSumBeyondUInt16DoesNotTrap() throws {
+        let font = CTFontCreateWithName("KhmerMN" as CFString, 10, nil)
+        try XCTSkipUnless((CTFontCopyPostScriptName(font) as String) == "KhmerMN", "KhmerMN 없음")
+        let box = HwpMsWordLineBox.metrics(of: font)
+        // 66,437 / 2048 = 32.44em — 그 밖 갈래면 그대로(+gap), CJK 갈래면 1.3배.
+        expect(box.lineHeight).to(beGreaterThan(32.4))
+        expect(box.lineHeight).to(beLessThan(43))
+        expect(box.baseline).to(beGreaterThan(1.0))
     }
 
     /// 표를 못 읽는 글꼴은 CoreText 보고값으로 그 밖 갈래를 만든다.

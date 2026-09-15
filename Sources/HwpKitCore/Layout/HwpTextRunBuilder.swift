@@ -473,10 +473,23 @@ extension HwpTextRunBuilder {
         for resolved: ResolvedShape,
         script: HwpScript
     ) -> [NSAttributedString.Key: Any] {
-        guard let attributeCache else { return attributes(for: resolved.shape, script: script) }
+        guard let attributeCache else { return uncachedAttributes(for: resolved, script: script) }
         return attributeCache.attributes(shapeId: resolved.cacheKey, script: script) {
-            attributes(for: resolved.shape, script: script)
+            uncachedAttributes(for: resolved, script: script)
         }
+    }
+
+    /// 캐시 없는 해석 — 글자 모양 사전에 `charShapeId`(#187)를 얹는다. `index`에 없는
+    /// id(`cacheKey` nil)는 폴백 모양이라 id를 싣지 않는다.
+    private func uncachedAttributes(
+        for resolved: ResolvedShape,
+        script: HwpScript
+    ) -> [NSAttributedString.Key: Any] {
+        var attributes = attributes(for: resolved.shape, script: script)
+        if let id = resolved.cacheKey {
+            attributes[HwpAttributedStringKey.charShapeId] = NSNumber(value: id)
+        }
+        return attributes
     }
 
     func attributes(

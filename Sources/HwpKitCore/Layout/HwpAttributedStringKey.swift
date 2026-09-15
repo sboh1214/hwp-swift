@@ -35,6 +35,14 @@ public enum HwpAttributedStringKey {
     /// run 단위라 보지 않는다.
     public static let msWordParagraphEndBox =
         NSAttributedString.Key("hwp.msWordParagraphEndBox")
+    /// run의 글자 모양 id (NSNumber = `HwpCharShape` id, #187) — 조판
+    /// (`HwpTextRunBuilder.attributes(for:script:)`)이 `HwpIndex`에 있는 글자 모양의 run에
+    /// 싣는다 (없는 id의 폴백 모양은 키 없음). 한글은 MS 워드 호환 문서의 취소선을 **글자
+    /// 모양 run** 단위로 그 run의 첫 글리프 글꼴에 놓으므로, 렌더러는 CoreText가 스크립트
+    /// 슬롯·대체 글꼴로 쪼갠 잇닿은 run을 이 id로 다시 묶는다
+    /// (`HwpPageLayerDecorations.msWordStrikethroughFonts`). 글자 모양이 다른 이웃 run은
+    /// 크기·색이 같아도 묶이지 않는다.
+    public static let charShapeId = NSAttributedString.Key("hwp.charShapeId")
     /// 양각/음각 (NSNumber: 1 양각, 2 음각) — 밝은/어두운 오프셋 사본 3-pass
     public static let reliefStyle = NSAttributedString.Key("hwp.reliefStyle")
     /// 양각/음각 run의 실제 글자색 (CGColor) — 글리프 자체는

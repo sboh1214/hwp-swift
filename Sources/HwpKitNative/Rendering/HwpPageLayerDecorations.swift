@@ -89,28 +89,33 @@ extension HwpPageLayer {
     /// nil. 한글은 취소선을 **글자 모양 run** 단위로 그 run의 첫 글리프 글꼴에 놓는다
     /// (2026-09-15 실측: 한글 슬롯 함초롬·라틴 슬롯 Apple SD인 run "Ag밑줄Ag한글"의
     /// 취소선이 전체가 Apple SD 자리 +0.2492em, 슬롯을 바꾼 run은 함초롬 자리 +0.2913em).
-    /// CoreText는 대체 글꼴 경계에서 run을 쪼개므로, 글꼴만 다르고 나머지 속성이 같은
-    /// 잇닿은 run을 한 글자 모양 run으로 묶어 첫 run의 글꼴을 함께 쓴다 — 안 묶으면
-    /// 한 run 안에서 취소선이 글꼴마다 계단이 진다.
+    /// 조판은 글자 모양 하나를 스크립트 슬롯마다 쪼개고 CoreText는 대체 글꼴 경계에서
+    /// 또 쪼개므로, 같은 글자 모양 id(`HwpAttributedStringKey.charShapeId`)의 잇닿은 run을
+    /// 한 글자 모양 run으로 묶어 첫 run의 글꼴을 함께 쓴다 — 안 묶으면 한 run 안에서
+    /// 취소선이 글꼴마다 계단이 진다. 속성 사전 전체를 비교하지 않는 이유는 양쪽 정렬
+    /// 자간(`kCTKernAttributeName`)·문단 끝 상자(`msWordParagraphEndBox`)가 한 글자 모양
+    /// 안에서 달라지고, 글꼴만 다른 별개 글자 모양은 사전이 같아 보이기 때문이다
+    /// (#187 리뷰). id 없는 폴백 모양 run은 홀로 선다.
     func msWordStrikethroughFonts(of runs: [CTRun]) -> [CTFont?] {
         var fonts: [CTFont?] = []
-        var groupAttributes: NSDictionary?
+        var groupShape: NSNumber?
         var groupFont: CTFont?
         for run in runs {
             let attributes = runAttributes(run)
             guard isMsWordCompatible(attributes) else {
                 fonts.append(nil)
-                groupAttributes = nil
+                groupShape = nil
                 continue
             }
             let font = runFont(attributes)
-            var withoutFont = attributes
-            withoutFont[kCTFontAttributeName as NSAttributedString.Key] = nil
-            let comparable = withoutFont as NSDictionary
-            if let groupAttributes, groupAttributes.isEqual(comparable) {
+            // 글자 모양 id(`charShapeId`)로 묶는다 — 속성 사전 전체를 비교하면 양쪽 정렬
+            // 자간·문단 끝 상자처럼 글자 모양 안에서 달라지는 키가 run을 가르고, 크기·
+            // 색이 같은 다른 글자 모양이 묶인다. id 없는 폴백 모양 run은 홀로 선다.
+            let shape = attributes[HwpAttributedStringKey.charShapeId] as? NSNumber
+            if let shape, let groupShape, shape == groupShape {
                 fonts.append(groupFont ?? font)
             } else {
-                groupAttributes = comparable
+                groupShape = shape
                 groupFont = font
                 fonts.append(font)
             }
@@ -123,12 +128,14 @@ extension HwpPageLayer {
     /// 이 줄에 있으면(조판이 문단 마지막 글자에 실은 `msWordParagraphEndBox`) 그 상자를
     /// 더해 합친다. 한글 문서 줄이면 nil.
     func msWordLineBox(of runs: [CTRun]) -> HwpMsWordLineBox? {
+        // 문서 단위 속성이라 줄의 run 하나가 MS 워드면 줄 전체가 그렇다 — 표식 run(한 줄
+        // 끝·빈 줄 앵커)처럼 허용 목록으로 깎인 run도 글꼴이 있는 한 후보로 넣는다
+        // (한글도 그 줄의 글자 모양으로 줄 상자를 잡는다).
+        guard runs.contains(where: { isMsWordCompatible(runAttributes($0)) }) else { return nil }
         var boxes: [HwpMsWordLineBox] = []
         for run in runs {
             let attributes = runAttributes(run)
-            guard isMsWordCompatible(attributes), let font = runFont(attributes) else { continue }
-            // 표식 run(한 줄 끝·빈 줄 앵커)은 글리프가 없어도 글꼴을 가지므로 후보다 —
-            // 한글도 그 줄의 글자 모양으로 줄 상자를 잡는다.
+            guard let font = runFont(attributes) else { continue }
             boxes.append(HwpMsWordLineBox.metrics(of: font).scaled(by: CTFontGetSize(font)))
             if let end = attributes[HwpAttributedStringKey.msWordParagraphEndBox] as? [NSNumber],
                end.count == 2

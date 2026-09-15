@@ -136,12 +136,13 @@ public enum HwpRenderTuning {
 
         /// MS 워드 호환 문서의 밑줄('글자 아래'·'글자 위'·변경 추적 삽입 밑줄) 두께 =
         /// 기준 상자 높이(`HwpMsWordLineBox.cellHeight`) × 글자 크기 × 이 배율.
-        /// 실측: 한글 12.30.0 (2026-09-15) PDF 내보내기, 글꼴 32종 × 10·40·80pt —
-        /// 함초롬돋움 80pt 4.20pt (0.0663em = 0.051 × 1.30), Apple SD 산돌고딕 Neo
-        /// 3.84pt (0.0606em = 0.0505 × 1.20), HY울릉도M 3.24pt (0.0511 = 0.0511 × 1.00),
-        /// 맑은 고딕 4.32pt (0.0682 = 0.0513 × 1.33), Menlo 3.72pt (0.0587 = 0.0504 ×
-        /// 1.164), Helvetica 2.88pt (0.0455 = 0.0503 × 0.9045), Courier New 2.76pt
-        /// (0.0436 = 0.050 × 0.8721) — 전부 0.050~0.052 (장치 0.12pt 양자화). 취소선은
+        /// 실측: 한글 12.30.0 (2026-09-15) PDF 내보내기, 글꼴 32종 × 10·40·80pt (변경
+        /// 내용 추적 문서라 쪽이 0.8배 축소돼 80pt 글리프가 63.36pt로 찍힌다 — 비율은
+        /// 그 관측 크기 기준) — 함초롬돋움 4.20pt (0.0663em = 0.051 × 1.30), Apple SD
+        /// 산돌고딕 Neo 3.84pt (0.0606em = 0.0505 × 1.20), HY울릉도M 3.24pt (0.0511 =
+        /// 0.0511 × 1.00), 맑은 고딕 4.32pt (0.0682 = 0.0513 × 1.33), Menlo 3.72pt
+        /// (0.0587 = 0.0504 × 1.164), Helvetica 2.88pt (0.0455 = 0.0503 × 0.9045), Courier
+        /// New 2.76pt (0.0436 = 0.050 × 0.8721) — 전부 0.050~0.052 (장치 0.12pt 양자화). 취소선은
         /// 호환 문서에서도 글자 크기 × `decorationLineThicknessRatio`다 (같은 실측:
         /// 모든 글꼴 0.0398em).
         /// 검증: `HwpDecorationLineGeometryTests+Compat` 두께 + `HwpRenderTuningTests`.
@@ -158,7 +159,7 @@ public enum HwpRenderTuning {
         /// 0.0205 × 0.9045); 글자 위 밑줄 (`ascent` 기준) 함초롬돋움 +1.0985 = 1.07 +
         /// 0.0219 × 1.30, Apple SD +0.9261 = 0.90 + 0.0218 × 1.20, Helvetica +0.8333 =
         /// 0.8146 + 0.0207 × 0.9045 — 전부 0.020~0.023. 이슈 #187의 근사 −(winDescent +
-        /// 두께/2)는 0.025라 함초롬 40pt에서 0.15pt 낮았다.
+        /// 두께/2)는 0.025라 함초롬 40pt에서 0.2pt(0.004 × 1.30 × 40) 낮았다.
         /// 검증: `HwpDecorationLineGeometryTests+Compat` 위치 + `HwpRenderTuningTests`.
         public static let msWordUnderlineOffsetCellRatio: CGFloat = 0.021
 

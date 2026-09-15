@@ -14,6 +14,8 @@ extension HwpTextRunBuilder {
         kCTFontAttributeName as NSAttributedString.Key,
         HwpAttributedStringKey.baseFontSize,
         kCTForegroundColorAttributeName as NSAttributedString.Key,
+        // 문서 단위 표식 — MS 워드 호환 줄 상자 판정 (#187, 빈 줄 앵커와 같은 이유).
+        HwpAttributedStringKey.compatibleDocumentTarget,
     ]
 
     /// 방출 텍스트가 한 줄 끝(U+000A)으로 끝나는가 — `accumulate`가 이 글자를 일반
