@@ -203,12 +203,15 @@ import XCTest
             let output = NSMutableAttributedString()
             for (index, text) in ["ab", "cd", "ef"].enumerated() {
                 let spec = sizes[index]
-                let attributes = spec.baseSize.map {
-                    attributes(size: spec.size, baseSize: $0, fontName: fontName)
-                } ?? fontOnlyAttributes(size: spec.size, fontName: fontName)
-                output.append(NSAttributedString(string: text, attributes: attributes))
+                // 지역 이름을 정적 헬퍼(`attributes(size:)`)와 다르게 둔다 — 같은 이름의 지역
+                // 변수를 선언하는 식 안에서 그 헬퍼를 부르면 CI 툴체인이 클로저 안의 호출을
+                // 선언 중인 딕셔너리로 풀어 "cannot call value of non-function type"이 난다.
+                let runAttributes = spec.baseSize.map {
+                    Self.attributes(size: spec.size, baseSize: $0, fontName: fontName)
+                } ?? Self.fontOnlyAttributes(size: spec.size, fontName: fontName)
+                output.append(NSAttributedString(string: text, attributes: runAttributes))
                 if index < 2 {
-                    output.append(lineBreak(attributes: attributes))
+                    output.append(lineBreak(attributes: runAttributes))
                 }
             }
             return applying(rule, to: output)
