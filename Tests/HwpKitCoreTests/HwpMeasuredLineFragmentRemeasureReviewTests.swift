@@ -173,7 +173,8 @@ import XCTest
             expect(fragments[1].frame.height)
                 .to(beCloseTo(CGFloat(drawn.count) * 16, within: 0.001))
             let last = try XCTUnwrap(drawn.last)
-            expect(last.baselineOrigin.y).to(beCloseTo(fragments[1].frame.maxY - 16 + 8.5, within: 0.001))
+            expect(last.baselineOrigin.y)
+                .to(beCloseTo(fragments[1].frame.maxY - 16 + 8.5, within: 0.001))
         }
 
         /// 균형 재배치가 문단의 **가운데** 조각(문단 끝을 담지 않음)을 폭이 다른 단으로 옮겨
@@ -221,14 +222,18 @@ import XCTest
                 )
             }
             var remainder = HwpFragmentRemainder(
-                lines: [line(0, baseline: 17, y: 0), line(10, baseline: 8.5, y: 30), line(20, baseline: 8.5, y: 46)],
+                lines: [
+                    line(0, baseline: 17, y: 0), line(10, baseline: 8.5, y: 30),
+                    line(20, baseline: 8.5, y: 46),
+                ],
                 textHeight: 62, measuredWidth: 100, heightIsMeasured: true
             )
             remainder.place(1)
             // 다시 잰 나머지: 첫 줄이 개체 줄(상자 20 → 전진량 30), 마지막 줄은 보통 줄(16).
             remainder.replace(
                 with: HwpParagraphFrame(
-                    totalHeight: 46, lines: [line(0, baseline: 17, y: 0), line(10, baseline: 8.5, y: 30)]
+                    totalHeight: 46,
+                    lines: [line(0, baseline: 17, y: 0), line(10, baseline: 8.5, y: 30)]
                 ),
                 textHeight: 46, width: 150, range: NSRange(location: 10, length: 20)
             )

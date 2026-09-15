@@ -96,9 +96,8 @@ final class FixtureBaselineAnchorTests: XCTestCase {
     /// 123.70pt였다). 그래서 여기서 잠그는 것은 ① 첫 줄 baseline 정확값과 ② 둘째 줄이 개체
     /// 상자 바닥 아래라는 것이다.
     ///
-    /// 둘째 줄의 절댓값은 줄 **전진량** 축이라 글꼴에 딸린다 — 한글의 전진량은 상자 40.87 +
-    /// 간격 6.00 = 46.87인데 우리는 CT의 자연 슬롯을 쓰므로 결정론 글꼴에서 47.95,
-    /// 실제 함초롬에서 46.17이 된다 (#180). 그 폭까지 담는 허용 오차로 둔다.
+    /// 둘째 줄은 첫 줄 상자 상단 + 전진량(상자 40.87 + 글자 10pt × 0.6 = 46.87) + 앵커 8.5 =
+    /// 154.57pt — 전진량이 줄별 상자와 줄 간격 규칙에서 나와 글꼴과 무관하다 (#180).
     func testTallInlineObjectOnTheFirstLineKeepsTheFollowingLineBelow() async throws {
         let page = try await Self.firstPage("CCL")
         let baselines = Self.textBlocks(page).map { Double($0.baseline) }
@@ -112,7 +111,7 @@ final class FixtureBaselineAnchorTests: XCTestCase {
         expect(lines[1].baselineOrigin.y).to(
             beGreaterThan(99.2 + 40.87), description: "둘째 줄은 개체 상자 바닥 아래"
         )
-        expect(Double(lines[1].baselineOrigin.y)).to(beCloseTo(154.57, within: 1.5))
+        expect(Double(lines[1].baselineOrigin.y)).to(beCloseTo(154.57, within: Self.tolerance))
     }
 
     /// `footnote-endnote` — 본문(10pt)과 각주 문단(9pt)이 각자의 줄 상자 앵커를 쓴다.

@@ -4,8 +4,9 @@ import CoreText
 import Foundation
 
 public extension HwpAttributedStringKey {
-    /// treatAsChar 개체 마커가 예약한 줄 공간 높이 (NSNumber, pt).
-    /// 비율/고정 줄 간격이 개체를 자르지 않도록 상한 적용 여부 판단에 쓴다.
+    /// treatAsChar 개체 마커가 예약한 줄 공간 높이 (NSNumber, pt) — 조각을 다른 단 폭으로
+    /// 다시 풀 때 예약을 다시 읽는 열쇠다 (`HwpInlineObjectReservation`). 줄 상자 높이 자체는
+    /// run delegate의 ascent에서 읽는다 (`HwpDrawnTextLayout.lineMetrics`).
     static let inlineObjectHeight = NSAttributedString.Key("hwp.inlineObjectHeight")
 }
 

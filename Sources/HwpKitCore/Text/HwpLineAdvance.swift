@@ -105,8 +105,10 @@ public struct HwpLineSpacingRule: Equatable, Sendable {
     /// 단 문자열) 그 스타일의 줄 높이 지정을 같은 상자 모델로 읽는다:
     /// `lineHeightMultiple` → 비율, `minimumLineHeight` == `maximumLineHeight` > 0 → 고정,
     /// `minimumLineHeight` > 0 → 최소, `lineSpacingAdjustment` > 0 → 여백만, 아니면 비율 100%.
-    static func rule(in attributedString: NSAttributedString, at location: Int) -> HwpLineSpacingRule {
-        guard attributedString.length > 0 else { return HwpLineSpacingRule(kind: .percent, value: 100) }
+    static func rule(
+        in attributedString: NSAttributedString, at location: Int
+    ) -> HwpLineSpacingRule {
+        guard attributedString.length > 0 else { return .naturalPercent }
         let index = min(max(location, 0), attributedString.length - 1)
         if let rule = HwpLineSpacingRule(attributeValue: attributedString.attribute(
             HwpAttributedStringKey.lineSpacing, at: index, effectiveRange: nil
@@ -134,8 +136,11 @@ public struct HwpLineSpacingRule: Equatable, Sendable {
         if spacing > 0 {
             return HwpLineSpacingRule(kind: .marginOnly, value: spacing)
         }
-        return HwpLineSpacingRule(kind: .percent, value: 100)
+        return .naturalPercent
     }
+
+    /// 비율 100% — 규칙도 CT 줄 높이 지정도 없는 문자열의 기본값 (줄 상자 = 글자 크기).
+    static let naturalPercent = HwpLineSpacingRule(kind: .percent, value: 100)
 }
 
 public extension HwpAttributedStringKey {
