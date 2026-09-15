@@ -37,6 +37,13 @@ enum HwpSelectionRTF {
     /// - 값 변환: `kCTParagraphStyle`은 키 이름이 "NSParagraphStyle"로 같지만
     ///   값이 `CTParagraphStyle`(toll-free 아님)이라 `NSParagraphStyle`로
     ///   다시 만든다 — 안 바꾸면 RTF 작성기가 CF 타입에 ObjC 메시지를 보낸다.
+    ///   줄 간격은 조판 문자열이 나르는 규칙 `hwp.lineSpacing`
+    ///   (`HwpLineSpacingRule`, #180)을 표준 문단 속성으로 옮긴다 — 비율 →
+    ///   `lineHeightMultiple`, 고정 → `minimumLineHeight` = `maximumLineHeight`,
+    ///   최소 → `minimumLineHeight`, 여백만 → `lineSpacing`. CT 스타일의 줄 높이
+    ///   지정은 규칙 표식이 없는 문자열의 폴백일 뿐이다 (CT 스타일은 비율을
+    ///   `lineHeightMultiple` 힌트로, 고정·최소를 `minimumLineHeight`로만 실어 고정과
+    ///   최소를 가르지 못한다).
     /// - `hwp.*` 명시 변환: `underlineStyle`/`underlineColor`·
     ///   `strikethroughStyle`/`strikethroughColor`(둘 다 값 1 = 단선)는 표준
     ///   밑줄·취소선으로, `hyperlink`(String)는 `.link`(URL)로 승격하되 URL
@@ -114,12 +121,16 @@ enum HwpSelectionRTF {
         {
             normalized[.baselineOffset] = offset
         }
-        // 값 변환: CTParagraphStyle → NSParagraphStyle (키 이름은 같다)
+        // 값 변환: CTParagraphStyle → NSParagraphStyle (키 이름은 같다). 줄 간격은
+        // 접두사 일괄 제거 전에 규칙 표식(`hwp.lineSpacing`)에서 읽는다.
         if let style = normalized[.paragraphStyle],
            CFGetTypeID(style as CFTypeRef) == CTParagraphStyleGetTypeID()
         {
             normalized[.paragraphStyle] = nsParagraphStyle(
-                from: style as! CTParagraphStyle // swiftlint:disable:this force_cast
+                from: style as! CTParagraphStyle, // swiftlint:disable:this force_cast
+                lineSpacing: HwpLineSpacingRule(
+                    attributeValue: attributes[HwpAttributedStringKey.lineSpacing]
+                )
             )
         }
         // 렌더러 전용 잔여 제거
@@ -149,7 +160,12 @@ enum HwpSelectionRTF {
     /// `HwpParagraphLayout.ctParagraphStyle`이 싣는 지정자만 옮긴다 —
     /// 정렬·들여쓰기 3종·문단 간격 2종·행간 3종·탭 정지.
     /// (CT `maximumLineSpacing`은 NSParagraphStyle에 대응이 없어 버린다.)
-    private static func nsParagraphStyle(from ctStyle: CTParagraphStyle) -> NSParagraphStyle {
+    ///
+    /// 줄 간격은 `lineSpacing` 규칙(조판 문자열의 `hwp.lineSpacing`, #180)이 있으면 그것을
+    /// 표준 속성으로 옮기고, 없으면(CT 스타일만 단 문자열) CT 지정자를 그대로 옮긴다.
+    private static func nsParagraphStyle(
+        from ctStyle: CTParagraphStyle, lineSpacing rule: HwpLineSpacingRule?
+    ) -> NSParagraphStyle {
         let style = NSMutableParagraphStyle()
         var alignment = CTTextAlignment.natural
         if CTParagraphStyleGetValueForSpecifier(
@@ -162,9 +178,14 @@ enum HwpSelectionRTF {
         copyFloat(ctStyle, .tailIndent) { style.tailIndent = $0 }
         copyFloat(ctStyle, .paragraphSpacingBefore) { style.paragraphSpacingBefore = $0 }
         copyFloat(ctStyle, .paragraphSpacing) { style.paragraphSpacing = $0 }
-        copyFloat(ctStyle, .lineSpacingAdjustment) { style.lineSpacing = $0 }
-        copyFloat(ctStyle, .minimumLineHeight) { style.minimumLineHeight = $0 }
-        copyFloat(ctStyle, .maximumLineHeight) { style.maximumLineHeight = $0 }
+        if let rule {
+            applyLineSpacing(rule, to: style)
+        } else {
+            copyFloat(ctStyle, .lineSpacingAdjustment) { style.lineSpacing = $0 }
+            copyFloat(ctStyle, .lineHeightMultiple) { style.lineHeightMultiple = $0 }
+            copyFloat(ctStyle, .minimumLineHeight) { style.minimumLineHeight = $0 }
+            copyFloat(ctStyle, .maximumLineHeight) { style.maximumLineHeight = $0 }
+        }
         // 탭 정지: CFArray를 +0 참조로 받는다 (버퍼에 담기는 것은 포인터)
         var tabsPointer: UnsafeMutableRawPointer?
         if CTParagraphStyleGetValueForSpecifier(
@@ -184,6 +205,31 @@ enum HwpSelectionRTF {
             }
         }
         return style
+    }
+
+    /// 표 46 줄 간격 규칙 → 표준 문단 속성. 한글의 상자 모델(비율은 글자 크기 × p, 고정은 값
+    /// 그대로)을 NSParagraphStyle이 그대로 표현하지는 못하므로 **뜻이 같은 속성**을 고른다 —
+    /// 비율 p → `lineHeightMultiple` p/100, 고정 v → `minimumLineHeight` = `maximumLineHeight`
+    /// = v, 최소 v → `minimumLineHeight` v, 여백만 v → `lineSpacing` v. 한 속성만 세우고
+    /// 나머지는 0(미설정)으로 둔다.
+    private static func applyLineSpacing(
+        _ rule: HwpLineSpacingRule, to style: NSMutableParagraphStyle
+    ) {
+        style.lineSpacing = 0
+        style.lineHeightMultiple = 0
+        style.minimumLineHeight = 0
+        style.maximumLineHeight = 0
+        switch rule.kind {
+        case .percent:
+            style.lineHeightMultiple = max(0, rule.value / 100)
+        case .fixed:
+            style.minimumLineHeight = max(0, rule.value)
+            style.maximumLineHeight = max(0, rule.value)
+        case .atLeast:
+            style.minimumLineHeight = max(0, rule.value)
+        case .marginOnly:
+            style.lineSpacing = max(0, rule.value)
+        }
     }
 
     private static func copyFloat(

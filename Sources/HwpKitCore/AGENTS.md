@@ -410,9 +410,12 @@ PDF 벡터 베이스라인이 이 표 그대로다: 10pt 여러 줄 문단이 �
 같은 상자 모델로 읽는다 — `lineHeightMultiple` → 비율, `minimumLineHeight` = `maximumLineHeight`
 > 0 → 고정, 하한만 → 최소, `lineSpacingAdjustment` > 0 → 여백만, 없으면 비율 100%. CT 스타일에
 남는 줄 높이 지정은 **힌트**다 (`ParagraphMetrics`: 비율 → `lineHeightMultiple`, 고정·최소 →
-`minimumLineHeight`, 여백만 → `lineSpacingAdjustment`) — 서식 복사(`HwpSelectionRTF`)와 위 폴백에만
-쓰이고, **상한(`maximumLineHeight`)은 두지 않는다**: CT는 그 높이에 안 들어가는 글자가 있는 줄을
-놓지 않아 문단이 통째로 사라졌다 (#202). 종전에는 비율·고정을 문단 최대 글자 크기 × 비율로
+`minimumLineHeight`, 여백만 → `lineSpacingAdjustment`) — 규칙 표식이 없는 문자열의 폴백에만 쓰이고
+(고정과 최소를 가르지 못한다), **상한(`maximumLineHeight`)은 두지 않는다**: CT는 그 높이에 안
+들어가는 글자가 있는 줄을 놓지 않아 문단이 통째로 사라졌다 (#202). 서식 복사(`HwpSelectionRTF`)는
+힌트가 아니라 **규칙 표식**을 읽어 표준 문단 속성으로 옮긴다 — 비율 → `lineHeightMultiple`, 고정 →
+`minimumLineHeight` = `maximumLineHeight`, 최소 → `minimumLineHeight`, 여백만 → `lineSpacing`
+(PR 리뷰: 힌트만 옮기던 동안 RTF에서 160%가 기본 줄 간격으로, 고정 5pt가 최소 5pt로 바뀌었다). 종전에는 비율·고정을 문단 최대 글자 크기 × 비율로
 min = max 못박고 CT 슬롯을 복원해 상자를 타일했는데 (#178 PR #197의 `placementSlots`·이월
 슬롯), 그 길은 글꼴 지표·못박은 높이보다 큰 글자·프레임 첫 슬롯 특례가 전진량에 남았고
 (#180·#198) 여백만·최소는 CT 자연 높이로 전진했다.
