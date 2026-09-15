@@ -46,9 +46,9 @@ extension HwpPageLayer {
         // `glyphBaselineOffset`(글자 위치·첨자)으로 글리프만 옮겨도 선은 제자리다.
         // 한글.app도 글자 위치에서는 그렇다 (2026-09-09 실측: `hh:offset` 50으로
         // 글리프가 5pt 내려가도 취소선·아래 밑줄·위 밑줄이 모두 같은 y에 남았다).
-        // 첨자는 예외라 별건이다 — 한글은 첨자 run의 취소선만 올라간 베이스라인을
-        // 따라가고 줄어든 크기로 그리는데(6.36pt 글리프에서 +2.28pt) 우리는
-        // 제자리에 그린다. 위쪽 밑줄은 한글도 제자리 + 기본 크기다.
+        // 첨자만 예외이고 선마다 다르다 (2026-09-15 실측, #179): 취소선·글자 가운데
+        // 밑줄은 첨자로 옮겨진 베이스라인을 따라가고(`scriptBaselineOffset`), 글자
+        // 아래·위 밑줄은 첨자에도 제자리다. 위치·두께의 크기 기준은 각 함수 주석에.
         for run in runs {
             // 밑줄은 CT 대신 항상 직접 (CT 밑줄은 폰트 지표 위치·두께라 실물과 갈린다)
             drawUnderlineIfNeeded(run, lineOrigin: underlineOrigin, in: ctx)
@@ -313,6 +313,22 @@ extension HwpPageLayer {
 
     /// 취소선 — 밑줄 종류 '글자 가운데'(표 35 값 2)와 변경 추적 삭제선도 이 선을
     /// 공유한다 (CT 미지원 — 항상 직접).
+    ///
+    /// 첨자 run에서는 **첨자로 옮겨진 베이스라인**(`scriptBaselineOffset`)을 기준으로
+    /// **줄어든 글꼴 크기**의 0.35배 위에 그린다 — 한글이 그렇게 그린다 (2026-09-15
+    /// 실측 #179, 함초롬바탕·Apple SD 동일: 10pt 위 첨자 6.36pt 글리프가 4.32pt 올라간
+    /// 표본에서 선은 원래 베이스라인 위 6.60pt = 4.32 + 0.35 × 6.36(장치 0.12pt 양자화,
+    /// 첨자 단독 표본의 올림은 4.44), 아래 첨자가 1.20pt 내려가면 1.08pt = −1.20 + 2.28;
+    /// 글자 가운데 밑줄도 같은 자리). 글자 위치(`hh:offset`)로 옮겨진 몫은 따라가지
+    /// 않는다 — 첨자와 글자 위치를 함께 준 run에서도 선은 첨자 몫만 옮겨진 자리
+    /// (위 첨자 + 위치 50에서 6.72pt)에 남는다. 종전에는 이동 없이 원래 베이스라인 위
+    /// 0.35 × 축소 크기에 그려 위 첨자 글리프 아래·아래 첨자 글리프 위로 벗어났다.
+    /// 변경 추적 삭제선(`trackChangeStrikethrough`)은 같은 경로라 함께 옮겨지지만
+    /// 첨자 표본은 없다 — 코퍼스의 유일한 변경 추적 실물이 MS Word 호환 문서(#187)다.
+    ///
+    /// 두께는 **첨자 축소 전 크기**(`preScriptFontSize`)의 0.04배다 — 한글은 첨자
+    /// run의 선도 본문과 같은 폭으로 그린다 (같은 실측: 10pt 첨자 선 0.36pt = 본문과
+    /// 같음, 축소 크기 6.36pt 기준이면 0.24pt).
     func drawStrikethroughIfNeeded(_ run: CTRun, lineOrigin: CGPoint, in ctx: CGContext) {
         let attributes = runAttributes(run)
         guard attributes[HwpAttributedStringKey.strikethroughStyle] != nil else { return }
@@ -328,10 +344,11 @@ extension HwpPageLayer {
         setDecorationFillColor(color, in: ctx)
         // 두께도 글자 크기 비례 — 밑줄과 같은 0.04em (#176 실측: 5~100pt에서
         // 밑줄·취소선이 같은 폭).
-        let thickness = size * HwpRenderTuning.Text.decorationLineThicknessRatio
+        let thickness = preScriptFontSize(attributes)
+            * HwpRenderTuning.Text.decorationLineThicknessRatio
         ctx.fill(CGRect(
             x: bounds.minX,
-            y: lineOrigin.y + size * ratio - thickness / 2,
+            y: lineOrigin.y + scriptBaselineShift(attributes) + size * ratio - thickness / 2,
             width: bounds.width,
             height: thickness
         ))
@@ -344,10 +361,17 @@ extension HwpPageLayer {
     /// 중심은 베이스라인 아래 글자 크기의 0.17배, 두께는 0.04배 (#176 실측 —
     /// 네 글꼴·13개 크기에서 같은 비율). 폰트 `underlinePosition`(−0.075em)은
     /// 한글 글리프 잉크를 관통하므로 쓰지 않는다.
+    ///
+    /// 크기는 **첨자로 줄기 전 값**(`preScriptFontSize`)이고 첨자 이동은 따라가지
+    /// 않는다 — 위쪽 밑줄과 같은 규칙이다 (2026-09-15 실측 #179: 10pt 위/아래 첨자
+    /// run의 밑줄이 둘 다 원래 베이스라인 아래 1.68pt = 10pt의 0.17배, 두께 0.36pt에
+    /// 남는다; 글자 위치 50을 함께 줘도 같은 자리). 종전에는 줄어든 6.7pt 기준이라
+    /// 베이스라인 아래 1.14pt(올바른 1.70pt보다 0.56pt 위)·두께 0.27pt로 첨자 글리프에
+    /// 붙었다.
     func drawUnderlineIfNeeded(_ run: CTRun, lineOrigin: CGPoint, in ctx: CGContext) {
         let attributes = runAttributes(run)
         guard attributes[HwpAttributedStringKey.underlineStyle] != nil else { return }
-        let size = runFont(attributes).map(CTFontGetSize) ?? 10
+        let size = preScriptFontSize(attributes)
         fillUnderline(
             run,
             lineOrigin: lineOrigin,
@@ -363,11 +387,13 @@ extension HwpPageLayer {
     /// 남기기 위한 보정이라, 위쪽 선에 적용하면 글자 아래로 떨어진다.
     ///
     /// 크기는 **첨자로 줄기 전 값**(`spaceTargetSize`, 상대크기는 반영하고 첨자
-    /// 축소만 뺀 글자 크기)을 쓴다. 한글은 첨자 run에서도 이 선만 기본 크기로
-    /// 그린다 (2026-09-09 실측: 9.96 → 6.36pt로 줄어든 첨자 글리프에서도 선이
-    /// 원래 베이스라인 위 8.76pt = 10pt의 0.87배 자리에 그대로 남는다). 같은
-    /// 줄의 취소선은 반대로 줄어든 크기를 따르므로 (`drawStrikethroughIfNeeded`)
-    /// 두 선의 기준이 다르다.
+    /// 축소만 뺀 글자 크기)을 쓰고 첨자 이동도 따라가지 않는다. 한글은 첨자 run에서
+    /// 이 선을 기본 크기·원래 베이스라인에 그린다 (2026-09-09 실측: 9.96 → 6.36pt로
+    /// 줄어든 첨자 글리프에서도 선이 원래 베이스라인 위 8.76pt = 10pt의 0.87배
+    /// 자리에 그대로 남는다; 2026-09-15 #179 실측에서 아래 첨자·글자 위치 동반도
+    /// 같다). 아래쪽 밑줄도 같은 규칙이고, 같은 줄의 취소선만 첨자로 옮겨진
+    /// 베이스라인 + 줄어든 크기를 따르므로 (`drawStrikethroughIfNeeded`) 기준이
+    /// 다르다.
     func drawAboveUnderlineIfNeeded(_ run: CTRun, lineOrigin: CGPoint, in ctx: CGContext) {
         let attributes = runAttributes(run)
         guard attributes[HwpAttributedStringKey.underlineAboveStyle] != nil else { return }
@@ -388,6 +414,14 @@ extension HwpPageLayer {
             return CGFloat(size.doubleValue)
         }
         return runFont(attributes).map(CTFontGetSize) ?? 10
+    }
+
+    /// 첨자로 옮겨진 베이스라인의 이동량 (pt, 양수 = 위, #179). 글자 위치 몫은 들어
+    /// 있지 않다 — 그 몫까지 합한 `glyphBaselineOffset`을 쓰면 글자 위치만 준 run의
+    /// 선까지 따라 움직여 한글과 갈린다.
+    private func scriptBaselineShift(_ attributes: [NSAttributedString.Key: Any]) -> CGFloat {
+        (attributes[HwpAttributedStringKey.scriptBaselineOffset] as? NSNumber)
+            .map { CGFloat($0.doubleValue) } ?? 0
     }
 
     /// 밑줄 한 줄 — `center`는 `lineOrigin` 기준 세로 위치 (양수 = 위),

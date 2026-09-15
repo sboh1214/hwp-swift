@@ -175,6 +175,15 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   근거다 (#177) — 글자선은 `LINETYPE2 - 1`(실선 0, `REV3D`는 4비트를 넘쳐 실선으로
   접힘), 테두리·대각선·구분선은 `LINETYPE2` 그대로(실선 1)이고 한글은 `DOT`를 긴
   점선으로, `DASH`를 점선으로 그린다. HWPX 쌍은 `HwpxFixtures/line-shapes`.
+- `script-decorations`: 위/아래 첨자 × 취소선·글자 가운데 밑줄·글자 아래 밑줄·글자 위
+  밑줄 8조합과 글자 위치 50 대조 3문단(취소선만·위 첨자+취소선·위 첨자+아래 밑줄)을
+  기준 run(검정) 사이에 빨강 대상 run으로 실은 합성 HWPX를 Hancom Office HWP for
+  macOS 12.30.0 build 6446으로 열어 2026-09-15에 `.hwp`·`.hwpx`로 저장. 첨자 run의
+  장식선이 어디에 그려지는지의 실물 근거다 (#179) — 한글은 취소선·글자 가운데 밑줄을
+  첨자로 옮겨진 베이스라인 + 줄어든 크기의 0.35배에, 글자 아래·위 밑줄은 원래
+  베이스라인에 축소 전 크기 기준으로 그리며 글자 위치 몫은 어느 선도 따라가지 않는다.
+  같은 세션의 PDF 내보내기 좌표는 `HwpKitTests/FixtureDecorationLineRenderTests+Script`가
+  핀한다. HWPX 쌍은 `HwpxFixtures/script-decorations`.
 - `track-changes`: WordprocessingML tracked changes DOCX를 Hancom Office HWP for macOS
   12.30.0 build 6382에서 열고 HWP로 저장. FileHeader, 본문/preview,
   DocumentProperties, DocInfo id mappings를 manifest로 검증.

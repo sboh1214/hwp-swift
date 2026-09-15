@@ -136,11 +136,7 @@ extension HwpTextRunBuilder {
         // 도입 근거였던 "CTFramesetter는 kCTBaselineOffset을 무시한다"는 macOS 27.0에서
         // 거짓이다 (`HwpTextRunBuilder`의 같은 자리 주석). 다만 여기서 더하는 것은 커스텀
         // 키뿐이고 CT 키는 건드리지 않으므로, 첨자 올림 몫 자체는 상쇄되지 않는다.
-        let baselineKey = HwpAttributedStringKey.glyphBaselineOffset
-        let existing = (attributes[baselineKey] as? NSNumber)?.doubleValue ?? 0
-        attributes[baselineKey] = NSNumber(
-            value: existing + Double(baseSize * Self.superscriptBaselineRatio)
-        )
+        addScriptBaselineShift(Double(baseSize * Self.superscriptBaselineRatio), to: &attributes)
     }
 
     /// 아래 첨자: 글꼴 크기를 줄이고 베이스라인을 내린다.
@@ -159,10 +155,23 @@ extension HwpTextRunBuilder {
                 nil
             )
         }
-        let baselineKey = HwpAttributedStringKey.glyphBaselineOffset
-        let existing = (attributes[baselineKey] as? NSNumber)?.doubleValue ?? 0
-        attributes[baselineKey] = NSNumber(
-            value: existing - Double(baseSize * Self.subscriptBaselineRatio)
-        )
+        addScriptBaselineShift(-Double(baseSize * Self.subscriptBaselineRatio), to: &attributes)
+    }
+
+    /// 첨자 이동량(양수 = 위)을 두 키에 누적한다 — 글리프를 옮기는 합산 키
+    /// (`glyphBaselineOffset`, 글자 위치 몫이 먼저 들어 있을 수 있다)와 첨자 몫만 담는
+    /// `scriptBaselineOffset` (#179). 뒤 키가 따로 있어야 장식선이 글자 위치는 무시하고
+    /// 첨자만 따라갈 수 있다 — 합산 키에서는 두 몫을 되돌려 가를 수 없다.
+    private func addScriptBaselineShift(
+        _ shift: Double,
+        to attributes: inout [NSAttributedString.Key: Any]
+    ) {
+        for key in [
+            HwpAttributedStringKey.glyphBaselineOffset,
+            HwpAttributedStringKey.scriptBaselineOffset,
+        ] {
+            let existing = (attributes[key] as? NSNumber)?.doubleValue ?? 0
+            attributes[key] = NSNumber(value: existing + shift)
+        }
     }
 }

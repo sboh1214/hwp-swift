@@ -72,7 +72,7 @@ final class HwpxFixtureManifestTests: XCTestCase {
 
     func testHwpxFixtureManifestsMatchParsedDocuments() throws {
         let fixtures = try HwpxFixtureLoader.loadAll()
-        expect(fixtures.count) >= 18
+        expect(fixtures.count) >= 19
 
         for fixture in fixtures {
             let manifest = fixture.manifest

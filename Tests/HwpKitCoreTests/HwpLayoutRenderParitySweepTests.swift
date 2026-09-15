@@ -161,9 +161,11 @@ import XCTest
         // 2026-09-12 `line-shapes`(#177, 최상위 36문단 + 17행 표 셀 17문단) 추가로
         // 문단 53·대조 106·컨테이너 17 증가 — 공유 코어 대조 건너뜀도 2 늘었다
         // ("underline DOUBLE_SLIM"·"strikeout DOUBLE_SLIM"이 120pt에서 slight-overflow
-        // 한 줄, 실측 6 = noori 1 + numbering-sequence 3 + line-shapes 2).
-        private static let expectedFixtureVisited = 230
-        private static let expectedFixtureMeasured = 446
+        // 한 줄, 실측 6 = noori 1 + numbering-sequence 3 + line-shapes 2), 2026-09-15
+        // `script-decorations`(#179, 구역 1 + 첨자 × 장식선 11문단) 추가로 문단 12·대조 24
+        // 증가 (컨테이너는 그대로다).
+        private static let expectedFixtureVisited = 242
+        private static let expectedFixtureMeasured = 470
         private static let expectedFixtureContainers = 69
         private static let minimumFixtureMultiLine = 60
         private static let maximumFixtureSharedCoreSkips = 6
