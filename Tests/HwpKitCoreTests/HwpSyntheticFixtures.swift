@@ -255,13 +255,21 @@ enum HwpSynthetic {
         pageHeight: UInt32 = 84188,
         footnoteNumberingMode: UInt32 = 0,
         footnoteStartingNumber: UInt16 = 0,
-        outlineNumberingId: UInt16 = 1
+        outlineNumberingId: UInt16 = 1,
+        pageStartsOn: CoreHwp.HwpSectionPageStartsOn = .both,
+        pageStartNumber: UInt16 = 0
     ) -> CoreHwp.HwpSectionDef {
         var sectionDef = CoreHwp.HwpSectionDef()
         sectionDef.pageDef.width = pageWidth
         sectionDef.pageDef.height = pageHeight
         sectionDef.pageDef.marginHeader = 0
         sectionDef.pageDef.marginFootnote = 0
+        // 구역 시작 종류 (표 130 bits 20-21)와 사용자 지정 시작 쪽 번호 — 세 표현
+        // (property·propertyInfo.rawValue·파생 필드)을 함께 세운다 (HWPX 매퍼와 같은 규약).
+        sectionDef.property |= UInt32(pageStartsOn.rawValue) << 20
+        sectionDef.propertyInfo.rawValue = sectionDef.property
+        sectionDef.propertyInfo.newPageNumberApplyRawValue = pageStartsOn.rawValue
+        sectionDef.pageStartNumber = pageStartNumber
         // 개요 번호 정의 참조 (1-based, 0 = 없음) — 빈 문서 기본값은 1이다 (#152).
         sectionDef.numberParaShapeId = outlineNumberingId
         // 각주 번호 매김 방식은 표 134 bits 10-11 (0 이어서 / 1 구역마다 / 2 쪽마다)

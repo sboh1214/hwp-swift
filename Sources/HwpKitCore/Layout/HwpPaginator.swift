@@ -207,7 +207,10 @@ public actor HwpPaginator {
     }
 
     /// 다음에 확정될 페이지의 논리 쪽 번호 (표 141 짝/홀 판정용).
-    /// 구역의 pageStartNumber(0 = 앞 구역에 이어서)로 재설정된다.
+    /// 구역 진입 때 `HwpSectionDef.firstPageNumber(continuing:)`로 재설정된다 — 사용자
+    /// 지정 시작 번호가 있으면 그 값, 없으면 구역 시작 종류(홀수·짝수)에 따라 홀짝이
+    /// 어긋난 번호만 1 건너뛴다 (#185, 이어서면 그대로). 새 번호 지정(nwno)의 보류 리셋
+    /// (`pendingPageNumber`)이 문단 배치 때 다시 덮는다.
     private var nextLogicalPageNumber = 1
     /// 새 번호 지정(nwno, 표 144)의 쪽 번호 리셋은 문단이 실제 배치될 때까지
     /// 보류한다 — 배치 전에 적용하면 넘침으로 확정되는 앞 페이지까지 리셋 번호를
@@ -1474,9 +1477,11 @@ private extension HwpPaginator {
         currentSectionDef = sectionDef
         pageChrome.applySectionHideFlags(sectionDef)
         // 구역은 항상 새 페이지에서 시작하므로 여기서 논리 쪽 번호를 재설정해도 안전하다.
-        if sectionDef.pageStartNumber > 0 {
-            nextLogicalPageNumber = Int(sectionDef.pageStartNumber)
-        }
+        // 사용자 지정 시작 번호가 없으면 구역 시작 종류(표 130 bits 20-21)에 따라 홀짝이
+        // 어긋난 번호만 1 건너뛴다 — 한글 12.30은 빈 쪽을 끼우지 않고 번호만 건너뛰므로
+        // (물리 4쪽에 1·3·4·5) 쪽 자체는 추가하지 않는다 (#185). 새 번호 지정(nwno)의
+        // 보류 리셋은 이 문단이 배치될 때 이 값을 덮는다 — 컨트롤이 구역보다 늦다.
+        nextLogicalPageNumber = sectionDef.firstPageNumber(continuing: nextLogicalPageNumber)
         // 이월 각주의 예약을 새 구역의 기하·구분선으로 다시 잰다 (#165 리뷰) — 앞 쪽을 확정하며
         // 잰 값은 이전 구역의 폭·구분선·쪽 높이 기준이라, 새 구역 첫 쪽의 배치(새 폭·새 구분선)와
         // 갈려 흐름 문단·표가 헛되이 밀리거나 각주 자리를 먹는다. 밴드를 열기 전에 잰다.

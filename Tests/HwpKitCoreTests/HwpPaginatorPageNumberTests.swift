@@ -159,9 +159,162 @@ import XCTest
             expect(self.pageNumberTexts(of: firstPage)).to(contain("- 9 -"))
             expect(self.pageNumberTexts(of: secondPage)).to(contain("- 10 -"))
         }
+
+        // MARK: 구역 시작 종류 (표 130 bits 20-21, #185)
+
+        /// 홀수·짝수 시작은 새 구역 첫 쪽의 번호만 건너뛰고 빈 쪽을 끼우지 않는다 —
+        /// 한글 12.30이 `section-page-number-skip` 쌍을 PDF로 내보낸 7쪽의 번호
+        /// 1·3·4·6·7·9·10과 같다 (이어서 → 홀수(2를 건너뜀) → 짝수(이미 짝수) →
+        /// 짝수(5를 건너뜀) → 홀수(이미 홀수) → 사용자 9 → 이어서).
+        func testSectionStartParitySkipsOnlyMismatchedPageNumbers() async throws {
+            let paginator = try makeSectionedPaginator(sectionDefs: [
+                HwpSynthetic.sectionDef(),
+                HwpSynthetic.sectionDef(pageStartsOn: .odd),
+                HwpSynthetic.sectionDef(pageStartsOn: .even),
+                HwpSynthetic.sectionDef(pageStartsOn: .even),
+                HwpSynthetic.sectionDef(pageStartsOn: .odd),
+                HwpSynthetic.sectionDef(pageStartNumber: 9),
+                HwpSynthetic.sectionDef(),
+            ])
+
+            let totalPages = await paginator.totalPages()
+            expect(totalPages) == 7
+            let paginatorTexts = try await pageNumberTexts(of: paginator)
+            expect(paginatorTexts) == [
+                ["- 1 -"], ["- 3 -"], ["- 4 -"], ["- 6 -"], ["- 7 -"], ["- 9 -"], ["- 10 -"],
+            ]
+        }
+
+        /// 문서 첫 구역도 같은 규칙이다 — 짝수 시작이면 첫 쪽이 2, 홀수 시작이면 1 그대로
+        /// (한글 12.30 실측: `probe-first-even` 2·3, `probe-first-odd` 1·2).
+        func testFirstSectionEvenStartNumbersTheFirstPageTwo() async throws {
+            let even = try makeSectionedPaginator(sectionDefs: [
+                HwpSynthetic.sectionDef(pageStartsOn: .even),
+                HwpSynthetic.sectionDef(),
+            ])
+            let evenTexts = try await pageNumberTexts(of: even)
+            expect(evenTexts) == [["- 2 -"], ["- 3 -"]]
+
+            let odd = try makeSectionedPaginator(sectionDefs: [
+                HwpSynthetic.sectionDef(pageStartsOn: .odd),
+                HwpSynthetic.sectionDef(),
+            ])
+            let oddTexts = try await pageNumberTexts(of: odd)
+            expect(oddTexts) == [["- 1 -"], ["- 2 -"]]
+        }
+
+        /// 사용자 지정 시작 번호가 있으면 홀수·짝수 종류는 보지 않는다 — 한글 12.30은
+        /// `ODD` + `page="4"`를 4로, `EVEN` + `page="7"`을 7로 찍고 다음 구역은 8이다
+        /// (`probe-parity-custom`). 종류만 보면 5·8·9가 된다.
+        func testUserPageStartNumberIgnoresSectionStartParity() async throws {
+            let paginator = try makeSectionedPaginator(sectionDefs: [
+                HwpSynthetic.sectionDef(),
+                HwpSynthetic.sectionDef(pageStartsOn: .odd, pageStartNumber: 4),
+                HwpSynthetic.sectionDef(pageStartsOn: .even, pageStartNumber: 7),
+                HwpSynthetic.sectionDef(),
+            ])
+            let paginatorTexts = try await pageNumberTexts(of: paginator)
+            expect(paginatorTexts) == [
+                ["- 1 -"], ["- 4 -"], ["- 7 -"], ["- 8 -"],
+            ]
+        }
+
+        /// 새 번호 지정(nwno)은 구역 시작 종류보다 늦게 적용된다 — 홀수 시작 구역의 첫
+        /// 문단에 쪽 번호 20을 지정하면 그 쪽은 20이다 (컨트롤은 문단 배치 때 확정되므로
+        /// 구역 진입 때 건너뛴 값을 덮는다). 짝/홀 판정용 머리말도 같은 번호를 본다.
+        func testNewPageNumberInSectionFirstParagraphOverridesParity() async throws {
+            let paginator = try makeSectionedPaginator(
+                sectionDefs: [
+                    HwpSynthetic.sectionDef(),
+                    HwpSynthetic.sectionDef(pageStartsOn: .odd),
+                ],
+                leadingBodyParagraphsBySection: [
+                    1: [HwpSynthetic.markerParagraph(
+                        control: HwpSynthetic.newNumberControl(kind: 0, number: 20)
+                    )],
+                ]
+            )
+            let paginatorTexts = try await pageNumberTexts(of: paginator)
+            expect(paginatorTexts) == [["- 1 -"], ["- 20 -"]]
+        }
+
+        /// 다중 쪽 구역 뒤의 홀짝 판정은 그 구역의 **마지막** 쪽 번호에서 이어진다 — 앞
+        /// 구역이 짝수 쪽에서 끝나면 홀수 시작은 건너뛰지 않고 짝수 시작이 1을 건너뛴다.
+        /// 어느 쪽이든 물리 쪽은 늘지 않고 그 뒤 번호는 연속이다.
+        func testSectionStartParityContinuesFromTheLastPageOfThePreviousSection() async throws {
+            let alone = try makeSectionedPaginator(
+                sectionDefs: [HwpSynthetic.sectionDef(pageHeight: 30000)],
+                bodyParagraphCount: 40
+            )
+            let firstSectionPages = await alone.totalPages()
+            expect(firstSectionPages) >= 2
+            let continuing = firstSectionPages + 1
+            let cases: [(CoreHwp.HwpSectionPageStartsOn, Int)] = [
+                (.odd, continuing.isMultiple(of: 2) ? continuing + 1 : continuing),
+                (.even, continuing.isMultiple(of: 2) ? continuing : continuing + 1),
+            ]
+            for (kind, expected) in cases {
+                let paginator = try makeSectionedPaginator(
+                    sectionDefs: [
+                        HwpSynthetic.sectionDef(pageHeight: 30000),
+                        HwpSynthetic.sectionDef(pageHeight: 30000, pageStartsOn: kind),
+                    ],
+                    bodyParagraphCount: 40
+                )
+                let texts = try await pageNumberTexts(of: paginator)
+                expect(texts.count) > firstSectionPages
+                expect(texts[firstSectionPages - 1]) == ["- \(firstSectionPages) -"]
+                let tail = Array(texts[firstSectionPages...])
+                expect(tail).to(
+                    equal((0 ..< tail.count).map { ["- \(expected + $0) -"] }),
+                    description: "\(kind) 시작 구역의 쪽 번호가 \(expected)부터 연속이어야 한다"
+                )
+            }
+        }
     }
 
     private extension HwpPaginatorPageNumberTests {
+        /// 구역마다 구역 정의 하나와 본문 문단 `bodyParagraphCount`개를 둔 다중 구역 문서.
+        /// 쪽 번호 위치 컨트롤은 첫 구역에만 두고(구역을 넘어도 유지 — 한글의 동작), 문단 수가
+        /// 적어 기본 쪽 크기에서는 구역마다 1쪽이다. `leadingBodyParagraphsBySection`은 그
+        /// 구역의 본문 앞에 끼울 문단(새 번호 지정 마커 등)이다.
+        func makeSectionedPaginator(
+            sectionDefs: [CoreHwp.HwpSectionDef],
+            leadingBodyParagraphsBySection: [Int: [CoreHwp.HwpParagraph]] = [:],
+            bodyParagraphCount: Int = 2
+        ) throws -> HwpPaginator {
+            let sections = try sectionDefs.enumerated().map { offset, sectionDef in
+                var controls: [CoreHwp.HwpCtrlId] = [.section(sectionDef)]
+                if offset == 0 {
+                    controls.append(
+                        HwpSynthetic.pageNumberPositionControl(numberFormat: 0, displayPosition: 5)
+                    )
+                }
+                let body = try (0 ..< bodyParagraphCount).map {
+                    try HwpSynthetic.textParagraph("구역 \(offset + 1) 본문 문단 \($0)")
+                }
+                return HwpSynthetic.section(
+                    firstParagraphControls: controls,
+                    bodyParagraphs: (leadingBodyParagraphsBySection[offset] ?? []) + body
+                )
+            }
+            return HwpPaginator(
+                sections: sections,
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+        }
+
+        /// 모든 쪽의 쪽 번호 텍스트 (쪽 순서).
+        func pageNumberTexts(of paginator: HwpPaginator) async throws -> [[String]] {
+            let totalPages = await paginator.totalPages()
+            var texts: [[String]] = []
+            for pageIndex in 0 ..< totalPages {
+                await texts.append(pageNumberTexts(of: try paginator.page(at: pageIndex)))
+            }
+            return texts
+        }
+
         func makePaginator(
             firstParagraphControls: [CoreHwp.HwpCtrlId],
             leadingBodyParagraphs: [CoreHwp.HwpParagraph] = []

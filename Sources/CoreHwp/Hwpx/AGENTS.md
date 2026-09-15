@@ -107,16 +107,20 @@ HWPX(OCF ZIP + OWPML XML, KS X 6101)를 **기존 `Hwp*` 모델로 변환 파싱*
 옮긴 흔적), 코퍼스가 전부 `BOTH`라 합성 테스트의 기대값까지 그 가정을 베끼고
 있었다. 한컴 모델의 `STARTNUMSTARTONTYPE`(BOTH 0 · EVEN 1 · ODD 2)은 스펙이 값을
 적은 이웃 자리(표 141 머리말 적용 범위·표 146 홀/짝수 조정: 0 양쪽 · 1 짝수 · 2
-홀수)와도 같다. 사용자 지정 시작 번호는 `BOTH` + `page` 속성이라 종류 비트는 0이고
-`pageStartNumber`에 따로 실린다. 미지 이름·생략은 한컴 `GetAttribute` 규약대로
-생성자 기본값 `BOTH`(0)로 접는다.
+홀수)와도 같다. 한글 GUI가 저장하는 사용자 지정 시작 번호는 `BOTH` + `page` 속성이라
+종류 비트는 0이고 `pageStartNumber`에 따로 실린다(합성 입력의 `ODD` + `page`처럼 둘이
+함께 오면 그대로 파싱되고 조판은 사용자 번호를 우선한다 — 아래 #185). 미지 이름·생략은
+한컴 `GetAttribute` 규약대로 생성자 기본값 `BOTH`(0)로 접는다.
 
 한글 12.30.0 macOS는 홀수·짝수 시작 때문에 **빈 쪽을 끼우지 않고 새 구역 첫 쪽의
 번호만 건너뛴다**(상태 표시줄 `3/4쪽`·`4/4쪽`·`5/4쪽`, PDF 내보내기도 4쪽). 조판은
-쪽 번호 시작과 관련해 `pageStartNumber`만 반영하고 bits 20-21은 읽지 않으므로
-(`HwpPaginator.applySectionDef`), 쪽 번호 매기기가 있는 문서에서는 다음 사용자 지정
-시작 번호 전까지 두 포맷 공통으로 한글보다 번호가 건너뛴 만큼 작다 — 렌더 몫의
-후속은 #185다. 텍스트 방향(bits 16-18, `hp:secPr@textDirection`)·빈 줄 감추기(bit 19,
+#185부터 이 비트를 `HwpSectionDefProperty.pageStartsOn`(`HwpSectionPageStartsOn`
+BOTH·EVEN·ODD)으로 읽어 `HwpSectionDef.firstPageNumber(continuing:)`로 새 구역 첫 쪽의
+번호를 정한다 — 이어지는 번호의 홀짝이 어긋날 때만 1을 더하고, 사용자 지정 시작
+번호(`page` > 0)가 있으면 종류를 보지 않는다(한글 실측: `pageStartsOn="ODD" page="4"`는
+4, 한글이 다시 저장한 HWPX에도 두 속성이 그대로 남는다). 쪽 번호 매기기를 넣은
+`section-page-number-skip` 쌍(7구역, 한글 PDF 1·3·4·6·7·9·10)이 두 포맷의 렌더 번호를
+직접 핀한다. 텍스트 방향(bits 16-18, `hp:secPr@textDirection`)·빈 줄 감추기(bit 19,
 `hp:visibility@hideFirstEmptyLine`)·원고지 정서법(bit 22, `hp:grid@wonggojiFormat`)·
 테두리/배경 감추기(bits 3·4·8·9, `@border`·`@fill`)는 대응 소비자도 실물 표본도
 없어 아직 옮기지 않는다 — 옮길 때 등가 축 `sectionSettings`에 함께 넣는다.
@@ -125,8 +129,12 @@ HWPX(OCF ZIP + OWPML XML, KS X 6101)를 **기존 `Hwp*` 모델로 변환 파싱*
 (BOTH·EVEN·ODD + 미지 이름·생략 폴백, 세 표현의 동기화)·
 `testUserPageStartNumberKeepsPageStartsOnBoth`, `HwpxHwpEquivalenceTests`의
 `sectionSettings` 축과 `HwpxHwpEquivalenceSectionSettingsTests`(`section-page-starts-on`
-직접 핀 `[0, 2, 1, 0]`·`[0, 0, 0, 5]`), HWP 매니페스트 `sections[].newPageNumberApplyRawValue`·
-`pageStartNumber`.
+직접 핀 `[0, 2, 1, 0]`·`[0, 0, 0, 5]`, `section-page-number-skip` 직접 핀
+`[0, 2, 1, 1, 2, 0, 0]`·`[0, 0, 0, 0, 0, 9, 0]`), HWP 매니페스트
+`sections[].newPageNumberApplyRawValue`·`pageStartNumber`. 렌더 번호는
+`HwpxFixtureRenderTests.testHwpxPageChromeMatchesHwpPairs`(#185 직접 핀)와
+`HwpPaginatorPageNumberTests`·`HwpSectionPageStartsOnTests`(첫 구역 짝수 → 2, 사용자
+번호 우선, raw 3 → 이어서).
 
 2026-09-02 한글.app 12.30.0 나란히 육안 대조(변환 쌍 10종 13쪽, 한컴 폰트
 모드): 쪽수 10종 전부 일치, 표·그림·다단·글자 장식·쪽나눔 일치. HWPX

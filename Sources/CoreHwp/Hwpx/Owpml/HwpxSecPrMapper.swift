@@ -337,7 +337,9 @@ private extension HwpxSecPrMapper {
     /// `BOTH` + `page` 속성이라 종류 비트는 0이다. 미지 이름·생략은 한컴 모델의
     /// `GetAttribute` 규약대로 생성자 기본값 `BOTH`로 접는다.
     static let pageStartModes: [String: Int] = [
-        "BOTH": 0, "EVEN": 1, "ODD": 2,
+        "BOTH": HwpSectionPageStartsOn.both.rawValue,
+        "EVEN": HwpSectionPageStartsOn.even.rawValue,
+        "ODD": HwpSectionPageStartsOn.odd.rawValue,
     ]
 
     static let columnTypes: [String: HwpColumnType] = [

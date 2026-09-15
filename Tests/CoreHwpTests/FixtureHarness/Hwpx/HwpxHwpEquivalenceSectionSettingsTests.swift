@@ -7,7 +7,8 @@ import XCTest
 /// 같은 규약이지만, 그 파일이 SwiftLint `file_length` 상한에 가까워 여기로 뗐다.
 final class HwpxHwpEquivalenceSectionSettingsTests: XCTestCase {
     /// 구역 시작 설정 축이 **기본값이 아닌 값으로** 성립하는지 직접 핀한다 (#173).
-    /// 등식만 두면 매핑이 뒤집혀도 다른 17쌍(전부 `BOTH`·0)은 통과하므로, 한글
+    /// 등식만 두면 매핑이 뒤집혀도 비기본값을 실은 두 쌍(이 쌍과 아래
+    /// `section-page-number-skip`) 외 나머지 18쌍(전부 `BOTH`·0)은 통과하므로, 한글
     /// 12.30.0이 `쪽 > 구역 설정... > 종류`를 이어서·홀수·짝수·사용자(5)로 저장한
     /// 4구역 쌍에서 HWPX 쪽 값을 HWP 저장본의 비트(홀수 `0x200000` = 2, 짝수
     /// `0x100000` = 1)로 못박는다. 매핑이 `ODD → 1`이던 종전에는 둘째·셋째
@@ -33,6 +34,25 @@ final class HwpxHwpEquivalenceSectionSettingsTests: XCTestCase {
             $0.hidesFirstHeader || $0.hidesFirstFooter
                 || $0.hidesFirstMasterPage || $0.hidesFirstPageNumber
         }) == false
+        expect(hwpxProjection.sectionSettings) == hwpProjection.sectionSettings
+    }
+
+    /// 쪽 번호 매기기를 넣은 7구역 쌍 (#185) — 짝수 시작이 홀수 번호를 건너뛰는 자리(넷째)와
+    /// 홀수 시작이 이미 홀수인 자리(다섯째)까지 실은 두 번째 비기본값 표본이다. 값의 근거는
+    /// 위 테스트와 같다.
+    func testSectionPageNumberSkipPairProjectsSameStartSettingsOnBothFormats() throws {
+        let hwp = try HwpFile(
+            fromPath: FixtureLoader.load(id: "section-page-number-skip").documentURL.path
+        )
+        let hwpx = try HwpFile(
+            fromPath: HwpxFixtureLoader.load(id: "section-page-number-skip").documentURL.path
+        )
+        let hwpProjection = DocumentEquivalenceProjection(of: hwp)
+        let hwpxProjection = DocumentEquivalenceProjection(of: hwpx)
+
+        expect(hwpxProjection.sectionSettings.count) == 7
+        expect(hwpxProjection.sectionSettings.map(\.pageStartsOn)) == [0, 2, 1, 1, 2, 0, 0]
+        expect(hwpxProjection.sectionSettings.map(\.pageStartNumber)) == [0, 0, 0, 0, 0, 9, 0]
         expect(hwpxProjection.sectionSettings) == hwpProjection.sectionSettings
     }
 }

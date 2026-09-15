@@ -94,6 +94,9 @@ final class FixturePreviewFidelityTests: XCTestCase {
         // 지키는 것은 `HwpxFixtureRenderTests.testHwpxPageChromeMatchesHwpPairs`다.
         "section-marks": 0.001, // 실측 0.0002 (2026-09-08)
         "section-page-starts-on": 0.001, // 실측 0.0001 (2026-09-11)
+        // 1쪽의 쪽 번호 `- 1 -`은 구역 시작 종류의 영향을 받지 않는다 (PrvImage는 1쪽뿐) —
+        // 건너뛴 번호(3·6)의 가드는 `HwpxFixtureRenderTests.testHwpxPageChromeMatchesHwpPairs`다.
+        "section-page-number-skip": 0.001, // 실측 0.0001 (2026-09-15)
         // 2단 문서의 표를 품은 문단 — 한글은 자리 차지 표를 문단 본문 **앞**에 놓고
         // 1단 7행/2단 10행으로 가르는데 우리는 본문 줄을 먼저 놓고 6행/11행으로 갈라
         // (두 포맷 공통, #190) 잉크가 한 줄씩 밀린다. 밑줄·취소선 모양(점선·파선·

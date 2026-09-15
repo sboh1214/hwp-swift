@@ -2119,13 +2119,15 @@ paraShape와 같은 값**이어야 한다.
   userSymbol은 아라비아 폴백
 - 단 나누기 (문단 헤더 columnType bit 3)와 홀/짝수 조정 (pageCT, 표 146) 미구현
   (쪽 나누기 bit 2는 구현). 구역 정의의 홀수·짝수 시작 (표 130 bits 20-21,
-  `HwpSectionDefProperty.newPageNumberApplyRawValue`)도 미적용 — 한글 12.30은 빈
-  쪽을 끼우지 않고 새 구역 첫 쪽의 번호만 홀수/짝수로 건너뛴다
-  (`section-page-starts-on` 픽스처: 물리 4쪽에 상태 표시줄 번호 1·3·4·5, PDF도 4쪽).
-  `applySectionDef`는 쪽 번호 시작과 관련해 `pageStartNumber`만 반영하므로 쪽 번호
-  매기기가 있는 문서는 다음 사용자 지정 시작 번호 전까지 번호가 한글이 건너뛴 만큼
-  작다 (#173의 상태 표시줄 실측에서 유도, 두 포맷 공통 — 픽스처엔 쪽 번호 매기기가
-  없어 이 격차를 잠그는 테스트는 없다, 후속 #185). 각주 numberingMode == 2 (쪽마다 새로)에서 문단이
+  `HwpSectionDefProperty.pageStartsOn`)은 **번호만** 건너뛴다 (#185) — 한글 12.30은
+  빈 쪽을 끼우지 않고 새 구역 첫 쪽의 번호만 홀수/짝수로 옮기므로
+  (`section-page-number-skip` 쌍: 물리 7쪽에 쪽 번호 1·3·4·6·7·9·10, PDF도 7쪽)
+  `applySectionDef`가 `HwpSectionDef.firstPageNumber(continuing:)`로 이어지는 번호의
+  홀짝이 어긋날 때만 1을 더하고 쪽은 추가하지 않는다. 사용자 지정 시작 번호
+  (`pageStartNumber` > 0)는 종류를 보지 않고 그대로다 (한글 실측: `ODD` + 4 → 4).
+  문서 첫 구역도 같은 규칙이라 짝수 시작 첫 쪽은 2다. 새 번호 지정 (nwno)의 보류
+  리셋은 문단 배치 때 이 값을 덮는다 (컨트롤이 구역보다 늦다). 인쇄 시 빈 쪽 삽입
+  여부는 확인 범위 밖이다. 각주 numberingMode == 2 (쪽마다 새로)에서 문단이
   페이지 경계 재시도로 밀리면 본문 위 첨자 번호가 재계산 전 값일 수 있다
 - 쪽 번호 위치 (표 148)의 상/하 밴드 프레임이 없으면 (여백 0) 콘텐츠 경계에
   근사 배치한다. 감추기 (표 145 pghd·표 130 구역 정의)의 머리말/꼬리말/쪽 번호
