@@ -24,8 +24,8 @@ final class HwpxFixtureRenderTests: XCTestCase {
         let fixtures = try FixtureRoot.loadAllHwpxFixtures(from: #file)
         let parseable = fixtures.filter { !$0.hasExpectedError }
         let withPageCount = parseable.filter { $0.expectedPageCount != nil }
-        // 픽스처 유실 가드 — 변환 쌍 20종
-        expect(fixtures.count) >= 20
+        // 픽스처 유실 가드 — 변환 쌍 21종
+        expect(fixtures.count) >= 21
         // 파싱 가능한 픽스처는 전부 pageCount 핀이 있어야 한다 (AGENTS.md "HWPX 픽스처 추가")
         expect(withPageCount.count) == parseable.count
         for fixture in withPageCount {
@@ -443,7 +443,7 @@ final class HwpxFixtureRenderTests: XCTestCase {
     func testHwpxFixturesRenderExpectedText() async throws {
         let fixtures = try FixtureRoot.loadAllHwpxFixtures(from: #file)
         let withText = fixtures.filter { !$0.hasExpectedError && !$0.expectedVisibleText.isEmpty }
-        expect(withText.count) >= 18
+        expect(withText.count) >= 19
 
         var failures: [String] = []
         for fixture in withText {

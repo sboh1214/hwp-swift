@@ -60,8 +60,11 @@ HWPX(OCF ZIP + OWPML XML, KS X 6101)를 **기존 `Hwp*` 모델로 변환 파싱*
 
 도형(line/rect/…)·수식·글상자(`.notImplemented`; `hp:default` fallback 없이
 `hp:chart`만 오는 문서도 여기 — OLE 개체 `hp:ole`은 #134에서 승격됐다),
-홀/짝수 조정(`hp:pageNumCtrl` → `pgct`), 형광펜·변경 추적 표식(zero-width 진단),
-그러데이션/이미지 채우기, 명시 탭 정지, 쪽 테두리.
+홀/짝수 조정(`hp:pageNumCtrl` → `pgct`), 형광펜·변경 추적 표식(zero-width 진단 —
+`compat-decorations` 쌍처럼 표식 없는 문서는 두 포맷이 같게 그려지지만 `track-changes`·
+`track-changes-native`처럼 표식이 있는 문서는 HWP(ViewText의 PARA_RANGE_TAG)만 빨강
+선을 그린다), 그러데이션/이미지 채우기, 명시 탭 정지, 쪽 테두리. 레이아웃 호환성
+(`hh:layoutCompatibility`)도 강등이다 — 대상 프로그램만 옮긴다 (아래 "호환 문서").
 승격 시 대응 요소를 `HwpxControlMapper` 분류표에서 옮긴다.
 
 **구역 부속 컨트롤 중 남은 강등은 `hp:pageNumCtrl` 하나다** (#163의 세 단계가
@@ -167,6 +170,35 @@ CharShape 취소선 견본은 두 포맷의 기록이 다르다 — HWP는 취�
 모양은 밑줄이 없어도 그대로 비교한다 — 한글이 밑줄 없는 글자 모양에도
 `shape="SOLID"`를 적고 바이너리에 0을 저장하므로, 실선을 0으로 옮기지 않으면 모든
 글자 모양에서 등식이 깨진다 (그것이 #177의 증상이었다). 아래 "선 종류" 절 참조.
+
+## 호환 문서 (`hh:compatibleDocument`, #187)
+
+`HwpxHeaderMapper.mapCompatibleDocument`가 head 직계 `hh:compatibleDocument`의
+`@targetProgram`을 `HwpDocInfo.compatibleDocument`(표 54, `HwpCompatibleDocumentTarget`)로
+옮긴다 — beginNum·refList처럼 head vocabulary로 좁혀 한 번만 읽고 두 번째부터는 통째로
+강등한다. 이름은 한컴 모델 `g_CompatiblieDocList` 그대로(`HWP201X` 0 · `HWP200X` 1 ·
+`MS_WORD` 2 · `Hunmin` 4)이고, **생략은 `HWP201X`**(한컴 참조 모델의 생성자 기본값
+`CT_HWP201X`), **미지 이름**도 `HWP201X`로 접되 `compatibleDocument@targetProgram=값`
+속성 강등 진단을 남긴다. 요소가 없으면 `compatibleDocument`는 nil이다 (한글 문서로 다룬다).
+
+옮기는 값이 대상 프로그램 하나뿐인 이유: 그 값이 조판·렌더링의 분기 축이다 — 한글은 MS
+워드 호환 문서에서 밑줄·취소선·변경 추적 표시선을 글꼴 지표로 놓는다
+(`Sources/HwpKitCore/AGENTS.md` 장식 항목). 강등 상태에서는 같은 문서가 HWP로 열 때와
+HWPX로 열 때 다르게 그려졌고 `HwpIndex.isCompatibilityDocument`(공백 폭 게이트)도
+HWPX에서 늘 거짓이었다. `hh:layoutCompatibility`의 35개 불리언 요소는 표 56 비트로
+옮기는 표가 없어 `compatibleDocument.unknownChildren`으로 강등한다 (`parseDiagnostics()`
+경로 `docInfo.compatibleDocument.unknownChild[…]`) — 한글은 이 플래그로 장식선 기하를
+바꾸지 않으므로(2026-09-15 실측: 35개 전부/없음·개별 플래그 모두 같은 값) 렌더 격차는
+없다. `HwpDocInfo.layoutCompatibility`는 HWPX에서 그대로 nil이다.
+
+실물 구조는 `compat-decorations` 쌍이 정본이다 — 한글 12.30이 MS 워드 호환 문서로
+저장한 HWP(`HWPTAG_COMPATIBLE_DOCUMENT` 2)와 HWPX(`targetProgram="MS_WORD"`, 재저장본은
+`hh:layoutCompatibility` 35개 요소를 전부 적는다). 코퍼스의 나머지 쌍은 전부 `HWP201X`.
+
+가드: `HwpxHeaderMapperTests`(이름 4종·생략·미지 이름 진단·중복 강등·타 vocabulary
+디코이·`layoutCompatibility` 강등 위치), `HwpxHwpEquivalenceTests`의
+`compatibleDocumentTarget` 축 + `HwpxHwpEquivalenceCompatTargetTests` 직접 핀
+(`compat-decorations` 2 · `CharShape` 0), `HwpxFixtureRenderTests`의 쪽수·텍스트 핀.
 
 ## 선 종류 (`LINETYPE2`, #177)
 

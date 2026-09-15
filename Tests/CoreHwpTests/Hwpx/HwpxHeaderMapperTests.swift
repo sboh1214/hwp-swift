@@ -441,3 +441,95 @@ final class HwpxHeaderMapperTests: XCTestCase {
         expect(decoded.emphasisType) == property.emphasisType
     }
 }
+
+/// `hh:compatibleDocument` → `HwpDocInfo.compatibleDocument` (#187). 대상 프로그램은
+/// MS 워드 호환 문서의 장식선 기하를 가르는 분기 축이라 강등 상태로 두면 같은 문서가
+/// HWP와 HWPX에서 다르게 그려진다.
+extension HwpxHeaderMapperTests {
+    private func header(compatible element: String) -> String {
+        HwpxHeaderFixture.headerXML.replacingOccurrences(
+            of: "<hh:refList>", with: element + "<hh:refList>"
+        )
+    }
+
+    func testMapsCompatibleDocumentTargetProgram() throws {
+        let (docInfo, _) = try HwpxHeaderFixture.mapHeader(header(
+            compatible: "<hh:compatibleDocument targetProgram=\"MS_WORD\">"
+                + "<hh:layoutCompatibility/></hh:compatibleDocument>"
+        ))
+        let document = try XCTUnwrap(docInfo.compatibleDocument)
+        expect(document.target) == .msWord
+        expect(document.targetDocument) == 2
+        expect(document.layoutCompatibility).to(beNil())
+        expect(document.rawPayload).to(beEmpty())
+        // 표 56으로 옮기는 표가 없는 레이아웃 호환성은 그 아래로 강등된다.
+        let names = document.unknownChildren.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names) == ["layoutCompatibility"]
+        // 헤더 최상위에는 남지 않는다 (이중 보고 방지).
+        let top = docInfo.unknownRecords.compactMap { String(bytes: $0.payload, encoding: .utf8) }
+        expect(top).toNot(contain("compatibleDocument"))
+        expect(top).toNot(contain("layoutCompatibility"))
+    }
+
+    func testMissingCompatibleDocumentLeavesDocInfoWithoutOne() throws {
+        let (docInfo, _) = try HwpxHeaderFixture.mapHeader(HwpxHeaderFixture.headerXML)
+        expect(docInfo.compatibleDocument).to(beNil())
+    }
+
+    func testOmittedTargetProgramFallsBackToHwp201XWithoutDiagnostic() throws {
+        // 한컴 참조 모델의 생성자 기본값 `CT_HWP201X` — 생략은 정상이라 진단이 없다.
+        let (docInfo, _) = try HwpxHeaderFixture.mapHeader(header(
+            compatible: "<hh:compatibleDocument/>"
+        ))
+        let document = try XCTUnwrap(docInfo.compatibleDocument)
+        expect(document.target) == .hwp201X
+        expect(document.unknownChildren).to(beEmpty())
+    }
+
+    func testUnknownTargetProgramFallsBackToHwp201XWithAttributeDiagnostic() throws {
+        let (docInfo, _) = try HwpxHeaderFixture.mapHeader(header(
+            compatible: "<hh:compatibleDocument targetProgram=\"WORD_PERFECT\"/>"
+        ))
+        let document = try XCTUnwrap(docInfo.compatibleDocument)
+        expect(document.target) == .hwp201X
+        let names = document.unknownChildren.compactMap {
+            String(bytes: $0.payload, encoding: .utf8)
+        }
+        expect(names) == ["compatibleDocument@targetProgram=WORD_PERFECT"]
+        expect(names[0].hasPrefix(HwpxHeaderMapper.targetProgramDiagnosticPrefix)) == true
+    }
+
+    func testEveryHancomTargetNameMaps() throws {
+        for target in HwpCompatibleDocumentTarget.allCases {
+            let (docInfo, _) = try HwpxHeaderFixture.mapHeader(header(
+                compatible: "<hh:compatibleDocument targetProgram=\"\(target.owpmlName)\"/>"
+            ))
+            expect(docInfo.compatibleDocument?.target).to(
+                equal(target), description: target.owpmlName
+            )
+        }
+    }
+
+    func testSecondCompatibleDocumentIsDemotedNotApplied() throws {
+        // 첫 등장이 이긴다 — 두 번째는 통째로 진단이다 (beginNum·refList와 같은 규약).
+        let (docInfo, _) = try HwpxHeaderFixture.mapHeader(header(
+            compatible: "<hh:compatibleDocument targetProgram=\"MS_WORD\"/>"
+                + "<hh:compatibleDocument targetProgram=\"HWP200X\"/>"
+        ))
+        expect(docInfo.compatibleDocument?.target) == .msWord
+        let top = docInfo.unknownRecords.compactMap { String(bytes: $0.payload, encoding: .utf8) }
+        expect(top.filter { $0 == "compatibleDocument" }.count) == 1
+    }
+
+    func testCompatibleDocumentDecoyFromOtherVocabularyIsDemoted() throws {
+        // head vocabulary가 아닌 동명 요소는 대상 프로그램을 세우지 못한다.
+        let (docInfo, _) = try HwpxHeaderFixture.mapHeader(header(
+            compatible: "<hp:compatibleDocument targetProgram=\"MS_WORD\"/>"
+        ))
+        expect(docInfo.compatibleDocument).to(beNil())
+        let top = docInfo.unknownRecords.compactMap { String(bytes: $0.payload, encoding: .utf8) }
+        expect(top).to(contain("compatibleDocument"))
+    }
+}

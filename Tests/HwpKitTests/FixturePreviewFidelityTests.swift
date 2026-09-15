@@ -106,6 +106,10 @@ final class FixturePreviewFidelityTests: XCTestCase {
         // 아래 밑줄 0.56pt)에 둔감해 수정 전후가 같은 0.0005다. 이 픽스처의 가드는
         // `FixtureDecorationLineRenderTests+Script`의 픽셀 핀이고, 여기 값은 유실 가드다.
         "script-decorations": 0.001, // 실측 0.0005 (2026-09-15, 수정 전 0.0005)
+        // MS 워드 호환 문서의 장식선(#187) — 글꼴 지표 기하는 12×16 그리드에 묻힌다.
+        // 가드는 `FixtureDecorationLineRenderTests+Compat`의 픽셀 핀이고 여기 값은 유실 가드다.
+        "compat-decorations": 0.001, // 실측 0.0002 (2026-09-15)
+        "track-changes-native": 0.001, // 실측 0.0002 (2026-09-15)
         "공공누리": 0.004, // 실측 0.0028 (저해상 GIF)
         "문서이력관리": 0.001, // 실측 0.0000
         "변경내용추적": 0.001, // 실측 0.0000

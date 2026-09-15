@@ -272,9 +272,17 @@ final class FixtureDecorationLineRenderTests: XCTestCase {
     }
 
     /// `track-changes` — 삭제선(베이스라인 위)과 삽입 밑줄(아래)이 둘 다 빨강
-    /// 한 줄씩 있고, 이 문서(MS Word 호환 문서)에서 한글이 그리는 비율(삭제선
-    /// +0.29em·삽입 밑줄 −0.26em)로 놓인다. 두 선의 간격이 그 비율의 핀이다.
-    func testTrackChangeMarksKeepTheirOwnGeometry() async throws {
+    /// 한 줄씩 있고, 이 문서(MS 워드 호환 문서, 대상 프로그램 2)에서는 **글꼴 지표**
+    /// 기하다 (#187): 삭제선은 run 글꼴 `ascent`의 0.273배 위, 삽입 밑줄은 줄의 기준
+    /// run(여기서는 같은 글꼴 10pt)의 `descent` + 0.021 cell 아래·두께 0.05 cell.
+    /// 두 선의 간격이 그 기하의 핀이고, 기대값은 결정론 resolver가 이 픽스처의
+    /// 글꼴(함초롬돋움)에 준 실제 글꼴의 지표로 계산한다 — Menlo(win 0.9282/0.2358,
+    /// CJK 비트 있음)면 2.534 + 2.602 = 5.136pt, 한컴 글꼴 모드의 함초롬돋움(1.07/0.23)
+    /// 이면 2.921 + 2.573 = 5.494pt다. 한글 실물(PDF 내보내기, 함초롬돋움)은 글리프
+    /// 7.92pt(쪽 축소)에 삭제선 +2.28pt·삽입 밑줄 −2.04pt = 4.32pt → 10pt 기준 5.45pt로
+    /// 한컴 글꼴 모드 기대값과 0.05pt 안이다. 종전(#176)의 상수 0.29em + 0.26em = 5.5pt는
+    /// 이 실물에 맞춘 값이었고 지금은 글꼴 지표에서 같은 값이 나온다.
+    func testTrackChangeMarksFollowTheMsWordFontMetrics() async throws {
         let raster = try await Self.raster("track-changes", hwpx: false)
         // 변경 추적 글자 자체도 빨강이고 왼쪽 여백엔 세로 변경 막대가 있다 —
         // 가로로 길게 이어진 빨강만 선으로 센다 (글리프 획은 그만큼 못 잇는다).
@@ -293,16 +301,22 @@ final class FixtureDecorationLineRenderTests: XCTestCase {
         expect(groups.count).to(equal(2), description: "삭제선 + 삽입 밑줄 두 줄")
         let strike = groups[0].reduce(0, +) / CGFloat(groups[0].count)
         let insert = groups[1].reduce(0, +) / CGFloat(groups[1].count)
-        // 삭제선은 베이스라인 위, 삽입 밑줄은 아래다. 비율 자체는
-        // `HwpDecorationLineGeometryTests`가 잡고, 여기서는 실물에서의 간격을
-        // 핀한다. 두 비율은 이 픽스처(MS Word 호환 문서)의 값이다 (#176, #187).
         expect(insert).to(beGreaterThan(strike + 1))
-        // 10pt 글자: 삭제선 +0.29em(2.9pt) + 삽입 밑줄 −0.26em(2.6pt) = 5.5pt (#176).
-        // 종전 삽입 밑줄은 0.75pt 사각형의 아래 모서리가 −3.5pt라 중심이 −3.125pt,
-        // 간격 6.0pt였다.
-        let expected = (HwpRenderTuning.Text.trackChangeStrikethroughCenterRatio
-            + HwpRenderTuning.Text.trackChangeInsertUnderlineCenterRatio) * 10
+
+        // 기대값: 픽스처의 글꼴(함초롬돋움 10pt)을 결정론 resolver로 푼 글꼴의 지표.
+        let font = HwpFontResolver.testDeterministic.resolve(
+            faceName: "함초롬돋움", alternatives: [], script: .english, size: 10
+        )
+        let box = HwpMsWordLineBox.metrics(of: font).scaled(by: 10)
+        let expected = HwpDecorationLineGeometry.msWordStrikethrough(
+            runBox: box, thicknessFontSize: 10
+        ).center - HwpDecorationLineGeometry.msWordUnderlineBelow(lineBox: box).center
         expect(insert - strike).to(beCloseTo(expected, within: 0.2))
-        expect(expected).to(beCloseTo(5.5, within: 0.001))
+        // 결정론 resolver는 Menlo다 — 한글 실물(함초롬돋움 5.45pt)과 0.3pt 안이고, 종전
+        // 상수(5.5pt)와도 가깝다. 글꼴이 바뀌면 이 값도 그 지표대로 옮겨진다.
+        expect(expected).to(beCloseTo(5.136, within: 0.01))
+        // 삽입 밑줄 두께 = 0.05 cell = 0.582pt(Menlo) — 4px/pt에서 2~3행. 왼쪽 여백의
+        // 세로 변경 막대가 모든 행에 빨강을 두므로 띠가 아니라 가로로 이어진 행만 센다.
+        expect(CGFloat(groups[1].count) / Self.scale).to(beLessThan(1.0))
     }
 }

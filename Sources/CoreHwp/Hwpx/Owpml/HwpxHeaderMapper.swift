@@ -28,6 +28,8 @@ struct HwpxHeaderMapping {
     var documentProperties = HwpDocumentProperties()
     var idMappings = HwpIdMappings()
     var idTables = HwpxIdTables()
+    /// `hh:compatibleDocument` — 요소가 없으면 nil (#187).
+    var compatibleDocument: HwpCompatibleDocument?
     var unknownRecords: [HwpUnknownRecord] = []
     /// 미지 서브트리 합성의 깊이 한도 — 호출자의 `maxNestingDepth`다.
     var unknownDepthLimit = HwpReadLimits.default.maxNestingDepth
@@ -146,7 +148,8 @@ enum HwpxHeaderMapper {
             hwpxDocumentProperties: mapping.documentProperties,
             idMappings: mapping.idMappings,
             unknownRecords: mapping.unknownRecords,
-            rawPayload: options.preservedPayload(data)
+            rawPayload: options.preservedPayload(data),
+            compatibleDocument: mapping.compatibleDocument
         )
         return (docInfo, mapping.idTables)
     }
@@ -188,6 +191,12 @@ private extension HwpxHeaderMapper {
                     continue
                 }
                 try mapRefList(child, into: &mapping)
+            } else if child.isNamed("compatibleDocument", in: HwpxNamespace.head) {
+                guard applied.insert("compatibleDocument").inserted else {
+                    mapping.demote(child)
+                    continue
+                }
+                mapping.compatibleDocument = mapCompatibleDocument(child, into: &mapping)
             } else {
                 mapping.demote(child)
             }

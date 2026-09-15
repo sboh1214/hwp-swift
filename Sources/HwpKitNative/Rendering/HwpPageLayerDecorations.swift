@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreHwp
 import CoreText
 import Foundation
 import HwpKitCore
@@ -49,15 +50,95 @@ extension HwpPageLayer {
         // 첨자만 예외이고 선마다 다르다 (2026-09-15 실측, #179): 취소선·글자 가운데
         // 밑줄은 첨자로 옮겨진 베이스라인을 따라가고(`scriptBaselineOffset`), 글자
         // 아래·위 밑줄은 첨자에도 제자리다. 위치·두께의 크기 기준은 각 함수 주석에.
-        for run in runs {
+        //
+        // MS 워드 호환 문서(#187)의 밑줄(글자 아래·위·삽입)은 **줄 단위**다 — 줄의 run
+        // 상자들을 축별 최댓값으로 합친 줄 상자가 줄의 모든 밑줄 자리·두께를 정한다
+        // (한글 실측: 밑줄 없는 run·대체 글꼴 run·문단 끝 글자도 후보). 취소선은
+        // run마다 자기 글꼴이라 아래에서 따로 푼다.
+        let msWordReference = msWordLineBox(of: runs)
+        let strikethroughFonts = msWordStrikethroughFonts(of: runs)
+        for (index, run) in runs.enumerated() {
             // 밑줄은 CT 대신 항상 직접 (CT 밑줄은 폰트 지표 위치·두께라 실물과 갈린다)
-            drawUnderlineIfNeeded(run, lineOrigin: underlineOrigin, in: ctx)
-            drawAboveUnderlineIfNeeded(run, lineOrigin: origin, in: ctx)
-            drawStrikethroughIfNeeded(run, lineOrigin: origin, in: ctx)
+            drawUnderlineIfNeeded(
+                run, lineOrigin: underlineOrigin, msWord: msWordReference, in: ctx
+            )
+            drawAboveUnderlineIfNeeded(
+                run, lineOrigin: origin, msWord: msWordReference, in: ctx
+            )
+            drawStrikethroughIfNeeded(
+                run, lineOrigin: origin, msWordFont: strikethroughFonts[index], in: ctx
+            )
             drawEmphasisIfNeeded(run, lineOrigin: origin, in: ctx)
-            drawTrackInsertUnderlineIfNeeded(run, lineOrigin: origin, in: ctx)
+            drawTrackInsertUnderlineIfNeeded(
+                run, lineOrigin: underlineOrigin, msWord: msWordReference, in: ctx
+            )
             drawTabLeaderIfNeeded(run, lineOrigin: origin, in: ctx)
         }
+    }
+
+    /// 이 run이 MS 워드 호환 문서의 것인지 — 조판이 한글 문서가 아닌 문서의 모든 run에
+    /// 싣는 `compatibleDocumentTarget`(표 55)이 `msWord`일 때만 참이다. 한글 2007 호환·
+    /// 훈민정음 호환·record 없음은 한글 문서와 같은 기하다.
+    func isMsWordCompatible(_ attributes: [NSAttributedString.Key: Any]) -> Bool {
+        guard let raw = attributes[HwpAttributedStringKey.compatibleDocumentTarget] as? NSNumber
+        else { return false }
+        return raw.uint32Value == HwpCompatibleDocumentTarget.msWord.rawValue
+    }
+
+    /// MS 워드 호환 문서에서 run마다 취소선의 기준이 되는 글꼴 — 한글 문서 줄이면 전부
+    /// nil. 한글은 취소선을 **글자 모양 run** 단위로 그 run의 첫 글리프 글꼴에 놓는다
+    /// (2026-09-15 실측: 한글 슬롯 함초롬·라틴 슬롯 Apple SD인 run "Ag밑줄Ag한글"의
+    /// 취소선이 전체가 Apple SD 자리 +0.2492em, 슬롯을 바꾼 run은 함초롬 자리 +0.2913em).
+    /// CoreText는 대체 글꼴 경계에서 run을 쪼개므로, 글꼴만 다르고 나머지 속성이 같은
+    /// 잇닿은 run을 한 글자 모양 run으로 묶어 첫 run의 글꼴을 함께 쓴다 — 안 묶으면
+    /// 한 run 안에서 취소선이 글꼴마다 계단이 진다.
+    func msWordStrikethroughFonts(of runs: [CTRun]) -> [CTFont?] {
+        var fonts: [CTFont?] = []
+        var groupAttributes: NSDictionary?
+        var groupFont: CTFont?
+        for run in runs {
+            let attributes = runAttributes(run)
+            guard isMsWordCompatible(attributes) else {
+                fonts.append(nil)
+                groupAttributes = nil
+                continue
+            }
+            let font = runFont(attributes)
+            var withoutFont = attributes
+            withoutFont[kCTFontAttributeName as NSAttributedString.Key] = nil
+            let comparable = withoutFont as NSDictionary
+            if let groupAttributes, groupAttributes.isEqual(comparable) {
+                fonts.append(groupFont ?? font)
+            } else {
+                groupAttributes = comparable
+                groupFont = font
+                fonts.append(font)
+            }
+        }
+        return fonts
+    }
+
+    /// MS 워드 호환 문서에서 이 줄의 줄 상자 (pt, `HwpMsWordLineBox.union`) — 줄의 run
+    /// 전부(장식 없는 run·CoreText 대체 글꼴 run 포함)의 글꼴 상자에, 문단 끝 글자가
+    /// 이 줄에 있으면(조판이 문단 마지막 글자에 실은 `msWordParagraphEndBox`) 그 상자를
+    /// 더해 합친다. 한글 문서 줄이면 nil.
+    func msWordLineBox(of runs: [CTRun]) -> HwpMsWordLineBox? {
+        var boxes: [HwpMsWordLineBox] = []
+        for run in runs {
+            let attributes = runAttributes(run)
+            guard isMsWordCompatible(attributes), let font = runFont(attributes) else { continue }
+            // 표식 run(한 줄 끝·빈 줄 앵커)은 글리프가 없어도 글꼴을 가지므로 후보다 —
+            // 한글도 그 줄의 글자 모양으로 줄 상자를 잡는다.
+            boxes.append(HwpMsWordLineBox.metrics(of: font).scaled(by: CTFontGetSize(font)))
+            if let end = attributes[HwpAttributedStringKey.msWordParagraphEndBox] as? [NSNumber],
+               end.count == 2
+            {
+                boxes.append(HwpMsWordLineBox(
+                    lineHeight: CGFloat(end[0].doubleValue), baseline: CGFloat(end[1].doubleValue)
+                ))
+            }
+        }
+        return HwpMsWordLineBox.union(boxes)
     }
 
     /// 탭 전진 구간의 점선 리더 (legacy 목차 실물: 가운데점 '……' 연속)
@@ -283,32 +364,23 @@ extension HwpPageLayer {
         }
     }
 
-    /// 변경 추적 삽입 밑줄 — 중심을 베이스라인 아래
-    /// `trackChangeInsertUnderlineCenterRatio`, 두께를
-    /// `trackChangeInsertUnderlineThicknessRatio`로 (둘 다 글자 크기 비례, #176).
-    /// 종전에는 0.75pt 사각형의 아래 모서리를 −0.35em에 두어 선 중심이 크기에
-    /// 비례하지 않았다. 두 상수는 `track-changes` 실물(MS Word 호환 문서)의 값이라
-    /// 네이티브 문서의 일반 밑줄과 갈린다 — 상수 doc-comment 참고.
+    /// 변경 추적 삽입 밑줄 — 일반 '글자 아래' 밑줄과 **같은 자리·같은 두께**를 빨강으로
+    /// 그린다 (#187 실측: 한글 문서 13개 글꼴·MS 워드 호환 문서 32개 글꼴 전부 삽입
+    /// 밑줄 = 일반 밑줄). 종전(#176)의 전용 상수 −0.26em·0.064em은 `track-changes`
+    /// 실물(MS 워드 호환 문서)의 함초롬돋움 값이었고, 그 값은 이제 호환 문서의 글꼴
+    /// 지표 기하(`msWord`)가 낸다. 원점도 일반 밑줄과 같은 되돌린 원점을 받는다.
     func drawTrackInsertUnderlineIfNeeded(
         _ run: CTRun,
         lineOrigin: CGPoint,
+        msWord: HwpMsWordLineBox?,
         in ctx: CGContext
     ) {
         let attributes = runAttributes(run)
         guard let color = attributes[HwpAttributedStringKey.trackInsertUnderline]
         else { return }
-        let bounds = runBounds(of: run, lineOrigin: lineOrigin)
-        let size = runFont(attributes).map(CTFontGetSize) ?? 10
-        let thickness = size * HwpRenderTuning.Text.trackChangeInsertUnderlineThicknessRatio
-        setDecorationFillColor(color, in: ctx)
-        ctx.fill(CGRect(
-            x: bounds.minX,
-            y: lineOrigin.y
-                - size * HwpRenderTuning.Text.trackChangeInsertUnderlineCenterRatio
-                - thickness / 2,
-            width: bounds.width,
-            height: thickness
-        ))
+        let line = msWord.map { HwpDecorationLineGeometry.msWordUnderlineBelow(lineBox: $0) }
+            ?? HwpDecorationLineGeometry.underlineBelow(fontSize: preScriptFontSize(attributes))
+        fillLine(run, lineOrigin: lineOrigin, line: line, color: color, in: ctx)
     }
 
     /// 취소선 — 밑줄 종류 '글자 가운데'(표 35 값 2)와 변경 추적 삭제선도 이 선을
@@ -323,35 +395,48 @@ extension HwpPageLayer {
     /// 않는다 — 첨자와 글자 위치를 함께 준 run에서도 선은 첨자 몫만 옮겨진 자리
     /// (위 첨자 + 위치 50에서 6.72pt)에 남는다. 종전에는 이동 없이 원래 베이스라인 위
     /// 0.35 × 축소 크기에 그려 위 첨자 글리프 아래·아래 첨자 글리프 위로 벗어났다.
-    /// 변경 추적 삭제선(`trackChangeStrikethrough`)은 같은 경로라 함께 옮겨지지만
-    /// 첨자 표본은 없다 — 코퍼스의 유일한 변경 추적 실물이 MS Word 호환 문서(#187)다.
+    /// 변경 추적 삭제선은 같은 경로라 함께 옮겨지지만 첨자 표본은 없다.
     ///
     /// 두께는 **첨자 축소 전 크기**(`preScriptFontSize`)의 0.04배다 — 한글은 첨자
     /// run의 선도 본문과 같은 폭으로 그린다 (같은 실측: 10pt 첨자 선 0.36pt = 본문과
     /// 같음, 축소 크기 6.36pt 기준이면 0.24pt).
-    func drawStrikethroughIfNeeded(_ run: CTRun, lineOrigin: CGPoint, in ctx: CGContext) {
+    ///
+    /// `msWordFont`는 MS 워드 호환 문서에서 이 run의 취소선 기준 글꼴
+    /// (`msWordStrikethroughFonts`) — 한글 문서면 nil이고 글자 크기 비례로 그린다.
+    func drawStrikethroughIfNeeded(
+        _ run: CTRun,
+        lineOrigin: CGPoint,
+        msWordFont: CTFont?,
+        in ctx: CGContext
+    ) {
         let attributes = runAttributes(run)
         guard attributes[HwpAttributedStringKey.strikethroughStyle] != nil else { return }
         let color = attributes[HwpAttributedStringKey.strikethroughColor]
             ?? attributes[kCTForegroundColorAttributeName as NSAttributedString.Key]
-        let bounds = runBounds(of: run, lineOrigin: lineOrigin)
-        let size = runFont(attributes).map(CTFontGetSize) ?? 10
-        // 한글은 글꼴 지표가 아니라 글자 크기에 비례해 그린다 (#136 실측) —
+        let font = runFont(attributes)
+        let size = font.map(CTFontGetSize) ?? 10
+        // 한글 문서에서는 글꼴 지표가 아니라 글자 크기에 비례해 그린다 (#136 실측) —
         // 폰트의 x-height 절반은 라틴 취소선 위치라 한글 글리프에서 낮게 보였다.
-        let ratio = attributes[HwpAttributedStringKey.trackChangeStrikethrough] != nil
-            ? HwpRenderTuning.Text.trackChangeStrikethroughCenterRatio
-            : HwpRenderTuning.Text.strikethroughCenterRatio
-        setDecorationFillColor(color, in: ctx)
-        // 두께도 글자 크기 비례 — 밑줄과 같은 0.04em (#176 실측: 5~100pt에서
-        // 밑줄·취소선이 같은 폭).
-        let thickness = preScriptFontSize(attributes)
-            * HwpRenderTuning.Text.decorationLineThicknessRatio
-        ctx.fill(CGRect(
-            x: bounds.minX,
-            y: lineOrigin.y + scriptBaselineShift(attributes) + size * ratio - thickness / 2,
-            width: bounds.width,
-            height: thickness
-        ))
+        // MS 워드 호환 문서(#187)에서는 run 자신의 글꼴 지표(`ascent` × 0.273)다 —
+        // 밑줄과 달리 줄 단위가 아니라 run 단위이고, 두께는 두 갈래 모두 글자 크기의
+        // 0.04배다 (#176 실측: 5~100pt에서 밑줄·취소선이 같은 폭). 변경 추적 삭제선도
+        // 같은 경로다 (`track-changes` 실물의 +0.29em = 함초롬돋움의 호환 문서 값).
+        let thicknessFontSize = preScriptFontSize(attributes)
+        let line: HwpDecorationLineGeometry.Line = if let msWordFont {
+            HwpDecorationLineGeometry.msWordStrikethrough(
+                runBox: HwpMsWordLineBox.metrics(of: msWordFont).scaled(by: size),
+                thicknessFontSize: thicknessFontSize
+            )
+        } else {
+            HwpDecorationLineGeometry.strikethrough(
+                fontSize: size, thicknessFontSize: thicknessFontSize
+            )
+        }
+        fillLine(
+            run,
+            lineOrigin: CGPoint(x: lineOrigin.x, y: lineOrigin.y + scriptBaselineShift(attributes)),
+            line: line, color: color, in: ctx
+        )
     }
 
     /// CTRunDraw 경로에서 밑줄 '글자 아래'를 직접 그린다 (CTLineDraw만 밑줄을 지원).
@@ -368,17 +453,20 @@ extension HwpPageLayer {
     /// 남는다; 글자 위치 50을 함께 줘도 같은 자리). 종전에는 줄어든 6.7pt 기준이라
     /// 베이스라인 아래 1.14pt(올바른 1.70pt보다 0.56pt 위)·두께 0.27pt로 첨자 글리프에
     /// 붙었다.
-    func drawUnderlineIfNeeded(_ run: CTRun, lineOrigin: CGPoint, in ctx: CGContext) {
+    ///
+    /// MS 워드 호환 문서(#187)에서는 `msWord`(줄 상자)로 줄 전체가 한 자리·한 두께다
+    /// — `HwpDecorationLineGeometry` 참조.
+    func drawUnderlineIfNeeded(
+        _ run: CTRun,
+        lineOrigin: CGPoint,
+        msWord: HwpMsWordLineBox?,
+        in ctx: CGContext
+    ) {
         let attributes = runAttributes(run)
         guard attributes[HwpAttributedStringKey.underlineStyle] != nil else { return }
-        let size = preScriptFontSize(attributes)
-        fillUnderline(
-            run,
-            lineOrigin: lineOrigin,
-            center: -size * HwpRenderTuning.Text.underlineBelowCenterRatio,
-            thickness: size * HwpRenderTuning.Text.decorationLineThicknessRatio,
-            in: ctx
-        )
+        let line = msWord.map { HwpDecorationLineGeometry.msWordUnderlineBelow(lineBox: $0) }
+            ?? HwpDecorationLineGeometry.underlineBelow(fontSize: preScriptFontSize(attributes))
+        fillUnderline(run, lineOrigin: lineOrigin, line: line, in: ctx)
     }
 
     /// 밑줄 '글자 위'(표 33 값 3) — 글자 크기의 0.87배 위 (#136 실측).
@@ -394,17 +482,21 @@ extension HwpPageLayer {
     /// 같다). 아래쪽 밑줄도 같은 규칙이고, 같은 줄의 취소선만 첨자로 옮겨진
     /// 베이스라인 + 줄어든 크기를 따르므로 (`drawStrikethroughIfNeeded`) 기준이
     /// 다르다.
-    func drawAboveUnderlineIfNeeded(_ run: CTRun, lineOrigin: CGPoint, in ctx: CGContext) {
+    ///
+    /// MS 워드 호환 문서(#187)에서는 아래쪽 밑줄과 같은 줄 상자의 `ascent` 위에 같은
+    /// 두께로 놓인다 (한글 실측: 함초롬 무장식 run 뒤 Apple SD 위 밑줄 run이 함초롬
+    /// 자리 +1.0991em).
+    func drawAboveUnderlineIfNeeded(
+        _ run: CTRun,
+        lineOrigin: CGPoint,
+        msWord: HwpMsWordLineBox?,
+        in ctx: CGContext
+    ) {
         let attributes = runAttributes(run)
         guard attributes[HwpAttributedStringKey.underlineAboveStyle] != nil else { return }
-        let size = preScriptFontSize(attributes)
-        fillUnderline(
-            run,
-            lineOrigin: lineOrigin,
-            center: size * HwpRenderTuning.Text.underlineAboveCenterRatio,
-            thickness: size * HwpRenderTuning.Text.decorationLineThicknessRatio,
-            in: ctx
-        )
+        let line = msWord.map { HwpDecorationLineGeometry.msWordUnderlineAbove(lineBox: $0) }
+            ?? HwpDecorationLineGeometry.underlineAbove(fontSize: preScriptFontSize(attributes))
+        fillUnderline(run, lineOrigin: lineOrigin, line: line, in: ctx)
     }
 
     /// 첨자 축소 전 글자 크기 (pt). 조판이 모든 run에 싣는 `spaceTargetSize`가
@@ -424,25 +516,35 @@ extension HwpPageLayer {
             .map { CGFloat($0.doubleValue) } ?? 0
     }
 
-    /// 밑줄 한 줄 — `center`는 `lineOrigin` 기준 세로 위치 (양수 = 위),
-    /// `thickness`는 선 두께 (pt). 사각형은 중심을 기준으로 위아래 반씩 나눈다.
+    /// 밑줄 한 줄 — 색은 글자 모양의 밑줄 색, 없으면 글자 색.
     private func fillUnderline(
         _ run: CTRun,
         lineOrigin: CGPoint,
-        center: CGFloat,
-        thickness: CGFloat,
+        line: HwpDecorationLineGeometry.Line,
         in ctx: CGContext
     ) {
         let attributes = runAttributes(run)
-        let bounds = runBounds(of: run, lineOrigin: lineOrigin)
         let color = attributes[HwpAttributedStringKey.underlineColor]
             ?? attributes[kCTForegroundColorAttributeName as NSAttributedString.Key]
+        fillLine(run, lineOrigin: lineOrigin, line: line, color: color, in: ctx)
+    }
+
+    /// 장식선 한 줄 — `line.center`는 `lineOrigin` 기준 세로 위치 (양수 = 위),
+    /// `line.thickness`는 두께 (pt). 사각형은 중심을 기준으로 위아래 반씩 나눈다.
+    private func fillLine(
+        _ run: CTRun,
+        lineOrigin: CGPoint,
+        line: HwpDecorationLineGeometry.Line,
+        color: Any?,
+        in ctx: CGContext
+    ) {
+        let bounds = runBounds(of: run, lineOrigin: lineOrigin)
         setDecorationFillColor(color, in: ctx)
         ctx.fill(CGRect(
             x: bounds.minX,
-            y: lineOrigin.y + center - thickness / 2,
+            y: lineOrigin.y + line.center - line.thickness / 2,
             width: bounds.width,
-            height: thickness
+            height: line.thickness
         ))
     }
 

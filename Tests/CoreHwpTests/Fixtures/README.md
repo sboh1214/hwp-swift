@@ -193,6 +193,18 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   베이스라인에 축소 전 크기 기준으로 그리며 글자 위치 몫은 어느 선도 따라가지 않는다.
   같은 세션의 PDF 내보내기 좌표는 `HwpKitTests/FixtureDecorationLineRenderTests+Script`가
   핀한다. HWPX 쌍은 `HwpxFixtures/script-decorations`.
+- `compat-decorations`: **MS 워드 호환 문서**(호환 문서 대상 프로그램 2)에 한글 슬롯 Apple SD
+  산돌고딕 Neo·라틴 슬롯 Menlo로 글자 아래 밑줄+취소선(10·20pt, 한글/라틴 run)·글자 위
+  밑줄·글자 가운데 밑줄·글꼴과 크기가 섞인 줄 3종을 실은 합성 HWPX를 Hancom Office HWP for
+  macOS 12.30.0 build 6446으로 2026-09-15에 열어 `.hwp`로 저장. 한글이 호환 문서에서 밑줄·
+  취소선을 글꼴 지표로 놓는 규칙(#187)의 실물 근거이고, 같은 세션의 PDF 내보내기 좌표가
+  `FixtureDecorationLineRenderTests+Compat`의 오라클이다. 두 글꼴이 결정론 resolver의
+  글꼴과 같아 어느 기기에서든 같은 값으로 핀한다. HWPX 쌍은 `HwpxFixtures/compat-decorations`.
+- `track-changes-native`: **한글 문서**(대상 프로그램 0)에 변경 추적 삽입·삭제 표식과
+  일반 밑줄·취소선을 같은 줄에 실은 합성 HWPX(`track-changes`의 HWPX 변환본 기반)를 같은
+  앱으로 2026-09-15에 열어 `.hwp`로 저장. 코퍼스의 유일한 변경 추적 실물이 MS 워드 호환
+  문서였던 자리의 대조군이다 — 한글 문서에서는 변경 추적 표시선이 일반 선과 같은 자리·
+  두께다 (#187). 표식·줄 캐시는 ViewText에 있다.
 - `track-changes`: WordprocessingML tracked changes DOCX를 Hancom Office HWP for macOS
   12.30.0 build 6382에서 열고 HWP로 저장. FileHeader, 본문/preview,
   DocumentProperties, DocInfo id mappings를 manifest로 검증.

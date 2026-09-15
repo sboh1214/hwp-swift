@@ -59,6 +59,7 @@ for section in hwp.displaySectionArray {
 - ``HwpDocumentProperties``
 - ``HwpIdMappings``
 - ``HwpCompatibleDocument``
+- ``HwpCompatibleDocumentTarget``
 - ``HwpLayoutCompatibility``
 
 ### DocInfo — 글꼴·모양·스타일 정의

@@ -162,19 +162,15 @@ extension HwpDecorationLineGeometryTests {
     }
 
     func strikethroughAttributes(
-        size: CGFloat, color: CGColor, trackChange: Bool = false
+        size: CGFloat, color: CGColor
     ) -> [NSAttributedString.Key: Any] {
-        var attributes: [NSAttributedString.Key: Any] = [
+        [
             kCTFontAttributeName as NSAttributedString.Key: CTFontCreateWithName(
                 "Menlo" as CFString, size, nil
             ),
             HwpAttributedStringKey.strikethroughStyle: NSNumber(value: 1),
             HwpAttributedStringKey.strikethroughColor: color,
         ]
-        if trackChange {
-            attributes[HwpAttributedStringKey.trackChangeStrikethrough] = NSNumber(value: 1)
-        }
-        return attributes
     }
 
     func belowUnderlineAttributes(

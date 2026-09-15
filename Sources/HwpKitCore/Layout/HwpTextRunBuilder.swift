@@ -520,6 +520,13 @@ extension HwpTextRunBuilder {
                 value: Double(spacing * size / 100)
             ),
         ]
+        if let target = index.compatibleDocumentTarget, target != .hwp201X {
+            // 호환 문서의 대상 프로그램 (표 55) — MS 워드 호환 문서의 장식선 기하를
+            // 렌더러가 가르는 열쇠 (#187). 한글 문서는 키 없음이 곧 기본값이다.
+            attributes[HwpAttributedStringKey.compatibleDocumentTarget] = NSNumber(
+                value: target.rawValue
+            )
+        }
         if location != 0 {
             // 글자 위치 (표 33): **줄 배치는 그대로 두고 글리프만** 세로로 옮긴다.
             // 그래서 조판 문자열에는 `kCTBaselineOffset`을 싣지 않고 이 커스텀 키만

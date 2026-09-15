@@ -188,7 +188,7 @@ final class HwpxHwpEquivalenceTests: XCTestCase {
             )
             comparedCount += 1
         }
-        expect(comparedCount) >= 20
+        expect(comparedCount) >= 21
     }
 }
 
@@ -375,6 +375,11 @@ struct DocumentEquivalenceProjection {
     /// 단 정의의 구분선 종류·굵기·색 (#177) — `hp:colLine@type`도 테두리 축이다.
     /// 코퍼스에 `hp:colLine`이 `line-shapes` 쌍뿐이라 그 밖의 쌍은 0 등식이다.
     let columnDividers: [ColumnDivider]
+    /// 호환 문서 대상 프로그램 (표 55, #187) — HWPX `hh:compatibleDocument@targetProgram`이
+    /// 옮겨져야 HWP 쌍과 같은 값이 선다. 강등 상태면 HWPX 쪽이 record 없음(nil)이라
+    /// 등식이 깨진다. 코퍼스는 `compat-decorations` 쌍만 2(MS 워드)이고 나머지는 0이다 —
+    /// 직접 핀은 `HwpxHwpEquivalenceCompatTargetTests`.
+    let compatibleDocumentTarget: UInt32?
 
     init(of file: HwpFile) {
         sectionCount = file.sectionArray.count
@@ -456,6 +461,7 @@ struct DocumentEquivalenceProjection {
         sectionSettings = Self.sectionSettings(of: file)
         cellBorders = Self.cellBorders(of: file)
         columnDividers = Self.columnDividers(of: file)
+        compatibleDocumentTarget = file.docInfo.compatibleDocument?.targetDocument
     }
 
     /// 문단 머리를 문서 순서(표 셀 재귀 포함)로 모은다 — noori의 글머리표
@@ -606,6 +612,10 @@ struct DocumentEquivalenceProjection {
         )
         expect(columnDividers).to(
             equal(other.columnDividers), description: "\(fixtureId) columnDividers"
+        )
+        expect(compatibleDocumentTarget).to(
+            equal(other.compatibleDocumentTarget),
+            description: "\(fixtureId) compatibleDocumentTarget"
         )
     }
 }

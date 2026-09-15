@@ -123,7 +123,8 @@ import XCTest
             // 독립이지만 CT 버전까지 잠그지는 않는다). 공허한 통과 방지가 목적.
             expect(stats.multiLine).to(beGreaterThanOrEqualTo(Self.minimumFixtureMultiLine))
             // 3-way 축이 조용히 비지 않았다 — 공유 코어 대조를 건너뛴 문단은
-            // slight-overflow 한 줄뿐이어야 한다 (실측 1 / 260 → 2026-09-12 6 / 446).
+            // slight-overflow 한 줄뿐이어야 한다 (실측 1 / 260 → 2026-09-12 6 / 446 →
+            // 2026-09-15 7 / 522).
             expect(stats.measured - stats.sharedCoreCompared)
                 .to(beLessThanOrEqualTo(Self.maximumFixtureSharedCoreSkips))
         }
@@ -164,12 +165,16 @@ import XCTest
         // 한 줄, 실측 6 = noori 1 + numbering-sequence 3 + line-shapes 2), 2026-09-15
         // `script-decorations`(#179, 구역 1 + 첨자 × 장식선 11문단) 추가로 문단 12·대조 24
         // 증가 (컨테이너는 그대로다), 같은 날 `section-page-number-skip`(#185, 구역 7·8문단)
-        // 추가로 문단 8·대조 16 증가 (컨테이너는 그대로다).
-        private static let expectedFixtureVisited = 250
-        private static let expectedFixtureMeasured = 486
+        // 추가로 문단 8·대조 16 증가 (컨테이너는 그대로다), 같은 날 `compat-decorations`
+        // (#187, 구역 1 + MS 워드 호환 장식선 11문단)·`track-changes-native`(#187, 구역 1 +
+        // 변경 추적 5문단) 추가로 문단 18·대조 36 증가 (컨테이너는 그대로다) — 공유 코어
+        // 대조 건너뜀도 1 늘었다 (`compat-decorations`의 "Agpy under" 20pt가 120pt에서
+        // slight-overflow 한 줄, 실측 7).
+        private static let expectedFixtureVisited = 268
+        private static let expectedFixtureMeasured = 522
         private static let expectedFixtureContainers = 69
         private static let minimumFixtureMultiLine = 60
-        private static let maximumFixtureSharedCoreSkips = 6
+        private static let maximumFixtureSharedCoreSkips = 7
         private static let expectedLegacyVisited = 14659
 
         // MARK: - 본체

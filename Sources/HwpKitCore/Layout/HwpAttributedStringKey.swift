@@ -16,12 +16,25 @@ public enum HwpAttributedStringKey {
     /// 취소선 여부 — NSStrikethrough 키를 쓰면 CTLineDraw가 자체로 한 번 더
     /// 그려 이중선이 된다 (CharShape 실물 대조 2026-07-10)
     public static let strikethroughStyle = NSAttributedString.Key("hwp.strikethroughStyle")
-    /// 변경 추적 삭제선 표식 (NSNumber != 0) — 같은 취소선 경로로 그리되 높이를
-    /// `HwpRenderTuning.Text.trackChangeStrikethroughCenterRatio`(0.29em)로 가른다.
-    /// 그 값은 `track-changes` 실물(MS Word 호환 문서)의 것이고 네이티브 문서에서는
-    /// 일반 취소선과 같은 자리다 (#136 → #176 정정, 호환 모드 분기는 #187)
-    public static let trackChangeStrikethrough =
-        NSAttributedString.Key("hwp.trackChangeStrikethrough")
+    /// 호환 문서의 대상 프로그램 (표 55, NSNumber = `HwpCompatibleDocumentTarget.rawValue`,
+    /// #187) — 조판(`HwpTextRunBuilder.attributes(for:script:)`)이 한글 문서가 아닌
+    /// 문서의 **모든 run**에 싣는다 (한글 문서·record 없음·미지 raw 값은 키 없음).
+    /// 렌더러(`HwpPageLayerDecorations`)는 `msWord`에서만 밑줄·취소선·변경 추적
+    /// 표시선을 글꼴 지표 기하(`HwpDecorationLineGeometry`)로 그리고, 나머지 값은
+    /// 한글 문서와 같이 글자 크기 비례로 그린다. CoreText가 대체 글꼴로 쪼갠 run에도
+    /// 그대로 남으므로 대체 글꼴 run의 선도 같은 갈래를 탄다.
+    public static let compatibleDocumentTarget =
+        NSAttributedString.Key("hwp.compatibleDocumentTarget")
+    /// MS 워드 호환 문서의 **문단 끝 글자** 줄 상자 (`[NSNumber]` = [줄 상자 높이 pt,
+    /// 상자 상단 → 베이스라인 pt], #187) — 조판(`HwpTextRunBuilder.finishBuild`)이 문단의
+    /// 마지막 글자에 싣는다. 한글은 문단 끝 글자(CR)를 마지막 글자 모양의 **라틴 슬롯**
+    /// 글꼴로 그 줄에 세우므로, 조판 문자열에서 접힌 CR의 상자를 렌더러가 마지막 줄의
+    /// 줄 상자(`HwpMsWordLineBox.union`)에 되돌려 넣는다 (한글 실측: Apple SD 20pt
+    /// 한글 문단의 마지막 줄만 Menlo 라틴 슬롯의 베이스라인 2207을 받아 밑줄이
+    /// −0.2994em으로 올라간다; 앞 줄들은 −0.3234em). 밑줄만 이 상자를 보고 취소선은
+    /// run 단위라 보지 않는다.
+    public static let msWordParagraphEndBox =
+        NSAttributedString.Key("hwp.msWordParagraphEndBox")
     /// 양각/음각 (NSNumber: 1 양각, 2 음각) — 밝은/어두운 오프셋 사본 3-pass
     public static let reliefStyle = NSAttributedString.Key("hwp.reliefStyle")
     /// 양각/음각 run의 실제 글자색 (CGColor) — 글리프 자체는
@@ -75,9 +88,10 @@ public enum HwpAttributedStringKey {
     public static let tabLeaderStops = NSAttributedString.Key("hwp.tabLeaderStops")
     /// 연속 그림자 — 본체에서 오프셋까지 이어지는 두꺼운 그림자
     public static let shadowContinuous = NSAttributedString.Key("hwp.shadowContinuous")
-    /// 변경 추적 삽입 밑줄 (CGColor) — 베이스라인 아래
-    /// `trackChangeInsertUnderlineCenterRatio`에 `trackChangeInsertUnderlineThicknessRatio`
-    /// 두께로 그린다 (`track-changes` 실물, #176)
+    /// 변경 추적 삽입 밑줄 (CGColor) — 일반 '글자 아래' 밑줄과 같은 자리·같은 두께로
+    /// 이 색으로 그린다 (#187 실측: 한글 문서 13개 글꼴·MS 워드 호환 문서 32개 글꼴
+    /// 전부 삽입 밑줄 = 일반 밑줄). 종전(#176)의 전용 상수 −0.26em·0.064em은
+    /// `track-changes` 실물(MS 워드 호환 문서)의 함초롬돋움 값이었다.
     public static let trackInsertUnderline = NSAttributedString.Key("hwp.trackInsertUnderline")
     /// 메모 앵커 둥근 테두리 색 (연녹 채움 위 괄호형 외곽선)
     public static let memoAnchorStroke = NSAttributedString.Key("hwp.memoAnchorStroke")

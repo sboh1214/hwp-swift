@@ -15,17 +15,13 @@ extension HwpTextRunBuilder {
         let red = CGColor.hwpTrackChange
         attributes[kCTForegroundColorAttributeName as NSAttributedString.Key] = red
         if mark == 17 {
+            // 삭제선은 일반 취소선과 같은 자리·두께다 (#187 실측: 한글 문서 +0.35em,
+            // MS 워드 호환 문서는 글꼴 지표 — 둘 다 일반 취소선 경로가 가른다).
             attributes[HwpAttributedStringKey.strikethroughStyle] = NSNumber(value: 1)
             attributes[HwpAttributedStringKey.strikethroughColor] = red
-            // 렌더러가 표식으로 갈라 `trackChangeStrikethroughCenterRatio`(0.29em)에
-            // 그린다 — 코퍼스의 변경 추적 실물(`track-changes`, MS Word 호환 문서)의
-            // 값이고, 네이티브 문서에서 한글은 일반 취소선과 같은 자리(0.35em)에
-            // 그린다 (#176 실측, 호환 모드 분기는 #187).
-            attributes[HwpAttributedStringKey.trackChangeStrikethrough] = NSNumber(value: 1)
         } else {
-            // 렌더러가 `trackChangeInsertUnderline*` 상수로 직접 그린다 — 삭제선과
-            // 같은 사정으로 호환 문서 실물의 값이며 네이티브 문서의 일반 밑줄과
-            // 다르다 (#176, #187).
+            // 삽입 밑줄도 일반 '글자 아래' 밑줄과 같은 자리·두께다 — 색만 이 키로
+            // 넘긴다 (글자 모양의 밑줄 색과 별개라 밑줄 키에 실을 수 없다).
             attributes[HwpAttributedStringKey.trackInsertUnderline] = red
         }
     }
@@ -248,7 +244,35 @@ extension HwpTextRunBuilder {
             return emptyParagraphAnchor(for: paragraph)
         }
         attachParagraphStyle(to: output, paragraph: paragraph)
+        if whole {
+            attachMsWordParagraphEndBox(to: output, paragraph: paragraph)
+        }
         return output
+    }
+
+    /// MS 워드 호환 문서에서 문단 끝 글자(CR)의 줄 상자를 마지막 글자에 싣는다
+    /// (`HwpAttributedStringKey.msWordParagraphEndBox`, #187). CR은 조판 문자열에서
+    /// 접히지만(`controlText`) 한글은 그 글자를 마지막 글자 모양의 라틴 슬롯 글꼴로
+    /// 줄 상자에 넣으므로, 렌더러가 마지막 줄의 밑줄 자리를 잡을 때 되돌려 넣는다.
+    /// 상한으로 잘린 결과(`whole == false`)는 문단 끝이 아니라 싣지 않는다.
+    func attachMsWordParagraphEndBox(
+        to output: NSMutableAttributedString, paragraph: CoreHwp.HwpParagraph
+    ) {
+        guard index.compatibleDocumentTarget == .msWord, output.length > 0,
+              let shapeId = paragraph.paraCharShape.shapeId.last
+        else { return }
+        let resolved = resolvedShape(id: shapeId, paragraph: paragraph)
+        let attributes = attributes(for: resolved.shape, script: .english)
+        guard let value = attributes[kCTFontAttributeName as NSAttributedString.Key],
+              CFGetTypeID(value as CFTypeRef) == CTFontGetTypeID()
+        else { return }
+        let font = value as! CTFont // swiftlint:disable:this force_cast
+        let box = HwpMsWordLineBox.metrics(of: font).scaled(by: CTFontGetSize(font))
+        output.addAttribute(
+            HwpAttributedStringKey.msWordParagraphEndBox,
+            value: [NSNumber(value: Double(box.lineHeight)), NSNumber(value: Double(box.baseline))],
+            range: NSRange(location: output.length - 1, length: 1)
+        )
     }
 
     /// 조판 문자열이 빈 문단 앵커 **하나뿐**인지 — 빈 줄 앵커(`가\n `)는 언제나

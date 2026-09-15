@@ -15,11 +15,13 @@ final class HwpRenderTuningTests: XCTestCase {
         expect(HwpRenderTuning.Text.shadowOffsetScale) == 1.5
         expect(HwpRenderTuning.Text.strikethroughCenterRatio) == 0.35
         expect(HwpRenderTuning.Text.underlineAboveCenterRatio) == 0.87
-        expect(HwpRenderTuning.Text.trackChangeStrikethroughCenterRatio) == 0.29
         expect(HwpRenderTuning.Text.underlineBelowCenterRatio) == 0.17
         expect(HwpRenderTuning.Text.decorationLineThicknessRatio) == 0.04
-        expect(HwpRenderTuning.Text.trackChangeInsertUnderlineCenterRatio) == 0.26
-        expect(HwpRenderTuning.Text.trackChangeInsertUnderlineThicknessRatio) == 0.064
+        expect(HwpRenderTuning.Text.msWordLineHeightCellRatio) == 1.3
+        expect(HwpRenderTuning.Text.msWordBaselineMarginCellRatio) == 0.15
+        expect(HwpRenderTuning.Text.msWordUnderlineThicknessCellRatio) == 0.05
+        expect(HwpRenderTuning.Text.msWordUnderlineOffsetCellRatio) == 0.021
+        expect(HwpRenderTuning.Text.msWordStrikethroughAscentRatio) == 0.273
     }
 
     func testNumberingTuningValues() {

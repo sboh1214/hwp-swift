@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Breaking Changes
+
+- `HwpRenderTuning.Text`의 변경 추적 표시선 상수 `trackChangeStrikethroughCenterRatio`·
+  `trackChangeInsertUnderlineCenterRatio`·`trackChangeInsertUnderlineThicknessRatio`와
+  `HwpAttributedStringKey.trackChangeStrikethrough`를 없앴습니다 (#187). 세 값은 변경
+  추적 고유의 기하가 아니라 MS 워드 호환 문서인 `track-changes` 픽스처의 함초롬돋움 글꼴
+  지표였고, 이제 문서의 호환 모드와 글꼴 지표에서 같은 값이 계산됩니다 — 아래 Fixed 항목.
+  대신 MS 워드 호환 문서의 상수 `msWordLineHeightCellRatio`(1.3)·
+  `msWordBaselineMarginCellRatio`(0.15)·`msWordUnderlineThicknessCellRatio`(0.05)·
+  `msWordUnderlineOffsetCellRatio`(0.021)·`msWordStrikethroughAscentRatio`(0.273)가
+  생겼습니다.
+
 ### Added
 
 - **구역 시작 종류(홀수·짝수)에 따라 새 구역 첫 쪽의 쪽 번호를 건너뜁니다** (#185).
@@ -21,6 +33,33 @@
 
 ### Fixed
 
+- **MS 워드 호환 문서의 밑줄·취소선·변경 추적 표시선이 한컴오피스 한글과 다른 자리·두께로
+  그려지고, 한글 문서의 변경 추적 표시선이 일반 밑줄·취소선보다 낮고 굵게 그려지던 문제를
+  바로잡았습니다** (#187). 종전 렌더러는 문서의 호환 모드를 보지 않고 일반 선에는 한글
+  문서의 글자 크기 비례값(밑줄 −0.17em·취소선 +0.35em·두께 0.04em)을, 변경 추적 표시선에는
+  MS 워드 호환 문서 실물(함초롬돋움)에 맞춘 고정 비율(−0.26em·+0.29em·0.064em)을 썼습니다.
+  한컴오피스 한글 12.30이 내보낸 PDF(글꼴 32종 + OS/2 비트를 바꾼 합성 글꼴 7종 × 10·40·
+  80pt, 글꼴·크기가 섞인 줄 12조합)를 재면 한글은 **호환 문서 대상 프로그램**(HWP
+  `HWPTAG_COMPATIBLE_DOCUMENT`, HWPX `hh:compatibleDocument@targetProgram`)이 MS 워드일
+  때만 글꼴 지표를 쓰고, 변경 추적 표시선은 두 문서 갈래 모두 같은 줄의 일반 밑줄·취소선과
+  같은 자리·같은 두께입니다(한글 문서 13개 글꼴, 호환 문서 32개 글꼴 전부). MS 워드 호환
+  문서에서는 글꼴의 OS/2 `usWinAscent`·`usWinDescent`로 줄 상자를 잡되 OS/2
+  `ulUnicodeRange2`에 CJK 블록 비트가 있는 글꼴은 1.3배 상자(베이스라인 winAscent + 0.15
+  상자), 없는 글꼴은 winAscent + winDescent + lineGap 상자이고, 장식선은 그 상자를 1.3으로
+  나눈 기준 상자에서 아래 밑줄 −(descent + 0.021 cell)·위 밑줄 ascent + 0.021 cell·두께
+  0.05 cell, 취소선 0.273 × ascent(두께는 0.04em)입니다. 밑줄은 **줄 단위**(줄의 모든 run과
+  문단 끝 글자의 상자를 축별 최댓값으로 합친 줄 상자 — 밑줄 없는 큰 글자 run이 같은 줄에
+  있으면 작은 밑줄 run의 선도 그 자리로 내려갑니다), 취소선은 **run 단위**입니다. HWPX
+  매퍼가 `hh:compatibleDocument@targetProgram`을 `HwpCompatibleDocumentTarget`
+  (`HwpCompatibleDocument.target`, `HwpIndex.compatibleDocumentTarget`)으로 옮겨 같은
+  문서가 두 형식에서 같게 그려지고, 조판이 그 값을 `HwpAttributedStringKey.compatibleDocumentTarget`
+  으로 모든 run에 싣습니다. 글꼴 줄 상자는 `HwpMsWordLineBox`, 산식은
+  `HwpDecorationLineGeometry`가 공개합니다. 한글.app이 저장한 `compat-decorations`
+  쌍(MS 워드 호환, Apple SD 산돌고딕 Neo + Menlo)과 `track-changes-native`(한글 문서의 변경
+  추적)를 픽스처로 추가해 한글 PDF의 선 간격·두께와 두 형식의 동일성을 픽셀로 잠갔습니다.
+  한글 2007 호환 문서(대상 프로그램 1)는 가는 고정 두께의 또 다른 기하를 쓰지만 표본이
+  한 크기뿐이라 이 수정에서는 한글 문서와 같이 그리고, 호환 문서의 줄 상자·베이스라인
+  자체는 #194에서 다룹니다.
 - **줄 간격이 한컴오피스 한글보다 넓거나 좁게 표시되던 문제를 바로잡았습니다** (#180, #192,
   #198, #202). 줄 캐시가 없거나 유효하지 않아 다시 조판하는 문단(글상자·HWPX 안전밸브·합성
   문서)에서 종전에는 CoreText의 글꼴 지표로 줄 상자를 잡고 문단 전체의 최대 글자 크기로
