@@ -3332,7 +3332,7 @@ private extension HwpPaginator {
         // 여백 폴백은 **빈 단의 용량**으로 판정한다 — 이 쪽의 각주 예약(`effectiveContentHeight`)
         // 으로 재면 앞 문단의 각주 때문에 다음 쪽에 정상적으로 들어갈 여백까지 잃는다 (PR 리뷰).
         var margins = fittingTableMargins(
-            margins, rows: frame.rows, capacity: currentColumnFrame.height
+            margins, rows: frame.rows[...], capacity: currentColumnFrame.height
         )
 
         // 셀 각주 수집용 시작 행 인덱스를 표당 한 번만 만든다 (세그먼트마다
@@ -3393,7 +3393,7 @@ private extension HwpPaginator {
                 // 앞 문단 각주만큼 덜 채우거나, 여백과 만나 들어갈 행을 자른다). 이월한 쪽의
                 // 예약이 여백까지 못 담으면 남은 조각은 여백 없이 흘린다 (PR 리뷰).
                 margins = fittingTableMargins(
-                    margins, rows: Array(rows[cursor...]),
+                    margins, rows: rows[cursor...],
                     capacity: effectiveContentHeight - (isFirstSegment ? 0 : repeatedHeight)
                 )
                 remaining = effectiveContentHeight - contentHeightUsed
@@ -3491,10 +3491,14 @@ private extension HwpPaginator {
     /// 본문 자리를 안 남기면 반복을 끄는 것(#13)과 같은 폴백이다. 그대로 두면 가용 높이가
     /// 음수가 돼 splitter가 0 높이 조각을 상한까지 낸다 (PR 리뷰: 본문 200.8pt·행 30pt·여백
     /// 110 + 110pt → 4,098쪽). 이런 여백은 한글 실측 표본이 없다.
+    ///
+    /// `rows`는 슬라이스로 받는다 — 첫 행 높이만 읽으므로 이월할 때마다 남은 행을 배열로
+    /// 복사하면 큰 표의 분할 비용이 행 수 × 조각 수가 된다 (PR 리뷰: 32,768행·4,096회 전진
+    /// Debug 실측 복사 1.50s vs 슬라이스 0.00145s).
     private func fittingTableMargins(
-        _ margins: TableFlowMargins, rows: [HwpTableRowFrame], capacity: CGFloat
+        _ margins: TableFlowMargins, rows: ArraySlice<HwpTableRowFrame>, capacity: CGFloat
     ) -> TableFlowMargins {
-        margins.total + HwpTableSplitter.minimumRowHeight(rows[...]) <= capacity ? margins : .none
+        margins.total + HwpTableSplitter.minimumRowHeight(rows) <= capacity ? margins : .none
     }
 
     /// 표 조각 아래 바깥 여백을 흐름 커서로 소비한다 (#190) — 다음 글줄은 여백 뒤에서
