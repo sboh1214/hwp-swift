@@ -1929,7 +1929,7 @@ private extension HwpPaginator {
         )
         let isWholeParagraph = remainder.start == 0 && slice.count == remainder.lines.count
         let sameWidth = currentColumnFrame.width == remainder.measuredWidth
-        let fragment = HwpParagraphLayout.measuredLineFragment(
+        let measured = HwpParagraphLayout.measuredLineFragment(
             placedFragment(
                 HwpParagraphLayout.continuationFragment(of: attributedString, range: range),
                 reservedWidth: placement.reservedWidth
@@ -1939,6 +1939,11 @@ private extension HwpPaginator {
             measuredWidth: remainder.measuredWidth,
             columnWidth: currentColumnFrame.width
         )
+        // 뒤에 놓을 줄이 남은 조각은 이어짐 표식을 단다 — 표 행 분할·각주 이어짐과 같은
+        // 마커다 (PR 리뷰: 없으면 조각 끝 줄이 문단 마지막 줄로 오인돼 양쪽 정렬이 풀리고
+        // MS 워드 호환 문단 끝 상자가 앞 조각에 든다).
+        let fragment = slice.endIndex < remainder.lines.count
+            ? HwpTableSplitter.markedAsContinuedFragment(measured) : measured
         appendBlock(
             height: height,
             attributedString: fragment,

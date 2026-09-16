@@ -1933,10 +1933,15 @@ paraShape와 같은 값**이어야 한다.
     ascent + 0.021 cell·두께 0.05 cell — 밑줄 없는 run·대체 글꼴 run도 후보이고, **문단
     끝 글자(CR)** 도 마지막 글자 모양의 **라틴 슬롯** 글꼴로 마지막 줄에 든다 (Apple SD
     20pt 한글 문단이 세 줄이면 앞 두 줄 베이스라인 2160·마지막 줄만 Menlo의 2207). 조판이
-    마지막 글자가 속한 **속성 run 전체**에 `hwp.msWordParagraphEndBox`로 그 상자를 싣고
-    (마지막 글자 하나에만 얹으면 속성 경계가 이모지 서로게이트 쌍을 가르고 결합 문자·아랍어
-    합자에서는 CoreText가 속성을 버린다 — PR 리뷰 재현), 렌더러가 문단의 마지막 줄
-    (`HwpDrawnLine.endsParagraph`: 문자열 끝에 닿고 이어지는 조각이 아닌 줄)에만 합친다.
+    문단 조판 문자열 **전체**에 `hwp.msWordParagraphEndBox`로 그 상자를 싣고(마지막 글자
+    하나에만 얹으면 속성 경계가 이모지 서로게이트 쌍을 가르고 결합 문자·아랍어 합자에서는
+    CoreText가 속성을 버리며, 마지막 속성 run에만 얹어도 글자 모양 id만 다른 `لا` 합자가
+    앞 run에 흡수돼 상자를 잃는다 — PR 리뷰 재현), 렌더러가 문단의 마지막 줄
+    (`HwpDrawnLine.endsParagraph`: 문자열 끝에 닿고 이어짐 표식 `continuedParagraphFragment`가
+    없는 줄)에만 합친다. 그래서 이어짐 표식은 **모든** 분할 경로(쪽 흐름 `appendLineSliceBlock`·
+    절대 캐시 run `runAttributedSlice`·다단 균형 `rebalancedFragment`·표 행·각주)가 조각 전체에
+    단다 — 표식이 빠진 경로에서는 앞 조각 끝 줄이 문단 끝으로 오인돼 밑줄이 CR 상자만큼
+    옮겨지고(Apple SD 10pt −3.252 → −3.024pt) 양쪽 정렬도 풀린다.
   - **취소선(가운데 밑줄·삭제선 포함)은 run 단위**: run 상자의 ascent × 0.273, 두께는
     한글 문서와 같은 0.04em. 한글은 글자 모양 run의 첫 글리프 글꼴을 run 전체에 쓰므로
     조판이 모든 run에 싣는 글자 모양 id(`hwp.charShapeId`)로 슬롯·대체 글꼴에 쪼개진

@@ -33,6 +33,28 @@ final class HwpDrawnLineParagraphEndTests: XCTestCase {
         expect(overflow.map(\.endsParagraph)) == [true]
     }
 
+    /// 이어짐 표식(`HwpTableSplitter.markedAsContinuedFragment`)은 조각 전체에 붙어 글리프
+    /// 조합 경계를 만들지 않는다 — `a😀`에 붙여도 CoreText run이 표식 없는 문자열과 같고,
+    /// 첫 글자와 끝 글자 모두 표식을 가지며, 그 줄은 문단의 마지막 줄이 아니다.
+    func testContinuedMarkerCoversTheWholeFragmentWithoutSplittingGlyphs() throws {
+        let plain = NSAttributedString(string: "a😀", attributes: menlo)
+        let marked = HwpTableSplitter.markedAsContinuedFragment(plain)
+        func runs(_ text: NSAttributedString) throws -> [(Int, Int)] {
+            let line = CTLineCreateWithAttributedString(text)
+            return try XCTUnwrap(CTLineGetGlyphRuns(line) as? [CTRun]).map {
+                (CTRunGetStringRange($0).location, CTRunGetStringRange($0).length)
+            }
+        }
+        expect(try runs(marked).map(\.0)) == (try runs(plain).map(\.0))
+        expect(try runs(marked).map(\.1)) == (try runs(plain).map(\.1))
+        for location in [0, marked.length - 1] {
+            expect(marked.attribute(
+                HwpAttributedStringKey.continuedParagraphFragment, at: location, effectiveRange: nil
+            )).toNot(beNil(), description: "\(location)")
+        }
+        expect(self.lines(marked, width: 200).map(\.endsParagraph)) == [false]
+    }
+
     /// 다음 단·쪽으로 이어지는 조각(`continuedParagraphFragment`)의 끝 줄은 마지막 줄이 아니다.
     func testContinuedFragmentNeverEndsTheParagraph() {
         let text = NSMutableAttributedString(string: wrapping, attributes: menlo)

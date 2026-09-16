@@ -54,9 +54,11 @@
   매퍼가 `hh:compatibleDocument@targetProgram`을 `HwpCompatibleDocumentTarget`
   (`HwpCompatibleDocument.target`, `HwpIndex.compatibleDocumentTarget`)으로 옮겨 같은
   문서가 두 형식에서 같게 그려지고, 조판이 그 값을 `HwpAttributedStringKey.compatibleDocumentTarget`
-  으로 모든 run에, 문단 끝 글자의 줄 상자를 `msWordParagraphEndBox`로 마지막 속성 run에
-  (렌더러는 `HwpDrawnLine.endsParagraph`인 줄에만 합칩니다), 글자 모양 id를 `charShapeId`로
-  싣습니다. 글꼴 줄 상자는 `HwpMsWordLineBox`, 산식은
+  으로 모든 run에, 문단 끝 글자의 줄 상자를 `msWordParagraphEndBox`로 문단 전체에(렌더러는
+  `HwpDrawnLine.endsParagraph`인 줄에만 합칩니다), 글자 모양 id를 `charShapeId`로 싣습니다.
+  이를 위해 쪽 흐름·절대 캐시 run·다단 균형 분할 조각에도 이어짐 표식
+  (`continuedParagraphFragment`, 조각 전체)을 달아 — 종전엔 표 행·각주 분할만 달았습니다 —
+  양쪽 정렬 문단이 쪽·단 경계로 나뉠 때 경계 직전 줄도 벌립니다(한글 실물). 글꼴 줄 상자는 `HwpMsWordLineBox`, 산식은
   `HwpDecorationLineGeometry`가 공개합니다. 한글.app이 저장한 `compat-decorations`
   쌍(MS 워드 호환, Apple SD 산돌고딕 Neo + Menlo)과 `track-changes-native`(한글 문서의 변경
   추적)를 픽스처로 추가해 한글 PDF의 선 간격·두께와 두 형식의 동일성을 픽셀로 잠갔습니다.

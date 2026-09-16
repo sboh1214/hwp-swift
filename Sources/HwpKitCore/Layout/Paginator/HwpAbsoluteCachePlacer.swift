@@ -372,9 +372,11 @@ struct HwpAbsoluteCachePlacer {
         let range = slice.dropFirst().reduce(first.attributedRange) {
             NSUnionRange($0, $1.attributedRange)
         }
-        // 둘째 run부터는 이어지는 조각 — 첫 줄 들여쓰기를 둘째 줄에 맞춘다.
+        // 둘째 run부터는 이어지는 조각 — 첫 줄 들여쓰기를 둘째 줄에 맞춘다. 뒤에 줄이 남는
+        // 조각(마지막 run 앞)은 이어짐 표식을 단다 (PR 리뷰: 다른 분할 경로와 같은 마커).
+        let text = HwpParagraphLayout.continuationFragment(of: attributedString, range: range)
         return (
-            HwpParagraphLayout.continuationFragment(of: attributedString, range: range),
+            end < lines.count ? HwpTableSplitter.markedAsContinuedFragment(text) : text,
             HwpParagraphLayout.fragmentLineFrames(slice, range: range)
         )
     }

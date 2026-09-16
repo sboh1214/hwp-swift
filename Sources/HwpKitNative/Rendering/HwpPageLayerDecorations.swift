@@ -129,11 +129,11 @@ extension HwpPageLayer {
 
     /// MS 워드 호환 문서에서 이 줄의 줄 상자 (pt, `HwpMsWordLineBox.union`) — 줄의 run
     /// 전부(장식 없는 run·CoreText 대체 글꼴 run 포함)의 글꼴 상자에, 이 줄이 문단의
-    /// 마지막 줄(`endsParagraph`)이면 조판이 마지막 속성 run에 실은 문단 끝 상자
-    /// (`msWordParagraphEndBox`)를 더해 합친다. 상자가 run 전체에 실리는 이유는 글리프
-    /// 조합 경계를 만들지 않기 위해서라(PR 리뷰: 이모지·결합 문자·합자) 그 run이 여러
-    /// 줄에 걸치면 앞 줄에도 키가 있다 — 줄 판정은 키가 아니라 `endsParagraph`다. 한글
-    /// 문서 줄이면 nil.
+    /// 마지막 줄(`endsParagraph`)이면 조판이 문단 전체에 실은 문단 끝 상자
+    /// (`msWordParagraphEndBox`)를 더해 합친다. 상자가 문단 전체에 실리는 이유는 글리프
+    /// 조합 경계를 만들지 않고 어느 run이 합자로 흡수돼도 상자가 남게 하기 위해서라
+    /// (PR 리뷰: 이모지·결합 문자·합자) 모든 줄에 키가 있다 — 줄 판정은 키가 아니라
+    /// `endsParagraph`다. 한글 문서 줄이면 nil.
     func msWordLineBox(of runs: [CTRun], endsParagraph: Bool) -> HwpMsWordLineBox? {
         // 문서 단위 속성이라 줄의 run 하나가 MS 워드면 줄 전체가 그렇다 — 표식 run(한 줄
         // 끝·빈 줄 앵커)처럼 허용 목록으로 깎인 run도 글꼴이 있는 한 후보로 넣는다

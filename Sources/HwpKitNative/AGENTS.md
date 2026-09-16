@@ -187,10 +187,10 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
   기하다** (#187, `Sources/HwpKitCore/AGENTS.md` 장식 항목). `drawDecoratedLine`이 줄마다
   두 값을 미리 푼다: ① `msWordLineBox(of:)` — 줄의 **모든** run(장식 없는 run·CoreText
   대체 글꼴 run 포함)의 `HwpMsWordLineBox`를 글자 크기로 곱해 축별 최댓값으로 합치고,
-  줄이 문단의 마지막 줄(`HwpDrawnLine.endsParagraph`)이면 마지막 속성 run이 실은
-  `hwp.msWordParagraphEndBox`(문단 끝 글자 = 라틴 슬롯 글꼴)도 더한다 (키는 run 전체에
-  있으므로 앞 줄에도 보이지만 줄 판정은 키가 아니라 `endsParagraph`다) → 아래·위·삽입
-  밑줄이 줄 전체에서 한 자리·한 두께; ② `msWordStrikethroughFonts(of:)`
+  줄이 문단의 마지막 줄(`HwpDrawnLine.endsParagraph`)이면 조판이 문단 전체에 실은
+  `hwp.msWordParagraphEndBox`(문단 끝 글자 = 라틴 슬롯 글꼴)도 더한다 (키는 모든 줄에
+  있으므로 줄 판정은 키가 아니라 `endsParagraph`다) → 아래·위·삽입 밑줄이 줄 전체에서
+  한 자리·한 두께; ② `msWordStrikethroughFonts(of:)`
   — 같은 글자 모양 id(`hwp.charShapeId`)의 잇닿은 run(슬롯·대체 글꼴 분할)을 한 글자
   모양 run으로 묶어 첫 run의 글꼴 → 취소선은 run 단위(속성 사전 비교는 양쪽 정렬 자간·
   문단 끝 상자에 갈린다). 줄 상자 판정은 줄의 run 하나라도 MS 워드 키를 실으면 줄 전체

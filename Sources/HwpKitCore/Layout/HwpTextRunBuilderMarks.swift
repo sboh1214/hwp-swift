@@ -256,12 +256,14 @@ extension HwpTextRunBuilder {
     /// 줄 상자에 넣으므로, 렌더러가 마지막 줄의 밑줄 자리를 잡을 때 되돌려 넣는다.
     /// 상한으로 잘린 결과(`whole == false`)는 문단 끝이 아니라 싣지 않는다.
     ///
-    /// 싣는 범위는 마지막 글자가 아니라 **마지막 글자가 속한 속성 run 전체**(같은 속성이
-    /// 이어진 가장 긴 범위)다 — 마지막 UTF-16 단위에만 얹으면 속성 경계가 글리프 조합을
-    /// 가른다 (PR 리뷰 재현: 이모지 서로게이트 쌍이 LastResort 글리프 둘로 깨져 폭이
-    /// 74.6 → 122.6pt, 결합 문자 `é`·아랍어 합자는 CoreText가 조합을 지키는 대신 속성을
-    /// 버려 끝 상자가 사라진다). run 전체에 같은 값을 얹으면 새 경계가 없고, 어느 줄이
-    /// 문단의 마지막 줄인지는 렌더러가 `HwpDrawnLine.endsParagraph`로 가른다.
+    /// 싣는 범위는 마지막 글자가 아니라 **문단 조판 문자열 전체**다 — 마지막 UTF-16
+    /// 단위에만 얹으면 속성 경계가 글리프 조합을 가르고(PR 리뷰 재현: 이모지 서로게이트
+    /// 쌍이 LastResort 글리프 둘로 깨져 폭이 74.6 → 122.6pt, 결합 문자 `é`·아랍어 합자는
+    /// CoreText가 조합을 지키는 대신 속성을 버려 끝 상자가 사라진다), 마지막 속성 run에만
+    /// 얹어도 그 run이 앞 run과 한 글리프로 합쳐지면(글자 모양 id만 다른 `لا` 합자·결합
+    /// 문자) CoreText가 앞 run의 속성만 남겨 상자를 버린다. 문단 전체에 같은 값을 얹으면
+    /// 새 경계가 없고 어느 run이 살아남아도 상자가 남는다. 어느 줄이 문단의 마지막 줄인지는
+    /// 렌더러가 `HwpDrawnLine.endsParagraph`(이어짐 표식이 없는 조각의 끝 줄)로 가른다.
     func attachMsWordParagraphEndBox(
         to output: NSMutableAttributedString, paragraph: CoreHwp.HwpParagraph
     ) {
@@ -276,15 +278,10 @@ extension HwpTextRunBuilder {
         else { return }
         let font = value as! CTFont // swiftlint:disable:this force_cast
         let box = HwpMsWordLineBox.metrics(of: font).scaled(by: CTFontGetSize(font))
-        var range = NSRange(location: 0, length: 0)
-        _ = output.attributes(
-            at: output.length - 1, longestEffectiveRange: &range,
-            in: NSRange(location: 0, length: output.length)
-        )
         output.addAttribute(
             HwpAttributedStringKey.msWordParagraphEndBox,
             value: [NSNumber(value: Double(box.lineHeight)), NSNumber(value: Double(box.baseline))],
-            range: range
+            range: NSRange(location: 0, length: output.length)
         )
     }
 
