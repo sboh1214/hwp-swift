@@ -80,22 +80,6 @@ public enum HwpRenderTuning {
         /// 검증: `FixtureDecorationLineRenderTests` 픽셀 핀 + fidelity 전수.
         public static let underlineAboveCenterRatio: CGFloat = 0.87
 
-        /// 변경 추적 삭제선 중심의 베이스라인 위 높이 = 글자 크기 × 이 배율.
-        /// 실측: 같은 세션의 `track-changes` 실물 — 10pt에서 +2.40pt, 40pt에서
-        /// +9.24pt (0.303·0.292, 두 표본 잔차 ≤0.11pt; 한글은 변경 내용 추적 문서를
-        /// PDF로 내보낼 때 쪽 전체를 약 0.8배로 줄이므로 글리프가 7.92·31.68pt로
-        /// 찍히지만 em 비율은 그대로다).
-        ///
-        /// **이 값은 변경 추적 고유의 기하가 아니라 MS Word 호환 문서의 취소선
-        /// 기하다** (2026-09-12 실측, #176). `track-changes` 픽스처는 호환 문서
-        /// 대상 프로그램 2(`CT_MSWORD`)인데, 같은 본문을 네이티브(`HWP201X`)로
-        /// 저장하면 한글은 삭제선을 일반 취소선과 같은 자리(+0.35em)에 그리고,
-        /// 호환 문서에서는 일반 취소선도 이 자리(함초롬 +0.29em, Apple SD +0.25em,
-        /// HY울릉도M +0.23em — 글꼴 지표 의존)에 그린다. 호환 모드 분기는 #187로
-        /// 분리했고, 그때까지는 코퍼스의 유일한 변경 추적 실물에 맞춘 이 값을 쓴다.
-        /// 검증: `FixtureDecorationLineRenderTests` 픽셀 핀 + fidelity 전수.
-        public static let trackChangeStrikethroughCenterRatio: CGFloat = 0.29
-
         /// 밑줄 '글자 아래'(표 35 밑줄 종류 1) 중심의 베이스라인 **아래** 깊이 =
         /// 글자 크기 × 이 배율.
         /// 실측: 한글.app 12.30.0 (2026-09-12, #176) `CharShape` HWPX 기반 합성
@@ -105,7 +89,9 @@ public enum HwpRenderTuning {
         /// 0.154~0.175, 장치 좌표 0.12pt 양자화; 60pt 이상은 정확히 0.170). 함초롬바탕·함초롬돋움·
         /// Apple SD 산돌고딕 Neo·HY울릉도M 네 글꼴이 **모든 크기에서 같은 값**이라
         /// descent·post `underlinePosition` 같은 글꼴 지표가 아니라 글자 크기
-        /// 비례다. 네이티브 문서의 변경 추적 삽입 밑줄도 이 자리다 (#187 참고).
+        /// 비례다. 변경 추적 삽입 밑줄도 같은 자리·같은 두께다 (#187 실측: 13개 글꼴
+        /// 전부 삽입 밑줄 = 일반 밑줄, 삭제선 = 일반 취소선). MS 워드 호환 문서에서는
+        /// 이 비율 대신 글꼴 지표를 쓴다 — 아래 `msWord*` 상수.
         /// 첨자 run에서도 **원래 베이스라인** 아래 **축소 전 크기** × 이 배율이다
         /// (#179 실측: 10pt 위/아래 첨자 모두 1.68pt 아래) — 취소선과 달리 첨자
         /// 이동을 따라가지 않는다.
@@ -125,30 +111,69 @@ public enum HwpRenderTuning {
         /// 검증: `HwpDecorationLineGeometryTests`(+`+Script`) 두께 비율 + fidelity 전수.
         public static let decorationLineThicknessRatio: CGFloat = 0.04
 
-        /// 변경 추적 삽입 밑줄 중심의 베이스라인 아래 깊이 = 글자 크기 × 이 배율.
-        /// 실측: `track-changes` 실물 (2026-09-08·09-12) — 선언 10pt·40pt가 PDF
-        /// 쪽 축소로 7.92·31.68pt 글리프로 찍히고 밑줄 중심은 그 아래 2.04·8.16pt
-        /// (둘 다 −0.2576em). 종전
-        /// 구현은 0.75pt 사각형의 **아래 모서리**를 −0.35em에 두어 중심이 크기에
-        /// 비례하지 않았다 (10pt −0.31em·40pt −0.34em).
-        /// `trackChangeStrikethroughCenterRatio`와 같은 사정으로 **MS Word 호환
-        /// 문서의 밑줄 기하**다 — 네이티브 문서에서는 삽입 밑줄이 일반 밑줄
-        /// (`underlineBelowCenterRatio`·`decorationLineThicknessRatio`)과 같은
-        /// 자리·두께이고, 호환 문서에서는 일반 밑줄도 이 자리다 (함초롬 −0.258em·
-        /// Apple SD −0.326em·HY울릉도M −0.167em, #187).
-        /// 검증: `HwpDecorationLineGeometryTests` 비율 +
-        /// `FixtureDecorationLineRenderTests` 픽셀 핀.
-        public static let trackChangeInsertUnderlineCenterRatio: CGFloat = 0.26
+        /// MS 워드 호환 문서(`HwpCompatibleDocumentTarget.msWord`)의 줄 상자 높이 =
+        /// CJK 글꼴의 (winAscent + winDescent) × 이 배율 (`HwpMsWordLineBox`, #187·
+        /// #194). 장식선은 두 글꼴 갈래 모두 줄 상자 ÷ 이 배율을 기준 상자로 쓴다.
+        /// 실측: 한글 12.30.0 (2026-09-15) 이 MS 워드 호환 합성 문서를 다시 저장한
+        /// 줄 캐시 `vertsize` — 함초롬돋움 80pt 13531 (1.6914em = 1.3 × 1.30), Apple SD
+        /// 산돌고딕 Neo 12477 (1.5596 = 1.3 × 1.20), HY울릉도M 10406 (1.3008 = 1.3 × 1.00),
+        /// 맑은 고딕 13836 (1.7295 = 1.3 × 1.3301); `track-changes` 실물 캐시 1692 = 1.3 ×
+        /// 1.30 (10pt). 그 밖의 글꼴은 winAscent + winDescent + lineGap이다 (Helvetica
+        /// 9407 = 1.1759 = 0.9502 + 0.2251, Times New Roman 9211 = 1.1514 = 0.8911 +
+        /// 0.2163 + 0.0425).
+        /// 검증: `HwpMsWordLineBoxTests` + `HwpRenderTuningTests` 값 핀.
+        public static let msWordLineHeightCellRatio: CGFloat = 1.3
 
-        /// 변경 추적 삽입 밑줄 두께 = 글자 크기 × 이 배율.
-        /// 실측: 같은 실물 — 글리프 7.92pt에서 0.48pt(0.0606em), 31.68pt에서
-        /// 2.04pt(0.0644em); 0.064em은 두 값을 한글의 0.12pt 장치 단위로 반올림해
-        /// 그대로 재현한다(4·17단위). 일반 선(0.04em)보다 굵다. 이것도 MS Word 호환
-        /// 문서의 밑줄 두께다 (함초롬 0.064em·Apple SD 0.061em·HY울릉도M 0.049em ≈
-        /// 0.05 × 글꼴 줄 높이, #187). 종전 0.75pt 고정은 선언 10pt(0.64pt)에서는
-        /// 굵고 40pt(2.56pt)에서는 가늘었다.
-        /// 검증: `HwpDecorationLineGeometryTests` 두께 비율.
-        public static let trackChangeInsertUnderlineThicknessRatio: CGFloat = 0.064
+        /// MS 워드 호환 문서 CJK 글꼴의 줄 상자 상단 → 베이스라인 = winAscent +
+        /// (winAscent + winDescent) × 이 배율 — 1.3배 상자의 여분 0.3을 위아래로 반씩
+        /// 나눈 값. 실측: 같은 줄 캐시의 `baseline` — 함초롬돋움 10125 (1.2656em =
+        /// 1.07 + 0.15 × 1.30), Apple SD 8641 (1.0801 = 0.90 + 0.15 × 1.20), HY울릉도M
+        /// 8070 (1.0088 = 0.8584 + 0.15 × 1.00); `track-changes` 실물 1266 = 1.07 + 0.195.
+        /// 그 밖의 글꼴은 winAscent + lineGap이다 (Helvetica 7602 = 0.9503, Times New
+        /// Roman 7477 = 0.9346 = 0.8911 + 0.0425).
+        /// 검증: `HwpMsWordLineBoxTests` + `HwpRenderTuningTests` 값 핀.
+        public static let msWordBaselineMarginCellRatio: CGFloat = 0.15
+
+        /// MS 워드 호환 문서의 밑줄('글자 아래'·'글자 위'·변경 추적 삽입 밑줄) 두께 =
+        /// 기준 상자 높이(`HwpMsWordLineBox.cellHeight`) × 글자 크기 × 이 배율.
+        /// 실측: 한글 12.30.0 (2026-09-15) PDF 내보내기, 글꼴 32종 × 10·40·80pt (변경
+        /// 내용 추적 문서라 쪽이 0.8배 축소돼 80pt 글리프가 63.36pt로 찍힌다 — 비율은
+        /// 그 관측 크기 기준) — 함초롬돋움 4.20pt (0.0663em = 0.051 × 1.30), Apple SD
+        /// 산돌고딕 Neo 3.84pt (0.0606em = 0.0505 × 1.20), HY울릉도M 3.24pt (0.0511 =
+        /// 0.0511 × 1.00), 맑은 고딕 4.32pt (0.0682 = 0.0513 × 1.33), Menlo 3.72pt
+        /// (0.0587 = 0.0504 × 1.164), Helvetica 2.88pt (0.0455 = 0.0503 × 0.9045), Courier
+        /// New 2.76pt (0.0436 = 0.050 × 0.8721) — 전부 0.050~0.052 (장치 0.12pt 양자화). 취소선은
+        /// 호환 문서에서도 글자 크기 × `decorationLineThicknessRatio`다 (같은 실측:
+        /// 모든 글꼴 0.0398em).
+        /// 검증: `HwpDecorationLineGeometryTests+Compat` 두께 + `HwpRenderTuningTests`.
+        public static let msWordUnderlineThicknessCellRatio: CGFloat = 0.05
+
+        /// MS 워드 호환 문서의 밑줄 중심이 기준 상자 가장자리(글자 아래 밑줄은
+        /// `descent`, 글자 위 밑줄은 `ascent`) 밖으로 나가는 거리 = 기준 상자 높이 ×
+        /// 글자 크기 × 이 배율. 두께 0.05와 함께 선 안쪽 가장자리가 상자 안으로 0.004
+        /// 들어온다.
+        /// 실측: 같은 스윕 — 밑줄 중심 (`descent` 기준) 함초롬돋움 −0.2576em = −(0.23 +
+        /// 0.0212 × 1.30), Apple SD −0.3258 = −(0.30 + 0.0215 × 1.20), HY울릉도M −0.1629
+        /// = −(0.1416 + 0.0213 × 1.00), 맑은 고딕 −0.2689 = −(0.2417 + 0.0205 × 1.33),
+        /// Menlo −0.2595 = −(0.2358 + 0.0204 × 1.164), Helvetica −0.1080 = −(0.0895 +
+        /// 0.0205 × 0.9045); 글자 위 밑줄 (`ascent` 기준) 함초롬돋움 +1.0985 = 1.07 +
+        /// 0.0219 × 1.30, Apple SD +0.9261 = 0.90 + 0.0218 × 1.20, Helvetica +0.8333 =
+        /// 0.8146 + 0.0207 × 0.9045 — 전부 0.020~0.023. 이슈 #187의 근사 −(winDescent +
+        /// 두께/2)는 0.025라 함초롬 40pt에서 0.2pt(0.004 × 1.30 × 40) 낮았다.
+        /// 검증: `HwpDecorationLineGeometryTests+Compat` 위치 + `HwpRenderTuningTests`.
+        public static let msWordUnderlineOffsetCellRatio: CGFloat = 0.021
+
+        /// MS 워드 호환 문서의 취소선(글자 가운데 밑줄·변경 추적 삭제선 포함) 중심의
+        /// 베이스라인 위 높이 = 기준 상자의 `ascent` × 글자 모양 기본 크기(슬롯 상대
+        /// 크기 무관, 첨자는 축소 비율) × 이 배율.
+        /// 실측: 같은 스윕 — 함초롬돋움 +0.2917em (÷ 1.07 = 0.2726), Apple SD 산돌고딕
+        /// Neo +0.2481 (÷ 0.90 = 0.2757), HY울릉도M +0.2330 (÷ 0.8584 = 0.2714), 맑은 고딕
+        /// +0.2973 (÷ 1.0884 = 0.2732), Menlo +0.2538 (÷ 0.9282 = 0.2734), Helvetica
+        /// +0.2197 (÷ 0.8146 = 0.2697), Times New Roman +0.2159 (÷ 0.8009 = 0.2696),
+        /// Courier New +0.1913 (÷ 0.7018 = 0.2726) — 0.267~0.278 (장치 양자화 ±0.003).
+        /// `track-changes` 실물의 삭제선 +0.29em (#136·#176) 은 함초롬돋움의 이 값이다.
+        /// 검증: `HwpDecorationLineGeometryTests+Compat` 위치 + `HwpRenderTuningTests`.
+        public static let msWordStrikethroughAscentRatio: CGFloat = 0.273
     }
 
     /// 문단 번호·개요 번호 라벨 (#154)

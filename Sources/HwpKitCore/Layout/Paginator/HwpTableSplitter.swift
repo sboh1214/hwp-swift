@@ -419,16 +419,25 @@ enum HwpTableSplitter {
         return (top, bottom)
     }
 
-    /// 문단이 다음 단/쪽으로 이어지는 조각의 마지막 문자에 마커를 단다 —
-    /// 렌더러의 양쪽 정렬이 조각 끝 줄을 문단 마지막 줄로 오인하지 않도록
-    /// (Column 실물: 단 경계 직전 줄도 양쪽 정렬로 늘어난다)
+    /// 문단이 다음 단/쪽으로 이어지는 조각에 마커를 단다 — 렌더러의 양쪽 정렬이 조각
+    /// 끝 줄을 문단 마지막 줄로 오인하지 않도록 (Column 실물: 단 경계 직전 줄도 양쪽
+    /// 정렬로 늘어난다), 그리고 MS 워드 호환 문단 끝 상자(`HwpDrawnLine.endsParagraph`)가
+    /// 조각 끝 줄에 들지 않도록. 쪽 흐름 분할(`HwpPaginator.appendLineSliceBlock`)·절대
+    /// 캐시 run 분할(`HwpAbsoluteCachePlacer.runAttributedSlice`)·다단 균형 재배치
+    /// (`HwpColumnBandController.rebalancedFragment`)·표 행 분할·각주 이어짐이 모두 이
+    /// 함수로 단다 (PR 리뷰: 앞 셋이 안 달아 앞 조각 끝 줄이 문단 끝으로 오인됐다).
+    ///
+    /// 마커는 **조각 전체**에 붙는다 (읽는 쪽은 끝 글자로 판정한다) — 끝 글자 하나에만 붙이면
+    /// 속성 경계가 그 글자의 글리프 조합(서로게이트 쌍·결합 문자·합자)을 가르고, 표식 조각을
+    /// 다시 자르면(표 다중 쪽 분할·다단 재배치) 앞부분이 표식을 잃는다. 전체에 붙으면 부분
+    /// 문자열이 표식을 물려받아 다시 잘라도 유지된다.
     static func markedAsContinuedFragment(_ attributed: NSAttributedString) -> NSAttributedString {
         guard attributed.length > 0 else { return attributed }
         let mutable = NSMutableAttributedString(attributedString: attributed)
         mutable.addAttribute(
             HwpAttributedStringKey.continuedParagraphFragment,
             value: NSNumber(value: true),
-            range: NSRange(location: attributed.length - 1, length: 1)
+            range: NSRange(location: 0, length: attributed.length)
         )
         return mutable
     }

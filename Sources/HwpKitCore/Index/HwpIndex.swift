@@ -38,9 +38,11 @@ public struct HwpIndex: Sendable {
         faceNamesEtc: [UInt32: CoreHwp.HwpFaceName],
         faceNamesSymbol: [UInt32: CoreHwp.HwpFaceName],
         faceNamesUser: [UInt32: CoreHwp.HwpFaceName],
-        isCompatibilityDocument: Bool = false
+        isCompatibilityDocument: Bool = false,
+        compatibleDocumentTarget: CoreHwp.HwpCompatibleDocumentTarget? = nil
     ) {
         self.isCompatibilityDocument = isCompatibilityDocument
+        self.compatibleDocumentTarget = compatibleDocumentTarget
         self.charShapes = charShapes
         self.paraShapes = paraShapes
         self.borderFills = borderFills
@@ -63,10 +65,19 @@ public struct HwpIndex: Sendable {
     /// targetDocument 2 문서만 native 공백, 한글 문서는 0.5em)
     public let isCompatibilityDocument: Bool
 
+    /// 호환 문서의 대상 프로그램 (표 55) — record가 없거나 raw 값이 표에 없으면 nil이고
+    /// 소비자는 한글 문서로 다룬다. 조판은 이 값을 모든 run에
+    /// `HwpAttributedStringKey.compatibleDocumentTarget`으로 실어 렌더러가 MS 워드
+    /// 호환 문서(`msWord`)의 장식선 기하를 가른다 (#187, `HwpDecorationLineGeometry`).
+    /// `isCompatibilityDocument`(공백 폭 게이트)와 달리 갈래를 특정한다 — 한글 2007
+    /// 호환(`hwp200X`)·훈민정음(`hunmin`)은 장식선에서 한글 문서와 같이 다룬다.
+    public let compatibleDocumentTarget: CoreHwp.HwpCompatibleDocumentTarget?
+
     public init(from file: CoreHwp.HwpFile) {
         let idMappings = file.docInfo.idMappings
         isCompatibilityDocument =
             (file.docInfo.compatibleDocument?.targetDocument ?? 0) != 0
+        compatibleDocumentTarget = file.docInfo.compatibleDocument?.target
         charShapes = Self.makeIndex(idMappings.charShapeArray)
         paraShapes = Self.makeIndex(idMappings.paraShapeArray)
         borderFills = Self.makeIndex(idMappings.borderFillArray)

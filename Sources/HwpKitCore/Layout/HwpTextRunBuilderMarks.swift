@@ -15,17 +15,13 @@ extension HwpTextRunBuilder {
         let red = CGColor.hwpTrackChange
         attributes[kCTForegroundColorAttributeName as NSAttributedString.Key] = red
         if mark == 17 {
+            // 삭제선은 일반 취소선과 같은 자리·두께다 (#187 실측: 한글 문서 +0.35em,
+            // MS 워드 호환 문서는 글꼴 지표 — 둘 다 일반 취소선 경로가 가른다).
             attributes[HwpAttributedStringKey.strikethroughStyle] = NSNumber(value: 1)
             attributes[HwpAttributedStringKey.strikethroughColor] = red
-            // 렌더러가 표식으로 갈라 `trackChangeStrikethroughCenterRatio`(0.29em)에
-            // 그린다 — 코퍼스의 변경 추적 실물(`track-changes`, MS Word 호환 문서)의
-            // 값이고, 네이티브 문서에서 한글은 일반 취소선과 같은 자리(0.35em)에
-            // 그린다 (#176 실측, 호환 모드 분기는 #187).
-            attributes[HwpAttributedStringKey.trackChangeStrikethrough] = NSNumber(value: 1)
         } else {
-            // 렌더러가 `trackChangeInsertUnderline*` 상수로 직접 그린다 — 삭제선과
-            // 같은 사정으로 호환 문서 실물의 값이며 네이티브 문서의 일반 밑줄과
-            // 다르다 (#176, #187).
+            // 삽입 밑줄도 일반 '글자 아래' 밑줄과 같은 자리·두께다 — 색만 이 키로
+            // 넘긴다 (글자 모양의 밑줄 색과 별개라 밑줄 키에 실을 수 없다).
             attributes[HwpAttributedStringKey.trackInsertUnderline] = red
         }
     }
@@ -248,7 +244,48 @@ extension HwpTextRunBuilder {
             return emptyParagraphAnchor(for: paragraph)
         }
         attachParagraphStyle(to: output, paragraph: paragraph)
+        if whole {
+            attachMsWordParagraphEndBox(to: output, paragraph: paragraph)
+        }
         return output
+    }
+
+    /// MS 워드 호환 문서에서 문단 끝 글자(CR)의 줄 상자를 마지막 글자에 싣는다
+    /// (`HwpAttributedStringKey.msWordParagraphEndBox`, #187). CR은 조판 문자열에서
+    /// 접히지만(`controlText`) 한글은 그 글자를 마지막 글자 모양의 라틴 슬롯 글꼴로
+    /// 줄 상자에 넣으므로, 렌더러가 마지막 줄의 밑줄 자리를 잡을 때 되돌려 넣는다.
+    /// 상한으로 잘린 결과(`whole == false`)는 문단 끝이 아니라 싣지 않는다.
+    ///
+    /// 싣는 범위는 마지막 글자가 아니라 **문단 조판 문자열 전체**다 — 마지막 UTF-16
+    /// 단위에만 얹으면 속성 경계가 글리프 조합을 가르고(PR 리뷰 재현: 이모지 서로게이트
+    /// 쌍이 LastResort 글리프 둘로 깨져 폭이 74.6 → 122.6pt, 결합 문자 `é`·아랍어 합자는
+    /// CoreText가 조합을 지키는 대신 속성을 버려 끝 상자가 사라진다), 마지막 속성 run에만
+    /// 얹어도 그 run이 앞 run과 한 글리프로 합쳐지면(글자 모양 id만 다른 `لا` 합자·결합
+    /// 문자) CoreText가 앞 run의 속성만 남겨 상자를 버린다. 문단 전체에 같은 값을 얹으면
+    /// 새 경계가 없고 어느 run이 살아남아도 상자가 남는다. 어느 줄이 문단의 마지막 줄인지는
+    /// 렌더러가 `HwpDrawnLine.endsParagraph`(이어짐 표식이 없는 조각의 끝 줄)로 가른다.
+    func attachMsWordParagraphEndBox(
+        to output: NSMutableAttributedString, paragraph: CoreHwp.HwpParagraph
+    ) {
+        guard index.compatibleDocumentTarget == .msWord, output.length > 0,
+              let shapeId = paragraph.paraCharShape.shapeId.last
+        else { return }
+        let resolved = resolvedShape(id: shapeId, paragraph: paragraph)
+        // 캐시 경로 — 같은 글자 모양의 라틴 슬롯 사전은 본문 run이 이미 만들어 두었다.
+        let attributes = attributes(for: resolved, script: .english)
+        guard let value = attributes[kCTFontAttributeName as NSAttributedString.Key],
+              CFGetTypeID(value as CFTypeRef) == CTFontGetTypeID()
+        else { return }
+        let font = value as! CTFont // swiftlint:disable:this force_cast
+        // 곱하는 크기는 라틴 슬롯 상대 크기를 반영한 글꼴 크기가 아니라 글자 모양 기본
+        // 크기다 — 한글은 MS 워드 호환 상자를 기본 크기로 잰다 (PR 리뷰 실측, `msWordBoxSize`).
+        let box = HwpMsWordLineBox.metrics(of: font)
+            .scaled(by: HwpUnits.points(fromHwpUnit: resolved.shape.baseSize))
+        output.addAttribute(
+            HwpAttributedStringKey.msWordParagraphEndBox,
+            value: [NSNumber(value: Double(box.lineHeight)), NSNumber(value: Double(box.baseline))],
+            range: NSRange(location: 0, length: output.length)
+        )
     }
 
     /// 조판 문자열이 빈 문단 앵커 **하나뿐**인지 — 빈 줄 앵커(`가\n `)는 언제나
@@ -268,6 +305,9 @@ extension HwpTextRunBuilder {
     static let emptyLastLineAnchorAttributes: [NSAttributedString.Key] = [
         kCTFontAttributeName as NSAttributedString.Key,
         HwpAttributedStringKey.baseFontSize,
+        // 문서 단위 표식은 남긴다 — MS 워드 호환 줄 상자 판정이 run 단위라 앵커만 있는
+        // 줄도 갈래를 알아야 한다 (#187).
+        HwpAttributedStringKey.compatibleDocumentTarget,
     ]
 
     /// 빈 줄 앵커 run을 표식하고 장식 속성을 떼어 낸다. `build`가 앵커를 실제로

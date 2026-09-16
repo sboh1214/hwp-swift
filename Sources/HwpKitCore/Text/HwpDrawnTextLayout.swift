@@ -15,6 +15,13 @@ public struct HwpDrawnLine {
     public let baselineOrigin: CGPoint
     public let ascent: CGFloat
     public let descent: CGFloat
+    /// 이 줄이 **문단의 마지막 줄**인지 — 단위 문자열의 끝에 닿고, 그 문자열이 다음 단·
+    /// 쪽으로 이어지는 조각(`hwp.continuedParagraphFragment`)이 아닐 때 (양쪽 정렬의
+    /// 마지막 줄 판정과 같은 규약). 렌더러는 MS 워드 호환 문단 끝 상자
+    /// (`hwp.msWordParagraphEndBox`, #187)를 이 줄의 줄 상자에만 합친다 — 상자는 문단
+    /// 전체에 실리므로 줄 판정은 키가 아니라 이 값이다. 이어짐 표식은 쪽 흐름·절대 캐시
+    /// run·다단 균형·표 행·각주의 모든 분할 경로가 단다 (PR 리뷰).
+    public let endsParagraph: Bool
 
     /// 줄의 선택 하이라이트 영역 (top-down 페이지 좌표)
     ///
@@ -134,8 +141,18 @@ public enum HwpDrawnTextLayout {
                 y: placement.baseline
             ),
             ascent: ascent,
-            descent: descent
+            descent: descent,
+            endsParagraph: endsParagraph(range, in: attributedString)
         )
+    }
+
+    /// `range`로 끝나는 줄이 문단의 마지막 줄인지 (`HwpDrawnLine.endsParagraph`).
+    static func endsParagraph(_ range: CFRange, in attributedString: NSAttributedString) -> Bool {
+        let length = attributedString.length
+        guard length > 0, range.location + range.length >= length else { return false }
+        return attributedString.attribute(
+            HwpAttributedStringKey.continuedParagraphFragment, at: length - 1, effectiveRange: nil
+        ) == nil
     }
 
     /// attributedString 안 `hyperlink` 속성 범위마다 줄별 글리프 rect와 URL을
@@ -284,7 +301,10 @@ public enum HwpDrawnTextLayout {
                 y: origin.y + baselineAnchor(of: line)
             ),
             ascent: ascent,
-            descent: descent
+            descent: descent,
+            endsParagraph: endsParagraph(
+                CFRange(location: 0, length: attributedString.length), in: attributedString
+            )
         )
     }
 

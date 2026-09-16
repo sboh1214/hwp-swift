@@ -23,7 +23,7 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
    `com.hancom.office.hwp12.mac.general`, 12.30.0 build 6446)에서
    `Fixtures/<id>/document.hwp`의 **사본**을 연다 (열람만으로 원본이 재기록될 수
    있다 — 4단계). 새로 저작하는 쌍(`section-marks`·`section-page-starts-on`·
-   `line-shapes`·`script-decorations`·`section-page-number-skip`)은 `.hwp`와 `.hwpx`를
+   `line-shapes`·`script-decorations`·`section-page-number-skip`·`compat-decorations`)은 `.hwp`와 `.hwpx`를
    **같은 편집 세션에서 연달아** 저장해야 두 파일이 같은 문서가 된다. 한글 GUI로
    만들기 어려운 조합은 합성 HWPX를 한글로 열어 두 형식으로 저장해도 된다
    (`line-shapes` — 17종 선 모양을 네 자리에 모두 실은 문서, `script-decorations` —
@@ -66,6 +66,10 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
   첨자와 장식선이 함께 걸린 글자 모양이 0건이라 렌더 해시·골든이 잡지 못하던 자리의
   실물 근거이며, 한글이 취소선만 켠 첨자 글자 모양도 HWP에는 밑줄 종류 2(가운데)를
   함께 적는다는(`line-shapes`와 같은 이중 기록) 표본이기도 하다.
+  MS 워드 호환 문서의 장식선은 #187에서 `compat-decorations` 쌍으로 저작했다 — 코퍼스의
+  호환 문서 실물이 `track-changes`(HWPX 쌍 없음) 하나라 `hh:compatibleDocument@targetProgram`
+  매핑을 등가 스위트가 잡지 못하던 자리의 실물 근거이며, 글꼴을 결정론 resolver와 같은
+  Apple SD 산돌고딕 Neo·Menlo로 골라 한글 PDF 좌표를 기기 무관하게 핀한다.
 
 ## manifest 작성 기준
 

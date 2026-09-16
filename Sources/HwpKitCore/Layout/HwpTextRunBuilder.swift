@@ -473,10 +473,23 @@ extension HwpTextRunBuilder {
         for resolved: ResolvedShape,
         script: HwpScript
     ) -> [NSAttributedString.Key: Any] {
-        guard let attributeCache else { return attributes(for: resolved.shape, script: script) }
+        guard let attributeCache else { return uncachedAttributes(for: resolved, script: script) }
         return attributeCache.attributes(shapeId: resolved.cacheKey, script: script) {
-            attributes(for: resolved.shape, script: script)
+            uncachedAttributes(for: resolved, script: script)
         }
+    }
+
+    /// 캐시 없는 해석 — 글자 모양 사전에 `charShapeId`(#187)를 얹는다. `index`에 없는
+    /// id(`cacheKey` nil)는 폴백 모양이라 id를 싣지 않는다.
+    private func uncachedAttributes(
+        for resolved: ResolvedShape,
+        script: HwpScript
+    ) -> [NSAttributedString.Key: Any] {
+        var attributes = attributes(for: resolved.shape, script: script)
+        if let id = resolved.cacheKey {
+            attributes[HwpAttributedStringKey.charShapeId] = NSNumber(value: id)
+        }
+        return attributes
     }
 
     func attributes(
@@ -520,6 +533,13 @@ extension HwpTextRunBuilder {
                 value: Double(spacing * size / 100)
             ),
         ]
+        if let target = index.compatibleDocumentTarget, target != .hwp201X {
+            // 호환 문서의 대상 프로그램 (표 55) — MS 워드 호환 문서의 장식선 기하를
+            // 렌더러가 가르는 열쇠 (#187). 한글 문서는 키 없음이 곧 기본값이다.
+            attributes[HwpAttributedStringKey.compatibleDocumentTarget] = NSNumber(
+                value: target.rawValue
+            )
+        }
         if location != 0 {
             // 글자 위치 (표 33): **줄 배치는 그대로 두고 글리프만** 세로로 옮긴다.
             // 그래서 조판 문자열에는 `kCTBaselineOffset`을 싣지 않고 이 커스텀 키만

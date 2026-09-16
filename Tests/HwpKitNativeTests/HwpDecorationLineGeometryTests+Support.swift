@@ -16,6 +16,35 @@ extension HwpDecorationLineGeometryTests {
         let bytesPerRow: Int
     }
 
+    /// 조건에 맞는 픽셀이 3개를 넘는 행들을 이어진 띠로 묶은 중심들 (pt, 위에서부터) —
+    /// 여러 줄의 같은 색 선을 줄마다 따로 잰다.
+    static func rowBands(
+        _ raster: Raster,
+        where match: (UInt8, UInt8, UInt8) -> Bool
+    ) -> [CGFloat] {
+        var bands: [[Int]] = []
+        for y in 0 ..< raster.pixelHeight {
+            var count = 0
+            for x in 0 ..< raster.pixelWidth {
+                let offset = y * raster.bytesPerRow + x * 4
+                if match(
+                    raster.data[offset], raster.data[offset + 1], raster.data[offset + 2]
+                ) {
+                    count += 1
+                }
+            }
+            guard count > 2 else { continue }
+            if let last = bands.last?.last, y - last <= 1 {
+                bands[bands.count - 1].append(y)
+            } else {
+                bands.append([y])
+            }
+        }
+        return bands.map { rows in
+            (CGFloat(rows.reduce(0, +)) / CGFloat(rows.count) + 0.5) / scale
+        }
+    }
+
     /// 조건에 맞는 픽셀이 3개를 넘는 행들의 잉크 가중 중심 (pt, 위에서부터).
     static func rowCenter(
         _ raster: Raster,
@@ -162,19 +191,15 @@ extension HwpDecorationLineGeometryTests {
     }
 
     func strikethroughAttributes(
-        size: CGFloat, color: CGColor, trackChange: Bool = false
+        size: CGFloat, color: CGColor
     ) -> [NSAttributedString.Key: Any] {
-        var attributes: [NSAttributedString.Key: Any] = [
+        [
             kCTFontAttributeName as NSAttributedString.Key: CTFontCreateWithName(
                 "Menlo" as CFString, size, nil
             ),
             HwpAttributedStringKey.strikethroughStyle: NSNumber(value: 1),
             HwpAttributedStringKey.strikethroughColor: color,
         ]
-        if trackChange {
-            attributes[HwpAttributedStringKey.trackChangeStrikethrough] = NSNumber(value: 1)
-        }
-        return attributes
     }
 
     func belowUnderlineAttributes(

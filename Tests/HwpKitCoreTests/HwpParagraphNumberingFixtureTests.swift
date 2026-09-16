@@ -188,7 +188,7 @@ import XCTest
                     guard FileManager.default.fileExists(atPath: url.path) else { return nil }
                     return try JSONDecoder().decode(HwpxPairManifest.self, from: Data(contentsOf: url))
                 }
-            expect(manifests.count) >= 20
+            expect(manifests.count) >= 21
             var numbered = 0
             for manifest in manifests {
                 guard let pairId = manifest.sourceHwpFixture else {
