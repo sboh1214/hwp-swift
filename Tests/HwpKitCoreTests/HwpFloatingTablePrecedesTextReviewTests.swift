@@ -156,5 +156,87 @@ import XCTest
             expect(Self.noteTexts(on: first)).to(beEmpty())
             expect(Self.noteTexts(on: second).first).to(contain("셀 각주"))
         }
+
+        // MARK: 2차 리뷰
+
+        /// 위·아래 바깥 여백이 빈 쪽마저 소진하면 여백을 버린다 — 그대로 두면 가용 높이가
+        /// 음수가 돼 splitter가 0 높이 조각을 상한(4,096)까지 내 4,098쪽이 됐다.
+        func testMarginsExhaustingThePageFallBackToNoMargins() async throws {
+            // 본문 200.8pt, 행 30pt, 여백 110 + 110pt.
+            let paginator = Support.paginator(pageHeight: 30000, bodyParagraphs: [
+                try Support.host(rowCount: 3, margins: [283, 283, 11000, 11000]),
+                try Support.flow("뒤 문단"),
+            ])
+            let total = await paginator.totalPages()
+            expect(total).to(equal(1))
+            let blocks = try await Support.blocks(of: paginator)
+            expect(blocks.map(\.kind)).to(equal([.text, .table, .text, .text]))
+            guard blocks.count == 4 else { return }
+            // 여백 없이 템플릿 문단 바로 아래에 통째로 놓인다.
+            expect(blocks[1].rowCount).to(equal(3))
+            expect(blocks[1].frame.minY).to(beCloseTo(blocks[0].frame.maxY, within: 0.01))
+            expect(blocks[2].frame.minY).to(beCloseTo(blocks[1].frame.maxY, within: 0.01))
+        }
+
+        /// 글줄이 안 들어가 문단을 다시 처리할 때 새 번호 지정을 되풀이하지 않는다 — 첫
+        /// 시도에서 표 셀 각주가 7)을 받았으므로 본문 각주는 8)이다 (되풀이하면 7)·7)).
+        func testNewNumberIsNotReappliedWhenTheParagraphIsRetried() async throws {
+            var cell = try HwpSynthetic.textParagraph("셀")
+            cell.ctrlHeaderArray = [Self.footnote(" 셀 각주")]
+            var host = CoreHwp.HwpParagraph()
+            var paraText = CoreHwp.HwpParaText()
+            paraText.charArray = [
+                CoreHwp.HwpChar(type: .extended, value: 21),
+                CoreHwp.HwpChar(type: .extended, value: 11),
+            ] + "본문".utf16.map { CoreHwp.HwpChar(type: .char, value: $0) }
+                + [CoreHwp.HwpChar(type: .extended, value: 17)]
+            host.paraText = paraText
+            host.paraLineSeg.paraLineSegInternalArray = []
+            host.ctrlHeaderArray = [
+                HwpSynthetic.newNumberControl(kind: 1, number: 7),
+                .table(HwpSynthetic.placed(
+                    HwpSynthetic.table(
+                        cellWidth: 20000, rowHeights: [3000], cellParagraphs: [[[cell]]]
+                    ),
+                    treatAsChar: false, margins: [283, 283, 283, 283]
+                )),
+                Self.footnote(" 본문 각주"),
+            ]
+            // 본문 205.8pt: 템플릿 + 앞 문단 일곱(128) → 표 35.66 + 셀 각주 예약은 들어가고
+            // 글줄 16은 안 들어가 글줄만 2쪽에서 다시 처리된다.
+            let fillers = try (0 ..< 7).map { try Support.flow("앞 문단 \($0)") }
+            let paginator = Support.paginator(pageHeight: 30500, bodyParagraphs: fillers + [host])
+            let first = try await paginator.page(at: 0)
+            let second = try await paginator.page(at: 1)
+            expect(Self.noteTexts(on: first).map { String($0.prefix(2)) }).to(equal(["7)"]))
+            expect(Self.noteTexts(on: second).map { String($0.prefix(2)) }).to(equal(["8)"]))
+            expect(Self.bodyText(on: second)).to(contain("8)"))
+        }
+
+        /// 표보다 앞선 쪽 번호 컨트롤은 표가 쪽을 넘기기 **전**에 등록된다 — 종전엔 글줄 뒤
+        /// 방출이 서수 순으로 등록해 표가 흐르기 전에 등록됐다. 늦게 등록하면 첫 쪽 번호가
+        /// 빠지고 둘째 쪽부터 `- 2 -`가 찍힌다.
+        func testPageChromePrecedingTheTableIsRegisteredBeforeItsPageBreak() async throws {
+            var host = try Support.host(rowCount: 10)
+            var paraText = CoreHwp.HwpParaText()
+            paraText.charArray = [
+                CoreHwp.HwpChar(type: .extended, value: 21),
+                CoreHwp.HwpChar(type: .extended, value: 11),
+            ] + "table anchor".utf16.map { CoreHwp.HwpChar(type: .char, value: $0) }
+            host.paraText = paraText
+            host.ctrlHeaderArray = [
+                HwpSynthetic.pageNumberPositionControl(numberFormat: 0, displayPosition: 5),
+            ] + (host.ctrlHeaderArray ?? [])
+            let paginator = Support.paginator(
+                pageHeight: 30000, bodyParagraphs: [host, try Support.flow("뒤 문단")]
+            )
+            var chrome: [[String]] = []
+            for index in 0 ..< 2 {
+                let page = try await paginator.page(at: index)
+                chrome.append((page?.blocks ?? []).filter { $0.role != .body }
+                    .compactMap { $0.attributedString?.string })
+            }
+            expect(chrome).to(equal([["- 1 -"], ["- 2 -"]]))
+        }
     }
 #endif

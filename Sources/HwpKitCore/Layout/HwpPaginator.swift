@@ -201,6 +201,11 @@ public actor HwpPaginator {
     private var tablesPlacedBeforeText: [Int: Int] = [:]
     /// `tablesPlacedBeforeText`가 속한 문단 (구역·문단 서수). 다른 문단에 들어서면 비운다.
     private var tablesPlacedBeforeTextParagraph: HwpParagraphPath?
+    /// 글줄 앞 표(#190)보다 **앞선** 쪽 장식 컨트롤(머리말·꼬리말·쪽 번호 위치·감추기)의
+    /// 서수 — 표를 놓기 전에 등록해 표가 넘긴 쪽부터 장식이 실린다 (종전 순서: 글줄 뒤 방출이
+    /// 서수 순으로 등록하므로 표보다 앞선 장식은 표가 흐르기 전에 등록됐다, PR 리뷰). 문단
+    /// 단위 방출(`appendControlBlocks`)이 이 서수의 등록을 되풀이하지 않는다.
+    private var chromeRegisteredBeforeText: Set<Int> = []
     /// 문단 단위 방출과 진단(`walkUnsupported`)이 건너뛸 **이미 놓인** 컨트롤 서수 → 쪽 —
     /// 조각과 함께 놓은 글자처럼 취급 개체(#164)와 글줄 앞에 놓은 자리 차지 표(#190)의 합.
     private var controlsPlacedBeforeParagraphEnd: [Int: Int] {
@@ -711,7 +716,12 @@ private extension HwpPaginator {
 
         applySectionDef(in: paragraph)
         applyColumnDef(in: paragraph)
-        applyNewNumbers(in: paragraph)
+        // 글줄 앞 표(#190)를 이미 놓은 문단의 재시도면 새 번호 지정을 되풀이하지 않는다 —
+        // 첫 시도에서 이미 적용됐고 표 셀 각주가 그 번호를 썼으므로, 다시 적용하면 본문 각주가
+        // 같은 번호를 받는다 (PR 리뷰: 새 번호 7 + 셀 각주 + 본문 각주 → 7)·7)).
+        if !isRetryingParagraphWithPlacedTables {
+            applyNewNumbers(in: paragraph)
+        }
         currentParagraphMargins = paragraphMargins(of: paragraph)
 
         beginParagraphEntryFlow(for: paragraph)
@@ -2530,6 +2540,11 @@ private extension HwpPaginator {
     ) {
         guard let ctrls = paragraph.ctrlHeaderArray else { return }
         for (ctrlIndex, ctrl) in ctrls.enumerated() {
+            // 글줄 앞 표보다 앞선 쪽 장식은 표를 놓기 전에 등록됐다 (#190) — 되풀이하면
+            // 쪽 감추기 마스크가 두 번 쌓인다.
+            if depth == 0, chromeRegisteredBeforeText.contains(ctrlIndex) {
+                continue
+            }
             // 줄 중간 앵커 문맥은 본문 문단 (depth 0)에서만 유효하다.
             let anchorIndex = depth == 0 ? ctrlIndex : nil
             let children = numbering?.container(controlIndex: ctrlIndex)
@@ -2968,6 +2983,7 @@ private extension HwpPaginator {
         }
         tablesPlacedBeforeTextParagraph = numbering.path
         tablesPlacedBeforeText = [:]
+        chromeRegisteredBeforeText = []
         guard absoluteCacheRuns(for: paragraph) == nil,
               let ctrls = paragraph.ctrlHeaderArray
         else { return }
@@ -2978,6 +2994,11 @@ private extension HwpPaginator {
                       table, numbering: numbering.container(controlIndex: ordinal)
                   )
             else { continue }
+            // 표보다 앞선 쪽 장식(머리말·꼬리말·쪽 번호 위치·감추기)은 표가 쪽을 넘기기 **전**에
+            // 등록한다 — 종전 순서(서수 순 등록 뒤 표 흐름)를 지켜 표의 첫 쪽부터 장식이 실린다
+            // (PR 리뷰: 쪽 번호 컨트롤 뒤 10행 표에서 첫 쪽 번호가 빠지고 둘째 쪽이 `- 2 -`).
+            // 표 뒤의 장식은 종전대로 글줄 뒤 방출이 등록한다.
+            registerPageChromePreceding(ordinal, in: ctrls, numbering: numbering)
             paragraphEntryFlow?.bandClosed = true
             // 진단이 보고할 쪽은 표의 첫 조각이 **실제로 놓인** 쪽이다 — 조각을 내기 전에
             // 단·쪽을 넘길 수 있으므로 놓기 전 값이 아니라 방출이 돌려준 값을 쓴다 (PR 리뷰).
@@ -2988,6 +3009,31 @@ private extension HwpPaginator {
                 margins: TableFlowMargins(outerMargins: table.commonCtrlProperty.marginArray)
             )
             tablesPlacedBeforeText[ordinal] = firstSegmentPage ?? cachedPages.count + 1
+        }
+    }
+
+    /// 이번 `processParagraph` 호출이 글줄 앞 표(#190)를 이미 놓은 같은 문단의 재시도인지 —
+    /// 글줄이 쪽에 안 들어가 `placeParagraphText`가 false를 돌려 다음 쪽에서 다시 처리하는
+    /// 경우다. 표를 놓지 않은 문단의 재시도는 종전대로 (새 번호 지정 반복이 무해하다 —
+    /// 아직 아무 번호도 소비되지 않았다).
+    private var isRetryingParagraphWithPlacedTables: Bool {
+        !tablesPlacedBeforeText.isEmpty
+            && tablesPlacedBeforeTextParagraph == currentParagraphScope.path
+    }
+
+    /// `ordinal`보다 앞선 쪽 장식 컨트롤 가운데 아직 등록하지 않은 것을 서수 순으로 등록한다
+    /// (#190). 등록한 서수는 `chromeRegisteredBeforeText`에 남아 글줄 뒤 방출이 건너뛴다.
+    private func registerPageChromePreceding(
+        _ ordinal: Int, in ctrls: [CoreHwp.HwpCtrlId], numbering: HwpNumberingScope
+    ) {
+        for index in 0 ..< ordinal where !chromeRegisteredBeforeText.contains(index) {
+            switch ctrls[index] {
+            case .header, .footer, .pageNumberPosition, .pageHide:
+                pageChrome.register(ctrls[index], numbering: numbering.container(controlIndex: index))
+                chromeRegisteredBeforeText.insert(index)
+            default:
+                continue
+            }
         }
     }
 
@@ -3273,6 +3319,7 @@ private extension HwpPaginator {
         margins: TableFlowMargins = .none
     ) -> Int? {
         guard !frame.rows.isEmpty else { return nil }
+        let margins = fittingTableMargins(margins, rows: frame.rows)
 
         // 셀 각주 수집용 시작 행 인덱스를 표당 한 번만 만든다 (세그먼트마다
         // 전수 스캔 방지, #15; fallback 셀도 실제 행에 귀속, #23).
@@ -3281,22 +3328,10 @@ private extension HwpPaginator {
         let cellNumbering = table.flatMap { table in numbering?.tableCells(of: table) }
 
         if pageBreakMode == .none {
-            let tableHeight = frame.rows.reduce(CGFloat(0)) { max($0, $1.rowFrame.maxY) }
-            if contentHeightUsed > 0,
-               contentHeightUsed + tableHeight + margins.total > effectiveContentHeight
-            {
-                advanceColumn()
-            }
-            if table != nil {
-                collectTableCellFootnotes(
-                    cellsByRow: cellsByRow, rows: nil, numbering: cellNumbering
-                )
-            }
-            contentHeightUsed += margins.top
-            let page = cachedPages.count + 1
-            appendTableSegmentBlock(rows: frame.rows, original: frame, instanceId: instanceId)
-            consumeTableBottomMargin(margins)
-            return page
+            return appendWholeTable(
+                frame, instanceId: instanceId, margins: margins,
+                cellsByRow: table == nil ? nil : cellsByRow, cellNumbering: cellNumbering
+            )
         }
 
         let (repeatedRows, repeatedHeight) = repeatedHeaderRows(
@@ -3401,6 +3436,44 @@ private extension HwpPaginator {
             truncatedTableRowLimits[instanceId, default: []].append((table, highestEmittedRow + 1))
         }
         return firstSegmentPage
+    }
+
+    /// 쪽 경계 나눔이 없는 표(표 76 bits 0-1 == 0)를 통째로 놓는다 — 남은 공간에 여백까지
+    /// 안 들어가면 새 쪽으로 넘긴다. 반환값은 놓인 1-기반 쪽. `cellsByRow`가 있으면 셀
+    /// 각주를 이 쪽에 담는다 (표 모델이 없는 호출은 nil).
+    private func appendWholeTable(
+        _ frame: HwpTableFrame,
+        instanceId: UInt32,
+        margins: TableFlowMargins,
+        cellsByRow: [Int: [(index: Int, cell: CoreHwp.HwpTableCell)]]?,
+        cellNumbering: HwpNumberingScope.TableCells?
+    ) -> Int {
+        let tableHeight = frame.rows.reduce(CGFloat(0)) { max($0, $1.rowFrame.maxY) }
+        if contentHeightUsed > 0,
+           contentHeightUsed + tableHeight + margins.total > effectiveContentHeight
+        {
+            advanceColumn()
+        }
+        if let cellsByRow {
+            collectTableCellFootnotes(cellsByRow: cellsByRow, rows: nil, numbering: cellNumbering)
+        }
+        contentHeightUsed += margins.top
+        let page = cachedPages.count + 1
+        appendTableSegmentBlock(rows: frame.rows, original: frame, instanceId: instanceId)
+        consumeTableBottomMargin(margins)
+        return page
+    }
+
+    /// 조각에 실을 바깥 여백 — 여백이 빈 쪽마저 소진하면 (첫 행 + 위·아래 여백이 빈 쪽에 안
+    /// 들어간다) 여백을 버린다. 제목 행 반복이 본문 자리를 안 남기면 반복을 끄는 것(#13)과
+    /// 같은 폴백이다. 그대로 두면 가용 높이가 음수가 돼 splitter가 0 높이 조각을 상한까지
+    /// 낸다 (PR 리뷰: 본문 200.8pt·행 30pt·여백 110 + 110pt → 4,098쪽). 이런 여백은 한글
+    /// 실측 표본이 없다.
+    private func fittingTableMargins(
+        _ margins: TableFlowMargins, rows: [HwpTableRowFrame]
+    ) -> TableFlowMargins {
+        margins.total + HwpTableSplitter.minimumRowHeight(rows[...]) <= effectiveContentHeight
+            ? margins : .none
     }
 
     /// 표 조각 아래 바깥 여백을 흐름 커서로 소비한다 (#190) — 다음 글줄은 여백 뒤에서
