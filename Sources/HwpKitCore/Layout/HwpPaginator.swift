@@ -3401,7 +3401,8 @@ private extension HwpPaginator {
         {
             // 이어지는 세그먼트는 제목 행 반복 높이를 미리 차감한다. 위·아래 바깥
             // 여백도 조각마다 든다 (#190) — 위 여백은 조각 앞에서 커서로 소비한다.
-            let headerAllowance = (isFirstSegment ? 0 : repeatedHeight) + margins.total
+            var repeatsHeader = !isFirstSegment && !repeatedRows.isEmpty
+            var headerAllowance = (repeatsHeader ? repeatedHeight : 0) + margins.total
             var remaining = effectiveContentHeight - contentHeightUsed - headerAllowance
             let freshPage = effectiveContentHeight - headerAllowance
             // 물리 첫 행이 안 들어가거나(기존), 시작 행 rowspan 셀 스팬이 남은
@@ -3415,15 +3416,13 @@ private extension HwpPaginator {
                remaining < HwpTableSplitter.minimumRowHeight(rows[cursor...]) || deferForSpan
             {
                 advanceColumn()
-                // 넘긴 단·쪽의 용량으로 다시 잰다 — 새 쪽은 각주 예약이 다르다 (앞 쪽 값을 쓰면
-                // 앞 문단 각주만큼 덜 채우거나, 여백과 만나 들어갈 행을 자른다). 이월한 쪽의
-                // 예약이 여백까지 못 담으면 남은 조각은 여백 없이 흘린다 (PR 리뷰).
-                margins = fittingTableMargins(
-                    margins, rows: rows[cursor...],
-                    capacity: effectiveContentHeight - (isFirstSegment ? 0 : repeatedHeight)
+                // 넘긴 단·쪽의 용량으로 여백·제목 행 반복을 다시 잰다 — 새 쪽은 각주 예약이 다르다
+                // (앞 쪽 값을 쓰면 앞 문단 각주만큼 덜 채우거나, 여백과 만나 들어갈 행을 자른다).
+                headerAllowance = refitContinuation(
+                    margins: &margins, repeatsHeader: &repeatsHeader,
+                    repeatedHeight: repeatedHeight, rows: rows[cursor...]
                 )
-                remaining = effectiveContentHeight - contentHeightUsed
-                    - (isFirstSegment ? 0 : repeatedHeight) - margins.total
+                remaining = effectiveContentHeight - contentHeightUsed - headerAllowance
             }
 
             // 후보 행의 셀 각주 예약 높이를 미리 반영해 세그먼트를 맞춘다 (#6).
@@ -3470,7 +3469,7 @@ private extension HwpPaginator {
                 rows: segmentRows,
                 original: frame,
                 instanceId: instanceId,
-                repeatedHeaderRows: isFirstSegment ? [] : repeatedRows
+                repeatedHeaderRows: repeatsHeader ? repeatedRows : []
             )
             consumeTableBottomMargin(margins)
             isFirstSegment = false
@@ -3497,16 +3496,30 @@ private extension HwpPaginator {
         cellNumbering: HwpNumberingScope.TableCells?
     ) -> Int {
         let tableHeight = frame.rows.reduce(CGFloat(0)) { max($0, $1.rowFrame.maxY) }
+        /// 이 표 자신의 셀 각주가 예약할 높이를 미리 반영한다 (#6, 분할 경로의
+        /// `remainingAfterCellNotes`와 같은 시산) — 수집은 놓기 직전이라 그 뒤에 재면 표 + 여백이
+        /// 예약 전엔 들어가고 예약 뒤엔 안 들어가는 표가 각주 자리로 넘친다 (PR 리뷰).
+        func anticipatedNotes() -> CGFloat {
+            cellsByRow.map {
+                anticipatedNotesForNextSegment(
+                    cellsByRow: $0, remainingRows: frame.rows[...],
+                    remaining: .greatestFiniteMagnitude, highestCollectedRow: Int.min,
+                    numbering: cellNumbering
+                )
+            } ?? 0
+        }
         if contentHeightUsed > 0,
-           contentHeightUsed + tableHeight + margins.total > effectiveContentHeight
+           contentHeightUsed + tableHeight + margins.total + anticipatedNotes()
+           > effectiveContentHeight
         {
             advanceColumn()
         }
         // 목적지 용량으로 여백을 다시 잰다 — 원자 단위가 표 전체라 첫 행 기준 폴백
-        // (`fittingTableMargins`)을 지나도 표 + 여백이 안 들어갈 수 있다 (이월 각주 예약, 또는
-        // 표만 빈 단에 들어가는 경우). 그대로 두면 위 여백만큼 아래 여백·각주 자리로 넘친다
-        // (PR 리뷰). 여백만 버린다.
-        let margins = tableHeight + margins.total <= effectiveContentHeight ? margins : .none
+        // (`fittingTableMargins`)을 지나도 표 + 여백이 안 들어갈 수 있다 (이월 각주 예약, 이 표의
+        // 셀 각주 예약, 또는 표만 빈 단에 들어가는 경우). 그대로 두면 위 여백만큼 아래 여백·각주
+        // 자리로 넘친다 (PR 리뷰). 여백만 버린다.
+        let margins = tableHeight + margins.total + anticipatedNotes() <= effectiveContentHeight
+            ? margins : .none
         if let cellsByRow {
             collectTableCellFootnotes(cellsByRow: cellsByRow, rows: nil, numbering: cellNumbering)
         }
@@ -3515,6 +3528,27 @@ private extension HwpPaginator {
         appendTableSegmentBlock(rows: frame.rows, original: frame, instanceId: instanceId)
         consumeTableBottomMargin(margins)
         return page
+    }
+
+    /// 단·쪽을 넘긴 조각의 여백과 제목 행 반복을 목적지 용량으로 다시 잰다 — 돌려주는 값은 그
+    /// 조각의 제목 행 몫 + 여백(`headerAllowance`). 이월한 쪽의 예약이 여백까지 못 담으면 남은
+    /// 조각은 여백 없이 흘리고, 그래도 제목 행 + 첫 행이 안 들어가면 **이 조각만** 제목 행
+    /// 반복을 끈다 (PR 리뷰 — 진입 쪽의 예약으로 표 전체의 반복을 끄면 뒤 쪽에 자리가 있어도
+    /// 제목이 사라진다; 0 높이 조각 폭주(#13)는 이 판정이 막는다).
+    private func refitContinuation(
+        margins: inout TableFlowMargins,
+        repeatsHeader: inout Bool,
+        repeatedHeight: CGFloat,
+        rows: ArraySlice<HwpTableRowFrame>
+    ) -> CGFloat {
+        let header = repeatsHeader ? repeatedHeight : 0
+        margins = fittingTableMargins(margins, rows: rows, capacity: effectiveContentHeight - header)
+        if repeatsHeader,
+           header + margins.total + HwpTableSplitter.minimumRowHeight(rows) > effectiveContentHeight
+        {
+            repeatsHeader = false
+        }
+        return (repeatsHeader ? repeatedHeight : 0) + margins.total
     }
 
     /// 조각에 실을 바깥 여백 — 여백이 `capacity`(빈 단 용량, 또는 이월한 쪽의 예약을 뺀
@@ -3541,10 +3575,12 @@ private extension HwpPaginator {
     }
 
     /// 이어지는 세그먼트마다 반복할 제목 행과 그 높이 (표 76 bit 2). 표 전체가 제목이면
-    /// 반복하지 않는다. 반복 제목이 페이지 본문(바깥 여백을 뺀)보다 크거나 같으면
-    /// continuation에 본문 행 공간이 남지 않아 splitter가 0-높이 조각을 유지하며 제목만
-    /// 반복해 페이지가 폭주한다 — 반복을 끈다 (#13). 실제 제목(몇 줄)은 페이지보다 훨씬
-    /// 작아 불변.
+    /// 반복하지 않는다. 반복 제목이 **빈 단**(바깥 여백을 뺀)보다 크거나 같으면 continuation에
+    /// 본문 행 공간이 남지 않아 splitter가 0-높이 조각을 유지하며 제목만 반복해 페이지가
+    /// 폭주한다 — 반복을 끈다 (#13). 실제 제목(몇 줄)은 페이지보다 훨씬 작아 불변. 용량은
+    /// 이 쪽의 각주 예약을 뺀 `effectiveContentHeight`가 **아니다** — 앞 문단의 큰 각주가
+    /// 남은 쪽에서 표가 시작하면 첫 조각이 바로 넘어가는데도 표 전체의 반복이 꺼져 뒤 쪽의
+    /// 제목이 사라진다 (PR 리뷰). 이월한 쪽의 예약은 조각 루프가 조각마다 다시 잰다.
     private func repeatedHeaderRows(
         of frame: HwpTableFrame,
         headerRowCount: Int,
@@ -3563,7 +3599,7 @@ private extension HwpPaginator {
             }
             return max(partial, rowExtent)
         } - firstRow.rowFrame.minY
-        guard candidateHeight + margins.total < effectiveContentHeight else { return ([], 0) }
+        guard candidateHeight + margins.total < currentColumnFrame.height else { return ([], 0) }
         return (candidateRows, candidateHeight)
     }
 

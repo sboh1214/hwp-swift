@@ -145,5 +145,81 @@ import XCTest
             expect(table.frame.height).to(beCloseTo(190, within: 0.01))
             expect(table.frame.maxY).to(beLessThanOrEqualTo(contentTop + 200.8 + 0.01))
         }
+
+        // MARK: 셀 각주 예약
+
+        private static func footnote(_ text: String) -> CoreHwp.HwpCtrlId {
+            .footnote(HwpSynthetic.listControl(ctrlId: .footnote, paragraphs: [
+                HwpSynthetic.noteParagraph(
+                    text, autoNumber: HwpSynthetic.autoNumberControl(kind: 1, decorationTail: ")")
+                ),
+            ]))
+        }
+
+        /// 나누지 않는 표는 자기 셀 각주의 예약을 미리 반영해 여백·목적지를 정한다 — 예약 전엔
+        /// 표 + 여백이 들어가고 예약 뒤엔 안 들어가는 자리에서 위 여백을 남기면 표가 각주
+        /// 영역으로 넘친다 (수정 전 17pt 겹침).
+        func testUnsplittableTableAnticipatesItsOwnCellFootnotes() async throws {
+            var cell = try HwpSynthetic.textParagraph("셀")
+            cell.ctrlHeaderArray = [Self.footnote(String(repeating: " 긴 셀 각주", count: 20))]
+            var host = Support.paragraphWithInlineControl(suffix: "table anchor")
+            host.ctrlHeaderArray = [.table(HwpSynthetic.placed(
+                HwpSynthetic.table(
+                    cellWidth: 20000, rowHeights: [3000, 3000], property: 0,
+                    cellParagraphs: [[[cell]], [[try HwpSynthetic.textParagraph("행 2")]]]
+                ),
+                treatAsChar: false, margins: [283, 283, 3000, 3000]
+            ))]
+            // 본문 200.8pt: 템플릿 + 앞 문단 넷(80) → 남은 120.8에 표 60 + 여백 60은 들어가지만
+            // 셀 각주 48pt 예약 뒤에는 안 들어간다.
+            let fillers = try (0 ..< 4).map { try Support.flow("앞 문단 \($0)") }
+            let paginator = Support.paginator(
+                pageHeight: 30000, bodyParagraphs: fillers + [host, try Support.flow("뒤 문단")]
+            )
+            let total = await paginator.totalPages()
+            for index in 0 ..< total {
+                let page = try await paginator.page(at: index)
+                let blocks = try await Support.blocks(of: paginator, page: index)
+                guard let table = blocks.first(where: { $0.kind == .table }) else { continue }
+                // 표(여백 포함)는 그 쪽의 각주 영역과 겹치지 않는다.
+                for note in (page?.blocks ?? []).filter({ $0.kind == .footnote }) {
+                    expect(table.frame.maxY).to(beLessThanOrEqualTo(note.frame.minY + 0.01))
+                }
+            }
+        }
+
+        /// 제목 행 반복은 진입 쪽의 각주 예약이 아니라 **조각이 놓이는 쪽의 용량**으로 판정한다 —
+        /// 앞 문단의 큰 각주가 남은 쪽에서 표가 시작해 첫 조각이 바로 넘어가도 이어지는 조각의
+        /// 제목 행은 그대로다 (수정 전엔 표 전체의 반복이 꺼져 3쪽 조각이 `행 5`로 시작했다).
+        func testRepeatedHeaderSurvivesAFootnoteReservationOnTheEntryPage() async throws {
+            var noteHost = try Support.flow("각주 문단")
+            noteHost.ctrlHeaderArray = [Self.footnote(String(repeating: " 긴 각주 본문", count: 60))]
+            var host = Support.paragraphWithInlineControl(suffix: "table anchor")
+            let rows = [6000] + Array(repeating: UInt32(3000), count: 10)
+            let cells = try (0 ..< rows.count).map { [[try HwpSynthetic.textParagraph("행 \($0)")]] }
+            host.ctrlHeaderArray = [.table(HwpSynthetic.placed(
+                HwpSynthetic.table(
+                    cellWidth: 20000, rowHeights: rows, property: 2 | (1 << 2),
+                    headerRowCount: 1, cellParagraphs: cells
+                ),
+                treatAsChar: false, margins: [283, 283, 283, 283]
+            ))]
+            let paginator = Support.paginator(pageHeight: 30000, bodyParagraphs: [
+                noteHost, host, try Support.flow("뒤 문단"),
+            ])
+            let total = await paginator.totalPages()
+            var firstCellTexts: [String] = []
+            for index in 0 ..< total {
+                let page = try await paginator.page(at: index)
+                for block in page?.blocks ?? [] where block.kind == .table {
+                    guard case let .table(frame)? = block.payload else { continue }
+                    let firstCell = frame.rows.first?.cells.first?.paragraphs.first
+                    firstCellTexts.append(firstCell?.attributedString.string ?? "")
+                }
+            }
+            // 1쪽은 각주 예약으로 표가 안 들어가 2쪽부터 시작하고, 3쪽 조각도 제목 행으로 시작한다.
+            expect(firstCellTexts.count).to(beGreaterThanOrEqualTo(2))
+            expect(Set(firstCellTexts)).to(equal(["행 0"]))
+        }
     }
 #endif
