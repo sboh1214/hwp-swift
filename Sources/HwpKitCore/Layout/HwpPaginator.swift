@@ -206,6 +206,19 @@ public actor HwpPaginator {
     /// 서수 순으로 등록하므로 표보다 앞선 장식은 표가 흐르기 전에 등록됐다, PR 리뷰). 문단
     /// 단위 방출(`appendControlBlocks`)이 이 서수의 등록을 되풀이하지 않는다.
     private var chromeRegisteredBeforeText: Set<Int> = []
+    /// 글줄 앞 표의 **첫 조각이 놓이는 순간** 등록할 앞선 쪽 장식 — 표를 놓기 전에 등록하면
+    /// 첫 행이 이 쪽에 안 들어가 `advanceColumn`으로 넘길 때 문단이 없는 앞 쪽이 그 장식으로
+    /// 확정된다 (PR 리뷰: 쪽 끝 문단의 쪽 번호 컨트롤 + 표가 다음 쪽으로 가는데 앞 쪽에 번호).
+    /// `appendTableSegmentBlock`이 소비한다 (`applyPendingPageNumberReset`과 같은 지점).
+    private var pendingChromeRegistration: PendingChromeRegistration?
+
+    /// `pendingChromeRegistration`의 내용 — 표 서수와 그 문단의 컨트롤·번호 열쇠.
+    private struct PendingChromeRegistration {
+        let tableOrdinal: Int
+        let controls: [CoreHwp.HwpCtrlId]
+        let numbering: HwpNumberingScope
+    }
+
     /// 문단 단위 방출과 진단(`walkUnsupported`)이 건너뛸 **이미 놓인** 컨트롤 서수 → 쪽 —
     /// 조각과 함께 놓은 글자처럼 취급 개체(#164)와 글줄 앞에 놓은 자리 차지 표(#190)의 합.
     private var controlsPlacedBeforeParagraphEnd: [Int: Int] {
@@ -726,6 +739,12 @@ private extension HwpPaginator {
         currentParagraphMargins = paragraphMargins(of: paragraph)
 
         beginParagraphEntryFlow(for: paragraph)
+        // 개요의 시작 쪽은 문단의 **첫 콘텐츠가 놓인** 쪽이다 — 글줄 앞 표(#190)가 먼저 놓이면
+        // 그 첫 조각의 쪽이고(`appendTableSegmentBlock`이 기록), 그 뒤 글줄이 밀려 재시도해도
+        // 유지된다 (PR 리뷰: 제목 문단의 표가 1쪽부터인데 목록이 글줄의 3쪽을 가리켰다).
+        if !isRetryingParagraphWithPlacedTables {
+            currentParagraphFirstPlacedPage = nil
+        }
         // 자리 차지 표는 문단 글줄 **앞**에 놓인다 (#190) — 흐름 배치 문단은 표를 먼저
         // 흘리고 글줄이 그 뒤를 따른다. 절대 캐시 배치 문단은 캐시 간격(띠)이 자리다 (#161).
         // 측정 **앞**이어야 한다: 표가 단·쪽을 넘기면 글줄은 그 단 폭으로 재야 하고, 표 셀
@@ -741,9 +760,9 @@ private extension HwpPaginator {
         )
         // 번호/개요 문단 머리의 진단 페이지는 문단이 시작하는 첫 페이지다 —
         // placeParagraphText가 다중 페이지 문단의 앞 조각 페이지를 먼저
-        // 캐시하므로 배치 전에 첫 페이지를 잡는다 (#3).
-        let paragraphFirstPage = cachedPages.count + 1
-        currentParagraphFirstPlacedPage = nil
+        // 캐시하므로 배치 전에 첫 페이지를 잡는다 (#3). 글줄 앞 표가 먼저 놓였으면 그
+        // 첫 조각의 쪽이다.
+        let paragraphFirstPage = currentParagraphFirstPlacedPage ?? cachedPages.count + 1
         guard placeParagraphText(
             paragraph,
             attributedString: measured.attributedString,
@@ -3004,12 +3023,14 @@ private extension HwpPaginator {
                       table, numbering: numbering.container(controlIndex: ordinal)
                   )
             else { continue }
-            // 표보다 앞선 쪽 장식(머리말·꼬리말·쪽 번호 위치·감추기)은 표가 쪽을 넘기기 **전**에
-            // 등록한다 — 종전 순서(서수 순 등록 뒤 표 흐름)를 지켜 표의 첫 쪽부터 장식이 실린다
-            // (PR 리뷰: 쪽 번호 컨트롤 뒤 10행 표에서 첫 쪽 번호가 빠지고 둘째 쪽이 `- 2 -`).
-            // 표 뒤의 장식은 종전대로 글줄 뒤 방출이 등록한다.
-            registerPageChromePreceding(ordinal, in: ctrls, numbering: numbering)
-            paragraphEntryFlow?.bandClosed = true
+            // 표보다 앞선 쪽 장식(머리말·꼬리말·쪽 번호 위치·감추기)은 표의 **첫 조각이 놓이는
+            // 순간** 등록한다 — 종전 순서(서수 순 등록 뒤 표 흐름)를 지켜 표의 첫 쪽부터 장식이
+            // 실린다 (PR 리뷰: 쪽 번호 컨트롤 뒤 10행 표에서 첫 쪽 번호가 빠지고 둘째 쪽이 `- 2 -`).
+            // 놓기 **전**에 등록하면 첫 행이 안 들어가 쪽을 넘길 때 문단이 없는 앞 쪽이 그
+            // 장식으로 확정된다 (PR 리뷰 2). 표 뒤의 장식은 종전대로 글줄 뒤 방출이 등록한다.
+            pendingChromeRegistration = PendingChromeRegistration(
+                tableOrdinal: ordinal, controls: ctrls, numbering: numbering
+            )
             // 진단이 보고할 쪽은 표의 첫 조각이 **실제로 놓인** 쪽이다 — 조각을 내기 전에
             // 단·쪽을 넘길 수 있으므로 놓기 전 값이 아니라 방출이 돌려준 값을 쓴다 (PR 리뷰).
             let firstSegmentPage = appendFlowTableSegments(
@@ -3018,7 +3039,12 @@ private extension HwpPaginator {
                 numbering: numbering.container(controlIndex: ordinal),
                 margins: TableFlowMargins(outerMargins: table.commonCtrlProperty.marginArray)
             )
-            tablesPlacedBeforeText[ordinal] = firstSegmentPage ?? cachedPages.count + 1
+            pendingChromeRegistration = nil
+            // 조각을 하나도 안 낸 표(행 없는 표)는 놓인 것이 아니다 — 기록하면 글줄 앞에 아무것도
+            // 없는데 문단 위 간격을 걷고 띠를 닫는다 (PR 리뷰). 종전 경로가 그대로 처리한다.
+            guard let firstSegmentPage else { continue }
+            paragraphEntryFlow?.bandClosed = true
+            tablesPlacedBeforeText[ordinal] = firstSegmentPage
         }
     }
 
@@ -3476,6 +3502,11 @@ private extension HwpPaginator {
         {
             advanceColumn()
         }
+        // 목적지 용량으로 여백을 다시 잰다 — 원자 단위가 표 전체라 첫 행 기준 폴백
+        // (`fittingTableMargins`)을 지나도 표 + 여백이 안 들어갈 수 있다 (이월 각주 예약, 또는
+        // 표만 빈 단에 들어가는 경우). 그대로 두면 위 여백만큼 아래 여백·각주 자리로 넘친다
+        // (PR 리뷰). 여백만 버린다.
+        let margins = tableHeight + margins.total <= effectiveContentHeight ? margins : .none
         if let cellsByRow {
             collectTableCellFootnotes(cellsByRow: cellsByRow, rows: nil, numbering: cellNumbering)
         }
@@ -3581,9 +3612,19 @@ private extension HwpPaginator {
             repeatedHeaderRows: repeatedHeaderRows
         ) else { return }
         let segmentHeight = segmentFrame.outerFrame.height
-        // 글줄 앞 표(#190)의 첫 조각이 문단의 첫 콘텐츠면 보류된 쪽 번호 리셋을 여기서 확정한다
-        // (글줄 뒤 표는 글줄이 이미 확정해 무동작).
+        // 글줄 앞 표(#190)의 첫 조각이 문단의 첫 콘텐츠면 보류된 쪽 번호 리셋과 앞선 쪽 장식
+        // 등록을 여기서 확정하고 개요의 시작 쪽도 여기가 된다 (글줄 뒤 표는 글줄이 이미 확정해
+        // 무동작). 조각을 내기 전에 넘긴 단·쪽 뒤라 문단이 실제로 시작하는 쪽에 걸린다.
         applyPendingPageNumberReset()
+        if let pending = pendingChromeRegistration {
+            registerPageChromePreceding(
+                pending.tableOrdinal, in: pending.controls, numbering: pending.numbering
+            )
+            pendingChromeRegistration = nil
+        }
+        if currentParagraphFirstPlacedPage == nil {
+            currentParagraphFirstPlacedPage = cachedPages.count + 1
+        }
 
         let columnFrame = currentColumnFrame
         let blockFrame = CGRect(
