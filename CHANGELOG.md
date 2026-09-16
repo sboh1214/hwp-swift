@@ -48,7 +48,9 @@
   글꼴은 1.3배 상자(베이스라인 winAscent + 0.15 상자), 없는 글꼴은 winAscent + winDescent +
   lineGap 상자이고, 장식선은 그 상자를 1.3으로
   나눈 기준 상자에서 아래 밑줄 −(descent + 0.021 cell)·위 밑줄 ascent + 0.021 cell·두께
-  0.05 cell, 취소선 0.273 × ascent(두께는 0.04em)입니다. 밑줄은 **줄 단위**(줄의 모든 run과
+  0.05 cell, 취소선 0.273 × ascent(두께는 0.04em)이며, 상자에 곱하는 크기는 run 글꼴 크기가
+  아니라 글자 모양 기본 크기입니다(슬롯 상대 크기를 50%로 줄여도 한글은 100%와 같은 자리에
+  그립니다). 밑줄은 **줄 단위**(줄의 모든 run과
   문단 끝 글자의 상자를 축별 최댓값으로 합친 줄 상자 — 밑줄 없는 큰 글자 run이 같은 줄에
   있으면 작은 밑줄 run의 선도 그 자리로 내려갑니다), 취소선은 **run 단위**입니다. HWPX
   매퍼가 `hh:compatibleDocument@targetProgram`을 `HwpCompatibleDocumentTarget`

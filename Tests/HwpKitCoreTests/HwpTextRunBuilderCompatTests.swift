@@ -122,6 +122,30 @@ import XCTest
                 .to(beCloseTo(expected.baseline, within: 0.001))
         }
 
+        /// 문단 끝 상자는 라틴 슬롯 상대 크기가 아니라 **글자 모양 기본 크기**로 잰다 —
+        /// 라틴 50%(Menlo 6pt)인 12pt 글자 모양의 끝 상자는 Menlo × 12pt다 (한글 실측:
+        /// 슬롯 상대 크기는 MS 워드 호환 상자에 들지 않는다, PR 리뷰).
+        func testMsWordParagraphEndBoxUsesTheBaseSizeNotTheLatinSlotSize() throws {
+            let shapes: [UInt32: CoreHwp.HwpCharShape] = [
+                0: try charShape(faceRelativeSize: [100, 50, 100, 100, 100, 100, 100]),
+            ]
+            let built = builder(shapes: shapes, target: .msWord)
+                .build(paragraph: paragraph(text: "가A", runs: [(0, 0)]))
+            let latinFont = try XCTUnwrap(
+                fontRanges(in: built).first { NSLocationInRange(1, $0.range) }?.font
+            )
+            expect(CTFontGetSize(latinFont)).to(beCloseTo(6, within: 0.001))
+            let numbers = try XCTUnwrap(built.attribute(
+                HwpAttributedStringKey.msWordParagraphEndBox, at: 0, effectiveRange: nil
+            ) as? [NSNumber])
+            let menlo = CTFontCreateWithName("Menlo" as CFString, 12, nil)
+            let expected = HwpMsWordLineBox.metrics(of: menlo).scaled(by: 12)
+            expect(CGFloat(numbers[0].doubleValue))
+                .to(beCloseTo(expected.lineHeight, within: 0.001))
+            expect(CGFloat(numbers[1].doubleValue))
+                .to(beCloseTo(expected.baseline, within: 0.001))
+        }
+
         /// 문단 끝 상자는 글리프 조합 경계를 바꾸지 않는다 (PR 리뷰) — 이모지 서로게이트
         /// 쌍·결합 문자 `é`·합자 후보 `fi`·커닝 쌍 `AV`·아랍어 합자 `لا`로 끝나는 문단의
         /// CoreText run 범위·글리프 수·줄 폭이 한글 문서와 같고, 마지막 run이 상자를

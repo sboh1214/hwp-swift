@@ -76,7 +76,9 @@ public struct HwpMsWordLineBox: Hashable, Sendable {
         }
     }
 
-    /// 글자 크기를 곱한 pt 상자.
+    /// 글자 크기를 곱한 pt 상자 — MS 워드 호환 문서에서는 run 글꼴 크기가 아니라 **글자
+    /// 모양 기본 크기**(`hwp.baseFontSize`, 슬롯 상대 크기 무관)를 곱한다 (한글 실측,
+    /// `HwpPageLayerDecorations.msWordBoxSize`).
     public func scaled(by fontSize: CGFloat) -> HwpMsWordLineBox {
         HwpMsWordLineBox(lineHeight: lineHeight * fontSize, baseline: baseline * fontSize)
     }
@@ -161,10 +163,20 @@ public struct HwpMsWordLineBox: Hashable, Sendable {
         guard unitsPerEm > 0 else {
             return fallback(from: font)
         }
-        let hhea = CTFontCopyTable(font, CTFontTableTag(kCTFontTableHhea), []) as Data?
+        return parse(
+            os2: CTFontCopyTable(font, CTFontTableTag(kCTFontTableOS2), []) as Data?,
+            hhea: CTFontCopyTable(font, CTFontTableTag(kCTFontTableHhea), []) as Data?,
+            unitsPerEm: unitsPerEm
+        ) ?? fallback(from: font)
+    }
+
+    /// 표 바이트에서 줄 상자를 푼다 — OS/2가 있으면 win 지표(+ hhea lineGap), 없으면 hhea
+    /// ascent·descent, 둘 다 못 읽으면 nil. 글꼴 없이 합성 표로 테스트하려고 갈라 두었다
+    /// (PR 리뷰: KhmerMN의 win 합 UInt16 넘침, hhea descent −32768의 Int16 절댓값 트랩).
+    static func parse(os2: Data?, hhea: Data?, unitsPerEm: CGFloat) -> HwpMsWordLineBox? {
         // hhea: ascent 4·descent 6·lineGap 8 (FWORD)
         let lineGap = hhea.flatMap { $0.int16(at: 8) }.map { CGFloat($0) / unitsPerEm } ?? 0
-        if let os2 = CTFontCopyTable(font, CTFontTableTag(kCTFontTableOS2), []) as Data?,
+        if let os2,
            let winAscent = os2.uint16(at: 74), let winDescent = os2.uint16(at: 76),
            Int(winAscent) + Int(winDescent) > 0
         {
@@ -181,14 +193,15 @@ public struct HwpMsWordLineBox: Hashable, Sendable {
         if let hhea, let ascent = hhea.int16(at: 4), let descent = hhea.int16(at: 6),
            ascent > 0
         {
+            // FWORD는 Int16 — −32768의 절댓값은 Int16에 없으므로 Int로 넓힌 뒤 취한다.
             return HwpMsWordLineBox(
                 winAscent: CGFloat(ascent) / unitsPerEm,
-                winDescent: CGFloat(abs(descent)) / unitsPerEm,
+                winDescent: CGFloat(abs(Int(descent))) / unitsPerEm,
                 lineGap: lineGap,
                 isCJK: false
             )
         }
-        return fallback(from: font)
+        return nil
     }
 
     /// 표를 못 읽는 글꼴 — CoreText 보고값(hhea 계열)으로 그 밖 갈래를 만든다.

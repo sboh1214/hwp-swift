@@ -143,7 +143,7 @@ extension HwpPageLayer {
         for run in runs {
             let attributes = runAttributes(run)
             guard let font = runFont(attributes) else { continue }
-            boxes.append(HwpMsWordLineBox.metrics(of: font).scaled(by: CTFontGetSize(font)))
+            boxes.append(HwpMsWordLineBox.metrics(of: font).scaled(by: msWordBoxSize(attributes)))
             if endsParagraph,
                let end = attributes[HwpAttributedStringKey.msWordParagraphEndBox] as? [NSNumber],
                end.count == 2
@@ -154,6 +154,22 @@ extension HwpPageLayer {
             }
         }
         return HwpMsWordLineBox.union(boxes)
+    }
+
+    /// MS 워드 호환 문서에서 글꼴 상자(em)에 곱하는 크기 — run 글꼴 크기가 아니라 **글자
+    /// 모양의 기본 크기**(`hwp.baseFontSize`, 슬롯 상대 크기·첨자 축소 전)다. 한글 12.30
+    /// 실측(2026-09-16, PR 리뷰): 한 글자 모양 안에서 한글 슬롯 50%·라틴 100%로 갈라도
+    /// (함초롬 20pt `가나` + Helvetica 40pt `Ag`) 밑줄은 함초롬 40pt 상자 자리·두께 그대로고
+    /// (−10.3pt·2.64pt, 슬롯 50% 상자로 재면 −4.3pt), 취소선도 첫 글리프 글꼴 × 40pt
+    /// (+11.64pt, 20pt 기준이면 +5.84)다. 표식 run은 허용 목록이 `baseFontSize`를 남겨
+    /// 같은 값을 갖고, 없으면 run 글꼴 크기로 떨어진다.
+    func msWordBoxSize(_ attributes: [NSAttributedString.Key: Any]) -> CGFloat {
+        if let base = attributes[HwpAttributedStringKey.baseFontSize] as? NSNumber,
+           base.doubleValue > 0
+        {
+            return CGFloat(base.doubleValue)
+        }
+        return runFont(attributes).map(CTFontGetSize) ?? 10
     }
 
     /// 탭 전진 구간의 점선 리더 (legacy 목차 실물: 가운데점 '……' 연속)
@@ -417,7 +433,13 @@ extension HwpPageLayer {
     /// 같음, 축소 크기 6.36pt 기준이면 0.24pt).
     ///
     /// `msWordFont`는 MS 워드 호환 문서에서 이 run의 취소선 기준 글꼴
-    /// (`msWordStrikethroughFonts`) — 한글 문서면 nil이고 글자 크기 비례로 그린다.
+    /// (`msWordStrikethroughFonts`) — 한글 문서면 nil이고 글자 크기 비례로 그린다. 그
+    /// 글꼴의 상자에 곱하는 크기는 run 글꼴 크기가 아니라 **글자 모양 기본 크기**
+    /// (`msWordBoxSize`, 슬롯 상대 크기 무관)에 첨자 축소 비율만 곱한 값이고, 두께도
+    /// 기본 크기의 0.04배다 (한글 실측: 한글 50%·라틴 100%로 갈린 글자 모양 run의
+    /// 취소선이 한 줄, 자리는 첫 글리프 글꼴 × 40pt, 두께 1.56pt = 0.04 × 40). 슬롯마다
+    /// 글꼴 크기가 달라 CoreText가 쪼갠 run을 run 크기로 곱하면 한 글자 모양 안에서
+    /// 취소선이 계단이 진다 (PR 리뷰).
     func drawStrikethroughIfNeeded(
         _ run: CTRun,
         lineOrigin: CGPoint,
@@ -438,9 +460,13 @@ extension HwpPageLayer {
         // 같은 경로다 (`track-changes` 실물의 +0.29em = 함초롬돋움의 호환 문서 값).
         let thicknessFontSize = preScriptFontSize(attributes)
         let line: HwpDecorationLineGeometry.Line = if let msWordFont {
+            // 첨자 축소 비율(run 글꼴 크기 ÷ 축소 전 크기)은 유지한다 — 한글 문서처럼
+            // 첨자 취소선은 줄어든 글리프 가운데를 지난다 (#179; 호환 문서 첨자 표본은 없다).
             HwpDecorationLineGeometry.msWordStrikethrough(
-                runBox: HwpMsWordLineBox.metrics(of: msWordFont).scaled(by: size),
-                thicknessFontSize: thicknessFontSize
+                runBox: HwpMsWordLineBox.metrics(of: msWordFont).scaled(
+                    by: msWordBoxSize(attributes) * size / max(thicknessFontSize, 0.01)
+                ),
+                thicknessFontSize: msWordBoxSize(attributes)
             )
         } else {
             HwpDecorationLineGeometry.strikethrough(

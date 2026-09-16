@@ -111,6 +111,37 @@ final class HwpMsWordLineBoxTests: XCTestCase {
         expect(box.baseline).to(beGreaterThan(1.0))
     }
 
+    /// 합성 표 바이트로 두 극단을 잰다 (PR 리뷰): hhea descent가 유효 FWORD 최솟값 −32768인
+    /// OS/2 없는 글꼴은 Int16 절댓값 트랩 없이 32768/upem으로 읽히고, win 합이 UInt16을
+    /// 넘는 OS/2(KhmerMN 2294 + 64143)는 Int 덧셈으로 그대로 읽힌다. 표가 둘 다 없으면 nil.
+    func testParseWidensSignedAndUnsignedTableFields() throws {
+        func bigEndian16(_ value: Int) -> [UInt8] {
+            let raw = UInt16(truncatingIfNeeded: value)
+            return [UInt8(raw >> 8), UInt8(raw & 0xFF)]
+        }
+        var hhea = [UInt8](repeating: 0, count: 36)
+        hhea.replaceSubrange(4 ..< 6, with: bigEndian16(1638))
+        hhea.replaceSubrange(6 ..< 8, with: bigEndian16(-32768))
+        hhea.replaceSubrange(8 ..< 10, with: bigEndian16(0))
+        let fromHhea = try XCTUnwrap(
+            HwpMsWordLineBox.parse(os2: nil, hhea: Data(hhea), unitsPerEm: 2048)
+        )
+        expect(fromHhea.baseline).to(beCloseTo(1638.0 / 2048, within: 0.0001))
+        expect(fromHhea.lineHeight).to(beCloseTo((1638.0 + 32768) / 2048, within: 0.0001))
+
+        var os2 = [UInt8](repeating: 0, count: 96)
+        os2.replaceSubrange(74 ..< 76, with: bigEndian16(2294))
+        os2.replaceSubrange(76 ..< 78, with: bigEndian16(64143))
+        let fromOS2 = try XCTUnwrap(
+            HwpMsWordLineBox.parse(os2: Data(os2), hhea: Data(hhea), unitsPerEm: 2048)
+        )
+        // CJK 비트 없음 → win 합 + lineGap, 베이스라인 winAscent + lineGap.
+        expect(fromOS2.lineHeight).to(beCloseTo((2294.0 + 64143) / 2048, within: 0.0001))
+        expect(fromOS2.baseline).to(beCloseTo(2294.0 / 2048, within: 0.0001))
+        expect(HwpMsWordLineBox.parse(os2: nil, hhea: nil, unitsPerEm: 2048)).to(beNil())
+        expect(HwpMsWordLineBox.parse(os2: Data(), hhea: Data(), unitsPerEm: 2048)).to(beNil())
+    }
+
     /// 표를 못 읽는 글꼴은 CoreText 보고값으로 그 밖 갈래를 만든다.
     func testFallbackUsesCoreTextMetricsAsNonCJK() {
         let font = CTFontCreateWithName("Menlo" as CFString, 10, nil)

@@ -465,13 +465,14 @@ import XCTest
         func charShape(
             property: UInt32 = 0,
             faceScaleX: [UInt8] = [100, 100, 100, 100, 100, 100, 100],
-            faceLocation: [Int8] = [0, 0, 0, 0, 0, 0, 0]
+            faceLocation: [Int8] = [0, 0, 0, 0, 0, 0, 0],
+            faceRelativeSize: [UInt8] = [100, 100, 100, 100, 100, 100, 100]
         ) throws -> CoreHwp.HwpCharShape {
             var data = Data()
             append(UInt16(0), count: 7, to: &data)
             data.append(contentsOf: faceScaleX)
             data.append(contentsOf: [0, 0, 0, 0, 0, 0, 0].map { UInt8(bitPattern: Int8($0)) })
-            data.append(contentsOf: [100, 100, 100, 100, 100, 100, 100])
+            data.append(contentsOf: faceRelativeSize)
             data.append(contentsOf: faceLocation.map { UInt8(bitPattern: $0) })
             append(Int32(1200), to: &data)
             append(property, to: &data)

@@ -21,16 +21,20 @@ import XCTest
 extension HwpDecorationLineGeometryTests {
     private static let msWord = NSNumber(value: HwpCompatibleDocumentTarget.msWord.rawValue)
 
+    /// `baseSize`는 글자 모양 기본 크기(`baseFontSize`, 기본은 `size`) — 슬롯 상대 크기로
+    /// 줄어든 run은 `size`가 작고 `baseSize`가 크다.
     private func run(
         _ fontName: String, size: CGFloat, color: CGColor,
         underline: Bool = false, above: Bool = false, strikethrough: Bool = false,
-        target: NSNumber? = HwpDecorationLineGeometryTests.msWord, shape: UInt32? = nil
+        target: NSNumber? = HwpDecorationLineGeometryTests.msWord, shape: UInt32? = nil,
+        baseSize: CGFloat? = nil
     ) -> [NSAttributedString.Key: Any] {
         var attributes: [NSAttributedString.Key: Any] = [
             kCTFontAttributeName as NSAttributedString.Key: CTFontCreateWithName(
                 fontName as CFString, size, nil
             ),
             HwpAttributedStringKey.spaceTargetSize: NSNumber(value: Double(size)),
+            HwpAttributedStringKey.baseFontSize: NSNumber(value: Double(baseSize ?? size)),
         ]
         if let target {
             attributes[HwpAttributedStringKey.compatibleDocumentTarget] = target
@@ -220,6 +224,65 @@ extension HwpDecorationLineGeometryTests {
             )
         }
         expect(apart).to(beCloseTo(1.240, within: 0.02))
+    }
+
+    /// 상자에 곱하는 크기는 글자 모양 기본 크기다 (PR 리뷰 + 한글 실측: 슬롯 상대 크기
+    /// 50%도 100% 자리) — 슬롯 상대 크기로 20pt가 된 Menlo run(기본 40pt)의 취소선은 40pt
+    /// Menlo run의 취소선과 같은 자리·같은 두께이고, 같은 글자 모양 안에서 슬롯이 갈린
+    /// 두 run(첫 run 40pt Menlo·둘째 run 20pt Helvetica)의 취소선도 한 자리다. 밑줄도 20pt
+    /// run 하나의 줄 상자가 40pt 상자다.
+    func testMsWordBoxesScaleWithTheCharShapeBaseSize() throws {
+        let helvetica = CTFontCreateWithName("Helvetica" as CFString, 20, nil)
+        try XCTSkipUnless(
+            (CTFontCopyPostScriptName(helvetica) as String) == "Helvetica", "Helvetica 없음"
+        )
+        // 취소선: 다른 글자 모양(5·6)의 두 run — 20pt(기본 40)와 40pt(기본 40).
+        let strikes = NSMutableAttributedString(string: "AA ", attributes: run(
+            "Menlo", size: 20, color: Self.cyan, strikethrough: true, shape: 5, baseSize: 40
+        ))
+        strikes.append(NSAttributedString(string: "BB", attributes: run(
+            "Menlo", size: 40, color: Self.magenta, strikethrough: true, shape: 6
+        )))
+        let strikeRaster = try render(text: strikes)
+        let small = try XCTUnwrap(Self.rowCenter(strikeRaster, where: Self.isCyan), "20pt 취소선")
+        let large = try XCTUnwrap(Self.rowCenter(strikeRaster, where: Self.isMagenta), "40pt 취소선")
+        expect(small).to(beCloseTo(large, within: 0.2), description: "기본 크기 40 자리")
+        // 두께는 글리프 잉크 없는 빈칸 run으로 잰다 (`thicknessProbe`와 같은 이유).
+        let blankStrike = try render(text: NSAttributedString(string: "    ", attributes: run(
+            "Menlo", size: 20, color: Self.cyan, strikethrough: true, baseSize: 40
+        )))
+        let smallThickness = try XCTUnwrap(
+            Self.lineThickness(blankStrike) { red, _, _ in red }, "20pt 취소선 두께"
+        )
+        expect(smallThickness).to(beCloseTo(40 * 0.04, within: 0.06))
+        // 같은 글자 모양(7) 안에서 슬롯이 갈린 두 run — 첫 run Menlo 40, 둘째 Helvetica 20.
+        let grouped = NSMutableAttributedString(string: "AA ", attributes: run(
+            "Menlo", size: 40, color: Self.cyan, strikethrough: true, shape: 7
+        ))
+        grouped.append(NSAttributedString(string: "BB", attributes: run(
+            "Helvetica", size: 20, color: Self.magenta, strikethrough: true, shape: 7,
+            baseSize: 40
+        )))
+        let groupedRaster = try render(text: grouped)
+        let first = try XCTUnwrap(Self.rowCenter(groupedRaster, where: Self.isCyan), "첫 run")
+        let second = try XCTUnwrap(Self.rowCenter(groupedRaster, where: Self.isMagenta), "둘째 run")
+        expect(second).to(beCloseTo(first, within: 0.2), description: "한 글자 모양 한 자리")
+        // 밑줄: 20pt run(기본 40) 혼자의 줄 상자 = 40pt Menlo 상자 — 40pt run과 같은 자리.
+        let smallUnderline = try render(text: NSAttributedString(string: "AAAA", attributes: run(
+            "Menlo", size: 20, color: Self.cyan, underline: true, baseSize: 40
+        )))
+        let largeUnderline = try render(text: NSAttributedString(string: "AAAA", attributes: run(
+            "Menlo", size: 40, color: Self.cyan, underline: true
+        )))
+        let smallCenter = try XCTUnwrap(Self.rowCenter(smallUnderline, where: Self.isCyan))
+        let largeCenter = try XCTUnwrap(Self.rowCenter(largeUnderline, where: Self.isCyan))
+        expect(smallCenter).to(beCloseTo(largeCenter, within: 0.2), description: "밑줄 자리")
+        let blankUnderline = try render(text: NSAttributedString(string: "    ", attributes: run(
+            "Menlo", size: 20, color: Self.cyan, underline: true, baseSize: 40
+        )))
+        let expected = HwpDecorationLineGeometry.msWordUnderlineBelow(lineBox: menloBox(40))
+        expect(try XCTUnwrap(Self.lineThickness(blankUnderline) { red, _, _ in red }))
+            .to(beCloseTo(expected.thickness, within: 0.06))
     }
 
     /// 글자 위 밑줄도 줄 상자의 `ascent` 위 0.021 cell — 같은 줄의 아래 밑줄과의 간격이
