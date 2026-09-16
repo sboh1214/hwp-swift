@@ -270,6 +270,56 @@ extension HwpDecorationLineGeometryTests {
         expect(expectedDrop).to(beCloseTo(0.42, within: 0.02))
     }
 
+    /// 문단 끝 상자는 **문단의 마지막 줄**에만 든다 — 상자가 마지막 속성 run 전체에 실려
+    /// 두 줄로 접힌 run의 앞 줄에도 키가 보이지만, 렌더러는 `HwpDrawnLine.endsParagraph`로
+    /// 마지막 줄만 옮긴다 (한글 실측: Apple SD 20pt 세 줄 문단의 마지막 줄만 2207).
+    /// 다음 쪽으로 이어지는 조각(`continuedParagraphFragment`)의 끝 줄은 마지막 줄이
+    /// 아니라 어느 줄도 옮기지 않는다.
+    func testParagraphEndBoxAppliesOnlyToTheParagraphLastLine() throws {
+        let appleSD = CTFontCreateWithName("Apple SD Gothic Neo" as CFString, 10, nil)
+        try XCTSkipUnless(
+            (CTFontCopyPostScriptName(appleSD) as String) == "AppleSDGothicNeo-Regular",
+            "Apple SD Gothic Neo 없음"
+        )
+        let appleBox = HwpMsWordLineBox.metrics(of: appleSD).scaled(by: 10)
+        // Menlo 10pt 6.02pt/자 × 39자 = 235pt > 줄 폭 200 → 빈칸에서 두 줄.
+        let text = "AAAAAAAAA AAAAAAAAA AAAAAAAAA AAAAAAAAA"
+        let plain = run("Menlo", size: 10, color: Self.cyan, underline: true)
+        let alone = Self.rowBands(
+            try render(text: NSAttributedString(string: text, attributes: plain)),
+            where: Self.isCyan
+        )
+        expect(alone.count) == 2
+        var boxed = plain
+        boxed[HwpAttributedStringKey.msWordParagraphEndBox] = [
+            NSNumber(value: Double(appleBox.lineHeight)),
+            NSNumber(value: Double(appleBox.baseline)),
+        ]
+        let joined = Self.rowBands(
+            try render(text: NSAttributedString(string: text, attributes: boxed)),
+            where: Self.isCyan
+        )
+        expect(joined.count) == 2
+        guard alone.count == 2, joined.count == 2 else { return }
+        let line = try XCTUnwrap(HwpMsWordLineBox.union([menloBox(10), appleBox]))
+        let expectedDrop = HwpDecorationLineGeometry.msWordUnderlineBelow(lineBox: menloBox(10))
+            .center - HwpDecorationLineGeometry.msWordUnderlineBelow(lineBox: line).center
+        expect(joined[0] - alone[0]).to(beCloseTo(0, within: 0.01), description: "앞 줄은 그대로")
+        expect(joined[1] - alone[1]).to(beCloseTo(expectedDrop, within: 0.2), description: "마지막 줄")
+        expect(expectedDrop).to(beCloseTo(0.42, within: 0.02))
+        // 이어지는 조각: 끝 글자에 이어짐 표식 → 어느 줄도 옮기지 않는다.
+        let continued = NSMutableAttributedString(string: text, attributes: boxed)
+        continued.addAttribute(
+            HwpAttributedStringKey.continuedParagraphFragment, value: NSNumber(value: true),
+            range: NSRange(location: continued.length - 1, length: 1)
+        )
+        let fragment = Self.rowBands(try render(text: continued), where: Self.isCyan)
+        expect(fragment.count) == 2
+        guard fragment.count == 2 else { return }
+        expect(fragment[0] - alone[0]).to(beCloseTo(0, within: 0.01), description: "조각 앞 줄")
+        expect(fragment[1] - alone[1]).to(beCloseTo(0, within: 0.01), description: "조각 끝 줄")
+    }
+
     /// 한글 2007 호환(raw 1)·훈민정음(raw 4) 문서의 run은 한글 문서 기하다 — MS 워드
     /// 값과 갈린다 (한글 실측: 훈민정음 = 한글 문서 그대로, 한글 2007은 별도 기하이지만
     /// 표본이 한 크기뿐이라 아직 한글 문서와 같이 다룬다).

@@ -87,20 +87,32 @@ import XCTest
             }
         }
 
-        /// 문단 끝 글자의 줄 상자는 MS 워드 호환 문서의 **마지막 글자에만** 실린다 —
-        /// 값은 마지막 글자 모양의 라틴 슬롯 글꼴(결정론 resolver: Menlo)을 그 크기로
-        /// 푼 상자다 (12pt × Menlo 1.513/1.1028).
-        func testMsWordParagraphEndBoxRidesOnTheLastCharacter() throws {
-            let paragraph = paragraph(text: "가나", runs: [(0, 0)])
-            let shapes: [UInt32: CoreHwp.HwpCharShape] = [0: try charShape()]
-            let built = builder(shapes: shapes, target: .msWord).build(paragraph: paragraph)
-            expect(built.attribute(
-                HwpAttributedStringKey.msWordParagraphEndBox, at: 0, effectiveRange: nil
-            )).to(beNil())
-            let last = built.attribute(
-                HwpAttributedStringKey.msWordParagraphEndBox, at: built.length - 1,
-                effectiveRange: nil
+        /// 문단 끝 글자의 줄 상자는 MS 워드 호환 문서에서 **마지막 글자가 속한 속성 run
+        /// 전체**에 실린다 — 글자 모양이 다른 두 run `가나`+`A`는 마지막 run `A`에만,
+        /// `가나` 한 run은 두 글자 모두에 (마지막 글자 하나에만 얹으면 속성 경계가 글리프
+        /// 조합을 가른다, PR 리뷰; 결정론 resolver는 한글·라틴 슬롯이 같은 Menlo라 슬롯이
+        /// 아니라 글자 모양으로 run을 가른다). 값은 마지막 글자 모양의 라틴 슬롯 글꼴
+        /// (결정론 resolver: Menlo)을 그 크기로 푼 상자다 (12pt × Menlo 1.513/1.1028).
+        func testMsWordParagraphEndBoxRidesOnTheLastRun() throws {
+            let shapes: [UInt32: CoreHwp.HwpCharShape] = [
+                0: try charShape(), 1: try charShape(property: 1 << 18),
+            ]
+            let mixed = builder(shapes: shapes, target: .msWord)
+                .build(paragraph: paragraph(text: "가나A", runs: [(0, 0), (2, 1)]))
+            let carried = (0 ..< mixed.length).map { location in
+                mixed.attribute(
+                    HwpAttributedStringKey.msWordParagraphEndBox, at: location, effectiveRange: nil
+                ) != nil
+            }
+            expect(carried) == [false, false, true]
+            let hangul = builder(shapes: shapes, target: .msWord)
+                .build(paragraph: paragraph(text: "가나", runs: [(0, 0)]))
+            var range = NSRange(location: 0, length: 0)
+            let last = hangul.attribute(
+                HwpAttributedStringKey.msWordParagraphEndBox, at: hangul.length - 1,
+                effectiveRange: &range
             ) as? [NSNumber]
+            expect(range) == NSRange(location: 0, length: 2)
             let numbers = try XCTUnwrap(last)
             expect(numbers.count) == 2
             let menlo = CTFontCreateWithName("Menlo" as CFString, 12, nil)
@@ -109,6 +121,51 @@ import XCTest
                 .to(beCloseTo(expected.lineHeight, within: 0.001))
             expect(CGFloat(numbers[1].doubleValue))
                 .to(beCloseTo(expected.baseline, within: 0.001))
+        }
+
+        /// 문단 끝 상자는 글리프 조합 경계를 바꾸지 않는다 (PR 리뷰) — 이모지 서로게이트
+        /// 쌍·결합 문자 `é`·합자 후보 `fi`·커닝 쌍 `AV`·아랍어 합자 `لا`로 끝나는 문단의
+        /// CoreText run 범위·글리프 수·줄 폭이 한글 문서와 같고, 마지막 run이 상자를
+        /// 싣는다. 마지막 UTF-16 단위에만 얹으면 `😀`가 LastResort 글리프 둘(폭 74.6 →
+        /// 122.6pt)로 깨지고 `é`·`لا`는 CoreText가 조합을 지키며 속성을 버렸다.
+        func testMsWordParagraphEndBoxKeepsGlyphComposition() throws {
+            let shapes: [UInt32: CoreHwp.HwpCharShape] = [0: try charShape()]
+            func runs(_ built: NSAttributedString) throws -> [(range: NSRange, glyphs: Int)] {
+                let line = CTLineCreateWithAttributedString(built)
+                let runs = try XCTUnwrap(CTLineGetGlyphRuns(line) as? [CTRun])
+                return runs.map { run in
+                    let range = CTRunGetStringRange(run)
+                    return (NSRange(location: range.location, length: range.length),
+                            CTRunGetGlyphCount(run))
+                }
+            }
+            for text in ["가😀", "가e\u{301}", "가fi", "AVA", "ab\u{0644}\u{0627}"] {
+                let paragraph = paragraph(text: text, runs: [(0, 0)])
+                let native = builder(shapes: shapes, target: nil).build(paragraph: paragraph)
+                let word = builder(shapes: shapes, target: .msWord).build(paragraph: paragraph)
+                let nativeRuns = try runs(native)
+                let wordRuns = try runs(word)
+                expect(wordRuns.map(\.range)).to(
+                    equal(nativeRuns.map(\.range)), description: "\(text) run 범위"
+                )
+                expect(wordRuns.map(\.glyphs)).to(
+                    equal(nativeRuns.map(\.glyphs)), description: "\(text) 글리프 수"
+                )
+                let nativeWidth = CTLineGetTypographicBounds(
+                    CTLineCreateWithAttributedString(native), nil, nil, nil
+                )
+                let wordWidth = CTLineGetTypographicBounds(
+                    CTLineCreateWithAttributedString(word), nil, nil, nil
+                )
+                expect(wordWidth).to(beCloseTo(nativeWidth, within: 0.001), description: text)
+                let lastRun = try XCTUnwrap(
+                    (CTLineGetGlyphRuns(CTLineCreateWithAttributedString(word)) as? [CTRun])?.last
+                )
+                let attributes = CTRunGetAttributes(lastRun) as? [NSAttributedString.Key: Any]
+                expect(attributes?[HwpAttributedStringKey.msWordParagraphEndBox]).toNot(
+                    beNil(), description: "\(text) 마지막 run의 끝 상자"
+                )
+            }
         }
 
         /// 모든 run이 글자 모양 id(`charShapeId`)를 싣는다 — 렌더러가 슬롯·대체 글꼴로

@@ -1933,7 +1933,10 @@ paraShape와 같은 값**이어야 한다.
     ascent + 0.021 cell·두께 0.05 cell — 밑줄 없는 run·대체 글꼴 run도 후보이고, **문단
     끝 글자(CR)** 도 마지막 글자 모양의 **라틴 슬롯** 글꼴로 마지막 줄에 든다 (Apple SD
     20pt 한글 문단이 세 줄이면 앞 두 줄 베이스라인 2160·마지막 줄만 Menlo의 2207). 조판이
-    문단 마지막 글자에 `hwp.msWordParagraphEndBox`로 그 상자를 싣고 렌더러가 합친다.
+    마지막 글자가 속한 **속성 run 전체**에 `hwp.msWordParagraphEndBox`로 그 상자를 싣고
+    (마지막 글자 하나에만 얹으면 속성 경계가 이모지 서로게이트 쌍을 가르고 결합 문자·아랍어
+    합자에서는 CoreText가 속성을 버린다 — PR 리뷰 재현), 렌더러가 문단의 마지막 줄
+    (`HwpDrawnLine.endsParagraph`: 문자열 끝에 닿고 이어지는 조각이 아닌 줄)에만 합친다.
   - **취소선(가운데 밑줄·삭제선 포함)은 run 단위**: run 상자의 ascent × 0.273, 두께는
     한글 문서와 같은 0.04em. 한글은 글자 모양 run의 첫 글리프 글꼴을 run 전체에 쓰므로
     조판이 모든 run에 싣는 글자 모양 id(`hwp.charShapeId`)로 슬롯·대체 글꼴에 쪼개진

@@ -12,7 +12,11 @@ extension HwpPageLayer {
     /// 취소선/강조점. 글리프는 run 하나하나가 다르게 그려질 이유(그림자·양각·
     /// 글자 위치·한 줄 끝 표식)가 없으면 CTLineDraw 한 번으로, 있으면 run마다
     /// 그린다 (`drawRun`). 밑줄·취소선 같은 선은 어느 경로든 아래에서 직접 그린다.
-    func drawDecoratedLine(_ line: CTLine, origin: CGPoint, in ctx: CGContext) {
+    /// `endsParagraph`(`HwpDrawnLine.endsParagraph`)는 문단의 마지막 줄 — MS 워드 호환
+    /// 문단 끝 상자가 이 줄에만 든다.
+    func drawDecoratedLine(
+        _ line: CTLine, origin: CGPoint, endsParagraph: Bool, in ctx: CGContext
+    ) {
         guard let runs = CTLineGetGlyphRuns(line) as? [CTRun], !runs.isEmpty else { return }
 
         for run in runs {
@@ -55,7 +59,7 @@ extension HwpPageLayer {
         // 상자들을 축별 최댓값으로 합친 줄 상자가 줄의 모든 밑줄 자리·두께를 정한다
         // (한글 실측: 밑줄 없는 run·대체 글꼴 run·문단 끝 글자도 후보). 취소선은
         // run마다 자기 글꼴이라 아래에서 따로 푼다.
-        let msWordReference = msWordLineBox(of: runs)
+        let msWordReference = msWordLineBox(of: runs, endsParagraph: endsParagraph)
         let strikethroughFonts = msWordStrikethroughFonts(of: runs)
         for (index, run) in runs.enumerated() {
             // 밑줄은 CT 대신 항상 직접 (CT 밑줄은 폰트 지표 위치·두께라 실물과 갈린다)
@@ -124,10 +128,13 @@ extension HwpPageLayer {
     }
 
     /// MS 워드 호환 문서에서 이 줄의 줄 상자 (pt, `HwpMsWordLineBox.union`) — 줄의 run
-    /// 전부(장식 없는 run·CoreText 대체 글꼴 run 포함)의 글꼴 상자에, 문단 끝 글자가
-    /// 이 줄에 있으면(조판이 문단 마지막 글자에 실은 `msWordParagraphEndBox`) 그 상자를
-    /// 더해 합친다. 한글 문서 줄이면 nil.
-    func msWordLineBox(of runs: [CTRun]) -> HwpMsWordLineBox? {
+    /// 전부(장식 없는 run·CoreText 대체 글꼴 run 포함)의 글꼴 상자에, 이 줄이 문단의
+    /// 마지막 줄(`endsParagraph`)이면 조판이 마지막 속성 run에 실은 문단 끝 상자
+    /// (`msWordParagraphEndBox`)를 더해 합친다. 상자가 run 전체에 실리는 이유는 글리프
+    /// 조합 경계를 만들지 않기 위해서라(PR 리뷰: 이모지·결합 문자·합자) 그 run이 여러
+    /// 줄에 걸치면 앞 줄에도 키가 있다 — 줄 판정은 키가 아니라 `endsParagraph`다. 한글
+    /// 문서 줄이면 nil.
+    func msWordLineBox(of runs: [CTRun], endsParagraph: Bool) -> HwpMsWordLineBox? {
         // 문서 단위 속성이라 줄의 run 하나가 MS 워드면 줄 전체가 그렇다 — 표식 run(한 줄
         // 끝·빈 줄 앵커)처럼 허용 목록으로 깎인 run도 글꼴이 있는 한 후보로 넣는다
         // (한글도 그 줄의 글자 모양으로 줄 상자를 잡는다).
@@ -137,7 +144,8 @@ extension HwpPageLayer {
             let attributes = runAttributes(run)
             guard let font = runFont(attributes) else { continue }
             boxes.append(HwpMsWordLineBox.metrics(of: font).scaled(by: CTFontGetSize(font)))
-            if let end = attributes[HwpAttributedStringKey.msWordParagraphEndBox] as? [NSNumber],
+            if endsParagraph,
+               let end = attributes[HwpAttributedStringKey.msWordParagraphEndBox] as? [NSNumber],
                end.count == 2
             {
                 boxes.append(HwpMsWordLineBox(

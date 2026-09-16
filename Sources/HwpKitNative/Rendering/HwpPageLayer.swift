@@ -281,7 +281,9 @@ public final class HwpPageLayer: CALayer, @unchecked Sendable {
                 y: effectivePageHeight - drawnLine.baselineOrigin.y
             )
             ctx.textPosition = lineOrigin
-            drawDecoratedLine(drawnLine.line, origin: lineOrigin, in: ctx)
+            drawDecoratedLine(
+                drawnLine.line, origin: lineOrigin, endsParagraph: drawnLine.endsParagraph, in: ctx
+            )
         }
         ctx.translateBy(x: 0, y: effectivePageHeight)
         ctx.scaleBy(x: 1, y: -1)

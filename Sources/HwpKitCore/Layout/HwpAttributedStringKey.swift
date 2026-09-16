@@ -26,13 +26,16 @@ public enum HwpAttributedStringKey {
     public static let compatibleDocumentTarget =
         NSAttributedString.Key("hwp.compatibleDocumentTarget")
     /// MS 워드 호환 문서의 **문단 끝 글자** 줄 상자 (`[NSNumber]` = [줄 상자 높이 pt,
-    /// 상자 상단 → 베이스라인 pt], #187) — 조판(`HwpTextRunBuilder.finishBuild`)이 문단의
-    /// 마지막 글자에 싣는다. 한글은 문단 끝 글자(CR)를 마지막 글자 모양의 **라틴 슬롯**
-    /// 글꼴로 그 줄에 세우므로, 조판 문자열에서 접힌 CR의 상자를 렌더러가 마지막 줄의
-    /// 줄 상자(`HwpMsWordLineBox.union`)에 되돌려 넣는다 (한글 실측: Apple SD 20pt
-    /// 한글 문단의 마지막 줄만 Menlo 라틴 슬롯의 베이스라인 2207을 받아 밑줄이
-    /// −0.2994em으로 올라간다; 앞 줄들은 −0.3234em). 밑줄만 이 상자를 보고 취소선은
-    /// run 단위라 보지 않는다.
+    /// 상자 상단 → 베이스라인 pt], #187) — 조판(`HwpTextRunBuilder.finishBuild`)이 문단
+    /// 마지막 글자가 속한 **속성 run 전체**에 싣는다 (마지막 글자 하나에만 얹으면 속성
+    /// 경계가 이모지 서로게이트 쌍·결합 문자·합자의 글리프 조합을 가른다 — PR 리뷰).
+    /// 한글은 문단 끝 글자(CR)를 마지막 글자 모양의 **라틴 슬롯** 글꼴로 그 줄에
+    /// 세우므로, 조판 문자열에서 접힌 CR의 상자를 렌더러가 **문단의 마지막 줄**
+    /// (`HwpDrawnLine.endsParagraph` — 그 run이 여러 줄에 걸쳐도 앞 줄은 아니다)의 줄
+    /// 상자(`HwpMsWordLineBox.union`)에 되돌려 넣는다 (한글 실측: Apple SD 20pt 한글
+    /// 문단의 마지막 줄만 Menlo 라틴 슬롯의 베이스라인 2207을 받아 밑줄이 −0.2994em으로
+    /// 올라간다; 앞 줄들은 −0.3234em). 밑줄만 이 상자를 보고 취소선은 run 단위라 보지
+    /// 않는다.
     public static let msWordParagraphEndBox =
         NSAttributedString.Key("hwp.msWordParagraphEndBox")
     /// run의 글자 모양 id (NSNumber = `HwpCharShape` id, #187) — 조판
