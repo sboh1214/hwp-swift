@@ -221,5 +221,65 @@ import XCTest
             expect(firstCellTexts.count).to(beGreaterThanOrEqualTo(2))
             expect(Set(firstCellTexts)).to(equal(["행 0"]))
         }
+
+        /// 셀 각주 예약이 넘긴 조각도 목적지 용량으로 여백을 다시 잰다 — 행 100 + 예약 78 +
+        /// 여백 30은 빈 쪽에 안 들어가지만 여백을 버리면 통째로 들어간다 (수정 전엔 낡은 여백을
+        /// 든 채 92.6 + 7.4로 갈려 쪽이 하나 늘었다).
+        func testCellNoteAdvanceRefitsMarginsOnTheDestination() async throws {
+            var cell = try HwpSynthetic.textParagraph("셀")
+            cell.ctrlHeaderArray = [Self.footnote(String(repeating: " 긴 셀 각주 본문", count: 20))]
+            var host = Support.paragraphWithInlineControl(suffix: "table anchor")
+            host.ctrlHeaderArray = [.table(HwpSynthetic.placed(
+                HwpSynthetic.table(
+                    cellWidth: 20000, rowHeights: [10000], cellParagraphs: [[[cell]]]
+                ),
+                treatAsChar: false, margins: [283, 283, 1500, 1500]
+            ))]
+            // 본문 200.8pt: 템플릿 + 앞 문단(32) 뒤 행 100은 들어가지만 각주 예약 78을 넣으면
+            // 안 들어가 셀 각주 경로가 다음 쪽으로 넘긴다.
+            let paginator = Support.paginator(pageHeight: 30000, bodyParagraphs: [
+                try Support.flow("앞 문단"), host, try Support.flow("뒤 문단"),
+            ])
+            let total = await paginator.totalPages()
+            var tables: [(page: Int, block: FloatingTablePrecedesTextSupport.Placed)] = []
+            for index in 0 ..< total {
+                let blocks = try await Support.blocks(of: paginator, page: index)
+                tables += blocks.filter { $0.kind == .table }.map { (index + 1, $0) }
+            }
+            let first = try await Support.blocks(of: paginator)
+            // 2쪽 상단에 여백 없이 통째로 놓이고 다른 쪽엔 조각이 없다.
+            expect(tables.map(\.page)).to(equal([2]))
+            expect(tables.map(\.block.frame.height)).to(equal([100]))
+            expect(tables.first?.block.frame.minY ?? 0)
+                .to(beCloseTo(first[0].frame.minY, within: 0.01))
+        }
+
+        /// 진단(`unsupportedElements`)의 쪽은 종전대로 문단이 **들어선** 쪽이고, 표의 첫 조각
+        /// 쪽을 따르는 것은 개요뿐이다 — 공개 출력의 쪽이 표 착지 쪽으로 바뀌면 안 된다.
+        func testDiagnosticPageStaysTheEntryPageWhileOutlineFollowsTheTable() async throws {
+            var heading = Support.paragraphWithInlineControl(suffix: "제목")
+            heading.ctrlHeaderArray = try Support.host(rowCount: 2).ctrlHeaderArray
+            heading.paraHeader = try HwpSynthetic.outlineParaHeader(paraShapeId: 1, paraStyleId: 0)
+            // 본문 200.8pt: 템플릿 + 앞 문단 열하나(192) → 첫 행 30이 안 들어가 표·글줄이 2쪽이다.
+            let fillers = try (0 ..< 11).map { try Support.flow("앞 문단 \($0)") }
+            let section = HwpSynthetic.section(
+                firstParagraphControls: [.section(HwpSynthetic.sectionDef(pageHeight: 30000))],
+                bodyParagraphs: fillers + [heading]
+            )
+            // 번호 정의 없는 개요 문단 → 문단 머리 진단이 뜬다.
+            let paginator = HwpPaginator(
+                sections: [section],
+                index: HwpSynthetic.outlineIndex(
+                    paraShapes: [1: HwpSynthetic.outlineParaShape(levelRawValue: 0)]
+                ),
+                fontResolver: .testDeterministic
+            )
+            let total = await paginator.totalPages()
+            let outline = await paginator.outline()
+            let diagnostics = await paginator.unsupportedElements()
+            expect(total).to(equal(2))
+            expect(outline.map(\.pageNumber)).to(equal([2]))
+            expect(diagnostics.map(\.page)).to(equal([1]))
+        }
     }
 #endif
