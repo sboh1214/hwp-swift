@@ -708,18 +708,19 @@ private extension HwpPaginator {
         // 취소된 로드가 0-높이 문단을 대량 처리할 때 page(at:) 반환 전에
         // 취소를 관찰해 옛 문서 레이아웃이 교체본과 나란히 도는 것을 막는다 (#3).
         try Task.checkCancellation()
-        // 구역 시작/쪽 나누기 문단: 진행 중인 페이지를 확정하고 이 문단은
-        // 다음 호출에서 새 페이지 첫머리로 다시 처리한다.
-        if try flushPageBeforeProcessing(paragraph) {
-            return .yieldToCaller
-        }
-
-        applySectionDef(in: paragraph)
-        applyColumnDef(in: paragraph)
-        // 글줄 앞 표(#190)를 이미 놓은 문단의 재시도면 새 번호 지정을 되풀이하지 않는다 —
-        // 첫 시도에서 이미 적용됐고 표 셀 각주가 그 번호를 썼으므로, 다시 적용하면 본문 각주가
-        // 같은 번호를 받는다 (PR 리뷰: 새 번호 7 + 셀 각주 + 본문 각주 → 7)·7)).
+        // 글줄 앞 표(#190)를 이미 놓은 문단의 재시도면 문단 **진입** 처리(구역 시작·쪽 나누기
+        // 확정, 구역·단 정의, 새 번호 지정)를 되풀이하지 않는다 — 첫 시도에서 이미 적용됐고
+        // 표가 그 상태로 쪽을 넘겼다. 되풀이하면 구역 시작 번호가 다시 놓여 쪽 번호가 7·7이
+        // 되고(구역 첫 문단의 표가 쪽을 채운 경우), 새 번호 7을 셀 각주가 쓴 뒤 본문 각주가
+        // 다시 7)을 받으며, 구역 시작의 미주 확정이 표 셀의 미주를 새 쪽 머리에 낸다 (PR 리뷰).
         if !isRetryingParagraphWithPlacedTables {
+            // 구역 시작/쪽 나누기 문단: 진행 중인 페이지를 확정하고 이 문단은
+            // 다음 호출에서 새 페이지 첫머리로 다시 처리한다.
+            if try flushPageBeforeProcessing(paragraph) {
+                return .yieldToCaller
+            }
+            applySectionDef(in: paragraph)
+            applyColumnDef(in: paragraph)
             applyNewNumbers(in: paragraph)
         }
         currentParagraphMargins = paragraphMargins(of: paragraph)
@@ -1644,10 +1645,8 @@ private extension HwpPaginator {
         // 열/쪽에 걸친 조각이 캐시되기 전에 적용해야 시작 페이지가 새 번호를
         // 갖는다 (조각 캐시 후 적용하면 시작 페이지가 옛 번호로 남는다 — #12).
         // 미적합 재시도는 appendBlock 전에 return하므로 리셋이 보류로 남아 올바르다.
-        if let reset = pendingPageNumber {
-            nextLogicalPageNumber = reset
-            pendingPageNumber = nil
-        }
+        // 글줄 앞 표(#190)가 먼저 놓인 문단은 그 첫 조각이 이미 확정했다.
+        applyPendingPageNumberReset()
         // 여기가 문단의 첫 콘텐츠가 쪽에 놓이는 지점이라 개요의 시작 쪽도 여기서
         // 확정된다 (위 쪽 번호 리셋과 같은 순간이다).
         if currentParagraphFirstPlacedPage == nil {
@@ -1691,6 +1690,17 @@ private extension HwpPaginator {
         currentParagraphContext = contextLines.isEmpty ? nil : (frame, contextLines)
         contentHeightUsed += height
         markBandUsage()
+    }
+
+    /// 새 번호 지정(nwno)의 보류된 쪽 번호 리셋을 **문단의 첫 콘텐츠가 쪽에 놓이는 지점**에서
+    /// 확정한다 — 글줄 블록(`appendBlock`)과 글줄 앞 표 조각(`appendTableSegmentBlock`, #190)이
+    /// 같은 지점이다. 표가 먼저 놓이는 문단은 표의 첫 조각이 실린 쪽부터 새 번호가 이어진다
+    /// (PR 리뷰: 새 쪽 번호 9 + 두 쪽 표 → 9·10·11; 글줄에서만 확정하면 1·2·9). 이미 확정됐으면
+    /// 무동작이다.
+    private func applyPendingPageNumberReset() {
+        guard let reset = pendingPageNumber else { return }
+        nextLogicalPageNumber = reset
+        pendingPageNumber = nil
     }
 
     /// 다단 밴드에서 문단 라인을 현재 단부터 채워 넣는다.
@@ -3319,7 +3329,11 @@ private extension HwpPaginator {
         margins: TableFlowMargins = .none
     ) -> Int? {
         guard !frame.rows.isEmpty else { return nil }
-        let margins = fittingTableMargins(margins, rows: frame.rows)
+        // 여백 폴백은 **빈 단의 용량**으로 판정한다 — 이 쪽의 각주 예약(`effectiveContentHeight`)
+        // 으로 재면 앞 문단의 각주 때문에 다음 쪽에 정상적으로 들어갈 여백까지 잃는다 (PR 리뷰).
+        var margins = fittingTableMargins(
+            margins, rows: frame.rows, capacity: currentColumnFrame.height
+        )
 
         // 셀 각주 수집용 시작 행 인덱스를 표당 한 번만 만든다 (세그먼트마다
         // 전수 스캔 방지, #15; fallback 셀도 실제 행에 귀속, #23).
@@ -3375,7 +3389,15 @@ private extension HwpPaginator {
                remaining < HwpTableSplitter.minimumRowHeight(rows[cursor...]) || deferForSpan
             {
                 advanceColumn()
-                remaining = freshPage
+                // 넘긴 단·쪽의 용량으로 다시 잰다 — 새 쪽은 각주 예약이 다르다 (앞 쪽 값을 쓰면
+                // 앞 문단 각주만큼 덜 채우거나, 여백과 만나 들어갈 행을 자른다). 이월한 쪽의
+                // 예약이 여백까지 못 담으면 남은 조각은 여백 없이 흘린다 (PR 리뷰).
+                margins = fittingTableMargins(
+                    margins, rows: Array(rows[cursor...]),
+                    capacity: effectiveContentHeight - (isFirstSegment ? 0 : repeatedHeight)
+                )
+                remaining = effectiveContentHeight - contentHeightUsed
+                    - (isFirstSegment ? 0 : repeatedHeight) - margins.total
             }
 
             // 후보 행의 셀 각주 예약 높이를 미리 반영해 세그먼트를 맞춘다 (#6).
@@ -3464,16 +3486,15 @@ private extension HwpPaginator {
         return page
     }
 
-    /// 조각에 실을 바깥 여백 — 여백이 빈 쪽마저 소진하면 (첫 행 + 위·아래 여백이 빈 쪽에 안
-    /// 들어간다) 여백을 버린다. 제목 행 반복이 본문 자리를 안 남기면 반복을 끄는 것(#13)과
-    /// 같은 폴백이다. 그대로 두면 가용 높이가 음수가 돼 splitter가 0 높이 조각을 상한까지
-    /// 낸다 (PR 리뷰: 본문 200.8pt·행 30pt·여백 110 + 110pt → 4,098쪽). 이런 여백은 한글
-    /// 실측 표본이 없다.
+    /// 조각에 실을 바깥 여백 — 여백이 `capacity`(빈 단 용량, 또는 이월한 쪽의 예약을 뺀
+    /// 용량)마저 소진하면 (첫 행 + 위·아래 여백이 안 들어간다) 여백을 버린다. 제목 행 반복이
+    /// 본문 자리를 안 남기면 반복을 끄는 것(#13)과 같은 폴백이다. 그대로 두면 가용 높이가
+    /// 음수가 돼 splitter가 0 높이 조각을 상한까지 낸다 (PR 리뷰: 본문 200.8pt·행 30pt·여백
+    /// 110 + 110pt → 4,098쪽). 이런 여백은 한글 실측 표본이 없다.
     private func fittingTableMargins(
-        _ margins: TableFlowMargins, rows: [HwpTableRowFrame]
+        _ margins: TableFlowMargins, rows: [HwpTableRowFrame], capacity: CGFloat
     ) -> TableFlowMargins {
-        margins.total + HwpTableSplitter.minimumRowHeight(rows[...]) <= effectiveContentHeight
-            ? margins : .none
+        margins.total + HwpTableSplitter.minimumRowHeight(rows[...]) <= capacity ? margins : .none
     }
 
     /// 표 조각 아래 바깥 여백을 흐름 커서로 소비한다 (#190) — 다음 글줄은 여백 뒤에서
@@ -3556,6 +3577,9 @@ private extension HwpPaginator {
             repeatedHeaderRows: repeatedHeaderRows
         ) else { return }
         let segmentHeight = segmentFrame.outerFrame.height
+        // 글줄 앞 표(#190)의 첫 조각이 문단의 첫 콘텐츠면 보류된 쪽 번호 리셋을 여기서 확정한다
+        // (글줄 뒤 표는 글줄이 이미 확정해 무동작).
+        applyPendingPageNumberReset()
 
         let columnFrame = currentColumnFrame
         let blockFrame = CGRect(

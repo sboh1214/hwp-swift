@@ -238,5 +238,97 @@ import XCTest
             }
             expect(chrome).to(equal([["- 1 -"], ["- 2 -"]]))
         }
+
+        // MARK: 3차 리뷰
+
+        private static func pageChrome(_ paginator: HwpPaginator) async throws -> [[String]] {
+            var out: [[String]] = []
+            for index in await 0 ..< (paginator.totalPages()) {
+                let page = try await paginator.page(at: index)
+                out.append((page?.blocks ?? []).filter { $0.role != .body }
+                    .compactMap { $0.attributedString?.string })
+            }
+            return out
+        }
+
+        /// 구역 첫 문단의 표가 쪽을 채워 글줄만 다음 쪽에서 다시 처리돼도 구역 시작 번호를
+        /// 되풀이하지 않는다 — 되풀이하면 둘째 쪽도 7이다.
+        func testSectionStartNumberIsNotReappliedWhenTheParagraphIsRetried() async throws {
+            // 본문 200.8pt: 표는 템플릿 줄 **앞**에 놓이므로 6행 180 + 여백 5.66 = 185.66이
+            // 들어가고 글줄 16은 안 들어가 둘째 쪽에서 다시 처리된다.
+            let table = try Support.host(rowCount: 6).ctrlHeaderArray ?? []
+            let section = HwpSynthetic.section(
+                firstParagraphControls: [
+                    .section(HwpSynthetic.sectionDef(pageHeight: 30000, pageStartNumber: 7)),
+                    HwpSynthetic.pageNumberPositionControl(numberFormat: 0, displayPosition: 5),
+                ] + table,
+                bodyParagraphs: [try Support.flow("뒤 문단")]
+            )
+            let paginator = HwpPaginator(
+                sections: [section], index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+            let chrome = try await Self.pageChrome(paginator)
+            expect(chrome).to(equal([["- 7 -"], ["- 8 -"]]))
+        }
+
+        /// 새 쪽 번호 지정은 문단의 첫 콘텐츠인 표의 첫 조각이 실린 쪽에서 확정된다 — 글줄에서만
+        /// 확정하면 두 쪽짜리 표가 1·2를 받고 글줄 쪽이 9가 된다.
+        func testPendingPageNumberAppliesAtTheFirstTableSegment() async throws {
+            var host = try Support.host(rowCount: 12)
+            host.ctrlHeaderArray = [HwpSynthetic.newNumberControl(kind: 0, number: 9)]
+                + (host.ctrlHeaderArray ?? [])
+            let section = HwpSynthetic.section(
+                firstParagraphControls: [
+                    .section(HwpSynthetic.sectionDef(pageHeight: 30000)),
+                    HwpSynthetic.pageNumberPositionControl(numberFormat: 0, displayPosition: 5),
+                ],
+                bodyParagraphs: [host, try Support.flow("뒤 문단")]
+            )
+            let paginator = HwpPaginator(
+                sections: [section], index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+            let chrome = try await Self.pageChrome(paginator)
+            expect(chrome).to(equal([["- 9 -"], ["- 10 -"], ["- 11 -"]]))
+        }
+
+        /// 여백 폴백은 빈 단 용량으로 판정한다 — 앞 문단의 각주 예약(80pt)이 남은 이 쪽의 용량으로
+        /// 재면 다음 쪽에 정상적으로 들어갈 여백(30 + 30pt)까지 잃고, 이월한 쪽에서는 그 쪽의
+        /// 용량으로 남은 높이를 다시 재어 행(100pt)을 자르지 않는다.
+        func testMarginsSurviveAFootnoteReservationOnThePreviousPage() async throws {
+            var noteHost = try Support.flow("각주 문단")
+            noteHost.ctrlHeaderArray = [.footnote(HwpSynthetic.listControl(
+                ctrlId: .footnote,
+                paragraphs: [HwpSynthetic.noteParagraph(
+                    String(repeating: " 긴 각주 본문", count: 30),
+                    autoNumber: HwpSynthetic.autoNumberControl(kind: 1, decorationTail: ")")
+                )]
+            ))]
+            var host = Support.paragraphWithInlineControl(suffix: "table anchor")
+            host.ctrlHeaderArray = [.table(HwpSynthetic.placed(
+                HwpSynthetic.table(
+                    cellWidth: 20000, rowHeights: [10000],
+                    cellParagraphs: [[[try HwpSynthetic.textParagraph("행")]]]
+                ),
+                treatAsChar: false, margins: [283, 283, 3000, 3000]
+            ))]
+            let paginator = Support.paginator(pageHeight: 30000, bodyParagraphs: [
+                noteHost, host, try Support.flow("뒤 문단"),
+            ])
+            let first = try await Support.blocks(of: paginator)
+            let second = try await Support.blocks(of: paginator, page: 1)
+            let firstPage = try await paginator.page(at: 0)
+            // 1쪽: 각주 80pt가 예약돼 표(100 + 60)가 안 들어간다.
+            expect((firstPage?.blocks ?? []).filter { $0.kind == .footnote }.map(\.frame.height))
+                .to(equal([80]))
+            expect(first.filter { $0.kind == .table }).to(beEmpty())
+            // 2쪽: 위 여백 30 뒤에 통째로(100pt), 글줄은 아래 여백 30 뒤.
+            expect(second.map(\.kind)).to(equal([.table, .text, .text]))
+            guard second.count == 3 else { return }
+            expect(second[0].frame.minY).to(beCloseTo(first[0].frame.minY + 30, within: 0.01))
+            expect(second[0].frame.height).to(beCloseTo(100, within: 0.01))
+            expect(second[1].frame.minY).to(beCloseTo(second[0].frame.maxY + 30, within: 0.01))
+        }
     }
 #endif
