@@ -64,8 +64,9 @@ public enum HwpBlockContentWalker {
 
     /// 표를 렌더 방출 순서로 순회한다 — 셀마다
     /// onCellStart → (글 뒤로 개체)* → onParagraphText* → (나머지 개체)* →
-    /// (중첩 표 재귀). 개체 이벤트는 종류별 콜백 (onCellImage/onCellShape/
-    /// onCellTextbox)으로 평면·zOrder 순서에 따라 발화한다.
+    /// (중첩 표 재귀: onNestedTable → 그 표의 이벤트 → onNestedTableEnd). 개체
+    /// 이벤트는 종류별 콜백 (onCellImage/onCellShape/onCellTextbox)으로 평면·zOrder
+    /// 순서에 따라 발화한다.
     /// 렌더는 모든 이벤트를 (fill/border·drawText·셀 개체), 선택은
     /// onParagraphText만 소비한다.
     public static func walkTable(
@@ -76,7 +77,8 @@ public enum HwpBlockContentWalker {
         onCellImage: (HwpCellImage, CGRect) -> Void = { _, _ in },
         onCellShape: (HwpCellShape, CGRect) -> Void = { _, _ in },
         onCellTextbox: (HwpCellTextbox, CGRect) -> Void = { _, _ in },
-        onNestedTable: (HwpNestedTableFrame, CGRect) -> Void = { _, _ in }
+        onNestedTable: (HwpNestedTableFrame, CGRect) -> Void = { _, _ in },
+        onNestedTableEnd: (HwpNestedTableFrame, CGRect) -> Void = { _, _ in }
     ) {
         for row in table.rows {
             for cell in row.cells {
@@ -94,7 +96,8 @@ public enum HwpBlockContentWalker {
                     case let .textbox(textbox):
                         onCellTextbox(textbox, textbox.rect.offsetBy(dx: origin.x, dy: origin.y))
                     case let .nestedTable(nested):
-                        onNestedTable(nested, nested.rect.offsetBy(dx: origin.x, dy: origin.y))
+                        let rect = nested.rect.offsetBy(dx: origin.x, dy: origin.y)
+                        onNestedTable(nested, rect)
                         walkTable(
                             nested.table,
                             origin: CGPoint(
@@ -106,8 +109,10 @@ public enum HwpBlockContentWalker {
                             onCellImage: onCellImage,
                             onCellShape: onCellShape,
                             onCellTextbox: onCellTextbox,
-                            onNestedTable: onNestedTable
+                            onNestedTable: onNestedTable,
+                            onNestedTableEnd: onNestedTableEnd
                         )
+                        onNestedTableEnd(nested, rect)
                     }
                 }
                 for object in objects where object.paintsBehindText {
@@ -120,7 +125,8 @@ public enum HwpBlockContentWalker {
                 // 중첩 표는 셀 안 위치를 origin으로 재귀 순회한다 —
                 // origin 합성 산식은 여기 한 곳에만 둔다.
                 for nested in cell.nestedTables {
-                    onNestedTable(nested, nested.rect.offsetBy(dx: origin.x, dy: origin.y))
+                    let rect = nested.rect.offsetBy(dx: origin.x, dy: origin.y)
+                    onNestedTable(nested, rect)
                     walkTable(
                         nested.table,
                         origin: CGPoint(
@@ -132,8 +138,10 @@ public enum HwpBlockContentWalker {
                         onCellImage: onCellImage,
                         onCellShape: onCellShape,
                         onCellTextbox: onCellTextbox,
-                        onNestedTable: onNestedTable
+                        onNestedTable: onNestedTable,
+                        onNestedTableEnd: onNestedTableEnd
                     )
+                    onNestedTableEnd(nested, rect)
                 }
             }
         }
@@ -152,7 +160,8 @@ public enum HwpBlockContentWalker {
         onCellImage: (HwpCellImage, CGRect) -> Void = { _, _ in },
         onCellShape: (HwpCellShape, CGRect) -> Void = { _, _ in },
         onCellTextbox: (HwpCellTextbox, CGRect) -> Void = { _, _ in },
-        onNestedTable: (HwpNestedTableFrame, CGRect) -> Void = { _, _ in }
+        onNestedTable: (HwpNestedTableFrame, CGRect) -> Void = { _, _ in },
+        onNestedTableEnd: (HwpNestedTableFrame, CGRect) -> Void = { _, _ in }
     ) {
         // 표도 같은 평면·정렬에 합류한다 (R47 #1) — 따로 두고 마지막에 그리면
         // 글 뒤로 표가 텍스트 앞에 나온다.
@@ -173,7 +182,8 @@ public enum HwpBlockContentWalker {
             case let .nestedTable(nested):
                 // 각주 안 표는 블록-로컬 위치를 origin으로 재귀 순회한다
                 // (셀 경로와 같은 origin 합성 산식).
-                onNestedTable(nested, nested.rect.offsetBy(dx: origin.x, dy: origin.y))
+                let rect = nested.rect.offsetBy(dx: origin.x, dy: origin.y)
+                onNestedTable(nested, rect)
                 walkTable(
                     nested.table,
                     origin: CGPoint(
@@ -185,8 +195,10 @@ public enum HwpBlockContentWalker {
                     onCellImage: onCellImage,
                     onCellShape: onCellShape,
                     onCellTextbox: onCellTextbox,
-                    onNestedTable: onNestedTable
+                    onNestedTable: onNestedTable,
+                    onNestedTableEnd: onNestedTableEnd
                 )
+                onNestedTableEnd(nested, rect)
             }
         }
         for object in objects where object.paintsBehindText {

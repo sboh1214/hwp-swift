@@ -56,6 +56,13 @@ public struct HwpHitTester {
                 if let url = hyperlinkURL(for: block, at: point) {
                     return .hyperlink(url: url, blockIndex: index)
                 }
+                // 표의 **칸막이**는 프레임 밖도 claim한다 — 셀 테두리는 모서리에 중심을 둬 바깥
+                // 절반이 표 프레임 밖이고(#191), 그 선 위의 탭이 그냥 내려가면 위 문단의 링크가
+                // 열린다 (R54 `자격 ⊇ 칠`). 넘친 자식 개체는 종전대로 프레임 밖에서 claim하지
+                // 않는다 (R60·R63 — 그 자리엔 방출된 링크가 없다).
+                if tableBorderPaints(block, at: point) {
+                    return ownHit(for: block, index: index, at: point)
+                }
                 // 프레임 밖이라도 **이 블록의 글자가 칠해진 자리**면 링크가 없어도 이 블록이
                 // claim한다 (R53의 텍스트 축, #200 리뷰 2차): slight-overflow·글자 위치로
                 // 프레임 밖에 그려진 전경 글자 위의 탭이 그냥 내려가면 그 밑에 숨은 뒤
@@ -263,16 +270,30 @@ public struct HwpHitTester {
         return textPaints(attributed, in: block.frame, at: point) ? url : nil
     }
 
+    /// 표 블록의 셀 칸막이(테두리 띠)가 페이지 좌표 점을 칠하는가 — 셀 채움은 프레임 안이라
+    /// 프레임 밖 판정에서는 띠만 남는다
+    private func tableBorderPaints(_ block: AnyHwpBlock, at point: CGPoint) -> Bool {
+        guard case let .table(tableFrame) = block.payload else { return false }
+        let localPoint = CGPoint(x: point.x - block.frame.minX, y: point.y - block.frame.minY)
+        return tableFrame.rows.contains { row in
+            row.cells.contains { cell in
+                cell.borders.bands(around: cell.cellFrame).contains { $0.contains(localPoint) }
+            }
+        }
+    }
+
+    /// 점이 든 셀의 (행, 열) — 셀 안이 아니면 그 점을 칠한(테두리 띠) 셀, 그것도 없으면 (0, 0)
     private func tableGridPosition(block: AnyHwpBlock, point: CGPoint) -> (row: Int, col: Int) {
         guard case let .table(tableFrame) = block.payload else { return (0, 0) }
         let localPoint = CGPoint(
             x: point.x - block.frame.minX,
             y: point.y - block.frame.minY
         )
-        for row in tableFrame.rows {
-            for cell in row.cells where cell.cellFrame.contains(localPoint) {
-                return (cell.row, cell.column)
-            }
+        let cells = tableFrame.rows.flatMap(\.cells)
+        if let cell = cells.first(where: { $0.cellFrame.contains(localPoint) })
+            ?? cells.first(where: { $0.paints(localPoint) })
+        {
+            return (cell.row, cell.column)
         }
         return (0, 0)
     }
@@ -280,8 +301,16 @@ public struct HwpHitTester {
     /// 표 셀·글상자 안 문단에 실린 하이퍼링크를 블록-로컬 좌표로 히트한다
     /// (컨테이너 블록 자체는 URL이 없어 예전에는 표/도형 히트로 떨어졌다).
     private func containerHyperlinkURL(block: AnyHwpBlock, point: CGPoint) -> String? {
+        guard case let .found(url) = containerLayerHit(block: block, point: point) else {
+            return nil
+        }
+        return url
+    }
+
+    /// 컨테이너 블록(표·글상자·각주)의 층 히트 — 페이지 좌표 점을 블록-로컬로 옮겨 훑는다
+    private func containerLayerHit(block: AnyHwpBlock, point: CGPoint) -> LayerHit {
         let localPoint = CGPoint(x: point.x - block.frame.minX, y: point.y - block.frame.minY)
-        let hit: LayerHit = switch block.payload {
+        return switch block.payload {
         case let .table(tableFrame):
             tableHit(tableFrame, at: localPoint)
         case let .textbox(textbox):
@@ -300,8 +329,6 @@ public struct HwpHitTester {
         default:
             LayerHit.miss
         }
-        guard case let .found(url) = hit else { return nil }
-        return url
     }
 
     /// 컨테이너(각주·표 셀·글상자) 하나를 **페인트 역순**으로 훑는다.

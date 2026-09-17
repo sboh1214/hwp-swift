@@ -437,46 +437,4 @@ extension HwpPaintListBuilderTests {
         expect(top?.minY).to(beCloseTo(-1, within: 0.01))
         expect(top?.maxY).to(beCloseTo(1, within: 0.01))
     }
-
-    /// 셀 테두리는 표의 채움·내용을 다 낸 **뒤에** 모아서 낸다 — 모서리에 중심을 둔 선은
-    /// 이웃 셀 안으로 t/2 걸치므로, 셀 순서대로 섞어 내면 나중 셀의 채움이 앞 셀 테두리의
-    /// 바깥 절반을 덮어 반 굵기로 보인다 (#191 리뷰)
-    func testCellBordersArePaintedAfterAllCellFillsAndText() {
-        let black = HwpRGBColor(red: 0, green: 0, blue: 0)
-        let cells = (0 ..< 2).map { column in
-            HwpTableCellFrame(
-                cellFrame: CGRect(x: CGFloat(column) * 100, y: 0, width: 100, height: 40),
-                row: 0, column: column, rowSpan: 1, columnSpan: 1,
-                paragraphs: [laidOutParagraph(
-                    text: "c\(column)",
-                    rect: CGRect(x: CGFloat(column) * 100, y: 0, width: 100, height: 40)
-                )],
-                borders: .uniform(width: 2, color: black),
-                fillColor: HwpRGBColor(red: 255, green: 255, blue: 0)
-            )
-        }
-        let tableRect = CGRect(x: 0, y: 0, width: 200, height: 40)
-        let table = HwpTableFrame(
-            outerFrame: tableRect,
-            rows: [HwpTableRowFrame(rowFrame: tableRect, cells: cells)],
-            borderColor: black, borderWidth: 1
-        )
-        let block = AnyHwpBlock(frame: tableRect, kind: .table, payload: .table(table))
-        let list = builder.build(for: makePage(blocks: [block]))
-        enum Step { case fill, text, border, other }
-        let steps: [Step] = list.commands.map {
-            switch $0 {
-            case .fillRect: .fill
-            case .drawText: .text
-            case let .drawPath(_, fill, stroke, _) where fill != nil && stroke == nil: .border
-            default: .other
-            }
-        }
-        expect(steps.filter { $0 == .fill }.count) == 2
-        expect(steps.filter { $0 == .text }.count) == 2
-        expect(steps.filter { $0 == .border }.count) == 8
-        let firstBorder = try? XCTUnwrap(steps.firstIndex(of: .border))
-        let lastContent = try? XCTUnwrap(steps.lastIndex { $0 == .fill || $0 == .text })
-        expect(firstBorder ?? -1) > (lastContent ?? Int.max)
-    }
 }

@@ -2032,19 +2032,28 @@ paraShape와 같은 값**이어야 한다.
     부속선마다 바깥쪽에서의 거리(**이웃 변 폭** 비율로 잰다 — 같은 폭이면 그대로)만큼
     물러나 모서리에서 겹상자 (`HwpBorderSet.Edge`). 히트 띠(`EdgeGeometry.band` =
     `bands(around:)`, 경로 없이 만든다)는 점선·물결의 빈 자리·겹상자 연장·물결 넘침까지
-    든다. 페인트는 변마다 `.drawPath` 하나 — 조각이 많은 모양도 명령 하나다 — 그리고
-    **표의 채움·내용을 다 낸 뒤에 모아서 낸다**(`tableCommands`·`footnoteCommands`): 셀
-    순서대로 섞어 내면 나중 셀의 채움이 앞 셀 테두리의 바깥 절반을 덮는다. 히트 자격 영역
-    (`HwpHitCoverage.paintedRects`)도 셀 rect에 `paintedBounds(around:)`(테두리 바깥 절반)
-    을 더해 R54 `자격 ⊇ 칠`을 지킨다.
+    든다 (원형 점선은 첫 원의 반지름만큼 앞으로, `alongExtent`). 페인트는 변마다 `.drawPath`
+    하나 — 조각이 많은 모양도 명령 하나다 — 그리고 **표 단위로 채움 → 테두리 → 내용**으로
+    묶어 낸다(`HwpTableCommandBuffer`, `tableCommands`·`footnoteCommands`): 셀 순서대로 섞어
+    내면 나중 셀의 채움이 앞 셀 테두리의 바깥 절반을 덮고, 내용까지 테두리 아래로 내리면
+    히트 역순(`tableHit`: 내용 → 칸막이)과 갈린다. 중첩 표는 자기 덩어리로 부모 셀 내용의
+    제 자리(walker `onNestedTable`~`onNestedTableEnd`)에 들어 각주의 글 뒤로 표(R47 #1)
+    도 그대로 텍스트 뒤에 남는다. 히트 자격 영역(`HwpHitCoverage.paintedRects`, 텍스트 포함
+    갈래)은 셀 rect에 `paintedBounds(around:)`(테두리 바깥 절반)을 더해 R54 `자격 ⊇ 칠`을
+    지키고, 프레임 밖 그 띠의 탭은 표·글상자 블록도 `.occluded`로 claim한다
+    (`HwpHitTester.hit`); 배치 하한 `paintedObjectBounds`는 종전대로 셀 rect다(한글이 표
+    아래 각주 자리를 선 바깥 절반까지 재는지 미실측).
   - 단 구분선은 밴드가 닫힐 때(`closeColumnBand`·`cacheCurrentPage`, `dividersEmitted`로 한
     번) 단 사이 간격 중앙(단 프레임을 x 순으로 짝지어 오른쪽부터 채우는 단도 같다)에
     `.shape`(`.pageChrome`) 블록으로 낸다. 세로 범위는 밴드 첫 줄 위에서 가장 긴 단의 마지막
     줄 **글상자 아래**까지 — 밴드 바닥에 **본문 텍스트 블록**이 닿았으면(자리 차지·글 앞뒤
-    개체·쪽 장식은 안 센다) `dividerTrailingLineSpacing`(줄 캐시 값, 없으면 마지막 글자의
-    줄 간격 규칙 × 기본 글자 크기로 잰 `measuredTrailingSpacing`)을 빼고 표면 그대로 — 이고
-    둘째 단이 비어도 그린다. 밴드 사이 간격(`bandTrailingLineSpacing`)은 캐시 없는 문서에서
-    0을 두는 종전 배치 그대로라 두 값을 따로 둔다.
+    개체·쪽 장식은 안 센다) **그 블록의 조판 문자열** 마지막 글자의 줄 간격 규칙 × 기본 글자
+    크기로 잰 줄 간격(`measuredTrailingSpacing`, 줄 캐시의 `lineSpacing`과 같은 값)을 빼고
+    표면 그대로 — 이고 둘째 단이 비어도 그린다. 저장 상태(`bandTrailingLineSpacing`)를 안
+    쓰는 이유: 쪽에 걸친 문단은 배치 도중 쪽이 닫혀 문단 뒤 기록값이 아직 없고 다른 단 뒤
+    문단 값이 샐 수 있다(PR 리뷰). 미실측: 마지막 줄의 더 큰 글자(줄 경계를 모른다), 문단
+    아래 간격이 있는 마지막 문단, 캐시 없는 문서의 밴드 사이 간격(0으로 둔다 — 한글은 줄
+    간격만큼).
   - PrvImage fidelity는 이 변화를 **거꾸로** 본다 — 한글 화면 렌더는 0.12mm 선을 최소 1px로
     굵히므로 0.085pt 부속선(2중선)·모서리 중심 띠는 724px 축소본에서 옅어져 `line-shapes`
     MAE가 0.0055 → 0.0061로 오른다(임계 0.007). 선 모양 판정은 `FixtureLineShapeRenderTests`

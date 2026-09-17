@@ -64,7 +64,8 @@ import XCTest
             let spacing = HwpColumnBandController.measuredTrailingSpacing(
                 of: try XCTUnwrap(lastText.attributedString)
             )
-            expect(spacing) > 1
+            // 빈 문서 기본 문단 모양 10pt·160% → 마지막 줄 줄 간격 6pt
+            expect(spacing).to(beCloseTo(6, within: 0.01))
             expect(divider.frame.minY).to(beCloseTo(top, within: 0.01))
             expect(divider.frame.maxY).to(beCloseTo(bottom - spacing, within: 0.01))
             // 경로는 일점쇄선 조각들이고 색은 단 정의의 구분선 색
@@ -105,10 +106,11 @@ import XCTest
                 .to(beCloseTo(text.frame.maxY - spacing, within: 0.01))
         }
 
-        /// 구분선 바닥 규칙 — 밴드 바닥에 본문 줄이 닿았으면 마지막 줄의 줄 간격을 빼고, 표처럼
-        /// 줄 간격 없는 블록이 바닥이면 사용량 그대로다 (한글 실측: 표 아래 여백까지). 밴드
-        /// 바닥까지 내려온 글 앞뒤 개체는 판정을 바꾸지 않는다. 단 프레임이 오른쪽부터여도
-        /// x는 간격 중앙이다.
+        /// 구분선 바닥 규칙 — 밴드 바닥에 본문 줄이 닿았으면 **그 블록**의 마지막 줄 줄 간격
+        /// (조판 문자열의 마지막 글자에서 잰다 — 저장 상태가 아니라서 쪽에 걸친 문단·다른 단의
+        /// 뒤 문단에 흔들리지 않는다)을 빼고, 표처럼 줄 간격 없는 블록이 바닥이면 사용량
+        /// 그대로다 (한글 실측: 표 아래 여백까지). 밴드 바닥까지 내려온 글 앞뒤 개체는 판정을
+        /// 바꾸지 않는다. 단 프레임이 오른쪽부터여도 x는 간격 중앙이다.
         func testDividerBottomSubtractsLineSpacingOnlyBelowBodyText() throws {
             var band = HwpColumnBandController()
             band.currentColumnDef = Self.column(divider: 1)
@@ -116,15 +118,24 @@ import XCTest
             let rightFrame = CGRect(x: 300, y: 100, width: 150, height: 500)
             band.columnFrames = [rightFrame, leftFrame] // 오른쪽부터 채우는 단 순서
             band.bandUsedBottom = 300
-            band.dividerTrailingLineSpacing = 6
-            func block(_ kind: HwpBlockKind, role: HwpBlockRole = .body) -> AnyHwpBlock {
+            func text(size: Double, percent: Double) -> NSAttributedString {
+                NSAttributedString(string: "가", attributes: [
+                    HwpAttributedStringKey.baseFontSize: NSNumber(value: size),
+                    HwpAttributedStringKey.lineSpacing:
+                        HwpLineSpacingRule(kind: .percent, value: percent).attributeValue,
+                ])
+            }
+            func block(
+                _ kind: HwpBlockKind, role: HwpBlockRole = .body, height: CGFloat = 200,
+                text attributed: NSAttributedString? = nil
+            ) -> AnyHwpBlock {
                 AnyHwpBlock(
-                    frame: CGRect(x: 50, y: 100, width: 200, height: 200), kind: kind, role: role
+                    frame: CGRect(x: 50, y: 100, width: 200, height: height), kind: kind,
+                    attributedString: attributed, role: role
                 )
             }
-            let belowText = try XCTUnwrap(
-                band.columnDividerBlocks(currentBlocks: [block(.text)]).first
-            )
+            let body = block(.text, text: text(size: 10, percent: 160)) // 줄 간격 6
+            let belowText = try XCTUnwrap(band.columnDividerBlocks(currentBlocks: [body]).first)
             expect(belowText.frame.midX).to(beCloseTo(275, within: 0.001))
             expect(belowText.frame.minY).to(beCloseTo(100, within: 0.001))
             expect(belowText.frame.maxY).to(beCloseTo(294, within: 0.001))
@@ -134,14 +145,82 @@ import XCTest
             expect(belowTable.frame.maxY).to(beCloseTo(300, within: 0.001))
             // 본문 줄과 함께 바닥에 닿은 글 앞으로 개체는 무시한다
             let withOverlay = try XCTUnwrap(band.columnDividerBlocks(
-                currentBlocks: [block(.text), block(.shape)]
+                currentBlocks: [body, block(.shape)]
             ).first)
             expect(withOverlay.frame.maxY).to(beCloseTo(294, within: 0.001))
             // 쪽 장식 역할의 텍스트(머리말)는 본문이 아니다
             let chromeOnly = try XCTUnwrap(band.columnDividerBlocks(
-                currentBlocks: [block(.text, role: .pageChrome)]
+                currentBlocks: [block(.text, role: .pageChrome, text: text(size: 10, percent: 160))]
             ).first)
             expect(chromeOnly.frame.maxY).to(beCloseTo(300, within: 0.001))
+            // 바닥에 닿은 블록의 값이다 — 다른 단의 짧은 뒤 문단(40pt·200% = 40)은 무관
+            let other = block(.text, height: 100, text: text(size: 40, percent: 200))
+            let twoColumns = try XCTUnwrap(band.columnDividerBlocks(
+                currentBlocks: [body, other]
+            ).first)
+            expect(twoColumns.frame.maxY).to(beCloseTo(294, within: 0.001))
+        }
+
+        /// 줄 캐시 없는 문단의 마지막 줄 줄 간격 산식 — 표 46 규칙 × 마지막 글자 기본 크기
+        func testMeasuredTrailingSpacingFollowsTheLineSpacingRule() {
+            func text(_ rule: HwpLineSpacingRule, size: Double = 10) -> NSAttributedString {
+                NSAttributedString(string: "가", attributes: [
+                    HwpAttributedStringKey.baseFontSize: NSNumber(value: size),
+                    HwpAttributedStringKey.lineSpacing: rule.attributeValue,
+                ])
+            }
+            let measure = HwpColumnBandController.measuredTrailingSpacing
+            expect(measure(text(HwpLineSpacingRule(kind: .percent, value: 160))))
+                .to(beCloseTo(6, within: 0.001))
+            expect(measure(text(HwpLineSpacingRule(kind: .fixed, value: 30))))
+                .to(beCloseTo(20, within: 0.001))
+            expect(measure(text(HwpLineSpacingRule(kind: .marginOnly, value: 4))))
+                .to(beCloseTo(4, within: 0.001))
+            expect(measure(text(HwpLineSpacingRule(kind: .atLeast, value: 8))))
+                .to(beCloseTo(0, within: 0.001))
+            expect(measure(NSAttributedString(string: ""))) == 0
+            expect(measure(NSAttributedString(string: "가"))) == 0 // 기본 크기 없음
+        }
+
+        /// 단 구분선의 2중 물결은 `Placement.divider`로 두 파가 같은 위상이고, 블록 프레임은
+        /// 물결의 마지막 반주기 넘침과 획 모서리까지 담는다 (#191 리뷰)
+        func testDividerDoubleWaveIsInPhaseAndFrameCoversTheOvershoot() throws {
+            var band = HwpColumnBandController()
+            band.currentColumnDef = Self.column(divider: 13, thickness: 14) // 2중 물결 4mm
+            band.columnFrames = [
+                CGRect(x: 50, y: 100, width: 200, height: 500),
+                CGRect(x: 300, y: 100, width: 200, height: 500),
+            ]
+            band.bandUsedBottom = 126
+            let divider = try XCTUnwrap(
+                band.columnDividerBlocks(currentBlocks: [AnyHwpBlock(
+                    frame: CGRect(x: 50, y: 100, width: 200, height: 26), kind: .table
+                )]).first
+            )
+            guard case let .shape(geometry)? = divider.payload else {
+                fail("구분선은 채우기 경로 블록이어야 한다")
+                return
+            }
+            let thickness = CGFloat(CoreHwp.HwpBorderFill.borderThicknessPoints(at: 14))
+            expect(thickness).to(beCloseTo(4 * 72 / 25.4, within: 0.01))
+            let corner = thickness / 4 / 2 / 2.0.squareRoot()
+            // 프레임: 위는 밴드 위 − 획 모서리, 아래는 마지막 반주기 끝(길이 26 → ceil(26 /
+            // 11.46) = 3개 대각선, 끝 = 3 × 11.46 − 0.12) + 획 모서리 — 26보다 아래로 넘친다
+            let halfPeriod = thickness + HwpRenderTuning.LineShape.waveVertexFlat
+            let count = (26 / halfPeriod).rounded(.up)
+            expect(count) == 3
+            let end = count * halfPeriod - HwpRenderTuning.LineShape.waveVertexFlat
+            expect(end) > 26
+            expect(divider.frame.minY).to(beCloseTo(100 - corner, within: 0.001))
+            expect(divider.frame.maxY).to(beCloseTo(100 + end + corner, within: 0.001))
+            // 두 파의 첫 대각선(블록 로컬)이 같은 y에서 시작한다 — 테두리라면 둘째가 3t/4 아래
+            let diagonals = HwpLineShapeGeometryTests.pieces(geometry.path).filter { $0.width > 4 }
+            let starts = diagonals.map(\.minY).filter { $0 < 1 }
+            expect(starts.count) == 2
+            expect(geometry.path.boundingBoxOfPath.minY).to(beCloseTo(0, within: 0.001))
+            let painted = geometry.path.boundingBoxOfPath
+                .offsetBy(dx: divider.frame.minX, dy: divider.frame.minY)
+            expect(divider.frame.contains(painted.insetBy(dx: 0.001, dy: 0.001))) == true
         }
 
         func testNoDividerWithoutLineTypeOrSecondColumn() async throws {

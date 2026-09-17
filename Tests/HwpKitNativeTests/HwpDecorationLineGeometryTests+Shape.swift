@@ -140,9 +140,10 @@ extension HwpDecorationLineGeometryTests {
         expect(splitColumns[boundaryColumn]) == true
     }
 
-    /// 같은 글자 모양 id라도 선을 정하는 키(여기서는 밑줄 색 — 변경 추적 삭제 run이 글자
-    /// 모양을 물려받고 색만 갈리는 경우)가 다르면 따로 묶는다: 패턴이 경계에서 다시 시작하고
-    /// 둘째 run은 제 색으로 그려진다 (#191 리뷰). 크기 축척(`spaceTargetSize`)이 달라도 같다.
+    /// 같은 글자 모양 id라도 선을 정하는 키가 다르면 따로 묶는다 (#191 리뷰). 래스터는 밑줄 색
+    /// (변경 추적 삭제 run이 글자 모양을 물려받고 색만 갈리는 경우)으로 잰다 — 패턴이 경계에서
+    /// 다시 시작하고 둘째 run은 제 색으로 그려진다. 크기 축척(`spaceTargetSize`)·첨자 이동은
+    /// 묶음 판정(`sameLineShapeGroup`)만 단언한다.
     func testDifferentLineKeysSplitTheGroupWithinOneCharShape() throws {
         let magenta = CGColor(red: 1, green: 0, blue: 1, alpha: 1)
         func isMagenta(_ red: UInt8, _ green: UInt8, _ blue: UInt8) -> Bool {

@@ -47,11 +47,6 @@ struct HwpColumnBandController {
     /// 띄우고 다음 밴드를 연다 (Column PrvImage 실측: 밴드 간 첫 줄 시작 간격
     /// = 줄 전진량 + 줄 간격, ±1pt).
     var bandTrailingLineSpacing: CGFloat = 0
-    /// 단 구분선 바닥이 밴드 사용량에서 뺄 마지막 줄의 줄 간격 (#191) — 줄 캐시가 있으면
-    /// `bandTrailingLineSpacing`과 같고, 없으면 마지막 글자의 줄 간격 규칙과 기본 글자 크기로
-    /// 잰 값이다. 밴드 사이 간격(`bandTrailingLineSpacing`)은 캐시 없는 문서에서 0을 두는
-    /// 종전 배치를 지키므로 따로 둔다.
-    var dividerTrailingLineSpacing: CGFloat = 0
     /// 이 밴드의 단 구분선을 이미 방출했는지 (#191) — 밴드 닫기와 쪽 확정이 같은 밴드를
     /// 두 번 보므로 한 번만 방출한다. `open`이 되돌린다.
     var dividersEmitted = false
@@ -115,32 +110,14 @@ struct HwpColumnBandController {
 
     /// 밴드 마지막 줄의 줄 간격을 기록한다 (단 정의 밴드 마감 시 다음 밴드
     /// 시작 여백으로 사용). 라인 캐시가 없으면 이전 값을 유지하지 않고 0으로 둔다.
-    /// 단 구분선 바닥용 값(`dividerTrailingLineSpacing`)은 캐시가 없으면 조판 문자열의
-    /// 마지막 글자에서 잰다 (#191 리뷰: 캐시 없는 문서의 구분선이 줄 간격만큼 길었다).
-    mutating func updateTrailingSpacing(
-        for paragraph: CoreHwp.HwpParagraph, attributedString: NSAttributedString? = nil
-    ) {
+    mutating func updateTrailingSpacing(for paragraph: CoreHwp.HwpParagraph) {
         if let last = paragraph.paraLineSeg.paraLineSegInternalArray.last,
            last.lineSpacing >= 0
         {
             bandTrailingLineSpacing = HwpUnits.points(fromHwpUnit: last.lineSpacing)
-            dividerTrailingLineSpacing = bandTrailingLineSpacing
         } else {
             bandTrailingLineSpacing = 0
-            dividerTrailingLineSpacing = attributedString.map(Self.measuredTrailingSpacing) ?? 0
         }
-    }
-
-    /// 줄 캐시 없는 문단의 마지막 줄 줄 간격 — 마지막 글자의 줄 간격 규칙(표 46)을 그 글자의
-    /// 기본 글자 크기 상자에 적용한 전진량에서 상자를 뺀 값 (개체 줄이면 개체 몫은 빠진다)
-    static func measuredTrailingSpacing(of attributedString: NSAttributedString) -> CGFloat {
-        guard attributedString.length > 0 else { return 0 }
-        let index = attributedString.length - 1
-        guard let size = (attributedString.attribute(
-            HwpAttributedStringKey.baseFontSize, at: index, effectiveRange: nil
-        ) as? NSNumber).map({ CGFloat($0.doubleValue) }), size > 0 else { return 0 }
-        let rule = HwpLineSpacingRule.rule(in: attributedString, at: index)
-        return max(0, rule.advance(textBoxHeight: size, objectHeight: 0) - size)
     }
 
     // MARK: - 단 균형 재배치 (플랜 산출 — currentBlocks 적용은 paginator)
@@ -414,13 +391,17 @@ extension HwpColumnBandController {
             CoreHwp.HwpBorderFill.borderThicknessPoints(at: column.dividerThickness)
         )
         guard thickness > 0 else { return [] }
-        // 밴드 바닥에 본문 줄이 닿았으면 마지막 줄의 줄 간격을 뺀다 — 본문 텍스트 블록만
-        // 본다: 밴드 바닥까지 내려온 자리 차지·글 앞뒤 개체는 줄 상자를 바꾸지 않는다.
-        let endsWithText = currentBlocks.contains {
+        // 밴드 바닥에 본문 줄이 닿았으면 그 블록 마지막 줄의 줄 간격을 뺀다 — 본문 텍스트
+        // 블록만 본다(밴드 바닥까지 내려온 자리 차지·글 앞뒤 개체는 줄 상자를 바꾸지 않는다)
+        // 그리고 값은 저장 상태가 아니라 **그 블록의 조판 문자열**에서 잰다: 쪽에 걸친 문단은
+        // 배치 도중에 쪽이 닫혀 문단 뒤에 기록하는 값이 아직 없고, 다른 단의 뒤 문단 값이
+        // 새어 들 수 있다 (#191 리뷰).
+        let bottomText = currentBlocks.filter {
             $0.kind == .text && $0.role == .body
                 && $0.frame.minY >= top - 0.01 && $0.frame.maxY >= bandUsedBottom - 0.01
-        }
-        let bottom = bandUsedBottom - (endsWithText ? dividerTrailingLineSpacing : 0)
+        }.max { $0.frame.maxY < $1.frame.maxY }
+        let spacing = bottomText?.attributedString.map(Self.measuredTrailingSpacing) ?? 0
+        let bottom = bandUsedBottom - spacing
         guard bottom > top else { return [] }
         let line = HwpLineShapeGeometry.Line(
             shape: shape, length: bottom - top, thickness: thickness,
@@ -458,5 +439,19 @@ extension HwpColumnBandController {
             ))
         }
         return blocks
+    }
+
+    /// 밴드 바닥 블록의 마지막 줄 줄 간격 — 마지막 글자의 줄 간격 규칙(표 46)을 그 글자의
+    /// 기본 글자 크기 상자에 적용한 전진량에서 상자를 뺀 값. 줄 캐시가 있는 문단의 캐시
+    /// `lineSpacing`과 같은 값이고(캐시도 같은 규칙으로 저장된다), 개체 줄의 개체 몫과 마지막
+    /// 줄의 더 큰 다른 글자는 안 본다(줄 경계를 모른다 — 마지막 글자 기준 근사).
+    static func measuredTrailingSpacing(of attributedString: NSAttributedString) -> CGFloat {
+        guard attributedString.length > 0 else { return 0 }
+        let index = attributedString.length - 1
+        guard let size = (attributedString.attribute(
+            HwpAttributedStringKey.baseFontSize, at: index, effectiveRange: nil
+        ) as? NSNumber).map({ CGFloat($0.doubleValue) }), size > 0 else { return 0 }
+        let rule = HwpLineSpacingRule.rule(in: attributedString, at: index)
+        return max(0, rule.advance(textBoxHeight: size, objectHeight: 0) - size)
     }
 }

@@ -123,11 +123,14 @@ import XCTest
             expect(HwpHitTester().hit(page: page, point: CGPoint(x: 250, y: 600.2)))
                 == .footnote(blockIndex: 1, number: 1)
             // 모서리 **바깥** 절반(599.5~600)도 칠한 자리다 — 자격 영역이 각주 프레임(600~)
-            // 에서 멈추면 게이트에서 기각돼 아래 링크가 열린다 (R54 `자격 ⊇ 칠`, #191 리뷰)
-            expect(HwpHitTester().hit(page: page, point: CGPoint(x: 250, y: 599.7)))
+            // 에서 멈추면 게이트에서 기각돼 아래 링크가 열린다 (R54 `자격 ⊇ 칠`, #191 리뷰).
+            // 아래 블록이 그 자리까지 올라와 있어도 각주가 먼저다
+            let raised = Self.pageWithUnfilledNestedTable(wrappedByLink: false, underBlockTop: 590)
+            expect(HwpHitTester().hit(page: raised, point: CGPoint(x: 250, y: 599.7)))
                 == .footnote(blockIndex: 1, number: 1)
-            // 띠 밖(599.5 위)은 아무도 칠하지 않았다 — 자격은 칠한 곳까지만 넓어진다
-            expect(HwpHitTester().hit(page: page, point: CGPoint(x: 250, y: 599.3))).to(beNil())
+            // 띠 밖(599.5 위)은 각주가 칠하지 않았다 — 자격은 칠한 곳까지만 넓어져 아래 링크
+            expect(HwpHitTester().hit(page: raised, point: CGPoint(x: 250, y: 599.3)))
+                == .hyperlink(url: "https://example.com/beneath", blockIndex: 0)
             // 칸 안 — 아무것도 안 칠했으니 아래 본문 링크가 열린다
             expect(HwpHitTester().hit(page: page, point: CGPoint(x: 250, y: 620)))
                 == .hyperlink(url: "https://example.com/beneath", blockIndex: 0)
@@ -263,7 +266,9 @@ import XCTest
         }
 
         /// 블록(100pt)을 넘어 300pt까지 뻗은 **안 채운** 중첩 표 + 그 아래 링크 블록.
-        private static func pageWithUnfilledNestedTable(wrappedByLink: Bool) -> HwpPage {
+        private static func pageWithUnfilledNestedTable(
+            wrappedByLink: Bool, underBlockTop: CGFloat = 600
+        ) -> HwpPage {
             let blockFrame = CGRect(x: 50, y: 600, width: 100, height: 40)
             let tableRect = CGRect(x: 0, y: 0, width: 300, height: 40)
             let black = HwpRGBColor(red: 0, green: 0, blue: 0)
@@ -313,7 +318,9 @@ import XCTest
                 margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
                 blocks: [
                     AnyHwpBlock(
-                        frame: CGRect(x: 50, y: 600, width: 400, height: 40),
+                        frame: CGRect(
+                            x: 50, y: underBlockTop, width: 400, height: 640 - underBlockTop
+                        ),
                         kind: .text,
                         attributedString: NSAttributedString(string: "본문 링크"),
                         hyperlinkURL: "https://example.com/beneath"
@@ -324,6 +331,44 @@ import XCTest
                 ],
                 pageNumber: 1
             )
+        }
+
+        /// 최상위 표 블록도 프레임 밖 테두리 바깥 절반을 claim한다 (#191 리뷰) — 각주 갈래의
+        /// `.occluded`와 같은 축이라, 위 문단의 링크 위에 놓인 표의 위 변 바깥 절반을 눌러도
+        /// 링크가 열리지 않고 그 셀이 잡힌다. 띠 밖은 여전히 링크다.
+        func testTopLevelTableClaimsTheOuterHalfOfItsBorder() {
+            let black = HwpRGBColor(red: 0, green: 0, blue: 0)
+            let cellRect = CGRect(x: 0, y: 0, width: 300, height: 40)
+            let cell = HwpTableCellFrame(
+                cellFrame: cellRect, row: 2, column: 3, rowSpan: 1, columnSpan: 1,
+                paragraphs: [], borders: .uniform(width: 2, color: black), fillColor: nil
+            )
+            let table = HwpTableFrame(
+                outerFrame: cellRect,
+                rows: [HwpTableRowFrame(rowFrame: cellRect, cells: [cell])],
+                borderColor: black, borderWidth: 1
+            )
+            let page = HwpPage(
+                size: CGSize(width: 595, height: 842),
+                margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
+                blocks: [
+                    AnyHwpBlock(
+                        frame: CGRect(x: 50, y: 500, width: 400, height: 100),
+                        kind: .text,
+                        attributedString: NSAttributedString(string: "본문 링크"),
+                        hyperlinkURL: "https://example.com/above"
+                    ),
+                    AnyHwpBlock(
+                        frame: CGRect(x: 50, y: 600, width: 300, height: 40),
+                        kind: .table, payload: .table(table)
+                    ),
+                ],
+                pageNumber: 1
+            )
+            expect(HwpHitTester().hit(page: page, point: CGPoint(x: 200, y: 599.5)))
+                == .table(blockIndex: 1, row: 2, col: 3)
+            expect(HwpHitTester().hit(page: page, point: CGPoint(x: 200, y: 598.5)))
+                == .hyperlink(url: "https://example.com/above", blockIndex: 0)
         }
     }
 #endif

@@ -308,14 +308,26 @@ final class HwpLineShapeGeometryTests: XCTestCase {
             for: Self.borderLine(.doubleWave, thickness: thickness, length: 40)
         ))
         // 둘째 파의 첫 대각선은 x = 3/4 두께 = 6에서 시작한다 (45° 평행사변형이라 상자는 획
-        // 반폭/√2만큼 왼쪽으로 나간다); 첫 파의 둘째 반주기(내려감, x = 2 × 8.12 = 16.24)
-        // 와 같은 직선 y − x 위에 놓인다
+        // 반폭/√2만큼 왼쪽으로 나간다) — 첫 파의 **첫** 내려가는 획(x 0~8, y −7~1)과 같은
+        // 직선 y − x = −7 위라 마름모 격자가 된다
         let diagonals = pieces.filter { $0.height > 4 }
-        let secondStart = 6 - 1 / 2.0.squareRoot()
-        let second = try? XCTUnwrap(diagonals.first { abs($0.minX - secondStart) < 0.01 })
+        let corner = 1 / 2.0.squareRoot()
+        let first = try? XCTUnwrap(diagonals.first { abs($0.minX + corner) < 0.01 })
+        let second = try? XCTUnwrap(diagonals.first { abs($0.minX - (6 - corner)) < 0.01 })
+        expect(first).toNot(beNil())
         expect(second).toNot(beNil())
-        expect(second?.minY).to(beCloseTo(-7 + 6 - 1 / 2.0.squareRoot(), within: 0.01))
-        expect(diagonals.contains { abs($0.minX - (2 - 1 / 2.0.squareRoot())) < 0.01 }) == false
+        expect(second?.minY).to(beCloseTo(-7 + 6 - corner, within: 0.01))
+        expect((second?.minY ?? 0) - (second?.minX ?? 0))
+            .to(beCloseTo((first?.minY ?? 1) - (first?.minX ?? 1), within: 0.01))
+        expect(diagonals.contains { abs($0.minX - (2 - corner)) < 0.01 }) == false
+        // 둘째 파의 시작(3t/4)이 길이 밖이면 둘째 파는 그리지 않는다 (강제 대각선 없음)
+        let short = Self.pieces(HwpLineShapeGeometry.path(
+            for: Self.borderLine(.doubleWave, thickness: thickness, length: 5)
+        )).filter { $0.height > 4 }
+        expect(short.count) == 1
+        expect(HwpLineShapeGeometry.alongExtent(
+            of: Self.borderLine(.doubleWave, thickness: thickness, length: 5)
+        )?.upperBound).to(beCloseTo(8 + corner, within: 0.001))
     }
 
     // MARK: - 글자 모양 값 변환
@@ -365,15 +377,40 @@ extension HwpLineShapeGeometryTests {
             .to(beCloseTo(-1 / 2.0.squareRoot(), within: 0.001))
         expect(HwpLineShapeGeometry.alongExtent(of: border)?.upperBound)
             .to(beCloseTo(24.24 + 1 / 2.0.squareRoot(), within: 0.001))
-        // 40pt 글자선 400pt: 반주기 4.6 → 400 / 4.6 = 86.96 → 87개
+        // 40pt 글자선 400pt: 반주기 4.6 → 400 / 4.6 = 86.96 → 87개, 끝 = 87 × 4.6 − 0.12 =
+        // 400.08 (잘랐다면 400에서 멈춘다)
         let character = Self.pieces(HwpLineShapeGeometry.path(for: Self.characterLine(.wave)))
-        expect(character.filter { $0.height > 2 }.count) == 87
+            .filter { $0.height > 2 }
+        expect(character.count) == 87
+        expect(character.last?.maxX).to(beCloseTo(400.08 + 0.6 / 2.0.squareRoot(), within: 0.01))
         // 대시·실선은 길이 그대로
         let dashed = Self.borderLine(.longDash, thickness: 8, length: 20)
         expect(HwpLineShapeGeometry.alongExtent(of: dashed)?.upperBound)
             .to(beCloseTo(20, within: 0.001))
         expect(Self.pieces(HwpLineShapeGeometry.path(for: dashed)).last?.maxX)
             .to(beCloseTo(20, within: 0.001))
+    }
+
+    /// 원형 점선은 첫 원의 중심이 선 시작이라 반지름만큼 앞으로 나간다 — `alongExtent`가 그
+    /// 몫을 보고해야 히트 띠가 첫 원을 다 덮는다 (#191 리뷰). 원 하나도 안 들어가는 길이(반지름
+    /// 미만)는 경로도 범위도 없다.
+    func testCircleAlongExtentStartsHalfADiameterBeforeTheLine() {
+        let border = Self.borderLine(.circle, thickness: 4)
+        let along = HwpLineShapeGeometry.alongExtent(of: border)
+        expect(along?.lowerBound).to(beCloseTo(-2, within: 0.001))
+        expect(along?.upperBound).to(beCloseTo(200, within: 0.001))
+        expect(HwpLineShapeGeometry.path(for: border)?.boundingBoxOfPath.minX)
+            .to(beCloseTo(-2, within: 0.001))
+        let character = Self.characterLine(.circle, fontSize: 20)
+        expect(HwpLineShapeGeometry.alongExtent(of: character)?.lowerBound)
+            .to(beCloseTo(-20 * 0.057 / 2, within: 0.001))
+        let tooShort = Self.borderLine(.circle, thickness: 4, length: 1.5)
+        expect(HwpLineShapeGeometry.path(for: tooShort)).to(beNil())
+        expect(HwpLineShapeGeometry.alongExtent(of: tooShort)).to(beNil())
+        expect(HwpLineShapeGeometry.crossExtent(of: tooShort)).to(beNil())
+        // 반지름과 같은 길이는 원 하나
+        let one = Self.borderLine(.circle, thickness: 4, length: 2)
+        expect(Self.pieces(HwpLineShapeGeometry.path(for: one)).count) == 1
     }
 
     /// 유한하지 않은 입력은 경로가 없고, 패턴이 10만 번 넘게 되풀이될 길이·축척은 실선 띠로
@@ -384,9 +421,16 @@ extension HwpLineShapeGeometryTests {
         )).to(beNil())
         expect(HwpLineShapeGeometry.path(for: Self.borderLine(.dotLine, thickness: .nan)))
             .to(beNil())
-        expect(HwpLineShapeGeometry.crossExtent(
-            of: Self.characterLine(.circle, fontSize: .infinity)
-        )).to(beNil())
+        // 글자 크기만 비정상 (두께는 유한): 무한·0·음수 모두 경로·범위 없음
+        for fontSize in [CGFloat.infinity, 0, -10] {
+            let line = HwpLineShapeGeometry.Line(
+                shape: .circle, length: 100, thickness: 1,
+                scale: .characterLine(fontSize: fontSize), placement: .underlineBelow
+            )
+            expect(HwpLineShapeGeometry.path(for: line)).to(beNil())
+            expect(HwpLineShapeGeometry.crossExtent(of: line)).to(beNil())
+            expect(HwpLineShapeGeometry.alongExtent(of: line)).to(beNil())
+        }
         let huge = Self.borderLine(.dotLine, thickness: 0.001, length: 10000)
         expect(HwpLineShapeGeometry.patternRepeats(of: huge))
             > HwpLineShapeGeometry.maxPatternRepeats

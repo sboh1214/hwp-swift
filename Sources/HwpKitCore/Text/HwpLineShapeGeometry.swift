@@ -127,6 +127,7 @@ public enum HwpLineShapeGeometry {
             return band.minY ... band.maxY
         case .circle:
             let radius = circleDiameter(for: line) / 2
+            guard radius <= line.length else { return nil }
             return -radius ... radius
         case .doubleLine, .thinThickDoubleLine, .thickThinDoubleLine, .thinThickThinTripleLine:
             let band = multiLineBand(for: line)
@@ -143,9 +144,10 @@ public enum HwpLineShapeGeometry {
         }
     }
 
-    /// 이 선이 칠하는 선 방향의 범위 (로컬 x). 대시·원·여러 줄은 [0, `length`]이지만 물결은
-    /// 한글처럼 마지막 반주기를 **끝까지 그려** `length`를 넘을 수 있고, 45° 획의 butt cap
-    /// 모서리가 양 끝에서 획 반폭/√2만큼 더 나간다. 경로 없는 입력이면 nil.
+    /// 이 선이 칠하는 선 방향의 범위 (로컬 x). 대시·여러 줄은 [0, `length`]이고, 원형 점선은
+    /// 첫 원의 중심이 0이라 반지름만큼 앞으로 나가며, 물결은 한글처럼 마지막 반주기를 **끝까지
+    /// 그려** `length`를 넘을 수 있고 45° 획의 butt cap 모서리가 양 끝에서 획 반폭/√2만큼 더
+    /// 나간다. 경로 없는 입력(원 하나도 안 들어가는 짧은 원형 점선 포함)이면 nil.
     public static func alongExtent(of line: Line) -> ClosedRange<CGFloat>? {
         guard isDrawable(line) else { return nil }
         switch line.shape {
@@ -157,19 +159,24 @@ public enum HwpLineShapeGeometry {
                 end = max(end, waveEnd(for: line, offsetX: doubleWaveOffset(for: line).x))
             }
             return -corner ... (end + corner)
+        case .circle where patternRepeats(of: line) <= maxPatternRepeats:
+            let radius = circleDiameter(for: line) / 2
+            guard radius <= line.length else { return nil }
+            return -radius ... line.length
         default:
             return 0 ... line.length
         }
     }
 
+    /// 경로가 있는 입력인가 — 길이·두께·글자 크기가 유한한 양수이고 `none`이 아니다
     static func isDrawable(_ line: Line) -> Bool {
         line.length.isFinite && line.thickness.isFinite && line.length > 0 && line.thickness > 0
-            && line.shape != .none && fontSizeIsFinite(line.scale)
+            && line.shape != .none && fontSizeIsPositive(line.scale)
     }
 
-    private static func fontSizeIsFinite(_ scale: Scale) -> Bool {
+    private static func fontSizeIsPositive(_ scale: Scale) -> Bool {
         if case let .characterLine(fontSize) = scale {
-            return fontSize.isFinite
+            return fontSize.isFinite && fontSize > 0
         }
         return true
     }
@@ -244,18 +251,19 @@ extension HwpLineShapeGeometry {
     }
 
     /// `offsetX`에서 시작한 물결의 대각선 개수 — 시작점이 `length` 앞에 있는 반주기는 끝까지
-    /// 그린다 (한글은 마지막 대각선을 자르지 않는다). 적어도 1.
+    /// 그린다 (한글은 마지막 대각선을 자르지 않는다). 시작점이 `length` 밖이면 0.
     static func waveDiagonalCount(for line: Line, offsetX: CGFloat) -> Int {
         let halfPeriod = waveHalfPeriod(for: line)
-        guard halfPeriod > 0 else { return 0 }
-        let count = ((line.length - offsetX) / halfPeriod - 1e-6).rounded(.up)
-        return max(1, Int(count))
+        let remaining = line.length - offsetX
+        guard halfPeriod > 0, remaining > 1e-6 else { return 0 }
+        return max(1, Int((remaining / halfPeriod - 1e-6).rounded(.up)))
     }
 
-    /// `offsetX`에서 시작한 물결의 마지막 대각선이 끝나는 x
+    /// `offsetX`에서 시작한 물결의 마지막 대각선이 끝나는 x (대각선이 없으면 `length` 안)
     static func waveEnd(for line: Line, offsetX: CGFloat) -> CGFloat {
-        let count = CGFloat(waveDiagonalCount(for: line, offsetX: offsetX))
-        return offsetX + count * waveHalfPeriod(for: line)
+        let count = waveDiagonalCount(for: line, offsetX: offsetX)
+        guard count > 0 else { return min(offsetX, line.length) }
+        return offsetX + CGFloat(count) * waveHalfPeriod(for: line)
             - HwpRenderTuning.LineShape.waveVertexFlat
     }
 
