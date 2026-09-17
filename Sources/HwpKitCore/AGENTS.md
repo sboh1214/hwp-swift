@@ -2061,14 +2061,18 @@ paraShape와 같은 값**이어야 한다.
     **블록마다** 낸다(`columnDividerBlocks(trailingSpacing:)`): 블록 문자열에
     `hwp.cachedTrailingLineSpacing`이 있으면 그 값, 없으면 조판 문자열 마지막 글자의 줄 간격
     규칙 × 기본 글자 크기(`measuredTrailingSpacing`)다. 그 표식은 **배치가 실제로 캐시 높이를
-    쓴** 블록에만 붙는다 — `appendBlock`이 `heightIsMeasured == false`이고 문단을 끝내는
-    (`continuedParagraphFragment` 없음) 블록에 현재 문단의 유효한 줄 캐시
-    (`isValidLineSegmentCache`) 마지막 줄 `lineSpacing`을 달고
-    (`markedWithCachedTrailingSpacing`), 단별 캐시 run 조각은 `placeCachedColumnRuns`가 그 run
-    마지막 줄 값을 먼저 단다(정상 다단 캐시는 단 경계마다 `lineLocation`이 0으로 돌아가 문단
-    단조 증가 검사에 걸린다). 출처 문단 캐시를 구분선에서 다시 조회하면 안 되는 이유(PR
+    골랐을 때만** 붙는다 — `placeFlowParagraph`가 `height(for:fallback:)`의 선택
+    (`cacheHeightUsed`: 유효한 캐시이고 페이지를 넘는 1줄 폴백이 아님)을 `cachedTrailingSpacing`
+    값으로 `appendBlock`·`HwpFragmentPlacement`에 넘기고, `appendBlock`은 문단을 끝내는
+    (`continuedParagraphFragment` 없음) 블록에만 단다(`markedWithCachedTrailingSpacing`); 단별
+    캐시 run 조각은 `placeCachedColumnRuns`가 그 run 마지막 줄 값을 먼저 단다(정상 다단 캐시는
+    단 경계마다 `lineLocation`이 0으로 돌아가 문단 단조 증가 검사에 걸린다). 수치 일치
+    (`heightIsMeasured`, #166)로 가르면 안 된다 — 캐시 총높이와 CT 총높이가 우연히 같아도 마지막
+    줄 간격은 다르다(PR 리뷰). 출처 문단 캐시를 구분선에서 다시 조회하면 안 되는 이유(PR
     리뷰): 캐시가 유효해도 페이지를 넘는 1줄 문단은 CT 측정 높이로 폴백하므로 그 블록에서
-    캐시 간격을 빼면 구분선이 짧아지고, 이어지는 조각은 문단 마지막 줄을 담지 않는다. 저장
+    캐시 간격을 빼면 구분선이 짧아지고, 이어지는 조각은 문단 마지막 줄을 담지 않는다. 단 균형
+    재배치(`rebalancedFragment`)가 블록을 다시 자르면 앞 조각은 물려받은 표식을 벗긴다
+    (`strippingCachedTrailingLineSpacing` — 그 값은 원래 블록 마지막 줄의 것, PR 리뷰). 저장
     상태(`bandTrailingLineSpacing`)
     를 안 쓰는 이유: 쪽에 걸친 문단은 배치 도중 쪽이 닫혀 문단 뒤 기록값이 아직 없고 다른 단
     뒤 문단 값이 샐 수 있다(PR 리뷰). 미실측: 캐시 없는 문단의 마지막 줄에 더 큰 글자(줄

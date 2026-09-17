@@ -361,11 +361,19 @@ struct HwpColumnBandController {
             measuredWidth: width,
             columnWidth: columnWidth
         )
-        // 블록 끝에 못 미치는 조각은 이어짐 표식을 단다 (PR 리뷰: 다른 분할 경로와 같은
-        // 마커). 블록 끝에 닿는 조각은 블록 자체의 표식(조각 전체에 붙어 부분 문자열이
+        // 블록 끝에 못 미치는 조각은 이어짐 표식을 달고, 블록이 물려준 캐시 줄 간격 표식은
+        // 벗긴다 — 그 값은 문단 마지막 줄의 것이라 앞 조각의 단 구분선 바닥이 틀린다 (PR
+        // 리뷰). 블록 끝에 닿는 조각은 블록 자체의 표식(조각 전체에 붙어 부분 문자열이
         // 물려받는다)을 따른다.
         let continues = NSMaxRange(merged.range) < attributed.length
-        return (continues ? HwpTableSplitter.markedAsContinuedFragment(text) : text, height)
+        return (
+            continues
+                ? HwpTableSplitter.markedAsContinuedFragment(
+                    HwpTableSplitter.strippingCachedTrailingLineSpacing(text)
+                )
+                : text,
+            height
+        )
     }
 }
 

@@ -52,6 +52,11 @@ struct HwpFragmentPlacement {
     /// 문단 높이가 측정값(`HwpParagraphFrame.totalHeight`)인지 — 아니면 저장본 줄 캐시
     /// (`HwpPaginator.height(for:fallback:)`)라 마지막 줄의 전진량이 그 잔여를 흡수한다 (#166).
     let heightIsMeasured: Bool
+    /// 문단 높이를 저장본 줄 캐시로 잡았을 때 그 마지막 줄의 줄 간격 (pt) — 문단을 끝내는
+    /// 조각 블록에 `hwp.cachedTrailingLineSpacing`으로 실려 단 구분선 바닥(#191)이 뺀다. CT
+    /// 측정 높이면 nil. `heightIsMeasured`(수치 일치)와 별개로 **실제 선택**을 나른다 (PR 리뷰:
+    /// 캐시 1줄 20+12과 CT 2줄 16×2처럼 총높이가 같아도 마지막 줄 간격은 다르다).
+    let cachedTrailingSpacing: CGFloat?
     let paragraphId: UInt32?
     /// 문단 전체 블록의 URL과 조각 블록의 URL (필드 스팬 문단은 조각에 전파하지 않는다).
     let hyperlinkURL: String?

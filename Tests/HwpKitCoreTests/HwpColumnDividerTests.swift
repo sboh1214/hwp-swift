@@ -321,9 +321,101 @@ import XCTest
         }
     }
 
-    // MARK: - 단별 캐시 run·CT 폴백
+    // MARK: - 단별 캐시 run·CT 폴백·재배치
 
     extension HwpColumnDividerTests {
+        /// 캐시 총높이(2줄 40 + 24 = 64pt)가 CT 총높이(4줄 16 × 4 = 64pt)와 우연히 같아도 높이
+        /// 출처는 캐시다 — 문단을 끝내는 조각은 캐시 마지막 줄 간격 2를 빼야 한다 (PR 리뷰: 수치
+        /// 일치로 판정하면 표식이 빠져 규칙값 6을 뺐다). 두 단 재배치 뒤 앞 조각(측정 2줄, 32 − 6)
+        /// 보다 뒤 조각(잔여 − 2)의 글상자가 낮아 구분선이 거기서 끝난다.
+        func testDividerUsesTheCacheSpacingWhenCacheAndMeasuredHeightsCoincide() async throws {
+            var paragraph = try HwpSynthetic.textParagraph(
+                String(repeating: "가나다라마 ", count: 14) // 10pt 네 줄 (207pt 단, 약 24자/줄)
+            )
+            var payload = Data()
+            for line: [UInt32] in [
+                [0, 0, 1000, 1000, 850, 3000, 0, 42520, 393_216],
+                [70, 4000, 2200, 2200, 1870, 200, 0, 42520, 393_216],
+            ] {
+                for value in line {
+                    withUnsafeBytes(of: value.littleEndian) { payload.append(contentsOf: $0) }
+                }
+            }
+            paragraph.paraLineSeg = try CoreHwp.HwpParaLineSeg.load(payload)
+            paragraph.ctrlHeaderArray = [.column(Self.column(divider: 1))]
+            let section = HwpSynthetic.section(
+                firstParagraphControls: [.section(HwpSynthetic.sectionDef())],
+                bodyParagraphs: [paragraph]
+            )
+            let paginator = HwpPaginator(
+                sections: [section],
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+            let maybePage = try await paginator.page(at: 0)
+            let page = try XCTUnwrap(maybePage)
+            let columns = page.blocks
+                .filter { $0.attributedString?.string.contains("가나다라마") == true }
+                .sorted { $0.frame.minX < $1.frame.minX }
+            expect(columns.count) == 2
+            guard columns.count == 2 else { return }
+            let front = columns[0], back = columns[1]
+            // 앞 조각 = 측정 2줄(32), 뒤 조각 = 캐시 잔여(64 − 32)
+            expect(front.frame.height).to(beCloseTo(32, within: 0.01))
+            expect(back.frame.height).to(beCloseTo(32, within: 0.01))
+            let divider = try XCTUnwrap(Self.dividers(in: page).first)
+            expect(divider.frame.maxY).to(beCloseTo(back.frame.maxY - 2, within: 0.01))
+            expect(back.frame.maxY - 2) > front.frame.maxY - 6
+        }
+
+        /// 단 균형 재배치(`rebalancedFragment`)로 나뉜 앞 조각은 문단 마지막 줄의 캐시 줄 간격
+        /// 표식을 물려받으면 안 된다 — 세 줄 캐시 문단(줄 간격 12·12·30)을 두 단에 나누면 앞
+        /// 조각(측정 2줄)은 규칙값 6, 뒤 조각(캐시 잔여, 문단 끝)은 캐시 30을 뺀다 (PR 리뷰: 앞
+        /// 조각에서 30을 빼 구분선이 짧아졌다)
+        func testRebalancedFrontFragmentDropsTheInheritedCacheSpacing() async throws {
+            var paragraph = try HwpSynthetic.textParagraph(
+                String(repeating: "가나다라마 ", count: 15) // 10pt 세 줄 (207pt 단, 약 41자/줄)
+            )
+            var payload = Data()
+            for (index, spacing) in [1200, 1200, 3000].enumerated() {
+                let line: [UInt32] = [
+                    UInt32(index * 18), UInt32(index * 2200), 1000, 1000, 850, UInt32(spacing),
+                    0, 42520, 393_216,
+                ]
+                for value in line {
+                    withUnsafeBytes(of: value.littleEndian) { payload.append(contentsOf: $0) }
+                }
+            }
+            paragraph.paraLineSeg = try CoreHwp.HwpParaLineSeg.load(payload)
+            paragraph.ctrlHeaderArray = [.column(Self.column(divider: 1))]
+            let section = HwpSynthetic.section(
+                firstParagraphControls: [.section(HwpSynthetic.sectionDef())],
+                bodyParagraphs: [paragraph]
+            )
+            let paginator = HwpPaginator(
+                sections: [section],
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+            let maybePage = try await paginator.page(at: 0)
+            let page = try XCTUnwrap(maybePage)
+            let columns = page.blocks
+                .filter { $0.attributedString?.string.contains("가나다라마") == true }
+                .sorted { $0.frame.minX < $1.frame.minX }
+            expect(columns.count) == 2
+            guard columns.count == 2 else { return }
+            let front = columns[0], back = columns[1]
+            // 세 줄을 두 단에 2 + 1로 — 앞 조각 = 측정 줄 2개(32pt), 뒤 조각 = 캐시 잔여
+            // (84 − 32 = 52pt)
+            expect(front.frame.height).to(beCloseTo(32, within: 0.01))
+            expect(back.frame.height).to(beCloseTo(52, within: 0.01))
+            let divider = try XCTUnwrap(Self.dividers(in: page).first)
+            // 앞 조각 글상자 아래(32 − 6 = 26)가 뒤 조각(52 − 30 = 22)보다 낮다 — 앞 조각이
+            // 30을 물려받았다면 22에서 끝난다
+            expect(divider.frame.maxY).to(beCloseTo(front.frame.maxY - 6, within: 0.01))
+            expect(front.frame.maxY - 6) > back.frame.maxY - 30
+        }
+
         /// 캐시 높이가 단 높이를 넘는 1줄 문단은 CT 측정 높이로 폴백해 놓인다 — 그 블록의 구분선은
         /// 버린 캐시의 줄 간격(12pt)이 아니라 측정 줄 간격(6pt)을 빼야 한다 (PR 리뷰: 16pt 블록에서
         /// 구분선이 4pt만 그려졌다)
