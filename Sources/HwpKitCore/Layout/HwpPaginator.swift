@@ -623,9 +623,9 @@ private extension HwpPaginator {
         guard !band.dividersEmitted else { return }
         band.dividersEmitted = true
         currentBlocks += band.columnDividerBlocks(currentBlocks: currentBlocks) { block in
-            // 단별 캐시 run으로 놓인 조각은 그 run 마지막 줄의 줄 간격을 싣고 있다
-            // (`placeCachedColumnRuns`) — 정상 다단 캐시는 단 경계마다 `lineLocation`이 0으로
-            // 돌아가 아래의 문단 캐시 검사에 걸리므로 먼저 본다.
+            // 높이를 줄 캐시로 놓은 블록은 그 마지막 줄의 캐시 줄 간격을 싣고 있다
+            // (`markedWithCachedTrailingSpacing`·`placeCachedColumnRuns`) — 없으면 높이가 CT
+            // 측정이라 조판 문자열 마지막 글자의 규칙값이다 (#191).
             if let attributed = block.attributedString, attributed.length > 0,
                let spacing = attributed.attribute(
                    HwpAttributedStringKey.cachedTrailingLineSpacing,
@@ -634,29 +634,36 @@ private extension HwpPaginator {
             {
                 return CGFloat(spacing.doubleValue)
             }
-            // 문단을 **끝내는** 블록이고 출처 문단에 유효한 줄 캐시가 있으면 한글이 저장한
-            // 마지막 줄 줄 간격, 아니면 조판 문자열 마지막 글자의 규칙값 (#191). 다음 단·쪽으로
-            // 이어지는 조각(`continuedParagraphFragment`)은 문단 마지막 줄을 담고 있지 않고,
-            // 무효한 캐시(`isValidLineSegmentCache`)는 높이도 CT 측정이라 캐시 값과 갈린다.
-            if let attributed = block.attributedString,
-               HwpDrawnTextLayout.endsParagraph(
-                   CFRange(location: 0, length: attributed.length), in: attributed
-               ),
-               let source = block.source, let sectionIndex = source.sectionIndex,
-               let paragraphIndex = source.paragraphIndex,
-               sections.indices.contains(sectionIndex),
-               sections[sectionIndex].paragraph.indices.contains(paragraphIndex)
-            {
-                let paragraph = sections[sectionIndex].paragraph[paragraphIndex]
-                if isValidLineSegmentCache(paragraph.paraLineSeg.paraLineSegInternalArray),
-                   let cached = HwpColumnBandController.cachedTrailingSpacing(of: paragraph)
-                {
-                    return cached
-                }
-            }
             return block.attributedString
                 .map(HwpColumnBandController.measuredTrailingSpacing) ?? 0
         }
+    }
+
+    /// 높이를 줄 캐시로 놓은(`heightIsMeasured == false`) 문단 **끝** 블록에 현재 문단 캐시의
+    /// 마지막 줄 줄 간격을 단다 (`HwpAttributedStringKey.cachedTrailingLineSpacing`) — 단
+    /// 구분선 바닥(#191)이 빼는 값이다. 출처를 **배치가 실제로 쓴 높이**에 묶는 이유: 캐시가
+    /// 유효해도 페이지를 넘는 1줄 문단은 CT 측정 높이로 폴백하는데(위 `placeFlowParagraph`),
+    /// 그 블록에서 캐시 간격을 빼면 구분선이 짧아진다 (PR 리뷰). 이어지는 조각은 문단 마지막
+    /// 줄을 담지 않고, 단별 run 조각은 `placeCachedColumnRuns`가 run 값을 먼저 달아 둔다.
+    private func markedWithCachedTrailingSpacing(
+        _ attributed: NSAttributedString, heightIsMeasured: Bool
+    ) -> NSAttributedString {
+        guard !heightIsMeasured, attributed.length > 0,
+              attributed.attribute(
+                  HwpAttributedStringKey.cachedTrailingLineSpacing,
+                  at: attributed.length - 1, effectiveRange: nil
+              ) == nil,
+              HwpDrawnTextLayout.endsParagraph(
+                  CFRange(location: 0, length: attributed.length), in: attributed
+              ),
+              sections.indices.contains(nextSectionIndex),
+              sections[nextSectionIndex].paragraph.indices.contains(nextParagraphIndex)
+        else { return attributed }
+        let paragraph = sections[nextSectionIndex].paragraph[nextParagraphIndex]
+        guard isValidLineSegmentCache(paragraph.paraLineSeg.paraLineSegInternalArray),
+              let spacing = HwpColumnBandController.cachedTrailingSpacing(of: paragraph)
+        else { return attributed }
+        return HwpTableSplitter.marked(attributed, cachedTrailingLineSpacing: spacing)
     }
 
     /// 문단에 붙은 단 정의를 반영한다: 현재 밴드를 닫고 그 아래에서 새 밴드를 연다.
@@ -1723,7 +1730,11 @@ private extension HwpPaginator {
         if currentParagraphFirstPlacedPage == nil {
             currentParagraphFirstPlacedPage = cachedPages.count + 1
         }
-        let immutable = NSAttributedString(attributedString: attributedString)
+        let immutable = NSAttributedString(
+            attributedString: markedWithCachedTrailingSpacing(
+                attributedString, heightIsMeasured: heightIsMeasured
+            )
+        )
         let columnFrame = currentColumnFrame
         let frame = CGRect(
             x: columnFrame.minX,

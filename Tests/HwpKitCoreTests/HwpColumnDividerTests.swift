@@ -321,9 +321,42 @@ import XCTest
         }
     }
 
-    // MARK: - 단별 캐시 run
+    // MARK: - 단별 캐시 run·CT 폴백
 
     extension HwpColumnDividerTests {
+        /// 캐시 높이가 단 높이를 넘는 1줄 문단은 CT 측정 높이로 폴백해 놓인다 — 그 블록의 구분선은
+        /// 버린 캐시의 줄 간격(12pt)이 아니라 측정 줄 간격(6pt)을 빼야 한다 (PR 리뷰: 16pt 블록에서
+        /// 구분선이 4pt만 그려졌다)
+        func testDividerUsesMeasuredSpacingWhenTheCacheHeightWasDiscarded() async throws {
+            var paragraph = try HwpSynthetic.textParagraph("한 줄")
+            var payload = Data()
+            // 표 40: 줄 높이 8000(80pt) + 줄 간격 1200(12pt) — 본문 65pt를 넘는 1줄 캐시
+            for value: UInt32 in [0, 0, 8000, 8000, 6800, 1200, 0, 42520, 393_216] {
+                withUnsafeBytes(of: value.littleEndian) { payload.append(contentsOf: $0) }
+            }
+            paragraph.paraLineSeg = try CoreHwp.HwpParaLineSeg.load(payload)
+            // 단 정의를 이 문단에 붙여 밴드에 이 블록만 들게 한다 (앞 빈 문단과 바닥이 겹치지 않게)
+            paragraph.ctrlHeaderArray = [.column(Self.column(divider: 1))]
+            let section = HwpSynthetic.section(
+                firstParagraphControls: [
+                    .section(HwpSynthetic.sectionDef(pageHeight: 6500 + 5670 + 5670)),
+                ],
+                bodyParagraphs: [paragraph]
+            )
+            let paginator = HwpPaginator(
+                sections: [section],
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+            let maybePage = try await paginator.page(at: 0)
+            let page = try XCTUnwrap(maybePage)
+            let text = try XCTUnwrap(page.blocks.first { $0.attributedString?.string == "한 줄" })
+            expect(text.frame.height).to(beCloseTo(16, within: 0.01)) // CT 10pt × 160%
+            let divider = try XCTUnwrap(Self.dividers(in: page).first)
+            expect(divider.frame.minY).to(beCloseTo(text.frame.minY, within: 0.01))
+            expect(divider.frame.maxY).to(beCloseTo(text.frame.maxY - 6, within: 0.01))
+        }
+
         /// 한글이 단별 run으로 저장한 정상 다단 캐시(단 경계마다 `lineLocation` 0 리셋)는 문단
         /// 전체의 단조 증가 검사에 걸리지만 블록은 캐시 높이로 놓인다(`placeCachedColumnRuns`) —
         /// 구분선도 그 run 마지막 줄의 캐시 줄 간격(12pt, 규칙값 6pt와 다름)을 빼야 한다 (PR 리뷰)

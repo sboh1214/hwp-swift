@@ -2058,15 +2058,18 @@ paraShape와 같은 값**이어야 한다.
     줄 **글상자 아래**까지 — 밴드 바닥에 **본문 텍스트 블록**이 닿았으면(자리 차지·글 앞뒤
     개체·쪽 장식은 안 센다) 본문 텍스트 블록마다 (블록 아래 − 그 블록 마지막 줄의 줄 간격)
     중 가장 낮은 자리, 표면 사용량 그대로 — 이고 둘째 단이 비어도 그린다. 줄 간격은
-    **블록마다** 낸다(`columnDividerBlocks(trailingSpacing:)`): 페이지네이터는 ① 단별 캐시
-    run으로 놓인 조각(`placeCachedColumnRuns`)이 실은 그 run 마지막 줄의 캐시 값
-    (`hwp.cachedTrailingLineSpacing` — 정상 다단 캐시는 단 경계마다 `lineLocation`이 0으로
-    돌아가 문단 단조 증가 검사에 걸린다, PR 리뷰), ② 아니면 문단을 **끝내는** 블록
-    (`continuedParagraphFragment` 없음)이고 출처 문단(`HwpBlockSource` 구역·문단 서수)에
-    유효한 줄 캐시(`isValidLineSegmentCache`)가 있으면 한글이 저장한 마지막 줄
-    `lineSpacing`(`cachedTrailingSpacing`), ③ 아니면 조판 문자열 마지막 글자의 줄 간격 규칙
-    × 기본 글자 크기(`measuredTrailingSpacing`)를 준다 — 이어지는 조각은 문단 마지막 줄을
-    담지 않고, 무효 캐시 문단은 높이도 CT 측정이다(PR 리뷰). 저장 상태(`bandTrailingLineSpacing`)
+    **블록마다** 낸다(`columnDividerBlocks(trailingSpacing:)`): 블록 문자열에
+    `hwp.cachedTrailingLineSpacing`이 있으면 그 값, 없으면 조판 문자열 마지막 글자의 줄 간격
+    규칙 × 기본 글자 크기(`measuredTrailingSpacing`)다. 그 표식은 **배치가 실제로 캐시 높이를
+    쓴** 블록에만 붙는다 — `appendBlock`이 `heightIsMeasured == false`이고 문단을 끝내는
+    (`continuedParagraphFragment` 없음) 블록에 현재 문단의 유효한 줄 캐시
+    (`isValidLineSegmentCache`) 마지막 줄 `lineSpacing`을 달고
+    (`markedWithCachedTrailingSpacing`), 단별 캐시 run 조각은 `placeCachedColumnRuns`가 그 run
+    마지막 줄 값을 먼저 단다(정상 다단 캐시는 단 경계마다 `lineLocation`이 0으로 돌아가 문단
+    단조 증가 검사에 걸린다). 출처 문단 캐시를 구분선에서 다시 조회하면 안 되는 이유(PR
+    리뷰): 캐시가 유효해도 페이지를 넘는 1줄 문단은 CT 측정 높이로 폴백하므로 그 블록에서
+    캐시 간격을 빼면 구분선이 짧아지고, 이어지는 조각은 문단 마지막 줄을 담지 않는다. 저장
+    상태(`bandTrailingLineSpacing`)
     를 안 쓰는 이유: 쪽에 걸친 문단은 배치 도중 쪽이 닫혀 문단 뒤 기록값이 아직 없고 다른 단
     뒤 문단 값이 샐 수 있다(PR 리뷰). 미실측: 캐시 없는 문단의 마지막 줄에 더 큰 글자(줄
     경계를 모른다), 문단 아래 간격이 있는 마지막 문단, 캐시 없는 문서의 밴드 사이 간격(0으로
