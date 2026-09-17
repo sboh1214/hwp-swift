@@ -3508,7 +3508,13 @@ private extension HwpPaginator {
         cellsByRow: [Int: [(index: Int, cell: CoreHwp.HwpTableCell)]]?,
         cellNumbering: HwpNumberingScope.TableCells?
     ) -> Int {
-        let tableHeight = frame.rows.reduce(CGFloat(0)) { max($0, $1.rowFrame.maxY) }
+        // 높이는 **실제로 방출할 블록**(`segmentFrame`)으로 잰다 — `rowFrame.maxY` 최댓값은 셀
+        // 간격(표 76 `cellSpacing`)이 있는 표에서 첫 행 앞 간격 한 칸을 더 담는데 방출은 그것을
+        // 0으로 정규화하므로, 그대로 쓰면 들어가는 여백을 버리거나 이르게 넘긴다 (PR 리뷰 —
+        // 띠 판정 `floatingTableBand`와 같은 처방).
+        let tableHeight = HwpTableSplitter.segmentFrame(
+            rows: frame.rows, original: frame, repeatedHeaderRows: []
+        )?.outerFrame.height ?? frame.rows.reduce(CGFloat(0)) { max($0, $1.rowFrame.maxY) }
         /// 이 표 자신의 셀 각주가 예약할 높이를 미리 반영한다 (#6, 분할 경로의
         /// `remainingAfterCellNotes`와 같은 시산) — 수집은 놓기 직전이라 그 뒤에 재면 표 + 여백이
         /// 예약 전엔 들어가고 예약 뒤엔 안 들어가는 표가 각주 자리로 넘친다 (PR 리뷰).

@@ -281,5 +281,29 @@ import XCTest
             expect(outline.map(\.pageNumber)).to(equal([2]))
             expect(diagnostics.map(\.page)).to(equal([1]))
         }
+
+        /// 나누지 않는 표의 적합·여백 판정은 방출할 블록 높이로 잰다 — 셀 간격이 있는 표는
+        /// `rowFrame.maxY`가 첫 행 앞 간격 한 칸을 더 담아(32.83 vs 방출 30), 여백 84.5·84.5와
+        /// 함께 빈 쪽에 딱 들어가는 표(30 + 169 = 199 ≤ 200.8)의 여백을 버렸다.
+        func testUnsplittableTableFitUsesTheEmittedHeightForSpacedTables() async throws {
+            var host = Support.paragraphWithInlineControl(suffix: "table anchor")
+            host.ctrlHeaderArray = [.table(HwpSynthetic.placed(
+                HwpSynthetic.table(
+                    cellWidth: 20000, rowHeights: [3000], property: 0, cellSpacing: 283,
+                    cellParagraphs: [[[try HwpSynthetic.textParagraph("행")]]]
+                ),
+                treatAsChar: false, margins: [283, 283, 8450, 8450]
+            ))]
+            let paginator = Support.paginator(pageHeight: 30000, bodyParagraphs: [
+                try Support.flow("앞 문단"), host, try Support.flow("뒤 문단"),
+            ])
+            let first = try await Support.blocks(of: paginator)
+            let second = try await Support.blocks(of: paginator, page: 1)
+            // 1쪽엔 안 들어가 2쪽 상단 + 위 여백 84.5에서 방출 높이 30으로 놓인다.
+            expect(first.filter { $0.kind == .table }).to(beEmpty())
+            let table = try XCTUnwrap(second.first { $0.kind == .table })
+            expect(table.frame.minY).to(beCloseTo(first[0].frame.minY + 84.5, within: 0.01))
+            expect(table.frame.height).to(beCloseTo(30, within: 0.01))
+        }
     }
 #endif
