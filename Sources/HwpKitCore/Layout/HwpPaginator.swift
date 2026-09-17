@@ -623,6 +623,17 @@ private extension HwpPaginator {
         guard !band.dividersEmitted else { return }
         band.dividersEmitted = true
         currentBlocks += band.columnDividerBlocks(currentBlocks: currentBlocks) { block in
+            // 단별 캐시 run으로 놓인 조각은 그 run 마지막 줄의 줄 간격을 싣고 있다
+            // (`placeCachedColumnRuns`) — 정상 다단 캐시는 단 경계마다 `lineLocation`이 0으로
+            // 돌아가 아래의 문단 캐시 검사에 걸리므로 먼저 본다.
+            if let attributed = block.attributedString, attributed.length > 0,
+               let spacing = attributed.attribute(
+                   HwpAttributedStringKey.cachedTrailingLineSpacing,
+                   at: attributed.length - 1, effectiveRange: nil
+               ) as? NSNumber
+            {
+                return CGFloat(spacing.doubleValue)
+            }
             // 문단을 **끝내는** 블록이고 출처 문단에 유효한 줄 캐시가 있으면 한글이 저장한
             // 마지막 줄 줄 간격, 아니면 조판 문자열 마지막 글자의 규칙값 (#191). 다음 단·쪽으로
             // 이어지는 조각(`continuedParagraphFragment`)은 문단 마지막 줄을 담고 있지 않고,
@@ -1221,11 +1232,15 @@ private extension HwpPaginator {
             let runLines = paragraphFrame.lines.filter {
                 NSLocationInRange($0.attributedRange.location, range)
             }
-            let fragmentText = placedFragment(
-                runIndex < runs.count - 1
-                    ? HwpTableSplitter.markedAsContinuedFragment(fragment) : fragment,
-                reservedWidth: measuredWidth
-            )
+            // 단 구분선 바닥이 뺄 이 run 마지막 줄의 줄 간격 — 정상 다단 캐시는 단 경계에서
+            // `lineLocation`이 0으로 돌아가 문단 캐시 검사에 걸리므로 조각에 직접 싣는다 (#191).
+            let runSpacing = run.last.map { CGFloat(HwpUnits.points(fromHwpUnit: $0.lineSpacing)) }
+            var marked = runIndex < runs.count - 1
+                ? HwpTableSplitter.markedAsContinuedFragment(fragment) : fragment
+            if let runSpacing, runSpacing >= 0 {
+                marked = HwpTableSplitter.marked(marked, cachedTrailingLineSpacing: runSpacing)
+            }
+            let fragmentText = placedFragment(marked, reservedWidth: measuredWidth)
             appendBlock(
                 height: max(1, HwpUnits.points(
                     fromHwpUnit: Int32(clamping: runBottom - Int(firstSegment.lineLocation))

@@ -2011,8 +2011,11 @@ paraShape와 같은 값**이어야 한다.
   0.8 진폭 아래(같은 x 위상) / 테두리 (3t/4, 3t/4)(둘째 파의 내려가는 획이 첫 파의 내려가는
   획과 한 직선 — 마름모 격자) / 단 구분선 (0, 3t/4)(`Placement.divider`)로 옮겨 겹친다.
   물결은 45° 지그재그이고 꼭짓점 사이 0.12pt 평탄(`waveVertexFlat`)은 한글의 600dpi 정수
-  좌표 부산물인데 주기를 맞추려 둔다. **물결은 `length` 앞에서 시작한 마지막 반주기를 자르지
-  않고 끝까지 그린다**(한글 실측: 40pt 밑줄 51.03반주기 → 대각선 52개) — `alongExtent(of:)`
+  좌표 부산물인데 주기를 맞추려 둔다. 대각선 평행사변형과 평탄 띠는 겹치므로 **부분 경로의
+  회전 방향을 `addRect`와 같게** 둔다 — 반대면 nonzero 채우기에서 겹친 자리가 상쇄돼 꼭짓점에
+  구멍이 난다(PR 리뷰, `testWaveSubpathsShareWindingSoJunctionsStayFilled`). **물결은 `length`
+  앞에서 시작한 마지막 반주기를 자르지 않고 끝까지 그린다**(한글 실측: 40pt 밑줄 51.03반주기 →
+  대각선 52개) — `alongExtent(of:)`
   가 그 넘침(+ 45° 획의 butt cap 모서리 획 반폭/√2)을 보고하고 테두리 히트 띠·구분선 블록
   프레임이 그만큼 넓다. 대시·원·여러 줄은 `length`에서 잘린다. 유한하지 않은 입력은 경로가
   없고 패턴 반복이 10만을 넘는 길이·축척은 실선 띠로 떨어진다(`maxPatternRepeats`).
@@ -2023,7 +2026,9 @@ paraShape와 같은 값**이어야 한다.
   - 조판은 실선이 아닐 때만 `hwp.underlineShape`·`hwp.strikethroughShape`(`HwpBorderType.
     rawValue`, 글자 모양 4비트 값 + 1 = `HwpBorderType(characterLineShape:)`)를 싣고, 취소선과
     합류한 '글자 가운데' 밑줄은 밑줄 모양을 따른다(한글은 취소선만 켠 글자 모양을 밑줄 종류
-    2 + 밑줄 모양 자리에 취소선 모양 복사로 저장한다, #177). 변경 추적 표시선은 늘 실선.
+    2 + 밑줄 모양 자리에 취소선 모양 복사로 저장한다, #177). 변경 추적 표시선은 늘 실선 —
+    삽입 밑줄은 렌더러가 `.line`으로 못박고, 삭제선은 `applyTrackChangeMark(17)`이 글자 모양의
+    `strikethroughShape`를 지운다(PR 리뷰: 물결 취소선 글자를 지우면 삭제 표시도 물결이었다).
   - **테두리는 셀 모서리에 중심**(양쪽으로 t/2, 종전 셀 안쪽 띠가 아니다)이고 공유 모서리는
     양쪽 셀이 각자 그린다(한글도 그렇다 — 실선 아래 변 + 긴 점선 위 변이 한 모서리에 둘 다
     남는다). 가로 변은 이웃 세로 변이 있는 끝만 그 폭의 절반 연장, 세로 변의 실선·대시·
@@ -2053,10 +2058,13 @@ paraShape와 같은 값**이어야 한다.
     줄 **글상자 아래**까지 — 밴드 바닥에 **본문 텍스트 블록**이 닿았으면(자리 차지·글 앞뒤
     개체·쪽 장식은 안 센다) 본문 텍스트 블록마다 (블록 아래 − 그 블록 마지막 줄의 줄 간격)
     중 가장 낮은 자리, 표면 사용량 그대로 — 이고 둘째 단이 비어도 그린다. 줄 간격은
-    **블록마다** 낸다(`columnDividerBlocks(trailingSpacing:)`): 페이지네이터가 문단을
-    **끝내는** 블록(`continuedParagraphFragment` 없음)이고 출처 문단(`HwpBlockSource` 구역·
-    문단 서수)에 유효한 줄 캐시(`isValidLineSegmentCache`)가 있으면 한글이 저장한 마지막 줄
-    `lineSpacing`(`cachedTrailingSpacing`)을, 아니면 조판 문자열 마지막 글자의 줄 간격 규칙
+    **블록마다** 낸다(`columnDividerBlocks(trailingSpacing:)`): 페이지네이터는 ① 단별 캐시
+    run으로 놓인 조각(`placeCachedColumnRuns`)이 실은 그 run 마지막 줄의 캐시 값
+    (`hwp.cachedTrailingLineSpacing` — 정상 다단 캐시는 단 경계마다 `lineLocation`이 0으로
+    돌아가 문단 단조 증가 검사에 걸린다, PR 리뷰), ② 아니면 문단을 **끝내는** 블록
+    (`continuedParagraphFragment` 없음)이고 출처 문단(`HwpBlockSource` 구역·문단 서수)에
+    유효한 줄 캐시(`isValidLineSegmentCache`)가 있으면 한글이 저장한 마지막 줄
+    `lineSpacing`(`cachedTrailingSpacing`), ③ 아니면 조판 문자열 마지막 글자의 줄 간격 규칙
     × 기본 글자 크기(`measuredTrailingSpacing`)를 준다 — 이어지는 조각은 문단 마지막 줄을
     담지 않고, 무효 캐시 문단은 높이도 CT 측정이다(PR 리뷰). 저장 상태(`bandTrailingLineSpacing`)
     를 안 쓰는 이유: 쪽에 걸친 문단은 배치 도중 쪽이 닫혀 문단 뒤 기록값이 아직 없고 다른 단

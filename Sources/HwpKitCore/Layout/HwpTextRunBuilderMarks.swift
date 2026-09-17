@@ -16,9 +16,12 @@ extension HwpTextRunBuilder {
         attributes[kCTForegroundColorAttributeName as NSAttributedString.Key] = red
         if mark == 17 {
             // 삭제선은 일반 취소선과 같은 자리·두께다 (#187 실측: 한글 문서 +0.35em,
-            // MS 워드 호환 문서는 글꼴 지표 — 둘 다 일반 취소선 경로가 가른다).
+            // MS 워드 호환 문서는 글꼴 지표 — 둘 다 일반 취소선 경로가 가른다). 모양은 늘
+            // 실선 — 글자 모양의 물결·점선 취소선(`strikethroughShape`, #191)이 남으면 삭제
+            // 표시까지 그 모양으로 그려진다 (PR 리뷰; 삽입 밑줄도 렌더러가 실선으로 못박는다).
             attributes[HwpAttributedStringKey.strikethroughStyle] = NSNumber(value: 1)
             attributes[HwpAttributedStringKey.strikethroughColor] = red
+            attributes.removeValue(forKey: HwpAttributedStringKey.strikethroughShape)
         } else {
             // 삽입 밑줄도 일반 '글자 아래' 밑줄과 같은 자리·두께다 — 색만 이 키로
             // 넘긴다 (글자 모양의 밑줄 색과 별개라 밑줄 키에 실을 수 없다).

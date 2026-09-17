@@ -444,7 +444,9 @@ extension HwpLineShapeGeometry {
         }
     }
 
-    /// 두 점을 잇는 획 두께 `stroke`의 평행사변형 (butt cap)
+    /// 두 점을 잇는 획 두께 `stroke`의 평행사변형 (butt cap). 꼭짓점 평탄 띠(`addRect`, 부호
+    /// 있는 넓이 양수)와 겹치므로 같은 회전 방향으로 둔다 — 반대면 nonzero 채우기
+    /// (`CGContext.fillPath`)에서 겹친 자리의 감김수가 0이 돼 꼭짓점에 구멍이 난다 (PR 리뷰).
     private static func addSegment(
         from start: CGPoint, to end: CGPoint, stroke: CGFloat, into path: CGMutablePath
     ) {
@@ -453,10 +455,10 @@ extension HwpLineShapeGeometry {
         guard lengthSquared > 0 else { return }
         let scale = stroke / 2 / lengthSquared.squareRoot()
         let normal = CGPoint(x: -delta.y * scale, y: delta.x * scale)
-        path.move(to: CGPoint(x: start.x + normal.x, y: start.y + normal.y))
-        path.addLine(to: CGPoint(x: end.x + normal.x, y: end.y + normal.y))
+        path.move(to: CGPoint(x: start.x - normal.x, y: start.y - normal.y))
         path.addLine(to: CGPoint(x: end.x - normal.x, y: end.y - normal.y))
-        path.addLine(to: CGPoint(x: start.x - normal.x, y: start.y - normal.y))
+        path.addLine(to: CGPoint(x: end.x + normal.x, y: end.y + normal.y))
+        path.addLine(to: CGPoint(x: start.x + normal.x, y: start.y + normal.y))
         path.closeSubpath()
     }
 }

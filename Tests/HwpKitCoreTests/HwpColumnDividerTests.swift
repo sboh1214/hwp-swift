@@ -320,4 +320,56 @@ import XCTest
             }
         }
     }
+
+    // MARK: - 단별 캐시 run
+
+    extension HwpColumnDividerTests {
+        /// 한글이 단별 run으로 저장한 정상 다단 캐시(단 경계마다 `lineLocation` 0 리셋)는 문단
+        /// 전체의 단조 증가 검사에 걸리지만 블록은 캐시 높이로 놓인다(`placeCachedColumnRuns`) —
+        /// 구분선도 그 run 마지막 줄의 캐시 줄 간격(12pt, 규칙값 6pt와 다름)을 빼야 한다 (PR 리뷰)
+        func testDividerBottomUsesTheColumnRunCacheSpacing() async throws {
+            let text = String(repeating: "가나다라 ", count: 8) // 40자
+            var paragraph = try HwpSynthetic.columnCacheParagraph(text, segments: [
+                .init(textIndex: 0, location: 0, height: 1000, width: 13416),
+                .init(textIndex: 10, location: 2200, height: 1000, width: 13416),
+                .init(textIndex: 20, location: 0, height: 1000, width: 13416),
+                .init(textIndex: 30, location: 2200, height: 1000, width: 13416),
+            ])
+            // 줄 간격을 600(6pt)에서 1200(12pt)으로 — 표 40의 여섯째 필드 (36바이트 레코드)
+            var payload = Data()
+            for (index, textIndex) in [UInt32(0), 10, 20, 30].enumerated() {
+                let line: [UInt32] = [
+                    textIndex, UInt32(index % 2 == 0 ? 0 : 2200), 1000, 1000, 850, 1200,
+                    0, 13416, 393_216,
+                ]
+                for value in line {
+                    withUnsafeBytes(of: value.littleEndian) { payload.append(contentsOf: $0) }
+                }
+            }
+            paragraph.paraLineSeg = try CoreHwp.HwpParaLineSeg.load(payload)
+            paragraph.ctrlHeaderArray = [.column(Self.column(divider: 1))]
+            let section = HwpSynthetic.section(
+                firstParagraphControls: [.section(HwpSynthetic.sectionDef())],
+                bodyParagraphs: [paragraph]
+            )
+            let paginator = HwpPaginator(
+                sections: [section],
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+            let maybePage = try await paginator.page(at: 0)
+            let page = try XCTUnwrap(maybePage)
+            let columns = page.blocks
+                .filter { $0.kind == .text && $0.attributedString?.string.contains("가나") == true }
+                .sorted { $0.frame.minX < $1.frame.minX }
+            expect(columns.count) == 2
+            // 두 run 모두 캐시 높이 (2200 + 1000 + 1200) = 44pt로 놓인다
+            for column in columns {
+                expect(column.frame.height).to(beCloseTo(44, within: 0.01))
+            }
+            let lowest = try XCTUnwrap(columns.map(\.frame.maxY).max())
+            let divider = try XCTUnwrap(Self.dividers(in: page).first)
+            expect(divider.frame.maxY).to(beCloseTo(lowest - 12, within: 0.01))
+        }
+    }
 #endif

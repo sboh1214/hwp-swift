@@ -413,6 +413,24 @@ extension HwpLineShapeGeometryTests {
         expect(Self.pieces(HwpLineShapeGeometry.path(for: one)).count) == 1
     }
 
+    /// 물결의 대각선(평행사변형)과 꼭짓점 평탄 띠는 겹치는데, 부분 경로의 회전 방향이 다르면
+    /// nonzero 채우기(`CGContext.fillPath`)에서 겹친 자리가 상쇄돼 꼭짓점에 구멍이 난다 (PR
+    /// 리뷰) — 첫 대각선 끝(4.48, 2.08) 둘레의 겹침 점이 합친 경로에서도 안에 있어야 한다
+    func testWaveSubpathsShareWindingSoJunctionsStayFilled() throws {
+        let line = Self.characterLine(.wave, length: 30)
+        let path = try XCTUnwrap(HwpLineShapeGeometry.path(for: line))
+        // 대각선 끝 (4.48, 2.08): 평탄 띠 [4.48, 4.6] × [1.48, 2.68]과 butt cap 모서리가 겹친다
+        for point in [CGPoint(x: 4.5, y: 2.0), CGPoint(x: 4.5, y: 2.2), CGPoint(x: 4.55, y: 2.08)] {
+            expect(path.contains(point, using: .winding)) == true
+        }
+        let border = try XCTUnwrap(
+            HwpLineShapeGeometry.path(for: Self.borderLine(.wave, thickness: 8))
+        )
+        // 테두리 8pt: 첫 대각선 끝 (8, 1), 평탄 [8, 8.12] × [0, 2]
+        expect(border.contains(CGPoint(x: 8.02, y: 1), using: .winding)) == true
+        expect(border.contains(CGPoint(x: 8.06, y: 0.5), using: .winding)) == true
+    }
+
     /// 유한하지 않은 입력은 경로가 없고, 패턴이 10만 번 넘게 되풀이될 길이·축척은 실선 띠로
     /// 떨어진다 (손상 문서가 수십만 부분 경로를 만들지 않게)
     func testDegenerateInputsHaveNoPathOrFallBackToSolid() {

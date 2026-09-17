@@ -101,6 +101,13 @@ public enum HwpAttributedStringKey {
     /// 않는다(`HwpDrawnLine.endsParagraph`). 쪽·단·표·각주의 모든 분할 경로가 단다.
     public static let continuedParagraphFragment =
         NSAttributedString.Key("hwp.continuedParagraphFragment")
+    /// 단별 줄 캐시 run으로 놓인 조각의 **그 run 마지막 줄 줄 간격** (NSNumber pt, 조각 전체에
+    /// 붙고 읽는 쪽은 끝 글자로 판정한다 — `HwpTableSplitter.marked(_:cachedTrailingLineSpacing:)`).
+    /// 단 경계마다 `lineLocation`이 0으로 돌아가는 정상 다단 캐시는 문단 전체의 단조 증가
+    /// 검사(`isValidLineSegmentCache`)에 걸리므로, 단 구분선 바닥(#191)이 문단 캐시 대신 이
+    /// 값을 읽는다 (PR 리뷰: 배치는 캐시 높이인데 구분선만 측정 간격을 빼 길어졌다).
+    public static let cachedTrailingLineSpacing =
+        NSAttributedString.Key("hwp.cachedTrailingLineSpacing")
 
     /// 페이지에 걸친 표의 반복된 제목 행 클론 표식 — 렌더·선택에는 남지만
     /// 복사 소스 텍스트에는 한 번만 포함한다 (페이지마다 중복 방지).
