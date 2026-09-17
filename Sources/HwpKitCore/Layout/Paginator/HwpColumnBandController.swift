@@ -111,13 +111,14 @@ struct HwpColumnBandController {
     /// 밴드 마지막 줄의 줄 간격을 기록한다 (단 정의 밴드 마감 시 다음 밴드
     /// 시작 여백으로 사용). 라인 캐시가 없으면 이전 값을 유지하지 않고 0으로 둔다.
     mutating func updateTrailingSpacing(for paragraph: CoreHwp.HwpParagraph) {
-        if let last = paragraph.paraLineSeg.paraLineSegInternalArray.last,
-           last.lineSpacing >= 0
-        {
-            bandTrailingLineSpacing = HwpUnits.points(fromHwpUnit: last.lineSpacing)
-        } else {
-            bandTrailingLineSpacing = 0
-        }
+        bandTrailingLineSpacing = Self.cachedTrailingSpacing(of: paragraph) ?? 0
+    }
+
+    /// 줄 캐시가 있는 문단의 마지막 줄 줄 간격 (pt) — 캐시가 없으면 nil
+    static func cachedTrailingSpacing(of paragraph: CoreHwp.HwpParagraph) -> CGFloat? {
+        guard let last = paragraph.paraLineSeg.paraLineSegInternalArray.last,
+              last.lineSpacing >= 0 else { return nil }
+        return HwpUnits.points(fromHwpUnit: last.lineSpacing)
     }
 
     // MARK: - 단 균형 재배치 (플랜 산출 — currentBlocks 적용은 paginator)
@@ -381,7 +382,17 @@ extension HwpColumnBandController {
     ///
     /// 블록은 `.shape`(채우기 경로, `HwpShapeGeometry`)이고 역할은 `.pageChrome`이라
     /// 선택·복사·검색이 건너뛴다. 좌표는 블록 로컬이다.
-    func columnDividerBlocks(currentBlocks: [AnyHwpBlock]) -> [AnyHwpBlock] {
+    ///
+    /// `trailingSpacing`은 본문 텍스트 블록의 마지막 줄 줄 간격 — 기본은 조판 문자열의 마지막
+    /// 글자에서 재는 `measuredTrailingSpacing`이고, 페이지네이터는 블록의 출처 문단에 줄 캐시가
+    /// 있으면 그 값을 준다 (한글이 줄 상자 기준으로 저장한 값이라 마지막 줄에 다른 크기 글자가
+    /// 섞여도 정확하다).
+    func columnDividerBlocks(
+        currentBlocks: [AnyHwpBlock],
+        trailingSpacing: (AnyHwpBlock) -> CGFloat = {
+            $0.attributedString.map(measuredTrailingSpacing) ?? 0
+        }
+    ) -> [AnyHwpBlock] {
         guard columnFrames.count > 1, let column = currentColumnDef,
               let shape = HwpBorderType(rawValue: Int(column.dividerType)), shape != .none
         else { return [] }
@@ -391,17 +402,19 @@ extension HwpColumnBandController {
             CoreHwp.HwpBorderFill.borderThicknessPoints(at: column.dividerThickness)
         )
         guard thickness > 0 else { return [] }
-        // 밴드 바닥에 본문 줄이 닿았으면 그 블록 마지막 줄의 줄 간격을 뺀다 — 본문 텍스트
-        // 블록만 본다(밴드 바닥까지 내려온 자리 차지·글 앞뒤 개체는 줄 상자를 바꾸지 않는다)
-        // 그리고 값은 저장 상태가 아니라 **그 블록의 조판 문자열**에서 잰다: 쪽에 걸친 문단은
-        // 배치 도중에 쪽이 닫혀 문단 뒤에 기록하는 값이 아직 없고, 다른 단의 뒤 문단 값이
-        // 새어 들 수 있다 (#191 리뷰).
-        let bottomText = currentBlocks.filter {
-            $0.kind == .text && $0.role == .body
-                && $0.frame.minY >= top - 0.01 && $0.frame.maxY >= bandUsedBottom - 0.01
-        }.max { $0.frame.maxY < $1.frame.maxY }
-        let spacing = bottomText?.attributedString.map(Self.measuredTrailingSpacing) ?? 0
-        let bottom = bandUsedBottom - spacing
+        // 밴드 바닥에 본문 줄이 닿았으면 마지막 줄 **글상자** 아래까지다 — 본문 텍스트 블록
+        // (밴드 바닥까지 내려온 자리 차지·글 앞뒤 개체는 줄 상자를 바꾸지 않는다)마다 블록
+        // 아래에서 그 블록의 줄 간격을 뺀 자리 중 가장 낮은 것. 값은 저장 상태가 아니라
+        // **블록마다** 잰다: 쪽에 걸친 문단은 배치 도중에 쪽이 닫혀 문단 뒤에 기록하는 값이
+        // 아직 없고, 다른 단의 뒤 문단 값이 새어 들 수 있다 (#191 리뷰). 바닥이 표면 사용량
+        // 그대로다.
+        let bodyText = currentBlocks.filter {
+            $0.kind == .text && $0.role == .body && $0.frame.minY >= top - 0.01
+        }
+        let endsWithText = bodyText.contains { $0.frame.maxY >= bandUsedBottom - 0.01 }
+        let bottom = endsWithText
+            ? bodyText.map { $0.frame.maxY - trailingSpacing($0) }.max() ?? bandUsedBottom
+            : bandUsedBottom
         guard bottom > top else { return [] }
         let line = HwpLineShapeGeometry.Line(
             shape: shape, length: bottom - top, thickness: thickness,

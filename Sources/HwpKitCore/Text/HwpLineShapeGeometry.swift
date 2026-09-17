@@ -168,9 +168,11 @@ public enum HwpLineShapeGeometry {
         }
     }
 
-    /// 경로가 있는 입력인가 — 길이·두께·글자 크기가 유한한 양수이고 `none`이 아니다
+    /// 경로가 있는 입력인가 — 길이·두께·글자 크기가 유한한 양수이고 `none`이 아니다. 길이의
+    /// 바닥 1e-6pt는 물결 대각선 개수(`waveDiagonalCount`)의 것과 같아 `path == nil ⇔ 범위 == nil`
+    /// 이 유지된다.
     static func isDrawable(_ line: Line) -> Bool {
-        line.length.isFinite && line.thickness.isFinite && line.length > 0 && line.thickness > 0
+        line.length.isFinite && line.thickness.isFinite && line.length > 1e-6 && line.thickness > 0
             && line.shape != .none && fontSizeIsPositive(line.scale)
     }
 

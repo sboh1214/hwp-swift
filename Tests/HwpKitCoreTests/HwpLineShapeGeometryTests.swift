@@ -421,6 +421,11 @@ extension HwpLineShapeGeometryTests {
         )).to(beNil())
         expect(HwpLineShapeGeometry.path(for: Self.borderLine(.dotLine, thickness: .nan)))
             .to(beNil())
+        // 길이 1e-6pt 이하: 물결 대각선이 0개라 경로가 없고 범위도 없다 (path == nil ⇔ 범위 == nil)
+        let hairline = Self.borderLine(.wave, thickness: 8, length: 1e-7)
+        expect(HwpLineShapeGeometry.path(for: hairline)).to(beNil())
+        expect(HwpLineShapeGeometry.alongExtent(of: hairline)).to(beNil())
+        expect(HwpLineShapeGeometry.crossExtent(of: hairline)).to(beNil())
         // 글자 크기만 비정상 (두께는 유한): 무한·0·음수 모두 경로·범위 없음
         for fontSize in [CGFloat.infinity, 0, -10] {
             let line = HwpLineShapeGeometry.Line(

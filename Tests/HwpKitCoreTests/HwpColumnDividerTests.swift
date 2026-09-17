@@ -161,66 +161,80 @@ import XCTest
             expect(twoColumns.frame.maxY).to(beCloseTo(294, within: 0.001))
         }
 
-        /// 줄 캐시 없는 문단의 마지막 줄 줄 간격 산식 — 표 46 규칙 × 마지막 글자 기본 크기
-        func testMeasuredTrailingSpacingFollowsTheLineSpacingRule() {
-            func text(_ rule: HwpLineSpacingRule, size: Double = 10) -> NSAttributedString {
-                NSAttributedString(string: "가", attributes: [
-                    HwpAttributedStringKey.baseFontSize: NSNumber(value: size),
-                    HwpAttributedStringKey.lineSpacing: rule.attributeValue,
-                ])
-            }
-            let measure = HwpColumnBandController.measuredTrailingSpacing
-            expect(measure(text(HwpLineSpacingRule(kind: .percent, value: 160))))
-                .to(beCloseTo(6, within: 0.001))
-            expect(measure(text(HwpLineSpacingRule(kind: .fixed, value: 30))))
-                .to(beCloseTo(20, within: 0.001))
-            expect(measure(text(HwpLineSpacingRule(kind: .marginOnly, value: 4))))
-                .to(beCloseTo(4, within: 0.001))
-            expect(measure(text(HwpLineSpacingRule(kind: .atLeast, value: 8))))
-                .to(beCloseTo(0, within: 0.001))
-            expect(measure(NSAttributedString(string: ""))) == 0
-            expect(measure(NSAttributedString(string: "가"))) == 0 // 기본 크기 없음
-        }
-
-        /// 단 구분선의 2중 물결은 `Placement.divider`로 두 파가 같은 위상이고, 블록 프레임은
-        /// 물결의 마지막 반주기 넘침과 획 모서리까지 담는다 (#191 리뷰)
-        func testDividerDoubleWaveIsInPhaseAndFrameCoversTheOvershoot() throws {
+        /// 구분선 바닥은 본문 텍스트 블록마다 (아래 − 그 블록 줄 간격) 중 가장 낮은 자리다 — 298에서
+        /// 끝나는 100% 문단의 글상자(298)가 300에서 끝나는 160% 문단의 글상자(294)보다 낮다.
+        /// 줄 간격 출처는 호출자가 준다(페이지네이터는 줄 캐시 값).
+        func testDividerBottomTakesTheLowestLineBoxAcrossColumns() throws {
             var band = HwpColumnBandController()
-            band.currentColumnDef = Self.column(divider: 13, thickness: 14) // 2중 물결 4mm
+            band.currentColumnDef = Self.column(divider: 1)
             band.columnFrames = [
                 CGRect(x: 50, y: 100, width: 200, height: 500),
-                CGRect(x: 300, y: 100, width: 200, height: 500),
+                CGRect(x: 300, y: 100, width: 150, height: 500),
             ]
-            band.bandUsedBottom = 126
-            let divider = try XCTUnwrap(
-                band.columnDividerBlocks(currentBlocks: [AnyHwpBlock(
-                    frame: CGRect(x: 50, y: 100, width: 200, height: 26), kind: .table
-                )]).first
-            )
-            guard case let .shape(geometry)? = divider.payload else {
-                fail("구분선은 채우기 경로 블록이어야 한다")
-                return
+            band.bandUsedBottom = 300
+            func text(percent: Double) -> NSAttributedString {
+                NSAttributedString(string: "가", attributes: [
+                    HwpAttributedStringKey.baseFontSize: NSNumber(value: 10),
+                    HwpAttributedStringKey.lineSpacing:
+                        HwpLineSpacingRule(kind: .percent, value: percent).attributeValue,
+                ])
             }
-            let thickness = CGFloat(CoreHwp.HwpBorderFill.borderThicknessPoints(at: 14))
-            expect(thickness).to(beCloseTo(4 * 72 / 25.4, within: 0.01))
-            let corner = thickness / 4 / 2 / 2.0.squareRoot()
-            // 프레임: 위는 밴드 위 − 획 모서리, 아래는 마지막 반주기 끝(길이 26 → ceil(26 /
-            // 11.46) = 3개 대각선, 끝 = 3 × 11.46 − 0.12) + 획 모서리 — 26보다 아래로 넘친다
-            let halfPeriod = thickness + HwpRenderTuning.LineShape.waveVertexFlat
-            let count = (26 / halfPeriod).rounded(.up)
-            expect(count) == 3
-            let end = count * halfPeriod - HwpRenderTuning.LineShape.waveVertexFlat
-            expect(end) > 26
-            expect(divider.frame.minY).to(beCloseTo(100 - corner, within: 0.001))
-            expect(divider.frame.maxY).to(beCloseTo(100 + end + corner, within: 0.001))
-            // 두 파의 첫 대각선(블록 로컬)이 같은 y에서 시작한다 — 테두리라면 둘째가 3t/4 아래
-            let diagonals = HwpLineShapeGeometryTests.pieces(geometry.path).filter { $0.width > 4 }
-            let starts = diagonals.map(\.minY).filter { $0 < 1 }
-            expect(starts.count) == 2
-            expect(geometry.path.boundingBoxOfPath.minY).to(beCloseTo(0, within: 0.001))
-            let painted = geometry.path.boundingBoxOfPath
-                .offsetBy(dx: divider.frame.minX, dy: divider.frame.minY)
-            expect(divider.frame.contains(painted.insetBy(dx: 0.001, dy: 0.001))) == true
+            let body = AnyHwpBlock(
+                frame: CGRect(x: 50, y: 100, width: 200, height: 200), kind: .text,
+                attributedString: text(percent: 160)
+            )
+            let tight = AnyHwpBlock(
+                frame: CGRect(x: 300, y: 100, width: 150, height: 198), kind: .text,
+                attributedString: text(percent: 100)
+            )
+            let nearTie = try XCTUnwrap(
+                band.columnDividerBlocks(currentBlocks: [body, tight]).first
+            )
+            expect(nearTie.frame.maxY).to(beCloseTo(298, within: 0.001))
+            let cached = try XCTUnwrap(band.columnDividerBlocks(
+                currentBlocks: [body], trailingSpacing: { _ in 12 }
+            ).first)
+            expect(cached.frame.maxY).to(beCloseTo(288, within: 0.001))
+        }
+
+        /// 줄 캐시가 있는 문단은 한글이 저장한 마지막 줄 줄 간격(캐시)을 뺀다 — 문단 모양의 규칙값
+        /// (10pt·160% → 6pt)과 다른 12pt 캐시 두 줄로 구분한다 (줄 상자 아래 = 블록 아래 − 12)
+        func testDividerBottomUsesTheLineCacheSpacingWhenPresent() async throws {
+            var paragraph = try HwpSynthetic.textParagraph("캐시 문단 두 줄")
+            var payload = Data()
+            // 표 40: textIndex, lineLocation, lineHeight, textHeight, baseline, lineSpacing,
+            // colOffset, width, flags
+            for line: [UInt32] in [
+                [0, 0, 1000, 1000, 850, 1200, 0, 42520, 393_216],
+                [5, 2200, 1000, 1000, 850, 1200, 0, 42520, 393_216],
+            ] {
+                for value in line {
+                    withUnsafeBytes(of: value.littleEndian) { payload.append(contentsOf: $0) }
+                }
+            }
+            paragraph.paraLineSeg = try CoreHwp.HwpParaLineSeg.load(payload)
+            let section = HwpSynthetic.section(
+                firstParagraphControls: [
+                    .section(HwpSynthetic.sectionDef()),
+                    .column(Self.column(divider: 1)),
+                ],
+                bodyParagraphs: [paragraph]
+            )
+            let paginator = HwpPaginator(
+                sections: [section],
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+            let maybePage = try await paginator.page(at: 0)
+            let page = try XCTUnwrap(maybePage)
+            let divider = try XCTUnwrap(Self.dividers(in: page).first)
+            let text = try XCTUnwrap(
+                page.blocks.first { $0.attributedString?.string == "캐시 문단 두 줄" }
+            )
+            expect(text.frame.height).to(beCloseTo(44, within: 0.01)) // 캐시 (10 + 12) × 2
+            expect(HwpColumnBandController.cachedTrailingSpacing(of: paragraph))
+                .to(beCloseTo(12, within: 0.001))
+            expect(divider.frame.maxY).to(beCloseTo(text.frame.maxY - 12, within: 0.01))
         }
 
         func testNoDividerWithoutLineTypeOrSecondColumn() async throws {

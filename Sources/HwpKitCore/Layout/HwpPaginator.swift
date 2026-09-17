@@ -622,7 +622,22 @@ private extension HwpPaginator {
     func emitColumnDividers() {
         guard !band.dividersEmitted else { return }
         band.dividersEmitted = true
-        currentBlocks += band.columnDividerBlocks(currentBlocks: currentBlocks)
+        currentBlocks += band.columnDividerBlocks(currentBlocks: currentBlocks) { block in
+            // 출처 문단에 줄 캐시가 있으면 한글이 저장한 마지막 줄 줄 간격, 없으면 조판 문자열
+            // 마지막 글자의 규칙값 (#191)
+            if let source = block.source, let sectionIndex = source.sectionIndex,
+               let paragraphIndex = source.paragraphIndex,
+               sections.indices.contains(sectionIndex),
+               sections[sectionIndex].paragraph.indices.contains(paragraphIndex),
+               let cached = HwpColumnBandController.cachedTrailingSpacing(
+                   of: sections[sectionIndex].paragraph[paragraphIndex]
+               )
+            {
+                return cached
+            }
+            return block.attributedString
+                .map(HwpColumnBandController.measuredTrailingSpacing) ?? 0
+        }
     }
 
     /// 문단에 붙은 단 정의를 반영한다: 현재 밴드를 닫고 그 아래에서 새 밴드를 연다.
