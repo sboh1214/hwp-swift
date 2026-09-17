@@ -112,6 +112,13 @@ import XCTest
                 == .table(blockIndex: 1, row: 0, col: 0)
             expect(HwpHitTester().hit(page: page, point: CGPoint(x: 50, y: 52)))
                 == .hyperlink(url: "https://example.com/beneath", blockIndex: 0)
+            // 중첩 표가 둘째 셀에 있으면 (행, 열)도 그 셀이다 — claim 판정과 같은 분해
+            let shifted = nested.withRect(nestedRect.offsetBy(dx: 100, dy: 0))
+            let second = Self.page(cells: [
+                Self.cell(column: 0), Self.cell(column: 1, nestedTables: [shifted]),
+            ])
+            expect(HwpHitTester().hit(page: second, point: CGPoint(x: 150, y: 50.5)))
+                == .table(blockIndex: 1, row: 0, col: 1)
         }
 
         /// 배치 하한(`paintedObjectBounds`)은 셀 테두리 바깥 절반을 더하지 않는다 — 히트 자격

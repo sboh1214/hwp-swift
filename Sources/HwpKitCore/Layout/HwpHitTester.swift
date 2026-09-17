@@ -58,9 +58,11 @@ public struct HwpHitTester {
                 }
                 // 표의 **칸막이**는 프레임 밖도 claim한다 — 셀 테두리는 모서리에 중심을 둬 바깥
                 // 절반이 표 프레임 밖이고(#191), 그 선 위의 탭이 그냥 내려가면 위 문단의 링크가
-                // 열린다 (R54 `자격 ⊇ 칠`). 넘친 자식 개체는 종전대로 프레임 밖에서 claim하지
-                // 않는다 (R60·R63 — 그 자리엔 방출된 링크가 없다). 글상자 블록 자신의 테두리
-                // 바깥 절반은 아직 claim하지 않는다 (#191 밖의 기존 격차).
+                // 열린다 (R54 `자격 ⊇ 칠`). 프레임 밖으로 넘친 자식 개체(그림·도형·글상자)의
+                // 가림(`containerLayerHit`의 `.occluded`)과 글상자 블록 자신의 테두리 바깥 절반은
+                // 아직 claim하지 않는다 — 각주 갈래(R45 #3)와 비대칭인 기존 격차로 #191 밖이다
+                // (R60·R63은 **이 블록의** 링크 폴백을 막는 근거이지 아래 블록 링크가 열려도 된다는
+                // 뜻이 아니다).
                 if tableBorderPaints(block, at: point) {
                     return ownHit(for: block, index: index, at: point)
                 }
@@ -280,7 +282,8 @@ public struct HwpHitTester {
         )
     }
 
-    /// 점이 든 셀의 (행, 열) — 셀 안이 아니면 그 점을 칠한(테두리 띠) 셀, 그것도 없으면 (0, 0)
+    /// 점이 든 셀의 (행, 열) — 셀 안이 아니면 그 점을 칠한 셀(테두리 띠, 그 셀 안 중첩 표의 칠
+    /// 포함 — claim 판정 `HwpTableFrame.paints`와 같은 분해), 그것도 없으면 (0, 0)
     private func tableGridPosition(block: AnyHwpBlock, point: CGPoint) -> (row: Int, col: Int) {
         guard case let .table(tableFrame) = block.payload else { return (0, 0) }
         let localPoint = CGPoint(
@@ -289,7 +292,7 @@ public struct HwpHitTester {
         )
         let cells = tableFrame.rows.flatMap(\.cells)
         if let cell = cells.first(where: { $0.cellFrame.contains(localPoint) })
-            ?? cells.first(where: { $0.paints(localPoint) })
+            ?? cells.first(where: { $0.paintsIncludingNestedTables(localPoint) })
         {
             return (cell.row, cell.column)
         }

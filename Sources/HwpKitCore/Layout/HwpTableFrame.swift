@@ -2,8 +2,7 @@ import CoreGraphics
 import CoreHwp
 import Foundation
 
-/// 셀 4방향 테두리 (pt 폭 + 색상 + 선 모양). 폭 0이거나 모양이 `none`이면 해당 변은 그리지
-/// 않는다.
+/// 셀 4방향 테두리 (pt 폭 + 색상 + 선 모양). 폭 0이거나 모양이 `none`이면 그리지 않는다.
 ///
 /// 선은 한글처럼 **셀 모서리에 중심**을 두고 양쪽으로 폭의 절반씩 걸친다 (한글 12.30 실측,
 /// #191: 0.1~5mm 16단 모두 위 테두리 중심이 셀 위 모서리, 왼 테두리 중심이 왼 모서리) —
@@ -454,19 +453,20 @@ extension HwpTableLayout {
     }
 }
 
+public extension HwpTableCellFrame {
+    /// `paints` ∪ 이 셀 안 중첩 표의 칠(재귀) — claim한 자리의 셀 찾기(`tableGridPosition`)용
+    func paintsIncludingNestedTables(_ point: CGPoint) -> Bool {
+        paints(point) || nestedTables.contains {
+            $0.table.paints(CGPoint(x: point.x - $0.rect.minX, y: point.y - $0.rect.minY))
+        }
+    }
+}
+
 public extension HwpTableFrame {
     /// 표가 이 지점에 칠했는가 (표-로컬 좌표) — 셀 채움·테두리 ∪ 중첩 표 재귀.
     /// `tableHit`의 순회와 같은 분해라 히트 결과와 갈리지 않는다 (R55).
     func paints(_ point: CGPoint) -> Bool {
-        rows.contains { row in
-            row.cells.contains { cell in
-                cell.paints(point) || cell.nestedTables.contains { nested in
-                    nested.table.paints(CGPoint(
-                        x: point.x - nested.rect.minX, y: point.y - nested.rect.minY
-                    ))
-                }
-            }
-        }
+        rows.contains { $0.cells.contains { $0.paintsIncludingNestedTables(point) } }
     }
 }
 

@@ -623,17 +623,25 @@ private extension HwpPaginator {
         guard !band.dividersEmitted else { return }
         band.dividersEmitted = true
         currentBlocks += band.columnDividerBlocks(currentBlocks: currentBlocks) { block in
-            // 출처 문단에 줄 캐시가 있으면 한글이 저장한 마지막 줄 줄 간격, 없으면 조판 문자열
-            // 마지막 글자의 규칙값 (#191)
-            if let source = block.source, let sectionIndex = source.sectionIndex,
+            // 문단을 **끝내는** 블록이고 출처 문단에 유효한 줄 캐시가 있으면 한글이 저장한
+            // 마지막 줄 줄 간격, 아니면 조판 문자열 마지막 글자의 규칙값 (#191). 다음 단·쪽으로
+            // 이어지는 조각(`continuedParagraphFragment`)은 문단 마지막 줄을 담고 있지 않고,
+            // 무효한 캐시(`isValidLineSegmentCache`)는 높이도 CT 측정이라 캐시 값과 갈린다.
+            if let attributed = block.attributedString,
+               HwpDrawnTextLayout.endsParagraph(
+                   CFRange(location: 0, length: attributed.length), in: attributed
+               ),
+               let source = block.source, let sectionIndex = source.sectionIndex,
                let paragraphIndex = source.paragraphIndex,
                sections.indices.contains(sectionIndex),
-               sections[sectionIndex].paragraph.indices.contains(paragraphIndex),
-               let cached = HwpColumnBandController.cachedTrailingSpacing(
-                   of: sections[sectionIndex].paragraph[paragraphIndex]
-               )
+               sections[sectionIndex].paragraph.indices.contains(paragraphIndex)
             {
-                return cached
+                let paragraph = sections[sectionIndex].paragraph[paragraphIndex]
+                if isValidLineSegmentCache(paragraph.paraLineSeg.paraLineSegInternalArray),
+                   let cached = HwpColumnBandController.cachedTrailingSpacing(of: paragraph)
+                {
+                    return cached
+                }
             }
             return block.attributedString
                 .map(HwpColumnBandController.measuredTrailingSpacing) ?? 0

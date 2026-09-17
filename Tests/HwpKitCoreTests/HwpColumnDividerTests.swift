@@ -237,6 +237,55 @@ import XCTest
             expect(divider.frame.maxY).to(beCloseTo(text.frame.maxY - 12, within: 0.01))
         }
 
+        /// 다음 단·쪽으로 이어지는 조각은 문단 마지막 줄을 담지 않으므로 캐시 값이 아니라 조각
+        /// 마지막 글자의 규칙값(6pt)을 뺀다 — 다섯 줄(줄 간격 12×4·30pt) 캐시 문단이 두 단 밴드
+        /// (본문 65pt)에 앞 빈 문단 + 2줄 / 2줄로 흐르고 마지막 줄만 2쪽으로 가면, 1쪽 구분선은
+        /// 가장 낮은 조각 아래 − 6, 2쪽은 문단 끝 캐시 30을 뺀다
+        func testContinuedFragmentUsesItsOwnLastLineNotTheParagraphCache() async throws {
+            var paragraph = try HwpSynthetic.textParagraph(
+                String(repeating: "이어지는 캐시 문단 ", count: 12)
+            )
+            var payload = Data()
+            for (index, spacing) in [1200, 1200, 1200, 1200, 3000].enumerated() {
+                let line: [UInt32] = [
+                    UInt32(index * 24), UInt32(index * 2200), 1000, 1000, 850, UInt32(spacing),
+                    0, 42520, 393_216,
+                ]
+                for value in line {
+                    withUnsafeBytes(of: value.littleEndian) { payload.append(contentsOf: $0) }
+                }
+            }
+            paragraph.paraLineSeg = try CoreHwp.HwpParaLineSeg.load(payload)
+            // 본문 높이 6500 HWPUNIT = 65pt (위·아래 여백 20mm): 1단 앞 빈 문단(16) + 두 줄(44),
+            // 2단 두 줄(44), 마지막 줄(40)은 2쪽
+            let section = HwpSynthetic.section(
+                firstParagraphControls: [
+                    .section(HwpSynthetic.sectionDef(pageHeight: 6500 + 5670 + 5670)),
+                    .column(Self.column(divider: 1)),
+                ],
+                bodyParagraphs: [paragraph]
+            )
+            let paginator = HwpPaginator(
+                sections: [section],
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+            let total = await paginator.totalPages()
+            expect(total) >= 2
+            let maybeFirst = try await paginator.page(at: 0)
+            let first = try XCTUnwrap(maybeFirst)
+            let fragments = first.blocks.filter { $0.kind == .text && $0.role == .body }
+            let lowest = try XCTUnwrap(fragments.map(\.frame.maxY).max())
+            let firstDivider = try XCTUnwrap(Self.dividers(in: first).first)
+            expect(fragments.count) == 3
+            expect(firstDivider.frame.maxY).to(beCloseTo(lowest - 6, within: 0.01))
+            let maybeSecond = try await paginator.page(at: 1)
+            let second = try XCTUnwrap(maybeSecond)
+            let tail = try XCTUnwrap(second.blocks.first { $0.kind == .text && $0.role == .body })
+            let secondDivider = try XCTUnwrap(Self.dividers(in: second).first)
+            expect(secondDivider.frame.maxY).to(beCloseTo(tail.frame.maxY - 30, within: 0.01))
+        }
+
         func testNoDividerWithoutLineTypeOrSecondColumn() async throws {
             let maybeNone = try await Self.page(column: Self.column(divider: 0), text: "본문")
             expect(Self.dividers(in: try XCTUnwrap(maybeNone))).to(beEmpty())
