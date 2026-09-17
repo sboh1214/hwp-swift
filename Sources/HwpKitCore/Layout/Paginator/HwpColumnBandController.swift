@@ -47,6 +47,11 @@ struct HwpColumnBandController {
     /// 띄우고 다음 밴드를 연다 (Column PrvImage 실측: 밴드 간 첫 줄 시작 간격
     /// = 줄 전진량 + 줄 간격, ±1pt).
     var bandTrailingLineSpacing: CGFloat = 0
+    /// 단 구분선 바닥이 밴드 사용량에서 뺄 마지막 줄의 줄 간격 (#191) — 줄 캐시가 있으면
+    /// `bandTrailingLineSpacing`과 같고, 없으면 마지막 글자의 줄 간격 규칙과 기본 글자 크기로
+    /// 잰 값이다. 밴드 사이 간격(`bandTrailingLineSpacing`)은 캐시 없는 문서에서 0을 두는
+    /// 종전 배치를 지키므로 따로 둔다.
+    var dividerTrailingLineSpacing: CGFloat = 0
     /// 이 밴드의 단 구분선을 이미 방출했는지 (#191) — 밴드 닫기와 쪽 확정이 같은 밴드를
     /// 두 번 보므로 한 번만 방출한다. `open`이 되돌린다.
     var dividersEmitted = false
@@ -100,66 +105,6 @@ struct HwpColumnBandController {
         dividersEmitted = false
     }
 
-    // MARK: - 단 구분선 (#191)
-
-    /// 이 밴드의 단 사이 구분선 블록 — 단 정의(`cold`)의 선 종류·굵기·색으로 단 간격의
-    /// 가운데에 세로선을 그린다 (한글 12.30 실측, 2026-09-17: 13종 × 0.1/0.4/1/3mm 합성
-    /// 문서 — x는 간격 중앙, 선 모양·굵기 축척은 표 셀 테두리와 같다, 둘째 단이 비어도
-    /// 그린다). 세로 범위는 밴드 첫 줄 위(`columnFrames[0].minY`)에서 가장 긴 단의 마지막
-    /// 줄 **글상자 아래**까지다 — 마지막 블록이 본문이면 밴드 사용량에서 마지막 줄의 줄
-    /// 간격을 뺀 자리이고(실측: 10pt 160% 밴드에서 마지막 줄 위 + 10.2pt), 표처럼 줄 간격이
-    /// 없는 블록이면 사용량 그대로다(실측: 표 아래 여백까지). 1단·구분선 없음·빈 밴드는 없다.
-    ///
-    /// 블록은 `.shape`(채우기 경로, `HwpShapeGeometry`)이고 역할은 `.pageChrome`이라
-    /// 선택·복사·검색이 건너뛴다. 좌표는 블록 로컬이다.
-    func columnDividerBlocks(currentBlocks: [AnyHwpBlock]) -> [AnyHwpBlock] {
-        guard columnFrames.count > 1, let column = currentColumnDef,
-              let shape = HwpBorderType(rawValue: Int(column.dividerType)), shape != .none
-        else { return [] }
-        let top = columnFrames[0].minY
-        guard bandUsedBottom > top + 0.01 else { return [] }
-        let thickness = CGFloat(
-            CoreHwp.HwpBorderFill.borderThicknessPoints(at: column.dividerThickness)
-        )
-        guard thickness > 0 else { return [] }
-        // 밴드 바닥에 닿은 블록이 전부 본문이면 마지막 줄의 줄 간격을 뺀다
-        let bottomBlocks = currentBlocks.filter {
-            $0.frame.minY >= top - 0.01 && $0.frame.maxY >= bandUsedBottom - 0.01
-        }
-        let endsWithText = !bottomBlocks.isEmpty && bottomBlocks.allSatisfy { $0.kind == .text }
-        let bottom = bandUsedBottom - (endsWithText ? bandTrailingLineSpacing : 0)
-        guard bottom > top else { return [] }
-        let line = HwpLineShapeGeometry.Line(
-            shape: shape, length: bottom - top, thickness: thickness,
-            scale: .border, placement: .border
-        )
-        guard let path = HwpLineShapeGeometry.path(for: line),
-              let extent = HwpLineShapeGeometry.crossExtent(of: line)
-        else { return [] }
-        let color = HwpRGBColor(column.dividerColor).cgColor
-        var blocks: [AnyHwpBlock] = []
-        for (leading, trailing) in zip(columnFrames, columnFrames.dropFirst()) {
-            let centerX = (leading.maxX + trailing.minX) / 2
-            // 블록 프레임은 선이 칠하는 띠 — 로컬 (x, y) = (extent 하한 기준 가로, 선 방향 세로)
-            let frame = CGRect(
-                x: centerX + extent.lowerBound, y: top,
-                width: extent.upperBound - extent.lowerBound, height: bottom - top
-            )
-            // 기하 로컬 (x = 선 방향, y = 가로지르는 축) → 블록 로컬 (y − extent 하한, x)
-            var transform = CGAffineTransform(a: 0, b: 1, c: 1, d: 0, tx: -extent.lowerBound, ty: 0)
-            guard let local = path.copy(using: &transform) else { continue }
-            blocks.append(AnyHwpBlock(
-                frame: frame,
-                kind: .shape,
-                payload: .shape(HwpShapeGeometry(
-                    path: local, fillColor: color, strokeColor: nil, strokeWidth: 0
-                )),
-                role: .pageChrome
-            ))
-        }
-        return blocks
-    }
-
     /// 다음 단이 있으면 columnIndex를 전진시키고 true. 마지막 단이면 false —
     /// 호출자 (paginator.advanceColumn)가 새 페이지를 연다.
     mutating func advanceToNextColumn() -> Bool {
@@ -170,14 +115,32 @@ struct HwpColumnBandController {
 
     /// 밴드 마지막 줄의 줄 간격을 기록한다 (단 정의 밴드 마감 시 다음 밴드
     /// 시작 여백으로 사용). 라인 캐시가 없으면 이전 값을 유지하지 않고 0으로 둔다.
-    mutating func updateTrailingSpacing(for paragraph: CoreHwp.HwpParagraph) {
+    /// 단 구분선 바닥용 값(`dividerTrailingLineSpacing`)은 캐시가 없으면 조판 문자열의
+    /// 마지막 글자에서 잰다 (#191 리뷰: 캐시 없는 문서의 구분선이 줄 간격만큼 길었다).
+    mutating func updateTrailingSpacing(
+        for paragraph: CoreHwp.HwpParagraph, attributedString: NSAttributedString? = nil
+    ) {
         if let last = paragraph.paraLineSeg.paraLineSegInternalArray.last,
            last.lineSpacing >= 0
         {
             bandTrailingLineSpacing = HwpUnits.points(fromHwpUnit: last.lineSpacing)
+            dividerTrailingLineSpacing = bandTrailingLineSpacing
         } else {
             bandTrailingLineSpacing = 0
+            dividerTrailingLineSpacing = attributedString.map(Self.measuredTrailingSpacing) ?? 0
         }
+    }
+
+    /// 줄 캐시 없는 문단의 마지막 줄 줄 간격 — 마지막 글자의 줄 간격 규칙(표 46)을 그 글자의
+    /// 기본 글자 크기 상자에 적용한 전진량에서 상자를 뺀 값 (개체 줄이면 개체 몫은 빠진다)
+    static func measuredTrailingSpacing(of attributedString: NSAttributedString) -> CGFloat {
+        guard attributedString.length > 0 else { return 0 }
+        let index = attributedString.length - 1
+        guard let size = (attributedString.attribute(
+            HwpAttributedStringKey.baseFontSize, at: index, effectiveRange: nil
+        ) as? NSNumber).map({ CGFloat($0.doubleValue) }), size > 0 else { return 0 }
+        let rule = HwpLineSpacingRule.rule(in: attributedString, at: index)
+        return max(0, rule.advance(textBoxHeight: size, objectHeight: 0) - size)
     }
 
     // MARK: - 단 균형 재배치 (플랜 산출 — currentBlocks 적용은 paginator)
@@ -425,5 +388,75 @@ struct HwpColumnBandController {
         // 물려받는다)을 따른다.
         let continues = NSMaxRange(merged.range) < attributed.length
         return (continues ? HwpTableSplitter.markedAsContinuedFragment(text) : text, height)
+    }
+}
+
+// MARK: - 단 구분선 (#191)
+
+extension HwpColumnBandController {
+    /// 이 밴드의 단 사이 구분선 블록 — 단 정의(`cold`)의 선 종류·굵기·색으로 단 간격의
+    /// 가운데에 세로선을 그린다 (한글 12.30 실측, 2026-09-17: 13종 × 0.1/0.4/1/3mm 합성
+    /// 문서 — x는 간격 중앙, 선 모양·굵기 축척은 표 셀 테두리와 같다, 둘째 단이 비어도
+    /// 그린다). 세로 범위는 밴드 첫 줄 위(`columnFrames[0].minY`)에서 가장 긴 단의 마지막
+    /// 줄 **글상자 아래**까지다 — 마지막 블록이 본문이면 밴드 사용량에서 마지막 줄의 줄
+    /// 간격을 뺀 자리이고(실측: 10pt 160% 밴드에서 마지막 줄 위 + 10.2pt), 표처럼 줄 간격이
+    /// 없는 블록이면 사용량 그대로다(실측: 표 아래 여백까지). 1단·구분선 없음·빈 밴드는 없다.
+    ///
+    /// 블록은 `.shape`(채우기 경로, `HwpShapeGeometry`)이고 역할은 `.pageChrome`이라
+    /// 선택·복사·검색이 건너뛴다. 좌표는 블록 로컬이다.
+    func columnDividerBlocks(currentBlocks: [AnyHwpBlock]) -> [AnyHwpBlock] {
+        guard columnFrames.count > 1, let column = currentColumnDef,
+              let shape = HwpBorderType(rawValue: Int(column.dividerType)), shape != .none
+        else { return [] }
+        let top = columnFrames[0].minY
+        guard bandUsedBottom > top + 0.01 else { return [] }
+        let thickness = CGFloat(
+            CoreHwp.HwpBorderFill.borderThicknessPoints(at: column.dividerThickness)
+        )
+        guard thickness > 0 else { return [] }
+        // 밴드 바닥에 본문 줄이 닿았으면 마지막 줄의 줄 간격을 뺀다 — 본문 텍스트 블록만
+        // 본다: 밴드 바닥까지 내려온 자리 차지·글 앞뒤 개체는 줄 상자를 바꾸지 않는다.
+        let endsWithText = currentBlocks.contains {
+            $0.kind == .text && $0.role == .body
+                && $0.frame.minY >= top - 0.01 && $0.frame.maxY >= bandUsedBottom - 0.01
+        }
+        let bottom = bandUsedBottom - (endsWithText ? dividerTrailingLineSpacing : 0)
+        guard bottom > top else { return [] }
+        let line = HwpLineShapeGeometry.Line(
+            shape: shape, length: bottom - top, thickness: thickness,
+            scale: .border, placement: .divider
+        )
+        guard let path = HwpLineShapeGeometry.path(for: line),
+              let extent = HwpLineShapeGeometry.crossExtent(of: line),
+              let along = HwpLineShapeGeometry.alongExtent(of: line)
+        else { return [] }
+        let color = HwpRGBColor(column.dividerColor).cgColor
+        var blocks: [AnyHwpBlock] = []
+        // 단 프레임은 왼쪽부터 짝짓는다 — 단 방향이 오른쪽부터면 배열 순서가 x 순서와 반대다
+        let orderedFrames = columnFrames.sorted { $0.minX < $1.minX }
+        for (leading, trailing) in zip(orderedFrames, orderedFrames.dropFirst()) {
+            let centerX = (leading.maxX + trailing.minX) / 2
+            // 블록 프레임은 선이 칠하는 띠 — 로컬 (x, y) = (extent 하한 기준 가로, along 하한
+            // 기준 세로; 물결의 마지막 반주기 넘침·획 모서리 포함)
+            let frame = CGRect(
+                x: centerX + extent.lowerBound, y: top + along.lowerBound,
+                width: extent.upperBound - extent.lowerBound,
+                height: along.upperBound - along.lowerBound
+            )
+            // 기하 로컬 (x = 선 방향, y = 가로지르는 축) → 블록 로컬 (y − extent 하한, x − along 하한)
+            var transform = CGAffineTransform(
+                a: 0, b: 1, c: 1, d: 0, tx: -extent.lowerBound, ty: -along.lowerBound
+            )
+            guard let local = path.copy(using: &transform) else { continue }
+            blocks.append(AnyHwpBlock(
+                frame: frame,
+                kind: .shape,
+                payload: .shape(HwpShapeGeometry(
+                    path: local, fillColor: color, strokeColor: nil, strokeWidth: 0
+                )),
+                role: .pageChrome
+            ))
+        }
+        return blocks
     }
 }

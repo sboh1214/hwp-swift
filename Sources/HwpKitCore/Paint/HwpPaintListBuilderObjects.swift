@@ -95,7 +95,9 @@ extension HwpPaintListBuilder {
         }
         // 각주 안 개체 (그림/도형/글상자/표)는 각주 콘텐츠로 그린다 (#94).
         // 방출 순서 (글 뒤로 개체 → 문단 텍스트 → 나머지 개체 → 안쪽 표 재귀)는
-        // walker의 이벤트 순서가 정의한다 — 표 셀 경로와 같은 규약.
+        // walker의 이벤트 순서가 정의한다 — 표 셀 경로와 같은 규약. 셀 테두리는
+        // `tableCommands`처럼 채움·내용 뒤에 모아서 낸다 (#191 리뷰).
+        var borders: [HwpPaintCommand] = []
         HwpBlockContentWalker.walkFootnote(
             footnote,
             origin: blockFrame.origin,
@@ -106,7 +108,7 @@ extension HwpPaintListBuilder {
                 if let fill = cell.fillColor {
                     commands.append(.fillRect(rect: cellRect, color: fill.cgColor))
                 }
-                commands.append(contentsOf: borderCommands(cell.borders, around: cellRect))
+                borders.append(contentsOf: borderCommands(cell.borders, around: cellRect))
             },
             onCellImage: { image, rect in
                 commands.append(contentsOf: cellImageCommands(image, rect: rect))
@@ -118,7 +120,7 @@ extension HwpPaintListBuilder {
                 commands.append(contentsOf: textboxCommands(textbox.textbox, origin: rect.origin))
             }
         )
-        return commands
+        return commands + borders
     }
 }
 

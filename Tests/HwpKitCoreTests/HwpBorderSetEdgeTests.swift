@@ -6,8 +6,9 @@ import Nimble
 import XCTest
 
 /// 셀 테두리 변 기하(`HwpBorderSet.edges`) — 한글 12.30.0 실측(#191)의 배치 규칙을 고정한다:
-/// 선은 셀 모서리에 중심, 가로 변은 세로 변이 있는 끝만 그 폭의 절반 연장, 세로 변은
-/// 연장 없음, 여러 줄은 모서리에서 겹상자, `none`·폭 0은 그리지 않음.
+/// 선은 셀 모서리에 중심, 가로 변은 세로 변이 있는 끝만 그 폭의 절반 연장, 세로 변의
+/// 실선·대시·원형은 연장 없음(물결만 가로 변 폭 절반 연장), 여러 줄은 모서리에서 겹상자,
+/// `none`·폭 0은 그리지 않음. 히트 띠(`band`·`bands(around:)`)는 칠한 곳을 다 덮는다.
 final class HwpBorderSetEdgeTests: XCTestCase {
     static let black = HwpRGBColor(red: 0, green: 0, blue: 0)
     static let rect = CGRect(x: 100, y: 200, width: 300, height: 50)
@@ -40,8 +41,18 @@ final class HwpBorderSetEdgeTests: XCTestCase {
         expect(boxes[2]).to(equal(CGRect(x: 98, y: 200, width: 4, height: 50)))
         // 오른 변: x 398~402
         expect(boxes[3]).to(equal(CGRect(x: 398, y: 200, width: 4, height: 50)))
-        // 히트 띠는 경로 상자와 같다
-        expect(edges.map(\.band)).to(equal(boxes))
+        // 히트 띠는 가로 변은 경로 상자와 같고, 세로 변은 이웃 가로 변 폭의 절반(1)만큼
+        // 양 끝으로 넓다 (겹상자·물결이 그곳까지 칠한다) — `bands(around:)`도 같다
+        expect(edges[0].band).to(equal(boxes[0]))
+        expect(edges[1].band).to(equal(boxes[1]))
+        expect(edges[2].band).to(equal(CGRect(x: 98, y: 199, width: 4, height: 52)))
+        expect(edges[3].band).to(equal(CGRect(x: 398, y: 199, width: 4, height: 52)))
+        let set = Self.set(top: 2, bottom: 2, left: 4, right: 4)
+        expect(set.bands(around: Self.rect)).to(equal(edges.map(\.band)))
+        // 칠한 곳을 다 담는 상자는 셀보다 테두리 바깥 절반만큼 크다
+        expect(set.paintedBounds(around: Self.rect))
+            .to(equal(CGRect(x: 98, y: 199, width: 304, height: 52)))
+        expect(Self.set().paintedBounds(around: Self.rect)).to(equal(Self.rect))
     }
 
     /// 세로 변이 없는 끝은 연장하지 않는다 (한글 실측: 오른 테두리 없는 셀의 위 테두리는
@@ -83,6 +94,27 @@ final class HwpBorderSetEdgeTests: XCTestCase {
         expect(left[1]).to(equal(CGRect(x: 101, y: 201, width: 1, height: 49)))
     }
 
+    /// 폭이 다른 변이 만나는 모서리: 세로 변의 부속선은 **이웃 가로 변** 폭의 절반을 기준으로
+    /// 물러난다 (자기 폭 기준이면 왼 변 안쪽 선이 위 변 안쪽 선보다 아래에서 시작해 겹상자가
+    /// 열린다) — 같은 모양이면 부속선이 서로 맞닿는다. 히트 띠는 바깥 선의 연장까지 담는다.
+    func testUnequalWidthCornersNestAgainstTheNeighbourWidth() {
+        let edges = Self.set(top: 2, left: 4, topShape: .doubleLine, leftShape: .doubleLine)
+            .edges(around: Self.rect)
+        let top = HwpLineShapeGeometryTests.pieces(edges[0].path)
+        // 위 변(폭 2): 바깥 선 y 199~199.5는 왼 변 폭 절반(2) 연장 → x 98; 안쪽 선 y
+        // 200.5~201은 바깥에서 1.5 물러난 몫을 왼 변 폭 비율(4/2)로 늘려 x 101 — 왼 변 안쪽
+        // 선의 왼쪽과 같다
+        expect(top[0]).to(equal(CGRect(x: 98, y: 199, width: 302, height: 0.5)))
+        expect(top[1]).to(equal(CGRect(x: 101, y: 200.5, width: 299, height: 0.5)))
+        let left = HwpLineShapeGeometryTests.pieces(edges[1].path)
+        // 왼 변(폭 4): 바깥 선 x 98~99는 위 변 폭 절반(1) 연장 → y 199; 안쪽 선 x 101~102는
+        // 바깥에서 3 물러난 몫을 위 변 폭 비율(2/4)로 줄여 y 200.5 — 위 변 안쪽 선의 위와 같다
+        expect(left[0]).to(equal(CGRect(x: 98, y: 199, width: 1, height: 51)))
+        expect(left[1]).to(equal(CGRect(x: 101, y: 200.5, width: 1, height: 49.5)))
+        expect(edges[1].band).to(equal(CGRect(x: 98, y: 199, width: 4, height: 51)))
+        expect(edges[1].band.contains(edges[1].path.boundingBoxOfPath)) == true
+    }
+
     /// 아래·오른 변의 여러 줄은 순서가 위→아래·왼→오른으로 같고(한글 실측: 가는+굵은 아래
     /// 변도 가는 선이 위), 바깥쪽은 반대이므로 겹상자 물림이 뒤집힌다
     func testThinThickBottomEdgeKeepsTopToBottomOrder() {
@@ -105,8 +137,30 @@ final class HwpBorderSetEdgeTests: XCTestCase {
         expect(box.maxX).to(beCloseTo(401, within: 0.5)) // 마지막 대시는 패턴 위상에 따라 잘린다
         expect(edges[0].band).to(equal(CGRect(x: 99, y: 199, width: 302, height: 2)))
         let wave = Self.set(left: 4, leftShape: .wave).edges(around: Self.rect)
-        // 왼 변 물결 띠: x 100 − 4 ~ 100 + 1 (−7/8·+1/8 두께 + 획 반폭 1/8)
-        expect(wave[0].band).to(equal(CGRect(x: 96, y: 200, width: 5, height: 50)))
+        // 왼 변 물결 띠: x 100 − 4 ~ 100 + 1 (−7/8·+1/8 두께 + 획 반폭 1/8); 세로 범위는 셀
+        // 높이 50을 반주기 4.12로 채운 13개 대각선 끝 = 13 × 4.12 − 0.12 = 53.44 (마지막
+        // 반주기를 끝까지 그린다)에 획 모서리 0.5/√2를 양 끝에 더한 것
+        let corner = 0.5 / 2.0.squareRoot()
+        expect(wave[0].band.minX).to(beCloseTo(96, within: 0.001))
+        expect(wave[0].band.width).to(beCloseTo(5, within: 0.001))
+        expect(wave[0].band.minY).to(beCloseTo(200 - corner, within: 0.001))
+        expect(wave[0].band.maxY).to(beCloseTo(253.44 + corner, within: 0.001))
+        expect(wave[0].band.contains(wave[0].path.boundingBoxOfPath.insetBy(dx: 0.001, dy: 0.001)))
+            == true
+    }
+
+    /// 세로 물결 변은 가로 변이 있는 끝에서 그 폭의 절반만큼 연장한 곳에서 시작한다 (한글
+    /// 4mm 실측: 위 테두리가 있는 왼 물결 변의 첫 꼭짓점이 모서리 − t/2) — 실선 세로 변과
+    /// 다르다
+    func testVerticalWaveEdgeStartsAtTheExtendedCorner() {
+        let edges = Self.set(top: 4, left: 4, leftShape: .wave).edges(around: Self.rect)
+        let left = HwpLineShapeGeometryTests.pieces(edges[1].path).filter { $0.height > 2 }
+        // 첫 대각선은 y = 198(모서리 − 2)에서 시작한다 (45° 평행사변형 상자는 획 반폭/√2
+        // 만큼 위로 나간다)
+        expect(left.first?.minY).to(beCloseTo(198 - 0.5 / 2.0.squareRoot(), within: 0.01))
+        expect(edges[1].band.minY).to(beCloseTo(198 - 0.5 / 2.0.squareRoot(), within: 0.001))
+        let solid = Self.set(top: 4, left: 4).edges(around: Self.rect)
+        expect(solid[1].path.boundingBoxOfPath.minY).to(beCloseTo(200, within: 0.001))
     }
 
     /// `HwpTableLayout.borders(from:)`는 표 23의 네 방향 선 종류를 그대로 싣는다

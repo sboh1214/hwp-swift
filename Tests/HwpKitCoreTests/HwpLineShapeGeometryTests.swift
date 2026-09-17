@@ -217,8 +217,8 @@ final class HwpLineShapeGeometryTests: XCTestCase {
     }
 
     /// 취소선은 띠를 단선 중심에 가운데 맞추고, 글자 위 밑줄은 아래 가장자리를 단선 띠의
-    /// 아래 가장자리에 맞춰 위로 자란다 (한글 실측: 취소선 2중선 −3.84/−3.12em … 중심 −3.48,
-    /// 위 밑줄 2중선 0.846~0.966em).
+    /// 아래 가장자리에 맞춰 위로 자란다 (한글 실측 10pt: 취소선 2중선 −3.84/−3.12pt … 중심
+    /// −3.48pt = 0.35em, 위 밑줄 2중선 0.846~0.966em).
     func testMultiLinePlacementFollowsTheDecorationKind() {
         let centered = Self.pieces(HwpLineShapeGeometry.path(for: Self.characterLine(
             .doubleLine, placement: .strikethrough
@@ -289,8 +289,9 @@ final class HwpLineShapeGeometryTests: XCTestCase {
     }
 
     /// 테두리 물결: 진폭·반주기 = 두께, 획 = 두께/4, 꼭짓점 띠 [−7/8, +1/8] 두께 (−y 쪽으로
-    /// 3/8 치우침, 한글 4mm 실측 71~167u 대 모서리 83u); 2중 물결은 (1/4, 3/4) 옮긴 파를 더해
-    /// [−7/8, +7/8] 대칭
+    /// 3/8 치우침, 한글 4mm 실측 71~167u 대 모서리 83u); 2중 물결은 (3/4, 3/4) 옮긴 파를 더해
+    /// [−7/8, +7/8] 대칭 — 둘째 파의 내려가는 획이 첫 파의 내려가는 획과 한 직선에 놓여
+    /// 마름모 격자를 이룬다 (한글 4mm 실측: 둘째 파 첫 꼭짓점이 첫 파 시작 + 3t/4)
     func testBorderWaveShiftsTowardNegativeCross() {
         let thickness: CGFloat = 8
         let wave = HwpLineShapeGeometry.crossExtent(
@@ -306,10 +307,15 @@ final class HwpLineShapeGeometryTests: XCTestCase {
         let pieces = Self.pieces(HwpLineShapeGeometry.path(
             for: Self.borderLine(.doubleWave, thickness: thickness, length: 40)
         ))
-        // 둘째 파의 첫 대각선은 x = 두께/4에서 시작한다 (45° 평행사변형이라 상자는 획
-        // 반폭/√2만큼 왼쪽으로 나간다)
-        let diagonals = pieces.filter { $0.height > 4 }.map(\.minX)
-        expect(diagonals.contains { abs($0 - (2 - 1 / 2.0.squareRoot())) < 0.01 }) == true
+        // 둘째 파의 첫 대각선은 x = 3/4 두께 = 6에서 시작한다 (45° 평행사변형이라 상자는 획
+        // 반폭/√2만큼 왼쪽으로 나간다); 첫 파의 둘째 반주기(내려감, x = 2 × 8.12 = 16.24)
+        // 와 같은 직선 y − x 위에 놓인다
+        let diagonals = pieces.filter { $0.height > 4 }
+        let secondStart = 6 - 1 / 2.0.squareRoot()
+        let second = try? XCTUnwrap(diagonals.first { abs($0.minX - secondStart) < 0.01 })
+        expect(second).toNot(beNil())
+        expect(second?.minY).to(beCloseTo(-7 + 6 - 1 / 2.0.squareRoot(), within: 0.01))
+        expect(diagonals.contains { abs($0.minX - (2 - 1 / 2.0.squareRoot())) < 0.01 }) == false
     }
 
     // MARK: - 글자 모양 값 변환
@@ -321,5 +327,75 @@ final class HwpLineShapeGeometryTests: XCTestCase {
         expect(HwpBorderType(characterLineShape: 15)) == .single3D
         expect(HwpBorderType(characterLineShape: 16)) == .line
         expect(HwpBorderType(characterLineShape: -1)) == .line
+    }
+}
+
+// MARK: - 단 구분선·넘침·비정상 입력
+
+extension HwpLineShapeGeometryTests {
+    /// 단 구분선의 2중 물결은 둘째 파를 선 방향으로 옮기지 않는다 (한글 3mm 실측: 두 파의
+    /// 꼭짓점이 같은 y에서 시작) — 가로지르는 축 이동은 테두리와 같은 3/4 두께
+    func testDividerDoubleWaveKeepsBothWavesInPhase() {
+        let line = HwpLineShapeGeometry.Line(
+            shape: .doubleWave, length: 40, thickness: 8, scale: .border, placement: .divider
+        )
+        let offset = HwpLineShapeGeometry.doubleWaveOffset(for: line)
+        expect(offset.x) == 0
+        expect(offset.y).to(beCloseTo(6, within: 0.001))
+        let starts = Self.pieces(HwpLineShapeGeometry.path(for: line))
+            .filter { $0.height > 4 }.map(\.minX).filter { $0 < 0 }
+        expect(starts.count) == 2
+        expect(HwpLineShapeGeometry.crossExtent(of: line)?.upperBound)
+            .to(beCloseTo(8, within: 0.001))
+    }
+
+    /// 물결은 `length` 앞에서 시작한 마지막 반주기를 자르지 않고 끝까지 그린다 (한글 실측:
+    /// 40pt 밑줄 51.03반주기 → 대각선 52개, 3mm 구분선 → 4개) — `alongExtent`가 그 넘침을
+    /// 보고하고, 대시는 종전대로 `length`에서 잘린다
+    func testWaveCompletesTheLastHalfPeriodPastTheLength() {
+        // 두께 8 → 반주기 8.12; 길이 20 → ceil(20 / 8.12) = 3개, 끝 = 3 × 8.12 − 0.12 = 24.24
+        let border = Self.borderLine(.wave, thickness: 8, length: 20)
+        let diagonals = Self.pieces(HwpLineShapeGeometry.path(for: border))
+            .filter { $0.height > 4 }
+        expect(diagonals.count) == 3
+        expect(diagonals.last?.maxX).to(beCloseTo(24.24 + 1 / 2.0.squareRoot(), within: 0.01))
+        expect(diagonals.last?.width).to(beCloseTo(8 + 2 / 2.0.squareRoot(), within: 0.01))
+        // 선 방향 범위는 넘침에 획 모서리(1/√2)를 양 끝에 더한 것
+        expect(HwpLineShapeGeometry.alongExtent(of: border)?.lowerBound)
+            .to(beCloseTo(-1 / 2.0.squareRoot(), within: 0.001))
+        expect(HwpLineShapeGeometry.alongExtent(of: border)?.upperBound)
+            .to(beCloseTo(24.24 + 1 / 2.0.squareRoot(), within: 0.001))
+        // 40pt 글자선 400pt: 반주기 4.6 → 400 / 4.6 = 86.96 → 87개
+        let character = Self.pieces(HwpLineShapeGeometry.path(for: Self.characterLine(.wave)))
+        expect(character.filter { $0.height > 2 }.count) == 87
+        // 대시·실선은 길이 그대로
+        let dashed = Self.borderLine(.longDash, thickness: 8, length: 20)
+        expect(HwpLineShapeGeometry.alongExtent(of: dashed)?.upperBound)
+            .to(beCloseTo(20, within: 0.001))
+        expect(Self.pieces(HwpLineShapeGeometry.path(for: dashed)).last?.maxX)
+            .to(beCloseTo(20, within: 0.001))
+    }
+
+    /// 유한하지 않은 입력은 경로가 없고, 패턴이 10만 번 넘게 되풀이될 길이·축척은 실선 띠로
+    /// 떨어진다 (손상 문서가 수십만 부분 경로를 만들지 않게)
+    func testDegenerateInputsHaveNoPathOrFallBackToSolid() {
+        expect(HwpLineShapeGeometry.path(
+            for: Self.borderLine(.wave, thickness: 8, length: .infinity)
+        )).to(beNil())
+        expect(HwpLineShapeGeometry.path(for: Self.borderLine(.dotLine, thickness: .nan)))
+            .to(beNil())
+        expect(HwpLineShapeGeometry.crossExtent(
+            of: Self.characterLine(.circle, fontSize: .infinity)
+        )).to(beNil())
+        let huge = Self.borderLine(.dotLine, thickness: 0.001, length: 10000)
+        expect(HwpLineShapeGeometry.patternRepeats(of: huge))
+            > HwpLineShapeGeometry.maxPatternRepeats
+        let pieces = Self.pieces(HwpLineShapeGeometry.path(for: huge))
+        expect(pieces.count) == 1
+        expect(pieces.first?.width).to(beCloseTo(10000, within: 0.001))
+        // 물결은 반주기에 0.12pt 평탄이 있어 길이 10만 pt는 돼야 상한을 넘는다
+        expect(HwpLineShapeGeometry.alongExtent(of: Self.borderLine(
+            .wave, thickness: 0.001, length: 100_000
+        ))?.upperBound).to(beCloseTo(100_000, within: 0.001))
     }
 }

@@ -17,10 +17,12 @@ import Foundation
 /// 축척의 모양 표(패턴 배수·띠 안 구성)는 같다.
 ///
 /// 여러 줄·물결 띠의 세로 자리는 `Placement`가 정한다 — 글자 아래 밑줄은 단선 띠의 위
-/// 가장자리에서 아래로 자라고, 취소선과 테두리는 단선 중심에 가운데 맞추며, 글자 위 밑줄은
-/// 아래 가장자리에서 위로 자란다. 물결은 예외로 한글이 종류마다 다른 만큼 위로 올려
-/// 그린다 (`HwpRenderTuning.LineShape.characterWaveTopShiftThicknessRatio`·
-/// `borderWaveShiftThicknessRatio`).
+/// 가장자리에서 아래로 자라고, 취소선과 테두리·단 구분선은 단선 중심에 가운데 맞추며, 글자
+/// 위 밑줄은 아래 가장자리에서 위로 자란다. 물결은 예외로 한글이 종류마다 다른 만큼 위로
+/// 올려 그린다 (`HwpRenderTuning.LineShape.characterWaveTopShiftThicknessRatio`·
+/// `borderWaveShiftThicknessRatio`). 2중 물결의 둘째 파는 테두리만 선 방향으로도 옮긴다
+/// (`doubleWaveOffset(for:)`). 물결은 마지막 반주기를 자르지 않아 `length`를 넘칠 수 있다
+/// (`alongExtent(of:)`).
 ///
 /// 3D 넷(`thick3D`·`thick3DReverse`·`single3D`·`single3DReverse`)은 한글 macOS가 아무것도
 /// 그리지 않지만 (실측) 여기서는 **실선으로 대체**한다 — 지정한 테두리가 통째로 사라지는
@@ -42,8 +44,12 @@ public enum HwpLineShapeGeometry {
         case strikethrough
         /// 글자 위 밑줄 — 띠는 단선의 아래 가장자리에서 위로, 물결은 두께 3배 위에서
         case underlineAbove
-        /// 테두리·단 구분선 — 띠는 선 중심에 가운데, 물결은 두께 3/8만큼 −y 쪽
+        /// 표 셀 테두리 — 띠는 선 중심에 가운데, 물결은 두께 3/8만큼 −y 쪽, 2중 물결의
+        /// 둘째 파는 선 방향으로 3/4 두께 뒤에서 시작해 내려가는 획이 첫 파와 한 직선을
+        /// 이룬다 (마름모 격자)
         case border
+        /// 단 구분선 — 테두리와 같되 2중 물결의 둘째 파가 첫 파와 같은 x에서 시작한다
+        case divider
     }
 
     /// 선 하나의 입력
@@ -72,14 +78,21 @@ public enum HwpLineShapeGeometry {
         }
     }
 
-    /// 로컬 좌표의 채우기 경로. 그릴 것이 없으면 (`none`·길이 0·두께 0) nil.
+    /// 패턴 반복 수의 상한 — 길이/축척이 비정상이라 이보다 많이 되풀이될 선은 실선 띠로
+    /// 떨어뜨린다 (수십만 개 부분 경로를 만들지 않게)
+    static let maxPatternRepeats: CGFloat = 100_000
+
+    /// 로컬 좌표의 채우기 경로. 그릴 것이 없으면 (`none`·길이 0·두께 0·유한하지 않은 입력)
+    /// nil.
     public static func path(for line: Line) -> CGPath? {
-        guard line.length > 0, line.thickness > 0, line.shape != .none else { return nil }
+        guard isDrawable(line) else { return nil }
         let path = CGMutablePath()
         switch line.shape {
         case .none:
             return nil
         case .line, .thick3D, .thick3DReverse, .single3D, .single3DReverse:
+            path.addRect(solidBand(for: line))
+        case _ where patternRepeats(of: line) > maxPatternRepeats:
             path.addRect(solidBand(for: line))
         case .longDotLine, .dotLine, .dashDot, .dashDotDot, .longDash:
             addDashes(dashPattern(for: line.shape, unit: dashUnit(for: line)), to: path, line: line)
@@ -101,12 +114,15 @@ public enum HwpLineShapeGeometry {
     /// 이 선이 칠하는 가로지르는 축의 범위 (로컬 y, [min, max]) — 히트 판정·클리핑용. 경로
     /// 없는 입력이면 nil.
     public static func crossExtent(of line: Line) -> ClosedRange<CGFloat>? {
-        guard line.length > 0, line.thickness > 0, line.shape != .none else { return nil }
+        guard isDrawable(line) else { return nil }
         switch line.shape {
         case .none:
             return nil
         case .line, .thick3D, .thick3DReverse, .single3D, .single3DReverse,
              .longDotLine, .dotLine, .dashDot, .dashDotDot, .longDash:
+            let band = solidBand(for: line)
+            return band.minY ... band.maxY
+        case _ where patternRepeats(of: line) > maxPatternRepeats:
             let band = solidBand(for: line)
             return band.minY ... band.maxY
         case .circle:
@@ -127,6 +143,58 @@ public enum HwpLineShapeGeometry {
         }
     }
 
+    /// 이 선이 칠하는 선 방향의 범위 (로컬 x). 대시·원·여러 줄은 [0, `length`]이지만 물결은
+    /// 한글처럼 마지막 반주기를 **끝까지 그려** `length`를 넘을 수 있고, 45° 획의 butt cap
+    /// 모서리가 양 끝에서 획 반폭/√2만큼 더 나간다. 경로 없는 입력이면 nil.
+    public static func alongExtent(of line: Line) -> ClosedRange<CGFloat>? {
+        guard isDrawable(line) else { return nil }
+        switch line.shape {
+        case .wave, .doubleWave:
+            guard patternRepeats(of: line) <= maxPatternRepeats else { return 0 ... line.length }
+            let corner = waveStroke(for: line) / 2 / 2.0.squareRoot()
+            var end = waveEnd(for: line, offsetX: 0)
+            if line.shape == .doubleWave {
+                end = max(end, waveEnd(for: line, offsetX: doubleWaveOffset(for: line).x))
+            }
+            return -corner ... (end + corner)
+        default:
+            return 0 ... line.length
+        }
+    }
+
+    static func isDrawable(_ line: Line) -> Bool {
+        line.length.isFinite && line.thickness.isFinite && line.length > 0 && line.thickness > 0
+            && line.shape != .none && fontSizeIsFinite(line.scale)
+    }
+
+    private static func fontSizeIsFinite(_ scale: Scale) -> Bool {
+        if case let .characterLine(fontSize) = scale {
+            return fontSize.isFinite
+        }
+        return true
+    }
+
+    /// 패턴이 선 길이 안에서 되풀이되는 횟수 (대시는 패턴 한 벌, 원은 피치, 물결은 반주기
+    /// 단위). 되풀이하지 않는 모양은 0.
+    static func patternRepeats(of line: Line) -> CGFloat {
+        let unit: CGFloat = switch line.shape {
+        case .longDotLine, .dotLine, .dashDot, .dashDotDot, .longDash:
+            dashPattern(for: line.shape, unit: dashUnit(for: line)).reduce(0, +)
+        case .circle:
+            circlePitch(for: line)
+        case .wave, .doubleWave:
+            waveHalfPeriod(for: line)
+        default:
+            0
+        }
+        guard unit > 0, unit.isFinite else { return 0 }
+        return line.length / unit
+    }
+}
+
+// MARK: - 축척·자리·모양 (같은 파일의 확장 — 본체는 공개 진입점만 둔다)
+
+extension HwpLineShapeGeometry {
     // MARK: - 축척
 
     /// 대시 패턴의 단위 길이 (`HwpRenderTuning.LineShape.characterDashUnitEmRatio`·
@@ -170,6 +238,27 @@ public enum HwpLineShapeGeometry {
         }
     }
 
+    /// 물결 반주기 — 45° 대각선(진폭만큼 전진)에 꼭짓점 평탄을 더한 길이
+    static func waveHalfPeriod(for line: Line) -> CGFloat {
+        waveAmplitude(for: line) + HwpRenderTuning.LineShape.waveVertexFlat
+    }
+
+    /// `offsetX`에서 시작한 물결의 대각선 개수 — 시작점이 `length` 앞에 있는 반주기는 끝까지
+    /// 그린다 (한글은 마지막 대각선을 자르지 않는다). 적어도 1.
+    static func waveDiagonalCount(for line: Line, offsetX: CGFloat) -> Int {
+        let halfPeriod = waveHalfPeriod(for: line)
+        guard halfPeriod > 0 else { return 0 }
+        let count = ((line.length - offsetX) / halfPeriod - 1e-6).rounded(.up)
+        return max(1, Int(count))
+    }
+
+    /// `offsetX`에서 시작한 물결의 마지막 대각선이 끝나는 x
+    static func waveEnd(for line: Line, offsetX: CGFloat) -> CGFloat {
+        let count = CGFloat(waveDiagonalCount(for: line, offsetX: offsetX))
+        return offsetX + count * waveHalfPeriod(for: line)
+            - HwpRenderTuning.LineShape.waveVertexFlat
+    }
+
     static func circleDiameter(for line: Line) -> CGFloat {
         switch line.scale {
         case .characterLine:
@@ -202,7 +291,7 @@ public enum HwpLineShapeGeometry {
         switch line.placement {
         case .underlineBelow:
             return -half ... (-half + height)
-        case .strikethrough, .border:
+        case .strikethrough, .border, .divider:
             return (-height / 2) ... (height / 2)
         case .underlineAbove:
             return (half - height) ... half
@@ -218,7 +307,7 @@ public enum HwpLineShapeGeometry {
         case .underlineBelow: steps = 1
         case .strikethrough: steps = 2
         case .underlineAbove: steps = 3
-        case .border:
+        case .border, .divider:
             return -line.thickness * HwpRenderTuning.LineShape.borderWaveShiftThicknessRatio
                 - waveAmplitude(for: line) / 2
         }
@@ -226,20 +315,21 @@ public enum HwpLineShapeGeometry {
         return -half - line.thickness * shift * steps
     }
 
-    /// 2중 물결의 둘째 파 이동량 — 글자선은 진폭의 0.8배 아래, 테두리는 (1/4, 3/4) 두께
+    /// 2중 물결의 둘째 파 이동량 — 글자선은 진폭의 0.8배 아래(같은 x 위상), 테두리는 선
+    /// 방향·가로지르는 축 모두 3/4 두께 (내려가는 획이 첫 파와 한 직선을 이루는 마름모
+    /// 격자), 단 구분선은 가로지르는 축만 3/4 두께
     static func doubleWaveOffset(for line: Line) -> CGPoint {
         switch line.scale {
         case .characterLine:
-            CGPoint(
+            return CGPoint(
                 x: 0,
                 y: waveAmplitude(for: line)
                     * HwpRenderTuning.LineShape.characterDoubleWaveOffsetAmplitudeRatio
             )
         case .border:
-            CGPoint(
-                x: line.thickness / 4,
-                y: line.thickness * HwpRenderTuning.LineShape.borderDoubleWaveOffsetThicknessRatio
-            )
+            let offset = line.thickness
+                * HwpRenderTuning.LineShape.borderDoubleWaveOffsetThicknessRatio
+            return CGPoint(x: line.placement == .divider ? 0 : offset, y: offset)
         }
     }
 
@@ -319,31 +409,28 @@ public enum HwpLineShapeGeometry {
 
     /// 45° 지그재그 — 위 꼭짓점에서 시작해 진폭만큼 내려갔다 올라오기를 반복하고, 꼭짓점
     /// 사이의 평탄(`waveVertexFlat`)은 짧은 띠로 잇는다. 대각선은 획 두께의 평행사변형
-    /// (butt cap)이다.
+    /// (butt cap)이고, `length` 앞에서 시작한 마지막 대각선은 자르지 않고 끝까지 그린다
+    /// (한글 실측 — `alongExtent(of:)`가 그 넘침을 보고한다).
     private static func addWave(to path: CGMutablePath, line: Line, offset: CGPoint) {
         let amplitude = waveAmplitude(for: line)
         let stroke = waveStroke(for: line)
         guard amplitude > 0, stroke > 0 else { return }
         let flat = HwpRenderTuning.LineShape.waveVertexFlat
-        let halfPeriod = amplitude + flat
+        let halfPeriod = waveHalfPeriod(for: line)
         let top = waveTopVertex(for: line) + offset.y
         let bottom = top + amplitude
-        var x = offset.x
-        var goingDown = true
-        while x < line.length {
-            let start = CGPoint(x: x, y: goingDown ? top : bottom)
-            let endX = min(x + amplitude, line.length)
-            let ratio = (endX - x) / amplitude
-            let end = CGPoint(x: endX, y: start.y + (goingDown ? amplitude : -amplitude) * ratio)
+        let count = waveDiagonalCount(for: line, offsetX: offset.x)
+        for index in 0 ..< count {
+            let goingDown = index.isMultiple(of: 2)
+            let startX = offset.x + CGFloat(index) * halfPeriod
+            let start = CGPoint(x: startX, y: goingDown ? top : bottom)
+            let end = CGPoint(x: startX + amplitude, y: goingDown ? bottom : top)
             addSegment(from: start, to: end, stroke: stroke, into: path)
-            if x + amplitude < line.length, flat > 0 {
+            if index + 1 < count, flat > 0 {
                 path.addRect(CGRect(
-                    x: x + amplitude, y: end.y - stroke / 2,
-                    width: min(flat, line.length - x - amplitude), height: stroke
+                    x: end.x, y: end.y - stroke / 2, width: flat, height: stroke
                 ))
             }
-            x += halfPeriod
-            goingDown.toggle()
         }
     }
 

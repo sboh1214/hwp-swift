@@ -293,9 +293,12 @@ public struct HwpPaintListBuilder: Sendable {
         _ table: HwpTableFrame,
         origin: CGPoint
     ) -> [HwpPaintCommand] {
-        // 방출 순서 (셀마다 fill → border → 문단 텍스트 → 셀 그림 → 중첩 표
-        // 재귀)는 walker의 이벤트 순서가 정의한다.
+        // 방출 순서 (셀마다 fill → 문단 텍스트 → 셀 그림 → 중첩 표 재귀)는 walker의
+        // 이벤트 순서가 정의한다. 테두리는 셀 모서리에 중심을 둬 이웃 셀 안으로 t/2 걸치므로
+        // 표의 채움·내용을 다 낸 **뒤에** 모아서 낸다 — 셀 순서대로 섞어 내면 나중 셀의
+        // 채움이 앞 셀 테두리의 바깥 절반을 덮어 선이 반 굵기로 보인다 (#191 리뷰).
         var commands: [HwpPaintCommand] = []
+        var borders: [HwpPaintCommand] = []
         HwpBlockContentWalker.walkTable(
             table,
             origin: origin,
@@ -303,7 +306,7 @@ public struct HwpPaintListBuilder: Sendable {
                 if let fill = cell.fillColor {
                     commands.append(.fillRect(rect: cellRect, color: fill.cgColor))
                 }
-                commands.append(contentsOf: borderCommands(cell.borders, around: cellRect))
+                borders.append(contentsOf: borderCommands(cell.borders, around: cellRect))
             },
             onParagraphText: { attributed, rect, _ in
                 commands.append(drawTextCommand(attributed, in: rect))
@@ -318,7 +321,7 @@ public struct HwpPaintListBuilder: Sendable {
                 commands.append(contentsOf: textboxCommands(textbox.textbox, origin: rect.origin))
             }
         )
-        return commands
+        return commands + borders
     }
 
     /// 셀·표 테두리의 명령 — 기하는 `HwpBorderSet.edges`가 소유하고 히트

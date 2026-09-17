@@ -122,6 +122,12 @@ import XCTest
             // 셀 위쪽 테두리 띠 (1pt, 모서리 600 양쪽 0.5) — 각주가 claim한다
             expect(HwpHitTester().hit(page: page, point: CGPoint(x: 250, y: 600.2)))
                 == .footnote(blockIndex: 1, number: 1)
+            // 모서리 **바깥** 절반(599.5~600)도 칠한 자리다 — 자격 영역이 각주 프레임(600~)
+            // 에서 멈추면 게이트에서 기각돼 아래 링크가 열린다 (R54 `자격 ⊇ 칠`, #191 리뷰)
+            expect(HwpHitTester().hit(page: page, point: CGPoint(x: 250, y: 599.7)))
+                == .footnote(blockIndex: 1, number: 1)
+            // 띠 밖(599.5 위)은 아무도 칠하지 않았다 — 자격은 칠한 곳까지만 넓어진다
+            expect(HwpHitTester().hit(page: page, point: CGPoint(x: 250, y: 599.3))).to(beNil())
             // 칸 안 — 아무것도 안 칠했으니 아래 본문 링크가 열린다
             expect(HwpHitTester().hit(page: page, point: CGPoint(x: 250, y: 620)))
                 == .hyperlink(url: "https://example.com/beneath", blockIndex: 0)

@@ -191,7 +191,12 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
   span에만 `HwpLineShapeGeometry.path`를 편다(묶음의 나머지 run은 아무것도 그리지 않는다;
   실선은 종전대로 run마다 사각형). 한글이 그렇다 — 한 글자 모양 안의 한글↔라틴 슬롯 전환
   (CoreText가 run을 가르는 경계)은 패턴이 이어지고 색만 다른 이웃 글자 모양은 run 시작에서
-  다시 시작한다 (2026-09-17 실측). 축척은 `preScriptFontSize`(첨자 축소 전 크기)이고 로컬
+  다시 시작한다 (2026-09-17 실측). 묶음 열쇠는 id에 더해 선을 정하는 키다
+  (`sameLineShapeGroup`: 모양·유무·색·`spaceTargetSize`·`scriptBaselineOffset`) — 변경 추적
+  삭제 run은 글자 모양을 물려받고 색만 갈리고 첨자 run은 취소선 자리가 다르므로 id만으로
+  묶으면 첫 run의 색·기하로 통째 그려진다(PR 리뷰). 속성 사전 전체 비교는 금물(자간·문단 끝
+  상자 키가 한 글자 모양을 가른다). 모양 키를 실은 run이 없는 줄은 재지 않는다. 축척은
+  `preScriptFontSize`(첨자 축소 전 크기)이고 로컬
   y(양수 = 아래)를 텍스트 공간(y-위)으로 뒤집어 단선 중심(`lineOrigin.y + line.center`)에
   놓는다 — 아래 밑줄의 되돌린 원점·취소선의 첨자 이동은 그 중심에 이미 들어 있다.
 - **MS 워드 호환 문서(`hwp.compatibleDocumentTarget` == `msWord`)의 장식선은 글꼴 지표

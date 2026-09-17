@@ -56,11 +56,17 @@ import XCTest
             let gapCenter = (left.frame.maxX + right.frame.minX) / 2
             expect(divider.frame.midX).to(beCloseTo(gapCenter, within: 0.01))
             expect(divider.frame.width).to(beCloseTo(0.12 * 72 / 25.4, within: 0.001))
-            // y: 밴드 위(첫 줄 위)에서 가장 긴 단의 아래까지
+            // y: 밴드 위(첫 줄 위)에서 가장 긴 단의 마지막 줄 글상자 아래(블록 아래에서 줄
+            // 간격을 뺀 자리 — 줄 캐시 없는 문단은 마지막 글자의 줄 간격 규칙으로 잰다)까지
             let top = texts.map(\.frame.minY).min() ?? 0
             let bottom = texts.map(\.frame.maxY).max() ?? 0
+            let lastText = try XCTUnwrap(texts.max { $0.frame.maxY < $1.frame.maxY })
+            let spacing = HwpColumnBandController.measuredTrailingSpacing(
+                of: try XCTUnwrap(lastText.attributedString)
+            )
+            expect(spacing) > 1
             expect(divider.frame.minY).to(beCloseTo(top, within: 0.01))
-            expect(divider.frame.maxY).to(beCloseTo(bottom, within: 0.01))
+            expect(divider.frame.maxY).to(beCloseTo(bottom - spacing, within: 0.01))
             // 경로는 일점쇄선 조각들이고 색은 단 정의의 구분선 색
             guard case let .shape(geometry)? = divider.payload else {
                 fail("구분선은 채우기 경로 블록이어야 한다")
@@ -91,8 +97,51 @@ import XCTest
             let dividers = Self.dividers(in: page)
             expect(dividers.count) == 1
             let text = try XCTUnwrap(page.blocks.first { $0.kind == .text })
+            let spacing = HwpColumnBandController.measuredTrailingSpacing(
+                of: try XCTUnwrap(text.attributedString)
+            )
             expect(dividers.first?.frame.minY).to(beCloseTo(text.frame.minY, within: 0.01))
-            expect(dividers.first?.frame.maxY).to(beCloseTo(text.frame.maxY, within: 0.01))
+            expect(dividers.first?.frame.maxY)
+                .to(beCloseTo(text.frame.maxY - spacing, within: 0.01))
+        }
+
+        /// 구분선 바닥 규칙 — 밴드 바닥에 본문 줄이 닿았으면 마지막 줄의 줄 간격을 빼고, 표처럼
+        /// 줄 간격 없는 블록이 바닥이면 사용량 그대로다 (한글 실측: 표 아래 여백까지). 밴드
+        /// 바닥까지 내려온 글 앞뒤 개체는 판정을 바꾸지 않는다. 단 프레임이 오른쪽부터여도
+        /// x는 간격 중앙이다.
+        func testDividerBottomSubtractsLineSpacingOnlyBelowBodyText() throws {
+            var band = HwpColumnBandController()
+            band.currentColumnDef = Self.column(divider: 1)
+            let leftFrame = CGRect(x: 50, y: 100, width: 200, height: 500)
+            let rightFrame = CGRect(x: 300, y: 100, width: 150, height: 500)
+            band.columnFrames = [rightFrame, leftFrame] // 오른쪽부터 채우는 단 순서
+            band.bandUsedBottom = 300
+            band.dividerTrailingLineSpacing = 6
+            func block(_ kind: HwpBlockKind, role: HwpBlockRole = .body) -> AnyHwpBlock {
+                AnyHwpBlock(
+                    frame: CGRect(x: 50, y: 100, width: 200, height: 200), kind: kind, role: role
+                )
+            }
+            let belowText = try XCTUnwrap(
+                band.columnDividerBlocks(currentBlocks: [block(.text)]).first
+            )
+            expect(belowText.frame.midX).to(beCloseTo(275, within: 0.001))
+            expect(belowText.frame.minY).to(beCloseTo(100, within: 0.001))
+            expect(belowText.frame.maxY).to(beCloseTo(294, within: 0.001))
+            let belowTable = try XCTUnwrap(
+                band.columnDividerBlocks(currentBlocks: [block(.table)]).first
+            )
+            expect(belowTable.frame.maxY).to(beCloseTo(300, within: 0.001))
+            // 본문 줄과 함께 바닥에 닿은 글 앞으로 개체는 무시한다
+            let withOverlay = try XCTUnwrap(band.columnDividerBlocks(
+                currentBlocks: [block(.text), block(.shape)]
+            ).first)
+            expect(withOverlay.frame.maxY).to(beCloseTo(294, within: 0.001))
+            // 쪽 장식 역할의 텍스트(머리말)는 본문이 아니다
+            let chromeOnly = try XCTUnwrap(band.columnDividerBlocks(
+                currentBlocks: [block(.text, role: .pageChrome)]
+            ).first)
+            expect(chromeOnly.frame.maxY).to(beCloseTo(300, within: 0.001))
         }
 
         func testNoDividerWithoutLineTypeOrSecondColumn() async throws {

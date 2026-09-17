@@ -32,27 +32,66 @@ extension HwpPageLayer {
     /// 새로 시작하고 그 안의 스크립트 슬롯 전환(한글↔라틴, CoreText가 run을 가르는 경계)은
     /// 이어 그린다 (2026-09-17 실측: "가나다 abc 라마" 한 글자 모양의 긴 점선이 한 위상으로
     /// 이어지고, 색만 다른 이웃 글자 모양 "ab"·"cd efgh"·" ij"는 각각 다시 시작). 묶는
-    /// 열쇠가 글자 모양 id인 이유는 `msWordStrikethroughFonts`와 같다 — 속성 사전 비교는
-    /// 양쪽 정렬 자간·문단 끝 상자가 한 글자 모양을 가른다. id 없는 폴백 run은 홀로 선다.
-    /// 실선은 이 묶음을 쓰지 않고 run마다 그린다 (이어 붙인 사각형과 같은 결과).
+    /// 열쇠가 글자 모양 id인 이유는 `msWordStrikethroughFonts`와 같다 — 속성 사전 전체 비교는
+    /// 양쪽 정렬 자간·문단 끝 상자가 한 글자 모양을 가른다. 다만 같은 id 안에서도 선을
+    /// 정하는 키(`sameLineShapeGroup` — 선 모양·유무·색·축척 크기·첨자 이동)가 다르면
+    /// 따로 묶는다: 변경 추적 삭제 run은 글자 모양을 물려받고 색만 갈리고, 첨자 run은
+    /// 취소선 자리가 달라 첫 run의 기하로 묶어 그리면 틀린다 (#191 리뷰). id 없는 폴백
+    /// run은 홀로 선다. 실선은 이 묶음을 쓰지 않고 run마다 그린다 (이어 붙인 사각형과
+    /// 같은 결과). 선 모양 키를 실은 run이 하나도 없는 줄은 재지 않는다.
     func lineShapeSpans(of runs: [CTRun], lineOrigin: CGPoint) -> [CGRect?] {
         var spans: [CGRect?] = Array(repeating: nil, count: runs.count)
+        let attributes = runs.map(runAttributes)
+        guard attributes.contains(where: {
+            $0[HwpAttributedStringKey.underlineShape] != nil
+                || $0[HwpAttributedStringKey.strikethroughShape] != nil
+        }) else { return spans }
         var groupStart = 0
-        var groupShape: NSNumber?
         for (index, run) in runs.enumerated() {
             let bounds = runBounds(of: run, lineOrigin: lineOrigin)
-            let shape = runAttributes(run)[HwpAttributedStringKey.charShapeId] as? NSNumber
-            if index > 0, let shape, let groupShape, shape == groupShape,
+            if index > 0, attributes[index][HwpAttributedStringKey.charShapeId] != nil,
+               Self.sameLineShapeGroup(attributes[groupStart], attributes[index]),
                let union = spans[groupStart]
             {
                 spans[groupStart] = union.union(bounds)
             } else {
                 groupStart = index
-                groupShape = shape
                 spans[index] = bounds
             }
         }
         return spans
+    }
+
+    /// `lineShapeSpans`가 한 묶음으로 보는 두 run의 조건 — 글자 모양 id와 선을 정하는 키가
+    /// 모두 같다 (값 키는 수치 비교, 색은 `CFEqual`)
+    static func sameLineShapeGroup(
+        _ lhs: [NSAttributedString.Key: Any], _ rhs: [NSAttributedString.Key: Any]
+    ) -> Bool {
+        let numberKeys: [NSAttributedString.Key] = [
+            HwpAttributedStringKey.charShapeId,
+            HwpAttributedStringKey.underlineShape, HwpAttributedStringKey.strikethroughShape,
+            HwpAttributedStringKey.underlineStyle, HwpAttributedStringKey.underlineAboveStyle,
+            HwpAttributedStringKey.strikethroughStyle,
+            HwpAttributedStringKey.spaceTargetSize, HwpAttributedStringKey.scriptBaselineOffset,
+        ]
+        for key in numberKeys where (lhs[key] as? NSNumber) != (rhs[key] as? NSNumber) {
+            return false
+        }
+        let colorKeys: [NSAttributedString.Key] = [
+            HwpAttributedStringKey.underlineColor, HwpAttributedStringKey.strikethroughColor,
+            kCTForegroundColorAttributeName as NSAttributedString.Key,
+        ]
+        for key in colorKeys {
+            switch (lhs[key], rhs[key]) {
+            case (nil, nil):
+                continue
+            case let (left?, right?):
+                guard CFEqual(left as CFTypeRef, right as CFTypeRef) else { return false }
+            default:
+                return false
+            }
+        }
+        return true
     }
 
     /// 실선이 아닌 장식선 — 글자 모양 run의 폭 `span`(묶음의 첫 run만 받는다,

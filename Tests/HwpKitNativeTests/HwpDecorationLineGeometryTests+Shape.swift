@@ -140,6 +140,64 @@ extension HwpDecorationLineGeometryTests {
         expect(splitColumns[boundaryColumn]) == true
     }
 
+    /// 같은 글자 모양 id라도 선을 정하는 키(여기서는 밑줄 색 — 변경 추적 삭제 run이 글자
+    /// 모양을 물려받고 색만 갈리는 경우)가 다르면 따로 묶는다: 패턴이 경계에서 다시 시작하고
+    /// 둘째 run은 제 색으로 그려진다 (#191 리뷰). 크기 축척(`spaceTargetSize`)이 달라도 같다.
+    func testDifferentLineKeysSplitTheGroupWithinOneCharShape() throws {
+        let magenta = CGColor(red: 1, green: 0, blue: 1, alpha: 1)
+        func isMagenta(_ red: UInt8, _ green: UInt8, _ blue: UInt8) -> Bool {
+            red > 150 && green < 100 && blue > 150
+        }
+        let first = NSAttributedString(
+            string: "AAAA", attributes: shapedUnderline(.longDotLine, charShape: 7)
+        )
+        let second = NSAttributedString(
+            string: "BBBB",
+            attributes: shapedUnderline(
+                .longDotLine, font: "Menlo-Bold", charShape: 7, color: magenta
+            )
+        )
+        let text = NSMutableAttributedString(attributedString: first)
+        text.append(second)
+        let boundary = 10 + CTLineGetTypographicBounds(
+            CTLineCreateWithAttributedString(first), nil, nil, nil
+        )
+        let raster = try render(text: text)
+        let center = try solidUnderlineCenter()
+        let rows = Int((center - 0.6) * Self.scale) ... Int((center + 0.6) * Self.scale)
+        func ink(at x: CGFloat, _ predicate: (UInt8, UInt8, UInt8) -> Bool) -> Bool {
+            let column = Int(x * Self.scale)
+            return rows.contains { y in
+                let offset = y * raster.bytesPerRow + column * 4
+                return predicate(
+                    raster.data[offset], raster.data[offset + 1], raster.data[offset + 2]
+                )
+            }
+        }
+        // 경계 바로 뒤에 자홍 선이 시작한다 (이어졌다면 공백이고, 청록으로 그려졌다면 색이 틀리다)
+        expect(ink(at: boundary + 0.3, isMagenta)) == true
+        expect(ink(at: boundary + 4.3, isMagenta)) == true
+        expect(ink(at: boundary + 4.3, Self.isCyan)) == false
+        // 앞 run은 청록 그대로
+        expect(ink(at: 10.5, Self.isCyan)) == true
+        // 묶음 판정 자체: 색만 달라도, 축척 크기만 달라도 다른 묶음이다
+        let base = shapedUnderline(.longDotLine, charShape: 7)
+        let recolored = shapedUnderline(.longDotLine, charShape: 7, color: magenta)
+        expect(HwpPageLayer.sameLineShapeGroup(base, base)) == true
+        expect(HwpPageLayer.sameLineShapeGroup(base, recolored)) == false
+        var larger = base
+        larger[HwpAttributedStringKey.spaceTargetSize] = NSNumber(value: 30)
+        expect(HwpPageLayer.sameLineShapeGroup(base, larger)) == false
+        var shifted = base
+        shifted[HwpAttributedStringKey.scriptBaselineOffset] = NSNumber(value: 3)
+        expect(HwpPageLayer.sameLineShapeGroup(base, shifted)) == false
+        var bold = base
+        bold[kCTFontAttributeName as NSAttributedString.Key] = CTFontCreateWithName(
+            "Menlo-Bold" as CFString, Self.shapeFontSize, nil
+        )
+        expect(HwpPageLayer.sameLineShapeGroup(base, bold)) == true
+    }
+
     /// 2중선 밑줄은 두 띠, 물결은 진폭 0.112em의 띠 하나 (20pt: 2.24pt + 획 0.6)
     func testMultiLineAndWaveUnderlinesSpanTheMeasuredBands() throws {
         let double = try render(text: NSAttributedString(

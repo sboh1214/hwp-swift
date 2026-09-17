@@ -1081,7 +1081,7 @@ private extension HwpPaginator {
                 beforeGap: beforeGap,
                 onFragmentPlaced: { appendInlineControlBlocksForCurrentFragment(from: paragraph) }
             )
-            updateBandTrailingSpacing(for: paragraph)
+            updateBandTrailingSpacing(for: paragraph, attributedString: attributedString)
             return true
         }
         contentHeightUsed += beforeGap
@@ -1096,7 +1096,7 @@ private extension HwpPaginator {
             heightIsMeasured: abs(paragraphHeight - paragraphFrame.totalHeight) < 0.01,
             paraShape: index.paraShapeOrDefault(for: paragraph)
         )
-        updateBandTrailingSpacing(for: paragraph)
+        updateBandTrailingSpacing(for: paragraph, attributedString: attributedString)
         return true
     }
 
@@ -1132,13 +1132,16 @@ private extension HwpPaginator {
             beforeGap: beforeGap,
             onFragmentPlaced: { appendInlineControlBlocksForCurrentFragment(from: paragraph) }
         )
-        updateBandTrailingSpacing(for: paragraph)
+        updateBandTrailingSpacing(for: paragraph, attributedString: attributedString)
     }
 
     /// 밴드 마지막 줄의 줄 간격을 기록한다 (단 정의 밴드 마감 시 다음 밴드
-    /// 시작 여백으로 사용). 산식은 band.updateTrailingSpacing.
-    private func updateBandTrailingSpacing(for paragraph: CoreHwp.HwpParagraph) {
-        band.updateTrailingSpacing(for: paragraph)
+    /// 시작 여백으로 사용). 산식은 band.updateTrailingSpacing — 조판 문자열은 줄 캐시
+    /// 없는 문단의 단 구분선 바닥(#191)에만 쓴다.
+    private func updateBandTrailingSpacing(
+        for paragraph: CoreHwp.HwpParagraph, attributedString: NSAttributedString
+    ) {
+        band.updateTrailingSpacing(for: paragraph, attributedString: attributedString)
     }
 
     /// 한글 라인 캐시의 단별 run을 단 프레임에 그대로 배분한다 (밴드가 비어 있고
@@ -1223,7 +1226,7 @@ private extension HwpPaginator {
                 appendInlineControlBlocksForCurrentFragment(from: paragraph)
             }
         }
-        updateBandTrailingSpacing(for: paragraph)
+        updateBandTrailingSpacing(for: paragraph, attributedString: attributedString)
         return true
     }
 
