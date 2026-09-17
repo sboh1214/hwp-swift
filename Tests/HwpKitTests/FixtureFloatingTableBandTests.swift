@@ -3,7 +3,8 @@ import HwpKitCore
 import Nimble
 import XCTest
 
-/// 자리 차지 표의 띠 배치 실물 핀 (#161).
+/// 자리 차지 표의 실물 핀 — 1단 절대 캐시 문단의 띠 배치(#161)와 2단 흐름 배치 문단의
+/// 글줄 앞 배치(#190).
 ///
 /// `numbering-sequence` 쌍(한컴오피스 한글 12.30 macOS 저장본) 3쪽의 표는
 /// 세로 기준 '문단'·자리 차지(표 70 `topAndBottom`)·오프셋 0·바깥 여백 283×4다.
@@ -64,6 +65,62 @@ final class FixtureFloatingTableBandTests: XCTestCase {
                 expect(table.frame.intersects(block.frame.insetBy(dx: 0, dy: 0.01)))
                     .to(beFalse(), description: "\(format) \(block.attributedString?.string ?? "")")
             }
+        }
+    }
+
+    /// 2단 문서의 자리 차지 표는 문단 글줄 **앞**에 흐름으로 놓인다 (#190).
+    ///
+    /// `line-shapes` 쌍(한글 12.30 저장본)은 2단이고 마지막 문단이 17행 표와 `table anchor`
+    /// 글줄을 품는다. 다단 밴드는 절대 캐시 모드라도 흐름 배치를 타므로 띠 판정이 아니라
+    /// 표 → 글줄 순서 자체가 답이다. 한글 PDF 실측(2026-09-16, 글자 baseline, 쪽 상단 기준
+    /// pt): 1단 첫 행 `border SOLID` 672.00 · 7행째 `border CIRCLE` 748.92 · 2단 첫 행
+    /// `border DOUBLE_SLIM` 111.96 · `table anchor` 241.56. 우리 블록에서 같은 baseline은
+    /// 표 상단 + 셀 위 여백 1.41 + 0.85 × 10pt = 662.03 + 9.91 = 671.94 / 102.03 + 9.91 =
+    /// 111.94 / 글줄 상단 233.06 + 8.5 = 241.56이라 0.06pt 안이다 (캐시 `vertpos` 13386 =
+    /// 233.06 − 99.20 = 133.86pt 도 같다). 고치기 전에는 글줄을 1단 659.20에 먼저 놓고 표를
+    /// 6행/11행으로 갈랐다. 남은 격차는 표 x의 바깥 왼쪽 여백 2.83pt(#161부터)뿐이다.
+    func testLineShapesTablePrecedesItsParagraphLineAcrossColumnsInBothFormats() async throws {
+        for hwpx in [false, true] {
+            let format = hwpx ? "HWPX" : "HWP"
+            let url = FixtureRoot.url(from: #file, subdirectory: hwpx ? "HwpxFixtures" : "Fixtures")
+                .appendingPathComponent("line-shapes")
+                .appendingPathComponent(hwpx ? "document.hwpx" : "document.hwp")
+            let document = try await HwpDocumentLoader(fontResolver: .testDeterministic)
+                .load(from: url)
+            expect(document.pages.count).to(equal(1), description: format)
+            let body = document.pages[0].blocks.filter { $0.role == .body }
+            let tables = body.filter { $0.kind == .table }
+            expect(tables.count).to(equal(2), description: format)
+            guard tables.count == 2 else { continue }
+            let host = try XCTUnwrap(body.first {
+                ($0.attributedString?.string ?? "").contains("table anchor")
+            })
+            let before = try XCTUnwrap(body.first {
+                ($0.attributedString?.string ?? "").hasPrefix("strikeout REV3D")
+            })
+
+            // 블록 순서: 표 두 조각이 글줄 앞이다.
+            let hostIndex = try XCTUnwrap(body.firstIndex { $0 == host })
+            for table in tables {
+                expect(try XCTUnwrap(body.firstIndex { $0 == table }))
+                    .to(beLessThan(hostIndex), description: format)
+            }
+            // 1단 조각: 앞 문단 끝 659.20 + 위 여백 2.83 = 662.03, 7행 89.74pt.
+            expect(tables[0].frame.minX)
+                .to(beCloseTo(before.frame.minX, within: 0.01), description: format)
+            expect(tables[0].frame.minY)
+                .to(beCloseTo(before.frame.maxY + 2.83, within: 0.01), description: format)
+            expect(tables[0].frame.minY).to(beCloseTo(662.03, within: 0.01), description: format)
+            expect(tables[0].frame.height).to(beCloseTo(89.74, within: 0.01), description: format)
+            // 2단 조각: 단 상단 99.20 + 위 여백 2.83, 10행 128.20pt.
+            expect(tables[1].frame.minX).to(beCloseTo(303.31, within: 0.01), description: format)
+            expect(tables[1].frame.minY).to(beCloseTo(102.03, within: 0.01), description: format)
+            expect(tables[1].frame.height).to(beCloseTo(128.20, within: 0.01), description: format)
+            // 글줄: 2단의 표 아래 + 아래 여백 = 233.06 (한글 캐시 vertpos 13386).
+            expect(host.frame.minX).to(beCloseTo(303.31, within: 0.01), description: format)
+            expect(host.frame.minY)
+                .to(beCloseTo(tables[1].frame.maxY + 2.83, within: 0.01), description: format)
+            expect(host.frame.minY).to(beCloseTo(233.06, within: 0.01), description: format)
         }
     }
 }

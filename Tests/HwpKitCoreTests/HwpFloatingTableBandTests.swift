@@ -220,10 +220,13 @@ import XCTest
                 .to(beGreaterThanOrEqualTo(tables[0].frame.minY - 0.01))
         }
 
-        /// 저작 문단 위 간격은 캐시 줄 위치에 이미 들어 있다 — 그 몫까지 표 자리로 세면
-        /// 문단이 의도한 여백에 표가 들어간다. 간격을 뺀 나머지가 띠다.
-        func testAuthoredParagraphSpacingIsNotCountedAsBand() async throws {
-            // 간격 13600 HWPUNIT → beforeGap 68pt = 캐시 간격 전부. 남는 띠는 0이다.
+        /// 이 문단 자신의 저작 위 간격은 띠를 좁히지 않는다 — 한글은 자리 차지 표를 품은
+        /// 문단의 위 간격을 표 앞에도 표와 글줄 사이에도 쓰지 않아 (#190 실측, 1단 저장본의
+        /// 캐시 간격 4412 = 283 + 3×1282 + 283로 간격 없는 문단과 같다) 캐시 간격이 곧
+        /// 표 + 여백이다. 그 몫을 빼면 그런 문단의 띠가 좁다고 오판돼 표가 글줄 뒤로 밀린다.
+        func testHostParagraphSpacingBeforeDoesNotShrinkTheBand() async throws {
+            // 간격 13600 HWPUNIT(68pt)을 빼면 띠가 0이 되지만, 빼지 않으면 68pt 띠에
+            // 표 30 + 여백 5.66이 들어간다.
             let index = HwpSynthetic.outlineIndex(paraShapes: [
                 7: CoreHwp.HwpParaShape(
                     property1: 0, marginLeft: 0, paragraphSpacingTop: 13600, tabDefId: 0
@@ -235,8 +238,10 @@ import XCTest
                 hostLocation: 10000, host: host, index: index
             ))
             let table = try XCTUnwrap(blocks.first { $0.kind == .table })
+            let before = try XCTUnwrap(blocks.first { $0.text == "앞 문단" })
             let hostBlock = try XCTUnwrap(blocks.first { $0.text == "\u{FFFC}" })
-            expect(table.frame.minY).to(beGreaterThanOrEqualTo(hostBlock.frame.maxY - 0.01))
+            expect(table.frame.minY).to(beCloseTo(before.frame.maxY + 2.83, within: 0.01))
+            expect(table.frame.maxY + 2.83).to(beLessThanOrEqualTo(hostBlock.frame.minY + 0.01))
         }
 
         /// **앞 문단**의 저작 아래 여백도 캐시 간격에 들어 있다 — 절대 캐시 블록 높이는
@@ -305,9 +310,12 @@ import XCTest
             }
         }
 
-        /// 문서가 절대 캐시 모드여도 **이 문단**이 캐시 없이 흐름 배치됐으면 판정하지
-        /// 않는다 — 그 간격은 한글이 표에 내준 띠가 아니라 문단 위 간격이다.
-        func testFlowPlacedParagraphInAnAbsoluteCacheDocumentIsNotBanded() async throws {
+        /// 문서가 절대 캐시 모드여도 **이 문단**이 캐시 없이 흐름 배치됐으면 띠 판정이
+        /// 아니라 흐름 배치 규칙(#190, `HwpFloatingTablePrecedesTextTests`)을 따른다 —
+        /// 표는 앞 문단 끝 + 위 여백에서 시작하고 글줄이 그 아래를 따르며, 문단 위 간격은
+        /// 띠도 아니고(#161) 표 앞·뒤 어디에도 쓰지 않는다(한글 실측). 캐시로 놓인 뒤
+        /// 문단과는 겹치지 않는다.
+        func testFlowPlacedParagraphInAnAbsoluteCacheDocumentFollowsTheFlowRule() async throws {
             // 문단 위 간격 8000 HWPUNIT → beforeGap 40pt > 표 30 + 여백 5.66pt
             let index = HwpSynthetic.outlineIndex(paraShapes: [
                 7: CoreHwp.HwpParaShape(
@@ -321,8 +329,13 @@ import XCTest
                 hostLocation: 10000, host: host, index: index
             ))
             let table = try XCTUnwrap(blocks.first { $0.kind == .table })
+            let before = try XCTUnwrap(blocks.first { $0.text == "앞 문단" })
             let hostBlock = try XCTUnwrap(blocks.first { $0.text == "\u{FFFC}" })
-            expect(table.frame.minY).to(beGreaterThanOrEqualTo(hostBlock.frame.maxY - 0.01))
+            let after = try XCTUnwrap(blocks.first { $0.text == "뒤 문단" })
+            expect(table.frame.minY).to(beCloseTo(before.frame.maxY + 2.83, within: 0.01))
+            expect(hostBlock.frame.minY).to(beCloseTo(table.frame.maxY + 2.83, within: 0.01))
+            expect(after.frame.minY).to(beGreaterThanOrEqualTo(hostBlock.frame.maxY - 0.01))
+            expect(blocks.map(\.kind)).to(equal([.text, .text, .table, .text, .text]))
         }
 
         /// 세로 기준이 '쪽'인 표도 뺀다 — 그 오프셋은 쪽 상단 기준 절대 좌표다.
