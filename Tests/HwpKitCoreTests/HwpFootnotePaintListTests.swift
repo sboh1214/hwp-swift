@@ -330,18 +330,25 @@ final class HwpFootnotePaintListTests: XCTestCase {
         )
         let commands = footnoteCommands(footnote, frame: blockFrame)
 
-        // 셀 테두리 4변 (fillRect) — 각주 좌표로 오프셋된다
-        let borderRects: [CGRect] = commands.compactMap {
-            if case let .fillRect(rect, _) = $0 {
-                return rect
+        // 구분선 1 (fillRect) + 셀 테두리 4변 (drawPath, #191) — 각주 좌표로 오프셋된다
+        let separators = commands.filter {
+            if case .fillRect = $0 {
+                return true
+            }
+            return false
+        }
+        expect(separators.count) == 1
+        let borderBoxes: [CGRect] = commands.compactMap {
+            if case let .drawPath(path, _, _, _) = $0 {
+                return path.boundingBoxOfPath
             }
             return nil
         }
-        // 구분선 1 + 테두리 4
-        expect(borderRects.count) == 5
-        for rect in borderRects.dropFirst() {
-            expect(rect.minX) >= 72 + 18 - 0.01
-            expect(rect.maxX) <= 72 + 18 + 100 + 0.01
+        expect(borderBoxes.count) == 4
+        // 선은 셀 모서리에 중심을 두므로 폭 1의 절반만큼 셀 밖으로 나간다
+        for box in borderBoxes {
+            expect(box.minX) >= 72 + 18 - 0.5 - 0.01
+            expect(box.maxX) <= 72 + 18 + 100 + 0.5 + 0.01
         }
         let texts: [String] = commands.compactMap {
             if case let .drawText(attributed, _, _) = $0 {

@@ -365,14 +365,15 @@ final class FixtureObjectRenderTests: XCTestCase {
         expect(texts).to(contain("구속성"))
         expect(texts).to(contain("비확정성"))
         expect(texts).to(contain("주관성"))
-        let fills = page.paintList.commands.filter {
-            if case .fillRect = $0 {
-                return true
+        // 구분선(fillRect) 하나뿐이었던 자리에 표 테두리(변마다 drawPath 채우기, #191)가
+        // 더해진다
+        let borders = page.paintList.commands.filter {
+            if case let .drawPath(_, fill, _, _) = $0 {
+                return fill != nil
             }
             return false
         }
-        // 구분선 하나뿐이었던 자리에 표 테두리가 더해진다
-        expect(fills.count) > 10
+        expect(borders.count) > 10
     }
 
     /// 각주 안 개체가 페이지 흐름 블록으로 새어 나오지 않는다 — 나오면 각주

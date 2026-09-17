@@ -115,12 +115,12 @@ import XCTest
         }
 
         /// **안 채운 표도 칸막이는 칠한다** (R55). 페인터(`borderCommands`)가 셀
-        /// 안쪽에 테두리 띠 넷을 그리므로 그 선 위의 탭은 표가 가져가야 하고,
+        /// 모서리에 중심을 둔 테두리 띠 넷을 그리므로 그 선 위의 탭은 표가 가져가야 하고,
         /// 칸 **안**(투명)만 아래 블록 몫이다.
         func testUnfilledNestedTableBorderClaimsButInteriorFallsThrough() {
             let page = Self.pageWithUnfilledNestedTable(wrappedByLink: false)
-            // 셀 위쪽 테두리 띠 (1pt) — 각주가 claim한다
-            expect(HwpHitTester().hit(page: page, point: CGPoint(x: 250, y: 600.5)))
+            // 셀 위쪽 테두리 띠 (1pt, 모서리 600 양쪽 0.5) — 각주가 claim한다
+            expect(HwpHitTester().hit(page: page, point: CGPoint(x: 250, y: 600.2)))
                 == .footnote(blockIndex: 1, number: 1)
             // 칸 안 — 아무것도 안 칠했으니 아래 본문 링크가 열린다
             expect(HwpHitTester().hit(page: page, point: CGPoint(x: 250, y: 620)))
@@ -231,9 +231,9 @@ import XCTest
                 == .footnote(blockIndex: 1, number: 1)
         }
 
-        /// 이중선의 **둘째 줄**도 칠이다 (R56). 페인터(`edgeStripes`)는 안쪽으로
-        /// thin + gap 만큼 민 자리에 두 번째 가는 선을 그리는데, 원래 폭 띠만
-        /// 보면 그 선 위의 탭이 아래 블록으로 샌다. 두 줄 **사이**는 안 칠한다.
+        /// 이중선의 **둘째 줄**도 칠이다 (R56). 페인터(`HwpBorderSet.edges`)는 셀 모서리에
+        /// 중심을 둔 폭 띠 안에 가는 선 둘을 그린다 (#191) — 모서리 **밖**의 첫 줄 위의 탭도
+        /// 이 셀을 가리키고, 두 줄 사이도 띠라 칠이며, 띠 밖은 아니다.
         func testDoubleBorderSecondStripeIsPainted() {
             let black = HwpRGBColor(red: 0, green: 0, blue: 0)
             let cellRect = CGRect(x: 0, y: 0, width: 100, height: 40)
@@ -244,14 +244,15 @@ import XCTest
                 borders: HwpBorderSet(
                     top: 3, bottom: 0, left: 0, right: 0,
                     topColor: black, bottomColor: black, leftColor: black, rightColor: black,
-                    topDouble: true
+                    topShape: .doubleLine
                 ),
                 fillColor: nil
             )
 
-            // 폭 3 → thin 1.2, gap 3: 첫 줄 0~1.2, 둘째 줄 4.2~5.4 (폭 띠 **밖**)
-            expect(cell.paints(CGPoint(x: 50, y: 0.6))).to(beTrue())
-            expect(cell.paints(CGPoint(x: 50, y: 4.8))).to(beTrue())
+            // 폭 3 → 띠 −1.5~1.5: 첫 줄 −1.5~−0.75, 둘째 줄 0.75~1.5
+            expect(cell.paints(CGPoint(x: 50, y: -1.2))).to(beTrue())
+            expect(cell.paints(CGPoint(x: 50, y: 1.2))).to(beTrue())
+            expect(cell.paints(CGPoint(x: 50, y: 0))).to(beTrue())
             expect(cell.paints(CGPoint(x: 50, y: 2.5))).to(beFalse())
         }
 

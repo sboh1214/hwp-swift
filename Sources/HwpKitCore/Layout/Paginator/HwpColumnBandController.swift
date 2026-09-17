@@ -47,6 +47,9 @@ struct HwpColumnBandController {
     /// 띄우고 다음 밴드를 연다 (Column PrvImage 실측: 밴드 간 첫 줄 시작 간격
     /// = 줄 전진량 + 줄 간격, ±1pt).
     var bandTrailingLineSpacing: CGFloat = 0
+    /// 이 밴드의 단 구분선을 이미 방출했는지 (#191) — 밴드 닫기와 쪽 확정이 같은 밴드를
+    /// 두 번 보므로 한 번만 방출한다. `open`이 되돌린다.
+    var dividersEmitted = false
 
     // MARK: - 조회
 
@@ -94,6 +97,67 @@ struct HwpColumnBandController {
         bandTextBlocks = []
         bandHasNonTextContent = false
         bandTrailingLineSpacing = 0
+        dividersEmitted = false
+    }
+
+    // MARK: - 단 구분선 (#191)
+
+    /// 이 밴드의 단 사이 구분선 블록 — 단 정의(`cold`)의 선 종류·굵기·색으로 단 간격의
+    /// 가운데에 세로선을 그린다 (한글 12.30 실측, 2026-09-17: 13종 × 0.1/0.4/1/3mm 합성
+    /// 문서 — x는 간격 중앙, 선 모양·굵기 축척은 표 셀 테두리와 같다, 둘째 단이 비어도
+    /// 그린다). 세로 범위는 밴드 첫 줄 위(`columnFrames[0].minY`)에서 가장 긴 단의 마지막
+    /// 줄 **글상자 아래**까지다 — 마지막 블록이 본문이면 밴드 사용량에서 마지막 줄의 줄
+    /// 간격을 뺀 자리이고(실측: 10pt 160% 밴드에서 마지막 줄 위 + 10.2pt), 표처럼 줄 간격이
+    /// 없는 블록이면 사용량 그대로다(실측: 표 아래 여백까지). 1단·구분선 없음·빈 밴드는 없다.
+    ///
+    /// 블록은 `.shape`(채우기 경로, `HwpShapeGeometry`)이고 역할은 `.pageChrome`이라
+    /// 선택·복사·검색이 건너뛴다. 좌표는 블록 로컬이다.
+    func columnDividerBlocks(currentBlocks: [AnyHwpBlock]) -> [AnyHwpBlock] {
+        guard columnFrames.count > 1, let column = currentColumnDef,
+              let shape = HwpBorderType(rawValue: Int(column.dividerType)), shape != .none
+        else { return [] }
+        let top = columnFrames[0].minY
+        guard bandUsedBottom > top + 0.01 else { return [] }
+        let thickness = CGFloat(
+            CoreHwp.HwpBorderFill.borderThicknessPoints(at: column.dividerThickness)
+        )
+        guard thickness > 0 else { return [] }
+        // 밴드 바닥에 닿은 블록이 전부 본문이면 마지막 줄의 줄 간격을 뺀다
+        let bottomBlocks = currentBlocks.filter {
+            $0.frame.minY >= top - 0.01 && $0.frame.maxY >= bandUsedBottom - 0.01
+        }
+        let endsWithText = !bottomBlocks.isEmpty && bottomBlocks.allSatisfy { $0.kind == .text }
+        let bottom = bandUsedBottom - (endsWithText ? bandTrailingLineSpacing : 0)
+        guard bottom > top else { return [] }
+        let line = HwpLineShapeGeometry.Line(
+            shape: shape, length: bottom - top, thickness: thickness,
+            scale: .border, placement: .border
+        )
+        guard let path = HwpLineShapeGeometry.path(for: line),
+              let extent = HwpLineShapeGeometry.crossExtent(of: line)
+        else { return [] }
+        let color = HwpRGBColor(column.dividerColor).cgColor
+        var blocks: [AnyHwpBlock] = []
+        for (leading, trailing) in zip(columnFrames, columnFrames.dropFirst()) {
+            let centerX = (leading.maxX + trailing.minX) / 2
+            // 블록 프레임은 선이 칠하는 띠 — 로컬 (x, y) = (extent 하한 기준 가로, 선 방향 세로)
+            let frame = CGRect(
+                x: centerX + extent.lowerBound, y: top,
+                width: extent.upperBound - extent.lowerBound, height: bottom - top
+            )
+            // 기하 로컬 (x = 선 방향, y = 가로지르는 축) → 블록 로컬 (y − extent 하한, x)
+            var transform = CGAffineTransform(a: 0, b: 1, c: 1, d: 0, tx: -extent.lowerBound, ty: 0)
+            guard let local = path.copy(using: &transform) else { continue }
+            blocks.append(AnyHwpBlock(
+                frame: frame,
+                kind: .shape,
+                payload: .shape(HwpShapeGeometry(
+                    path: local, fillColor: color, strokeColor: nil, strokeWidth: 0
+                )),
+                role: .pageChrome
+            ))
+        }
+        return blocks
     }
 
     /// 다음 단이 있으면 columnIndex를 전진시키고 true. 마지막 단이면 false —

@@ -176,6 +176,99 @@ public enum HwpRenderTuning {
         public static let msWordStrikethroughAscentRatio: CGFloat = 0.273
     }
 
+    /// 선 모양 (표 25 `HwpBorderType`) — 밑줄·취소선·표 셀 테두리·단 구분선의 점선·파선·
+    /// 원형 점선·여러 줄·물결 기하 (#191). 값은 전부 한글.app 12.30.0 (2026-09-17) PDF
+    /// 내보내기의 벡터 좌표(600dpi = 0.12pt 정수 단위)에서 읽었다 — 글자선은 13종 ×
+    /// 5·10·20·40·80pt × 밑줄/취소선/글자 위 밑줄, 테두리는 13종 × 표 26 굵기 16단(0.1~5mm,
+    /// 위·왼쪽 변만 켠 셀), 단 구분선은 13종 × 0.1/0.4/1/3mm 합성 문서. 글자선과
+    /// 테두리·구분선은 **같은 모양 표를 다른 축척**으로 그린다 — 글자선은 글자 크기(em)에,
+    /// 테두리·구분선은 명목 두께(t, 표 26 mm)에 비례한다. `HwpLineShapeGeometry`가 이
+    /// 상수로 경로를 만든다. 3D 넷(`thick3D`·`thick3DReverse`·`single3D`·
+    /// `single3DReverse`)은 한글 macOS가 글자선·테두리 모두 **아무것도 그리지 않는다**
+    /// (같은 실측: PDF 벡터 0건, 한글이 만든 PrvImage에도 없음) — 여기서는 실선으로 대체한다.
+    /// 검증: `HwpLineShapeGeometryTests` + `FixtureLineShapeRenderTests` 픽셀 핀 + fidelity 전수.
+    public enum LineShape {
+        /// 글자선(밑줄·취소선) 대시 패턴의 단위 길이 = 글자 크기 × 이 배율 (0.057em =
+        /// 0.04em 두께의 1.425배). 패턴은 단위의 배수다: 긴 점선(`longDotLine`) 5·공백 3,
+        /// 점선(`dotLine`) 1·공백 1.5, 일점쇄선 10·3·1·3, 이점쇄선 10·3·1·3·1·3, 긴 파선 10·3.
+        /// 실측: 80pt 긴 점선 22.8/13.68pt(190u/114u) = 5·3 × 38u, 40pt 점선 2.28/3.48pt
+        /// (19u/29u) = 1·1.5 × 19u, 20pt 긴 파선 11.4/3.36pt = 10·3 × 9.5u; 5·10pt는 정수화로
+        /// ±1u. 밑줄·취소선·글자 위 밑줄이 같은 값이다. 패턴은 run 시작에서 선으로
+        /// 시작하고 글자 모양 run마다 다시 시작한다.
+        public static let characterDashUnitEmRatio: CGFloat = 0.057
+
+        /// 테두리·단 구분선 대시 패턴의 단위 길이 = 명목 두께 × 이 배율 (22/15). 패턴 배수는
+        /// 글자선과 같다. 실측: 5mm(118.11u) 점선 선 173u·공백 259u, 긴 점선 866u·519u,
+        /// 긴 파선 1732u·519u = 1·1.5·5·3·10·3 × 173.2u; 1mm 35u·52u; 0.12mm 4u·6u.
+        /// 글자선의 1.425와 3% 다르다 — 두 축이 다른 그리기 루틴이다.
+        public static let borderDashUnitThicknessRatio: CGFloat = 22.0 / 15.0
+
+        /// 글자선 원형 점선(`circle`)의 원 지름 = 대시 단위(`characterDashUnitEmRatio`),
+        /// 원 중심 간격 = 지름 × 이 배율. 채운 원이고 첫 원의 중심이 run 시작 x다.
+        /// 실측: 80pt 지름 4.56pt(38u)·피치 11.4pt(95u), 40pt 2.4/5.76pt, 20pt 1.2/3.0pt.
+        public static let characterCirclePitchDiameterRatio: CGFloat = 2.5
+
+        /// 테두리·단 구분선 원형 점선의 원 지름 = 명목 두께, 원 중심 간격 = 두께 × 이 배율.
+        /// 첫 원의 중심은 선 시작(셀 모서리 − 두께/2)이다. 실측: 5mm 지름 118u·피치 236u,
+        /// 1mm 24u·48u, 0.12mm 4u·6u(정수화).
+        public static let borderCirclePitchThicknessRatio: CGFloat = 2
+
+        /// 글자선 2중선(`doubleLine`)의 띠 높이 = 글자 크기 × 이 배율 (= 두께 0.04em의 3배).
+        /// 띠 안 구성은 [1/4 선, 1/2 공백, 1/4 선]. 실측: 40pt 선 1.2pt 둘의 중심 간격 3.6pt
+        /// (띠 4.8pt = 0.12em), 20pt 0.6pt·1.8pt, 10pt 0.24pt·0.72pt.
+        public static let characterDoubleLineBandEmRatio: CGFloat = 0.12
+
+        /// 글자선 가는+굵은(`thinThickDoubleLine`)·굵은+가는·가는+굵은+가는(`thinThickThinTripleLine`)
+        /// 의 띠 높이 = 글자 크기 × 이 배율 (= 두께의 5배). 띠 안 구성은 테두리와 같은
+        /// [1/4, 1/4 공백, 1/2]·[1/2, 1/4 공백, 1/4]·[1/6, 1/6, 1/3, 1/6, 1/6]. 실측: 40pt
+        /// 가는+굵은 1.92pt + 공백 1.88 + 4.08pt = 7.9pt(0.197em), 3중선 1.32·1.38·2.64·1.26·
+        /// 1.32pt = 7.9pt; 20pt 0.96+0.9+2.04 = 3.9pt.
+        public static let characterThickBandEmRatio: CGFloat = 0.2
+
+        /// 글자선 물결(`wave`·`doubleWave`)의 진폭(꼭짓점 사이 세로 거리) = 글자 크기 × 이
+        /// 배율 (= 두께의 2.8배). 파는 45° 지그재그라 반주기도 같은 값이다. 실측: 80pt
+        /// 꼭짓점 세로 9.0pt·가로 9.0pt(75u), 40pt 4.56/4.56pt, 20pt 2.28pt, 10pt 1.08pt.
+        public static let characterWaveAmplitudeEmRatio: CGFloat = 0.112
+
+        /// 글자선 물결의 획 두께 = 글자 크기 × 이 배율 (= 두께의 3/4, 2중선의 가는 선과 같다).
+        /// 실측: 80pt 2.28pt(19u), 40pt 1.2pt, 20pt 0.6pt, 10pt 0.24pt.
+        public static let characterWaveStrokeEmRatio: CGFloat = 0.03
+
+        /// 글자선 2중 물결의 둘째 파 = 첫째 파를 진폭 × 이 배율만큼 아래로 옮긴 것 (x 위상은
+        /// 같다). 실측: 40pt 3.6pt/4.56pt = 0.79, 20pt 1.8/2.28 = 0.79, 10pt 0.72/0.96 = 0.75.
+        public static let characterDoubleWaveOffsetAmplitudeRatio: CGFloat = 0.8
+
+        /// 글자선 물결 꼭짓점 띠의 **위쪽** 꼭짓점 = 단선 띠의 위 가장자리에서 두께 × (이 값 ×
+        /// 밑줄 종류) 만큼 위 — 종류는 글자 아래 밑줄 1, 취소선(글자 가운데) 2, 글자 위 밑줄
+        /// 3이고 띠는 거기서 진폭만큼 아래로 내려온다. 실측(20pt, 베이스라인 기준 위 양수):
+        /// 아래 밑줄 꼭짓점 −0.108~−0.216em(단선 위 가장자리 −0.15em + 0.042), 취소선
+        /// 0.342~0.45em(0.37 + 0.08), 위 밑줄 0.90~1.008em(0.89 + 0.118) — 세 종류가 0.04em씩
+        /// 계단으로 올라간다 (10·40·80pt 같음). 2중 물결도 같은 위쪽 꼭짓점을 쓴다.
+        public static let characterWaveTopShiftThicknessRatio: CGFloat = 1
+
+        /// 테두리·단 구분선 물결의 진폭 = 명목 두께 (45° 지그재그, 반주기도 두께), 획 두께 =
+        /// 두께 × 이 배율 (2중선의 가는 선과 같다). 실측: 5mm 꼭짓점 세로 118u·가로 118u·
+        /// 획 30u, 1mm 24u·6u, 0.12mm 3u·1u.
+        public static let borderWaveStrokeThicknessRatio: CGFloat = 0.25
+
+        /// 테두리·단 구분선 물결의 꼭짓점 띠 중심이 선 중심(셀 모서리·간격 중앙)에서 **−x/−y**
+        /// 쪽으로 옮겨진 거리 = 두께 × 이 배율 (3/8). 위·아래·왼·오른 테두리와 단 구분선이
+        /// 모두 같은 방향이다 (바깥쪽이 아니다). 실측: 4mm 위 테두리 꼭짓점 71~167u(모서리
+        /// 83u 기준 −0.38t), 왼 테두리 −84~+11u, 3mm 단 구분선 중심 −27u(−0.38t), 0.12mm
+        /// 표 행의 위·아래·왼·오른 테두리 −1~−2u.
+        public static let borderWaveShiftThicknessRatio: CGFloat = 0.375
+
+        /// 테두리·단 구분선 2중 물결의 둘째 파 = 첫째 파를 (두께 × 1/4, 두께 × 이 배율)만큼
+        /// 옮긴 것 — 첫째 파와 합쳐 선 중심에 대칭인 [−7/8, +7/8] 띠가 된다. 실측: 4mm
+        /// 둘째 파 꼭짓점 0~95u(첫째 72~167u, 72u = 0.76t), 대각선 시작 x 24u(= t/4) 어긋남.
+        public static let borderDoubleWaveOffsetThicknessRatio: CGFloat = 0.75
+
+        /// 물결 꼭짓점 사이의 평탄 구간 (pt) — 한글은 600dpi 정수 좌표로 꼭짓점을 잡아
+        /// 대각선 사이에 1단위(0.12pt) 평탄이 생기고 반주기가 진폭보다 그만큼 길다 (실측:
+        /// 모든 크기·굵기에서 대각선 시작 간격 = 진폭 + 1u). 주기를 맞추려고 그대로 둔다.
+        public static let waveVertexFlat: CGFloat = 0.12
+    }
+
     /// 문단 번호·개요 번호 라벨 (#154)
     public enum Numbering {
         /// 번호 너비를 자릿수에 맞추지 않는(`useInstWidth` 해제) 정의의 번호

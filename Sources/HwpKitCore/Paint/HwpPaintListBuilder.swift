@@ -321,14 +321,15 @@ public struct HwpPaintListBuilder: Sendable {
         return commands
     }
 
-    /// 셀·표 테두리의 fillRect 명령 — 기하는 `HwpBorderSet.stripes`가 소유하고
-    /// 히트 (`HwpTableCellFrame.paints`) 와 공유한다 (R56).
+    /// 셀·표 테두리의 명령 — 기하는 `HwpBorderSet.edges`가 소유하고 히트
+    /// (`HwpTableCellFrame.paints`) 와 공유한다 (R56). 변마다 채우기 경로 하나다 — 점선·
+    /// 물결·원형 점선처럼 조각이 많은 모양도 명령 하나로 간다 (#191).
     func borderCommands(
         _ borders: HwpBorderSet,
         around rect: CGRect
     ) -> [HwpPaintCommand] {
-        borders.stripes(around: rect).map {
-            .fillRect(rect: $0.rect, color: $0.color.cgColor)
+        borders.edges(around: rect).map {
+            .drawPath(path: $0.path, fill: $0.color.cgColor, stroke: nil, strokeWidth: 0)
         }
     }
 

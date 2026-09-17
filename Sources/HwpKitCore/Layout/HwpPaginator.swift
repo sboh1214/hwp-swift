@@ -612,8 +612,17 @@ private extension HwpPaginator {
             columnIndex = 0
             contentHeightUsed = max(0, bandUsedBottom - currentColumnFrame.minY)
         }
+        emitColumnDividers()
         bandTextBlocks = []
         bandHasNonTextContent = false
+    }
+
+    /// 밴드의 단 구분선을 한 번 방출한다 (#191) — 밴드 닫기(`closeColumnBand`)와 쪽 확정
+    /// (`cacheCurrentPage`) 어느 쪽이 먼저 오든 같은 밴드는 한 번이다. 산식은 band.
+    func emitColumnDividers() {
+        guard !band.dividersEmitted else { return }
+        band.dividersEmitted = true
+        currentBlocks += band.columnDividerBlocks(currentBlocks: currentBlocks)
     }
 
     /// 문단에 붙은 단 정의를 반영한다: 현재 밴드를 닫고 그 아래에서 새 밴드를 연다.
@@ -4650,6 +4659,9 @@ private extension HwpPaginator {
         }
         // 각주 이어짐 판정의 본문 하한 (#165) — 크롬·변경 막대를 붙이기 전의 본문만.
         let footnoteBodyBottom = absoluteCacheMode ? footnoteBodyBottom() : nil
+        // 쪽 끝으로 닫히는 밴드의 단 구분선 (#191) — 밴드 사용량은 단 전진·밴드 닫기가
+        // 이미 반영했다.
+        emitColumnDividers()
         // 변경 추적 문단의 이 페이지 조각마다 변경 막대를 방출한다 — 페이지 걸친
         // 문단의 앞 조각도 자기 페이지에서 막대를 받는다 (#7).
         emitTrackChangeBars()

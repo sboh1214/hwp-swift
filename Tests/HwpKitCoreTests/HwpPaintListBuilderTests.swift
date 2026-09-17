@@ -199,9 +199,10 @@ final class HwpPaintListBuilderTests: XCTestCase {
         )
         let list = builder.build(for: makePage(blocks: [block]))
 
-        let fillRects = list.commands.filter {
-            if case .fillRect = $0 {
-                return true
+        // 4방향 테두리는 변마다 채우기 경로 하나다 (#191 — 점선·물결도 같은 명령)
+        let borderPaths = list.commands.filter {
+            if case let .drawPath(_, fill, stroke, _) = $0 {
+                return fill != nil && stroke == nil
             }
             return false
         }
@@ -211,7 +212,7 @@ final class HwpPaintListBuilderTests: XCTestCase {
             }
             return false
         }
-        expect(fillRects.count) == 4 // 4방향 테두리 edge rect
+        expect(borderPaths.count) == 4
         expect(drawTexts.count) == 1
     }
 
@@ -392,7 +393,9 @@ final class HwpPaintListBuilderTests: XCTestCase {
 extension HwpPaintListBuilderTests {
     /// 이중 하단·우측 테두리의 둘째 선도 셀 안(maxY/maxX 이내)에 그려진다 —
     /// 셀 밖으로 나가면 인접 셀·표 밖을 침범한다 (R42 #2).
-    func testDoubleBottomRightBordersStayInsideCell() {
+    /// 2중선 네 변은 셀 모서리에 중심을 둔 폭 2의 띠 안에 든다 — 한글처럼 모서리 양쪽으로
+    /// 폭의 절반씩 걸치고(#191), 종전처럼 셀 안쪽으로 폭 넘게 파고들지 않는다.
+    func testDoubleBordersCenterOnCellEdges() {
         let black = HwpRGBColor(red: 0, green: 0, blue: 0)
         let cellRect = CGRect(x: 0, y: 0, width: 100, height: 40)
         let cell = HwpTableCellFrame(
@@ -402,7 +405,8 @@ extension HwpPaintListBuilderTests {
             borders: HwpBorderSet(
                 top: 2, bottom: 2, left: 2, right: 2,
                 topColor: black, bottomColor: black, leftColor: black, rightColor: black,
-                topDouble: true, bottomDouble: true, leftDouble: true, rightDouble: true
+                topShape: .doubleLine, bottomShape: .doubleLine,
+                leftShape: .doubleLine, rightShape: .doubleLine
             ),
             fillColor: nil
         )
@@ -414,18 +418,23 @@ extension HwpPaintListBuilderTests {
         let block = AnyHwpBlock(frame: cellRect, kind: .table, payload: .table(table))
         let list = builder.build(for: makePage(blocks: [block]))
 
-        let fills: [CGRect] = list.commands.compactMap {
-            if case let .fillRect(rect, _) = $0 {
-                return rect
+        let boxes: [CGRect] = list.commands.compactMap {
+            if case let .drawPath(path, _, _, _) = $0 {
+                return path.boundingBoxOfPath
             }
             return nil
         }
-        expect(fills).toNot(beEmpty())
-        for rect in fills {
-            expect(rect.maxY).to(beLessThanOrEqualTo(cellRect.maxY + 0.01))
-            expect(rect.maxX).to(beLessThanOrEqualTo(cellRect.maxX + 0.01))
-            expect(rect.minY).to(beGreaterThanOrEqualTo(cellRect.minY - 0.01))
-            expect(rect.minX).to(beGreaterThanOrEqualTo(cellRect.minX - 0.01))
+        expect(boxes.count) == 4
+        let outer = cellRect.insetBy(dx: -1, dy: -1)
+        for box in boxes {
+            expect(box.maxY).to(beLessThanOrEqualTo(outer.maxY + 0.01))
+            expect(box.maxX).to(beLessThanOrEqualTo(outer.maxX + 0.01))
+            expect(box.minY).to(beGreaterThanOrEqualTo(outer.minY - 0.01))
+            expect(box.minX).to(beGreaterThanOrEqualTo(outer.minX - 0.01))
         }
+        // 위 변의 두 부속선: 바깥 선은 모서리 밖 [−1, −0.5], 안쪽 선은 모서리 안 [0.5, 1]
+        let top = boxes.min { $0.minY < $1.minY }
+        expect(top?.minY).to(beCloseTo(-1, within: 0.01))
+        expect(top?.maxY).to(beCloseTo(1, within: 0.01))
     }
 }
