@@ -293,42 +293,49 @@ public struct HwpPaintListBuilder: Sendable {
         _ table: HwpTableFrame,
         origin: CGPoint
     ) -> [HwpPaintCommand] {
-        // 방출 순서 (셀마다 fill → border → 문단 텍스트 → 셀 그림 → 중첩 표
-        // 재귀)는 walker의 이벤트 순서가 정의한다.
-        var commands: [HwpPaintCommand] = []
+        // 방출 순서는 walker의 이벤트 순서(셀마다 채움 → 테두리 → 문단 텍스트 → 셀 개체 →
+        // 중첩 표 재귀)를 `HwpTableCommandBuffer`가 표 단위로 채움 → 테두리 → 내용으로
+        // 다시 묶은 것이다 — 이웃 셀의 채움이 모서리에 중심을 둔 테두리의 바깥 절반을 덮지
+        // 않게 (#191 리뷰).
+        var buffer = HwpTableCommandBuffer()
+        buffer.beginTable()
         HwpBlockContentWalker.walkTable(
             table,
             origin: origin,
             onCellStart: { cell, cellRect in
                 if let fill = cell.fillColor {
-                    commands.append(.fillRect(rect: cellRect, color: fill.cgColor))
+                    buffer.appendFill(.fillRect(rect: cellRect, color: fill.cgColor))
                 }
-                commands.append(contentsOf: borderCommands(cell.borders, around: cellRect))
+                buffer.appendBorders(borderCommands(cell.borders, around: cellRect))
             },
             onParagraphText: { attributed, rect, _ in
-                commands.append(drawTextCommand(attributed, in: rect))
+                buffer.append(drawTextCommand(attributed, in: rect))
             },
             onCellImage: { image, rect in
-                commands.append(contentsOf: cellImageCommands(image, rect: rect))
+                buffer.append(contentsOf: cellImageCommands(image, rect: rect))
             },
             onCellShape: { shape, rect in
-                commands.append(contentsOf: shapeCommands(shape.geometry, origin: rect.origin))
+                buffer.append(contentsOf: shapeCommands(shape.geometry, origin: rect.origin))
             },
             onCellTextbox: { textbox, rect in
-                commands.append(contentsOf: textboxCommands(textbox.textbox, origin: rect.origin))
-            }
+                buffer.append(contentsOf: textboxCommands(textbox.textbox, origin: rect.origin))
+            },
+            onNestedTable: { _, _ in buffer.beginTable() },
+            onNestedTableEnd: { _, _ in buffer.endTable() }
         )
-        return commands
+        buffer.endTable()
+        return buffer.output
     }
 
-    /// 셀·표 테두리의 fillRect 명령 — 기하는 `HwpBorderSet.stripes`가 소유하고
-    /// 히트 (`HwpTableCellFrame.paints`) 와 공유한다 (R56).
+    /// 셀·표 테두리의 명령 — 기하는 `HwpBorderSet.edges`가 소유하고 히트
+    /// (`HwpTableCellFrame.paints`) 와 공유한다 (R56). 변마다 채우기 경로 하나다 — 점선·
+    /// 물결·원형 점선처럼 조각이 많은 모양도 명령 하나로 간다 (#191).
     func borderCommands(
         _ borders: HwpBorderSet,
         around rect: CGRect
     ) -> [HwpPaintCommand] {
-        borders.stripes(around: rect).map {
-            .fillRect(rect: $0.rect, color: $0.color.cgColor)
+        borders.edges(around: rect).map {
+            .drawPath(path: $0.path, fill: $0.color.cgColor, stroke: nil, strokeWidth: 0)
         }
     }
 

@@ -95,30 +95,35 @@ extension HwpPaintListBuilder {
         }
         // 각주 안 개체 (그림/도형/글상자/표)는 각주 콘텐츠로 그린다 (#94).
         // 방출 순서 (글 뒤로 개체 → 문단 텍스트 → 나머지 개체 → 안쪽 표 재귀)는
-        // walker의 이벤트 순서가 정의한다 — 표 셀 경로와 같은 규약.
+        // walker의 이벤트 순서가 정의한다 — 표 셀 경로와 같은 규약. 각주 안 표는
+        // `HwpTableCommandBuffer`가 표마다 채움 → 테두리 → 내용으로 묶어 walker가 방문한
+        // 자리에 그대로 두므로 글 뒤로 표는 텍스트 뒤에 남는다 (R47 #1, #191 리뷰).
+        var buffer = HwpTableCommandBuffer()
         HwpBlockContentWalker.walkFootnote(
             footnote,
             origin: blockFrame.origin,
             onParagraphText: { attributed, rect, _ in
-                commands.append(drawTextCommand(attributed, in: rect))
+                buffer.append(drawTextCommand(attributed, in: rect))
             },
             onCellStart: { cell, cellRect in
                 if let fill = cell.fillColor {
-                    commands.append(.fillRect(rect: cellRect, color: fill.cgColor))
+                    buffer.appendFill(.fillRect(rect: cellRect, color: fill.cgColor))
                 }
-                commands.append(contentsOf: borderCommands(cell.borders, around: cellRect))
+                buffer.appendBorders(borderCommands(cell.borders, around: cellRect))
             },
             onCellImage: { image, rect in
-                commands.append(contentsOf: cellImageCommands(image, rect: rect))
+                buffer.append(contentsOf: cellImageCommands(image, rect: rect))
             },
             onCellShape: { shape, rect in
-                commands.append(contentsOf: shapeCommands(shape.geometry, origin: rect.origin))
+                buffer.append(contentsOf: shapeCommands(shape.geometry, origin: rect.origin))
             },
             onCellTextbox: { textbox, rect in
-                commands.append(contentsOf: textboxCommands(textbox.textbox, origin: rect.origin))
-            }
+                buffer.append(contentsOf: textboxCommands(textbox.textbox, origin: rect.origin))
+            },
+            onNestedTable: { _, _ in buffer.beginTable() },
+            onNestedTableEnd: { _, _ in buffer.endTable() }
         )
-        return commands
+        return commands + buffer.output
     }
 }
 

@@ -442,6 +442,41 @@ enum HwpTableSplitter {
         return mutable
     }
 
+    /// 단별 캐시 run으로 놓인 조각에 그 run 마지막 줄의 줄 간격(pt)을 단다
+    /// (`HwpAttributedStringKey.cachedTrailingLineSpacing`) — 이어짐 표식과 같은 이유로 조각
+    /// 전체에 붙인다.
+    static func marked(
+        _ attributed: NSAttributedString, cachedTrailingLineSpacing spacing: CGFloat
+    ) -> NSAttributedString {
+        guard attributed.length > 0 else { return attributed }
+        let mutable = NSMutableAttributedString(attributedString: attributed)
+        mutable.addAttribute(
+            HwpAttributedStringKey.cachedTrailingLineSpacing,
+            value: NSNumber(value: Double(spacing)),
+            range: NSRange(location: 0, length: attributed.length)
+        )
+        return mutable
+    }
+
+    /// 조각을 다시 잘라 앞부분을 만들 때 물려받은 캐시 줄 간격 표식을 벗긴다 — 그 값은 원래
+    /// 블록 마지막 줄의 것이다 (`HwpColumnBandController.rebalancedFragment`).
+    static func strippingCachedTrailingLineSpacing(
+        _ attributed: NSAttributedString
+    ) -> NSAttributedString {
+        guard attributed.length > 0,
+              attributed.attribute(
+                  HwpAttributedStringKey.cachedTrailingLineSpacing,
+                  at: attributed.length - 1, effectiveRange: nil
+              ) != nil
+        else { return attributed }
+        let mutable = NSMutableAttributedString(attributedString: attributed)
+        mutable.removeAttribute(
+            HwpAttributedStringKey.cachedTrailingLineSpacing,
+            range: NSRange(location: 0, length: attributed.length)
+        )
+        return mutable
+    }
+
     /// 지정한 라인들만 담은 하위 문단을 만든다. 라인 range는 하위 문자열 기준으로
     /// 재기준화해 (다중 페이지 row에서) 이후 분할에서도 라인 정보를 쓸 수 있게 한다.
     /// `heightIsMeasured`는 `rect.height`가 측정 줄 전진량에서 왔는지 — 그럴 때만 측정

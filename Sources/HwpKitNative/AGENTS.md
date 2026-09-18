@@ -16,6 +16,7 @@ HwpKitNative/
 │                                   #   이미지 공급자, 프로그레시브 판정, Array[safe:] (#if 없이 양쪽 컴파일)
 ├── HwpDocumentAccessibility.swift  # 페이지별 합성 AX 요소 보관함(제네릭) + 모델 합성 진입점 (#79, #if 밖)
 ├── Rendering/HwpPageLayer.swift    # CALayer + paint list executor (Core Text, drawImageReference)
+├── Rendering/HwpPageLayerLineShapes.swift # 글자선 선 모양 — 글자 모양 run 묶음 + 경로 채우기 (#191)
 ├── Rendering/HwpPageImageProvider.swift  # HwpImageStore + HwpImageCache + HwpImageAdapter 연결
 ├── Rendering/HwpDecodeThrottle.swift     # 동시 디코드 상한 3 (provider 전역 static)
 ├── Rendering/HwpImageStyleRenderer.swift # 표 107 crop/밝기/명암/효과 (CGImage.cropping + CoreImage)
@@ -183,6 +184,21 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
   세 축을 실측으로 정할 것 — 비율은 `HwpDecorationLineGeometryTests`(+`+Script`·`+Compat`)
   가 폰트 독립으로, 절대 위치는 `FixtureDecorationLineRenderTests`(+`+Script`·`+Compat`)
   가 픽스처 픽셀로 잡는다.
+- **선 모양(점선·파선·원형 점선·여러 줄·물결, #191)은 글자 모양 run 단위로 편다**
+  (`HwpPageLayerLineShapes`). `drawDecoratedLine`이 줄마다 `lineShapeSpans(of:)`로 같은
+  글자 모양 id(`hwp.charShapeId`)의 잇닿은 CoreText run을 묶어 첫 run 자리에 합친 경계를
+  두고, `fillLine`은 모양 키(`hwp.underlineShape`·`hwp.strikethroughShape`)가 있으면 그
+  span에만 `HwpLineShapeGeometry.path`를 편다(묶음의 나머지 run은 아무것도 그리지 않는다;
+  실선은 종전대로 run마다 사각형). 한글이 그렇다 — 한 글자 모양 안의 한글↔라틴 슬롯 전환
+  (CoreText가 run을 가르는 경계)은 패턴이 이어지고 색만 다른 이웃 글자 모양은 run 시작에서
+  다시 시작한다 (2026-09-17 실측). 묶음 열쇠는 id에 더해 선을 정하는 키다
+  (`sameLineShapeGroup`: 모양·유무·색·`spaceTargetSize`·`scriptBaselineOffset`) — 변경 추적
+  삭제 run은 글자 모양을 물려받고 색만 갈리고 첨자 run은 취소선 자리가 다르므로 id만으로
+  묶으면 첫 run의 색·기하로 통째 그려진다(PR 리뷰). 속성 사전 전체 비교는 금물(자간·문단 끝
+  상자 키가 한 글자 모양을 가른다). 모양 키를 실은 run이 없는 줄은 재지 않는다. 축척은
+  `preScriptFontSize`(첨자 축소 전 크기)이고 로컬
+  y(양수 = 아래)를 텍스트 공간(y-위)으로 뒤집어 단선 중심(`lineOrigin.y + line.center`)에
+  놓는다 — 아래 밑줄의 되돌린 원점·취소선의 첨자 이동은 그 중심에 이미 들어 있다.
 - **MS 워드 호환 문서(`hwp.compatibleDocumentTarget` == `msWord`)의 장식선은 글꼴 지표
   기하다** (#187, `Sources/HwpKitCore/AGENTS.md` 장식 항목). `drawDecoratedLine`이 줄마다
   두 값을 미리 푼다: ① `msWordLineBox(of:)` — 줄의 **모든** run(장식 없는 run·CoreText

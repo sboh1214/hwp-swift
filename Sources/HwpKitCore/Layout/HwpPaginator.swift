@@ -612,8 +612,53 @@ private extension HwpPaginator {
             columnIndex = 0
             contentHeightUsed = max(0, bandUsedBottom - currentColumnFrame.minY)
         }
+        emitColumnDividers()
         bandTextBlocks = []
         bandHasNonTextContent = false
+    }
+
+    /// 밴드의 단 구분선을 한 번 방출한다 (#191) — 밴드 닫기(`closeColumnBand`)와 쪽 확정
+    /// (`cacheCurrentPage`) 어느 쪽이 먼저 오든 같은 밴드는 한 번이다. 산식은 band.
+    func emitColumnDividers() {
+        guard !band.dividersEmitted else { return }
+        band.dividersEmitted = true
+        currentBlocks += band.columnDividerBlocks(currentBlocks: currentBlocks) { block in
+            // 높이를 줄 캐시로 놓은 블록은 그 마지막 줄의 캐시 줄 간격을 싣고 있다
+            // (`markedWithCachedTrailingSpacing`·`placeCachedColumnRuns`) — 없으면 높이가 CT
+            // 측정이라 조판 문자열 마지막 글자의 규칙값이다 (#191).
+            if let attributed = block.attributedString, attributed.length > 0,
+               let spacing = attributed.attribute(
+                   HwpAttributedStringKey.cachedTrailingLineSpacing,
+                   at: attributed.length - 1, effectiveRange: nil
+               ) as? NSNumber
+            {
+                return CGFloat(spacing.doubleValue)
+            }
+            return block.attributedString
+                .map(HwpColumnBandController.measuredTrailingSpacing) ?? 0
+        }
+    }
+
+    /// 높이를 줄 캐시로 놓은 문단 **끝** 블록에 그 캐시 마지막 줄의 줄 간격을 단다
+    /// (`HwpAttributedStringKey.cachedTrailingLineSpacing`) — 단 구분선 바닥(#191)이 빼는 값이다.
+    /// `cachedTrailingSpacing`은 호출자가 **실제로 캐시 높이를 골랐을 때만** 준다 (PR 리뷰:
+    /// 캐시가 유효해도 페이지를 넘는 1줄 문단은 CT 측정 높이로 폴백하고, 캐시 총높이와 CT
+    /// 총높이가 같아도 마지막 줄 간격은 다르므로 수치 일치로는 가를 수 없다). 이어지는 조각은
+    /// 문단 마지막 줄을 담지 않아 달지 않고, 단별 run 조각은 `placeCachedColumnRuns`가 run 값을
+    /// 먼저 달아 둔다.
+    static func markedWithCachedTrailingSpacing(
+        _ attributed: NSAttributedString, cachedTrailingSpacing: CGFloat?
+    ) -> NSAttributedString {
+        guard let spacing = cachedTrailingSpacing, attributed.length > 0,
+              attributed.attribute(
+                  HwpAttributedStringKey.cachedTrailingLineSpacing,
+                  at: attributed.length - 1, effectiveRange: nil
+              ) == nil,
+              HwpDrawnTextLayout.endsParagraph(
+                  CFRange(location: 0, length: attributed.length), in: attributed
+              )
+        else { return attributed }
+        return HwpTableSplitter.marked(attributed, cachedTrailingLineSpacing: spacing)
     }
 
     /// 문단에 붙은 단 정의를 반영한다: 현재 밴드를 닫고 그 아래에서 새 밴드를 연다.
@@ -1023,12 +1068,20 @@ private extension HwpPaginator {
             ? max(1, height(for: paragraph, fallback: paragraphFrame.totalHeight + suppressedGap)
                 - suppressedGap)
             : height(for: paragraph, fallback: paragraphFrame.totalHeight)
+        // 높이 출처가 캐시인지는 수치 일치가 아니라 **선택**으로 기록한다 — 캐시 총높이와 CT
+        // 총높이가 우연히 같아도 마지막 줄 간격은 다르다 (단 구분선 바닥, PR 리뷰).
+        var cacheHeightUsed = isValidLineSegmentCache(
+            paragraph.paraLineSeg.paraLineSegInternalArray
+        )
         // 캐시 높이가 페이지를 넘는데 CT 라인도 하나뿐이면 (표/개체 앵커가 캐시
         // 높이를 지배하는 문단) 캐시 높이를 그대로 쓸 수 없다 — 개체는 별도
         // 블록으로 배치되므로 텍스트 몫은 CT 측정 높이로 폴백한다.
         if paragraphHeight > currentColumnFrame.height, paragraphFrame.lines.count <= 1 {
             paragraphHeight = paragraphFrame.totalHeight
+            cacheHeightUsed = false
         }
+        let cachedTrailingSpacing = cacheHeightUsed
+            ? HwpColumnBandController.cachedTrailingSpacing(of: paragraph) : nil
         // 이 문단이 만들 각주 예약 높이를 미리 반영해 본문/각주 겹침을 막는다.
         let anticipatedFootnotes = anticipatedFootnoteHeight(for: paragraph)
         // 문단-앞 간격은 paragraphHeight에 포함되지만 CoreText는 각 블록(별도
@@ -1042,7 +1095,8 @@ private extension HwpPaginator {
                 paragraphFrame: paragraphFrame,
                 paragraphHeight: paragraphHeight,
                 anticipatedFootnotes: anticipatedFootnotes,
-                beforeGap: beforeGap
+                beforeGap: beforeGap,
+                cachedTrailingSpacing: cachedTrailingSpacing
             )
             return true
         }
@@ -1070,6 +1124,7 @@ private extension HwpPaginator {
                 paraShape: index.paraShapeOrDefault(for: paragraph),
                 reservedFootnoteHeight: anticipatedFootnotes,
                 beforeGap: beforeGap,
+                cachedTrailingSpacing: cachedTrailingSpacing,
                 onFragmentPlaced: { appendInlineControlBlocksForCurrentFragment(from: paragraph) }
             )
             updateBandTrailingSpacing(for: paragraph)
@@ -1085,7 +1140,8 @@ private extension HwpPaginator {
             lines: paragraphFrame.lines,
             // 캐시 높이(`height(for:fallback:)`)를 썼으면 마지막 줄 몫은 측정값이 아니다 (#166).
             heightIsMeasured: abs(paragraphHeight - paragraphFrame.totalHeight) < 0.01,
-            paraShape: index.paraShapeOrDefault(for: paragraph)
+            paraShape: index.paraShapeOrDefault(for: paragraph),
+            cachedTrailingSpacing: cachedTrailingSpacing
         )
         updateBandTrailingSpacing(for: paragraph)
         return true
@@ -1101,7 +1157,8 @@ private extension HwpPaginator {
         paragraphFrame: HwpParagraphFrame,
         paragraphHeight: CGFloat,
         anticipatedFootnotes: CGFloat,
-        beforeGap: CGFloat = 0
+        beforeGap: CGFloat = 0,
+        cachedTrailingSpacing: CGFloat? = nil
     ) {
         // 캐시 run 경로는 한글이 계산한 절대 위치를 그대로 재현하므로 간격 보정을
         // 더하지 않는다 (#1).
@@ -1121,6 +1178,7 @@ private extension HwpPaginator {
             paraShape: index.paraShapeOrDefault(for: paragraph),
             reservedFootnoteHeight: anticipatedFootnotes,
             beforeGap: beforeGap,
+            cachedTrailingSpacing: cachedTrailingSpacing,
             onFragmentPlaced: { appendInlineControlBlocksForCurrentFragment(from: paragraph) }
         )
         updateBandTrailingSpacing(for: paragraph)
@@ -1189,11 +1247,15 @@ private extension HwpPaginator {
             let runLines = paragraphFrame.lines.filter {
                 NSLocationInRange($0.attributedRange.location, range)
             }
-            let fragmentText = placedFragment(
-                runIndex < runs.count - 1
-                    ? HwpTableSplitter.markedAsContinuedFragment(fragment) : fragment,
-                reservedWidth: measuredWidth
-            )
+            // 단 구분선 바닥이 뺄 이 run 마지막 줄의 줄 간격 — 정상 다단 캐시는 단 경계에서
+            // `lineLocation`이 0으로 돌아가 문단 캐시 검사에 걸리므로 조각에 직접 싣는다 (#191).
+            let runSpacing = run.last.map { CGFloat(HwpUnits.points(fromHwpUnit: $0.lineSpacing)) }
+            var marked = runIndex < runs.count - 1
+                ? HwpTableSplitter.markedAsContinuedFragment(fragment) : fragment
+            if let runSpacing, runSpacing >= 0 {
+                marked = HwpTableSplitter.marked(marked, cachedTrailingLineSpacing: runSpacing)
+            }
+            let fragmentText = placedFragment(marked, reservedWidth: measuredWidth)
             appendBlock(
                 height: max(1, HwpUnits.points(
                     fromHwpUnit: Int32(clamping: runBottom - Int(firstSegment.lineLocation))
@@ -1663,7 +1725,8 @@ private extension HwpPaginator {
         paraShape: CoreHwp.HwpParaShape? = nil,
         startsParagraph: Bool = true,
         metricsReference: NSAttributedString? = nil,
-        anchorLines: [HwpLineFrame] = []
+        anchorLines: [HwpLineFrame] = [],
+        cachedTrailingSpacing: CGFloat? = nil
     ) {
         // 문단의 첫 콘텐츠가 페이지에 놓이는 지금 보류된 쪽 번호 리셋을 확정한다 —
         // 열/쪽에 걸친 조각이 캐시되기 전에 적용해야 시작 페이지가 새 번호를
@@ -1676,7 +1739,11 @@ private extension HwpPaginator {
         if currentParagraphFirstPlacedPage == nil {
             currentParagraphFirstPlacedPage = cachedPages.count + 1
         }
-        let immutable = NSAttributedString(attributedString: attributedString)
+        let immutable = NSAttributedString(
+            attributedString: Self.markedWithCachedTrailingSpacing(
+                attributedString, cachedTrailingSpacing: cachedTrailingSpacing
+            )
+        )
         let columnFrame = currentColumnFrame
         let frame = CGRect(
             x: columnFrame.minX,
@@ -1759,6 +1826,7 @@ private extension HwpPaginator {
         paraShape: CoreHwp.HwpParaShape = CoreHwp.HwpParaShape(),
         reservedFootnoteHeight: CGFloat = 0,
         beforeGap: CGFloat = 0,
+        cachedTrailingSpacing: CGFloat? = nil,
         onFragmentPlaced: () -> Void = {}
     ) {
         let lines = paragraphFrame.lines
@@ -1775,7 +1843,8 @@ private extension HwpPaginator {
         let placement = fragmentPlacement(
             attributedString: attributedString, paragraphFrame: paragraphFrame,
             paragraphHeight: paragraphHeight, hyperlinkURL: hyperlinkURL,
-            paragraphId: paragraphId, paraShape: paraShape
+            paragraphId: paragraphId, paraShape: paraShape,
+            cachedTrailingSpacing: cachedTrailingSpacing
         )
         paragraphAnchorTop = currentColumnFrame.minY + contentHeightUsed
         // 라인별 실제 전진량(origin.y 델타)으로 조각을 나눈다 — 산식과 조각 첫 줄
@@ -1812,7 +1881,8 @@ private extension HwpPaginator {
                     paragraphId: paragraphId,
                     lines: remainder.lines,
                     heightIsMeasured: remainder.heightIsMeasured,
-                    paraShape: paraShape
+                    paraShape: paraShape,
+                    cachedTrailingSpacing: remainder.cachedTrailingSpacing(from: placement)
                 )
                 return
             }
@@ -1974,12 +2044,14 @@ private extension HwpPaginator {
         paragraphHeight: CGFloat,
         hyperlinkURL: String?,
         paragraphId: UInt32?,
-        paraShape: CoreHwp.HwpParaShape
+        paraShape: CoreHwp.HwpParaShape,
+        cachedTrailingSpacing: CGFloat? = nil
     ) -> HwpFragmentPlacement {
         HwpFragmentPlacement(
             paraShape: paraShape,
             reservedWidth: currentColumnFrame.width,
             heightIsMeasured: abs(paragraphHeight - paragraphFrame.totalHeight) < 0.01,
+            cachedTrailingSpacing: cachedTrailingSpacing,
             paragraphId: paragraphId,
             hyperlinkURL: hyperlinkURL,
             fragmentURL: containsHyperlinkFieldSpans(attributedString) ? nil : hyperlinkURL
@@ -2050,7 +2122,8 @@ private extension HwpPaginator {
                 : fragmentAnchorLines(
                     slice, range: range, fragment: fragment,
                     paraShape: placement.paraShape, measuredWidth: remainder.measuredWidth
-                )
+                ),
+            cachedTrailingSpacing: remainder.cachedTrailingSpacing(from: placement)
         )
     }
 
@@ -4650,6 +4723,9 @@ private extension HwpPaginator {
         }
         // 각주 이어짐 판정의 본문 하한 (#165) — 크롬·변경 막대를 붙이기 전의 본문만.
         let footnoteBodyBottom = absoluteCacheMode ? footnoteBodyBottom() : nil
+        // 쪽 끝으로 닫히는 밴드의 단 구분선 (#191) — 밴드 사용량은 단 전진·밴드 닫기가
+        // 이미 반영했다.
+        emitColumnDividers()
         // 변경 추적 문단의 이 페이지 조각마다 변경 막대를 방출한다 — 페이지 걸친
         // 문단의 앞 조각도 자기 페이지에서 막대를 받는다 (#7).
         emitTrackChangeBars()

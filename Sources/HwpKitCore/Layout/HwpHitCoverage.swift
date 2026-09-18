@@ -85,8 +85,12 @@ extension HwpHitTester {
             guard includingText else { return }
             rects.append(textBounds(rect, of: attributed))
         }
-        func addCell(_: HwpTableCellFrame, _ rect: CGRect) {
-            rects.append(rect)
+        /// 셀 테두리는 모서리에 중심을 둬 셀·표 프레임 밖으로 폭의 절반이 나간다 (#191) —
+        /// 히트 자격은 그만큼 넓어야 바깥 절반 위의 탭이 `paints`까지 닿는다 (R54 `자격 ⊇
+        /// 칠`). 배치 하한(`paintedObjectBounds`, 텍스트 제외 갈래)은 종전대로 셀 rect다 —
+        /// 한글이 표 아래 각주 자리를 테두리 바깥 절반까지 재는지는 실측하지 않았다.
+        func addCell(_ cell: HwpTableCellFrame, _ rect: CGRect) {
+            rects.append(includingText ? cell.borders.paintedBounds(around: rect) : rect)
         }
         /// 중첩 표는 **자기 frame**도 자격이다 (R64) — 셀만 모으면 표 rect와 첫 셀
         /// 사이의 여백 띠가 빠지는데, 방출은 감싼 링크를 표 rect 전체로 낸다.

@@ -22,13 +22,23 @@ extension HwpTextRunBuilder {
         to attributes: inout [NSAttributedString.Key: Any],
         shape: CoreHwp.HwpCharShape
     ) {
+        /// 선 모양 (표 35 bit 4~7·26~29 → 표 25, 실선 0) — 실선이 아닐 때만 싣는다 (#191).
+        /// 렌더러는 키가 없으면 실선이다.
+        func setLineShape(_ key: NSAttributedString.Key, _ raw: Int) {
+            let type = HwpBorderType(characterLineShape: raw)
+            if type != .line {
+                attributes[key] = NSNumber(value: type.rawValue)
+            }
+        }
         switch shape.property.underlineType {
         case .under:
             attributes[HwpAttributedStringKey.underlineStyle] = NSNumber(value: 1)
             attributes[HwpAttributedStringKey.underlineColor] = shape.underlineColor.cgColor
+            setLineShape(HwpAttributedStringKey.underlineShape, shape.property.underlineShape)
         case .above:
             attributes[HwpAttributedStringKey.underlineAboveStyle] = NSNumber(value: 1)
             attributes[HwpAttributedStringKey.underlineColor] = shape.underlineColor.cgColor
+            setLineShape(HwpAttributedStringKey.underlineShape, shape.property.underlineShape)
         case .center, CoreHwp.HwpUnderlineType.none:
             break
         }
@@ -41,6 +51,12 @@ extension HwpTextRunBuilder {
         attributes[HwpAttributedStringKey.strikethroughColor] = isCenterLine
             ? shape.underlineColor.cgColor
             : (shape.strikethroughColor ?? shape.faceColor).cgColor
+        // 모양도 색과 같은 우선순위다 — 한글은 취소선만 켠 글자 모양을 저장할 때 밑줄 종류
+        // 2 + 밑줄 모양 자리에 취소선 모양을 복사한다 (#177 실측, `line-shapes` 픽스처).
+        setLineShape(
+            HwpAttributedStringKey.strikethroughShape,
+            isCenterLine ? shape.property.underlineShape : shape.property.strikethroughShape
+        )
     }
 
     /// 글자 장식 (표 33): 밑줄/취소선/음영/그림자/외곽선/첨자 속성.

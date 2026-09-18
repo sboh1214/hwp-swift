@@ -74,6 +74,17 @@ public enum HwpAttributedStringKey {
     /// `underlineColor`를 공유한다. RTF 복사에는 싣지 않는다 (윗줄 속성이 없어
     /// 표준 밑줄로 바꾸면 위치가 뒤집힌다 — `HwpSelectionRTF` 주석).
     public static let underlineAboveStyle = NSAttributedString.Key("hwp.underlineAboveStyle")
+    /// 밑줄 모양 (NSNumber = `HwpBorderType.rawValue`, 표 25 값 — 글자 모양의 4비트 값 +
+    /// 1, #191) — 조판이 실선이 아닐 때만 싣는다. 글자 아래·위 밑줄이 공유한다. 렌더러는
+    /// `HwpLineShapeGeometry`로 점선·파선·여러 줄·물결을 그리되 패턴을 **글자 모양 run**
+    /// (같은 `charShapeId`의 잇닿은 CoreText run) 단위로 새로 시작한다 — 한글이 그렇다
+    /// (2026-09-17 실측: 한 글자 모양 안의 한글↔라틴 전환은 패턴이 이어지고, 색만 다른
+    /// 이웃 글자 모양은 다시 시작). RTF 복사에는 싣지 않는다 (`hwp.*` 일괄 제거).
+    public static let underlineShape = NSAttributedString.Key("hwp.underlineShape")
+    /// 취소선 모양 (NSNumber = `HwpBorderType.rawValue`, #191) — 밑줄 종류 '글자 가운데'와
+    /// 취소선이 합류한 선은 밑줄 모양을 따른다 (한글은 취소선만 켠 글자 모양을 저장할 때
+    /// 밑줄 모양 자리에 취소선 모양을 복사한다, #177).
+    public static let strikethroughShape = NSAttributedString.Key("hwp.strikethroughShape")
     /// 상대크기 적용 전 기본 글자 크기 (pt) — % 줄 간격의 기준
     public static let baseFontSize = NSAttributedString.Key("hwp.baseFontSize")
     /// 고정 공백 폭 (0.5em)의 기준 크기 — 상대크기는 반영, 첨자 축소는
@@ -90,6 +101,13 @@ public enum HwpAttributedStringKey {
     /// 않는다(`HwpDrawnLine.endsParagraph`). 쪽·단·표·각주의 모든 분할 경로가 단다.
     public static let continuedParagraphFragment =
         NSAttributedString.Key("hwp.continuedParagraphFragment")
+    /// 단별 줄 캐시 run으로 놓인 조각의 **그 run 마지막 줄 줄 간격** (NSNumber pt, 조각 전체에
+    /// 붙고 읽는 쪽은 끝 글자로 판정한다 — `HwpTableSplitter.marked(_:cachedTrailingLineSpacing:)`).
+    /// 단 경계마다 `lineLocation`이 0으로 돌아가는 정상 다단 캐시는 문단 전체의 단조 증가
+    /// 검사(`isValidLineSegmentCache`)에 걸리므로, 단 구분선 바닥(#191)이 문단 캐시 대신 이
+    /// 값을 읽는다 (PR 리뷰: 배치는 캐시 높이인데 구분선만 측정 간격을 빼 길어졌다).
+    public static let cachedTrailingLineSpacing =
+        NSAttributedString.Key("hwp.cachedTrailingLineSpacing")
 
     /// 페이지에 걸친 표의 반복된 제목 행 클론 표식 — 렌더·선택에는 남지만
     /// 복사 소스 텍스트에는 한 번만 포함한다 (페이지마다 중복 방지).

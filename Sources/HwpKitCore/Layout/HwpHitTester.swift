@@ -56,6 +56,16 @@ public struct HwpHitTester {
                 if let url = hyperlinkURL(for: block, at: point) {
                     return .hyperlink(url: url, blockIndex: index)
                 }
+                // 표의 **칸막이**는 프레임 밖도 claim한다 — 셀 테두리는 모서리에 중심을 둬 바깥
+                // 절반이 표 프레임 밖이고(#191), 그 선 위의 탭이 그냥 내려가면 위 문단의 링크가
+                // 열린다 (R54 `자격 ⊇ 칠`). 프레임 밖으로 넘친 자식 개체(그림·도형·글상자)의
+                // 가림(`containerLayerHit`의 `.occluded`)과 글상자 블록 자신의 테두리 바깥 절반은
+                // 아직 claim하지 않는다 — 각주 갈래(R45 #3)와 비대칭인 기존 격차로 #191 밖이다
+                // (R60·R63은 **이 블록의** 링크 폴백을 막는 근거이지 아래 블록 링크가 열려도 된다는
+                // 뜻이 아니다).
+                if tableBorderPaints(block, at: point) {
+                    return ownHit(for: block, index: index, at: point)
+                }
                 // 프레임 밖이라도 **이 블록의 글자가 칠해진 자리**면 링크가 없어도 이 블록이
                 // claim한다 (R53의 텍스트 축, #200 리뷰 2차): slight-overflow·글자 위치로
                 // 프레임 밖에 그려진 전경 글자 위의 탭이 그냥 내려가면 그 밑에 숨은 뒤
@@ -263,16 +273,28 @@ public struct HwpHitTester {
         return textPaints(attributed, in: block.frame, at: point) ? url : nil
     }
 
+    /// 표 블록의 셀 칠(채움 ∪ 칸막이, 중첩 표 포함 — `HwpTableFrame.paints`)이 페이지 좌표 점을
+    /// 덮는가. 프레임 밖 판정에서는 셀 채움이 프레임 안이라 칸막이 띠만 남는다.
+    private func tableBorderPaints(_ block: AnyHwpBlock, at point: CGPoint) -> Bool {
+        guard case let .table(tableFrame) = block.payload else { return false }
+        return tableFrame.paints(
+            CGPoint(x: point.x - block.frame.minX, y: point.y - block.frame.minY)
+        )
+    }
+
+    /// 점이 든 셀의 (행, 열) — 셀 안이 아니면 그 점을 칠한 셀(테두리 띠, 그 셀 안 중첩 표의 칠
+    /// 포함 — claim 판정 `HwpTableFrame.paints`와 같은 분해), 그것도 없으면 (0, 0)
     private func tableGridPosition(block: AnyHwpBlock, point: CGPoint) -> (row: Int, col: Int) {
         guard case let .table(tableFrame) = block.payload else { return (0, 0) }
         let localPoint = CGPoint(
             x: point.x - block.frame.minX,
             y: point.y - block.frame.minY
         )
-        for row in tableFrame.rows {
-            for cell in row.cells where cell.cellFrame.contains(localPoint) {
-                return (cell.row, cell.column)
-            }
+        let cells = tableFrame.rows.flatMap(\.cells)
+        if let cell = cells.first(where: { $0.cellFrame.contains(localPoint) })
+            ?? cells.first(where: { $0.paintsIncludingNestedTables(localPoint) })
+        {
+            return (cell.row, cell.column)
         }
         return (0, 0)
     }
@@ -280,8 +302,16 @@ public struct HwpHitTester {
     /// 표 셀·글상자 안 문단에 실린 하이퍼링크를 블록-로컬 좌표로 히트한다
     /// (컨테이너 블록 자체는 URL이 없어 예전에는 표/도형 히트로 떨어졌다).
     private func containerHyperlinkURL(block: AnyHwpBlock, point: CGPoint) -> String? {
+        guard case let .found(url) = containerLayerHit(block: block, point: point) else {
+            return nil
+        }
+        return url
+    }
+
+    /// 컨테이너 블록(표·글상자·각주)의 층 히트 — 페이지 좌표 점을 블록-로컬로 옮겨 훑는다
+    private func containerLayerHit(block: AnyHwpBlock, point: CGPoint) -> LayerHit {
         let localPoint = CGPoint(x: point.x - block.frame.minX, y: point.y - block.frame.minY)
-        let hit: LayerHit = switch block.payload {
+        return switch block.payload {
         case let .table(tableFrame):
             tableHit(tableFrame, at: localPoint)
         case let .textbox(textbox):
@@ -300,8 +330,6 @@ public struct HwpHitTester {
         default:
             LayerHit.miss
         }
-        guard case let .found(url) = hit else { return nil }
-        return url
     }
 
     /// 컨테이너(각주·표 셀·글상자) 하나를 **페인트 역순**으로 훑는다.
@@ -349,66 +377,72 @@ public struct HwpHitTester {
     /// 표를 셀 단위로 훑는다. 셀 안은 같은 컨테이너 규약이고, **채운 셀은 아래를
     /// 가린다** — 페인터가 `fillRect`로 칠하므로 (R43 #5) 링크가 없다고 통과시키면
     /// 그 아래 문단 링크가 열린다.
+    ///
+    /// 두 단계다 — 페인터(`HwpTableCommandBuffer`)가 표 하나를 **모든 셀 채움 → 모든 셀
+    /// 테두리 → 셀 내용**(셀 순서, 중첩 표는 자기 셀 내용의 끝) 순으로 내므로 (#191 리뷰) 역순은
+    /// ① 모든 셀의 내용을 셀 역순으로 → ② 어느 셀이든 채움 ∪ 칸막이(`cell.paints`)다. 셀마다
+    /// 내용 → 칠을 섞어 보면 앞 셀에서 뒤 셀 자리로 넘친 개체(R44 #2)가 뒤 셀 채움 위에 그려졌는데
+    /// 히트는 뒤 셀 채움에서 멈춘다.
     private func tableHit(_ table: HwpTableFrame, at point: CGPoint) -> LayerHit {
         // 셀 프레임으로 **미리 거르지 않는다** — 셀 문단·자식이 자기 셀을 넘어
         // 그려질 수 있고 (R44 #2) 자격 영역(`footnoteContentFrame`)은 그 자리를
         // 이미 인정한다. `cellFrame`은 **셀 채움 가림 판정에만** 쓴다.
-        // 순서는 페인트 역순 (`walkTable`이 행·셀 순으로 그린다).
-        for row in table.rows.reversed() {
-            for cell in row.cells.reversed() {
-                // 셀 안 표는 **평면 정렬에 넣지 않는다** (R48). 각주와 갈리는
-                // 이유는 생산자다 — 각주 수집기는 표에 평면·정렬 키를 채우지만
-                // (R47 #1) 셀 생산자 (`HwpTableLayout`) 는 채우지 않아 전부
-                // 기본값이라, 정렬에 넣으면 `sourceOrder: 0`으로 맨 앞에 놓여
-                // 히트가 가장 나중에 본다. 반면 셀 페인터 (`walkTable`) 는 표를
-                // 모든 개체 **뒤에** 그린다 — 그 순서를 그대로 따라 최상단으로
-                // 먼저 훑는다.
-                for nested in cell.nestedTables.reversed() {
-                    var innerOccluded = false
-                    switch tableHit(nested.table, at: CGPoint(
-                        x: point.x - nested.rect.minX, y: point.y - nested.rect.minY
-                    )) {
-                    case let .found(url):
-                        return .found(url)
-                    case .occluded:
-                        innerOccluded = true
-                    case .miss:
-                        break
-                    }
-                    // 감싼 링크는 **표 rect 전체**의 것이다 (R60) — 층 경로
-                    // (`layerHit`) 와 같은 규약이고 (R50 #2), 셀 안 표는 R48이 평면
-                    // 정렬에서 빠져 그 경로 밖에 있으므로 여기서 되풀이한다.
-                    if nested.rect.contains(point),
-                       let url = nested.wrapperURL
-                       ?? HwpDrawnTextLayout.wrapperHyperlinkURL(
-                           in: cell.paragraphs,
-                           paragraphId: nested.paragraphId,
-                           controlIndex: nested.controlIndex
-                       )
-                    {
-                        return .found(url)
-                    }
-                    if innerOccluded {
-                        return .occluded
-                    }
-                }
-                let hit = containerHit(
-                    paragraphs: cell.paragraphs,
-                    images: cell.images, shapes: cell.shapes, textboxes: cell.textboxes,
-                    nestedTables: [], at: point
-                )
-                if case .miss = hit {
-                    // 채움뿐 아니라 **칸막이**도 칠이다 (R55) — 안 채운 셀의 테두리
-                    // 선 위를 눌렀는데 아래 블록 링크가 열리면 안 된다
-                    if cell.paints(point) {
-                        return .occluded
-                    }
-                    continue
-                }
-                return hit
+        let cells = table.rows.flatMap(\.cells)
+        for cell in cells.reversed() {
+            let hit = cellContentHit(cell, at: point)
+            if case .miss = hit {
+                continue
+            }
+            return hit
+        }
+        // 채움뿐 아니라 **칸막이**도 칠이다 (R55) — 안 채운 셀의 테두리 선 위를 눌렀는데
+        // 아래 블록 링크가 열리면 안 된다
+        return cells.contains { $0.paints(point) } ? .occluded : .miss
+    }
+
+    /// 셀 하나의 **내용** 층(중첩 표 → 개체·문단) — 채움·칸막이는 `tableHit`의 둘째 단계
+    private func cellContentHit(_ cell: HwpTableCellFrame, at point: CGPoint) -> LayerHit {
+        // 셀 안 표는 **평면 정렬에 넣지 않는다** (R48). 각주와 갈리는
+        // 이유는 생산자다 — 각주 수집기는 표에 평면·정렬 키를 채우지만
+        // (R47 #1) 셀 생산자 (`HwpTableLayout`) 는 채우지 않아 전부
+        // 기본값이라, 정렬에 넣으면 `sourceOrder: 0`으로 맨 앞에 놓여
+        // 히트가 가장 나중에 본다. 반면 셀 페인터 (`walkTable`) 는 표를
+        // 모든 개체 **뒤에** 그린다 — 그 순서를 그대로 따라 최상단으로
+        // 먼저 훑는다.
+        for nested in cell.nestedTables.reversed() {
+            var innerOccluded = false
+            switch tableHit(nested.table, at: CGPoint(
+                x: point.x - nested.rect.minX, y: point.y - nested.rect.minY
+            )) {
+            case let .found(url):
+                return .found(url)
+            case .occluded:
+                innerOccluded = true
+            case .miss:
+                break
+            }
+            // 감싼 링크는 **표 rect 전체**의 것이다 (R60) — 층 경로
+            // (`layerHit`) 와 같은 규약이고 (R50 #2), 셀 안 표는 R48이 평면
+            // 정렬에서 빠져 그 경로 밖에 있으므로 여기서 되풀이한다.
+            if nested.rect.contains(point),
+               let url = nested.wrapperURL
+               ?? HwpDrawnTextLayout.wrapperHyperlinkURL(
+                   in: cell.paragraphs,
+                   paragraphId: nested.paragraphId,
+                   controlIndex: nested.controlIndex
+               )
+            {
+                return .found(url)
+            }
+            if innerOccluded {
+                return .occluded
             }
         }
-        return .miss
+        return containerHit(
+            paragraphs: cell.paragraphs,
+            images: cell.images, shapes: cell.shapes, textboxes: cell.textboxes,
+            nestedTables: [], at: point
+        )
     }
 
     /// 문단 목록에서 링크를 찾는다 — 필드 스팬이 있으면 **글리프 rect에서만**,

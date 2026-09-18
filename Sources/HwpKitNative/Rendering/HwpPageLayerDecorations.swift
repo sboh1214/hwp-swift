@@ -61,16 +61,22 @@ extension HwpPageLayer {
         // run마다 자기 글꼴이라 아래에서 따로 푼다.
         let msWordReference = msWordLineBox(of: runs, endsParagraph: endsParagraph)
         let strikethroughFonts = msWordStrikethroughFonts(of: runs)
+        // 점선·물결 같은 선 모양(#191)은 글자 모양 run(같은 `charShapeId`의 잇닿은 run)
+        // 단위로 패턴을 편다 — 그 묶음의 첫 run만 span을 받고 나머지는 nil이다.
+        let shapeSpans = lineShapeSpans(of: runs, lineOrigin: origin)
         for (index, run) in runs.enumerated() {
             // 밑줄은 CT 대신 항상 직접 (CT 밑줄은 폰트 지표 위치·두께라 실물과 갈린다)
             drawUnderlineIfNeeded(
-                run, lineOrigin: underlineOrigin, msWord: msWordReference, in: ctx
+                run, lineOrigin: underlineOrigin, msWord: msWordReference,
+                shapeSpan: shapeSpans[index], in: ctx
             )
             drawAboveUnderlineIfNeeded(
-                run, lineOrigin: origin, msWord: msWordReference, in: ctx
+                run, lineOrigin: origin, msWord: msWordReference,
+                shapeSpan: shapeSpans[index], in: ctx
             )
             drawStrikethroughIfNeeded(
-                run, lineOrigin: origin, msWordFont: strikethroughFonts[index], in: ctx
+                run, lineOrigin: origin, msWordFont: strikethroughFonts[index],
+                shapeSpan: shapeSpans[index], in: ctx
             )
             drawEmphasisIfNeeded(run, lineOrigin: origin, in: ctx)
             drawTrackInsertUnderlineIfNeeded(
@@ -411,7 +417,15 @@ extension HwpPageLayer {
         else { return }
         let line = msWord.map { HwpDecorationLineGeometry.msWordUnderlineBelow(lineBox: $0) }
             ?? HwpDecorationLineGeometry.underlineBelow(fontSize: preScriptFontSize(attributes))
-        fillLine(run, lineOrigin: lineOrigin, line: line, color: color, in: ctx)
+        // 변경 추적 표시선에는 선 모양이 없다 — 늘 실선.
+        fillLine(
+            run, lineOrigin: lineOrigin, line: line, color: color,
+            shaped: ShapedLine(
+                shape: .line, placement: .underlineBelow,
+                fontSize: preScriptFontSize(attributes), span: nil
+            ),
+            in: ctx
+        )
     }
 
     /// 취소선 — 밑줄 종류 '글자 가운데'(표 35 값 2)와 변경 추적 삭제선도 이 선을
@@ -444,6 +458,7 @@ extension HwpPageLayer {
         _ run: CTRun,
         lineOrigin: CGPoint,
         msWordFont: CTFont?,
+        shapeSpan: CGRect?,
         in ctx: CGContext
     ) {
         let attributes = runAttributes(run)
@@ -476,7 +491,12 @@ extension HwpPageLayer {
         fillLine(
             run,
             lineOrigin: CGPoint(x: lineOrigin.x, y: lineOrigin.y + scriptBaselineShift(attributes)),
-            line: line, color: color, in: ctx
+            line: line, color: color,
+            shaped: ShapedLine(
+                shape: lineShape(attributes[HwpAttributedStringKey.strikethroughShape]),
+                placement: .strikethrough, fontSize: thicknessFontSize, span: shapeSpan
+            ),
+            in: ctx
         )
     }
 
@@ -501,13 +521,17 @@ extension HwpPageLayer {
         _ run: CTRun,
         lineOrigin: CGPoint,
         msWord: HwpMsWordLineBox?,
+        shapeSpan: CGRect?,
         in ctx: CGContext
     ) {
         let attributes = runAttributes(run)
         guard attributes[HwpAttributedStringKey.underlineStyle] != nil else { return }
         let line = msWord.map { HwpDecorationLineGeometry.msWordUnderlineBelow(lineBox: $0) }
             ?? HwpDecorationLineGeometry.underlineBelow(fontSize: preScriptFontSize(attributes))
-        fillUnderline(run, lineOrigin: lineOrigin, line: line, in: ctx)
+        fillUnderline(
+            run, lineOrigin: lineOrigin, line: line, placement: .underlineBelow,
+            span: shapeSpan, in: ctx
+        )
     }
 
     /// 밑줄 '글자 위'(표 33 값 3) — 글자 크기의 0.87배 위 (#136 실측).
@@ -531,13 +555,17 @@ extension HwpPageLayer {
         _ run: CTRun,
         lineOrigin: CGPoint,
         msWord: HwpMsWordLineBox?,
+        shapeSpan: CGRect?,
         in ctx: CGContext
     ) {
         let attributes = runAttributes(run)
         guard attributes[HwpAttributedStringKey.underlineAboveStyle] != nil else { return }
         let line = msWord.map { HwpDecorationLineGeometry.msWordUnderlineAbove(lineBox: $0) }
             ?? HwpDecorationLineGeometry.underlineAbove(fontSize: preScriptFontSize(attributes))
-        fillUnderline(run, lineOrigin: lineOrigin, line: line, in: ctx)
+        fillUnderline(
+            run, lineOrigin: lineOrigin, line: line, placement: .underlineAbove,
+            span: shapeSpan, in: ctx
+        )
     }
 
     /// 첨자 축소 전 글자 크기 (pt). 조판이 모든 run에 싣는 `spaceTargetSize`가
@@ -557,36 +585,52 @@ extension HwpPageLayer {
             .map { CGFloat($0.doubleValue) } ?? 0
     }
 
-    /// 밑줄 한 줄 — 색은 글자 모양의 밑줄 색, 없으면 글자 색.
+    /// 밑줄 한 줄 — 색은 글자 모양의 밑줄 색, 없으면 글자 색. 모양은 `underlineShape`
+    /// (글자 아래·위 공용, 없으면 실선).
     private func fillUnderline(
         _ run: CTRun,
         lineOrigin: CGPoint,
         line: HwpDecorationLineGeometry.Line,
+        placement: HwpLineShapeGeometry.Placement,
+        span: CGRect?,
         in ctx: CGContext
     ) {
         let attributes = runAttributes(run)
         let color = attributes[HwpAttributedStringKey.underlineColor]
             ?? attributes[kCTForegroundColorAttributeName as NSAttributedString.Key]
-        fillLine(run, lineOrigin: lineOrigin, line: line, color: color, in: ctx)
+        fillLine(
+            run, lineOrigin: lineOrigin, line: line, color: color,
+            shaped: ShapedLine(
+                shape: lineShape(attributes[HwpAttributedStringKey.underlineShape]),
+                placement: placement, fontSize: preScriptFontSize(attributes), span: span
+            ),
+            in: ctx
+        )
     }
 
     /// 장식선 한 줄 — `line.center`는 `lineOrigin` 기준 세로 위치 (양수 = 위),
-    /// `line.thickness`는 두께 (pt). 사각형은 중심을 기준으로 위아래 반씩 나눈다.
-    private func fillLine(
+    /// `line.thickness`는 두께 (pt). 실선은 run 폭의 사각형을 중심 기준으로 위아래 반씩
+    /// 나눠 채우고, 그 밖의 모양(#191)은 `fillShapedLine`이 글자 모양 run의 폭에 경로를 편다.
+    func fillLine(
         _ run: CTRun,
         lineOrigin: CGPoint,
         line: HwpDecorationLineGeometry.Line,
         color: Any?,
+        shaped: ShapedLine,
         in ctx: CGContext
     ) {
-        let bounds = runBounds(of: run, lineOrigin: lineOrigin)
         setDecorationFillColor(color, in: ctx)
-        ctx.fill(CGRect(
-            x: bounds.minX,
-            y: lineOrigin.y + line.center - line.thickness / 2,
-            width: bounds.width,
-            height: line.thickness
-        ))
+        guard shaped.shape != .line else {
+            let bounds = runBounds(of: run, lineOrigin: lineOrigin)
+            ctx.fill(CGRect(
+                x: bounds.minX,
+                y: lineOrigin.y + line.center - line.thickness / 2,
+                width: bounds.width,
+                height: line.thickness
+            ))
+            return
+        }
+        fillShapedLine(line: line, lineOrigin: lineOrigin, shaped: shaped, in: ctx)
     }
 
     func setDecorationFillColor(_ color: Any?, in ctx: CGContext) {

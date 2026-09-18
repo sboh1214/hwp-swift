@@ -339,6 +339,25 @@ import XCTest
             expect(CFEqual(plain as CFTypeRef, expected as CFTypeRef)) == true
         }
 
+        /// 변경 추적 삭제 표시는 늘 실선이다 — 글자 모양의 물결 취소선 모양(`strikethroughShape`)이
+        /// 삭제 구간에 남으면 삭제선까지 물결로 그려진다 (PR 리뷰). 추적 밖 글자는 모양을 지킨다.
+        func testTrackChangeDeletionMarkDropsTheStrikethroughShape() throws {
+            var tracked = paragraph(text: "가나다라", runs: [(0, 0)])
+            tracked.paraRangeTagArray = [try rangeTag(start: 0, end: 2, kind: 17)]
+            // 표 35: 취소선 bit 18~20, 취소선 모양 bit 26~29 (11 = 물결 → 표 25의 12)
+            let shapes = [UInt32(0): try charShape(property: (1 << 18) | (11 << 26))]
+
+            let result = builder(shapes: shapes, cache: HwpTextAttributeCache())
+                .build(paragraph: tracked)
+
+            let deleted = result.attributes(at: 0, effectiveRange: nil)
+            let plain = result.attributes(at: 2, effectiveRange: nil)
+            expect(deleted[HwpAttributedStringKey.strikethroughStyle]).toNot(beNil())
+            expect(deleted[HwpAttributedStringKey.strikethroughShape]).to(beNil())
+            expect((plain[HwpAttributedStringKey.strikethroughShape] as? NSNumber)?.intValue)
+                == HwpBorderType.wave.rawValue
+        }
+
         func testAttributeCacheReusesTabStopsPerTabDefinition() {
             // CTTextTab은 불변이고 tabDefId만의 함수라 문서 안에서 공유한다.
             let cache = HwpTextAttributeCache()

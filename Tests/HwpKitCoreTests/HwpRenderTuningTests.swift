@@ -24,6 +24,24 @@ final class HwpRenderTuningTests: XCTestCase {
         expect(HwpRenderTuning.Text.msWordStrikethroughAscentRatio) == 0.273
     }
 
+    func testLineShapeTuningValues() {
+        expect(HwpRenderTuning.LineShape.characterDashUnitEmRatio) == 0.057
+        expect(HwpRenderTuning.LineShape.borderDashUnitThicknessRatio)
+            .to(beCloseTo(22.0 / 15.0, within: 1e-9))
+        expect(HwpRenderTuning.LineShape.characterCirclePitchDiameterRatio) == 2.5
+        expect(HwpRenderTuning.LineShape.borderCirclePitchThicknessRatio) == 2
+        expect(HwpRenderTuning.LineShape.characterDoubleLineBandEmRatio) == 0.12
+        expect(HwpRenderTuning.LineShape.characterThickBandEmRatio) == 0.2
+        expect(HwpRenderTuning.LineShape.characterWaveAmplitudeEmRatio) == 0.112
+        expect(HwpRenderTuning.LineShape.characterWaveStrokeEmRatio) == 0.03
+        expect(HwpRenderTuning.LineShape.characterDoubleWaveOffsetAmplitudeRatio) == 0.8
+        expect(HwpRenderTuning.LineShape.characterWaveTopShiftThicknessRatio) == 1
+        expect(HwpRenderTuning.LineShape.borderWaveStrokeThicknessRatio) == 0.25
+        expect(HwpRenderTuning.LineShape.borderWaveShiftThicknessRatio) == 0.375
+        expect(HwpRenderTuning.LineShape.borderDoubleWaveOffsetThicknessRatio) == 0.75
+        expect(HwpRenderTuning.LineShape.waveVertexFlat) == 0.12
+    }
+
     func testNumberingTuningValues() {
         expect(HwpRenderTuning.Numbering.fixedWidthEmRatio) == 1.5
     }
