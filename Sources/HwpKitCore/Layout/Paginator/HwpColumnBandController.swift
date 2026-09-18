@@ -326,6 +326,7 @@ struct HwpColumnBandController {
         var lineCount = merged.count
         var height = merged.height
         var width = measuredWidth
+        var remeasured = false
         if remeasures, let paraShape = merged.paraShape {
             // 문단 머리에서 시작하는 블록 전체(문단)는 문단 단위 한 줄 규칙을 따라 재고, 조각
             // (블록의 일부, 또는 쪽·단 경계로 나뉜 문단의 뒤 조각 블록)은 표식을 단 채로 재어
@@ -352,6 +353,7 @@ struct HwpColumnBandController {
                 height = max(1, frame.totalHeight - max(0, metrics.paragraphSpacingBefore)
                     - (reachesEnd ? 0 : metrics.paragraphSpacing))
                 width = columnWidth
+                remeasured = true
             }
         }
         let text = HwpParagraphLayout.measuredLineFragment(
@@ -361,19 +363,14 @@ struct HwpColumnBandController {
             measuredWidth: width,
             columnWidth: columnWidth
         )
-        // 블록 끝에 못 미치는 조각은 이어짐 표식을 달고, 블록이 물려준 캐시 줄 간격 표식은
-        // 벗긴다 — 그 값은 문단 마지막 줄의 것이라 앞 조각의 단 구분선 바닥이 틀린다 (PR
-        // 리뷰). 블록 끝에 닿는 조각은 블록 자체의 표식(조각 전체에 붙어 부분 문자열이
-        // 물려받는다)을 따른다.
+        // 블록이 물려준 캐시 줄 간격 표식은 블록 끝에 못 미치는 조각(그 값은 문단 마지막 줄의
+        // 것)과 CT로 다시 잰 조각(높이가 더는 캐시가 아니다)에서 벗긴다 — 남으면 단 구분선
+        // 바닥이 캐시 간격을 뺀다 (PR 리뷰). 블록 끝에 닿고 다시 재지 않은 조각은 블록 자체의
+        // 표식(조각 전체에 붙어 부분 문자열이 물려받는다)을 따른다.
         let continues = NSMaxRange(merged.range) < attributed.length
-        return (
-            continues
-                ? HwpTableSplitter.markedAsContinuedFragment(
-                    HwpTableSplitter.strippingCachedTrailingLineSpacing(text)
-                )
-                : text,
-            height
-        )
+        let kept = continues || remeasured
+            ? HwpTableSplitter.strippingCachedTrailingLineSpacing(text) : text
+        return (continues ? HwpTableSplitter.markedAsContinuedFragment(kept) : kept, height)
     }
 }
 
