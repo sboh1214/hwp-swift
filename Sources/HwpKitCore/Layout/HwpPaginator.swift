@@ -3199,7 +3199,12 @@ private extension HwpPaginator {
         table: CoreHwp.HwpTable,
         controlIndex: Int?
     ) -> Bool {
-        guard let position = inlineAnchorPosition(for: controlIndex) else { return false }
+        guard let outerBox = inlineAnchorPosition(for: controlIndex) else { return false }
+        // 줄 앵커는 바깥 상자(표 + 바깥 여백)의 원점이다 — 표는 왼쪽·위쪽 여백만큼 안 (#193).
+        let position = HwpObjectAnchorGeometry.inlineObjectOrigin(
+            outerBoxOrigin: outerBox,
+            margins: .init(table.commonCtrlProperty)
+        )
         let height = frame.rows.reduce(CGFloat(0)) { max($0, $1.rowFrame.maxY) }
         currentBlocks.append(AnyHwpBlock(
             frame: CGRect(
@@ -4073,7 +4078,9 @@ private extension HwpPaginator {
             zOrder: commonProperty.zOrder
         )
 
-        if info.treatAsChar, appendInlineAnchoredBlock(spec, controlIndex: controlIndex) {
+        if info.treatAsChar, appendInlineAnchoredBlock(
+            spec, margins: .init(commonProperty), controlIndex: controlIndex
+        ) {
             return
         }
 
@@ -4263,12 +4270,18 @@ private extension HwpPaginator {
 
     /// treatAsChar 개체를 FFFC 앵커 라인 위치에 배치한다. 앵커가 없으면 false
     /// (호출자가 flow 배치로 폴백). 줄 높이는 run delegate가 이미 예약했으므로
-    /// 흐름 높이를 추가 소비하지 않는다.
+    /// 흐름 높이를 추가 소비하지 않는다. `margins`는 개체의 바깥 여백 — 예약(바깥 상자)
+    /// 안에서 개체를 들일 몫이다.
     private func appendInlineAnchoredBlock(
         _ spec: ObjectBlockSpec,
+        margins: HwpObjectAnchorGeometry.OuterMargins,
         controlIndex: Int?
     ) -> Bool {
-        guard let position = inlineAnchorPosition(for: controlIndex) else { return false }
+        guard let outerBox = inlineAnchorPosition(for: controlIndex) else { return false }
+        // 줄 앵커는 바깥 상자(개체 + 바깥 여백)의 원점이다 (#193).
+        let position = HwpObjectAnchorGeometry.inlineObjectOrigin(
+            outerBoxOrigin: outerBox, margins: margins
+        )
         let contentFrame = currentPageGeometry.contentFrame
         let frame = CGRect(
             x: position.x,

@@ -64,6 +64,10 @@ struct HwpParagraphMeasurer {
         /// 라인 캐시 높이를 썼으면 그 줄 상자 범위 — 표 셀이 저작 높이의 하한을
         /// 재는 데 쓴다 (#160). CT 측정 높이를 썼으면 nil.
         let cachedLineExtent: HwpParagraphLayout.CachedLineExtent?
+        /// `frame.totalHeight` 가운데 마지막 줄 **상자** 아래에 놓인 몫 (pt) — 그 줄의 줄
+        /// 간격 여분과 문단 아래 간격이다. 컨테이너(표 셀·글상자)의 내용 범위는 마지막 줄
+        /// 상자 아래에서 끝난다 (#193, `HwpContainerContentExtent`).
+        let trailingGap: CGFloat
     }
 
     func measure(
@@ -91,6 +95,8 @@ struct HwpParagraphMeasurer {
             paraShape: paraShape,
             columnWidth: width
         )
+        // 줄 프레임을 비우기(빈 문단 앵커) 전에 잰다 — 빈 문단도 한 줄 상자를 차지한다.
+        var trailingGap = HwpContainerContentExtent.trailingGap(of: frame, paraShape: paraShape)
         // 빈 문단의 조판 문자열은 빈 문단 앵커(빈칸 1자, #145)라 위 `layout`이
         // 실물과 같은 한 줄 높이를 이미 냈다 — 길이 0이면 라인 캐시를 쓰지 않는
         // 측정(글상자·캐시 무효 문단·안전밸브로 linesegarray를 폐기한 HWPX 문단)
@@ -120,11 +126,13 @@ struct HwpParagraphMeasurer {
                 lines: frame.lines
             )
             cachedLineExtent = extent
+            trailingGap = spacingAfter + extent.trailingLineSpacing
         }
         return Result(
             attributed: attributed,
             frame: frame,
-            cachedLineExtent: cachedLineExtent
+            cachedLineExtent: cachedLineExtent,
+            trailingGap: trailingGap
         )
     }
 }

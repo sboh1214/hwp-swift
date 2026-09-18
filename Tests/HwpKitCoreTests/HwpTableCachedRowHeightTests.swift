@@ -69,9 +69,10 @@ import XCTest
             }
         }
 
-        /// 문단 위/아래 간격은 배치가 셀 안에 그대로 더하므로 (첫 문단 위 간격만큼
-        /// 글자가 내려간다) 하한에도 든다 — 줄 1000 + 위 400 + 아래 200 + 여백 282 =
-        /// 1882. 간격을 빼면 저작 282인 셀에서 글자가 아래 여백을 넘는다.
+        /// 첫 문단 위 간격은 배치가 셀 안에 그대로 더하므로 (그만큼 글자가 내려간다)
+        /// 하한에도 든다 — 줄 1000 + 위 400 + 여백 282 = 1682. 간격을 빼면 저작 282인
+        /// 셀에서 글자가 아래 여백을 넘는다. 마지막 문단의 **아래** 간격은 들지 않는다 —
+        /// 한글은 아래 간격 10pt 문단 하나인 저작 282 셀을 12.82pt로 그린다 (#193 실측).
         func testParagraphSpacingCountsTowardFloor() throws {
             let paragraph = try oneLine()
             let table = CoreHwp.HwpTable(
@@ -85,7 +86,7 @@ import XCTest
                 XCTFail("expected table layout success")
                 return
             }
-            expect(frame.rows[0].rowFrame.height).to(beCloseTo(18.82, within: 0.01))
+            expect(frame.rows[0].rowFrame.height).to(beCloseTo(16.82, within: 0.01))
             let rect = try XCTUnwrap(frame.rows[0].cells[0].paragraphs.first?.rect)
             // 글자 줄 상자(10pt)가 위 여백 1.41 + 위 간격 4 아래에서 시작해 아래 여백 안에 끝난다.
             expect(rect.minY).to(beCloseTo(5.41, within: 0.01))
@@ -112,16 +113,24 @@ import XCTest
         }
 
         /// 캐시가 없는 문단이 하나라도 있으면 (다시 조판하는 셀) 하한을 쓰지 않고
-        /// 종전대로 CT 측정 높이와 저작 높이의 max를 쓴다 — 줄 간격까지 든
-        /// 콘텐츠 높이라 하한보다 크다.
+        /// 종전대로 CT 측정 높이와 저작 높이의 max를 쓴다. CT 콘텐츠 높이도 마지막 줄
+        /// **상자**에서 끝난다 — 줄 간격 여분(160% → 6pt)은 행에 들지 않는다 (#193, 한글의
+        /// 행 = 마지막 줄 상자 아래 + 여백).
         func testCellWithoutFullCacheKeepsContentHeight() throws {
             let frame = try layoutRows(
                 authoredHeights: [282],
                 cells: [[[try HwpSynthetic.textParagraph("가")]]]
             )
-            let contentHeight = frame.rows[0].cells[0].paragraphs[0].frame.totalHeight + 2.82
-            expect(frame.rows[0].rowFrame.height).to(beCloseTo(contentHeight, within: 0.01))
-            expect(frame.rows[0].rowFrame.height) > 12.82
+            let paragraph = frame.rows[0].cells[0].paragraphs[0]
+            expect(paragraph.frame.totalHeight).to(beCloseTo(16, within: 0.01))
+            expect(frame.rows[0].rowFrame.height).to(beCloseTo(10 + 2.82, within: 0.01))
+
+            let taller = try layoutRows(
+                authoredHeights: [282],
+                cells: [[[try HwpSynthetic.textParagraph("가\n나")]]]
+            )
+            // 두 줄: 16 + 10 + 여백 — 줄 사이 간격은 들고 마지막 줄의 여분만 빠진다.
+            expect(taller.rows[0].rowFrame.height).to(beCloseTo(26 + 2.82, within: 0.01))
         }
 
         /// 셀 여백을 셀 고유 값으로 두는 셀은 그 여백으로 하한을 잰다.

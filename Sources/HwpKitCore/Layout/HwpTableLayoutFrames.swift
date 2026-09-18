@@ -6,6 +6,35 @@ import Foundation
 // MARK: - 행/셀 프레임 조립 (레이아웃 결과 → HwpTableRowFrame/HwpTableCellFrame)
 
 extension HwpTableLayout {
+    /// 셀 안 문단 하나의 레이아웃 결과 (문단 텍스트 + 그 문단에 붙은 중첩 표)
+    struct PlacedCellContent {
+        let paragraph: CoreHwp.HwpParagraph
+        let frame: HwpParagraphFrame
+        /// 이 문단의 번호 열쇠 (#158) — 측정(`measuredCellContents`)이 라벨을 붙여
+        /// 잰 그 번호로 배치(`laidOutContents`)가 같은 문자열을 다시 만들고, 문단
+        /// 안 글상자·중첩 표는 여기서 한 겹 더 내려간다.
+        let numbering: HwpNumberingScope?
+        /// 측정이 라인 캐시 높이를 썼을 때 그 줄 상자 범위 (#160). CT 측정 문단은 nil.
+        let cachedLineExtent: HwpParagraphLayout.CachedLineExtent?
+        /// `frame.totalHeight` 가운데 마지막 줄 상자 아래 몫 — 그 줄의 줄 간격 여분과 문단
+        /// 아래 간격 (#193, `HwpParagraphMeasurer.Result.trailingGap`). 셀 내용 범위(행
+        /// 높이·세로 정렬)는 마지막 문단에서 이만큼을 뺀 자리에서 끝난다.
+        let trailingGap: CGFloat
+        let nestedTables: [PlacedNestedTable]
+
+        var totalHeight: CGFloat {
+            frame.totalHeight + nestedTables.reduce(CGFloat(0)) {
+                $0 + $1.frame.outerFrame.height
+            }
+        }
+
+        /// 이 문단이 셀의 마지막 콘텐츠일 때 내용 범위 밖으로 빠지는 몫 — 중첩 표가 뒤에
+        /// 붙으면 범위가 그 표 바닥에서 끝나므로 0이다.
+        var trailingGapIfLast: CGFloat {
+            nestedTables.isEmpty ? trailingGap : 0
+        }
+    }
+
     /// 행 높이 = max(저작된 셀 높이, 콘텐츠 높이). span 셀은 마지막 행에 나머지를 반영.
     /// 셀 문단 전부가 라인 캐시로 측정된 셀은 저작된 높이 (표 80)를 신뢰한다 —
     /// 캐시 합 + 여백 근사가 저작 높이를 살짝 넘겨 표가 부풀면 페이지 분할이
@@ -52,12 +81,15 @@ extension HwpTableLayout {
 
     /// 라인 캐시가 담는 셀 콘텐츠 높이 (pt, 여백 제외) — 셀 문단의 측정 높이
     /// (캐시 전진량 + 문단 위/아래 간격)를 배치(`laidOutContents`)와 같은 순서로
-    /// 쌓고 마지막 줄의 줄 간격만 뺀다. 즉 배치가 그리는 마지막 줄 **상자**의
+    /// 쌓고 마지막 줄의 줄 간격과 마지막 문단의 아래 간격을 뺀다
+    /// (`PlacedCellContent.trailingGap`). 즉 배치가 그리는 마지막 줄 **상자**의
     /// 아래다. 한글도 셀을 거기(+ 위아래 안쪽 여백)까지 그린다 (실측:
     /// numbering-sequence 3쪽 1줄 셀 1000 + 여백 282 = 표 공통 속성 height 1282 =
     /// 한글.app 12.81pt, 새 표 2문단 셀 1000+600+1000 = 2600 + 282 = 2882 — 표 공통
     /// 속성 height 8964가 행 높이 합이다). 줄 간격까지 더한 `contentHeight`로
-    /// 잡으면 정상 셀까지 부푼다 (#160).
+    /// 잡으면 정상 셀까지 부푼다 (#160). 마지막 문단의 아래 간격도 행에 들지 않는다 —
+    /// 아래 간격 10pt 문단 하나인 저작 282 셀이 한글 12.82pt다 (#193,
+    /// `HwpContainerContentExtent`).
     ///
     /// 실물 셀 문단의 `lineLocation`은 셀 안에서 문단을 넘어 누적되고(헌법주석
     /// 5문단 셀 0·1300·…·10400, noori 4문단 셀 0·2700·6000·9000, 새 표 0·1600) 그
@@ -67,13 +99,10 @@ extension HwpTableLayout {
     /// 되돌아간다). 중첩 표는 세지 않는다 — 저작 높이가 담는 몫이다. 어느
     /// 문단이든 캐시가 없으면 nil — 그 셀은 CT 측정(`contentHeight`)이 맡는다.
     static func cachedLineBoxHeight(of contents: [PlacedCellContent]) -> CGFloat? {
-        guard let last = contents.last?.cachedLineExtent,
+        guard let last = contents.last, last.cachedLineExtent != nil,
               contents.allSatisfy({ $0.cachedLineExtent != nil })
         else { return nil }
-        let trailingSpacing = HwpUnits.points(
-            fromHwpUnit: Int32(clamping: last.spacedBottom - last.bottom)
-        )
-        return max(0, contents.reduce(CGFloat(0)) { $0 + $1.frame.totalHeight } - trailingSpacing)
+        return max(0, contents.reduce(CGFloat(0)) { $0 + $1.frame.totalHeight } - last.trailingGap)
     }
 
     func rows(
@@ -202,10 +231,15 @@ extension HwpTableLayout {
         let images: [HwpCellImage]
         let shapes: [HwpCellShape]
         let textboxes: [HwpCellTextbox]
+        /// 문단 내용의 끝 — 마지막 문단의 마지막 줄 **상자** 아래 (문단 rect 바닥에서
+        /// `PlacedCellContent.trailingGap`을 뺀 자리, #193). 문단이 없으면 nil.
+        var paragraphContentBottom: CGFloat?
     }
 
     /// 셀 세로 정렬 (표 89 리스트 헤더 속성): 콘텐츠가 셀보다 작으면
     /// 가운데/아래 정렬만큼 내린다 (noori 제목 셀 실물: 위·아래 여백 균등).
+    /// 콘텐츠 범위는 첫 문단 위 간격부터 마지막 줄 **상자** 아래까지다 —
+    /// `HwpContainerContentExtent` (#193).
     func verticallyAligned(
         _ contents: LaidOutCellContents,
         cell: CoreHwp.HwpTableCell,
@@ -216,7 +250,8 @@ extension HwpTableLayout {
         guard alignment != .top else { return contents }
         // 콘텐츠 하단은 문단뿐 아니라 중첩 표·이미지 자식의 extent도 포함해야
         // 한다 — 문단만 보면 slack이 과대돼 자식이 셀 하단을 넘긴다 (#7).
-        let bottom = (contents.paragraphs.map(\.rect.maxY)
+        // 문단은 마지막 줄 상자 아래까지다 — 줄 간격 여분·아래 간격은 범위 밖 (#193).
+        let bottom = ([contents.paragraphContentBottom].compactMap { $0 }
             + contents.nestedTables.map(\.rect.maxY)
             + contents.images.map(\.rect.maxY)
             + contents.shapes.map(\.rect.maxY)
@@ -279,6 +314,7 @@ extension HwpTableLayout {
         var paragraphs: [HwpLaidOutParagraph] = []
         var nestedTables: [HwpNestedTableFrame] = []
         var objects = HwpParagraphObjectCollector.Objects()
+        var paragraphContentBottom: CGFloat?
         for content in cell.contents {
             // 문단 위 간격 (프레임 높이에 포함됨)만큼 텍스트 상단을 내린다
             let spacingBefore = halfSpacingBefore(of: content.paragraph, index: index)
@@ -310,6 +346,7 @@ extension HwpTableLayout {
             objects.shapes.append(contentsOf: collected.shapes)
             objects.textboxes.append(contentsOf: collected.textboxes)
             cursorY += content.frame.totalHeight
+            paragraphContentBottom = cursorY - content.trailingGap
             nestedTables.append(contentsOf: nestedFrames(
                 of: content, innerX: innerX, cursorY: &cursorY
             ))
@@ -319,7 +356,8 @@ extension HwpTableLayout {
             nestedTables: nestedTables,
             images: objects.images,
             shapes: objects.shapes,
-            textboxes: objects.textboxes
+            textboxes: objects.textboxes,
+            paragraphContentBottom: paragraphContentBottom
         )
     }
 

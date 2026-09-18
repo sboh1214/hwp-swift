@@ -18,6 +18,13 @@ public extension HwpAttributedStringKey {
     static let inlineObjectWidthBasis = NSAttributedString.Key("hwp.inlineObjectWidthBasis")
 }
 
+extension HwpAttributedStringKey {
+    /// 예약 폭에 든 좌우 바깥 여백 합 (NSNumber, pt) — 폭 열쇠(`inlineObjectWidthRaw`·
+    /// `inlineObjectWidthBasis`)와 함께만 붙고, 여백이 있을 때만 붙는다. 예약 폭을 다른 단
+    /// 기하로 다시 풀 때 개체 폭에 이 값을 다시 더한다 (#193).
+    static let inlineObjectWidthMargin = NSAttributedString.Key("hwp.inlineObjectWidthMargin")
+}
+
 /// treatAsChar 개체의 줄 공간 예약 값 (CTRunDelegate refCon)
 private final class HwpInlineObjectMetrics {
     let width: CGFloat
@@ -56,15 +63,23 @@ enum HwpInlineObjectReservation {
     /// 마커에 실을 예약 폭 열쇠 — 폭 기준이 단 폭에 딸릴 때만 값이 있다.
     /// 개체 요소 detail로 폴백한 폭(`HwpTextRunBuilder.inlineObjectReservation`)은 절대값
     /// (HWPUNIT)이라 다시 풀 게 없으므로 열쇠를 싣지 않는다.
+    /// `horizontalMargin`은 예약 폭에 든 좌우 바깥 여백 합이다 (#193) — 다시 풀 때 더한다.
     static func widthKeyAttributes(
         raw: UInt32,
-        basis: CoreHwp.HwpCommonCtrlObjectWidthRelativeTo?
+        basis: CoreHwp.HwpCommonCtrlObjectWidthRelativeTo?,
+        horizontalMargin: CGFloat = 0
     ) -> [NSAttributedString.Key: Any] {
         guard let basis, basis == .column || basis == .paragraph else { return [:] }
-        return [
+        var attributes: [NSAttributedString.Key: Any] = [
             HwpAttributedStringKey.inlineObjectWidthRaw: NSNumber(value: raw),
             HwpAttributedStringKey.inlineObjectWidthBasis: NSNumber(value: basis.rawValue),
         ]
+        if horizontalMargin > 0 {
+            attributes[HwpAttributedStringKey.inlineObjectWidthMargin] = NSNumber(
+                value: Double(horizontalMargin)
+            )
+        }
+        return attributes
     }
 
     /// 단 폭에 딸린 예약 폭을 `resolver` 기하로 다시 푼 사본 — 다시 풀 마커가 없으면
@@ -112,7 +127,8 @@ enum HwpInlineObjectReservation {
     }
 
     /// 마커 한 글자의 예약을 `resolver` 기하로 다시 푼 run delegate — 폭 열쇠가 온전하지
-    /// 않으면 nil(그 마커는 그대로 둔다). 높이는 빌더가 실어 둔 `inlineObjectHeight`다.
+    /// 않으면 nil(그 마커는 그대로 둔다). 높이는 빌더가 실어 둔 `inlineObjectHeight`(바깥
+    /// 여백 포함)이고, 폭은 다시 푼 개체 폭 + 좌우 바깥 여백(`inlineObjectWidthMargin`)이다.
     private static func resolvedDelegate(
         of string: NSAttributedString,
         at location: Int,
@@ -128,8 +144,10 @@ enum HwpInlineObjectReservation {
             let raw = attributes[HwpAttributedStringKey.inlineObjectWidthRaw] as? NSNumber
         else { return nil }
         let height = attributes[HwpAttributedStringKey.inlineObjectHeight] as? NSNumber
+        let margin = attributes[HwpAttributedStringKey.inlineObjectWidthMargin] as? NSNumber
         return runDelegate(
-            width: resolver.width(raw.uint32Value, basis: basis),
+            width: resolver.width(raw.uint32Value, basis: basis)
+                + (margin.map { CGFloat($0.doubleValue) } ?? 0),
             height: height.map { CGFloat($0.doubleValue) } ?? 0
         )
     }

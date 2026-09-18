@@ -340,7 +340,11 @@ struct HwpParagraphObjectCollector {
         cursorX: CGFloat
     ) -> CGPoint {
         guard let commonProperty, !commonProperty.propertyInfo.treatAsChar else {
-            return placement.origin(cursorX: cursorX)
+            // 줄 앵커는 바깥 상자의 원점 — 개체는 바깥 여백만큼 안이다 (#193).
+            guard placement.anchor != nil else { return placement.origin(cursorX: cursorX) }
+            return HwpObjectAnchorGeometry.inlineObjectOrigin(
+                outerBoxOrigin: placement.origin(cursorX: cursorX), margins: .init(commonProperty)
+            )
         }
         let rect = placement.paragraphRect
         let offsetX = HwpUnits.points(
