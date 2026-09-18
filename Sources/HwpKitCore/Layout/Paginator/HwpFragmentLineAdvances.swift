@@ -133,6 +133,14 @@ struct HwpFragmentRemainder {
         start == 0 && lineIndex == 0
     }
 
+    /// 이 나머지의 조각 블록에 실을 캐시 마지막 줄 줄 간격 — 한 번이라도 목적 단 폭으로 다시
+    /// 쟀으면(`remeasureCount > 0`) 높이가 더는 캐시가 아니라 nil이다 (PR 리뷰: 최초
+    /// `placement.cachedTrailingSpacing`을 그대로 넘기면 다시 잰 문단 끝 조각의 단 구분선이
+    /// 캐시 간격을 뺀다).
+    func cachedTrailingSpacing(from placement: HwpFragmentPlacement) -> CGFloat? {
+        remeasureCount > 0 ? nil : placement.cachedTrailingSpacing
+    }
+
     /// 다음 줄부터 `available`에 들어가는 줄 수와 그 누적 전진량. 적합 판정과 방출 높이가
     /// 같은 전진량 합을 쓴다.
     func fit(in available: CGFloat) -> (count: Int, height: CGFloat) {

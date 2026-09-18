@@ -1882,7 +1882,7 @@ private extension HwpPaginator {
                     lines: remainder.lines,
                     heightIsMeasured: remainder.heightIsMeasured,
                     paraShape: paraShape,
-                    cachedTrailingSpacing: placement.cachedTrailingSpacing
+                    cachedTrailingSpacing: remainder.cachedTrailingSpacing(from: placement)
                 )
                 return
             }
@@ -2123,7 +2123,7 @@ private extension HwpPaginator {
                     slice, range: range, fragment: fragment,
                     paraShape: placement.paraShape, measuredWidth: remainder.measuredWidth
                 ),
-            cachedTrailingSpacing: placement.cachedTrailingSpacing
+            cachedTrailingSpacing: remainder.cachedTrailingSpacing(from: placement)
         )
     }
 

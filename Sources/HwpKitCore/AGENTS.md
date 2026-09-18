@@ -2073,7 +2073,9 @@ paraShape와 같은 값**이어야 한다.
     캐시 간격을 빼면 구분선이 짧아지고, 이어지는 조각은 문단 마지막 줄을 담지 않는다. 단 균형
     재배치(`rebalancedFragment`)가 블록을 다시 자르면 앞 조각(그 값은 원래 블록 마지막 줄의
     것)과 폭이 다른 단으로 옮겨 CT로 다시 잰 조각(높이가 더는 캐시가 아니다)은 물려받은
-    표식을 벗긴다(`strippingCachedTrailingLineSpacing`, PR 리뷰). 저장
+    표식을 벗기고(`strippingCachedTrailingLineSpacing`), 흐름 분할의 나머지도 목적 단 폭으로
+    다시 쟀으면(`HwpFragmentRemainder.remeasureCount > 0`) 최초 placement의 캐시 간격을 조각에
+    싣지 않는다(`cachedTrailingSpacing(from:)`, PR 리뷰). 저장
     상태(`bandTrailingLineSpacing`)
     를 안 쓰는 이유: 쪽에 걸친 문단은 배치 도중 쪽이 닫혀 문단 뒤 기록값이 아직 없고 다른 단
     뒤 문단 값이 샐 수 있다(PR 리뷰). 미실측: 캐시 없는 문단의 마지막 줄에 더 큰 글자(줄
