@@ -50,12 +50,13 @@ public struct HwpBorderSet: Sendable, Hashable {
         self.rightShape = rightShape
     }
 
-    /// 한 변의 그리기 — 페이지 좌표 채우기 경로 + 색 + 히트용 띠
-    public struct EdgeGeometry: @unchecked Sendable {
-        public let path: CGPath
-        public let color: HwpRGBColor
+    /// 한 변의 그리기 — 페이지 좌표 채우기 경로 + 색 + 히트용 띠. 모듈 안(페인터·히트) 전용.
+    struct EdgeGeometry: @unchecked Sendable {
+        /// 불변 경로 — `Edge.geometry`가 소유권 경계에서 복사해 넣는다 (`HwpPaintCommand`가 retain)
+        let path: CGPath
+        let color: HwpRGBColor
         /// 이 변이 칠하는 영역의 경계 상자 (모서리에 중심을 둔 띠, 연장·물결 넘침 포함)
-        public let band: CGRect
+        let band: CGRect
     }
 
     /// rect 둘레에 **실제로 칠하는 변 전부** — 페인터 (`HwpPaintListBuilder.borderCommands`)
@@ -67,13 +68,13 @@ public struct HwpBorderSet: Sendable, Hashable {
 
     /// rect 둘레에 칠하는 변들의 띠만 — 경로를 만들지 않아 히트 판정마다 싸다. 경계 상자는
     /// `edges(around:)`가 내는 `EdgeGeometry.band`와 같다.
-    public func bands(around rect: CGRect) -> [CGRect] {
+    func bands(around rect: CGRect) -> [CGRect] {
         drawnEdges(around: rect).compactMap(\.band)
     }
 
     /// rect와 그 둘레 테두리 띠를 모두 담는 경계 상자 — 히트 자격 영역이 칠한 곳을 다
     /// 덮도록 (R54 `자격 ⊇ 칠`) 셀·표 프레임에 테두리 바깥 절반을 더한다.
-    public func paintedBounds(around rect: CGRect) -> CGRect {
+    func paintedBounds(around rect: CGRect) -> CGRect {
         bands(around: rect).reduce(rect) { $0.union($1) }
     }
 
@@ -214,7 +215,7 @@ public struct HwpBorderSet: Sendable, Hashable {
                 }
             }
             guard !path.isEmpty else { return nil }
-            return EdgeGeometry(path: path, color: color, band: band)
+            return EdgeGeometry(path: path.copy() ?? path, color: color, band: band)
         }
     }
 
@@ -453,8 +454,8 @@ extension HwpTableLayout {
     }
 }
 
-public extension HwpTableCellFrame {
-    /// `paints` ∪ 이 셀 안 중첩 표의 칠(재귀) — claim한 자리의 셀 찾기(`tableGridPosition`)용
+extension HwpTableCellFrame {
+    /// `paints` ∪ 이 셀 안 중첩 표의 칠(재귀) — `tableGridPosition`용 모듈 안 헬퍼 (PR 리뷰)
     func paintsIncludingNestedTables(_ point: CGPoint) -> Bool {
         paints(point) || nestedTables.contains {
             $0.table.paints(CGPoint(x: point.x - $0.rect.minX, y: point.y - $0.rect.minY))
