@@ -20,11 +20,16 @@ import Foundation
 /// 종전에는 문단 rect 바닥(마지막 줄 전진량 + 아래 간격)을 내용 끝으로 써서 가운데 정렬
 /// 글자가 (줄 간격 여분 + 아래 간격) / 2만큼 위에 놓였다 — noori 1쪽 표 셀 1.3~2.6pt.
 enum HwpContainerContentExtent {
-    /// CT로 잰 문단 프레임의 `totalHeight` 가운데 마지막 줄 상자 아래 몫 (pt, 0 이상).
+    /// CT로 잰 문단 프레임의 `totalHeight` 가운데 마지막 줄 상자 아래 몫 (pt).
     ///
     /// 프레임 높이는 위 간격 + 줄 전진량 합 + 아래 간격이고
     /// (`HwpParagraphLayout.layout`), 마지막 줄 상자 바닥은 위 간격 + 그 줄 상자 상단
     /// (`HwpLineFrame.origin.y`) + 상자 높이다. 줄이 없으면(빈 문자열) 0.
+    ///
+    /// **음수일 수 있다** — 줄 전진량이 상자보다 작으면(비율 100% 미만·글자보다 작은 고정값)
+    /// 상자가 프레임 아래로 나가므로, 내용 범위는 그 상자 바닥까지 늘어나야 한다. 캐시 경로는
+    /// 한글이 저장한 줄 상자(`CachedLineExtent.bottom`)가 이미 그 바닥을 담아 같은 답이다
+    /// (PR 리뷰: 60% 줄 간격 셀·글상자가 캐시 유무에 따라 4pt 갈렸다).
     static func trailingGap(
         of frame: HwpParagraphFrame,
         paraShape: CoreHwp.HwpParaShape
@@ -33,7 +38,7 @@ enum HwpContainerContentExtent {
         // 문단 간격은 표 43 여백 계열과 같은 1/2 단위다 (`HwpParagraphLayout.ParagraphMetrics`).
         let spacingBefore = HwpUnits.points(fromHwpUnit: paraShape.paragraphSpacingTop) / 2
         let boxBottom = spacingBefore + last.origin.y + lineBoxHeight(of: last)
-        return max(0, frame.totalHeight - boxBottom)
+        return frame.totalHeight - boxBottom
     }
 
     /// 문단 위 간격 (pt) — 표 43 여백 계열과 같은 1/2 단위다. 컨테이너 문단의 CT 높이는 이

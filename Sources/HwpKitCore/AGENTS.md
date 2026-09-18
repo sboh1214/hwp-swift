@@ -50,8 +50,9 @@ CoreHwp.HwpFile
               자동 쪽 번호 (atno kind 0) 밴드는 논리 쪽 번호 치환 + 캐시 제외)
             쪽 번호 방출 (표 147/148 위치·모양·장식, 장식 없으면 줄표 필드(4번째
               WCHAR `unused`)가 0이 아닐 때만 "- N -", pageHide 0x20 억제 — #138;
-              영문 이름 "Page Number" 스타일의 글자 모양, 글자 크기 상자를 꼬리말 영역
-              바닥·머리말 영역 위에 붙이고 베이스라인은 바닥 − 글꼴 descent — #193)
+              영문 이름 "Page Number" 스타일의 글자 모양(없으면 함초롬돋움 10pt), 기본 크기
+              상자를 꼬리말 영역 바닥·머리말 영역 위(여백 0이면 아래·위 여백 가운데, 위로
+              제책이면 제본 뒤)에 붙이고 베이스라인은 바닥 − 조판 글꼴 descent — #193)
             HwpFootnoteLayout.place  # 각주 하단 배치 — 절대 캐시 모드는 본문 아래 자리에 한글 규칙으로 싣고 넘침은 줄 캐시 분할 지점에서 나눠 다음 쪽에 이어 싣는다 (#165)
             HwpPaintListBuilder → HwpPaintList
         └─ 문서/구역 끝: HwpFootnoteLayout.placeFlow  # 미주 (표 134 bits 8-9)
@@ -445,7 +446,10 @@ min = max 못박고 CT 슬롯을 복원해 상자를 타일했는데 (#178 PR #1
 글자로 잡고, 개체 자신은 `HwpObjectAnchorGeometry.inlineObjectOrigin`이 왼쪽·위쪽 여백만큼
 들인 자리다 — 페이지 경로(`appendInlineAnchoredTable`·`appendInlineAnchoredBlock`)와 컨테이너
 경로(`HwpParagraphObjectCollector.origin`)가 공유한다. 단 폭에 딸린 예약 폭을 다른 단으로
-다시 풀 때는 좌우 여백 합(`inlineObjectWidthMargin`)을 다시 더한다. 한글 12.30 실측: 30pt 표에
+다시 풀 때는 좌우 여백 합(`inlineObjectWidthMargin`)을 다시 더한다. 줄이 자리를 예약하지
+않은 앵커(한 축 0 — 예약 생략, delegate ascent 0)는 바깥 상자가 없으니 들이지 않고
+(`HwpPaginator.inlineObjectPosition`·`LineAnchor.reservesSpace`), 페이지 경로의 폭 클램프는
+개체 원점이 아니라 바깥 상자 원점에서 잰다(줄 시작의 단 폭 그림이 왼쪽 여백만큼 눌리지 않게). 한글 12.30 실측: 30pt 표에
 여백 왼 10·오 5·위 7·아래 3pt → 줄 캐시 `vertsize` 40pt, 표가 줄 상단 + 7·앞 글자 끝 + 10pt,
 뒤 글자 +15pt. noori 제목 표 `vertsize` 12858 = 12578 + 위·아래 140, 헌법주석 인용 표 세 개는
 좌우 56씩이라 나란한 두 표 사이가 1.12pt다(한글 PDF 잉크 간격 87.29 vs 87.33).
@@ -540,7 +544,8 @@ p2 두 쪽만 갈려 재기록했다).
 높이(위 캐시 하한과 CT 측정 셀의 `contentHeight`)가 이 범위를 쓴다. 측정
 (`HwpParagraphMeasurer.Result.trailingGap`)이 문단 높이 가운데 마지막 줄 상자 아래 몫을
 내고(캐시면 `spacedBottom − bottom` + 아래 간격, CT면 프레임 높이 − 위 간격 − 마지막 줄 상자
-바닥), 배치(`laidOutContents`)가 마지막 문단 rect 바닥에서 그만큼 뺀 자리를 내용 끝으로
+바닥 — 전진량이 상자보다 작은 비율 100% 미만·작은 고정값이면 음수라 상자 바닥까지 늘어난다),
+배치(`laidOutContents`)가 마지막 문단 rect 바닥에서 그만큼 뺀 자리를 내용 끝으로
 삼는다(중첩 표가 뒤에 붙으면 그 표 바닥). 글상자는 CT 측정만 쓰며, 문단 위 간격만큼 rect
 상단을 내린다(셀과 같은 규약). 한글 12.30 합성 실측(40pt 셀·글상자, 10pt 한 줄): 가운데
 정렬 상자 상단이 안쪽 위 + (안쪽 높이 − 10)/2 — 줄 간격 160·300·100%·고정 20pt·아래 간격

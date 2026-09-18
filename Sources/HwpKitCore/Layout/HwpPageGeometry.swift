@@ -13,6 +13,9 @@ public struct HwpPageGeometry: Sendable, Hashable {
     /// 단 정의 (`cold` 컨트롤)가 주어지면 콘텐츠 영역을 나눈 단 프레임,
     /// 없으면 `[contentFrame]`.
     public let columnFrames: [CGRect]
+    /// 위로 제책(표 131 제책 방법 2)일 때 위 여백 앞에 드는 제본 여백 (pt) — 그 밖에는 0.
+    /// 머리말 여백이 0인 쪽의 위 쪽 번호가 이 값 + 위 여백의 가운데에 놓인다 (#193).
+    var topGutter: CGFloat = 0
 
     public static func compute(
         pageDef: CoreHwp.HwpPageDef,
@@ -97,7 +100,8 @@ public struct HwpPageGeometry: Sendable, Hashable {
             contentFrame: contentFrame,
             headerFrame: headerFrame,
             footerFrame: footerFrame,
-            columnFrames: columnFrames
+            columnFrames: columnFrames,
+            topGutter: topGutter
         )
     }
 

@@ -17,8 +17,8 @@ extension HwpTableLayout {
         /// 측정이 라인 캐시 높이를 썼을 때 그 줄 상자 범위 (#160). CT 측정 문단은 nil.
         let cachedLineExtent: HwpParagraphLayout.CachedLineExtent?
         /// `frame.totalHeight` 가운데 마지막 줄 상자 아래 몫 — 그 줄의 줄 간격 여분과 문단
-        /// 아래 간격 (#193, `HwpParagraphMeasurer.Result.trailingGap`). 셀 내용 범위(행
-        /// 높이·세로 정렬)는 마지막 문단에서 이만큼을 뺀 자리에서 끝난다.
+        /// 아래 간격 (#193, `HwpParagraphMeasurer.Result.trailingGap` — 음수일 수 있다). 셀
+        /// 내용 범위(행 높이·세로 정렬)는 마지막 문단에서 이만큼을 뺀 자리에서 끝난다.
         let trailingGap: CGFloat
         let nestedTables: [PlacedNestedTable]
 

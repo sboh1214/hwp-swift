@@ -126,6 +126,95 @@ import XCTest
                 .to(beCloseTo(hostBlock.frame.minX + 215, within: 0.01))
         }
 
+        /// 표가 아닌 개체(도형·그림)의 페이지 경로 — 줄 시작의 개체가 왼쪽·위쪽 여백만큼 들어가고,
+        /// 단 폭 개체는 블록 **폭을 그대로** 지킨다 (PR 리뷰: 폭 클램프를 개체 원점으로 재면
+        /// 왼쪽 여백만큼 좁아져 그림 비트맵이 눌렸다 — 클램프 기준은 바깥 상자 원점이다).
+        func testInlineObjectIsInsetAndKeepsItsWidth() async throws {
+            let probe = try await Self.pictureBlock(width: 10000, margins: [0, 0, 0, 0])
+            let inset = try await Self.pictureBlock(width: 10000, margins: [1000, 500, 700, 300])
+            expect(inset.picture.minX).to(beCloseTo(probe.picture.minX + 10, within: 0.01))
+            expect(inset.picture.minY).to(beCloseTo(inset.host.minY + 7, within: 0.01))
+            expect(inset.picture.width).to(beCloseTo(100, within: 0.01))
+
+            let columnWide = try await Self.pictureBlock(
+                width: UInt32((probe.host.width * 100).rounded()), margins: [1000, 0, 0, 0]
+            )
+            expect(columnWide.picture.minX).to(beCloseTo(columnWide.host.minX + 10, within: 0.01))
+            expect(columnWide.picture.width).to(beCloseTo(probe.host.width, within: 0.01))
+        }
+
+        /// 줄이 자리를 예약하지 않은 개체(한 축 0 — 예약 생략)는 바깥 상자가 없어 들이지 않는다
+        /// (PR 리뷰: 들이면 예약 없는 개체만 베이스라인 아래·뒤 글자 위로 옮겨졌다).
+        func testUnreservedInlineObjectIsNotInset() async throws {
+            let plain = try await Self.shapeBlock(height: 0, margins: [0, 0, 0, 0])
+            let margined = try await Self.shapeBlock(height: 0, margins: [1000, 500, 700, 300])
+            expect(margined.minX).to(beCloseTo(plain.minX, within: 0.01))
+            expect(margined.minY).to(beCloseTo(plain.minY, within: 0.01))
+        }
+
+        /// 컨테이너 경로 — 표 셀 문단의 글자처럼 취급 그림도 바깥 여백만큼 들어간다
+        /// (`HwpParagraphObjectCollector.origin`, 페이지 경로와 같은 산식).
+        func testCellInlinePictureIsInsetByItsMargins() throws {
+            func pictureRect(margins: [CoreHwp.HWPUNIT16]) throws -> CGRect {
+                var paragraph = HwpSynthetic.paragraphWithInlineControl(prefix: "", suffix: "나")
+                var picture = HwpSynthetic.inlinePictureObject(
+                    width: 3000, height: 2000, binItemId: 1
+                )
+                picture.commonCtrlProperty.marginArray = margins
+                paragraph.ctrlHeaderArray = [.genShapeObject(picture)]
+                let table = HwpSynthetic.table(
+                    cellWidth: 20000, rowHeights: [6000], property: 0,
+                    cellParagraphs: [[[paragraph]]]
+                )
+                let result = HwpTableLayout(fontResolver: .testDeterministic).layout(
+                    table: table, availableWidth: 400, index: HwpIndex(from: CoreHwp.HwpFile())
+                )
+                guard case let .success(frame) = result else { throw LayoutFailure() }
+                return try XCTUnwrap(frame.rows[0].cells[0].images.first?.rect)
+            }
+            let plain = try pictureRect(margins: [0, 0, 0, 0])
+            let margined = try pictureRect(margins: [1000, 500, 700, 300])
+            expect(margined.minX).to(beCloseTo(plain.minX + 10, within: 0.01))
+            expect(margined.minY).to(beCloseTo(plain.minY + 7, within: 0.01))
+            expect(margined.width).to(beCloseTo(30, within: 0.01))
+        }
+
+        private struct LayoutFailure: Error {}
+
+        /// 줄 시작에 글자처럼 취급 개체 하나를 둔 문단 — (개체 블록, 문단 블록) 프레임.
+        private static func pictureBlock(
+            width: UInt32, margins: [CoreHwp.HWPUNIT16]
+        ) async throws -> (picture: CGRect, host: CGRect) {
+            var paragraph = HwpSynthetic.paragraphWithInlineControl(prefix: "", suffix: "")
+            var object = HwpSynthetic.inlineShapeObject(width: width, height: 2000)
+            object.commonCtrlProperty.marginArray = margins
+            paragraph.ctrlHeaderArray = [.genShapeObject(object)]
+            let blocks = try await body(of: [paragraph])
+            let placed = try XCTUnwrap(blocks.first { $0.kind != .text })
+            let host = try XCTUnwrap(blocks.last { $0.kind == .text })
+            return (placed.frame, host.frame)
+        }
+
+        /// '가[개체]나' 문단의 도형 블록 프레임 (폭 30pt, 높이 `height` HWPUNIT).
+        private static func shapeBlock(
+            height: UInt32, margins: [CoreHwp.HWPUNIT16]
+        ) async throws -> CGRect {
+            var paragraph = HwpSynthetic.paragraphWithInlineControl(prefix: "가", suffix: "나")
+            var object = HwpSynthetic.inlineShapeObject(width: 3000, height: height)
+            object.commonCtrlProperty.marginArray = margins
+            paragraph.ctrlHeaderArray = [.genShapeObject(object)]
+            let blocks = try await body(of: [paragraph])
+            return try XCTUnwrap(blocks.first { $0.kind != .text }?.frame)
+        }
+
+        private static func body(
+            of paragraphs: [CoreHwp.HwpParagraph]
+        ) async throws -> [AnyHwpBlock] {
+            let paginator = Support.paginator(bodyParagraphs: paragraphs)
+            let rendered = try await paginator.page(at: 0)
+            return try XCTUnwrap(rendered).blocks.filter { $0.role == .body }
+        }
+
         private static func resolver(columnWidth: CGFloat) -> HwpObjectSizeResolver {
             HwpObjectSizeResolver(
                 paperSize: CGSize(width: 595, height: 842),

@@ -85,6 +85,29 @@ import XCTest
                 .to(beCloseTo(1.41, within: 0.01))
         }
 
+        /// 줄 전진량이 상자보다 작으면(비율 60% → 6pt < 상자 10pt) 내용 범위는 전진량 끝이
+        /// 아니라 상자 바닥까지다 — 캐시 없는 CT 셀·글상자도 한글이 저장한 캐시(`vertsize`
+        /// 1000·`spacing` −400)로 잰 셀과 같은 답이어야 한다 (PR 리뷰: 4pt 갈렸다).
+        func testLineAdvanceShorterThanTheBoxStillEndsAtTheBoxBottom() throws {
+            let uncached = try cellTable(
+                alignment: .bottom, paragraphs: [HwpSynthetic.textParagraph("가")],
+                height: 4000, lineSpacing: 60
+            )
+            let uncachedRect = try XCTUnwrap(uncached.rows[0].cells[0].paragraphs.first?.rect)
+            expect(uncachedRect.minY + 10).to(beCloseTo(40 - 1.41, within: 0.01))
+
+            let floor = try cellTable(
+                alignment: .top, paragraphs: [HwpSynthetic.textParagraph("가")],
+                height: 282, lineSpacing: 60
+            )
+            expect(floor.rows[0].rowFrame.height).to(beCloseTo(12.82, within: 0.01))
+
+            let box = try textboxParagraphRect(alignment: .bottom, lineSpacing: 60)
+            expect(box.minY + 10).to(beCloseTo(40 - 2.83, within: 0.01))
+            let centered = try textboxParagraphRect(alignment: .center, lineSpacing: 60)
+            expect(centered.minY).to(beCloseTo(15.00, within: 0.01))
+        }
+
         // MARK: 글상자
 
         /// 글상자도 같은 범위다 — 40pt 상자·안쪽 여백 2.83pt에서 10pt 한 줄의 상자 상단이 가운데
@@ -160,7 +183,8 @@ import XCTest
             paragraphs: [CoreHwp.HwpParagraph],
             height: UInt32,
             spacingTop: Int32 = 0,
-            spacingBottom: Int32 = 0
+            spacingBottom: Int32 = 0,
+            lineSpacing: Int32 = 160
         ) throws -> HwpTableFrame {
             var cell = HwpSynthetic.tableCell(
                 row: 0, column: 0, width: 20000, height: height, paragraphs: paragraphs
@@ -169,7 +193,9 @@ import XCTest
             let table = CoreHwp.HwpTable(property: tableProperty(), cellArray: [cell])
             let result = HwpTableLayout(fontResolver: .testDeterministic).layout(
                 table: table, availableWidth: 400,
-                index: index(spacingTop: spacingTop, spacingBottom: spacingBottom)
+                index: index(
+                    spacingTop: spacingTop, spacingBottom: spacingBottom, lineSpacing: lineSpacing
+                )
             )
             guard case let .success(frame) = result else {
                 XCTFail("expected table layout success")
@@ -181,7 +207,8 @@ import XCTest
         /// 200 × 40pt 글상자, 안쪽 여백 283 HWPUNIT, CT로 재는 10pt 한 줄.
         func textboxParagraphRect(
             alignment: CoreHwp.HwpListHeaderVerticalAlignment,
-            spacingTop: Int32 = 0
+            spacingTop: Int32 = 0,
+            lineSpacing: Int32 = 160
         ) throws -> CGRect {
             var property = Data()
             withUnsafeBytes(of: Int32(1).littleEndian) { property.append(contentsOf: $0) }
@@ -210,7 +237,8 @@ import XCTest
                 shapeComponentArray: [component], ctrlDataRecords: [], unknownChildren: []
             )
             let frame = try XCTUnwrap(HwpTextboxLayout(fontResolver: .testDeterministic).layout(
-                textbox: textbox, width: 200, index: index(spacingTop: spacingTop)
+                textbox: textbox, width: 200,
+                index: index(spacingTop: spacingTop, lineSpacing: lineSpacing)
             ))
             expect(frame.outerFrame.height).to(beCloseTo(40, within: 0.01))
             return try XCTUnwrap(frame.paragraphs.first?.rect)
@@ -227,8 +255,11 @@ import XCTest
             )
         }
 
-        /// 줄 간격 160% — 문단 위/아래 간격은 표 43 여백 계열의 1/2 단위 (2000 → 10pt).
-        func index(spacingTop: Int32 = 0, spacingBottom: Int32 = 0) -> HwpIndex {
+        /// 줄 간격 비율(기본 160%) — 문단 위/아래 간격은 표 43 여백 계열의 1/2 단위
+        /// (2000 → 10pt).
+        func index(
+            spacingTop: Int32 = 0, spacingBottom: Int32 = 0, lineSpacing: Int32 = 160
+        ) -> HwpIndex {
             HwpIndex(
                 charShapes: [:],
                 paraShapes: [0: CoreHwp.HwpParaShape(
@@ -236,8 +267,9 @@ import XCTest
                     marginLeft: 0,
                     paragraphSpacingTop: spacingTop,
                     paragraphSpacingBottom: spacingBottom,
+                    lineSpacing: lineSpacing,
                     tabDefId: 0,
-                    lineSpacing2: 160
+                    lineSpacing2: UInt32(lineSpacing)
                 )],
                 borderFills: [:],
                 tabDefs: [:],

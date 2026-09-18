@@ -413,8 +413,10 @@ extension HwpPageChromeBuilder {
     ///   여백이 0이면 상자 바닥이 아래 여백의 가운데다(아래 여백 42.52·30·60pt에서 813.72·
     ///   819.96·804.96).
     /// - 위 위치: 상자 위 = 머리말 영역 위(위 여백), 베이스라인 = 그 위 + 글자 크기 − descent
-    ///   (함초롬돋움 30pt 79.80 = 56.68 + 30 − 6.9, Courier New 77.76). 머리말 여백이 0이면
-    ///   상자 위가 위 여백의 가운데다(51.36 = 28.34 + 23.1).
+    ///   (함초롬돋움 30pt 79.80 = 56.68 + 30 − 6.9, Courier New 77.76). 글자 크기는 상대 크기
+    ///   적용 **전** 기본 크기이고 descent만 조판 글꼴 것이다(20pt × 200% → 67.44 = 56.68 + 20 −
+    ///   9.2, 40pt × 50% → 92.16). 머리말 여백이 0이면 상자 위가 위 여백의 가운데다(51.36 =
+    ///   28.34 + 23.1) — 위로 제책이면 제본 여백 뒤의 위 여백 가운데다(제본 85.04pt → 136.44).
     ///
     /// 블록 프레임의 위는 그 베이스라인에서 렌더러의 베이스라인 앵커(`HwpDrawnTextLayout.
     /// baselineAnchor`)를 뺀 자리다 — 렌더러는 첫 줄 상자 상단을 블록 상단에 핀한다.
@@ -432,8 +434,9 @@ extension HwpPageChromeBuilder {
             (geometry.footerFrame?.maxY ?? geometry.pageSize.height - geometry.margins.bottom / 2)
                 - descent
         case .top:
-            (geometry.headerFrame?.minY ?? geometry.margins.top / 2)
-                + glyphSize(of: line) - descent
+            (geometry.headerFrame?.minY
+                ?? geometry.topGutter + (geometry.margins.top - geometry.topGutter) / 2)
+                + HwpDrawnTextLayout.lineMetrics(of: line).textBoxHeight - descent
         }
         let boxHeight = HwpDrawnTextLayout.lineMetrics(of: line).boxHeight
         return CGRect(
@@ -442,18 +445,6 @@ extension HwpPageChromeBuilder {
             width: contentFrame.width,
             height: max(1, boxHeight)
         )
-    }
-
-    /// 줄에서 가장 큰 조판 글꼴 크기 — 쪽 번호 상자(글자 크기 높이)의 높이다.
-    private static func glyphSize(of line: CTLine) -> CGFloat {
-        let runs = CTLineGetGlyphRuns(line) as? [CTRun] ?? []
-        return runs.reduce(CGFloat(0)) { size, run in
-            let attributes = CTRunGetAttributes(run) as NSDictionary
-            guard let value = attributes[kCTFontAttributeName],
-                  CFGetTypeID(value as CFTypeRef) == CTFontGetTypeID()
-            else { return size }
-            return max(size, CTFontGetSize(value as! CTFont)) // swiftlint:disable:this force_cast
-        }
     }
 
     /// 쪽 번호 스타일의 글자 모양으로 쪽 번호 문자열을 만든다 — 본문 글자와 같은 경로를
@@ -480,6 +471,11 @@ extension HwpPageChromeBuilder {
                 kCTForegroundColorAttributeName as NSAttributedString.Key:
                     CGColor(gray: 0, alpha: 1),
             ])
+            // 기본 모양도 보통 빈칸이 0.5em이다 — 한글 실측: 폴백 "- 1 -"의 빈칸 전진량
+            // 5.04·4.92pt(글꼴 고유 3.0pt가 아니다), 스타일 경로와 같은 폭 (PR 리뷰).
+            HwpTextRunBuilder.applyFixedSpaceWidth(
+                to: output, includesOrdinarySpace: !index.isCompatibilityDocument
+            )
         }
         var alignmentValue = alignment
         let style = withUnsafeMutablePointer(to: &alignmentValue) { pointer in

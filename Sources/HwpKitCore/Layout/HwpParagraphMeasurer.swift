@@ -66,7 +66,8 @@ struct HwpParagraphMeasurer {
         let cachedLineExtent: HwpParagraphLayout.CachedLineExtent?
         /// `frame.totalHeight` 가운데 마지막 줄 **상자** 아래에 놓인 몫 (pt) — 그 줄의 줄
         /// 간격 여분과 문단 아래 간격이다. 컨테이너(표 셀·글상자)의 내용 범위는 마지막 줄
-        /// 상자 아래에서 끝난다 (#193, `HwpContainerContentExtent`).
+        /// 상자 아래에서 끝난다 (#193, `HwpContainerContentExtent`). 줄 전진량이 상자보다
+        /// 작으면(비율 100% 미만 등) 음수다 — 상자가 프레임 아래로 나간다.
         let trailingGap: CGFloat
     }
 
