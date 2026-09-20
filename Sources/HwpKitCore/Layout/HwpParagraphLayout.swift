@@ -84,8 +84,8 @@ public struct HwpParagraphLayout {
     struct CachedLineExtent: Equatable {
         /// 첫 줄의 세로 위치
         let top: Int
-        /// 마지막 줄 **상자**의 아래 — 줄 간격을 뺀 `lineLocation + lineHeight`의 최댓값.
-        /// 표 셀의 하한은 여기까지다 (마지막 줄의 줄 간격은 셀 높이에 들지 않는다).
+        /// **마지막 세그먼트** 줄 상자의 아래 (`lineLocation + lineHeight`, 줄 간격 제외) — 셀
+        /// 하한·세로 정렬의 끝이고, 겹친 줄에서도 최댓값이 아니다 (`HwpContainerContentExtent`).
         let bottom: Int
         /// 줄 간격까지 더한 전진량의 끝 (`HwpAbsoluteCachePlacer.lineBottom`의 최댓값).
         let spacedBottom: Int
@@ -110,7 +110,7 @@ public struct HwpParagraphLayout {
             previous = segment.lineLocation
             // 미신뢰 캐시의 Int32 덧셈 트랩 방지 — Int로 넓혀 누적한다.
             top = min(top, Int(segment.lineLocation))
-            bottom = max(bottom, Int(segment.lineLocation) + Int(segment.lineHeight))
+            bottom = Int(segment.lineLocation) + Int(segment.lineHeight) // 증가 가드 → 마지막 줄
             spacedBottom = max(spacedBottom, HwpAbsoluteCachePlacer.lineBottom(of: segment))
         }
         guard spacedBottom > top else { return nil }

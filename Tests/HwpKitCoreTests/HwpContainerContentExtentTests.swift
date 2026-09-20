@@ -108,6 +108,39 @@ import XCTest
             expect(centered.minY).to(beCloseTo(15.00, within: 0.01))
         }
 
+        /// 겹친 줄(고정 줄 간격 16pt < 첫 줄 상자 30pt)에서도 기준은 **마지막 줄 상자**다 —
+        /// 앞 줄이 더 아래까지 내려가도 한글은 그 줄을 셀 밖으로 흘려 보낸다. 캐시 경로와 CT
+        /// 경로가 같은 자리를 내야 한다 (#193 리뷰, 한컴오피스 한글 12.30 실측 2026-09-20:
+        /// 30pt + 10pt 두 줄·고정 16pt 셀에서 아래 정렬 첫 줄 베이스라인이 셀 위 + 38.16(셀
+        /// 아래로 4pt 넘침)·가운데 정렬 32.52, 저작 282 행이 28.80pt. 줄 상자 최댓값을 쓰면
+        /// 34.16·30.52·32.82로 4pt 어긋난다).
+        func testOverlappingLinesEndAtTheLastLineBoxInBothPaths() throws {
+            for cached in [false, true] {
+                let paragraph = try Self.overlappingParagraph(cached: cached)
+                let bottom = try cellTable(
+                    alignment: .bottom, paragraphs: [paragraph], height: 4000,
+                    index: Self.overlappingIndex()
+                )
+                let bottomRect = try XCTUnwrap(bottom.rows[0].cells[0].paragraphs.first?.rect)
+                // 마지막 줄(10pt) 상자 아래가 안쪽 아래에 닿고, 첫 줄(30pt)은 4pt 넘친다.
+                expect(bottomRect.minY + 16 + 10).to(beCloseTo(40 - 1.41, within: 0.01))
+                expect(bottomRect.minY + 25.5).to(beCloseTo(38.09, within: 0.01))
+
+                let center = try cellTable(
+                    alignment: .center, paragraphs: [paragraph], height: 4000,
+                    index: Self.overlappingIndex()
+                )
+                let centerRect = try XCTUnwrap(center.rows[0].cells[0].paragraphs.first?.rect)
+                expect(centerRect.minY).to(beCloseTo(1.41 + (37.18 - 26) / 2, within: 0.01))
+
+                let floor = try cellTable(
+                    alignment: .top, paragraphs: [paragraph], height: 282,
+                    index: Self.overlappingIndex()
+                )
+                expect(floor.rows[0].rowFrame.height).to(beCloseTo(28.82, within: 0.01))
+            }
+        }
+
         // MARK: 글상자
 
         /// 글상자도 같은 범위다 — 40pt 상자·안쪽 여백 2.83pt에서 10pt 한 줄의 상자 상단이 가운데
@@ -184,7 +217,8 @@ import XCTest
             height: UInt32,
             spacingTop: Int32 = 0,
             spacingBottom: Int32 = 0,
-            lineSpacing: Int32 = 160
+            lineSpacing: Int32 = 160,
+            index: HwpIndex? = nil
         ) throws -> HwpTableFrame {
             var cell = HwpSynthetic.tableCell(
                 row: 0, column: 0, width: 20000, height: height, paragraphs: paragraphs
@@ -193,7 +227,7 @@ import XCTest
             let table = CoreHwp.HwpTable(property: tableProperty(), cellArray: [cell])
             let result = HwpTableLayout(fontResolver: .testDeterministic).layout(
                 table: table, availableWidth: 400,
-                index: index(
+                index: index ?? self.index(
                     spacingTop: spacingTop, spacingBottom: spacingBottom, lineSpacing: lineSpacing
                 )
             )
@@ -252,6 +286,64 @@ import XCTest
                 rowSize: [1, 0], borderFillId: 0,
                 validZoneInfoSize: nil, zonePropertyArray: nil,
                 rawPayload: Data(), rawTrailing: Data()
+            )
+        }
+
+        /// 30pt 한 줄 + 10pt 한 줄(한 줄 끝으로 나눔) 문단 — `cached`면 한글이 저장하는 꼴의 줄
+        /// 캐시(상자 3000·1000, 줄 간격 −1400·600)를 함께 단다.
+        static func overlappingParagraph(cached: Bool) throws -> CoreHwp.HwpParagraph {
+            var paragraph = CoreHwp.HwpParagraph()
+            var text = CoreHwp.HwpParaText()
+            text.charArray = [
+                CoreHwp.HwpChar(type: .char, value: 0xAC00),
+                CoreHwp.HwpChar(type: .char, value: 10),
+                CoreHwp.HwpChar(type: .char, value: 0xB098),
+            ]
+            paragraph.paraText = text
+            var shapes = CoreHwp.HwpParaCharShape()
+            shapes.startingIndex = [0, 2]
+            shapes.shapeId = [0, 1]
+            paragraph.paraCharShape = shapes
+            paragraph.paraLineSeg.paraLineSegInternalArray = []
+            guard cached else { return paragraph }
+            var payload = Data()
+            for (location, height, spacing) in [
+                (Int32(0), Int32(3000), Int32(-1400)), (Int32(1600), Int32(1000), Int32(600)),
+            ] {
+                withUnsafeBytes(of: UInt32(0).littleEndian) { payload.append(contentsOf: $0) }
+                withUnsafeBytes(of: location.littleEndian) { payload.append(contentsOf: $0) }
+                withUnsafeBytes(of: height.littleEndian) { payload.append(contentsOf: $0) }
+                withUnsafeBytes(of: height.littleEndian) { payload.append(contentsOf: $0) }
+                withUnsafeBytes(of: (height * 85 / 100).littleEndian) {
+                    payload.append(contentsOf: $0)
+                }
+                withUnsafeBytes(of: spacing.littleEndian) { payload.append(contentsOf: $0) }
+                withUnsafeBytes(of: Int32(0).littleEndian) { payload.append(contentsOf: $0) }
+                withUnsafeBytes(of: Int32(19716).littleEndian) { payload.append(contentsOf: $0) }
+                withUnsafeBytes(of: UInt32(393_216).littleEndian) { payload.append(contentsOf: $0) }
+            }
+            paragraph.paraLineSeg = try CoreHwp.HwpParaLineSeg.load(payload)
+            return paragraph
+        }
+
+        /// 글자 모양 0 = 30pt·1 = 10pt, 문단 모양 = 고정 줄 간격 16pt (표 46 종류 1).
+        static func overlappingIndex() -> HwpIndex {
+            var paraShape = CoreHwp.HwpParaShape(
+                property1: 1, marginLeft: 0, lineSpacing: 3200, tabDefId: 0, lineSpacing2: 3200
+            )
+            paraShape.property3 = 1
+            func charShape(_ size: Int32) -> CoreHwp.HwpCharShape {
+                CoreHwp.HwpCharShape(
+                    faceId: [0, 0, 0, 0, 0, 0, 0], faceSpacing: [0, 0, 0, 0, 0, 0, 0],
+                    baseSize: size, faceColor: CoreHwp.HwpColor()
+                )
+            }
+            return HwpIndex(
+                charShapes: [0: charShape(3000), 1: charShape(1000)],
+                paraShapes: [0: paraShape],
+                borderFills: [:], tabDefs: [:], styles: [:], bullets: [:], numberings: [:],
+                binData: [:], faceNamesKorean: [:], faceNamesEnglish: [:], faceNamesChinese: [:],
+                faceNamesJapanese: [:], faceNamesEtc: [:], faceNamesSymbol: [:], faceNamesUser: [:]
             )
         }
 

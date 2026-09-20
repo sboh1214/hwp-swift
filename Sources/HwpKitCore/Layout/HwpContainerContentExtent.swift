@@ -27,9 +27,13 @@ enum HwpContainerContentExtent {
     /// (`HwpLineFrame.origin.y`) + 상자 높이다. 줄이 없으면(빈 문자열) 0.
     ///
     /// **음수일 수 있다** — 줄 전진량이 상자보다 작으면(비율 100% 미만·글자보다 작은 고정값)
-    /// 상자가 프레임 아래로 나가므로, 내용 범위는 그 상자 바닥까지 늘어나야 한다. 캐시 경로는
-    /// 한글이 저장한 줄 상자(`CachedLineExtent.bottom`)가 이미 그 바닥을 담아 같은 답이다
+    /// 상자가 프레임 아래로 나가므로, 내용 범위는 그 상자 바닥까지 늘어나야 한다. 캐시 경로도
+    /// 같은 답을 낸다 — `CachedLineExtent.bottom`이 마지막 세그먼트의 줄 상자 아래다
     /// (PR 리뷰: 60% 줄 간격 셀·글상자가 캐시 유무에 따라 4pt 갈렸다).
+    ///
+    /// **기준은 마지막 줄뿐이다** — 겹친 줄(고정 줄 간격이 앞 줄 상자보다 작음)에서 앞 줄이 더
+    /// 아래까지 내려가도 한글은 그 줄을 컨테이너 밖으로 흘려 보낸다 (#193 리뷰, 한글 12.30 실측:
+    /// 30pt + 10pt 두 줄·고정 16pt 셀의 아래 정렬 30pt 줄이 셀 아래로 4pt 넘는다).
     static func trailingGap(
         of frame: HwpParagraphFrame,
         paraShape: CoreHwp.HwpParaShape
@@ -58,7 +62,8 @@ enum HwpContainerContentExtent {
 }
 
 extension HwpParagraphLayout.CachedLineExtent {
-    /// 마지막 줄의 줄 간격 여분 (pt) — 전진량 끝에서 줄 상자 아래까지.
+    /// 마지막 줄의 줄 간격 여분 (pt) — 전진량 끝(`spacedBottom`)에서 그 줄 상자 아래
+    /// (`bottom`)까지. 앞 줄이 더 아래로 내려가는 겹친 줄에서도 기준은 마지막 줄이다 (#193).
     var trailingLineSpacing: CGFloat {
         HwpUnits.points(fromHwpUnit: Int32(clamping: spacedBottom - bottom))
     }
