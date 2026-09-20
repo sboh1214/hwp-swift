@@ -182,7 +182,8 @@ struct HwpFragmentRemainder {
                     length: line.attributedRange.length
                 ),
                 inlineAnchors: line.inlineAnchors,
-                boxHeight: line.boxHeight
+                boxHeight: line.boxHeight,
+                objectBaselineRatio: line.objectBaselineRatio
             )
         }
         advances = HwpFragmentLineAdvances(lines: lines, textHeight: textHeight)

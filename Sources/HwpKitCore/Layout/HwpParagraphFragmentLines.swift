@@ -36,7 +36,8 @@ extension HwpParagraphLayout {
                     length: line.attributedRange.length
                 ),
                 inlineAnchors: line.inlineAnchors,
-                boxHeight: line.boxHeight
+                boxHeight: line.boxHeight,
+                objectBaselineRatio: line.objectBaselineRatio
             )
         }
     }
@@ -94,7 +95,8 @@ extension HwpParagraphLayout {
             baseline: metrics.baselineAnchor,
             attributedRange: NSRange(location: 0, length: attributedString.length),
             inlineAnchors: HwpParagraphLayout().inlineAnchors(in: overflow.line),
-            boxHeight: metrics.boxHeight
+            boxHeight: metrics.boxHeight,
+            objectBaselineRatio: metrics.inlineObjectBaselineRatio
         )
     }
 }

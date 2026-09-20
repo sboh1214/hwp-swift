@@ -200,6 +200,15 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   취소선을 글꼴 지표로 놓는 규칙(#187)의 실물 근거이고, 같은 세션의 PDF 내보내기 좌표가
   `FixtureDecorationLineRenderTests+Compat`의 오라클이다. 두 글꼴이 결정론 resolver의
   글꼴과 같아 어느 기기에서든 같은 값으로 핀한다. HWPX 쌍은 `HwpxFixtures/compat-decorations`.
+- `inline-object-baseline`: 함초롬바탕 40pt 본문에 줄 상자보다 **작은** 글자처럼 취급
+  그림(4~50pt 7단)·1칸 표를 바깥 여백·상대 크기 50%·고정 줄 간격·10pt 줄·한 줄 세 그림·
+  자리 차지 표의 셀 안 조건으로 실은 합성 HWPX를 Hancom Office HWP for macOS 12.30.0 build
+  6446으로 2026-09-21에 열어 `.hwp`·`.hwpx`로 저장. 글자처럼 취급 개체의 세로 자리(#195)의
+  실물 근거다 — 한글은 개체의 바깥 상자(개체 + 바깥 여백)를 그 높이의 글자로 보고 상단에서
+  0.85 × 높이 내려간 자리를 줄 베이스라인에 맞춘다(상자를 정한 개체는 줄 상단, 작은 개체는
+  베이스라인 − 0.85 × 높이). 같은 세션의 PDF 내보내기 좌표(README의 표)를
+  `HwpKitTests/FixtureInlineObjectBaselineTests`가 핀한다. HWPX 쌍은
+  `HwpxFixtures/inline-object-baseline`.
 - `track-changes-native`: **한글 문서**(대상 프로그램 0)에 변경 추적 삽입·삭제 표식과
   일반 밑줄·취소선을 같은 줄에 실은 합성 HWPX(`track-changes`의 HWPX 변환본 기반)를 같은
   앱으로 2026-09-15에 열어 `.hwp`로 저장. 코퍼스의 유일한 변경 추적 실물이 MS 워드 호환

@@ -215,7 +215,8 @@ extension HwpFootnoteLayout {
                 baseline: line.baseline,
                 attributedRange: NSRange(location: location, length: max(0, end - location)),
                 inlineAnchors: clipped ? [] : line.inlineAnchors,
-                boxHeight: line.boxHeight
+                boxHeight: line.boxHeight,
+                objectBaselineRatio: line.objectBaselineRatio
             )
         }
     }

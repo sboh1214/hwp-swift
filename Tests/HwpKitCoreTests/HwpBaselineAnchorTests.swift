@@ -271,8 +271,8 @@ import XCTest
                   let anchor = frame.lines[1].inlineAnchors.first
             else { return }
             let objectTop = HwpObjectAnchorGeometry.inlineAnchorOrigin(
-                paragraphOrigin: CGPoint(x: 0, y: blockTop), lineBaseline: frame.lines[1].baseline,
-                lineOrigin: frame.lines[1].origin, xOffset: anchor.xOffset, ascent: anchor.ascent
+                paragraphOrigin: CGPoint(x: 0, y: blockTop), line: frame.lines[1],
+                anchor: anchor
             ).y
             let objectBottom = objectTop + anchor.ascent
             let baseline = lines[1].baselineOrigin.y

@@ -169,10 +169,13 @@ import XCTest
         // (#187, 구역 1 + MS 워드 호환 장식선 11문단)·`track-changes-native`(#187, 구역 1 +
         // 변경 추적 5문단) 추가로 문단 18·대조 36 증가 (컨테이너는 그대로다) — 공유 코어
         // 대조 건너뜀도 1 늘었다 (`compat-decorations`의 "Agpy under" 20pt가 120pt에서
-        // slight-overflow 한 줄, 실측 7).
-        private static let expectedFixtureVisited = 268
-        private static let expectedFixtureMeasured = 522
-        private static let expectedFixtureContainers = 69
+        // slight-overflow 한 줄, 실측 7), 2026-09-21 `inline-object-baseline`(#195, 구역 1 +
+        // 글자처럼 취급 그림·표 18문단 + 셀 4문단) 추가로 문단 23·대조 42·컨테이너 4 증가 —
+        // 공유 코어 대조 건너뜀도 2 늘었다 (`C1` 한 줄 세 그림·`M2 15-15` 바깥 50pt 상자가
+        // 120pt에서 slight-overflow 한 줄, 실측 9).
+        private static let expectedFixtureVisited = 291
+        private static let expectedFixtureMeasured = 564
+        private static let expectedFixtureContainers = 73
         private static let minimumFixtureMultiLine = 60
         private static let maximumFixtureSharedCoreSkips = 7
         private static let expectedLegacyVisited = 14659

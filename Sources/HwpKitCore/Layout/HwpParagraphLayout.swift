@@ -43,16 +43,25 @@ public struct HwpLineFrame: Sendable, Hashable {
     /// `baseline`에서 역산할 수 없어 따로 든다. 컨테이너 내용 범위
     /// (`HwpContainerContentExtent`)가 마지막 줄 상자 아래를 이것으로 잰다.
     public let boxHeight: CGFloat
+    /// 이 줄의 글자처럼 취급 개체 **바깥 상자**가 베이스라인에 맞추는 자리의 비율 — 바깥 상자
+    /// 상단에서 그 자리까지가 상자 높이 × 이 값이다 (`HwpObjectAnchorGeometry.inlineAnchorOrigin`,
+    /// #195). 한글 문서는 글자 상자와 같은 `HwpRenderTuning.Text.baselineAnchorRatio`(0.85),
+    /// MS 워드 호환 문서는 1(바깥 상자 바닥이 베이스라인) —
+    /// `HwpDrawnTextLayout.LineMetrics.inlineObjectBaselineRatio`. `boxHeight`처럼 문서 모델에
+    /// 딸린 값이라 `baseline`에서 역산할 수 없어 따로 든다.
+    public let objectBaselineRatio: CGFloat
 
     /// `boxHeight`를 주지 않으면 한글 문서의 규칙(`baseline` ÷ `baselineAnchorRatio`)으로
     /// 되푼다 — 줄 프레임을 직접 만드는 호출자(각주·표 조각의 복사)는 원본 값을 넘긴다.
+    /// `objectBaselineRatio`도 같다 — 주지 않으면 한글 문서의 비율이다.
     public init(
         origin: CGPoint,
         width: CGFloat,
         baseline: CGFloat,
         attributedRange: NSRange,
         inlineAnchors: [HwpInlineAnchor] = [],
-        boxHeight: CGFloat? = nil
+        boxHeight: CGFloat? = nil,
+        objectBaselineRatio: CGFloat = HwpRenderTuning.Text.baselineAnchorRatio
     ) {
         self.origin = origin
         self.width = width
@@ -60,6 +69,7 @@ public struct HwpLineFrame: Sendable, Hashable {
         self.attributedRange = attributedRange
         self.inlineAnchors = inlineAnchors
         self.boxHeight = boxHeight ?? max(0, baseline) / HwpRenderTuning.Text.baselineAnchorRatio
+        self.objectBaselineRatio = objectBaselineRatio
     }
 }
 
@@ -267,7 +277,8 @@ public struct HwpParagraphLayout {
                 baseline: metrics.baselineAnchor,
                 attributedRange: NSRange(location: 0, length: attributedString.length),
                 inlineAnchors: inlineAnchors(in: overflow.line),
-                boxHeight: metrics.boxHeight
+                boxHeight: metrics.boxHeight,
+                objectBaselineRatio: metrics.inlineObjectBaselineRatio
             )
             return HwpParagraphFrame(totalHeight: max(1, totalHeight), lines: [lineFrame])
         }
@@ -343,7 +354,8 @@ private extension HwpParagraphLayout {
                         length: Int(range.length)
                     ),
                     inlineAnchors: inlineAnchors(in: line),
-                    boxHeight: metrics.boxHeight
+                    boxHeight: metrics.boxHeight,
+                    objectBaselineRatio: metrics.inlineObjectBaselineRatio
                 )
             )
             totalLineHeight += advances[index]

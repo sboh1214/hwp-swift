@@ -389,11 +389,7 @@ struct HwpParagraphObjectCollector {
             for anchor in line.inlineAnchors where anchor.controlIndex == controlIndex {
                 return LineAnchor(
                     origin: HwpObjectAnchorGeometry.inlineAnchorOrigin(
-                        paragraphOrigin: paragraphRect.origin,
-                        lineBaseline: line.baseline,
-                        lineOrigin: line.origin,
-                        xOffset: anchor.xOffset,
-                        ascent: anchor.ascent
+                        paragraphOrigin: paragraphRect.origin, line: line, anchor: anchor
                     ),
                     reserved: CGSize(width: anchor.width, height: anchor.ascent)
                 )

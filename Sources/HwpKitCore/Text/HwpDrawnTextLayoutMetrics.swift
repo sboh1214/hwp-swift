@@ -73,6 +73,19 @@ extension HwpDrawnTextLayout {
             }
             return max(msWordTextBox.baseline, delegateAscent)
         }
+
+        /// 글자처럼 취급 개체의 **바깥 상자**(개체 + 바깥 여백)가 줄 베이스라인에 맞추는 자리 —
+        /// 바깥 상자 상단에서 그 자리까지가 상자 높이의 이 비율이다 (`HwpLineFrame.objectBaselineRatio`,
+        /// `HwpObjectAnchorGeometry.inlineAnchorOrigin`). 한글 문서는 글자 상자와 같은
+        /// `HwpRenderTuning.Text.baselineAnchorRatio`(0.85) — 개체 바깥 상자를 그 높이의 글자
+        /// 하나로 보고 베이스라인을 맞춘다. MS 워드 호환 문서는 1 — 바깥 상자 바닥이 베이스라인에
+        /// 놓인다 (`hh:adjustBaselineOfObjectToBottom`). 한글 12.30 실측 (2026-09-21, #195): 함초롬바탕
+        /// 40pt 줄에 4·8·20·30·36·40·50pt 그림을 글자처럼 넣으면 한글 문서는 그림 상단 =
+        /// 베이스라인 − 0.85 × 높이(바깥 여백 위 7·아래 3pt를 주면 바깥 30pt 상자의 0.85), MS 워드
+        /// 호환 문서는 베이스라인 − 높이(여백은 바깥 상자 바닥 기준)였다 — 둘 다 0.12pt 안.
+        var inlineObjectBaselineRatio: CGFloat {
+            msWordTextBox == nil ? HwpRenderTuning.Text.baselineAnchorRatio : 1
+        }
     }
 
     /// 이 줄의 상자 지표 — 갈래마다 다시 걷지 않게 한 번만 걷는다. `endsParagraph`는 이
