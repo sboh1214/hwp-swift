@@ -272,6 +272,9 @@ extension HwpHitTester {
     static func verticalInkReach(
         of attributed: NSAttributedString
     ) -> (above: CGFloat, below: CGFloat) {
+        if let reach = msWordVerticalInkReach(of: attributed) {
+            return reach
+        }
         var maxAscent: CGFloat = 0
         var maxDescent: CGFloat = 0
         var minFontSize = CGFloat.infinity
@@ -302,6 +305,58 @@ extension HwpHitTester {
             above: max(0, maxAscent - box * anchor),
             below: max(0, maxDescent - box * (1 - anchor))
         )
+    }
+
+    /// MS 워드 호환 문서(#194)의 `verticalInkReach` — 줄 상자가 글꼴 줄 상자
+    /// (`HwpMsWordLineBox`)라 앵커 몫도 글꼴마다 다르다. 줄 상자는 높이와 베이스라인을
+    /// **서로 다른 run**에서 고르므로(축별 최댓값) run 자신의 상자로 재면 안 된다:
+    /// - 위: 줄의 베이스라인은 어느 run 상자의 베이스라인보다도 크거나 같으므로 run마다
+    ///   (ascent − 자기 상자 베이스라인)의 최댓값이 상한이다.
+    /// - 아래: 줄 상자의 베이스라인 아래 몫은 (가장 큰 높이 − 가장 큰 베이스라인)이고, 이는
+    ///   베이스라인이 가장 큰 run의 아래 몫 이상이라 **후보 상자 아래 몫의 최솟값** 이상이다
+    ///   — 그래서 (가장 큰 descent − 최솟값)이 상한이다. run 자신의 아래 몫을 쓰면 Papyrus
+    ///   10pt(상자 15.43/9.40, descent 6.03) + Menlo 10pt(15.13/11.03) 줄에서 줄 상자가
+    ///   15.43/11.03이 되어 `j`가 상자 아래로 1.63pt 새는데 0으로 잰다 (PR 리뷰 재현: 그
+    ///   글자를 누르면 게이트가 거부해 뒤 블록의 링크가 열렸다). 문단 끝 글자 상자
+    ///   (`hwp.msWordParagraphEndBox`)도 후보다 — 문단마다 다르므로(결합 문자열·공개
+    ///   `drawText`의 여러 문단) **모든** 속성 범위를 훑는다. 첫 문단 것만 보면 Papyrus 두
+    ///   문단 가운데 마지막 문단의 끝 글꼴만 Menlo일 때 그 줄이 같은 1.63pt를 새는데 0으로
+    ///   잰다 (두 번째 PR 리뷰 재현).
+    /// 한글 문서(첫 run에 호환 문서 키 없음)면 nil.
+    static func msWordVerticalInkReach(
+        of attributed: NSAttributedString
+    ) -> (above: CGFloat, below: CGFloat)? {
+        let whole = NSRange(location: 0, length: attributed.length)
+        guard attributed.length > 0,
+              HwpDrawnTextLayout.isMsWordCompatible(attributed.attributes(at: 0, effectiveRange: nil))
+        else { return nil }
+        var above: CGFloat = 0
+        var maxDescent: CGFloat = 0
+        var minBelow = CGFloat.infinity
+        attributed.enumerateAttribute(
+            HwpAttributedStringKey.msWordParagraphEndBox, in: whole,
+            options: .longestEffectiveRangeNotRequired
+        ) { value, _, _ in
+            guard let end = value as? [NSNumber], end.count == 2 else { return }
+            minBelow = min(minBelow, CGFloat(end[0].doubleValue - end[1].doubleValue))
+        }
+        attributed.enumerateAttribute(
+            .font, in: whole, options: .longestEffectiveRangeNotRequired
+        ) { value, range, _ in
+            guard let value else { return }
+            let ref = value as CFTypeRef
+            guard CFGetTypeID(ref) == CTFontGetTypeID() else { return }
+            let font = unsafeBitCast(ref, to: CTFont.self)
+            let size = (attributed.attribute(
+                HwpAttributedStringKey.baseFontSize, at: range.location, effectiveRange: nil
+            ) as? NSNumber).map { CGFloat($0.doubleValue) } ?? CTFontGetSize(font)
+            let box = HwpMsWordLineBox.metrics(of: font).scaled(by: max(0, size))
+            above = max(above, CTFontGetAscent(font) - box.baseline)
+            maxDescent = max(maxDescent, CTFontGetDescent(font))
+            minBelow = min(minBelow, box.lineHeight - box.baseline)
+        }
+        let below = minBelow.isFinite ? maxDescent - minBelow : 0
+        return (max(0, above), max(0, below))
     }
 
     /// 문단이 이 지점에 글자를 칠했는지 — **`textBounds` 밖이면 CT 조판을 하지 않는다**.

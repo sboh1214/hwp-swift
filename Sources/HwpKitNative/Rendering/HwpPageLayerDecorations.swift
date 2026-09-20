@@ -57,9 +57,10 @@ extension HwpPageLayer {
         //
         // MS 워드 호환 문서(#187)의 밑줄(글자 아래·위·삽입)은 **줄 단위**다 — 줄의 run
         // 상자들을 축별 최댓값으로 합친 줄 상자가 줄의 모든 밑줄 자리·두께를 정한다
-        // (한글 실측: 밑줄 없는 run·대체 글꼴 run·문단 끝 글자도 후보). 취소선은
-        // run마다 자기 글꼴이라 아래에서 따로 푼다.
-        let msWordReference = msWordLineBox(of: runs, endsParagraph: endsParagraph)
+        // (한글 실측: 밑줄 없는 run·대체 글꼴 run·문단 끝 글자도 후보). 세로 배치가 쓰는
+        // 상자와 같은 값이다 (`HwpDrawnTextLayout.LineMetrics.msWordTextBox`, #194).
+        // 취소선은 run마다 자기 글꼴이라 아래에서 따로 푼다.
+        let msWordReference = HwpDrawnTextLayout.msWordLineBox(of: line, endsParagraph: endsParagraph)
         let strikethroughFonts = msWordStrikethroughFonts(of: runs)
         // 점선·물결 같은 선 모양(#191)은 글자 모양 run(같은 `charShapeId`의 잇닿은 run)
         // 단위로 패턴을 편다 — 그 묶음의 첫 run만 span을 받고 나머지는 nil이다.
@@ -131,35 +132,6 @@ extension HwpPageLayer {
             }
         }
         return fonts
-    }
-
-    /// MS 워드 호환 문서에서 이 줄의 줄 상자 (pt, `HwpMsWordLineBox.union`) — 줄의 run
-    /// 전부(장식 없는 run·CoreText 대체 글꼴 run 포함)의 글꼴 상자에, 이 줄이 문단의
-    /// 마지막 줄(`endsParagraph`)이면 조판이 문단 전체에 실은 문단 끝 상자
-    /// (`msWordParagraphEndBox`)를 더해 합친다. 상자가 문단 전체에 실리는 이유는 글리프
-    /// 조합 경계를 만들지 않고 어느 run이 합자로 흡수돼도 상자가 남게 하기 위해서라
-    /// (PR 리뷰: 이모지·결합 문자·합자) 모든 줄에 키가 있다 — 줄 판정은 키가 아니라
-    /// `endsParagraph`다. 한글 문서 줄이면 nil.
-    func msWordLineBox(of runs: [CTRun], endsParagraph: Bool) -> HwpMsWordLineBox? {
-        // 문서 단위 속성이라 줄의 run 하나가 MS 워드면 줄 전체가 그렇다 — 표식 run(한 줄
-        // 끝·빈 줄 앵커)처럼 허용 목록으로 깎인 run도 글꼴이 있는 한 후보로 넣는다
-        // (한글도 그 줄의 글자 모양으로 줄 상자를 잡는다).
-        guard runs.contains(where: { isMsWordCompatible(runAttributes($0)) }) else { return nil }
-        var boxes: [HwpMsWordLineBox] = []
-        for run in runs {
-            let attributes = runAttributes(run)
-            guard let font = runFont(attributes) else { continue }
-            boxes.append(HwpMsWordLineBox.metrics(of: font).scaled(by: msWordBoxSize(attributes)))
-            if endsParagraph,
-               let end = attributes[HwpAttributedStringKey.msWordParagraphEndBox] as? [NSNumber],
-               end.count == 2
-            {
-                boxes.append(HwpMsWordLineBox(
-                    lineHeight: CGFloat(end[0].doubleValue), baseline: CGFloat(end[1].doubleValue)
-                ))
-            }
-        }
-        return HwpMsWordLineBox.union(boxes)
     }
 
     /// MS 워드 호환 문서에서 글꼴 상자(em)에 곱하는 크기 — run 글꼴 크기가 아니라 **글자

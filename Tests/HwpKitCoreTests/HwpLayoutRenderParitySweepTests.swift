@@ -309,7 +309,7 @@ import XCTest
                 let coreWidth = CGFloat(CTLineGetTypographicBounds(frameLine, nil, nil, nil))
                 // 측정 줄의 `baseline`은 줄 상자 상단 → 베이스라인 앵커다 (#178·#180) — 렌더가
                 // 그 줄 글자를 그리는 자리와 같은 값이어야 한다.
-                let ascent = HwpDrawnTextLayout.baselineAnchor(of: frameLine)
+                let ascent = HwpDrawnTextLayout.baselineAnchor(of: frameLine, in: attributed)
                 let coreRange = NSRange(location: range.location, length: range.length)
                 if line.attributedRange != coreRange {
                     stats.failures.append(

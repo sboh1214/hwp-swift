@@ -194,7 +194,7 @@ public struct HwpTextRunBuilder {
             chunk.text += String(decoding: [lone], as: UTF16.self)
         }
         append(chunk, paragraph: paragraph, to: output)
-        finishEmptyLastLineAnchor(in: output, emitted: emittedEmptyLastLineAnchor)
+        finishEmptyLastLineAnchor(in: output, emitted: emittedEmptyLastLineAnchor, paragraph: paragraph)
         return finishBuild(output, paragraph: paragraph, whole: isWhole)
     }
 }

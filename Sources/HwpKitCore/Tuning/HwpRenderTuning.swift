@@ -30,6 +30,10 @@ public enum HwpRenderTuning {
         /// `lineLocation + baselineDistance`와 최대 0.10pt (한글 PDF의 0.12pt 장치
         /// 양자화) 차이였다 — **한글이 그리는 자리도 이 규칙이다**.
         ///
+        /// MS 워드 호환 문서(`HwpCompatibleDocumentTarget.msWord`, #194)에는 이 비율이
+        /// 쓰이지 않는다 — 줄 상자와 베이스라인이 글꼴 줄 상자(`HwpMsWordLineBox`)다
+        /// (`HwpDrawnTextLayout.LineMetrics.baselineAnchor`).
+        ///
         /// 검증: `HwpBaselineAnchorTests` 비율 + `FixtureBaselineAnchorTests` 캐시 대조 +
         /// `FixtureDecorationLineRenderTests` 픽셀 핀 + fidelity 전수.
         public static let baselineAnchorRatio: CGFloat = 0.85
@@ -113,7 +117,8 @@ public enum HwpRenderTuning {
 
         /// MS 워드 호환 문서(`HwpCompatibleDocumentTarget.msWord`)의 줄 상자 높이 =
         /// CJK 글꼴의 (winAscent + winDescent) × 이 배율 (`HwpMsWordLineBox`, #187·
-        /// #194). 장식선은 두 글꼴 갈래 모두 줄 상자 ÷ 이 배율을 기준 상자로 쓴다.
+        /// #194). 장식선은 두 글꼴 갈래 모두 줄 상자 ÷ 이 배율을 기준 상자로 쓰고, 세로
+        /// 배치(#194)는 줄 상자 자체를 줄 캐시의 `vertsize`로 쓴다.
         /// 실측: 한글 12.30.0 (2026-09-15) 이 MS 워드 호환 합성 문서를 다시 저장한
         /// 줄 캐시 `vertsize` — 함초롬돋움 80pt 13531 (1.6914em = 1.3 × 1.30), Apple SD
         /// 산돌고딕 Neo 12477 (1.5596 = 1.3 × 1.20), HY울릉도M 10406 (1.3008 = 1.3 × 1.00),

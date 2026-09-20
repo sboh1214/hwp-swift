@@ -52,12 +52,11 @@ enum HwpContainerContentExtent {
         HwpUnits.points(fromHwpUnit: index.paraShape(for: paragraph)?.paragraphSpacingTop ?? 0) / 2
     }
 
-    /// 줄 프레임의 상자 높이 — `baseline`은 상자 상단에서 베이스라인 앵커까지의 거리
-    /// (= 상자 높이 × `baselineAnchorRatio`, `HwpDrawnTextLayout.baselineAnchor`)라 그
-    /// 역이다. 측정(`HwpParagraphLayout.makeLineFrames`·한 줄 넘침 갈래)이 줄 프레임을
-    /// 모두 그 앵커로 만든다.
+    /// 줄 프레임의 상자 높이 — 측정(`HwpParagraphLayout.makeLineFrames`·한 줄 넘침 갈래)이
+    /// 줄 프레임에 실은 `boxHeight`(한글 문서는 `baseline` ÷ `baselineAnchorRatio`, MS 워드
+    /// 호환 문서는 글꼴 줄 상자 — #194)다.
     static func lineBoxHeight(of line: HwpLineFrame) -> CGFloat {
-        max(0, line.baseline) / HwpRenderTuning.Text.baselineAnchorRatio
+        max(0, line.boxHeight)
     }
 }
 

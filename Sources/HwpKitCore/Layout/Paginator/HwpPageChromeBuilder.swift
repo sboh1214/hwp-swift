@@ -442,14 +442,16 @@ extension HwpPageChromeBuilder {
         case .top:
             (geometry.headerFrame?.minY
                 ?? geometry.topGutter + (geometry.margins.top - geometry.topGutter) / 2)
-                + HwpDrawnTextLayout.lineMetrics(of: line).textBoxHeight - descent
+                + HwpDrawnTextLayout.lineMetrics(of: line).baseFontSize - descent
         }
-        let boxHeight = HwpDrawnTextLayout.lineMetrics(of: line).boxHeight
+        // 렌더러(`HwpDrawnTextLayout.lines`)와 같은 앵커여야 그린 베이스라인이 위 자리에
+        // 놓인다 — MS 워드 호환 문서(#194)는 글꼴 줄 상자의 베이스라인이다.
+        let metrics = HwpDrawnTextLayout.lineMetrics(of: line, in: attributed)
         return CGRect(
             x: contentFrame.minX,
-            y: baseline - HwpDrawnTextLayout.baselineAnchor(of: line),
+            y: baseline - metrics.baselineAnchor,
             width: contentFrame.width,
-            height: max(1, boxHeight)
+            height: max(1, metrics.boxHeight)
         )
     }
 

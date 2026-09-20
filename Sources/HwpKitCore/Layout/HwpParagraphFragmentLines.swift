@@ -35,7 +35,8 @@ extension HwpParagraphLayout {
                     location: max(0, line.attributedRange.location - range.location),
                     length: line.attributedRange.length
                 ),
-                inlineAnchors: line.inlineAnchors
+                inlineAnchors: line.inlineAnchors,
+                boxHeight: line.boxHeight
             )
         }
     }
@@ -81,7 +82,8 @@ extension HwpParagraphLayout {
         attributedString: NSAttributedString,
         columnWidth: CGFloat
     ) -> HwpLineFrame {
-        HwpLineFrame(
+        let metrics = HwpDrawnTextLayout.lineMetrics(of: overflow.line, in: attributedString)
+        return HwpLineFrame(
             origin: CGPoint(
                 x: HwpDrawnTextLayout.slightOverflowAlignmentOffset(
                     attributedString: attributedString, lineWidth: columnWidth, line: overflow.line
@@ -89,9 +91,10 @@ extension HwpParagraphLayout {
                 y: 0
             ),
             width: CGFloat(CTLineGetTypographicBounds(overflow.line, nil, nil, nil)),
-            baseline: HwpDrawnTextLayout.baselineAnchor(of: overflow.line),
+            baseline: metrics.baselineAnchor,
             attributedRange: NSRange(location: 0, length: attributedString.length),
-            inlineAnchors: HwpParagraphLayout().inlineAnchors(in: overflow.line)
+            inlineAnchors: HwpParagraphLayout().inlineAnchors(in: overflow.line),
+            boxHeight: metrics.boxHeight
         )
     }
 }

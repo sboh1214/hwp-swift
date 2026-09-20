@@ -1,5 +1,6 @@
 import CoreGraphics
 import CoreHwp
+import CoreText
 import Foundation
 import HwpKit
 import HwpKitCore
@@ -32,6 +33,15 @@ final class FixtureBaselineAnchorTests: XCTestCase {
 
     /// pt 비교 허용 오차 — 누적 부동소수 잔차만 흡수한다 (실측 일치는 정확하다).
     private static let tolerance = 0.001
+
+    /// HWPX 쌍 픽스처(`HwpxFixtures/<id>/document.hwpx`)의 첫 쪽.
+    private static func firstHwpxPage(_ id: String, file: String = #file) async throws -> HwpPage {
+        let url = FixtureRoot.url(from: file, subdirectory: "HwpxFixtures")
+            .appendingPathComponent(id)
+            .appendingPathComponent("document.hwpx")
+        let document = try await HwpDocumentLoader(fontResolver: .testDeterministic).load(from: url)
+        return try XCTUnwrap(document.pages.first)
+    }
 
     /// 쪽의 `drawText` 명령마다 그 블록의 줄 전체를 돌려준다.
     private static func drawnLines(_ page: HwpPage) -> [[HwpDrawnLine]] {
@@ -69,6 +79,53 @@ final class FixtureBaselineAnchorTests: XCTestCase {
             .to(beCloseTo(expected, within: Self.tolerance))
         expect(Self.textBlocks(page).map { Double($0.top) })
             .to(beCloseTo(expected.map { $0 - 8.5 }, within: Self.tolerance))
+    }
+
+    /// **MS 워드 호환 문서**(`compat-decorations`, #194)는 줄 상자가 글꼴 줄 상자다 — 한글이
+    /// 저장한 줄 캐시(HWP `PARA_LINE_SEG` = HWPX `hp:lineseg`)의 `vertsize`·`baseline`이
+    /// Apple SD 산돌고딕 Neo 10pt 줄 1559·1104(문단 끝 글자 Menlo의 베이스라인), Menlo 10pt
+    /// 1515·1104, 20pt 3119/3029·2207이고 160%의 `spacing`은 932·908·1868·1816이다. 본문
+    /// 상단 99.2pt에서 문단 1~11의 첫 줄 베이스라인 = `lineLocation + baselineDistance`.
+    /// 문단 0(구역 정의만 있는 빈 문단)은 글자 모양이 함초롬돋움이라 CI에 없는 글꼴이므로
+    /// 핀하지 않는다. 결정론 resolver가 고르는 글꼴이 한글의 글꼴(Apple SD·Menlo)과 같아
+    /// 기기 무관하고, 글꼴 상자 반올림 차(한글 ±0.03pt)만 남는다.
+    func testCompatDecorationsBaselinesMatchTheSavedLineCache() async throws {
+        let expected = [
+            137.32, 162.23, 197.49, 247.36, 284.78, 309.69, 333.92, 369.86, 407.28, 443.22, 482.06,
+        ]
+        for page in try await [Self.firstPage("compat-decorations"), Self.firstHwpxPage("compat-decorations")] {
+            let baselines = Self.textBlocks(page).map { Double($0.baseline) }
+            expect(baselines.count) == 12
+            expect(Array(baselines.dropFirst())).to(beCloseTo(expected, within: 0.03))
+        }
+    }
+
+    /// `track-changes`(함초롬돋움 10pt·160%, MS 워드 호환) — 이슈 #194의 표: 줄 캐시
+    /// `lineHeight` 1692·`baselineDistance` 1266·`lineSpacing` 1016, 본문 상단 72pt에서 두
+    /// 줄의 베이스라인 84.66·111.74pt (종전에는 각각 4.16pt 위였다). 함초롬돋움이 없는
+    /// 기기(CI)는 대체 글꼴의 상자를 쓰므로 건너뛴다.
+    func testTrackChangesBaselinesMatchTheSavedLineCacheWithHancomFonts() async throws {
+        let url = FixtureRoot.url(from: #file)
+            .appendingPathComponent("track-changes")
+            .appendingPathComponent("document.hwp")
+        let document = try await HwpDocumentLoader().load(from: url)
+        let page = try XCTUnwrap(document.pages.first)
+        let lines = Self.drawnLines(page).flatMap { $0 }
+        let fonts = lines.flatMap { line -> [String] in
+            (CTLineGetGlyphRuns(line.line) as? [CTRun] ?? []).compactMap { run in
+                let attributes = CTRunGetAttributes(run) as? [NSAttributedString.Key: Any]
+                // CF 타입에 `as!`를 쓰지 않는다 — 타입 id를 검사한 뒤 비트 캐스트 (AGENTS.md).
+                guard let value = attributes?[kCTFontAttributeName as NSAttributedString.Key] else {
+                    return nil
+                }
+                let ref = value as CFTypeRef
+                guard CFGetTypeID(ref) == CTFontGetTypeID() else { return nil }
+                return CTFontCopyPostScriptName(unsafeBitCast(ref, to: CTFont.self)) as String
+            }
+        }
+        try XCTSkipUnless(fonts.contains("HCRDotum"), "함초롬돋움 없음 — 대체 글꼴의 상자를 쓴다")
+        expect(lines.map { Double($0.baselineOrigin.y) })
+            .to(beCloseTo([84.66, 111.74], within: 0.03))
     }
 
     /// `underline-above` 한 줄 — 한글 PDF의 텍스트 베이스라인 실측이 107.76pt다
