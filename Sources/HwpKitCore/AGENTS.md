@@ -2166,7 +2166,9 @@ paraShape와 같은 값**이어야 한다.
     CoreText가 속성을 버리며, 마지막 속성 run에만 얹어도 글자 모양 id만 다른 `لا` 합자가
     앞 run에 흡수돼 상자를 잃는다 — PR 리뷰 재현), 렌더러가 문단의 마지막 줄
     (`HwpDrawnLine.endsParagraph`: 문자열 끝에 닿고 이어짐 표식 `continuedParagraphFragment`가
-    없는 줄)에만 합친다. 그래서 이어짐 표식은 **모든** 분할 경로(쪽 흐름 `appendLineSliceBlock`·
+    없는 줄, 또는 문자열 안에서 한 줄 끝 표식이 아닌 문단 구분자로 끝나는 줄 — 컨테이너의
+    결합 문자열·공개 `drawText`의 여러 문단 문자열은 앞 문단들이 이 갈래로 끝난다, #194 PR
+    리뷰)에만 합친다. 그래서 이어짐 표식은 **모든** 분할 경로(쪽 흐름 `appendLineSliceBlock`·
     절대 캐시 run `runAttributedSlice`·다단 균형 `rebalancedFragment`·표 행·각주)가 조각 전체에
     단다 — 표식이 빠진 경로에서는 앞 조각 끝 줄이 문단 끝으로 오인돼 밑줄이 CR 상자만큼
     옮겨지고(Apple SD 10pt −3.252 → −3.024pt) 양쪽 정렬도 풀린다.
@@ -2238,6 +2240,12 @@ paraShape와 같은 값**이어야 한다.
       `baseline` 3311(Menlo 30 CR)을 잡는데 상자 아래 몫 1688이 어느 상자(Menlo 30 1233·
       Apple SD 30 1438)와도 안 맞아 미모델 — 우리는 4544(4.5pt 짧다). ③ 한 줄 끝(코드
       10) run의 글꼴 슬롯(한글이 CR처럼 라틴 슬롯인지)은 미실측 — 지금은 앞 chunk의 슬롯.
+    - 히트 판정의 조판 없는 잉크 상한(`HwpHitTester.msWordVerticalInkReach`)은 줄 상자가 높이와
+      베이스라인을 **다른 run**에서 고르는 것을 감안한다 — 위는 run마다 (ascent − 자기 상자
+      베이스라인)의 최댓값, 아래는 (가장 큰 descent − 후보 상자 아래 몫의 최솟값). run 자신의
+      아래 몫으로 재면 Papyrus 10pt(15.43/9.40, descent 6.03) + Menlo 10pt(15.13/11.03) 줄에서
+      `j`가 상자 아래로 1.63pt 새는데 0이 되어 그 글자 위의 탭이 뒤 블록의 링크를 열었다 (PR
+      리뷰 재현).
     - 이제 호환 문서 픽스처의 베이스라인을 쪽 좌표로 핀한다 (`FixtureBaselineAnchorTests`
       `compat-decorations` 11문단 0.03pt·`track-changes` 84.66/111.74pt — 함초롬돋움이 있는
       기기에서만).

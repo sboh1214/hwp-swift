@@ -34,7 +34,8 @@ public enum HwpAttributedStringKey {
     /// 글자 모양 id만 다른 합자 `لا`·결합 문자에서 CoreText가 앞 run의 속성만 남겨 상자를
     /// 버린다 — PR 리뷰). 한글은 문단 끝 글자(CR)를 마지막 글자 모양의 **라틴 슬롯** 글꼴로
     /// 그 줄에 세우므로, 조판 문자열에서 접힌 CR의 상자를 렌더러가 **문단의 마지막 줄**
-    /// (`HwpDrawnLine.endsParagraph` — 이어짐 표식이 없는 조각의 끝 줄)의 줄 상자
+    /// (`HwpDrawnLine.endsParagraph` — 이어짐 표식이 없는 조각의 끝 줄, 결합 문자열 안에서는
+    /// 한 줄 끝 표식이 아닌 문단 구분자로 끝나는 줄)의 줄 상자
     /// (`HwpMsWordLineBox.union`)에 되돌려 넣는다 (한글 실측: Apple SD 20pt 한글
     /// 문단의 마지막 줄만 Menlo 라틴 슬롯의 베이스라인 2207을 받아 밑줄이 −0.2994em으로
     /// 올라간다; 앞 줄들은 −0.3234em). 밑줄과 세로 배치(#194 — 마지막 줄의 베이스라인

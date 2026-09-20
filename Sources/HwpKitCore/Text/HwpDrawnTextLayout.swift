@@ -15,12 +15,14 @@ public struct HwpDrawnLine {
     public let baselineOrigin: CGPoint
     public let ascent: CGFloat
     public let descent: CGFloat
-    /// 이 줄이 **문단의 마지막 줄**인지 — 단위 문자열의 끝에 닿고, 그 문자열이 다음 단·
-    /// 쪽으로 이어지는 조각(`hwp.continuedParagraphFragment`)이 아닐 때 (양쪽 정렬의
-    /// 마지막 줄 판정과 같은 규약). 렌더러는 MS 워드 호환 문단 끝 상자
-    /// (`hwp.msWordParagraphEndBox`, #187)를 이 줄의 줄 상자에만 합친다 — 상자는 문단
-    /// 전체에 실리므로 줄 판정은 키가 아니라 이 값이다. 이어짐 표식은 쪽 흐름·절대 캐시
-    /// run·다단 균형·표 행·각주의 모든 분할 경로가 단다 (PR 리뷰).
+    /// 이 줄이 **문단의 마지막 줄**인지 — 단위 문자열의 끝에 닿고 그 문자열이 다음 단·
+    /// 쪽으로 이어지는 조각(`hwp.continuedParagraphFragment`)이 아닐 때(양쪽 정렬의
+    /// 마지막 줄 판정과 같은 규약), 또는 문자열 안에서 한 줄 끝 표식(`hwp.lineBreak`)이
+    /// 아닌 문단 구분자로 끝날 때(문단들을 `\n`으로 이은 결합 문자열 —
+    /// `HwpDrawnTextLayout.endsParagraph(_:in:)`). 렌더러와 세로 배치는 MS 워드 호환 문단
+    /// 끝 상자(`hwp.msWordParagraphEndBox`, #187·#194)를 이 줄의 줄 상자에만 합친다 — 상자는
+    /// 문단 전체에 실리므로 줄 판정은 키가 아니라 이 값이다. 이어짐 표식은 쪽 흐름·절대
+    /// 캐시 run·다단 균형·표 행·각주의 모든 분할 경로가 단다 (PR 리뷰).
     public let endsParagraph: Bool
 
     /// 줄의 선택 하이라이트 영역 (top-down 페이지 좌표)
@@ -147,11 +149,29 @@ public enum HwpDrawnTextLayout {
     }
 
     /// `range`로 끝나는 줄이 문단의 마지막 줄인지 (`HwpDrawnLine.endsParagraph`).
+    ///
+    /// 두 갈래다. ① 문자열 끝에 닿는 줄 — 그 문자열이 다음 단·쪽으로 이어지는 조각
+    /// (`hwp.continuedParagraphFragment`)이 아닐 때. ② 문자열 **안**의 문단 끝 — 줄의 마지막
+    /// 글자가 한 줄 끝 표식(`hwp.lineBreak`, 같은 문단의 줄 나눔)이 아닌 문단 구분자(LF·CR·
+    /// U+2029)일 때. 컨테이너 블록이 문단들을 `\n`으로 이은 결합 문자열과 공개 `drawText`
+    /// 호출자의 여러 문단 문자열은 앞 문단들이 ②로 끝난다 — 문단 사이 간격
+    /// (`HwpLineAdvance.paragraphGap`)과 같은 판정이고, 문자열 끝만 보면 앞 문단의 MS 워드
+    /// 호환 끝 상자(`hwp.msWordParagraphEndBox`)가 빠져 그 줄의 베이스라인·밑줄이 어긋난다
+    /// (PR 리뷰: Apple SD 10pt 본문 + Menlo 30pt 끝 상자 문단이 결합되면 33.09 → 10.8pt).
     static func endsParagraph(_ range: CFRange, in attributedString: NSAttributedString) -> Bool {
         let length = attributedString.length
-        guard length > 0, range.location + range.length >= length else { return false }
+        let end = range.location + range.length
+        guard length > 0, end > 0 else { return false }
+        if end >= length {
+            return attributedString.attribute(
+                HwpAttributedStringKey.continuedParagraphFragment, at: length - 1, effectiveRange: nil
+            ) == nil
+        }
+        let text = attributedString.string as NSString
+        guard end <= text.length, HwpLineAdvance.isParagraphSeparator(text.character(at: end - 1))
+        else { return false }
         return attributedString.attribute(
-            HwpAttributedStringKey.continuedParagraphFragment, at: length - 1, effectiveRange: nil
+            HwpAttributedStringKey.lineBreak, at: end - 1, effectiveRange: nil
         ) == nil
     }
 

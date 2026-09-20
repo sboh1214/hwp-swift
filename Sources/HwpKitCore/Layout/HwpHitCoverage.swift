@@ -308,20 +308,31 @@ extension HwpHitTester {
     }
 
     /// MS 워드 호환 문서(#194)의 `verticalInkReach` — 줄 상자가 글꼴 줄 상자
-    /// (`HwpMsWordLineBox`)라 앵커 몫도 글꼴마다 다르다. 줄의 베이스라인은 run 상자 베이스
-    /// 라인의 최댓값 이상이고 상자 아래 몫은 run 상자 아래 몫의 최솟값 이상이므로, run마다
-    /// (ascent − 자기 상자 베이스라인)·(descent − 자기 상자 아래 몫)의 최댓값이 상한이다.
+    /// (`HwpMsWordLineBox`)라 앵커 몫도 글꼴마다 다르다. 줄 상자는 높이와 베이스라인을
+    /// **서로 다른 run**에서 고르므로(축별 최댓값) run 자신의 상자로 재면 안 된다:
+    /// - 위: 줄의 베이스라인은 어느 run 상자의 베이스라인보다도 크거나 같으므로 run마다
+    ///   (ascent − 자기 상자 베이스라인)의 최댓값이 상한이다.
+    /// - 아래: 줄 상자의 베이스라인 아래 몫은 (가장 큰 높이 − 가장 큰 베이스라인)이고, 이는
+    ///   베이스라인이 가장 큰 run의 아래 몫 이상이라 **후보 상자 아래 몫의 최솟값** 이상이다
+    ///   — 그래서 (가장 큰 descent − 최솟값)이 상한이다. run 자신의 아래 몫을 쓰면 Papyrus
+    ///   10pt(상자 15.43/9.40, descent 6.03) + Menlo 10pt(15.13/11.03) 줄에서 줄 상자가
+    ///   15.43/11.03이 되어 `j`가 상자 아래로 1.63pt 새는데 0으로 잰다 (PR 리뷰 재현: 그
+    ///   글자를 누르면 게이트가 거부해 뒤 블록의 링크가 열렸다). 문단 끝 글자 상자
+    ///   (`hwp.msWordParagraphEndBox`)도 후보다.
     /// 한글 문서(첫 run에 호환 문서 키 없음)면 nil.
     static func msWordVerticalInkReach(
         of attributed: NSAttributedString
     ) -> (above: CGFloat, below: CGFloat)? {
-        guard attributed.length > 0,
-              HwpDrawnTextLayout.isMsWordCompatible(
-                  attributed.attributes(at: 0, effectiveRange: nil)
-              )
-        else { return nil }
+        let first = attributed.length > 0 ? attributed.attributes(at: 0, effectiveRange: nil) : nil
+        guard let first, HwpDrawnTextLayout.isMsWordCompatible(first) else { return nil }
         var above: CGFloat = 0
-        var below: CGFloat = 0
+        var maxDescent: CGFloat = 0
+        var minBelow = CGFloat.infinity
+        if let end = first[HwpAttributedStringKey.msWordParagraphEndBox] as? [NSNumber],
+           end.count == 2
+        {
+            minBelow = min(minBelow, CGFloat(end[0].doubleValue - end[1].doubleValue))
+        }
         attributed.enumerateAttribute(
             .font, in: NSRange(location: 0, length: attributed.length),
             options: .longestEffectiveRangeNotRequired
@@ -335,8 +346,10 @@ extension HwpHitTester {
             ) as? NSNumber).map { CGFloat($0.doubleValue) } ?? CTFontGetSize(font)
             let box = HwpMsWordLineBox.metrics(of: font).scaled(by: max(0, size))
             above = max(above, CTFontGetAscent(font) - box.baseline)
-            below = max(below, CTFontGetDescent(font) - (box.lineHeight - box.baseline))
+            maxDescent = max(maxDescent, CTFontGetDescent(font))
+            minBelow = min(minBelow, box.lineHeight - box.baseline)
         }
+        let below = minBelow.isFinite ? maxDescent - minBelow : 0
         return (max(0, above), max(0, below))
     }
 

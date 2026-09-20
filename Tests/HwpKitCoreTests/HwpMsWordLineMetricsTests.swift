@@ -145,6 +145,47 @@ import XCTest
                 .to(beCloseTo(Self.blockTop + advance + appleSD.baseline, within: 0.001))
         }
 
+        /// 결합 문자열(컨테이너가 문단들을 `\n`으로 이은 것, 공개 `drawText`의 여러 문단)에서는
+        /// 앞 문단의 마지막 줄도 문단 끝이다 — 문단 끝 상자가 그 줄에 들고(Menlo 30pt 상자 →
+        /// 33.09pt, 홀로 그릴 때와 같다) 다음 문단이 그만큼 아래에 놓인다. 한 줄 끝 표식(`lineBreak`)
+        /// 으로 끝나는 줄은 문단 끝이 아니다 (PR 리뷰).
+        func testCombinedParagraphsKeepEachParagraphEndBox() throws {
+            try skipUnlessOracleFonts()
+            let appleSD = Self.box("Apple SD Gothic Neo", 10)
+            let menlo30 = Self.box("Menlo", 30)
+            let text = Self.attributes("Apple SD Gothic Neo", 10)
+            let first = Self.finish(
+                NSMutableAttributedString(string: "가나\n", attributes: text), endBox: menlo30
+            )
+            let second = Self.finish(NSMutableAttributedString(string: "다라", attributes: text))
+            let combined = NSMutableAttributedString(attributedString: first)
+            combined.append(second)
+            let alone = Self.lines(first)
+            let joined = Self.lines(combined)
+            expect(joined.count) == 2
+            guard joined.count == 2, let aloneFirst = alone.first else { return }
+            expect(aloneFirst.baselineOrigin.y)
+                .to(beCloseTo(Self.blockTop + menlo30.baseline, within: 0.001))
+            expect(joined[0].baselineOrigin.y).to(beCloseTo(aloneFirst.baselineOrigin.y, within: 0.001))
+            expect(joined[0].endsParagraph).to(beTrue())
+            expect(menlo30.baseline).to(beCloseTo(33.09, within: 0.03))
+            // 다음 문단은 앞 문단의 (Menlo 30 상자 + 비율 여분) 아래에서 시작한다.
+            let advance = menlo30.lineHeight
+                + HwpLineSpacingRule.percentShare(of: menlo30.lineHeight, percent: 160)
+            expect(joined[1].baselineOrigin.y)
+                .to(beCloseTo(Self.blockTop + advance + appleSD.baseline, within: 0.001))
+            // 한 줄 끝 run으로 나뉜 줄은 문단 끝이 아니다.
+            let broken = NSMutableAttributedString(string: "가나", attributes: text)
+            broken.append(LineBoxFixtures.lineBreak(attributes: text))
+            broken.append(NSAttributedString(string: "다라", attributes: text))
+            let brokenLines = Self.lines(Self.finish(broken, endBox: menlo30))
+            expect(brokenLines.count) == 2
+            expect(brokenLines.first?.endsParagraph).to(beFalse())
+            expect(brokenLines.first?.baselineOrigin.y)
+                .to(beCloseTo(Self.blockTop + appleSD.baseline, within: 0.001))
+            expect(brokenLines.last?.endsParagraph).to(beTrue())
+        }
+
         /// 줄 상자는 run 상자의 **축별 최댓값**이다 — Apple SD 10pt + Menlo 20pt 줄의 높이는
         /// Menlo 20(30.27), 베이스라인도 Menlo 20(22.06) (한글 캐시 3029·2207); Apple SD 20pt +
         /// Menlo 10pt 줄은 높이 Apple SD 20(31.20)·베이스라인 Apple SD 20(21.60)이되 끝 상자가
@@ -344,6 +385,31 @@ import XCTest
                 string: "가나", attributes: Self.attributes("Apple SD Gothic Neo", 10, msWord: false)
             )
             expect(HwpHitTester.msWordVerticalInkReach(of: native)).to(beNil())
+        }
+
+        /// 줄 상자가 높이와 베이스라인을 다른 run에서 고르면 run 자신의 상자로 잰 아래 몫은
+        /// 상한이 아니다 — Papyrus 10pt(상자 15.43/9.40, descent 6.03) + Menlo 10pt(15.13/11.03)
+        /// 줄의 상자는 15.43/11.03이라 `j`가 상자 아래로 1.63pt 새는데 종전 산식은 0이었다
+        /// (PR 리뷰: 그 글자 위의 탭이 뒤 블록의 링크를 열었다). 상한은 실제 새는 몫 이상이다.
+        func testVerticalInkReachCoversMixedFontLines() throws {
+            try skipUnlessOracleFonts()
+            let papyrus = Self.font("Papyrus", 10)
+            try XCTSkipUnless(CTFontGetDescent(papyrus) > 5, "Papyrus 없음")
+            let string = NSMutableAttributedString(string: "j", attributes: Self.attributes("Papyrus", 10))
+            string.append(NSAttributedString(string: "A", attributes: Self.attributes("Menlo", 10)))
+            let line = try XCTUnwrap(Self.lines(Self.finish(string)).first)
+            let metrics = HwpDrawnTextLayout.lineMetrics(of: line.line, in: string)
+            let inkBelow = CTFontGetDescent(papyrus) - (metrics.boxHeight - metrics.baselineAnchor)
+            expect(inkBelow).to(beGreaterThan(1.5))
+            let reach = HwpHitTester.verticalInkReach(of: string)
+            expect(reach.below).to(beGreaterThanOrEqualTo(inkBelow))
+            expect(reach.below).to(beCloseTo(
+                CTFontGetDescent(papyrus) - (Self.box("Menlo", 10).lineHeight - Self.box("Menlo", 10).baseline),
+                within: 0.001
+            ))
+            expect(reach.above).to(beGreaterThanOrEqualTo(
+                max(CTFontGetAscent(papyrus), CTFontGetAscent(Self.font("Menlo", 10))) - metrics.baselineAnchor
+            ))
         }
     }
 #endif
