@@ -318,24 +318,30 @@ extension HwpHitTester {
     ///   10pt(상자 15.43/9.40, descent 6.03) + Menlo 10pt(15.13/11.03) 줄에서 줄 상자가
     ///   15.43/11.03이 되어 `j`가 상자 아래로 1.63pt 새는데 0으로 잰다 (PR 리뷰 재현: 그
     ///   글자를 누르면 게이트가 거부해 뒤 블록의 링크가 열렸다). 문단 끝 글자 상자
-    ///   (`hwp.msWordParagraphEndBox`)도 후보다.
+    ///   (`hwp.msWordParagraphEndBox`)도 후보다 — 문단마다 다르므로(결합 문자열·공개
+    ///   `drawText`의 여러 문단) **모든** 속성 범위를 훑는다. 첫 문단 것만 보면 Papyrus 두
+    ///   문단 가운데 마지막 문단의 끝 글꼴만 Menlo일 때 그 줄이 같은 1.63pt를 새는데 0으로
+    ///   잰다 (두 번째 PR 리뷰 재현).
     /// 한글 문서(첫 run에 호환 문서 키 없음)면 nil.
     static func msWordVerticalInkReach(
         of attributed: NSAttributedString
     ) -> (above: CGFloat, below: CGFloat)? {
-        let first = attributed.length > 0 ? attributed.attributes(at: 0, effectiveRange: nil) : nil
-        guard let first, HwpDrawnTextLayout.isMsWordCompatible(first) else { return nil }
+        let whole = NSRange(location: 0, length: attributed.length)
+        guard attributed.length > 0,
+              HwpDrawnTextLayout.isMsWordCompatible(attributed.attributes(at: 0, effectiveRange: nil))
+        else { return nil }
         var above: CGFloat = 0
         var maxDescent: CGFloat = 0
         var minBelow = CGFloat.infinity
-        if let end = first[HwpAttributedStringKey.msWordParagraphEndBox] as? [NSNumber],
-           end.count == 2
-        {
+        attributed.enumerateAttribute(
+            HwpAttributedStringKey.msWordParagraphEndBox, in: whole,
+            options: .longestEffectiveRangeNotRequired
+        ) { value, _, _ in
+            guard let end = value as? [NSNumber], end.count == 2 else { return }
             minBelow = min(minBelow, CGFloat(end[0].doubleValue - end[1].doubleValue))
         }
         attributed.enumerateAttribute(
-            .font, in: NSRange(location: 0, length: attributed.length),
-            options: .longestEffectiveRangeNotRequired
+            .font, in: whole, options: .longestEffectiveRangeNotRequired
         ) { value, range, _ in
             guard let value else { return }
             let ref = value as CFTypeRef

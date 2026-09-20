@@ -2245,7 +2245,9 @@ paraShape와 같은 값**이어야 한다.
       베이스라인)의 최댓값, 아래는 (가장 큰 descent − 후보 상자 아래 몫의 최솟값). run 자신의
       아래 몫으로 재면 Papyrus 10pt(15.43/9.40, descent 6.03) + Menlo 10pt(15.13/11.03) 줄에서
       `j`가 상자 아래로 1.63pt 새는데 0이 되어 그 글자 위의 탭이 뒤 블록의 링크를 열었다 (PR
-      리뷰 재현).
+      리뷰 재현). 문단 끝 상자는 문단마다 다르므로 결합 문자열의 **모든** `msWordParagraphEndBox`
+      범위를 훑는다 — 첫 문단 것만 보면 마지막 문단의 끝 글꼴만 Menlo인 Papyrus 두 문단에서
+      같은 1.63pt를 놓친다 (두 번째 리뷰).
     - 이제 호환 문서 픽스처의 베이스라인을 쪽 좌표로 핀한다 (`FixtureBaselineAnchorTests`
       `compat-decorations` 11문단 0.03pt·`track-changes` 84.66/111.74pt — 함초롬돋움이 있는
       기기에서만).

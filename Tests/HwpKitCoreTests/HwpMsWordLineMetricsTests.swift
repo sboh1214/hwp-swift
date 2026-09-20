@@ -411,5 +411,34 @@ import XCTest
                 max(CTFontGetAscent(papyrus), CTFontGetAscent(Self.font("Menlo", 10))) - metrics.baselineAnchor
             ))
         }
+
+        /// 문단 끝 상자는 문단마다 다르다 — Papyrus 두 문단을 이은 결합 문자열에서 마지막
+        /// 문단의 끝 글꼴만 Menlo면 그 줄의 상자가 15.43/11.03이라 `j`가 1.63pt 새는데, 첫
+        /// 문단의 끝 상자(Papyrus)만 보면 0이다 (두 번째 PR 리뷰). 모든 끝 상자를 훑는다.
+        func testVerticalInkReachCoversEveryParagraphEndBox() throws {
+            try skipUnlessOracleFonts()
+            let papyrus = Self.font("Papyrus", 10)
+            try XCTSkipUnless(CTFontGetDescent(papyrus) > 5, "Papyrus 없음")
+            let text = Self.attributes("Papyrus", 10)
+            let first = Self.finish(
+                NSMutableAttributedString(string: "j\n", attributes: text),
+                endBox: Self.box("Papyrus", 10)
+            )
+            let last = Self.finish(
+                NSMutableAttributedString(string: "j", attributes: text), endBox: Self.box("Menlo", 10)
+            )
+            let combined = NSMutableAttributedString(attributedString: first)
+            combined.append(last)
+            let lines = Self.lines(combined)
+            expect(lines.count) == 2
+            guard let lastLine = lines.last else { return }
+            let metrics = HwpDrawnTextLayout.lineMetrics(of: lastLine.line, in: combined)
+            let inkBelow = CTFontGetDescent(papyrus) - (metrics.boxHeight - metrics.baselineAnchor)
+            expect(inkBelow).to(beGreaterThan(1.5))
+            let reach = HwpHitTester.verticalInkReach(of: combined)
+            expect(reach.below).to(beGreaterThanOrEqualTo(inkBelow))
+            // 첫 문단만 그리면 Papyrus 상자뿐이라 새는 몫이 없다.
+            expect(HwpHitTester.verticalInkReach(of: first).below).to(beCloseTo(0, within: 0.001))
+        }
     }
 #endif
