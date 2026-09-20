@@ -76,6 +76,29 @@ import XCTest
                 .to(beCloseTo(85.04 + 28.34 + 30 - Self.descent(of: string), within: 0.01))
         }
 
+        /// 제본 여백이 쪽 높이를 넘는 잘못된 문서 — 기하가 제본 여백을 위 인셋(쪽 높이로
+        /// 클램프) 안으로 접으므로 상자 위가 위 인셋을 넘지 않는다 (PR 리뷰: 클램프 전엔
+        /// UInt32 최대 제본 여백에서 가운데가 (42,949,672.95 + 841.86) / 2 ≈ 2,147만 pt라
+        /// 쪽 번호가 사라졌다).
+        func testHeaderlessTopPageNumberStaysAtPageScaleWithAnOversizedGutter() {
+            var sectionDef = HwpSynthetic.sectionDef(pageHeight: 84186)
+            sectionDef.pageDef.marginTop = 5668
+            sectionDef.pageDef.marginHeader = 0
+            sectionDef.pageDef.marginGutter = UInt32.max
+            sectionDef.pageDef.property |= 2 << 1
+            let geometry = HwpPageGeometry.compute(
+                pageDef: sectionDef.pageDef, sectionDef: sectionDef
+            )
+            expect(geometry.margins.top).to(beCloseTo(841.86, within: 0.01))
+            let string = Self.number(size: 30)
+            expect(Self.drawnBaseline(of: string, edge: .top, geometry: geometry))
+                .to(beCloseTo(geometry.margins.top + 30 - Self.descent(of: string), within: 0.01))
+            let frame = HwpPageChromeBuilder.pageNumberFrame(
+                of: string, edge: .top, geometry: geometry
+            )
+            expect(frame.minY) <= geometry.pageSize.height
+        }
+
         /// 스타일은 영문 이름으로 찾는다 — 빈 문서의 '쪽 번호'(12번, 글자 모양 1)를 30pt로
         /// 바꾸면 쪽 번호가 30pt이고 글자 모양 id·기본 크기 표식이 실린다.
         func testPageNumberUsesTheStyleNamedPageNumber() async throws {
@@ -96,6 +119,31 @@ import XCTest
             )
             expect(run.fontSize).to(beCloseTo(10, within: 0.01))
             expect(run.charShapeId).to(beNil())
+        }
+
+        /// 쪽 번호 글자 모양은 색인이 불변이라 빌더 초기화 때 한 번 푼다 — 스타일이 있고 그
+        /// 글자 모양이 색인에 있을 때만 id가 서고, 영문 이름이 다르거나 글자 모양이 색인에
+        /// 없으면 nil(기본 모양)이다 (PR 리뷰: 쪽마다 스타일 열쇠를 정렬해 다시 찾았다).
+        func testPageNumberCharShapeIsResolvedOnceAtBuilderInit() throws {
+            let styled = HwpPageChromeBuilder(
+                index: try Self.blankIndex(pageNumberCharSize: 1000),
+                fontResolver: .testDeterministic
+            )
+            expect(styled.pageNumberCharShapeId) == 1
+
+            let renamed = HwpPageChromeBuilder(
+                index: try Self.blankIndex(
+                    pageNumberCharSize: 1000, pageNumberEnglishName: "Other"
+                ),
+                fontResolver: .testDeterministic
+            )
+            expect(renamed.pageNumberCharShapeId).to(beNil())
+
+            let dangling = HwpPageChromeBuilder(
+                index: try Self.blankIndex(pageNumberCharSize: 1000, pageNumberCharShapeId: 999),
+                fontResolver: .testDeterministic
+            )
+            expect(dangling.pageNumberCharShapeId).to(beNil())
         }
 
         /// 기본 모양도 보통 빈칸이 0.5em이다 — 같은 10pt 스타일 경로와 줄 폭이 같다 (한글 실측:
@@ -151,11 +199,11 @@ import XCTest
             let charShapeId: UInt32?
         }
 
-        /// 빈 문서 색인 — '쪽 번호' 스타일(글자 모양 1)의 크기와 영문 이름, 글자 모양 0의
-        /// 크기만 바꾼다.
+        /// 빈 문서 색인 — '쪽 번호' 스타일(글자 모양 1)의 크기·영문 이름·글자 모양 참조와
+        /// 글자 모양 0의 크기만 바꾼다.
         static func blankIndex(
             pageNumberCharSize: Int32, pageNumberEnglishName: String = "Page Number",
-            baseCharSize: Int32 = 1000
+            baseCharSize: Int32 = 1000, pageNumberCharShapeId: UInt16 = 1
         ) throws -> HwpIndex {
             let base = HwpIndex(from: CoreHwp.HwpFile())
             var charShapes = base.charShapes
@@ -173,7 +221,7 @@ import XCTest
             )
             styles[key] = CoreHwp.HwpStyle(
                 "쪽 번호", pageNumberEnglishName,
-                property: 1, nextId: 0, paraShapeId: 0, charShapeId: 1
+                property: 1, nextId: 0, paraShapeId: 0, charShapeId: pageNumberCharShapeId
             )
             return index(base, charShapes: charShapes, styles: styles)
         }

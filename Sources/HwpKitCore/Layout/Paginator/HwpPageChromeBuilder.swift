@@ -61,6 +61,8 @@ struct HwpPageChromeBuilder {
     /// 글자 모양별 속성 캐시 (소유는 `HwpPaginator`) — 머리말/꼬리말 문단도
     /// 본문과 같은 캐시를 쓴다.
     private let attributeCache: HwpTextAttributeCache?
+    /// 쪽 번호 글자 모양 id (`pageNumberCharShapeId(in:)`) — 색인이 불변이라 초기화 때 한 번 푼다 (PR 리뷰).
+    let pageNumberCharShapeId: UInt32?
     private var state = State()
 
     init(
@@ -71,6 +73,7 @@ struct HwpPageChromeBuilder {
         self.index = index
         self.fontResolver = fontResolver
         self.attributeCache = attributeCache
+        pageNumberCharShapeId = Self.pageNumberCharShapeId(in: index)
     }
 
     // MARK: 컨트롤 등록
@@ -333,11 +336,13 @@ extension HwpPageChromeBuilder {
     /// 모두 바꾸면 글자 모양 0·1과 무관하게 이것으로 그린다).
     static let fallbackPageNumberFont = (faceName: "함초롬돋움", size: CGFloat(10))
 
-    /// 영문 이름이 "Page Number"인 첫 스타일 (id 오름차순).
-    static func pageNumberStyle(in index: HwpIndex) -> CoreHwp.HwpStyle? {
+    /// 쪽 번호 글자 모양 id — 영문 이름이 "Page Number"인 첫 스타일(id 오름차순)의 글자 모양이 색인에 있을 때만.
+    static func pageNumberCharShapeId(in index: HwpIndex) -> UInt32? {
         index.styles.keys.sorted().lazy
             .compactMap { index.styles[$0] }
             .first { $0.styelEnglishName == pageNumberStyleEnglishName }
+            .map { UInt32($0.charShapeId) }
+            .flatMap { index.charShape(id: $0) != nil ? $0 : nil }
     }
 
     /// 논리 쪽 번호 텍스트 블록 — hideMask 0x20 (쪽 번호 감추기, 표 145)이면 건너뛴다.
@@ -417,6 +422,7 @@ extension HwpPageChromeBuilder {
     ///   적용 **전** 기본 크기이고 descent만 조판 글꼴 것이다(20pt × 200% → 67.44 = 56.68 + 20 −
     ///   9.2, 40pt × 50% → 92.16). 머리말 여백이 0이면 상자 위가 위 여백의 가운데다(51.36 =
     ///   28.34 + 23.1) — 위로 제책이면 제본 여백 뒤의 위 여백 가운데다(제본 85.04pt → 136.44).
+    ///   제본 여백은 위 인셋 안으로 클램프한 값이다(`HwpPageGeometry.topGutter`, 잘못된 문서 방어).
     ///
     /// 블록 프레임의 위는 그 베이스라인에서 렌더러의 베이스라인 앵커(`HwpDrawnTextLayout.
     /// baselineAnchor`)를 뺀 자리다 — 렌더러는 첫 줄 상자 상단을 블록 상단에 핀한다.
@@ -455,12 +461,10 @@ extension HwpPageChromeBuilder {
         alignment: CTTextAlignment
     ) -> NSAttributedString {
         let output: NSMutableAttributedString
-        if let style = Self.pageNumberStyle(in: index),
-           index.charShape(id: UInt32(style.charShapeId)) != nil
-        {
+        if let charShapeId = pageNumberCharShapeId {
             output = HwpTextRunBuilder(
                 index: index, fontResolver: fontResolver, attributeCache: attributeCache
-            ).standaloneRun(text, charShapeId: UInt32(style.charShapeId))
+            ).standaloneRun(text, charShapeId: charShapeId)
         } else {
             let font = fontResolver.resolve(
                 faceName: Self.fallbackPageNumberFont.faceName,
