@@ -61,6 +61,8 @@ struct HwpPageChromeBuilder {
     /// 글자 모양별 속성 캐시 (소유는 `HwpPaginator`) — 머리말/꼬리말 문단도
     /// 본문과 같은 캐시를 쓴다.
     private let attributeCache: HwpTextAttributeCache?
+    /// 쪽 번호 글자 모양 id (`pageNumberCharShapeId(in:)`) — 색인이 불변이라 초기화 때 한 번 푼다 (PR 리뷰).
+    let pageNumberCharShapeId: UInt32?
     private var state = State()
 
     init(
@@ -71,6 +73,7 @@ struct HwpPageChromeBuilder {
         self.index = index
         self.fontResolver = fontResolver
         self.attributeCache = attributeCache
+        pageNumberCharShapeId = Self.pageNumberCharShapeId(in: index)
     }
 
     // MARK: 컨트롤 등록
@@ -311,22 +314,48 @@ struct HwpPageChromeBuilder {
         }
         return blocks
     }
+}
 
-    // MARK: 쪽 번호 (표 147/148)
+// MARK: - 쪽 번호 (표 147/148)
 
-    /// 활성 쪽 번호 위치에 따라 논리 쪽 번호 텍스트 블록을 방출한다.
-    /// hideMask 0x20 (쪽 번호 감추기, 표 145)이 켜진 페이지는 건너뛴다.
-    private func pageNumberBlock(
+extension HwpPageChromeBuilder {
+    /// 쪽 번호가 놓이는 가장자리 — 표 148 표시 위치의 위(1·2·3·7·9)·아래(4·5·6·8·10).
+    enum PageNumberEdge {
+        case top
+        case bottom
+    }
+
+    /// 한글이 쪽 번호를 조판하는 스타일의 **영문 이름**. 한글은 스타일을 이 이름으로 찾는다
+    /// (#193, 한컴오피스 한글 12.30 macOS 실측 2026-09-18: '쪽 번호' 스타일의 글자 모양을
+    /// 30pt로 바꾸면 쪽 번호가 30pt로 그려지고, 한글 이름만 바꿔도 그대로지만 영문 이름을
+    /// 바꾸면 기본 모양으로 돌아간다). 스타일 id는 문서마다 다르다 — noori는 9번 문단
+    /// 스타일, 한글 12.30 새 문서는 12번 글자 스타일이다.
+    static let pageNumberStyleEnglishName = "Page Number"
+
+    /// 쪽 번호 스타일이 없을 때 한글이 쓰는 모양 — 함초롬돋움 10pt 검정 (위 실측: 두 이름을
+    /// 모두 바꾸면 글자 모양 0·1과 무관하게 이것으로 그린다).
+    static let fallbackPageNumberFont = (faceName: "함초롬돋움", size: CGFloat(10))
+
+    /// 쪽 번호 글자 모양 id — 영문 이름이 "Page Number"인 첫 스타일(id 오름차순)의 글자 모양이 색인에 있을 때만.
+    static func pageNumberCharShapeId(in index: HwpIndex) -> UInt32? {
+        index.styles.keys.sorted().lazy
+            .compactMap { index.styles[$0] }
+            .first { $0.styelEnglishName == pageNumberStyleEnglishName }
+            .map { UInt32($0.charShapeId) }
+            .flatMap { index.charShape(id: $0) != nil ? $0 : nil }
+    }
+
+    /// 논리 쪽 번호 텍스트 블록 — hideMask 0x20 (쪽 번호 감추기, 표 145)이면 건너뛴다.
+    func pageNumberBlock(
         pageNumber: Int,
         hideMask: UInt32,
         geometry: HwpPageGeometry
     ) -> AnyHwpBlock? {
         guard hideMask & 0x20 == 0,
               let position = state.activePageNumberPosition,
-              let placement = pageNumberPlacement(
+              let placement = Self.pageNumberPlacement(
                   displayPosition: position.propertyInfo.displayPosition,
-                  pageNumber: pageNumber,
-                  geometry: geometry
+                  pageNumber: pageNumber
               )
         else { return nil }
 
@@ -347,25 +376,23 @@ struct HwpPageChromeBuilder {
         }
         let attributed = pageNumberAttributedString(text: text, alignment: placement.alignment)
         return AnyHwpBlock(
-            frame: placement.frame,
+            frame: Self.pageNumberFrame(of: attributed, edge: placement.edge, geometry: geometry),
             kind: .text,
             attributedString: attributed,
             role: .pageChrome
         )
     }
 
-    /// 표 148 bit 8-11 표시 위치 → 페이지 프레임/정렬.
+    /// 표 148 bit 8-11 표시 위치 → 가장자리/정렬.
     /// 0 없음이면 nil. 바깥쪽/안쪽은 짝/홀 페이지에 따라 좌/우가 바뀐다.
-    private func pageNumberPlacement(
+    static func pageNumberPlacement(
         displayPosition: Int,
-        pageNumber: Int,
-        geometry: HwpPageGeometry
-    ) -> (frame: CGRect, alignment: CTTextAlignment)? {
-        let contentFrame = geometry.contentFrame
-        let isTop: Bool
+        pageNumber: Int
+    ) -> (edge: PageNumberEdge, alignment: CTTextAlignment)? {
+        let edge: PageNumberEdge
         switch displayPosition {
-        case 1, 2, 3, 7, 9: isTop = true
-        case 4, 5, 6, 8, 10: isTop = false
+        case 1, 2, 3, 7, 9: edge = .top
+        case 4, 5, 6, 8, 10: edge = .bottom
         default: return nil
         }
         let isEven = pageNumber.isMultiple(of: 2)
@@ -377,45 +404,83 @@ struct HwpPageChromeBuilder {
         case 9, 10: isEven ? .right : .left // 안쪽
         default: .center
         }
-        let blockHeight = pageNumberBlockHeight
-        let frame: CGRect = if isTop {
-            geometry.headerFrame ?? CGRect(
-                x: contentFrame.minX,
-                y: max(0, contentFrame.minY - blockHeight),
-                width: contentFrame.width,
-                height: blockHeight
-            )
-        } else {
-            geometry.footerFrame ?? CGRect(
-                x: contentFrame.minX,
-                y: min(geometry.pageSize.height - blockHeight, contentFrame.maxY),
-                width: contentFrame.width,
-                height: blockHeight
-            )
+        return (edge, alignment)
+    }
+
+    /// 쪽 번호 블록 프레임 — 가로는 본문 폭(정렬은 문단 스타일), 세로는 한글의 쪽 번호 자리.
+    ///
+    /// 한글은 쪽 번호를 **글자 크기 높이의 상자**로 머리말·꼬리말 영역 가장자리에 붙인다
+    /// (#193, 한컴오피스 한글 12.30 macOS PDF 실측 2026-09-18):
+    /// - 아래 위치: 상자 바닥 = 꼬리말 영역 바닥(쪽 높이 − 아래 여백), 베이스라인 = 그 바닥 −
+    ///   글꼴 descent. 함초롬돋움 30pt 792.48 = 799.34 − 6.9(0.23em), Courier New 30pt
+    ///   790.44 = 799.34 − 9.0(0.30em), 10pt 797.16, noori 811.20 = 813.54 − 2.3. 꼬리말
+    ///   영역 높이(42.52·10pt)·쪽 번호 문단 모양(줄 간격 160%·300%)과 무관하다. 꼬리말
+    ///   여백이 0이면 상자 바닥이 아래 여백의 가운데다(아래 여백 42.52·30·60pt에서 813.72·
+    ///   819.96·804.96).
+    /// - 위 위치: 상자 위 = 머리말 영역 위(위 여백), 베이스라인 = 그 위 + 글자 크기 − descent
+    ///   (함초롬돋움 30pt 79.80 = 56.68 + 30 − 6.9, Courier New 77.76). 글자 크기는 상대 크기
+    ///   적용 **전** 기본 크기이고 descent만 조판 글꼴 것이다(20pt × 200% → 67.44 = 56.68 + 20 −
+    ///   9.2, 40pt × 50% → 92.16). 머리말 여백이 0이면 상자 위가 위 여백의 가운데다(51.36 =
+    ///   28.34 + 23.1) — 위로 제책이면 제본 여백 뒤의 위 여백 가운데다(제본 85.04pt → 136.44).
+    ///   제본 여백은 위 인셋 안으로 클램프한 값이다(`HwpPageGeometry.topGutter`, 잘못된 문서 방어).
+    ///
+    /// 블록 프레임의 위는 그 베이스라인에서 렌더러의 베이스라인 앵커(`HwpDrawnTextLayout.
+    /// baselineAnchor`)를 뺀 자리다 — 렌더러는 첫 줄 상자 상단을 블록 상단에 핀한다.
+    static func pageNumberFrame(
+        of attributed: NSAttributedString,
+        edge: PageNumberEdge,
+        geometry: HwpPageGeometry
+    ) -> CGRect {
+        let contentFrame = geometry.contentFrame
+        let line = CTLineCreateWithAttributedString(attributed)
+        var descent: CGFloat = 0
+        _ = CTLineGetTypographicBounds(line, nil, &descent, nil)
+        let baseline: CGFloat = switch edge {
+        case .bottom:
+            (geometry.footerFrame?.maxY ?? geometry.pageSize.height - geometry.margins.bottom / 2)
+                - descent
+        case .top:
+            (geometry.headerFrame?.minY
+                ?? geometry.topGutter + (geometry.margins.top - geometry.topGutter) / 2)
+                + HwpDrawnTextLayout.lineMetrics(of: line).textBoxHeight - descent
         }
-        return (frame, alignment)
+        let boxHeight = HwpDrawnTextLayout.lineMetrics(of: line).boxHeight
+        return CGRect(
+            x: contentFrame.minX,
+            y: baseline - HwpDrawnTextLayout.baselineAnchor(of: line),
+            width: contentFrame.width,
+            height: max(1, boxHeight)
+        )
     }
 
-    private var pageNumberBlockHeight: CGFloat {
-        let shape = index.charShape(id: 0) ?? CoreHwp.HwpCharShape()
-        return max(10, HwpUnits.points(fromHwpUnit: shape.baseSize) * 1.4)
-    }
-
-    /// 기본 글자 모양 (charShape 0)의 글꼴로 쪽 번호 문자열을 만든다.
+    /// 쪽 번호 스타일의 글자 모양으로 쪽 번호 문자열을 만든다 — 본문 글자와 같은 경로를
+    /// 글자마다 지나 숫자·줄표·빈칸이 각자의 스크립트 슬롯 글꼴·상대 크기·빈칸 폭 규칙을
+    /// 따른다 (문단 번호 라벨 선례). 스타일이 없으면 한글 기본 모양(함초롬돋움 10pt)이다.
     private func pageNumberAttributedString(
         text: String,
         alignment: CTTextAlignment
     ) -> NSAttributedString {
-        let shape = index.charShape(id: 0) ?? CoreHwp.HwpCharShape()
-        let size = max(6, HwpUnits.points(fromHwpUnit: shape.baseSize))
-        let faceId = UInt32(shape.faceId.first ?? 0)
-        let face = index.faceName(for: faceId, script: .korean)
-        let font = fontResolver.resolve(
-            faceName: face?.faceName ?? "Helvetica",
-            alternatives: [face?.alternativeFaceName, face?.defaultFaceName].compactMap { $0 },
-            script: .korean, size: size
-        )
-
+        let output: NSMutableAttributedString
+        if let charShapeId = pageNumberCharShapeId {
+            output = HwpTextRunBuilder(
+                index: index, fontResolver: fontResolver, attributeCache: attributeCache
+            ).standaloneRun(text, charShapeId: charShapeId)
+        } else {
+            let font = fontResolver.resolve(
+                faceName: Self.fallbackPageNumberFont.faceName,
+                script: .english, size: Self.fallbackPageNumberFont.size
+            )
+            output = NSMutableAttributedString(string: text, attributes: [
+                kCTFontAttributeName as NSAttributedString.Key: font,
+                kCTForegroundColorAttributeName as NSAttributedString.Key:
+                    CGColor(gray: 0, alpha: 1),
+            ])
+            // 기본 모양도 보통 빈칸이 0.5em이다 — 한글 실측: 폴백 "- 1 -"의 빈칸 전진량
+            // 5.04·4.92pt(글꼴 고유 3.0pt가 아니다), 스타일 경로와 같은 폭 (PR 리뷰).
+            HwpTextRunBuilder.applyFixedSpaceWidth(
+                to: output, includesOrdinarySpace: !index.isCompatibilityDocument
+            )
+        }
         var alignmentValue = alignment
         let style = withUnsafeMutablePointer(to: &alignmentValue) { pointer in
             var setting = CTParagraphStyleSetting(
@@ -425,10 +490,11 @@ struct HwpPageChromeBuilder {
             )
             return CTParagraphStyleCreate(&setting, 1)
         }
-        return NSAttributedString(string: text, attributes: [
-            kCTFontAttributeName as NSAttributedString.Key: font,
-            kCTForegroundColorAttributeName as NSAttributedString.Key: shape.faceColor.cgColor,
-            kCTParagraphStyleAttributeName as NSAttributedString.Key: style,
-        ])
+        output.addAttribute(
+            kCTParagraphStyleAttributeName as NSAttributedString.Key,
+            value: style,
+            range: NSRange(location: 0, length: output.length)
+        )
+        return NSAttributedString(attributedString: output)
     }
 }

@@ -12,51 +12,29 @@ extension HwpTextRunBuilder {
     }
 
     /// controlIndex번째 컨트롤이 treatAsChar 개체면 그 줄 공간 예약 (크기는 pt).
+    ///
+    /// 예약은 개체의 **바깥 상자**다 — 개체 크기에 바깥 여백(표 70)을 더한 것이 줄의 한
+    /// 글자 폭·높이다 (#193, `HwpObjectAnchorGeometry.OuterMargins`). 개체는 그 안에서
+    /// 왼쪽·위쪽 여백만큼 들어가 놓인다 (`HwpObjectAnchorGeometry.inlineObjectOrigin`).
     func inlineObjectReservation(
         controlIndex: Int,
         paragraph: CoreHwp.HwpParagraph
     ) -> InlineObjectReservation? {
         guard let ctrls = paragraph.ctrlHeaderArray,
-              ctrls.indices.contains(controlIndex)
+              ctrls.indices.contains(controlIndex),
+              let (commonProperty, components) = Self.inlineObjectParts(of: ctrls[controlIndex]),
+              let commonProperty, commonProperty.propertyInfo.treatAsChar
         else { return nil }
-
-        let commonProperty: CoreHwp.HwpCommonCtrlProperty?
-        let components: [CoreHwp.HwpShapeComponent]
-        switch ctrls[controlIndex] {
-        case let .genShapeObject(genShape):
-            commonProperty = genShape.commonCtrlProperty
-            components = genShape.shapeComponentArray
-        case let .table(table):
-            // 글자처럼 취급 표도 줄 공간을 예약한다 (noori 실측: 캐시 줄 높이
-            // = 표 높이). 앵커 배치는 HwpPaginator.appendInlineAnchoredTable.
-            commonProperty = table.commonCtrlProperty
-            components = []
-        case let .shape(shape),
-             let .line(shape),
-             let .rectangle(shape),
-             let .ellipse(shape),
-             let .arc(shape),
-             let .polygon(shape),
-             let .curve(shape),
-             let .equation(shape),
-             let .equationLegacy(shape),
-             let .picture(shape),
-             let .ole(shape),
-             let .container(shape):
-            commonProperty = shape.commonCtrlProperty
-            components = shape.shapeComponentArray
-        default:
-            return nil
-        }
-        guard let commonProperty, commonProperty.propertyInfo.treatAsChar else { return nil }
 
         let stored = HwpObjectSizeResolver.size(of: commonProperty, resolver: sizeResolver)
         var width = stored.width
         var height = stored.height
+        let margins = HwpObjectAnchorGeometry.OuterMargins(commonProperty)
         // 저작 폭이 0이라 개체 요소 detail로 폴백하면 그 폭은 절대값(HWPUNIT)이므로
         // 단 폭에 딸리지 않는다 — 예약 폭 열쇠도 그때는 싣지 않는다.
         var widthKeyAttributes = HwpInlineObjectReservation.widthKeyAttributes(
-            raw: commonProperty.width, basis: commonProperty.propertyInfo.widthRelativeTo
+            raw: commonProperty.width, basis: commonProperty.propertyInfo.widthRelativeTo,
+            horizontalMargin: margins.horizontal
         )
         if width <= 0 || height <= 0, let detail = components.first?.detail {
             if width <= 0 {
@@ -69,8 +47,37 @@ extension HwpTextRunBuilder {
         }
         guard width > 0, height > 0 else { return nil }
         return InlineObjectReservation(
-            size: CGSize(width: width, height: height),
+            size: CGSize(width: width + margins.horizontal, height: height + margins.vertical),
             widthKeyAttributes: widthKeyAttributes
         )
+    }
+
+    /// 줄 공간을 예약할 수 있는 컨트롤의 공통 속성과 개체 요소 — 개체가 아니면 nil.
+    private static func inlineObjectParts(
+        of ctrl: CoreHwp.HwpCtrlId
+    ) -> (CoreHwp.HwpCommonCtrlProperty?, [CoreHwp.HwpShapeComponent])? {
+        switch ctrl {
+        case let .genShapeObject(genShape):
+            (genShape.commonCtrlProperty, genShape.shapeComponentArray)
+        case let .table(table):
+            // 글자처럼 취급 표도 줄 공간을 예약한다 (noori 실측: 캐시 줄 높이
+            // = 표 높이 + 위·아래 바깥 여백). 앵커 배치는 HwpPaginator.appendInlineAnchoredTable.
+            (table.commonCtrlProperty, [])
+        case let .shape(shape),
+             let .line(shape),
+             let .rectangle(shape),
+             let .ellipse(shape),
+             let .arc(shape),
+             let .polygon(shape),
+             let .curve(shape),
+             let .equation(shape),
+             let .equationLegacy(shape),
+             let .picture(shape),
+             let .ole(shape),
+             let .container(shape):
+            (shape.commonCtrlProperty, shape.shapeComponentArray)
+        default:
+            nil
+        }
     }
 }

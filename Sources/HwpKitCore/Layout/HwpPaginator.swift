@@ -309,7 +309,7 @@ public actor HwpPaginator {
 
     /// controlIndex → 인라인 앵커 페이지 좌표 캐시 — 컨트롤마다 전 라인·앵커를
     /// 처음부터 스캔하지 않도록 컨텍스트당 한 번만 만든다 (#12).
-    private var inlineAnchorCache: [Int: CGPoint]?
+    private var inlineAnchorCache: [Int: InlineAnchorPlacement]?
     /// 절대 라인 캐시 배치 — run 분해·높이·슬라이스·stale 판정 계산과
     /// 절대 캐시 전용 상태 (모드·마지막 loc·stale 보정)를 소유한다.
     /// 페이지 확정·블록 방출은 여기 (paginator)에 남는다.
@@ -3199,7 +3199,10 @@ private extension HwpPaginator {
         table: CoreHwp.HwpTable,
         controlIndex: Int?
     ) -> Bool {
-        guard let position = inlineAnchorPosition(for: controlIndex) else { return false }
+        // 줄 앵커는 바깥 상자(표 + 바깥 여백)의 원점이다 — 표는 왼쪽·위쪽 여백만큼 안 (#193).
+        guard let position = inlineObjectPosition(
+            for: controlIndex, margins: .init(table.commonCtrlProperty)
+        ) else { return false }
         let height = frame.rows.reduce(CGFloat(0)) { max($0, $1.rowFrame.maxY) }
         currentBlocks.append(AnyHwpBlock(
             frame: CGRect(
@@ -4073,7 +4076,9 @@ private extension HwpPaginator {
             zOrder: commonProperty.zOrder
         )
 
-        if info.treatAsChar, appendInlineAnchoredBlock(spec, controlIndex: controlIndex) {
+        if info.treatAsChar, appendInlineAnchoredBlock(
+            spec, margins: .init(commonProperty), controlIndex: controlIndex
+        ) {
             return
         }
 
@@ -4263,17 +4268,24 @@ private extension HwpPaginator {
 
     /// treatAsChar 개체를 FFFC 앵커 라인 위치에 배치한다. 앵커가 없으면 false
     /// (호출자가 flow 배치로 폴백). 줄 높이는 run delegate가 이미 예약했으므로
-    /// 흐름 높이를 추가 소비하지 않는다.
+    /// 흐름 높이를 추가 소비하지 않는다. `margins`는 개체의 바깥 여백 — 예약(바깥 상자)
+    /// 안에서 개체를 들일 몫이다.
     private func appendInlineAnchoredBlock(
         _ spec: ObjectBlockSpec,
+        margins: HwpObjectAnchorGeometry.OuterMargins,
         controlIndex: Int?
     ) -> Bool {
-        guard let position = inlineAnchorPosition(for: controlIndex) else { return false }
+        guard let outerBox = inlineAnchorPosition(for: controlIndex),
+              let position = inlineObjectPosition(for: controlIndex, margins: margins)
+        else { return false }
+        // 폭 클램프의 기준은 바깥 상자 원점이다 — 개체 원점(왼쪽 여백만큼 안)으로 재면 줄
+        // 시작의 단 폭 그림·차트가 왼쪽 여백만큼 눌려 그려진다 (PR 리뷰). 여백 없는 개체는
+        // 종전과 같다.
         let contentFrame = currentPageGeometry.contentFrame
         let frame = CGRect(
             x: position.x,
             y: position.y,
-            width: min(spec.size.width, max(1, contentFrame.maxX - position.x)),
+            width: min(spec.size.width, max(1, contentFrame.maxX - outerBox.x)),
             height: spec.size.height
         )
         currentBlocks.append(AnyHwpBlock(
@@ -4295,7 +4307,31 @@ private extension HwpPaginator {
     /// (줄 상자 모델, #180·#195).
     func inlineAnchorPosition(for controlIndex: Int?) -> CGPoint? {
         guard let controlIndex, currentParagraphContext != nil else { return nil }
-        return inlineAnchorMap()[controlIndex]
+        return inlineAnchorMap()[controlIndex]?.origin
+    }
+
+    /// 글자처럼 취급 개체 자신의 페이지 좌표 — 줄이 예약한 바깥 상자의 원점에서 바깥
+    /// 여백(왼쪽·위쪽)만큼 들인 자리 (#193). 줄이 자리를 예약하지 **않은** 앵커(한 축 크기가
+    /// 0인 개체 — `inlineObjectReservation`이 nil)는 바깥 상자가 없어 들이지 않는다 — 들이면
+    /// 예약 없는 개체만 베이스라인 아래·뒤 글자 위로 옮겨진다 (PR 리뷰).
+    func inlineObjectPosition(
+        for controlIndex: Int?,
+        margins: HwpObjectAnchorGeometry.OuterMargins
+    ) -> CGPoint? {
+        guard let controlIndex, currentParagraphContext != nil,
+              let placement = inlineAnchorMap()[controlIndex]
+        else { return nil }
+        return HwpObjectAnchorGeometry.inlineObjectOrigin(
+            outerBoxOrigin: placement.origin,
+            margins: placement.reservesSpace ? margins : .zero
+        )
+    }
+
+    /// 줄 앵커 하나 — 바깥 상자 원점과, 줄이 그 자리를 예약했는지 (delegate ascent > 0 —
+    /// `HwpParagraphObjectCollector.LineAnchor.reservesSpace`와 같은 판정).
+    private struct InlineAnchorPlacement {
+        let origin: CGPoint
+        let reservesSpace: Bool
     }
 
     /// 방금 놓인 문단 블록(조각)의 줄에 앵커가 있는 컨트롤 서수 — 문서 순서(오름차순).
@@ -4308,7 +4344,7 @@ private extension HwpPaginator {
     /// controlIndex → 앵커 좌표 맵을 컨텍스트당 한 번 만들고 캐시한다 (#12).
     /// 라인·앵커를 방출 순서로 훑어 각 controlIndex의 첫 매칭만 담는다
     /// (기존 lines.first(where:) 순서와 동일).
-    private func inlineAnchorMap() -> [Int: CGPoint] {
+    private func inlineAnchorMap() -> [Int: InlineAnchorPlacement] {
         if let cached = inlineAnchorCache {
             return cached
         }
@@ -4316,15 +4352,18 @@ private extension HwpPaginator {
             inlineAnchorCache = [:]
             return [:]
         }
-        var map: [Int: CGPoint] = [:]
+        var map: [Int: InlineAnchorPlacement] = [:]
         for line in context.lines {
             for anchor in line.inlineAnchors where map[anchor.controlIndex] == nil {
-                map[anchor.controlIndex] = HwpObjectAnchorGeometry.inlineAnchorOrigin(
-                    paragraphOrigin: context.blockFrame.origin,
-                    lineBaseline: line.baseline,
-                    lineOrigin: line.origin,
-                    xOffset: anchor.xOffset,
-                    ascent: anchor.ascent
+                map[anchor.controlIndex] = InlineAnchorPlacement(
+                    origin: HwpObjectAnchorGeometry.inlineAnchorOrigin(
+                        paragraphOrigin: context.blockFrame.origin,
+                        lineBaseline: line.baseline,
+                        lineOrigin: line.origin,
+                        xOffset: anchor.xOffset,
+                        ascent: anchor.ascent
+                    ),
+                    reservesSpace: anchor.ascent > 0
                 )
             }
         }

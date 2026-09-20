@@ -137,6 +137,34 @@ final class HwpPageGeometryTests: XCTestCase {
         expect(geo.contentFrame.minY) == 132.0
     }
 
+    /// 제본 여백이 쪽 높이를 넘는 잘못된 문서: 위 인셋처럼 제본 여백도 쪽 안으로 접는다 —
+    /// 인셋을 넘지 않으므로(`topGutter <= margins.top`) 머리말 여백 0인 쪽의 위 쪽 번호
+    /// 가운데(제본 + (위 인셋 − 제본) / 2)가 쪽 안에 남는다 (PR 리뷰). 인셋이 쪽에 드는
+    /// 문서에서는 저작 값 그대로다.
+    func testOversizedTopGutterIsClampedToTheTopInset() {
+        var pageDef = HwpPageDef()
+        pageDef.width = 61200
+        pageDef.height = 79200
+        pageDef.marginTop = 7200
+        pageDef.marginLeft = 7200
+        pageDef.marginBottom = 7200
+        pageDef.marginRight = 7200
+        pageDef.marginHeader = 0
+        pageDef.marginFootnote = 0
+        pageDef.marginGutter = 3600
+        pageDef.property = 0b100 // 위로 제책
+
+        let plausible = HwpPageGeometry.compute(pageDef: pageDef, sectionDef: nil)
+        expect(plausible.topGutter) == 36.0
+        expect(plausible.margins.top) == 108.0
+
+        pageDef.marginGutter = UInt32.max
+        let oversized = HwpPageGeometry.compute(pageDef: pageDef, sectionDef: nil)
+        expect(oversized.margins.top) == 792.0
+        expect(oversized.topGutter) == oversized.margins.top
+        expect(oversized.contentFrame.height) == 1.0
+    }
+
     /// 한글의 세로 구성 (표 137): 위쪽 여백 → 머리말 영역 → 본문 → 꼬리말 영역
     /// → 아래쪽 여백. 본문 상단 = marginTop + marginHeader (BinData/plain-text
     /// 픽스처 PrvImage 실측: A4 기본 여백에서 본문 상단 99.2pt).

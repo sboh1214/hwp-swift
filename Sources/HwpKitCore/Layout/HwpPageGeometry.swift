@@ -13,6 +13,13 @@ public struct HwpPageGeometry: Sendable, Hashable {
     /// 단 정의 (`cold` 컨트롤)가 주어지면 콘텐츠 영역을 나눈 단 프레임,
     /// 없으면 `[contentFrame]`.
     public let columnFrames: [CGRect]
+    /// 위로 제책(표 131 제책 방법 2)일 때 위 여백 앞에 드는 제본 여백 (pt) — 그 밖에는 0.
+    /// 머리말 여백이 0인 쪽의 위 쪽 번호가 이 값 + 위 여백의 가운데에 놓인다 (#193).
+    /// 여백처럼 미신뢰 값을 방어한다 — 위 인셋(`margins.top`, 쪽 높이로 클램프)을 넘지
+    /// 않으므로 인셋이 쪽에 드는 문서에서는 저작 값 그대로고, 제본 여백만으로 쪽 높이를
+    /// 넘는 문서에서도 그 가운데가 쪽 안에 남는다 (PR 리뷰: 클램프 전엔 UInt32 최대에서
+    /// 가운데가 2,100만 pt 아래라 쪽 번호가 사라졌다).
+    var topGutter: CGFloat = 0
 
     public static func compute(
         pageDef: CoreHwp.HwpPageDef,
@@ -38,11 +45,11 @@ public struct HwpPageGeometry: Sendable, Hashable {
         let headerMarginPt = HwpUnits.points(fromHwpUnitU: pageDef.marginHeader)
         let footerMarginPt = HwpUnits.points(fromHwpUnitU: pageDef.marginFootnote)
 
-        let (leftGutter, topGutter) = Self.gutterInsets(pageDef)
+        let (leftGutter, rawTopGutter) = Self.gutterInsets(pageDef)
 
         // margins는 본문 콘텐츠 인셋 (머리말/꼬리말 영역 포함) — 뷰/테스트가
         // "본문 밖" 판정에 그대로 쓸 수 있는 값이다.
-        let topInset = paperTopMargin + headerMarginPt + topGutter
+        let topInset = paperTopMargin + headerMarginPt + rawTopGutter
         let leftInset = HwpUnits.points(fromHwpUnitU: pageDef.marginLeft) + leftGutter
         let bottomInset = paperBottomMargin + footerMarginPt
         let rightInset = HwpUnits.points(fromHwpUnitU: pageDef.marginRight)
@@ -52,6 +59,10 @@ public struct HwpPageGeometry: Sendable, Hashable {
             bottom: Self.clampMargin(bottomInset, limit: pageSize.height),
             right: Self.clampMargin(rightInset, limit: pageSize.width)
         )
+        // 제본 여백은 위 인셋의 일부다 — 인셋을 쪽 높이로 클램프했으니 그 안으로 같이
+        // 접는다 (모든 항이 0 이상이라 인셋이 쪽에 들면 값이 그대로다). 머리말 자리와
+        // 머리말 없는 쪽의 위 쪽 번호 가운데가 이 값을 쓴다 (PR 리뷰).
+        let topGutter = min(rawTopGutter, margins.top)
 
         // 여백 합이 페이지를 넘으면 콘텐츠 rect가 음수가 되므로 최소 1로 클램프한다.
         let contentWidth = max(1, pageSize.width - margins.left - margins.right)
@@ -97,7 +108,8 @@ public struct HwpPageGeometry: Sendable, Hashable {
             contentFrame: contentFrame,
             headerFrame: headerFrame,
             footerFrame: footerFrame,
-            columnFrames: columnFrames
+            columnFrames: columnFrames,
+            topGutter: topGutter
         )
     }
 

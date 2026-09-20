@@ -177,27 +177,6 @@ extension HwpTableLayout {
         let frame: HwpTableFrame
     }
 
-    /// 셀 안 문단 하나의 레이아웃 결과 (문단 텍스트 + 그 문단에 붙은 중첩 표)
-    struct PlacedCellContent {
-        let paragraph: CoreHwp.HwpParagraph
-        let frame: HwpParagraphFrame
-        /// 이 문단의 번호 열쇠 (#158) — 측정(`measuredCellContents`)이 라벨을 붙여
-        /// 잰 그 번호로 배치(`laidOutContents`)가 같은 문자열을 다시 만들고, 문단
-        /// 안 글상자·중첩 표는 여기서 한 겹 더 내려간다.
-        let numbering: HwpNumberingScope?
-        /// 측정이 라인 캐시 높이를 썼을 때 그 줄 상자 범위 (#160) — 셀 높이의
-        /// 하한(`cachedLineBoxHeight`)이 마지막 줄의 줄 간격을 이 값으로 뺀다.
-        /// CT 측정 문단은 nil.
-        let cachedLineExtent: HwpParagraphLayout.CachedLineExtent?
-        let nestedTables: [PlacedNestedTable]
-
-        var totalHeight: CGFloat {
-            frame.totalHeight + nestedTables.reduce(CGFloat(0)) {
-                $0 + $1.frame.outerFrame.height
-            }
-        }
-    }
-
     struct PlacedCell {
         let row: Int
         let column: Int
@@ -388,8 +367,9 @@ extension HwpTableLayout {
             measurer: measurer,
             context: context
         )
+        // 내용은 마지막 줄 상자 아래에서 끝난다 — 줄 간격 여분·아래 간격은 행에 들지 않는다 (#193).
         let contentHeight = contents.reduce(CGFloat(0)) { $0 + $1.totalHeight }
-            + margins.top + margins.bottom
+            - (contents.last?.trailingGapIfLast ?? 0) + margins.top + margins.bottom
         let authoredHeight = cell.header.cellProperty.map {
             HwpUnits.points(fromHwpUnitU: $0.height)
         } ?? 0
@@ -502,6 +482,7 @@ extension HwpTableLayout {
                 frame: measured.frame,
                 numbering: numbering,
                 cachedLineExtent: measured.cachedLineExtent,
+                trailingGap: measured.trailingGap,
                 nestedTables: nestedTableFrames(
                     in: paragraph,
                     innerWidth: innerWidth,

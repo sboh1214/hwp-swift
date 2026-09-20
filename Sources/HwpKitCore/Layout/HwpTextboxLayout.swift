@@ -166,8 +166,10 @@ public struct HwpTextboxLayout {
 
         // 콘텐츠 하단은 문단뿐 아니라 그림/도형 자식의 extent도 포함해야
         // 한다 — 문단만 보면 slack이 과대돼 세로 정렬이 자식을 글상자 밖으로
-        // 민다 (표 셀 verticallyAligned와 동일 규약, R34 #2).
-        let contentBottom = (contents.paragraphs.map(\.rect.maxY)
+        // 민다 (표 셀 verticallyAligned와 동일 규약, R34 #2). 문단은 마지막 줄
+        // **상자** 아래까지다 — 줄 간격 여분·아래 간격은 범위 밖 (#193,
+        // `HwpContainerContentExtent`).
+        let contentBottom = ([contents.paragraphContentBottom].compactMap { $0 }
             + contents.images.map(\.rect.maxY)
             + contents.shapes.map(\.rect.maxY))
             .max() ?? insets.top
@@ -198,6 +200,8 @@ public struct HwpTextboxLayout {
         var paragraphs: [HwpLaidOutParagraph] = []
         var images: [HwpCellImage] = []
         var shapes: [HwpCellShape] = []
+        /// 마지막 문단의 마지막 줄 상자 아래 (#193) — 문단이 없으면 nil.
+        var paragraphContentBottom: CGFloat?
     }
 
     /// 글상자 리스트의 문단들을 위에서 아래로 순차 배치하고 (블록-로컬 rect),
@@ -239,11 +243,14 @@ public struct HwpTextboxLayout {
                 let measured = measurer.measure(
                     paragraph, width: wrapWidth, options: .init(number: scope?.number)
                 )
+                // 위 간격만큼 rect 상단을 내린다 — 표 셀과 같은 규약 (한글 실측 #193: 위
+                // 간격 10pt 문단의 첫 줄 상자가 그만큼 아래).
+                let spacingBefore = HwpContainerContentExtent.spacingBefore(
+                    of: paragraph, index: index
+                )
                 let rect = CGRect(
-                    x: insets.left,
-                    y: contentY,
-                    width: wrapWidth,
-                    height: measured.frame.totalHeight
+                    x: insets.left, y: contentY + spacingBefore,
+                    width: wrapWidth, height: measured.frame.totalHeight - spacingBefore
                 )
                 contents.paragraphs.append(HwpLaidOutParagraph(
                     attributedString: measured.attributed,
@@ -260,6 +267,7 @@ public struct HwpTextboxLayout {
                 contents.images.append(contentsOf: collected.images)
                 contents.shapes.append(contentsOf: collected.shapes)
                 contentY += measured.frame.totalHeight
+                contents.paragraphContentBottom = contentY - measured.trailingGap
             }
         }
         return contents

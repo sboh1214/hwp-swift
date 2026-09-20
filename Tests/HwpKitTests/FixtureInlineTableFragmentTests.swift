@@ -52,9 +52,12 @@ final class FixtureInlineTableFragmentTests: XCTestCase {
         // 표 줄의 상자 상단 = 조각 상단 + 앞 세 줄의 전진량 3 × 16pt (#180 — 줄 상자 모델).
         expect(table1.frame.minY).to(beCloseTo(646.41, within: 0.01))
         expect(table1.frame.height).to(beCloseTo(11.08, within: 0.01))
-        expect(table1.frame.minX).to(beCloseTo(365.57, within: 0.01))
+        expect(table1.frame.minX).to(beCloseTo(363.89, within: 0.01))
         expect(table2.frame.minY).to(beCloseTo(table1.frame.minY, within: 0.01))
-        expect(table2.frame.minX).to(beCloseTo(table1.frame.maxX, within: 0.01))
+        // 세 표 모두 좌우 바깥 여백 56 HWPUNIT — 줄은 여백까지 예약하므로 나란한 두 표 사이가
+        // 앞 표 오른쪽 + 뒤 표 왼쪽 = 1.12pt다 (#193). 한글 PDF(한컴 글꼴)의 두 표 글자 시작
+        // 간격 87.29pt와 우리 87.33pt가 같다 (여백을 빼면 86.21pt).
+        expect(table2.frame.minX).to(beCloseTo(table1.frame.maxX + 1.12, within: 0.01))
         for table in [table1, table2] {
             expect(table.frame.minY).to(beGreaterThanOrEqualTo(fragment.frame.minY))
             expect(table.frame.maxY).to(beLessThanOrEqualTo(fragment.frame.maxY))
@@ -74,7 +77,7 @@ final class FixtureInlineTableFragmentTests: XCTestCase {
         // 한글과 같아 앞 조각의 표 줄 상자 상단이 캐시 그대로 662.41pt다 (수정 전 666.59).
         expect(table3.frame.minY).to(beCloseTo(163.21, within: 0.01))
         expect(table3.frame.height).to(beCloseTo(11.08, within: 0.01))
-        expect(table3.frame.minX).to(beCloseTo(304.10, within: 0.01))
+        expect(table3.frame.minX).to(beCloseTo(303.98, within: 0.01))
         expect(table3.frame.maxY).to(beLessThanOrEqualTo(fragment.frame.maxY))
         let emptyFollower = try XCTUnwrap(second.first {
             $0.source?.sectionIndex == 24 && $0.source?.paragraphIndex == 491
