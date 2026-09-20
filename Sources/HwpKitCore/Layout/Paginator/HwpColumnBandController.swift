@@ -460,15 +460,16 @@ extension HwpColumnBandController {
     }
 
     /// 밴드 바닥 블록의 마지막 줄 줄 간격 — 마지막 글자의 줄 간격 규칙(표 46)을 그 글자의
-    /// 기본 글자 크기 상자에 적용한 전진량에서 상자를 뺀 값. 줄 캐시가 있는 문단의 캐시
-    /// `lineSpacing`과 같은 값이고(캐시도 같은 규칙으로 저장된다), 개체 줄의 개체 몫과 마지막
-    /// 줄의 더 큰 다른 글자는 안 본다(줄 경계를 모른다 — 마지막 글자 기준 근사).
+    /// 글자 상자(한글 문서는 기본 글자 크기, MS 워드 호환 문서는 그 글꼴의 줄 상자 —
+    /// `HwpDrawnTextLayout.textBoxHeight(at:in:)`, #194)에 적용한 전진량에서 상자를 뺀 값.
+    /// 줄 캐시가 있는 문단의 캐시 `lineSpacing`과 같은 값이고(캐시도 같은 규칙으로
+    /// 저장된다), 개체 줄의 개체 몫과 마지막 줄의 더 큰 다른 글자는 안 본다(줄 경계를
+    /// 모른다 — 마지막 글자 기준 근사).
     static func measuredTrailingSpacing(of attributedString: NSAttributedString) -> CGFloat {
         guard attributedString.length > 0 else { return 0 }
         let index = attributedString.length - 1
-        guard let size = (attributedString.attribute(
-            HwpAttributedStringKey.baseFontSize, at: index, effectiveRange: nil
-        ) as? NSNumber).map({ CGFloat($0.doubleValue) }), size > 0 else { return 0 }
+        let size = HwpDrawnTextLayout.textBoxHeight(at: index, in: attributedString)
+        guard size > 0 else { return 0 }
         let rule = HwpLineSpacingRule.rule(in: attributedString, at: index)
         return max(0, rule.advance(textBoxHeight: size, objectHeight: 0) - size)
     }

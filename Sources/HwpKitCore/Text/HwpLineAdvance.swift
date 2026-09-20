@@ -10,6 +10,10 @@ import Foundation
 /// 적용한 값이다. 글꼴 지표(ascent·descent·leading)는 관여하지 않는다 — 한글 12.30.0
 /// 이 저장한 줄 캐시(`PARA_LINE_SEG`)의 `vertsize`·`spacing`이 그대로 이 규칙이다
 /// (2026-09-12 스윕: 글자 크기 8종 × 종류 4종 × 글꼴 3종 × 상대크기 2종 전부).
+/// MS 워드 호환 문서(#194)는 글자 상자가 글꼴 줄 상자(`HwpMsWordLineBox`)로 바뀔 뿐
+/// 종류별 규칙은 같다 (2026-09-20 실측 `cm194-spacing`: Apple SD 산돌고딕 Neo 10pt 상자
+/// 1559 HWPUNIT에 고정 5·16·30 → 500·1600·3000, 여백만 0·3·10 → 1559·1859·2559, 최소
+/// 5·16·30 → 1559·1600·3000, 비율 100·160·200·300·80 → 1559·2491·3115·4671·1247).
 ///
 /// | 종류 | 값 | 전진량 |
 /// | --- | --- | --- |
@@ -65,12 +69,41 @@ public struct HwpLineSpacingRule: Equatable, Sendable {
     /// - `textBoxHeight`: 그 줄 글자 run들의 기본 글자 크기 최댓값 (개체 마커 run의
     ///   글자 모양 포함).
     /// - `objectHeight`: 그 줄이 예약한 글자처럼 취급 개체 높이 최댓값 (없으면 0).
+    ///
+    /// 줄 상자는 둘 가운데 큰 것이다 — 한글 문서의 규칙. MS 워드 호환 문서처럼 줄 상자가
+    /// 그 최댓값이 아닌 줄은 `advance(lineBoxHeight:textBoxHeight:)`에 상자를 직접 준다.
     public func advance(textBoxHeight: CGFloat, objectHeight: CGFloat) -> CGFloat {
+        advance(
+            lineBoxHeight: max(max(0, textBoxHeight), max(0, objectHeight)),
+            textBoxHeight: textBoxHeight
+        )
+    }
+
+    /// 줄 하나의 전진량 — `lineBoxHeight`는 줄 상자 높이(한글 줄 캐시의 `vertsize`,
+    /// `HwpDrawnTextLayout.LineMetrics.boxHeight`), `textBoxHeight`는 비율 여분의 기준이
+    /// 되는 글자 상자 높이(`LineMetrics.textBoxHeight`)다. 둘은 독립이다 — MS 워드 호환
+    /// 문서에서 20pt 글자 모양의 표 마커가 든 10pt 줄은 상자 15.59pt에 여분 기준 20pt다
+    /// (한글 캐시 `vertsize` 1559·160% `spacing` 1200, 2026-09-20 `cm194-markers`).
+    ///
+    /// **비율의 여분은 4 HWPUNIT(0.04pt) 양자다** — 글자 상자를 4 HWPUNIT 단위로 내림한
+    /// 뒤 (p − 100)%를 곱해 반올림한다. 한글 12.30 실측 (2026-09-20, MS 워드 호환 합성
+    /// 문서의 줄 캐시): Apple SD 산돌고딕 Neo 10pt 상자 1559에 160·200·300·80%의
+    /// `spacing`이 932·1556·3112·−312 (1559 ÷ 4 = 389 → 389 × 0.6 = 233.4 → 233 × 4;
+    /// 1559 × 0.6 = 935가 아니다), Menlo 10pt 1515 → 908·1512·3024 (378 × 0.6 = 226.8 →
+    /// 227 × 4), 함초롬돋움 10pt 1692 → 1016, 20pt 3383 → 2028, Apple SD 30pt 4678 → 2804.
+    /// 한글 문서의 실물 캐시도 같다 — `CCL`·`noori` 15pt 170% 줄의 `spacing` 1052 (1500 ÷ 4
+    /// = 375 → 262.5 → 263 × 4; 15 × 0.7 = 10.50이 아니다), `legacy-common-control-property`
+    /// 각주 9pt 130% 6,920줄 전부 272 (225 × 0.3 = 67.5 → 68; 270이 아니다), 10.5pt 160%
+    /// 628 (1050 ÷ 4 = 262.5 → **262** × 0.6 = 157.2 → 157 — 내림이 상자에도 걸린다), 11pt
+    /// 130% 332, 9.5pt 130% 284, `noori` 13pt 130% 392·15.5pt 160% 928. 반올림은 .5를
+    /// 올린다 (67.5·82.5·97.5·262.5 전부). 상자가 4의 배수인 보통의 글자 크기(10·12·20pt…)
+    /// 에서는 산술 그대로다.
+    public func advance(lineBoxHeight: CGFloat, textBoxHeight: CGFloat) -> CGFloat {
         let text = max(0, textBoxHeight)
-        let box = max(text, max(0, objectHeight))
+        let box = max(0, lineBoxHeight)
         let advance: CGFloat = switch kind {
         case .percent:
-            box + text * (value - 100) / 100
+            box + Self.percentShare(of: text, percent: value)
         case .fixed:
             value
         case .marginOnly:
@@ -81,6 +114,15 @@ public struct HwpLineSpacingRule: Equatable, Sendable {
         // 0·음수 전진량은 줄이 같은 자리에 겹쳐 뒤 줄이 앞 줄 위로 올라간다 — 고정 0이나
         // 비율 0은 저작 UI가 막지만 손상 문서가 실을 수 있으므로 1pt를 바닥으로 둔다.
         return max(1, advance)
+    }
+
+    /// 비율 줄 간격의 여분 (pt) — 글자 상자 `textBoxHeight`(pt)를 HWPUNIT로 옮겨 4 단위로
+    /// 내림한 몫에 (p − 100)%를 곱해 반올림하고 다시 pt로 (위 `advance` 실측). 곱을 먼저 하고
+    /// 100으로 나눠야 375 × 70 / 100 = 262.5가 정확히 떨어진다 (0.7 × 375는 262.4999…).
+    static func percentShare(of textBoxHeight: CGFloat, percent: CGFloat) -> CGFloat {
+        let quanta = Int((max(0, textBoxHeight) * 100).rounded()) / 4
+        let share = (CGFloat(quanta) * (percent - 100) / 100).rounded()
+        return share * 4 / 100
     }
 
     // MARK: 조판 문자열 속성
@@ -189,9 +231,9 @@ enum HwpLineAdvance {
     static func lineAdvance(
         of line: CTLine, at location: Int, in attributedString: NSAttributedString
     ) -> CGFloat {
-        let metrics = HwpDrawnTextLayout.lineMetrics(of: line)
+        let metrics = HwpDrawnTextLayout.lineMetrics(of: line, in: attributedString)
         return HwpLineSpacingRule.rule(in: attributedString, at: location).advance(
-            textBoxHeight: metrics.textBoxHeight, objectHeight: metrics.delegateAscent
+            lineBoxHeight: metrics.boxHeight, textBoxHeight: metrics.textBoxHeight
         )
     }
 

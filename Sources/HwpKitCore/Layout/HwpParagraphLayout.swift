@@ -30,25 +30,36 @@ public struct HwpInlineAnchor: Sendable, Hashable {
 }
 
 public struct HwpLineFrame: Sendable, Hashable {
+    /// 줄 상자 상단 (문단 첫 줄 상자 상단 기준, 전진량 누적)
     public let origin: CGPoint
     public let width: CGFloat
+    /// 줄 상자 상단에서 베이스라인 앵커까지 (`HwpDrawnTextLayout.baselineAnchor(of:in:)`)
     public let baseline: CGFloat
     public let attributedRange: NSRange
     /// 이 라인에 있는 컨트롤 마커 앵커들
     public let inlineAnchors: [HwpInlineAnchor]
+    /// 줄 상자 높이 (한글 줄 캐시의 `vertsize`, `HwpDrawnTextLayout.LineMetrics.boxHeight`) —
+    /// 한글 문서는 `baseline` ÷ 0.85와 같고, MS 워드 호환 문서(#194)는 글꼴 줄 상자라
+    /// `baseline`에서 역산할 수 없어 따로 든다. 컨테이너 내용 범위
+    /// (`HwpContainerContentExtent`)가 마지막 줄 상자 아래를 이것으로 잰다.
+    public let boxHeight: CGFloat
 
+    /// `boxHeight`를 주지 않으면 한글 문서의 규칙(`baseline` ÷ `baselineAnchorRatio`)으로
+    /// 되푼다 — 줄 프레임을 직접 만드는 호출자(각주·표 조각의 복사)는 원본 값을 넘긴다.
     public init(
         origin: CGPoint,
         width: CGFloat,
         baseline: CGFloat,
         attributedRange: NSRange,
-        inlineAnchors: [HwpInlineAnchor] = []
+        inlineAnchors: [HwpInlineAnchor] = [],
+        boxHeight: CGFloat? = nil
     ) {
         self.origin = origin
         self.width = width
         self.baseline = baseline
         self.attributedRange = attributedRange
         self.inlineAnchors = inlineAnchors
+        self.boxHeight = boxHeight ?? max(0, baseline) / HwpRenderTuning.Text.baselineAnchorRatio
     }
 }
 
@@ -249,12 +260,14 @@ public struct HwpParagraphLayout {
             // 글자처럼 취급 표(noori 1쪽, 마커 폭이 단 폭을 0.4pt 넘는다)가 가운데 정렬
             // 오프셋만큼 단 왼쪽 밖으로 밀린다 (한글은 단 왼쪽 끝). 조각 접기
             // (`fragmentLineFramesAsDrawn`)만 렌더러 오프셋을 따른다.
+            let metrics = HwpDrawnTextLayout.lineMetrics(of: overflow.line, in: attributedString)
             let lineFrame = HwpLineFrame(
                 origin: .zero,
                 width: CGFloat(CTLineGetTypographicBounds(overflow.line, nil, nil, nil)),
-                baseline: HwpDrawnTextLayout.baselineAnchor(of: overflow.line),
+                baseline: metrics.baselineAnchor,
                 attributedRange: NSRange(location: 0, length: attributedString.length),
-                inlineAnchors: inlineAnchors(in: overflow.line)
+                inlineAnchors: inlineAnchors(in: overflow.line),
+                boxHeight: metrics.boxHeight
             )
             return HwpParagraphFrame(totalHeight: max(1, totalHeight), lines: [lineFrame])
         }
@@ -319,16 +332,18 @@ private extension HwpParagraphLayout {
             let line = chunk.lines[index]
             let range = CTLineGetStringRange(line)
             let width = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+            let metrics = HwpDrawnTextLayout.lineMetrics(of: line, in: attributedString)
             lineFrames.append(
                 HwpLineFrame(
                     origin: CGPoint(x: chunk.origins[index].x, y: yOffset + totalLineHeight),
                     width: width,
-                    baseline: HwpDrawnTextLayout.baselineAnchor(of: line),
+                    baseline: metrics.baselineAnchor,
                     attributedRange: NSRange(
                         location: Int(range.location),
                         length: Int(range.length)
                     ),
-                    inlineAnchors: inlineAnchors(in: line)
+                    inlineAnchors: inlineAnchors(in: line),
+                    boxHeight: metrics.boxHeight
                 )
             )
             totalLineHeight += advances[index]

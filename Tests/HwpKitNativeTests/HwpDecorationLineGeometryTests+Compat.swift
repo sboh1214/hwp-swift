@@ -402,7 +402,8 @@ extension HwpDecorationLineGeometryTests {
             let nativeCenter = try XCTUnwrap(Self.rowCenter(native, where: Self.isCyan), "native")
             expect(center).to(beCloseTo(nativeCenter, within: 0.1), description: "\(raw)")
         }
-        // 대조: MS 워드는 갈린다 (−0.17 × 20 = −3.4 vs −5.204).
+        // 대조: MS 워드는 갈린다 — 밑줄이 베이스라인 아래 −0.17 × 20 = −3.4 대신 −5.204이고,
+        // 베이스라인 자체도 0.85 × 20 = 17 대신 Menlo 20pt 글꼴 상자의 22.06이다 (#194).
         let msWord = try render(text: NSAttributedString(
             string: "AAAA", attributes: run("Menlo", size: 20, color: Self.cyan, underline: true)
         ))
@@ -412,6 +413,9 @@ extension HwpDecorationLineGeometryTests {
         ))
         let msWordCenter = try XCTUnwrap(Self.rowCenter(msWord, where: Self.isCyan))
         let nativeCenter = try XCTUnwrap(Self.rowCenter(native, where: Self.isCyan))
-        expect(msWordCenter - nativeCenter).to(beCloseTo(5.204 - 3.4, within: 0.2))
+        let anchorShift = HwpMsWordLineBox.metrics(of: CTFontCreateWithName("Menlo" as CFString, 20, nil))
+            .scaled(by: 20).baseline - 20 * HwpRenderTuning.Text.baselineAnchorRatio
+        expect(anchorShift).to(beCloseTo(5.06, within: 0.05))
+        expect(msWordCenter - nativeCenter).to(beCloseTo(anchorShift + 5.204 - 3.4, within: 0.2))
     }
 }

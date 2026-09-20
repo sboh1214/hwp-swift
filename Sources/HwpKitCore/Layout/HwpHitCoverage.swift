@@ -272,6 +272,9 @@ extension HwpHitTester {
     static func verticalInkReach(
         of attributed: NSAttributedString
     ) -> (above: CGFloat, below: CGFloat) {
+        if let reach = msWordVerticalInkReach(of: attributed) {
+            return reach
+        }
         var maxAscent: CGFloat = 0
         var maxDescent: CGFloat = 0
         var minFontSize = CGFloat.infinity
@@ -302,6 +305,39 @@ extension HwpHitTester {
             above: max(0, maxAscent - box * anchor),
             below: max(0, maxDescent - box * (1 - anchor))
         )
+    }
+
+    /// MS 워드 호환 문서(#194)의 `verticalInkReach` — 줄 상자가 글꼴 줄 상자
+    /// (`HwpMsWordLineBox`)라 앵커 몫도 글꼴마다 다르다. 줄의 베이스라인은 run 상자 베이스
+    /// 라인의 최댓값 이상이고 상자 아래 몫은 run 상자 아래 몫의 최솟값 이상이므로, run마다
+    /// (ascent − 자기 상자 베이스라인)·(descent − 자기 상자 아래 몫)의 최댓값이 상한이다.
+    /// 한글 문서(첫 run에 호환 문서 키 없음)면 nil.
+    static func msWordVerticalInkReach(
+        of attributed: NSAttributedString
+    ) -> (above: CGFloat, below: CGFloat)? {
+        guard attributed.length > 0,
+              HwpDrawnTextLayout.isMsWordCompatible(
+                  attributed.attributes(at: 0, effectiveRange: nil)
+              )
+        else { return nil }
+        var above: CGFloat = 0
+        var below: CGFloat = 0
+        attributed.enumerateAttribute(
+            .font, in: NSRange(location: 0, length: attributed.length),
+            options: .longestEffectiveRangeNotRequired
+        ) { value, range, _ in
+            guard let value else { return }
+            let ref = value as CFTypeRef
+            guard CFGetTypeID(ref) == CTFontGetTypeID() else { return }
+            let font = unsafeBitCast(ref, to: CTFont.self)
+            let size = (attributed.attribute(
+                HwpAttributedStringKey.baseFontSize, at: range.location, effectiveRange: nil
+            ) as? NSNumber).map { CGFloat($0.doubleValue) } ?? CTFontGetSize(font)
+            let box = HwpMsWordLineBox.metrics(of: font).scaled(by: max(0, size))
+            above = max(above, CTFontGetAscent(font) - box.baseline)
+            below = max(below, CTFontGetDescent(font) - (box.lineHeight - box.baseline))
+        }
+        return (max(0, above), max(0, below))
     }
 
     /// 문단이 이 지점에 글자를 칠했는지 — **`textBounds` 밖이면 CT 조판을 하지 않는다**.

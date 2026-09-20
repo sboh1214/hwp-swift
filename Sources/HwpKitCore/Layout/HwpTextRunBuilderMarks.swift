@@ -221,12 +221,19 @@ extension HwpTextRunBuilder {
     /// 소비자별 가드: 복사 `droppingEmptyLineAnchor`(글자 제거)·검색
     /// `HwpTextSearcher`(앵커 전용 단위 제외)·낭독 `accessibilityLabel`(공백만
     /// 남으면 버림)·페인트(빈칸은 잉크가 없고 장식은 허용 목록으로 떨어짐).
+    ///
+    /// MS 워드 호환 문서(#194)에서는 앵커를 **라틴 슬롯** 글꼴로 조판한다 — 빈 문단의 줄
+    /// 상자는 문단 끝 글자(CR)뿐이고 한글은 그 글자를 라틴 슬롯 글꼴로 세운다 (한글 12.30
+    /// 실측 2026-09-20 `cm194-mixed`: 한글 슬롯 Apple SD 산돌고딕 Neo·라틴 슬롯 Menlo
+    /// 10pt 글자 모양의 빈 문단 `vertsize` 1515·`baseline` 1104 = Menlo, 20pt 3029·2207;
+    /// 함초롬돋움 1692·1266). 한글 문서의 줄 상자는 글꼴과 무관하므로 종전대로 한글 슬롯이다.
     func emptyParagraphAnchor(for paragraph: CoreHwp.HwpParagraph) -> NSAttributedString {
         let shapeId = paragraph.paraCharShape.shapeId.first ?? 0
         let shape = index.charShape(id: shapeId) ?? CoreHwp.HwpCharShape()
+        let script: HwpScript = index.compatibleDocumentTarget == .msWord ? .english : .korean
         let anchor = NSMutableAttributedString(
             string: " ",
-            attributes: attributes(for: shape, script: .korean)
+            attributes: attributes(for: shape, script: script)
         )
         finishEmptyLastLineAnchor(in: anchor, emitted: true)
         attachParagraphStyle(to: anchor, paragraph: paragraph)
@@ -270,16 +277,10 @@ extension HwpTextRunBuilder {
     func attachMsWordParagraphEndBox(
         to output: NSMutableAttributedString, paragraph: CoreHwp.HwpParagraph
     ) {
-        guard index.compatibleDocumentTarget == .msWord, output.length > 0,
+        guard output.length > 0, let font = msWordParagraphEndFont(of: paragraph),
               let shapeId = paragraph.paraCharShape.shapeId.last
         else { return }
         let resolved = resolvedShape(id: shapeId, paragraph: paragraph)
-        // 캐시 경로 — 같은 글자 모양의 라틴 슬롯 사전은 본문 run이 이미 만들어 두었다.
-        let attributes = attributes(for: resolved, script: .english)
-        guard let value = attributes[kCTFontAttributeName as NSAttributedString.Key],
-              CFGetTypeID(value as CFTypeRef) == CTFontGetTypeID()
-        else { return }
-        let font = value as! CTFont // swiftlint:disable:this force_cast
         // 곱하는 크기는 라틴 슬롯 상대 크기를 반영한 글꼴 크기가 아니라 글자 모양 기본
         // 크기다 — 한글은 MS 워드 호환 상자를 기본 크기로 잰다 (PR 리뷰 실측, `msWordBoxSize`).
         let box = HwpMsWordLineBox.metrics(of: font)
@@ -331,8 +332,18 @@ extension HwpTextRunBuilder {
     /// 마지막 글자 모양에 음영·밑줄·취소선이 걸려 있으면 앵커만 있는 빈 줄에
     /// 0.5em짜리 장식 토막이 그려진다 (합성 실측: 접기 전 0.000 → 앵커 도입 후
     /// 5.000). 형광펜을 칠한 문단을 Shift+Enter로 끝내면 바로 나오는 형태다.
-    func finishEmptyLastLineAnchor(in output: NSMutableAttributedString, emitted: Bool) {
+    ///
+    /// MS 워드 호환 문서(#194)에서는 앵커의 글꼴을 `paragraph`의 마지막 글자 모양의 **라틴
+    /// 슬롯** 글꼴(`msWordParagraphEndFont`)로 바꾼다 — 빈 줄 앵커는 문단 끝 글자(CR)의
+    /// 자리이고 한글은 그 글자를 라틴 슬롯 글꼴로 줄 상자에 세우므로, 앞 글자의 한글 슬롯
+    /// 글꼴을 물려받으면 그 줄 상자가 한글 슬롯 상자만큼 커진다 (`emptyParagraphAnchor`의
+    /// 실측과 같은 규칙). 한글 문서·`paragraph` 없음이면 글꼴은 그대로다.
+    func finishEmptyLastLineAnchor(
+        in output: NSMutableAttributedString, emitted: Bool,
+        paragraph: CoreHwp.HwpParagraph? = nil
+    ) {
         guard emitted, output.length > 0 else { return }
+        let latinSlotFont = paragraph.flatMap { msWordParagraphEndFont(of: $0) }
         let range = NSRange(location: output.length - 1, length: 1)
         let existing = output.attributes(at: range.location, effectiveRange: nil)
         var kept: [NSAttributedString.Key: Any] = [
@@ -341,7 +352,25 @@ extension HwpTextRunBuilder {
         for key in Self.emptyLastLineAnchorAttributes {
             kept[key] = existing[key]
         }
+        if let latinSlotFont {
+            kept[kCTFontAttributeName as NSAttributedString.Key] = latinSlotFont
+        }
         output.setAttributes(kept, range: range)
+    }
+
+    /// MS 워드 호환 문서에서 문단 끝 글자(CR)가 서는 글꼴 — 마지막 글자 모양의 라틴 슬롯
+    /// 글꼴 (#187·#194). 한글 문서·글자 모양 없음이면 nil.
+    func msWordParagraphEndFont(of paragraph: CoreHwp.HwpParagraph) -> CTFont? {
+        guard index.compatibleDocumentTarget == .msWord,
+              let shapeId = paragraph.paraCharShape.shapeId.last
+        else { return nil }
+        let resolved = resolvedShape(id: shapeId, paragraph: paragraph)
+        // 캐시 경로 — 같은 글자 모양의 라틴 슬롯 사전은 본문 run이 이미 만들어 두었다.
+        let attributes = attributes(for: resolved, script: .english)
+        guard let value = attributes[kCTFontAttributeName as NSAttributedString.Key],
+              CFGetTypeID(value as CFTypeRef) == CTFontGetTypeID()
+        else { return nil }
+        return (value as! CTFont) // swiftlint:disable:this force_cast
     }
 
     /// 이 문자가 조판 문자열에 낼 텍스트.

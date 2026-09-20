@@ -499,7 +499,8 @@ enum HwpTableSplitter {
                     location: max(0, line.attributedRange.location - range.location),
                     length: line.attributedRange.length
                 ),
-                inlineAnchors: line.inlineAnchors
+                inlineAnchors: line.inlineAnchors,
+                boxHeight: line.boxHeight
             )
         }
         // 문단 첫머리가 아닌 조각은 이어지는 조각 — 첫 줄 들여쓰기를 둘째 줄에 맞춘다.

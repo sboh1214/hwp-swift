@@ -21,8 +21,10 @@ public enum HwpAttributedStringKey {
     /// 문서의 **모든 run**에 싣는다 (한글 문서·record 없음·미지 raw 값은 키 없음).
     /// 렌더러(`HwpPageLayerDecorations`)는 `msWord`에서만 밑줄·취소선·변경 추적
     /// 표시선을 글꼴 지표 기하(`HwpDecorationLineGeometry`)로 그리고, 나머지 값은
-    /// 한글 문서와 같이 글자 크기 비례로 그린다. CoreText가 대체 글꼴로 쪼갠 run에도
-    /// 그대로 남으므로 대체 글꼴 run의 선도 같은 갈래를 탄다.
+    /// 한글 문서와 같이 글자 크기 비례로 그린다. 세로 배치(`HwpDrawnTextLayout.LineMetrics`,
+    /// #194)도 `msWord`에서만 줄 상자·베이스라인·전진량을 글꼴 줄 상자(`HwpMsWordLineBox`)로
+    /// 잡는다. CoreText가 대체 글꼴로 쪼갠 run에도 그대로 남으므로 대체 글꼴 run의 선·상자도
+    /// 같은 갈래를 탄다.
     public static let compatibleDocumentTarget =
         NSAttributedString.Key("hwp.compatibleDocumentTarget")
     /// MS 워드 호환 문서의 **문단 끝 글자** 줄 상자 (`[NSNumber]` = [줄 상자 높이 pt,
@@ -35,8 +37,8 @@ public enum HwpAttributedStringKey {
     /// (`HwpDrawnLine.endsParagraph` — 이어짐 표식이 없는 조각의 끝 줄)의 줄 상자
     /// (`HwpMsWordLineBox.union`)에 되돌려 넣는다 (한글 실측: Apple SD 20pt 한글
     /// 문단의 마지막 줄만 Menlo 라틴 슬롯의 베이스라인 2207을 받아 밑줄이 −0.2994em으로
-    /// 올라간다; 앞 줄들은 −0.3234em). 밑줄만 이 상자를 보고 취소선은 run 단위라 보지
-    /// 않는다.
+    /// 올라간다; 앞 줄들은 −0.3234em). 밑줄과 세로 배치(#194 — 마지막 줄의 베이스라인
+    /// 앵커·상자 높이)가 이 상자를 보고 취소선은 run 단위라 보지 않는다.
     public static let msWordParagraphEndBox =
         NSAttributedString.Key("hwp.msWordParagraphEndBox")
     /// run의 글자 모양 id (NSNumber = `HwpCharShape` id, #187) — 조판

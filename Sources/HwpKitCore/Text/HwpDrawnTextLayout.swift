@@ -298,7 +298,7 @@ public enum HwpDrawnTextLayout {
             stringRange: NSRange(location: 0, length: attributedString.length),
             baselineOrigin: CGPoint(
                 x: origin.x + offsetX,
-                y: origin.y + baselineAnchor(of: line)
+                y: origin.y + baselineAnchor(of: line, in: attributedString)
             ),
             ascent: ascent,
             descent: descent,

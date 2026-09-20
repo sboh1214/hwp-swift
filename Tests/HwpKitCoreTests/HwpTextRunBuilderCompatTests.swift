@@ -245,6 +245,40 @@ import XCTest
             )).to(beNil())
         }
 
+        /// MS 워드 호환 문서의 빈 문단 앵커와 빈 줄 앵커는 **라틴 슬롯** 글꼴이다 (#194) —
+        /// 그 자리는 문단 끝 글자(CR)뿐이고 한글은 CR을 라틴 슬롯 글꼴로 줄 상자에 세운다
+        /// (한글 실측: Apple SD/Menlo 10pt 글자 모양의 빈 문단 `vertsize` 1515 = Menlo).
+        /// 라틴 50%(6pt)인 12pt 글자 모양으로 슬롯을 가른다 — 한글 문서는 종전대로 한글
+        /// 슬롯(12pt)이다.
+        func testMsWordEmptyAnchorsUseTheLatinSlotFont() throws {
+            let shapes: [UInt32: CoreHwp.HwpCharShape] = [
+                0: try charShape(faceRelativeSize: [100, 50, 100, 100, 100, 100, 100]),
+            ]
+            func anchorSize(_ text: String, target: CoreHwp.HwpCompatibleDocumentTarget?) throws -> CGFloat {
+                let built = builder(shapes: shapes, target: target)
+                    .build(paragraph: paragraph(text: text, runs: [(0, 0)]))
+                expect(built.attribute(
+                    HwpAttributedStringKey.emptyLineAnchor, at: built.length - 1, effectiveRange: nil
+                )).toNot(beNil())
+                let font = try XCTUnwrap(fontRanges(in: built).last?.font)
+                return CTFontGetSize(font)
+            }
+            expect(try anchorSize("\u{0D}", target: .msWord)).to(beCloseTo(6, within: 0.001))
+            expect(try anchorSize("가\u{0A}\u{0D}", target: .msWord)).to(beCloseTo(6, within: 0.001))
+            // 한글 문서는 종전대로다 — 빈 문단 앵커는 한글 슬롯(12pt), 한 줄 끝 뒤의 빈 줄
+            // 앵커는 빈칸의 스크립트 판정(기본 `.english`)대로 라틴 슬롯(6pt). 상자가 글꼴과
+            // 무관하니 어느 쪽이든 줄 높이는 같다.
+            expect(try anchorSize("\u{0D}", target: nil)).to(beCloseTo(12, within: 0.001))
+            expect(try anchorSize("가\u{0A}\u{0D}", target: nil)).to(beCloseTo(6, within: 0.001))
+            // 빈 줄 앵커의 다른 속성(기본 크기·호환 문서 키)은 그대로다.
+            let built = builder(shapes: shapes, target: .msWord)
+                .build(paragraph: paragraph(text: "가\u{0A}\u{0D}", runs: [(0, 0)]))
+            let anchor = built.attributes(at: 2, effectiveRange: nil)
+            expect((anchor[HwpAttributedStringKey.baseFontSize] as? NSNumber)?.doubleValue) == 12
+            expect((anchor[HwpAttributedStringKey.compatibleDocumentTarget] as? NSNumber)?
+                .uint32Value) == HwpCompatibleDocumentTarget.msWord.rawValue
+        }
+
         /// 변경 추적 표식은 삽입 밑줄 색·삭제선 키만 싣고 별도 기하 키가 없다 — 두 선은
         /// 일반 밑줄·취소선과 같은 경로로 그려진다 (#187 실측).
         func testTrackChangeMarksReuseTheOrdinaryLineKeys() throws {
