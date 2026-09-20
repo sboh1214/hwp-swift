@@ -114,10 +114,13 @@ final class FixtureBaselineAnchorTests: XCTestCase {
         let fonts = lines.flatMap { line -> [String] in
             (CTLineGetGlyphRuns(line.line) as? [CTRun] ?? []).compactMap { run in
                 let attributes = CTRunGetAttributes(run) as? [NSAttributedString.Key: Any]
-                guard let value = attributes?[kCTFontAttributeName as NSAttributedString.Key],
-                      CFGetTypeID(value as CFTypeRef) == CTFontGetTypeID()
-                else { return nil }
-                return CTFontCopyPostScriptName(value as! CTFont) as String // swiftlint:disable:this force_cast
+                // CF 타입에 `as!`를 쓰지 않는다 — 타입 id를 검사한 뒤 비트 캐스트 (AGENTS.md).
+                guard let value = attributes?[kCTFontAttributeName as NSAttributedString.Key] else {
+                    return nil
+                }
+                let ref = value as CFTypeRef
+                guard CFGetTypeID(ref) == CTFontGetTypeID() else { return nil }
+                return CTFontCopyPostScriptName(unsafeBitCast(ref, to: CTFont.self)) as String
             }
         }
         try XCTSkipUnless(fonts.contains("HCRDotum"), "함초롬돋움 없음 — 대체 글꼴의 상자를 쓴다")

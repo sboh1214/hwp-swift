@@ -367,6 +367,33 @@ import XCTest
             expect(HwpDrawnTextLayout.textBoxHeight(at: 0, in: NSAttributedString())) == 0
         }
 
+        /// 밴드 바닥 구분선이 쓰는 마지막 줄 글자 상자(`trailingTextBoxHeight(in:)`) — 마지막
+        /// 글자의 상자에 문단 끝 글자 상자를 합친다: Apple SD 10pt 본문(15.60)에 Menlo 30pt 끝
+        /// 상자(45.40)면 45.40이고 160% 줄 간격의 뒤 여백은 그 상자 기준이다. 다음 단으로
+        /// 이어지는 조각은 끝 상자가 들지 않고, 한글 문서는 기본 글자 크기다 (PR 리뷰).
+        func testTrailingTextBoxHeightIncludesTheParagraphEndBox() throws {
+            try skipUnlessOracleFonts()
+            let appleSD = Self.box("Apple SD Gothic Neo", 10)
+            let menlo30 = Self.box("Menlo", 30)
+            let text = Self.attributes("Apple SD Gothic Neo", 10)
+            let whole = Self.finish(NSMutableAttributedString(string: "가나", attributes: text), endBox: menlo30)
+            expect(HwpDrawnTextLayout.trailingTextBoxHeight(in: whole))
+                .to(beCloseTo(menlo30.lineHeight, within: 0.001))
+            expect(HwpColumnBandController.measuredTrailingSpacing(of: whole)).to(beCloseTo(
+                HwpLineSpacingRule.percentShare(of: menlo30.lineHeight, percent: 160), within: 0.001
+            ))
+            let continued = Self.finish(
+                NSMutableAttributedString(string: "가나", attributes: text), endBox: menlo30, continued: true
+            )
+            expect(HwpDrawnTextLayout.trailingTextBoxHeight(in: continued))
+                .to(beCloseTo(appleSD.lineHeight, within: 0.001))
+            let native = NSAttributedString(
+                string: "가나", attributes: Self.attributes("Apple SD Gothic Neo", 10, msWord: false)
+            )
+            expect(HwpDrawnTextLayout.trailingTextBoxHeight(in: native)) == 10
+            expect(HwpDrawnTextLayout.trailingTextBoxHeight(in: NSAttributedString())) == 0
+        }
+
         /// 조판 없는 잉크 상한(`verticalInkReach`) — MS 워드 호환 문자열은 run마다 (ascent −
         /// 자기 상자 베이스라인)·(descent − 자기 상자 아래 몫)의 최댓값이고 음수는 0이다.
         func testVerticalInkReachUsesTheFontBoxForMsWordStrings() throws {

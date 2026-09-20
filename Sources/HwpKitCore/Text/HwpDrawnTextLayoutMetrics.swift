@@ -175,6 +175,25 @@ extension HwpDrawnTextLayout {
         return HwpMsWordLineBox.metrics(of: font).scaled(by: size).lineHeight
     }
 
+    /// 문자열 **마지막 줄**의 글자 상자 높이 근사 — 마지막 글자의 상자(`textBoxHeight(at:in:)`)에,
+    /// 문자열이 문단을 끝내면(`endsParagraph`) MS 워드 호환 문단 끝 글자 상자
+    /// (`hwp.msWordParagraphEndBox`)의 높이를 합친다. 접힌 문단 끝 글자(CR)는 마지막 글자와
+    /// 다른 라틴 슬롯 글꼴이거나 CR만의 글자 모양일 수 있어 그 상자가 더 클 수 있다 (PR 리뷰:
+    /// 다단 밴드 바닥의 구분선이 그만큼 마지막 줄 상자 아래로 길어졌다). 다음 단·쪽으로
+    /// 이어지는 조각의 끝 줄은 문단 끝이 아니라 끝 상자가 들지 않는다.
+    static func trailingTextBoxHeight(in attributedString: NSAttributedString) -> CGFloat {
+        guard attributedString.length > 0 else { return 0 }
+        let index = attributedString.length - 1
+        let height = textBoxHeight(at: index, in: attributedString)
+        guard endsParagraph(
+            CFRange(location: 0, length: attributedString.length), in: attributedString
+        ), let end = attributedString.attribute(
+            HwpAttributedStringKey.msWordParagraphEndBox, at: index, effectiveRange: nil
+        ) as? [NSNumber], end.count == 2
+        else { return height }
+        return max(height, CGFloat(end[0].doubleValue))
+    }
+
     /// run이 MS 워드 호환 문서의 것인지 — 조판이 한글 문서가 아닌 문서의 모든 run에 싣는
     /// `hwp.compatibleDocumentTarget`(표 55)이 `msWord`일 때만 참이다. 한글 2007 호환·
     /// 훈민정음 호환·record 없음은 한글 문서와 같은 줄 상자다.

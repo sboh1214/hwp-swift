@@ -2104,7 +2104,8 @@ paraShape와 같은 값**이어야 한다.
     중 가장 낮은 자리, 표면 사용량 그대로 — 이고 둘째 단이 비어도 그린다. 줄 간격은
     **블록마다** 낸다(`columnDividerBlocks(trailingSpacing:)`): 블록 문자열에
     `hwp.cachedTrailingLineSpacing`이 있으면 그 값, 없으면 조판 문자열 마지막 글자의 줄 간격
-    규칙 × 기본 글자 크기(`measuredTrailingSpacing`)다. 그 표식은 **배치가 실제로 캐시 높이를
+    규칙 × 마지막 줄 글자 상자(`measuredTrailingSpacing` — 한글 문서는 기본 글자 크기, MS 워드
+    호환 문서는 글꼴 줄 상자와 문단 끝 글자 상자의 큰 쪽, `trailingTextBoxHeight(in:)`, #194)다. 그 표식은 **배치가 실제로 캐시 높이를
     골랐을 때만** 붙는다 — `placeFlowParagraph`가 `height(for:fallback:)`의 선택
     (`cacheHeightUsed`: 유효한 캐시이고 페이지를 넘는 1줄 폴백이 아님)을 `cachedTrailingSpacing`
     값으로 `appendBlock`·`HwpFragmentPlacement`에 넘기고, `appendBlock`은 문단을 끝내는
