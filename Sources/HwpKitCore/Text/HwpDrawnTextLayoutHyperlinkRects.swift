@@ -41,9 +41,13 @@ extension HwpDrawnTextLayout {
     /// **진행 폭은 음수일 수 있다** (PR 리뷰): 좁은 글리프에 큰 음수 자간이 걸리면(Helvetica
     /// 10pt `í`(i + U+0301)에 kern −3 → run 폭 −0.222pt, HWP 자간 −30%로 닿는 입력) 끝이
     /// 시작보다 왼쪽이다(단일 글리프의 kern은 CT가 폭 0으로 클램프하므로 결합 부호가 붙은
-    /// run에서 난다). `minX ≤ maxX`로 정규화해 절대 구간 [시작 + 폭, 시작]으로 담는다 — 줄
-    /// 상자(`selectionRect`)도 같은 음수 폭이라 같은 정의이고, 역전된 채 `ClosedRange`를
-    /// 만들면 프로세스가 종료된다.
+    /// run에서 난다). 역전된 채 `ClosedRange`를 만들면 프로세스가 종료되므로 `minX ≤ maxX`로
+    /// 정규화하되, 접힌 진행 폭 [시작 + 폭, 시작]만 담으면 원점 **오른쪽**에 그려지는 글리프
+    /// (잉크 0.3…2.5)가 어느 링크도 아니게 된다(리뷰 2차 — 종전 캐럿 산식은 [0, 2.78]을
+    /// 냈다). 그래서 진행 폭이 음수인 run만 **잉크 경계**(`CTRunGetImageBounds`, 밴드와 같은
+    /// 줄 원점 기준·매트릭스 적용 후)까지 넓힌다 — 글리프 중심은 자기 링크를 열어야 한다는
+    /// 규약 그대로다. 양수 폭 run은 잉크로 넓히지 않는다(기울임 오버행이 이웃 링크 상자에
+    /// 들어가 단방향 줄이 종전과 달라진다).
     struct RunExtent {
         let range: CFRange
         let minX: CGFloat
@@ -95,9 +99,17 @@ extension HwpDrawnTextLayout {
                 CTRunGetPositions(run, CFRange(location: 0, length: 1), &position)
                 start = position.applying(matrix).x
             }
-            extents.append(RunExtent(
-                range: CTRunGetStringRange(run), minX: start, maxX: start + width
-            ))
+            var minX = min(start, start + width)
+            var maxX = max(start, start + width)
+            if width < 0 {
+                // 접힌 진행 폭만으로는 보이는 글리프가 빠진다 — 잉크까지 넓힌다 (위 주석).
+                let ink = CTRunGetImageBounds(run, nil, CFRange(location: 0, length: 0))
+                if !ink.isNull, ink.width > 0 {
+                    minX = min(minX, ink.minX)
+                    maxX = max(maxX, ink.maxX)
+                }
+            }
+            extents.append(RunExtent(range: CTRunGetStringRange(run), minX: minX, maxX: maxX))
         }
         return extents
     }
