@@ -28,11 +28,13 @@ import XCTest
 /// | 10 | 위 첨자 + 글자 위치 50 취소선 | 261.12 | 1과 같은 자리 (+144.0) — 위치 몫은 안 따라감 |
 /// | 11 | 위 첨자 + 글자 위치 50 아래 밑줄 | 285.48 | 원래 베이스라인 283.7 + 0.17 × 10 |
 ///
-/// 첨자 이동에 걸리지 않는 선(5~9·11)은 한글 좌표를 그대로 핀한다. 첨자 취소선(1~4·10)은
-/// 우리 첨자 글리프 자체가 한글과 다르게 놓여(위 첨자 올림 0.33em vs 한글 0.446em,
-/// 아래 첨자 내림 0.30em vs 0.12em — 이 축은 #179 밖이라 #204) 절대 좌표 대신
-/// **글리프와의 관계**를 핀한다: 선이 옮겨진 첨자 글리프 잉크의 세로 가운데를 지나고,
-/// 글자 위치 50을 더해도 같은 자리이며, 가운데 밑줄이 취소선과 같은 규칙이다.
+/// 첨자 이동에 걸리지 않는 선(5~9·11)은 한글 좌표를 그대로 핀한다. 첨자 취소선·가운데
+/// 밑줄(1~4·10)도 #204에서 첨자 글리프 자체를 한글 규칙(0.64배·위 0.44em·아래 0.12em)에
+/// 맞춘 뒤로는 한글 좌표를 그대로 핀한다 — 우리 선은 옮겨진 베이스라인(4.40 위·1.20 아래)
+/// + 0.35 × 6.4pt라 117.06·138.66·149.06·170.66·261.06으로 한글과 0.06~0.10pt 차다(#204 전
+/// 0.33em·0.30em·0.67배에서는 0.9(위)·1.7pt(아래) 낮았다). 덧붙여 **글리프와의 관계**도
+/// 핀한다: 선이 옮겨진 첨자 글리프 잉크의 세로 가운데를 지나고, 글자 위치 50을 더해도
+/// 같은 자리이며, 가운데 밑줄이 취소선과 같은 규칙이다.
 ///
 /// `extension`에 두는 이유는 `FixtureDecorationLineRenderTests` 본문이
 /// `type_body_length` 경고선에 닿아 있어서다.
@@ -70,7 +72,7 @@ extension FixtureDecorationLineRenderTests {
     }
 
     /// 첨자에 걸리지 않는 선 6개는 한글 좌표 그대로다 — 아래쪽 밑줄은 첨자 run에서도
-    /// 원래 베이스라인 아래 0.17 × 10pt(줄어든 6.7pt 기준이면 0.56pt 위), 위쪽 밑줄은
+    /// 원래 베이스라인 아래 0.17 × 10pt(줄어든 6.4pt 기준이면 0.61pt 위), 위쪽 밑줄은
     /// 위 0.87 × 10pt, 글자 위치만 준 취소선은 제자리다. 두 포맷이 같은 행이다.
     func testScriptIndependentLinesMatchHancomCoordinatesInBothFormats() async throws {
         struct Pin {
@@ -115,10 +117,55 @@ extension FixtureDecorationLineRenderTests {
         }
     }
 
+    /// 첨자 취소선·가운데 밑줄은 한글 좌표 그대로다 (#204) — 옮겨진 베이스라인(위 첨자
+    /// 4.40 위·아래 첨자 1.20 아래) + 0.35 × 6.4pt. #204 전(0.33em·0.30em·0.67배)에는 위
+    /// 첨자 선이 0.9pt·아래 첨자 선이 1.7pt 낮아 0.3pt 예산 밖이었다. 두 포맷이 같은 행이다.
+    func testScriptLinesMatchHancomCoordinatesInBothFormats() async throws {
+        struct Pin {
+            let paragraph: Int
+            let hancom: CGFloat
+            let match: (UInt8, UInt8, UInt8) -> Bool
+        }
+        let pins = [
+            Pin(paragraph: 1, hancom: 117.12, match: Self.isCyan),
+            Pin(paragraph: 2, hancom: 138.72, match: Self.isCyan),
+            Pin(paragraph: 3, hancom: 149.16, match: Self.isMagenta),
+            Pin(paragraph: 4, hancom: 170.76, match: Self.isMagenta),
+            Pin(paragraph: 10, hancom: 261.12, match: Self.isCyan),
+        ]
+        var centers: [[CGFloat]] = []
+        for hwpx in [false, true] {
+            let format = hwpx ? "HWPX" : "HWP"
+            let raster = try await Self.raster(Self.fixture, hwpx: hwpx)
+            var rows: [CGFloat] = []
+            for pin in pins {
+                let center = try XCTUnwrap(
+                    Self.lineCenter(raster, paragraph: pin.paragraph, where: pin.match),
+                    "\(format): 문단 \(pin.paragraph)의 선을 못 찾았다"
+                )
+                // 오차 예산은 첨자 무관 선과 같다(잉크 가중 중심 ±0.08 + 우리 격차 ≤0.10 +
+                // 한글 장치 양자화 0.12). 위 첨자 취소선 표본의 올림은 4.32라 우리 4.40과
+                // 0.08 차이고, 10pt 위 첨자 단독 표본(4.44)과는 0.04 차다.
+                expect(center).to(
+                    beCloseTo(pin.hancom, within: 0.3),
+                    description: "\(format) 문단 \(pin.paragraph)"
+                )
+                rows.append(center)
+            }
+            centers.append(rows)
+        }
+        for (index, pin) in pins.enumerated() {
+            expect(centers[0][index]).to(
+                beCloseTo(centers[1][index], within: 0.01),
+                description: "문단 \(pin.paragraph): HWP와 HWPX가 같은 자리"
+            )
+        }
+    }
+
     /// 첨자 취소선은 옮겨진 글리프를 따라간다 — 선이 첨자 run의 빨강 잉크 세로 가운데를
     /// 지나고, 위 첨자 선은 본문 취소선 자리(베이스라인 위 3.5pt)보다 위, 아래 첨자 선은
-    /// 그보다 아래다. 종전에는 둘 다 원래 베이스라인 위 0.35 × 6.7pt = 2.3pt에 그려
-    /// 위 첨자 글리프 아래·아래 첨자 글리프 위로 벗어났다.
+    /// 그보다 아래다. #179 전에는 둘 다 원래 베이스라인 위 0.35 × 축소 크기(당시 6.7pt =
+    /// 2.3pt)에 그려 위 첨자 글리프 아래·아래 첨자 글리프 위로 벗어났다.
     func testScriptStrikethroughCrossesTheShiftedGlyphsInBothFormats() async throws {
         var rows: [[CGFloat]] = []
         for hwpx in [false, true] {

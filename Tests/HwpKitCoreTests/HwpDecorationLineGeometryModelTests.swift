@@ -16,8 +16,8 @@ final class HwpDecorationLineGeometryModelTests: XCTestCase {
         expect(above.center).to(beCloseTo(8.7, within: 0.0001))
         expect(above.thickness).to(beCloseTo(0.4, within: 0.0001))
         // 취소선 중심은 (첨자로 줄어든) 글꼴 크기, 두께는 축소 전 크기 기준.
-        let script = HwpDecorationLineGeometry.strikethrough(fontSize: 6.7, thicknessFontSize: 10)
-        expect(script.center).to(beCloseTo(2.345, within: 0.0001))
+        let script = HwpDecorationLineGeometry.strikethrough(fontSize: 6.4, thicknessFontSize: 10)
+        expect(script.center).to(beCloseTo(2.24, within: 0.0001))
         expect(script.thickness).to(beCloseTo(0.4, within: 0.0001))
     }
 

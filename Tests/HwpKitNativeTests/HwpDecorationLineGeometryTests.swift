@@ -118,7 +118,7 @@ final class HwpDecorationLineGeometryTests: XCTestCase {
     /// 실은 조합은 `+Script`가 잡는다.
     func testAboveUnderlineKeepsPreScriptSize() throws {
         let preScript: CGFloat = 10
-        let shrunk = preScript * 0.67 // HwpTextRunBuilder.superscriptScale
+        let shrunk = preScript * 0.64 // HwpTextRunBuilder.superscriptScale
         let text = NSAttributedString(string: "AA", attributes: [
             kCTFontAttributeName as NSAttributedString.Key: CTFontCreateWithName(
                 "Menlo" as CFString, shrunk, nil
@@ -143,9 +143,9 @@ final class HwpDecorationLineGeometryTests: XCTestCase {
         let expected = HwpRenderTuning.Text.underlineAboveCenterRatio * preScript
             - HwpRenderTuning.Text.strikethroughCenterRatio * shrunk
         expect(strike - above).to(beCloseTo(expected, within: 0.2))
-        // 위 밑줄까지 줄어든 글꼴 크기로 그리면 8.7이 5.83으로 내려가 간격이
-        // 6.355 → 3.484로 좁아진다.
-        expect(expected).to(beCloseTo(6.355, within: 0.001))
+        // 위 밑줄까지 줄어든 글꼴 크기로 그리면 8.7이 5.568로 내려가 간격이
+        // 6.46 → 3.328로 좁아진다.
+        expect(expected).to(beCloseTo(6.46, within: 0.001))
     }
 
     /// 밑줄 '글자 아래'는 베이스라인 **아래** 0.17em이다 (#176) — 큰 글자일수록

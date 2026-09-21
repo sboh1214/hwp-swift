@@ -256,8 +256,8 @@ import XCTest
 
     /// 자격 영역은 옮겨진 글리프의 **최대 |오프셋|**만큼도 넓다 (#200 리뷰).
     ///
-    /// `textBounds`의 세로 여유가 줄 높이뿐이면, 오프셋이 그보다 큰 글리프 — 첨자(0.67배
-    /// 글꼴·+0.33em)와 글자 위치(±1.0×크기)가 누적되는 글자 모양, 또는 공개 키로 실린 큰
+    /// `textBounds`의 세로 여유가 줄 높이뿐이면, 오프셋이 그보다 큰 글리프 — 첨자(0.64배
+    /// 글꼴·+0.44em)와 글자 위치(±1.0×크기)가 누적되는 글자 모양, 또는 공개 키로 실린 큰
     /// 값 — 위의 탭이 rect 판정에 닿기도 전에 블록 단계에서 기각된다 (R56 "자격 ⊇ 칠"
     /// 위반). 실측: Helvetica 10pt·줄 높이 10에서 오프셋 12부터 `hit`이 nil이었다.
     final class HwpLargeGlyphOffsetEligibilityTests: XCTestCase {
@@ -318,15 +318,15 @@ import XCTest
             }
         }
 
-        /// 첨자 크기 글꼴(6.7pt)에 첨자 올림 + 글자 위치 100이 누적된 13.3pt — 파싱 문서에서
+        /// 첨자 크기 글꼴(6.4pt)에 첨자 올림 + 글자 위치 100이 누적된 14.4pt — 파싱 문서에서
         /// 닿는 조합이다 (`applySuperscript`는 기존 오프셋에 더한다).
         func testSuperscriptSizedFontWithStackedOffsetStaysHittable() {
-            let attributed = linked(fontSize: 6.7, offset: 13.3)
+            let attributed = linked(fontSize: 6.4, offset: 14.4)
             let block = AnyHwpBlock(
                 frame: Self.frame, kind: .text, attributedString: attributed
             )
             let hit = HwpHitTester().hit(
-                page: page(block), point: farEdgeTap(of: attributed, offset: 13.3)
+                page: page(block), point: farEdgeTap(of: attributed, offset: 14.4)
             )
 
             expect(self.url(of: hit)) == Self.url
