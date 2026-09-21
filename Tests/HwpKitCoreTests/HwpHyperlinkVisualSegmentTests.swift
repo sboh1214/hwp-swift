@@ -52,6 +52,23 @@ import XCTest
             )).to(beEmpty())
         }
 
+        /// 진행 폭이 음수인 run(끝이 시작보다 왼쪽)은 정규화된 절대 구간으로 든다 — 역전된
+        /// 범위로 `ClosedRange`를 만들면 트랩이다 (PR 리뷰).
+        func testNegativeWidthExtentIsNormalized() {
+            let extents = [
+                Extent(range: CFRange(location: 0, length: 2), minX: 0, maxX: 10),
+                Extent(range: CFRange(location: 2, length: 2), minX: 10, maxX: 9.8),
+            ]
+            expect(extents[1].minX) == 9.8
+            expect(extents[1].maxX) == 10
+            expect(HwpDrawnTextLayout.visualSegments(
+                of: extents, in: CFRange(location: 0, length: 4)
+            )) == [0 ... 10]
+            expect(HwpDrawnTextLayout.visualSegments(
+                of: [extents[1]], in: CFRange(location: 2, length: 2)
+            )) == [9.8 ... 10]
+        }
+
         /// 화면 순서가 흐트러진 입력도 x로 정렬해 합친다 — 결과는 순서와 무관하다.
         func testOrderIndependent() {
             let extents = [

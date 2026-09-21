@@ -2359,7 +2359,13 @@ paraShape와 같은 값**이어야 한다.
     (`CTLineGetTypographicBounds`·`selectionRect`)와 같은 진행 폭 정의라 경계가 kern/2, 줄 끝이
     kern만큼 옮겨지고 링크 rect 끝 = 줄 상자 끝이 된다 — HWP 자간은 `HwpTextRunBuilder`가 모든
     run에 싣고 양쪽 정렬 재조판은 빈칸에 kern을 얹으므로 그 경계에 닿는 스팬이 대상이다
-    (`testKernedSpansMeetAtRunBoundariesAndEndAtTheLineBox`). run 범위는 줄 캐시 옆
+    (`testKernedSpansMeetAtRunBoundariesAndEndAtTheLineBox`). **진행 폭은 음수일 수 있다** (PR
+    리뷰): 좁은 글리프에 큰 음수 자간이 걸리면(Helvetica 10pt `í`에 kern −3 → run 폭 −0.222pt,
+    HWP 자간 −30%로 닿는다; 단일 글리프 `i`·`.`의 kern은 CT가 폭 0으로 클램프해 rect가 없다)
+    run 끝이 시작보다 왼쪽이고, 그대로 `ClosedRange`를 만들면 프로세스가 종료된다 — `RunExtent`가
+    `minX ≤ maxX`로 정규화해 절대 구간 [시작 + 폭, 시작]을 낸다(줄 상자 `selectionRect`도 같은
+    음수 폭이라 같은 정의; 종전 캐럿 산식은 줄 끝에서 kern을 빼 [0, 2.78]을 냈다)
+    (`testNegativeRunWidthFromLargeNegativeKernDoesNotTrap`). run 범위는 줄 캐시 옆
     `SpanLineGeometry`에 두되 **스팬이 닿는 줄만** 처음 닿는 스팬이 걷는다. 비용은 오히려 준다 — 스팬 × 줄마다
     `CTLineGetOffsetForStringIndex` 두 번보다 캐시된 run 범위 한 번 훑기가 싸다 (릴리스 빌드,
     Helvetica 10pt, median, 종전 산식 → 새 산식: 40스팬 ~15줄 1.00 → 0.82ms, 120스팬 ~46줄

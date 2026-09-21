@@ -37,10 +37,23 @@ extension HwpDrawnTextLayout {
     /// 14.123 vs run 끝 15.123, 줄 끝 27.685 vs 줄 폭 29.685; kern −1이면 줄 끝 캐럿이 줄 상자
     /// **밖** 18.685 vs 17.685), 자간이 있는 줄의 스팬 경계는 kern/2, 줄 끝은 kern만큼 종전과
     /// 다르다 — 링크 rect의 끝이 줄 상자 끝과 일치하는 쪽이 새 값이다.
+    ///
+    /// **진행 폭은 음수일 수 있다** (PR 리뷰): 좁은 글리프에 큰 음수 자간이 걸리면(Helvetica
+    /// 10pt `í`(i + U+0301)에 kern −3 → run 폭 −0.222pt, HWP 자간 −30%로 닿는 입력) 끝이
+    /// 시작보다 왼쪽이다(단일 글리프의 kern은 CT가 폭 0으로 클램프하므로 결합 부호가 붙은
+    /// run에서 난다). `minX ≤ maxX`로 정규화해 절대 구간 [시작 + 폭, 시작]으로 담는다 — 줄
+    /// 상자(`selectionRect`)도 같은 음수 폭이라 같은 정의이고, 역전된 채 `ClosedRange`를
+    /// 만들면 프로세스가 종료된다.
     struct RunExtent {
         let range: CFRange
         let minX: CGFloat
         let maxX: CGFloat
+
+        init(range: CFRange, minX: CGFloat, maxX: CGFloat) {
+            self.range = range
+            self.minX = min(minX, maxX)
+            self.maxX = max(minX, maxX)
+        }
 
         /// 이 run이 `span`의 것인가 — run의 **첫 글자**가 스팬 안에 있으면 그 스팬 것이다.
         ///
@@ -96,6 +109,8 @@ extension HwpDrawnTextLayout {
     /// 여럿이다 — 그것을 외접 사각형 하나로 합치면 그 사이 글자를 다른 링크에서 뺏는다
     /// (#201). 폭 0 구간(폭 0 개체 마커·U+200B)은 차지한 자리가 없으니 버린다 (종전의
     /// `maxX > minX` 가드).
+    /// 범위 생성은 `RunExtent`가 정규화한 `minX ≤ maxX`에 기댄다 — 음수 진행 폭 run(큰 음수
+    /// 자간)이 역전된 범위로 들어오면 `ClosedRange`가 트랩한다.
     ///
     /// 한 번 훑는다 — `CTLineGetGlyphRuns`가 run을 화면 순서(왼쪽→오른쪽)로 주므로 (실측
     /// 양방향·아랍 shaping 모두) 정렬·필터 배열을 스팬 × 줄마다 만들지 않는다. 순서가 어긋난

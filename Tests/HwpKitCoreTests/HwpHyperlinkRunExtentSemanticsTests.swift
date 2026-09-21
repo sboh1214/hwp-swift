@@ -162,6 +162,34 @@ import XCTest
                 .to(beCloseTo(3.0, within: 0.001))
         }
 
+        /// **진행 폭이 음수인 run은 트랩 없이 정규화된 rect를 낸다** (PR 리뷰) — 좁은 글리프에
+        /// 큰 음수 자간이 걸리면 run 폭이 음수라(Helvetica 10pt `í`(i + U+0301)에 kern −3 →
+        /// −0.222pt, HWP 자간 −30%) 역전된 범위로 `ClosedRange`를 만들던 첫 형태는 프로세스를
+        /// 종료했다. CT는 단일 글리프 `i`·`.`의 kern은 폭 0으로 클램프하므로(rect 없음, 종전
+        /// `maxX > minX` 가드와 같다) 음수는 결합 부호가 붙은 run에서 난다 — 그 rect는 줄 상자
+        /// (`selectionRect`, 역시 음수 폭)와 같은 진행 폭 정의의 절대 구간 [시작 + 폭, 시작]이다.
+        func testNegativeRunWidthFromLargeNegativeKernDoesNotTrap() {
+            let collapsed = tightlyKerned("i\u{0301}")
+            let widths = runWidths(collapsed)
+            // 정말 음수 폭 run이다 — 아니면 이 테스트가 아무것도 지키지 않는다.
+            expect(widths.count) == 1
+            expect(widths.first ?? 0).to(beLessThan(0))
+            let rects = regions(collapsed).map(\.rect)
+            expect(rects.count) == 1
+            expect(Double(rects.first?.width ?? -1))
+                .to(beCloseTo(-(widths.first ?? 0), within: 0.001))
+            expect(Double(rects.first?.maxX ?? -1))
+                .to(beCloseTo(Double(Self.origin.x), within: 0.001))
+
+            // 단일 글리프는 CT가 kern을 폭 0으로 클램프한다 — rect가 없고 트랩도 없다.
+            for text in ["i", "."] {
+                let string = tightlyKerned(text)
+                expect(self.runWidths(string).first ?? -1)
+                    .to(beCloseTo(0, within: 0.001), description: text)
+                expect(self.regions(string)).to(beEmpty(), description: text)
+            }
+        }
+
         /// **자간(kern)이 있는 줄의 rect는 줄 상자와 같은 진행 폭 정의다** — 링크가 줄 끝까지
         /// 닿으면 rect 끝 = `selectionRect` 끝(마지막 글자의 kern 포함)이고, 이웃 스팬은 정확히
         /// 잇닿는다. 종전 캐럿 산식은 경계에서 kern/2, 줄 끝에서 kern만큼 달랐다(음수 자간이면
@@ -315,6 +343,27 @@ import XCTest
                 expect(hitURL).to(equal(run.url), description: "hit \"\(run.text)\"")
                 expect(self.hit(commands, point))
                     .to(equal(run.url), description: "paint \"\(run.text)\"")
+            }
+        }
+    }
+
+    private extension HwpHyperlinkRunExtentSemanticsTests {
+        /// kern −3(10pt의 −30%)이 걸린 링크 하나.
+        func tightlyKerned(_ text: String) -> NSAttributedString {
+            joined([span(
+                text, url: "https://a.example",
+                extra: [kCTKernAttributeName as NSAttributedString.Key: NSNumber(value: -3)]
+            )])
+        }
+
+        /// 첫 줄 run들의 타이포그래피 폭.
+        func runWidths(_ string: NSAttributedString) -> [Double] {
+            let line = HwpDrawnTextLayout.lines(
+                attributedString: string, origin: Self.origin, lineWidth: Self.width
+            ).first
+            let runs = line.flatMap { CTLineGetGlyphRuns($0.line) as? [CTRun] } ?? []
+            return runs.map {
+                CTRunGetTypographicBounds($0, CFRange(location: 0, length: 0), nil, nil, nil)
             }
         }
     }
