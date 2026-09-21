@@ -179,6 +179,11 @@ import XCTest
         }
 
         /// 300pt 개체 하나를 `reservedAscent`만큼만 예약한 줄에 앵커로 단다.
+        ///
+        /// 손으로 만든 줄 프레임은 예약이 곧 줄 상자인 줄이다 — 앵커는 상자 높이 ×
+        /// `baselineAnchorRatio`(0.85)이고, 개체 바깥 상자는 그 앵커에 자기 높이의 0.85 지점을
+        /// 맞추므로(#195) 개체 상단이 줄 상단(0)에 놓인다. 앵커를 예약 높이 그대로 두면 개체가
+        /// 줄 상단 아래 0.15 × 예약만큼 내려가 하한도 그만큼 밀린다.
         private func collect(
             reservedAscent: CGFloat
         ) throws -> HwpParagraphObjectCollector.Objects {
@@ -193,7 +198,7 @@ import XCTest
                 lines: [HwpLineFrame(
                     origin: .zero,
                     width: 200,
-                    baseline: reservedAscent,
+                    baseline: reservedAscent * HwpRenderTuning.Text.baselineAnchorRatio,
                     attributedRange: NSRange(location: 0, length: 1),
                     inlineAnchors: [HwpInlineAnchor(
                         controlIndex: 0, xOffset: 0, ascent: reservedAscent, width: 50

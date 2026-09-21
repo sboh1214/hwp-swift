@@ -110,6 +110,10 @@ final class FixturePreviewFidelityTests: XCTestCase {
         // 가드는 `FixtureDecorationLineRenderTests+Compat`의 픽셀 핀이고 여기 값은 유실 가드다.
         "compat-decorations": 0.001, // 실측 0.0002 (2026-09-15)
         "track-changes-native": 0.001, // 실측 0.0002 (2026-09-15)
+        // 줄 상자보다 작은 글자처럼 취급 개체(#195) — 단색 40pt 그림과 표 테두리의 래스터 차가
+        // 대부분이고 12×16 그리드는 개체의 0.6~4.5pt 이동에 둔감하다(수정 전 0.0029, 후 0.0033).
+        // 이 픽스처의 가드는 `FixtureInlineObjectBaselineTests`의 좌표 핀이고 여기 값은 유실 가드다.
+        "inline-object-baseline": 0.004, // 실측 0.0033 (2026-09-21)
         "공공누리": 0.004, // 실측 0.0028 (저해상 GIF)
         "문서이력관리": 0.001, // 실측 0.0000
         "변경내용추적": 0.001, // 실측 0.0000

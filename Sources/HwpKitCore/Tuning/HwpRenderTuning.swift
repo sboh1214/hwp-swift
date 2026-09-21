@@ -30,12 +30,24 @@ public enum HwpRenderTuning {
         /// `lineLocation + baselineDistance`와 최대 0.10pt (한글 PDF의 0.12pt 장치
         /// 양자화) 차이였다 — **한글이 그리는 자리도 이 규칙이다**.
         ///
+        /// **글자처럼 취급 개체의 바깥 상자**(개체 + 바깥 여백)도 같은 비율로 놓인다 (#195,
+        /// `HwpObjectAnchorGeometry.inlineAnchorOrigin`): 바깥 상자 상단에서 높이 × 0.85
+        /// 내려간 자리가 줄 베이스라인이다 — 개체가 상자를 정한 줄에서는 상자 상단 = 개체
+        /// 상단이고, 상자보다 작은 개체는 베이스라인 위로 0.85 × 높이만 올라간다. 한글.app
+        /// 12.30.0 (2026-09-21) 실측: 함초롬바탕 40pt 줄의 4·8·20·30·36·40·50pt 그림 상단이
+        /// 베이스라인 − 0.85 × 높이(3.49·6.85·16.93·25.57·30.62·33.98·42.62pt, 장치 양자화
+        /// 0.12pt 안)였고 바깥 여백·상대 크기·줄 간격 종류·글꼴·표·도형·글상자·셀 안·쪽에
+        /// 걸친 문단에서도 같았다.
+        ///
         /// MS 워드 호환 문서(`HwpCompatibleDocumentTarget.msWord`, #194)에는 이 비율이
-        /// 쓰이지 않는다 — 줄 상자와 베이스라인이 글꼴 줄 상자(`HwpMsWordLineBox`)다
-        /// (`HwpDrawnTextLayout.LineMetrics.baselineAnchor`).
+        /// 쓰이지 않는다 — 줄 상자와 베이스라인이 글꼴 줄 상자(`HwpMsWordLineBox`)이고
+        /// (`HwpDrawnTextLayout.LineMetrics.baselineAnchor`) 개체 바깥 상자는 바닥이
+        /// 베이스라인이다 (같은 실측, 함초롬돋움 40pt 줄의 같은 그림들이 베이스라인 − 높이;
+        /// `LineMetrics.inlineObjectBaselineRatio` = 1).
         ///
         /// 검증: `HwpBaselineAnchorTests` 비율 + `FixtureBaselineAnchorTests` 캐시 대조 +
-        /// `FixtureDecorationLineRenderTests` 픽셀 핀 + fidelity 전수.
+        /// `FixtureDecorationLineRenderTests` 픽셀 핀 + `HwpInlineObjectBaselineTests`(개체) +
+        /// fidelity 전수.
         public static let baselineAnchorRatio: CGFloat = 0.85
 
         /// 키 큰 인라인 개체 (run delegate) 줄에서 밑줄이 되돌아갈 개체 ascent 비율

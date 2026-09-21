@@ -500,7 +500,8 @@ enum HwpTableSplitter {
                     length: line.attributedRange.length
                 ),
                 inlineAnchors: line.inlineAnchors,
-                boxHeight: line.boxHeight
+                boxHeight: line.boxHeight,
+                objectBaselineRatio: line.objectBaselineRatio
             )
         }
         // 문단 첫머리가 아닌 조각은 이어지는 조각 — 첫 줄 들여쓰기를 둘째 줄에 맞춘다.

@@ -35,26 +35,43 @@ enum HwpObjectAnchorGeometry {
 
     /// 글자처럼 취급되는 개체의 줄 앵커 좌표 — 문단 rect 원점 기준.
     ///
-    /// 세로는 줄 상자 모델(#178·#180)을 따른다: `lineOrigin.y`는 그 줄 **상자 상단**(문단
-    /// 첫 줄 상자 상단 기준)이고 `lineBaseline`은 상자 상단에서 베이스라인 앵커까지의 거리
-    /// (`HwpDrawnTextLayout.baselineAnchor`)다. 개체 바닥은 베이스라인에 놓되 개체가
-    /// 베이스라인 위 공간보다 크면 상자 상단에 붙는다 — 개체가 상자를 정한 줄(코퍼스의
-    /// 전부)은 상자 높이 = 개체 높이라 개체 상단 = 상자 상단이고, 렌더가 그 줄 글자를 그리는
-    /// 자리(상자 상단 + 0.85 × 개체 높이)와 같은 기준이다. 두 경로가 이 식을 공유한다.
-    /// 상자보다 작은 개체의 세로 자리는 한글 실측 전이다 (#195).
+    /// 세로는 줄 상자 모델(#178·#180)을 따른다: `line.origin.y`는 그 줄 **상자 상단**(문단
+    /// 첫 줄 상자 상단 기준)이고 `line.baseline`은 상자 상단에서 베이스라인 앵커까지의 거리
+    /// (`HwpDrawnTextLayout.baselineAnchor`)다. 개체의 **바깥 상자**(개체 + 바깥 여백, 높이
+    /// `anchor.ascent`)는 그 높이의 글자 하나처럼 놓인다 — 바깥 상자 상단에서 높이 ×
+    /// `line.objectBaselineRatio` 내려간 자리가 줄 베이스라인에 맞는다 (#195). 한글 문서는 글자
+    /// 상자와 같은 0.85(`HwpRenderTuning.Text.baselineAnchorRatio`), MS 워드 호환 문서는
+    /// 1(바깥 상자 바닥이 베이스라인) — `HwpLineFrame.objectBaselineRatio`가 줄마다 든다.
     ///
-    /// 결과는 줄이 예약한 **바깥 상자**(개체 + 바깥 여백, `OuterMargins`)의 원점이다 —
-    /// 개체 자신의 원점은 `inlineObjectOrigin`이 여백만큼 들여 낸다.
+    /// 개체가 상자를 정한 줄(코퍼스의 전부)에서는 종전과 같은 자리다 — 상자 높이 = 바깥 상자
+    /// 높이라 `baseline` = 비율 × `ascent`이고 바깥 상자 상단 = 상자 상단이다. 상자보다
+    /// 작은 개체는 종전에 바깥 상자 **바닥**을 베이스라인에 두어 한글보다 (1 − 비율) × 높이만큼
+    /// 위였다 (이슈 #195: 함초롬바탕 40pt 줄의 20pt 그림 −2.99pt, 30pt −4.55pt).
+    ///
+    /// 한글 12.30 실측 (2026-09-21, 합성 HWPX → 한글 PDF, 전부 0.12pt 안): 함초롬바탕 40pt
+    /// 160% 줄에 폭 40pt 그림 높이 4·8·20·30·36·40·50pt → 그림 상단 = 베이스라인 − 0.85 ×
+    /// 높이(3.49·6.85·16.93·25.57·30.62·33.98·42.62). 바깥 여백 위 7·아래 3pt(바깥 30)의
+    /// 20pt 그림은 바깥 상자 상단 = 베이스라인 − 25.5, 그림은 그 아래 7; 위 0·아래 10과
+    /// 위 10·아래 0, 위·아래 15(바깥 50 > 상자 40)도 같은 식. 마커 run·본문의 상대 크기
+    /// 50·150%, 줄 간격 100%·고정 30·60pt·여백만 0·최소 50pt, Apple SD 산돌고딕 Neo, 가운데
+    /// 정렬, 한 줄의 8·20·30pt 세 그림, 10pt 줄의 4·8·20pt 그림, 20pt 줄의 10·20pt 그림,
+    /// 도형(사각형 20·50pt)·글상자·표 셀 안·글상자 안·쪽에 걸친 문단의 둘째 쪽 조각까지 모두
+    /// 0.85. MS 워드 호환 문서(함초롬돋움 40pt)는 같은 표본 전부 베이스라인 − 높이(4.0·8.05·
+    /// 19.93·30.02·36.02·40.11·50.04, 여백 위 7·아래 3은 − 23.05 = 바깥 바닥 − 3).
+    ///
+    /// 결과는 줄이 예약한 **바깥 상자**(`OuterMargins`)의 원점이다 — 개체 자신의 원점은
+    /// `inlineObjectOrigin`이 여백만큼 들여 낸다. 바깥 상자가 베이스라인 위 공간보다 커도 상자
+    /// 상단 위로는 올리지 않는다 — 측정 줄 프레임은 `baseline` ≥ 비율 × `ascent`라 이 가드에
+    /// 걸리지 않고, 줄 프레임을 손으로 만든 입력만 막는다. 두 경로가 이 식을 공유한다.
     static func inlineAnchorOrigin(
         paragraphOrigin: CGPoint,
-        lineBaseline: CGFloat,
-        lineOrigin: CGPoint,
-        xOffset: CGFloat,
-        ascent: CGFloat
+        line: HwpLineFrame,
+        anchor: HwpInlineAnchor
     ) -> CGPoint {
-        CGPoint(
-            x: paragraphOrigin.x + lineOrigin.x + xOffset,
-            y: paragraphOrigin.y + lineOrigin.y + max(0, lineBaseline - ascent)
+        let drop = max(0, line.baseline - line.objectBaselineRatio * anchor.ascent)
+        return CGPoint(
+            x: paragraphOrigin.x + line.origin.x + anchor.xOffset,
+            y: paragraphOrigin.y + line.origin.y + drop
         )
     }
 

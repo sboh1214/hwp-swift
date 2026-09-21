@@ -4303,8 +4303,9 @@ private extension HwpPaginator {
     /// 개체의 페이지 좌표 (왼쪽 위)를 계산한다.
     ///
     /// 줄 프레임 origin.y는 줄 상자 상단(문단 첫 줄 상자 상단 기준)이고 `baseline`은 그
-    /// 줄의 상자 상단 → 베이스라인 앵커다. 개체 상단은 `HwpObjectAnchorGeometry.inlineAnchorOrigin`
-    /// (줄 상자 모델, #180·#195).
+    /// 줄의 상자 상단 → 베이스라인 앵커다. 개체 바깥 상자의 상단은
+    /// `HwpObjectAnchorGeometry.inlineAnchorOrigin`(줄 상자 모델 — 바깥 상자를 그 높이의 글자로
+    /// 보고 베이스라인에 맞춘다, #180·#195).
     func inlineAnchorPosition(for controlIndex: Int?) -> CGPoint? {
         guard let controlIndex, currentParagraphContext != nil else { return nil }
         return inlineAnchorMap()[controlIndex]?.origin
@@ -4357,11 +4358,7 @@ private extension HwpPaginator {
             for anchor in line.inlineAnchors where map[anchor.controlIndex] == nil {
                 map[anchor.controlIndex] = InlineAnchorPlacement(
                     origin: HwpObjectAnchorGeometry.inlineAnchorOrigin(
-                        paragraphOrigin: context.blockFrame.origin,
-                        lineBaseline: line.baseline,
-                        lineOrigin: line.origin,
-                        xOffset: anchor.xOffset,
-                        ascent: anchor.ascent
+                        paragraphOrigin: context.blockFrame.origin, line: line, anchor: anchor
                     ),
                     reservesSpace: anchor.ascent > 0
                 )
