@@ -189,26 +189,28 @@ public enum HwpDrawnTextLayout {
         var regions: [(rect: CGRect, url: String)] = []
         // 하이퍼링크 속성이 있는 블록만 CT 재조판한다 (블록마다 framesetting 방지)
         var cachedLines: [HwpDrawnLine]?
-        // 밴드도 줄 캐시 옆에 같이 둔다: `glyphOffsetBands`는 줄의 CTRun을 전수로 돌며
-        // CTRunGetAttributes를 브리징하는데, 스팬마다 다시 부르면 (스팬 × 줄)만큼 값을
-        // 치른다 — 옮겨진 run이 하나도 없어도 그렇다 (실측 median: 40스팬 ~13줄
-        // 1.16 → 0.74ms, 120스팬 ~40줄 4.02 → 2.91ms).
-        var cachedBands: [[GlyphOffsetBand]]?
+        // 줄별 스팬 기하도 줄 캐시 옆에 같이 둔다: 밴드(`glyphOffsetBands`)는 줄의 CTRun을
+        // 전수로 돌며 CTRunGetAttributes를 브리징하는데, 스팬마다 다시 부르면 (스팬 × 줄)
+        // 만큼 값을 치른다 — 옮겨진 run이 하나도 없어도 그렇다 (실측 median: 40스팬 ~13줄
+        // 1.16 → 0.74ms, 120스팬 ~40줄 4.02 → 2.91ms). run별 진행 폭 범위(#201)는 스팬이
+        // 닿는 줄만 그 자리에서 채운다.
+        var geometries: [SpanLineGeometry] = []
         attributedString.enumerateAttribute(
             HwpAttributedStringKey.hyperlink, in: NSRange(location: 0, length: length)
         ) { value, range, _ in
             guard let url = value as? String else { return }
-            let drawnLines = cachedLines ?? lines(
-                attributedString: attributedString, origin: origin, lineWidth: lineWidth
-            )
-            cachedLines = drawnLines
-            let bandsByLine = cachedBands ?? glyphOffsetBands(
-                ofLines: drawnLines, in: attributedString
-            )
-            cachedBands = bandsByLine
+            if cachedLines == nil {
+                let drawnLines = lines(
+                    attributedString: attributedString, origin: origin, lineWidth: lineWidth
+                )
+                cachedLines = drawnLines
+                geometries = glyphOffsetBands(ofLines: drawnLines, in: attributedString)
+                    .map { SpanLineGeometry(bands: $0, runExtents: nil) }
+            }
+            guard let drawnLines = cachedLines else { return }
             for (lineIndex, drawn) in drawnLines.enumerated() {
                 appendHyperlinkRects(
-                    of: drawn, spanRange: range, bands: bandsByLine[lineIndex],
+                    of: drawn, spanRange: range, geometry: &geometries[lineIndex],
                     url: url, into: &regions
                 )
             }
