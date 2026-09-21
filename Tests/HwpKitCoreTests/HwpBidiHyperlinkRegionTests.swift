@@ -17,20 +17,20 @@ import XCTest
     ///
     /// 오라클은 **run의 잉크**다 — `CTRunGetImageBounds`는 시각 좌표라 논리 순서와 무관하고,
     /// 그 run의 링크 속성이 곧 그 자리를 눌렀을 때 열려야 하는 URL이다.
-    final class HwpBidiHyperlinkRegionTests: XCTestCase {
-        private static let font = CTFontCreateWithName("Helvetica" as CFString, 10, nil)
-        private static let origin = CGPoint(x: 0, y: 100)
-        private static let width: CGFloat = 300
+    class HwpBidiHyperlinkRegionTestCase: XCTestCase {
+        static let font = CTFontCreateWithName("Helvetica" as CFString, 10, nil)
+        static let origin = CGPoint(x: 0, y: 100)
+        static let width: CGFloat = 300
 
         /// 링크 속성과 잉크 중심을 가진 run — 그 자리의 탭이 열어야 하는 URL.
-        private struct InkedRun {
+        struct InkedRun {
             let url: String?
             let text: String
             let point: CGPoint
         }
 
-        private func span(
-            _ text: String, url: String? = nil, font: CTFont = HwpBidiHyperlinkRegionTests.font,
+        func span(
+            _ text: String, url: String? = nil, font: CTFont = HwpBidiHyperlinkRegionTestCase.font,
             extra: [NSAttributedString.Key: Any] = [:]
         ) -> NSAttributedString {
             var attributes: [NSAttributedString.Key: Any] = [
@@ -45,13 +45,13 @@ import XCTest
             return NSAttributedString(string: text, attributes: attributes)
         }
 
-        private func joined(_ spans: [NSAttributedString]) -> NSAttributedString {
+        func joined(_ spans: [NSAttributedString]) -> NSAttributedString {
             let string = NSMutableAttributedString()
             spans.forEach { string.append($0) }
             return string
         }
 
-        private func regions(
+        func regions(
             _ string: NSAttributedString, lineWidth: CGFloat = width
         ) -> [(rect: CGRect, url: String)] {
             HwpDrawnTextLayout.hyperlinkRegions(
@@ -60,12 +60,12 @@ import XCTest
         }
 
         /// 히트 규칙 그대로 — `regions.first { contains }` (`HwpHitTester`).
-        private func hit(_ regions: [(rect: CGRect, url: String)], _ point: CGPoint) -> String? {
+        func hit(_ regions: [(rect: CGRect, url: String)], _ point: CGPoint) -> String? {
             regions.first { $0.rect.contains(point) }?.url
         }
 
         /// 그려진 줄마다 잉크 있는 run의 (링크, 잉크 중심). 잉크 중심의 y는 줄 상자 가운데다.
-        private func inkedRuns(
+        func inkedRuns(
             _ string: NSAttributedString, lineWidth: CGFloat = width
         ) -> [InkedRun] {
             let lines = HwpDrawnTextLayout.lines(
@@ -97,13 +97,14 @@ import XCTest
         }
 
         /// 모든 run의 잉크 중심이 자기 URL로 열린다 — 링크 없는 run은 어느 영역에도 안 든다.
-        private func expectEveryRunOpensItsOwnLink(
+        func expectEveryRunOpensItsOwnLink(
             _ string: NSAttributedString, lineWidth: CGFloat = width,
             file: FileString = #file, line: UInt = #line
         ) {
             let regions = regions(string, lineWidth: lineWidth)
             let runs = inkedRuns(string, lineWidth: lineWidth)
-            expect(file: file, line: line, runs.isEmpty) == false
+            // 링크 run이 하나도 안 잡히면(속성 브리징 실패) 아래 루프가 공허해진다.
+            expect(file: file, line: line, runs.contains { $0.url != nil }) == true
             for run in runs {
                 let opened = expect(file: file, line: line, self.hit(regions, run.point))
                 if let url = run.url {
@@ -113,7 +114,10 @@ import XCTest
                 }
             }
         }
+    }
 
+    /// 양방향 줄 — 이슈의 재현 문자열과 그 변주. 오라클은 run의 잉크다 (기반 클래스 주석).
+    final class HwpBidiHyperlinkRegionTests: HwpBidiHyperlinkRegionTestCase {
         /// `abc א`(A) + `בג`(B): 이슈의 재현 문자열. A는 화면에서 떨어진 두 구간이라 rect
         /// 둘, B는 그 사이 하나 — 어느 글자를 눌러도 자기 URL이다.
         func testEachRunOnBidiLineOpensItsOwnLink() {
@@ -128,6 +132,8 @@ import XCTest
             let second = regions.filter { $0.url == "https://b.example" }.map(\.rect)
             expect(first.count) == 2
             expect(second.count) == 1
+            // 회귀하면 단언 실패로 끝나야지 첨자 트랩으로 번들을 죽이면 안 된다.
+            guard first.count == 2, second.count == 1 else { return }
             // A의 두 구간 사이에 B가 끼어 있다 — 셋이 서로 겹치지 않고 잇닿는다.
             let ordered = (first + second).sorted { $0.minX < $1.minX }
             expect(ordered.map(\.minX)) == [first[0].minX, second[0].minX, first[1].minX]
@@ -177,7 +183,8 @@ import XCTest
             let second = regions.filter { $0.url == "https://b.example" }.map(\.rect)
             expect(first.count) == 1
             expect(second.count) == 1
-            expect(Double(second[0].maxX)).to(beCloseTo(Double(first[0].minX), within: 0.001))
+            guard let firstRect = first.first, let secondRect = second.first else { return }
+            expect(Double(secondRect.maxX)).to(beCloseTo(Double(firstRect.minX), within: 0.001))
         }
 
         /// 링크 없는 run이 끼어도 그 자리는 어느 링크도 아니다 — 양방향 줄에서 링크 밖
@@ -193,211 +200,44 @@ import XCTest
         }
 
         /// 양쪽 정렬로 재조판된 줄(0-기준 부분 복사본)에서도 run 범위를 스팬에 바르게 댄다 —
-        /// 여러 줄에 걸친 양방향 문단의 모든 run이 자기 URL로 열린다.
-        func testJustifiedMultiLineBidiParagraphMapsRunsToSpans() {
+        /// 둘째 줄이 재조판본이고 그 줄에서 A가 두 구간으로 갈린다 (종전 산식은 줄마다 rect
+        /// 하나뿐이라 여기서 실패한다).
+        func testJustifiedRetypesetLineSplitsBidiSpan() {
+            let paragraph = kCTParagraphStyleAttributeName as NSAttributedString.Key
+            let style = Self.justifiedStyle()
+            let string = joined([
+                span("aaaa bbbb cccc ", extra: [paragraph: style]),
+                span("abc \u{05D0}", url: "https://a.example", extra: [paragraph: style]),
+                span("\u{05D1}\u{05D2}", url: "https://b.example", extra: [paragraph: style]),
+                span(" ghi jkl mno pqr stu vwx", url: "https://c.example",
+                     extra: [paragraph: style]),
+            ])
+            let lines = HwpDrawnTextLayout.lines(
+                attributedString: string, origin: Self.origin, lineWidth: 80
+            )
+            // 둘째 줄이 정말 재조판본(0-기준 CTLine)이고 양방향 줄이다 — 아니면 이 테스트가
+            // 아무것도 지키지 않는다.
+            expect(lines.count) == 3
+            guard lines.count == 3 else { return }
+            let second = lines[1]
+            expect(CTLineGetStringRange(second.line).location) == 0
+            expect(second.stringRange.location).to(beGreaterThan(0))
+            let regions = regions(string, lineWidth: 80)
+            let onSecond = regions.filter {
+                abs($0.rect.minY - (second.baselineOrigin.y - second.ascent)) < 0.001
+            }
+            expect(onSecond.filter { $0.url == "https://a.example" }.count) == 2
+            expect(onSecond.filter { $0.url == "https://b.example" }.count) == 1
+            expectEveryRunOpensItsOwnLink(string, lineWidth: 80)
+        }
+
+        static func justifiedStyle() -> CTParagraphStyle {
             var alignment = CTTextAlignment.justified
-            let style = withUnsafeMutablePointer(to: &alignment) { pointer in
+            return withUnsafeMutablePointer(to: &alignment) { pointer in
                 CTParagraphStyleCreate([CTParagraphStyleSetting(
                     spec: .alignment, valueSize: MemoryLayout<CTTextAlignment>.size, value: pointer
                 )], 1)
             }
-            let paragraph = kCTParagraphStyleAttributeName as NSAttributedString.Key
-            let string = joined([
-                span("abc abc abc \u{05D0}\u{05D1}\u{05D2} \u{05D3}\u{05D4}\u{05D5} def ",
-                     url: "https://a.example", extra: [paragraph: style]),
-                span("\u{05D6}\u{05D7} ghi", url: "https://b.example", extra: [paragraph: style]),
-                span(" \u{05D8}\u{05D9} end end", url: "https://c.example",
-                     extra: [paragraph: style]),
-            ])
-            let lines = HwpDrawnTextLayout.lines(
-                attributedString: string, origin: Self.origin, lineWidth: 90
-            )
-            // 정말 여러 줄이고, 앞 줄은 재조판본(0-기준 CTLine)이다 — 아니면 이 테스트가
-            // 아무것도 지키지 않는다.
-            expect(lines.count).to(beGreaterThan(1))
-            expect(lines.dropLast().contains {
-                CTLineGetStringRange($0.line).location == 0 && $0.stringRange.location > 0
-            }) == true
-            expectEveryRunOpensItsOwnLink(string, lineWidth: 90)
-        }
-
-        /// **단방향 줄의 rect는 종전 그대로다** — 스팬 양끝 오프셋(min/max)의 상자와 줄마다
-        /// 하나씩 0.001pt 안에서 같다. 단일·다중 스팬, 글꼴 폴백, 꼬리 공백, 장평, 줄 넘김.
-        func testUnidirectionalSpansKeepTheLegacySpanBox() {
-            var condensedMatrix = CGAffineTransform(scaleX: 0.5, y: 1)
-            let condensed = CTFontCreateCopyWithAttributes(Self.font, 0, &condensedMatrix, nil)
-            struct Case {
-                let name: String
-                let string: NSAttributedString
-                let lineWidth: CGFloat
-            }
-            let cases = [
-                Case(name: "single", string: span("LINK", url: "u"), lineWidth: 200),
-                Case(name: "multi", string: joined([
-                    span("AAAA ", url: "a"), span("plain "), span("BBBB", url: "b"), span(" "),
-                    span("CCCC", url: "c"),
-                ]), lineWidth: 300),
-                Case(name: "fallback", string: joined([
-                    span("홈페이지 바로가기 link", url: "k"), span(" tail"),
-                ]), lineWidth: 300),
-                Case(name: "trailing ws", string: joined([
-                    span("LINK   ", url: "u"), span("x"),
-                ]), lineWidth: 200),
-                Case(name: "condensed", string: joined([
-                    span(String(repeating: "A", count: 20)),
-                    span("LINK", url: "c", font: condensed),
-                ]), lineWidth: 300),
-                Case(name: "wrapped", string: joined([
-                    span("AAAAAAAAAA ", url: "a"), span("BBBBBBBBBB BBBB", url: "b"),
-                ]), lineWidth: 80),
-            ]
-            for testCase in cases {
-                let name = testCase.name
-                let regions = regions(testCase.string, lineWidth: testCase.lineWidth).map(\.rect)
-                let legacy = legacySpanBoxes(testCase.string, lineWidth: testCase.lineWidth)
-                expect(regions.count).to(equal(legacy.count), description: name)
-                for (rect, box) in zip(regions, legacy) {
-                    expect(Double(rect.minX))
-                        .to(beCloseTo(Double(box.minX), within: 0.001), description: name)
-                    expect(Double(rect.maxX))
-                        .to(beCloseTo(Double(box.maxX), within: 0.001), description: name)
-                    expect(rect.minY).to(equal(box.minY), description: name)
-                    expect(rect.height).to(equal(box.height), description: name)
-                }
-            }
-        }
-
-        /// 종전 산식 — 스팬 양끝 인덱스의 `CTLineGetOffsetForStringIndex`를 min/max로 정규화한
-        /// 줄 상자 하나 (cc40b23). 단방향 줄에서는 옳은 값이라 회귀 기준으로 쓴다.
-        private func legacySpanBoxes(
-            _ string: NSAttributedString, lineWidth: CGFloat
-        ) -> [CGRect] {
-            let lines = HwpDrawnTextLayout.lines(
-                attributedString: string, origin: Self.origin, lineWidth: lineWidth
-            )
-            var boxes: [CGRect] = []
-            string.enumerateAttribute(
-                HwpAttributedStringKey.hyperlink, in: NSRange(location: 0, length: string.length)
-            ) { value, range, _ in
-                guard value is String else { return }
-                for drawn in lines {
-                    let lower = max(range.location, drawn.stringRange.location)
-                    let upper = min(
-                        range.location + range.length,
-                        drawn.stringRange.location + drawn.stringRange.length
-                    )
-                    guard upper > lower else { continue }
-                    let ctStart = CTLineGetStringRange(drawn.line).location
-                    let lowerX = CTLineGetOffsetForStringIndex(
-                        drawn.line, ctStart + lower - drawn.stringRange.location, nil
-                    )
-                    let upperX = CTLineGetOffsetForStringIndex(
-                        drawn.line, ctStart + upper - drawn.stringRange.location, nil
-                    )
-                    guard max(lowerX, upperX) > min(lowerX, upperX) else { continue }
-                    boxes.append(CGRect(
-                        x: drawn.baselineOrigin.x + min(lowerX, upperX),
-                        y: drawn.baselineOrigin.y - drawn.ascent,
-                        width: max(lowerX, upperX) - min(lowerX, upperX),
-                        height: drawn.ascent + drawn.descent
-                    ))
-                }
-            }
-            return boxes
-        }
-
-        /// 방출 ≡ 히트: 페이지의 `.hyperlink` 명령과 `HwpHitTester`가 양방향 줄에서 같은 자리에
-        /// 같은 URL을 낸다 — 이슈 표의 세 지점(ב·ג 구간, א, abc).
-        func testPaintListAndHitTesterAgreeOnBidiLine() {
-            let string = joined([
-                span("abc \u{05D0}", url: "https://a.example"),
-                span("\u{05D1}\u{05D2}", url: "https://b.example"),
-            ])
-            let frame = CGRect(x: 20, y: 100, width: 300, height: 20)
-            let block = AnyHwpBlock(frame: frame, kind: .text, attributedString: string)
-            let page = HwpPage(
-                size: CGSize(width: 595, height: 842),
-                margins: HwpPageMargins(top: 0, left: 0, bottom: 0, right: 0),
-                blocks: [block],
-                pageNumber: 1
-            )
-            let commands = HwpPaintListBuilder().build(for: page).commands.compactMap { command
-                -> (rect: CGRect, url: String)? in
-                if case let .hyperlink(rect, url) = command {
-                    return (rect: rect, url: url)
-                }
-                return nil
-            }
-            let lines = HwpDrawnTextLayout.lines(
-                attributedString: string, origin: frame.origin, lineWidth: frame.width
-            )
-            let midY = (lines.first?.baselineOrigin.y ?? 0)
-                + ((lines.first?.descent ?? 0) - (lines.first?.ascent ?? 0)) / 2
-            for run in inkedRuns(string) {
-                // `inkedRuns`는 원점 (0, 100) 기준이라 블록 원점 x만 옮긴다.
-                let point = CGPoint(x: run.point.x + frame.minX, y: midY)
-                let hit = HwpHitTester().hit(page: page, point: point)
-                var hitURL: String?
-                if case let .hyperlink(url, _) = hit {
-                    hitURL = url
-                }
-                expect(hitURL).to(equal(run.url), description: "hit \"\(run.text)\"")
-                expect(self.hit(commands, point))
-                    .to(equal(run.url), description: "paint \"\(run.text)\"")
-            }
-        }
-    }
-
-    /// 스팬에 속한 run 범위를 잇닿은 구간으로 합치는 규칙 (`visualSegments`).
-    final class HwpHyperlinkVisualSegmentTests: XCTestCase {
-        private typealias Extent = HwpDrawnTextLayout.RunExtent
-
-        /// 화면 순서 [A][B][A]: 스팬 A는 구간 둘, 스팬 B는 그 사이 하나.
-        func testSplitsAroundAForeignRun() {
-            let extents = [
-                Extent(range: CFRange(location: 0, length: 4), minX: 0, maxX: 18.9),
-                Extent(range: CFRange(location: 5, length: 2), minX: 18.9, maxX: 28.8),
-                Extent(range: CFRange(location: 4, length: 1), minX: 28.8, maxX: 35.3),
-            ]
-            let first = HwpDrawnTextLayout.visualSegments(
-                of: extents, in: CFRange(location: 0, length: 5)
-            )
-            let second = HwpDrawnTextLayout.visualSegments(
-                of: extents, in: CFRange(location: 5, length: 2)
-            )
-
-            expect(first) == [0 ... 18.9, 28.8 ... 35.3]
-            expect(second) == [18.9 ... 28.8]
-        }
-
-        /// 잇닿은 run은 하나로 합치고 (경계 오차 0.001 안), 폭 0 run은 버리며, 스팬에 걸친
-        /// run(포함이 아닌 교집합)은 가져가지 않는다.
-        func testJoinsAdjacentRunsDropsEmptyOnesAndSkipsStraddlers() {
-            let extents = [
-                Extent(range: CFRange(location: 0, length: 2), minX: 0, maxX: 10),
-                Extent(range: CFRange(location: 2, length: 1), minX: 10.0005, maxX: 10.0005),
-                Extent(range: CFRange(location: 3, length: 2), minX: 10.0005, maxX: 20),
-                Extent(range: CFRange(location: 5, length: 3), minX: 20, maxX: 30),
-            ]
-            let segments = HwpDrawnTextLayout.visualSegments(
-                of: extents, in: CFRange(location: 0, length: 6)
-            )
-
-            expect(segments) == [0 ... 20]
-            expect(HwpDrawnTextLayout.visualSegments(
-                of: [extents[1]], in: CFRange(location: 0, length: 6)
-            )).to(beEmpty())
-        }
-
-        /// 화면 순서가 흐트러진 입력도 x로 정렬해 합친다 — 결과는 순서와 무관하다.
-        func testOrderIndependent() {
-            let extents = [
-                Extent(range: CFRange(location: 2, length: 2), minX: 20, maxX: 30),
-                Extent(range: CFRange(location: 0, length: 2), minX: 10, maxX: 20),
-            ]
-            expect(HwpDrawnTextLayout.visualSegments(
-                of: extents, in: CFRange(location: 0, length: 4)
-            )) == [10 ... 30]
         }
     }
 #endif

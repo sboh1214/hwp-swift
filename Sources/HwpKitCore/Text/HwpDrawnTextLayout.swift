@@ -177,8 +177,10 @@ public enum HwpDrawnTextLayout {
 
     /// attributedString 안 `hyperlink` 속성 범위마다 줄별 글리프 rect와 URL을
     /// 돌려준다 (페이지 로컬 top-down). 블록 전체가 아니라 링크 텍스트에만
-    /// 히트/오버레이를 스코프하는 데 쓴다 (#2). 재조판된 CTLine은 자체 범위가
-    /// 0-기준 sub-copy라, attributedString index를 CTLine index로 옮겨 오프셋을 낸다.
+    /// 히트/오버레이를 스코프하는 데 쓴다 (#2). rect는 스팬의 run이 화면에서 잇닿은
+    /// 구간마다 하나다 — 양방향 줄에서는 한 스팬이 여럿을 낸다 (#201,
+    /// `appendHyperlinkRects`). 재조판된 CTLine은 자체 범위가 0-기준 sub-copy라,
+    /// attributedString index를 CTLine index로 옮겨 run 범위와 댄다.
     public static func hyperlinkRegions(
         attributedString: NSAttributedString,
         origin: CGPoint,

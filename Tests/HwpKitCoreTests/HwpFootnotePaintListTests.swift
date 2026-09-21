@@ -82,7 +82,7 @@ final class HwpFootnotePaintListTests: XCTestCase {
     }
 
     /// `%hlk`가 감싼 **비 treatAsChar** 개체는 마커 폭이 0이라 스팬 방출이 아무
-    /// rect도 못 낸다 (`hyperlinkRegions`의 `maxX > minX` 가드). 히트는
+    /// rect도 못 낸다 (`visualSegments`가 폭 0 구간을 버린다). 히트는
     /// `wrapperHyperlinkURL`로 개체에서 링크를 여니, 방출도 **개체 rect**로 내야
     /// 밑줄과 탭이 같은 자리에 있다 (R56 — AGENTS.md "방출 ≡ 히트").
     func testWrappedFootnoteObjectEmitsHyperlinkAtObjectRect() {

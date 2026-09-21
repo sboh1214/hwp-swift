@@ -17,23 +17,42 @@ extension HwpDrawnTextLayout {
     /// 있다 — 스팬 하나로 전체를 걸어도 히브리 글자 셋이 통째로 빠졌다). run은 화면 순서로
     /// 놓이고 자기 자리를 안다.
     ///
-    /// 가로 범위는 `CTRunGetPositions`의 첫 글리프(run 안 글리프는 시각 순서라 가장
-    /// 왼쪽)에 run 텍스트 매트릭스를 건 시작점 + `CTRunGetTypographicBounds` 폭이다 —
-    /// positions는 매트릭스 **적용 전** 좌표라(장평 50% run이 줄 중간에서 두 배 자리에
-    /// 선다, #200 리뷰) 렌더러(`drawRun`)처럼 매트릭스를 걸어야 줄 좌표가 되고, 폭은 적용
-    /// 후 값이다. 인접 run의 끝과 다음 run의 시작은 CT가 같은 누적값을 줘 비트 단위로
-    /// 같다 (실측 — 양방향·장평·기울임 근사 전부).
+    /// 가로 범위는 run의 **기저 글리프 위치**에 run 텍스트 매트릭스를 건 값과
+    /// `CTRunGetTypographicBounds` 폭으로 낸다 — positions는 매트릭스 **적용 전** 좌표라
+    /// (장평 50% run이 줄 중간에서 두 배 자리에 선다, #200 리뷰) 렌더러(`drawRun`)처럼
+    /// 매트릭스를 걸어야 줄 좌표가 되고, 폭과 advances는 적용 후 값이다. **기준 글리프는
+    /// 방향에 따라 다르다** (PR 리뷰): run 안 글리프는 시각 순서인데 결합 부호는 LTR run에서
+    /// 기저 **뒤**, RTL run에서 기저 **앞**에 온다. 그래서 LTR은 첫 글리프 위치가 왼쪽 끝이고,
+    /// RTL은 첫 글리프가 논리 마지막 글자의 부호일 수 있어(니쿠드·샤다 — GPOS 오프셋만큼
+    /// 기저와 다른 자리: GeezaPro `شَّ` 3.71pt·함초롬바탕 1.26pt·Times New Roman 홀람은
+    /// 기저 **왼쪽** 1.59pt) 마지막 글리프(논리 첫 글자의 기저)의 위치 + advance를 오른쪽
+    /// 끝으로 잡고 폭을 뺀다. 첫 글리프로 잡으면 링크 rect가 줄 상자 밖으로 나가거나 이웃
+    /// 링크 글자를 덮는다. 인접 run의 끝과 다음 run의 시작은 CT가 같은 누적값을 주는
+    /// 자리라 실측 글꼴(Helvetica·Lucida Grande 폴백·장평·기울임 근사)에서는 비트 단위로
+    /// 같았다.
+    ///
+    /// 진행 폭은 **자간(`kCTKern`)을 품는다** — 줄 상자(`CTLineGetTypographicBounds`·
+    /// `selectionRect`)와 같은 정의다. 종전의 양끝 캐럿(`CTLineGetOffsetForStringIndex`)은
+    /// 글자 사이 kern을 반씩 나누고 줄 끝에서는 kern을 통째로 뺐으므로(실측 kern +2: 경계
+    /// 14.123 vs run 끝 15.123, 줄 끝 27.685 vs 줄 폭 29.685; kern −1이면 줄 끝 캐럿이 줄 상자
+    /// **밖** 18.685 vs 17.685), 자간이 있는 줄의 스팬 경계는 kern/2, 줄 끝은 kern만큼 종전과
+    /// 다르다 — 링크 rect의 끝이 줄 상자 끝과 일치하는 쪽이 새 값이다.
     struct RunExtent {
         let range: CFRange
         let minX: CGFloat
         let maxX: CGFloat
 
-        /// 이 run이 `span` 안에 통째로 드는가 — `GlyphOffsetBand.belongs(to:)`와 같은
-        /// **포함** 판정이다. CT는 속성 경계마다 run을 끊으므로 링크 스팬과 run은 안에
-        /// 들거나 밖에 있지 걸치지 않는다.
+        /// 이 run이 `span`의 것인가 — run의 **첫 글자**가 스팬 안에 있으면 그 스팬 것이다.
+        ///
+        /// 밴드(`GlyphOffsetBand.belongs(to:)`)처럼 **포함**으로 물으면 안 된다: CT는 속성
+        /// 경계마다 run을 끊지만 **자소 묶음은 예외**다 — ZWJ 이모지 열·첫가끝 자모(U+1112
+        /// U+1161 U+11AB)·아랍 lam-alef는 링크 경계가 묶음 안에 떨어져도 한 run으로 나오고
+        /// (실측; 결합 부호 U+0301과 서로게이트 쌍은 갈린다) 그 run의 속성 사전은 첫 글자의
+        /// 것이다. 포함이면 그 run이 양쪽 스팬에서 다 버려져 클릭 구멍이 나고, 렌더러는 그
+        /// run을 첫 글자의 링크(글자 색·밑줄)로 그리므로 소속도 첫 글자를 따라야 방출 ≡ 칠이다.
         func belongs(to span: CFRange) -> Bool {
             range.location >= span.location
-                && range.location + range.length <= span.location + span.length
+                && range.location < span.location + span.length
         }
     }
 
@@ -43,13 +62,26 @@ extension HwpDrawnTextLayout {
         guard let runs = CTLineGetGlyphRuns(line) as? [CTRun] else { return [] }
         var extents: [RunExtent] = []
         extents.reserveCapacity(runs.count)
-        for run in runs where CTRunGetGlyphCount(run) > 0 {
-            var origin = CGPoint.zero
-            CTRunGetPositions(run, CFRange(location: 0, length: 1), &origin)
-            let start = origin.applying(CTRunGetTextMatrix(run)).x
+        for run in runs {
+            let glyphCount = CTRunGetGlyphCount(run)
+            guard glyphCount > 0 else { continue }
+            let matrix = CTRunGetTextMatrix(run)
             let width = CGFloat(
                 CTRunGetTypographicBounds(run, CFRange(location: 0, length: 0), nil, nil, nil)
             )
+            var position = CGPoint.zero
+            let start: CGFloat
+            if CTRunGetStatus(run).contains(.rightToLeft) {
+                // 마지막 글리프 = 논리 첫 글자의 기저 (RTL run은 부호가 기저 앞이다).
+                // advance는 run 끝까지의 델타라 위치 + advance가 run의 오른쪽 끝이다.
+                CTRunGetPositions(run, CFRange(location: glyphCount - 1, length: 1), &position)
+                var advance = CGSize.zero
+                CTRunGetAdvances(run, CFRange(location: glyphCount - 1, length: 1), &advance)
+                start = position.applying(matrix).x + advance.width - width
+            } else {
+                CTRunGetPositions(run, CFRange(location: 0, length: 1), &position)
+                start = position.applying(matrix).x
+            }
             extents.append(RunExtent(
                 range: CTRunGetStringRange(run), minX: start, maxX: start + width
             ))
@@ -59,16 +91,17 @@ extension HwpDrawnTextLayout {
 
     /// `span`에 속한 run들의 가로 범위를 **화면에서 잇닿은 구간별로** 합친다 (줄 원점 기준).
     ///
-    /// 단방향 줄에서는 스팬의 run이 늘 잇닿아 구간 하나 = 종전의 스팬 양끝 상자다. 양방향
-    /// 줄에서는 사이에 다른 링크의 run이 끼어 구간이 여럿이다 — 그것을 외접 사각형 하나로
-    /// 합치면 그 사이 글자를 다른 링크에서 뺏는다 (#201). 폭 0 구간(폭 0 개체 마커·U+200B)은
-    /// 차지한 자리가 없으니 버린다 (종전의 `maxX > minX` 가드).
+    /// 단방향 줄에서는 스팬의 run이 늘 잇닿아 구간 하나 = 종전의 스팬 양끝 상자다(자간이
+    /// 없을 때 — `RunExtent` 주석). 양방향 줄에서는 사이에 다른 링크의 run이 끼어 구간이
+    /// 여럿이다 — 그것을 외접 사각형 하나로 합치면 그 사이 글자를 다른 링크에서 뺏는다
+    /// (#201). 폭 0 구간(폭 0 개체 마커·U+200B)은 차지한 자리가 없으니 버린다 (종전의
+    /// `maxX > minX` 가드).
     ///
     /// 한 번 훑는다 — `CTLineGetGlyphRuns`가 run을 화면 순서(왼쪽→오른쪽)로 주므로 (실측
-    /// 양방향·아랍 shaping 모두) 정렬·필터 배열을 스팬 × 줄마다 만들지 않는다 (120스팬
-    /// ~46줄 실측 median 5.11 → 4.4ms대, 종전 산식 4.17ms). 순서가 어긋난 입력이 오면 그때만
-    /// 정렬해 다시 훑는다 — 잇닿음 판정이 순서에 기대므로 순서 없이 합치면 사이 글자를 건너
-    /// 다리를 놓는다.
+    /// 양방향·아랍 shaping 모두) 정렬·필터 배열을 스팬 × 줄마다 만들지 않는다. 순서가 어긋난
+    /// 입력이 오면 그때만 정렬해 다시 훑는다 — 잇닿음 판정이 순서에 기대므로 순서 없이
+    /// 합치면 사이 글자를 건너 다리를 놓는다. 비용은 종전 양끝 오프셋 질의보다 작다 (릴리스
+    /// 빌드 실측은 AGENTS.md "글자 위치" 절의 #201 항목).
     static func visualSegments(
         of extents: [RunExtent], in span: CFRange
     ) -> [ClosedRange<CGFloat>] {
@@ -95,8 +128,8 @@ extension HwpDrawnTextLayout {
         return segments
     }
 
-    /// 인접 run의 경계는 CT가 같은 누적값을 줘 정확히 같지만 (실측), 다른 조판 경로가
-    /// 부동소수 오차를 내더라도 눈에 안 보이는 틈으로 구간이 갈리지 않게 둔 여유.
+    /// 인접 run의 경계는 실측 글꼴에서는 비트 단위로 같지만 폴백 글꼴에 따라 누적 오차
+    /// (1e-15 수준)가 날 수 있어, 눈에 안 보이는 틈으로 구간이 갈리지 않게 둔 여유.
     private static let segmentJoinTolerance: CGFloat = 0.001
 
     /// 줄 하나의 스팬 기하 캐시 — `hyperlinkRegions`가 줄마다 하나씩 두고 그 줄에 닿는
