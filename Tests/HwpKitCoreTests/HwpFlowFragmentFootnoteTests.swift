@@ -172,6 +172,43 @@ import XCTest
             expect(perPage.notes[1].count) == 1
         }
 
+        /// 다단 밴드에서는 조각별 귀속을 쓰지 않는다 — 각주 영역이 쪽 폭 하단이라 뒤 단 조각이 걷은
+        /// 각주가 이미 끝까지 찬 앞 단의 아랫줄을 덮는다 (PR 리뷰). 문단 전체 예약이 모든 단에
+        /// 미리 빠져 앞 단 조각 아래에 각주 자리가 남는다.
+        func testMultiColumnBandKeepsTheWholeParagraphReservation() async throws {
+            // 참조가 셋째 줄(둘째 단 몫)에 있는 세 줄 문단, 2단 본문 48pt: 첫 단은 구역 첫 문단 뒤
+            // 두 줄(16~48)로 가득 차고 셋째 줄은 둘째 단이다 — 조각별 예약이면 둘째 단에서 셋째 줄
+            // + 각주(16 + 24)가 들어간다고 보고 각주를 쪽 하단(약 24~48)에 놓아 첫 단 둘째 줄을 덮는다.
+            let host = try Self.host(markerLine: 2)
+            var sectionDef = MeasuredLineFragmentSupport.sectionDef(
+                columnWidth: 300 * 2 + 10, contentHeight: 48
+            )
+            sectionDef.footNoteShape.property = 0
+            let section = HwpSynthetic.section(
+                firstParagraphControls: [
+                    .section(sectionDef), .column(HwpSynthetic.column(count: 2, spacing: 1000)),
+                ],
+                bodyParagraphs: [host]
+            )
+            let paginator = HwpPaginator(
+                sections: [section],
+                index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+            let pages = try await InlineControlFragmentSupport.pages(of: paginator)
+            let fragments = pages.flatMap { page in
+                page.blocks.filter { $0.kind == .text && $0.source?.paragraphIndex == 1 }
+            }
+            let notes = pages.flatMap { page in page.blocks.filter { $0.kind == .footnote } }
+            expect(notes.count) == 1
+            guard let note = notes.first else { return }
+            for fragment in fragments where fragment.frame.minX < note.frame.maxX
+                && fragment.frame.maxX > note.frame.minX
+            {
+                expect(fragment.frame.maxY).to(beLessThanOrEqualTo(note.frame.minY + 0.01))
+            }
+        }
+
         // MARK: 귀속 문맥 단위
 
         /// 마커 속성 run이 있는 조판 문자열과 줄 프레임을 직접 지어 서수 범위 산식을 잠근다.

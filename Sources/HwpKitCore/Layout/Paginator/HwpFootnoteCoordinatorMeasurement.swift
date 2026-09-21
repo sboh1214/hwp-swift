@@ -286,11 +286,21 @@ extension HwpFootnoteCoordinator {
         // 전부 훑으면 이어지는 각주 뒤에 흐름 문단·표를 다시 시도하는 쪽마다 그 일을 되풀이한다).
         guard !state.stopped, let ctrls = paragraph.ctrlHeaderArray else { return 0 }
         var total: CGFloat = 0
-        for (ordinal, ctrl) in ctrls.enumerated() {
+        // 조각 범위 필터는 깊이 0에만 든다 (`collectFootnotes`와 같다, #207). 비최종 조각은
+        // **범위만** 돈다 — 줄마다 예약을 재는 흐름 분할이 컨트롤 전수를 훑으면 각주 수천 개
+        // 문단에서 이차다 (PR 리뷰; 수집의 같은 분기와 같은 이유). 최종 조각은 범위 밖 컨테이너의
+        // 중첩 각주까지 재므로 전수 순회다(문단당 한 번).
+        let visited: [(ordinal: Int, ctrl: CoreHwp.HwpCtrlId)] = if depth == 0,
+                                                                    let ordinals, !collectsNested
+        {
+            ordinals.filter { ctrls.indices.contains($0) }.map { ($0, ctrls[$0]) }
+        } else {
+            Array(ctrls.enumerated().map { ($0.offset, $0.element) })
+        }
+        for (ordinal, ctrl) in visited {
             if state.stopped {
                 break
             }
-            // 조각 범위 필터는 깊이 0에만 든다 (`collectFootnotes`와 같다, #207).
             let inFragment = depth > 0 || (ordinals?.contains(ordinal) ?? true)
             let container = numbering?.container(controlIndex: ordinal)
             if case let .footnote(list) = ctrl, inFragment {
@@ -343,7 +353,15 @@ extension HwpFootnoteCoordinator {
             } else {
                 depth > 0 || collectsNested
             }
-            guard walksChildren else { continue }
+            guard walksChildren else {
+                // 비최종 조각의 범위 안 컨테이너: 수집은 그 안 각주에 **번호는 지금** 매기고
+                // (`deferNestedNotes`) 배치만 미루므로 예약도 번호만 소비한다 — 그 뒤 직접 각주의
+                // 라벨을 같은 번호로 재야 한다 (PR 리뷰).
+                if inFragment {
+                    state.preview += Self.nestedFootnoteCount(in: ctrl, childParagraphs: childParagraphs)
+                }
+                continue
+            }
             for (childIndex, (nested, _)) in childParagraphs(ctrl).enumerated()
                 where nested.ctrlHeaderArray != nil
             {
@@ -358,6 +376,31 @@ extension HwpFootnoteCoordinator {
             }
         }
         return total
+    }
+
+    /// 컨테이너 안(깊이 3까지, 표 셀 제외)의 각주 수 — 비최종 조각 예약의 번호 미리보기용.
+    private static func nestedFootnoteCount(
+        in ctrl: CoreHwp.HwpCtrlId, childParagraphs: ChildParagraphs, depth: Int = 1
+    ) -> Int {
+        guard depth < 3 else { return 0 }
+        var count = 0
+        for (nested, _) in childParagraphs(ctrl) {
+            for child in nested.ctrlHeaderArray ?? [] {
+                switch child {
+                case let .footnote(list):
+                    if !list.listArray.flatMap(\.paragraphArray).isEmpty {
+                        count += 1
+                    }
+                case .table:
+                    continue
+                default:
+                    count += nestedFootnoteCount(
+                        in: child, childParagraphs: childParagraphs, depth: depth + 1
+                    )
+                }
+            }
+        }
+        return count
     }
 
     /// numbering: 이 각주 문단의 번호 열쇠 (#158) — 배치(`HwpFootnoteLayout.measure`)가

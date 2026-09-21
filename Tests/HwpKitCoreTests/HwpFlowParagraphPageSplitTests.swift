@@ -173,9 +173,10 @@ import XCTest
         /// 첫 줄조차 안 들어가면 종전대로 문단을 통째로 다음 쪽에서 다시 처리한다 (한글 실측 R)
         /// — 첫 쪽엔 구역 첫 문단과 채움 문단만 남는다.
         func testParagraphWhoseFirstLineDoesNotFitMovesWhole() async throws {
-            // 본문 60pt: 템플릿 16 + 채움 두 줄 32 뒤 남은 12pt에 첫 줄(16)이 안 들어간다.
+            // 본문 56pt: 템플릿 16 + 채움 두 줄 32 뒤 남은 8pt에는 첫 줄 상자(10)도 안 들어간다
+            // (줄 상자 판정 #222와도 같은 답). 다음 쪽(56)엔 세 줄 48이 든다.
             let layout = try await Self.layout(
-                Self.paragraph(lines: 3), contentHeight: 60, fillerLines: 2
+                Self.paragraph(lines: 3), contentHeight: 56, fillerLines: 2
             )
             expect(layout.pages.count) >= 2
             guard layout.pages.count >= 2 else { return }
@@ -315,6 +316,100 @@ import XCTest
             expect(oversized.fragments[0]).to(beNil())
             expect(oversized.fragments[1]?.attributedString?.length) == 90
             expect(oversized.fragments[2]?.attributedString?.length) == 60
+        }
+
+        // MARK: 문단에 묶인 컨트롤
+
+        /// 마지막 조각 뒤에 문단 단위로 나오는 것이 문단 머리에 묶여 있으면(자리 차지·글 앞뒤
+        /// 개체는 문단 상단 기준, 자동 쪽 번호는 진입 쪽 번호로 구워짐) 나누지 않고 종전대로
+        /// 통째로 옮긴다 — 글자처럼 취급 개체는 조각마다 놓이므로 나눈다.
+        func testParagraphBoundControlsKeepTheWholeParagraphTogether() async throws {
+            /// 남은 40pt: 보통이면 두 줄이 남는다 (셋째 줄 끝에 마커).
+            func host(marker: CoreHwp.WCHAR, control: CoreHwp.HwpCtrlId) throws -> CoreHwp.HwpParagraph {
+                var host = try HwpSynthetic.splitParagraphWithControlMarkers(
+                    lines: [(characters: 5, marker: false), (characters: 5, marker: false),
+                            (characters: 5, marker: true)],
+                    segments: [], markerCode: marker
+                )
+                host.ctrlHeaderArray = [control]
+                return host
+            }
+            let floating = try await Self.layout(
+                host(marker: 11, control: .genShapeObject(
+                    HwpSynthetic.floatingShapeObject(width: 2000, height: 1000)
+                )),
+                contentHeight: Self.templateHeight + 40
+            )
+            expect(floating.fragments[0]).to(beNil())
+            expect(floating.fragments[1]).toNot(beNil())
+
+            let pageNumber = try await Self.layout(
+                host(marker: 18, control: HwpSynthetic.autoNumberControl(kind: 0)),
+                contentHeight: Self.templateHeight + 40
+            )
+            expect(pageNumber.fragments[0]).to(beNil())
+            expect(pageNumber.fragments[1]).toNot(beNil())
+
+            let inline = try await Self.layout(
+                host(marker: 11, control: .genShapeObject(
+                    HwpSynthetic.inlineShapeObject(width: 2000, height: 1000)
+                )),
+                contentHeight: Self.templateHeight + 40
+            )
+            expect(inline.fragments[0]).toNot(beNil())
+            expect(inline.fragments[1]).toNot(beNil())
+        }
+
+        // MARK: 다단·진행 보장
+
+        /// 다단 밴드: 문단 보호 + 위 간격 + 단보다 긴 문단이 부분 채운 단에서 시작하면 새 단 머리에
+        /// 간격이 다시 실려 커서가 양수라도 그 단은 이 문단만 든 빈 단이다 — 문단 보호가 거기서
+        /// 다시 0줄을 내면 쪽 상한까지 빈 쪽이 생긴다 (PR 리뷰). 새 단에서 나뉘고 뒤 문단이 이어진다.
+        func testKeepLinesTogetherSplitsOnTheFreshColumnAfterMovingAcrossColumns() async throws {
+            let index = Self.index(property1: 1 << 18, spacingTop: 2400)
+            let leading = try HwpSynthetic.textParagraph("앞 문단")
+            let host = try Self.paragraph(lines: 8)
+            let built = HwpTextRunBuilder(index: index, fontResolver: .testDeterministic)
+                .build(paragraph: host)
+            let columnWidth = Support.columnWidth(charactersPerLine: 30, in: built)
+            // 2단, 본문 100pt: 여덟 줄(128pt)은 단보다 길다.
+            let section = HwpSynthetic.section(
+                firstParagraphControls: [
+                    .section(Support.sectionDef(columnWidth: columnWidth * 2 + 10, contentHeight: 100)),
+                    .column(HwpSynthetic.column(count: 2, spacing: 1000)),
+                ],
+                bodyParagraphs: [leading, host, try HwpSynthetic.textParagraph("뒤 문단")]
+            )
+            let paginator = HwpPaginator(
+                sections: [section], index: index, fontResolver: .testDeterministic
+            )
+            let pages = try await Pages.pages(of: paginator)
+            expect(pages.count) == 2
+            guard pages.count == 2 else { return }
+            let fragments = pages.flatMap { page in
+                page.blocks.filter {
+                    $0.kind == .text && $0.source?.sectionIndex == 0 && $0.source?.paragraphIndex == 2
+                }
+            }
+            expect(fragments.map { $0.attributedString?.length }) == [150, 90]
+            // 둘째 단 머리에 간격 12pt를 두고 시작한다.
+            expect(fragments.first?.frame.minX).to(beCloseTo(columnWidth + 10, within: 0.05))
+            expect(fragments.first?.frame.minY).to(beCloseTo(12, within: 0.01))
+            expect(pages[1].blocks.contains { $0.attributedString?.string.contains("뒤 문단") == true })
+                .to(beTrue())
+        }
+
+        /// 두 줄도 안 들어가는 단에서 외톨이줄 보호가 매번 0줄을 내도 진행 보장이 한 줄씩 놓는다.
+        func testWidowOrphanProtectionStillMakesProgressInAColumnShorterThanTwoLines() async throws {
+            let index = Self.index(property1: 1 << 16, spacingTop: 800)
+            // 본문 30pt: 템플릿 16 뒤 남은 14pt엔 한 줄도 안 들어가 통째로 넘기고, 새 쪽(30)에도
+            // 간격 4 + 한 줄(20)뿐이라 외톨이줄 보호는 매 쪽 0줄을 낸다 — 진행 보장이 한 줄씩 놓는다.
+            let layout = try await Self.layout(
+                Self.paragraph(lines: 3), contentHeight: 30, index: index
+            )
+            // 뒤 문단(16)은 마지막 줄 쪽에 안 들어가 다섯째 쪽이다.
+            expect(layout.pages.count) == 5
+            expect(layout.fragments.map { $0?.attributedString?.length }) == [nil, 30, 30, 30, nil]
         }
 
         // MARK: 분할 규칙 표

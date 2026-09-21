@@ -178,22 +178,25 @@ import XCTest
 
         // MARK: 쪽 경계 흐름 분할
 
-        /// 라인 캐시 없는 문단이 쪽에 걸쳐 나뉘면(`appendLineSliceBlock`) 뒤 조각(30자 × 2 + 1자)은
-        /// 측정한 세 줄 높이로 놓이고 렌더러도 세 줄을 그린다.
+        /// 라인 캐시 없는 문단이 쪽에 걸쳐 나뉘면(`appendLineSliceBlock`) 뒤 조각(30자 + 1자)은
+        /// 측정한 두 줄 높이로 놓이고 렌더러도 두 줄을 그린다 — 뒤 문단은 그 바로 아래다.
         func testFlowPageSplitFragmentDrawsAsManyLinesAsItWasMeasured() async throws {
             let index = HwpIndex(from: CoreHwp.HwpFile())
+            // 채움 두 줄(32pt)이 구역 첫 문단(16pt) 뒤 첫 쪽을 채워 남은 8pt에는 한 줄도 안
+            // 들어간다 — 문단은 종전대로 둘째 쪽에서 통째로 시작한다 (#207 뒤에도 같은 형상).
+            let filler = try HwpSynthetic.textParagraph(String(repeating: "채", count: 60))
             let host = try HwpSynthetic.textParagraph(String(repeating: "가", count: 121))
             let follower = try HwpSynthetic.textParagraph("뒤 문단")
             let built = HwpTextRunBuilder(index: index, fontResolver: .testDeterministic)
                 .build(paragraph: host)
-            // 본문 높이 56pt = 줄 전진량(16pt) 3.5줄 — 구역 첫 문단(16pt) 뒤 남은 40pt에 앞 조각
-            // 줄 둘(#207), 다음 쪽에 뒤 조각 줄 셋(30자 × 2 + 1자), 뒤 문단은 그 다음 쪽이다.
+            // 본문 높이 56pt = 줄 전진량(16pt) 3.5줄 — 앞 조각 줄 셋, 뒤 조각 줄 둘(30자 + 1자)과
+            // 뒤 문단이 다음 쪽에 들어간다.
             let section = HwpSynthetic.section(
                 firstParagraphControls: [.section(Support.sectionDef(
                     columnWidth: Support.columnWidth(charactersPerLine: 30, in: built),
                     contentHeight: 56
                 ))],
-                bodyParagraphs: [host, follower]
+                bodyParagraphs: [filler, host, follower]
             )
             let paginator = HwpPaginator(
                 sections: [section], index: index, fontResolver: .testDeterministic
@@ -201,18 +204,22 @@ import XCTest
             let pages = try await InlineControlFragmentSupport.pages(of: paginator)
             expect(pages.count) == 3
             guard pages.count == 3 else { return }
-            let head = try XCTUnwrap(InlineControlFragmentSupport.hostFragment(on: pages[0]))
-            let tail = try XCTUnwrap(InlineControlFragmentSupport.hostFragment(on: pages[1]))
-            expect(head.attributedString?.length) == 60
-            expect(tail.attributedString?.length) == 61
-            expect(head.frame.minY).to(beCloseTo(16, within: 0.01))
-            expect(tail.frame.minY).to(beCloseTo(0, within: 0.01))
-            Support.expectDrawsMeasuredLines(head, lineCount: 2, linePitch: 16)
-            Support.expectDrawsMeasuredLines(tail, lineCount: 3, linePitch: 16)
+            func hostFragment(on page: HwpPage) -> AnyHwpBlock? {
+                page.blocks.first {
+                    $0.kind == .text && $0.source?.sectionIndex == 0 && $0.source?.paragraphIndex == 2
+                }
+            }
+            expect(hostFragment(on: pages[0])).to(beNil())
+            let head = try XCTUnwrap(hostFragment(on: pages[1]))
+            let tail = try XCTUnwrap(hostFragment(on: pages[2]))
+            expect(head.attributedString?.length) == 90
+            expect(tail.attributedString?.length) == 31
+            Support.expectDrawsMeasuredLines(head, lineCount: 3, linePitch: 16)
+            Support.expectDrawsMeasuredLines(tail, lineCount: 2, linePitch: 16)
             let followerBlock = try XCTUnwrap(pages[2].blocks.first {
                 $0.attributedString?.string.contains("뒤 문단") == true
             })
-            expect(followerBlock.frame.minY).to(beCloseTo(0, within: 0.01))
+            expect(followerBlock.frame.minY).to(beCloseTo(tail.frame.maxY, within: 0.01))
         }
 
         // MARK: 다단 균형 재배치

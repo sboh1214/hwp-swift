@@ -63,7 +63,8 @@ public extension HwpParaShapeProperty1 {
     /**
      외톨이줄 보호 여부 (표 44 bit 16)
 
-     켜진 문단은 쪽·단 경계 **양쪽**에 줄이 최소 두 줄씩 남아야 나뉜다 — 못 지키면 문단이
+     켜진 문단은 쪽 경계 **양쪽**에 줄이 최소 두 줄씩 남아야 나뉜다 — 들어가는 줄 k, 남은 줄 n이면
+     남기는 줄은 min(k, n − 2)이고(4줄 문단에 세 줄이 들어가도 2 + 2) 그 값이 2 미만이면 문단이
      통째로 다음 쪽으로 간다 (한글 12.30 실측, #207). HWPX `hh:breakSetting@widowOrphan`.
      */
     var protectsWidowOrphan: Bool {
