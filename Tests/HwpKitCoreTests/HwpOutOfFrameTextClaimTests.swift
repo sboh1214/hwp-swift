@@ -177,14 +177,15 @@ import XCTest
             }
 
             let superscripted = NSMutableAttributedString(attributedString: long)
+            // 위 첨자 올림 0.44 × 10pt = 4.4 — 위로 4.4pt 띠(y ≥ 95.6)까지만 연다.
             superscripted.addAttribute(
-                HwpAttributedStringKey.glyphBaselineOffset, value: NSNumber(value: 3.3),
+                HwpAttributedStringKey.glyphBaselineOffset, value: NSNumber(value: 4.4),
                 range: NSRange(location: 0, length: 2)
             )
             expect(HwpHitTester.mayPaintOutsideFrame(superscripted, frame: frame, at: above))
                 == true
             expect(HwpHitTester.mayPaintOutsideFrame(
-                superscripted, frame: frame, at: CGPoint(x: 10, y: 96)
+                superscripted, frame: frame, at: CGPoint(x: 10, y: 95)
             )) == false
             expect(HwpHitTester.mayPaintOutsideFrame(superscripted, frame: frame, at: below))
                 == false

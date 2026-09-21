@@ -23,8 +23,8 @@ import XCTest
         /// 밑줄 종류 '글자 가운데' (bit 2~3 값 2)
         private static let centerUnderlineBits: UInt32 = 2 << 2
 
-        /// 위 첨자 + 글자 위치 30: 합산 키는 두 몫의 합(3.96 − 3.6)이고 첨자 키는
-        /// 첨자 몫(0.33 × 12pt)만이다.
+        /// 위 첨자 + 글자 위치 30: 합산 키는 두 몫의 합(5.28 − 3.6)이고 첨자 키는
+        /// 첨자 몫(0.44 × 12pt)만이다.
         func testSuperscriptRecordsScriptShiftSeparatelyFromFaceLocation() throws {
             let paragraph = paragraph(text: "가", runs: [(0, 0)])
             let shape = try charShape(
@@ -36,12 +36,12 @@ import XCTest
 
             let script = attributes[HwpAttributedStringKey.scriptBaselineOffset] as? NSNumber
             let glyph = attributes[HwpAttributedStringKey.glyphBaselineOffset] as? NSNumber
-            expect(script?.doubleValue).to(beCloseTo(3.96, within: 0.0001))
-            expect(glyph?.doubleValue).to(beCloseTo(3.96 - 3.6, within: 0.0001))
+            expect(script?.doubleValue).to(beCloseTo(5.28, within: 0.0001))
+            expect(glyph?.doubleValue).to(beCloseTo(5.28 - 3.6, within: 0.0001))
         }
 
-        /// 아래 첨자는 음수 첨자 몫(−0.30 × 12pt)이고, 글자 위치 30(아래 3.6pt)과 합쳐
-        /// 글리프는 7.2pt 내려간다.
+        /// 아래 첨자는 음수 첨자 몫(−0.12 × 12pt)이고, 글자 위치 30(아래 3.6pt)과 합쳐
+        /// 글리프는 5.04pt 내려간다.
         func testSubscriptRecordsNegativeScriptShift() throws {
             let paragraph = paragraph(text: "가", runs: [(0, 0)])
             let shape = try charShape(
@@ -53,8 +53,8 @@ import XCTest
 
             let script = attributes[HwpAttributedStringKey.scriptBaselineOffset] as? NSNumber
             let glyph = attributes[HwpAttributedStringKey.glyphBaselineOffset] as? NSNumber
-            expect(script?.doubleValue).to(beCloseTo(-3.6, within: 0.0001))
-            expect(glyph?.doubleValue).to(beCloseTo(-7.2, within: 0.0001))
+            expect(script?.doubleValue).to(beCloseTo(-1.44, within: 0.0001))
+            expect(glyph?.doubleValue).to(beCloseTo(-5.04, within: 0.0001))
         }
 
         /// 글자 위치만 있는 run에는 첨자 키가 없다 — "첨자 run에만 키가 있다"가 이
@@ -107,6 +107,68 @@ import XCTest
                 .to(beLessThan(0))
         }
 
+        /// 각주·미주 참조 번호(마커 치환 run)는 글자 모양 첨자와 **다른 규칙**이다 (#204, 한글
+        /// 12.30 실측: 글꼴 0.75배·설정 크기의 0.21배 위) — 12pt 본문의 번호는 9pt 글꼴에
+        /// 2.52pt 위이고, 글자 위치 30(아래 3.6)과 합치면 글리프는 1.08pt 아래다. 첨자 몫 키는
+        /// 참조 번호에도 실려 장식선이 번호를 따라간다.
+        func testNoteReferenceUsesItsOwnScaleAndShift() throws {
+            var paragraph = paragraph(text: "가", runs: [(0, 0)])
+            paragraph.paraText?.charArray.append(CoreHwp.HwpChar(type: .extended, value: 17))
+            paragraph.ctrlHeaderArray = [
+                .footnote(HwpSynthetic.listControl(ctrlId: .footnote, paragraphs: [])),
+            ]
+            let shape = try charShape(faceLocation: Array(repeating: 30, count: 7))
+            let result = builder(shapes: [0: shape]).build(
+                paragraph: paragraph,
+                controlReplacements: [
+                    0: HwpControlMarkerReplacement(text: "1)", isSuperscript: true),
+                ]
+            )
+            expect(result.string) == "가1)"
+            let attributes = result.attributes(at: 1, effectiveRange: nil)
+
+            let script = attributes[HwpAttributedStringKey.scriptBaselineOffset] as? NSNumber
+            let glyph = attributes[HwpAttributedStringKey.glyphBaselineOffset] as? NSNumber
+            expect(script?.doubleValue).to(beCloseTo(2.52, within: 0.0001))
+            expect(glyph?.doubleValue).to(beCloseTo(2.52 - 3.6, within: 0.0001))
+            let fontValue = try XCTUnwrap(
+                attributes[kCTFontAttributeName as NSAttributedString.Key]
+            )
+            let ref = fontValue as CFTypeRef
+            expect(CFGetTypeID(ref)) == CTFontGetTypeID()
+            let font = unsafeBitCast(ref, to: CTFont.self)
+            expect(CTFontGetSize(font)).to(beCloseTo(9, within: 0.0001))
+            // 글자 모양 첨자 규칙(0.64배·0.44em)으로 그리면 7.68pt·5.28 위라 갈린다.
+            expect(HwpTextRunBuilder.noteReferenceScale) != HwpTextRunBuilder.superscriptScale
+            expect(HwpTextRunBuilder.noteReferenceBaselineRatio)
+                != HwpTextRunBuilder.superscriptBaselineRatio
+            // 참조 번호는 첨자 축소 전 크기도 유지한다 — 장식선 두께·아래 밑줄 기준.
+            let target = attributes[HwpAttributedStringKey.spaceTargetSize] as? NSNumber
+            expect(target?.doubleValue).to(beCloseTo(12, within: 0.0001))
+        }
+
+        /// 상대 크기 50%의 위 첨자: 축소는 글꼴 크기(6pt)에, 올림은 설정 크기(12pt)에 건다 —
+        /// 한글 20pt 상대 50% 위 첨자가 6.36pt 글리프로 8.88pt 위였다.
+        func testSuperscriptScalesTheFontButShiftsBySettingSize() throws {
+            let paragraph = paragraph(text: "가", runs: [(0, 0)])
+            let shape = try charShape(
+                property: Self.superscriptBit, faceRelativeSize: Array(repeating: 50, count: 7)
+            )
+            let attributes = builder(shapes: [0: shape])
+                .build(paragraph: paragraph)
+                .attributes(at: 0, effectiveRange: nil)
+
+            let script = attributes[HwpAttributedStringKey.scriptBaselineOffset] as? NSNumber
+            expect(script?.doubleValue).to(beCloseTo(12 * 0.44, within: 0.0001))
+            let fontValue = try XCTUnwrap(
+                attributes[kCTFontAttributeName as NSAttributedString.Key]
+            )
+            let ref = fontValue as CFTypeRef
+            expect(CFGetTypeID(ref)) == CTFontGetTypeID()
+            let font = unsafeBitCast(ref, to: CTFont.self)
+            expect(CTFontGetSize(font)).to(beCloseTo(6 * 0.64, within: 0.0001))
+        }
+
         /// 첨자 run도 `spaceTargetSize`는 축소 전 크기다 — 렌더러가 아래쪽 밑줄 위치와
         /// 모든 장식선 두께의 기준으로 쓴다 (한글은 첨자 run의 선도 본문 두께로 그린다).
         func testScriptRunKeepsPreScriptSizeForDecorations() throws {
@@ -124,7 +186,7 @@ import XCTest
             let ref = fontValue as CFTypeRef
             expect(CFGetTypeID(ref)) == CTFontGetTypeID()
             let font = unsafeBitCast(ref, to: CTFont.self)
-            expect(CTFontGetSize(font)).to(beCloseTo(12 * 0.67, within: 0.0001))
+            expect(CTFontGetSize(font)).to(beCloseTo(12 * 0.64, within: 0.0001))
         }
     }
 #endif

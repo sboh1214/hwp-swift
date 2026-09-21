@@ -73,13 +73,13 @@ final class HwpSelectionRTFTests: XCTestCase {
         // 첨자 run은 합산 키(글자 위치 + 첨자)와 첨자 몫만 담은
         // hwp.scriptBaselineOffset(#179, 장식선 전용)을 함께 싣는다. 기준선
         // 공급원은 합산 키 하나라 첨자 몫이 두 번 더해지거나 빠지면 안 된다 —
-        // 위 첨자 3.96 + 글자 위치 −3.6 = 0.36이 그대로 나가고 첨자 키는 버린다.
+        // 위 첨자 5.28 + 글자 위치 −3.6 = 1.68이 그대로 나가고 첨자 키는 버린다.
         let normalized = HwpSelectionRTF.normalizedAttributes([
-            HwpAttributedStringKey.glyphBaselineOffset: NSNumber(value: 0.36),
-            HwpAttributedStringKey.scriptBaselineOffset: NSNumber(value: 3.96),
+            HwpAttributedStringKey.glyphBaselineOffset: NSNumber(value: 1.68),
+            HwpAttributedStringKey.scriptBaselineOffset: NSNumber(value: 5.28),
         ])
 
-        expect(normalized[.baselineOffset] as? NSNumber) == NSNumber(value: 0.36)
+        expect(normalized[.baselineOffset] as? NSNumber) == NSNumber(value: 1.68)
         expect(normalized.keys.filter { $0.rawValue.hasPrefix("hwp.") }).to(beEmpty())
     }
 

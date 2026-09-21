@@ -175,15 +175,6 @@ extension HwpTextRunBuilder {
     }
 }
 
-extension HwpTextRunBuilder {
-    /// 위 첨자 글꼴 크기 배율 — 실물 실측 (CharShapeProperty): 본문의 ~67%
-    static let superscriptScale: CGFloat = 0.67
-    /// 위 첨자 베이스라인 상승 배율 (기준 글자 크기 대비)
-    static let superscriptBaselineRatio: CGFloat = 0.33
-    /// 아래 첨자 베이스라인 하강 배율 (실물: 다음 줄 방향 ~0.35줄)
-    static let subscriptBaselineRatio: CGFloat = 0.30
-}
-
 /// 조판 문자열 생성 보조 (메모 앵커 sweep·문자별 방출 텍스트).
 extension HwpTextRunBuilder {
     /// 메모 앵커 구간 커서를 `position`까지 앞으로만 밀고 포함 여부를 준다

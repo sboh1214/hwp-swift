@@ -7,7 +7,9 @@ import OSLog
 /// extended 컨트롤 마커 (U+FFFC) 대신 렌더할 텍스트 (각주 참조/자동 번호 등)
 public struct HwpControlMarkerReplacement: Sendable, Hashable {
     public let text: String
-    /// 위 첨자 (본문 각주 참조 번호, 표 143 bit 12)
+    /// 위 첨자 (본문 각주·미주 참조 번호, 각주 내용의 번호는 표 143 bit 12) — 글자 모양의
+    /// 위 첨자와 다른 참조 번호 규칙(0.75배·설정 크기의 0.21배 위,
+    /// `HwpTextRunBuilder.noteReferenceScale`)으로 그린다.
     public let isSuperscript: Bool
 
     public init(text: String, isSuperscript: Bool = false) {
@@ -417,7 +419,7 @@ extension HwpTextRunBuilder {
             let script = detectScript(in: replacement.text)
             var textAttributes = attributes(for: resolved, script: script)
             if replacement.isSuperscript {
-                applySuperscript(to: &textAttributes, shape: resolved.shape)
+                applyNoteReferenceSuperscript(to: &textAttributes, shape: resolved.shape)
             }
             if let controlIndex {
                 textAttributes[HwpAttributedStringKey.controlIndex] = NSNumber(

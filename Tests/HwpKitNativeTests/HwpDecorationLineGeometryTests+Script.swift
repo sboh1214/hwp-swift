@@ -26,14 +26,14 @@ import XCTest
 /// `type_body_length` 경고선에 닿아 있어서다. 래스터·측정 헬퍼는 `+Support`.
 extension HwpDecorationLineGeometryTests {
     private static let baseSize: CGFloat = 10
-    /// `HwpTextRunBuilder.superscriptScale` — 첨자 글꼴 크기
-    private static let scriptSize: CGFloat = 10 * 0.67
-    /// `HwpTextRunBuilder.superscriptBaselineRatio` × 기본 크기 — 첨자 올림
-    private static let scriptShift: CGFloat = 10 * 0.33
-    /// 글자 위치 50 → 아래 5pt (렌더러 규약 양수 = 위). 첨자 몫 +3.3과 합치면 합산 키가
-    /// −1.7이라, 합산 키를 잘못 더하는 회귀가 아래 밑줄 테스트에서 1.7pt 차로 드러난다
-    /// (글자 위치 30이면 합이 +0.3이라 허용 오차 안에 묻힌다).
-    private static let locationShift: CGFloat = -5
+    /// `HwpTextRunBuilder.superscriptScale` — 첨자 글꼴 크기 (#204, 한글 0.64배)
+    private static let scriptSize: CGFloat = 10 * 0.64
+    /// `HwpTextRunBuilder.superscriptBaselineRatio` × 기본 크기 — 첨자 올림 (한글 0.44em)
+    private static let scriptShift: CGFloat = 10 * 0.44
+    /// 글자 위치 80 → 아래 8pt (렌더러 규약 양수 = 위). 첨자 몫 +4.4와 합치면 합산 키가
+    /// −3.6이라, 합산 키를 잘못 더하는 회귀가 아래 밑줄 테스트에서 3.6pt 차로 드러난다
+    /// (글자 위치 50이면 합이 −0.6이라 허용 오차 0.2의 세 배뿐이고, 40이면 +0.4다).
+    private static let locationShift: CGFloat = -8
 
     private static func isGreen(_ red: UInt8, _ green: UInt8, _ blue: UInt8) -> Bool {
         red < 100 && green > 150 && blue < 100
@@ -99,9 +99,10 @@ extension HwpDecorationLineGeometryTests {
     }
 
     /// 취소선은 첨자 몫만 따라간다 — 글자 위치만 준 run(자홍)의 선은 본문(청록)과
-    /// 같은 행이고, 첨자 + 글자 위치 run(초록)의 선은 첨자 몫 3.3pt만큼 올라간 자리에
-    /// 줄어든 크기의 0.35배로 놓인다. 종전에는 첨자 선만 원래 베이스라인 위
-    /// 0.35 × 6.7 = 2.3pt(본문보다 1.2pt 아래)에 그려 첨자 글리프 밖으로 벗어났다.
+    /// 같은 행이고, 첨자 + 글자 위치 run(초록)의 선은 첨자 몫 4.4pt만큼 올라간 자리에
+    /// 줄어든 크기의 0.35배로 놓인다. #179 전에는 첨자 선만 원래 베이스라인 위
+    /// 0.35 × 축소 크기(당시 6.7pt = 2.3pt, 본문보다 1.2pt 아래)에 그려 첨자 글리프
+    /// 밖으로 벗어났다.
     func testStrikethroughFollowsScriptShiftButNotFaceLocation() throws {
         let cyan = CGColor(red: 0, green: 1, blue: 1, alpha: 1)
         let magenta = CGColor(red: 1, green: 0, blue: 1, alpha: 1)
@@ -128,17 +129,17 @@ extension HwpDecorationLineGeometryTests {
 
         expect(located).to(beCloseTo(plain, within: 0.2), description: "글자 위치는 선을 안 옮긴다")
         // 위 방향 = 위에서부터 잰 행이 작아진다. 본문 선은 +0.35 × 10, 첨자 선은
-        // +3.3 + 0.35 × 6.7이라 차는 3.3 − 0.35 × 3.3 = 2.145pt다.
+        // +4.4 + 0.35 × 6.4이라 차는 4.4 − 0.35 × 3.6 = 3.14pt다.
         let ratio = HwpRenderTuning.Text.strikethroughCenterRatio
         let expected = Self.scriptShift + ratio * Self.scriptSize - ratio * Self.baseSize
         expect(plain - scripted).to(beCloseTo(expected, within: 0.2))
-        expect(expected).to(beCloseTo(2.145, within: 0.001))
+        expect(expected).to(beCloseTo(3.14, within: 0.001))
     }
 
     /// 아래쪽 밑줄은 첨자에도 글자 위치에도 제자리이고 축소 전 크기 기준이다 —
-    /// 첨자 + 글자 위치 run(자홍)의 선이 본문(청록)과 같은 행에 놓인다. 종전에는
-    /// 줄어든 6.7pt 기준(−1.14pt)이라 0.56pt 위였다. 합산 키(−1.7)를 더하는 회귀는
-    /// 1.7pt 차로, 첨자 키(+3.3)를 더하는 회귀는 3.3pt 차로 갈린다.
+    /// 첨자 + 글자 위치 run(자홍)의 선이 본문(청록)과 같은 행에 놓인다. #179 전에는
+    /// 줄어든 크기 기준(당시 6.7pt → −1.14pt)이라 0.56pt 위였다. 합산 키(−3.6)를 더하는
+    /// 회귀는 3.6pt 차로, 첨자 키(+4.4)를 더하는 회귀는 4.4pt 차로 갈린다.
     func testBelowUnderlineIgnoresScriptShiftAndKeepsPreScriptSize() throws {
         let cyan = CGColor(red: 0, green: 1, blue: 1, alpha: 1)
         let magenta = CGColor(red: 1, green: 0, blue: 1, alpha: 1)
@@ -159,7 +160,7 @@ extension HwpDecorationLineGeometryTests {
             Self.rowCenter(raster) { $0 > 150 && $1 < 100 && $2 > 150 }, "첨자 밑줄"
         )
         expect(scripted).to(beCloseTo(plain, within: 0.2))
-        // 줄어든 크기를 기준으로 그리면 0.17 × (10 − 6.7) = 0.561pt 올라간다.
+        // 줄어든 크기를 기준으로 그리면 0.17 × (10 − 6.4) = 0.612pt 올라간다.
         let drift = HwpRenderTuning.Text.underlineBelowCenterRatio
             * (Self.baseSize - Self.scriptSize)
         expect(drift).to(beGreaterThan(0.5))
@@ -219,7 +220,7 @@ extension HwpDecorationLineGeometryTests {
                 beCloseTo(ratio * Self.baseSize, within: 0.05), description: line.name
             )
         }
-        // 줄어든 글꼴 크기 기준이면 0.268pt로 0.4pt와 0.05 밖에서 갈린다.
-        expect(ratio * Self.scriptSize).to(beCloseTo(0.268, within: 0.001))
+        // 줄어든 글꼴 크기 기준이면 0.256pt로 0.4pt와 0.05 밖에서 갈린다.
+        expect(ratio * Self.scriptSize).to(beCloseTo(0.256, within: 0.001))
     }
 }
