@@ -109,6 +109,44 @@ final class HwpxHeaderMapperTests: XCTestCase {
         expect(plain.property1Info.alignmentRawValue) == 0
         expect(plain.resolvedLineSpacingKind) == HwpLineSpacingKind.percent
         expect(plain.resolvedLineSpacingValue) == 160
+        // breakSetting이 없으면 쪽 나눔 보호 넷은 전부 꺼진다 (한컴 모델 생성자 기본값).
+        expect(plain.property1Info.protectsWidowOrphan) == false
+        expect(plain.property1Info.keepsLinesTogether) == false
+    }
+
+    /// `hh:breakSetting`의 쪽 나눔 보호 넷은 표 44 bit 16-19 순서 그대로 속성1에 든다 (#207) —
+    /// 한컴 공개 모델 `CBreakSetting`의 속성 순서(widowOrphan·keepWithNext·keepLines·
+    /// pageBreakBefore)와 일치한다. "0"·부재는 거짓이다.
+    func testMapsBreakSettingProtectionBits() throws {
+        let withBreakSetting = HwpxHeaderFixture.headerXML.replacingOccurrences(
+            of: "<hh:paraPr id=\"9\"><hh:align horizontal=\"JUSTIFY\"/></hh:paraPr>",
+            with: "<hh:paraPr id=\"9\"><hh:align horizontal=\"JUSTIFY\"/>"
+                + "<hh:breakSetting breakLatinWord=\"KEEP_WORD\" breakNonLatinWord=\"KEEP_WORD\""
+                + " widowOrphan=\"1\" keepWithNext=\"0\" keepLines=\"1\" lineWrap=\"BREAK\"/>"
+                + "</hh:paraPr>"
+        )
+        let (docInfo, _) = try HwpxHeaderFixture.mapHeader(withBreakSetting)
+        let paraShape = docInfo.idMappings.paraShapeArray[1]
+
+        expect(paraShape.property1Info.protectsWidowOrphan) == true
+        expect(paraShape.property1Info.keepsWithNext) == false
+        expect(paraShape.property1Info.keepsLinesTogether) == true
+        expect(paraShape.property1Info.breaksPageBefore) == false
+        expect(paraShape.property1 & (0b1111 << 16)) == (1 << 16) | (1 << 18)
+        // 나머지 비트는 breakSetting과 무관하다 (정렬 양쪽 = 0, 줄 간격 비율 = 0).
+        expect(paraShape.property1 & ~(0b1111 << 16)) == 0
+
+        let pageBreakBefore = HwpxHeaderFixture.headerXML.replacingOccurrences(
+            of: "<hh:paraPr id=\"9\"><hh:align horizontal=\"JUSTIFY\"/></hh:paraPr>",
+            with: "<hh:paraPr id=\"9\"><hh:align horizontal=\"JUSTIFY\"/>"
+                + "<hh:breakSetting keepWithNext=\"1\" pageBreakBefore=\"1\"/></hh:paraPr>"
+        )
+        let (other, _) = try HwpxHeaderFixture.mapHeader(pageBreakBefore)
+        let otherShape = other.idMappings.paraShapeArray[1]
+        expect(otherShape.property1Info.protectsWidowOrphan) == false
+        expect(otherShape.property1Info.keepsWithNext) == true
+        expect(otherShape.property1Info.keepsLinesTogether) == false
+        expect(otherShape.property1Info.breaksPageBefore) == true
     }
 
     func testMapsTabDefAutoTabBits() throws {

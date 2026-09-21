@@ -591,9 +591,11 @@ private extension HwpxHeaderMapper {
 
     /// `hh:paraProperties` 가족을 문단 모양 배열로 옮긴다.
     ///
-    /// breakSetting·autoSpacing 등 1차 범위 밖 자식은 `mapParaShape`가 속성만
-    /// 옮기고 버린다 — 진단으로 강등해야 "미해석 강등은 진단으로 보고됨"
-    /// 규약이 지켜진다 (tabPr의 tabItem 강등과 같은 채널).
+    /// autoSpacing 등 1차 범위 밖 자식은 `mapParaShape`가 속성만 옮기고 버린다 —
+    /// 진단으로 강등해야 "미해석 강등은 진단으로 보고됨" 규약이 지켜진다 (tabPr의
+    /// tabItem 강등과 같은 채널). breakSetting은 쪽 나눔 보호 넷(표 44 bit 16-19)을
+    /// 옮기므로 소비된 잎이다 — 안 읽는 나머지 속성은 align@vertical과 같이 진단 없이
+    /// 버려진다 (#207).
     static func mapParaProperties(
         _ family: HwpxXMLNode,
         into mapping: inout HwpxHeaderMapping
@@ -616,12 +618,12 @@ private extension HwpxHeaderMapper {
         for paraPr in paraPrs {
             mapping.demoteUnconsumed(
                 in: paraPr,
-                consumed: ["align", "heading", "margin", "lineSpacing", "border"],
+                consumed: ["align", "heading", "margin", "lineSpacing", "border", "breakSetting"],
                 namespace: HwpxNamespace.head
             )
             mapping.demoteDuplicateSingletons(
                 in: paraPr,
-                of: ["align", "heading", "margin", "lineSpacing", "border"],
+                of: ["align", "heading", "margin", "lineSpacing", "border", "breakSetting"],
                 namespace: HwpxNamespace.head
             )
             // 소비된 래퍼 안 미지 자식 — margin은 5종만 읽고 나머지 래퍼
@@ -643,7 +645,7 @@ private extension HwpxHeaderMapper {
                     }
                 }
             }
-            for leafName in ["align", "heading", "lineSpacing", "border"] {
+            for leafName in ["align", "heading", "lineSpacing", "border", "breakSetting"] {
                 if let leaf = paraPr.headFirstChild(named: leafName) {
                     mapping.demoteUnconsumed(in: leaf, consumed: [])
                 }

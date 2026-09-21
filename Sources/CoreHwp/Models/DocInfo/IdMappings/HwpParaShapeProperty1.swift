@@ -60,6 +60,36 @@ public extension HwpParaShapeProperty1 {
         (rawValue >> 2) & 0b111
     }
 
+    /**
+     외톨이줄 보호 여부 (표 44 bit 16)
+
+     켜진 문단은 쪽·단 경계 **양쪽**에 줄이 최소 두 줄씩 남아야 나뉜다 — 못 지키면 문단이
+     통째로 다음 쪽으로 간다 (한글 12.30 실측, #207). HWPX `hh:breakSetting@widowOrphan`.
+     */
+    var protectsWidowOrphan: Bool {
+        rawValue & (1 << 16) != 0
+    }
+
+    /** 다음 문단과 함께 여부 (표 44 bit 17, HWPX `keepWithNext`) — 조판은 아직 읽지 않는다. */
+    var keepsWithNext: Bool {
+        rawValue & (1 << 17) != 0
+    }
+
+    /**
+     문단 보호 여부 (표 44 bit 18, HWPX `keepLines`)
+
+     켜진 문단은 남은 자리에 다 들어가지 않으면 나누지 않고 통째로 다음 쪽으로 간다. 빈 쪽보다
+     긴 문단은 그 새 쪽부터 줄 단위로 나뉜다 (한글 12.30 실측, #207).
+     */
+    var keepsLinesTogether: Bool {
+        rawValue & (1 << 18) != 0
+    }
+
+    /** 문단 앞에서 항상 쪽 나눔 여부 (표 44 bit 19, HWPX `pageBreakBefore`) — 조판은 아직 읽지 않는다. */
+    var breaksPageBefore: Bool {
+        rawValue & (1 << 19) != 0
+    }
+
     /** 문단 머리 모양 종류 (표 44 bit 23-24): 0 없음, 1 개요, 2 번호, 3 글머리표 */
     var headingTypeRawValue: UInt32 {
         (rawValue >> 23) & 0b11

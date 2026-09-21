@@ -195,11 +195,18 @@ extension HwpFootnoteCoordinator {
         var stopped: Bool
     }
 
+    /// ordinals·collectsNested: 흐름 분할 **조각**의 예약 (#207) — `collectFootnotes`와 같은
+    /// 필터다. 비최종 조각(`collectsNested == false`)은 범위 안 top-level 각주와 그 각주 안
+    /// 중첩 각주만, 최종 조각은 범위 안 각주에 더해 **범위 밖** 컨테이너(글상자·도형)의 중첩
+    /// 각주까지 잰다 — 그 컨테이너는 마지막 조각 뒤에 그려지고 앞 조각이 미뤄 둔 각주도 그
+    /// 쪽에 실리기 때문이다. nil이면 문단 전체(기존 동작).
     mutating func anticipatedFootnoteHeight(
         for paragraph: CoreHwp.HwpParagraph,
         environment: Environment,
         childParagraphs: ChildParagraphs,
-        numbering: HwpNumberingScope? = nil
+        numbering: HwpNumberingScope? = nil,
+        ordinals: Range<Int>? = nil,
+        collectsNested: Bool = true
     ) -> CGFloat {
         // collectFootnotes가 부여할 번호와 같은 순서의 미리보기 카운터. 예약이 이미 분할
         // 지점에서 멈춘 쪽이면 새 각주는 이 쪽에 실리지 않는다 (`appendPendingFootnote`와 같다).
@@ -209,7 +216,9 @@ extension HwpFootnoteCoordinator {
             state: &state,
             environment: environment,
             childParagraphs: childParagraphs,
-            numbering: numbering
+            numbering: numbering,
+            ordinals: ordinals,
+            collectsNested: collectsNested
         )
         return Self.preflightTotal(
             body: body, landed: state.landed,
@@ -268,7 +277,9 @@ extension HwpFootnoteCoordinator {
         state: inout PreflightState,
         environment: Environment,
         childParagraphs: ChildParagraphs,
-        numbering: HwpNumberingScope?
+        numbering: HwpNumberingScope?,
+        ordinals: Range<Int>? = nil,
+        collectsNested: Bool = true
     ) -> CGFloat {
         // 예약이 분할 지점에서 멈춘 뒤의 각주는 이 쪽에 실리지 않는다 — 번호도 높이도 필요
         // 없으므로 개체 술어·중첩 순회에 들어가지 않는다 (#165 리뷰: 멈춘 예측이 뒤 각주의 문단을
@@ -279,8 +290,10 @@ extension HwpFootnoteCoordinator {
             if state.stopped {
                 break
             }
+            // 조각 범위 필터는 깊이 0에만 든다 (`collectFootnotes`와 같다, #207).
+            let inFragment = depth > 0 || (ordinals?.contains(ordinal) ?? true)
             let container = numbering?.container(controlIndex: ordinal)
-            if case let .footnote(list) = ctrl {
+            if case let .footnote(list) = ctrl, inFragment {
                 let paragraphs = list.listArray.flatMap(\.paragraphArray)
                 if !paragraphs.isEmpty {
                     let number = state.preview
@@ -323,6 +336,14 @@ extension HwpFootnoteCoordinator {
             if case .table = ctrl {
                 continue
             }
+            // 각주 컨트롤의 자식은 그 조각이, 나머지 컨테이너(글상자·도형·미주)의 자식은
+            // 최종 조각이 걷는다 — 수집(`collectFootnotes`)의 `isPlacedByThisFragment`와 같다.
+            let walksChildren: Bool = if case .footnote = ctrl {
+                inFragment
+            } else {
+                depth > 0 || collectsNested
+            }
+            guard walksChildren else { continue }
             for (childIndex, (nested, _)) in childParagraphs(ctrl).enumerated()
                 where nested.ctrlHeaderArray != nil
             {

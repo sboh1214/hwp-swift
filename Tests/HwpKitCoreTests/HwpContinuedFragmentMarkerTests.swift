@@ -23,7 +23,7 @@ import XCTest
             ) != nil
         }
 
-        /// 쪽에 걸쳐 나뉜 문단: 앞 조각(줄 셋)은 표식이 있고 뒤 조각(줄 둘)은 없다 — 표식은
+        /// 쪽에 걸쳐 나뉜 문단: 앞 조각(줄 둘)은 표식이 있고 뒤 조각(줄 셋)은 없다 — 표식은
         /// 조각 전체에 붙어 첫 글자에도 있다.
         func testFlowPageSplitMarksOnlyTheLeadingFragment() async throws {
             let index = HwpIndex(from: CoreHwp.HwpFile())
@@ -42,11 +42,12 @@ import XCTest
                 sections: [section], index: index, fontResolver: .testDeterministic
             )
             let pages = try await InlineControlFragmentSupport.pages(of: paginator)
+            // 구역 첫 문단 뒤 남은 40pt에 앞 조각 줄 둘, 다음 쪽에 뒤 조각 줄 셋 (#207).
             expect(pages.count) == 3
             guard pages.count == 3 else { return }
-            let head = try XCTUnwrap(InlineControlFragmentSupport.hostFragment(on: pages[1]))
-            let tail = try XCTUnwrap(InlineControlFragmentSupport.hostFragment(on: pages[2]))
-            expect(head.attributedString?.length) == 90
+            let head = try XCTUnwrap(InlineControlFragmentSupport.hostFragment(on: pages[0]))
+            let tail = try XCTUnwrap(InlineControlFragmentSupport.hostFragment(on: pages[1]))
+            expect(head.attributedString?.length) == 60
             expect(Self.isContinued(head)) == true
             expect(head.attributedString?.attribute(
                 HwpAttributedStringKey.continuedParagraphFragment, at: 0, effectiveRange: nil
