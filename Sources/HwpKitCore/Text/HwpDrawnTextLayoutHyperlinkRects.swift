@@ -46,7 +46,12 @@ extension HwpDrawnTextLayout {
     /// (잉크 0.3…2.5)가 어느 링크도 아니게 된다(리뷰 2차 — 종전 캐럿 산식은 [0, 2.78]을
     /// 냈다). 그래서 진행 폭이 음수인 run만 **잉크 경계**(`CTRunGetImageBounds`, 밴드와 같은
     /// 줄 원점 기준·매트릭스 적용 후)까지 넓힌다 — 글리프 중심은 자기 링크를 열어야 한다는
-    /// 규약 그대로다. 양수 폭 run은 잉크로 넓히지 않는다(기울임 오버행이 이웃 링크 상자에
+    /// 규약 그대로다. **폭 0 run도 같다** (리뷰 3차): 단일 글리프 `i`·`.`에 kern −3이면 CT가
+    /// 폭을 0으로 클램프하지만 잉크(0.65…1.54)는 그대로 그려지므로 버리면 그 글리프가 어느
+    /// 링크도 아니다(종전 캐럿 산식은 [0, 2.22]). 잉크가 없는 폭 0 run(공백·U+200B·폭 0 개체
+    /// 마커·프레임 안 개행 run — 실측 전부 잉크 empty)은 그대로 버려지고, 렌더러가 글리프를
+    /// 안 그리는 run(개체 마커 run delegate·한 줄 끝 표식 `hwp.lineBreak`)은 잉크가 보고돼도
+    /// 넓히지 않는다. 양수 폭 run은 잉크로 넓히지 않는다(기울임 오버행이 이웃 링크 상자에
     /// 들어가 단방향 줄이 종전과 달라진다).
     struct RunExtent {
         let range: CFRange
@@ -61,12 +66,14 @@ extension HwpDrawnTextLayout {
 
         /// 이 run이 `span`의 것인가 — run의 **첫 글자**가 스팬 안에 있으면 그 스팬 것이다.
         ///
-        /// 밴드(`GlyphOffsetBand.belongs(to:)`)처럼 **포함**으로 물으면 안 된다: CT는 속성
-        /// 경계마다 run을 끊지만 **자소 묶음은 예외**다 — ZWJ 이모지 열·첫가끝 자모(U+1112
-        /// U+1161 U+11AB)·아랍 lam-alef는 링크 경계가 묶음 안에 떨어져도 한 run으로 나오고
-        /// (실측; 결합 부호 U+0301과 서로게이트 쌍은 갈린다) 그 run의 속성 사전은 첫 글자의
-        /// 것이다. 포함이면 그 run이 양쪽 스팬에서 다 버려져 클릭 구멍이 나고, 렌더러는 그
-        /// run을 첫 글자의 링크(글자 색·밑줄)로 그리므로 소속도 첫 글자를 따라야 방출 ≡ 칠이다.
+        /// 첫 형태처럼 run 전체가 스팬에 드는 **포함**으로 물으면 안 된다: CT는 속성 경계마다
+        /// run을 끊지만 **자소 묶음과 글리프 없는 문자는 예외**다 — ZWJ 이모지 열·첫가끝 자모
+        /// (U+1112 U+1161 U+11AB)·아랍 lam-alef는 링크 경계가 묶음 안에 떨어져도 한 run으로
+        /// 나오고, U+200B·RLM·결합 부호는 속성이 달라도 앞 run에 흡수되며(실측; 서로게이트 쌍은
+        /// 갈린다) 그 run의 속성 사전은 첫 글자의 것이다. 포함이면 그 run이 양쪽 스팬에서 다
+        /// 버려져 클릭 구멍이 나고, 렌더러는 그 run을 첫 글자의 링크(글자 색·밑줄)로 그리므로
+        /// 소속도 첫 글자를 따라야 방출 ≡ 칠이다. 글자 위치 밴드(`GlyphOffsetBand.belongs(to:)`)
+        /// 도 같은 규칙이다.
         func belongs(to span: CFRange) -> Bool {
             range.location >= span.location
                 && range.location < span.location + span.length
@@ -101,10 +108,11 @@ extension HwpDrawnTextLayout {
             }
             var minX = min(start, start + width)
             var maxX = max(start, start + width)
-            if width < 0 {
-                // 접힌 진행 폭만으로는 보이는 글리프가 빠진다 — 잉크까지 넓힌다 (위 주석).
+            if width <= 0 {
+                // 접힌·클램프된 진행 폭만으로는 보이는 글리프가 빠진다 — 잉크까지 넓힌다 (위 주석).
+                // 잉크가 있는 폭 0 run은 드물어 속성 브리징은 그때만 치른다.
                 let ink = CTRunGetImageBounds(run, nil, CFRange(location: 0, length: 0))
-                if !ink.isNull, ink.width > 0 {
+                if !ink.isNull, ink.width > 0, drawsGlyphs(run) {
                     minX = min(minX, ink.minX)
                     maxX = max(maxX, ink.maxX)
                 }
@@ -112,6 +120,15 @@ extension HwpDrawnTextLayout {
             extents.append(RunExtent(range: CTRunGetStringRange(run), minX: minX, maxX: maxX))
         }
         return extents
+    }
+
+    /// 렌더러(`drawRun`)가 이 run의 글리프를 그리는가 — 개체 마커(run delegate)는 개체 명령이
+    /// 따로 그리고, 한 줄 끝 표식(`hwp.lineBreak`)은 글리프를 건너뛴다 (#146). `glyphOffsetBands`
+    /// 와 같은 술어다.
+    private static func drawsGlyphs(_ run: CTRun) -> Bool {
+        let attributes = CTRunGetAttributes(run) as? [NSAttributedString.Key: Any]
+        return attributes?[kCTRunDelegateAttributeName as NSAttributedString.Key] == nil
+            && attributes?[HwpAttributedStringKey.lineBreak] == nil
     }
 
     /// `span`에 속한 run들의 가로 범위를 **화면에서 잇닿은 구간별로** 합친다 (줄 원점 기준).

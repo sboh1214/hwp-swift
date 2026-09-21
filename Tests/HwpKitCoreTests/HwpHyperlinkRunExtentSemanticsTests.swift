@@ -296,8 +296,9 @@ import XCTest
         /// −0.222pt, HWP 자간 −30%) 역전된 범위로 `ClosedRange`를 만들던 첫 형태는 프로세스를
         /// 종료했고, 접힌 진행 폭 [시작 + 폭, 시작]만 담은 둘째 형태는 원점 오른쪽의 글리프를
         /// 어느 링크도 아니게 했다(리뷰 2차). rect는 잉크까지 덮어야 하고 잉크 중심의 탭이 그
-        /// 링크를 열어야 한다. CT는 단일 글리프 `i`·`.`의 kern은 폭 0으로 클램프하므로(rect 없음,
-        /// 종전 `maxX > minX` 가드와 같다) 음수는 결합 부호가 붙은 run에서 난다.
+        /// 링크를 열어야 한다. CT는 단일 글리프 `i`·`.`의 kern은 폭 0으로 클램프하지만 잉크는
+        /// 그대로 그리므로(리뷰 3차) 그 글리프도 같은 규칙으로 눌려야 하고, 잉크 없는 폭 0
+        /// run(공백)은 rect가 없다.
         func testNegativeRunWidthKeepsTheVisibleGlyphHittable() {
             let collapsed = tightlyKerned("i\u{0301}")
             let widths = runWidths(collapsed)
@@ -328,13 +329,26 @@ import XCTest
             ])
             expectEveryRunOpensItsOwnLink(followed)
 
-            // 단일 글리프는 CT가 kern을 폭 0으로 클램프한다 — rect가 없고 트랩도 없다.
+            // 단일 글리프는 CT가 kern을 폭 0으로 클램프하지만 잉크는 그려진다 — 잉크 중심의
+            // 탭이 그 링크를 연다.
             for text in ["i", "."] {
                 let string = tightlyKerned(text)
                 expect(self.runWidths(string).first ?? -1)
                     .to(beCloseTo(0, within: 0.001), description: text)
-                expect(self.regions(string)).to(beEmpty(), description: text)
+                let clampedRegions = regions(string)
+                let clampedInk = inkBounds(string)
+                expect(clampedRegions.count).to(equal(1), description: text)
+                expect(Double(clampedRegions.first?.rect.minX ?? 1))
+                    .to(beLessThanOrEqualTo(Double(clampedInk.minX) + 0.001), description: text)
+                expect(Double(clampedRegions.first?.rect.maxX ?? -1))
+                    .to(beGreaterThanOrEqualTo(Double(clampedInk.maxX) - 0.001), description: text)
+                for run in inkedRuns(string) {
+                    expect(self.hit(clampedRegions, run.point))
+                        .to(equal("https://a.example"), description: text)
+                }
             }
+            // 잉크 없는 폭 0 run(공백)은 종전처럼 rect가 없다.
+            expect(self.regions(self.tightlyKerned(" "))).to(beEmpty())
         }
 
         /// **자간(kern)이 있는 줄의 rect는 줄 상자와 같은 진행 폭 정의다** — 링크가 줄 끝까지
