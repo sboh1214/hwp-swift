@@ -54,17 +54,20 @@ extension HwpDrawnTextLayout {
         /// 잇닿은 같은 오프셋·같은 링크의 run이 한 밴드로 묶이므로 (#200 리뷰) 여럿일 수 있다.
         let ranges: [CFRange]
 
-        /// 이 밴드의 run이 **전부** `span` 안에 통째로 드는가 (CTLine 인덱스끼리 비교).
+        /// 이 밴드가 `span`의 것인가 — 묶음의 **첫 run의 첫 글자**가 스팬 안에 있으면 그 스팬
+        /// 것이다 (CTLine 인덱스끼리 비교). 묶음은 같은 링크 속성의 run만 잇고(`glyphOffsetBands`)
+        /// CT는 run에 첫 글자의 속성을 달므로, 첫 run의 첫 글자가 곧 이 밴드가 그려지는 링크다.
         ///
-        /// 교집합이 아니라 **포함**으로 묻는다: CT는 속성이 바뀌는 자리마다 run을
-        /// 끊으므로 (실측: `abc אבג`에 링크 둘을 걸면 run이 ct[0,3)·[3,4)·[5,7)·[4,5)로
-        /// 정확히 갈린다) 정상적으로는 둘이 같지만, 혹시라도 run이 두 스팬에 걸치면
-        /// 포함이 실패해 **남의 잉크를 안 가져간다**.
+        /// 처음(#197 리뷰 4차)에는 run 전부가 스팬에 통째로 드는 **포함**으로 물어 남의 잉크를
+        /// 안 가져가게 했지만, CT는 글리프 없는 문자(U+200B·RLM·결합 부호)와 자소 묶음을 속성이
+        /// 달라도 **앞 run에 합치므로** run이 스팬 경계를 넘을 수 있고(#201 리뷰 실측), 그때
+        /// 포함은 자기 밴드를 버린다 — 링크 스팬의 줄 상자 구간(`RunExtent.belongs(to:)`)과
+        /// 같은 규칙으로 맞춘다. 양방향 줄에서 남의 run을 안 가져가는 것은 이 규칙으로도
+        /// 그대로다: 남의 run은 첫 글자가 남의 스팬에 있다.
         func belongs(to span: CFRange) -> Bool {
-            ranges.allSatisfy { range in
-                range.location >= span.location
-                    && range.location + range.length <= span.location + span.length
-            }
+            guard let first = ranges.first else { return false }
+            return first.location >= span.location
+                && first.location < span.location + span.length
         }
     }
 

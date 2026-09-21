@@ -261,12 +261,15 @@ import XCTest
 
     /// **양방향 줄에서 밴드는 자기 스팬의 run 것만 가져간다** (#197 리뷰 4차).
     ///
-    /// 스팬 rect는 양끝 오프셋을 min/max로 정규화해 내는데, 양방향 줄에서는 그 상자가
-    /// **다른 링크의 글자를 덮는다** (실측 `abc אבג`에 `abc א`·`בג` 두 링크: 앞 스팬
+    /// 당시 스팬 rect는 양끝 오프셋을 min/max로 정규화해 냈고, 양방향 줄에서는 그 상자가
+    /// **다른 링크의 글자를 덮었다** (실측 `abc אבג`에 `abc א`·`בג` 두 링크: 앞 스팬
     /// 상자가 0…28.313인데 뒤 스팬 글자가 18.903…28.313, 앞 스팬 자기 글자 א는 상자
-    /// 밖 28.313…33.943). 그래서 밴드를 가로로만 자르면 두 가지가 한꺼번에 어긋난다 —
+    /// 밖 28.313…33.943 — 그 회차의 히브리 폴백 글꼴 기준이고 Lucida Grande 폴백은
+    /// 28.804…35.254다). 그래서 밴드를 가로로만 자르면 두 가지가 한꺼번에 어긋난다 —
     /// 남의 옮겨진 잉크를 가져가고(뒤 링크 글자를 눌러도 앞 URL이 열린다), 자기 옮겨진
-    /// 잉크는 잘려 나간다(א를 눌러도 아무것도 안 열린다).
+    /// 잉크는 잘려 나간다(א를 눌러도 아무것도 안 열린다). #201 뒤 스팬 rect는 run별 구간
+    /// (앞 스팬은 `abc `·`א` 두 구간)이지만 밴드의 소속 규칙은 그대로다 —
+    /// 밴드는 구간 상자로 자르지 않고 `belongs(to:)`로 고른다.
     final class HwpBidiGlyphOffsetBandTests: XCTestCase {
         private static let urlA = "https://a.example"
         private static let urlB = "https://b.example"
@@ -338,17 +341,21 @@ import XCTest
             }
         }
 
-        /// **자기 옮겨진 run은 스팬 상자 밖이어도 살린다** — 양방향이라 앞 스팬의 א가
-        /// 그 스팬 rect 오른쪽 밖에 있는데, 가로로 자르면 그 글자가 히트 불가가 된다.
+        /// **자기 옮겨진 run은 첫 구간 상자 밖이어도 살린다** — 양방향이라 앞 스팬의 א가
+        /// `abc ` 구간 rect 오른쪽 밖에 있는데, 밴드를 그 상자로 자르면 그 글자가 히트
+        /// 불가가 된다.
         func testOwnRaisedRunOutsideTheSpanBoxStaysHittable() {
             let string = mixed(firstOffset: 10, secondOffset: 0)
             let box = lineBox(string)
             let regions = regions(string)
             let ink = raisedInk(string, above: box)
-            let spanBox = regions.first { $0.url == Self.urlA }?.rect ?? .null
+            // 앞 스팬의 줄 상자 구간(밴드가 아닌 rect) 중 가장 왼쪽 — `abc ` 구간.
+            let spanBox = regions
+                .filter { $0.url == Self.urlA && abs($0.rect.minY - box.minY) < 0.001 }
+                .map(\.rect).min { $0.minX < $1.minX } ?? .null
 
             expect(ink.isEmpty) == false
-            // 이 줄이 정말 양방향인지부터 확인한다 — 앞 스팬의 잉크 일부가 그 스팬 rect
+            // 이 줄이 정말 양방향인지부터 확인한다 — 앞 스팬의 잉크 일부가 그 첫 구간 rect
             // 오른쪽 밖에 있다 (아니면 이 테스트가 아무것도 지키지 않는다). 중심으로 본다 —
             // 밴드는 잉크 경계라 폴백 글꼴의 왼쪽 사이드 베어링 부호에 따라 minX가 흔들린다.
             expect(ink.contains { $0.midX >= spanBox.maxX }) == true
