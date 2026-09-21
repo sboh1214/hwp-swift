@@ -58,17 +58,22 @@ extension FixtureDecorationLineRenderTests {
         return raster.center(in: (base - 12) ... (base + 4), where: match)
     }
 
-    /// 문단 k의 빨강(대상 run) 잉크 띠의 세로 가운데 — 베이스라인 위 `above`pt ~ 아래
-    /// 6pt 안에서 찾는다. 글자 위치 50으로 5pt 내려간 앞 문단의 잉크가 이 창에 걸치면
-    /// `above`를 줄인다.
+    /// 문단 k의 빨강(대상 run) 잉크 띠 — 베이스라인 위 `above`pt ~ 아래 4pt 안에서 찾는다.
+    /// 글자 위치 50으로 5pt 내려간 앞 문단의 잉크가 이 창에 걸치면 `above`를 줄인다. 아래
+    /// 4pt는 아래 첨자 글리프(1.2 아래 + 6.4pt 글꼴의 descender ≈ 2.8)를 품되 다음 문단의
+    /// 위 첨자 잉크(4.4 위로 올라가 문단 간격 16pt에서 base + 6.5쯤부터)는 밖이다.
+    private static func redInkBand(
+        _ raster: Raster, paragraph: Int, above: CGFloat = 12
+    ) -> (top: CGFloat, bottom: CGFloat)? {
+        let base = baseline(paragraph)
+        return raster.band(in: (base - above) ... (base + 4), where: isRed)
+    }
+
+    /// `redInkBand`의 세로 가운데.
     private static func redInkCenter(
         _ raster: Raster, paragraph: Int, above: CGFloat = 12
     ) -> CGFloat? {
-        let base = baseline(paragraph)
-        guard let band = raster.band(in: (base - above) ... (base + 6), where: isRed) else {
-            return nil
-        }
-        return (band.top + band.bottom) / 2
+        redInkBand(raster, paragraph: paragraph, above: above).map { ($0.top + $0.bottom) / 2 }
     }
 
     /// 첨자에 걸리지 않는 선 6개는 한글 좌표 그대로다 — 아래쪽 밑줄은 첨자 run에서도
@@ -162,10 +167,14 @@ extension FixtureDecorationLineRenderTests {
         }
     }
 
-    /// 첨자 취소선은 옮겨진 글리프를 따라간다 — 선이 첨자 run의 빨강 잉크 세로 가운데를
-    /// 지나고, 위 첨자 선은 본문 취소선 자리(베이스라인 위 3.5pt)보다 위, 아래 첨자 선은
-    /// 그보다 아래다. #179 전에는 둘 다 원래 베이스라인 위 0.35 × 축소 크기(당시 6.7pt =
-    /// 2.3pt)에 그려 위 첨자 글리프 아래·아래 첨자 글리프 위로 벗어났다.
+    /// 첨자 취소선은 옮겨진 글리프를 따라간다 — 선이 첨자 run의 빨강 잉크 띠의 **가운데
+    /// 절반** 안을 지나고, 위 첨자 선은 본문 취소선 자리(베이스라인 위 3.5pt)보다 위, 아래
+    /// 첨자 선은 그보다 아래다. #179 전에는 둘 다 원래 베이스라인 위 0.35 × 축소 크기(당시
+    /// 6.7pt = 2.3pt)에 그려 위 첨자 글리프 아래·아래 첨자 글리프 위로 2.7·3.6pt 벗어났다.
+    /// 선과 잉크 중심의 거리를 좁게 핀하지 않는 이유: 취소선(옮겨진 베이스라인 위 0.35em)과
+    /// `대상 Ag` 잉크 중심(약 0.25em)은 원래 0.5pt쯤 어긋나고, 그 값은 래스터 반올림에 따라
+    /// macOS 0.50·iOS 시뮬레이터 0.62로 갈린다 — 절대 좌표는
+    /// `testScriptLinesMatchHancomCoordinatesInBothFormats`가 0.3pt로 핀한다.
     func testScriptStrikethroughCrossesTheShiftedGlyphsInBothFormats() async throws {
         var rows: [[CGFloat]] = []
         for hwpx in [false, true] {
@@ -178,11 +187,17 @@ extension FixtureDecorationLineRenderTests {
                     "\(format): \(name) 취소선을 못 찾았다"
                 )
                 let ink = try XCTUnwrap(
-                    Self.redInkCenter(raster, paragraph: paragraph),
+                    Self.redInkBand(raster, paragraph: paragraph),
                     "\(format): \(name) 글리프를 못 찾았다"
                 )
-                expect(abs(line - ink)).to(
-                    beLessThan(0.6), description: "\(format) \(name) 선 \(line) 잉크중심 \(ink)"
+                let inkCenter = (ink.top + ink.bottom) / 2
+                let quarter = (ink.bottom - ink.top) / 4
+                // 6.4pt 글리프의 잉크 띠는 6.5pt쯤이라 가운데 절반은 ±1.6pt — 선이 글리프
+                // 밖(#179 전 2.7·3.6pt)이면 갈리고 래스터 반올림(≤0.25pt)에는 무관하다.
+                expect(quarter).to(beGreaterThan(1.2), description: "\(format) \(name) 잉크 띠")
+                expect(abs(line - inkCenter)).to(
+                    beLessThan(quarter),
+                    description: "\(format) \(name) 선 \(line) 잉크 \(ink.top)…\(ink.bottom)"
                 )
                 centers.append(line)
             }
