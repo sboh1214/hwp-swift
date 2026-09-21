@@ -42,6 +42,21 @@ public enum HwpAttributedStringKey {
     /// 앵커·상자 높이)가 이 상자를 보고 취소선은 run 단위라 보지 않는다.
     public static let msWordParagraphEndBox =
         NSAttributedString.Key("hwp.msWordParagraphEndBox")
+    /// **문단 끝 글자**(CR, 코드 13)의 상대크기 적용 전 기본 글자 크기 (NSNumber pt, #206) —
+    /// 조판(`HwpTextRunBuilder.finishBuild`)이 잘리지 않은 문단의 조판 문자열 **전체**에
+    /// 싣는다 (`msWordParagraphEndBox`와 같은 이유로 마지막 글자 하나에 얹지 않는다). CR은
+    /// 조판 문자열에서 접히지만(`controlText`, #137) 한글은 그 글자의 글자 모양도 문단
+    /// **마지막 줄**의 글자 상자에 넣는다 — 줄 상자(`vertsize`)와 비율 줄 간격 여분의 기준
+    /// 둘 다다 (한글 12.30 실측 2026-09-21: 함초롬바탕 10pt 본문 + 16pt CR 문단의 마지막
+    /// 줄만 `vertsize` 1600·`baseline` 1360·160% `spacing` 960이고 앞 줄들은 1000·850·600;
+    /// `noori` 2번째 문단은 표 마커 10pt + CR 16pt 줄의 `spacing`이 1120 = 16 × 0.7).
+    /// 한 줄 끝(코드 10)으로 나뉜 앞 줄에는 들지 않는다 — 그 줄은 한 줄 끝 글자 자신의
+    /// 글자 모양을 싣는다(`hwp.lineBreak` run의 `baseFontSize`). 어느 줄이 마지막 줄인지는
+    /// `HwpDrawnLine.endsParagraph`가 가른다 (`HwpDrawnTextLayout.LineMetrics`). MS 워드
+    /// 호환 문서의 세로 배치는 이 값 대신 문단 끝 글자의 **글꼴 상자**(`msWordParagraphEndBox`)를
+    /// 읽는다.
+    public static let paragraphEndBaseFontSize =
+        NSAttributedString.Key("hwp.paragraphEndBaseFontSize")
     /// run의 글자 모양 id (NSNumber = `HwpCharShape` id, #187) — 조판
     /// (`HwpTextRunBuilder.attributes(for:script:)`)이 `HwpIndex`에 있는 글자 모양의 run에
     /// 싣는다 (없는 id의 폴백 모양은 키 없음). 한글은 MS 워드 호환 문서의 취소선을 **글자

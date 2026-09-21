@@ -218,7 +218,7 @@ extension HwpTextRunBuilder {
     /// 실측 2026-09-20 `cm194-mixed`: 한글 슬롯 Apple SD 산돌고딕 Neo·라틴 슬롯 Menlo
     /// 10pt 글자 모양의 빈 문단 `vertsize` 1515·`baseline` 1104 = Menlo, 20pt 3029·2207;
     /// 함초롬돋움 1692·1266). 한글 문서의 줄 상자는 글꼴과 무관하므로 종전대로 한글 슬롯이다.
-    func emptyParagraphAnchor(for paragraph: CoreHwp.HwpParagraph) -> NSAttributedString {
+    func emptyParagraphAnchor(for paragraph: CoreHwp.HwpParagraph) -> NSMutableAttributedString {
         let shapeId = paragraph.paraCharShape.shapeId.first ?? 0
         let shape = index.charShape(id: shapeId) ?? CoreHwp.HwpCharShape()
         let script: HwpScript = index.compatibleDocumentTarget == .msWord ? .english : .korean
@@ -242,45 +242,16 @@ extension HwpTextRunBuilder {
         whole: Bool
     ) -> NSAttributedString {
         if output.length == 0, whole {
-            return emptyParagraphAnchor(for: paragraph)
+            let anchor = emptyParagraphAnchor(for: paragraph)
+            attachParagraphEndBaseFontSize(to: anchor, paragraph: paragraph)
+            return anchor
         }
         attachParagraphStyle(to: output, paragraph: paragraph)
         if whole {
+            attachParagraphEndBaseFontSize(to: output, paragraph: paragraph)
             attachMsWordParagraphEndBox(to: output, paragraph: paragraph)
         }
         return output
-    }
-
-    /// MS 워드 호환 문서에서 문단 끝 글자(CR)의 줄 상자를 마지막 글자에 싣는다
-    /// (`HwpAttributedStringKey.msWordParagraphEndBox`, #187). CR은 조판 문자열에서
-    /// 접히지만(`controlText`) 한글은 그 글자를 마지막 글자 모양의 라틴 슬롯 글꼴로
-    /// 줄 상자에 넣으므로, 렌더러가 마지막 줄의 밑줄 자리를 잡을 때 되돌려 넣는다.
-    /// 상한으로 잘린 결과(`whole == false`)는 문단 끝이 아니라 싣지 않는다.
-    ///
-    /// 싣는 범위는 마지막 글자가 아니라 **문단 조판 문자열 전체**다 — 마지막 UTF-16
-    /// 단위에만 얹으면 속성 경계가 글리프 조합을 가르고(PR 리뷰 재현: 이모지 서로게이트
-    /// 쌍이 LastResort 글리프 둘로 깨져 폭이 74.6 → 122.6pt, 결합 문자 `é`·아랍어 합자는
-    /// CoreText가 조합을 지키는 대신 속성을 버려 끝 상자가 사라진다), 마지막 속성 run에만
-    /// 얹어도 그 run이 앞 run과 한 글리프로 합쳐지면(글자 모양 id만 다른 `لا` 합자·결합
-    /// 문자) CoreText가 앞 run의 속성만 남겨 상자를 버린다. 문단 전체에 같은 값을 얹으면
-    /// 새 경계가 없고 어느 run이 살아남아도 상자가 남는다. 어느 줄이 문단의 마지막 줄인지는
-    /// 렌더러가 `HwpDrawnLine.endsParagraph`(이어짐 표식이 없는 조각의 끝 줄)로 가른다.
-    func attachMsWordParagraphEndBox(
-        to output: NSMutableAttributedString, paragraph: CoreHwp.HwpParagraph
-    ) {
-        guard output.length > 0, let font = msWordParagraphEndFont(of: paragraph),
-              let shapeId = paragraph.paraCharShape.shapeId.last
-        else { return }
-        let resolved = resolvedShape(id: shapeId, paragraph: paragraph)
-        // 곱하는 크기는 라틴 슬롯 상대 크기를 반영한 글꼴 크기가 아니라 글자 모양 기본
-        // 크기다 — 한글은 MS 워드 호환 상자를 기본 크기로 잰다 (PR 리뷰 실측, `msWordBoxSize`).
-        let box = HwpMsWordLineBox.metrics(of: font)
-            .scaled(by: HwpUnits.points(fromHwpUnit: resolved.shape.baseSize))
-        output.addAttribute(
-            HwpAttributedStringKey.msWordParagraphEndBox,
-            value: [NSNumber(value: Double(box.lineHeight)), NSNumber(value: Double(box.baseline))],
-            range: NSRange(location: 0, length: output.length)
-        )
     }
 
     /// 조판 문자열이 빈 문단 앵커 **하나뿐**인지 — 빈 줄 앵커(`가\n `)는 언제나

@@ -69,8 +69,8 @@ final class FixtureRenderTests: XCTestCase {
     func testPageCountsMatchManifest() async throws {
         let fixtures = try FixtureRoot.loadAllFixtures(from: #file)
         let withPageCount = fixtures.filter { $0.expectedPageCount != nil }
-        // 파싱 가능한 40개 픽스처 전부에 pageCount 명세가 있다
-        expect(withPageCount.count) >= 40
+        // 파싱 가능한 41개 픽스처 전부에 pageCount 명세가 있다
+        expect(withPageCount.count) >= 41
 
         var failures: [String] = []
         for fixture in withPageCount {
@@ -95,10 +95,10 @@ final class FixtureRenderTests: XCTestCase {
 
     func testFixtureCountAndCategories() throws {
         let fixtures = try FixtureRoot.loadAllFixtures(from: #file)
-        expect(fixtures.count) >= 44
+        expect(fixtures.count) >= 45
         let withText = fixtures.filter { !$0.expectedVisibleText.isEmpty }
         let empty = fixtures.filter(\.expectedVisibleText.isEmpty)
-        expect(withText.count) >= 31
+        expect(withText.count) >= 32
         expect(empty.count) >= 13
         expect(withText.count + empty.count) == fixtures.count
     }

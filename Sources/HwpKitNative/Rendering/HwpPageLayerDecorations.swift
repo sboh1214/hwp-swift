@@ -45,7 +45,7 @@ extension HwpPageLayer {
         // 아래 6.3pt). 나머지 장식과 같이 올라간 베이스라인을 그대로 쓴다.
         let underlineOrigin = CGPoint(
             x: origin.x,
-            y: origin.y - HwpPageLayer.underlineReturnDrop(of: line)
+            y: origin.y - HwpPageLayer.underlineReturnDrop(of: line, endsParagraph: endsParagraph)
         )
         // 장식은 글리프가 아니라 **줄 원점**을 기준으로 그린다 — `drawRun`이
         // `glyphBaselineOffset`(글자 위치·첨자)으로 글리프만 옮겨도 선은 제자리다.

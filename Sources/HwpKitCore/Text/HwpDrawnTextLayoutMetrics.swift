@@ -19,8 +19,10 @@ extension HwpDrawnTextLayout {
     /// `textBoxHeight`는 그 높이다.
     struct LineMetrics {
         /// 이 줄 글자 run들의 **상대크기 적용 전 기본 크기** 최댓값 — 개체 마커 run이 실은
-        /// 글자 모양도 포함한다. 한글 문서의 글자 상자 높이이고, 쪽 번호 상자처럼 글자 크기
-        /// 자체가 필요한 곳(`HwpPageChromeBuilder.pageNumberFrame`)이 읽는다.
+        /// 글자 모양과, 문단의 마지막 줄이면 조판 문자열에서 접힌 **문단 끝 글자**(CR)의
+        /// 글자 모양(`hwp.paragraphEndBaseFontSize`, #206)도 포함한다. 한글 문서의 글자 상자
+        /// 높이이고, 쪽 번호 상자처럼 글자 크기 자체가 필요한 곳
+        /// (`HwpPageChromeBuilder.pageNumberFrame`)이 읽는다.
         var baseFontSize: CGFloat = 0
         /// 이 줄이 예약한 글자처럼 취급 개체(run delegate)의 높이 최댓값 — 없으면 0.
         var delegateAscent: CGFloat = 0
@@ -89,8 +91,11 @@ extension HwpDrawnTextLayout {
     }
 
     /// 이 줄의 상자 지표 — 갈래마다 다시 걷지 않게 한 번만 걷는다. `endsParagraph`는 이
-    /// 줄이 문단의 마지막 줄인지(`HwpDrawnLine.endsParagraph`) — MS 워드 호환 문서의 문단
-    /// 끝 글자 상자가 그 줄에만 든다. 문단 문자열이 있으면 `lineMetrics(of:in:)`가 판정한다.
+    /// 줄이 문단의 마지막 줄인지(`HwpDrawnLine.endsParagraph`) — 조판 문자열에서 접힌 문단
+    /// 끝 글자(CR)의 글자 모양이 그 줄에만 든다: 한글 문서는 그 기본 크기
+    /// (`hwp.paragraphEndBaseFontSize`, #206)가 글자 상자에, MS 워드 호환 문서는 그 글꼴 상자
+    /// (`hwp.msWordParagraphEndBox`, #194)가 줄 상자에. 문단 문자열이 있으면
+    /// `lineMetrics(of:in:)`가 판정한다.
     static func lineMetrics(of line: CTLine, endsParagraph: Bool = false) -> LineMetrics {
         var metrics = LineMetrics()
         guard let runs = CTLineGetGlyphRuns(line) as? [CTRun] else { return metrics }
@@ -105,9 +110,15 @@ extension HwpDrawnTextLayout {
             // — delegate 분기보다 먼저 봐야 마커만 있는 줄(자리 차지 개체 앵커·필드 표식·
             // 메모 앵커는 폭 0 delegate를 단다)의 상자가 0이 되지 않는다.
             let declared = declaredSize(in: attributes, font: font)
-            if let declared {
-                metrics.baseFontSize = max(metrics.baseFontSize, declared)
-            }
+            // 문단의 마지막 줄에는 접힌 문단 끝 글자(CR)의 글자 모양 크기도 글자 상자에 든다
+            // — 한글 12.30 실측: 10pt 본문 + 16pt CR 문단의 마지막 줄만 `vertsize` 1600·
+            // 160% `spacing` 960 (`HwpTextRunBuilder.attachParagraphEndBaseFontSize`). 키는
+            // 문단 전체에 실리므로 줄 판정은 키가 아니라 `endsParagraph`다. 한 줄 끝으로
+            // 나뉜 앞 줄에는 들지 않는다 (실측: 그 줄은 `baseline` 850·`spacing` 600 그대로).
+            metrics.baseFontSize = max(
+                metrics.baseFontSize, declared ?? 0,
+                endsParagraph ? paragraphEndBaseFontSize(in: attributes) : 0
+            )
             if isMsWordCompatible(attributes) {
                 isMsWord = true
                 if endsParagraph, endBox == nil,
@@ -189,22 +200,29 @@ extension HwpDrawnTextLayout {
     }
 
     /// 문자열 **마지막 줄**의 글자 상자 높이 근사 — 마지막 글자의 상자(`textBoxHeight(at:in:)`)에,
-    /// 문자열이 문단을 끝내면(`endsParagraph`) MS 워드 호환 문단 끝 글자 상자
-    /// (`hwp.msWordParagraphEndBox`)의 높이를 합친다. 접힌 문단 끝 글자(CR)는 마지막 글자와
-    /// 다른 라틴 슬롯 글꼴이거나 CR만의 글자 모양일 수 있어 그 상자가 더 클 수 있다 (PR 리뷰:
-    /// 다단 밴드 바닥의 구분선이 그만큼 마지막 줄 상자 아래로 길어졌다). 다음 단·쪽으로
-    /// 이어지는 조각의 끝 줄은 문단 끝이 아니라 끝 상자가 들지 않는다.
+    /// 문자열이 문단을 끝내면(`endsParagraph`) 접힌 문단 끝 글자(CR)의 상자를 합친다: 한글
+    /// 문서는 그 기본 크기(`hwp.paragraphEndBaseFontSize`, #206), MS 워드 호환 문서는 그 글꼴
+    /// 상자(`hwp.msWordParagraphEndBox`)의 높이. CR은 마지막 글자와 다른 라틴 슬롯 글꼴이거나
+    /// CR만의 글자 모양일 수 있어 그 상자가 더 클 수 있다 (PR 리뷰: 다단 밴드 바닥의 구분선이
+    /// 그만큼 마지막 줄 상자 아래로 길어졌다). 다음 단·쪽으로 이어지는 조각의 끝 줄은 문단
+    /// 끝이 아니라 끝 상자가 들지 않는다.
     static func trailingTextBoxHeight(in attributedString: NSAttributedString) -> CGFloat {
         guard attributedString.length > 0 else { return 0 }
         let index = attributedString.length - 1
         let height = textBoxHeight(at: index, in: attributedString)
         guard endsParagraph(
             CFRange(location: 0, length: attributedString.length), in: attributedString
-        ), let end = attributedString.attribute(
-            HwpAttributedStringKey.msWordParagraphEndBox, at: index, effectiveRange: nil
-        ) as? [NSNumber], end.count == 2
+        ) else { return height }
+        let attributes = attributedString.attributes(at: index, effectiveRange: nil)
+        if isMsWordCompatible(attributes) {
+            guard let end = attributes[HwpAttributedStringKey.msWordParagraphEndBox] as? [NSNumber],
+                  end.count == 2
+            else { return height }
+            return max(height, CGFloat(end[0].doubleValue))
+        }
+        guard let end = attributes[HwpAttributedStringKey.paragraphEndBaseFontSize] as? NSNumber
         else { return height }
-        return max(height, CGFloat(end[0].doubleValue))
+        return max(height, CGFloat(end.doubleValue))
     }
 
     /// run이 MS 워드 호환 문서의 것인지 — 조판이 한글 문서가 아닌 문서의 모든 run에 싣는
@@ -214,6 +232,16 @@ extension HwpDrawnTextLayout {
         guard let raw = attributes?[HwpAttributedStringKey.compatibleDocumentTarget] as? NSNumber
         else { return false }
         return raw.uint32Value == HwpCompatibleDocumentTarget.msWord.rawValue
+    }
+
+    /// run이 실은 문단 끝 글자(CR)의 기본 크기 (`hwp.paragraphEndBaseFontSize`, #206) — 잘리지
+    /// 않은 문단의 조판 문자열 전체에 실리며, 없거나 0 이하면 0.
+    private static func paragraphEndBaseFontSize(
+        in attributes: [NSAttributedString.Key: Any]?
+    ) -> CGFloat {
+        let value = attributes?[HwpAttributedStringKey.paragraphEndBaseFontSize]
+        guard let number = value as? NSNumber, number.doubleValue > 0 else { return 0 }
+        return CGFloat(number.doubleValue)
     }
 
     /// run이 선언한 줄 상자 기준 크기 — 상대크기 적용 **전** 기본 글자 크기이고,
