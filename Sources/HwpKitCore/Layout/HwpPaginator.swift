@@ -1203,7 +1203,10 @@ private extension HwpPaginator {
             cachedTrailingSpacing: split.cachedTrailingSpacing,
             splitPolicy: split.splitPolicy,
             fragmentFootnotes: split.fragmentFootnotes,
-            onFragmentPlaced: { appendInlineControlBlocksForCurrentFragment(from: split.paragraph) }
+            onFragmentPlaced: {
+                registerPageChromeForCurrentFragment(from: split.paragraph)
+                appendInlineControlBlocksForCurrentFragment(from: split.paragraph)
+            }
         )
         updateBandTrailingSpacing(for: split.paragraph)
     }
@@ -1221,7 +1224,7 @@ private extension HwpPaginator {
     private func canSplitAtEntry(_ split: FlowSplitInput, cacheHeightUsed: Bool) -> Bool {
         guard split.paragraphFrame.lines.count > 1,
               split.fragmentFootnotes != nil || !Self.hasNotes(split.paragraph),
-              !Self.hasParagraphBoundControls(split.paragraph)
+              !hasParagraphBoundControls(split.paragraph)
         else { return false }
         return !cacheHeightUsed
             || split.paragraphFrame.lines.count
@@ -1242,17 +1245,19 @@ private extension HwpPaginator {
     }
 
     /// 문단 머리에 묶여 마지막 조각 뒤에 문단 단위로 나오는 컨트롤이 있는지 — 글자처럼 취급이
-    /// 아닌 개체(자리 차지·글 앞뒤, 표 제외: 표는 글줄 앞에 먼저 놓인다 #190)와 자동 쪽 번호.
-    static func hasParagraphBoundControls(_ paragraph: CoreHwp.HwpParagraph) -> Bool {
-        (paragraph.ctrlHeaderArray ?? []).contains { ctrl in
+    /// 아닌 개체(자리 차지·글 앞뒤)와 자동 쪽 번호. 표는 글줄 앞에 **실제로 놓인** 것
+    /// (`tablesPlacedBeforeText`, #190 — 자리 차지·문단 기준·오프셋 0 표)만 예외다: 글 앞뒤·
+    /// 어울림·쪽 기준·오프셋 있는 표와 레이아웃에 실패한 표는 뒤에 문단 단위로 나온다 (PR 리뷰).
+    private func hasParagraphBoundControls(_ paragraph: CoreHwp.HwpParagraph) -> Bool {
+        (paragraph.ctrlHeaderArray ?? []).enumerated().contains { ordinal, ctrl in
             switch ctrl {
             case .table:
-                false
+                !Self.isTreatAsChar(ctrl) && tablesPlacedBeforeText[ordinal] == nil
             case let .autoNumber(other):
                 other.autoNumberInfo?.kind == .page
             case .genShapeObject, .shape, .line, .rectangle, .ellipse, .arc, .polygon, .curve,
                  .equation, .equationLegacy, .picture, .ole, .container:
-                !isTreatAsChar(ctrl)
+                !Self.isTreatAsChar(ctrl)
             default:
                 false
             }
@@ -1434,8 +1439,10 @@ private extension HwpPaginator {
                 )
             )
             // 앞 단의 줄에 앵커가 있는 글자처럼 취급 개체는 그 단에 지금 놓는다 (#164) —
-            // 마지막 단의 문맥만 남으면 앞 단의 개체가 앵커를 잃고 흐름 위치로 간다.
+            // 마지막 단의 문맥만 남으면 앞 단의 개체가 앵커를 잃고 흐름 위치로 간다. 앞 단
+            // 조각의 쪽 장식도 지금 등록한다 (#207 PR 리뷰).
             if runIndex < runs.count - 1 {
+                registerPageChromeForCurrentFragment(from: paragraph)
                 appendInlineControlBlocksForCurrentFragment(from: paragraph)
             }
         }
@@ -1539,8 +1546,10 @@ private extension HwpPaginator {
                 collectsNested: runIndex == runs.count - 1
             )
             // 앞 조각의 줄에 앵커가 있는 글자처럼 취급 개체는 이 쪽이 확정되기 전에
-            // 놓는다 (#164). 마지막 조각은 종전대로 문단 단위 방출이 맡는다.
+            // 놓는다 (#164). 앞 조각의 쪽 장식도 이 쪽이 확정되기 전에 등록한다 (#207 PR
+            // 리뷰). 마지막 조각은 종전대로 문단 단위 방출이 맡는다.
             if runIndex < runs.count - 1 {
+                registerPageChromeForCurrentFragment(from: paragraph)
                 appendInlineControlBlocksForCurrentFragment(from: paragraph)
             }
         }
@@ -2950,6 +2959,23 @@ private extension HwpPaginator {
                 inlineControlsPlacedPerFragment[ordinal] = cachedPages.count + 1
             }
         }
+    }
+
+    /// 방금 놓인 조각에 그려진 마지막 컨트롤 서수까지의 쪽 장식(머리말·꼬리말·쪽 번호 위치·
+    /// 감추기)을 **이 쪽**에 등록한다 (#207 PR 리뷰). 등록은 문단 단위 방출(`appendControlBlocks`)이
+    /// 마지막 조각 뒤에 하므로 나뉜 문단의 앞 조각 쪽에는 장식이 빠졌다 — 문두에 쪽 번호 위치
+    /// 컨트롤을 둔 3줄 문단이 나뉘면 1쪽엔 번호가 없고 2쪽부터 `- 2 -`. 글줄 앞 표(#190)가 표의
+    /// 첫 조각에서 하는 등록과 같은 기록(`chromeRegisteredBeforeText`)이라 뒤 방출이 되풀이하지
+    /// 않는다. 조각 문자열은 방금 `appendBlock`이 낸 마지막 블록이다 — 흐름 분할·절대 캐시 run·
+    /// 다단 캐시 run 모두 블록을 낸 직후 이 훅을 부른다.
+    private func registerPageChromeForCurrentFragment(from paragraph: CoreHwp.HwpParagraph) {
+        guard let ctrls = paragraph.ctrlHeaderArray,
+              let fragment = currentBlocks.last?.attributedString,
+              let last = HwpAbsoluteCachePlacer.lastControlOrdinal(in: fragment)
+        else { return }
+        registerPageChromePreceding(
+            min(last + 1, ctrls.count), in: ctrls, numbering: currentParagraphScope
+        )
     }
 
     /// 글자처럼 취급 컨트롤의 **줄 안 배치만** 시도한다 (#164) — 표 레이아웃 실패의

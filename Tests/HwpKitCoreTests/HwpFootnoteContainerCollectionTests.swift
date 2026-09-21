@@ -330,5 +330,66 @@ import XCTest
             expect(coordinator.pendingFootnotes.count) == 1
             expect(coordinator.pendingEndnotes.count) == 1
         }
+
+        /// 최종 조각의 예약은 앞 조각이 미룬 컨테이너 안 각주를 **저장된 번호**로 잰다 — 현재
+        /// 카운터로 다시 매기면(`9)` → `10)`) 라벨 폭이 달라 줄바꿈 경계에서 예약이 배치보다 한 줄
+        /// 크고, 들어가는 본문이 다음 쪽으로 밀린다 (#207 PR 리뷰). 각주 본문 길이를 훑어 예약 ==
+        /// 실제 예약을 잠근다.
+        func testFinalFragmentPreflightMeasuresDeferredNotesWithTheirNumbers() {
+            for length in 1 ... 40 {
+                var coordinator = HwpFootnoteCoordinator(
+                    index: HwpIndex(from: CoreHwp.HwpFile()), fontResolver: .testDeterministic
+                )
+                coordinator.footnoteCounter = 9
+                var host = CoreHwp.HwpParagraph()
+                host.ctrlHeaderArray = [
+                    .header(HwpSynthetic.listControl(ctrlId: .header, paragraphs: [])),
+                    .footnote(HwpSynthetic.listControl(
+                        ctrlId: .footnote,
+                        paragraphs: [HwpSynthetic.noteParagraph(
+                            " 뒤따르는 직접 각주 본문 글자들",
+                            autoNumber: HwpSynthetic.autoNumberControl(kind: 1, decorationTail: ")")
+                        )]
+                    )),
+                ]
+                var nested = CoreHwp.HwpParagraph()
+                nested.ctrlHeaderArray = [
+                    .footnote(HwpSynthetic.listControl(
+                        ctrlId: .footnote,
+                        paragraphs: [HwpSynthetic.noteParagraph(
+                            " " + String(repeating: "가", count: length),
+                            autoNumber: HwpSynthetic.autoNumberControl(kind: 1, decorationTail: ")")
+                        )]
+                    )),
+                ]
+                let children: HwpFootnoteCoordinator.ChildParagraphs = { ctrl in
+                    if case .header = ctrl {
+                        return [(nested, .textbox)]
+                    }
+                    return []
+                }
+                let environment = HwpFootnoteCoordinator.Environment(
+                    contentWidth: 100, footnoteShape: nil
+                )
+                coordinator.collectFootnotes(
+                    from: host, includeTableCells: false, ordinals: 0 ..< 1, collectsNested: false,
+                    environment: environment, childParagraphs: children
+                )
+                let before = coordinator.footnoteReservedHeight
+                let predicted = coordinator.anticipatedFootnoteHeight(
+                    for: host, environment: environment, childParagraphs: children,
+                    ordinals: 1 ..< 2, collectsNested: true
+                )
+                coordinator.collectFootnotes(
+                    from: host, includeTableCells: false, ordinals: 1 ..< 2, collectsNested: true,
+                    environment: environment, childParagraphs: children
+                )
+                expect(predicted).to(
+                    beCloseTo(coordinator.footnoteReservedHeight - before, within: 0.01),
+                    description: "각주 본문 \(length)자"
+                )
+                expect(coordinator.pendingFootnotes.map(\.number)) == [9, 10]
+            }
+        }
     }
 #endif

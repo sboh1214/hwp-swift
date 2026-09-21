@@ -358,6 +358,61 @@ import XCTest
             )
             expect(inline.fragments[0]).toNot(beNil())
             expect(inline.fragments[1]).toNot(beNil())
+
+            // 표는 글줄 앞에 **실제로 놓인** 것(자리 차지·문단 기준·오프셋 0, #190)만 예외다 — 글
+            // 앞으로 표는 마지막 조각 뒤에 문단 단위로 나오므로 통째로 옮긴다 (PR 리뷰).
+            let table = HwpSynthetic.table(
+                cellWidth: 2000, rowHeights: [500],
+                cellParagraphs: [[[try HwpSynthetic.textParagraph("셀")]]]
+            )
+            let inFront = try await Self.layout(
+                host(marker: 11, control: .table(HwpSynthetic.placed(
+                    table, treatAsChar: false, textWrap: .inFrontOfText
+                ))),
+                contentHeight: Self.templateHeight + 40
+            )
+            expect(inFront.fragments[0]).to(beNil())
+            expect(inFront.fragments[1]).toNot(beNil())
+            let preceding = try await Self.layout(
+                host(marker: 11, control: .table(HwpSynthetic.placed(
+                    table, treatAsChar: false, textWrap: .topAndBottom
+                ))),
+                contentHeight: Self.templateHeight + 40
+            )
+            expect(preceding.fragments[0]).toNot(beNil())
+            expect(preceding.fragments[1]).toNot(beNil())
+        }
+
+        /// 쪽 장식(쪽 번호 위치 등)은 그려진 조각의 쪽에 등록한다 — 등록이 마지막 조각 뒤의 문단
+        /// 단위 방출뿐이면 문두에 쪽 번호 위치 컨트롤을 둔 문단이 나뉠 때 앞 쪽엔 번호가 없고 다음
+        /// 쪽부터 `- 2 -`다 (PR 리뷰).
+        func testPageChromeInTheFirstFragmentAppliesFromItsPage() async throws {
+            var host = try HwpSynthetic.splitParagraphWithControlMarkers(
+                lines: [(characters: 5, marker: true), (characters: 5, marker: false),
+                        (characters: 5, marker: false)],
+                segments: [], markerCode: 16
+            )
+            host.ctrlHeaderArray = [HwpSynthetic.pageNumberPositionControl()]
+            let layout = try await Self.layout(host, contentHeight: Self.templateHeight + 40)
+            expect(layout.pages.count) == 2
+            guard layout.pages.count == 2 else { return }
+            expect(layout.fragments[0]).toNot(beNil())
+            expect(layout.fragments[1]).toNot(beNil())
+            let chrome = layout.pages.map { page in page.blocks.filter { $0.role == .pageChrome }.count }
+            expect(chrome) == [1, 1]
+
+            // 컨트롤이 뒤 조각의 줄에 있으면 앞 쪽엔 없고 뒤 쪽부터다.
+            var later = try HwpSynthetic.splitParagraphWithControlMarkers(
+                lines: [(characters: 5, marker: false), (characters: 5, marker: false),
+                        (characters: 5, marker: true)],
+                segments: [], markerCode: 16
+            )
+            later.ctrlHeaderArray = [HwpSynthetic.pageNumberPositionControl()]
+            let laterLayout = try await Self.layout(later, contentHeight: Self.templateHeight + 40)
+            let laterChrome = laterLayout.pages.map { page in
+                page.blocks.filter { $0.role == .pageChrome }.count
+            }
+            expect(laterChrome) == [0, 1]
         }
 
         // MARK: 다단·진행 보장

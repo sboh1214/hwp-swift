@@ -98,7 +98,7 @@ struct HwpFootnoteCoordinator {
     /// 배치를 미룬 컨테이너 안 각주 — top-level 컨트롤 서수별. 번호는 앞 조각에서
     /// 문서 순서대로 받아 두고 **배치만** 마지막 조각으로 미룬다. 열쇠(서수)가
     /// 문단 안에서만 유일하므로 문단마다 비운다 (`resetDeferredNestedFootnotes`).
-    private var deferredNestedFootnotes: [Int: [DeferredNote]] = [:]
+    private(set) var deferredNestedFootnotes: [Int: [DeferredNote]] = [:]
     /// 각주·미주 식별자 일련번호 (#165 리뷰) — **절대 리셋하지 않는다**. 표시 번호는
     /// 쪽마다 새로 시작할 수 있어 (표 134 모드 2) 이월된 각주와 새 각주가 같은 값을
     /// 갖는데, 배치는 "같은 각주의 이어지는 문단"을 그 값으로 가르기 때문이다.
@@ -110,7 +110,7 @@ struct HwpFootnoteCoordinator {
     /// 번호만 앞 조각에서 확정하고 배치를 미룬 각주 하나. 해석기를 싣지 않는 것이
     /// 요점이다 — 예약도 배치도 **실릴 페이지**에서 일어나므로 그 시점 값을 써야
     /// 둘이 같은 기하를 본다 (R44 #1 · R45 #1).
-    private struct DeferredNote {
+    struct DeferredNote {
         let paragraphs: [CoreHwp.HwpParagraph]
         let number: Int
         /// 표시 번호와 별개인 각주 식별자 (#165 리뷰)

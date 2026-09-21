@@ -2000,8 +2000,12 @@ paraShape와 같은 값**이어야 한다.
   (collectMemos/appendControlBlocks)이 placeParagraphText 뒤에 오는데 앞 조각
   페이지는 cacheCurrentPage에서 paintList까지 확정돼 사후 귀속이 불가능하다.
   그래서 문단 머리에 묶인 채 문단 단위로 나오는 것(자리 차지·글 앞뒤 개체는
-  `paragraphAnchorTop` 기준, 자동 쪽 번호는 진입 쪽 번호로 구워진 문자열)이 있는 문단은
-  진입 쪽에서 나누지 않는다 (`canSplitAtEntry`·`hasParagraphBoundControls`, #207). 흐름 배치 문단의 자리
+  `paragraphAnchorTop` 기준, 자동 쪽 번호는 진입 쪽 번호로 구워진 문자열, 글줄 앞에
+  **실제로 놓이지 않은** 비인라인 표 — 글 앞뒤·어울림·쪽 기준·오프셋 있는 표)이 있는 문단은
+  진입 쪽에서 나누지 않는다 (`canSplitAtEntry`·`hasParagraphBoundControls`, #207). 쪽 장식
+  (머리말·꼬리말·쪽 번호 위치·감추기)은 예외 — 그려진 조각의 쪽에 등록한다
+  (`registerPageChromeForCurrentFragment`, 세 조각 경로 모두; 글줄 앞 표의 첫 조각 등록과 같은
+  기록). 흐름 배치 문단의 자리
   차지 표는 이제 글줄 **앞**에 흘려(#190, 위 "앵커 규칙") 조각 단위 방출이 필요 없고,
   절대 캐시 run 문단의 자리 차지 표는 띠(#161)가 자리다 — 한글 12.30 저장본에서 그
   표는 문단 첫 줄 앞에 있으므로 뒤 조각에 실릴 일이 없다

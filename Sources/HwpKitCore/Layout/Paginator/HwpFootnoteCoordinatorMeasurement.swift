@@ -308,38 +308,26 @@ extension HwpFootnoteCoordinator {
                 if !paragraphs.isEmpty {
                     let number = state.preview
                     state.preview += 1
-                    let noteCarriesObjects = paragraphs.contains {
-                        HwpParagraphObjectCollector.hasCollectibleObject(
-                            in: $0, collectsTextboxes: true, collectsTables: true
-                        )
-                    }
-                    // 예측도 수집(`appendPendingFootnote`)과 같은 조각까지다 (#165 리뷰): 줄
-                    // 캐시가 여러 쪽에 걸친 각주의 전부를 더하면 첫 조각 옆에 들어가는 문단이
-                    // 다른 쪽으로 밀린다.
-                    let shares = Self.fragmentShares(
-                        count: paragraphs.count,
-                        splits: !noteCarriesObjects && environment.continuesAtCacheBreaks
-                    ) { (lines: HwpFootnoteCacheLines.lines(of: paragraphs[$0]), placedLineCount: 0) }
-                    if !shares.isEmpty {
-                        state.landed += 1
-                    }
-                    if shares.count < paragraphs.count || shares.last?.endsPage == true {
-                        state.stopped = true
-                    }
-                    // 같은 컨트롤의 문단은 간격 없이 이어진다 — 노트 경계
-                    // 간격은 anticipatedFootnoteHeight가 노트 수로 계산한다
-                    for (paragraphIndex, share) in shares.enumerated() {
-                        total += measuredFootnoteHeight(
-                            of: paragraphs[paragraphIndex],
-                            number: number,
-                            environment: environment,
-                            numbering: container?.paragraph(childIndex: paragraphIndex),
-                            isNoteEnd: paragraphIndex == paragraphs.count - 1 || share.endsPage,
-                            noteCarriesObjects: noteCarriesObjects,
-                            lineLimit: share.lineLimit
-                        )
-                    }
+                    total += anticipatedNoteHeight(
+                        paragraphs: paragraphs, number: number, state: &state,
+                        environment: environment
+                    ) { container?.paragraph(childIndex: $0) }
                 }
+            }
+            // 최종 조각의 범위 **앞** 컨테이너: 앞 조각이 그 안 각주에 번호를 매기고 배치만 미뤘다
+            // (`deferNestedNotes`) — 수집은 그 버퍼를 **저장된 번호**로 푼다(`flushDeferredNestedNotes`)
+            // 이므로 예약도 그 번호로 재고 다시 걷지 않는다 (PR 리뷰: 현재 카운터로 다시 매기면
+            // 라벨 폭이 달라 줄바꿈 경계에서 한 줄만큼 어긋난다).
+            if depth == 0, let ordinals, ordinal < ordinals.lowerBound,
+               let deferred = deferredNestedFootnotes[ordinal]
+            {
+                for note in deferred where !state.stopped {
+                    total += anticipatedNoteHeight(
+                        paragraphs: note.paragraphs, number: note.number, state: &state,
+                        environment: environment
+                    ) { note.numbering.indices.contains($0) ? note.numbering[$0] : nil }
+                }
+                continue
             }
             guard depth < 3 else { continue }
             // 셀 각주는 행이 실리는 페이지에서 수집/예약되므로 예측에서도 제외
@@ -374,6 +362,47 @@ extension HwpFootnoteCoordinator {
                     numbering: container?.paragraph(childIndex: childIndex)
                 )
             }
+        }
+        return total
+    }
+
+    /// 각주 하나의 예약 높이 — 배치(`appendPendingFootnote`)와 같은 조각까지 잰다 (#165 리뷰):
+    /// 줄 캐시가 여러 쪽에 걸친 각주의 전부를 더하면 첫 조각 옆에 들어가는 문단이 다른 쪽으로
+    /// 밀린다. 같은 컨트롤의 문단은 간격 없이 이어진다 — 노트 경계 간격은
+    /// `anticipatedFootnoteHeight`가 노트 수(`state.landed`)로 계산한다.
+    private mutating func anticipatedNoteHeight(
+        paragraphs: [CoreHwp.HwpParagraph],
+        number: Int,
+        state: inout PreflightState,
+        environment: Environment,
+        numbering: (Int) -> HwpNumberingScope?
+    ) -> CGFloat {
+        let noteCarriesObjects = paragraphs.contains {
+            HwpParagraphObjectCollector.hasCollectibleObject(
+                in: $0, collectsTextboxes: true, collectsTables: true
+            )
+        }
+        let shares = Self.fragmentShares(
+            count: paragraphs.count,
+            splits: !noteCarriesObjects && environment.continuesAtCacheBreaks
+        ) { (lines: HwpFootnoteCacheLines.lines(of: paragraphs[$0]), placedLineCount: 0) }
+        if !shares.isEmpty {
+            state.landed += 1
+        }
+        if shares.count < paragraphs.count || shares.last?.endsPage == true {
+            state.stopped = true
+        }
+        var total: CGFloat = 0
+        for (paragraphIndex, share) in shares.enumerated() {
+            total += measuredFootnoteHeight(
+                of: paragraphs[paragraphIndex],
+                number: number,
+                environment: environment,
+                numbering: numbering(paragraphIndex),
+                isNoteEnd: paragraphIndex == paragraphs.count - 1 || share.endsPage,
+                noteCarriesObjects: noteCarriesObjects,
+                lineLimit: share.lineLimit
+            )
         }
         return total
     }
