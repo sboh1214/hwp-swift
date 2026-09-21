@@ -383,6 +383,33 @@ delegate)가 더 크면 개체 높이다. **개체 마커 run도 자기 글자 �
 되지 않는다. 한 문단이 크기 섞여 줄바꿈되면 한글 캐시의 `vertsize`도 줄별로 다르다 (2026-09-12
 실측: 10pt 45자 + 40pt 12자 문단이 1000·4000·4000) — 문단 최대가 아니다.
 
+**문단의 마지막 줄에는 접힌 문단 끝 글자(CR, 코드 13)의 글자 모양 크기도 든다** (#206). CR은
+조판 문자열에 없지만(#137) 한글은 그 글자 모양의 기본 크기를 마지막 줄의 글자 상자에 넣는다 —
+줄 상자(`vertsize`)와 비율 여분의 기준 둘 다. 조판(`HwpTextRunBuilder.attachParagraphEndBaseFontSize`)
+이 `paraCharShape.shapeId.last`의 기본 크기를 잘리지 않은 문단 문자열 **전체**에
+`hwp.paragraphEndBaseFontSize`로 싣고(마지막 글자 하나에 얹으면 속성 경계가 글리프 조합을 가른다
+— MS 워드 끝 상자와 같은 이유), `LineMetrics`가 `endsParagraph`인 줄에서만 `baseFontSize`에
+합친다 — 그래서 결합 문자열의 문단마다, 쪽·단에 걸친 조각은 진짜 마지막 조각에서만 든다.
+한글 12.30 실측(2026-09-21, `paragraph-end-char-size` 픽스처 쌍 — 함초롬바탕 본문 + 빈 꼬리
+run으로 CR 글자 모양을 준 합성 HWPX의 재저장 줄 캐시·PDF, 우리 재조판 116줄 전부 0.10pt 안):
+10pt 본문 + 16pt CR 한 줄 `vertsize` 1600·`baseline` 1360·160% `spacing` 960, 여러 줄은 마지막
+줄만(앞 줄 1000·850·600), 16pt 본문 + 10pt CR 1600(최댓값), 10 + 40pt CR 4000·3400·2400, 고정
+30 → 30·여백만 5 → 21·최소 12/20 → 16/20, 상대 크기 50%의 CR도 1600(기본 크기), Apple SD도
+1600(글꼴 무관), 표 마커 10pt + 30pt 표 + 16pt CR(`noori` 2번째 문단 꼴, 170%) 3000·2550·1120,
+8pt 표 + 16pt CR 1600(CR이 상자를 정한다), 20pt 표 + 16pt CR 2000·1700·960(여분 기준은 CR 16),
+표 셀 안도 같다. **한 줄 끝(코드 10)으로 나뉜 앞 줄에는 들지 않는다** — 10pt run의 한 줄 끝 +
+16pt CR 문단의 첫 줄은 `baseline` 850·`spacing` 600(전진량 16, PDF 베이스라인도 8.5)이고 빈
+마지막 줄(앵커)만 1600·1360·960; 한 줄 끝이 16pt run에 있으면 그 글자 자신의 크기로 첫 줄도
+1600(`hwp.lineBreak` run의 `baseFontSize`가 이미 그렇다). 그 첫 줄의 캐시 `vertsize`만 1600이고
+`textheight`·`baseline`·`spacing`은 10pt 기준이라 배치는 10pt 상자다 — 코퍼스 캐시 14,659문단은
+`lineHeight` = `textHeight`이고 이 한 줄 끝 꼴만 갈린다. 빈 문단 앵커(#145)에도 싣는다(앵커는
+첫 글자 모양으로 서므로 하이픈(24)만 있는 문단의 CR이 더 크면 CR 쪽이 상자). 상한으로 잘린 문단
+(`maxCharacters`)은 문단 끝이 아니라 싣지 않는다. 밑줄 되돌림(`underlineReturnDrop(of:endsParagraph:)`)
+·마지막 줄 근사(`trailingTextBoxHeight`)도 같은 값을 본다. MS 워드 호환 문서는 이 키 대신 문단 끝
+글자의 **글꼴 상자**(`hwp.msWordParagraphEndBox`, #194)를 읽는다. 코퍼스 영향: 헌법주석 각주
+3쪽(p319·p434·p893)의 마지막 줄이 0.85pt 내려가 한글 PDF와 0.02pt 안(9pt 본문 + 10pt CR), 나머지
+CR이 큰 문단(`noori` 2번째·헌법주석 6각주)은 캐시로 놓여 종전부터 같았다.
+
 **전진량은 그 상자에 표 46 줄 간격 종류를 적용한 값이다** (`HwpLineSpacingRule.advance`):
 
 | 종류 | 값 v | 전진량 (상자 h, 글자 상자 t) |
@@ -464,7 +491,10 @@ min = max 못박고 CT 슬롯을 복원해 상자를 타일했는데 (#178 PR #1
 
 가드: `HwpLineSpacingRuleTests`(규칙 표·1/2 단위·표식 왕복·CT 스타일 폴백),
 `HwpLineBoxAdvanceTests`(렌더 기하 — 균일·글꼴 무관·혼합 크기·상대크기·개체·문단 간격·측정 ≡
-렌더·청크 예산 불변·한 줄 끝 빈 줄), `HwpOversizedGlyphLineTests`(상자보다 큰 글자·고정값보다
+렌더·청크 예산 불변·한 줄 끝 빈 줄), `HwpParagraphEndCharSizeTests`(문단 끝 글자 크기 — 키
+싣기·마지막 줄만·줄 간격 종류·개체 줄·한 줄 끝·이어짐 조각·결합 문자열·`noori` 2번째 문단
+68.69/11.20/79.89) + `FixtureParagraphEndCharSizeTests`(`paragraph-end-char-size` 쌍의 줄 캐시를
+지운 재조판 ≡ 캐시 배치, `noori` 캐시 없는 첫 쪽의 제목 표 227.00), `HwpOversizedGlyphLineTests`(상자보다 큰 글자·고정값보다
 큰 글자에서 줄이 사라지지 않는다 — #202), `HwpBaselineAnchorTests`(앵커·개체 줄),
 `HwpLayoutRenderParitySweepTests`(측정 줄 `baseline` = 공유 코어 줄의 앵커),
 `FixtureBaselineAnchorTests`(`CCL` 둘째 줄 154.57 = 40.87 + 6.00 아래, 정확),
@@ -474,9 +504,9 @@ min = max 못박고 CT 슬롯을 복원해 상자를 타일했는데 (#178 PR #1
 간 것이고 블록 프레임은 그대로다. 1쪽 PrvImage 정합성(MAE)은 두 글꼴 모드 모두 소수 4자리까지
 불변.
 
-**남은 격차 (다른 축)**: ① **문단 끝 글자(CR)의 글자 모양은 조판 문자열에 없다** — 한글은 그
-모양도 줄의 글자 상자에 넣는다 (`noori` 2번째 문단: 마커 10pt + CR 16pt 줄의 `spacing`이
-1120 = 16 × 0.7인데 우리는 600, #206). 마지막 글자 모양이 다른 문단에서만 드러난다. ② (해결, #193) 글상자·표
+**남은 격차 (다른 축)**: ① (해결, #206) 문단 끝 글자(CR)의 글자 모양은 조판 문자열에 없지만
+한글은 그 크기도 마지막 줄의 글자 상자에 넣는다 (`noori` 2번째 문단: 마커 10pt + CR 16pt 줄의
+`spacing`이 1120 = 16 × 0.7인데 종전에는 600) — 위 "문단의 마지막 줄" 항목의 키로 고쳤다. ② (해결, #193) 글상자·표
 셀·쪽 번호 안 텍스트가 한글보다 위였던 격차(noori 1쪽 제목 표 −5.35pt·표 셀 −1.3 ~ −2.6pt·
 쪽 번호 −31.7pt)는 컨테이너 내용 범위(`HwpContainerContentExtent`)·글자처럼 취급 개체의 바깥
 여백·쪽 번호 자리로 고쳤다 — 이제 0.1pt 안이다. ③ (해결, #194) MS Word 호환 문서 (`targetProgram` 2) 는

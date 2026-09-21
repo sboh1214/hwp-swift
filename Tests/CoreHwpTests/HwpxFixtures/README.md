@@ -24,7 +24,7 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
    `Fixtures/<id>/document.hwp`의 **사본**을 연다 (열람만으로 원본이 재기록될 수
    있다 — 4단계). 새로 저작하는 쌍(`section-marks`·`section-page-starts-on`·
    `line-shapes`·`script-decorations`·`section-page-number-skip`·`compat-decorations`·
-   `inline-object-baseline`)은 `.hwp`와 `.hwpx`를
+   `inline-object-baseline`·`paragraph-end-char-size`)은 `.hwp`와 `.hwpx`를
    **같은 편집 세션에서 연달아** 저장해야 두 파일이 같은 문서가 된다. 한글 GUI로
    만들기 어려운 조합은 합성 HWPX를 한글로 열어 두 형식으로 저장해도 된다
    (`line-shapes` — 17종 선 모양을 네 자리에 모두 실은 문서, `script-decorations` —
@@ -76,6 +76,11 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
   자리(바깥 상자를 글자로 보아 0.85 × 높이를 베이스라인 위에)를 렌더 해시·골든이 잡지 못하던
   자리의 실물 근거이며, `hp:pic`의 `hp:sz`·`hp:outMargin`과 표의 `hp:outMargin`이 HWP 쌍과
   같은 줄 캐시(`vertsize`·`baseline`)로 이어지는 표본이기도 하다.
+  문단 끝 글자(CR)의 글자 모양 크기는 #206에서 `paragraph-end-char-size` 쌍으로 저작했다 —
+  코퍼스에서 CR의 글자 모양이 본문보다 큰 문단이 캐시로 놓이는 `noori`·헌법주석 아홉뿐이라
+  줄 캐시 없는 재조판의 마지막 줄 상자를 렌더 해시가 잡지 못하던 자리의 실물 근거이며,
+  문단 마지막의 빈 run(`<hp:run charPrIDRef="N"><hp:t/></hp:run>`)이 HWP 쌍의
+  `PARA_CHAR_SHAPE` 마지막 항목과 같은 문단 끝 글자 모양으로 옮겨지는 표본이기도 하다.
 
 ## manifest 작성 기준
 

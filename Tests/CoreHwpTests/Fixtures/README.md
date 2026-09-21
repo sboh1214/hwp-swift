@@ -209,6 +209,14 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   베이스라인 − 0.85 × 높이). 같은 세션의 PDF 내보내기 좌표(README의 표)를
   `HwpKitTests/FixtureInlineObjectBaselineTests`가 핀한다. HWPX 쌍은
   `HwpxFixtures/inline-object-baseline`.
+- `paragraph-end-char-size`: 함초롬바탕 본문에 **문단 끝 글자**(CR)의 글자 모양 크기가 본문과
+  다른 문단(10pt + 16pt CR 한 줄·여러 줄, 16pt + 10pt CR, 10pt + 40pt CR, 줄 간격 종류 5종,
+  상대 크기·글꼴·문단 간격, 한 줄 끝 조합 3종, 빈 문단 2종, 글자처럼 취급 표 3종, 셀 안,
+  10·20·10 혼합, 쪽에 걸친 문단)을 실은 합성 HWPX를 Hancom Office HWP for macOS 12.30.0
+  build 6446으로 2026-09-21에 열어 `.hwp`·`.hwpx`로 저장. 문단 끝 글자의 크기가 문단 마지막
+  줄의 줄 상자와 비율 줄 간격 여분에 드는 규칙(#206)의 실물 근거다 — 한글이 저장한 줄 캐시
+  (README의 표)가 오라클이고 `HwpKitTests/FixtureParagraphEndCharSizeTests`가 줄 캐시를 지운
+  재조판을 그것과 대조한다. HWPX 쌍은 `HwpxFixtures/paragraph-end-char-size`.
 - `track-changes-native`: **한글 문서**(대상 프로그램 0)에 변경 추적 삽입·삭제 표식과
   일반 밑줄·취소선을 같은 줄에 실은 합성 HWPX(`track-changes`의 HWPX 변환본 기반)를 같은
   앱으로 2026-09-15에 열어 `.hwp`로 저장. 코퍼스의 유일한 변경 추적 실물이 MS 워드 호환

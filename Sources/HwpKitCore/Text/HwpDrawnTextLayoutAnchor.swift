@@ -27,18 +27,20 @@ public extension HwpDrawnTextLayout {
     ///
     /// MS 워드 호환 문서(`hwp.compatibleDocumentTarget` == `msWord`, #194)는 글꼴 줄 상자
     /// (`HwpMsWordLineBox`)의 베이스라인이다 — 함초롬돋움 10pt 줄이면 12.66pt(0.85 × 10 =
-    /// 8.5가 아니다). 문단의 마지막 줄에는 문단 끝 글자(CR)의 라틴 슬롯 글꼴 상자도 드는데
-    /// 이 변형은 CTLine만 보므로 그 상자를 모른다 — 문단 문자열이 있는 호출자는
-    /// `baselineAnchor(of:in:)`를 쓴다.
+    /// 8.5가 아니다). 문단의 마지막 줄에는 접힌 문단 끝 글자(CR)의 글자 모양도 드는데(한글
+    /// 문서는 그 기본 크기 #206, MS 워드 호환 문서는 라틴 슬롯 글꼴 상자 #194) 이 변형은
+    /// CTLine만 보므로 그것을 모른다 — 문단 문자열이 있는 호출자는 `baselineAnchor(of:in:)`를
+    /// 쓴다.
     static func baselineAnchor(of line: CTLine) -> CGFloat {
         lineMetrics(of: line).baselineAnchor
     }
 
     /// 문단 문자열 `attributedString` 안 줄 `line`의 베이스라인 앵커 — 줄이 문단의 마지막
-    /// 줄(`HwpDrawnLine.endsParagraph`)이면 MS 워드 호환 문단 끝 글자 상자
-    /// (`hwp.msWordParagraphEndBox`)를 포함한다 (한글 12.30 실측: Apple SD 산돌고딕 Neo
-    /// 10pt 한글 문단의 마지막 줄만 라틴 슬롯 Menlo의 베이스라인 11.04pt, 앞 줄은 10.80pt).
-    /// 한글 문서에서는 `baselineAnchor(of:)`와 같다.
+    /// 줄(`HwpDrawnLine.endsParagraph`)이면 접힌 문단 끝 글자(CR)의 글자 모양을 포함한다:
+    /// 한글 문서는 그 기본 크기(`hwp.paragraphEndBaseFontSize`, #206 — 한글 12.30 실측: 10pt
+    /// 본문 + 16pt CR 문단의 마지막 줄만 `baseline` 1360, 앞 줄은 850), MS 워드 호환 문서는
+    /// 그 글꼴 상자(`hwp.msWordParagraphEndBox`, #194 — Apple SD 산돌고딕 Neo 10pt 한글
+    /// 문단의 마지막 줄만 라틴 슬롯 Menlo의 베이스라인 11.04pt, 앞 줄은 10.80pt).
     static func baselineAnchor(
         of line: CTLine, in attributedString: NSAttributedString
     ) -> CGFloat {
@@ -94,8 +96,12 @@ public extension HwpDrawnTextLayout {
     /// MS 워드 호환 문서(#194)에서는 되돌리지 않는다 — 베이스라인 자체가 개체 바닥이고
     /// (`LineMetrics.baselineAnchor` = max(글꼴 상자 베이스라인, 개체 높이)) 상자는 그 아래
     /// 글꼴 상자의 descent 몫만큼 더 내려가므로 개체가 상자 높이와 같아지는 일이 없다.
-    static func underlineReturnDrop(of line: CTLine) -> CGFloat {
-        let metrics = lineMetrics(of: line)
+    ///
+    /// `endsParagraph`(`HwpDrawnLine.endsParagraph`)는 이 줄이 문단의 마지막 줄인지 — 그 줄은
+    /// 접힌 문단 끝 글자(CR)의 글자 모양도 상자에 넣으므로(#206) 개체가 상자를 정했는지가
+    /// 달라질 수 있다 (10pt 글 + 12pt 개체 + 16pt CR 줄의 상자는 12가 아니라 16).
+    static func underlineReturnDrop(of line: CTLine, endsParagraph: Bool = false) -> CGFloat {
+        let metrics = lineMetrics(of: line, endsParagraph: endsParagraph)
         guard metrics.delegateAscent > 0, metrics.delegateAscent >= metrics.boxHeight
         else { return 0 }
         return metrics.delegateAscent * HwpRenderTuning.Text.baselineLiftRatio
