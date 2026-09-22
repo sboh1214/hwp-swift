@@ -174,9 +174,11 @@ import XCTest
         // 공유 코어 대조 건너뜀도 2 늘었다 (`C1` 한 줄 세 그림·`M2 15-15` 바깥 50pt 상자가
         // 120pt에서 slight-overflow 한 줄, 실측 9), 같은 날 `paragraph-end-char-size`(#206,
         // 구역 1 + 문단 끝 글자 모양 48문단 + 셀 5문단) 추가로 문단 54·대조 98·컨테이너 5 증가
-        // (공유 코어 대조 건너뜀은 그대로다).
-        private static let expectedFixtureVisited = 345
-        private static let expectedFixtureMeasured = 662
+        // (공유 코어 대조 건너뜀은 그대로다), 2026-09-22 `hwp2007-decorations`(#210, 구역 1 +
+        // 한글 2007 호환 장식선 9문단) 추가로 문단 10·대조 20 증가 (컨테이너와 공유 코어 대조
+        // 건너뜀은 그대로다).
+        private static let expectedFixtureVisited = 355
+        private static let expectedFixtureMeasured = 682
         private static let expectedFixtureContainers = 78
         private static let minimumFixtureMultiLine = 60
         private static let maximumFixtureSharedCoreSkips = 7

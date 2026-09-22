@@ -109,6 +109,10 @@ final class FixturePreviewFidelityTests: XCTestCase {
         // MS 워드 호환 문서의 장식선(#187) — 글꼴 지표 기하는 12×16 그리드에 묻힌다.
         // 가드는 `FixtureDecorationLineRenderTests+Compat`의 픽셀 핀이고 여기 값은 유실 가드다.
         "compat-decorations": 0.001, // 실측 0.0002 (2026-09-15)
+        // 한글 2007 호환 문서의 장식선(#210) — 10~60pt 장식선 아홉 문단이라 12×16 그리드에
+        // 잉크가 고르게 퍼져 다른 장식선 픽스처보다 기본 잔차가 크다. 선 자리의 가드는
+        // `FixtureDecorationLineRenderTests+Hwp2007`의 픽셀 핀이고 여기 값은 유실 가드다.
+        "hwp2007-decorations": 0.005, // 실측 0.0038 (2026-09-22)
         "track-changes-native": 0.001, // 실측 0.0002 (2026-09-15)
         // 줄 상자보다 작은 글자처럼 취급 개체(#195) — 단색 40pt 그림과 표 테두리의 래스터 차가
         // 대부분이고 12×16 그리드는 개체의 0.6~4.5pt 이동에 둔감하다(수정 전 0.0029, 후 0.0033).

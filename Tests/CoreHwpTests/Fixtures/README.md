@@ -200,6 +200,14 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   취소선을 글꼴 지표로 놓는 규칙(#187)의 실물 근거이고, 같은 세션의 PDF 내보내기 좌표가
   `FixtureDecorationLineRenderTests+Compat`의 오라클이다. 두 글꼴이 결정론 resolver의
   글꼴과 같아 어느 기기에서든 같은 값으로 핀한다. HWPX 쌍은 `HwpxFixtures/compat-decorations`.
+- `hwp2007-decorations`: **한글 2007 호환 문서**(호환 문서 대상 프로그램 1)에 한글 슬롯
+  Apple SD 산돌고딕 Neo·라틴 슬롯 Menlo로 글자 아래 밑줄(10·20·40·60pt)·글자 위 밑줄
+  (40·60pt)·취소선(10·40pt)·글자 가운데 밑줄(40pt)을 문단마다 하나씩 실은 합성 HWPX를
+  Hancom Office HWP for macOS 12.30.0 build 6446으로 2026-09-22에 열어 `.hwp`·`.hwpx`로
+  저장. 한글이 이 호환 문서에서 장식선 두께를 **크기와 무관한 고정 0.36pt**로 놓고 밑줄은
+  한글 문서와 같은 가장자리(아래 0.15em·위 0.85em)에 얹는 규칙(#210)의 실물 근거이며,
+  같은 세션의 PDF 내보내기 좌표(README의 표)가 렌더 핀의 오라클이다. 크기 축 4단을 한
+  문서에 실어 두께의 크기 비례 여부를 가른다. HWPX 쌍은 `HwpxFixtures/hwp2007-decorations`.
 - `inline-object-baseline`: 함초롬바탕 40pt 본문에 줄 상자보다 **작은** 글자처럼 취급
   그림(4~50pt 7단)·1칸 표를 바깥 여백·상대 크기 50%·고정 줄 간격·10pt 줄·한 줄 세 그림·
   자리 차지 표의 셀 안 조건으로 실은 합성 HWPX를 Hancom Office HWP for macOS 12.30.0 build
