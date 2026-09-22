@@ -1313,6 +1313,11 @@ private extension HwpPaginator {
 
     /// 나머지의 줄 `lineIndex`까지 놓을 조각이 걷을 각주의 예약 높이 (#207) — 귀속 문맥이
     /// 없으면 0 (그때는 문단 전체 예약이 `reservedFootnoteHeight`로 든다).
+    ///
+    /// 비최종 조각은 **증분**으로 잰다 (PR 리뷰 2): 후보 줄마다 범위가 `0..<1`, `0..<2`처럼 늘 때
+    /// 앞 서수를 다시 훑으면 마커 줄 N개에 N(N+1)/2 순회다 — 커서(`reservationCursor`)가 앞 후보의
+    /// 누적 예약·번호 상태를 들고 새로 든 서수만 더한다. 최종 조각은 범위 밖 컨테이너까지 재는
+    /// 다른 술어라 한 번 통째로 잰다(메모).
     private func fragmentFootnoteReservation(
         through lineIndex: Int,
         of remainder: HwpFragmentRemainder,
@@ -1321,14 +1326,31 @@ private extension HwpPaginator {
         guard let fragmentFootnotes else { return 0 }
         let ordinals = fragmentFootnotes.ordinals(through: lineIndex, of: remainder)
         let isLast = lineIndex >= remainder.lines.count - 1
-        return fragmentFootnotes.reservation(for: ordinals, isLast: isLast) {
+        guard isLast else {
+            var cursor = fragmentFootnotes.reservationCursor
+                ?? footnoteCoordinator.fragmentReservationCursor(from: ordinals.lowerBound)
+            if cursor.upperBound > ordinals.upperBound {
+                cursor = footnoteCoordinator.fragmentReservationCursor(from: ordinals.lowerBound)
+            }
+            let total = footnoteCoordinator.extendFragmentReservation(
+                &cursor,
+                for: fragmentFootnotes.paragraph,
+                through: ordinals.upperBound,
+                environment: noteEnvironment,
+                childParagraphs: Self.childParagraphs(of:),
+                numbering: currentParagraphScope
+            )
+            fragmentFootnotes.reservationCursor = cursor
+            return total
+        }
+        return fragmentFootnotes.reservation(for: ordinals, isLast: true) {
             footnoteCoordinator.anticipatedFootnoteHeight(
                 for: fragmentFootnotes.paragraph,
                 environment: noteEnvironment,
                 childParagraphs: Self.childParagraphs(of:),
                 numbering: currentParagraphScope,
                 ordinals: ordinals,
-                collectsNested: isLast
+                collectsNested: true
             )
         }
     }
@@ -2035,21 +2057,24 @@ private extension HwpPaginator {
             lines: lines, textHeight: textHeight,
             measuredWidth: currentColumnFrame.width, heightIsMeasured: placement.heightIsMeasured
         )
+        // 이 문단 말고는 아무것도 없는 단인지 — 진입한 빈 단, 또는 단·쪽을 넘긴 뒤의 새 단.
+        // 커서(`contentHeightUsed`)로는 못 가른다: 통째로 넘긴 새 단 머리에 문단 위 간격이
+        // 다시 실려(`advancePastUnplacedFragment`·`moveWholeParagraphToNextColumn`) 커서가
+        // 양수라도 단은 비어 있다. 분할 규칙의 빈 단 예외(문단 보호 무시)와 아래 진행 보장이 같은
+        // 술어를 봐야 한다 — 부분 채운 단에서 시작한 문단 보호 문단이 새 단마다 0줄을 내면 쪽
+        // 상한까지 빈 쪽을 만든다 (PR 리뷰). 한 줄 문단을 통째로 옮긴 뒤 좁은 단에서 여러 줄로
+        // 다시 재어 조각 루프로 넘어온 경우도 같다 (PR 리뷰 2: 진입 시 값을 그대로 쓰면 빈 둘째
+        // 단을 건너뛴다).
+        var columnHoldsOnlyThisParagraph = startedEmpty
         if lines.count <= 1 || textHeight <= 0,
            placeSingleLineParagraph(
-               &remainder, startedEmpty: startedEmpty, attributedString: attributedString,
-               placement: placement
+               &remainder, columnHoldsOnlyThisParagraph: &columnHoldsOnlyThisParagraph,
+               attributedString: attributedString, placement: placement
            )
         {
             return
         }
 
-        // 이 문단 말고는 아무것도 없는 단인지 — 진입한 빈 단, 또는 단·쪽을 넘긴 뒤의 새 단.
-        // 커서(`contentHeightUsed`)로는 못 가른다: 통째로 넘긴 새 단 머리에 문단 위 간격이
-        // 다시 실려(`advancePastUnplacedFragment`) 커서가 양수라도 단은 비어 있다. 분할 규칙의
-        // 빈 단 예외(문단 보호 무시)와 아래 진행 보장이 같은 술어를 봐야 한다 — 부분 채운 단에서
-        // 시작한 문단 보호 문단이 새 단마다 0줄을 내면 쪽 상한까지 빈 쪽을 만든다 (PR 리뷰).
-        var columnHoldsOnlyThisParagraph = startedEmpty
         while !remainder.isExhausted {
             let isAtParagraphStart = remainder.isAtParagraphStart
             let available = max(1, effectiveContentHeight - reservedFootnoteHeight)
@@ -2115,9 +2140,12 @@ private extension HwpPaginator {
     /// flush한다 — 빈 단을 건너뛰지 않는다 (R54 #3). 각주 몫은 조각 귀속 문맥이 있으면 그 줄의
     /// 각주 예약이다 (#207). 통째로 옮기며 다시 재어 여러 줄이 됐으면 false를 돌려 조각 루프가 이
     /// 단부터 나눠 놓는다 (PR 리뷰) — 통째로 놓으면 목적 단보다 큰 상자가 여백·뒤 내용으로 넘친다.
+    ///
+    /// `columnHoldsOnlyThisParagraph`는 진입 시 빈 단 여부로 들어와, 통째로 옮기면 참이 된다 —
+    /// 옮긴 새 단은 이 문단만 든 단이다 (PR 리뷰 2).
     private func placeSingleLineParagraph(
         _ remainder: inout HwpFragmentRemainder,
-        startedEmpty: Bool,
+        columnHoldsOnlyThisParagraph: inout Bool,
         attributedString: NSAttributedString,
         placement: HwpFragmentPlacement
     ) -> Bool {
@@ -2126,7 +2154,7 @@ private extension HwpPaginator {
         let noteReservation = fragmentFootnoteReservation(
             through: 0, of: remainder, placement.fragmentFootnotes
         )
-        if startedEmpty {
+        if columnHoldsOnlyThisParagraph {
             if placement.beforeGap + textHeight + noteReservation > usableHeight {
                 contentHeightUsed = 0
                 paragraphAnchorTop = currentColumnFrame.minY
@@ -2135,6 +2163,7 @@ private extension HwpPaginator {
             moveWholeParagraphToNextColumn(
                 &remainder, attributedString: attributedString, placement: placement
             )
+            columnHoldsOnlyThisParagraph = true
         }
         guard remainder.lines.count <= 1 else { return false }
         appendBlock(

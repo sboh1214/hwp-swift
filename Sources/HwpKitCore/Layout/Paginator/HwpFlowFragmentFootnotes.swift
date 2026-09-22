@@ -41,8 +41,11 @@ final class HwpFlowFragmentFootnotes {
     private var lineOrdinalEnds: [Int] = []
     private var lineOrdinalEndsStamp = -1
     /// 같은 쪽·같은 커서에서 잰 예약의 메모 — 후보 줄마다 잰 값이 같은 범위면 같다. 커서가
-    /// 움직이면(조각을 걷으면) 비운다.
+    /// 움직이면(조각을 걷으면) 비운다. 최종 조각(범위 밖 컨테이너까지 재는 술어)만 쓴다.
     private var reservationMemo: [ReservationKey: CGFloat] = [:]
+    /// 비최종 조각 예약의 증분 커서 (PR 리뷰 2) — 후보 줄마다 늘어나는 범위를 앞 후보의 누적
+    /// 상태에서 이어 잰다. 메모와 같은 때 비운다.
+    var reservationCursor: HwpFootnoteCoordinator.FragmentReservationCursor?
 
     private struct ReservationKey: Hashable {
         let upperBound: Int
@@ -113,6 +116,7 @@ final class HwpFlowFragmentFootnotes {
     /// 쪽의 각주 상태(구분선 오버헤드·이월 예약)로 다시 재야 한다.
     func invalidateReservations() {
         reservationMemo = [:]
+        reservationCursor = nil
     }
 
     /// 줄별 서수 끝을 (필요하면) 다시 만든다 — 줄 범위와 마커 범위가 둘 다 위치 오름차순이라

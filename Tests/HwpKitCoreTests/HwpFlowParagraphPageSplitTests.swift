@@ -454,6 +454,32 @@ import XCTest
                 .to(beTrue())
         }
 
+        /// 한 줄 문단을 통째로 좁은 단으로 옮겨 여러 줄로 다시 잰 뒤에도 그 단은 이 문단만 든 빈
+        /// 단이다 — 진입 시의 빈 단 여부를 그대로 쓰면 위 간격이 실린 새 단을 점유된 것으로 보아
+        /// 문단 보호가 빈 둘째 단을 건너뛴다 (PR 리뷰 2). 61자/30자 비등폭 단, 본문 40pt.
+        func testKeepLinesTogetherSplitsOnTheFreshColumnAfterAWholeMoveRemeasure() async throws {
+            let index = Self.index(property1: 1 << 18, spacingTop: 2000)
+            let leading = try HwpSynthetic.textParagraph("앞")
+            let host = try HwpSynthetic.styledParagraph(String(repeating: "가", count: 61), paraShapeId: 1)
+            // 첫 단(61자)에 앞 문단 한 줄(16) 뒤 남은 24pt에 간격 10 + 한 줄 16이 안 들어가 둘째
+            // 단(30자)으로 옮겨져 세 줄이 되고, 간격 10 뒤 한 줄만 들어가 나머지는 다음 쪽이다.
+            let (paginator, widths) = try MeasuredLineRemeasureSupport.columns(
+                charactersPerLine: [61, 30], contentHeight: 40,
+                bodyParagraphs: [leading, host, try HwpSynthetic.textParagraph("뒤 문단")],
+                index: index
+            )
+            let pages = try await Pages.pages(of: paginator)
+            expect(pages.count) == 2
+            guard pages.count == 2 else { return }
+            let first = pages[0].blocks.filter {
+                $0.kind == .text && $0.source?.sectionIndex == 0 && $0.source?.paragraphIndex == 2
+            }
+            expect(first.count) == 1
+            expect(first.first?.frame.minX).to(beCloseTo(widths[0] + 10, within: 0.05))
+            expect(first.first?.frame.minY).to(beCloseTo(10, within: 0.01))
+            expect(first.first?.attributedString?.length) == 30
+        }
+
         /// 두 줄도 안 들어가는 단에서 외톨이줄 보호가 매번 0줄을 내도 진행 보장이 한 줄씩 놓는다.
         func testWidowOrphanProtectionStillMakesProgressInAColumnShorterThanTwoLines() async throws {
             let index = Self.index(property1: 1 << 16, spacingTop: 800)

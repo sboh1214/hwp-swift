@@ -195,6 +195,53 @@ extension HwpFootnoteCoordinator {
         var stopped: Bool
     }
 
+    /// 흐름 분할 비최종 조각 예약의 증분 커서 (#207 PR 리뷰 2) — 후보 줄마다 서수 범위가 늘 때
+    /// 앞 서수를 다시 훑지 않고 `upperBound`부터 새로 든 서수만 잰다. 번호 미리보기·실린 각주
+    /// 수·멈춤 상태를 `state`가, 각주 본문 높이 합을 `body`가 든다.
+    struct FragmentReservationCursor {
+        var state: PreflightState
+        var body: CGFloat = 0
+        var upperBound: Int
+    }
+
+    /// `lowerBound`부터 잴 새 커서 — 카운터·멈춤 상태는 지금 쪽의 것이다.
+    func fragmentReservationCursor(from lowerBound: Int) -> FragmentReservationCursor {
+        FragmentReservationCursor(
+            state: PreflightState(preview: footnoteCounter, stopped: reservationStopsAtSplit),
+            upperBound: lowerBound
+        )
+    }
+
+    /// 커서를 `upperBound`까지 늘리고(비최종 조각 술어 — 범위 안 직접 각주와 그 안 중첩 각주만,
+    /// 범위 안 컨테이너는 번호만 소비) 예약 총높이를 돌려준다. `anticipatedFootnoteHeight`의
+    /// `collectsNested: false`와 같은 값을 누적으로 낸다.
+    mutating func extendFragmentReservation(
+        _ cursor: inout FragmentReservationCursor,
+        for paragraph: CoreHwp.HwpParagraph,
+        through upperBound: Int,
+        environment: Environment,
+        childParagraphs: ChildParagraphs,
+        numbering: HwpNumberingScope? = nil
+    ) -> CGFloat {
+        if upperBound > cursor.upperBound {
+            cursor.body += anticipatedFootnoteBodyHeight(
+                for: paragraph,
+                state: &cursor.state,
+                environment: environment,
+                childParagraphs: childParagraphs,
+                numbering: numbering,
+                ordinals: cursor.upperBound ..< upperBound,
+                collectsNested: false
+            )
+            cursor.upperBound = upperBound
+        }
+        return Self.preflightTotal(
+            body: cursor.body, landed: cursor.state.landed,
+            metrics: footnoteReservationMetrics(environment: environment),
+            firstOnPage: pendingFootnotes.isEmpty
+        )
+    }
+
     /// ordinals·collectsNested: 흐름 분할 **조각**의 예약 (#207) — `collectFootnotes`와 같은
     /// 필터다. 비최종 조각(`collectsNested == false`)은 범위 안 top-level 각주와 그 각주 안
     /// 중첩 각주만, 최종 조각은 범위 안 각주에 더해 **범위 밖** 컨테이너(글상자·도형)의 중첩
@@ -407,26 +454,28 @@ extension HwpFootnoteCoordinator {
         return total
     }
 
-    /// 컨테이너 안(깊이 3까지, 표 셀 제외)의 각주 수 — 비최종 조각 예약의 번호 미리보기용.
+    /// 컨테이너 안의 각주 수 — 비최종 조각 예약의 번호 미리보기용. 수집(`collectFootnotes(depth:)`)과
+    /// 같은 순회다 (PR 리뷰 2): 깊이 `depth`의 컨테이너는 그 자식 문단(깊이 `depth + 1`)의 직접
+    /// 각주를 세고, 각주 컨트롤을 포함한 모든 컨테이너(표 셀 제외)로 내려가되 자식 문단의 깊이가
+    /// 3을 넘는 곳까지는 가지 않는다 — 각주 안 각주도 번호를 소비한다.
     private static func nestedFootnoteCount(
-        in ctrl: CoreHwp.HwpCtrlId, childParagraphs: ChildParagraphs, depth: Int = 1
+        in ctrl: CoreHwp.HwpCtrlId, childParagraphs: ChildParagraphs, depth: Int = 0
     ) -> Int {
         guard depth < 3 else { return 0 }
         var count = 0
         for (nested, _) in childParagraphs(ctrl) {
             for child in nested.ctrlHeaderArray ?? [] {
-                switch child {
-                case let .footnote(list):
-                    if !list.listArray.flatMap(\.paragraphArray).isEmpty {
-                        count += 1
-                    }
-                case .table:
-                    continue
-                default:
-                    count += nestedFootnoteCount(
-                        in: child, childParagraphs: childParagraphs, depth: depth + 1
-                    )
+                if case let .footnote(list) = child,
+                   !list.listArray.flatMap(\.paragraphArray).isEmpty
+                {
+                    count += 1
                 }
+                if case .table = child {
+                    continue
+                }
+                count += nestedFootnoteCount(
+                    in: child, childParagraphs: childParagraphs, depth: depth + 1
+                )
             }
         }
         return count
