@@ -66,7 +66,7 @@ extension HwpTextRunBuilder {
         else { return }
         let resolved = resolvedShape(id: shapeId, paragraph: paragraph)
         // 곱하는 크기는 라틴 슬롯 상대 크기를 반영한 글꼴 크기가 아니라 글자 모양 기본
-        // 크기다 — 한글은 MS 워드 호환 상자를 기본 크기로 잰다 (PR 리뷰 실측, `msWordBoxSize`).
+        // 크기다 — 한글은 MS 워드 호환 상자를 기본 크기로 잰다 (PR 리뷰 실측, `decorationBaseFontSize`).
         let box = HwpMsWordLineBox.metrics(of: font)
             .scaled(by: HwpUnits.points(fromHwpUnit: resolved.shape.baseSize))
         output.addAttribute(

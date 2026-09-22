@@ -383,11 +383,11 @@ extension HwpDecorationLineGeometryTests {
         expect(fragment[1] - alone[1]).to(beCloseTo(0, within: 0.01), description: "조각 끝 줄")
     }
 
-    /// 한글 2007 호환(raw 1)·훈민정음(raw 4) 문서의 run은 한글 문서 기하다 — MS 워드
-    /// 값과 갈린다 (한글 실측: 훈민정음 = 한글 문서 그대로, 한글 2007은 별도 기하이지만
-    /// 표본이 한 크기뿐이라 아직 한글 문서와 같이 다룬다).
-    func testOtherCompatibleTargetsUseTheNativeGeometry() throws {
-        for raw: UInt32 in [1, 4] {
+    /// 훈민정음 호환(raw 4) 문서의 run은 한글 문서 기하다 — MS 워드 값과 갈린다 (한글
+    /// 실측: 훈민정음 = 한글 문서 그대로). 한글 2007 호환(raw 1)은 #210에서 자기 기하로
+    /// 갈렸다 — `HwpDecorationLineGeometryTests+Hwp2007`가 잡는다.
+    func testHunminUsesTheNativeGeometry() throws {
+        for raw: UInt32 in [4] {
             let attributes = run(
                 "Menlo", size: 20, color: Self.cyan, underline: true, target: NSNumber(value: raw)
             )

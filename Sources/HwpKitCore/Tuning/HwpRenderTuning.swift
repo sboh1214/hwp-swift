@@ -86,6 +86,8 @@ public enum HwpRenderTuning {
         /// 줄어든 크기 × 이 배율이다 (#179, 2026-09-15 실측: 10pt 위 첨자 6.36pt
         /// 글리프가 4.32pt 올라간 표본에서 선은 6.60pt 위 = 4.32 + 0.35 × 6.36, 장치
         /// 0.12pt 양자화) — 글자 위치(`hh:offset`)로 옮겨진 몫은 따라가지 않는다.
+        /// 한글 2007 호환 문서(`hwp200X`)도 중심은 이 배율 그대로이고 두께만 고정
+        /// 0.36pt다 (#210 실측: 22개 크기에서 0.349~0.357).
         /// 검증: `FixtureDecorationLineRenderTests`(+`+Script`) 픽셀 핀 + fidelity 전수.
         public static let strikethroughCenterRatio: CGFloat = 0.35
 
@@ -191,6 +193,42 @@ public enum HwpRenderTuning {
         /// `track-changes` 실물의 삭제선 +0.29em (#136·#176) 은 함초롬돋움의 이 값이다.
         /// 검증: `HwpDecorationLineGeometryTests+Compat` 위치 + `HwpRenderTuningTests`.
         public static let msWordStrikethroughAscentRatio: CGFloat = 0.273
+
+        /// 한글 2007 호환 문서(`HwpCompatibleDocumentTarget.hwp200X`)의 장식선 두께
+        /// (pt) — 글자 아래·위 밑줄, 취소선(글자 가운데 밑줄), 변경 추적 삽입/삭제선이
+        /// 모두 글자 크기와 **무관한 고정 pt**다.
+        /// 실측: 한글 12.30.0 build 6446 (2026-09-22, #210) `CharShape` HWPX 기반 합성
+        /// 문서(`targetProgram="HWP200X"`, `hp:linesegarray` 제거)를 PDF로 내보내 벡터
+        /// 좌표를 읽었다 — 5·6·7·8·9·10·11·12·14·16·18·20·24·28·32·40·48·56·64·72·80·
+        /// 100pt **22개 크기 전부 0.36pt**(600dpi 장치 단위 3개)이고 함초롬돋움·함초롬
+        /// 바탕·Apple SD 산돌고딕 Neo·Helvetica·Times New Roman·Menlo·Courier New·
+        /// Baskerville·궁서 9개 글꼴이 같다. 한글 문서의 `decorationLineThicknessRatio`
+        /// (0.04em — 40pt에서 1.56pt)와 달리 크기를 따라가지 않는다. 쪽을 0.8배로 줄여
+        /// 내보낸 변경 추적 표본의 0.24pt는 0.36 × 0.8 = 0.288이 장치 단위 2개로 떨어진
+        /// 값이라 이 두께는 **쪽 좌표계의 길이**다.
+        /// 검증: `HwpDecorationLineGeometryTests+Hwp2007` 두께 + `HwpRenderTuningTests`.
+        public static let hwp200XDecorationLineThickness: CGFloat = 0.36
+
+        /// 한글 2007 호환 문서의 '글자 아래' 밑줄·변경 추적 삽입 밑줄 기준 가장자리 —
+        /// 선의 **위 가장자리**가 베이스라인 아래 글자 크기 × 이 배율에 닿고 선은 그
+        /// 아래로 두께만큼 그려진다 (중심은 두께의 절반만큼 더 아래다).
+        /// 실측: 같은 스윕 — 22개 크기의 중심이 −(0.15em + 0.18pt)에 장치 양자화
+        /// 0.12pt 안으로 들어맞는다 (100pt −15.12 = −(14.994 + 0.18), 40pt −6.12,
+        /// 20pt −3.12, 10pt −1.56). 고정 비율 −0.1545em은 10개, 한글 문서의 −0.17em은
+        /// 13개 크기에서 한 단위를 넘겨 어긋난다. 한글 문서의
+        /// `underlineBelowCenterRatio`(0.17)도 이 가장자리 + 두께 절반
+        /// (0.15 + 0.04 / 2)이라 두 갈래는 **가장자리가 같고 두께만 다르다**.
+        /// 검증: `HwpDecorationLineGeometryTests+Hwp2007` 위치 + `HwpRenderTuningTests`.
+        public static let hwp200XUnderlineBelowEdgeRatio: CGFloat = 0.15
+
+        /// 한글 2007 호환 문서의 '글자 위' 밑줄 기준 가장자리 — 선의 **아래 가장자리**가
+        /// 베이스라인 위 글자 크기 × 이 배율에 닿는다.
+        /// 실측: 같은 스윕 — 중심이 0.85em + 0.18pt다 (100pt +85.08 = 84.966 + 0.18,
+        /// 80pt +68.16, 40pt +34.20, 20pt +17.16; 한글 문서의 0.87em으로는 13개 크기가
+        /// 어긋난다). 한글 문서의 `underlineAboveCenterRatio`(0.87) = 0.85 + 0.04 / 2로
+        /// 같은 가장자리다.
+        /// 검증: `HwpDecorationLineGeometryTests+Hwp2007` 위치 + `HwpRenderTuningTests`.
+        public static let hwp200XUnderlineAboveEdgeRatio: CGFloat = 0.85
     }
 
     /// 선 모양 (표 25 `HwpBorderType`) — 밑줄·취소선·표 셀 테두리·단 구분선의 점선·파선·

@@ -17,13 +17,15 @@ public enum HwpAttributedStringKey {
     /// 그려 이중선이 된다 (CharShape 실물 대조 2026-07-10)
     public static let strikethroughStyle = NSAttributedString.Key("hwp.strikethroughStyle")
     /// 호환 문서의 대상 프로그램 (표 55, NSNumber = `HwpCompatibleDocumentTarget.rawValue`,
-    /// #187) — 조판(`HwpTextRunBuilder.attributes(for:script:)`)이 한글 문서가 아닌
+    /// #187·#210) — 조판(`HwpTextRunBuilder.attributes(for:script:)`)이 한글 문서가 아닌
     /// 문서의 **모든 run**에 싣는다 (한글 문서·record 없음·미지 raw 값은 키 없음).
-    /// 렌더러(`HwpPageLayerDecorations`)는 `msWord`에서만 밑줄·취소선·변경 추적
-    /// 표시선을 글꼴 지표 기하(`HwpDecorationLineGeometry`)로 그리고, 나머지 값은
-    /// 한글 문서와 같이 글자 크기 비례로 그린다. 세로 배치(`HwpDrawnTextLayout.LineMetrics`,
-    /// #194)도 `msWord`에서만 줄 상자·베이스라인·전진량을 글꼴 줄 상자(`HwpMsWordLineBox`)로
-    /// 잡는다. CoreText가 대체 글꼴로 쪼갠 run에도 그대로 남으므로 대체 글꼴 run의 선·상자도
+    /// 렌더러(`HwpPageLayerDecorations`)는 `msWord`에서 밑줄·취소선·변경 추적 표시선을
+    /// 글꼴 지표 기하(`HwpDecorationLineGeometry`)로, `hwp200X`에서 글자 크기 비례 자리의
+    /// 고정 0.36pt 선으로 그리고 (`isHwp2007Compatible`), 나머지 값은 한글 문서와 같이
+    /// 글자 크기 비례 0.04em 선으로 그린다. 세로 배치
+    /// (`HwpDrawnTextLayout.LineMetrics`, #194)는 **`msWord`에서만** 줄 상자·베이스라인·
+    /// 전진량을 글꼴 줄 상자(`HwpMsWordLineBox`)로 잡는다 — `hwp200X`의 줄 상자는 한글
+    /// 문서와 같다 (장식선만 갈린다). CoreText가 대체 글꼴로 쪼갠 run에도 그대로 남으므로 대체 글꼴 run의 선·상자도
     /// 같은 갈래를 탄다.
     public static let compatibleDocumentTarget =
         NSAttributedString.Key("hwp.compatibleDocumentTarget")
