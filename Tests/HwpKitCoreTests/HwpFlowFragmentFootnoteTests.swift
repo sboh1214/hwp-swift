@@ -159,7 +159,9 @@ import XCTest
         }
 
         /// 쪽마다 각주 번호를 새로 시작하는 구역(표 134 numberingMode 2)에서는 조각별 귀속을 못
-        /// 하므로(뒤 조각 참조 번호를 못 고친다) 부분 적합 문단을 나누지 않고 통째로 옮긴다.
+        /// 하므로(뒤 조각 참조 번호를 못 고친다) 각주 문단을 나누지 않고 통째로 옮긴다. 미주만 있는
+        /// 문단은 그 모드에서도 나눈다 (PR 리뷰) — 미주는 쪽에 실리지 않고 번호도 쪽마다 되돌리지
+        /// 않는다.
         func testPerPageNumberingKeepsTheWholeParagraphTogether() async throws {
             // 남은 60pt: 보통이면 두 줄 + 각주가 들어간다.
             let continuous = try await Self.place(Self.host(markerLine: 0), remaining: 60)
@@ -170,6 +172,22 @@ import XCTest
             expect(perPage.fragments[0]).to(beNil())
             expect(perPage.fragments[1]).toNot(beNil())
             expect(perPage.notes[1].count) == 1
+
+            var endnoteHost = try HwpSynthetic.splitParagraphWithNoteMarkers(
+                lines: (0 ..< 3).map { (characters: 5, marker: $0 == 0) }, segments: []
+            )
+            endnoteHost.ctrlHeaderArray = [
+                .endnote(HwpSynthetic.listControl(
+                    ctrlId: .endnote,
+                    paragraphs: [HwpSynthetic.noteParagraph(
+                        " 미주 본문",
+                        autoNumber: HwpSynthetic.autoNumberControl(kind: 2, decorationTail: ")")
+                    )]
+                )),
+            ]
+            let endnotes = try await Self.place(endnoteHost, remaining: 40, footnoteNumberingMode: 2)
+            expect(endnotes.fragments[0]).toNot(beNil())
+            expect(endnotes.fragments[1]).toNot(beNil())
         }
 
         /// 다단 밴드에서는 조각별 귀속을 쓰지 않는다 — 각주 영역이 쪽 폭 하단이라 뒤 단 조각이 걷은

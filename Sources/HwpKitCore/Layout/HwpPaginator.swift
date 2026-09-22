@@ -1211,9 +1211,11 @@ private extension HwpPaginator {
         updateBandTrailingSpacing(for: split.paragraph)
     }
 
-    /// 부분 채운 1단 쪽에서 문단을 줄 단위로 나눌 수 있는지 (#207). 각주가 있는데 조각별
+    /// 부분 채운 1단 쪽에서 문단을 줄 단위로 나눌 수 있는지 (#207). **각주**가 있는데 조각별
     /// 귀속을 못 하면(쪽별 번호 모드 2·마커 어긋남) 나누지 않는다 — 첫 조각의 각주가 마지막 조각
-    /// 쪽에 실리고 뒤 조각의 참조 번호가 낡는다. 저장본 줄 캐시 높이를 따르는 문단은 CT 줄 수가
+    /// 쪽에 실리고 뒤 조각의 참조 번호가 낡는다. 미주만 있는 문단은 나눈다 (PR 리뷰): 미주는 쪽이
+    /// 아니라 문서·구역 끝에 모이고 번호도 쪽마다 되돌리지 않으므로 문단 단위 수집이면 충분하다.
+    /// 저장본 줄 캐시 높이를 따르는 문단은 CT 줄 수가
     /// 캐시 줄 수와 같을 때만 나눈다 — 다르면 마지막 줄의 전진량이 캐시 잔여(1pt 하한)라 실제로
     /// 안 들어가는 줄까지 들어간다고 판정한다. 통째 이동은 종전 동작이라 격차가 늘지 않는다.
     ///
@@ -1223,7 +1225,7 @@ private extension HwpPaginator {
     /// 뒤 조각에 그대로 남는다 (PR 리뷰). 종전 통째 이동은 문단과 그것들을 같은 쪽에 두었다.
     private func canSplitAtEntry(_ split: FlowSplitInput, cacheHeightUsed: Bool) -> Bool {
         guard split.paragraphFrame.lines.count > 1,
-              split.fragmentFootnotes != nil || !Self.hasNotes(split.paragraph),
+              split.fragmentFootnotes != nil || !Self.hasFootnotes(split.paragraph),
               !hasParagraphBoundControls(split.paragraph)
         else { return false }
         return !cacheHeightUsed
@@ -1231,17 +1233,33 @@ private extension HwpPaginator {
             == split.paragraph.paraLineSeg.paraLineSegInternalArray.count
     }
 
-    /// 문단이 각주·미주를 품는지 (직접 또는 컨테이너 안) — 예약 높이 0을 "각주 없음"으로 읽으면
-    /// 이월 각주가 분할 지점에서 멈춘 쪽(`reservationStopsAtSplit`)에서 각주 문단이 새는다 (PR 리뷰).
-    static func hasNotes(_ paragraph: CoreHwp.HwpParagraph) -> Bool {
+    /// 문단이 **각주**를 품는지 (직접 또는 컨테이너 안 — 미주 안 각주 포함) — 예약 높이 0을 "각주
+    /// 없음"으로 읽으면 이월 각주가 분할 지점에서 멈춘 쪽(`reservationStopsAtSplit`)에서 각주 문단이
+    /// 새는다 (PR 리뷰). 미주는 세지 않는다 — 쪽에 실리지 않고 번호도 쪽마다 되돌리지 않는다.
+    static func hasFootnotes(_ paragraph: CoreHwp.HwpParagraph) -> Bool {
         (paragraph.ctrlHeaderArray ?? []).contains { ctrl in
-            switch ctrl {
-            case .footnote, .endnote:
-                true
-            default:
-                containsNotes(ctrl)
+            if case .footnote = ctrl {
+                return true
+            }
+            return containsFootnotes(ctrl)
+        }
+    }
+
+    /// 컨트롤이 품은 문단(셀·글상자·미주 문단·자식) 어딘가에 **각주**가 있는지 — `containsNotes`와
+    /// 같은 순회에서 미주만 뺀 것.
+    nonisolated static func containsFootnotes(_ ctrl: CoreHwp.HwpCtrlId, depth: Int = 0) -> Bool {
+        guard depth < maximumContainerDepth else { return false }
+        for (nested, _) in childParagraphSequence(of: ctrl) {
+            for child in nested.ctrlHeaderArray ?? [] {
+                if case .footnote = child {
+                    return true
+                }
+                if containsFootnotes(child, depth: depth + 1) {
+                    return true
+                }
             }
         }
+        return false
     }
 
     /// 문단 머리에 묶여 마지막 조각 뒤에 문단 단위로 나오는 컨트롤이 있는지 — 글자처럼 취급이
