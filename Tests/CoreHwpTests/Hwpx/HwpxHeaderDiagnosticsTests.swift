@@ -433,9 +433,10 @@ final class HwpxHeaderDiagnosticsTests: XCTestCase {
         let names = docInfo.unknownRecords.compactMap {
             String(bytes: $0.payload, encoding: .utf8)
         }
-        expect(names).to(contain("breakSetting"))
         expect(names).to(contain("autoSpacing"))
-        // 소비되는 자식은 강등되지 않는다 (음성 대조).
+        // 소비되는 자식은 강등되지 않는다 (음성 대조) — breakSetting은 쪽 나눔 보호
+        // 비트를 옮기는 잎이다 (#207).
+        expect(names).toNot(contain("breakSetting"))
         expect(names).toNot(contain("align"))
         expect(names).toNot(contain("margin"))
         expect(names).toNot(contain("lineSpacing"))

@@ -7,8 +7,8 @@ import XCTest
 #if canImport(CoreText)
     /// 다단에서의 개요 쪽 귀속 (#77). 1단 경로의 같은 계약은
     /// `HwpOutlineNavigationTests.testHeadingOnPageBoundaryReportsTheStartingPage`가
-    /// 본다 — 그쪽은 미루기(`placeFlowParagraph`의 `false` 반환)로 쪽이 재계산되므로
-    /// 애초에 낡을 여지가 없다.
+    /// 본다 — 그쪽은 첫 줄이 들어가면 진입 쪽에 남고(#207) 한 줄도 안 들어가면 미루기
+    /// (`placeFlowParagraph`의 `false` 반환)로 쪽이 재계산되므로 애초에 낡을 여지가 없다.
     final class HwpOutlineColumnPageTests: XCTestCase {
         /// 개요 쪽은 문단의 **첫 조각이 놓인** 쪽이다.
         ///

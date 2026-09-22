@@ -1088,25 +1088,48 @@ private extension HwpPaginator {
         // 프레임의 첫 문단)에 paragraphSpacingBefore를 렌더하지 않는다 — 모든 배치
         // 경로(다단·초과 조각·단일 블록)가 텍스트 앞에서 커서로 소비한다 (P1, #1).
         let beforeGap = suppressedGap > 0 ? 0 : authoredBeforeGap(of: paragraph)
+        // 쪽·단 경계의 분할 규칙(외톨이줄 보호·문단 보호)과 조각별 각주 귀속 문맥 (#207).
+        // 귀속 문맥이 있으면 각주 예약은 조각 루프가 줄마다 그 조각 범위로 재므로 문단 전체
+        // 예약(`anticipatedFootnotes`)은 통째 배치 판정에만 쓴다.
+        let fragmentFootnotes = flowFragmentFootnotes(
+            for: paragraph, attributedString: attributedString
+        )
+        let split = FlowSplitInput(
+            paragraph: paragraph,
+            attributedString: attributedString,
+            paragraphFrame: paragraphFrame,
+            paragraphHeight: paragraphHeight,
+            beforeGap: beforeGap,
+            cachedTrailingSpacing: cachedTrailingSpacing,
+            reservedFootnoteHeight: fragmentFootnotes == nil ? anticipatedFootnotes : 0,
+            splitPolicy: HwpParagraphSplitPolicy(paraShape: index.paraShapeOrDefault(for: paragraph)),
+            fragmentFootnotes: fragmentFootnotes
+        )
         if columnFrames.count > 1 {
-            placeMultiColumnParagraph(
-                paragraph,
-                attributedString: attributedString,
-                paragraphFrame: paragraphFrame,
-                paragraphHeight: paragraphHeight,
-                anticipatedFootnotes: anticipatedFootnotes,
-                beforeGap: beforeGap,
-                cachedTrailingSpacing: cachedTrailingSpacing
-            )
+            placeMultiColumnParagraph(split)
             return true
         }
         if contentHeightUsed > 0,
            contentHeightUsed + paragraphHeight
            > effectiveContentHeight - anticipatedFootnotes
         {
-            // 글줄 앞에 놓은 표(#190)는 다시 처리해도 다시 놓이지 않는다
-            // (`appendTablesPrecedingText`가 같은 문단이면 건너뛴다) — 글줄만 다음 쪽에서
-            // 그 쪽의 번호·각주 카운터로 다시 재어 놓는다.
+            // 문단 전체는 남은 자리에 안 들어간다. 남은 자리에 들어가는 줄이 있으면 그 줄들을
+            // 이 쪽에 두고 나머지를 다음 쪽에 잇는다 (#207 — 한글 12.30 실측: 외톨이줄 보호가
+            // 꺼진 3줄 문단은 첫 줄이 들어가면 첫 줄만 남기고 둘을 다음 쪽으로 넘긴다). 첫 조각의
+            // 줄 수는 조각 루프의 첫 반복과 **같은 함수·입력**으로 정한다 — 여기서 남는다고 본
+            // 줄을 루프가 넘기거나 그 반대면 안 된다. 각주 예약은 그 줄들의 각주 몫만 든다
+            // (`HwpFlowFragmentFootnotes`).
+            //
+            // 한 줄도 못 남기면(문단 보호·외톨이줄 보호·한 줄 문단·첫 줄 + 그 각주가 안 들어감)
+            // 종전대로 쪽을 확정하고 다음 쪽에서 다시 처리한다 — 재처리가 각주 참조 번호·자동
+            // 쪽 번호·진단 쪽을 새 쪽 기준으로 다시 잡는다. 글줄 앞에 놓은 표(#190)는 다시
+            // 처리해도 다시 놓이지 않는다 (`appendTablesPrecedingText`가 같은 문단이면 건너뛴다).
+            if canSplitAtEntry(split, cacheHeightUsed: cacheHeightUsed),
+               entryFragmentLineCount(split) > 0
+            {
+                appendFlowParagraphAcrossPages(split)
+                return true
+            }
             cacheCurrentPage()
             return false
         }
@@ -1115,19 +1138,7 @@ private extension HwpPaginator {
         if paragraphHeight > currentColumnFrame.height,
            paragraphFrame.lines.count > 1
         {
-            appendParagraphAcrossColumns(
-                attributedString: attributedString,
-                paragraphFrame: paragraphFrame,
-                paragraphHeight: paragraphHeight,
-                hyperlinkURL: hyperlinkURL(in: paragraph),
-                paragraphId: paragraph.paraHeader.paraId,
-                paraShape: index.paraShapeOrDefault(for: paragraph),
-                reservedFootnoteHeight: anticipatedFootnotes,
-                beforeGap: beforeGap,
-                cachedTrailingSpacing: cachedTrailingSpacing,
-                onFragmentPlaced: { appendInlineControlBlocksForCurrentFragment(from: paragraph) }
-            )
-            updateBandTrailingSpacing(for: paragraph)
+            appendFlowParagraphAcrossPages(split)
             return true
         }
         contentHeightUsed += beforeGap
@@ -1151,37 +1162,234 @@ private extension HwpPaginator {
     /// 주면 한글의 단별 텍스트 배분을 그대로 재현하고 — 비등폭 단은 라인 수가
     /// 아니라 단 폭에 맞는 글자 위치로 나뉜다 (Column 픽스처 캐시/PrvImage
     /// 실측) — 아니면 라인 단위로 단을 채운다.
-    private func placeMultiColumnParagraph(
-        _ paragraph: CoreHwp.HwpParagraph,
-        attributedString: NSAttributedString,
-        paragraphFrame: HwpParagraphFrame,
-        paragraphHeight: CGFloat,
-        anticipatedFootnotes: CGFloat,
-        beforeGap: CGFloat = 0,
-        cachedTrailingSpacing: CGFloat? = nil
-    ) {
+    private func placeMultiColumnParagraph(_ split: FlowSplitInput) {
         // 캐시 run 경로는 한글이 계산한 절대 위치를 그대로 재현하므로 간격 보정을
         // 더하지 않는다 (#1).
         if placeCachedColumnRuns(
-            paragraph,
-            attributedString: attributedString,
-            paragraphFrame: paragraphFrame
+            split.paragraph,
+            attributedString: split.attributedString,
+            paragraphFrame: split.paragraphFrame
         ) {
             return
         }
+        appendFlowParagraphAcrossPages(split)
+    }
+
+    /// 흐름 문단을 줄 단위로 나누는 세 자리(다단 밴드·부분 채운 1단 쪽·빈 쪽보다 긴 문단)가
+    /// `appendParagraphAcrossColumns`에 같은 인자를 넘긴다 (#207).
+    private struct FlowSplitInput {
+        let paragraph: CoreHwp.HwpParagraph
+        let attributedString: NSAttributedString
+        let paragraphFrame: HwpParagraphFrame
+        let paragraphHeight: CGFloat
+        let beforeGap: CGFloat
+        let cachedTrailingSpacing: CGFloat?
+        /// 조각 루프에 상수로 넘기는 문단 전체 각주 예약 — 조각별 귀속 문맥이 있으면 0이다.
+        let reservedFootnoteHeight: CGFloat
+        let splitPolicy: HwpParagraphSplitPolicy
+        let fragmentFootnotes: HwpFlowFragmentFootnotes?
+    }
+
+    private func appendFlowParagraphAcrossPages(_ split: FlowSplitInput) {
         appendParagraphAcrossColumns(
-            attributedString: attributedString,
-            paragraphFrame: paragraphFrame,
-            paragraphHeight: paragraphHeight,
-            hyperlinkURL: hyperlinkURL(in: paragraph),
-            paragraphId: paragraph.paraHeader.paraId,
-            paraShape: index.paraShapeOrDefault(for: paragraph),
-            reservedFootnoteHeight: anticipatedFootnotes,
-            beforeGap: beforeGap,
-            cachedTrailingSpacing: cachedTrailingSpacing,
-            onFragmentPlaced: { appendInlineControlBlocksForCurrentFragment(from: paragraph) }
+            attributedString: split.attributedString,
+            paragraphFrame: split.paragraphFrame,
+            paragraphHeight: split.paragraphHeight,
+            hyperlinkURL: hyperlinkURL(in: split.paragraph),
+            paragraphId: split.paragraph.paraHeader.paraId,
+            paraShape: index.paraShapeOrDefault(for: split.paragraph),
+            reservedFootnoteHeight: split.reservedFootnoteHeight,
+            beforeGap: split.beforeGap,
+            cachedTrailingSpacing: split.cachedTrailingSpacing,
+            splitPolicy: split.splitPolicy,
+            fragmentFootnotes: split.fragmentFootnotes,
+            onFragmentPlaced: {
+                registerPageChromeForCurrentFragment(from: split.paragraph)
+                appendInlineControlBlocksForCurrentFragment(from: split.paragraph)
+            }
         )
-        updateBandTrailingSpacing(for: paragraph)
+        updateBandTrailingSpacing(for: split.paragraph)
+    }
+
+    /// 부분 채운 1단 쪽에서 문단을 줄 단위로 나눌 수 있는지 (#207). **각주**가 있는데 조각별
+    /// 귀속을 못 하면(쪽별 번호 모드 2·마커 어긋남) 나누지 않는다 — 첫 조각의 각주가 마지막 조각
+    /// 쪽에 실리고 뒤 조각의 참조 번호가 낡는다. 미주만 있는 문단은 나눈다 (PR 리뷰): 미주는 쪽이
+    /// 아니라 문서·구역 끝에 모이고 번호도 쪽마다 되돌리지 않으므로 문단 단위 수집이면 충분하다.
+    /// 저장본 줄 캐시 높이를 따르는 문단은 CT 줄 수가
+    /// 캐시 줄 수와 같을 때만 나눈다 — 다르면 마지막 줄의 전진량이 캐시 잔여(1pt 하한)라 실제로
+    /// 안 들어가는 줄까지 들어간다고 판정한다. 통째 이동은 종전 동작이라 격차가 늘지 않는다.
+    ///
+    /// 문단 단위로 마지막 조각 뒤에 나오는 것이 문단 머리에 묶여 있으면 나누지 않는다 — 자리
+    /// 차지·글 앞뒤 개체는 `paragraphAnchorTop`(문단 상단) 기준인데 뒤 조각 쪽에서 방출되면 그
+    /// 쪽 머리를 기준으로 그려지고, 자동 쪽 번호 필드는 조판 문자열에 진입 쪽 번호로 구워져
+    /// 뒤 조각에 그대로 남는다 (PR 리뷰). 종전 통째 이동은 문단과 그것들을 같은 쪽에 두었다.
+    private func canSplitAtEntry(_ split: FlowSplitInput, cacheHeightUsed: Bool) -> Bool {
+        guard split.paragraphFrame.lines.count > 1,
+              split.fragmentFootnotes != nil || !Self.hasFootnotes(split.paragraph),
+              !hasParagraphBoundControls(split.paragraph)
+        else { return false }
+        return !cacheHeightUsed
+            || split.paragraphFrame.lines.count
+            == split.paragraph.paraLineSeg.paraLineSegInternalArray.count
+    }
+
+    /// 문단이 **각주**를 품는지 (직접 또는 컨테이너 안 — 미주 안 각주 포함) — 예약 높이 0을 "각주
+    /// 없음"으로 읽으면 이월 각주가 분할 지점에서 멈춘 쪽(`reservationStopsAtSplit`)에서 각주 문단이
+    /// 새는다 (PR 리뷰). 미주는 세지 않는다 — 쪽에 실리지 않고 번호도 쪽마다 되돌리지 않는다.
+    static func hasFootnotes(_ paragraph: CoreHwp.HwpParagraph) -> Bool {
+        (paragraph.ctrlHeaderArray ?? []).contains { ctrl in
+            if case .footnote = ctrl {
+                return true
+            }
+            return containsFootnotes(ctrl)
+        }
+    }
+
+    /// 컨트롤이 품은 문단(셀·글상자·미주 문단·자식) 어딘가에 **각주**가 있는지 — `containsNotes`와
+    /// 같은 순회에서 미주만 뺀 것.
+    nonisolated static func containsFootnotes(_ ctrl: CoreHwp.HwpCtrlId, depth: Int = 0) -> Bool {
+        guard depth < maximumContainerDepth else { return false }
+        for (nested, _) in childParagraphSequence(of: ctrl) {
+            for child in nested.ctrlHeaderArray ?? [] {
+                if case .footnote = child {
+                    return true
+                }
+                if containsFootnotes(child, depth: depth + 1) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    /// 문단 머리에 묶여 마지막 조각 뒤에 문단 단위로 나오는 컨트롤이 있는지 — 글자처럼 취급이
+    /// 아닌 개체(자리 차지·글 앞뒤)와 자동 쪽 번호. 표는 글줄 앞에 **실제로 놓인** 것
+    /// (`tablesPlacedBeforeText`, #190 — 자리 차지·문단 기준·오프셋 0 표)만 예외다: 글 앞뒤·
+    /// 어울림·쪽 기준·오프셋 있는 표와 레이아웃에 실패한 표는 뒤에 문단 단위로 나온다 (PR 리뷰).
+    private func hasParagraphBoundControls(_ paragraph: CoreHwp.HwpParagraph) -> Bool {
+        (paragraph.ctrlHeaderArray ?? []).enumerated().contains { ordinal, ctrl in
+            switch ctrl {
+            case .table:
+                !Self.isTreatAsChar(ctrl) && tablesPlacedBeforeText[ordinal] == nil
+            case let .autoNumber(other):
+                other.autoNumberInfo?.kind == .page
+            case .genShapeObject, .shape, .line, .rectangle, .ellipse, .arc, .polygon, .curve,
+                 .equation, .equationLegacy, .picture, .ole, .container:
+                !Self.isTreatAsChar(ctrl)
+            default:
+                false
+            }
+        }
+    }
+
+    /// 흐름 분할 조각의 각주 귀속 문맥 (#207) — 조각을 놓을 때마다 그 조각의 컨트롤 서수
+    /// 범위로 각주를 걷어 참조가 놓인 쪽에 싣고, 조각을 자르기 전엔 같은 범위의 예약을 줄마다
+    /// 적합 판정에 더한다. 각주 참조가 없는 문단도 만든다 (걷을 것이 없어 무동작이고, 최종
+    /// 조각의 컨테이너 걷기는 문단 단위 수집과 같다).
+    ///
+    /// nil이면 문단 전체 예약 + 문단 단위 수집(종전 동작)이다: 마커 ↔ 컨트롤 배열이 어긋난
+    /// 문단, 그리고 쪽마다 각주 번호를 새로 시작하는 구역(표 134 numberingMode 2) — 조각 사이
+    /// `cacheCurrentPage`가 카운터를 되돌려 뒤 조각의 참조 번호를 다시 매겨야 하는데(절대 캐시
+    /// 경로의 `renumberedNoteMarkers`) 흐름 경로엔 그 기계가 없다.
+    ///
+    /// 다단 밴드도 만들지 않는다 (PR 리뷰): 각주 영역은 **쪽 폭** 하단이라 뒤 단 조각이 걷은 각주가
+    /// 이미 끝까지 찬 앞 단의 아랫줄을 덮는다 — 밴드의 모든 단이 문단 전체 예약을 미리 빼는
+    /// 종전 회계를 유지한다.
+    private func flowFragmentFootnotes(
+        for paragraph: CoreHwp.HwpParagraph,
+        attributedString: NSAttributedString
+    ) -> HwpFlowFragmentFootnotes? {
+        guard columnFrames.count <= 1,
+              currentSectionDef?.footNoteShape.numberingModeRawValue != 2
+        else { return nil }
+        return HwpFlowFragmentFootnotes(
+            paragraph: paragraph,
+            attributedString: attributedString,
+            controlCount: paragraph.ctrlHeaderArray?.count ?? 0
+        )
+    }
+
+    /// 부분 채운 1단 쪽에서 문단의 첫 조각이 남기는 줄 수 (#207) — 조각 루프
+    /// (`appendParagraphAcrossColumns`)의 첫 반복과 같은 나머지·남은 자리·규칙·각주 예약으로
+    /// 잰다. 0이면 문단을 통째로 다음 쪽에서 다시 처리한다.
+    private func entryFragmentLineCount(_ split: FlowSplitInput) -> Int {
+        let remainder = HwpFragmentRemainder(
+            lines: split.paragraphFrame.lines,
+            textHeight: split.paragraphHeight - split.beforeGap,
+            measuredWidth: currentColumnFrame.width,
+            heightIsMeasured: abs(split.paragraphHeight - split.paragraphFrame.totalHeight) < 0.01
+        )
+        let available = max(1, effectiveContentHeight - split.reservedFootnoteHeight)
+            - (contentHeightUsed + split.beforeGap)
+        return remainder.fit(
+            in: available, policy: split.splitPolicy, columnIsEmpty: false,
+            extra: {
+                fragmentFootnoteReservation(through: $0, of: remainder, split.fragmentFootnotes)
+            }
+        ).count
+    }
+
+    /// 나머지의 줄 `lineIndex`까지 놓을 조각이 걷을 각주의 예약 높이 (#207) — 귀속 문맥이
+    /// 없으면 0 (그때는 문단 전체 예약이 `reservedFootnoteHeight`로 든다).
+    ///
+    /// 비최종 조각은 **증분**으로 잰다 (PR 리뷰 2): 후보 줄마다 범위가 `0..<1`, `0..<2`처럼 늘 때
+    /// 앞 서수를 다시 훑으면 마커 줄 N개에 N(N+1)/2 순회다 — 커서(`reservationCursor`)가 앞 후보의
+    /// 누적 예약·번호 상태를 들고 새로 든 서수만 더한다. 최종 조각은 범위 밖 컨테이너까지 재는
+    /// 다른 술어라 한 번 통째로 잰다(메모).
+    private func fragmentFootnoteReservation(
+        through lineIndex: Int,
+        of remainder: HwpFragmentRemainder,
+        _ fragmentFootnotes: HwpFlowFragmentFootnotes?
+    ) -> CGFloat {
+        guard let fragmentFootnotes else { return 0 }
+        let ordinals = fragmentFootnotes.ordinals(through: lineIndex, of: remainder)
+        let isLast = lineIndex >= remainder.lines.count - 1
+        guard isLast else {
+            var cursor = fragmentFootnotes.reservationCursor
+                ?? footnoteCoordinator.fragmentReservationCursor(from: ordinals.lowerBound)
+            if cursor.upperBound > ordinals.upperBound {
+                cursor = footnoteCoordinator.fragmentReservationCursor(from: ordinals.lowerBound)
+            }
+            let total = footnoteCoordinator.extendFragmentReservation(
+                &cursor,
+                for: fragmentFootnotes.paragraph,
+                through: ordinals.upperBound,
+                environment: noteEnvironment,
+                childParagraphs: Self.childParagraphs(of:),
+                numbering: currentParagraphScope
+            )
+            fragmentFootnotes.reservationCursor = cursor
+            return total
+        }
+        return fragmentFootnotes.reservation(for: ordinals, isLast: true) {
+            footnoteCoordinator.anticipatedFootnoteHeight(
+                for: fragmentFootnotes.paragraph,
+                environment: noteEnvironment,
+                childParagraphs: Self.childParagraphs(of:),
+                numbering: currentParagraphScope,
+                ordinals: ordinals,
+                collectsNested: true
+            )
+        }
+    }
+
+    /// 방금 놓은 흐름 조각(나머지의 줄 `lineIndex`까지)의 각주를 이 쪽에 걷는다 (#207) — 곧
+    /// 이어지는 `advanceColumn`(1단이면 `cacheCurrentPage`)이 그 쪽에 싣는다. 마지막 조각은
+    /// 서수 범위 밖 컨테이너의 각주까지 걷는다 (`collectFootnotes`의 `collectsNested`).
+    private func collectFlowFragmentFootnotes(
+        through lineIndex: Int,
+        of remainder: HwpFragmentRemainder,
+        _ fragmentFootnotes: HwpFlowFragmentFootnotes?
+    ) {
+        guard let fragmentFootnotes else { return }
+        let ordinals = fragmentFootnotes.ordinals(through: lineIndex, of: remainder)
+        collectFragmentFootnotes(
+            from: fragmentFootnotes.paragraph,
+            ordinals: ordinals,
+            collectsNested: lineIndex >= remainder.lines.count - 1
+        )
+        fragmentFootnotes.markCollected(ordinals)
+        collectedFootnotesDuringPlacement = true
     }
 
     /// 밴드 마지막 줄의 줄 간격을 기록한다 (단 정의 밴드 마감 시 다음 밴드
@@ -1271,8 +1479,10 @@ private extension HwpPaginator {
                 )
             )
             // 앞 단의 줄에 앵커가 있는 글자처럼 취급 개체는 그 단에 지금 놓는다 (#164) —
-            // 마지막 단의 문맥만 남으면 앞 단의 개체가 앵커를 잃고 흐름 위치로 간다.
+            // 마지막 단의 문맥만 남으면 앞 단의 개체가 앵커를 잃고 흐름 위치로 간다. 앞 단
+            // 조각의 쪽 장식도 지금 등록한다 (#207 PR 리뷰).
             if runIndex < runs.count - 1 {
+                registerPageChromeForCurrentFragment(from: paragraph)
                 appendInlineControlBlocksForCurrentFragment(from: paragraph)
             }
         }
@@ -1376,8 +1586,10 @@ private extension HwpPaginator {
                 collectsNested: runIndex == runs.count - 1
             )
             // 앞 조각의 줄에 앵커가 있는 글자처럼 취급 개체는 이 쪽이 확정되기 전에
-            // 놓는다 (#164). 마지막 조각은 종전대로 문단 단위 방출이 맡는다.
+            // 놓는다 (#164). 앞 조각의 쪽 장식도 이 쪽이 확정되기 전에 등록한다 (#207 PR
+            // 리뷰). 마지막 조각은 종전대로 문단 단위 방출이 맡는다.
             if runIndex < runs.count - 1 {
+                registerPageChromeForCurrentFragment(from: paragraph)
                 appendInlineControlBlocksForCurrentFragment(from: paragraph)
             }
         }
@@ -1817,6 +2029,10 @@ private extension HwpPaginator {
     /// 나머지를 폭이 다른 단에서 다시 잴 때 쓴다 (`HwpFragmentRemainder`) — 줄은 이 함수에
     /// 들어올 때의 단 폭으로 측정됐고, 비등폭 단으로 이월된 조각은 렌더가 그 단 폭으로
     /// 다시 줄바꿈한다.
+    ///
+    /// `splitPolicy`는 쪽·단 경계의 분할 규칙(외톨이줄 보호·문단 보호, #207)이고
+    /// `fragmentFootnotes`는 조각별 각주 귀속 문맥이다 — 있으면 각주 예약은 조각 범위로 줄마다
+    /// 재고(`reservedFootnoteHeight`는 0으로 온다) 조각을 놓을 때마다 그 각주를 걷는다.
     func appendParagraphAcrossColumns(
         attributedString: NSAttributedString,
         paragraphFrame: HwpParagraphFrame,
@@ -1827,10 +2043,11 @@ private extension HwpPaginator {
         reservedFootnoteHeight: CGFloat = 0,
         beforeGap: CGFloat = 0,
         cachedTrailingSpacing: CGFloat? = nil,
+        splitPolicy: HwpParagraphSplitPolicy = .none,
+        fragmentFootnotes: HwpFlowFragmentFootnotes? = nil,
         onFragmentPlaced: () -> Void = {}
     ) {
         let lines = paragraphFrame.lines
-        let usableHeight = max(1, effectiveContentHeight - reservedFootnoteHeight)
         // 조각들은 독립 CT 프레임이라 문단-앞 간격이 렌더되지 않는다 — 첫 조각
         // 앞에서 커서로 소비하고 이후 산술은 텍스트 몫(textHeight)만 쓴다 (#1).
         // 넘김 판정은 (커서+gap) + text = 커서 + paragraphHeight로 종전과 동치.
@@ -1840,12 +2057,16 @@ private extension HwpPaginator {
         contentHeightUsed += beforeGap
         let textHeight = paragraphHeight - beforeGap
         // 조각마다 같은 문단 문맥 — 예약이 묶인 단 폭·높이 출처·URL (`fragmentPlacement`).
-        let placement = fragmentPlacement(
+        var placement = fragmentPlacement(
             attributedString: attributedString, paragraphFrame: paragraphFrame,
             paragraphHeight: paragraphHeight, hyperlinkURL: hyperlinkURL,
             paragraphId: paragraphId, paraShape: paraShape,
             cachedTrailingSpacing: cachedTrailingSpacing
         )
+        placement.beforeGap = beforeGap
+        placement.reservedFootnoteHeight = reservedFootnoteHeight
+        placement.splitPolicy = splitPolicy
+        placement.fragmentFootnotes = fragmentFootnotes
         paragraphAnchorTop = currentColumnFrame.minY + contentHeightUsed
         // 라인별 실제 전진량(origin.y 델타)으로 조각을 나눈다 — 산식과 조각 첫 줄
         // ascent 초과분(#164 리뷰)은 `HwpFragmentLineAdvances`. 나머지가 폭이 다른 단으로
@@ -1854,50 +2075,42 @@ private extension HwpPaginator {
             lines: lines, textHeight: textHeight,
             measuredWidth: currentColumnFrame.width, heightIsMeasured: placement.heightIsMeasured
         )
-        if lines.count <= 1 || textHeight <= 0 {
-            if startedEmpty {
-                // 빈 단: gap+text가 안 맞는 초과 문단이면 gap을 무르고 현재 단 top에
-                // flush한다 — 빈 단을 건너뛰지 않는다 (R54 #3).
-                if beforeGap + textHeight > usableHeight {
-                    contentHeightUsed = 0
-                    paragraphAnchorTop = currentColumnFrame.minY
-                }
-            } else if contentHeightUsed + textHeight > usableHeight {
-                moveWholeParagraphToNextColumn(
-                    &remainder, attributedString: attributedString, placement: placement,
-                    beforeGap: beforeGap, reservedFootnoteHeight: reservedFootnoteHeight
-                )
-            }
-            // 다시 재어 여러 줄이 됐으면 아래 조각 루프가 이 단부터 나눠 놓는다 (PR 리뷰) —
-            // 통째로 놓으면 목적 단보다 큰 상자가 여백·뒤 내용으로 넘친다.
-            if remainder.lines.count <= 1 {
-                appendBlock(
-                    height: remainder.advances.textHeight,
-                    // 다시 잰 문자열(목적 단으로 다시 푼 개체 예약)을 그대로 그린다 (PR 리뷰).
-                    attributedString: placedFragment(
-                        attributedString, reservedWidth: placement.reservedWidth
-                    ),
-                    hyperlinkURL: hyperlinkURL,
-                    paragraphId: paragraphId,
-                    lines: remainder.lines,
-                    heightIsMeasured: remainder.heightIsMeasured,
-                    paraShape: paraShape,
-                    cachedTrailingSpacing: remainder.cachedTrailingSpacing(from: placement)
-                )
-                return
-            }
+        // 이 문단 말고는 아무것도 없는 단인지 — 진입한 빈 단, 또는 단·쪽을 넘긴 뒤의 새 단.
+        // 커서(`contentHeightUsed`)로는 못 가른다: 통째로 넘긴 새 단 머리에 문단 위 간격이
+        // 다시 실려(`advancePastUnplacedFragment`·`moveWholeParagraphToNextColumn`) 커서가
+        // 양수라도 단은 비어 있다. 분할 규칙의 빈 단 예외(문단 보호 무시)와 아래 진행 보장이 같은
+        // 술어를 봐야 한다 — 부분 채운 단에서 시작한 문단 보호 문단이 새 단마다 0줄을 내면 쪽
+        // 상한까지 빈 쪽을 만든다 (PR 리뷰). 한 줄 문단을 통째로 옮긴 뒤 좁은 단에서 여러 줄로
+        // 다시 재어 조각 루프로 넘어온 경우도 같다 (PR 리뷰 2: 진입 시 값을 그대로 쓰면 빈 둘째
+        // 단을 건너뛴다).
+        var columnHoldsOnlyThisParagraph = startedEmpty
+        if lines.count <= 1 || textHeight <= 0,
+           placeSingleLineParagraph(
+               &remainder, columnHoldsOnlyThisParagraph: &columnHoldsOnlyThisParagraph,
+               attributedString: attributedString, placement: placement
+           )
+        {
+            return
         }
 
         while !remainder.isExhausted {
             let isAtParagraphStart = remainder.isAtParagraphStart
             let available = max(1, effectiveContentHeight - reservedFootnoteHeight)
                 - contentHeightUsed
-            var (takeCount, takenHeight) = remainder.fit(in: available)
+            let columnIsEmpty = contentHeightUsed <= 0 || columnHoldsOnlyThisParagraph
+            // 남는 줄 수는 분할 규칙(#207)으로 깎이고, 줄마다 그 줄까지의 각주 예약이 든다.
+            var (takeCount, takenHeight) = remainder.fit(
+                in: available,
+                policy: splitPolicy,
+                columnIsEmpty: columnIsEmpty,
+                extra: { fragmentFootnoteReservation(through: $0, of: remainder, fragmentFootnotes) }
+            )
             // 빈 단(gap만 charge)에서 gap+첫 줄이 안 맞는 초과 문단은 gap을 무르고
             // 첫 줄을 현재 단 top에 flush한다 — 빈 단을 건너뛰지 않는다 (R54 #3).
-            // 단 이동 후의 빈 단은 contentHeightUsed<=0로 판정한다.
-            let onEmptyStartColumn = startedEmpty && isAtParagraphStart
-            if contentHeightUsed <= 0 || onEmptyStartColumn, takeCount == 0 {
+            // 분할 규칙이 빈 단에서 0줄을 내는 경우(두 줄도 안 들어가는 단의 외톨이줄 보호)도
+            // 같은 진행 보장이다.
+            let onEmptyStartColumn = columnHoldsOnlyThisParagraph && isAtParagraphStart
+            if columnIsEmpty, takeCount == 0 {
                 if onEmptyStartColumn {
                     contentHeightUsed = 0
                     paragraphAnchorTop = currentColumnFrame.minY
@@ -1905,36 +2118,14 @@ private extension HwpPaginator {
                 (takeCount, takenHeight) = (1, remainder.firstLineHeight)
             }
             if takeCount <= 0 {
-                // 아직 아무 줄도 안 놓은 통째 이동이면 진입 시 charge한 gap을
-                // 구 단 사용량에서 무른다 — 렌더되지 않을 gap이 markBandUsage로
-                // 밴드 하단을 부풀린다 (R56 #3). 이후 단에서 재적용될 수 있다.
-                if isAtParagraphStart {
-                    contentHeightUsed = max(0, contentHeightUsed - beforeGap)
-                }
-                advanceColumn()
                 // 페이지 상한 도달: cacheCurrentPage가 밴드/커서를 리셋하지
                 // 않고 종료하므로 같은 lineIndex 재시도는 무한 루프다 —
                 // 남은 줄은 상한 절단 계약대로 버린다 (#1).
-                if didFinishPagination {
-                    return
-                }
-                remeasureRemainderIfNeeded(
-                    &remainder, attributedString: attributedString, placement: placement
-                )
-                // 문단 첫 줄을 통째로 새 단으로 옮기면(아직 아무 줄도 안 놓음) 문단
-                // 위 간격을 새 단 top에도 유지한다 — 본문 단일 열이 새 페이지 top에서
-                // gap을 렌더하는 것(placeFlowParagraph)과 일치 (R53 #1). gap+첫 줄이
-                // 빈 단보다 크면 진행 보장을 위해 flush 배치한다. 단 이동이 페이지를
-                // 넘기면 각주 예약이 바뀌므로 usable을 재계산하고 (R55 #4), gap을
-                // 물리면 .paragraph 기준 개체의 anchor도 함께 내린다 (R55 #5).
-                // "첫 줄"의 크기는 적합 판정·방출과 **같은 출처**인 줄 전진량이다 (PR 리뷰).
-                let usableAfterAdvance = max(1, effectiveContentHeight - reservedFootnoteHeight)
-                if isAtParagraphStart,
-                   beforeGap + remainder.firstLineHeight <= usableAfterAdvance
-                {
-                    contentHeightUsed += beforeGap
-                    paragraphAnchorTop = currentColumnFrame.minY + contentHeightUsed
-                }
+                guard advancePastUnplacedFragment(
+                    &remainder, isAtParagraphStart: isAtParagraphStart,
+                    attributedString: attributedString, placement: placement
+                ) else { return }
+                columnHoldsOnlyThisParagraph = true
                 continue
             }
             appendLineSliceBlock(
@@ -1944,10 +2135,14 @@ private extension HwpPaginator {
                 attributedString: attributedString,
                 placement: placement
             )
+            let placedThrough = remainder.lineIndex + takeCount - 1
             remainder.place(takeCount)
+            // 이 조각의 각주는 이 쪽에 — 쪽을 넘기기 **전**에 걷어야 `cacheCurrentPage`가 싣는다.
+            collectFlowFragmentFootnotes(through: placedThrough, of: remainder, fragmentFootnotes)
             if !remainder.isExhausted {
                 onFragmentPlaced()
                 advanceColumn()
+                columnHoldsOnlyThisParagraph = true
                 if didFinishPagination {
                     return
                 }
@@ -1956,6 +2151,91 @@ private extension HwpPaginator {
                 )
             }
         }
+    }
+
+    /// 한 줄 문단(또는 텍스트 몫 0)의 배치 — 나눌 줄이 없으니 들어가면 놓고 아니면 통째로 다음
+    /// 단으로 옮긴다. 빈 단에서 gap+text가 안 맞는 초과 문단이면 gap을 무르고 현재 단 top에
+    /// flush한다 — 빈 단을 건너뛰지 않는다 (R54 #3). 각주 몫은 조각 귀속 문맥이 있으면 그 줄의
+    /// 각주 예약이다 (#207). 통째로 옮기며 다시 재어 여러 줄이 됐으면 false를 돌려 조각 루프가 이
+    /// 단부터 나눠 놓는다 (PR 리뷰) — 통째로 놓으면 목적 단보다 큰 상자가 여백·뒤 내용으로 넘친다.
+    ///
+    /// `columnHoldsOnlyThisParagraph`는 진입 시 빈 단 여부로 들어와, 통째로 옮기면 참이 된다 —
+    /// 옮긴 새 단은 이 문단만 든 단이다 (PR 리뷰 2).
+    private func placeSingleLineParagraph(
+        _ remainder: inout HwpFragmentRemainder,
+        columnHoldsOnlyThisParagraph: inout Bool,
+        attributedString: NSAttributedString,
+        placement: HwpFragmentPlacement
+    ) -> Bool {
+        let textHeight = remainder.advances.textHeight
+        let usableHeight = max(1, effectiveContentHeight - placement.reservedFootnoteHeight)
+        let noteReservation = fragmentFootnoteReservation(
+            through: 0, of: remainder, placement.fragmentFootnotes
+        )
+        if columnHoldsOnlyThisParagraph {
+            if placement.beforeGap + textHeight + noteReservation > usableHeight {
+                contentHeightUsed = 0
+                paragraphAnchorTop = currentColumnFrame.minY
+            }
+        } else if contentHeightUsed + textHeight + noteReservation > usableHeight {
+            moveWholeParagraphToNextColumn(
+                &remainder, attributedString: attributedString, placement: placement
+            )
+            columnHoldsOnlyThisParagraph = true
+        }
+        guard remainder.lines.count <= 1 else { return false }
+        appendBlock(
+            height: remainder.advances.textHeight,
+            // 다시 잰 문자열(목적 단으로 다시 푼 개체 예약)을 그대로 그린다 (PR 리뷰).
+            attributedString: placedFragment(attributedString, reservedWidth: placement.reservedWidth),
+            hyperlinkURL: placement.hyperlinkURL,
+            paragraphId: placement.paragraphId,
+            lines: remainder.lines,
+            heightIsMeasured: remainder.heightIsMeasured,
+            paraShape: placement.paraShape,
+            cachedTrailingSpacing: remainder.cachedTrailingSpacing(from: placement)
+        )
+        collectFlowFragmentFootnotes(
+            through: max(0, remainder.lines.count - 1), of: remainder, placement.fragmentFootnotes
+        )
+        return true
+    }
+
+    /// 조각 루프에서 줄이 하나도 안 들어가 단·쪽을 넘긴다 — 쪽 상한에 닿았으면 false.
+    ///
+    /// 아직 아무 줄도 안 놓은 통째 이동이면 진입 시 charge한 gap을 구 단 사용량에서 무른다 —
+    /// 렌더되지 않을 gap이 markBandUsage로 밴드 하단을 부풀린다 (R56 #3). 문단 첫 줄을 통째로
+    /// 새 단으로 옮기면(아직 아무 줄도 안 놓음) 문단 위 간격을 새 단 top에도 유지한다 — 본문
+    /// 단일 열이 새 페이지 top에서 gap을 렌더하는 것(placeFlowParagraph)과 일치 (R53 #1).
+    /// gap+첫 줄이 빈 단보다 크면 진행 보장을 위해 flush 배치한다. 단 이동이 페이지를 넘기면
+    /// 각주 예약이 바뀌므로 usable을 재계산하고 (R55 #4), gap을 물리면 .paragraph 기준 개체의
+    /// anchor도 함께 내린다 (R55 #5). "첫 줄"의 크기는 적합 판정·방출과 **같은 출처**인 줄
+    /// 전진량이다 (PR 리뷰). 조각을 걷지 않고 넘겼으니 새 쪽의 각주 상태로 예약을 다시 잰다 (#207).
+    private func advancePastUnplacedFragment(
+        _ remainder: inout HwpFragmentRemainder,
+        isAtParagraphStart: Bool,
+        attributedString: NSAttributedString,
+        placement: HwpFragmentPlacement
+    ) -> Bool {
+        if isAtParagraphStart {
+            contentHeightUsed = max(0, contentHeightUsed - placement.beforeGap)
+        }
+        advanceColumn()
+        placement.fragmentFootnotes?.invalidateReservations()
+        if didFinishPagination {
+            return false
+        }
+        remeasureRemainderIfNeeded(
+            &remainder, attributedString: attributedString, placement: placement
+        )
+        let usableAfterAdvance = max(1, effectiveContentHeight - placement.reservedFootnoteHeight)
+        if isAtParagraphStart,
+           placement.beforeGap + remainder.firstLineHeight <= usableAfterAdvance
+        {
+            contentHeightUsed += placement.beforeGap
+            paragraphAnchorTop = currentColumnFrame.minY + contentHeightUsed
+        }
+        return true
     }
 
     /// 부분 채운 단에 안 맞는 한 줄 문단을 통째로 다음 단으로 옮긴다 — 다중 줄·본문 경로와
@@ -1968,19 +2248,19 @@ private extension HwpPaginator {
     private func moveWholeParagraphToNextColumn(
         _ remainder: inout HwpFragmentRemainder,
         attributedString: NSAttributedString,
-        placement: HwpFragmentPlacement,
-        beforeGap: CGFloat,
-        reservedFootnoteHeight: CGFloat
+        placement: HwpFragmentPlacement
     ) {
-        contentHeightUsed -= beforeGap
+        contentHeightUsed -= placement.beforeGap
         advanceColumn()
+        // 조각을 걷지 않고 넘겼으니 새 쪽의 각주 상태로 예약을 다시 잰다 (#207).
+        placement.fragmentFootnotes?.invalidateReservations()
         remeasureRemainderIfNeeded(
             &remainder, attributedString: attributedString, placement: placement
         )
-        if beforeGap + remainder.firstLineHeight
-            <= max(1, effectiveContentHeight - reservedFootnoteHeight)
+        if placement.beforeGap + remainder.firstLineHeight
+            <= max(1, effectiveContentHeight - placement.reservedFootnoteHeight)
         {
-            contentHeightUsed += beforeGap
+            contentHeightUsed += placement.beforeGap
         }
         paragraphAnchorTop = currentColumnFrame.minY + contentHeightUsed
     }
@@ -2726,6 +3006,23 @@ private extension HwpPaginator {
                 inlineControlsPlacedPerFragment[ordinal] = cachedPages.count + 1
             }
         }
+    }
+
+    /// 방금 놓인 조각에 그려진 마지막 컨트롤 서수까지의 쪽 장식(머리말·꼬리말·쪽 번호 위치·
+    /// 감추기)을 **이 쪽**에 등록한다 (#207 PR 리뷰). 등록은 문단 단위 방출(`appendControlBlocks`)이
+    /// 마지막 조각 뒤에 하므로 나뉜 문단의 앞 조각 쪽에는 장식이 빠졌다 — 문두에 쪽 번호 위치
+    /// 컨트롤을 둔 3줄 문단이 나뉘면 1쪽엔 번호가 없고 2쪽부터 `- 2 -`. 글줄 앞 표(#190)가 표의
+    /// 첫 조각에서 하는 등록과 같은 기록(`chromeRegisteredBeforeText`)이라 뒤 방출이 되풀이하지
+    /// 않는다. 조각 문자열은 방금 `appendBlock`이 낸 마지막 블록이다 — 흐름 분할·절대 캐시 run·
+    /// 다단 캐시 run 모두 블록을 낸 직후 이 훅을 부른다.
+    private func registerPageChromeForCurrentFragment(from paragraph: CoreHwp.HwpParagraph) {
+        guard let ctrls = paragraph.ctrlHeaderArray,
+              let fragment = currentBlocks.last?.attributedString,
+              let last = HwpAbsoluteCachePlacer.lastControlOrdinal(in: fragment)
+        else { return }
+        registerPageChromePreceding(
+            min(last + 1, ctrls.count), in: ctrls, numbering: currentParagraphScope
+        )
     }
 
     /// 글자처럼 취급 컨트롤의 **줄 안 배치만** 시도한다 (#164) — 표 레이아웃 실패의

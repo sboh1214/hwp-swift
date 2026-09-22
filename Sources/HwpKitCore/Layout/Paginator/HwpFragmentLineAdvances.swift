@@ -43,6 +43,58 @@ struct HwpFragmentLineAdvances {
     }
 }
 
+/// 쪽·단 경계에서 문단의 줄을 어디까지 남길 수 있는지의 규칙 (#207) — 문단 모양 표 44의
+/// 쪽 나눔 보호 비트에서 온다. 한글 12.30 실측(2026-09-21, `probes/207`, 전부 1단 **쪽**
+/// 경계 — 다단의 단 경계는 미실측이고 같은 규칙을 적용한다):
+///
+/// - **외톨이줄 보호**(bit 16): 경계 **양쪽**에 줄이 최소 두 줄씩 남아야 나뉜다 — 들어가는
+///   줄 k, 남은 줄 n이면 남기는 줄은 min(k, n − 2)이고 그 값이 2 미만이면 하나도 남기지
+///   않는다 (5줄 문단 k=2 → 2+3, k=3 → 3+2, k=4 → 3+2; 4줄 k=3 → 2+2; 3줄·2줄은 k가 몇이든
+///   통째; 74줄 문단도 k=1이면 통째로 다음 쪽; 빈 쪽에서 시작하는 42줄 문단(41줄 들어감)은
+///   40 + 2, 43줄은 41 + 2).
+/// - **문단 보호**(bit 18): 부분 채운 단에서는 나누지 않는다(통째 이동). 빈 단보다 긴
+///   문단은 그 빈 단에서부터 나뉜다 (74줄 문단이 새 쪽에서 41 + 33, 빈 쪽 42줄은 41 + 1).
+struct HwpParagraphSplitPolicy: Equatable {
+    var protectsWidowOrphan = false
+    var keepsLinesTogether = false
+
+    /// 외톨이줄 보호가 경계 양쪽에 요구하는 최소 줄 수.
+    static let minimumLinesAtBoundary = 2
+
+    /// 보호 없음 — 들어가는 줄을 그대로 남긴다.
+    static let none = HwpParagraphSplitPolicy()
+
+    init(protectsWidowOrphan: Bool = false, keepsLinesTogether: Bool = false) {
+        self.protectsWidowOrphan = protectsWidowOrphan
+        self.keepsLinesTogether = keepsLinesTogether
+    }
+
+    init(paraShape: CoreHwp.HwpParaShape) {
+        self.init(
+            protectsWidowOrphan: paraShape.property1Info.protectsWidowOrphan,
+            keepsLinesTogether: paraShape.property1Info.keepsLinesTogether
+        )
+    }
+
+    /// 탐욕 적합 줄 수 `count`(남은 `remaining` 줄 가운데)를 규칙으로 깎은 값. 남은 줄이 다
+    /// 들어가면 깎을 것이 없다. `columnIsEmpty`인 단에서는 문단 보호를 적용하지 않는다 —
+    /// 빈 단에도 안 들어가는 문단은 어차피 나뉘어야 하고, 안 그러면 진행이 없다.
+    func allowedCount(fitting count: Int, remaining: Int, columnIsEmpty: Bool) -> Int {
+        guard count < remaining else { return count }
+        var allowed = count
+        if protectsWidowOrphan {
+            allowed = min(allowed, remaining - Self.minimumLinesAtBoundary)
+            if allowed < Self.minimumLinesAtBoundary {
+                allowed = 0
+            }
+        }
+        if keepsLinesTogether, !columnIsEmpty {
+            allowed = 0
+        }
+        return max(0, allowed)
+    }
+}
+
 /// 흐름 분할이 조각마다 같은 값으로 쓰는 문단 단위 문맥 — 루프 밖에서 한 번 만든다.
 struct HwpFragmentPlacement {
     let paraShape: CoreHwp.HwpParaShape
@@ -61,6 +113,16 @@ struct HwpFragmentPlacement {
     /// 문단 전체 블록의 URL과 조각 블록의 URL (필드 스팬 문단은 조각에 전파하지 않는다).
     let hyperlinkURL: String?
     let fragmentURL: String?
+    /// 문단 위 간격 — 첫 조각 앞에서 커서로 소비하고, 통째로 옮기면 무르고 새 단 머리에 다시
+    /// 적용한다.
+    var beforeGap: CGFloat = 0
+    /// 조각마다 남은 자리에서 상수로 빼는 문단 전체 각주 예약 — 조각별 귀속 문맥
+    /// (`fragmentFootnotes`)이 있으면 0이고 예약은 줄마다 그 조각 범위로 잰다 (#207).
+    var reservedFootnoteHeight: CGFloat = 0
+    /// 쪽·단 경계의 분할 규칙 (#207).
+    var splitPolicy: HwpParagraphSplitPolicy = .none
+    /// 조각별 각주 귀속 문맥 (#207) — nil이면 문단 단위 수집.
+    var fragmentFootnotes: HwpFlowFragmentFootnotes?
 }
 
 /// 흐름 분할이 아직 놓지 않은 문단의 **나머지** — 줄·전진량과 그 줄을 잰 단 폭 (#166 PR 리뷰).
@@ -143,16 +205,44 @@ struct HwpFragmentRemainder {
 
     /// 다음 줄부터 `available`에 들어가는 줄 수와 그 누적 전진량. 적합 판정과 방출 높이가
     /// 같은 전진량 합을 쓴다.
-    func fit(in available: CGFloat) -> (count: Int, height: CGFloat) {
+    ///
+    /// `extra`는 줄 `i`(문단 줄 색인)까지 놓을 때 그 줄들이 요구하는 **추가** 높이 — 그 줄에
+    /// 참조가 놓인 각주의 예약(#207, `HwpFlowFragmentFootnotes.reservation(through:)`)이다.
+    /// 줄이 늘수록 줄지 않는 단조 함수라 첫 실패에서 멈춘다. 반환 높이는 전진량 합뿐이다
+    /// (예약은 각주 영역이 차지한다).
+    func fit(
+        in available: CGFloat, extra: (Int) -> CGFloat = { _ in 0 }
+    ) -> (count: Int, height: CGFloat) {
         var count = 0
         var height: CGFloat = 0
         while lineIndex + count < lines.count,
-              height + advances.advance(lineIndex + count) <= available
+              height + advances.advance(lineIndex + count) + extra(lineIndex + count) <= available
         {
             height += advances.advance(lineIndex + count)
             count += 1
         }
         return (count, height)
+    }
+
+    /// `fit`에 쪽 나눔 보호 규칙(#207)을 씌운 것 — 규칙이 줄 수를 깎으면 높이도 그 줄까지의
+    /// 전진량 합으로 다시 잰다. 진입 판정(`HwpPaginator.placeFlowParagraph`)과 조각 루프
+    /// (`appendParagraphAcrossColumns`)가 **같은 함수**로 첫 조각의 줄 수를 정해야 갈리지 않는다.
+    func fit(
+        in available: CGFloat,
+        policy: HwpParagraphSplitPolicy,
+        columnIsEmpty: Bool,
+        extra: (Int) -> CGFloat = { _ in 0 }
+    ) -> (count: Int, height: CGFloat) {
+        let greedy = fit(in: available, extra: extra)
+        let allowed = policy.allowedCount(
+            fitting: greedy.count, remaining: lines.count - lineIndex, columnIsEmpty: columnIsEmpty
+        )
+        guard allowed < greedy.count else { return greedy }
+        var height: CGFloat = 0
+        for offset in 0 ..< allowed {
+            height += advances.advance(lineIndex + offset)
+        }
+        return (allowed, height)
     }
 
     /// 다음 줄 하나만 놓을 때의 전진량 — 빈 단에 안 들어가도 진행 보장으로 싣는 몫.

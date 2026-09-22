@@ -60,7 +60,9 @@ import XCTest
         }
 
         /// 쪽 경계 흐름 분할: 본문 40pt라 캐시 높이 48pt 문단이 쪽보다 커 줄 단위로 나뉜다 —
-        /// 앞 조각 60자 두 줄(표식), 뒤 조각 30자 + `끝`(무표식·17pt·한 줄).
+        /// 앞 조각 60자 두 줄(표식), 뒤 조각 30자 + `끝`(무표식·17pt·한 줄). 캐시 줄 수(3)가 CT
+        /// 줄 수(4)와 달라 구역 첫 문단 뒤 남은 24pt에서 나뉘지 않고(#207 — 마지막 줄 전진량이
+        /// 캐시 잔여 1pt라 판정이 관대해진다) 종전대로 빈 둘째 쪽에서부터 나뉜다.
         func testFlowSplitKeepsTheCachedRemainderFragmentUnmarked() async throws {
             let paragraph = try Self.cachedParagraph()
             let section = HwpSynthetic.section(
@@ -75,6 +77,7 @@ import XCTest
                 fontResolver: .testDeterministic
             )
             let pages = try await InlineControlFragmentSupport.pages(of: paginator)
+            expect(InlineControlFragmentSupport.hostFragment(on: pages[0])).to(beNil())
             let fragments = pages.compactMap { page -> (text: NSAttributedString, rect: CGRect)? in
                 guard let block = InlineControlFragmentSupport.hostFragment(on: page),
                       let text = block.attributedString else { return nil }

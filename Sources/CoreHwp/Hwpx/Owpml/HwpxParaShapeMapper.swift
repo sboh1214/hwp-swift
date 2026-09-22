@@ -32,6 +32,7 @@ enum HwpxParaShapeMapper {
         let margin = node.headFirstChild(named: "margin")
         let lineSpacing = node.headFirstChild(named: "lineSpacing")
         let border = node.headFirstChild(named: "border")
+        let breakSetting = node.headFirstChild(named: "breakSetting")
 
         let lineSpacingKind = Self.lineSpacingKinds[
             lineSpacing?.attribute("type") ?? "PERCENT"
@@ -53,6 +54,15 @@ enum HwpxParaShapeMapper {
         }
         if border?.boolAttribute("ignoreMargin") == true {
             property1 |= 1 << 29
+        }
+        // 쪽 나눔 보호 넷은 표 44 bit 16-19 순서 그대로다 — 한컴 공개 모델
+        // `CBreakSetting`의 속성 순서(widowOrphan·keepWithNext·keepLines·pageBreakBefore)와
+        // 일치하고 생략 기본값은 전부 거짓이다. 나머지 속성(줄 나눔 단위·lineWrap)은
+        // 조판이 아직 읽지 않아 옮기지 않는다.
+        for (bit, name) in [
+            (16, "widowOrphan"), (17, "keepWithNext"), (18, "keepLines"), (19, "pageBreakBefore"),
+        ] where breakSetting?.boolAttribute(name) == true {
+            property1 |= 1 << UInt32(bit)
         }
 
         let headingIdTable = headingType == 3 ? tables.bullet : tables.numbering

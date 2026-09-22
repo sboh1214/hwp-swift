@@ -59,15 +59,14 @@ import XCTest
                 fontResolver: .testDeterministic
             )
             let pages = try await Self.pages(of: paginator)
-            // 흐름 배치는 구역 첫 문단 뒤에 안 들어가는 문단을 새 쪽으로 옮기므로
-            // 첫 쪽엔 구역 첫 문단만 남고, 긴 문단은 둘째·셋째 쪽에 갈린다.
-            expect(pages.count) == 3
-            guard pages.count == 3 else { return }
+            // 긴 문단은 구역 첫 문단 뒤 남은 자리에서 시작해(#207) 첫 쪽과 둘째 쪽에 갈린다.
+            expect(pages.count) == 2
+            guard pages.count == 2 else { return }
 
-            let first = try XCTUnwrap(Self.objectBlocks(on: pages[1], instanceId: 1).first)
-            let firstHost = try XCTUnwrap(Self.hostFragment(on: pages[1]))
-            let second = try XCTUnwrap(Self.objectBlocks(on: pages[2], instanceId: 2).first)
-            let secondHost = try XCTUnwrap(Self.hostFragment(on: pages[2]))
+            let first = try XCTUnwrap(Self.objectBlocks(on: pages[0], instanceId: 1).first)
+            let firstHost = try XCTUnwrap(Self.hostFragment(on: pages[0]))
+            let second = try XCTUnwrap(Self.objectBlocks(on: pages[1], instanceId: 2).first)
+            let secondHost = try XCTUnwrap(Self.hostFragment(on: pages[1]))
             expect(first.frame.minY).to(beGreaterThanOrEqualTo(firstHost.frame.minY - 0.01))
             expect(first.frame.maxY).to(beLessThanOrEqualTo(firstHost.frame.maxY + 0.01))
             expect(first.frame.minX) > firstHost.frame.minX + 1
@@ -75,9 +74,9 @@ import XCTest
             expect(second.frame.maxY).to(beLessThanOrEqualTo(secondHost.frame.maxY + 0.01))
             expect(pages.flatMap { Self.objectBlocks(on: $0, instanceId: 1) }.count) == 1
             expect(pages.flatMap { Self.objectBlocks(on: $0, instanceId: 2) }.count) == 1
-            expect(Self.objectBlocks(on: pages[1], instanceId: 2)).to(beEmpty())
+            expect(Self.objectBlocks(on: pages[0], instanceId: 2)).to(beEmpty())
             // 뒤 문단은 마지막 조각 아래 흐름 자리 그대로다.
-            let followerBlock = try XCTUnwrap(pages[2].blocks.first {
+            let followerBlock = try XCTUnwrap(pages[1].blocks.first {
                 $0.attributedString?.string.contains("뒤 문단") == true
             })
             expect(followerBlock.frame.minY)
@@ -103,10 +102,10 @@ import XCTest
             )
             host.ctrlHeaderArray = [tall]
             let follower = try HwpSynthetic.textParagraph("뒤 문단")
-            // 본문 250pt = 쪽 높이 − 위/아래 여백(9920): 긴 문단(314pt)은 새 쪽으로 옮겨져
-            // 평문 줄 열 개(10pt × 160% = 16pt씩, 160pt)는 들어가고 표 줄(상자 100pt + 글자
-            // 상자 여분 6pt = 106pt, 누적 266pt)은 안 들어가며, 그 다음 쪽은 표 줄 106pt·
-            // 남은 줄 셋 48pt·뒤 문단 16pt(합 170pt)를 다 담는다.
+            // 본문 250pt = 쪽 높이 − 위/아래 여백(9920): 긴 문단(314pt)은 구역 첫 문단(16pt) 뒤
+            // 남은 자리에서 시작해(#207) 평문 줄 열 개(10pt × 160% = 16pt씩, 160pt)는 들어가고
+            // 표 줄(상자 100pt + 글자 상자 여분 6pt = 106pt, 누적 282pt)은 안 들어가며, 그 다음
+            // 쪽은 표 줄 106pt·남은 줄 셋 48pt·뒤 문단 16pt(합 170pt)를 다 담는다.
             let section = HwpSynthetic.section(
                 firstParagraphControls: [
                     .section(HwpSynthetic.sectionDef(pageHeight: 9920 + 25000)),

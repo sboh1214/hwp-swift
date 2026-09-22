@@ -475,6 +475,15 @@ HWP 쌍 manifest `pageNumberPositions[0]`과 payload 바이트 동일. (2) 2026-
 문단 모양이 `headingType == 0`). 탐색 목록은 스타일 이름 폴백으로 그 문단을 여전히
 잡는다.
 
+문단 모양의 **쪽 나눔 보호**(`hh:breakSetting`, #207)도 `HwpxParaShapeMapper`가 표 44
+bit 16-19로 옮긴다 — `widowOrphan`·`keepWithNext`·`keepLines`·`pageBreakBefore`가
+한컴 모델 `CBreakSetting`의 속성 순서 그대로 bit 16·17·18·19이고 생략 기본값은 전부
+거짓(`boolAttribute`는 "1"/"true"만 참). 한글 12.30이 `widowOrphan="1"`·`keepLines="1"`
+HWPX를 .hwp로 저장한 속성1이 0x10080·0x40080이라 실물로 닫혔다. 그래서 `breakSetting`은
+소비된 잎이고 조판이 아직 안 읽는 나머지 속성(`breakLatinWord`·`breakNonLatinWord`·
+`lineWrap`)은 `align@vertical`처럼 진단 없이 버려진다. 조판은 bit 16(외톨이줄 보호)·18
+(문단 보호)만 읽는다(`HwpParagraphSplitPolicy`).
+
 두 가족은 자식 `hh:paraHead`(표 39 문단 머리 정보 12바이트)를 공유한다. 스펙은
 항목 4개(속성 UINT32 · 너비 보정값 HWPUNIT16 · 본문과의 거리 HWPUNIT16 · 글자
 모양 아이디 참조 INT32)를 적고 "전체 길이 8"로 합계를 틀리게 적었다 — 실물은

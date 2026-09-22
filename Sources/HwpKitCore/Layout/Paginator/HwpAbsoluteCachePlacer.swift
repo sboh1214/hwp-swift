@@ -219,8 +219,9 @@ struct HwpAbsoluteCachePlacer {
     }
 
     /// 조각에 그려진 마지막 컨트롤 서수 — 마커가 없으면 nil.
-    /// 번호로 치환된 참조 run도 같은 속성을 달고 있다 (`appendControlMarker`).
-    private static func lastControlOrdinal(in slice: NSAttributedString) -> Int? {
+    /// 번호로 치환된 참조 run도 같은 속성을 달고 있다 (`appendControlMarker`). 흐름 분할 조각의
+    /// 쪽 장식 등록(`HwpPaginator.registerPageChromeForCurrentFragment`)도 같은 서수를 본다.
+    static func lastControlOrdinal(in slice: NSAttributedString) -> Int? {
         var last: Int?
         slice.enumerateAttribute(
             HwpAttributedStringKey.controlIndex,

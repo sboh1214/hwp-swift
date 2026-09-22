@@ -182,6 +182,9 @@ import XCTest
         /// 측정한 두 줄 높이로 놓이고 렌더러도 두 줄을 그린다 — 뒤 문단은 그 바로 아래다.
         func testFlowPageSplitFragmentDrawsAsManyLinesAsItWasMeasured() async throws {
             let index = HwpIndex(from: CoreHwp.HwpFile())
+            // 채움 두 줄(32pt)이 구역 첫 문단(16pt) 뒤 첫 쪽을 채워 남은 8pt에는 한 줄도 안
+            // 들어간다 — 문단은 종전대로 둘째 쪽에서 통째로 시작한다 (#207 뒤에도 같은 형상).
+            let filler = try HwpSynthetic.textParagraph(String(repeating: "채", count: 60))
             let host = try HwpSynthetic.textParagraph(String(repeating: "가", count: 121))
             let follower = try HwpSynthetic.textParagraph("뒤 문단")
             let built = HwpTextRunBuilder(index: index, fontResolver: .testDeterministic)
@@ -193,17 +196,22 @@ import XCTest
                     columnWidth: Support.columnWidth(charactersPerLine: 30, in: built),
                     contentHeight: 56
                 ))],
-                bodyParagraphs: [host, follower]
+                bodyParagraphs: [filler, host, follower]
             )
             let paginator = HwpPaginator(
                 sections: [section], index: index, fontResolver: .testDeterministic
             )
             let pages = try await InlineControlFragmentSupport.pages(of: paginator)
-            // 흐름 배치는 구역 첫 문단 뒤에 안 들어가는 긴 문단을 새 쪽으로 옮긴다 — 쪽 3장.
             expect(pages.count) == 3
             guard pages.count == 3 else { return }
-            let head = try XCTUnwrap(InlineControlFragmentSupport.hostFragment(on: pages[1]))
-            let tail = try XCTUnwrap(InlineControlFragmentSupport.hostFragment(on: pages[2]))
+            func hostFragment(on page: HwpPage) -> AnyHwpBlock? {
+                page.blocks.first {
+                    $0.kind == .text && $0.source?.sectionIndex == 0 && $0.source?.paragraphIndex == 2
+                }
+            }
+            expect(hostFragment(on: pages[0])).to(beNil())
+            let head = try XCTUnwrap(hostFragment(on: pages[1]))
+            let tail = try XCTUnwrap(hostFragment(on: pages[2]))
             expect(head.attributedString?.length) == 90
             expect(tail.attributedString?.length) == 31
             Support.expectDrawsMeasuredLines(head, lineCount: 3, linePitch: 16)

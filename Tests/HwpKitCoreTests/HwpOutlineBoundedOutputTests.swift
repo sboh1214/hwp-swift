@@ -75,15 +75,18 @@ import XCTest
         /// 취소되면 끝내 만들어지지 않는다 — 공개 API가 없는 쪽으로 안내하면
         /// 안 된다 (액터 스냅샷에만 걸어 둔 접두를 여기로 내린다).
         func testOutlineOnlyExposesFinalizedPages() async throws {
-            // 여러 쪽에 걸치는 문단 + 그 문단의 책갈피. 구역 정의 문단이 1쪽을
-            // 물고 있어 이 문단은 2쪽으로 밀린 뒤 쪼개지는데, 배치가 끝나는
-            // 시점에 마지막 조각은 **아직 캐시되지 않은** 쪽에 있다 — 책갈피는
-            // 그 쪽으로 귀속된다.
+            // 여러 쪽에 걸치는 문단 + 그 문단의 책갈피. 구역 정의 문단(16pt)과 채움
+            // 문단(다섯 줄 80pt)이 1쪽(본문 100.8pt)을 물고 있어 첫 줄도 안 들어가므로
+            // 이 문단은 2쪽으로 밀린 뒤 쪼개지는데, 배치가 끝나는 시점에 마지막 조각은
+            // **아직 캐시되지 않은** 쪽에 있다 — 책갈피는 그 쪽으로 귀속된다.
+            let filler = try HwpSynthetic.textParagraph(
+                (1 ... 5).map { "채움 \($0)" }.joined(separator: "\n")
+            )
             let long = String(repeating: "본문 ", count: 400)
             var host = try HwpSynthetic.styledParagraph(long, paraShapeId: 1)
             host.ctrlHeaderArray = [HwpSynthetic.bookmarkControl("걸친 문단 앵커")]
             let paginator = HwpSynthetic.outlinePaginator(
-                bodyParagraphs: [host],
+                bodyParagraphs: [filler, host],
                 index: HwpSynthetic.outlineIndex(
                     paraShapes: [1: HwpSynthetic.outlineParaShape(levelRawValue: 0)]
                 ),

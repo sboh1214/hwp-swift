@@ -246,7 +246,8 @@ import XCTest
             var secondDef = HwpSynthetic.sectionDef()
             secondDef.footNoteShape.rawPayload = Self.dividerPayload(marginTop: 5000, marginBottom: 850)
             // 24줄(384pt) 흐름 문단: 자리 = 742.68 − 16(구역 문단) − 예약. 옛 예약(302 + 14.17)으론
-            // 410pt라 들어가고 새 예약(302 + 58.5)으론 366pt라 안 들어간다.
+            // 410pt라 통째로 들어가 각주를 덮고, 새 예약(302 + 58.5)으론 366pt라 22줄만 남고
+            // 나머지는 다음 쪽이다 (#207 — 종전엔 통째로 다음 쪽).
             let flow = try HwpSynthetic.textParagraph((1 ... 24).map { "흐름 \($0)" }.joined(separator: "\n"))
             let secondSection = HwpSynthetic.section(
                 firstParagraphControls: [.section(secondDef)], bodyParagraphs: [flow]
@@ -262,12 +263,19 @@ import XCTest
                 pages.append(page)
                 index += 1
             }
-            // 2구역 첫 쪽(1)에 이월 각주가 실리고, 흐름 문단은 그 자리를 비켜 다음 쪽으로 간다.
-            expect(Support.footnoteBlocks(on: pages[1]).count) == 1
-            let flowPage = try XCTUnwrap(pages.firstIndex { page in
-                page.blocks.contains { ($0.attributedString?.string ?? "").contains("흐름 1") }
+            // 2구역 첫 쪽(1)에 이월 각주가 실리고, 흐름 문단은 그 자리를 비켜 남는 줄만 그 위에
+            // 두고 나머지를 다음 쪽으로 보낸다.
+            let notes = Support.footnoteBlocks(on: pages[1])
+            expect(notes.count) == 1
+            let head = try XCTUnwrap(pages[1].blocks.first {
+                ($0.attributedString?.string ?? "").contains("흐름 1")
             })
-            expect(flowPage) == 2
+            expect(head.frame.maxY).to(beLessThanOrEqualTo((notes.first?.frame.minY ?? 0) + 0.01))
+            expect(head.attributedString?.string.contains("흐름 24")) == false
+            let tailPage = try XCTUnwrap(pages.firstIndex { page in
+                page.blocks.contains { ($0.attributedString?.string ?? "").contains("흐름 24") }
+            })
+            expect(tailPage) == 2
         }
 
         /// 구분선 여백만 지정한 각주 모양 payload (28바이트) — `dividerInfo`는 rawPayload를 다시
