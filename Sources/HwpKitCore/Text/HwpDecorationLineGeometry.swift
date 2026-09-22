@@ -3,12 +3,16 @@ import CoreText
 import Foundation
 
 /// 글자 장식선(글자 아래·글자 위 밑줄, 취소선 = 글자 가운데 밑줄, 변경 추적 삽입 밑줄·
-/// 삭제선)의 **세로 위치와 두께** — 한글 문서와 MS 워드 호환 문서의 두 기하를 한 곳에
-/// 모은다 (#136·#176·#179·#187). 렌더러(`HwpPageLayerDecorations`)가 이 값을 그대로
-/// 그린다.
+/// 삭제선)의 **세로 위치와 두께** — 한글 문서·한글 2007 호환 문서·MS 워드 호환 문서의
+/// 세 기하를 한 곳에 모은다 (#136·#176·#179·#187·#210). 렌더러
+/// (`HwpPageLayerDecorations`)가 이 값을 그대로 그린다.
 ///
 /// - 한글 문서: 아래 밑줄(삽입 밑줄 포함) −0.17em · 위 밑줄 +0.87em · 취소선(가운데
 ///   밑줄·삭제선 포함) +0.35em, 두께 모두 0.04em.
+/// - 한글 2007 호환(`HwpCompatibleDocumentTarget.hwp200X`): 두께가 크기와 무관한 고정
+///   0.36pt이고, 밑줄은 한글 문서와 **같은 가장자리**(아래 0.15em·위 0.85em)에 그 얇은
+///   선을 얹는다 — 중심은 −(0.15em + 0.18pt) · +(0.85em + 0.18pt)이고 취소선 중심은
+///   한글 문서와 같은 +0.35em이다.
 /// - MS 워드 호환: 아래 밑줄 −(descent + 0.021 cell) · 위 밑줄 ascent + 0.021 cell, 두께
 ///   0.05 cell · 취소선 0.273 ascent, 두께 0.04em.
 ///
@@ -17,7 +21,7 @@ import Foundation
 /// MS 워드 호환 문서의 `ascent`·`descent`·`cell`은 글꼴의 win 지표에서 푼 상자
 /// (`HwpMsWordLineBox`)에 **글자 모양 기본 크기**를 곱한 pt다 — 슬롯 상대 크기는 곱하지
 /// 않는다 (2026-09-16 실측: 한글 슬롯 50%·라틴 100%로 갈린 글자 모양의 밑줄·취소선이
-/// 100%와 같은 자리·두께, `HwpPageLayerDecorations.msWordBoxSize`). 한글은 그 문서에서
+/// 100%와 같은 자리·두께, `HwpPageLayerDecorations.decorationBaseFontSize`). 한글은 그 문서에서
 /// **밑줄을 줄 단위로, 취소선을 run 단위로** 놓는다 (2026-09-15 한글 12.30 실측, 12조합 +
 /// 픽스처):
 ///
@@ -32,6 +36,14 @@ import Foundation
 ///   +0.1892em). 글자 모양 run이 슬롯으로 갈려도 첫 글리프의 글꼴 × 기본 크기 한 줄이다
 ///   (`가나Ag`에서 한글 50%·라틴 100%든 그 반대든 함초롬 × 40pt 자리 +11.64pt, `Ag가나`는
 ///   Helvetica × 40pt 자리 +8.76pt).
+///
+/// 한글 2007 호환 문서의 값도 글꼴과 무관하다 (2026-09-22 실측, 9개 글꼴 × 5~100pt 22개
+/// 크기: 위치는 장치 양자화 0.12pt 안에서 같고 두께는 전부 0.36pt). 한글 문서와 달리 em을
+/// 곱하는 크기는 **글자 모양 기본 크기**(`hwp.baseFontSize`, 슬롯 상대 크기 전)다 — 기본
+/// 40pt·한글 슬롯 50%인 run의 밑줄이 20pt 자리가 아니라 40pt 자리(−6.24pt)이고 취소선도
+/// 40pt 자리(+13.92pt)다. 밑줄을 **줄 단위**로 놓는 축(크기가 섞인 줄에서 줄의 가장 큰
+/// 글자 모양이 자리를 정한다)은 한글 문서 갈래도 같은 규칙이라 이 수정의 범위 밖이다
+/// (#226).
 ///
 /// 한글 문서의 값은 글꼴과 무관하고 (13개 글꼴 전부 같은 값) 첨자 규칙(#179)은 두 문서
 /// 갈래가 같다 — 취소선 중심은 첨자로 옮겨진 베이스라인 + 줄어든 크기 기준, 두께와
@@ -74,6 +86,41 @@ public enum HwpDecorationLineGeometry {
         Line(
             center: fontSize * HwpRenderTuning.Text.strikethroughCenterRatio,
             thickness: thicknessFontSize * HwpRenderTuning.Text.decorationLineThicknessRatio
+        )
+    }
+
+    // MARK: - 한글 2007 호환 문서
+
+    /// 글자 아래 밑줄(변경 추적 삽입 밑줄 포함) — 베이스라인 아래 0.15em에 **위
+    /// 가장자리**가 닿는 고정 0.36pt 선이라 중심은 −(0.15em + 0.18pt)다. `fontSize`는
+    /// 글자 모양 기본 크기(첨자 축소·슬롯 상대 크기 전)다.
+    public static func hwp200XUnderlineBelow(fontSize: CGFloat) -> Line {
+        let thickness = HwpRenderTuning.Text.hwp200XDecorationLineThickness
+        return Line(
+            center: -(fontSize * HwpRenderTuning.Text.hwp200XUnderlineBelowEdgeRatio
+                + thickness / 2),
+            thickness: thickness
+        )
+    }
+
+    /// 글자 위 밑줄 — 베이스라인 위 0.85em에 **아래 가장자리**가 닿는 고정 0.36pt 선.
+    public static func hwp200XUnderlineAbove(fontSize: CGFloat) -> Line {
+        let thickness = HwpRenderTuning.Text.hwp200XDecorationLineThickness
+        return Line(
+            center: fontSize * HwpRenderTuning.Text.hwp200XUnderlineAboveEdgeRatio
+                + thickness / 2,
+            thickness: thickness
+        )
+    }
+
+    /// 취소선(글자 가운데 밑줄·변경 추적 삭제선 포함) — 중심은 한글 문서와 같은
+    /// 0.35em이고 두께만 고정 0.36pt다. 밑줄과 달리 가장자리가 아니라 중심을 맞춘다
+    /// (실측: 22개 크기에서 0.349~0.357em, 0.35em + 두께 절반은 18개 크기가 어긋난다).
+    /// `fontSize`는 첨자면 줄어든 크기다 — 취소선만 첨자로 옮겨진 베이스라인을 따른다.
+    public static func hwp200XStrikethrough(fontSize: CGFloat) -> Line {
+        Line(
+            center: fontSize * HwpRenderTuning.Text.strikethroughCenterRatio,
+            thickness: HwpRenderTuning.Text.hwp200XDecorationLineThickness
         )
     }
 

@@ -26,6 +26,27 @@ final class HwpxHwpEquivalenceCompatTargetTests: XCTestCase {
         hwpProjection.assertEqual(to: hwpxProjection, fixtureId: "compat-decorations")
     }
 
+    /// 한글 2007 호환 문서 축의 직접 핀 (#210) — 위 MS 워드 핀과 같은 규약이다. 한글
+    /// 12.30.0이 `HWP200X`로 저장한 이 쌍에서 HWPX 쪽 값을 HWP 저장본의 1(`CT_HWP200X`)로
+    /// 못박아, 대상 프로그램이 MS 워드 하나만 옮겨지고 나머지가 한글 문서(0)로 접히는
+    /// 회귀를 잡는다.
+    func testHwp2007DecorationsPairProjectsTheHwp200XTargetOnBothFormats() throws {
+        let hwp = try HwpFile(
+            fromPath: FixtureLoader.load(id: "hwp2007-decorations").documentURL.path
+        )
+        let hwpx = try HwpFile(
+            fromPath: HwpxFixtureLoader.load(id: "hwp2007-decorations").documentURL.path
+        )
+        let hwpProjection = DocumentEquivalenceProjection(of: hwp)
+        let hwpxProjection = DocumentEquivalenceProjection(of: hwpx)
+
+        expect(hwpProjection.compatibleDocumentTarget) == 1
+        expect(hwpxProjection.compatibleDocumentTarget) == 1
+        expect(hwp.docInfo.compatibleDocument?.target) == .hwp200X
+        expect(hwpx.docInfo.compatibleDocument?.target) == .hwp200X
+        hwpProjection.assertEqual(to: hwpxProjection, fixtureId: "hwp2007-decorations")
+    }
+
     /// 한글 문서 쌍은 0으로 같다 — 재저장본에 record가 있고(`HWP201X`) 매퍼가 그것을
     /// 옮긴다. nil ↔ 0으로 갈리는 회귀를 잡는다.
     func testNativePairProjectsZeroOnBothFormats() throws {

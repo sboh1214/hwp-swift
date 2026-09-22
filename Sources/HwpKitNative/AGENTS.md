@@ -213,10 +213,13 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
   — 같은 글자 모양 id(`hwp.charShapeId`)의 잇닿은 run(슬롯·대체 글꼴 분할)을 한 글자
   모양 run으로 묶어 첫 run의 글꼴 → 취소선은 run 단위(속성 사전 비교는 양쪽 정렬 자간·
   문단 끝 상자에 갈린다). 두 상자 모두 글꼴 상자(em)에 **글자 모양 기본 크기**
-  (`msWordBoxSize`: `hwp.baseFontSize`)를 곱한다 — run 글꼴 크기(슬롯 상대 크기 반영)로
+  (`decorationBaseFontSize`: `hwp.baseFontSize`)를 곱한다 — run 글꼴 크기(슬롯 상대 크기 반영)로
   곱하면 한 글자 모양 안에서 선이 계단이 진다 (PR 리뷰, 한글 실측: 슬롯 50%도 100% 자리). 줄 상자 판정은 줄의 run 하나라도 MS 워드 키를 실으면 줄 전체
-  (표식 run도 글꼴이 있으면 후보). 한글 문서(키 없음·`hwp201X`·`hwp200X`·
-  `hunmin`)는 종전 글자 크기 비례 경로다. 글꼴 상자 읽기는 PostScript 이름으로 캐시된다
+  (표식 run도 글꼴이 있으면 후보). 한글 문서(키 없음·`hwp201X`·`hunmin`)는
+  글자 크기 비례 경로이고, **한글 2007 호환(`hwp200X`)은 같은 비례 자리에 크기와 무관한 고정
+  0.36pt 선을 얹는 제3의 갈래**다 (#210, 갈래 판정과 세 산식은
+  `HwpPageLayerDecorationLines.swift`의 `isHwp2007Compatible`·`underlineBelowLine`·
+  `underlineAboveLine`·`strikethroughLine` — 네 그리기 함수가 모두 이 resolver를 지난다). 글꼴 상자 읽기는 PostScript 이름으로 캐시된다
   (`HwpMsWordLineBox.metrics(of:)`) — 줄마다 OS/2 표를 다시 읽지 않는다.
 
 ## 줄 배치 캐시 (HwpPageLayer)

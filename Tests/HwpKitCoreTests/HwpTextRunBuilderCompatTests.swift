@@ -73,8 +73,9 @@ import XCTest
             }
         }
 
-        /// 한글 2007 호환·훈민정음 호환도 키를 싣되 값이 다르다 — 렌더러는 `msWord`만
-        /// 가르므로 한글 문서와 같은 기하가 된다.
+        /// 한글 2007 호환·훈민정음 호환도 키를 싣되 값이 다르다 — 렌더러는 이 raw 값으로
+        /// `msWord`(글꼴 지표 기하)와 `hwp200X`(고정 두께 기하, #210)를 가르고 훈민정음은
+        /// 한글 문서와 같이 그린다. 이 계약이 두 기하의 전제다.
         func testOtherTargetsCarryTheirOwnRawValue() throws {
             let paragraph = paragraph(text: "가", runs: [(0, 0)])
             let shapes: [UInt32: CoreHwp.HwpCharShape] = [0: try charShape()]

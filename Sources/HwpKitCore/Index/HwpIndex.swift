@@ -68,9 +68,10 @@ public struct HwpIndex: Sendable {
     /// 호환 문서의 대상 프로그램 (표 55) — record가 없거나 raw 값이 표에 없으면 nil이고
     /// 소비자는 한글 문서로 다룬다. 조판은 이 값을 모든 run에
     /// `HwpAttributedStringKey.compatibleDocumentTarget`으로 실어 렌더러가 MS 워드
-    /// 호환 문서(`msWord`)의 장식선 기하를 가른다 (#187, `HwpDecorationLineGeometry`).
-    /// `isCompatibilityDocument`(공백 폭 게이트)와 달리 갈래를 특정한다 — 한글 2007
-    /// 호환(`hwp200X`)·훈민정음(`hunmin`)은 장식선에서 한글 문서와 같이 다룬다.
+    /// 호환 문서(`msWord`)와 한글 2007 호환 문서(`hwp200X`)의 장식선 기하를 가른다
+    /// (#187·#210, `HwpDecorationLineGeometry`). `isCompatibilityDocument`(공백 폭
+    /// 게이트)와 달리 갈래를 특정한다 — 훈민정음(`hunmin`)은 장식선에서 한글 문서와
+    /// 같이 다룬다.
     public let compatibleDocumentTarget: CoreHwp.HwpCompatibleDocumentTarget?
 
     public init(from file: CoreHwp.HwpFile) {

@@ -467,5 +467,31 @@ import XCTest
             // 첫 문단만 그리면 Papyrus 상자뿐이라 새는 몫이 없다.
             expect(HwpHitTester.verticalInkReach(of: first).below).to(beCloseTo(0, within: 0.001))
         }
+
+        /// 한글 2007 호환 문서(`hwp200X`)는 **장식선만** 갈린다 (#210) — 줄 상자·베이스라인·
+        /// 전진량은 키 없는 한글 문서와 같다. 이 축까지 갈리면 쪽 나눔이 흔들리므로 비대칭을
+        /// 여기서 잠근다 (#194의 갈래 판정은 `msWord` 전용이다).
+        func testHwp2007KeyKeepsTheNativeVerticalLayout() {
+            let text = "가나다라마바사아자차카타파하"
+            var compatAttributes = Self.attributes("Apple SD Gothic Neo", 10, msWord: false)
+            compatAttributes[HwpAttributedStringKey.compatibleDocumentTarget] = NSNumber(
+                value: HwpCompatibleDocumentTarget.hwp200X.rawValue
+            )
+            let compat = Self.lines(Self.finish(NSMutableAttributedString(
+                string: text, attributes: compatAttributes
+            )), width: 70)
+            let native = Self.lines(Self.finish(NSMutableAttributedString(
+                string: text,
+                attributes: Self.attributes("Apple SD Gothic Neo", 10, msWord: false)
+            )), width: 70)
+            expect(compat.count) == native.count
+            guard compat.count == native.count else { return }
+            for (index, line) in compat.enumerated() {
+                expect(line.baselineOrigin.y).to(
+                    beCloseTo(native[index].baselineOrigin.y, within: 0.001),
+                    description: "줄 \(index) 베이스라인"
+                )
+            }
+        }
     }
 #endif

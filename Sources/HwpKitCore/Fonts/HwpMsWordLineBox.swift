@@ -78,7 +78,7 @@ public struct HwpMsWordLineBox: Hashable, Sendable {
 
     /// 글자 크기를 곱한 pt 상자 — MS 워드 호환 문서에서는 run 글꼴 크기가 아니라 **글자
     /// 모양 기본 크기**(`hwp.baseFontSize`, 슬롯 상대 크기 무관)를 곱한다 (한글 실측,
-    /// `HwpPageLayerDecorations.msWordBoxSize`).
+    /// `HwpPageLayerDecorations.decorationBaseFontSize`).
     public func scaled(by fontSize: CGFloat) -> HwpMsWordLineBox {
         HwpMsWordLineBox(lineHeight: lineHeight * fontSize, baseline: baseline * fontSize)
     }

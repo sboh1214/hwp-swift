@@ -88,8 +88,9 @@ extension HwpPageLayer {
     }
 
     /// 이 run이 MS 워드 호환 문서의 것인지 — 조판이 한글 문서가 아닌 문서의 모든 run에
-    /// 싣는 `compatibleDocumentTarget`(표 55)이 `msWord`일 때만 참이다. 한글 2007 호환·
-    /// 훈민정음 호환·record 없음은 한글 문서와 같은 기하다.
+    /// 싣는 `compatibleDocumentTarget`(표 55)이 `msWord`일 때만 참이다. 한글 2007 호환은
+    /// 또 다른 기하이고 (`isHwp2007Compatible`, #210), 훈민정음 호환·record 없음은 한글
+    /// 문서와 같은 기하다.
     func isMsWordCompatible(_ attributes: [NSAttributedString.Key: Any]) -> Bool {
         guard let raw = attributes[HwpAttributedStringKey.compatibleDocumentTarget] as? NSNumber
         else { return false }
@@ -134,14 +135,17 @@ extension HwpPageLayer {
         return fonts
     }
 
-    /// MS 워드 호환 문서에서 글꼴 상자(em)에 곱하는 크기 — run 글꼴 크기가 아니라 **글자
-    /// 모양의 기본 크기**(`hwp.baseFontSize`, 슬롯 상대 크기·첨자 축소 전)다. 한글 12.30
+    /// 호환 문서에서 장식선의 기준 크기 — run 글꼴 크기가 아니라 **글자 모양의 기본
+    /// 크기**(`hwp.baseFontSize`, 슬롯 상대 크기·첨자 축소 전)다. MS 워드 호환 문서는
+    /// 글꼴 상자(em)에, 한글 2007 호환 문서는 em 비율에 이 크기를 곱한다 (#210 실측:
+    /// 기본 40pt·한글 슬롯 50%인 run의 밑줄이 −6.24pt = 40pt 자리, 취소선 +13.92pt =
+    /// 0.35 × 40pt — 20pt 자리라면 −3.24·+7.08이다). 한글 12.30
     /// 실측(2026-09-16, PR 리뷰): 한 글자 모양 안에서 한글 슬롯 50%·라틴 100%로 갈라도
     /// (함초롬 20pt `가나` + Helvetica 40pt `Ag`) 밑줄은 함초롬 40pt 상자 자리·두께 그대로고
     /// (−10.3pt·2.64pt, 슬롯 50% 상자로 재면 −4.3pt), 취소선도 첫 글리프 글꼴 × 40pt
     /// (+11.64pt, 20pt 기준이면 +5.84)다. 표식 run은 허용 목록이 `baseFontSize`를 남겨
     /// 같은 값을 갖고, 없으면 run 글꼴 크기로 떨어진다.
-    func msWordBoxSize(_ attributes: [NSAttributedString.Key: Any]) -> CGFloat {
+    func decorationBaseFontSize(_ attributes: [NSAttributedString.Key: Any]) -> CGFloat {
         if let base = attributes[HwpAttributedStringKey.baseFontSize] as? NSNumber,
            base.doubleValue > 0
         {
@@ -377,7 +381,10 @@ extension HwpPageLayer {
     /// 그린다 (#187 실측: 한글 문서 13개 글꼴·MS 워드 호환 문서 32개 글꼴 전부 삽입
     /// 밑줄 = 일반 밑줄). 종전(#176)의 전용 상수 −0.26em·0.064em은 `track-changes`
     /// 실물(MS 워드 호환 문서)의 함초롬돋움 값이었고, 그 값은 이제 호환 문서의 글꼴
-    /// 지표 기하(`msWord`)가 낸다. 원점도 일반 밑줄과 같은 되돌린 원점을 받는다.
+    /// 지표 기하(`msWord`)가 낸다. 한글 2007 호환 문서에서도 일반 밑줄과 같은
+    /// 고정 0.36pt 선이다 (#210 실측: 삽입 밑줄 −4.92pt = 일반 밑줄, 삭제선 +11.16pt ≒
+    /// 일반 취소선 +11.04pt — 쪽이 0.8배로 줄어 글리프가 31.68pt로 찍힌 표본).
+    /// 원점도 일반 밑줄과 같은 되돌린 원점을 받는다.
     func drawTrackInsertUnderlineIfNeeded(
         _ run: CTRun,
         lineOrigin: CGPoint,
@@ -387,8 +394,7 @@ extension HwpPageLayer {
         let attributes = runAttributes(run)
         guard let color = attributes[HwpAttributedStringKey.trackInsertUnderline]
         else { return }
-        let line = msWord.map { HwpDecorationLineGeometry.msWordUnderlineBelow(lineBox: $0) }
-            ?? HwpDecorationLineGeometry.underlineBelow(fontSize: preScriptFontSize(attributes))
+        let line = underlineBelowLine(attributes, msWord: msWord)
         // 변경 추적 표시선에는 선 모양이 없다 — 늘 실선.
         fillLine(
             run, lineOrigin: lineOrigin, line: line, color: color,
@@ -421,11 +427,14 @@ extension HwpPageLayer {
     /// `msWordFont`는 MS 워드 호환 문서에서 이 run의 취소선 기준 글꼴
     /// (`msWordStrikethroughFonts`) — 한글 문서면 nil이고 글자 크기 비례로 그린다. 그
     /// 글꼴의 상자에 곱하는 크기는 run 글꼴 크기가 아니라 **글자 모양 기본 크기**
-    /// (`msWordBoxSize`, 슬롯 상대 크기 무관)에 첨자 축소 비율만 곱한 값이고, 두께도
+    /// (`decorationBaseFontSize`, 슬롯 상대 크기 무관)에 첨자 축소 비율만 곱한 값이고, 두께도
     /// 기본 크기의 0.04배다 (한글 실측: 한글 50%·라틴 100%로 갈린 글자 모양 run의
     /// 취소선이 한 줄, 자리는 첫 글리프 글꼴 × 40pt, 두께 1.56pt = 0.04 × 40). 슬롯마다
     /// 글꼴 크기가 달라 CoreText가 쪼갠 run을 run 크기로 곱하면 한 글자 모양 안에서
     /// 취소선이 계단이 진다 (PR 리뷰).
+    ///
+    /// 한글 2007 호환 문서(#210)에서는 중심이 한글 문서와 같은 0.35 × 기준 크기이고
+    /// 두께만 고정 0.36pt다 — 갈래 판정은 `strikethroughLine`에 있다.
     func drawStrikethroughIfNeeded(
         _ run: CTRun,
         lineOrigin: CGPoint,
@@ -446,20 +455,7 @@ extension HwpPageLayer {
         // 0.04배다 (#176 실측: 5~100pt에서 밑줄·취소선이 같은 폭). 변경 추적 삭제선도
         // 같은 경로다 (`track-changes` 실물의 +0.29em = 함초롬돋움의 호환 문서 값).
         let thicknessFontSize = preScriptFontSize(attributes)
-        let line: HwpDecorationLineGeometry.Line = if let msWordFont {
-            // 첨자 축소 비율(run 글꼴 크기 ÷ 축소 전 크기)은 유지한다 — 한글 문서처럼
-            // 첨자 취소선은 줄어든 글리프 가운데를 지난다 (#179; 호환 문서 첨자 표본은 없다).
-            HwpDecorationLineGeometry.msWordStrikethrough(
-                runBox: HwpMsWordLineBox.metrics(of: msWordFont).scaled(
-                    by: msWordBoxSize(attributes) * size / max(thicknessFontSize, 0.01)
-                ),
-                thicknessFontSize: msWordBoxSize(attributes)
-            )
-        } else {
-            HwpDecorationLineGeometry.strikethrough(
-                fontSize: size, thicknessFontSize: thicknessFontSize
-            )
-        }
+        let line = strikethroughLine(attributes, msWordFont: msWordFont, fontSize: size)
         fillLine(
             run,
             lineOrigin: CGPoint(x: lineOrigin.x, y: lineOrigin.y + scriptBaselineShift(attributes)),
@@ -487,8 +483,9 @@ extension HwpPageLayer {
     /// 베이스라인 아래 1.14pt(올바른 1.70pt보다 0.56pt 위)·두께 0.27pt로 첨자 글리프에
     /// 붙었다.
     ///
-    /// MS 워드 호환 문서(#187)에서는 `msWord`(줄 상자)로 줄 전체가 한 자리·한 두께다
-    /// — `HwpDecorationLineGeometry` 참조.
+    /// MS 워드 호환 문서(#187)에서는 `msWord`(줄 상자)로 줄 전체가 한 자리·한 두께이고,
+    /// 한글 2007 호환 문서(#210)에서는 베이스라인 아래 0.15 × 기준 크기에 위 가장자리를
+    /// 맞춘 고정 0.36pt 선이다 — `HwpDecorationLineGeometry`·`underlineBelowLine` 참조.
     func drawUnderlineIfNeeded(
         _ run: CTRun,
         lineOrigin: CGPoint,
@@ -498,8 +495,7 @@ extension HwpPageLayer {
     ) {
         let attributes = runAttributes(run)
         guard attributes[HwpAttributedStringKey.underlineStyle] != nil else { return }
-        let line = msWord.map { HwpDecorationLineGeometry.msWordUnderlineBelow(lineBox: $0) }
-            ?? HwpDecorationLineGeometry.underlineBelow(fontSize: preScriptFontSize(attributes))
+        let line = underlineBelowLine(attributes, msWord: msWord)
         fillUnderline(
             run, lineOrigin: lineOrigin, line: line, placement: .underlineBelow,
             span: shapeSpan, in: ctx
@@ -522,7 +518,8 @@ extension HwpPageLayer {
     ///
     /// MS 워드 호환 문서(#187)에서는 아래쪽 밑줄과 같은 줄 상자의 `ascent` 위에 같은
     /// 두께로 놓인다 (한글 실측: 함초롬 무장식 run 뒤 Apple SD 위 밑줄 run이 함초롬
-    /// 자리 +1.0991em).
+    /// 자리 +1.0991em). 한글 2007 호환 문서(#210)에서는 베이스라인 위 0.85 × 기준 크기에
+    /// 아래 가장자리를 맞춘 고정 0.36pt 선이다.
     func drawAboveUnderlineIfNeeded(
         _ run: CTRun,
         lineOrigin: CGPoint,
@@ -532,8 +529,7 @@ extension HwpPageLayer {
     ) {
         let attributes = runAttributes(run)
         guard attributes[HwpAttributedStringKey.underlineAboveStyle] != nil else { return }
-        let line = msWord.map { HwpDecorationLineGeometry.msWordUnderlineAbove(lineBox: $0) }
-            ?? HwpDecorationLineGeometry.underlineAbove(fontSize: preScriptFontSize(attributes))
+        let line = underlineAboveLine(attributes, msWord: msWord)
         fillUnderline(
             run, lineOrigin: lineOrigin, line: line, placement: .underlineAbove,
             span: shapeSpan, in: ctx
@@ -542,7 +538,7 @@ extension HwpPageLayer {
 
     /// 첨자 축소 전 글자 크기 (pt). 조판이 모든 run에 싣는 `spaceTargetSize`가
     /// 그 값이고, 없으면 run 글꼴 크기로 떨어진다.
-    private func preScriptFontSize(_ attributes: [NSAttributedString.Key: Any]) -> CGFloat {
+    func preScriptFontSize(_ attributes: [NSAttributedString.Key: Any]) -> CGFloat {
         if let size = attributes[HwpAttributedStringKey.spaceTargetSize] as? NSNumber {
             return CGFloat(size.doubleValue)
         }
