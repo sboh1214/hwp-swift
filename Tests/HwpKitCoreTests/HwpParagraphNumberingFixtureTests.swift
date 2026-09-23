@@ -188,8 +188,8 @@ import XCTest
                     guard FileManager.default.fileExists(atPath: url.path) else { return nil }
                     return try JSONDecoder().decode(HwpxPairManifest.self, from: Data(contentsOf: url))
                 }
-            // 픽스처 유실 가드 — 변환 쌍 24종
-            expect(manifests.count) >= 24
+            // 픽스처 유실 가드 — 변환 쌍 25종
+            expect(manifests.count) >= 25
             var numbered = 0
             for manifest in manifests {
                 guard let pairId = manifest.sourceHwpFixture else {

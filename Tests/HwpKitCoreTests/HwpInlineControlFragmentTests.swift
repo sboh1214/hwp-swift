@@ -169,7 +169,11 @@ import XCTest
                 try Self.inlineTable(instanceId: 1),
                 try Self.inlineTable(instanceId: 2),
             ]
-            let pages = try await Self.pages(host: host)
+            // 뒤 문단은 본문 마지막 줄(4820 + 전진량 2100) 아래에서 시작한다 — 같은 4820이면 한글의
+            // 쪽 절단점이라 다음 쪽으로 간다 (#214).
+            let pages = try await Self.pages(
+                of: try InlineControlFragmentSupport.absolutePaginator(host: host, tailLocation: 6920)
+            )
             expect(pages.count) == 1
             guard let page = pages.first else { return }
             let hostBlock = try XCTUnwrap(Self.hostFragment(on: page))

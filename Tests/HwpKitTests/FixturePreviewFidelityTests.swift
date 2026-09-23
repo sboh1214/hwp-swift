@@ -121,6 +121,10 @@ final class FixturePreviewFidelityTests: XCTestCase {
         // 문단 끝 글자의 글자 모양 크기(#206) — 1쪽은 캐시로 놓이므로 이 값은 유실 가드이고, 캐시
         // 없이 조판한 줄이 캐시 자리와 같은지의 가드는 `FixtureParagraphEndCharSizeTests`다.
         "paragraph-end-char-size": 0.003, // 실측 0.0023 (2026-09-21)
+        // 셀 내용이 키운 글자처럼 취급 표(#214) — 1쪽은 한글이 실제 높이로 고쳐 쓴 저장본을
+        // 캐시로 놓으므로 이 값은 유실 가드이고, 낡은 높이·캐시 없는 재조판의 가드는
+        // `FixtureInlineTableActualHeightTests`의 좌표 핀이다. 표 테두리·셀 글자가 대부분이다.
+        "inline-table-actual-height": 0.0045, // 실측 0.0034 (2026-09-23)
         "공공누리": 0.004, // 실측 0.0028 (저해상 GIF)
         "문서이력관리": 0.001, // 실측 0.0000
         "변경내용추적": 0.001, // 실측 0.0000

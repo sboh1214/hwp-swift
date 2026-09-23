@@ -164,6 +164,9 @@ public actor HwpPaginator {
     }
 
     private var measureMemo: ParagraphMeasureMemo?
+    /// 최상위 문단의 글자처럼 취급 표 레이아웃 메모 (#214) — 줄 예약(`inlineTableHeights`)이
+    /// 조판 전에 잰 표를 배치(`layoutTable`)가 다시 조판하지 않게 한다. 문단이 바뀌면 비운다.
+    var inlineTableFrames = InlineTableFrameMemo()
     /// 문단 단위 `Task.yield()` 배칭 카운터 (#73 조각 3).
     ///
     /// 문단마다 최대 두 번(배치 뒤·측정 진입) 양보하던 것을 `yieldBatchSize`
@@ -325,6 +328,18 @@ public actor HwpPaginator {
     private var lastAbsoluteCacheLoc: Int32 {
         get { absoluteCachePlacer.lastAbsoluteCacheLoc }
         set { absoluteCachePlacer.lastAbsoluteCacheLoc = newValue }
+    }
+
+    /// 그 세그먼트의 전진량 (#214) — 저장은 absoluteCachePlacer
+    private var lastAbsoluteCacheAdvance: Int {
+        get { absoluteCachePlacer.lastAbsoluteCacheAdvance }
+        set { absoluteCachePlacer.lastAbsoluteCacheAdvance = newValue }
+    }
+
+    /// 쪽 중간에 열린 단 밴드의 첫 캐시 문단을 기다리는가 (#214 리뷰) — 저장은 absoluteCachePlacer
+    private var absoluteCacheBandRestarted: Bool {
+        get { absoluteCachePlacer.bandRestartedMidPage }
+        set { absoluteCachePlacer.bandRestartedMidPage = newValue }
     }
 
     /// 절대 캐시 모드에서 stale 캐시 문단이 만든 아래 방향 보정 오프셋
@@ -597,6 +612,13 @@ private extension HwpPaginator {
         paragraphAnchorTop = top
         // 새 밴드의 첫 문단 앞에는 앞 문단의 아래 간격이 없다 (#161).
         lastPlacedSpacingBottom = 0
+        // 줄 캐시 위치는 밴드 상단 기준이다 — 앞 밴드의 줄 위치와 견줘 쪽 절단점을 찾지 않고, 쪽
+        // 중간에 열린 밴드의 캐시 문단은 자리로도 판정한다 (#214 리뷰, `bandStartOverflows`). 낡은
+        // 캐시 보정도 밴드마다 다시 센다 — 새 밴드 상단(`bandUsedBottom`)이 그 몫을 이미 담았다.
+        lastAbsoluteCacheLoc = Int32.min
+        lastAbsoluteCacheAdvance = 0
+        absoluteCacheStaleOffset = 0
+        absoluteCacheBandRestarted = !currentBlocks.isEmpty
     }
 
     /// 밴드를 닫는다. 본문 텍스트가 첫 단에만 남은 다단 밴드는
@@ -863,7 +885,11 @@ private extension HwpPaginator {
         {
             return (memo.attributedString, memo.paragraphFrame)
         }
-        let attributedString = textRunBuilder().build(
+        // 글자처럼 취급 표는 그려지는 높이로 줄을 예약한다 (#214) — 메모 열쇠의 단 폭·문단
+        // 위치가 그 높이의 입력(단 폭·크기 해석기·셀 번호)도 정하므로 메모는 그대로 유효하다.
+        var builder = textRunBuilder()
+        builder.inlineTableHeights = inlineTableHeights(for: paragraph)
+        let attributedString = builder.build(
             paragraph: paragraph, controlReplacements: replacements,
             number: currentParagraphNumber
         )
@@ -1069,9 +1095,10 @@ private extension HwpPaginator {
                 - suppressedGap)
             : height(for: paragraph, fallback: paragraphFrame.totalHeight)
         // 높이 출처가 캐시인지는 수치 일치가 아니라 **선택**으로 기록한다 — 캐시 총높이와 CT
-        // 총높이가 우연히 같아도 마지막 줄 간격은 다르다 (단 구분선 바닥, PR 리뷰).
-        var cacheHeightUsed = isValidLineSegmentCache(
-            paragraph.paraLineSeg.paraLineSegInternalArray
+        // 총높이가 우연히 같아도 마지막 줄 간격은 다르다 (단 구분선 바닥, PR 리뷰). 글자처럼 취급
+        // 표보다 낮은 캐시는 쓰지 않는다 (`lineCacheHeightIsUsable`, #214 PR 리뷰).
+        var cacheHeightUsed = lineCacheHeightIsUsable(
+            paragraph, measuredHeight: paragraphFrame.totalHeight + suppressedGap
         )
         // 캐시 높이가 페이지를 넘는데 CT 라인도 하나뿐이면 (표/개체 앵커가 캐시
         // 높이를 지배하는 문단) 캐시 높이를 그대로 쓸 수 없다 — 개체는 별도
@@ -1417,7 +1444,13 @@ private extension HwpPaginator {
               let runs = HwpAbsoluteCachePlacer.cacheRuns(for: paragraph),
               runs.count > 1,
               runs.count <= columnFrames.count,
-              runs.allSatisfy({ $0.first?.lineLocation == 0 })
+              runs.allSatisfy({ $0.first?.lineLocation == 0 }),
+              // 글자처럼 취급 표를 실은 줄이 그 표보다 낮은 캐시는 단 배분도 낡았다 (#214 PR
+              // 리뷰) — run 높이를 믿으면 뒤 문단이 표를 덮으므로 줄 단위 배분으로 떨어진다.
+              !HwpParagraphLayout.lineCacheIsStale(
+                  paragraph,
+                  inlineTableHeights: columnRunInlineTableHeights(for: paragraph, runs: runs)
+              )
         else { return false }
 
         guard let boundaries = HwpAbsoluteCachePlacer.columnRunBoundaries(
@@ -1491,9 +1524,73 @@ private extension HwpPaginator {
     }
 
     /// 절대 캐시 문단 배치: run들을 한글이 계산한 y에 그대로 놓고,
-    /// run 사이 (loc 리셋)마다 페이지를 확정한다. 문단 첫 loc이 현재 페이지의
-    /// 마지막 loc보다 작으면 한글이 이 문단을 새 페이지에서 시작한 것이므로
-    /// 페이지를 확정하고 false를 반환한다 (호출자가 재처리).
+    /// 쪽 중간에 새로 열린 단 밴드의 캐시 문단이 남은 본문에 안 들어가는가 (#214 리뷰) — 한글은
+    /// 밴드마다 줄 위치를 밴드 상단부터 다시 세므로 앞 밴드의 줄과 견주는 쪽 절단점 판정은 쓸 수
+    /// 없다(종전에는 앞 밴드 마지막 줄 위치보다 작다고 쪽을 넘겨 `Column` 꼴 한 쪽 문서가 두 쪽이
+    /// 됐다). 대신 **자리**로 판정한다: 첫 run은 한글이 한 쪽에 놓은 줄들이므로, 그 줄 **상자**(줄
+    /// 간격 제외) 가운데 하나라도 캐시가 준 자리에서 본문(각주 예약 제외) 아래를 넘으면 한글은 그
+    /// 문단을 다음 쪽에 놓았다 — 쪽을 채운 문단 뒤의 단 정의 문단, 첫 줄은 들어가도 문단 보호·외톨이줄
+    /// 보호로 통째로 옮긴 문단(#207)이 그렇다. 밴드의 문단마다 쪽이 넘어갈 때까지 본다 — 옮겨진 문단
+    /// 뒤의 문단들도 위치가 늘기만 해서 위치로는 절단점이 안 보인다.
+    private func bandStartOverflows(_ run: [CoreHwp.HwpParaLineSegInternal]) -> Bool {
+        guard absoluteCacheBandRestarted else { return false }
+        let usableBottom = currentPageGeometry.contentFrame.maxY - footnoteReservedHeight
+        let runBottom = run.reduce(Int.min) {
+            max($0, Int($1.lineLocation) + Int(max(0, $1.lineHeight)))
+        }
+        let bottom = currentColumnFrame.minY + absoluteCacheStaleOffset
+            + HwpUnits.points(fromHwpUnit: Int32(clamping: max(0, runBottom)))
+        return bottom > usableBottom + 0.01
+    }
+
+    /// 낡은 캐시 보정(`staleAdjustedHeight`)이 걸린 쪽에서 이 문단의 첫 run이 보정된 자리에서
+    /// 본문(각주 예약 제외) 아래를 넘는가 (#214 PR 리뷰). 캐시의 쪽 절단점은 보정 **전** 자리로
+    /// 정해졌으므로 절단점만 따르면, 표가 크게 커진 문서에서 밀린 뒤 문단이 종이 밖으로 나가
+    /// 사라진다. 한글은 넘는 문단을 다음 쪽 머리에 놓는다 — 한글 12.30 실측(2026-09-23): 앞 표가
+    /// 51.28 → 563.28pt로 커진 문서의 뒤 표 문단은 2쪽 머리(줄 위치 0)에, 제 표가 627.28pt로 커져
+    /// 남은 자리에 안 들어가는 문단은 2쪽 머리에 통째로 놓이고 그 뒤 문단은 3쪽 머리다. 자리는 줄
+    /// **상자**로 잰다(줄 간격 제외, `bandStartOverflows`와 같다) — 문단 자신이 보정되면 CT 줄 상자다.
+    private func staleShiftOverflows(
+        _ paragraph: CoreHwp.HwpParagraph,
+        attributedString: NSAttributedString,
+        frame: HwpParagraphFrame,
+        runs: [[CoreHwp.HwpParaLineSegInternal]]
+    ) -> Bool {
+        let firstLoc = runs[0][0].lineLocation
+        let grows = staleLineExtent(
+            paragraph, runs: runs, slice: attributedString, frame: frame,
+            cachedHeight: absoluteRunBlockHeight(run: runs[0], firstLocation: firstLoc)
+        ) != nil
+        guard absoluteCacheStaleOffset != 0 || grows else { return false }
+        let boxes: CGFloat = if grows {
+            frame.lines.map { $0.origin.y + $0.boxHeight }.max() ?? frame.totalHeight
+        } else {
+            HwpUnits.points(fromHwpUnit: Int32(clamping: runs[0].reduce(Int.min) {
+                max($0, Int($1.lineLocation) + Int(max(0, $1.lineHeight)))
+            } - Int(firstLoc)))
+        }
+        let top = currentColumnFrame.minY + absoluteCacheStaleOffset
+            + max(0, HwpUnits.points(fromHwpUnit: firstLoc))
+        let usableBottom = currentPageGeometry.contentFrame.maxY - footnoteReservedHeight
+        return top + boxes > usableBottom + 0.01
+    }
+
+    /// `staleShiftOverflows`로 쪽을 넘긴 문단을 새 쪽 머리에 놓는다 — 그 문단의 캐시 위치는 옛 쪽
+    /// 기준이므로 이 쪽의 보정을 그 위치만큼 당긴다. 같은 쪽의 뒤 캐시 문단은 같은 보정으로 캐시 간격을
+    /// 그대로 잇고, 캐시의 다음 쪽 절단점에서 보정이 풀린다. 다른 문단이 먼저 오면 버린다.
+    private func applyPendingAbsoluteCacheRebase(at firstLoc: Int32) {
+        guard let pending = absoluteCachePlacer.pendingRebaseLocation else { return }
+        absoluteCachePlacer.pendingRebaseLocation = nil
+        guard pending == firstLoc else { return }
+        absoluteCacheStaleOffset = -max(0, HwpUnits.points(fromHwpUnit: firstLoc))
+    }
+
+    /// run 사이 (loc 리셋)마다 페이지를 확정한다. 문단 첫 줄이 현재 페이지의 마지막 줄 뒤의
+    /// 한글 쪽 절단점이면 (`HwpAbsoluteCachePlacer.isPageBreak` — loc이 줄거나, 자리를 차지한 줄
+    /// 뒤의 같은 loc, #214) 한글이 이 문단을 새 페이지에서 시작한 것이므로 페이지를 확정하고
+    /// false를 반환한다 (호출자가 재처리). 쪽 중간에 열린 단 밴드의 첫 캐시 문단은 loc을 밴드
+    /// 상단부터 다시 세므로 자리로 판정한다 (`bandStartOverflows`). 낡은 캐시 보정으로 밀린 문단이
+    /// 쪽 아래를 넘어도 쪽을 넘기고, 새 쪽 머리에 놓는다 (`staleShiftOverflows`, #214 PR 리뷰).
     private func placeAbsoluteCachedParagraph(
         _ paragraph: CoreHwp.HwpParagraph,
         attributedString: NSAttributedString,
@@ -1501,10 +1598,22 @@ private extension HwpPaginator {
         runs: [[CoreHwp.HwpParaLineSegInternal]]
     ) -> Bool {
         let firstLoc = runs[0][0].lineLocation
-        if firstLoc < lastAbsoluteCacheLoc, !currentBlocks.isEmpty || contentHeightUsed > 0 {
-            closeColumnBand()
-            cacheCurrentPage()
-            return false
+        applyPendingAbsoluteCacheRebase(at: firstLoc)
+        if !currentBlocks.isEmpty || contentHeightUsed > 0 {
+            let cachedBreak = HwpAbsoluteCachePlacer.isPageBreak(
+                at: firstLoc, after: lastAbsoluteCacheLoc, previousAdvance: lastAbsoluteCacheAdvance
+            ) || bandStartOverflows(runs[0])
+            let shiftedOut = !cachedBreak && staleShiftOverflows(
+                paragraph, attributedString: attributedString, frame: paragraphFrame, runs: runs
+            )
+            if cachedBreak || shiftedOut {
+                closeColumnBand()
+                cacheCurrentPage()
+                if shiftedOut {
+                    absoluteCachePlacer.pendingRebaseLocation = firstLoc
+                }
+                return false
+            }
         }
         // 이 문단은 캐시 y로 배치된다 — 자리 차지 표의 띠 판정이 이 사실을 요구한다 (#161).
         paragraphEntryFlow?.placedFromCache = true
@@ -1559,7 +1668,7 @@ private extension HwpPaginator {
                 + absoluteCacheStaleOffset
             let cachedHeight = height
             height = staleAdjustedHeight(
-                height, runs: runs, run: run, slice: sliceText, frame: paragraphFrame
+                height, paragraph: paragraph, runs: runs, slice: sliceText, frame: paragraphFrame
             )
             paragraphAnchorTop = currentColumnFrame.minY + contentHeightUsed
             // 여러 run이면 `slice.lines`는 조각 기준 줄이라 앵커 문맥으로만 쓴다.
@@ -1580,6 +1689,7 @@ private extension HwpPaginator {
                 isStaleAdjusted: height != cachedHeight
             )
             lastAbsoluteCacheLoc = run.last?.lineLocation ?? runFirst
+            lastAbsoluteCacheAdvance = run.last.map(HwpAbsoluteCachePlacer.signedAdvance(of:)) ?? 0
             collectFragmentFootnotes(
                 from: paragraph,
                 ordinals: ordinalRanges?[runIndex],
@@ -1738,26 +1848,54 @@ private extension HwpPaginator {
         return HwpTextRunBuilder.renumberingNoteMarkers(in: slice, replacements: carried)
     }
 
-    /// stale 캐시 (캐시 줄 높이 < 선언 글자 크기) 보정된 run 높이.
-    ///
-    /// 한글.app도 이런 문단은 열 때 재조판해 줄을 CT 자연 높이로 넓힌다 — 슬롯을
-    /// CT 높이로 키우고 이후 문단을 그만큼 민다 (`absoluteCacheStaleOffset`).
-    /// 신선한 캐시 (h ≥ 글자 크기)에서는 절대 발동하지 않는다 (헌법주석 페이지
-    /// 절단 유지). 여러 run으로 나뉜 문단은 대상이 아니다 — 조각마다 CT 높이를
-    /// 다시 배분할 수 없다.
+    /// 낡은 캐시 보정된 run 높이 — 캐시가 현재 내용과 안 맞는 문단(캐시 줄 높이 < 선언 글자 크기,
+    /// 또는 글자처럼 취급 표를 실은 줄 < 그 표)은 블록을 CT **줄 범위**로 키우고 이후 문단을 그만큼
+    /// 민다 (`absoluteCacheStaleOffset`). 높이·판정은 `staleLineExtent`가 정한다.
     private func staleAdjustedHeight(
         _ height: CGFloat,
+        paragraph: CoreHwp.HwpParagraph,
         runs: [[CoreHwp.HwpParaLineSegInternal]],
-        run: [CoreHwp.HwpParaLineSegInternal],
         slice: NSAttributedString,
         frame: HwpParagraphFrame
     ) -> CGFloat {
+        guard let lineExtent = staleLineExtent(
+            paragraph, runs: runs, slice: slice, frame: frame, cachedHeight: height
+        ) else { return height }
+        absoluteCacheStaleOffset += lineExtent - height
+        return lineExtent
+    }
+
+    /// 낡은 캐시 보정이 이 문단에 쓸 블록 높이 — 대상이 아니거나 커지지 않으면 nil.
+    ///
+    /// 한글.app도 캐시가 내용과 안 맞는 문단은 열 때 재조판한다. 글자 크기 쪽은 CharShape 실물,
+    /// 표 쪽은 #214 PR 리뷰의 한글 12.30 실측이다 (`HwpParagraphLayout.lineCacheIsStale`: 줄 예약이
+    /// 표의 그려지는 높이라 셀 내용이 저장 뒤에 표를 키운 문서는 캐시 줄보다 CT 줄이 크다 — 표 51.28
+    /// → 371.28pt, 호스트 캐시 56.94pt에서 한글은 표 줄을 376.94pt로 키우고 뒤 문단을 320pt 내렸다).
+    /// 캐시 줄 높이가 글자 크기 이상이라도 표 쪽 판정은 걸린다. 여러 run으로 나뉜 문단은 대상이
+    /// 아니다 — 조각마다 CT 높이를 다시 배분할 수 없다.
+    ///
+    /// 높이는 CT 문단 높이에서 저작 문단 위·아래 간격을 뺀 **줄 범위**다 — 캐시 run 높이도 줄
+    /// 위치·높이만 담고, 두 간격은 캐시 위치(이 문단 첫 줄·다음 문단 첫 줄)에 이미 들어 있다. CT
+    /// 문단 높이를 쓰면 뒤 문단이 두 간격만큼 더 밀린다 (한글 12.30 실측: 위 10·아래 5pt 문단의 같은
+    /// 표에서 뒤 문단은 캐시 위치 + 320pt — CT 문단 높이 차는 335pt). 트리거와 무관한 기하라 글자
+    /// 크기 쪽도 같은 높이를 쓴다 (코퍼스의 그 사례인 CharShape는 간격이 0이라 종전과 같다). 밀린
+    /// 문단이 쪽 아래를 넘으면 `staleShiftOverflows`가 쪽을 넘긴다.
+    private func staleLineExtent(
+        _ paragraph: CoreHwp.HwpParagraph,
+        runs: [[CoreHwp.HwpParaLineSegInternal]],
+        slice: NSAttributedString,
+        frame: HwpParagraphFrame,
+        cachedHeight: CGFloat
+    ) -> CGFloat? {
         guard runs.count == 1,
-              HwpAbsoluteCachePlacer.cacheIsStale(run: run, attributedString: slice),
-              frame.totalHeight > height
-        else { return height }
-        absoluteCacheStaleOffset += frame.totalHeight - height
-        return frame.totalHeight
+              HwpAbsoluteCachePlacer.cacheIsStale(run: runs[0], attributedString: slice)
+              || HwpParagraphLayout.lineCacheIsStale(
+                  paragraph, inlineTableHeights: inlineTableHeights(for: paragraph)
+              )
+        else { return nil }
+        let lineExtent = frame.totalHeight - authoredBeforeGap(of: paragraph)
+            - authoredAfterGap(of: paragraph)
+        return lineExtent > cachedHeight ? lineExtent : nil
     }
 
     /// 절대 캐시 run의 블록 높이 — 산식은 HwpAbsoluteCachePlacer, 하단 경계
@@ -1777,11 +1915,11 @@ private extension HwpPaginator {
     /// 방금 놓은 절대 캐시 run 블록의 마지막 줄 줄 간격 몫을 기록한다 (#165) — 블록
     /// 아래(전진량)와 마지막 줄 상자 아래의 차. 하단 경계에 잘린 블록은 잘린 만큼만 남는다.
     ///
-    /// **stale 캐시로 CT 높이까지 커진 블록은 0이다** (PR 리뷰): 그 블록의 아래는 캐시
-    /// 전진량이 아니라 다시 조판한 CT 높이라 캐시의 줄 간격이 들어 있지 않고, 커진 몫을
+    /// **낡은 캐시로 CT 줄 범위까지 커진 블록은 0이다** (PR 리뷰): 그 블록의 아래는 캐시
+    /// 전진량이 아니라 다시 조판한 CT 줄 범위라 캐시의 줄 간격이 들어 있지 않고, 커진 몫을
     /// "블록 아래 − 캐시 잉크"로 재면 재조판으로 늘어난 글자 높이까지 통째로 빼 본문 하한이
     /// 캐시 잉크로 되돌아간다 — 각주 구분선이 커진 글자 위에 그어진다. CT 마지막 줄의
-    /// 상자 아래는 stale 캐시로는 알 수 없으므로 CT 높이 전체를 보수적으로 하한으로 둔다.
+    /// 상자 아래는 낡은 캐시로는 알 수 없으므로 CT 줄 범위 전체를 보수적으로 하한으로 둔다.
     private func recordAbsoluteRunTrailingSpacing(
         run: [CoreHwp.HwpParaLineSegInternal],
         firstLocation: Int32,
@@ -2421,9 +2559,9 @@ private extension HwpPaginator {
         reservedWidth: CGFloat
     ) -> NSAttributedString {
         guard currentColumnFrame.width != reservedWidth else { return fragment }
-        return HwpInlineObjectReservation.rescaledForColumn(
+        return rescaledInlineTableHeights(HwpInlineObjectReservation.rescaledForColumn(
             fragment, resolver: objectSizeResolver
-        )
+        ))
     }
 
     /// 조각의 줄 앵커 문맥 (#164 리뷰): 조각이 놓이는 단의 폭이 줄을 잰 폭과 같으면 측정한
@@ -3472,21 +3610,138 @@ private extension HwpPaginator {
 
     /// 본문 표의 레이아웃 — `appendTableBlocks`와 조각별 줄 안 배치(#164)가 같은 입력으로
     /// 부른다. 글 앞/뒤로 표는 appendFloatingTableIfNeeded가 흐름 밖에 통째로 배치하므로
-    /// 저작 폭 (예: 종이 100%)을 단 폭으로 자르지 않는다.
+    /// 저작 폭 (예: 종이 100%)을 단 폭으로 자르지 않는다. 글자처럼 취급 표는 줄 예약
+    /// (`inlineTableHeights`, #214)이 먼저 잰 결과를 메모에서 다시 쓴다. `columnWidth`는 특정 단의
+    /// 폭으로 잴 때 준다 (다단 캐시 run의 낡은 캐시 판정, #214 PR 리뷰) — 가용 폭과 크기 해석기가
+    /// 모두 그 단의 것이라, 그 단에서 배치가 조판할 표와 같다 (메모도 그대로 이어받는다).
     private func layoutTable(
         _ table: CoreHwp.HwpTable,
-        numbering: HwpNumberingScope.Container?
+        numbering: HwpNumberingScope.Container?,
+        columnWidth: CGFloat? = nil
     ) -> Result<HwpTableFrame, HwpUnsupportedElement> {
         let info = table.commonCtrlProperty.propertyInfo
-        return tableLayout.layout(
+        let width = columnWidth ?? currentColumnFrame.width
+        let sizeResolver = columnWidth.map { objectSizeResolver(columnWidth: $0) }
+            ?? objectSizeResolver
+        let key = inlineTableFrameKey(
+            for: table, numbering: numbering, availableWidth: width, sizeResolver: sizeResolver
+        )
+        if let key, let frame = inlineTableFrames.frame(for: key, owner: currentParagraphScope.path) {
+            return .success(frame)
+        }
+        let result = tableLayout.layout(
             table: table,
-            availableWidth: currentColumnFrame.width,
+            availableWidth: width,
             index: index,
-            sizeResolver: objectSizeResolver,
+            sizeResolver: sizeResolver,
             clampToAvailableWidth: info.treatAsChar
                 || HwpParagraphObjectCollector.consumesFlow(info),
             numbering: numbering
         )
+        if let key, case let .success(frame) = result {
+            inlineTableFrames.store(frame, for: key, owner: currentParagraphScope.path)
+        }
+        return result
+    }
+
+    /// 문단의 글자처럼 취급 표가 **이 단에** 그려질 높이 (controlIndex → pt) — 줄 예약이 저작
+    /// 높이 대신 쓴다 (#214). 배치(`appendInlineAnchoredTable`)와 같은 `layoutTable`·같은
+    /// 높이(`flowBlockHeight`)라 예약과 그림이 갈리지 않는다. 조판이 실패한 표는 싣지 않는다
+    /// — 저작 높이 예약이 남고, 실패 보고는 배치가 한다.
+    func inlineTableHeights(for paragraph: CoreHwp.HwpParagraph) -> [Int: CGFloat] {
+        guard let ctrls = paragraph.ctrlHeaderArray else { return [:] }
+        let scope = currentParagraphScope
+        var heights: [Int: CGFloat] = [:]
+        // 취소된 로드는 남은 표를 조판하지 않는다 (`appendTablesPrecedingText`와 같은 이유).
+        for (ordinal, ctrl) in ctrls.enumerated() where !Task.isCancelled {
+            guard case let .table(table) = ctrl,
+                  table.commonCtrlProperty.propertyInfo.treatAsChar,
+                  case let .success(frame) = layoutTable(
+                      table, numbering: scope.container(controlIndex: ordinal)
+                  )
+            else { continue }
+            heights[ordinal] = frame.flowBlockHeight
+        }
+        return heights
+    }
+
+    /// `layoutTable`이 메모를 쓸 열쇠 — 문단 경로가 있는 글자처럼 취급 표만 (줄 예약과 배치가
+    /// 같은 표를 두 번 조판하는 경우뿐이다).
+    func inlineTableFrameKey(
+        for table: CoreHwp.HwpTable,
+        numbering: HwpNumberingScope.Container?,
+        availableWidth: CGFloat,
+        sizeResolver: HwpObjectSizeResolver
+    ) -> InlineTableFrameMemo.Key? {
+        guard let numbering, table.commonCtrlProperty.propertyInfo.treatAsChar else { return nil }
+        return InlineTableFrameMemo.Key(
+            hostPath: numbering.hostPath,
+            controlIndex: numbering.controlIndex,
+            availableWidth: availableWidth,
+            sizeResolver: sizeResolver
+        )
+    }
+
+    /// 다단 캐시 run(`placeCachedColumnRuns`)의 글자처럼 취급 표가 그려질 높이 (controlIndex → pt) —
+    /// 표를 실은 캐시 줄이 속한 run의 **단 폭**에서 잰다 (#214 PR 리뷰). 표는 그 단에 놓여 그 폭으로
+    /// 조판되므로(`appendInlineAnchoredTable`) 문단을 잰 첫 단의 폭으로 재면, 표 폭이 단 폭에
+    /// 잘리는 비등폭 단에서 신선한 캐시를 낡았다고 오판한다. 줄 위치를 못 푸는 표는 run들의 단
+    /// 폭 가운데 가장 낮게 나오는 높이다 — 어느 단인지 모를 때 캐시를 버리는 쪽으로 기울지 않는다.
+    func columnRunInlineTableHeights(
+        for paragraph: CoreHwp.HwpParagraph,
+        runs: [[CoreHwp.HwpParaLineSegInternal]]
+    ) -> [Int: CGFloat] {
+        guard let ctrls = paragraph.ctrlHeaderArray else { return [:] }
+        let hosts = HwpParagraphLayout.controlHostSegments(of: paragraph)
+        // run은 세그먼트를 순서대로 나눈 것이다 — 세그먼트 색인 → run(단) 색인.
+        let runOfSegment = runs.indices.flatMap { Array(repeating: $0, count: runs[$0].count) }
+        let runColumns = columnFrames.prefix(runs.count)
+        let scope = currentParagraphScope
+        var heights: [Int: CGFloat] = [:]
+        for (ordinal, ctrl) in ctrls.enumerated() where !Task.isCancelled {
+            guard case let .table(table) = ctrl,
+                  table.commonCtrlProperty.propertyInfo.treatAsChar
+            else { continue }
+            let hostColumn = hosts?[ordinal]
+                .flatMap { runOfSegment.indices.contains($0) ? runOfSegment[$0] : nil }
+                .flatMap { runColumns.indices.contains($0) ? runColumns[$0] : nil }
+            let candidates = hostColumn.map { [$0] } ?? Array(runColumns)
+            let laidOut = candidates.compactMap { column -> CGFloat? in
+                guard case let .success(frame) = layoutTable(
+                    table, numbering: scope.container(controlIndex: ordinal),
+                    columnWidth: column.width
+                ) else { return nil }
+                return frame.flowBlockHeight
+            }
+            heights[ordinal] = laidOut.min()
+        }
+        return heights
+    }
+
+    /// 조각이 줄을 잰 단과 폭이 다른 단에 놓일 때, 조각에 든 글자처럼 취급 표 마커의 예약
+    /// 높이를 **그 단에서** 그려질 높이로 다시 잡은 사본 (#214) — 표 폭이 단 폭에 잘리거나
+    /// 단·문단 기준이면 셀 줄바꿈이 달라져 높이가 바뀌는데, 배치(`appendInlineAnchoredTable`)는
+    /// 놓이는 단의 폭으로 표를 조판한다. 폭 예약을 다시 푸는 `rescaledForColumn`과 짝이다.
+    func rescaledInlineTableHeights(_ fragment: NSAttributedString) -> NSAttributedString {
+        guard sections.indices.contains(nextSectionIndex),
+              sections[nextSectionIndex].paragraph.indices.contains(nextParagraphIndex),
+              let ctrls = sections[nextSectionIndex].paragraph[nextParagraphIndex].ctrlHeaderArray
+        else { return fragment }
+        let scope = currentParagraphScope
+        var outerHeights: [Int: CGFloat] = [:]
+        for ordinal in HwpInlineObjectReservation.reservedMarkerControlIndices(in: fragment)
+            where ctrls.indices.contains(ordinal)
+        {
+            guard case let .table(table) = ctrls[ordinal],
+                  table.commonCtrlProperty.propertyInfo.treatAsChar,
+                  case let .success(frame) = layoutTable(
+                      table, numbering: scope.container(controlIndex: ordinal)
+                  )
+            else { continue }
+            outerHeights[ordinal] = frame.flowBlockHeight
+                + HwpObjectAnchorGeometry.OuterMargins(table.commonCtrlProperty).vertical
+        }
+        return HwpInlineObjectReservation.withReservedHeights(fragment, outerHeights: outerHeights)
     }
 
     /// 글자처럼 취급 표를 앵커 라인 위치에 배치한다. 앵커가 없으면 false
@@ -3500,7 +3755,8 @@ private extension HwpPaginator {
         guard let position = inlineObjectPosition(
             for: controlIndex, margins: .init(table.commonCtrlProperty)
         ) else { return false }
-        let height = frame.rows.reduce(CGFloat(0)) { max($0, $1.rowFrame.maxY) }
+        // 줄 예약(`inlineTableHeights`, #214)과 같은 높이 — 둘이 갈리면 표가 다음 줄을 덮는다.
+        let height = frame.flowBlockHeight
         currentBlocks.append(AnyHwpBlock(
             frame: CGRect(
                 x: position.x,
@@ -3527,7 +3783,7 @@ private extension HwpPaginator {
         let info = table.commonCtrlProperty.propertyInfo
         guard !info.treatAsChar,
               !HwpParagraphObjectCollector.consumesFlow(info) else { return false }
-        let height = frame.rows.reduce(CGFloat(0)) { max($0, $1.rowFrame.maxY) }
+        let height = frame.flowBlockHeight
         appendFloatingBlock(
             ObjectBlockSpec(
                 kind: .table,
@@ -3887,7 +4143,7 @@ private extension HwpPaginator {
         // 띠 판정 `floatingTableBand`와 같은 처방).
         let tableHeight = HwpTableSplitter.segmentFrame(
             rows: frame.rows, original: frame, repeatedHeaderRows: []
-        )?.outerFrame.height ?? frame.rows.reduce(CGFloat(0)) { max($0, $1.rowFrame.maxY) }
+        )?.outerFrame.height ?? frame.flowBlockHeight
         /// 이 표 자신의 셀 각주가 예약할 높이를 미리 반영한다 (#6, 분할 경로의
         /// `remainingAfterCellNotes`와 같은 시산) — 수집은 놓기 직전이라 그 뒤에 재면 표 + 여백이
         /// 예약 전엔 들어가고 예약 뒤엔 안 들어가는 표가 각주 자리로 넘친다 (PR 리뷰).
@@ -4254,6 +4510,20 @@ private extension HwpPaginator {
             contentSize: currentPageGeometry.contentFrame.size,
             columnWidth: currentColumnFrame.width,
             paragraphWidth: currentParagraphWidth
+        )
+    }
+
+    /// 폭 `columnWidth`인 단에 놓인 현재 문단의 크기 해석기 — 현재 단이 아닌 단에서 개체를 잴 때
+    /// 쓴다 (#214 PR 리뷰). '단'·'문단' 기준 크기가 그 단의 폭으로 풀려야 그 단에서 배치가 쓰는
+    /// 해석기와 같아진다 (문단 폭은 `currentParagraphWidth`와 같은 근사).
+    func objectSizeResolver(columnWidth: CGFloat) -> HwpObjectSizeResolver {
+        HwpObjectSizeResolver(
+            paperSize: currentPageGeometry.pageSize,
+            contentSize: currentPageGeometry.contentFrame.size,
+            columnWidth: columnWidth,
+            paragraphWidth: max(
+                1, columnWidth - currentParagraphMargins.left - currentParagraphMargins.right
+            )
         )
     }
 
@@ -5100,6 +5370,8 @@ private extension HwpPaginator {
         currentParagraphContext = nil
         // 새 페이지: 절대 캐시 loc 추적과 stale 캐시 보정을 리셋한다.
         lastAbsoluteCacheLoc = Int32.min
+        lastAbsoluteCacheAdvance = 0
+        absoluteCacheBandRestarted = false
         absoluteCacheStaleOffset = 0
         // 새 페이지: 현재 단 정의로 콘텐츠 상단부터 새 밴드를 연다.
         openColumnBand(top: currentPageGeometry.contentFrame.minY)
@@ -5112,9 +5384,35 @@ private extension HwpPaginator {
         }
     }
 
+    /// 흐름 배치가 문단 높이로 줄 캐시를 쓸 수 있는가 — 캐시가 유효하고, 글자처럼 취급 표를 실은
+    /// 줄이 그 표보다 낮지 않다 (#214 PR 리뷰). 낮으면 셀 내용이 저장 뒤에 표를 키운 문서라 줄
+    /// 예약(그려지는 높이)과 캐시가 갈리므로, 캐시 높이를 쓰면 블록은 캐시만큼만 전진하고 표는 실제
+    /// 높이로 그려져 뒤 문단이 표를 덮는다 — CT 높이로 떨어진다 (`HwpParagraphLayout.lineCacheIsStale`).
+    /// 단 CT 높이(`measuredHeight`)가 캐시보다 클 때만이다 — 절대 캐시 보정(`staleLineExtent`)과 같다.
+    /// 줄이 표를 예약하지 못한 문단(단보다 넓은 표)은 CT가 더 낮아, 캐시를 버리면 블록이 줄어 겹침이
+    /// 커진다.
+    func lineCacheHeightIsUsable(
+        _ paragraph: CoreHwp.HwpParagraph,
+        measuredHeight: CGFloat
+    ) -> Bool {
+        guard let cached = cachedParagraphHeight(paragraph) else { return false }
+        return cached >= measuredHeight
+            || !HwpParagraphLayout.lineCacheIsStale(
+                paragraph, inlineTableHeights: inlineTableHeights(for: paragraph)
+            )
+    }
+
     func height(for paragraph: CoreHwp.HwpParagraph, fallback: CGFloat) -> CGFloat {
+        guard lineCacheHeightIsUsable(paragraph, measuredHeight: fallback),
+              let cached = cachedParagraphHeight(paragraph)
+        else { return fallback }
+        return cached
+    }
+
+    /// 줄 캐시가 주는 문단 높이 (줄 범위 + 저작 위·아래 간격) — 캐시가 유효하지 않으면 nil.
+    func cachedParagraphHeight(_ paragraph: CoreHwp.HwpParagraph) -> CGFloat? {
         let segments = paragraph.paraLineSeg.paraLineSegInternalArray
-        guard isValidLineSegmentCache(segments) else { return fallback }
+        guard isValidLineSegmentCache(segments) else { return nil }
         // 일부 저장본 (한/글 2007 계열)은 lineLocation을 문단-상대 (0 시작)가 아니라
         // 페이지 내 누적 절대 y로 기록한다. 첫 세그먼트 위치를 빼서 문단-상대 높이로
         // 정규화한다 (첫 lineLocation == 0인 저장본에서는 동일 규칙).

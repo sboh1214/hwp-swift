@@ -15,10 +15,22 @@ struct HwpAbsoluteCachePlacer {
     let absoluteCacheMode: Bool
     /// 현재 페이지에 배치한 마지막 세그먼트의 lineLocation (절대 캐시 모드 전용)
     var lastAbsoluteCacheLoc = Int32.min
-    /// 절대 캐시 모드에서 stale 캐시 문단 (캐시 줄 높이 < 선언 글자 크기)이
-    /// 만든 아래 방향 보정 오프셋 (페이지 로컬). 한글.app도 이런 문단은 열 때
-    /// 재조판해 CT 자연 높이만큼 다음 문단을 밀어낸다 (CharShape 실측).
+    /// 그 세그먼트의 전진량 (HWPUNIT, `signedAdvance`) — 같은 위치에서 시작하는 다음 문단이
+    /// 새 쪽인지 가른다 (`isPageBreak`, #214).
+    var lastAbsoluteCacheAdvance = 0
+    /// 이 쪽에서 단 밴드가 쪽 중간에 새로 열렸는가 (#214 리뷰) — 쪽이 넘어갈 때까지 유지한다. 한글은
+    /// 밴드마다 줄 위치를 밴드 상단부터 다시 세므로(`Column` 쌍: 밴드 첫 문단이 모두 0) 밴드가 열리면
+    /// 위 두 기록을 지우고, 그 밴드의 캐시 문단은 위치에 더해 **자리**로도 쪽 넘김을 판정한다 — 첫
+    /// run의 줄 상자가 남은 본문에 안 들어가면 한글은 그 문단을 다음 쪽에 놓았다.
+    var bandRestartedMidPage = false
+    /// 절대 캐시 모드에서 낡은 캐시 문단(캐시 줄 높이 < 선언 글자 크기, 또는 글자처럼 취급 표를 실은
+    /// 줄 < 그 표 — #214 PR 리뷰)이 만든 보정 오프셋 (페이지 로컬). 한글.app도 이런 문단은 열 때
+    /// 재조판해 CT 줄 범위만큼 다음 문단을 밀어낸다 (CharShape 실측·#214 PR 리뷰 실측). 밀려 쪽을
+    /// 넘긴 문단을 새 쪽 머리에 놓을 때는 그 문단의 캐시 위치만큼 **음수**가 된다 (`pendingRebaseLocation`).
     var absoluteCacheStaleOffset: CGFloat = 0
+    /// 낡은 캐시 보정으로 밀려 쪽을 넘긴 문단의 첫 줄 위치 (#214 PR 리뷰) — 다음 쪽에서 그 문단을 다시
+    /// 처리할 때 보정 오프셋을 이 위치만큼 당겨 쪽 머리에 놓는다. 캐시 위치는 옛 쪽 기준이기 때문이다.
+    var pendingRebaseLocation: Int32?
 
     init(sections: [CoreHwp.HwpSection]) {
         absoluteCacheMode = Self.detectAbsoluteCacheMode(sections: sections)
@@ -45,8 +57,9 @@ struct HwpAbsoluteCachePlacer {
         return absolute > zero
     }
 
-    /// 세그먼트를 단조 (비감소) run으로 나눈다. lineLocation이 줄어드는 지점이
-    /// 한글의 페이지 절단점이다. 캐시가 없거나 음수 높이가 있으면 nil (CT 폴백).
+    /// 세그먼트를 run으로 나눈다 — 한글의 쪽 절단점(`isPageBreak`: lineLocation이 줄어들거나,
+    /// 자리를 차지한 줄 뒤에 같은 위치에서 **새 줄**이 시작하는 지점)마다 가른다. 캐시가 없거나
+    /// 음수 높이가 있으면 nil (CT 폴백).
     static func cacheRuns(
         for paragraph: CoreHwp.HwpParagraph
     ) -> [[CoreHwp.HwpParaLineSegInternal]]? {
@@ -55,14 +68,19 @@ struct HwpAbsoluteCachePlacer {
         var runs: [[CoreHwp.HwpParaLineSegInternal]] = []
         var current: [CoreHwp.HwpParaLineSegInternal] = []
         var previous = Int32.min
+        var previousAdvance = 0
         for segment in segments {
             guard segment.lineHeight >= 0 else { return nil }
-            if segment.lineLocation < previous, !current.isEmpty {
+            if isPageBreak(
+                at: segment.lineLocation, after: previous, previousAdvance: previousAdvance,
+                startsLine: Self.startsLine(segment)
+            ), !current.isEmpty {
                 runs.append(current)
                 current = []
             }
             current.append(segment)
             previous = segment.lineLocation
+            previousAdvance = signedAdvance(of: segment)
         }
         if !current.isEmpty {
             runs.append(current)
@@ -432,5 +450,41 @@ struct HwpAbsoluteCachePlacer {
             }
         }
         return best
+    }
+}
+
+// MARK: - 쪽 절단점 (#214)
+
+extension HwpAbsoluteCachePlacer {
+    /// 줄 캐시에서 `location`에서 시작하는 세그먼트가 `previous` 세그먼트 뒤의 한글 쪽
+    /// 절단점인가 — 위치가 줄거나, 앞 세그먼트가 자리를 차지했는데(전진량 > 0) **같은** 위치에서
+    /// **새 줄**(`startsLine`)이 시작하면 새 쪽이다 (#214). 줄 위치만 보면 쪽 머리(0)에서 시작한
+    /// 줄 뒤에 또 쪽 머리에서 시작하는 줄 — 쪽을 채우는 글자처럼 취급 표·그림을 품은 문단이 잇단
+    /// 문서 — 을 같은 쪽에 겹쳐 놓는다 (`inline-table-actual-height`의 32행 표 셋이 한 쪽에
+    /// 쌓였다). 같은 위치의 세그먼트가 한 쪽에 오는 경우는 둘이다: 앞 세그먼트의 전진량이 0
+    /// 이하이거나, 한 줄이 여러 세그먼트로 나뉜 경우(어울림 개체 양옆으로 흐르는 줄 — 이어지는
+    /// 세그먼트는 표 62 bit 17 '줄의 첫 세그먼트'가 꺼져 있다, `HwpFootnoteCacheLines.lines`와 같은
+    /// 규칙). 문단의 첫 세그먼트는 늘 줄을 시작한다. 쪽 중간에 새로 열린 단 밴드의 첫 문단은 loc을
+    /// 밴드 상단부터 다시 세므로 이 판정을 쓰지 않는다 (`bandRestartedMidPage`). 절대 캐시 모드
+    /// 문서의 문단 사이·문단 안 전이 전수(헌법주석 캐시 문단 11,056개 포함)에서 새 규칙이 판정을
+    /// 바꾸는 곳은 그 픽스처의 두 곳뿐이다.
+    static func isPageBreak(
+        at location: Int32,
+        after previous: Int32,
+        previousAdvance: Int,
+        startsLine: Bool = true
+    ) -> Bool {
+        location < previous || (location == previous && previousAdvance > 0 && startsLine)
+    }
+
+    /// 세그먼트가 줄을 시작하는가 — 표 62 속성 bit 17 ('줄의 첫 세그먼트').
+    static func startsLine(_ segment: CoreHwp.HwpParaLineSegInternal) -> Bool {
+        segment.property & (1 << 17) != 0
+    }
+
+    /// 줄의 부호 있는 전진량 (HWPUNIT): lineHeight + lineSpacing — 고정 줄 간격이 줄 상자보다
+    /// 작으면 줄 간격이 음수라 줄 상자보다 작다. Int로 넓혀 미신뢰 캐시의 덧셈 트랩을 막는다.
+    static func signedAdvance(of segment: CoreHwp.HwpParaLineSegInternal) -> Int {
+        Int(segment.lineHeight) + Int(segment.lineSpacing)
     }
 }

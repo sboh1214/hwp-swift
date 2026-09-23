@@ -176,10 +176,12 @@ import XCTest
         // 구역 1 + 문단 끝 글자 모양 48문단 + 셀 5문단) 추가로 문단 54·대조 98·컨테이너 5 증가
         // (공유 코어 대조 건너뜀은 그대로다), 2026-09-22 `hwp2007-decorations`(#210, 구역 1 +
         // 한글 2007 호환 장식선 9문단) 추가로 문단 10·대조 20 증가 (컨테이너와 공유 코어 대조
-        // 건너뜀은 그대로다).
-        private static let expectedFixtureVisited = 355
-        private static let expectedFixtureMeasured = 682
-        private static let expectedFixtureContainers = 78
+        // 건너뜀은 그대로다), 2026-09-23 `inline-table-actual-height`(#214, 구역 1 +
+        // 본문 13문단(글자처럼 취급 표 문단 11) + 셀 125문단 + 각주 1문단) 추가로 문단 140·
+        // 대조 182·컨테이너 126 증가 (공유 코어 대조 건너뜀은 그대로다).
+        private static let expectedFixtureVisited = 495
+        private static let expectedFixtureMeasured = 864
+        private static let expectedFixtureContainers = 204
         private static let minimumFixtureMultiLine = 60
         private static let maximumFixtureSharedCoreSkips = 7
         private static let expectedLegacyVisited = 14659

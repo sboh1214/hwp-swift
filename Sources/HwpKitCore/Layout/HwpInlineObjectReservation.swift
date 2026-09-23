@@ -93,6 +93,8 @@ enum HwpInlineObjectReservation {
     /// 높이는 다시 풀지 않는다 — 폭과 달리 높이 기준(표 70)엔 '단'이 없어
     /// (종이·쪽·절대) 단 폭과 무관하다. 다만 delegate는 폭·높이를 함께 나르므로 마커가
     /// 이미 실어 둔 예약 높이(`inlineObjectHeight`)를 **그 마커에서** 다시 읽어 얹는다.
+    /// 글자처럼 취급 표의 예약 높이는 단 폭의 함수라(#214) 호출부가 이 뒤에
+    /// `withReservedHeights`로 따로 다시 잡는다 (`HwpPaginator.placedFragment`).
     static func rescaledForColumn(
         _ string: NSAttributedString,
         resolver: HwpObjectSizeResolver
@@ -150,5 +152,80 @@ enum HwpInlineObjectReservation {
                 + (margin.map { CGFloat($0.doubleValue) } ?? 0),
             height: height.map { CGFloat($0.doubleValue) } ?? 0
         )
+    }
+
+    /// 예약을 가진 개체 마커(U+FFFC + `controlIndex` + 예약 높이)의 컨트롤 서수들 — 문서 순서.
+    static func reservedMarkerControlIndices(in string: NSAttributedString) -> [Int] {
+        var ordinals: [Int] = []
+        forEachReservedMarker(in: string) { ordinal, _, _ in ordinals.append(ordinal) }
+        return ordinals
+    }
+
+    /// 개체 마커의 예약 높이를 `outerHeights`(controlIndex → 바깥 상자 높이, pt)로 바꾼 사본
+    /// (#214) — 폭은 마커가 이미 예약한 값 그대로다. 예약이 없는 마커(예약 높이를 싣지 않은
+    /// 폭 0 마커)는 예약을 새로 만들지 않고, 값이 같은 마커는 건드리지 않는다. 바꿀 것이
+    /// 없으면 원본 그대로다 (사본을 뜨지 않는다).
+    static func withReservedHeights(
+        _ string: NSAttributedString,
+        outerHeights: [Int: CGFloat]
+    ) -> NSAttributedString {
+        guard !outerHeights.isEmpty else { return string }
+        var updated: NSMutableAttributedString?
+        forEachReservedMarker(in: string) { ordinal, location, reservedHeight in
+            guard let height = outerHeights[ordinal], height != reservedHeight,
+                  let width = reservedWidth(of: string, at: location)
+            else { return }
+            let target = updated ?? NSMutableAttributedString(attributedString: string)
+            updated = target
+            let range = NSRange(location: location, length: 1)
+            if let delegate = runDelegate(width: width, height: height) {
+                target.addAttribute(
+                    kCTRunDelegateAttributeName as NSAttributedString.Key,
+                    value: delegate,
+                    range: range
+                )
+            }
+            target.addAttribute(
+                HwpAttributedStringKey.inlineObjectHeight,
+                value: NSNumber(value: Double(height)), range: range
+            )
+        }
+        return updated ?? string
+    }
+
+    /// 예약 높이(`inlineObjectHeight`)를 실은 U+FFFC 마커마다 (컨트롤 서수, 위치, 예약 높이).
+    private static func forEachReservedMarker(
+        in string: NSAttributedString,
+        _ body: (Int, Int, CGFloat) -> Void
+    ) {
+        let text = string.string as NSString
+        string.enumerateAttribute(
+            HwpAttributedStringKey.inlineObjectHeight,
+            in: NSRange(location: 0, length: string.length)
+        ) { value, range, _ in
+            guard let reserved = value as? NSNumber else { return }
+            // 값이 같은 이웃 마커는 한 범위로 합쳐 오므로 글자 단위로 되짚는다
+            // (`rescaledForColumn`과 같은 이유).
+            for location in range.location ..< NSMaxRange(range)
+                where text.character(at: location) == 0xFFFC
+            {
+                guard let ordinal = string.attribute(
+                    HwpAttributedStringKey.controlIndex, at: location, effectiveRange: nil
+                ) as? NSNumber else { continue }
+                body(ordinal.intValue, location, CGFloat(reserved.doubleValue))
+            }
+        }
+    }
+
+    /// 마커 한 글자의 run delegate가 예약한 폭.
+    private static func reservedWidth(of string: NSAttributedString, at location: Int) -> CGFloat? {
+        guard let value = string.attribute(
+            kCTRunDelegateAttributeName as NSAttributedString.Key, at: location, effectiveRange: nil
+        ) else { return nil }
+        let reference = value as CFTypeRef
+        guard CFGetTypeID(reference) == CTRunDelegateGetTypeID() else { return nil }
+        let delegate = unsafeBitCast(reference, to: CTRunDelegate.self)
+        return Unmanaged<HwpInlineObjectMetrics>.fromOpaque(CTRunDelegateGetRefCon(delegate))
+            .takeUnretainedValue().width
     }
 }

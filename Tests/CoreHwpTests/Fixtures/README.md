@@ -217,6 +217,14 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   베이스라인 − 0.85 × 높이). 같은 세션의 PDF 내보내기 좌표(README의 표)를
   `HwpKitTests/FixtureInlineObjectBaselineTests`가 핀한다. HWPX 쌍은
   `HwpxFixtures/inline-object-baseline`.
+- `inline-table-actual-height`: 함초롬바탕 10pt 본문에 셀 내용이 저작 높이보다 키운 **글자처럼
+  취급 표**(4행·한 줄 두 표·공통 높이가 행 합보다 큰 표·10pt 줄의 8pt 표·40pt 줄·둘째 줄·각주 안
+  표, 이슈의 32행 표 셋)를 실은 합성 HWPX를 Hancom Office HWP for macOS 12.30.0 build 6446으로
+  2026-09-23에 열어 `.hwp`·`.hwpx`로 저장. 글자처럼 취급 표의 줄 상자·앵커가 저작 높이가 아니라
+  **그려지는 높이**라는 규칙(#214·#218)의 실물 근거다 — 한글은 저장할 때 공통 속성 높이를 실제
+  높이로 고쳐 쓰므로 `HwpKitTests/FixtureInlineTableActualHeightTests`가 높이를 원본 값으로
+  되돌리고 줄 캐시를 지운 재조판을 저장된 줄 캐시·PDF 좌표(README의 표)와 대조한다. HWPX 쌍은
+  `HwpxFixtures/inline-table-actual-height`.
 - `paragraph-end-char-size`: 함초롬바탕 본문에 **문단 끝 글자**(CR)의 글자 모양 크기가 본문과
   다른 문단(10pt + 16pt CR 한 줄·여러 줄, 16pt + 10pt CR, 10pt + 40pt CR, 줄 간격 종류 5종,
   상대 크기·글꼴·문단 간격, 한 줄 끝 조합 3종, 빈 문단 2종, 글자처럼 취급 표 3종, 셀 안,

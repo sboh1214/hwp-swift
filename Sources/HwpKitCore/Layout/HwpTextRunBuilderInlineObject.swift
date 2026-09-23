@@ -16,6 +16,15 @@ extension HwpTextRunBuilder {
     /// 예약은 개체의 **바깥 상자**다 — 개체 크기에 바깥 여백(표 70)을 더한 것이 줄의 한
     /// 글자 폭·높이다 (#193, `HwpObjectAnchorGeometry.OuterMargins`). 개체는 그 안에서
     /// 왼쪽·위쪽 여백만큼 들어가 놓인다 (`HwpObjectAnchorGeometry.inlineObjectOrigin`).
+    ///
+    /// **표의 높이는 저작 높이가 아니라 그려지는 높이다** (#214) — 표 높이는 셀 내용이 정하는
+    /// 행의 합이라 공통 속성(표 69)의 저작 높이와 다를 수 있는데, 한글은 줄 상자·앵커를 그
+    /// 실제 높이로 잡는다. 한글 12.30.0(6446) 실측(2026-09-23, 합성 HWPX → 재저장 줄 캐시·PDF):
+    /// 저작 90.24pt(행 2.82pt × 32)·실제 410.24pt(10pt 셀 문단 32행)인 표의 줄은 `vertsize` 41590
+    /// (= 410.24 + 위·아래 여백 2.83 × 2)·`baseline` 35352(0.85배)이고 표 상단이 줄 상단 + 2.83이다.
+    /// 저작 높이가 **더 큰** 표(공통 30pt, 1행 12.82pt)도 12.82pt로 잡는다 — 최댓값이 아니다.
+    /// 조판 문자열을 만드는 시점엔 표 레이아웃이 없으므로 표를 조판한 호출부가
+    /// `inlineTableHeights`로 넘기고, 넘기지 않은 표는 종전대로 저작 높이다 (#218).
     func inlineObjectReservation(
         controlIndex: Int,
         paragraph: CoreHwp.HwpParagraph
@@ -29,6 +38,9 @@ extension HwpTextRunBuilder {
         let stored = HwpObjectSizeResolver.size(of: commonProperty, resolver: sizeResolver)
         var width = stored.width
         var height = stored.height
+        if case .table = ctrls[controlIndex], let laidOut = inlineTableHeights[controlIndex] {
+            height = laidOut
+        }
         let margins = HwpObjectAnchorGeometry.OuterMargins(commonProperty)
         // 저작 폭이 0이라 개체 요소 detail로 폴백하면 그 폭은 절대값(HWPUNIT)이므로
         // 단 폭에 딸리지 않는다 — 예약 폭 열쇠도 그때는 싣지 않는다.
