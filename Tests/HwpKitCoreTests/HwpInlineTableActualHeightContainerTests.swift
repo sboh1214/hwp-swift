@@ -171,6 +171,65 @@ import XCTest
             expect(tight.frame.height).to(beGreaterThanOrEqualTo(tightTable.rect.maxY - 0.01))
         }
 
+        /// 표를 실은 캐시 줄이 표보다 낮으면(저작 뒤 셀 내용이 표를 키운 문서) 표 뒤 글줄도 내려가므로
+        /// 각주 높이를 캐시가 아니라 CT로 잰다 (#214 PR 리뷰: 실제 30pt 표 + 10pt 두 줄 캐시에서 둘째 줄
+        /// 베이스라인이 24.5 → 44.5pt로 내려가는데 블록은 30pt라 다음 각주와 겹쳤다). 캐시·CT 모두 두
+        /// 줄이라 줄 수 불일치와는 다른 경우다.
+        func testStaleFootnoteCacheKeepsLinesBelowTheTableInTheBlock() throws {
+            var note = Support.host(
+                table: try Support.staleTable(rows: 3, instanceId: 5, width: 10000),
+                suffix: " " + String(repeating: "abcdefghi ", count: 8)
+            )
+            note.paraLineSeg = try HwpSynthetic.lineSegParagraph(
+                "캐시", segments: [(location: 0, height: 1000), (location: 1600, height: 1000)]
+            ).paraLineSeg
+            let next = try HwpSynthetic.noteParagraph(
+                " 다음 각주", autoNumber: HwpSynthetic.autoNumberControl(kind: 1, decorationTail: ")")
+            )
+            let blocks = HwpFootnoteLayout(fontResolver: .testDeterministic).layout(
+                footnotes: [.init(paragraph: note, number: 1), .init(paragraph: next, number: 2)],
+                onPage: Self.footnoteGeometry, index: Self.index
+            )
+            expect(blocks.count) == 2
+            guard blocks.count == 2 else { return }
+            let paragraph = try XCTUnwrap(blocks[0].paragraphs.first)
+            let lines = HwpDrawnTextLayout.lines(
+                attributedString: paragraph.attributedString,
+                origin: paragraph.rect.origin, lineWidth: paragraph.rect.width
+            )
+            expect(lines.count) == 2
+            let last = try XCTUnwrap(lines.last)
+            // 둘째 줄은 표(30) + 줄 간격(6) 아래 10pt 줄 — 그 상자 아래까지 블록 안이다.
+            expect(last.baselineOrigin.y - paragraph.rect.minY).to(beCloseTo(44.5, within: 0.01))
+            expect(blocks[0].frame.height).to(beGreaterThanOrEqualTo(46 - 0.01))
+            expect(blocks[1].frame.minY).to(beGreaterThanOrEqualTo(blocks[0].frame.maxY))
+        }
+
+        /// 캐시 신선도 판정 — 표를 실은 줄이 표 + 바깥 여백을 담으면 캐시를 믿고, 못 담으면 낡았다.
+        func testLineCacheIsStaleOnlyWhenTheTablesLineIsShorterThanTheTable() throws {
+            let table = try Support.staleTable(rows: 3, instanceId: 6, width: 10000)
+            var note = Support.host(table: table, suffix: " 뒤")
+            let heights: [Int: CGFloat] = [0: 30]
+            note.paraLineSeg = try HwpSynthetic.lineSegParagraph(
+                "캐시", segments: [(location: 0, height: 1000)]
+            ).paraLineSeg
+            expect(HwpFootnoteLayout.lineCacheIsStale(note, inlineTableHeights: heights)) == true
+            note.paraLineSeg = try HwpSynthetic.lineSegParagraph(
+                "캐시", segments: [(location: 0, height: 3000)]
+            ).paraLineSeg
+            expect(HwpFootnoteLayout.lineCacheIsStale(note, inlineTableHeights: heights)) == false
+            expect(HwpFootnoteLayout.lineCacheIsStale(note, inlineTableHeights: [:])) == false
+        }
+
+        private static let footnoteGeometry = HwpPageGeometry(
+            pageSize: CGSize(width: 595, height: 842),
+            margins: HwpPageMargins(top: 72, left: 72, bottom: 72, right: 72),
+            contentFrame: CGRect(x: 72, y: 72, width: 451, height: 698),
+            headerFrame: nil,
+            footerFrame: nil,
+            columnFrames: [CGRect(x: 72, y: 72, width: 451, height: 698)]
+        )
+
         /// 비등폭 단 — 줄을 잰 좁은 단에서는 표가 단 폭으로 잘려 셀 글이 두 줄(20pt)이지만, 표가
         /// 놓이는 넓은 단에서는 한 줄(10pt)이다. 예약도 놓이는 단의 높이로 다시 잡혀 마커가 10pt를
         /// 예약한다 — 잰 단의 20pt가 남으면 줄이 표보다 10pt 크다.

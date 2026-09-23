@@ -181,12 +181,16 @@ extension HwpFootnoteLayout {
         sourceLayout: SourceLayout? = nil
     ) -> NoteMeasurement {
         let noteResolver = sizeResolver?.forFootnoteArea(width: width)
+        let tableHeights = inlineTableHeights(
+            of: paragraph, width: width, index: index, resolver: noteResolver, numbering: numbering
+        )
         /// 각주 첫머리의 자동 번호 (ext18) 마커를 번호 문자열로 치환한다 (번호는
         /// paginator가 부여한 문서 순서 번호 — 본문 참조와 동일 소스). 스택
-        /// 높이는 한글 라인 캐시를 우선한다 (본문 절대 캐시와 동일 철학).
+        /// 높이는 한글 라인 캐시를 우선한다 (본문 절대 캐시와 동일 철학) — 표를 실은 캐시
+        /// 줄이 그 표보다 낮으면(`lineCacheIsStale`) CT 높이다.
         /// 문단 번호·개요 번호 라벨(#158)은 자동 번호 앞에 전치된다. 글자처럼 취급 표는
         /// 수집기(아래)가 그릴 높이로 줄을 예약한다 (#214).
-        func layOut() -> HwpParagraphMeasurer.Result {
+        func layOut(preferCachedHeight: Bool = true) -> HwpParagraphMeasurer.Result {
             HwpParagraphMeasurer(
                 index: index,
                 fontResolver: fontResolver,
@@ -202,14 +206,9 @@ extension HwpFootnoteLayout {
                         number: number,
                         footnoteShape: footnoteShape
                     ),
-                    preferCachedHeight: true,
+                    preferCachedHeight: preferCachedHeight,
                     number: numbering?.number,
-                    inlineTableHeights: HwpTableLayout(
-                        fontResolver: fontResolver, attributeCache: attributeCache
-                    ).inlineTableHeights(
-                        in: paragraph, availableWidth: width, index: index,
-                        sizeResolver: noteResolver, numbering: numbering
-                    )
+                    inlineTableHeights: tableHeights
                 )
             )
         }
@@ -233,7 +232,11 @@ extension HwpFootnoteLayout {
                 noteCarriesObjects: noteCarriesObjects
             )
         }
-        let measured = layOut()
+        // 표를 실은 캐시 줄이 그 표보다 낮으면 캐시가 낡았다 — 표 줄이 커지며 아래 줄이 모두
+        // 내려가므로 캐시 높이 대신 CT 높이로 잰다 (#214 리뷰, `lineCacheIsStale`).
+        let measured = layOut(
+            preferCachedHeight: !Self.lineCacheIsStale(paragraph, inlineTableHeights: tableHeights)
+        )
         // 각주 문단에 붙은 개체 (그림/도형/글상자/표)는 각주 영역 안 콘텐츠다 —
         // 페이지 흐름 블록으로 방출하면 각주 밖에 그려진다 (#94). 표 셀과 같은
         // 수집기를 쓰되 표까지 담는다: 셀은 `PlacedCellContent.nestedTables`가
@@ -331,6 +334,60 @@ extension HwpFootnoteLayout {
             sourceWidth: layout.width,
             sourceLayout: layout
         )
+    }
+
+    /// 각주 문단의 글자처럼 취급 표가 수집기(`HwpParagraphObjectCollector.table`)에서 그려질 높이
+    /// (controlIndex → pt, #214) — 줄 예약과 캐시 신선도 판정(`lineCacheIsStale`)이 같이 쓴다.
+    private func inlineTableHeights(
+        of paragraph: CoreHwp.HwpParagraph,
+        width: CGFloat,
+        index: HwpIndex,
+        resolver: HwpObjectSizeResolver?,
+        numbering: HwpNumberingScope?
+    ) -> [Int: CGFloat] {
+        HwpTableLayout(fontResolver: fontResolver, attributeCache: attributeCache)
+            .inlineTableHeights(
+                in: paragraph, availableWidth: width, index: index,
+                sizeResolver: resolver, numbering: numbering
+            )
+    }
+
+    /// 문단의 줄 캐시가 글자처럼 취급 표보다 낡았는가 (#214 리뷰) — 한글이 저장한 캐시에서 표를
+    /// 실은 줄의 높이(`vertsize`)는 그 표의 바깥 상자(표 + 위·아래 바깥 여백) 이상이다. 그보다
+    /// 낮으면 저작 뒤 셀 내용이 표를 키운 문서라, 줄 예약이 그려지는 높이인 지금(#214) 표 줄이
+    /// 커지며 그 아래 줄이 모두 내려간다 — 캐시 높이를 믿으면 둘째 줄 이후가 각주 블록 밖으로 나가
+    /// 다음 각주와 겹친다 (실제 30pt 표 + 10pt 두 줄 캐시: 둘째 줄 베이스라인 24.5 → 44.5pt,
+    /// 블록 30pt). 표를 실은 줄은 표 컨트롤의 WCHAR 위치를 덮는 마지막 세그먼트로 찾고, 위치를
+    /// 못 푸는 문단은 가장 높은 캐시 줄과 견준다. `tableHeights`는 표 높이(바깥 여백 제외, pt)다.
+    static func lineCacheIsStale(
+        _ paragraph: CoreHwp.HwpParagraph,
+        inlineTableHeights tableHeights: [Int: CGFloat]
+    ) -> Bool {
+        let segments = paragraph.paraLineSeg.paraLineSegInternalArray
+        guard !tableHeights.isEmpty, !segments.isEmpty, let ctrls = paragraph.ctrlHeaderArray
+        else { return false }
+        var offsets: [Int] = []
+        var offset = 0
+        for char in paragraph.paraText?.charArray ?? [] {
+            if char.type == .extended {
+                offsets.append(offset)
+            }
+            offset += char.type == .char ? 1 : 8
+        }
+        let mapsControls = offsets.count == ctrls.count
+        let tallest = segments.map(\.lineHeight).max() ?? 0
+        for (ordinal, height) in tableHeights where ctrls.indices.contains(ordinal) {
+            guard case let .table(table) = ctrls[ordinal] else { continue }
+            let margins = HwpObjectAnchorGeometry.OuterMargins(table.commonCtrlProperty)
+            let host = mapsControls
+                ? segments.last { Int($0.textStartingIndex) <= offsets[ordinal] }
+                : nil
+            let lineHeight = host?.lineHeight ?? tallest
+            if height + margins.vertical > HwpUnits.points(fromHwpUnit: lineHeight) + 0.5 {
+                return true
+            }
+        }
+        return false
     }
 
     /// 이 각주가 그릴 개체가 있는지 — 쪽 끝 분할 금지·CT 높이 보존 술어 (#165 리뷰).
