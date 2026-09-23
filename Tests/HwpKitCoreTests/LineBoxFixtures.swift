@@ -309,7 +309,7 @@ import XCTest
             return applying(rule, to: output)
         }
 
-        /// 컨테이너 블록이 문단 둘을 LF로 이은 꼴 (`HwpPaginator.combinedAttributedString`) —
+        /// 컨테이너 블록이 문단 둘을 LF로 이은 꼴 (`HwpCombinedBlockString.combine`) —
         /// 앞 문단은 10·40·10(+30pt 개체)·10pt 네 줄이고 아래 간격 10pt, 뒤 문단은 10pt 두 줄이고
         /// 위 간격 10pt. 비율 160%. 줄 상자 `[10, 40, 30, 10, 10, 10]`, 전진량
         /// `[16, 64, 36, 16 + 20, 16, 16]`.

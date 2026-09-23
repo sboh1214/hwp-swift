@@ -24,8 +24,8 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
    `Fixtures/<id>/document.hwp`의 **사본**을 연다 (열람만으로 원본이 재기록될 수
    있다 — 4단계). 새로 저작하는 쌍(`section-marks`·`section-page-starts-on`·
    `line-shapes`·`script-decorations`·`section-page-number-skip`·`compat-decorations`·
-   `hwp2007-decorations`·`inline-object-baseline`·`inline-table-actual-height`·
-   `paragraph-end-char-size`)은 `.hwp`와 `.hwpx`를
+   `hwp2007-decorations`·`inline-object-baseline`·`inline-object-marker-size`·
+   `inline-table-actual-height`·`paragraph-end-char-size`)은 `.hwp`와 `.hwpx`를
    **같은 편집 세션에서 연달아** 저장해야 두 파일이 같은 문서가 된다. 한글 GUI로
    만들기 어려운 조합은 합성 HWPX를 한글로 열어 두 형식으로 저장해도 된다
    (`line-shapes` — 17종 선 모양을 네 자리에 모두 실은 문서, `script-decorations` —
@@ -90,6 +90,10 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
   쌍으로 저작했다 — 코퍼스의 글자처럼 취급 표 14개가 전부 저작 높이 = 실제 높이라(한글이 저장할 때
   고쳐 쓴다) 줄 예약이 저작 높이를 믿어도 렌더 해시·골든이 잡지 못하던 자리의 실물 근거이며, 각주
   안 글자처럼 취급 표(`hp:footNote` 안 `hp:tbl`)가 HWP 쌍과 같은 줄 캐시로 이어지는 표본이기도 하다.
+  글자처럼 취급 개체 마커의 글자 모양 크기는 #217에서 `inline-object-marker-size` 쌍으로 저작했다 —
+  수정 전후 기존 픽스처의 렌더 해시가 두 글꼴 모드 모두 불변이라 마커 크기가 줄 상자에 들던 결함을
+  렌더 해시·골든이 잡지 못하던 자리의 실물 근거이며, 개체·책갈피만 싣는 run(`<hp:run charPrIDRef="N">` 안
+  `hp:pic`·`hp:tbl`·`hp:ctrl/hp:bookmark`)의 글자 모양이 HWP 쌍과 같은 줄 캐시로 이어지는 표본이기도 하다.
 
 ## manifest 작성 기준
 

@@ -217,6 +217,15 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   베이스라인 − 0.85 × 높이). 같은 세션의 PDF 내보내기 좌표(README의 표)를
   `HwpKitTests/FixtureInlineObjectBaselineTests`가 핀한다. HWPX 쌍은
   `HwpxFixtures/inline-object-baseline`.
+- `inline-object-marker-size`: 함초롬바탕 10pt 본문에 글자처럼 취급 그림·1칸 표와 책갈피의
+  **개체 마커**를 본문과 다른 글자 모양(대개 40pt — 20pt·상대 크기 50%·10pt 대조군 포함)으로
+  싣고 바깥 여백·자리 차지 개체·문단 끝 40pt·개체만 남은 줄·줄 간격 고정·여백만·최소·100%·셀 안 조건을 더한
+  합성 HWPX를 Hancom Office HWP for macOS 12.30.0 build 6446으로 2026-09-24에 열어 `.hwp`·`.hwpx`로
+  저장. 줄 공간을 예약하는 개체의 마커 글자 모양 크기가 줄 상자에 들지 않고 비율 줄 간격 여분의
+  기준에만 든다는 규칙(#217)의 실물 근거다 — 높이 0 마커(책갈피)와 자리 차지 개체의 마커는 상자에
+  든다. 같은 세션의 PDF 내보내기 좌표와 줄 캐시(README의 표)를
+  `HwpKitTests/FixtureInlineObjectMarkerSizeTests`가 핀한다. HWPX 쌍은
+  `HwpxFixtures/inline-object-marker-size`.
 - `inline-table-actual-height`: 함초롬바탕 10pt 본문에 셀 내용이 저작 높이보다 키운 **글자처럼
   취급 표**(4행·한 줄 두 표·공통 높이가 행 합보다 큰 표·10pt 줄의 8pt 표·40pt 줄·둘째 줄·각주 안
   표, 이슈의 32행 표 셋)를 실은 합성 HWPX를 Hancom Office HWP for macOS 12.30.0 build 6446으로

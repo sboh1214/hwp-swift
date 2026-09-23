@@ -125,6 +125,10 @@ final class FixturePreviewFidelityTests: XCTestCase {
         // 캐시로 놓으므로 이 값은 유실 가드이고, 낡은 높이·캐시 없는 재조판의 가드는
         // `FixtureInlineTableActualHeightTests`의 좌표 핀이다. 표 테두리·셀 글자가 대부분이다.
         "inline-table-actual-height": 0.0045, // 실측 0.0034 (2026-09-23)
+        // 개체 마커의 글자 모양 크기(#217) — 단색 그림·표 테두리와 10pt 글줄이 대부분이다.
+        // 이 값은 유실 가드이고, 줄 자리·개체 자리의 가드는
+        // `FixtureInlineObjectMarkerSizeTests`의 좌표 핀이다.
+        "inline-object-marker-size": 0.002, // 실측 0.0013 (2026-09-24)
         "공공누리": 0.004, // 실측 0.0028 (저해상 GIF)
         "문서이력관리": 0.001, // 실측 0.0000
         "변경내용추적": 0.001, // 실측 0.0000
