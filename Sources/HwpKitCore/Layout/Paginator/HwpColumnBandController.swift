@@ -463,14 +463,19 @@ extension HwpColumnBandController {
     /// 글자 상자(한글 문서는 기본 글자 크기, MS 워드 호환 문서는 그 글꼴의 줄 상자와 문단을
     /// 끝내는 문자열이면 문단 끝 글자 상자의 큰 쪽 — `HwpDrawnTextLayout.trailingTextBoxHeight(in:)`,
     /// #194)에 적용한 전진량에서 상자를 뺀 값. 줄 캐시가 있는 문단의 캐시 `lineSpacing`과 같은
-    /// 값이고(캐시도 같은 규칙으로 저장된다), 개체 줄의 개체 몫과 마지막 줄의 더 큰 다른 글자는
-    /// 안 본다(줄 경계를 모른다 — 마지막 글자 기준 근사).
+    /// 값이고(캐시도 같은 규칙으로 저장된다), 마지막 줄의 더 큰 다른 글자와 마지막 글자가 아닌
+    /// 개체의 몫은 안 본다(줄 경계를 모른다 — 마지막 글자 기준 근사). 마지막 글자가 줄 공간을
+    /// 예약한 개체 마커면 줄 상자는 개체 높이·문단 끝 글자 쪽이고 마커의 글자 모양은 비율 여분
+    /// 기준에만 든다 (`HwpDrawnTextLayout.trailingLineBox(in:)`, #217) — 렌더가 그린 마지막 줄
+    /// 상자와 같은 규칙이라, 최소·고정 줄 간격에서 구분선이 그 상자 아래로 뻗지 않는다.
     static func measuredTrailingSpacing(of attributedString: NSAttributedString) -> CGFloat {
         guard attributedString.length > 0 else { return 0 }
         let index = attributedString.length - 1
-        let size = HwpDrawnTextLayout.trailingTextBoxHeight(in: attributedString)
-        guard size > 0 else { return 0 }
+        let box = HwpDrawnTextLayout.trailingLineBox(in: attributedString)
+        guard box.text > 0 else { return 0 }
         let rule = HwpLineSpacingRule.rule(in: attributedString, at: index)
-        return max(0, rule.advance(textBoxHeight: size, objectHeight: 0) - size)
+        return max(
+            0, rule.advance(lineBoxHeight: box.line, textBoxHeight: box.text) - box.line
+        )
     }
 }

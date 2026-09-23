@@ -60,6 +60,14 @@ enum HwpInlineObjectReservation {
         return CTRunDelegateCreate(&callbacks, Unmanaged.passRetained(metrics).toOpaque())
     }
 
+    /// 줄 공간을 예약한 개체 마커의 속성인지 — 빌더가 예약 높이(`hwp.inlineObjectHeight`)를 싣는
+    /// 마커다 (`HwpTextRunBuilder.appendControlMarker`). 한글은 그 마커의 글자 모양 크기를 줄
+    /// 상자에 넣지 않는다 (#217) — 줄 지표(`HwpDrawnTextLayout.LineMetrics`)는 같은 판정을 run
+    /// delegate의 ascent로 한다 (빌더는 둘을 함께 싣는다).
+    static func reservesLineSpace(_ attributes: [NSAttributedString.Key: Any]) -> Bool {
+        ((attributes[HwpAttributedStringKey.inlineObjectHeight] as? NSNumber)?.doubleValue ?? 0) > 0
+    }
+
     /// 마커에 실을 예약 폭 열쇠 — 폭 기준이 단 폭에 딸릴 때만 값이 있다.
     /// 개체 요소 detail로 폴백한 폭(`HwpTextRunBuilder.inlineObjectReservation`)은 절대값
     /// (HWPUNIT)이라 다시 풀 게 없으므로 열쇠를 싣지 않는다.

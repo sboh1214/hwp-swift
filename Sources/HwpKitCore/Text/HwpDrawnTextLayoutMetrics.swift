@@ -248,6 +248,31 @@ extension HwpDrawnTextLayout {
         return max(height, CGFloat(end.doubleValue))
     }
 
+    /// 문자열 **마지막 줄**의 줄 상자(`line`)와 글자 상자(`text` — 비율 여분의 기준) 근사.
+    /// 글자 상자는 `trailingTextBoxHeight(in:)`이다. 한글 문서에서 마지막 글자가 줄 공간을 예약한
+    /// 개체 마커(`hwp.inlineObjectHeight`)면 줄 상자는 그 마커의 글자 모양 크기가 아니라 개체
+    /// 높이와 (문단을 끝내는 문자열이면) 문단 끝 글자 크기 가운데 큰 것이다 — `LineMetrics`와 같은
+    /// 규칙 (#217: 개체 마커의 글자 모양은 여분 기준에만 든다). 그 밖에는 두 값이 같다 (MS 워드
+    /// 호환 문서 포함 — 그 문서의 개체 줄 상자는 글꼴 상자와 개체의 조합이라 이 근사가 다루지
+    /// 않는다).
+    static func trailingLineBox(
+        in attributedString: NSAttributedString
+    ) -> (line: CGFloat, text: CGFloat) {
+        let text = trailingTextBoxHeight(in: attributedString)
+        guard attributedString.length > 0 else { return (text, text) }
+        let attributes = attributedString.attributes(
+            at: attributedString.length - 1, effectiveRange: nil
+        )
+        guard !isMsWordCompatible(attributes),
+              let reserved = attributes[HwpAttributedStringKey.inlineObjectHeight] as? NSNumber,
+              reserved.doubleValue > 0
+        else { return (text, text) }
+        let paragraphEnd = endsParagraph(
+            CFRange(location: 0, length: attributedString.length), in: attributedString
+        ) ? paragraphEndBaseFontSize(in: attributes) : 0
+        return (max(CGFloat(reserved.doubleValue), paragraphEnd), text)
+    }
+
     /// run이 MS 워드 호환 문서의 것인지 — 조판이 한글 문서가 아닌 문서의 모든 run에 싣는
     /// `hwp.compatibleDocumentTarget`(표 55)이 `msWord`일 때만 참이다. 한글 2007 호환·
     /// 훈민정음 호환·record 없음은 한글 문서와 같은 줄 상자다.

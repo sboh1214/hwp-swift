@@ -245,7 +245,7 @@ enum HwpLineAdvance {
     /// 위/아래 간격 10pt 문단의 한 줄 끝 앞뒤 줄 전진량이 16pt 그대로).
     ///
     /// 문자열 하나가 CT 문단을 둘 이상 품는 것은 컨테이너 블록이 문단들을 `\n`으로 이은
-    /// 경우다 (`HwpPaginator.combinedAttributedString`) — 문단마다 자기 스타일이 붙어
+    /// 경우다 (`HwpCombinedBlockString.combine`) — 문단마다 자기 스타일이 붙어
     /// 있으므로 간격은 **줄 자신의 문단**(아래)과 **다음 줄의 문단**(위)에서 각각 읽는다.
     /// 음수 간격은 0으로 본다 (CT와 같다).
     static func paragraphGap(
