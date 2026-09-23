@@ -95,12 +95,16 @@ struct HwpParagraphObjectCollector {
 
     /// `numbering`은 이 문단의 번호 열쇠 (#158) — 수집하는 글상자·표 안 문단이 한 겹
     /// 아래 경로로 자기 번호를 찾는다. 없으면 그 안 문단은 라벨 없이 조판된다.
+    ///
+    /// `tableContainmentBottom`: 문단 높이를 줄 캐시로 잡은 컨테이너(각주·미주)가 표를 담아야 하는
+    /// 바닥 — 캐시 마지막 줄 **상자**의 아래다 (#214 리뷰). 없으면 문단 rect의 아래다.
     func objects(
         in paragraph: CoreHwp.HwpParagraph,
         frame: HwpParagraphFrame,
         paragraphRect: CGRect,
         firstSourceOrder: Int = 0,
-        numbering: HwpNumberingScope? = nil
+        numbering: HwpNumberingScope? = nil,
+        tableContainmentBottom: CGFloat? = nil
     ) -> Objects {
         var collected = Objects()
         var state = CollectState(cursorX: paragraphRect.minX, sourceOrder: firstSourceOrder)
@@ -119,9 +123,12 @@ struct HwpParagraphObjectCollector {
                 if let table = table(nested, placement: placement, state: &state) {
                     collected.nestedTables.append(table)
                 }
+                // 줄이 표의 그려지는 높이를 예약해도(#214) 문단 높이가 **줄 캐시**에서 왔으면 그 캐시가
+                // 표보다 작을 수 있다 (저작 뒤 셀 내용이 커진 문서) — 캐시 줄 상자를 넘친 만큼도 하한이다.
                 noteContainerFloor(
                     nested.commonCtrlProperty,
-                    placement: placement, since: marker, into: &collected
+                    placement: placement, since: marker, into: &collected,
+                    textBottom: tableContainmentBottom ?? placement.paragraphRect.maxY
                 )
                 continue
             }
@@ -161,20 +168,29 @@ struct HwpParagraphObjectCollector {
     /// 예약은 저작 치수다 (`inlineObjectReservation` → 표 69 공통 속성). 표·글상자의 실제
     /// 높이는 **내용**이 정하므로 예약보다 크게 조판될 수 있고, 그때 줄은 그 초과분을
     /// 안 담는다 — `reservesSpace`(예약 > 0)만 보면 "줄이 담았다"로 접어 개체가 다음
-    /// 각주·행 위로 흘러나간다. #91이 저작 셀 높이에서 겪은 것과 같은 함정이다.
+    /// 각주·행 위로 흘러나간다. #91이 저작 셀 높이에서 겪은 것과 같은 함정이다. 각주·미주
+    /// 안 표는 줄이 그려지는 높이를 예약하므로(#214, `HwpTableLayout.inlineTableHeights`)
+    /// 예약 상자로는 걸리지 않지만, 문단 높이가 표보다 짧은 줄 캐시에서 왔으면 문단 rect를
+    /// 넘친 만큼 걸린다(`textBottom`). 글상자와 높이를 넘기지 않는 경로의 안전망이기도 하다.
+    ///
+    /// `textBottom`이 있으면 예약 상자와 그 바닥 가운데 **위쪽**을 넘친 만큼이 기준이다 — 예약
+    /// 상자가 줄 캐시의 줄 상자보다 아래로 나가도 컨테이너는 캐시 높이까지만 담기 때문이다 (각주
+    /// 안 표). 각주 끝 블록은 마지막 줄의 줄 간격을 빼고 쌓으므로 그 바닥은 줄 간격을 뺀 상자 아래다.
     private func noteContainerFloor(
         _ commonProperty: CoreHwp.HwpCommonCtrlProperty?,
         placement: Placement,
         since marker: ObjectMarker,
-        into collected: inout Objects
+        into collected: inout Objects,
+        textBottom: CGFloat? = nil
     ) {
         if Self.raisesContainerFloor(commonProperty, anchor: placement.anchor) {
             collected.noteFloating(since: marker)
             return
         }
         guard let anchor = placement.anchor, anchor.reservesSpace else { return }
+        let reservedBottom = anchor.origin.y + anchor.reserved.height
         collected.noteFloating(
-            since: marker, exceeding: anchor.origin.y + anchor.reserved.height
+            since: marker, exceeding: textBottom.map { min($0, reservedBottom) } ?? reservedBottom
         )
     }
 

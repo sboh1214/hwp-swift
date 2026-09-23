@@ -184,7 +184,8 @@ extension HwpFootnoteLayout {
         /// 각주 첫머리의 자동 번호 (ext18) 마커를 번호 문자열로 치환한다 (번호는
         /// paginator가 부여한 문서 순서 번호 — 본문 참조와 동일 소스). 스택
         /// 높이는 한글 라인 캐시를 우선한다 (본문 절대 캐시와 동일 철학).
-        /// 문단 번호·개요 번호 라벨(#158)은 자동 번호 앞에 전치된다.
+        /// 문단 번호·개요 번호 라벨(#158)은 자동 번호 앞에 전치된다. 글자처럼 취급 표는
+        /// 수집기(아래)가 그릴 높이로 줄을 예약한다 (#214).
         func layOut() -> HwpParagraphMeasurer.Result {
             HwpParagraphMeasurer(
                 index: index,
@@ -202,7 +203,13 @@ extension HwpFootnoteLayout {
                         footnoteShape: footnoteShape
                     ),
                     preferCachedHeight: true,
-                    number: numbering?.number
+                    number: numbering?.number,
+                    inlineTableHeights: HwpTableLayout(
+                        fontResolver: fontResolver, attributeCache: attributeCache
+                    ).inlineTableHeights(
+                        in: paragraph, availableWidth: width, index: index,
+                        sizeResolver: noteResolver, numbering: numbering
+                    )
                 )
             )
         }
@@ -245,7 +252,12 @@ extension HwpFootnoteLayout {
             paragraphRect: Self.paragraphRect(
                 width: width, textHeight: measured.frame.totalHeight
             ),
-            numbering: numbering
+            numbering: numbering,
+            // 문단 높이가 줄 캐시면 표는 캐시 마지막 줄 상자 안에 들어야 한다 (#214 리뷰) — 각주 끝
+            // 블록은 그 줄의 줄 간격을 빼고 쌓는다 (`stackingHeight`).
+            tableContainmentBottom: measured.cachedLineExtent.map {
+                HwpUnits.points(fromHwpUnit: Int32(clamping: $0.bottom - $0.top))
+            }
         )
         // 쪽에 걸친 문단 (세로 위치 리셋) 은 `cachedLineExtent`가 거부해 CT 높이로
         // 떨어진다 — 쪽 몫의 합이 한글 높이다 (#165). 단조 캐시는 두 산식이 같다.

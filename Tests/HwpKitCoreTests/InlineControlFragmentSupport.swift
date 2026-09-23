@@ -174,13 +174,16 @@ import XCTest
 
         /// 절대 캐시 문서 — 본문 뒤에 캐시 문단 둘을 더해 절대 모드 감지(첫 loc > 0인
         /// 캐시 문단 다수)를 만족시킨다. 둘째 쪽의 뒤 문단은 run 1 바로 아래(4820)다.
+        /// `tailLocation`은 뒤 문단 첫 줄 위치다 — 본문의 마지막 줄 **뒤**여야 한다: 앞 줄과 같은
+        /// 위치에서 시작하는 줄은 한글의 쪽 절단점이다 (#214, `HwpAbsoluteCachePlacer.isPageBreak`).
         static func absolutePaginator(
-            host: CoreHwp.HwpParagraph
+            host: CoreHwp.HwpParagraph,
+            tailLocation: Int32 = 4820
         ) throws -> HwpPaginator {
             let tail = try (0 ..< 2).map { index in
                 try HwpSynthetic.lineSegParagraph(
                     "뒤 문단 \(index)",
-                    segments: [(location: Int32(4820 + index * 2100), height: 1500)]
+                    segments: [(location: tailLocation + Int32(index * 2100), height: 1500)]
                 )
             }
             let section = HwpSynthetic.section(

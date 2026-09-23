@@ -56,6 +56,10 @@ struct HwpParagraphMeasurer {
         /// 측정과 배치가 **같은 번호**로 같은 문자열을 만들어야 줄바꿈·높이가
         /// 갈리지 않는다.
         var number: HwpParagraphNumber?
+        /// 글자처럼 취급 표가 그려지는 높이 (controlIndex → pt, #214) — 줄 예약이 저작 높이
+        /// 대신 쓴다 (`HwpTextRunBuilder.inlineTableHeights`). 표를 그 자리에 그리는 호출부
+        /// (각주·미주)만 넘긴다.
+        var inlineTableHeights: [Int: CGFloat] = [:]
     }
 
     struct Result {
@@ -76,12 +80,13 @@ struct HwpParagraphMeasurer {
         width: CGFloat,
         options: Options = Options()
     ) -> Result {
-        let builder = HwpTextRunBuilder(
+        var builder = HwpTextRunBuilder(
             index: index,
             fontResolver: fontResolver,
             sizeResolver: sizeResolver,
             attributeCache: attributeCache
         )
+        builder.inlineTableHeights = options.inlineTableHeights
         let attributed = builder.build(
             paragraph: paragraph,
             controlReplacements: options.controlReplacements,

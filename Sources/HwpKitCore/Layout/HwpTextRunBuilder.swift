@@ -27,6 +27,9 @@ public struct HwpTextRunBuilder {
     /// 글자 모양별 속성 사전 캐시 — 같은 문서(`index`)·같은 `fontResolver`를 쓰는
     /// 빌더끼리 공유한다 (소유는 `HwpPaginator`). nil이면 매번 새로 계산한다.
     let attributeCache: HwpTextAttributeCache?
+    /// 글자처럼 취급 표가 그려지는 높이 (controlIndex → pt) — 줄 예약이 저작 높이 대신 쓴다
+    /// (#214, `inlineObjectReservation`). 표를 조판한 호출부만 채운다.
+    var inlineTableHeights: [Int: CGFloat] = [:]
 
     public init(
         index: HwpIndex,
