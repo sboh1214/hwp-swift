@@ -213,12 +213,12 @@ import XCTest
             note.paraLineSeg = try HwpSynthetic.lineSegParagraph(
                 "캐시", segments: [(location: 0, height: 1000)]
             ).paraLineSeg
-            expect(HwpFootnoteLayout.lineCacheIsStale(note, inlineTableHeights: heights)) == true
+            expect(HwpParagraphLayout.lineCacheIsStale(note, inlineTableHeights: heights)) == true
             note.paraLineSeg = try HwpSynthetic.lineSegParagraph(
                 "캐시", segments: [(location: 0, height: 3000)]
             ).paraLineSeg
-            expect(HwpFootnoteLayout.lineCacheIsStale(note, inlineTableHeights: heights)) == false
-            expect(HwpFootnoteLayout.lineCacheIsStale(note, inlineTableHeights: [:])) == false
+            expect(HwpParagraphLayout.lineCacheIsStale(note, inlineTableHeights: heights)) == false
+            expect(HwpParagraphLayout.lineCacheIsStale(note, inlineTableHeights: [:])) == false
         }
 
         private static let footnoteGeometry = HwpPageGeometry(

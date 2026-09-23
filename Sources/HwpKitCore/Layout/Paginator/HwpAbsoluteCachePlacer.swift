@@ -23,10 +23,14 @@ struct HwpAbsoluteCachePlacer {
     /// 위 두 기록을 지우고, 그 밴드의 캐시 문단은 위치에 더해 **자리**로도 쪽 넘김을 판정한다 — 첫
     /// run의 줄 상자가 남은 본문에 안 들어가면 한글은 그 문단을 다음 쪽에 놓았다.
     var bandRestartedMidPage = false
-    /// 절대 캐시 모드에서 stale 캐시 문단 (캐시 줄 높이 < 선언 글자 크기)이
-    /// 만든 아래 방향 보정 오프셋 (페이지 로컬). 한글.app도 이런 문단은 열 때
-    /// 재조판해 CT 자연 높이만큼 다음 문단을 밀어낸다 (CharShape 실측).
+    /// 절대 캐시 모드에서 낡은 캐시 문단(캐시 줄 높이 < 선언 글자 크기, 또는 글자처럼 취급 표를 실은
+    /// 줄 < 그 표 — #214 PR 리뷰)이 만든 보정 오프셋 (페이지 로컬). 한글.app도 이런 문단은 열 때
+    /// 재조판해 CT 줄 범위만큼 다음 문단을 밀어낸다 (CharShape 실측·#214 PR 리뷰 실측). 밀려 쪽을
+    /// 넘긴 문단을 새 쪽 머리에 놓을 때는 그 문단의 캐시 위치만큼 **음수**가 된다 (`pendingRebaseLocation`).
     var absoluteCacheStaleOffset: CGFloat = 0
+    /// 낡은 캐시 보정으로 밀려 쪽을 넘긴 문단의 첫 줄 위치 (#214 PR 리뷰) — 다음 쪽에서 그 문단을 다시
+    /// 처리할 때 보정 오프셋을 이 위치만큼 당겨 쪽 머리에 놓는다. 캐시 위치는 옛 쪽 기준이기 때문이다.
+    var pendingRebaseLocation: Int32?
 
     init(sections: [CoreHwp.HwpSection]) {
         absoluteCacheMode = Self.detectAbsoluteCacheMode(sections: sections)
