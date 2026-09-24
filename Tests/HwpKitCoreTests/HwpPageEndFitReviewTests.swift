@@ -188,7 +188,9 @@ import XCTest
         /// 두 줄짜리 각주를 달면 종전에는 상자 하단 84가 단에 들어간다며 통째로 놓아 셋째 줄 상자
         /// (64~84)가 각주(74~100)를 덮었다. 기준처럼 나눠 두 줄을 남기고 셋째 줄을 각주와 함께 넘긴다.
         func testPerPageNumberingParagraphKeepsTheBaseOverflowSplit() async throws {
-            let layout = try await Self.keptTogetherNoteLayout(markerLine: 2, footnoteNumberingMode: 2)
+            let layout = try await Self.keptTogetherNoteLayout(
+                markerLine: 2, footnoteNumberingMode: 2
+            )
             let notePages = layout.pages.indices.filter { page in
                 layout.pages[page].blocks.contains { $0.kind == .footnote }
             }

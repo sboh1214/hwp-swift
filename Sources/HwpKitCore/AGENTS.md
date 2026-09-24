@@ -782,10 +782,14 @@ extra:)`)이라 갈리지 않는다. 한글 12.30 실측(2026-09-21, 합성 HWPX
 빠진다, PR 리뷰. 상자가 단 자체를 넘으면 게이트와 무관하게 나눈다), 조각 루프·
 진입 줄 수(`HwpFragmentRemainder.fit`), 한 줄 문단(`placeSingleLineParagraph`,
 `remainingFitHeight`), 통째로 옮긴 새 단 머리의 위 간격 재적용(`firstLineFitHeight`). 상자는
-**높이와 같은 출처**다: 저장본 줄 캐시 높이를 쓴 문단은 캐시의 줄 상자 바닥(`cachedLineBoxExtent` —
-`vertsize`, 줄 간격·문단 간격 제외)으로 문단 전체를 재고, 조각 루프도 마지막 줄만 그 캐시 바닥으로
-잰다(`HwpFragmentFitSource.cachedLastLineBoxBottom` — 마지막 줄 전진량이 캐시 잔여라 CT 상자와
-출처가 갈린다). 빈 문단은 페이지네이터의 `layout`이 줄 프레임을 비우므로 앵커 줄을 한 번 더
+**높이와 같은 출처**다: 저장본 줄 캐시 높이를 쓴 문단은 **마지막 줄**을 캐시의 줄 상자 바닥
+(`cachedLineBoxExtent` — `vertsize`, 줄 간격·문단 간격 제외)으로 재고 앞 줄들은 CT 상자로 잰다 —
+문단 전체 판정(`paragraphFitHeight`)과 조각 루프(`HwpFragmentFitSource.cachedLastLineBoxBottom`)가
+같다. 마지막 줄 전진량이 캐시 잔여라 CT 상자와 출처가 갈리기 때문이고, 앞 줄을 CT로 재는 것은
+렌더러가 캐시 높이 블록 안에서도 줄을 **CT 전진량으로 그리기** 때문이다 — CT 줄 상자가 캐시보다
+큰 문단(MS 워드 호환 문서의 글꼴 대체, 글자보다 낮은 낡은 캐시)을 캐시 바닥만으로 통째로 두면 뒤
+줄이 본문 아래·쪽 밖에 그려진다(PR 리뷰의 "캐시 바닥만 쓰라"는 제안을 이 이유로 받지 않았다). CT 줄
+수가 캐시와 다를 때만 캐시 상자 바닥으로 문단 전체를 잰다(#222 리뷰). 빈 문단은 페이지네이터의 `layout`이 줄 프레임을 비우므로 앵커 줄을 한 번 더
 조판해 상자를 얻는다(`emptyParagraphLines`). 원점이 비단조인 문단(평균 폴백)과 상자 0인 줄은
 전진량으로 잰다. 블록이 본문 아래로 넘친 몫은 `trailingSpacesBelowLineBox`에 기록해(절대 캐시
 run 블록 #165와 같은 표) 각주 이어짐의 본문 하한(`footnoteBodyBottom`)과 단 구분선 끝이 상자
