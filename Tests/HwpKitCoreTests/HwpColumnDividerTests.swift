@@ -292,7 +292,7 @@ import XCTest
             expect(fragments.count) == 3
             expect(firstDivider.frame.maxY).to(beCloseTo(lowest - 6, within: 0.01))
             // 표식 가드(`markedWithCachedTrailingSpacing`의 문단 끝 판정) — 구분선은 흐름 블록의
-            // 기록을 먼저 쓰므로 표식 자체를 따로 본다(기록이 없는 균형 재배치 조각은 표식을 쓴다).
+            // 기록을 먼저 쓰므로 표식 자체를 따로 본다(기록이 없는 블록은 표식을 쓴다).
             // 구역 첫 문단(템플릿 캐시 한 줄)은 문단을 끝내므로 표식이 있다 — 이 문단의 조각만 본다.
             let continued = fragments.filter {
                 $0.attributedString?.string.contains("이어지는") == true

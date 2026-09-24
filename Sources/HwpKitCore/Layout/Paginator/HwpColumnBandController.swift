@@ -127,6 +127,9 @@ struct HwpColumnBandController {
     struct RebalancePlan {
         let replacedBlockIndices: Set<Int>
         let newBlocks: [AnyHwpBlock]
+        /// 새 블록마다 마지막 줄 상자 아래 몫 (`newBlocks` 순서, #222 PR 리뷰) — nil이면 기록이
+        /// 없다(다시 재지 않았고 문단 끝도 담지 않은 조각 — 단 구분선은 측정 규칙으로 잰다).
+        let newBlockLineBoxGaps: [CGFloat?]
         let maxBottom: CGFloat
     }
 
@@ -175,13 +178,19 @@ struct HwpColumnBandController {
     /// 첫 단에만 쌓인 밴드 텍스트를 라인 단위로 모든 단에 균등 재배치하는
     /// 플랜을 만든다. 라인 조각이 2개 미만이면 nil (재배치 없음 — 기존
     /// rebalanceColumnBand의 `guard units.count > 1` 조기 반환과 동일).
-    func rebalancePlan(currentBlocks: [AnyHwpBlock]) -> RebalancePlan? {
+    /// `lineBoxGaps`는 블록 index별 마지막 줄 상자 아래 몫(`trailingSpacesBelowLineBox`)이다.
+    func rebalancePlan(
+        currentBlocks: [AnyHwpBlock], lineBoxGaps: [Int: CGFloat]
+    ) -> RebalancePlan? {
         let units = bandLineUnits(currentBlocks: currentBlocks)
         guard units.count > 1 else { return nil }
-        let result = balancedBlocks(from: units, currentBlocks: currentBlocks)
+        let result = balancedBlocks(
+            from: units, currentBlocks: currentBlocks, lineBoxGaps: lineBoxGaps
+        )
         return RebalancePlan(
             replacedBlockIndices: Set(bandTextBlocks.map(\.blockIndex)),
-            newBlocks: result.blocks,
+            newBlocks: result.blocks.map(\.block),
+            newBlockLineBoxGaps: result.blocks.map(\.lineBoxGap),
             maxBottom: result.maxBottom
         )
     }
@@ -244,11 +253,12 @@ struct HwpColumnBandController {
     /// 라인 조각을 단별로 균등 분배해 새 텍스트 블록으로 조립한다.
     private func balancedBlocks(
         from units: [BandLineUnit],
-        currentBlocks: [AnyHwpBlock]
-    ) -> (blocks: [AnyHwpBlock], maxBottom: CGFloat) {
+        currentBlocks: [AnyHwpBlock],
+        lineBoxGaps: [Int: CGFloat]
+    ) -> (blocks: [(block: AnyHwpBlock, lineBoxGap: CGFloat?)], maxBottom: CGFloat) {
         let columnCount = columnFrames.count
         let perColumn = Int((Double(units.count) / Double(columnCount)).rounded(.up))
-        var newBlocks: [AnyHwpBlock] = []
+        var newBlocks: [(block: AnyHwpBlock, lineBoxGap: CGFloat?)] = []
         var maxBottom = columnFrames[0].minY
         var unitIndex = 0
         for column in 0 ..< columnCount {
@@ -272,7 +282,12 @@ struct HwpColumnBandController {
                     merged, of: attributed, measuredWidth: original.frame.width,
                     columnWidth: columnFrames[column].width
                 )
-                newBlocks.append(AnyHwpBlock(
+                // 원래 블록의 끝을 담은 조각은 그 블록의 상자 아래 몫(줄 간격 여분 + 문단 아래
+                // 간격)을 물려받는다 — 마지막 줄 단위가 그 잔여를 그대로 흡수한다 (#222 PR 리뷰;
+                // 한글 12.30 실측 so222r: 균형 배분 밴드의 구분선도 줄 상자 바닥에서 끝난다).
+                let reachesEnd = NSMaxRange(merged.range) == attributed.length
+                let gap = fragment.lineBoxGap ?? (reachesEnd ? lineBoxGaps[merged.blockIndex] : nil)
+                newBlocks.append((AnyHwpBlock(
                     frame: CGRect(
                         x: columnFrames[column].minX,
                         y: cursorY,
@@ -283,7 +298,7 @@ struct HwpColumnBandController {
                     attributedString: NSAttributedString(attributedString: fragment.text),
                     hyperlinkURL: original.hyperlinkURL,
                     source: original.source
-                ))
+                ), gap))
                 cursorY += fragment.height
             }
             maxBottom = max(maxBottom, cursorY)
@@ -292,6 +307,13 @@ struct HwpColumnBandController {
             }
         }
         return (newBlocks, maxBottom)
+    }
+
+    /// 재배치 조각 — 다시 잰 조각은 그 줄로 잰 상자 아래 몫(`lineBoxGap`)을 싣는다 (#222 PR 리뷰).
+    private struct RebalancedFragment {
+        let text: NSAttributedString
+        let height: CGFloat
+        var lineBoxGap: CGFloat?
     }
 
     /// 단에 놓을 조각 문자열과 높이. 블록 첫머리가 아닌 조각은 이어지는 조각 — 첫 줄
@@ -311,7 +333,7 @@ struct HwpColumnBandController {
         of attributed: NSAttributedString,
         measuredWidth: CGFloat,
         columnWidth: CGFloat
-    ) -> (text: NSAttributedString, height: CGFloat) {
+    ) -> RebalancedFragment {
         let isWholeBlock = merged.range.location == 0
             && NSMaxRange(merged.range) == attributed.length
         let remeasures = merged.heightIsMeasured && columnWidth != measuredWidth
@@ -320,13 +342,14 @@ struct HwpColumnBandController {
         // 뒤 조각 블록(줄 목록 없는 단위 하나)이 제자리에 남을 때 표식을 다시 판정하면 줄 수를
         // 몰라(단위 1개) 벗겨져 #166 증상이 되살아난다 (PR 리뷰, HEAD의 잔여 결함).
         if isWholeBlock, !remeasures {
-            return (attributed, merged.height)
+            return RebalancedFragment(text: attributed, height: merged.height)
         }
         let base = HwpParagraphLayout.continuationFragment(of: attributed, range: merged.range)
         var lineCount = merged.count
         var height = merged.height
         var width = measuredWidth
         var remeasured = false
+        var lineBoxGap: CGFloat?
         if remeasures, let paraShape = merged.paraShape {
             // 문단 머리에서 시작하는 블록 전체(문단)는 문단 단위 한 줄 규칙을 따라 재고, 조각
             // (블록의 일부, 또는 쪽·단 경계로 나뉜 문단의 뒤 조각 블록)은 표식을 단 채로 재어
@@ -354,6 +377,9 @@ struct HwpColumnBandController {
                     - (reachesEnd ? 0 : metrics.paragraphSpacing))
                 width = columnWidth
                 remeasured = true
+                // 줄이 바뀌었으니 상자 아래 몫도 다시 잰 줄로 잰다 (#222 PR 리뷰).
+                let advances = HwpFragmentLineAdvances(lines: frame.lines, textHeight: height)
+                lineBoxGap = max(0, height - advances.fitHeight(from: 0, through: lineCount - 1))
             }
         }
         let text = HwpParagraphLayout.measuredLineFragment(
@@ -370,7 +396,10 @@ struct HwpColumnBandController {
         let continues = NSMaxRange(merged.range) < attributed.length
         let kept = continues || remeasured
             ? HwpTableSplitter.strippingCachedTrailingLineSpacing(text) : text
-        return (continues ? HwpTableSplitter.markedAsContinuedFragment(kept) : kept, height)
+        return RebalancedFragment(
+            text: continues ? HwpTableSplitter.markedAsContinuedFragment(kept) : kept,
+            height: height, lineBoxGap: lineBoxGap
+        )
     }
 }
 

@@ -152,6 +152,9 @@ public struct HwpFootnoteLayout {
     struct PendingPlacement {
         let blocks: [HwpFootnoteBlock]
         let overflow: PendingNotes
+        /// 이 쪽 각주 영역의 상단(구분선 위 여백 시작) — 각주가 있는 쪽의 본문 하단이다 (#222).
+        /// 실린 각주가 없으면 nil.
+        var areaTop: CGFloat?
     }
 
     /// 페이지 하단에 배치할 각주 블록들을 계산한다.
@@ -275,7 +278,8 @@ public struct HwpFootnoteLayout {
             )
             return PendingPlacement(
                 blocks: placement.blocks,
-                overflow: placement.overflow.stampingUnmeasured(with: footnoteShape)
+                overflow: placement.overflow.stampingUnmeasured(with: footnoteShape),
+                areaTop: placement.areaTop
             )
         }
 
@@ -302,7 +306,9 @@ public struct HwpFootnoteLayout {
             divider: divider
         )
         return PendingPlacement(
-            blocks: stacked.blocks, overflow: stacked.overflow.stampingUnmeasured(with: footnoteShape)
+            blocks: stacked.blocks,
+            overflow: stacked.overflow.stampingUnmeasured(with: footnoteShape),
+            areaTop: stacked.blocks.isEmpty ? nil : areaTop
         )
     }
 

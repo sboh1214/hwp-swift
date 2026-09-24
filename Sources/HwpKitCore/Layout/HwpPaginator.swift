@@ -650,8 +650,9 @@ private extension HwpPaginator {
             // 흐름 배치가 기록한 마지막 줄 상자 아래 몫이 먼저다 (#222) — 줄 간격 여분에 문단 아래
             // 간격까지 든다. 한글 12.30 실측(`probes/222` DA): 단 끝 문단의 아래 간격 20pt는
             // 구분선에 들지 않고 구분선은 그 줄 상자 바닥(733.2)에서 끝난다 — 쪽 끝 적합이 줄
-            // 상자까지라 그 간격이 본문 아래로 넘친 쪽에서도 같다. 기록이 없는 블록(균형 재배치가
-            // 새로 만든 조각)은 아래 규칙이다.
+            // 상자까지라 그 간격이 본문 아래로 넘친 쪽에서도 같고, 균형 배분된 밴드도 같다(so222r —
+            // 재배치 조각은 원래 블록의 기록을 물려받는다). 기록이 없는 블록(문단 끝을 담지 않은
+            // 재배치 조각 등)은 아래 규칙이다.
             if let recorded = trailingSpacesBelowLineBox[offset] {
                 return recorded
             }
@@ -735,13 +736,16 @@ private extension HwpPaginator {
     /// 재배치 플랜 (교체 index·새 블록) 산출은 band.rebalancePlan,
     /// currentBlocks 재작성 적용은 여기서 한다.
     func rebalanceColumnBand() {
-        guard let plan = band.rebalancePlan(currentBlocks: currentBlocks) else { return }
+        guard let plan = band.rebalancePlan(
+            currentBlocks: currentBlocks, lineBoxGaps: trailingSpacesBelowLineBox
+        ) else { return }
         // 블록 배열을 다시 쓰면 블록 인덱스를 열쇠로 둔 부속 정보도 함께 옮긴다 (#165 리뷰,
         // `trailingSpacesBelowLineBox`). 재배치는 다단 밴드의 꼬리 블록만 갈아 끼우므로 앞
         // 블록의 인덱스는 밀리지 않지만, 위치 열쇠가 배열 재작성과 따로 놀면 그 전제가 바뀔 때
-        // 다른 블록의 몫을 빼게 된다. 갈아 끼운 흐름 블록의 상자 아래 몫(#222)은 그 블록과 함께
-        // 버려지고, 새 조각은 기록이 없어 단 구분선이 측정 규칙(`measuredTrailingSpacing` — 문단
-        // 아래 간격 제외)으로 잰다 — 균형 재배치 조각의 아래 간격은 미실측이다.
+        // 다른 블록의 몫을 빼게 된다. 갈아 끼운 흐름 블록의 상자 아래 몫(#222)은 새 조각이
+        // 물려받는다(`RebalancePlan.newBlockLineBoxGaps`, PR 리뷰) — 버리면 단 구분선이 측정
+        // 규칙(`measuredTrailingSpacing` — 문단 아래 간격은 빼지 않는다)으로 재어 마지막 문단의
+        // 아래 간격만큼 길어진다. 한글 12.30 실측(so222r)은 균형 배분 밴드도 줄 상자 바닥이다.
         var kept: [AnyHwpBlock] = []
         var remapped: [Int: CGFloat] = [:]
         for (offset, block) in currentBlocks.enumerated()
@@ -751,6 +755,11 @@ private extension HwpPaginator {
                 remapped[kept.count] = spacing
             }
             kept.append(block)
+        }
+        for (offset, gap) in plan.newBlockLineBoxGaps.enumerated() {
+            if let gap {
+                remapped[kept.count + offset] = gap
+            }
         }
         currentBlocks = kept + plan.newBlocks
         trailingSpacesBelowLineBox = remapped
@@ -1062,18 +1071,25 @@ private extension HwpPaginator {
     /// 빨간 변경 막대를 그린다. 페이지가 캐시되기 직전에 호출돼, 페이지 걸친
     /// 문단의 앞 조각도 자기 페이지에서 막대를 받는다 — 배치 후 currentBlocks만
     /// 보면 이미 캐시된 앞 페이지 조각이 빠진다 (#7, round13 #2 미완).
-    private func emitTrackChangeBars() {
+    private func emitTrackChangeBars(footnoteAreaTop: CGFloat?) {
         guard !trackChangeParagraphIds.isEmpty else { return }
         let barX = currentPageGeometry.contentFrame.minX - 10
         let barColor = CGColor.hwpTrackChange
         // 쪽 끝 적합이 줄 상자까지라(#222) 흐름 블록은 줄 간격 여분·아래 간격만큼 본문 아래로 나갈
         // 수 있다 — 막대는 본문 하단에서 멈춘다(절대 캐시 run 블록이 본문 하단에서 잘리는 것과 같다).
-        let bodyBottom = currentPageGeometry.contentFrame.maxY
-        let bars: [AnyHwpBlock] = currentBlocks.compactMap { block in
+        // 각주가 있는 쪽의 본문 하단은 각주 영역 상단이다 (#222 PR 리뷰 — 쪽 하단까지 두면 넘친
+        // 여분을 따라 막대가 구분선·각주 옆으로 내려간다). 다만 기록된 마지막 줄 상자는 자르지
+        // 않는다: 상자까지는 그려진 글줄이다(각주를 덮는 기존 격차의 문단도 그 줄에 막대가 선다).
+        let bodyBottom = min(
+            currentPageGeometry.contentFrame.maxY, footnoteAreaTop ?? .greatestFiniteMagnitude
+        )
+        let bars: [AnyHwpBlock] = currentBlocks.enumerated().compactMap { offset, block in
             guard block.kind == .text,
                   let paragraphId = block.source?.paragraphId,
                   trackChangeParagraphIds.contains(paragraphId) else { return nil }
-            let height = max(0, min(block.frame.maxY, bodyBottom) - block.frame.minY)
+            let lineBoxBottom = trailingSpacesBelowLineBox[offset].map { block.frame.maxY - $0 }
+            let limit = max(bodyBottom, lineBoxBottom ?? bodyBottom)
+            let height = max(0, min(block.frame.maxY, limit) - block.frame.minY)
             guard height > 0 else { return nil }
             let barRect = CGRect(x: 0, y: 0, width: 1.2, height: height)
             return AnyHwpBlock(
@@ -2083,7 +2099,7 @@ private extension HwpPaginator {
     ///
     /// **미주 블록은 본문이다** (#165 리뷰): 미주는 흐름 콘텐츠라 쪽 위에서부터 놓이고
     /// (`appendPendingEndnotes`) 이월된 각주는 그 아래 자리에 실려야 한다. 쪽 각주는 이
-    /// 하한을 잰 **뒤에** 붙으므로 (`appendPendingFootnotes`) 이 시점의 `.footnote` 종류
+    /// 하한을 잰 **뒤에** 붙으므로 (`placePageFootnotes`) 이 시점의 `.footnote` 종류
     /// 블록은 전부 미주다 — 그것을 빼면 미주만 있는 쪽이 빈 쪽으로 보여 각주 스택이 쪽
     /// 전체에 바닥 정렬되고, 진행 보장으로 놓인 미주를 덮는다 (재현: 미주 하단 104.67pt
     /// 위 구분선 92.6pt).
@@ -5204,7 +5220,7 @@ private extension HwpPaginator {
             contentWidth: currentPageGeometry.contentFrame.width,
             footnoteShape: currentSectionDef?.footNoteShape,
             sizeResolver: objectSizeResolver,
-            // 절대 캐시 모드만 각주를 분할 지점에서 나눠 잇는다 (`appendPendingFootnotes`의
+            // 절대 캐시 모드만 각주를 분할 지점에서 나눠 잇는다 (`placePageFootnotes`의
             // `limitsAreaToHalfContent: !absoluteCacheMode`와 같은 판정).
             continuesAtCacheBreaks: absoluteCacheMode
         )
@@ -5400,19 +5416,33 @@ private extension HwpPaginator {
     /// 대기 중인 각주를 페이지 하단에 배치한다. 영역(콘텐츠 절반 상한)을
     /// 넘는 각주는 pendingFootnotes에 남겨 다음 페이지로 이월한다.
     ///
-    /// bodyBottom: 절대 캐시 모드에서 본문이 남긴 하한 (#165). 본문 y는 캐시로
+    /// 절대 캐시 모드에서는 본문이 남긴 하한(`footnoteBodyBottom`, #165) 아래에 싣는다. 본문 y는 캐시로
     /// 고정돼 있으므로 각주는 그 아래 자리에 한글의 이어짐 규칙으로 싣는다 — 안
     /// 들어가는 각주는 줄 캐시의 분할 지점에서 나눠 다음 쪽 첫 각주로 잇고 (한글이
     /// 그렇게 저장했다), 분할 지점이 없으면 통째로 옮긴다. 절반 상한은 두지 않는다.
-    func appendPendingFootnotes(bodyBottom: CGFloat? = nil) {
-        guard !pendingFootnotes.isEmpty else { return }
+    ///
+    /// 자리만 잡고 블록은 아직 붙이지 않는다 (`appendFootnoteBlocks`) — 쪽 확정이 각주 영역
+    /// 상단을 변경 막대보다 먼저 알아야 하는데(#222 PR 리뷰), 블록 순서(막대·크롬·각주)는
+    /// 그대로 둔다.
+    func placePageFootnotes() -> HwpFootnoteLayout.PendingPlacement? {
+        guard !pendingFootnotes.isEmpty else { return nil }
         let placement = footnoteCoordinator.placePendingFootnotes(
             onPage: currentPageGeometry,
             footnoteShape: currentSectionDef?.footNoteShape,
             limitsAreaToHalfContent: !absoluteCacheMode,
             sizeResolver: objectSizeResolver,
-            bodyBottom: bodyBottom
+            // 각주 이어짐 판정의 본문 하한 (#165) — 크롬·변경 막대를 붙이기 전의 본문만 잰다(단
+            // 구분선은 크롬 역할이라 들지 않는다).
+            bodyBottom: absoluteCacheMode ? footnoteBodyBottom() : nil
         )
+        pendingFootnotes = placement.overflow
+        footnoteReservedHeight = 0
+        return placement
+    }
+
+    /// `placePageFootnotes`가 잡은 각주 블록을 쪽에 붙인다.
+    func appendFootnoteBlocks(_ placement: HwpFootnoteLayout.PendingPlacement?) {
+        guard let placement else { return }
         for block in placement.blocks {
             currentBlocks.append(AnyHwpBlock(
                 frame: block.frame,
@@ -5424,8 +5454,6 @@ private extension HwpPaginator {
                 source: HwpBlockSource(paragraphId: block.paragraphs.first?.paragraphId)
             ))
         }
-        pendingFootnotes = placement.overflow
-        footnoteReservedHeight = 0
     }
 
     // MARK: 페이지 확정
@@ -5437,21 +5465,22 @@ private extension HwpPaginator {
             didFinishPagination = true
             return
         }
-        // 각주 이어짐 판정의 본문 하한 (#165) — 크롬·변경 막대를 붙이기 전의 본문만.
-        let footnoteBodyBottom = absoluteCacheMode ? footnoteBodyBottom() : nil
         // 쪽 끝으로 닫히는 밴드의 단 구분선 (#191) — 밴드 사용량은 단 전진·밴드 닫기가
         // 이미 반영했다.
         emitColumnDividers()
+        // 각주 자리를 먼저 잡는다 — 각주가 있는 쪽의 본문 하단은 각주 영역 상단이라 변경
+        // 막대가 그 자리를 알아야 한다 (#222 PR 리뷰). 블록은 크롬 뒤에 붙인다(종전 순서).
+        let footnotes = placePageFootnotes()
         // 변경 추적 문단의 이 페이지 조각마다 변경 막대를 방출한다 — 페이지 걸친
         // 문단의 앞 조각도 자기 페이지에서 막대를 받는다 (#7).
-        emitTrackChangeBars()
+        emitTrackChangeBars(footnoteAreaTop: footnotes?.areaTop)
         // 머리말/꼬리말/쪽 번호 크롬 블록 (감추기 마스크는 빌더가 소비한다)
         currentBlocks += pageChrome.blocks(
             forPage: nextLogicalPageNumber,
             geometry: currentPageGeometry
         )
         nextLogicalPageNumber += 1
-        appendPendingFootnotes(bodyBottom: footnoteBodyBottom)
+        appendFootnoteBlocks(footnotes)
         let pageIndex = cachedPages.count
         let page = HwpPage(
             size: currentPageGeometry.pageSize,
