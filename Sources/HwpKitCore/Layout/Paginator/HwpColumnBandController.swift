@@ -388,12 +388,13 @@ extension HwpColumnBandController {
     /// 블록은 `.shape`(채우기 경로, `HwpShapeGeometry`)이고 역할은 `.pageChrome`이라
     /// 선택·복사·검색이 건너뛴다. 좌표는 블록 로컬이다.
     ///
-    /// `trailingSpacing`은 본문 텍스트 블록의 마지막 줄 줄 간격 — 기본은 블록 문자열을 그 폭으로
-    /// 조판한 마지막 줄에서 재는 `measuredTrailingSpacing`이고, 페이지네이터는 블록의 출처 문단에
-    /// 줄 캐시가 있으면 그 값을 준다 (한글이 줄 상자 기준으로 저장한 값).
+    /// `trailingSpacing`은 본문 텍스트 블록(`currentBlocks` 인덱스, 블록)의 마지막 줄 상자 아래
+    /// 몫 — 기본은 블록 문자열을 그 폭으로 조판한 마지막 줄에서 재는 `measuredTrailingSpacing`이고,
+    /// 페이지네이터는 흐름 배치가 기록한 상자 아래 몫(문단 아래 간격 포함, #222)이나 블록의 출처
+    /// 문단에 줄 캐시가 있으면 그 값을 준다 (한글이 줄 상자 기준으로 저장한 값).
     func columnDividerBlocks(
         currentBlocks: [AnyHwpBlock],
-        trailingSpacing: (AnyHwpBlock) -> CGFloat = { block in
+        trailingSpacing: (Int, AnyHwpBlock) -> CGFloat = { _, block in
             block.attributedString.map {
                 measuredTrailingSpacing(of: $0, lineWidth: block.frame.width)
             } ?? 0
@@ -414,12 +415,13 @@ extension HwpColumnBandController {
         // **블록마다** 잰다: 쪽에 걸친 문단은 배치 도중에 쪽이 닫혀 문단 뒤에 기록하는 값이
         // 아직 없고, 다른 단의 뒤 문단 값이 새어 들 수 있다 (#191 리뷰). 바닥이 표면 사용량
         // 그대로다.
-        let bodyText = currentBlocks.filter {
-            $0.kind == .text && $0.role == .body && $0.frame.minY >= top - 0.01
+        let bodyText = currentBlocks.enumerated().filter { _, block in
+            block.kind == .text && block.role == .body && block.frame.minY >= top - 0.01
         }
-        let endsWithText = bodyText.contains { $0.frame.maxY >= bandUsedBottom - 0.01 }
+        let endsWithText = bodyText.contains { $0.element.frame.maxY >= bandUsedBottom - 0.01 }
         let bottom = endsWithText
-            ? bodyText.map { $0.frame.maxY - trailingSpacing($0) }.max() ?? bandUsedBottom
+            ? bodyText.map { $0.element.frame.maxY - trailingSpacing($0.offset, $0.element) }.max()
+            ?? bandUsedBottom
             : bandUsedBottom
         guard bottom > top else { return [] }
         let line = HwpLineShapeGeometry.Line(

@@ -53,8 +53,9 @@ extension HwpFootnoteLayout {
         /// 없는 앞 문단이 캐시 합으로 줄어 그 문단의 마지막 글줄 위로 뒤 문단의 그림이
         /// 올라온다 — 두 판정의 범위를 맞춘다.
         let carriesObjects: Bool
-        /// 텍스트 높이가 캐시에서 왔을 때 마지막 줄의 줄 간격 — 각주 끝·쪽 끝에서 세지
-        /// 않는다 (각주 사이 여백이 대체하고, 쪽 끝은 줄 상자 아래가 본문 하단에 닿는다).
+        /// 마지막 줄 상자 아래 몫 — 텍스트 높이가 캐시에서 왔으면 그 마지막 줄의 줄 간격, CT로
+        /// 쟀으면 그 프레임의 마지막 줄 상자 아래 몫(#222)이다. 각주 끝·쪽 끝에서 세지 않는다
+        /// (각주 사이 여백이 대체하고, 쪽 끝은 줄 상자 아래가 본문 하단에 닿는다).
         let trailingLineSpacing: CGFloat
         /// `sourceAttributed`/`sourceLines`를 조판한 폭 — 이월 입력이 원본을 나를 때 폭이
         /// 같은지 가리는 열쇠 (#165 리뷰, `SourceLayout`).
@@ -273,9 +274,16 @@ extension HwpFootnoteLayout {
         // 다음 각주와 겹친다 (실측: 블록 44.16pt에 개체 하단 79.35pt). 개체를 놓은
         // 좌표계인 CT 높이를 그대로 두고, 그 높이엔 없는 캐시 마지막 줄 간격도 빼지 않는다.
         var frame = measured.frame
+        // 줄 캐시가 없는 각주(흐름 조판 문서·캐시를 버린 HWPX)는 CT 프레임의 마지막 줄 상자 아래
+        // 몫(줄 간격 여분 + 문단 아래 간격, `HwpParagraphMeasurer.Result.trailingGap`)을 뺀다
+        // (#222) — 한글은 캐시 유무와 무관하게 각주 스택을 마지막 줄 **상자**까지로 쌓는다
+        // (한글 12.30 실측 `probes/222` FN: 10pt·160% 각주 한 줄의 상자 바닥이 본문 하단에 닿고
+        // 영역은 위 8.5 + 구분선 아래 5.67 + 상자 10 = 24.17). 종전 0은 그 여분 6pt만큼 영역을
+        // 키워 구분선이 위로 올라가고 본문이 그만큼 먼저 넘어갔다. 상자가 프레임 아래로 나가는
+        // 줄(전진량 < 상자)은 음수라 0으로 둔다.
         var trailingSpacing = cacheLines.map {
             HwpFootnoteCacheLines.trailingSpacing(of: $0, in: $0.indices)
-        } ?? 0
+        } ?? max(0, measured.trailingGap)
         let carriesObjects = noteCarriesObjects || Self.carriesObjects(objects)
         if let cacheLines, measured.cachedLineExtent == nil {
             if carriesObjects {

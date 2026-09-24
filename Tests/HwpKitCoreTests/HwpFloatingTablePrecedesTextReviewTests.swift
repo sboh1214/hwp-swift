@@ -293,7 +293,7 @@ import XCTest
             expect(chrome).to(equal([["- 9 -"], ["- 10 -"], ["- 11 -"]]))
         }
 
-        /// 여백 폴백은 빈 단 용량으로 판정한다 — 앞 문단의 각주 예약(80pt)이 남은 이 쪽의 용량으로
+        /// 여백 폴백은 빈 단 용량으로 판정한다 — 앞 문단의 각주 예약(74pt)이 남은 이 쪽의 용량으로
         /// 재면 다음 쪽에 정상적으로 들어갈 여백(30 + 30pt)까지 잃고, 이월한 쪽에서는 그 쪽의
         /// 용량으로 남은 높이를 다시 재어 행(100pt)을 자르지 않는다.
         func testMarginsSurviveAFootnoteReservationOnThePreviousPage() async throws {
@@ -319,9 +319,10 @@ import XCTest
             let first = try await Support.blocks(of: paginator)
             let second = try await Support.blocks(of: paginator, page: 1)
             let firstPage = try await paginator.page(at: 0)
-            // 1쪽: 각주 80pt가 예약돼 표(100 + 60)가 안 들어간다.
+            // 1쪽: 각주(다섯 줄 80pt에서 마지막 줄의 줄 간격 여분 6pt를 뺀 74pt — 스택은 마지막
+            // 줄 상자까지다, #222)가 예약돼 표(100 + 60)가 안 들어간다.
             expect((firstPage?.blocks ?? []).filter { $0.kind == .footnote }.map(\.frame.height))
-                .to(equal([80]))
+                .to(equal([74]))
             expect(first.filter { $0.kind == .table }).to(beEmpty())
             // 2쪽: 위 여백 30 뒤에 통째로(100pt), 글줄은 아래 여백 30 뒤.
             expect(second.map(\.kind)).to(equal([.table, .text, .text]))

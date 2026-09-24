@@ -211,9 +211,10 @@ import XCTest
         }
 
         /// 다시 잰 나머지는 줄 상자 상단 원점 그대로 이어진다 (#180) — 줄 프레임 원점이 줄
-        /// 상자 상단이라 조각 첫 줄에 ascent 초과분 보정이 없고, 첫 줄 높이·적합 판정은 그 줄의
+        /// 상자 상단이라 조각 첫 줄에 ascent 초과분 보정이 없고, 첫 줄 높이(방출)는 그 줄의
         /// 전진량 그대로다 (종전 CT baseline 원점 모델에서는 개체 줄이 첫 줄로 올라오면 앞
-        /// 조각·나머지 마지막 줄 가운데 작은 ascent 기준의 초과분을 더해야 했다).
+        /// 조각·나머지 마지막 줄 가운데 작은 ascent 기준의 초과분을 더해야 했다). 적합 판정은 줄
+        /// **상자** 바닥까지다 (#222) — 둘째 줄은 상자 바닥 30 + 10 = 40이 경계보다 위여야 든다.
         func testRemeasuredRemainderKeepsLineBoxTopAdvances() {
             func line(_ location: Int, baseline: CGFloat, y: CGFloat) -> HwpLineFrame {
                 HwpLineFrame(
@@ -240,9 +241,10 @@ import XCTest
             expect(remainder.start) == 10
             expect(remainder.lines.map(\.attributedRange.location)) == [10, 20]
             expect(remainder.firstLineHeight).to(beCloseTo(30, within: 0.001))
-            expect(remainder.fit(in: 45).count) == 1
-            expect(remainder.fit(in: 46).count) == 2
-            expect(remainder.fit(in: 46).height).to(beCloseTo(46, within: 0.001))
+            expect(remainder.firstLineFitHeight).to(beCloseTo(20, within: 0.001))
+            expect(remainder.fit(in: 40).count) == 1
+            expect(remainder.fit(in: 40.01).count) == 2
+            expect(remainder.fit(in: 40.01).height).to(beCloseTo(46, within: 0.001))
             expect(remainder.remeasureCount) == 1
         }
     }

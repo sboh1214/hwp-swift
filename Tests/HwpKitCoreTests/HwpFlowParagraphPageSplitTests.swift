@@ -458,11 +458,12 @@ import XCTest
         /// 단이다 — 진입 시의 빈 단 여부를 그대로 쓰면 위 간격이 실린 새 단을 점유된 것으로 보아
         /// 문단 보호가 빈 둘째 단을 건너뛴다 (PR 리뷰 2). 61자/30자 비등폭 단, 본문 40pt.
         func testKeepLinesTogetherSplitsOnTheFreshColumnAfterAWholeMoveRemeasure() async throws {
-            let index = Self.index(property1: 1 << 18, spacingTop: 2000)
+            let index = Self.index(property1: 1 << 18, spacingTop: 2800)
             let leading = try HwpSynthetic.textParagraph("앞")
             let host = try HwpSynthetic.styledParagraph(String(repeating: "가", count: 61), paraShapeId: 1)
-            // 첫 단(61자)에 앞 문단 한 줄(16) 뒤 남은 24pt에 간격 10 + 한 줄 16이 안 들어가 둘째
-            // 단(30자)으로 옮겨져 세 줄이 되고, 간격 10 뒤 한 줄만 들어가 나머지는 다음 쪽이다.
+            // 첫 단(61자)에 앞 문단 한 줄(16) 뒤 남은 24pt에 간격 14 + 줄 상자 10이 안 들어가
+            // (상자 바닥이 단 바닥에 닿는다 — 쪽 끝 적합은 줄 상자까지, #222) 둘째 단(30자)으로
+            // 옮겨져 세 줄이 되고, 간격 14 뒤 한 줄만 들어가 나머지는 다음 쪽이다.
             let (paginator, widths) = try MeasuredLineRemeasureSupport.columns(
                 charactersPerLine: [61, 30], contentHeight: 40,
                 bodyParagraphs: [leading, host, try HwpSynthetic.textParagraph("뒤 문단")],
@@ -476,17 +477,18 @@ import XCTest
             }
             expect(first.count) == 1
             expect(first.first?.frame.minX).to(beCloseTo(widths[0] + 10, within: 0.05))
-            expect(first.first?.frame.minY).to(beCloseTo(10, within: 0.01))
+            expect(first.first?.frame.minY).to(beCloseTo(14, within: 0.01))
             expect(first.first?.attributedString?.length) == 30
         }
 
         /// 두 줄도 안 들어가는 단에서 외톨이줄 보호가 매번 0줄을 내도 진행 보장이 한 줄씩 놓는다.
         func testWidowOrphanProtectionStillMakesProgressInAColumnShorterThanTwoLines() async throws {
             let index = Self.index(property1: 1 << 16, spacingTop: 800)
-            // 본문 30pt: 템플릿 16 뒤 남은 14pt엔 한 줄도 안 들어가 통째로 넘기고, 새 쪽(30)에도
-            // 간격 4 + 한 줄(20)뿐이라 외톨이줄 보호는 매 쪽 0줄을 낸다 — 진행 보장이 한 줄씩 놓는다.
+            // 본문 25pt: 템플릿 16 뒤 남은 9pt엔 간격 4 + 줄 상자 10이 안 들어가 통째로 넘기고, 새
+            // 쪽에도 두 줄(16 + 상자 10 = 26)은 안 들어가(쪽 끝 적합은 줄 상자까지, #222) 외톨이줄
+            // 보호는 매 쪽 0줄을 낸다 — 진행 보장이 한 줄씩 놓는다.
             let layout = try await Self.layout(
-                Self.paragraph(lines: 3), contentHeight: 30, index: index
+                Self.paragraph(lines: 3), contentHeight: 25, index: index
             )
             // 뒤 문단(16)은 마지막 줄 쪽에 안 들어가 다섯째 쪽이다.
             expect(layout.pages.count) == 5

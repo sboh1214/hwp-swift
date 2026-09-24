@@ -192,7 +192,7 @@ import XCTest
             )
             expect(nearTie.frame.maxY).to(beCloseTo(298, within: 0.001))
             let cached = try XCTUnwrap(band.columnDividerBlocks(
-                currentBlocks: [body], trailingSpacing: { _ in 12 }
+                currentBlocks: [body], trailingSpacing: { _, _ in 12 }
             ).first)
             expect(cached.frame.maxY).to(beCloseTo(288, within: 0.001))
         }
@@ -238,9 +238,11 @@ import XCTest
         }
 
         /// 다음 단·쪽으로 이어지는 조각은 문단 마지막 줄을 담지 않으므로 캐시 값이 아니라 조각
-        /// 마지막 글자의 규칙값(6pt)을 뺀다 — 다섯 줄(줄 간격 12×4·30pt) 캐시 문단이 두 단 밴드
-        /// (본문 65pt)에 앞 빈 문단 + 2줄 / 2줄로 흐르고 마지막 줄만 2쪽으로 가면, 1쪽 구분선은
-        /// 가장 낮은 조각 아래 − 6, 2쪽은 문단 끝 캐시 30을 뺀다
+        /// 마지막 글자의 규칙값(6pt)을 뺀다 — 다섯 줄(줄 간격 12×4·30pt) 캐시 문단(CT 다섯 줄,
+        /// 전진량 16·상자 10)이 두 단 밴드(본문 50pt)에 앞 빈 문단 + 2줄 / 2줄로 흐르고 마지막
+        /// 줄만 2쪽으로 가면, 1쪽 구분선은 가장 낮은 조각 아래 − 6, 2쪽은 문단 끝 캐시 30을 뺀다.
+        /// 쪽 끝 적합은 줄 상자까지다 (#222) — 1단 셋째 줄 상자 바닥(16 + 32 + 10 = 58)과 2단
+        /// 마지막 줄 상자 바닥(32 + 캐시 잔여 64 − 캐시 줄 간격 30 = 66)이 본문 50을 넘는다.
         func testContinuedFragmentUsesItsOwnLastLineNotTheParagraphCache() async throws {
             var paragraph = try HwpSynthetic.textParagraph(
                 String(repeating: "이어지는 캐시 문단 ", count: 12)
@@ -256,11 +258,11 @@ import XCTest
                 }
             }
             paragraph.paraLineSeg = try CoreHwp.HwpParaLineSeg.load(payload)
-            // 본문 높이 6500 HWPUNIT = 65pt (위·아래 여백 20mm): 1단 앞 빈 문단(16) + 두 줄(44),
-            // 2단 두 줄(44), 마지막 줄(40)은 2쪽
+            // 본문 높이 5000 HWPUNIT = 50pt (쪽 − 기본 위 여백 5668 − 아래 여백 4252): 1단 앞 빈
+            // 문단(16) + 두 줄, 2단 두 줄, 마지막 줄은 2쪽
             let section = HwpSynthetic.section(
                 firstParagraphControls: [
-                    .section(HwpSynthetic.sectionDef(pageHeight: 6500 + 5670 + 5670)),
+                    .section(HwpSynthetic.sectionDef(pageHeight: 5000 + 5668 + 4252)),
                     .column(Self.column(divider: 1)),
                 ],
                 bodyParagraphs: [paragraph]

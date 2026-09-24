@@ -15,10 +15,16 @@ struct HwpFragmentLineAdvances {
     let textHeight: CGFloat
     /// 줄 원점이 단조 증가하는지 — 아니면 (캐시 열화) 평균 전진량으로 폴백한다.
     let strictlyIncreasing: Bool
+    /// 텍스트 몫이 저장본 줄 캐시 높이일 때 그 캐시의 줄 상자 바닥 (첫 줄 상자 상단 기준, pt,
+    /// `HwpPaginator.cachedLineBoxExtent`) — 마지막 줄의 적합 높이를 이것으로 잰다 (#222). 캐시
+    /// 높이 문단의 마지막 줄 전진량은 캐시 잔여(`advance`)라 CT 상자와 출처가 갈리므로, 판정도
+    /// 높이와 **같은 출처**여야 한다 (#166의 높이 출처 원칙). CT 측정 높이면 nil.
+    let cachedLastLineBoxBottom: CGFloat?
 
-    init(lines: [HwpLineFrame], textHeight: CGFloat) {
+    init(lines: [HwpLineFrame], textHeight: CGFloat, cachedLastLineBoxBottom: CGFloat? = nil) {
         self.lines = lines
         self.textHeight = textHeight
+        self.cachedLastLineBoxBottom = cachedLastLineBoxBottom
         strictlyIncreasing = zip(lines, lines.dropFirst())
             .allSatisfy { $0.origin.y < $1.origin.y }
     }
@@ -34,12 +40,62 @@ struct HwpFragmentLineAdvances {
         return max(1, textHeight - lines[index].origin.y)
     }
 
+    /// 줄 `index`를 쪽·단 끝에 남길지 판정할 때 그 줄이 줄 상자 상단부터 차지하는 높이 — **줄
+    /// 상자** 높이다 (#222). 한글 12.30 실측: 줄 상자 하단이 본문 하단보다 위면 그 줄을 남기고,
+    /// 줄 간격 여분(비율 여분·여백만 간격)과 문단 아래 간격은 쪽·단 아래로 넘쳐도 된다 — 남은
+    /// 17.62pt에 16pt·160% 줄(상자 16, 전진량 25.6)을 남기고, 고정 줄 간격이 상자보다 작은 줄
+    /// (상자 10, 전진량 8)은 남은 9pt에서 넘긴다. 전진량(`advance`)과 갈리는 것은 이 판정뿐이고
+    /// 조각 높이·커서 전진은 그대로 전진량 합이다.
+    ///
+    /// 원점이 비단조라 평균 전진량으로 폴백한 문단(캐시 열화)은 줄 상단을 알 수 없으므로 전진량
+    /// 그대로 잰다. 상자 높이가 0인 줄(합성 줄 프레임)도 전진량이다. 텍스트 몫이 줄 캐시 높이인
+    /// 문단의 마지막 줄은 캐시의 줄 상자 바닥까지다 (`cachedLastLineBoxBottom`) — CT 줄이 캐시보다
+    /// 많으면 그 줄 상단이 이미 캐시 상자 바닥 아래라 음수일 수 있고, 조각 판정은 앞 줄들의 상자가
+    /// 정한다.
+    func fitHeight(_ index: Int) -> CGFloat {
+        guard strictlyIncreasing else { return advance(index) }
+        if index == lines.count - 1, let cachedLastLineBoxBottom {
+            return cachedLastLineBoxBottom - lines[index].origin.y
+        }
+        guard lines[index].boxHeight > 0 else { return advance(index) }
+        return lines[index].boxHeight
+    }
+
+    /// 줄 `start`부터 `end`까지를 한 조각으로 남길 때 조각 상단(줄 `start`의 상자 상단)에서 잰
+    /// 적합 높이 — 줄마다 (그 줄 상자 상단 + `fitHeight`)의 최댓값이다. 고정 줄 간격이 상자보다
+    /// 작으면 앞 줄 상자가 뒤 줄 상자보다 아래로 내려갈 수 있어 마지막 줄만 보면 안 된다.
+    func fitHeight(from start: Int, through end: Int) -> CGFloat {
+        var top: CGFloat = 0
+        var required: CGFloat = 0
+        for index in start ... end {
+            required = max(required, top + fitHeight(index))
+            top += advance(index)
+        }
+        return required
+    }
+
     /// 줄 `boundary` 앞에서 끊긴 조각의 높이가 **측정 줄 전진량만으로** 났는지 (#166). 마지막
     /// 줄의 전진량은 `textHeight`의 잔여라 그 줄을 담은 조각은 `textHeight`가 측정값일 때만
     /// 그렇고, 원점이 비단조라 평균으로 폴백한 문단은 모든 조각이 `textHeight`의 몫이다.
     func heightIsMeasured(endingBefore boundary: Int, textHeightIsMeasured: Bool) -> Bool {
         guard strictlyIncreasing else { return textHeightIsMeasured }
         return boundary < lines.count || textHeightIsMeasured
+    }
+}
+
+/// 쪽·단 끝 적합 판정 (#222) — 줄(또는 문단)이 요구하는 높이가 남은 높이에 들어가는가.
+///
+/// 한글 12.30 실측(2026-09-24, `probes/222`): 줄 상자 하단이 본문 하단과 **같으면 넘긴다** —
+/// 17.62pt 줄을 남은 17.62pt에 두지 않고(줄 간격 100%로 전진량까지 같아도) 17.61pt 줄은
+/// 남긴다. 고정 줄 간격 줄·세 줄 문단의 마지막 줄도 같다. 그래서 판정은 엄격 부등호이고,
+/// 부동소수 누적 오차는 HWPUNIT(0.01pt)의 절반으로 흡수해 한 HWPUNIT 차이는 그대로 가른다.
+enum HwpPageEndFit {
+    /// HWPUNIT(0.01pt)의 절반.
+    static let tolerance: CGFloat = 0.005
+
+    /// `required`가 `available` 안에 들어가는가 — 하단이 경계에 닿으면 안 들어간다.
+    static func fits(_ required: CGFloat, in available: CGFloat) -> Bool {
+        required < available - tolerance
     }
 }
 
@@ -93,6 +149,19 @@ struct HwpParagraphSplitPolicy: Equatable {
         }
         return max(0, allowed)
     }
+}
+
+/// 쪽 끝 적합 판정(#222)에 쓸, 줄 프레임만으로는 알 수 없는 줄 상자 — 흐름 분할의 진입 판정
+/// (`HwpPaginator.entryFragmentLineCount`)과 조각 루프(`appendParagraphAcrossColumns`)가 **같은
+/// 값**으로 나머지(`HwpFragmentRemainder`)를 만들어야 첫 조각의 줄 수가 갈리지 않는다.
+struct HwpFragmentFitSource {
+    /// 줄 프레임이 빈 문단(빈 문단 앵커)의 줄 상자 높이 — 페이지네이터의 `layout`이 그 줄을
+    /// 비우므로 따로 잰다.
+    var emptyLineBoxHeight: CGFloat?
+    /// 문단 높이를 저장본 줄 캐시로 잡았을 때 그 캐시의 줄 상자 바닥 (첫 줄 상자 상단 기준, pt).
+    var cachedLastLineBoxBottom: CGFloat?
+
+    static let none = HwpFragmentFitSource()
 }
 
 /// 흐름 분할이 조각마다 같은 값으로 쓰는 문단 단위 문맥 — 루프 밖에서 한 번 만든다.
@@ -160,13 +229,26 @@ struct HwpFragmentRemainder {
     /// 총비용을 선형으로 묶는다.
     static let maximumRemeasures = 64
 
+    /// 줄 프레임이 없는 문단(빈 문단 앵커 — `HwpPaginator.layout`이 줄을 비운다)의 적합 높이
+    /// — 그 한 줄의 상자 높이다 (#222). nil이면 텍스트 몫 전체(`advances.textHeight`).
+    private let fitHeightWithoutLines: CGFloat?
+
+    /// `fitSource`는 줄 프레임만으로 알 수 없는 줄 상자 (#222) — 캐시의 마지막 줄 상자 바닥은
+    /// 호출자가 문단 높이로 캐시를 **골랐을 때만** 싣는다(`FlowSplitInput.cachedLineBoxBottom` —
+    /// 수치 일치 `heightIsMeasured`로 가르면 캐시와 CT 총높이가 우연히 같은 문단에서 문단 전체
+    /// 판정과 갈린다). 다시 재면(`replace`) 버린다.
     init(
-        lines: [HwpLineFrame], textHeight: CGFloat, measuredWidth: CGFloat, heightIsMeasured: Bool
+        lines: [HwpLineFrame], textHeight: CGFloat, measuredWidth: CGFloat, heightIsMeasured: Bool,
+        fitSource: HwpFragmentFitSource = .none
     ) {
         self.lines = lines
-        advances = HwpFragmentLineAdvances(lines: lines, textHeight: textHeight)
+        advances = HwpFragmentLineAdvances(
+            lines: lines, textHeight: textHeight,
+            cachedLastLineBoxBottom: fitSource.cachedLastLineBoxBottom
+        )
         self.measuredWidth = measuredWidth
         self.heightIsMeasured = heightIsMeasured
+        fitHeightWithoutLines = fitSource.emptyLineBoxHeight
         start = 0
     }
 
@@ -203,8 +285,10 @@ struct HwpFragmentRemainder {
         remeasureCount > 0 ? nil : placement.cachedTrailingSpacing
     }
 
-    /// 다음 줄부터 `available`에 들어가는 줄 수와 그 누적 전진량. 적합 판정과 방출 높이가
-    /// 같은 전진량 합을 쓴다.
+    /// 다음 줄부터 `available`에 들어가는 줄 수와 그 누적 전진량. 줄마다 그 줄의 **상자
+    /// 하단**(앞 줄들의 전진량 합 + `HwpFragmentLineAdvances.fitHeight`)이 들어가는지 보고
+    /// (#222 — 마지막으로 남기는 줄의 줄 간격 여분은 쪽·단 아래로 넘쳐도 된다), 방출 높이는
+    /// 그 줄들의 전진량 합이다. 판정은 엄격 부등호다 (`HwpPageEndFit`).
     ///
     /// `extra`는 줄 `i`(문단 줄 색인)까지 놓을 때 그 줄들이 요구하는 **추가** 높이 — 그 줄에
     /// 참조가 놓인 각주의 예약(#207, `HwpFlowFragmentFootnotes.reservation(through:)`)이다.
@@ -216,7 +300,10 @@ struct HwpFragmentRemainder {
         var count = 0
         var height: CGFloat = 0
         while lineIndex + count < lines.count,
-              height + advances.advance(lineIndex + count) + extra(lineIndex + count) <= available
+              HwpPageEndFit.fits(
+                  height + advances.fitHeight(lineIndex + count) + extra(lineIndex + count),
+                  in: available
+              )
         {
             height += advances.advance(lineIndex + count)
             count += 1
@@ -248,6 +335,22 @@ struct HwpFragmentRemainder {
     /// 다음 줄 하나만 놓을 때의 전진량 — 빈 단에 안 들어가도 진행 보장으로 싣는 몫.
     var firstLineHeight: CGFloat {
         advances.advance(lineIndex)
+    }
+
+    /// 다음 줄 하나를 남길지 판정할 때의 높이 — 그 줄의 상자 높이다 (#222,
+    /// `HwpFragmentLineAdvances.fitHeight`). 통째로 옮긴 새 단 머리에 문단 위 간격을 다시 실을지
+    /// (`HwpPaginator.advancePastUnplacedFragment`)도 이 값으로 가른다.
+    var firstLineFitHeight: CGFloat {
+        advances.fitHeight(lineIndex)
+    }
+
+    /// 남은 줄을 모두 한 조각으로 남길 때의 적합 높이 (#222) — 줄이 없으면 빈 문단 앵커 줄의
+    /// 상자(`fitHeightWithoutLines`), 그것도 없으면 텍스트 몫 전체다.
+    var remainingFitHeight: CGFloat {
+        guard lineIndex < lines.count else {
+            return lines.isEmpty ? fitHeightWithoutLines ?? advances.textHeight : 0
+        }
+        return advances.fitHeight(from: lineIndex, through: lines.count - 1)
     }
 
     /// 아직 놓지 않은 줄들의 문자열 범위 (문단 조판 문자열 기준).
