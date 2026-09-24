@@ -27,7 +27,7 @@ import XCTest
         ]
 
         /// 문단 모양 id 0은 기본(160%), 1은 `shape`다.
-        private static func index(shape: CoreHwp.HwpParaShape? = nil) throws -> HwpIndex {
+        static func index(shape: CoreHwp.HwpParaShape? = nil) throws -> HwpIndex {
             var paraShapes: [UInt32: CoreHwp.HwpParaShape] = [
                 0: CoreHwp.HwpParaShape(
                     property1: 0, marginLeft: 0, tabDefId: 0, lineSpacing2: 160
@@ -46,7 +46,7 @@ import XCTest
         }
 
         /// 비율 160% 문단 모양 — 속성1(쪽 나눔 보호 비트)·아래 간격(HWPUNIT, 1/2 저장 규약).
-        private static func percentShape(
+        static func percentShape(
             property1: UInt32 = 0, spacingBottom: Int32 = 0
         ) -> CoreHwp.HwpParaShape {
             CoreHwp.HwpParaShape(
@@ -56,7 +56,7 @@ import XCTest
         }
 
         /// 고정 줄 간격 문단 모양 — `points`pt (1/2 단위로 저장).
-        private static func fixedShape(points: CGFloat) -> CoreHwp.HwpParaShape {
+        static func fixedShape(points: CGFloat) -> CoreHwp.HwpParaShape {
             CoreHwp.HwpParaShape(
                 hwpxProperty1: 0, marginLeft: 0, marginRight: 0, indent: 0,
                 paragraphSpacingTop: 0, paragraphSpacingBottom: 0, lineSpacing: 0, tabDefId: 0,
@@ -69,7 +69,7 @@ import XCTest
         }
 
         /// 글자 모양 `charShapeId`·문단 모양 1의 대상 문단.
-        private static func target(
+        static func target(
             _ text: String, charShapeId: UInt32 = 0
         ) throws -> CoreHwp.HwpParagraph {
             var paragraph = try HwpSynthetic.styledParagraph(text, paraShapeId: 1)

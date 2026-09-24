@@ -87,7 +87,9 @@ import XCTest
                 fitSource: HwpFragmentFitSource(cachedLastLineBoxBottom: 20)
             )
             expect(shifted.remainingFitHeight).to(beCloseTo(26, within: 0.001))
-            var remeasured = cached
+            // 캐시 바닥이 CT 상자와 다른 나머지(`shifted`)를 다시 재야 버리는지가 드러난다 — 캐시
+            // 바닥을 물려받으면 26·3줄이다.
+            var remeasured = shifted
             remeasured.replace(
                 with: HwpParagraphFrame(totalHeight: 48, lines: lines),
                 textHeight: 48, width: 150, range: NSRange(location: 0, length: 3)

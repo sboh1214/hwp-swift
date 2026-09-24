@@ -1066,11 +1066,16 @@ private extension HwpPaginator {
         guard !trackChangeParagraphIds.isEmpty else { return }
         let barX = currentPageGeometry.contentFrame.minX - 10
         let barColor = CGColor.hwpTrackChange
+        // 쪽 끝 적합이 줄 상자까지라(#222) 흐름 블록은 줄 간격 여분·아래 간격만큼 본문 아래로 나갈
+        // 수 있다 — 막대는 본문 하단에서 멈춘다(절대 캐시 run 블록이 본문 하단에서 잘리는 것과 같다).
+        let bodyBottom = currentPageGeometry.contentFrame.maxY
         let bars: [AnyHwpBlock] = currentBlocks.compactMap { block in
             guard block.kind == .text,
                   let paragraphId = block.source?.paragraphId,
                   trackChangeParagraphIds.contains(paragraphId) else { return nil }
-            let barRect = CGRect(x: 0, y: 0, width: 1.2, height: block.frame.height)
+            let height = max(0, min(block.frame.maxY, bodyBottom) - block.frame.minY)
+            guard height > 0 else { return nil }
+            let barRect = CGRect(x: 0, y: 0, width: 1.2, height: height)
             return AnyHwpBlock(
                 frame: CGRect(
                     x: barX, y: block.frame.minY, width: barRect.width, height: barRect.height
@@ -1250,10 +1255,13 @@ private extension HwpPaginator {
         /// 아니면 nil.
         let cachedLineBoxBottom: CGFloat?
 
-        /// 흐름 분할의 나머지가 쓸 줄 상자 (#222) — 진입 판정과 조각 루프가 같은 값을 쓴다.
+        /// 흐름 분할의 나머지가 쓸 줄 상자 (#222) — 진입 판정과 조각 루프가 같은 값을 쓴다. 빈
+        /// 문단의 상자도 높이와 같은 출처다 — 캐시 높이를 쓴 빈 문단은 캐시의 줄 상자 바닥이다
+        /// (`paragraphFitHeight`와 같은 값, #222 리뷰: 다단만 CT 상자로 재 1단과 갈렸다).
         var fitSource: HwpFragmentFitSource {
             HwpFragmentFitSource(
-                emptyLineBoxHeight: paragraphFrame.lines.isEmpty ? fitLines.first?.boxHeight : nil,
+                emptyLineBoxHeight: paragraphFrame.lines.isEmpty
+                    ? cachedLineBoxBottom ?? fitLines.first?.boxHeight : nil,
                 cachedLastLineBoxBottom: cachedLineBoxBottom
             )
         }
@@ -1410,6 +1418,14 @@ private extension HwpPaginator {
         let lines = split.fitLines
         guard !lines.isEmpty else {
             return split.cachedLineBoxBottom.map { split.beforeGap + $0 } ?? split.paragraphHeight
+        }
+        // 캐시 높이를 쓰는데 CT 줄 수가 캐시 줄 수와 다르면 캐시의 줄 상자만 본다 (#222 리뷰) — 앞
+        // 줄들의 CT 상자는 캐시 높이로 놓는 블록과 좌표계가 달라, 섞으면 캐시로는 들어가는 문단을
+        // 종전(캐시 전진량)보다도 엄격하게 넘긴다. 진입 분할도 이때는 하지 않는다(`canSplitAtEntry`).
+        if let cached = split.cachedLineBoxBottom,
+           lines.count != split.paragraph.paraLineSeg.paraLineSegInternalArray.count
+        {
+            return split.beforeGap + cached
         }
         // 조각 루프(`HwpFragmentRemainder.fit`)와 **같은 함수**로 잰다 — 문단 전체가 들어간다는
         // 판정과 루프가 모든 줄을 남긴다는 판정이 같아야 한다. 고정 줄 간격이 상자보다 작은 줄은
@@ -2448,8 +2464,9 @@ private extension HwpPaginator {
     /// 단일 열이 새 페이지 top에서 gap을 렌더하는 것(placeFlowParagraph)과 일치 (R53 #1).
     /// gap+첫 줄이 빈 단보다 크면 진행 보장을 위해 flush 배치한다. 단 이동이 페이지를 넘기면
     /// 각주 예약이 바뀌므로 usable을 재계산하고 (R55 #4), gap을 물리면 .paragraph 기준 개체의
-    /// anchor도 함께 내린다 (R55 #5). "첫 줄"의 크기는 적합 판정·방출과 **같은 출처**인 줄
-    /// 전진량이다 (PR 리뷰). 조각을 걷지 않고 넘겼으니 새 쪽의 각주 상태로 예약을 다시 잰다 (#207).
+    /// anchor도 함께 내린다 (R55 #5). "첫 줄"의 크기는 다음 반복의 적합 판정과 **같은 출처**인
+    /// 그 줄의 **상자 높이**다 (`firstLineFitHeight`, #222 — 방출·진행 보장은 여전히 줄 전진량이다).
+    /// 조각을 걷지 않고 넘겼으니 새 쪽의 각주 상태로 예약을 다시 잰다 (#207).
     private func advancePastUnplacedFragment(
         _ remainder: inout HwpFragmentRemainder,
         isAtParagraphStart: Bool,

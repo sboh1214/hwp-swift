@@ -35,6 +35,15 @@ import XCTest
             return try await paginator.page(at: 0)
         }
 
+        /// 블록 문자열 마지막 글자의 캐시 줄 간격 표식 (`markedWithCachedTrailingSpacing`) — 없으면 nil.
+        static func cachedTrailingSpacingMarker(of block: AnyHwpBlock) -> CGFloat? {
+            guard let text = block.attributedString, text.length > 0 else { return nil }
+            return (text.attribute(
+                HwpAttributedStringKey.cachedTrailingLineSpacing, at: text.length - 1,
+                effectiveRange: nil
+            ) as? NSNumber).map { CGFloat($0.doubleValue) }
+        }
+
         static func dividers(in page: HwpPage) -> [AnyHwpBlock] {
             page.blocks.filter { $0.kind == .shape && $0.role == .pageChrome }
         }
@@ -237,8 +246,9 @@ import XCTest
             expect(divider.frame.maxY).to(beCloseTo(text.frame.maxY - 12, within: 0.01))
         }
 
-        /// 다음 단·쪽으로 이어지는 조각은 문단 마지막 줄을 담지 않으므로 캐시 값이 아니라 조각
-        /// 마지막 글자의 규칙값(6pt)을 뺀다 — 다섯 줄(줄 간격 12×4·30pt) 캐시 문단(CT 다섯 줄,
+        /// 다음 단·쪽으로 이어지는 조각은 문단 마지막 줄을 담지 않으므로 캐시 값(30)이 아니라 그 조각
+        /// 마지막 줄의 상자 아래 몫(6pt — 흐름 배치가 기록한 값, #222)을 빼고, 캐시 간격 표식도 문단을
+        /// 끝내는 조각에만 붙는다 — 다섯 줄(줄 간격 12×4·30pt) 캐시 문단(CT 다섯 줄,
         /// 전진량 16·상자 10)이 두 단 밴드(본문 50pt)에 앞 빈 문단 + 2줄 / 2줄로 흐르고 마지막
         /// 줄만 2쪽으로 가면, 1쪽 구분선은 가장 낮은 조각 아래 − 6, 2쪽은 문단 끝 캐시 30을 뺀다.
         /// 쪽 끝 적합은 줄 상자까지다 (#222) — 1단 셋째 줄 상자 바닥(16 + 32 + 10 = 58)과 2단
@@ -281,11 +291,20 @@ import XCTest
             let firstDivider = try XCTUnwrap(Self.dividers(in: first).first)
             expect(fragments.count) == 3
             expect(firstDivider.frame.maxY).to(beCloseTo(lowest - 6, within: 0.01))
+            // 표식 가드(`markedWithCachedTrailingSpacing`의 문단 끝 판정) — 구분선은 흐름 블록의
+            // 기록을 먼저 쓰므로 표식 자체를 따로 본다(기록이 없는 균형 재배치 조각은 표식을 쓴다).
+            // 구역 첫 문단(템플릿 캐시 한 줄)은 문단을 끝내므로 표식이 있다 — 이 문단의 조각만 본다.
+            let continued = fragments.filter {
+                $0.attributedString?.string.contains("이어지는") == true
+            }
+            expect(continued.count) == 2
+            expect(continued.compactMap(Self.cachedTrailingSpacingMarker)).to(beEmpty())
             let maybeSecond = try await paginator.page(at: 1)
             let second = try XCTUnwrap(maybeSecond)
             let tail = try XCTUnwrap(second.blocks.first { $0.kind == .text && $0.role == .body })
             let secondDivider = try XCTUnwrap(Self.dividers(in: second).first)
             expect(secondDivider.frame.maxY).to(beCloseTo(tail.frame.maxY - 30, within: 0.01))
+            expect(Self.cachedTrailingSpacingMarker(of: tail)).to(beCloseTo(30, within: 0.001))
         }
 
         func testNoDividerWithoutLineTypeOrSecondColumn() async throws {

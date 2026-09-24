@@ -333,15 +333,22 @@ struct HwpFragmentRemainder {
     }
 
     /// 다음 줄 하나만 놓을 때의 전진량 — 빈 단에 안 들어가도 진행 보장으로 싣는 몫.
+    ///
+    /// 줄이 없는 문단(빈 문단 앵커 — `HwpPaginator.layout`이 줄을 비운다)은 텍스트 몫 전체다 —
+    /// 그런 문단도 다단에서 통째로 옮겨진다(`moveWholeParagraphToNextColumn`)(#222 리뷰: 빈 줄 배열을
+    /// 인덱싱해 멈췄다).
     var firstLineHeight: CGFloat {
-        advances.advance(lineIndex)
+        guard lineIndex < lines.count else { return advances.textHeight }
+        return advances.advance(lineIndex)
     }
 
     /// 다음 줄 하나를 남길지 판정할 때의 높이 — 그 줄의 상자 높이다 (#222,
     /// `HwpFragmentLineAdvances.fitHeight`). 통째로 옮긴 새 단 머리에 문단 위 간격을 다시 실을지
-    /// (`HwpPaginator.advancePastUnplacedFragment`)도 이 값으로 가른다.
+    /// (`HwpPaginator.advancePastUnplacedFragment`)도 이 값으로 가른다. 줄이 없는 문단은
+    /// `remainingFitHeight`와 같은 값(빈 문단 앵커 줄의 상자)이다.
     var firstLineFitHeight: CGFloat {
-        advances.fitHeight(lineIndex)
+        guard lineIndex < lines.count else { return remainingFitHeight }
+        return advances.fitHeight(lineIndex)
     }
 
     /// 남은 줄을 모두 한 조각으로 남길 때의 적합 높이 (#222) — 줄이 없으면 빈 문단 앵커 줄의

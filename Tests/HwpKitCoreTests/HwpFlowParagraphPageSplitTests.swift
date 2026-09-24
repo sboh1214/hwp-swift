@@ -13,9 +13,11 @@ import XCTest
     /// 최소 두 줄, 문단 보호는 부분 채운 쪽에서 통째 이동, 문단 위 간격은 첫 줄과 함께 판정하고
     /// 통째로 옮긴 새 쪽 머리에도 든다. 각주는 참조 줄의 쪽에 실리고 그 줄의 적합 판정에 든다.
     ///
-    /// 기하: 여백 없는 쪽, 30자/줄, 10pt 160%라 줄 전진량 16pt. 구역 첫 문단(빈 문서 템플릿 줄
-    /// 캐시)이 첫 쪽 머리 16pt를 차지한다. 쪽 끝 적합은 줄 전진량으로 재므로(#222는 별개) 본문
-    /// 높이는 전진량 합에 여유를 더해 잡는다.
+    /// 기하: 여백 없는 쪽, 30자/줄, 10pt 160%라 줄 전진량 16pt·줄 상자 10pt. 구역 첫 문단(빈 문서
+    /// 템플릿 줄 캐시)이 첫 쪽 머리 16pt를 차지한다. 쪽 끝 적합은 마지막으로 남기는 줄의 **상자
+    /// 하단**으로 잰다(#222, 엄격 부등호 — 상자 바닥이 본문 하단과 같으면 넘긴다). 그래서 n줄이 드는
+    /// 경계는 16(n − 1) + 10이고, 전진량 합에 여유를 더한 본문 높이는 여유가 10pt 미만이어야 줄
+    /// 하나가 더 들지 않는다.
     final class HwpFlowParagraphPageSplitTests: XCTestCase {
         private typealias Support = MeasuredLineFragmentSupport
         private typealias Pages = InlineControlFragmentSupport

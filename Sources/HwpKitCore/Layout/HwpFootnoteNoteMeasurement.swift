@@ -272,7 +272,10 @@ extension HwpFootnoteLayout {
         // 높이인데 개체를 담은 각주는 나누지 않고 한 쪽에 통째로 그리므로
         // (`carriesObjects`), 그 합으로 낮추면 CT 좌표로 수집한 개체를 블록이 담지 못해
         // 다음 각주와 겹친다 (실측: 블록 44.16pt에 개체 하단 79.35pt). 개체를 놓은
-        // 좌표계인 CT 높이를 그대로 두고, 그 높이엔 없는 캐시 마지막 줄 간격도 빼지 않는다.
+        // 좌표계인 CT 높이를 그대로 두고, 그 높이엔 없는 캐시 마지막 줄 간격 대신 **CT 프레임의**
+        // 마지막 줄 상자 아래 몫을 뺀다 — 캐시 없는 각주와 같은 규칙이다 (#222 리뷰: 0을 두면 같은
+        // 각주가 낡은 캐시 한 줄이 붙었다는 이유만으로 스택이 6pt 커졌다). 떠 있는 개체는
+        // `stackingHeight`의 `floatingBottom` 하한이 지킨다.
         var frame = measured.frame
         // 줄 캐시가 없는 각주(흐름 조판 문서·캐시를 버린 HWPX)는 CT 프레임의 마지막 줄 상자 아래
         // 몫(줄 간격 여분 + 문단 아래 간격, `HwpParagraphMeasurer.Result.trailingGap`)을 뺀다
@@ -287,7 +290,7 @@ extension HwpFootnoteLayout {
         let carriesObjects = noteCarriesObjects || Self.carriesObjects(objects)
         if let cacheLines, measured.cachedLineExtent == nil {
             if carriesObjects {
-                trailingSpacing = 0
+                trailingSpacing = max(0, measured.trailingGap)
             } else {
                 frame = HwpParagraphFrame(
                     totalHeight: HwpFootnoteCacheLines.height(
