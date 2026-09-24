@@ -598,7 +598,7 @@ extension HwpFootnoteCoordinator {
             sizeResolver: sizeResolver,
             footnoteShape: environment.footnoteShape,
             numberingPath: numbering?.path,
-            noteEnd: false,
+            noteEnd: isNoteEnd,
             placedLineCount: 0,
             noteCarriesObjects: false
         )
@@ -624,7 +624,12 @@ extension HwpFootnoteCoordinator {
                 number: numbering?.number
             )
         )
-        let height = max(1, measured.frame.totalHeight)
+        // 각주 끝이면 상자 아래 몫을 뺀다 — 배치(`NoteMeasurement.stackingHeight`, 줄 캐시 없는
+        // 각주는 `HwpFootnoteLayout.stackTrailingGap`, #222)와 같은 함수다.
+        let height = max(
+            1, measured.frame.totalHeight
+                - (isNoteEnd ? HwpFootnoteLayout.stackTrailingGap(of: measured) : 0)
+        )
         footnoteHeightCache[key] = height
         return height
     }

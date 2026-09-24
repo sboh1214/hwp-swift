@@ -447,7 +447,9 @@ extension HwpFootnoteLayout {
             cursorY = block.frame.maxY
             previousNoteId = entry.measured.input.noteId
         }
-        return PendingPlacement(blocks: blocks, overflow: plan.overflow)
+        return PendingPlacement(
+            blocks: blocks, overflow: plan.overflow, paintedTop: min(areaTop, separatorLine.minY)
+        )
     }
 
     /// 각주 블록 하나 — 통째 항목과 쪽 끝에서 나뉜 앞 몫이 같은 산식으로 프레임·문단

@@ -124,7 +124,7 @@ import XCTest
             expect(stats.multiLine).to(beGreaterThanOrEqualTo(Self.minimumFixtureMultiLine))
             // 3-way 축이 조용히 비지 않았다 — 공유 코어 대조를 건너뛴 문단은
             // slight-overflow 한 줄뿐이어야 한다 (실측 1 / 260 → 2026-09-12 6 / 446 →
-            // 2026-09-15 7 / 522 → 2026-09-24 9 / 918).
+            // 2026-09-15 7 / 522 → 2026-09-24 9 / 918 → 같은 날 9 / 1108).
             expect(stats.measured - stats.sharedCoreCompared)
                 .to(beLessThanOrEqualTo(Self.maximumFixtureSharedCoreSkips))
         }
@@ -182,10 +182,13 @@ import XCTest
         // `inline-object-marker-size`(#217, 구역 1 + 개체 마커 글자 모양 23문단 + 셀 4문단)
         // 추가로 문단 28·대조 54·컨테이너 4 증가 — 공유 코어 대조 건너뜀도 2 늘었다
         // (`K3 mk40 p20`·`S5 s100 p20`이 120pt에서 slight-overflow 한 줄, 실측 9 = noori 1 +
-        // numbering-sequence 3 + line-shapes 2 + compat-decorations 1 + 이 픽스처 2).
-        private static let expectedFixtureVisited = 523
-        private static let expectedFixtureMeasured = 918
-        private static let expectedFixtureContainers = 208
+        // numbering-sequence 3 + line-shapes 2 + compat-decorations 1 + 이 픽스처 2), 같은 날
+        // `page-end-line-box`(#222, 구역 1 + 쪽 끝 적합 판정 94문단 + 각주 1문단) 추가로 문단 96·
+        // 대조 190(빈 문단 하나는 두 폭 모두 대조 대상이 아니다)·컨테이너 1 증가 (공유 코어 대조
+        // 건너뜀은 그대로다).
+        private static let expectedFixtureVisited = 619
+        private static let expectedFixtureMeasured = 1108
+        private static let expectedFixtureContainers = 209
         private static let minimumFixtureMultiLine = 60
         private static let maximumFixtureSharedCoreSkips = 9
         private static let expectedLegacyVisited = 14659

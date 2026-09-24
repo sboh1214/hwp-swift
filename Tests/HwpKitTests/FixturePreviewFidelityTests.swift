@@ -129,6 +129,10 @@ final class FixturePreviewFidelityTests: XCTestCase {
         // 이 값은 유실 가드이고, 줄 자리·개체 자리의 가드는
         // `FixtureInlineObjectMarkerSizeTests`의 좌표 핀이다.
         "inline-object-marker-size": 0.002, // 실측 0.0013 (2026-09-24)
+        // 쪽 끝 적합 판정(#222) — 1쪽은 본문 97.62pt의 작은 쪽에 10pt 채움 줄과 16pt 한 줄뿐이고
+        // 저장본 줄 캐시로 놓이므로 이 값은 유실 가드다. 쪽 나눔의 가드는
+        // `FixturePageEndLineBoxTests`와 매니페스트 쪽수 핀(29쪽)이다.
+        "page-end-line-box": 0.001, // 실측 0.0001 (2026-09-24)
         "공공누리": 0.004, // 실측 0.0028 (저해상 GIF)
         "문서이력관리": 0.001, // 실측 0.0000
         "변경내용추적": 0.001, // 실측 0.0000

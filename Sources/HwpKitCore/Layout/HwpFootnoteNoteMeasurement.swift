@@ -53,8 +53,9 @@ extension HwpFootnoteLayout {
         /// 없는 앞 문단이 캐시 합으로 줄어 그 문단의 마지막 글줄 위로 뒤 문단의 그림이
         /// 올라온다 — 두 판정의 범위를 맞춘다.
         let carriesObjects: Bool
-        /// 텍스트 높이가 캐시에서 왔을 때 마지막 줄의 줄 간격 — 각주 끝·쪽 끝에서 세지
-        /// 않는다 (각주 사이 여백이 대체하고, 쪽 끝은 줄 상자 아래가 본문 하단에 닿는다).
+        /// 마지막 줄 상자 아래 몫 — 텍스트 높이가 캐시에서 왔으면 그 마지막 줄의 줄 간격, CT로
+        /// 쟀으면 그 프레임의 마지막 줄 상자 아래 몫(#222)이다. 각주 끝·쪽 끝에서 세지 않는다
+        /// (각주 사이 여백이 대체하고, 쪽 끝은 줄 상자 아래가 본문 하단에 닿는다).
         let trailingLineSpacing: CGFloat
         /// `sourceAttributed`/`sourceLines`를 조판한 폭 — 이월 입력이 원본을 나를 때 폭이
         /// 같은지 가리는 열쇠 (#165 리뷰, `SourceLayout`).
@@ -271,15 +272,24 @@ extension HwpFootnoteLayout {
         // 높이인데 개체를 담은 각주는 나누지 않고 한 쪽에 통째로 그리므로
         // (`carriesObjects`), 그 합으로 낮추면 CT 좌표로 수집한 개체를 블록이 담지 못해
         // 다음 각주와 겹친다 (실측: 블록 44.16pt에 개체 하단 79.35pt). 개체를 놓은
-        // 좌표계인 CT 높이를 그대로 두고, 그 높이엔 없는 캐시 마지막 줄 간격도 빼지 않는다.
+        // 좌표계인 CT 높이를 그대로 두고, 그 높이엔 없는 캐시 마지막 줄 간격 대신 **CT 프레임의**
+        // 마지막 줄 상자 아래 몫을 뺀다 — 캐시 없는 각주와 같은 규칙이다 (#222 리뷰: 0을 두면 같은
+        // 각주가 낡은 캐시 한 줄이 붙었다는 이유만으로 스택이 6pt 커졌다). 떠 있는 개체는
+        // `stackingHeight`의 `floatingBottom` 하한이 지킨다.
         var frame = measured.frame
+        // 줄 캐시가 없는 각주(흐름 조판 문서·캐시를 버린 HWPX)는 CT 프레임의 상자 아래 몫
+        // (`stackTrailingGap` — 줄 간격 여분 + 문단 아래 간격)을 뺀다 (#222) — 한글은 캐시 유무와
+        // 무관하게 각주 스택을 마지막 줄 **상자**까지로 쌓는다 (한글 12.30 실측 `probes/222` FN:
+        // 10pt·160% 각주 한 줄의 상자 바닥이 본문 하단에 닿고 영역은 위 8.5 + 구분선 아래 5.67 +
+        // 상자 10 = 24.17). 종전 0은 그 여분 6pt만큼 영역을 키워 구분선이 위로 올라가고 본문이
+        // 그만큼 먼저 넘어갔다.
         var trailingSpacing = cacheLines.map {
             HwpFootnoteCacheLines.trailingSpacing(of: $0, in: $0.indices)
-        } ?? 0
+        } ?? Self.stackTrailingGap(of: measured)
         let carriesObjects = noteCarriesObjects || Self.carriesObjects(objects)
         if let cacheLines, measured.cachedLineExtent == nil {
             if carriesObjects {
-                trailingSpacing = 0
+                trailingSpacing = Self.stackTrailingGap(of: measured)
             } else {
                 frame = HwpParagraphFrame(
                     totalHeight: HwpFootnoteCacheLines.height(
@@ -303,6 +313,28 @@ extension HwpFootnoteLayout {
             sourceWidth: width,
             sourceLayout: nil
         )
+    }
+
+    /// CT로 잰 각주 문단의 스택에서 빼는 몫 (#222) — 전진량 끝(프레임 높이 − 문단 위 간격)에서
+    /// **모든 줄 상자 아래의 최댓값**까지. 줄 캐시 쪽 규약(①, `HwpFootnoteCacheLines.trailingSpacing`
+    /// — "전진량 끝 최댓값 − 상자 아래 최댓값")과 같은 정의다: 고정 줄 간격이 앞 줄 상자보다 작으면
+    /// 앞 줄(30pt 글자·글자처럼 취급 개체)이 마지막 줄 아래로 내려가므로, 마지막 줄만 보는
+    /// `HwpParagraphMeasurer.Result.trailingGap`(컨테이너 내용 범위의 규칙 #193)을 빼면 그 줄이
+    /// 스택 밖으로 나간다 (#222 PR 리뷰: 30pt 개체 줄 + 10pt 줄·고정 16pt → 32 − 6 = 26에 개체
+    /// 30이 담기지 않았다 — 글자처럼 취급 개체는 `floatingBottom`으로도 지켜지지 않는다). 줄이
+    /// 고르면 마지막 줄의 몫과 같고, 상자가 프레임 아래로 나가는 줄(전진량 < 상자)은 **음수**라
+    /// 스택이 그 상자 바닥까지 자란다 (#222 PR 리뷰 — 한글 12.30 실측 so222n NF: 고정 8pt 두 줄
+    /// 각주의 마지막 줄 상자 바닥이 본문 하단에 닿는다; 0으로 자르면 상자가 2pt 밖으로 나갔다).
+    /// 한글이 저장한 그런 각주는 줄 캐시의 줄 간격이 음수라 `HwpFootnoteCacheLines.lines`가 받지
+    /// 않고 이 CT 경로로 온다.
+    /// 배치(`measureNote`)와 예약의 빠른 길(`HwpFootnoteCoordinator.measuredFootnoteTextHeight`)이
+    /// 이 함수를 함께 쓴다.
+    static func stackTrailingGap(of measured: HwpParagraphMeasurer.Result) -> CGFloat {
+        let lines = measured.frame.lines
+        guard let last = lines.last else { return measured.trailingGap }
+        let lastBottom = last.origin.y + max(0, last.boxHeight)
+        let lowestBottom = lines.reduce(lastBottom) { max($0, $1.origin.y + max(0, $1.boxHeight)) }
+        return measured.trailingGap - (lowestBottom - lastBottom)
     }
 
     /// 이어지는 조각의 측정 — 원본 조판에서 앞 쪽에 실린 줄 뒤를 잘라 내고 높이는 그 줄들의

@@ -127,6 +127,9 @@ struct HwpColumnBandController {
     struct RebalancePlan {
         let replacedBlockIndices: Set<Int>
         let newBlocks: [AnyHwpBlock]
+        /// 새 블록마다 마지막 줄 상자 아래 몫 (`newBlocks` 순서, #222 PR 리뷰) — nil이면 기록이
+        /// 없다(다시 재지 않았고 문단 끝도 담지 않은 조각 — 단 구분선은 측정 규칙으로 잰다).
+        let newBlockLineBoxGaps: [CGFloat?]
         let maxBottom: CGFloat
     }
 
@@ -175,13 +178,19 @@ struct HwpColumnBandController {
     /// 첫 단에만 쌓인 밴드 텍스트를 라인 단위로 모든 단에 균등 재배치하는
     /// 플랜을 만든다. 라인 조각이 2개 미만이면 nil (재배치 없음 — 기존
     /// rebalanceColumnBand의 `guard units.count > 1` 조기 반환과 동일).
-    func rebalancePlan(currentBlocks: [AnyHwpBlock]) -> RebalancePlan? {
+    /// `lineBoxGaps`는 블록 index별 마지막 줄 상자 아래 몫(`trailingSpacesBelowLineBox`)이다.
+    func rebalancePlan(
+        currentBlocks: [AnyHwpBlock], lineBoxGaps: [Int: CGFloat]
+    ) -> RebalancePlan? {
         let units = bandLineUnits(currentBlocks: currentBlocks)
         guard units.count > 1 else { return nil }
-        let result = balancedBlocks(from: units, currentBlocks: currentBlocks)
+        let result = balancedBlocks(
+            from: units, currentBlocks: currentBlocks, lineBoxGaps: lineBoxGaps
+        )
         return RebalancePlan(
             replacedBlockIndices: Set(bandTextBlocks.map(\.blockIndex)),
-            newBlocks: result.blocks,
+            newBlocks: result.blocks.map(\.block),
+            newBlockLineBoxGaps: result.blocks.map(\.lineBoxGap),
             maxBottom: result.maxBottom
         )
     }
@@ -244,11 +253,12 @@ struct HwpColumnBandController {
     /// 라인 조각을 단별로 균등 분배해 새 텍스트 블록으로 조립한다.
     private func balancedBlocks(
         from units: [BandLineUnit],
-        currentBlocks: [AnyHwpBlock]
-    ) -> (blocks: [AnyHwpBlock], maxBottom: CGFloat) {
+        currentBlocks: [AnyHwpBlock],
+        lineBoxGaps: [Int: CGFloat]
+    ) -> (blocks: [(block: AnyHwpBlock, lineBoxGap: CGFloat?)], maxBottom: CGFloat) {
         let columnCount = columnFrames.count
         let perColumn = Int((Double(units.count) / Double(columnCount)).rounded(.up))
-        var newBlocks: [AnyHwpBlock] = []
+        var newBlocks: [(block: AnyHwpBlock, lineBoxGap: CGFloat?)] = []
         var maxBottom = columnFrames[0].minY
         var unitIndex = 0
         for column in 0 ..< columnCount {
@@ -272,7 +282,12 @@ struct HwpColumnBandController {
                     merged, of: attributed, measuredWidth: original.frame.width,
                     columnWidth: columnFrames[column].width
                 )
-                newBlocks.append(AnyHwpBlock(
+                // 원래 블록의 끝을 담은 조각은 그 블록의 상자 아래 몫(줄 간격 여분 + 문단 아래
+                // 간격)을 물려받는다 — 마지막 줄 단위가 그 잔여를 그대로 흡수한다 (#222 PR 리뷰;
+                // 한글 12.30 실측 so222r: 균형 배분 밴드의 구분선도 줄 상자 바닥에서 끝난다).
+                let reachesEnd = NSMaxRange(merged.range) == attributed.length
+                let gap = fragment.lineBoxGap ?? (reachesEnd ? lineBoxGaps[merged.blockIndex] : nil)
+                newBlocks.append((AnyHwpBlock(
                     frame: CGRect(
                         x: columnFrames[column].minX,
                         y: cursorY,
@@ -283,7 +298,7 @@ struct HwpColumnBandController {
                     attributedString: NSAttributedString(attributedString: fragment.text),
                     hyperlinkURL: original.hyperlinkURL,
                     source: original.source
-                ))
+                ), gap))
                 cursorY += fragment.height
             }
             maxBottom = max(maxBottom, cursorY)
@@ -292,6 +307,13 @@ struct HwpColumnBandController {
             }
         }
         return (newBlocks, maxBottom)
+    }
+
+    /// 재배치 조각 — 다시 잰 조각은 그 줄로 잰 상자 아래 몫(`lineBoxGap`)을 싣는다 (#222 PR 리뷰).
+    private struct RebalancedFragment {
+        let text: NSAttributedString
+        let height: CGFloat
+        var lineBoxGap: CGFloat?
     }
 
     /// 단에 놓을 조각 문자열과 높이. 블록 첫머리가 아닌 조각은 이어지는 조각 — 첫 줄
@@ -311,7 +333,7 @@ struct HwpColumnBandController {
         of attributed: NSAttributedString,
         measuredWidth: CGFloat,
         columnWidth: CGFloat
-    ) -> (text: NSAttributedString, height: CGFloat) {
+    ) -> RebalancedFragment {
         let isWholeBlock = merged.range.location == 0
             && NSMaxRange(merged.range) == attributed.length
         let remeasures = merged.heightIsMeasured && columnWidth != measuredWidth
@@ -320,13 +342,14 @@ struct HwpColumnBandController {
         // 뒤 조각 블록(줄 목록 없는 단위 하나)이 제자리에 남을 때 표식을 다시 판정하면 줄 수를
         // 몰라(단위 1개) 벗겨져 #166 증상이 되살아난다 (PR 리뷰, HEAD의 잔여 결함).
         if isWholeBlock, !remeasures {
-            return (attributed, merged.height)
+            return RebalancedFragment(text: attributed, height: merged.height)
         }
         let base = HwpParagraphLayout.continuationFragment(of: attributed, range: merged.range)
         var lineCount = merged.count
         var height = merged.height
         var width = measuredWidth
         var remeasured = false
+        var lineBoxGap: CGFloat?
         if remeasures, let paraShape = merged.paraShape {
             // 문단 머리에서 시작하는 블록 전체(문단)는 문단 단위 한 줄 규칙을 따라 재고, 조각
             // (블록의 일부, 또는 쪽·단 경계로 나뉜 문단의 뒤 조각 블록)은 표식을 단 채로 재어
@@ -354,6 +377,9 @@ struct HwpColumnBandController {
                     - (reachesEnd ? 0 : metrics.paragraphSpacing))
                 width = columnWidth
                 remeasured = true
+                // 줄이 바뀌었으니 상자 아래 몫도 다시 잰 줄로 잰다 (#222 PR 리뷰).
+                let advances = HwpFragmentLineAdvances(lines: frame.lines, textHeight: height)
+                lineBoxGap = height - advances.fitHeight(from: 0, through: lineCount - 1)
             }
         }
         let text = HwpParagraphLayout.measuredLineFragment(
@@ -370,7 +396,10 @@ struct HwpColumnBandController {
         let continues = NSMaxRange(merged.range) < attributed.length
         let kept = continues || remeasured
             ? HwpTableSplitter.strippingCachedTrailingLineSpacing(text) : text
-        return (continues ? HwpTableSplitter.markedAsContinuedFragment(kept) : kept, height)
+        return RebalancedFragment(
+            text: continues ? HwpTableSplitter.markedAsContinuedFragment(kept) : kept,
+            height: height, lineBoxGap: lineBoxGap
+        )
     }
 }
 
@@ -383,17 +412,20 @@ extension HwpColumnBandController {
     /// 그린다). 세로 범위는 밴드 첫 줄 위(`columnFrames[0].minY`)에서 가장 긴 단의 마지막
     /// 줄 **글상자 아래**까지다 — 마지막 블록이 본문이면 밴드 사용량에서 마지막 줄의 줄
     /// 간격을 뺀 자리이고(실측: 10pt 160% 밴드에서 마지막 줄 위 + 10.2pt), 표처럼 줄 간격이
-    /// 없는 블록이면 사용량 그대로다(실측: 표 아래 여백까지). 1단·구분선 없음·빈 밴드는 없다.
+    /// 없는 블록이면 사용량 그대로다(실측: 표 아래 여백까지). 다만 다른 단의 줄 상자가 블록 아래로
+    /// 나가(고정 줄 간격 < 상자) 그 바닥보다 더 내려가면 그 상자 바닥까지다 (#222 PR 리뷰,
+    /// `textDividerBottom`). 1단·구분선 없음·빈 밴드는 없다.
     ///
     /// 블록은 `.shape`(채우기 경로, `HwpShapeGeometry`)이고 역할은 `.pageChrome`이라
     /// 선택·복사·검색이 건너뛴다. 좌표는 블록 로컬이다.
     ///
-    /// `trailingSpacing`은 본문 텍스트 블록의 마지막 줄 줄 간격 — 기본은 블록 문자열을 그 폭으로
-    /// 조판한 마지막 줄에서 재는 `measuredTrailingSpacing`이고, 페이지네이터는 블록의 출처 문단에
-    /// 줄 캐시가 있으면 그 값을 준다 (한글이 줄 상자 기준으로 저장한 값).
+    /// `trailingSpacing`은 본문 텍스트 블록(`currentBlocks` 인덱스, 블록)의 마지막 줄 상자 아래
+    /// 몫 — 기본은 블록 문자열을 그 폭으로 조판한 마지막 줄에서 재는 `measuredTrailingSpacing`이고,
+    /// 페이지네이터는 흐름 배치가 기록한 상자 아래 몫(문단 아래 간격 포함, #222)이나 블록의 출처
+    /// 문단에 줄 캐시가 있으면 그 값을 준다 (한글이 줄 상자 기준으로 저장한 값).
     func columnDividerBlocks(
         currentBlocks: [AnyHwpBlock],
-        trailingSpacing: (AnyHwpBlock) -> CGFloat = { block in
+        trailingSpacing: (Int, AnyHwpBlock) -> CGFloat = { _, block in
             block.attributedString.map {
                 measuredTrailingSpacing(of: $0, lineWidth: block.frame.width)
             } ?? 0
@@ -408,19 +440,9 @@ extension HwpColumnBandController {
             CoreHwp.HwpBorderFill.borderThicknessPoints(at: column.dividerThickness)
         )
         guard thickness > 0 else { return [] }
-        // 밴드 바닥에 본문 줄이 닿았으면 마지막 줄 **글상자** 아래까지다 — 본문 텍스트 블록
-        // (밴드 바닥까지 내려온 자리 차지·글 앞뒤 개체는 줄 상자를 바꾸지 않는다)마다 블록
-        // 아래에서 그 블록의 줄 간격을 뺀 자리 중 가장 낮은 것. 값은 저장 상태가 아니라
-        // **블록마다** 잰다: 쪽에 걸친 문단은 배치 도중에 쪽이 닫혀 문단 뒤에 기록하는 값이
-        // 아직 없고, 다른 단의 뒤 문단 값이 새어 들 수 있다 (#191 리뷰). 바닥이 표면 사용량
-        // 그대로다.
-        let bodyText = currentBlocks.filter {
-            $0.kind == .text && $0.role == .body && $0.frame.minY >= top - 0.01
-        }
-        let endsWithText = bodyText.contains { $0.frame.maxY >= bandUsedBottom - 0.01 }
-        let bottom = endsWithText
-            ? bodyText.map { $0.frame.maxY - trailingSpacing($0) }.max() ?? bandUsedBottom
-            : bandUsedBottom
+        let bottom = textDividerBottom(
+            currentBlocks: currentBlocks, top: top, trailingSpacing: trailingSpacing
+        ) ?? bandUsedBottom
         guard bottom > top else { return [] }
         let line = HwpLineShapeGeometry.Line(
             shape: shape, length: bottom - top, thickness: thickness,
@@ -460,6 +482,31 @@ extension HwpColumnBandController {
         return blocks
     }
 
+    /// 밴드 바닥에 본문 줄이 닿았으면 마지막 줄 **글상자** 아래까지다 — 본문 텍스트 블록
+    /// (밴드 바닥까지 내려온 자리 차지·글 앞뒤 개체는 줄 상자를 바꾸지 않는다)마다 블록
+    /// 아래에서 그 블록의 줄 간격을 뺀 자리 중 가장 낮은 것이고, 닿지 않았으면 nil(표처럼 줄
+    /// 간격 없는 블록이 바닥 — 사용량 그대로). 값은 저장 상태가 아니라 **블록마다** 잰다: 쪽에
+    /// 걸친 문단은 배치 도중에 쪽이 닫혀 문단 뒤에 기록하는 값이 아직 없고, 다른 단의 뒤 문단
+    /// 값이 새어 들 수 있다 (#191 리뷰). 본문 줄이 바닥에 닿았는지는 블록 아래와 그 줄 상자
+    /// 아래 중 낮은 쪽으로 잰다 (#222 PR 리뷰) — 고정 줄 간격이 상자보다 작아 상자가 블록
+    /// 아래로 나가면(음수 몫) 다른 단의 표가 그 사이에서 끝나도 줄 상자가 더 아래라, 표
+    /// 바닥에서 끊으면 구분선이 그려진 줄 상자 안에서 멈춘다.
+    private func textDividerBottom(
+        currentBlocks: [AnyHwpBlock], top: CGFloat,
+        trailingSpacing: (Int, AnyHwpBlock) -> CGFloat
+    ) -> CGFloat? {
+        let bodyText = currentBlocks.enumerated().compactMap { offset, block in
+            block.kind == .text && block.role == .body && block.frame.minY >= top - 0.01
+                ? (frameBottom: block.frame.maxY,
+                   lineBoxBottom: block.frame.maxY - trailingSpacing(offset, block))
+                : nil
+        }
+        guard bodyText.contains(where: {
+            max($0.frameBottom, $0.lineBoxBottom) >= bandUsedBottom - 0.01
+        }) else { return nil }
+        return bodyText.map(\.lineBoxBottom).max()
+    }
+
     /// 밴드 바닥 블록의 마지막 줄 줄 간격 — 블록 문자열을 그 블록이 그려지는 폭(`lineWidth`,
     /// `HwpPaintListBuilder.drawTextCommand`와 같은 `max(폭, 1)`)으로 조판해 **실제 마지막 줄**의
     /// 전진량(그 줄의 줄 간격 규칙 × 그 줄의 줄 상자, 표 46 — 문단 사이 간격 제외)에서 줄 상자를 뺀
@@ -469,7 +516,8 @@ extension HwpColumnBandController {
     /// 값이다 (캐시도 같은 규칙으로 저장된다). 종전에는 줄 경계를 모른 채 마지막 글자의 크기로 근사해,
     /// 마지막 줄의 앞 글자가 더 크거나(#217 PR 리뷰: 30pt 글 + 40pt 마커의 8pt 그림 + 10pt CR 줄은
     /// 상자 30인데 10으로 봐 고정·최소 줄 간격에서 구분선이 그 줄 안에서 끝났다) 문단이 개체 마커로
-    /// 끝나면 틀렸다.
+    /// 끝나면 틀렸다. 고정 줄 간격이 상자보다 작으면 음수다 — 구분선이 전진량 끝 아래의 상자 바닥까지
+    /// 내려간다 (#222 PR 리뷰, 한글 12.30 실측 so222n DG; 캐시도 그 줄 간격을 음수로 적는다).
     static func measuredTrailingSpacing(
         of attributedString: NSAttributedString, lineWidth: CGFloat
     ) -> CGFloat {
@@ -486,6 +534,6 @@ extension HwpColumnBandController {
         let advance = rule.advance(
             lineBoxHeight: metrics.boxHeight, textBoxHeight: metrics.textBoxHeight
         )
-        return max(0, advance - metrics.boxHeight)
+        return advance - metrics.boxHeight
     }
 }
