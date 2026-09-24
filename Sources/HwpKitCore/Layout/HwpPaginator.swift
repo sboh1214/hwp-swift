@@ -1071,17 +1071,18 @@ private extension HwpPaginator {
     /// 빨간 변경 막대를 그린다. 페이지가 캐시되기 직전에 호출돼, 페이지 걸친
     /// 문단의 앞 조각도 자기 페이지에서 막대를 받는다 — 배치 후 currentBlocks만
     /// 보면 이미 캐시된 앞 페이지 조각이 빠진다 (#7, round13 #2 미완).
-    private func emitTrackChangeBars(footnoteAreaTop: CGFloat?) {
+    private func emitTrackChangeBars(footnoteTop: CGFloat?) {
         guard !trackChangeParagraphIds.isEmpty else { return }
         let barX = currentPageGeometry.contentFrame.minX - 10
         let barColor = CGColor.hwpTrackChange
         // 쪽 끝 적합이 줄 상자까지라(#222) 흐름 블록은 줄 간격 여분·아래 간격만큼 본문 아래로 나갈
         // 수 있다 — 막대는 본문 하단에서 멈춘다(절대 캐시 run 블록이 본문 하단에서 잘리는 것과 같다).
-        // 각주가 있는 쪽의 본문 하단은 각주 영역 상단이다 (#222 PR 리뷰 — 쪽 하단까지 두면 넘친
-        // 여분을 따라 막대가 구분선·각주 옆으로 내려간다). 다만 기록된 마지막 줄 상자는 자르지
-        // 않는다: 상자까지는 그려진 글줄이다(각주를 덮는 기존 격차의 문단도 그 줄에 막대가 선다).
+        // 각주가 있는 쪽의 본문 하단은 각주 영역이 칠하는 상단이다 (#222 PR 리뷰 — 쪽 하단까지
+        // 두면 넘친 여분을 따라 막대가 구분선·각주 옆으로 내려간다; 구분선 획이 위 여백보다 굵으면
+        // 그 획 상단이다 — 예약이 그 몫을 센다). 다만 기록된 마지막 줄 상자는 자르지 않는다: 상자까지는
+        // 그려진 글줄이다(각주를 덮는 기존 격차의 문단도 그 줄에 막대가 선다).
         let bodyBottom = min(
-            currentPageGeometry.contentFrame.maxY, footnoteAreaTop ?? .greatestFiniteMagnitude
+            currentPageGeometry.contentFrame.maxY, footnoteTop ?? .greatestFiniteMagnitude
         )
         let bars: [AnyHwpBlock] = currentBlocks.enumerated().compactMap { offset, block in
             guard block.kind == .text,
@@ -5473,7 +5474,7 @@ private extension HwpPaginator {
         let footnotes = placePageFootnotes()
         // 변경 추적 문단의 이 페이지 조각마다 변경 막대를 방출한다 — 페이지 걸친
         // 문단의 앞 조각도 자기 페이지에서 막대를 받는다 (#7).
-        emitTrackChangeBars(footnoteAreaTop: footnotes?.areaTop)
+        emitTrackChangeBars(footnoteTop: footnotes?.paintedTop)
         // 머리말/꼬리말/쪽 번호 크롬 블록 (감추기 마스크는 빌더가 소비한다)
         currentBlocks += pageChrome.blocks(
             forPage: nextLogicalPageNumber,

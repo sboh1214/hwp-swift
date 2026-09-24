@@ -95,7 +95,8 @@ import XCTest
 
         /// 첫 쪽에 `remaining`pt를 남기고 대상 문단과 뒤 문단을 놓는다 — 구역 첫 문단 16 + 채움
         /// `fillerLines`줄. `columns`가 2면 두 단(간격 10pt)이고 남은 자리는 첫 단의 것이다.
-        /// `footnoteNumberingMode`는 각주 모양의 번호 매김 방식(표 134 bits 10-11)이다.
+        /// `footnoteNumberingMode`는 각주 모양의 번호 매김 방식(표 134 bits 10-11)이고,
+        /// `footnoteShape`를 주면 구역의 각주 모양(구분선 여백·굵기)을 그것으로 바꾼다.
         static func layout(
             _ target: CoreHwp.HwpParagraph,
             remaining: CGFloat,
@@ -103,7 +104,8 @@ import XCTest
             fillerLines: Int = 1,
             columns: Int = 1,
             divider: Bool = false,
-            footnoteNumberingMode: UInt32 = 0
+            footnoteNumberingMode: UInt32 = 0,
+            footnoteShape: CoreHwp.HwpFootnoteShape? = nil
         ) async throws -> Layout {
             let filler = try HwpSynthetic.textParagraph(
                 (1 ... fillerLines).map { "채움 \($0)" }.joined(separator: "\n")
@@ -116,6 +118,9 @@ import XCTest
                 columnWidth: columnWidth * CGFloat(columns) + 10 * CGFloat(columns - 1),
                 contentHeight: contentHeight
             )
+            if let footnoteShape {
+                sectionDef.footNoteShape = footnoteShape
+            }
             sectionDef.footNoteShape.property = sectionDef.footNoteShape.property & ~(0b11 << 10)
                 | footnoteNumberingMode << 10
             var controls: [CoreHwp.HwpCtrlId] = [.section(sectionDef)]

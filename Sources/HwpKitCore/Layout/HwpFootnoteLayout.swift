@@ -152,9 +152,11 @@ public struct HwpFootnoteLayout {
     struct PendingPlacement {
         let blocks: [HwpFootnoteBlock]
         let overflow: PendingNotes
-        /// 이 쪽 각주 영역의 상단(구분선 위 여백 시작) — 각주가 있는 쪽의 본문 하단이다 (#222).
-        /// 실린 각주가 없으면 nil.
-        var areaTop: CGFloat?
+        /// 이 쪽 각주 영역이 칠하는 상단 — 영역 상단(구분선 위 여백 시작)이고, 구분선 획이 위
+        /// 여백보다 굵으면 그 획의 상단(`separatorOverhang`만큼 위)이다. 각주가 있는 쪽의 본문
+        /// 하단이다 (#222 — 예약도 그 몫을 센다, `ReservationMetrics.separatorOverhead`). 실린
+        /// 각주가 없으면 nil.
+        var paintedTop: CGFloat?
     }
 
     /// 페이지 하단에 배치할 각주 블록들을 계산한다.
@@ -279,7 +281,7 @@ public struct HwpFootnoteLayout {
             return PendingPlacement(
                 blocks: placement.blocks,
                 overflow: placement.overflow.stampingUnmeasured(with: footnoteShape),
-                areaTop: placement.areaTop
+                paintedTop: placement.paintedTop
             )
         }
 
@@ -308,7 +310,7 @@ public struct HwpFootnoteLayout {
         return PendingPlacement(
             blocks: stacked.blocks,
             overflow: stacked.overflow.stampingUnmeasured(with: footnoteShape),
-            areaTop: stacked.blocks.isEmpty ? nil : areaTop
+            paintedTop: stacked.blocks.isEmpty ? nil : min(areaTop, separatorLine.minY)
         )
     }
 

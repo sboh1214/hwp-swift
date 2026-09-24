@@ -18,17 +18,7 @@ import XCTest
         /// 블록은 각주 영역 위로 20pt 넘게 내려간다. 쪽 하단에서만 끊으면 막대가 구분선을 넘어 각주
         /// 옆까지 그려졌다. 줄 상자(10)는 자르지 않는다.
         func testTrackChangeBarStopsAtTheFootnoteAreaTop() async throws {
-            var target = try HwpSynthetic.splitParagraphWithNoteMarkers(
-                lines: [(characters: 3, marker: true)], segments: []
-            )
-            target.paraHeader = try HwpSynthetic.outlineParaHeader(paraShapeId: 1, paraStyleId: 0)
-            target.ctrlHeaderArray = [.footnote(HwpSynthetic.listControl(
-                ctrlId: .footnote,
-                paragraphs: [HwpSynthetic.noteParagraph(
-                    " 각주",
-                    autoNumber: HwpSynthetic.autoNumberControl(kind: 1, decorationTail: ")")
-                )]
-            ))]
+            var target = try Self.footnotedTarget()
             target.paraRangeTagArray = [try Self.trackChangeTag()]
             let layout = try await Fit.layout(
                 target, remaining: 40,
@@ -57,6 +47,80 @@ import XCTest
                 payload.separatorLine.midY - HwpRenderTuning.Footnote.dividerDefaultMarginTop,
                 within: 0.01
             ))
+        }
+
+        /// 구분선 획이 위 여백보다 굵으면 본문 하단은 그 획의 상단이다 — 예약이 획의 넘친 몫
+        /// (`separatorOverhang`)을 세므로 본문 줄은 거기까지만 들어가고, 막대도 거기서 멈춘다 (#222 PR
+        /// 리뷰). 위 여백 0·굵기 14.17pt 구분선이면 획 반 두께(7.09)만큼 영역 상단 위에서 끊는다 —
+        /// 영역 상단에서 끊으면 막대가 구분선 획 안으로 그만큼 들어갔다.
+        func testTrackChangeBarStopsAtAThickSeparatorTop() async throws {
+            var target = try Self.footnotedTarget()
+            target.paraRangeTagArray = [try Self.trackChangeTag()]
+            let layout = try await Fit.layout(
+                target, remaining: 40,
+                index: Fit.index(shape: Fit.percentShape(spacingBottom: 4000)),
+                footnoteShape: HwpFootnoteContinuationBodyBottomTests.thickDividerShape()
+            )
+            let page = try XCTUnwrap(layout.pages.first)
+            let block = try XCTUnwrap(layout.targets.first?.first)
+            let note = try XCTUnwrap(page.blocks.first { $0.kind == .footnote })
+            guard case let .footnote(payload) = note.payload else {
+                fail("각주 블록의 payload가 각주가 아니다")
+                return
+            }
+            expect(payload.separatorLine.height).to(beCloseTo(14.17, within: 0.01))
+            // 대상 줄과 그 각주가 한 쪽에 있고 블록은 구분선 획 아래까지 내려간다.
+            expect(block.frame.minY + 10).to(beLessThan(payload.separatorLine.minY))
+            expect(block.frame.maxY).to(beGreaterThan(payload.separatorLine.maxY))
+            let bar = try XCTUnwrap(page.blocks.first {
+                $0.kind == .shape && $0.frame.maxX <= block.frame.minX
+                    && abs($0.frame.minY - block.frame.minY) < 0.001
+            })
+            expect(bar.frame.maxY).to(beCloseTo(payload.separatorLine.minY, within: 0.01))
+        }
+
+        /// 각주 배치가 내는 칠하는 상단은 두 배치 모두 예약 경계와 같다 — 구분선 획이 위 여백보다
+        /// 굵으면 그 획의 상단(`separatorLine.minY`), 아니면 영역 상단(구분선 가운데 − 위 여백)이다.
+        func testPaintedTopIsTheSeparatorTopWhenTheStrokeOverhangs() throws {
+            let layout = HwpFootnoteLayout(fontResolver: .testDeterministic)
+            let geometry = FootnoteContinuationSupport.geometry(contentWidth: 451)
+            let note = try FootnoteContinuationSupport.note(lines: ["줄 1"], locations: [0])
+            let thick = try HwpFootnoteContinuationBodyBottomTests.thickDividerShape()
+            for halfCap in [true, false] {
+                for shape in [thick, nil] {
+                    let placement = layout.placePending(
+                        footnotes: HwpFootnoteLayout.PendingNotes([
+                            HwpFootnoteLayout.Input(paragraph: note, number: 1),
+                        ]),
+                        onPage: geometry, index: HwpIndex(from: CoreHwp.HwpFile()),
+                        footnoteShape: shape, limitsAreaToHalfContent: halfCap,
+                        bodyBottom: geometry.contentFrame.minY + 100
+                    )
+                    let label = "절반 상한 \(halfCap), 굵은 구분선 \(shape != nil)"
+                    let separator = try XCTUnwrap(placement.blocks.first?.separatorLine, label)
+                    let expected = shape == nil
+                        ? separator.midY - HwpRenderTuning.Footnote.dividerDefaultMarginTop
+                        : separator.minY
+                    expect(placement.paintedTop)
+                        .to(beCloseTo(expected, within: 0.001), description: label)
+                }
+            }
+        }
+
+        /// 한 줄 각주를 첫 줄에 단 대상 문단(문단 모양 1).
+        private static func footnotedTarget() throws -> CoreHwp.HwpParagraph {
+            var target = try HwpSynthetic.splitParagraphWithNoteMarkers(
+                lines: [(characters: 3, marker: true)], segments: []
+            )
+            target.paraHeader = try HwpSynthetic.outlineParaHeader(paraShapeId: 1, paraStyleId: 0)
+            target.ctrlHeaderArray = [.footnote(HwpSynthetic.listControl(
+                ctrlId: .footnote,
+                paragraphs: [HwpSynthetic.noteParagraph(
+                    " 각주",
+                    autoNumber: HwpSynthetic.autoNumberControl(kind: 1, decorationTail: ")")
+                )]
+            ))]
+            return target
         }
 
         /// 막대는 그려진 줄 상자를 자르지 않는다 — 쪽마다 각주 번호를 새로 매기는 구역에서 문단 높이가

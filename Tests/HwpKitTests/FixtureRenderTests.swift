@@ -106,16 +106,49 @@ final class FixtureRenderTests: XCTestCase {
     /// 고정 줄 간격이 글자 상자보다 작은 줄은 한글에서도 다음 줄에 겹쳐 그려진다 — 텍스트 블록
     /// 프레임은 줄 상자 높이라 상자와 고정 간격의 차만큼 겹치는 것이 저장본 그대로의 자리다.
     /// `page-end-line-box`(#222)는 쪽 끝 적합 판정을 가르려고 상자 10pt 줄에 고정 8·7.61·5·5.62pt
-    /// 간격을 건다. 자리는 한글이 저장한 줄 캐시라 글꼴과 무관하므로 쪽과 겹침량(10 − 간격)을
-    /// 정확히 핀한다 — 다른 자리의 겹침도, 핀한 겹침의 소실도 그대로 실패한다.
-    private static let fixedSpacingOverlaps: [String: [Int: CGFloat]] = [
-        "page-end-line-box": [9: 2.0, 10: 2.39, 14: 5.0, 16: 5.0, 24: 4.38],
+    /// 간격을 건다. 자리는 한글이 저장한 줄 캐시라 글꼴과 무관하므로 겹치는 **블록 쌍**(두 블록의
+    /// 상단과 문자열 머리)과 겹침량(10 − 간격)을 정확히 핀한다 — 같은 쪽의 다른 쌍이 같은 깊이로
+    /// 겹쳐도, 핀한 겹침이 사라져도 그대로 실패한다 (#222 PR 리뷰).
+    private struct PinnedOverlap {
+        let page: Int
+        /// 위·아래 블록의 상단과 문자열 머리 (아래 블록 `" "`은 빈 문단 앵커다).
+        let upper: (minY: CGFloat, prefix: String)
+        let lower: (minY: CGFloat, prefix: String)
+        let depth: CGFloat
+
+        func matches(page: Int, upper: AnyHwpBlock, lower: AnyHwpBlock, depth: CGFloat) -> Bool {
+            page == self.page && abs(depth - self.depth) < 0.01
+                && abs(upper.frame.minY - self.upper.minY) < 0.01
+                && abs(lower.frame.minY - self.lower.minY) < 0.01
+                && upper.attributedString?.string.hasPrefix(self.upper.prefix) == true
+                && lower.attributedString?.string.hasPrefix(self.lower.prefix) == true
+        }
+    }
+
+    private static let fixedSpacingOverlaps: [String: [PinnedOverlap]] = [
+        "page-end-line-box": [
+            PinnedOverlap(page: 9, upper: (99.2, "FAT"), lower: (107.2, "FAA"), depth: 2.0),
+            PinnedOverlap(page: 10, upper: (179.2, "FBP"), lower: (186.81, "FBT"), depth: 2.39),
+            PinnedOverlap(page: 14, upper: (147.2, "LAP"), lower: (152.2, "LAT"), depth: 5.0),
+            PinnedOverlap(page: 16, upper: (147.2, "LBP"), lower: (152.2, "LBT"), depth: 5.0),
+            PinnedOverlap(page: 24, upper: (179.2, "EAP"), lower: (184.82, " "), depth: 4.38),
+        ],
     ]
+
+    /// 겹친 텍스트 블록 쌍이 핀한 겹침이면 그 핀의 순번 (위·아래는 블록 상단으로 가른다).
+    private static func pinnedOverlapIndex(
+        fixture: String, page: Int, _ lhs: AnyHwpBlock, _ rhs: AnyHwpBlock, depth: CGFloat
+    ) -> Int? {
+        let (upper, lower) = lhs.frame.minY <= rhs.frame.minY ? (lhs, rhs) : (rhs, lhs)
+        return fixedSpacingOverlaps[fixture]?.firstIndex {
+            $0.matches(page: page, upper: upper, lower: lower, depth: depth)
+        }
+    }
 
     func testPageBlocksDoNotOverlap() async throws {
         let fixtures = try FixtureRoot.loadAllFixtures(from: #file)
         var failures: [String] = []
-        var pinnedPages: [String: Set<Int>] = [:]
+        var matchedPins: [String: [Int]] = [:]
         let tolerance: CGFloat = 0.5
 
         for fixture in fixtures where !fixture.expectedVisibleText.isEmpty {
@@ -136,10 +169,11 @@ final class FixtureRenderTests: XCTestCase {
                             let overlapY = min(frameA.maxY, frameB.maxY) -
                                 max(frameA.minY, frameB.minY)
                             if overlapX > tolerance, overlapY > tolerance {
-                                if let pinned = Self.fixedSpacingOverlaps[fixture.id]?[pageIndex],
-                                   abs(overlapY - pinned) < 0.01
-                                {
-                                    pinnedPages[fixture.id, default: []].insert(pageIndex)
+                                if let pin = Self.pinnedOverlapIndex(
+                                    fixture: fixture.id, page: pageIndex,
+                                    blocks[lhs], blocks[rhs], depth: overlapY
+                                ) {
+                                    matchedPins[fixture.id, default: []].append(pin)
                                     continue
                                 }
                                 failures.append(
@@ -155,9 +189,10 @@ final class FixtureRenderTests: XCTestCase {
             }
         }
 
-        for (id, pinned) in Self.fixedSpacingOverlaps {
-            expect(pinnedPages[id] ?? []).to(
-                equal(Set(pinned.keys)),
+        // 핀마다 정확히 한 쌍 — 소실도, 같은 핀에 걸리는 두 번째 쌍도 실패다.
+        for (id, pins) in Self.fixedSpacingOverlaps {
+            expect((matchedPins[id] ?? []).sorted()).to(
+                equal(Array(pins.indices)),
                 description: "[\(id)] 고정 줄 간격 겹침 핀"
             )
         }
