@@ -41,6 +41,35 @@ import XCTest
             expect(divider.frame.maxY - divider.frame.minY).to(beCloseTo(48, within: 0.01))
         }
 
+        /// 다른 단의 표가 본문 줄 블록 아래(140)와 그 줄 상자 아래(144) 사이(142)에서 끝나도 구분선은
+        /// 줄 상자 바닥까지다 (#222 PR 리뷰) — 밴드 바닥이 블록 아래로만 재면 본문이 바닥에 닿지 않은
+        /// 것으로 보여 표 바닥 142에서 끊겨, 그려진 줄 상자 안에서 멈췄다. 상자도 표 바닥에 못 닿으면
+        /// (141) 종전대로 표 바닥이다.
+        func testDividerReachesAHangingLineBoxBelowANonTextBandBottom() throws {
+            var band = HwpColumnBandController()
+            band.currentColumnDef = HwpColumnDividerTests.column(divider: 1)
+            band.columnFrames = [
+                CGRect(x: 50, y: 100, width: 200, height: 500),
+                CGRect(x: 300, y: 100, width: 150, height: 500),
+            ]
+            band.bandUsedBottom = 142
+            let text = AnyHwpBlock(
+                frame: CGRect(x: 50, y: 100, width: 200, height: 40), kind: .text,
+                attributedString: NSAttributedString(string: "가")
+            )
+            let table = AnyHwpBlock(
+                frame: CGRect(x: 300, y: 100, width: 150, height: 42), kind: .table
+            )
+            let hanging = try XCTUnwrap(band.columnDividerBlocks(
+                currentBlocks: [text, table], trailingSpacing: { _, _ in -4 }
+            ).first)
+            expect(hanging.frame.maxY).to(beCloseTo(144, within: 0.001))
+            let short = try XCTUnwrap(band.columnDividerBlocks(
+                currentBlocks: [text, table], trailingSpacing: { _, _ in -1 }
+            ).first)
+            expect(short.frame.maxY).to(beCloseTo(142, within: 0.001))
+        }
+
         /// 변경 막대도 블록 아래로 나간 줄 상자까지 긋는다 — 16pt·고정 8pt 한 줄 문단의 블록은 8이고
         /// 상자는 16이다. 블록에서 끊으면 그려진 글줄의 아래 절반 옆에 막대가 없었다.
         func testTrackChangeBarReachesALineBoxHangingBelowItsBlock() async throws {

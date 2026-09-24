@@ -412,7 +412,9 @@ extension HwpColumnBandController {
     /// 그린다). 세로 범위는 밴드 첫 줄 위(`columnFrames[0].minY`)에서 가장 긴 단의 마지막
     /// 줄 **글상자 아래**까지다 — 마지막 블록이 본문이면 밴드 사용량에서 마지막 줄의 줄
     /// 간격을 뺀 자리이고(실측: 10pt 160% 밴드에서 마지막 줄 위 + 10.2pt), 표처럼 줄 간격이
-    /// 없는 블록이면 사용량 그대로다(실측: 표 아래 여백까지). 1단·구분선 없음·빈 밴드는 없다.
+    /// 없는 블록이면 사용량 그대로다(실측: 표 아래 여백까지). 다만 다른 단의 줄 상자가 블록 아래로
+    /// 나가(고정 줄 간격 < 상자) 그 바닥보다 더 내려가면 그 상자 바닥까지다 (#222 PR 리뷰,
+    /// `textDividerBottom`). 1단·구분선 없음·빈 밴드는 없다.
     ///
     /// 블록은 `.shape`(채우기 경로, `HwpShapeGeometry`)이고 역할은 `.pageChrome`이라
     /// 선택·복사·검색이 건너뛴다. 좌표는 블록 로컬이다.
@@ -438,20 +440,9 @@ extension HwpColumnBandController {
             CoreHwp.HwpBorderFill.borderThicknessPoints(at: column.dividerThickness)
         )
         guard thickness > 0 else { return [] }
-        // 밴드 바닥에 본문 줄이 닿았으면 마지막 줄 **글상자** 아래까지다 — 본문 텍스트 블록
-        // (밴드 바닥까지 내려온 자리 차지·글 앞뒤 개체는 줄 상자를 바꾸지 않는다)마다 블록
-        // 아래에서 그 블록의 줄 간격을 뺀 자리 중 가장 낮은 것. 값은 저장 상태가 아니라
-        // **블록마다** 잰다: 쪽에 걸친 문단은 배치 도중에 쪽이 닫혀 문단 뒤에 기록하는 값이
-        // 아직 없고, 다른 단의 뒤 문단 값이 새어 들 수 있다 (#191 리뷰). 바닥이 표면 사용량
-        // 그대로다.
-        let bodyText = currentBlocks.enumerated().filter { _, block in
-            block.kind == .text && block.role == .body && block.frame.minY >= top - 0.01
-        }
-        let endsWithText = bodyText.contains { $0.element.frame.maxY >= bandUsedBottom - 0.01 }
-        let bottom = endsWithText
-            ? bodyText.map { $0.element.frame.maxY - trailingSpacing($0.offset, $0.element) }.max()
-            ?? bandUsedBottom
-            : bandUsedBottom
+        let bottom = textDividerBottom(
+            currentBlocks: currentBlocks, top: top, trailingSpacing: trailingSpacing
+        ) ?? bandUsedBottom
         guard bottom > top else { return [] }
         let line = HwpLineShapeGeometry.Line(
             shape: shape, length: bottom - top, thickness: thickness,
@@ -489,6 +480,31 @@ extension HwpColumnBandController {
             ))
         }
         return blocks
+    }
+
+    /// 밴드 바닥에 본문 줄이 닿았으면 마지막 줄 **글상자** 아래까지다 — 본문 텍스트 블록
+    /// (밴드 바닥까지 내려온 자리 차지·글 앞뒤 개체는 줄 상자를 바꾸지 않는다)마다 블록
+    /// 아래에서 그 블록의 줄 간격을 뺀 자리 중 가장 낮은 것이고, 닿지 않았으면 nil(표처럼 줄
+    /// 간격 없는 블록이 바닥 — 사용량 그대로). 값은 저장 상태가 아니라 **블록마다** 잰다: 쪽에
+    /// 걸친 문단은 배치 도중에 쪽이 닫혀 문단 뒤에 기록하는 값이 아직 없고, 다른 단의 뒤 문단
+    /// 값이 새어 들 수 있다 (#191 리뷰). 본문 줄이 바닥에 닿았는지는 블록 아래와 그 줄 상자
+    /// 아래 중 낮은 쪽으로 잰다 (#222 PR 리뷰) — 고정 줄 간격이 상자보다 작아 상자가 블록
+    /// 아래로 나가면(음수 몫) 다른 단의 표가 그 사이에서 끝나도 줄 상자가 더 아래라, 표
+    /// 바닥에서 끊으면 구분선이 그려진 줄 상자 안에서 멈춘다.
+    private func textDividerBottom(
+        currentBlocks: [AnyHwpBlock], top: CGFloat,
+        trailingSpacing: (Int, AnyHwpBlock) -> CGFloat
+    ) -> CGFloat? {
+        let bodyText = currentBlocks.enumerated().compactMap { offset, block in
+            block.kind == .text && block.role == .body && block.frame.minY >= top - 0.01
+                ? (frameBottom: block.frame.maxY,
+                   lineBoxBottom: block.frame.maxY - trailingSpacing(offset, block))
+                : nil
+        }
+        guard bodyText.contains(where: {
+            max($0.frameBottom, $0.lineBoxBottom) >= bandUsedBottom - 0.01
+        }) else { return nil }
+        return bodyText.map(\.lineBoxBottom).max()
     }
 
     /// 밴드 바닥 블록의 마지막 줄 줄 간격 — 블록 문자열을 그 블록이 그려지는 폭(`lineWidth`,
