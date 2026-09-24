@@ -770,7 +770,9 @@ extra:)`)이라 갈리지 않는다. 한글 12.30 실측(2026-09-21, 합성 HWPX
 보호도 상자로 센 줄 수에 걸린다(16pt 5줄, 남은 49.62 → 2 + 3); 2단의 단 끝도 같다; 각주가 있는
 쪽은 각주 영역 상단(구분선 위 여백까지)이 본문 하단이다. 넘친 여분은 이월하지 않는다 — 쪽·단을
 넘기면 커서가 0으로 돌아가 다음 문단이 새 쪽 상단에서 시작한다(한글도 다음 쪽 첫 줄이 본문
-상단). 판정 지점은 넷이다 — 1단 문단 전체(`placeFlowParagraph`, `paragraphFitHeight`), 조각 루프·
+상단). 판정 지점은 넷이다 — 1단 문단 전체(`placeFlowParagraph`, `paragraphFitHeight`; **빈 쪽에서도**
+각주 예약을 뺀 본문 높이로 판정해, 안 들어가면 진입 분할 게이트 `canSplitAtEntry`를 지날 때 조각
+루프로 보낸다 — 단 전체 높이와만 견주면 문단 자신의 각주가 마지막 줄을 덮는다, PR 리뷰), 조각 루프·
 진입 줄 수(`HwpFragmentRemainder.fit`), 한 줄 문단(`placeSingleLineParagraph`,
 `remainingFitHeight`), 통째로 옮긴 새 단 머리의 위 간격 재적용(`firstLineFitHeight`). 상자는
 **높이와 같은 출처**다: 저장본 줄 캐시 높이를 쓴 문단은 캐시의 줄 상자 바닥(`cachedLineBoxExtent` —

@@ -158,6 +158,54 @@ import XCTest
             expect(pages[1].blocks.filter { $0.kind == .footnote }.count) == 1
         }
 
+        /// 빈 쪽에서도 본문 하단은 각주 영역 상단이다 (#222 PR 리뷰) — 문단 보호로 빈 쪽에 다시 온
+        /// 20pt·160% 세 줄 문단(아래 간격 20, 첫 줄에 두 줄짜리 각주)은 상자 하단 84가 본문 100에
+        /// 들어가도 각주 영역(8.5 + 5.67 + 16 + 10 = 40.17)을 빼면 안 들어가므로 통째로 놓지 않고
+        /// 나눈다: 둘째 줄 상자 바닥 52 + 40.17은 들고 셋째 줄 84 + 40.17은 안 든다.
+        func testParagraphOnAnEmptyPageLeavesRoomForItsFootnotes() async throws {
+            var host = try HwpSynthetic.splitParagraphWithNoteMarkers(
+                lines: [
+                    (characters: 3, marker: true), (characters: 3, marker: false),
+                    (characters: 3, marker: false),
+                ],
+                segments: []
+            )
+            host.paraHeader = try HwpSynthetic.outlineParaHeader(paraShapeId: 1, paraStyleId: 0)
+            var runs = CoreHwp.HwpParaCharShape()
+            runs.startingIndex = [0]
+            runs.shapeId = [5] // 20pt
+            host.paraCharShape = runs
+            host.ctrlHeaderArray = [.footnote(HwpSynthetic.listControl(
+                ctrlId: .footnote,
+                paragraphs: [HwpSynthetic.noteParagraph(
+                    " 첫 줄\n둘째 줄",
+                    autoNumber: HwpSynthetic.autoNumberControl(kind: 1, decorationTail: ")")
+                )]
+            ))]
+            // 구역 첫 문단 16 + 채움 두 줄 32 → 남은 52: 문단 보호라 통째로 둘째 쪽(빈 쪽)에서 다시 처리.
+            let layout = try await Fit.layout(
+                host, remaining: 52,
+                index: Fit.index(shape: Fit.percentShape(property1: 1 << 18, spacingBottom: 4000)),
+                fillerLines: 2
+            )
+            let notePages = layout.pages.indices.filter { page in
+                layout.pages[page].blocks.contains { $0.kind == .footnote }
+            }
+            expect(layout.targets.map(\.count)) == [0, 1, 1]
+            expect(notePages) == [1]
+            guard layout.targets.count == 3 else { return }
+            let fragment = try XCTUnwrap(layout.targets[1].first)
+            expect(fragment.frame.height).to(beCloseTo(64, within: 0.001))
+            let note = try XCTUnwrap(layout.pages[1].blocks.first { $0.kind == .footnote })
+            guard case let .footnote(payload) = note.payload else {
+                fail("각주 블록의 payload가 각주가 아니다")
+                return
+            }
+            // 남긴 둘째 줄 상자 바닥(32 + 20)은 구분선 위다.
+            expect(fragment.frame.minY + 52).to(beLessThan(payload.separatorLine.minY))
+            expect(layout.targets[2].first?.frame.minY).to(beCloseTo(0, within: 0.001))
+        }
+
         /// 줄 캐시 없는 각주의 스택은 **모든 줄 상자 아래의 최댓값**까지다 (#222 PR 리뷰) — 고정 16pt
         /// 간격에 30pt 첫 줄·10pt 둘째 줄이면 프레임 32에서 마지막 줄 기준 여분 6을 빼 26에 머무르면
         /// 첫 줄 상자(30)가 스택 밖으로 나간다. 캐시 각주의 규약(전진량 끝 − 상자 아래 최댓값)과 같이

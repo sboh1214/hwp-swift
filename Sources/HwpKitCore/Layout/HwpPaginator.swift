@@ -1192,9 +1192,19 @@ private extension HwpPaginator {
         }
         // 빈 페이지에도 안 들어가는 문단 (여러 페이지에 걸친 라인 캐시)은 1단에서도
         // 라인 단위로 나눠 페이지에 흘린다 (1단 밴드의 advanceColumn == 새 페이지).
-        if !HwpPageEndFit.fits(fitHeight, in: currentColumnFrame.height),
-           paragraphFrame.lines.count > 1
-        {
+        //
+        // 빈 쪽이라도 본문 하단은 각주 영역 상단이다 (#222 PR 리뷰) — 문단 자신의 각주(와 앞 쪽에서
+        // 이월된 각주)를 빼면 안 들어가는 문단은 조각 루프로 보내 줄마다 그 줄의 각주와 함께 판정한다.
+        // 종전에는 단 전체 높이와만 견줘, 문단 보호로 빈 쪽에 다시 온 20pt·160% 세 줄 문단(상자
+        // 하단 84)이 두 줄 각주를 품고도 통째로 놓여 마지막 줄이 각주 영역을 덮었다(전진량 판정일
+        // 때는 문단 높이 116 > 100이라 우연히 나뉘었다). 그렇게 나누는 것은 부분 채운 쪽의 진입
+        // 분할과 같은 게이트(`canSplitAtEntry` — 조각별 각주 귀속·문단 머리 컨트롤·캐시 줄 수)를
+        // 통과할 때만이다 — 못 지나면 종전처럼 통째로 둔다(나누면 각주가 마지막 조각 쪽으로 간다).
+        let exceedsColumn = !HwpPageEndFit.fits(fitHeight, in: currentColumnFrame.height)
+        let exceedsBodyAboveNotes = !HwpPageEndFit.fits(
+            fitHeight, in: effectiveContentHeight - anticipatedFootnotes
+        ) && canSplitAtEntry(split, cacheHeightUsed: cacheHeightUsed)
+        if paragraphFrame.lines.count > 1, exceedsColumn || exceedsBodyAboveNotes {
             appendFlowParagraphAcrossPages(split)
             return true
         }
