@@ -25,9 +25,10 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
    있다 — 4단계). 새로 저작하는 쌍(`section-marks`·`section-page-starts-on`·
    `line-shapes`·`script-decorations`·`section-page-number-skip`·`compat-decorations`·
    `hwp2007-decorations`·`inline-object-baseline`·`inline-object-marker-size`·
-   `inline-table-actual-height`·`page-end-line-box`·`paragraph-end-char-size`)은 `.hwp`와
-   `.hwpx`를 **같은 편집 세션에서 연달아** 저장해야 두 파일이 같은 문서가 된다. 한글 GUI로
-   만들기 어려운 조합은 합성 HWPX를 한글로 열어 두 형식으로 저장해도 된다
+   `inline-table-actual-height`·`ms-word-paragraph-end-box`·`page-end-line-box`·
+   `paragraph-end-char-size`)은 `.hwp`와 `.hwpx`를 **같은 편집 세션에서 연달아** 저장해야 두
+   파일이 같은 문서가 된다. 한글 GUI로 만들기 어려운 조합은 합성 HWPX를 한글로 열어 두 형식으로
+   저장해도 된다
    (`line-shapes` — 17종 선 모양을 네 자리에 모두 실은 문서, `script-decorations` —
    첨자 × 장식선 × 글자 위치 조합 11문단, `section-page-number-skip` — 쪽 번호 매기기 +
    구역 시작 종류 7구역; 각각 `Fixtures/<id>/README.md`의 절차).
@@ -98,6 +99,11 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
   쪽 나눔을 그대로 받아 판정 규칙(줄 전진량이 아니라 **줄 상자 하단**)을 렌더 해시·골든이 잡지
   못하던 자리의 실물 근거이며, 본문 97.62pt의 작은 쪽(`hp:pagePr@height` 28186) 29쪽과 각주가 있는
   쪽이 HWP 쌍과 같은 줄 캐시·쪽 나눔으로 이어지는 표본이기도 하다.
+  MS 워드 호환 문서의 문단 끝 글자·한 줄 끝 글자 줄 상자는 #223에서 `ms-word-paragraph-end-box`
+  쌍으로 저작했다 — 끝 글자의 글꼴 상자가 본문보다 큰 줄에서 한글이 그 상자를 본문 상자 위에
+  **쌓는** 규칙(줄 상자 = 끝 글자 상자 + 본문 상자의 베이스라인 아래 몫)의 실물 근거이며, 시스템
+  글꼴 넷(Apple SD 산돌고딕 Neo·Menlo·Helvetica·Times New Roman)의 조합과 글자처럼 취급 표·밑줄이
+  HWP 쌍과 같은 줄 캐시로 이어지는 표본이기도 하다.
 
 ## manifest 작성 기준
 

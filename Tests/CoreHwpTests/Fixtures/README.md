@@ -234,6 +234,19 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   높이로 고쳐 쓰므로 `HwpKitTests/FixtureInlineTableActualHeightTests`가 높이를 원본 값으로
   되돌리고 줄 캐시를 지운 재조판을 저장된 줄 캐시·PDF 좌표(README의 표)와 대조한다. HWPX 쌍은
   `HwpxFixtures/inline-table-actual-height`.
+- `ms-word-paragraph-end-box`: **MS 워드 호환 문서**(호환 문서 대상 프로그램 2)에 시스템 글꼴만
+  (한글 슬롯 Apple SD 산돌고딕 Neo, 라틴 슬롯 Menlo·Helvetica·Times New Roman·Apple SD 산돌고딕
+  Neo)으로 **문단 끝 글자**(CR)·**한 줄 끝 글자**(코드 10)의 글꼴 줄 상자가 본문 글자보다 큰 줄
+  (글꼴·크기 조합 7종, 네 줄 문단, 줄 간격 비율 100%·여백만·최소, 한 줄 끝 3종, 글자처럼 취급 표
+  4종, 글자 아래·위 밑줄 4종)을 실은 합성 HWPX를 Hancom Office HWP for macOS 12.30.0 build 6446으로
+  2026-09-25에 열어 `.hwp`·`.hwpx`로 저장(3쪽). 한글이 끝 글자의 상자를 본문 상자 위에 **쌓는**
+  규칙(#223)의 실물 근거다 — 줄 상자 높이 = 끝 글자 상자 높이 + 본문 상자(글자 run 상자의 축별
+  합집합)의 베이스라인 아래 몫, 베이스라인 = 둘 중 큰 값이고, 본문 상자보다 큰 개체도 개체 높이 +
+  본문 아래 몫이다(본문 베이스라인과 본문 상자 높이 사이의 개체는 베이스라인만 옮긴다). 비율 줄
+  간격 여분은 max(본문 상자, 끝 글자 상자) 기준이고, 밑줄은 줄 상자 가장자리에서 0.129 × (본문 상자
+  높이 / 1.3) 안쪽이다. 한글이 저장한 줄 캐시와 같은 세션의 PDF 내보내기(README의 표)가 오라클이고
+  `HwpKitTests/FixtureMsWordParagraphEndBoxTests`가 그것과 대조한다. HWPX 쌍은
+  `HwpxFixtures/ms-word-paragraph-end-box`.
 - `page-end-line-box`: 본문 높이 97.62pt의 작은 쪽(쪽 높이 28186 HWPUNIT)에 함초롬바탕 10pt·
   160% 채움 줄을 쌓고 쪽 끝 남은 자리에 16·18·17.62·17.61pt 한 줄, 상자보다 작은 고정 줄 간격,
   아래 간격 20pt, 세 줄 문단(보호 없음·문단 보호), 외톨이줄 보호 16pt 다섯 줄, 16pt 세 줄, 빈
