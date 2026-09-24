@@ -624,10 +624,11 @@ extension HwpFootnoteCoordinator {
                 number: numbering?.number
             )
         )
-        // 각주 끝이면 마지막 줄 상자 아래 몫을 뺀다 — 배치(`NoteMeasurement.stackingHeight`,
-        // 줄 캐시 없는 각주는 CT 프레임의 `trailingGap`, #222)와 같은 값이다.
+        // 각주 끝이면 상자 아래 몫을 뺀다 — 배치(`NoteMeasurement.stackingHeight`, 줄 캐시 없는
+        // 각주는 `HwpFootnoteLayout.stackTrailingGap`, #222)와 같은 함수다.
         let height = max(
-            1, measured.frame.totalHeight - (isNoteEnd ? max(0, measured.trailingGap) : 0)
+            1, measured.frame.totalHeight
+                - (isNoteEnd ? HwpFootnoteLayout.stackTrailingGap(of: measured) : 0)
         )
         footnoteHeightCache[key] = height
         return height

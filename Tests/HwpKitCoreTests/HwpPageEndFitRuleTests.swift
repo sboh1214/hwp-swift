@@ -69,6 +69,22 @@ import XCTest
             expect(degraded.fitHeight(0)).to(beCloseTo(20, within: 0.001))
         }
 
+        /// 각주 예약은 지금까지 놓은 줄들의 **상자 하단 최댓값**에 더한다 (#222 PR 리뷰) — 고정 16pt
+        /// 간격의 50pt·10pt 두 줄은 앞 줄 상자(50)가 둘째 줄 상자(16 + 10 = 26)보다 아래라, 둘째 줄의
+        /// 각주 24.17이 붙으면 50 + 24.17이 남은 52를 넘는다(둘째 줄 상자만 보면 50.17로 들어간다).
+        /// 각주가 없으면 두 줄 다 든다.
+        func testFootnoteReservationIsAddedToTheLowestBoxSoFar() {
+            let remainder = HwpFragmentRemainder(
+                lines: [Self.line(y: 0, box: 50), Self.line(y: 16, box: 10)],
+                textHeight: 32, measuredWidth: 100, heightIsMeasured: true
+            )
+            expect(remainder.fit(in: 52).count) == 2
+            let withNote = remainder.fit(in: 52) { $0 == 1 ? 24.17 : 0 }
+            expect(withNote.count) == 1
+            expect(withNote.height).to(beCloseTo(16, within: 0.001))
+            expect(remainder.fit(in: 74.2) { $0 == 1 ? 24.17 : 0 }.count) == 2
+        }
+
         /// 텍스트 몫이 줄 캐시 높이인 문단의 마지막 줄은 캐시의 줄 상자 바닥까지다 — 높이와 같은
         /// 출처. 마지막 줄 전진량은 캐시 잔여(여기서는 48 − 32 = 16)이고 그 가운데 캐시 줄 간격 몫
         /// 6을 뺀 10이 적합 높이다. CT 줄이 캐시보다 아래로 밀려 캐시 바닥이 마지막 줄 상단 위면

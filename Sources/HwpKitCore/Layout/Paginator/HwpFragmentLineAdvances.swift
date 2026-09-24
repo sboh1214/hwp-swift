@@ -285,27 +285,32 @@ struct HwpFragmentRemainder {
         remeasureCount > 0 ? nil : placement.cachedTrailingSpacing
     }
 
-    /// 다음 줄부터 `available`에 들어가는 줄 수와 그 누적 전진량. 줄마다 그 줄의 **상자
-    /// 하단**(앞 줄들의 전진량 합 + `HwpFragmentLineAdvances.fitHeight`)이 들어가는지 보고
-    /// (#222 — 마지막으로 남기는 줄의 줄 간격 여분은 쪽·단 아래로 넘쳐도 된다), 방출 높이는
-    /// 그 줄들의 전진량 합이다. 판정은 엄격 부등호다 (`HwpPageEndFit`).
+    /// 다음 줄부터 `available`에 들어가는 줄 수와 그 누적 전진량. 줄을 하나 더할 때마다 지금까지
+    /// 놓은 줄들의 **상자 하단 최댓값**(각 줄: 앞 줄들의 전진량 합 + `HwpFragmentLineAdvances.fitHeight`)
+    /// 에 그 줄까지의 각주 예약을 더해 들어가는지 보고 (#222 — 마지막으로 남기는 줄의 줄 간격 여분은
+    /// 쪽·단 아래로 넘쳐도 된다), 방출 높이는 그 줄들의 전진량 합이다. 판정은 엄격 부등호다
+    /// (`HwpPageEndFit`).
     ///
     /// `extra`는 줄 `i`(문단 줄 색인)까지 놓을 때 그 줄들이 요구하는 **추가** 높이 — 그 줄에
     /// 참조가 놓인 각주의 예약(#207, `HwpFlowFragmentFootnotes.reservation(through:)`)이다.
     /// 줄이 늘수록 줄지 않는 단조 함수라 첫 실패에서 멈춘다. 반환 높이는 전진량 합뿐이다
-    /// (예약은 각주 영역이 차지한다).
+    /// (예약은 각주 영역이 차지한다). 예약은 그 줄 상자가 아니라 **최댓값**에 더한다 (#222 PR
+    /// 리뷰): 고정 줄 간격이 앞 줄 상자보다 작으면 앞 줄이 더 아래로 내려가는데, 뒤 줄의 각주가
+    /// 영역을 넓히는 순간 그 앞 줄 상자가 각주 영역과 겹친다(50pt·10pt 두 줄·고정 16pt, 둘째 줄
+    /// 각주 24.17 — 둘째 줄 상자 26만 보면 두 줄이 남는다). 각주가 없으면 앞 줄들은 이미 통과했으므로
+    /// 결과가 같다.
     func fit(
         in available: CGFloat, extra: (Int) -> CGFloat = { _ in 0 }
     ) -> (count: Int, height: CGFloat) {
         var count = 0
         var height: CGFloat = 0
-        while lineIndex + count < lines.count,
-              HwpPageEndFit.fits(
-                  height + advances.fitHeight(lineIndex + count) + extra(lineIndex + count),
-                  in: available
-              )
-        {
-            height += advances.advance(lineIndex + count)
+        var lowestBoxBottom: CGFloat = 0
+        while lineIndex + count < lines.count {
+            let index = lineIndex + count
+            let boxBottom = max(lowestBoxBottom, height + advances.fitHeight(index))
+            guard HwpPageEndFit.fits(boxBottom + extra(index), in: available) else { break }
+            lowestBoxBottom = boxBottom
+            height += advances.advance(index)
             count += 1
         }
         return (count, height)

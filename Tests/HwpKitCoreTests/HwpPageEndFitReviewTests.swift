@@ -108,6 +108,94 @@ import XCTest
             expect(stacking(stale)).to(beCloseTo(stacking(bare), within: 0.001))
         }
 
+        /// 흐름 분할의 각주 예약도 앞 줄의 큰 상자 위에 선다 (#222 PR 리뷰) — 고정 16pt 간격, 첫 줄
+        /// 50pt(상자 16..66)·둘째 줄 10pt + 각주. 본문 80에서 둘째 줄까지 남기면 각주 영역(24.17,
+        /// 상단 55.83)이 첫 줄 상자와 10pt 겹치므로 첫 줄만 남고 둘째 줄은 각주와 함께 다음 쪽이다.
+        func testFootnoteOfALaterLineDoesNotCoverAnEarlierTallerLineBox() async throws {
+            var host = try HwpSynthetic.splitParagraphWithNoteMarkers(
+                lines: [(characters: 5, marker: false), (characters: 5, marker: true)], segments: []
+            )
+            host.paraHeader = try HwpSynthetic.outlineParaHeader(paraShapeId: 1, paraStyleId: 0)
+            var runs = CoreHwp.HwpParaCharShape()
+            runs.startingIndex = [0, 6] // 첫 줄 다섯 자 + 한 줄 끝은 50pt, 둘째 줄부터 10pt
+            runs.shapeId = [6, 0]
+            host.paraCharShape = runs
+            host.ctrlHeaderArray = [.footnote(HwpSynthetic.listControl(
+                ctrlId: .footnote,
+                paragraphs: [HwpSynthetic.noteParagraph(
+                    " 각주 본문",
+                    autoNumber: HwpSynthetic.autoNumberControl(kind: 1, decorationTail: ")")
+                )]
+            ))]
+            let base = try Fit.index(shape: Fit.fixedShape(points: 16))
+            var charShapes = base.charShapes
+            charShapes[6] = try HwpNumberingHeadingRenderTests.charShape(baseSize: 5000)
+            let index = HwpIndex(
+                charShapes: charShapes, paraShapes: base.paraShapes, borderFills: [:],
+                tabDefs: [:], styles: [:], bullets: [:], numberings: [:], binData: [:],
+                faceNamesKorean: [:], faceNamesEnglish: [:], faceNamesChinese: [:],
+                faceNamesJapanese: [:], faceNamesEtc: [:], faceNamesSymbol: [:],
+                faceNamesUser: [:]
+            )
+            let section = HwpSynthetic.section(
+                firstParagraphControls: [.section(MeasuredLineFragmentSupport.sectionDef(
+                    columnWidth: 300, contentHeight: 80
+                ))],
+                bodyParagraphs: [host, try HwpSynthetic.textParagraph("뒤 문단")]
+            )
+            let paginator = HwpPaginator(
+                sections: [section], index: index, fontResolver: .testDeterministic
+            )
+            let pages = try await InlineControlFragmentSupport.pages(of: paginator)
+            expect(pages.count).to(beGreaterThanOrEqualTo(2))
+            guard pages.count >= 2 else { return }
+            func hostBlocks(_ page: HwpPage) -> [AnyHwpBlock] {
+                page.blocks.filter { $0.kind == .text && $0.source?.paragraphIndex == 1 }
+            }
+            expect(hostBlocks(pages[0]).map(\.frame.height)) == [16]
+            expect(pages[0].blocks.filter { $0.kind == .footnote }).to(beEmpty())
+            expect(hostBlocks(pages[1]).count) == 1
+            expect(pages[1].blocks.filter { $0.kind == .footnote }.count) == 1
+        }
+
+        /// 줄 캐시 없는 각주의 스택은 **모든 줄 상자 아래의 최댓값**까지다 (#222 PR 리뷰) — 고정 16pt
+        /// 간격에 30pt 첫 줄·10pt 둘째 줄이면 프레임 32에서 마지막 줄 기준 여분 6을 빼 26에 머무르면
+        /// 첫 줄 상자(30)가 스택 밖으로 나간다. 캐시 각주의 규약(전진량 끝 − 상자 아래 최댓값)과 같이
+        /// 30이고, 배치와 예약의 빠른 길이 같은 값이다.
+        func testCTFootnoteStackKeepsAnEarlierTallerLineBox() throws {
+            var note = HwpSynthetic.noteParagraph(
+                " 크\n작은", autoNumber: HwpSynthetic.autoNumberControl(kind: 1, decorationTail: ")")
+            )
+            var runs = CoreHwp.HwpParaCharShape()
+            runs.startingIndex = [0, 11] // 자동 번호(8) + 빈칸 + 크 + 한 줄 끝은 30pt, 둘째 줄은 10pt
+            runs.shapeId = [7, 0]
+            note.paraCharShape = runs
+            let base = try Fit.index(shape: Fit.fixedShape(points: 16))
+            var charShapes = base.charShapes
+            charShapes[7] = try HwpNumberingHeadingRenderTests.charShape(baseSize: 3000)
+            var paraShapes = base.paraShapes
+            paraShapes[0] = Fit.fixedShape(points: 16)
+            let index = HwpIndex(
+                charShapes: charShapes, paraShapes: paraShapes, borderFills: [:],
+                tabDefs: [:], styles: [:], bullets: [:], numberings: [:], binData: [:],
+                faceNamesKorean: [:], faceNamesEnglish: [:], faceNamesChinese: [:],
+                faceNamesJapanese: [:], faceNamesEtc: [:], faceNamesSymbol: [:],
+                faceNamesUser: [:]
+            )
+            let placed = HwpFootnoteLayout(fontResolver: .testDeterministic).measureNote(
+                note, number: 1, width: 400, index: index, footnoteShape: nil, sizeResolver: nil
+            )
+            expect(placed.frame.lines.map(\.boxHeight)) == [30, 10]
+            expect(placed.textRectHeight).to(beCloseTo(32, within: 0.001))
+            expect(placed.stackingHeight(isNoteEnd: true)).to(beCloseTo(30, within: 0.001))
+            var coordinator = HwpFootnoteCoordinator(index: index, fontResolver: .testDeterministic)
+            let reserved = coordinator.measuredFootnoteHeight(
+                of: note, number: 1,
+                environment: .init(contentWidth: 400, footnoteShape: nil), isNoteEnd: true
+            )
+            expect(reserved).to(beCloseTo(30, within: 0.001))
+        }
+
         /// 변경 추적 막대는 본문 하단에서 멈춘다 — 쪽 끝 적합이 줄 상자까지라 줄 간격 여분과 아래
         /// 간격(20pt)만큼 본문 아래로 나간 블록(16pt 줄, 블록 45.6)도 막대는 아래 여백으로 뻗지 않는다.
         func testTrackChangeBarStopsAtTheBodyBottom() async throws {
