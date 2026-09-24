@@ -72,8 +72,8 @@ final class HwpxFixtureManifestTests: XCTestCase {
 
     func testHwpxFixtureManifestsMatchParsedDocuments() throws {
         let fixtures = try HwpxFixtureLoader.loadAll()
-        // 픽스처 유실 가드 — 변환 쌍 26종
-        expect(fixtures.count) >= 26
+        // 픽스처 유실 가드 — 변환 쌍 27종
+        expect(fixtures.count) >= 27
 
         for fixture in fixtures {
             let manifest = fixture.manifest

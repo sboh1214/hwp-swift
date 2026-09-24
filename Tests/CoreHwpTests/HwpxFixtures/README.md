@@ -25,8 +25,8 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
    있다 — 4단계). 새로 저작하는 쌍(`section-marks`·`section-page-starts-on`·
    `line-shapes`·`script-decorations`·`section-page-number-skip`·`compat-decorations`·
    `hwp2007-decorations`·`inline-object-baseline`·`inline-object-marker-size`·
-   `inline-table-actual-height`·`paragraph-end-char-size`)은 `.hwp`와 `.hwpx`를
-   **같은 편집 세션에서 연달아** 저장해야 두 파일이 같은 문서가 된다. 한글 GUI로
+   `inline-table-actual-height`·`page-end-line-box`·`paragraph-end-char-size`)은 `.hwp`와
+   `.hwpx`를 **같은 편집 세션에서 연달아** 저장해야 두 파일이 같은 문서가 된다. 한글 GUI로
    만들기 어려운 조합은 합성 HWPX를 한글로 열어 두 형식으로 저장해도 된다
    (`line-shapes` — 17종 선 모양을 네 자리에 모두 실은 문서, `script-decorations` —
    첨자 × 장식선 × 글자 위치 조합 11문단, `section-page-number-skip` — 쪽 번호 매기기 +
@@ -94,6 +94,10 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
   수정 전후 기존 픽스처의 렌더 해시가 두 글꼴 모드 모두 불변이라 마커 크기가 줄 상자에 들던 결함을
   렌더 해시·골든이 잡지 못하던 자리의 실물 근거이며, 개체·책갈피만 싣는 run(`<hp:run charPrIDRef="N">` 안
   `hp:pic`·`hp:tbl`·`hp:ctrl/hp:bookmark`)의 글자 모양이 HWP 쌍과 같은 줄 캐시로 이어지는 표본이기도 하다.
+  쪽 끝 적합 판정은 #222에서 `page-end-line-box` 쌍으로 저작했다 — 코퍼스 저장본은 줄 캐시로
+  쪽 나눔을 그대로 받아 판정 규칙(줄 전진량이 아니라 **줄 상자 하단**)을 렌더 해시·골든이 잡지
+  못하던 자리의 실물 근거이며, 본문 97.62pt의 작은 쪽(`hp:pagePr@height` 28186) 29쪽과 각주가 있는
+  쪽이 HWP 쌍과 같은 줄 캐시·쪽 나눔으로 이어지는 표본이기도 하다.
 
 ## manifest 작성 기준
 

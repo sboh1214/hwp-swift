@@ -69,8 +69,8 @@ final class FixtureRenderTests: XCTestCase {
     func testPageCountsMatchManifest() async throws {
         let fixtures = try FixtureRoot.loadAllFixtures(from: #file)
         let withPageCount = fixtures.filter { $0.expectedPageCount != nil }
-        // 파싱 가능한 44개 픽스처 전부에 pageCount 명세가 있다
-        expect(withPageCount.count) >= 44
+        // 파싱 가능한 45개 픽스처 전부에 pageCount 명세가 있다
+        expect(withPageCount.count) >= 45
 
         var failures: [String] = []
         for fixture in withPageCount {
@@ -95,17 +95,27 @@ final class FixtureRenderTests: XCTestCase {
 
     func testFixtureCountAndCategories() throws {
         let fixtures = try FixtureRoot.loadAllFixtures(from: #file)
-        expect(fixtures.count) >= 48
+        expect(fixtures.count) >= 49
         let withText = fixtures.filter { !$0.expectedVisibleText.isEmpty }
         let empty = fixtures.filter(\.expectedVisibleText.isEmpty)
-        expect(withText.count) >= 35
+        expect(withText.count) >= 36
         expect(empty.count) >= 13
         expect(withText.count + empty.count) == fixtures.count
     }
 
+    /// 고정 줄 간격이 글자 상자보다 작은 줄은 한글에서도 다음 줄에 겹쳐 그려진다 — 텍스트 블록
+    /// 프레임은 줄 상자 높이라 상자와 고정 간격의 차만큼 겹치는 것이 저장본 그대로의 자리다.
+    /// `page-end-line-box`(#222)는 쪽 끝 적합 판정을 가르려고 상자 10pt 줄에 고정 8·7.61·5·5.62pt
+    /// 간격을 건다. 자리는 한글이 저장한 줄 캐시라 글꼴과 무관하므로 쪽과 겹침량(10 − 간격)을
+    /// 정확히 핀한다 — 다른 자리의 겹침도, 핀한 겹침의 소실도 그대로 실패한다.
+    private static let fixedSpacingOverlaps: [String: [Int: CGFloat]] = [
+        "page-end-line-box": [9: 2.0, 10: 2.39, 14: 5.0, 16: 5.0, 24: 4.38],
+    ]
+
     func testPageBlocksDoNotOverlap() async throws {
         let fixtures = try FixtureRoot.loadAllFixtures(from: #file)
         var failures: [String] = []
+        var pinnedPages: [String: Set<Int>] = [:]
         let tolerance: CGFloat = 0.5
 
         for fixture in fixtures where !fixture.expectedVisibleText.isEmpty {
@@ -126,6 +136,12 @@ final class FixtureRenderTests: XCTestCase {
                             let overlapY = min(frameA.maxY, frameB.maxY) -
                                 max(frameA.minY, frameB.minY)
                             if overlapX > tolerance, overlapY > tolerance {
+                                if let pinned = Self.fixedSpacingOverlaps[fixture.id]?[pageIndex],
+                                   abs(overlapY - pinned) < 0.01
+                                {
+                                    pinnedPages[fixture.id, default: []].insert(pageIndex)
+                                    continue
+                                }
                                 failures.append(
                                     "[\(fixture.id)] page \(pageIndex) " +
                                         "block \(lhs) \(frameA) overlaps block \(rhs) \(frameB)"
@@ -139,6 +155,12 @@ final class FixtureRenderTests: XCTestCase {
             }
         }
 
+        for (id, pinned) in Self.fixedSpacingOverlaps {
+            expect(pinnedPages[id] ?? []).to(
+                equal(Set(pinned.keys)),
+                description: "[\(id)] 고정 줄 간격 겹침 핀"
+            )
+        }
         if !failures.isEmpty {
             fail("Block overlap failures (\(failures.count)):\n" + failures.joined(separator: "\n"))
         }

@@ -234,6 +234,15 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   높이로 고쳐 쓰므로 `HwpKitTests/FixtureInlineTableActualHeightTests`가 높이를 원본 값으로
   되돌리고 줄 캐시를 지운 재조판을 저장된 줄 캐시·PDF 좌표(README의 표)와 대조한다. HWPX 쌍은
   `HwpxFixtures/inline-table-actual-height`.
+- `page-end-line-box`: 본문 높이 97.62pt의 작은 쪽(쪽 높이 28186 HWPUNIT)에 함초롬바탕 10pt·
+  160% 채움 줄을 쌓고 쪽 끝 남은 자리에 16·18·17.62·17.61pt 한 줄, 상자보다 작은 고정 줄 간격,
+  아래 간격 20pt, 세 줄 문단(보호 없음·문단 보호), 외톨이줄 보호 16pt 다섯 줄, 16pt 세 줄, 빈
+  문단, 각주가 있는 쪽의 20pt 한 줄을 걸친 합성 HWPX(여러 줄 문단은 한 줄 끝으로 줄 수 고정)를
+  Hancom Office HWP for macOS 12.30.0 build 6446으로 2026-09-24에 열어 `.hwp`·`.hwpx`로
+  저장(29쪽). 쪽·단 끝에 줄을 남길지를 줄 전진량이 아니라 **줄 상자 하단**으로 판정하는
+  규칙(#222)의 실물 근거다 — 줄 간격 여분과 문단 아래 간격은 본문 아래로 넘쳐도 줄이 남고, 상자
+  하단이 본문 하단과 같으면 넘어간다. 한글이 저장한 줄 캐시와 같은 세션의 PDF 내보내기가
+  오라클이다. HWPX 쌍은 `HwpxFixtures/page-end-line-box`.
 - `paragraph-end-char-size`: 함초롬바탕 본문에 **문단 끝 글자**(CR)의 글자 모양 크기가 본문과
   다른 문단(10pt + 16pt CR 한 줄·여러 줄, 16pt + 10pt CR, 10pt + 40pt CR, 줄 간격 종류 5종,
   상대 크기·글꼴·문단 간격, 한 줄 끝 조합 3종, 빈 문단 2종, 글자처럼 취급 표 3종, 셀 안,
