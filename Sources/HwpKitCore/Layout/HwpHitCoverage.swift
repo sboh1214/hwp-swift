@@ -340,6 +340,20 @@ extension HwpHitTester {
             guard let end = value as? [NSNumber], end.count == 2 else { return }
             minBelow = min(minBelow, CGFloat(end[0].doubleValue - end[1].doubleValue))
         }
+        // 글자 상자보다 낮지만 그 베이스라인보다 높은 글자처럼 취급 개체는 베이스라인만
+        // 내리고 상자는 그대로 둔다 (#223 한글 실측: Apple SD 20pt 줄 + 25pt 표 → 3119/2500)
+        // — 그 줄의 베이스라인 아래 몫은 어느 후보 상자의 몫보다도 작아져 0까지 줄 수 있다.
+        // 개체를 예약한 문단은 descent 전체를 상한으로 둔다 (조판 없이는 개체 높이와 줄의
+        // 짝을 모른다).
+        attributed.enumerateAttribute(
+            HwpAttributedStringKey.inlineObjectHeight, in: whole,
+            options: .longestEffectiveRangeNotRequired
+        ) { value, _, stop in
+            if ((value as? NSNumber)?.doubleValue ?? 0) > 0 {
+                minBelow = 0
+                stop.pointee = true
+            }
+        }
         attributed.enumerateAttribute(
             .font, in: whole, options: .longestEffectiveRangeNotRequired
         ) { value, range, _ in

@@ -197,4 +197,12 @@ public enum HwpAttributedStringKey {
     /// 축이다 — 그쪽은 문단의 마지막 조각엔 없다.
     public static let measuredLineFragment =
         NSAttributedString.Key("hwp.measuredLineFragment")
+    /// 컨테이너 블록의 **결합 문자열 문단 구분자** 표식 (NSNumber true, #223) —
+    /// `HwpCombinedBlockString`이 문단 사이에 넣은 `\n`에 붙는다. 그 글자는 앞 문단의
+    /// 문단 끝 글자(CR) 자리라, MS 워드 호환 줄 상자에서 글자 상자가 아니라 문단 끝
+    /// 상자(`msWordParagraphEndBox`) 쪽이다 (`HwpDrawnTextLayout.LineMetrics`) — 글자로
+    /// 세면 개체로 끝나는 문단이 홀로 잰 상자(개체 높이)와 결합 문자열에서 잰 상자(개체 +
+    /// 구분자 글꼴의 아래 몫)가 갈린다.
+    static let combinedParagraphSeparator =
+        NSAttributedString.Key("hwp.combinedParagraphSeparator")
 }

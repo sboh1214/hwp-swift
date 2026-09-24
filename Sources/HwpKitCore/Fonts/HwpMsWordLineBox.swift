@@ -21,7 +21,8 @@ import Foundation
 ///
 /// 장식선은 두 갈래 모두 **줄 상자에서 거꾸로 푼 상자**를 쓴다 — `cellHeight` =
 /// `lineHeight` / 1.3, `ascent` = `baseline` − 0.15 × `cellHeight`, `descent` =
-/// `cellHeight` − `ascent`. CJK 글꼴에서는 그것이 win 지표 그대로이고(함초롬돋움
+/// `cellHeight` − `ascent` (줄 상자 가장자리에서 0.15 cell씩 안쪽). CJK 글꼴에서는 그것이
+/// win 지표 그대로이고(함초롬돋움
 /// 1.07/0.23, Apple SD 산돌고딕 Neo 0.90/0.30, HY울릉도M 0.8584/0.1416, Menlo
 /// 0.9282/0.2358), 그 밖의 글꼴에서는 win 상자보다 작은 상자가 된다(Helvetica win
 /// 0.9502/0.2251 → 0.8146/0.0895, Times New Roman 0.8911/0.2163 + gap 0.0425 →
@@ -48,17 +49,36 @@ import Foundation
 /// 실측: Apple SD 산돌고딕 Neo 20pt 글자 + Menlo 20pt 문단 끝 글자의 줄이 `vertsize`
 /// 3119 = Apple SD의 1.5596em, `baseline` 2207 = Menlo의 1.1028em). 문단 끝 글자(CR)는
 /// 마지막 글자 모양의 **라틴 슬롯** 글꼴로 그 줄에 든다 (같은 문단이 세 줄로 접히면
-/// 앞 두 줄은 2160 = Apple SD의 1.08em, 끝 글자가 있는 마지막 줄만 2207). 장식선은
-/// 그렇게 합친 줄 상자에서 `cellHeight`·`ascent`·`descent`를 다시 푼다.
+/// 앞 두 줄은 2160 = Apple SD의 1.08em, 끝 글자가 있는 마지막 줄만 2207). 다만 **끝
+/// 글자 상자가 글자 상자보다 높으면** 합치지 않고 쌓는다 — 줄 상자 = 끝 글자 상자 높이 +
+/// 글자 상자의 베이스라인 아래 몫이다 (#223, `HwpDrawnTextLayout.LineMetrics.msWordLineBox`;
+/// 글자처럼 취급 개체도 같은 꼴). 장식선은 그렇게 정한 줄 상자의 가장자리에서 글자 상자의
+/// `cellHeight`만큼 안쪽에 놓인다 (`ascent`·`descent`).
 public struct HwpMsWordLineBox: Hashable, Sendable {
     /// 줄 상자 높이 (em 또는 pt)
     public let lineHeight: CGFloat
     /// 줄 상자 상단에서 베이스라인까지 (em 또는 pt)
     public let baseline: CGFloat
+    /// 장식선 기준 상자 높이 — 밑줄이 줄 상자 가장자리에서 들어오는 거리와 두께의 기준
+    /// (`HwpDecorationLineGeometry.msWordUnderlineBelow`). 글꼴 하나의 상자나 글자 run들을
+    /// 합친 상자는 줄 상자 / 1.3이고(`init(lineHeight:baseline:)`), 문단 끝 글자·개체가 줄
+    /// 상자를 키운 줄에서는 **글자 상자**의 값이 남는다 (#223 한글 12.30 실측: 함초롬돋움
+    /// 10pt 밑줄 + 16pt 문단 끝 글자 줄은 상자 31.32pt인데 밑줄이 상자 바닥에서 1.68pt
+    /// = 0.129 × 16.92 / 1.3 위·두께 0.65pt — 27.06 / 1.3이나 31.32 / 1.3이 아니다).
+    public let cellHeight: CGFloat
 
     public init(lineHeight: CGFloat, baseline: CGFloat) {
+        self.init(
+            lineHeight: lineHeight, baseline: baseline,
+            cellHeight: lineHeight / HwpRenderTuning.Text.msWordLineHeightCellRatio
+        )
+    }
+
+    /// 장식선 기준 상자 높이를 따로 준다 — 줄 상자가 글자 상자보다 커진 줄 (#223).
+    public init(lineHeight: CGFloat, baseline: CGFloat, cellHeight: CGFloat) {
         self.lineHeight = lineHeight
         self.baseline = baseline
+        self.cellHeight = cellHeight
     }
 
     /// 표 값에서 만든다 — `isCJK`가 두 갈래를 가른다.
@@ -80,34 +100,36 @@ public struct HwpMsWordLineBox: Hashable, Sendable {
     /// 모양 기본 크기**(`hwp.baseFontSize`, 슬롯 상대 크기 무관)를 곱한다 (한글 실측,
     /// `HwpPageLayerDecorations.decorationBaseFontSize`).
     public func scaled(by fontSize: CGFloat) -> HwpMsWordLineBox {
-        HwpMsWordLineBox(lineHeight: lineHeight * fontSize, baseline: baseline * fontSize)
+        HwpMsWordLineBox(
+            lineHeight: lineHeight * fontSize, baseline: baseline * fontSize,
+            cellHeight: cellHeight * fontSize
+        )
     }
 
-    /// 줄의 run 상자들을 합친 줄 상자 — 높이와 베이스라인 자리를 **각각** 최댓값으로
-    /// 잡는다 (위 실측). 빈 줄이면 nil.
+    /// 줄의 글자 run 상자들을 합친 상자 — 높이와 베이스라인 자리를 **각각** 최댓값으로
+    /// 잡는다 (위 실측; 장식선 기준 상자도 최댓값). 빈 줄이면 nil. 문단 끝 글자·개체는 이
+    /// 합이 아니라 쌓는 규칙이다 (`HwpDrawnTextLayout.LineMetrics.msWordLineBox`, #223).
     public static func union(_ boxes: [HwpMsWordLineBox]) -> HwpMsWordLineBox? {
         guard let first = boxes.first else { return nil }
         return boxes.dropFirst().reduce(first) { line, box in
             HwpMsWordLineBox(
                 lineHeight: max(line.lineHeight, box.lineHeight),
-                baseline: max(line.baseline, box.baseline)
+                baseline: max(line.baseline, box.baseline),
+                cellHeight: max(line.cellHeight, box.cellHeight)
             )
         }
     }
 
-    /// 장식선 기준 상자 높이 = 줄 상자 / 1.3
-    public var cellHeight: CGFloat {
-        lineHeight / HwpRenderTuning.Text.msWordLineHeightCellRatio
-    }
-
-    /// 장식선 기준 상자의 베이스라인 위 높이
+    /// 장식선 기준 상자의 베이스라인 위 높이 — 줄 상자 윗변에서 0.15 cell 아래.
     public var ascent: CGFloat {
         baseline - HwpRenderTuning.Text.msWordBaselineMarginCellRatio * cellHeight
     }
 
-    /// 장식선 기준 상자의 베이스라인 아래 깊이
+    /// 장식선 기준 상자의 베이스라인 아래 깊이 — 줄 상자 바닥에서 0.15 cell 위. 줄 상자 =
+    /// 1.3 cell인 상자에서는 `cellHeight − ascent`와 같다 (#223 전의 정의).
     public var descent: CGFloat {
-        cellHeight - ascent
+        lineHeight - baseline
+            - HwpRenderTuning.Text.msWordBaselineMarginCellRatio * cellHeight
     }
 
     /// 글꼴에서 em 단위로 읽는다 — OS/2·hhea 표를 직접 읽고 PostScript 이름으로

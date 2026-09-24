@@ -26,8 +26,10 @@ import Foundation
 /// 픽스처):
 ///
 /// - 글자 아래·위 밑줄과 삽입 밑줄은 **줄 상자**(run 상자들의 축별 최댓값 — 밑줄이 없는
-///   run·대체 글꼴 run·마지막 줄의 문단 끝 글자도 후보다, `HwpMsWordLineBox.union`)에서
-///   줄 전체가 한 자리·한 두께다 (함초롬돋움 40pt 무장식 run 뒤의 Apple SD 40pt 밑줄
+///   run·대체 글꼴 run도 후보다, `HwpMsWordLineBox.union`; 문단 끝 글자·한 줄 끝·개체가 그보다
+///   높으면 쌓여 커진 줄 상자, `HwpDrawnTextLayout.msWordLineBox`)의 가장자리에서 글자 상자의
+///   cell × 0.129만큼 안쪽에 줄 전체가 한 자리·한 두께다 (#223: 16pt 문단 끝 글자가 쌓인
+///   함초롬돋움 10pt 밑줄 줄은 베이스라인 아래 9.36pt; 함초롬돋움 40pt 무장식 run 뒤의 Apple SD 40pt 밑줄
 ///   run이 함초롬 자리 −0.2583em·0.0661em, Apple SD 40pt 무장식 run 뒤의 함초롬 10pt
 ///   밑줄 run이 Apple SD 40pt 자리 −0.3273em·2.40pt, 같은 글꼴 10pt + 40pt 밑줄 run
 ///   둘은 40pt 자리 한 줄).

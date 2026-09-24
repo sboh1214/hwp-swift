@@ -96,15 +96,17 @@ public extension HwpDrawnTextLayout {
     /// 높이라는 뜻이고, 그때 되돌림 `0.15 × 개체 높이`가 상자 바닥과 같아진다.
     ///
     /// MS 워드 호환 문서(#194)에서는 되돌리지 않는다 — 베이스라인 자체가 개체 바닥이고
-    /// (`LineMetrics.baselineAnchor` = max(글꼴 상자 베이스라인, 개체 높이)) 상자는 그 아래
-    /// 글꼴 상자의 descent 몫만큼 더 내려가므로 개체가 상자 높이와 같아지는 일이 없다.
+    /// (`LineMetrics.baselineAnchor` = max(글꼴 상자 베이스라인, 개체 높이)) 밑줄은 줄 상자
+    /// 가장자리에서 잰다 (`HwpDecorationLineGeometry.msWordUnderlineBelow`). 개체가 상자 높이와
+    /// 같아지는 줄(글자 없이 개체와 문단 끝 글자만 있는 줄, #223)도 그렇다.
     ///
     /// `endsParagraph`(`HwpDrawnLine.endsParagraph`)는 이 줄이 문단의 마지막 줄인지 — 그 줄은
     /// 접힌 문단 끝 글자(CR)의 글자 모양도 상자에 넣으므로(#206) 개체가 상자를 정했는지가
     /// 달라질 수 있다 (10pt 글 + 12pt 개체 + 16pt CR 줄의 상자는 12가 아니라 16).
     static func underlineReturnDrop(of line: CTLine, endsParagraph: Bool = false) -> CGFloat {
         let metrics = lineMetrics(of: line, endsParagraph: endsParagraph)
-        guard metrics.delegateAscent > 0, metrics.delegateAscent >= metrics.boxHeight
+        guard metrics.msWordLineBox == nil, metrics.delegateAscent > 0,
+              metrics.delegateAscent >= metrics.boxHeight
         else { return 0 }
         return metrics.delegateAscent * HwpRenderTuning.Text.baselineLiftRatio
     }

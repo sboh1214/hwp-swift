@@ -31,7 +31,9 @@ enum HwpCombinedBlockString {
     ) -> [NSAttributedString.Key: Any] {
         guard preceding.length > 0 else { return [:] }
         let last = preceding.attributes(at: preceding.length - 1, effectiveRange: nil)
-        var attributes: [NSAttributedString.Key: Any] = [:]
+        var attributes: [NSAttributedString.Key: Any] = [
+            HwpAttributedStringKey.combinedParagraphSeparator: NSNumber(value: true),
+        ]
         for key in [
             kCTFontAttributeName as NSAttributedString.Key,
             kCTParagraphStyleAttributeName as NSAttributedString.Key,
@@ -44,7 +46,8 @@ enum HwpCombinedBlockString {
         }
         // 앞 문단이 줄 공간을 예약한 개체 마커로 끝나면 구분자는 그 문단 끝 글자(CR)의 크기를
         // 싣는다 — 구분자는 글자로 조판되므로 마커의 글자 모양을 물려받으면 줄 상자에 들지 않아야
-        // 할 그 크기가 되살아난다 (#217).
+        // 할 그 크기가 되살아난다 (#217). MS 워드 호환 줄 상자는 구분자 표식
+        // (`combinedParagraphSeparator`)으로 구분자를 글자 상자에서 뺀다 (#223).
         if HwpInlineObjectReservation.reservesLineSpace(last),
            let end = last[HwpAttributedStringKey.paragraphEndBaseFontSize]
         {
