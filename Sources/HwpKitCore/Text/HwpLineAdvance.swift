@@ -66,12 +66,13 @@ public struct HwpLineSpacingRule: Equatable, Sendable {
 
     /// 줄 하나의 전진량 (줄 상자 상단에서 다음 줄 상자 상단까지).
     ///
-    /// - `textBoxHeight`: 그 줄 글자 run들의 기본 글자 크기 최댓값 (개체 마커 run의
-    ///   글자 모양 포함).
+    /// - `textBoxHeight`: 그 줄 글자 run들의 기본 글자 크기 최댓값.
     /// - `objectHeight`: 그 줄이 예약한 글자처럼 취급 개체 높이 최댓값 (없으면 0).
     ///
-    /// 줄 상자는 둘 가운데 큰 것이다 — 한글 문서의 규칙. MS 워드 호환 문서처럼 줄 상자가
-    /// 그 최댓값이 아닌 줄은 `advance(lineBoxHeight:textBoxHeight:)`에 상자를 직접 준다.
+    /// 줄 상자는 둘 가운데 큰 것이다 — 한글 문서의 규칙. 줄 상자가 그 최댓값이 아닌 줄은
+    /// `advance(lineBoxHeight:textBoxHeight:)`에 상자를 직접 준다: MS 워드 호환 문서, 그리고
+    /// 글자처럼 취급 개체 마커의 글자 모양이 글자보다 큰 한글 문서 줄 — 그 크기는 비율 여분의
+    /// 기준에는 들어도 줄 상자에는 들지 않는다 (#217).
     public func advance(textBoxHeight: CGFloat, objectHeight: CGFloat) -> CGFloat {
         advance(
             lineBoxHeight: max(max(0, textBoxHeight), max(0, objectHeight)),
@@ -244,7 +245,7 @@ enum HwpLineAdvance {
     /// 위/아래 간격 10pt 문단의 한 줄 끝 앞뒤 줄 전진량이 16pt 그대로).
     ///
     /// 문자열 하나가 CT 문단을 둘 이상 품는 것은 컨테이너 블록이 문단들을 `\n`으로 이은
-    /// 경우다 (`HwpPaginator.combinedAttributedString`) — 문단마다 자기 스타일이 붙어
+    /// 경우다 (`HwpCombinedBlockString.combine`) — 문단마다 자기 스타일이 붙어
     /// 있으므로 간격은 **줄 자신의 문단**(아래)과 **다음 줄의 문단**(위)에서 각각 읽는다.
     /// 음수 간격은 0으로 본다 (CT와 같다).
     static func paragraphGap(

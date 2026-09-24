@@ -388,14 +388,15 @@ extension HwpColumnBandController {
     /// 블록은 `.shape`(채우기 경로, `HwpShapeGeometry`)이고 역할은 `.pageChrome`이라
     /// 선택·복사·검색이 건너뛴다. 좌표는 블록 로컬이다.
     ///
-    /// `trailingSpacing`은 본문 텍스트 블록의 마지막 줄 줄 간격 — 기본은 조판 문자열의 마지막
-    /// 글자에서 재는 `measuredTrailingSpacing`이고, 페이지네이터는 블록의 출처 문단에 줄 캐시가
-    /// 있으면 그 값을 준다 (한글이 줄 상자 기준으로 저장한 값이라 마지막 줄에 다른 크기 글자가
-    /// 섞여도 정확하다).
+    /// `trailingSpacing`은 본문 텍스트 블록의 마지막 줄 줄 간격 — 기본은 블록 문자열을 그 폭으로
+    /// 조판한 마지막 줄에서 재는 `measuredTrailingSpacing`이고, 페이지네이터는 블록의 출처 문단에
+    /// 줄 캐시가 있으면 그 값을 준다 (한글이 줄 상자 기준으로 저장한 값).
     func columnDividerBlocks(
         currentBlocks: [AnyHwpBlock],
-        trailingSpacing: (AnyHwpBlock) -> CGFloat = {
-            $0.attributedString.map(measuredTrailingSpacing) ?? 0
+        trailingSpacing: (AnyHwpBlock) -> CGFloat = { block in
+            block.attributedString.map {
+                measuredTrailingSpacing(of: $0, lineWidth: block.frame.width)
+            } ?? 0
         }
     ) -> [AnyHwpBlock] {
         guard columnFrames.count > 1, let column = currentColumnDef,
@@ -459,18 +460,32 @@ extension HwpColumnBandController {
         return blocks
     }
 
-    /// 밴드 바닥 블록의 마지막 줄 줄 간격 — 마지막 글자의 줄 간격 규칙(표 46)을 마지막 줄의
-    /// 글자 상자(한글 문서는 기본 글자 크기, MS 워드 호환 문서는 그 글꼴의 줄 상자와 문단을
-    /// 끝내는 문자열이면 문단 끝 글자 상자의 큰 쪽 — `HwpDrawnTextLayout.trailingTextBoxHeight(in:)`,
-    /// #194)에 적용한 전진량에서 상자를 뺀 값. 줄 캐시가 있는 문단의 캐시 `lineSpacing`과 같은
-    /// 값이고(캐시도 같은 규칙으로 저장된다), 개체 줄의 개체 몫과 마지막 줄의 더 큰 다른 글자는
-    /// 안 본다(줄 경계를 모른다 — 마지막 글자 기준 근사).
-    static func measuredTrailingSpacing(of attributedString: NSAttributedString) -> CGFloat {
-        guard attributedString.length > 0 else { return 0 }
-        let index = attributedString.length - 1
-        let size = HwpDrawnTextLayout.trailingTextBoxHeight(in: attributedString)
-        guard size > 0 else { return 0 }
-        let rule = HwpLineSpacingRule.rule(in: attributedString, at: index)
-        return max(0, rule.advance(textBoxHeight: size, objectHeight: 0) - size)
+    /// 밴드 바닥 블록의 마지막 줄 줄 간격 — 블록 문자열을 그 블록이 그려지는 폭(`lineWidth`,
+    /// `HwpPaintListBuilder.drawTextCommand`와 같은 `max(폭, 1)`)으로 조판해 **실제 마지막 줄**의
+    /// 전진량(그 줄의 줄 간격 규칙 × 그 줄의 줄 상자, 표 46 — 문단 사이 간격 제외)에서 줄 상자를 뺀
+    /// 값이다. 렌더(`HwpDrawnTextLayout.lines`)와 같은 줄바꿈·같은 줄 지표(`LineMetrics`)라 구분선이
+    /// 그려진 마지막 줄 상자 바닥에서 멈춘다 — 그 줄에 크기가 다른 글자·개체·문단 끝 글자(CR, #206)·
+    /// MS 워드 호환 글꼴 상자(#194)가 섞여도 같다. 줄 캐시가 있는 문단의 캐시 `lineSpacing`과 같은
+    /// 값이다 (캐시도 같은 규칙으로 저장된다). 종전에는 줄 경계를 모른 채 마지막 글자의 크기로 근사해,
+    /// 마지막 줄의 앞 글자가 더 크거나(#217 PR 리뷰: 30pt 글 + 40pt 마커의 8pt 그림 + 10pt CR 줄은
+    /// 상자 30인데 10으로 봐 고정·최소 줄 간격에서 구분선이 그 줄 안에서 끝났다) 문단이 개체 마커로
+    /// 끝나면 틀렸다.
+    static func measuredTrailingSpacing(
+        of attributedString: NSAttributedString, lineWidth: CGFloat
+    ) -> CGFloat {
+        guard attributedString.length > 0,
+              let last = HwpDrawnTextLayout.lines(
+                  attributedString: attributedString, origin: .zero, lineWidth: max(lineWidth, 1)
+              ).last
+        else { return 0 }
+        // 재조판된 줄(양쪽 정렬)은 부분 복사본이라 문자열 기준 판정은 `HwpDrawnLine`이 든 값을 쓴다.
+        let metrics = HwpDrawnTextLayout.lineMetrics(
+            of: last.line, endsParagraph: last.endsParagraph
+        )
+        let rule = HwpLineSpacingRule.rule(in: attributedString, at: last.stringRange.location)
+        let advance = rule.advance(
+            lineBoxHeight: metrics.boxHeight, textBoxHeight: metrics.textBoxHeight
+        )
+        return max(0, advance - metrics.boxHeight)
     }
 }

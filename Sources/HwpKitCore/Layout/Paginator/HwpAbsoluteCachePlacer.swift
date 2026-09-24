@@ -292,7 +292,9 @@ struct HwpAbsoluteCachePlacer {
 
     /// 캐시가 stale한지 — 캐시 줄 높이 (h)보다 큰 글자 크기가 선언되어 있으면
     /// 캐시가 현재 내용과 안 맞는 저장본이다 (신선한 캐시는 h ≥ 글자 크기).
-    /// 폰트 대체와 무관하다: CT 폰트 포인트 크기는 요청 크기를 유지한다.
+    /// 폰트 대체와 무관하다: CT 폰트 포인트 크기는 요청 크기를 유지한다. 개체 마커의 글자 모양은
+    /// 안 보고(#217: 한글은 줄 상자에 넣지 않는다 — 40pt 마커의 8pt 그림 줄 `vertsize` 1000) 문단 끝
+    /// 글자(CR)의 기본 크기는 본다 (#206: 마지막 줄 상자에 든다 — 마커로 끝나는 문단의 40pt는 CR만 안다).
     static func cacheIsStale(
         run: [CoreHwp.HwpParaLineSegInternal],
         attributedString: NSAttributedString
@@ -304,14 +306,11 @@ struct HwpAbsoluteCachePlacer {
         guard cacheHeightPoints > 0, attributedString.length > 0,
               !HwpTextRunBuilder.isEmptyParagraphAnchor(attributedString)
         else { return false }
-        var maxFontSize: CGFloat = 0
-        attributedString.enumerateAttribute(
-            kCTFontAttributeName as NSAttributedString.Key,
+        var maxFontSize = HwpDrawnTextLayout.paragraphEndBaseFontSize(of: attributedString)
+        attributedString.enumerateAttributes(
             in: NSRange(location: 0, length: attributedString.length)
-        ) { value, _, _ in
-            guard let value, CFGetTypeID(value as CFTypeRef) == CTFontGetTypeID() else { return }
-            let font = value as! CTFont // swiftlint:disable:this force_cast
-            maxFontSize = max(maxFontSize, CTFontGetSize(font))
+        ) { attributes, _, _ in
+            maxFontSize = max(maxFontSize, Self.staleCheckFontSize(attributes))
         }
         return maxFontSize > cacheHeightPoints + 0.5
     }
@@ -486,5 +485,16 @@ extension HwpAbsoluteCachePlacer {
     /// 작으면 줄 간격이 음수라 줄 상자보다 작다. Int로 넓혀 미신뢰 캐시의 덧셈 트랩을 막는다.
     static func signedAdvance(of segment: CoreHwp.HwpParaLineSegInternal) -> Int {
         Int(segment.lineHeight) + Int(segment.lineSpacing)
+    }
+}
+
+private extension HwpAbsoluteCachePlacer {
+    /// 낡음 판정(`cacheIsStale`)이 보는 run의 글꼴 크기 — 줄 공간을 예약한 개체 마커는 0 (#217).
+    static func staleCheckFontSize(_ attributes: [NSAttributedString.Key: Any]) -> CGFloat {
+        guard !HwpInlineObjectReservation.reservesLineSpace(attributes),
+              let value = attributes[kCTFontAttributeName as NSAttributedString.Key],
+              CFGetTypeID(value as CFTypeRef) == CTFontGetTypeID()
+        else { return 0 }
+        return CTFontGetSize(unsafeBitCast(value as CFTypeRef, to: CTFont.self))
     }
 }

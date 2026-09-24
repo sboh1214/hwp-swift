@@ -352,46 +352,41 @@ import XCTest
             expect(frame.totalHeight).to(beCloseTo(advance * CGFloat(drawn.count), within: 0.001))
         }
 
-        /// 마지막 글자의 글자 상자(`textBoxHeight(at:in:)`) — 다단 밴드 바닥 간격의 근사가 쓴다.
-        /// 한글 문서는 기본 크기, MS 워드 호환 문서는 그 글꼴의 줄 상자 높이.
-        func testTextBoxHeightAtIndexFollowsTheDocumentKind() throws {
-            try skipUnlessOracleFonts()
-            let menlo = Self.box("Menlo", 10)
-            let msWord = NSAttributedString(string: "Ag", attributes: Self.attributes("Menlo", 10))
-            expect(HwpDrawnTextLayout.textBoxHeight(at: 1, in: msWord))
-                .to(beCloseTo(menlo.lineHeight, within: 0.001))
-            let native = NSAttributedString(
-                string: "Ag", attributes: Self.attributes("Menlo", 10, msWord: false)
-            )
-            expect(HwpDrawnTextLayout.textBoxHeight(at: 1, in: native)) == 10
-            expect(HwpDrawnTextLayout.textBoxHeight(at: 0, in: NSAttributedString())) == 0
-        }
-
-        /// 밴드 바닥 구분선이 쓰는 마지막 줄 글자 상자(`trailingTextBoxHeight(in:)`) — 마지막
-        /// 글자의 상자에 문단 끝 글자 상자를 합친다: Apple SD 10pt 본문(15.60)에 Menlo 30pt 끝
-        /// 상자(45.40)면 45.40이고 160% 줄 간격의 뒤 여백은 그 상자 기준이다. 다음 단으로
-        /// 이어지는 조각은 끝 상자가 들지 않고, 한글 문서는 기본 글자 크기다 (PR 리뷰).
-        func testTrailingTextBoxHeightIncludesTheParagraphEndBox() throws {
+        /// 밴드 바닥 구분선이 빼는 마지막 줄 줄 간격(`measuredTrailingSpacing`)은 그 줄의 줄 상자
+        /// 기준이다 — Apple SD 10pt 본문(15.60)에 Menlo 30pt 문단 끝 상자(45.40)면 마지막 줄 상자와
+        /// 160% 여분의 기준이 두 상자의 합(축별 최댓값)이다. 다음 단으로 이어지는 조각의 끝 줄은 끝
+        /// 상자가 들지 않아 본문 상자 기준이고, 한글 문서는 기본 글자 크기(10pt → 6)다 (PR 리뷰).
+        func testTrailingSpacingIncludesTheParagraphEndBox() throws {
             try skipUnlessOracleFonts()
             let appleSD = Self.box("Apple SD Gothic Neo", 10)
             let menlo30 = Self.box("Menlo", 30)
             let text = Self.attributes("Apple SD Gothic Neo", 10)
-            let whole = Self.finish(NSMutableAttributedString(string: "가나", attributes: text), endBox: menlo30)
-            expect(HwpDrawnTextLayout.trailingTextBoxHeight(in: whole))
-                .to(beCloseTo(menlo30.lineHeight, within: 0.001))
-            expect(HwpColumnBandController.measuredTrailingSpacing(of: whole)).to(beCloseTo(
-                HwpLineSpacingRule.percentShare(of: menlo30.lineHeight, percent: 160), within: 0.001
-            ))
+            let whole = Self.finish(
+                NSMutableAttributedString(string: "가나", attributes: text), endBox: menlo30
+            )
+            let union = try XCTUnwrap(HwpMsWordLineBox.union([appleSD, menlo30]))
+            expect(HwpColumnBandController.measuredTrailingSpacing(of: whole, lineWidth: 400))
+                .to(beCloseTo(
+                    HwpLineSpacingRule.percentShare(of: union.lineHeight, percent: 160),
+                    within: 0.001
+                ))
             let continued = Self.finish(
-                NSMutableAttributedString(string: "가나", attributes: text), endBox: menlo30, continued: true
+                NSMutableAttributedString(string: "가나", attributes: text),
+                endBox: menlo30, continued: true
             )
-            expect(HwpDrawnTextLayout.trailingTextBoxHeight(in: continued))
-                .to(beCloseTo(appleSD.lineHeight, within: 0.001))
-            let native = NSAttributedString(
+            expect(HwpColumnBandController.measuredTrailingSpacing(of: continued, lineWidth: 400))
+                .to(beCloseTo(
+                    HwpLineSpacingRule.percentShare(of: appleSD.lineHeight, percent: 160),
+                    within: 0.001
+                ))
+            let native = Self.finish(NSMutableAttributedString(
                 string: "가나", attributes: Self.attributes("Apple SD Gothic Neo", 10, msWord: false)
-            )
-            expect(HwpDrawnTextLayout.trailingTextBoxHeight(in: native)) == 10
-            expect(HwpDrawnTextLayout.trailingTextBoxHeight(in: NSAttributedString())) == 0
+            ))
+            expect(HwpColumnBandController.measuredTrailingSpacing(of: native, lineWidth: 400))
+                .to(beCloseTo(6, within: 0.001))
+            expect(HwpColumnBandController.measuredTrailingSpacing(
+                of: NSAttributedString(), lineWidth: 400
+            )) == 0
         }
 
         /// 조판 없는 잉크 상한(`verticalInkReach`) — MS 워드 호환 문자열은 run마다 (ascent −

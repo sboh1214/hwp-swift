@@ -62,7 +62,7 @@ import XCTest
             let bottom = texts.map(\.frame.maxY).max() ?? 0
             let lastText = try XCTUnwrap(texts.max { $0.frame.maxY < $1.frame.maxY })
             let spacing = HwpColumnBandController.measuredTrailingSpacing(
-                of: try XCTUnwrap(lastText.attributedString)
+                of: try XCTUnwrap(lastText.attributedString), lineWidth: lastText.frame.width
             )
             // 빈 문서 기본 문단 모양 10pt·160% → 마지막 줄 줄 간격 6pt
             expect(spacing).to(beCloseTo(6, within: 0.01))
@@ -99,7 +99,7 @@ import XCTest
             expect(dividers.count) == 1
             let text = try XCTUnwrap(page.blocks.first { $0.kind == .text })
             let spacing = HwpColumnBandController.measuredTrailingSpacing(
-                of: try XCTUnwrap(text.attributedString)
+                of: try XCTUnwrap(text.attributedString), lineWidth: text.frame.width
             )
             expect(dividers.first?.frame.minY).to(beCloseTo(text.frame.minY, within: 0.01))
             expect(dividers.first?.frame.maxY)

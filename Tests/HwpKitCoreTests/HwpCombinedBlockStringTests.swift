@@ -6,7 +6,7 @@ import Nimble
 import XCTest
 
 #if canImport(CoreText)
-    /// 컨테이너 블록이 문단들을 `\n`으로 이은 문자열(`HwpPaginator.combinedAttributedString`)의
+    /// 컨테이너 블록이 문단들을 `\n`으로 이은 문자열(`HwpCombinedBlockString.combine`)의
     /// 구분자가 앞 문단 마지막 글자의 조판 속성을 물려받는지 (#180).
     ///
     /// 속성 없는 `\n`은 CT 기본 글꼴(Helvetica 12pt)로 조판돼 그 줄의 상자

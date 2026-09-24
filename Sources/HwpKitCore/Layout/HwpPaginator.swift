@@ -656,8 +656,11 @@ private extension HwpPaginator {
             {
                 return CGFloat(spacing.doubleValue)
             }
-            return block.attributedString
-                .map(HwpColumnBandController.measuredTrailingSpacing) ?? 0
+            return block.attributedString.map {
+                HwpColumnBandController.measuredTrailingSpacing(
+                    of: $0, lineWidth: block.frame.width
+                )
+            } ?? 0
         }
     }
 
@@ -4638,7 +4641,7 @@ private extension HwpPaginator {
             kind: kind,
             size: size,
             payload: payload,
-            attributedString: combinedAttributedString(attributedText),
+            attributedString: HwpCombinedBlockString.combine(attributedText),
             instanceId: commonProperty.instanceId,
             zOrder: commonProperty.zOrder
         )
@@ -4935,45 +4938,6 @@ private extension HwpPaginator {
         return map
     }
 
-    func combinedAttributedString(_ strings: [NSAttributedString]) -> NSAttributedString? {
-        guard !strings.isEmpty else { return nil }
-        let combined = NSMutableAttributedString()
-        for (offset, string) in strings.enumerated() {
-            if offset > 0 {
-                // 구분자는 앞 문단 마지막 글자의 **조판 속성**(글꼴·기본 크기·줄 간격 규칙·문단
-                // 스타일)을 물려받는다 — 속성 없는 `\n`은 CT 기본 글꼴(Helvetica 12pt)로 조판돼
-                // 그 줄의 상자(`HwpDrawnTextLayout.lineMetrics`)를 12pt로 부풀리고, 줄 뒤 문단
-                // 간격도 앞 문단이 아니라 스타일 없는 글자에서 읽힌다 (#180). 장식·링크 같은 나머지
-                // 속성은 싣지 않는다 — 구분자에 그려질 것이 없다.
-                combined.append(NSAttributedString(
-                    string: "\n", attributes: Self.separatorAttributes(of: combined)
-                ))
-            }
-            combined.append(string)
-        }
-        return combined
-    }
-
-    /// 문단 구분자에 물려줄 조판 속성 — 직전 글자의 글꼴·기본 크기·줄 간격 규칙·문단 스타일.
-    private static func separatorAttributes(
-        of preceding: NSAttributedString
-    ) -> [NSAttributedString.Key: Any] {
-        guard preceding.length > 0 else { return [:] }
-        let last = preceding.attributes(at: preceding.length - 1, effectiveRange: nil)
-        var attributes: [NSAttributedString.Key: Any] = [:]
-        for key in [
-            kCTFontAttributeName as NSAttributedString.Key,
-            kCTParagraphStyleAttributeName as NSAttributedString.Key,
-            HwpAttributedStringKey.baseFontSize,
-            HwpAttributedStringKey.lineSpacing,
-        ] {
-            if let value = last[key] {
-                attributes[key] = value
-            }
-        }
-        return attributes
-    }
-
     func appendPlaceholderBlock(hint: String) {
         let height: CGFloat = 20
         if contentHeightUsed > 0, contentHeightUsed + height > effectiveContentHeight {
@@ -5228,7 +5192,7 @@ private extension HwpPaginator {
                 currentBlocks.append(AnyHwpBlock(
                     frame: block.frame,
                     kind: .footnote,
-                    attributedString: combinedAttributedString(
+                    attributedString: HwpCombinedBlockString.combine(
                         block.paragraphs.map(\.attributedString)
                     ),
                     payload: .footnote(block),
@@ -5304,7 +5268,7 @@ private extension HwpPaginator {
             currentBlocks.append(AnyHwpBlock(
                 frame: block.frame,
                 kind: .footnote,
-                attributedString: combinedAttributedString(
+                attributedString: HwpCombinedBlockString.combine(
                     block.paragraphs.map(\.attributedString)
                 ),
                 payload: .footnote(block),
