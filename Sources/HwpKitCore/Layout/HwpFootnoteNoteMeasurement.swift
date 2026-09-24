@@ -322,15 +322,19 @@ extension HwpFootnoteLayout {
     /// `HwpParagraphMeasurer.Result.trailingGap`(컨테이너 내용 범위의 규칙 #193)을 빼면 그 줄이
     /// 스택 밖으로 나간다 (#222 PR 리뷰: 30pt 개체 줄 + 10pt 줄·고정 16pt → 32 − 6 = 26에 개체
     /// 30이 담기지 않았다 — 글자처럼 취급 개체는 `floatingBottom`으로도 지켜지지 않는다). 줄이
-    /// 고르면 마지막 줄의 몫과 같고, 상자가 프레임 아래로 나가는 줄(전진량 < 상자)은 음수라 0이다.
+    /// 고르면 마지막 줄의 몫과 같고, 상자가 프레임 아래로 나가는 줄(전진량 < 상자)은 **음수**라
+    /// 스택이 그 상자 바닥까지 자란다 (#222 PR 리뷰 — 한글 12.30 실측 so222n NF: 고정 8pt 두 줄
+    /// 각주의 마지막 줄 상자 바닥이 본문 하단에 닿는다; 0으로 자르면 상자가 2pt 밖으로 나갔다).
+    /// 한글이 저장한 그런 각주는 줄 캐시의 줄 간격이 음수라 `HwpFootnoteCacheLines.lines`가 받지
+    /// 않고 이 CT 경로로 온다.
     /// 배치(`measureNote`)와 예약의 빠른 길(`HwpFootnoteCoordinator.measuredFootnoteTextHeight`)이
     /// 이 함수를 함께 쓴다.
     static func stackTrailingGap(of measured: HwpParagraphMeasurer.Result) -> CGFloat {
         let lines = measured.frame.lines
-        guard let last = lines.last else { return max(0, measured.trailingGap) }
+        guard let last = lines.last else { return measured.trailingGap }
         let lastBottom = last.origin.y + max(0, last.boxHeight)
         let lowestBottom = lines.reduce(lastBottom) { max($0, $1.origin.y + max(0, $1.boxHeight)) }
-        return max(0, measured.trailingGap - (lowestBottom - lastBottom))
+        return measured.trailingGap - (lowestBottom - lastBottom)
     }
 
     /// 이어지는 조각의 측정 — 원본 조판에서 앞 쪽에 실린 줄 뒤를 잘라 내고 높이는 그 줄들의

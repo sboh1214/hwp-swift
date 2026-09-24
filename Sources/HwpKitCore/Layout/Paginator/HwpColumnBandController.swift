@@ -379,7 +379,7 @@ struct HwpColumnBandController {
                 remeasured = true
                 // 줄이 바뀌었으니 상자 아래 몫도 다시 잰 줄로 잰다 (#222 PR 리뷰).
                 let advances = HwpFragmentLineAdvances(lines: frame.lines, textHeight: height)
-                lineBoxGap = max(0, height - advances.fitHeight(from: 0, through: lineCount - 1))
+                lineBoxGap = height - advances.fitHeight(from: 0, through: lineCount - 1)
             }
         }
         let text = HwpParagraphLayout.measuredLineFragment(
@@ -500,7 +500,8 @@ extension HwpColumnBandController {
     /// 값이다 (캐시도 같은 규칙으로 저장된다). 종전에는 줄 경계를 모른 채 마지막 글자의 크기로 근사해,
     /// 마지막 줄의 앞 글자가 더 크거나(#217 PR 리뷰: 30pt 글 + 40pt 마커의 8pt 그림 + 10pt CR 줄은
     /// 상자 30인데 10으로 봐 고정·최소 줄 간격에서 구분선이 그 줄 안에서 끝났다) 문단이 개체 마커로
-    /// 끝나면 틀렸다.
+    /// 끝나면 틀렸다. 고정 줄 간격이 상자보다 작으면 음수다 — 구분선이 전진량 끝 아래의 상자 바닥까지
+    /// 내려간다 (#222 PR 리뷰, 한글 12.30 실측 so222n DG; 캐시도 그 줄 간격을 음수로 적는다).
     static func measuredTrailingSpacing(
         of attributedString: NSAttributedString, lineWidth: CGFloat
     ) -> CGFloat {
@@ -517,6 +518,6 @@ extension HwpColumnBandController {
         let advance = rule.advance(
             lineBoxHeight: metrics.boxHeight, textBoxHeight: metrics.textBoxHeight
         )
-        return max(0, advance - metrics.boxHeight)
+        return advance - metrics.boxHeight
     }
 }

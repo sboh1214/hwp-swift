@@ -1080,7 +1080,8 @@ private extension HwpPaginator {
         // 각주가 있는 쪽의 본문 하단은 각주 영역이 칠하는 상단이다 (#222 PR 리뷰 — 쪽 하단까지
         // 두면 넘친 여분을 따라 막대가 구분선·각주 옆으로 내려간다; 구분선 획이 위 여백보다 굵으면
         // 그 획 상단이다 — 예약이 그 몫을 센다). 다만 기록된 마지막 줄 상자는 자르지 않는다: 상자까지는
-        // 그려진 글줄이다(각주를 덮는 기존 격차의 문단도 그 줄에 막대가 선다).
+        // 그려진 글줄이다(각주를 덮는 기존 격차의 문단도 그 줄에 막대가 선다). 상자가 블록 아래로
+        // 나간 줄(고정 줄 간격 < 상자 — 기록이 음수)은 그 상자 바닥까지 긋는다 (#222 PR 리뷰).
         let bodyBottom = min(
             currentPageGeometry.contentFrame.maxY, footnoteTop ?? .greatestFiniteMagnitude
         )
@@ -1089,8 +1090,9 @@ private extension HwpPaginator {
                   let paragraphId = block.source?.paragraphId,
                   trackChangeParagraphIds.contains(paragraphId) else { return nil }
             let lineBoxBottom = trailingSpacesBelowLineBox[offset].map { block.frame.maxY - $0 }
+            let drawnBottom = max(block.frame.maxY, lineBoxBottom ?? block.frame.maxY)
             let limit = max(bodyBottom, lineBoxBottom ?? bodyBottom)
-            let height = max(0, min(block.frame.maxY, limit) - block.frame.minY)
+            let height = max(0, min(drawnBottom, limit) - block.frame.minY)
             guard height > 0 else { return nil }
             let barRect = CGRect(x: 0, y: 0, width: 1.2, height: height)
             return AnyHwpBlock(
@@ -1501,10 +1503,12 @@ private extension HwpPaginator {
     /// 이 몫은 본문 하단을 넘을 수 있고, 각주 이어짐의 본문 하한(`footnoteBodyBottom`)은
     /// 절대 캐시 run 블록과 같이 상자 아래에서 잰다 — 안 빼면 적합 판정이 "줄과 각주가 함께
     /// 들어간다"고 본 쪽에서 각주 자리가 여분만큼 줄어 각주가 나뉘거나 밀린다. 고정 줄 간격이
-    /// 상자보다 작아 상자가 블록 아래로 나가면 0이다.
+    /// 상자보다 작아 상자가 블록 아래로 나가면 **음수**다 (#222 PR 리뷰) — 쓰는 쪽(단 구분선·
+    /// 각주 이어짐의 본문 하한·변경 막대)이 그 상자 바닥까지 잰다. 한글 12.30 실측(so222n DG):
+    /// 12pt·고정 8pt 줄이 단 끝이면 구분선이 전진량 끝이 아니라 상자 바닥에서 끝난다.
     private func recordFlowTrailingSpace(blockHeight: CGFloat, fitHeight: CGFloat) {
         guard !currentBlocks.isEmpty else { return }
-        trailingSpacesBelowLineBox[currentBlocks.count - 1] = max(0, blockHeight - fitHeight)
+        trailingSpacesBelowLineBox[currentBlocks.count - 1] = blockHeight - fitHeight
     }
 
     /// 나머지의 줄 `lineIndex`까지 놓을 조각이 걷을 각주의 예약 높이 (#207) — 귀속 문맥이
@@ -1644,8 +1648,13 @@ private extension HwpPaginator {
             let runSpacing = run.last.map { CGFloat(HwpUnits.points(fromHwpUnit: $0.lineSpacing)) }
             var marked = runIndex < runs.count - 1
                 ? HwpTableSplitter.markedAsContinuedFragment(fragment) : fragment
-            if let runSpacing, runSpacing >= 0 {
-                marked = HwpTableSplitter.marked(marked, cachedTrailingLineSpacing: runSpacing)
+            // 줄 간격이 음수(고정 줄 간격 < 상자)면 블록 높이(`lineBottom` — 음수 간격을 0으로 잡는다)가
+            // 이미 상자 바닥까지라 뺄 몫은 0이다 (#222 PR 리뷰) — 표식이 없으면 측정 규칙(음수)이
+            // 구분선을 상자 아래로 더 내린다.
+            if let runSpacing {
+                marked = HwpTableSplitter.marked(
+                    marked, cachedTrailingLineSpacing: max(0, runSpacing)
+                )
             }
             let fragmentText = placedFragment(marked, reservedWidth: measuredWidth)
             appendBlock(
