@@ -399,9 +399,10 @@ CR 자신의 글자 모양이라 상자에 든다 — 40pt 마커의 8pt 그림�
 K7 30pt)씩 밀렸다 — 한글이 저장한 캐시보다 높게 잰 줄이 낡은 캐시로 판정돼 버려지므로 저장본도
 누적됐다. 같은 규칙을 쓰는 곳이 둘 더 있다: 절대 캐시의 낡음 판정(`cacheIsStale`)은 예약 높이를
 실은 마커의 글꼴 크기를 보지 않고(보면 한글이 막 저장한 캐시가 낡은 것이 된다) 문단 끝 글자 크기는
-본다(아래 "stale 캐시 보정"), 단 구분선 끝의
-마지막 줄 근사(`trailingLineBox`)는 끝 글자가 개체 마커면 줄 상자를 개체 높이·문단 끝 글자로
-잡는다. MS 워드 호환 문서는 원래 마커 글꼴을 상자에서 뺐다 (#194, `msWordSpacingBase`).
+본다(아래 "stale 캐시 보정"), 단 구분선 끝의 마지막 줄 줄 간격(`measuredTrailingSpacing`)은
+블록을 그려지는 폭으로 조판한 **실제 마지막 줄**의 지표로 잰다 — 끝 글자만 보던 근사는 끝 글자가
+개체 마커면 마커 크기를, 앞에 더 큰 글자가 있으면 그 글자를 놓쳤다(PR 리뷰: 30pt 글 + 40pt 마커의
+8pt 그림 줄을 10으로 봐 고정·최소 줄 간격에서 구분선이 그 줄 안에서 끝났다). MS 워드 호환 문서는 원래 마커 글꼴을 상자에서 뺐다 (#194, `msWordSpacingBase`).
 
 **문단의 마지막 줄에는 접힌 문단 끝 글자(CR, 코드 13)의 글자 모양 크기도 든다** (#206). CR은
 조판 문자열에 없지만(#137) 한글은 그 글자 모양의 기본 크기를 마지막 줄의 글자 상자에 넣는다 —
@@ -425,7 +426,7 @@ run으로 CR 글자 모양을 준 합성 HWPX의 재저장 줄 캐시·PDF, 우�
 `lineHeight` = `textHeight`이고 이 한 줄 끝 꼴만 갈린다. 빈 문단 앵커(#145)에도 싣는다(앵커는
 첫 글자 모양으로 서므로 하이픈(24)만 있는 문단의 CR이 더 크면 CR 쪽이 상자). 상한으로 잘린 문단
 (`maxCharacters`)은 문단 끝이 아니라 싣지 않는다. 밑줄 되돌림(`underlineReturnDrop(of:endsParagraph:)`)
-·마지막 줄 근사(`trailingTextBoxHeight`)도 같은 값을 본다. MS 워드 호환 문서는 이 키 대신 문단 끝
+·단 구분선 끝(`measuredTrailingSpacing` — 마지막 줄을 조판해 `LineMetrics`로 잰다)도 같은 값을 본다. MS 워드 호환 문서는 이 키 대신 문단 끝
 글자의 **글꼴 상자**(`hwp.msWordParagraphEndBox`, #194)를 읽는다. 코퍼스 영향: 헌법주석 각주
 3쪽(p319·p434·p893)의 마지막 줄이 0.85pt 내려가 한글 PDF와 0.02pt 안(9pt 본문 + 10pt CR), 나머지
 CR이 큰 문단(`noori` 2번째·헌법주석 6각주)은 캐시로 놓여 종전부터 같았다.
@@ -2292,9 +2293,10 @@ paraShape와 같은 값**이어야 한다.
     개체·쪽 장식은 안 센다) 본문 텍스트 블록마다 (블록 아래 − 그 블록 마지막 줄의 줄 간격)
     중 가장 낮은 자리, 표면 사용량 그대로 — 이고 둘째 단이 비어도 그린다. 줄 간격은
     **블록마다** 낸다(`columnDividerBlocks(trailingSpacing:)`): 블록 문자열에
-    `hwp.cachedTrailingLineSpacing`이 있으면 그 값, 없으면 조판 문자열 마지막 글자의 줄 간격
-    규칙 × 마지막 줄 글자 상자(`measuredTrailingSpacing` — 한글 문서는 기본 글자 크기, MS 워드
-    호환 문서는 글꼴 줄 상자와 문단 끝 글자 상자의 큰 쪽, `trailingTextBoxHeight(in:)`, #194)다. 그 표식은 **배치가 실제로 캐시 높이를
+    `hwp.cachedTrailingLineSpacing`이 있으면 그 값, 없으면 블록 문자열을 그 블록이 그려지는 폭으로
+    조판한 **마지막 줄**의 전진량 − 줄 상자(`measuredTrailingSpacing(of:lineWidth:)` — 렌더와 같은
+    줄바꿈·`LineMetrics`라 그 줄의 크기가 섞인 글자·개체 마커·문단 끝 글자(#206)·MS 워드 호환 글꼴
+    상자(#194)가 모두 든다; 종전의 마지막 글자 근사는 #217 PR 리뷰에서 걷어냈다)다. 그 표식은 **배치가 실제로 캐시 높이를
     골랐을 때만** 붙는다 — `placeFlowParagraph`가 `height(for:fallback:)`의 선택
     (`cacheHeightUsed`: 유효한 캐시이고 페이지를 넘는 1줄 폴백이 아님)을 `cachedTrailingSpacing`
     값으로 `appendBlock`·`HwpFragmentPlacement`에 넘기고, `appendBlock`은 문단을 끝내는

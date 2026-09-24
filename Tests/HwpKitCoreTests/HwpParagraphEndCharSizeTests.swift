@@ -248,19 +248,26 @@ import XCTest
             expect(Self.lineBoxes(of: Fixtures.applying(rule, to: plainSecond))) == [16, 10]
         }
 
-        /// 마지막 줄 근사(`trailingTextBoxHeight`)도 CR 크기를 합친다 — 이어지는 조각은 아니다.
-        func testTrailingTextBoxHeightIncludesTheParagraphEndSize() {
-            let string = Self.withEndSize(16, Self.singleLine(size: 10, rule: nil))
-            expect(HwpDrawnTextLayout.trailingTextBoxHeight(in: string)) == 16
+        /// 밴드 바닥 구분선이 빼는 마지막 줄 줄 간격(`measuredTrailingSpacing`)도 CR 크기가 든
+        /// 줄 상자 기준이다 — 10pt 글 + 16pt CR 줄은 고정 30에서 30 − 16 = 14, 이어지는 조각의 끝
+        /// 줄은 CR이 들지 않아 30 − 10 = 20, CR이 글보다 작으면(8pt) 글 상자 기준 20.
+        func testTrailingSpacingIncludesTheParagraphEndSize() {
+            let fixed = Fixtures.rule(.fixed, 30)
+            let string = Self.withEndSize(16, Self.singleLine(size: 10, rule: fixed))
+            let spacing = { (string: NSAttributedString) in
+                Double(HwpColumnBandController.measuredTrailingSpacing(
+                    of: string, lineWidth: Fixtures.wideWidth
+                ))
+            }
+            expect(spacing(string)).to(beCloseTo(14, within: 0.001))
             let continued = NSMutableAttributedString(attributedString: string)
             continued.addAttribute(
                 HwpAttributedStringKey.continuedParagraphFragment, value: NSNumber(value: true),
                 range: NSRange(location: 0, length: continued.length)
             )
-            expect(HwpDrawnTextLayout.trailingTextBoxHeight(in: continued)) == 10
-            expect(HwpDrawnTextLayout.trailingTextBoxHeight(
-                in: Self.withEndSize(8, Self.singleLine(size: 10, rule: nil))
-            )) == 10
+            expect(spacing(continued)).to(beCloseTo(20, within: 0.001))
+            expect(spacing(Self.withEndSize(8, Self.singleLine(size: 10, rule: fixed))))
+                .to(beCloseTo(20, within: 0.001))
         }
 
         /// 밑줄 되돌림은 **개체가 상자를 정한 줄**에서만 든다 — 10pt 글 + 12pt 개체 줄의 상자는

@@ -61,31 +61,49 @@ import XCTest
             expect(Self.isStale(short, continued)) == false
         }
 
-        /// 단 구분선 끝의 마지막 줄 근사도 끝 글자가 개체 마커면 줄 상자를 개체 높이·문단 끝 글자로
-        /// 잡는다 — 10pt 글 + 40pt 마커의 8pt 그림 + 10pt 문단 끝(O1 꼴) 줄의 줄 간격 몫은 최소 12 →
-        /// 2, 고정 30 → 20, 비율 160% → 24(여분은 마커 기준)이고 렌더가 그린 마지막 줄의 전진량 − 상자와
-        /// 같다. 종전에는 마커의 40pt를 상자로 봐 최소·고정이 0이라 구분선이 그 줄 상자 아래로 2·20pt
-        /// 뻗었다.
-        func testColumnDividerApproximationUsesTheObjectBox() {
-            let rows: [Fixtures.RuleCase<CGFloat>] = [
-                .init(.atLeast, 12, 2), .init(.fixed, 30, 20), .init(.percent, 160, 24),
+        /// 단 구분선이 빼는 마지막 줄 줄 간격(`measuredTrailingSpacing`)은 렌더가 그린 **마지막 줄의
+        /// 줄 상자** 기준이다 — 끝 글자가 개체 마커여도 그 마커의 글자 모양은 여분 기준에만 든다.
+        /// 10pt 글 + 40pt 마커의 8pt 그림 + 10pt 문단 끝(O1 꼴) 줄은 상자 10이라 최소 12 → 2, 고정 30
+        /// → 20, 비율 160% → 24(여분은 마커 기준). 마지막 줄 앞에 더 큰 글자가 있으면 그 글자가 상자를
+        /// 정한다 (#217 PR 리뷰): 30pt 글 + 같은 그림 줄은 상자 30이라 고정 30·최소 12에서 0이다 — 끝
+        /// 글자만 보던 근사는 10으로 봐 구분선이 그 줄 안에서 끝났다. 앞 줄이 크고 마지막 줄만 작은
+        /// 문단(한 줄 끝으로 나뉜 30pt 줄 + 10pt 줄)은 마지막 줄 상자 10 기준이다. 모든 값은 측정
+        /// 경로가 그린 마지막 줄의 전진량 − 상자와 같다.
+        func testColumnDividerSpacingUsesTheDrawnLastLineBox() {
+            let rows: [(text: CGFloat, rule: Fixtures.RuleCase<CGFloat>)] = [
+                (10, .init(.atLeast, 12, 2)), (10, .init(.fixed, 30, 20)),
+                (10, .init(.percent, 160, 24)),
+                (30, .init(.atLeast, 12, 0)), (30, .init(.fixed, 30, 0)),
+                (30, .init(.percent, 160, 24)),
             ]
             for row in rows {
-                let text = Fixtures.attributes(size: 10)
-                let output = NSMutableAttributedString(string: "ab", attributes: text)
+                let label = "\(row.text)pt 글 · \(row.rule.label)"
+                let output = NSMutableAttributedString(
+                    string: "ab", attributes: Fixtures.attributes(size: row.text)
+                )
                 output.append(Lines.marker(height: 8, attributes: Fixtures.attributes(size: 40)))
-                let string = Lines.withEndSize(10, Fixtures.applying(row.rule, to: output))
-                let box = HwpDrawnTextLayout.trailingLineBox(in: string)
-                expect(box.line).to(equal(10), description: row.label)
-                expect(box.text).to(equal(40), description: row.label)
-                let spacing = HwpColumnBandController.measuredTrailingSpacing(of: string)
+                let string = Lines.withEndSize(10, Fixtures.applying(row.rule.rule, to: output))
+                let spacing = HwpColumnBandController.measuredTrailingSpacing(
+                    of: string, lineWidth: Fixtures.wideWidth
+                )
                 expect(Double(spacing))
-                    .to(beCloseTo(Double(row.expected), within: 0.001), description: row.label)
-                let frame = Lines.measure(string, rule: row.rule)
-                let rendered = frame.totalHeight - (frame.lines.last?.boxHeight ?? 0)
-                expect(Double(spacing))
-                    .to(beCloseTo(Double(rendered), within: 0.001), description: row.label)
+                    .to(beCloseTo(Double(row.rule.expected), within: 0.001), description: label)
+                let drawn = Self.drawnTrailingSpacing(string, rule: row.rule.rule)
+                expect(Double(spacing)).to(beCloseTo(drawn, within: 0.001), description: label)
             }
+            let fixed = Fixtures.rule(.fixed, 30)
+            let twoLines = NSMutableAttributedString(
+                string: "ab", attributes: Fixtures.attributes(size: 30)
+            )
+            twoLines.append(Fixtures.lineBreak(attributes: Fixtures.attributes(size: 30)))
+            twoLines.append(
+                NSAttributedString(string: "cd", attributes: Fixtures.attributes(size: 10))
+            )
+            let string = Lines.withEndSize(10, Fixtures.applying(fixed, to: twoLines))
+            expect(Double(HwpColumnBandController.measuredTrailingSpacing(
+                of: string, lineWidth: Fixtures.wideWidth
+            ))).to(beCloseTo(20, within: 0.001))
+            expect(Self.drawnTrailingSpacing(string, rule: fixed)).to(beCloseTo(20, within: 0.001))
         }
 
         /// 컨테이너 블록이 문단들을 `\n`으로 이은 문자열(payload 없는 조각이 그대로 그린다)에서 앞
@@ -119,6 +137,15 @@ import XCTest
         }
 
         // MARK: 헬퍼
+
+        /// 측정 경로가 그린 마지막 줄의 줄 간격 — 문단 높이 − (마지막 줄 상단 + 그 줄 상자).
+        private static func drawnTrailingSpacing(
+            _ string: NSAttributedString, rule: HwpLineSpacingRule
+        ) -> Double {
+            let frame = Lines.measure(string, rule: rule)
+            guard let last = frame.lines.last else { return -1 }
+            return Double(frame.totalHeight - last.origin.y - last.boxHeight)
+        }
 
         private static func isStale(
             _ cache: [CoreHwp.HwpParaLineSegInternal], _ string: NSAttributedString

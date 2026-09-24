@@ -656,8 +656,11 @@ private extension HwpPaginator {
             {
                 return CGFloat(spacing.doubleValue)
             }
-            return block.attributedString
-                .map(HwpColumnBandController.measuredTrailingSpacing) ?? 0
+            return block.attributedString.map {
+                HwpColumnBandController.measuredTrailingSpacing(
+                    of: $0, lineWidth: block.frame.width
+                )
+            } ?? 0
         }
     }
 
