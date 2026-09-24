@@ -1197,13 +1197,30 @@ private extension HwpPaginator {
         // 이월된 각주)를 빼면 안 들어가는 문단은 조각 루프로 보내 줄마다 그 줄의 각주와 함께 판정한다.
         // 종전에는 단 전체 높이와만 견줘, 문단 보호로 빈 쪽에 다시 온 20pt·160% 세 줄 문단(상자
         // 하단 84)이 두 줄 각주를 품고도 통째로 놓여 마지막 줄이 각주 영역을 덮었다(전진량 판정일
-        // 때는 문단 높이 116 > 100이라 우연히 나뉘었다). 그렇게 나누는 것은 부분 채운 쪽의 진입
-        // 분할과 같은 게이트(`canSplitAtEntry` — 조각별 각주 귀속·문단 머리 컨트롤·캐시 줄 수)를
-        // 통과할 때만이다 — 못 지나면 종전처럼 통째로 둔다(나누면 각주가 마지막 조각 쪽으로 간다).
+        // 때는 문단 높이 116 > 100이라 나뉘었다).
+        //
+        // 부분 채운 쪽의 진입 분할 게이트(`canSplitAtEntry` — 조각별 각주 귀속·문단 머리 컨트롤·
+        // 캐시 줄 수)를 못 지나는 문단도 각주 위 판정에서 기준(#222 이전)의 초과 문단 분할은 그대로
+        // 받는다 (PR 리뷰 — 쪽마다 번호를 새로 매기는 구역의 같은 문단은 마지막 줄의 각주를 품고도
+        // 통째로 놓여 그 각주를 덮었다). 기준은 문단 높이(`paragraphHeight` — 위 간격 + 전진량 합 +
+        // 아래 간격)가 단보다 크면 나눴다. 각주 위 판정에서는 게이트를 못 지나는 문단을 그보다 넓게
+        // 나누지 않는다 — 조각별 귀속이 없어 각주가 마지막 조각 쪽으로 가고 문단 전체 예약이 쪽마다
+        // 빠지며(그 예약이 쪽만큼 크면 쪽마다 한 줄씩 흘린다), 문단 머리 컨트롤은 뒤 조각 쪽에서
+        // 방출된다. 상자가 단 자체를 넘으면(`exceedsColumn`) 게이트와 무관하게 나눈다 — 고정 줄
+        // 간격이 상자보다 작아 문단 높이는 단에 들어가도 상자가 넘는 문단도 그렇다(#222).
+        //
+        // 줄의 각주가 그 줄과 함께 안 들어갈 때 한글은 줄을 남기고 각주만 본문 아래 남은 자리까지
+        // 싣고 나머지를 다음 쪽에 잇는다 (한글 12.30 실측 2026-09-24, 쪽마다 번호 구역의 20pt·160%
+        // 20줄 문단: 마지막 줄 두 줄 각주면 20줄을 모두 남기고 각주 첫 줄만 싣는다; 첫 줄 각주면
+        // 우리처럼 19 + 1로 나눈다). 흐름 경로에는 그 이월이 없어(#207의 남은 격차) 줄을 각주와 함께
+        // 넘긴다 — 본문이 각주를 덮지 않게 하는 기준 동작이다.
         let exceedsColumn = !HwpPageEndFit.fits(fitHeight, in: currentColumnFrame.height)
         let exceedsBodyAboveNotes = !HwpPageEndFit.fits(
             fitHeight, in: effectiveContentHeight - anticipatedFootnotes
-        ) && canSplitAtEntry(split, cacheHeightUsed: cacheHeightUsed)
+        ) && (
+            paragraphHeight > currentColumnFrame.height
+                || canSplitAtEntry(split, cacheHeightUsed: cacheHeightUsed)
+        )
         if paragraphFrame.lines.count > 1, exceedsColumn || exceedsBodyAboveNotes {
             appendFlowParagraphAcrossPages(split)
             return true

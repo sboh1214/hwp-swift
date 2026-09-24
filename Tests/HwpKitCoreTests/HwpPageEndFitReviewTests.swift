@@ -163,31 +163,7 @@ import XCTest
         /// 들어가도 각주 영역(8.5 + 5.67 + 16 + 10 = 40.17)을 빼면 안 들어가므로 통째로 놓지 않고
         /// 나눈다: 둘째 줄 상자 바닥 52 + 40.17은 들고 셋째 줄 84 + 40.17은 안 든다.
         func testParagraphOnAnEmptyPageLeavesRoomForItsFootnotes() async throws {
-            var host = try HwpSynthetic.splitParagraphWithNoteMarkers(
-                lines: [
-                    (characters: 3, marker: true), (characters: 3, marker: false),
-                    (characters: 3, marker: false),
-                ],
-                segments: []
-            )
-            host.paraHeader = try HwpSynthetic.outlineParaHeader(paraShapeId: 1, paraStyleId: 0)
-            var runs = CoreHwp.HwpParaCharShape()
-            runs.startingIndex = [0]
-            runs.shapeId = [5] // 20pt
-            host.paraCharShape = runs
-            host.ctrlHeaderArray = [.footnote(HwpSynthetic.listControl(
-                ctrlId: .footnote,
-                paragraphs: [HwpSynthetic.noteParagraph(
-                    " 첫 줄\n둘째 줄",
-                    autoNumber: HwpSynthetic.autoNumberControl(kind: 1, decorationTail: ")")
-                )]
-            ))]
-            // 구역 첫 문단 16 + 채움 두 줄 32 → 남은 52: 문단 보호라 통째로 둘째 쪽(빈 쪽)에서 다시 처리.
-            let layout = try await Fit.layout(
-                host, remaining: 52,
-                index: Fit.index(shape: Fit.percentShape(property1: 1 << 18, spacingBottom: 4000)),
-                fillerLines: 2
-            )
+            let layout = try await Self.keptTogetherNoteLayout(markerLine: 0)
             let notePages = layout.pages.indices.filter { page in
                 layout.pages[page].blocks.contains { $0.kind == .footnote }
             }
@@ -204,6 +180,64 @@ import XCTest
             // 남긴 둘째 줄 상자 바닥(32 + 20)은 구분선 위다.
             expect(fragment.frame.minY + 52).to(beLessThan(payload.separatorLine.minY))
             expect(layout.targets[2].first?.frame.minY).to(beCloseTo(0, within: 0.001))
+        }
+
+        /// 진입 분할 게이트(`canSplitAtEntry`)를 못 지나는 문단도 기준(#222 이전)의 초과 문단 분할은
+        /// 그대로 받는다 (#222 PR 리뷰) — 쪽마다 각주 번호를 새로 매기는 구역(표 134 numberingMode 2)은
+        /// 조각별 각주 귀속을 못 해 게이트에 걸린다. 같은 문단(문단 높이 116 > 본문 100)의 **셋째 줄**에
+        /// 두 줄짜리 각주를 달면 종전에는 상자 하단 84가 단에 들어간다며 통째로 놓아 셋째 줄 상자
+        /// (64~84)가 각주(74~100)를 덮었다. 기준처럼 나눠 두 줄을 남기고 셋째 줄을 각주와 함께 넘긴다.
+        func testPerPageNumberingParagraphKeepsTheBaseOverflowSplit() async throws {
+            let layout = try await Self.keptTogetherNoteLayout(markerLine: 2, footnoteNumberingMode: 2)
+            let notePages = layout.pages.indices.filter { page in
+                layout.pages[page].blocks.contains { $0.kind == .footnote }
+            }
+            // 뒤 문단은 셋째 줄의 전진량 + 아래 간격(52) 뒤 상자 10이 각주 영역 위(59.83)에 안 들어
+            // 넷째 쪽이다.
+            expect(layout.targets.map(\.count)) == [0, 1, 1, 0]
+            expect(notePages) == [2]
+            expect(layout.follower?.page) == 3
+            guard layout.targets.count == 4 else { return }
+            let kept = try XCTUnwrap(layout.targets[1].first)
+            expect(kept.frame.minY).to(beCloseTo(0, within: 0.001))
+            expect(kept.frame.height).to(beCloseTo(64, within: 0.001))
+            let moved = try XCTUnwrap(layout.targets[2].first)
+            expect(moved.frame.minY).to(beCloseTo(0, within: 0.001))
+            let note = try XCTUnwrap(layout.pages[2].blocks.first { $0.kind == .footnote })
+            guard case let .footnote(payload) = note.payload else {
+                fail("각주 블록의 payload가 각주가 아니다")
+                return
+            }
+            // 넘긴 셋째 줄의 상자 바닥(20)은 구분선 위다.
+            expect(moved.frame.minY + 20).to(beLessThan(payload.separatorLine.minY))
+        }
+
+        /// 문단 보호(20pt·160% 세 줄, 아래 간격 20)가 둘째 쪽(빈 쪽)으로 통째로 옮기는 각주 문단 —
+        /// `markerLine`째 줄에 두 줄짜리 각주를 단다. 구역 첫 문단 16 + 채움 두 줄 32 → 남은 52.
+        private static func keptTogetherNoteLayout(
+            markerLine: Int, footnoteNumberingMode: UInt32 = 0
+        ) async throws -> Fit.Layout {
+            var host = try HwpSynthetic.splitParagraphWithNoteMarkers(
+                lines: (0 ..< 3).map { (characters: 3, marker: $0 == markerLine) },
+                segments: []
+            )
+            host.paraHeader = try HwpSynthetic.outlineParaHeader(paraShapeId: 1, paraStyleId: 0)
+            var runs = CoreHwp.HwpParaCharShape()
+            runs.startingIndex = [0]
+            runs.shapeId = [5] // 20pt
+            host.paraCharShape = runs
+            host.ctrlHeaderArray = [.footnote(HwpSynthetic.listControl(
+                ctrlId: .footnote,
+                paragraphs: [HwpSynthetic.noteParagraph(
+                    " 첫 줄\n둘째 줄",
+                    autoNumber: HwpSynthetic.autoNumberControl(kind: 1, decorationTail: ")")
+                )]
+            ))]
+            return try await Fit.layout(
+                host, remaining: 52,
+                index: Fit.index(shape: Fit.percentShape(property1: 1 << 18, spacingBottom: 4000)),
+                fillerLines: 2, footnoteNumberingMode: footnoteNumberingMode
+            )
         }
 
         /// 줄 캐시 없는 각주의 스택은 **모든 줄 상자 아래의 최댓값**까지다 (#222 PR 리뷰) — 고정 16pt

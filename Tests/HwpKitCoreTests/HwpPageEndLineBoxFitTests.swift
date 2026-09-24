@@ -95,13 +95,15 @@ import XCTest
 
         /// 첫 쪽에 `remaining`pt를 남기고 대상 문단과 뒤 문단을 놓는다 — 구역 첫 문단 16 + 채움
         /// `fillerLines`줄. `columns`가 2면 두 단(간격 10pt)이고 남은 자리는 첫 단의 것이다.
+        /// `footnoteNumberingMode`는 각주 모양의 번호 매김 방식(표 134 bits 10-11)이다.
         static func layout(
             _ target: CoreHwp.HwpParagraph,
             remaining: CGFloat,
             index: HwpIndex,
             fillerLines: Int = 1,
             columns: Int = 1,
-            divider: Bool = false
+            divider: Bool = false,
+            footnoteNumberingMode: UInt32 = 0
         ) async throws -> Layout {
             let filler = try HwpSynthetic.textParagraph(
                 (1 ... fillerLines).map { "채움 \($0)" }.joined(separator: "\n")
@@ -110,10 +112,13 @@ import XCTest
                 .build(paragraph: try HwpSynthetic.textParagraph("가"))
             let columnWidth = Support.columnWidth(charactersPerLine: 30, in: reference)
             let contentHeight = 16 + 16 * CGFloat(fillerLines) + remaining
-            var controls: [CoreHwp.HwpCtrlId] = [.section(Support.sectionDef(
+            var sectionDef = Support.sectionDef(
                 columnWidth: columnWidth * CGFloat(columns) + 10 * CGFloat(columns - 1),
                 contentHeight: contentHeight
-            ))]
+            )
+            sectionDef.footNoteShape.property = sectionDef.footNoteShape.property & ~(0b11 << 10)
+                | footnoteNumberingMode << 10
+            var controls: [CoreHwp.HwpCtrlId] = [.section(sectionDef)]
             if columns > 1 {
                 var column = HwpSynthetic.column(count: columns, spacing: 1000)
                 column.dividerType = divider ? 1 : 0
