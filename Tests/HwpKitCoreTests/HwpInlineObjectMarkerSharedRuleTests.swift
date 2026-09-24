@@ -37,6 +37,30 @@ import XCTest
             expect(Self.isStale(cache, large)) == true
         }
 
+        /// 개체 마커의 글꼴을 빼도 문단 끝 글자(CR)의 크기는 본다 (#217 PR 리뷰) — 한글은 CR 크기를
+        /// 마지막 줄 상자에 넣으므로(#206) 40pt 마커의 8pt 그림 + 40pt CR 문단(`O2` 꼴)의 신선한 캐시는
+        /// 4000이고 1000은 낡았다. 마커를 빼면 그 40pt를 알려 주는 것은 CR뿐이다 — 안 보면 낡은 캐시를
+        /// 믿어 그려지는 40pt 줄이 뒤 문단을 덮는다. CR이 10pt면 1000이 신선하고, 10pt 글 + 40pt CR도
+        /// 1000이면 낡았다. 다음 쪽으로 이어지는 조각의 끝은 문단 끝이 아니라 CR을 보지 않는다.
+        func testParagraphEndSizeStillMakesAShortCacheStale() throws {
+            let short = try Self.lineCache(height: 1000)
+            let objectOnly = Lines.marker(height: 8, attributes: Fixtures.attributes(size: 40))
+            let bigEnd = Lines.withEndSize(40, objectOnly)
+            expect(Self.isStale(short, bigEnd)) == true
+            expect(Self.isStale(try Self.lineCache(height: 4000), bigEnd)) == false
+            expect(Self.isStale(short, Lines.withEndSize(10, objectOnly))) == false
+
+            let text = NSAttributedString(string: "ab", attributes: Fixtures.attributes(size: 10))
+            expect(Self.isStale(short, Lines.withEndSize(40, text))) == true
+
+            let continued = NSMutableAttributedString(attributedString: bigEnd)
+            continued.addAttribute(
+                HwpAttributedStringKey.continuedParagraphFragment, value: NSNumber(value: true),
+                range: NSRange(location: 0, length: continued.length)
+            )
+            expect(Self.isStale(short, continued)) == false
+        }
+
         /// 단 구분선 끝의 마지막 줄 근사도 끝 글자가 개체 마커면 줄 상자를 개체 높이·문단 끝 글자로
         /// 잡는다 — 10pt 글 + 40pt 마커의 8pt 그림 + 10pt 문단 끝(O1 꼴) 줄의 줄 간격 몫은 최소 12 →
         /// 2, 고정 30 → 20, 비율 160% → 24(여분은 마커 기준)이고 렌더가 그린 마지막 줄의 전진량 − 상자와

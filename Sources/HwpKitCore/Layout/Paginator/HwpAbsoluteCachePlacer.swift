@@ -292,9 +292,9 @@ struct HwpAbsoluteCachePlacer {
 
     /// 캐시가 stale한지 — 캐시 줄 높이 (h)보다 큰 글자 크기가 선언되어 있으면
     /// 캐시가 현재 내용과 안 맞는 저장본이다 (신선한 캐시는 h ≥ 글자 크기).
-    /// 폰트 대체와 무관하다: CT 폰트 포인트 크기는 요청 크기를 유지한다.
-    /// 줄 공간을 예약한 개체 마커의 글자 모양은 보지 않는다 — 한글은 그 크기를 줄 상자에 넣지
-    /// 않아 신선한 캐시의 h가 그보다 작다 (#217: 10pt 글 + 40pt 마커의 8pt 그림 줄 `vertsize` 1000).
+    /// 폰트 대체와 무관하다: CT 폰트 포인트 크기는 요청 크기를 유지한다. 개체 마커의 글자 모양은
+    /// 안 보고(#217: 한글은 줄 상자에 넣지 않는다 — 40pt 마커의 8pt 그림 줄 `vertsize` 1000) 문단 끝
+    /// 글자(CR)의 기본 크기는 본다 (#206: 마지막 줄 상자에 든다 — 마커로 끝나는 문단의 40pt는 CR만 안다).
     static func cacheIsStale(
         run: [CoreHwp.HwpParaLineSegInternal],
         attributedString: NSAttributedString
@@ -306,7 +306,7 @@ struct HwpAbsoluteCachePlacer {
         guard cacheHeightPoints > 0, attributedString.length > 0,
               !HwpTextRunBuilder.isEmptyParagraphAnchor(attributedString)
         else { return false }
-        var maxFontSize: CGFloat = 0
+        var maxFontSize = HwpDrawnTextLayout.paragraphEndBaseFontSize(of: attributedString)
         attributedString.enumerateAttributes(
             in: NSRange(location: 0, length: attributedString.length)
         ) { attributes, _, _ in

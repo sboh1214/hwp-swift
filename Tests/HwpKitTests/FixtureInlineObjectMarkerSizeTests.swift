@@ -1,5 +1,5 @@
 import CoreGraphics
-import CoreHwp
+@testable import CoreHwp
 import Foundation
 import HwpKit
 import HwpKitCore
@@ -92,6 +92,42 @@ final class FixtureInlineObjectMarkerSizeTests: XCTestCase {
         }
     }
 
+    /// 낡은 줄 캐시 — 개체 마커로 끝나는 문단의 문단 끝 글자(CR)가 캐시 줄보다 크면 그 캐시는
+    /// 낡았다 (#217 PR 리뷰). 개체 마커의 글꼴은 낡음 판정에서 빠지므로(#217) 그런 문단의 40pt를
+    /// 알려 주는 것은 CR의 기본 크기뿐이다 — 한글도 CR 크기를 마지막 줄 상자에 넣는다(#206).
+    ///
+    /// `E1`(10pt 글 + 40pt 마커의 8pt 그림 + 40pt CR)의 캐시 줄을 10pt로 낮추고 같은 쪽 뒤 문단의
+    /// 캐시 위치를 그만큼(30pt) 당겨, E1의 CR이 10pt이던 때 저장된 캐시처럼 만든다. 그 캐시를 믿으면
+    /// E1의 그려지는 줄 상자(40)가 뒤 `O1` 줄을 덮는다. 낡은 캐시로 판정하면 E1을 다시 조판한 높이로
+    /// 놓고 뒤 문단을 30pt 밀어 한글이 저장한 자리(`O1` 641.7 · `O2` 701.2)로 온다. 두 포맷 모두.
+    func testStaleCacheIsDetectedByTheParagraphEndSizeBehindAnObjectMarker() async throws {
+        for hwpx in [false, true] {
+            let label = hwpx ? "HWPX" : "HWP"
+            let pages = try await Self.pages(hwpx: hwpx) { paragraphs in
+                try Self.shrinkingCache(of: "E1 ", in: paragraphs, to: 1000, pullingFollowers: true)
+            }
+            let lines = Self.drawnLines(in: pages).filter { $0.page == 0 }
+            let expected = Self.hancomLines.filter { $0.page == 0 }
+            expect(lines.map(\.baseline))
+                .to(beCloseTo(expected.map(\.baseline), within: 0.011), description: label)
+        }
+    }
+
+    /// 리뷰의 재현 — 그림만 있는 `O2`(40pt 마커의 8pt 그림 + 40pt CR)의 캐시 줄을 10pt로 낮추면
+    /// 그 문단 블록은 캐시 높이(10 + 24)가 아니라 다시 조판한 높이(40 + 24)다. 두 포맷 모두.
+    func testStaleCacheOfAnObjectOnlyParagraphTakesTheReflowedHeight() async throws {
+        for hwpx in [false, true] {
+            let label = hwpx ? "HWPX" : "HWP"
+            let pages = try await Self.pages(hwpx: hwpx) { paragraphs in
+                try Self.shrinkingCache(of: nil, in: paragraphs, to: 1000, pullingFollowers: false)
+            }
+            let block = pages.first?.blocks.filter { $0.kind == .text }
+                .max { $0.frame.minY < $1.frame.minY }
+            expect(block.map { Double($0.frame.height) })
+                .to(beCloseTo(64, within: 0.011), description: label)
+        }
+    }
+
     // MARK: 헬퍼
 
     /// 줄 하나 — 쪽(0-기준), 쪽 좌표 베이스라인, 첫 보이는 글자 (`hancomLines`의 규약).
@@ -135,12 +171,17 @@ final class FixtureInlineObjectMarkerSizeTests: XCTestCase {
 
     /// 문서의 모든 쪽 — `dropCaches`면 줄 캐시 없이 조판한다.
     private static func pages(hwpx: Bool, dropCaches: Bool) async throws -> [HwpPage] {
+        try await pages(hwpx: hwpx) { dropCaches ? droppingLineCaches($0) : $0 }
+    }
+
+    /// 문서의 모든 쪽 — 최상위 문단을 `edit`으로 바꾼 뒤 조판한다.
+    private static func pages(
+        hwpx: Bool, editing edit: ([CoreHwp.HwpParagraph]) throws -> [CoreHwp.HwpParagraph]
+    ) async throws -> [HwpPage] {
         let file = try CoreHwp.HwpFile(fromPath: fixtureURL(hwpx: hwpx).path)
         var sections = file.displaySectionArray
-        if dropCaches {
-            for index in sections.indices {
-                sections[index].paragraph = droppingLineCaches(sections[index].paragraph)
-            }
+        for index in sections.indices {
+            sections[index].paragraph = try edit(sections[index].paragraph)
         }
         let paginator = HwpPaginator(
             sections: sections, index: HwpIndex(from: file), fontResolver: .testDeterministic,
@@ -231,5 +272,58 @@ final class FixtureInlineObjectMarkerSizeTests: XCTestCase {
                 .map { (pageIndex, $0) }
         }
         return tops
+    }
+
+    /// 1쪽 최상위 문단 가운데 `prefix`로 시작하는 문단(nil이면 1쪽 마지막 문단 — 그림만 있는
+    /// `O2`)의 캐시 줄 높이를 `height`(HWPUNIT)로 낮춘다 — 베이스라인도 0.85배로. `pullingFollowers`면
+    /// 같은 쪽 뒤 문단의 캐시 위치를 줄어든 만큼 당겨, 그 크기로 저장된 캐시처럼 만든다.
+    private static func shrinkingCache(
+        of prefix: String?, in paragraphs: [CoreHwp.HwpParagraph],
+        to height: Int32, pullingFollowers: Bool
+    ) throws -> [CoreHwp.HwpParagraph] {
+        // 2쪽은 쪽 나누기가 걸린 `N1`부터다.
+        let pageBreak = try XCTUnwrap(paragraphs.firstIndex { paragraphText($0).hasPrefix("N1 ") })
+        let target = try XCTUnwrap(prefix.map { prefix in
+            paragraphs.firstIndex { paragraphText($0).hasPrefix(prefix) }
+        } ?? pageBreak - 1)
+        var edited = paragraphs
+        let old = try XCTUnwrap(edited[target].paraLineSeg.paraLineSegInternalArray.first)
+        edited[target].paraLineSeg = try lineSeg(edited[target], height: height)
+        guard pullingFollowers else { return edited }
+        for index in (target + 1) ..< pageBreak {
+            edited[index].paraLineSeg = try lineSeg(
+                edited[index], shift: height - old.lineHeight
+            )
+        }
+        return edited
+    }
+
+    /// 문단 줄 캐시를 다시 만든다 — 줄마다 위치에 `shift`를 더하고, `height`가 있으면 줄 높이를
+    /// 그 값으로·베이스라인을 그 0.85배로 바꾼다.
+    private static func lineSeg(
+        _ paragraph: CoreHwp.HwpParagraph, shift: Int32 = 0, height: Int32? = nil
+    ) throws -> CoreHwp.HwpParaLineSeg {
+        var payload = Data()
+        for segment in paragraph.paraLineSeg.paraLineSegInternalArray {
+            let lineHeight = height ?? segment.lineHeight
+            for value in [
+                Int32(bitPattern: segment.textStartingIndex), segment.lineLocation + shift,
+                lineHeight, height ?? segment.textHeight,
+                height.map { $0 * 85 / 100 } ?? segment.baselineDistance, segment.lineSpacing,
+                segment.startingLocation, segment.width, Int32(bitPattern: segment.property),
+            ] {
+                withUnsafeBytes(of: value.littleEndian) { payload.append(contentsOf: $0) }
+            }
+        }
+        return try CoreHwp.HwpParaLineSeg.load(payload)
+    }
+
+    /// 문단의 보이는 글자 (제어 문자 제외).
+    private static func paragraphText(_ paragraph: CoreHwp.HwpParagraph) -> String {
+        (paragraph.paraText?.charArray ?? []).compactMap { char -> String? in
+            guard char.type == .char, char.value >= 32, let scalar = UnicodeScalar(char.value)
+            else { return nil }
+            return String(scalar)
+        }.joined()
     }
 }

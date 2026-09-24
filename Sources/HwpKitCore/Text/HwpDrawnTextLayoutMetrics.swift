@@ -267,10 +267,23 @@ extension HwpDrawnTextLayout {
               let reserved = attributes[HwpAttributedStringKey.inlineObjectHeight] as? NSNumber,
               reserved.doubleValue > 0
         else { return (text, text) }
-        let paragraphEnd = endsParagraph(
-            CFRange(location: 0, length: attributedString.length), in: attributedString
-        ) ? paragraphEndBaseFontSize(in: attributes) : 0
-        return (max(CGFloat(reserved.doubleValue), paragraphEnd), text)
+        let line = max(
+            CGFloat(reserved.doubleValue), paragraphEndBaseFontSize(of: attributedString)
+        )
+        return (line, text)
+    }
+
+    /// 문자열이 문단을 끝내면(`endsParagraph` — 다음 단·쪽으로 이어지는 조각이 아니면) 그 문단 끝
+    /// 글자(CR)의 기본 크기(`hwp.paragraphEndBaseFontSize`, #206), 아니면 0. 한글은 이 크기를 문단
+    /// 마지막 줄의 줄 상자에 넣는다 — 개체 마커로 끝나는 문단에서도 (#217: 40pt 마커의 8pt 그림만
+    /// 있는 문단은 CR이 10pt면 `vertsize` 1000, 40pt면 4000).
+    static func paragraphEndBaseFontSize(of attributedString: NSAttributedString) -> CGFloat {
+        let length = attributedString.length
+        guard length > 0, endsParagraph(CFRange(location: 0, length: length), in: attributedString)
+        else { return 0 }
+        return paragraphEndBaseFontSize(
+            in: attributedString.attributes(at: length - 1, effectiveRange: nil)
+        )
     }
 
     /// run이 MS 워드 호환 문서의 것인지 — 조판이 한글 문서가 아닌 문서의 모든 run에 싣는
