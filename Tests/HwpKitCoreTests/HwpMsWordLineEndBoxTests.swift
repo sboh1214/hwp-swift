@@ -11,7 +11,8 @@ import XCTest
     /// 상자에 드는 규칙 (#223) — 글자 run 상자들의 축별 최댓값 T에 끝 글자 상자 C와 개체 높이
     /// O를 **쌓는다**: 높이 = T 높이, 다만 C가 T보다 높으면 C 높이 + T의 베이스라인 아래 몫, O가
     /// T보다 높으면 O + T의 아래 몫과 견줘 큰 것. 베이스라인 = max(T, C, O). 비율 여분은
-    /// max(T, C) 기준이고, 밑줄은 줄 상자 가장자리에서 **T의** cell × 0.129만큼 안쪽이다.
+    /// max(T, C) 기준이고, 밑줄은 줄 상자 가장자리에서 **T의** cell × 0.129만큼 안쪽이다 (T가
+    /// 없으면 C의 cell, 개체만 있는 줄은 개체 마커 글꼴의 cell).
     ///
     /// 오라클은 한글 12.30.0 (build 6446, 2026-09-25)이 `targetProgram="MS_WORD"` 합성 HWPX
     /// (줄 캐시 없음)를 다시 저장한 줄 캐시(`vertsize`·`textheight`·`baseline`·`spacing`)와 PDF
@@ -347,6 +348,44 @@ import XCTest
             let anchorMetrics = HwpDrawnTextLayout.lineMetrics(of: anchorLine.line, in: anchors)
             expect(anchorMetrics.boxHeight).to(beCloseTo(menlo16.lineHeight, within: 0.001))
             expect(anchorMetrics.baselineAnchor).to(beCloseTo(menlo16.baseline, within: 0.001))
+        }
+
+        /// 개체가 있는 줄에서는 폭·높이 0인 마커(구역 첫 문단의 구역·단 정의, 책갈피, 필드 표식)의
+        /// 글꼴도 글자 상자가 되지 않는다 — 한글 12.30 실측 (2026-09-25 `mk223`, #223 PR 리뷰):
+        /// 자동 줄바꿈으로 30pt 표만 남은 앞 줄에 구역·단 정의나 10·16pt 책갈피가 함께 있어도
+        /// 3000/3000·160% `spacing` 600이다 (16pt 책갈피의 크기도 여분에 들지 않는다). 그 마커를
+        /// 글자 상자로 삼으면 30 + 그 글꼴의 아래 몫이 된다. 글자가 있는 개체 줄의 장식선 cell은
+        /// 개체 마커가 다른 글꼴이어도 글자 상자의 것이다.
+        func testAnchorMarkersDoNotSizeAnObjectLine() throws {
+            try skipUnlessOracleFonts()
+            let marker = Self.attributes("Apple SD Gothic Neo", 10)
+            var anchorAttributes = Self.attributes("Menlo", 16)
+            anchorAttributes[kCTRunDelegateAttributeName as Key] =
+                HwpInlineObjectReservation.runDelegate(width: 0, height: 0)
+            let string = Self.finish([
+                NSAttributedString(string: "\u{FFFC}", attributes: anchorAttributes),
+                LineBoxFixtures.objectMarker(height: 30, attributes: marker),
+                LineBoxFixtures.objectMarker(height: 30, attributes: marker),
+            ], endBox: Self.box("Menlo", 10))
+            let drawn = Self.lines(string, width: 30)
+            expect(drawn.count) == 2
+            let first = try XCTUnwrap(drawn.first)
+            expect(first.endsParagraph).to(beFalse())
+            let metrics = HwpDrawnTextLayout.lineMetrics(of: first.line, in: string)
+            expect(metrics.boxHeight).to(beCloseTo(30, within: 0.001))
+            expect(metrics.baselineAnchor).to(beCloseTo(30, within: 0.001))
+            expect(metrics.textBoxHeight).to(beCloseTo(10, within: 0.001))
+            let appleSD20 = Self.box("Apple SD Gothic Neo", 20)
+            let band = Self.finish([
+                Self.text("가나", "Apple SD Gothic Neo", 20),
+                LineBoxFixtures.objectMarker(height: 30, attributes: Self.attributes("Menlo", 16)),
+            ], endBox: Self.box("Menlo", 20))
+            let bandLine = try XCTUnwrap(Self.lines(band).first)
+            let bandBox = try XCTUnwrap(
+                HwpDrawnTextLayout.msWordLineBox(of: bandLine.line, endsParagraph: true)
+            )
+            expect(bandBox.cellHeight) == appleSD20.cellHeight
+            expect(bandBox.cellHeight) != Self.box("Menlo", 16).cellHeight
         }
 
         /// 결합 문자열(각주·글상자 블록이 문단들을 `\n`으로 이은 것)의 문단 구분자는 앞 문단의

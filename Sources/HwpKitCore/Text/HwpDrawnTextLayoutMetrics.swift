@@ -47,10 +47,10 @@ extension HwpDrawnTextLayout {
         /// 않는다** — 한글 12.30 실측 (2026-09-20 `cm194-markers`): Apple SD/Menlo 10pt
         /// 줄(1559/1104)에 글자 모양이 함초롬돋움 10·20pt인 글자처럼 취급 표(높이 10.62pt)나
         /// 책갈피 컨트롤을 넣어도 `vertsize`·`baseline`이 1559·1104 그대로다 (함초롬돋움 상자
-        /// 1692/1266·3383/2531이 들면 달라졌을 값). 글자 run도 줄 끝 글자도 없는 줄은 줄
-        /// 공간을 **예약하지 않은** 마커(책갈피·자리 차지 개체 앵커)의 글꼴로 떨어지고, 줄
-        /// 공간을 예약한 개체 마커의 글꼴로는 끝내 떨어지지 않는다 — 그런 줄은 개체가 상자다
-        /// (`msWordObjectMarkerBox`). 한글 문서 줄이면 nil.
+        /// 1692/1266·3383/2531이 들면 달라졌을 값). 글자 run도 줄 끝 글자도 개체도 없는 줄만
+        /// 줄 공간을 **예약하지 않은** 마커(구역·단 정의, 책갈피, 자리 차지 개체 앵커)의 글꼴로
+        /// 떨어진다. 개체가 있는 줄은 어느 마커의 글꼴로도 떨어지지 않는다 — 그런 줄은 개체가
+        /// 상자다 (`msWordObjectMarkerBox`). 한글 문서 줄이면 nil.
         var msWordTextBox: HwpMsWordLineBox?
         /// MS 워드 호환 문서에서 줄을 끝내는 **줄 끝 글자의 상자** (pt) — 문단의 마지막 줄이면
         /// 문단 끝 글자(CR)의 상자(조판이 문단 전체에 실은 `hwp.msWordParagraphEndBox`), 한 줄
@@ -66,8 +66,10 @@ extension HwpDrawnTextLayout {
         /// 하나씩 놓인 문단의 앞 줄: 함초롬돋움 10pt 마커의 30pt 표 `vertsize` 30.00·`baseline`
         /// 30.00·160% `spacing` 6.00 = 0.6 × 마커 기본 크기, 16pt 마커면 9.60, Apple SD/Menlo
         /// 마커도 같고 셀 내용으로 16.92pt가 된 표는 16.92/16.92·6.00 — 마커 글꼴 상자
-        /// 16.92/12.66을 글자 상자로 삼으면 30pt 표 줄이 34.26, 여분이 10.16이 된다). 한글 문서
-        /// 줄이면 nil.
+        /// 16.92/12.66을 글자 상자로 삼으면 30pt 표 줄이 34.26, 여분이 10.16이 된다). 그 줄에
+        /// 폭·높이 0인 마커(구역 첫 문단의 구역·단 정의, 10·16pt 책갈피)가 함께 있어도 같다
+        /// (`mk223`: 3000/3000·600 — 16pt 책갈피의 크기도 여분에 들지 않는다). 한글 문서 줄이면
+        /// nil.
         var msWordObjectMarkerBox: HwpMsWordLineBox?
         /// MS 워드 호환 문서에서 비율 여분의 기준이 되는 기본 크기 — 글자 run과 **줄 공간을
         /// 예약한** 개체 마커의 기본 크기 최댓값. 같은 실측에서 20pt 글자 모양의 표 마커가
@@ -85,6 +87,8 @@ extension HwpDrawnTextLayout {
         ///   O가 **T보다 높으면** O + T의 베이스라인 아래 몫과 견줘 큰 것이다.
         /// - 장식선 기준 상자(`cellHeight`)는 T의 것 — 밑줄은 이 줄 상자의 가장자리에서 T의
         ///   0.129 cell만큼 안쪽에 놓인다 (`HwpDecorationLineGeometry.msWordUnderlineBelow`).
+        ///   T가 없는 줄은 줄 끝 글자 C의 cell, T도 C도 없이 개체만 있는 줄은 개체 마커 글꼴의
+        ///   cell이다.
         ///
         /// 한글 12.30 실측 (2026-09-25, `targetProgram="MS_WORD"` 합성 HWPX 4종 ~140문단을
         /// 한글이 다시 저장한 줄 캐시와 PDF; 함초롬돋움 상자 1.692/1.266em, 아래 몫 0.426em):
@@ -296,7 +300,8 @@ extension HwpDrawnTextLayout {
     /// 포함) 밑줄이 그 줄의 베이스라인 자리와 어긋나지 않는다. 장식선 기준 상자
     /// (`cellHeight`)는 글자 상자의 것이다 (#223 한글 PDF: 16pt 문단 끝 글자가 키운 10pt 밑줄
     /// 줄의 밑줄은 상자 바닥에서 1.71pt 위 — 산식 1.68, 30pt 표 줄의 위 밑줄은 표 윗변에서
-    /// 1.68pt 아래). 글자도 줄 끝 글자도 없이 개체만 있는 줄은 개체 마커 글꼴의 cell이다.
+    /// 1.68pt 아래). 글자가 없는 줄은 줄 끝 글자의 cell, 글자도 줄 끝 글자도 없이 개체만 있는
+    /// 줄은 개체 마커 글꼴의 cell이다.
     /// 한글 문서 줄이면 nil.
     public static func msWordLineBox(of line: CTLine, endsParagraph: Bool) -> HwpMsWordLineBox? {
         lineMetrics(of: line, endsParagraph: endsParagraph).msWordLineBox
@@ -376,8 +381,8 @@ extension HwpDrawnTextLayout {
 ///   줄 끝 글자뿐이다 (실측: 10pt 한 줄 끝 + 16pt CR의 빈 마지막 줄 2706/2025, 16pt 한 줄
 ///   끝 + 10pt CR은 1692/1266 = CR 상자만). 줄 끝 상자가 있으면 T에서 빠지고, 없으면(빈
 ///   문단 앵커는 문단 끝 상자를 싣지 않는다) 글자다.
-/// - 앵커 마커: 줄 공간을 예약하지 않은 run delegate(책갈피·필드 표식·자리 차지 개체
-///   앵커) — 글자가 하나도 없고 줄 끝 상자도 없을 때만 T로 떨어진다.
+/// - 앵커 마커: 줄 공간을 예약하지 않은 run delegate(구역·단 정의, 책갈피·필드 표식, 자리
+///   차지 개체 앵커) — 글자도 줄 끝 상자도 개체도 없을 때만 T로 떨어진다.
 /// - 개체 마커: 줄 공간을 예약한 run delegate(글자처럼 취급 개체) — T로 떨어지지 않는다.
 ///   개체만 있는 줄은 개체가 상자이고(`LineMetrics.msWordLineBox`) 이 글꼴은 그 줄의 장식선
 ///   기준 상자로만 쓴다 (#223 PR 리뷰 실측: 자동 줄바꿈으로 나뉜 30pt 표 줄 30/30).
@@ -425,7 +430,11 @@ private struct HwpMsWordRunFonts {
         // 대역이라 어느 쪽에도 넣지 않는다.
         let lineEnd = paragraphEnd ?? Self.union(lineBreaks)
         let glyphs = lineEnd == nil ? text + endStandIns : text
-        let chosen = glyphs.isEmpty && lineEnd == nil ? anchorMarkers : glyphs
+        // 앵커 마커는 개체가 없는 줄에서만 T의 대역이다 — 개체가 있으면 상자는 개체다 (한글
+        // 12.30 실측 `mk223`: 구역 첫 문단의 구역·단 정의나 10·16pt 책갈피가 자동 줄바꿈된 30pt
+        // 표와 한 줄에 있어도 3000/3000·160% `spacing` 600).
+        let bare = glyphs.isEmpty && lineEnd == nil && objectMarkers.isEmpty
+        let chosen = bare ? anchorMarkers : glyphs
         return (Self.union(chosen), lineEnd, Self.union(objectMarkers))
     }
 

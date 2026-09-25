@@ -38,7 +38,8 @@ final class HwpMsWordLineBoxTests: XCTestCase {
     /// 상자에서 밑줄은 **줄 상자 가장자리**에서 글자 상자의 0.15 cell 안쪽이다: 기본 init은
     /// 종전 정의(줄 상자 / 1.3, descent = cell − ascent)와 같은 값이고, cell을 준 상자는
     /// descent = (줄 상자 − 베이스라인) − 0.15 cell이다 (함초롬돋움 10pt 글 + 16pt 끝 글자:
-    /// 31.32/20.25, cell 13.02 → descent 9.12, 한글 PDF 밑줄 중심 9.36 = 9.12 + 0.021 cell).
+    /// 31.32/20.25, cell 13.02 → descent 9.12, 밑줄 중심 산식 9.39 = 9.12 + 0.021 cell — 한글
+    /// PDF 9.36).
     /// `scaled`는 세 값을 함께 곱하고, `union`은 cell도 최댓값이다.
     func testStoredCellHeightKeepsTheDecorationBoxOfTheTextRuns() {
         let plain = HwpMsWordLineBox(lineHeight: 16.92, baseline: 12.66)
@@ -47,7 +48,9 @@ final class HwpMsWordLineBoxTests: XCTestCase {
         let stacked = HwpMsWordLineBox(lineHeight: 31.32, baseline: 20.25, cellHeight: plain.cellHeight)
         expect(stacked.ascent).to(beCloseTo(20.25 - 0.15 * plain.cellHeight, within: 0.0001))
         expect(stacked.descent).to(beCloseTo(31.32 - 20.25 - 0.15 * plain.cellHeight, within: 0.0001))
-        expect(stacked.descent + 0.021 * plain.cellHeight).to(beCloseTo(9.36, within: 0.12))
+        expect(stacked.descent + 0.021 * plain.cellHeight).to(beCloseTo(9.39, within: 0.01))
+        // 한글 PDF(9.36)와는 한글의 글꼴 상자 반올림(16.92)·0.12pt 격자만큼 갈린다.
+        expect(stacked.descent + 0.021 * plain.cellHeight).to(beCloseTo(9.36, within: 0.05))
         let scaled = HwpMsWordLineBox(lineHeight: 1, baseline: 0.5, cellHeight: 0.4).scaled(by: 10)
         expect(scaled.cellHeight).to(beCloseTo(4, within: 0.0001))
         expect(scaled.lineHeight).to(beCloseTo(10, within: 0.0001))
