@@ -103,13 +103,17 @@ final class FixtureDecorationLineRenderTests: XCTestCase {
         }
     }
 
-    static func raster(_ id: String, hwpx: Bool) async throws -> Raster {
+    /// 픽스처 `id`의 `pageIndex`번째 쪽(0부터)을 4px/pt로 그린 래스터.
+    static func raster(_ id: String, hwpx: Bool, pageIndex: Int = 0) async throws -> Raster {
         let url = FixtureRoot.url(from: #file, subdirectory: hwpx ? "HwpxFixtures" : "Fixtures")
             .appendingPathComponent(id)
             .appendingPathComponent(hwpx ? "document.hwpx" : "document.hwp")
         let document = try await HwpDocumentLoader(fontResolver: .testDeterministic)
             .load(from: url)
-        let page = try XCTUnwrap(document.pages.first)
+        let page = try XCTUnwrap(
+            document.pages.indices.contains(pageIndex) ? document.pages[pageIndex] : nil,
+            "\(id) \(pageIndex + 1)쪽"
+        )
         let pixelWidth = Int(page.size.width * scale)
         let pixelHeight = Int(page.size.height * scale)
         let image = try await HwpPageBitmapRenderer.render(

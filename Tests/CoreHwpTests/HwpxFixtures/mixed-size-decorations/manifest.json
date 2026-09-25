@@ -1,0 +1,64 @@
+{
+  "id": "mixed-size-decorations",
+  "generationTool": "한컴오피스 한글 12.30.0 (6446) macOS",
+  "source": "HWP fixture mixed-size-decorations와 같은 편집 세션에서 파일 > 다른 이름으로 저장하기 > 한글 표준 문서 (*.hwpx)로 저장 (System Events 접근성 자동화)",
+  "owpmlVersion": "5.1.1.0",
+  "sourceHwpFixture": "mixed-size-decorations",
+  "features": [
+    "hwpx",
+    "derived-from-hwp",
+    "char-shape-property",
+    "table",
+    "paragraph-text",
+    "multi-paragraph",
+    "doc-info",
+    "doc-properties",
+    "preview-text",
+    "preview-image"
+  ],
+  "expectations": {
+    "binDataCount": 0,
+    "borderFillCount": 3,
+    "bulletCount": 0,
+    "charShapeCount": 17,
+    "faceNamesKorean": [
+      "함초롬돋움",
+      "함초롬바탕",
+      "Apple SD 산돌고딕 Neo"
+    ],
+    "numberingCount": 1,
+    "pageCount": 2,
+    "pageCountSource": "한글.app 12.30.0 실측 (2026-09-25, PDF로 저장하기 2쪽) = HwpKit 렌더 실측 (.testDeterministic) = HWP 쌍 쪽수",
+    "pageDef": {
+      "height": 84186,
+      "marginBottom": 4252,
+      "marginLeft": 8504,
+      "marginRight": 8504,
+      "marginTop": 5668,
+      "width": 59528
+    },
+    "paraShapeCount": 20,
+    "sectionCount": 1,
+    "sectionParagraphCounts": [
+      13
+    ],
+    "styleCount": 21,
+    "tabDefCount": 3,
+    "tableCellCounts": [
+      1,
+      1
+    ],
+    "visibleTextContains": [
+      "크기가 섞인 줄의 장식선",
+      "M1 가나Ag",
+      "M2 가나Ag",
+      "M5 가나Ag",
+      "M6 가나Ag",
+      "다음 줄Ag",
+      "M7 가나Ag",
+      "M8 가나Ag",
+      "M11 위첨자 뒤",
+      "M12 가나"
+    ]
+  }
+}

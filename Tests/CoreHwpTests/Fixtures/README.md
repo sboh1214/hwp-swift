@@ -234,6 +234,17 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   높이로 고쳐 쓰므로 `HwpKitTests/FixtureInlineTableActualHeightTests`가 높이를 원본 값으로
   되돌리고 줄 캐시를 지운 재조판을 저장된 줄 캐시·PDF 좌표(README의 표)와 대조한다. HWPX 쌍은
   `HwpxFixtures/inline-table-actual-height`.
+- `mixed-size-decorations`: **한글 문서**(호환 문서 대상 프로그램 `HWP201X`)의 한 줄에 크기가 다른
+  글자·문단 끝 글자·한 줄 끝(코드 10)·책갈피·글자처럼 취급 표를 섞고 글자 아래·위 밑줄·긴 점선 밑줄·
+  취소선을 실은 합성 HWPX(한글 슬롯 Apple SD 산돌고딕 Neo, 라틴 슬롯 Menlo, 기본 40pt·상대 크기 50%
+  글자와 상대 크기 50% 위 첨자 포함 12표본)를 Hancom Office HWP for macOS 12.30.0 build 6446으로
+  2026-09-25에 열어 `.hwp`·`.hwpx`로 저장(2쪽). 한글이 **밑줄을 줄 단위로** 놓는 규칙(#226)의 실물
+  근거다 — 위 가장자리 = 줄 상자(`vertsize`) 바닥, 글자 위 밑줄의 아래 가장자리 = 줄 상자 상단이고,
+  두께·선 모양 축척은 줄 **글자**의 기본 크기 최댓값(문단 끝 글자·한 줄 끝·책갈피·개체는 상자에만
+  든다)이며, 장식선 크기는 슬롯 상대 크기 전 글자 모양 기본 크기다. 같은 세션의 PDF 내보내기
+  좌표(README의 표)가 `HwpKitTests/FixtureDecorationLineRenderTests+LineWide`의 오라클이고 두
+  글꼴이 결정론 resolver의 글꼴과 같아 쪽 좌표를 기기 무관하게 핀한다. HWPX 쌍은
+  `HwpxFixtures/mixed-size-decorations`.
 - `ms-word-paragraph-end-box`: **MS 워드 호환 문서**(호환 문서 대상 프로그램 2)에 시스템 글꼴만
   (한글 슬롯 Apple SD 산돌고딕 Neo, 라틴 슬롯 Menlo·Helvetica·Times New Roman·Apple SD 산돌고딕
   Neo)으로 **문단 끝 글자**(CR)·**한 줄 끝 글자**(코드 10)의 글꼴 줄 상자가 본문 글자보다 큰 줄
