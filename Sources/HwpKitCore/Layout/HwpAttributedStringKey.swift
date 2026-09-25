@@ -85,12 +85,14 @@ public enum HwpAttributedStringKey {
     /// 실측, `HwpPageLayerDecorations.drawStrikethroughIfNeeded`). 글리프 그리기·기하
     /// 질의·서식 복사는 종전대로 합산 키만 본다.
     public static let scriptBaselineOffset = NSAttributedString.Key("hwp.scriptBaselineOffset")
-    /// 밑줄 여부 (글자 아래) — CT 밑줄 대신 렌더러가 베이스라인 아래
-    /// `underlineBelowCenterRatio`에 `decorationLineThicknessRatio` 두께로 직접
-    /// 그린다 (둘 다 글자 크기 비례, #176)
+    /// 밑줄 여부 (글자 아래) — CT 밑줄 대신 렌더러가 직접 그린다: 선의 위 가장자리가 줄
+    /// 상자 바닥(베이스라인 아래 `underlineBelowEdgeRatio` × 줄 상자 높이)에 붙고 두께는 줄
+    /// 글자 기본 크기 × `decorationLineThicknessRatio`다 (#176·#226 — 줄 단위,
+    /// `HwpDecorationLineGeometry.UnderlineReference`)
     public static let underlineStyle = NSAttributedString.Key("hwp.underlineStyle")
-    /// 밑줄 '글자 위' 여부 (표 35 밑줄 종류 3) — 같은 두께의 선을 베이스라인
-    /// **위** `underlineAboveCenterRatio`에 그린다 (#136). 색은
+    /// 밑줄 '글자 위' 여부 (표 35 밑줄 종류 3) — 같은 두께의 선을 아래 가장자리가 줄 상자
+    /// 상단(베이스라인 **위** `underlineAboveEdgeRatio` × 줄 상자 높이)에 붙게 그린다
+    /// (#136·#226). 색은
     /// `underlineColor`를 공유한다. RTF 복사에는 싣지 않는다 (윗줄 속성이 없어
     /// 표준 밑줄로 바꾸면 위치가 뒤집힌다 — `HwpSelectionRTF` 주석).
     public static let underlineAboveStyle = NSAttributedString.Key("hwp.underlineAboveStyle")
@@ -105,14 +107,18 @@ public enum HwpAttributedStringKey {
     /// 취소선이 합류한 선은 밑줄 모양을 따른다 (한글은 취소선만 켠 글자 모양을 저장할 때
     /// 밑줄 모양 자리에 취소선 모양을 복사한다, #177).
     public static let strikethroughShape = NSAttributedString.Key("hwp.strikethroughShape")
-    /// 상대크기 적용 전 기본 글자 크기 (pt) — % 줄 간격의 기준
+    /// 상대크기 적용 전 기본 글자 크기 (pt) — % 줄 간격·줄 상자의 기준이고, 장식선
+    /// (밑줄·취소선) 자리·두께의 크기 기준이기도 하다 (#226: 한글은 슬롯 상대 크기 전 이
+    /// 크기로 장식선을 그린다 — `HwpPageLayerDecorations.decorationBaseFontSize`)
     public static let baseFontSize = NSAttributedString.Key("hwp.baseFontSize")
     /// 고정 공백 폭 (0.5em)의 기준 크기 — 상대크기는 반영, 첨자 축소는
     /// 제외한 글자 크기 (라운드 12 실측: 상대크기 170 줄 공백도 1.7배).
     /// 조판(`HwpTextRunBuilder.attributes(for:script:)`)이 **모든 run**에 싣는다 —
-    /// 장식선도 이 값을 첨자 축소 전 크기의 정본으로 읽는다 (#136·#179: 글자 아래·위
-    /// 밑줄 위치와 네 장식선 두께, `HwpPageLayerDecorations.preScriptFontSize`; 없으면
-    /// run 글꼴 크기로 떨어져 첨자 run의 선이 조용히 축소 크기로 그려진다).
+    /// 취소선의 첨자 축소 비율(run 글꼴 크기 ÷ 이 값)과, 기본 크기 키가 없는 문자열의
+    /// 장식선 크기 폴백으로 읽는다 (`HwpPageLayerDecorations.preScriptFontSize`; 한글 문서의
+    /// 장식선 크기 자체는 #226부터 `baseFontSize`다 — 이 값은 슬롯 상대 크기를 반영해 기본
+    /// 40pt·50% run의 선을 20pt 자리에 그렸다). MS 워드 호환·한글 2007 호환 문서의 선 모양
+    /// 축척도 이 값이다.
     public static let spaceTargetSize = NSAttributedString.Key("hwp.spaceTargetSize")
     /// 문단이 다음 단/쪽으로 이어지는 조각의 마커 (NSNumber true, 조각 **전체**에 붙고
     /// 읽는 쪽은 끝 글자로 판정한다 — `HwpTableSplitter.markedAsContinuedFragment`) — 이

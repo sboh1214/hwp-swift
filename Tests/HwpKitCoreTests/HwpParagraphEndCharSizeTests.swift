@@ -270,17 +270,19 @@ import XCTest
                 .to(beCloseTo(20, within: 0.001))
         }
 
-        /// 밑줄 되돌림은 **개체가 상자를 정한 줄**에서만 든다 — 10pt 글 + 12pt 개체 줄의 상자는
-        /// 마지막 줄이면 16pt CR이 정하므로 되돌리지 않고, 앞 조각의 끝 줄(문단 끝 아님)이면
-        /// 개체 12가 정해 0.15 × 12를 되돌린다.
-        func testUnderlineReturnDropSeesTheParagraphEndBox() {
+        /// 밑줄 기준의 줄 상자에도 **마지막 줄에만** 문단 끝 글자가 든다 (#226) — 10pt 글 + 12pt
+        /// 개체 줄의 상자는 마지막 줄이면 16pt CR이 정하고, 앞 조각의 끝 줄(문단 끝 아님)이면
+        /// 개체 12가 정한다. 두께 기준은 어느 쪽이든 글자 10pt다 — 한글 12.30 실측: 10pt 밑줄 +
+        /// 40pt 문단 끝 글자 줄의 밑줄은 40pt 상자 바닥 −6.24pt에 두께 0.36pt(10pt 몫).
+        func testUnderlineReferenceSeesTheParagraphEndBox() {
             let string = Self.withEndSize(16, Self.objectLine(objectHeight: 12, rule: nil))
             let line = CTLineCreateWithAttributedString(string)
-            expect(HwpDrawnTextLayout.underlineReturnDrop(of: line, endsParagraph: true)) == 0
-            expect(HwpDrawnTextLayout.underlineReturnDrop(of: line, endsParagraph: false))
-                .to(beCloseTo(12 * HwpRenderTuning.Text.baselineLiftRatio, within: 0.001))
-            expect(HwpDrawnTextLayout.underlineReturnDrop(of: line))
-                .to(beCloseTo(12 * HwpRenderTuning.Text.baselineLiftRatio, within: 0.001))
+            let last = HwpDrawnTextLayout.underlineReference(of: line, endsParagraph: true)
+            expect(last.lineBoxHeight).to(beCloseTo(16, within: 0.001))
+            expect(last.textFontSize).to(beCloseTo(10, within: 0.001))
+            let continued = HwpDrawnTextLayout.underlineReference(of: line, endsParagraph: false)
+            expect(continued.lineBoxHeight).to(beCloseTo(12, within: 0.001))
+            expect(continued.textFontSize).to(beCloseTo(10, within: 0.001))
         }
 
         // MARK: 실물 — `noori` 2번째 문단

@@ -53,6 +53,7 @@ extension HwpDecorationLineGeometryTests {
                 script ? Self.scriptSize : Self.baseSize
             ),
             HwpAttributedStringKey.spaceTargetSize: NSNumber(value: Double(Self.baseSize)),
+            HwpAttributedStringKey.baseFontSize: NSNumber(value: Double(Self.baseSize)),
             HwpAttributedStringKey.strikethroughStyle: NSNumber(value: 1),
             HwpAttributedStringKey.strikethroughColor: color,
         ]
@@ -161,8 +162,8 @@ extension HwpDecorationLineGeometryTests {
         )
         expect(scripted).to(beCloseTo(plain, within: 0.2))
         // 줄어든 크기를 기준으로 그리면 0.17 × (10 − 6.4) = 0.612pt 올라간다.
-        let drift = HwpRenderTuning.Text.underlineBelowCenterRatio
-            * (Self.baseSize - Self.scriptSize)
+        let drift = HwpDecorationLineGeometry.underlineBelow(fontSize: Self.scriptSize).center
+            - HwpDecorationLineGeometry.underlineBelow(fontSize: Self.baseSize).center
         expect(drift).to(beGreaterThan(0.5))
     }
 

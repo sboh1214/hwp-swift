@@ -9,13 +9,12 @@ import XCTest
 final class HwpRenderTuningTests: XCTestCase {
     func testTextTuningValues() {
         expect(HwpRenderTuning.Text.baselineAnchorRatio) == 0.85
-        expect(HwpRenderTuning.Text.baselineLiftRatio) == 0.15
         expect(HwpRenderTuning.Text.slightOverflowWidthRatio) == 1.06
         expect(HwpRenderTuning.Text.syntheticBoldStrokeWidth) == -3.5
         expect(HwpRenderTuning.Text.shadowOffsetScale) == 1.5
         expect(HwpRenderTuning.Text.strikethroughCenterRatio) == 0.35
-        expect(HwpRenderTuning.Text.underlineAboveCenterRatio) == 0.87
-        expect(HwpRenderTuning.Text.underlineBelowCenterRatio) == 0.17
+        expect(HwpRenderTuning.Text.underlineAboveEdgeRatio) == 0.85
+        expect(HwpRenderTuning.Text.underlineBelowEdgeRatio) == 0.15
         expect(HwpRenderTuning.Text.decorationLineThicknessRatio) == 0.04
         expect(HwpRenderTuning.Text.msWordLineHeightCellRatio) == 1.3
         expect(HwpRenderTuning.Text.msWordBaselineMarginCellRatio) == 0.15
@@ -23,8 +22,6 @@ final class HwpRenderTuningTests: XCTestCase {
         expect(HwpRenderTuning.Text.msWordUnderlineOffsetCellRatio) == 0.021
         expect(HwpRenderTuning.Text.msWordStrikethroughAscentRatio) == 0.273
         expect(HwpRenderTuning.Text.hwp200XDecorationLineThickness) == 0.36
-        expect(HwpRenderTuning.Text.hwp200XUnderlineBelowEdgeRatio) == 0.15
-        expect(HwpRenderTuning.Text.hwp200XUnderlineAboveEdgeRatio) == 0.85
     }
 
     func testLineShapeTuningValues() {

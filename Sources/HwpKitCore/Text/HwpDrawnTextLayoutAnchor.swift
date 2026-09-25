@@ -83,31 +83,4 @@ public extension HwpDrawnTextLayout {
             return geometry
         }
     }
-
-    /// 인라인 개체 줄에서 밑줄이 되돌아갈 양 — 실물은 밑줄을 개체 하단
-    /// (= 줄 상자 바닥, 베이스라인 아래 `1 − baselineAnchorRatio` 몫) 근처에
-    /// 남긴다 (공공누리 실물 실측)
-    ///
-    /// **개체가 줄 상자를 정할 때만 되돌린다.** 개체 높이를 **글꼴 ascent**와 견주면 글자보다
-    /// 낮은 개체까지 걸려, 베이스라인이 글자 자리 그대로인 줄에서 글자 아래 밑줄만 내려간다
-    /// (실측, 10pt 글자: 개체 8pt에서 1.20pt·9pt 1.35pt·9.9pt 1.49pt 아래. 글꼴 ascent
-    /// 7.7002와 상자 높이 10 사이의 개체 전부다 — 4pt 개체는 ascent보다 낮아 통과하지 못했다).
-    /// 상자 높이는 `max(기본 크기, 개체 높이)`이므로 개체가 정했다는 것은 개체 높이가 곧 상자
-    /// 높이라는 뜻이고, 그때 되돌림 `0.15 × 개체 높이`가 상자 바닥과 같아진다.
-    ///
-    /// MS 워드 호환 문서(#194)에서는 되돌리지 않는다 — 베이스라인 자체가 개체 바닥이고
-    /// (`LineMetrics.baselineAnchor` = max(글꼴 상자 베이스라인, 개체 높이)) 밑줄은 줄 상자
-    /// 가장자리에서 잰다 (`HwpDecorationLineGeometry.msWordUnderlineBelow`). 개체가 상자 높이와
-    /// 같아지는 줄(글자 없이 개체와 문단 끝 글자만 있는 줄, #223)도 그렇다.
-    ///
-    /// `endsParagraph`(`HwpDrawnLine.endsParagraph`)는 이 줄이 문단의 마지막 줄인지 — 그 줄은
-    /// 접힌 문단 끝 글자(CR)의 글자 모양도 상자에 넣으므로(#206) 개체가 상자를 정했는지가
-    /// 달라질 수 있다 (10pt 글 + 12pt 개체 + 16pt CR 줄의 상자는 12가 아니라 16).
-    static func underlineReturnDrop(of line: CTLine, endsParagraph: Bool = false) -> CGFloat {
-        let metrics = lineMetrics(of: line, endsParagraph: endsParagraph)
-        guard metrics.msWordLineBox == nil, metrics.delegateAscent > 0,
-              metrics.delegateAscent >= metrics.boxHeight
-        else { return 0 }
-        return metrics.delegateAscent * HwpRenderTuning.Text.baselineLiftRatio
-    }
 }

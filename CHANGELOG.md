@@ -18,6 +18,16 @@
   `msWordBaselineMarginCellRatio`(0.15)·`msWordUnderlineThicknessCellRatio`(0.05)·
   `msWordUnderlineOffsetCellRatio`(0.021)·`msWordStrikethroughAscentRatio`(0.273)가
   생겼습니다.
+- `HwpDrawnTextLayout.underlineReturnDrop(of:)`와 `HwpRenderTuning.Text.baselineLiftRatio`를
+  없앴습니다 (#226). 키 큰 '글자처럼 취급' 개체 줄에서 글자 아래 밑줄의 원점을 개체 높이의
+  0.15배만큼 되돌리던 보정은 밑줄이 줄 상자 바닥에 붙는 규칙의 한 경우라 따로 둘 필요가
+  없어졌고, 그 보정은 상자 바닥 몫을 두 번 세어 10pt 글자에서 1.5pt 낮았습니다 — 아래 Fixed
+  항목. 줄의 밑줄 기준은 `HwpDrawnTextLayout.underlineReference(of:endsParagraph:)`
+  (`HwpDecorationLineGeometry.UnderlineReference`)가 냅니다.
+- `HwpRenderTuning.Text.underlineBelowCenterRatio`(0.17)·`underlineAboveCenterRatio`(0.87)를
+  `underlineBelowEdgeRatio`(0.15)·`underlineAboveEdgeRatio`(0.85)로 바꿨습니다 (#226). 밑줄
+  중심은 이제 줄 상자 가장자리에 두께의 절반을 더한 자리라 한 크기만 있는 줄에서만
+  −0.17em·+0.87em입니다. 두 가장자리 상수는 한글 2007 호환 문서와 공용입니다.
 
 ### Added
 
@@ -62,6 +72,29 @@
 
 ### Fixed
 
+- **같은 줄의 밑줄 높이가 글자 크기마다 달라지고, 상대 크기를 준 글자의 밑줄·취소선이
+  한컴오피스 한글과 다른 자리·두께로 그려지던 문제를 바로잡았습니다** (#226). 한글 문서와
+  한글 2007 호환 문서에서 종전 렌더러는 밑줄을 run마다 그 run의 글꼴 크기로 놓아(아래 밑줄
+  −0.17em·위 밑줄 +0.87em), 40pt 글자와 한 줄에 있는 10pt 밑줄이 한글보다 5.1pt 위에 가늘게
+  그려지고 한 줄의 밑줄이 크기마다 계단이 졌습니다. 또 슬롯 상대 크기를 반영한 글꼴 크기를
+  썼기 때문에 기본 40pt·상대 크기 50%인 글자의 밑줄·취소선이 20pt 자리·두께로 그려졌습니다.
+  한컴오피스 한글 12.30.0(macOS)이 다시 조판한 합성 문서(40여 표본)의 PDF 벡터 좌표와 줄 캐시로
+  확정한 규칙을 반영했습니다 — **밑줄·글자 위 밑줄·변경 추적 삽입 밑줄은 줄 단위**로, 선의 위
+  가장자리가 그 줄 상자(한글 줄 캐시의 `vertsize`) 바닥에(글자 위 밑줄은 아래 가장자리가 상자
+  상단에) 붙습니다. 줄 상자에는 무장식 글자·문단 끝 문자·한 줄 끝(코드 10)·책갈피 같은 높이 0
+  마커의 글자 모양과 '글자처럼 취급' 개체의 바깥 상자 높이가 들어가고, 여러 줄로 나뉜 문단은
+  줄마다 따로 정합니다. 두께와 점선·2중선·물결의 축척은 **줄 글자**의 기본 크기 최댓값 기준이라
+  40pt 무장식 글자와 한 줄이면 1.56pt, 40pt 문단 끝 문자·한 줄 끝·책갈피·개체와 한 줄이면
+  10pt 몫 0.36pt입니다. 취소선은 종전처럼 run 단위입니다. 장식선의 크기는 모두 run 글꼴 크기가
+  아니라 **글자 모양 기본 크기**(상대 크기 전)이고, 첨자는 기본 크기에 첨자 축소 비율만 곱합니다
+  (기본 20pt·상대 크기 50% 위 첨자의 취소선은 옮겨진 베이스라인 위 0.35 × 12.8pt). 키 큰 개체
+  줄에서 밑줄이 개체 아래 끝에 남는 현상도 이 줄 상자 규칙의 한 경우라, 상자 바닥 몫을 두 번
+  세던 종전 보정(10pt 글자 + 40pt 개체 줄에서 −7.70pt, 한글 −6.12~−6.24pt)을 없앴고 글자 위
+  밑줄은 개체 윗변에 붙습니다(종전 +8.70pt, 한글 +34.20pt). 한글 2007 호환 문서는 같은 자리에
+  고정 0.36pt 선을 얹고, MS 워드 호환 문서는 종전의 글꼴 줄 상자 규칙(#187·#223) 그대로입니다.
+  한글.app이 저장한 `mixed-size-decorations` 쌍(HWP + HWPX, 2쪽 12표본)을 픽스처로 추가해 한글
+  PDF의 선 14개 자리(0.35pt 안)·두께·점선 토막을 픽셀로 잠갔습니다 — 수정 전에는 같은 선이 최대
+  25.5pt 어긋났습니다. 한글 2007 호환 문서의 실선이 아닌 선 모양 패턴은 범위 밖입니다 (#227).
 - **MS Word 호환 문서에서 문단 끝 문자·한 줄 끝 문자가 본문보다 크면 줄 높이를 한컴오피스 한글보다
   작게 잡아 다음 문단이 위로 당겨지던 문제를 바로잡았습니다** (#223). 종전에는 문단 끝 문자(CR)의 글꼴
   상자를 본문 글꼴 상자와 축별 최댓값으로 합쳐, 끝 문자 상자가 더 높은 마지막 줄이 본문 상자의
@@ -167,14 +200,15 @@
   그 얇은 선을 얹으며(중심 −(0.15em + 0.18pt)·+(0.85em + 0.18pt)), 취소선 중심은 한글 문서와
   같은 +0.35em입니다. 자리의 기준 크기는 run 글꼴 크기가 아니라 글자 모양 기본 크기(슬롯
   상대 크기 전)이고, 변경 추적 삽입/삭제선은 일반 밑줄·취소선과 같습니다. 산식은
-  `HwpDecorationLineGeometry`의 `hwp200XUnderlineBelow(fontSize:)`·
-  `hwp200XUnderlineAbove(fontSize:)`·`hwp200XStrikethrough(fontSize:)`와
-  `HwpRenderTuning.Text`의 `hwp200XDecorationLineThickness`(0.36)·
-  `hwp200XUnderlineBelowEdgeRatio`(0.15)·`hwp200XUnderlineAboveEdgeRatio`(0.85)로 공개합니다.
+  `HwpDecorationLineGeometry`의 `hwp200XUnderlineBelow(lineBoxHeight:)`·
+  `hwp200XUnderlineAbove(lineBoxHeight:)`·`hwp200XStrikethrough(fontSize:)`와
+  `HwpRenderTuning.Text`의 `hwp200XDecorationLineThickness`(0.36)로 공개하고, 밑줄 가장자리
+  0.15·0.85는 한글 문서와 공용인 `underlineBelowEdgeRatio`·`underlineAboveEdgeRatio`입니다
+  (#226에서 밑줄 자리가 줄 상자 기준으로 바뀌며 이름을 합쳤습니다).
   한글.app이 저장한 `hwp2007-decorations` 쌍(HWP + HWPX, 한글 슬롯 Apple SD 산돌고딕 Neo·
   라틴 슬롯 Menlo, 10~60pt 네 종류 장식선)을 픽스처로 추가해 한글 PDF의 선 자리·두께를
   픽셀로 잠갔습니다. 크기가 섞인 줄에서 밑줄을 줄 단위로 놓는 축과 실선이 아닌 선 모양의
-  패턴은 한글 문서 갈래와 공통이라 범위 밖입니다 (#226, #227).
+  패턴은 한글 문서 갈래와 공통이라 범위 밖입니다 (줄 단위 밑줄은 위 #226 항목, 선 모양은 #227).
 - **1단 본문에서 문단의 일부 줄이 현재 쪽에 들어갈 수 있어도 문단 전체가 다음 쪽으로 넘어가
   쪽 끝에 빈 공간이 남던 문제를 바로잡았습니다** (#207). 저장된 줄 배치 정보 없이 다시
   조판하는 문단은 종전에 현재 쪽의 남은 공간에 다 들어가지 않으면 통째로 다음 쪽에서 시작했고,
@@ -215,9 +249,8 @@
   10pt 문단 끝은 16(최댓값), 줄 간격 종류 5종·상대 크기·글꼴·문단 간격·글자처럼 취급 표(8·20·
   30pt)·표 셀 안·쪽에 걸친 문단까지 우리 재조판 116줄 전부 한글 PDF와 0.10pt 안입니다. 한글이
   같은 세션에 저장한 `paragraph-end-char-size` 쌍(HWP·HWPX, 5쪽)을 픽스처로 추가해 줄 캐시를
-  지운 재조판이 캐시 배치와 같은 자리인지 잠갔고, 밑줄 되돌림 판정
-  (`HwpDrawnTextLayout.underlineReturnDrop(of:endsParagraph:)`)도 같은 상자를 봅니다. MS 워드
-  호환 문서는 종전처럼 문단 끝 문자의 글꼴 상자(#194)를 읽습니다.
+  지운 재조판이 캐시 배치와 같은 자리인지 잠갔고, 밑줄 자리(위 #226 항목의 줄 상자 바닥)도
+  같은 상자를 봅니다. MS 워드 호환 문서는 종전처럼 문단 끝 문자의 글꼴 상자(#194)를 읽습니다.
 - **왼쪽에서 오른쪽으로 쓰는 글자와 오른쪽에서 왼쪽으로 쓰는 글자(히브리·아랍 문자)가 섞인
   줄에서 하이퍼링크를 누르면 다른 링크가 열리거나 일부 글자가 눌리지 않던 문제를 바로잡았습니다**
   (#201). 링크 스팬의 클릭 영역과 paint list의 `.hyperlink` 명령은 스팬 양끝 문자 인덱스의 x

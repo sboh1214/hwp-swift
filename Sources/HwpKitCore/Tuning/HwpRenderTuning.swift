@@ -50,13 +50,6 @@ public enum HwpRenderTuning {
         /// fidelity 전수.
         public static let baselineAnchorRatio: CGFloat = 0.85
 
-        /// 키 큰 인라인 개체 (run delegate) 줄에서 밑줄이 되돌아갈 개체 ascent 비율
-        /// (`HwpDrawnTextLayout.underlineReturnDrop`). `baselineAnchorRatio`와 상보
-        /// 관계 (1 − 0.85) 이지만 독립 실측값으로 별도 고정한다.
-        /// 실측: 공공누리 실물 (실물은 밑줄을 개체 하단 = 상자 바닥에 남긴다).
-        /// 검증: fidelity 전수 + 실물 대조.
-        public static let baselineLiftRatio: CGFloat = 0.15
-
         /// 개행 없는 한 줄 문단이 폭을 이 배율 (6%) 이내로 넘으면 줄바꿈
         /// 없이 한 줄로 배치한다.
         /// 실측: noori 제목 3행 후행 '-' 실물 — 행이 글상자 가장자리를
@@ -88,37 +81,59 @@ public enum HwpRenderTuning {
         /// 0.12pt 양자화) — 글자 위치(`hh:offset`)로 옮겨진 몫은 따라가지 않는다.
         /// 한글 2007 호환 문서(`hwp200X`)도 중심은 이 배율 그대로이고 두께만 고정
         /// 0.36pt다 (#210 실측: 22개 크기에서 0.349~0.357).
+        /// 곱하는 크기는 run 글꼴 크기가 아니라 **글자 모양 기본 크기**(슬롯 상대 크기
+        /// 전)에 첨자 축소 비율만 곱한 값이다 (#226, 한글 12.30 실측 2026-09-25: 기본 40pt·
+        /// 상대 크기 50% run의 취소선 +14.04pt = 40pt 자리, 기본 10pt·200%는 +3.48pt = 10pt
+        /// 자리, 기본 20pt·상대 크기 50% 위 첨자는 옮겨진 베이스라인 위 4.44pt = 0.35 ×
+        /// 12.8(= 20 × 0.64) — 상대 크기를 곱한 6.4pt 기준이면 2.24pt). 취소선은 밑줄과
+        /// 달리 **run 단위**다 — 40pt 글자와 한 줄에 있는 10pt 취소선은 +3.48pt에 남는다.
         /// 검증: `FixtureDecorationLineRenderTests`(+`+Script`) 픽셀 핀 + fidelity 전수.
         public static let strikethroughCenterRatio: CGFloat = 0.35
 
-        /// 밑줄 '글자 위'(표 35 밑줄 종류 3) 중심의 베이스라인 위 높이 =
-        /// 글자 크기 × 이 배율.
-        /// 실측: 같은 세션의 `underline-above` 쌍 — 10/40/100pt에서
-        /// +8.76/34.68/86.88pt (0.867~0.876). 함초롬돋움도 같은 값이다 (#136).
-        /// 검증: `FixtureDecorationLineRenderTests` 픽셀 핀 + fidelity 전수.
-        public static let underlineAboveCenterRatio: CGFloat = 0.87
+        /// 밑줄 '글자 아래'(표 35 밑줄 종류 1)·변경 추적 삽입 밑줄의 **위 가장자리**가
+        /// 놓이는 베이스라인 아래 깊이 = **줄 상자 높이** × 이 배율 — 곧 줄 상자의 바닥이다
+        /// (`baselineAnchorRatio`와 상보: 1 − 0.85). 선은 그 가장자리에서 아래로 두께만큼
+        /// 그려지므로 중심은 두께의 절반만큼 더 아래다 (`HwpDecorationLineGeometry.underlineBelow`).
+        ///
+        /// **밑줄은 줄 단위다** (#226, 한글 12.30.0 build 6446 실측 2026-09-22·25, `CharShape`
+        /// HWPX 기반 합성 문서에서 `hp:linesegarray`를 지워 한글이 다시 조판한 PDF): 한 줄의
+        /// 모든 밑줄이 그 줄 상자(한글 줄 캐시의 `vertsize`) 바닥에 붙는다. 10pt 밑줄 run이
+        /// 40pt 무장식 글자·40pt 문단 끝 글자(CR)·40pt 한 줄 끝(코드 10)·40pt 글자 모양의
+        /// 책갈피·높이 40pt인 글자처럼 취급 그림과 표 가운데 무엇과 같은 줄에 있든 위
+        /// 가장자리가 베이스라인 아래 6.00pt(= 0.15 × 40)이고, 바깥 여백 위 7·아래 3pt를 준
+        /// 20pt 그림 줄(상자 30pt)은 4.50pt, 40pt 글자 모양 마커의 8pt 그림 줄(상자 20pt —
+        /// #217)은 3.00pt다. 여러 줄로 접힌 문단은 줄마다 따로다. 한 크기만 있는 줄에서는
+        /// 종전의 중심 −0.17em(#176: 5~100pt 13개 크기·네 글꼴에서 같은 값)이 곧 이 가장자리
+        /// + 두께 절반(0.15 + 0.04 / 2)이다. 한글 2007 호환 문서(`hwp200X`)도 같은 가장자리에
+        /// 고정 0.36pt 선을 얹는다 (#210: 22개 크기의 중심이 −(0.15em + 0.18pt)에 장치 양자화
+        /// 0.12pt 안으로 들어맞는다 — 100pt −15.12·40pt −6.12·20pt −3.12·10pt −1.56; 고정 비율
+        /// −0.1545em은 10개, −0.17em은 13개 크기에서 한 단위를 넘겨 어긋난다 — 종전
+        /// `hwp200XUnderlineBelowEdgeRatio`). 두 갈래는 **가장자리가 같고 두께만 다르다**. 이 가장자리는
+        /// 종전의 '키 큰 인라인 개체 줄의 밑줄 되돌림'(`underlineReturnDrop` — 공공누리
+        /// 실물에서 밑줄이 개체 하단에 남는 현상)을 포함한다: 개체가 상자를 정한 줄의 상자
+        /// 바닥이 곧 개체 하단이다. MS 워드 호환 문서는 글꼴 지표를 쓴다 — 아래 `msWord*` 상수.
+        /// 첨자 run도 **원래 베이스라인** 기준이다 (#179 실측: 10pt 위/아래 첨자 모두 1.68pt
+        /// 아래) — 취소선과 달리 첨자 이동을 따라가지 않는다.
+        /// 검증: `HwpDecorationLineGeometryModelTests`·`HwpUnderlineReferenceTests` 모델 +
+        /// `HwpDecorationLineGeometryTests`(+`+Script`·`+Hwp2007`·`+LineWide`) 래스터 +
+        /// `FixtureDecorationLineRenderTests`(+`+LineWide`) 픽셀 핀 + fidelity 전수.
+        public static let underlineBelowEdgeRatio: CGFloat = 0.15
 
-        /// 밑줄 '글자 아래'(표 35 밑줄 종류 1) 중심의 베이스라인 **아래** 깊이 =
-        /// 글자 크기 × 이 배율.
-        /// 실측: 한글.app 12.30.0 (2026-09-12, #176) `CharShape` HWPX 기반 합성
-        /// 문서(`hp:linesegarray` 제거)를 PDF로 내보내 벡터 좌표를 읽었다 — 5·7·8·
-        /// 10·12·13·15·20·25·30·40·60·100pt에서 베이스라인 대비 −0.84/1.08/1.32/
-        /// 1.68/2.04/2.28/2.52/3.48/4.32/5.16/6.84/10.20/17.04pt (선언 크기 대비
-        /// 0.154~0.175, 장치 좌표 0.12pt 양자화; 60pt 이상은 정확히 0.170). 함초롬바탕·함초롬돋움·
-        /// Apple SD 산돌고딕 Neo·HY울릉도M 네 글꼴이 **모든 크기에서 같은 값**이라
-        /// descent·post `underlinePosition` 같은 글꼴 지표가 아니라 글자 크기
-        /// 비례다. 변경 추적 삽입 밑줄도 같은 자리·같은 두께다 (#187 실측: 13개 글꼴
-        /// 전부 삽입 밑줄 = 일반 밑줄, 삭제선 = 일반 취소선). MS 워드 호환 문서에서는
-        /// 이 비율 대신 글꼴 지표를 쓴다 — 아래 `msWord*` 상수.
-        /// 첨자 run에서도 **원래 베이스라인** 아래 **축소 전 크기** × 이 배율이다
-        /// (#179 실측: 10pt 위/아래 첨자 모두 1.68pt 아래) — 취소선과 달리 첨자
-        /// 이동을 따라가지 않는다.
-        /// 검증: `HwpDecorationLineGeometryTests`(+`+Script`) 비율 +
-        /// `FixtureDecorationLineRenderTests`(+`+Script`) 픽셀 핀 + fidelity 전수.
-        public static let underlineBelowCenterRatio: CGFloat = 0.17
+        /// 밑줄 '글자 위'(표 35 밑줄 종류 3)의 **아래 가장자리**가 놓이는 베이스라인 위
+        /// 높이 = **줄 상자 높이** × 이 배율 — 곧 줄 상자의 상단이다. 중심은 두께의 절반만큼
+        /// 더 위다 (`HwpDecorationLineGeometry.underlineAbove`).
+        /// 실측: 아래 밑줄과 같은 줄 단위 규칙이다 (#226: 10pt 위 밑줄이 40pt 무장식 글자·
+        /// 40pt 문단 끝 글자·40pt 한 줄 끝·40pt 책갈피·40pt 그림과 표와 같은 줄이면 가장자리
+        /// 34.00pt = 0.85 × 40, 상자 30pt 그림 줄은 25.50pt). 한 크기만 있는 줄의 종전 중심
+        /// 0.87em(#136: `underline-above` 쌍 10/40/100pt에서 +8.76/34.68/86.88pt)이 곧 이
+        /// 가장자리 + 두께 절반(0.85 + 0.04 / 2)이고, 한글 2007 호환 문서의 0.85em + 0.18pt
+        /// (#210: 100pt +85.08·40pt +34.20·20pt +17.16 — 종전 `hwp200XUnderlineAboveEdgeRatio`)도
+        /// 같은 가장자리다.
+        /// 검증: 아래 밑줄과 같다.
+        public static let underlineAboveEdgeRatio: CGFloat = 0.85
 
-        /// 장식선(글자 아래·글자 위 밑줄, 취소선, 글자 가운데 밑줄) 두께 = 글자
-        /// 크기 × 이 배율.
+        /// 장식선(글자 아래·글자 위 밑줄, 취소선, 글자 가운데 밑줄) 두께 = 기준 크기 ×
+        /// 이 배율 — 선 모양(점선·여러 줄·물결)의 축척도 같은 기준 크기다 (#191).
         /// 실측: 같은 세션 — 한글 PDF의 선 폭은 5·7·8·10·12·13·15·20·25·30·40·60·
         /// 100pt에서 0.24/0.24/0.36/0.36/0.48/0.48/0.60/0.84/0.96/1.20/1.56/2.40/
         /// 3.96pt로, 13개 전부 `0.12pt × round(크기 / 3)` = 0.04em을 600dpi 장치
@@ -126,7 +141,17 @@ public enum HwpRenderTuning {
         /// 하한은 두지 않는다 — 한글도 5pt를 0.24pt로 그린다. 종전 0.4pt 고정은
         /// 10pt에서만 맞았다. 첨자 run에서도 **축소 전 크기** 기준이다 (#179 실측:
         /// 10pt 첨자의 네 선 모두 0.36pt = 본문과 같음).
-        /// 검증: `HwpDecorationLineGeometryTests`(+`+Script`) 두께 비율 + fidelity 전수.
+        ///
+        /// **기준 크기는 선마다 다르다** (#226 실측): 취소선은 그 run의 글자 모양 기본 크기
+        /// (슬롯 상대 크기 전 — 기본 40pt·상대 크기 50%도 1.56pt), 밑줄 세 종은 **줄의 글자**
+        /// 기본 크기 최댓값이다 — 10pt 밑줄이 40pt 무장식 글자·40pt 공백과 한 줄이면 1.56pt,
+        /// 20pt 무장식 글자와 40pt 문단 끝 글자 줄이면 0.84pt(20pt)다. 문단 끝 글자·한 줄
+        /// 끝·책갈피·개체 마커의 글자 모양과 개체 높이는 줄 상자(밑줄 자리)에는 들어도 이
+        /// 크기에는 들지 않는다 (40pt인 그것들과 한 줄인 10pt 밑줄은 0.36pt). 기본 40pt 위
+        /// 첨자 무장식 run이 든 줄은 1.56pt — 첨자 축소 전 기본 크기다. 점선 한 토막도 같은
+        /// 기준이다 (40pt 무장식 글자 줄의 10pt 긴 점선이 11.40/6.96pt = 5q/3q, q = 0.057 ×
+        /// 40; 40pt 문단 끝 글자 줄은 2.88/1.68pt = 10pt 몫).
+        /// 검증: `HwpDecorationLineGeometryTests`(+`+Script`·`+LineWide`) 두께 비율 + fidelity 전수.
         public static let decorationLineThicknessRatio: CGFloat = 0.04
 
         /// MS 워드 호환 문서(`HwpCompatibleDocumentTarget.msWord`)의 줄 상자 높이 =
@@ -208,27 +233,6 @@ public enum HwpRenderTuning {
         /// 값이라 이 두께는 **쪽 좌표계의 길이**다.
         /// 검증: `HwpDecorationLineGeometryTests+Hwp2007` 두께 + `HwpRenderTuningTests`.
         public static let hwp200XDecorationLineThickness: CGFloat = 0.36
-
-        /// 한글 2007 호환 문서의 '글자 아래' 밑줄·변경 추적 삽입 밑줄 기준 가장자리 —
-        /// 선의 **위 가장자리**가 베이스라인 아래 글자 크기 × 이 배율에 닿고 선은 그
-        /// 아래로 두께만큼 그려진다 (중심은 두께의 절반만큼 더 아래다).
-        /// 실측: 같은 스윕 — 22개 크기의 중심이 −(0.15em + 0.18pt)에 장치 양자화
-        /// 0.12pt 안으로 들어맞는다 (100pt −15.12 = −(14.994 + 0.18), 40pt −6.12,
-        /// 20pt −3.12, 10pt −1.56). 고정 비율 −0.1545em은 10개, 한글 문서의 −0.17em은
-        /// 13개 크기에서 한 단위를 넘겨 어긋난다. 한글 문서의
-        /// `underlineBelowCenterRatio`(0.17)도 이 가장자리 + 두께 절반
-        /// (0.15 + 0.04 / 2)이라 두 갈래는 **가장자리가 같고 두께만 다르다**.
-        /// 검증: `HwpDecorationLineGeometryTests+Hwp2007` 위치 + `HwpRenderTuningTests`.
-        public static let hwp200XUnderlineBelowEdgeRatio: CGFloat = 0.15
-
-        /// 한글 2007 호환 문서의 '글자 위' 밑줄 기준 가장자리 — 선의 **아래 가장자리**가
-        /// 베이스라인 위 글자 크기 × 이 배율에 닿는다.
-        /// 실측: 같은 스윕 — 중심이 0.85em + 0.18pt다 (100pt +85.08 = 84.966 + 0.18,
-        /// 80pt +68.16, 40pt +34.20, 20pt +17.16; 한글 문서의 0.87em으로는 13개 크기가
-        /// 어긋난다). 한글 문서의 `underlineAboveCenterRatio`(0.87) = 0.85 + 0.04 / 2로
-        /// 같은 가장자리다.
-        /// 검증: `HwpDecorationLineGeometryTests+Hwp2007` 위치 + `HwpRenderTuningTests`.
-        public static let hwp200XUnderlineAboveEdgeRatio: CGFloat = 0.85
     }
 
     /// 선 모양 (표 25 `HwpBorderType`) — 밑줄·취소선·표 셀 테두리·단 구분선의 점선·파선·

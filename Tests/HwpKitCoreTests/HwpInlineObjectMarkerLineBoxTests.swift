@@ -220,31 +220,29 @@ import XCTest
             expect(Self.metrics(of: wideLine).boxHeight) == 40
         }
 
-        // MARK: 밑줄 되돌림
+        // MARK: 줄 단위 밑줄
 
-        /// 개체가 상자를 정한 줄의 밑줄 되돌림은 마커의 글자 모양과 무관하다 — 한글 12.30 PDF
-        /// (2026-09-24): 10pt 밑줄 글 + 20pt 그림 줄의 밑줄 중심이 마커 10pt·40pt 모두 베이스라인
-        /// 아래 3.24, 40pt 그림은 6.12·6.24. 종전에는 40pt 마커 줄의 상자가 40이라 개체가 상자를
-        /// 정하지 않은 것으로 보여 되돌리지 않았다.
-        func testUnderlineReturnIgnoresTheMarkerSize() {
-            for object in [CGFloat(20), 40] {
-                let small = Self.objectLine(marker: 10, objectHeight: object)
-                let large = Self.objectLine(marker: 40, objectHeight: object)
-                let drop = { (string: NSAttributedString) in
-                    HwpDrawnTextLayout.underlineReturnDrop(
-                        of: CTLineCreateWithAttributedString(string)
-                    )
-                }
-                expect(drop(large)).to(equal(drop(small)), description: "개체 \(object)pt")
-                expect(drop(large)).to(
-                    beCloseTo(HwpRenderTuning.Text.baselineLiftRatio * object, within: 0.0001),
-                    description: "개체 \(object)pt"
+        /// 밑줄 기준(#226)은 마커의 글자 모양과 무관하다 — 한글 12.30 PDF (2026-09-24): 10pt 밑줄
+        /// 글 + 20pt 그림 줄의 밑줄 중심이 마커 10pt·40pt 모두 베이스라인 아래 3.24, 40pt 그림은
+        /// 6.12·6.24 (상자 바닥 0.15 × 개체 + 10pt 두께 절반), 두께는 전부 0.36pt. 개체 마커의
+        /// 글자 모양은 줄 상자에도(#217) 두께 기준에도 들지 않는다.
+        func testUnderlineReferenceIgnoresTheMarkerSize() {
+            let reference = { (string: NSAttributedString) in
+                HwpDrawnTextLayout.underlineReference(
+                    of: CTLineCreateWithAttributedString(string), endsParagraph: false
                 )
             }
-            // 글자가 상자를 정한 8pt 그림 줄은 되돌리지 않는다 (한글: 밑줄 1.68 — 글자 줄과 같다).
-            expect(HwpDrawnTextLayout.underlineReturnDrop(
-                of: CTLineCreateWithAttributedString(Self.objectLine(marker: 40, objectHeight: 8))
-            )) == 0
+            for object in [CGFloat(20), 40] {
+                let small = reference(Self.objectLine(marker: 10, objectHeight: object))
+                let large = reference(Self.objectLine(marker: 40, objectHeight: object))
+                expect(large).to(equal(small), description: "개체 \(object)pt")
+                expect(large.lineBoxHeight).to(beCloseTo(object, within: 0.0001))
+                expect(large.textFontSize).to(beCloseTo(10, within: 0.0001))
+            }
+            // 글자가 상자를 정한 8pt 그림 줄은 글자 줄 자리다 (한글: 밑줄 1.68 — 글자 줄과 같다).
+            let short = reference(Self.objectLine(marker: 40, objectHeight: 8))
+            expect(short.lineBoxHeight).to(beCloseTo(10, within: 0.0001))
+            expect(short.textFontSize).to(beCloseTo(10, within: 0.0001))
         }
 
         // MARK: MS 워드 호환 문서

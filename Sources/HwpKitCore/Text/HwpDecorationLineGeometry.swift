@@ -4,19 +4,40 @@ import Foundation
 
 /// 글자 장식선(글자 아래·글자 위 밑줄, 취소선 = 글자 가운데 밑줄, 변경 추적 삽입 밑줄·
 /// 삭제선)의 **세로 위치와 두께** — 한글 문서·한글 2007 호환 문서·MS 워드 호환 문서의
-/// 세 기하를 한 곳에 모은다 (#136·#176·#179·#187·#210). 렌더러
+/// 세 기하를 한 곳에 모은다 (#136·#176·#179·#187·#210·#226). 렌더러
 /// (`HwpPageLayerDecorations`)가 이 값을 그대로 그린다.
 ///
-/// - 한글 문서: 아래 밑줄(삽입 밑줄 포함) −0.17em · 위 밑줄 +0.87em · 취소선(가운데
-///   밑줄·삭제선 포함) +0.35em, 두께 모두 0.04em.
+/// - 한글 문서: 아래 밑줄(삽입 밑줄 포함)은 **위 가장자리가 줄 상자 바닥**(베이스라인
+///   아래 0.15L), 위 밑줄은 **아래 가장자리가 줄 상자 상단**(위 0.85L), 두께 0.04T —
+///   한 크기만 있는 줄(L = T = em)이면 중심 −0.17em · +0.87em이다. 취소선(가운데 밑줄·
+///   삭제선 포함)은 +0.35em, 두께 0.04em.
 /// - 한글 2007 호환(`HwpCompatibleDocumentTarget.hwp200X`): 두께가 크기와 무관한 고정
-///   0.36pt이고, 밑줄은 한글 문서와 **같은 가장자리**(아래 0.15em·위 0.85em)에 그 얇은
-///   선을 얹는다 — 중심은 −(0.15em + 0.18pt) · +(0.85em + 0.18pt)이고 취소선 중심은
+///   0.36pt이고, 밑줄은 한글 문서와 **같은 가장자리**(아래 0.15L·위 0.85L)에 그 얇은
+///   선을 얹는다 — 중심은 −(0.15L + 0.18pt) · +(0.85L + 0.18pt)이고 취소선 중심은
 ///   한글 문서와 같은 +0.35em이다.
 /// - MS 워드 호환: 아래 밑줄 −(descent + 0.021 cell) · 위 밑줄 ascent + 0.021 cell, 두께
 ///   0.05 cell · 취소선 0.273 ascent, 두께 0.04em.
 ///
-/// (em = 글자 크기, 첨자면 두께는 축소 전 크기)
+/// (L = 줄 상자 높이, T = 줄 글자의 기본 크기 최댓값 — 둘 다 줄 단위, `UnderlineReference`;
+/// em = run의 글자 모양 기본 크기, 첨자면 취소선 자리만 축소 비율을 곱한다)
+///
+/// **밑줄 세 종은 줄 단위, 취소선은 run 단위다** — 세 문서 갈래가 같다 (#187·#226). 한글
+/// 문서·한글 2007 호환 문서에서 밑줄 자리를 정하는 L은 줄 상자 높이(한글 줄 캐시의
+/// `vertsize` — 줄의 글자·문단 끝 글자·한 줄 끝·높이 0 마커의 기본 크기와 글자처럼 취급
+/// 개체의 바깥 상자 높이 가운데 최댓값)이고, 두께·선 모양 축척을 정하는 T는 그 가운데
+/// **글자**의 기본 크기만 본다 (`HwpDrawnTextLayout.underlineReference(of:endsParagraph:)`).
+/// 한글 12.30 실측 (2026-09-22·25, #226 — 함초롬바탕 10pt 밑줄 run과 같은 줄에 무엇이
+/// 있는가): 40pt 무장식 글자 −6.84pt·두께 1.56pt, 40pt 문단 끝 글자·한 줄 끝·책갈피·
+/// 그림·표 −6.12~−6.24pt·0.36pt, 20pt 무장식 글자 + 40pt 문단 끝 글자 −6.36pt·0.84pt,
+/// 바깥 여백 위 7·아래 3pt인 20pt 그림(상자 30pt) −4.68pt·0.36pt. 위 밑줄도 같은 줄에서
+/// +34.20pt(40pt 상자)·+25.68pt(30pt 상자)이고, 변경 추적 삽입 밑줄은 같은 줄의 밑줄과
+/// 같은 자리·두께다. 종전에는 run마다 그 run 글꼴 크기로 −0.17em·+0.87em에 그려
+/// 같은 줄의 밑줄이 크기마다 계단이 졌다.
+///
+/// 크기는 전부 **글자 모양 기본 크기**(`hwp.baseFontSize`, 슬롯 상대 크기 전)다 — 기본 40pt·
+/// 상대 크기 50%인 run의 밑줄은 −6.84pt·1.56pt, 취소선은 +14.04pt (20pt 자리가 아니다,
+/// #226·#210). 첨자는 #179 규칙 그대로 — 밑줄은 원래 베이스라인·축소 전 기본 크기,
+/// 취소선은 첨자로 옮겨진 베이스라인 + 기본 크기 × 첨자 축소 비율이다.
 ///
 /// MS 워드 호환 문서의 `ascent`·`descent`·`cell`은 글꼴의 win 지표에서 푼 상자
 /// (`HwpMsWordLineBox`)에 **글자 모양 기본 크기**를 곱한 pt다 — 슬롯 상대 크기는 곱하지
@@ -40,16 +61,15 @@ import Foundation
 ///   Helvetica × 40pt 자리 +8.76pt).
 ///
 /// 한글 2007 호환 문서의 값도 글꼴과 무관하다 (2026-09-22 실측, 9개 글꼴 × 5~100pt 22개
-/// 크기: 위치는 장치 양자화 0.12pt 안에서 같고 두께는 전부 0.36pt). 한글 문서와 달리 em을
-/// 곱하는 크기는 **글자 모양 기본 크기**(`hwp.baseFontSize`, 슬롯 상대 크기 전)다 — 기본
-/// 40pt·한글 슬롯 50%인 run의 밑줄이 20pt 자리가 아니라 40pt 자리(−6.24pt)이고 취소선도
-/// 40pt 자리(+13.92pt)다. 밑줄을 **줄 단위**로 놓는 축(크기가 섞인 줄에서 줄의 가장 큰
-/// 글자 모양이 자리를 정한다)은 한글 문서 갈래도 같은 규칙이라 이 수정의 범위 밖이다
-/// (#226).
+/// 크기: 위치는 장치 양자화 0.12pt 안에서 같고 두께는 전부 0.36pt). 크기는 한글 문서와
+/// 같은 글자 모양 기본 크기다 — 기본 40pt·한글 슬롯 50%인 run의 밑줄이 20pt 자리가 아니라
+/// 40pt 자리(−6.24pt)이고 취소선도 40pt 자리(+13.92pt)다. 줄 단위 밑줄도 한글 문서와 같은
+/// 규칙이다 (#226 실측: 위 표본들의 밑줄이 전부 −6.12pt·+34.08~34.20pt).
 ///
-/// 한글 문서의 값은 글꼴과 무관하고 (13개 글꼴 전부 같은 값) 첨자 규칙(#179)은 두 문서
+/// 한글 문서의 값은 글꼴과 무관하고 (13개 글꼴 전부 같은 값) 첨자 규칙(#179)은 세 문서
 /// 갈래가 같다 — 취소선 중심은 첨자로 옮겨진 베이스라인 + 줄어든 크기 기준, 두께와
-/// 밑줄은 축소 전 크기 기준 (호환 문서의 첨자 표본은 없어 같은 규칙을 적용한다).
+/// 밑줄은 축소 전 크기 기준 (한글 2007 호환 문서는 #210·#226에서 같은 규칙을 실측했고,
+/// MS 워드 호환 문서의 첨자 표본은 없어 같은 규칙을 적용한다).
 public enum HwpDecorationLineGeometry {
     /// 선 하나 — `center`는 베이스라인 기준 세로 위치 (pt, 위가 양수), `thickness`는
     /// 두께 (pt). 렌더러는 중심을 기준으로 위아래 반씩 채운다.
@@ -63,27 +83,71 @@ public enum HwpDecorationLineGeometry {
         }
     }
 
+    /// 한 줄의 밑줄(글자 아래·글자 위·변경 추적 삽입 밑줄)이 **모두 공유하는** 기준 (#226) —
+    /// `HwpDrawnTextLayout.underlineReference(of:endsParagraph:)`가 줄마다 한 번 푼다. 어느
+    /// 기하를 쓸지(한글 문서·한글 2007 호환·MS 워드 호환)는 run의 문서 갈래가 정하고, 이
+    /// 값은 그 셋이 필요로 하는 줄 단위 입력을 함께 싣는다.
+    public struct UnderlineReference: Equatable, Sendable {
+        /// 줄 상자 높이 (pt, 한글 줄 캐시의 `vertsize`) — 한글 문서·한글 2007 호환 문서의
+        /// 밑줄 가장자리가 이 상자의 바닥(글자 아래)·상단(글자 위)에 닿는다. 줄의 글자·
+        /// 문단 끝 글자(마지막 줄)·한 줄 끝·높이 0 마커의 기본 크기와 글자처럼 취급 개체의
+        /// 바깥 상자 높이 가운데 최댓값이다 (세로 배치가 쓰는 상자와 같은 값). 0이면 그리는
+        /// run의 기본 크기로 떨어진다.
+        public let lineBoxHeight: CGFloat
+        /// 두께·선 모양 축척의 기준 크기 (pt) — 줄 **글자**의 글자 모양 기본 크기 최댓값.
+        /// 문단 끝 글자·한 줄 끝·마커(책갈피·개체)의 글자 모양과 개체 높이는 들지 않는다.
+        /// 글자가 없는 줄이면 0이고 그리는 run의 기본 크기로 떨어진다.
+        public let textFontSize: CGFloat
+        /// MS 워드 호환 문서의 줄 상자 — 있으면 밑줄은 이 상자에서 잰다 (#187·#223,
+        /// `HwpDrawnTextLayout.msWordLineBox(of:endsParagraph:)`). 한글 문서·한글 2007 호환
+        /// 문서 줄이면 nil.
+        public let msWordLineBox: HwpMsWordLineBox?
+
+        public init(
+            lineBoxHeight: CGFloat, textFontSize: CGFloat, msWordLineBox: HwpMsWordLineBox? = nil
+        ) {
+            self.lineBoxHeight = lineBoxHeight
+            self.textFontSize = textFontSize
+            self.msWordLineBox = msWordLineBox
+        }
+    }
+
     // MARK: - 한글 문서
 
-    /// 글자 아래 밑줄 — 베이스라인 아래 0.17em, 두께 0.04em. `fontSize`는 첨자 축소 전
-    /// 크기다.
+    /// 글자 아래 밑줄 — **위 가장자리가 줄 상자 바닥**(베이스라인 아래 0.15 ×
+    /// `lineBoxHeight`)에 닿고 아래로 두께 0.04 × `thicknessFontSize`만큼 그려진다. 중심은
+    /// −(0.15L + 0.02T) (#226 — `HwpRenderTuning.Text.underlineBelowEdgeRatio`의 실측).
+    public static func underlineBelow(lineBoxHeight: CGFloat, thicknessFontSize: CGFloat) -> Line {
+        let thickness = thicknessFontSize * HwpRenderTuning.Text.decorationLineThicknessRatio
+        return Line(
+            center: -(lineBoxHeight * HwpRenderTuning.Text.underlineBelowEdgeRatio + thickness / 2),
+            thickness: thickness
+        )
+    }
+
+    /// 글자 위 밑줄 — **아래 가장자리가 줄 상자 상단**(베이스라인 위 0.85 ×
+    /// `lineBoxHeight`)에 닿고 위로 두께 0.04 × `thicknessFontSize`만큼 그려진다.
+    public static func underlineAbove(lineBoxHeight: CGFloat, thicknessFontSize: CGFloat) -> Line {
+        let thickness = thicknessFontSize * HwpRenderTuning.Text.decorationLineThicknessRatio
+        return Line(
+            center: lineBoxHeight * HwpRenderTuning.Text.underlineAboveEdgeRatio + thickness / 2,
+            thickness: thickness
+        )
+    }
+
+    /// 한 크기만 있는 줄의 글자 아래 밑줄 — 줄 상자와 두께 기준이 모두 `fontSize`라
+    /// 베이스라인 아래 0.17em, 두께 0.04em이다 (#176).
     public static func underlineBelow(fontSize: CGFloat) -> Line {
-        Line(
-            center: -fontSize * HwpRenderTuning.Text.underlineBelowCenterRatio,
-            thickness: fontSize * HwpRenderTuning.Text.decorationLineThicknessRatio
-        )
+        underlineBelow(lineBoxHeight: fontSize, thicknessFontSize: fontSize)
     }
 
-    /// 글자 위 밑줄 — 베이스라인 위 0.87em, 두께 0.04em.
+    /// 한 크기만 있는 줄의 글자 위 밑줄 — 베이스라인 위 0.87em, 두께 0.04em (#136).
     public static func underlineAbove(fontSize: CGFloat) -> Line {
-        Line(
-            center: fontSize * HwpRenderTuning.Text.underlineAboveCenterRatio,
-            thickness: fontSize * HwpRenderTuning.Text.decorationLineThicknessRatio
-        )
+        underlineAbove(lineBoxHeight: fontSize, thicknessFontSize: fontSize)
     }
 
-    /// 취소선 — 베이스라인 위 0.35 × `fontSize`(첨자면 줄어든 크기), 두께 0.04 ×
-    /// `thicknessFontSize`(첨자 축소 전 크기).
+    /// 취소선 — 베이스라인 위 0.35 × `fontSize`(글자 모양 기본 크기, 첨자면 × 축소 비율),
+    /// 두께 0.04 × `thicknessFontSize`(첨자 축소 전 기본 크기). 밑줄과 달리 run 단위다.
     public static func strikethrough(fontSize: CGFloat, thicknessFontSize: CGFloat) -> Line {
         Line(
             center: fontSize * HwpRenderTuning.Text.strikethroughCenterRatio,
@@ -93,23 +157,24 @@ public enum HwpDecorationLineGeometry {
 
     // MARK: - 한글 2007 호환 문서
 
-    /// 글자 아래 밑줄(변경 추적 삽입 밑줄 포함) — 베이스라인 아래 0.15em에 **위
-    /// 가장자리**가 닿는 고정 0.36pt 선이라 중심은 −(0.15em + 0.18pt)다. `fontSize`는
-    /// 글자 모양 기본 크기(첨자 축소·슬롯 상대 크기 전)다.
-    public static func hwp200XUnderlineBelow(fontSize: CGFloat) -> Line {
+    /// 글자 아래 밑줄(변경 추적 삽입 밑줄 포함) — 줄 상자 바닥(베이스라인 아래 0.15 ×
+    /// `lineBoxHeight`)에 **위 가장자리**가 닿는 고정 0.36pt 선이라 중심은
+    /// −(0.15L + 0.18pt)다. 한 크기만 있는 줄이면 `lineBoxHeight`는 글자 모양 기본 크기다.
+    public static func hwp200XUnderlineBelow(lineBoxHeight: CGFloat) -> Line {
         let thickness = HwpRenderTuning.Text.hwp200XDecorationLineThickness
         return Line(
-            center: -(fontSize * HwpRenderTuning.Text.hwp200XUnderlineBelowEdgeRatio
+            center: -(lineBoxHeight * HwpRenderTuning.Text.underlineBelowEdgeRatio
                 + thickness / 2),
             thickness: thickness
         )
     }
 
-    /// 글자 위 밑줄 — 베이스라인 위 0.85em에 **아래 가장자리**가 닿는 고정 0.36pt 선.
-    public static func hwp200XUnderlineAbove(fontSize: CGFloat) -> Line {
+    /// 글자 위 밑줄 — 줄 상자 상단(베이스라인 위 0.85 × `lineBoxHeight`)에 **아래
+    /// 가장자리**가 닿는 고정 0.36pt 선.
+    public static func hwp200XUnderlineAbove(lineBoxHeight: CGFloat) -> Line {
         let thickness = HwpRenderTuning.Text.hwp200XDecorationLineThickness
         return Line(
-            center: fontSize * HwpRenderTuning.Text.hwp200XUnderlineAboveEdgeRatio
+            center: lineBoxHeight * HwpRenderTuning.Text.underlineAboveEdgeRatio
                 + thickness / 2,
             thickness: thickness
         )
