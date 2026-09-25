@@ -190,9 +190,11 @@ import XCTest
         // 끝 글자 줄 상자 24문단 + 1칸 표 셀 6문단) 추가로 문단 31·대조 50(셀의 빈 문단 6개는 두 폭
         // 모두 대조 대상이 아니다)·컨테이너 6 증가 (공유 코어 대조 건너뜀은 그대로다), 같은 날
         // `mixed-size-decorations`(#226, 구역 1 + 크기가 섞인 줄의 장식선 12문단 + 1칸 표 셀
-        // 2문단) 추가로 문단 15·대조 30·컨테이너 2 증가 (공유 코어 대조 건너뜀은 그대로다).
-        private static let expectedFixtureVisited = 665
-        private static let expectedFixtureMeasured = 1188
+        // 2문단) 추가로 문단 15·대조 30·컨테이너 2 증가 (공유 코어 대조 건너뜀은 그대로다),
+        // 2026-09-26 `hwp2007-decorations` 재저장(#227, 선 모양 10문단 추가)으로 문단 10·대조 20
+        // 증가 (컨테이너와 공유 코어 대조 건너뜀은 그대로다).
+        private static let expectedFixtureVisited = 675
+        private static let expectedFixtureMeasured = 1208
         private static let expectedFixtureContainers = 217
         private static let minimumFixtureMultiLine = 60
         private static let maximumFixtureSharedCoreSkips = 9

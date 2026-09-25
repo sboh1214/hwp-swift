@@ -2,7 +2,7 @@
   "id": "hwp2007-decorations",
   "generationTool": "Hancom Office HWP for macOS 12.30.0 (build 6446)",
   "hwpVersion": "5.1.1.0",
-  "source": "Generated locally with Hancom Office HWP on 2026-09-22 — CharShape의 HWPX 사본에 hh:compatibleDocument@targetProgram=\"HWP200X\"를 적고 한글 슬롯 Apple SD 산돌고딕 Neo·라틴 슬롯 Menlo로 글자 아래 밑줄(10·20·40·60pt)·글자 위 밑줄(40·60pt)·취소선(10·40pt)·글자 가운데 밑줄(40pt)을 문단마다 하나씩 실은 합성 문서(hp:linesegarray 제거)를 한글에서 연 뒤 같은 편집 세션에서 한글 문서(*.hwp)·한글 표준 문서(*.hwpx)·PDF로 각각 저장 (System Events 접근성 자동화)",
+  "source": "Generated locally with Hancom Office HWP on 2026-09-22 (#210), 2026-09-26 regenerated (#227) — CharShape의 HWPX 사본에 hh:compatibleDocument@targetProgram=\"HWP200X\"를 적고 한글 슬롯 Apple SD 산돌고딕 Neo·라틴 슬롯 Menlo로 글자 아래 밑줄(10·20·40·60pt)·글자 위 밑줄(40·60pt)·취소선(10·40pt)·글자 가운데 밑줄(40pt)을 문단마다 하나씩 싣고(#210), 그 뒤에 실선이 아닌 선 모양 표본 10문단(긴 점선 밑줄 10·40pt, 점선 위 밑줄·원형 점선 밑줄·2중선 밑줄·3중선 밑줄·가는+굵은 취소선·물결 밑줄·2중 물결 취소선·일점쇄선 가운데 밑줄 40pt, 자홍)을 더한 합성 문서(hp:linesegarray 제거)를 한글에서 연 뒤 같은 편집 세션에서 한글 문서(*.hwp)·한글 표준 문서(*.hwpx)·PDF로 각각 저장 (System Events 접근성 자동화)",
   "features": [
     "char-shape-property",
     "paragraph-text",
@@ -74,26 +74,26 @@
     ],
     "documentProperties": {
       "caratLocation": {
-        "charIndex": 16,
+        "charIndex": 8,
         "listId": 0,
-        "paragraphId": 0,
+        "paragraphId": 11,
         "rawPayloadLength": 12,
         "rawPayloadPrefixBytes": [
           0,
           0,
           0,
           0,
-          0,
+          11,
           0,
           0,
           0
         ],
         "rawPayloadSuffixBytes": [
+          11,
           0,
           0,
           0,
-          0,
-          16,
+          8,
           0,
           0,
           0
@@ -111,11 +111,11 @@
         0
       ],
       "rawPayloadSuffixBytes": [
+        11,
         0,
         0,
         0,
-        0,
-        16,
+        8,
         0,
         0,
         0
@@ -156,7 +156,7 @@
       "borderFillCount": 2,
       "borderFillRawPayloadTotalByteCount": 93,
       "bulletCount": 0,
-      "charShapeCount": 18,
+      "charShapeCount": 28,
       "charShapePropertyRawValues": [
         0,
         0,
@@ -175,9 +175,19 @@
         12,
         262152,
         262152,
-        8
+        8,
+        20,
+        20,
+        44,
+        100,
+        116,
+        164,
+        537133192,
+        180,
+        805568712,
+        56
       ],
-      "charShapeRawPayloadTotalByteCount": 1332,
+      "charShapeRawPayloadTotalByteCount": 2072,
       "faceNameChineseCount": 3,
       "faceNameEnglishCount": 4,
       "faceNameEtcCount": 3,
@@ -195,7 +205,7 @@
       "tabDefRawPayloadTotalByteCount": 24,
       "unknownChildCount": 0
     },
-    "docInfoRawPayloadLength": 5897,
+    "docInfoRawPayloadLength": 6677,
     "docInfoRawPayloadPrefixBytes": [
       16,
       0,
@@ -220,7 +230,7 @@
     "docInfoUnknownRecordCount": 0,
     "sectionCount": 1,
     "sectionRawPayloadCount": 1,
-    "sectionRawPayloadTotalByteCount": 1305,
+    "sectionRawPayloadTotalByteCount": 2325,
     "sectionRawPayloadPrefixBytes": [
       [
         66,
@@ -246,13 +256,13 @@
       ]
     ],
     "sectionParagraphCounts": [
-      10
+      20
     ],
     "sectionUnknownRecordCount": 0,
-    "paragraphCount": 10,
-    "allParagraphCount": 10,
-    "paraTextRawPayloadCount": 10,
-    "paraTextRawPayloadTotalByteCount": 224,
+    "paragraphCount": 20,
+    "allParagraphCount": 20,
+    "paraTextRawPayloadCount": 20,
+    "paraTextRawPayloadTotalByteCount": 404,
     "paraTextRawPayloadPrefixBytes": [
       [
         2,
@@ -353,6 +363,106 @@
         0,
         32,
         0
+      ],
+      [
+        76,
+        0,
+        49,
+        0,
+        48,
+        0,
+        32,
+        0
+      ],
+      [
+        76,
+        0,
+        52,
+        0,
+        48,
+        0,
+        32,
+        0
+      ],
+      [
+        72,
+        0,
+        52,
+        0,
+        48,
+        0,
+        32,
+        0
+      ],
+      [
+        79,
+        0,
+        52,
+        0,
+        48,
+        0,
+        32,
+        0
+      ],
+      [
+        87,
+        0,
+        52,
+        0,
+        48,
+        0,
+        32,
+        0
+      ],
+      [
+        75,
+        0,
+        52,
+        0,
+        48,
+        0,
+        32,
+        0
+      ],
+      [
+        69,
+        0,
+        52,
+        0,
+        48,
+        0,
+        32,
+        0
+      ],
+      [
+        86,
+        0,
+        52,
+        0,
+        48,
+        0,
+        32,
+        0
+      ],
+      [
+        88,
+        0,
+        52,
+        0,
+        48,
+        0,
+        32,
+        0
+      ],
+      [
+        77,
+        0,
+        52,
+        0,
+        48,
+        0,
+        32,
+        0
       ]
     ],
     "paraTextRawPayloadSuffixBytes": [
@@ -363,6 +473,106 @@
         194,
         32,
         193,
+        13,
+        0
+      ],
+      [
+        152,
+        176,
+        65,
+        0,
+        103,
+        0,
+        13,
+        0
+      ],
+      [
+        152,
+        176,
+        65,
+        0,
+        103,
+        0,
+        13,
+        0
+      ],
+      [
+        152,
+        176,
+        65,
+        0,
+        103,
+        0,
+        13,
+        0
+      ],
+      [
+        152,
+        176,
+        65,
+        0,
+        103,
+        0,
+        13,
+        0
+      ],
+      [
+        152,
+        176,
+        65,
+        0,
+        103,
+        0,
+        13,
+        0
+      ],
+      [
+        152,
+        176,
+        65,
+        0,
+        103,
+        0,
+        13,
+        0
+      ],
+      [
+        152,
+        176,
+        65,
+        0,
+        103,
+        0,
+        13,
+        0
+      ],
+      [
+        152,
+        176,
+        65,
+        0,
+        103,
+        0,
+        13,
+        0
+      ],
+      [
+        152,
+        176,
+        65,
+        0,
+        103,
+        0,
+        13,
+        0
+      ],
+      [
+        152,
+        176,
+        65,
+        0,
+        103,
+        0,
         13,
         0
       ],
@@ -503,8 +713,8 @@
         0
       ]
     ],
-    "paraHeaderPayloadCount": 10,
-    "paraHeaderPayloadTotalByteCount": 240,
+    "paraHeaderPayloadCount": 20,
+    "paraHeaderPayloadTotalByteCount": 480,
     "paraHeaderPayloadPrefixBytes": [
       [
         31,
@@ -512,6 +722,106 @@
         0,
         0,
         4,
+        0,
+        0,
+        0
+      ],
+      [
+        9,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        9,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        9,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        9,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        9,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        9,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        9,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        9,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        9,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        9,
+        0,
+        0,
+        0,
+        0,
         0,
         0,
         0
@@ -707,10 +1017,110 @@
         0,
         0,
         0
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
       ]
     ],
-    "paraCharShapePayloadCount": 10,
-    "paraCharShapePayloadTotalByteCount": 88,
+    "paraCharShapePayloadCount": 20,
+    "paraCharShapePayloadTotalByteCount": 168,
     "paraCharShapePayloadPrefixBytes": [
       [
         0,
@@ -808,6 +1218,106 @@
         0,
         0,
         17,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        18,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        19,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        20,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        21,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        22,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        23,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        24,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        25,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        26,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        27,
         0,
         0,
         0
@@ -913,10 +1423,110 @@
         0,
         0,
         0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        18,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        19,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        20,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        21,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        22,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        23,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        24,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        25,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        26,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        27,
+        0,
+        0,
+        0
       ]
     ],
-    "paraLineSegPayloadCount": 10,
-    "paraLineSegPayloadTotalByteCount": 360,
+    "paraLineSegPayloadCount": 20,
+    "paraLineSegPayloadTotalByteCount": 720,
     "paraLineSegPayloadPrefixBytes": [
       [
         0,
@@ -1017,9 +1627,209 @@
         147,
         0,
         0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        148,
+        167,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        168,
+        172,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        248,
+        192,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        72,
+        213,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        152,
+        233,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        80,
+        20,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        160,
+        40,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        240,
+        60,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        64,
+        81,
+        0,
+        0
       ]
     ],
     "paraLineSegPayloadSuffixBytes": [
+      [
+        24,
+        166,
+        0,
+        0,
+        0,
+        0,
+        6,
+        0
+      ],
+      [
+        24,
+        166,
+        0,
+        0,
+        0,
+        0,
+        6,
+        0
+      ],
+      [
+        24,
+        166,
+        0,
+        0,
+        0,
+        0,
+        6,
+        0
+      ],
+      [
+        24,
+        166,
+        0,
+        0,
+        0,
+        0,
+        6,
+        0
+      ],
+      [
+        24,
+        166,
+        0,
+        0,
+        0,
+        0,
+        6,
+        0
+      ],
+      [
+        24,
+        166,
+        0,
+        0,
+        0,
+        0,
+        6,
+        0
+      ],
+      [
+        24,
+        166,
+        0,
+        0,
+        0,
+        0,
+        6,
+        0
+      ],
+      [
+        24,
+        166,
+        0,
+        0,
+        0,
+        0,
+        6,
+        0
+      ],
+      [
+        24,
+        166,
+        0,
+        0,
+        0,
+        0,
+        6,
+        0
+      ],
+      [
+        24,
+        166,
+        0,
+        0,
+        0,
+        0,
+        6,
+        0
+      ],
       [
         24,
         166,
@@ -1290,8 +2100,8 @@
       0,
       0
     ],
-    "previewTextLength": 96,
-    "previewTextRawPayloadLength": 212,
+    "previewTextLength": 186,
+    "previewTextRawPayloadLength": 412,
     "previewTextPrefixBytes": [
       92,
       213,
@@ -1314,9 +2124,11 @@
     ],
     "previewTextContains": [
       "한글 2007 호환 장식선\r\nU10 가나Ag\r\nU20 가나Ag",
-      "T40 가나Ag\r\nT60 가나Ag\r\nS10 가나Ag\r\nS40 가나Ag\r\nC40 가나Ag"
+      "T40 가나Ag\r\nT60 가나Ag\r\nS10 가나Ag\r\nS40 가나Ag\r\nC40 가나Ag",
+      "L10 가나Ag\r\nL40 가나Ag\r\nH40 가나Ag",
+      "X40 가나Ag\r\nM40 가나Ag"
     ],
-    "previewImageLength": 61252,
+    "previewImageLength": 82913,
     "previewImageFormat": "png",
     "previewImagePrefixBytes": [
       137,
@@ -1348,10 +2160,20 @@
       "T60 가나Ag",
       "S10 가나Ag",
       "S40 가나Ag",
-      "C40 가나Ag"
+      "C40 가나Ag",
+      "L10 가나Ag",
+      "L40 가나Ag",
+      "H40 가나Ag",
+      "O40 가나Ag",
+      "W40 가나Ag",
+      "K40 가나Ag",
+      "E40 가나Ag",
+      "V40 가나Ag",
+      "X40 가나Ag",
+      "M40 가나Ag"
     ],
-    "pageCount": 1,
-    "pageCountSource": "한글.app 12.30.0 실측 (2026-09-22, PDF로 저장하기 1쪽) = HwpKit 렌더 실측 (.testDeterministic) = HWPX 쌍 쪽수",
+    "pageCount": 2,
+    "pageCountSource": "한글.app 12.30.0 실측 (2026-09-26, PDF로 저장하기 2쪽) = HwpKit 렌더 실측 (.testDeterministic) = HWPX 쌍 쪽수",
     "topLevelEntryNames": [
       "\u0005HwpSummaryInformation",
       "BodyText",

@@ -207,7 +207,11 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   저장. 한글이 이 호환 문서에서 장식선 두께를 **크기와 무관한 고정 0.36pt**로 놓고 밑줄은
   한글 문서와 같은 가장자리(아래 0.15em·위 0.85em)에 얹는 규칙(#210)의 실물 근거이며,
   같은 세션의 PDF 내보내기 좌표(README의 표)가 렌더 핀의 오라클이다. 크기 축 4단을 한
-  문서에 실어 두께의 크기 비례 여부를 가른다. HWPX 쌍은 `HwpxFixtures/hwp2007-decorations`.
+  문서에 실어 두께의 크기 비례 여부를 가른다. 2026-09-26(#227)에 실선이 아닌 선 모양 10문단
+  (긴 점선 10·40pt, 점선·원형 점선·2중선·3중선·가는+굵은·물결·2중 물결·일점쇄선, 자홍)을 더해
+  다시 저장했다 — 이 모드의 무늬·띠·물결도 크기와 무관한 고정 pt라는 규칙의 실물 근거이며
+  `FixtureDecorationLineRenderTests+Hwp2007Shapes`의 오라클이다. 이제 2쪽이다. HWPX 쌍은
+  `HwpxFixtures/hwp2007-decorations`.
 - `inline-object-baseline`: 함초롬바탕 40pt 본문에 줄 상자보다 **작은** 글자처럼 취급
   그림(4~50pt 7단)·1칸 표를 바깥 여백·상대 크기 50%·고정 줄 간격·10pt 줄·한 줄 세 그림·
   자리 차지 표의 셀 안 조건으로 실은 합성 HWPX를 Hancom Office HWP for macOS 12.30.0 build
