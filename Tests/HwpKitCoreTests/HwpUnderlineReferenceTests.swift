@@ -149,6 +149,17 @@ import XCTest
             expect(grown.textFontSize) == 10
         }
 
+        /// 첨자 run은 **축소 전 기본 크기**로 줄 상자와 두께 기준에 든다 — 기본 40pt 위 첨자 무장식
+        /// run(글꼴 25.6pt)과 한 줄인 10pt 밑줄은 40pt 상자·40pt 두께다 (한글 12.30: −6.72·1.56).
+        /// 줄어든 글꼴 크기로 들면 상자·두께 기준이 25.6pt가 된다.
+        func testSuperscriptRunJoinsWithItsBaseSize() {
+            let reference = Self.reference(Self.concat([
+                Self.text("ab", size: 10), Self.text("sup", size: 40 * 0.64, base: 40),
+            ]), endsParagraph: false)
+            expect(reference.lineBoxHeight) == 40
+            expect(reference.textFontSize) == 40
+        }
+
         /// 기본 크기 표식이 없는 합성 문자열은 조판 글꼴 크기로 떨어진다 (공개 `drawText` 입력).
         func testUnmarkedStringFallsBackToTheFontSize() {
             let string = NSAttributedString(

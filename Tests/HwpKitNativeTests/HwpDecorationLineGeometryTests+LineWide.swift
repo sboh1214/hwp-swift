@@ -289,4 +289,125 @@ extension HwpDecorationLineGeometryTests {
         expect(starts[1] - starts[0]).to(beCloseTo(period, within: 0.2))
         expect(starts[2] - starts[1]).to(beCloseTo(period, within: 0.2))
     }
+
+    /// 긴 점선 한 줄의 잉크가 시작하는 x (pt) 목록 — `band`(pt) 행들에서 조건 색 열을 본다.
+    private func lineWideInkStarts(
+        _ raster: Raster, band: ClosedRange<CGFloat>,
+        where match: (UInt8, UInt8, UInt8) -> Bool
+    ) -> [CGFloat] {
+        let rows = Int(band.lowerBound * Self.scale) ... Int(band.upperBound * Self.scale)
+        let columns = (0 ..< raster.pixelWidth).map { x in
+            rows.contains { y in
+                let offset = y * raster.bytesPerRow + x * 4
+                return match(raster.data[offset], raster.data[offset + 1], raster.data[offset + 2])
+            }
+        }
+        var starts: [CGFloat] = []
+        for (index, ink) in columns.enumerated() where ink && (index == 0 || !columns[index - 1]) {
+            starts.append(CGFloat(index) / Self.scale)
+        }
+        return starts
+    }
+
+    /// 한 글자 모양 안에서 슬롯 상대 크기가 달라 CoreText가 run을 갈라도 긴 점선의 위상은
+    /// 이어진다 — 축척이 기본 크기라 두 run이 같은 패턴이다 (#226, 한글 12.30 실측 2026-09-26:
+    /// 기본 20pt·한글 슬롯 50%·라틴 100% "가나다라 abcdefg 마바사아"의 긴 점선 밑줄이 주기
+    /// 9.0pt로 슬롯 경계를 넘어 이어진다). 종전에는 `spaceTargetSize`가 묶음을 갈라 경계에서
+    /// 패턴이 다시 시작했다.
+    func testDottedPatternContinuesAcrossSlotRelativeSizes() throws {
+        func slot(size: CGFloat) -> [NSAttributedString.Key: Any] {
+            var attributes = decoratedRun(
+                HwpAttributedStringKey.underlineStyle, size: size, base: 20, strikethrough: false
+            )
+            attributes[HwpAttributedStringKey.underlineShape] = NSNumber(
+                value: HwpBorderType.longDotLine.rawValue
+            )
+            attributes[HwpAttributedStringKey.charShapeId] = NSNumber(value: 7)
+            return attributes
+        }
+        let first = NSAttributedString(string: "AAAA", attributes: slot(size: 20))
+        let text = line([first, NSAttributedString(string: "AAAAAAAA", attributes: slot(size: 10))])
+        let boundary = 10 + CTLineGetTypographicBounds(
+            CTLineCreateWithAttributedString(first), nil, nil, nil
+        )
+        let raster = try render(text: text)
+        let center = try XCTUnwrap(Self.rowCenter(raster, where: Self.isLineWideCyan), "점선")
+        let starts = lineWideInkStarts(
+            raster, band: (center - 0.4) ... (center + 0.4), where: Self.isLineWideCyan
+        )
+        // 기본 20pt 몫 주기 0.057 × 20 × 8 = 9.12pt가 run 시작(x 10)부터 끊기지 않는다
+        let period: CGFloat = 0.057 * 20 * 8
+        expect(starts.count) >= 7
+        for (index, start) in starts.prefix(7).enumerated() {
+            expect(start).to(beCloseTo(10 + period * CGFloat(index), within: 0.3))
+        }
+        // 경계(48.16pt 뒤)는 선 한가운데라, 다시 시작했다면 경계에서 새 선이 잡힌다
+        expect(starts.contains { abs($0 - boundary) < 0.3 }) == false
+    }
+
+    /// 2중선·물결 밑줄의 띠도 줄 글자 기준 크기다 — 40pt 무장식 글자와 한 줄인 10pt 2중선은
+    /// 띠 0.12 × 40 = 4.8pt를 [1/4·1/2·1/4]로 나눈 두 선(베이스라인 아래 6.6·10.2pt, 굵기 1.2pt),
+    /// 물결은 진폭 0.112 × 40 + 획 0.03 × 40 = 5.68pt 폭이다 (한글 12.30: 2중선 −6.48·−10.08·
+    /// 1.20pt, 물결 진폭 4.56·획 1.20pt). 10pt 몫이면 두 선이 1.65·2.55pt, 물결 폭이 1.42pt다.
+    func testDoubleAndWaveUnderlinesScaleWithTheLineText() throws {
+        func shaped(_ shape: HwpBorderType) throws -> Raster {
+            var attributes = decoratedRun(HwpAttributedStringKey.underlineStyle)
+            attributes[HwpAttributedStringKey.underlineShape] = NSNumber(value: shape.rawValue)
+            attributes[HwpAttributedStringKey.charShapeId] = NSNumber(value: 1)
+            var big = plainRun(size: 40)
+            big[HwpAttributedStringKey.charShapeId] = NSNumber(value: 2)
+            return try render(text: line([
+                NSAttributedString(string: "        ", attributes: attributes),
+                NSAttributedString(string: " ", attributes: big),
+            ]))
+        }
+        let double = try shaped(.doubleLine)
+        let strike = try XCTUnwrap(
+            Self.rowBands(double, where: Self.isLineWideMagenta).first, "취소선"
+        )
+        let bands = Self.rowBands(double, where: Self.isLineWideCyan)
+        expect(bands.count) == 2
+        guard bands.count == 2 else { return }
+        expect(bands[0] - strike).to(beCloseTo(3.5 + 6.6, within: 0.25))
+        expect(bands[1] - strike).to(beCloseTo(3.5 + 10.2, within: 0.25))
+        let wave = try shaped(.wave)
+        var rows: [Int] = []
+        for y in 0 ..< wave.pixelHeight {
+            let hit = (0 ..< wave.pixelWidth).contains { x in
+                let offset = y * wave.bytesPerRow + x * 4
+                return Self.isLineWideCyan(
+                    wave.data[offset], wave.data[offset + 1], wave.data[offset + 2]
+                )
+            }
+            if hit {
+                rows.append(y)
+            }
+        }
+        let extent = CGFloat((rows.last ?? 0) - (rows.first ?? 0) + 1) / Self.scale
+        expect(extent).to(beCloseTo(CGFloat((0.112 + 0.03) * 40), within: 0.6))
+    }
+
+    /// 상대 크기로 줄어든 run의 선 모양 취소선도 글자 모양 기본 크기 몫이다 — 기본 40pt·상대 크기
+    /// 50%(글꼴 20pt) run의 긴 점선 취소선은 한 토막 5 × 0.057 × 40 = 11.4pt·주기 18.24pt
+    /// (한글 12.30 실측 2026-09-26: 11.40pt·18.36pt, 물결 취소선도 40pt 몫 진폭 4.56pt). 종전
+    /// `spaceTargetSize` 축척이면 20pt 몫 5.7·9.12pt다.
+    func testShapedStrikethroughUsesTheCharShapeBaseSize() throws {
+        var attributes = decoratedRun(nil, size: 20, base: 40)
+        attributes[HwpAttributedStringKey.strikethroughShape] = NSNumber(
+            value: HwpBorderType.longDotLine.rawValue
+        )
+        attributes[HwpAttributedStringKey.charShapeId] = NSNumber(value: 1)
+        let raster = try render(text: NSAttributedString(
+            string: String(repeating: "A", count: 16), attributes: attributes
+        ))
+        let center = try XCTUnwrap(Self.rowCenter(raster, where: Self.isLineWideMagenta), "취소선")
+        let starts = lineWideInkStarts(
+            raster, band: (center - 0.5) ... (center + 0.5), where: Self.isLineWideMagenta
+        )
+        expect(starts.count) >= 3
+        guard starts.count >= 3 else { return }
+        let period = CGFloat(0.057 * 40 * 8)
+        expect(starts[1] - starts[0]).to(beCloseTo(period, within: 0.3))
+        expect(starts[2] - starts[1]).to(beCloseTo(period, within: 0.3))
+    }
 }

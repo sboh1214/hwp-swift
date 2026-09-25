@@ -288,10 +288,14 @@ import XCTest
             expect(small.boxHeight).to(beCloseTo(30, within: 0.001))
             expect(small.baselineAnchor).to(beCloseTo(30, within: 0.001))
             let line = try XCTUnwrap(Self.lines(objectOnly(end: Self.box("Menlo", 10))).first)
-            // 밑줄은 한글 문서의 줄 상자 바닥 규칙이 아니라 MS 워드 줄 상자에서 잰다 (#226).
-            expect(HwpDrawnTextLayout.underlineReference(of: line.line, endsParagraph: true)
-                .msWordLineBox)
-                == HwpDrawnTextLayout.msWordLineBox(of: line.line, endsParagraph: true)
+            // 밑줄은 한글 문서의 줄 상자 바닥 규칙이 아니라 MS 워드 줄 상자(= 개체 30pt)에서
+            // 잰다 (#226) — 기준이 그 상자를 싣고 줄 상자 높이도 같은 값이다.
+            let reference = HwpDrawnTextLayout.underlineReference(
+                of: line.line, endsParagraph: true
+            )
+            let referenceBox = try XCTUnwrap(reference.msWordLineBox)
+            expect(referenceBox.lineHeight).to(beCloseTo(30, within: 0.001))
+            expect(reference.lineBoxHeight).to(beCloseTo(30, within: 0.001))
             let menlo40 = Self.box("Menlo", 40)
             let large = try Self.metrics(objectOnly(end: menlo40))
             expect(large.boxHeight).to(beCloseTo(menlo40.lineHeight, within: 0.001))

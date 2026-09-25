@@ -173,8 +173,8 @@ extension HwpDecorationLineGeometryTests {
     /// 슬롯 상대 크기 50%로 20pt가 된 run의 밑줄이 40pt 자리에 남는다 (한글 실측
     /// 2026-09-22: −6.24pt, 20pt 자리라면 −3.24pt).
     func testHwp2007LinesUseTheCharShapeBaseFontSize() throws {
-        // 기본 40pt·슬롯 50%인 20pt run과 40pt run을 한 줄에 — 베이스라인이 같으므로 두 선의
-        // 행을 바로 견줄 수 있다. 기준이 기본 크기라면 같은 자리다.
+        // 기본 40pt·슬롯 50%인 20pt run과 40pt run을 한 줄에 — 밑줄은 줄 단위(#226)라 두 run이
+        // 한 행이다 (이 비교는 줄 단위만 본다 — 기본 크기 판정은 아래 run 하나 줄이 한다).
         let scaled = try blankCenters(
             small: hwp2007Run(
                 size: Self.smallSize, color: Self.probeCyan, underline: true,

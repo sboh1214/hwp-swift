@@ -142,8 +142,9 @@ extension HwpDecorationLineGeometryTests {
 
     /// 같은 글자 모양 id라도 선을 정하는 키가 다르면 따로 묶는다 (#191 리뷰). 래스터는 밑줄 색
     /// (변경 추적 삭제 run이 글자 모양을 물려받고 색만 갈리는 경우)으로 잰다 — 패턴이 경계에서
-    /// 다시 시작하고 둘째 run은 제 색으로 그려진다. 크기 축척(`spaceTargetSize`)·첨자 이동은
-    /// 묶음 판정(`sameLineShapeGroup`)만 단언한다.
+    /// 다시 시작하고 둘째 run은 제 색으로 그려진다. 크기 축척(한글 문서는 `baseFontSize`, 호환
+    /// 문서와 기본 크기 키 없는 문자열은 `spaceTargetSize`)·첨자 이동은 묶음 판정
+    /// (`sameLineShapeGroup`)만 단언한다.
     func testDifferentLineKeysSplitTheGroupWithinOneCharShape() throws {
         let magenta = CGColor(red: 1, green: 0, blue: 1, alpha: 1)
         func isMagenta(_ red: UInt8, _ green: UInt8, _ blue: UInt8) -> Bool {
@@ -197,6 +198,29 @@ extension HwpDecorationLineGeometryTests {
             "Menlo-Bold" as CFString, Self.shapeFontSize, nil
         )
         expect(HwpPageLayer.sameLineShapeGroup(base, bold)) == true
+        // 한글 문서(기본 크기 키가 있는 run)는 슬롯 상대 크기만 다른 run을 한 묶음으로 본다 —
+        // 축척이 기본 크기라 같고 한글도 그 경계에서 위상을 잇는다 (#226 실측). 호환 문서 두
+        // 갈래는 축척이 `spaceTargetSize`라 종전대로 가른다.
+        var native = base
+        native[HwpAttributedStringKey.baseFontSize] = NSNumber(value: 20)
+        var nativeSlot = native
+        nativeSlot[HwpAttributedStringKey.spaceTargetSize] = NSNumber(value: 10)
+        expect(HwpPageLayer.sameLineShapeGroup(native, nativeSlot)) == true
+        for target in [HwpCompatibleDocumentTarget.msWord, .hwp200X] {
+            var compat = native
+            compat[HwpAttributedStringKey.compatibleDocumentTarget] = NSNumber(
+                value: target.rawValue
+            )
+            var compatSlot = nativeSlot
+            compatSlot[HwpAttributedStringKey.compatibleDocumentTarget] = NSNumber(
+                value: target.rawValue
+            )
+            expect(HwpPageLayer.sameLineShapeGroup(compat, compatSlot))
+                .to(beFalse(), description: "\(target)")
+        }
+        var biggerBase = native
+        biggerBase[HwpAttributedStringKey.baseFontSize] = NSNumber(value: 40)
+        expect(HwpPageLayer.sameLineShapeGroup(native, biggerBase)) == false
     }
 
     /// 2중선 밑줄은 두 띠, 물결은 진폭 0.112em의 띠 하나 (20pt: 2.24pt + 획 0.6)

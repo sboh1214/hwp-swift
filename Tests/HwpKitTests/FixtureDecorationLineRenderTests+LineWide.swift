@@ -201,4 +201,36 @@ extension FixtureDecorationLineRenderTests {
         expect(dash).to(beCloseTo(0.057 * 40 * 5, within: 0.5))
         expect(gap).to(beCloseTo(0.057 * 40 * 3, within: 0.5))
     }
+
+    /// 실물의 글자처럼 취급 그림 줄 (#226) — `공공누리`·`CCL` 1쪽은 라이선스 그림이 줄 상자를 정한
+    /// 줄에 파랑 하이퍼링크 밑줄이 있다. 한글 12.30 PDF(2026-09-26, 사본을 열어 내보냄)에서 그 밑줄은
+    /// 쪽 위에서 140.28pt(두께 0.36)이고 `CCL`의 다음 줄 밑줄은 156.36pt다. 종전 렌더는 개체 높이
+    /// 몫 되돌림 위에 run 크기 × 0.17을 더해 상자 바닥 몫을 두 번 세어 141.77pt(1.49pt 아래)였다 —
+    /// 이 되돌림의 원래 근거였던 실물이다.
+    func testInlineImageLineUnderlinesMatchHangulInRealDocuments() async throws {
+        let cases: [(id: String, expected: [CGFloat])] = [
+            ("공공누리", [140.28]),
+            ("CCL", [140.28, 156.36]),
+        ]
+        for (id, expected) in cases {
+            let raster = try await Self.raster(id, hwpx: false)
+            // 파랑 링크 글자의 획과 가르려고 40pt 넘게 이어진 행만 선으로 본다.
+            let rows = (0 ..< raster.pixelHeight)
+                .filter { raster.longestRun($0, where: Self.isBlue) > Int(40 * Self.scale) }
+                .map { (CGFloat($0) + 0.5) / Self.scale }
+            var groups: [[CGFloat]] = []
+            for row in rows {
+                if let last = groups.last?.last, row - last < 0.5 / Self.scale + 0.3 {
+                    groups[groups.count - 1].append(row)
+                } else {
+                    groups.append([row])
+                }
+            }
+            let centers = groups.map { $0.reduce(0, +) / CGFloat($0.count) }
+            expect(centers.count).to(equal(expected.count), description: "\(id) 밑줄 수")
+            for (line, value) in zip(expected, centers) {
+                expect(value).to(beCloseTo(line, within: 0.35), description: "\(id) \(line)")
+            }
+        }
+    }
 }

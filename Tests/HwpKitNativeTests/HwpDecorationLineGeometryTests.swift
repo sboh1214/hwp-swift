@@ -60,9 +60,8 @@ final class HwpDecorationLineGeometryTests: XCTestCase {
                 HwpAttributedStringKey.underlineColor: color,
             ]
         }
-        expect(probe.rise).to(beCloseTo(0, within: 0.2))
         // run 단위로 그리면 0.87 × (40 − 20) = 17.4pt 벌어진다.
-        expect(0.87 * (Self.largeSize - Self.smallSize)).to(beGreaterThan(17))
+        expect(probe.rise).to(beCloseTo(0, within: 0.2))
     }
 
     /// 키 큰 인라인 개체가 줄 상자를 정한 줄에서 '글자 위' 밑줄은 그 상자 **상단**(= 개체

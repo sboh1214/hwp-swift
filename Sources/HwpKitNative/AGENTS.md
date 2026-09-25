@@ -176,9 +176,10 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
   크기·첨자 축소 전, `decorationBaseFontSize`)다. **밑줄 세 종(아래·위·삽입)은 줄 단위다**
   (#226): `drawDecoratedLine`이 줄마다 한 번 `HwpDrawnTextLayout.underlineReference(of:endsParagraph:)`
   를 풀고, 한글 문서·한글 2007 호환 문서는 그 줄 상자 높이 L(세로 배치의 `vertsize`와 같은 값)의
-  바닥에 아래 밑줄의 위 가장자리, 상단에 위 밑줄의 아래 가장자리를 붙이며 두께는 줄 글자의 기본
-  크기 최댓값 T × 0.04다 (한 크기 줄이면 −0.17em·+0.87em). 키 큰 개체 줄에서 밑줄이 개체 하단에
-  남는 실물(공공누리)도 이 상자 바닥 규칙이라 원점을 되돌리지 않는다 — 종전의
+  바닥에 아래 밑줄의 위 가장자리, 상단에 위 밑줄의 아래 가장자리를 붙인다. 두께는 한글 문서가
+  줄 글자의 기본 크기 최댓값 T × 0.04(한 크기 줄이면 −0.17em·+0.87em), 한글 2007 호환 문서가
+  고정 0.36pt다. 키 큰 개체 줄에서 밑줄이 개체 하단에 남는 실물(공공누리)도 이 상자 바닥 규칙이라
+  (상자 바닥 = 개체 바깥 상자의 아랫변) 원점을 되돌리지 않는다 — 종전의
   `underlineReturnDrop` 원점 보정은 상자 바닥 몫을 두 번 세어 없앴다. 취소선(글자 가운데 밑줄
   포함)만 **run 단위**이고 첨자 이동(`hwp.scriptBaselineOffset`, 합산 키가 아니다)을 더해
   기본 크기 × 첨자 축소 비율 × 0.35 위에, 두께 기본 크기 × 0.04로 놓인다; 밑줄은 첨자 이동을
@@ -198,7 +199,10 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
   실선은 종전대로 run마다 사각형). 한글이 그렇다 — 한 글자 모양 안의 한글↔라틴 슬롯 전환
   (CoreText가 run을 가르는 경계)은 패턴이 이어지고 색만 다른 이웃 글자 모양은 run 시작에서
   다시 시작한다 (2026-09-17 실측). 묶음 열쇠는 id에 더해 선을 정하는 키다
-  (`sameLineShapeGroup`: 모양·유무·색·`spaceTargetSize`·`scriptBaselineOffset`) — 변경 추적
+  (`sameLineShapeGroup`: 모양·유무·색·축척 크기·`scriptBaselineOffset`; 축척 크기는 한글 문서가
+  `baseFontSize`, 호환 문서 두 갈래와 기본 크기 키가 없는 문자열이 `spaceTargetSize`다 — 한글
+  문서에서 슬롯마다 상대 크기가 다른 한 글자 모양은 한 묶음이고, 한글도 그 경계에서 패턴 위상을
+  잇는다, #226 실측 2026-09-26) — 변경 추적
   삭제 run은 글자 모양을 물려받고 색만 갈리고 첨자 run은 취소선 자리가 다르므로 id만으로
   묶으면 첫 run의 색·기하로 통째 그려진다(PR 리뷰). 속성 사전 전체 비교는 금물(자간·문단 끝
   상자 키가 한 글자 모양을 가른다). 모양 키를 실은 run이 없는 줄은 재지 않는다. 축척은

@@ -28,8 +28,9 @@ extension HwpDrawnTextLayout {
         /// (`objectMarkerBaseFontSize`, #217). 쪽 번호 상자처럼 글자 크기 자체가 필요한 곳
         /// (`HwpPageChromeBuilder.pageNumberFrame`)도 읽는다.
         var baseFontSize: CGFloat = 0
-        /// 줄 **글자** run의 상대크기 적용 전 기본 크기 최댓값 — 한글 문서·한글 2007 호환
-        /// 문서에서 밑줄 두께와 선 모양 축척의 기준이다 (#226, `UnderlineReference.textFontSize`).
+        /// 줄 **글자** run의 상대크기 적용 전 기본 크기 최댓값 — 한글 문서에서 밑줄 두께와 선
+        /// 모양 축척의 기준이다 (#226, `UnderlineReference.textFontSize`; 한글 2007 호환 문서는
+        /// 두께가 고정이고 선 모양이 run 크기라 쓰지 않는다).
         /// `baseFontSize`와 달리 문단 끝 글자(CR)·한 줄 끝(`hwp.lineBreak`)·빈 줄 앵커·결합
         /// 문자열의 문단 구분자와 **모든** 마커 run(높이 0 마커 포함)을 세지 않는다 — 한글
         /// 12.30 실측 (2026-09-25): 10pt 밑줄이 40pt 무장식 글자·40pt 공백과 한 줄이면 두께
@@ -323,10 +324,11 @@ extension HwpDrawnTextLayout {
     /// 이 줄의 밑줄(글자 아래·글자 위·변경 추적 삽입 밑줄)이 공유하는 기준 (#226) — 장식선
     /// 기하(`HwpPageLayerDecorations`)가 줄마다 한 번 부른다. 한글 문서·한글 2007 호환
     /// 문서는 줄 상자 높이(`lineBoxHeight` — 세로 배치가 쓰는 `vertsize`와 같은 값이라 밑줄이
-    /// 그 상자의 바닥·상단에 붙는다)와 줄 글자의 기본 크기 최댓값(`textFontSize` — 두께·선
-    /// 모양 축척)을, MS 워드 호환 문서는 줄 상자(`msWordLineBox(of:endsParagraph:)`와 같은
-    /// 값)를 싣는다. `endsParagraph`(`HwpDrawnLine.endsParagraph`)는 이 줄이 문단의 마지막
-    /// 줄인지 — 그 줄의 상자에는 접힌 문단 끝 글자(CR)의 글자 모양도 든다 (#206, 한글 실측:
+    /// 그 상자의 바닥·상단에 붙는다)를, 한글 문서는 여기에 줄 글자의 기본 크기 최댓값
+    /// (`textFontSize` — 두께·선 모양 축척)을 더 쓰고, MS 워드 호환 문서는 줄 상자
+    /// (`msWordLineBox(of:endsParagraph:)`와 같은 값)를 싣는다. `endsParagraph`
+    /// (`HwpDrawnLine.endsParagraph`)는 이 줄이 문단의 마지막 줄인지 — 그 줄의 상자에는 접힌
+    /// 문단 끝 글자(CR)의 글자 모양도 든다 (#206, 한글 실측:
     /// 10pt 밑줄 + 40pt 문단 끝 글자 줄의 밑줄은 40pt 상자 바닥 −6.24pt에 10pt 두께 0.36pt).
     public static func underlineReference(
         of line: CTLine, endsParagraph: Bool
