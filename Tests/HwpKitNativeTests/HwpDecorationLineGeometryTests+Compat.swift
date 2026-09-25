@@ -306,10 +306,12 @@ extension HwpDecorationLineGeometryTests {
     }
 
     /// 문단 끝 글자의 상자(`msWordParagraphEndBox`)가 그 줄의 밑줄을 옮긴다 — Menlo 10pt
-    /// 밑줄 run 하나에 Apple SD 산돌고딕 Neo 10pt 문단 끝 상자를 실으면 줄 상자의 높이는
-    /// Apple SD(15.6pt), 베이스라인은 Menlo(11.03pt)가 되어 밑줄이 −3.02pt로 올라간다
-    /// (한글 실측 `compat-decorations` 문단 "가나다밑줄": −0.3012em; Apple SD 혼자면 −0.3252).
-    func testParagraphEndBoxJoinsTheLineBox() throws {
+    /// 밑줄 run 하나에 그보다 **높은** Apple SD 산돌고딕 Neo 10pt 문단 끝 상자(15.60 > 15.13)를
+    /// 실으면 줄 상자가 끝 상자 + Menlo 상자의 베이스라인 아래 몫(4.10)으로 쌓여 19.70pt가
+    /// 되고(베이스라인은 Menlo 11.03), 밑줄은 그 줄 상자 바닥에서 Menlo cell의 0.129만큼 위라
+    /// 4.57pt 내려간다 (#223 한글 12.30 실측: 같은 구성의 줄 `vertsize` 1970·`baseline` 1104,
+    /// PDF 밑줄 베이스라인 아래 7.20pt — Menlo 혼자면 2.60, 두께는 Menlo cell의 0.05).
+    func testTallerParagraphEndBoxStacksAndMovesTheUnderline() throws {
         let appleSD = CTFontCreateWithName("Apple SD Gothic Neo" as CFString, 10, nil)
         try XCTSkipUnless(
             (CTFontCopyPostScriptName(appleSD) as String) == "AppleSDGothicNeo-Regular",
@@ -324,13 +326,30 @@ extension HwpDecorationLineGeometryTests {
             NSNumber(value: Double(appleBox.baseline)),
         ]
         let joined = try render(text: NSAttributedString(string: "AAAA", attributes: attributes))
-        let joinedCenter = try XCTUnwrap(Self.rowCenter(joined, where: Self.isCyan), "합침")
-        let line = try XCTUnwrap(HwpMsWordLineBox.union([menloBox(10), appleBox]))
-        let expectedDrop = HwpDecorationLineGeometry.msWordUnderlineBelow(lineBox: menloBox(10))
+        let joinedCenter = try XCTUnwrap(Self.rowCenter(joined, where: Self.isCyan), "쌓임")
+        let menlo = menloBox(10)
+        let line = Self.stackedLineBox(text: menlo, end: appleBox)
+        // 두 렌더의 베이스라인은 같다 (Menlo 11.03 ≥ Apple SD 10.80) — 밑줄 중심의 차가 곧 이동량.
+        let expectedDrop = HwpDecorationLineGeometry.msWordUnderlineBelow(lineBox: menlo)
             .center - HwpDecorationLineGeometry.msWordUnderlineBelow(lineBox: line).center
-        // 합친 상자는 Menlo 혼자보다 깊다 (cell 12 > 11.64, descent 2.77 > 2.36).
         expect(joinedCenter - aloneCenter).to(beCloseTo(expectedDrop, within: 0.2))
-        expect(expectedDrop).to(beCloseTo(0.42, within: 0.02))
+        expect(expectedDrop).to(beCloseTo(4.57, within: 0.02))
+        expect(-HwpDecorationLineGeometry.msWordUnderlineBelow(lineBox: line).center)
+            .to(beCloseTo(7.20, within: 0.12))
+        expect(HwpDecorationLineGeometry.msWordUnderlineBelow(lineBox: line).thickness)
+            .to(beCloseTo(menlo.cellHeight * 0.05, within: 0.0001))
+    }
+
+    /// 글자 상자 위에 쌓인 끝 글자 상자 — `LineMetrics.msWordLineBox`의 산식 (#223):
+    /// 높이 = 끝 상자 + 글자 상자의 베이스라인 아래 몫, 베이스라인 = 큰 쪽, cell = 글자 상자.
+    private static func stackedLineBox(
+        text: HwpMsWordLineBox, end: HwpMsWordLineBox
+    ) -> HwpMsWordLineBox {
+        HwpMsWordLineBox(
+            lineHeight: end.lineHeight + (text.lineHeight - text.baseline),
+            baseline: max(text.baseline, end.baseline),
+            cellHeight: text.cellHeight
+        )
     }
 
     /// 문단 끝 상자는 **문단의 마지막 줄**에만 든다 — 상자가 마지막 속성 run 전체에 실려
@@ -364,12 +383,12 @@ extension HwpDecorationLineGeometryTests {
         )
         expect(joined.count) == 2
         guard alone.count == 2, joined.count == 2 else { return }
-        let line = try XCTUnwrap(HwpMsWordLineBox.union([menloBox(10), appleBox]))
+        let line = Self.stackedLineBox(text: menloBox(10), end: appleBox)
         let expectedDrop = HwpDecorationLineGeometry.msWordUnderlineBelow(lineBox: menloBox(10))
             .center - HwpDecorationLineGeometry.msWordUnderlineBelow(lineBox: line).center
         expect(joined[0] - alone[0]).to(beCloseTo(0, within: 0.01), description: "앞 줄은 그대로")
         expect(joined[1] - alone[1]).to(beCloseTo(expectedDrop, within: 0.2), description: "마지막 줄")
-        expect(expectedDrop).to(beCloseTo(0.42, within: 0.02))
+        expect(expectedDrop).to(beCloseTo(4.57, within: 0.02))
         // 이어지는 조각: 끝 글자에 이어짐 표식 → 어느 줄도 옮기지 않는다.
         let continued = NSMutableAttributedString(string: text, attributes: boxed)
         continued.addAttribute(

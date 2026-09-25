@@ -34,6 +34,43 @@ final class HwpMsWordLineBoxTests: XCTestCase {
         expect(box.descent).to(beCloseTo(0.0836, within: 0.0005))
     }
 
+    /// 장식선 기준 상자(`cellHeight`)는 따로 실을 수 있다 (#223) — 끝 글자·개체가 키운 줄
+    /// 상자에서 밑줄은 **줄 상자 가장자리**에서 글자 상자의 0.15 cell 안쪽이다: 기본 init은
+    /// 종전 정의(줄 상자 / 1.3, descent = cell − ascent)와 같은 값이고, cell을 준 상자는
+    /// descent = (줄 상자 − 베이스라인) − 0.15 cell이다 (함초롬돋움 10pt 글 + 16pt 끝 글자:
+    /// 31.32/20.25, cell 13.02 → descent 9.12, 밑줄 중심 산식 9.39 = 9.12 + 0.021 cell — 한글
+    /// PDF 9.36).
+    /// `scaled`는 세 값을 함께 곱하고, `union`은 cell도 최댓값이다.
+    func testStoredCellHeightKeepsTheDecorationBoxOfTheTextRuns() {
+        let plain = HwpMsWordLineBox(lineHeight: 16.92, baseline: 12.66)
+        expect(plain.cellHeight).to(beCloseTo(16.92 / 1.3, within: 0.0001))
+        expect(plain.descent).to(beCloseTo(plain.cellHeight - plain.ascent, within: 0.0001))
+        let stacked = HwpMsWordLineBox(lineHeight: 31.32, baseline: 20.25, cellHeight: plain.cellHeight)
+        expect(stacked.ascent).to(beCloseTo(20.25 - 0.15 * plain.cellHeight, within: 0.0001))
+        expect(stacked.descent).to(beCloseTo(31.32 - 20.25 - 0.15 * plain.cellHeight, within: 0.0001))
+        expect(stacked.descent + 0.021 * plain.cellHeight).to(beCloseTo(9.39, within: 0.01))
+        // 한글 PDF(9.36)와의 차이는 PDF 좌표의 0.12pt 격자다 — 입력이 이미 한글 캐시 값이다
+        // (참 베이스라인 316.77이 316.80으로, 밑줄 326.161이 326.16으로 반올림된다).
+        expect(stacked.descent + 0.021 * plain.cellHeight).to(beCloseTo(9.36, within: 0.05))
+        let scaled = HwpMsWordLineBox(lineHeight: 1, baseline: 0.5, cellHeight: 0.4).scaled(by: 10)
+        expect(scaled.cellHeight).to(beCloseTo(4, within: 0.0001))
+        expect(scaled.lineHeight).to(beCloseTo(10, within: 0.0001))
+        // 따로 실은 cell이 합친 줄 상자 / 1.3보다 커야 `union`이 cell을 되풀지 않고 최댓값을
+        // 잡는지 가려진다 (12 / 1.3 ≈ 9.23 < 20).
+        let union = HwpMsWordLineBox.union([
+            HwpMsWordLineBox(lineHeight: 10, baseline: 8, cellHeight: 20),
+            HwpMsWordLineBox(lineHeight: 12, baseline: 7),
+        ])
+        expect(union?.lineHeight) == 12
+        expect(union?.baseline) == 8
+        expect(union?.cellHeight) == 20
+        let plainUnion = HwpMsWordLineBox.union([
+            HwpMsWordLineBox(lineHeight: 10, baseline: 8, cellHeight: 7),
+            HwpMsWordLineBox(lineHeight: 12, baseline: 7),
+        ])
+        expect(plainUnion?.cellHeight ?? 0).to(beCloseTo(12 / 1.3, within: 1e-9))
+    }
+
     func testScaledMultipliesBothAxes() {
         let box = HwpMsWordLineBox(lineHeight: 1.69, baseline: 1.265).scaled(by: 20)
         expect(box.lineHeight).to(beCloseTo(33.8, within: 0.0001))

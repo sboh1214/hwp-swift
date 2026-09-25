@@ -133,6 +133,10 @@ final class FixturePreviewFidelityTests: XCTestCase {
         // 저장본 줄 캐시로 놓이므로 이 값은 유실 가드다. 쪽 나눔의 가드는
         // `FixturePageEndLineBoxTests`와 매니페스트 쪽수 핀(29쪽)이다.
         "page-end-line-box": 0.001, // 실측 0.0001 (2026-09-24)
+        // MS 워드 호환 문서의 문단 끝·한 줄 끝 글자 줄 상자(#223) — 1쪽은 10·16·20pt 글자 19줄이라
+        // 12×16 그리드는 줄 상자의 몇 pt 차이에 둔감하다. 이 값은 유실 가드이고, 줄 자리의 가드는
+        // `FixtureMsWordParagraphEndBoxTests`의 줄 캐시·PDF 베이스라인 핀이다.
+        "ms-word-paragraph-end-box": 0.0025, // 실측 0.0018 (2026-09-25)
         "공공누리": 0.004, // 실측 0.0028 (저해상 GIF)
         "문서이력관리": 0.001, // 실측 0.0000
         "변경내용추적": 0.001, // 실측 0.0000

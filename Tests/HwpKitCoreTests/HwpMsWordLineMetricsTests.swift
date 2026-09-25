@@ -147,8 +147,11 @@ import XCTest
 
         /// 결합 문자열(컨테이너가 문단들을 `\n`으로 이은 것, 공개 `drawText`의 여러 문단)에서는
         /// 앞 문단의 마지막 줄도 문단 끝이다 — 문단 끝 상자가 그 줄에 들고(Menlo 30pt 상자 →
-        /// 33.09pt, 홀로 그릴 때와 같다) 다음 문단이 그만큼 아래에 놓인다. 한 줄 끝 표식(`lineBreak`)
-        /// 으로 끝나는 줄은 문단 끝이 아니다 (PR 리뷰).
+        /// 33.09pt, 홀로 그릴 때와 같다) 다음 문단이 그만큼 아래에 놓인다. 끝 상자(45.40)가 글자
+        /// 상자(Apple SD 10pt 15.60)보다 높으므로 줄 상자는 끝 상자 + 글자 상자의 베이스라인 아래
+        /// 몫(4.80)이다 (#223 — 한글 12.30 실측: 10pt 글 + 30pt 글자 모양의 끝 글자 줄 `vertsize`
+        /// 4999 = 한글의 Menlo 30 상자 4544(우리 산식 4540 — 글꼴 상자 반올림 격차) + Apple SD/Menlo
+        /// 10 글자 상자의 아래 몫 455, #194가 미해석으로 남긴 1688의 정체). 한 줄 끝 표식(`lineBreak`)으로 끝나는 줄은 문단 끝이 아니다 (PR 리뷰).
         func testCombinedParagraphsKeepEachParagraphEndBox() throws {
             try skipUnlessOracleFonts()
             let appleSD = Self.box("Apple SD Gothic Neo", 10)
@@ -169,8 +172,9 @@ import XCTest
             expect(joined[0].baselineOrigin.y).to(beCloseTo(aloneFirst.baselineOrigin.y, within: 0.001))
             expect(joined[0].endsParagraph).to(beTrue())
             expect(menlo30.baseline).to(beCloseTo(33.09, within: 0.03))
-            // 다음 문단은 앞 문단의 (Menlo 30 상자 + 비율 여분) 아래에서 시작한다.
-            let advance = menlo30.lineHeight
+            // 다음 문단은 앞 문단의 (Menlo 30 상자 + 글자 상자 아래 몫 + 끝 상자 기준 비율 여분)
+            // 아래에서 시작한다.
+            let advance = menlo30.lineHeight + (appleSD.lineHeight - appleSD.baseline)
                 + HwpLineSpacingRule.percentShare(of: menlo30.lineHeight, percent: 160)
             expect(joined[1].baselineOrigin.y)
                 .to(beCloseTo(Self.blockTop + advance + appleSD.baseline, within: 0.001))
@@ -231,18 +235,24 @@ import XCTest
         }
 
         /// 글자처럼 취급 개체 줄 — 베이스라인은 max(글꼴 상자 베이스라인, 개체 높이)이고 상자는
-        /// 그 아래에 글꼴 상자의 베이스라인 아래 몫이 붙는다: Apple SD/Menlo 10pt 줄(15.59/11.04)
-        /// 에 30pt 표를 넣으면 한글 캐시 `vertsize` 3455 = 3000 + 455·`baseline` 3000, 160%
-        /// `spacing`은 글자 상자 기준 932 그대로. 개체가 베이스라인보다 낮으면 상자가 그대로다.
+        /// 그 아래에 **글자 상자**의 베이스라인 아래 몫이 붙는다: Apple SD/Menlo 10pt 줄(15.59/11.04
+        /// — 빈칸이 라틴 슬롯 Menlo다)에 30pt 표를 넣으면 한글 캐시 `vertsize` 3455 = 3000 + 455·
+        /// `baseline` 3000, 160% `spacing`은 글자 상자 기준 932 그대로. 개체가 베이스라인보다 낮으면
+        /// 상자가 그대로다. 아래 몫은 문단 끝 상자가 아니라 글자 run의 것이다 (#223 실측: 빈칸 없는
+        /// Apple SD 10pt 글 + 20pt 표 + Menlo 끝 글자 → 2479 = 2000 + Apple SD의 479).
         func testObjectLinePutsTheObjectBottomOnTheBaseline() throws {
             try skipUnlessOracleFonts()
             let appleSD = Self.box("Apple SD Gothic Neo", 10)
             let menlo = Self.box("Menlo", 10)
             let text = Self.attributes("Apple SD Gothic Neo", 10)
+            // 한글처럼 빈칸은 라틴 슬롯(Menlo)이다 — 글자 상자가 Apple SD ∪ Menlo가 된다.
+            let space = Self.attributes("Menlo", 10)
             func paragraph(objectHeight: CGFloat) -> NSAttributedString {
-                let string = NSMutableAttributedString(string: "가나 ", attributes: text)
+                let string = NSMutableAttributedString(string: "가나", attributes: text)
+                string.append(NSAttributedString(string: " ", attributes: space))
                 string.append(LineBoxFixtures.objectMarker(height: objectHeight, attributes: text))
-                string.append(NSAttributedString(string: " 뒤", attributes: text))
+                string.append(NSAttributedString(string: " ", attributes: space))
+                string.append(NSAttributedString(string: "뒤", attributes: text))
                 return Self.finish(string, endBox: menlo)
             }
             let tall = try XCTUnwrap(Self.lines(paragraph(objectHeight: 30)).first)

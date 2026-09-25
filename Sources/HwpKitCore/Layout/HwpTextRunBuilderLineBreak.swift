@@ -79,7 +79,12 @@ extension HwpTextRunBuilder {
     ///    빈 문단 앵커(`emptyParagraphAnchor`)와 같은 선택이고, 비율 줄 간격의 빈
     ///    첫 줄이 다음 줄과 같은 높이를 갖는다 (실측 15pt·160%: 라틴 슬롯
     ///    Helvetica로 조판한 빈 첫 줄은 23pt, 한글 슬롯 HY울릉도M이면 다음 줄과 같은
-    ///    24pt).
+    ///    24pt). **MS 워드 호환 문서는 라틴 슬롯이다** — 그 줄 상자는 글꼴 상자이고
+    ///    한글은 한 줄 끝을 문단 끝 글자(CR)처럼 글자 모양의 라틴 슬롯 글꼴로 세운다
+    ///    (#223 한글 12.30 실측: 한글 슬롯 Apple SD 산돌고딕 Neo·라틴 슬롯 함초롬돋움
+    ///    10pt 글자 모양의 한글 글 뒤 한 줄 끝 줄은 `textheight` 21.71 = 함초롬 상자
+    ///    16.92 + Apple SD 아래 몫 4.79 — 직전 슬롯이면 15.59; 한글 슬롯 함초롬·라틴 슬롯
+    ///    Menlo의 라틴 글 뒤는 15.15로 한글 슬롯이 아니다).
     ///
     /// 속성은 허용 목록(`lineBreakAttributes`)으로 깎는다 — 변경 추적 표시·메모
     /// 강조·장식은 run 폭에 그려지므로 물려받으면 줄 끝에 토막이 남는다.
@@ -90,7 +95,8 @@ extension HwpTextRunBuilder {
         to output: NSMutableAttributedString
     ) {
         let resolved = resolvedShape(id: shapeId, paragraph: paragraph)
-        let existing = attributes(for: resolved, script: script)
+        let slot: HwpScript = index.compatibleDocumentTarget == .msWord ? .english : script
+        let existing = attributes(for: resolved, script: slot)
         var kept: [NSAttributedString.Key: Any] = [
             HwpAttributedStringKey.lineBreak: NSNumber(value: true),
         ]

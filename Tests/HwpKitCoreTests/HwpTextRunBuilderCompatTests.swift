@@ -280,6 +280,32 @@ import XCTest
                 .uint32Value) == HwpCompatibleDocumentTarget.msWord.rawValue
         }
 
+        /// MS 워드 호환 문서의 한 줄 끝(코드 10) run은 **라틴 슬롯** 글꼴이다 (#223) — 한글은 한
+        /// 줄 끝을 문단 끝 글자처럼 글자 모양의 라틴 슬롯 글꼴로 줄 상자에 세운다 (한글 실측:
+        /// 한글 슬롯 Apple SD·라틴 슬롯 함초롬돋움 10pt 글자 모양의 한글 글 뒤 한 줄 끝 줄
+        /// `textheight` 2171 = 함초롬 상자 1692 + Apple SD 아래 몫 479). 라틴 50%(6pt)인 12pt
+        /// 글자 모양으로 슬롯을 가른다 — 한글 문서는 종전대로 직전 run의 슬롯(한글 12pt)이다.
+        func testMsWordLineBreakUsesTheLatinSlotFont() throws {
+            let shapes: [UInt32: CoreHwp.HwpCharShape] = [
+                0: try charShape(faceRelativeSize: [100, 50, 100, 100, 100, 100, 100]),
+            ]
+            func lineBreakSize(target: CoreHwp.HwpCompatibleDocumentTarget?) throws -> CGFloat {
+                let built = builder(shapes: shapes, target: target)
+                    .build(paragraph: paragraph(text: "가\u{0A}나\u{0D}", runs: [(0, 0)]))
+                expect(built.attribute(
+                    HwpAttributedStringKey.lineBreak, at: 1, effectiveRange: nil
+                )).toNot(beNil())
+                let value = try XCTUnwrap(built.attribute(
+                    kCTFontAttributeName as NSAttributedString.Key, at: 1, effectiveRange: nil
+                ))
+                let ref = value as CFTypeRef
+                try XCTSkipUnless(CFGetTypeID(ref) == CTFontGetTypeID(), "글꼴 없음")
+                return CTFontGetSize(unsafeBitCast(ref, to: CTFont.self))
+            }
+            expect(try lineBreakSize(target: .msWord)).to(beCloseTo(6, within: 0.001))
+            expect(try lineBreakSize(target: nil)).to(beCloseTo(12, within: 0.001))
+        }
+
         /// 변경 추적 표식은 삽입 밑줄 색·삭제선 키만 싣고 별도 기하 키가 없다 — 두 선은
         /// 일반 밑줄·취소선과 같은 경로로 그려진다 (#187 실측).
         func testTrackChangeMarksReuseTheOrdinaryLineKeys() throws {

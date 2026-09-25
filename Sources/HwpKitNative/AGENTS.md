@@ -203,11 +203,14 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
   기하다** (#187, `Sources/HwpKitCore/AGENTS.md` 장식 항목). `drawDecoratedLine`이 줄마다
   두 값을 미리 푼다: ① `HwpDrawnTextLayout.msWordLineBox(of:endsParagraph:)` — 줄의
   글자 run(장식 없는 run·CoreText 대체 글꼴 run 포함, 마커 run 제외)의 `HwpMsWordLineBox`를
-  글자 크기로 곱해 축별 최댓값으로 합치고, 줄이 문단의 마지막 줄
-  (`HwpDrawnLine.endsParagraph`)이면 조판이 문단 전체에 실은
-  `hwp.msWordParagraphEndBox`(문단 끝 글자 = 라틴 슬롯 글꼴)도 더한다 (키는 모든 줄에
-  있으므로 줄 판정은 키가 아니라 `endsParagraph`다) → 아래·위·삽입 밑줄이 줄 전체에서
-  한 자리·한 두께. **세로 배치가 쓰는 줄 상자와 같은 값**(`LineMetrics.msWordTextBox`, #194)
+  글자 크기로 곱해 축별 최댓값으로 합친 글자 상자에, 줄 끝 글자(줄이 문단의 마지막 줄
+  (`HwpDrawnLine.endsParagraph`)이면 조판이 문단 전체에 실은 `hwp.msWordParagraphEndBox` —
+  문단 끝 글자 = 라틴 슬롯 글꼴, 한 줄 끝으로 끝나는 줄이면 그 run)와 글자처럼 취급 개체를
+  **쌓은** 줄 상자다 (#223 — 글자 상자보다 높을 때만 그 위에 글자 상자의 아래 몫이 붙는다;
+  키는 모든 줄에 있으므로 줄 판정은 키가 아니라 `endsParagraph`다) → 아래·위·삽입 밑줄이 줄
+  전체에서 한 자리·한 두께. 밑줄은 그 줄 상자의 가장자리에서 **글자 상자의 cell** × 0.129
+  안쪽이다 (`HwpMsWordLineBox.cellHeight`를 따로 싣는다 — 쌓인 줄의 상자 / 1.3이 아니다).
+  **세로 배치가 쓰는 줄 상자와 같은 값**(`LineMetrics.msWordLineBox`, #194·#223)
   이라 렌더러가 따로 계산하지 않는다 — 베이스라인 자리와 밑줄 자리가 한 상자에서 나온다;
   ② `msWordStrikethroughFonts(of:)`
   — 같은 글자 모양 id(`hwp.charShapeId`)의 잇닿은 run(슬롯·대체 글꼴 분할)을 한 글자

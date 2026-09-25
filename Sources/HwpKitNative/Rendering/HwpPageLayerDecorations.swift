@@ -55,10 +55,11 @@ extension HwpPageLayer {
         // 밑줄은 첨자로 옮겨진 베이스라인을 따라가고(`scriptBaselineOffset`), 글자
         // 아래·위 밑줄은 첨자에도 제자리다. 위치·두께의 크기 기준은 각 함수 주석에.
         //
-        // MS 워드 호환 문서(#187)의 밑줄(글자 아래·위·삽입)은 **줄 단위**다 — 줄의 run
-        // 상자들을 축별 최댓값으로 합친 줄 상자가 줄의 모든 밑줄 자리·두께를 정한다
-        // (한글 실측: 밑줄 없는 run·대체 글꼴 run·문단 끝 글자도 후보). 세로 배치가 쓰는
-        // 상자와 같은 값이다 (`HwpDrawnTextLayout.LineMetrics.msWordTextBox`, #194).
+        // MS 워드 호환 문서(#187)의 밑줄(글자 아래·위·삽입)은 **줄 단위**다 — 줄 상자의
+        // 가장자리와 줄의 run 상자들을 축별 최댓값으로 합친 글자 상자의 cell이 줄의 모든
+        // 밑줄 자리·두께를 정한다 (한글 실측: 밑줄 없는 run·대체 글꼴 run·문단 끝 글자도
+        // 후보, 문단 끝 글자·개체가 키운 줄 상자는 그 가장자리를 옮긴다 — #223). 세로
+        // 배치가 쓰는 상자와 같은 값이다 (`HwpDrawnTextLayout.LineMetrics.msWordLineBox`).
         // 취소선은 run마다 자기 글꼴이라 아래에서 따로 푼다.
         let msWordReference = HwpDrawnTextLayout.msWordLineBox(of: line, endsParagraph: endsParagraph)
         let strikethroughFonts = msWordStrikethroughFonts(of: runs)
