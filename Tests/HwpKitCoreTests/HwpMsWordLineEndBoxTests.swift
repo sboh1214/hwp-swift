@@ -277,7 +277,7 @@ import XCTest
 
         /// 글자 없이 개체와 문단 끝 글자만 있는 줄은 max(끝 상자, 개체)다 — 아래 몫을 붙일 글자
         /// 상자가 없다 (한글 실측: 30pt 표 + 10pt 끝 글자 3000/3000, 40pt 끝 글자 6766/5063).
-        /// 개체가 상자 높이와 같아져도 MS 워드 호환 줄은 밑줄을 되돌리지 않는다.
+        /// 개체가 상자 높이와 같아져도 MS 워드 호환 줄의 밑줄은 그 글꼴 줄 상자에서 잰다.
         func testObjectOnlyParagraphLineIsTheLargerOfTheEndBoxAndTheObject() throws {
             try skipUnlessOracleFonts()
             let marker = Self.attributes("Apple SD Gothic Neo", 10)
@@ -288,7 +288,17 @@ import XCTest
             expect(small.boxHeight).to(beCloseTo(30, within: 0.001))
             expect(small.baselineAnchor).to(beCloseTo(30, within: 0.001))
             let line = try XCTUnwrap(Self.lines(objectOnly(end: Self.box("Menlo", 10))).first)
-            expect(HwpDrawnTextLayout.underlineReturnDrop(of: line.line, endsParagraph: true)) == 0
+            // 밑줄은 한글 문서의 줄 상자 바닥 규칙이 아니라 MS 워드 줄 상자(= 개체 30pt)에서
+            // 잰다 (#226) — 기준이 그 상자를 싣고 줄 상자 높이도 같은 값이다.
+            let reference = HwpDrawnTextLayout.underlineReference(
+                of: line.line, endsParagraph: true
+            )
+            let referenceBox = try XCTUnwrap(reference.msWordLineBox)
+            expect(referenceBox.lineHeight).to(beCloseTo(30, within: 0.001))
+            expect(referenceBox.baseline).to(beCloseTo(30, within: 0.001))
+            // 밑줄 자리·두께를 정하는 장식선 기준 상자는 글자가 없어 끝 글자(Menlo 10pt)의 cell이다.
+            expect(referenceBox.cellHeight)
+                .to(beCloseTo(Self.box("Menlo", 10).cellHeight, within: 0.001))
             let menlo40 = Self.box("Menlo", 40)
             let large = try Self.metrics(objectOnly(end: menlo40))
             expect(large.boxHeight).to(beCloseTo(menlo40.lineHeight, within: 0.001))
@@ -330,13 +340,14 @@ import XCTest
                 expect(drawn[1].baselineOrigin.y - drawn[0].baselineOrigin.y)
                     .to(beCloseTo(30 + share, within: 0.001), description: "\(markerSize)")
             }
-            // 장식선 기준 상자는 마커 글꼴의 cell이고, 밑줄은 되돌리지 않는다.
+            // 장식선 기준 상자는 마커 글꼴의 cell이고, 밑줄 기준은 그 줄 상자다.
             let string = gallery(markerSize: 10)
             let first = try XCTUnwrap(Self.lines(string, width: 30).first)
             let box = try XCTUnwrap(HwpDrawnTextLayout.msWordLineBox(of: first.line, endsParagraph: false))
             expect(box.lineHeight).to(beCloseTo(30, within: 0.001))
             expect(box.cellHeight).to(beCloseTo(appleSD10.cellHeight, within: 0.001))
-            expect(HwpDrawnTextLayout.underlineReturnDrop(of: first.line)) == 0
+            expect(HwpDrawnTextLayout.underlineReference(of: first.line, endsParagraph: false)
+                .msWordLineBox) == box
             // 줄 공간을 예약하지 않은 마커(높이 0 — 책갈피·자리 차지 개체 앵커)만 있는 줄은 그
             // 마커의 글꼴 상자다 — 상자가 0이 되지 않는다.
             let menlo16 = Self.box("Menlo", 16)

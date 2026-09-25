@@ -53,6 +53,7 @@ extension HwpDecorationLineGeometryTests {
                 script ? Self.scriptSize : Self.baseSize
             ),
             HwpAttributedStringKey.spaceTargetSize: NSNumber(value: Double(Self.baseSize)),
+            HwpAttributedStringKey.baseFontSize: NSNumber(value: Double(Self.baseSize)),
             HwpAttributedStringKey.strikethroughStyle: NSNumber(value: 1),
             HwpAttributedStringKey.strikethroughColor: color,
         ]
@@ -160,10 +161,34 @@ extension HwpDecorationLineGeometryTests {
             Self.rowCenter(raster) { $0 > 150 && $1 < 100 && $2 > 150 }, "첨자 밑줄"
         )
         expect(scripted).to(beCloseTo(plain, within: 0.2))
-        // 줄어든 크기를 기준으로 그리면 0.17 × (10 − 6.4) = 0.612pt 올라간다.
-        let drift = HwpRenderTuning.Text.underlineBelowCenterRatio
-            * (Self.baseSize - Self.scriptSize)
-        expect(drift).to(beGreaterThan(0.5))
+        // 밑줄은 줄 단위(#226)라 이 줄에서는 본문 run이 기준을 정한다 — 첨자 run의 크기 기준은
+        // 첨자 run만 있는 줄을 견주는 `testScriptRunAloneSetsTheUnderlineLineBox`가 잡는다.
+    }
+
+    /// 첨자 run만 있는 줄의 밑줄 기준은 그 run의 **축소 전 기본 크기**다 (#179·#226) — 첨자
+    /// run(글꼴 6.4pt)만 있는 줄과 본문 10pt run만 있는 줄은 줄 상자가 같은 10pt라 베이스라인·
+    /// 밑줄 행·두께가 같다. 첨자 run이 줄어든 6.4pt로 줄 기준에 들면 상자가 6.4pt가 되어
+    /// 베이스라인이 3.06pt·밑줄이 3.7pt 위로 가고 두께가 0.256pt로 준다. 한글 실측(#226): 기본
+    /// 40pt 위 첨자 무장식 run이 든 줄의 10pt 밑줄은 40pt 상자 자리(−6.72pt)·두께 1.56pt다.
+    func testScriptRunAloneSetsTheUnderlineLineBox() throws {
+        let cyan = CGColor(red: 0, green: 1, blue: 1, alpha: 1)
+        func measure(script: Bool) throws -> (row: CGFloat, thickness: CGFloat) {
+            let raster = try render(text: NSAttributedString(
+                string: "    ",
+                attributes: belowUnderlineRun(
+                    color: cyan, script: script, location: Self.locationShift
+                )
+            ))
+            return try (
+                XCTUnwrap(Self.rowCenter(raster) { $0 < 100 && $1 > 150 && $2 > 150 }, "밑줄"),
+                XCTUnwrap(Self.lineThickness(raster) { red, _, _ in red }, "두께")
+            )
+        }
+        let plain = try measure(script: false)
+        let scripted = try measure(script: true)
+        expect(scripted.row).to(beCloseTo(plain.row, within: 0.2))
+        expect(scripted.thickness).to(beCloseTo(plain.thickness, within: 0.05))
+        expect(plain.thickness).to(beCloseTo(0.4, within: 0.05))
     }
 
     /// 위쪽 밑줄도 첨자 이동을 따라가지 않는다 — 첨자 + 글자 위치 run(자홍)의 선이
@@ -220,7 +245,9 @@ extension HwpDecorationLineGeometryTests {
                 beCloseTo(ratio * Self.baseSize, within: 0.05), description: line.name
             )
         }
-        // 줄어든 글꼴 크기 기준이면 0.256pt로 0.4pt와 0.05 밖에서 갈린다.
+        // 줄어든 글꼴 크기 기준이면 0.256pt로 0.4pt와 0.05 밖에서 갈린다 — 취소선 행이 가른다
+        // (run 단위). 밑줄 두 행은 줄 단위(#226)라 본문 run이 기준을 정하고, 첨자 run의 크기
+        // 기준은 `testScriptRunAloneSetsTheUnderlineLineBox`가 잡는다.
         expect(ratio * Self.scriptSize).to(beCloseTo(0.256, within: 0.001))
     }
 }

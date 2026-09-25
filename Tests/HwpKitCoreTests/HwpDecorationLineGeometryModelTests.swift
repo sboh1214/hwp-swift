@@ -4,10 +4,10 @@ import Foundation
 import Nimble
 import XCTest
 
-/// 장식선 기하의 산식 핀 (#187·#210) — 렌더러 없이 `HwpDecorationLineGeometry`만 잰다.
-/// 한글 문서는 글자 크기 비례, 한글 2007 호환 문서는 같은 가장자리에 고정 두께,
-/// MS 워드 호환 문서는 줄 상자(밑줄)·run 상자(취소선)에서 나온다. 수치는 한글 12.30.0
-/// 실측(`HwpRenderTuning.Text`의 `msWord*`·`hwp200X*` doc-comment).
+/// 장식선 기하의 산식 핀 (#187·#210·#226) — 렌더러 없이 `HwpDecorationLineGeometry`만 잰다.
+/// 한글 문서는 밑줄이 줄 상자 가장자리·두께가 줄 글자 크기 비례, 한글 2007 호환 문서는
+/// 같은 가장자리에 고정 두께, MS 워드 호환 문서는 줄 상자(밑줄)·run 상자(취소선)에서
+/// 나온다. 수치는 한글 12.30.0 실측(`HwpRenderTuning.Text`의 doc-comment).
 final class HwpDecorationLineGeometryModelTests: XCTestCase {
     /// 한글 PDF가 찍은 실제 글자 크기와 세 선의 중심 (pt, 베이스라인 기준).
     private struct Hwp200XSample {
@@ -30,6 +30,83 @@ final class HwpDecorationLineGeometryModelTests: XCTestCase {
         expect(script.thickness).to(beCloseTo(0.4, within: 0.0001))
     }
 
+    /// 한글 PDF가 찍은 줄 단위 밑줄 (#226) — 줄 상자 높이(L)·줄 글자 기본 크기(T)와 중심
+    /// (pt, 베이스라인 기준; 위 밑줄은 nil이면 표본 없음)·두께.
+    private struct LineWideSample {
+        let lineBox: CGFloat
+        let text: CGFloat
+        let below: CGFloat?
+        let above: CGFloat?
+        let thickness: CGFloat
+    }
+
+    /// 한글 문서의 밑줄은 **줄 단위**다 (#226) — 아래 밑줄은 위 가장자리가 줄 상자 바닥
+    /// (0.15L)에, 위 밑줄은 아래 가장자리가 줄 상자 상단(0.85L)에 붙고 두께는 0.04T다.
+    /// 한글 12.30 PDF 실측(2026-09-22·25, 함초롬바탕, 10pt 밑줄 run과 한 줄에 놓인 것):
+    /// 40pt 무장식 글자·40pt 공백(L 40·T 40) −6.84·1.56, 위 밑줄은 기본 40pt·상대 크기
+    /// 50% run +34.80·1.56; 40pt 문단 끝 글자·한 줄 끝·책갈피·그림·표(L 40·T 10) −6.12~
+    /// −6.24·+34.20·0.36; 20pt 무장식 글자 + 40pt 문단 끝 글자(L 40·T 20) −6.36·0.84;
+    /// 40pt 마커의 8pt 그림 + 20pt 글자(L 20·T 20) −3.36·0.84; 바깥 여백 위 7·아래 3pt인
+    /// 20pt 그림(L 30·T 10) −4.68·+25.68·0.36; 10pt만(L·T 10) −1.68·+8.76·0.36. 한글은
+    /// 좌표·두께를 600dpi 장치 단위(0.12pt)로 떨어뜨리므로 한 단위 안에서 본다.
+    func testNativeUnderlinesSitOnTheLineBoxEdges() {
+        let quantum = 0.12
+        let samples = [
+            LineWideSample(lineBox: 40, text: 40, below: -6.84, above: 34.80, thickness: 1.56),
+            LineWideSample(lineBox: 40, text: 10, below: -6.24, above: 34.20, thickness: 0.36),
+            LineWideSample(lineBox: 40, text: 20, below: -6.36, above: nil, thickness: 0.84),
+            LineWideSample(lineBox: 20, text: 20, below: -3.36, above: nil, thickness: 0.84),
+            LineWideSample(lineBox: 30, text: 10, below: -4.68, above: 25.68, thickness: 0.36),
+            LineWideSample(lineBox: 10, text: 10, below: -1.68, above: 8.76, thickness: 0.36),
+        ]
+        for sample in samples {
+            let label = "L \(sample.lineBox) · T \(sample.text)"
+            let below = HwpDecorationLineGeometry.underlineBelow(
+                lineBoxHeight: sample.lineBox, thicknessFontSize: sample.text
+            )
+            let above = HwpDecorationLineGeometry.underlineAbove(
+                lineBoxHeight: sample.lineBox, thicknessFontSize: sample.text
+            )
+            if let expected = sample.below {
+                expect(below.center).to(beCloseTo(expected, within: quantum), description: label)
+            }
+            if let expected = sample.above {
+                expect(above.center).to(beCloseTo(expected, within: quantum), description: label)
+            }
+            for line in [below, above] {
+                expect(line.thickness)
+                    .to(beCloseTo(sample.thickness, within: quantum), description: label)
+            }
+            // 가장자리는 두께와 무관하게 줄 상자 바닥·상단이다.
+            expect(below.center + below.thickness / 2)
+                .to(beCloseTo(-0.15 * sample.lineBox, within: 0.0001), description: label)
+            expect(above.center - above.thickness / 2)
+                .to(beCloseTo(0.85 * sample.lineBox, within: 0.0001), description: label)
+        }
+        // 한 크기만 있는 줄의 편의 산식은 L = T = 글자 크기다.
+        expect(HwpDecorationLineGeometry.underlineBelow(fontSize: 40)) == HwpDecorationLineGeometry
+            .underlineBelow(lineBoxHeight: 40, thicknessFontSize: 40)
+        expect(HwpDecorationLineGeometry.underlineAbove(fontSize: 40)) == HwpDecorationLineGeometry
+            .underlineAbove(lineBoxHeight: 40, thicknessFontSize: 40)
+    }
+
+    /// 한글 2007 호환 문서도 같은 줄 상자 가장자리에 고정 0.36pt 선을 얹는다 (#226 실측: 10pt
+    /// 밑줄과 한 줄인 40pt 글자·문단 끝 글자·한 줄 끝·책갈피·그림·표 −6.12·+34.08~34.20,
+    /// 상자 30pt 그림 줄 −4.68·+25.68, 상자 20pt 줄 −3.12).
+    func testHwp200XUnderlinesSitOnTheLineBoxEdges() {
+        let quantum = 0.12
+        expect(HwpDecorationLineGeometry.hwp200XUnderlineBelow(lineBoxHeight: 40).center)
+            .to(beCloseTo(-6.12, within: quantum))
+        expect(HwpDecorationLineGeometry.hwp200XUnderlineAbove(lineBoxHeight: 40).center)
+            .to(beCloseTo(34.20, within: quantum))
+        expect(HwpDecorationLineGeometry.hwp200XUnderlineBelow(lineBoxHeight: 30).center)
+            .to(beCloseTo(-4.68, within: quantum))
+        expect(HwpDecorationLineGeometry.hwp200XUnderlineAbove(lineBoxHeight: 30).center)
+            .to(beCloseTo(25.68, within: quantum))
+        expect(HwpDecorationLineGeometry.hwp200XUnderlineBelow(lineBoxHeight: 20).center)
+            .to(beCloseTo(-3.12, within: quantum))
+    }
+
     /// 한글 2007 호환 문서의 세 선을 한글 PDF 좌표에 맞춘다 — 한글은 좌표를 600dpi
     /// 장치 단위(0.12pt)로 떨어뜨리므로 한 단위 안에서 본다. 실측(2026-09-22, 함초롬바탕,
     /// 괄호는 PDF가 찍은 실제 글자 크기): 10pt(9.96) 밑줄 −1.56·위 밑줄 +8.64·취소선
@@ -44,9 +121,11 @@ final class HwpDecorationLineGeometryModelTests: XCTestCase {
             Hwp200XSample(size: 99.96, below: -15.12, above: 85.08, strike: 34.92),
         ]
         for sample in samples {
-            expect(HwpDecorationLineGeometry.hwp200XUnderlineBelow(fontSize: sample.size).center)
+            expect(HwpDecorationLineGeometry.hwp200XUnderlineBelow(lineBoxHeight: sample.size)
+                .center)
                 .to(beCloseTo(sample.below, within: quantum), description: "\(sample.size)pt 밑줄")
-            expect(HwpDecorationLineGeometry.hwp200XUnderlineAbove(fontSize: sample.size).center)
+            expect(HwpDecorationLineGeometry.hwp200XUnderlineAbove(lineBoxHeight: sample.size)
+                .center)
                 .to(beCloseTo(sample.above, within: quantum), description: "\(sample.size)pt 위 밑줄")
             expect(HwpDecorationLineGeometry.hwp200XStrikethrough(fontSize: sample.size).center)
                 .to(beCloseTo(sample.strike, within: quantum), description: "\(sample.size)pt 취소선")
@@ -57,8 +136,8 @@ final class HwpDecorationLineGeometryModelTests: XCTestCase {
     /// 갈래가 같다 — 중심 차이가 두께 절반의 차이다.
     func testHwp200XLinesUseAFixedThicknessOnTheNativeEdge() {
         for size in [CGFloat(5), 10, 40, 100] {
-            let below = HwpDecorationLineGeometry.hwp200XUnderlineBelow(fontSize: size)
-            let above = HwpDecorationLineGeometry.hwp200XUnderlineAbove(fontSize: size)
+            let below = HwpDecorationLineGeometry.hwp200XUnderlineBelow(lineBoxHeight: size)
+            let above = HwpDecorationLineGeometry.hwp200XUnderlineAbove(lineBoxHeight: size)
             let strike = HwpDecorationLineGeometry.hwp200XStrikethrough(fontSize: size)
             for line in [below, above, strike] {
                 expect(line.thickness).to(beCloseTo(0.36, within: 0.0001), description: "\(size)pt")

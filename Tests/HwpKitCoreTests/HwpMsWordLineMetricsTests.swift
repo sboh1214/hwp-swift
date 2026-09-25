@@ -271,7 +271,14 @@ import XCTest
                 within: 0.001
             ))
             expect(advance).to(beCloseTo(43.87, within: 0.1))
-            expect(HwpDrawnTextLayout.underlineReturnDrop(of: tall.line)).to(equal(0))
+            // 밑줄은 한글 문서의 줄 상자 바닥 규칙이 아니라 이 글꼴 줄 상자에서 잰다 (#226).
+            let reference = HwpDrawnTextLayout.underlineReference(
+                of: tall.line, endsParagraph: false
+            )
+            expect(reference.msWordLineBox) == HwpDrawnTextLayout.msWordLineBox(
+                of: tall.line, endsParagraph: false
+            )
+            expect(reference.msWordLineBox).toNot(beNil())
             let short = try XCTUnwrap(Self.lines(paragraph(objectHeight: 5)).first)
             expect(short.baselineOrigin.y)
                 .to(beCloseTo(Self.blockTop + max(appleSD.baseline, menlo.baseline), within: 0.001))

@@ -151,17 +151,21 @@ extension HwpDecorationLineGeometryTests {
     }
 
     /// 두께는 크기를 따라가지 않는다 — 20pt와 40pt 밑줄이 같은 0.36pt다 (한글 실측:
-    /// 5~100pt 22개 크기 전부 0.36pt). 한글 문서에서는 0.8pt와 1.6pt로 갈린다.
+    /// 5~100pt 22개 크기 전부 0.36pt). 한글 문서에서는 20pt만 있는 줄 0.8pt, 40pt 줄 1.6pt로
+    /// 갈린다 (밑줄 두께는 줄 단위라 두 크기를 따로 그려 견준다, #226).
     func testHwp2007LineThicknessDoesNotScaleWithFontSize() throws {
         let probe = try thicknessProbe { size, color in
             hwp2007Run(size: size, color: color, underline: true)
         }
         expect(probe.small).to(beCloseTo(0.36, within: 0.06))
         expect(probe.large).to(beCloseTo(0.36, within: 0.06))
-        let native = try thicknessProbe { size, color in
-            hwp2007Run(size: size, color: color, underline: true, target: nil)
-        }
-        expect(native.large - native.small)
+        let nativeSmall = try blankLine(
+            hwp2007Run(size: Self.smallSize, color: Self.probeCyan, underline: true, target: nil)
+        )
+        let nativeLarge = try blankLine(
+            hwp2007Run(size: Self.largeSize, color: Self.probeCyan, underline: true, target: nil)
+        )
+        expect(nativeLarge.thickness - nativeSmall.thickness)
             .to(beCloseTo((Self.largeSize - Self.smallSize) * 0.04, within: 0.12))
     }
 
@@ -169,8 +173,8 @@ extension HwpDecorationLineGeometryTests {
     /// 슬롯 상대 크기 50%로 20pt가 된 run의 밑줄이 40pt 자리에 남는다 (한글 실측
     /// 2026-09-22: −6.24pt, 20pt 자리라면 −3.24pt).
     func testHwp2007LinesUseTheCharShapeBaseFontSize() throws {
-        // 기본 40pt·슬롯 50%인 20pt run과 40pt run을 한 줄에 — 베이스라인이 같으므로 두 선의
-        // 행을 바로 견줄 수 있다. 기준이 기본 크기라면 같은 자리다.
+        // 기본 40pt·슬롯 50%인 20pt run과 40pt run을 한 줄에 — 밑줄은 줄 단위(#226)라 두 run이
+        // 한 행이다 (이 비교는 줄 단위만 본다 — 기본 크기 판정은 아래 run 하나 줄이 한다).
         let scaled = try blankCenters(
             small: hwp2007Run(
                 size: Self.smallSize, color: Self.probeCyan, underline: true,
@@ -179,14 +183,19 @@ extension HwpDecorationLineGeometryTests {
             large: hwp2007Run(size: Self.largeSize, color: Self.probeMagenta, underline: true)
         )
         expect(scaled.small).to(beCloseTo(scaled.large, within: 0.1))
-        // 대조: 기본 크기까지 20pt인 run은 0.15 × 20 = 3.0pt 위다 (두께가 같아 중심 차이가
-        // 곧 가장자리 차이다).
-        let plain = try blankCenters(
-            small: hwp2007Run(size: Self.smallSize, color: Self.probeCyan, underline: true),
-            large: hwp2007Run(size: Self.largeSize, color: Self.probeMagenta, underline: true)
+        // 그 run 하나만 있는 줄에서도 밑줄·취소선이 40pt 자리다 — 같은 run의 두 선 간격이
+        // 0.35 × 40 + 0.15 × 40 + 0.18 = 20.18pt (run 글꼴 20pt 기준이면 10.18pt). 밑줄은 줄
+        // 단위라 두 run을 한 줄에 두는 위 비교만으로는 기본 크기를 가르지 못한다 (#226).
+        var alone = hwp2007Run(
+            size: Self.smallSize, color: Self.probeCyan, underline: true, baseSize: Self.largeSize
         )
-        expect(plain.large - plain.small)
-            .to(beCloseTo(0.15 * (Self.largeSize - Self.smallSize), within: 0.1))
+        alone[HwpAttributedStringKey.strikethroughStyle] = NSNumber(value: 1)
+        alone[HwpAttributedStringKey.strikethroughColor] = Self.probeMagenta
+        let raster = try render(text: NSAttributedString(string: "    ", attributes: alone))
+        let underline = try XCTUnwrap(Self.rowCenter(raster, where: Self.isProbeCyan), "밑줄")
+        let strike = try XCTUnwrap(Self.rowCenter(raster, where: Self.isProbeMagenta), "취소선")
+        let expected = 0.35 * Self.largeSize + 0.15 * Self.largeSize + 0.18
+        expect(underline - strike).to(beCloseTo(expected, within: 0.1))
     }
 
     /// 변경 추적 삽입 밑줄은 일반 밑줄과 같은 자리·두께다 (한글 실측: 쪽이 0.8배로 줄어

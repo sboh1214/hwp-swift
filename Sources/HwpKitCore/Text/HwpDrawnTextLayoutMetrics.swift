@@ -3,11 +3,13 @@ import CoreHwp
 import CoreText
 import Foundation
 
-/// 줄 상자를 정하는 **지표**와 그 수집 (#178·#180·#194·#223).
+/// 줄 상자를 정하는 **지표**와 그 수집 (#178·#180·#194·#223·#226).
 ///
-/// 앵커(`baselineAnchor`)·줄 전진량(`HwpLineAdvance`)·밑줄 되돌림(`underlineReturnDrop`)·
-/// MS 워드 호환 장식선의 줄 상자(`msWordLineBox`)가 모두 이 한 벌을 쓴다 — 줄에서 무엇을
-/// 읽는지의 단일 원본이라 갈래마다 다른 지표를 보는 일이 생기지 않는다.
+/// 앵커(`baselineAnchor`)·줄 전진량(`HwpLineAdvance`)·줄 단위 밑줄의 기준
+/// (`underlineReference` — 한글 문서·한글 2007 호환은 줄 상자 높이와 글자 기본 크기, MS 워드
+/// 호환은 줄 상자 `msWordLineBox`)이 모두 이 한 벌을 쓴다 — 줄에서 무엇을 읽는지의 단일
+/// 원본이라 갈래마다 다른 지표를 보는 일이 생기지 않는다. 밑줄이 세로 배치와 같은 상자에서
+/// 나오므로 줄 상자 바닥·상단에 정확히 붙는다.
 extension HwpDrawnTextLayout {
     /// 줄 상자를 정하는 지표 — 한글 줄 캐시(`PARA_LINE_SEG`)의 `vertsize`·`baseline`에
     /// 해당하는 값을 글자 몫과 개체 몫으로 나눠 든다.
@@ -26,6 +28,15 @@ extension HwpDrawnTextLayout {
         /// (`objectMarkerBaseFontSize`, #217). 쪽 번호 상자처럼 글자 크기 자체가 필요한 곳
         /// (`HwpPageChromeBuilder.pageNumberFrame`)도 읽는다.
         var baseFontSize: CGFloat = 0
+        /// 줄 **글자** run의 상대크기 적용 전 기본 크기 최댓값 — 한글 문서에서 밑줄 두께와 선
+        /// 모양 축척의 기준이다 (#226, `UnderlineReference.textFontSize`; 한글 2007 호환 문서는
+        /// 두께가 고정이고 선 모양은 렌더러가 종전 run 크기로 그려(#227 범위 밖) 쓰지 않는다).
+        /// `baseFontSize`와 달리 문단 끝 글자(CR)·한 줄 끝(`hwp.lineBreak`)·빈 줄 앵커·결합
+        /// 문자열의 문단 구분자와 **모든** 마커 run(높이 0 마커 포함)을 세지 않는다 — 한글
+        /// 12.30 실측 (2026-09-25): 10pt 밑줄이 40pt 무장식 글자·40pt 공백과 한 줄이면 두께
+        /// 1.56pt(40pt 몫)인데, 40pt 문단 끝 글자·40pt 한 줄 끝·40pt 책갈피·40pt 글자 모양
+        /// 마커의 그림과 한 줄이면 0.36pt(10pt 몫)다. 그 넷은 줄 상자(밑줄 자리)에는 든다.
+        var textFontSize: CGFloat = 0
         /// 줄 공간을 **예약한** 글자처럼 취급 개체 마커 run(높이 > 0 delegate)의 기본 크기
         /// 최댓값 — 한글 문서에서 비율 줄 간격의 여분 기준(`textBoxHeight`)에만 들고 줄
         /// 상자(`boxHeight`)·베이스라인에는 들지 않는다 (#217). 한글 12.30 실측 (2026-09-24,
@@ -242,6 +253,9 @@ extension HwpDrawnTextLayout {
                 metrics.baseFontSize, ascent > 0 ? 0 : declared ?? 0,
                 endsParagraph ? paragraphEndBaseFontSize(in: attributes) : 0
             )
+            if !isMarker, isGlyphText(attributes) {
+                metrics.textFontSize = max(metrics.textFontSize, declared ?? 0)
+            }
             if isMsWordCompatible(attributes) {
                 isMsWord = true
                 if endsParagraph, endBox == nil,
@@ -307,6 +321,25 @@ extension HwpDrawnTextLayout {
         lineMetrics(of: line, endsParagraph: endsParagraph).msWordLineBox
     }
 
+    /// 이 줄의 밑줄(글자 아래·글자 위·변경 추적 삽입 밑줄)이 공유하는 기준 (#226) — 장식선
+    /// 기하(`HwpPageLayerDecorations`)가 줄마다 한 번 부른다. 한글 문서·한글 2007 호환
+    /// 문서는 줄 상자 높이(`lineBoxHeight` — 세로 배치가 쓰는 `vertsize`와 같은 값이라 밑줄이
+    /// 그 상자의 바닥·상단에 붙는다)를, 한글 문서는 여기에 줄 글자의 기본 크기 최댓값
+    /// (`textFontSize` — 두께·선 모양 축척)을 더 쓰고, MS 워드 호환 문서는 줄 상자
+    /// (`msWordLineBox(of:endsParagraph:)`와 같은 값)를 싣는다. `endsParagraph`
+    /// (`HwpDrawnLine.endsParagraph`)는 이 줄이 문단의 마지막 줄인지 — 그 줄의 상자에는 접힌
+    /// 문단 끝 글자(CR)의 글자 모양도 든다 (#206, 한글 실측:
+    /// 10pt 밑줄 + 40pt 문단 끝 글자 줄의 밑줄은 40pt 상자 바닥 −6.24pt에 10pt 두께 0.36pt).
+    public static func underlineReference(
+        of line: CTLine, endsParagraph: Bool
+    ) -> HwpDecorationLineGeometry.UnderlineReference {
+        let metrics = lineMetrics(of: line, endsParagraph: endsParagraph)
+        return HwpDecorationLineGeometry.UnderlineReference(
+            lineBoxHeight: metrics.boxHeight, textFontSize: metrics.textFontSize,
+            msWordLineBox: metrics.msWordLineBox
+        )
+    }
+
     /// 문자열이 문단을 끝내면(`endsParagraph` — 다음 단·쪽으로 이어지는 조각이 아니면) 그 문단 끝
     /// 글자(CR)의 기본 크기(`hwp.paragraphEndBaseFontSize`, #206), 아니면 0. 한글은 이 크기를 문단
     /// 마지막 줄의 줄 상자에 넣는다 — 개체 마커로 끝나는 문단에서도 (#217: 40pt 마커의 8pt 그림만
@@ -327,6 +360,16 @@ extension HwpDrawnTextLayout {
         guard let raw = attributes?[HwpAttributedStringKey.compatibleDocumentTarget] as? NSNumber
         else { return false }
         return raw.uint32Value == HwpCompatibleDocumentTarget.msWord.rawValue
+    }
+
+    /// run이 **글자**인지 — 조판 문자열에만 있거나 줄 끝 글자의 자리를 대신하는 표식 run
+    /// (한 줄 끝 `hwp.lineBreak`, 빈 줄·빈 문단 앵커 `hwp.emptyLineAnchor`, 결합 문자열의 문단
+    /// 구분자 `combinedParagraphSeparator`)이 아니면 참이다. 마커 run(run delegate)은
+    /// 호출자가 따로 거른다. 밑줄 두께의 기준(`LineMetrics.textFontSize`)이 이 run만 센다.
+    private static func isGlyphText(_ attributes: [NSAttributedString.Key: Any]?) -> Bool {
+        attributes?[HwpAttributedStringKey.lineBreak] == nil
+            && attributes?[HwpAttributedStringKey.emptyLineAnchor] == nil
+            && attributes?[HwpAttributedStringKey.combinedParagraphSeparator] == nil
     }
 
     /// 마커 run이 줄에 예약한 높이 — run delegate의 ascent다 (`HwpInlineObjectReservation`:

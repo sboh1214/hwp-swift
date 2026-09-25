@@ -30,7 +30,8 @@ import Foundation
 public enum HwpLineShapeGeometry {
     /// 패턴 축척의 갈래
     public enum Scale: Equatable, Sendable {
-        /// 글자선 — `fontSize`는 첨자 축소 전 글자 크기 (pt)
+        /// 글자선 — `fontSize`는 선의 기준 크기 (pt): 한글 문서는 밑줄이 줄 글자 기본 크기,
+        /// 취소선이 run의 글자 모양 기본 크기이고(#226) 호환 문서는 첨자 축소 전 run 크기다
         case characterLine(fontSize: CGFloat)
         /// 표 셀 테두리·단 구분선 — 명목 두께에 비례
         case border

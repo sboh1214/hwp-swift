@@ -25,8 +25,8 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
    있다 — 4단계). 새로 저작하는 쌍(`section-marks`·`section-page-starts-on`·
    `line-shapes`·`script-decorations`·`section-page-number-skip`·`compat-decorations`·
    `hwp2007-decorations`·`inline-object-baseline`·`inline-object-marker-size`·
-   `inline-table-actual-height`·`ms-word-paragraph-end-box`·`page-end-line-box`·
-   `paragraph-end-char-size`)은 `.hwp`와 `.hwpx`를 **같은 편집 세션에서 연달아** 저장해야 두
+   `inline-table-actual-height`·`mixed-size-decorations`·`ms-word-paragraph-end-box`·
+   `page-end-line-box`·`paragraph-end-char-size`)은 `.hwp`와 `.hwpx`를 **같은 편집 세션에서 연달아** 저장해야 두
    파일이 같은 문서가 된다. 한글 GUI로 만들기 어려운 조합은 합성 HWPX를 한글로 열어 두 형식으로
    저장해도 된다
    (`line-shapes` — 17종 선 모양을 네 자리에 모두 실은 문서, `script-decorations` —
@@ -104,6 +104,10 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
   **쌓는** 규칙(줄 상자 = 끝 글자 상자 + 본문 상자의 베이스라인 아래 몫)의 실물 근거이며, 시스템
   글꼴 넷(Apple SD 산돌고딕 Neo·Menlo·Helvetica·Times New Roman)의 조합과 글자처럼 취급 표·밑줄이
   HWP 쌍과 같은 줄 캐시로 이어지는 표본이기도 하다.
+  한글 문서의 줄 단위 밑줄은 #226에서 `mixed-size-decorations` 쌍으로 저작했다 — 코퍼스의 밑줄
+  줄이 대부분 한 크기라 크기가 섞인 줄(무장식 큰 글자·문단 끝 글자·한 줄 끝·책갈피·글자처럼 취급
+  표)에서 밑줄이 줄 상자 바닥에 붙는 자리를 렌더 해시·골든이 잡지 못하던 자리의 실물 근거이며,
+  `hh:relSz` 50% 글자와 위 첨자의 장식선이 HWP 쌍과 같은 기본 크기 기하로 그려지는 표본이기도 하다.
 
 ## manifest 작성 기준
 

@@ -170,20 +170,27 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
   한컴 번들 HY 계열 폰트(U+000A에 잉크 있는 글리프, 진행 폭 1em)에서 Shift+Enter
   자리마다 조판 부호가 다시 그려진다. 선 장식(밑줄·취소선·강조점·탭 리더)은 경로와
   무관하게 아래에서 직접 그리며, 표식 run은 장식 키가 없어 자연히 빠진다.
-- **장식선의 기준은 선마다 다르다** (#136·#176·#179, 네 장식선은 한글 12.30 PDF 실측).
+- **장식선의 기준은 선마다 다르다** (#136·#176·#179·#226, 네 장식선은 한글 12.30 PDF 실측).
   네 선(취소선·글자 가운데·아래·위 밑줄)의 공통은 줄 원점(글자 위치로 옮겨진 글리프를
-  따라가지 않는다)과 두께 `spaceTargetSize`(첨자 축소 전 크기) × 0.04. 취소선(글자
-  가운데 밑줄 포함)만 첨자 이동(`hwp.scriptBaselineOffset`, 합산 키가 아니다)을 더하고
-  **줄어든** 글꼴 크기 × 비율 위에 놓인다; 글자 아래 밑줄은 `underlineReturnDrop`으로
-  되돌린 원점 − 축소 전 크기 × 0.17, 글자 위 밑줄은 되돌림 없는 원점 + 축소 전 크기 ×
-  0.87이고 둘 다 첨자 이동은 무시한다. 변경 추적 표시선은 일반 선과 같다 (#187 실측) —
-  삭제선은 취소선 경로 그대로이고 삽입 밑줄(`drawTrackInsertUnderlineIfNeeded`)은 아래
-  밑줄과 같은 산식·같은 되돌린 원점에 색만 다르다 (첨자 표본은 없다). 산식은 전부
-  `HwpDecorationLineGeometry`(HwpKitCore)가 낸다. 새 장식을 더할 때는 (1) 어느 원점을
-  받는지 (2) 첨자 키를 더하는지 (3) 크기 기준이 `runFont`인지 `preScriptFontSize`인지
-  세 축을 실측으로 정할 것 — 비율은 `HwpDecorationLineGeometryTests`(+`+Script`·`+Compat`)
-  가 폰트 독립으로, 절대 위치는 `FixtureDecorationLineRenderTests`(+`+Script`·`+Compat`)
-  가 픽스처 픽셀로 잡는다.
+  따라가지 않는다)과 크기의 기준인 **글자 모양 기본 크기**(`hwp.baseFontSize` — 슬롯 상대
+  크기·첨자 축소 전, `decorationBaseFontSize`)다. **밑줄 세 종(아래·위·삽입)은 줄 단위다**
+  (#226): `drawDecoratedLine`이 줄마다 한 번 `HwpDrawnTextLayout.underlineReference(of:endsParagraph:)`
+  를 풀고, 한글 문서·한글 2007 호환 문서는 그 줄 상자 높이 L(세로 배치의 `vertsize`와 같은 값)의
+  바닥에 아래 밑줄의 위 가장자리, 상단에 위 밑줄의 아래 가장자리를 붙인다. 두께는 한글 문서가
+  줄 글자의 기본 크기 최댓값 T × 0.04(한 크기 줄이면 −0.17em·+0.87em), 한글 2007 호환 문서가
+  고정 0.36pt다. 키 큰 개체 줄에서 밑줄이 개체 하단에 남는 실물(공공누리)도 이 상자 바닥 규칙이라
+  (상자 바닥 = 개체 바깥 상자의 아랫변) 원점을 되돌리지 않는다 — 종전의
+  `underlineReturnDrop` 원점 보정은 상자 바닥 몫을 두 번 세어 없앴다. 취소선(글자 가운데 밑줄
+  포함)만 **run 단위**이고 첨자 이동(`hwp.scriptBaselineOffset`, 합산 키가 아니다)을 더해
+  기본 크기 × 첨자 축소 비율 × 0.35 위에, 두께 기본 크기 × 0.04로 놓인다; 밑줄은 첨자 이동을
+  무시한다. 변경 추적 표시선은 일반 선과 같다 (#187·#226 실측) — 삭제선은 취소선 경로
+  그대로이고 삽입 밑줄(`drawTrackInsertUnderlineIfNeeded`)은 아래 밑줄과 같은 줄 기준에 색만
+  다르다 (첨자 표본은 없다). 갈래 판정과 산식 선택은 `HwpPageLayerDecorationLines.swift`,
+  산식은 전부 `HwpDecorationLineGeometry`(HwpKitCore)가 낸다. 새 장식을 더할 때는 (1) 어느
+  원점을 받는지 (2) 첨자 키를 더하는지 (3) 크기 기준이 run인지 줄인지, 기본 크기인지 run 글꼴
+  크기인지를 실측으로 정할 것 — 비율은 `HwpDecorationLineGeometryTests`(+`+Script`·`+Compat`·
+  `+Hwp2007`·`+LineWide`)가 폰트 독립으로, 절대 위치는 `FixtureDecorationLineRenderTests`
+  (+`+Script`·`+Compat`·`+Hwp2007`·`+LineWide`)가 픽스처 픽셀로 잡는다.
 - **선 모양(점선·파선·원형 점선·여러 줄·물결, #191)은 글자 모양 run 단위로 편다**
   (`HwpPageLayerLineShapes`). `drawDecoratedLine`이 줄마다 `lineShapeSpans(of:)`로 같은
   글자 모양 id(`hwp.charShapeId`)의 잇닿은 CoreText run을 묶어 첫 run 자리에 합친 경계를
@@ -192,16 +199,23 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
   실선은 종전대로 run마다 사각형). 한글이 그렇다 — 한 글자 모양 안의 한글↔라틴 슬롯 전환
   (CoreText가 run을 가르는 경계)은 패턴이 이어지고 색만 다른 이웃 글자 모양은 run 시작에서
   다시 시작한다 (2026-09-17 실측). 묶음 열쇠는 id에 더해 선을 정하는 키다
-  (`sameLineShapeGroup`: 모양·유무·색·`spaceTargetSize`·`scriptBaselineOffset`) — 변경 추적
+  (`sameLineShapeGroup`: 모양·유무·색·축척 크기·`scriptBaselineOffset`; 축척 크기는 한글 문서가
+  `baseFontSize`, 호환 문서 두 갈래와 기본 크기 키가 없는 문자열이 `spaceTargetSize`다 — 한글
+  문서에서 슬롯마다 상대 크기가 다른 한 글자 모양은 한 묶음이고, 한글도 그 경계에서 패턴 위상을
+  잇는다, #226 실측 2026-09-26) — 변경 추적
   삭제 run은 글자 모양을 물려받고 색만 갈리고 첨자 run은 취소선 자리가 다르므로 id만으로
   묶으면 첫 run의 색·기하로 통째 그려진다(PR 리뷰). 속성 사전 전체 비교는 금물(자간·문단 끝
   상자 키가 한 글자 모양을 가른다). 모양 키를 실은 run이 없는 줄은 재지 않는다. 축척은
-  `preScriptFontSize`(첨자 축소 전 크기)이고 로컬
+  한글 문서에서 두께와 같은 기준 크기다 — 밑줄은 줄 글자 기본 크기 T(`underlineShapeScale`,
+  #226 실측: 40pt 무장식 글자와 한 줄인 10pt 긴 점선의 한 토막 11.40pt), 취소선은 run의 기본
+  크기(`strikethroughShapeScale`). 한글 2007 호환 문서(패턴이 크기를 따르지 않는다 — #227)와
+  MS 워드 호환 문서(미실측)는 종전대로 `preScriptFontSize`(첨자 축소 전 run 크기)다. 로컬
   y(양수 = 아래)를 텍스트 공간(y-위)으로 뒤집어 단선 중심(`lineOrigin.y + line.center`)에
-  놓는다 — 아래 밑줄의 되돌린 원점·취소선의 첨자 이동은 그 중심에 이미 들어 있다.
+  놓는다 — 밑줄의 줄 상자 가장자리·취소선의 첨자 이동은 그 중심에 이미 들어 있다.
 - **MS 워드 호환 문서(`hwp.compatibleDocumentTarget` == `msWord`)의 장식선은 글꼴 지표
   기하다** (#187, `Sources/HwpKitCore/AGENTS.md` 장식 항목). `drawDecoratedLine`이 줄마다
-  두 값을 미리 푼다: ① `HwpDrawnTextLayout.msWordLineBox(of:endsParagraph:)` — 줄의
+  두 값을 미리 푼다: ① `HwpDrawnTextLayout.underlineReference(of:endsParagraph:)`가 싣는
+  `msWordLineBox`(`msWordLineBox(of:endsParagraph:)`와 같은 값) — 줄의
   글자 run(장식 없는 run·CoreText 대체 글꼴 run 포함, 마커 run 제외)의 `HwpMsWordLineBox`를
   글자 크기로 곱해 축별 최댓값으로 합친 글자 상자에, 줄 끝 글자(줄이 문단의 마지막 줄
   (`HwpDrawnLine.endsParagraph`)이면 조판이 문단 전체에 실은 `hwp.msWordParagraphEndBox` —
@@ -219,8 +233,8 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
   (`decorationBaseFontSize`: `hwp.baseFontSize`)를 곱한다 — run 글꼴 크기(슬롯 상대 크기 반영)로
   곱하면 한 글자 모양 안에서 선이 계단이 진다 (PR 리뷰, 한글 실측: 슬롯 50%도 100% 자리). 줄 상자 판정은 줄의 run 하나라도 MS 워드 키를 실으면 줄 전체
   (표식 run도 글꼴이 있으면 후보). 한글 문서(키 없음·`hwp201X`·`hunmin`)는
-  글자 크기 비례 경로이고, **한글 2007 호환(`hwp200X`)은 같은 비례 자리에 크기와 무관한 고정
-  0.36pt 선을 얹는 제3의 갈래**다 (#210, 갈래 판정과 세 산식은
+  글자 크기 비례 경로(밑줄은 줄 상자 가장자리, #226)이고, **한글 2007 호환(`hwp200X`)은 같은
+  자리에 크기와 무관한 고정 0.36pt 선을 얹는 제3의 갈래**다 (#210, 갈래 판정과 세 산식은
   `HwpPageLayerDecorationLines.swift`의 `isHwp2007Compatible`·`underlineBelowLine`·
   `underlineAboveLine`·`strikethroughLine` — 네 그리기 함수가 모두 이 resolver를 지난다). 글꼴 상자 읽기는 PostScript 이름으로 캐시된다
   (`HwpMsWordLineBox.metrics(of:)`) — 줄마다 OS/2 표를 다시 읽지 않는다.

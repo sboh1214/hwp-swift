@@ -44,13 +44,15 @@ import XCTest
             ).map(\.baselineOrigin.y)
         }
 
-        /// 글자 아래 밑줄이 되돌아갈 양 (`underlineReturnDrop`).
-        private func underlineReturn(size: CGFloat, delegateHeight: CGFloat?) -> CGFloat {
+        /// 줄 단위 밑줄의 기준 (`underlineReference`, #226).
+        private func underlineReference(
+            size: CGFloat, delegateHeight: CGFloat?
+        ) -> HwpDecorationLineGeometry.UnderlineReference {
             let string = Self.attributedString(Input(
                 size: size, baseSize: size, delegateHeight: delegateHeight
             ))
-            return HwpDrawnTextLayout.underlineReturnDrop(
-                of: CTLineCreateWithAttributedString(string)
+            return HwpDrawnTextLayout.underlineReference(
+                of: CTLineCreateWithAttributedString(string), endsParagraph: false
             )
         }
 
@@ -214,21 +216,33 @@ import XCTest
                 .to(equal([117.0]))
         }
 
-        /// **밑줄 되돌림은 개체가 줄 상자를 정할 때만 한다** (#178 리뷰). 개체 높이를 글꼴
-        /// ascent와 견주면 글자보다 낮은 개체까지 걸려, baseline이 글자 자리 그대로인 줄에서
-        /// 글자 아래 밑줄만 내려갔다 — 10pt 글자에서 개체 8pt 1.20pt·9pt 1.35pt·9.9pt 1.49pt다
-        /// (글꼴 ascent 7.7002와 상자 높이 10 사이 전부. 4pt는 ascent보다 낮아 통과 못 했다).
-        func testUnderlineReturnOnlyFollowsAnObjectThatSetsTheLineBox() {
+        /// **밑줄은 세로 배치와 같은 줄 상자에 붙는다** (#226) — 밑줄 기준의 상자 높이는 앵커가
+        /// 쓰는 상자(`max(기본 크기, 개체 높이)`) 그대로라, 글자보다 낮은 개체 줄에서는 글자 줄
+        /// 자리이고 개체가 상자를 정하면 그 바닥(= 0.15 × 개체 높이, 공공누리 실물의 '개체 하단에
+        /// 남는 밑줄')이다. 두께 기준은 개체와 무관하게 글자 크기다. 종전의 원점 되돌림은 개체
+        /// 높이를 글꼴 ascent와 견줄 때 글자보다 낮은 8·9·9.9pt 개체 줄에서도 밑줄만 내렸고
+        /// (#178 리뷰), 상자를 정한 줄에서는 상자 바닥 몫을 두 번 셌다 (한글 12.30: 10pt 글 +
+        /// 40pt 그림 줄의 밑줄 −6.12·−6.24, 종전 −7.70).
+        func testUnderlineReferenceIsTheAnchorLineBox() {
             for height in [CGFloat(4), 8, 9, 9.9] {
-                expect(self.underlineReturn(size: 10, delegateHeight: height))
-                    .to(equal(0), description: "개체 \(height)pt는 상자를 정하지 않는다")
+                let reference = underlineReference(size: 10, delegateHeight: height)
+                expect(reference.lineBoxHeight).to(equal(10), description: "개체 \(height)pt")
+                expect(reference.textFontSize).to(equal(10), description: "개체 \(height)pt")
                 expect(self.baseline(size: 10, baseSize: 10, delegateHeight: height))
                     .to(equal([108.5]), description: "개체 \(height)pt")
             }
-            // 개체가 상자를 정하면 상자 바닥 (= 0.15 × 개체 높이) 으로 되돌린다.
-            expect(self.underlineReturn(size: 10, delegateHeight: 10)).to(equal(1.5))
-            expect(self.underlineReturn(size: 10, delegateHeight: 40)).to(equal(6))
-            expect(self.underlineReturn(size: 10, delegateHeight: nil)).to(equal(0))
+            // 개체가 상자를 정하면 밑줄 기준 상자도 개체 높이다 — 두께 기준은 글자 그대로.
+            expect(self.underlineReference(size: 10, delegateHeight: 10).lineBoxHeight)
+                .to(equal(10))
+            let tall = underlineReference(size: 10, delegateHeight: 40)
+            expect(tall.lineBoxHeight).to(equal(40))
+            expect(tall.textFontSize).to(equal(10))
+            expect(tall.msWordLineBox).to(beNil())
+            expect(HwpDecorationLineGeometry.underlineBelow(
+                lineBoxHeight: tall.lineBoxHeight, thicknessFontSize: tall.textFontSize
+            ).center).to(beCloseTo(-6.2, within: 0.0001))
+            expect(self.underlineReference(size: 10, delegateHeight: nil).lineBoxHeight)
+                .to(equal(10))
         }
 
         /// 폭 0 개체 마커만 있는 줄 — 상자는 **그 마커의 글자 크기**다. 자리 차지 개체
