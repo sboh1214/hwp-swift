@@ -39,15 +39,18 @@ extension HwpDrawnTextLayout {
         /// 이 줄이 예약한 글자처럼 취급 개체(run delegate)의 높이 최댓값 — 없으면 0.
         var delegateAscent: CGFloat = 0
         /// MS 워드 호환 문서의 **글자 상자** (pt) — 줄의 글자 run(장식 없는 run·CoreText
-        /// 대체 글꼴 run·표식 run 포함)의 글꼴 상자를 글자 모양 기본 크기로 곱해 축별
-        /// 최댓값으로 합친 것(`HwpMsWordLineBox.union`). 문단 끝 글자 상자는 여기 들지 않고
-        /// `msWordParagraphEndBox`로 따로 든다 — 둘은 합치는 규칙이 다르다 (`msWordLineBox`,
-        /// #223). **개체 마커 run(run delegate)의 글꼴은 들지 않는다** — 한글 12.30 실측
-        /// (2026-09-20 `cm194-markers`): Apple SD/Menlo 10pt 줄(1559/1104)에 글자 모양이
-        /// 함초롬돋움 10·20pt인 글자처럼 취급 표(높이 10.62pt)나 책갈피 컨트롤을 넣어도
-        /// `vertsize`·`baseline`이 1559·1104 그대로다 (함초롬돋움 상자 1692/1266·3383/2531이
-        /// 들면 달라졌을 값). 글자 run이 하나도 없는 줄(컨트롤만 있는 조각)은 문단 끝 상자가
-        /// 없을 때만 마커 글꼴로 떨어진다. 한글 문서 줄이면 nil.
+        /// 대체 글꼴 run 포함)의 글꼴 상자를 글자 모양 기본 크기로 곱해 축별 최댓값으로 합친
+        /// 것(`HwpMsWordLineBox.union`). 줄 끝 글자(문단 끝 CR·한 줄 끝 LF)의 상자는 여기 들지
+        /// 않고 `msWordLineEndBox`로 따로 든다 — 둘은 합치는 규칙이 다르다 (`msWordLineBox`,
+        /// #223). 빈 줄 앵커·결합 문자열의 문단 구분자는 줄 끝 상자가 있으면 빠지고 없으면
+        /// 글자로 든다 (`HwpMsWordRunFonts`). **개체 마커 run(run delegate)의 글꼴은 들지
+        /// 않는다** — 한글 12.30 실측 (2026-09-20 `cm194-markers`): Apple SD/Menlo 10pt
+        /// 줄(1559/1104)에 글자 모양이 함초롬돋움 10·20pt인 글자처럼 취급 표(높이 10.62pt)나
+        /// 책갈피 컨트롤을 넣어도 `vertsize`·`baseline`이 1559·1104 그대로다 (함초롬돋움 상자
+        /// 1692/1266·3383/2531이 들면 달라졌을 값). 글자 run도 줄 끝 글자도 없는 줄은 줄
+        /// 공간을 **예약하지 않은** 마커(책갈피·자리 차지 개체 앵커)의 글꼴로 떨어지고, 줄
+        /// 공간을 예약한 개체 마커의 글꼴로는 끝내 떨어지지 않는다 — 그런 줄은 개체가 상자다
+        /// (`msWordObjectMarkerBox`). 한글 문서 줄이면 nil.
         var msWordTextBox: HwpMsWordLineBox?
         /// MS 워드 호환 문서에서 줄을 끝내는 **줄 끝 글자의 상자** (pt) — 문단의 마지막 줄이면
         /// 문단 끝 글자(CR)의 상자(조판이 문단 전체에 실은 `hwp.msWordParagraphEndBox`), 한 줄
@@ -56,6 +59,16 @@ extension HwpDrawnTextLayout {
         /// 글 + 20pt 한 줄 끝의 줄 `textheight` 38.09 = 33.84 + 4.26 — 16pt CR과 같은 꼴). 그런
         /// 글자가 없는 줄(자동 줄바꿈)이거나 한글 문서 줄이면 nil.
         var msWordLineEndBox: HwpMsWordLineBox?
+        /// MS 워드 호환 문서에서 줄 공간을 **예약한** 개체 마커 run 글꼴 상자의 축별 최댓값
+        /// (pt) — 줄 상자에는 들지 않고, 글자 상자도 줄 끝 글자 상자도 없이 개체만 있는 줄에서
+        /// 장식선 기준 상자(`cellHeight`)로만 쓴다 (`msWordLineBox`). 그런 줄은 상자 = 개체다
+        /// (#223 PR 리뷰, 한글 12.30 실측 2026-09-25 — 넓은 표 둘·셋이 자동 줄바꿈으로 한 줄에
+        /// 하나씩 놓인 문단의 앞 줄: 함초롬돋움 10pt 마커의 30pt 표 `vertsize` 30.00·`baseline`
+        /// 30.00·160% `spacing` 6.00 = 0.6 × 마커 기본 크기, 16pt 마커면 9.60, Apple SD/Menlo
+        /// 마커도 같고 셀 내용으로 16.92pt가 된 표는 16.92/16.92·6.00 — 마커 글꼴 상자
+        /// 16.92/12.66을 글자 상자로 삼으면 30pt 표 줄이 34.26, 여분이 10.16이 된다). 한글 문서
+        /// 줄이면 nil.
+        var msWordObjectMarkerBox: HwpMsWordLineBox?
         /// MS 워드 호환 문서에서 비율 여분의 기준이 되는 기본 크기 — 글자 run과 **줄 공간을
         /// 예약한** 개체 마커의 기본 크기 최댓값. 같은 실측에서 20pt 글자 모양의 표 마커가
         /// 든 10pt 줄의 160% `spacing`이 1200(= 0.6 × 2000)이고, 20pt 글자 모양의 책갈피
@@ -88,12 +101,17 @@ extension HwpDrawnTextLayout {
         /// 16pt 끝 글자 34.26/30, 26pt 표 31.32/26, 28pt 표 32.26/28, 22pt 표 31.32/22;
         /// T보다 낮은 개체는 베이스라인만 옮긴다 (Apple SD 20pt + 25pt 표 3119/2500 — 종전
         /// 산식은 34.12; 10+20pt 본문 + 30pt 표 3383/3000); 표만 있는 문단은 끝 글자 10pt면
-        /// 30/30, 40pt면 67.66/50.63. 이 규칙이 없던 동안(#194의 축별 최댓값) 끝 글자가 큰
-        /// 줄은 T의 아래 몫만큼 짧아 다음 문단이 그만큼 위로 당겨졌다 (#223).
+        /// 30/30, 40pt면 67.66/50.63. 글자도 줄 끝 글자도 없이 개체만 있는 줄(자동 줄바꿈으로
+        /// 나뉜 개체 줄)은 T도 C도 없어 상자 = 개체다 (`msWordObjectMarkerBox`의 실측: 30pt 표
+        /// 30/30 — 같은 문단의 마지막 줄 max(C, O)와 같은 규칙). 이 규칙이 없던 동안(#194의
+        /// 축별 최댓값) 끝 글자가 큰 줄은 T의 아래 몫만큼 짧아 다음 문단이 그만큼 위로
+        /// 당겨졌다 (#223).
         var msWordLineBox: HwpMsWordLineBox? {
             let text = msWordTextBox
             let end = msWordLineEndBox
-            guard let reference = text ?? end else { return nil }
+            // 개체만 있는 줄의 장식선 기준 상자는 개체 마커 글꼴의 것이다 (상자에는 안 든다).
+            let objectOnly = delegateAscent > 0 ? msWordObjectMarkerBox : nil
+            guard let reference = text ?? end ?? objectOnly else { return nil }
             let textHeight = text?.lineHeight ?? 0
             let textBaseline = text?.baseline ?? 0
             let textBelow = max(0, textHeight - textBaseline)
@@ -115,6 +133,10 @@ extension HwpDrawnTextLayout {
             )
         }
 
+        /// 끝 글자·개체가 글자 상자보다 **높다**고 보는 문턱 (pt) — 같은 상자의 등호를 쌓기로
+        /// 읽지 않게 하는 부동소수 여유다 (한글 캐시 단위 0.01pt보다 작다).
+        static let stackingTolerance: CGFloat = 0.001
+
         /// 글자 상자 높이 — 비율 줄 간격의 여분(`spacing`)은 이 값 기준이다 (개체가 상자를
         /// 정한 줄에서도). 한글 문서는 `baseFontSize`와 `objectMarkerBaseFontSize` 가운데 큰
         /// 것 — 개체 마커의 글자 모양은 상자에는 안 들어도 여분 기준에는 든다 (#217 실측:
@@ -123,9 +145,11 @@ extension HwpDrawnTextLayout {
         /// 12.30 실측 2026-09-20: Apple SD 산돌고딕 Neo 10pt 줄 `vertsize` 1559에 160%의
         /// `spacing` 932, 30pt 표가 든 같은 줄도 932) — 문단 끝 상자가 줄 상자를 키운 줄도
         /// 여분은 끝 상자 기준이다 (#223: 10pt + 16pt 끝 글자 `vertsize` 31.32에 `spacing`
-        /// 16.24 = 0.6 × 27.06, 200%는 27.04).
+        /// 16.24 = 0.6 × 27.06, 200%는 27.04). 개체만 있는 줄은 글자 상자가 없어 개체 마커의
+        /// 기본 크기가 기준이다 (#223 PR 리뷰 실측: 10pt 마커의 30pt 표 줄 `spacing` 6.00,
+        /// 16pt 마커 9.60).
         var textBoxHeight: CGFloat {
-            guard msWordTextBox != nil || msWordLineEndBox != nil else {
+            guard msWordLineBox != nil else {
                 return max(baseFontSize, objectMarkerBaseFontSize)
             }
             return max(
@@ -168,10 +192,6 @@ extension HwpDrawnTextLayout {
         /// 40pt 줄에 4·8·20·30·36·40·50pt 그림을 글자처럼 넣으면 한글 문서는 그림 상단 =
         /// 베이스라인 − 0.85 × 높이(바깥 여백 위 7·아래 3pt를 주면 바깥 30pt 상자의 0.85), MS 워드
         /// 호환 문서는 베이스라인 − 높이(여백은 바깥 상자 바닥 기준)였다 — 둘 다 0.12pt 안.
-        /// 끝 글자·개체가 글자 상자보다 **높다**고 보는 문턱 (pt) — 같은 상자의 등호를 쌓기로
-        /// 읽지 않게 하는 부동소수 여유다 (한글 캐시 단위 0.01pt보다 작다).
-        static let stackingTolerance: CGFloat = 0.001
-
         var inlineObjectBaselineRatio: CGFloat {
             msWordLineBox == nil ? HwpRenderTuning.Text.baselineAnchorRatio : 1
         }
@@ -231,7 +251,10 @@ extension HwpDrawnTextLayout {
                 }
             }
             if let font, let declared {
-                fonts.append((font, declared), isMarker: isMarker, attributes: attributes)
+                fonts.append(
+                    (font, declared), marker: isMarker ? (ascent > 0 ? .object : .anchor) : nil,
+                    attributes: attributes
+                )
                 if !isMarker {
                     metrics.msWordSpacingBase = max(metrics.msWordSpacingBase, declared)
                 }
@@ -251,6 +274,7 @@ extension HwpDrawnTextLayout {
             let boxes = fonts.boxes(paragraphEnd: endBox)
             metrics.msWordTextBox = boxes.text
             metrics.msWordLineEndBox = boxes.lineEnd
+            metrics.msWordObjectMarkerBox = boxes.objectMarker
         }
         return metrics
     }
@@ -270,9 +294,10 @@ extension HwpDrawnTextLayout {
     /// (`HwpPageLayerDecorations`)가 밑줄 자리·두께의 기준으로 쓴다. 세로 배치가 쓰는 상자와
     /// 같은 값이라(`LineMetrics.msWordLineBox` — 문단 끝 글자·글자처럼 취급 개체가 키운 몫
     /// 포함) 밑줄이 그 줄의 베이스라인 자리와 어긋나지 않는다. 장식선 기준 상자
-    /// (`cellHeight`)는 글자 상자의 것이다 (#223 실측: 16pt 문단 끝 글자가 키운 10pt 밑줄
-    /// 줄의 밑줄은 상자 바닥에서 1.68pt 위, 30pt 표 줄의 위 밑줄은 표 윗변에서 1.68pt
-    /// 아래). 한글 문서 줄이면 nil.
+    /// (`cellHeight`)는 글자 상자의 것이다 (#223 한글 PDF: 16pt 문단 끝 글자가 키운 10pt 밑줄
+    /// 줄의 밑줄은 상자 바닥에서 1.71pt 위 — 산식 1.68, 30pt 표 줄의 위 밑줄은 표 윗변에서
+    /// 1.68pt 아래). 글자도 줄 끝 글자도 없이 개체만 있는 줄은 개체 마커 글꼴의 cell이다.
+    /// 한글 문서 줄이면 nil.
     public static func msWordLineBox(of line: CTLine, endsParagraph: Bool) -> HwpMsWordLineBox? {
         lineMetrics(of: line, endsParagraph: endsParagraph).msWordLineBox
     }
@@ -351,40 +376,57 @@ extension HwpDrawnTextLayout {
 ///   줄 끝 글자뿐이다 (실측: 10pt 한 줄 끝 + 16pt CR의 빈 마지막 줄 2706/2025, 16pt 한 줄
 ///   끝 + 10pt CR은 1692/1266 = CR 상자만). 줄 끝 상자가 있으면 T에서 빠지고, 없으면(빈
 ///   문단 앵커는 문단 끝 상자를 싣지 않는다) 글자다.
-/// - 마커: run delegate — 글자가 하나도 없고 줄 끝 상자도 없을 때만 T로 떨어진다.
+/// - 앵커 마커: 줄 공간을 예약하지 않은 run delegate(책갈피·필드 표식·자리 차지 개체
+///   앵커) — 글자가 하나도 없고 줄 끝 상자도 없을 때만 T로 떨어진다.
+/// - 개체 마커: 줄 공간을 예약한 run delegate(글자처럼 취급 개체) — T로 떨어지지 않는다.
+///   개체만 있는 줄은 개체가 상자이고(`LineMetrics.msWordLineBox`) 이 글꼴은 그 줄의 장식선
+///   기준 상자로만 쓴다 (#223 PR 리뷰 실측: 자동 줄바꿈으로 나뉜 30pt 표 줄 30/30).
 private struct HwpMsWordRunFonts {
     typealias Entry = (font: CTFont, size: CGFloat)
+
+    /// run delegate를 단 마커의 갈래 — 줄 공간을 예약했는지가 가른다 (#217).
+    enum Marker {
+        case anchor
+        case object
+    }
+
     var text: [Entry] = []
     var lineBreaks: [Entry] = []
     var endStandIns: [Entry] = []
-    var markers: [Entry] = []
+    var anchorMarkers: [Entry] = []
+    var objectMarkers: [Entry] = []
 
     mutating func append(
-        _ entry: Entry, isMarker: Bool, attributes: [NSAttributedString.Key: Any]?
+        _ entry: Entry, marker: Marker?, attributes: [NSAttributedString.Key: Any]?
     ) {
-        if isMarker {
-            markers.append(entry)
-        } else if attributes?[HwpAttributedStringKey.lineBreak] != nil {
-            lineBreaks.append(entry)
-        } else if attributes?[HwpAttributedStringKey.emptyLineAnchor] != nil
-            || attributes?[HwpAttributedStringKey.combinedParagraphSeparator] != nil
-        {
-            endStandIns.append(entry)
-        } else {
-            text.append(entry)
+        switch marker {
+        case .anchor:
+            anchorMarkers.append(entry)
+        case .object:
+            objectMarkers.append(entry)
+        case nil:
+            if attributes?[HwpAttributedStringKey.lineBreak] != nil {
+                lineBreaks.append(entry)
+            } else if attributes?[HwpAttributedStringKey.emptyLineAnchor] != nil
+                || attributes?[HwpAttributedStringKey.combinedParagraphSeparator] != nil
+            {
+                endStandIns.append(entry)
+            } else {
+                text.append(entry)
+            }
         }
     }
 
-    /// 글자 상자 T와 줄 끝 상자 — `paragraphEnd`는 문단의 마지막 줄이면 CR 상자.
+    /// 글자 상자 T·줄 끝 상자·개체 마커 상자 — `paragraphEnd`는 문단의 마지막 줄이면 CR 상자.
     func boxes(
         paragraphEnd: HwpMsWordLineBox?
-    ) -> (text: HwpMsWordLineBox?, lineEnd: HwpMsWordLineBox?) {
+    ) -> (text: HwpMsWordLineBox?, lineEnd: HwpMsWordLineBox?, objectMarker: HwpMsWordLineBox?) {
         // CR이 줄을 끝내면 같은 줄의 한 줄 끝 run(조판 문자열 끝에 남은 한 줄 끝)도 끝 글자
         // 대역이라 어느 쪽에도 넣지 않는다.
         let lineEnd = paragraphEnd ?? Self.union(lineBreaks)
         let glyphs = lineEnd == nil ? text + endStandIns : text
-        let chosen = glyphs.isEmpty && lineEnd == nil ? markers : glyphs
-        return (Self.union(chosen), lineEnd)
+        let chosen = glyphs.isEmpty && lineEnd == nil ? anchorMarkers : glyphs
+        return (Self.union(chosen), lineEnd, Self.union(objectMarkers))
     }
 
     private static func union(_ entries: [Entry]) -> HwpMsWordLineBox? {

@@ -28,6 +28,7 @@ import XCTest
     /// | Apple SD 20 글 + 25pt 표 + Menlo 20 끝 글자 | 3119/2500 | O ≤ T 높이 → 베이스라인만 |
     /// | 10pt 글 + 26pt 표 + 16pt 끝 글자 (함초롬돋움) | 3132/2600 | max(27.06, 26) + 4.26 |
     /// | 표만 + 10pt 끝 글자 | 3000/3000 | T 없음 → max(C, O) |
+    /// | 자동 줄바꿈으로 나뉜 표만 있는 앞 줄 (10pt 마커 30pt 표, 160%) | 3000/3000, `spacing` 600 | T·C 없음 → O, 여분은 마커 크기 |
     final class HwpMsWordLineEndBoxTests: XCTestCase {
         private typealias Key = NSAttributedString.Key
         private static let blockTop: CGFloat = 100
@@ -291,6 +292,61 @@ import XCTest
             let large = try Self.metrics(objectOnly(end: menlo40))
             expect(large.boxHeight).to(beCloseTo(menlo40.lineHeight, within: 0.001))
             expect(large.baselineAnchor).to(beCloseTo(menlo40.baseline, within: 0.001))
+        }
+
+        /// 글자도 줄 끝 글자도 없이 **개체만 있는 줄**(자동 줄바꿈으로 나뉜 앞 줄)도 상자 = 개체다
+        /// — 개체 마커의 글꼴은 글자 상자로 떨어지지 않고, 비율 여분은 마커 기본 크기 기준이다
+        /// (#223 PR 리뷰, 한글 12.30 실측 2026-09-25: 넓은 30pt 표 둘을 한 줄에 하나씩 놓은
+        /// 문단의 앞 줄 3000/3000·160% `spacing` 600 — 마지막 줄 3000/3000과 같은 규칙, 16pt
+        /// 마커면 960, Apple SD/Menlo 마커도 같다). 마커 글꼴을 글자 상자로 삼으면 앞 줄만
+        /// 30 + 마커 글꼴의 아래 몫이 되어 한 문단 안에서 규칙이 갈린다 (함초롬돋움 10pt 마커:
+        /// 34.26 — 다시 조판한 뒤 문단이 한글 PDF보다 앞 줄마다 8.3pt 안팎씩 아래에 놓였다). 줄
+        /// 공간을 예약하지 않은 마커만 있는 줄은 종전대로(#194) 그 마커의 글꼴로 떨어진다.
+        func testWrappedObjectOnlyLineIsTheObject() throws {
+            try skipUnlessOracleFonts()
+            let appleSD10 = Self.box("Apple SD Gothic Neo", 10)
+            func gallery(markerSize: CGFloat) -> NSAttributedString {
+                let marker = Self.attributes("Apple SD Gothic Neo", markerSize)
+                return Self.finish([
+                    LineBoxFixtures.objectMarker(height: 30, attributes: marker),
+                    LineBoxFixtures.objectMarker(height: 30, attributes: marker),
+                ], endBox: Self.box("Menlo", 10))
+            }
+            for (markerSize, share) in [(CGFloat(10), CGFloat(6)), (16, 9.6)] {
+                let string = gallery(markerSize: markerSize)
+                let drawn = Self.lines(string, width: 30)
+                expect(drawn.count) == 2
+                guard drawn.count == 2 else { return }
+                expect(drawn[0].endsParagraph).to(beFalse())
+                let wrapped = HwpDrawnTextLayout.lineMetrics(of: drawn[0].line, in: string)
+                expect(wrapped.boxHeight).to(beCloseTo(30, within: 0.001), description: "\(markerSize)")
+                expect(wrapped.baselineAnchor).to(beCloseTo(30, within: 0.001), description: "\(markerSize)")
+                expect(wrapped.textBoxHeight).to(beCloseTo(markerSize, within: 0.001))
+                expect(wrapped.inlineObjectBaselineRatio) == 1
+                let last = HwpDrawnTextLayout.lineMetrics(of: drawn[1].line, in: string)
+                expect(last.boxHeight).to(beCloseTo(30, within: 0.001), description: "\(markerSize)")
+                // 다음 줄은 앞 줄 상자 30 + 마커 기본 크기 기준 여분 아래다 (한글 3000 + 600·960).
+                expect(drawn[1].baselineOrigin.y - drawn[0].baselineOrigin.y)
+                    .to(beCloseTo(30 + share, within: 0.001), description: "\(markerSize)")
+            }
+            // 장식선 기준 상자는 마커 글꼴의 cell이고, 밑줄은 되돌리지 않는다.
+            let string = gallery(markerSize: 10)
+            let first = try XCTUnwrap(Self.lines(string, width: 30).first)
+            let box = try XCTUnwrap(HwpDrawnTextLayout.msWordLineBox(of: first.line, endsParagraph: false))
+            expect(box.lineHeight).to(beCloseTo(30, within: 0.001))
+            expect(box.cellHeight).to(beCloseTo(appleSD10.cellHeight, within: 0.001))
+            expect(HwpDrawnTextLayout.underlineReturnDrop(of: first.line)) == 0
+            // 줄 공간을 예약하지 않은 마커(높이 0 — 책갈피·자리 차지 개체 앵커)만 있는 줄은 그
+            // 마커의 글꼴 상자다 — 상자가 0이 되지 않는다.
+            let menlo16 = Self.box("Menlo", 16)
+            let anchors = Self.finish([
+                LineBoxFixtures.objectMarker(height: 0, attributes: Self.attributes("Menlo", 16)),
+                LineBoxFixtures.objectMarker(height: 0, attributes: Self.attributes("Menlo", 16)),
+            ], endBox: Self.box("Menlo", 10))
+            let anchorLine = try XCTUnwrap(Self.lines(anchors, width: 30).first)
+            let anchorMetrics = HwpDrawnTextLayout.lineMetrics(of: anchorLine.line, in: anchors)
+            expect(anchorMetrics.boxHeight).to(beCloseTo(menlo16.lineHeight, within: 0.001))
+            expect(anchorMetrics.baselineAnchor).to(beCloseTo(menlo16.baseline, within: 0.001))
         }
 
         /// 결합 문자열(각주·글상자 블록이 문단들을 `\n`으로 이은 것)의 문단 구분자는 앞 문단의
