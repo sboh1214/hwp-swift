@@ -49,7 +49,8 @@ final class HwpMsWordLineBoxTests: XCTestCase {
         expect(stacked.ascent).to(beCloseTo(20.25 - 0.15 * plain.cellHeight, within: 0.0001))
         expect(stacked.descent).to(beCloseTo(31.32 - 20.25 - 0.15 * plain.cellHeight, within: 0.0001))
         expect(stacked.descent + 0.021 * plain.cellHeight).to(beCloseTo(9.39, within: 0.01))
-        // 한글 PDF(9.36)와는 한글의 글꼴 상자 반올림(16.92)·0.12pt 격자만큼 갈린다.
+        // 한글 PDF(9.36)와의 차이는 PDF 좌표의 0.12pt 격자다 — 입력이 이미 한글 캐시 값이다
+        // (참 베이스라인 316.77이 316.80으로, 밑줄 326.161이 326.16으로 반올림된다).
         expect(stacked.descent + 0.021 * plain.cellHeight).to(beCloseTo(9.36, within: 0.05))
         let scaled = HwpMsWordLineBox(lineHeight: 1, baseline: 0.5, cellHeight: 0.4).scaled(by: 10)
         expect(scaled.cellHeight).to(beCloseTo(4, within: 0.0001))

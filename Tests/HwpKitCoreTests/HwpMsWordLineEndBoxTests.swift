@@ -170,7 +170,7 @@ import XCTest
 
         /// 쌓이는 아래 몫은 **합친 글자 상자**의 것이다 — Apple SD 20pt 한글 + Menlo 20pt 라틴 줄
         /// (T = 31.20/22.06, 아래 몫 9.14)에 30pt 끝 글자면 끝 상자 + 9.14이지 Apple SD 혼자의 아래
-        /// 몫 9.60이 아니다 (한글 실측: 함초롬돋움 30pt 끝 글자 5986 = 5076 + 910).
+        /// 몫 9.60이 아니다 (한글 실측: 함초롬돋움 30pt 끝 글자 5986 = 끝 상자 5074 + 912).
         func testStackedBelowShareIsTheUnionTextBoxShare() throws {
             try skipUnlessOracleFonts()
             let appleSD20 = Self.box("Apple SD Gothic Neo", 20)
