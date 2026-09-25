@@ -70,17 +70,24 @@ extension HwpPageLayer {
     /// 밑줄 선 모양(점선·여러 줄·물결, #191)의 축척 — 한글 문서는 두께와 같은 줄 글자 기준
     /// 크기다 (#226 실측: 40pt 무장식 글자와 한 줄인 10pt 긴 점선은 한 토막 11.40pt = 40pt
     /// 몫, 여러 줄 띠·물결 진폭도 40pt 몫; 40pt 문단 끝 글자와 한 줄이면 2.88pt = 10pt 몫).
-    /// 다른 두 갈래는 종전대로 첨자 축소 전 run 크기다 — 한글 2007 호환 문서의 선 모양은
-    /// 크기를 따라가지 않는 별도 패턴이고(#227 — 같은 실측에서 긴 점선이 줄·글자 크기와
-    /// 무관하게 2.40/1.44pt) MS 워드 호환 문서의 선 모양 축척은 실측하지 않았다.
+    /// 한글 2007 호환 문서는 크기와 무관한 고정 축척이다 (#227 실측: 5~100pt 전부, 크기가 섞인
+    /// 줄·상대 크기 run에서도 긴 점선 2.40/1.44pt — `HwpLineShapeGeometry.Scale.hwp200XCharacterLine`).
+    /// MS 워드 호환 문서는 종전대로 첨자 축소 전 run 크기다 (그 갈래의 선 모양 축척은 실측하지
+    /// 않았다). MS 워드 판정이 먼저다 — 두 호환 키는 한 문서에 함께 오지 않지만, 두께·자리를
+    /// 고르는 `underlineBelowLine`과 같은 차례로 둔다.
     func underlineShapeScale(
         _ attributes: [NSAttributedString.Key: Any],
         reference: HwpDecorationLineGeometry.UnderlineReference
-    ) -> CGFloat {
-        guard reference.msWordLineBox == nil, !isHwp2007Compatible(attributes) else {
-            return preScriptFontSize(attributes)
+    ) -> HwpLineShapeGeometry.Scale {
+        if reference.msWordLineBox != nil {
+            return .characterLine(fontSize: preScriptFontSize(attributes))
         }
-        return underlineThicknessFontSize(attributes, reference: reference)
+        if isHwp2007Compatible(attributes) {
+            return .hwp200XCharacterLine
+        }
+        return .characterLine(
+            fontSize: underlineThicknessFontSize(attributes, reference: reference)
+        )
     }
 
     /// 취소선(글자 가운데 밑줄·변경 추적 삭제선 포함) 한 줄의 기하 — 밑줄과 달리 세
@@ -114,13 +121,19 @@ extension HwpPageLayer {
     }
 
     /// 취소선 선 모양의 축척 — 한글 문서는 두께와 같은 run의 글자 모양 기본 크기다 (#226).
-    /// 다른 두 갈래는 밑줄(`underlineShapeScale`)과 같은 이유로 종전대로 첨자 축소 전 run
-    /// 크기다.
-    func strikethroughShapeScale(_ attributes: [NSAttributedString.Key: Any]) -> CGFloat {
-        guard !isMsWordCompatible(attributes), !isHwp2007Compatible(attributes) else {
-            return preScriptFontSize(attributes)
+    /// 한글 2007 호환 문서는 밑줄(`underlineShapeScale`)과 같은 고정 축척이고(#227 실측: 위
+    /// 첨자·상대 크기 50%·200% run의 취소선 무늬도 크기와 무관), MS 워드 호환 문서는 종전대로
+    /// 첨자 축소 전 run 크기다.
+    func strikethroughShapeScale(
+        _ attributes: [NSAttributedString.Key: Any]
+    ) -> HwpLineShapeGeometry.Scale {
+        if isMsWordCompatible(attributes) {
+            return .characterLine(fontSize: preScriptFontSize(attributes))
         }
-        return decorationBaseFontSize(attributes)
+        if isHwp2007Compatible(attributes) {
+            return .hwp200XCharacterLine
+        }
+        return .characterLine(fontSize: decorationBaseFontSize(attributes))
     }
 
     /// 밑줄 자리의 기준인 줄 상자 높이 — 줄에 글자 크기를 가진 것이 하나도 없으면(0) 그리는

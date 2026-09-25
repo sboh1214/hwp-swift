@@ -14,10 +14,10 @@ extension HwpPageLayer {
         let shape: HwpBorderType
         /// 여러 줄·물결 띠의 자리 (아래 밑줄·취소선·위 밑줄)
         let placement: HwpLineShapeGeometry.Placement
-        /// 패턴·띠·물결의 축척 (pt) — 한글 문서는 밑줄이 줄 글자 기본 크기, 취소선이 run의 글자
-        /// 모양 기본 크기이고 호환 문서 두 갈래는 첨자 축소 전 run 크기다
-        /// (`underlineShapeScale`·`strikethroughShapeScale`, #226)
-        let fontSize: CGFloat
+        /// 패턴·띠·물결의 축척 — 한글 문서는 밑줄이 줄 글자 기본 크기, 취소선이 run의 글자
+        /// 모양 기본 크기이고(#226) 한글 2007 호환 문서는 크기와 무관한 고정 축척(#227), MS 워드
+        /// 호환 문서는 첨자 축소 전 run 크기다 (`underlineShapeScale`·`strikethroughShapeScale`)
+        let scale: HwpLineShapeGeometry.Scale
         /// 글자 모양 run의 가로 범위 (`lineShapeSpans`, 묶음의 첫 run만 값이 있다)
         let span: CGRect?
     }
@@ -42,7 +42,9 @@ extension HwpPageLayer {
     /// 크기가 다른 한 글자 모양도 한글 문서에서는 한 묶음이다 — 축척이 기본 크기라 슬롯이
     /// 바뀌어도 같고, 한글도 그 경계에서 위상을 잇는다 (#226, 한글 12.30 실측 2026-09-26: 기본
     /// 20pt·한글 슬롯 50%·라틴 100% "가나다라 abcdefg 마바사아"의 긴 점선 밑줄·취소선이 한 토막
-    /// 5.64pt·주기 9.0pt로 슬롯 경계를 넘어 이어진다). id 없는 폴백
+    /// 5.64pt·주기 9.0pt로 슬롯 경계를 넘어 이어진다). 한글 2007 호환 문서도 같다 — 축척이
+    /// 고정이라 슬롯과 무관하고, 한글도 같은 표본의 긴 점선·일점쇄선·원형 점선·물결을 한 위상
+    /// (주기 3.84·6.24/1.92·3.0·3.0pt)으로 잇는다 (#227). id 없는 폴백
     /// run은 홀로 선다. 실선은 이 묶음을 쓰지 않고 run마다 그린다 (이어 붙인 사각형과
     /// 같은 결과). 선 모양 키를 실은 run이 하나도 없는 줄은 재지 않는다.
     func lineShapeSpans(of runs: [CTRun], lineOrigin: CGPoint) -> [CGRect?] {
@@ -71,8 +73,9 @@ extension HwpPageLayer {
     /// `lineShapeSpans`가 한 묶음으로 보는 두 run의 조건 — 글자 모양 id와 선을 정하는 키가
     /// 모두 같다 (값 키는 수치 비교, 색은 `CFEqual`). 축척 크기 키는 그 run의 축척이 실제로
     /// 기대는 값이다: 한글 문서는 글자 모양 기본 크기(`baseFontSize` — 슬롯 상대 크기와 무관,
-    /// #226), 호환 문서 두 갈래와 기본 크기 키가 없는 문자열은 슬롯 상대 크기를 반영한
-    /// `spaceTargetSize`(그 갈래의 축척 — `underlineShapeScale`·`strikethroughShapeScale`).
+    /// #226), 한글 2007 호환 문서는 고정 축척이라 기본 크기 키로 충분하고(#227), MS 워드 호환
+    /// 문서와 기본 크기 키가 없는 문자열은 슬롯 상대 크기를 반영한 `spaceTargetSize`(그 갈래의
+    /// 축척 — `underlineShapeScale`·`strikethroughShapeScale`).
     static func sameLineShapeGroup(
         _ lhs: [NSAttributedString.Key: Any], _ rhs: [NSAttributedString.Key: Any]
     ) -> Bool {
@@ -107,9 +110,9 @@ extension HwpPageLayer {
         return true
     }
 
-    /// 선 모양 축척이 `spaceTargetSize`(슬롯 상대 크기 반영)에 기대는 run인지 — MS 워드 호환·
-    /// 한글 2007 호환 문서(그 갈래의 축척은 첨자 축소 전 run 크기)와 기본 크기 키가 없는 문자열
-    /// (축척이 그 키로 떨어진다)이다.
+    /// 선 모양 축척이 `spaceTargetSize`(슬롯 상대 크기 반영)에 기대는 run인지 — MS 워드 호환
+    /// 문서(그 갈래의 축척은 첨자 축소 전 run 크기)와 기본 크기 키가 없는 문자열(축척이 그
+    /// 키로 떨어진다)이다. 한글 2007 호환 문서는 축척이 고정이라 기대지 않는다 (#227).
     private static func shapeScaleFollowsSpaceTarget(
         _ attributes: [NSAttributedString.Key: Any]
     ) -> Bool {
@@ -119,13 +122,12 @@ extension HwpPageLayer {
         guard let raw = attributes[HwpAttributedStringKey.compatibleDocumentTarget] as? NSNumber
         else { return false }
         return raw.uint32Value == HwpCompatibleDocumentTarget.msWord.rawValue
-            || raw.uint32Value == HwpCompatibleDocumentTarget.hwp200X.rawValue
     }
 
     /// 실선이 아닌 장식선 — 글자 모양 run의 폭 `span`(묶음의 첫 run만 받는다,
     /// `lineShapeSpans`; 나머지 run은 아무것도 그리지 않는다)에 `HwpLineShapeGeometry`의
-    /// 경로를 편다. 패턴·띠·물결의 축척은 `shaped.fontSize`(선마다 정한 기준 크기 —
-    /// `ShapedLine.fontSize`)이고, 로컬 y(양수 = 아래)를 텍스트 공간(y-위)으로 뒤집어 단선
+    /// 경로를 편다. 패턴·띠·물결의 축척은 `shaped.scale`(선마다 정한 축척 —
+    /// `ShapedLine.scale`)이고, 로컬 y(양수 = 아래)를 텍스트 공간(y-위)으로 뒤집어 단선
     /// 중심(`lineOrigin.y + line.center`)에 놓는다.
     func fillShapedLine(
         line: HwpDecorationLineGeometry.Line,
@@ -136,7 +138,7 @@ extension HwpPageLayer {
         guard let span = shaped.span,
               let path = HwpLineShapeGeometry.path(for: HwpLineShapeGeometry.Line(
                   shape: shaped.shape, length: span.width, thickness: line.thickness,
-                  scale: .characterLine(fontSize: shaped.fontSize), placement: shaped.placement
+                  scale: shaped.scale, placement: shaped.placement
               ))
         else { return }
         // 로컬 (x, y) → 텍스트 공간 (span.minX + x, 선 중심 − y)

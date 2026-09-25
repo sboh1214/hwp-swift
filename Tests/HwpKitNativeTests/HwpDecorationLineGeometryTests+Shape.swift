@@ -201,8 +201,10 @@ extension HwpDecorationLineGeometryTests {
     }
 
     /// 한글 문서(기본 크기 키가 있는 run)는 슬롯 상대 크기만 다른 run을 한 묶음으로 본다 —
-    /// 축척이 기본 크기라 같고 한글도 그 경계에서 위상을 잇는다 (#226 실측). 호환 문서 두
-    /// 갈래는 축척이 `spaceTargetSize`라 종전대로 가른다.
+    /// 축척이 기본 크기라 같고 한글도 그 경계에서 위상을 잇는다 (#226 실측). 한글 2007 호환
+    /// 문서도 축척이 고정이라 한 묶음이다 (#227 실측: 기본 20pt·한글 50%·라틴 100% 한 글자
+    /// 모양의 긴 점선·일점쇄선·원형 점선·물결이 슬롯 경계에서 주기 3.84·6.24/1.92·3.0·3.0pt로
+    /// 이어진다). MS 워드 호환 문서는 축척이 `spaceTargetSize`라 종전대로 가른다 (미실측).
     func testNativeDocumentsKeepOneGroupAcrossSlotRelativeSizes() {
         let base = shapedUnderline(.longDotLine, charShape: 7)
         var native = base
@@ -210,7 +212,9 @@ extension HwpDecorationLineGeometryTests {
         var nativeSlot = native
         nativeSlot[HwpAttributedStringKey.spaceTargetSize] = NSNumber(value: 10)
         expect(HwpPageLayer.sameLineShapeGroup(native, nativeSlot)) == true
-        for target in [HwpCompatibleDocumentTarget.msWord, .hwp200X] {
+        for (target, grouped) in [
+            (HwpCompatibleDocumentTarget.msWord, false), (.hwp200X, true),
+        ] {
             var compat = native
             compat[HwpAttributedStringKey.compatibleDocumentTarget] = NSNumber(
                 value: target.rawValue
@@ -220,7 +224,7 @@ extension HwpDecorationLineGeometryTests {
                 value: target.rawValue
             )
             expect(HwpPageLayer.sameLineShapeGroup(compat, compatSlot))
-                .to(beFalse(), description: "\(target)")
+                .to(equal(grouped), description: "\(target)")
         }
         var biggerBase = native
         biggerBase[HwpAttributedStringKey.baseFontSize] = NSNumber(value: 40)
