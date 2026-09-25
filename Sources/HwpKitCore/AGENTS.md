@@ -2427,7 +2427,9 @@ paraShape와 같은 값**이어야 한다.
     OS/2가 없으면(AppleMyungjo) hhea가 win 자리이고 그 밖 갈래.
     장식선 기준 상자는 줄 상자에서 되푼다: cell = 줄 상자 / 1.3, ascent = 베이스라인 −
     0.15 cell, descent = cell − ascent (CJK 갈래는 win 지표 그대로, Helvetica는 win
-    0.9502/0.2251 → 0.8146/0.0895).
+    0.9502/0.2251 → 0.8146/0.0895). 이 되풀이는 글꼴 하나의 상자와 그 합의 것이다 — 줄 끝
+    글자·개체가 키운 줄 상자는 글자 상자의 cell을 따로 싣고 ascent·descent가 그 줄 상자의
+    가장자리에서 0.15 cell 안쪽이다 (descent = 줄 상자 − 베이스라인 − 0.15 cell, #223).
   - **밑줄(글자 아래·글자 위·삽입)은 줄 단위**: 줄의 run 상자(글자 크기 × 글꼴 상자)를
     **축별 최댓값**으로 합친 줄 상자에서 아래 밑줄 중심 −(descent + 0.021 cell)·위 밑줄
     ascent + 0.021 cell·두께 0.05 cell — 곧 **줄 상자 가장자리에서 0.129 cell 안쪽**이다
@@ -2435,7 +2437,8 @@ paraShape와 같은 값**이어야 한다.
     (#223, 아래 "줄 끝 글자와 개체는 쌓인다")은 그 **키운 줄 상자의 가장자리**에 **글자
     상자의 cell**로 선다 (`HwpMsWordLineBox.cellHeight`를 따로 싣는다) — 한글 12.30 PDF:
     함초롬돋움 10pt 밑줄 + 16pt 문단 끝 글자 줄(31.32/20.25)의 밑줄이 베이스라인 아래
-    9.36pt(상자 바닥에서 1.68 = 0.129 × 16.92 / 1.3 위)·두께 0.65, 30pt 표 줄의 10pt 위
+    9.36pt(상자 바닥에서 1.71 위 — 산식 0.129 × 16.92 / 1.3 = 1.68)·두께 0.72(PDF의 0.12pt
+    격자 — 산식 0.65; 끝 상자의 cell이면 1.04), 30pt 표 줄의 10pt 위
     밑줄이 베이스라인 위 28.32pt(표 윗변에서 1.68 아래), 20pt 글 + 32pt 표 줄(33.83/32)의
     밑줄은 베이스라인 **위** 1.56pt다(글자 상자 안쪽 개체가 베이스라인을 상자 바닥 가까이
     내린다 — 산식 1.52). 밑줄 없는 run·대체 글꼴 run도 후보이고, **문단
@@ -2469,8 +2472,10 @@ paraShape와 같은 값**이어야 한다.
     27문단·글자처럼 취급 표 10문단·쪽에 걸친 3문단·마커 7문단·크기 스윕 93문단 — 을 한글이
     다시 저장한 줄 캐시 `vertsize`·`baseline`·`spacing`과 PDF 베이스라인).
     `HwpDrawnTextLayout.LineMetrics`가 줄의 글자 run 상자를 `HwpMsWordLineBox.union`으로
-    합친 `msWordTextBox`를 들고, 앵커(`baselineAnchor`)는 그 `baseline`(함초롬돋움 10pt
-    12.66pt — 0.85 × 10 = 8.5가 아니다), 상자(`boxHeight`)는 그 `lineHeight`다.
+    합친 글자 상자 `msWordTextBox`에 줄 끝 글자·개체를 들인 줄 상자 `msWordLineBox`(아래
+    "줄 끝 글자와 개체는 글자 상자에 쌓인다", #223)를 들고, 앵커(`baselineAnchor`)는 그
+    `baseline`(함초롬돋움 10pt 12.66pt — 0.85 × 10 = 8.5가 아니다), 상자(`boxHeight`)는 그
+    `lineHeight`다.
     측정(`HwpParagraphLayout.makeLineFrames`)·렌더(`lineGeometries`)·전진량
     (`HwpLineAdvance`)·장식선(`msWordLineBox(of:endsParagraph:)`)·컨테이너 내용 범위
     (`HwpLineFrame.boxHeight`)·쪽 번호 상자·히트 잉크 상한이 전부 이 한 벌을 읽는다.
@@ -2564,8 +2569,9 @@ paraShape와 같은 값**이어야 한다.
       두었고 줄마다 ≤ 0.03pt(80pt 0.11pt), 비율 여분의 4 단위 내림이 이를 최대 0.05pt/줄로
       키운다 (Apple SD 10pt 160%: 2496 vs 2491). ② (해결, #223) 마지막 run이 글자보다 큰 글자
       모양의 표 마커인 줄(10pt 글자 + 30pt 글자 모양 마커, 셀 10.62pt)의 `vertsize` 4999·`baseline`
-      3311은 줄 끝 글자 쌓기다 — Menlo 30 CR 상자 4540 + Apple SD/Menlo 10pt 글자 상자의 아래 몫
-      455(종전 4544). ③ (해결, #223) 한 줄 끝(코드 10) run의 글꼴 슬롯은 라틴 슬롯이다 — 위 "줄 끝
+      3311은 줄 끝 글자 쌓기다 — 한글의 Menlo 30 CR 상자 4544 + Apple SD/Menlo 10pt 글자 상자의
+      아래 몫 455 (우리 산식은 Menlo 30 상자가 4540이라 4997 — ①의 글꼴 상자 반올림 격차 안).
+      ③ (해결, #223) 한 줄 끝(코드 10) run의 글꼴 슬롯은 라틴 슬롯이다 — 위 "줄 끝
       글자와 개체는 글자 상자에 쌓인다".
     - 히트 판정의 조판 없는 잉크 상한(`HwpHitTester.msWordVerticalInkReach`)은 줄 상자가 높이와
       베이스라인을 **다른 run**에서 고르는 것을 감안한다 — 위는 run마다 (ascent − 자기 상자

@@ -51,13 +51,20 @@ final class HwpMsWordLineBoxTests: XCTestCase {
         let scaled = HwpMsWordLineBox(lineHeight: 1, baseline: 0.5, cellHeight: 0.4).scaled(by: 10)
         expect(scaled.cellHeight).to(beCloseTo(4, within: 0.0001))
         expect(scaled.lineHeight).to(beCloseTo(10, within: 0.0001))
+        // 따로 실은 cell이 합친 줄 상자 / 1.3보다 커야 `union`이 cell을 되풀지 않고 최댓값을
+        // 잡는지 가려진다 (12 / 1.3 ≈ 9.23 < 20).
         let union = HwpMsWordLineBox.union([
-            HwpMsWordLineBox(lineHeight: 10, baseline: 8, cellHeight: 9),
+            HwpMsWordLineBox(lineHeight: 10, baseline: 8, cellHeight: 20),
             HwpMsWordLineBox(lineHeight: 12, baseline: 7),
         ])
         expect(union?.lineHeight) == 12
         expect(union?.baseline) == 8
-        expect(union?.cellHeight ?? 0).to(beCloseTo(12 / 1.3, within: 1e-9))
+        expect(union?.cellHeight) == 20
+        let plainUnion = HwpMsWordLineBox.union([
+            HwpMsWordLineBox(lineHeight: 10, baseline: 8, cellHeight: 7),
+            HwpMsWordLineBox(lineHeight: 12, baseline: 7),
+        ])
+        expect(plainUnion?.cellHeight ?? 0).to(beCloseTo(12 / 1.3, within: 1e-9))
     }
 
     func testScaledMultipliesBothAxes() {

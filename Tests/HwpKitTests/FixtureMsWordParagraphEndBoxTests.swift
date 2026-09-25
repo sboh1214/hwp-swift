@@ -193,7 +193,7 @@ final class FixtureMsWordParagraphEndBoxTests: XCTestCase {
     /// 밑줄은 줄 상자의 가장자리에서 **글자 상자의** cell × 0.129만큼 안쪽이다 — 끝 글자가 쌓인 줄
     /// (U1 9.60 아래·U2 7.08 아래), 30pt 표 줄의 위 밑줄(U3 28.56 위 = 표 윗변 아래), 글자 상자
     /// 안쪽 개체가 베이스라인을 상자 바닥 가까이 내린 줄(유사: 밑줄이 베이스라인 **위** 1.80). 종전
-    /// 산식은 U1 4.1 아래·U3 11.0 위·유사 5.2 아래였다.
+    /// 산식(글자·끝 글자 상자의 축별 최댓값, 개체 제외)은 U1 4.2 아래·U3 9.5 위·유사 6.0 아래였다.
     func testUnderlinesSitOnTheLineBoxEdgesWithTheTextCell() async throws {
         try skipUnlessOracleFonts()
         let samples = [

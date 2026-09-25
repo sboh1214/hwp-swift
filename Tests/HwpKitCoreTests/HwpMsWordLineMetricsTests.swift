@@ -150,8 +150,8 @@ import XCTest
         /// 33.09pt, 홀로 그릴 때와 같다) 다음 문단이 그만큼 아래에 놓인다. 끝 상자(45.40)가 글자
         /// 상자(Apple SD 10pt 15.60)보다 높으므로 줄 상자는 끝 상자 + 글자 상자의 베이스라인 아래
         /// 몫(4.80)이다 (#223 — 한글 12.30 실측: 10pt 글 + 30pt 글자 모양의 끝 글자 줄 `vertsize`
-        /// 4999 = Menlo 30 상자 4540 + Apple SD/Menlo 10 글자 상자의 아래 몫 455, #194가 미해석으로
-        /// 남긴 1688의 정체). 한 줄 끝 표식(`lineBreak`)으로 끝나는 줄은 문단 끝이 아니다 (PR 리뷰).
+        /// 4999 = 한글의 Menlo 30 상자 4544(우리 산식 4540 — 글꼴 상자 반올림 격차) + Apple SD/Menlo
+        /// 10 글자 상자의 아래 몫 455, #194가 미해석으로 남긴 1688의 정체). 한 줄 끝 표식(`lineBreak`)으로 끝나는 줄은 문단 끝이 아니다 (PR 리뷰).
         func testCombinedParagraphsKeepEachParagraphEndBox() throws {
             try skipUnlessOracleFonts()
             let appleSD = Self.box("Apple SD Gothic Neo", 10)

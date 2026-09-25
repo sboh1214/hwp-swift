@@ -19,10 +19,11 @@ import Foundation
 ///
 /// (win 상자 = winAscent + winDescent)
 ///
-/// 장식선은 두 갈래 모두 **줄 상자에서 거꾸로 푼 상자**를 쓴다 — `cellHeight` =
-/// `lineHeight` / 1.3, `ascent` = `baseline` − 0.15 × `cellHeight`, `descent` =
-/// `cellHeight` − `ascent` (줄 상자 가장자리에서 0.15 cell씩 안쪽). CJK 글꼴에서는 그것이
-/// win 지표 그대로이고(함초롬돋움
+/// 장식선은 두 갈래 모두 **줄 상자에서 거꾸로 푼 상자**를 쓴다 — 글꼴 하나의 상자와 그
+/// 합(`init(lineHeight:baseline:)`·`union`)에서는 `cellHeight` = `lineHeight` / 1.3,
+/// `ascent` = `baseline` − 0.15 × `cellHeight`, `descent` = `cellHeight` − `ascent` (줄 상자
+/// 가장자리에서 0.15 cell씩 안쪽; 줄 끝 글자·개체가 키운 줄 상자는 아래 문단). CJK
+/// 글꼴에서는 그것이 win 지표 그대로이고(함초롬돋움
 /// 1.07/0.23, Apple SD 산돌고딕 Neo 0.90/0.30, HY울릉도M 0.8584/0.1416, Menlo
 /// 0.9282/0.2358), 그 밖의 글꼴에서는 win 상자보다 작은 상자가 된다(Helvetica win
 /// 0.9502/0.2251 → 0.8146/0.0895, Times New Roman 0.8911/0.2163 + gap 0.0425 →
@@ -52,8 +53,11 @@ import Foundation
 /// 앞 두 줄은 2160 = Apple SD의 1.08em, 끝 글자가 있는 마지막 줄만 2207). 다만 **끝
 /// 글자 상자가 글자 상자보다 높으면** 합치지 않고 쌓는다 — 줄 상자 = 끝 글자 상자 높이 +
 /// 글자 상자의 베이스라인 아래 몫이다 (#223, `HwpDrawnTextLayout.LineMetrics.msWordLineBox`;
-/// 글자처럼 취급 개체도 같은 꼴). 장식선은 그렇게 정한 줄 상자의 가장자리에서 글자 상자의
-/// `cellHeight`만큼 안쪽에 놓인다 (`ascent`·`descent`).
+/// 글자처럼 취급 개체도 같은 꼴). 그렇게 키운 줄 상자는 **글자 상자의 `cellHeight`**를 따로
+/// 싣고(`init(lineHeight:baseline:cellHeight:)` — `lineHeight` / 1.3이 아니다), 장식선 기준
+/// 상자(`ascent`·`descent`)는 그 줄 상자의 가장자리에서 그 cell의 0.15배 안쪽이다 — `descent`
+/// = `lineHeight` − `baseline` − 0.15 × `cellHeight` (밑줄 중심은 가장자리에서 0.129 cell,
+/// `HwpDecorationLineGeometry.msWordUnderlineBelow`).
 public struct HwpMsWordLineBox: Hashable, Sendable {
     /// 줄 상자 높이 (em 또는 pt)
     public let lineHeight: CGFloat
@@ -62,9 +66,10 @@ public struct HwpMsWordLineBox: Hashable, Sendable {
     /// 장식선 기준 상자 높이 — 밑줄이 줄 상자 가장자리에서 들어오는 거리와 두께의 기준
     /// (`HwpDecorationLineGeometry.msWordUnderlineBelow`). 글꼴 하나의 상자나 글자 run들을
     /// 합친 상자는 줄 상자 / 1.3이고(`init(lineHeight:baseline:)`), 문단 끝 글자·개체가 줄
-    /// 상자를 키운 줄에서는 **글자 상자**의 값이 남는다 (#223 한글 12.30 실측: 함초롬돋움
-    /// 10pt 밑줄 + 16pt 문단 끝 글자 줄은 상자 31.32pt인데 밑줄이 상자 바닥에서 1.68pt
-    /// = 0.129 × 16.92 / 1.3 위·두께 0.65pt — 27.06 / 1.3이나 31.32 / 1.3이 아니다).
+    /// 상자를 키운 줄에서는 **글자 상자**의 값이 남는다 (#223 한글 12.30 PDF: 함초롬돋움
+    /// 10pt 밑줄 + 16pt 문단 끝 글자 줄은 상자 31.32pt인데 밑줄 중심이 상자 바닥에서 1.71pt
+    /// 위·두께 0.72pt(0.12pt 격자) — 글자 상자 cell 16.92 / 1.3의 산식 1.68·0.65에 맞고,
+    /// 27.06 / 1.3이면 2.69·1.04, 31.32 / 1.3이면 3.11·1.20이다).
     public let cellHeight: CGFloat
 
     public init(lineHeight: CGFloat, baseline: CGFloat) {
