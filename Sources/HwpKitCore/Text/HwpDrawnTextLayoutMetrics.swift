@@ -30,7 +30,7 @@ extension HwpDrawnTextLayout {
         var baseFontSize: CGFloat = 0
         /// 줄 **글자** run의 상대크기 적용 전 기본 크기 최댓값 — 한글 문서에서 밑줄 두께와 선
         /// 모양 축척의 기준이다 (#226, `UnderlineReference.textFontSize`; 한글 2007 호환 문서는
-        /// 두께가 고정이고 선 모양이 run 크기라 쓰지 않는다).
+        /// 두께가 고정이고 선 모양은 렌더러가 종전 run 크기로 그려(#227 범위 밖) 쓰지 않는다).
         /// `baseFontSize`와 달리 문단 끝 글자(CR)·한 줄 끝(`hwp.lineBreak`)·빈 줄 앵커·결합
         /// 문자열의 문단 구분자와 **모든** 마커 run(높이 0 마커 포함)을 세지 않는다 — 한글
         /// 12.30 실측 (2026-09-25): 10pt 밑줄이 40pt 무장식 글자·40pt 공백과 한 줄이면 두께

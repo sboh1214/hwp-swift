@@ -170,9 +170,9 @@ import XCTest
         }
 
         /// 첨자 run도 `spaceTargetSize`는 축소 전 크기다 — 렌더러가 취소선의 첨자 축소 비율
-        /// (run 글꼴 크기 ÷ 이 값)과 기본 크기 키가 없는 문자열의 장식선 크기 폴백으로 쓴다
-        /// (한글은 첨자 run의 선도 본문 두께로 그린다; 장식선 크기 자체는 #226부터
-        /// `baseFontSize`다).
+        /// (run 글꼴 크기 ÷ 이 값), 기본 크기 키가 없는 문자열의 장식선 크기 폴백, 호환 문서 두
+        /// 갈래의 선 모양 축척과 묶음 키(`sameLineShapeGroup`)로 쓴다 (한글은 첨자 run의 선도 본문
+        /// 두께로 그린다; 한글 문서의 장식선 크기는 #226부터 `baseFontSize`다).
         func testScriptRunKeepsPreScriptSizeForDecorations() throws {
             let paragraph = paragraph(text: "가", runs: [(0, 0)])
             let shape = try charShape(property: Self.superscriptBit)

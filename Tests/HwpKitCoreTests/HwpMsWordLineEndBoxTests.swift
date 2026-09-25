@@ -295,7 +295,10 @@ import XCTest
             )
             let referenceBox = try XCTUnwrap(reference.msWordLineBox)
             expect(referenceBox.lineHeight).to(beCloseTo(30, within: 0.001))
-            expect(reference.lineBoxHeight).to(beCloseTo(30, within: 0.001))
+            expect(referenceBox.baseline).to(beCloseTo(30, within: 0.001))
+            // 밑줄 자리·두께를 정하는 장식선 기준 상자는 글자가 없어 끝 글자(Menlo 10pt)의 cell이다.
+            expect(referenceBox.cellHeight)
+                .to(beCloseTo(Self.box("Menlo", 10).cellHeight, within: 0.001))
             let menlo40 = Self.box("Menlo", 40)
             let large = try Self.metrics(objectOnly(end: menlo40))
             expect(large.boxHeight).to(beCloseTo(menlo40.lineHeight, within: 0.001))

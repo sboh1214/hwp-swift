@@ -335,20 +335,24 @@ extension HwpDecorationLineGeometryTests {
         let starts = lineWideInkStarts(
             raster, band: (center - 0.4) ... (center + 0.4), where: Self.isLineWideCyan
         )
-        // 기본 20pt 몫 주기 0.057 × 20 × 8 = 9.12pt가 run 시작(x 10)부터 끊기지 않는다
+        // 기본 20pt 몫 주기 0.057 × 20 × 8 = 9.12pt가 run 시작(x 10)부터 경계(x 58.16)를 넘어
+        // 끊기지 않는다. 경계는 여섯째 선(55.6~61.3) 한가운데라 다시 시작한 무늬는 경계의 새
+        // 선이 앞 선과 붙어 잉크 시작이 안 생기고, 일곱째 시작이 64.72가 아니라 67.3으로 밀린다
+        // — 경계 뒤 시작들이 가른다.
         let period: CGFloat = 0.057 * 20 * 8
-        expect(starts.count) >= 7
-        for (index, start) in starts.prefix(7).enumerated() {
+        expect(boundary).to(beCloseTo(58.16, within: 0.3))
+        expect(starts.count) >= 10
+        for (index, start) in starts.prefix(10).enumerated() {
             expect(start).to(beCloseTo(10 + period * CGFloat(index), within: 0.3))
         }
-        // 경계(48.16pt 뒤)는 선 한가운데라, 다시 시작했다면 경계에서 새 선이 잡힌다
-        expect(starts.contains { abs($0 - boundary) < 0.3 }) == false
     }
 
     /// 2중선·물결 밑줄의 띠도 줄 글자 기준 크기다 — 40pt 무장식 글자와 한 줄인 10pt 2중선은
     /// 띠 0.12 × 40 = 4.8pt를 [1/4·1/2·1/4]로 나눈 두 선(베이스라인 아래 6.6·10.2pt, 굵기 1.2pt),
     /// 물결은 진폭 0.112 × 40 + 획 0.03 × 40 = 5.68pt 폭이다 (한글 12.30: 2중선 −6.48·−10.08·
-    /// 1.20pt, 물결 진폭 4.56·획 1.20pt). 10pt 몫이면 두 선이 1.65·2.55pt, 물결 폭이 1.42pt다.
+    /// 1.20pt, 물결 진폭 4.56·획 1.20pt). 선 모양 축척만 10pt 몫으로 되돌리면 두 선이 6.15·
+    /// 7.05pt(띠 1.2pt)·물결 폭 1.42pt이고, 종전 run 단위(자리까지 10pt)면 1.65·2.55pt였다.
+    /// 줄 상자만 큰 줄(L > T)은 `testShapedUnderlineIgnoresLineBoxOnlyMembers`가 본다.
     func testDoubleAndWaveUnderlinesScaleWithTheLineText() throws {
         func shaped(_ shape: HwpBorderType) throws -> Raster {
             var attributes = decoratedRun(HwpAttributedStringKey.underlineStyle)
@@ -409,5 +413,40 @@ extension HwpDecorationLineGeometryTests {
         let period = CGFloat(0.057 * 40 * 8)
         expect(starts[1] - starts[0]).to(beCloseTo(period, within: 0.3))
         expect(starts[2] - starts[1]).to(beCloseTo(period, within: 0.3))
+    }
+
+    /// 선 모양 축척은 줄 **상자**(L)가 아니라 줄 **글자**(T) 몫이다 — 40pt 문단 끝 글자와 한
+    /// 줄인 10pt 긴 점선은 자리는 40pt 상자 바닥(−6.2pt)이지만 무늬는 10pt 몫(주기 4.56pt)이고,
+    /// 2중선은 그 가장자리 6.0pt에서 10pt 몫 띠 1.2pt(두 선 6.15·7.05pt)다 (한글 12.30 S18: 자리
+    /// −6.24pt·선 2.88·공백 1.68pt). L로 재면 주기 18.24pt·두 선 6.6·10.2pt가 된다.
+    func testShapedUnderlineIgnoresLineBoxOnlyMembers() throws {
+        func shaped(_ shape: HwpBorderType) throws -> Raster {
+            var attributes = decoratedRun(HwpAttributedStringKey.underlineStyle)
+            attributes[HwpAttributedStringKey.underlineShape] = NSNumber(value: shape.rawValue)
+            attributes[HwpAttributedStringKey.charShapeId] = NSNumber(value: 1)
+            attributes[HwpAttributedStringKey.paragraphEndBaseFontSize] = NSNumber(value: 40)
+            return try render(text: NSAttributedString(
+                string: String(repeating: " ", count: 16), attributes: attributes
+            ))
+        }
+        let dotted = try shaped(.longDotLine)
+        let center = try XCTUnwrap(Self.rowCenter(dotted, where: Self.isLineWideCyan), "점선")
+        let starts = lineWideInkStarts(
+            dotted, band: (center - 0.4) ... (center + 0.4), where: Self.isLineWideCyan
+        )
+        expect(starts.count) >= 3
+        guard starts.count >= 3 else { return }
+        let period = CGFloat(0.057 * 10 * 8)
+        expect(starts[1] - starts[0]).to(beCloseTo(period, within: 0.2))
+        expect(starts[2] - starts[1]).to(beCloseTo(period, within: 0.2))
+        let double = try shaped(.doubleLine)
+        let strike = try XCTUnwrap(
+            Self.rowBands(double, where: Self.isLineWideMagenta).first, "취소선"
+        )
+        let bands = Self.rowBands(double, where: Self.isLineWideCyan)
+        expect(bands.count) == 2
+        guard bands.count == 2 else { return }
+        expect(bands[0] - strike).to(beCloseTo(3.5 + 6.15, within: 0.25))
+        expect(bands[1] - strike).to(beCloseTo(3.5 + 7.05, within: 0.25))
     }
 }

@@ -153,8 +153,14 @@ import XCTest
         /// run(글꼴 25.6pt)과 한 줄인 10pt 밑줄은 40pt 상자·40pt 두께다 (한글 12.30: −6.72·1.56).
         /// 줄어든 글꼴 크기로 들면 상자·두께 기준이 25.6pt가 된다.
         func testSuperscriptRunJoinsWithItsBaseSize() {
+            // 조판이 위 첨자 run에 싣는 키 그대로 — 줄어든 글꼴·축소 전 크기·첨자 이동(0.44 × 40)
+            var superscript = Fixtures.attributes(size: 40 * 0.64, baseSize: 40)
+            superscript[HwpAttributedStringKey.spaceTargetSize] = NSNumber(value: 40)
+            superscript[HwpAttributedStringKey.scriptBaselineOffset] = NSNumber(value: 17.6)
+            superscript[HwpAttributedStringKey.glyphBaselineOffset] = NSNumber(value: 17.6)
             let reference = Self.reference(Self.concat([
-                Self.text("ab", size: 10), Self.text("sup", size: 40 * 0.64, base: 40),
+                Self.text("ab", size: 10),
+                NSAttributedString(string: "sup", attributes: superscript),
             ]), endsParagraph: false)
             expect(reference.lineBoxHeight) == 40
             expect(reference.textFontSize) == 40
