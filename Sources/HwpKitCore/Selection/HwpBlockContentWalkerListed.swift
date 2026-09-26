@@ -88,6 +88,27 @@ extension HwpBlockContentWalker {
         onNestedTable: (HwpNestedTableFrame, CGRect) -> Void = { _, _ in },
         onNestedTableEnd: (HwpNestedTableFrame, CGRect) -> Void = { _, _ in }
     ) {
+        /// 중첩 표는 셀 안 위치를 origin으로 재귀 순회한다 —
+        /// origin 합성 산식은 여기 한 곳에만 둔다.
+        func walkNested(_ nested: HwpNestedTableFrame) {
+            let rect = nested.rect.offsetBy(dx: origin.x, dy: origin.y)
+            onNestedTable(nested, rect)
+            walkListedTable(
+                nested.table,
+                origin: CGPoint(
+                    x: origin.x + nested.rect.minX,
+                    y: origin.y + nested.rect.minY
+                ),
+                onCellStart: onCellStart,
+                onParagraphText: onParagraphText,
+                onCellImage: onCellImage,
+                onCellShape: onCellShape,
+                onCellTextbox: onCellTextbox,
+                onNestedTable: onNestedTable,
+                onNestedTableEnd: onNestedTableEnd
+            )
+            onNestedTableEnd(nested, rect)
+        }
         for row in table.rows {
             for cell in row.cells {
                 onCellStart(cell, cell.cellFrame.offsetBy(dx: origin.x, dy: origin.y))
@@ -103,24 +124,11 @@ extension HwpBlockContentWalker {
                         onCellShape(shape, shape.rect.offsetBy(dx: origin.x, dy: origin.y))
                     case let .textbox(textbox):
                         onCellTextbox(textbox, textbox.rect.offsetBy(dx: origin.x, dy: origin.y))
+                    // 셀 개체 정렬(`sortedCellObjects`)은 중첩 표를 싣지 않는다 — 셀 중첩 표는
+                    // 아래 `cell.nestedTables` 순회가 문단 뒤에 걷는다. 갈래는 망라성 때문에
+                    // 두되 같은 산식을 쓴다.
                     case let .nestedTable(nested):
-                        let rect = nested.rect.offsetBy(dx: origin.x, dy: origin.y)
-                        onNestedTable(nested, rect)
-                        walkListedTable(
-                            nested.table,
-                            origin: CGPoint(
-                                x: origin.x + nested.rect.minX,
-                                y: origin.y + nested.rect.minY
-                            ),
-                            onCellStart: onCellStart,
-                            onParagraphText: onParagraphText,
-                            onCellImage: onCellImage,
-                            onCellShape: onCellShape,
-                            onCellTextbox: onCellTextbox,
-                            onNestedTable: onNestedTable,
-                            onNestedTableEnd: onNestedTableEnd
-                        )
-                        onNestedTableEnd(nested, rect)
+                        walkNested(nested)
                     }
                 }
                 for object in objects where object.paintsBehindText {
@@ -130,26 +138,8 @@ extension HwpBlockContentWalker {
                 for object in objects where !object.paintsBehindText {
                     emit(object)
                 }
-                // 중첩 표는 셀 안 위치를 origin으로 재귀 순회한다 —
-                // origin 합성 산식은 여기 한 곳에만 둔다.
                 for nested in cell.nestedTables {
-                    let rect = nested.rect.offsetBy(dx: origin.x, dy: origin.y)
-                    onNestedTable(nested, rect)
-                    walkListedTable(
-                        nested.table,
-                        origin: CGPoint(
-                            x: origin.x + nested.rect.minX,
-                            y: origin.y + nested.rect.minY
-                        ),
-                        onCellStart: onCellStart,
-                        onParagraphText: onParagraphText,
-                        onCellImage: onCellImage,
-                        onCellShape: onCellShape,
-                        onCellTextbox: onCellTextbox,
-                        onNestedTable: onNestedTable,
-                        onNestedTableEnd: onNestedTableEnd
-                    )
-                    onNestedTableEnd(nested, rect)
+                    walkNested(nested)
                 }
             }
         }

@@ -156,5 +156,48 @@ import XCTest
             expect(Self.emittedBottoms(page)[Self.firstURL])
                 .to(beCloseTo([116], within: 0.001))
         }
+
+        /// 글상자 방문자를 주지 않는 목록 순회(기본 인자 — 선택·검색처럼 글상자를 따로 걷지 않는
+        /// 호출)도 셀·각주 **자신의** 문단에는 목록 끝을 그대로 싣고 글상자는 건너뛴다. 각주는
+        /// 블록이 각주의 마지막 항목이 아니면(`isNoteEnd == false`) 마지막 문단도 목록 끝이 아니다.
+        func testListedWalksWithoutATextboxVisitorKeepTheOwnParagraphListEnds() {
+            let textboxes = [HwpCellTextbox(
+                rect: CGRect(x: 20, y: 40, width: 200, height: 80),
+                textbox: Self.textbox(Self.twoLinks), controlInstanceId: 9
+            )]
+            let cellFrame = CGRect(x: 0, y: 0, width: 300, height: 120)
+            let cell = HwpTableCellFrame(
+                cellFrame: cellFrame, row: 0, column: 0, rowSpan: 1, columnSpan: 1,
+                paragraphs: Self.twoLinks,
+                borders: HwpBorderSet.uniform(width: 0.5, color: Self.black),
+                fillColor: nil, textboxes: textboxes
+            )
+            let table = HwpTableFrame(
+                outerFrame: cellFrame,
+                rows: [HwpTableRowFrame(rowFrame: cellFrame, cells: [cell])],
+                borderColor: Self.black, borderWidth: 0.5
+            )
+            var cellEnds: [HwpDrawnTextLayout.ListEnd] = []
+            HwpBlockContentWalker.walkListedTable(
+                table, origin: .zero, onParagraphText: { _, _, _, end in cellEnds.append(end) }
+            )
+            expect(cellEnds) == [.followed, .end]
+
+            func footnoteEnds(isNoteEnd: Bool) -> [HwpDrawnTextLayout.ListEnd] {
+                let footnote = HwpFootnoteBlock(
+                    frame: CGRect(x: 50, y: 600, width: 300, height: 120),
+                    paragraphs: Self.twoLinks, number: 1,
+                    separatorLine: CGRect(x: 50, y: 590, width: 100, height: 1),
+                    textboxes: textboxes, isNoteEnd: isNoteEnd
+                )
+                var ends: [HwpDrawnTextLayout.ListEnd] = []
+                HwpBlockContentWalker.walkListedFootnote(
+                    footnote, origin: .zero, onParagraphText: { _, _, _, end in ends.append(end) }
+                )
+                return ends
+            }
+            expect(footnoteEnds(isNoteEnd: true)) == [.followed, .end]
+            expect(footnoteEnds(isNoteEnd: false)) == [.followed, .followed]
+        }
     }
 #endif
