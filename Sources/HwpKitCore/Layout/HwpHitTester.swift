@@ -16,82 +16,91 @@ public struct HwpHitTester {
 
     public func hit(page: HwpPage, point: CGPoint) -> HwpHitResult? {
         // 위→아래 순으로 히트: 페인트 순서를 뒤집어 훑되, 반환 blockIndex는
-        // 논리 배열 위치 그대로다 (선택 좌표와 정합).
-        let ordered = Array(AnyHwpBlock.paintOrdered(page.blocks).reversed())
-        for (position, (index, block)) in ordered.enumerated() {
-            let lower = ordered[(position + 1)...]
-            if !block.frame.contains(point) {
-                // frame 밖에도 그려지는 가시 영역이 있으면 기각 전에 링크 rect와 **칠**로
-                // 확인한다 — 페인트가 그린 링크는 눌려야 하고(#4, #94), 그려진 글자·자손은
-                // 링크가 없어도 그 블록이 claim한다 (R53).
-                guard hitEligibleFrame(for: block).contains(point) else { continue }
-                // 각주는 가림까지 살려 판정한다 — `.occluded`를 nil로 접어 아래
-                // 블록으로 내려가면 그 개체 밑에 숨은 링크가 열린다 (R45 #3).
-                if case let .footnote(footnote) = block.payload {
-                    switch containerHit(
-                        paragraphs: footnote.paragraphs, listEnds: footnote.isNoteEnd,
-                        images: footnote.images, shapes: footnote.shapes,
-                        textboxes: footnote.textboxes,
-                        nestedTables: footnote.nestedTables,
-                        at: CGPoint(
-                            x: point.x - block.frame.minX, y: point.y - block.frame.minY
-                        )
-                    ) {
-                    case let .found(url):
-                        return .hyperlink(url: url, blockIndex: index)
-                    case .occluded:
-                        return footnoteClaim(
-                            footnote, of: block, index: index, over: lower, at: point
-                        )
-                    case .miss:
-                        // 자격 영역은 bounding box라 투명한 틈까지 든다 — 그 틈은
-                        // 아래 블록 몫이지만 **칠해진 자손 위**라면 각주가 claim
-                        // 한다 (R53). `containerHit`은 링크와 불투명 채움만 알아
-                        // 링크 없는 문단·안 채운 셀에 `.miss`를 주는데, 그대로
-                        // 통과시키면 보이는 각주 글자를 눌렀는데 아래 본문의 무관한
-                        // 링크가 열린다 — frame **안**에서 같은 텍스트가
-                        // `.footnote`가 되는 것과 답이 같아야 한다.
-                        guard paintsContent(
-                            footnote, origin: block.frame.origin, at: point
-                        ) else { continue }
-                        return footnoteClaim(
-                            footnote, of: block, index: index, over: lower, at: point
-                        )
-                    }
+        // 논리 배열 위치 그대로다 (선택 좌표와 정합). 프레임 위 글자 claim은 곧바로 답하지
+        // 않고 들고 내려가 아래 블록의 답이 링크인지 본다 (`BlockAnswer.yielding`, #233).
+        var yielding: HwpHitResult?
+        for (index, block) in AnyHwpBlock.paintOrdered(page.blocks).reversed() {
+            switch blockHit(block, index: index, at: point) {
+            case nil:
+                continue
+            case let .yielding(claim)?:
+                yielding = yielding ?? claim
+            case let .final(result)?:
+                return Self.resolve(result, under: yielding)
+            }
+        }
+        return yielding
+    }
+
+    /// 블록 하나의 판정 — nil이면 이 블록은 그 점을 갖지 않아 아래 블록으로 내려간다.
+    private func blockHit(
+        _ block: AnyHwpBlock, index: Int, at point: CGPoint
+    ) -> BlockAnswer? {
+        if !block.frame.contains(point) {
+            // frame 밖에도 그려지는 가시 영역이 있으면 기각 전에 링크 rect와 **칠**로
+            // 확인한다 — 페인트가 그린 링크는 눌려야 하고(#4, #94), 그려진 글자·자손은
+            // 링크가 없어도 그 블록이 claim한다 (R53).
+            guard hitEligibleFrame(for: block).contains(point) else { return nil }
+            // 각주는 가림까지 살려 판정한다 — `.occluded`를 nil로 접어 아래
+            // 블록으로 내려가면 그 개체 밑에 숨은 링크가 열린다 (R45 #3).
+            if case let .footnote(footnote) = block.payload {
+                switch containerHit(
+                    paragraphs: footnote.paragraphs, listEnds: footnote.isNoteEnd,
+                    images: footnote.images, shapes: footnote.shapes,
+                    textboxes: footnote.textboxes,
+                    nestedTables: footnote.nestedTables,
+                    at: CGPoint(
+                        x: point.x - block.frame.minX, y: point.y - block.frame.minY
+                    )
+                ) {
+                case let .found(url):
+                    return .final(.hyperlink(url: url, blockIndex: index))
+                case .occluded:
+                    return footnoteClaim(footnote, of: block, index: index, at: point)
+                case .miss:
+                    // 자격 영역은 bounding box라 투명한 틈까지 든다 — 그 틈은
+                    // 아래 블록 몫이지만 **칠해진 자손 위**라면 각주가 claim
+                    // 한다 (R53). `containerHit`은 링크와 불투명 채움만 알아
+                    // 링크 없는 문단·안 채운 셀에 `.miss`를 주는데, 그대로
+                    // 통과시키면 보이는 각주 글자를 눌렀는데 아래 본문의 무관한
+                    // 링크가 열린다 — frame **안**에서 같은 텍스트가
+                    // `.footnote`가 되는 것과 답이 같아야 한다.
+                    guard paintsContent(
+                        footnote, origin: block.frame.origin, at: point
+                    ) else { return nil }
+                    return footnoteClaim(footnote, of: block, index: index, at: point)
                 }
-                if let url = hyperlinkURL(for: block, at: point) {
-                    return .hyperlink(url: url, blockIndex: index)
-                }
-                // 표의 **칸막이**는 프레임 밖도 claim한다 — 셀 테두리는 모서리에 중심을 둬 바깥
-                // 절반이 표 프레임 밖이고(#191), 그 선 위의 탭이 그냥 내려가면 위 문단의 링크가
-                // 열린다 (R54 `자격 ⊇ 칠`). 프레임 밖으로 넘친 자식 개체(그림·도형·글상자)의
-                // 가림(`containerLayerHit`의 `.occluded`)과 글상자 블록 자신의 테두리 바깥 절반은
-                // 아직 claim하지 않는다 — 각주 갈래(R45 #3)와 비대칭인 기존 격차로 #191 밖이다
-                // (R60·R63은 **이 블록의** 링크 폴백을 막는 근거이지 아래 블록 링크가 열려도 된다는
-                // 뜻이 아니다).
-                if tableBorderPaints(block, at: point) {
-                    return ownHit(for: block, index: index, at: point)
-                }
-                // 프레임 밖이라도 **이 블록의 글자가 칠해진 자리**면 링크가 없어도 이 블록이
-                // claim한다 (R53의 텍스트 축, #200 리뷰 2차): slight-overflow·글자 위치로
-                // 프레임 밖에 그려진 전경 글자 위의 탭이 그냥 내려가면 그 밑에 숨은 뒤
-                // 블록의 링크가 열린다 — 프레임 **안**에서 같은 글자가 `.text`가 되는 것과
-                // 답이 같아야 한다. 판정은 `textPaints`(줄 상자·옮겨진 밴드)라 자격 영역의
-                // 빈 띠는 종전대로 아래 블록 몫이다. 프레임 **위**로 솟은 글자는 앞 블록의 링크 줄
-                // 띠에 진다 (`textClaim`, #233).
-                guard let plain = HwpBlockContentWalker.plainText(of: block),
-                      Self.mayPaintOutsideFrame(plain, frame: block.frame, at: point),
-                      textPaints(plain, in: block.frame, at: point)
-                else { continue }
-                let claim = ownHit(for: block, index: index, at: point)
-                return textClaim(claim, of: block, over: lower, at: point)
             }
             if let url = hyperlinkURL(for: block, at: point) {
-                return .hyperlink(url: url, blockIndex: index)
+                return .final(.hyperlink(url: url, blockIndex: index))
             }
-            return ownHit(for: block, index: index, at: point)
+            // 표의 **칸막이**는 프레임 밖도 claim한다 — 셀 테두리는 모서리에 중심을 둬 바깥
+            // 절반이 표 프레임 밖이고(#191), 그 선 위의 탭이 그냥 내려가면 위 문단의 링크가
+            // 열린다 (R54 `자격 ⊇ 칠`). 프레임 밖으로 넘친 자식 개체(그림·도형·글상자)의
+            // 가림(`containerLayerHit`의 `.occluded`)과 글상자 블록 자신의 테두리 바깥 절반은
+            // 아직 claim하지 않는다 — 각주 갈래(R45 #3)와 비대칭인 기존 격차로 #191 밖이다
+            // (R60·R63은 **이 블록의** 링크 폴백을 막는 근거이지 아래 블록 링크가 열려도 된다는
+            // 뜻이 아니다).
+            if tableBorderPaints(block, at: point) {
+                return .final(ownHit(for: block, index: index, at: point))
+            }
+            // 프레임 밖이라도 **이 블록의 글자가 칠해진 자리**면 링크가 없어도 이 블록이
+            // claim한다 (R53의 텍스트 축, #200 리뷰 2차): slight-overflow·글자 위치로
+            // 프레임 밖에 그려진 전경 글자 위의 탭이 그냥 내려가면 그 밑에 숨은 뒤
+            // 블록의 링크가 열린다 — 프레임 **안**에서 같은 글자가 `.text`가 되는 것과
+            // 답이 같아야 한다. 판정은 `textPaints`(줄 상자·옮겨진 밴드)라 자격 영역의
+            // 빈 띠는 종전대로 아래 블록 몫이다. 프레임 **위**로 솟은 글자는 앞 블록의 링크 줄
+            // 띠에 진다 (`textClaim`, #233).
+            guard let plain = HwpBlockContentWalker.plainText(of: block),
+                  Self.mayPaintOutsideFrame(plain, frame: block.frame, at: point),
+                  textPaints(plain, in: block.frame, at: point)
+            else { return nil }
+            return textClaim(ownHit(for: block, index: index, at: point), of: block, at: point)
         }
-        return nil
+        if let url = hyperlinkURL(for: block, at: point) {
+            return .final(.hyperlink(url: url, blockIndex: index))
+        }
+        return .final(ownHit(for: block, index: index, at: point))
     }
 
     /// 페이지 좌표의 점을 페이로드 자신의 좌표계로 옮긴다 — `ContentLayer`의

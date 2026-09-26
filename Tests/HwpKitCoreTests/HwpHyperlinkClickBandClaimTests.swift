@@ -137,17 +137,177 @@ import XCTest
             expect(tester.hit(page: page(second()), point: point))
                 == .hyperlink(url: Self.url, blockIndex: 0)
             // 뒤 문단의 채운 도형이 프레임 위로 넘쳐 그 자리를 덮으면 도형 쪽이다 (R42 #2).
-            let shapeRect = CGRect(x: 0, y: -4, width: 20, height: 8)
-            let filled = HwpCellShape(
-                rect: shapeRect,
+            let filled = Self.filledShape(CGRect(x: 0, y: -4, width: 20, height: 8))
+            expect(tester.hit(page: page(second(shapes: [filled])), point: point))
+                == .footnote(blockIndex: 1, number: 1)
+        }
+
+        // MARK: 양보 탐색은 중간 블록의 claim에서 멈춘다
+
+        /// 채운 도형 — 블록-로컬 `rect`에 불투명하게 칠한다 (경로는 도형 rect 원점 기준이다).
+        private static func filledShape(_ rect: CGRect) -> HwpCellShape {
+            HwpCellShape(
+                rect: rect,
                 geometry: HwpShapeGeometry(
-                    path: CGPath(rect: shapeRect, transform: nil),
+                    path: CGPath(rect: CGRect(origin: .zero, size: rect.size), transform: nil),
                     fillColor: CGColor(gray: 0.5, alpha: 1), strokeColor: nil, strokeWidth: 0
                 ),
                 controlInstanceId: 1
             )
-            expect(tester.hit(page: page(second(shapes: [filled])), point: point))
+        }
+
+        /// 링크 줄(0) · 중간 블록(1) · 큰 글자 줄(2) 순으로 그린 쪽. 탭은 링크 띠 안이자 큰 글자
+        /// 줄 프레임 위(글자 claim 자리)다.
+        private static func stacked(middle: AnyHwpBlock) -> HwpPage {
+            page([
+                AnyHwpBlock(frame: linkFrame, kind: .text, attributedString: linkLine()),
+                middle,
+                AnyHwpBlock(frame: nextFrame, kind: .text, attributedString: tallLine()),
+            ])
+        }
+
+        private static let stackedTap = CGPoint(x: 5, y: 114)
+
+        /// 중간 각주의 **채운 도형이 제 프레임 밖으로** 나와 그 자리를 덮으면, 양보 탐색은 그
+        /// 가림에서 멈춰야 한다 — 밑의 링크는 가려져 안 보인다. 탐색이 링크와 프레임만 보면
+        /// `.occluded`가 링크 조회에서 nil로 접히고 프레임 밖이라 지나쳐, 큰 글자 줄이 없을 때는
+        /// `.footnote`이던 자리가 글자 줄을 더하자 가려진 링크로 바뀌었다 (#233 리뷰 P2).
+        /// 멈춘 자리의 답은 맨 위 글자 줄의 claim이다 — 양보가 없던 때와 같다.
+        func testYieldStopsAtAnIntermediateFootnoteShapeOutsideItsFrame() {
+            let footnote = HwpFootnoteBlock(
+                frame: CGRect(x: 0, y: 300, width: 300, height: 20),
+                paragraphs: [], number: 1,
+                separatorLine: CGRect(x: 0, y: 290, width: 100, height: 1),
+                shapes: [Self.filledShape(CGRect(x: 0, y: -200, width: 40, height: 30))]
+            )
+            let middle = AnyHwpBlock(
+                frame: footnote.frame, kind: .footnote, payload: .footnote(footnote)
+            )
+            let tester = HwpHitTester()
+            expect(middle.frame.contains(Self.stackedTap)) == false
+            // 큰 글자 줄이 없으면 도형(각주)이 그 자리를 가진다.
+            let withoutTallLine = Self.page([
+                AnyHwpBlock(frame: Self.linkFrame, kind: .text, attributedString: Self.linkLine()),
+                middle,
+            ])
+            expect(tester.hit(page: withoutTallLine, point: Self.stackedTap))
                 == .footnote(blockIndex: 1, number: 1)
+            expect(tester.hit(page: Self.stacked(middle: middle), point: Self.stackedTap))
+                == .text(blockIndex: 2, characterIndex: nil)
+        }
+
+        /// 중간 표의 셀 테두리 바깥 절반(표 프레임 밖, #191)도 칠이다 — 탐색이 거기서 멈춘다.
+        func testYieldStopsAtAnIntermediateTableBorderOutsideItsFrame() {
+            let black = HwpRGBColor(red: 0, green: 0, blue: 0)
+            let cellFrame = CGRect(x: 0, y: 0, width: 100, height: 30)
+            let cell = HwpTableCellFrame(
+                cellFrame: cellFrame, row: 0, column: 0, rowSpan: 1, columnSpan: 1,
+                paragraphs: [], borders: HwpBorderSet.uniform(width: 1, color: black),
+                fillColor: nil
+            )
+            let table = HwpTableFrame(
+                outerFrame: cellFrame,
+                rows: [HwpTableRowFrame(rowFrame: cellFrame, cells: [cell])],
+                borderColor: black, borderWidth: 1
+            )
+            // 표 상단 114.3 — 1pt 테두리의 바깥 절반 113.8…114.3이 탭(114)을 덮는다.
+            let middle = AnyHwpBlock(
+                frame: CGRect(x: 0, y: 114.3, width: 100, height: 30), kind: .table,
+                payload: .table(table)
+            )
+            let tester = HwpHitTester()
+            expect(middle.frame.contains(Self.stackedTap)) == false
+            expect(tester.hit(page: Self.stacked(middle: middle), point: Self.stackedTap))
+                == .text(blockIndex: 2, characterIndex: nil)
+        }
+
+        /// 중간 문단의 **아래로 옮겨진** 글자(글자 위치)가 제 프레임 밖에서 그 자리를 덮으면 그
+        /// 글자가 위에 그려진 것이다 (R53) — 탐색이 멈춘다.
+        func testYieldStopsAtAnIntermediateGlyphShiftedOutOfItsFrame() {
+            var attributes = Fixtures.attributes(size: 10)
+            attributes[HwpAttributedStringKey.glyphBaselineOffset] = NSNumber(value: -10)
+            let shifted = NSAttributedString(string: "AAAA", attributes: attributes)
+            let frame = CGRect(x: 0, y: 97, width: 100, height: 10)
+            let middle = AnyHwpBlock(frame: frame, kind: .text, attributedString: shifted)
+            let tester = HwpHitTester()
+            expect(frame.contains(Self.stackedTap)) == false
+            expect(tester.textPaints(shifted, in: frame, at: Self.stackedTap)) == true
+            expect(tester.hit(page: Self.stacked(middle: middle), point: Self.stackedTap))
+                == .text(blockIndex: 2, characterIndex: nil)
+        }
+
+        /// 중간 블록도 **프레임 위** 글자 claim이면 같은 규칙으로 다시 양보한다 — 두 문단의 큰
+        /// 글자가 겹쳐 솟아도 가려지지 않은 링크 띠는 열린다.
+        func testIntermediateTextClaimAboveItsFrameYieldsInTurn() {
+            let middle = AnyHwpBlock(
+                frame: Self.nextFrame, kind: .text, attributedString: Self.tallLine()
+            )
+            let top = AnyHwpBlock(
+                frame: CGRect(x: 0, y: 118, width: 400, height: 16), kind: .text,
+                attributedString: Self.tallLine(fontSize: 25)
+            )
+            let page = Self.page([
+                AnyHwpBlock(frame: Self.linkFrame, kind: .text, attributedString: Self.linkLine()),
+                middle, top,
+            ])
+            let tester = HwpHitTester()
+            let tall = Self.tallLine(fontSize: 25)
+            expect(tester.textPaints(tall, in: top.frame, at: Self.stackedTap)) == true
+            expect(tester.hit(page: page, point: Self.stackedTap))
+                == .hyperlink(url: Self.url, blockIndex: 0)
+        }
+
+        /// 대조군: 중간 각주의 자격 영역이 탭을 덮어도 **칠하지 않은** 자리(안 채운 도형 안쪽)면
+        /// 그 블록은 답하지 않고 탐색이 링크까지 내려간다.
+        func testYieldPassesAnIntermediateBlockThatPaintsNothingThere() {
+            let rect = CGRect(x: 0, y: -200, width: 40, height: 30)
+            let outline = HwpCellShape(
+                rect: rect,
+                geometry: HwpShapeGeometry(
+                    path: CGPath(rect: CGRect(origin: .zero, size: rect.size), transform: nil),
+                    fillColor: nil, strokeColor: CGColor(gray: 0, alpha: 1), strokeWidth: 0.5
+                ),
+                controlInstanceId: 1
+            )
+            let footnote = HwpFootnoteBlock(
+                frame: CGRect(x: 0, y: 300, width: 300, height: 20),
+                paragraphs: [], number: 1,
+                separatorLine: CGRect(x: 0, y: 290, width: 100, height: 1), shapes: [outline]
+            )
+            let middle = AnyHwpBlock(
+                frame: footnote.frame, kind: .footnote, payload: .footnote(footnote)
+            )
+            let tester = HwpHitTester()
+            expect(tester.hitEligibleFrame(for: middle).contains(Self.stackedTap)) == true
+            expect(tester.hit(page: Self.stacked(middle: middle), point: Self.stackedTap))
+                == .hyperlink(url: Self.url, blockIndex: 0)
+        }
+
+        /// 양보는 **재귀하지 않는다** — 같은 자리에 프레임 위 글자 claim이 천 겹 쌓여도 호출이
+        /// 깊어지지 않는다. 재귀 형태(아래 블록을 `textClaim`에서 다시 훑음)는 512KB 스레드에서
+        /// 300겹, 8MB 메인 스레드에서 3,000겹에 잡을 수 없는 스택 오버플로로 죽었다 (#233 리뷰 —
+        /// 1pt 줄 수천 개에 거대한 글자를 얹은 조작 문서로 실제 조판 경로에서도 재현됐다).
+        func testStackedTextClaimsDoNotDeepenTheStack() {
+            let tall = AnyHwpBlock(
+                frame: Self.nextFrame, kind: .text, attributedString: Self.tallLine()
+            )
+            let page = Self.page(
+                [AnyHwpBlock(frame: Self.linkFrame, kind: .text, attributedString: Self.linkLine())]
+                    + Array(repeating: tall, count: 1000)
+            )
+            final class Box: @unchecked Sendable {
+                var result: HwpHitResult?
+            }
+            let box = Box()
+            let done = DispatchSemaphore(value: 0)
+            let thread = Thread {
+                box.result = HwpHitTester().hit(page: page, point: Self.stackedTap)
+                done.signal()
+            }
+            thread.stackSize = 256 * 1024
+            thread.start()
+            done.wait()
+            expect(box.result) == .hyperlink(url: Self.url, blockIndex: 0)
         }
     }
 #endif
