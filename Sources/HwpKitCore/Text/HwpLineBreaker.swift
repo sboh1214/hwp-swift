@@ -8,7 +8,7 @@ import Foundation
 /// `nextFrameChunk`를 불러 같은 `CTFramesetterSuggestFrameSizeWithConstraints`
 /// 상자에서 같은 `CTLine` 경계를 얻는다 — 줄바꿈 사실(문자 분할·origin)이
 /// 정의상 일치한다. 줄바꿈 뒤의 **세로 전진량**도 공유한다 — 둘 다
-/// `HwpLineAdvance.advances(of:in:)`로 줄별 상자 높이 × 줄 간격 규칙을 쌓는다 (#180).
+/// `HwpLineAdvance.advanceParts(of:in:)`로 줄별 상자 높이 × 줄 간격 규칙을 쌓는다 (#180).
 ///
 /// 계약 네 가지는 `Sources/HwpKitCore/AGENTS.md`("측정·렌더 공유 줄바꿈 코어")가
 /// 소유한다 — 줄 예산 절단, 미완 마지막 줄 이월, 한 시각 줄 재프레이밍,

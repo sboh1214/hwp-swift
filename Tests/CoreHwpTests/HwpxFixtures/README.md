@@ -24,9 +24,9 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
    `Fixtures/<id>/document.hwp`의 **사본**을 연다 (열람만으로 원본이 재기록될 수
    있다 — 4단계). 새로 저작하는 쌍(`section-marks`·`section-page-starts-on`·
    `line-shapes`·`script-decorations`·`section-page-number-skip`·`compat-decorations`·
-   `hwp2007-decorations`·`inline-object-baseline`·`inline-object-marker-size`·
-   `inline-table-actual-height`·`mixed-size-decorations`·`ms-word-paragraph-end-box`·
-   `page-end-line-box`·`paragraph-end-char-size`)은 `.hwp`와 `.hwpx`를 **같은 편집 세션에서 연달아** 저장해야 두
+   `hwp2007-decorations`·`hyperlink-click-band`·`inline-object-baseline`·
+   `inline-object-marker-size`·`inline-table-actual-height`·`mixed-size-decorations`·
+   `ms-word-paragraph-end-box`·`page-end-line-box`·`paragraph-end-char-size`)은 `.hwp`와 `.hwpx`를 **같은 편집 세션에서 연달아** 저장해야 두
    파일이 같은 문서가 된다. 한글 GUI로 만들기 어려운 조합은 합성 HWPX를 한글로 열어 두 형식으로
    저장해도 된다
    (`line-shapes` — 17종 선 모양을 네 자리에 모두 실은 문서, `script-decorations` —
@@ -110,6 +110,11 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
   줄이 대부분 한 크기라 크기가 섞인 줄(무장식 큰 글자·문단 끝 글자·한 줄 끝·책갈피·글자처럼 취급
   표)에서 밑줄이 줄 상자 바닥에 붙는 자리를 렌더 해시·골든이 잡지 못하던 자리의 실물 근거이며,
   `hh:relSz` 50% 글자와 위 첨자의 장식선이 HWP 쌍과 같은 기본 크기 기하로 그려지는 표본이기도 하다.
+  링크를 여는 클릭 띠는 #233에서 `hyperlink-click-band` 쌍으로 저작했다 — 코퍼스에서 링크가 더
+  큰 줄 상자 옆에 놓인 문서는 `CCL`·`공공누리`뿐이고 둘 다 HWPX 쌍이 없어, 한글 편집 화면의 클릭
+  띠(줄 상자 상단에서 줄 간격 몫까지, 문단 간격은 어느 줄에도 속하지 않고 목록·쪽·문서의 마지막
+  줄은 줄 상자까지)를 잴 실물이 없던 자리의 실물 근거다. 이 쌍의 `hp:fieldBegin type="HYPERLINK"`
+  29개는 2026-09-26 현재 typed 하이퍼링크로 승격되지 않고 강등 컨트롤로 보존된다 (fixture README).
 
 ## manifest 작성 기준
 

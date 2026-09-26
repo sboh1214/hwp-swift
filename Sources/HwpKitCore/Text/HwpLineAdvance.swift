@@ -199,7 +199,8 @@ public extension HwpAttributedStringKey {
 /// 문단을 끝내면 문단 사이 간격을 더한다.
 ///
 /// `HwpParagraphLayout.makeLineFrames`(측정)와 `HwpDrawnTextLayout.lineGeometries`(렌더)가
-/// 둘 다 `advances(of:in:)`를 불러 같은 값을 쌓는다 — 한쪽만 바꾸면 문단 높이(쪽 나눔)와
+/// 둘 다 `advanceParts(of:in:)`로 같은 값을 쌓는다 — 측정은 그 합(`advances(of:in:)`)을, 렌더는
+/// 두 몫을 받아 더하고 줄 몫은 링크 클릭 띠(#233)에도 쓴다. 한쪽만 바꾸면 문단 높이(쪽 나눔)와
 /// 그려지는 줄이 갈린다 (`Sources/HwpKitCore/AGENTS.md` "측정·렌더 공유 줄바꿈 코어").
 /// CT 줄 origin·슬롯은 세로 배치에 쓰지 않는다 (#178·#180: CT는 글꼴 지표로 슬롯을 잡고
 /// 못박은 높이에 안 들어가는 글자가 있으면 슬롯을 늘리거나 줄을 놓지 않는다 — #198·#202).
@@ -211,6 +212,17 @@ enum HwpLineAdvance {
         of chunk: HwpLineBreaker.FrameChunk,
         in attributedString: NSAttributedString
     ) -> [CGFloat] {
+        advanceParts(of: chunk, in: attributedString).map { $0.line + $0.gap }
+    }
+
+    /// `advances(of:in:)`의 두 몫 — 줄 자신의 전진량(`line`, 줄 상자 × 줄 간격 규칙)과 그 뒤 문단
+    /// 사이 간격(`gap`). 렌더(`HwpDrawnTextLayout.lineGeometries`)는 합으로 줄을 타일하고, 줄의 링크
+    /// 클릭 띠(#233, `HwpDrawnTextLayout.ClickBand`)는 `line`만 쓴다 — 문단 사이 간격은 어느 줄의
+    /// 띠도 아니다.
+    static func advanceParts(
+        of chunk: HwpLineBreaker.FrameChunk,
+        in attributedString: NSAttributedString
+    ) -> [(line: CGFloat, gap: CGFloat)] {
         let text = attributedString.string as NSString
         return (0 ..< chunk.keepCount).map { index in
             let line = chunk.lines[index]
@@ -223,7 +235,7 @@ enum HwpLineAdvance {
                     afterLine: range, nextLocation: next, in: attributedString, text: text
                 )
                 : 0
-            return lineAdvance(of: line, at: range.location, in: attributedString) + gap
+            return (lineAdvance(of: line, at: range.location, in: attributedString), gap)
         }
     }
 
@@ -232,8 +244,19 @@ enum HwpLineAdvance {
     static func lineAdvance(
         of line: CTLine, at location: Int, in attributedString: NSAttributedString
     ) -> CGFloat {
-        let metrics = HwpDrawnTextLayout.lineMetrics(of: line, in: attributedString)
-        return HwpLineSpacingRule.rule(in: attributedString, at: location).advance(
+        lineAdvance(
+            metrics: HwpDrawnTextLayout.lineMetrics(of: line, in: attributedString),
+            at: location, in: attributedString
+        )
+    }
+
+    /// 이미 잰 줄 지표로 낸 `lineAdvance(of:at:in:)` — 렌더의 slight-overflow 한 줄
+    /// (`HwpDrawnTextLayout.slightOverflowSingleLine`)이 앵커와 같은 지표 한 벌을 다시 재지 않게.
+    static func lineAdvance(
+        metrics: HwpDrawnTextLayout.LineMetrics, at location: Int,
+        in attributedString: NSAttributedString
+    ) -> CGFloat {
+        HwpLineSpacingRule.rule(in: attributedString, at: location).advance(
             lineBoxHeight: metrics.boxHeight, textBoxHeight: metrics.textBoxHeight
         )
     }

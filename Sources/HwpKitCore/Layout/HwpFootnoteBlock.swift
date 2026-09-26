@@ -25,6 +25,13 @@ public struct HwpFootnoteBlock: @unchecked Sendable, Hashable {
     /// 각주 문단 안 표 (블록-로컬 rect, #94). 한글.app 실측 (헌법주석 883쪽
     /// 각주 29): 표가 각주 영역 안에 그려지고 그 아래로 다음 각주가 이어진다.
     public let nestedTables: [HwpNestedTableFrame]
+    /// 이 블록이 그 각주(번호)의 **마지막 항목**인지 — 각주 영역은 문단마다 블록 하나라 같은
+    /// 각주의 다음 문단은 바로 아래 블록으로 이어진다. 참이면 스택이 마지막 줄의 줄 간격을
+    /// 세지 않는 자리다 (쪽 끝에서 나뉜 앞 몫도 참 — `HwpFootnoteLayout.StackEntry.isNoteEnd`,
+    /// 흐름 배치도 같은 각주의 뒤 문단이 다음 쪽으로 넘어가면 이 쪽의 앞 블록이 참이다).
+    /// 링크 클릭 띠의 **목록 끝**(#233 — 한글은 각주의 마지막 줄 아래를 눌러도 링크를 열지
+    /// 않는다)이 이 값으로 가려진다: 참인 블록의 마지막 문단만 마지막 줄 띠가 줄 상자에서 끝난다.
+    public let isNoteEnd: Bool
 
     public init(
         frame: CGRect,
@@ -35,7 +42,8 @@ public struct HwpFootnoteBlock: @unchecked Sendable, Hashable {
         images: [HwpCellImage] = [],
         shapes: [HwpCellShape] = [],
         textboxes: [HwpCellTextbox] = [],
-        nestedTables: [HwpNestedTableFrame] = []
+        nestedTables: [HwpNestedTableFrame] = [],
+        isNoteEnd: Bool = true
     ) {
         self.frame = frame
         self.paragraphs = paragraphs
@@ -46,6 +54,7 @@ public struct HwpFootnoteBlock: @unchecked Sendable, Hashable {
         self.shapes = shapes
         self.textboxes = textboxes
         self.nestedTables = nestedTables
+        self.isNoteEnd = isNoteEnd
     }
 
     /// 하위 호환: 문단 지오메트리만 필요할 때

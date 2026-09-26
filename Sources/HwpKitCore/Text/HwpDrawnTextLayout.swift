@@ -24,6 +24,14 @@ public struct HwpDrawnLine {
     /// 문단 전체에 실리므로 줄 판정은 키가 아니라 이 값이다. 이어짐 표식은 쪽 흐름·절대
     /// 캐시 run·다단 균형·표 행·각주의 모든 분할 경로가 단다 (PR 리뷰).
     public let endsParagraph: Bool
+    /// 줄 상자 상단 (top-down 페이지 좌표) — `HwpDrawnTextLayout.lines`가 이 줄을 놓은 자리다
+    /// (baseline = 상자 상단 + 앵커). 아래 둘과 함께 링크 클릭 띠(#233, `ClickBand`)가 쓴다 —
+    /// 줄을 놓은 바로 그 기하라 문단 안 줄의 띠 하단이 다음 줄 상자 상단과 비트 단위로 같다.
+    let boxTop: CGFloat
+    /// 줄 상자 높이 (한글 줄 캐시의 `vertsize`, `LineMetrics.boxHeight`)
+    let boxHeight: CGFloat
+    /// 줄 자신의 전진량 — 줄 상자 × 줄 간격 규칙 (`HwpLineAdvance.lineAdvance`), 문단 사이 간격 제외
+    let lineAdvance: CGFloat
 
     /// 줄의 선택 하이라이트 영역 (top-down 페이지 좌표)
     ///
@@ -92,7 +100,7 @@ public enum HwpDrawnTextLayout {
                     frameLine: chunk.lines[index],
                     attributedString: attributedString,
                     placement: Placement(
-                        baseline: geometries[index].baseline,
+                        geometry: geometries[index],
                         originX: origin.x,
                         ctOriginX: chunk.origins[index].x
                     ),
@@ -108,11 +116,11 @@ public enum HwpDrawnTextLayout {
         return result
     }
 
-    /// 한 줄이 놓일 자리 — `baseline`은 `lines`가 `lineGeometries`로 구한 top-down
-    /// baseline이다. **baseline은 앵커가 정한다** (#178) — CT·글꼴의 ascent는 세로 배치에
+    /// 한 줄이 놓일 자리 — `geometry`는 `lines`가 `lineGeometries`로 구한 top-down 세로
+    /// 기하다. **baseline은 앵커가 정한다** (#178) — CT·글꼴의 ascent는 세로 배치에
     /// 쓰이지 않는다.
     private struct Placement {
-        let baseline: CGFloat
+        let geometry: LineGeometry
         /// 블록 원점 x
         let originX: CGFloat
         /// CT가 준 이 줄의 프레임 내 x (문단 들여쓰기·정렬)
@@ -140,11 +148,14 @@ public enum HwpDrawnTextLayout {
             stringRange: NSRange(location: range.location, length: range.length),
             baselineOrigin: CGPoint(
                 x: placement.originX + placement.ctOriginX + (replacement?.xOffset ?? 0),
-                y: placement.baseline
+                y: placement.geometry.baseline
             ),
             ascent: ascent,
             descent: descent,
-            endsParagraph: endsParagraph(range, in: attributedString)
+            endsParagraph: endsParagraph(range, in: attributedString),
+            boxTop: placement.geometry.boxTop,
+            boxHeight: placement.geometry.boxHeight,
+            lineAdvance: placement.geometry.lineAdvance
         )
     }
 
@@ -175,16 +186,41 @@ public enum HwpDrawnTextLayout {
         ) == nil
     }
 
-    /// attributedString 안 `hyperlink` 속성 범위마다 줄별 글리프 rect와 URL을
+    /// attributedString 안 `hyperlink` 속성 범위마다 줄별 링크 rect와 URL을
     /// 돌려준다 (페이지 로컬 top-down). 블록 전체가 아니라 링크 텍스트에만
     /// 히트/오버레이를 스코프하는 데 쓴다 (#2). rect는 스팬의 run이 화면에서 잇닿은
     /// 구간마다 하나다 — 양방향 줄에서는 한 스팬이 여럿을 낸다 (#201,
     /// `appendHyperlinkRects`). 재조판된 CTLine은 자체 범위가 0-기준 sub-copy라,
     /// attributedString index를 CTLine index로 옮겨 run 범위와 댄다.
+    ///
+    /// 세로 범위는 글꼴 지표가 아니라 **한글의 줄 클릭 띠**다 (#233) — 줄 상자 상단부터 그
+    /// 줄의 줄 간격 몫까지(다음 줄 상자 상단까지)라 줄 상자 바닥에 붙는 밑줄(#226)과 글자·밑줄
+    /// 사이 빈칸을 누르면 링크가 열린다. 이 함수는 문자열 뒤에 무엇이 오는지 모르므로 마지막
+    /// 줄의 띠를 줄 간격 몫과 줄 상자 가운데 넓은 쪽까지 둔다 — 표 셀·글상자·각주의 마지막 줄은
+    /// 한글처럼 줄 상자에서 끝나므로, 그런 블록의 권위 있는 링크 기하는 paint list의
+    /// `.hyperlink` 명령(`HwpPaintListBuilder.build(for:)`)과 `HwpHitTester`다. 규칙과 한글
+    /// 실측은 `ClickBand`.
     public static func hyperlinkRegions(
         attributedString: NSAttributedString,
         origin: CGPoint,
         lineWidth: CGFloat
+    ) -> [(rect: CGRect, url: String)] {
+        hyperlinkRegions(
+            attributedString: attributedString, origin: origin, lineWidth: lineWidth,
+            listEnd: .unknown
+        )
+    }
+
+    /// `hyperlinkRegions(attributedString:origin:lineWidth:)`에 문자열 **뒤에 무엇이 오는지**
+    /// (`ListEnd`)를 더한 형태 — 문자열의 마지막 줄 클릭 띠의 하단이 그것으로 정해진다
+    /// (`ClickBand`: 한글은 표 셀·글상자·각주의 마지막 줄 아래를 눌러도 링크를 열지 않는다).
+    /// 컨테이너 문단 배열을 걷는 방출(`HwpPaintListBuilder`)과 히트(`HwpHitTester`)가 같은
+    /// 판정으로 넘긴다 — 마지막 문단은 `.end`, 나머지는 `.followed`, 본문 블록은 `.unknown`.
+    static func hyperlinkRegions(
+        attributedString: NSAttributedString,
+        origin: CGPoint,
+        lineWidth: CGFloat,
+        listEnd: ListEnd
     ) -> [(rect: CGRect, url: String)] {
         let length = attributedString.length
         guard length > 0 else { return [] }
@@ -206,8 +242,15 @@ public enum HwpDrawnTextLayout {
                     attributedString: attributedString, origin: origin, lineWidth: lineWidth
                 )
                 cachedLines = drawnLines
+                let lastIndex = drawnLines.count - 1
                 geometries = glyphOffsetBands(ofLines: drawnLines, in: attributedString)
-                    .map { SpanLineGeometry(bands: $0, runExtents: nil) }
+                    .enumerated()
+                    .map { index, bands in
+                        SpanLineGeometry(
+                            bands: bands, runExtents: nil,
+                            listEnd: index == lastIndex ? listEnd : .followed
+                        )
+                    }
             }
             guard let drawnLines = cachedLines else { return }
             for (lineIndex, drawn) in drawnLines.enumerated() {
@@ -317,18 +360,22 @@ public enum HwpDrawnTextLayout {
         let offsetX = slightOverflowAlignmentOffset(
             attributedString: attributedString, lineWidth: lineWidth, line: line
         )
+        let metrics = lineMetrics(of: line, in: attributedString)
         return HwpDrawnLine(
             line: line,
             stringRange: NSRange(location: 0, length: attributedString.length),
             baselineOrigin: CGPoint(
                 x: origin.x + offsetX,
-                y: origin.y + baselineAnchor(of: line, in: attributedString)
+                y: origin.y + metrics.baselineAnchor
             ),
             ascent: ascent,
             descent: descent,
             endsParagraph: endsParagraph(
                 CFRange(location: 0, length: attributedString.length), in: attributedString
-            )
+            ),
+            boxTop: origin.y,
+            boxHeight: metrics.boxHeight,
+            lineAdvance: HwpLineAdvance.lineAdvance(metrics: metrics, at: 0, in: attributedString)
         )
     }
 

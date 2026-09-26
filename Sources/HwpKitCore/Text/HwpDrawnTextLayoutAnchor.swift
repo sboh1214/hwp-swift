@@ -50,11 +50,15 @@ public extension HwpDrawnTextLayout {
     }
 
     /// 청크 줄 하나의 세로 기하 — 줄 상자 상단과 그 아래 앵커만큼 내린 baseline, 그리고
-    /// 다음 줄 상자 상단까지의 전진량 (문단 사이 간격 포함).
+    /// 다음 줄 상자 상단까지의 전진량 (문단 사이 간격 포함). 줄 상자 높이와 줄 자신의 전진량
+    /// (문단 사이 간격 제외)은 링크 클릭 띠(#233)가 그려진 줄에서 그대로 쓴다
+    /// (`HwpDrawnLine.boxHeight`·`lineAdvance`).
     internal struct LineGeometry {
         let boxTop: CGFloat
         let baseline: CGFloat
         let advance: CGFloat
+        let boxHeight: CGFloat
+        let lineAdvance: CGFloat
     }
 
     /// 청크 줄들의 세로 기하 (top-down).
@@ -64,22 +68,25 @@ public extension HwpDrawnTextLayout {
     /// 위로 올라간다 (실제로 그 형태의 회귀를 한 번 냈다 — 헌법주석 각주 0.63pt).
     ///
     /// 나머지 줄은 앞 줄 상자 상단 + 앞 줄 전진량이다. 전진량은 측정
-    /// (`HwpParagraphLayout.makeLineFrames`)과 같은 `HwpLineAdvance.advances(of:in:)`에서
-    /// 온다 — 그래서 문단 높이(쪽 나눔)와 그려지는 줄이 정의상 같은 자리다. 커밋된 줄
+    /// (`HwpParagraphLayout.makeLineFrames`)과 같은 `HwpLineAdvance.advanceParts(of:in:)`에서
+    /// 온다(측정은 그 합 `advances`) — 그래서 문단 높이(쪽 나눔)와 그려지는 줄이 정의상 같은
+    /// 자리다. 커밋된 줄
     /// (`keepCount`)만 낸다.
     internal static func lineGeometries(
         of chunk: HwpLineBreaker.FrameChunk,
         in attributedString: NSAttributedString,
         base: CGFloat
     ) -> [LineGeometry] {
-        let advances = HwpLineAdvance.advances(of: chunk, in: attributedString)
+        let parts = HwpLineAdvance.advanceParts(of: chunk, in: attributedString)
         var boxTop = base
         return (0 ..< chunk.keepCount).map { index in
-            let anchor = baselineAnchor(of: chunk.lines[index], in: attributedString)
+            let metrics = lineMetrics(of: chunk.lines[index], in: attributedString)
+            let advance = parts[index].line + parts[index].gap
             let geometry = LineGeometry(
-                boxTop: boxTop, baseline: boxTop + anchor, advance: advances[index]
+                boxTop: boxTop, baseline: boxTop + metrics.baselineAnchor, advance: advance,
+                boxHeight: metrics.boxHeight, lineAdvance: parts[index].line
             )
-            boxTop += advances[index]
+            boxTop += advance
             return geometry
         }
     }

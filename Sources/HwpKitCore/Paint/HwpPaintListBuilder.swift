@@ -40,7 +40,7 @@ public struct HwpPaintListBuilder: Sendable {
         return HwpPaintList(commands: commands)
     }
 
-    /// 하이퍼링크(%hlk)를 필드 스팬 글리프 rect로 스코프해 방출한다 — 링크
+    /// 하이퍼링크(%hlk)를 필드 스팬의 링크 rect(줄 클릭 띠, #233)로 스코프해 방출한다 — 링크
     /// 텍스트에만 히트/오버레이가 걸리고, 앞뒤 평문이나 다중 링크가 첫 URL로
     /// 뭉개지지 않는다 (#2). 필드 속성이 없는 블록(직접 설정·컨테이너 폴백)만
     /// 블록 프레임으로 방출한다.
@@ -49,9 +49,12 @@ public struct HwpPaintListBuilder: Sendable {
         to commands: inout [HwpPaintCommand]
     ) {
         var emitted = false
-        HwpBlockContentWalker.walkText(block: block) { attributed, rect, _ in
+        // 목록 끝(셀·글상자·각주 문단 배열의 마지막)은 마지막 줄의 클릭 띠가 줄 상자에서
+        // 끝난다 (#233) — 히트(`spanAwareHyperlinkURL`)와 같은 판정이라 방출 ≡ 히트.
+        HwpBlockContentWalker.walkListedText(block: block) { attributed, rect, _, listEnd in
             for region in HwpDrawnTextLayout.hyperlinkRegions(
-                attributedString: attributed, origin: rect.origin, lineWidth: rect.width
+                attributedString: attributed, origin: rect.origin, lineWidth: rect.width,
+                listEnd: listEnd
             ) {
                 commands.append(.hyperlink(rect: region.rect, url: region.url))
                 emitted = true

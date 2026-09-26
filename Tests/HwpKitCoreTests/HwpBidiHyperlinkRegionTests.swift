@@ -223,8 +223,9 @@ import XCTest
             expect(CTLineGetStringRange(second.line).location) == 0
             expect(second.stringRange.location).to(beGreaterThan(0))
             let regions = regions(string, lineWidth: 80)
+            // 둘째 줄의 클릭 띠 상단 (#233) — 10pt 100% 줄이라 베이스라인 − 8.5.
             let onSecond = regions.filter {
-                abs($0.rect.minY - (second.baselineOrigin.y - second.ascent)) < 0.001
+                abs($0.rect.minY - (second.baselineOrigin.y - 8.5)) < 0.001
             }
             expect(onSecond.filter { $0.url == "https://a.example" }.count) == 2
             expect(onSecond.filter { $0.url == "https://b.example" }.count) == 1

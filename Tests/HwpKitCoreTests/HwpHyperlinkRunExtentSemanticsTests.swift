@@ -162,8 +162,9 @@ import XCTest
                 .to(beCloseTo(3.0, within: 0.001))
         }
 
-        /// **단방향 줄의 rect는 종전 그대로다** — 스팬 양끝 오프셋(min/max)의 상자와 줄마다
+        /// **단방향 줄의 rect 가로는 종전 그대로다** — 스팬 양끝 오프셋(min/max)의 상자와 줄마다
         /// 하나씩 0.001pt 안에서 같다. 단일·다중 스팬, 글꼴 폴백, 꼬리 공백, 장평, 줄 넘김.
+        /// 세로는 종전 CT 줄 지표가 아니라 한글의 줄 클릭 띠다 (#233, `legacySpanBoxes`).
         func testUnidirectionalSpansKeepTheLegacySpanBox() {
             var condensedMatrix = CGAffineTransform(scaleX: 0.5, y: 1)
             let condensed = CTFontCreateCopyWithAttributes(Self.font, 0, &condensedMatrix, nil)
@@ -202,14 +203,20 @@ import XCTest
                         .to(beCloseTo(Double(box.minX), within: 0.001), description: name)
                     expect(Double(rect.maxX))
                         .to(beCloseTo(Double(box.maxX), within: 0.001), description: name)
-                    expect(rect.minY).to(equal(box.minY), description: name)
-                    expect(rect.height).to(equal(box.height), description: name)
+                    expect(Double(rect.minY))
+                        .to(beCloseTo(Double(box.minY), within: 0.001), description: name)
+                    expect(Double(rect.height))
+                        .to(beCloseTo(Double(box.height), within: 0.001), description: name)
                 }
             }
         }
 
         /// 종전 산식 — 스팬 양끝 인덱스의 `CTLineGetOffsetForStringIndex`를 min/max로 정규화한
-        /// 줄 상자 하나 (cc40b23). 단방향 줄에서는 옳은 값이라 회귀 기준으로 쓴다.
+        /// 줄 상자 하나 (cc40b23). 단방향 줄에서는 옳은 가로라 회귀 기준으로 쓴다.
+        ///
+        /// 세로는 한글의 줄 클릭 띠(#233)를 **손으로** 적는다 — 여기 문자열은 전부 10pt에 줄 간격
+        /// 규칙이 없어(비율 100%) 띠 = 줄 상자 [베이스라인 − 8.5, 베이스라인 + 1.5]다 (종전은 CT
+        /// ascent·descent: Helvetica 10pt면 [−7.7, +2.3]).
         func legacySpanBoxes(
             _ string: NSAttributedString, lineWidth: CGFloat
         ) -> [CGRect] {
@@ -238,9 +245,9 @@ import XCTest
                     guard max(lowerX, upperX) > min(lowerX, upperX) else { continue }
                     boxes.append(CGRect(
                         x: drawn.baselineOrigin.x + min(lowerX, upperX),
-                        y: drawn.baselineOrigin.y - drawn.ascent,
+                        y: drawn.baselineOrigin.y - 8.5,
                         width: max(lowerX, upperX) - min(lowerX, upperX),
-                        height: drawn.ascent + drawn.descent
+                        height: 10
                     ))
                 }
             }

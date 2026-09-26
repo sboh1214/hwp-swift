@@ -481,6 +481,21 @@ public struct HwpFootnoteLayout {
             let blockHeight = note.measurement.stackingHeight(isNoteEnd: isNoteEnd)
             if !blocks.isEmpty, cursorY + blockHeight > frame.maxY + 0.5 {
                 overflow = notes.inputs(from: noteIndex)
+                // 같은 각주의 뒤 문단이 다음 쪽으로 넘어가면 앞 문단이 이 쪽의 마지막 항목이다 —
+                // 이어짐 스태커(`headEntries`)와 같은 판정이고 `HwpFootnoteBlock.isNoteEnd`(#233
+                // 링크 클릭 띠의 목록 끝)가 두 배치 모드에서 같은 뜻이 된다.
+                if previousNoteId == note.input.noteId, let last = blocks.indices.last {
+                    let noteEnd = StackEntry(
+                        measured: notes[noteIndex - 1], lineRange: nil, isNoteEnd: true
+                    )
+                    let flipped = Self.footnoteBlock(
+                        for: noteEnd,
+                        at: blocks[last].frame.minY, in: frame, separatorLine: separatorLine,
+                        divider: divider
+                    )
+                    blocks[last] = flipped
+                    cursorY = flipped.frame.maxY
+                }
                 break
             }
             previousNoteId = note.input.noteId
