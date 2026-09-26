@@ -27,7 +27,7 @@
     ],
     "numberingCount": 1,
     "pageCount": 1,
-    "pageCountSource": "한글.app 12.30.0 실측 (2026-09-12, 상태 표시줄 1/1쪽·PDF로 저장하기 1쪽) = HwpKit 렌더 실측 (.testDeterministic) = HWP 쌍 쪽수",
+    "pageCountSource": "한글.app 12.30.0 실측 (2026-09-12, 상태 표시줄 1/1쪽·PDF로 저장하기 1쪽; 2026-09-27 #235 재저장 PDF로 저장하기 1쪽) = HwpKit 렌더 실측 (.testDeterministic) = HWP 쌍 쪽수",
     "pageDef": {
       "height": 84186,
       "marginBottom": 4252,
@@ -39,7 +39,7 @@
     "paraShapeCount": 20,
     "sectionCount": 1,
     "sectionParagraphCounts": [
-      36
+      40
     ],
     "styleCount": 22,
     "tabDefCount": 3,
@@ -50,7 +50,9 @@
       "CoreHwp line shape fixture",
       "underline DOT",
       "strikeout DASH",
-      "table anchor"
+      "table anchor",
+      "R1 AAAAA",
+      "R4 AAAAAAAAAAAAAA"
     ]
   }
 }
