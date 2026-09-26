@@ -401,7 +401,7 @@ extension HwpPageLayer {
             run, lineOrigin: lineOrigin, line: line, color: color,
             shaped: ShapedLine(
                 shape: .line, placement: .underlineBelow,
-                fontSize: underlineShapeScale(attributes, reference: reference), span: nil
+                scale: underlineShapeScale(attributes, reference: reference), span: nil
             ),
             in: ctx
         )
@@ -464,7 +464,7 @@ extension HwpPageLayer {
             line: line, color: color,
             shaped: ShapedLine(
                 shape: lineShape(attributes[HwpAttributedStringKey.strikethroughShape]),
-                placement: .strikethrough, fontSize: strikethroughShapeScale(attributes),
+                placement: .strikethrough, scale: strikethroughShapeScale(attributes),
                 span: shapeSpan
             ),
             in: ctx
@@ -580,7 +580,7 @@ extension HwpPageLayer {
             shaped: ShapedLine(
                 shape: lineShape(attributes[HwpAttributedStringKey.underlineShape]),
                 placement: placement,
-                fontSize: underlineShapeScale(attributes, reference: reference), span: span
+                scale: underlineShapeScale(attributes, reference: reference), span: span
             ),
             in: ctx
         )

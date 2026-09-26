@@ -200,16 +200,18 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
   (CoreText가 run을 가르는 경계)은 패턴이 이어지고 색만 다른 이웃 글자 모양은 run 시작에서
   다시 시작한다 (2026-09-17 실측). 묶음 열쇠는 id에 더해 선을 정하는 키다
   (`sameLineShapeGroup`: 모양·유무·색·축척 크기·`scriptBaselineOffset`; 축척 크기는 한글 문서가
-  `baseFontSize`, 호환 문서 두 갈래와 기본 크기 키가 없는 문자열이 `spaceTargetSize`다 — 한글
-  문서에서 슬롯마다 상대 크기가 다른 한 글자 모양은 한 묶음이고, 한글도 그 경계에서 패턴 위상을
-  잇는다, #226 실측 2026-09-26) — 변경 추적
+  `baseFontSize`, MS 워드 호환 문서와 기본 크기 키가 없는 문자열이 `spaceTargetSize`다 — 한글
+  문서·한글 2007 호환 문서에서 슬롯마다 상대 크기가 다른 한 글자 모양은 한 묶음이고, 한글도 그
+  경계에서 패턴 위상을 잇는다, #226·#227 실측 2026-09-26) — 변경 추적
   삭제 run은 글자 모양을 물려받고 색만 갈리고 첨자 run은 취소선 자리가 다르므로 id만으로
   묶으면 첫 run의 색·기하로 통째 그려진다(PR 리뷰). 속성 사전 전체 비교는 금물(자간·문단 끝
   상자 키가 한 글자 모양을 가른다). 모양 키를 실은 run이 없는 줄은 재지 않는다. 축척은
   한글 문서에서 두께와 같은 기준 크기다 — 밑줄은 줄 글자 기본 크기 T(`underlineShapeScale`,
   #226 실측: 40pt 무장식 글자와 한 줄인 10pt 긴 점선의 한 토막 11.40pt), 취소선은 run의 기본
-  크기(`strikethroughShapeScale`). 한글 2007 호환 문서(패턴이 크기를 따르지 않는다 — #227)와
-  MS 워드 호환 문서(미실측)는 종전대로 `preScriptFontSize`(첨자 축소 전 run 크기)다. 로컬
+  크기(`strikethroughShapeScale`). 한글 2007 호환 문서는 크기와 무관한 고정 축척
+  `HwpLineShapeGeometry.Scale.hwp200XCharacterLine`이고(#227 — 두 함수가 `Scale`을 돌려주고
+  `ShapedLine.scale`이 그대로 나른다), MS 워드 호환 문서(미실측)는 종전대로
+  `preScriptFontSize`(첨자 축소 전 run 크기)다. 로컬
   y(양수 = 아래)를 텍스트 공간(y-위)으로 뒤집어 단선 중심(`lineOrigin.y + line.center`)에
   놓는다 — 밑줄의 줄 상자 가장자리·취소선의 첨자 이동은 그 중심에 이미 들어 있다.
 - **MS 워드 호환 문서(`hwp.compatibleDocumentTarget` == `msWord`)의 장식선은 글꼴 지표

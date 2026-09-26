@@ -117,8 +117,9 @@ public enum HwpAttributedStringKey {
     /// 취소선의 첨자 축소 비율(run 글꼴 크기 ÷ 이 값)과, 기본 크기 키가 없는 문자열의
     /// 장식선 크기 폴백으로 읽는다 (`HwpPageLayerDecorations.preScriptFontSize`; 한글 문서의
     /// 장식선 크기 자체는 #226부터 `baseFontSize`다 — 이 값은 슬롯 상대 크기를 반영해 기본
-    /// 40pt·50% run의 선을 20pt 자리에 그렸다). MS 워드 호환·한글 2007 호환 문서의 선 모양
-    /// 축척도 이 값이다.
+    /// 40pt·50% run의 선을 20pt 자리에 그렸다). MS 워드 호환 문서의 선 모양 축척도 이
+    /// 값이다 — 한글 2007 호환 문서의 선 모양은 크기와 무관한 고정 축척이다 (#227,
+    /// `HwpLineShapeGeometry.Scale.hwp200XCharacterLine`).
     public static let spaceTargetSize = NSAttributedString.Key("hwp.spaceTargetSize")
     /// 문단이 다음 단/쪽으로 이어지는 조각의 마커 (NSNumber true, 조각 **전체**에 붙고
     /// 읽는 쪽은 끝 글자로 판정한다 — `HwpTableSplitter.markedAsContinuedFragment`) — 이

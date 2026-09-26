@@ -11,10 +11,12 @@ import Foundation
 /// 아핀 변환으로 옮긴다 — 가로 선은 (x, y) → (시작 x + x, 중심 y + y), 세로 선은
 /// (x, y) → (중심 x + y, 시작 y + x), CoreText의 y-위 텍스트 공간이면 y를 뒤집는다.
 ///
-/// 두 축척(`Scale`)이 있다. 글자선은 패턴·띠·물결이 **글자 크기**에 비례하고 (대시 단위
+/// 세 축척(`Scale`)이 있다. 글자선은 패턴·띠·물결이 **글자 크기**에 비례하고 (대시 단위
 /// 0.057em, 2중선 띠 0.12em, 그 밖의 여러 줄 띠 0.2em, 물결 진폭 0.112em), 테두리·단
-/// 구분선은 **명목 두께**에 비례한다 (대시 단위 22/15 t, 여러 줄 띠 t, 물결 진폭 t). 두
-/// 축척의 모양 표(패턴 배수·띠 안 구성)는 같다.
+/// 구분선은 **명목 두께**에 비례한다 (대시 단위 22/15 t, 여러 줄 띠 t, 물결 진폭 t). 한글
+/// 2007 호환 문서의 글자선은 **고정 pt**다 (대시 단위 0.48pt, 2중선 띠 1.44pt, 그 밖의 여러 줄
+/// 띠 4.2pt, 물결 진폭 2.88pt — #227). 세 축척의 패턴 배수는 같고, 띠 안 구성은 글자선·테두리가
+/// 같으며 한글 2007 호환 문서만 굵은 여러 줄의 비율이 다르다 (`stripeFractions(for:scale:)`).
 ///
 /// 여러 줄·물결 띠의 세로 자리는 `Placement`가 정한다 — 글자 아래 밑줄은 단선 띠의 위
 /// 가장자리에서 아래로 자라고, 취소선과 테두리·단 구분선은 단선 중심에 가운데 맞추며, 글자
@@ -31,19 +33,25 @@ public enum HwpLineShapeGeometry {
     /// 패턴 축척의 갈래
     public enum Scale: Equatable, Sendable {
         /// 글자선 — `fontSize`는 선의 기준 크기 (pt): 한글 문서는 밑줄이 줄 글자 기본 크기,
-        /// 취소선이 run의 글자 모양 기본 크기이고(#226) 호환 문서는 첨자 축소 전 run 크기다
+        /// 취소선이 run의 글자 모양 기본 크기이고(#226) MS 워드 호환 문서는 첨자 축소 전 run
+        /// 크기다
         case characterLine(fontSize: CGFloat)
+        /// 한글 2007 호환 문서(`HwpCompatibleDocumentTarget.hwp200X`)의 글자선 — 패턴·띠·물결이
+        /// 글자 크기와 무관한 고정 pt다 (#227, `HwpRenderTuning.LineShape.hwp200X*`). 선 두께가
+        /// 고정 0.36pt인 것(#210)과 같은 갈래다.
+        case hwp200XCharacterLine
         /// 표 셀 테두리·단 구분선 — 명목 두께에 비례
         case border
     }
 
     /// 여러 줄·물결 띠의 세로 자리
     public enum Placement: Equatable, Sendable {
-        /// 글자 아래 밑줄 — 띠는 단선의 위 가장자리에서 아래로, 물결은 두께 1배 위에서
+        /// 글자 아래 밑줄 — 띠는 단선의 위 가장자리에서 아래로, 물결은 계단 1개 위에서 (계단은
+        /// 한글 문서가 두께, 한글 2007 호환 문서가 물결 1.2pt·2중 물결 0.54pt — `waveTopStep(for:)`)
         case underlineBelow
-        /// 취소선·글자 가운데 밑줄 — 띠는 단선 중심에 가운데, 물결은 두께 2배 위에서
+        /// 취소선·글자 가운데 밑줄 — 띠는 단선 중심에 가운데, 물결은 계단 2개 위에서
         case strikethrough
-        /// 글자 위 밑줄 — 띠는 단선의 아래 가장자리에서 위로, 물결은 두께 3배 위에서
+        /// 글자 위 밑줄 — 띠는 단선의 아래 가장자리에서 위로, 물결은 계단 3개 위에서
         case underlineAbove
         /// 표 셀 테두리 — 띠는 선 중심에 가운데, 물결은 두께 3/8만큼 −y 쪽, 2중 물결의
         /// 둘째 파는 선 방향으로 3/4 두께 뒤에서 시작해 내려가는 획이 첫 파와 한 직선을
@@ -129,7 +137,8 @@ public enum HwpLineShapeGeometry {
         case .circle:
             let radius = circleDiameter(for: line) / 2
             guard radius <= line.length else { return nil }
-            return -radius ... radius
+            let center = circleCenterY(for: line)
+            return (center - radius) ... (center + radius)
         case .doubleLine, .thinThickDoubleLine, .thickThinDoubleLine, .thinThickThinTripleLine:
             let band = multiLineBand(for: line)
             return band.lowerBound ... band.upperBound
@@ -213,27 +222,39 @@ extension HwpLineShapeGeometry {
         switch line.scale {
         case let .characterLine(fontSize):
             fontSize * HwpRenderTuning.LineShape.characterDashUnitEmRatio
+        case .hwp200XCharacterLine:
+            HwpRenderTuning.LineShape.hwp200XDashUnit
         case .border:
             line.thickness * HwpRenderTuning.LineShape.borderDashUnitThicknessRatio
         }
     }
 
-    /// 여러 줄 띠의 높이 — 글자선은 2중선 0.12em·그 밖 0.2em, 테두리는 두께
+    /// 여러 줄 띠의 높이 — 글자선은 2중선 0.12em·그 밖 0.2em, 한글 2007 호환 문서의 글자선은
+    /// 2중선 1.44pt·그 밖 4.2pt, 테두리는 두께
     static func multiLineBandHeight(for line: Line) -> CGFloat {
         switch line.scale {
         case let .characterLine(fontSize):
             line.shape == .doubleLine
                 ? fontSize * HwpRenderTuning.LineShape.characterDoubleLineBandEmRatio
                 : fontSize * HwpRenderTuning.LineShape.characterThickBandEmRatio
+        case .hwp200XCharacterLine:
+            line.shape == .doubleLine
+                ? HwpRenderTuning.LineShape.hwp200XDoubleLineBand
+                : HwpRenderTuning.LineShape.hwp200XThickLineBand
         case .border:
             line.thickness
         }
     }
 
+    /// 물결 진폭 — 한글 2007 호환 문서의 글자선만 2중 물결이 단일 물결의 절반이다
     static func waveAmplitude(for line: Line) -> CGFloat {
         switch line.scale {
         case let .characterLine(fontSize):
             fontSize * HwpRenderTuning.LineShape.characterWaveAmplitudeEmRatio
+        case .hwp200XCharacterLine:
+            line.shape == .doubleWave
+                ? HwpRenderTuning.LineShape.hwp200XDoubleWaveAmplitude
+                : HwpRenderTuning.LineShape.hwp200XWaveAmplitude
         case .border:
             line.thickness
         }
@@ -243,6 +264,10 @@ extension HwpLineShapeGeometry {
         switch line.scale {
         case let .characterLine(fontSize):
             fontSize * HwpRenderTuning.LineShape.characterWaveStrokeEmRatio
+        case .hwp200XCharacterLine:
+            line.shape == .doubleWave
+                ? HwpRenderTuning.LineShape.hwp200XDoubleWaveStroke
+                : HwpRenderTuning.LineShape.hwp200XWaveStroke
         case .border:
             line.thickness * HwpRenderTuning.LineShape.borderWaveStrokeThicknessRatio
         }
@@ -274,6 +299,8 @@ extension HwpLineShapeGeometry {
         switch line.scale {
         case .characterLine:
             dashUnit(for: line)
+        case .hwp200XCharacterLine:
+            HwpRenderTuning.LineShape.hwp200XCircleDiameter
         case .border:
             line.thickness
         }
@@ -283,8 +310,22 @@ extension HwpLineShapeGeometry {
         switch line.scale {
         case .characterLine:
             circleDiameter(for: line) * HwpRenderTuning.LineShape.characterCirclePitchDiameterRatio
+        case .hwp200XCharacterLine:
+            HwpRenderTuning.LineShape.hwp200XCirclePitch
         case .border:
             line.thickness * HwpRenderTuning.LineShape.borderCirclePitchThicknessRatio
+        }
+    }
+
+    /// 원형 점선의 원 중심 y — 한글 2007 호환 문서의 글자선만 단선 중심에서 띠가 자라는 쪽으로
+    /// 옮겨진다 (아래 밑줄 아래·위 밑줄 위, `hwp200XCircleCenterShift`). 나머지는 단선 중심.
+    static func circleCenterY(for line: Line) -> CGFloat {
+        guard line.scale == .hwp200XCharacterLine else { return 0 }
+        let shift = HwpRenderTuning.LineShape.hwp200XCircleCenterShift
+        switch line.placement {
+        case .underlineBelow: return shift
+        case .underlineAbove: return -shift
+        case .strikethrough, .border, .divider: return 0
         }
     }
 
@@ -309,10 +350,11 @@ extension HwpLineShapeGeometry {
         }
     }
 
-    /// 물결 꼭짓점 띠의 위쪽 꼭짓점 y — 글자선은 단선 위 가장자리에서 종류 × 두께만큼 위,
-    /// 테두리는 중심에서 3/8 두께 위에 진폭 절반을 더 올린 곳
+    /// 물결 꼭짓점 띠의 위쪽 꼭짓점 y — 글자선은 계단의 시작(`waveTopBase(for:)` — 한글 문서는
+    /// 단선 위 가장자리)에서 종류 × 계단만큼 위(한글 문서는 계단이 두께, 한글 2007 호환 문서는
+    /// 물결마다 고정 pt — `waveTopStep(for:)`), 테두리는 중심에서 3/8 두께 위에 진폭 절반을 더
+    /// 올린 곳
     static func waveTopVertex(for line: Line) -> CGFloat {
-        let half = line.thickness / 2
         let steps: CGFloat
         switch line.placement {
         case .underlineBelow: steps = 1
@@ -322,13 +364,32 @@ extension HwpLineShapeGeometry {
             return -line.thickness * HwpRenderTuning.LineShape.borderWaveShiftThicknessRatio
                 - waveAmplitude(for: line) / 2
         }
-        let shift = HwpRenderTuning.LineShape.characterWaveTopShiftThicknessRatio
-        return -half - line.thickness * shift * steps
+        return -waveTopBase(for: line) - waveTopStep(for: line) * steps
     }
 
-    /// 2중 물결의 둘째 파 이동량 — 글자선은 진폭의 0.8배 아래(같은 x 위상), 테두리는 선
-    /// 방향·가로지르는 축 모두 3/4 두께 (내려가는 획이 첫 파와 한 직선을 이루는 마름모
-    /// 격자), 단 구분선은 가로지르는 축만 3/4 두께
+    /// 글자선 물결 꼭짓점 계단이 시작하는 자리 (단선 중심 위, pt) — 한글 문서는 단선 위
+    /// 가장자리(두께 절반), 한글 2007 호환 문서는 물결 0.12pt·2중 물결 0.18pt
+    static func waveTopBase(for line: Line) -> CGFloat {
+        guard line.scale == .hwp200XCharacterLine else { return line.thickness / 2 }
+        return line.shape == .doubleWave
+            ? HwpRenderTuning.LineShape.hwp200XDoubleWaveTopBase
+            : HwpRenderTuning.LineShape.hwp200XWaveTopBase
+    }
+
+    /// 글자선 물결의 위쪽 꼭짓점 계단 폭 — 한글 문서는 두께 × 1(단일·2중 물결 같은 꼭짓점),
+    /// 한글 2007 호환 문서는 단일 물결 1.2pt·2중 물결 0.54pt
+    static func waveTopStep(for line: Line) -> CGFloat {
+        guard line.scale == .hwp200XCharacterLine else {
+            return line.thickness * HwpRenderTuning.LineShape.characterWaveTopShiftThicknessRatio
+        }
+        return line.shape == .doubleWave
+            ? HwpRenderTuning.LineShape.hwp200XDoubleWaveTopStep
+            : HwpRenderTuning.LineShape.hwp200XWaveTopStep
+    }
+
+    /// 2중 물결의 둘째 파 이동량 — 글자선은 진폭의 0.8배 아래(같은 x 위상), 한글 2007 호환
+    /// 문서의 글자선은 1.08pt 아래(같은 x 위상), 테두리는 선 방향·가로지르는 축 모두 3/4 두께
+    /// (내려가는 획이 첫 파와 한 직선을 이루는 마름모 격자), 단 구분선은 가로지르는 축만 3/4 두께
     static func doubleWaveOffset(for line: Line) -> CGPoint {
         switch line.scale {
         case .characterLine:
@@ -337,6 +398,8 @@ extension HwpLineShapeGeometry {
                 y: waveAmplitude(for: line)
                     * HwpRenderTuning.LineShape.characterDoubleWaveOffsetAmplitudeRatio
             )
+        case .hwp200XCharacterLine:
+            return CGPoint(x: 0, y: HwpRenderTuning.LineShape.hwp200XDoubleWaveOffset)
         case .border:
             let offset = line.thickness
                 * HwpRenderTuning.LineShape.borderDoubleWaveOffsetThicknessRatio
@@ -360,9 +423,21 @@ extension HwpLineShapeGeometry {
         return multiples.map { $0 * unit }
     }
 
-    /// 여러 줄의 띠 안 구성 — 띠 높이에 대한 비율 [(시작, 끝)], 위(−y)에서 아래로
-    static func stripeFractions(for shape: HwpBorderType) -> [(CGFloat, CGFloat)] {
-        switch shape {
+    /// 여러 줄의 띠 안 구성 — 띠 높이에 대한 비율 [(시작, 끝)], 위(−y)에서 아래로. 한글 2007
+    /// 호환 문서의 글자선은 굵은 여러 줄의 비율이 다르다 (4.2pt 띠에 가는 선 0.96·굵은 선 2.28,
+    /// 3중선 0.6·1.8·0.6 — `HwpRenderTuning.LineShape.hwp200XThickLineBand`); 2중선은 같다.
+    static func stripeFractions(
+        for shape: HwpBorderType, scale: Scale
+    ) -> [(CGFloat, CGFloat)] {
+        if scale == .hwp200XCharacterLine {
+            switch shape {
+            case .thinThickDoubleLine: return [(0, 8 / 35), (16 / 35, 1)]
+            case .thickThinDoubleLine: return [(0, 19 / 35), (27 / 35, 1)]
+            case .thinThickThinTripleLine: return [(0, 1 / 7), (2 / 7, 5 / 7), (6 / 7, 1)]
+            default: break
+            }
+        }
+        return switch shape {
         case .doubleLine: [(0, 0.25), (0.75, 1)]
         case .thinThickDoubleLine: [(0, 0.25), (0.5, 1)]
         case .thickThinDoubleLine: [(0, 0.5), (0.75, 1)]
@@ -375,7 +450,7 @@ extension HwpLineShapeGeometry {
     static func stripes(for line: Line) -> [CGRect] {
         let band = multiLineBand(for: line)
         let height = band.upperBound - band.lowerBound
-        return stripeFractions(for: line.shape).map { start, end in
+        return stripeFractions(for: line.shape, scale: line.scale).map { start, end in
             CGRect(
                 x: 0,
                 y: band.lowerBound + height * start,
@@ -383,84 +458,6 @@ extension HwpLineShapeGeometry {
                 height: height * (end - start)
             )
         }
-    }
-
-    private static func addDashes(_ pattern: [CGFloat], to path: CGMutablePath, line: Line) {
-        guard pattern.count >= 2, pattern.allSatisfy({ $0 > 0 }) else {
-            path.addRect(solidBand(for: line))
-            return
-        }
-        let band = solidBand(for: line)
-        var x: CGFloat = 0
-        var index = 0
-        while x < line.length {
-            let span = pattern[index % pattern.count]
-            if index % 2 == 0 {
-                path.addRect(CGRect(
-                    x: x, y: band.minY, width: min(span, line.length - x), height: band.height
-                ))
-            }
-            x += span
-            index += 1
-        }
-    }
-
-    private static func addCircles(to path: CGMutablePath, line: Line) {
-        let diameter = circleDiameter(for: line)
-        let pitch = circlePitch(for: line)
-        guard diameter > 0, pitch > 0 else { return }
-        var center: CGFloat = 0
-        while center + diameter / 2 <= line.length {
-            path.addEllipse(in: CGRect(
-                x: center - diameter / 2, y: -diameter / 2, width: diameter, height: diameter
-            ))
-            center += pitch
-        }
-    }
-
-    /// 45° 지그재그 — 위 꼭짓점에서 시작해 진폭만큼 내려갔다 올라오기를 반복하고, 꼭짓점
-    /// 사이의 평탄(`waveVertexFlat`)은 짧은 띠로 잇는다. 대각선은 획 두께의 평행사변형
-    /// (butt cap)이고, `length` 앞에서 시작한 마지막 대각선은 자르지 않고 끝까지 그린다
-    /// (한글 실측 — `alongExtent(of:)`가 그 넘침을 보고한다).
-    private static func addWave(to path: CGMutablePath, line: Line, offset: CGPoint) {
-        let amplitude = waveAmplitude(for: line)
-        let stroke = waveStroke(for: line)
-        guard amplitude > 0, stroke > 0 else { return }
-        let flat = HwpRenderTuning.LineShape.waveVertexFlat
-        let halfPeriod = waveHalfPeriod(for: line)
-        let top = waveTopVertex(for: line) + offset.y
-        let bottom = top + amplitude
-        let count = waveDiagonalCount(for: line, offsetX: offset.x)
-        for index in 0 ..< count {
-            let goingDown = index.isMultiple(of: 2)
-            let startX = offset.x + CGFloat(index) * halfPeriod
-            let start = CGPoint(x: startX, y: goingDown ? top : bottom)
-            let end = CGPoint(x: startX + amplitude, y: goingDown ? bottom : top)
-            addSegment(from: start, to: end, stroke: stroke, into: path)
-            if index + 1 < count, flat > 0 {
-                path.addRect(CGRect(
-                    x: end.x, y: end.y - stroke / 2, width: flat, height: stroke
-                ))
-            }
-        }
-    }
-
-    /// 두 점을 잇는 획 두께 `stroke`의 평행사변형 (butt cap). 꼭짓점 평탄 띠(`addRect`, 부호
-    /// 있는 넓이 양수)와 겹치므로 같은 회전 방향으로 둔다 — 반대면 nonzero 채우기
-    /// (`CGContext.fillPath`)에서 겹친 자리의 감김수가 0이 돼 꼭짓점에 구멍이 난다 (PR 리뷰).
-    private static func addSegment(
-        from start: CGPoint, to end: CGPoint, stroke: CGFloat, into path: CGMutablePath
-    ) {
-        let delta = CGPoint(x: end.x - start.x, y: end.y - start.y)
-        let lengthSquared = delta.x * delta.x + delta.y * delta.y
-        guard lengthSquared > 0 else { return }
-        let scale = stroke / 2 / lengthSquared.squareRoot()
-        let normal = CGPoint(x: -delta.y * scale, y: delta.x * scale)
-        path.move(to: CGPoint(x: start.x - normal.x, y: start.y - normal.y))
-        path.addLine(to: CGPoint(x: end.x - normal.x, y: end.y - normal.y))
-        path.addLine(to: CGPoint(x: end.x + normal.x, y: end.y + normal.y))
-        path.addLine(to: CGPoint(x: start.x + normal.x, y: start.y + normal.y))
-        path.closeSubpath()
     }
 }
 

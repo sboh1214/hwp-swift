@@ -24,8 +24,10 @@ import Foundation
 /// **밑줄 세 종은 줄 단위, 취소선은 run 단위다** — 세 문서 갈래가 같다 (#187·#226). 한글
 /// 문서·한글 2007 호환 문서에서 밑줄 자리를 정하는 L은 줄 상자 높이(한글 줄 캐시의
 /// `vertsize` — 줄의 글자·문단 끝 글자·한 줄 끝·높이 0 마커의 기본 크기와 글자처럼 취급
-/// 개체의 바깥 상자 높이 가운데 최댓값)이고, 두께·선 모양 축척을 정하는 T는 그 가운데
-/// **글자**의 기본 크기만 본다 (`HwpDrawnTextLayout.underlineReference(of:endsParagraph:)`).
+/// 개체의 바깥 상자 높이 가운데 최댓값)이고, 한글 문서의 두께·선 모양 축척을 정하는 T는 그
+/// 가운데 **글자**의 기본 크기만 본다 (`HwpDrawnTextLayout.underlineReference(of:endsParagraph:)`).
+/// 한글 2007 호환 문서는 T를 쓰지 않는다 — 두께는 고정 0.36pt(#210), 선 모양은 고정 축척
+/// `HwpLineShapeGeometry.Scale.hwp200XCharacterLine`(#227)이다.
 /// 한글 12.30 실측 (2026-09-22·25, #226 — 함초롬바탕 10pt 밑줄 run과 같은 줄에 무엇이
 /// 있는가): 40pt 무장식 글자 −6.84pt·두께 1.56pt, 40pt 문단 끝 글자·한 줄 끝·책갈피·
 /// 그림·표 −6.12~−6.24pt·0.36pt, 20pt 무장식 글자 + 40pt 문단 끝 글자 −6.36pt·0.84pt,
@@ -100,8 +102,8 @@ public enum HwpDecorationLineGeometry {
         public let lineBoxHeight: CGFloat
         /// 한글 문서의 두께·선 모양 축척 기준 크기 (pt) — 줄 **글자**의 글자 모양 기본 크기
         /// 최댓값. 문단 끝 글자·한 줄 끝·마커(책갈피·개체)의 글자 모양과 개체 높이는 들지
-        /// 않는다. 한글 2007 호환 문서는 두께가 고정 0.36pt이고(#210), 선 모양은 한글이 크기와
-        /// 무관한 무늬로 그리지만(#227, 범위 밖) 렌더러가 종전대로 run 크기를 써서 이 값을 쓰지
+        /// 않는다. 한글 2007 호환 문서는 두께가 고정 0.36pt이고(#210) 선 모양도 크기와 무관한
+        /// 고정 무늬라(#227, `HwpLineShapeGeometry.Scale.hwp200XCharacterLine`) 이 값을 쓰지
         /// 않는다. 글자가 없는 줄이면 0이다 — 호출자가 그리는 run의 글자 모양 기본
         /// 크기로 대신한다 (번들 렌더러 `HwpPageLayer`가 그렇게 한다).
         public let textFontSize: CGFloat

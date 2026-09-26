@@ -19,15 +19,15 @@
     "binDataCount": 0,
     "borderFillCount": 2,
     "bulletCount": 0,
-    "charShapeCount": 18,
+    "charShapeCount": 28,
     "faceNamesKorean": [
       "함초롬돋움",
       "함초롬바탕",
       "Apple SD 산돌고딕 Neo"
     ],
     "numberingCount": 1,
-    "pageCount": 1,
-    "pageCountSource": "한글.app 12.30.0 실측 (2026-09-22, PDF로 저장하기 1쪽) = HwpKit 렌더 실측 (.testDeterministic) = HWP 쌍 쪽수",
+    "pageCount": 2,
+    "pageCountSource": "한글.app 12.30.0 실측 (2026-09-26, PDF로 저장하기 2쪽) = HwpKit 렌더 실측 (.testDeterministic) = HWP 쌍 쪽수",
     "pageDef": {
       "height": 84186,
       "marginBottom": 4252,
@@ -39,7 +39,7 @@
     "paraShapeCount": 20,
     "sectionCount": 1,
     "sectionParagraphCounts": [
-      10
+      20
     ],
     "styleCount": 21,
     "tabDefCount": 3,
@@ -49,7 +49,12 @@
       "U60 가나Ag",
       "T40 가나Ag",
       "S10 가나Ag",
-      "C40 가나Ag"
+      "C40 가나Ag",
+      "L40 가나Ag",
+      "O40 가나Ag",
+      "K40 가나Ag",
+      "X40 가나Ag",
+      "M40 가나Ag"
     ]
   }
 }
