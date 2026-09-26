@@ -192,8 +192,11 @@ import XCTest
         }
 
         /// 상대 크기가 큰 글꼴은 첫 줄 잉크가 프레임 **위**로 샌다 (baseline = 상단 + 0.85 × 기본
-        /// 크기, 잉크는 그 위로 글꼴 ascent) — 링크 없이도 그 글자 위의 탭은 앞 문단의 링크가
-        /// 아니라 이 문단이다. 게이트가 글꼴 지표로 그 띠를 연다.
+        /// 크기, 잉크는 그 위로 글꼴 ascent) — 링크 없이도 그 글자 위의 탭은 앞 문단이 아니라 이
+        /// 문단이다. 게이트가 글꼴 지표로 그 띠를 연다. 단 앞 문단의 **링크**는 이긴다 (#233): 한글은
+        /// 그 자리를 앞 줄의 클릭 띠로 보고 다음 줄 잉크를 보지 않는다(상대 크기 200%·150% 실측 —
+        /// `HwpHitTester.textClaim`, `HwpHyperlinkClickBandClaimTests`). 종전 이 테스트는 반대를
+        /// 단언했다.
         func testTallRelativeSizeGlyphAboveTheFrameClaimsTheTap() {
             let tall = NSAttributedString(string: "HHHH", attributes: [
                 kCTFontAttributeName as NSAttributedString.Key:
@@ -220,8 +223,13 @@ import XCTest
             expect(link.frame.contains(tap)) == true
             expect(HwpHitTester().textPaints(tall, in: front.frame, at: tap)) == true
 
-            expect(HwpHitTester().hit(page: self.page([link, front]), point: tap))
+            let plain = AnyHwpBlock(
+                frame: link.frame, kind: .text, attributedString: link.attributedString
+            )
+            expect(HwpHitTester().hit(page: self.page([plain, front]), point: tap))
                 == .text(blockIndex: 1, characterIndex: nil)
+            expect(HwpHitTester().hit(page: self.page([link, front]), point: tap))
+                == .hyperlink(url: Self.url, blockIndex: 0)
         }
 
         /// 옮겨진 run의 기울임 오버행이 프레임 **옆**으로 나간 잉크 — 링크 없는 쌍둥이

@@ -27,7 +27,8 @@ public struct HwpFootnoteBlock: @unchecked Sendable, Hashable {
     public let nestedTables: [HwpNestedTableFrame]
     /// 이 블록이 그 각주(번호)의 **마지막 항목**인지 — 각주 영역은 문단마다 블록 하나라 같은
     /// 각주의 다음 문단은 바로 아래 블록으로 이어진다. 참이면 스택이 마지막 줄의 줄 간격을
-    /// 세지 않는 자리다 (쪽 끝에서 나뉜 앞 몫도 참 — `HwpFootnoteLayout.StackEntry.isNoteEnd`).
+    /// 세지 않는 자리다 (쪽 끝에서 나뉜 앞 몫도 참 — `HwpFootnoteLayout.StackEntry.isNoteEnd`,
+    /// 흐름 배치도 같은 각주의 뒤 문단이 다음 쪽으로 넘어가면 이 쪽의 앞 블록이 참이다).
     /// 링크 클릭 띠의 **목록 끝**(#233 — 한글은 각주의 마지막 줄 아래를 눌러도 링크를 열지
     /// 않는다)이 이 값으로 가려진다: 참인 블록의 마지막 문단만 마지막 줄 띠가 줄 상자에서 끝난다.
     public let isNoteEnd: Bool

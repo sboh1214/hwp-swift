@@ -158,7 +158,8 @@ public enum HwpAttributedStringKey {
     /// 배분/나눔 정렬 (표 44 정렬 4·5) — 마지막 줄도 단어 간격을 벌린다
     public static let distributeAlignment = NSAttributedString.Key("hwp.distributeAlignment")
     /// 하이퍼링크(%hlk) 필드가 감싸는 텍스트의 URL — 히트/페인트가 블록 전체가
-    /// 아니라 이 속성 범위의 글리프 rect로 링크를 스코프한다 (#2).
+    /// 아니라 이 속성 범위의 링크 rect(가로는 스팬 run의 진행 폭, 세로는 줄 클릭 띠 —
+    /// `HwpDrawnTextLayout.hyperlinkRegions`, #233)로 링크를 스코프한다 (#2).
     public static let hyperlink = NSAttributedString.Key("hwp.hyperlink")
     /// **조판 전용 앵커** 표식 — 한 줄 끝(10)으로 끝난 문단의 마지막 빈 줄을
     /// 살리는 빈칸(`HwpTextRunBuilder.emittedText`, #137)과, 글자가 없는 문단의

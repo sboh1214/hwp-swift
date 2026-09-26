@@ -185,9 +185,27 @@ extension HwpDrawnTextLayout {
         /// run별 진행 폭 범위 (#201) — 그 줄에 처음 닿는 스팬이 걷고, 스팬이 안 닿는 줄은
         /// 걷지 않는다 (링크 하나뿐인 긴 문단에서 모든 줄을 걷지 않는다).
         var runExtents: [RunExtent]?
-        /// 이 줄이 **문단 목록의 마지막 줄**인지 (`ClickBand`) — 셀·글상자·각주 문단 배열의
-        /// 마지막 문단의 마지막 줄만 참이다 (`hyperlinkRegions`의 `endsList`).
-        let endsList: Bool
+        /// 이 줄 뒤에 무엇이 오는가 (`ClickBand`) — 문자열의 마지막 줄만 호출자가 준 값이고
+        /// 앞 줄들은 같은 문자열의 다음 줄이 뒤따르므로 `.followed`다.
+        let listEnd: ListEnd
+    }
+
+    /// 문자열의 마지막 줄 뒤에 무엇이 오는가 — 그 줄 클릭 띠의 하단을 정한다 (#233, `ClickBand`).
+    /// 문자열 안의 앞 줄들은 언제나 `.followed`다 (같은 문자열의 다음 줄이 뒤따른다).
+    enum ListEnd: Sendable {
+        /// 같은 문단 목록의 다음 문단이 바로 뒤따른다 (셀·글상자의 가운데 문단, 같은 각주의
+        /// 뒤 문단이 이어지는 블록) — 띠는 줄 전진량까지(= 다음 줄 상자 상단)다. 전진량이 줄
+        /// 상자보다 작으면(고정 < 상자, 비율 < 100%) 상자 아래 몫은 다음 문단 것이다.
+        case followed
+        /// 문단 목록의 마지막 줄 (셀·글상자·각주 배열의 끝) — 띠는 줄 상자까지다.
+        case end
+        /// 뒤에 무엇이 오는지 모른다 — 본문 문단 블록(다음 블록이 이을 수도, 쪽·단의 끝일
+        /// 수도 있다)과 공개 `hyperlinkRegions(attributedString:origin:lineWidth:)`. 띠는 둘 중
+        /// 넓은 쪽(줄 전진량과 줄 상자 가운데 큰 값)이다: 전진량이 작으면 상자까지 — 안 그러면
+        /// 쪽 끝 줄의 베이스라인·밑줄이 띠 밖이다(#233 리뷰: 80% 한 줄 문단의 베이스라인
+        /// 탭이 `.text`로 떨어졌다). 다음 블록이 이으면 그 블록이 먼저 히트되므로 겹친 몫은
+        /// 그대로 다음 줄 것이다.
+        case unknown
     }
 
     /// 줄 하나에서 링크가 열리는 **세로 범위** (#233) — top-down 페이지 좌표.
@@ -198,10 +216,11 @@ extension HwpDrawnTextLayout {
     /// 끝난다. 한글 12.30.0(6446) macOS 실측 (2026-09-26, 155%, 함초롬바탕 10pt 밑줄 링크를 한
     /// 줄씩 번갈아 왼쪽·오른쪽 칸에 둔 합성 HWPX — 칸마다 위→아래로 눌러 연결 실패 대화상자의
     /// URL로 어느 링크가 열렸는지 읽었다, 경계 ±0.25pt):
-    /// - 줄과 줄의 경계 = **다음 줄 상자 상단**. 160% 10pt 줄은 상자 바닥 + 6.0, 40pt 문단 끝
-    ///   글자·40pt 책갈피·40pt 글자 줄은 + 24.1(40pt 몫 여분), 높이 40pt 글자처럼 취급 그림
-    ///   줄은 + 6.0(여분은 글자 상자 기준 — `HwpLineSpacingRule`). 같은 문단의 한 줄 끝(LF)
-    ///   앞뒤도 같다.
+    /// - 줄과 줄의 경계 = **다음 줄 상자 상단**. 160% 10pt 줄은 상자 바닥 + 6.0(실측 +5.8…+6.1),
+    ///   40pt 문단 끝 글자·40pt 책갈피·40pt 글자 줄은 + 24.0(40pt 몫 여분, 실측 +23.9…+24.1),
+    ///   높이 40pt 글자처럼 취급 그림 줄은 + 6.0(여분은 글자 상자 기준 — `HwpLineSpacingRule`,
+    ///   실측 +6.3). 같은 문단의 한 줄 끝(LF) 앞뒤도 같다. 다음 줄 글자가 제 상자 위로 솟아도
+    ///   (상대 크기 200%·150%) 경계는 그대로다 — 한글은 다음 줄 잉크를 보지 않는다.
     /// - 문단 아래 간격·위 간격 24pt 띠에서는 위·아래 어느 링크도 안 열린다.
     /// - 100%면 경계 = 상자 바닥이라 밑줄(상자 바닥 아래)은 **다음 줄 몫**이고, 고정 8pt(상자
     ///   10pt)면 경계 = 다음 줄 상단이라 상자 바닥 2pt도 다음 줄 몫이다 — 띠는 상자가 아니라
@@ -214,12 +233,14 @@ extension HwpDrawnTextLayout {
     /// 사이 빈칸이 영역 밖이었고, 40pt 그림 줄은 위로만 커졌다. **합집합으로 두지 않는다**:
     /// 함초롬바탕 10pt의 CT ascent 10.7이 상자 상단(8.5)보다 높아 앞 줄의 줄 간격 띠(한글은
     /// 앞 줄 몫)를 이 링크가 가져간다 — 앞 블록이면 뒤 블록이 먼저 히트되므로 앞 링크가 진다.
+    /// 같은 몫을 뒤 블록의 **링크 아닌 글자** claim이 가져가는 길은 히트가 막는다
+    /// (`HwpHitTester.textClaim` — 프레임 위 글자 claim은 아래 블록 링크에 양보한다).
     ///
-    /// **본문 블록의 마지막 줄은 줄 간격 몫까지 둔다** — 한글은 쪽·단·문서의 마지막 줄에서 그
-    /// 몫을 빼지만 문단 블록은 자기가 단의 끝인지 모른다. 그 몫은 블록 프레임 안(문단 높이 =
-    /// 줄 전진량 합 + 아래 간격)이라 다른 블록을 가리지 않는다. 컨테이너 문단은 반대로 목록
-    /// 끝을 알고(배열의 마지막), 몫을 두면 셀 높이(마지막 줄 간격 제외, #160) 밖 다음 행 셀까지
-    /// 넘쳐 그 칸의 빈자리를 누르면 윗 셀 링크가 열리므로 한글대로 뺀다.
+    /// **본문 블록의 마지막 줄은 줄 간격 몫까지 둔다** (`ListEnd.unknown`) — 한글은 쪽·단·
+    /// 문서의 마지막 줄에서 그 몫을 빼지만 문단 블록은 자기가 단의 끝인지 모른다. 그 몫은 블록
+    /// 프레임 안(문단 높이 = 줄 전진량 합 + 아래 간격)이라 다른 블록을 가리지 않는다. 컨테이너
+    /// 문단은 반대로 목록 끝을 알고(배열의 마지막), 몫을 두면 셀 높이(마지막 줄 간격 제외, #160)
+    /// 밖 다음 행 셀까지 넘쳐 그 칸의 빈자리를 누르면 윗 셀 링크가 열리므로 한글대로 뺀다.
     ///
     /// 글꼴 속성이 없는 문자열도 CT가 run에 기본 글꼴(Helvetica 12)을 달아 주므로 그 크기의
     /// 상자다. 잴 run이 없어 상자가 0인 줄만 CT 줄 지표로 폴백한다 (방어 — 높이 0 rect를 내지
@@ -231,17 +252,23 @@ extension HwpDrawnTextLayout {
     }
 
     /// `drawn`의 링크 클릭 띠 (`ClickBand`) — `lines`가 이 줄을 놓은 기하 그대로다: 상단은 줄
-    /// 상자 상단(`HwpDrawnLine.boxTop`), 높이는 줄 자신의 전진량(`lineAdvance` — 측정·렌더가
-    /// 쌓는 `HwpLineAdvance`의 줄 몫, 문단 사이 간격 제외)이고 목록 끝이면 줄 상자
-    /// (`boxHeight`)다. 다시 재지 않으므로 문단 안 줄의 띠 하단이 다음 줄 상자 상단과 비트
-    /// 단위로 같고, 양쪽 정렬 재조판본(0-기준 부분 복사본)에서 문단 끝을 잘못 짚을 일도 없다.
-    static func clickBand(of drawn: HwpDrawnLine, endsList: Bool) -> ClickBand {
+    /// 상자 상단(`HwpDrawnLine.boxTop`), 높이는 뒤에 오는 것(`ListEnd`)에 따라 줄 자신의 전진량
+    /// (`lineAdvance` — 측정·렌더가 쌓는 `HwpLineAdvance`의 줄 몫, 문단 사이 간격 제외), 줄
+    /// 상자(`boxHeight`), 또는 둘 중 큰 값이다. 다시 재지 않으므로 문단 안 줄의 띠 하단이 다음
+    /// 줄 상자 상단과 비트 단위로 같고, 양쪽 정렬 재조판본(0-기준 부분 복사본)에서 문단 끝을
+    /// 잘못 짚을 일도 없다.
+    static func clickBand(of drawn: HwpDrawnLine, listEnd: ListEnd) -> ClickBand {
         guard drawn.boxHeight > 0 else {
             return ClickBand(
                 top: drawn.baselineOrigin.y - drawn.ascent, height: drawn.ascent + drawn.descent
             )
         }
-        return ClickBand(top: drawn.boxTop, height: endsList ? drawn.boxHeight : drawn.lineAdvance)
+        let height = switch listEnd {
+        case .followed: drawn.lineAdvance
+        case .end: drawn.boxHeight
+        case .unknown: max(drawn.lineAdvance, drawn.boxHeight)
+        }
+        return ClickBand(top: drawn.boxTop, height: height)
     }
 
     /// 한 줄에서 링크 스팬이 차지하는 rect들을 `regions`에 바로 쌓는다 — 스팬의 run이
@@ -274,7 +301,7 @@ extension HwpDrawnTextLayout {
         )
         let extents = geometry.runExtents ?? Self.runExtents(of: drawn.line)
         geometry.runExtents = extents
-        let band = clickBand(of: drawn, endsList: geometry.endsList)
+        let band = clickBand(of: drawn, listEnd: geometry.listEnd)
         for segment in visualSegments(of: extents, in: spanCTRange) {
             regions.append((
                 rect: CGRect(

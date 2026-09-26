@@ -14,7 +14,7 @@ import XCTest
     /// 오라클은 한글 12.30.0(6446) macOS 편집 화면이다 (2026-09-26, 155%, 함초롬바탕 10pt 밑줄
     /// 링크를 한 줄씩 번갈아 왼쪽·오른쪽 칸에 둔 합성 HWPX를 칸마다 위→아래로 눌러 열린 URL을
     /// 읽었다, 경계 ±0.25pt). 베이스라인 기준 거리(아래가 +)로: 10pt 링크와 한 줄인 40pt 문단 끝
-    /// 글자·40pt 책갈피 줄의 띠는 −34.0…+30.1(상자 바닥 +6.0에 40pt 몫 여분 24), 40pt 그림 줄은
+    /// 글자·40pt 책갈피 줄의 띠는 −34.0…+30.0(상자 바닥 +6.0에 40pt 몫 여분 24), 40pt 그림 줄은
     /// −34.0…+12.0(여분은 글자 상자 10pt 몫 6), 10pt 줄은 −8.5…+7.5. 입력은 Helvetica로 조판한다 —
     /// 한글 문서의 줄 상자는 글꼴 지표의 함수가 아니다 (`LineBoxFixtures`).
     ///
@@ -255,6 +255,42 @@ import XCTest
             }
         }
 
+        /// 줄 전진량이 줄 상자보다 작은 줄(비율 < 100%·고정 < 상자)의 **마지막 줄**은 뒤에 오는
+        /// 것에 따라 갈린다 (#233 리뷰). 같은 목록의 다음 문단이 이으면(`.followed`) 한글처럼
+        /// 전진량까지 — 상자 아래 몫은 다음 문단 것이다. 뒤를 모르는 본문 블록(`.unknown`, 공개
+        /// 함수)은 상자까지 — 전진량까지로 자르면 쪽 끝 줄의 베이스라인·밑줄이 띠 밖이다(한글은
+        /// 쪽·문서 끝 줄을 상자까지 연다). 목록 끝(`.end`)은 상자다.
+        func testNegativeLineSpacingShareKeepsTheLastLineBoxUnlessAParagraphFollows() {
+            let cases: [(rule: HwpLineSpacingRule, advance: CGFloat)] = [
+                (HwpLineSpacingRule(kind: .percent, value: 80), 8),
+                (HwpLineSpacingRule(kind: .fixed, value: 5), 5),
+            ]
+            for (rule, advance) in cases {
+                let name = "\(rule.kind) \(rule.value)"
+                let string = Fixtures.applying(rule, to: Self.linkText("LINKgy"))
+                let baseline = Self.origin.y + 8.5
+                func band(_ listEnd: HwpDrawnTextLayout.ListEnd) -> CGRect {
+                    HwpDrawnTextLayout.hyperlinkRegions(
+                        attributedString: string, origin: Self.origin, lineWidth: Self.width,
+                        listEnd: listEnd
+                    ).first?.rect ?? .null
+                }
+                expect(Double(band(.followed).height))
+                    .to(beCloseTo(Double(advance), within: 0.001), description: name)
+                for listEnd in [HwpDrawnTextLayout.ListEnd.end, .unknown] {
+                    expect(Double(band(listEnd).height))
+                        .to(beCloseTo(10, within: 0.001), description: name)
+                }
+                // 공개 함수는 `.unknown` — 베이스라인과 밑줄(상자 바닥 +0.2)이 링크다.
+                let regions = Self.regions(string)
+                let x = regions.first?.rect.midX ?? 0
+                expect(Self.hit(regions, CGPoint(x: x, y: baseline)))
+                    .to(equal(Self.url), description: name)
+                expect(Self.hit(regions, CGPoint(x: x, y: Self.origin.y + 9.9)))
+                    .to(equal(Self.url), description: name)
+            }
+        }
+
         // MARK: 목록 끝
 
         /// **목록의 마지막 줄은 줄 상자에서 끝난다** — 한글은 표 셀·글상자·각주의 마지막 줄
@@ -264,12 +300,13 @@ import XCTest
             let string = Self.paragraph(paragraphEnd: 40)
             let listed = HwpDrawnTextLayout.hyperlinkRegions(
                 attributedString: string, origin: Self.origin, lineWidth: Self.width,
-                endsList: true
+                listEnd: .end
             )
             let open = Self.regions(string)
             let baseline = Self.origin.y + 34
             expect(listed.count) == 1
-            expect(Double((listed.first?.rect.maxY ?? 0) - baseline)).to(beCloseTo(6, within: 0.001))
+            expect(Double((listed.first?.rect.maxY ?? 0) - baseline))
+                .to(beCloseTo(6, within: 0.001))
             expect(Double((open.first?.rect.maxY ?? 0) - baseline)).to(beCloseTo(30, within: 0.001))
             // 목록 끝이 아닌 앞 줄은 그대로 줄 간격 몫까지다.
             let text = Fixtures.attributes(size: 10)
@@ -280,7 +317,7 @@ import XCTest
             ]))
             let rects = HwpDrawnTextLayout.hyperlinkRegions(
                 attributedString: twoLines, origin: Self.origin, lineWidth: Self.width,
-                endsList: true
+                listEnd: .end
             ).map(\.rect)
             expect(rects.map { Double($0.height) }) == [16, 10]
         }
@@ -289,7 +326,9 @@ import XCTest
         /// 안 열린다. 방출(`.hyperlink` 명령)도 같은 rect다 (방출 ≡ 히트).
         func testTableCellLastParagraphIsTheListEnd() {
             let first = Self.paragraph()
-            let last = Fixtures.applying(Self.percent160, to: Self.linkText(url: "https://last.example"))
+            let last = Fixtures.applying(
+                Self.percent160, to: Self.linkText(url: "https://last.example")
+            )
             let paragraphs = [
                 HwpLaidOutParagraph(
                     attributedString: first, frame: HwpParagraphFrame(totalHeight: 16, lines: []),
@@ -400,6 +439,37 @@ import XCTest
                 return nil
             }
             expect(emitted.map { Double($0.0) }) == [716, 726]
+        }
+
+        /// 흐름 배치(미주·절대 캐시가 아닌 각주, `placeFlow`)도 같은 각주의 뒤 문단이 다음 쪽으로
+        /// 넘어가면 이 쪽에 남은 앞 문단을 각주 끝으로 싣는다 — 이어짐 스태커(`headEntries`)와 같은
+        /// 판정이라 `isNoteEnd`가 배치 모드와 무관하게 "이 쪽의 마지막 항목"이고, 그 줄 띠도 한글처럼
+        /// 줄 상자에서 끝난다. 종전 흐름 스태커는 전체 목록으로 판정해 거짓으로 남겼다 (#233 리뷰).
+        func testFlowStackerMarksThePageEndPartAsTheNoteEnd() throws {
+            typealias Support = FootnoteContinuationSupport
+            let paragraphs = try [
+                Support.note(lines: ["첫 문단"], locations: [0]),
+                Support.notePlainParagraph("둘째 문단", locations: [0]),
+            ]
+            let layout = HwpFootnoteLayout(fontResolver: .testDeterministic)
+            func place(height: CGFloat) -> HwpFootnoteLayout.FlowPlacement {
+                layout.placeFlow(
+                    footnotes: paragraphs.map { HwpFootnoteLayout.Input(paragraph: $0, number: 1) },
+                    from: 100, in: CGRect(x: 72, y: 100, width: 451, height: height),
+                    index: HwpIndex(from: CoreHwp.HwpFile()), drawSeparator: false
+                )
+            }
+            let both = place(height: 500)
+            expect(both.blocks.map(\.isNoteEnd)) == [false, true]
+            // 앞 문단(줄 상자 9 + 간격 2.72)만 들어가는 높이 — 뒤 문단은 넘어간다.
+            let cut = place(height: 12)
+            expect(cut.blocks.count) == 1
+            expect(cut.overflow.count) == 1
+            expect(cut.blocks.first?.isNoteEnd) == true
+            expect(Double(cut.blocks.first?.frame.height ?? 0))
+                .to(beCloseTo(Support.box, within: 0.001))
+            expect(Double(both.blocks.first?.frame.height ?? 0))
+                .to(beCloseTo(Support.pitch, within: 0.001))
         }
 
         // MARK: 표식 없는 문자열

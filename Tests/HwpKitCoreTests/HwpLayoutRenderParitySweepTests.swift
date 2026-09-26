@@ -194,7 +194,7 @@ import XCTest
         // 2문단) 추가로 문단 15·대조 30·컨테이너 2 증가 (공유 코어 대조 건너뜀은 그대로다),
         // 2026-09-26 `hwp2007-decorations` 재저장(#227, 선 모양 10문단 추가)으로 문단 10·대조 20
         // 증가 (컨테이너와 공유 코어 대조 건너뜀은 그대로다), 같은 날 `hyperlink-click-band`
-        // (#233, 구역 1 + 링크 클릭 띠 23문단 + 1칸 표 셀 3문단 + 각주 3문단) 추가로 문단 29·
+        // (#233, 구역 1 + 링크 클릭 띠 22문단 + 1칸 표 셀 3문단 + 각주 3문단) 추가로 문단 29·
         // 대조 58·컨테이너 6 증가 (공유 코어 대조 건너뜀은 그대로다).
         private static let expectedFixtureVisited = 704
         private static let expectedFixtureMeasured = 1266

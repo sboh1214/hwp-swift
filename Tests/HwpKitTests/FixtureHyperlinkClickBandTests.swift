@@ -15,8 +15,9 @@ import XCTest
 /// 것도 아니고, 표 셀·각주의 마지막 줄은 줄 상자(`vertpos + vertsize`)에서 끝난다. 아래 기대값의
 /// 수는 이 문서 자신의 줄 캐시(`PARA_LINE_SEG` = `hp:lineseg`)다 — 10pt 줄 1000/850/600, 40pt 문단
 /// 끝 글자·책갈피·글자 줄 4000/3400/2400, 40pt 그림 줄 4000/3400/600, 고정 8pt 1000/850/−200,
-/// 100% 1000/850/0 (`vertsize`/`baseline`/`spacing`, HWPUNIT). 그려지는 베이스라인이 그 캐시와 같다는
-/// 것은 `FixtureBaselineAnchorTests`가 따로 잠그므로 여기서는 베이스라인 기준 거리로 견준다.
+/// 100% 1000/850/0 (`vertsize`/`baseline`/`spacing`, HWPUNIT). 띠·히트는 그려진 베이스라인 기준
+/// 거리로 견주고, 그 베이스라인 자체가 캐시 자리(`vertpos + baseline`)에 있는지는
+/// `testFirstPageLinkBaselinesMatchTheSavedLineCache`가 따로 잠근다.
 ///
 /// 폰트는 `testDeterministic`이다 — 한글 문서의 줄 상자는 글꼴 지표의 함수가 아니다(가로 자리는
 /// 결정론 글꼴의 것이라 링크 rect의 가운데로 누른다).
@@ -90,7 +91,10 @@ final class FixtureHyperlinkClickBandTests: XCTestCase {
         "l11-spacing-below24": (0, -8.5, 7.5), "r12": (0, -8.5, 7.5), "l13": (0, -8.5, 7.5),
         "r14-spacing-above24": (0, -8.5, 7.5),
         "l15-line1": (0, -8.5, 7.5), "r16-line2": (0, -8.5, 7.5),
-        "l17-fixed8-line1": (0, -8.5, -0.5), "r18-fixed8-line2": (0, -8.5, -0.5),
+        // 고정 8pt(상자 10) 두 줄 문단: 첫 줄은 다음 줄 상단(전진량 8)까지. 둘째 줄은 문단 블록의
+        // 마지막 줄이라 뒤를 모르므로 상자까지 두되(`ListEnd.unknown`), 뒤 문단 블록 `l19`가
+        // 먼저 히트돼 상자 바닥 2pt는 한글처럼 그 줄 몫이다 (아래 히트 가드).
+        "l17-fixed8-line1": (0, -8.5, -0.5), "r18-fixed8-line2": (0, -8.5, 1.5),
         "l19-percent100": (0, -8.5, 1.5), "r20-percent100": (0, -8.5, 1.5),
         "l21-page-last": (0, -8.5, 7.5),
         "c1-left": (1, -8.5, 7.5), "c2-right": (1, -8.5, 7.5), "c3-cell-last": (1, -8.5, 1.5),
@@ -118,6 +122,35 @@ final class FixtureHyperlinkClickBandTests: XCTestCase {
                     .to(beCloseTo(Double(band.bottom), within: 0.001), description: name)
             }
         }
+    }
+
+    /// 표본 줄의 **자리** — 위아래 가드의 거리는 그려진 베이스라인 기준이라 줄이 통째로 옮겨져도
+    /// (문단 간격이 빠지는 조판 회귀 등) 통과하므로, 1쪽 본문 링크 줄 22개의 베이스라인을 문서
+    /// 자신의 줄 캐시(`PARA_LINE_SEG`)에 맞춘다: 본문 상단 + `vertpos` + `baseline`. 1쪽은 제목 한 줄
+    /// + 링크 줄 22개이고, 2쪽에서 캐시의 `vertpos`가 처음으로 돌아간다.
+    func testFirstPageLinkBaselinesMatchTheSavedLineCache() async throws {
+        let url = FixtureRoot.url(from: #file).appendingPathComponent(Self.id)
+            .appendingPathComponent("document.hwp")
+        let file = try CoreHwp.HwpFile(fromPath: url.path)
+        var cache: [Double] = []
+        var previous = -Double.infinity
+        lines: for paragraph in file.displaySectionArray.first?.paragraph ?? [] {
+            for segment in paragraph.paraLineSeg.paraLineSegInternalArray {
+                let location = Double(segment.lineLocation) / 100
+                guard location > previous else { break lines }
+                previous = location
+                cache.append(location + Double(segment.baselineDistance) / 100)
+            }
+        }
+        expect(cache.count) == 23
+        let pages = try await Self.pages(hwpx: false)
+        let drawn = Self.links(pages).values.flatMap { $0 }.filter { $0.page == 0 }
+            .map { Double($0.baseline) }.sorted()
+        expect(drawn.count) == 22
+        // 본문 상단 = 쪽 위 여백 + 머리말 여백 (한글 기본 20mm + 15mm, 99.2pt)
+        let bodyTop = 99.2
+        expect(Double(pages[0].margins.top)).to(beCloseTo(bodyTop, within: 0.001))
+        expect(drawn).to(beCloseTo(cache.dropFirst().map { bodyTop + $0 }, within: 0.001))
     }
 
     /// 히트로도 같다 — 밑줄(줄 상자 바닥 +0.2)과 글자·밑줄 사이를 누르면 그 링크가 열리고, 목록
@@ -156,6 +189,18 @@ final class FixtureHyperlinkClickBandTests: XCTestCase {
             expect(hit("l19-percent100", below: 1.7)).to(beNil(), description: label)
             expect(hit("l17-fixed8-line1", below: -0.6)) == "l17-fixed8-line1"
             expect(hit("l17-fixed8-line1", below: -0.4)).to(beNil(), description: label)
+            // 둘째 줄의 상자 바닥 2pt(띠 안)는 뒤 블록 `l19`가 먼저 가져간다 — 한글의 경계(상자 바닥
+            // −2.06 = 베이스라인 −0.56)와 같은 자리다(우리는 `l19` 프레임 상단 −0.5).
+            expect(hit("r18-fixed8-line2", below: -0.6)) == "r18-fixed8-line2"
+            expect(hit("r18-fixed8-line2", below: -0.4)).to(beNil(), description: label)
+            // 다음 문단(블록)의 첫 줄 글자 상자가 제 프레임 위로 솟아도 그 자리는 앞 줄 띠다 — 한글은
+            // 다음 줄 잉크를 보지 않는다(`HwpHitTester.textClaim`). 결정론 글꼴(Menlo ascent 0.928em)
+            // 기준 10pt 줄 아래는 0.78pt, 40pt 글자 줄(`l09`) 위의 `r08`은 3.1pt라 밑줄 아래 빈칸까지
+            // 뒤 문단 글자로 claim됐다 — 설치 글꼴(함초롬바탕 1.07em)이면 밑줄 위까지다 (#233 리뷰).
+            for sample in ["r00-control", "l01-control", "r08", "r12", "r16-line2", "f1-left"] {
+                expect(hit(sample, below: 7.3)).to(equal(sample), description: "\(label) \(sample)")
+            }
+            expect(hit("r08", below: 5)) == "r08"
         }
     }
 

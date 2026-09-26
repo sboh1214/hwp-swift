@@ -195,9 +195,11 @@ public enum HwpDrawnTextLayout {
     ///
     /// 세로 범위는 글꼴 지표가 아니라 **한글의 줄 클릭 띠**다 (#233) — 줄 상자 상단부터 그
     /// 줄의 줄 간격 몫까지(다음 줄 상자 상단까지)라 줄 상자 바닥에 붙는 밑줄(#226)과 글자·밑줄
-    /// 사이 빈칸을 누르면 링크가 열린다. 문자열의 마지막 줄도 줄 간격 몫까지 둔다 — 셀·글상자·
-    /// 각주 문단처럼 목록의 마지막 줄을 줄 상자에서 끝내야 하는 호출자는 내부 변형
-    /// (`endsList`)을 쓴다. 규칙과 한글 실측은 `ClickBand`.
+    /// 사이 빈칸을 누르면 링크가 열린다. 이 함수는 문자열 뒤에 무엇이 오는지 모르므로 마지막
+    /// 줄의 띠를 줄 간격 몫과 줄 상자 가운데 넓은 쪽까지 둔다 — 표 셀·글상자·각주의 마지막 줄은
+    /// 한글처럼 줄 상자에서 끝나므로, 그런 블록의 권위 있는 링크 기하는 paint list의
+    /// `.hyperlink` 명령(`HwpPaintListBuilder.build(for:)`)과 `HwpHitTester`다. 규칙과 한글
+    /// 실측은 `ClickBand`.
     public static func hyperlinkRegions(
         attributedString: NSAttributedString,
         origin: CGPoint,
@@ -205,19 +207,20 @@ public enum HwpDrawnTextLayout {
     ) -> [(rect: CGRect, url: String)] {
         hyperlinkRegions(
             attributedString: attributedString, origin: origin, lineWidth: lineWidth,
-            endsList: false
+            listEnd: .unknown
         )
     }
 
-    /// `hyperlinkRegions(attributedString:origin:lineWidth:)`에 **목록 끝** 여부를 더한 형태 —
-    /// `endsList`면 문자열의 마지막 줄의 클릭 띠가 줄 상자에서 끝난다 (`ClickBand`: 한글은 표
-    /// 셀·글상자·각주의 마지막 줄 아래를 눌러도 링크를 열지 않는다). 컨테이너 문단 배열을 걷는
-    /// 방출(`HwpPaintListBuilder`)과 히트(`HwpHitTester`)가 **마지막 문단**에 참을 넘긴다.
+    /// `hyperlinkRegions(attributedString:origin:lineWidth:)`에 문자열 **뒤에 무엇이 오는지**
+    /// (`ListEnd`)를 더한 형태 — 문자열의 마지막 줄 클릭 띠의 하단이 그것으로 정해진다
+    /// (`ClickBand`: 한글은 표 셀·글상자·각주의 마지막 줄 아래를 눌러도 링크를 열지 않는다).
+    /// 컨테이너 문단 배열을 걷는 방출(`HwpPaintListBuilder`)과 히트(`HwpHitTester`)가 같은
+    /// 판정으로 넘긴다 — 마지막 문단은 `.end`, 나머지는 `.followed`, 본문 블록은 `.unknown`.
     static func hyperlinkRegions(
         attributedString: NSAttributedString,
         origin: CGPoint,
         lineWidth: CGFloat,
-        endsList: Bool
+        listEnd: ListEnd
     ) -> [(rect: CGRect, url: String)] {
         let length = attributedString.length
         guard length > 0 else { return [] }
@@ -244,7 +247,8 @@ public enum HwpDrawnTextLayout {
                     .enumerated()
                     .map { index, bands in
                         SpanLineGeometry(
-                            bands: bands, runExtents: nil, endsList: endsList && index == lastIndex
+                            bands: bands, runExtents: nil,
+                            listEnd: index == lastIndex ? listEnd : .followed
                         )
                     }
             }
@@ -371,9 +375,7 @@ public enum HwpDrawnTextLayout {
             ),
             boxTop: origin.y,
             boxHeight: metrics.boxHeight,
-            lineAdvance: HwpLineSpacingRule.rule(in: attributedString, at: 0).advance(
-                lineBoxHeight: metrics.boxHeight, textBoxHeight: metrics.textBoxHeight
-            )
+            lineAdvance: HwpLineAdvance.lineAdvance(metrics: metrics, at: 0, in: attributedString)
         )
     }
 
