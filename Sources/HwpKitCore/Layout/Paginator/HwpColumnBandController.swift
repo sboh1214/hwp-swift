@@ -459,7 +459,7 @@ extension HwpColumnBandController {
         for (leading, trailing) in zip(orderedFrames, orderedFrames.dropFirst()) {
             let centerX = (leading.maxX + trailing.minX) / 2
             // 블록 프레임은 선이 칠하는 띠 — 로컬 (x, y) = (extent 하한 기준 가로, along 하한
-            // 기준 세로; 물결의 마지막 반주기 넘침·획 모서리 포함)
+            // 기준 세로; 물결의 마지막 반주기 넘침·획 모서리, 원형 점선의 앞뒤 반지름 포함)
             let frame = CGRect(
                 x: centerX + extent.lowerBound, y: top + along.lowerBound,
                 width: extent.upperBound - extent.lowerBound,

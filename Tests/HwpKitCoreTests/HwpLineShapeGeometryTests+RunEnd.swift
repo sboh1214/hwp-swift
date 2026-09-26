@@ -8,13 +8,16 @@ import XCTest
 /// 원형 점선·물결의 **끝점 규칙** (#235) — 한글은 자리(원 중심·물결 대각선 시작)가 선 끝보다
 /// 앞인 요소를 끝을 넘어도 온전히 그리고, 끝과 같은 자리의 요소는 그리지 않는다.
 ///
-/// 근거는 한글 12.30.0 PDF 벡터 실측(2026-09-27)이다. 12pt '가' run의 자간을 1%(= 0.12pt, 600dpi
-/// 한 단위)씩 −50~50%로 바꿔 run 길이를 한 단위씩 늘린 표본 — 한글 2007 호환 문서 12pt와 한글
-/// 문서 12·20·40pt의 원형 점선·물결·2중 물결 밑줄·취소선 1,818개 — 전부에서 요소는 자리 < run
-/// 진행 폭(다음 run 글리프 원점 − 이 run 글리프 원점)일 때만 그려졌다. 한글은 실선을 진행 폭 +
-/// 0.12pt(장치 한 단위의 포함 끝)까지 그으므로, 실선 길이를 run 길이로 읽으면 요소가 0.12pt 더
-/// 앞이어야 그려지는 것처럼 보인다 — 이 기하의 `length`는 렌더러가 넘기는 **진행 폭**이다.
-/// 단 구분선의 물결·원형 점선도 줄 상자 길이 기준으로 같은 규칙이다 (0.4·1·2mm).
+/// 근거는 한글 12.30.0 PDF 벡터 실측(2026-09-27)이다. '가' run의 자간을 1%씩 −50~50%로 바꿔
+/// run 길이를 조금씩 늘린 표본(12pt에서 1% = 0.12pt = 600dpi 한 단위) 4,242개 — 한글 2007 호환
+/// 문서 7·12·20pt와 한글 문서 7·12·16pt의 원형 점선·물결·2중 물결 밑줄·취소선, 한글 문서 20·40pt의
+/// 같은 세 모양 밑줄 — 전부에서 요소는 자리 < run 진행 폭(다음 run 글리프 원점 − 이 run 글리프
+/// 원점)일 때만 그려졌다. 한글 2007 호환 문서 표본 1,818개는 한글의 진행 폭을 이 기하에 그대로
+/// 넣은 요소 수도 한글과 모두 같다 (무늬가 고정 pt라 간격이 한글과 같다 — 종전 규칙은 원 표본
+/// 606개 중 124개가 달랐다). 한글은 실선을 진행 폭 + 0.12pt(장치 한 단위의 포함 끝)까지 그으므로,
+/// 실선 길이를 run 길이로 읽으면 요소가 0.12pt 더 앞이어야 그려지는 것처럼 보인다 — 이 기하의
+/// `length`는 렌더러가 넘기는 **진행 폭**이다. 단 구분선의 물결·원형 점선도 줄 상자 길이 기준으로
+/// 같은 규칙이다 (0.4·1·2mm).
 extension HwpLineShapeGeometryTests {
     /// 물결 조각 가운데 대각선(평행사변형)만 — 꼭짓점 평탄 띠는 높이가 획 두께뿐이다
     static func diagonals(_ line: HwpLineShapeGeometry.Line) -> [CGRect] {
@@ -86,29 +89,42 @@ extension HwpLineShapeGeometryTests {
         expect(Self.diagonals(Self.characterLine(.doubleWave, length: 9.32)).count) == 6
     }
 
-    /// 테두리·단 구분선도 같은 규칙이다. 원형 점선은 두께 4pt(간격 8pt)에서 길이 16이면 원 둘,
-    /// 16.12면 셋째 원(16)이 반지름 2만큼 넘친다. 테두리 2중 물결의 둘째 파는 3t/4 뒤에서
-    /// 시작하므로 그 자리부터 센다. 한글 실측: 단 구분선은 줄 상자 길이 기준으로 정확히 같고,
-    /// 표의 가로 변은 셀 폭 기준 장치 한두 단위 안에서 같다 (세로 변은 원이 2~4단위, 물결이
-    /// 두께 절반쯤 먼저 끝난다 — 이 규칙 밖의 세로 변 격차다).
-    func testBorderAndDividerEndsFollowTheSameRule() {
-        let border16 = Self.borderLine(.circle, thickness: 4, length: 16)
-        expect(Self.pieces(HwpLineShapeGeometry.path(for: border16)).count) == 2
-        let border1612 = Self.borderLine(.circle, thickness: 4, length: 16.12)
-        expect(Self.pieces(HwpLineShapeGeometry.path(for: border1612)).map(\.midX))
-            .to(beCloseTo([0, 8, 16], within: 1e-9))
-        expect(HwpLineShapeGeometry.alongExtent(of: border1612)?.upperBound)
-            .to(beCloseTo(18, within: 1e-9))
-
+    /// 단 구분선은 같은 규칙이다 (한글 실측: 줄 상자 길이 기준으로 정확히 같다) — 원형 점선은
+    /// 두께 4pt(간격 8pt)에서 길이 16이면 원 둘, 16.12면 셋째 원(16)이 반지름 2만큼 넘친다.
+    /// 표 셀 테두리의 **원**은 예외로 변 안에 온전히 드는 것만 그린다: 한글은 같은 모양 이웃 칸의
+    /// 원형 점선 변을 한 선으로 이어 칸 경계에 걸친 원이 없는데 우리는 칸마다 다시 시작하므로,
+    /// 끝 규칙을 쓰면 칸 경계마다 원 둘이 겹친다 (#235 재검증 — 1×3·3×1 표). 테두리 물결은 한글도
+    /// 칸마다 다시 시작해 넘치므로 같은 규칙이고, 2중 물결의 둘째 파는 3t/4 뒤에서 시작하므로 그
+    /// 자리부터 센다.
+    func testDividerEndsFollowTheRuleWhileCellBorderCirclesStayInside() {
         func divider(_ shape: HwpBorderType, _ length: CGFloat) -> HwpLineShapeGeometry.Line {
             HwpLineShapeGeometry.Line(
                 shape: shape, length: length, thickness: 4, scale: .border, placement: .divider
             )
         }
+        expect(Self.pieces(HwpLineShapeGeometry.path(for: divider(.circle, 16))).count) == 2
+        expect(Self.pieces(HwpLineShapeGeometry.path(for: divider(.circle, 16.12))).map(\.midX))
+            .to(beCloseTo([0, 8, 16], within: 1e-9))
+        expect(HwpLineShapeGeometry.alongExtent(of: divider(.circle, 16.12))?.upperBound)
+            .to(beCloseTo(18, within: 1e-9))
         expect(Self.diagonals(divider(.wave, 8.24)).count) == 2
         expect(Self.diagonals(divider(.wave, 8.25)).count) == 3
-        expect(Self.pieces(HwpLineShapeGeometry.path(for: divider(.circle, 8))).count) == 1
-        expect(Self.pieces(HwpLineShapeGeometry.path(for: divider(.circle, 8.01))).count) == 2
+
+        /// 표 셀 테두리: 중심 ≤ 길이 − 반지름 (길이 18에서 셋째 원 16이 끝에 닿는다)
+        func cellCircles(_ length: CGFloat) -> [CGRect] {
+            Self.pieces(HwpLineShapeGeometry.path(for: Self.borderLine(
+                .circle, thickness: 4, length: length
+            )))
+        }
+        expect(cellCircles(16.12).map(\.midX)).to(beCloseTo([0, 8], within: 1e-9))
+        expect(cellCircles(17.99).count) == 2
+        expect(cellCircles(18).map(\.midX)).to(beCloseTo([0, 8, 16], within: 1e-9))
+        expect(HwpLineShapeGeometry.alongExtent(of: Self.borderLine(
+            .circle, thickness: 4, length: 16.12
+        ))?.upperBound).to(beCloseTo(16.12, within: 1e-9))
+        expect(HwpLineShapeGeometry.circleCount(for: Self.borderLine(
+            .circle, thickness: 4, length: 1.99
+        ))) == 0
 
         /// 테두리 2중 물결: 첫 파 0·4.12, 둘째 파 3.0부터 — 7.12면 둘째 파는 3.0 하나(7.12는 끝과
         /// 같은 자리), 7.13이면 7.12까지 둘
@@ -124,7 +140,7 @@ extension HwpLineShapeGeometryTests {
     /// 끝과 같은 자리는 부동소수점 잡음(상대 1e-6) 안이면 그리지 않는 쪽으로 가른다. 1e-6pt 이하
     /// 길이는 요소가 없어 경로·범위가 함께 없고 (`isDrawable`), 비율이 반복 상한을 넘거나 유한하지
     /// 않아도 개수 계산이 트랩하지 않는다.
-    func testEndTiesAndDegenerateSpans() {
+    func testEndTiesAndDegenerateSpans() throws {
         let tied = Self.hwp2007Line(.circle, length: 6.0 * (1 + 1e-9))
         expect(Self.pieces(HwpLineShapeGeometry.path(for: tied)).count) == 2
         let hairline = Self.borderLine(.circle, thickness: 4, length: 1e-7)
@@ -136,6 +152,27 @@ extension HwpLineShapeGeometryTests {
         expect(HwpLineShapeGeometry.patternElementCount(span: 2e-6, period: 3)) == 1
         expect(HwpLineShapeGeometry.patternElementCount(span: 3, period: 0)) == 0
         expect(HwpLineShapeGeometry.patternElementCount(span: 3, period: -1)) == 0
+        expect(HwpLineShapeGeometry.patternElementCount(span: 3, period: .infinity)) == 1
+        expect(HwpLineShapeGeometry.fittingElementCount(span: 0, period: 3)) == 1
+        expect(HwpLineShapeGeometry.fittingElementCount(span: -1e-9, period: 3)) == 0
+        expect(HwpLineShapeGeometry.fittingElementCount(span: 6 * (1 - 1e-9), period: 3)) == 3
+        expect(HwpLineShapeGeometry.fittingElementCount(span: 3, period: 0)) == 0
+        expect(HwpLineShapeGeometry.fittingElementCount(span: .infinity, period: 3)) == 0
+        // 원 간격(두께 × 2)이 무한대로 넘치는 두께도 첫 원(자리 0)만 그린다 — 자리를 0 × ∞ = NaN으로
+        // 곱하지 않으므로 경로가 유한하고 범위가 그 원을 담는다. 표 셀 테두리는 원이 변 안에 들지
+        // 않아 경로·범위가 함께 없다 (종전과 같다)
+        let overflow = HwpLineShapeGeometry.Line(
+            shape: .circle, length: 100, thickness: 1e308, scale: .border, placement: .divider
+        )
+        let overflowBox = try XCTUnwrap(HwpLineShapeGeometry.path(for: overflow)).boundingBoxOfPath
+        expect(overflowBox.minX) == -5e307
+        expect(overflowBox.width) == 1e308
+        expect(HwpLineShapeGeometry.alongExtent(of: overflow)) == -5e307 ... 5e307
+        expect(HwpLineShapeGeometry.crossExtent(of: overflow)) == -5e307 ... 5e307
+        let overflowCell = Self.borderLine(.circle, thickness: 1e308, length: 100)
+        expect(HwpLineShapeGeometry.path(for: overflowCell)).to(beNil())
+        expect(HwpLineShapeGeometry.crossExtent(of: overflowCell)).to(beNil())
+        expect(HwpLineShapeGeometry.alongExtent(of: overflowCell)).to(beNil())
         let infinite = HwpLineShapeGeometry.patternElementCount(
             span: .greatestFiniteMagnitude, period: 1e-300
         )

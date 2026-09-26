@@ -393,13 +393,14 @@ extension HwpLineShapeGeometryTests {
     }
 
     /// 원형 점선은 첫 원의 중심이 선 시작이라 반지름만큼 앞으로 나간다 — `alongExtent`가 그
-    /// 몫을 보고해야 히트 띠가 첫 원을 다 덮는다 (#191 리뷰). 첫 원의 중심 0은 어떤 양수 길이보다
-    /// 앞이라 반지름보다 짧은 선도 그 원 하나는 그리고 (#235), 범위가 그 원을 보고한다.
+    /// 몫을 보고해야 히트 띠가 첫 원을 다 덮는다 (#191 리뷰). 표 셀 테두리는 원 하나도 안
+    /// 들어가는 길이(반지름 미만)면 경로도 범위도 없고, 단 구분선·글자선은 첫 원의 중심 0이 어떤
+    /// 양수 길이보다 앞이라 반지름보다 짧은 선도 그 원 하나는 그린다 (#235).
     func testCircleAlongExtentStartsHalfADiameterBeforeTheLine() {
         let border = Self.borderLine(.circle, thickness: 4)
         let along = HwpLineShapeGeometry.alongExtent(of: border)
         expect(along?.lowerBound).to(beCloseTo(-2, within: 0.001))
-        // 피치 8: 중심 0 … 192 (200은 끝과 같은 자리라 그리지 않는다) → 뒤는 선 끝 그대로
+        // 피치 8: 중심 0 … 192 (200은 원이 넘친다) → 뒤는 선 끝 그대로
         expect(along?.upperBound).to(beCloseTo(200, within: 0.001))
         expect(HwpLineShapeGeometry.path(for: border)?.boundingBoxOfPath.minX)
             .to(beCloseTo(-2, within: 0.001))
@@ -408,11 +409,20 @@ extension HwpLineShapeGeometryTests {
         let character = Self.characterLine(.circle, fontSize: 20)
         expect(HwpLineShapeGeometry.alongExtent(of: character)?.lowerBound)
             .to(beCloseTo(-20 * 0.057 / 2, within: 0.001))
-        let short = Self.borderLine(.circle, thickness: 4, length: 1.5)
-        expect(Self.pieces(HwpLineShapeGeometry.path(for: short)))
+        let tooShort = Self.borderLine(.circle, thickness: 4, length: 1.5)
+        expect(HwpLineShapeGeometry.path(for: tooShort)).to(beNil())
+        expect(HwpLineShapeGeometry.alongExtent(of: tooShort)).to(beNil())
+        expect(HwpLineShapeGeometry.crossExtent(of: tooShort)).to(beNil())
+        // 반지름과 같은 길이는 원 하나
+        let one = Self.borderLine(.circle, thickness: 4, length: 2)
+        expect(Self.pieces(HwpLineShapeGeometry.path(for: one)).count) == 1
+        let shortDivider = HwpLineShapeGeometry.Line(
+            shape: .circle, length: 1.5, thickness: 4, scale: .border, placement: .divider
+        )
+        expect(Self.pieces(HwpLineShapeGeometry.path(for: shortDivider)))
             .to(equal([CGRect(x: -2, y: -2, width: 4, height: 4)]))
-        expect(HwpLineShapeGeometry.alongExtent(of: short)) == -2 ... 2
-        expect(HwpLineShapeGeometry.crossExtent(of: short)) == -2 ... 2
+        expect(HwpLineShapeGeometry.alongExtent(of: shortDivider)) == -2 ... 2
+        expect(HwpLineShapeGeometry.crossExtent(of: shortDivider)) == -2 ... 2
     }
 
     /// 물결의 대각선(평행사변형)과 꼭짓점 평탄 띠는 겹치는데, 부분 경로의 회전 방향이 다르면
