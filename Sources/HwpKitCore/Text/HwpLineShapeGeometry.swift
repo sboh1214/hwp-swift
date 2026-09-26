@@ -23,8 +23,12 @@ import Foundation
 /// 위 밑줄은 아래 가장자리에서 위로 자란다. 물결은 예외로 한글이 종류마다 다른 만큼 위로
 /// 올려 그린다 (`HwpRenderTuning.LineShape.characterWaveTopShiftThicknessRatio`·
 /// `borderWaveShiftThicknessRatio`). 2중 물결의 둘째 파는 테두리만 선 방향으로도 옮긴다
-/// (`doubleWaveOffset(for:)`). 물결은 마지막 반주기를 자르지 않아 `length`를 넘칠 수 있다
-/// (`alongExtent(of:)`).
+/// (`doubleWaveOffset(for:)`).
+///
+/// 원형 점선과 물결은 **자리가 `length` 앞인 요소를 끝까지 그린다** — 원은 중심, 물결은
+/// 대각선 시작이 그 자리이고, 끝과 같은 자리의 요소는 그리지 않는다
+/// (`patternElementCount(span:period:)`). 그래서 마지막 원·대각선이 `length`를 넘칠 수 있다
+/// (`alongExtent(of:)`). 대시는 `length`에서 잘린다.
 ///
 /// 3D 넷(`thick3D`·`thick3DReverse`·`single3D`·`single3DReverse`)은 한글 macOS가 아무것도
 /// 그리지 않지만 (실측) 여기서는 **실선으로 대체**한다 — 지정한 테두리가 통째로 사라지는
@@ -135,8 +139,8 @@ public enum HwpLineShapeGeometry {
             let band = solidBand(for: line)
             return band.minY ... band.maxY
         case .circle:
+            guard circleCount(for: line) > 0 else { return nil }
             let radius = circleDiameter(for: line) / 2
-            guard radius <= line.length else { return nil }
             let center = circleCenterY(for: line)
             return (center - radius) ... (center + radius)
         case .doubleLine, .thinThickDoubleLine, .thickThinDoubleLine, .thinThickThinTripleLine:
@@ -154,10 +158,11 @@ public enum HwpLineShapeGeometry {
         }
     }
 
-    /// 이 선이 칠하는 선 방향의 범위 (로컬 x). 대시·여러 줄은 [0, `length`]이고, 원형 점선은
-    /// 첫 원의 중심이 0이라 반지름만큼 앞으로 나가며, 물결은 한글처럼 마지막 반주기를 **끝까지
-    /// 그려** `length`를 넘을 수 있고 45° 획의 butt cap 모서리가 양 끝에서 획 반폭/√2만큼 더
-    /// 나간다. 경로 없는 입력(원 하나도 안 들어가는 짧은 원형 점선 포함)이면 nil.
+    /// 이 선이 칠하는 선 방향의 범위 (로컬 x). 대시·여러 줄은 [0, `length`]이다. 원형 점선은
+    /// 첫 원의 중심이 0이라 반지름만큼 앞으로 나가고, 중심이 `length` 앞인 마지막 원을 온전히
+    /// 그려 뒤로도 반지름까지 넘칠 수 있다. 물결은 시작이 `length` 앞인 마지막 대각선을
+    /// **끝까지 그려** `length`를 넘을 수 있고 45° 획의 butt cap 모서리가 양 끝에서 획
+    /// 반폭/√2만큼 더 나간다. 경로 없는 입력이면 nil.
     public static func alongExtent(of line: Line) -> ClosedRange<CGFloat>? {
         guard isDrawable(line) else { return nil }
         switch line.shape {
@@ -170,17 +175,19 @@ public enum HwpLineShapeGeometry {
             }
             return -corner ... (end + corner)
         case .circle where patternRepeats(of: line) <= maxPatternRepeats:
+            let count = circleCount(for: line)
+            guard count > 0 else { return nil }
             let radius = circleDiameter(for: line) / 2
-            guard radius <= line.length else { return nil }
-            return -radius ... line.length
+            let lastCenter = CGFloat(count - 1) * circlePitch(for: line)
+            return -radius ... max(line.length, lastCenter + radius)
         default:
             return 0 ... line.length
         }
     }
 
     /// 경로가 있는 입력인가 — 길이·두께·글자 크기가 유한한 양수이고 `none`이 아니다. 길이의
-    /// 바닥 1e-6pt는 물결 대각선 개수(`waveDiagonalCount`)의 것과 같아 `path == nil ⇔ 범위 == nil`
-    /// 이 유지된다.
+    /// 바닥 1e-6pt는 원·물결 요소 개수(`patternElementCount(span:period:)`)의 것과 같아
+    /// `path == nil ⇔ 범위 == nil`이 유지된다.
     static func isDrawable(_ line: Line) -> Bool {
         line.length.isFinite && line.thickness.isFinite && line.length > 1e-6 && line.thickness > 0
             && line.shape != .none && fontSizeIsPositive(line.scale)
@@ -278,13 +285,29 @@ extension HwpLineShapeGeometry {
         waveAmplitude(for: line) + HwpRenderTuning.LineShape.waveVertexFlat
     }
 
+    /// 선 시작에서 `period` 간격으로 놓이는 무늬 요소(원 중심·물결 대각선 시작 — 0, `period`,
+    /// 2`period` …) 가운데 자리가 `span` **앞**인 것의 개수. 한글은 그 요소를 끝을 넘더라도
+    /// 온전히 그리고 끝과 같은 자리의 요소는 그리지 않는다 (#235 — 한글 12.30 실측: 자간을
+    /// 0.12pt씩 바꾼 글자선 run 1,818개(한글 문서 12·20·40pt와 한글 2007 호환 문서 12pt × 원형
+    /// 점선·물결·2중 물결 × 밑줄·취소선)와 단 구분선이 전부 자리 < 길이일 때만 그렸다). 끝과 같은
+    /// 자리는 상대 오차 1e-6 안이면 그리지 않는다. `span`이 1e-6pt 이하이거나 간격이 양수가
+    /// 아니면 0이고, 비율이 반복 상한(`maxPatternRepeats`)을 넘으면 거기서 잘라 트랩하지 않는다.
+    static func patternElementCount(span: CGFloat, period: CGFloat) -> Int {
+        guard period > 0, span > 1e-6 else { return 0 }
+        let ratio = span / period
+        guard ratio.isFinite else { return 0 }
+        return max(1, Int((min(ratio, maxPatternRepeats + 1) - 1e-6).rounded(.up)))
+    }
+
     /// `offsetX`에서 시작한 물결의 대각선 개수 — 시작점이 `length` 앞에 있는 반주기는 끝까지
     /// 그린다 (한글은 마지막 대각선을 자르지 않는다). 시작점이 `length` 밖이면 0.
     static func waveDiagonalCount(for line: Line, offsetX: CGFloat) -> Int {
-        let halfPeriod = waveHalfPeriod(for: line)
-        let remaining = line.length - offsetX
-        guard halfPeriod > 0, remaining > 1e-6 else { return 0 }
-        return max(1, Int((remaining / halfPeriod - 1e-6).rounded(.up)))
+        patternElementCount(span: line.length - offsetX, period: waveHalfPeriod(for: line))
+    }
+
+    /// 원형 점선의 원 개수 — 중심이 `length` 앞인 원은 끝에 걸쳐도 그린다 (#235)
+    static func circleCount(for line: Line) -> Int {
+        patternElementCount(span: line.length, period: circlePitch(for: line))
     }
 
     /// `offsetX`에서 시작한 물결의 마지막 대각선이 끝나는 x (대각선이 없으면 `length` 안)

@@ -27,25 +27,27 @@ extension HwpLineShapeGeometry {
         }
     }
 
+    /// 채운 원 — 첫 원의 중심이 선 시작이고, 중심이 `length` 앞인 마지막 원은 끝에 걸쳐도
+    /// 온전히 그린다 (#235 — `circleCount(for:)`; `alongExtent(of:)`가 그 넘침을 보고한다)
     static func addCircles(to path: CGMutablePath, line: Line) {
         let diameter = circleDiameter(for: line)
         let pitch = circlePitch(for: line)
         guard diameter > 0, pitch > 0 else { return }
         let centerY = circleCenterY(for: line)
-        var center: CGFloat = 0
-        while center + diameter / 2 <= line.length {
+        for index in 0 ..< circleCount(for: line) {
+            let center = CGFloat(index) * pitch
             path.addEllipse(in: CGRect(
                 x: center - diameter / 2, y: centerY - diameter / 2,
                 width: diameter, height: diameter
             ))
-            center += pitch
         }
     }
 
     /// 45° 지그재그 — 위 꼭짓점에서 시작해 진폭만큼 내려갔다 올라오기를 반복하고, 꼭짓점
     /// 사이의 평탄(`waveVertexFlat`)은 짧은 띠로 잇는다. 대각선은 획 두께의 평행사변형
-    /// (butt cap)이고, `length` 앞에서 시작한 마지막 대각선은 자르지 않고 끝까지 그린다
-    /// (한글 실측 — `alongExtent(of:)`가 그 넘침을 보고한다).
+    /// (butt cap)이고, `length` 앞에서 시작한 마지막 대각선은 자르지 않고 끝까지 그린다 —
+    /// `length`와 같은 자리에서 시작하는 대각선은 그리지 않는다 (한글 실측, #191·#235 —
+    /// `waveDiagonalCount(for:offsetX:)`; `alongExtent(of:)`가 그 넘침을 보고한다).
     static func addWave(to path: CGMutablePath, line: Line, offset: CGPoint) {
         let amplitude = waveAmplitude(for: line)
         let stroke = waveStroke(for: line)
