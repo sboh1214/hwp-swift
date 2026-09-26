@@ -212,6 +212,16 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   다시 저장했다 — 이 모드의 무늬·띠·물결도 크기와 무관한 고정 pt라는 규칙의 실물 근거이며
   `FixtureDecorationLineRenderTests+Hwp2007Shapes`의 오라클이다. 이제 2쪽이다. HWPX 쌍은
   `HwpxFixtures/hwp2007-decorations`.
+- `hyperlink-click-band`: **한글 문서**(호환 문서 대상 프로그램 `HWP201X`)에 함초롬바탕 10pt·줄 간격
+  160% 기본으로 파란 밑줄 10pt 하이퍼링크(`https://hwp-swift.test/<표본>`)를 줄마다 왼쪽(링크 뒤
+  일반)·오른쪽(일반 뒤 링크) 칸에 번갈아 두고, 40pt 문단 끝 글자·40pt 글자 모양 책갈피·높이 40pt
+  글자처럼 취급 그림·40pt 글자·문단 아래/위 간격 24pt·한 줄 끝 두 줄(160%·고정 8pt)·100% 줄 간격·
+  쪽 마지막 줄 표본과 쪽 나누기 뒤 셀 여백 20pt 1칸 표(문단 3개)·문서 마지막 줄의 각주 둘(두 문단
+  + 한 문단)을 실은 합성 HWPX를 Hancom Office HWP for macOS 12.30.0 build 6446으로 2026-09-26에
+  열어 `.hwp`·`.hwpx`로 저장(2쪽, 하이퍼링크 29개). 한글 편집 화면이 링크를 여는 **클릭 띠**
+  (#233)의 실물 근거다 — 띠는 줄 상자 상단에서 그 줄의 줄 간격 몫까지(다음 줄 상자 상단까지)
+  내려가고, 문단 간격은 어느 줄에도 속하지 않으며, 목록(표 셀·각주)의 마지막 줄과 쪽·문서의 마지막
+  줄은 줄 상자에서 끝난다. HWPX 쌍은 `HwpxFixtures/hyperlink-click-band`.
 - `inline-object-baseline`: 함초롬바탕 40pt 본문에 줄 상자보다 **작은** 글자처럼 취급
   그림(4~50pt 7단)·1칸 표를 바깥 여백·상대 크기 50%·고정 줄 간격·10pt 줄·한 줄 세 그림·
   자리 차지 표의 셀 안 조건으로 실은 합성 HWPX를 Hancom Office HWP for macOS 12.30.0 build

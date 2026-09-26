@@ -69,8 +69,8 @@ final class FixtureRenderTests: XCTestCase {
     func testPageCountsMatchManifest() async throws {
         let fixtures = try FixtureRoot.loadAllFixtures(from: #file)
         let withPageCount = fixtures.filter { $0.expectedPageCount != nil }
-        // 파싱 가능한 47개 픽스처 전부에 pageCount 명세가 있다
-        expect(withPageCount.count) >= 47
+        // 파싱 가능한 48개 픽스처 전부에 pageCount 명세가 있다
+        expect(withPageCount.count) >= 48
 
         var failures: [String] = []
         for fixture in withPageCount {
@@ -95,10 +95,10 @@ final class FixtureRenderTests: XCTestCase {
 
     func testFixtureCountAndCategories() throws {
         let fixtures = try FixtureRoot.loadAllFixtures(from: #file)
-        expect(fixtures.count) >= 51
+        expect(fixtures.count) >= 52
         let withText = fixtures.filter { !$0.expectedVisibleText.isEmpty }
         let empty = fixtures.filter(\.expectedVisibleText.isEmpty)
-        expect(withText.count) >= 38
+        expect(withText.count) >= 39
         expect(empty.count) >= 13
         expect(withText.count + empty.count) == fixtures.count
     }
@@ -106,7 +106,8 @@ final class FixtureRenderTests: XCTestCase {
     /// 고정 줄 간격이 글자 상자보다 작은 줄은 한글에서도 다음 줄에 겹쳐 그려진다 — 텍스트 블록
     /// 프레임은 줄 상자 높이라 상자와 고정 간격의 차만큼 겹치는 것이 저장본 그대로의 자리다.
     /// `page-end-line-box`(#222)는 쪽 끝 적합 판정을 가르려고 상자 10pt 줄에 고정 8·7.61·5·5.62pt
-    /// 간격을 건다. 자리는 한글이 저장한 줄 캐시라 글꼴과 무관하므로 겹치는 **블록 쌍**(두 블록의
+    /// 간격을 건다. `hyperlink-click-band`(#233)는 클릭 띠를 가르려고 10pt 두 줄 문단에 고정
+    /// 8pt 간격을 건다. 자리는 한글이 저장한 줄 캐시라 글꼴과 무관하므로 겹치는 **블록 쌍**(두 블록의
     /// 상단과 문자열 머리)과 겹침량(10 − 간격)을 정확히 핀한다 — 같은 쪽의 다른 쌍이 같은 깊이로
     /// 겹쳐도, 핀한 겹침이 사라져도 그대로 실패한다 (#222 PR 리뷰).
     private struct PinnedOverlap {
@@ -132,6 +133,12 @@ final class FixtureRenderTests: XCTestCase {
             PinnedOverlap(page: 14, upper: (147.2, "LAP"), lower: (152.2, "LAT"), depth: 5.0),
             PinnedOverlap(page: 16, upper: (147.2, "LBP"), lower: (152.2, "LBT"), depth: 5.0),
             PinnedOverlap(page: 24, upper: (179.2, "EAP"), lower: (184.82, " "), depth: 4.38),
+        ],
+        // 고정 줄 간격 8pt의 두 줄 문단 `17`/`18`(10pt 글자) — 마지막 줄 상자 10pt가 8pt
+        // 피치를 넘어 다음 문단 `19`의 머리를 2pt 덮는다. 한글 PDF도 같은 8pt 피치다
+        // (베이스라인 17 617.76 → 18 625.8 → 19 633.72, #233).
+        "hyperlink-click-band": [
+            PinnedOverlap(page: 0, upper: (609.2, "17 "), lower: (625.2, "19 "), depth: 2.0),
         ],
     ]
 
