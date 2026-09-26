@@ -515,7 +515,8 @@ extension HwpFootnoteLayout {
             images: measurement.objects.images,
             shapes: measurement.objects.shapes,
             textboxes: measurement.objects.textboxes,
-            nestedTables: measurement.objects.nestedTables
+            nestedTables: measurement.objects.nestedTables,
+            isNoteEnd: entry.isNoteEnd
         )
     }
 }

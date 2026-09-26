@@ -211,6 +211,17 @@ enum HwpLineAdvance {
         of chunk: HwpLineBreaker.FrameChunk,
         in attributedString: NSAttributedString
     ) -> [CGFloat] {
+        advanceParts(of: chunk, in: attributedString).map { $0.line + $0.gap }
+    }
+
+    /// `advances(of:in:)`의 두 몫 — 줄 자신의 전진량(`line`, 줄 상자 × 줄 간격 규칙)과 그 뒤 문단
+    /// 사이 간격(`gap`). 렌더(`HwpDrawnTextLayout.lineGeometries`)는 합으로 줄을 타일하고, 줄의 링크
+    /// 클릭 띠(#233, `HwpDrawnTextLayout.ClickBand`)는 `line`만 쓴다 — 문단 사이 간격은 어느 줄의
+    /// 띠도 아니다.
+    static func advanceParts(
+        of chunk: HwpLineBreaker.FrameChunk,
+        in attributedString: NSAttributedString
+    ) -> [(line: CGFloat, gap: CGFloat)] {
         let text = attributedString.string as NSString
         return (0 ..< chunk.keepCount).map { index in
             let line = chunk.lines[index]
@@ -223,7 +234,7 @@ enum HwpLineAdvance {
                     afterLine: range, nextLocation: next, in: attributedString, text: text
                 )
                 : 0
-            return lineAdvance(of: line, at: range.location, in: attributedString) + gap
+            return (lineAdvance(of: line, at: range.location, in: attributedString), gap)
         }
     }
 

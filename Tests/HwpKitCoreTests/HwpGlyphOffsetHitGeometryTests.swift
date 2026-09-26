@@ -41,20 +41,31 @@ import XCTest
             ).map(\.rect)
         }
 
-        /// 줄 상자 rect는 **언제나 그대로** 나온다 — 옮긴 몫은 따로 붙는 rect다.
+        /// 클릭 띠 rect(#233)는 **언제나 그대로** 나온다 — 옮긴 몫은 따로 붙는 rect다.
         private func box(offset: Double?) -> CGRect {
             regions(offset: offset).first ?? .null
         }
 
-        /// **아래로 옮긴 글리프만큼 링크 영역이 아래로 넓어진다** — 줄 상자는 그대로고
+        /// 옮긴 밴드의 기준 — 클릭 띠가 아니라 **CT 줄 상자**(`selectionRect`, 칠 커버리지와 같은
+        /// 정의)를 옮긴 잉크 범위다. Helvetica 10pt면 [베이스라인 − 7.7, + 2.3]이고 클릭 띠는
+        /// [− 8.5, + 1.5]다.
+        private func inkBox() -> CGRect {
+            HwpDrawnTextLayout.lines(
+                attributedString: linked(offset: nil), origin: CGPoint(x: 0, y: 100),
+                lineWidth: 200
+            ).first?.selectionRect ?? .null
+        }
+
+        /// **아래로 옮긴 글리프만큼 링크 영역이 아래로 넓어진다** — 클릭 띠는 그대로고
         /// 내려간 밴드가 따로 온다.
         func testDownwardGlyphOffsetGrowsHyperlinkRegionDownward() {
             let plain = box(offset: nil)
+            let ink = inkBox()
             let lowered = regions(offset: -3)
 
             expect(plain.isNull) == false
             expect(lowered.first) == plain
-            expect(Double((lowered.map(\.maxY).max() ?? 0) - plain.maxY))
+            expect(Double((lowered.map(\.maxY).max() ?? 0) - ink.maxY))
                 .to(beCloseTo(3.0, within: 0.0001))
             expect(Double(lowered.map(\.minY).min() ?? 0))
                 .to(beCloseTo(Double(plain.minY), within: 0.0001))
@@ -63,9 +74,10 @@ import XCTest
         /// 위로 옮기면 반대쪽이 넓어진다.
         func testUpwardGlyphOffsetGrowsHyperlinkRegionUpward() {
             let plain = box(offset: nil)
+            let ink = inkBox()
             let raised = regions(offset: 3)
 
-            expect(Double(plain.minY - (raised.map(\.minY).min() ?? 0)))
+            expect(Double(ink.minY - (raised.map(\.minY).min() ?? 0)))
                 .to(beCloseTo(3.0, within: 0.0001))
             expect(Double(raised.map(\.maxY).max() ?? 0))
                 .to(beCloseTo(Double(plain.maxY), within: 0.0001))
@@ -90,13 +102,13 @@ import XCTest
             let rects = HwpDrawnTextLayout.hyperlinkRegions(
                 attributedString: mixed, origin: CGPoint(x: 0, y: 100), lineWidth: 200
             ).map(\.rect)
-            let plain = box(offset: nil)
+            let ink = inkBox()
 
-            // 줄 상자 + 위로 4pt 밴드 + 아래로 2pt 밴드.
+            // 클릭 띠 + 위로 4pt 밴드 + 아래로 2pt 밴드 (밴드는 CT 줄 상자를 옮긴 것).
             expect(rects.count) == 3
-            expect(Double(plain.minY - (rects.map(\.minY).min() ?? 0)))
+            expect(Double(ink.minY - (rects.map(\.minY).min() ?? 0)))
                 .to(beCloseTo(4.0, within: 0.0001))
-            expect(Double((rects.map(\.maxY).max() ?? 0) - plain.maxY))
+            expect(Double((rects.map(\.maxY).max() ?? 0) - ink.maxY))
                 .to(beCloseTo(2.0, within: 0.0001))
             // 옮긴 두 밴드는 줄 상자보다 **좁다** — 'MID'가 든 가로 범위를 안 가져간다.
             let lineBox = rects[0]
@@ -237,8 +249,14 @@ import XCTest
             expect(second.count) == 2
             // 두 스팬이 실제로 다른 줄에 있다 (아니면 이 테스트가 아무것도 안 지킨다).
             expect(Double(second[0].minY)).to(beGreaterThan(Double(first[0].minY)))
-            // 옮긴 몫은 둘째 줄 상자 위 6pt고, 첫 줄은 그대로다.
-            expect(Double(second[0].minY - second[1].minY)).to(beCloseTo(6.0, within: 0.0001))
+            // 옮긴 몫은 둘째 줄 CT 상자(칠 커버리지의 줄 상자) 위 6pt고, 첫 줄은 그대로다.
+            let lines = HwpDrawnTextLayout.lines(
+                attributedString: twoLines(offset: 6), origin: CGPoint(x: 0, y: 100),
+                lineWidth: 80
+            )
+            expect(lines.count) == 2
+            let inkTop = lines.last.map { $0.baselineOrigin.y - $0.ascent } ?? 0
+            expect(Double(inkTop - second[1].minY)).to(beCloseTo(6.0, within: 0.0001))
             expect(regions.contains { $0.rect.minY < first[0].minY }) == false
         }
 
@@ -349,9 +367,13 @@ import XCTest
             let box = lineBox(string)
             let regions = regions(string)
             let ink = raisedInk(string, above: box)
-            // 앞 스팬의 줄 상자 구간(밴드가 아닌 rect) 중 가장 왼쪽 — `abc ` 구간.
+            // 앞 스팬의 클릭 띠 구간(밴드가 아닌 rect) 중 가장 왼쪽 — `abc ` 구간. 띠 상단은
+            // 10pt 100% 줄이라 베이스라인 − 8.5다 (#233).
+            let bandTop = (HwpDrawnTextLayout.lines(
+                attributedString: string, origin: Self.origin, lineWidth: Self.width
+            ).first?.baselineOrigin.y ?? 0) - 8.5
             let spanBox = regions
-                .filter { $0.url == Self.urlA && abs($0.rect.minY - box.minY) < 0.001 }
+                .filter { $0.url == Self.urlA && abs($0.rect.minY - bandTop) < 0.001 }
                 .map(\.rect).min { $0.minX < $1.minX } ?? .null
 
             expect(ink.isEmpty) == false

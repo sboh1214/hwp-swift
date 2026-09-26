@@ -49,9 +49,12 @@ public struct HwpPaintListBuilder: Sendable {
         to commands: inout [HwpPaintCommand]
     ) {
         var emitted = false
-        HwpBlockContentWalker.walkText(block: block) { attributed, rect, _ in
+        // 목록 끝(셀·글상자·각주 문단 배열의 마지막)은 마지막 줄의 클릭 띠가 줄 상자에서
+        // 끝난다 (#233) — 히트(`spanAwareHyperlinkURL`)와 같은 판정이라 방출 ≡ 히트.
+        HwpBlockContentWalker.walkListedText(block: block) { attributed, rect, _, endsList in
             for region in HwpDrawnTextLayout.hyperlinkRegions(
-                attributedString: attributed, origin: rect.origin, lineWidth: rect.width
+                attributedString: attributed, origin: rect.origin, lineWidth: rect.width,
+                endsList: endsList
             ) {
                 commands.append(.hyperlink(rect: region.rect, url: region.url))
                 emitted = true

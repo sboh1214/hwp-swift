@@ -185,11 +185,68 @@ extension HwpDrawnTextLayout {
         /// run별 진행 폭 범위 (#201) — 그 줄에 처음 닿는 스팬이 걷고, 스팬이 안 닿는 줄은
         /// 걷지 않는다 (링크 하나뿐인 긴 문단에서 모든 줄을 걷지 않는다).
         var runExtents: [RunExtent]?
+        /// 이 줄이 **문단 목록의 마지막 줄**인지 (`ClickBand`) — 셀·글상자·각주 문단 배열의
+        /// 마지막 문단의 마지막 줄만 참이다 (`hyperlinkRegions`의 `endsList`).
+        let endsList: Bool
+    }
+
+    /// 줄 하나에서 링크가 열리는 **세로 범위** (#233) — top-down 페이지 좌표.
+    ///
+    /// 한글 편집 화면의 규칙을 따른다: 줄 상자 상단(베이스라인 − 앵커)부터 **그 줄의 줄 간격
+    /// 몫까지**, 곧 다음 줄 상자 상단까지다 — 문단 사이 간격(문단 위·아래 간격)은 어느 줄의
+    /// 것도 아니고, **목록의 마지막 줄**(표 셀·글상자·각주 문단 배열의 마지막 줄)은 줄 상자에서
+    /// 끝난다. 한글 12.30.0(6446) macOS 실측 (2026-09-26, 155%, 함초롬바탕 10pt 밑줄 링크를 한
+    /// 줄씩 번갈아 왼쪽·오른쪽 칸에 둔 합성 HWPX — 칸마다 위→아래로 눌러 연결 실패 대화상자의
+    /// URL로 어느 링크가 열렸는지 읽었다, 경계 ±0.25pt):
+    /// - 줄과 줄의 경계 = **다음 줄 상자 상단**. 160% 10pt 줄은 상자 바닥 + 6.0, 40pt 문단 끝
+    ///   글자·40pt 책갈피·40pt 글자 줄은 + 24.1(40pt 몫 여분), 높이 40pt 글자처럼 취급 그림
+    ///   줄은 + 6.0(여분은 글자 상자 기준 — `HwpLineSpacingRule`). 같은 문단의 한 줄 끝(LF)
+    ///   앞뒤도 같다.
+    /// - 문단 아래 간격·위 간격 24pt 띠에서는 위·아래 어느 링크도 안 열린다.
+    /// - 100%면 경계 = 상자 바닥이라 밑줄(상자 바닥 아래)은 **다음 줄 몫**이고, 고정 8pt(상자
+    ///   10pt)면 경계 = 다음 줄 상단이라 상자 바닥 2pt도 다음 줄 몫이다 — 띠는 상자가 아니라
+    ///   줄 전진량을 따른다.
+    /// - 셀·글상자·각주의 마지막 줄은 줄 상자 바닥에서 끝난다(밑줄도 안 열린다 — 셀 높이
+    ///   100pt로 아래가 비어 있어도). 쪽·문서의 마지막 줄도 같다.
+    ///
+    /// 종전의 CT 줄 지표(`ascent`·`descent`)는 이 규칙과 무관하다 — 10pt 링크와 한 줄인 40pt
+    /// 문단 끝 글자·40pt 책갈피는 CT 줄을 키우지 않아 줄 상자 바닥에 붙는 밑줄(#226)과 그
+    /// 사이 빈칸이 영역 밖이었고, 40pt 그림 줄은 위로만 커졌다. **합집합으로 두지 않는다**:
+    /// 함초롬바탕 10pt의 CT ascent 10.7이 상자 상단(8.5)보다 높아 앞 줄의 줄 간격 띠(한글은
+    /// 앞 줄 몫)를 이 링크가 가져간다 — 앞 블록이면 뒤 블록이 먼저 히트되므로 앞 링크가 진다.
+    ///
+    /// **본문 블록의 마지막 줄은 줄 간격 몫까지 둔다** — 한글은 쪽·단·문서의 마지막 줄에서 그
+    /// 몫을 빼지만 문단 블록은 자기가 단의 끝인지 모른다. 그 몫은 블록 프레임 안(문단 높이 =
+    /// 줄 전진량 합 + 아래 간격)이라 다른 블록을 가리지 않는다. 컨테이너 문단은 반대로 목록
+    /// 끝을 알고(배열의 마지막), 몫을 두면 셀 높이(마지막 줄 간격 제외, #160) 밖 다음 행 셀까지
+    /// 넘쳐 그 칸의 빈자리를 누르면 윗 셀 링크가 열리므로 한글대로 뺀다.
+    ///
+    /// 글꼴 속성이 없는 문자열도 CT가 run에 기본 글꼴(Helvetica 12)을 달아 주므로 그 크기의
+    /// 상자다. 잴 run이 없어 상자가 0인 줄만 CT 줄 지표로 폴백한다 (방어 — 높이 0 rect를 내지
+    /// 않는다). 글자 위치로 옮겨진 run의 밴드(`GlyphOffsetBand`)는 이 띠가 아니라 **CT 줄
+    /// 상자를 옮긴 잉크 범위**다 — 칠 커버리지(`paintedRects`)와 같은 정의로 남는다.
+    struct ClickBand: Equatable {
+        let top: CGFloat
+        let height: CGFloat
+    }
+
+    /// `drawn`의 링크 클릭 띠 (`ClickBand`) — `lines`가 이 줄을 놓은 기하 그대로다: 상단은 줄
+    /// 상자 상단(`HwpDrawnLine.boxTop`), 높이는 줄 자신의 전진량(`lineAdvance` — 측정·렌더가
+    /// 쌓는 `HwpLineAdvance`의 줄 몫, 문단 사이 간격 제외)이고 목록 끝이면 줄 상자
+    /// (`boxHeight`)다. 다시 재지 않으므로 문단 안 줄의 띠 하단이 다음 줄 상자 상단과 비트
+    /// 단위로 같고, 양쪽 정렬 재조판본(0-기준 부분 복사본)에서 문단 끝을 잘못 짚을 일도 없다.
+    static func clickBand(of drawn: HwpDrawnLine, endsList: Bool) -> ClickBand {
+        guard drawn.boxHeight > 0 else {
+            return ClickBand(
+                top: drawn.baselineOrigin.y - drawn.ascent, height: drawn.ascent + drawn.descent
+            )
+        }
+        return ClickBand(top: drawn.boxTop, height: endsList ? drawn.boxHeight : drawn.lineAdvance)
     }
 
     /// 한 줄에서 링크 스팬이 차지하는 rect들을 `regions`에 바로 쌓는다 — 스팬의 run이
-    /// 화면에서 잇닿은 **구간마다** 줄 상자 rect 하나와, 글자 위치로 옮겨진 run 중 **이
-    /// 스팬에 속한 것마다** 밴드 rect.
+    /// 화면에서 잇닿은 **구간마다** 클릭 띠(`ClickBand`) rect 하나와, 글자 위치로 옮겨진 run
+    /// 중 **이 스팬에 속한 것마다** 밴드 rect.
     /// (배열로 돌려주면 줄마다 임시 할당이 생겨 캐시로 아낀 몫의 절반을 도로 쓴다 —
     /// 실측 median: 120스팬 ~40줄 2.93 → 3.55ms.)
     ///
@@ -217,17 +274,20 @@ extension HwpDrawnTextLayout {
         )
         let extents = geometry.runExtents ?? Self.runExtents(of: drawn.line)
         geometry.runExtents = extents
-        let top = drawn.baselineOrigin.y - drawn.ascent
-        let height = drawn.ascent + drawn.descent
+        let band = clickBand(of: drawn, endsList: geometry.endsList)
         for segment in visualSegments(of: extents, in: spanCTRange) {
             regions.append((
                 rect: CGRect(
-                    x: drawn.baselineOrigin.x + segment.lowerBound, y: top,
-                    width: segment.upperBound - segment.lowerBound, height: height
+                    x: drawn.baselineOrigin.x + segment.lowerBound, y: band.top,
+                    width: segment.upperBound - segment.lowerBound, height: band.height
                 ),
                 url: url
             ))
         }
+        // 옮겨진 run의 밴드는 클릭 띠가 아니라 **CT 줄 상자를 옮긴 잉크 범위**다 — 칠
+        // 커버리지(`paintedRects`)와 같은 정의라 옮겨진 글자 위의 탭이 자기 링크를 연다.
+        let top = drawn.baselineOrigin.y - drawn.ascent
+        let height = drawn.ascent + drawn.descent
         // **이 스팬에 속한 run의 밴드만** 가져간다 (#197 리뷰 4차). 밴드는 이 스팬 자신의
         // run 잉크라 구간 상자로 **자르지 않는다** — 잉크는 진행 폭 상자 밖으로 삐칠 수 있고
         // (기울임 근사의 오버행), 단방향 줄에서는 run이 늘 스팬 상자 안이라 자르나 마나 같다.

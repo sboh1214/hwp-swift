@@ -1004,6 +1004,59 @@ run 블록 #165와 같은 표) 각주 이어짐의 본문 하한(`footnoteBodyBo
   (  `HwpAttributedStringKey.shadeColor`). 네이티브 뷰가 페이지 오른쪽에 투명
   `HwpPageLayer`로 그린다 (`memoPanelLayers`)
 
+## 링크 클릭 띠 (#233)
+
+`hyperlinkRegions`가 내는 링크 rect의 **세로 범위는 글꼴 지표가 아니라 한글의 줄 클릭 띠**다
+(`HwpDrawnTextLayout.ClickBand`) — 줄 상자 상단(베이스라인 − 앵커)부터 그 줄의 **줄 전진량**
+(`HwpLineSpacingRule.advance` — 문단 사이 간격 제외)까지, 곧 다음 줄 상자 상단까지다. 가로는
+종전 그대로 run 진행 폭 구간이다 (#201). 종전의 CT `ascent`·`descent` 상자는 10pt 링크와 한 줄인
+40pt 문단 끝 글자·책갈피를 몰라(CT 줄을 안 키운다) 줄 상자 바닥에 붙는 밑줄(#226)과 글자·밑줄
+사이 빈칸이 영역 밖이었고, 40pt 그림 줄은 위로만 커졌다.
+
+- **오라클은 한글 편집 화면의 클릭이다** (12.30.0 6446, 2026-09-26, 155%). 링크를 한 줄씩 번갈아
+  왼쪽·오른쪽 칸에 둔 합성 HWPX를 칸마다 위→아래로 이분 탐색했다(±0.25pt) — 링크가 있는 줄과
+  그 칸이 평문인 이웃 줄이 맞닿으므로 열림→안 열림 전이가 곧 띠 경계다. 로컬 URL이면 연결 실패
+  대화상자에 URL이 찍혀 어느 링크가 열렸는지 읽힌다(다른 도메인은 URL 없는 보안 대화상자다).
+  결과: 줄 사이 경계 = 다음 줄 상자 상단(10pt 160% 상자 바닥 +6.0, 40pt 문단 끝 글자·책갈피·글자
+  줄 +24.1, 40pt 그림 줄 +6.0 — 여분은 글자 상자 기준), 문단 아래·위 간격 띠는 **어느 링크도
+  아니다**, 100%면 경계 = 상자 바닥(밑줄은 다음 줄 몫), 고정 8pt(상자 10)면 다음 줄 상단(상자 바닥
+  2pt도 다음 줄 몫), **표 셀·글상자·각주·쪽·문서의 마지막 줄은 상자 바닥에서 끝난다**(밑줄도 안
+  열린다 — 셀 높이 100pt로 아래가 비어 있어도). 손 모양 커서는 줄 상자까지뿐인데 우리에겐 호버
+  커서가 없어 클릭 띠만 맞춘다. 한글 PDF의 링크 주석은 글꼴 지표 상자라 오라클이 아니다(#201과 같다).
+- **목록 끝은 호출자가 안다**: 셀·글상자 문단 배열의 마지막 문단이 목록 끝이다. **각주는 배열이
+  아니라 블록이 답한다** — 각주 영역은 문단마다 블록 하나(`HwpFootnoteContinuation`의 스택 항목)라
+  배열 인덱스로 보면 두 문단 각주의 첫 문단까지 목록 끝이 된다. 스택이 이미 아는 "그 각주의 마지막
+  항목"(`StackEntry.isNoteEnd` — 쪽 끝에서 나뉜 앞 몫도 참)을 `HwpFootnoteBlock.isNoteEnd`로 실어
+  배열 판정과 AND 한다. 히트
+  (`HwpHitTester.spanAwareHyperlinkURL`)는 배열 인덱스로, 방출(`HwpPaintListBuilder.appendHyperlinkCommands`)은
+  목록 끝을 넷째 인자로 넘기는 순회(`HwpBlockContentWalker.walkListedText` — 공개 `walkText`·
+  `walkTable`·`walkFootnote`·`walkParagraphs`가 그 본체를 감싼다)로 같은 판정을 받는다 — 방출 ≡ 히트.
+  길이 0 문단은 방문하지 않지만 목록 끝 판정에는 든다(배열 끝이 빈 문단이면 그 앞 문단은 끝이
+  아니다). 공개 `hyperlinkRegions(attributedString:origin:lineWidth:)`는 목록 끝이 아닌 것으로 본다.
+- **본문 블록의 마지막 줄은 한글과 다르게 줄 간격 몫까지 둔다**: 문단 블록은 자기가 쪽·단의 끝인지
+  모른다. 그 몫은 블록 프레임(= 전진량 합 + 아래 간격) 안의 빈 자리라 다른 블록을 가리지 않는다.
+  컨테이너 문단은 반대다 — 몫을 두면 셀 높이(마지막 줄 간격 제외, #160) 밖 다음 행 셀까지 넘쳐
+  그 칸의 빈자리를 누르면 윗 셀 링크가 열리므로 한글대로 뺀다.
+- **CT 상자와 합집합으로 두지 않는다**: 함초롬바탕 10pt의 CT ascent(10.7)가 상자 상단(8.5)보다 높아
+  합집합이면 앞 줄의 줄 간격 띠(한글은 앞 줄 몫)를 이 링크가 가져간다 — 앞 블록이면 뒤 블록이
+  먼저 히트되므로 앞 링크가 진다. 첫 줄 상자 상단 = 블록 상단이라 띠가 프레임 위로 나가지 않는
+  것도 이 선택의 값이다. 줄 상자가 0인 줄(잴 run이 없음)만 CT 상자로 폴백한다 — 글꼴 속성이 없는
+  문자열도 CT가 기본 글꼴(Helvetica 12)을 달아 그 크기의 상자다.
+- **밴드(글자 위치로 옮겨진 run)는 띠가 아니라 CT 줄 상자를 옮긴 잉크 범위**다 — 칠 커버리지
+  (`paintedRects`)와 같은 정의라 아래 "글자 위치" 항목의 밴드 ≡ 칠이 그대로다. 줄 rect만 칠
+  커버리지보다 넓어졌고(줄 간격 몫) claim(`textLineRegions`)은 그대로 CT 상자라 R54의 정밀 커버리지
+  규약은 바뀌지 않는다 — 같은 블록 안에서는 링크 판정이 claim보다 먼저라 넓어진 띠가 막히지 않는다.
+- **띠는 줄을 놓은 기하 그대로다** — `lines`가 `lineGeometries`에서 받은 줄 상자 상단·높이·줄 몫
+  전진량(`HwpLineAdvance.advanceParts`의 `line`)을 `HwpDrawnLine`(`boxTop`·`boxHeight`·`lineAdvance`,
+  internal)에 실어 두고 `clickBand`는 다시 재지 않는다. 그래서 문단 안 줄의 띠 하단이 다음 줄 상자
+  상단과 비트 단위로 같고, 양쪽 정렬 재조판본(0-기준 부분 복사본)에서 CTLine 범위로 문단 끝을 잘못
+  짚는 함정(`lineMetrics(of:in:)`)도 없다. 처음 형태처럼 링크 줄마다 `lineMetrics`를 다시 재면
+  `hyperlinkRegions`가 20% 느렸다(디버그, 40스팬 ~14줄 1.69 → 2.08ms) — 지금은 종전과 같다(1.62ms).
+- 가드: `HwpHyperlinkClickBandTests`(합성 9건 — 이슈의 세 표본·줄 경계·문단 간격·고정/100%·목록
+  끝·셀·각주 방출; 종전 CT 상자로 되돌리면 9건 전부, 목록 끝을 무시하면 4건 실패),
+  `FixtureHyperlinkClickBandTests`(`hyperlink-click-band` 쌍 — 표본 29개의 띠를 문서 자신의 줄 캐시
+  값으로, 히트를 한글 실측으로; HWPX 쌍은 링크 필드가 아직 강등 컨트롤이라 링크가 0개임을 따로 핀).
+
 ## 선택 끝점 캐럿 (#84)
 
 핸들이 왜 이 계층을 쓰는지(캐시)와 `HwpCaretAffinity`를 `HwpTextPosition`에
@@ -2671,7 +2724,8 @@ paraShape와 같은 값**이어야 한다.
   10pt 링크에 글자 위치 30이면 잉크 하단 3.000pt가 줄 상자 밖이라 하단 클릭이 `.text`로
   떨어지고, 위치 100에서는 겹침이 **0%**가 된다(실측). 그래서 `HwpDrawnLine.paintedRects`
   (= 줄 상자 + 옮겨진 run마다 **그 run의 잉크 가로 범위만** 가진 밴드)를 두고
-  `textLineRegions`(claim)와 `hyperlinkRegions`(방출 ≡ 히트)가 그것을 쓴다.
+  `textLineRegions`(claim)와 `hyperlinkRegions`(방출 ≡ 히트)의 밴드가 그것을 쓴다 (링크의 줄
+  rect는 #233부터 한글의 줄 클릭 띠다 — "링크 클릭 띠" 절).
   `hitEligibleFrame`도 payload 없이 프레임에 직접 그리는 문자열(`plainText`)이면 가로만
   넓히던 것을 `textBounds`로 바꿔 세로 여유를 함께 준다 — 안 그러면 그 글리프 위의 탭이
   rect 판정에 닿기도 전에 블록 단계에서 기각된다.

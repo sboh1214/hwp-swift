@@ -440,7 +440,7 @@ PageUp/Down은 한 쪽씩, Home/End는 문서 처음·끝으로 — 두 플랫�
 
 | Callback | 발화 시점 |
 |---|---|
-| `onHyperlinkTapped(url)` | tap/click 이 `.hyperlink` 블록 프레임을 hit 했을 때 |
+| `onHyperlinkTapped(url)` | tap/click 이 링크를 hit 했을 때 (`HwpHitTester` — 링크 텍스트의 줄 클릭 띠, 스팬 없는 링크는 블록·문단 rect; `Sources/HwpKitCore/AGENTS.md` "링크 클릭 띠") |
 | `onPageChanged(page)` | `updateVisiblePages` 가 visible range 를 갱신할 때 |
 | `onZoomChanged(scale)` | 핀치/스크롤 줌으로 배율이 변했을 때 (버튼 줌 echo 는 가드로 차단) |
 | `onUnsupportedElement(element)` | 양쪽 플랫폼: document `didSet` 시 `unsupportedElements` **전량** 순회 (콜백은 document 할당보다 먼저 배선됨) |

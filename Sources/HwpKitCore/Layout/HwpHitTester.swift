@@ -27,7 +27,7 @@ public struct HwpHitTester {
                 // 블록으로 내려가면 그 개체 밑에 숨은 링크가 열린다 (R45 #3).
                 if case let .footnote(footnote) = block.payload {
                     switch containerHit(
-                        paragraphs: footnote.paragraphs,
+                        paragraphs: footnote.paragraphs, listEnds: footnote.isNoteEnd,
                         images: footnote.images, shapes: footnote.shapes,
                         textboxes: footnote.textboxes,
                         nestedTables: footnote.nestedTables,
@@ -322,7 +322,7 @@ public struct HwpHitTester {
             )
         case let .footnote(footnote):
             containerHit(
-                paragraphs: footnote.paragraphs,
+                paragraphs: footnote.paragraphs, listEnds: footnote.isNoteEnd,
                 images: footnote.images, shapes: footnote.shapes,
                 textboxes: footnote.textboxes,
                 nestedTables: footnote.nestedTables, at: localPoint
@@ -342,7 +342,7 @@ public struct HwpHitTester {
     /// 링크 조회는 층 rect로 미리 거르지 않는다 (자손이 컨테이너를 넘어 그려질 수
     /// 있다, R41 #2). **가림 판정만** 실제 칠한 영역을 본다 (R43).
     private func containerHit(
-        paragraphs: [HwpLaidOutParagraph],
+        paragraphs: [HwpLaidOutParagraph], listEnds: Bool = true,
         images: [HwpCellImage],
         shapes: [HwpCellShape],
         textboxes: [HwpCellTextbox],
@@ -362,7 +362,7 @@ public struct HwpHitTester {
         case .miss:
             break
         }
-        if let url = spanAwareHyperlinkURL(in: paragraphs, at: point) {
+        if let url = spanAwareHyperlinkURL(in: paragraphs, listEnds: listEnds, at: point) {
             return .found(url)
         }
         // 링크 없는 전경 글자도 **칠해진 것**이다 — 그 위의 탭이 글 뒤로 개체의
@@ -445,16 +445,26 @@ public struct HwpHitTester {
         )
     }
 
+    private func footnoteNumber(block: AnyHwpBlock) -> Int {
+        guard case let .footnote(footnote) = block.payload else { return 0 }
+        return footnote.number
+    }
+}
+
+extension HwpHitTester {
     /// 문단 목록에서 링크를 찾는다 — 필드 스팬이 있으면 **글리프 rect에서만**,
     /// 없으면 문단 rect 폴백 (R38 #4, 루트 규약 "하이퍼링크 방출은 스팬 우선").
+    /// `listEnds`면 마지막 문단의 마지막 줄 클릭 띠가 줄 상자에서 끝난다 (#233, 방출의
+    /// `walkListedText`와 같은 판정 — 각주는 문단마다 블록이라 `HwpFootnoteBlock.isNoteEnd`).
     private func spanAwareHyperlinkURL(
-        in paragraphs: [HwpLaidOutParagraph], at point: CGPoint
+        in paragraphs: [HwpLaidOutParagraph], listEnds: Bool, at point: CGPoint
     ) -> String? {
-        for paragraph in paragraphs {
+        for (index, paragraph) in paragraphs.enumerated() {
             let regions = HwpDrawnTextLayout.hyperlinkRegions(
                 attributedString: paragraph.attributedString,
                 origin: paragraph.rect.origin,
-                lineWidth: paragraph.rect.width
+                lineWidth: paragraph.rect.width,
+                endsList: listEnds && index == paragraphs.count - 1
             )
             if !regions.isEmpty {
                 if let url = regions.first(where: { $0.rect.contains(point) })?.url {
@@ -469,13 +479,6 @@ public struct HwpHitTester {
         return nil
     }
 
-    private func footnoteNumber(block: AnyHwpBlock) -> Int {
-        guard case let .footnote(footnote) = block.payload else { return 0 }
-        return footnote.number
-    }
-}
-
-extension HwpHitTester {
     /// 링크가 아닌 이 블록 자신의 히트 — 프레임 안과, 프레임 밖 칠해진 글자 위가 같은 답을 낸다.
     private func ownHit(for block: AnyHwpBlock, index: Int, at point: CGPoint) -> HwpHitResult {
         switch block.kind {
