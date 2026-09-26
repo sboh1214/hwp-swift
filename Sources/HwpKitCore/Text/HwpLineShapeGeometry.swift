@@ -285,39 +285,6 @@ extension HwpLineShapeGeometry {
         waveAmplitude(for: line) + HwpRenderTuning.LineShape.waveVertexFlat
     }
 
-    /// 선 시작에서 `period` 간격으로 놓이는 무늬 요소(원 중심·물결 대각선 시작 — 0, `period`,
-    /// 2`period` …) 가운데 자리가 `span` **앞**인 것의 개수. 한글은 그 요소를 끝을 넘더라도
-    /// 온전히 그리고 끝과 같은 자리의 요소는 그리지 않는다 (#235 — 한글 12.30 실측: 자간을
-    /// 0.12pt씩 바꾼 글자선 run 1,818개(한글 문서 12·20·40pt와 한글 2007 호환 문서 12pt × 원형
-    /// 점선·물결·2중 물결 × 밑줄·취소선)와 단 구분선이 전부 자리 < 길이일 때만 그렸다). 끝과 같은
-    /// 자리는 상대 오차 1e-6 안이면 그리지 않는다. `span`이 1e-6pt 이하이거나 간격이 양수가
-    /// 아니면 0이고, 비율이 반복 상한(`maxPatternRepeats`)을 넘으면 거기서 잘라 트랩하지 않는다.
-    static func patternElementCount(span: CGFloat, period: CGFloat) -> Int {
-        guard period > 0, span > 1e-6 else { return 0 }
-        let ratio = span / period
-        guard ratio.isFinite else { return 0 }
-        return max(1, Int((min(ratio, maxPatternRepeats + 1) - 1e-6).rounded(.up)))
-    }
-
-    /// `offsetX`에서 시작한 물결의 대각선 개수 — 시작점이 `length` 앞에 있는 반주기는 끝까지
-    /// 그린다 (한글은 마지막 대각선을 자르지 않는다). 시작점이 `length` 밖이면 0.
-    static func waveDiagonalCount(for line: Line, offsetX: CGFloat) -> Int {
-        patternElementCount(span: line.length - offsetX, period: waveHalfPeriod(for: line))
-    }
-
-    /// 원형 점선의 원 개수 — 중심이 `length` 앞인 원은 끝에 걸쳐도 그린다 (#235)
-    static func circleCount(for line: Line) -> Int {
-        patternElementCount(span: line.length, period: circlePitch(for: line))
-    }
-
-    /// `offsetX`에서 시작한 물결의 마지막 대각선이 끝나는 x (대각선이 없으면 `length` 안)
-    static func waveEnd(for line: Line, offsetX: CGFloat) -> CGFloat {
-        let count = waveDiagonalCount(for: line, offsetX: offsetX)
-        guard count > 0 else { return min(offsetX, line.length) }
-        return offsetX + CGFloat(count) * waveHalfPeriod(for: line)
-            - HwpRenderTuning.LineShape.waveVertexFlat
-    }
-
     static func circleDiameter(for line: Line) -> CGFloat {
         switch line.scale {
         case .characterLine:
