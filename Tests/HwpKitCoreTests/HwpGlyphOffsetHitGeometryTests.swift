@@ -337,6 +337,16 @@ import XCTest
             ).filter { $0.minY < box.minY - 0.001 }
         }
 
+        /// 링크의 클릭 띠 상단(#233) — 10pt 100% 줄이라 베이스라인 − 8.5다. 글꼴과 무관한 값이라
+        /// "옮겨지지 않은 링크 rect"의 기준은 CT 줄 상자(`lineBox`)가 아니라 이것이다: CT 상자 상단
+        /// (베이스라인 − ascent)은 히브리 폴백 글꼴에 따라 띠 상단보다 위(macOS)에도 아래(iOS
+        /// 시뮬레이터)에도 놓인다.
+        private func clickBandTop(_ string: NSAttributedString) -> CGFloat {
+            (HwpDrawnTextLayout.lines(
+                attributedString: string, origin: Self.origin, lineWidth: Self.width
+            ).first?.baselineOrigin.y ?? 0) - 8.5
+        }
+
         /// 히트 규칙 그대로 — `regions.first { contains }` (`HwpHitTester`).
         private func hit(_ regions: [(rect: CGRect, url: String)], _ point: CGPoint) -> String? {
             regions.first { $0.rect.contains(point) }?.url
@@ -349,10 +359,11 @@ import XCTest
             let box = lineBox(string)
             let regions = regions(string)
             let ink = raisedInk(string, above: box)
+            let bandTop = clickBandTop(string)
 
             expect(ink.isEmpty) == false
-            // 앞 스팬에는 옮겨진 run이 하나도 없다 — 올라간 rect가 있다면 남의 것이다.
-            expect(regions.contains { $0.url == Self.urlA && $0.rect.minY < box.minY - 0.001 })
+            // 앞 스팬에는 옮겨진 run이 하나도 없다 — 클릭 띠 위로 올라간 rect가 있다면 남의 것이다.
+            expect(regions.contains { $0.url == Self.urlA && $0.rect.minY < bandTop - 0.001 })
                 == false
             for rect in ink {
                 expect(self.hit(regions, CGPoint(x: rect.midX, y: rect.minY + 1))) == Self.urlB
@@ -367,11 +378,8 @@ import XCTest
             let box = lineBox(string)
             let regions = regions(string)
             let ink = raisedInk(string, above: box)
-            // 앞 스팬의 클릭 띠 구간(밴드가 아닌 rect) 중 가장 왼쪽 — `abc ` 구간. 띠 상단은
-            // 10pt 100% 줄이라 베이스라인 − 8.5다 (#233).
-            let bandTop = (HwpDrawnTextLayout.lines(
-                attributedString: string, origin: Self.origin, lineWidth: Self.width
-            ).first?.baselineOrigin.y ?? 0) - 8.5
+            // 앞 스팬의 클릭 띠 구간(밴드가 아닌 rect) 중 가장 왼쪽 — `abc ` 구간.
+            let bandTop = clickBandTop(string)
             let spanBox = regions
                 .filter { $0.url == Self.urlA && abs($0.rect.minY - bandTop) < 0.001 }
                 .map(\.rect).min { $0.minX < $1.minX } ?? .null
