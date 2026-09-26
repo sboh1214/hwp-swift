@@ -65,7 +65,7 @@ extension HwpLineShapeGeometryTests {
         for (placement, centerY) in expectations {
             let line = Self.hwp2007Line(.circle, length: 30, placement: placement)
             let pieces = Self.pieces(HwpLineShapeGeometry.path(for: line))
-            expect(pieces.count) == 10 // 0, 3, …, 27 (30은 반지름이 넘친다)
+            expect(pieces.count) == 10 // 0, 3, …, 27 (30은 선 끝과 같은 자리라 그리지 않는다, #235)
             expect(pieces[0].width).to(beCloseTo(1.32, within: 1e-3))
             expect(pieces[0].height).to(beCloseTo(1.32, within: 1e-3))
             expect(pieces[0].midX).to(beCloseTo(0, within: 1e-3))

@@ -167,6 +167,10 @@ final class FixtureDecorationLineRenderTests: XCTestCase {
         red < 100 && green > 150 && blue < 100
     }
 
+    static func isMagenta(_ red: UInt8, _ green: UInt8, _ blue: UInt8) -> Bool {
+        red > 150 && green < 100 && blue > 150
+    }
+
     /// `CharShape` 쌍의 "취소선 색 #00ffff" 줄 — 두 포맷이 같은 행에 한 줄만
     /// 그리고, 그 선이 글자 잉크의 세로 가운데를 지난다 (한글 실물의 성질).
     func testStrikethroughCrossesGlyphCenterIdenticallyInBothFormats() async throws {

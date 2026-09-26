@@ -15,8 +15,9 @@ import XCTest
 ///
 /// 한글 문서의 무늬 단위는 한글이 장치 단위로 반올림해 (10pt 원 간격 1.56pt) 우리 모델(1.425pt)과
 /// 개수를 맞댈 수 없으므로 여기서는 **규칙**만 잠근다. 같은 표본의 한글 PDF(12.30.0, 2026-09-27)도
-/// 마지막 원·대각선이 모두 자리 < run 끝을 지키고, 규칙 자체는 자간을 0.12pt씩 바꾼 run 표본으로
-/// 확정했다 (`HwpLineShapeGeometryTests+RunEnd`).
+/// 마지막 원·대각선이 모두 자리 < run 끝을 지키고, 규칙 자체는 자간을 1%씩 바꾼 run 표본으로
+/// 확정했다 (`HwpLineShapeGeometryTests+RunEnd`). R4는 마지막 대각선이 run 끝 안에서 끝나 끝
+/// 규칙을 가르지 않는 개수 핀이다 (2중 물결의 끝은 `hwp2007-decorations` R4가 잠근다).
 extension FixtureLineShapeRenderTests {
     func testRunEndCirclesAndWavesKeepElementsStartingBeforeTheEnd() throws {
         typealias Render = FixtureDecorationLineRenderTests
@@ -55,7 +56,8 @@ extension FixtureLineShapeRenderTests {
             expect(right - start).to(beGreaterThan(runWidth + 0.3))
         }
         // R4 (베이스라인 305.64): 2중 물결 취소선 — 첫 파의 가운데 행 띠에서 대각선 68개 (둘째 파는
-        // 0.9pt 아래에서 시작해 닿지 않는다)
+        // 0.9pt 아래에서 시작해 닿지 않는다). 마지막 대각선(83.08 → 84.20)이 run 끝(84.29) 안에서
+        // 끝나 끝 규칙은 가르지 않는 개수 핀이다
         expect(Self.horizontalInkRuns(
             raster, y: 301.52 ... 301.72, x: columnTwo, where: Self.isBlue
         )) == 68

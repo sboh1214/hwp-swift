@@ -23,12 +23,14 @@ import XCTest
 /// | R3 | 물결 아래 밑줄 | 15 | 대각선 31 · 시작 90.0 → 92.88까지 | 같음 |
 /// | R4 | 2중 물결 취소선 | 13 | 파마다 대각선 51 · 시작 78.0 | 같음 |
 ///
-/// 우리 run은 R1 90.31·R2 144.49·R4 78.27pt라 마지막 원(중심 90.0·144.0)이 run 끝보다 반지름
-/// 0.66 안쪽 앞에 있다 — 원이 끝 안에 온전히 들 때만 그리던 종전 규칙은 그 원을 빼 개수가 하나
-/// 모자랐다. 물결은 종전에도 시작이 끝 앞인 대각선을 끝까지 그렸고, 그 넘침(R3 +2.6pt)을 함께 잠근다.
+/// 우리 run은 R1 90.31·R2 144.49pt라 마지막 원(중심 90.0·144.0)이 run 끝보다 반지름(0.66) 안쪽
+/// 앞에 있다 — 원이 끝 안에 온전히 들 때만 그리던 종전 규칙은 그 원을 빼 개수가 하나 모자랐다.
+/// 물결은 종전에도 시작이 끝 앞인 대각선을 끝까지 그렸고, 그 넘침(R3 +2.6pt)과 R4(우리 run
+/// 78.27pt — 마지막 대각선 시작 78.0)를 함께 잠근다. 아래 주석의 y 좌표는 이 테스트가 재는 **우리
+/// 결정론 렌더**의 것이고 (베이스라인이 한글 PDF보다 0.06~0.10pt 위), 한글 값은 괄호로 따로 적는다.
 extension FixtureDecorationLineRenderTests {
     /// `y`(pt) ± `halfBand` 안에서 조건 픽셀이 가장 많은 행의, `x` 구간 안 가로 잉크 조각 (시작,
-    /// 끝, pt) 목록 — #235 run 끝 핀(`FixtureLineShapeRenderTests+RunEnd`도 쓴다)
+    /// 끝, pt) 목록 — #235 run 끝 핀(`FixtureLineShapeRenderTests+RunEnd`·`magentaRuns`도 쓴다)
     static func rowRuns(
         _ raster: Raster, near y: CGFloat, halfBand: CGFloat, x: ClosedRange<CGFloat>,
         where match: (UInt8, UInt8, UInt8) -> Bool
@@ -85,19 +87,15 @@ extension FixtureDecorationLineRenderTests {
         return CGFloat(advance) * CGFloat(count)
     }
 
-    private static func isRunEndMagenta(_ red: UInt8, _ green: UInt8, _ blue: UInt8) -> Bool {
-        red > 150 && green < 100 && blue > 150
-    }
-
     func testHwp2007RunEndCirclesAndWavesMatchHangulCounts() async throws {
-        let magenta = Self.isRunEndMagenta
+        let magenta = Self.isMagenta
         for hwpx in [false, true] {
             let format = hwpx ? "HWPX" : "HWP"
             let page = try await Self.raster("hwp2007-decorations", hwpx: hwpx, pageIndex: 1)
             func runs(near y: CGFloat, halfBand: CGFloat) -> [(start: CGFloat, end: CGFloat)] {
                 Self.rowRuns(page, near: y, halfBand: halfBand, x: 90 ... 290, where: magenta)
             }
-            // R1 (베이스라인 367.80): 원 중심 = 단선 중심(1.68 아래) + 띠 쪽 0.24 — 우리 369.62
+            // R1 (베이스라인 367.70, 한글 367.80): 원 중심 = 단선 중심(1.68 아래) + 띠 쪽 0.24 = 369.62
             let circleUnderline = runs(near: 369.62, halfBand: 0.3)
             expect(circleUnderline.count).to(equal(31), description: "\(format) R1 원 수")
             if let first = circleUnderline.first, let last = circleUnderline.last {
@@ -105,14 +103,15 @@ extension FixtureDecorationLineRenderTests {
                 expect((last.start + last.end) / 2 - (first.start + first.end) / 2)
                     .to(beCloseTo(90.0, within: 0.3), description: "\(format) R1 마지막 중심")
             }
-            // R2 (베이스라인 380.76): 취소선 중심 0.35em 위 — 우리 377.20
+            // R2 (베이스라인 380.70, 한글 380.76): 취소선 중심 0.35em 위 = 377.20 (한글 377.28)
             let circleStrikeout = runs(near: 377.20, halfBand: 0.3)
             expect(circleStrikeout.count).to(equal(49), description: "\(format) R2 원 수")
             if let first = circleStrikeout.first, let last = circleStrikeout.last {
                 expect((last.start + last.end) / 2 - (first.start + first.end) / 2)
                     .to(beCloseTo(144.0, within: 0.3), description: "\(format) R2 마지막 중심")
             }
-            // R3 (베이스라인 393.72): 물결 꼭짓점 394.08 ~ 396.96, 가운데 행에서 대각선마다 한 조각
+            // R3 (베이스라인 393.70, 한글 393.72): 물결 꼭짓점 394.06 ~ 396.94 (한글 394.08 ~ 396.96),
+            // 가운데 행에서 대각선마다 한 조각
             let waveUnderline = runs(near: 395.52, halfBand: 0.2)
             expect(waveUnderline.count).to(equal(31), description: "\(format) R3 대각선 수")
             if let first = waveUnderline.first,
@@ -129,7 +128,7 @@ extension FixtureDecorationLineRenderTests {
                 expect(right - start)
                     .to(beLessThan(92.88 + 0.6), description: "\(format) R3 끝")
             }
-            // R4 (베이스라인 406.80): 첫 파(꼭짓점 402.04 ~ 403.48)의 위쪽 행 — 둘째 파는 1.08 아래
+            // R4 (베이스라인 406.70, 한글 406.80): 첫 파(꼭짓점 401.94 ~ 403.38)의 위쪽 행 — 둘째 파는 1.08 아래
             // (위 꼭짓점 획이 402.84부터)라 402.75 행부터 섞인다. 획이 0.36pt라 4px/pt에서 한
             // 대각선이 임계 아래 픽셀로 갈라지지 않게 옅은 자홍까지 센다
             let doubleWave = Self.rowRuns(page, near: 402.4, halfBand: 0.12, x: 90 ... 220) {

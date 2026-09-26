@@ -41,10 +41,6 @@ extension FixtureDecorationLineRenderTests {
         red < 100 && green < 100 && blue > 150
     }
 
-    private static func isMagenta(_ red: UInt8, _ green: UInt8, _ blue: UInt8) -> Bool {
-        red > 150 && green < 100 && blue > 150
-    }
-
     /// 가로로 `minimumLength`pt 넘게 이어진 색 행들을 위에서부터 선 단위로 묶은 중심(pt)과
     /// 행 수. 기본 8pt는 선 색 글리프가 없는 초록·청록·자홍·파랑용이고, 빨강은 변경 추적
     /// 글자 자체가 빨강이라 20pt 글리프의 가로 획(≤ 16pt)보다 긴 선만 세야 한다.
