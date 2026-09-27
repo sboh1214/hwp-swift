@@ -37,7 +37,7 @@ final class HwpRenderTuningTests: XCTestCase {
         expect(HwpRenderTuning.LineShape.circleMinimumGapDeviceUnits) == 2
         expect(HwpRenderTuning.LineShape.circleMinimumPathDeviceUnits) == 2
         expect(HwpRenderTuning.LineShape.circleOutlineDeviceUnits) == 1
-        expect(HwpRenderTuning.LineShape.borderCirclePitchThicknessRatio) == 2
+        expect(HwpRenderTuning.LineShape.cellBorderCirclePitchUnitRatio) == 2
         expect(HwpRenderTuning.LineShape.characterDoubleLineBandEmRatio) == 0.12
         expect(HwpRenderTuning.LineShape.characterThickBandEmRatio) == 0.2
         expect(HwpRenderTuning.LineShape.characterWaveAmplitudeEmRatio) == 0.112

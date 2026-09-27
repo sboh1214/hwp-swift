@@ -58,8 +58,9 @@ extension HwpLineShapeGeometry {
     }
 
     /// 장치 단위로 반올림하는 입력의 상한 (pt) — 두께(글자선은 글자 크기 × 0.039)가 이보다 크면
-    /// 장치 단위 반올림이 뜻이 없으므로 반올림 전 비율로 셈한다. HWPUNIT·장치 단위로 옮기는 곱이
-    /// 넘치지 않게 하는 경계다 (이 아래 두께의 HWPUNIT 곱은 1e17 안이다).
+    /// 장치 단위 반올림이 뜻이 없으므로 반올림 전 비율로 셈한다. 이 아래에서는 HWPUNIT·장치 단위
+    /// 값이 2^52보다 작아 0.5 올림(`roundHalfUp`)이 정확하고, 곱도 넘치지 않는다 (두 갈래의 차는
+    /// 경계에서 상대 1e-13 안이다).
     static let circleDeviceRoundingLimit: CGFloat = 1e12
 
     /// 한글 문서의 원 — (칠 지름, 중심 간격) pt. 두께를 HWPUNIT(0.01pt)으로 반올림하고(글자선은 글자
@@ -81,7 +82,7 @@ extension HwpLineShapeGeometry {
         }
         guard thickness < circleDeviceRoundingLimit else {
             if grid {
-                return (thickness, thickness * Shape.borderCirclePitchThicknessRatio)
+                return (thickness, thickness * Shape.cellBorderCirclePitchUnitRatio)
             }
             // 나눗셈 먼저 — 두께가 유한 최댓값 근처여도 점 단위가 넘치지 않게
             let dot = thickness / Shape.circleDotUnitThicknessDenominator
@@ -99,7 +100,7 @@ extension HwpLineShapeGeometry {
         if grid {
             let side = max(1, roundHalfUp(hwpUnits / hwpUnitsPerDeviceUnit))
             pathUnits = evenCeiling(side)
-            pitchUnits = side * Shape.borderCirclePitchThicknessRatio
+            pitchUnits = side * Shape.cellBorderCirclePitchUnitRatio
         } else {
             let dot = roundHalfUp(
                 hwpUnits * Shape.circleDotUnitThicknessNumerator

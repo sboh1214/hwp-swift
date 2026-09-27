@@ -91,7 +91,7 @@ extension HwpLineShapeGeometryTests {
     }
 
     /// 단 구분선·표 셀 테두리도 같은 규칙이다 (한글 실측: 단 구분선은 줄 상자 길이 기준으로 물결은
-    /// 정확히, 원형 점선은 #239 뒤 110표본 중 109개가 정확히 나머지 하나가 장치 한 단위 안에서 같다) —
+    /// 정확히, 원형 점선은 #239 뒤 110표본 모두 같다) —
     /// 단 구분선 원형 점선은 두께 4pt(점 단위 49u, 간격 123u = 14.76pt, 칠 반지름 3.06)에서 길이
     /// 29.52면 원 둘, 29.64면 셋째 원(29.52)이 반지름만큼 넘친다. 표 셀 테두리의 원도 같다: 한글은 같은 모양
     /// 이웃 칸의 변을 한 선으로 이어 그 끝에서 이 규칙을 쓰고 (#238 — 이웃 세로 변이 없는 가로 사슬은
@@ -169,6 +169,14 @@ extension HwpLineShapeGeometryTests {
         expect(overflowBox.width) == dot
         expect(HwpLineShapeGeometry.alongExtent(of: overflow)) == -dot / 2 ... dot / 2
         expect(HwpLineShapeGeometry.crossExtent(of: overflow)) == -dot / 2 ... dot / 2
+        // 점 단위 자체가 넘치는 두께(유한 최댓값 × 22/15)는 지름이 유한 최댓값에서 멈춘다
+        let widest = HwpLineShapeGeometry.Line(
+            shape: .circle, length: 100, thickness: .greatestFiniteMagnitude,
+            scale: .border, placement: .divider
+        )
+        expect(HwpLineShapeGeometry.circleDiameter(for: widest)) == .greatestFiniteMagnitude
+        expect(HwpLineShapeGeometry.crossExtent(of: widest)?.upperBound.isFinite) == true
+        expect(HwpLineShapeGeometry.alongExtent(of: widest)?.lowerBound.isFinite) == true
         // 유한 최댓값 길이에서 끝을 넘는 마지막 원의 바깥 끝이 넘치면 그 원을 빼 경로·범위가 유한하다
         // (간격 2.5 × 0.039 × 22/15 × 5e307 = 7.15e306 → 중심 26개, 마지막 원의 바깥 끝이 넘쳐 25개)
         let huge = HwpLineShapeGeometry.Line(
