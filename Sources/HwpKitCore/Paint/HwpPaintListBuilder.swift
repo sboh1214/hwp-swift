@@ -331,7 +331,8 @@ public struct HwpPaintListBuilder: Sendable {
     }
 
     /// 셀 테두리의 명령 — 기하는 `HwpBorderSet.edges`가 소유하고 히트
-    /// (`HwpTableCellFrame.paints`) 와 공유한다 (R56). 변마다 채우기 경로 하나다 — 점선·
+    /// (`HwpTableCellFrame.paints`) 와 같은 변 기하를 공유한다 (R56 — 히트 띠는 칠하지 않는 이은 변의
+    /// 띠를 더 가질 수 있다). 변마다 채우기 경로 하나다 — 점선·
     /// 물결·원형 점선처럼 조각이 많은 모양도 명령 하나로 간다 (#191). 이웃 칸과 이은 대시·원형
     /// 점선 변은 표가 셈한 자리(`HwpTableCellFrame.borderChains`)로 제 몫만 그린다 (#238).
     func borderCommands(

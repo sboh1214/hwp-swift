@@ -342,8 +342,9 @@ final class HwpBorderChainingTests: XCTestCase {
     /// 사슬 끝은 든 조각의 연장 포함 끝 가운데 가장 먼 것이다 — 원점(첫 조각)과 달리 끝 모서리에
     /// 늦게 닿은 조각의 세로 변 연장도 사슬을 민다. 한글 12.30 실측(`probes/238/review`, 2×3 격자선
     /// 긴 점선 1mm): 끝 모서리의 세로 변이 위 칸에만·아래 칸에만·양쪽에 있거나, 위·아래 병합 칸이 먼저
-    /// 끝 모서리에 닿아도 마지막 대시가 모서리 + 1.44(세로 변 1mm의 절반)까지 간다 — 세로 변이 없으면
-    /// 모서리까지.
+    /// 끝 모서리에 닿아도 마지막 대시가 모서리 + 1.44(세로 변 1mm의 절반)까지 간다. 세로 변이 둘 다
+    /// 없으면 한글은 NONE 변 폭(0.1mm) 연장만큼 + 0.12, 우리는 NONE 변을 폭 0으로 보아 모서리까지다
+    /// (기존 격차).
     func testChainEndTakesTheFarthestExtension() {
         let wall = Side.shape(.line)
         func lastDashEnd(_ table: HwpTableFrame) -> CGFloat? {

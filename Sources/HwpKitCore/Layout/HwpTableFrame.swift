@@ -67,8 +67,9 @@ public struct HwpTableCellFrame: @unchecked Sendable, Hashable {
         return borderRects.contains { $0.contains(point) }
     }
 
-    /// 페인터가 실제로 칠하는 테두리 띠 (모서리 중심, 연장 포함, 이은 변은 제 몫) — 경로 없이
-    /// 띠만 만든다
+    /// 테두리 히트 띠 (모서리 중심, 연장 포함) — 페인터가 칠하는 변의 띠와, 이웃 칸과 이은 변
+    /// 가운데 제 몫의 요소가 없어 칠하지 않는 변의 모서리 구간 띠 (점선의 빈 자리처럼 선 위다, #238).
+    /// 경로 없이 띠만 만든다
     private var borderRects: [CGRect] {
         borders.bands(around: cellFrame, chains: borderChains)
     }

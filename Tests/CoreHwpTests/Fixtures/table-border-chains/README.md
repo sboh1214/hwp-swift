@@ -79,6 +79,9 @@ HWPX 쌍(`HwpxFixtures/table-border-chains`)과 PDF 내보내기(1쪽)가 같은
   잘린다.
 - 물결·2중 물결은 칸마다 다시 시작한다 (`#7`).
 - 사슬 끝은 든 조각의 연장 포함 끝 가운데 가장 먼 것이다 (원점과 달리 먼저 온 조각이 정하지 않는다).
+  이 픽스처의 표본으로는 가를 수 없는 규칙이라 근거는 별도 실측(`probes/238/review` — 끝 모서리
+  세로 변이 한쪽 칸에만 있거나 병합 칸이 먼저 닿은 2×3 격자선)이고, 단위 테스트
+  `HwpBorderChainingTests.testChainEndTakesTheFarthestExtension`이 잠근다.
 - 남은 격차:
   - 1.0mm 원형 점선의 원 간격이 한글은 5.76pt, 우리 모델은 5.67pt라 긴 사슬에서 원 개수가 하나씩
     갈릴 수 있다 (#239).

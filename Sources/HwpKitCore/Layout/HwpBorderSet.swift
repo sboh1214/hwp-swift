@@ -65,9 +65,10 @@ public struct HwpBorderSet: Sendable, Hashable {
     }
 
     /// rect 둘레에 **실제로 칠하는 변 전부** — 페인터 (`HwpPaintListBuilder.borderCommands`)
-    /// 와 히트 (`HwpTableCellFrame.paints`, `bands(around:)`) 가 이 하나를 공유한다 (R56).
-    /// 두 곳이 따로 계산하면 보이는 선과 눌리는 선이 갈린다. `chains`는 이웃 칸과 이은 대시·원형
-    /// 점선 변의 자리다 (#238 — 없으면 변마다 홀로 선 선).
+    /// 와 히트 (`HwpTableCellFrame.paints`, `bands(around:chains:)`) 가 같은 변 기하(`Edge`)를
+    /// 공유한다 (R56). 두 곳이 따로 계산하면 보이는 선과 눌리는 선이 갈린다. 히트 띠는 이 변들의
+    /// 띠에 더해 칠하지 않는 이은 변(제 몫의 요소가 없는 변)의 띠도 낸다 (`bands(around:chains:)`).
+    /// `chains`는 이웃 칸과 이은 대시·원형 점선 변의 자리다 (#238 — 없으면 변마다 홀로 선 선).
     func edges(around rect: CGRect, chains: HwpBorderChains = .none) -> [EdgeGeometry] {
         drawnEdges(around: rect, chains: chains).compactMap(\.geometry)
     }
