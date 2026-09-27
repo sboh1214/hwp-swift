@@ -266,13 +266,18 @@ public enum HwpRenderTuning {
         public static let borderDashUnitThicknessRatio: CGFloat = 22.0 / 15.0
 
         /// 글자선 원형 점선(`circle`)의 원 지름 = 대시 단위(`characterDashUnitEmRatio`),
-        /// 원 중심 간격 = 지름 × 이 배율. 채운 원이고 첫 원의 중심이 run 시작 x다.
+        /// 원 중심 간격 = 지름 × 이 배율. 채운 원이고 첫 원의 중심이 run 시작 x, 중심이 run
+        /// 끝 앞인 마지막 원은 끝에 걸쳐도 온전히 그린다 (#235 —
+        /// `HwpLineShapeGeometry.patternElementCount(span:period:)`).
         /// 실측: 80pt 지름 4.56pt(38u)·피치 11.4pt(95u), 40pt 2.4/5.76pt, 20pt 1.2/3.0pt.
         public static let characterCirclePitchDiameterRatio: CGFloat = 2.5
 
         /// 테두리·단 구분선 원형 점선의 원 지름 = 명목 두께, 원 중심 간격 = 두께 × 이 배율.
-        /// 첫 원의 중심은 선 시작(셀 모서리 − 두께/2)이다. 실측: 5mm 지름 118u·피치 236u,
-        /// 1mm 24u·48u, 0.12mm 4u·6u(정수화).
+        /// 첫 원의 중심은 선 시작이다 (가로 변은 셀 모서리 − 이웃 세로 변 폭/2, 세로 변은 셀
+        /// 모서리). 실측(표 테두리): 5mm 지름 118u·피치 236u, 1mm 24u·48u, 0.12mm 4u·6u(정수화).
+        /// 끝은 단 구분선만 글자선 규칙을 따르고 셀 테두리는 끝을 넘지 않는 원까지다 (#235 —
+        /// `HwpLineShapeGeometry.circleCount(for:)`). 한글은 단 구분선의 원을 더 크게 그린다 (지름
+        /// ≈ 1.5 × 두께·간격 ≈ 2.5 × 지름, #239).
         public static let borderCirclePitchThicknessRatio: CGFloat = 2
 
         /// 글자선 2중선(`doubleLine`)의 띠 높이 = 글자 크기 × 이 배율 (= 두께 0.04em의 3배).
@@ -362,7 +367,7 @@ public enum HwpRenderTuning {
 
         /// 한글 2007 호환 문서의 원형 점선 — 원 지름 (pt). 한글은 지름 1.20pt 원을 채우고 0.12pt
         /// 윤곽을 둘러 그리므로 칠해지는 지름은 1.32pt다. 원 중심 간격은
-        /// `hwp200XCirclePitch`, 첫 원의 중심은 run 시작 x다 (한글 문서와 같다).
+        /// `hwp200XCirclePitch`, 첫 원의 중심은 run 시작 x이고 run 끝은 한글 문서와 같다 (#235).
         public static let hwp200XCircleDiameter: CGFloat = 1.32
 
         /// 한글 2007 호환 문서의 원형 점선 — 원 중심 간격 (pt). 실측: 모든 크기·종류에서 3.0pt.

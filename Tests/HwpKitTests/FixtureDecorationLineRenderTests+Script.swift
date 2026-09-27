@@ -45,10 +45,6 @@ extension FixtureDecorationLineRenderTests {
         107.7 + 16 * CGFloat(paragraph)
     }
 
-    private static func isMagenta(_ red: UInt8, _ green: UInt8, _ blue: UInt8) -> Bool {
-        red > 150 && green < 100 && blue > 150
-    }
-
     /// 문단 k의 색 선 중심 — 그 줄의 베이스라인 위 12pt ~ 아래 4pt 안에서 찾는다
     /// (문단 간격 16pt라 이웃 줄의 선은 밖이다).
     private static func lineCenter(

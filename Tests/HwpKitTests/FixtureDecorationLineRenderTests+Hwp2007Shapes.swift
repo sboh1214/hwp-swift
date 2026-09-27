@@ -34,32 +34,15 @@ extension FixtureDecorationLineRenderTests {
     /// 본문 왼쪽 끝 — 한글 PDF의 run 시작 x
     private static let shapeRunStart: CGFloat = 85.08
 
-    private static func isMagenta(_ red: UInt8, _ green: UInt8, _ blue: UInt8) -> Bool {
-        red > 150 && green < 100 && blue > 150
-    }
-
-    /// `y`(pt) ± `halfBand` 안에서 자홍 픽셀이 가장 많은 행의 가로 조각 (시작, 길이) 목록 (pt).
+    /// `y`(pt) ± `halfBand` 안에서 자홍 픽셀이 가장 많은 행의 가로 조각 (시작, 길이) 목록 (pt) —
+    /// 페이지 전체 폭의 `rowRuns`
     private static func magentaRuns(
         _ raster: Raster, near y: CGFloat, halfBand: CGFloat = 0.6
     ) -> [(start: CGFloat, length: CGFloat)] {
-        let rows = Int((y - halfBand) * scale) ... Int((y + halfBand) * scale)
-        let counts = rows.map { raster.matches($0, isMagenta) }
-        guard let best = counts.indices.max(by: { counts[$0] < counts[$1] }) else { return [] }
-        let row = rows.lowerBound + best
-        var runs: [(start: CGFloat, length: CGFloat)] = []
-        var start: Int?
-        for x in 0 ... raster.pixelWidth {
-            let offset = row * raster.bytesPerRow + x * 4
-            let ink = x < raster.pixelWidth
-                && isMagenta(raster.data[offset], raster.data[offset + 1], raster.data[offset + 2])
-            if ink, start == nil {
-                start = x
-            } else if !ink, let first = start {
-                runs.append((CGFloat(first) / scale, CGFloat(x - first) / scale))
-                start = nil
-            }
-        }
-        return runs
+        rowRuns(
+            raster, near: y, halfBand: halfBand,
+            x: 0 ... CGFloat(raster.pixelWidth - 1) / scale, where: isMagenta
+        ).map { ($0.start, $0.end - $0.start) }
     }
 
     /// `range`(pt) 안의 자홍 행들을 이어진 띠로 묶은 (위, 아래) 목록 (pt, 픽셀 경계)

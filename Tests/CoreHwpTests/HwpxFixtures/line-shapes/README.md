@@ -9,7 +9,9 @@ HWP fixture `line-shapes`(`Tests/CoreHwpTests/Fixtures/line-shapes/document.hwp`
 `LINETYPE2` 그대로(실선 1)다. 한글은 글자선 `REV3D`를 `SOLID` 글자 모양으로 접어 저장했고,
 취소선만 있는 글자 모양은 `type="NONE"` 밑줄 + `<hh:strikeout shape="…">`로 적는다
 (HWP 쌍은 밑줄 종류 2 + 밑줄 모양 복사 — 등가 투영이 그 이중 기록만 접는다).
-`document.hwpx`의 파싱 기대값은 `manifest.json`에 있다.
+둘째 단 끝의 run 끝 표본 문단 넷(#235 — 원형 점선·물결이 자리가 run 끝보다 앞인 원·대각선을
+끝을 넘어도 그리는 규칙)은 HWP 쌍 README에 있다. `document.hwpx`의 파싱 기대값은
+`manifest.json`에 있다.
 
 ## 재생성
 
@@ -25,4 +27,4 @@ HWP fixture `line-shapes`(`Tests/CoreHwpTests/Fixtures/line-shapes/document.hwp`
 
 - 앱: /Applications/한컴오피스 한글.app (com.hancom.office.hwp12.mac.general)
 - 버전: 12.30.0 (build 6446)
-- 일자: 2026-09-12 (System Events 접근성 자동화로 저장)
+- 일자: 2026-09-12, 재저장 2026-09-27 (#235) (System Events 접근성 자동화로 저장)

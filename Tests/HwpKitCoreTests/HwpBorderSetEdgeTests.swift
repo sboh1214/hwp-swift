@@ -60,7 +60,8 @@ final class HwpBorderSetEdgeTests: XCTestCase {
             expect(edge.band.insetBy(dx: -0.001, dy: -0.001).contains(edge.path.boundingBoxOfPath))
                 == true
         }
-        // 원 하나도 안 들어가는 짧은 원형 변은 경로도 띠도 없다
+        // 원 하나도 안 들어가는 짧은 원형 변은 경로도 띠도 없다 — 표 셀 테두리의 원은 변 끝을
+        // 넘지 않는 것만 그린다 (#235: 끝 규칙은 글자선·단 구분선만)
         let tiny = Self.set(top: 4, topShape: .circle)
         let tinyRect = CGRect(x: 100, y: 200, width: 1, height: 50)
         expect(tiny.edges(around: tinyRect)).to(beEmpty())

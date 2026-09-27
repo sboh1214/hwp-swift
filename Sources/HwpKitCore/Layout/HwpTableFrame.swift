@@ -55,7 +55,7 @@ public struct HwpBorderSet: Sendable, Hashable {
         /// 불변 경로 — `Edge.geometry`가 소유권 경계에서 복사해 넣는다 (`HwpPaintCommand`가 retain)
         let path: CGPath
         let color: HwpRGBColor
-        /// 이 변이 칠하는 영역의 경계 상자 (모서리에 중심을 둔 띠, 연장·물결 넘침 포함)
+        /// 이 변이 칠하는 영역의 경계 상자 (모서리에 중심을 둔 띠, 연장·물결 넘침·첫 원 반지름 포함)
         let band: CGRect
     }
 
@@ -165,9 +165,9 @@ public struct HwpBorderSet: Sendable, Hashable {
             )
         }
 
-        /// 이 변이 칠하는 영역의 경계 상자 (페이지 좌표) — 가로지르는 축은 모양의 띠, 선
-        /// 방향은 연장 포함 [start − lead, end + trail]에 물결의 넘침·획 모서리를 더한 범위.
-        /// 경로를 만들지 않는다.
+        /// 이 변이 칠하는 영역의 경계 상자 (페이지 좌표) — 가로지르는 축은 모양의 띠, 선 방향은
+        /// 연장 포함 [start − lead, end + trail]에 물결의 넘침·획 모서리와 원형 점선 첫 원의 앞
+        /// 반지름을 더한 범위 (셀 테두리의 원은 변 끝을 넘지 않는다, #235). 경로를 만들지 않는다.
         var band: CGRect? {
             guard lineLength > 0,
                   let cross = HwpLineShapeGeometry.crossExtent(of: line),

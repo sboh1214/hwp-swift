@@ -183,7 +183,11 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   `.hwp`·`.hwpx`로 저장. HWPX 선 종류 이름이 HWP5의 어느 값으로 저장되는지의 실물
   근거다 (#177) — 글자선은 `LINETYPE2 - 1`(실선 0, `REV3D`는 4비트를 넘쳐 실선으로
   접힘), 테두리·대각선·구분선은 `LINETYPE2` 그대로(실선 1)이고 한글은 `DOT`를 긴
-  점선으로, `DASH`를 점선으로 그린다. HWPX 쌍은 `HwpxFixtures/line-shapes`.
+  점선으로, `DASH`를 점선으로 그린다. 2026-09-27(#235)에 둘째 단 끝에 run 끝 표본 4문단
+  (라벨 뒤 원형 점선 밑줄·취소선·물결 밑줄·2중 물결 취소선 'A' run)을 더해 같은 방법으로 다시
+  저장했다 — 원·대각선의 자리가 run 끝 앞이면 끝을 넘어도 그리는 규칙을
+  `FixtureLineShapeRenderTests+RunEnd`가 이 문서의 렌더에서 잠근다 (앞 문단들의 한글 PDF 벡터는
+  재저장 전과 같다). HWPX 쌍은 `HwpxFixtures/line-shapes`.
 - `script-decorations`: 위/아래 첨자 × 취소선·글자 가운데 밑줄·글자 아래 밑줄·글자 위
   밑줄 8조합과 글자 위치 50 대조 3문단(취소선만·위 첨자+취소선·위 첨자+아래 밑줄)을
   기준 run(검정) 사이에 빨강 대상 run으로 실은 합성 HWPX를 Hancom Office HWP for
@@ -210,8 +214,11 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   문서에 실어 두께의 크기 비례 여부를 가른다. 2026-09-26(#227)에 실선이 아닌 선 모양 10문단
   (긴 점선 10·40pt, 점선·원형 점선·2중선·3중선·가는+굵은·물결·2중 물결·일점쇄선, 자홍)을 더해
   다시 저장했다 — 이 모드의 무늬·띠·물결도 크기와 무관한 고정 pt라는 규칙의 실물 근거이며
-  `FixtureDecorationLineRenderTests+Hwp2007Shapes`의 오라클이다. 이제 2쪽이다. HWPX 쌍은
-  `HwpxFixtures/hwp2007-decorations`.
+  `FixtureDecorationLineRenderTests+Hwp2007Shapes`의 오라클이다. 이제 2쪽이다. 2026-09-27
+  (#235)에 2쪽 끝에 run 끝 표본 4문단(Menlo 10pt 'A' run의 원형 점선 밑줄·취소선·물결 밑줄·2중
+  물결 취소선)을 더해 다시 저장했다 — 무늬가 고정 pt라 run 끝의 원·대각선 개수를 같은 세션의 한글
+  PDF와 그대로 맞대는 `FixtureDecorationLineRenderTests+RunEnd`의 오라클이다 (앞 스무 문단의 좌표는
+  #227 저장본과 같다). HWPX 쌍은 `HwpxFixtures/hwp2007-decorations`.
 - `hyperlink-click-band`: **한글 문서**(호환 문서 대상 프로그램 `HWP201X`)에 함초롬바탕 10pt·줄 간격
   160% 기본으로 파란 밑줄 10pt 하이퍼링크(`https://hwp-swift.test/<표본>`)를 줄마다 왼쪽(링크 뒤
   일반)·오른쪽(일반 뒤 링크) 칸에 번갈아 두고, 40pt 문단 끝 글자·40pt 글자 모양 책갈피·높이 40pt
