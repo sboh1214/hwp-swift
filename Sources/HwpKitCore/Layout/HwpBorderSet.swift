@@ -20,12 +20,26 @@ import Foundation
 /// 이웃 칸의 변을 한 선으로 이어 무늬를 그린다 (#238). 그 자리는 표가 셀 배치에서 셈해 칸에
 /// 싣고 (`HwpBorderChains`, `HwpTableFrame.init`), 이 타입은 변마다 받은 자리로 제 몫의 요소만
 /// 그린다. 자리가 없는 변은 홀로 선 선이다.
+///
+/// 셀 간격(`cellSpacing`)이 있는 표는 칸이 맞닿지 않아 잇지 않고, 한글은 실선·대시·원형 점선 변을
+/// 칸마다 네 변의 상자로 그린다 (#243). 원형 점선의 원은 단 구분선과 같은 점 무늬로 크고 성기며
+/// (`HwpLineShapeGeometry.Line.inSpacedTable`), 모서리는 **모서리마다** 만나는 두 변으로 정한다 —
+/// 두 변의 모양·굵기가 같으면(색은 보지 않는다) 맞물린 모서리라 실선·대시는 가로·세로 변 모두 굵기의
+/// 절반만큼 나가고 원형 점선은 둘 다 모서리에서 시작·끝난다. 다르면 가로 변은 위 규칙처럼 세로 변
+/// 굵기의 절반만큼 나가고 세로 변은 가로 변 굵기의 절반만큼 **물러난다** (가로 변이 모서리를 덮는다).
+/// 세로 변을 먼저, 가로 변을 나중에 그린다 (`Position.spacedOrder`). 여러 줄·물결 변은 셀 간격이
+/// 있어도 위 격자 규칙으로 그린다 — 한글도 여러 줄·물결은 셀 간격 0·1·283HWPUNIT에서 같은
+/// 벡터다 (이웃이 다른 모양일 때의 모서리는 한글과 다르다 — `Sources/HwpKitCore/AGENTS.md`의 남은
+/// 격차).
 public struct HwpBorderSet: Sendable, Hashable {
     public let top, bottom, left, right: CGFloat
     public let topColor, bottomColor, leftColor, rightColor: HwpRGBColor
     /// 선 모양 (표 25) — 점선·파선·여러 줄·물결은 `HwpLineShapeGeometry`가 두께 축척으로
     /// 그린다 (#191). `none`은 폭과 무관하게 그리지 않는다.
     public let topShape, bottomShape, leftShape, rightShape: HwpBorderType
+    /// 이 칸이 속한 표의 셀 간격 (pt, 표 76 `cellSpacing`) — 0보다 크면 실선·대시·원형 점선 변을
+    /// 한글처럼 칸마다 상자로 그린다 (#243, 타입 설명). 0이면 이웃 칸과 맞닿은 격자다.
+    public let cellSpacing: CGFloat
 
     public init(
         top: CGFloat,
@@ -39,7 +53,8 @@ public struct HwpBorderSet: Sendable, Hashable {
         topShape: HwpBorderType = .line,
         bottomShape: HwpBorderType = .line,
         leftShape: HwpBorderType = .line,
-        rightShape: HwpBorderType = .line
+        rightShape: HwpBorderType = .line,
+        cellSpacing: CGFloat = 0
     ) {
         self.top = top
         self.bottom = bottom
@@ -53,6 +68,7 @@ public struct HwpBorderSet: Sendable, Hashable {
         self.bottomShape = bottomShape
         self.leftShape = leftShape
         self.rightShape = rightShape
+        self.cellSpacing = cellSpacing
     }
 
     /// 한 변의 그리기 — 페이지 좌표 채우기 경로 + 색 + 히트용 띠. 모듈 안(페인터·히트) 전용.
@@ -87,48 +103,135 @@ public struct HwpBorderSet: Sendable, Hashable {
         bands(around: rect, chains: chains).reduce(rect) { $0.union($1) }
     }
 
+    /// 셀 간격이 있는 표의 칸인가 — 실선·대시·원형 점선 변을 칸마다 상자로 그리고 이웃 칸과 잇지
+    /// 않는다 (#243). 무늬 이음(`HwpBorderChaining`)도 같은 술어를 쓴다.
+    var isSpacedCell: Bool {
+        cellSpacing > 0
+    }
+
     /// 변 폭 — 폭이 있고 모양이 `none`이 아니면 그 폭, 아니면 0 (그리지 않는 변). 이웃 변의
     /// 연장(폭의 절반)도 이 값으로 셈한다 — 무늬 이음(`HwpBorderChaining`)도 같은 술어를 쓴다.
     static func visibleWidth(_ width: CGFloat, _ shape: HwpBorderType) -> CGFloat {
         width > 0 && shape != .none ? width : 0
     }
 
-    private func drawnEdges(around rect: CGRect, chains: HwpBorderChains) -> [Edge] {
+    /// 변의 자리 — 위·아래는 가로 변, 왼·오른은 세로 변. `edges(around:chains:)`의 차례(곧 그리는
+    /// 차례)는 셀 간격이 없는 칸이 `allCases`(위·아래·왼·오른), 셀 간격이 있는 칸이 `spacedOrder`다.
+    private enum Position: CaseIterable {
+        case top, bottom, left, right
+
+        /// 셀 간격이 있는 칸의 그리는 차례 — 한글은 세로 변을 먼저, 가로 변을 나중에 그려 모서리에서
+        /// 가로 변이 위에 온다 (#243, 한글 12.30 PDF의 그리기 순서: 셀 간격 1·283HWPUNIT 표본 74개
+        /// 모두). 맞물린 모서리(두 변 모두 나간다)와 물러난 세로 원형 점선(원의 반지름이 가로 변 띠에
+        /// 걸친다)에서 색이 다르면 보인다.
+        static let spacedOrder: [Position] = [.left, .right, .top, .bottom]
+
+        var isHorizontal: Bool {
+            self == .top || self == .bottom
+        }
+
+        /// 띠의 바깥쪽이 −y/−x 쪽인가 (위·왼 변)
+        var outerIsLeading: Bool {
+            self == .top || self == .left
+        }
+
+        /// 시작·끝 모서리에서 만나는 이웃 변 — 가로 변은 왼·오른, 세로 변은 위·아래
+        var neighbours: (lead: Position, trail: Position) {
+            isHorizontal ? (.left, .right) : (.top, .bottom)
+        }
+    }
+
+    /// 변 하나의 모양·보이는 폭(`visibleWidth` — 없는 변은 0)·색
+    private struct Side {
+        let shape: HwpBorderType
+        let width: CGFloat
+        let color: HwpRGBColor
+    }
+
+    private func side(_ position: Position) -> Side {
         let visible = Self.visibleWidth
-        let widths = (
-            top: visible(top, topShape), bottom: visible(bottom, bottomShape),
-            left: visible(left, leftShape), right: visible(right, rightShape)
-        )
-        let edges: [Edge] = [
-            // 가로 변: 끝에 세로 변이 있으면 그 폭의 절반만큼 연장
-            Edge(
-                shape: topShape, width: widths.top, color: topColor,
-                start: rect.minX, end: rect.maxX, cross: rect.minY, horizontal: true,
-                leadExtension: widths.left / 2, trailExtension: widths.right / 2,
-                outerIsLeading: true, chain: chains.top
-            ),
-            Edge(
-                shape: bottomShape, width: widths.bottom, color: bottomColor,
-                start: rect.minX, end: rect.maxX, cross: rect.maxY, horizontal: true,
-                leadExtension: widths.left / 2, trailExtension: widths.right / 2,
-                outerIsLeading: false, chain: chains.bottom
-            ),
-            // 세로 변: 실선·대시·원형은 연장 없음. 여러 줄의 부속선은 가로 변이 있는 끝에서
-            // 그 폭의 절반을 기준으로 겹상자로 물러나고, 물결은 그만큼 연장한 곳에서 시작한다.
-            Edge(
-                shape: leftShape, width: widths.left, color: leftColor,
-                start: rect.minY, end: rect.maxY, cross: rect.minX, horizontal: false,
-                leadExtension: widths.top / 2, trailExtension: widths.bottom / 2,
-                outerIsLeading: true, chain: chains.left
-            ),
-            Edge(
-                shape: rightShape, width: widths.right, color: rightColor,
-                start: rect.minY, end: rect.maxY, cross: rect.maxX, horizontal: false,
-                leadExtension: widths.top / 2, trailExtension: widths.bottom / 2,
-                outerIsLeading: false, chain: chains.right
-            ),
-        ]
-        return edges.filter { $0.width > 0 }
+        return switch position {
+        case .top: Side(shape: topShape, width: visible(top, topShape), color: topColor)
+        case .bottom:
+            Side(shape: bottomShape, width: visible(bottom, bottomShape), color: bottomColor)
+        case .left: Side(shape: leftShape, width: visible(left, leftShape), color: leftColor)
+        case .right: Side(shape: rightShape, width: visible(right, rightShape), color: rightColor)
+        }
+    }
+
+    private func drawnEdges(around rect: CGRect, chains: HwpBorderChains) -> [Edge] {
+        let spaced = isSpacedCell
+        return (spaced ? Position.spacedOrder : Position.allCases).compactMap { position in
+            let side = side(position)
+            guard side.width > 0 else { return nil }
+            let lead = self.side(position.neighbours.lead)
+            let trail = self.side(position.neighbours.trail)
+            let horizontal = position.isHorizontal
+            let (start, end) = horizontal ? (rect.minX, rect.maxX) : (rect.minY, rect.maxY)
+            let cross = switch position {
+            case .top: rect.minY
+            case .bottom: rect.maxY
+            case .left: rect.minX
+            case .right: rect.maxX
+            }
+            let chain = switch position {
+            case .top: chains.top
+            case .bottom: chains.bottom
+            case .left: chains.left
+            case .right: chains.right
+            }
+            let reach = { (neighbour: Side) in
+                Self.lineReach(
+                    of: side, horizontal: horizontal, neighbour: neighbour, spaced: spaced
+                )
+            }
+            return Edge(
+                shape: side.shape, width: side.width, color: side.color,
+                start: start, end: end, cross: cross, horizontal: horizontal,
+                leadExtension: lead.width / 2, trailExtension: trail.width / 2,
+                lineLead: reach(lead), lineTrail: reach(trail),
+                outerIsLeading: position.outerIsLeading, inSpacedTable: spaced, chain: chain
+            )
+        }
+    }
+
+    /// 선이 모서리 밖으로 나가는 길이 (음수면 안으로 물러난다) — `neighbour`는 그 모서리에서 만나는
+    /// 이웃 변이다. 이은 선(#238)은 쓰지 않는다 (사슬의 원점·끝이 정한다).
+    ///
+    /// - 셀 간격이 없는 표(격자, #191): 가로 변은 이웃 세로 변 폭의 절반만큼 나가고, 세로 변은
+    ///   물결만 이웃 가로 변 폭의 절반만큼 나간다 (실선·대시·원형은 모서리에서 — 가로 변이 모서리를
+    ///   메운다; 여러 줄은 부속선마다 물러나는 겹상자라 선 자체는 모서리에서). 이웃이 여러 줄·물결이거나
+    ///   여러 줄·물결 변의 이웃이 다른 모양일 때 한글이 물리는 자리는 따르지 않는다 (남은 격차).
+    /// - 셀 간격이 있는 표의 실선·대시·원형 점선(#243, 한글 12.30 실측 `probes/243`): 이웃과 모양·
+    ///   굵기가 같은 **맞물린 모서리**면 원형 점선은 모서리에서, 실선·대시는 가로·세로 변 모두 굵기의
+    ///   절반만큼 나간다. 맞물리지 않으면 가로 변은 이웃 폭의 절반만큼 나가고 세로 변은 그만큼 물러난다.
+    ///   여러 줄·물결 변은 셀 간격이 없는 표와 같은 규칙이다.
+    private static func lineReach(
+        of side: Side, horizontal: Bool, neighbour: Side, spaced: Bool
+    ) -> CGFloat {
+        let half = neighbour.width / 2
+        guard spaced, isSingleLine(side.shape) else {
+            return horizontal || side.shape == .wave || side.shape == .doubleWave ? half : 0
+        }
+        let joined = neighbour.width > 0 && neighbour.shape == side.shape
+            && neighbour.width == side.width
+        if joined {
+            return side.shape == .circle ? 0 : half
+        }
+        return horizontal ? half : -half
+    }
+
+    /// 한 줄로 그리는 모양 — 실선(3D 넷은 실선으로 대체한다)·대시·원형 점선. 셀 간격이 있는 표에서
+    /// 칸마다 상자로 그리는 갈래다 (#243 — 여러 줄·물결은 한글이 셀 간격과 무관하게 그린다).
+    private static func isSingleLine(_ shape: HwpBorderType) -> Bool {
+        switch shape {
+        case .line, .thick3D, .thick3DReverse, .single3D, .single3DReverse,
+             .longDotLine, .dotLine, .dashDot, .dashDotDot, .longDash, .circle:
+            true
+        case .none, .doubleLine, .thinThickDoubleLine, .thickThinDoubleLine,
+             .thinThickThinTripleLine, .wave, .doubleWave:
+            false
+        }
     }
 
     /// 한 변의 입력 — `HwpLineShapeGeometry`의 로컬 좌표(x = 선 방향, y = 가로지르는 축,
@@ -143,11 +246,17 @@ public struct HwpBorderSet: Sendable, Hashable {
         /// 가로지르는 축의 모서리 좌표 (선 중심)
         let cross: CGFloat
         let horizontal: Bool
-        /// 시작·끝 쪽 이웃 변 폭의 절반 (없으면 0)
+        /// 시작·끝 쪽 이웃 변 폭의 절반 (없으면 0) — 히트 띠와 여러 줄 겹상자의 기준
         let leadExtension: CGFloat
         let trailExtension: CGFloat
+        /// 선 자체가 시작·끝 모서리 밖으로 나가는 길이 (음수면 물러난다, `lineReach`) — 이은 선이면
+        /// 쓰지 않는다
+        let lineLead: CGFloat
+        let lineTrail: CGFloat
         /// 띠의 바깥쪽이 −y/−x 쪽인지 (위·왼 변 true, 아래·오른 변 false)
         let outerIsLeading: Bool
+        /// 셀 간격이 있는 표의 변인가 (#243) — 원형 점선의 원 크기·간격이 점 무늬다
+        let inSpacedTable: Bool
         /// 이웃 칸과 이은 대시·원형 점선의 자리 (#238) — 있으면 선은 사슬 전체이고 이 변은 제 몫의
         /// 요소만 그린다. 없으면 이 변 혼자의 선.
         let chain: HwpBorderChainPlacement?
@@ -160,31 +269,26 @@ public struct HwpBorderSet: Sendable, Hashable {
                 : CGAffineTransform(a: 0, b: 1, c: 1, d: 0, tx: cross, ty: lineStart)
         }
 
-        /// 선 자체를 이웃 변 폭의 절반만큼 연장하는가 — 가로 변은 늘, 세로 변은 물결만
-        /// (실선·대시·원형 세로 변은 모서리에서 시작하고, 여러 줄은 부속선별로 물러난다)
-        private var extendsLine: Bool {
-            horizontal || shape == .wave || shape == .doubleWave
-        }
-
         /// 선 시작 — 이은 선이면 사슬의 무늬 원점 (사슬 첫 조각의 연장 포함 시작)
         private var lineStart: CGFloat {
             if let chain {
                 return start - chain.offset
             }
-            return start - (extendsLine ? leadExtension : 0)
+            return start - lineLead
         }
 
         private var lineLength: CGFloat {
             if let chain {
                 return chain.length
             }
-            return end + (extendsLine ? trailExtension : 0) - lineStart
+            return end + lineTrail - lineStart
         }
 
         private var line: HwpLineShapeGeometry.Line {
             HwpLineShapeGeometry.Line(
                 shape: shape, length: lineLength, thickness: width,
-                scale: .border, placement: .border, elementRange: chain?.elementRange
+                scale: .border, placement: .border, elementRange: chain?.elementRange,
+                inSpacedTable: inSpacedTable
             )
         }
 
@@ -248,7 +352,9 @@ public struct HwpBorderSet: Sendable, Hashable {
         }
     }
 
-    public static func uniform(width: CGFloat, color: HwpRGBColor) -> HwpBorderSet {
+    public static func uniform(
+        width: CGFloat, color: HwpRGBColor, cellSpacing: CGFloat = 0
+    ) -> HwpBorderSet {
         HwpBorderSet(
             top: width,
             bottom: width,
@@ -257,7 +363,8 @@ public struct HwpBorderSet: Sendable, Hashable {
             topColor: color,
             bottomColor: color,
             leftColor: color,
-            rightColor: color
+            rightColor: color,
+            cellSpacing: cellSpacing
         )
     }
 }

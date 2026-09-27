@@ -48,7 +48,9 @@ struct HwpBorderChains: Hashable, Sendable {
 /// - 물결·2중 물결·실선·여러 줄은 잇지 않는다 (한글도 물결은 칸마다 다시 시작한다).
 ///
 /// 표가 쪽마다 나뉘면 쪽 조각(`HwpTableSplitter.segmentFrame`)마다 새로 셈한다 — 한글도 세로
-/// 사슬을 쪽 조각의 위 모서리에서 다시 시작한다. 칸 간격이 있는 표는 칸이 맞닿지 않아 잇지 않는다.
+/// 사슬을 쪽 조각의 위 모서리에서 다시 시작한다. 칸 간격이 있는 표는 잇지 않는다 — 칸이 맞닿지
+/// 않고, 한글은 그 표의 변을 칸마다 상자로 그린다 (#243, `HwpBorderSet.cellSpacing`). 칸 간격을 실은
+/// 칸은 맞닿은 배치로 옮겨 와도 조각을 내지 않는다 (상자의 모서리 규칙과 사슬 자리가 섞이지 않게).
 enum HwpBorderChaining {
     /// 격자선 좌표·맞닿음 판정의 허용 오차 (pt) — 셀 배치의 부동소수 잡음(병합 칸 모서리가 합의
     /// 묶음 순서로 1e-12pt쯤 어긋난다)만 흡수한다. 가장 작은 칸 간격(1 HWPUNIT = 0.01pt)보다 훨씬
@@ -133,6 +135,7 @@ enum HwpBorderChaining {
 
         static func pieces(of cell: HwpTableCellFrame, row: Int, cell index: Int) -> [Piece] {
             let borders = cell.borders
+            guard !borders.isSpacedCell else { return [] }
             let frame = cell.cellFrame
             let visible = HwpBorderSet.visibleWidth
             let widths = (

@@ -4,8 +4,9 @@ import Foundation
 // MARK: - 원형 점선의 원 (같은 타입의 확장 — 본체 파일 길이를 지킨다)
 
 /// 원형 점선(`circle`)의 원 크기·간격·세로 자리. 한글은 원을 600dpi 장치 단위(0.12pt)의 정수로
-/// 그린다 (#239) — 한글 문서·MS 워드 호환 문서의 글자선과 단 구분선은 점선(1·1.5)의 점을 원으로
-/// 그리는 **점 무늬**, 표 셀 테두리는 두께를 단위로 하는 **격자**다 (`circleDeviceGeometry(for:)`).
+/// 그린다 (#239) — 한글 문서·MS 워드 호환 문서의 글자선, 단 구분선, 셀 간격이 있는 표의 셀 테두리
+/// (#243)는 점선(1·1.5)의 점을 원으로 그리는 **점 무늬**, 셀 간격이 없는 표의 셀 테두리는 두께를
+/// 단위로 하는 **격자**다 (`circleDeviceGeometry(for:)`).
 /// 한글 2007 호환 문서의 글자선은 크기와 무관한 고정 pt다 (#227). 값은
 /// `HwpRenderTuning.LineShape`의 원형 점선 절 (한글 12.30.0 PDF 실측).
 extension HwpLineShapeGeometry {
@@ -44,11 +45,12 @@ extension HwpLineShapeGeometry {
         }
     }
 
-    /// 원형 점선이 표 셀 테두리의 **격자** 갈래인가 — 테두리 축척에서 단 구분선이 아닌 자리.
-    /// 단 구분선과 글자선은 점 무늬 갈래다 (한글은 같은 두께의 단 구분선 원을 표 셀 테두리보다
-    /// 크고 성기게 그린다 — 1mm 간격 88u vs 48u).
+    /// 원형 점선이 표 셀 테두리의 **격자** 갈래인가 — 테두리 축척에서 단 구분선이 아니고 셀 간격이
+    /// 있는 표(`Line.inSpacedTable`)의 테두리도 아닌 자리. 단 구분선·셀 간격이 있는 표의 셀 테두리와
+    /// 글자선은 점 무늬 갈래다 (한글은 같은 두께의 원을 셀 간격이 없는 표의 셀 테두리보다 크고 성기게
+    /// 그린다 — 1mm 간격 88u vs 48u; 셀 간격이 있는 표는 1HWPUNIT부터 점 무늬다, #243).
     static func circleUsesCellGrid(_ line: Line) -> Bool {
-        guard line.scale == .border else { return false }
+        guard line.scale == .border, !line.inSpacedTable else { return false }
         switch line.placement {
         case .divider:
             return false

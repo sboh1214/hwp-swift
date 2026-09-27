@@ -18,8 +18,8 @@ import Foundation
 /// 띠 4.2pt, 물결 진폭 2.88pt — #227). 세 축척의 패턴 배수는 같고, 띠 안 구성은 글자선·테두리가
 /// 같으며 한글 2007 호환 문서만 굵은 여러 줄의 비율이 다르다 (`stripeFractions(for:scale:)`).
 /// 원형 점선의 원만 비례가 아니다 — 한글처럼 지름·간격을 600dpi 장치 단위(0.12pt)의 정수로
-/// 반올림하고, 단 구분선은 표 셀 테두리가 아니라 글자선과 같은 점 무늬로 그린다 (#239 —
-/// `circleDeviceGeometry(for:)`).
+/// 반올림하고, 단 구분선과 셀 간격이 있는 표의 셀 테두리는 셀 간격이 없는 표의 셀 테두리가 아니라
+/// 글자선과 같은 점 무늬로 그린다 (#239·#243 — `circleDeviceGeometry(for:)`).
 ///
 /// 여러 줄·물결 띠의 세로 자리는 `Placement`가 정한다 — 글자 아래 밑줄은 단선 띠의 위
 /// 가장자리에서 아래로 자라고, 취소선과 테두리·단 구분선은 단선 중심에 가운데 맞추며, 글자
@@ -52,8 +52,9 @@ public enum HwpLineShapeGeometry {
         /// 글자 크기와 무관한 고정 pt다 (#227, `HwpRenderTuning.LineShape.hwp200X*`). 선 두께가
         /// 고정 0.36pt인 것(#210)과 같은 갈래다.
         case hwp200XCharacterLine
-        /// 표 셀 테두리·단 구분선 — 명목 두께에 비례 (원형 점선은 장치 단위 정수이고 `Placement`가
-        /// 표 셀 테두리의 격자와 단 구분선의 점 무늬를 가른다, #239)
+        /// 표 셀 테두리·단 구분선 — 명목 두께에 비례 (원형 점선은 장치 단위 정수이고 `Placement`와
+        /// `Line.inSpacedTable`이 셀 간격 없는 표 셀 테두리의 격자와 단 구분선·셀 간격 있는 표의 점
+        /// 무늬를 가른다, #239·#243)
         case border
     }
 
@@ -69,7 +70,7 @@ public enum HwpLineShapeGeometry {
         /// 표 셀 테두리 — 띠는 선 중심에 가운데, 물결은 두께 3/8만큼 −y 쪽, 2중 물결의
         /// 둘째 파는 선 방향으로 3/4 두께 뒤에서 시작해 내려가는 획이 첫 파와 한 직선을
         /// 이룬다 (마름모 격자). 원형 점선은 두께를 HWPUNIT·장치 단위로 차례로 반올림한 r이 단위인 격자다
-        /// (간격 2r, #239)
+        /// (간격 2r, #239) — 셀 간격이 있는 표(`Line.inSpacedTable`)만 단 구분선의 점 무늬다 (#243)
         case border
         /// 단 구분선 — 테두리와 같되 2중 물결의 둘째 파가 첫 파와 같은 x에서 시작하고, 원형
         /// 점선은 글자선과 같은 점 무늬다 (점 단위 = 두께 × 22/15, 간격 ≈ 2.5 × 점 단위, #239)
@@ -91,6 +92,15 @@ public enum HwpLineShapeGeometry {
         /// `length` 전체로 정한다 (끝 규칙·대시 자름은 `length`에서). 대시·원형 점선만 본다 — 실선·
         /// 여러 줄·물결에는 쓰지 않는다 (무시한다). nil이면 선 전체.
         public var elementRange: Range<CGFloat>?
+        /// 셀 간격(표 76 `cellSpacing`)이 있는 표의 셀 테두리인가 — 테두리 축척(`Scale.border`)에서
+        /// 단 구분선(`Placement.divider`)이 아닌 자리에서만 본다. 한글은 그 표의 원형 점선을 표 셀
+        /// 테두리의 격자가 아니라 단 구분선과 같은 **점 무늬**로 그린다 (#243 — 셀 간격 1HWPUNIT부터,
+        /// 표 26 굵기 16단 모두). 이 값은 원형 점선의 원 크기·간격만 바꾸고 대시·여러 줄·물결 경로는
+        /// 그대로다 (한글도 여러 줄·물결은 셀 간격과 무관하다; 대시는 한글이 장치 단위로 반올림하는
+        /// 식이 셀 간격에 따라 달라 한 주기에 1u쯤 갈리는데 여기서는 두 경우 모두 비례로 그린다 —
+        /// `Sources/HwpKitCore/AGENTS.md`의 남은 격차). 모서리에서 선이 나가거나 물러나는 길이는
+        /// 호출자(`HwpBorderSet`)가 `length`로 정한다.
+        public var inSpacedTable: Bool
 
         public init(
             shape: HwpBorderType,
@@ -98,7 +108,8 @@ public enum HwpLineShapeGeometry {
             thickness: CGFloat,
             scale: Scale,
             placement: Placement,
-            elementRange: Range<CGFloat>? = nil
+            elementRange: Range<CGFloat>? = nil,
+            inSpacedTable: Bool = false
         ) {
             self.shape = shape
             self.length = length
@@ -106,6 +117,7 @@ public enum HwpLineShapeGeometry {
             self.scale = scale
             self.placement = placement
             self.elementRange = elementRange
+            self.inSpacedTable = inSpacedTable
         }
     }
 
