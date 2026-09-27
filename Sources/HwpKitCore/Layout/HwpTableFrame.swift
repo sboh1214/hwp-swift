@@ -22,6 +22,9 @@ public struct HwpTableCellFrame: @unchecked Sendable, Hashable {
     public let shapes: [HwpCellShape]
     /// 셀 안 글상자 (문단 줄 위치에 배치, R29 #1)
     public let textboxes: [HwpCellTextbox]
+    /// 이웃 칸과 이은 대시·원형 점선 변의 자리 (#238) — 셀 혼자로는 알 수 없어 표가 셀 배치에서
+    /// 셈해 싣는다 (`HwpTableFrame.init`, `HwpBorderChaining`). 기본은 이음 없음.
+    var borderChains: HwpBorderChains = .none
 
     public init(
         cellFrame: CGRect,
@@ -64,9 +67,10 @@ public struct HwpTableCellFrame: @unchecked Sendable, Hashable {
         return borderRects.contains { $0.contains(point) }
     }
 
-    /// 페인터가 실제로 칠하는 테두리 띠 (모서리 중심, 연장 포함) — 경로 없이 띠만 만든다
+    /// 페인터가 실제로 칠하는 테두리 띠 (모서리 중심, 연장 포함, 이은 변은 제 몫) — 경로 없이
+    /// 띠만 만든다
     private var borderRects: [CGRect] {
-        borders.bands(around: cellFrame)
+        borders.bands(around: cellFrame, chains: borderChains)
     }
 
     /// 분할 **전에** 감싼 링크를 개체에 고정한 사본 (R58).
@@ -82,7 +86,7 @@ public struct HwpTableCellFrame: @unchecked Sendable, Hashable {
                 in: paragraphs, paragraphId: paragraphId, controlIndex: controlIndex
             )
         }
-        return HwpTableCellFrame(
+        let copy = HwpTableCellFrame(
             cellFrame: cellFrame,
             row: row,
             column: column,
@@ -104,6 +108,7 @@ public struct HwpTableCellFrame: @unchecked Sendable, Hashable {
                 $0.withWrapperURL($0.wrapperURL ?? resolved($0.paragraphId, $0.controlIndex))
             }
         )
+        return copy.withBorderChains(borderChains)
     }
 
     /// 셀과 모든 콘텐츠 지오메트리를 deltaY만큼 이동한 사본 (분할 세그먼트 이동).
@@ -134,6 +139,8 @@ public struct HwpTableCellFrame: @unchecked Sendable, Hashable {
             shapes: shapes.map { $0.withRect($0.rect.offsetBy(dx: 0, dy: deltaY)) },
             textboxes: textboxes.map { $0.withRect($0.rect.offsetBy(dx: 0, dy: deltaY)) }
         )
+        // 이음 자리는 칸 모서리 기준이라 옮겨도 그대로다
+        .withBorderChains(borderChains)
     }
 }
 
@@ -154,6 +161,8 @@ public struct HwpTableFrame: @unchecked Sendable, Hashable {
     public let borderColor: HwpRGBColor
     public let borderWidth: CGFloat
 
+    /// 셀 테두리의 대시·원형 점선은 이 표의 셀 배치로 이웃 칸과 잇는다 (#238) — `rows`의 칸이
+    /// 싣고 온 이음 자리는 버리고 새로 셈한다 (쪽 조각·옮겨 온 칸도 이 표 기준이 된다).
     public init(
         outerFrame: CGRect,
         rows: [HwpTableRowFrame],
@@ -161,7 +170,7 @@ public struct HwpTableFrame: @unchecked Sendable, Hashable {
         borderWidth: CGFloat
     ) {
         self.outerFrame = outerFrame
-        self.rows = rows
+        self.rows = HwpBorderChaining.chained(rows)
         self.borderColor = borderColor
         self.borderWidth = borderWidth
     }

@@ -90,7 +90,10 @@ extension HwpHitTester {
         /// 칠`). 배치 하한(`paintedObjectBounds`, 텍스트 제외 갈래)은 종전대로 셀 rect다 —
         /// 한글이 표 아래 각주 자리를 테두리 바깥 절반까지 재는지는 실측하지 않았다.
         func addCell(_ cell: HwpTableCellFrame, _ rect: CGRect) {
-            rects.append(includingText ? cell.borders.paintedBounds(around: rect) : rect)
+            rects.append(
+                includingText
+                    ? cell.borders.paintedBounds(around: rect, chains: cell.borderChains) : rect
+            )
         }
         /// 중첩 표는 **자기 frame**도 자격이다 (R64) — 셀만 모으면 표 rect와 첫 셀
         /// 사이의 여백 띠가 빠지는데, 방출은 감싼 링크를 표 rect 전체로 낸다.

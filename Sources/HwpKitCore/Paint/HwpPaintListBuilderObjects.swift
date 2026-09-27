@@ -109,7 +109,7 @@ extension HwpPaintListBuilder {
                 if let fill = cell.fillColor {
                     buffer.appendFill(.fillRect(rect: cellRect, color: fill.cgColor))
                 }
-                buffer.appendBorders(borderCommands(cell.borders, around: cellRect))
+                buffer.appendBorders(borderCommands(cell, around: cellRect))
             },
             onCellImage: { image, rect in
                 buffer.append(contentsOf: cellImageCommands(image, rect: rect))

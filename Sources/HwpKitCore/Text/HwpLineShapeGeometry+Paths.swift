@@ -9,40 +9,141 @@ import Foundation
 extension HwpLineShapeGeometry {
     static func addDashes(_ pattern: [CGFloat], to path: CGMutablePath, line: Line) {
         guard pattern.count >= 2, pattern.allSatisfy({ $0 > 0 }) else {
-            path.addRect(solidBand(for: line))
+            addOwnedSolidBand(to: path, line: line)
             return
         }
         let band = solidBand(for: line)
-        var x: CGFloat = 0
-        var index = 0
-        while x < line.length {
-            let span = pattern[index % pattern.count]
-            if index % 2 == 0 {
-                path.addRect(CGRect(
-                    x: x, y: band.minY, width: min(span, line.length - x), height: band.height
-                ))
+        forEachOwnedDash(pattern, line: line) { x, width in
+            path.addRect(CGRect(x: x, y: band.minY, width: width, height: band.height))
+        }
+    }
+
+    /// 선 시작에서 패턴을 되풀이해 놓이는 대시 가운데 시작 자리가 `elementRange`에 드는 것
+    /// (없으면 전부) — (시작, 폭). 대시는 `length`에서 잘린다. 범위가 있으면 자리를 패턴 주기의
+    /// 곱(주기 색인 × 주기 + 주기 안 자리)으로 셈해 범위 앞 주기를 건너뛴다 — 같은 사슬의 조각은 같은
+    /// `length`·패턴을 받아 같은 자리를 얻으므로 이웃 조각의 경계 판정이 어긋나지 않고, 긴 사슬도
+    /// 조각마다 제 몫만 훑는다 (#238). 범위가 없으면 종전의 누적 덧셈 그대로다.
+    static func forEachOwnedDash(
+        _ pattern: [CGFloat], line: Line, _ body: (CGFloat, CGFloat) -> Void
+    ) {
+        guard let owned = line.elementRange else {
+            var x: CGFloat = 0
+            var index = 0
+            while x < line.length {
+                let span = pattern[index % pattern.count]
+                if index % 2 == 0 {
+                    body(x, min(span, line.length - x))
+                }
+                x += span
+                index += 1
             }
-            x += span
-            index += 1
+            return
+        }
+        let period = pattern.reduce(0, +)
+        guard period > 0, period.isFinite else { return }
+        var slotStarts: [CGFloat] = []
+        var cumulative: CGFloat = 0
+        for span in pattern {
+            slotStarts.append(cumulative)
+            cumulative += span
+        }
+        let end = min(line.length, owned.upperBound)
+        let guess = (owned.lowerBound / period).rounded(.down) - 1
+        var cycle = guess.isFinite && guess > 0 ? Int(min(guess, maxPatternRepeats)) : 0
+        while true {
+            let base = cycle == 0 ? 0 : CGFloat(cycle) * period
+            guard base < end else { return }
+            for slot in stride(from: 0, to: pattern.count, by: 2) {
+                let x = base + slotStarts[slot]
+                guard x < end else { return }
+                if x >= owned.lowerBound {
+                    body(x, min(pattern[slot], line.length - x))
+                }
+            }
+            cycle += 1
         }
     }
 
     /// 채운 원 — 첫 원의 중심이 선 시작이고, 중심이 `length` 앞인 마지막 원은 끝에 걸쳐도
-    /// 온전히 그린다 (#235 — 표 셀 테두리만 끝을 넘지 않는 원까지, `circleCount(for:)`;
-    /// `alongExtent(of:)`가 그 넘침을 보고한다)
+    /// 온전히 그린다 (#235·#238 — `alongExtent(of:)`가 그 넘침을 보고한다)
     static func addCircles(to path: CGMutablePath, line: Line) {
         let diameter = circleDiameter(for: line)
-        let pitch = circlePitch(for: line)
-        guard diameter > 0, pitch > 0 else { return }
+        guard diameter > 0 else { return }
         let centerY = circleCenterY(for: line)
-        for index in 0 ..< circleCount(for: line) {
-            // 첫 원은 곱하지 않고 0 — 간격이 무한대로 넘친 입력에서 0 × ∞ = NaN을 피한다
-            let center = index == 0 ? 0 : CGFloat(index) * pitch
+        forEachOwnedCircle(line) { center in
             path.addEllipse(in: CGRect(
                 x: center - diameter / 2, y: centerY - diameter / 2,
                 width: diameter, height: diameter
             ))
         }
+    }
+
+    /// 원 중심 가운데 `elementRange`에 드는 것 (없으면 전부, `circleCount(for:)`개). 중심은 조각마다
+    /// 같은 곱셈(색인 × 간격)으로 셈한다 — 첫 원은 곱하지 않고 0이라 간격이 무한대로 넘친 입력에서
+    /// 0 × ∞ = NaN을 피한다.
+    static func forEachOwnedCircle(_ line: Line, _ body: (CGFloat) -> Void) {
+        let pitch = circlePitch(for: line)
+        guard pitch > 0 else { return }
+        let count = circleCount(for: line)
+        let owned = line.elementRange ?? -CGFloat.infinity ..< .infinity
+        // 범위 앞 원은 건너뛴다 — 판정은 아래 비교가 하므로 한 칸 앞에서 시작해도 된다
+        let guess = (owned.lowerBound / pitch).rounded(.down) - 1
+        var index = guess.isFinite && guess > 0 ? Int(min(guess, CGFloat(count))) : 0
+        while index < count {
+            let center = index == 0 ? 0 : CGFloat(index) * pitch
+            if center >= owned.upperBound {
+                break
+            }
+            if center >= owned.lowerBound {
+                body(center)
+            }
+            index += 1
+        }
+    }
+
+    /// 실선 띠로 떨어진 무늬의 제 몫을 더한다 (`ownedSolidBand(for:)` — 몫이 없으면 그대로)
+    static func addOwnedSolidBand(to path: CGMutablePath, line: Line) {
+        if let band = ownedSolidBand(for: line) {
+            path.addRect(band)
+        }
+    }
+
+    /// 반복 상한을 넘어 실선 띠로 떨어진 무늬의 제 몫 — `elementRange`와 [0, `length`]의 겹침
+    /// (없으면 띠 전체). 겹침이 없으면 nil.
+    static func ownedSolidBand(for line: Line) -> CGRect? {
+        let band = solidBand(for: line)
+        guard let owned = line.elementRange, isPatterned(line.shape) else { return band }
+        let start = max(0, owned.lowerBound)
+        let end = min(line.length, owned.upperBound)
+        guard end > start else { return nil }
+        return CGRect(x: start, y: band.minY, width: end - start, height: band.height)
+    }
+
+    /// `elementRange`가 있는 대시·원형 점선의 선 방향 범위 — 그 범위에 자리를 둔 요소가 칠하는
+    /// 곳. 요소가 없으면 nil (`path(for:)`도 nil이다).
+    static func ownedAlongExtent(of line: Line) -> ClosedRange<CGFloat>? {
+        var lower = CGFloat.infinity
+        var upper = -CGFloat.infinity
+        func cover(_ start: CGFloat, _ end: CGFloat) {
+            lower = min(lower, start)
+            upper = max(upper, end)
+        }
+        if patternRepeats(of: line) > maxPatternRepeats {
+            guard let band = ownedSolidBand(for: line) else { return nil }
+            return band.minX ... band.maxX
+        }
+        if line.shape == .circle {
+            let radius = circleDiameter(for: line) / 2
+            forEachOwnedCircle(line) { cover($0 - radius, $0 + radius) }
+        } else {
+            let pattern = dashPattern(for: line.shape, unit: dashUnit(for: line))
+            guard pattern.count >= 2, pattern.allSatisfy({ $0 > 0 }) else {
+                guard let band = ownedSolidBand(for: line) else { return nil }
+                return band.minX ... band.maxX
+            }
+            forEachOwnedDash(pattern, line: line) { cover($0, $0 + $1) }
+        }
+        return lower <= upper ? lower ... upper : nil
     }
 
     /// 45° 지그재그 — 위 꼭짓점에서 시작해 진폭만큼 내려갔다 올라오기를 반복하고, 꼭짓점
@@ -114,35 +215,18 @@ extension HwpLineShapeGeometry {
         patternElementCount(span: line.length - offsetX, period: waveHalfPeriod(for: line))
     }
 
-    /// 원형 점선의 원 개수. 글자선·단 구분선은 중심이 `length` 앞인 원을 끝에 걸쳐도 그리고
-    /// (#235), 표 셀 테두리(`Placement.border`)는 마지막 원이 변 끝을 넘지 않는 것까지 그린다
-    /// (중심 ≤ `length` − 반지름 — 첫 원은 선 시작에 중심을 두어 앞으로는 반지름만큼 나간다).
-    /// 한글은 같은 모양 이웃 칸의 원형 점선 변을 칸 경계에서 다시 시작하지 않고 한 선으로 잇는데
-    /// (#235 재검증: 1×3·3×1·2×2 표, 표 테두리 유무·칸 폭과 무관), 우리는 칸마다 무늬를 다시
-    /// 시작하므로 끝 규칙을 그대로 쓰면 칸 경계에서 앞 칸의 걸친 원과 다음 칸의 첫 원이 포개지는
-    /// 자리가 생긴다 (1mm 22.8pt 칸: 0.12pt 간격). 이 규칙은 그 겹침을 줄일 뿐이고 없애는 것은 이어
-    /// 그리기다(#238) — 그때 이은 선의 끝에 끝 규칙을 쓴다.
+    /// 원형 점선의 원 개수 — 중심이 `length` 앞인 원을 끝에 걸쳐도 그린다 (#235). 표 셀 테두리도
+    /// 같다: 한글은 같은 모양 이웃 칸의 원형 점선 변을 한 선으로 이어 그 끝에서 이 규칙을 쓴다
+    /// (#238 — 한글 12.30 실측: 이웃 세로 변이 없는 가로 사슬은 칸 1·2·3개 모두 정확히 이 규칙이고,
+    /// 이웃 세로 변이 굵거나 세로 사슬이면 한글이 끝에서 3~10u(0.12pt) 더 엄격하다). 이은 선의 조각은
+    /// 사슬 전체를 `length`로 받으므로 개수도 사슬 전체의 것이다.
     static func circleCount(for line: Line) -> Int {
         let pitch = circlePitch(for: line)
-        guard line.placement == .border else {
-            let count = patternElementCount(span: line.length, period: pitch)
-            // 끝을 넘는 마지막 원의 바깥 끝이 무한대로 넘치면(길이가 유한 최댓값 근처) 그 원은
-            // 뺀다 — 경로와 `alongExtent(of:)`가 함께 유한하게 남는다 (앞 원은 길이 안에서 끝난다)
-            let lastEdge = CGFloat(count - 1) * pitch + circleDiameter(for: line) / 2
-            return count > 1 && !lastEdge.isFinite ? count - 1 : count
-        }
-        return fittingElementCount(span: line.length - circleDiameter(for: line) / 2, period: pitch)
-    }
-
-    /// 선 시작에서 `period` 간격으로 놓이는 요소 가운데 자리가 `span` **이하**인 것의 개수
-    /// (`span`과 같은 자리는 비율의 오차 1e-6 안이면 든다 — #235 전의 누적 루프 `center += pitch`는
-    /// 정확한 동점에서 누적 오차로 그 원을 빼기도 했다). `span`이 음수이거나 간격이 양수가 아니거나
-    /// 비율이 유한하지 않으면 0이고, 비율은 반복 상한(`maxPatternRepeats`)에서 자른다.
-    static func fittingElementCount(span: CGFloat, period: CGFloat) -> Int {
-        guard period > 0, span >= 0 else { return 0 }
-        let ratio = span / period
-        guard ratio.isFinite else { return 0 }
-        return Int((min(ratio, maxPatternRepeats) + 1e-6).rounded(.down)) + 1
+        let count = patternElementCount(span: line.length, period: pitch)
+        // 끝을 넘는 마지막 원의 바깥 끝이 무한대로 넘치면(길이가 유한 최댓값 근처) 그 원은
+        // 뺀다 — 경로와 `alongExtent(of:)`가 함께 유한하게 남는다 (앞 원은 길이 안에서 끝난다)
+        let lastEdge = CGFloat(count - 1) * pitch + circleDiameter(for: line) / 2
+        return count > 1 && !lastEdge.isFinite ? count - 1 : count
     }
 
     /// `offsetX`에서 시작한 물결의 마지막 대각선이 끝나는 x (대각선이 없으면 `length` 안)
