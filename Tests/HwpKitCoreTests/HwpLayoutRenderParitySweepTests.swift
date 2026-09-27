@@ -126,7 +126,7 @@ import XCTest
             // slight-overflow 한 줄뿐이어야 한다 (실측 1 / 260 → 2026-09-12 6 / 446 →
             // 2026-09-15 7 / 522 → 2026-09-24 9 / 918 → 같은 날 9 / 1108 →
             // 2026-09-25 9 / 1158 → 같은 날 9 / 1188 → 2026-09-26 9 / 1208 → 같은 날
-            // 9 / 1266).
+            // 9 / 1266 → 2026-09-27 9 / 1282 → 같은 날 9 / 1324).
             expect(stats.measured - stats.sharedCoreCompared)
                 .to(beLessThanOrEqualTo(Self.maximumFixtureSharedCoreSkips))
         }
@@ -197,10 +197,13 @@ import XCTest
         // (#233, 구역 1 + 링크 클릭 띠 22문단 + 1칸 표 셀 3문단 + 각주 3문단) 추가로 문단 29·
         // 대조 58·컨테이너 6 증가 (공유 코어 대조 건너뜀은 그대로다), 2026-09-27
         // `hwp2007-decorations`·`line-shapes` 재저장(#235, 각각 run 끝 표본 4문단 추가)으로 문단 8·
-        // 대조 16 증가 (컨테이너와 공유 코어 대조 건너뜀은 그대로다).
-        private static let expectedFixtureVisited = 712
-        private static let expectedFixtureMeasured = 1282
-        private static let expectedFixtureContainers = 223
+        // 대조 16 증가 (컨테이너와 공유 코어 대조 건너뜀은 그대로다), 같은 날 `table-border-chains`
+        // (#238, 구역 1 + 글자처럼 취급 표 문단 10개를 포함한 21문단 + 표 10개의 셀 39문단) 추가로
+        // 문단 60·대조 42(셀의 빈 문단 39개는 두 폭 모두 대조 대상이 아니다)·컨테이너 39 증가
+        // (공유 코어 대조 건너뜀은 그대로다).
+        private static let expectedFixtureVisited = 772
+        private static let expectedFixtureMeasured = 1324
+        private static let expectedFixtureContainers = 262
         private static let minimumFixtureMultiLine = 60
         private static let maximumFixtureSharedCoreSkips = 9
         private static let expectedLegacyVisited = 14659
