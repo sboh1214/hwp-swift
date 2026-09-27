@@ -296,6 +296,16 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   줄의 줄 상자와 비율 줄 간격 여분에 드는 규칙(#206)의 실물 근거다 — 한글이 저장한 줄 캐시
   (README의 표)가 오라클이고 `HwpKitTests/FixtureParagraphEndCharSizeTests`가 줄 캐시를 지운
   재조판을 그것과 대조한다. HWPX 쌍은 `HwpxFixtures/paragraph-end-char-size`.
+- `table-border-chains`: **한글 문서**(호환 문서 대상 프로그램 `HWP201X`)에 여러 칸에 걸친 셀
+  테두리 무늬 표본 — 1×3 가로 원형 점선(세로 변 없음·굵은 세로 변)·긴 점선, 위·아래 행이 같은
+  격자선에 다른 색(2×3)·빈 변(2×3)을 둔 표, 3×1 세로 원형 점선, 네 변 원형 2×2, 물결, 병합 칸,
+  가운데 칸만 다른 색 — 을 글자처럼 취급 표 10개(셀 폭 22.8pt, 표마다 7pt 꼬리표 ` #0`…` #9`)로
+  실은 합성 HWPX(줄 배치 정보 없음)를 Hancom Office HWP for macOS 12.30.0 build 6446으로
+  2026-09-27에 열어 `.hwp`·`.hwpx`로 저장(1쪽). 한글이 셀 테두리의 원형 점선·긴 점선을 칸마다
+  새로 시작하지 않고 **격자선을 따라 이어 그리는** 규칙(#238)의 실물 근거다 — 모양·굵기·색이 같고
+  맞닿은 칸 변은 한 사슬로 잇고, 반대쪽 칸 변의 다른 색·굵기는 사슬을 끊고, 빈 변은 반대쪽이
+  잇고, 물결은 칸마다 다시 시작한다. 같은 세션의 PDF 내보내기가 오라클이다. HWPX 쌍은
+  `HwpxFixtures/table-border-chains`.
 - `track-changes-native`: **한글 문서**(대상 프로그램 0)에 변경 추적 삽입·삭제 표식과
   일반 밑줄·취소선을 같은 줄에 실은 합성 HWPX(`track-changes`의 HWPX 변환본 기반)를 같은
   앱으로 2026-09-15에 열어 `.hwp`로 저장. 코퍼스의 유일한 변경 추적 실물이 MS 워드 호환

@@ -393,9 +393,9 @@ extension HwpLineShapeGeometryTests {
     }
 
     /// 원형 점선은 첫 원의 중심이 선 시작이라 반지름만큼 앞으로 나간다 — `alongExtent`가 그
-    /// 몫을 보고해야 히트 띠가 첫 원을 다 덮는다 (#191 리뷰). 표 셀 테두리는 원 하나도 안
-    /// 들어가는 길이(반지름 미만)면 경로도 범위도 없고, 단 구분선·글자선은 첫 원의 중심 0이 어떤
-    /// 양수 길이보다 앞이라 반지름보다 짧은 선도 그 원 하나는 그린다 (#235).
+    /// 몫을 보고해야 히트 띠가 첫 원을 다 덮는다 (#191 리뷰). 첫 원의 중심 0은 어떤 양수 길이보다
+    /// 앞이라 반지름보다 짧은 선도 그 원 하나는 그린다 — 글자선·단 구분선(#235)도, 표 셀
+    /// 테두리(#238 — 이은 선의 끝 규칙)도.
     func testCircleAlongExtentStartsHalfADiameterBeforeTheLine() {
         let border = Self.borderLine(.circle, thickness: 4)
         let along = HwpLineShapeGeometry.alongExtent(of: border)
@@ -409,10 +409,10 @@ extension HwpLineShapeGeometryTests {
         let character = Self.characterLine(.circle, fontSize: 20)
         expect(HwpLineShapeGeometry.alongExtent(of: character)?.lowerBound)
             .to(beCloseTo(-20 * 0.057 / 2, within: 0.001))
-        let tooShort = Self.borderLine(.circle, thickness: 4, length: 1.5)
-        expect(HwpLineShapeGeometry.path(for: tooShort)).to(beNil())
-        expect(HwpLineShapeGeometry.alongExtent(of: tooShort)).to(beNil())
-        expect(HwpLineShapeGeometry.crossExtent(of: tooShort)).to(beNil())
+        let short = Self.borderLine(.circle, thickness: 4, length: 1.5)
+        expect(Self.pieces(HwpLineShapeGeometry.path(for: short)).count) == 1
+        expect(HwpLineShapeGeometry.alongExtent(of: short)) == -2 ... 2
+        expect(HwpLineShapeGeometry.crossExtent(of: short)) == -2 ... 2
         // 반지름과 같은 길이는 원 하나
         let one = Self.borderLine(.circle, thickness: 4, length: 2)
         expect(Self.pieces(HwpLineShapeGeometry.path(for: one)).count) == 1

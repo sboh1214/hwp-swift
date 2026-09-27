@@ -1,0 +1,263 @@
+import CoreGraphics
+import CoreHwp
+import Foundation
+
+/// 셀 4방향 테두리 (pt 폭 + 색상 + 선 모양). 폭 0이거나 모양이 `none`이면 그리지 않는다.
+///
+/// 선은 한글처럼 **셀 모서리에 중심**을 두고 양쪽으로 폭의 절반씩 걸친다 (한글 12.30 실측,
+/// #191: 0.1~5mm 16단 모두 위 테두리 중심이 셀 위 모서리, 왼 테두리 중심이 왼 모서리) —
+/// 이웃 셀과 공유하는 모서리는 양쪽 셀이 각자 자기 선을 겹쳐 그린다 (한글도 그렇다: 2중선
+/// 아래 변 + 가는+굵은 위 변이 한 모서리에 둘 다 남는다). 가로 변은 그 끝에 세로 변이
+/// 있으면 세로 변 폭의 절반만큼 밖으로 연장해 모서리를 메우고 (실측: 왼 테두리가 있는 왼쪽
+/// 끝은 −t/2, 오른 테두리가 없는 오른쪽 끝은 모서리 그대로), 세로 변의 실선·대시·원형은
+/// 연장하지 않는다 (가로 변이 이미 모서리를 메운다). 여러 줄(2중선·3중선)은 부속선마다
+/// 바깥쪽에서의 거리만큼 안쪽으로 물러나 모서리에서 겹상자를 이루고 (실측: 1mm 2중선 위
+/// 변의 바깥 선은 −t/2에서, 안쪽 선은 +t/4에서 시작; 물러나는 거리의 기준은 **이웃 변**의
+/// 폭 절반), 물결·2중 물결은 세로 변도 가로 변 폭의 절반만큼 연장한 곳에서 시작한다 (실측:
+/// 위 테두리가 있는 왼 물결 변의 첫 꼭짓점은 모서리 − t/2).
+///
+/// 대시·원형 점선은 한 변 안에서 끝나지 않는다 — 한글은 같은 격자선에서 모양·굵기·색이 같은
+/// 이웃 칸의 변을 한 선으로 이어 무늬를 그린다 (#238). 그 자리는 표가 셀 배치에서 셈해 칸에
+/// 싣고 (`HwpBorderChains`, `HwpTableFrame.init`), 이 타입은 변마다 받은 자리로 제 몫의 요소만
+/// 그린다. 자리가 없는 변은 홀로 선 선이다.
+public struct HwpBorderSet: Sendable, Hashable {
+    public let top, bottom, left, right: CGFloat
+    public let topColor, bottomColor, leftColor, rightColor: HwpRGBColor
+    /// 선 모양 (표 25) — 점선·파선·여러 줄·물결은 `HwpLineShapeGeometry`가 두께 축척으로
+    /// 그린다 (#191). `none`은 폭과 무관하게 그리지 않는다.
+    public let topShape, bottomShape, leftShape, rightShape: HwpBorderType
+
+    public init(
+        top: CGFloat,
+        bottom: CGFloat,
+        left: CGFloat,
+        right: CGFloat,
+        topColor: HwpRGBColor,
+        bottomColor: HwpRGBColor,
+        leftColor: HwpRGBColor,
+        rightColor: HwpRGBColor,
+        topShape: HwpBorderType = .line,
+        bottomShape: HwpBorderType = .line,
+        leftShape: HwpBorderType = .line,
+        rightShape: HwpBorderType = .line
+    ) {
+        self.top = top
+        self.bottom = bottom
+        self.left = left
+        self.right = right
+        self.topColor = topColor
+        self.bottomColor = bottomColor
+        self.leftColor = leftColor
+        self.rightColor = rightColor
+        self.topShape = topShape
+        self.bottomShape = bottomShape
+        self.leftShape = leftShape
+        self.rightShape = rightShape
+    }
+
+    /// 한 변의 그리기 — 페이지 좌표 채우기 경로 + 색 + 히트용 띠. 모듈 안(페인터·히트) 전용.
+    struct EdgeGeometry: @unchecked Sendable {
+        /// 불변 경로 — `Edge.geometry`가 소유권 경계에서 복사해 넣는다 (`HwpPaintCommand`가 retain)
+        let path: CGPath
+        let color: HwpRGBColor
+        /// 이 변이 칠하는 영역의 경계 상자 (모서리에 중심을 둔 띠, 연장·물결 넘침·첫 원 반지름 포함)
+        let band: CGRect
+    }
+
+    /// rect 둘레에 **실제로 칠하는 변 전부** — 페인터 (`HwpPaintListBuilder.borderCommands`)
+    /// 와 히트 (`HwpTableCellFrame.paints`, `bands(around:chains:)`) 가 같은 변 기하(`Edge`)를
+    /// 공유한다 (R56). 두 곳이 따로 계산하면 보이는 선과 눌리는 선이 갈린다. 히트 띠는 이 변들의
+    /// 띠에 더해 칠하지 않는 이은 변(제 몫의 요소가 없는 변)의 띠도 낸다 (`bands(around:chains:)`).
+    /// `chains`는 이웃 칸과 이은 대시·원형 점선 변의 자리다 (#238 — 없으면 변마다 홀로 선 선).
+    func edges(around rect: CGRect, chains: HwpBorderChains = .none) -> [EdgeGeometry] {
+        drawnEdges(around: rect, chains: chains).compactMap(\.geometry)
+    }
+
+    /// rect 둘레 변들의 히트 띠 — 경로를 만들지 않아 히트 판정마다 싸다. 칠하는 변의 경계 상자는
+    /// `edges(around:chains:)`가 내는 `EdgeGeometry.band`와 같고, 이웃 칸과 이은 변 가운데 제 몫의
+    /// 요소가 없는 변(무늬의 빈 자리나 이웃 칸이 넘겨 그린 대시만 지나는 변)도 선 위라 띠를 낸다 —
+    /// 그 변은 칠하지 않으므로 `edges`에는 없다 (점선의 빈 자리도 띠로 치는 규약, #238).
+    func bands(around rect: CGRect, chains: HwpBorderChains = .none) -> [CGRect] {
+        drawnEdges(around: rect, chains: chains).compactMap(\.band)
+    }
+
+    /// rect와 그 둘레 테두리 띠를 모두 담는 경계 상자 — 히트 자격 영역이 칠한 곳을 다
+    /// 덮도록 (R54 `자격 ⊇ 칠`) 셀·표 프레임에 테두리 바깥 절반을 더한다.
+    func paintedBounds(around rect: CGRect, chains: HwpBorderChains = .none) -> CGRect {
+        bands(around: rect, chains: chains).reduce(rect) { $0.union($1) }
+    }
+
+    /// 변 폭 — 폭이 있고 모양이 `none`이 아니면 그 폭, 아니면 0 (그리지 않는 변). 이웃 변의
+    /// 연장(폭의 절반)도 이 값으로 셈한다 — 무늬 이음(`HwpBorderChaining`)도 같은 술어를 쓴다.
+    static func visibleWidth(_ width: CGFloat, _ shape: HwpBorderType) -> CGFloat {
+        width > 0 && shape != .none ? width : 0
+    }
+
+    private func drawnEdges(around rect: CGRect, chains: HwpBorderChains) -> [Edge] {
+        let visible = Self.visibleWidth
+        let widths = (
+            top: visible(top, topShape), bottom: visible(bottom, bottomShape),
+            left: visible(left, leftShape), right: visible(right, rightShape)
+        )
+        let edges: [Edge] = [
+            // 가로 변: 끝에 세로 변이 있으면 그 폭의 절반만큼 연장
+            Edge(
+                shape: topShape, width: widths.top, color: topColor,
+                start: rect.minX, end: rect.maxX, cross: rect.minY, horizontal: true,
+                leadExtension: widths.left / 2, trailExtension: widths.right / 2,
+                outerIsLeading: true, chain: chains.top
+            ),
+            Edge(
+                shape: bottomShape, width: widths.bottom, color: bottomColor,
+                start: rect.minX, end: rect.maxX, cross: rect.maxY, horizontal: true,
+                leadExtension: widths.left / 2, trailExtension: widths.right / 2,
+                outerIsLeading: false, chain: chains.bottom
+            ),
+            // 세로 변: 실선·대시·원형은 연장 없음. 여러 줄의 부속선은 가로 변이 있는 끝에서
+            // 그 폭의 절반을 기준으로 겹상자로 물러나고, 물결은 그만큼 연장한 곳에서 시작한다.
+            Edge(
+                shape: leftShape, width: widths.left, color: leftColor,
+                start: rect.minY, end: rect.maxY, cross: rect.minX, horizontal: false,
+                leadExtension: widths.top / 2, trailExtension: widths.bottom / 2,
+                outerIsLeading: true, chain: chains.left
+            ),
+            Edge(
+                shape: rightShape, width: widths.right, color: rightColor,
+                start: rect.minY, end: rect.maxY, cross: rect.maxX, horizontal: false,
+                leadExtension: widths.top / 2, trailExtension: widths.bottom / 2,
+                outerIsLeading: false, chain: chains.right
+            ),
+        ]
+        return edges.filter { $0.width > 0 }
+    }
+
+    /// 한 변의 입력 — `HwpLineShapeGeometry`의 로컬 좌표(x = 선 방향, y = 가로지르는 축,
+    /// 0 = 모서리)를 페이지 좌표로 옮기는 데 필요한 값
+    private struct Edge {
+        let shape: HwpBorderType
+        let width: CGFloat
+        let color: HwpRGBColor
+        /// 선 방향 축의 셀 모서리 시작·끝
+        let start: CGFloat
+        let end: CGFloat
+        /// 가로지르는 축의 모서리 좌표 (선 중심)
+        let cross: CGFloat
+        let horizontal: Bool
+        /// 시작·끝 쪽 이웃 변 폭의 절반 (없으면 0)
+        let leadExtension: CGFloat
+        let trailExtension: CGFloat
+        /// 띠의 바깥쪽이 −y/−x 쪽인지 (위·왼 변 true, 아래·오른 변 false)
+        let outerIsLeading: Bool
+        /// 이웃 칸과 이은 대시·원형 점선의 자리 (#238) — 있으면 선은 사슬 전체이고 이 변은 제 몫의
+        /// 요소만 그린다. 없으면 이 변 혼자의 선.
+        let chain: HwpBorderChainPlacement?
+
+        /// 로컬 (x, y) → 페이지: 가로 변은 (lineStart + x, cross + y), 세로 변은
+        /// (cross + y, lineStart + x)
+        func transform(lineStart: CGFloat) -> CGAffineTransform {
+            horizontal
+                ? CGAffineTransform(a: 1, b: 0, c: 0, d: 1, tx: lineStart, ty: cross)
+                : CGAffineTransform(a: 0, b: 1, c: 1, d: 0, tx: cross, ty: lineStart)
+        }
+
+        /// 선 자체를 이웃 변 폭의 절반만큼 연장하는가 — 가로 변은 늘, 세로 변은 물결만
+        /// (실선·대시·원형 세로 변은 모서리에서 시작하고, 여러 줄은 부속선별로 물러난다)
+        private var extendsLine: Bool {
+            horizontal || shape == .wave || shape == .doubleWave
+        }
+
+        /// 선 시작 — 이은 선이면 사슬의 무늬 원점 (사슬 첫 조각의 연장 포함 시작)
+        private var lineStart: CGFloat {
+            if let chain {
+                return start - chain.offset
+            }
+            return start - (extendsLine ? leadExtension : 0)
+        }
+
+        private var lineLength: CGFloat {
+            if let chain {
+                return chain.length
+            }
+            return end + (extendsLine ? trailExtension : 0) - lineStart
+        }
+
+        private var line: HwpLineShapeGeometry.Line {
+            HwpLineShapeGeometry.Line(
+                shape: shape, length: lineLength, thickness: width,
+                scale: .border, placement: .border, elementRange: chain?.elementRange
+            )
+        }
+
+        /// 이 변이 칠하는 영역의 경계 상자 (페이지 좌표) — 가로지르는 축은 모양의 띠, 선 방향은
+        /// 연장 포함 [start − lead, end + trail]에 물결의 넘침·획 모서리와 원형 점선 첫·끝 원의
+        /// 반지름을 더한 범위. 이은 선의 조각은 제 몫의 요소가 칠하는 범위(이웃 칸으로 넘친 대시·원
+        /// 포함)를 더하고, 제 몫이 없어도 모서리 구간의 띠는 낸다 (칠하지 않는 빈 자리도 선 위다).
+        /// 경로를 만들지 않는다.
+        var band: CGRect? {
+            guard lineLength > 0, let cross = HwpLineShapeGeometry.crossExtent(of: line) else {
+                return nil
+            }
+            let along = HwpLineShapeGeometry.alongExtent(of: line)
+            // 이은 변은 제 몫의 요소가 없어도 제 모서리 구간의 띠를 낸다 (칠하지는 않는다)
+            guard along != nil || chain != nil else { return nil }
+            let alongStart = min(
+                lineStart + (along?.lowerBound ?? .infinity), start - leadExtension
+            )
+            let alongEnd = max(lineStart + (along?.upperBound ?? -.infinity), end + trailExtension)
+            let localBand = CGRect(
+                x: alongStart - lineStart, y: cross.lowerBound,
+                width: alongEnd - alongStart, height: cross.upperBound - cross.lowerBound
+            )
+            return localBand.applying(transform(lineStart: lineStart))
+        }
+
+        /// 변의 경로 — 여러 줄은 부속선마다 물려 겹상자, 나머지는 연장 길이 전체를 한 경로로
+        var geometry: EdgeGeometry? {
+            let (lineStart, line) = (lineStart, line)
+            guard let band, let extent = HwpLineShapeGeometry.crossExtent(of: line) else {
+                return nil
+            }
+            let transform = transform(lineStart: lineStart)
+            let path = CGMutablePath()
+            let stripes = HwpLineShapeGeometry.stripes(for: line)
+            if stripes.isEmpty {
+                guard let shapePath = HwpLineShapeGeometry.path(for: line) else { return nil }
+                path.addPath(shapePath, transform: transform)
+            } else {
+                for stripe in stripes {
+                    // 바깥쪽에서의 거리만큼 이웃 변 쪽 끝을 물린다 (이웃 변이 없는 끝은 그대로;
+                    // 거리는 **이웃 변 폭** 비율 — 같은 모양의 부속선이 맞닿는 자리, 실측은 같은 폭뿐)
+                    let outerDistance = outerIsLeading
+                        ? stripe.minY - extent.lowerBound
+                        : extent.upperBound - stripe.maxY
+                    let inset = outerDistance * 2 / width
+                    let stripeStart = start - leadExtension + inset * leadExtension
+                    let stripeEnd = end + trailExtension - inset * trailExtension
+                    guard stripeEnd > stripeStart else { continue }
+                    path.addRect(
+                        CGRect(
+                            x: stripeStart - lineStart, y: stripe.minY,
+                            width: stripeEnd - stripeStart, height: stripe.height
+                        ),
+                        transform: transform
+                    )
+                }
+            }
+            guard !path.isEmpty else { return nil }
+            return EdgeGeometry(path: path.copy() ?? path, color: color, band: band)
+        }
+    }
+
+    public static func uniform(width: CGFloat, color: HwpRGBColor) -> HwpBorderSet {
+        HwpBorderSet(
+            top: width,
+            bottom: width,
+            left: width,
+            right: width,
+            topColor: color,
+            bottomColor: color,
+            leftColor: color,
+            rightColor: color
+        )
+    }
+}

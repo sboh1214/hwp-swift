@@ -26,7 +26,8 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
    `line-shapes`·`script-decorations`·`section-page-number-skip`·`compat-decorations`·
    `hwp2007-decorations`·`hyperlink-click-band`·`inline-object-baseline`·
    `inline-object-marker-size`·`inline-table-actual-height`·`mixed-size-decorations`·
-   `ms-word-paragraph-end-box`·`page-end-line-box`·`paragraph-end-char-size`)은 `.hwp`와 `.hwpx`를 **같은 편집 세션에서 연달아** 저장해야 두
+   `ms-word-paragraph-end-box`·`page-end-line-box`·`paragraph-end-char-size`·
+   `table-border-chains`)은 `.hwp`와 `.hwpx`를 **같은 편집 세션에서 연달아** 저장해야 두
    파일이 같은 문서가 된다. 한글 GUI로 만들기 어려운 조합은 합성 HWPX를 한글로 열어 두 형식으로
    저장해도 된다
    (`line-shapes` — 17종 선 모양을 네 자리에 모두 실은 문서, `script-decorations` —
@@ -117,6 +118,13 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
   띠(줄 상자 상단에서 줄 간격 몫까지, 문단 간격은 어느 줄에도 속하지 않고 목록·쪽·문서의 마지막
   줄은 줄 상자까지)를 잴 실물이 없던 자리의 실물 근거다. 이 쌍의 `hp:fieldBegin type="HYPERLINK"`
   29개는 2026-09-26 현재 typed 하이퍼링크로 승격되지 않고 강등 컨트롤로 보존된다 (fixture README).
+  표 셀 테두리 무늬의 이어 그리기는 #238에서 `table-border-chains` 쌍으로 저작했다 — 코퍼스에
+  원형 점선·긴 점선 셀 테두리가 여러 칸에 걸친 표가 없고, `line-shapes`의 17행 표는 행마다 선
+  모양이 달라 이어질 변이 없어, 한글이 같은 모양·굵기·색의 맞닿은 칸 변을 격자선을 따라 한
+  사슬로 이어 그리는(반대쪽 칸 변의 다른 색·굵기는 끊고, 빈 변은 반대쪽이 잇고, 물결은 칸마다
+  다시 시작하는) 규칙을 렌더 해시·골든이 잡지 못하던 자리의 실물 근거다. 1×3·2×3·3×1·2×2·병합
+  칸 표 10개의 셀 39개가 참조하는 `hh:borderFill`의 원형 점선(`CIRCLE`)·물결(`WAVE`) 변이 HWP
+  쌍과 같은 선 종류·굵기로 옮겨지는(등가 스위트의 셀 테두리 축) 표본이기도 하다.
 
 ## manifest 작성 기준
 

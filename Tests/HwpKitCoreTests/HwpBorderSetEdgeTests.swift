@@ -60,12 +60,16 @@ final class HwpBorderSetEdgeTests: XCTestCase {
             expect(edge.band.insetBy(dx: -0.001, dy: -0.001).contains(edge.path.boundingBoxOfPath))
                 == true
         }
-        // 원 하나도 안 들어가는 짧은 원형 변은 경로도 띠도 없다 — 표 셀 테두리의 원은 변 끝을
-        // 넘지 않는 것만 그린다 (#235: 끝 규칙은 글자선·단 구분선만)
+        // 원 하나 들어갈 자리가 없는 짧은 원형 변도 첫 원(중심 = 선 시작)은 그린다 — 표 셀 테두리의
+        // 원도 끝 규칙이다 (#238: 중심 < 선 끝이면 끝을 넘어도 그린다). 띠는 그 원을 담는다.
         let tiny = Self.set(top: 4, topShape: .circle)
         let tinyRect = CGRect(x: 100, y: 200, width: 1, height: 50)
-        expect(tiny.edges(around: tinyRect)).to(beEmpty())
-        expect(tiny.bands(around: tinyRect)).to(beEmpty())
+        let tinyEdges = tiny.edges(around: tinyRect)
+        expect(tinyEdges.count) == 1
+        expect(tinyEdges.first?.path.boundingBoxOfPath)
+            .to(equal(CGRect(x: 98, y: 198, width: 4, height: 4)))
+        expect(tiny.bands(around: tinyRect)).to(equal(tinyEdges.map(\.band)))
+        expect(tinyEdges.first?.band.contains(CGRect(x: 98, y: 198, width: 4, height: 4))) == true
         // 칠한 곳을 다 담는 상자는 셀보다 테두리 바깥 절반만큼 크다
         expect(set.paintedBounds(around: Self.rect))
             .to(equal(CGRect(x: 98, y: 199, width: 304, height: 52)))
