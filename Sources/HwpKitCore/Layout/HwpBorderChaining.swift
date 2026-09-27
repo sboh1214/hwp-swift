@@ -38,8 +38,11 @@ struct HwpBorderChains: Hashable, Sendable {
 ///   모양이 다른 조각(실선·다른 대시)은 끊지 않는다. 칸 변이 없는 쪽(`none`)도 끊지 않는다 —
 ///   같은 격자선의 다른 쪽 조각이 잇는다.
 /// - 사슬의 무늬 원점은 **첫 조각의 연장 포함 시작**이다 (가로 변은 세로 변 폭의 절반 앞, 세로
-///   대시·원은 모서리). 뒤에 든 조각의 연장은 원점을 바꾸지 않는다. 끝은 사슬을 마지막으로 늘린
-///   조각의 연장 포함 끝이고, 원형 점선은 거기서 끝 규칙을 쓴다 (`HwpLineShapeGeometry`).
+///   대시·원은 모서리). 뒤에 든 조각의 연장은 원점을 바꾸지 않는다. 끝은 반대로 사슬에 든 조각의
+///   연장 포함 끝 가운데 **가장 먼 것**이다 — 격자선 끝 모서리에 세로 변이 위 칸에만 있든 아래 칸에만
+///   있든, 병합 칸이 먼저 끝 모서리에 닿았든 사슬은 그 세로 변 폭의 절반까지 간다 (한글 실측
+///   `probes/238/review`: 2×3 긴 점선 격자선의 마지막 대시가 여섯 조합 모두 끝 모서리 + 1.44). 원형
+///   점선은 거기서 끝 규칙을 쓴다 (`HwpLineShapeGeometry`).
 /// - 물결·2중 물결·실선·여러 줄은 잇지 않는다 (한글도 물결은 칸마다 다시 시작한다).
 ///
 /// 표가 쪽마다 나뉘면 쪽 조각(`HwpTableSplitter.segmentFrame`)마다 새로 셈한다 — 한글도 세로
@@ -209,7 +212,7 @@ enum HwpBorderChaining {
         let startCorner: CGFloat
         /// 지금까지 이은 모서리 끝
         var endCorner: CGFloat
-        /// 사슬 끝 (끝을 마지막으로 늘린 조각의 연장 포함)
+        /// 사슬 끝 (든 조각의 연장 포함 끝 가운데 가장 먼 것)
         var end: CGFloat
         /// (조각, 요소 범위의 시작 — 사슬의 첫 자리면 nil)
         var members: [(piece: Piece, lowerBound: CGFloat?)]
@@ -255,8 +258,9 @@ enum HwpBorderChaining {
         chain.members.append((piece, lowerBound))
         if piece.end > chain.endCorner + tolerance {
             chain.endCorner = piece.end
-            chain.end = piece.end + piece.trail
         }
+        // 끝 모서리에 늦게 닿은 조각의 연장도 사슬 끝을 민다 (원점과 달리 먼저 온 조각이 정하지 않는다)
+        chain.end = max(chain.end, piece.end + piece.trail)
     }
 
     static func placement(

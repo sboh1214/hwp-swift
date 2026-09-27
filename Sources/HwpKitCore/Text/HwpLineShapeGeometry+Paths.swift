@@ -40,7 +40,23 @@ extension HwpLineShapeGeometry {
             return
         }
         let period = pattern.reduce(0, +)
-        guard period > 0, period.isFinite else { return }
+        guard period.isFinite else {
+            // 주기가 무한대로 넘친 입력(두께가 유한 최댓값 근처)은 누적 덧셈처럼 첫 대시 하나다 —
+            // 그 자리(0)를 맡은 조각이 그린다
+            if owned.contains(0) {
+                body(0, min(pattern[0], line.length))
+            }
+            return
+        }
+        guard period > 0 else { return }
+        forEachDash(pattern, period: period, line: line, owned: owned, body)
+    }
+
+    /// `forEachOwnedDash`의 범위 갈래 — 범위 앞 주기를 건너뛰고 주기마다 대시 자리를 곱으로 셈한다
+    private static func forEachDash(
+        _ pattern: [CGFloat], period: CGFloat, line: Line, owned: Range<CGFloat>,
+        _ body: (CGFloat, CGFloat) -> Void
+    ) {
         var slotStarts: [CGFloat] = []
         var cumulative: CGFloat = 0
         for span in pattern {

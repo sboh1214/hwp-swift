@@ -72,8 +72,10 @@ public struct HwpBorderSet: Sendable, Hashable {
         drawnEdges(around: rect, chains: chains).compactMap(\.geometry)
     }
 
-    /// rect 둘레에 칠하는 변들의 띠만 — 경로를 만들지 않아 히트 판정마다 싸다. 경계 상자는
-    /// `edges(around:chains:)`가 내는 `EdgeGeometry.band`와 같다.
+    /// rect 둘레 변들의 히트 띠 — 경로를 만들지 않아 히트 판정마다 싸다. 칠하는 변의 경계 상자는
+    /// `edges(around:chains:)`가 내는 `EdgeGeometry.band`와 같고, 이웃 칸과 이은 변 가운데 제 몫의
+    /// 요소가 없는 변(무늬의 빈 자리나 이웃 칸이 넘겨 그린 대시만 지나는 변)도 선 위라 띠를 낸다 —
+    /// 그 변은 칠하지 않으므로 `edges`에는 없다 (점선의 빈 자리도 띠로 치는 규약, #238).
     func bands(around rect: CGRect, chains: HwpBorderChains = .none) -> [CGRect] {
         drawnEdges(around: rect, chains: chains).compactMap(\.band)
     }
@@ -188,14 +190,19 @@ public struct HwpBorderSet: Sendable, Hashable {
         /// 이 변이 칠하는 영역의 경계 상자 (페이지 좌표) — 가로지르는 축은 모양의 띠, 선 방향은
         /// 연장 포함 [start − lead, end + trail]에 물결의 넘침·획 모서리와 원형 점선 첫·끝 원의
         /// 반지름을 더한 범위. 이은 선의 조각은 제 몫의 요소가 칠하는 범위(이웃 칸으로 넘친 대시·원
-        /// 포함)를 더하고, 제 몫이 없으면 띠도 없다 (경로가 없으므로). 경로를 만들지 않는다.
+        /// 포함)를 더하고, 제 몫이 없어도 모서리 구간의 띠는 낸다 (칠하지 않는 빈 자리도 선 위다).
+        /// 경로를 만들지 않는다.
         var band: CGRect? {
-            guard lineLength > 0,
-                  let cross = HwpLineShapeGeometry.crossExtent(of: line),
-                  let along = HwpLineShapeGeometry.alongExtent(of: line)
-            else { return nil }
-            let alongStart = min(lineStart + along.lowerBound, start - leadExtension)
-            let alongEnd = max(lineStart + along.upperBound, end + trailExtension)
+            guard lineLength > 0, let cross = HwpLineShapeGeometry.crossExtent(of: line) else {
+                return nil
+            }
+            let along = HwpLineShapeGeometry.alongExtent(of: line)
+            // 이은 변은 제 몫의 요소가 없어도 제 모서리 구간의 띠를 낸다 (칠하지는 않는다)
+            guard along != nil || chain != nil else { return nil }
+            let alongStart = min(
+                lineStart + (along?.lowerBound ?? .infinity), start - leadExtension
+            )
+            let alongEnd = max(lineStart + (along?.upperBound ?? -.infinity), end + trailExtension)
             let localBand = CGRect(
                 x: alongStart - lineStart, y: cross.lowerBound,
                 width: alongEnd - alongStart, height: cross.upperBound - cross.lowerBound

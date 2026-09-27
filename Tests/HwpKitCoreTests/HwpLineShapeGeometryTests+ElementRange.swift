@@ -85,6 +85,20 @@ extension HwpLineShapeGeometryTests {
         expect(HwpLineShapeGeometry.alongExtent(of: outside)).to(beNil())
     }
 
+    /// 대시 주기가 무한대로 넘친 입력(두께가 유한 최댓값 근처)도 조각을 합치면 선 전체다 — 선 전체는
+    /// 첫 대시 하나가 길이만큼이고, 그 자리(0)를 맡은 조각 하나가 그린다
+    func testInfinitePeriodDashesStillPartition() {
+        let line = Self.borderLine(.dotLine, thickness: 1e308, length: 100)
+        let whole = Self.pieces(HwpLineShapeGeometry.path(for: line))
+        expect(whole.count) == 1
+        let joined = Self.ranges(cuts: [40]).flatMap { range -> [CGRect] in
+            var piece = line
+            piece.elementRange = range
+            return Self.pieces(HwpLineShapeGeometry.path(for: piece))
+        }
+        expect(joined) == whole
+    }
+
     /// 조각 범위는 대시·원형 점선만 본다 — 실선·여러 줄·물결은 범위와 무관하게 선 전체다
     func testElementRangeIsIgnoredByUnpatternedShapes() {
         for shape: HwpBorderType in [.line, .doubleLine, .wave, .doubleWave] {

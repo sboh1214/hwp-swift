@@ -217,6 +217,9 @@ final class FixtureTableBorderChainTests: XCTestCase {
             for x in corners {
                 let line = Self.circleCenters(tables[6], verticalAt: x)
                 expect(Self.runStarts(line)).to(haveCount(1), description: "\(format) x \(x)")
+                // 세로 사슬은 위·아래 변이 있어도 연장 없이 위 모서리에서 (한글 첫 원 = 모서리)
+                expect(line.first)
+                    .to(beCloseTo(0, within: tolerance), description: "\(format) x \(x)")
                 expect(line.last ?? 0) > 40
             }
         }

@@ -33,6 +33,9 @@ final class HwpBorderChainingTests: XCTestCase {
         let table = Self.row([side, side, side])
         // 원점 −2, 끝 92: 중심 −2 … 86 (94는 끝 뒤)
         expect(Self.circlesX(table, y: 0)) == Self.stride8(from: -2, count: 12)
+        // 끝 모서리 뒤 연장 구간 [93, 95)의 원(94)도 마지막 칸이 그린다 — 칸 폭 31
+        let wide = Self.row([side, side, side], width: 31)
+        expect(Self.circlesX(wide, y: 0)) == Self.stride8(from: -2, count: 13)
     }
 
     /// 대시는 사슬 전체로 이어지고 칸 경계에 걸친 대시는 시작 칸이 통째로 그린다 — 그 칸의 띠가
@@ -171,6 +174,17 @@ final class HwpBorderChainingTests: XCTestCase {
             cells: (0 ..< 3).map { Cell($0, 0, 1, 1, Self.borders(left: .circle())) }
         )
         expect(Self.circlesY(column, x: 0)) == Self.stride8(from: 0, count: 12)
+        // 위·아래 변이 있어도 세로 원은 연장 없이 모서리에서 (한글 so238-main #7: 위아래 파랑 1mm인
+        // 3×1 왼 변 원형 점선의 첫 원 = 위 모서리)
+        let walled = Self.table(
+            widths: [20], heights: [30, 30, 30],
+            cells: (0 ..< 3).map {
+                Cell($0, 0, 1, 1, Self.borders(
+                    top: .shape(.line), bottom: .shape(.line), left: .circle()
+                ))
+            }
+        )
+        expect(Self.circlesY(walled, x: 0)) == Self.stride8(from: 0, count: 12)
         let blue = Side.circle(4, Self.blue)
         let mirror = Self.table(
             widths: [20, 20], heights: [30, 30, 30],
@@ -214,6 +228,18 @@ final class HwpBorderChainingTests: XCTestCase {
                 Cell(1, 1, 1, 2, Self.borders(top: blue)),
             ]
         )
+        // 먼저 든 긴 병합 조각 뒤에 짧은 조각이 겹쳐 들어도 사슬 끝 모서리는 줄지 않는다 — 짧은 조각은
+        // 제 구간(0~30)의 원만 한 번 더 그린다
+        let shorter = Self.table(
+            widths: [30, 30], heights: [20, 20],
+            cells: [
+                Cell(0, 0, 1, 2, Self.borders(bottom: .circle())),
+                Cell(1, 0, 1, 1, Self.borders(top: .circle())),
+                Cell(1, 1, 1, 1, Self.borders()),
+            ]
+        )
+        let twice = Self.stride8(from: 0, count: 4).flatMap { [$0, $0] }
+        expect(Self.circlesX(shorter, y: 20)) == twice + Self.stride8(from: 32, count: 4)
         // 초록은 둘째 칸까지 잇고 셋째 칸(60)에서 다시 시작한다
         expect(Self.unique(Self.circlesX(breaking, y: 20)))
             == Self.stride8(from: 0, count: 8) + Self.stride8(from: 60, count: 4)
@@ -271,16 +297,18 @@ final class HwpBorderChainingTests: XCTestCase {
 
     // MARK: - 히트 띠
 
-    /// 이은 변의 띠는 제 몫이 칠한 곳(이웃 칸으로 넘친 원 포함)을 다 덮고, `bands(around:chains:)`는
-    /// `edges(around:chains:)`의 띠와 같다. 제 몫이 없는 변은 경로도 띠도 없다.
-    func testBandsCoverOwnedPaintAndMatchEdges() {
-        // 폭 5 칸 여섯: 원 간격 8이라 자리가 없는 칸이 생긴다 (5~8·10~16 …)
+    /// 이은 변의 띠는 제 몫이 칠한 곳(이웃 칸으로 넘친 원 포함)을 다 덮고, 칠하는 변의 띠는
+    /// `edges(around:chains:)`의 띠와 같다. 제 몫의 요소가 없는 이은 변은 칠하지 않지만 선 위라
+    /// 제 모서리 구간의 띠를 낸다 — 점선의 빈 자리도 띠로 치는 규약(`HwpTableCellFrame.paints`).
+    func testBandsCoverOwnedPaintAndTheWholeEdgeLine() {
+        // 폭 5 칸 여섯: 원 간격 8이라 자리가 없는 칸이 생긴다
         let table = Self.row(Array(repeating: Self.borders(top: .circle()), count: 6), width: 5)
         var owning = 0
         for cell in table.rows[0].cells {
             let edges = cell.borders.edges(around: cell.cellFrame, chains: cell.borderChains)
-            expect(cell.borders.bands(around: cell.cellFrame, chains: cell.borderChains))
-                == edges.map(\.band)
+            let bands = cell.borders.bands(around: cell.cellFrame, chains: cell.borderChains)
+            expect(bands.count) == 1
+            expect(edges.allSatisfy { bands.contains($0.band) }) == true
             for edge in edges {
                 owning += 1
                 let slack = edge.band.insetBy(dx: -1e-9, dy: -1e-9)
@@ -289,173 +317,48 @@ final class HwpBorderChainingTests: XCTestCase {
                     expect(cell.paints(CGPoint(x: piece.maxX - 0.01, y: piece.midY))) == true
                 }
             }
+            // 제 몫이 있든 없든 제 모서리 구간의 선 위(원 띠 [−2, 2]) 탭은 그 칸을 가리키고, 띠
+            // 밖은 아니다 (채움 없는 칸)
+            expect(cell.paints(CGPoint(x: cell.cellFrame.midX, y: 1.5))) == true
+            expect(cell.paints(CGPoint(x: cell.cellFrame.midX, y: -2.5))) == false
         }
         // 사슬 길이 30 → 원 0·8·16·24 — 칸 [0,5)·[5,10)·[15,20)·[20,25)만 자리를 맡는다
         expect(owning) == 4
         expect(Self.circlesX(table, y: 0)) == [0, 8, 16, 24]
     }
-}
 
-// MARK: - 표 만들기·요소 읽기
-
-extension HwpBorderChainingTests {
-    static let green = HwpRGBColor(red: 0, green: 1, blue: 0)
-    static let blue = HwpRGBColor(red: 0, green: 0, blue: 1)
-
-    /// 변 하나 — (폭, 모양, 색). 폭 0이면 없는 변
-    struct Side {
-        var width: CGFloat = 0
-        var shape: HwpBorderType = .none
-        var color = HwpBorderChainingTests.green
-
-        static let none = Side()
-        static func circle(
-            _ width: CGFloat = 4, _ color: HwpRGBColor = HwpBorderChainingTests.green
-        ) -> Side {
-            Side(width: width, shape: .circle, color: color)
-        }
-
-        static func shape(_ shape: HwpBorderType, _ width: CGFloat = 4) -> Side {
-            Side(width: width, shape: shape)
-        }
-    }
-
-    static func borders(
-        top: Side = .none, bottom: Side = .none, left: Side = .none, right: Side = .none
-    ) -> HwpBorderSet {
-        HwpBorderSet(
-            top: top.width, bottom: bottom.width, left: left.width, right: right.width,
-            topColor: top.color, bottomColor: bottom.color, leftColor: left.color,
-            rightColor: right.color, topShape: top.shape, bottomShape: bottom.shape,
-            leftShape: left.shape, rightShape: right.shape
+    /// 히트 자격(`HwpHitTester.hitEligibleFrame`, `HwpHitCoverage`)도 같은 자리로 잰다 — 칸 28.5
+    /// 둘의 사슬 [0, 57]은 끝 원 56이 반지름만큼 58까지 넘친다. 칸마다 셈하면 끝 칸의 원은 52.5에서
+    /// 끝나 자격이 57에서 멈추고, 칠한 58까지를 덮지 못한다 (R54 `자격 ⊇ 칠`).
+    func testHitEligibilityUsesTheChainPlacement() {
+        let table = Self.row(Array(repeating: Self.borders(top: .circle()), count: 2), width: 28.5)
+        expect(Self.circlesX(table, y: 0).last) == 56
+        let block = AnyHwpBlock(
+            frame: CGRect(x: 0, y: 0, width: 57, height: 20), kind: .table, payload: .table(table)
         )
+        expect(HwpHitTester().hitEligibleFrame(for: block).maxX) >= 58 - 1e-9
     }
 
-    /// 칸 하나 — (행, 열, 행 병합, 열 병합, 테두리)
-    struct Cell {
-        let row: Int
-        let column: Int
-        let rowSpan: Int
-        let columnSpan: Int
-        let borders: HwpBorderSet
-
-        init(
-            _ row: Int, _ column: Int, _ rowSpan: Int, _ columnSpan: Int, _ borders: HwpBorderSet
-        ) {
-            self.row = row
-            self.column = column
-            self.rowSpan = rowSpan
-            self.columnSpan = columnSpan
-            self.borders = borders
+    /// 사슬 끝은 든 조각의 연장 포함 끝 가운데 가장 먼 것이다 — 원점(첫 조각)과 달리 끝 모서리에
+    /// 늦게 닿은 조각의 세로 변 연장도 사슬을 민다. 한글 12.30 실측(`probes/238/review`, 2×3 격자선
+    /// 긴 점선 1mm): 끝 모서리의 세로 변이 위 칸에만·아래 칸에만·양쪽에 있거나, 위·아래 병합 칸이 먼저
+    /// 끝 모서리에 닿아도 마지막 대시가 모서리 + 1.44(세로 변 1mm의 절반)까지 간다 — 세로 변이 없으면
+    /// 모서리까지.
+    func testChainEndTakesTheFarthestExtension() {
+        let wall = Side.shape(.line)
+        func lastDashEnd(_ table: HwpTableFrame) -> CGFloat? {
+            Self.elements(table)
+                .filter { abs($0.rect.midY - 20) < 0.01 && $0.rect.width > 10 }
+                .map(\.rect.maxX).max()
         }
-    }
-
-    /// (행, 열, 행 병합, 열 병합, 테두리)로 표를 만든다 — 칸 폭·높이는 격자 합, 칸 간격 `spacing`
-    static func table(
-        widths: [CGFloat], heights: [CGFloat], spacing: CGFloat = 0,
-        cells: [Cell]
-    ) -> HwpTableFrame {
-        func origin(_ sizes: [CGFloat], _ index: Int) -> CGFloat {
-            sizes.prefix(index).reduce(spacing) { $0 + $1 + spacing }
-        }
-        let rows = heights.indices.map { row in
-            HwpTableRowFrame(
-                rowFrame: CGRect(
-                    x: 0, y: origin(heights, row), width: widths.reduce(0, +), height: heights[row]
-                ),
-                cells: cells.filter { $0.row == row }.map { cell in
-                    let (column, rowSpan, columnSpan) = (cell.column, cell.rowSpan, cell.columnSpan)
-                    return HwpTableCellFrame(
-                        cellFrame: CGRect(
-                            x: origin(widths, column), y: origin(heights, row),
-                            width: widths[column ..< column + columnSpan].reduce(0, +)
-                                + spacing * CGFloat(columnSpan - 1),
-                            height: heights[row ..< row + rowSpan].reduce(0, +)
-                                + spacing * CGFloat(rowSpan - 1)
-                        ),
-                        row: row, column: column, rowSpan: rowSpan, columnSpan: columnSpan,
-                        paragraphs: [], borders: cell.borders, fillColor: nil
-                    )
-                }
-            )
-        }
-        return HwpTableFrame(
-            outerFrame: CGRect(
-                x: 0, y: 0, width: widths.reduce(0, +), height: heights.reduce(0, +)
-            ),
-            rows: rows, borderColor: HwpRGBColor(red: 0, green: 0, blue: 0), borderWidth: 1
-        )
-    }
-
-    /// 한 행 표 — 칸마다 같은 테두리를 주거나 칸별로 준다
-    static func row(
-        _ borders: [HwpBorderSet], width: CGFloat = 30, height: CGFloat = 20
-    ) -> HwpTableFrame {
-        table(
-            widths: Array(repeating: width, count: borders.count), heights: [height],
-            cells: borders.enumerated().map { Cell(0, $0.offset, 1, 1, $0.element) }
-        )
-    }
-
-    /// 두 행 표 — 위 행 아래 변과 아래 행 위 변만 준다 (같은 격자선 y = 20의 두 쪽)
-    static func twoRows(upper: [Side], lower: [Side], width: CGFloat = 30) -> HwpTableFrame {
-        table(
-            widths: Array(repeating: width, count: upper.count), heights: [20, 20],
-            cells: upper.enumerated().map { Cell(0, $0.offset, 1, 1, borders(bottom: $0.element)) }
-                + lower.enumerated().map { Cell(1, $0.offset, 1, 1, borders(top: $0.element)) }
-        )
-    }
-
-    struct Element: Equatable {
-        let row: Int
-        let column: Int
-        let color: HwpRGBColor
-        let rect: CGRect
-    }
-
-    /// 칸마다 그린 테두리 요소 (원·대시 하나하나의 경계 상자, 표 로컬 좌표) — 페인터와 같은
-    /// `edges(around:chains:)`로
-    static func elements(_ table: HwpTableFrame) -> [Element] {
-        table.rows.flatMap(\.cells).flatMap { cell in
-            cell.borders.edges(around: cell.cellFrame, chains: cell.borderChains).flatMap { edge in
-                HwpLineShapeGeometryTests.pieces(edge.path).map {
-                    Element(row: cell.row, column: cell.column, color: edge.color, rect: $0)
-                }
-            }
-        }
-    }
-
-    /// 가로 격자선 y의 원 중심 x (그린 횟수만큼, 오름차순)
-    static func circlesX(
-        _ table: HwpTableFrame, y: CGFloat, color: HwpRGBColor = green
-    ) -> [CGFloat] {
-        elements(table)
-            .filter { $0.color == color && abs($0.rect.midY - y) < 0.01 && $0.rect.width < 10 }
-            .map { ($0.rect.midX * 1000).rounded() / 1000 }
-            .sorted()
-    }
-
-    /// 세로 격자선 x의 원 중심 y
-    static func circlesY(
-        _ table: HwpTableFrame, x: CGFloat, color: HwpRGBColor = green
-    ) -> [CGFloat] {
-        elements(table)
-            .filter { $0.color == color && abs($0.rect.midX - x) < 0.01 && $0.rect.height < 10 }
-            .map { ($0.rect.midY * 1000).rounded() / 1000 }
-            .sorted()
-    }
-
-    static func stride8(from start: CGFloat, count: Int) -> [CGFloat] {
-        (0 ..< count).map { start + CGFloat($0) * 8 }
-    }
-
-    /// 두 쪽이 같은 원을 두 번 그린 자리를 한 번으로
-    static func unique(_ values: [CGFloat]) -> [CGFloat] {
-        Array(Set(values)).sorted()
-    }
-
-    /// 표의 어느 칸도 이음 자리를 싣지 않았는가
-    static func unchained(_ table: HwpTableFrame) -> Bool {
-        table.rows.flatMap(\.cells).allSatisfy { $0.borderChains == HwpBorderChains.none }
+        // 대시 22 · 공백 13.2 (주기 35.2): 셋째 대시 70.4가 사슬 끝에서 잘린다
+        expect(lastDashEnd(Self.cornerGrid(upperRight: .none, lowerRight: wall))) == 92
+        expect(lastDashEnd(Self.cornerGrid(upperRight: wall, lowerRight: .none))) == 92
+        expect(lastDashEnd(Self.cornerGrid(upperRight: wall, lowerRight: wall))) == 92
+        expect(lastDashEnd(Self.cornerGrid(upperRight: .none, lowerRight: .none))) == 90
+        let mergedUpper = Self.cornerGrid(upperRight: .none, lowerRight: wall, mergeUpper: true)
+        expect(lastDashEnd(mergedUpper)) == 92
+        let mergedLower = Self.cornerGrid(upperRight: wall, lowerRight: .none, mergeLower: true)
+        expect(lastDashEnd(mergedLower)) == 92
     }
 }
