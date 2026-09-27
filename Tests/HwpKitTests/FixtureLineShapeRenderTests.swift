@@ -147,8 +147,8 @@ final class FixtureLineShapeRenderTests: XCTestCase {
     }
 
     /// 밑줄 13종: 실선은 한 덩어리, 긴 점선·점선·쇄선·원형 점선은 한글의 주기대로 조각난다
-    /// (65pt 안에서 긴 점선 4.56pt 주기 14~15개, 점선 1.5pt 주기 40개쯤, 원형 점선 1.4pt
-    /// 피치 45개쯤)
+    /// (65pt 안에서 긴 점선 4.56pt 주기 14~15개, 점선 1.5pt 주기 40개쯤, 원형 점선 1.56pt
+    /// 간격 42개쯤 — 한글 PDF 같은 행 65pt 안 42개, #239)
     func testUnderlineDashPatternsAreFragmented() throws {
         let raster = try XCTUnwrap(Self.hwp)
         func runs(_ index: Int) -> Double {
@@ -164,7 +164,7 @@ final class FixtureLineShapeRenderTests: XCTestCase {
         expect(runs(3)).to(beCloseTo(14, within: 2)) // DASH_DOT 5.76/1.68/0.6/1.68
         expect(runs(4)).to(beCloseTo(17, within: 3)) // DASH_DOT_DOT
         expect(runs(5)).to(beCloseTo(9, within: 2)) // LONG_DASH 5.76/1.68
-        expect(runs(6)).to(beCloseTo(46, within: 5)) // CIRCLE 지름 0.57·피치 1.43
+        expect(runs(6)).to(beCloseTo(42, within: 2)) // CIRCLE 칠 지름 0.84·간격 1.56
         expect(runs(7)) == 1 // DOUBLE_SLIM은 가로로는 이어진다
     }
 
@@ -280,7 +280,8 @@ final class FixtureLineShapeRenderTests: XCTestCase {
         expect(leftRuns(1)).to(beCloseTo(3, within: 1)) // DOT
         expect(leftRuns(2)).to(beCloseTo(8, within: 2)) // DASH
         expect(leftRuns(5)).to(beCloseTo(2, within: 1)) // LONG_DASH
-        // CIRCLE — 지름 0.34·간격 0.34pt 원 사이가 4px/pt에선 붙기도 해 하한만 둔다
+        // CIRCLE — 0.12mm는 칠 지름 0.6·간격 0.72pt(r 3u, #239)라 원 사이 0.12pt가 4px/pt에선
+        // 붙기도 해 하한만 둔다
         expect(leftRuns(6)) >= 8
     }
 

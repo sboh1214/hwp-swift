@@ -73,16 +73,17 @@ extension HwpLineShapeGeometryTests {
         expect(Self.diagonals(Self.hwp2007Line(.wave, length: 342.12)).count) == 115
     }
 
-    /// 한글 문서(글자 크기 비례)도 같은 규칙 — 40pt 원 간격 5.7pt(반지름 1.14): 길이 11.4면 원
-    /// 둘, 한 단위라도 길면 셋째 원(11.4)을 그려 12.54까지 넘친다. 물결 반주기 4.6pt도 같다.
-    /// 규칙은 반지름·획과 무관하다 (한글 40pt 원 지름 2.4pt도 중심이 진행 폭 한 단위 앞이면 그린다).
+    /// 한글 문서(글자 크기 비례)도 같은 규칙 — 40pt 원 간격 5.76pt(48u, 칠 반지름 1.26): 길이
+    /// 11.52면 원 둘, 한 단위라도 길면 셋째 원(11.52)을 그려 12.78까지 넘친다. 물결 반주기 4.6pt도
+    /// 같다. 규칙은 반지름·획과 무관하다 (한글 40pt 원 경로 지름 2.4pt도 중심이 진행 폭 한 단위 앞이면
+    /// 그린다).
     func testNativeElementsBeforeTheRunEndAreDrawnWhole() {
         func circles(_ length: CGFloat) -> [CGRect] {
             Self.pieces(HwpLineShapeGeometry.path(for: Self.characterLine(.circle, length: length)))
         }
-        expect(circles(11.4).count) == 2
-        expect(circles(11.52).count) == 3
-        expect(circles(11.52).last?.maxX).to(beCloseTo(11.4 + 1.14, within: 1e-9))
+        expect(circles(11.52).count) == 2
+        expect(circles(11.64).count) == 3
+        expect(circles(11.64).last?.maxX).to(beCloseTo(11.52 + 1.26, within: 1e-9))
         expect(Self.diagonals(Self.characterLine(.wave, length: 9.2)).count) == 2
         expect(Self.diagonals(Self.characterLine(.wave, length: 9.32)).count) == 3
         expect(Self.diagonals(Self.characterLine(.doubleWave, length: 9.2)).count) == 4
@@ -90,8 +91,9 @@ extension HwpLineShapeGeometryTests {
     }
 
     /// 단 구분선·표 셀 테두리도 같은 규칙이다 (한글 실측: 단 구분선은 줄 상자 길이 기준으로 물결은
-    /// 정확히, 원형 점선은 장치 한 단위 안에서 같다) — 원형 점선은 두께 4pt(간격 8pt)에서 길이 16이면
-    /// 원 둘, 16.12면 셋째 원(16)이 반지름 2만큼 넘친다. 표 셀 테두리의 원도 같다: 한글은 같은 모양
+    /// 정확히, 원형 점선은 #239 뒤 110표본 중 109개가 정확히 나머지 하나가 장치 한 단위 안에서 같다) —
+    /// 단 구분선 원형 점선은 두께 4pt(점 단위 49u, 간격 123u = 14.76pt, 칠 반지름 3.06)에서 길이
+    /// 29.52면 원 둘, 29.64면 셋째 원(29.52)이 반지름만큼 넘친다. 표 셀 테두리의 원도 같다: 한글은 같은 모양
     /// 이웃 칸의 변을 한 선으로 이어 그 끝에서 이 규칙을 쓰고 (#238 — 이웃 세로 변이 없는 가로 사슬은
     /// 칸 1·2·3개 모두 정확히), 우리는 이은 선을 사슬 전체 길이로 받는다 (`HwpBorderChaining`). 테두리
     /// 물결은 한글도 칸마다 다시 시작해 넘치므로 같은 규칙이고, 2중 물결의 둘째 파는 3t/4 뒤에서
@@ -102,25 +104,26 @@ extension HwpLineShapeGeometryTests {
                 shape: shape, length: length, thickness: 4, scale: .border, placement: .divider
             )
         }
-        expect(Self.pieces(HwpLineShapeGeometry.path(for: divider(.circle, 16))).count) == 2
-        expect(Self.pieces(HwpLineShapeGeometry.path(for: divider(.circle, 16.12))).map(\.midX))
-            .to(beCloseTo([0, 8, 16], within: 1e-9))
-        expect(HwpLineShapeGeometry.alongExtent(of: divider(.circle, 16.12))?.upperBound)
-            .to(beCloseTo(18, within: 1e-9))
+        expect(Self.pieces(HwpLineShapeGeometry.path(for: divider(.circle, 29.52))).count) == 2
+        expect(Self.pieces(HwpLineShapeGeometry.path(for: divider(.circle, 29.64))).map(\.midX))
+            .to(beCloseTo([0, 14.76, 29.52], within: 1e-9))
+        expect(HwpLineShapeGeometry.alongExtent(of: divider(.circle, 29.64))?.upperBound)
+            .to(beCloseTo(29.52 + 3.06, within: 1e-9))
         expect(Self.diagonals(divider(.wave, 8.24)).count) == 2
         expect(Self.diagonals(divider(.wave, 8.25)).count) == 3
 
-        /// 표 셀 테두리: 중심 < 길이 (길이 16이면 원 둘, 16.12면 셋째 원 16이 끝을 넘는다)
+        /// 표 셀 테두리 4pt(r 33u, 간격 66u = 7.92pt, 칠 반지름 2.1): 중심 < 길이 (길이 15.84면 원 둘,
+        /// 15.96이면 셋째 원 15.84가 끝을 넘는다)
         func cellCircles(_ length: CGFloat) -> [CGRect] {
             Self.pieces(HwpLineShapeGeometry.path(for: Self.borderLine(
                 .circle, thickness: 4, length: length
             )))
         }
-        expect(cellCircles(16).map(\.midX)).to(beCloseTo([0, 8], within: 1e-9))
-        expect(cellCircles(16.12).map(\.midX)).to(beCloseTo([0, 8, 16], within: 1e-9))
+        expect(cellCircles(15.84).map(\.midX)).to(beCloseTo([0, 7.92], within: 1e-9))
+        expect(cellCircles(15.96).map(\.midX)).to(beCloseTo([0, 7.92, 15.84], within: 1e-9))
         expect(HwpLineShapeGeometry.alongExtent(of: Self.borderLine(
-            .circle, thickness: 4, length: 16.12
-        ))?.upperBound).to(beCloseTo(18, within: 1e-9))
+            .circle, thickness: 4, length: 15.96
+        ))?.upperBound).to(beCloseTo(15.84 + 2.1, within: 1e-9))
         // 원 하나 들어갈 자리가 없어도 첫 원(중심 0)은 그린다 — 자리 0 < 길이
         expect(HwpLineShapeGeometry.circleCount(for: Self.borderLine(
             .circle, thickness: 4, length: 1.99
@@ -154,22 +157,28 @@ extension HwpLineShapeGeometryTests {
         expect(HwpLineShapeGeometry.patternElementCount(span: 3, period: 0)) == 0
         expect(HwpLineShapeGeometry.patternElementCount(span: 3, period: -1)) == 0
         expect(HwpLineShapeGeometry.patternElementCount(span: 3, period: .infinity)) == 1
-        // 원 간격(두께 × 2)이 무한대로 넘치는 두께도 첫 원(자리 0)만 그린다 — 자리를 0 × ∞ = NaN으로
-        // 곱하지 않으므로 경로가 유한하고 범위가 그 원을 담는다. 표 셀 테두리도 같다 (#238 — 끝 규칙)
+        // 원 간격이 무한대로 넘치는 두께도 첫 원(자리 0)만 그린다 — 자리를 0 × ∞ = NaN으로 곱하지
+        // 않으므로 경로가 유한하고 범위가 그 원을 담는다. 장치 단위 반올림 상한 밖이라 단 구분선은 반올림
+        // 전 비율(지름 = 점 단위 = 두께 × 22/15)이다. 표 셀 테두리도 같다 (#238 — 끝 규칙)
         let overflow = HwpLineShapeGeometry.Line(
             shape: .circle, length: 100, thickness: 1e308, scale: .border, placement: .divider
         )
+        let dot: CGFloat = 1e308 / 15 * 22
         let overflowBox = try XCTUnwrap(HwpLineShapeGeometry.path(for: overflow)).boundingBoxOfPath
-        expect(overflowBox.minX) == -5e307
-        expect(overflowBox.width) == 1e308
-        expect(HwpLineShapeGeometry.alongExtent(of: overflow)) == -5e307 ... 5e307
-        expect(HwpLineShapeGeometry.crossExtent(of: overflow)) == -5e307 ... 5e307
+        expect(overflowBox.minX) == -dot / 2
+        expect(overflowBox.width) == dot
+        expect(HwpLineShapeGeometry.alongExtent(of: overflow)) == -dot / 2 ... dot / 2
+        expect(HwpLineShapeGeometry.crossExtent(of: overflow)) == -dot / 2 ... dot / 2
         // 유한 최댓값 길이에서 끝을 넘는 마지막 원의 바깥 끝이 넘치면 그 원을 빼 경로·범위가 유한하다
+        // (간격 2.5 × 0.039 × 22/15 × 5e307 = 7.15e306 → 중심 26개, 마지막 원의 바깥 끝이 넘쳐 25개)
         let huge = HwpLineShapeGeometry.Line(
             shape: .circle, length: .greatestFiniteMagnitude, thickness: 1,
-            scale: .characterLine(fontSize: 1e307), placement: .underlineBelow
+            scale: .characterLine(fontSize: 5e307), placement: .underlineBelow
         )
-        expect(HwpLineShapeGeometry.circleCount(for: huge)) == 126
+        expect(HwpLineShapeGeometry.patternElementCount(
+            span: .greatestFiniteMagnitude, period: HwpLineShapeGeometry.circlePitch(for: huge)
+        )) == 26
+        expect(HwpLineShapeGeometry.circleCount(for: huge)) == 25
         expect(HwpLineShapeGeometry.alongExtent(of: huge)?.upperBound) == .greatestFiniteMagnitude
         let hugeBox = try XCTUnwrap(HwpLineShapeGeometry.path(for: huge)).boundingBoxOfPath
         expect(hugeBox.maxX.isFinite) == true

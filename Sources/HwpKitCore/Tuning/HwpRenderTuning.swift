@@ -244,7 +244,9 @@ public enum HwpRenderTuning {
     /// 5·10·20·40·80pt × 밑줄/취소선/글자 위 밑줄, 테두리는 13종 × 표 26 굵기 16단(0.1~5mm,
     /// 위·왼쪽 변만 켠 셀), 단 구분선은 13종 × 0.1/0.4/1/3mm 합성 문서. 글자선과
     /// 테두리·구분선은 **같은 모양 표를 다른 축척**으로 그린다 — 글자선은 글자 크기(em)에,
-    /// 테두리·구분선은 명목 두께(t, 표 26 mm)에 비례한다. `HwpLineShapeGeometry`가 이
+    /// 테두리·구분선은 명목 두께(t, 표 26 mm)에 비례한다. 원형 점선만 예외로 원의 지름·간격이
+    /// 장치 단위(0.12pt)의 정수이고, 단 구분선은 표 셀 테두리가 아니라 글자선과 같은 점 무늬로
+    /// 그린다 (#239 — `deviceUnit` 둘레의 상수). `HwpLineShapeGeometry`가 이
     /// 상수로 경로를 만든다. 3D 넷(`thick3D`·`thick3DReverse`·`single3D`·
     /// `single3DReverse`)은 한글 macOS가 글자선·테두리 모두 **아무것도 그리지 않는다**
     /// (같은 실측: PDF 벡터 0건, 한글이 만든 PrvImage에도 없음) — 여기서는 실선으로 대체한다.
@@ -266,22 +268,6 @@ public enum HwpRenderTuning {
         /// 다시 시작하지 않고 격자선을 따라 같은 모양·굵기·색의 이웃 칸 변과 이어진다 (#238 —
         /// `HwpBorderChaining`).
         public static let borderDashUnitThicknessRatio: CGFloat = 22.0 / 15.0
-
-        /// 글자선 원형 점선(`circle`)의 원 지름 = 대시 단위(`characterDashUnitEmRatio`),
-        /// 원 중심 간격 = 지름 × 이 배율. 채운 원이고 첫 원의 중심이 run 시작 x, 중심이 run
-        /// 끝 앞인 마지막 원은 끝에 걸쳐도 온전히 그린다 (#235 —
-        /// `HwpLineShapeGeometry.patternElementCount(span:period:)`).
-        /// 실측: 80pt 지름 4.56pt(38u)·피치 11.4pt(95u), 40pt 2.4/5.76pt, 20pt 1.2/3.0pt.
-        public static let characterCirclePitchDiameterRatio: CGFloat = 2.5
-
-        /// 테두리·단 구분선 원형 점선의 원 지름 = 명목 두께, 원 중심 간격 = 두께 × 이 배율.
-        /// 첫 원의 중심은 선 시작이다 (가로 변은 셀 모서리 − 이웃 세로 변 폭/2, 세로 변은 셀
-        /// 모서리; 이웃 칸과 이은 셀 테두리는 사슬의 무늬 원점, #238). 실측(표 테두리): 5mm 지름
-        /// 118u·피치 236u, 1mm 24u·48u, 0.12mm 4u·6u(정수화). 끝은 글자선 규칙이다 — 중심이 선(이은
-        /// 셀 테두리는 사슬) 끝 앞인 원을 끝에 걸쳐도 그린다 (#235·#238 —
-        /// `HwpLineShapeGeometry.circleCount(for:)`). 한글은 단 구분선의 원을 더 크게 그린다 (지름
-        /// ≈ 1.5 × 두께·간격 ≈ 2.5 × 지름, #239).
-        public static let borderCirclePitchThicknessRatio: CGFloat = 2
 
         /// 글자선 2중선(`doubleLine`)의 띠 높이 = 글자 크기 × 이 배율 (= 두께 0.04em의 3배).
         /// 띠 안 구성은 [1/4 선, 1/2 공백, 1/4 선]. 실측: 40pt 선 1.2pt 둘의 중심 간격 3.6pt
