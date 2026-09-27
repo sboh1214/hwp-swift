@@ -121,7 +121,7 @@ extension HwpLineShapeGeometry {
     /// (#235 재검증: 1×3·3×1·2×2 표, 표 테두리 유무·칸 폭과 무관), 우리는 칸마다 무늬를 다시
     /// 시작하므로 끝 규칙을 그대로 쓰면 칸 경계에서 앞 칸의 걸친 원과 다음 칸의 첫 원이 포개지는
     /// 자리가 생긴다 (1mm 22.8pt 칸: 0.12pt 간격). 이 규칙은 그 겹침을 줄일 뿐이고 없애는 것은 이어
-    /// 그리기다 — 그때 이은 선의 끝에 끝 규칙을 쓴다.
+    /// 그리기다(#238) — 그때 이은 선의 끝에 끝 규칙을 쓴다.
     static func circleCount(for line: Line) -> Int {
         let pitch = circlePitch(for: line)
         guard line.placement == .border else {

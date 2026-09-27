@@ -277,7 +277,7 @@ public enum HwpRenderTuning {
         /// 모서리). 실측(표 테두리): 5mm 지름 118u·피치 236u, 1mm 24u·48u, 0.12mm 4u·6u(정수화).
         /// 끝은 단 구분선만 글자선 규칙을 따르고 셀 테두리는 끝을 넘지 않는 원까지다 (#235 —
         /// `HwpLineShapeGeometry.circleCount(for:)`). 한글은 단 구분선의 원을 더 크게 그린다 (지름
-        /// ≈ 1.5 × 두께·간격 ≈ 2.5 × 지름, 별도 격차).
+        /// ≈ 1.5 × 두께·간격 ≈ 2.5 × 지름, #239).
         public static let borderCirclePitchThicknessRatio: CGFloat = 2
 
         /// 글자선 2중선(`doubleLine`)의 띠 높이 = 글자 크기 × 이 배율 (= 두께 0.04em의 3배).
