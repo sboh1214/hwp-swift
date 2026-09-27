@@ -341,4 +341,34 @@ import XCTest
             }
         }
     }
+
+    extension HwpColumnDividerTests {
+        /// 원형 점선 구분선은 표 셀 테두리의 격자가 아니라 글자선과 같은 점 무늬다 (#239 — 한글
+        /// 12.30 실측: 1mm 구분선의 원은 경로 36u + 윤곽 1u, 간격 88u; 같은 굵기의 셀 테두리는
+        /// 경로 24u·간격 48u). 블록 프레임 폭은 칠 지름이고, 첫 원의 중심이 밴드 위다.
+        func testCircleDividerUsesTheDotPatternOfCharacterLines() async throws {
+            let maybePage = try await Self.page(
+                column: Self.column(divider: 7, thickness: 10), // 원형 점선 1mm
+                text: String(repeating: "가나다라 ", count: 40)
+            )
+            let page = try XCTUnwrap(maybePage)
+            let divider = try XCTUnwrap(Self.dividers(in: page).first)
+            let diameter: CGFloat = 37 * 0.12
+            expect(divider.frame.width).to(beCloseTo(diameter, within: 1e-9))
+            guard case let .shape(geometry)? = divider.payload else {
+                fail("구분선은 채우기 경로 블록이어야 한다")
+                return
+            }
+            let circles = HwpLineShapeGeometryTests.pieces(geometry.path)
+            expect(circles.count) > 2
+            expect(circles.allSatisfy { abs($0.height - diameter) < 1e-9 }) == true
+            expect(circles.first?.midY).to(beCloseTo(diameter / 2, within: 1e-9))
+            for (upper, lower) in zip(circles, circles.dropFirst()) {
+                expect(lower.midY - upper.midY).to(beCloseTo(88 * 0.12, within: 1e-9))
+            }
+            let texts = page.blocks.filter { $0.kind == .text }
+            let top = texts.map(\.frame.minY).min() ?? 0
+            expect(divider.frame.minY + diameter / 2).to(beCloseTo(top, within: 0.01))
+        }
+    }
 #endif

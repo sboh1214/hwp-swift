@@ -72,9 +72,11 @@ extension HwpPageLayer {
     /// 몫, 여러 줄 띠·물결 진폭도 40pt 몫; 40pt 문단 끝 글자와 한 줄이면 2.88pt = 10pt 몫).
     /// 한글 2007 호환 문서는 크기와 무관한 고정 축척이다 (#227 실측: 5~100pt 전부, 크기가 섞인
     /// 줄·상대 크기 run에서도 긴 점선 2.40/1.44pt — `HwpLineShapeGeometry.Scale.hwp200XCharacterLine`).
-    /// MS 워드 호환 문서는 종전대로 첨자 축소 전 run 크기다 (그 갈래의 선 모양 축척은 실측하지
-    /// 않았다). MS 워드 판정이 먼저다 — 두 호환 키는 한 문서에 함께 오지 않지만, 두께·자리를
-    /// 고르는 `underlineBelowLine`과 같은 차례로 둔다.
+    /// MS 워드 호환 문서는 종전대로 첨자 축소 전 run 크기다 — #239 실측에서 이 갈래의 밑줄은
+    /// 한글이 글자 크기의 약 1.7배를 기준으로 원형 점선을 그려(함초롬바탕 10pt 간격 20u, 80pt
+    /// 163u) 남은 격차다 (#244 — 기준 크기가 글꼴 줄 상자의 어느 값인지 미확정). MS 워드 판정이
+    /// 먼저다 — 두 호환 키는 한 문서에 함께 오지 않지만, 두께·자리를 고르는 `underlineBelowLine`과
+    /// 같은 차례로 둔다.
     func underlineShapeScale(
         _ attributes: [NSAttributedString.Key: Any],
         reference: HwpDecorationLineGeometry.UnderlineReference
@@ -123,7 +125,7 @@ extension HwpPageLayer {
     /// 취소선 선 모양의 축척 — 한글 문서는 두께와 같은 run의 글자 모양 기본 크기다 (#226).
     /// 한글 2007 호환 문서는 밑줄(`underlineShapeScale`)과 같은 고정 축척이고(#227 실측: 위
     /// 첨자·상대 크기 50%·200% run의 취소선 무늬도 크기와 무관), MS 워드 호환 문서는 종전대로
-    /// 첨자 축소 전 run 크기다.
+    /// 첨자 축소 전 run 크기다 (#239 실측: 5~80pt 원형 점선 취소선이 이 크기의 장치 단위 규칙과 같다).
     func strikethroughShapeScale(
         _ attributes: [NSAttributedString.Key: Any]
     ) -> HwpLineShapeGeometry.Scale {

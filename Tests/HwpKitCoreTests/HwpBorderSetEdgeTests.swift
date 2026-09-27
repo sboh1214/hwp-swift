@@ -29,7 +29,7 @@ final class HwpBorderSetEdgeTests: XCTestCase {
     /// 실선 네 변: 띠는 모서리 양쪽으로 폭의 절반, 가로 변은 양 끝의 세로 변 폭 절반만큼
     /// 연장, 세로 변은 셀 높이 그대로 (한글 실측: 5mm 위 테두리 x0 = 모서리 − 7.08pt, 왼
     /// 테두리 y0 = 모서리)
-    func testSolidEdgesCenterOnCellEdgesAndHorizontalOnesExtend() {
+    func testSolidEdgesCenterOnCellEdgesAndHorizontalOnesExtend() throws {
         let edges = Self.set(top: 2, bottom: 2, left: 4, right: 4).edges(around: Self.rect)
         expect(edges.count) == 4
         let boxes = edges.map(\.path.boundingBoxOfPath)
@@ -66,10 +66,14 @@ final class HwpBorderSetEdgeTests: XCTestCase {
         let tinyRect = CGRect(x: 100, y: 200, width: 1, height: 50)
         let tinyEdges = tiny.edges(around: tinyRect)
         expect(tinyEdges.count) == 1
-        expect(tinyEdges.first?.path.boundingBoxOfPath)
-            .to(equal(CGRect(x: 98, y: 198, width: 4, height: 4)))
+        // 두께 4pt 원: 칠 지름 35u = 4.2 (#239 — 경로 34u + 윤곽 1u)
+        let tinyCircle = try XCTUnwrap(tinyEdges.first?.path.boundingBoxOfPath)
+        expect(tinyCircle.minX).to(beCloseTo(97.9, within: 1e-9))
+        expect(tinyCircle.minY).to(beCloseTo(197.9, within: 1e-9))
+        expect(tinyCircle.width).to(beCloseTo(4.2, within: 1e-9))
+        expect(tinyCircle.height).to(beCloseTo(4.2, within: 1e-9))
         expect(tiny.bands(around: tinyRect)).to(equal(tinyEdges.map(\.band)))
-        expect(tinyEdges.first?.band.contains(CGRect(x: 98, y: 198, width: 4, height: 4))) == true
+        expect(tinyEdges.first?.band.insetBy(dx: -1e-9, dy: -1e-9).contains(tinyCircle)) == true
         // 칠한 곳을 다 담는 상자는 셀보다 테두리 바깥 절반만큼 크다
         expect(set.paintedBounds(around: Self.rect))
             .to(equal(CGRect(x: 98, y: 199, width: 304, height: 52)))

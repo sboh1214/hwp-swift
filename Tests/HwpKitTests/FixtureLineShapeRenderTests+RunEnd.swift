@@ -9,15 +9,14 @@ import XCTest
 /// 중심·대각선 시작)가 run 끝보다 앞인 요소를 끝을 넘어도 온전히 그린다.
 ///
 /// 표본은 라벨 뒤 'A' run 하나에 기존 선 모양 글자 모양(10pt 함초롬바탕)을 싣고, 결정론
-/// resolver에서 Menlo 10pt(6.02pt/자)로 조판된다. 글자 수는 원 간격 1.425pt(반지름 0.285)의
-/// 마지막 원 중심이 run 끝보다 반지름 안쪽 앞에 오도록 골랐다 — R1 5자 30.10 − 29.925 = 0.18,
-/// R2 14자 84.29 − 84.075 = 0.21. 종전 규칙(원이 끝 안에 온전히 들 때만)은 그 원을 빼 21·59개였다.
-///
-/// 한글 문서의 무늬 단위는 한글이 장치 단위로 반올림해 (10pt 원 간격 1.56pt, #239) 우리 모델
-/// (1.425pt)과 개수를 맞댈 수 없으므로 여기서는 **규칙**만 잠근다. 같은 표본의 한글 PDF(12.30.0, 2026-09-27)도
-/// 마지막 원·대각선이 모두 자리 < run 끝을 지키고, 규칙 자체는 자간을 1%씩 바꾼 run 표본으로
-/// 확정했다 (`HwpLineShapeGeometryTests+RunEnd`). R4는 마지막 대각선이 run 끝 안에서 끝나 끝
-/// 규칙을 가르지 않는 개수 핀이다 (2중 물결의 끝은 `hwp2007-decorations` R4가 잠근다).
+/// resolver에서 Menlo 10pt(6.02pt/자)로 조판된다. 10pt 원형 점선은 한글처럼 장치 단위로 반올림한
+/// 간격 1.56pt(13u)·칠 지름 0.84pt(7u)다 (#239). R2 14자 84.29pt는 마지막 원 중심 84.24가 run 끝보다
+/// 칠 반지름(0.42) 안쪽 앞이라 그 원이 끝을 넘는다 — 원이 끝 안에 온전히 들 때만 그리던 종전
+/// 규칙은 54개였다. R1 5자 30.10pt의 마지막 원(29.64)은 끝 안에서 끝나 **개수 핀**이다 (#239 전의
+/// 간격 1.425pt에서는 R1도 끝 규칙을 갈랐다). 간격이 한글과 같아졌으므로 한글 PDF와의 개수 대조는
+/// 한글의 run 길이를 넣는 `HwpLineShapeGeometryTests+Circles`가 한다 (R1 23개·R2 64개 — 여기서는
+/// 글꼴이 달라 run 길이가 다르다). R4는 마지막 대각선이 run 끝 안에서 끝나 끝 규칙을 가르지 않는
+/// 개수 핀이다 (2중 물결의 끝은 `hwp2007-decorations` R4가 잠근다).
 extension FixtureLineShapeRenderTests {
     func testRunEndCirclesAndWavesKeepElementsStartingBeforeTheEnd() throws {
         typealias Render = FixtureDecorationLineRenderTests
@@ -29,19 +28,21 @@ extension FixtureLineShapeRenderTests {
         ) -> [(start: CGFloat, end: CGFloat)] {
             Render.rowRuns(raster, near: y, halfBand: 0.2, x: columnTwo, where: match)
         }
-        // R1 (베이스라인 257.64): 원형 점선 밑줄 — 원 22개, 마지막 중심 29.925
+        // R1 (베이스라인 257.64): 원형 점선 밑줄 — 원 20개, 마지막 중심 29.64 (= 19 × 1.56)
         let circleUnderline = runs(near: 259.26, where: red)
-        expect(circleUnderline.count) == 22
+        expect(circleUnderline.count) == 20
         if let first = circleUnderline.first, let last = circleUnderline.last {
             expect((last.start + last.end) / 2 - (first.start + first.end) / 2)
-                .to(beCloseTo(29.925, within: 0.3))
+                .to(beCloseTo(29.64, within: 0.3))
         }
-        // R2 (베이스라인 273.60): 원형 점선 취소선 — 원 60개, 마지막 중심 84.075
+        // R2 (베이스라인 273.60): 원형 점선 취소선 — 원 55개, 마지막 중심 84.24 (= 54 × 1.56)가 run
+        // 끝 84.29 앞이라 끝을 넘어 그린다. 간격은 한글과 같은 1.56pt다
         let circleStrikeout = runs(near: 270.06, where: Self.isBlue)
-        expect(circleStrikeout.count) == 60
+        expect(circleStrikeout.count) == 55
         if let first = circleStrikeout.first, let last = circleStrikeout.last {
-            expect((last.start + last.end) / 2 - (first.start + first.end) / 2)
-                .to(beCloseTo(84.075, within: 0.3))
+            let span = (last.start + last.end) / 2 - (first.start + first.end) / 2
+            expect(span).to(beCloseTo(84.24, within: 0.3))
+            expect(span / CGFloat(circleStrikeout.count - 1)).to(beCloseTo(1.56, within: 0.01))
         }
         // R3 (베이스라인 289.56): 물결 밑줄 — 반주기 1.24pt, 대각선 25개. 마지막 대각선(29.76
         // 시작)은 run 끝(30.10)을 넘어 30.88 + 획 모서리까지 칠한다

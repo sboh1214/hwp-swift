@@ -152,8 +152,13 @@ extension HwpBorderChainingTests {
             .sorted()
     }
 
-    static func stride8(from start: CGFloat, count: Int) -> [CGFloat] {
-        (0 ..< count).map { start + CGFloat($0) * 8 }
+    /// 두께 4pt 원형 점선의 원 중심 간격 — 두께 400HWPUNIT을 장치 단위로 반올림한 33u의 두 배
+    /// 66u (#239)
+    static let circlePitch: CGFloat = 7.92
+
+    /// 무늬 원점 `origin`에서 `indices`번째 원들의 중심 (`circlesX`·`circlesY`처럼 0.001 단위)
+    static func circleCenters(from origin: CGFloat, _ indices: Range<Int>) -> [CGFloat] {
+        indices.map { ((origin + CGFloat($0) * circlePitch) * 1000).rounded() / 1000 }
     }
 
     /// 두 쪽이 같은 원을 두 번 그린 자리를 한 번으로

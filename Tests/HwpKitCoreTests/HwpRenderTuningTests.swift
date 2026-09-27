@@ -28,8 +28,16 @@ final class HwpRenderTuningTests: XCTestCase {
         expect(HwpRenderTuning.LineShape.characterDashUnitEmRatio) == 0.057
         expect(HwpRenderTuning.LineShape.borderDashUnitThicknessRatio)
             .to(beCloseTo(22.0 / 15.0, within: 1e-9))
-        expect(HwpRenderTuning.LineShape.characterCirclePitchDiameterRatio) == 2.5
-        expect(HwpRenderTuning.LineShape.borderCirclePitchThicknessRatio) == 2
+        expect(HwpRenderTuning.LineShape.deviceUnit) == 0.12
+        expect(HwpRenderTuning.LineShape.characterCircleThicknessPerMille) == 39
+        expect(HwpRenderTuning.LineShape.circleDotUnitThicknessNumerator) == 22
+        expect(HwpRenderTuning.LineShape.circleDotUnitThicknessDenominator) == 15
+        expect(HwpRenderTuning.LineShape.circleGapDotUnitRatio) == 1.5
+        expect(HwpRenderTuning.LineShape.circleMinimumDotDeviceUnits) == 3
+        expect(HwpRenderTuning.LineShape.circleMinimumGapDeviceUnits) == 2
+        expect(HwpRenderTuning.LineShape.circleMinimumPathDeviceUnits) == 2
+        expect(HwpRenderTuning.LineShape.circleOutlineDeviceUnits) == 1
+        expect(HwpRenderTuning.LineShape.cellBorderCirclePitchUnitRatio) == 2
         expect(HwpRenderTuning.LineShape.characterDoubleLineBandEmRatio) == 0.12
         expect(HwpRenderTuning.LineShape.characterThickBandEmRatio) == 0.2
         expect(HwpRenderTuning.LineShape.characterWaveAmplitudeEmRatio) == 0.112

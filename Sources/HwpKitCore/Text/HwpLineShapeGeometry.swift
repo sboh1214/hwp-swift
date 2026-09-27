@@ -17,6 +17,9 @@ import Foundation
 /// 2007 호환 문서의 글자선은 **고정 pt**다 (대시 단위 0.48pt, 2중선 띠 1.44pt, 그 밖의 여러 줄
 /// 띠 4.2pt, 물결 진폭 2.88pt — #227). 세 축척의 패턴 배수는 같고, 띠 안 구성은 글자선·테두리가
 /// 같으며 한글 2007 호환 문서만 굵은 여러 줄의 비율이 다르다 (`stripeFractions(for:scale:)`).
+/// 원형 점선의 원만 비례가 아니다 — 한글처럼 지름·간격을 600dpi 장치 단위(0.12pt)의 정수로
+/// 반올림하고, 단 구분선은 표 셀 테두리가 아니라 글자선과 같은 점 무늬로 그린다 (#239 —
+/// `circleDeviceGeometry(for:)`).
 ///
 /// 여러 줄·물결 띠의 세로 자리는 `Placement`가 정한다 — 글자 아래 밑줄은 단선 띠의 위
 /// 가장자리에서 아래로 자라고, 취소선과 테두리·단 구분선은 단선 중심에 가운데 맞추며, 글자
@@ -49,7 +52,8 @@ public enum HwpLineShapeGeometry {
         /// 글자 크기와 무관한 고정 pt다 (#227, `HwpRenderTuning.LineShape.hwp200X*`). 선 두께가
         /// 고정 0.36pt인 것(#210)과 같은 갈래다.
         case hwp200XCharacterLine
-        /// 표 셀 테두리·단 구분선 — 명목 두께에 비례
+        /// 표 셀 테두리·단 구분선 — 명목 두께에 비례 (원형 점선은 장치 단위 정수이고 `Placement`가
+        /// 표 셀 테두리의 격자와 단 구분선의 점 무늬를 가른다, #239)
         case border
     }
 
@@ -64,9 +68,11 @@ public enum HwpLineShapeGeometry {
         case underlineAbove
         /// 표 셀 테두리 — 띠는 선 중심에 가운데, 물결은 두께 3/8만큼 −y 쪽, 2중 물결의
         /// 둘째 파는 선 방향으로 3/4 두께 뒤에서 시작해 내려가는 획이 첫 파와 한 직선을
-        /// 이룬다 (마름모 격자)
+        /// 이룬다 (마름모 격자). 원형 점선은 두께를 HWPUNIT·장치 단위로 차례로 반올림한 r이 단위인 격자다
+        /// (간격 2r, #239)
         case border
-        /// 단 구분선 — 테두리와 같되 2중 물결의 둘째 파가 첫 파와 같은 x에서 시작한다
+        /// 단 구분선 — 테두리와 같되 2중 물결의 둘째 파가 첫 파와 같은 x에서 시작하고, 원형
+        /// 점선은 글자선과 같은 점 무늬다 (점 단위 = 두께 × 22/15, 간격 ≈ 2.5 × 점 단위, #239)
         case divider
     }
 
@@ -309,40 +315,6 @@ extension HwpLineShapeGeometry {
     /// 물결 반주기 — 45° 대각선(진폭만큼 전진)에 꼭짓점 평탄을 더한 길이
     static func waveHalfPeriod(for line: Line) -> CGFloat {
         waveAmplitude(for: line) + HwpRenderTuning.LineShape.waveVertexFlat
-    }
-
-    static func circleDiameter(for line: Line) -> CGFloat {
-        switch line.scale {
-        case .characterLine:
-            dashUnit(for: line)
-        case .hwp200XCharacterLine:
-            HwpRenderTuning.LineShape.hwp200XCircleDiameter
-        case .border:
-            line.thickness
-        }
-    }
-
-    static func circlePitch(for line: Line) -> CGFloat {
-        switch line.scale {
-        case .characterLine:
-            circleDiameter(for: line) * HwpRenderTuning.LineShape.characterCirclePitchDiameterRatio
-        case .hwp200XCharacterLine:
-            HwpRenderTuning.LineShape.hwp200XCirclePitch
-        case .border:
-            line.thickness * HwpRenderTuning.LineShape.borderCirclePitchThicknessRatio
-        }
-    }
-
-    /// 원형 점선의 원 중심 y — 한글 2007 호환 문서의 글자선만 단선 중심에서 띠가 자라는 쪽으로
-    /// 옮겨진다 (아래 밑줄 아래·위 밑줄 위, `hwp200XCircleCenterShift`). 나머지는 단선 중심.
-    static func circleCenterY(for line: Line) -> CGFloat {
-        guard line.scale == .hwp200XCharacterLine else { return 0 }
-        let shift = HwpRenderTuning.LineShape.hwp200XCircleCenterShift
-        switch line.placement {
-        case .underlineBelow: return shift
-        case .underlineAbove: return -shift
-        case .strikethrough, .border, .divider: return 0
-        }
     }
 
     // MARK: - 자리
