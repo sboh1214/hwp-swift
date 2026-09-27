@@ -212,7 +212,7 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
   `HwpLineShapeGeometry.Scale.hwp200XCharacterLine`이고(#227 — 두 함수가 `Scale`을 돌려주고
   `ShapedLine.scale`이 그대로 나른다), MS 워드 호환 문서는 종전대로
   `preScriptFontSize`(첨자 축소 전 run 크기)다 — #239 실측에서 취소선(원형 점선)은 이 크기가
-  맞고, 밑줄은 한글이 글자 크기의 약 1.7배를 기준으로 그려 남은 격차다. 로컬
+  맞고, 밑줄은 한글이 글자 크기의 약 1.7배를 기준으로 그려 남은 격차다(#244). 로컬
   y(양수 = 아래)를 텍스트 공간(y-위)으로 뒤집어 단선 중심(`lineOrigin.y + line.center`)에
   놓는다 — 밑줄의 줄 상자 가장자리·취소선의 첨자 이동은 그 중심에 이미 들어 있다.
 - **MS 워드 호환 문서(`hwp.compatibleDocumentTarget` == `msWord`)의 장식선은 글꼴 지표

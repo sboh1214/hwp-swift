@@ -74,8 +74,9 @@ extension HwpPageLayer {
     /// 줄·상대 크기 run에서도 긴 점선 2.40/1.44pt — `HwpLineShapeGeometry.Scale.hwp200XCharacterLine`).
     /// MS 워드 호환 문서는 종전대로 첨자 축소 전 run 크기다 — #239 실측에서 이 갈래의 밑줄은
     /// 한글이 글자 크기의 약 1.7배를 기준으로 원형 점선을 그려(함초롬바탕 10pt 간격 20u, 80pt
-    /// 163u) 남은 격차다 (기준 크기가 글꼴 줄 상자의 어느 값인지 미확정). MS 워드 판정이 먼저다 — 두 호환 키는 한 문서에 함께 오지 않지만, 두께·자리를
-    /// 고르는 `underlineBelowLine`과 같은 차례로 둔다.
+    /// 163u) 남은 격차다 (#244 — 기준 크기가 글꼴 줄 상자의 어느 값인지 미확정). MS 워드 판정이
+    /// 먼저다 — 두 호환 키는 한 문서에 함께 오지 않지만, 두께·자리를 고르는 `underlineBelowLine`과
+    /// 같은 차례로 둔다.
     func underlineShapeScale(
         _ attributes: [NSAttributedString.Key: Any],
         reference: HwpDecorationLineGeometry.UnderlineReference
