@@ -5,8 +5,8 @@ import Foundation
 import Nimble
 import XCTest
 
-/// 원형 점선의 원 크기·간격 (#239) — 한글 12.30.0 build 6446의 PDF 내보내기(2026-09-27,
-/// `probes/239`)에서 읽은 값을 고정한다. 한글은 원을 600dpi 장치 단위(u = 0.12pt)의 정수로 그리고,
+/// 원형 점선의 원 크기·간격 (#239·#243) — 한글 12.30.0 build 6446의 PDF 내보내기(2026-09-27~28,
+/// `probes/239`·`probes/243`)에서 읽은 값을 고정한다. 한글은 원을 600dpi 장치 단위(u = 0.12pt)의 정수로 그리고,
 /// 경로를 채운 뒤 1u 윤곽을 둘러 칠하므로 칠 지름 = 경로 지름 + 1u다. 아래 표의 간격·경로 지름은
 /// PDF의 원 중심 차와 원 경로 상자 폭 그대로다 (윤곽 제외).
 extension HwpLineShapeGeometryTests {
@@ -44,6 +44,16 @@ extension HwpLineShapeGeometryTests {
 
     /// 단 구분선 원형 점선의 표 26 굵기 index별 간격·경로 지름 (0.1~5mm) — 점 무늬다
     static let dividerCircleSamples: [CircleSample] = [
+        .init(0, 8, 4), .init(1, 10, 4), .init(2, 13, 6), .init(3, 18, 8),
+        .init(4, 23, 10), .init(5, 25, 10), .init(6, 35, 14), .init(7, 43, 18),
+        .init(8, 53, 22), .init(9, 60, 24), .init(10, 88, 36), .init(11, 130, 52),
+        .init(12, 173, 70), .init(13, 260, 104), .init(14, 348, 140), .init(15, 433, 174),
+    ]
+
+    /// 셀 간격이 있는 표의 셀 테두리 원형 점선 굵기 index별 간격·경로 지름 (#243, `probes/243`
+    /// `so243-widths`: 셀 간격 283HWPUNIT 가로 변 360pt, 셀 간격 1HWPUNIT 네 변) — 단 구분선과 같은
+    /// 점 무늬다. 값이 `dividerCircleSamples`와 같은 것은 따로 잰 결과이지 옮겨 적은 것이 아니다.
+    static let spacedCellCircleSamples: [CircleSample] = [
         .init(0, 8, 4), .init(1, 10, 4), .init(2, 13, 6), .init(3, 18, 8),
         .init(4, 23, 10), .init(5, 25, 10), .init(6, 35, 14), .init(7, 43, 18),
         .init(8, 53, 22), .init(9, 60, 24), .init(10, 88, 36), .init(11, 130, 52),
@@ -125,6 +135,58 @@ extension HwpLineShapeGeometryTests {
         }
     }
 
+    /// 셀 간격이 있는 표의 셀 테두리는 격자가 아니라 단 구분선의 점 무늬다 (#243) — 한글은 셀 간격
+    /// 1HWPUNIT(0.01pt)부터 이 갈래다. 같은 두께의 셀 간격 없는 표 셀 테두리보다 원이 크고 성기다
+    /// (1mm: 간격 88u·경로 36u vs 48u·24u).
+    func testSpacedCellCirclesUseTheDotPatternOfDividers() {
+        for sample in Self.spacedCellCircleSamples {
+            let thickness = CoreHwp.HwpBorderFill.borderThicknessPoints(at: UInt8(sample.input))
+            var line = Self.borderLine(.circle, thickness: CGFloat(thickness))
+            line.inSpacedTable = true
+            let label = "index \(sample.input)"
+            expect(HwpLineShapeGeometry.circleUsesCellGrid(line)).to(beFalse(), description: label)
+            expect(HwpLineShapeGeometry.circlePitch(for: line)).to(
+                beCloseTo(CGFloat(sample.pitch) * Self.deviceUnit, within: 1e-9), description: label
+            )
+            expect(HwpLineShapeGeometry.circleDiameter(for: line)).to(
+                beCloseTo(CGFloat(sample.path + 1) * Self.deviceUnit, within: 1e-9),
+                description: label
+            )
+        }
+        // 1mm 셀 간격 없는 표는 여전히 격자 — 같은 입력에서 셀 간격만 가른다
+        let thickness = CGFloat(CoreHwp.HwpBorderFill.borderThicknessPoints(at: 10))
+        let grid = Self.borderLine(.circle, thickness: thickness)
+        expect(HwpLineShapeGeometry.circleUsesCellGrid(grid)) == true
+        expect(HwpLineShapeGeometry.circlePitch(for: grid)).to(beCloseTo(5.76, within: 1e-9))
+    }
+
+    /// 셀 간격 표시는 표 셀 테두리의 원만 바꾼다 — 글자선·단 구분선 원과 대시·여러 줄·물결 경로는
+    /// 그대로다 (한글 12.30 실측: 셀 간격 0·1·283 표의 여러 줄·물결·2중 물결 벡터가 같다; 대시는
+    /// 한글이 장치 단위로 반올림하는 식이 셀 간격에 따라 한 주기에 1u쯤 갈리지만 여기서는 두 경우
+    /// 모두 같은 비례 경로다 — `Sources/HwpKitCore/AGENTS.md`의 남은 격차)
+    func testSpacedTableFlagLeavesOtherLinesAlone() {
+        var character = Self.characterLine(.circle, fontSize: 12)
+        let characterPitch = HwpLineShapeGeometry.circlePitch(for: character)
+        character.inSpacedTable = true
+        expect(HwpLineShapeGeometry.circlePitch(for: character)) == characterPitch
+        var divider = HwpLineShapeGeometry.Line(
+            shape: .circle, length: 100, thickness: 2.8346, scale: .border, placement: .divider
+        )
+        let dividerPitch = HwpLineShapeGeometry.circlePitch(for: divider)
+        divider.inSpacedTable = true
+        expect(HwpLineShapeGeometry.circlePitch(for: divider)) == dividerPitch
+        let shapes = (0 ... 17).compactMap(HwpBorderType.init(rawValue:)).filter { $0 != .circle }
+        expect(shapes.count) == 17
+        for shape in shapes {
+            let grid = Self.borderLine(shape, thickness: 2.8346)
+            var spaced = grid
+            spaced.inSpacedTable = true
+            let gridPieces = Self.pieces(HwpLineShapeGeometry.path(for: grid))
+            expect(Self.pieces(HwpLineShapeGeometry.path(for: spaced)))
+                .to(equal(gridPieces), description: "\(shape)")
+        }
+    }
+
     /// `line-shapes` 픽스처의 run 끝 표본 R1(원형 점선 밑줄 'A' 5자)·R2(취소선 14자)를 한글 PDF의
     /// run 길이(함초롬바탕 10pt 'A' 진행 폭 7.0796pt × 글자 수)로 그리면 원의 개수·자리가 한글과
     /// 같다 — R1 원 23개(마지막 중심 34.32), R2 64개(98.28), 간격 1.56pt(13u). 반올림하지 않던 간격
@@ -166,6 +228,11 @@ extension HwpLineShapeGeometryTests {
         expect(HwpLineShapeGeometry.circlePitch(for: cell)).to(beCloseTo(0.24, within: 1e-9))
         expect(HwpLineShapeGeometry.circleDiameter(for: cell)).to(beCloseTo(0.36, within: 1e-9))
         expect(Self.pieces(HwpLineShapeGeometry.path(for: cell)).count) == 42
+        // 셀 간격이 있는 표의 셀 테두리는 점 무늬의 최솟값 (#243)
+        var spaced = cell
+        spaced.inSpacedTable = true
+        expect(HwpLineShapeGeometry.circlePitch(for: spaced)).to(beCloseTo(0.6, within: 1e-9))
+        expect(HwpLineShapeGeometry.circleDiameter(for: spaced)).to(beCloseTo(0.36, within: 1e-9))
     }
 
     /// 한글 2007 호환 문서의 글자선 원은 장치 단위 반올림 밖의 고정 pt 그대로다 (#227)

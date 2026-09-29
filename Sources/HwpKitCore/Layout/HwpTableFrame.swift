@@ -186,9 +186,15 @@ extension HwpTableLayout {
         return index.borderFill(id: UInt32(id) - 1) ?? index.borderFill(id: UInt32(id))
     }
 
-    func borders(from borderFill: CoreHwp.HwpBorderFill?) -> HwpBorderSet {
+    /// 칸의 테두리 — `cellSpacing`은 표의 셀 간격(pt, 표 76)이라 셀 간격이 있는 표의 칸 상자
+    /// 규칙(#243)을 테두리가 스스로 고르게 싣는다
+    func borders(
+        from borderFill: CoreHwp.HwpBorderFill?, cellSpacing: CGFloat = 0
+    ) -> HwpBorderSet {
         guard let borderFill, borderFill.borderLineArray.count == 4 else {
-            return .uniform(width: 0.5, color: HwpRGBColor(red: 0, green: 0, blue: 0))
+            return .uniform(
+                width: 0.5, color: HwpRGBColor(red: 0, green: 0, blue: 0), cellSpacing: cellSpacing
+            )
         }
         // 4방향 순서: 왼쪽/오른쪽/위쪽/아래쪽 (표 23)
         let lines = borderFill.borderLineArray
@@ -213,7 +219,8 @@ extension HwpTableLayout {
             topShape: lines[2].type ?? .line,
             bottomShape: lines[3].type ?? .line,
             leftShape: lines[0].type ?? .line,
-            rightShape: lines[1].type ?? .line
+            rightShape: lines[1].type ?? .line,
+            cellSpacing: cellSpacing
         )
     }
 

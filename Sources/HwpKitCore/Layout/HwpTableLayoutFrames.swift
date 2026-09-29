@@ -215,7 +215,7 @@ extension HwpTableLayout {
             rowSpan: cell.rowSpan,
             columnSpan: cell.columnSpan,
             paragraphs: laidOut.paragraphs,
-            borders: borders(from: resolved),
+            borders: borders(from: resolved, cellSpacing: metrics.spacing),
             fillColor: fillColor(from: resolved),
             nestedTables: laidOut.nestedTables,
             images: laidOut.images,

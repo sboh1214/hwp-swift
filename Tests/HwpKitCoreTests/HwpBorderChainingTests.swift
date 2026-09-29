@@ -264,6 +264,31 @@ final class HwpBorderChainingTests: XCTestCase {
         }
     }
 
+    /// 셀 간격을 실은 칸은 맞닿은 배치로 옮겨 와도 잇지 않는다 — 한글은 셀 간격이 있는 표의 변을
+    /// 칸마다 상자로 그리므로 (#243) 사슬 자리가 상자의 모서리 규칙과 섞이면 안 된다
+    func testSpacedCellBordersNeverChain() {
+        let spaced = Self.borders(top: .circle())
+        let boxed = HwpBorderSet(
+            top: spaced.top, bottom: 0, left: 0, right: 0,
+            topColor: spaced.topColor, bottomColor: spaced.bottomColor,
+            leftColor: spaced.leftColor, rightColor: spaced.rightColor,
+            topShape: spaced.topShape, bottomShape: .none, leftShape: .none, rightShape: .none,
+            cellSpacing: 2
+        )
+        let touching = Self.row([boxed, boxed, boxed])
+        expect(Self.unchained(touching)) == true
+        // 칸마다 제 모서리에서 다시 시작한다 (점 무늬 간격 — 두께 4pt = 400HWPUNIT → q 49u, 간격
+        // 49 + 74 = 123u = 14.76pt; 30pt 칸에 3개씩)
+        let centers = Self.circlesX(touching, y: 0)
+        expect(centers.count) == 9
+        for (index, center) in centers.enumerated() {
+            let cell = CGFloat(index / 3) * 30
+            expect(center).to(beCloseTo(cell + CGFloat(index % 3) * 14.76, within: 1e-3))
+        }
+        // 셀 간격이 없는 같은 표는 잇는다 (대조군)
+        expect(Self.unchained(Self.row([spaced, spaced, spaced]))) == false
+    }
+
     // MARK: - 표 경계
 
     /// 이음 자리는 표가 셀 배치로 셈한다 — 다른 표로 옮긴 칸의 낡은 자리는 새 표가 버리고 다시 셈하고,
