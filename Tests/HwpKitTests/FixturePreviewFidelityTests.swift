@@ -143,6 +143,10 @@ final class FixturePreviewFidelityTests: XCTestCase {
         // 12×16 그리드는 줄 상자의 몇 pt 차이에 둔감하다. 이 값은 유실 가드이고, 줄 자리의 가드는
         // `FixtureMsWordParagraphEndBoxTests`의 줄 캐시·PDF 베이스라인 핀이다.
         "ms-word-paragraph-end-box": 0.0025, // 실측 0.0018 (2026-09-25)
+        // MS 워드 호환 문서의 밑줄 선 모양(#244) — 1쪽은 10·20·40pt 선 모양 밑줄·취소선 11문단이라
+        // 12×16 그리드는 원 크기·간격, 여러 줄 띠의 자리에 둔감하다. 이 값은 유실 가드이고, 무늬
+        // 크기·자리의 가드는 `FixtureDecorationLineRenderTests+MsWordShapes`의 픽셀 핀이다.
+        "ms-word-line-shapes": 0.004, // 실측 0.0030 (2026-09-30, 두 폰트 모드 같음)
         // 크기가 섞인 줄의 장식선(#226) — 1쪽은 10·40pt 글자가 섞인 표본 10문단이라 12×16 그리드는
         // 밑줄의 줄 단위 자리·두께에 둔감하다. 이 값은 유실 가드이고, 선 자리의 가드는
         // `FixtureDecorationLineRenderTests+LineWide`의 픽셀 핀이다.
