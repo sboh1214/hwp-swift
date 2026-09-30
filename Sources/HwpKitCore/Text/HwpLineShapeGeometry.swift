@@ -45,8 +45,9 @@ public enum HwpLineShapeGeometry {
     /// 패턴 축척의 갈래
     public enum Scale: Equatable, Sendable {
         /// 글자선 — `fontSize`는 선의 기준 크기 (pt): 한글 문서는 밑줄이 줄 글자 기본 크기,
-        /// 취소선이 run의 글자 모양 기본 크기이고(#226) MS 워드 호환 문서는 첨자 축소 전 run
-        /// 크기다
+        /// 취소선이 run의 글자 모양 기본 크기이고(#226) MS 워드 호환 문서는 밑줄이 줄 글자 상자의
+        /// 높이(`HwpMsWordLineBox.cellHeight` × 1.3), 취소선이 run의 글자 모양 기본 크기다 (#244).
+        /// 물결 꼭짓점 계단도 이 크기에서 잰다 (× 0.04 — `wavePatternThickness(for:)`)
         case characterLine(fontSize: CGFloat)
         /// 한글 2007 호환 문서(`HwpCompatibleDocumentTarget.hwp200X`)의 글자선 — 패턴·띠·물결이
         /// 글자 크기와 무관한 고정 pt다 (#227, `HwpRenderTuning.LineShape.hwp200X*`). 선 두께가
@@ -61,9 +62,11 @@ public enum HwpLineShapeGeometry {
     /// 여러 줄·물결 띠의 세로 자리
     public enum Placement: Equatable, Sendable {
         /// 글자 아래 밑줄 — 띠는 단선의 위 가장자리에서 아래로, 물결은 계단 1개 위에서 (계단은
-        /// 한글 문서가 두께, 한글 2007 호환 문서가 물결 1.2pt·2중 물결 0.54pt — `waveTopStep(for:)`)
+        /// 한글 문서가 두께 — 정확히는 무늬 두께 `wavePatternThickness(for:)`, 한글 2007 호환 문서가
+        /// 물결 1.2pt·2중 물결 0.54pt — `waveTopStep(for:)`)
         case underlineBelow
-        /// 취소선·글자 가운데 밑줄 — 띠는 단선 중심에 가운데, 물결은 계단 2개 위에서
+        /// 취소선·글자 가운데 밑줄 — 띠는 단선 중심에 가운데, 물결은 계단 2개 위에서. MS 워드
+        /// 호환 문서의 글자 아래·위 밑줄도 이 자리다 (#244 — 렌더러의 `underlineShapePlacement`)
         case strikethrough
         /// 글자 위 밑줄 — 띠는 단선의 아래 가장자리에서 위로, 물결은 계단 3개 위에서
         case underlineAbove
@@ -351,9 +354,9 @@ extension HwpLineShapeGeometry {
     }
 
     /// 물결 꼭짓점 띠의 위쪽 꼭짓점 y — 글자선은 계단의 시작(`waveTopBase(for:)` — 한글 문서는
-    /// 단선 위 가장자리)에서 종류 × 계단만큼 위(한글 문서는 계단이 두께, 한글 2007 호환 문서는
-    /// 물결마다 고정 pt — `waveTopStep(for:)`), 테두리는 중심에서 3/8 두께 위에 진폭 절반을 더
-    /// 올린 곳
+    /// 단선 위 가장자리)에서 종류 × 계단만큼 위(한글 문서·MS 워드 호환 문서는 계단이 축척의
+    /// 0.04배 — 한글 문서에서는 두께와 같다, 한글 2007 호환 문서는 물결마다 고정 pt —
+    /// `waveTopStep(for:)`), 테두리는 중심에서 3/8 두께 위에 진폭 절반을 더 올린 곳
     static func waveTopVertex(for line: Line) -> CGFloat {
         let steps: CGFloat
         switch line.placement {
@@ -367,24 +370,42 @@ extension HwpLineShapeGeometry {
         return -waveTopBase(for: line) - waveTopStep(for: line) * steps
     }
 
-    /// 글자선 물결 꼭짓점 계단이 시작하는 자리 (단선 중심 위, pt) — 한글 문서는 단선 위
-    /// 가장자리(두께 절반), 한글 2007 호환 문서는 물결 0.12pt·2중 물결 0.18pt
+    /// 글자선 물결 꼭짓점 계단이 시작하는 자리 (단선 중심 위, pt) — 한글 문서·MS 워드 호환
+    /// 문서는 무늬 두께(`wavePatternThickness(for:)`)의 절반, 한글 2007 호환 문서는 물결 0.12pt·
+    /// 2중 물결 0.18pt
     static func waveTopBase(for line: Line) -> CGFloat {
-        guard line.scale == .hwp200XCharacterLine else { return line.thickness / 2 }
+        guard line.scale == .hwp200XCharacterLine else {
+            return wavePatternThickness(for: line) / 2
+        }
         return line.shape == .doubleWave
             ? HwpRenderTuning.LineShape.hwp200XDoubleWaveTopBase
             : HwpRenderTuning.LineShape.hwp200XWaveTopBase
     }
 
-    /// 글자선 물결의 위쪽 꼭짓점 계단 폭 — 한글 문서는 두께 × 1(단일·2중 물결 같은 꼭짓점),
-    /// 한글 2007 호환 문서는 단일 물결 1.2pt·2중 물결 0.54pt
+    /// 글자선 물결의 위쪽 꼭짓점 계단 폭 — 한글 문서·MS 워드 호환 문서는 무늬 두께 × 1(단일·2중
+    /// 물결 같은 꼭짓점), 한글 2007 호환 문서는 단일 물결 1.2pt·2중 물결 0.54pt
     static func waveTopStep(for line: Line) -> CGFloat {
         guard line.scale == .hwp200XCharacterLine else {
-            return line.thickness * HwpRenderTuning.LineShape.characterWaveTopShiftThicknessRatio
+            return wavePatternThickness(for: line)
+                * HwpRenderTuning.LineShape.characterWaveTopShiftThicknessRatio
         }
         return line.shape == .doubleWave
             ? HwpRenderTuning.LineShape.hwp200XDoubleWaveTopStep
             : HwpRenderTuning.LineShape.hwp200XWaveTopStep
+    }
+
+    /// 물결 꼭짓점 계단을 재는 두께 — 글자선은 **축척 크기 × 0.04**(`decorationLineThicknessRatio`),
+    /// 그 밖(테두리 축척을 글자선 자리에 쓴 선)은 단선 두께다. 한글 문서에서는 두 값이 같지만 (두께
+    /// 자체가 같은 크기의 0.04배) MS 워드 호환 문서의 밑줄은 두께가 기준 상자의 0.05배(#187)라 축척
+    /// 크기의 약 0.0385배로 갈린다 — 한글은 그 문서에서도 물결을 축척의 0.04배로 잰다 (#244 실측,
+    /// 한글 12.30 PDF 2026-09-30: 글꼴 5종 80pt 물결 밑줄의 위 꼭짓점이 단선 중심 위 2.5 × 0.04 ×
+    /// 축척과 0.1pt 안 — 함초롬바탕 13.44pt·Menlo 12.12pt·Times New Roman 9.22pt; 단선 두께 0.05
+    /// cell로 재면 0.36~0.54pt 낮다).
+    static func wavePatternThickness(for line: Line) -> CGFloat {
+        if case let .characterLine(fontSize) = line.scale {
+            return fontSize * HwpRenderTuning.Text.decorationLineThicknessRatio
+        }
+        return line.thickness
     }
 
     /// 2중 물결의 둘째 파 이동량 — 글자선은 진폭의 0.8배 아래(같은 x 위상), 한글 2007 호환

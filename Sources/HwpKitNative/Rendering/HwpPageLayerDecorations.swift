@@ -560,7 +560,8 @@ extension HwpPageLayer {
     /// 밑줄 한 줄 — 자리·두께는 `placement`(글자 아래·위)와 줄의 기준 `reference`에서 푼다
     /// (`underlineBelowLine`·`underlineAboveLine`). 색은 글자 모양의 밑줄 색, 없으면 글자 색.
     /// 모양은 `underlineShape`(글자 아래·위 공용, 없으면 실선)이고 축척은
-    /// `underlineShapeScale`이다.
+    /// `underlineShapeScale`, 여러 줄 띠·물결 자리는 `underlineShapePlacement`다 (MS 워드 호환
+    /// 문서는 두 밑줄 모두 취소선처럼 단선 중심에 가운데, #244).
     private func fillUnderline(
         _ run: CTRun,
         lineOrigin: CGPoint,
@@ -579,7 +580,7 @@ extension HwpPageLayer {
             run, lineOrigin: lineOrigin, line: line, color: color,
             shaped: ShapedLine(
                 shape: lineShape(attributes[HwpAttributedStringKey.underlineShape]),
-                placement: placement,
+                placement: underlineShapePlacement(placement, reference: reference),
                 scale: underlineShapeScale(attributes, reference: reference), span: span
             ),
             in: ctx
