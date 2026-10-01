@@ -61,10 +61,11 @@ import XCTest
             expect(texts.count) >= 2
             let left = try XCTUnwrap(texts.min { $0.frame.minX < $1.frame.minX })
             let right = try XCTUnwrap(texts.max { $0.frame.minX < $1.frame.minX })
-            // x: 두 단 사이 간격의 가운데, 폭은 선 굵기 (0.12mm)
+            // x: 두 단 사이 간격의 가운데, 폭은 선 굵기 0.12mm의 획 — 장치 단위로 반올림한 3u = 0.36pt
+            // (한글 12.30 실측, #245)
             let gapCenter = (left.frame.maxX + right.frame.minX) / 2
             expect(divider.frame.midX).to(beCloseTo(gapCenter, within: 0.01))
-            expect(divider.frame.width).to(beCloseTo(0.12 * 72 / 25.4, within: 0.001))
+            expect(divider.frame.width).to(beCloseTo(0.36, within: 1e-9))
             // y: 밴드 위(첫 줄 위)에서 가장 긴 단의 마지막 줄 글상자 아래(블록 아래에서 줄
             // 간격을 뺀 자리 — 줄 캐시 없는 문단은 마지막 글자의 줄 간격 규칙으로 잰다)까지
             let top = texts.map(\.frame.minY).min() ?? 0
@@ -86,11 +87,11 @@ import XCTest
             expect(geometry.strokeColor).to(beNil())
             let pieces = HwpLineShapeGeometryTests.pieces(geometry.path)
             expect(pieces.count) > 4
-            // 첫 조각은 10단위 선, 둘째는 1단위 점 (단위 = 22/15 × 굵기)
-            let unit = 0.12 * 72 / 25.4 * 22 / 15
-            expect(pieces[0].height).to(beCloseTo(unit * 10, within: 0.001))
-            expect(pieces[1].height).to(beCloseTo(unit, within: 0.001))
-            expect(pieces[1].minY - pieces[0].maxY).to(beCloseTo(unit * 3, within: 0.001))
+            // 첫 조각은 긴 선, 둘째는 점 — 0.12mm 구분선의 무늬 두께 33HWPUNIT(단위 4.03u)에서 긴 선
+            // 40u·점 4u·공백 12u (한글 12.30 PDF 그대로, #245)
+            expect(pieces[0].height).to(beCloseTo(40 * 0.12, within: 1e-9))
+            expect(pieces[1].height).to(beCloseTo(4 * 0.12, within: 1e-9))
+            expect(pieces[1].minY - pieces[0].maxY).to(beCloseTo(12 * 0.12, within: 1e-9))
             // 페인트 목록에도 채우기 경로로 나간다
             let painted = page.paintList.commands.contains {
                 if case let .drawPath(_, fill, _, _) = $0 {

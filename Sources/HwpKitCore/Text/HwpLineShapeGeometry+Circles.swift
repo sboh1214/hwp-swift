@@ -6,7 +6,8 @@ import Foundation
 /// 원형 점선(`circle`)의 원 크기·간격·세로 자리. 한글은 원을 600dpi 장치 단위(0.12pt)의 정수로
 /// 그린다 (#239) — 한글 문서·MS 워드 호환 문서의 글자선, 단 구분선, 셀 간격이 있는 표의 셀 테두리
 /// (#243)는 점선(1·1.5)의 점을 원으로 그리는 **점 무늬**, 셀 간격이 없는 표의 셀 테두리는 두께를
-/// 단위로 하는 **격자**다 (`circleDeviceGeometry(for:)`).
+/// 단위로 하는 **격자**다 (`circleDeviceGeometry(for:)` — 무늬 두께·갈래는 대시와 공용,
+/// `HwpLineShapeGeometry+Dashes.swift`).
 /// 한글 2007 호환 문서의 글자선은 크기와 무관한 고정 pt다 (#227). 값은
 /// `HwpRenderTuning.LineShape`의 원형 점선 절 (한글 12.30.0 PDF 실측).
 extension HwpLineShapeGeometry {
@@ -45,58 +46,29 @@ extension HwpLineShapeGeometry {
         }
     }
 
-    /// 원형 점선이 표 셀 테두리의 **격자** 갈래인가 — 테두리 축척에서 단 구분선이 아니고 셀 간격이
-    /// 있는 표(`Line.inSpacedTable`)의 테두리도 아닌 자리. 단 구분선·셀 간격이 있는 표의 셀 테두리와
-    /// 글자선은 점 무늬 갈래다 (한글은 같은 두께의 원을 셀 간격이 없는 표의 셀 테두리보다 크고 성기게
-    /// 그린다 — 1mm 간격 88u vs 48u; 셀 간격이 있는 표는 1HWPUNIT부터 점 무늬다, #243).
-    static func circleUsesCellGrid(_ line: Line) -> Bool {
-        guard line.scale == .border, !line.inSpacedTable else { return false }
-        switch line.placement {
-        case .divider:
-            return false
-        case .border, .underlineBelow, .strikethrough, .underlineAbove:
-            return true
-        }
-    }
-
-    /// 장치 단위로 반올림하는 입력의 상한 (pt) — 두께(글자선은 글자 크기 × 0.039)가 이보다 크면
-    /// 장치 단위 반올림이 뜻이 없으므로 반올림 전 비율로 셈한다. 이 아래에서는 HWPUNIT·장치 단위
-    /// 값이 2^52보다 작아 0.5 올림(`roundHalfUp`)이 정확하고, 곱도 넘치지 않는다 (두 갈래의 차는
-    /// 경계에서 상대 1e-13 안이다).
-    static let circleDeviceRoundingLimit: CGFloat = 1e12
-
-    /// 한글 문서의 원 — (칠 지름, 중심 간격) pt. 두께를 HWPUNIT(0.01pt)으로 반올림하고(글자선은 글자
-    /// 크기를 HWPUNIT으로 둔 뒤 × 39/1000을 반올림), 격자 갈래는 그것을 장치 단위로 반올림한 r이
-    /// 단위(간격 2r, 경로 지름 = r을 짝수로 올림), 점 무늬 갈래는 × 22/15를 장치 단위로 반올림한 점
-    /// 단위 q가 단위다(간격 = max(q, 3u) + max(1.5q 반올림, 2u), 경로 지름 = q를 짝수로 올림·최소
-    /// 2u). 칠 지름은 경로 지름 + 윤곽 1u. 반올림은 0.5를 올리고, 곱과 나눗셈을 정수 분수의 차례로
-    /// 두어 0.5u 경계를 정확히 가른다. 상한(`circleDeviceRoundingLimit`) 밖 두께는 반올림 전 비율
-    /// (격자: 지름 = 두께·간격 2배, 점 무늬: 지름 = 점 단위·간격 2.5배)이고 지름은 유한 최댓값에서
-    /// 멈춘다 (간격은 무한대로 넘쳐도 첫 원만 남는다 — `circleCount(for:)`).
+    /// 한글 문서의 원 — (칠 지름, 중심 간격) pt. 무늬 두께(HWPUNIT 정수, `patternHwpUnits(for:)` —
+    /// 글자선은 글자 크기를 HWPUNIT으로 둔 뒤 × 39/1000을 반올림, 테두리·단 구분선은 표 26 굵기마다의
+    /// 값)에서 격자 갈래(`usesCellGrid(_:)`)는 그것을 장치 단위로 반올림한 r이 단위(간격 2r, 경로 지름
+    /// = r을 짝수로 올림), 점 무늬 갈래는 × 22/15를 장치 단위로 반올림한 점 단위 q가 단위다(간격 =
+    /// max(q, 3u) + max(1.5q 반올림, 2u), 경로 지름 = q를 짝수로 올림·최소 2u). 칠 지름은 경로 지름 +
+    /// 윤곽 1u. 반올림은 0.5를 올리고, 곱과 나눗셈을 정수 분수의 차례로 두어 0.5u 경계를 정확히
+    /// 가른다. 상한(`deviceRoundingLimit`) 밖 두께는 반올림 전 비율(격자: 지름 = 두께·간격 2배,
+    /// 점 무늬: 지름 = 점 단위·간격 2.5배)이고 지름은 유한 최댓값에서 멈춘다 (간격은 무한대로 넘쳐도
+    /// 첫 원만 남는다 — `circleCount(for:)`).
     static func circleDeviceGeometry(for line: Line) -> (diameter: CGFloat, pitch: CGFloat) {
         typealias Shape = HwpRenderTuning.LineShape
-        let grid = circleUsesCellGrid(line)
-        // 나눗셈 먼저 — 글자 크기가 유한 최댓값 근처여도 두께가 넘치지 않게
-        let thickness: CGFloat = if case let .characterLine(fontSize) = line.scale {
-            fontSize / 1000 * Shape.characterCircleThicknessPerMille
-        } else {
-            line.thickness
-        }
-        guard thickness < circleDeviceRoundingLimit else {
+        let grid = usesCellGrid(line)
+        let thickness = patternThickness(for: line)
+        guard thickness < deviceRoundingLimit else {
             if grid {
                 return (thickness, thickness * Shape.cellBorderCirclePitchUnitRatio)
             }
             // 나눗셈 먼저 — 두께가 유한 최댓값 근처여도 점 단위가 넘치지 않게
-            let dot = thickness / Shape.circleDotUnitThicknessDenominator
-                * Shape.circleDotUnitThicknessNumerator
+            let dot = thickness / Shape.patternUnitThicknessDenominator
+                * Shape.patternUnitThicknessNumerator
             return (min(dot, .greatestFiniteMagnitude), dot * (1 + Shape.circleGapDotUnitRatio))
         }
-        let hwpUnits: CGFloat = if case let .characterLine(fontSize) = line.scale {
-            roundHalfUp((fontSize * 100).rounded() * Shape.characterCircleThicknessPerMille / 1000)
-        } else {
-            roundHalfUp(line.thickness * 100)
-        }
-        let hwpUnitsPerDeviceUnit = (Shape.deviceUnit * 100).rounded()
+        let hwpUnits = patternHwpUnits(for: line)
         let pathUnits: CGFloat
         let pitchUnits: CGFloat
         if grid {
@@ -105,8 +77,8 @@ extension HwpLineShapeGeometry {
             pitchUnits = side * Shape.cellBorderCirclePitchUnitRatio
         } else {
             let dot = roundHalfUp(
-                hwpUnits * Shape.circleDotUnitThicknessNumerator
-                    / Shape.circleDotUnitThicknessDenominator / hwpUnitsPerDeviceUnit
+                hwpUnits * Shape.patternUnitThicknessNumerator
+                    / Shape.patternUnitThicknessDenominator / hwpUnitsPerDeviceUnit
             )
             pathUnits = max(Shape.circleMinimumPathDeviceUnits, evenCeiling(dot))
             let gap = roundHalfUp(dot * Shape.circleGapDotUnitRatio)

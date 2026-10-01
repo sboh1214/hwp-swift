@@ -115,6 +115,24 @@ public struct HwpBorderSet: Sendable, Hashable {
         width > 0 && shape != .none ? width : 0
     }
 
+    /// 모서리에서 이웃 변이 나가거나 물러나는 길이의 기준 폭 — 실선·대시(3D 넷 대체 포함)는 한글이
+    /// 그리는 획 두께(장치 단위로 반올림, `HwpLineShapeGeometry.borderStrokeThickness(_:)`)라 가로 변이
+    /// 세로 변의 바깥 가장자리에서 정확히 끝난다 (#245 실측: 2mm 파랑 세로 변 47u 사이의 1mm 위 변이
+    /// 양 끝으로 23u·24u 나간다 — 명목 두께면 23.6u씩), 원형 점선·여러 줄·물결은 보이는 폭
+    /// (`visibleWidth`) 그대로다. 무늬 이음(`HwpBorderChaining`)도 같은 술어를 쓴다.
+    static func reachWidth(_ width: CGFloat, _ shape: HwpBorderType) -> CGFloat {
+        let visible = visibleWidth(width, shape)
+        guard visible > 0 else { return 0 }
+        switch shape {
+        case .line, .thick3D, .thick3DReverse, .single3D, .single3DReverse,
+             .longDotLine, .dotLine, .dashDot, .dashDotDot, .longDash:
+            return HwpLineShapeGeometry.borderStrokeThickness(visible)
+        case .none, .circle, .doubleLine, .thinThickDoubleLine, .thickThinDoubleLine,
+             .thinThickThinTripleLine, .wave, .doubleWave:
+            return visible
+        }
+    }
+
     /// 변의 자리 — 위·아래는 가로 변, 왼·오른은 세로 변. `edges(around:chains:)`의 차례(곧 그리는
     /// 차례)는 셀 간격이 없는 칸이 `allCases`(위·아래·왼·오른), 셀 간격이 있는 칸이 `spacedOrder`다.
     private enum Position: CaseIterable {
@@ -146,6 +164,11 @@ public struct HwpBorderSet: Sendable, Hashable {
         let shape: HwpBorderType
         let width: CGFloat
         let color: HwpRGBColor
+
+        /// 모서리 연장·물림의 기준 폭 (`reachWidth`)
+        var reach: CGFloat {
+            HwpBorderSet.reachWidth(width, shape)
+        }
     }
 
     private func side(_ position: Position) -> Side {
@@ -188,7 +211,7 @@ public struct HwpBorderSet: Sendable, Hashable {
             return Edge(
                 shape: side.shape, width: side.width, color: side.color,
                 start: start, end: end, cross: cross, horizontal: horizontal,
-                leadExtension: lead.width / 2, trailExtension: trail.width / 2,
+                leadExtension: lead.reach / 2, trailExtension: trail.reach / 2,
                 lineLead: reach(lead), lineTrail: reach(trail),
                 outerIsLeading: position.outerIsLeading, inSpacedTable: spaced, chain: chain
             )
@@ -209,7 +232,7 @@ public struct HwpBorderSet: Sendable, Hashable {
     private static func lineReach(
         of side: Side, horizontal: Bool, neighbour: Side, spaced: Bool
     ) -> CGFloat {
-        let half = neighbour.width / 2
+        let half = neighbour.reach / 2
         guard spaced, isSingleLine(side.shape) else {
             return horizontal || side.shape == .wave || side.shape == .doubleWave ? half : 0
         }

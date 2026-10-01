@@ -170,7 +170,8 @@ extension FixtureDecorationLineRenderTests {
     }
 
     /// 긴 점선의 한 토막도 줄 글자 기준 크기 몫이다 — 40pt 무장식 글자와 한 줄인 M9의 10pt 긴
-    /// 점선은 선 5 × 0.057 × 40 = 11.4pt · 공백 6.84pt (한글 11.40·6.96), 10pt 몫이면 2.85·1.71pt.
+    /// 점선은 선 95u = 11.40pt · 공백 58u = 6.96pt (한글 11.40·6.96 — 무늬 두께 156HWPUNIT의 장치
+    /// 단위 식, #245), 10pt 몫이면 2.88·1.68pt.
     func testMixedSizeDottedUnderlineUsesTheLineTextScale() async throws {
         let raster = try await Self.raster(Self.mixedSize, hwpx: false)
         let centers = Self.mixedSizeLineCenters(raster, where: Self.isGreen)
@@ -198,8 +199,8 @@ extension FixtureDecorationLineRenderTests {
         guard segments.count >= 3 else { return }
         let dash = CGFloat(segments[0].count) / Self.scale
         let gap = CGFloat(segments[1].lowerBound - segments[0].upperBound) / Self.scale
-        expect(dash).to(beCloseTo(0.057 * 40 * 5, within: 0.5))
-        expect(gap).to(beCloseTo(0.057 * 40 * 3, within: 0.5))
+        expect(dash).to(beCloseTo(95 * 0.12, within: 0.5))
+        expect(gap).to(beCloseTo(58 * 0.12, within: 0.5))
     }
 
     /// 실물의 글자처럼 취급 그림 줄 (#226) — `공공누리`·`CCL` 1쪽은 라이선스 그림이 줄 상자를 정한

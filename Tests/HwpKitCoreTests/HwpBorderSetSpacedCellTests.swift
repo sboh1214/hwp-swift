@@ -20,6 +20,12 @@ final class HwpBorderSetSpacedCellTests: XCTestCase {
     static let oneMillimetre = CGFloat(CoreHwp.HwpBorderFill.borderThicknessPoints(at: 10))
     /// 2mm (index 12)
     static let twoMillimetres = CGFloat(CoreHwp.HwpBorderFill.borderThicknessPoints(at: 12))
+    /// 실선·대시의 획 — 한글처럼 장치 단위로 반올림한다 (#245): 2pt 17u, 4pt 33u, 1mm 24u(한글
+    /// 1.44pt 연장의 두 배), 2mm 47u. 모서리에서 나가고 물러나는 길이도 이 획의 절반이다.
+    static let stroke2: CGFloat = 17 * 0.12
+    static let stroke4: CGFloat = 33 * 0.12
+    static let strokeOneMillimetre: CGFloat = 24 * 0.12
+    static let strokeTwoMillimetres: CGFloat = 47 * 0.12
 
     struct Side {
         var width: CGFloat = 0
@@ -89,30 +95,41 @@ final class HwpBorderSetSpacedCellTests: XCTestCase {
             right: Self.solid(2)
         ).edges(around: Self.rect)
         expect(edges.count) == 4
-        expect(Self.box(edges, .top)).to(equal(CGRect(x: 99, y: 199, width: 302, height: 2)))
-        expect(Self.box(edges, .bottom)).to(equal(CGRect(x: 99, y: 249, width: 302, height: 2)))
-        expect(Self.box(edges, .left)).to(equal(CGRect(x: 99, y: 199, width: 2, height: 52)))
-        expect(Self.box(edges, .right)).to(equal(CGRect(x: 399, y: 199, width: 2, height: 52)))
+        let (thin, half) = (Self.stroke2, Self.stroke2 / 2)
+        let top = CGRect(x: 100 - half, y: 200 - half, width: 300 + thin, height: thin)
+        expect(Self.box(edges, .top)).to(beCloseTo(top))
+        expect(Self.box(edges, .bottom)).to(beCloseTo(top.offsetBy(dx: 0, dy: 50)))
+        let left = CGRect(x: 100 - half, y: 200 - half, width: thin, height: 50 + thin)
+        expect(Self.box(edges, .left)).to(beCloseTo(left))
+        expect(Self.box(edges, .right)).to(beCloseTo(left.offsetBy(dx: 300, dy: 0)))
         // 셀 간격이 없으면 세로 변은 모서리에서 (#191)
         let grid = Self.set(
             top: Self.solid(2), bottom: Self.solid(2), left: Self.solid(2), right: Self.solid(2),
             cellSpacing: 0
         ).edges(around: Self.rect)
-        expect(Self.box(grid, .left)).to(equal(CGRect(x: 99, y: 200, width: 2, height: 50)))
+        expect(Self.box(grid, .left))
+            .to(beCloseTo(CGRect(x: 100 - half, y: 200, width: thin, height: 50)))
     }
 
     /// 모양이나 굵기가 다른 이웃이면 가로 변이 모서리를 덮고 세로 변은 가로 변 굵기의 절반만큼
     /// 물러난다 (한글: 초록 1mm 세로 변 + 파랑 2mm 가로 변 → 세로 변 y 2.88 ~ 117.36, 가로 변은 −1.44)
     func testVerticalsTuckUnderUnjoinedNeighbours() {
         // 굵기가 다르다: 위 4 · 왼 2
+        let (thin, wide) = (Self.stroke2, Self.stroke4)
         let wider = Self.set(top: Self.solid(4), left: Self.solid(2)).edges(around: Self.rect)
-        expect(Self.box(wider, .top)).to(equal(CGRect(x: 99, y: 198, width: 301, height: 4)))
-        expect(Self.box(wider, .left)).to(equal(CGRect(x: 99, y: 202, width: 2, height: 48)))
+        expect(Self.box(wider, .top)).to(beCloseTo(CGRect(
+            x: 100 - thin / 2, y: 200 - wide / 2, width: 300 + thin / 2, height: wide
+        )))
+        expect(Self.box(wider, .left)).to(beCloseTo(CGRect(
+            x: 100 - thin / 2, y: 200 + wide / 2, width: thin, height: 50 - wide / 2
+        )))
         // 모양이 다르다: 위 점선 2 · 왼 실선 2 — 가로 변(점선)은 나가고 세로 변은 물러난다
         let otherShape = Self.set(top: Self.shape(.dotLine, 2), left: Self.solid(2))
             .edges(around: Self.rect)
-        expect(Self.box(otherShape, .top)?.minX).to(beCloseTo(99, within: 1e-9))
-        expect(Self.box(otherShape, .left)).to(equal(CGRect(x: 99, y: 201, width: 2, height: 49)))
+        expect(Self.box(otherShape, .top)?.minX).to(beCloseTo(100 - thin / 2, within: 1e-9))
+        expect(Self.box(otherShape, .left)).to(beCloseTo(CGRect(
+            x: 100 - thin / 2, y: 200 + thin / 2, width: thin, height: 50 - thin / 2
+        )))
         // 이웃이 여러 줄·물결이어도 같다 (가로 변의 반폭 = 4/2 만큼 물러난다)
         for neighbour in [HwpBorderType.doubleLine, .wave, .circle] {
             let edges = Self.set(top: Self.shape(neighbour, 4), left: Self.solid(2))
@@ -128,10 +145,11 @@ final class HwpBorderSetSpacedCellTests: XCTestCase {
     }
 
     /// 대시 다섯 모양 모두 실선과 같은 상자 규칙이다 — 네 변이 같으면 세로 변도 반폭 앞에서 첫
-    /// 대시를 시작하고(한글 1mm 긴 점선: −1.44), 굵기가 다른 이웃이면 그 반폭만큼 물러나 시작한다.
-    /// 셀 간격 0이면 세로 변은 모서리에서 시작한다.
+    /// 대시를 시작하고(한글 1mm 긴 점선: −1.44 = 획 24u의 절반), 굵기가 다른 이웃이면 그 반폭만큼
+    /// 물러나 시작한다. 셀 간격 0이면 세로 변은 모서리에서 시작한다.
     func testDashVerticalsFollowTheBoxCorners() throws {
         let width = Self.oneMillimetre
+        let half = Self.strokeOneMillimetre / 2
         let dashes: [HwpBorderType] = [.longDotLine, .dotLine, .dashDot, .dashDotDot, .longDash]
         for shape in dashes {
             let dash = Self.shape(shape, width)
@@ -140,14 +158,14 @@ final class HwpBorderSetSpacedCellTests: XCTestCase {
                 .edges(around: Self.rect)
             let left = try XCTUnwrap(Self.edge(joined, .left), label)
             expect(HwpLineShapeGeometryTests.pieces(left.path).first?.minY)
-                .to(beCloseTo(200 - width / 2, within: 1e-9), description: label)
+                .to(beCloseTo(200 - half, within: 1e-9), description: label)
             let top = try XCTUnwrap(Self.edge(joined, .top), label)
             expect(HwpLineShapeGeometryTests.pieces(top.path).first?.minX)
-                .to(beCloseTo(100 - width / 2, within: 1e-9), description: label)
+                .to(beCloseTo(100 - half, within: 1e-9), description: label)
             let unjoined = Self.set(top: Self.solid(4), left: dash).edges(around: Self.rect)
             let tucked = try XCTUnwrap(Self.edge(unjoined, .left), label)
             expect(HwpLineShapeGeometryTests.pieces(tucked.path).first?.minY)
-                .to(beCloseTo(202, within: 1e-9), description: label)
+                .to(beCloseTo(200 + Self.stroke4 / 2, within: 1e-9), description: label)
             let grid = Self.set(top: dash, bottom: dash, left: dash, right: dash, cellSpacing: 0)
                 .edges(around: Self.rect)
             let gridLeft = try XCTUnwrap(Self.edge(grid, .left), label)
@@ -202,17 +220,18 @@ final class HwpBorderSetSpacedCellTests: XCTestCase {
     }
 
     /// 이웃이 다르면(여기서는 2mm 실선) 원형 점선 가로 변은 이웃 반폭만큼 앞에서, 세로 변은 이웃
-    /// 반폭만큼 뒤에서 시작한다 (한글: 가로 첫 원 −2.70, 세로 첫 원 +2.88 — 장치 격자)
+    /// 반폭만큼 뒤에서 시작한다 (한글: 가로 첫 원 −2.70, 세로 첫 원 +2.88 — 장치 격자; 이웃 실선의
+    /// 반폭은 획 47u의 절반 2.82)
     func testUnjoinedCirclesFollowTheBoxCorners() throws {
         let circle = Self.shape(.circle, Self.oneMillimetre)
         let solid = Self.solid(Self.twoMillimetres)
         let horizontal = Self.set(top: circle, left: solid, right: solid).edges(around: Self.rect)
         let top = try Self.centers(XCTUnwrap(Self.edge(horizontal, .top)), horizontal: true)
-        expect(top.first).to(beCloseTo(100 - Self.twoMillimetres / 2, within: 1e-9))
+        expect(top.first).to(beCloseTo(100 - Self.strokeTwoMillimetres / 2, within: 1e-9))
         expect(top[1] - top[0]).to(beCloseTo(10.56, within: 1e-9))
         let vertical = Self.set(top: solid, bottom: solid, left: circle).edges(around: Self.rect)
         let left = try Self.centers(XCTUnwrap(Self.edge(vertical, .left)), horizontal: false)
-        expect(left.first).to(beCloseTo(200 + Self.twoMillimetres / 2, within: 1e-9))
+        expect(left.first).to(beCloseTo(200 + Self.strokeTwoMillimetres / 2, within: 1e-9))
         // 굵기가 다른 원형 점선 이웃도 맞물리지 않는다
         let thicker = Self.shape(.circle, Self.twoMillimetres)
         let mixed = Self.set(top: thicker, left: circle).edges(around: Self.rect)

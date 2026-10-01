@@ -15,7 +15,8 @@ import XCTest
 ///
 /// 오라클은 한글.app 12.30.0 build 6446의 PDF 내보내기다 (2026-09-26): 5~100pt 전부 긴 점선
 /// 2.40/1.44pt(주기 3.84pt), 2중선 0.36pt 두 줄·중심 간격 1.08pt, 물결 진폭 2.88pt·획 0.72pt.
-/// 같은 표본을 한글 문서로 내보내면 40pt 긴 점선 주기가 18.24pt(= 8 × 0.057 × 40)다.
+/// 같은 표본을 한글 문서로 내보내면 40pt 긴 점선이 선 11.40·주기 18.36pt(95u·153u — 무늬 두께
+/// 156HWPUNIT의 장치 단위 식, #245)다.
 extension HwpDecorationLineGeometryTests {
     private static let hwp2007Target = NSNumber(
         value: HwpCompatibleDocumentTarget.hwp200X.rawValue
@@ -169,7 +170,7 @@ extension HwpDecorationLineGeometryTests {
             string: "AAAAAAAA",
             attributes: hwp2007ShapeRun(size: 40, shape: .longDotLine, target: nil)
         )))
-        expect(native.first?.length ?? 0).to(beCloseTo(40 * 0.057 * 5, within: 0.2))
+        expect(native.first?.length ?? 0).to(beCloseTo(95 * 0.12, within: 0.2))
     }
 
     /// 2중선 밑줄은 0.36pt 두 줄·중심 간격 1.08pt, 물결 밑줄은 진폭 2.88pt + 꼭짓점 평탄의 획

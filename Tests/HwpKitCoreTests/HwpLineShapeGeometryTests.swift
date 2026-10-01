@@ -81,20 +81,26 @@ final class HwpLineShapeGeometryTests: XCTestCase {
         expect(HwpLineShapeGeometry.crossExtent(of: Self.characterLine(.none))).to(beNil())
     }
 
-    /// 3D 넷은 한글 macOS가 아무것도 그리지 않지만 실선으로 대체한다 (사라지는 것보다 낫다).
+    /// 3D 넷은 한글 macOS가 아무것도 그리지 않지만 실선으로 대체한다 (사라지는 것보다 낫다) —
+    /// 테두리 실선처럼 획 두께를 장치 단위로 반올림한다 (2pt = 200HWPUNIT → 17u = 2.04pt, #245).
     func test3DShapesFallBackToSolid() {
         for shape in [HwpBorderType.thick3D, .thick3DReverse, .single3D, .single3DReverse] {
             let pieces = Self.pieces(
                 HwpLineShapeGeometry.path(for: Self.borderLine(shape, thickness: 2))
             )
-            expect(pieces).to(equal([CGRect(x: 0, y: -1, width: 200, height: 2)]))
+            expect(pieces.count) == 1
+            expect(pieces.first?.minX) == 0
+            expect(pieces.first?.width) == 200
+            expect(pieces.first?.minY).to(beCloseTo(-1.02, within: 1e-9))
+            expect(pieces.first?.height).to(beCloseTo(2.04, within: 1e-9))
         }
     }
 
-    // MARK: - 대시 (실측: 80pt 긴 점선 22.8/13.68pt, 5mm 테두리 173/259u = 점선)
+    // MARK: - 대시 (실측: 80pt 긴 점선 190/114u, 5mm 테두리 점선 173/259u — 장치 단위 식은 `+Dashes`)
 
     func testCharacterLongDotDashesAreFiveAndThreeUnits() {
-        // 80pt: 단위 0.057em = 4.56pt → 선 22.8, 공백 13.68 (한글 190u/114u)
+        // 80pt: 무늬 두께 312HWPUNIT → 단위 38.13u, 긴 선 381u → 선 ⌊381/2⌋ = 190u = 22.8,
+        // 공백 2·round(57.2) = 114u = 13.68 (한글 190u/114u)
         let line = Self.characterLine(.longDotLine, fontSize: 80, length: 200)
         let pieces = Self.pieces(HwpLineShapeGeometry.path(for: line))
         expect(pieces.count) == 6 // 36.48 주기 → 0, 36.48, …, 182.4 (마지막은 잘린다)
@@ -106,47 +112,6 @@ final class HwpLineShapeGeometryTests: XCTestCase {
             expect(piece.minY).to(beCloseTo(-1.6, within: 0.001))
             expect(piece.height).to(beCloseTo(3.2, within: 0.001))
         }
-    }
-
-    func testCharacterDashPatternsFollowTheUnitTable() {
-        let unit: CGFloat = 40 * 0.057 // 2.28pt (한글 19u)
-        let expectations: [(HwpBorderType, [CGFloat])] = [
-            (.dotLine, [1, 1.5]),
-            (.dashDot, [10, 3, 1, 3]),
-            (.dashDotDot, [10, 3, 1, 3, 1, 3]),
-            (.longDash, [10, 3]),
-        ]
-        for (shape, multiples) in expectations {
-            let pieces = Self.pieces(HwpLineShapeGeometry.path(for: Self.characterLine(shape)))
-            var x: CGFloat = 0
-            for (index, multiple) in multiples.enumerated() {
-                if index % 2 == 0 {
-                    let piece = pieces[index / 2]
-                    expect(piece.minX).to(beCloseTo(x, within: 0.001), description: "\(shape)")
-                    expect(piece.width).to(beCloseTo(multiple * unit, within: 0.001))
-                }
-                x += multiple * unit
-            }
-        }
-    }
-
-    func testBorderDashUnitIsTwentyTwoFifteenthsOfThickness() {
-        // 5mm(14.173pt): 단위 20.79pt → 점선 선 20.79·공백 31.18 (한글 173u/259u)
-        let thickness = 5 * 72 / 25.4
-        let pieces = Self.pieces(HwpLineShapeGeometry.path(for: Self.borderLine(
-            .dotLine, thickness: thickness, length: 300
-        )))
-        let unit = thickness * 22 / 15
-        expect(pieces[0].width).to(beCloseTo(unit, within: 0.001))
-        expect(pieces[1].minX).to(beCloseTo(unit * 2.5, within: 0.001))
-        expect(pieces[0].minY).to(beCloseTo(-thickness / 2, within: 0.001))
-        expect(unit).to(beCloseTo(20.79, within: 0.01))
-        // 긴 점선은 5·3 단위 (한글 866u/519u)
-        let long = Self.pieces(HwpLineShapeGeometry.path(for: Self.borderLine(
-            .longDotLine, thickness: thickness, length: 300
-        )))
-        expect(long[0].width).to(beCloseTo(unit * 5, within: 0.001))
-        expect(long[1].minX).to(beCloseTo(unit * 8, within: 0.001))
     }
 
     // MARK: - 원형 점선
@@ -486,12 +451,13 @@ extension HwpLineShapeGeometryTests {
             expect(HwpLineShapeGeometry.crossExtent(of: line)).to(beNil())
             expect(HwpLineShapeGeometry.alongExtent(of: line)).to(beNil())
         }
-        let huge = Self.borderLine(.dotLine, thickness: 0.001, length: 10000)
+        // 대시는 장치 단위라 주기가 아무리 얇아도 2u(점 1u·공백 1u) — 상한은 길이 24,000pt 너머다
+        let huge = Self.borderLine(.dotLine, thickness: 0.001, length: 30000)
         expect(HwpLineShapeGeometry.patternRepeats(of: huge))
             > HwpLineShapeGeometry.maxPatternRepeats
         let pieces = Self.pieces(HwpLineShapeGeometry.path(for: huge))
         expect(pieces.count) == 1
-        expect(pieces.first?.width).to(beCloseTo(10000, within: 0.001))
+        expect(pieces.first?.width).to(beCloseTo(30000, within: 0.001))
         // 물결은 반주기에 0.12pt 평탄이 있어 길이 10만 pt는 돼야 상한을 넘는다
         expect(HwpLineShapeGeometry.alongExtent(of: Self.borderLine(
             .wave, thickness: 0.001, length: 100_000

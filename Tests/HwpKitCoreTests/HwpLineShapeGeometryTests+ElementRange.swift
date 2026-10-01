@@ -69,7 +69,8 @@ extension HwpLineShapeGeometryTests {
     /// 반복 상한을 넘어 실선 띠로 떨어진 무늬도 조각이 제 몫만 그린다 — 조각 띠를 이으면 선 전체이고
     /// 겹치지 않는다
     func testSolidFallbackIsSplitByElementRanges() {
-        let line = Self.borderLine(.dotLine, thickness: 0.001, length: 10000)
+        // 장치 단위 대시의 주기는 2u(0.24pt) 아래로 내려가지 않아 길이 24,000pt를 넘어야 상한에 걸린다
+        let line = Self.borderLine(.dotLine, thickness: 0.001, length: 30000)
         expect(HwpLineShapeGeometry.patternRepeats(of: line))
             > HwpLineShapeGeometry.maxPatternRepeats
         let bands = Self.ranges(cuts: [2500, 7000]).map { range -> CGRect in
@@ -78,9 +79,9 @@ extension HwpLineShapeGeometryTests {
             return HwpLineShapeGeometry.path(for: piece)?.boundingBoxOfPath ?? .null
         }
         expect(bands.map(\.minX)) == [0, 2500, 7000]
-        expect(bands.map(\.maxX)) == [2500, 7000, 10000]
+        expect(bands.map(\.maxX)) == [2500, 7000, 30000]
         var outside = line
-        outside.elementRange = 20000 ..< .infinity
+        outside.elementRange = 40000 ..< .infinity
         expect(HwpLineShapeGeometry.path(for: outside)).to(beNil())
         expect(HwpLineShapeGeometry.alongExtent(of: outside)).to(beNil())
     }

@@ -67,14 +67,14 @@ extension HwpLineShapeGeometryTests {
             .to(beCloseTo(amplitude * 0.8, within: 0.001))
     }
 
-    /// 대시는 무늬가 축척을, 획 두께가 선 두께를 따른다 — Menlo 20pt 긴 점선 밑줄은 한 토막
-    /// 5 × 0.057 × 30.27 = 8.63pt(한글 72u = 8.64pt)에 두께 1.164pt(한글 10u = 1.2pt)
+    /// 대시는 무늬가 축척을, 획 두께가 선 두께를 따른다 — Menlo 20pt 긴 점선 밑줄은 무늬 두께
+    /// round(3027 × 0.039) = 118HWPUNIT의 긴 선 round(144.2) = 144u의 절반 72u = 8.64pt(한글 72u, #245)에
+    /// 두께 1.164pt(한글 10u = 1.2pt — 글자선 획 두께는 반올림하지 않는다)
     func testDashesScaleWithTheBoxAndKeepTheLineThickness() {
         let pieces = Self.pieces(HwpLineShapeGeometry.path(for: Self.msWordUnderline(.longDotLine)))
         expect(pieces.count) > 4
         guard let first = pieces.first else { return }
-        expect(first.width).to(beCloseTo(5 * 0.057 * Self.msWordBoxHeight, within: 0.001))
-        expect(first.width).to(beCloseTo(8.64, within: 0.05))
+        expect(first.width).to(beCloseTo(72 * 0.12, within: 1e-9))
         expect(first.height).to(beCloseTo(Self.msWordUnderlineThickness, within: 0.001))
     }
 
