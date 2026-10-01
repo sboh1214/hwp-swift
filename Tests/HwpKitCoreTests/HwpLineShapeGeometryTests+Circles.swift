@@ -144,7 +144,7 @@ extension HwpLineShapeGeometryTests {
             var line = Self.borderLine(.circle, thickness: CGFloat(thickness))
             line.inSpacedTable = true
             let label = "index \(sample.input)"
-            expect(HwpLineShapeGeometry.circleUsesCellGrid(line)).to(beFalse(), description: label)
+            expect(HwpLineShapeGeometry.usesCellGrid(line)).to(beFalse(), description: label)
             expect(HwpLineShapeGeometry.circlePitch(for: line)).to(
                 beCloseTo(CGFloat(sample.pitch) * Self.deviceUnit, within: 1e-9), description: label
             )
@@ -156,14 +156,14 @@ extension HwpLineShapeGeometryTests {
         // 1mm 셀 간격 없는 표는 여전히 격자 — 같은 입력에서 셀 간격만 가른다
         let thickness = CGFloat(CoreHwp.HwpBorderFill.borderThicknessPoints(at: 10))
         let grid = Self.borderLine(.circle, thickness: thickness)
-        expect(HwpLineShapeGeometry.circleUsesCellGrid(grid)) == true
+        expect(HwpLineShapeGeometry.usesCellGrid(grid)) == true
         expect(HwpLineShapeGeometry.circlePitch(for: grid)).to(beCloseTo(5.76, within: 1e-9))
     }
 
-    /// 셀 간격 표시는 표 셀 테두리의 원만 바꾼다 — 글자선·단 구분선 원과 대시·여러 줄·물결 경로는
-    /// 그대로다 (한글 12.30 실측: 셀 간격 0·1·283 표의 여러 줄·물결·2중 물결 벡터가 같다; 대시는
-    /// 한글이 장치 단위로 반올림하는 식이 셀 간격에 따라 한 주기에 1u쯤 갈리지만 여기서는 두 경우
-    /// 모두 같은 비례 경로다 — `Sources/HwpKitCore/AGENTS.md`의 남은 격차)
+    /// 셀 간격 표시는 표 셀 테두리의 원과 대시만 바꾼다 — 글자선·단 구분선 원과 실선·여러 줄·물결
+    /// 경로는 그대로다 (한글 12.30 실측: 셀 간격 0·1·283 표의 여러 줄·물결·2중 물결 벡터가 같다).
+    /// 대시는 셀 간격이 있으면 단 구분선과 같은 점 무늬 식으로 반올림한다 (#245 — 1mm 점선 35·52u →
+    /// 35·53u, 긴 파선 346·105u → 346·104u; `HwpLineShapeGeometryTests+Dashes`가 굵기 16단을 본다).
     func testSpacedTableFlagLeavesOtherLinesAlone() {
         var character = Self.characterLine(.circle, fontSize: 12)
         let characterPitch = HwpLineShapeGeometry.circlePitch(for: character)
@@ -175,8 +175,10 @@ extension HwpLineShapeGeometryTests {
         let dividerPitch = HwpLineShapeGeometry.circlePitch(for: divider)
         divider.inSpacedTable = true
         expect(HwpLineShapeGeometry.circlePitch(for: divider)) == dividerPitch
-        let shapes = (0 ... 17).compactMap(HwpBorderType.init(rawValue:)).filter { $0 != .circle }
-        expect(shapes.count) == 17
+        let dashes: Set<HwpBorderType> = [.longDotLine, .dotLine, .dashDot, .dashDotDot, .longDash]
+        let shapes = (0 ... 17).compactMap(HwpBorderType.init(rawValue:))
+            .filter { $0 != .circle && !dashes.contains($0) }
+        expect(shapes.count) == 12
         for shape in shapes {
             let grid = Self.borderLine(shape, thickness: 2.8346)
             var spaced = grid
@@ -184,6 +186,17 @@ extension HwpLineShapeGeometryTests {
             let gridPieces = Self.pieces(HwpLineShapeGeometry.path(for: grid))
             expect(Self.pieces(HwpLineShapeGeometry.path(for: spaced)))
                 .to(equal(gridPieces), description: "\(shape)")
+        }
+        for (shape, gridUnits, spacedUnits) in [
+            (HwpBorderType.dotLine, [CGFloat(35), 52], [CGFloat(35), 53]),
+            (.longDash, [346, 105], [346, 104]),
+        ] {
+            var line = Self.borderLine(shape, thickness: 72 / 25.4)
+            let grid = HwpLineShapeGeometry.dashPattern(for: line).map { ($0 / 0.12).rounded() }
+            expect(grid).to(equal(gridUnits), description: "\(shape) grid")
+            line.inSpacedTable = true
+            let spaced = HwpLineShapeGeometry.dashPattern(for: line).map { ($0 / 0.12).rounded() }
+            expect(spaced).to(equal(spacedUnits), description: "\(shape) spaced")
         }
     }
 

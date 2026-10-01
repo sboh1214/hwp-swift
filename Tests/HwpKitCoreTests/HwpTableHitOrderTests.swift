@@ -127,8 +127,14 @@ import XCTest
             let page = Self.page(cells: [Self.cell(column: 0, width: 200)])
             let block = page.blocks[1]
             expect(HwpHitTester.paintedObjectBounds(of: block)) == block.frame
-            expect(HwpHitTester().hitEligibleFrame(for: block))
-                .to(equal(block.frame.insetBy(dx: -0.5, dy: -0.5)))
+            // 폭 1pt 테두리의 획은 장치 단위로 반올림한 8u = 0.96pt라 바깥 절반은 0.48 (#245)
+            let half: CGFloat = 8 * 0.12 / 2
+            let eligible = HwpHitTester().hitEligibleFrame(for: block)
+            let expected = block.frame.insetBy(dx: -half, dy: -half)
+            expect(eligible.minX).to(beCloseTo(expected.minX, within: 1e-9))
+            expect(eligible.minY).to(beCloseTo(expected.minY, within: 1e-9))
+            expect(eligible.width).to(beCloseTo(expected.width, within: 1e-9))
+            expect(eligible.height).to(beCloseTo(expected.height, within: 1e-9))
         }
     }
 #endif

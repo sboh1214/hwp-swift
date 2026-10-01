@@ -29,9 +29,9 @@ import XCTest
 /// | 10 | 기본 20pt·한글 슬롯 50% 긴 점선 밑줄 | 616.08 · 8.88 / 14.16 (슬롯 경계에서 이어진다) |
 /// | 11 | 같은 글자 모양의 긴 점선 취소선 | 645.72 · 5.64 / 9.00 |
 ///
-/// 원은 한글처럼 장치 단위로 반올림하므로 우리 PDF와 간격·지름이 같고, 대시는 한글이 단위를 장치
-/// 단위로 반올림해(#245 계열 — 한글 문서에도 있는 기존 격차) 주기마다 0.1pt쯤 갈리므로 쪽 좌표를 누적해
-/// 대지 않고 이웃 조각 사이의 주기로 잰다. 수정 전에는 1번 원 간격이 3.00pt(글자 크기 몫), 3·4번이
+/// 원과 대시는 한글처럼 장치 단위로 반올림하므로 우리 PDF와 간격·지름·선·주기가 같다 — 대시는 첫
+/// 조각에서 누적한 자리로 잰다 (#245 전에는 비례 단위라 주기마다 0.1pt쯤 갈려 이웃 조각 사이의 주기로만
+/// 쟀다). 수정 전에는 1번 원 간격이 3.00pt(글자 크기 몫), 3·4번이
 /// 1.56pt(10pt 몫), 2중선 두 줄이 단선 위 가장자리 아래로 몰렸고, 9번 취소선은 1.56pt(상대 크기 10pt
 /// 몫), 10번은 슬롯 경계에서 무늬가 다시 시작했다. 10·11번은 x 자리를 핀하지 않는다 — 한글은 이 글자
 /// 모양의 빈칸을 5.04pt로, 우리는 라틴 슬롯 Menlo 20pt의 12.04pt로 조판해 슬롯 경계와 run 끝이
@@ -142,8 +142,9 @@ extension FixtureDecorationLineRenderTests {
 
     /// 긴 점선 세 표본 — 무늬 단위가 밑줄은 줄 글자 상자(Menlo 20pt 30.27pt → 선 8.64·주기 13.92;
     /// 한글 슬롯 50% 한 글자 모양은 두 슬롯 상자의 합 Apple SD 31.19pt → 8.88·14.16), 취소선은 기본
-    /// 크기 20pt(5.64·9.00)다. 이웃 조각의 주기가 run 끝까지 한결같아야 한다 — 슬롯 경계에서 무늬가
-    /// 다시 시작하면 그 자리의 주기가 짧거나 길다.
+    /// 크기 20pt(5.64·9.00)다. 조각의 시작이 run 끝까지 첫 조각 + 주기의 배수에 놓여야 한다 — 슬롯
+    /// 경계에서 무늬가 다시 시작하면 그 뒤 자리가 모두 밀리고, 무늬 단위를 장치 단위로 반올림하지 않으면
+    /// (#245 전) 주기마다 0.1pt쯤 차가 쌓인다.
     func testMsWordDashedLinesMatchHangulInBothFormats() async throws {
         let samples = [
             DashSample(label: "5 Menlo 20pt 밑줄", y: 418.44, dash: 8.64, period: 13.92),
@@ -168,8 +169,9 @@ extension FixtureDecorationLineRenderTests {
                     expect(dashes[index].length).to(
                         beCloseTo(sample.dash, within: 0.3), description: "\(label) 선 \(index)"
                     )
-                    expect(dashes[index + 1].start - dashes[index].start).to(
-                        beCloseTo(sample.period, within: 0.3), description: "\(label) 주기 \(index)"
+                    expect(dashes[index + 1].start - dashes[0].start).to(
+                        beCloseTo(sample.period * CGFloat(index + 1), within: 0.3),
+                        description: "\(label) 누적 주기 \(index + 1)"
                     )
                 }
             }

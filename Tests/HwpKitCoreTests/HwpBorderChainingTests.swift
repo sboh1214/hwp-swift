@@ -26,43 +26,45 @@ final class HwpBorderChainingTests: XCTestCase {
         expect(owners.filter { abs($0.1 - 31.68) < 1e-6 }.map(\.0)) == [1]
     }
 
-    /// 세로 변이 있으면 가로 사슬의 무늬 원점은 첫 칸의 연장 포함 시작(−t/2)이고 끝도 마지막 칸의
+    /// 세로 변이 있으면 가로 사슬의 무늬 원점은 첫 칸의 연장 포함 시작(−획/2)이고 끝도 마지막 칸의
     /// 연장까지다 (한글 so238-main #2·#3: 1mm 원 −1.44에서 시작, 칸 사이 세로 변과 무관하게 이어짐).
+    /// 4pt 실선 세로 변의 획은 장치 단위로 반올림한 33u = 3.96이라 연장은 1.98이다 (#245).
     func testChainOriginIsTheFirstPiecesExtendedStart() {
         let side = Self.borders(
             top: .circle(), left: .shape(.line), right: .shape(.line)
         )
         let table = Self.row([side, side, side])
-        // 원점 −2, 끝 92: 중심 −2 … 85.12 (93.04는 끝 뒤)
-        expect(Self.circlesX(table, y: 0)) == Self.circleCenters(from: -2, 0 ..< 12)
-        // 끝 모서리 뒤 연장 구간 [93, 95)의 원(93.04)도 마지막 칸이 그린다 — 칸 폭 31
+        // 원점 −1.98, 끝 91.98: 중심 −1.98 … 85.14 (93.06은 끝 뒤)
+        expect(Self.circlesX(table, y: 0)) == Self.circleCenters(from: -1.98, 0 ..< 12)
+        // 끝 모서리 뒤 연장 구간 [93, 94.98)의 원(93.06)도 마지막 칸이 그린다 — 칸 폭 31
         let wide = Self.row([side, side, side], width: 31)
-        expect(Self.circlesX(wide, y: 0)) == Self.circleCenters(from: -2, 0 ..< 13)
+        expect(Self.circlesX(wide, y: 0)) == Self.circleCenters(from: -1.98, 0 ..< 13)
     }
 
     /// 대시는 사슬 전체로 이어지고 칸 경계에 걸친 대시는 시작 칸이 통째로 그린다 — 그 칸의 띠가
     /// 넘친 몫까지 덮는다 (R54 `자격 ⊇ 칠`). 사슬 끝에서만 잘린다.
     func testDashesContinueAndTheStartingCellDrawsTheWholeDash() throws {
-        // 긴 점선 두께 3: 단위 22/15 × 3 = 4.4, 대시 22 · 공백 13.2 (주기 35.2)
+        // 긴 점선 두께 3pt(300HWPUNIT → 단위 36.67u, 셀 간격 없는 표의 격자 식 #245): 대시
+        // ⌈367/2⌉ = 184u = 22.08 · 공백 3 × 37 − 1 = 110u = 13.2 (주기 294u = 35.28)
         let table = Self.row(Array(repeating: Self.borders(top: .shape(.longDotLine, 3)), count: 3))
         let dashes = Self.elements(table).sorted { $0.rect.minX < $1.rect.minX }
-        expect(dashes.map { ($0.rect.minX * 100).rounded() / 100 }) == [0, 35.2, 70.4]
+        expect(dashes.map { ($0.rect.minX * 100).rounded() / 100 }) == [0, 35.28, 70.56]
         expect(dashes.map(\.column)) == [0, 1, 2]
-        // 둘째 대시 [35.2, 57.2]는 둘째 칸, 셋째 [70.4, 90]은 사슬 끝(90)에서 잘린다
-        expect(dashes[1].rect.maxX).to(beCloseTo(57.2, within: 1e-9))
+        // 둘째 대시 [35.28, 57.36]는 둘째 칸, 셋째 [70.56, 90]은 사슬 끝(90)에서 잘린다
+        expect(dashes[1].rect.maxX).to(beCloseTo(57.36, within: 1e-9))
         expect(dashes[2].rect.maxX).to(beCloseTo(90, within: 1e-9))
-        // 첫 대시 [0, 22]는 첫 칸 안 — 둘째 칸으로 넘친 대시가 있는 표: 폭 20 칸
+        // 첫 대시 [0, 22.08]는 첫 칸을 넘는다 — 둘째 칸으로 넘친 대시가 있는 표: 폭 20 칸
         let narrow = Self.row(
             Array(repeating: Self.borders(top: .shape(.longDotLine, 3)), count: 3), width: 20
         )
         let first = try XCTUnwrap(narrow.rows.first?.cells.first)
         let firstEdges = first.borders.edges(around: first.cellFrame, chains: first.borderChains)
         let overhang = try XCTUnwrap(firstEdges.first)
-        expect(overhang.path.boundingBoxOfPath.maxX).to(beCloseTo(22, within: 1e-9))
-        expect(overhang.band.maxX).to(beCloseTo(22, within: 1e-9))
+        expect(overhang.path.boundingBoxOfPath.maxX).to(beCloseTo(22.08, within: 1e-9))
+        expect(overhang.band.maxX).to(beCloseTo(22.08, within: 1e-9))
         expect(first.paints(CGPoint(x: 21.5, y: 0))) == true
-        // 둘째 칸 [20, 40)은 35.2에서 시작하는 대시를 맡고, 셋째 칸 [40, 60)은 맡을 자리가 없다
-        // (다음 대시 70.4는 사슬 끝 60 뒤) — 셋째 칸 위 변은 경로가 없다
+        // 둘째 칸 [20, 40)은 35.28에서 시작하는 대시를 맡고, 셋째 칸 [40, 60)은 맡을 자리가 없다
+        // (다음 대시 70.56은 사슬 끝 60 뒤) — 셋째 칸 위 변은 경로가 없다
         expect(Self.elements(narrow).map(\.column).sorted()) == [0, 1]
     }
 
@@ -138,11 +140,12 @@ final class HwpBorderChainingTests: XCTestCase {
             lower: [.shape(.longDotLine, 3), .shape(.dotLine, 3), .shape(.longDotLine, 3)]
         )
         let longDots = Self.elements(dashInside).filter { $0.rect.width > 10 }
-        expect(Set(longDots.map { ($0.rect.minX * 100).rounded() / 100 })) == [0, 35.2, 70.4]
+        expect(Set(longDots.map { ($0.rect.minX * 100).rounded() / 100 })) == [0, 35.28, 70.56]
     }
 
     /// 뒤에 든 조각의 연장은 무늬 원점을 바꾸지 않는다 (O7: 아래 행 첫 칸만 왼 변이 있어도 원점은
-    /// 먼저 본 위 행 조각의 시작 −0.12), 먼저 본 조각의 연장이면 원점이다 (F8: −1.44)
+    /// 먼저 본 위 행 조각의 시작 −0.12), 먼저 본 조각의 연장이면 원점이다 (F8: −1.44 — 여기서는 4pt
+    /// 실선 세로 변의 획 33u의 절반 1.98)
     func testOriginComesFromTheFirstVisitedPiece() {
         let lowerLeft = Self.table(
             widths: [30, 30], heights: [20, 20],
@@ -164,7 +167,7 @@ final class HwpBorderChainingTests: XCTestCase {
             ]
         )
         expect(Self.unique(Self.circlesX(upperLeft, y: 20)))
-            == Self.circleCenters(from: -2, 0 ..< 8)
+            == Self.circleCenters(from: -1.98, 0 ..< 8)
     }
 
     // MARK: - 세로·병합·간격
@@ -383,14 +386,18 @@ final class HwpBorderChainingTests: XCTestCase {
                 .filter { abs($0.rect.midY - 20) < 0.01 && $0.rect.width > 10 }
                 .map(\.rect.maxX).max()
         }
-        // 대시 22 · 공백 13.2 (주기 35.2): 셋째 대시 70.4가 사슬 끝에서 잘린다
-        expect(lastDashEnd(Self.cornerGrid(upperRight: .none, lowerRight: wall))) == 92
-        expect(lastDashEnd(Self.cornerGrid(upperRight: wall, lowerRight: .none))) == 92
-        expect(lastDashEnd(Self.cornerGrid(upperRight: wall, lowerRight: wall))) == 92
+        // 셋째 대시가 사슬 끝에서 잘린다 — 끝은 모서리 90 + 4pt 실선 세로 변 획(33u)의 절반 1.98
+        let reached: CGFloat = 90 + 33 * 0.12 / 2
+        expect(lastDashEnd(Self.cornerGrid(upperRight: .none, lowerRight: wall)))
+            .to(beCloseTo(reached, within: 1e-9))
+        expect(lastDashEnd(Self.cornerGrid(upperRight: wall, lowerRight: .none)))
+            .to(beCloseTo(reached, within: 1e-9))
+        expect(lastDashEnd(Self.cornerGrid(upperRight: wall, lowerRight: wall)))
+            .to(beCloseTo(reached, within: 1e-9))
         expect(lastDashEnd(Self.cornerGrid(upperRight: .none, lowerRight: .none))) == 90
         let mergedUpper = Self.cornerGrid(upperRight: .none, lowerRight: wall, mergeUpper: true)
-        expect(lastDashEnd(mergedUpper)) == 92
+        expect(lastDashEnd(mergedUpper)).to(beCloseTo(reached, within: 1e-9))
         let mergedLower = Self.cornerGrid(upperRight: wall, lowerRight: .none, mergeLower: true)
-        expect(lastDashEnd(mergedLower)) == 92
+        expect(lastDashEnd(mergedLower)).to(beCloseTo(reached, within: 1e-9))
     }
 }

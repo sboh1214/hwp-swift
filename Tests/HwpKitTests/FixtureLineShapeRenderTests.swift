@@ -242,8 +242,9 @@ final class FixtureLineShapeRenderTests: XCTestCase {
 
     /// 첫 단 표(0.12mm 테두리): 이웃 행과 공유하는 가로 변은 두 셀의 모양이 겹쳐 그려지므로
     /// (한글도 그렇다 — 실선 아래 변 + 긴 점선 위 변이 한 모서리에 둘 다 남는다) 표 맨 위
-    /// 변과 행마다 하나뿐인 **왼 변**으로 잰다: 왼 변 10pt 안에서 긴 점선(2.4/1.44)은 3조각,
-    /// 점선(0.48/0.72)은 8조각쯤, 긴 파선(4.8/1.44)은 2조각, 원형 점선(간격 0.72)은 8조각 넘게
+    /// 변과 행마다 하나뿐인 **왼 변**으로 잰다: 왼 변 10pt 안에서 긴 점선(2.4/1.44, 주기 3.84 —
+    /// 0.12mm 무늬 두께 33HWPUNIT의 장치 단위 식, #245)은 3~4조각, 점선(0.48/0.72)은 8조각쯤, 긴
+    /// 파선(4.8/1.44)은 2조각, 원형 점선(간격 0.72)은 8조각 넘게
     func testTableBordersFollowTheirShapes() throws {
         let raster = try XCTUnwrap(Self.hwp)
         let top = Self.tableRowTop(0)
@@ -277,7 +278,7 @@ final class FixtureLineShapeRenderTests: XCTestCase {
             ).runs)
         }
         expect(leftRuns(0)) == 1 // SOLID
-        expect(leftRuns(1)).to(beCloseTo(3, within: 1)) // DOT
+        expect(leftRuns(1)).to(beCloseTo(3.5, within: 0.6)) // DOT
         expect(leftRuns(2)).to(beCloseTo(8, within: 2)) // DASH
         expect(leftRuns(5)).to(beCloseTo(2, within: 1)) // LONG_DASH
         // CIRCLE — 0.12mm는 칠 지름 0.6·간격 0.72pt(r 3u, #239)라 원 사이 0.12pt가 4px/pt에선

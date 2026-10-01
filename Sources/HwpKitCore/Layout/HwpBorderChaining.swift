@@ -165,7 +165,8 @@ enum HwpBorderChaining {
                         row: row, cell: index, side: side, style: style,
                         cross: side == .top ? frame.minY : frame.maxY,
                         start: frame.minX, end: frame.maxX,
-                        lead: widths.left / 2, trail: widths.right / 2
+                        lead: HwpBorderSet.reachWidth(widths.left, borders.leftShape) / 2,
+                        trail: HwpBorderSet.reachWidth(widths.right, borders.rightShape) / 2
                     )
                 }
                 return Piece(

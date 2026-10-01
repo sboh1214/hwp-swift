@@ -11,15 +11,17 @@ import Foundation
 /// 아핀 변환으로 옮긴다 — 가로 선은 (x, y) → (시작 x + x, 중심 y + y), 세로 선은
 /// (x, y) → (중심 x + y, 시작 y + x), CoreText의 y-위 텍스트 공간이면 y를 뒤집는다.
 ///
-/// 세 축척(`Scale`)이 있다. 글자선은 패턴·띠·물결이 **글자 크기**에 비례하고 (대시 단위
-/// 0.057em, 2중선 띠 0.12em, 그 밖의 여러 줄 띠 0.2em, 물결 진폭 0.112em), 테두리·단
-/// 구분선은 **명목 두께**에 비례한다 (대시 단위 22/15 t, 여러 줄 띠 t, 물결 진폭 t). 한글
-/// 2007 호환 문서의 글자선은 **고정 pt**다 (대시 단위 0.48pt, 2중선 띠 1.44pt, 그 밖의 여러 줄
-/// 띠 4.2pt, 물결 진폭 2.88pt — #227). 세 축척의 패턴 배수는 같고, 띠 안 구성은 글자선·테두리가
+/// 세 축척(`Scale`)이 있다. 글자선은 띠·물결이 **글자 크기**에 비례하고 (2중선 띠 0.12em, 그
+/// 밖의 여러 줄 띠 0.2em, 물결 진폭 0.112em), 테두리·단 구분선은 **명목 두께**에 비례한다 (여러
+/// 줄 띠 t, 물결 진폭 t). 한글 2007 호환 문서의 글자선은 **고정 pt**다 (대시 단위 0.48pt, 2중선
+/// 띠 1.44pt, 그 밖의 여러 줄 띠 4.2pt, 물결 진폭 2.88pt — #227). 띠 안 구성은 글자선·테두리가
 /// 같으며 한글 2007 호환 문서만 굵은 여러 줄의 비율이 다르다 (`stripeFractions(for:scale:)`).
-/// 원형 점선의 원만 비례가 아니다 — 한글처럼 지름·간격을 600dpi 장치 단위(0.12pt)의 정수로
-/// 반올림하고, 단 구분선과 셀 간격이 있는 표의 셀 테두리는 셀 간격이 없는 표의 셀 테두리가 아니라
-/// 글자선과 같은 점 무늬로 그린다 (#239·#243 — `circleDeviceGeometry(for:)`).
+/// 대시와 원형 점선은 비례가 아니다 — 한글처럼 선·공백 길이와 원의 지름·간격을 600dpi 장치
+/// 단위(0.12pt)의 정수로 정한다. 무늬 두께(글자선은 글자 크기의 0.039배, 테두리·단 구분선은 표 26
+/// 굵기마다의 값)에서 단위 22/15 t를 장치 단위로 풀고, 단 구분선과 셀 간격이 있는 표의 셀 테두리는
+/// 셀 간격이 없는 표의 셀 테두리가 아니라 글자선과 같은 점 무늬로 그린다 (#239·#243·#245 —
+/// `dashDeviceUnits(for:hwpUnits:grid:)`·`circleDeviceGeometry(for:)`). 테두리 축척의 실선·대시 획
+/// 두께도 장치 단위로 반올림한다 (`strokeThickness(for:)`).
 ///
 /// 여러 줄·물결 띠의 세로 자리는 `Placement`가 정한다 — 글자 아래 밑줄은 단선 띠의 위
 /// 가장자리에서 아래로 자라고, 취소선과 테두리·단 구분선은 단선 중심에 가운데 맞추며, 글자
@@ -53,9 +55,10 @@ public enum HwpLineShapeGeometry {
         /// 글자 크기와 무관한 고정 pt다 (#227, `HwpRenderTuning.LineShape.hwp200X*`). 선 두께가
         /// 고정 0.36pt인 것(#210)과 같은 갈래다.
         case hwp200XCharacterLine
-        /// 표 셀 테두리·단 구분선 — 명목 두께에 비례 (원형 점선은 장치 단위 정수이고 `Placement`와
-        /// `Line.inSpacedTable`이 셀 간격 없는 표 셀 테두리의 격자와 단 구분선·셀 간격 있는 표의 점
-        /// 무늬를 가른다, #239·#243)
+        /// 표 셀 테두리·단 구분선 — 여러 줄 띠·물결은 명목 두께에 비례한다. 원형 점선과 대시는 표 26
+        /// 굵기마다의 무늬 두께에서 푼 장치 단위 정수이고, 실선·대시 획도 장치 단위로 반올림한다
+        /// (#239·#245). `Placement`와 `Line.inSpacedTable`이 셀 간격 없는 표 셀 테두리의 격자와 단
+        /// 구분선·셀 간격 있는 표의 점 무늬를 가른다 (#243)
         case border
     }
 
@@ -98,11 +101,11 @@ public enum HwpLineShapeGeometry {
         /// 셀 간격(표 76 `cellSpacing`)이 있는 표의 셀 테두리인가 — 테두리 축척(`Scale.border`)에서
         /// 단 구분선(`Placement.divider`)이 아닌 자리에서만 본다. 한글은 그 표의 원형 점선을 표 셀
         /// 테두리의 격자가 아니라 단 구분선과 같은 **점 무늬**로 그린다 (#243 — 셀 간격 1HWPUNIT부터,
-        /// 표 26 굵기 16단 모두). 이 값은 원형 점선의 원 크기·간격만 바꾸고 대시·여러 줄·물결 경로는
-        /// 그대로다 (한글도 여러 줄·물결은 셀 간격과 무관하다; 대시는 한글이 장치 단위로 반올림하는
-        /// 식이 셀 간격에 따라 달라 한 주기에 1u쯤 갈리는데 여기서는 두 경우 모두 비례로 그린다 —
-        /// `Sources/HwpKitCore/AGENTS.md`의 남은 격차). 모서리에서 선이 나가거나 물러나는 길이는
-        /// 호출자(`HwpBorderSet`)가 `length`로 정한다.
+        /// 표 26 굵기 16단 모두). 대시도 같다 — 셀 간격이 있는 표는 단 구분선과 같은 점 무늬 식, 없는
+        /// 표는 격자 식으로 선·공백을 장치 단위로 반올림한다 (#245 — 1mm 점선 주기 88u vs 87u,
+        /// `dashDeviceUnits(for:hwpUnits:grid:)`). 여러 줄·물결 경로는 그대로다 (한글도 여러 줄·물결은
+        /// 셀 간격과 무관하다). 모서리에서 선이 나가거나 물러나는 길이는 호출자(`HwpBorderSet`)가
+        /// `length`로 정한다.
         public var inSpacedTable: Bool
 
         public init(
@@ -141,7 +144,7 @@ public enum HwpLineShapeGeometry {
         case _ where patternRepeats(of: line) > maxPatternRepeats:
             addOwnedSolidBand(to: path, line: line)
         case .longDotLine, .dotLine, .dashDot, .dashDotDot, .longDash:
-            addDashes(dashPattern(for: line.shape, unit: dashUnit(for: line)), to: path, line: line)
+            addDashes(dashPattern(for: line), to: path, line: line)
         case .circle:
             addCircles(to: path, line: line)
         case .doubleLine, .thinThickDoubleLine, .thickThinDoubleLine, .thinThickThinTripleLine:
@@ -252,7 +255,7 @@ public enum HwpLineShapeGeometry {
     static func patternRepeats(of line: Line) -> CGFloat {
         let unit: CGFloat = switch line.shape {
         case .longDotLine, .dotLine, .dashDot, .dashDotDot, .longDash:
-            dashPattern(for: line.shape, unit: dashUnit(for: line)).reduce(0, +)
+            dashPattern(for: line).reduce(0, +)
         case .circle:
             circlePitch(for: line)
         case .wave, .doubleWave:
@@ -269,19 +272,6 @@ public enum HwpLineShapeGeometry {
 
 extension HwpLineShapeGeometry {
     // MARK: - 축척
-
-    /// 대시 패턴의 단위 길이 (`HwpRenderTuning.LineShape.characterDashUnitEmRatio`·
-    /// `borderDashUnitThicknessRatio`)
-    static func dashUnit(for line: Line) -> CGFloat {
-        switch line.scale {
-        case let .characterLine(fontSize):
-            fontSize * HwpRenderTuning.LineShape.characterDashUnitEmRatio
-        case .hwp200XCharacterLine:
-            HwpRenderTuning.LineShape.hwp200XDashUnit
-        case .border:
-            line.thickness * HwpRenderTuning.LineShape.borderDashUnitThicknessRatio
-        }
-    }
 
     /// 여러 줄 띠의 높이 — 글자선은 2중선 0.12em·그 밖 0.2em, 한글 2007 호환 문서의 글자선은
     /// 2중선 1.44pt·그 밖 4.2pt, 테두리는 두께
@@ -334,9 +324,11 @@ extension HwpLineShapeGeometry {
 
     // MARK: - 자리
 
-    /// 단선(실선·대시)의 띠 — 중심 0에 두께만큼
+    /// 단선(실선·대시)의 띠 — 중심 0에 획 두께(`strokeThickness(for:)` — 테두리 축척은 장치 단위로
+    /// 반올림한 두께)만큼
     static func solidBand(for line: Line) -> CGRect {
-        CGRect(x: 0, y: -line.thickness / 2, width: line.length, height: line.thickness)
+        let thickness = strokeThickness(for: line)
+        return CGRect(x: 0, y: -thickness / 2, width: line.length, height: thickness)
     }
 
     /// 여러 줄 띠의 세로 범위 — `Placement`에 따라 단선 띠에 맞춘다
@@ -430,10 +422,12 @@ extension HwpLineShapeGeometry {
 
     // MARK: - 모양
 
-    /// 대시 패턴 (선, 공백, 선, 공백 … 순, 단위의 배수). 한글은 OWPML 이름과 반대로
-    /// `DOT`(`longDotLine`)을 긴 점선으로, `DASH`(`dotLine`)를 점선으로 그린다 (#177).
-    static func dashPattern(for shape: HwpBorderType, unit: CGFloat) -> [CGFloat] {
-        let multiples: [CGFloat] = switch shape {
+    /// 대시 무늬의 단위 배수 (선, 공백, 선, 공백 … 순) — 한글 2007 호환 문서의 고정 단위와 장치 단위
+    /// 반올림 상한 밖의 비례 무늬가 이 배수다 (그 밖은 장치 단위 정수 — `dashPattern(for:)`). 한글은
+    /// OWPML 이름과 반대로 `DOT`(`longDotLine`)을 긴 점선으로, `DASH`(`dotLine`)를 점선으로 그린다
+    /// (#177).
+    static func dashMultiples(for shape: HwpBorderType) -> [CGFloat] {
+        switch shape {
         case .longDotLine: [5, 3]
         case .dotLine: [1, 1.5]
         case .dashDot: [10, 3, 1, 3]
@@ -441,7 +435,6 @@ extension HwpLineShapeGeometry {
         case .longDash: [10, 3]
         default: []
         }
-        return multiples.map { $0 * unit }
     }
 
     /// 여러 줄의 띠 안 구성 — 띠 높이에 대한 비율 [(시작, 끝)], 위(−y)에서 아래로. 한글 2007

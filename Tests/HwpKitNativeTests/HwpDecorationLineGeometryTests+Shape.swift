@@ -19,8 +19,9 @@ import XCTest
 /// `extension`에 두는 이유는 `+Script`와 같다 (`type_body_length`). 래스터 헬퍼는 `+Support`.
 extension HwpDecorationLineGeometryTests {
     private static let shapeFontSize: CGFloat = 20
-    /// 20pt 긴 점선: 단위 1.14pt → 선 5.7 · 공백 3.42 · 주기 9.12
-    private static let longDotPeriod: CGFloat = 20 * 0.057 * 8
+    /// 20pt 긴 점선: 무늬 두께 78HWPUNIT(단위 9.53u) → 선 ⌊95/2⌋ = 47u = 5.64 · 공백 2·round(14.3) =
+    /// 28u = 3.36 · 주기 75u = 9.0 (한글 그대로, #245)
+    private static let longDotPeriod: CGFloat = 75 * 0.12
 
     private static func isCyan(_ red: UInt8, _ green: UInt8, _ blue: UInt8) -> Bool {
         red < 100 && green > 150 && blue > 150
@@ -78,7 +79,7 @@ extension HwpDecorationLineGeometryTests {
         return starts
     }
 
-    /// 긴 점선 밑줄은 run 시작에서 선으로 시작해 5.7pt 선·3.42pt 공백을 되풀이한다
+    /// 긴 점선 밑줄은 run 시작에서 선으로 시작해 5.64pt 선·3.36pt 공백을 되풀이한다
     func testLongDotUnderlineRepeatsTheMeasuredPattern() throws {
         let text = NSAttributedString(
             string: "AAAAAAAAAA", attributes: shapedUnderline(.longDotLine)
@@ -88,7 +89,7 @@ extension HwpDecorationLineGeometryTests {
         let columns = underlineColumns(raster, band: (center - 0.6) ... (center + 0.6))
         let starts = Self.inkStarts(columns)
         expect(starts.count) >= 8
-        // 첫 선은 run 시작(x 10)에서, 이후 9.12pt 주기
+        // 첫 선은 run 시작(x 10)에서, 이후 9.0pt 주기
         expect(starts.first).to(beCloseTo(10, within: 0.2))
         for (index, start) in starts.prefix(8).enumerated() {
             expect(start).to(beCloseTo(10 + Self.longDotPeriod * CGFloat(index), within: 0.2))

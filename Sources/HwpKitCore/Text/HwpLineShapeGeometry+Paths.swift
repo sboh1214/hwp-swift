@@ -5,7 +5,7 @@ import Foundation
 
 /// `HwpLineShapeGeometry.path(for:)`가 모양마다 부르는 경로 조각 — 대시·원·물결의 부분
 /// 경로를 로컬 좌표(x = 선 방향, y = 가로지르는 축, 0 = 단선 중심, 양수 = 아래)에 더한다.
-/// 축척·자리는 본체의 헬퍼(`dashUnit`·`circleDiameter`·`waveTopVertex` …)가 정한다.
+/// 축척·자리는 본체의 헬퍼(`dashPattern(for:)`·`circleDiameter`·`waveTopVertex` …)가 정한다.
 extension HwpLineShapeGeometry {
     static func addDashes(_ pattern: [CGFloat], to path: CGMutablePath, line: Line) {
         guard pattern.count >= 2, pattern.allSatisfy({ $0 > 0 }) else {
@@ -152,7 +152,7 @@ extension HwpLineShapeGeometry {
             let radius = circleDiameter(for: line) / 2
             forEachOwnedCircle(line) { cover($0 - radius, $0 + radius) }
         } else {
-            let pattern = dashPattern(for: line.shape, unit: dashUnit(for: line))
+            let pattern = dashPattern(for: line)
             guard pattern.count >= 2, pattern.allSatisfy({ $0 > 0 }) else {
                 guard let band = ownedSolidBand(for: line) else { return nil }
                 return band.minX ... band.maxX

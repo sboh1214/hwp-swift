@@ -25,13 +25,17 @@ final class HwpRenderTuningTests: XCTestCase {
     }
 
     func testLineShapeTuningValues() {
-        expect(HwpRenderTuning.LineShape.characterDashUnitEmRatio) == 0.057
-        expect(HwpRenderTuning.LineShape.borderDashUnitThicknessRatio)
-            .to(beCloseTo(22.0 / 15.0, within: 1e-9))
         expect(HwpRenderTuning.LineShape.deviceUnit) == 0.12
-        expect(HwpRenderTuning.LineShape.characterCircleThicknessPerMille) == 39
-        expect(HwpRenderTuning.LineShape.circleDotUnitThicknessNumerator) == 22
-        expect(HwpRenderTuning.LineShape.circleDotUnitThicknessDenominator) == 15
+        expect(HwpRenderTuning.LineShape.characterPatternThicknessPerMille) == 39
+        expect(HwpRenderTuning.LineShape.patternUnitThicknessNumerator) == 22
+        expect(HwpRenderTuning.LineShape.patternUnitThicknessDenominator) == 15
+        expect(HwpRenderTuning.LineShape.borderPatternHwpUnits) == [
+            28, 33, 42, 56, 70, 84, 113, 141, 169, 198, 283, 424, 567, 850, 1134, 1417,
+        ]
+        expect(HwpRenderTuning.LineShape.dashMinimumDotDeviceUnits) == 1
+        expect(HwpRenderTuning.LineShape.dashMinimumLongDeviceUnits) == 10
+        expect(HwpRenderTuning.LineShape.dashMinimumDotGapDeviceUnits) == 4
+        expect(HwpRenderTuning.LineShape.dashMinimumLongGapDeviceUnits) == 2
         expect(HwpRenderTuning.LineShape.circleGapDotUnitRatio) == 1.5
         expect(HwpRenderTuning.LineShape.circleMinimumDotDeviceUnits) == 3
         expect(HwpRenderTuning.LineShape.circleMinimumGapDeviceUnits) == 2

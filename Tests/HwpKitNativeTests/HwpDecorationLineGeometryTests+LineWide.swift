@@ -255,8 +255,8 @@ extension HwpDecorationLineGeometryTests {
     }
 
     /// 밑줄 선 모양의 축척도 줄 글자 기준 크기다 — 40pt 글자와 한 줄인 10pt 긴 점선은 40pt
-    /// 몫 패턴(단위 0.057 × 40 = 2.28pt, 주기 8단위 18.24pt)으로 그려진다 (한글: 선 11.40pt·공백
-    /// 6.96pt). 10pt 몫이면 주기 4.56pt다.
+    /// 몫 패턴(무늬 두께 156HWPUNIT → 선 95u·공백 58u, 주기 153u = 18.36pt, #245)으로 그려진다
+    /// (한글: 선 11.40pt·공백 6.96pt). 10pt 몫이면 주기 38u = 4.56pt다.
     func testShapedUnderlineScalesWithTheLineText() throws {
         var dotted = decoratedRun(HwpAttributedStringKey.underlineStyle, strikethrough: false)
         dotted[HwpAttributedStringKey.underlineShape] = NSNumber(
@@ -285,7 +285,7 @@ extension HwpDecorationLineGeometryTests {
         }
         expect(starts.count) >= 3
         guard starts.count >= 3 else { return }
-        let period: CGFloat = 0.057 * 40 * 8
+        let period: CGFloat = 153 * 0.12
         expect(starts[1] - starts[0]).to(beCloseTo(period, within: 0.2))
         expect(starts[2] - starts[1]).to(beCloseTo(period, within: 0.2))
     }
@@ -335,11 +335,11 @@ extension HwpDecorationLineGeometryTests {
         let starts = lineWideInkStarts(
             raster, band: (center - 0.4) ... (center + 0.4), where: Self.isLineWideCyan
         )
-        // 기본 20pt 몫 주기 0.057 × 20 × 8 = 9.12pt가 run 시작(x 10)부터 경계(x 58.16)를 넘어
-        // 끊기지 않는다. 경계는 여섯째 선(55.6~61.3) 한가운데라 다시 시작한 무늬는 경계의 새
-        // 선이 앞 선과 붙어 잉크 시작이 안 생기고, 일곱째 시작이 64.72가 아니라 67.3으로 밀린다
-        // — 경계 뒤 시작들이 가른다.
-        let period: CGFloat = 0.057 * 20 * 8
+        // 기본 20pt 몫 주기 75u = 9.0pt(선 47u·공백 28u, #245 — 한글 실측 주기 그대로)가 run
+        // 시작(x 10)부터 경계(x 58.16)를 넘어 끊기지 않는다. 경계는 여섯째 선(55.0~60.64) 안이라
+        // 다시 시작한 무늬는 경계의 새 선이 앞 선과 붙어 잉크 시작이 안 생기고, 일곱째 시작이 64.0이
+        // 아니라 67.16으로 밀린다 — 경계 뒤 시작들이 가른다.
+        let period: CGFloat = 75 * 0.12
         expect(boundary).to(beCloseTo(58.16, within: 0.3))
         expect(starts.count) >= 10
         for (index, start) in starts.prefix(10).enumerated() {
@@ -392,9 +392,9 @@ extension HwpDecorationLineGeometryTests {
     }
 
     /// 상대 크기로 줄어든 run의 선 모양 취소선도 글자 모양 기본 크기 몫이다 — 기본 40pt·상대 크기
-    /// 50%(글꼴 20pt) run의 긴 점선 취소선은 한 토막 5 × 0.057 × 40 = 11.4pt·주기 18.24pt
-    /// (한글 12.30 실측 2026-09-26: 11.40pt·18.36pt, 물결 취소선도 40pt 몫 진폭 4.56pt). 종전
-    /// `spaceTargetSize` 축척이면 20pt 몫 5.7·9.12pt다.
+    /// 50%(글꼴 20pt) run의 긴 점선 취소선은 한 토막 95u = 11.4pt·주기 153u = 18.36pt (한글 12.30
+    /// 실측 2026-09-26: 11.40pt·18.36pt, 물결 취소선도 40pt 몫 진폭 4.56pt). 종전
+    /// `spaceTargetSize` 축척이면 20pt 몫 5.64·9.0pt다.
     func testShapedStrikethroughUsesTheCharShapeBaseSize() throws {
         var attributes = decoratedRun(nil, size: 20, base: 40)
         attributes[HwpAttributedStringKey.strikethroughShape] = NSNumber(
@@ -410,15 +410,16 @@ extension HwpDecorationLineGeometryTests {
         )
         expect(starts.count) >= 3
         guard starts.count >= 3 else { return }
-        let period = CGFloat(0.057 * 40 * 8)
+        let period = CGFloat(153 * 0.12)
         expect(starts[1] - starts[0]).to(beCloseTo(period, within: 0.3))
         expect(starts[2] - starts[1]).to(beCloseTo(period, within: 0.3))
     }
 
     /// 선 모양 축척은 줄 **상자**(L)가 아니라 줄 **글자**(T) 몫이다 — 40pt 문단 끝 글자와 한
-    /// 줄인 10pt 긴 점선은 자리는 40pt 상자 바닥(−6.2pt)이지만 무늬는 10pt 몫(주기 4.56pt)이고,
+    /// 줄인 10pt 긴 점선은 자리는 40pt 상자 바닥(−6.2pt)이지만 무늬는 10pt 몫(주기 38u = 4.56pt)이고,
     /// 2중선은 그 가장자리 6.0pt에서 10pt 몫 띠 1.2pt(두 선 6.15·7.05pt)다 (한글 12.30 S18: 자리
-    /// −6.24pt·선 2.88·공백 1.68pt). L로 재면 주기 18.24pt·두 선 6.6·10.2pt가 된다.
+    /// −6.24pt·선 2.88·공백 1.68pt — 장치 단위 식의 24u·14u, #245). L로 재면 주기 18.36pt·두 선
+    /// 6.6·10.2pt가 된다.
     func testShapedUnderlineIgnoresLineBoxOnlyMembers() throws {
         func shaped(_ shape: HwpBorderType) throws -> Raster {
             var attributes = decoratedRun(HwpAttributedStringKey.underlineStyle)
@@ -436,7 +437,7 @@ extension HwpDecorationLineGeometryTests {
         )
         expect(starts.count) >= 3
         guard starts.count >= 3 else { return }
-        let period = CGFloat(0.057 * 10 * 8)
+        let period = CGFloat(38 * 0.12)
         expect(starts[1] - starts[0]).to(beCloseTo(period, within: 0.2))
         expect(starts[2] - starts[1]).to(beCloseTo(period, within: 0.2))
         let double = try shaped(.doubleLine)
