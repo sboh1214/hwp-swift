@@ -130,12 +130,13 @@ final class HwpBorderSetSpacedCellTests: XCTestCase {
         expect(Self.box(otherShape, .left)).to(beCloseTo(CGRect(
             x: 100 - thin / 2, y: 200 + thin / 2, width: thin, height: 50 - thin / 2
         )))
-        // 이웃이 여러 줄·물결이어도 같다 (가로 변의 반폭 = 4/2 만큼 물러난다)
+        // 이웃이 여러 줄·물결·원형 점선이어도 같다 — 가로 변 굵기의 획(4pt = 33u)의 절반만큼 물러난다
+        // (#245: 물러나는 길이는 이웃 모양을 보지 않는다 — 한글 실측도 같은 굵기 이웃이면 같은 자리)
         for neighbour in [HwpBorderType.doubleLine, .wave, .circle] {
             let edges = Self.set(top: Self.shape(neighbour, 4), left: Self.solid(2))
                 .edges(around: Self.rect)
             expect(Self.box(edges, .left)?.minY)
-                .to(beCloseTo(202, within: 1e-9), description: "\(neighbour)")
+                .to(beCloseTo(200 + wide / 2, within: 1e-9), description: "\(neighbour)")
         }
         // 히트 띠는 칠한 곳을 다 담는다
         for edge in wider + otherShape {
@@ -210,12 +211,12 @@ final class HwpBorderSetSpacedCellTests: XCTestCase {
         expect(left.last).to(beCloseTo(242.24, within: 1e-9))
         let circleBox = try XCTUnwrap(HwpLineShapeGeometryTests.pieces(topEdge.path).first)
         expect(circleBox.width).to(beCloseTo(4.44, within: 1e-9))
-        // 셀 간격이 없으면 격자 — 가로 변이 세로 변 반폭만큼 나가고 간격 5.76
+        // 셀 간격이 없으면 격자 — 가로 변이 세로 변 획(1mm = 24u)의 절반만큼 나가고 간격 5.76
         let grid = Self.set(
             top: circle, bottom: circle, left: circle, right: circle, cellSpacing: 0
         ).edges(around: Self.rect)
         let gridTop = try Self.centers(XCTUnwrap(Self.edge(grid, .top)), horizontal: true)
-        expect(gridTop.first).to(beCloseTo(100 - Self.oneMillimetre / 2, within: 1e-9))
+        expect(gridTop.first).to(beCloseTo(100 - Self.strokeOneMillimetre / 2, within: 1e-9))
         expect(gridTop[1] - gridTop[0]).to(beCloseTo(5.76, within: 1e-9))
     }
 
@@ -232,11 +233,11 @@ final class HwpBorderSetSpacedCellTests: XCTestCase {
         let vertical = Self.set(top: solid, bottom: solid, left: circle).edges(around: Self.rect)
         let left = try Self.centers(XCTUnwrap(Self.edge(vertical, .left)), horizontal: false)
         expect(left.first).to(beCloseTo(200 + Self.strokeTwoMillimetres / 2, within: 1e-9))
-        // 굵기가 다른 원형 점선 이웃도 맞물리지 않는다
+        // 굵기가 다른 원형 점선 이웃도 맞물리지 않는다 — 물러나는 길이는 실선 이웃과 같은 획 절반
         let thicker = Self.shape(.circle, Self.twoMillimetres)
         let mixed = Self.set(top: thicker, left: circle).edges(around: Self.rect)
         expect(try Self.centers(XCTUnwrap(Self.edge(mixed, .left)), horizontal: false).first)
-            .to(beCloseTo(200 + Self.twoMillimetres / 2, within: 1e-9))
+            .to(beCloseTo(200 + Self.strokeTwoMillimetres / 2, within: 1e-9))
         for edge in horizontal + vertical + mixed {
             expect(edge.band.insetBy(dx: -1e-9, dy: -1e-9).contains(edge.path.boundingBoxOfPath))
                 == true

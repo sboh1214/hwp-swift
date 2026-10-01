@@ -115,21 +115,29 @@ public struct HwpBorderSet: Sendable, Hashable {
         width > 0 && shape != .none ? width : 0
     }
 
-    /// 모서리에서 이웃 변이 나가거나 물러나는 길이의 기준 폭 — 실선·대시(3D 넷 대체 포함)는 한글이
-    /// 그리는 획 두께(장치 단위로 반올림, `HwpLineShapeGeometry.borderStrokeThickness(_:)`)라 가로 변이
-    /// 세로 변의 바깥 가장자리에서 정확히 끝난다 (#245 실측: 2mm 파랑 세로 변 47u 사이의 1mm 위 변이
-    /// 양 끝으로 23u·24u 나간다 — 명목 두께면 23.6u씩), 원형 점선·여러 줄·물결은 보이는 폭
-    /// (`visibleWidth`) 그대로다. 무늬 이음(`HwpBorderChaining`)도 같은 술어를 쓴다.
+    /// 모서리에서 선이 나가거나 물러나는 길이의 기준 폭 — 이웃 변 굵기를 장치 단위로 반올림한 획
+    /// (`HwpLineShapeGeometry.borderStrokeThickness(_:)`)이고 이웃 모양은 보지 않는다 (#245 실측: 파랑
+    /// 2mm 실선 세로 변(47u) 사이의 0.4mm 긴 점선 위 변이 양 끝으로 23u·24u 나간다 — 명목 두께면
+    /// 23.6u씩; #243 실측: 같은 굵기면 실선·대시·원형 점선 이웃이 — 셀 간격 표에서는 여러 줄·물결
+    /// 이웃도 — 같은 자리를 낸다). 선 자리(`lineReach`)와 무늬 이음(`HwpBorderChaining`)이 쓴다. 여러 줄
+    /// 겹상자 물림과 히트 띠는 이웃이 **그리는** 폭(`drawnWidth`)을 쓴다.
     static func reachWidth(_ width: CGFloat, _ shape: HwpBorderType) -> CGFloat {
         let visible = visibleWidth(width, shape)
-        guard visible > 0 else { return 0 }
+        return visible > 0 ? HwpLineShapeGeometry.borderStrokeThickness(visible) : 0
+    }
+
+    /// 이웃 변이 그리는 폭 — 실선·대시(3D 넷 대체 포함)는 장치 단위로 반올림한 획
+    /// (`reachWidth`), 여러 줄·물결·원형 점선의 띠는 명목 폭(`visibleWidth`)이다. 여러 줄 부속선이
+    /// 모서리에서 물러나는 기준(이웃 폭의 절반)과 히트 띠의 연장이 이 값이라 겹상자가 이웃의 실제
+    /// 부속선과 맞닿는다.
+    static func drawnWidth(_ width: CGFloat, _ shape: HwpBorderType) -> CGFloat {
         switch shape {
         case .line, .thick3D, .thick3DReverse, .single3D, .single3DReverse,
              .longDotLine, .dotLine, .dashDot, .dashDotDot, .longDash:
-            return HwpLineShapeGeometry.borderStrokeThickness(visible)
+            reachWidth(width, shape)
         case .none, .circle, .doubleLine, .thinThickDoubleLine, .thickThinDoubleLine,
              .thinThickThinTripleLine, .wave, .doubleWave:
-            return visible
+            visibleWidth(width, shape)
         }
     }
 
@@ -165,9 +173,14 @@ public struct HwpBorderSet: Sendable, Hashable {
         let width: CGFloat
         let color: HwpRGBColor
 
-        /// 모서리 연장·물림의 기준 폭 (`reachWidth`)
+        /// 선이 모서리에서 나가거나 물러나는 기준 폭 (`reachWidth`)
         var reach: CGFloat {
             HwpBorderSet.reachWidth(width, shape)
+        }
+
+        /// 그리는 폭 — 여러 줄 물림·히트 띠의 기준 (`drawnWidth`)
+        var drawn: CGFloat {
+            HwpBorderSet.drawnWidth(width, shape)
         }
     }
 
@@ -211,7 +224,7 @@ public struct HwpBorderSet: Sendable, Hashable {
             return Edge(
                 shape: side.shape, width: side.width, color: side.color,
                 start: start, end: end, cross: cross, horizontal: horizontal,
-                leadExtension: lead.reach / 2, trailExtension: trail.reach / 2,
+                leadExtension: lead.drawn / 2, trailExtension: trail.drawn / 2,
                 lineLead: reach(lead), lineTrail: reach(trail),
                 outerIsLeading: position.outerIsLeading, inSpacedTable: spaced, chain: chain
             )
