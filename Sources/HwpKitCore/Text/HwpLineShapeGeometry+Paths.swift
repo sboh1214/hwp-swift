@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreHwp
 import Foundation
 
 // MARK: - 경로 조각 (같은 타입의 확장 — 본체 파일 길이를 지킨다)
@@ -19,17 +20,23 @@ extension HwpLineShapeGeometry {
     }
 
     /// 선 시작에서 패턴을 되풀이해 놓이는 대시 가운데 시작 자리가 `elementRange`에 드는 것
-    /// (없으면 전부) — (시작, 폭). 대시는 `length`에서 잘린다. 범위가 있으면 자리를 패턴 주기의
-    /// 곱(주기 색인 × 주기 + 주기 안 자리)으로 셈해 범위 앞 주기를 건너뛴다 — 같은 사슬의 조각은 같은
-    /// `length`·패턴을 받아 같은 자리를 얻으므로 이웃 조각의 경계 판정이 어긋나지 않고, 긴 사슬도
-    /// 조각마다 제 몫만 훑는다 (#238). 범위가 없으면 종전의 누적 덧셈 그대로다.
+    /// (없으면 전부) — (시작, 폭). 대시는 `length`에서 잘리고, 시작이 `length`와 같은 자리(주기의 1e-6
+    /// 안 — 원·물결의 `patternElementCount`와 같은 오차)인 대시는 그리지 않는다: 한글은 장치 단위 정수로
+    /// 셈해 그 자리가 끝과 정확히 같지만 우리는 pt 누적이라 끝 바로 앞에 길이 0에 가까운 대시가 남는다
+    /// (#246 — 선 없음 이웃의 굵기 연장으로 0.12mm 긴 점선 330.24pt 선이 주기 3.84의 정확한 배수가 됐다).
+    /// 범위가 있으면 자리를 패턴 주기의 곱(주기 색인 × 주기 + 주기 안 자리)으로 셈해 범위 앞 주기를
+    /// 건너뛴다 — 같은 사슬의 조각은 같은 `length`·패턴을 받아 같은 자리를 얻으므로 이웃 조각의 경계
+    /// 판정이 어긋나지 않고, 긴 사슬도 조각마다 제 몫만 훑는다 (#238). 범위가 없으면 종전의 누적 덧셈
+    /// 그대로다.
     static func forEachOwnedDash(
         _ pattern: [CGFloat], line: Line, _ body: (CGFloat, CGFloat) -> Void
     ) {
+        let period = pattern.reduce(0, +)
+        let lastStart = line.length - (period.isFinite ? period * 1e-6 : 0)
         guard let owned = line.elementRange else {
             var x: CGFloat = 0
             var index = 0
-            while x < line.length {
+            while x < lastStart {
                 let span = pattern[index % pattern.count]
                 if index % 2 == 0 {
                     body(x, min(span, line.length - x))
@@ -39,7 +46,6 @@ extension HwpLineShapeGeometry {
             }
             return
         }
-        let period = pattern.reduce(0, +)
         guard period.isFinite else {
             // 주기가 무한대로 넘친 입력(두께가 유한 최댓값 근처)은 누적 덧셈처럼 첫 대시 하나다 —
             // 그 자리(0)를 맡은 조각이 그린다
@@ -53,17 +59,19 @@ extension HwpLineShapeGeometry {
     }
 
     /// `forEachOwnedDash`의 범위 갈래 — 범위 앞 주기를 건너뛰고 주기마다 대시 자리를 곱으로 셈한다
+    /// (끝과 같은 자리 — 주기의 1e-6 안 — 의 대시는 그리지 않는다)
     private static func forEachDash(
         _ pattern: [CGFloat], period: CGFloat, line: Line, owned: Range<CGFloat>,
         _ body: (CGFloat, CGFloat) -> Void
     ) {
+        let lastStart = line.length - period * 1e-6
         var slotStarts: [CGFloat] = []
         var cumulative: CGFloat = 0
         for span in pattern {
             slotStarts.append(cumulative)
             cumulative += span
         }
-        let end = min(line.length, owned.upperBound)
+        let end = min(lastStart, owned.upperBound)
         let guess = (owned.lowerBound / period).rounded(.down) - 1
         var cycle = guess.isFinite && guess > 0 ? Int(min(guess, maxPatternRepeats)) : 0
         while true {
@@ -114,6 +122,26 @@ extension HwpLineShapeGeometry {
                 body(center)
             }
             index += 1
+        }
+    }
+
+    /// 실선으로 긋는 모양 — 실선과 그것으로 대체하는 3D 넷
+    static func isSolid(_ shape: HwpBorderType) -> Bool {
+        switch shape {
+        case .line, .thick3D, .thick3DReverse, .single3D, .single3DReverse: true
+        default: false
+        }
+    }
+
+    /// 실선이 이 조각의 몫인가 — 요소 하나가 자리 0에 놓인다 (`elementRange`가 없으면 늘 그린다)
+    static func ownsSolidLine(_ line: Line) -> Bool {
+        line.elementRange?.contains(0) ?? true
+    }
+
+    /// 실선 띠를 더한다 — 이은 실선은 자리 0을 맡은 조각만 (`ownsSolidLine(_:)`)
+    static func addOwnedSolidLine(to path: CGMutablePath, line: Line) {
+        if ownsSolidLine(line) {
+            path.addRect(solidBand(for: line))
         }
     }
 

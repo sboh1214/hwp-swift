@@ -100,9 +100,9 @@ extension HwpLineShapeGeometryTests {
         expect(joined) == whole
     }
 
-    /// 조각 범위는 대시·원형 점선만 본다 — 실선·여러 줄·물결은 범위와 무관하게 선 전체다
-    func testElementRangeIsIgnoredByUnpatternedShapes() {
-        for shape: HwpBorderType in [.line, .doubleLine, .wave, .doubleWave] {
+    /// 조각 범위는 여러 줄·물결에는 쓰지 않는다 — 범위와 무관하게 선 전체다
+    func testElementRangeIsIgnoredByMultiLinesAndWaves() {
+        for shape: HwpBorderType in [.doubleLine, .wave, .doubleWave] {
             let line = Self.borderLine(shape, thickness: 3, length: 60)
             var piece = line
             piece.elementRange = 20 ..< 30
@@ -110,6 +110,24 @@ extension HwpLineShapeGeometryTests {
                 == HwpLineShapeGeometry.path(for: line)?.boundingBoxOfPath
             expect(HwpLineShapeGeometry.alongExtent(of: piece))
                 == HwpLineShapeGeometry.alongExtent(of: line)
+        }
+    }
+
+    /// 실선(3D 넷 대체 포함)은 자리 0에 놓인 요소 하나다 — 0을 담은 조각만 선 전체를 긋고 나머지는
+    /// 경로·선 방향 범위가 없다 (이은 실선 사슬의 첫 조각이 한 번에 긋는다, #246)
+    func testSolidLineIsOneElementAtTheOrigin() {
+        for shape: HwpBorderType in [.line, .thick3D] {
+            let line = Self.borderLine(shape, thickness: 3, length: 60)
+            var first = line
+            first.elementRange = -.infinity ..< 30
+            expect(HwpLineShapeGeometry.path(for: first)?.boundingBoxOfPath)
+                == HwpLineShapeGeometry.path(for: line)?.boundingBoxOfPath
+            expect(HwpLineShapeGeometry.alongExtent(of: first)) == 0 ... 60
+            var later = line
+            later.elementRange = 30 ..< .infinity
+            expect(HwpLineShapeGeometry.path(for: later)).to(beNil())
+            expect(HwpLineShapeGeometry.alongExtent(of: later)).to(beNil())
+            expect(HwpLineShapeGeometry.crossExtent(of: later)) != nil
         }
     }
 }

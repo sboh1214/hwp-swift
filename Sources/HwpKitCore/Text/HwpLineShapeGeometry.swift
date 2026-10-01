@@ -95,7 +95,8 @@ public enum HwpLineShapeGeometry {
         public var placement: Placement
         /// 이 선이 그리는 무늬 요소의 **자리** 범위 (로컬 x, [lowerBound, upperBound)) — 이은 선의 한
         /// 조각이 제 몫만 그리게 한다 (#238). 자리는 원 중심·대시 시작이고, 요소의 개수·자리는 여전히
-        /// `length` 전체로 정한다 (끝 규칙·대시 자름은 `length`에서). 대시·원형 점선만 본다 — 실선·
+        /// `length` 전체로 정한다 (끝 규칙·대시 자름은 `length`에서). 실선(3D 넷 대체 포함)은 자리 0에
+        /// 놓인 요소 하나라 0을 담은 조각만 선 전체를 그린다 — 한글은 이은 실선을 한 번에 긋는다 (#246).
         /// 여러 줄·물결에는 쓰지 않는다 (무시한다). nil이면 선 전체.
         public var elementRange: Range<CGFloat>?
         /// 셀 간격(표 76 `cellSpacing`)이 있는 표의 셀 테두리인가 — 테두리 축척(`Scale.border`)에서
@@ -140,7 +141,7 @@ public enum HwpLineShapeGeometry {
         case .none:
             return nil
         case .line, .thick3D, .thick3DReverse, .single3D, .single3DReverse:
-            path.addRect(solidBand(for: line))
+            addOwnedSolidLine(to: path, line: line)
         case _ where patternRepeats(of: line) > maxPatternRepeats:
             addOwnedSolidBand(to: path, line: line)
         case .longDotLine, .dotLine, .dashDot, .dashDotDot, .longDash:
@@ -199,11 +200,15 @@ public enum HwpLineShapeGeometry {
     /// 그려 뒤로도 반지름까지 넘칠 수 있다. 물결은 시작이 `length` 앞인 마지막 대각선을
     /// **끝까지 그려** `length`를 넘을 수 있고 45° 획의 butt cap 모서리가 양 끝에서 획
     /// 반폭/√2만큼 더 나간다. `elementRange`가 있는 대시·원형 점선은 그 범위에 자리를 둔 요소가
-    /// 칠하는 범위다 (이웃 조각의 자리로 넘친 대시·원 포함). 경로 없는 입력이면 nil.
+    /// 칠하는 범위다 (이웃 조각의 자리로 넘친 대시·원 포함). 실선은 범위가 0을 담을 때만 선 전체다.
+    /// 경로 없는 입력이면 nil.
     public static func alongExtent(of line: Line) -> ClosedRange<CGFloat>? {
         guard isDrawable(line) else { return nil }
         if line.elementRange != nil, isPatterned(line.shape) {
             return ownedAlongExtent(of: line)
+        }
+        if isSolid(line.shape) {
+            return ownsSolidLine(line) ? 0 ... line.length : nil
         }
         switch line.shape {
         case .wave, .doubleWave:

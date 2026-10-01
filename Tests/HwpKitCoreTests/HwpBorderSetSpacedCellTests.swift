@@ -175,8 +175,9 @@ final class HwpBorderSetSpacedCellTests: XCTestCase {
         }
     }
 
-    /// 셀 간격이 있는 칸은 세로 변을 먼저, 가로 변을 나중에 그린다 — 한글처럼 모서리에서 가로 변이
-    /// 위에 온다 (한글 PDF 그리기 순서 74표본). 셀 간격이 없는 칸은 종전 차례(위·아래·왼·오른)다.
+    /// 셀 간격이 있는 칸은 세로 변을 먼저, 가로 변을 나중에 낸다 — 한글처럼 모서리에서 가로 변이
+    /// 위에 온다 (한글 PDF 그리기 순서 74표본). 셀 간격이 없는 칸은 위·아래·왼·오른 차례로 내고, 그리는
+    /// 차례는 표가 셈한 `EdgeGeometry.order`가 정한다 (#246 — `HwpBorderCornerTests`).
     func testSpacedCellsPaintVerticalEdgesFirst() {
         let four = (Self.solid(2), Self.solid(3, Self.red))
         let spaced = Self.set(top: four.1, bottom: four.1, left: four.0, right: four.0)

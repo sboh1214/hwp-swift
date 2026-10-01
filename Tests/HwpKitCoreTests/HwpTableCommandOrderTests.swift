@@ -92,9 +92,10 @@ final class HwpTableCommandOrderTests: XCTestCase {
             AnyHwpBlock(frame: tableRect, kind: .table, payload: .table(table)),
         ]))
         let steps = Self.steps(list.commands)
-        // 바깥 표: 채움 2 → 테두리 8 → 내용 (c0 텍스트·그림 → c1 텍스트 → 중첩 표 덩어리)
-        expect(Array(steps.prefix(10))) == [.fill, .fill] + Array(repeating: .border, count: 8)
-        let contents = Array(steps.dropFirst(10))
+        // 바깥 표: 채움 2 → 테두리 6 → 내용 (c0 텍스트·그림 → c1 텍스트 → 중첩 표 덩어리). 위·아래 가로
+        // 실선은 두 칸이 한 사슬이라 첫 칸이 한 번에 긋고 (#246), 가운데 세로선은 두 칸이 각자 긋는다
+        expect(Array(steps.prefix(8))) == [.fill, .fill] + Array(repeating: .border, count: 6)
+        let contents = Array(steps.dropFirst(8))
         expect(Array(contents.prefix(3))) == [.text("c0"), .image, .text("c1")]
         // 중첩 표 덩어리: 채움 → 테두리 4 → 텍스트
         expect(Array(contents.dropFirst(3)))

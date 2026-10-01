@@ -121,10 +121,11 @@ extension HwpBorderChainingTests {
     }
 
     /// 칸마다 그린 테두리 요소 (원·대시 하나하나의 경계 상자, 표 로컬 좌표) — 페인터와 같은
-    /// `edges(around:chains:)`로
+    /// `edges(around:context:)`로
     static func elements(_ table: HwpTableFrame) -> [Element] {
         table.rows.flatMap(\.cells).flatMap { cell in
-            cell.borders.edges(around: cell.cellFrame, chains: cell.borderChains).flatMap { edge in
+            let edges = cell.borders.edges(around: cell.cellFrame, context: cell.borderContext)
+            return edges.flatMap { edge in
                 HwpLineShapeGeometryTests.pieces(edge.path).map {
                     Element(row: cell.row, column: cell.column, color: edge.color, rect: $0)
                 }
@@ -168,7 +169,7 @@ extension HwpBorderChainingTests {
 
     /// 표의 어느 칸도 이음 자리를 싣지 않았는가
     static func unchained(_ table: HwpTableFrame) -> Bool {
-        table.rows.flatMap(\.cells).allSatisfy { $0.borderChains == HwpBorderChains.none }
+        table.rows.flatMap(\.cells).allSatisfy { !$0.borderContext.hasPlacements }
     }
 
     /// 2×3 격자선 y = 20의 두 쪽을 긴 점선(두께 3)으로 — 끝 모서리의 세로 변(`upperRight`·
