@@ -243,7 +243,28 @@ extension HwpTableLayout {
 extension HwpTableCellFrame {
     /// `paints` ∪ 이 셀 안 중첩 표의 칠(재귀) — `tableGridPosition`용 모듈 안 헬퍼 (PR 리뷰)
     func paintsIncludingNestedTables(_ point: CGPoint) -> Bool {
-        paints(point) || nestedTables.contains {
+        paints(point) || nestedTableContentPaints(point)
+    }
+
+    /// 이 셀이 **제 변으로** 칠했는가 — 채움 ∪ 이웃 칸과 잇지 않은 것처럼 본 제 변의 띠 ∪ 중첩 표의 칠.
+    /// 이은 실선은 자리 0을 담은 조각(보통 첫 조각)이 사슬 전체를 긋고 그 띠도 사슬 전체라 (#246) `paints`로 셀을 고르면
+    /// 다른 칸의 바깥 테두리 위 점이 첫 칸으로 간다 — `tableGridPosition`은 이것으로 그 점의 칸을 고른다
+    /// (표의 claim `HwpTableFrame.paints`는 그대로 사슬 띠다).
+    func paintsWithOwnEdges(_ point: CGPoint) -> Bool {
+        if fillColor != nil, cellFrame.contains(point) {
+            return true
+        }
+        var own = borderContext
+        own.top = nil
+        own.bottom = nil
+        own.left = nil
+        own.right = nil
+        return borders.bands(around: cellFrame, context: own).contains { $0.contains(point) }
+            || nestedTableContentPaints(point)
+    }
+
+    private func nestedTableContentPaints(_ point: CGPoint) -> Bool {
+        nestedTables.contains {
             $0.table.paints(CGPoint(x: point.x - $0.rect.minX, y: point.y - $0.rect.minY))
         }
     }
