@@ -126,7 +126,8 @@ import XCTest
             // slight-overflow 한 줄뿐이어야 한다 (실측 1 / 260 → 2026-09-12 6 / 446 →
             // 2026-09-15 7 / 522 → 2026-09-24 9 / 918 → 같은 날 9 / 1108 →
             // 2026-09-25 9 / 1158 → 같은 날 9 / 1188 → 2026-09-26 9 / 1208 → 같은 날
-            // 9 / 1266 → 2026-09-27 9 / 1282 → 같은 날 9 / 1324 → 2026-09-28 11 / 1362).
+            // 9 / 1266 → 2026-09-27 9 / 1282 → 같은 날 9 / 1324 → 2026-09-28 11 / 1362 →
+            // 2026-09-30 11 / 1386).
             expect(stats.measured - stats.sharedCoreCompared)
                 .to(beLessThanOrEqualTo(Self.maximumFixtureSharedCoreSkips))
         }
@@ -203,9 +204,11 @@ import XCTest
         // (공유 코어 대조 건너뜀은 그대로다), 2026-09-28 `table-cell-spacing`(#243, 구역 1 + 글자처럼
         // 취급 표 문단 9개를 포함한 19문단 + 표 9개의 셀 29문단) 추가로 문단 48·대조 38(셀의 빈 문단
         // 29개는 두 폭 모두 대조 대상이 아니다)·컨테이너 29 증가 — 공유 코어 대조 건너뜀도 2 늘었다
-        // (`#8`·`#18`: 폭 110pt 표 + 7pt 꼬리표가 120pt에서 slight-overflow 한 줄, 실측 11).
-        private static let expectedFixtureVisited = 820
-        private static let expectedFixtureMeasured = 1362
+        // (`#8`·`#18`: 폭 110pt 표 + 7pt 꼬리표가 120pt에서 slight-overflow 한 줄, 실측 11),
+        // 2026-09-30 `ms-word-line-shapes`(#244, 구역 1 + 선 모양 11문단 = 12문단, 개체 없음) 추가로
+        // 문단 12·대조 24 증가(컨테이너·공유 코어 대조 건너뜀은 그대로다).
+        private static let expectedFixtureVisited = 832
+        private static let expectedFixtureMeasured = 1386
         private static let expectedFixtureContainers = 291
         private static let minimumFixtureMultiLine = 60
         private static let maximumFixtureSharedCoreSkips = 11

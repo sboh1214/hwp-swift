@@ -266,6 +266,18 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   좌표(README의 표)가 `HwpKitTests/FixtureDecorationLineRenderTests+LineWide`의 오라클이고 두
   글꼴이 결정론 resolver의 글꼴과 같아 쪽 좌표를 기기 무관하게 핀한다. HWPX 쌍은
   `HwpxFixtures/mixed-size-decorations`.
+- `ms-word-line-shapes`: **MS 워드 호환 문서**(호환 문서 대상 프로그램 2)에 한글 슬롯 Apple SD
+  산돌고딕 Neo·라틴 슬롯 Menlo로 선 모양 밑줄·취소선 11문단 — 원형 점선 밑줄(Menlo 20pt, Apple SD
+  40pt, 40pt 무장식 글자와 한 줄인 10pt, 40pt 문단 끝 글자와 한 줄인 10pt), 긴 점선·2중선·물결 밑줄,
+  가는+굵은 선 위 밑줄, 기본 20pt·상대 크기 50% 원형 점선 취소선, 한글 슬롯만 상대 크기 50%인 한 글자
+  모양의 긴 점선 밑줄·취소선 — 을 실은 합성 HWPX(줄 배치 정보 없음)를 Hancom Office HWP for macOS
+  12.30.0 build 6446으로 2026-09-30에 열어 `.hwp`·`.hwpx`로 저장(1쪽). 한글이 이 문서의 **밑줄 무늬를
+  줄 글자 상자의 높이**(줄 캐시 `vertsize`, 문단 끝 글자·개체 제외)로 재고 여러 줄 띠·물결을 **단선
+  중심에 가운데** 맞추며 취소선 무늬를 **글자 모양 기본 크기**로 재는 규칙(#244)의 실물 근거다 —
+  Menlo 20pt 원형 점선 밑줄의 간격이 글자 크기 몫 3.00pt가 아니라 상자 몫 4.20pt다. 같은 세션의 PDF
+  내보내기 좌표(README의 표)가 `HwpKitTests/FixtureDecorationLineRenderTests+MsWordShapes`의 오라클이고
+  두 글꼴이 결정론 resolver의 글꼴과 같아 쪽 좌표를 기기 무관하게 핀한다. HWPX 쌍은
+  `HwpxFixtures/ms-word-line-shapes`.
 - `ms-word-paragraph-end-box`: **MS 워드 호환 문서**(호환 문서 대상 프로그램 2)에 시스템 글꼴만
   (한글 슬롯 Apple SD 산돌고딕 Neo, 라틴 슬롯 Menlo·Helvetica·Times New Roman·Apple SD 산돌고딕
   Neo)으로 **문단 끝 글자**(CR)·**한 줄 끝 글자**(코드 10)의 글꼴 줄 상자가 본문 글자보다 큰 줄

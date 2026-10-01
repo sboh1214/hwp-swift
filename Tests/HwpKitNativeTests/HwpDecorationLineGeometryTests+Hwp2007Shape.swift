@@ -108,7 +108,8 @@ extension HwpDecorationLineGeometryTests {
 
     /// 한글 2007 호환 문서의 밑줄·취소선 축척은 run·줄 크기와 무관한 고정 갈래다. 한글 문서는
     /// 밑줄이 줄 글자 크기(`textFontSize`), 취소선이 run 기본 크기이고(#226), MS 워드 호환
-    /// 문서는 종전대로 첨자 축소 전 run 크기다 (미실측).
+    /// 문서는 밑줄이 줄 글자 상자의 높이, 취소선이 run 기본 크기다 (#244 —
+    /// `+MsWordShape`가 따로 잰다).
     func testHwp2007ShapeScaleIsFixedWhateverTheSizes() {
         let layer = HwpPageLayer()
         for size in [CGFloat(5), 10, 40, 100] {
@@ -134,15 +135,15 @@ extension HwpDecorationLineGeometryTests {
             target: NSNumber(value: HwpCompatibleDocumentTarget.msWord.rawValue)
         )
         msWord[HwpAttributedStringKey.spaceTargetSize] = NSNumber(value: 16)
-        expect(layer.strikethroughShapeScale(msWord)) == .characterLine(fontSize: 16)
-        // MS 워드 호환 줄(줄 상자가 있는 줄)의 밑줄도 종전대로 첨자 축소 전 run 크기다 —
-        // 줄 글자 크기(60)도, 한글 2007 호환의 고정 축척도 아니다
+        // MS 워드 호환 문서는 고정 축척이 아니다 — 취소선은 기본 크기(20, 슬롯 상대 크기를 반영한
+        // 16이 아니다), 밑줄은 줄 글자 상자의 높이(cell × 1.3 = 1.3 — 줄 글자 크기 60도 아니다)
+        expect(layer.strikethroughShapeScale(msWord)) == .characterLine(fontSize: 20)
         let msWordLine = HwpDecorationLineGeometry.UnderlineReference(
             lineBoxHeight: 60, textFontSize: 60,
             msWordLineBox: HwpMsWordLineBox(lineHeight: 1.3, baseline: 1.0, cellHeight: 1.0)
         )
         expect(layer.underlineShapeScale(msWord, reference: msWordLine))
-            == .characterLine(fontSize: 16)
+            == .characterLine(fontSize: 1.3)
     }
 
     /// 긴 점선 밑줄의 무늬가 10pt와 40pt에서 같다 — 2.40pt 선·주기 3.84pt (한글 실측, 모든 크기).

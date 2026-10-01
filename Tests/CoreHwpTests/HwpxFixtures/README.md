@@ -26,7 +26,7 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
    `line-shapes`·`script-decorations`·`section-page-number-skip`·`compat-decorations`·
    `hwp2007-decorations`·`hyperlink-click-band`·`inline-object-baseline`·
    `inline-object-marker-size`·`inline-table-actual-height`·`mixed-size-decorations`·
-   `ms-word-paragraph-end-box`·`page-end-line-box`·`paragraph-end-char-size`·
+   `ms-word-line-shapes`·`ms-word-paragraph-end-box`·`page-end-line-box`·`paragraph-end-char-size`·
    `table-border-chains`·`table-cell-spacing`)은 `.hwp`와 `.hwpx`를 **같은 편집 세션에서
    연달아** 저장해야 두
    파일이 같은 문서가 된다. 한글 GUI로 만들기 어려운 조합은 합성 HWPX를 한글로 열어 두 형식으로
@@ -131,6 +131,11 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
   점선은 단 구분선과 같은 점 무늬로, 모서리는 만나는 두 변의 모양·굵기로) 그리는 규칙을 렌더 해시·
   골든이 잡지 못하던 자리의 실물 근거다. `hp:tbl@cellSpacing`(1·283·850HWPUNIT)이 HWP 쌍과 같은
   셀 간격으로 옮겨지는 표본이기도 하다.
+  MS 워드 호환 문서의 선 모양 밑줄·취소선은 #244에서 `ms-word-line-shapes` 쌍으로 저작했다 — 코퍼스의
+  MS 워드 호환 실물(`compat-decorations`·`ms-word-paragraph-end-box`·`track-changes`)에 실선이 아닌
+  밑줄이 없어, 한글이 그 문서의 밑줄 무늬를 줄 글자 상자의 높이로 재고 여러 줄 띠·물결을 단선 중심에
+  가운데 맞추는 규칙을 렌더 해시·골든이 잡지 못하던 자리의 실물 근거다. `hh:underline@shape`·
+  `hh:strikeout@shape`와 슬롯별 `hh:relSz`가 HWP 쌍과 같은 선 모양·상대 크기로 옮겨지는 표본이기도 하다.
 
 ## manifest 작성 기준
 

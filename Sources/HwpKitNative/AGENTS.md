@@ -199,10 +199,10 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
   실선은 종전대로 run마다 사각형). 한글이 그렇다 — 한 글자 모양 안의 한글↔라틴 슬롯 전환
   (CoreText가 run을 가르는 경계)은 패턴이 이어지고 색만 다른 이웃 글자 모양은 run 시작에서
   다시 시작한다 (2026-09-17 실측). 묶음 열쇠는 id에 더해 선을 정하는 키다
-  (`sameLineShapeGroup`: 모양·유무·색·축척 크기·`scriptBaselineOffset`; 축척 크기는 한글 문서가
-  `baseFontSize`, MS 워드 호환 문서와 기본 크기 키가 없는 문자열이 `spaceTargetSize`다 — 한글
-  문서·한글 2007 호환 문서에서 슬롯마다 상대 크기가 다른 한 글자 모양은 한 묶음이고, 한글도 그
-  경계에서 패턴 위상을 잇는다, #226·#227 실측 2026-09-26) — 변경 추적
+  (`sameLineShapeGroup`: 모양·유무·색·축척 크기·`scriptBaselineOffset`; 축척 크기는 조판이 낸 run이면
+  `baseFontSize`, 기본 크기 키가 없는 문자열만 `spaceTargetSize`다 — 세 문서 갈래 모두 슬롯마다
+  상대 크기가 다른 한 글자 모양은 한 묶음이고, 한글도 그 경계에서 패턴 위상을 잇는다, #226·#227·#244
+  실측) — 변경 추적
   삭제 run은 글자 모양을 물려받고 색만 갈리고 첨자 run은 취소선 자리가 다르므로 id만으로
   묶으면 첫 run의 색·기하로 통째 그려진다(PR 리뷰). 속성 사전 전체 비교는 금물(자간·문단 끝
   상자 키가 한 글자 모양을 가른다). 모양 키를 실은 run이 없는 줄은 재지 않는다. 축척은
@@ -210,9 +210,12 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
   #226 실측: 40pt 무장식 글자와 한 줄인 10pt 긴 점선의 한 토막 11.40pt), 취소선은 run의 기본
   크기(`strikethroughShapeScale`). 한글 2007 호환 문서는 크기와 무관한 고정 축척
   `HwpLineShapeGeometry.Scale.hwp200XCharacterLine`이고(#227 — 두 함수가 `Scale`을 돌려주고
-  `ShapedLine.scale`이 그대로 나른다), MS 워드 호환 문서는 종전대로
-  `preScriptFontSize`(첨자 축소 전 run 크기)다 — #239 실측에서 취소선(원형 점선)은 이 크기가
-  맞고, 밑줄은 한글이 글자 크기의 약 1.7배를 기준으로 그려 남은 격차다(#244). 로컬
+  `ShapedLine.scale`이 그대로 나른다), MS 워드 호환 문서는 밑줄이 **줄 글자 상자의 높이**
+  (`msWordLineBox.cellHeight` × 1.3 — 문단 끝 글자·개체가 쌓아 키운 줄 상자가 아니라 글자 상자이고,
+  쌓이지 않은 줄에서는 한글 줄 캐시 `vertsize`와 같다), 취소선이 한글 문서와 같은 글자 모양 기본 크기다 (#244). 그 문서의 밑줄은 여러 줄
+  띠·물결 자리도 다르다 — 아래·위 밑줄 모두 취소선 자리(단선 중심에 가운데, `underlineShapePlacement`)
+  이고, 물결 계단은 선 두께(0.05 cell)가 아니라 축척의 0.04배다(`HwpLineShapeGeometry.
+  wavePatternThickness(for:)`). 근거는 `Sources/HwpKitCore/AGENTS.md`의 원형 점선 항목. 로컬
   y(양수 = 아래)를 텍스트 공간(y-위)으로 뒤집어 단선 중심(`lineOrigin.y + line.center`)에
   놓는다 — 밑줄의 줄 상자 가장자리·취소선의 첨자 이동은 그 중심에 이미 들어 있다.
 - **MS 워드 호환 문서(`hwp.compatibleDocumentTarget` == `msWord`)의 장식선은 글꼴 지표
