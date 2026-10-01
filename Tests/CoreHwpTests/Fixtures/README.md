@@ -204,6 +204,18 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   취소선을 글꼴 지표로 놓는 규칙(#187)의 실물 근거이고, 같은 세션의 PDF 내보내기 좌표가
   `FixtureDecorationLineRenderTests+Compat`의 오라클이다. 두 글꼴이 결정론 resolver의
   글꼴과 같아 어느 기기에서든 같은 값으로 핀한다. HWPX 쌍은 `HwpxFixtures/compat-decorations`.
+- `dash-patterns`: **한글 문서**(호환 문서 대상 프로그램 `HWP201X`)에 대시 무늬 표본 15개 — 위 변만
+  초록인 330pt 시험 칸의 글자처럼 취급 표 8개(긴 점선 0.12mm·점선 1mm·긴 파선 2mm를 셀 간격 0과
+  283HWPUNIT으로 하나씩, 일점쇄선 0.5mm 셀 간격 0, 이점쇄선 1.5mm 셀 간격 283; 끝에 빨강 0.1mm 기준
+  칸)와 위 변 긴 점선 0.4mm·왼/오른 변 파랑 실선 2mm인 1×2 표, 취소선 문단 5개(긴 점선 20pt, 점선
+  11.54pt, 긴 파선 10pt, 일점쇄선 40pt, 긴 점선 7pt), 쪽 나누기 뒤 일점쇄선 0.4mm 단 구분선의 2단
+  밴드 — 를 꼬리표(` #0`…` #13`, `#14`)와 함께 실은 합성 HWPX(줄 배치 정보 없음)를 Hancom Office HWP
+  for macOS 12.30.0 build 6446으로 2026-10-01에 열어 `.hwp`·`.hwpx`로 저장(2쪽). 한글이 대시 무늬의
+  **선·공백 길이**와 표 셀 테두리·단 구분선의 **획 두께**를 600dpi 장치 단위(0.12pt) 정수로 그리는
+  규칙(#245)의 실물 근거다 — 셀 테두리는 셀 간격이 없으면 격자 식, 있으면 단 구분선과 같은 점 무늬
+  식으로 재고(1mm 점선 35·52u vs 35·53u), 획은 0.12mm·1mm·2mm가 3u·24u·47u다. 같은 세션의 PDF
+  내보내기 좌표(README의 표)가 `HwpKitTests/FixtureDashPatternTests`의 오라클이다. HWPX 쌍은
+  `HwpxFixtures/dash-patterns`.
 - `hwp2007-decorations`: **한글 2007 호환 문서**(호환 문서 대상 프로그램 1)에 한글 슬롯
   Apple SD 산돌고딕 Neo·라틴 슬롯 Menlo로 글자 아래 밑줄(10·20·40·60pt)·글자 위 밑줄
   (40·60pt)·취소선(10·40pt)·글자 가운데 밑줄(40pt)을 문단마다 하나씩 실은 합성 HWPX를

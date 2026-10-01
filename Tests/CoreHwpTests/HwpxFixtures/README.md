@@ -24,7 +24,7 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
    `Fixtures/<id>/document.hwp`의 **사본**을 연다 (열람만으로 원본이 재기록될 수
    있다 — 4단계). 새로 저작하는 쌍(`section-marks`·`section-page-starts-on`·
    `line-shapes`·`script-decorations`·`section-page-number-skip`·`compat-decorations`·
-   `hwp2007-decorations`·`hyperlink-click-band`·`inline-object-baseline`·
+   `dash-patterns`·`hwp2007-decorations`·`hyperlink-click-band`·`inline-object-baseline`·
    `inline-object-marker-size`·`inline-table-actual-height`·`mixed-size-decorations`·
    `ms-word-line-shapes`·`ms-word-paragraph-end-box`·`page-end-line-box`·`paragraph-end-char-size`·
    `table-border-chains`·`table-cell-spacing`)은 `.hwp`와 `.hwpx`를 **같은 편집 세션에서
@@ -136,6 +136,12 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
   밑줄이 없어, 한글이 그 문서의 밑줄 무늬를 줄 글자 상자의 높이로 재고 여러 줄 띠·물결을 단선 중심에
   가운데 맞추는 규칙을 렌더 해시·골든이 잡지 못하던 자리의 실물 근거다. `hh:underline@shape`·
   `hh:strikeout@shape`와 슬롯별 `hh:relSz`가 HWP 쌍과 같은 선 모양·상대 크기로 옮겨지는 표본이기도 하다.
+  대시 무늬의 장치 단위 반올림은 #245에서 `dash-patterns` 쌍으로 저작했다 — 같은 무늬를 굵기·셀
+  간격·글자 크기·자리(셀 테두리·취소선·단 구분선)별로 갈라 실어, 한글이 긴 점선·점선·쇄선·긴 파선의
+  선·공백 길이와 셀 테두리·단 구분선의 획 두께를 600dpi 장치 단위(0.12pt) 정수로 그리는(셀 간격이
+  있으면 단 구분선과 같은 점 무늬 식으로 재는) 규칙을 한 문서의 PDF로 가르는 실물 근거다.
+  `hh:borderFill` 변의 긴 파선(`LONG_DASH`)·이점쇄선(`DASH_DOT_DOT`)과 `hp:colLine`의 일점쇄선이 HWP
+  쌍과 같은 선 종류·굵기로 옮겨지는(등가 스위트의 셀 테두리·단 구분선 축) 표본이기도 하다.
 
 ## manifest 작성 기준
 

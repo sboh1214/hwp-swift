@@ -188,8 +188,8 @@ final class HwpxHwpEquivalenceTests: XCTestCase {
             )
             comparedCount += 1
         }
-        // 픽스처 유실 가드 — 쌍을 잇는 변환 픽스처 33종이 모두 대조된다
-        expect(comparedCount) >= 33
+        // 픽스처 유실 가드 — 쌍을 잇는 변환 픽스처 34종이 모두 대조된다
+        expect(comparedCount) >= 34
     }
 }
 
@@ -374,7 +374,7 @@ struct DocumentEquivalenceProjection {
     /// 종전에는 `tableShapes`가 셀 수·병합만 봐서 DOT/DASH가 뒤바뀐 매핑도 통과했다.
     let cellBorders: [CellBorders?]
     /// 단 정의의 구분선 종류·굵기·색 (#177) — `hp:colLine@type`도 테두리 축이다.
-    /// 코퍼스에 `hp:colLine`이 `line-shapes` 쌍뿐이라 그 밖의 쌍은 0 등식이다.
+    /// 코퍼스에 `hp:colLine`이 `line-shapes`·`dash-patterns` 쌍뿐이라 그 밖의 쌍은 0 등식이다.
     let columnDividers: [ColumnDivider]
     /// 호환 문서 대상 프로그램 (표 55, #187) — HWPX `hh:compatibleDocument@targetProgram`이
     /// 옮겨져야 HWP 쌍과 같은 값이 선다. 강등 상태면 HWPX 쪽이 record 없음(nil)이라
