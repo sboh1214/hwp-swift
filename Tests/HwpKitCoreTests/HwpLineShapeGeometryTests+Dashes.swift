@@ -228,8 +228,11 @@ extension HwpLineShapeGeometryTests {
         }
     }
 
-    /// 0.5u 동점은 올린다 — 22/15를 이진 소수로 곱하면 아래로 내려가는 자리를 정수 분수 한 번의
-    /// 나눗셈으로 가른다 (T 30: 1.5b = 5.5u → 공백 12u; T 45: b = 5.5u → 점 6u; T 30·45 모두 한글 실측)
+    /// 0.5u 동점은 올린다 — b의 배수를 정수 두께 × (22 × 배수) ÷ 180 한 번의 나눗셈으로 셈해 동점을
+    /// 정확히 가른다. T 30(1.5b = 5.5u → 공백 12u)·T 45(b = 5.5u → 점 6u)는 반올림 방향을 잠그고,
+    /// T 315(b = 38.5u)·T 330(1.5b = 60.5u)은 22/15를 이진 소수로 곱하면 38.4999…·60.4999…로 내려가
+    /// 점 38u·공백 120u가 되는 자리다 — 한글 12.30 PDF는 쇄선 385·116·39·116u(8077HU)와 긴 파선
+    /// 403·122u·점선 40·60u·긴 점선 201·122u(8461HU)로 올린다 (2026-10-01 `probes/245`).
     func testDashUnitTiesRoundUp() {
         expect(HwpLineShapeGeometry.dashDeviceUnits(for: .longDash, hwpUnits: 30, grid: false))
             == [37, 12]
@@ -237,6 +240,18 @@ extension HwpLineShapeGeometryTests {
             == [6, 9]
         expect(HwpLineShapeGeometry.dashDeviceUnits(for: .dotLine, hwpUnits: 45, grid: true))
             == [6, 9]
+        expect(HwpLineShapeGeometry.dashDeviceUnits(for: .dashDot, hwpUnits: 315, grid: false))
+            == [385, 116, 39, 116]
+        expect(HwpLineShapeGeometry.dashDeviceUnits(for: .longDash, hwpUnits: 330, grid: false))
+            == [403, 122]
+        // 글자선 경로도 같은 자리에서 — 한글 실측 글자 크기 80.77pt·84.61pt
+        for (size, shape, units) in [
+            (CGFloat(8077), HwpBorderType.dashDotDot, [CGFloat(385), 116, 39, 116, 39, 116]),
+            (8461, .dotLine, [40, 60]), (8461, .longDotLine, [201, 122]),
+        ] {
+            let line = Self.characterLine(shape, fontSize: size / 100, placement: .strikethrough)
+            expect(Self.deviceUnits(line)).to(equal(units), description: "\(size)HU \(shape)")
+        }
     }
 
     /// 표 26 굵기가 아닌 두께(테두리 정보가 없는 표의 0.5pt 등)는 HWPUNIT으로 반올림한 두께로 푼다 —
