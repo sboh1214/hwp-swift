@@ -155,8 +155,8 @@ final class FixtureDashPatternTests: XCTestCase {
     }
 
     /// 2쪽 단 구분선(일점쇄선 0.4mm) — 한글 PDF: 조각 15개, 긴 선 138u·공백 42u·점 14u·공백 42u, 획 9u,
-    /// 마지막 조각 끝은 첫 조각에서 212.16pt (우리 밴드 높이는 0.16pt 짧다 — 마지막 줄 줄 간격의 기존
-    /// 격차라 끝은 0.3 안에서 댄다)
+    /// 마지막 조각 끝은 첫 조각에서 212.16pt (밴드 높이는 한글·우리 모두 212pt이고, 0.16pt는 한글이 선을
+    /// 장치 격자에 맞추고 끝 칸을 하나 더 그린 몫이다 — #235의 포함 끝; 그래서 끝은 0.3 안에서 댄다)
     func testColumnDividerDashesMatchHangul() async throws {
         for format in ["hwp", "hwpx"] {
             let url = FixtureRoot.url(

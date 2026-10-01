@@ -2,7 +2,7 @@
   "id": "dash-patterns",
   "generationTool": "Hancom Office HWP for macOS 12.30.0 (build 6446)",
   "hwpVersion": "5.1.1.0",
-  "source": "Generated locally with Hancom Office HWP on 2026-10-01 — CharShape의 HWPX 사본(hh:compatibleDocument@targetProgram=\"HWP201X\")에 초록 대시 무늬 표본 15개 — 위 변만 초록인 330pt 시험 칸 + 빈 칸 + 빨강 0.1mm 기준 칸의 한 행 글자처럼 취급 표 8개(긴 점선 0.12mm·점선 1mm·긴 파선 2mm를 셀 간격 0과 283HWPUNIT으로 하나씩, 일점쇄선 0.5mm 셀 간격 0, 이점쇄선 1.5mm 셀 간격 283)와 위 변 긴 점선 0.4mm·왼/오른 변 파랑 실선 2mm인 165pt 칸 둘의 1×2 표, 취소선 문단 5개(긴 점선 20pt, 점선 11.54pt — 무늬 두께 45의 점 단위 동점, 긴 파선 10pt, 일점쇄선 40pt, 긴 점선 7pt), 쪽 나누기 뒤 일점쇄선 0.4mm 단 구분선을 가진 2단 밴드(20pt '가' 14줄) — 와 표본마다 7pt 꼬리표( #0… #13, #14)를 실은 합성 문서(hp:linesegarray 없음, 로컬 probes/245 gen245fx.py)를 한글에서 연 뒤 같은 편집 세션에서 PDF(2쪽)·한글 문서(*.hwp)·한글 표준 문서(*.hwpx)로 각각 저장 (System Events 접근성 자동화)",
+  "source": "Generated locally with Hancom Office HWP on 2026-10-01 — CharShape의 HWPX 사본(hh:compatibleDocument@targetProgram=\"HWP201X\")에 초록 대시 무늬 표본 15개 — 위 변만 초록인 330pt 시험 칸 + 빈 칸 + 빨강 0.1mm 기준 칸의 한 행 글자처럼 취급 표 8개(긴 점선 0.12mm·점선 1mm·긴 파선 2mm를 셀 간격 0과 283HWPUNIT으로 하나씩, 일점쇄선 0.5mm 셀 간격 0, 이점쇄선 1.5mm 셀 간격 283)와 위 변 긴 점선 0.4mm·왼/오른 변 파랑 실선 2mm인 165pt 칸 둘의 1×2 표, 취소선 문단 5개(긴 점선 20pt, 점선 11.54pt — 무늬 두께 45의 점 단위 동점, 긴 파선 10pt, 일점쇄선 40pt, 긴 점선 7pt), 쪽 나누기 뒤 일점쇄선 0.4mm 단 구분선을 가진 2단 밴드(20pt 14줄 — 첫 줄 '#14' + '가' 13줄) — 와 표본마다 꼬리표(7pt ' #0'…' #13', 단 구분선은 밴드 첫 줄의 20pt '#14')를 실은 합성 문서(hp:linesegarray 없음, 로컬 probes/245 gen245fx.py)를 한글에서 연 뒤 같은 편집 세션에서 PDF(2쪽)·한글 문서(*.hwp)·한글 표준 문서(*.hwpx)로 각각 저장 (System Events 접근성 자동화)",
   "features": [
     "char-shape-property",
     "paragraph-text",

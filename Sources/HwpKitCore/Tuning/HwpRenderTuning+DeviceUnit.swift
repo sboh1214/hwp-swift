@@ -6,7 +6,7 @@ public extension HwpRenderTuning.LineShape {
     // 한글은 대시 무늬(긴 점선·점선·일점쇄선·이점쇄선·긴 파선)와 원형 점선을 글자 크기·두께에 비례하는
     // 연속값이 아니라 **600dpi 장치 단위(`deviceUnit`, 0.12pt)의 정수**로 그린다 — 요소 길이를 먼저
     // 정수로 정한 뒤 되풀이하므로 선 하나 안의 주기는 일정하고, 비례로 두면 주기마다 차가 쌓여 긴 선에서
-    // 대시가 한글과 어긋난다 (1mm 점선 주기 86.47u vs 한글 87·88u — #245). 무늬는 **무늬 두께**
+    // 대시가 한글과 어긋난다 (1mm 점선 주기 86.61u vs 한글 87·88u — #245). 무늬는 **무늬 두께**
     // t(HWPUNIT 정수)에서 푼다: 글자선은 글자 크기(HWPUNIT) × 0.039를 반올림한 값
     // (`characterPatternThicknessPerMille`), 표 셀 테두리·단 구분선은 표 26 굵기마다 한글이 쓰는 값
     // (`borderPatternHwpUnits`)이다. 단위 b = t × 22/15 ÷ 12 (u, `patternUnitThicknessNumerator`/
@@ -18,9 +18,10 @@ public extension HwpRenderTuning.LineShape {
     /// 원의 지름·간격, 테두리·단 구분선의 획 두께가 이 단위의 정수다.
     static let deviceUnit: CGFloat = 0.12
 
-    /// 글자선 무늬 두께 (HWPUNIT) = 글자 크기(HWPUNIT) × 이 값 ÷ 1000을 반올림 (0.039em). 대시의 단위와
-    /// 원형 점선의 점 단위는 이 두께 × 22/15(`patternUnitThicknessNumerator`/`…Denominator`)를 장치
-    /// 단위로 반올림한 값이다 — 두께를 먼저 HWPUNIT으로 반올림해야 한글의 전환점이 설명된다. 원형
+    /// 글자선 무늬 두께 (HWPUNIT) = 글자 크기(HWPUNIT) × 이 값 ÷ 1000을 반올림 (0.039em). 대시의 단위
+    /// b는 이 두께 × 22/15(`patternUnitThicknessNumerator`/`…Denominator`)를 장치 단위로 잰 값(반올림
+    /// 전 — 요소마다 배수를 곱한 뒤 반올림)이고, 원형 점선의 점 단위 q는 b를 반올림한 값이다 — 두께를
+    /// 먼저 HWPUNIT으로 반올림해야 한글의 전환점이 설명된다. 원형
     /// 점선 실측(점 단위가 바뀌는 크기, HWPUNIT): 730→731(3→4u)·935→936(4→5)·1141→1142(5→6)·
     /// 1371→1372(6→7)·1576→1577(7→8)·2192→2193(10→11)·2423→2424(11→12)·4730→4732(22→23)·
     /// 6602→6604(31→32)·8704→8706(41→42) — 한 번 반올림한 비례식으로는 9.36pt(5u)와 47pt(22u)를
@@ -32,8 +33,9 @@ public extension HwpRenderTuning.LineShape {
     /// 글자 모양 기본 크기다 (#244 — 글꼴 10종 × 8~100pt 밑줄 732표본·취소선 180표본).
     static let characterPatternThicknessPerMille: CGFloat = 39
 
-    /// 무늬 단위의 두께 배율 22/15의 분자 — 대시의 단위·원형 점선의 점 단위 = 무늬 두께 × 22/15를
-    /// 장치 단위로 반올림. 반올림 경계(0.5u)를 정확히 가르도록 정수 분수로 둔다 — 22/15를 이진 소수로
+    /// 무늬 단위의 두께 배율 22/15의 분자 — 대시의 단위 b = 무늬 두께 × 22/15 (장치 단위, 요소마다
+    /// 배수를 곱해 반올림)·원형 점선의 점 단위 q = round(b). 반올림 경계(0.5u)를 정확히 가르도록 정수
+    /// 분수로 둔다 — 22/15를 이진 소수로
     /// 곱하면 두께 315HWPUNIT의 38.5u가 38.4999…로 내려가 80.65pt에서 원 간격 95u가 된다 (한글 실측
     /// 98u; 149.88pt(두께 585)도 한글 180u vs 178u — 두께 0~200만HWPUNIT 중 6,809곳이 이런 동점이다).
     static let patternUnitThicknessNumerator: CGFloat = 22

@@ -55,9 +55,10 @@ public enum HwpLineShapeGeometry {
         /// 글자 크기와 무관한 고정 pt다 (#227, `HwpRenderTuning.LineShape.hwp200X*`). 선 두께가
         /// 고정 0.36pt인 것(#210)과 같은 갈래다.
         case hwp200XCharacterLine
-        /// 표 셀 테두리·단 구분선 — 명목 두께에 비례 (원형 점선은 장치 단위 정수이고 `Placement`와
-        /// `Line.inSpacedTable`이 셀 간격 없는 표 셀 테두리의 격자와 단 구분선·셀 간격 있는 표의 점
-        /// 무늬를 가른다, #239·#243)
+        /// 표 셀 테두리·단 구분선 — 여러 줄 띠·물결은 명목 두께에 비례한다. 원형 점선과 대시는 표 26
+        /// 굵기마다의 무늬 두께에서 푼 장치 단위 정수이고, 실선·대시 획도 장치 단위로 반올림한다
+        /// (#239·#245). `Placement`와 `Line.inSpacedTable`이 셀 간격 없는 표 셀 테두리의 격자와 단
+        /// 구분선·셀 간격 있는 표의 점 무늬를 가른다 (#243)
         case border
     }
 

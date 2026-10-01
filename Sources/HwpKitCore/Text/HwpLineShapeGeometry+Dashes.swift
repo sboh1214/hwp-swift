@@ -19,14 +19,16 @@ import Foundation
 /// PDF (2026-10-01 `probes/245`): 한글 문서 취소선 대시 5종 × 무늬 두께 4~390 991표본·아래 밑줄 90표본,
 /// MS 워드 호환 문서 취소선 580표본, 표 셀 테두리 대시 5종 × 표 26 굵기 16단 × 셀 간격 0·283HWPUNIT
 /// 가로·세로 변 317표본, 단 구분선 68표본이 모두 이 식과 요소마다 같다 (종전 비례 무늬는 1mm 점선
-/// 주기 86.47u — 한글 87·88u — 라 긴 선에서 대시가 한 주기마다 밀렸다). 표 셀 테두리·단 구분선의
+/// 주기 86.61u — 한글 87·88u — 라 긴 선에서 대시가 한 주기마다 밀렸다). 표 셀 테두리·단 구분선의
 /// 실선·대시 획 두께도 round(t ÷ 12)u다 (16단 모두, `strokeThickness(for:)`). 한글 2007 호환 문서는
 /// 고정 단위 0.48pt(= 4u, 위 식에 b = 4를 넣은 값과 같다)라 이 모델 밖이다 (#227).
 extension HwpLineShapeGeometry {
     /// 장치 단위로 반올림하는 입력의 상한 (pt) — 무늬 두께(`patternThickness(for:)`)가 이보다 크면
-    /// 장치 단위 반올림이 뜻이 없으므로 반올림 전 비율로 셈한다. 이 아래에서는 HWPUNIT·장치 단위
-    /// 값이 2^53보다 작아 0.5 올림(`roundHalfUp`)이 정확하고, 곱도 넘치지 않는다 (두 갈래의 차는
-    /// 경계에서 상대 1e-13 안이다). 원형 점선(`circleDeviceGeometry(for:)`)도 같은 상한이다.
+    /// 장치 단위 반올림이 뜻이 없으므로 반올림 전 비율로 셈한다. 이 아래에서는 반올림하는 HWPUNIT·장치
+    /// 단위 값이 2^52보다 작아 0.5 올림(`roundHalfUp`)이 정확하고 곱이 넘치지 않는다 (두 갈래의 차는
+    /// 경계에서 상대 1e-13 안이다) — 다만 글자선의 무늬 두께는 글자 크기(HWPUNIT) × 39를 거치므로 글자
+    /// 크기 약 2.3e12pt부터는 그 곱이 2^53을 넘어 동점 근처에서 1 갈릴 수 있다 (실제 글자 크기와는 먼
+    /// 자리다). 원형 점선(`circleDeviceGeometry(for:)`)도 같은 상한이다.
     static let deviceRoundingLimit: CGFloat = 1e12
 
     /// 대시 무늬 (선, 공백, 선, 공백 … 순, pt) — 무늬가 없는 모양은 빈 배열. 한글 문서·MS 워드 호환
@@ -42,7 +44,8 @@ extension HwpLineShapeGeometry {
         }
         let thickness = patternThickness(for: line)
         guard thickness < deviceRoundingLimit else {
-            // 나눗셈 먼저 — 두께가 유한 최댓값 근처여도 단위가 넘치지 않게
+            // 나눗셈 먼저 — 곱이 먼저 넘치지 않게. 두께가 유한 최댓값의 15/22를 넘으면 단위가
+            // 무한대가 되지만 경로는 첫 대시 하나(길이 전체)로 유한하다
             let unit = thickness / Shape.patternUnitThicknessDenominator
                 * Shape.patternUnitThicknessNumerator
             return multiples.map { $0 * unit }
@@ -54,8 +57,9 @@ extension HwpLineShapeGeometry {
 
     /// 대시 무늬의 요소 길이 (장치 단위 정수, 선·공백 차례) — 무늬 두께 `hwpUnits`(HWPUNIT 정수)에서
     /// 타입 설명의 식으로 푼다. `grid`는 셀 간격이 없는 표의 셀 테두리 갈래다. b의 배수 m × b는
-    /// 정수 두께 × (22m)를 정수 180(= 15 × 12)으로 한 번 나눠 0.5u 동점(무늬 두께 30·45HWPUNIT …)을
-    /// 정확히 가른다 (22/15를 이진 소수로 곱하면 동점이 아래로 내려간다 — #239).
+    /// 정수 두께 × (22m)를 정수 180(= 15 × 12)으로 한 번 나눠 0.5u 동점을 정확히 가른다 — 22/15를 이진
+    /// 소수로 곱하면 무늬 두께 315(b = 38.5u)·330(1.5b = 60.5u)…에서 동점이 아래로 내려간다(한글은
+    /// 올린다, #239의 원형 점선과 같은 함정).
     static func dashDeviceUnits(
         for shape: HwpBorderType, hwpUnits: CGFloat, grid: Bool
     ) -> [CGFloat] {
@@ -148,7 +152,9 @@ extension HwpLineShapeGeometry {
     /// 실선·대시의 획 두께 (pt) — 테두리 축척(표 셀 테두리·단 구분선)은 한글처럼 무늬 두께를 장치
     /// 단위로 반올림한 값(최소 1u — 표 26 16단: 2·3·4·5·6·7·9·12·14·17·24·35·47·71·95·118u, #245
     /// 실측: 가로·세로 변·단 구분선 모두; 0.4mm 1.134 → 1.08pt, 1mm 2.835 → 2.88pt), 글자선은 단선
-    /// 두께 그대로다. 여러 줄·물결·원형 점선의 띠는 이 값을 쓰지 않는다 (명목 두께 축척). 상한
+    /// 두께 그대로다. 여러 줄·물결 띠는 이 값을 쓰지 않고 명목 두께에 비례한다 — 한글은 이것도 장치
+    /// 단위로 그리는데(1mm 2중선 띠 2.88pt·물결 진폭 24u, `Sources/HwpKitCore/AGENTS.md`의 남은 격차)
+    /// 아직 좇지 않는다. 원형 점선은 제 장치 단위 규칙이 있다(`circleDeviceGeometry(for:)`). 상한
     /// (`deviceRoundingLimit`) 밖 두께는 그대로다.
     static func strokeThickness(for line: Line) -> CGFloat {
         line.scale == .border ? borderStrokeThickness(line.thickness) : line.thickness
@@ -156,7 +162,8 @@ extension HwpLineShapeGeometry {
 
     /// 테두리·단 구분선 두께(pt)의 획 두께 — 무늬 두께(`borderPatternHwpUnits(thickness:)`)를 장치
     /// 단위로 반올림한 값(최소 1u). 0 이하·유한하지 않은 두께와 상한(`deviceRoundingLimit`) 밖 두께는
-    /// 그대로다. 모서리에서 이웃 변이 나가는 길이도 이 값의 절반이다 (`HwpBorderSet.reachWidth`).
+    /// 그대로다. 모서리에서 선이 나가거나 물러나는 길이도 이웃 변의 이 값의 절반이다
+    /// (`HwpBorderSet.reachWidth`).
     static func borderStrokeThickness(_ thickness: CGFloat) -> CGFloat {
         guard thickness > 0, thickness < deviceRoundingLimit else { return thickness }
         let units = roundHalfUp(borderPatternHwpUnits(thickness: thickness) / hwpUnitsPerDeviceUnit)

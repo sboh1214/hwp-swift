@@ -63,7 +63,8 @@ extension HwpLineShapeGeometry {
             if grid {
                 return (thickness, thickness * Shape.cellBorderCirclePitchUnitRatio)
             }
-            // 나눗셈 먼저 — 두께가 유한 최댓값 근처여도 점 단위가 넘치지 않게
+            // 나눗셈 먼저 — 곱이 먼저 넘치지 않게 (두께가 유한 최댓값 근처면 간격은 무한대로 넘쳐도
+            // 지름은 아래에서 유한 최댓값에 멈춘다)
             let dot = thickness / Shape.patternUnitThicknessDenominator
                 * Shape.patternUnitThicknessNumerator
             return (min(dot, .greatestFiniteMagnitude), dot * (1 + Shape.circleGapDotUnitRatio))
