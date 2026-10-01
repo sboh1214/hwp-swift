@@ -11,7 +11,8 @@ struct HwpBorderChainPlacement: Hashable, Sendable {
     let length: CGFloat
     /// 이 변이 그리는 요소의 자리 범위 (사슬 로컬) — 사슬의 첫 조각은 −∞부터, 끝에 닿는 조각은
     /// +∞까지다. 맞닿은 두 조각의 경계는 같은 값 하나를 나눠 가져 요소가 빠지거나 겹치지 않는다.
-    /// 실선은 자리 0의 요소 하나라 첫 조각이 사슬 전체를 긋는다 (`HwpLineShapeGeometry.Line`).
+    /// 실선은 자리 0의 요소 하나라 자리 0을 담은 조각(보통 첫 조각 — 첫 칸이 제 물러남보다 좁으면 뒤
+    /// 조각)이 사슬 전체를 긋는다 (`HwpLineShapeGeometry.Line`).
     let elementRange: Range<CGFloat>
 }
 
@@ -49,10 +50,12 @@ struct HwpBorderCorners: Hashable, Sendable {
 }
 
 /// 칸 네 변이 표 안에서 그려지는 차례 (작을수록 먼저, #246). 한글 12.30은 셀 간격이 없는 표를
-/// ① 여러 줄·물결 변을 칸 차례로(칸마다 왼·오른·위·아래) ② 단선 세로 사슬을 격자선 x 차례로 ③ 단선
-/// 가로 사슬을 격자선 y 차례로 그리고 — 같은 격자선 안에서는 사슬을 만든 차례(`HwpBorderChaining`)다
-/// — 셀 간격이 있는 표는 칸마다 왼·오른·위·아래로 그린다 (실측 `so246-order` 가로·세로 모양 7×7 ×
-/// 셀 간격 0·283 98표본, `so246-cells`·`solidchain`·`junction`의 다칸 표).
+/// ① 여러 줄·물결 변을 칸 차례로(칸마다 왼·오른·위·아래) ② 단선 세로 무리(격자선 × 모양)를 모양(표 25
+/// 값) 차례, 같은 모양 안에서 격자선 x 차례로 ③ 단선 가로 무리를 모양·y 차례로 그리고 — 무리 안에서는
+/// 사슬을 만든 차례다 — ④ 세로 마지막·첫 무리(사슬 거꾸로)와 가로 마지막·첫 무리(사슬 거꾸로)를 한 번
+/// 더 긋는다 (`HwpBorderChaining.paintSequence` — 덧그은 조각은 마지막 차례가 남는다). 셀 간격이 있는
+/// 표는 칸마다 왼·오른·위·아래로 그린다 (실측 `so246-order` 가로·세로 모양 7×7 × 셀 간격 0·283
+/// 98표본, `so246-cells`·`solidchain`·`junction`의 다칸 표).
 struct HwpBorderPaintOrder: Hashable, Sendable {
     var top = 0, bottom = 0, left = 0, right = 0
 

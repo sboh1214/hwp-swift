@@ -164,9 +164,10 @@ final class HwpBorderCornerTests: XCTestCase {
         }
     }
 
-    /// 같은 모양·굵기 이웃은 색과 무관하게 맞물린다 — 가는+굵은 2중선 1×1 모서리의 끝 자리는 부속선마다
-    /// 이웃 부속선의 먼 가장자리다 (`so246-multi` #44·#76: 굵은 선 0.04 ~ 199.36, 가는 선 −1.40 ~
-    /// 201.52 — 종전 겹상자 산식은 굵은 선 끝이 200이었다)
+    /// 같은 모양·굵기 이웃은 색과 무관하게 맞물린다 — 비대칭 2중선 1×1 모서리의 끝 자리는 부속선마다
+    /// 이웃 부속선의 먼 가장자리다 (`so246-multi` #44 가는+굵은: 바깥 가는 선 −1.40 ~ 201.52·안쪽 굵은
+    /// 선 0.04 ~ 199.36, #76 굵은+가는: 바깥 굵은 선 −1.40 ~ 201.52·안쪽 가는 선 0.76 ~ 200.08 — 종전
+    /// 겹상자 산식은 #44의 굵은 선 끝이 200이었다)
     func testSameShapeCornersNestStripeByStripe() {
         let top = Self.pieces(Chaining.borders(
             top: Self.side(.thinThickDoubleLine, Self.mm1),
@@ -314,8 +315,8 @@ final class HwpBorderCornerTests: XCTestCase {
 
     // MARK: - 실선 사슬
 
-    /// 셀 간격이 없는 표의 실선도 격자선을 따라 잇는다 — 안쪽 모서리의 2중선과 무관하게 한 선이고 사슬의
-    /// 첫 조각이 한 번에 긋는다. 색이 다른 조각은 사슬을 끊어 그 끝에서 물러난다 (`so246-cells` #7·
+    /// 셀 간격이 없는 표의 실선도 격자선을 따라 잇는다 — 안쪽 모서리의 2중선과 무관하게 한 선이고 자리
+    /// 0을 담은 조각(여기서는 첫 조각)이 한 번에 긋는다. 색이 다른 조각은 사슬을 끊어 그 끝에서 물러난다 (`so246-cells` #7·
     /// `solidchain` #3: 1×3 위 변 −0.16 ~ 180.08 한 선, 가운데 칸만 파랑이면 초록 −0.16 ~ 57.2)
     func testSolidChainsIgnoreInteriorCorners() {
         let double = Self.side(.doubleLine, Self.mm2, Self.blue)

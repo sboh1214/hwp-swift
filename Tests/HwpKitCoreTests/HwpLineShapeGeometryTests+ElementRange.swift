@@ -114,7 +114,8 @@ extension HwpLineShapeGeometryTests {
     }
 
     /// 실선(3D 넷 대체 포함)은 자리 0에 놓인 요소 하나다 — 0을 담은 조각만 선 전체를 긋고 나머지는
-    /// 경로·선 방향 범위가 없다 (이은 실선 사슬의 첫 조각이 한 번에 긋는다, #246)
+    /// 경로·선 방향 범위가 없다 (이은 실선 사슬은 자리 0을 담은 조각 — 보통 첫 조각 — 이 한 번에 긋는다,
+    /// #246)
     func testSolidLineIsOneElementAtTheOrigin() {
         for shape: HwpBorderType in [.line, .thick3D] {
             let line = Self.borderLine(shape, thickness: 3, length: 60)

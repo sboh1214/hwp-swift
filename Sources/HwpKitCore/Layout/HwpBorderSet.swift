@@ -22,8 +22,9 @@ import Foundation
 ///   옮긴다. 다르면 가로 변은 나가고 세로 변은 물러나되, 표 격자의 이어짐·지나감이 그 자리를 바꾼다
 ///   (`HwpBorderCornerContext` — 표가 셀 배치로 셈해 칸에 싣는다).
 ///
-/// 이은 대시·원형 점선은 사슬의 무늬 자리를 받아 제 몫의 요소만 그리고 (#238), 이은 실선은 사슬의 첫
-/// 조각이 한 번에 긋는다. 그리는 차례도 표가 정한다 (`EdgeGeometry.order`, `HwpBorderPaintOrder`).
+/// 이은 대시·원형 점선은 사슬의 무늬 자리를 받아 제 몫의 요소만 그리고 (#238), 이은 실선은 자리 0을
+/// 담은 조각(보통 첫 조각)이 한 번에 긋는다. 그리는 차례도 표가 정한다 (`EdgeGeometry.order`,
+/// `HwpBorderPaintOrder`).
 public struct HwpBorderSet: Sendable, Hashable {
     /// 변 굵기 (pt, 표 26) — 모양이 `none`이어도 저장된 굵기를 싣는다 (#246, 모서리 계산에 쓴다)
     public let top, bottom, left, right: CGFloat
@@ -90,8 +91,8 @@ public struct HwpBorderSet: Sendable, Hashable {
 
     /// rect 둘레 변들의 히트 띠 — 경로를 만들지 않아 히트 판정마다 싸다. 칠하는 변의 경계 상자는
     /// `edges(around:context:)`가 내는 `EdgeGeometry.band`와 같고, 이웃 칸과 이은 변 가운데 제 몫의
-    /// 요소가 없는 변(무늬의 빈 자리, 이웃 칸이 넘겨 그린 대시, 첫 조각이 한 번에 그은 실선만 지나는
-    /// 변)도 선 위라 띠를 낸다 — 그 변은 칠하지 않으므로 `edges`에는 없다 (#238).
+    /// 요소가 없는 변(무늬의 빈 자리, 이웃 칸이 넘겨 그린 대시, 자리 0을 담은 조각이 한 번에 그은 실선만
+    /// 지나는 변)도 선 위라 띠를 낸다 — 그 변은 칠하지 않으므로 `edges`에는 없다 (#238).
     func bands(around rect: CGRect, context: HwpBorderContext = .none) -> [CGRect] {
         drawnEdges(around: rect, context: context).compactMap(\.band)
     }
@@ -266,7 +267,7 @@ public struct HwpBorderSet: Sendable, Hashable {
     ///
     /// - 셀 간격이 없는 표: 이웃이 여러 줄·물결이면 가로·세로 모두 이웃 굵기의 절반만큼 물러나고 (#246
     ///   실측 `so246-single`: 이웃 2중선·3중선·가는+굵은·물결 0.4~2mm × 실선·긴 점선·원형 점선·일점쇄선
-    ///   가로·세로 80표본, 이웃 모양·굵기·색과 무관), 그 밖(단선·선 없음)이면 가로 변은 그만큼 나가고
+    ///   가로·세로 56표본, 이웃 모양·굵기·색과 무관), 그 밖(단선·선 없음)이면 가로 변은 그만큼 나가고
     ///   세로 변은 모서리에서다 (#191 — 가로 변이 모서리를 메운다).
     /// - 셀 간격이 있는 표 (#243): 이웃과 모양·굵기가 같은 **맞물린 모서리**면 원형 점선은 모서리에서,
     ///   실선·대시는 가로·세로 변 모두 굵기의 절반만큼 나간다. 맞물리지 않으면(여러 줄·물결·선 없음 이웃
