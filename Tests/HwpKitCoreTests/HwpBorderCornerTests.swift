@@ -5,7 +5,7 @@ import Foundation
 import Nimble
 import XCTest
 
-/// 표 셀 테두리의 모서리 끝 자리와 그리는 차례 (#246) — 한글 12.30.0(build 6446, macOS) PDF 실측
+/// 표 셀 테두리의 모서리 끝 자리와 그리는 차례 (#246) — 한글 12.30.0(build 6523, macOS) PDF 실측
 /// (2026-10-02, 로컬 `probes/246`의 `so246-*` 문서 8종)을 칸 로컬 좌표(pt)로 고정한다. 한글 값은
 /// 0.12pt 장치 격자에 표 원점을 맞추고 선 끝을 장치 한 칸 더 그려 1~1.5u 흔들리므로 0.2 안에서 맞춘다.
 final class HwpBorderCornerTests: XCTestCase {

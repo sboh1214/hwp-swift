@@ -11,7 +11,7 @@ HWP fixture `table-border-corners`(`Tests/CoreHwpTests/Fixtures/table-border-cor
 ## 재생성
 
 1. `/Applications/한컴오피스 한글.app`(bundle `com.hancom.office.hwp12.mac.general`,
-   12.30.0 build 6446)에서 HWP 쌍의 재생성 절차(`Fixtures/table-border-corners/README.md`)를
+   12.30.0 build 6523)에서 HWP 쌍의 재생성 절차(`Fixtures/table-border-corners/README.md`)를
    따라 원본 HWPX를 연다.
 2. `파일 > 다른 이름으로 저장하기...` → 파일 형식 **한글 문서 (*.hwp)** → 저장한 뒤,
    같은 세션에서 다시 `파일 > 다른 이름으로 저장하기...` → **한글 표준 문서 (*.hwpx)** → 저장.
@@ -21,5 +21,5 @@ HWP fixture `table-border-corners`(`Tests/CoreHwpTests/Fixtures/table-border-cor
 ## 생성 확인 환경
 
 - 앱: /Applications/한컴오피스 한글.app (com.hancom.office.hwp12.mac.general)
-- 버전: 12.30.0 (build 6446)
+- 버전: 12.30.0 (build 6523)
 - 일자: 2026-10-02 (System Events 접근성 자동화로 저장)
