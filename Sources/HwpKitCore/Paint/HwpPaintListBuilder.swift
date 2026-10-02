@@ -143,6 +143,7 @@ public struct HwpPaintListBuilder: Sendable {
         // 살고 (R49) 비 treatAsChar 개체의 마커는 폭이 0이라, 스팬 방출이 아무
         // rect도 못 낸다. 히트는 `wrapperHyperlinkURL`로 **개체에서** 링크를
         // 여니 방출도 개체 rect로 내야 밑줄과 탭이 같은 자리에 있다 (R56).
+
         func emitWrapped(
             _ paragraphs: [HwpLaidOutParagraph], _ objects: [WrappedObjectRef], offset: CGPoint
         ) {
@@ -166,6 +167,7 @@ public struct HwpPaintListBuilder: Sendable {
         // 컨테이너의 감싼 개체 링크 — **글상자 자식까지 같은 규칙으로** 내려간다
         // (R57). 컨테이너가 셋 (각주·표 셀·글상자) 이라 호출부마다 손으로 쓰면
         // 한 곳을 빠뜨린다 — 실제로 각주 안 글상자가 빠져 있었다.
+
         func emitWrappedObjects(
             _ paragraphs: [HwpLaidOutParagraph], _ objects: ContainerObjects, offset: CGPoint
         ) {

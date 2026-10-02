@@ -55,6 +55,7 @@ enum HwpBorderChaining {
         }
         // 단선 사슬 — 이음 자리를 싣고, 여러 줄·물결 변 다음 차례를 매긴다 (`paintSequence`). 나중에
         // 다시 그리는 무리는 마지막 차례가 남는다 (같은 경로를 덧그린 것과 보이는 결과가 같다)
+
         func groups(_ lines: [HwpBorderGrid.Line]) -> [LineGroup] {
             lines.flatMap { line in
                 lineGroups(chains(on: line.pieces.filter(\.isSingleLine)), cross: line.cross)

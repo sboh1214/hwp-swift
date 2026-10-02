@@ -296,6 +296,7 @@ final class HwpBorderCornerTests: XCTestCase {
         let half = HwpBorderSet.reachWidth(Self.mm1) / 2
         let corner = Self.mm1 / 4 / 2 / 2.0.squareRoot()
         // 첫 대각선의 시작 (획 모서리만큼 앞으로 나간 상자를 되돌린다)
+
         func start(_ edge: HwpBorderSet.EdgeGeometry, horizontal: Bool) -> CGFloat {
             let box = edge.path.boundingBoxOfPath
             return (horizontal ? box.minX : box.minY) + corner
