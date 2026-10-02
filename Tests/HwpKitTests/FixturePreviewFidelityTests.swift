@@ -147,6 +147,10 @@ final class FixturePreviewFidelityTests: XCTestCase {
         // 12×16 그리드는 원 크기·간격, 여러 줄 띠의 자리에 둔감하다. 이 값은 유실 가드이고, 무늬
         // 크기·자리의 가드는 `FixtureDecorationLineRenderTests+MsWordShapes`의 픽셀 핀이다.
         "ms-word-line-shapes": 0.004, // 실측 0.0030 (2026-09-30, 두 폰트 모드 같음)
+        // MS 워드 호환 문서의 첨자 취소선(#248) — 1쪽은 20·40pt 보통·위 첨자·아래 첨자 취소선 8문단이라
+        // 12×16 그리드는 선의 1pt 안 자리 차이에 둔감하다. 이 값은 유실 가드이고, 선 자리의 가드는
+        // `FixtureDecorationLineRenderTests+MsWordScript`의 픽셀 핀이다.
+        "ms-word-script-strikethrough": 0.0025, // 실측 0.0017 (2026-10-02, 두 폰트 모드 같음)
         // 크기가 섞인 줄의 장식선(#226) — 1쪽은 10·40pt 글자가 섞인 표본 10문단이라 12×16 그리드는
         // 밑줄의 줄 단위 자리·두께에 둔감하다. 이 값은 유실 가드이고, 선 자리의 가드는
         // `FixtureDecorationLineRenderTests+LineWide`의 픽셀 핀이다.

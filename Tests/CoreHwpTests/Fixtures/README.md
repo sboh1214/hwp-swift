@@ -303,6 +303,16 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   높이 / 1.3) 안쪽이다. 한글이 저장한 줄 캐시와 같은 세션의 PDF 내보내기(README의 표)가 오라클이고
   `HwpKitTests/FixtureMsWordParagraphEndBoxTests`가 그것과 대조한다. HWPX 쌍은
   `HwpxFixtures/ms-word-paragraph-end-box`.
+- `ms-word-script-strikethrough`: **MS 워드 호환 문서**(호환 문서 대상 프로그램 2)에 한글 슬롯 Apple
+  SD 산돌고딕 Neo·라틴 슬롯 Menlo로 보통·위 첨자·아래 첨자 취소선을 한 줄씩 나란히 둔 8문단 — Menlo·
+  Apple SD 20·40pt 실선 취소선, 글자 가운데 밑줄, 원형 점선 취소선, 기본 40pt·상대 크기 50%, 첨자
+  run만 글자 위치 30% — 을 실은 합성 HWPX(줄 배치 정보 없음)를 Hancom Office HWP for macOS 12.30.0
+  build 6523으로 2026-10-02에 열어 `.hwp`·`.hwpx`로 저장(1쪽). 한글이 이 문서의 **첨자 취소선을
+  첨자로 옮겨진 베이스라인 위, 보통 글자 취소선 높이의 0.696배에** 그리는 규칙(#248 — 한글 문서는
+  첨자 글리프 축소 비율 0.64배에 가깝다, 실측 0.636)의 실물 근거다 — Menlo 40pt 위 첨자 선이
+  0.64배 자리보다 0.45pt 위다. 같은 세션의 PDF 내보내기 좌표(README의 표)가 `HwpKitTests/FixtureDecorationLineRenderTests+MsWordScript`의
+  오라클이고 두 글꼴이 결정론 resolver의 글꼴과 같아 쪽 좌표를 기기 무관하게 핀한다. HWPX 쌍은
+  `HwpxFixtures/ms-word-script-strikethrough`.
 - `page-end-line-box`: 본문 높이 97.62pt의 작은 쪽(쪽 높이 28186 HWPUNIT)에 함초롬바탕 10pt·
   160% 채움 줄을 쌓고 쪽 끝 남은 자리에 16·18·17.62·17.61pt 한 줄, 상자보다 작은 고정 줄 간격,
   아래 간격 20pt, 세 줄 문단(보호 없음·문단 보호), 외톨이줄 보호 16pt 다섯 줄, 16pt 세 줄, 빈

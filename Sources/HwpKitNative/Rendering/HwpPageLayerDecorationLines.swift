@@ -122,21 +122,31 @@ extension HwpPageLayer {
 
     /// 취소선(글자 가운데 밑줄·변경 추적 삭제선 포함) 한 줄의 기하 — 밑줄과 달리 세
     /// 갈래 모두 **run 단위**다. `fontSize`는 run 글꼴 크기(첨자면 줄어든 크기)이고,
-    /// 세 갈래 모두 글자 모양 기본 크기에 첨자 축소 비율만 곱한 값을 쓴다 (슬롯 상대
-    /// 크기는 곱하지 않는다 — #187·#210·#226 실측: 기본 40pt·상대 크기 50% run의 취소선
-    /// +14.04pt, 기본 20pt·상대 크기 50% 위 첨자는 옮겨진 베이스라인 위 0.35 × 12.8pt).
+    /// 세 갈래 모두 글자 모양 기본 크기를 쓴다 (슬롯 상대 크기는 곱하지 않는다 —
+    /// #187·#210·#226 실측: 기본 40pt·상대 크기 50% run의 취소선 +14.04pt, 기본 20pt·상대
+    /// 크기 50% 위 첨자는 옮겨진 베이스라인 위 0.35 × 12.8pt). 첨자 run이면 그 크기를
+    /// 줄인다 — 한글 문서·한글 2007 호환 문서는 첨자 축소 비율(run 글꼴 크기 ÷ 축소 전
+    /// 크기, #179·#210)을, MS 워드 호환 문서는 그보다 큰 `msWordScriptStrikethroughScale`
+    /// (0.696, #248)을 곱한다.
     func strikethroughLine(
         _ attributes: [NSAttributedString.Key: Any], msWordFont: CTFont?, fontSize size: CGFloat
     ) -> HwpDecorationLineGeometry.Line {
         let preScriptSize = preScriptFontSize(attributes)
         let baseSize = decorationBaseFontSize(attributes)
-        let scriptSize = baseSize * size / max(preScriptSize, 0.01)
+        let scriptScale = size / max(preScriptSize, 0.01)
+        let scriptSize = baseSize * scriptScale
         if let msWordFont {
-            // 첨자 축소 비율(run 글꼴 크기 ÷ 축소 전 크기)은 유지한다 — 한글 문서처럼
-            // 첨자 취소선은 줄어든 글리프 가운데를 지난다 (#179; 호환 문서 첨자 표본은
-            // MS 워드 갈래엔 없고 한글 2007 갈래는 실측했다).
+            // 첨자 run은 한글이 같은 글꼴·기본 크기 보통 글자 취소선 높이의 0.696배에 그린다
+            // — 글리프 축소 비율 0.64가 아니다 (#248, 한글 12.30 PDF 실측: 글꼴 10종 × 8~
+            // 100pt × 위·아래 첨자 360표본, `HwpRenderTuning.Text.msWordScriptStrikethroughScale`).
+            // 첨자 판정은 축소 비율이 1보다 확실히 작은지로 한다 — 첨자 축소는 0.64·0.75배라
+            // 0.99 아래이고, 보통 run의 글꼴 크기와 축소 전 크기는 같은 값에서 나오지만
+            // 부동소수 비교로 1을 가르면 미세 오차에 보통 run이 첨자 자리로 떨어질 수 있다.
+            let boxSize = scriptScale < 0.99
+                ? baseSize * HwpRenderTuning.Text.msWordScriptStrikethroughScale
+                : baseSize
             return HwpDecorationLineGeometry.msWordStrikethrough(
-                runBox: HwpMsWordLineBox.metrics(of: msWordFont).scaled(by: scriptSize),
+                runBox: HwpMsWordLineBox.metrics(of: msWordFont).scaled(by: boxSize),
                 thicknessFontSize: baseSize
             )
         }

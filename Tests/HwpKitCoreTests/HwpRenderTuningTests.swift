@@ -21,6 +21,7 @@ final class HwpRenderTuningTests: XCTestCase {
         expect(HwpRenderTuning.Text.msWordUnderlineThicknessCellRatio) == 0.05
         expect(HwpRenderTuning.Text.msWordUnderlineOffsetCellRatio) == 0.021
         expect(HwpRenderTuning.Text.msWordStrikethroughAscentRatio) == 0.273
+        expect(HwpRenderTuning.Text.msWordScriptStrikethroughScale) == 0.696
         expect(HwpRenderTuning.Text.hwp200XDecorationLineThickness) == 0.36
     }
 
