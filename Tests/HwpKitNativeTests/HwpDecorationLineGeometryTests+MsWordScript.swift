@@ -111,7 +111,7 @@ extension HwpDecorationLineGeometryTests {
     /// 축소 전 크기보다 아주 조금 작아도 첨자 배율로 떨어지지 않는다(떨어지면 선이 보통 높이의
     /// 0.3배만큼 — Menlo 40pt에서 3.08pt — 내려간다).
     /// 각주·미주 참조 번호(0.75배)는 첨자 배율을 받는다 — 한글은 그 번호의 취소선을 본문 자리에
-    /// 그리므로 두 갈래 모두 아직 한글과 다르다(별건).
+    /// 그리므로 두 갈래 모두 아직 한글과 다르다(#256).
     func testMsWordScriptStrikethroughNeedsARealScriptReduction() {
         let layer = HwpPageLayer()
         let size = Self.msWordScriptSize
