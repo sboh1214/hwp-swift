@@ -212,7 +212,7 @@ public enum HwpRenderTuning {
 
         /// MS 워드 호환 문서의 취소선(글자 가운데 밑줄·변경 추적 삭제선 포함) 중심의
         /// 베이스라인 위 높이 = 기준 상자의 `ascent` × 글자 모양 기본 크기(슬롯 상대
-        /// 크기 무관, 첨자는 축소 비율) × 이 배율.
+        /// 크기 무관, 첨자는 `msWordScriptStrikethroughScale`배) × 이 배율.
         /// 실측: 같은 스윕 — 함초롬돋움 +0.2917em (÷ 1.07 = 0.2726), Apple SD 산돌고딕
         /// Neo +0.2481 (÷ 0.90 = 0.2757), HY울릉도M +0.2330 (÷ 0.8584 = 0.2714), 맑은 고딕
         /// +0.2973 (÷ 1.0884 = 0.2732), Menlo +0.2538 (÷ 0.9282 = 0.2734), Helvetica
@@ -221,6 +221,28 @@ public enum HwpRenderTuning {
         /// `track-changes` 실물의 삭제선 +0.29em (#136·#176) 은 함초롬돋움의 이 값이다.
         /// 검증: `HwpDecorationLineGeometryTests+Compat` 위치 + `HwpRenderTuningTests`.
         public static let msWordStrikethroughAscentRatio: CGFloat = 0.273
+
+        /// MS 워드 호환 문서에서 위·아래 첨자 run의 취소선(글자 가운데 밑줄 포함)이 첨자로
+        /// 옮겨진 베이스라인 위로 오르는 높이 ÷ 같은 글꼴·기본 크기의 보통 글자 취소선이 베이스라인
+        /// 위로 오르는 높이 (#248). 한글 문서 갈래는 이 비율로 첨자 글리프 축소 비율(0.64,
+        /// `HwpTextRunBuilder.superscriptScale`)을 쓰고(#179 — 한글 실측은 0.636으로 그에 가깝다)
+        /// MS 워드 호환 문서는 확연히 크다 — 0.64로 그리면 함초롬바탕 40pt 위·아래 첨자 취소선이
+        /// 한글보다 0.7pt 낮았다.
+        /// 실측: 한글 12.30.0 build 6523 (2026-10-02) PDF 벡터 좌표 — `targetProgram="MS_WORD"`
+        /// 합성 문서에서 글꼴 10종(함초롬바탕·Apple SD 산돌고딕 Neo·HY울릉도M·Menlo·Baskerville·
+        /// Times New Roman·Helvetica·Courier New·Georgia·Arial) × 8~100pt 18단 × 위·아래 첨자의
+        /// 실선 취소선 360표본. 글꼴별로 크기 20~100pt에서 맞춘 비율이 0.694~0.699이고(글꼴의
+        /// 상자 모양과 무관 — 기준 상자 `descent`/`ascent`가 0.10인 Times New Roman과 0.36인
+        /// Baskerville이 0.696·0.697), 360표본 전체에서 평균 잔차가 0이 되는 값이 0.696이다
+        /// (최대 0.16pt, 장치 단위 0.12pt를 넘는 표본 15개 — 첨자 선·첨자 글리프 베이스라인·보통
+        /// 선 세 좌표가 저마다 장치 좌표로 반올림된 합성 오차 범위다; 0.7이면 평균 0.03pt 높고
+        /// 최대 0.22pt, 0.12pt를 넘는 표본이 28개다). 글리프 자체(0.64배·위 0.44em·아래 0.12em, #204)와 선 두께(축소 전
+        /// 기본 크기 × 0.04)는 한글 문서와 같고, 상대 크기(50·70·150·200%)·글자 위치(±30%)·선
+        /// 모양(원형 점선·점선·파선·긴 파선·물결·2중선·가는+굵은 선·2중 물결)·글자 가운데 밑줄도
+        /// 같은 비율을 따른다.
+        /// 검증: `HwpDecorationLineGeometryTests+MsWordScript` + `ms-word-script-strikethrough`
+        /// 픽스처 쌍 + `HwpRenderTuningTests`.
+        public static let msWordScriptStrikethroughScale: CGFloat = 0.696
 
         /// 한글 2007 호환 문서(`HwpCompatibleDocumentTarget.hwp200X`)의 장식선 두께
         /// (pt) — 글자 아래·위 밑줄, 취소선(글자 가운데 밑줄), 변경 추적 삽입/삭제선이
