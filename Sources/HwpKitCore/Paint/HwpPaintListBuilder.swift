@@ -139,10 +139,11 @@ public struct HwpPaintListBuilder: Sendable {
                 emitted = true
             }
         }
-        /// 개체를 감싼 `%hlk` — 링크가 개체가 아니라 부모 문단의 U+FFFC run에
-        /// 살고 (R49) 비 treatAsChar 개체의 마커는 폭이 0이라, 스팬 방출이 아무
-        /// rect도 못 낸다. 히트는 `wrapperHyperlinkURL`로 **개체에서** 링크를
-        /// 여니 방출도 개체 rect로 내야 밑줄과 탭이 같은 자리에 있다 (R56).
+        // 개체를 감싼 `%hlk` — 링크가 개체가 아니라 부모 문단의 U+FFFC run에
+        // 살고 (R49) 비 treatAsChar 개체의 마커는 폭이 0이라, 스팬 방출이 아무
+        // rect도 못 낸다. 히트는 `wrapperHyperlinkURL`로 **개체에서** 링크를
+        // 여니 방출도 개체 rect로 내야 밑줄과 탭이 같은 자리에 있다 (R56).
+
         func emitWrapped(
             _ paragraphs: [HwpLaidOutParagraph], _ objects: [WrappedObjectRef], offset: CGPoint
         ) {
@@ -163,9 +164,10 @@ public struct HwpPaintListBuilder: Sendable {
                 emitted = true
             }
         }
-        /// 컨테이너의 감싼 개체 링크 — **글상자 자식까지 같은 규칙으로** 내려간다
-        /// (R57). 컨테이너가 셋 (각주·표 셀·글상자) 이라 호출부마다 손으로 쓰면
-        /// 한 곳을 빠뜨린다 — 실제로 각주 안 글상자가 빠져 있었다.
+        // 컨테이너의 감싼 개체 링크 — **글상자 자식까지 같은 규칙으로** 내려간다
+        // (R57). 컨테이너가 셋 (각주·표 셀·글상자) 이라 호출부마다 손으로 쓰면
+        // 한 곳을 빠뜨린다 — 실제로 각주 안 글상자가 빠져 있었다.
+
         func emitWrappedObjects(
             _ paragraphs: [HwpLaidOutParagraph], _ objects: ContainerObjects, offset: CGPoint
         ) {
@@ -330,17 +332,19 @@ public struct HwpPaintListBuilder: Sendable {
         return buffer.output
     }
 
-    /// 셀 테두리의 명령 — 기하는 `HwpBorderSet.edges`가 소유하고 히트
+    /// 셀 테두리의 명령과 그 표 안 그리는 차례 — 기하는 `HwpBorderSet.edges`가 소유하고 히트
     /// (`HwpTableCellFrame.paints`) 와 같은 변 기하를 공유한다 (R56 — 히트 띠는 칠하지 않는 이은 변의
     /// 띠를 더 가질 수 있다). 변마다 채우기 경로 하나다 — 점선·
-    /// 물결·원형 점선처럼 조각이 많은 모양도 명령 하나로 간다 (#191). 이웃 칸과 이은 대시·원형
-    /// 점선 변은 표가 셈한 자리(`HwpTableCellFrame.borderChains`)로 제 몫만 그린다 (#238).
+    /// 물결·원형 점선처럼 조각이 많은 모양도 명령 하나로 간다 (#191). 이웃 칸과 이은 단선 변은 표가
+    /// 셈한 자리(`HwpTableCellFrame.borderContext`)로 제 몫만 그리고 (#238), 차례는 표 단위로
+    /// `HwpTableCommandBuffer`가 다시 늘어놓는다 (#246).
     func borderCommands(
         _ cell: HwpTableCellFrame,
         around rect: CGRect
-    ) -> [HwpPaintCommand] {
-        cell.borders.edges(around: rect, chains: cell.borderChains).map {
-            .drawPath(path: $0.path, fill: $0.color.cgColor, stroke: nil, strokeWidth: 0)
+    ) -> [(order: Int, command: HwpPaintCommand)] {
+        cell.borders.edges(around: rect, context: cell.borderContext).map { edge in
+            let fill = edge.color.cgColor
+            return (edge.order, .drawPath(path: edge.path, fill: fill, stroke: nil, strokeWidth: 0))
         }
     }
 

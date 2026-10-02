@@ -22,9 +22,10 @@ public struct HwpTableCellFrame: @unchecked Sendable, Hashable {
     public let shapes: [HwpCellShape]
     /// 셀 안 글상자 (문단 줄 위치에 배치, R29 #1)
     public let textboxes: [HwpCellTextbox]
-    /// 이웃 칸과 이은 대시·원형 점선 변의 자리 (#238) — 셀 혼자로는 알 수 없어 표가 셀 배치에서
-    /// 셈해 싣는다 (`HwpTableFrame.init`, `HwpBorderChaining`). 기본은 이음 없음.
-    var borderChains: HwpBorderChains = .none
+    /// 테두리 맥락 — 이웃 칸과 이은 단선 변의 자리(#238·#246), 여러 줄·물결 변의 모서리 맥락,
+    /// 그리는 차례(#246). 셀 혼자로는 알 수 없어 표가 셀 배치에서 셈해 싣는다 (`HwpTableFrame.init`,
+    /// `HwpBorderChaining`). 기본은 맥락 없는 칸 혼자의 테두리.
+    var borderContext: HwpBorderContext = .none
 
     public init(
         cellFrame: CGRect,
@@ -71,7 +72,7 @@ public struct HwpTableCellFrame: @unchecked Sendable, Hashable {
     /// 가운데 제 몫의 요소가 없어 칠하지 않는 변의 모서리 구간 띠 (점선의 빈 자리처럼 선 위다, #238).
     /// 경로 없이 띠만 만든다
     private var borderRects: [CGRect] {
-        borders.bands(around: cellFrame, chains: borderChains)
+        borders.bands(around: cellFrame, context: borderContext)
     }
 
     /// 분할 **전에** 감싼 링크를 개체에 고정한 사본 (R58).
@@ -109,7 +110,7 @@ public struct HwpTableCellFrame: @unchecked Sendable, Hashable {
                 $0.withWrapperURL($0.wrapperURL ?? resolved($0.paragraphId, $0.controlIndex))
             }
         )
-        return copy.withBorderChains(borderChains)
+        return copy.withBorderContext(borderContext)
     }
 
     /// 셀과 모든 콘텐츠 지오메트리를 deltaY만큼 이동한 사본 (분할 세그먼트 이동).
@@ -140,8 +141,8 @@ public struct HwpTableCellFrame: @unchecked Sendable, Hashable {
             shapes: shapes.map { $0.withRect($0.rect.offsetBy(dx: 0, dy: deltaY)) },
             textboxes: textboxes.map { $0.withRect($0.rect.offsetBy(dx: 0, dy: deltaY)) }
         )
-        // 이음 자리는 칸 모서리 기준이라 옮겨도 그대로다
-        .withBorderChains(borderChains)
+        // 테두리 맥락은 칸 모서리 기준이라 옮겨도 그대로다
+        .withBorderContext(borderContext)
     }
 }
 
@@ -162,8 +163,8 @@ public struct HwpTableFrame: @unchecked Sendable, Hashable {
     public let borderColor: HwpRGBColor
     public let borderWidth: CGFloat
 
-    /// 셀 테두리의 대시·원형 점선은 이 표의 셀 배치로 이웃 칸과 잇는다 (#238) — `rows`의 칸이
-    /// 싣고 온 이음 자리는 버리고 새로 셈한다 (쪽 조각·옮겨 온 칸도 이 표 기준이 된다).
+    /// 셀 테두리의 맥락(단선 이음·모서리·그리는 차례)은 이 표의 셀 배치로 셈한다 (#238·#246) —
+    /// `rows`의 칸이 싣고 온 맥락은 버리고 새로 셈한다 (쪽 조각·옮겨 온 칸도 이 표 기준이 된다).
     public init(
         outerFrame: CGRect,
         rows: [HwpTableRowFrame],
@@ -199,10 +200,9 @@ extension HwpTableLayout {
         // 4방향 순서: 왼쪽/오른쪽/위쪽/아래쪽 (표 23)
         let lines = borderFill.borderLineArray
         func width(_ line: CoreHwp.HwpBorderLine) -> CGFloat {
-            // 선 종류가 없으면 (표 25 type 0 = 선 없음) 굵기와 무관하게 안 그린다
-            // (CCL 한글.app 실측: 셀 테두리 none인데 굵기 값은 남아 있다)
-            guard line.type != CoreHwp.HwpBorderType.none else { return 0 }
-            return CGFloat(CoreHwp.HwpBorderFill.borderThicknessPoints(at: line.thickness))
+            // 선 종류가 없어도 (표 25 type 0 = 선 없음) 굵기 값은 남아 있고 (CCL 한글.app 실측) 한글은
+            // 그 굵기를 모서리 계산에 쓴다 (#246) — 그리지 않는 것은 `HwpBorderSet`이 모양으로 가른다
+            CGFloat(CoreHwp.HwpBorderFill.borderThicknessPoints(at: line.thickness))
         }
         func color(_ line: CoreHwp.HwpBorderLine) -> HwpRGBColor {
             HwpRGBColor(line.color)
@@ -243,7 +243,28 @@ extension HwpTableLayout {
 extension HwpTableCellFrame {
     /// `paints` ∪ 이 셀 안 중첩 표의 칠(재귀) — `tableGridPosition`용 모듈 안 헬퍼 (PR 리뷰)
     func paintsIncludingNestedTables(_ point: CGPoint) -> Bool {
-        paints(point) || nestedTables.contains {
+        paints(point) || nestedTableContentPaints(point)
+    }
+
+    /// 이 셀이 **제 변으로** 칠했는가 — 채움 ∪ 이웃 칸과 잇지 않은 것처럼 본 제 변의 띠 ∪ 중첩 표의 칠.
+    /// 이은 실선은 자리 0을 담은 조각(보통 첫 조각)이 사슬 전체를 긋고 그 띠도 사슬 전체라 (#246) `paints`로 셀을 고르면
+    /// 다른 칸의 바깥 테두리 위 점이 첫 칸으로 간다 — `tableGridPosition`은 이것으로 그 점의 칸을 고른다
+    /// (표의 claim `HwpTableFrame.paints`는 그대로 사슬 띠다).
+    func paintsWithOwnEdges(_ point: CGPoint) -> Bool {
+        if fillColor != nil, cellFrame.contains(point) {
+            return true
+        }
+        var own = borderContext
+        own.top = nil
+        own.bottom = nil
+        own.left = nil
+        own.right = nil
+        return borders.bands(around: cellFrame, context: own).contains { $0.contains(point) }
+            || nestedTableContentPaints(point)
+    }
+
+    private func nestedTableContentPaints(_ point: CGPoint) -> Bool {
+        nestedTables.contains {
             $0.table.paints(CGPoint(x: point.x - $0.rect.minX, y: point.y - $0.rect.minY))
         }
     }

@@ -136,5 +136,19 @@ import XCTest
             expect(eligible.width).to(beCloseTo(expected.width, within: 1e-9))
             expect(eligible.height).to(beCloseTo(expected.height, within: 1e-9))
         }
+
+        /// 이은 실선은 자리 0을 담은 조각(첫 칸)이 사슬 전체를 긋지만 (#246), 프레임 밖 바깥 테두리
+        /// 위 탭의 (행, 열)은 그 자리의 칸이다 — 사슬 띠로 칸을 고르면 첫 칸으로 간다 (#246 리뷰)
+        func testOuterBorderOutsideTheFrameResolvesToItsOwnCell() {
+            let page = Self.page(cells: [Self.cell(column: 0), Self.cell(column: 1)])
+            // 아래 바깥 테두리: y 40 ± 0.48 — 표 프레임(높이 40) 밖 절반
+            expect(HwpHitTester().hit(page: page, point: CGPoint(x: 150, y: 40.3)))
+                == .table(blockIndex: 1, row: 0, col: 1)
+            expect(HwpHitTester().hit(page: page, point: CGPoint(x: 50, y: 40.3)))
+                == .table(blockIndex: 1, row: 0, col: 0)
+            // 오른 바깥 테두리 (세로 사슬은 따로 — 첫 칸이 아닌 칸의 변)
+            expect(HwpHitTester().hit(page: page, point: CGPoint(x: 200.3, y: 20)))
+                == .table(blockIndex: 1, row: 0, col: 1)
+        }
     }
 #endif

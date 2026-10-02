@@ -5,10 +5,11 @@ import Foundation
 import Nimble
 import XCTest
 
-/// 셀 테두리 변 기하(`HwpBorderSet.edges`) — 한글 12.30.0 실측(#191)의 배치 규칙을 고정한다:
-/// 선은 셀 모서리에 중심, 가로 변은 세로 변이 있는 끝만 그 폭의 절반 연장, 세로 변의
-/// 실선·대시·원형은 연장 없음(물결만 가로 변 폭 절반 연장), 여러 줄은 모서리에서 겹상자,
-/// `none`·폭 0은 그리지 않음. 히트 띠(`band`·`bands(around:)`)는 칠한 곳을 다 덮는다.
+/// 셀 테두리 변 기하(`HwpBorderSet.edges`) — 한글 12.30.0 실측(#191·#246)의 배치 규칙을 고정한다:
+/// 선은 셀 모서리에 중심, 단선 가로 변은 이웃 세로 변(선 없음도 저장된 굵기로) 획의 절반 연장, 단선
+/// 세로 변은 연장 없음, 여러 줄·물결은 이웃이 같은 모양·굵기면 맞물리고 다르면 가로 변은 나가고
+/// 세로 변은 물러남, `none`·폭 0은 그리지 않음. 히트 띠(`band`·`bands(around:)`)는 칠한 곳을 다
+/// 덮는다. 표 격자의 모서리 맥락은 `HwpBorderCornerTests`가 본다.
 final class HwpBorderSetEdgeTests: XCTestCase {
     static let black = HwpRGBColor(red: 0, green: 0, blue: 0)
     static let rect = CGRect(x: 100, y: 200, width: 300, height: 50)
@@ -90,19 +91,24 @@ final class HwpBorderSetEdgeTests: XCTestCase {
         expect(Self.set().paintedBounds(around: Self.rect)).to(equal(Self.rect))
     }
 
-    /// 세로 변이 없는 끝은 연장하지 않는다 (한글 실측: 오른 테두리 없는 셀의 위 테두리는
-    /// 오른 모서리에서 끝난다)
-    func testHorizontalEdgeDoesNotExtendPastMissingVerticalEdge() {
+    /// 굵기 0인 세로 변 쪽 끝은 연장하지 않고, 선 없음(`none`) 세로 변은 그리지 않지만 저장된 굵기의
+    /// 절반만큼 가로 변을 연장한다 (#246 한글 실측: 선 없음 0.5·2·5mm 이웃 옆 실선 위 변이 0.68·2.72·
+    /// 7.04pt 나간다 — `so246-single`)
+    func testHorizontalEdgeExtendsByTheStoredWidthOfANoneVerticalEdge() {
         let edges = Self.set(top: 2, left: 4).edges(around: Self.rect)
         expect(edges.count) == 2
         expect(edges[0].path.boundingBoxOfPath).to(beCloseTo(CGRect(
             x: 100 - Self.stroke4 / 2, y: 200 - Self.stroke2 / 2,
             width: 300 + Self.stroke4 / 2, height: Self.stroke2
         )))
-        // `none` 모양은 폭이 있어도 없는 변이다
         let hidden = Self.set(top: 2, left: 4, right: 4, rightShape: .none).edges(around: Self.rect)
         expect(hidden.count) == 2
-        expect(hidden[0].path.boundingBoxOfPath.maxX).to(beCloseTo(400, within: 0.001))
+        expect(hidden[0].path.boundingBoxOfPath.maxX)
+            .to(beCloseTo(400 + Self.stroke4 / 2, within: 0.001))
+        // 세로 변은 선 없음 이웃 쪽에서 모서리에 머문다
+        let vertical = Self.set(top: 4, left: 2, topShape: .none).edges(around: Self.rect)
+        expect(vertical.count) == 1
+        expect(vertical[0].path.boundingBoxOfPath.minY).to(beCloseTo(200, within: 0.001))
     }
 
     func testZeroWidthAndNoneEdgesAreSkipped() {
@@ -131,30 +137,31 @@ final class HwpBorderSetEdgeTests: XCTestCase {
         expect(left[1]).to(equal(CGRect(x: 101, y: 201, width: 1, height: 49)))
     }
 
-    /// 폭이 다른 변이 만나는 모서리: 세로 변의 부속선은 **이웃 가로 변** 폭의 절반을 기준으로
-    /// 물러난다 (자기 폭 기준이면 왼 변 안쪽 선이 위 변 안쪽 선보다 아래에서 시작해 겹상자가
-    /// 열린다) — 같은 모양이면 부속선이 서로 맞닿는다. 히트 띠는 바깥 선의 연장까지 담는다.
-    func testUnequalWidthCornersNestAgainstTheNeighbourWidth() {
+    /// 굵기가 다른 2중선이 만나는 모서리는 맞물리지 않는다 (#246 한글 실측 `so246-multi` sameB2·
+    /// `junction` #31): 가로 변은 부속선 모두 이웃 세로 변 획의 절반만큼 나가고, 세로 변은 부속선 모두
+    /// 이웃 가로 변 획의 절반만큼 물러난다 (겹상자 없음). 히트 띠는 이웃이 그리는 폭의 절반까지 넓다.
+    func testUnequalWidthCornersDoNotNest() {
         let edges = Self.set(top: 2, left: 4, topShape: .doubleLine, leftShape: .doubleLine)
             .edges(around: Self.rect)
         let top = HwpLineShapeGeometryTests.pieces(edges[0].path)
-        // 위 변(폭 2): 바깥 선 y 199~199.5는 왼 변 폭 절반(2) 연장 → x 98; 안쪽 선 y
-        // 200.5~201은 바깥에서 1.5 물러난 몫을 왼 변 폭 비율(4/2)로 늘려 x 101 — 왼 변 안쪽
-        // 선의 왼쪽과 같다
-        expect(top[0]).to(equal(CGRect(x: 98, y: 199, width: 302, height: 0.5)))
-        expect(top[1]).to(equal(CGRect(x: 101, y: 200.5, width: 299, height: 0.5)))
+        // 위 변(폭 2): 두 부속선 모두 왼 변 획(4pt = 33u)의 절반만큼 나가 x 98.02
+        let reach4 = Self.stroke4 / 2
+        let span = (x: 100 - reach4, width: 300 + reach4)
+        expect(top[0]).to(beCloseTo(CGRect(x: span.x, y: 199, width: span.width, height: 0.5)))
+        expect(top[1]).to(beCloseTo(CGRect(x: span.x, y: 200.5, width: span.width, height: 0.5)))
         let left = HwpLineShapeGeometryTests.pieces(edges[1].path)
-        // 왼 변(폭 4): 바깥 선 x 98~99는 위 변 폭 절반(1) 연장 → y 199; 안쪽 선 x 101~102는
-        // 바깥에서 3 물러난 몫을 위 변 폭 비율(2/4)로 줄여 y 200.5 — 위 변 안쪽 선의 위와 같다
-        expect(left[0]).to(equal(CGRect(x: 98, y: 199, width: 1, height: 51)))
-        expect(left[1]).to(equal(CGRect(x: 101, y: 200.5, width: 1, height: 49.5)))
-        expect(edges[1].band).to(equal(CGRect(x: 98, y: 199, width: 4, height: 51)))
+        // 왼 변(폭 4): 두 부속선 모두 위 변 획(2pt = 17u)의 절반만큼 물러나 y 201.02 — 아래 변은 굵기 0
+        let reach2 = Self.stroke2 / 2
+        let rows = (y: 200 + reach2, height: 50 - reach2)
+        expect(left[0]).to(beCloseTo(CGRect(x: 98, y: rows.y, width: 1, height: rows.height)))
+        expect(left[1]).to(beCloseTo(CGRect(x: 101, y: rows.y, width: 1, height: rows.height)))
+        expect(edges[1].band).to(beCloseTo(CGRect(x: 98, y: 199, width: 4, height: 51)))
         expect(edges[1].band.contains(edges[1].path.boundingBoxOfPath)) == true
     }
 
-    /// 아래·오른 변의 여러 줄은 순서가 위→아래·왼→오른으로 같고(한글 실측: 가는+굵은 아래
-    /// 변도 가는 선이 위), 바깥쪽은 반대이므로 겹상자 물림이 뒤집힌다. 오른 변은 실선이라 연장의
-    /// 기준이 그 획(`stroke4`)이다.
+    /// 아래·오른 변의 여러 줄도 순서는 위→아래·왼→오른이다 (한글 실측: 가는+굵은 아래 변도 가는 선이
+    /// 위). 이웃 오른 변이 실선이라 모양이 달라 겹상자 없이 부속선 모두 그 획(`stroke4`)의 절반만큼
+    /// 나간다 (#246).
     func testThinThickBottomEdgeKeepsTopToBottomOrder() {
         let edges = Self.set(
             bottom: 4, right: 4, bottomShape: .thinThickDoubleLine, rightShape: .line
@@ -162,10 +169,8 @@ final class HwpBorderSetEdgeTests: XCTestCase {
         let bottom = HwpLineShapeGeometryTests.pieces(edges[0].path)
         expect(bottom.count) == 2
         let reach = Self.stroke4 / 2
-        // 가는 선(위, 안쪽): y 248~249 — 바깥쪽에서 3t/4 = 3 물러난 몫(띠 폭 비율 1.5)만큼 연장을
-        // 덜어 x 100 ~ 400 + reach − 1.5 × reach
-        expect(bottom[0]).to(beCloseTo(CGRect(x: 100, y: 248, width: 300 - reach / 2, height: 1)))
-        // 굵은 선(아래, 바깥): y 250~252 — x 100 ~ 400 + reach
+        // 가는 선(위): y 248~249, 굵은 선(아래): y 250~252 — 둘 다 x 100 ~ 400 + reach
+        expect(bottom[0]).to(beCloseTo(CGRect(x: 100, y: 248, width: 300 + reach, height: 1)))
         expect(bottom[1]).to(beCloseTo(CGRect(x: 100, y: 250, width: 300 + reach, height: 2)))
     }
 
@@ -194,23 +199,25 @@ final class HwpBorderSetEdgeTests: XCTestCase {
             == true
     }
 
-    /// 세로 물결 변은 가로 변이 있는 끝에서 **그 가로 변** 폭의 절반만큼 연장한 곳에서 시작한다
-    /// (한글 4mm 실측: 위 테두리가 있는 왼 물결 변의 첫 꼭짓점이 모서리 − t/2) — 실선 세로
-    /// 변과 다르고, 자기 폭이 아니라 이웃 폭이다
-    func testVerticalWaveEdgeStartsAtTheExtendedCorner() {
+    /// 세로 물결 변은 이웃 가로 변이 다른 모양이면 그 획의 절반만큼 **물러난** 곳에서 시작한다 (#246
+    /// 한글 실측 `so246-multi`: 2mm 실선 이웃 옆 1mm 물결 왼 변의 첫 대각선이 모서리 + 2.88) — 자기 폭이
+    /// 아니라 이웃 폭이고, 이웃이 없으면 모서리에서다. 같은 물결 이웃이면 변 전체를 옮긴다
+    /// (`testSameWaveCornersShiftTheWholeEdge`).
+    func testVerticalWaveEdgeStartsInsideADifferentNeighbour() {
         let corner = 0.5 / 2.0.squareRoot()
         let edges = Self.set(top: 4, left: 4, leftShape: .wave).edges(around: Self.rect)
         let left = HwpLineShapeGeometryTests.pieces(edges[1].path).filter { $0.height > 2 }
-        // 첫 대각선은 모서리 − 위 변 획의 절반(실선 4pt = 33u, 1.98)에서 시작한다 (45° 평행사변형
+        // 첫 대각선은 모서리 + 위 변 획의 절반(실선 4pt = 33u, 1.98)에서 시작한다 (45° 평행사변형
         // 상자는 획 반폭/√2 만큼 위로 나간다)
-        let start4 = 200 - Self.stroke4 / 2
+        let start4 = 200 + Self.stroke4 / 2
         expect(left.first?.minY).to(beCloseTo(start4 - corner, within: 0.01))
-        expect(edges[1].band.minY).to(beCloseTo(start4 - corner, within: 0.001))
+        // 히트 띠는 이웃이 그리는 폭의 절반까지 모서리 밖을 담는다
+        expect(edges[1].band.minY).to(beCloseTo(200 - Self.stroke4 / 2, within: 0.001))
         // 위 변 폭 2 / 왼 변 폭 4: 왼 변 폭 절반이 아니라 위 변 획의 절반(2pt = 17u, 1.02)만큼
         let unequal = Self.set(top: 2, left: 4, leftShape: .wave).edges(around: Self.rect)
         let unequalLeft = HwpLineShapeGeometryTests.pieces(unequal[1].path).filter { $0.height > 2 }
         expect(unequalLeft.first?.minY)
-            .to(beCloseTo(200 - Self.stroke2 / 2 - corner, within: 0.01))
+            .to(beCloseTo(200 + Self.stroke2 / 2 - corner, within: 0.01))
         // 위 변이 없으면 모서리에서
         let alone = Self.set(left: 4, leftShape: .wave).edges(around: Self.rect)
         expect(alone[0].path.boundingBoxOfPath.minY).to(beCloseTo(200 - corner, within: 0.01))
@@ -218,8 +225,8 @@ final class HwpBorderSetEdgeTests: XCTestCase {
         expect(solid[1].path.boundingBoxOfPath.minY).to(beCloseTo(200, within: 0.001))
     }
 
-    /// `HwpTableLayout.borders(from:)`는 표 23의 네 방향 선 종류를 그대로 싣는다
-    /// (왼·오른·위·아래 순서, 종류 0은 폭 0)
+    /// `HwpTableLayout.borders(from:)`는 표 23의 네 방향 선 종류·굵기를 그대로 싣는다
+    /// (왼·오른·위·아래 순서, 종류 0도 굵기를 싣는다)
     func testBordersFromBorderFillCarryShapes() throws {
         // 표 23 payload: 속성 u16 + 네 방향 (종류 u8, 굵기 u8, 색 u32) + 대각선 + 채움
         var payload = Data([0, 0])
@@ -233,7 +240,8 @@ final class HwpBorderSetEdgeTests: XCTestCase {
         expect(borders.rightShape) == HwpBorderType.wave
         expect(borders.topShape) == HwpBorderType.doubleLine
         expect(borders.bottomShape) == HwpBorderType.none
-        expect(borders.bottom) == 0
+        // 선 없음도 저장된 굵기(0.12mm)를 싣는다 — 한글은 그 굵기로 모서리를 셈한다 (#246)
+        expect(borders.bottom).to(beCloseTo(0.12 * 72 / 25.4, within: 0.001))
         expect(borders.top).to(beCloseTo(0.12 * 72 / 25.4, within: 0.001))
     }
 }

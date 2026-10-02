@@ -27,8 +27,8 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
    `dash-patterns`·`hwp2007-decorations`·`hyperlink-click-band`·`inline-object-baseline`·
    `inline-object-marker-size`·`inline-table-actual-height`·`mixed-size-decorations`·
    `ms-word-line-shapes`·`ms-word-paragraph-end-box`·`page-end-line-box`·`paragraph-end-char-size`·
-   `table-border-chains`·`table-cell-spacing`)은 `.hwp`와 `.hwpx`를 **같은 편집 세션에서
-   연달아** 저장해야 두
+   `table-border-chains`·`table-border-corners`·`table-cell-spacing`)은 `.hwp`와 `.hwpx`를
+   **같은 편집 세션에서 연달아** 저장해야 두
    파일이 같은 문서가 된다. 한글 GUI로 만들기 어려운 조합은 합성 HWPX를 한글로 열어 두 형식으로
    저장해도 된다
    (`line-shapes` — 17종 선 모양을 네 자리에 모두 실은 문서, `script-decorations` —
@@ -142,6 +142,14 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
   있으면 단 구분선과 같은 점 무늬 식으로 재는) 규칙을 한 문서의 PDF로 가르는 실물 근거다.
   `hh:borderFill` 변의 긴 파선(`LONG_DASH`)·이점쇄선(`DASH_DOT_DOT`)과 `hp:colLine`의 일점쇄선이 HWP
   쌍과 같은 선 종류·굵기로 옮겨지는(등가 스위트의 셀 테두리·단 구분선 축) 표본이기도 하다.
+  표 셀 테두리의 모서리 끝 자리와 그리는 차례는 #246에서 `table-border-corners` 쌍으로 저작했다 —
+  단선·여러 줄·물결 변을 다른 모양·굵기·선 없음 이웃과 모서리마다 갈라 실어, 한글이 셀 간격이 없는 표의
+  테두리 끝 자리(단선은 여러 줄·물결 이웃 쪽 끝을 물리고, 여러 줄은 모양·굵기가 같은 이웃과만 부속선마다
+  맞물려 교차점을 만들고, 같은 물결 이웃이면 변 전체를 옮기는)와 실선 사슬·그리는 차례(여러 줄·물결 →
+  단선 세로 → 단선 가로 → 바깥 테두리 덧긋기)를 정하는 규칙을 한 문서의 PDF로 가르는 실물 근거다. 1×1·2×2·3×2·1×3 표
+  12개의 셀 54개가 참조하는 `hh:borderFill`의 2중선(`DOUBLE_SLIM`)·가는+굵은 2중선(`SLIM_THICK`)·
+  물결(`WAVE`)과 굵기만 있는 선 없음(`NONE` 2mm) 변이 HWP 쌍과 같은 선 종류·굵기로 옮겨지는(등가
+  스위트의 셀 테두리 축) 표본이기도 하다.
 
 ## manifest 작성 기준
 

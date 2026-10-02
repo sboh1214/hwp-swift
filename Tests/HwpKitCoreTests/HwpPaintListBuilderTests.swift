@@ -432,8 +432,9 @@ extension HwpPaintListBuilderTests {
             expect(box.minY).to(beGreaterThanOrEqualTo(outer.minY - 0.01))
             expect(box.minX).to(beGreaterThanOrEqualTo(outer.minX - 0.01))
         }
-        // 위 변의 두 부속선: 바깥 선은 모서리 밖 [−1, −0.5], 안쪽 선은 모서리 안 [0.5, 1]
-        let top = boxes.min { $0.minY < $1.minY }
+        // 위 변의 두 부속선: 바깥 선은 모서리 밖 [−1, −0.5], 안쪽 선은 모서리 안 [0.5, 1] — 그리는 차례가
+        // 왼·오른·위·아래라(#246) 위 변은 가로로 긴 경로 가운데 가장 위의 것이다
+        let top = boxes.filter { $0.width > $0.height }.min { $0.minY < $1.minY }
         expect(top?.minY).to(beCloseTo(-1, within: 0.01))
         expect(top?.maxY).to(beCloseTo(1, within: 0.01))
     }

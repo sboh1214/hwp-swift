@@ -58,7 +58,7 @@ final class HwpBorderChainingTests: XCTestCase {
             Array(repeating: Self.borders(top: .shape(.longDotLine, 3)), count: 3), width: 20
         )
         let first = try XCTUnwrap(narrow.rows.first?.cells.first)
-        let firstEdges = first.borders.edges(around: first.cellFrame, chains: first.borderChains)
+        let firstEdges = first.borders.edges(around: first.cellFrame, context: first.borderContext)
         let overhang = try XCTUnwrap(firstEdges.first)
         expect(overhang.path.boundingBoxOfPath.maxX).to(beCloseTo(22.08, within: 1e-9))
         expect(overhang.band.maxX).to(beCloseTo(22.08, within: 1e-9))
@@ -68,17 +68,21 @@ final class HwpBorderChainingTests: XCTestCase {
         expect(Self.elements(narrow).map(\.column).sorted()) == [0, 1]
     }
 
-    /// 칸 변 모양이 이어 그리기 대상이 아니면 (실선·여러 줄·물결) 이음 자리가 없다 — 물결은 한글도
-    /// 칸마다 다시 시작한다 (so238-main #17). 조각 하나뿐인 사슬도 싣지 않는다.
-    func testOnlyDashesAndCirclesChain() {
-        for shape: HwpBorderType in [.line, .doubleLine, .wave, .doubleWave, .thick3D] {
+    /// 여러 줄·물결은 잇지 않는다 — 물결은 한글도 칸마다 다시 시작한다 (so238-main #17). 단선은 실선
+    /// (3D 넷 대체 포함)도 잇는다 (#246 `so246-solidchain`). 조각 하나뿐인 사슬은 자리를 싣지 않는다.
+    func testSingleLinesChainButFramedShapesDoNot() {
+        for shape: HwpBorderType in [.doubleLine, .thinThickThinTripleLine, .wave, .doubleWave] {
             let table = Self.row(Array(repeating: Self.borders(top: .shape(shape)), count: 3))
             expect(Self.unchained(table)) == true
         }
+        for shape: HwpBorderType in [.line, .thick3D, .longDotLine, .circle] {
+            let table = Self.row(Array(repeating: Self.borders(top: .shape(shape)), count: 3))
+            expect(table.rows[0].cells.map { $0.borderContext.top != nil }) == [true, true, true]
+        }
         let lone = Self.row([Self.borders(top: .circle())])
-        expect(lone.rows[0].cells[0].borderChains) == HwpBorderChains.none
+        expect(lone.rows[0].cells[0].borderContext.hasPlacements) == false
         let chained = Self.row([Self.borders(top: .circle()), Self.borders(top: .circle())])
-        expect(chained.rows[0].cells.map { $0.borderChains.top != nil }) == [true, true]
+        expect(chained.rows[0].cells.map { $0.borderContext.top != nil }) == [true, true]
     }
 
     // MARK: - 같은 격자선의 두 쪽
@@ -299,16 +303,16 @@ final class HwpBorderChainingTests: XCTestCase {
     func testTableFrameRecomputesChainsForItsOwnCells() throws {
         let table = Self.row(Array(repeating: Self.borders(top: .circle()), count: 3))
         let cells = table.rows[0].cells
-        let chains = try XCTUnwrap(cells[1].borderChains.top)
+        let chains = try XCTUnwrap(cells[1].borderContext.top)
         expect(chains.offset) == 30
         expect(chains.length) == 90
-        expect(cells[1].offsetBy(deltaY: 50).borderChains) == cells[1].borderChains
+        expect(cells[1].offsetBy(deltaY: 50).borderContext) == cells[1].borderContext
         // 가운데 칸 하나만 새 표로 — 홀로 선 변이 된다
         let alone = HwpTableFrame(
             outerFrame: .zero, rows: [HwpTableRowFrame(rowFrame: .zero, cells: [cells[1]])],
             borderColor: Self.green, borderWidth: 1
         )
-        expect(alone.rows[0].cells[0].borderChains) == HwpBorderChains.none
+        expect(alone.rows[0].cells[0].borderContext.hasPlacements) == false
         expect(Self.circlesX(alone, y: 0)) == Self.circleCenters(from: 30, 0 ..< 4)
     }
 
@@ -331,15 +335,15 @@ final class HwpBorderChainingTests: XCTestCase {
     // MARK: - 히트 띠
 
     /// 이은 변의 띠는 제 몫이 칠한 곳(이웃 칸으로 넘친 원 포함)을 다 덮고, 칠하는 변의 띠는
-    /// `edges(around:chains:)`의 띠와 같다. 제 몫의 요소가 없는 이은 변은 칠하지 않지만 선 위라
+    /// `edges(around:context:)`의 띠와 같다. 제 몫의 요소가 없는 이은 변은 칠하지 않지만 선 위라
     /// 제 모서리 구간의 띠를 낸다 — 점선의 빈 자리도 띠로 치는 규약(`HwpTableCellFrame.paints`).
     func testBandsCoverOwnedPaintAndTheWholeEdgeLine() {
         // 폭 5 칸 여섯: 원 간격 7.92라 자리가 없는 칸이 생긴다
         let table = Self.row(Array(repeating: Self.borders(top: .circle()), count: 6), width: 5)
         var owning = 0
         for cell in table.rows[0].cells {
-            let edges = cell.borders.edges(around: cell.cellFrame, chains: cell.borderChains)
-            let bands = cell.borders.bands(around: cell.cellFrame, chains: cell.borderChains)
+            let edges = cell.borders.edges(around: cell.cellFrame, context: cell.borderContext)
+            let bands = cell.borders.bands(around: cell.cellFrame, context: cell.borderContext)
             expect(bands.count) == 1
             expect(edges.allSatisfy { bands.contains($0.band) }) == true
             for edge in edges {
@@ -377,8 +381,8 @@ final class HwpBorderChainingTests: XCTestCase {
     /// 늦게 닿은 조각의 세로 변 연장도 사슬을 민다. 한글 12.30 실측(`probes/238/review`, 2×3 격자선
     /// 긴 점선 1mm): 끝 모서리의 세로 변이 위 칸에만·아래 칸에만·양쪽에 있거나, 위·아래 병합 칸이 먼저
     /// 끝 모서리에 닿아도 마지막 대시가 모서리 + 1.44(세로 변 1mm의 절반)까지 간다. 세로 변이 둘 다
-    /// 없으면 한글은 NONE 변 폭(0.1mm) 연장만큼 + 0.12, 우리는 NONE 변을 폭 0으로 보아 모서리까지다
-    /// (기존 격차).
+    /// 없으면 한글은 선 없음 변 굵기(0.1mm)의 절반만큼 + 0.12다 — 이 합성 표의 빈 변은 굵기 0이라
+    /// 모서리까지다 (선 없음 굵기 연장은 `HwpBorderCornerTests`, #246).
     func testChainEndTakesTheFarthestExtension() {
         let wall = Side.shape(.line)
         func lastDashEnd(_ table: HwpTableFrame) -> CGFloat? {

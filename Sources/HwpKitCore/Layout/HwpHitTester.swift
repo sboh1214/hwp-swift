@@ -299,8 +299,10 @@ public struct HwpHitTester {
         )
     }
 
-    /// 점이 든 셀의 (행, 열) — 셀 안이 아니면 그 점을 칠한 셀(테두리 띠, 그 셀 안 중첩 표의 칠
-    /// 포함 — claim 판정 `HwpTableFrame.paints`와 같은 분해), 그것도 없으면 (0, 0)
+    /// 점이 든 셀의 (행, 열) — 셀 안이 아니면 그 점을 제 변으로 칠한 셀(테두리 띠, 그 셀 안 중첩 표의
+    /// 칠 포함 — `paintsWithOwnEdges`; 이은 실선의 사슬 띠로 고르면 바깥 테두리 위 점이 사슬 첫 칸으로
+    /// 간다, #246), 그것도 없으면 칠한 셀(claim 판정 `HwpTableFrame.paints`와 같은 분해), 그것도 없으면
+    /// (0, 0)
     func tableGridPosition(block: AnyHwpBlock, point: CGPoint) -> (row: Int, col: Int) {
         guard case let .table(tableFrame) = block.payload else { return (0, 0) }
         let localPoint = CGPoint(
@@ -309,6 +311,7 @@ public struct HwpHitTester {
         )
         let cells = tableFrame.rows.flatMap(\.cells)
         if let cell = cells.first(where: { $0.cellFrame.contains(localPoint) })
+            ?? cells.first(where: { $0.paintsWithOwnEdges(localPoint) })
             ?? cells.first(where: { $0.paintsIncludingNestedTables(localPoint) })
         {
             return (cell.row, cell.column)
