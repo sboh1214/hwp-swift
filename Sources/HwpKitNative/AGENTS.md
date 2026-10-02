@@ -182,8 +182,9 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
   (상자 바닥 = 개체 바깥 상자의 아랫변) 원점을 되돌리지 않는다 — 종전의
   `underlineReturnDrop` 원점 보정은 상자 바닥 몫을 두 번 세어 없앴다. 취소선(글자 가운데 밑줄
   포함)만 **run 단위**이고 첨자 이동(`hwp.scriptBaselineOffset`, 합산 키가 아니다)을 더해
-  기본 크기 × 첨자 축소 비율 × 0.35 위에, 두께 기본 크기 × 0.04로 놓인다; 밑줄은 첨자 이동을
-  무시한다. 변경 추적 표시선은 일반 선과 같다 (#187·#226 실측) — 삭제선은 취소선 경로
+  기본 크기 × 첨자 축소 비율 × 0.35 위에, 두께 기본 크기 × 0.04로 놓인다 — MS 워드 호환 문서는
+  자리가 글꼴 상자 산식(아래 항목)이고 첨자 run이면 축소 비율이 아니라 보통 글자 높이의 0.696배다
+  (`msWordScriptStrikethroughScale`, #248); 밑줄은 첨자 이동을 무시한다. 변경 추적 표시선은 일반 선과 같다 (#187·#226 실측) — 삭제선은 취소선 경로
   그대로이고 삽입 밑줄(`drawTrackInsertUnderlineIfNeeded`)은 아래 밑줄과 같은 줄 기준에 색만
   다르다 (첨자 표본은 없다). 갈래 판정과 산식 선택은 `HwpPageLayerDecorationLines.swift`,
   산식은 전부 `HwpDecorationLineGeometry`(HwpKitCore)가 낸다. 새 장식을 더할 때는 (1) 어느
@@ -235,7 +236,10 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
   ② `msWordStrikethroughFonts(of:)`
   — 같은 글자 모양 id(`hwp.charShapeId`)의 잇닿은 run(슬롯·대체 글꼴 분할)을 한 글자
   모양 run으로 묶어 첫 run의 글꼴 → 취소선은 run 단위(속성 사전 비교는 양쪽 정렬 자간·
-  문단 끝 상자에 갈린다). 두 상자 모두 글꼴 상자(em)에 **글자 모양 기본 크기**
+  문단 끝 상자에 갈린다). 위·아래 첨자 run의 취소선은 첨자로 옮겨진 베이스라인 위 그 높이의
+  0.696배다 — 한글 문서 갈래의 0.64배(첨자 글리프 축소 비율)가 아니다 (#248, 한글 12.30 PDF 글꼴 10종 ×
+  8~100pt 360표본; `strikethroughLine`이 축소 비율 < 0.99인 run을 첨자로 본다 — 각주·미주 참조
+  번호(0.75배)도 들지만 한글은 그 번호의 취소선을 본문 자리에 그려 두 문서 갈래 모두 별건이다). 두 상자 모두 글꼴 상자(em)에 **글자 모양 기본 크기**
   (`decorationBaseFontSize`: `hwp.baseFontSize`)를 곱한다 — run 글꼴 크기(슬롯 상대 크기 반영)로
   곱하면 한 글자 모양 안에서 선이 계단이 진다 (PR 리뷰, 한글 실측: 슬롯 50%도 100% 자리). 줄 상자 판정은 줄의 run 하나라도 MS 워드 키를 실으면 줄 전체
   (표식 run도 글꼴이 있으면 후보). 한글 문서(키 없음·`hwp201X`·`hunmin`)는
