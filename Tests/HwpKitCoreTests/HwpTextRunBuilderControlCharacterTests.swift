@@ -330,55 +330,35 @@ import XCTest
             expect(result.length) == 0
         }
 
-        func testControlSpacesKeepFixedWidthWhenOrdinarySpacesFollowTheFont() {
-            // '글꼴에 어울리는 빈칸'·워드 호환 문서에서는 보통 빈칸이 폰트 고유
-            // 폭으로 돌아간다 — 그때 고정폭 빈칸까지 글꼴을 따르면 이름과
-            // 모순이라, 제어 빈칸만 게이트 밖에서 0.5em을 유지해야 한다.
-            let font = CTFontCreateWithName("Helvetica" as CFString, 12, nil)
-            let attributed = NSMutableAttributedString(
-                string: "가 나\u{A0}다",
-                attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
-            )
-            HwpTextRunBuilder.applyFixedSpaceWidth(
-                to: attributed, includesOrdinarySpace: false
-            )
+        func testControlSpacesKeepFixedWidthWhenOrdinarySpacesFollowTheFont() throws {
+            // '글꼴에 어울리는 빈칸'(bit 25)에서는 보통 빈칸이 글꼴 고유 폭으로 돌아간다 —
+            // 그때 묶음 빈칸까지 글꼴을 따르면 안 된다 (#249 실측: 옵션·문서 갈래와 무관하게
+            // 한글 슬롯의 0.5em). 결정론 해석기의 Menlo 빈칸(0.602em)은 0.5em보다 넓다.
+            let paragraph = paragraph(text: "가 나\u{1E}다", runs: [(0, 0)])
+            let attributed = builder(shapes: [0: try charShape(property: 1 << 25)])
+                .build(paragraph: paragraph)
 
-            func advance(at location: Int) -> Double {
-                let piece = attributed.attributedSubstring(
-                    from: NSRange(location: location, length: 1)
-                )
-                return CTLineGetTypographicBounds(
-                    CTLineCreateWithAttributedString(piece), nil, nil, nil
-                )
-            }
-
-            expect(advance(at: 3)).to(beCloseTo(6.0, within: 0.01))
-            expect(advance(at: 1)).to(beLessThan(advance(at: 3)))
+            expect(self.controlSpaceAdvance(in: attributed, at: 3)).to(beCloseTo(6.0, within: 0.01))
+            expect(self.controlSpaceAdvance(in: attributed, at: 1))
+                .to(beGreaterThan(controlSpaceAdvance(in: attributed, at: 3) + 1))
         }
 
-        func testControlSpacesReceiveTheFixedSpaceWidth() {
-            // U+00A0으로 옮긴 30/31도 일반 공백과 같은 0.5em 보정을 받아야
-            // 한다 — 빠지면 폰트 고유 advance에 머물러 그 문단만 좁게 조판된다.
-            let font = CTFontCreateWithName("Helvetica" as CFString, 12, nil)
-            let attributed = NSMutableAttributedString(
-                string: "가 나\u{A0}다",
-                attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
-            )
-            HwpTextRunBuilder.applyFixedSpaceWidth(
-                to: attributed, includesOrdinarySpace: true
-            )
+        func testControlSpacesReceiveTheFixedSpaceWidth() throws {
+            // U+00A0으로 옮긴 30도 보통 빈칸과 같은 0.5em을 받아야 한다 — 빠지면 글꼴 고유
+            // advance에 머물러 그 문단만 좁게 조판된다. 31(고정폭 빈칸)은 그 절반이다 (#249).
+            let paragraph = paragraph(text: "가 나\u{1E}다\u{1F}라", runs: [(0, 0)])
+            let attributed = builder(shapes: [0: try charShape()]).build(paragraph: paragraph)
 
-            func advance(at location: Int) -> Double {
-                let piece = attributed.attributedSubstring(
-                    from: NSRange(location: location, length: 1)
-                )
-                return CTLineGetTypographicBounds(
-                    CTLineCreateWithAttributedString(piece), nil, nil, nil
-                )
-            }
+            expect(self.controlSpaceAdvance(in: attributed, at: 1)).to(beCloseTo(6.0, within: 0.01))
+            expect(self.controlSpaceAdvance(in: attributed, at: 3)).to(beCloseTo(6.0, within: 0.01))
+            expect(self.controlSpaceAdvance(in: attributed, at: 5)).to(beCloseTo(3.0, within: 0.01))
+        }
 
-            expect(advance(at: 3)) == advance(at: 1)
-            expect(advance(at: 3)).to(beCloseTo(6.0, within: 0.01))
+        /// 한 글자의 진행 폭 (kern 포함, 글리프 원점 차 — `HwpSpaceWidthTests` 확장의 헬퍼).
+        private func controlSpaceAdvance(
+            in attributed: NSAttributedString, at location: Int
+        ) -> CGFloat {
+            Self.glyphAdvances(in: attributed)[location]
         }
     }
 #endif

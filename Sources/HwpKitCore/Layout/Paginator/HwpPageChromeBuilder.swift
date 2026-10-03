@@ -478,10 +478,11 @@ extension HwpPageChromeBuilder {
                     CGColor(gray: 0, alpha: 1),
             ])
             // 기본 모양도 보통 빈칸이 0.5em이다 — 한글 실측: 폴백 "- 1 -"의 빈칸 전진량
-            // 5.04·4.92pt(글꼴 고유 3.0pt가 아니다), 스타일 경로와 같은 폭 (PR 리뷰).
-            HwpTextRunBuilder.applyFixedSpaceWidth(
-                to: output, includesOrdinarySpace: !index.isCompatibilityDocument
-            )
+            // 5.04·4.92pt(글꼴 고유 3.0pt가 아니다), 스타일 경로와 같은 폭 (PR 리뷰). 글자
+            // 모양 id가 없으니 빈칸 폭 패스는 기본 글자 모양(10pt = 이 폴백의 크기)으로 잰다.
+            HwpTextRunBuilder(
+                index: index, fontResolver: fontResolver, attributeCache: attributeCache
+            ).applySpaceWidths(to: output)
         }
         var alignmentValue = alignment
         let style = withUnsafeMutablePointer(to: &alignmentValue) { pointer in

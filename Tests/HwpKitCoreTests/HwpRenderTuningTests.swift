@@ -23,6 +23,8 @@ final class HwpRenderTuningTests: XCTestCase {
         expect(HwpRenderTuning.Text.msWordStrikethroughAscentRatio) == 0.273
         expect(HwpRenderTuning.Text.msWordScriptStrikethroughScale) == 0.696
         expect(HwpRenderTuning.Text.hwp200XDecorationLineThickness) == 0.36
+        expect(HwpRenderTuning.Text.fixedSpaceEmRatio) == 0.5
+        expect(HwpRenderTuning.Text.fixedWidthSpaceEmRatio) == 0.25
     }
 
     func testLineShapeTuningValues() {

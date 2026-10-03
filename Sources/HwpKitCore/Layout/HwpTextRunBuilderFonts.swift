@@ -4,8 +4,8 @@ import Foundation
 
 /// 글자 모양 속성 → CTFont 트레이트 합성.
 ///
-/// 본체가 `file_length` 상한에 붙어 분리했다 — 변경 추적·공백 폭이
-/// `HwpTextRunBuilderMarks`로 나간 것과 같은 관례다.
+/// 본체가 `file_length` 상한에 붙어 분리했다 — 변경 추적이 `HwpTextRunBuilderMarks`로,
+/// 빈칸 폭이 `HwpTextRunBuilderSpaces`로 나간 것과 같은 관례다.
 extension HwpTextRunBuilder {
     func symbolicTraits(for property: CoreHwp.HwpCharShapeProperty) -> CTFontSymbolicTraits {
         var traits = CTFontSymbolicTraits()

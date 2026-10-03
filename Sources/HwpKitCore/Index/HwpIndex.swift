@@ -60,18 +60,21 @@ public struct HwpIndex: Sendable {
         self.faceNamesUser = faceNamesUser
     }
 
-    /// MS 워드 등 호환 문서 (표 20 대상 프로그램 ≠ 한글) 여부 — 워드 호환
-    /// 모드는 공백을 폰트 고유 폭으로 조판한다 (track-changes 실물 실측:
-    /// targetDocument 2 문서만 native 공백, 한글 문서는 0.5em)
+    /// MS 워드·한글 2007 등 호환 문서 (표 20 대상 프로그램 ≠ 한글) 여부.
+    ///
+    /// #249 전에는 빈칸 폭의 게이트였다 (호환 문서 전체의 보통 빈칸을 글꼴 고유 폭으로
+    /// 조판했다). 한글 12.30 실측으로 그 규칙은 틀렸다 — 한글 2007 호환 문서는 한글 문서와
+    /// 같은 고정 폭이고, MS 워드 호환 문서도 앞뒤가 모두 라틴 부류 글자인 빈칸만 글꼴 폭이다.
+    /// 조판은 이제 갈래를 특정하는 `compatibleDocumentTarget`으로 가르고 이 값을 읽지 않는다.
     public let isCompatibilityDocument: Bool
 
     /// 호환 문서의 대상 프로그램 (표 55) — record가 없거나 raw 값이 표에 없으면 nil이고
     /// 소비자는 한글 문서로 다룬다. 조판은 이 값을 모든 run에
     /// `HwpAttributedStringKey.compatibleDocumentTarget`으로 실어 렌더러가 MS 워드
     /// 호환 문서(`msWord`)와 한글 2007 호환 문서(`hwp200X`)의 장식선 기하를 가른다
-    /// (#187·#210, `HwpDecorationLineGeometry`). `isCompatibilityDocument`(공백 폭
-    /// 게이트)와 달리 갈래를 특정한다 — 훈민정음(`hunmin`)은 장식선에서 한글 문서와
-    /// 같이 다룬다.
+    /// (#187·#210, `HwpDecorationLineGeometry`). 빈칸 폭도 이 값으로 MS 워드 호환 문서를
+    /// 가른다 (#249, `HwpSpaceWidthMetrics`). `isCompatibilityDocument`와 달리 갈래를
+    /// 특정한다 — 훈민정음(`hunmin`)은 장식선·빈칸에서 한글 문서와 같이 다룬다.
     public let compatibleDocumentTarget: CoreHwp.HwpCompatibleDocumentTarget?
 
     public init(from file: CoreHwp.HwpFile) {

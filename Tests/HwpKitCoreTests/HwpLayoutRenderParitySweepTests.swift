@@ -128,7 +128,7 @@ import XCTest
             // 2026-09-25 9 / 1158 → 같은 날 9 / 1188 → 2026-09-26 9 / 1208 → 같은 날
             // 9 / 1266 → 2026-09-27 9 / 1282 → 같은 날 9 / 1324 → 2026-09-28 11 / 1362 →
             // 2026-09-30 11 / 1386 → 2026-10-01 11 / 1448 → 2026-10-02 11 / 1498 → 같은 날
-            // 11 / 1516).
+            // 11 / 1516 → 2026-10-03 12 / 1546).
             expect(stats.measured - stats.sharedCoreCompared)
                 .to(beLessThanOrEqualTo(Self.maximumFixtureSharedCoreSkips))
         }
@@ -214,12 +214,16 @@ import XCTest
         // 글자처럼 취급 표 문단 12개를 포함한 25문단 + 표 12개의 셀 54문단) 추가로 문단 79·대조 50(셀의
         // 빈 문단 54개는 두 폭 모두 대조 대상이 아니다)·컨테이너 54 증가 (공유 코어 대조 건너뜀은
         // 그대로다, 실측 11), 같은 날 `ms-word-script-strikethrough`(#248, 구역 1 + 첨자 취소선 8문단 =
-        // 9문단, 개체 없음) 추가로 문단 9·대조 18 증가(컨테이너·공유 코어 대조 건너뜀은 그대로다).
-        private static let expectedFixtureVisited = 979
-        private static let expectedFixtureMeasured = 1516
+        // 9문단, 개체 없음) 추가로 문단 9·대조 18 증가(컨테이너·공유 코어 대조 건너뜀은 그대로다),
+        // 2026-10-03 `space-width`(#249, 구역·제목 1 + 빈칸 7문단 = 8문단)·`ms-word-space-width`(구역·제목
+        // 1 + 빈칸 6문단 = 7문단, 둘 다 개체 없음) 추가로 문단 15·대조 30 증가(컨테이너는 그대로다) —
+        // 공유 코어 대조 건너뜀이 1 늘었다 (`ms-word-space-width` `#2`: `ab cd 가나 ef #1`이 120pt에서
+        // 자연 폭 120.62pt인 slight-overflow 한 줄, 실측 12).
+        private static let expectedFixtureVisited = 994
+        private static let expectedFixtureMeasured = 1546
         private static let expectedFixtureContainers = 373
         private static let minimumFixtureMultiLine = 60
-        private static let maximumFixtureSharedCoreSkips = 11
+        private static let maximumFixtureSharedCoreSkips = 12
         private static let expectedLegacyVisited = 14659
 
         // MARK: - 본체
