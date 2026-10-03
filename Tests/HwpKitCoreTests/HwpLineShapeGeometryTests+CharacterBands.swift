@@ -9,10 +9,12 @@ import XCTest
 /// (build 6523, macOS) PDF가 그린 값이다 (2026-10-03, `probes/252`): 글자 아래 밑줄 1~100pt의 부속선
 /// 두께와 부속선 중심 사이(u = 0.12pt, 첫 부속선 기준), 물결의 대각선 가로 폭·반주기·획. 띠는 2중선·
 /// 물결이 0.113em, 가는+굵은 선·3중선이 0.198em을 HWPUNIT과 장치 단위로 차례로 반올림한 것이다
-/// (`HwpLineShapeGeometry+CharacterBands.swift`). 크기는 1.49~4pt의 작은 크기 갈림(2중선·물결의 1u 한
-/// 줄, 가는+굵은 선의 굵은 선 하한 3u, 3중선의 굵은 선 0·1·2u)과 1u 경계를 지나는 큰 크기를 고른다.
+/// (`HwpLineShapeGeometry+CharacterBands.swift`). 크기는 0.2~4pt의 작은 크기 갈림(2중선·물결의 1u 한
+/// 줄, 가는+굵은 선의 굵은 선 하한 3u, 3중선의 굵은 선 0·1·2u와 띠 1u 이하의 1u 한 줄 — 1pt 미만은
+/// HWPX로만 저작되지만 한글이 그대로 그린다)과 1u 경계를 지나는 큰 크기를 고른다.
 /// 자리는 한글이 쪽 절대 600dpi 격자에서 세어 줄마다 ±1u 흔들리므로 여기서는 띠 안 구성만 본다 — 띠
-/// 가운데는 `HwpLineShapeGeometryTests`의 40pt 핀이 잡는다.
+/// 가운데는 `HwpLineShapeGeometryTests`의 40pt 핀과 홀수 띠 핀(`testOddBandCenterUsesTheFloorHalf`)이
+/// 잡는다.
 extension HwpLineShapeGeometryTests {
     struct StripeSample {
         let shape: HwpBorderType
@@ -48,6 +50,9 @@ extension HwpLineShapeGeometryTests {
     }
 
     private static let stripeSamples: [StripeSample] = [
+        StripeSample(.doubleLine, 20, [1], [0]),
+        StripeSample(.doubleLine, 50, [1], [0]),
+        StripeSample(.doubleLine, 90, [1], [0]),
         StripeSample(.doubleLine, 100, [1], [0]),
         StripeSample(.doubleLine, 140, [1], [0]),
         StripeSample(.doubleLine, 149, [1], [0]),
@@ -73,6 +78,9 @@ extension HwpLineShapeGeometryTests {
         StripeSample(.doubleLine, 8000, [19, 19], [0, 57]),
         StripeSample(.doubleLine, 9900, [23, 23], [0, 69]),
         StripeSample(.doubleLine, 10000, [24, 24], [0, 72]),
+        StripeSample(.thinThickDoubleLine, 20, [1], [0]),
+        StripeSample(.thinThickDoubleLine, 50, [1], [0]),
+        StripeSample(.thinThickDoubleLine, 90, [2], [0]),
         StripeSample(.thinThickDoubleLine, 100, [2], [0]),
         StripeSample(.thinThickDoubleLine, 140, [2], [0]),
         StripeSample(.thinThickDoubleLine, 149, [1, 3], [0, 3]),
@@ -98,6 +106,9 @@ extension HwpLineShapeGeometryTests {
         StripeSample(.thinThickDoubleLine, 8000, [33, 66], [0, 83]),
         StripeSample(.thinThickDoubleLine, 9900, [40, 83], [0, 101]),
         StripeSample(.thinThickDoubleLine, 10000, [41, 83], [0, 103]),
+        StripeSample(.thickThinDoubleLine, 20, [1], [0]),
+        StripeSample(.thickThinDoubleLine, 50, [1], [0]),
+        StripeSample(.thickThinDoubleLine, 90, [2], [0]),
         StripeSample(.thickThinDoubleLine, 100, [2], [0]),
         StripeSample(.thickThinDoubleLine, 140, [2], [0]),
         StripeSample(.thickThinDoubleLine, 149, [3, 1], [0, 3]),
@@ -123,6 +134,10 @@ extension HwpLineShapeGeometryTests {
         StripeSample(.thickThinDoubleLine, 8000, [66, 33], [0, 82]),
         StripeSample(.thickThinDoubleLine, 9900, [83, 40], [0, 102]),
         StripeSample(.thickThinDoubleLine, 10000, [83, 41], [0, 103]),
+        StripeSample(.thinThickThinTripleLine, 20, [1], [0]),
+        StripeSample(.thinThickThinTripleLine, 50, [1], [0]),
+        StripeSample(.thinThickThinTripleLine, 80, [1], [0]),
+        StripeSample(.thinThickThinTripleLine, 90, [1, 1], [0, 3]),
         StripeSample(.thinThickThinTripleLine, 100, [1, 1], [0, 3]),
         StripeSample(.thinThickThinTripleLine, 140, [1, 1], [0, 3]),
         StripeSample(.thinThickThinTripleLine, 149, [1, 1, 1], [0, 2, 4]),
@@ -150,6 +165,9 @@ extension HwpLineShapeGeometryTests {
         StripeSample(.thinThickThinTripleLine, 10000, [27, 57, 27], [0, 69, 138]),
     ]
     private static let waveSamples: [WaveSample] = [
+        WaveSample(20, nil, nil, 1),
+        WaveSample(50, nil, nil, 1),
+        WaveSample(90, nil, nil, 1),
         WaveSample(100, nil, nil, 1),
         WaveSample(140, nil, nil, 1),
         WaveSample(149, nil, nil, 1),
@@ -285,6 +303,21 @@ extension HwpLineShapeGeometryTests {
                     .to(beCloseTo(3 * sample.stroke, within: 1e-6), description: label)
             }
         }
+    }
+
+    /// 띠 HWPUNIT이 홀수면 띠 가운데는 ⌊띠/2⌋만큼 줄 상자 바깥이다 — 10pt: 띠 113HWPUNIT → r 9u·획
+    /// 2u, 단선 획 3u(0.36pt). 아래 밑줄 M = −0.18 + ⌊113/2⌋/100 = 0.38에서 두 줄이 위 ⌈3⌉u·아래
+    /// ⌊3⌋u라 [0.02, 0.74], 위 밑줄은 거울 [−0.74, −0.02], 물결 위 평탄은 M − (⌊9/2⌋ + ⌈3⌉)u = −0.46이다
+    /// (⌈띠/2⌉로 두면 0.01pt씩 밀린다 — 한글이 줄마다 ±1u 흔들려 실측으로는 못 가르는 크기라 규칙 핀이다).
+    func testOddBandCenterUsesTheFloorHalf() {
+        let below = HwpLineShapeGeometry.stripes(for: Self.characterLine(.doubleLine, fontSize: 10))
+        expect(below.map(\.midY)).to(beCloseTo([0.02, 0.74], within: 1e-9))
+        let above = HwpLineShapeGeometry.stripes(for: Self.characterLine(
+            .doubleLine, fontSize: 10, placement: .underlineAbove
+        ))
+        expect(above.map(\.midY)).to(beCloseTo([-0.74, -0.02], within: 1e-9))
+        let wave = HwpLineShapeGeometry.wave(for: Self.characterLine(.wave, fontSize: 10))
+        expect(wave.top).to(beCloseTo(-0.46, within: 1e-9))
     }
 
     /// 무늬 두께가 장치 단위 반올림 상한 밖인 거대한 크기는 반올림 없이 같은 비율이다 — 2중선 띠
