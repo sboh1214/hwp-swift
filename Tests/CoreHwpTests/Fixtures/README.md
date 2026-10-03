@@ -313,6 +313,15 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   0.64배 자리보다 0.45pt 위다. 같은 세션의 PDF 내보내기 좌표(README의 표)가 `HwpKitTests/FixtureDecorationLineRenderTests+MsWordScript`의
   오라클이고 두 글꼴이 결정론 resolver의 글꼴과 같아 쪽 좌표를 기기 무관하게 핀한다. HWPX 쌍은
   `HwpxFixtures/ms-word-script-strikethrough`.
+- `ms-word-space-width`: **MS 워드 호환 문서**(호환 문서 대상 프로그램 2)에 한글 슬롯 Apple SD
+  산돌고딕 Neo·라틴 슬롯 Menlo 20pt로 빈칸(U+0020) 폭 표본 6문단 — 라틴 사이·한글 앞뒤, 줄 시작·연속
+  빈칸, 구두점·`½` 이웃(라틴 50%), 글자 모양 run 경계, 글꼴에 어울리는 빈칸, 묶음 빈칸·고정폭 빈칸 — 을
+  실은 합성 HWPX(줄 배치 정보 없음)를 Hancom Office HWP for macOS 12.30.0 build 6523으로 2026-10-03에
+  열어 `.hwp`·`.hwpx`로 저장(1쪽). 한글이 이 문서에서 **앞뒤가 모두 라틴 부류 글자인 빈칸만 라틴 글꼴
+  고유 폭으로**, 나머지는 한글 문서와 같은 고정 폭(한글 슬롯 글자 크기 × 0.5)으로 벌리는 규칙(#249)의
+  실물 근거다 — 라틴 사이 빈칸은 Menlo 20pt 고유 폭 12pt, 한글 앞뒤는 5pt다. 같은 세션의 PDF
+  내보내기 글자 원점(README의 표)이 `HwpKitTests/FixtureSpaceWidthTests`의 오라클이고 두 글꼴이 결정론
+  resolver의 글꼴과 같아 쪽 좌표를 기기 무관하게 핀한다. HWPX 쌍은 `HwpxFixtures/ms-word-space-width`.
 - `page-end-line-box`: 본문 높이 97.62pt의 작은 쪽(쪽 높이 28186 HWPUNIT)에 함초롬바탕 10pt·
   160% 채움 줄을 쌓고 쪽 끝 남은 자리에 16·18·17.62·17.61pt 한 줄, 상자보다 작은 고정 줄 간격,
   아래 간격 20pt, 세 줄 문단(보호 없음·문단 보호), 외톨이줄 보호 16pt 다섯 줄, 16pt 세 줄, 빈
@@ -330,6 +339,16 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   줄의 줄 상자와 비율 줄 간격 여분에 드는 규칙(#206)의 실물 근거다 — 한글이 저장한 줄 캐시
   (README의 표)가 오라클이고 `HwpKitTests/FixtureParagraphEndCharSizeTests`가 줄 캐시를 지운
   재조판을 그것과 대조한다. HWPX 쌍은 `HwpxFixtures/paragraph-end-char-size`.
+- `space-width`: **한글 문서**(호환 문서 대상 프로그램 `HWP201X`)에 한글 슬롯 Apple SD 산돌고딕
+  Neo·라틴 슬롯 Menlo 20pt로 빈칸(U+0020) 폭 표본 7문단 — 한글 50%·라틴 100%, 한글 100%·라틴 50%, 줄
+  시작·연속 빈칸, 한글·라틴 장평 50%, 글꼴에 어울리는 빈칸 두 가지(앞 글자 슬롯·새 글자 모양 run),
+  묶음 빈칸·고정폭 빈칸 — 을 실은 합성 HWPX(줄 배치 정보 없음)를 Hancom Office HWP for macOS
+  12.30.0 build 6523으로 2026-10-03에 열어 `.hwp`·`.hwpx`로 저장(1쪽). 한글이 빈칸을 **라틴 슬롯이
+  아니라 한글 슬롯 글자 크기 × 0.5 × 한글 장평으로** 벌리고, 글꼴에 어울리는 빈칸은 라틴 글꼴 빈칸
+  너비 × 앞 글자 슬롯 크기로, 묶음 빈칸은 같은 고정 폭, 고정폭 빈칸은 그 절반으로 벌리는 규칙(#249)의
+  실물 근거다. 같은 세션의 PDF 내보내기 글자 원점(README의 표)이 `HwpKitTests/FixtureSpaceWidthTests`의
+  오라클이고 두 글꼴이 결정론 resolver의 글꼴과 같아 쪽 좌표를 기기 무관하게 핀한다. HWPX 쌍은
+  `HwpxFixtures/space-width`.
 - `table-border-chains`: **한글 문서**(호환 문서 대상 프로그램 `HWP201X`)에 여러 칸에 걸친 셀
   테두리 무늬 표본 — 1×3 가로 원형 점선(세로 변 없음·굵은 세로 변)·긴 점선, 위·아래 행이 같은
   격자선에 다른 색(2×3)·빈 변(2×3)을 둔 표, 3×1 세로 원형 점선, 네 변 원형 2×2, 물결, 병합 칸,

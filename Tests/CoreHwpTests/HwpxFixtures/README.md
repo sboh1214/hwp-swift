@@ -27,7 +27,7 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
    `dash-patterns`·`hwp2007-decorations`·`hyperlink-click-band`·`inline-object-baseline`·
    `inline-object-marker-size`·`inline-table-actual-height`·`mixed-size-decorations`·
    `ms-word-line-shapes`·`ms-word-paragraph-end-box`·`ms-word-script-strikethrough`·
-   `page-end-line-box`·`paragraph-end-char-size`·
+   `ms-word-space-width`·`page-end-line-box`·`paragraph-end-char-size`·`space-width`·
    `table-border-chains`·`table-border-corners`·`table-cell-spacing`)은 `.hwp`와 `.hwpx`를
    **같은 편집 세션에서 연달아** 저장해야 두
    파일이 같은 문서가 된다. 한글 GUI로 만들기 어려운 조합은 합성 HWPX를 한글로 열어 두 형식으로
@@ -142,6 +142,12 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
   위 보통 글자 취소선 높이의 0.696배(한글 문서의 약 0.64배 — 첨자 글리프 축소 비율 — 와 다르다)에 그리는
   규칙을 렌더 해시·골든이 잡지 못하던 자리의 실물 근거다. `hh:supscript`·`hh:subscript`와 밑줄 종류
   `CENTER`, 슬롯별 `hh:offset`이 HWP 쌍과 같은 첨자·장식·글자 위치로 옮겨지는 표본이기도 하다.
+  빈칸(U+0020) 폭은 #249에서 `space-width`(한글 문서)·`ms-word-space-width`(MS 워드 호환 문서) 두 쌍으로
+  저작했다 — 코퍼스에 한글·라틴 슬롯의 상대 크기·장평이 다른 글자 모양으로 빈칸을 둔 문서가 없어, 한글이
+  빈칸을 라틴 슬롯이 아니라 한글 슬롯 글자 크기 × 0.5 × 한글 장평으로 벌리고(MS 워드 호환 문서는 앞뒤가
+  모두 라틴 부류인 빈칸만 라틴 글꼴 고유 폭, 한글 2007 호환 문서는 한글 문서와 같다) 글꼴에 어울리는 빈칸은 라틴 글꼴 빈칸 × 앞 글자 슬롯 크기로 벌리는
+  규칙을 렌더 해시·골든이 잡지 못하던 자리의 실물 근거다. `hh:charPr@useFontSpace`·슬롯별 `hh:ratio`와
+  `hp:nbSpace`·`hp:fwSpace`가 HWP 쌍과 같은 빈칸 설정·장평·빈칸 문자로 옮겨지는 표본이기도 하다.
   대시 무늬의 장치 단위 반올림은 #245에서 `dash-patterns` 쌍으로 저작했다 — 같은 무늬를 굵기·셀
   간격·글자 크기·자리(셀 테두리·취소선·단 구분선)별로 갈라 실어, 한글이 긴 점선·점선·쇄선·긴 파선의
   선·공백 길이와 셀 테두리·단 구분선의 획 두께를 600dpi 장치 단위(0.12pt) 정수로 그리는(셀 간격이
