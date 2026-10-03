@@ -1,6 +1,6 @@
 import CoreGraphics
 
-// MARK: - 장치 단위 무늬 — 대시·원형 점선 공용 (본체 파일 길이를 지키려 확장으로 둔다)
+// MARK: - 장치 단위 무늬 — 대시·원형 점선·글자선 획과 여러 줄 (본체 파일 길이를 지키려 확장으로 둔다)
 
 public extension HwpRenderTuning.LineShape {
     // 한글은 대시 무늬(긴 점선·점선·일점쇄선·이점쇄선·긴 파선)와 원형 점선을 글자 크기·두께에 비례하는
@@ -11,7 +11,10 @@ public extension HwpRenderTuning.LineShape {
     // (`characterPatternThicknessPerMille`), 표 셀 테두리·단 구분선은 표 26 굵기마다 한글이 쓰는 값
     // (`borderPatternHwpUnits`)이다. 단위 b = t × 22/15 ÷ 12 (u, `patternUnitThicknessNumerator`/
     // `…Denominator`)이고, 점 q = round(b)는 원형 점선의 점 단위와 같다 (원의 규칙은
-    // `HwpRenderTuning+Circle.swift`, 대시의 요소 식은 `HwpLineShapeGeometry+Dashes.swift`).
+    // `HwpRenderTuning+Circle.swift`, 대시의 요소 식은 `HwpLineShapeGeometry+Dashes.swift`). 글자선의
+    // 실선·대시 획(같은 t)과 2중선·가는+굵은 선·3중선·물결·2중 물결의 띠(`characterDoubleBandPerMille`·
+    // `characterThickBandPerMille`)도 같은 단위의 정수다 (#252 —
+    // `HwpLineShapeGeometry+CharacterBands.swift`).
     // 반올림은 모두 0.5를 올린다.
 
     /// 한글이 대시·원형 점선을 그리는 장치 단위 (pt) — 600dpi 한 칸(72/600). 대시의 선·공백 길이와
@@ -44,18 +47,21 @@ public extension HwpRenderTuning.LineShape {
     /// 상단 − ⌊띠/2⌋, 취소선이 단선 중심이다 (`HwpLineShapeGeometry+CharacterBands.swift`). 실측: 한글
     /// 12.30 build 6523 PDF (2026-10-03, `probes/252`) — 2중선·물결·2중 물결 × 아래 밑줄 1~100pt(1pt
     /// 간격)·취소선·위 밑줄 3~99pt 450표본과 계수·반올림 차례를 가르는 크기(4.53·6.15·7.92·…·64.2pt,
-    /// 1~4pt 0.1pt 간격) 210표본, MS 워드 호환 문서 글꼴 4종 144표본(기준 크기는 줄 글자 상자 높이)이
-    /// 모두 같다 — 0.112·0.12em, 반올림 한 번(round(X × 0.113 ÷ 12)), r을 거치지 않은 획(round(띠 ÷
-    /// 48))은 어긋난다. 계수는 [0.113, 0.11301)까지 맞고 가장 단순한 113‰을 쓴다.
+    /// 1~4pt 0.1pt 간격) 210표본, 0.2~1pt 0.1pt 간격 취소선 27표본, MS 워드 호환 문서 글꼴 4종
+    /// 144표본(기준 크기는 줄 글자 상자 높이)이 모두 같다 — 0.112·0.12em, 반올림 한 번(round(X × 0.113 ÷
+    /// 12)), r을 거치지 않은 획(round(띠 ÷ 48))은 어긋난다. 계수는 한글 문서 표본에서 [0.113, 149.5/1323
+    /// ≈ 0.1130008)만 맞고 (13.23pt 물결이 위 끝을 가른다) 가장 단순한 113‰을 쓴다.
     static let characterDoubleBandPerMille: CGFloat = 113
 
     /// 글자선 가는+굵은 선·굵은+가는 선·3중선의 띠 (HWPUNIT) = 기준 크기(HWPUNIT) × 이 값 ÷ 1000을
     /// 반올림 (0.198em, #252). 장치 띠 E = round(띠 ÷ 12)u를 가는+굵은 선은 가는 선·공백 ⌊E/4⌋(최소
-    /// 1u)·굵은 선 E − 2⌊E/4⌋(최소 3u, E ≤ 2u면 E 한 줄)로, 3중선은 가는 선·공백 max(1, ⌊E/6⌋)·굵은 선
-    /// E − 4 × 그 값(E ≤ 5u면 min(E − 2, 2)u)으로 나눈다. 실측: 같은 문서 — 세 모양 × 아래 밑줄
-    /// 1~100pt·취소선·위 밑줄 3~99pt 450표본, 1~4pt 0.1pt 간격·갈림 크기 237표본(앞 표본의 선이 측정
-    /// 창에 섞인 3개는 그 선을 빼면 같다), MS 워드 호환 문서 144표본이 모두 같다 (0.2em이면 가는+굵은
-    /// 선 300표본 중 78개만 맞는다). 계수는 [0.19796, 0.19801]까지 맞고 198‰을 쓴다.
+    /// 1u)·굵은 선 E − 2⌊E/4⌋(최소 3u, E ≤ 2u면 max(E, 1) 한 줄)로, 3중선은 가는 선·공백 max(1, ⌊E/6⌋)·
+    /// 굵은 선 E − 4 × 그 값(E ≤ 5u면 min(E − 2, 2)u, E ≤ 1u면 1u 한 줄)으로 나눈다. 실측: 같은 문서 —
+    /// 세 모양 × 아래 밑줄 1~100pt·취소선·위 밑줄 3~99pt 450표본, 1~4pt 0.1pt 간격·갈림 크기 237표본(앞
+    /// 표본의 선이 측정 창에 섞인 3개는 그 선을 빼면 같다), 0.2~1pt 0.1pt 간격 취소선 27표본, MS 워드
+    /// 호환 문서 144표본이 모두 같다 (0.2em이면 가는+굵은 선 300표본 중 78개만 맞는다). 계수는 한글
+    /// 문서 표본에서 [29.5/149, 89.5/452) ≈ [0.197987, 0.198009)만 맞고 (1.49pt·4.52pt가 가른다)
+    /// 198‰을 쓴다.
     static let characterThickBandPerMille: CGFloat = 198
 
     /// 무늬 단위의 두께 배율 22/15의 분자 — 대시의 단위 b = 무늬 두께 × 22/15 (장치 단위, 요소마다
