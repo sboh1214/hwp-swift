@@ -177,12 +177,15 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
   (#226): `drawDecoratedLine`이 줄마다 한 번 `HwpDrawnTextLayout.underlineReference(of:endsParagraph:)`
   를 풀고, 한글 문서·한글 2007 호환 문서는 그 줄 상자 높이 L(세로 배치의 `vertsize`와 같은 값)의
   바닥에 아래 밑줄의 위 가장자리, 상단에 위 밑줄의 아래 가장자리를 붙인다. 두께는 한글 문서가
-  줄 글자의 기본 크기 최댓값 T × 0.04(한 크기 줄이면 −0.17em·+0.87em), 한글 2007 호환 문서가
-  고정 0.36pt다. 키 큰 개체 줄에서 밑줄이 개체 하단에 남는 실물(공공누리)도 이 상자 바닥 규칙이라
+  줄 글자의 기본 크기 최댓값 T의 장치 단위 획(#252 — max(1, round(round(T_HU × 39/1000) ÷ 12))u,
+  10pt 0.36pt·40pt 1.56pt; 한 크기 줄이면 약 −0.17em·+0.87em), 한글 2007 호환 문서가 고정 0.36pt다.
+  실선(`fillLine`이 `line.thickness`를 그대로 채운다)과 대시 띠가 같은 두께다 — 반올림은
+  `HwpDecorationLineGeometry` 한 곳에서 한다. 키 큰 개체 줄에서 밑줄이 개체 하단에 남는 실물(공공누리)도 이 상자 바닥 규칙이라
   (상자 바닥 = 개체 바깥 상자의 아랫변) 원점을 되돌리지 않는다 — 종전의
   `underlineReturnDrop` 원점 보정은 상자 바닥 몫을 두 번 세어 없앴다. 취소선(글자 가운데 밑줄
   포함)만 **run 단위**이고 첨자 이동(`hwp.scriptBaselineOffset`, 합산 키가 아니다)을 더해
-  기본 크기 × 첨자 축소 비율 × 0.35 위에, 두께 기본 크기 × 0.04로 놓인다 — MS 워드 호환 문서는
+  기본 크기 × 첨자 축소 비율 × 0.35 위에, 두께는 첨자 축소 전 기본 크기의 장치 단위 획(#252)으로
+  놓인다 — MS 워드 호환 문서는
   자리가 글꼴 상자 산식(아래 항목)이고 첨자 run이면 축소 비율이 아니라 보통 글자 높이의 0.696배다
   (`msWordScriptStrikethroughScale`, #248); 밑줄은 첨자 이동을 무시한다. 변경 추적 표시선은 일반 선과 같다 (#187·#226 실측) — 삭제선은 취소선 경로
   그대로이고 삽입 밑줄(`drawTrackInsertUnderlineIfNeeded`)은 아래 밑줄과 같은 줄 기준에 색만
@@ -215,8 +218,9 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
   (`msWordLineBox.cellHeight` × 1.3 — 문단 끝 글자·개체가 쌓아 키운 줄 상자가 아니라 글자 상자이고,
   쌓이지 않은 줄에서는 한글 줄 캐시 `vertsize`와 같다), 취소선이 한글 문서와 같은 글자 모양 기본 크기다 (#244). 그 문서의 밑줄은 여러 줄
   띠·물결 자리도 다르다 — 아래·위 밑줄 모두 취소선 자리(단선 중심에 가운데, `underlineShapePlacement`)
-  이고, 물결 계단은 선 두께(0.05 cell)가 아니라 축척의 0.04배다(`HwpLineShapeGeometry.
-  wavePatternThickness(for:)`). 근거는 `Sources/HwpKitCore/AGENTS.md`의 원형 점선 항목. 로컬
+  이고, 여러 줄·물결은 한글 문서처럼 그 축척의 장치 단위 정수 기하다(#252 —
+  `HwpLineShapeGeometry+CharacterBands.swift`). 근거는 `Sources/HwpKitCore/AGENTS.md`의 원형 점선·
+  "글자선의 획과 여러 줄·물결" 항목. 로컬
   y(양수 = 아래)를 텍스트 공간(y-위)으로 뒤집어 단선 중심(`lineOrigin.y + line.center`)에
   놓는다 — 밑줄의 줄 상자 가장자리·취소선의 첨자 이동은 그 중심에 이미 들어 있다.
 - **MS 워드 호환 문서(`hwp.compatibleDocumentTarget` == `msWord`)의 장식선은 글꼴 지표
