@@ -205,8 +205,9 @@ import XCTest
             runs: [(UInt32, UInt32)] = [(0, 0)],
             target: CoreHwp.HwpCompatibleDocumentTarget? = nil
         ) -> NSAttributedString {
-            let index = target.map { index(shapes: shapes, target: $0) } ?? index(shapes: shapes)
-            return HwpTextRunBuilder(index: index, fontResolver: .testDeterministic)
+            let documentIndex = target.map { index(shapes: shapes, target: $0) }
+                ?? index(shapes: shapes)
+            return HwpTextRunBuilder(index: documentIndex, fontResolver: .testDeterministic)
                 .build(paragraph: paragraph(text: text, runs: runs))
         }
 
