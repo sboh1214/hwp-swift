@@ -31,7 +31,7 @@ import Foundation
 /// 20%에 13.68pt) 조판은 글자 크기의 %(`HwpTextRunBuilder.attributes(for:script:)`)로 붙인다.
 /// 빈칸에만 한글 모델을 넣으면 음수 자간 문서에서 빈칸만 좁아지고 라틴 글자·따옴표는 여전히
 /// 한글보다 좁아 줄 폭이 한글보다 짧아진다(실측: `noori` 2쪽 자간 −7% 줄이 한 글자를 더 담아
-/// 줄바꿈이 한글과 갈렸다). 그래서 둘을 함께 바꾼다 (후속 이슈).
+/// 줄바꿈이 한글과 갈렸다). 그래서 둘을 함께 바꾼다 (#260).
 struct HwpSpaceWidthMetrics: Equatable {
     /// 빈칸의 종류 — 폭 규칙이 갈린다.
     enum Kind: Equatable {
