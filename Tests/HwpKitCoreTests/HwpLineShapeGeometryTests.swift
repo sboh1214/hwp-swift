@@ -156,7 +156,8 @@ final class HwpLineShapeGeometryTests: XCTestCase {
 
     /// 취소선은 띠 가운데가 단선 중심이고, 글자 위 밑줄은 띠 가운데가 줄 상자 상단(단선 띠의 아래
     /// 가장자리)에서 띠 절반 위다 (#252 — 40pt 가는+굵은 위 밑줄: 가운데 0.78 − 3.96 = −3.18, 띠 66u가
-    /// [−7.14, 0.78] — 한글 40pt +41.04/+36.12pt 중심은 단선 중심 34.78에서 −6.18·−1.26).
+    /// [−7.14, 0.78] — 한글 40pt +41.04/+36.12pt 중심은 단선 중심 34.78에서 −6.26·−1.34라 모델의
+    /// −6.18·−1.26과 쪽 격자 흔들림 1u 안이다).
     func testMultiLinePlacementFollowsTheDecorationKind() {
         let centered = Self.pieces(HwpLineShapeGeometry.path(for: Self.characterLine(
             .doubleLine, placement: .strikethrough

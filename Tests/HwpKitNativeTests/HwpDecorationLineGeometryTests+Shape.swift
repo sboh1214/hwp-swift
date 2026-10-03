@@ -238,14 +238,15 @@ extension HwpDecorationLineGeometryTests {
         expect(HwpPageLayer.sameLineShapeGroup(native, biggerBase)) == false
     }
 
-    /// 2중선 밑줄은 두 띠, 물결은 진폭 0.112em의 띠 하나 (20pt: 2.24pt + 획 0.6)
+    /// 2중선 밑줄은 두 띠, 물결은 대각선 r의 띠 하나 (#252 — 20pt: 띠 226HWPUNIT → r 19u = 2.28pt,
+    /// 획 round(19 ÷ 4) = 5u = 0.6pt)
     func testMultiLineAndWaveUnderlinesSpanTheMeasuredBands() throws {
         let double = try render(text: NSAttributedString(
             string: "AAAAAAAA", attributes: shapedUnderline(.doubleLine)
         ))
         let bands = Self.rowBands(double, where: Self.isCyan)
         expect(bands.count) == 2
-        // 0.12em 띠: 0.6pt 두 줄, 중심 간격 1.8pt (한글 20pt 실측 0.6/1.8)
+        // 획 5u = 0.6pt 두 줄, 중심 간격 3 × 5u = 1.8pt (한글 20pt 실측 0.6/1.8)
         if bands.count == 2 {
             expect(bands[1] - bands[0]).to(beCloseTo(1.8, within: 0.15))
         }
@@ -263,11 +264,11 @@ extension HwpDecorationLineGeometryTests {
             }
         }
         let span = CGFloat((inkRows.max() ?? 0) - (inkRows.min() ?? 0) + 1) / Self.scale
-        // 진폭 2.24 + 꼭짓점 평탄의 획 0.6 (한글 20pt 실측 꼭짓점 2.28pt·획 0.6pt)
-        expect(span).to(beCloseTo(2.24 + 0.6, within: 0.25))
-        // 꼭짓점 띠 위쪽 = 단선 위 가장자리(중심 − 0.4) − 두께 0.8 = 중심 − 1.2, 그 위로 획
-        // 반폭 0.3
+        // 대각선 2.28 + 평탄의 획 0.6 (한글 20pt 실측 꼭짓점 2.28pt·획 0.6pt)
+        expect(span).to(beCloseTo(2.28 + 0.6, within: 0.25))
+        // 위 평탄 = 띠 가운데(단선 위 가장자리 중심 − 0.42에서 ⌊226/2⌋HWPUNIT 아래 = 중심 + 0.71)
+        // − (⌊19/2⌋ + ⌈15/2⌉)u = 중심 − 1.33, 그 위로 획 반폭 0.3
         let center = try solidUnderlineCenter()
-        expect(CGFloat(inkRows.min() ?? 0) / Self.scale).to(beCloseTo(center - 1.5, within: 0.3))
+        expect(CGFloat(inkRows.min() ?? 0) / Self.scale).to(beCloseTo(center - 1.63, within: 0.3))
     }
 }
