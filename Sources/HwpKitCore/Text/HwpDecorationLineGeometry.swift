@@ -8,15 +8,17 @@ import Foundation
 /// (`HwpPageLayerDecorations`)가 이 값을 그대로 그린다.
 ///
 /// - 한글 문서: 아래 밑줄(삽입 밑줄 포함)은 **위 가장자리가 줄 상자 바닥**(베이스라인
-///   아래 0.15L), 위 밑줄은 **아래 가장자리가 줄 상자 상단**(위 0.85L), 두께 0.04T —
-///   한 크기만 있는 줄(L = T = em)이면 중심 −0.17em · +0.87em이다. 취소선(가운데 밑줄·
-///   삭제선 포함)은 +0.35em, 두께 0.04em.
+///   아래 0.15L), 위 밑줄은 **아래 가장자리가 줄 상자 상단**(위 0.85L), 두께는 T의 획 두께 —
+///   한 크기만 있는 줄(L = T = em)이면 중심이 −0.17em · +0.87em 근처다. 취소선(가운데 밑줄·
+///   삭제선 포함)은 +0.35em, 두께는 em의 획 두께. 획 두께는 기준 크기에서 푼 600dpi 장치
+///   단위(0.12pt)의 정수다 — max(1, round(round(X × 39/1000) ÷ 12))u, X = 기준 크기 HWPUNIT
+///   (`strokeThickness(referenceSize:)`, #252; 10pt 0.36pt·5pt 0.24pt·80pt 3.12pt).
 /// - 한글 2007 호환(`HwpCompatibleDocumentTarget.hwp200X`): 두께가 크기와 무관한 고정
 ///   0.36pt이고, 밑줄은 한글 문서와 **같은 가장자리**(아래 0.15L·위 0.85L)에 그 얇은
 ///   선을 얹는다 — 중심은 −(0.15L + 0.18pt) · +(0.85L + 0.18pt)이고 취소선 중심은
 ///   한글 문서와 같은 +0.35em이다.
-/// - MS 워드 호환: 아래 밑줄 −(descent + 0.021 cell) · 위 밑줄 ascent + 0.021 cell, 두께
-///   0.05 cell · 취소선 0.273 ascent, 두께 0.04em.
+/// - MS 워드 호환: 아래 밑줄 −(descent + 0.021 cell) · 위 밑줄 ascent + 0.021 cell, 두께는
+///   줄 글자 상자 높이(cell × 1.3)의 획 두께 · 취소선 0.273 ascent, 두께는 em의 획 두께.
 ///
 /// (L = 줄 상자 높이, T = 줄 글자의 기본 크기 최댓값 — 둘 다 줄 단위, `UnderlineReference`;
 /// em = run의 글자 모양 기본 크기, 첨자면 취소선 자리만 줄인다 — 한글 문서·한글 2007 호환
@@ -130,10 +132,10 @@ public enum HwpDecorationLineGeometry {
     // MARK: - 한글 문서
 
     /// 글자 아래 밑줄 — **위 가장자리가 줄 상자 바닥**(베이스라인 아래 0.15 ×
-    /// `lineBoxHeight`)에 닿고 아래로 두께 0.04 × `thicknessFontSize`만큼 그려진다. 중심은
-    /// −(0.15L + 0.02T) (#226 — `HwpRenderTuning.Text.underlineBelowEdgeRatio`의 실측).
+    /// `lineBoxHeight`)에 닿고 아래로 `thicknessFontSize`의 획 두께(`strokeThickness(referenceSize:)`)
+    /// 만큼 그려진다. 중심은 −(0.15L + 획/2) (#226 — `HwpRenderTuning.Text.underlineBelowEdgeRatio`의 실측).
     public static func underlineBelow(lineBoxHeight: CGFloat, thicknessFontSize: CGFloat) -> Line {
-        let thickness = thicknessFontSize * HwpRenderTuning.Text.decorationLineThicknessRatio
+        let thickness = strokeThickness(referenceSize: thicknessFontSize)
         return Line(
             center: -(lineBoxHeight * HwpRenderTuning.Text.underlineBelowEdgeRatio + thickness / 2),
             thickness: thickness
@@ -141,9 +143,9 @@ public enum HwpDecorationLineGeometry {
     }
 
     /// 글자 위 밑줄 — **아래 가장자리가 줄 상자 상단**(베이스라인 위 0.85 ×
-    /// `lineBoxHeight`)에 닿고 위로 두께 0.04 × `thicknessFontSize`만큼 그려진다.
+    /// `lineBoxHeight`)에 닿고 위로 `thicknessFontSize`의 획 두께만큼 그려진다.
     public static func underlineAbove(lineBoxHeight: CGFloat, thicknessFontSize: CGFloat) -> Line {
-        let thickness = thicknessFontSize * HwpRenderTuning.Text.decorationLineThicknessRatio
+        let thickness = strokeThickness(referenceSize: thicknessFontSize)
         return Line(
             center: lineBoxHeight * HwpRenderTuning.Text.underlineAboveEdgeRatio + thickness / 2,
             thickness: thickness
@@ -151,22 +153,24 @@ public enum HwpDecorationLineGeometry {
     }
 
     /// 한 크기만 있는 줄의 글자 아래 밑줄 — 줄 상자와 두께 기준이 모두 `fontSize`라
-    /// 베이스라인 아래 0.17em, 두께 0.04em이다 (#176).
+    /// 위 가장자리가 베이스라인 아래 0.15em이고 두께는 그 크기의 획 두께다 (#176·#252 — 중심은
+    /// 0.17em 근처, 10pt면 −1.68pt·0.36pt).
     public static func underlineBelow(fontSize: CGFloat) -> Line {
         underlineBelow(lineBoxHeight: fontSize, thicknessFontSize: fontSize)
     }
 
-    /// 한 크기만 있는 줄의 글자 위 밑줄 — 베이스라인 위 0.87em, 두께 0.04em (#136).
+    /// 한 크기만 있는 줄의 글자 위 밑줄 — 아래 가장자리가 베이스라인 위 0.85em이고 두께는 그
+    /// 크기의 획 두께다 (#136·#252 — 중심은 0.87em 근처, 10pt면 +8.68pt·0.36pt).
     public static func underlineAbove(fontSize: CGFloat) -> Line {
         underlineAbove(lineBoxHeight: fontSize, thicknessFontSize: fontSize)
     }
 
     /// 취소선 — 베이스라인 위 0.35 × `fontSize`(글자 모양 기본 크기, 첨자면 × 축소 비율),
-    /// 두께 0.04 × `thicknessFontSize`(첨자 축소 전 기본 크기). 밑줄과 달리 run 단위다.
+    /// 두께는 `thicknessFontSize`(첨자 축소 전 기본 크기)의 획 두께. 밑줄과 달리 run 단위다.
     public static func strikethrough(fontSize: CGFloat, thicknessFontSize: CGFloat) -> Line {
         Line(
             center: fontSize * HwpRenderTuning.Text.strikethroughCenterRatio,
-            thickness: thicknessFontSize * HwpRenderTuning.Text.decorationLineThicknessRatio
+            thickness: strokeThickness(referenceSize: thicknessFontSize)
         )
     }
 
@@ -208,32 +212,71 @@ public enum HwpDecorationLineGeometry {
 
     // MARK: - MS 워드 호환 문서
 
-    /// 글자 아래 밑줄 — 줄 상자(`lineBox`, pt)의 `descent` 아래 0.021 cell, 두께 0.05 cell.
+    /// 글자 아래 밑줄 — 줄 상자(`lineBox`, pt)의 `descent` 아래 0.021 cell, 두께는 줄 글자 상자
+    /// 높이(cell × 1.3 — 한글 줄 캐시의 `vertsize`)의 획 두께 (`msWordUnderlineStrokeThickness(lineBox:)`).
     public static func msWordUnderlineBelow(lineBox: HwpMsWordLineBox) -> Line {
         let cell = lineBox.cellHeight
         return Line(
             center: -(lineBox.descent + cell * HwpRenderTuning.Text.msWordUnderlineOffsetCellRatio),
-            thickness: cell * HwpRenderTuning.Text.msWordUnderlineThicknessCellRatio
+            thickness: msWordUnderlineStrokeThickness(lineBox: lineBox)
         )
     }
 
-    /// 글자 위 밑줄 — 줄 상자의 `ascent` 위 0.021 cell, 두께 0.05 cell.
+    /// 글자 위 밑줄 — 줄 상자의 `ascent` 위 0.021 cell, 두께는 아래 밑줄과 같다.
     public static func msWordUnderlineAbove(lineBox: HwpMsWordLineBox) -> Line {
         let cell = lineBox.cellHeight
         return Line(
             center: lineBox.ascent + cell * HwpRenderTuning.Text.msWordUnderlineOffsetCellRatio,
-            thickness: cell * HwpRenderTuning.Text.msWordUnderlineThicknessCellRatio
+            thickness: msWordUnderlineStrokeThickness(lineBox: lineBox)
         )
     }
 
     /// 취소선 — run 자신의 상자(`runBox`, pt)의 `ascent` × 0.273, 두께는 한글 문서와
-    /// 같은 0.04 × `thicknessFontSize`.
+    /// 같은 `thicknessFontSize`(글자 모양 기본 크기)의 획 두께.
     public static func msWordStrikethrough(
         runBox: HwpMsWordLineBox, thicknessFontSize: CGFloat
     ) -> Line {
         Line(
             center: runBox.ascent * HwpRenderTuning.Text.msWordStrikethroughAscentRatio,
-            thickness: thicknessFontSize * HwpRenderTuning.Text.decorationLineThicknessRatio
+            thickness: strokeThickness(referenceSize: thicknessFontSize)
         )
+    }
+
+    /// MS 워드 호환 문서 밑줄(글자 아래·위·변경 추적 삽입)의 획 두께 — 기준 크기는 줄 글자 상자의
+    /// 높이 `cellHeight` × 1.3(`HwpRenderTuning.Text.msWordLineHeightCellRatio`)이다. 선 모양의 무늬
+    /// 축척과 같은 크기다 (#244 — 렌더러의 `underlineShapeScale`).
+    static func msWordUnderlineStrokeThickness(lineBox: HwpMsWordLineBox) -> CGFloat {
+        strokeThickness(
+            referenceSize: lineBox.cellHeight * HwpRenderTuning.Text.msWordLineHeightCellRatio
+        )
+    }
+
+    // MARK: - 획 두께
+
+    /// 한글 문서·MS 워드 호환 문서 장식선의 획 두께 (pt) — 기준 크기 `referenceSize`(pt)를
+    /// HWPUNIT 정수로 둔 X에서 무늬 두께 t = round(X × 39/1000)를 풀고, t ÷ 12를 600dpi 장치
+    /// 단위(0.12pt)로 반올림한 값이다. 최소 1u(0.12pt)이고 반올림은 0.5를 올린다 (#252):
+    ///
+    ///     획 = max(1, round(round(X × 39 / 1000) / 12)) × 0.12pt
+    ///
+    /// t는 대시·원형 점선의 무늬 두께와 같은 값이고 (`HwpLineShapeGeometry.characterPatternHwpUnits`),
+    /// 실선과 대시 다섯 종(점선·긴 점선·일점쇄선·이점쇄선·긴 파선)이 같은 크기에서 같은 획이다.
+    /// 기준 크기는 선마다 다르다 — 한글 문서는 밑줄 세 종이 줄 글자 기본 크기 최댓값(#226), 취소선·
+    /// 글자 가운데 밑줄이 run의 글자 모양 기본 크기(첨자 축소 전)이고, MS 워드 호환 문서는 밑줄이 줄
+    /// 글자 상자의 높이(#244), 취소선이 글자 모양 기본 크기다. 한글 2007 호환 문서는 이 식 밖의
+    /// 고정 0.36pt다 (#210, `HwpRenderTuning.Text.hwp200XDecorationLineThickness`).
+    ///
+    /// 실측: 한컴오피스 한글 12.30.0 PDF — build 6446 (2026-10-01 재집계, #210·#227·#244·#245 자료)
+    /// 한글 문서 실선 69 + 대시 1,206표본·MS 워드 호환 문서 실선 92 + 대시 880표본, build 6523
+    /// (2026-10-03, `probes/252`) 한글 문서 실선 취소선·아래 밑줄·위 밑줄 237표본(t가 12k+5·12k+6으로
+    /// 갈리는 0.01pt 이웃 쌍 34개씩 + 1~3pt)·점선·긴 점선 취소선 158표본·기준 크기 갈래(크기가 섞인
+    /// 줄·문단 끝 글자·상대 크기·첨자) 32표본·MS 워드 호환 문서 글꼴 11종 밑줄 248 + 취소선 135표본이
+    /// **모두** 이 식과 같다 (MS 워드 호환 밑줄은 한글 줄 캐시의 `vertsize`를 넣었을 때 — 우리 글꼴
+    /// 상자는 그 반올림을 재현하지 않아 7표본이 1u 갈린다, #194). 종전 연속값(0.04em, MS 워드 호환
+    /// 밑줄 0.05 cell)은 10pt에서 0.40pt(한글 0.36), 5pt에서 0.20pt(0.24), 1.02pt 취소선에서
+    /// 0.04pt(0.12)였고, `round(크기 ÷ 3)`u(#176의 13개 크기 실측에서 읽은 식)는 56pt 18u·80pt
+    /// 26u에서 반증된다 (같은 경계 쌍 237표본 중 138개만 맞는다). 0 이하·NaN이면 0이다.
+    public static func strokeThickness(referenceSize: CGFloat) -> CGFloat {
+        HwpLineShapeGeometry.characterStrokeThickness(fontSize: referenceSize)
     }
 }

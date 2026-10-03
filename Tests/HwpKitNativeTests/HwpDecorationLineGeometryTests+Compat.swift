@@ -96,8 +96,10 @@ extension HwpDecorationLineGeometryTests {
         expect(expected).to(beCloseTo(10.272, within: 0.01))
     }
 
-    /// 두께 — 밑줄은 0.05 × cell(Menlo 20pt: 1.164pt), 취소선은 한글 문서와 같은 0.04em
-    /// (0.8pt). 빈칸 run 위 선의 열 커버리지 합으로 잰다.
+    /// 두께 — 밑줄은 줄 글자 상자 높이(cell × 1.3, Menlo 20pt 30.27pt)의 획 10u = 1.20pt, 취소선은
+    /// 한글 문서와 같은 기본 크기 20pt의 획 7u = 0.84pt다 (#252 — 한글 12.30 Menlo 20pt 밑줄 10u).
+    /// 종전 연속값 0.05 cell(1.164pt)·0.04em(0.8pt)은 허용 오차 밖이다. 빈칸 run 위 선의 열 커버리지
+    /// 합으로 잰다.
     func testMsWordThicknessComesFromTheCell() throws {
         let size: CGFloat = 20
         let text = NSMutableAttributedString(
@@ -110,10 +112,8 @@ extension HwpDecorationLineGeometryTests {
         let raster = try render(text: text)
         let underline = try XCTUnwrap(Self.lineThickness(raster) { red, _, _ in red }, "밑줄 두께")
         let strike = try XCTUnwrap(Self.lineThickness(raster) { _, green, _ in green }, "취소선 두께")
-        let box = menloBox(size)
-        expect(underline).to(beCloseTo(box.cellHeight * 0.05, within: 0.05))
-        expect(box.cellHeight * 0.05).to(beCloseTo(1.164, within: 0.001))
-        expect(strike).to(beCloseTo(0.8, within: 0.05))
+        expect(underline).to(beCloseTo(1.20, within: Self.strokeTolerance))
+        expect(strike).to(beCloseTo(0.84, within: Self.strokeTolerance))
     }
 
     /// 밑줄은 줄 단위다 — 밑줄 없는 큰 run(Menlo 40pt)이 같은 줄에 있으면 작은 run(Menlo
@@ -138,7 +138,7 @@ extension HwpDecorationLineGeometryTests {
         expect(underline - strike).to(beCloseTo(gap, within: 0.25))
         expect(gap).to(beCloseTo(12.942, within: 0.01))
 
-        // 두께도 40pt 상자(2.33pt)다 — 빈칸 run으로 잰다.
+        // 두께도 40pt 상자의 획(글자 상자 높이 60.53pt → 20u = 2.40pt)이다 — 빈칸 run으로 잰다.
         let blanks = NSMutableAttributedString(string: "    ", attributes: plainBig)
         blanks.append(NSAttributedString(
             string: "    ", attributes: run("Menlo", size: 10, color: Self.cyan, underline: true)
@@ -147,9 +147,7 @@ extension HwpDecorationLineGeometryTests {
         let thickness = try XCTUnwrap(
             Self.lineThickness(blankRaster) { red, _, _ in red }, "밑줄 두께"
         )
-        let bigCell = menloBox(40).cellHeight
-        expect(thickness).to(beCloseTo(bigCell * 0.05, within: 0.06))
-        expect(bigCell * 0.05).to(beCloseTo(2.328, within: 0.01))
+        expect(thickness).to(beCloseTo(2.40, within: Self.strokeTolerance))
     }
 
     /// 취소선은 run 단위다 — 같은 줄의 Menlo(CJK 갈래)·Helvetica(그 밖 갈래) 취소선 run이
@@ -254,7 +252,7 @@ extension HwpDecorationLineGeometryTests {
         let smallThickness = try XCTUnwrap(
             Self.lineThickness(blankStrike) { red, _, _ in red }, "20pt 취소선 두께"
         )
-        expect(smallThickness).to(beCloseTo(40 * 0.04, within: 0.06))
+        expect(smallThickness).to(beCloseTo(1.56, within: Self.strokeTolerance))
         // 같은 글자 모양(7) 안에서 슬롯이 갈린 두 run — 첫 run Menlo 40, 둘째 Helvetica 20.
         let grouped = NSMutableAttributedString(string: "AA ", attributes: run(
             "Menlo", size: 40, color: Self.cyan, strikethrough: true, shape: 7
@@ -282,7 +280,8 @@ extension HwpDecorationLineGeometryTests {
         )))
         let expected = HwpDecorationLineGeometry.msWordUnderlineBelow(lineBox: menloBox(40))
         expect(try XCTUnwrap(Self.lineThickness(blankUnderline) { red, _, _ in red }))
-            .to(beCloseTo(expected.thickness, within: 0.06))
+            .to(beCloseTo(expected.thickness, within: Self.strokeTolerance))
+        expect(expected.thickness).to(beCloseTo(2.40, within: 0.0001))
     }
 
     /// 글자 위 밑줄도 줄 상자의 `ascent` 위 0.021 cell — 같은 줄의 아래 밑줄과의 간격이
@@ -310,7 +309,8 @@ extension HwpDecorationLineGeometryTests {
     /// 실으면 줄 상자가 끝 상자 + Menlo 상자의 베이스라인 아래 몫(4.10)으로 쌓여 19.70pt가
     /// 되고(베이스라인은 Menlo 11.03), 밑줄은 그 줄 상자 바닥에서 Menlo cell의 0.129만큼 위라
     /// 4.57pt 내려간다 (#223 한글 12.30 실측: 같은 구성의 줄 `vertsize` 1970·`baseline` 1104,
-    /// PDF 밑줄 베이스라인 아래 7.20pt — Menlo 혼자면 2.60, 두께는 Menlo cell의 0.05).
+    /// PDF 밑줄 베이스라인 아래 7.20pt — Menlo 혼자면 2.60, 두께는 Menlo 글자 상자 높이
+    /// 15.13pt의 획 5u = 0.60pt — 쌓인 줄 상자가 아니다, #252).
     func testTallerParagraphEndBoxStacksAndMovesTheUnderline() throws {
         let appleSD = CTFontCreateWithName("Apple SD Gothic Neo" as CFString, 10, nil)
         try XCTSkipUnless(
@@ -337,7 +337,7 @@ extension HwpDecorationLineGeometryTests {
         expect(-HwpDecorationLineGeometry.msWordUnderlineBelow(lineBox: line).center)
             .to(beCloseTo(7.20, within: 0.12))
         expect(HwpDecorationLineGeometry.msWordUnderlineBelow(lineBox: line).thickness)
-            .to(beCloseTo(menlo.cellHeight * 0.05, within: 0.0001))
+            .to(beCloseTo(0.60, within: 0.0001))
     }
 
     /// 글자 상자 위에 쌓인 끝 글자 상자 — `LineMetrics.msWordLineBox`의 산식 (#223):
@@ -421,7 +421,7 @@ extension HwpDecorationLineGeometryTests {
             let nativeCenter = try XCTUnwrap(Self.rowCenter(native, where: Self.isCyan), "native")
             expect(center).to(beCloseTo(nativeCenter, within: 0.1), description: "\(raw)")
         }
-        // 대조: MS 워드는 갈린다 — 밑줄이 베이스라인 아래 −0.17 × 20 = −3.4 대신 −5.204이고,
+        // 대조: MS 워드는 갈린다 — 밑줄이 베이스라인 아래 −(0.15 × 20 + 0.84 / 2) = −3.42 대신 −5.204이고,
         // 베이스라인 자체도 0.85 × 20 = 17 대신 Menlo 20pt 글꼴 상자의 22.06이다 (#194).
         let msWord = try render(text: NSAttributedString(
             string: "AAAA", attributes: run("Menlo", size: 20, color: Self.cyan, underline: true)
@@ -435,6 +435,6 @@ extension HwpDecorationLineGeometryTests {
         let anchorShift = HwpMsWordLineBox.metrics(of: CTFontCreateWithName("Menlo" as CFString, 20, nil))
             .scaled(by: 20).baseline - 20 * HwpRenderTuning.Text.baselineAnchorRatio
         expect(anchorShift).to(beCloseTo(5.06, within: 0.05))
-        expect(msWordCenter - nativeCenter).to(beCloseTo(anchorShift + 5.204 - 3.4, within: 0.2))
+        expect(msWordCenter - nativeCenter).to(beCloseTo(anchorShift + 5.204 - 3.42, within: 0.2))
     }
 }

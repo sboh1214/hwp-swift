@@ -22,7 +22,7 @@ public enum HwpAttributedStringKey {
     /// 렌더러(`HwpPageLayerDecorations`)는 `msWord`에서 밑줄·취소선·변경 추적 표시선을
     /// 글꼴 지표 기하(`HwpDecorationLineGeometry`)로, `hwp200X`에서 글자 크기 비례 자리의
     /// 고정 0.36pt 선으로 그리고 (`isHwp2007Compatible`), 나머지 값은 한글 문서와 같이
-    /// 글자 크기 비례 0.04em 선으로 그린다. 세로 배치
+    /// 글자 크기 비례 자리에 장치 단위(0.12pt 정수배) 획의 선으로 그린다 (#252). 세로 배치
     /// (`HwpDrawnTextLayout.LineMetrics`, #194)는 **`msWord`에서만** 줄 상자·베이스라인·
     /// 전진량을 글꼴 줄 상자(`HwpMsWordLineBox`)로 잡는다 — `hwp200X`의 줄 상자는 한글
     /// 문서와 같다 (장식선만 갈린다). CoreText가 대체 글꼴로 쪼갠 run에도 그대로 남으므로 대체 글꼴 run의 선·상자도
@@ -87,8 +87,8 @@ public enum HwpAttributedStringKey {
     public static let scriptBaselineOffset = NSAttributedString.Key("hwp.scriptBaselineOffset")
     /// 밑줄 여부 (글자 아래) — CT 밑줄 대신 렌더러가 직접 그린다: 선의 위 가장자리가 줄
     /// 상자 바닥(베이스라인 아래 `underlineBelowEdgeRatio` × 줄 상자 높이)에 붙고 두께는 줄
-    /// 글자 기본 크기 × `decorationLineThicknessRatio`다 (#176·#226 — 줄 단위,
-    /// `HwpDecorationLineGeometry.UnderlineReference`)
+    /// 글자 기본 크기의 장치 단위 획이다 (#176·#226·#252 — 줄 단위,
+    /// `HwpDecorationLineGeometry.UnderlineReference`·`strokeThickness(referenceSize:)`)
     public static let underlineStyle = NSAttributedString.Key("hwp.underlineStyle")
     /// 밑줄 '글자 위' 여부 (표 35 밑줄 종류 3) — 같은 두께의 선을 아래 가장자리가 줄 상자
     /// 상단(베이스라인 **위** `underlineAboveEdgeRatio` × 줄 상자 높이)에 붙게 그린다

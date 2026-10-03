@@ -70,7 +70,7 @@ extension HwpDecorationLineGeometryTests {
     }
 
     /// 산식 자체 — MS 워드 호환 문서의 첨자 run은 보통 run 취소선 높이의 0.696배(7.055pt), 두께는
-    /// 기본 크기 몫 1.6pt다. 한글 문서·한글 2007 호환 문서의 첨자 run은 종전대로 0.35 × 축소 크기
+    /// 기본 크기 40pt 몫의 획 13u = 1.56pt다 (#252). 한글 문서·한글 2007 호환 문서의 첨자 run은 종전대로 0.35 × 축소 크기
     /// (8.96pt)다 — 그 갈래는 첨자 배율로 글리프 축소 비율을 쓴다. 수정 전 MS 워드 갈래는 0.64배
     /// (6.487pt)라 40pt에서 0.57pt 낮았다.
     func testMsWordScriptStrikethroughHeightIsTheScaledPlainHeight() {
@@ -92,7 +92,7 @@ extension HwpDecorationLineGeometryTests {
             plain.center * HwpRenderTuning.Text.msWordScriptStrikethroughScale, within: 0.000_1
         ))
         expect(scripted.center).to(beCloseTo(7.055, within: 0.001))
-        expect(scripted.thickness).to(beCloseTo(0.04 * size, within: 0.000_1))
+        expect(scripted.thickness).to(beCloseTo(1.56, within: 0.000_1))
 
         // 한글 문서·한글 2007 호환 문서 — 첨자 배율은 글리프 축소 비율 그대로
         for target in [nil, HwpCompatibleDocumentTarget.hwp200X] {

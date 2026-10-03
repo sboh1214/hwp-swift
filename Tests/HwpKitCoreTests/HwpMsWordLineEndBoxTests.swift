@@ -424,8 +424,8 @@ import XCTest
 
         /// 장식선은 줄 상자의 **가장자리**와 **글자 상자의 cell**로 선다 — 10pt 밑줄 줄에 16pt 끝
         /// 글자가 쌓이면 밑줄은 상자 바닥에서 0.129 × 글자 cell 위(한글 PDF: 함초롬돋움 베이스라인
-        /// 아래 9.36pt = 상자 바닥에서 1.71 위, 산식 1.68; 두께는 0.12pt 격자의 0.72, 산식 0.65 —
-        /// 끝 상자의 cell이면 1.04), 글자 상자보다 낮은 개체가 베이스라인을
+        /// 아래 9.36pt = 상자 바닥에서 1.71 위, 산식 1.68; 두께 0.72 = 글자 상자 높이의 획 6u, #252 —
+        /// 끝 상자의 cell이면 1.08), 글자 상자보다 낮은 개체가 베이스라인을
         /// 상자 바닥 가까이 내리면 밑줄이 **베이스라인 위로** 올라간다(Apple SD 20pt + 30pt 표: 한글
         /// PDF 1.80pt 위, 산식 1.90).
         func testDecorationBoxUsesTheLineEdgesAndTheTextCell() throws {
@@ -445,7 +445,8 @@ import XCTest
             expect(-underline.center).to(beCloseTo(
                 box.lineHeight - box.baseline - 0.129 * appleSD10.cellHeight, within: 0.001
             ))
-            expect(underline.thickness).to(beCloseTo(0.05 * appleSD10.cellHeight, within: 0.0001))
+            // 글자 상자 높이 1.3 × 12 = 15.6pt → 무늬 두께 61HWPUNIT → 5u (쌓인 줄 상자가 아니다)
+            expect(underline.thickness).to(beCloseTo(0.60, within: 0.0001))
             let appleSD20 = Self.box("Apple SD Gothic Neo", 20)
             let band = Self.finish([
                 Self.text("가나", "Apple SD Gothic Neo", 20),

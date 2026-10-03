@@ -21,8 +21,8 @@ import XCTest
 extension HwpLineShapeGeometryTests {
     /// 물결 조각 가운데 대각선(평행사변형)만 — 꼭짓점 평탄 띠는 높이가 획 두께뿐이다
     static func diagonals(_ line: HwpLineShapeGeometry.Line) -> [CGRect] {
-        let amplitude = HwpLineShapeGeometry.waveAmplitude(for: line)
-        return pieces(HwpLineShapeGeometry.path(for: line)).filter { $0.height > amplitude / 2 }
+        let run = HwpLineShapeGeometry.wave(for: line).run
+        return pieces(HwpLineShapeGeometry.path(for: line)).filter { $0.height > run / 2 }
     }
 
     /// 한글 2007 호환 문서 12pt 실측 그대로 (자리·길이는 run 시작 기준, 0.12pt 단위): 원 간격
@@ -74,9 +74,9 @@ extension HwpLineShapeGeometryTests {
     }
 
     /// 한글 문서(글자 크기 비례)도 같은 규칙 — 40pt 원 간격 5.76pt(48u, 칠 반지름 1.26): 길이
-    /// 11.52면 원 둘, 한 단위라도 길면 셋째 원(11.52)을 그려 12.78까지 넘친다. 물결 반주기 4.6pt도
-    /// 같다. 규칙은 반지름·획과 무관하다 (한글 40pt 원 경로 지름 2.4pt도 중심이 진행 폭 한 단위 앞이면
-    /// 그린다).
+    /// 11.52면 원 둘, 한 단위라도 길면 셋째 원(11.52)을 그려 12.78까지 넘친다. 물결 반주기 4.68pt(39u,
+    /// #252)도 같다. 규칙은 반지름·획과 무관하다 (한글 40pt 원 경로 지름 2.4pt도 중심이 진행 폭 한 단위
+    /// 앞이면 그린다).
     func testNativeElementsBeforeTheRunEndAreDrawnWhole() {
         func circles(_ length: CGFloat) -> [CGRect] {
             Self.pieces(HwpLineShapeGeometry.path(for: Self.characterLine(.circle, length: length)))
@@ -84,10 +84,10 @@ extension HwpLineShapeGeometryTests {
         expect(circles(11.52).count) == 2
         expect(circles(11.64).count) == 3
         expect(circles(11.64).last?.maxX).to(beCloseTo(11.52 + 1.26, within: 1e-9))
-        expect(Self.diagonals(Self.characterLine(.wave, length: 9.2)).count) == 2
-        expect(Self.diagonals(Self.characterLine(.wave, length: 9.32)).count) == 3
-        expect(Self.diagonals(Self.characterLine(.doubleWave, length: 9.2)).count) == 4
-        expect(Self.diagonals(Self.characterLine(.doubleWave, length: 9.32)).count) == 6
+        expect(Self.diagonals(Self.characterLine(.wave, length: 9.36)).count) == 2
+        expect(Self.diagonals(Self.characterLine(.wave, length: 9.48)).count) == 3
+        expect(Self.diagonals(Self.characterLine(.doubleWave, length: 9.36)).count) == 4
+        expect(Self.diagonals(Self.characterLine(.doubleWave, length: 9.48)).count) == 6
     }
 
     /// 단 구분선·표 셀 테두리도 같은 규칙이다 (한글 실측: 단 구분선은 줄 상자 길이 기준으로 물결은
@@ -112,8 +112,8 @@ extension HwpLineShapeGeometryTests {
         expect(Self.diagonals(divider(.wave, 8.24)).count) == 2
         expect(Self.diagonals(divider(.wave, 8.25)).count) == 3
 
-        /// 표 셀 테두리 4pt(r 33u, 간격 66u = 7.92pt, 칠 반지름 2.1): 중심 < 길이 (길이 15.84면 원 둘,
-        /// 15.96이면 셋째 원 15.84가 끝을 넘는다)
+        // 표 셀 테두리 4pt(r 33u, 간격 66u = 7.92pt, 칠 반지름 2.1): 중심 < 길이 (길이 15.84면 원 둘,
+        // 15.96이면 셋째 원 15.84가 끝을 넘는다)
         func cellCircles(_ length: CGFloat) -> [CGRect] {
             Self.pieces(HwpLineShapeGeometry.path(for: Self.borderLine(
                 .circle, thickness: 4, length: length
@@ -129,8 +129,8 @@ extension HwpLineShapeGeometryTests {
             .circle, thickness: 4, length: 1.99
         ))) == 1
 
-        /// 테두리 2중 물결: 첫 파 0·4.12, 둘째 파 3.0부터 — 7.12면 둘째 파는 3.0 하나(7.12는 끝과
-        /// 같은 자리), 7.13이면 7.12까지 둘
+        // 테두리 2중 물결: 첫 파 0·4.12, 둘째 파 3.0부터 — 7.12면 둘째 파는 3.0 하나(7.12는 끝과
+        // 같은 자리), 7.13이면 7.12까지 둘
         func doubleWave(_ length: CGFloat) -> HwpLineShapeGeometry.Line {
             Self.borderLine(.doubleWave, thickness: 4, length: length)
         }

@@ -15,10 +15,8 @@ final class HwpRenderTuningTests: XCTestCase {
         expect(HwpRenderTuning.Text.strikethroughCenterRatio) == 0.35
         expect(HwpRenderTuning.Text.underlineAboveEdgeRatio) == 0.85
         expect(HwpRenderTuning.Text.underlineBelowEdgeRatio) == 0.15
-        expect(HwpRenderTuning.Text.decorationLineThicknessRatio) == 0.04
         expect(HwpRenderTuning.Text.msWordLineHeightCellRatio) == 1.3
         expect(HwpRenderTuning.Text.msWordBaselineMarginCellRatio) == 0.15
-        expect(HwpRenderTuning.Text.msWordUnderlineThicknessCellRatio) == 0.05
         expect(HwpRenderTuning.Text.msWordUnderlineOffsetCellRatio) == 0.021
         expect(HwpRenderTuning.Text.msWordStrikethroughAscentRatio) == 0.273
         expect(HwpRenderTuning.Text.msWordScriptStrikethroughScale) == 0.696
@@ -45,12 +43,8 @@ final class HwpRenderTuningTests: XCTestCase {
         expect(HwpRenderTuning.LineShape.circleMinimumPathDeviceUnits) == 2
         expect(HwpRenderTuning.LineShape.circleOutlineDeviceUnits) == 1
         expect(HwpRenderTuning.LineShape.cellBorderCirclePitchUnitRatio) == 2
-        expect(HwpRenderTuning.LineShape.characterDoubleLineBandEmRatio) == 0.12
-        expect(HwpRenderTuning.LineShape.characterThickBandEmRatio) == 0.2
-        expect(HwpRenderTuning.LineShape.characterWaveAmplitudeEmRatio) == 0.112
-        expect(HwpRenderTuning.LineShape.characterWaveStrokeEmRatio) == 0.03
-        expect(HwpRenderTuning.LineShape.characterDoubleWaveOffsetAmplitudeRatio) == 0.8
-        expect(HwpRenderTuning.LineShape.characterWaveTopShiftThicknessRatio) == 1
+        expect(HwpRenderTuning.LineShape.characterDoubleBandPerMille) == 113
+        expect(HwpRenderTuning.LineShape.characterThickBandPerMille) == 198
         expect(HwpRenderTuning.LineShape.borderWaveStrokeThicknessRatio) == 0.25
         expect(HwpRenderTuning.LineShape.borderWaveShiftThicknessRatio) == 0.375
         expect(HwpRenderTuning.LineShape.borderDoubleWaveOffsetThicknessRatio) == 0.75

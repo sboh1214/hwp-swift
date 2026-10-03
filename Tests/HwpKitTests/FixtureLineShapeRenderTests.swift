@@ -169,8 +169,8 @@ final class FixtureLineShapeRenderTests: XCTestCase {
     }
 
     /// 여러 줄 밑줄: 2중선은 0.24pt 두 줄(중심 간격 0.72pt), 가는+굵은은 위가 가늘고 아래가
-    /// 굵으며, 3중선은 세 띠 — 모두 단선 띠의 위 가장자리(베이스라인 아래 1.5pt)에서
-    /// 아래로 자란다 (한글 실측 2026-09-17)
+    /// 굵으며(0.48·1.08pt), 3중선은 세 띠 — 모두 줄 상자 바닥(베이스라인 아래 1.5pt) 근처에서
+    /// 아래로 놓인다 (한글 실측 2026-09-17·#252 장치 단위 기하 2026-10-03)
     func testMultiLineUnderlinesStackDownwardFromTheSingleLineTop() throws {
         let raster = try XCTUnwrap(Self.hwp)
         func bands(_ index: Int) -> [(top: CGFloat, bottom: CGFloat)] {
@@ -191,7 +191,7 @@ final class FixtureLineShapeRenderTests: XCTestCase {
         expect(thinThick.count) == 2
         if thinThick.count == 2 {
             expect(thinThick[1].bottom - thinThick[1].top) > thinThick[0].bottom - thinThick[0].top
-            // 띠 0.2em = 2pt: 위 가장자리 +1.5 → 아래 가장자리 +3.5
+            // 띠 E = 17u = 2.04pt: 위 끝 +1.53 → 아래 끝 +3.57 (#252)
             expect(thinThick[1].bottom).to(beCloseTo(Self.underlineBaseline(8) + 3.5, within: 0.45))
         }
         let thickThin = bands(9)
@@ -202,8 +202,8 @@ final class FixtureLineShapeRenderTests: XCTestCase {
         expect(bands(10).count) == 3
     }
 
-    /// 물결 밑줄은 진폭 1.12pt(0.112em)의 지그재그, 2중 물결은 둘째 파가 0.8 진폭 아래 —
-    /// 잉크 띠가 한 줄보다 훨씬 높다 (한글 실측: 10pt 꼭짓점 세로 1.08pt, 2중 1.68pt)
+    /// 물결 밑줄은 대각선 9u(1.08pt)·획 2u의 지그재그, 2중 물결은 둘째 파가 6u(0.72pt) 아래 —
+    /// 잉크 띠가 한 줄보다 훨씬 높다 (#252 장치 단위 기하, 한글 실측: 10pt 꼭짓점 세로 1.08pt)
     func testWaveUnderlinesSpanTheirAmplitude() throws {
         let raster = try XCTUnwrap(Self.hwp)
         func span(_ index: Int) -> CGFloat {
@@ -214,7 +214,7 @@ final class FixtureLineShapeRenderTests: XCTestCase {
             )
             return (result.bottom ?? 0) - (result.top ?? 0)
         }
-        expect(span(0)).to(beCloseTo(0.5, within: 0.3)) // 실선 0.4pt
+        expect(span(0)).to(beCloseTo(0.5, within: 0.3)) // 실선 0.36pt (#252)
         expect(span(11)).to(beCloseTo(1.12 + 0.3, within: 0.4)) // WAVE
         expect(span(12)).to(beCloseTo(1.12 * 1.8 + 0.3, within: 0.5)) // DOUBLEWAVE
     }

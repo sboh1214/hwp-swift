@@ -125,10 +125,10 @@ extension FixtureDecorationLineRenderTests {
     }
 
     /// `compat-decorations`의 기대값 — 문단 1·2·3·4·8·9의 (산식 간격, 한글 실측 간격)과
-    /// 두께 핀(밑줄 색인, 줄 상자 cell).
+    /// 두께 핀(밑줄 색인, 줄 상자의 밑줄 두께 pt).
     private struct GapExpectations {
         let gaps: [(gap: CGFloat, hancom: CGFloat)]
-        let cells: [(index: Int, cell: CGFloat)]
+        let thicknesses: [(index: Int, thickness: CGFloat)]
     }
 
     /// 결정론 글꼴(Apple SD 산돌고딕 Neo·Menlo)의 상자로 산식을 풀고 한글 PDF 값과 0.15pt
@@ -161,18 +161,23 @@ extension FixtureDecorationLineRenderTests {
             )
         }
         // 두께 핀: 밑줄 색인 → 줄 상자 (문단 1·3·8·10 — 라틴 run의 g·p·y 획이 선을
-        // 가로지르는 문단 2·4는 뺀다).
-        expect(hangul10.cellHeight * 0.05).to(beCloseTo(0.6, within: 0.001))
-        expect(line8.cellHeight * 0.05).to(beCloseTo(1.164, within: 0.001))
-        return GapExpectations(gaps: gaps, cells: [
-            (0, hangul10.cellHeight), (2, hangul20.cellHeight),
-            (4, line8.cellHeight), (6, line10.cellHeight),
-        ])
+        // 가로지르는 문단 2·4는 뺀다). 두께는 줄 글자 상자 높이(cell × 1.3)의 획이다 (#252) —
+        // 10pt 줄 15.6pt → 5u = 0.60pt, 20pt 줄 31.2·30.27pt → 10u = 1.20pt로 한글(0.0602 ×
+        // 9.96 = 0.5996·0.0599 × 20.04 = 1.2004)과 같다. 종전 0.05 cell은 Menlo 20pt 상자의
+        // 문단 8에서 1.164pt였다.
+        let thicknesses: [(index: Int, thickness: CGFloat)] = [
+            (0, 0.60), (2, 1.20), (4, 1.20), (6, 1.20),
+        ]
+        for ((_, expected), box) in zip(thicknesses, [hangul10, hangul20, line8, line10]) {
+            expect(HwpDecorationLineGeometry.msWordUnderlineBelow(lineBox: box).thickness)
+                .to(beCloseTo(expected, within: 0.0001))
+        }
+        return GapExpectations(gaps: gaps, thicknesses: thicknesses)
     }
 
     /// 문단 1·2·3·4·8·9의 밑줄(초록)–취소선(청록) 간격이 글꼴 지표 산식과 같고 두 포맷이
     /// 같다. 문단 10은 10pt·20pt 두 밑줄 run이 20pt 상자의 **한 줄**로 이어진다. 밑줄 두께는
-    /// 줄 상자의 0.05 cell — 10pt 줄 0.6pt·20pt 줄 1.2pt (한글 문서 기하라면 0.4·0.8pt).
+    /// 줄 글자 상자 높이의 획 — 10pt 줄 0.60pt·20pt 줄 1.20pt (한글 문서 기하라면 0.36·0.84pt).
     func testCompatUnderlineAndStrikethroughGapsFollowFontMetricsInBothFormats() async throws {
         let expected = try Self.gapExpectations()
         var perFormat: [[CGFloat]] = []
@@ -191,7 +196,7 @@ extension FixtureDecorationLineRenderTests {
                 )
             }
             try assertUnderlineThicknesses(
-                raster, format: format, underlines: underlines, cells: expected.cells
+                raster, format: format, underlines: underlines, thicknesses: expected.thicknesses
             )
             perFormat.append(gaps + underlines.map(\.center))
         }
@@ -204,20 +209,22 @@ extension FixtureDecorationLineRenderTests {
         }
     }
 
-    /// 초록 밑줄의 두께가 줄 상자의 0.05 cell이다.
+    /// 초록 밑줄의 두께가 줄 글자 상자 높이의 획이다 (#252).
     private func assertUnderlineThicknesses(
-        _ raster: Raster, format: String, underlines: [Line], cells: [(index: Int, cell: CGFloat)]
+        _ raster: Raster, format: String, underlines: [Line],
+        thicknesses: [(index: Int, thickness: CGFloat)]
     ) throws {
-        for (index, cell) in cells {
+        for (index, expected) in thicknesses {
             let thickness = try XCTUnwrap(
                 Self.thickness(
-                    raster, of: underlines[index], halfBand: cell * 0.025 + 0.35,
+                    raster, of: underlines[index], halfBand: expected / 2 + 0.35,
                     where: Self.isGreen, channel: Self.redChannel
                 ),
                 "\(format) 밑줄 \(index) 두께"
             )
             expect(thickness).to(
-                beCloseTo(cell * 0.05, within: 0.06), description: "\(format) 밑줄 \(index) 두께"
+                beCloseTo(expected, within: Self.strokeTolerance),
+                description: "\(format) 밑줄 \(index) 두께"
             )
         }
     }
@@ -280,7 +287,7 @@ extension FixtureDecorationLineRenderTests {
     }
 
     /// 위 밑줄(자홍)의 자리를 같은 글리프의 잉크 위 끝을 거쳐 아래 밑줄(초록)과 잇고,
-    /// 두께가 0.05 cell(0.6pt)임을 잰다.
+    /// 두께가 줄 글자 상자 높이의 획(10pt 줄 5u = 0.60pt, #252)임을 잰다.
     private func assertAboveUnderline(
         _ raster: Raster, format: String, pair: AbovePair, above: Line, below: Line
     ) throws {
@@ -311,7 +318,8 @@ extension FixtureDecorationLineRenderTests {
             "\(format) 위 밑줄 \(pair.above) 두께"
         )
         expect(thickness).to(
-            beCloseTo(0.6, within: 0.06), description: "\(format) 위 밑줄 \(pair.above) 두께"
+            beCloseTo(0.6, within: Self.strokeTolerance),
+            description: "\(format) 위 밑줄 \(pair.above) 두께"
         )
     }
 
@@ -345,7 +353,7 @@ extension FixtureDecorationLineRenderTests {
         let ordinary: Line
         let size: CGFloat
         let isStrikethrough: Bool
-        /// 20pt 선(3.2px)에서 잰 일반 선 색의 완전 커버 채널값.
+        /// 20pt 선(0.84pt = 3.36px)에서 잰 일반 선 색의 완전 커버 채널값.
         let fullChannel: UInt8?
     }
 
@@ -354,9 +362,9 @@ extension FixtureDecorationLineRenderTests {
     /// 10pt에서 밑줄이 0.9pt 낮고 두께가 1.6배, 삭제선이 0.6pt 낮았다. 변경 추적 글자
     /// 자체가 빨강이라 빨강 선은 일반 선의 행 근처(±2pt)에서 12pt 넘게 이어진 행으로만
     /// 센다 — 20pt 글리프의 가로 획은 11pt를 넘지 않고 10pt 삭제 run의 선은 17pt다.
-    /// 두께는 커버리지 합(`Raster.lineThickness`)으로 0.04em(10pt 0.4·20pt 0.8pt)을 핀한다
-    /// — 10pt 선은 1.6px라 완전 커버 행이 없을 수 있어 같은 색 20pt 선(3.2px)에서 잰
-    /// 완전 커버 값으로 정규화한다.
+    /// 두께는 커버리지 합(`Raster.lineThickness`)으로 장치 단위 획(10pt 3u = 0.36·20pt 7u =
+    /// 0.84pt, #252)을 핀한다 — 10pt 선은 1.44px라 완전 커버 행이 없을 수 있어 같은 색 20pt
+    /// 선(3.36px)에서 잰 완전 커버 값으로 정규화한다. 종전 0.04em(0.4·0.8pt)은 허용 오차 밖이다.
     func testNativeTrackChangeLinesCoincideWithOrdinaryLines() async throws {
         let raster = try await Self.raster("track-changes-native", hwpx: false)
         let greens = Self.lineGroups(raster, where: Self.isGreen)
@@ -364,7 +372,7 @@ extension FixtureDecorationLineRenderTests {
         expect(greens.count).to(equal(2), description: "일반 밑줄 10·20pt")
         expect(cyans.count).to(equal(2), description: "취소선 10·20pt")
         guard greens.count == 2, cyans.count == 2 else { return }
-        // 완전 커버 값은 20pt 선(0.8pt = 3.2px)에서 — 문단 3·4.
+        // 완전 커버 값은 20pt 선(0.84pt = 3.36px)에서 — 문단 3·4.
         let fullGreen = Self.fullChannel(
             raster, of: greens[1], halfBand: 0.75, where: Self.isGreen, channel: Self.redChannel
         )
@@ -401,7 +409,7 @@ extension FixtureDecorationLineRenderTests {
             .filter { abs($0.center - ordinary.center) < 2 }
     }
 
-    /// 빨강 표시선이 일반 선과 같은 자리·같은 두께이고, 일반 선 두께가 0.04em이다.
+    /// 빨강 표시선이 일반 선과 같은 자리·같은 두께이고, 일반 선 두께가 크기의 획이다.
     private func assertTrackedLine(
         _ raster: Raster, paragraph: Int, line: TrackedLine, fullRed: UInt8?
     ) throws {
@@ -411,7 +419,7 @@ extension FixtureDecorationLineRenderTests {
         expect(red.center).to(
             beCloseTo(line.ordinary.center, within: 0.2), description: "문단 \(paragraph) 자리"
         )
-        let expected = line.size * 0.04
+        let expected: CGFloat = line.size == 10 ? 0.36 : 0.84
         let halfBand = expected / 2 + 0.35
         let ordinary = try XCTUnwrap(
             Self.thickness(
@@ -429,7 +437,8 @@ extension FixtureDecorationLineRenderTests {
             "문단 \(paragraph) 빨강 선 두께"
         )
         expect(ordinary).to(
-            beCloseTo(expected, within: 0.06), description: "문단 \(paragraph) 일반 선 두께"
+            beCloseTo(expected, within: Self.strokeTolerance),
+            description: "문단 \(paragraph) 일반 선 두께"
         )
         expect(tracked).to(
             beCloseTo(ordinary, within: 0.06), description: "문단 \(paragraph) 두께 일치"

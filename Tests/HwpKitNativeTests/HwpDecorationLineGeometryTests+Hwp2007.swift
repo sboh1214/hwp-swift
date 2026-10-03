@@ -101,7 +101,7 @@ extension HwpDecorationLineGeometryTests {
 
     /// 글자 아래 밑줄 — 한글 2007 호환 문서에서는 두께가 0.36pt이고 중심은 한글 문서보다
     /// 베이스라인 쪽으로 (1.56 − 0.36) / 2 = 0.6pt 올라온다 (40pt 기준: 한글 문서
-    /// −6.80pt → 한글 2007 −6.18pt, 한글 PDF −6.84 → −6.12). **위 가장자리**(중심 +
+    /// −6.78pt → 한글 2007 −6.18pt, 한글 PDF −6.84 → −6.12). **위 가장자리**(중심 +
     /// 두께 절반 = −6.0pt = −0.15em)는 두 갈래가 같다.
     func testHwp2007UnderlineKeepsTheNativeEdgeAndUsesAFixedThickness() throws {
         let size = Self.largeSize
@@ -110,7 +110,7 @@ extension HwpDecorationLineGeometryTests {
             hwp2007Run(size: size, color: Self.probeCyan, underline: true, target: nil)
         )
         expect(compat.thickness).to(beCloseTo(0.36, within: 0.06))
-        expect(native.thickness).to(beCloseTo(size * 0.04, within: 0.12))
+        expect(native.thickness).to(beCloseTo(1.56, within: Self.strokeTolerance))
         // 래스터는 아래로 y가 커진다 — 밑줄이 베이스라인 쪽으로 올라오면 값이 작아진다.
         expect(native.center - compat.center)
             .to(beCloseTo((native.thickness - compat.thickness) / 2, within: 0.1))
@@ -120,7 +120,7 @@ extension HwpDecorationLineGeometryTests {
     }
 
     /// 글자 위 밑줄 — 같은 규칙이 반대 방향이다: 중심이 한글 문서보다 0.6pt 내려오고
-    /// (40pt: +34.80 → +34.18pt) **아래 가장자리** 0.85em은 같다.
+    /// (40pt: +34.78 → +34.18pt) **아래 가장자리** 0.85em은 같다.
     func testHwp2007AboveUnderlineKeepsTheNativeEdge() throws {
         let size = Self.largeSize
         let compat = try blankLine(hwp2007Run(size: size, color: Self.probeCyan, above: true))
@@ -147,12 +147,12 @@ extension HwpDecorationLineGeometryTests {
         )
         expect(compat.center).to(beCloseTo(native.center, within: 0.1))
         expect(compat.thickness).to(beCloseTo(0.36, within: 0.06))
-        expect(native.thickness).to(beCloseTo(size * 0.04, within: 0.12))
+        expect(native.thickness).to(beCloseTo(1.56, within: Self.strokeTolerance))
     }
 
     /// 두께는 크기를 따라가지 않는다 — 20pt와 40pt 밑줄이 같은 0.36pt다 (한글 실측:
-    /// 5~100pt 22개 크기 전부 0.36pt). 한글 문서에서는 20pt만 있는 줄 0.8pt, 40pt 줄 1.6pt로
-    /// 갈린다 (밑줄 두께는 줄 단위라 두 크기를 따로 그려 견준다, #226).
+    /// 5~100pt 22개 크기 전부 0.36pt). 한글 문서에서는 20pt만 있는 줄 0.84pt, 40pt 줄 1.56pt로
+    /// 갈린다 (밑줄 두께는 줄 단위라 두 크기를 따로 그려 견준다, #226·#252).
     func testHwp2007LineThicknessDoesNotScaleWithFontSize() throws {
         let probe = try thicknessProbe { size, color in
             hwp2007Run(size: size, color: color, underline: true)
@@ -165,8 +165,8 @@ extension HwpDecorationLineGeometryTests {
         let nativeLarge = try blankLine(
             hwp2007Run(size: Self.largeSize, color: Self.probeCyan, underline: true, target: nil)
         )
-        expect(nativeLarge.thickness - nativeSmall.thickness)
-            .to(beCloseTo((Self.largeSize - Self.smallSize) * 0.04, within: 0.12))
+        expect(nativeSmall.thickness).to(beCloseTo(0.84, within: Self.strokeTolerance))
+        expect(nativeLarge.thickness).to(beCloseTo(1.56, within: Self.strokeTolerance))
     }
 
     /// 자리의 기준 크기는 run 글꼴 크기가 아니라 **글자 모양 기본 크기**다 — 기본 40pt·

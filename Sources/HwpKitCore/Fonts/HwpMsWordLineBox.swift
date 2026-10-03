@@ -69,8 +69,8 @@ public struct HwpMsWordLineBox: Hashable, Sendable {
     /// 상자를 키운 줄에서는 **글자 상자**의 값이 남는다 (글자가 없는 줄은 줄 끝 글자 상자,
     /// 개체만 있는 줄은 개체 마커 글꼴의 값 — `HwpDrawnTextLayout.msWordLineBox(of:endsParagraph:)`) (#223 한글 12.30 PDF: 함초롬돋움
     /// 10pt 밑줄 + 16pt 문단 끝 글자 줄은 상자 31.32pt인데 밑줄 중심이 상자 바닥에서 1.71pt
-    /// 위·두께 0.72pt(0.12pt 격자) — 글자 상자 cell 16.92 / 1.3의 산식 1.68·0.65에 맞고,
-    /// 27.06 / 1.3이면 2.69·1.04, 31.32 / 1.3이면 3.11·1.20이다).
+    /// 위·두께 0.72pt — 글자 상자 cell 16.92 / 1.3의 산식 1.68과 그 상자 높이의 획 6u(#252)에
+    /// 맞고, 27.06 / 1.3이면 2.69·9u = 1.08, 31.32 / 1.3이면 3.11·10u = 1.20이다).
     public let cellHeight: CGFloat
 
     public init(lineHeight: CGFloat, baseline: CGFloat) {

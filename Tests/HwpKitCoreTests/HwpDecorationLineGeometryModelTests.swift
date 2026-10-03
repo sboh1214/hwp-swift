@@ -17,17 +17,22 @@ final class HwpDecorationLineGeometryModelTests: XCTestCase {
         let strike: CGFloat
     }
 
+    /// 10pt 한 크기 줄 — 획 두께 3u(0.36pt, #252: 무늬 두께 39HWPUNIT ÷ 12 = 3.25 → 3)라 밑줄 중심은
+    /// 가장자리 −1.5·+8.5에서 획 절반만큼 바깥이다 (한글 12.30 PDF −1.68·+8.76, 두께 0.36).
     func testNativeLinesScaleWithFontSize() {
         let below = HwpDecorationLineGeometry.underlineBelow(fontSize: 10)
-        expect(below.center).to(beCloseTo(-1.7, within: 0.0001))
-        expect(below.thickness).to(beCloseTo(0.4, within: 0.0001))
+        expect(below.center).to(beCloseTo(-1.68, within: 0.0001))
+        expect(below.thickness).to(beCloseTo(0.36, within: 0.0001))
         let above = HwpDecorationLineGeometry.underlineAbove(fontSize: 10)
-        expect(above.center).to(beCloseTo(8.7, within: 0.0001))
-        expect(above.thickness).to(beCloseTo(0.4, within: 0.0001))
-        // 취소선 중심은 (첨자로 줄어든) 글꼴 크기, 두께는 축소 전 크기 기준.
+        expect(above.center).to(beCloseTo(8.68, within: 0.0001))
+        expect(above.thickness).to(beCloseTo(0.36, within: 0.0001))
+        // 취소선 중심은 (첨자로 줄어든) 글꼴 크기, 두께는 축소 전 크기 기준 — 줄어든 6.4pt로
+        // 재면 무늬 두께 25HWPUNIT → 2u(0.24pt)라 갈린다.
         let script = HwpDecorationLineGeometry.strikethrough(fontSize: 6.4, thicknessFontSize: 10)
         expect(script.center).to(beCloseTo(2.24, within: 0.0001))
-        expect(script.thickness).to(beCloseTo(0.4, within: 0.0001))
+        expect(script.thickness).to(beCloseTo(0.36, within: 0.0001))
+        expect(HwpDecorationLineGeometry.strokeThickness(referenceSize: 6.4))
+            .to(beCloseTo(0.24, within: 0.0001))
     }
 
     /// 한글 PDF가 찍은 줄 단위 밑줄 (#226) — 줄 상자 높이(L)·줄 글자 기본 크기(T)와 중심
@@ -41,7 +46,8 @@ final class HwpDecorationLineGeometryModelTests: XCTestCase {
     }
 
     /// 한글 문서의 밑줄은 **줄 단위**다 (#226) — 아래 밑줄은 위 가장자리가 줄 상자 바닥
-    /// (0.15L)에, 위 밑줄은 아래 가장자리가 줄 상자 상단(0.85L)에 붙고 두께는 0.04T다.
+    /// (0.15L)에, 위 밑줄은 아래 가장자리가 줄 상자 상단(0.85L)에 붙고 두께는 T의 획 두께다
+    /// (장치 단위 정수, #252 — 아래 표본의 두께는 한글이 그린 값과 정확히 같다).
     /// 한글 12.30 PDF 실측(2026-09-22·25, 함초롬바탕, 10pt 밑줄 run과 한 줄에 놓인 것):
     /// 40pt 무장식 글자·40pt 공백(L 40·T 40) −6.84·1.56, 위 밑줄은 기본 40pt·상대 크기
     /// 50% run +34.80·1.56; 40pt 문단 끝 글자·한 줄 끝·책갈피·그림·표(L 40·T 10) −6.12~
@@ -75,7 +81,7 @@ final class HwpDecorationLineGeometryModelTests: XCTestCase {
             }
             for line in [below, above] {
                 expect(line.thickness)
-                    .to(beCloseTo(sample.thickness, within: quantum), description: label)
+                    .to(beCloseTo(sample.thickness, within: 1e-9), description: label)
             }
             // 가장자리는 두께와 무관하게 줄 상자 바닥·상단이다.
             expect(below.center + below.thickness / 2)
@@ -132,8 +138,8 @@ final class HwpDecorationLineGeometryModelTests: XCTestCase {
         }
     }
 
-    /// 두께는 크기와 무관한 0.36pt 고정이고 (한글 문서는 0.04em) 밑줄 **가장자리**는 두
-    /// 갈래가 같다 — 중심 차이가 두께 절반의 차이다.
+    /// 두께는 크기와 무관한 0.36pt 고정이고 (한글 문서는 크기에서 푼 장치 단위 획 — 5pt
+    /// 0.24·100pt 3.96) 밑줄 **가장자리**는 두 갈래가 같다 — 중심 차이가 두께 절반의 차이다.
     func testHwp200XLinesUseAFixedThicknessOnTheNativeEdge() {
         for size in [CGFloat(5), 10, 40, 100] {
             let below = HwpDecorationLineGeometry.hwp200XUnderlineBelow(lineBoxHeight: size)
@@ -156,41 +162,48 @@ final class HwpDecorationLineGeometryModelTests: XCTestCase {
         }
     }
 
-    /// 함초롬돋움 40pt (win 1.07/0.23, CJK): 밑줄 −(0.23 + 0.021 × 1.3) × 40 = −10.29pt,
-    /// 두께 0.05 × 1.3 × 40 = 2.6pt (한글 PDF −0.2576em·0.0663em); 위 밑줄 +(1.07 +
-    /// 0.0273) × 40 = 43.89pt (한글 +1.0985em); 취소선 0.273 × 1.07 × 40 = 11.68pt
-    /// (한글 +0.2917em).
+    /// 함초롬돋움 40pt (win 1.07/0.23, CJK): 밑줄 −(0.23 + 0.021 × 1.3) × 40 = −10.29pt
+    /// (한글 PDF −0.2576em), 두께는 줄 글자 상자 높이 1.3 × 1.3 × 40 = 67.6pt의 획 — 무늬 두께
+    /// 264HWPUNIT → 22u = 2.64pt (#252, 한글 0.0663em = 2.65pt); 위 밑줄 +(1.07 + 0.0273) × 40 =
+    /// 43.89pt (한글 +1.0985em); 취소선 0.273 × 1.07 × 40 = 11.68pt (한글 +0.2917em), 두께는
+    /// 기본 크기 40pt의 획 13u = 1.56pt.
     func testMsWordLinesFollowTheLineBox() {
         let box = HwpMsWordLineBox(winAscent: 1.07, winDescent: 0.23, lineGap: 0, isCJK: true)
             .scaled(by: 40)
         let below = HwpDecorationLineGeometry.msWordUnderlineBelow(lineBox: box)
         expect(below.center).to(beCloseTo(-10.292, within: 0.001))
-        expect(below.thickness).to(beCloseTo(2.6, within: 0.001))
+        expect(below.thickness).to(beCloseTo(2.64, within: 0.0001))
         let above = HwpDecorationLineGeometry.msWordUnderlineAbove(lineBox: box)
         expect(above.center).to(beCloseTo(43.892, within: 0.001))
-        expect(above.thickness).to(beCloseTo(2.6, within: 0.001))
+        expect(above.thickness).to(beCloseTo(2.64, within: 0.0001))
         let strike = HwpDecorationLineGeometry.msWordStrikethrough(
             runBox: box, thicknessFontSize: 40
         )
         expect(strike.center).to(beCloseTo(11.684, within: 0.001))
-        expect(strike.thickness).to(beCloseTo(1.6, within: 0.001))
+        expect(strike.thickness).to(beCloseTo(1.56, within: 0.0001))
     }
 
     /// Helvetica 80pt (그 밖 갈래, 기준 상자 0.8146/0.0895·cell 0.9041): 한글 PDF
-    /// −0.1080em·+0.8333em·+0.2197em·두께 0.0455em.
+    /// −0.1080em·+0.8333em·+0.2197em. 두께는 줄 글자 상자 높이 1.1753 × 80 = 94.02pt의 획 —
+    /// 무늬 두께 367HWPUNIT → 31u = 3.72pt (0.0465em, #252: 한글 12.30 build 6523 100% 쪽에서
+    /// 아래·위 밑줄 3.72pt, 줄 캐시 `vertsize` 9407; 종전 0.0455em은 변경 추적 문서의 0.8배
+    /// 축소 쪽에서 잰 값이라 축소한 크기로 다시 반올림된 획이었다), 취소선은 기본 크기 80pt의
+    /// 26u = 3.12pt.
     func testMsWordLinesForANonCJKFont() {
         let box = HwpMsWordLineBox(
             winAscent: 0.9502, winDescent: 0.2251, lineGap: 0, isCJK: false
         ).scaled(by: 80)
         let below = HwpDecorationLineGeometry.msWordUnderlineBelow(lineBox: box)
         expect(below.center / 80).to(beCloseTo(-0.1085, within: 0.002))
-        expect(below.thickness / 80).to(beCloseTo(0.0452, within: 0.001))
+        expect(below.thickness).to(beCloseTo(3.72, within: 0.0001))
         let above = HwpDecorationLineGeometry.msWordUnderlineAbove(lineBox: box)
         expect(above.center / 80).to(beCloseTo(0.8336, within: 0.002))
+        expect(above.thickness).to(beCloseTo(3.72, within: 0.0001))
         let strike = HwpDecorationLineGeometry.msWordStrikethrough(
             runBox: box, thicknessFontSize: 80
         )
         expect(strike.center / 80).to(beCloseTo(0.2224, within: 0.003))
+        expect(strike.thickness).to(beCloseTo(3.12, within: 0.0001))
     }
 
     /// 줄 상자를 합치면 밑줄은 합친 상자를 따른다 — Apple SD 10pt 글자 줄에 Menlo 10pt

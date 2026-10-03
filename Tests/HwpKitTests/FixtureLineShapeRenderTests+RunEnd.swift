@@ -15,8 +15,9 @@ import XCTest
 /// 규칙은 54개였다. R1 5자 30.10pt의 마지막 원(29.64)은 끝 안에서 끝나 **개수 핀**이다 (#239 전의
 /// 간격 1.425pt에서는 R1도 끝 규칙을 갈랐다). 간격이 한글과 같아졌으므로 한글 PDF와의 개수 대조는
 /// 한글의 run 길이를 넣는 `HwpLineShapeGeometryTests+Circles`가 한다 (R1 23개·R2 64개 — 여기서는
-/// 글꼴이 달라 run 길이가 다르다). R4는 마지막 대각선이 run 끝 안에서 끝나 끝 규칙을 가르지 않는
-/// 개수 핀이다 (2중 물결의 끝은 `hwp2007-decorations` R4가 잠근다).
+/// 글꼴이 달라 run 길이가 다르다). 10pt 물결은 한글처럼 장치 단위 정수다 — 대각선 9u·반주기 10u
+/// (1.2pt)·획 2u, 2중 물결의 둘째 파는 6u 아래다 (#252). R3·R4 모두 마지막 대각선이 run 끝 앞에서
+/// 시작해 끝을 넘는다 (2중 물결의 끝은 `hwp2007-decorations` R4도 잠근다).
 extension FixtureLineShapeRenderTests {
     func testRunEndCirclesAndWavesKeepElementsStartingBeforeTheEnd() throws {
         typealias Render = FixtureDecorationLineRenderTests
@@ -44,10 +45,10 @@ extension FixtureLineShapeRenderTests {
             expect(span).to(beCloseTo(84.24, within: 0.3))
             expect(span / CGFloat(circleStrikeout.count - 1)).to(beCloseTo(1.56, within: 0.01))
         }
-        // R3 (베이스라인 289.56): 물결 밑줄 — 반주기 1.24pt, 대각선 25개. 마지막 대각선(29.76
-        // 시작)은 run 끝(30.10)을 넘어 30.88 + 획 모서리까지 칠한다
-        // (가운데 행 둘레 띠에서 대각선마다 한 조각 — 10pt 획은 0.3pt라 한 행만 보면 놓친다)
-        expect(Self.horizontalInkRuns(raster, y: 291.1 ... 291.34, x: columnTwo, where: red)) == 25
+        // R3 (베이스라인 289.56): 물결 밑줄 — 반주기 1.2pt(10u), 대각선 26개. 마지막 대각선(30.0
+        // 시작)은 run 끝(30.10)을 넘어 31.08 + 획 모서리까지 칠한다
+        // (가운데 행 둘레 띠에서 대각선마다 한 조각 — 10pt 획은 0.24pt라 한 행만 보면 놓친다)
+        expect(Self.horizontalInkRuns(raster, y: 291.1 ... 291.34, x: columnTwo, where: red)) == 26
         if let first = circleUnderline.first,
            let right = Render.inkRightEdge(raster, y: 290.3 ... 292.1, x: columnTwo, where: red)
         {
@@ -56,11 +57,11 @@ extension FixtureLineShapeRenderTests {
             let runWidth = Render.menloRunWidth(size: 10, count: 5)
             expect(right - start).to(beGreaterThan(runWidth + 0.3))
         }
-        // R4 (베이스라인 305.64): 2중 물결 취소선 — 첫 파의 가운데 행 띠에서 대각선 68개 (둘째 파는
-        // 0.9pt 아래에서 시작해 닿지 않는다). 마지막 대각선(83.08 → 84.20)이 run 끝(84.29) 안에서
-        // 끝나 끝 규칙은 가르지 않는 개수 핀이다
+        // R4 (베이스라인 305.64): 2중 물결 취소선 — 첫 파의 가운데 행 띠에서 대각선 71개 (둘째 파는
+        // 0.72pt 아래에서 시작해 닿지 않는다). 마지막 대각선(84.0 → 85.08)이 run 끝(84.29) 앞에서
+        // 시작해 끝을 넘는다 — 끝 안에 온전히 드는 대각선만 그리면 70개다
         expect(Self.horizontalInkRuns(
             raster, y: 301.52 ... 301.72, x: columnTwo, where: Self.isBlue
-        )) == 68
+        )) == 71
     }
 }

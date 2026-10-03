@@ -26,11 +26,11 @@ import XCTest
 /// | S40 | 40pt | 취소선 | 444.24 | +14.04 |
 /// | C40 | 40pt | 가운데 밑줄 (주황) | 496.20 | +14.04 |
 ///
-/// 한글 문서 기하로 그리면 같은 문단의 밑줄이 0.18~1.2pt 아래, 위 밑줄이 그만큼 위,
-/// 두께가 0.4~2.4pt가 된다. 두께는 4px/pt에서 0.36pt = 1.44px라 행 수로는 못 가르므로
+/// 한글 문서 기하로 그리면 같은 문단의 밑줄이 0~1.02pt 아래, 위 밑줄이 그만큼 위,
+/// 두께가 0.36~2.40pt가 된다. 두께는 4px/pt에서 0.36pt = 1.44px라 행 수로는 못 가르므로
 /// 커버리지 합(`Raster.lineThickness`)의 **크기 사이 일치**로 잡는다 — 같은 두께는 같은
 /// 안티앨리어싱 편향을 받으므로 10pt 줄과 60pt 줄의 값이 같다는 것이 고정 두께의 증거다
-/// (한글 문서 기하라면 0.4pt와 2.4pt로 갈린다).
+/// (한글 문서 기하라면 0.36pt와 2.40pt로 갈린다 — 10pt만은 한글 문서의 획도 3u라 같다, #252).
 ///
 /// `extension`에 두는 이유는 `FixtureDecorationLineRenderTests` 본문이
 /// `type_body_length` 경고선에 닿아 있어서다. 글꼴은 `HwpFontResolver.testDeterministic`
@@ -119,8 +119,8 @@ extension FixtureDecorationLineRenderTests {
     }
 
     /// 네 크기(10·20·40·60pt)의 아래 밑줄 두께가 **서로 같다** — 고정 0.36pt의 증거다
-    /// (한글 문서 기하라면 0.4·0.8·1.6·2.4pt). 절대값도 0.36pt 근처이고, 가장 큰 줄조차
-    /// 한글 문서 20pt 값(0.8pt)에 못 미친다.
+    /// (한글 문서 기하라면 0.36·0.84·1.56·2.40pt — 10pt는 같으니 20·40·60pt가 가른다). 절대값도
+    /// 0.36pt 근처이고, 가장 큰 줄조차 한글 문서 20pt 값(0.84pt)에 못 미친다.
     func testHwp2007DecorationLineThicknessIsFixedAcrossSizes() async throws {
         let raster = try await Self.raster(Self.hwp2007, hwpx: false)
         let centers = Self.lineCenters(raster, where: Self.isGreen)

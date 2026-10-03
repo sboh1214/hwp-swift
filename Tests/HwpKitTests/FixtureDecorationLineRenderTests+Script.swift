@@ -99,7 +99,7 @@ extension FixtureDecorationLineRenderTests {
                     Self.lineCenter(raster, paragraph: pin.paragraph, where: pin.match),
                     "\(format): 문단 \(pin.paragraph)의 선을 못 찾았다"
                 )
-                // 오차 예산: 잉크 가중 중심 추정 ±0.08(4배 래스터의 0.4pt 선) + 우리
+                // 오차 예산: 잉크 가중 중심 추정 ±0.08(4배 래스터의 0.36pt 선) + 우리
                 // 렌더의 한글 대비 격차 ≤0.15 + 한글 장치 좌표 0.12pt 양자화. 수정 전
                 // 아래 밑줄 격차 0.56은 밖이다.
                 expect(center).to(
