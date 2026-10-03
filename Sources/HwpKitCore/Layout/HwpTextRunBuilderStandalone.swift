@@ -20,6 +20,7 @@ extension HwpTextRunBuilder {
             )
         }
         append(chunk, paragraph: paragraph, to: output)
+        applySpaceWidths(to: output)
         return output
     }
 }

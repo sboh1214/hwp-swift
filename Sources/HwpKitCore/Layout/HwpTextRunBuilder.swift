@@ -80,7 +80,7 @@ public struct HwpTextRunBuilder {
         // 문단 머리는 글자가 없는 문단(PARA_TEXT 없음)에도 붙는다 — 번호는 문단
         // 모양·구역 정의로 매겨지므로(#154) 빈 개요 줄도 라벨을 받아야 한다.
         let output = NSMutableAttributedString()
-        appendParagraphHeading(for: paragraph, number: number, to: output)
+        let bodyStart = appendParagraphHeading(for: paragraph, number: number, to: output)
         guard !units.isEmpty else { return finishBuild(output, paragraph: paragraph, whole: isWhole) }
         // 글자 모양/변경추적/메모 앵커를 문자마다 처음부터 재스캔하면 문단당
         // O(문자×run)이 된다 — position(wcharPosition)이 단조 증가하므로 각
@@ -126,17 +126,12 @@ public struct HwpTextRunBuilder {
                 shapeSweep += 1
             }
             let shapeId = activeShape
-            while trackCursor < trackIntervals.count, trackIntervals[trackCursor].end <= position {
-                trackCursor += 1
-            }
-            let trackMark: UInt32 = trackCursor < trackIntervals.count
-                && trackIntervals[trackCursor].start <= position
-                && position < trackIntervals[trackCursor].end
-                ? trackIntervals[trackCursor].kind : 0
+            let trackMark = trackMark(at: position, in: trackIntervals, cursor: &trackCursor)
             let memoAnchor = memoAnchor(at: position, in: memoAnchorRanges, cursor: &memoCursor)
             if hwpChar.type == .char {
                 accumulate(
                     text, shapeId: shapeId, trackMark: trackMark, memoAnchor: memoAnchor,
+                    fixedWidthSpace: hwpChar.value == 31,
                     into: &chunk, paragraph: paragraph, to: output
                 )
                 continue
@@ -200,7 +195,7 @@ public struct HwpTextRunBuilder {
         }
         append(chunk, paragraph: paragraph, to: output)
         finishEmptyLastLineAnchor(in: output, emitted: emittedEmptyLastLineAnchor, paragraph: paragraph)
-        return finishBuild(output, paragraph: paragraph, whole: isWhole)
+        return finishBuild(output, paragraph: paragraph, whole: isWhole, bodyStart: bodyStart)
     }
 }
 
@@ -314,6 +309,9 @@ extension HwpTextRunBuilder {
         var trackMark: UInt32 = 0
         /// 메모 (댓글) 앵커 범위 안 — 연녹색 강조 (한글.app 편집 뷰)
         var memoAnchor = false
+        /// 고정폭 빈칸(제어 문자 31) 한 자 — 묶음 빈칸(30)과 같은 U+00A0으로 접히지만 폭이
+        /// 다르므로 따로 run을 낸다 (`HwpAttributedStringKey.fixedWidthSpace`, #249).
+        var fixedWidthSpace = false
     }
 
     /// 일반 문자를 현재 chunk에 합치거나, 모양/스크립트/변경 마크가 바뀌면
@@ -323,6 +321,7 @@ extension HwpTextRunBuilder {
         shapeId: UInt32,
         trackMark: UInt32 = 0,
         memoAnchor: Bool = false,
+        fixedWidthSpace: Bool = false,
         into chunk: inout Chunk,
         paragraph: CoreHwp.HwpParagraph,
         to output: NSMutableAttributedString
@@ -348,13 +347,15 @@ extension HwpTextRunBuilder {
             chunk.script = script
             chunk.trackMark = trackMark
             chunk.memoAnchor = memoAnchor
+            chunk.fixedWidthSpace = fixedWidthSpace
         } else if chunk.shapeId != shapeId || chunk.script != script
             || chunk.trackMark != trackMark || chunk.memoAnchor != memoAnchor
+            || chunk.fixedWidthSpace != fixedWidthSpace
         {
             append(chunk, paragraph: paragraph, to: output)
             chunk = Chunk(
-                shapeId: shapeId, script: script,
-                trackMark: trackMark, memoAnchor: memoAnchor
+                shapeId: shapeId, script: script, trackMark: trackMark,
+                memoAnchor: memoAnchor, fixedWidthSpace: fixedWidthSpace
             )
         }
         chunk.text += text
@@ -369,6 +370,9 @@ extension HwpTextRunBuilder {
         let resolved = resolvedShape(id: chunk.shapeId, paragraph: paragraph)
         var chunkAttributes = attributes(for: resolved, script: script)
         applyTrackChangeMark(chunk.trackMark, to: &chunkAttributes)
+        if chunk.fixedWidthSpace {
+            chunkAttributes[HwpAttributedStringKey.fixedWidthSpace] = true
+        }
         if chunk.memoAnchor,
            chunkAttributes[HwpAttributedStringKey.shadeColor] == nil
         {
@@ -378,18 +382,9 @@ extension HwpTextRunBuilder {
             chunkAttributes[HwpAttributedStringKey.memoAnchorStroke] =
                 HwpMemoPanelPainter.borderColor
         }
-        let attributed = NSMutableAttributedString(
-            string: chunk.text,
-            attributes: chunkAttributes
-        )
-        // 워드 호환 문서 (표 20)와 '글꼴에 어울리는 빈칸'은 **보통 빈칸**만
-        // 폰트 고유 폭으로 돌린다 — 제어 빈칸은 그 게이트 밖이다.
-        Self.applyFixedSpaceWidth(
-            to: attributed,
-            includesOrdinarySpace: !resolved.shape.property.doesAdjustBlank
-                && !index.isCompatibilityDocument
-        )
-        output.append(attributed)
+        // 빈칸 폭은 여기서 정하지 않는다 — 앞뒤 chunk의 글자가 정하므로 조판 문자열이
+        // 완성된 뒤 `applySpaceWidths`가 한 번에 준다 (#249).
+        output.append(NSAttributedString(string: chunk.text, attributes: chunkAttributes))
     }
 
     /// U+FFFC 컨트롤 마커 run을 내보낸다.

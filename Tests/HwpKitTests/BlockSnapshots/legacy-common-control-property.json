@@ -1301,7 +1301,7 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 190,
+          "textLength" : 191,
           "textPrefix" : "26) 이를 헌"
         }
       ],
@@ -1544,8 +1544,8 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 155,
-          "textPrefix" : "현이라고 볼 수"
+          "textLength" : 154,
+          "textPrefix" : "이라고 볼 수 "
         },
         {
           "frame" : [
@@ -1745,8 +1745,8 @@
           "kind" : "footnote",
           "payload" : "footnote",
           "role" : "body",
-          "textLength" : 216,
-          "textPrefix" : "으나 구체적인 "
+          "textLength" : 215,
+          "textPrefix" : "나 구체적인 권"
         },
         {
           "frame" : [

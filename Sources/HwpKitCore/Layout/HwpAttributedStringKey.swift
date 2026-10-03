@@ -111,8 +111,9 @@ public enum HwpAttributedStringKey {
     /// (밑줄·취소선) 자리·두께의 크기 기준이기도 하다 (#226: 한글은 슬롯 상대 크기 전 이
     /// 크기로 장식선을 그린다 — `HwpPageLayerDecorations.decorationBaseFontSize`)
     public static let baseFontSize = NSAttributedString.Key("hwp.baseFontSize")
-    /// 고정 공백 폭 (0.5em)의 기준 크기 — 상대크기는 반영, 첨자 축소는
-    /// 제외한 글자 크기 (라운드 12 실측: 상대크기 170 줄 공백도 1.7배).
+    /// 슬롯 상대 크기는 반영하고 첨자 축소는 제외한 글자 크기 (pt). 이름은 이 값이 고정
+    /// 빈칸 폭(0.5em)의 기준이던 시절에서 왔다 — 빈칸 폭은 #249부터 run 슬롯(빈칸은 라틴)이
+    /// 아니라 글자 모양의 **한글 슬롯**에서 잰다 (`HwpSpaceWidthMetrics`).
     /// 조판(`HwpTextRunBuilder.attributes(for:script:)`)이 **모든 run**에 싣는다 —
     /// 취소선의 첨자 축소 비율(run 글꼴 크기 ÷ 이 값)과, 기본 크기 키가 없는 문자열의
     /// 장식선 크기 폴백으로 읽는다 (`HwpPageLayerDecorations.preScriptFontSize`; 한글 문서의
@@ -214,4 +215,8 @@ public enum HwpAttributedStringKey {
     /// 구분자 글꼴의 아래 몫)가 갈린다.
     static let combinedParagraphSeparator =
         NSAttributedString.Key("hwp.combinedParagraphSeparator")
+    /// **고정폭 빈칸**(제어 문자 31) 표식 (NSNumber true, #249) — 묶음 빈칸(30)과 같은
+    /// U+00A0으로 조판되지만 한글은 폭이 다르다(한글 슬롯 크기의 1/4, 묶음 빈칸은 1/2 —
+    /// `HwpSpaceWidthMetrics`). 빈칸 폭 패스(`HwpTextRunBuilder.applySpaceWidths`)만 읽는다.
+    static let fixedWidthSpace = NSAttributedString.Key("hwp.fixedWidthSpace")
 }

@@ -10,16 +10,20 @@ extension HwpTextRunBuilder {
     /// `appendBulletHeading`, 개요(1)·번호 매기기(2)는 `HwpParagraphNumbering`이
     /// 문서 순서로 만든 번호(`number`)의 라벨이다. `number`가 없으면(번호 문단이
     /// 아니거나 호출부가 번호 열쇠를 나르지 않는 문단 — 메모 등) 글머리표만 본다.
+    ///
+    /// 돌려주는 값은 머리 뒤 본문이 시작하는 자리(`output.length`)다 — 빈칸 폭 패스가 머리를
+    /// 본문 이웃으로 보지 않게 한다 (`applySpaceWidths`).
     func appendParagraphHeading(
         for paragraph: CoreHwp.HwpParagraph,
         number: HwpParagraphNumber?,
         to output: NSMutableAttributedString
-    ) {
-        guard let number else {
+    ) -> Int {
+        if let number {
+            appendNumberingHeading(for: paragraph, number: number, to: output)
+        } else {
             appendBulletHeading(for: paragraph, to: output)
-            return
         }
-        appendNumberingHeading(for: paragraph, number: number, to: output)
+        return output.length
     }
 
     /// 번호 라벨 전치: `라벨 [뒤 여백 + 본문과의 거리]` (#154). 앞 여백(가운데·오른쪽
@@ -71,6 +75,8 @@ extension HwpTextRunBuilder {
         }
         append(chunk, paragraph: paragraph, to: label)
         guard label.length > 0 else { return }
+        // 형식 문자열의 빈칸(`제 ^1 장`)은 본문 빈칸과 같은 규칙이다 — 라벨 안에서만 이웃을 본다.
+        applySpaceWidths(to: label)
 
         // 거리 빈칸은 본문 빈칸(U+0020 → `.english`)과 같은 슬롯이다.
         let spaceAttributes = attributes(
@@ -155,8 +161,8 @@ extension HwpTextRunBuilder {
 
     /// 폭 `width`의 빈칸 한 자 — 글리프 advance와의 차를 kern으로 메운다. 빈칸을
     /// 쓰는 이유는 복사 텍스트에 한글.app과 같은 구분 빈칸이 들어가게 하기
-    /// 위해서다. `applyFixedSpaceWidth`의 0.5em 규칙은 `append`를 거치지 않으므로
-    /// 여기 kern이 유일한 폭 근거다.
+    /// 위해서다. 빈칸 폭 패스(`applySpaceWidths`)는 라벨 표식이 붙은 이 빈칸을 건너뛰고
+    /// 라벨 문자열에서도 이 빈칸이 붙기 전에 돌므로 여기 kern이 유일한 폭 근거다.
     static func paddingSpace(
         width: CGFloat,
         font: CTFont,
