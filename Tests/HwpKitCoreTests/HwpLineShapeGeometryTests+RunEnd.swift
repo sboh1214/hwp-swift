@@ -112,8 +112,9 @@ extension HwpLineShapeGeometryTests {
         expect(Self.diagonals(divider(.wave, 8.24)).count) == 2
         expect(Self.diagonals(divider(.wave, 8.25)).count) == 3
 
-        /// 표 셀 테두리 4pt(r 33u, 간격 66u = 7.92pt, 칠 반지름 2.1): 중심 < 길이 (길이 15.84면 원 둘,
-        /// 15.96이면 셋째 원 15.84가 끝을 넘는다)
+        // 표 셀 테두리 4pt(r 33u, 간격 66u = 7.92pt, 칠 반지름 2.1): 중심 < 길이 (길이 15.84면 원 둘,
+        // 15.96이면 셋째 원 15.84가 끝을 넘는다)
+
         func cellCircles(_ length: CGFloat) -> [CGRect] {
             Self.pieces(HwpLineShapeGeometry.path(for: Self.borderLine(
                 .circle, thickness: 4, length: length
@@ -129,8 +130,9 @@ extension HwpLineShapeGeometryTests {
             .circle, thickness: 4, length: 1.99
         ))) == 1
 
-        /// 테두리 2중 물결: 첫 파 0·4.12, 둘째 파 3.0부터 — 7.12면 둘째 파는 3.0 하나(7.12는 끝과
-        /// 같은 자리), 7.13이면 7.12까지 둘
+        // 테두리 2중 물결: 첫 파 0·4.12, 둘째 파 3.0부터 — 7.12면 둘째 파는 3.0 하나(7.12는 끝과
+        // 같은 자리), 7.13이면 7.12까지 둘
+
         func doubleWave(_ length: CGFloat) -> HwpLineShapeGeometry.Line {
             Self.borderLine(.doubleWave, thickness: 4, length: length)
         }
