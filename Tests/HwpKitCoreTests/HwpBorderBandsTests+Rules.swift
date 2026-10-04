@@ -55,7 +55,7 @@ extension HwpBorderBandsTests {
     /// 다른 모양 이웃 쪽 끝은 이웃 획 B를 모서리의 장치 단위 행 [−⌊B/2⌋, ⌈B/2⌉)로 본 자리다 (`so253-ends`·
     /// `so246-multi`): 가로 변이 덮을 때 시작은 ⌊B/2⌋ 앞·끝은 ⌈B/2⌉ − 1 뒤(한글은 끝을 행의 마지막 칸에서
     /// 멈춘다), 물러날 때 시작은 ⌈B/2⌉ 뒤·끝은 ⌊B/2⌋ 앞이다. 이어지면 0이고, 가로 변도 수직 격자선이 지나가면
-    /// 물러난다.
+    /// 물러난다 (`so246-junction` #24·#26 — 실선 2mm 세로 격자선 사이 1mm 2중선이 시작 24u 뒤·끝 23u 앞).
     func testFramedReachSplitsTheNeighbourStrokeOnTheDeviceGrid() {
         func border(_ millimetres: CGFloat, _ shape: HwpBorderType = .line) -> HwpBorderSet.Border {
             HwpBorderSet.Border(

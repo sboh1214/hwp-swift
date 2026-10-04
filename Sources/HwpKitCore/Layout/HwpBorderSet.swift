@@ -308,9 +308,11 @@ public struct HwpBorderSet: Sendable, Hashable {
     ///   이어지면 모서리에서, 아니면 물러난다.
     ///
     /// 물러나면 시작은 ⌈B/2⌉ 뒤, 끝은 ⌊B/2⌋ 앞이다. 한글 12.30 실측 (#253 `probes/253` `so253-ends` — 1mm
-    /// 물결·2중 물결 × 이웃 실선 2·0.5mm·선 없음 0.1·2mm·2중선 1mm × 가로·세로, 칸 길이를 1u씩 늘린 300표본:
-    /// 대각선이 느는 자리와 첫 대각선이 모두 이 끝·시작; `so246-multi` 여러 줄 변도 같다). 장치 단위로
-    /// 반올림하지 않는 두께(상한 밖)는 행 대신 절반씩이다.
+    /// 물결 × 이웃 실선 2·0.5mm·선 없음 0.1·2mm·2중선 1mm + 1mm 2중 물결 × 실선 2mm, 가로·세로, 칸 길이를
+    /// 1u씩 25단계(반주기 하나) 늘린 300표본: 대각선이 느는 자리와 첫 대각선이 모두 이 끝·시작;
+    /// `so246-multi` 여러 줄 변도 같다; 가로 변이 지나가는 세로 격자선에서 물러나는 자리는 `so246-junction`
+    /// #24·#26 — 실선 2mm(47u) 세로 격자선 사이 1mm 2중선이 시작 24u 뒤·끝 23u 앞). 장치 단위로 반올림하지
+    /// 않는 두께(상한 밖)는 행 대신 절반씩이다.
     static func framedReach(
         horizontal: Bool, neighbour: Border, corner: HwpBorderCornerContext, atStart: Bool
     ) -> CGFloat {

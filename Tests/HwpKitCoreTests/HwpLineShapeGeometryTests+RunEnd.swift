@@ -97,7 +97,8 @@ extension HwpLineShapeGeometryTests {
     /// 이웃 칸의 변을 한 선으로 이어 그 끝에서 이 규칙을 쓰고 (#238 — 이웃 세로 변이 없는 가로 사슬은
     /// 칸 1·2·3개 모두 정확히), 우리는 이은 선을 사슬 전체 길이로 받는다 (`HwpBorderChaining`). 테두리
     /// 물결은 한글도 칸마다 다시 시작해 넘치므로 같은 규칙이고, 2중 물결은 파마다 제 범위(`Line.waveSpans` —
-    /// 표 모서리 맥락)의 끝에서 센다 (#253: 칸 길이를 1u씩 늘린 564표본에서 대각선·평탄이 느는 자리가 범위 끝).
+    /// 표 모서리 맥락)의 끝에서 센다 (#253: 칸 길이를 늘린 564표본(1u씩 — 한쪽만 맞물린 2mm 64표본만 6u씩)에서 대각선·평탄이 느는 자리가
+    /// 범위 끝).
     func testDividerAndCellBorderEndsFollowTheRule() {
         func divider(_ shape: HwpBorderType, _ length: CGFloat) -> HwpLineShapeGeometry.Line {
             HwpLineShapeGeometry.Line(

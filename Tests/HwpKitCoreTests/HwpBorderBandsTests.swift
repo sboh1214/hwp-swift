@@ -43,8 +43,8 @@ final class HwpBorderBandsTests: XCTestCase {
 
     /// 여러 줄 4종 × 표 26 16단의 부속선 — 한글은 같은 굵기 실선의 획 B를 띠로 #252의 글자선 행 규칙을
     /// 쓴다: 2중선은 w = round(B/4) 두 줄이 중심 사이 3w (0.25mm(B 6u)에서 w = 2u — round(t ÷ 48) = 1u가
-    /// 아니다), 가는+굵은은 ⌊B/4⌋(최소 1u)·굵은 선 최소 3u (0.12~0.2mm는 띠가 B보다 넓은 1/1/3u, 0.1mm는 2u
-    /// 한 줄), 3중선은 max(1, ⌊B/6⌋)·굵은 선 max(B − 4a, min(B − 2, 2)) — 띠는 −⌊전체/2⌋에서, 획 중심은
+    /// 아니다), 가는+굵은은 ⌊B/4⌋(최소 1u)·굵은 선 최소 3u (0.12~0.2mm는 1/1/3u — 0.12·0.15mm는 띠가 B보다
+    /// 넓다, 0.1mm는 2u 한 줄), 3중선은 max(1, ⌊B/6⌋)·굵은 선 max(B − 4a, min(B − 2, 2)) — 띠는 −⌊전체/2⌋에서, 획 중심은
     /// 행 시작 + ⌊폭/2⌋. 표 셀 테두리의 네 변·셀 간격 0·283HWPUNIT과 단 구분선이 모두 같다 (각 9벌).
     func testBorderStripesMatchHangul() {
         expect(Self.stripeSamples.count) == 64
@@ -163,10 +163,10 @@ final class HwpBorderBandsTests: XCTestCase {
         }
     }
 
-    /// 한쪽 모서리만 같은 물결 이웃 (`so253-mixed` — 1·2mm 물결·2중 물결, 칸 길이를 1u씩) — 맞물린 시작
-    /// 모서리만 파를 옮기고, 끝은 칸 끝을 그 몫만큼 옮긴 자리에 다른 모양 이웃 쪽 몫을 더한다: 시작 이웃이
-    /// 다르면 두 파가 그 행 앞(가로)·뒤(세로)에서 시작해 칸 끝에서 끝나고, 끝 이웃이 다르면 파마다
-    /// −2w·+w에서 시작해 칸 끝 + 그 몫 + 이웃 행 몫에서 끝난다.
+    /// 한쪽 모서리만 같은 물결 이웃 (`so253-mixed` — 1·2mm 물결·2중 물결, 칸 길이를 1mm는 1u씩·2mm는
+    /// 6u씩) — 맞물린 시작 모서리만 파를 옮기고, 끝은 칸 끝을 그 몫만큼 옮긴 자리에 다른 모양 이웃 쪽 몫을
+    /// 더한다: 시작 이웃이 다르면 두 파가 그 행 앞(가로)·뒤(세로)에서 시작해 칸 끝에서 끝나고, 끝 이웃이
+    /// 다르면 파마다 −2w·+w에서 시작해 칸 끝 + 그 몫 + 이웃 행 몫에서 끝난다.
     func testHalfJoinedWaveEndsMatchHangul() {
         expect(Self.halfJoinedSamples.count) == 55
         let solid = Chaining.Side(
