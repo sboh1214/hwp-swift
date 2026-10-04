@@ -50,54 +50,65 @@ extension HwpBorderSet {
 
         /// 여러 줄(2중선 셋·3중선)인가 — 부속선마다 끝 자리가 다를 수 있다 (`stripeSpans`)
         private var isMultiLine: Bool {
-            HwpBorderSet.isFramed(border.shape) && border.shape != .wave
-                && border.shape != .doubleWave
+            HwpBorderSet.isFramed(border.shape) && !isWave
         }
 
-        /// 선이 시작 모서리 밖으로 나가는 길이 (음수면 물러난다) — 단선은 `singleLineReach`, 여러
-        /// 줄·물결은 이웃이 같으면 물결의 옮김(`waveShift`)이고 다르면 `framedReach`다. 여러 줄은 이웃이
-        /// 같은 끝을 부속선마다 따로 정한다 (`stripeSpans`).
+        /// 물결·2중 물결인가 — 파마다 선 방향 범위가 다를 수 있다 (`waveRanges`)
+        private var isWave: Bool {
+            border.shape == .wave || border.shape == .doubleWave
+        }
+
+        /// 단선이 시작 모서리 밖으로 나가는 길이 (음수면 물러난다, `singleLineReach`) — 여러 줄·물결은
+        /// 부속선·파마다 정한다 (`stripeSpans`·`waveRanges`)
         private var lineLead: CGFloat {
-            if HwpBorderSet.isSingleLine(border.shape) {
-                return HwpBorderSet.singleLineReach(
-                    of: border, horizontal: horizontal, neighbour: lead, spaced: inSpacedTable
-                )
-            }
-            if border.matches(lead) {
-                return -waveShift
-            }
-            return HwpBorderSet.framedReach(
-                horizontal: horizontal, neighbour: lead, corner: corners.lead
+            HwpBorderSet.singleLineReach(
+                of: border, horizontal: horizontal, neighbour: lead, spaced: inSpacedTable
             )
         }
 
-        /// 선이 끝 모서리 밖으로 나가는 길이 (음수면 물러난다)
+        /// 단선이 끝 모서리 밖으로 나가는 길이 (음수면 물러난다)
         private var lineTrail: CGFloat {
-            if HwpBorderSet.isSingleLine(border.shape) {
-                return HwpBorderSet.singleLineReach(
-                    of: border, horizontal: horizontal, neighbour: trail, spaced: inSpacedTable
-                )
-            }
-            if border.matches(trail) {
-                return waveShift
-            }
-            return HwpBorderSet.framedReach(
-                horizontal: horizontal, neighbour: trail, corner: corners.trail
+            HwpBorderSet.singleLineReach(
+                of: border, horizontal: horizontal, neighbour: trail, spaced: inSpacedTable
             )
         }
 
-        /// 같은 모양·굵기 이웃과 맞물린 물결이 변을 통째로 옮기는 길이 (선 방향, 양수 = 끝 쪽) — 한글은
-        /// 그 물결을 칸 변과 같은 길이로 두고 **시작** 모서리의 수직 격자선이 물결 띠 쪽(가로 변은 위,
-        /// 세로 변은 왼쪽 — 띠가 그쪽으로 치우친다)에 그린 변을 가지면 굵기 획의 1/4만큼 뒤로, 아니면
-        /// 절반만큼 앞으로 옮긴다 (#246 실측 `so246-wave`: 1mm 물결의 칸 폭·높이를 1u씩 늘린 1×1·1×2·
-        /// 2×1·2×2 표 156개에서 대각선이 느는 자리가 모두 끝 모서리 + 이 길이; 끝 모서리의 맥락은 보지
-        /// 않는다). 다른 모양 이웃 쪽 끝은 `framedReach`다.
-        private var waveShift: CGFloat {
-            let reach = border.reach
-            // 위·왼 변은 띠 쪽이 칸 바깥(모서리 너머), 아래·오른 변은 칸 쪽이다
-            let bandSideDrawn = position.outerIsLeading
-                ? corners.lead.crossesBeyond : corners.lead.crossesNear
-            return bandSideDrawn ? reach / 4 : -reach / 2
+        /// 여러 줄·물결 변이 이웃과 모양·굵기가 다른 모서리에서 나가는 길이 (`framedReach`)
+        private func framedReach(atStart: Bool) -> CGFloat {
+            HwpBorderSet.framedReach(
+                horizontal: horizontal, neighbour: atStart ? lead : trail,
+                corner: atStart ? corners.lead : corners.trail, atStart: atStart
+            )
+        }
+
+        /// 물결 파마다의 선 방향 범위 (페이지 축, [시작, 끝)) — 한글은 표 셀 테두리의 물결을 2중선의 위·
+        /// 아래 줄 자리로 보고 (2중 물결의 둘째 파가 아래 줄), 같은 모양·굵기 이웃과 맞물린 모서리에서 **파마다**
+        /// 그 부속선처럼 물린다 (`nestedStripeOffset` — 시작 모서리의 수직 격자선이 그 파 쪽에 그린 변을
+        /// 가지면 다가오는 쪽 부속선의 먼 가장자리 +w, 아니면 이웃 띠의 먼 가장자리 −2w). 시작 이웃이 다른
+        /// 모양이면 옮기지 않고 두 파가 같은 자리(`framedReach`)에서 시작한다. 끝은 칸 변 끝을 시작에서 옮긴
+        /// 그 몫만큼 옮긴 자리이고 — 끝 모서리의 맞물림은 보지 않는다 — 끝 이웃이 다른 모양이면 거기에
+        /// `framedReach`를 더한다. 한글 12.30 실측 (#253 `probes/253`): 1×1 표 굵기 16단의 위·왼 변은 첫 파
+        /// −2w·둘째 파 +w, 아래·오른 변은 첫 파 +w·둘째 파 −2w에서 시작하고, 다칸 표의 안쪽 격자선은 두 파
+        /// 모두 +w다; 칸 길이를 1u씩 늘린 표본(다른 모양 이웃 사이 300개 — 실선·선 없음·2중선 0.1~2mm, 한쪽만
+        /// 맞물린 264개)에서 대각선·평탄이 느는 자리가 모두 이 끝이다 (#246은 1mm 물결의 첫 파만 쟀다 — 종전
+        /// 끝은 시작이 다른 모양이어도 맞물린 몫을 옮겨 1mm에서 반 주기 어긋났다).
+        private func waveRanges(slots: [ClosedRange<CGFloat>]) -> [Range<CGFloat>] {
+            let leadSides = drawnSides(at: corners.lead)
+            let joinsLead = border.matches(lead)
+            let joinsTrail = border.matches(trail)
+            let leadReach = framedReach(atStart: true)
+            let trailReach = framedReach(atStart: false)
+            let count = border.shape == .doubleWave ? 2 : 1
+            return (0 ..< count).map { index in
+                // 맞물린 시작 모서리만 파를 옮긴다 — 끝은 그 옮김에 다른 모양 이웃 쪽 몫을 더한다
+                let shift = joinsLead && slots.count > index
+                    ? HwpBorderSet.nestedStripeOffset(
+                        index, among: slots, atStart: true, drawn: leadSides
+                    ) : 0
+                let lower = joinsLead ? start + shift : start - leadReach
+                let upper = end + shift + (joinsTrail ? 0 : trailReach)
+                return lower ..< max(lower, upper)
+            }
         }
 
         /// 로컬 (x, y) → 페이지: 가로 변은 (lineStart + x, cross + y), 세로 변은
@@ -108,60 +119,66 @@ extension HwpBorderSet {
                 : CGAffineTransform(a: 0, b: 1, c: 1, d: 0, tx: cross, ty: lineStart)
         }
 
-        /// 선 시작 — 이은 선이면 사슬의 무늬 원점 (사슬 첫 조각의 연장 포함 시작), 여러 줄은 모서리
-        /// (부속선 자리는 `stripeSpans`가 정한다)
-        private var lineStart: CGFloat {
-            if let chain {
-                return start - chain.offset
-            }
-            return isMultiLine ? start : start - lineLead
-        }
-
-        private var lineLength: CGFloat {
-            if let chain {
-                return chain.length
-            }
-            return isMultiLine ? end - start : end + lineTrail - lineStart
-        }
-
-        private var line: HwpLineShapeGeometry.Line {
-            HwpLineShapeGeometry.Line(
-                shape: border.shape, length: lineLength, thickness: border.visible,
+        /// 변의 선 — 선 시작(페이지 축)과 `HwpLineShapeGeometry`의 입력. 이은 선이면 사슬의 무늬 원점(사슬 첫
+        /// 조각의 연장 포함 시작)부터 사슬 길이, 여러 줄은 모서리부터 칸 변 길이(부속선 자리는 `stripeSpans`가
+        /// 정한다), 물결은 가장 앞 파의 시작부터 가장 뒤 파의 끝까지에 파마다의 범위(`waveRanges`)를 싣는다.
+        private var resolvedLine: (start: CGFloat, line: HwpLineShapeGeometry.Line) {
+            var line = HwpLineShapeGeometry.Line(
+                shape: border.shape, length: end - start, thickness: border.visible,
                 scale: .border, placement: .border, elementRange: chain?.elementRange,
                 inSpacedTable: inSpacedTable
             )
+            if let chain {
+                line.length = chain.length
+                return (start - chain.offset, line)
+            }
+            if isMultiLine {
+                return (start, line)
+            }
+            if isWave {
+                let ranges = waveRanges(slots: HwpLineShapeGeometry.waveSlots(for: line))
+                let lineStart = ranges.map(\.lowerBound).min() ?? start
+                line.length = (ranges.map(\.upperBound).max() ?? end) - lineStart
+                line.waveSpans = ranges.map {
+                    ($0.lowerBound - lineStart) ..< ($0.upperBound - lineStart)
+                }
+                return (lineStart, line)
+            }
+            let lineStart = start - lineLead
+            line.length = end + lineTrail - lineStart
+            return (lineStart, line)
         }
 
         /// 여러 줄 부속선마다의 자리. 이웃과 모양·굵기가 다른 끝은 부속선 모두 `framedReach` 자리이고,
-        /// 같은 끝은 부속선마다 이웃의 부속선과 맞물린다 (`nestedStripeOffset`). 그릴 길이가 없는
-        /// 부속선은 뺀다.
+        /// 같은 끝은 부속선마다 이웃의 부속선과 맞물린다 (`nestedStripeOffset` — 획이 아니라 정수 행 구간
+        /// `Stripe.slot`으로, #253). 그릴 길이가 없는 부속선은 뺀다.
         private func stripeSpans(of line: HwpLineShapeGeometry.Line) -> [StripeSpan] {
-            let stripes = HwpLineShapeGeometry.stripes(for: line)
-            let ranges = stripes.map { $0.minY ... $0.maxY }
-            let band = HwpLineShapeGeometry.multiLineBand(for: line)
+            let stripes = HwpLineShapeGeometry.stripeGeometry(for: line)
+            let slots = stripes.map(\.slot)
             let leadSides = drawnSides(at: corners.lead)
             let trailSides = drawnSides(at: corners.trail)
             let joinsLead = border.matches(lead)
             let joinsTrail = border.matches(trail)
-            let leadReach = HwpBorderSet.framedReach(
-                horizontal: horizontal, neighbour: lead, corner: corners.lead
-            )
-            let trailReach = HwpBorderSet.framedReach(
-                horizontal: horizontal, neighbour: trail, corner: corners.trail
-            )
-            return zip(stripes, ranges).compactMap { stripe, range in
+            let leadReach = framedReach(atStart: true)
+            let trailReach = framedReach(atStart: false)
+            return stripes.indices.compactMap { index in
+                let stripe = stripes[index]
                 let spanStart = joinsLead
                     ? start + HwpBorderSet.nestedStripeOffset(
-                        range, among: ranges, band: band, atStart: true, drawn: leadSides
+                        index, among: slots, atStart: true, drawn: leadSides
                     )
                     : start - leadReach
                 let spanEnd = joinsTrail
                     ? end + HwpBorderSet.nestedStripeOffset(
-                        range, among: ranges, band: band, atStart: false, drawn: trailSides
+                        index, among: slots, atStart: false, drawn: trailSides
                     )
                     : end + trailReach
+                let rect = CGRect(
+                    x: 0, y: stripe.center - stripe.thickness / 2, width: line.length,
+                    height: stripe.thickness
+                )
                 return spanEnd > spanStart
-                    ? StripeSpan(stripe: stripe, start: spanStart, end: spanEnd) : nil
+                    ? StripeSpan(stripe: rect, start: spanStart, end: spanEnd) : nil
             }
         }
 
@@ -179,10 +196,9 @@ extension HwpBorderSet {
         /// 칸으로 넘친 대시·원, 자리 0을 담은 조각이 그은 실선 사슬 전체)를 더하고, 제 몫이 없어도 모서리 구간의
         /// 띠는 낸다 (칠하지 않는 빈 자리도 선 위다). 경로를 만들지 않는다.
         var band: CGRect? {
-            let (lineStart, line) = (lineStart, line)
-            guard lineLength > 0, let crossRange = HwpLineShapeGeometry.crossExtent(of: line) else {
-                return nil
-            }
+            let (lineStart, line) = resolvedLine
+            guard line.length > 0, let crossRange = HwpLineShapeGeometry.crossExtent(of: line)
+            else { return nil }
             let along: ClosedRange<CGFloat>? = if isMultiLine {
                 stripeSpans(of: line).reduce(nil) { extent, span in
                     guard let extent else { return span.start ... span.end }
@@ -206,7 +222,7 @@ extension HwpBorderSet {
 
         /// 변의 경로 — 여러 줄은 부속선마다 제 끝 자리의 띠, 나머지는 선 전체를 한 경로로
         var geometry: EdgeGeometry? {
-            let (lineStart, line) = (lineStart, line)
+            let (lineStart, line) = resolvedLine
             guard let band else { return nil }
             let transform = transform(lineStart: lineStart)
             let path = CGMutablePath()
@@ -230,38 +246,40 @@ extension HwpBorderSet {
         }
     }
 
-    /// 같은 모양·굵기 이웃과 맞물린 모서리에서 여러 줄 부속선 하나가 끝나는 자리 — 모서리에서 선
-    /// 방향으로 잰 거리 (양수 = 끝 쪽). 이웃 변의 부속선은 이 변과 같은 띠(`among`)다. 한글 12.30 실측
-    /// (#246 `so246-junction`·`so246-multi` — 2중선·3중선·가는+굵은 1×1 모서리와 2×2·3×3 격자의
-    /// T·+ 교차점):
+    /// 같은 모양·굵기 이웃과 맞물린 모서리에서 여러 줄 부속선(또는 물결 파) 하나가 끝나는 자리 — 모서리에서
+    /// 선 방향으로 잰 거리 (양수 = 끝 쪽). 이웃 변의 부속선은 이 변과 같은 정수 행 구간(`among`, 위에서
+    /// 아래로)이다. 한글 12.30 실측 (#246 `so246-junction`·`so246-multi` — 2중선·3중선·가는+굵은 1×1 모서리와
+    /// 2×2·3×3 격자의 T·+ 교차점; #253 `probes/253` — 1×1·다칸 표의 여섯 모양 × 굵기 16단):
     ///
-    /// - 선 중심을 걸친 부속선(3중선 가운데)은 이웃의 가운데 부속선 먼 가장자리까지 간다 (교차점에서도
+    /// - 셋 가운데 가운데 부속선(3중선의 굵은 선)은 이웃의 가운데 부속선 먼 가장자리까지 간다 (교차점에서도
     ///   가운데 부속선끼리는 엇갈려 지난다).
-    /// - 한쪽 부속선은 모서리의 수직 격자선이 **그 쪽에** 그린 변을 가지면 이웃 부속선 가운데 다가오는
-    ///   쪽에서 가장 가까운 것의 먼 가장자리에서 멈추고 (그 부속선과 맞붙어 모서리가 닫힌다 — 겹상자와
-    ///   교차점 ╬), 아니면 이웃 띠의 먼 가장자리까지 나간다 (바깥 테두리의 바깥 부속선이 이어진다).
-    ///   칸 쪽에는 늘 이웃 변이 있다.
+    /// - 그 밖은 첫 부속선이 −쪽, 끝 부속선이 +쪽이다 — 띠가 −⌊전체/2⌋에서 시작해 굵은 선이 중심을 1u 넘을
+    ///   수 있으므로(2mm 가는+굵은의 굵은 선 [−1, 24)u) 자리로 가르지 않는다. 한쪽 부속선은 모서리의 수직
+    ///   격자선이 **그 쪽에** 그린 변을 가지면 이웃 부속선 가운데 다가오는 쪽에서 가장 가까운 것의 먼
+    ///   가장자리에서 멈추고 (그 부속선과 맞붙어 모서리가 닫힌다 — 겹상자와 교차점 ╬), 아니면 이웃 띠의 먼
+    ///   가장자리까지 나간다 (바깥 테두리의 바깥 부속선이 이어진다). 칸 쪽에는 늘 이웃 변이 있다.
+    /// - 부속선이 하나뿐이면(0.1mm 가는+굵은 — 2u 한 줄) 모서리에서 모서리까지다.
     ///
     /// `drawn`은 수직 격자선이 이 변의 선 −쪽·+쪽에 그린 변을 갖는가다. 시작 모서리에서는 +쪽에서,
     /// 끝 모서리에서는 −쪽에서 다가온다.
     static func nestedStripeOffset(
-        _ stripe: ClosedRange<CGFloat>, among stripes: [ClosedRange<CGFloat>],
-        band: ClosedRange<CGFloat>, atStart: Bool, drawn: (minus: Bool, plus: Bool)
+        _ index: Int, among stripes: [ClosedRange<CGFloat>], atStart: Bool,
+        drawn: (minus: Bool, plus: Bool)
     ) -> CGFloat {
-        let epsilon = 1e-9 * max(1, band.upperBound - band.lowerBound)
-        func straddles(_ range: ClosedRange<CGFloat>) -> Bool {
-            range.lowerBound < -epsilon && range.upperBound > epsilon
+        guard stripes.count > 1, stripes.indices.contains(index),
+              let lower = stripes.map(\.lowerBound).min(),
+              let upper = stripes.map(\.upperBound).max()
+        else { return 0 }
+        if stripes.count == 3, index == 1 {
+            return atStart ? stripes[1].lowerBound : stripes[1].upperBound
         }
-        if straddles(stripe), let center = stripes.first(where: straddles) {
-            return atStart ? center.lowerBound : center.upperBound
-        }
-        let onPlusSide = stripe.lowerBound >= -epsilon
+        let onPlusSide = index == stripes.count - 1
         guard onPlusSide ? drawn.plus : drawn.minus else {
-            return atStart ? band.lowerBound : band.upperBound
+            return atStart ? lower : upper
         }
         if atStart {
-            return stripes.max { $0.upperBound < $1.upperBound }?.lowerBound ?? band.lowerBound
+            return stripes.max { $0.upperBound < $1.upperBound }?.lowerBound ?? lower
         }
-        return stripes.min { $0.lowerBound < $1.lowerBound }?.upperBound ?? band.upperBound
+        return stripes.min { $0.lowerBound < $1.lowerBound }?.upperBound ?? upper
     }
 }

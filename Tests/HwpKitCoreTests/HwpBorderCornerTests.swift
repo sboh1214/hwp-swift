@@ -286,32 +286,33 @@ final class HwpBorderCornerTests: XCTestCase {
 
     // MARK: - 물결
 
-    /// 같은 물결 이웃과 맞물린 물결은 변 전체를 옮긴다 — 시작 모서리의 수직선이 물결 띠 쪽(위·왼)에
-    /// 그린 변을 가지면 굵기 획의 1/4 뒤로, 아니면 절반 앞으로 (`so246-wave`: 1mm 물결 위 변 −1.44
-    /// 시작·끝 칸 폭 − 1.44, 아래 변 0.72·칸 폭 + 0.72, 2×2 아래 행 위 변 0.72)
+    /// 같은 물결 이웃과 맞물린 물결은 파를 2중선의 부속선처럼 물린다 (#246·#253) — 시작 모서리의 수직선이
+    /// 물결 띠 쪽(첫 파는 위·왼)에 그린 변을 가지면 이웃 안쪽 부속선의 먼 가장자리 +w 뒤로, 아니면 이웃 띠의
+    /// 먼 가장자리 −2w 앞으로 옮기고 길이는 칸 변 그대로다 (한글 실측 `so246-wave`·`so253-tables`: 1mm(B 24u,
+    /// w 6u) 물결 위·왼 변 −1.44, 아래·오른 변 0.72, 2×2 아래 행 위 변 0.72)
     func testSameWaveCornersShiftTheWholeEdge() {
         let wave = Self.side(.wave, Self.mm1)
         let set = Chaining.borders(top: wave, bottom: wave, left: wave, right: wave)
         let edges = set.edges(around: CGRect(x: 0, y: 0, width: 100, height: 40))
-        let half = HwpBorderSet.reachWidth(Self.mm1) / 2
-        let corner = Self.mm1 / 4 / 2 / 2.0.squareRoot()
+        let unit: CGFloat = 0.12
+        let corner = 6 * unit / 2 / 2.0.squareRoot()
         // 첫 대각선의 시작 (획 모서리만큼 앞으로 나간 상자를 되돌린다)
 
         func start(_ edge: HwpBorderSet.EdgeGeometry, horizontal: Bool) -> CGFloat {
             let box = edge.path.boundingBoxOfPath
             return (horizontal ? box.minX : box.minY) + corner
         }
-        expect(start(edges[0], horizontal: true)).to(beCloseTo(-half, within: 1e-6))
-        expect(start(edges[1], horizontal: true)).to(beCloseTo(half / 2, within: 1e-6))
-        expect(start(edges[2], horizontal: false)).to(beCloseTo(-half, within: 1e-6))
-        expect(start(edges[3], horizontal: false)).to(beCloseTo(half / 2, within: 1e-6))
+        expect(start(edges[0], horizontal: true)).to(beCloseTo(-12 * unit, within: 1e-9))
+        expect(start(edges[1], horizontal: true)).to(beCloseTo(6 * unit, within: 1e-9))
+        expect(start(edges[2], horizontal: false)).to(beCloseTo(-12 * unit, within: 1e-9))
+        expect(start(edges[3], horizontal: false)).to(beCloseTo(6 * unit, within: 1e-9))
         // 아래 행 위 변은 시작 모서리 위에 왼 변이 있어 뒤로 옮긴다
         let table = Chaining.table(widths: [80, 80], heights: [40, 40], cells: (0 ..< 4).map {
             Cell($0 / 2, $0 % 2, 1, 1, set)
         })
         let lower = table.rows[1].cells[0]
         let lowerTop = lower.borders.edges(around: lower.cellFrame, context: lower.borderContext)
-        expect(start(lowerTop[0], horizontal: true)).to(beCloseTo(half / 2, within: 1e-6))
+        expect(start(lowerTop[0], horizontal: true)).to(beCloseTo(6 * unit, within: 1e-9))
     }
 
     // MARK: - 실선 사슬

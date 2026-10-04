@@ -163,10 +163,10 @@ extension HwpLineShapeGeometry {
     /// 실측: 가로·세로 변·단 구분선 모두; 0.4mm 1.134 → 1.08pt, 1mm 2.835 → 2.88pt), 글자선은 단선
     /// 두께 그대로다 — 글자선의 단선 두께는 이미 같은 규칙으로 반올림한 값이다
     /// (`HwpDecorationLineGeometry`가 `characterStrokeThickness(fontSize:)`로 낸다, #252). 그래서 실선을
-    /// 채우는 렌더러(`Line.thickness`를 그대로 쓴다)와 대시 띠가 같은 두께다. 여러 줄·물결 띠는 이 값을
-    /// 쓰지 않고 명목 두께에 비례한다 — 한글은 이것도 장치 단위로 그리는데(1mm 2중선 띠 2.88pt·물결
-    /// 진폭 24u, `Sources/HwpKitCore/AGENTS.md`의 남은 격차) 아직 좇지 않는다. 원형 점선은 제 장치 단위
-    /// 규칙이 있다(`circleDeviceGeometry(for:)`). 상한(`deviceRoundingLimit`) 밖 두께는 그대로다.
+    /// 채우는 렌더러(`Line.thickness`를 그대로 쓴다)와 대시 띠가 같은 두께다. 테두리·단 구분선의 여러 줄·
+    /// 물결은 이 획(장치 단위 수 `borderStrokeUnits(_:)`)을 띠로 삼아 부속선과 물결을 나눈다 (#253 —
+    /// `HwpLineShapeGeometry+DeviceBands.swift`). 원형 점선은 제 장치 단위 규칙이 있다
+    /// (`circleDeviceGeometry(for:)`). 상한(`deviceRoundingLimit`) 밖 두께는 그대로다.
     static func strokeThickness(for line: Line) -> CGFloat {
         line.scale == .border ? borderStrokeThickness(line.thickness) : line.thickness
     }
@@ -177,7 +177,15 @@ extension HwpLineShapeGeometry {
     /// (`HwpBorderSet.reachWidth`).
     static func borderStrokeThickness(_ thickness: CGFloat) -> CGFloat {
         guard thickness > 0, thickness < deviceRoundingLimit else { return thickness }
-        return deviceStrokeThickness(hwpUnits: borderPatternHwpUnits(thickness: thickness))
+        return borderStrokeUnits(thickness) * HwpRenderTuning.LineShape.deviceUnit
+    }
+
+    /// 테두리·단 구분선 두께(pt)의 획 두께를 장치 단위 수로 — B = max(1, round(t ÷ 12)) (t = 무늬 두께
+    /// `borderPatternHwpUnits(thickness:)`; 표 26 16단 2·3·4·5·6·7·9·12·14·17·24·35·47·71·95·118).
+    /// 여러 줄·물결의 장치 띠도 이 값이다 (#253, `borderBand(for:)`). 양수이고 상한(`deviceRoundingLimit`)
+    /// 안인 두께에서만 부른다.
+    static func borderStrokeUnits(_ thickness: CGFloat) -> CGFloat {
+        max(1, roundHalfUp(borderPatternHwpUnits(thickness: thickness) / hwpUnitsPerDeviceUnit))
     }
 
     /// 글자선(한글 문서·MS 워드 호환 문서의 밑줄·취소선)의 실선·대시 획 두께 (pt) — 기준 크기

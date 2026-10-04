@@ -18,9 +18,9 @@ import Foundation
 ///   상자다 (#243): 이웃과 모양·굵기가 같은 모서리는 맞물려 나가고 (원형 점선은 모서리에서), 다르면
 ///   가로 변은 나가고 세로 변은 물러난다.
 /// - **여러 줄·물결**은 셀 간격과 무관하다. 이웃 변과 모양·굵기가 같으면 (색은 보지 않는다) 여러 줄은
-///   부속선마다 이웃 부속선과 맞물려 겹상자·교차점을 이루고, 물결은 변 전체를 띠 쪽 이웃 유무만큼
-///   옮긴다. 다르면 가로 변은 나가고 세로 변은 물러나되, 표 격자의 이어짐·지나감이 그 자리를 바꾼다
-///   (`HwpBorderCornerContext` — 표가 셀 배치로 셈해 칸에 싣는다).
+///   부속선마다 이웃 부속선과 맞물려 겹상자·교차점을 이루고, 물결은 파마다 2중선의 부속선처럼 물려 선
+///   전체를 옮긴다 (#253). 다르면 가로 변은 나가고 세로 변은 물러나되, 표 격자의 이어짐·지나감이 그
+///   자리를 바꾼다 (`HwpBorderCornerContext` — 표가 셀 배치로 셈해 칸에 싣는다).
 ///
 /// 이은 대시·원형 점선은 사슬의 무늬 자리를 받아 제 몫의 요소만 그리고 (#238), 이은 실선은 자리 0을
 /// 담은 조각(보통 첫 조각)이 한 번에 긋는다. 그리는 차례도 표가 정한다 (`EdgeGeometry.order`,
@@ -118,19 +118,28 @@ public struct HwpBorderSet: Sendable, Hashable {
     /// (`HwpLineShapeGeometry.borderStrokeThickness(_:)`)이고 이웃 모양은 보지 않는다 (#245 실측: 파랑
     /// 2mm 실선 세로 변(47u) 사이의 0.4mm 긴 점선 위 변이 양 끝으로 23u·24u 나간다; #243: 같은 굵기면
     /// 실선·대시·원형 점선·여러 줄·물결 이웃이 같은 자리를 낸다). 선 없음(`none`)도 저장된 굵기대로다
-    /// (#246 실측: 선 없음 0.5·2·5mm 이웃 옆 실선 위 변이 0.68·2.72·7.04pt 나간다). 여러 줄 겹상자
-    /// 물림과 히트 띠는 이웃이 **그리는** 폭(`drawnWidth`)을 쓴다.
+    /// (#246 실측: 선 없음 0.5·2·5mm 이웃 옆 실선 위 변이 0.68·2.72·7.04pt 나간다). 여러 줄·물결은 이 획을
+    /// 모서리의 장치 단위 행으로 나눠 쓰고 (`framedReach` — #253), 같은 모양 이웃과의 겹상자 물림은 부속선
+    /// 행(`HwpLineShapeGeometry.Stripe.slot`)으로 정한다. 히트 띠는 이웃이 **그리는** 폭(`drawnWidth`)을 쓴다.
     static func reachWidth(_ width: CGFloat) -> CGFloat {
         width > 0 && width.isFinite ? HwpLineShapeGeometry.borderStrokeThickness(width) : 0
     }
 
-    /// 이웃 변이 그리는 폭 — 단선은 장치 단위로 반올림한 획(`reachWidth`), 여러 줄·물결·원형 점선의
-    /// 띠는 명목 폭, 그리지 않는 변은 0이다. 히트 띠의 연장이 이 값이다.
+    /// 이웃 변이 그리는 폭 — 단선은 장치 단위로 반올림한 획(`reachWidth`), 여러 줄·물결은 그 모양이 칠하는
+    /// 가로지르는 범위의 폭(장치 단위 띠 — #253; 물결은 띠가 선 중심의 −쪽으로 치우쳐도 범위 전체), 원형
+    /// 점선은 명목 폭, 그리지 않는 변은 0이다. 히트 띠의 연장이 이 값의 절반이다.
     static func drawnWidth(_ width: CGFloat, _ shape: HwpBorderType) -> CGFloat {
         let visible = visibleWidth(width, shape)
         guard visible > 0 else { return 0 }
-        let stroked = HwpLineShapeGeometry.isSolid(shape) || isDashed(shape)
-        return stroked ? reachWidth(visible) : visible
+        if HwpLineShapeGeometry.isSolid(shape) || isDashed(shape) {
+            return reachWidth(visible)
+        }
+        guard isFramed(shape) else { return visible }
+        let line = HwpLineShapeGeometry.Line(
+            shape: shape, length: 1, thickness: visible, scale: .border, placement: .border
+        )
+        guard let extent = HwpLineShapeGeometry.crossExtent(of: line) else { return visible }
+        return extent.upperBound - extent.lowerBound
     }
 
     /// 대시 5종 (긴 점선·점선·일점쇄선·이점쇄선·긴 파선)
@@ -288,29 +297,59 @@ public struct HwpBorderSet: Sendable, Hashable {
         return horizontal ? half : -half
     }
 
-    /// 여러 줄·물결 변이 이웃과 모양·굵기가 **다른** 모서리에서 나가는 길이 (음수면 물러난다) —
-    /// 부속선 모두 같은 자리다 (겹상자 없음). 셀 간격과 무관하다 (#246 실측 `so246-multi`·`multi283`·
-    /// `junction`):
+    /// 여러 줄·물결 변이 이웃과 모양·굵기가 **다른** 모서리에서 나가는 길이 (음수면 물러난다) — 부속선과
+    /// 물결 파 모두 같은 자리다 (겹상자 없음). 셀 간격과 무관하다 (#246 실측 `so246-multi`·`multi283`·
+    /// `junction`). 이웃 굵기의 획 B(장치 단위, `reachWidth`)를 모서리에 놓인 행 [−⌊B/2⌋, ⌈B/2⌉)로 본다 (#253):
     ///
     /// - 가로 변: 같은 격자선이 모서리 너머로 같은 모양·굵기의 변으로 이어지면 모서리에서 (색 무관),
-    ///   아니면 세로 격자선이 모서리 위·아래로 지나가면 이웃 굵기의 절반만큼 물러나고, 아니면 나간다.
+    ///   아니면 세로 격자선이 모서리 위·아래로 지나가면 그 행 밖으로 물러나고, 아니면 그 행을 덮는다 —
+    ///   시작은 ⌊B/2⌋ 앞에서, 끝은 ⌈B/2⌉ − 1u 뒤에서 (한글은 끝을 행의 마지막 장치 칸에서 멈춘다).
     /// - 세로 변: 가로 격자선이 모서리 좌우로 지나가면 물러나고, 아니면 같은 격자선이 같은 모양·굵기로
     ///   이어지면 모서리에서, 아니면 물러난다.
+    ///
+    /// 물러나면 시작은 ⌈B/2⌉ 뒤, 끝은 ⌊B/2⌋ 앞이다. 한글 12.30 실측 (#253 `probes/253` `so253-ends` — 1mm
+    /// 물결·2중 물결 × 이웃 실선 2·0.5mm·선 없음 0.1·2mm·2중선 1mm × 가로·세로, 칸 길이를 1u씩 늘린 300표본:
+    /// 대각선이 느는 자리와 첫 대각선이 모두 이 끝·시작; `so246-multi` 여러 줄 변도 같다). 장치 단위로
+    /// 반올림하지 않는 두께(상한 밖)는 행 대신 절반씩이다.
     static func framedReach(
-        horizontal: Bool, neighbour: Border, corner: HwpBorderCornerContext
+        horizontal: Bool, neighbour: Border, corner: HwpBorderCornerContext, atStart: Bool
     ) -> CGFloat {
-        let half = neighbour.reach / 2
+        let halves = ReachHalves(neighbour)
         let crossPasses = corner.crossesNear && corner.crossesBeyond
+        let recede = atStart ? -halves.high : -halves.low
         if horizontal {
             if corner.continues {
                 return 0
             }
-            return crossPasses ? -half : half
+            if crossPasses {
+                return recede
+            }
+            return atStart ? halves.low : max(0, halves.high - halves.unit)
         }
         if crossPasses {
-            return -half
+            return recede
         }
-        return corner.continues ? 0 : -half
+        return corner.continues ? 0 : recede
+    }
+
+    /// 이웃 획(`reachWidth`)을 모서리에 놓인 장치 단위 행 [−⌊B/2⌋, ⌈B/2⌉)로 본 앞·뒤 몫과 장치 단위 (pt) —
+    /// 반올림 상한 밖 두께는 절반씩이고 단위는 0이다.
+    struct ReachHalves {
+        let low: CGFloat
+        let high: CGFloat
+        let unit: CGFloat
+
+        init(_ neighbour: Border) {
+            let reach = neighbour.reach
+            guard reach > 0, neighbour.width < HwpLineShapeGeometry.deviceRoundingLimit else {
+                (low, high, unit) = (reach / 2, reach / 2, 0)
+                return
+            }
+            unit = HwpRenderTuning.LineShape.deviceUnit
+            let units = (reach / unit).rounded()
+            let lowUnits = (units / 2).rounded(.down)
+            (low, high) = (lowUnits * unit, (units - lowUnits) * unit)
+        }
     }
 
     public static func uniform(

@@ -13,8 +13,9 @@ public extension HwpRenderTuning.LineShape {
     // `…Denominator`)이고, 점 q = round(b)는 원형 점선의 점 단위와 같다 (원의 규칙은
     // `HwpRenderTuning+Circle.swift`, 대시의 요소 식은 `HwpLineShapeGeometry+Dashes.swift`). 글자선의
     // 실선·대시 획(같은 t)과 2중선·가는+굵은 선·3중선·물결·2중 물결의 띠(`characterDoubleBandPerMille`·
-    // `characterThickBandPerMille`)도 같은 단위의 정수다 (#252 —
-    // `HwpLineShapeGeometry+CharacterBands.swift`).
+    // `characterThickBandPerMille`)도 같은 단위의 정수다 (#252). 표 셀 테두리·단 구분선의 여러 줄·물결은
+    // 같은 굵기 실선의 획(`borderPatternHwpUnits`의 t에서 round(t ÷ 12)u)을 띠로 삼는다 (#253 — 두 갈래 모두
+    // `HwpLineShapeGeometry+DeviceBands.swift`).
     // 반올림은 모두 0.5를 올린다.
 
     /// 한글이 대시·원형 점선을 그리는 장치 단위 (pt) — 600dpi 한 칸(72/600). 대시의 선·공백 길이와
@@ -44,7 +45,7 @@ public extension HwpRenderTuning.LineShape {
     /// (0.113em, #252). 장치 띠 r = round(띠 ÷ 12)u에서 획 w = round(r ÷ 4)u를 내고, 2중선은 두께 w 두
     /// 줄이 중심 사이 3w, 물결은 대각선의 가로·세로가 r·반주기 r + 1·획 w, 2중 물결은 같은 물결을 3w
     /// 아래에 하나 더 긋는다. 띠 가운데는 글자 아래 밑줄이 줄 상자 바닥 + ⌊띠/2⌋, 글자 위 밑줄이 상자
-    /// 상단 − ⌊띠/2⌋, 취소선이 단선 중심이다 (`HwpLineShapeGeometry+CharacterBands.swift`). 실측: 한글
+    /// 상단 − ⌊띠/2⌋, 취소선이 단선 중심이다 (`HwpLineShapeGeometry+DeviceBands.swift`). 실측: 한글
     /// 12.30 build 6523 PDF (2026-10-03, `probes/252`) — 2중선·물결·2중 물결 × 아래 밑줄 1~100pt(1pt
     /// 간격)·취소선·위 밑줄 3~99pt 450표본과 계수·반올림 차례를 가르는 크기(4.53·6.15·7.92·…·64.2pt,
     /// 1~4pt 0.1pt 간격) 210표본, 0.2~1pt 0.1pt 간격 취소선 27표본, MS 워드 호환 문서 글꼴 4종
@@ -83,7 +84,9 @@ public extension HwpRenderTuning.LineShape {
     /// 곱과 내림·반올림·올림)은 찾지 못해 실측한 값을 표로 둔다 — 대시 5종 × 굵기 16단 × 셀 간격
     /// 0·283HWPUNIT의 가로·세로 변 317표본과 단 구분선 68표본의 선·공백 길이가 모두 이 두께의 식과
     /// 같다 (2026-10-01 `probes/245`). 획 두께(이 값 ÷ 12를 반올림한 장치 단위 — 2·3·4·5·6·7·9·12·
-    /// 14·17·24·35·47·71·95·118u)와 원형 점선은 반올림한 두께로 셈해도 같은 값이다.
+    /// 14·17·24·35·47·71·95·118u)와 원형 점선은 반올림한 두께로 셈해도 같은 값이다. 그 획이 여러 줄·
+    /// 물결의 장치 띠 B이기도 하다 (#253 — 2중선 획 round(B ÷ 4)는 0.25mm(B 6u)에서 round(t ÷ 48) = 1u가
+    /// 아니라 2u다).
     static let borderPatternHwpUnits: [CGFloat] = [
         28, 33, 42, 56, 70, 84, 113, 141, 169, 198, 283, 424, 567, 850, 1134, 1417,
     ]

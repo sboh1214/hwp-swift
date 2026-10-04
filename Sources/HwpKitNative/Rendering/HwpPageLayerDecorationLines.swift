@@ -112,7 +112,7 @@ extension HwpPageLayer {
     /// 한글 12.30 PDF 실측(2026-09-30, 글꼴 5종 × 10·20·40·80pt): 2중선·가는+굵은·굵은+가는·
     /// 3중선 밑줄의 띠가 실선 밑줄 중심을 가운데로 두고(함초롬바탕 40pt 2중선 −3.84~+3.84pt), 물결의
     /// 위 평탄이 그 중심 위 ⌊r/2⌋ + ⌈3w/2⌉u다(같은 크기 −6.74pt — #252 장치 단위 기하,
-    /// `HwpLineShapeGeometry+CharacterBands.swift`). 아래·위 밑줄이 같은 무늬다 (build 6523 글꼴 4종 ×
+    /// `HwpLineShapeGeometry+DeviceBands.swift`). 아래·위 밑줄이 같은 무늬다 (build 6523 글꼴 4종 ×
     /// 4크기 × 6모양 × 세 종류 288표본의 부속선 두께·물결 모양이 모두 같다). 원형 점선·대시는 가운데
     /// 띠라 자리가 같다.
     func underlineShapePlacement(
