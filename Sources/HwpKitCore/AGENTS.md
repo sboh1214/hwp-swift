@@ -2681,8 +2681,8 @@ paraShape와 같은 값**이어야 한다.
       `HwpLineShapeGeometryTests+CharacterBands`(한글 값 표)다.
     - **남은 격차**: MS 워드 호환 밑줄의 X는 우리 글꼴 상자(cell × 1.3)라 한글 줄 캐시의 반올림(±0.1%,
       #194)과 갈리는 7표본(810 중 — 함초롬 90pt·Times New Roman/Arial 36pt·Courier New 80pt)이 획 1u
-      다르고, 그 문서의 여러 줄·물결 자리는 단선 자리 모델(#187·#248)의 오차를 그대로 물려받는다(최대
-      2.8u). 물결 마지막 대각선 뒤의 평탄(한글은 따로 긋는 요소라 시작이 run 끝 앞이면 그리기도 한다)은
+      다르고, 그 문서의 여러 줄·물결 자리는 단선 자리 모델(#187·#248)의 오차를 그대로 물려받는다(첨자
+      없는 288표본에서 최대 2.8u ≈ 0.33pt — 단선 자체의 오차는 글꼴·크기에 따라 그보다 크다). 물결 마지막 대각선 뒤의 평탄(한글은 따로 긋는 요소라 시작이 run 끝 앞이면 그리기도 한다)은
       좇지 않는다. 테두리·단 구분선의 여러 줄·물결은 #253 몫이다.
   - 조판은 실선이 아닐 때만 `hwp.underlineShape`·`hwp.strikethroughShape`(`HwpBorderType.
     rawValue`, 글자 모양 4비트 값 + 1 = `HwpBorderType(characterLineShape:)`)를 싣고, 취소선과
