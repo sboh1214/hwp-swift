@@ -219,7 +219,7 @@ macOS 페이지 레이어는 `HwpFlippedContentView` (isFlipped=true, NSScrollVi
   쌓이지 않은 줄에서는 한글 줄 캐시 `vertsize`와 같다), 취소선이 한글 문서와 같은 글자 모양 기본 크기다 (#244). 그 문서의 밑줄은 여러 줄
   띠·물결 자리도 다르다 — 아래·위 밑줄 모두 취소선 자리(단선 중심에 가운데, `underlineShapePlacement`)
   이고, 여러 줄·물결은 한글 문서처럼 그 축척의 장치 단위 정수 기하다(#252 —
-  `HwpLineShapeGeometry+CharacterBands.swift`). 근거는 `Sources/HwpKitCore/AGENTS.md`의 원형 점선·
+  `HwpLineShapeGeometry+DeviceBands.swift`). 근거는 `Sources/HwpKitCore/AGENTS.md`의 원형 점선·
   "글자선의 획과 여러 줄·물결" 항목. 로컬
   y(양수 = 아래)를 텍스트 공간(y-위)으로 뒤집어 단선 중심(`lineOrigin.y + line.center`)에
   놓는다 — 밑줄의 줄 상자 가장자리·취소선의 첨자 이동은 그 중심에 이미 들어 있다.
