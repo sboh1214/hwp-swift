@@ -15,13 +15,16 @@ import XCTest
 /// 오라클은 한글 12.30.0(build 6523, macOS)이 같은 편집 세션에서 `PDF로 저장하기…`로 내보낸 벡터
 /// 좌표다 (2026-10-02, PyMuPDF — 표마다 끝의 빨강 기준 칸으로 표 원점을 잡았다; 로컬 `probes/246`의
 /// `fxdata246.py`가 표본을 뽑는다). 좌표는 **표 로컬**(첫 칸 왼 위 모서리 = 0, pt)이다. 한글은 표
-/// 원점을 0.12pt 장치 격자에 맞추고 여러 줄 띠를 장치 단위로 그려 1~2u 흔들리므로 선 끝은 0.2,
-/// 가로지르는 자리는 0.6 안에서 짝짓는다 (띠 두께는 남은 격차 — `Sources/HwpKitCore/AGENTS.md`). 물결은
-/// 반주기가 남은 격차라 첫 대각선의 시작만 댄다. 결정론 글꼴로 조판하므로 기기 독립이다.
+/// 원점과 칸 경계를 0.12pt 장치 격자에 맞추고 우리는 HWPUNIT 그대로라 선 끝은 0.2, 가로지르는 자리는
+/// 장치 한 칸(`crossTolerance`) 안에서 짝짓는다 — 여러 줄 띠와 물결은 한글처럼 장치 단위 정수다 (#253; 그
+/// 전에는 띠 두께가 남은 격차라 0.6이었다). 물결은 첫 대각선의 시작과, 초록 물결 변은 대각선 수·마지막
+/// 대각선 끝까지 댄다. 결정론 글꼴로 조판하므로 기기 독립이다.
 final class FixtureTableBorderCornerTests: XCTestCase {
     static let fixture = "table-border-corners"
     /// 선 끝 자리 — 장치 격자 한 칸 + 반올림 차
     static let tolerance: CGFloat = 0.2
+    /// 가로지르는 자리 — 장치 격자 한 칸 (한글 칸 경계의 반올림 차)
+    static let crossTolerance: CGFloat = 0.13
 
     enum Ink { case green, blue, magenta, cyan }
 
@@ -53,18 +56,24 @@ final class FixtureTableBorderCornerTests: XCTestCase {
         }
     }
 
-    /// 물결 변 — 색, 가로인가, 띠의 가로지르는 시작, 첫 대각선의 선 방향 시작 (중심선)
+    /// 물결 변 — 색, 가로인가, 띠의 가로지르는 시작, 첫 대각선의 선 방향 시작 (중심선). 초록 물결 변은
+    /// 대각선 수와 마지막 대각선의 끝(중심선)도 싣는다 (#253 — 반주기·끝 규칙).
     struct Wave {
         let ink: Ink
         let horizontal: Bool
         let cross: CGFloat
         let start: CGFloat
+        let diagonals: (count: Int, end: CGFloat)?
 
-        init(_ ink: Ink, _ horizontal: Bool, _ cross: CGFloat, _ start: CGFloat) {
+        init(
+            _ ink: Ink, _ horizontal: Bool, _ cross: CGFloat, _ start: CGFloat,
+            diagonals: (Int, CGFloat)? = nil
+        ) {
             self.ink = ink
             self.horizontal = horizontal
             self.cross = cross
             self.start = start
+            self.diagonals = diagonals.map { (count: $0.0, end: $0.1) }
         }
     }
 
@@ -150,7 +159,7 @@ final class FixtureTableBorderCornerTests: XCTestCase {
         }
     }
 
-    /// 한글 선 요소와 짝지을 우리 조각 — 같은 색·방향, 가로지르는 자리 0.6 안, 선 방향으로 겹치는 것
+    /// 한글 선 요소와 짝지을 우리 조각 — 같은 색·방향, 가로지르는 자리 장치 한 칸 안, 선 방향으로 겹치는 것
     /// 가운데 시작·끝이 가장 가까운 것
     static func match(_ line: Line, in marks: [Mark]) -> Mark? {
         func distance(_ mark: Mark) -> CGFloat {
@@ -161,7 +170,7 @@ final class FixtureTableBorderCornerTests: XCTestCase {
             let span = mark.span(horizontal: line.horizontal)
             let cross = mark.isHorizontal ? mark.rect.midY : mark.rect.midX
             return mark.ink == line.ink && mark.isHorizontal == line.horizontal
-                && abs(cross - line.cross) < 0.6
+                && abs(cross - line.cross) < crossTolerance
                 && min(span.end, line.end) > max(span.start, line.start)
         }.min { distance($0) < distance($1) }
     }
@@ -188,7 +197,7 @@ final class FixtureTableBorderCornerTests: XCTestCase {
                     let cross = mark.isHorizontal ? mark.rect.midY : mark.rect.midX
                     let covered = sample.lines.contains { line in
                         line.ink == mark.ink && line.horizontal == mark.isHorizontal
-                            && abs(line.cross - cross) < 0.6
+                            && abs(line.cross - cross) < Self.crossTolerance
                             && line.start - Self.tolerance <= span.start
                             && span.end <= line.end + Self.tolerance
                     }
@@ -220,9 +229,11 @@ final class FixtureTableBorderCornerTests: XCTestCase {
         }
     }
 
-    /// 물결 변의 첫 대각선 시작 — 우리 대각선은 45° 평행사변형이라 경로 상자가 획 반폭/√2만큼 앞이다
+    /// 물결 변의 첫 대각선 시작 — 우리 대각선은 45° 평행사변형이라 경로 상자가 획 반폭/√2만큼 앞이다 (1mm
+    /// 획 6u). 초록 물결 변은 대각선 수와 마지막 대각선 끝도 한글과 같다 (반주기 25u — 종전 비례 반주기
+    /// 24.62u는 끝이 칸 길이 80pt에서 1pt 넘게 밀렸다).
     func testWaveStartsMatchHangul() async throws {
-        let corner = 72 / 25.4 / 4 / 2 / 2.0.squareRoot()
+        let corner = 6 * 0.12 / 2 / 2.0.squareRoot()
         for format in ["hwp", "hwpx"] {
             let tables = try await Self.marks(format)
             for (index, (sample, marks)) in zip(Self.samples, tables).enumerated() {
@@ -237,6 +248,19 @@ final class FixtureTableBorderCornerTests: XCTestCase {
                     let nearest = starts.min { abs($0 - wave.start) < abs($1 - wave.start) }
                     expect(nearest)
                         .to(beCloseTo(wave.start, within: Self.tolerance), description: label)
+                    guard let diagonals = wave.diagonals else { continue }
+                    // 그 변의 경로(명령 하나) 가운데 대각선 조각 — 꼭짓점 평탄(1u × 획)보다 크다
+                    let edge = marks.filter { mark in
+                        let box = mark.command
+                        let start = (wave.horizontal ? box.minX : box.minY) + corner
+                        return mark.ink == wave.ink && abs(start - wave.start) < Self.tolerance
+                            && (box.width > box.height) == wave.horizontal
+                            && abs((wave.horizontal ? box.minY : box.minX) - wave.cross) < 1
+                    }.filter { min($0.rect.width, $0.rect.height) > 1.5 }
+                    expect(edge.count).to(equal(diagonals.count), description: label)
+                    let end = edge.map { wave.horizontal ? $0.rect.maxX : $0.rect.maxY }.max()
+                    expect(end.map { $0 - corner })
+                        .to(beCloseTo(diagonals.end, within: Self.tolerance), description: label)
                 }
             }
         }
@@ -244,7 +268,7 @@ final class FixtureTableBorderCornerTests: XCTestCase {
 }
 
 extension FixtureTableBorderCornerTests {
-    /// 표 12개 (문서 순) — 한글 PDF 값 (`fxdata246.py`)
+    /// 표 12개 (문서 순) — 한글 PDF 값 (`fxdata246.py`; 초록 물결 변의 대각선 수·끝은 #253 `probes/253`)
     static let samples: [Sample] = [
         // #0 A H solid + dbl verticals
         Sample(
@@ -292,7 +316,7 @@ extension FixtureTableBorderCornerTests {
             ],
             above: [],
             waves: [
-                Wave(.green, false, -2.56, 2.88),
+                Wave(.green, false, -2.56, 2.88, diagonals: (19, 59.76)),
             ]
         ),
         // #5 F 2x2 dbl colors
@@ -391,8 +415,10 @@ extension FixtureTableBorderCornerTests {
             lines: [],
             above: [],
             waves: [
-                Wave(.green, false, -2.52, -1.44), Wave(.green, false, 77.52, 0.72),
-                Wave(.green, true, -2.52, -1.44), Wave(.green, true, 37.56, 0.72),
+                Wave(.green, false, -2.52, -1.44, diagonals: (14, 40.44)),
+                Wave(.green, false, 77.52, 0.72, diagonals: (14, 42.6)),
+                Wave(.green, true, -2.52, -1.44, diagonals: (27, 79.44)),
+                Wave(.green, true, 37.56, 0.72, diagonals: (27, 81.6)),
                 Wave(.blue, false, 77.52, 0.72), Wave(.blue, false, 157.44, 0.72),
                 Wave(.blue, true, -2.52, 78.60), Wave(.blue, true, 37.56, 80.76),
                 Wave(.magenta, false, -2.52, 38.64), Wave(.magenta, false, 77.52, 40.80),
