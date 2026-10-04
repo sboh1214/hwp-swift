@@ -280,6 +280,14 @@ final class HwpLineShapeGeometryTests: XCTestCase {
         expect(shortPieces.filter { $0.height > 4 }.count) == 1
         expect(HwpLineShapeGeometry.alongExtent(of: short)?.upperBound)
             .to(beCloseTo(67 * unit + corner, within: 1e-9))
+        // 가로지르는 범위도 긋는 파만 센다 — 둘째 파 자리(+51u)를 비워 둔다
+        expect(HwpLineShapeGeometry.crossExtent(of: short)).to(equal(wave))
+        // 두 파가 모두 비면 경로도 범위도 없다 (path == nil ⇔ 범위 == nil)
+        var empty = Self.borderLine(.doubleWave, thickness: thickness, length: 5)
+        empty.waveSpans = [5 ..< 5]
+        expect(HwpLineShapeGeometry.path(for: empty)).to(beNil())
+        expect(HwpLineShapeGeometry.alongExtent(of: empty)).to(beNil())
+        expect(HwpLineShapeGeometry.crossExtent(of: empty)).to(beNil())
     }
 
     // MARK: - 글자 모양 값 변환
@@ -455,6 +463,7 @@ extension HwpLineShapeGeometryTests {
                 )
                 expect(HwpLineShapeGeometry.path(for: line)).to(beNil())
                 expect(HwpLineShapeGeometry.alongExtent(of: line)).to(beNil())
+                expect(HwpLineShapeGeometry.crossExtent(of: line)).to(beNil())
             }
         }
         // 대시는 장치 단위라 주기가 아무리 얇아도 2u(점 1u·공백 1u) — 상한은 길이 24,000pt 너머다

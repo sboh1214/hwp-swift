@@ -176,8 +176,8 @@ public enum HwpLineShapeGeometry {
         return path.isEmpty ? nil : path
     }
 
-    /// 이 선이 칠하는 가로지르는 축의 범위 (로컬 y, [min, max]) — 히트 판정·클리핑용. 경로
-    /// 없는 입력이면 nil.
+    /// 이 선이 칠하는 가로지르는 축의 범위 (로컬 y, [min, max]) — 히트 판정·클리핑용. 물결은
+    /// 실제로 긋는 파만 센다 (`Line.waveSpans`가 비운 파는 빼고, 모두 비면 nil). 경로 없는 입력이면 nil.
     public static func crossExtent(of line: Line) -> ClosedRange<CGFloat>? {
         guard isDrawable(line) else { return nil }
         switch line.shape {
@@ -204,9 +204,12 @@ public enum HwpLineShapeGeometry {
             let wave = wave(for: line)
             let half = wave.stroke / 2
             let range = wave.centerRange
-            let second = line.shape == .doubleWave ? max(0, wave.secondOffset) : 0
-            let lift = line.shape == .doubleWave ? min(0, wave.secondOffset) : 0
-            return (range.lowerBound + lift - half) ... (range.upperBound + second + half)
+            // 실제로 긋는 파만 센다 — `waveSpans`가 비운 파는 경로에 없다 (`alongExtent(of:)`와 같은 판정)
+            let offsets = (0 ..< drawnWaveCount(for: line))
+                .filter { waveAlongExtent(for: line, index: $0) != nil }
+                .map { CGFloat($0) * wave.secondOffset }
+            guard let lift = offsets.min(), let drop = offsets.max() else { return nil }
+            return (range.lowerBound + lift - half) ... (range.upperBound + drop + half)
         }
     }
 
