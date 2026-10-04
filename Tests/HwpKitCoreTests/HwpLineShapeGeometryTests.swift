@@ -445,6 +445,18 @@ extension HwpLineShapeGeometryTests {
             expect(HwpLineShapeGeometry.crossExtent(of: line)).to(beNil())
             expect(HwpLineShapeGeometry.alongExtent(of: line)).to(beNil())
         }
+        // 파마다의 범위(`waveSpans`)가 유한하지 않으면 그 파는 빈 범위다 — 대각선 없이 가로 선 하나로 접힌
+        // 얇은 물결(B ≤ 1u)도 무한 사각형이나 무한 범위를 내지 않는다 (#253)
+        for spans: [Range<CGFloat>] in [[0 ..< .infinity], [-.infinity ..< 5]] {
+            for thickness: CGFloat in [0.1, 8] {
+                let line = HwpLineShapeGeometry.Line(
+                    shape: .wave, length: 10, thickness: thickness, scale: .border,
+                    placement: .border, waveSpans: spans
+                )
+                expect(HwpLineShapeGeometry.path(for: line)).to(beNil())
+                expect(HwpLineShapeGeometry.alongExtent(of: line)).to(beNil())
+            }
+        }
         // 대시는 장치 단위라 주기가 아무리 얇아도 2u(점 1u·공백 1u) — 상한은 길이 24,000pt 너머다
         let huge = Self.borderLine(.dotLine, thickness: 0.001, length: 30000)
         expect(HwpLineShapeGeometry.patternRepeats(of: huge))

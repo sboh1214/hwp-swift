@@ -196,7 +196,7 @@ extension HwpLineShapeGeometry {
     /// (butt cap)이고, 범위 끝 앞에서 시작한 마지막 대각선은 자르지 않고 끝까지 그린다 — 끝과 같은 자리에서
     /// 시작하는 대각선은 그리지 않는다 (한글 실측, #191·#235 — `waveDiagonalCount(for:index:)`;
     /// `alongExtent(of:)`가 그 넘침을 보고한다). 표 셀 테두리·단 구분선은 마지막 대각선 뒤의 평탄도 그 시작이
-    /// 끝 앞이면 긋는다 (`drawsTrailingFlat(_:)`).
+    /// 끝 앞이면 긋는다 (`drawsTrailingFlat(after:line:span:)`).
     static func addWave(to path: CGMutablePath, line: Line, index: Int) {
         let wave = wave(for: line)
         let stroke = wave.stroke
@@ -246,10 +246,15 @@ extension HwpLineShapeGeometry {
     }
 
     /// 파 `index`의 선 방향 범위 (로컬 x, [시작, 끝)) — `Line.waveSpans`가 있으면 그 `index`번째(모자라면
-    /// 마지막), 없으면 [0, `length`). 끝이 시작 앞이면 빈 범위다.
+    /// 마지막), 없으면 [0, `length`). 끝이 시작 앞이면 빈 범위다. 공개 입력이라 끝이 유한하지 않거나 폭이
+    /// 넘치는 범위는 빈 범위로 본다 — 그 파는 그리지 않고 범위도 보고하지 않는다 (path == nil ⇔ 범위 == nil).
     static func waveSpan(for line: Line, index: Int) -> Range<CGFloat> {
         guard let spans = line.waveSpans, let last = spans.last else { return 0 ..< line.length }
-        return index < spans.count ? spans[index] : last
+        let span = index < spans.count ? spans[index] : last
+        guard span.lowerBound.isFinite, span.upperBound.isFinite,
+              (span.upperBound - span.lowerBound).isFinite
+        else { return 0 ..< 0 }
+        return span
     }
 
     /// 마지막 대각선 뒤의 평탄을 긋는가 — 표 셀 테두리·단 구분선(`Scale.border`)은 한글처럼 평탄도 따로
