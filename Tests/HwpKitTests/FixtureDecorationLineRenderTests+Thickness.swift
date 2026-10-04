@@ -3,7 +3,7 @@ import Foundation
 import XCTest
 
 /// `FixtureDecorationLineRenderTests.Raster`의 선 두께·글리프 잉크 위치 헬퍼 (#187 리뷰).
-/// 행 수 세기는 4px/pt에서 0.4pt(한글 문서 10pt)와 0.6pt(MS 워드 호환 10pt 상자)를
+/// 행 수 세기는 4px/pt에서 0.36pt(한글 문서 10pt)와 0.6pt(MS 워드 호환 10pt 상자)를
 /// 못 가르므로, 선이 지나는 열의 **커버리지 합**으로 두께를 잰다 —
 /// `HwpDecorationLineGeometryTests.lineThickness`와 같은 원리이되 글리프 잉크가 있는
 /// 쪽이라 선을 가로지르는 획이 있는 열은 거른다.

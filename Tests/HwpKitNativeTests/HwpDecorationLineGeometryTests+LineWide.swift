@@ -125,8 +125,8 @@ extension HwpDecorationLineGeometryTests {
         return text
     }
 
-    /// 10pt 밑줄 + 40pt 무장식 글자 한 줄 — 밑줄은 40pt 상자 바닥 아래(−6.8pt)에 40pt 두께
-    /// (1.6pt)다. 같은 run의 취소선은 +3.5pt라 간격 10.3pt (종전 run 단위 5.2pt).
+    /// 10pt 밑줄 + 40pt 무장식 글자 한 줄 — 밑줄은 40pt 상자 바닥 아래(−6.78pt)에 40pt 획
+    /// 두께(1.56pt)다. 같은 run의 취소선은 +3.5pt라 간격 10.28pt (종전 run 단위 5.2pt).
     func testUnderlineFollowsTheTallestTextOnTheLine() throws {
         let measured = try underlineGap(line([
             NSAttributedString(
@@ -134,13 +134,14 @@ extension HwpDecorationLineGeometryTests {
             ),
             NSAttributedString(string: "  ", attributes: plainRun(size: 40)),
         ]))
-        expect(measured.gap).to(beCloseTo(3.5 + 6.8, within: 0.2))
-        expect(measured.thickness).to(beCloseTo(1.6, within: 0.05))
+        expect(measured.gap).to(beCloseTo(3.5 + 6.78, within: 0.2))
+        expect(measured.thickness).to(beCloseTo(1.56, within: Self.strokeTolerance))
     }
 
     /// 문단 끝 글자·한 줄 끝·높이 0 마커(책갈피)·글자처럼 취급 개체는 줄 상자에는 들고
     /// **두께 기준에는 들지 않는다** — 40pt인 그것들과 한 줄인 10pt 밑줄은 40pt 상자 바닥 아래
-    /// −(6 + 0.2)pt에 10pt 두께 0.4pt다 (한글: −6.12~−6.24·0.36).
+    /// −(6 + 0.18)pt에 10pt 획 0.36pt다 (한글: −6.12~−6.24·0.36; #252 실측 80pt 문단 끝 글자와
+    /// 한 줄인 10pt 밑줄도 3u).
     func testLineBoxOnlyMembersMoveTheUnderlineButNotItsThickness() throws {
         let underline = NSAttributedString(
             string: "    ", attributes: decoratedRun(HwpAttributedStringKey.underlineStyle)
@@ -161,26 +162,28 @@ extension HwpDecorationLineGeometryTests {
         ]
         for (name, text) in cases {
             let measured = try underlineGap(text)
-            expect(measured.gap).to(beCloseTo(3.5 + 6.2, within: 0.2), description: name)
-            expect(measured.thickness).to(beCloseTo(0.4, within: 0.05), description: name)
+            expect(measured.gap).to(beCloseTo(3.5 + 6.18, within: 0.2), description: name)
+            expect(measured.thickness)
+                .to(beCloseTo(0.36, within: Self.strokeTolerance), description: name)
         }
     }
 
-    /// 글자 위 밑줄도 줄 단위다 — 40pt 무장식 글자와 한 줄이면 40pt 상자 상단 위(+34.8pt),
-    /// 40pt 문단 끝 글자와 한 줄이면 +34.2pt·10pt 두께다. 취소선(+3.5pt)과의 간격으로 잰다.
+    /// 글자 위 밑줄도 줄 단위다 — 40pt 무장식 글자와 한 줄이면 40pt 상자 상단 위(+34.78pt)·
+    /// 1.56pt, 40pt 문단 끝 글자와 한 줄이면 +34.18pt·10pt 획 0.36pt다. 취소선(+3.5pt)과의
+    /// 간격으로 잰다.
     func testAboveUnderlineFollowsTheLineBoxTop() throws {
         let above = decoratedRun(HwpAttributedStringKey.underlineAboveStyle)
         let mixed = try underlineGap(line([
             NSAttributedString(string: "    ", attributes: above),
             NSAttributedString(string: "  ", attributes: plainRun(size: 40)),
         ]))
-        expect(-mixed.gap).to(beCloseTo(CGFloat(34.8 - 3.5), within: 0.2))
-        expect(mixed.thickness).to(beCloseTo(1.6, within: 0.05))
+        expect(-mixed.gap).to(beCloseTo(CGFloat(34.78 - 3.5), within: 0.2))
+        expect(mixed.thickness).to(beCloseTo(1.56, within: Self.strokeTolerance))
         var withEnd = above
         withEnd[HwpAttributedStringKey.paragraphEndBaseFontSize] = NSNumber(value: 40)
         let ended = try underlineGap(NSAttributedString(string: "    ", attributes: withEnd))
-        expect(-ended.gap).to(beCloseTo(CGFloat(34.2 - 3.5), within: 0.2))
-        expect(ended.thickness).to(beCloseTo(0.4, within: 0.05))
+        expect(-ended.gap).to(beCloseTo(CGFloat(34.18 - 3.5), within: 0.2))
+        expect(ended.thickness).to(beCloseTo(0.36, within: Self.strokeTolerance))
     }
 
     /// 변경 추적 삽입 밑줄도 같은 줄 단위다 (한글: 40pt 글자와 한 줄인 10pt 삽입 밑줄이 40pt
@@ -193,31 +196,32 @@ extension HwpDecorationLineGeometryTests {
             ),
             NSAttributedString(string: "  ", attributes: plainRun(size: 40)),
         ]))
-        expect(measured.gap).to(beCloseTo(3.5 + 6.8, within: 0.2))
-        expect(measured.thickness).to(beCloseTo(1.6, within: 0.05))
+        expect(measured.gap).to(beCloseTo(3.5 + 6.78, within: 0.2))
+        expect(measured.thickness).to(beCloseTo(1.56, within: Self.strokeTolerance))
     }
 
     /// 상대 크기로 줄어든 run도 **글자 모양 기본 크기**로 그린다 — 기본 40pt·상대 크기 50%
-    /// (글꼴 20pt) run의 밑줄은 −6.8pt·1.6pt, 취소선은 +14.0pt라 간격 20.8pt다 (한글: −6.84·
-    /// +14.04·1.56). 종전에는 20pt 기준(−3.4·+7.0·0.8)이었다.
+    /// (글꼴 20pt) run의 밑줄은 −6.78pt·1.56pt, 취소선은 +14.0pt라 간격 20.78pt다 (한글: −6.84·
+    /// +14.04·1.56; #252 실측 기본 80·56pt 상대 크기 50% run도 26·18u). 종전에는 20pt 기준
+    /// (−3.4·+7.0·0.8)이었다.
     func testRelativeSizedRunUsesTheCharShapeBaseSize() throws {
         let measured = try underlineGap(NSAttributedString(
             string: "    ",
             attributes: decoratedRun(HwpAttributedStringKey.underlineStyle, size: 20, base: 40)
         ))
-        expect(measured.gap).to(beCloseTo(14 + 6.8, within: 0.2))
-        expect(measured.thickness).to(beCloseTo(1.6, within: 0.05))
+        expect(measured.gap).to(beCloseTo(14 + 6.78, within: 0.2))
+        expect(measured.thickness).to(beCloseTo(1.56, within: Self.strokeTolerance))
         // 취소선 두께도 기본 크기 몫이다.
         let raster = try render(text: NSAttributedString(
             string: "    ",
             attributes: decoratedRun(nil, size: 20, base: 40)
         ))
         expect(Self.lineThickness(raster) { _, green, _ in green })
-            .to(beCloseTo(1.6, within: 0.05))
+            .to(beCloseTo(1.56, within: Self.strokeTolerance))
     }
 
-    /// 한 문단이 여러 줄로 접히면 줄마다 따로다 — 10pt 밑줄 글만 있는 첫 줄은 −1.7pt, 끝에
-    /// 40pt 글자가 든 마지막 줄만 −6.8pt다 (한글: −1.68 / −6.72).
+    /// 한 문단이 여러 줄로 접히면 줄마다 따로다 — 10pt 밑줄 글만 있는 첫 줄은 −1.68pt, 끝에
+    /// 40pt 글자가 든 마지막 줄만 −6.78pt다 (한글: −1.68 / −6.72).
     func testWrappedParagraphDecidesEachLineSeparately() throws {
         let text = line([
             NSAttributedString(
@@ -232,8 +236,8 @@ extension HwpDecorationLineGeometryTests {
         expect(underlines.count) == 2
         expect(strikes.count) == 2
         guard underlines.count == 2, strikes.count == 2 else { return }
-        expect(underlines[0] - strikes[0]).to(beCloseTo(3.5 + 1.7, within: 0.2))
-        expect(underlines[1] - strikes[1]).to(beCloseTo(3.5 + 6.8, within: 0.2))
+        expect(underlines[0] - strikes[0]).to(beCloseTo(3.5 + 1.68, within: 0.2))
+        expect(underlines[1] - strikes[1]).to(beCloseTo(3.5 + 6.78, within: 0.2))
     }
 
     /// 한글 2007 호환 문서도 같은 줄 상자 바닥에 고정 0.36pt 선을 얹는다 — 40pt 글자와 한 줄인

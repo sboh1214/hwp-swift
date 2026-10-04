@@ -240,7 +240,7 @@ import XCTest
             expect(tall.msWordLineBox).to(beNil())
             expect(HwpDecorationLineGeometry.underlineBelow(
                 lineBoxHeight: tall.lineBoxHeight, thicknessFontSize: tall.textFontSize
-            ).center).to(beCloseTo(-6.2, within: 0.0001))
+            ).center).to(beCloseTo(-6.18, within: 0.0001))
             expect(self.underlineReference(size: 10, delegateHeight: nil).lineBoxHeight)
                 .to(equal(10))
         }

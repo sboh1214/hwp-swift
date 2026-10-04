@@ -130,10 +130,11 @@ extension FixtureDecorationLineRenderTests {
         }
     }
 
-    /// 밑줄 두께는 줄 **글자**의 가장 큰 기본 크기 몫이다 — M1(40pt 무장식 글자 줄)은 1.6pt,
-    /// M5(20pt 무장식 글자 + 40pt 문단 끝 글자 줄)는 0.8pt, M4(40pt 책갈피 줄)는 10pt 몫 0.4pt
-    /// (한글 1.56·0.84·0.36). 종전 렌더는 셋 다 10pt run 몫 0.4pt였다. 완전 커버 채널값은 두꺼운
-    /// M1 선에서 재어 얇은 선에 넘긴다 (`FixtureDecorationLineRenderTests+Thickness`).
+    /// 밑줄 두께는 줄 **글자**의 가장 큰 기본 크기 몫이다 — M1(40pt 무장식 글자 줄)은 1.56pt,
+    /// M5(20pt 무장식 글자 + 40pt 문단 끝 글자 줄)는 0.84pt, M4(40pt 책갈피 줄)는 10pt 몫 0.36pt로
+    /// 한글과 같다 (장치 단위 획 13·7·3u, #252 — 종전 0.04em은 1.6·0.8·0.4pt). #226 전 렌더는 셋 다
+    /// 10pt run 몫이었다. 완전 커버 채널값은 두꺼운 M1 선에서 재어 얇은 선에 넘긴다
+    /// (`FixtureDecorationLineRenderTests+Thickness`).
     func testMixedSizeUnderlineThicknessFollowsTheLineText() async throws {
         let raster = try await Self.raster(Self.mixedSize, hwpx: false)
         let centers = Self.mixedSizeLineCenters(raster, where: Self.isGreen)
@@ -164,9 +165,9 @@ extension FixtureDecorationLineRenderTests {
         let wide = try thickness(0, full: full)
         let mixed = try thickness(3, full: full)
         let bookmark = try thickness(2, full: full)
-        expect(wide).to(beCloseTo(1.6, within: 0.15), description: "M1")
-        expect(mixed).to(beCloseTo(0.8, within: 0.15), description: "M5")
-        expect(bookmark).to(beCloseTo(0.4, within: 0.15), description: "M4")
+        expect(wide).to(beCloseTo(1.56, within: Self.strokeTolerance), description: "M1")
+        expect(mixed).to(beCloseTo(0.84, within: Self.strokeTolerance), description: "M5")
+        expect(bookmark).to(beCloseTo(0.36, within: Self.strokeTolerance), description: "M4")
     }
 
     /// 긴 점선의 한 토막도 줄 글자 기준 크기 몫이다 — 40pt 무장식 글자와 한 줄인 M9의 10pt 긴

@@ -24,6 +24,10 @@ final class HwpDecorationLineGeometryTests: XCTestCase {
     static let scale: CGFloat = 8
     static let smallSize: CGFloat = 20
     static let largeSize: CGFloat = 40
+    /// 래스터로 잰 획 두께의 허용 오차 (pt) — 열 커버리지 합의 잔차는 0.005pt 안이고, 종전
+    /// 연속 두께(0.04em — 20pt 0.80·40pt 1.60)와 장치 단위 획(0.84·1.56)의 차 0.04보다 작아야
+    /// 둘을 가른다 (#252).
+    static let strokeTolerance: CGFloat = 0.02
 
     struct Probe {
         let small: CGFloat
@@ -109,7 +113,8 @@ final class HwpDecorationLineGeometryTests: XCTestCase {
             lineBoxHeight: 100, thicknessFontSize: size
         ).center - HwpRenderTuning.Text.strikethroughCenterRatio * size
         expect(strike - above).to(beCloseTo(expected, within: 0.2))
-        expect(expected).to(beCloseTo(81.7, within: 0.001))
+        // 85 + 10pt 획 0.36 / 2 − 3.5
+        expect(expected).to(beCloseTo(81.68, within: 0.001))
     }
 
     /// 첨자로 글꼴이 줄어도 '글자 위' 밑줄은 **줄기 전 크기**로 그린다 — 한글이
@@ -146,9 +151,9 @@ final class HwpDecorationLineGeometryTests: XCTestCase {
         let expected = HwpDecorationLineGeometry.underlineAbove(fontSize: preScript).center
             - HwpRenderTuning.Text.strikethroughCenterRatio * shrunk
         expect(strike - above).to(beCloseTo(expected, within: 0.2))
-        // 위 밑줄까지 줄어든 글꼴 크기로 그리면 8.7이 5.568로 내려가 간격이
-        // 6.46 → 3.328로 좁아진다.
-        expect(expected).to(beCloseTo(6.46, within: 0.001))
+        // 위 밑줄까지 줄어든 글꼴 크기로 그리면 8.68이 5.56으로 내려가 간격이
+        // 6.44 → 3.32로 좁아진다.
+        expect(expected).to(beCloseTo(6.44, within: 0.001))
     }
 
     /// 밑줄 '글자 아래'는 **줄 단위**다 (#226) — 크기가 다른 두 run이 한 줄에 있으면 둘 다
@@ -163,8 +168,9 @@ final class HwpDecorationLineGeometryTests: XCTestCase {
     }
 
     /// 밑줄 '글자 아래'의 자리 비율 — 한 크기만 있는 줄에서 같은 run의 취소선과 밑줄 사이가
-    /// (0.35 + 0.17) × 크기다 (#136·#176: 취소선 +0.35em, 밑줄 −0.17em = 줄 상자 바닥 0.15em +
-    /// 두께 절반 0.02em). 종전 0.20em은 한글보다 10pt에서 0.3pt, 40pt에서 1.2pt 낮았다.
+    /// (0.35 + 0.15) × 크기 + 획 절반이다 (#136·#176·#252: 취소선 +0.35em, 밑줄은 줄 상자 바닥
+    /// 0.15em 아래로 획 두께 — 40pt 1.56pt — 만큼, 중심은 −6.78pt). 종전 0.20em은 한글보다
+    /// 10pt에서 0.3pt, 40pt에서 1.2pt 낮았다.
     func testBelowUnderlineSitsUnderTheLineBoxBottom() throws {
         let size = Self.largeSize
         var attributes = belowUnderlineAttributes(
@@ -184,7 +190,7 @@ final class HwpDecorationLineGeometryTests: XCTestCase {
         let expected = HwpRenderTuning.Text.strikethroughCenterRatio * size
             - HwpDecorationLineGeometry.underlineBelow(fontSize: size).center
         expect(below - strike).to(beCloseTo(expected, within: 0.2))
-        expect(expected).to(beCloseTo(20.8, within: 0.001))
+        expect(expected).to(beCloseTo(20.78, within: 0.001))
     }
 
     /// 변경 추적 삽입 밑줄은 한글 문서에서 일반 '글자 아래' 밑줄과 같은 자리다 (#187 실측:
@@ -212,28 +218,26 @@ final class HwpDecorationLineGeometryTests: XCTestCase {
         expect(insert).to(beCloseTo(underline, within: 0.2))
     }
 
-    /// 취소선 두께는 글자 크기의 0.04배다 (#176) — 20pt 0.8pt, 40pt 1.6pt.
-    /// 종전 0.4pt 고정은 40pt에서 한글(1.56pt)의 1/4이었다.
+    /// 취소선 두께는 글자 크기에서 푼 장치 단위 획이다 (#176·#252) — 20pt 7u(0.84pt, 무늬 두께
+    /// 78HWPUNIT ÷ 12 = 6.5를 올린다), 40pt 13u(1.56pt). 종전 0.04em(0.8·1.6pt)은 0.02 안에서
+    /// 갈리고, 그보다 앞선 0.4pt 고정은 40pt에서 한글(1.56pt)의 1/4이었다.
     func testStrikethroughThicknessScalesWithFontSize() throws {
         let probe = try thicknessProbe { size, color in
             strikethroughAttributes(size: size, color: color)
         }
-        let ratio = HwpRenderTuning.Text.decorationLineThicknessRatio
-        expect(probe.small).to(beCloseTo(ratio * Self.smallSize, within: 0.05))
-        expect(probe.large).to(beCloseTo(ratio * Self.largeSize, within: 0.05))
-        expect(ratio * Self.largeSize).to(beCloseTo(1.6, within: 0.001))
+        expect(probe.small).to(beCloseTo(0.84, within: Self.strokeTolerance))
+        expect(probe.large).to(beCloseTo(1.56, within: Self.strokeTolerance))
     }
 
-    /// 아래·위 밑줄도 취소선과 같은 0.04em 두께지만 **줄 단위**다 (#226) — 한 줄의 밑줄은
+    /// 아래·위 밑줄도 취소선과 같은 획 두께지만 **줄 단위**다 (#226·#252) — 한 줄의 밑줄은
     /// 모두 그 줄 글자의 가장 큰 기본 크기로 두께가 같다 (한글 12.30: 40pt 글자와 한 줄인
-    /// 10pt 밑줄 1.56pt). 20pt만 있는 줄은 0.8pt다.
+    /// 10pt 밑줄 1.56pt, 56·66·80pt 글자와 한 줄이면 18·21·26u). 20pt만 있는 줄은 0.84pt다.
     func testUnderlineThicknessFollowsTheLargestTextOnTheLine() throws {
-        let ratio = HwpRenderTuning.Text.decorationLineThicknessRatio
         let below = try thicknessProbe { size, color in
             belowUnderlineAttributes(size: size, color: color)
         }
-        expect(below.small).to(beCloseTo(ratio * Self.largeSize, within: 0.05))
-        expect(below.large).to(beCloseTo(ratio * Self.largeSize, within: 0.05))
+        expect(below.small).to(beCloseTo(1.56, within: Self.strokeTolerance))
+        expect(below.large).to(beCloseTo(1.56, within: Self.strokeTolerance))
         let alone = try render(text: NSAttributedString(
             string: "    ",
             attributes: belowUnderlineAttributes(
@@ -241,7 +245,7 @@ final class HwpDecorationLineGeometryTests: XCTestCase {
             )
         ))
         expect(Self.lineThickness(alone) { red, _, _ in red })
-            .to(beCloseTo(ratio * Self.smallSize, within: 0.05))
+            .to(beCloseTo(0.84, within: Self.strokeTolerance))
 
         let above = try thicknessProbe { size, color in
             [
@@ -252,22 +256,19 @@ final class HwpDecorationLineGeometryTests: XCTestCase {
                 HwpAttributedStringKey.underlineColor: color,
             ]
         }
-        expect(above.small).to(beCloseTo(ratio * Self.largeSize, within: 0.05))
-        expect(above.large).to(beCloseTo(ratio * Self.largeSize, within: 0.05))
-        expect(ratio * Self.smallSize).to(beCloseTo(0.8, within: 0.001))
+        expect(above.small).to(beCloseTo(1.56, within: Self.strokeTolerance))
+        expect(above.large).to(beCloseTo(1.56, within: Self.strokeTolerance))
     }
 
-    /// 변경 추적 삽입 밑줄의 두께도 한글 문서에서 일반 밑줄과 같은 0.04em이고 줄 단위다 —
-    /// 20pt와 40pt가 한 줄이면 둘 다 1.6pt (#226 실측: 40pt 글자와 한 줄인 10pt 삽입 밑줄도
+    /// 변경 추적 삽입 밑줄의 두께도 한글 문서에서 일반 밑줄과 같은 획이고 줄 단위다 —
+    /// 20pt와 40pt가 한 줄이면 둘 다 1.56pt (#226 실측: 40pt 글자와 한 줄인 10pt 삽입 밑줄도
     /// 40pt 몫). 종전(#176)의 0.064em은 MS 워드 호환 문서의 함초롬돋움 값이라 한글
     /// 문서에서는 1.6배 굵었다.
     func testTrackInsertUnderlineThicknessMatchesTheUnderline() throws {
         let probe = try thicknessProbe { size, color in
             trackInsertUnderlineAttributes(size: size, color: color)
         }
-        let ratio = HwpRenderTuning.Text.decorationLineThicknessRatio
-        expect(probe.small).to(beCloseTo(ratio * Self.largeSize, within: 0.05))
-        expect(probe.large).to(beCloseTo(ratio * Self.largeSize, within: 0.05))
-        expect(ratio * Self.largeSize).to(beCloseTo(1.6, within: 0.001))
+        expect(probe.small).to(beCloseTo(1.56, within: Self.strokeTolerance))
+        expect(probe.large).to(beCloseTo(1.56, within: Self.strokeTolerance))
     }
 }

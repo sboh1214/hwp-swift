@@ -11,24 +11,26 @@ import Foundation
 /// 아핀 변환으로 옮긴다 — 가로 선은 (x, y) → (시작 x + x, 중심 y + y), 세로 선은
 /// (x, y) → (중심 x + y, 시작 y + x), CoreText의 y-위 텍스트 공간이면 y를 뒤집는다.
 ///
-/// 세 축척(`Scale`)이 있다. 글자선은 띠·물결이 **글자 크기**에 비례하고 (2중선 띠 0.12em, 그
-/// 밖의 여러 줄 띠 0.2em, 물결 진폭 0.112em), 테두리·단 구분선은 **명목 두께**에 비례한다 (여러
-/// 줄 띠 t, 물결 진폭 t). 한글 2007 호환 문서의 글자선은 **고정 pt**다 (대시 단위 0.48pt, 2중선
-/// 띠 1.44pt, 그 밖의 여러 줄 띠 4.2pt, 물결 진폭 2.88pt — #227). 띠 안 구성은 글자선·테두리가
-/// 같으며 한글 2007 호환 문서만 굵은 여러 줄의 비율이 다르다 (`stripeFractions(for:scale:)`).
+/// 세 축척(`Scale`)이 있다. 글자선은 띠·물결이 **글자 크기**에서 풀리되 한글처럼 600dpi 장치
+/// 단위의 정수다 (2중선·물결 띠 0.113em, 그 밖의 여러 줄 띠 0.198em을 HWPUNIT·장치 단위로 차례로
+/// 반올림해 부속선·획을 나눈다 — `HwpLineShapeGeometry+CharacterBands.swift`, #252), 테두리·단
+/// 구분선은 **명목 두께**에 비례한다 (여러 줄 띠 t, 물결 진폭 t). 한글 2007 호환 문서의 글자선은
+/// **고정 pt**다 (대시 단위 0.48pt, 2중선 띠 1.44pt, 그 밖의 여러 줄 띠 4.2pt, 물결 진폭 2.88pt —
+/// #227). 비례 띠 안 구성은 테두리와 한글 2007 호환 문서가 비율로 나눈다 (`stripeFractions(for:scale:)`).
 /// 대시와 원형 점선은 비례가 아니다 — 한글처럼 선·공백 길이와 원의 지름·간격을 600dpi 장치
 /// 단위(0.12pt)의 정수로 정한다. 무늬 두께(글자선은 글자 크기의 0.039배, 테두리·단 구분선은 표 26
 /// 굵기마다의 값)에서 단위 22/15 t를 장치 단위로 풀고, 단 구분선과 셀 간격이 있는 표의 셀 테두리는
 /// 셀 간격이 없는 표의 셀 테두리가 아니라 글자선과 같은 점 무늬로 그린다 (#239·#243·#245 —
 /// `dashDeviceUnits(for:hwpUnits:grid:)`·`circleDeviceGeometry(for:)`). 테두리 축척의 실선·대시 획
-/// 두께도 장치 단위로 반올림한다 (`strokeThickness(for:)`).
+/// 두께도 장치 단위로 반올림한다 (`strokeThickness(for:)`) — 글자선의 실선·대시 획은 장식선 기하가
+/// 같은 규칙으로 이미 반올림해 넘긴다 (`HwpDecorationLineGeometry.strokeThickness(referenceSize:)`, #252).
 ///
-/// 여러 줄·물결 띠의 세로 자리는 `Placement`가 정한다 — 글자 아래 밑줄은 단선 띠의 위
-/// 가장자리에서 아래로 자라고, 취소선과 테두리·단 구분선은 단선 중심에 가운데 맞추며, 글자
-/// 위 밑줄은 아래 가장자리에서 위로 자란다. 물결은 예외로 한글이 종류마다 다른 만큼 위로
-/// 올려 그린다 (`HwpRenderTuning.LineShape.characterWaveTopShiftThicknessRatio`·
-/// `borderWaveShiftThicknessRatio`). 2중 물결의 둘째 파는 테두리만 선 방향으로도 옮긴다
-/// (`doubleWaveOffset(for:)`).
+/// 여러 줄·물결 띠의 세로 자리는 `Placement`가 정한다 — 글자 아래 밑줄은 줄 상자 바닥(단선 띠의 위
+/// 가장자리) 근처에서 아래로, 글자 위 밑줄은 줄 상자 상단 근처에서 위로, 취소선과 테두리·단
+/// 구분선은 단선 중심에 놓인다. 글자선은 띠 가운데를 줄 상자 가장자리에서 띠 절반만큼 안쪽에 두고
+/// 물결은 그 가운데에서 위로 올린다 (`characterBandCenter(for:halfBand:)`·`characterWave(for:)`),
+/// 테두리·단 구분선의 물결은 −y 쪽으로 옮긴다 (`borderWaveShiftThicknessRatio`). 2중 물결의 둘째
+/// 파는 테두리만 선 방향으로도 옮긴다 (`doubleWaveOffset(for:)`).
 ///
 /// 원형 점선과 물결은 **자리가 `length` 앞인 요소를 끝까지 그린다** — 원은 중심, 물결은
 /// 대각선 시작이 그 자리이고, 끝과 같은 자리의 요소는 그리지 않는다
@@ -49,7 +51,7 @@ public enum HwpLineShapeGeometry {
         /// 글자선 — `fontSize`는 선의 기준 크기 (pt): 한글 문서는 밑줄이 줄 글자 기본 크기,
         /// 취소선이 run의 글자 모양 기본 크기이고(#226) MS 워드 호환 문서는 밑줄이 줄 글자 상자의
         /// 높이(`HwpMsWordLineBox.cellHeight` × 1.3), 취소선이 run의 글자 모양 기본 크기다 (#244).
-        /// 물결 꼭짓점 계단도 이 크기에서 잰다 (× 0.04 — `wavePatternThickness(for:)`)
+        /// 여러 줄·물결의 띠도 이 크기에서 푼 장치 단위 정수다 (#252)
         case characterLine(fontSize: CGFloat)
         /// 한글 2007 호환 문서(`HwpCompatibleDocumentTarget.hwp200X`)의 글자선 — 패턴·띠·물결이
         /// 글자 크기와 무관한 고정 pt다 (#227, `HwpRenderTuning.LineShape.hwp200X*`). 선 두께가
@@ -64,14 +66,17 @@ public enum HwpLineShapeGeometry {
 
     /// 여러 줄·물결 띠의 세로 자리
     public enum Placement: Equatable, Sendable {
-        /// 글자 아래 밑줄 — 띠는 단선의 위 가장자리에서 아래로, 물결은 계단 1개 위에서 (계단은
-        /// 한글 문서가 두께 — 정확히는 무늬 두께 `wavePatternThickness(for:)`, 한글 2007 호환 문서가
-        /// 물결 1.2pt·2중 물결 0.54pt — `waveTopStep(for:)`)
+        /// 글자 아래 밑줄 — 한글 문서의 글자선은 띠 가운데가 줄 상자 바닥(단선의 위 가장자리)에서 띠
+        /// 절반 아래(#252), 한글 2007 호환 문서는 띠가 단선의 위 가장자리에서 아래로 자라고 물결은
+        /// 계단 1개 위에서 (물결 1.2pt·2중 물결 0.54pt — `waveTopStep(for:)`)
         case underlineBelow
-        /// 취소선·글자 가운데 밑줄 — 띠는 단선 중심에 가운데, 물결은 계단 2개 위에서. MS 워드
-        /// 호환 문서의 글자 아래·위 밑줄도 이 자리다 (#244 — 렌더러의 `underlineShapePlacement`)
+        /// 취소선·글자 가운데 밑줄 — 띠는 단선 중심에 가운데(한글 2007 호환 문서의 물결은 계단 2개
+        /// 위에서). MS 워드 호환 문서의 글자 아래·위 밑줄도 이 자리다 (#244 — 렌더러의
+        /// `underlineShapePlacement`)
         case strikethrough
-        /// 글자 위 밑줄 — 띠는 단선의 아래 가장자리에서 위로, 물결은 계단 3개 위에서
+        /// 글자 위 밑줄 — 한글 문서의 글자선은 띠 가운데가 줄 상자 상단(단선의 아래 가장자리)에서
+        /// 띠 절반 위, 한글 2007 호환 문서는 띠가 단선의 아래 가장자리에서 위로 자라고 물결은 계단
+        /// 3개 위에서
         case underlineAbove
         /// 표 셀 테두리 — 띠는 선 중심에 가운데, 물결은 두께 3/8만큼 −y 쪽, 2중 물결의
         /// 둘째 파는 선 방향으로 3/4 두께 뒤에서 시작해 내려가는 획이 첫 파와 한 직선을
@@ -155,8 +160,7 @@ public enum HwpLineShapeGeometry {
         case .wave:
             addWave(to: path, line: line, offset: .zero)
         case .doubleWave:
-            addWave(to: path, line: line, offset: .zero)
-            addWave(to: path, line: line, offset: doubleWaveOffset(for: line))
+            addDoubleWave(to: path, line: line)
         }
         return path.isEmpty ? nil : path
     }
@@ -181,17 +185,17 @@ public enum HwpLineShapeGeometry {
             let center = circleCenterY(for: line)
             return (center - radius) ... (center + radius)
         case .doubleLine, .thinThickDoubleLine, .thickThinDoubleLine, .thinThickThinTripleLine:
-            let band = multiLineBand(for: line)
-            return band.lowerBound ... band.upperBound
-        case .wave:
-            let top = waveTopVertex(for: line)
-            let half = waveStroke(for: line) / 2
-            return (top - half) ... (top + waveAmplitude(for: line) + half)
-        case .doubleWave:
-            let top = waveTopVertex(for: line)
-            let half = waveStroke(for: line) / 2
-            let offset = doubleWaveOffset(for: line)
-            return (top - half) ... (top + offset.y + waveAmplitude(for: line) + half)
+            let stripes = stripes(for: line)
+            guard let top = stripes.map(\.minY).min(), let bottom = stripes.map(\.maxY).max()
+            else { return nil }
+            return top ... bottom
+        case .wave, .doubleWave:
+            let wave = wave(for: line)
+            let half = wave.stroke / 2
+            let range = wave.centerRange
+            let second = line.shape == .doubleWave ? max(0, wave.secondOffset.y) : 0
+            let lift = line.shape == .doubleWave ? min(0, wave.secondOffset.y) : 0
+            return (range.lowerBound + lift - half) ... (range.upperBound + second + half)
         }
     }
 
@@ -213,10 +217,11 @@ public enum HwpLineShapeGeometry {
         switch line.shape {
         case .wave, .doubleWave:
             guard patternRepeats(of: line) <= maxPatternRepeats else { return 0 ... line.length }
-            let corner = waveStroke(for: line) / 2 / 2.0.squareRoot()
+            let wave = wave(for: line)
+            let corner = wave.stroke / 2 / 2.0.squareRoot()
             var end = waveEnd(for: line, offsetX: 0)
             if line.shape == .doubleWave {
-                end = max(end, waveEnd(for: line, offsetX: doubleWaveOffset(for: line).x))
+                end = max(end, waveEnd(for: line, offsetX: wave.secondOffset.x))
             }
             return -corner ... (end + corner)
         case .circle where patternRepeats(of: line) <= maxPatternRepeats:
@@ -264,7 +269,7 @@ public enum HwpLineShapeGeometry {
         case .circle:
             circlePitch(for: line)
         case .wave, .doubleWave:
-            waveHalfPeriod(for: line)
+            wave(for: line).halfPeriod
         default:
             0
         }
@@ -278,14 +283,15 @@ public enum HwpLineShapeGeometry {
 extension HwpLineShapeGeometry {
     // MARK: - 축척
 
-    /// 여러 줄 띠의 높이 — 글자선은 2중선 0.12em·그 밖 0.2em, 한글 2007 호환 문서의 글자선은
-    /// 2중선 1.44pt·그 밖 4.2pt, 테두리는 두께
+    /// 비례 여러 줄 띠의 높이 — 한글 2007 호환 문서의 글자선은 2중선 1.44pt·그 밖 4.2pt, 테두리는
+    /// 두께. 한글 문서·MS 워드 호환 문서의 글자선은 `characterStripes(for:)`가 장치 단위로 나누고
+    /// 이 값은 그 띠의 비례 근사(2중선 113‰·그 밖 198‰ × 기준 크기)다.
     static func multiLineBandHeight(for line: Line) -> CGFloat {
         switch line.scale {
         case let .characterLine(fontSize):
             line.shape == .doubleLine
-                ? fontSize * HwpRenderTuning.LineShape.characterDoubleLineBandEmRatio
-                : fontSize * HwpRenderTuning.LineShape.characterThickBandEmRatio
+                ? fontSize / 1000 * HwpRenderTuning.LineShape.characterDoubleBandPerMille
+                : fontSize / 1000 * HwpRenderTuning.LineShape.characterThickBandPerMille
         case .hwp200XCharacterLine:
             line.shape == .doubleLine
                 ? HwpRenderTuning.LineShape.hwp200XDoubleLineBand
@@ -293,38 +299,6 @@ extension HwpLineShapeGeometry {
         case .border:
             line.thickness
         }
-    }
-
-    /// 물결 진폭 — 한글 2007 호환 문서의 글자선만 2중 물결이 단일 물결의 절반이다
-    static func waveAmplitude(for line: Line) -> CGFloat {
-        switch line.scale {
-        case let .characterLine(fontSize):
-            fontSize * HwpRenderTuning.LineShape.characterWaveAmplitudeEmRatio
-        case .hwp200XCharacterLine:
-            line.shape == .doubleWave
-                ? HwpRenderTuning.LineShape.hwp200XDoubleWaveAmplitude
-                : HwpRenderTuning.LineShape.hwp200XWaveAmplitude
-        case .border:
-            line.thickness
-        }
-    }
-
-    static func waveStroke(for line: Line) -> CGFloat {
-        switch line.scale {
-        case let .characterLine(fontSize):
-            fontSize * HwpRenderTuning.LineShape.characterWaveStrokeEmRatio
-        case .hwp200XCharacterLine:
-            line.shape == .doubleWave
-                ? HwpRenderTuning.LineShape.hwp200XDoubleWaveStroke
-                : HwpRenderTuning.LineShape.hwp200XWaveStroke
-        case .border:
-            line.thickness * HwpRenderTuning.LineShape.borderWaveStrokeThicknessRatio
-        }
-    }
-
-    /// 물결 반주기 — 45° 대각선(진폭만큼 전진)에 꼭짓점 평탄을 더한 길이
-    static func waveHalfPeriod(for line: Line) -> CGFloat {
-        waveAmplitude(for: line) + HwpRenderTuning.LineShape.waveVertexFlat
     }
 
     // MARK: - 자리
@@ -347,81 +321,6 @@ extension HwpLineShapeGeometry {
             return (-height / 2) ... (height / 2)
         case .underlineAbove:
             return (half - height) ... half
-        }
-    }
-
-    /// 물결 꼭짓점 띠의 위쪽 꼭짓점 y — 글자선은 계단의 시작(`waveTopBase(for:)` — 한글 문서는
-    /// 단선 위 가장자리)에서 종류 × 계단만큼 위(한글 문서·MS 워드 호환 문서는 계단이 축척의
-    /// 0.04배 — 한글 문서에서는 두께와 같다, 한글 2007 호환 문서는 물결마다 고정 pt —
-    /// `waveTopStep(for:)`), 테두리는 중심에서 3/8 두께 위에 진폭 절반을 더 올린 곳
-    static func waveTopVertex(for line: Line) -> CGFloat {
-        let steps: CGFloat
-        switch line.placement {
-        case .underlineBelow: steps = 1
-        case .strikethrough: steps = 2
-        case .underlineAbove: steps = 3
-        case .border, .divider:
-            return -line.thickness * HwpRenderTuning.LineShape.borderWaveShiftThicknessRatio
-                - waveAmplitude(for: line) / 2
-        }
-        return -waveTopBase(for: line) - waveTopStep(for: line) * steps
-    }
-
-    /// 글자선 물결 꼭짓점 계단이 시작하는 자리 (단선 중심 위, pt) — 한글 문서·MS 워드 호환
-    /// 문서는 무늬 두께(`wavePatternThickness(for:)`)의 절반, 한글 2007 호환 문서는 물결 0.12pt·
-    /// 2중 물결 0.18pt
-    static func waveTopBase(for line: Line) -> CGFloat {
-        guard line.scale == .hwp200XCharacterLine else {
-            return wavePatternThickness(for: line) / 2
-        }
-        return line.shape == .doubleWave
-            ? HwpRenderTuning.LineShape.hwp200XDoubleWaveTopBase
-            : HwpRenderTuning.LineShape.hwp200XWaveTopBase
-    }
-
-    /// 글자선 물결의 위쪽 꼭짓점 계단 폭 — 한글 문서·MS 워드 호환 문서는 무늬 두께 × 1(단일·2중
-    /// 물결 같은 꼭짓점), 한글 2007 호환 문서는 단일 물결 1.2pt·2중 물결 0.54pt
-    static func waveTopStep(for line: Line) -> CGFloat {
-        guard line.scale == .hwp200XCharacterLine else {
-            return wavePatternThickness(for: line)
-                * HwpRenderTuning.LineShape.characterWaveTopShiftThicknessRatio
-        }
-        return line.shape == .doubleWave
-            ? HwpRenderTuning.LineShape.hwp200XDoubleWaveTopStep
-            : HwpRenderTuning.LineShape.hwp200XWaveTopStep
-    }
-
-    /// 물결 꼭짓점 계단을 재는 두께 — 글자선은 **축척 크기 × 0.04**(`decorationLineThicknessRatio`),
-    /// 그 밖(테두리 축척을 글자선 자리에 쓴 선)은 단선 두께다. 한글 문서에서는 두 값이 같지만 (두께
-    /// 자체가 같은 크기의 0.04배) MS 워드 호환 문서의 밑줄은 두께가 기준 상자의 0.05배(#187)라 축척
-    /// 크기의 약 0.0385배로 갈린다 — 한글은 그 문서에서도 물결을 축척의 0.04배로 잰다 (#244 실측,
-    /// 한글 12.30 PDF 2026-09-30: 글꼴 5종 80pt 물결 밑줄의 위 꼭짓점이 단선 중심 위 2.5 × 0.04 ×
-    /// 축척과 0.1pt 안 — 함초롬바탕 13.44pt·Menlo 12.12pt·Times New Roman 9.22pt; 단선 두께 0.05
-    /// cell로 재면 0.36~0.54pt 낮다).
-    static func wavePatternThickness(for line: Line) -> CGFloat {
-        if case let .characterLine(fontSize) = line.scale {
-            return fontSize * HwpRenderTuning.Text.decorationLineThicknessRatio
-        }
-        return line.thickness
-    }
-
-    /// 2중 물결의 둘째 파 이동량 — 글자선은 진폭의 0.8배 아래(같은 x 위상), 한글 2007 호환
-    /// 문서의 글자선은 1.08pt 아래(같은 x 위상), 테두리는 선 방향·가로지르는 축 모두 3/4 두께
-    /// (내려가는 획이 첫 파와 한 직선을 이루는 마름모 격자), 단 구분선은 가로지르는 축만 3/4 두께
-    static func doubleWaveOffset(for line: Line) -> CGPoint {
-        switch line.scale {
-        case .characterLine:
-            return CGPoint(
-                x: 0,
-                y: waveAmplitude(for: line)
-                    * HwpRenderTuning.LineShape.characterDoubleWaveOffsetAmplitudeRatio
-            )
-        case .hwp200XCharacterLine:
-            return CGPoint(x: 0, y: HwpRenderTuning.LineShape.hwp200XDoubleWaveOffset)
-        case .border:
-            let offset = line.thickness
-                * HwpRenderTuning.LineShape.borderDoubleWaveOffsetThicknessRatio
-            return CGPoint(x: line.placement == .divider ? 0 : offset, y: offset)
         }
     }
 
@@ -465,8 +364,17 @@ extension HwpLineShapeGeometry {
         }
     }
 
-    /// 여러 줄의 부속선 띠 (로컬 좌표, 선 길이 전체)
+    /// 여러 줄의 부속선 띠 (로컬 좌표, 선 길이 전체) — 한글 문서·MS 워드 호환 문서의 글자선은 장치
+    /// 단위 정수 기하(`characterStripes(for:)`, #252), 그 밖은 띠(`multiLineBand(for:)`)를 비율로 나눈다.
     static func stripes(for line: Line) -> [CGRect] {
+        if let character = characterStripes(for: line) {
+            return character.map { stripe in
+                CGRect(
+                    x: 0, y: stripe.center - stripe.thickness / 2,
+                    width: line.length, height: stripe.thickness
+                )
+            }
+        }
         let band = multiLineBand(for: line)
         let height = band.upperBound - band.lowerBound
         return stripeFractions(for: line.shape, scale: line.scale).map { start, end in

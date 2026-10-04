@@ -24,6 +24,9 @@ import XCTest
 /// `HwpFontResolver.testDeterministic`이라 기기 독립이다.
 final class FixtureDecorationLineRenderTests: XCTestCase {
     static let scale: CGFloat = 4
+    /// 커버리지 합으로 잰 장식선 두께의 허용 오차 (pt) — 획은 장치 단위(0.12pt)의 정수라
+    /// (#252) 종전 연속 두께(0.04em·0.05 cell)와 0.02~0.04pt 갈리는 자리를 가를 만큼 좁다.
+    static let strokeTolerance: CGFloat = 0.025
 
     /// 래스터·색 판정 헬퍼는 `+Script` 확장(#179)도 쓰므로 internal이다.
     struct Raster {
@@ -228,7 +231,7 @@ final class FixtureDecorationLineRenderTests: XCTestCase {
             expect(ink.bottom).to(
                 beLessThan(center), description: "\(format): 선이 글자보다 아래"
             )
-            // 선 두께: 10pt × 0.04 = 0.4pt = 1.6px — `isGreen`(커버리지 ≥ ~0.6)을
+            // 선 두께: 10pt의 획 3u = 0.36pt = 1.44px (#252) — `isGreen`(커버리지 ≥ ~0.6)을
             // 통과하는 행은 1~2행이다. 3행(0.5pt) 이상이면 두께 산식이 틀어진 것.
             let band = try XCTUnwrap(
                 raster.band(in: (center - 1) ... (center + 1), where: Self.isGreen),
@@ -282,7 +285,8 @@ final class FixtureDecorationLineRenderTests: XCTestCase {
     /// `track-changes` — 삭제선(베이스라인 위)과 삽입 밑줄(아래)이 둘 다 빨강
     /// 한 줄씩 있고, 이 문서(MS 워드 호환 문서, 대상 프로그램 2)에서는 **글꼴 지표**
     /// 기하다 (#187): 삭제선은 run 글꼴 `ascent`의 0.273배 위, 삽입 밑줄은 줄의 기준
-    /// run(여기서는 같은 글꼴 10pt)의 `descent` + 0.021 cell 아래·두께 0.05 cell.
+    /// run(여기서는 같은 글꼴 10pt)의 `descent` + 0.021 cell 아래·두께는 글자 상자 높이
+    /// (cell × 1.3)의 획 (#252).
     /// 두 선의 간격이 그 기하의 핀이고, 기대값은 결정론 resolver가 이 픽스처의
     /// 글꼴(함초롬돋움)에 준 실제 글꼴의 지표로 계산한다 — Menlo(win 0.9282/0.2358,
     /// CJK 비트 있음)면 2.534 + 2.602 = 5.136pt, 한컴 글꼴 모드의 함초롬돋움(1.07/0.23)
@@ -323,9 +327,10 @@ final class FixtureDecorationLineRenderTests: XCTestCase {
         // 결정론 resolver는 Menlo다 — 한글 실물(함초롬돋움 5.45pt)과 0.3pt 안이고, 종전
         // 상수(5.5pt)와도 가깝다. 글꼴이 바뀌면 이 값도 그 지표대로 옮겨진다.
         expect(expected).to(beCloseTo(5.136, within: 0.01))
-        // 삽입 밑줄 두께 = 0.05 cell = 0.582pt(Menlo) — 커버리지 합으로 잰다 (종전 상수
-        // 0.064em = 0.64pt, 한글 문서 0.04em = 0.4pt와 갈린다). 2.3px라 자기 열에서 완전
-        // 커버 값을 얻고, 왼쪽 여백의 세로 변경 막대는 짧은 구간이라 가장 긴 구간에 안 든다.
+        // 삽입 밑줄 두께 = 글자 상자 높이(Menlo 10pt 15.13pt)의 획 5u = 0.60pt (#252) — 커버리지
+        // 합으로 잰다 (종전 0.05 cell = 0.582pt, 종전 상수 0.064em = 0.64pt, 한글 문서 10pt의
+        // 0.36pt와 갈린다). 2.4px라 자기 열에서 완전 커버 값을 얻고, 왼쪽 여백의 세로 변경
+        // 막대는 짧은 구간이라 가장 긴 구간에 안 든다.
         let span = try XCTUnwrap(
             raster.longestSpan(Int(insert * Self.scale), where: Self.isRed), "삽입 밑줄 폭"
         )
@@ -336,7 +341,8 @@ final class FixtureDecorationLineRenderTests: XCTestCase {
             ) { _, green, _ in green },
             "삽입 밑줄 두께"
         )
-        expect(thickness).to(beCloseTo(box.cellHeight * 0.05, within: 0.04))
-        expect(box.cellHeight * 0.05).to(beCloseTo(0.582, within: 0.005))
+        expect(thickness).to(beCloseTo(0.60, within: 0.01))
+        expect(HwpDecorationLineGeometry.msWordUnderlineBelow(lineBox: box).thickness)
+            .to(beCloseTo(0.60, within: 0.0001))
     }
 }

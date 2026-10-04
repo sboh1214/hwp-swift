@@ -20,8 +20,10 @@ import Foundation
 /// MS 워드 호환 문서 취소선 580표본, 표 셀 테두리 대시 5종 × 표 26 굵기 16단 × 셀 간격 0·283HWPUNIT
 /// 가로·세로 변 317표본, 단 구분선 68표본이 모두 이 식과 요소마다 같다 (종전 비례 무늬는 1mm 점선
 /// 주기 86.61u — 한글 87·88u — 라 긴 선에서 대시가 한 주기마다 밀렸다). 표 셀 테두리·단 구분선의
-/// 실선·대시 획 두께도 round(t ÷ 12)u다 (16단 모두, `strokeThickness(for:)`). 한글 2007 호환 문서는
-/// 고정 단위 0.48pt(= 4u, 위 식에 b = 4를 넣은 값과 같다)라 이 모델 밖이다 (#227).
+/// 실선·대시 획 두께도 round(t ÷ 12)u다 (16단 모두, `strokeThickness(for:)`). 글자선(한글 문서·MS 워드
+/// 호환 문서의 밑줄·취소선)의 실선·대시 획도 같은 식에 글자선의 t를 넣은 값이고 최소 1u다 (#252 —
+/// `characterStrokeThickness(fontSize:)`). 한글 2007 호환 문서는 고정 단위 0.48pt(= 4u, 위 식에 b = 4를
+/// 넣은 값과 같다)·고정 획 0.36pt라 이 모델 밖이다 (#210·#227).
 extension HwpLineShapeGeometry {
     /// 장치 단위로 반올림하는 입력의 상한 (pt) — 무늬 두께(`patternThickness(for:)`)가 이보다 크면
     /// 장치 단위 반올림이 뜻이 없으므로 반올림 전 비율로 셈한다. 이 아래에서는 반올림하는 HWPUNIT·장치
@@ -126,12 +128,19 @@ extension HwpLineShapeGeometry {
     /// 대시와 원형 점선이 함께 쓴다. 상한(`deviceRoundingLimit`) 안의 입력에서만 부른다.
     static func patternHwpUnits(for line: Line) -> CGFloat {
         if case let .characterLine(fontSize) = line.scale {
-            return roundHalfUp(
-                (fontSize * 100).rounded()
-                    * HwpRenderTuning.LineShape.characterPatternThicknessPerMille / 1000
-            )
+            return characterPatternHwpUnits(fontSize: fontSize)
         }
         return borderPatternHwpUnits(thickness: line.thickness)
+    }
+
+    /// 글자선의 무늬 두께 (HWPUNIT 정수) — 기준 크기 `fontSize`(pt)를 HWPUNIT 정수로 둔 X에서
+    /// round(X × 39/1000). 대시·원형 점선의 무늬와 실선·대시의 획 두께(`characterStrokeThickness(fontSize:)`)가
+    /// 이 값에서 나온다. 상한(`deviceRoundingLimit`) 안의 입력에서만 부른다.
+    static func characterPatternHwpUnits(fontSize: CGFloat) -> CGFloat {
+        roundHalfUp(
+            (fontSize * 100).rounded()
+                * HwpRenderTuning.LineShape.characterPatternThicknessPerMille / 1000
+        )
     }
 
     /// 테두리·단 구분선 두께의 무늬 두께 (HWPUNIT) — 표 26 굵기(`HwpBorderFill.borderThicknessPoints`)
@@ -152,10 +161,12 @@ extension HwpLineShapeGeometry {
     /// 실선·대시의 획 두께 (pt) — 테두리 축척(표 셀 테두리·단 구분선)은 한글처럼 무늬 두께를 장치
     /// 단위로 반올림한 값(최소 1u — 표 26 16단: 2·3·4·5·6·7·9·12·14·17·24·35·47·71·95·118u, #245
     /// 실측: 가로·세로 변·단 구분선 모두; 0.4mm 1.134 → 1.08pt, 1mm 2.835 → 2.88pt), 글자선은 단선
-    /// 두께 그대로다. 여러 줄·물결 띠는 이 값을 쓰지 않고 명목 두께에 비례한다 — 한글은 이것도 장치
-    /// 단위로 그리는데(1mm 2중선 띠 2.88pt·물결 진폭 24u, `Sources/HwpKitCore/AGENTS.md`의 남은 격차)
-    /// 아직 좇지 않는다. 원형 점선은 제 장치 단위 규칙이 있다(`circleDeviceGeometry(for:)`). 상한
-    /// (`deviceRoundingLimit`) 밖 두께는 그대로다.
+    /// 두께 그대로다 — 글자선의 단선 두께는 이미 같은 규칙으로 반올림한 값이다
+    /// (`HwpDecorationLineGeometry`가 `characterStrokeThickness(fontSize:)`로 낸다, #252). 그래서 실선을
+    /// 채우는 렌더러(`Line.thickness`를 그대로 쓴다)와 대시 띠가 같은 두께다. 여러 줄·물결 띠는 이 값을
+    /// 쓰지 않고 명목 두께에 비례한다 — 한글은 이것도 장치 단위로 그리는데(1mm 2중선 띠 2.88pt·물결
+    /// 진폭 24u, `Sources/HwpKitCore/AGENTS.md`의 남은 격차) 아직 좇지 않는다. 원형 점선은 제 장치 단위
+    /// 규칙이 있다(`circleDeviceGeometry(for:)`). 상한(`deviceRoundingLimit`) 밖 두께는 그대로다.
     static func strokeThickness(for line: Line) -> CGFloat {
         line.scale == .border ? borderStrokeThickness(line.thickness) : line.thickness
     }
@@ -166,8 +177,27 @@ extension HwpLineShapeGeometry {
     /// (`HwpBorderSet.reachWidth`).
     static func borderStrokeThickness(_ thickness: CGFloat) -> CGFloat {
         guard thickness > 0, thickness < deviceRoundingLimit else { return thickness }
-        let units = roundHalfUp(borderPatternHwpUnits(thickness: thickness) / hwpUnitsPerDeviceUnit)
-        return max(1, units) * HwpRenderTuning.LineShape.deviceUnit
+        return deviceStrokeThickness(hwpUnits: borderPatternHwpUnits(thickness: thickness))
+    }
+
+    /// 글자선(한글 문서·MS 워드 호환 문서의 밑줄·취소선)의 실선·대시 획 두께 (pt) — 기준 크기
+    /// `fontSize`(pt)의 무늬 두께 t = round(X × 39/1000)(`characterPatternHwpUnits(fontSize:)`, X = 기준
+    /// 크기 HWPUNIT 정수)를 장치 단위로 반올림한 값, 최소 1u다 (#252). 테두리·단 구분선의 획
+    /// (`borderStrokeThickness(_:)`)과 같은 식에 무늬 두께만 글자선의 것을 넣는다. 기준 크기는 무늬와
+    /// 같다 — `Scale.characterLine`의 `fontSize`. 0 이하·NaN이면 0(선 없음), 무늬 두께가 상한
+    /// (`deviceRoundingLimit`) 밖이면 반올림 전 무늬 두께(글자 크기 × 0.039)다.
+    static func characterStrokeThickness(fontSize: CGFloat) -> CGFloat {
+        guard fontSize > 0 else { return 0 }
+        // 나눗셈 먼저 — 글자 크기가 유한 최댓값 근처여도 넘치지 않게 (`patternThickness(for:)`와 같다)
+        let pattern = fontSize / 1000 * HwpRenderTuning.LineShape.characterPatternThicknessPerMille
+        guard pattern < deviceRoundingLimit else { return pattern }
+        return deviceStrokeThickness(hwpUnits: characterPatternHwpUnits(fontSize: fontSize))
+    }
+
+    /// 무늬 두께(HWPUNIT 정수)의 획 두께 (pt) — round(t ÷ 12)u, 최소 1u. 한글은 무늬 두께가 6HWPUNIT
+    /// 미만(글자선은 기준 크기 1.41pt 이하, 무늬 두께 0~5)이어도 1u 획을 긋는다 (#252 실측).
+    static func deviceStrokeThickness(hwpUnits: CGFloat) -> CGFloat {
+        max(1, roundHalfUp(hwpUnits / hwpUnitsPerDeviceUnit)) * HwpRenderTuning.LineShape.deviceUnit
     }
 
     /// 장치 단위 한 칸의 HWPUNIT (12 = 0.12pt × 100)

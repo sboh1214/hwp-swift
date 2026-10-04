@@ -199,9 +199,9 @@ extension HwpDecorationLineGeometryTests {
         expect(runs[5].start - runs[0].start).to(beCloseTo(5 * 8.76, within: 0.3))
     }
 
-    /// 2중선 밑줄의 두 줄은 실선 밑줄 중심을 가운데로 두고(한글 ±1.26pt), 물결 밑줄의 위 꼭짓점은
-    /// 그 중심 위 2.5 × 0.04 × 30.27 = 3.03pt다(한글 3.04pt) — 한글 문서 규칙(띠가 단선 위
-    /// 가장자리에서 아래로)이었다면 두 줄이 중심 아래로 몰리고 꼭짓점은 1.75pt 위다.
+    /// 2중선 밑줄의 두 줄은 실선 밑줄 중심을 가운데로 두고(한글 ±1.26pt — 우리 −1.32·+1.20pt), 물결
+    /// 밑줄의 위 평탄은 그 중심 위 25u = 3.00pt다(한글 위 꼭짓점 3.04pt, #252 장치 단위 기하: 대각선 29u·
+    /// 획 7u) — 한글 문서 규칙(띠 가운데가 줄 상자 바닥 아래)이었다면 두 줄이 중심 아래로 몰린다.
     func testMsWordMultiLineAndWaveUnderlinesCenterOnTheSingleLine() throws {
         let solid = try render(text: NSAttributedString(
             string: "          ", attributes: msWordShapeRun(size: 20, shape: .line)
@@ -213,17 +213,16 @@ extension HwpDecorationLineGeometryTests {
         let bands = Self.rowBands(double, where: Self.isMsWordCyan)
         expect(bands.count) == 2
         if bands.count == 2 {
-            expect((bands[0] + bands[1]) / 2).to(beCloseTo(center, within: 0.15))
-            expect(bands[1] - bands[0]).to(beCloseTo(2 * 1.36, within: 0.2))
+            expect((bands[0] + bands[1]) / 2).to(beCloseTo(center - 0.06, within: 0.15))
+            expect(bands[1] - bands[0]).to(beCloseTo(21 * 0.12, within: 0.2))
         }
         let wave = try XCTUnwrap(Self.cyanRowSpan(try render(text: NSAttributedString(
             string: "          ", attributes: msWordShapeRun(size: 20, shape: .wave)
         ))))
-        let box = Self.menloBox(20).lineHeight
-        let stroke = box * HwpRenderTuning.LineShape.characterWaveStrokeEmRatio
-        let amplitude = box * HwpRenderTuning.LineShape.characterWaveAmplitudeEmRatio
-        // 대각 획의 잉크는 꼭짓점 밖으로 획 반폭만큼 나간다 (45°라 반폭 × √2 안쪽)
-        expect(wave.lowerBound).to(beCloseTo(center - 3.03 - stroke / 2, within: 0.3))
-        expect(wave.upperBound).to(beCloseTo(center - 3.03 + amplitude + stroke / 2, within: 0.3))
+        // 위 평탄 3.00pt(홀수 대각선은 1u 더 위), 대각선 29u, 획 7u (#252) — 대각 획의 잉크는
+        // 꼭짓점 밖으로 획 반폭만큼 나간다 (45°라 반폭 × √2 안쪽)
+        let stroke = 7 * 0.12
+        expect(wave.lowerBound).to(beCloseTo(center - 3.12 - stroke / 2, within: 0.3))
+        expect(wave.upperBound).to(beCloseTo(center - 3.00 + 29 * 0.12 + stroke / 2, within: 0.3))
     }
 }

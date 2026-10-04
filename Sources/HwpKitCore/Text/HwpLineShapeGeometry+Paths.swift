@@ -196,26 +196,44 @@ extension HwpLineShapeGeometry {
     /// `length`와 같은 자리에서 시작하는 대각선은 그리지 않는다 (한글 실측, #191·#235 —
     /// `waveDiagonalCount(for:offsetX:)`; `alongExtent(of:)`가 그 넘침을 보고한다).
     static func addWave(to path: CGMutablePath, line: Line, offset: CGPoint) {
-        let amplitude = waveAmplitude(for: line)
-        let stroke = waveStroke(for: line)
-        guard amplitude > 0, stroke > 0 else { return }
-        let flat = HwpRenderTuning.LineShape.waveVertexFlat
-        let halfPeriod = waveHalfPeriod(for: line)
-        let top = waveTopVertex(for: line) + offset.y
-        let bottom = top + amplitude
+        let wave = wave(for: line)
+        let stroke = wave.stroke
+        guard stroke > 0 else { return }
+        let top = wave.top + offset.y
+        if wave.straight {
+            // 대각선이 없는 작은 크기 — 위 평탄 높이에 가로 선 하나 (한글 12.30: 1.54pt 이하)
+            let start = max(0, offset.x)
+            guard line.length > start else { return }
+            path.addRect(CGRect(
+                x: start, y: top - stroke / 2, width: line.length - start, height: stroke
+            ))
+            return
+        }
+        guard wave.run > 0 else { return }
         let count = waveDiagonalCount(for: line, offsetX: offset.x)
         for index in 0 ..< count {
             let goingDown = index.isMultiple(of: 2)
-            let startX = offset.x + CGFloat(index) * halfPeriod
-            let start = CGPoint(x: startX, y: goingDown ? top : bottom)
-            let end = CGPoint(x: startX + amplitude, y: goingDown ? bottom : top)
-            addSegment(from: start, to: end, stroke: stroke, into: path)
-            if index + 1 < count, flat > 0 {
+            let startX = offset.x + CGFloat(index) * wave.halfPeriod
+            let startY = goingDown ? top : top + wave.levelGap
+            let end = CGPoint(x: startX + wave.run, y: startY + (goingDown ? wave.run : -wave.run))
+            addSegment(from: CGPoint(x: startX, y: startY), to: end, stroke: stroke, into: path)
+            if index + 1 < count, wave.flat > 0 {
+                // 평탄은 다음 대각선이 시작하는 높이다 — 대각선 끝과 다를 수 있다 (홀수 r)
+                let flatY = goingDown ? top + wave.levelGap : top
                 path.addRect(CGRect(
-                    x: end.x, y: end.y - stroke / 2, width: flat, height: stroke
+                    x: end.x, y: flatY - stroke / 2, width: wave.flat, height: stroke
                 ))
             }
         }
+    }
+
+    /// 2중 물결 — 같은 물결을 둘째 파 이동량(`Wave.secondOffset`)만큼 옮겨 한 번 더 긋는다. 물결이
+    /// 가로 선으로 접힌 작은 크기(`Wave.straight`)는 두 파가 같은 자리라 한 번만 긋는다 (한글 1.54pt 이하).
+    static func addDoubleWave(to path: CGMutablePath, line: Line) {
+        addWave(to: path, line: line, offset: .zero)
+        let wave = wave(for: line)
+        guard !wave.straight else { return }
+        addWave(to: path, line: line, offset: wave.secondOffset)
     }
 
     /// 두 점을 잇는 획 두께 `stroke`의 평행사변형 (butt cap). 꼭짓점 평탄 띠(`addRect`, 부호
@@ -276,9 +294,12 @@ extension HwpLineShapeGeometry {
 
     /// `offsetX`에서 시작한 물결의 마지막 대각선이 끝나는 x (대각선이 없으면 `length` 안)
     static func waveEnd(for line: Line, offsetX: CGFloat) -> CGFloat {
+        let wave = wave(for: line)
+        if wave.straight {
+            return line.length
+        }
         let count = waveDiagonalCount(for: line, offsetX: offsetX)
         guard count > 0 else { return min(offsetX, line.length) }
-        return offsetX + CGFloat(count) * waveHalfPeriod(for: line)
-            - HwpRenderTuning.LineShape.waveVertexFlat
+        return offsetX + CGFloat(count - 1) * wave.halfPeriod + wave.run
     }
 }

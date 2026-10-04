@@ -191,7 +191,8 @@ extension HwpLineShapeGeometryTests {
 
     /// 표 셀 테두리·단 구분선의 실선·대시 획은 장치 단위로 반올림한 두께다 — 한글 PDF의 획 폭이 굵기
     /// 16단에서 2·3·4·5·6·7·9·12·14·17·24·35·47·71·95·118u (가로·세로 변·단 구분선 모두). 글자선의
-    /// 획은 반올림하지 않는다.
+    /// 획은 여기서 다시 반올림하지 않는다 — 장식선 기하가 같은 규칙으로 반올림한 두께를 넘긴다 (#252:
+    /// 10pt 3u = 0.36pt, `HwpDecorationLineGeometry.strokeThickness(referenceSize:)`).
     func testBorderStrokesRoundToDeviceUnits() {
         let hangul: [CGFloat] = [2, 3, 4, 5, 6, 7, 9, 12, 14, 17, 24, 35, 47, 71, 95, 118]
         for (index, units) in hangul.enumerated() {
@@ -207,6 +208,12 @@ extension HwpLineShapeGeometryTests {
         }
         let character = Self.characterLine(.longDash, fontSize: 10)
         expect(HwpLineShapeGeometry.crossExtent(of: character)?.upperBound)
+            .to(beCloseTo(0.18, within: 1e-9))
+        let unrounded = HwpLineShapeGeometry.Line(
+            shape: .longDash, length: 100, thickness: 0.4,
+            scale: .characterLine(fontSize: 10), placement: .strikethrough
+        )
+        expect(HwpLineShapeGeometry.crossExtent(of: unrounded)?.upperBound)
             .to(beCloseTo(0.2, within: 1e-9))
     }
 

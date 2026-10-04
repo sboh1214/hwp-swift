@@ -11,7 +11,8 @@ import Foundation
  (`msWord`)에서 밑줄·취소선·변경 추적 표시선을 글꼴 지표(OS/2 `usWinAscent`·
  `usWinDescent`)로 놓고, 한글 2007 호환 문서(`hwp200X`)에서는 글자 크기 비례 자리에
  **크기와 무관한 고정 0.36pt** 선을 놓으며, 그 밖의 문서에서는 글자 크기 비례 자리에
- 0.04em 선을 놓는다 (`HwpKitCore`의 `HwpDecorationLineGeometry`). 레이아웃 호환성
+ 크기에서 푼 장치 단위(0.12pt 정수배) 획의 선을 놓는다 (`HwpKitCore`의
+ `HwpDecorationLineGeometry`). 레이아웃 호환성
  플래그(표 56)는 이 기하에 관여하지 않는다 (2026-09-15 한글 12.30 실측: 35개 플래그
  전부/없음·개별 `useInnerUnderline`·`useLowercaseStrikeout`이 같은 결과). 훈민정음
  호환(`hunmin`)·record 없음은 한글 문서와 같이 다룬다.

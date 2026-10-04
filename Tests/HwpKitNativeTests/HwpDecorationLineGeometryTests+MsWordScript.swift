@@ -11,8 +11,8 @@ import XCTest
 /// **첨자로 옮겨진 베이스라인** 위, 같은 글꼴·기본 크기 보통 글자 취소선 높이의
 /// `msWordScriptStrikethroughScale`(0.696)배에 놓인다. 한글 문서·한글 2007 호환 문서 갈래는 그
 /// 배율로 첨자 글리프 축소 비율(0.64)을 쓴다 (#179·#210 — 한글 실측은 0.636). 두께는 한글 문서·MS
-/// 워드 호환 문서가 축소 전 기본 크기 × 0.04, 한글 2007 호환 문서가 크기와 무관한 고정 0.36pt다
-/// (#210).
+/// 워드 호환 문서가 축소 전 기본 크기의 장치 단위 획(#252), 한글 2007 호환 문서가 크기와 무관한
+/// 고정 0.36pt다 (#210).
 ///
 /// 오라클은 한글.app 12.30.0 build 6523의 PDF 내보내기다 (2026-10-02, 글꼴 10종 × 8~100pt × 위·아래
 /// 첨자 360표본 — `HwpRenderTuning.Text.msWordScriptStrikethroughScale`의 doc-comment). 여기서는
@@ -70,7 +70,7 @@ extension HwpDecorationLineGeometryTests {
     }
 
     /// 산식 자체 — MS 워드 호환 문서의 첨자 run은 보통 run 취소선 높이의 0.696배(7.055pt), 두께는
-    /// 기본 크기 몫 1.6pt다. 한글 문서·한글 2007 호환 문서의 첨자 run은 종전대로 0.35 × 축소 크기
+    /// 기본 크기 40pt 몫의 획 13u = 1.56pt다 (#252). 한글 문서·한글 2007 호환 문서의 첨자 run은 종전대로 0.35 × 축소 크기
     /// (8.96pt)다 — 그 갈래는 첨자 배율로 글리프 축소 비율을 쓴다. 수정 전 MS 워드 갈래는 0.64배
     /// (6.487pt)라 40pt에서 0.57pt 낮았다.
     func testMsWordScriptStrikethroughHeightIsTheScaledPlainHeight() {
@@ -92,7 +92,7 @@ extension HwpDecorationLineGeometryTests {
             plain.center * HwpRenderTuning.Text.msWordScriptStrikethroughScale, within: 0.000_1
         ))
         expect(scripted.center).to(beCloseTo(7.055, within: 0.001))
-        expect(scripted.thickness).to(beCloseTo(0.04 * size, within: 0.000_1))
+        expect(scripted.thickness).to(beCloseTo(1.56, within: 0.000_1))
 
         // 한글 문서·한글 2007 호환 문서 — 첨자 배율은 글리프 축소 비율 그대로
         for target in [nil, HwpCompatibleDocumentTarget.hwp200X] {

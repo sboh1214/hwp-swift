@@ -194,6 +194,8 @@ final class FixtureMsWordParagraphEndBoxTests: XCTestCase {
     /// (U1 9.60 아래·U2 7.08 아래), 30pt 표 줄의 위 밑줄(U3 28.56 위 = 표 윗변 아래), 글자 상자
     /// 안쪽 개체가 베이스라인을 상자 바닥 가까이 내린 줄(유사: 밑줄이 베이스라인 **위** 1.80). 종전
     /// 산식(글자·끝 글자 상자의 축별 최댓값, 개체 제외)은 U1 4.2 아래·U3 9.5 위·유사 6.0 아래였다.
+    /// 두께는 글자 상자 높이의 장치 단위 획이라 한글 PDF 값과 정확히 같다 (#252 — 종전 0.05 cell은
+    /// Menlo 상자의 U2·U3에서 0.582pt였다).
     func testUnderlinesSitOnTheLineBoxEdgesWithTheTextCell() async throws {
         try skipUnlessOracleFonts()
         let samples = [
@@ -220,7 +222,8 @@ final class FixtureMsWordParagraphEndBoxTests: XCTestCase {
                     beCloseTo(sample.offset, within: 0.15), description: "\(label) \(sample.prefix)"
                 )
                 expect(geometry.thickness).to(
-                    beCloseTo(sample.thickness, within: 0.07), description: "\(label) \(sample.prefix) 두께"
+                    beCloseTo(sample.thickness, within: 0.0001),
+                    description: "\(label) \(sample.prefix) 두께"
                 )
             }
         }
