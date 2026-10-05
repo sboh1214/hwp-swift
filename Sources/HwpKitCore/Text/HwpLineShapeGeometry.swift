@@ -187,6 +187,8 @@ public enum HwpLineShapeGeometry {
              .longDotLine, .dotLine, .dashDot, .dashDotDot, .longDash:
             let band = solidBand(for: line)
             return band.minY ... band.maxY
+        case .wave, .doubleWave:
+            return waveCrossExtent(of: line)
         case _ where patternRepeats(of: line) > maxPatternRepeats:
             let band = solidBand(for: line)
             return band.minY ... band.maxY
@@ -200,16 +202,6 @@ public enum HwpLineShapeGeometry {
             guard let top = stripes.map(\.minY).min(), let bottom = stripes.map(\.maxY).max()
             else { return nil }
             return top ... bottom
-        case .wave, .doubleWave:
-            let wave = wave(for: line)
-            let half = wave.stroke / 2
-            let range = wave.centerRange
-            // 실제로 긋는 파만 센다 — `waveSpans`가 비운 파는 경로에 없다 (`alongExtent(of:)`와 같은 판정)
-            let offsets = (0 ..< drawnWaveCount(for: line))
-                .filter { waveAlongExtent(for: line, index: $0) != nil }
-                .map { CGFloat($0) * wave.secondOffset }
-            guard let lift = offsets.min(), let drop = offsets.max() else { return nil }
-            return (range.lowerBound + lift - half) ... (range.upperBound + drop + half)
         }
     }
 
@@ -231,7 +223,9 @@ public enum HwpLineShapeGeometry {
         }
         switch line.shape {
         case .wave, .doubleWave:
-            guard patternRepeats(of: line) <= maxPatternRepeats else { return 0 ... line.length }
+            guard patternRepeats(of: line) <= maxPatternRepeats else {
+                return ownedSolidBand(for: line).map { $0.minX ... $0.maxX }
+            }
             let extents = (0 ..< drawnWaveCount(for: line)).compactMap {
                 waveAlongExtent(for: line, index: $0)
             }
@@ -276,20 +270,24 @@ public enum HwpLineShapeGeometry {
     }
 
     /// 패턴이 선 길이 안에서 되풀이되는 횟수 (대시는 패턴 한 벌, 원은 피치, 물결은 반주기
-    /// 단위). 되풀이하지 않는 모양은 0.
+    /// 단위). 물결은 `length`가 아니라 가장 긴 긋는 파의 범위(`Line.waveSpans` — 없으면 [0, `length`))로
+    /// 센다 — 긋는 파가 없으면 0이라 실선 띠로 떨어지지 않는다. 되풀이하지 않는 모양은 0.
     static func patternRepeats(of line: Line) -> CGFloat {
-        let unit: CGFloat = switch line.shape {
+        let (unit, span): (CGFloat, CGFloat) = switch line.shape {
         case .longDotLine, .dotLine, .dashDot, .dashDotDot, .longDash:
-            dashPattern(for: line).reduce(0, +)
+            (dashPattern(for: line).reduce(0, +), line.length)
         case .circle:
-            circlePitch(for: line)
+            (circlePitch(for: line), line.length)
         case .wave, .doubleWave:
-            wave(for: line).halfPeriod
+            (
+                wave(for: line).halfPeriod,
+                drawableWaveSpans(for: line).map { $0.upperBound - $0.lowerBound }.max() ?? 0
+            )
         default:
-            0
+            (0, 0)
         }
         guard unit > 0, unit.isFinite else { return 0 }
-        return line.length / unit
+        return span / unit
     }
 }
 

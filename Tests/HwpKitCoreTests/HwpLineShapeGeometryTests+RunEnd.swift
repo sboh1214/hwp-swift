@@ -209,4 +209,56 @@ extension HwpLineShapeGeometryTests {
         expect(HwpLineShapeGeometry.patternElementCount(span: 1e12, period: 1e-3))
             == Int(HwpLineShapeGeometry.maxPatternRepeats) + 1
     }
+
+    /// 반복 상한(`maxPatternRepeats`)을 넘어 실선 띠로 떨어지는 물결도 파마다의 범위(`Line.waveSpans`)를
+    /// 따른다 (#253 — PR #266 리뷰): 반복 수는 긋는 파의 범위로 세고, 띠는 그 범위를 합친 곳이며, 긋는 파가
+    /// 없으면 경로도 범위도 없다. 0.28pt 테두리 물결은 획 B = 2u라 반주기가 0.36pt — 길이 40,000pt면 11만
+    /// 번을 넘는다.
+    func testRepeatLimitFallbackFollowsTheWaveSpans() {
+        func line(
+            _ shape: HwpBorderType, length: CGFloat, spans: [Range<CGFloat>]?
+        ) -> HwpLineShapeGeometry.Line {
+            var line = Self.borderLine(shape, thickness: 0.28, length: length)
+            line.waveSpans = spans
+            return line
+        }
+        let long: CGFloat = 40000
+        expect(HwpLineShapeGeometry.patternRepeats(of: line(.doubleWave, length: long, spans: nil)))
+            > HwpLineShapeGeometry.maxPatternRepeats
+        // 비거나 유한하지 않은 범위뿐이면 실선 띠로 떨어지지 않고 아무것도 그리지 않는다 — 범위마다는 유한해도
+        // 합친 폭이 넘치면 띠를 낼 수 없어 마찬가지다
+        let degenerate: [[Range<CGFloat>]] = [
+            [5 ..< 5], [0 ..< .infinity], [-.infinity ..< 5, 5 ..< 5],
+            [-1e308 ..< -9e307, 9e307 ..< 1e308],
+        ]
+        for spans in degenerate {
+            let empty = line(.doubleWave, length: long, spans: spans)
+            expect(HwpLineShapeGeometry.path(for: empty)).to(beNil())
+            expect(HwpLineShapeGeometry.alongExtent(of: empty)).to(beNil())
+            expect(HwpLineShapeGeometry.crossExtent(of: empty)).to(beNil())
+        }
+        // 띠는 긋는 파의 범위를 합친 곳이라 모서리 자리(첫 파 −2w·둘째 파 +w)를 지킨다
+        let shifted = line(
+            .doubleWave, length: long, spans: [-0.24 ..< long - 0.24, 0.12 ..< long + 0.12]
+        )
+        let band = Self.pieces(HwpLineShapeGeometry.path(for: shifted))
+        expect(band.count) == 1
+        expect(band.first?.minX).to(beCloseTo(-0.24, within: 1e-6))
+        expect(band.first?.maxX).to(beCloseTo(long + 0.12, within: 1e-6))
+        expect(HwpLineShapeGeometry.alongExtent(of: shifted)?.lowerBound)
+            .to(beCloseTo(-0.24, within: 1e-6))
+        expect(HwpLineShapeGeometry.alongExtent(of: shifted)?.upperBound)
+            .to(beCloseTo(long + 0.12, within: 1e-6))
+        // 빈 파는 합치지 않는다 — 멀리 놓인 빈 둘째 파가 띠를 늘리지 않는다
+        let lone = line(.doubleWave, length: long, spans: [0 ..< long, 2 * long ..< 2 * long])
+        expect(HwpLineShapeGeometry.alongExtent(of: lone)?.upperBound)
+            .to(beCloseTo(long, within: 1e-6))
+        // 반복 수는 `length`가 아니라 긋는 범위로 센다 — 짧은 길이에 긴 범위를 주어도 상한을 비켜 가지 못한다
+        let longSpan = line(.wave, length: 10, spans: [0 ..< long])
+        expect(HwpLineShapeGeometry.patternRepeats(of: longSpan))
+            > HwpLineShapeGeometry.maxPatternRepeats
+        expect(Self.pieces(HwpLineShapeGeometry.path(for: longSpan)).count) == 1
+        expect(HwpLineShapeGeometry.alongExtent(of: longSpan)?.upperBound)
+            .to(beCloseTo(long, within: 1e-6))
+    }
 }

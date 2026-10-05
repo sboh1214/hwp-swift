@@ -152,10 +152,18 @@ extension HwpLineShapeGeometry {
         }
     }
 
-    /// 반복 상한을 넘어 실선 띠로 떨어진 무늬의 제 몫 — `elementRange`와 [0, `length`]의 겹침
-    /// (없으면 띠 전체). 겹침이 없으면 nil.
+    /// 반복 상한을 넘어 실선 띠로 떨어진 무늬의 제 몫 — 대시·원형 점선은 `elementRange`와 [0, `length`]의
+    /// 겹침(없으면 띠 전체), 파마다의 범위(`Line.waveSpans`)가 있는 물결은 긋는 파의 범위를 합친 곳(모서리
+    /// 자리를 지킨다). 몫이 없으면 nil — 긋는 파가 없는 물결도 실선 띠로 떨어지지 않는다.
     static func ownedSolidBand(for line: Line) -> CGRect? {
         let band = solidBand(for: line)
+        if line.waveSpans != nil, line.shape == .wave || line.shape == .doubleWave {
+            let spans = drawableWaveSpans(for: line)
+            guard let start = spans.map(\.lowerBound).min(),
+                  let end = spans.map(\.upperBound).max(), (end - start).isFinite
+            else { return nil }
+            return CGRect(x: start, y: band.minY, width: end - start, height: band.height)
+        }
         guard let owned = line.elementRange, isPatterned(line.shape) else { return band }
         let start = max(0, owned.lowerBound)
         let end = min(line.length, owned.upperBound)
@@ -257,6 +265,14 @@ extension HwpLineShapeGeometry {
         return span
     }
 
+    /// 긋는 파의 선 방향 범위 — 비었거나(1e-6pt 이하, 요소 개수의 바닥과 같다) 유한하지 않은
+    /// (`waveSpan(for:index:)`) 범위는 뺀다. 반복 상한 판정(`patternRepeats(of:)`)과 그 실선 띠
+    /// (`ownedSolidBand(for:)`)가 이 범위로 센다.
+    static func drawableWaveSpans(for line: Line) -> [Range<CGFloat>] {
+        (0 ..< drawnWaveCount(for: line)).map { waveSpan(for: line, index: $0) }
+            .filter { $0.upperBound - $0.lowerBound > 1e-6 }
+    }
+
     /// 마지막 대각선 뒤의 평탄을 긋는가 — 표 셀 테두리·단 구분선(`Scale.border`)은 한글처럼 평탄도 따로
     /// 긋는 요소라 시작(대각선 끝 `flatStart`)이 범위 끝 앞이면 긋는다 (#253 실측: 셀 간격 표 0.1mm 세로 변
     /// 666u — 대각선 222개 뒤 평탄 222개). 글자선은 좇지 않는다 (#252 — 남은 격차).
@@ -325,6 +341,25 @@ extension HwpLineShapeGeometry {
         // 뺀다 — 경로와 `alongExtent(of:)`가 함께 유한하게 남는다 (앞 원은 길이 안에서 끝난다)
         let lastEdge = CGFloat(count - 1) * pitch + circleDiameter(for: line) / 2
         return count > 1 && !lastEdge.isFinite ? count - 1 : count
+    }
+
+    /// 물결의 가로지르는 범위 (로컬 y) — 실제로 긋는 파만 센다: `Line.waveSpans`가 비운 파는 경로에 없다
+    /// (`alongExtent(of:)`와 같은 판정). 반복 상한을 넘으면 실선 띠이고, 긋는 파가 없으면 그 띠도 없다
+    /// (대시·원형 점선 조각은 제 몫이 없어도 선 전체의 띠를 내는 것과 갈린다).
+    static func waveCrossExtent(of line: Line) -> ClosedRange<CGFloat>? {
+        if patternRepeats(of: line) > maxPatternRepeats {
+            guard ownedSolidBand(for: line) != nil else { return nil }
+            let band = solidBand(for: line)
+            return band.minY ... band.maxY
+        }
+        let wave = wave(for: line)
+        let half = wave.stroke / 2
+        let range = wave.centerRange
+        let offsets = (0 ..< drawnWaveCount(for: line))
+            .filter { waveAlongExtent(for: line, index: $0) != nil }
+            .map { CGFloat($0) * wave.secondOffset }
+        guard let lift = offsets.min(), let drop = offsets.max() else { return nil }
+        return (range.lowerBound + lift - half) ... (range.upperBound + drop + half)
     }
 
     /// 파 `index`가 칠하는 선 방향 범위 (로컬 x) — 첫 대각선 시작부터 마지막 대각선 끝(또는 그 뒤 평탄 끝)
