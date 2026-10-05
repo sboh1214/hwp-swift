@@ -169,9 +169,16 @@ final class FixtureWideTableTests: XCTestCase {
                     return (block, note)
                 }
             }
-            let tables = notes.flatMap { block, note in
-                note.nestedTables.map { (block.frame.origin, $0) }
-            }.sorted { $0.0.y + $0.1.rect.minY < $1.0.y + $1.1.rect.minY }
+            // 쪽 좌표 위→아래 (타입을 적어 둔다 — 튜플 클로저 추론이 느리다)
+            typealias Placed = (origin: CGPoint, nested: HwpNestedTableFrame)
+            let placed: [Placed] = notes.flatMap { block, note in
+                note.nestedTables.map { (origin: block.frame.origin, nested: $0) }
+            }
+            let tables = placed.sorted { lhs, rhs in
+                let left: CGFloat = lhs.origin.y + lhs.nested.rect.minY
+                let right: CGFloat = rhs.origin.y + rhs.nested.rect.minY
+                return left < right
+            }
             expect(tables.count).to(equal(Self.footnotes.count), description: format)
             for ((origin, nested), sample) in zip(tables, Self.footnotes) {
                 Self.assertEdges(
