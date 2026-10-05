@@ -53,12 +53,16 @@ import XCTest
             )) == true
         }
 
-        /// 공통 폭이 0인 표는 줄이 자리를 예약하지 못해(`inlineObjectReservation`) CT 줄이 글자
+        /// 공통 폭과 칸 폭이 모두 0인 표는 줄이 자리를 예약하지 못해(`inlineObjectReservation` —
+        /// 표 폭은 칸 폭 합이 정하므로 칸 폭을 알면 공통 폭이 0이어도 예약한다, #254) CT 줄이 글자
         /// 높이(16pt)뿐이다 — 표를 실은 30pt 캐시 줄이 100pt 표보다 낮아도 CT가 더 낮으므로 캐시를
         /// 버리지 않는다. 버리면 블록이 36 → 16pt로 줄어 뒤 문단이 표를 더 덮는다.
         func testStaleCacheIsKeptWhenTheMeasuredParagraphIsNotTaller() async throws {
             var table = try Support.staleTable(rows: 10, instanceId: 34)
             table.commonCtrlProperty.width = 0
+            for index in table.cellArray.indices {
+                table.cellArray[index].header.cellProperty?.width = 0
+            }
             let blocks = try await Self.flowBlocks(table: table, lineHeight: 3000)
             expect(blocks.host.frame.height).to(beCloseTo(36, within: 0.01))
             expect(blocks.tail.frame.minY).to(beCloseTo(blocks.host.frame.maxY, within: 0.01))

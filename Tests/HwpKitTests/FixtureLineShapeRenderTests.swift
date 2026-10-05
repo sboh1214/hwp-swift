@@ -252,7 +252,8 @@ final class FixtureLineShapeRenderTests: XCTestCase {
             raster, y: (top - 0.6) ... (top + 0.6), x: 100 ... 280,
             where: FixtureDecorationLineRenderTests.isDark
         )) == 1
-        // 표 왼 모서리 x (한글보다 2.83pt 왼쪽 — #161의 표 x 격차) — 실선 행에서 찾는다
+        // 표 왼 모서리 x — 단 왼쪽 85.04 + 바깥 왼쪽 여백 2.83 (#254: 한글 PDF 0.12mm 왼 변 중심
+        // 87.96 — 종전에는 여백을 빼 2.83pt 왼쪽이었다, #161부터의 격차) — 실선 행에서 찾는다
         let solidRow = Self.tableRowTop(0)
         var edge: CGFloat?
         for column in Int(80 * Self.scale) ..< Int(95 * Self.scale) {
@@ -269,7 +270,7 @@ final class FixtureLineShapeRenderTests: XCTestCase {
             }
         }
         let left = try XCTUnwrap(edge, "표 왼 변을 못 찾았다")
-        expect(left).to(beCloseTo(85.1, within: 0.6))
+        expect(left).to(beCloseTo(87.93, within: 0.6))
         func leftRuns(_ row: Int) -> Double {
             let y = Self.tableRowTop(row)
             return Double(Self.verticalInkRuns(

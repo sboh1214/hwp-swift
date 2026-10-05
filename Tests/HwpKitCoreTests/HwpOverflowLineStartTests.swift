@@ -1,0 +1,146 @@
+import CoreGraphics
+import CoreText
+import Foundation
+@testable import HwpKitCore
+import Nimble
+import XCTest
+
+#if canImport(CoreText)
+    /// 가용 폭보다 넓은 줄의 시작 자리 (#254) — 한글은 줄보다 넓은 개체만 실은 줄을 문단 정렬과
+    /// 무관하게 **줄 시작**(문단 왼쪽 여백 + 첫 줄이면 들여쓰기)에 둔다. CT는 가운데·오른쪽 정렬
+    /// 줄을 남는 폭(음수)만큼 왼쪽으로 민다. 공유 줄바꿈 코어가 고치므로 측정·렌더가 함께 따른다.
+    final class HwpOverflowLineStartTests: XCTestCase {
+        /// 폭 `width`인 개체 마커(run delegate) 하나 + `tail` 문자열 — 정렬·들여쓰기를 준 문단 스타일
+        static func string(
+            objectWidth width: CGFloat,
+            prefix: String = "",
+            tail: String = "",
+            alignment: CTTextAlignment,
+            firstLineHeadIndent: CGFloat = 0,
+            headIndent: CGFloat = 0
+        ) -> NSAttributedString {
+            var alignmentValue = alignment
+            var first = firstLineHeadIndent
+            var head = headIndent
+            let style = withUnsafeBytes(of: &alignmentValue) { alignmentBytes in
+                withUnsafeBytes(of: &first) { firstBytes in
+                    withUnsafeBytes(of: &head) { headBytes in
+                        let settings = [
+                            CTParagraphStyleSetting(
+                                spec: .alignment, valueSize: MemoryLayout<CTTextAlignment>.size,
+                                value: alignmentBytes.baseAddress!
+                            ),
+                            CTParagraphStyleSetting(
+                                spec: .firstLineHeadIndent, valueSize: MemoryLayout<CGFloat>.size,
+                                value: firstBytes.baseAddress!
+                            ),
+                            CTParagraphStyleSetting(
+                                spec: .headIndent, valueSize: MemoryLayout<CGFloat>.size,
+                                value: headBytes.baseAddress!
+                            ),
+                        ]
+                        return CTParagraphStyleCreate(settings, settings.count)
+                    }
+                }
+            }
+            let font = CTFontCreateWithName("Menlo" as CFString, 10, nil)
+            let base: [NSAttributedString.Key: Any] = [
+                kCTFontAttributeName as NSAttributedString.Key: font,
+                kCTParagraphStyleAttributeName as NSAttributedString.Key: style,
+            ]
+            let result = NSMutableAttributedString(string: prefix, attributes: base)
+            var marker = base
+            marker[kCTRunDelegateAttributeName as NSAttributedString.Key] =
+                HwpInlineObjectReservation.runDelegate(width: width, height: 15)
+            result.append(NSAttributedString(string: "\u{FFFC}", attributes: marker))
+            result.append(NSAttributedString(string: tail, attributes: base))
+            return result
+        }
+
+        /// 공유 코어의 줄 origin x와 각 줄의 문자 범위
+        static func lines(
+            _ string: NSAttributedString, lineWidth: CGFloat
+        ) -> [(x: CGFloat, range: CFRange)] {
+            let framesetter = CTFramesetterCreateWithAttributedString(string)
+            let typesetter = CTTypesetterCreateWithAttributedString(string)
+            guard let chunk = HwpLineBreaker.nextFrameChunk(
+                framesetter: framesetter, typesetter: typesetter, attributedString: string,
+                startLocation: 0, fullLength: string.length, remainingLineBudget: 100,
+                lineWidth: lineWidth
+            ) else { return [] }
+            return (0 ..< chunk.keepCount).map {
+                (chunk.origins[$0].x, CTLineGetStringRange(chunk.lines[$0]))
+            }
+        }
+
+        /// 한글: 본문 425.2pt의 가운데·오른쪽 정렬 줄에 450pt 표가 혼자 놓이면 줄 시작(0)에서 시작한다
+        /// (CT: −12.4·−24.8). 뒤 글자는 다음 줄로 가서 그 줄의 정렬을 따른다.
+        func testOverflowingCenteredAndRightAlignedLinesStartAtTheLineStart() {
+            for alignment in [CTTextAlignment.center, .right] {
+                let lines = Self.lines(
+                    Self.string(objectWidth: 450, tail: "뒤", alignment: alignment), lineWidth: 425.2
+                )
+                expect(lines.count).to(equal(2), description: "\(alignment)")
+                guard lines.count == 2 else { continue }
+                expect(lines[0].x).to(equal(0), description: "\(alignment)")
+                expect(lines[1].x).to(beGreaterThan(200), description: "\(alignment) 뒤 글자 줄")
+            }
+        }
+
+        /// 줄 시작은 문단 왼쪽 여백(`headIndent`)이고, 문단 첫 줄이면 들여쓰기를 더한
+        /// `firstLineHeadIndent`다 — 한글: 왼쪽 여백 20pt면 105.12, 들여쓰기 20pt면 105.12 (본문 85.08).
+        func testOverflowingLineStartsAtTheParagraphIndent() {
+            let first = Self.lines(
+                Self.string(
+                    objectWidth: 450, alignment: .center, firstLineHeadIndent: 30, headIndent: 20
+                ),
+                lineWidth: 425.2
+            )
+            expect(first.first?.x) == 30
+            // 둘째 줄이면 headIndent — 앞 글자가 첫 줄을 차지하고 개체가 둘째 줄로 넘어간다
+            let second = Self.lines(
+                Self.string(
+                    objectWidth: 450, prefix: "가나다", alignment: .right,
+                    firstLineHeadIndent: 30, headIndent: 20
+                ),
+                lineWidth: 425.2
+            )
+            expect(second.count).to(beGreaterThanOrEqualTo(2))
+            guard second.count >= 2 else { return }
+            expect(second[1].x) == 20
+        }
+
+        /// 한 줄 끝(U+000A) 뒤는 CT 문단이 새로 시작해 첫 줄 들여쓰기에 놓인다 — 측정·렌더가 그 줄을
+        /// 같은 규약으로 다루므로 넘친 줄의 시작도 그 들여쓰기다.
+        func testOverflowingLineAfterAHardLineBreakStartsAtTheFirstLineIndent() {
+            let lines = Self.lines(
+                Self.string(
+                    objectWidth: 450, prefix: "가\n", alignment: .center,
+                    firstLineHeadIndent: 30, headIndent: 20
+                ),
+                lineWidth: 425.2
+            )
+            let marker = lines.first { $0.range.location == 2 }
+            expect(marker?.x) == 30
+        }
+
+        /// 넘치지 않는 줄은 CT 정렬 그대로다 — 가운데 정렬 400pt 줄은 (425.2 − 400) / 2 = 12.6.
+        func testFittingLinesKeepTheirAlignment() {
+            let lines = Self.lines(
+                Self.string(objectWidth: 400, alignment: .center), lineWidth: 425.2
+            )
+            expect(lines.first?.x).to(beCloseTo(12.6, within: 1e-6))
+            let left = Self.lines(Self.string(objectWidth: 450, alignment: .left), lineWidth: 425.2)
+            expect(left.first?.x) == 0
+        }
+
+        /// 렌더(`HwpDrawnTextLayout.lines`)도 같은 코어의 origin을 쓴다 — 넘친 줄의 그려지는 x가 줄 시작이다.
+        func testDrawnLinesFollowTheSharedOrigin() {
+            let string = Self.string(objectWidth: 450, alignment: .right, firstLineHeadIndent: 20)
+            let drawn = HwpDrawnTextLayout.lines(
+                attributedString: string, origin: CGPoint(x: 85.04, y: 0), lineWidth: 425.2
+            )
+            expect(drawn.first?.baselineOrigin.x).to(beCloseTo(105.04, within: 1e-6))
+        }
+    }
+#endif

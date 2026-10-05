@@ -196,10 +196,13 @@ struct HwpParagraphObjectCollector {
 
     /// 문단에 붙은 표를 컨테이너-로컬 rect로 재귀 레이아웃한다 (#94).
     ///
-    /// 폭 기준은 문단 rect 폭이다 — 한글.app 실측 (헌법주석 883쪽 각주 29):
+    /// 폭은 저작대로 두고 위치만 앵커에 맞춘다 — 한글.app 실측 (헌법주석 883쪽 각주 29):
     /// 408pt 표가 문단 들여쓰기(≈17.9pt) 위치에서 시작해 오른쪽 본문 경계를
-    /// 12.6pt 넘어가고, 한글은 그것을 자르거나 줄이지 않는다. 즉 폭은 저작대로
-    /// 두고 위치만 앵커에 맞춘다.
+    /// 12.6pt 넘어가고, 한글은 그것을 자르거나 줄이지 않는다. 문단 폭보다 넓은 표도 줄이지
+    /// 않는다 (#254 — 각주 안 450pt 표가 본문 425.2pt를 넘겨 그려진다). 문단 rect 폭은 저작
+    /// 폭이 없는 표의 폴백일 뿐이다. 글자처럼 취급이 아닌 표는 바깥 상자(표 + 좌우 바깥
+    /// 여백)로 정렬하고 왼쪽 여백만큼 들인다 — 페이지 경로(`HwpPaginator.flowTableOriginX`)와
+    /// 같은 규칙이다.
     private func table(
         _ nested: CoreHwp.HwpTable,
         placement: Placement,
@@ -214,20 +217,18 @@ struct HwpParagraphObjectCollector {
             availableWidth: placement.paragraphRect.width,
             index: index,
             sizeResolver: sizeResolver,
-            // 흐름 경로 (`HwpPaginator`) 와 같은 술어다 — 비흐름 오버레이
-            // (글 뒤로·글 앞으로) 는 저작 폭을 지킨다 (R43 #1). 기본값 true를
-            // 그대로 두면 한글이 줄이지 않는 표를 우리만 줄인다.
-            clampToAvailableWidth: info.treatAsChar || Self.consumesFlow(info),
             numbering: placement.numbering
         ) else { return nil }
         let size = frame.outerFrame.size
-        let rect = CGRect(
-            origin: origin(
-                commonProperty: commonProperty, size: size,
-                placement: placement, cursorX: state.cursorX
-            ),
-            size: size
+        let margins = info.treatAsChar
+            ? .zero : HwpObjectAnchorGeometry.OuterMargins(commonProperty)
+        var tableOrigin = origin(
+            commonProperty: commonProperty,
+            size: CGSize(width: size.width + margins.horizontal, height: size.height),
+            placement: placement, cursorX: state.cursorX
         )
+        tableOrigin.x += margins.left
+        let rect = CGRect(origin: tableOrigin, size: size)
         if commonProperty.propertyInfo.treatAsChar, placement.anchor == nil {
             state.cursorX += size.width
         }

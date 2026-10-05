@@ -36,18 +36,20 @@ public struct HwpTableLayout {
 
     /// 표 하나를 레이아웃한다. 페이지 분할은 호출자(paginator)가 row 단위로 수행한다.
     /// 셀 안 중첩 표는 depth 3까지 재귀 레이아웃한다.
+    ///
+    /// 표 폭은 `availableWidth`로 줄이지 않는다 — 한글은 본문·단·셀·각주·글상자보다 넓은 표를
+    /// 저작 폭 그대로 그려 넘긴다 (#254, `resolvedWidths`). `availableWidth`는 저작 폭이 없는
+    /// 표의 폴백 폭이다.
     public func layout(
         table: CoreHwp.HwpTable,
         availableWidth: CGFloat,
         index: HwpIndex,
         depth: Int = 0,
-        sizeResolver: HwpObjectSizeResolver? = nil,
-        clampToAvailableWidth: Bool = true
+        sizeResolver: HwpObjectSizeResolver? = nil
     ) -> Result<HwpTableFrame, HwpUnsupportedElement> {
         layout(
             table: table, availableWidth: availableWidth, index: index, depth: depth,
-            sizeResolver: sizeResolver, clampToAvailableWidth: clampToAvailableWidth,
-            numbering: nil
+            sizeResolver: sizeResolver, numbering: nil
         )
     }
 
@@ -61,7 +63,6 @@ public struct HwpTableLayout {
         index: HwpIndex,
         depth: Int = 0,
         sizeResolver: HwpObjectSizeResolver? = nil,
-        clampToAvailableWidth: Bool = true,
         numbering: HwpNumberingScope.Container?
     ) -> Result<HwpTableFrame, HwpUnsupportedElement> {
         let property = table.tableProperty
@@ -71,21 +72,19 @@ public struct HwpTableLayout {
         let rowCount = grid.rows
         let columnCount = grid.columns
 
-        let outerWidth = resolvedOuterWidth(
-            table: table, availableWidth: availableWidth, sizeResolver: sizeResolver,
-            clampToAvailableWidth: clampToAvailableWidth
-        )
         let metrics = TableMetrics(property: property)
         let context = LayoutContext(
             table: table, metrics: metrics, index: index, depth: depth, sizeResolver: sizeResolver,
             numbering: numbering?.tableCells(of: table)
         )
-        let columnWidths = resolvedColumnWidths(
-            table: table,
+        let widths = Self.resolvedWidths(
+            of: table,
             columnCount: columnCount,
-            outerWidth: outerWidth,
-            spacing: metrics.spacing
+            availableWidth: availableWidth,
+            sizeResolver: sizeResolver
         )
+        let outerWidth = widths.outer
+        let columnWidths = widths.columns
         let placed = placeCells(
             context: context,
             rowCount: rowCount,
@@ -204,58 +203,6 @@ extension HwpTableLayout {
             borderColor: HwpRGBColor(red: 0, green: 0, blue: 0),
             borderWidth: 1
         )
-    }
-
-    /// 떠 있는 표 (글 앞/뒤로 — 흐름 밖 배치)는 저작 폭이 단 폭을 넘는 것이
-    /// 정당하므로 clampToAvailableWidth = false로 클램프를 해제한다 (#3).
-    func resolvedOuterWidth(
-        table: CoreHwp.HwpTable,
-        availableWidth: CGFloat,
-        sizeResolver: HwpObjectSizeResolver?,
-        clampToAvailableWidth: Bool = true
-    ) -> CGFloat {
-        let property = table.commonCtrlProperty
-        let authored = HwpObjectSizeResolver.width(
-            property.width, basis: property.propertyInfo.widthRelativeTo, resolver: sizeResolver
-        )
-        guard authored > 1 else { return availableWidth }
-        return clampToAvailableWidth ? min(authored, availableWidth) : authored
-    }
-
-    /// colSpan == 1 셀의 저작된 폭으로 열 폭을 복원하고, 남는 열은 균등 분배한다.
-    func resolvedColumnWidths(
-        table: CoreHwp.HwpTable,
-        columnCount: Int,
-        outerWidth: CGFloat,
-        spacing: CGFloat
-    ) -> [CGFloat] {
-        var widths = [CGFloat](repeating: 0, count: columnCount)
-        for cell in table.cellArray {
-            guard let property = cell.header.cellProperty,
-                  property.columnSpan == 1,
-                  Int(property.columnAddress) < columnCount
-            else { continue }
-            let width = HwpUnits.points(fromHwpUnitU: property.width)
-            guard width > 0 else { continue }
-            widths[Int(property.columnAddress)] = max(widths[Int(property.columnAddress)], width)
-        }
-
-        let totalSpacing = spacing * CGFloat(columnCount + 1)
-        let contentWidth = max(1, outerWidth - totalSpacing)
-        let knownSum = widths.reduce(CGFloat(0), +)
-        let unknownCount = widths.filter { $0 <= 0 }.count
-        if unknownCount > 0 {
-            let fallback = max(1, (contentWidth - knownSum) / CGFloat(unknownCount))
-            widths = widths.map { $0 > 0 ? $0 : fallback }
-        }
-
-        // 저작된 폭 합계가 표 폭과 다르면 비례 배분으로 맞춘다.
-        let sum = widths.reduce(CGFloat(0), +)
-        if sum > 0, abs(sum - contentWidth) > 0.5 {
-            let scale = contentWidth / sum
-            widths = widths.map { max(1, $0 * scale) }
-        }
-        return widths
     }
 
     func placeCells(

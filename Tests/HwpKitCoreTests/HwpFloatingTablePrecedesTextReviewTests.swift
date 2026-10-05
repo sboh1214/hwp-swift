@@ -97,7 +97,8 @@ import XCTest
             // 넣으면 201.66 > 200.8이라 둘째 단으로.
             expect(first.rowCount).to(equal(5))
             expect(second.rowCount).to(equal(2))
-            expect(second.frame.minX).to(beCloseTo(241.87, within: 0.01))
+            // 둘째 단 왼쪽 241.87 + 바깥 왼쪽 여백 2.83 (#254) — 조각은 놓이는 단에서 다시 잰다.
+            expect(second.frame.minX).to(beCloseTo(244.70, within: 0.01))
             // 글줄은 둘째 단(268.37pt)에서 20자가 한 줄이다 — 첫 단(134.16pt)이면 두 줄.
             expect(line.frame.minX).to(beCloseTo(241.87, within: 0.01))
             expect(line.frame.width).to(beCloseTo(268.37, within: 0.01))

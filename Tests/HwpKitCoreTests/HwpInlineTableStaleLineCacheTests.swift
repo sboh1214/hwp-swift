@@ -141,11 +141,12 @@ import XCTest
         /// 단 블록이 15pt 줄 둘만큼만 내려가고 뒤 문단이 100pt 표를 덮는다. 신선한 캐시(표를 담는
         /// 110pt 줄)는 종전대로 두 단에 나뉜다.
         ///
-        /// 셋째 경우는 **판정 폭**이다: 비등폭 단에서 250pt 표는 문단을 잰 좁은 첫 단(134pt)에서는
-        /// 셀 글이 두 줄이라 15pt 줄보다 높지만, 표가 실린 넓은 둘째 단에서는 한 줄(10pt)이라 캐시가
-        /// 신선하다 — 첫 단 폭으로 재면 신선한 캐시를 버려 두 단 배분이 한 단으로 무너진다. 넷째는 폭이
-        /// **단 기준**(93%)인 표다: 가용 폭만 둘째 단으로 바꾸고 크기 해석기를 첫 단 것으로 두면 표가
-        /// 0.93 × 134pt로 풀려 같은 오판이 난다.
+        /// 셋째·넷째 경우는 **판정 폭**이다: 폭 기준이 '문단'(셋째)·'단'(넷째)인 표는 놓이는 단 폭에
+        /// 맞춰지므로(#254 — 한글은 상대 기준 표를 저장값과 무관하게 기준 폭 100%로 그린다) 비등폭
+        /// 단에서 문단을 잰 좁은 첫 단(134pt)에서는 셀 글이 두 줄이라 15pt 줄보다 높지만, 표가 실린 넓은
+        /// 둘째 단에서는 한 줄(10pt)이라 캐시가 신선하다 — 가용 폭이나 크기 해석기를 첫 단 것으로 재면
+        /// 신선한 캐시를 버려 두 단 배분이 한 단으로 무너진다. (종전 셋째 경우는 절대 폭 250pt 표가 첫
+        /// 단 폭으로 잘리는 클램프로 이 갈림을 만들었는데, 한글은 절대 폭 표를 줄이지 않는다.)
         func testCachedColumnRunsShorterThanTheirTableFallBackToLineFill() async throws {
             let equal = HwpSynthetic.column(count: 2, spacing: 1134)
             let tall = try Support.staleTable(rows: 10, instanceId: 23, width: 15000)
@@ -155,12 +156,16 @@ import XCTest
             try await Self.assertColumnRun(
                 column: equal, table: tall, tableLineHeight: 11000, staysInColumns: true
             )
+            var paragraphRelative = try Support.staleTable(
+                rows: 1, instanceId: 23, width: 25000,
+                cellText: { _ in "abcdefghij abcdefghij abcdefgh" }
+            )
+            paragraphRelative.commonCtrlProperty.propertyInfo.widthRelativeToRawValue =
+                CoreHwp.HwpCommonCtrlObjectWidthRelativeTo.paragraph.rawValue
+            paragraphRelative.commonCtrlProperty.propertyInfo.widthRelativeTo = .paragraph
             try await Self.assertColumnRun(
                 column: HwpSynthetic.column(count: 2, widths: [10339, 20682], gaps: [1747, 0]),
-                table: try Support.staleTable(
-                    rows: 1, instanceId: 23, width: 25000,
-                    cellText: { _ in "abcdefghij abcdefghij abcdefgh" }
-                ),
+                table: paragraphRelative,
                 tableLineHeight: 1500,
                 staysInColumns: true
             )
@@ -244,7 +249,8 @@ import XCTest
         func testLineCacheIsStaleComparesTheTablesOwnLine() throws {
             let table = try Support.staleTable(rows: 3, instanceId: 6, width: 10000)
             var paragraph = Support.host(prefix: "가나", table: table, suffix: " 뒤")
-            /// 두 줄 캐시 — 둘째 줄이 WCHAR 1에서 시작한다. 인자는 줄마다 (위치, 높이).
+            // 두 줄 캐시 — 둘째 줄이 WCHAR 1에서 시작한다. 인자는 줄마다 (위치, 높이).
+
             func cache(_ first: (Int32, Int32), _ second: (Int32, Int32)) throws {
                 paragraph.paraLineSeg = try HwpSynthetic.splitParagraphWithControlMarkers(
                     lines: [(characters: 1, marker: false)],

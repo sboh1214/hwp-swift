@@ -65,7 +65,7 @@ enum HwpLineBreaker {
             else { return nil }
             var origins = [CGPoint](repeating: .zero, count: lines.count)
             CTFrameGetLineOrigins(created, CFRange(location: 0, length: 0), &origins)
-            return (lines, origins)
+            return (lines, overflowStartAligned(origins, lines: lines, in: attributedString))
         }
 
         guard var chunk = frame(length: probeLength) else { return nil }
@@ -104,6 +104,55 @@ enum HwpLineBreaker {
         return FrameChunk(
             lines: chunk.lines, origins: chunk.origins, keepCount: keepCount, nextStart: nextStart
         )
+    }
+
+    /// 가용 폭보다 넓은 줄을 **줄 시작**에 둔 origin (#254).
+    ///
+    /// CT는 가운데·오른쪽 정렬 줄의 origin을 남는 폭(가용 폭 − 줄 폭)으로 밀므로, 줄보다 넓은
+    /// 개체(글자처럼 취급 표·도형)만 실은 줄은 줄 시작보다 왼쪽(문단 여백·본문 밖)에서
+    /// 시작한다. 한글은 그런 줄을 정렬과 무관하게 줄 시작(문단 왼쪽 여백 + 첫 줄이면 들여쓰기)
+    /// 에 두고 오른쪽으로만 넘긴다 — 한컴오피스 한글 12.30(build 6523) PDF 실측(2026-10-05,
+    /// `probes/254`): 본문 425.2pt에 450pt 표·사각형을 실은 가운데·오른쪽·양쪽·배분 정렬 줄이
+    /// 모두 본문 왼쪽 85.08pt, 문단 왼쪽 여백 20pt면 105.12pt, 첫 줄 들여쓰기 20pt면 105.12pt,
+    /// 문단 폭 385pt의 400pt 표(가운데 정렬)도 105.12pt에서 시작했다(우리는 72.64·60.24·
+    /// 97.64pt). 넘치지 않는 줄은 origin이 줄 시작 이상이라 그대로다. 왼쪽·양쪽·자연 정렬은
+    /// CT가 이미 줄 시작에 두므로 보지 않는다 (자연 정렬의 오른쪽→왼쪽 문단을 건드리지 않는다).
+    /// 측정(`HwpParagraphLayout`)과 렌더(`HwpDrawnTextLayout`)가 이 코어의 origin을 함께 쓰므로
+    /// 줄 앵커·글리프·선택 영역이 한 자리를 본다.
+    static func overflowStartAligned(
+        _ origins: [CGPoint],
+        lines: [CTLine],
+        in attributedString: NSAttributedString
+    ) -> [CGPoint] {
+        var adjusted = origins
+        for index in origins.indices where index < lines.count {
+            let location = CTLineGetStringRange(lines[index]).location
+            let style = paragraphStyle(in: attributedString, at: location)
+            guard let alignment = textAlignment(of: style),
+                  alignment == .center || alignment == .right
+            else { continue }
+            let firstLine = paragraphCGFloat(.firstLineHeadIndent, in: style) ?? 0
+            let head = paragraphCGFloat(.headIndent, in: style) ?? 0
+            // 어느 들여쓰기보다도 오른쪽이면 넘친 줄일 수 없다 — 문단 경계 조회를 건너뛴다.
+            guard origins[index].x < max(firstLine, head) else { continue }
+            let startsParagraph = (attributedString.string as NSString)
+                .paragraphRange(for: NSRange(location: location, length: 0)).location == location
+            let lineStart = startsParagraph ? firstLine : head
+            if origins[index].x < lineStart {
+                adjusted[index].x = lineStart
+            }
+        }
+        return adjusted
+    }
+
+    /// CTParagraphStyle의 정렬. 없으면 nil.
+    private static func textAlignment(of style: CTParagraphStyle?) -> CTTextAlignment? {
+        guard let style else { return nil }
+        var value = CTTextAlignment.natural
+        guard CTParagraphStyleGetValueForSpecifier(
+            style, .alignment, MemoryLayout<CTTextAlignment>.size, &value
+        ) else { return nil }
+        return value
     }
 
     /// startLocation의 CTParagraphStyle. 없으면 nil.

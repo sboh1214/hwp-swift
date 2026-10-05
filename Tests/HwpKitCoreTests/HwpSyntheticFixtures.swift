@@ -487,7 +487,9 @@ extension HwpSynthetic {
                 ))
             }
         }
-        return CoreHwp.HwpTable(
+        // 한글이 저장한 표처럼 폭 기준은 절대값이고 공통 폭은 칸 폭 합 + 셀 간격이다 — 기준 비트를
+        // 0(종이)으로 두면 상대 기준 표라 종이 폭에 맞춰진다 (#254).
+        var table = CoreHwp.HwpTable(
             property: CoreHwp.HwpTableProperty(
                 property: property,
                 rowCount: UInt16(rowCount),
@@ -506,6 +508,12 @@ extension HwpSynthetic {
             ),
             cellArray: cells
         )
+        table.commonCtrlProperty.width = cellWidth * UInt32(columnCount)
+            + UInt32(max(0, cellSpacing)) * UInt32(columnCount + 1)
+        table.commonCtrlProperty.propertyInfo.widthRelativeToRawValue =
+            CoreHwp.HwpCommonCtrlObjectWidthRelativeTo.absolute.rawValue
+        table.commonCtrlProperty.propertyInfo.widthRelativeTo = .absolute
+        return table
     }
 
     /// 빈 문서의 첫 구역을 기반으로, 첫 문단 컨트롤과 본문 문단을 구성한 구역을 만든다.
@@ -528,20 +536,29 @@ extension HwpSynthetic {
 extension HwpSynthetic {
     /// 표 컨트롤의 본문 배치 속성을 지정한 사본. 각주 안 표는 한글 실측에서
     /// **글자처럼 취급**이라 (헌법주석 883쪽 각주 29) 기본값을 그렇게 둔다.
-    /// 떠 있는 표의 컨테이너 높이 하한 경계를 태우려면 인자로 바꾼다.
+    /// 떠 있는 표의 컨테이너 높이 하한 경계를 태우려면 인자로 바꾼다. 가로 기준은 한글이 새 표에
+    /// 주는 '문단'이 기본이다 — 비트 0(종이)으로 두면 자리 차지 표가 종이 왼쪽에 놓인다 (#254).
     static func placed(
         _ table: CoreHwp.HwpTable,
         treatAsChar: Bool = true,
         verticalRelativeTo: CoreHwp.HwpCommonCtrlVerticalRelativeTo = .paragraph,
         verticalOffset: Int32 = 0,
         textWrap: CoreHwp.HwpCommonCtrlTextWrap = .topAndBottom,
-        margins: [CoreHwp.HWPUNIT16] = [0, 0, 0, 0]
+        margins: [CoreHwp.HWPUNIT16] = [0, 0, 0, 0],
+        horizontalRelativeTo: CoreHwp.HwpCommonCtrlHorizontalRelativeTo = .paragraph,
+        horizontalAlignment: CoreHwp.HwpCommonCtrlRelativeAlignment = .topOrLeft,
+        horizontalOffset: Int32 = 0
     ) -> CoreHwp.HwpTable {
         var placed = table
         var info = placed.commonCtrlProperty.propertyInfo
         info.treatAsChar = treatAsChar
         info.verticalRelativeToRawValue = verticalRelativeTo.rawValue
         info.verticalRelativeTo = verticalRelativeTo
+        info.horizontalRelativeToRawValue = horizontalRelativeTo.rawValue
+        info.horizontalRelativeTo = horizontalRelativeTo
+        info.horizontalAlignmentRawValue = horizontalAlignment.rawValue
+        info.horizontalAlignment = horizontalAlignment
+        placed.commonCtrlProperty.horizontalOffset = UInt32(bitPattern: horizontalOffset)
         info.textWrapRawValue = textWrap.rawValue
         info.textWrap = textWrap
         placed.commonCtrlProperty.propertyInfo = info

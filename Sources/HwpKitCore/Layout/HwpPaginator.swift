@@ -3655,19 +3655,27 @@ private extension HwpPaginator {
             // 흐름(글줄 뒤)으로 간 표 뒤에는 띠를 닫는다 — 뒤 표가 그 위로 되감기면
             // 문서 순서와 그리는 순서가 뒤집힌다 (#161).
             paragraphEntryFlow?.bandClosed = true
-            appendFlowTableSegments(frame, table: table, numbering: numbering)
+            appendFlowTableSegments(
+                frame, table: table, numbering: numbering, anchorsHorizontally: controlIndex != nil
+            )
         }
     }
 
     /// 표를 흐름에 row 단위로 흘린다 — 글줄 뒤 흐름 배치(`appendTableBlocks`)와 글줄 앞
     /// 배치(`appendTablesPrecedingText`)가 같은 입력으로 부른다. 반환값은 첫 조각이 놓인
     /// 1-기반 쪽 (`appendTableSegments`).
+    ///
+    /// `anchorsHorizontally`는 자리 차지·어울림 표의 가로 자리를 앵커 규칙으로 잡을지다
+    /// (#254, `flowTableOriginX`) — 최상위 문단의 표만 참이다. 글상자 안 문단의 표(컨테이너
+    /// 경로, `controlIndex` nil)는 그 글상자의 기하를 모르는 채 본문 흐름에 놓이므로 앵커
+    /// 기준(문단·단)이 엉뚱한 본문 문단을 가리킨다 — 종전대로 단 왼쪽에 둔다.
     @discardableResult
     private func appendFlowTableSegments(
         _ frame: HwpTableFrame,
         table: CoreHwp.HwpTable,
         numbering: HwpNumberingScope.Container?,
-        margins: TableFlowMargins = .none
+        margins: TableFlowMargins = .none,
+        anchorsHorizontally: Bool
     ) -> Int? {
         appendTableSegments(
             frame,
@@ -3676,7 +3684,10 @@ private extension HwpPaginator {
             pageBreakMode: table.tableProperty.pageBreakMode,
             headerRowCount: HwpTableSplitter.repeatingHeaderRowCount(of: table),
             numbering: numbering,
-            margins: margins
+            margins: margins,
+            anchor: anchorsHorizontally
+                && Self.anchorsFlowTableHorizontally(table.commonCtrlProperty)
+                ? table.commonCtrlProperty : nil
         )
     }
 
@@ -3735,7 +3746,8 @@ private extension HwpPaginator {
                 frame,
                 table: table,
                 numbering: numbering.container(controlIndex: ordinal),
-                margins: TableFlowMargins(outerMargins: table.commonCtrlProperty.marginArray)
+                margins: TableFlowMargins(outerMargins: table.commonCtrlProperty.marginArray),
+                anchorsHorizontally: true
             )
             pendingChromeRegistration = nil
             // 조각을 하나도 안 낸 표(행 없는 표)는 놓인 것이 아니다 — 기록하면 글줄 앞에 아무것도
@@ -3791,8 +3803,8 @@ private extension HwpPaginator {
     }
 
     /// 본문 표의 레이아웃 — `appendTableBlocks`와 조각별 줄 안 배치(#164)가 같은 입력으로
-    /// 부른다. 글 앞/뒤로 표는 appendFloatingTableIfNeeded가 흐름 밖에 통째로 배치하므로
-    /// 저작 폭 (예: 종이 100%)을 단 폭으로 자르지 않는다. 글자처럼 취급 표는 줄 예약
+    /// 부른다. 어느 배치 방식이든 저작 폭을 단 폭으로 자르지 않는다 (#254 — 한글은 넓은 표를
+    /// 넘겨 그린다, `HwpTableLayout.resolvedWidths`). 글자처럼 취급 표는 줄 예약
     /// (`inlineTableHeights`, #214)이 먼저 잰 결과를 메모에서 다시 쓴다. `columnWidth`는 특정 단의
     /// 폭으로 잴 때 준다 (다단 캐시 run의 낡은 캐시 판정, #214 PR 리뷰) — 가용 폭과 크기 해석기가
     /// 모두 그 단의 것이라, 그 단에서 배치가 조판할 표와 같다 (메모도 그대로 이어받는다).
@@ -3801,7 +3813,6 @@ private extension HwpPaginator {
         numbering: HwpNumberingScope.Container?,
         columnWidth: CGFloat? = nil
     ) -> Result<HwpTableFrame, HwpUnsupportedElement> {
-        let info = table.commonCtrlProperty.propertyInfo
         let width = columnWidth ?? currentColumnFrame.width
         let sizeResolver = columnWidth.map { objectSizeResolver(columnWidth: $0) }
             ?? objectSizeResolver
@@ -3816,8 +3827,6 @@ private extension HwpPaginator {
             availableWidth: width,
             index: index,
             sizeResolver: sizeResolver,
-            clampToAvailableWidth: info.treatAsChar
-                || HwpParagraphObjectCollector.consumesFlow(info),
             numbering: numbering
         )
         if let key, case let .success(frame) = result {
@@ -4106,7 +4115,8 @@ private extension HwpPaginator {
         appendTableSegmentBlock(
             rows: frame.rows,
             original: frame,
-            instanceId: table.commonCtrlProperty.instanceId
+            instanceId: table.commonCtrlProperty.instanceId,
+            anchor: table.commonCtrlProperty
         )
         paragraphEntryFlow?.bandUsed = contentHeightUsed + band.bottomMargin
         contentHeightUsed = max(resumed, contentHeightUsed + band.bottomMargin)
@@ -4162,6 +4172,8 @@ private extension HwpPaginator {
     /// - headerRowCount > 0이면 (표 76 bit 2) 이어지는 세그먼트마다 제목 행을 복제한다.
     /// - `margins`는 조각마다 위 바깥 여백 뒤에서 시작하고 아래 바깥 여백을 남기는 몫이다
     ///   (#190, `TableFlowMargins`) — 적합 판정도 두 여백을 뺀 높이로 한다.
+    /// - `anchor`가 있으면 조각마다 가로 자리를 앵커 규칙으로 그 단에서 다시 잰다 (#254,
+    ///   `flowTableOriginX`). 없으면 단 왼쪽이다.
     ///
     /// 반환값은 첫 조각이 놓인 1-기반 쪽 (조각을 하나도 안 냈으면 nil) — 진단이 표의
     /// 쪽으로 보고하는 값이다 (#190). 조각을 내기 전에 단·쪽을 넘길 수 있으므로 호출
@@ -4174,7 +4186,8 @@ private extension HwpPaginator {
         pageBreakMode: CoreHwp.HwpTableProperty.HwpTablePageBreakMode = .split,
         headerRowCount: Int = 0,
         numbering: HwpNumberingScope.Container? = nil,
-        margins: TableFlowMargins = .none
+        margins: TableFlowMargins = .none,
+        anchor: CoreHwp.HwpCommonCtrlProperty? = nil
     ) -> Int? {
         guard !frame.rows.isEmpty else { return nil }
         // 여백 폴백은 **빈 단의 용량**으로 판정한다 — 이 쪽의 각주 예약(`effectiveContentHeight`)
@@ -4188,11 +4201,11 @@ private extension HwpPaginator {
         let cellsByRow = table.map { HwpTableLayout.cellRowIndex(for: $0) } ?? [:]
         // 셀 각주 문단의 번호 열쇠 — 셀 서수 접두 합도 표당 한 번 (#158).
         let cellNumbering = table.flatMap { table in numbering?.tableCells(of: table) }
-
         if pageBreakMode == .none {
             return appendWholeTable(
                 frame, instanceId: instanceId, margins: margins,
-                cellsByRow: table == nil ? nil : cellsByRow, cellNumbering: cellNumbering
+                cellsByRow: table == nil ? nil : cellsByRow, cellNumbering: cellNumbering,
+                anchor: anchor
             )
         }
 
@@ -4293,7 +4306,8 @@ private extension HwpPaginator {
                 rows: segmentRows,
                 original: frame,
                 instanceId: instanceId,
-                repeatedHeaderRows: fit.repeatsHeader ? repeatedRows : []
+                repeatedHeaderRows: fit.repeatsHeader ? repeatedRows : [],
+                anchor: anchor
             )
             consumeTableBottomMargin(margins)
             isFirstSegment = false
@@ -4317,7 +4331,8 @@ private extension HwpPaginator {
         instanceId: UInt32,
         margins: TableFlowMargins,
         cellsByRow: [Int: [(index: Int, cell: CoreHwp.HwpTableCell)]]?,
-        cellNumbering: HwpNumberingScope.TableCells?
+        cellNumbering: HwpNumberingScope.TableCells?,
+        anchor: CoreHwp.HwpCommonCtrlProperty?
     ) -> Int {
         // 높이는 **실제로 방출할 블록**(`segmentFrame`)으로 잰다 — `rowFrame.maxY` 최댓값은 셀
         // 간격(표 76 `cellSpacing`)이 있는 표에서 첫 행 앞 간격 한 칸을 더 담는데 방출은 그것을
@@ -4326,9 +4341,10 @@ private extension HwpPaginator {
         let tableHeight = HwpTableSplitter.segmentFrame(
             rows: frame.rows, original: frame, repeatedHeaderRows: []
         )?.outerFrame.height ?? frame.flowBlockHeight
-        /// 이 표 자신의 셀 각주가 예약할 높이를 미리 반영한다 (#6, 분할 경로의
-        /// `remainingAfterCellNotes`와 같은 시산) — 수집은 놓기 직전이라 그 뒤에 재면 표 + 여백이
-        /// 예약 전엔 들어가고 예약 뒤엔 안 들어가는 표가 각주 자리로 넘친다 (PR 리뷰).
+        // 이 표 자신의 셀 각주가 예약할 높이를 미리 반영한다 (#6, 분할 경로의
+        // `remainingAfterCellNotes`와 같은 시산) — 수집은 놓기 직전이라 그 뒤에 재면 표 + 여백이
+        // 예약 전엔 들어가고 예약 뒤엔 안 들어가는 표가 각주 자리로 넘친다 (PR 리뷰).
+
         func anticipatedNotes() -> CGFloat {
             cellsByRow.map {
                 anticipatedNotesForNextSegment(
@@ -4355,7 +4371,9 @@ private extension HwpPaginator {
         }
         contentHeightUsed += margins.top
         let page = cachedPages.count + 1
-        appendTableSegmentBlock(rows: frame.rows, original: frame, instanceId: instanceId)
+        appendTableSegmentBlock(
+            rows: frame.rows, original: frame, instanceId: instanceId, anchor: anchor
+        )
         consumeTableBottomMargin(margins)
         return page
     }
@@ -4488,7 +4506,8 @@ private extension HwpPaginator {
         rows: [HwpTableRowFrame],
         original: HwpTableFrame,
         instanceId: UInt32,
-        repeatedHeaderRows: [HwpTableRowFrame] = []
+        repeatedHeaderRows: [HwpTableRowFrame] = [],
+        anchor: CoreHwp.HwpCommonCtrlProperty? = nil
     ) {
         guard let segmentFrame = HwpTableSplitter.segmentFrame(
             rows: rows,
@@ -4511,8 +4530,11 @@ private extension HwpPaginator {
         }
 
         let columnFrame = currentColumnFrame
+        // 자리 차지·어울림 표는 앵커 규칙의 가로 자리, 그 밖(줄 앵커를 못 얻은 글자처럼 취급 표)은
+        // 단 왼쪽이다 (#254).
         let blockFrame = CGRect(
-            x: columnFrame.minX,
+            x: anchor.map { flowTableOriginX($0, width: segmentFrame.outerFrame.width) }
+                ?? columnFrame.minX,
             y: columnFrame.minY + contentHeightUsed,
             width: segmentFrame.outerFrame.width,
             height: segmentHeight
@@ -4894,15 +4916,7 @@ private extension HwpPaginator {
         offsetY: CGFloat
     ) -> CGRect {
         let contentFrame = currentPageGeometry.contentFrame
-        let hRef: (base: CGFloat, extent: CGFloat) = switch info.horizontalRelativeTo {
-        case .paper: (0, currentPageGeometry.pageSize.width)
-        case .page, nil: (contentFrame.minX, contentFrame.width)
-        case .column: (currentColumnFrame.minX, currentColumnFrame.width)
-        case .paragraph: (
-                currentColumnFrame.minX + currentParagraphMargins.left,
-                currentParagraphWidth
-            )
-        }
+        let hRef = horizontalReference(info.horizontalRelativeTo)
         let vRef: (base: CGFloat, extent: CGFloat) = switch info.verticalRelativeTo {
         case .paper: (0, currentPageGeometry.pageSize.height)
         case .page, nil: (contentFrame.minY, contentFrame.height)
@@ -4920,6 +4934,55 @@ private extension HwpPaginator {
             width: spec.size.width,
             height: spec.size.height
         )
+    }
+
+    /// 가로 기준(표 70 `horzRelTo`)의 기준 좌표(base)와 여유 폭(extent) — 종이·쪽·단·문단.
+    /// 떠 있는 개체(`anchoredObjectFrame`)와 흐름 표의 가로 자리(`flowTableOriginX`)가 공유한다.
+    func horizontalReference(
+        _ relativeTo: CoreHwp.HwpCommonCtrlHorizontalRelativeTo?
+    ) -> (base: CGFloat, extent: CGFloat) {
+        let contentFrame = currentPageGeometry.contentFrame
+        return switch relativeTo {
+        case .paper: (0, currentPageGeometry.pageSize.width)
+        case .page, nil: (contentFrame.minX, contentFrame.width)
+        case .column: (currentColumnFrame.minX, currentColumnFrame.width)
+        case .paragraph: (
+                currentColumnFrame.minX + currentParagraphMargins.left,
+                currentParagraphWidth
+            )
+        }
+    }
+
+    /// 흐름을 차지하는 표(자리 차지·어울림 — 글자처럼 취급 아님)의 가로 자리 (#254).
+    ///
+    /// 한글은 그런 표를 가로 기준(종이·쪽·단·문단)·정렬·오프셋으로 놓고 표가 기준보다 넓으면
+    /// 정렬대로 넘긴다 — 왼쪽 정렬은 오른쪽으로, 가운데는 양쪽으로, 오른쪽 정렬은 왼쪽으로
+    /// (종이 밖까지). 정렬은 바깥 상자(표 + 왼쪽·오른쪽 바깥 여백, 표 70 `marginArray`)로 하고
+    /// 표는 그 안에서 왼쪽 여백만큼 들어간다. 한컴오피스 한글 12.30(build 6523) PDF 실측
+    /// (2026-10-05, `probes/254`, 본문 85.04–510.24pt): 450pt 표가 문단·단·쪽 기준 왼쪽 85.08·
+    /// 가운데 72.72·오른쪽 60.24, 종이 기준 0·72.72·145.32, 300pt 표는 85.08·147.72·210.24;
+    /// 오프셋 ±20pt면 105.12·65.04, 바깥 여백 좌우 10pt면 왼쪽 95.04·가운데 72.72·오른쪽 50.28,
+    /// 문단 왼쪽 여백 20pt면 문단 기준 왼쪽 105.12·가운데 82.68, 700pt 표 오른쪽 정렬 −189.72,
+    /// 2단(단 폭 201.26pt) 250pt 표 단 기준 오른쪽 36.36. 어울림(`square`)도 같은 자리다.
+    /// 헌법주석 인쇄 666·667쪽 표(바깥 여백 2.83pt)가 한글에서 96.48pt인 것도 이 여백이다
+    /// (#161에서 남은 차이). 쪽·단을 넘긴 조각은 그 단에서 다시 잰다.
+    func flowTableOriginX(_ property: CoreHwp.HwpCommonCtrlProperty, width: CGFloat) -> CGFloat {
+        let info = property.propertyInfo
+        let margins = HwpObjectAnchorGeometry.OuterMargins(property)
+        let reference = horizontalReference(info.horizontalRelativeTo)
+        let offset = HwpUnits.points(fromHwpUnit: Int32(bitPattern: property.horizontalOffset))
+        return HwpObjectAnchorGeometry.aligned(
+            base: reference.base, extent: reference.extent,
+            size: width + margins.horizontal, alignment: info.horizontalAlignment
+        ) + margins.left + offset
+    }
+
+    /// 가로 자리를 앵커 규칙(`flowTableOriginX`)으로 잡는 흐름 표인가 — 글자처럼 취급이 아니고
+    /// 흐름을 차지하는 표. 글자처럼 취급 표가 줄 앵커를 못 얻어 흐름으로 폴백하면 종전대로
+    /// 단 왼쪽이다.
+    static func anchorsFlowTableHorizontally(_ property: CoreHwp.HwpCommonCtrlProperty) -> Bool {
+        let info = property.propertyInfo
+        return !info.treatAsChar && HwpParagraphObjectCollector.consumesFlow(info)
     }
 
     /// 문단 기준 + restrictInPage 개체가 현재 페이지 본문 하단을 넘으면 다음

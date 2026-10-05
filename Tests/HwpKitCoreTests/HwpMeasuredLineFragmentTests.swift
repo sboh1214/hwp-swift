@@ -277,15 +277,18 @@ import XCTest
             let cell = try HwpSynthetic.textParagraph(String(repeating: "가", count: 181))
             let built = HwpTextRunBuilder(index: index, fontResolver: .testDeterministic)
                 .build(paragraph: cell)
+            // 칸 폭 = 단 폭 (가로 30자) — 표는 단 폭으로 줄지 않으므로 칸 폭을 직접 맞춘다 (#254).
+            let columnWidth = Support.columnWidth(charactersPerLine: 30, in: built)
             var host = try HwpSynthetic.textParagraph("")
             host.ctrlHeaderArray = [.table(HwpSynthetic.table(
-                cellWidth: 20000, rowHeights: [1000], cellParagraphs: [[[cell]]]
+                cellWidth: Support.hwpUnits(columnWidth), rowHeights: [1000],
+                cellParagraphs: [[[cell]]]
             ))]
             // 본문 높이 88pt: 빈 쪽에도 안 들어가는 행이라 새 쪽(둘째 쪽)에서 줄 다섯(80pt)을
             // 자르고 나머지 줄 둘(30자 + 1자)을 셋째 쪽으로 이월한다.
             let section = HwpSynthetic.section(
                 firstParagraphControls: [.section(Support.sectionDef(
-                    columnWidth: Support.columnWidth(charactersPerLine: 30, in: built),
+                    columnWidth: columnWidth,
                     contentHeight: 88
                 ))],
                 bodyParagraphs: [host]
@@ -353,12 +356,18 @@ import XCTest
             naturalWidth(of: built.attributedSubstring(from: NSRange(location: 0, length: 1)))
         }
 
+        /// pt → HWPUNIT 올림 — 구역 정의(`sectionDef`)의 쪽 폭과 같은 반올림이라, 이 값을 칸 폭으로
+        /// 준 표는 단 폭과 같다.
+        static func hwpUnits(_ points: CGFloat) -> UInt32 {
+            UInt32((points * 100).rounded(.up))
+        }
+
         /// 여백 없는 구역 정의 — 단 폭·본문 높이를 pt로 준다 (HWPUNIT 올림).
         static func sectionDef(
             columnWidth: CGFloat, contentHeight: CGFloat
         ) -> CoreHwp.HwpSectionDef {
             var sectionDef = HwpSynthetic.sectionDef(
-                pageWidth: UInt32((columnWidth * 100).rounded(.up)),
+                pageWidth: hwpUnits(columnWidth),
                 pageHeight: UInt32((contentHeight * 100).rounded(.up))
             )
             sectionDef.pageDef.marginLeft = 0
