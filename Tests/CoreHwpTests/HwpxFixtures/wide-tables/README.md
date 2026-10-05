@@ -7,7 +7,8 @@ A4 본문 425.2pt)에 본문·문단·셀·각주보다 넓은 표 20개 — 왼
 자리 차지 표, 각주 안 표 둘, 셀 안 350pt 표 — 와 꼬리표(`#0`…`#19`)를 싣고, 두 포맷의 렌더가 표를
 줄이지 않고 한글의 가로 자리에 놓는지를 고정한다 (#254, `HwpKitTests/FixtureWideTableTests.swift`).
 `document.hwpx`의 파싱 기대값은 `manifest.json`에 있다. 한글은 폭 기준 '문단' 표의 `hp:sz@width`를 문단
-폭 HWPUNIT(32520)으로 고쳐 쓰고 `@widthRelTo="PARA"`를 그대로 둔다 — HWP 쌍과 같다.
+폭 HWPUNIT(32520)으로, 첫 칸 `hp:cellSz@width`를 29520으로 고쳐 쓰고 `@widthRelTo="PARA"`를 그대로 둔다 —
+HWP 쌍과 같다.
 
 ## 재생성
 

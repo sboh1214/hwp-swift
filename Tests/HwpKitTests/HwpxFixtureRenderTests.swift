@@ -18,13 +18,13 @@ final class HwpxFixtureRenderTests: XCTestCase {
     /// 핀은 **파싱 가능한 픽스처 전부**에 강제한다 — 하한(`>= 39`)만 두면
     /// `pageCount` 없는 새 픽스처가 조판 캐시 회귀 가드에서 조용히 빠진다.
     /// 등식만 두면 반대로 픽스처가 전부 유실돼도 0 == 0으로 통과하므로 하한도
-    /// 남긴다. `expectedError` 픽스처(암호·배포용·DRM)는 HWP 하니스가 60종 중
-    /// 56종만 요구하는 것과 같은 이유로 분모에서 뺀다.
+    /// 남긴다. `expectedError` 픽스처(암호·배포용·DRM)는 HWP 하니스가 61종 중
+    /// 57종만 요구하는 것과 같은 이유로 분모에서 뺀다.
     func testHwpxPageCountsMatchManifest() async throws {
         let fixtures = try FixtureRoot.loadAllHwpxFixtures(from: #file)
         let parseable = fixtures.filter { !$0.hasExpectedError }
         let withPageCount = parseable.filter { $0.expectedPageCount != nil }
-        // 픽스처 유실 가드 — 변환 쌍 38종
+        // 픽스처 유실 가드 — 변환 쌍 39종
         expect(fixtures.count) >= 39
         // 파싱 가능한 픽스처는 전부 pageCount 핀이 있어야 한다 (AGENTS.md "HWPX 픽스처 추가")
         expect(withPageCount.count) == parseable.count
@@ -93,7 +93,7 @@ final class HwpxFixtureRenderTests: XCTestCase {
             }
         }
 
-        // 비교 가능한 변환 쌍 38종 — 하한은 유실 가드
+        // 비교 가능한 변환 쌍 39종 — 하한은 유실 가드
         expect(comparedCount) >= 39
         if !failures.isEmpty {
             fail("HWP↔HWPX page count mismatches (\(failures.count)):\n" +

@@ -4,7 +4,10 @@ import CoreText
 import Foundation
 
 public extension HwpAttributedStringKey {
-    /// treatAsChar 개체 마커가 예약한 **폭**의 저장값 (NSNumber, 표 70 width).
+    /// treatAsChar 개체 마커가 예약한 **폭**을 다른 단 기하로 다시 풀 상대 저장값 (NSNumber,
+    /// 10000 = 100%). 개체는 표 70 width 그대로이고, **글자처럼 취급 표는 저장값과 무관하게
+    /// 10000**(`HwpTableLayout.fullBasisWidthRaw`)이다 — 한글은 상대 기준 표를 기준 폭 100%로
+    /// 그리고 다시 저장할 때 그 폭을 HWPUNIT으로 쓰므로 저장값을 퍼센트로 읽을 수 없다 (#254).
     /// `inlineObjectWidthBasis`와 짝으로만 붙는다.
     static let inlineObjectWidthRaw = NSAttributedString.Key("hwp.inlineObjectWidthRaw")
     /// 그 저장값의 크기 기준 (NSNumber, `HwpCommonCtrlObjectWidthRelativeTo` rawValue)

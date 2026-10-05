@@ -188,7 +188,7 @@ final class HwpxHwpEquivalenceTests: XCTestCase {
             )
             comparedCount += 1
         }
-        // 픽스처 유실 가드 — 쌍을 잇는 변환 픽스처 38종이 모두 대조된다
+        // 픽스처 유실 가드 — 쌍을 잇는 변환 픽스처 39종이 모두 대조된다
         expect(comparedCount) >= 39
     }
 }

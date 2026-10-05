@@ -79,7 +79,8 @@ final class FixtureFloatingTableBandTests: XCTestCase {
     /// 111.94 / 글줄 상단 233.06 + 8.5 = 241.56이라 0.06pt 안이다 (캐시 `vertpos` 13386 =
     /// 233.06 − 99.20 = 133.86pt 도 같다). 고치기 전에는 글줄을 1단 659.20에 먼저 놓고 표를
     /// 6행/11행으로 갈랐다. 표 x는 단 왼쪽 + 바깥 왼쪽 여백 2.83pt다 (#254 — #161부터 남은
-    /// 격차였다; 한글 PDF 2단 표 왼 변 중심 305.88 = 303.31 + 2.83 − 0.12mm 선 반폭 근방).
+    /// 격차였다; 한글 PDF 2단 표 왼 변 중심은 단선 행 306.0·306.12, 2중선 행은 두 획 305.88·
+    /// 306.24 — 303.31 + 2.83 = 306.14의 장치 격자 반올림).
     func testLineShapesTablePrecedesItsParagraphLineAcrossColumnsInBothFormats() async throws {
         for hwpx in [false, true] {
             let format = hwpx ? "HWPX" : "HWP"
