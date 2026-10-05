@@ -6,9 +6,10 @@ import Nimble
 import XCTest
 
 #if canImport(CoreText)
-    /// 가용 폭보다 넓은 줄의 시작 자리 (#254) — 한글은 줄보다 넓은 개체만 실은 줄을 문단 정렬과
-    /// 무관하게 **줄 시작**(문단 왼쪽 여백 + 첫 줄이면 들여쓰기)에 둔다. CT는 가운데·오른쪽 정렬
-    /// 줄을 남는 폭(음수)만큼 왼쪽으로 민다. 공유 줄바꿈 코어가 고치므로 측정·렌더가 함께 따른다.
+    /// 가용 폭보다 넓은 줄의 시작 자리 (#254) — 한글은 줄보다 넓은 줄(개체 줄이든 글자 하나가 넓은
+    /// 글줄이든)을 문단 정렬과 무관하게 **줄 시작**(문단 왼쪽 여백 + 첫 줄이면 들여쓰기)에 둔다. CT는
+    /// 가운데·오른쪽 정렬 줄을 남는 폭(음수)만큼 왼쪽으로 민다. 공유 줄바꿈 코어가 고치므로
+    /// 측정·렌더가 함께 따른다.
     final class HwpOverflowLineStartTests: XCTestCase {
         /// 폭 `width`인 개체 마커(run delegate) 하나 + `tail` 문자열 — 정렬·들여쓰기를 준 문단 스타일
         static func string(
@@ -19,10 +20,35 @@ import XCTest
             firstLineHeadIndent: CGFloat = 0,
             headIndent: CGFloat = 0
         ) -> NSAttributedString {
+            let style = paragraphStyle(
+                alignment: alignment,
+                firstLineHeadIndent: firstLineHeadIndent,
+                headIndent: headIndent
+            )
+            let font = CTFontCreateWithName("Menlo" as CFString, 10, nil)
+            let base: [NSAttributedString.Key: Any] = [
+                kCTFontAttributeName as NSAttributedString.Key: font,
+                kCTParagraphStyleAttributeName as NSAttributedString.Key: style,
+            ]
+            let result = NSMutableAttributedString(string: prefix, attributes: base)
+            var marker = base
+            marker[kCTRunDelegateAttributeName as NSAttributedString.Key] =
+                HwpInlineObjectReservation.runDelegate(width: width, height: 15)
+            result.append(NSAttributedString(string: "\u{FFFC}", attributes: marker))
+            result.append(NSAttributedString(string: tail, attributes: base))
+            return result
+        }
+
+        /// 정렬·첫 줄 들여쓰기·들여쓰기만 준 CT 문단 스타일
+        static func paragraphStyle(
+            alignment: CTTextAlignment,
+            firstLineHeadIndent: CGFloat,
+            headIndent: CGFloat
+        ) -> CTParagraphStyle {
             var alignmentValue = alignment
             var first = firstLineHeadIndent
             var head = headIndent
-            let style = withUnsafeBytes(of: &alignmentValue) { alignmentBytes in
+            return withUnsafeBytes(of: &alignmentValue) { alignmentBytes in
                 withUnsafeBytes(of: &first) { firstBytes in
                     withUnsafeBytes(of: &head) { headBytes in
                         let settings = [
@@ -43,18 +69,6 @@ import XCTest
                     }
                 }
             }
-            let font = CTFontCreateWithName("Menlo" as CFString, 10, nil)
-            let base: [NSAttributedString.Key: Any] = [
-                kCTFontAttributeName as NSAttributedString.Key: font,
-                kCTParagraphStyleAttributeName as NSAttributedString.Key: style,
-            ]
-            let result = NSMutableAttributedString(string: prefix, attributes: base)
-            var marker = base
-            marker[kCTRunDelegateAttributeName as NSAttributedString.Key] =
-                HwpInlineObjectReservation.runDelegate(width: width, height: 15)
-            result.append(NSAttributedString(string: "\u{FFFC}", attributes: marker))
-            result.append(NSAttributedString(string: tail, attributes: base))
-            return result
         }
 
         /// 공유 코어의 줄 origin x와 각 줄의 문자 범위
@@ -132,6 +146,31 @@ import XCTest
             expect(lines.first?.x).to(beCloseTo(12.6, within: 1e-6))
             let left = Self.lines(Self.string(objectWidth: 450, alignment: .left), lineWidth: 425.2)
             expect(left.first?.x) == 0
+        }
+
+        /// 개체가 없는 글줄도 같다 (#254 PR 리뷰 실측, `probes/254/review`) — 한글은 문단 폭 125.2pt의
+        /// 150pt '가'와 칸 폭 40pt 셀의 60pt '다'를 왼쪽·가운데·오른쪽 정렬 모두 줄 시작에 둔다(CT 정렬
+        /// 오프셋대로면 가운데 −10.2·−9.1pt, 오른쪽 −20.3·−18.2pt). 리뷰는 이 보정을 개체 줄로 좁히자고
+        /// 했지만 실측이 반증했다. 나눌 수 없는 글자 하나(400pt `W`, 240.8pt)가 가용 폭 180pt(줄 200pt −
+        /// 들여쓰기 20pt)를 넘는 줄은 정렬과 무관하게 20에서 시작하고, 넘치지 않는 100pt `W`는 정렬대로
+        /// 놓인다.
+        func testOverflowingGlyphLinesWithoutObjectsAlsoStartAtTheLineStart() {
+            func line(_ size: CGFloat, _ alignment: CTTextAlignment) -> CGFloat? {
+                let string = NSAttributedString(string: "W", attributes: [
+                    kCTFontAttributeName as NSAttributedString.Key:
+                        CTFontCreateWithName("Menlo" as CFString, size, nil),
+                    kCTParagraphStyleAttributeName as NSAttributedString.Key: Self.paragraphStyle(
+                        alignment: alignment, firstLineHeadIndent: 20, headIndent: 20
+                    ),
+                ])
+                let lines = Self.lines(string, lineWidth: 200)
+                return lines.count == 1 ? lines[0].x : nil
+            }
+            for alignment in [CTTextAlignment.left, .center, .right] {
+                expect(line(400, alignment)).to(equal(20), description: "\(alignment)")
+            }
+            expect(line(100, .center) ?? 0).to(beGreaterThan(60))
+            expect(line(100, .right) ?? 0).to(beGreaterThan(line(100, .center) ?? 0))
         }
 
         /// 개체만으로 줄의 **가용 폭**(컨테이너 폭 − 첫 줄 들여쓰기)을 넘는 줄은 slight-overflow 한 줄
