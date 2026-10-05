@@ -145,6 +145,81 @@ import XCTest
             expect(widths[1]).to(beCloseTo(325.2 * 400 / 450, within: 1e-9))
         }
 
+        /// 칸 폭은 배치가 받아들인 셀에서, 그 셀이 **놓인 칸**으로 읽는다 (#254 PR 리뷰). 1×1 격자가 찬
+        /// 뒤 범위 밖 행 주소를 가진 1000pt 셀은 배치가 버리므로 표 폭을 정하지 않는다. 1×2 격자에서 범위
+        /// 밖 주소를 가진 30pt 셀은 빈 1열로 옮겨 그려지므로 그 폭은 주소의 0열이 아니라 1열의 폭이다 —
+        /// 주소대로 읽으면 0열 max(100, 30)·1열 미상이라 저작 폭 150pt로 나눠 1열이 50pt가 된다.
+        func testColumnWidthsComeFromTheCellsTheLayoutPlaces() throws {
+            var dropped = try Self.table(columns: [10000])
+            var stray = dropped.cellArray[0]
+            stray.header.cellProperty?.rowAddress = 5
+            stray.header.cellProperty?.width = 100_000
+            dropped.cellArray.append(stray)
+            let droppedFrame = try Self.frame(dropped)
+            expect(droppedFrame.outerFrame.width).to(beCloseTo(100, within: 1e-9))
+            expect(droppedFrame.rows.first?.cells.count) == 1
+            expect(HwpTableLayout.reservedWidth(of: dropped, sizeResolver: Self.resolver))
+                .to(beCloseTo(100, within: 1e-9))
+
+            var moved = try Self.table(columns: [10000, 3000], commonWidth: 15000)
+            moved.cellArray[1].header.cellProperty?.rowAddress = 9
+            moved.cellArray[1].header.cellProperty?.columnAddress = 0
+            let movedFrame = try Self.frame(moved)
+            expect(Self.columnWidths(movedFrame)).to(equal([100, 30]))
+            expect(movedFrame.outerFrame.width).to(beCloseTo(130, within: 1e-9))
+            expect(HwpTableLayout.reservedWidth(of: moved, sizeResolver: Self.resolver))
+                .to(beCloseTo(130, within: 1e-9))
+        }
+
+        /// 칸이 1pt 하한에 걸려 선언 폭보다 넓어지면 바깥 폭은 그린 칸을 덮는다 (#254 PR 리뷰 — 한글
+        /// 미실측). 문단 폭 2pt의 문단 기준 표(10pt 칸 셋)는 첫 칸이 차이를 흡수하지 못해 비례로 줄이면
+        /// 칸마다 1pt라 바깥 3pt이고, 저작 폭 2pt에 칸 폭을 모르는 표도 같다. 칸 하나만 걸려도 같다 —
+        /// 문단 폭 50pt의 [1 | 100]pt 표는 [1 | 49.5]pt라 50.5pt. 비례 배분 없이 돌아가는 길도 같다 —
+        /// 셀 간격 6pt가 저작 폭 10pt를 다 먹은 1칸 표는 안쪽 폭이 1pt로 올라가 행이 13pt다. 줄 예약도
+        /// 그 폭이다 — 선언 폭을 그대로 두면 셀이 바깥 상자를 넘고 예약이 그리는 폭보다 좁다.
+        func testColumnsClampedToTheMinimumWidthStayInsideTheOuterWidth() throws {
+            let narrow = HwpObjectSizeResolver(
+                paperSize: Self.resolver.paperSize, contentSize: Self.resolver.contentSize,
+                columnWidth: 425.2, paragraphWidth: 2
+            )
+            let relative = try Self.table(
+                columns: [1000, 1000, 1000], commonWidth: 5000, basis: .paragraph
+            )
+            let relativeFrame = try Self.frame(relative, resolver: narrow)
+            expect(Self.columnWidths(relativeFrame)).to(equal([1, 1, 1]))
+            expect(relativeFrame.outerFrame.width).to(beCloseTo(3, within: 1e-9))
+            expect(HwpTableLayout.reservedWidth(of: relative, sizeResolver: narrow))
+                .to(beCloseTo(3, within: 1e-9))
+
+            let unknown = try Self.table(columns: [0, 0, 0], commonWidth: 200)
+            let unknownFrame = try Self.frame(unknown)
+            expect(Self.columnWidths(unknownFrame)).to(equal([1, 1, 1]))
+            expect(unknownFrame.outerFrame.width).to(beCloseTo(3, within: 1e-9))
+            expect(HwpTableLayout.reservedWidth(of: unknown, sizeResolver: Self.resolver))
+                .to(beCloseTo(3, within: 1e-9))
+
+            let paragraph50 = HwpObjectSizeResolver(
+                paperSize: Self.resolver.paperSize, contentSize: Self.resolver.contentSize,
+                columnWidth: 425.2, paragraphWidth: 50
+            )
+            let oneClamped = try Self.table(
+                columns: [100, 10000], commonWidth: 5000, basis: .paragraph
+            )
+            let oneClampedFrame = try Self.frame(oneClamped, resolver: paragraph50)
+            let expected: CGFloat = 1 + 100 * 50 / 101
+            expect(Self.columnWidths(oneClampedFrame).first).to(equal(1))
+            expect(oneClampedFrame.outerFrame.width).to(beCloseTo(expected, within: 1e-9))
+            expect(HwpTableLayout.reservedWidth(of: oneClamped, sizeResolver: paragraph50))
+                .to(beCloseTo(expected, within: 1e-9))
+
+            let spaced = try Self.table(columns: [0], commonWidth: 1000, cellSpacing: 600)
+            let spacedFrame = try Self.frame(spaced)
+            expect(spacedFrame.outerFrame.width).to(beCloseTo(13, within: 1e-9))
+            expect(spacedFrame.rows.first?.rowFrame.width ?? 0).to(beCloseTo(13, within: 1e-9))
+            expect(HwpTableLayout.reservedWidth(of: spaced, sizeResolver: Self.resolver))
+                .to(beCloseTo(13, within: 1e-9))
+        }
+
         /// 줄 예약 폭은 레이아웃이 그릴 바깥 폭과 같다 — 한글은 예약한 폭 그대로 그린다. 칸 폭을 모르고
         /// 공통 폭도 없는 표만 예약하지 않는다 (가용 폭 폴백).
         func testReservedWidthEqualsTheLaidOutWidth() throws {
