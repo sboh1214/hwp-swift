@@ -189,7 +189,7 @@ import XCTest
                     return try JSONDecoder().decode(HwpxPairManifest.self, from: Data(contentsOf: url))
                 }
             // 픽스처 유실 가드 — 변환 쌍 38종
-            expect(manifests.count) >= 38
+            expect(manifests.count) >= 39
             var numbered = 0
             for manifest in manifests {
                 guard let pairId = manifest.sourceHwpFixture else {

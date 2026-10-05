@@ -387,6 +387,17 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   앱으로 2026-09-15에 열어 `.hwp`로 저장. 코퍼스의 유일한 변경 추적 실물이 MS 워드 호환
   문서였던 자리의 대조군이다 — 한글 문서에서는 변경 추적 표시선이 일반 선과 같은 자리·
   두께다 (#187). 표식·줄 캐시는 ViewText에 있다.
+- `wide-tables`: **한글 문서**(호환 문서 대상 프로그램 `HWP201X`)에 본문(425.2pt)·문단·셀·각주보다
+  넓은 표의 폭과 가로 자리 표본 — 왼쪽·가운데·오른쪽·배분 정렬 문단의 글자처럼 취급 450pt 표, 문단
+  왼쪽 여백·첫 줄 들여쓰기·문단 폭 385pt의 400pt 표·셀 간격 283HWPUNIT·폭 기준 '문단' 표, 문단·종이·단
+  기준 왼쪽·가운데·오른쪽 자리 차지 표와 가로 오프셋·바깥 여백·문단 왼쪽 여백, 각주 안 글자처럼 취급·
+  자리 차지 표, 300pt 셀 안 350pt 표 — 을 1행 2열 표 20개(초록 시험 칸 + 빨강 30pt 기준 칸, 7pt 꼬리표
+  `#0`…`#19`)로 실은 합성 HWPX(줄 배치 정보 없음)를 Hancom Office HWP for macOS 12.30.0 build 6523으로
+  2026-10-05에 열어 `.hwp`·`.hwpx`로 저장(2쪽). 한글이 표를 **놓이는 자리의 폭으로 줄이지 않고**(칸 폭
+  합이 표 폭, 상대 기준 표는 기준 폭 100%), 줄보다 넓은 글자처럼 취급 표를 정렬과 무관하게 **줄 시작**에
+  두며, 자리 차지 표를 가로 기준·정렬·오프셋·바깥 여백으로 놓아 정렬대로 넘기는 규칙(#254)의 실물
+  근거다. 같은 세션의 PDF 내보내기 테두리 좌표(README의 표)가 `HwpKitTests/FixtureWideTableTests`의
+  오라클이다. HWPX 쌍은 `HwpxFixtures/wide-tables`.
 - `track-changes`: WordprocessingML tracked changes DOCX를 Hancom Office HWP for macOS
   12.30.0 build 6382에서 열고 HWP로 저장. FileHeader, 본문/preview,
   DocumentProperties, DocInfo id mappings를 manifest로 검증.

@@ -43,7 +43,7 @@ final class HwpxFixtureCopyParityTests: XCTestCase {
         }
 
         // 비교 가능한 변환 쌍 38종 — 하한은 유실 가드
-        expect(comparedCount) >= 38
+        expect(comparedCount) >= 39
         if !failures.isEmpty {
             fail("HWP↔HWPX copy mismatches (\(failures.count)):\n" +
                 failures.joined(separator: "\n"))

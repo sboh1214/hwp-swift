@@ -28,7 +28,7 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
    `inline-object-marker-size`·`inline-table-actual-height`·`mixed-size-decorations`·
    `ms-word-line-shapes`·`ms-word-paragraph-end-box`·`ms-word-script-strikethrough`·
    `ms-word-space-width`·`page-end-line-box`·`paragraph-end-char-size`·`space-width`·
-   `table-border-chains`·`table-border-corners`·`table-cell-spacing`)은 `.hwp`와 `.hwpx`를
+   `table-border-chains`·`table-border-corners`·`table-cell-spacing`·`wide-tables`)은 `.hwp`와 `.hwpx`를
    **같은 편집 세션에서 연달아** 저장해야 두
    파일이 같은 문서가 된다. 한글 GUI로 만들기 어려운 조합은 합성 HWPX를 한글로 열어 두 형식으로
    저장해도 된다
@@ -162,6 +162,13 @@ HWP↔HWPX 파싱 등가(`HwpxHwpEquivalenceTests`)가 핵심 회귀 축이 되�
   12개의 셀 54개가 참조하는 `hh:borderFill`의 2중선(`DOUBLE_SLIM`)·가는+굵은 2중선(`SLIM_THICK`)·
   물결(`WAVE`)과 굵기만 있는 선 없음(`NONE` 2mm) 변이 HWP 쌍과 같은 선 종류·굵기로 옮겨지는(등가
   스위트의 셀 테두리 축) 표본이기도 하다.
+  본문보다 넓은 표의 폭과 가로 자리는 #254에서 `wide-tables` 쌍으로 저작했다 — 코퍼스의 표는 거의 모두
+  본문 안이고(넓은 표는 헌법주석 표 하나와 `noori`의 0.4pt 넘는 표뿐) 자리 차지 표는 모두 왼쪽 정렬·오프셋
+  0이라, 한글이 표를 놓이는 자리의 폭으로 줄이지 않고(칸 폭 합이 표 폭, 상대 기준 표는 기준 폭 100%)
+  넓은 글자처럼 취급 표를 줄 시작에 두며 자리 차지 표를 가로 기준·정렬·오프셋·바깥 여백대로 넘기는
+  규칙을 렌더 해시·골든이 잡지 못하던 자리의 실물 근거다. `hp:pos@horzRelTo`·`@horzAlign`·
+  `@horzOffset`, `hp:outMargin`, `hp:sz@widthRelTo="PARA"`가 HWP 쌍과 같은 앵커·크기 기준으로
+  옮겨지는 표본이기도 하다.
 
 ## manifest 작성 기준
 

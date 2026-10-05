@@ -128,7 +128,7 @@ import XCTest
             // 2026-09-25 9 / 1158 → 같은 날 9 / 1188 → 2026-09-26 9 / 1208 → 같은 날
             // 9 / 1266 → 2026-09-27 9 / 1282 → 같은 날 9 / 1324 → 2026-09-28 11 / 1362 →
             // 2026-09-30 11 / 1386 → 2026-10-01 11 / 1448 → 2026-10-02 11 / 1498 → 같은 날
-            // 11 / 1516 → 2026-10-03 12 / 1546).
+            // 11 / 1516 → 2026-10-03 12 / 1546 → 2026-10-05 13 / 1634).
             expect(stats.measured - stats.sharedCoreCompared)
                 .to(beLessThanOrEqualTo(Self.maximumFixtureSharedCoreSkips))
         }
@@ -218,12 +218,17 @@ import XCTest
         // 2026-10-03 `space-width`(#249, 구역·제목 1 + 빈칸 7문단 = 8문단)·`ms-word-space-width`(구역·제목
         // 1 + 빈칸 6문단 = 7문단, 둘 다 개체 없음) 추가로 문단 15·대조 30 증가(컨테이너는 그대로다) —
         // 공유 코어 대조 건너뜀이 1 늘었다 (`ms-word-space-width` `#2`: `ab cd 가나 ef #1`이 120pt에서
-        // 자연 폭 120.62pt인 slight-overflow 한 줄, 실측 12).
-        private static let expectedFixtureVisited = 994
-        private static let expectedFixtureMeasured = 1546
-        private static let expectedFixtureContainers = 373
+        // 자연 폭 120.62pt인 slight-overflow 한 줄, 실측 12), 2026-10-05 `wide-tables`(#254, 구역·제목 1 +
+        // 꼬리표·표본 39문단 = 40문단 + 표 17개의 셀 34문단 + 바깥 표 셀 2문단·중첩 표 셀 2문단 + 각주 2문단·
+        // 각주 표 셀 4문단 = 컨테이너 44) 추가로 문단 84·대조 88(셀의 빈 문단 40개는 두 폭 모두 대조 대상이
+        // 아니다)·컨테이너 44 증가 — 공유 코어 대조 건너뜀이 1 늘었다 (`wide-tables` `#23`: 400pt 표 + `뒤5`가
+        // 400pt에서 개체만으로는 넘치지 않고 글자까지 더해 살짝 넘치는 slight-overflow 한 줄, 실측 13 — 개체
+        // 하나가 줄 폭을 넘는 줄은 #254부터 slight-overflow가 아니다).
+        private static let expectedFixtureVisited = 1078
+        private static let expectedFixtureMeasured = 1634
+        private static let expectedFixtureContainers = 417
         private static let minimumFixtureMultiLine = 60
-        private static let maximumFixtureSharedCoreSkips = 12
+        private static let maximumFixtureSharedCoreSkips = 13
         private static let expectedLegacyVisited = 14659
 
         // MARK: - 본체
