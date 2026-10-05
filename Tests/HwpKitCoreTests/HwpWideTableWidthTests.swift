@@ -166,6 +166,30 @@ import XCTest
             expect(try Self.frame(unknown).outerFrame.width).to(beCloseTo(425.2, within: 1e-9))
         }
 
+        /// 빌더가 마커에 싣는 줄 예약 폭도 레이아웃의 바깥 폭이다 — 공통 폭(sz)을 예약하면 sz 450·칸
+        /// 400 표는 450을 잡아 줄이 넘친 것으로 처리되고(가운데 정렬 문단에서도 줄 시작), 문단 기준
+        /// 저장값 5000 표는 162.6pt만 잡아 325.2pt로 그려지는 표 위에 뒤 글자가 놓인다 (#254 리뷰).
+        func testBuilderReservesTheLaidOutWidth() throws {
+            let tables = [
+                try Self.table(columns: [37000, 3000], commonWidth: 45000),
+                try Self.table(columns: [37000, 3000], commonWidth: 5000, basis: .paragraph),
+                try Self.table(columns: [37000, 3000], commonWidth: 42520, basis: .paragraph),
+            ]
+            for table in tables {
+                var paragraph = HwpSynthetic.paragraphWithInlineControl(prefix: "", suffix: "뒤")
+                paragraph.ctrlHeaderArray = [.table(HwpSynthetic.placed(table, treatAsChar: true))]
+                let built = HwpTextRunBuilder(
+                    index: Self.index, fontResolver: .testDeterministic, sizeResolver: Self.resolver
+                ).build(paragraph: paragraph)
+                let marker = (built.string as NSString).range(of: "\u{FFFC}").location
+                let line = CTLineCreateWithAttributedString(
+                    built.attributedSubstring(from: NSRange(location: marker, length: 1))
+                )
+                expect(CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil)))
+                    .to(beCloseTo(try Self.frame(table).outerFrame.width, within: 1e-6))
+            }
+        }
+
         /// 글자처럼 취급 상대 기준 표의 줄 예약은 **100%**로 다시 풀리는 열쇠를 싣는다 — 다른 단으로
         /// 이월된 조각이 저장값을 퍼센트로 읽으면(42520 → 425%) 예약이 기준 폭의 4.25배가 된다.
         func testInlineRelativeTableReservationRescalesAsTheFullBasis() throws {

@@ -76,8 +76,9 @@ extension HwpParagraphLayout {
     /// (`HwpDrawnTextLayout.slightOverflowSingleLine`)가 가운데·오른쪽 정렬에 주는 가로
     /// 오프셋이다 — 0으로 두면 오른쪽 정렬 조각의 개체 앵커가 그려진 글자보다 초과분만큼
     /// 오른쪽에 놓여 단 경계를 넘는다 (PR 리뷰). 측정의 한 줄 분기(`layout`)는 원점 0을
-    /// 유지한다 — 단 폭과 같은 글자처럼 취급 표의 마커가 단 폭을 살짝 넘어 가운데
-    /// 정렬 오프셋으로 단 밖에 밀리는 실물(noori 1쪽)이 있어서다.
+    /// 유지한다 — 종전 근거였던 noori 1쪽 제목 표(마커가 단 폭을 0.4pt 넘는 줄)는 #254부터
+    /// 이 분기에 오지 않는다(개체 예약 폭이 가용 폭을 넘는 줄은 공유 코어가 줄 시작에 둔다,
+    /// `HwpDrawnTextLayout.slightOverflowLineMetrics`). 남는 것은 살짝 넘치는 글줄이다.
     static func slightOverflowLineFrame(
         _ overflow: HwpDrawnTextLayout.SlightOverflowLine,
         attributedString: NSAttributedString,

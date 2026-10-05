@@ -250,16 +250,8 @@ import XCTest
             paragraph.paraText = HwpSynthetic.paragraphWithInlineControl(
                 prefix: prefix, suffix: suffix
             ).paraText
-            // 단 기준 표 — 좁은 단(134pt)에서는 단 폭에 맞춰져 30자 셀 글이 두 줄이 된다.
-            var table = try Support.staleTable(
-                rows: 1, instanceId: 6, width: 25000,
-                cellText: { _ in "abcdefghij abcdefghij abcdefgh" }
-            )
-            table.commonCtrlProperty.propertyInfo.widthRelativeToRawValue =
-                CoreHwp.HwpCommonCtrlObjectWidthRelativeTo.column.rawValue
-            table.commonCtrlProperty.propertyInfo.widthRelativeTo = .column
             paragraph.ctrlHeaderArray = [
-                .table(table),
+                .table(try Self.columnBasisTable(instanceId: 6)),
                 .column(HwpSynthetic.column(count: 2, widths: [10339, 20682], gaps: [1747, 0])),
             ]
             let section = HwpSynthetic.section(
@@ -290,6 +282,18 @@ import XCTest
                 lineWidth: columns[1].frame.width
             ).first { NSLocationInRange(marker, $0.stringRange) })
             expect(line.ascent).to(beCloseTo(10, within: 0.01))
+        }
+
+        /// 단 기준 표 — 좁은 단(134pt)에서는 단 폭에 맞춰져 30자 셀 글이 두 줄이 된다.
+        private static func columnBasisTable(instanceId: UInt32) throws -> CoreHwp.HwpTable {
+            var table = try Support.staleTable(
+                rows: 1, instanceId: instanceId, width: 25000,
+                cellText: { _ in "abcdefghij abcdefghij abcdefgh" }
+            )
+            table.commonCtrlProperty.propertyInfo.widthRelativeToRawValue =
+                CoreHwp.HwpCommonCtrlObjectWidthRelativeTo.column.rawValue
+            table.commonCtrlProperty.propertyInfo.widthRelativeTo = .column
+            return table
         }
     }
 #endif

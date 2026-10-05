@@ -142,11 +142,77 @@ import XCTest
             }
         }
 
+        /// 단을 넘긴 조각은 **그 단에서** 다시 잰다 — 비등폭 2단(134.16 / 268.37pt)에서 단 기준 오른쪽
+        /// 정렬 100pt 표가 둘째 단으로 넘어가면 그 조각은 둘째 단 오른쪽 끝에 붙는다. 첫 조각의 x를
+        /// 다시 쓰면 둘째 조각이 첫 단 자리에 남는다.
+        func testSegmentsInAnotherColumnAreAlignedInThatColumn() async throws {
+            let sectionDef = HwpSynthetic.sectionDef(pageHeight: 30000)
+            let column = HwpSynthetic.column(count: 2, widths: [10339, 20682], gaps: [1747, 0])
+            let section = HwpSynthetic.section(
+                firstParagraphControls: [.section(sectionDef), .column(column)],
+                bodyParagraphs: [
+                    try Self.host(
+                        width: 10000, rows: 20, relativeTo: .column, alignment: .bottomOrRight
+                    ),
+                ]
+            )
+            let paginator = HwpPaginator(
+                sections: [section], index: HwpIndex(from: CoreHwp.HwpFile()),
+                fontResolver: .testDeterministic
+            )
+            let frames = try await Support.blocks(of: paginator)
+                .filter { $0.kind == .table }.map(\.frame)
+            let columns = HwpPageGeometry.compute(
+                pageDef: sectionDef.pageDef, sectionDef: sectionDef, column: column
+            ).columnFrames
+            expect(frames.count) == 2
+            expect(columns.count) == 2
+            guard frames.count == 2, columns.count == 2 else { return }
+            expect(frames[0].minX).to(beCloseTo(columns[0].maxX - 100, within: 1e-6))
+            expect(frames[1].minX).to(beCloseTo(columns[1].maxX - 100, within: 1e-6))
+        }
+
+        /// 쪽 경계에서 나누지 않는 표(표 76 bits 0-1 = 0)는 통째 경로(`appendWholeTable`)를 타지만
+        /// 가로 자리는 같다 — 문단 기준 가운데 450pt 표 72.64, 오른쪽 300pt 표는 본문 오른쪽 끝.
+        func testUnsplitTablesUseTheSamePlacement() async throws {
+            let content = Self.geometry.contentFrame
+            let frames = try await Self.tableFrames(of: [
+                Self.unsplit(Self.host(width: 45000, alignment: .center)),
+                Self.unsplit(Self.host(width: 30000, alignment: .bottomOrRight)),
+            ])
+            expect(frames.map(\.minX)).to(equal([
+                content.minX + (content.width - 450) / 2, content.maxX - 300,
+            ]))
+            expect(frames.map(\.width)) == [450, 300]
+        }
+
+        /// 표 76 bits 0-1을 '나누지 않음'(0)으로 바꾼 문단 — `host`가 만든 표 컨트롤 하나를 고친다.
+        static func unsplit(_ paragraph: CoreHwp.HwpParagraph) -> CoreHwp.HwpParagraph {
+            var paragraph = paragraph
+            guard case var .table(table) = paragraph.ctrlHeaderArray?.first else {
+                return paragraph
+            }
+            table.tableProperty.property &= ~UInt32(0b11)
+            paragraph.ctrlHeaderArray = [.table(table)]
+            return paragraph
+        }
+
         /// 줄 앵커를 얻는 글자처럼 취급 표는 이 규칙을 타지 않는다 — 줄 시작(#254 넘친 줄)이다.
         func testInlineTablesStayOnTheirLine() async throws {
             let frames = try await Self.tableFrames(of: [
                 Self.host(width: 45000, alignment: .bottomOrRight, treatAsChar: true),
             ])
+            expect(frames.first?.minX).to(beCloseTo(Self.geometry.contentFrame.minX, within: 1e-6))
+        }
+
+        /// 줄 앵커를 **못 얻은** 글자처럼 취급 표(문단에 컨트롤 문자가 없다)는 흐름 경로로 폴백해도
+        /// 앵커 규칙을 타지 않고 종전대로 단 왼쪽이다 — 공통 속성의 가로 기준·정렬은 자리 차지 표의
+        /// 것이고, 글자처럼 취급 표에서는 줄 안 자리가 그것을 대신한다.
+        func testInlineTablesWithoutALineAnchorStayAtTheColumnLeft() async throws {
+            var host = try Self.host(width: 10000, alignment: .center, treatAsChar: true)
+            host.paraText = try HwpSynthetic.textParagraph("앵커").paraText
+            let frames = try await Self.tableFrames(of: [host])
+            expect(frames.count) == 1
             expect(frames.first?.minX).to(beCloseTo(Self.geometry.contentFrame.minX, within: 1e-6))
         }
 

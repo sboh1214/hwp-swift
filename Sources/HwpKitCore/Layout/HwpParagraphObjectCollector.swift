@@ -200,9 +200,9 @@ struct HwpParagraphObjectCollector {
     /// 408pt 표가 문단 들여쓰기(≈17.9pt) 위치에서 시작해 오른쪽 본문 경계를
     /// 12.6pt 넘어가고, 한글은 그것을 자르거나 줄이지 않는다. 문단 폭보다 넓은 표도 줄이지
     /// 않는다 (#254 — 각주 안 450pt 표가 본문 425.2pt를 넘겨 그려진다). 문단 rect 폭은 저작
-    /// 폭이 없는 표의 폴백일 뿐이다. 글자처럼 취급이 아닌 표는 바깥 상자(표 + 좌우 바깥
-    /// 여백)로 정렬하고 왼쪽 여백만큼 들인다 — 페이지 경로(`HwpPaginator.flowTableOriginX`)와
-    /// 같은 규칙이다.
+    /// 폭이 없는 표의 폴백일 뿐이다. 흐름을 차지하는 표(자리 차지·어울림)는 바깥 상자(표 + 좌우
+    /// 바깥 여백)로 정렬하고 왼쪽 여백만큼 들인다 — 페이지 경로(`HwpPaginator.flowTableOriginX`)와
+    /// 같은 규칙·같은 술어(`alignsByOuterBox`)다.
     private func table(
         _ nested: CoreHwp.HwpTable,
         placement: Placement,
@@ -220,8 +220,9 @@ struct HwpParagraphObjectCollector {
             numbering: placement.numbering
         ) else { return nil }
         let size = frame.outerFrame.size
-        let margins = info.treatAsChar
-            ? .zero : HwpObjectAnchorGeometry.OuterMargins(commonProperty)
+        // 바깥 상자 정렬은 흐름을 차지하는 표의 규칙이다 — 페이지 경로와 같은 술어.
+        let margins = Self.alignsByOuterBox(commonProperty)
+            ? HwpObjectAnchorGeometry.OuterMargins(commonProperty) : .zero
         var tableOrigin = origin(
             commonProperty: commonProperty,
             size: CGSize(width: size.width + margins.horizontal, height: size.height),

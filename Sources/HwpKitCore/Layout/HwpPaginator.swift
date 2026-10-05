@@ -3875,8 +3875,8 @@ private extension HwpPaginator {
 
     /// 다단 캐시 run(`placeCachedColumnRuns`)의 글자처럼 취급 표가 그려질 높이 (controlIndex → pt) —
     /// 표를 실은 캐시 줄이 속한 run의 **단 폭**에서 잰다 (#214 PR 리뷰). 표는 그 단에 놓여 그 폭으로
-    /// 조판되므로(`appendInlineAnchoredTable`) 문단을 잰 첫 단의 폭으로 재면, 표 폭이 단 폭에
-    /// 잘리는 비등폭 단에서 신선한 캐시를 낡았다고 오판한다. 줄 위치를 못 푸는 표는 run들의 단
+    /// 조판되므로(`appendInlineAnchoredTable`) 문단을 잰 첫 단의 폭으로 재면, 폭 기준이 단·문단이라
+    /// 표 폭이 그 단 폭 100%를 따르는(#254) 비등폭 단에서 신선한 캐시를 낡았다고 오판한다. 줄 위치를 못 푸는 표는 run들의 단
     /// 폭 가운데 가장 낮게 나오는 높이다 — 어느 단인지 모를 때 캐시를 버리는 쪽으로 기울지 않는다.
     func columnRunInlineTableHeights(
         for paragraph: CoreHwp.HwpParagraph,
@@ -3910,8 +3910,8 @@ private extension HwpPaginator {
     }
 
     /// 조각이 줄을 잰 단과 폭이 다른 단에 놓일 때, 조각에 든 글자처럼 취급 표 마커의 예약
-    /// 높이를 **그 단에서** 그려질 높이로 다시 잡은 사본 (#214) — 표 폭이 단 폭에 잘리거나
-    /// 단·문단 기준이면 셀 줄바꿈이 달라져 높이가 바뀌는데, 배치(`appendInlineAnchoredTable`)는
+    /// 높이를 **그 단에서** 그려질 높이로 다시 잡은 사본 (#214) — 폭 기준이 단·문단이면 표 폭이
+    /// 그 단 폭 100%를 따라(#254 — 절대 폭 표는 단과 무관하다) 셀 줄바꿈이 달라져 높이가 바뀌는데, 배치(`appendInlineAnchoredTable`)는
     /// 놓이는 단의 폭으로 표를 조판한다. 폭 예약을 다시 푸는 `rescaledForColumn`과 짝이다.
     func rescaledInlineTableHeights(_ fragment: NSAttributedString) -> NSAttributedString {
         guard sections.indices.contains(nextSectionIndex),
@@ -4981,8 +4981,7 @@ private extension HwpPaginator {
     /// 흐름을 차지하는 표. 글자처럼 취급 표가 줄 앵커를 못 얻어 흐름으로 폴백하면 종전대로
     /// 단 왼쪽이다.
     static func anchorsFlowTableHorizontally(_ property: CoreHwp.HwpCommonCtrlProperty) -> Bool {
-        let info = property.propertyInfo
-        return !info.treatAsChar && HwpParagraphObjectCollector.consumesFlow(info)
+        HwpParagraphObjectCollector.alignsByOuterBox(property)
     }
 
     /// 문단 기준 + restrictInPage 개체가 현재 페이지 본문 하단을 넘으면 다음

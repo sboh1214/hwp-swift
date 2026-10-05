@@ -125,6 +125,7 @@ enum HwpLineBreaker {
         in attributedString: NSAttributedString
     ) -> [CGPoint] {
         var adjusted = origins
+        let string = attributedString.string as NSString
         for index in origins.indices where index < lines.count {
             let location = CTLineGetStringRange(lines[index]).location
             let style = paragraphStyle(in: attributedString, at: location)
@@ -135,8 +136,11 @@ enum HwpLineBreaker {
             let head = paragraphCGFloat(.headIndent, in: style) ?? 0
             // 어느 들여쓰기보다도 오른쪽이면 넘친 줄일 수 없다 — 문단 경계 조회를 건너뛴다.
             guard origins[index].x < max(firstLine, head) else { continue }
-            let startsParagraph = (attributedString.string as NSString)
-                .paragraphRange(for: NSRange(location: location, length: 0)).location == location
+            // CT 문단의 첫 줄인가 — 직전 글자가 문단 구분자(LF·CR·U+2029)면 그렇다. 원문을 앞으로
+            // 훑는 `paragraphRange`는 줄마다 O(문단 길이)라 긴 문단 조판이 이차가 된다.
+            let startsParagraph = location == 0
+                || (location <= string.length
+                    && HwpLineAdvance.isParagraphSeparator(string.character(at: location - 1)))
             let lineStart = startsParagraph ? firstLine : head
             if origins[index].x < lineStart {
                 adjusted[index].x = lineStart

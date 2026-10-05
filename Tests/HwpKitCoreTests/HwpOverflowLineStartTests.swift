@@ -134,6 +134,37 @@ import XCTest
             expect(left.first?.x) == 0
         }
 
+        /// 개체만으로 줄의 **가용 폭**(컨테이너 폭 − 첫 줄 들여쓰기)을 넘는 줄은 slight-overflow 한 줄
+        /// 허용이 아니다 — 문단 폭 405.2pt(왼쪽 여백 20)의 415pt 표 + 뒤 글자는 컨테이너 425.2pt를 살짝
+        /// 넘을 뿐이지만 개체가 줄에 안 들어가므로 공유 코어가 줄 시작(20)에 두고 뒤 글자를 다음 줄로
+        /// 보낸다. 한 줄씩 들어가는 개체 둘(220 + 220pt)도 합이 가용 폭을 넘으면 마찬가지다. 개체가
+        /// 줄에 들어가고 글자까지 더해 살짝 넘치는 줄(글꼴 차)은 종전대로 허용이다.
+        func testObjectsOverflowingTheAvailableWidthAreNotSlightOverflow() {
+            let indented = Self.string(
+                objectWidth: 415, tail: "뒤뒤", alignment: .center,
+                firstLineHeadIndent: 20, headIndent: 20
+            )
+            expect(HwpDrawnTextLayout.slightOverflowLineMetrics(
+                attributedString: indented, lineWidth: 425.2
+            )).to(beNil())
+            let lines = Self.lines(indented, lineWidth: 425.2)
+            expect(lines.count) == 2
+            expect(lines.first?.x) == 20
+
+            let pair = NSMutableAttributedString(
+                attributedString: Self.string(objectWidth: 220, alignment: .center)
+            )
+            pair.append(Self.string(objectWidth: 220, alignment: .center))
+            expect(HwpDrawnTextLayout.slightOverflowLineMetrics(
+                attributedString: pair, lineWidth: 425.2
+            )).to(beNil())
+
+            let fitting = Self.string(objectWidth: 400, tail: "가나다", alignment: .center)
+            expect(HwpDrawnTextLayout.slightOverflowLineMetrics(
+                attributedString: fitting, lineWidth: 425.2
+            )).notTo(beNil())
+        }
+
         /// 렌더(`HwpDrawnTextLayout.lines`)도 같은 코어의 origin을 쓴다 — 넘친 줄의 그려지는 x가 줄 시작이다.
         func testDrawnLinesFollowTheSharedOrigin() {
             let string = Self.string(objectWidth: 450, alignment: .right, firstLineHeadIndent: 20)
