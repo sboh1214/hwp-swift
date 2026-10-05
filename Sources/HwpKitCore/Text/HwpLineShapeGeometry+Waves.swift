@@ -5,12 +5,12 @@ import Foundation
 // MARK: - 물결 (같은 타입의 확장 — 본체 파일 길이를 지킨다)
 
 extension HwpLineShapeGeometry {
-    /// 물결 하나의 기하 — 한글 문서·MS 워드 호환 문서의 글자선은 장치 단위 정수 기하
-    /// (`characterWave(for:)`, #252), 한글 2007 호환 문서는 고정 pt(#227), 테두리·단 구분선은 명목
-    /// 두께 비례(#191 — 대각선의 가로·세로가 진폭, 평탄 0.12pt, 두 평탄 높이 사이도 진폭)다.
+    /// 물결 하나의 기하 — 한글 문서·MS 워드 호환 문서의 글자선과 표 셀 테두리·단 구분선은 장치 단위 정수
+    /// 기하(`deviceWave(for:)`, #252·#253), 한글 2007 호환 문서는 고정 pt(#227 — 대각선의 가로·세로가
+    /// 진폭, 평탄 0.12pt, 두 평탄 높이 사이도 진폭)다.
     static func wave(for line: Line) -> Wave {
-        if let character = characterWave(for: line) {
-            return character
+        if let device = deviceWave(for: line) {
+            return device
         }
         let amplitude = waveAmplitude(for: line)
         let flat = HwpRenderTuning.LineShape.waveVertexFlat
@@ -21,32 +21,21 @@ extension HwpLineShapeGeometry {
         )
     }
 
-    /// 비례 물결의 진폭 — 한글 2007 호환 문서의 글자선만 2중 물결이 단일 물결의 절반이다. 한글
-    /// 문서·MS 워드 호환 문서의 글자선은 `characterWave(for:)`가 맡는다 (여기서는 0).
+    /// 한글 2007 호환 문서 글자선 물결의 진폭 — 2중 물결이 단일 물결의 절반이다. 장치 단위 축척(글자선·
+    /// 테두리)은 `deviceWave(for:)`가 맡는다 (여기서는 0).
     static func waveAmplitude(for line: Line) -> CGFloat {
-        switch line.scale {
-        case .characterLine:
-            0
-        case .hwp200XCharacterLine:
-            line.shape == .doubleWave
-                ? HwpRenderTuning.LineShape.hwp200XDoubleWaveAmplitude
-                : HwpRenderTuning.LineShape.hwp200XWaveAmplitude
-        case .border:
-            line.thickness
-        }
+        guard line.scale == .hwp200XCharacterLine else { return 0 }
+        return line.shape == .doubleWave
+            ? HwpRenderTuning.LineShape.hwp200XDoubleWaveAmplitude
+            : HwpRenderTuning.LineShape.hwp200XWaveAmplitude
     }
 
+    /// 한글 2007 호환 문서 글자선 물결의 획 (장치 단위 축척은 0 — `deviceWave(for:)`)
     static func waveStroke(for line: Line) -> CGFloat {
-        switch line.scale {
-        case .characterLine:
-            0
-        case .hwp200XCharacterLine:
-            line.shape == .doubleWave
-                ? HwpRenderTuning.LineShape.hwp200XDoubleWaveStroke
-                : HwpRenderTuning.LineShape.hwp200XWaveStroke
-        case .border:
-            line.thickness * HwpRenderTuning.LineShape.borderWaveStrokeThicknessRatio
-        }
+        guard line.scale == .hwp200XCharacterLine else { return 0 }
+        return line.shape == .doubleWave
+            ? HwpRenderTuning.LineShape.hwp200XDoubleWaveStroke
+            : HwpRenderTuning.LineShape.hwp200XWaveStroke
     }
 
     /// 물결 반주기 — 대각선(가로 폭)에 꼭짓점 평탄을 더한 길이 (`wave(for:)`)
@@ -54,21 +43,17 @@ extension HwpLineShapeGeometry {
         wave(for: line).halfPeriod
     }
 
-    /// 비례 물결 꼭짓점 띠의 위쪽 꼭짓점 y — 한글 2007 호환 문서의 글자선은 계단의 시작
-    /// (`waveTopBase(for:)`)에서 종류 × 계단(`waveTopStep(for:)` — 물결마다 고정 pt)만큼 위, 테두리는
-    /// 중심에서 3/8 두께 위에 진폭 절반을 더 올린 곳. 한글 문서·MS 워드 호환 문서의 글자선은
-    /// `characterWave(for:)`가 맡는다 (여기서는 0).
+    /// 한글 2007 호환 문서 글자선 물결의 위쪽 꼭짓점 y — 계단의 시작(`waveTopBase(for:)`)에서 종류 ×
+    /// 계단(`waveTopStep(for:)` — 물결마다 고정 pt)만큼 위. 장치 단위 축척(글자선·테두리·단 구분선)은
+    /// `deviceWave(for:)`가 맡는다 (여기서는 0).
     static func waveTopVertex(for line: Line) -> CGFloat {
-        let steps: CGFloat
-        switch line.placement {
-        case .underlineBelow: steps = 1
-        case .strikethrough: steps = 2
-        case .underlineAbove: steps = 3
-        case .border, .divider:
-            return -line.thickness * HwpRenderTuning.LineShape.borderWaveShiftThicknessRatio
-                - waveAmplitude(for: line) / 2
-        }
         guard line.scale == .hwp200XCharacterLine else { return 0 }
+        let steps: CGFloat = switch line.placement {
+        case .underlineBelow: 1
+        case .strikethrough: 2
+        case .underlineAbove: 3
+        case .border, .divider: 0
+        }
         return -waveTopBase(for: line) - waveTopStep(for: line) * steps
     }
 
@@ -87,20 +72,9 @@ extension HwpLineShapeGeometry {
             : HwpRenderTuning.LineShape.hwp200XWaveTopStep
     }
 
-    /// 비례 2중 물결의 둘째 파 이동량 — 한글 2007 호환 문서의 글자선은 1.08pt 아래(같은 x 위상),
-    /// 테두리는 선 방향·가로지르는 축 모두 3/4 두께(내려가는 획이 첫 파와 한 직선을 이루는 마름모
-    /// 격자), 단 구분선은 가로지르는 축만 3/4 두께. 한글 문서·MS 워드 호환 문서의 글자선은
-    /// `characterWave(for:)`가 맡는다 (3w 아래 — 여기서는 0).
-    static func doubleWaveOffset(for line: Line) -> CGPoint {
-        switch line.scale {
-        case .characterLine:
-            return .zero
-        case .hwp200XCharacterLine:
-            return CGPoint(x: 0, y: HwpRenderTuning.LineShape.hwp200XDoubleWaveOffset)
-        case .border:
-            let offset = line.thickness
-                * HwpRenderTuning.LineShape.borderDoubleWaveOffsetThicknessRatio
-            return CGPoint(x: line.placement == .divider ? 0 : offset, y: offset)
-        }
+    /// 한글 2007 호환 문서 글자선 2중 물결의 둘째 파 이동량 — 1.08pt 아래(같은 x 위상). 장치 단위 축척은
+    /// `deviceWave(for:)`가 맡는다 (3w 아래 — 여기서는 0).
+    static func doubleWaveOffset(for line: Line) -> CGFloat {
+        line.scale == .hwp200XCharacterLine ? HwpRenderTuning.LineShape.hwp200XDoubleWaveOffset : 0
     }
 }

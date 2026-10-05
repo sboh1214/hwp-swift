@@ -45,9 +45,6 @@ final class HwpRenderTuningTests: XCTestCase {
         expect(HwpRenderTuning.LineShape.cellBorderCirclePitchUnitRatio) == 2
         expect(HwpRenderTuning.LineShape.characterDoubleBandPerMille) == 113
         expect(HwpRenderTuning.LineShape.characterThickBandPerMille) == 198
-        expect(HwpRenderTuning.LineShape.borderWaveStrokeThicknessRatio) == 0.25
-        expect(HwpRenderTuning.LineShape.borderWaveShiftThicknessRatio) == 0.375
-        expect(HwpRenderTuning.LineShape.borderDoubleWaveOffsetThicknessRatio) == 0.75
         expect(HwpRenderTuning.LineShape.waveVertexFlat) == 0.12
     }
 

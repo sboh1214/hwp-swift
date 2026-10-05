@@ -53,8 +53,10 @@ extension HwpLineShapeGeometryTests {
         let single = HwpLineShapeGeometry.wave(for: Self.msWordUnderline(.wave))
         let double = HwpLineShapeGeometry.wave(for: Self.msWordUnderline(.doubleWave))
         expect(double.top).to(beCloseTo(single.top, within: 1e-12))
-        expect(double.secondOffset.y).to(beCloseTo(21 * 0.12, within: 1e-9))
-        expect(double.secondOffset.x) == 0
+        expect(double.secondOffset).to(beCloseTo(21 * 0.12, within: 1e-9))
+        // 선 방향으로는 옮기지 않는다 — 두 파 모두 run 시작(`Line.waveSpans` 없음)에서
+        let line = Self.msWordUnderline(.doubleWave)
+        expect(HwpLineShapeGeometry.waveSpan(for: line, index: 1)) == 0 ..< line.length
     }
 
     /// 대시는 무늬와 획 두께가 같은 축척을 따른다 — Menlo 20pt 긴 점선 밑줄은 무늬 두께

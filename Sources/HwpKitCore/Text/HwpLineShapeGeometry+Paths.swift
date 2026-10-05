@@ -152,10 +152,18 @@ extension HwpLineShapeGeometry {
         }
     }
 
-    /// 반복 상한을 넘어 실선 띠로 떨어진 무늬의 제 몫 — `elementRange`와 [0, `length`]의 겹침
-    /// (없으면 띠 전체). 겹침이 없으면 nil.
+    /// 반복 상한을 넘어 실선 띠로 떨어진 무늬의 제 몫 — 대시·원형 점선은 `elementRange`와 [0, `length`]의
+    /// 겹침(없으면 띠 전체), 파마다의 범위(`Line.waveSpans`)가 있는 물결은 긋는 파의 범위를 합친 곳(모서리
+    /// 자리를 지킨다). 몫이 없으면 nil — 긋는 파가 없는 물결도 실선 띠로 떨어지지 않는다.
     static func ownedSolidBand(for line: Line) -> CGRect? {
         let band = solidBand(for: line)
+        if line.waveSpans != nil, line.shape == .wave || line.shape == .doubleWave {
+            let spans = drawableWaveSpans(for: line)
+            guard let start = spans.map(\.lowerBound).min(),
+                  let end = spans.map(\.upperBound).max(), (end - start).isFinite
+            else { return nil }
+            return CGRect(x: start, y: band.minY, width: end - start, height: band.height)
+        }
         guard let owned = line.elementRange, isPatterned(line.shape) else { return band }
         let start = max(0, owned.lowerBound)
         let end = min(line.length, owned.upperBound)
@@ -190,34 +198,38 @@ extension HwpLineShapeGeometry {
         return lower <= upper ? lower ... upper : nil
     }
 
-    /// 45° 지그재그 — 위 꼭짓점에서 시작해 진폭만큼 내려갔다 올라오기를 반복하고, 꼭짓점
-    /// 사이의 평탄(`waveVertexFlat`)은 짧은 띠로 잇는다. 대각선은 획 두께의 평행사변형
-    /// (butt cap)이고, `length` 앞에서 시작한 마지막 대각선은 자르지 않고 끝까지 그린다 —
-    /// `length`와 같은 자리에서 시작하는 대각선은 그리지 않는다 (한글 실측, #191·#235 —
-    /// `waveDiagonalCount(for:offsetX:)`; `alongExtent(of:)`가 그 넘침을 보고한다).
-    static func addWave(to path: CGMutablePath, line: Line, offset: CGPoint) {
+    /// 45° 지그재그 파 하나 (`index` — 2중 물결의 둘째 파는 1) — 파의 선 방향 범위(`waveSpan(for:index:)`)
+    /// 시작의 위 꼭짓점에서 진폭만큼 내려갔다 올라오기를 반복하고, 꼭짓점 사이의 평탄은 짧은 띠로 잇는다.
+    /// 둘째 파는 가로지르는 축으로 `Wave.secondOffset`만큼 아래다. 대각선은 획 두께의 평행사변형
+    /// (butt cap)이고, 범위 끝 앞에서 시작한 마지막 대각선은 자르지 않고 끝까지 그린다 — 끝과 같은 자리에서
+    /// 시작하는 대각선은 그리지 않는다 (한글 실측, #191·#235 — `waveDiagonalCount(for:index:)`;
+    /// `alongExtent(of:)`가 그 넘침을 보고한다). 표 셀 테두리·단 구분선은 마지막 대각선 뒤의 평탄도 그 시작이
+    /// 끝 앞이면 긋는다 (`drawsTrailingFlat(after:line:span:)`).
+    static func addWave(to path: CGMutablePath, line: Line, index: Int) {
         let wave = wave(for: line)
         let stroke = wave.stroke
         guard stroke > 0 else { return }
-        let top = wave.top + offset.y
+        let span = waveSpan(for: line, index: index)
+        let top = wave.top + CGFloat(index) * wave.secondOffset
         if wave.straight {
-            // 대각선이 없는 작은 크기 — 위 평탄 높이에 가로 선 하나 (한글 12.30: 1.54pt 이하)
-            let start = max(0, offset.x)
-            guard line.length > start else { return }
+            // 대각선이 없는 작은 크기 — 위 평탄 높이에 가로 선 하나 (한글 12.30: 글자선 1.54pt 이하)
+            guard span.upperBound > span.lowerBound else { return }
             path.addRect(CGRect(
-                x: start, y: top - stroke / 2, width: line.length - start, height: stroke
+                x: span.lowerBound, y: top - stroke / 2, width: span.upperBound - span.lowerBound,
+                height: stroke
             ))
             return
         }
         guard wave.run > 0 else { return }
-        let count = waveDiagonalCount(for: line, offsetX: offset.x)
-        for index in 0 ..< count {
-            let goingDown = index.isMultiple(of: 2)
-            let startX = offset.x + CGFloat(index) * wave.halfPeriod
+        let count = waveDiagonalCount(for: line, index: index)
+        for diagonal in 0 ..< count {
+            let goingDown = diagonal.isMultiple(of: 2)
+            let startX = span.lowerBound + CGFloat(diagonal) * wave.halfPeriod
             let startY = goingDown ? top : top + wave.levelGap
             let end = CGPoint(x: startX + wave.run, y: startY + (goingDown ? wave.run : -wave.run))
             addSegment(from: CGPoint(x: startX, y: startY), to: end, stroke: stroke, into: path)
-            if index + 1 < count, wave.flat > 0 {
+            let trailing = diagonal + 1 == count
+            if wave.flat > 0, !trailing || drawsTrailingFlat(after: end.x, line: line, span: span) {
                 // 평탄은 다음 대각선이 시작하는 높이다 — 대각선 끝과 다를 수 있다 (홀수 r)
                 let flatY = goingDown ? top + wave.levelGap : top
                 path.addRect(CGRect(
@@ -227,13 +239,49 @@ extension HwpLineShapeGeometry {
         }
     }
 
-    /// 2중 물결 — 같은 물결을 둘째 파 이동량(`Wave.secondOffset`)만큼 옮겨 한 번 더 긋는다. 물결이
-    /// 가로 선으로 접힌 작은 크기(`Wave.straight`)는 두 파가 같은 자리라 한 번만 긋는다 (한글 1.54pt 이하).
+    /// 2중 물결 — 같은 물결을 둘째 파 자리(`Wave.secondOffset` 아래, 선 방향은 그 파의 범위)에 한 번 더
+    /// 긋는다. 물결이 가로 선으로 접힌 작은 크기(`Wave.straight`)는 두 파가 같은 자리라 한 번만 긋는다
+    /// (한글 1.54pt 이하).
     static func addDoubleWave(to path: CGMutablePath, line: Line) {
-        addWave(to: path, line: line, offset: .zero)
-        let wave = wave(for: line)
-        guard !wave.straight else { return }
-        addWave(to: path, line: line, offset: wave.secondOffset)
+        addWave(to: path, line: line, index: 0)
+        guard !wave(for: line).straight else { return }
+        addWave(to: path, line: line, index: 1)
+    }
+
+    /// 그리는 파의 수 — 물결 1, 2중 물결 2 (가로 선으로 접힌 2중 물결은 1)
+    static func drawnWaveCount(for line: Line) -> Int {
+        line.shape == .doubleWave && !wave(for: line).straight ? 2 : 1
+    }
+
+    /// 파 `index`의 선 방향 범위 (로컬 x, [시작, 끝)) — `Line.waveSpans`가 있으면 그 `index`번째(모자라면
+    /// 마지막), 없으면 [0, `length`). 끝이 시작 앞이면 빈 범위다. 공개 입력이라 끝이 유한하지 않거나 폭이
+    /// 넘치는 범위는 빈 범위로 본다 — 그 파는 그리지 않고 범위도 보고하지 않는다 (path == nil ⇔ 범위 == nil).
+    static func waveSpan(for line: Line, index: Int) -> Range<CGFloat> {
+        guard let spans = line.waveSpans, let last = spans.last else { return 0 ..< line.length }
+        let span = index < spans.count ? spans[index] : last
+        guard span.lowerBound.isFinite, span.upperBound.isFinite,
+              (span.upperBound - span.lowerBound).isFinite
+        else { return 0 ..< 0 }
+        return span
+    }
+
+    /// 긋는 파의 선 방향 범위 — 비었거나(1e-6pt 이하, 요소 개수의 바닥과 같다) 유한하지 않은
+    /// (`waveSpan(for:index:)`) 범위는 뺀다. 반복 상한 판정(`patternRepeats(of:)`)과 그 실선 띠
+    /// (`ownedSolidBand(for:)`)가 이 범위로 센다.
+    static func drawableWaveSpans(for line: Line) -> [Range<CGFloat>] {
+        (0 ..< drawnWaveCount(for: line)).map { waveSpan(for: line, index: $0) }
+            .filter { $0.upperBound - $0.lowerBound > 1e-6 }
+    }
+
+    /// 마지막 대각선 뒤의 평탄을 긋는가 — 표 셀 테두리·단 구분선(`Scale.border`)은 한글처럼 평탄도 따로
+    /// 긋는 요소라 시작(대각선 끝 `flatStart`)이 범위 끝 앞이면 긋는다 (#253 실측: 셀 간격 표 0.1mm 세로 변
+    /// 666u — 대각선 222개 뒤 평탄 222개). 글자선은 좇지 않는다 (#252 — 남은 격차).
+    static func drawsTrailingFlat(
+        after flatStart: CGFloat, line: Line, span: Range<CGFloat>
+    ) -> Bool {
+        guard line.scale == .border else { return false }
+        let room = span.upperBound - flatStart
+        return room > waveHalfPeriod(for: line) * 1e-6
     }
 
     /// 두 점을 잇는 획 두께 `stroke`의 평행사변형 (butt cap). 꼭짓점 평탄 띠(`addRect`, 부호
@@ -272,10 +320,13 @@ extension HwpLineShapeGeometry {
         return max(1, Int((min(ratio, maxPatternRepeats + 1) - 1e-6).rounded(.up)))
     }
 
-    /// `offsetX`에서 시작한 물결의 대각선 개수 — 시작점이 `length` 앞에 있는 반주기는 끝까지
-    /// 그린다 (한글은 마지막 대각선을 자르지 않는다). 시작점이 `length` 밖이면 0.
-    static func waveDiagonalCount(for line: Line, offsetX: CGFloat) -> Int {
-        patternElementCount(span: line.length - offsetX, period: waveHalfPeriod(for: line))
+    /// 파 `index`의 대각선 개수 — 시작점이 범위 끝 앞에 있는 반주기는 끝까지 그린다 (한글은 마지막
+    /// 대각선을 자르지 않는다). 범위가 비었으면 0.
+    static func waveDiagonalCount(for line: Line, index: Int) -> Int {
+        let span = waveSpan(for: line, index: index)
+        return patternElementCount(
+            span: span.upperBound - span.lowerBound, period: waveHalfPeriod(for: line)
+        )
     }
 
     /// 원형 점선의 원 개수 — 중심이 `length` 앞인 원을 끝에 걸쳐도 그린다 (#235). 표 셀 테두리도
@@ -292,14 +343,45 @@ extension HwpLineShapeGeometry {
         return count > 1 && !lastEdge.isFinite ? count - 1 : count
     }
 
-    /// `offsetX`에서 시작한 물결의 마지막 대각선이 끝나는 x (대각선이 없으면 `length` 안)
-    static func waveEnd(for line: Line, offsetX: CGFloat) -> CGFloat {
-        let wave = wave(for: line)
-        if wave.straight {
-            return line.length
+    /// 물결의 가로지르는 범위 (로컬 y) — 실제로 긋는 파만 센다: `Line.waveSpans`가 비운 파는 경로에 없다
+    /// (`alongExtent(of:)`와 같은 판정). 반복 상한을 넘으면 실선 띠이고, 긋는 파가 없으면 그 띠도 없다
+    /// (대시·원형 점선 조각은 제 몫이 없어도 선 전체의 띠를 내는 것과 갈린다).
+    static func waveCrossExtent(of line: Line) -> ClosedRange<CGFloat>? {
+        if patternRepeats(of: line) > maxPatternRepeats {
+            guard ownedSolidBand(for: line) != nil else { return nil }
+            let band = solidBand(for: line)
+            return band.minY ... band.maxY
         }
-        let count = waveDiagonalCount(for: line, offsetX: offsetX)
-        guard count > 0 else { return min(offsetX, line.length) }
-        return offsetX + CGFloat(count - 1) * wave.halfPeriod + wave.run
+        let wave = wave(for: line)
+        let half = wave.stroke / 2
+        let range = wave.centerRange
+        let offsets = (0 ..< drawnWaveCount(for: line))
+            .filter { waveAlongExtent(for: line, index: $0) != nil }
+            .map { CGFloat($0) * wave.secondOffset }
+        guard let lift = offsets.min(), let drop = offsets.max() else { return nil }
+        return (range.lowerBound + lift - half) ... (range.upperBound + drop + half)
+    }
+
+    /// 파 `index`가 칠하는 선 방향 범위 (로컬 x) — 첫 대각선 시작부터 마지막 대각선 끝(또는 그 뒤 평탄 끝)
+    /// 까지에 45° 획의 butt cap 모서리(획 반폭/√2)를 양 끝에 더한다. 가로 선으로 접힌 물결은 범위 그대로다.
+    /// 그릴 대각선이 없으면 nil.
+    static func waveAlongExtent(for line: Line, index: Int) -> ClosedRange<CGFloat>? {
+        let wave = wave(for: line)
+        let span = waveSpan(for: line, index: index)
+        if wave.straight {
+            return span.upperBound > span.lowerBound ? span.lowerBound ... span.upperBound : nil
+        }
+        let count = waveDiagonalCount(for: line, index: index)
+        guard count > 0 else { return nil }
+        let corner = wave.stroke / 2 / 2.0.squareRoot()
+        // 첫 대각선 시작은 곱하지 않는다 — 반주기가 무한대로 넘친 입력에서 0 × ∞ = NaN을 피한다
+        let lastStart = count > 1
+            ? span.lowerBound + CGFloat(count - 1) * wave.halfPeriod : span.lowerBound
+        let lastEnd = lastStart + wave.run
+        var upper = lastEnd + corner
+        if wave.flat > 0, drawsTrailingFlat(after: lastEnd, line: line, span: span) {
+            upper = max(upper, lastEnd + wave.flat)
+        }
+        return (span.lowerBound - corner) ... upper
     }
 }

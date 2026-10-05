@@ -172,18 +172,21 @@ final class HwpLineShapeGeometryTests: XCTestCase {
         expect(above.map(\.midY)).to(beCloseTo([-6.18, -1.26], within: 1e-9))
     }
 
-    /// 테두리 여러 줄은 두께 띠 안에 든다 — 4mm(11.34pt) 가는+굵은: 2.83 / 2.83 공백 / 5.67,
-    /// 모서리(0)에 중심 (한글 23·23·49u, 띠 35.5~130.5u가 모서리 83u 중심)
+    /// 테두리 여러 줄은 같은 굵기 실선의 획 B를 장치 단위 띠로 나눈다 (#253) — 4mm(무늬 두께 1134HWPUNIT →
+    /// B = 95u) 가는+굵은: 가는 선·공백 ⌊95/4⌋ = 23u, 굵은 선 95 − 46 = 49u, 띠는 모서리(0)에서 −⌊95/2⌋ =
+    /// −47u부터. 행 [−47, −24)·[−1, 48)u, 획 중심은 행 시작 + ⌊폭/2⌋라 홀수 폭은 반 칸 위로 치우친다 (한글
+    /// 12.30: 가는 선 (−36, 23)u·굵은 선 (23, 49)u — 종전 비례 띠는 두께 11.34pt의 1/4·1/4·1/2였다).
     func testBorderMultiLineBandIsThicknessCenteredOnEdge() {
-        let thickness = 4 * 72 / 25.4
-        let pieces = Self.pieces(HwpLineShapeGeometry.path(for: Self.borderLine(
-            .thinThickDoubleLine, thickness: thickness
-        )))
+        let line = Self.borderLine(.thinThickDoubleLine, thickness: 4 * 72 / 25.4)
+        let pieces = Self.pieces(HwpLineShapeGeometry.path(for: line))
         expect(pieces.count) == 2
-        expect(pieces[0].minY).to(beCloseTo(-thickness / 2, within: 0.001))
-        expect(pieces[0].height).to(beCloseTo(thickness / 4, within: 0.001))
-        expect(pieces[1].minY).to(beCloseTo(0, within: 0.001))
-        expect(pieces[1].maxY).to(beCloseTo(thickness / 2, within: 0.001))
+        expect(pieces[0].minY).to(beCloseTo(-47.5 * 0.12, within: 1e-9))
+        expect(pieces[0].height).to(beCloseTo(23 * 0.12, within: 1e-9))
+        expect(pieces[1].minY).to(beCloseTo(-1.5 * 0.12, within: 1e-9))
+        expect(pieces[1].maxY).to(beCloseTo(47.5 * 0.12, within: 1e-9))
+        let slots = HwpLineShapeGeometry.stripeGeometry(for: line).map(\.slot)
+        expect(slots.map(\.lowerBound)).to(beCloseTo([-47 * 0.12, -1 * 0.12], within: 1e-9))
+        expect(slots.map(\.upperBound)).to(beCloseTo([-24 * 0.12, 48 * 0.12], within: 1e-9))
     }
 
     // MARK: - 물결
@@ -240,46 +243,51 @@ final class HwpLineShapeGeometryTests: XCTestCase {
         expect(odd.centerRange.lowerBound).to(beCloseTo(-(9 + 8 + 1) * 0.12, within: 1e-9))
     }
 
-    /// 테두리 물결: 진폭·반주기 = 두께, 획 = 두께/4, 꼭짓점 띠 [−7/8, +1/8] 두께 (−y 쪽으로
-    /// 3/8 치우침, 한글 4mm 실측 71~167u 대 모서리 83u); 2중 물결은 (3/4, 3/4) 옮긴 파를 더해
-    /// [−7/8, +7/8] 대칭 — 둘째 파의 내려가는 획이 첫 파의 내려가는 획과 한 직선에 놓여
-    /// 마름모 격자를 이룬다 (한글 4mm 실측: 둘째 파 첫 꼭짓점이 첫 파 시작 + 3t/4)
+    /// 테두리 물결은 같은 굵기 실선의 획 B를 띠로 삼은 장치 단위 물결이다 (#253) — 8pt(800HWPUNIT → B =
+    /// 67u, 획 w = round(67/4) = 17u): 대각선 가로·세로 67u, 반주기 68u, 위 평탄 −(⌊67/2⌋ + ⌈3·17/2⌉) = −59u,
+    /// 아래 평탄 −59 + 66 = 7u — 홀수 B라 올라가는 대각선이 위 평탄을 1u 넘는다(−60u). 물결은 선 중심보다 −y
+    /// 쪽(2중선의 위 줄 자리)에 치우치고, 2중 물결의 둘째 파는 3w = 51u 아래다 (한글 12.30: 1mm 물결 위 평탄
+    /// −21u·대각선 24u·획 6u, 2중 물결 둘째 파 +18u). 선 방향 자리는 파마다 `Line.waveSpans`다 — 표 셀 테두리가
+    /// 위 변에 [−2w, …)·[+w, …)를 주면 둘째 파의 내려가는 획이 첫 파의 것과 한 직선(y − x 일정)에 놓인다.
     func testBorderWaveShiftsTowardNegativeCross() {
         let thickness: CGFloat = 8
+        let unit: CGFloat = 0.12
         let wave = HwpLineShapeGeometry.crossExtent(
             of: Self.borderLine(.wave, thickness: thickness)
         )
-        expect(wave?.lowerBound).to(beCloseTo(-7 - 1, within: 0.001))
-        expect(wave?.upperBound).to(beCloseTo(1 + 1, within: 0.001))
+        expect(wave?.lowerBound).to(beCloseTo((-60 - 8.5) * unit, within: 1e-9))
+        expect(wave?.upperBound).to(beCloseTo((8 + 8.5) * unit, within: 1e-9))
         let double = HwpLineShapeGeometry.crossExtent(
             of: Self.borderLine(.doubleWave, thickness: thickness)
         )
-        expect(double?.lowerBound).to(beCloseTo(-8, within: 0.001))
-        expect(double?.upperBound).to(beCloseTo(7 + 1, within: 0.001))
-        let pieces = Self.pieces(HwpLineShapeGeometry.path(
-            for: Self.borderLine(.doubleWave, thickness: thickness, length: 40)
-        ))
-        // 둘째 파의 첫 대각선은 x = 3/4 두께 = 6에서 시작한다 (45° 평행사변형이라 상자는 획
-        // 반폭/√2만큼 왼쪽으로 나간다) — 첫 파의 **첫** 내려가는 획(x 0~8, y −7~1)과 같은
-        // 직선 y − x = −7 위라 마름모 격자가 된다
-        let diagonals = pieces.filter { $0.height > 4 }
-        let corner = 1 / 2.0.squareRoot()
-        let first = try? XCTUnwrap(diagonals.first { abs($0.minX + corner) < 0.01 })
-        let second = try? XCTUnwrap(diagonals.first { abs($0.minX - (6 - corner)) < 0.01 })
-        expect(first).toNot(beNil())
-        expect(second).toNot(beNil())
-        expect(second?.minY).to(beCloseTo(-7 + 6 - corner, within: 0.01))
+        expect(double?.lowerBound).to(beCloseTo((-60 - 8.5) * unit, within: 1e-9))
+        expect(double?.upperBound).to(beCloseTo((8 + 51 + 8.5) * unit, within: 1e-9))
+        // 위 변의 두 파 — 첫 파 −2w = −34u, 둘째 파 +w = 17u에서 시작 (1×1 표, `HwpBorderSet`이 준다)
+        var line = Self.borderLine(.doubleWave, thickness: thickness, length: 40)
+        line.waveSpans = [(-34 * unit) ..< (40 - 34 * unit), (17 * unit) ..< (40 + 17 * unit)]
+        let diagonals = Self.pieces(HwpLineShapeGeometry.path(for: line)).filter { $0.height > 4 }
+        let corner = 17 * unit / 2 / 2.0.squareRoot()
+        let first = try? XCTUnwrap(diagonals.first { abs($0.minX - (-34 * unit - corner)) < 1e-6 })
+        let second = try? XCTUnwrap(diagonals.first { abs($0.minX - (17 * unit - corner)) < 1e-6 })
+        expect(first?.minY).to(beCloseTo((-59 * unit) - corner, within: 1e-6))
+        expect(second?.minY).to(beCloseTo((-59 + 51) * unit - corner, within: 1e-6))
         expect((second?.minY ?? 0) - (second?.minX ?? 0))
-            .to(beCloseTo((first?.minY ?? 1) - (first?.minX ?? 1), within: 0.01))
-        expect(diagonals.contains { abs($0.minX - (2 - corner)) < 0.01 }) == false
-        // 둘째 파의 시작(3t/4)이 길이 밖이면 둘째 파는 그리지 않는다 (강제 대각선 없음)
-        let short = Self.pieces(HwpLineShapeGeometry.path(
-            for: Self.borderLine(.doubleWave, thickness: thickness, length: 5)
-        )).filter { $0.height > 4 }
-        expect(short.count) == 1
-        expect(HwpLineShapeGeometry.alongExtent(
-            of: Self.borderLine(.doubleWave, thickness: thickness, length: 5)
-        )?.upperBound).to(beCloseTo(8 + corner, within: 0.001))
+            .to(beCloseTo((first?.minY ?? 1) - (first?.minX ?? 1), within: 1e-6))
+        // 둘째 파의 범위가 비면 둘째 파는 그리지 않는다 (강제 대각선 없음)
+        var short = Self.borderLine(.doubleWave, thickness: thickness, length: 5)
+        short.waveSpans = [0 ..< 5, 5 ..< 5]
+        let shortPieces = Self.pieces(HwpLineShapeGeometry.path(for: short))
+        expect(shortPieces.filter { $0.height > 4 }.count) == 1
+        expect(HwpLineShapeGeometry.alongExtent(of: short)?.upperBound)
+            .to(beCloseTo(67 * unit + corner, within: 1e-9))
+        // 가로지르는 범위도 긋는 파만 센다 — 둘째 파 자리(+51u)를 비워 둔다
+        expect(HwpLineShapeGeometry.crossExtent(of: short)).to(equal(wave))
+        // 두 파가 모두 비면 경로도 범위도 없다 (path == nil ⇔ 범위 == nil)
+        var empty = Self.borderLine(.doubleWave, thickness: thickness, length: 5)
+        empty.waveSpans = [5 ..< 5]
+        expect(HwpLineShapeGeometry.path(for: empty)).to(beNil())
+        expect(HwpLineShapeGeometry.alongExtent(of: empty)).to(beNil())
+        expect(HwpLineShapeGeometry.crossExtent(of: empty)).to(beNil())
     }
 
     // MARK: - 글자 모양 값 변환
@@ -297,38 +305,39 @@ final class HwpLineShapeGeometryTests: XCTestCase {
 // MARK: - 단 구분선·넘침·비정상 입력
 
 extension HwpLineShapeGeometryTests {
-    /// 단 구분선의 2중 물결은 둘째 파를 선 방향으로 옮기지 않는다 (한글 3mm 실측: 두 파의
-    /// 꼭짓점이 같은 y에서 시작) — 가로지르는 축 이동은 테두리와 같은 3/4 두께
+    /// 단 구분선의 2중 물결은 두 파가 구분선 시작에서 함께 시작한다 (한글 12.30 실측: 굵기 16단 모두 두 파의
+    /// 첫 대각선이 같은 y, #253) — 가로지르는 축 이동은 테두리와 같은 3w (8pt: w 17u → 51u = 6.12)
     func testDividerDoubleWaveKeepsBothWavesInPhase() {
         let line = HwpLineShapeGeometry.Line(
             shape: .doubleWave, length: 40, thickness: 8, scale: .border, placement: .divider
         )
-        let offset = HwpLineShapeGeometry.doubleWaveOffset(for: line)
-        expect(offset.x) == 0
-        expect(offset.y).to(beCloseTo(6, within: 0.001))
+        let offset = HwpLineShapeGeometry.wave(for: line).secondOffset
+        expect(offset).to(beCloseTo(51 * 0.12, within: 1e-9))
         let starts = Self.pieces(HwpLineShapeGeometry.path(for: line))
             .filter { $0.height > 4 }.map(\.minX).filter { $0 < 0 }
         expect(starts.count) == 2
         expect(HwpLineShapeGeometry.crossExtent(of: line)?.upperBound)
-            .to(beCloseTo(8, within: 0.001))
+            .to(beCloseTo((8 + 51 + 8.5) * 0.12, within: 1e-9))
     }
 
     /// 물결은 `length` 앞에서 시작한 마지막 반주기를 자르지 않고 끝까지 그린다 (한글 실측:
     /// 40pt 밑줄 51.03반주기 → 대각선 52개, 3mm 구분선 → 4개) — `alongExtent`가 그 넘침을
     /// 보고하고, 대시는 종전대로 `length`에서 잘린다
     func testWaveCompletesTheLastHalfPeriodPastTheLength() {
-        // 두께 8 → 반주기 8.12; 길이 20 → ceil(20 / 8.12) = 3개, 끝 = 3 × 8.12 − 0.12 = 24.24
+        // 두께 8 → B 67u = 8.04, 반주기 68u = 8.16; 길이 20 → 0·8.16·16.32의 3개, 끝 = 16.32 + 8.04 = 24.36
+        // (그 뒤 평탄 24.36은 끝 뒤라 긋지 않는다)
         let border = Self.borderLine(.wave, thickness: 8, length: 20)
+        let corner = 17 * 0.12 / 2 / 2.0.squareRoot()
         let diagonals = Self.pieces(HwpLineShapeGeometry.path(for: border))
             .filter { $0.height > 4 }
         expect(diagonals.count) == 3
-        expect(diagonals.last?.maxX).to(beCloseTo(24.24 + 1 / 2.0.squareRoot(), within: 0.01))
-        expect(diagonals.last?.width).to(beCloseTo(8 + 2 / 2.0.squareRoot(), within: 0.01))
-        // 선 방향 범위는 넘침에 획 모서리(1/√2)를 양 끝에 더한 것
+        expect(diagonals.last?.maxX).to(beCloseTo(24.36 + corner, within: 1e-9))
+        expect(diagonals.last?.width).to(beCloseTo(8.04 + 2 * corner, within: 1e-9))
+        // 선 방향 범위는 넘침에 획 모서리(획 반폭/√2)를 양 끝에 더한 것
         expect(HwpLineShapeGeometry.alongExtent(of: border)?.lowerBound)
-            .to(beCloseTo(-1 / 2.0.squareRoot(), within: 0.001))
+            .to(beCloseTo(-corner, within: 1e-9))
         expect(HwpLineShapeGeometry.alongExtent(of: border)?.upperBound)
-            .to(beCloseTo(24.24 + 1 / 2.0.squareRoot(), within: 0.001))
+            .to(beCloseTo(24.36 + corner, within: 1e-9))
         // 40pt 글자선 400pt: 반주기 4.68 → 400 / 4.68 = 85.47 → 86개, 끝 = 85 × 4.68 + 4.56 =
         // 402.36 (잘랐다면 400에서 멈춘다)
         let character = Self.pieces(HwpLineShapeGeometry.path(for: Self.characterLine(.wave)))
@@ -415,9 +424,10 @@ extension HwpLineShapeGeometryTests {
         let border = try XCTUnwrap(
             HwpLineShapeGeometry.path(for: Self.borderLine(.wave, thickness: 8))
         )
-        // 테두리 8pt: 첫 대각선 끝 (8, 1), 평탄 [8, 8.12] × [0, 2]
-        expect(border.contains(CGPoint(x: 8.02, y: 1), using: .winding)) == true
-        expect(border.contains(CGPoint(x: 8.06, y: 0.5), using: .winding)) == true
+        // 테두리 8pt: 첫 대각선 (0, −7.08) → (8.04, 0.96), 평탄 [8.04, 8.16] × [0.84 ± 1.02] — 대각선 끝 안쪽과
+        // 평탄이 겹친 (8.05, 0.9)도, 평탄만인 (8.1, 0.5)도 칠해진다
+        expect(border.contains(CGPoint(x: 8.05, y: 0.9), using: .winding)) == true
+        expect(border.contains(CGPoint(x: 8.1, y: 0.5), using: .winding)) == true
     }
 
     /// 유한하지 않은 입력은 경로가 없고, 패턴이 10만 번 넘게 되풀이될 길이·축척은 실선 띠로
@@ -442,6 +452,19 @@ extension HwpLineShapeGeometryTests {
             expect(HwpLineShapeGeometry.path(for: line)).to(beNil())
             expect(HwpLineShapeGeometry.crossExtent(of: line)).to(beNil())
             expect(HwpLineShapeGeometry.alongExtent(of: line)).to(beNil())
+        }
+        // 파마다의 범위(`waveSpans`)가 유한하지 않으면 그 파는 빈 범위다 — 대각선 없이 가로 선 하나로 접힌
+        // 얇은 물결(B ≤ 1u)도 무한 사각형이나 무한 범위를 내지 않는다 (#253)
+        for spans: [Range<CGFloat>] in [[0 ..< .infinity], [-.infinity ..< 5]] {
+            for thickness: CGFloat in [0.1, 8] {
+                let line = HwpLineShapeGeometry.Line(
+                    shape: .wave, length: 10, thickness: thickness, scale: .border,
+                    placement: .border, waveSpans: spans
+                )
+                expect(HwpLineShapeGeometry.path(for: line)).to(beNil())
+                expect(HwpLineShapeGeometry.alongExtent(of: line)).to(beNil())
+                expect(HwpLineShapeGeometry.crossExtent(of: line)).to(beNil())
+            }
         }
         // 대시는 장치 단위라 주기가 아무리 얇아도 2u(점 1u·공백 1u) — 상한은 길이 24,000pt 너머다
         let huge = Self.borderLine(.dotLine, thickness: 0.001, length: 30000)

@@ -9,7 +9,7 @@ import XCTest
 /// (build 6523, macOS) PDF가 그린 값이다 (2026-10-03, `probes/252`): 글자 아래 밑줄 1~100pt의 부속선
 /// 두께와 부속선 중심 사이(u = 0.12pt, 첫 부속선 기준), 물결의 대각선 가로 폭·반주기·획. 띠는 2중선·
 /// 물결이 0.113em, 가는+굵은 선·3중선이 0.198em을 HWPUNIT과 장치 단위로 차례로 반올림한 것이다
-/// (`HwpLineShapeGeometry+CharacterBands.swift`). 크기는 0.2~4pt의 작은 크기 갈림(2중선·물결의 1u 한
+/// (`HwpLineShapeGeometry+DeviceBands.swift`). 크기는 0.2~4pt의 작은 크기 갈림(2중선·물결의 1u 한
 /// 줄, 가는+굵은 선의 굵은 선 하한 3u, 3중선의 굵은 선 0·1·2u와 띠 1u 이하의 1u 한 줄 — 1pt 미만은
 /// HWPX로만 저작되지만 한글이 그대로 그린다)과 1u 경계를 지나는 큰 크기를 고른다.
 /// 자리는 한글이 쪽 절대 600dpi 격자에서 세어 줄마다 ±1u 흔들리므로 여기서는 띠 안 구성만 본다 — 띠
@@ -299,7 +299,7 @@ extension HwpLineShapeGeometryTests {
                     .to(beCloseTo(halfPeriod, within: 1e-6), description: label)
                 expect(wave.levelGap / 0.12)
                     .to(beCloseTo(2 * (run / 2).rounded(.down), within: 1e-6), description: label)
-                expect(wave.secondOffset.y / 0.12)
+                expect(wave.secondOffset / 0.12)
                     .to(beCloseTo(3 * sample.stroke, within: 1e-6), description: label)
             }
         }

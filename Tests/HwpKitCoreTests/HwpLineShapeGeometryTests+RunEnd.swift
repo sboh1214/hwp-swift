@@ -96,8 +96,9 @@ extension HwpLineShapeGeometryTests {
     /// 29.52면 원 둘, 29.64면 셋째 원(29.52)이 반지름만큼 넘친다. 표 셀 테두리의 원도 같다: 한글은 같은 모양
     /// 이웃 칸의 변을 한 선으로 이어 그 끝에서 이 규칙을 쓰고 (#238 — 이웃 세로 변이 없는 가로 사슬은
     /// 칸 1·2·3개 모두 정확히), 우리는 이은 선을 사슬 전체 길이로 받는다 (`HwpBorderChaining`). 테두리
-    /// 물결은 한글도 칸마다 다시 시작해 넘치므로 같은 규칙이고, 2중 물결의 둘째 파는 3t/4 뒤에서
-    /// 시작하므로 그 자리부터 센다.
+    /// 물결은 한글도 칸마다 다시 시작해 넘치므로 같은 규칙이고, 2중 물결은 파마다 제 범위(`Line.waveSpans` —
+    /// 표 모서리 맥락)의 끝에서 센다 (#253: 칸 길이를 늘린 564표본(1u씩 — 한쪽만 맞물린 2mm 64표본만 6u씩)에서 대각선·평탄이 느는 자리가
+    /// 범위 끝).
     func testDividerAndCellBorderEndsFollowTheRule() {
         func divider(_ shape: HwpBorderType, _ length: CGFloat) -> HwpLineShapeGeometry.Line {
             HwpLineShapeGeometry.Line(
@@ -109,8 +110,9 @@ extension HwpLineShapeGeometryTests {
             .to(beCloseTo([0, 14.76, 29.52], within: 1e-9))
         expect(HwpLineShapeGeometry.alongExtent(of: divider(.circle, 29.64))?.upperBound)
             .to(beCloseTo(29.52 + 3.06, within: 1e-9))
-        expect(Self.diagonals(divider(.wave, 8.24)).count) == 2
-        expect(Self.diagonals(divider(.wave, 8.25)).count) == 3
+        // 단 구분선 4pt 물결: B 33u, 반주기 34u = 4.08 — 대각선 0·4.08·8.16 (8.16은 끝과 같으면 안 긋는다)
+        expect(Self.diagonals(divider(.wave, 8.16)).count) == 2
+        expect(Self.diagonals(divider(.wave, 8.17)).count) == 3
 
         // 표 셀 테두리 4pt(r 33u, 간격 66u = 7.92pt, 칠 반지름 2.1): 중심 < 길이 (길이 15.84면 원 둘,
         // 15.96이면 셋째 원 15.84가 끝을 넘는다)
@@ -130,16 +132,19 @@ extension HwpLineShapeGeometryTests {
             .circle, thickness: 4, length: 1.99
         ))) == 1
 
-        // 테두리 2중 물결: 첫 파 0·4.12, 둘째 파 3.0부터 — 7.12면 둘째 파는 3.0 하나(7.12는 끝과
-        // 같은 자리), 7.13이면 7.12까지 둘
+        // 테두리 2중 물결 4pt(무늬 두께 400HWPUNIT → B 33u, 반주기 34u = 4.08): 파마다 제 범위의 끝에서
+        // 같은 규칙이다 — 첫 파 [0, 7.12)는 0·4.08 둘, 둘째 파 [3.0, 7.08)은 3.0 하나(7.08은 끝과 같은 자리),
+        // [3.0, 7.09)면 7.08까지 둘 (#253 — 둘째 파의 범위는 표 모서리 맥락이 준다)
 
-        func doubleWave(_ length: CGFloat) -> HwpLineShapeGeometry.Line {
-            Self.borderLine(.doubleWave, thickness: 4, length: length)
+        func doubleWave(_ secondEnd: CGFloat) -> HwpLineShapeGeometry.Line {
+            var line = Self.borderLine(.doubleWave, thickness: 4, length: 7.12)
+            line.waveSpans = [0 ..< 7.12, 3 ..< secondEnd]
+            return line
         }
-        expect(HwpLineShapeGeometry.waveDiagonalCount(for: doubleWave(7.12), offsetX: 3)) == 1
-        expect(HwpLineShapeGeometry.waveDiagonalCount(for: doubleWave(7.13), offsetX: 3)) == 2
-        expect(Self.diagonals(doubleWave(7.12)).count) == 2 + 1
-        expect(Self.diagonals(doubleWave(7.13)).count) == 2 + 2
+        expect(HwpLineShapeGeometry.waveDiagonalCount(for: doubleWave(7.08), index: 1)) == 1
+        expect(HwpLineShapeGeometry.waveDiagonalCount(for: doubleWave(7.09), index: 1)) == 2
+        expect(Self.diagonals(doubleWave(7.08)).count) == 2 + 1
+        expect(Self.diagonals(doubleWave(7.09)).count) == 2 + 2
     }
 
     /// 끝과 같은 자리는 부동소수점 잡음(비율 1e-6) 안이면 끝 규칙(`patternElementCount`)이 그리지
@@ -203,5 +208,57 @@ extension HwpLineShapeGeometryTests {
         expect(infinite) == 0
         expect(HwpLineShapeGeometry.patternElementCount(span: 1e12, period: 1e-3))
             == Int(HwpLineShapeGeometry.maxPatternRepeats) + 1
+    }
+
+    /// 반복 상한(`maxPatternRepeats`)을 넘어 실선 띠로 떨어지는 물결도 파마다의 범위(`Line.waveSpans`)를
+    /// 따른다 (#253 — PR #266 리뷰): 반복 수는 긋는 파의 범위로 세고, 띠는 그 범위를 합친 곳이며, 긋는 파가
+    /// 없으면 경로도 범위도 없다. 0.28pt 테두리 물결은 획 B = 2u라 반주기가 0.36pt — 길이 40,000pt면 11만
+    /// 번을 넘는다.
+    func testRepeatLimitFallbackFollowsTheWaveSpans() {
+        func line(
+            _ shape: HwpBorderType, length: CGFloat, spans: [Range<CGFloat>]?
+        ) -> HwpLineShapeGeometry.Line {
+            var line = Self.borderLine(shape, thickness: 0.28, length: length)
+            line.waveSpans = spans
+            return line
+        }
+        let long: CGFloat = 40000
+        expect(HwpLineShapeGeometry.patternRepeats(of: line(.doubleWave, length: long, spans: nil)))
+            > HwpLineShapeGeometry.maxPatternRepeats
+        // 비거나 유한하지 않은 범위뿐이면 실선 띠로 떨어지지 않고 아무것도 그리지 않는다 — 범위마다는 유한해도
+        // 합친 폭이 넘치면 띠를 낼 수 없어 마찬가지다
+        let degenerate: [[Range<CGFloat>]] = [
+            [5 ..< 5], [0 ..< .infinity], [-.infinity ..< 5, 5 ..< 5],
+            [-1e308 ..< -9e307, 9e307 ..< 1e308],
+        ]
+        for spans in degenerate {
+            let empty = line(.doubleWave, length: long, spans: spans)
+            expect(HwpLineShapeGeometry.path(for: empty)).to(beNil())
+            expect(HwpLineShapeGeometry.alongExtent(of: empty)).to(beNil())
+            expect(HwpLineShapeGeometry.crossExtent(of: empty)).to(beNil())
+        }
+        // 띠는 긋는 파의 범위를 합친 곳이라 모서리 자리(첫 파 −2w·둘째 파 +w)를 지킨다
+        let shifted = line(
+            .doubleWave, length: long, spans: [-0.24 ..< long - 0.24, 0.12 ..< long + 0.12]
+        )
+        let band = Self.pieces(HwpLineShapeGeometry.path(for: shifted))
+        expect(band.count) == 1
+        expect(band.first?.minX).to(beCloseTo(-0.24, within: 1e-6))
+        expect(band.first?.maxX).to(beCloseTo(long + 0.12, within: 1e-6))
+        expect(HwpLineShapeGeometry.alongExtent(of: shifted)?.lowerBound)
+            .to(beCloseTo(-0.24, within: 1e-6))
+        expect(HwpLineShapeGeometry.alongExtent(of: shifted)?.upperBound)
+            .to(beCloseTo(long + 0.12, within: 1e-6))
+        // 빈 파는 합치지 않는다 — 멀리 놓인 빈 둘째 파가 띠를 늘리지 않는다
+        let lone = line(.doubleWave, length: long, spans: [0 ..< long, 2 * long ..< 2 * long])
+        expect(HwpLineShapeGeometry.alongExtent(of: lone)?.upperBound)
+            .to(beCloseTo(long, within: 1e-6))
+        // 반복 수는 `length`가 아니라 긋는 범위로 센다 — 짧은 길이에 긴 범위를 주어도 상한을 비켜 가지 못한다
+        let longSpan = line(.wave, length: 10, spans: [0 ..< long])
+        expect(HwpLineShapeGeometry.patternRepeats(of: longSpan))
+            > HwpLineShapeGeometry.maxPatternRepeats
+        expect(Self.pieces(HwpLineShapeGeometry.path(for: longSpan)).count) == 1
+        expect(HwpLineShapeGeometry.alongExtent(of: longSpan)?.upperBound)
+            .to(beCloseTo(long, within: 1e-6))
     }
 }
