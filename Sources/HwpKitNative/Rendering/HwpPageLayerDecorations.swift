@@ -104,9 +104,18 @@ extension HwpPageLayer {
     /// 자간(`kCTKernAttributeName`)·문단 끝 상자(`msWordParagraphEndBox`)가 한 글자 모양
     /// 안에서 달라지고, 글꼴만 다른 별개 글자 모양은 사전이 같아 보이기 때문이다
     /// (#187 리뷰). id 없는 폴백 모양 run은 홀로 선다.
+    ///
+    /// 각주·미주 참조 번호는 같은 글자 모양이어도 **따로 선다** (#256, `noteReferenceRunIdentity`)
+    /// — 한글은 번호를 앞뒤 글자와 다른 글자 모양 run으로 그린다 (2026-10-06 실측: 한글 슬롯
+    /// 함초롬바탕·라틴 슬롯 Apple SD 40pt `가나L` + 각주 + `AB`에서 `가나L`의 취소선은 함초롬
+    /// 자리 +11.64pt, 번호 `15)`는 자기 글꼴 Apple SD 자리 +9.96pt, 번호 뒤 `AB`도 앞 묶음이 아니라
+    /// 자기 첫 글리프 Apple SD 자리 +9.96pt; `가나K` + 각주 + `다라`에서 번호 뒤 `다라`는 번호 글꼴이
+    /// 아니라 자기 첫 글리프 함초롬 자리 +11.64pt). 그래서 번호 run은 자기 글꼴로 새 묶음을 열고,
+    /// 번호 뒤 글자는 같은 글자 모양이어도 다시 새 묶음이다.
     func msWordStrikethroughFonts(of runs: [CTRun]) -> [CTFont?] {
         var fonts: [CTFont?] = []
         var groupShape: NSNumber?
+        var groupNote: NSNumber?
         var groupFont: CTFont?
         for run in runs {
             let attributes = runAttributes(run)
@@ -120,10 +129,12 @@ extension HwpPageLayer {
             // 자간·문단 끝 상자처럼 글자 모양 안에서 달라지는 키가 run을 가르고, 크기·
             // 색이 같은 다른 글자 모양이 묶인다. id 없는 폴백 모양 run은 홀로 선다.
             let shape = attributes[HwpAttributedStringKey.charShapeId] as? NSNumber
-            if let shape, let groupShape, shape == groupShape {
+            let note = Self.noteReferenceRunIdentity(attributes)
+            if let shape, let groupShape, shape == groupShape, note == groupNote {
                 fonts.append(groupFont ?? font)
             } else {
                 groupShape = shape
+                groupNote = note
                 groupFont = font
                 fonts.append(font)
             }
@@ -421,6 +432,11 @@ extension HwpPageLayer {
     /// 0.35 × 축소 크기에 그려 위 첨자 글리프 아래·아래 첨자 글리프 위로 벗어났다.
     /// 변경 추적 삭제선은 같은 경로라 함께 옮겨지지만 첨자 표본은 없다.
     ///
+    /// 각주·미주 참조 번호는 첨자가 아니다 (#256) — 번호 글리프의 축소(0.75배)·올림(0.21 × 설정
+    /// 크기)은 선이 따라가지 않고, 번호가 놓인 글자 모양의 자리·두께 그대로다 (한글 12.30 실측: 세
+    /// 문서 갈래 × 10~80pt에서 번호 선 = 본문 선; 위 첨자 글자 모양 안의 번호는 그 첨자 선).
+    /// 조판이 번호의 올림을 첨자 몫 키에 싣지 않고, 크기는 `strikethroughRunFontSize`가 무른다.
+    ///
     /// 두께는 **첨자 축소 전 기본 크기**의 장치 단위 획이다 (#252) — 한글은 첨자 run의 선도
     /// 본문과 같은 폭으로 그린다 (같은 실측: 10pt 첨자 선 0.36pt = 본문과 같음, 축소 크기
     /// 6.36pt 기준이면 0.24pt; #252 실측: 기본 80pt 위·아래 첨자 run의 세 선 모두 26u = 3.12pt).
@@ -451,8 +467,7 @@ extension HwpPageLayer {
         guard attributes[HwpAttributedStringKey.strikethroughStyle] != nil else { return }
         let color = attributes[HwpAttributedStringKey.strikethroughColor]
             ?? attributes[kCTForegroundColorAttributeName as NSAttributedString.Key]
-        let font = runFont(attributes)
-        let size = font.map(CTFontGetSize) ?? 10
+        let size = strikethroughRunFontSize(attributes)
         // 한글 문서에서는 글꼴 지표가 아니라 글자 크기에 비례해 그린다 (#136 실측) —
         // 폰트의 x-height 절반은 라틴 취소선 위치라 한글 글리프에서 낮게 보였다.
         // MS 워드 호환 문서(#187)에서는 run 자신의 글꼴 지표(`ascent` × 0.273)다 —

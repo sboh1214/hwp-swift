@@ -125,7 +125,7 @@ public extension HwpTextRunBuilder {
 /// 63.96, 장치 0.12pt 양자화; 20pt 상대 50%는 6.36·150%는 19.20), 위 첨자는 설정 크기의 0.44배
 /// 위(8pt 3.48·10pt 4.32~4.44·20pt 8.76·100pt 44.04; 상대 50%·150%도 20pt의 8.76~8.88), 아래
 /// 첨자는 0.12배 아래(10pt 1.20·20pt 2.40·100pt 12.00)에 놓인다. 글자 위치(`faceLocation`)가
-/// 옮긴 몫은 여기에 **더해진다** (`addScriptBaselineShift`). 종전 값 0.67·0.33·0.30은
+/// 옮긴 몫은 여기에 **더해진다** (`addBaselineShift`). 종전 값 0.67·0.33·0.30은
 /// `CharShapeProperty` 실물의 육안 추정이라 10pt에서 위 첨자가 1.1pt 낮고 아래 첨자가 1.8pt
 /// 낮으며 글리프가 0.3pt 컸다.
 extension HwpTextRunBuilder {
@@ -148,8 +148,9 @@ extension HwpTextRunBuilder {
     static let noteReferenceBaselineRatio: CGFloat = 0.21
 }
 
-/// 첨자 속성 — 표 33 위/아래 첨자와 각주·미주 참조 번호가 같은 두 키(`glyphBaselineOffset`·
-/// `scriptBaselineOffset`)를 쓰되 배율·비율은 다르다 (#204).
+/// 첨자 속성 — 표 33 위/아래 첨자는 글리프 이동을 두 키(`glyphBaselineOffset`·
+/// `scriptBaselineOffset`)에 싣고, 각주·미주 참조 번호는 다른 배율·비율(#204)로 글리프만
+/// 옮긴다 — 올림은 합산 키에만 들고 축소 배율은 `noteReferenceScale`로 알린다 (#256).
 extension HwpTextRunBuilder {
     /// 위 첨자 (표 33): 글꼴 크기를 0.64배로 줄이고 베이스라인을 설정 크기의 0.44배 올린다.
     func applySuperscript(
@@ -176,14 +177,26 @@ extension HwpTextRunBuilder {
     /// 각주·미주 참조 번호 (본문 마커·각주 내용의 위 첨자 번호): 글꼴 크기를 0.75배로 줄이고
     /// 베이스라인을 설정 크기의 0.21배 올린다 — 한글은 참조 번호에 글자 모양 위 첨자와 다른
     /// 규칙을 쓴다 (`noteReferenceScale`의 실측).
+    ///
+    /// 이 축소·올림은 **글리프만** 옮긴다 (#256): 올림은 합산 키(`glyphBaselineOffset`)에만
+    /// 더하고 첨자 몫 키(`scriptBaselineOffset`)에는 싣지 않으며, 축소 배율은
+    /// `HwpAttributedStringKey.noteReferenceScale`로 알려 렌더러가 장식선 자리에서 무르게 한다.
+    /// 한글은 번호의 취소선·글자 가운데 밑줄을 번호가 놓인 글자 모양의 자리·두께에 그린다
+    /// (2026-10-06 한글 12.30 PDF 실측: 세 문서 갈래 모두 번호 선 = 본문 선, 위 첨자 글자 모양
+    /// 안의 번호는 그 첨자 선). 종전에는 첨자 몫 키에도 올림을 실어 취소선이 번호를 따라 올라갔고
+    /// 렌더러가 0.75배 글꼴을 첨자로 읽어 선 자리까지 줄였다 — 한글 문서 20pt 본문에서 번호
+    /// 취소선이 9.45pt로 본문(6.96pt)보다 2.5pt 높았다.
     func applyNoteReferenceSuperscript(
         to attributes: inout [NSAttributedString.Key: Any],
         shape: CoreHwp.HwpCharShape
     ) {
-        applyScript(
-            scale: Self.noteReferenceScale, baselineRatio: Self.noteReferenceBaselineRatio,
-            to: &attributes, shape: shape
+        scaleFont(in: &attributes, by: Self.noteReferenceScale)
+        addBaselineShift(
+            Double(settingSize(of: shape) * Self.noteReferenceBaselineRatio),
+            to: &attributes, keys: [HwpAttributedStringKey.glyphBaselineOffset]
         )
+        attributes[HwpAttributedStringKey.noteReferenceScale] =
+            NSNumber(value: Double(Self.noteReferenceScale))
     }
 
     /// 글꼴 크기를 `scale`배로 줄이고 베이스라인을 설정 크기 × `baselineRatio`(양수 = 위)만큼
@@ -195,36 +208,53 @@ extension HwpTextRunBuilder {
         to attributes: inout [NSAttributedString.Key: Any],
         shape: CoreHwp.HwpCharShape
     ) {
-        let baseSize = HwpUnits.points(fromHwpUnit: shape.baseSize)
-        let fontKey = kCTFontAttributeName as NSAttributedString.Key
-        if let value = attributes[fontKey], CFGetTypeID(value as CFTypeRef) == CTFontGetTypeID() {
-            let font = value as! CTFont // swiftlint:disable:this force_cast
-            attributes[fontKey] = CTFontCreateCopyWithAttributes(
-                font,
-                CTFontGetSize(font) * scale,
-                nil,
-                nil
-            )
-        }
+        scaleFont(in: &attributes, by: scale)
         // 첨자 이동은 렌더가 반영하는 커스텀 키 (drawRun 글리프 세로 이동)로 싣는다 —
         // 도입 근거였던 "CTFramesetter는 kCTBaselineOffset을 무시한다"는 macOS 27.0에서
         // 거짓이다 (`HwpTextRunBuilder`의 같은 자리 주석). 다만 여기서 더하는 것은 커스텀
         // 키뿐이고 CT 키는 건드리지 않으므로, 첨자 이동 몫 자체는 상쇄되지 않는다.
-        addScriptBaselineShift(Double(baseSize * baselineRatio), to: &attributes)
+        //
+        // 이동량은 두 키에 누적한다 — 글리프를 옮기는 합산 키(`glyphBaselineOffset`, 글자
+        // 위치 몫이 먼저 들어 있을 수 있다)와 첨자 몫만 담는 `scriptBaselineOffset` (#179).
+        // 뒤 키가 따로 있어야 장식선이 글자 위치는 무시하고 첨자만 따라갈 수 있다 — 합산
+        // 키에서는 두 몫을 되돌려 가를 수 없다.
+        addBaselineShift(
+            Double(settingSize(of: shape) * baselineRatio),
+            to: &attributes,
+            keys: [
+                HwpAttributedStringKey.glyphBaselineOffset,
+                HwpAttributedStringKey.scriptBaselineOffset,
+            ]
+        )
     }
 
-    /// 첨자 이동량(양수 = 위)을 두 키에 누적한다 — 글리프를 옮기는 합산 키
-    /// (`glyphBaselineOffset`, 글자 위치 몫이 먼저 들어 있을 수 있다)와 첨자 몫만 담는
-    /// `scriptBaselineOffset` (#179). 뒤 키가 따로 있어야 장식선이 글자 위치는 무시하고
-    /// 첨자만 따라갈 수 있다 — 합산 키에서는 두 몫을 되돌려 가를 수 없다.
-    private func addScriptBaselineShift(
+    /// 설정 글자 크기 (pt, `HwpCharShape.baseSize` — 상대 크기 반영 전). 첨자·참조 번호의
+    /// 베이스라인 이동량은 이 크기에 건다.
+    private func settingSize(of shape: CoreHwp.HwpCharShape) -> CGFloat {
+        HwpUnits.points(fromHwpUnit: shape.baseSize)
+    }
+
+    /// run 글꼴(`kCTFontAttributeName`)을 `scale`배 크기의 사본으로 바꾼다.
+    private func scaleFont(in attributes: inout [NSAttributedString.Key: Any], by scale: CGFloat) {
+        let fontKey = kCTFontAttributeName as NSAttributedString.Key
+        guard let value = attributes[fontKey], CFGetTypeID(value as CFTypeRef) == CTFontGetTypeID()
+        else { return }
+        let font = value as! CTFont // swiftlint:disable:this force_cast
+        attributes[fontKey] = CTFontCreateCopyWithAttributes(
+            font,
+            CTFontGetSize(font) * scale,
+            nil,
+            nil
+        )
+    }
+
+    /// 베이스라인 이동량(양수 = 위)을 `keys`의 값에 누적한다.
+    private func addBaselineShift(
         _ shift: Double,
-        to attributes: inout [NSAttributedString.Key: Any]
+        to attributes: inout [NSAttributedString.Key: Any],
+        keys: [NSAttributedString.Key]
     ) {
-        for key in [
-            HwpAttributedStringKey.glyphBaselineOffset,
-            HwpAttributedStringKey.scriptBaselineOffset,
-        ] {
+        for key in keys {
             let existing = (attributes[key] as? NSNumber)?.doubleValue ?? 0
             attributes[key] = NSNumber(value: existing + shift)
         }

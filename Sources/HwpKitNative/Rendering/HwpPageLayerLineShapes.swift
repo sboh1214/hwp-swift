@@ -39,7 +39,8 @@ extension HwpPageLayer {
     /// 양쪽 정렬 자간·문단 끝 상자가 한 글자 모양을 가른다. 다만 같은 id 안에서도 선을
     /// 정하는 키(`sameLineShapeGroup` — 선 모양·유무·색·축척 크기·첨자 이동)가 다르면
     /// 따로 묶는다: 변경 추적 삭제 run은 글자 모양을 물려받고 색만 갈리고, 첨자 run은
-    /// 취소선 자리가 달라 첫 run의 기하로 묶어 그리면 틀린다 (#191 리뷰). 슬롯마다 상대
+    /// 취소선 자리가 달라 첫 run의 기하로 묶어 그리면 틀린다 (#191 리뷰). 각주·미주 참조
+    /// 번호도 앞뒤 글자와 따로 묶는다 — 한글이 번호 앞뒤에서 무늬를 새로 시작한다 (#256). 슬롯마다 상대
     /// 크기가 다른 한 글자 모양도 한글 문서에서는 한 묶음이다 — 축척이 기본 크기라 슬롯이
     /// 바뀌어도 같고, 한글도 그 경계에서 위상을 잇는다 (#226, 한글 12.30 실측 2026-09-26: 기본
     /// 20pt·한글 슬롯 50%·라틴 100% "가나다라 abcdefg 마바사아"의 긴 점선 밑줄·취소선이 한 토막
@@ -75,7 +76,9 @@ extension HwpPageLayer {
     }
 
     /// `lineShapeSpans`가 한 묶음으로 보는 두 run의 조건 — 글자 모양 id와 선을 정하는 키가
-    /// 모두 같다 (값 키는 수치 비교, 색은 `CFEqual`). 축척 크기 키는 그 run의 축척이 실제로
+    /// 모두 같고 각주·미주 참조 번호 신원(`noteReferenceRunIdentity`)도 같다 (값 키는 수치 비교,
+    /// 색은 `CFEqual`). 한글은 번호를 따로 된 글자 모양 run으로 그려 긴 점선 무늬가 번호 시작과
+    /// 번호 뒤 글자 시작에서 새로 시작한다 (#256, 2026-10-06 한글 12.30 PDF 실측: 세 문서 갈래 모두). 축척 크기 키는 그 run의 축척이 실제로
     /// 기대는 값이다: 한글 문서·MS 워드 호환 문서는 글자 모양 기본 크기(`baseFontSize` — 슬롯
     /// 상대 크기와 무관, #226·#244; MS 워드 호환 밑줄의 줄 글자 상자는 줄마다 하나라 run을 가르지
     /// 않는다), 한글 2007 호환 문서는 고정 축척이라 기본 크기 키로 충분하고(#227), 기본 크기 키가
@@ -98,6 +101,9 @@ extension HwpPageLayer {
         for key in numberKeys where (lhs[key] as? NSNumber) != (rhs[key] as? NSNumber) {
             return false
         }
+        // 각주·미주 참조 번호는 같은 글자 모양이어도 따로 선다 (#256) — 한글은 번호 앞뒤에서
+        // 무늬를 새로 시작한다. 번호 run의 첨자 몫 키는 앞뒤 글자와 같으므로 위 키로는 갈리지 않는다.
+        guard noteReferenceRunIdentity(lhs) == noteReferenceRunIdentity(rhs) else { return false }
         let colorKeys: [NSAttributedString.Key] = [
             HwpAttributedStringKey.underlineColor, HwpAttributedStringKey.strikethroughColor,
             kCTForegroundColorAttributeName as NSAttributedString.Key,

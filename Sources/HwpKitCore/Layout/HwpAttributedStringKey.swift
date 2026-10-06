@@ -83,8 +83,23 @@ public enum HwpAttributedStringKey {
     /// 장식선은 둘을 다르게 따른다: 한글은 취소선·글자 가운데 밑줄을 첨자로 옮겨진
     /// 베이스라인에 그리지만 글자 위치로 옮겨진 글리프는 따라가지 않는다 (2026-09-15
     /// 실측, `HwpPageLayerDecorations.drawStrikethroughIfNeeded`). 글리프 그리기·기하
-    /// 질의·서식 복사는 종전대로 합산 키만 본다.
+    /// 질의·서식 복사는 종전대로 합산 키만 본다. 각주·미주 참조 번호의 올림은 이 키에
+    /// **싣지 않는다** — 한글은 번호의 취소선을 번호가 아니라 번호가 놓인 글자 모양의
+    /// 자리에 그린다 (#256, `noteReferenceScale`).
     public static let scriptBaselineOffset = NSAttributedString.Key("hwp.scriptBaselineOffset")
+    /// 각주·미주 참조 번호(본문 마커와 각주 내용의 위 첨자 번호) run이 글리프에 건 글꼴 축소
+    /// 배율 (NSNumber, 0.75, #256) — 번호 run에만 있다. 번호의 축소·올림(0.21 × 설정 크기)은
+    /// 글리프만 옮기고(올림은 `glyphBaselineOffset`에만 든다) 장식선은 따라가지 않는다: 한글
+    /// 12.30 PDF 실측(2026-10-06, 한글 문서·한글 2007 호환·MS 워드 호환 × 함초롬바탕·함초롬돋움
+    /// 10~80pt, 미주·글자 가운데 밑줄·상대 크기 50%·각주 내용 번호 포함)에서 번호의 취소선은
+    /// 같은 글자 모양 본문 취소선과 높이·두께가 같다. 그래서 렌더러는 취소선 자리를 잴 때 run 글꼴
+    /// 크기에서 이 축소를 무른다 (`HwpPageLayer.strikethroughRunFontSize`). 번호가 위 첨자 글자
+    /// 모양 안에 있으면 그 첨자 자리를 그대로 따른다 — 첨자 몫은 `scriptBaselineOffset`에 남는다.
+    /// 한편 한글은 번호를 앞뒤 글자와 **다른 글자 모양 run**으로 그린다 — 선 모양 무늬가 번호
+    /// 앞뒤에서 새로 시작하고, MS 워드 호환 문서의 취소선 글꼴(run 첫 글리프 글꼴)도 번호가
+    /// 자기 글꼴로, 번호 뒤 글자가 다시 자기 첫 글리프 글꼴로 정한다 (같은 실측). 렌더러는 이
+    /// 키가 있는 run을 컨트롤 순번(`controlIndex`)마다 따로 묶는다.
+    public static let noteReferenceScale = NSAttributedString.Key("hwp.noteReferenceScale")
     /// 밑줄 여부 (글자 아래) — CT 밑줄 대신 렌더러가 직접 그린다: 선의 위 가장자리가 줄
     /// 상자 바닥(베이스라인 아래 `underlineBelowEdgeRatio` × 줄 상자 높이)에 붙고 두께는 줄
     /// 글자 기본 크기의 장치 단위 획이다 (#176·#226·#252 — 줄 단위,

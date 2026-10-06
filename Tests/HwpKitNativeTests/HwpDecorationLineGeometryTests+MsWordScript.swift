@@ -110,8 +110,9 @@ extension HwpDecorationLineGeometryTests {
     /// 첨자 판정은 축소 비율이 1보다 **확실히** 작을 때다 — 보통 run의 글꼴 크기가 부동소수 오차로
     /// 축소 전 크기보다 아주 조금 작아도 첨자 배율로 떨어지지 않는다(떨어지면 선이 보통 높이의
     /// 0.3배만큼 — Menlo 40pt에서 3.08pt — 내려간다).
-    /// 각주·미주 참조 번호(0.75배)는 첨자 배율을 받는다 — 한글은 그 번호의 취소선을 본문 자리에
-    /// 그리므로 두 갈래 모두 아직 한글과 다르다(#256).
+    /// 각주·미주 참조 번호(0.75배)는 첨자가 아니다 — 번호 run은 `noteReferenceScale`을 실어
+    /// 렌더러가 그 축소를 무르므로(`strikethroughRunFontSize`) 보통 높이에 그린다. 한글도 번호의
+    /// 취소선을 본문 자리에 그린다 (#256, 2026-10-06 실측: 함초롬바탕 20pt 본문·번호 모두 +5.88pt).
     func testMsWordScriptStrikethroughNeedsARealScriptReduction() {
         let layer = HwpPageLayer()
         let size = Self.msWordScriptSize
@@ -124,14 +125,15 @@ extension HwpDecorationLineGeometryTests {
         expect(plain.center).to(beCloseTo(msWordPlainStrikeHeight, within: 0.000_1))
 
         let noteSize = size * 0.75
+        var noteRun = msWordScriptRun(size: size, color: cyan)
+        noteRun[kCTFontAttributeName as NSAttributedString.Key] = menlo(noteSize)
+        noteRun[HwpAttributedStringKey.glyphBaselineOffset] = NSNumber(value: Double(0.21 * size))
+        noteRun[HwpAttributedStringKey.noteReferenceScale] = NSNumber(value: 0.75)
         let note = layer.strikethroughLine(
-            msWordScriptRun(size: size, shift: 0.21 * size, color: cyan),
-            msWordFont: menlo(noteSize), fontSize: noteSize
+            noteRun, msWordFont: menlo(noteSize),
+            fontSize: layer.strikethroughRunFontSize(noteRun)
         )
-        expect(note.center).to(beCloseTo(
-            msWordPlainStrikeHeight * HwpRenderTuning.Text.msWordScriptStrikethroughScale,
-            within: 0.000_1
-        ))
+        expect(note.center).to(beCloseTo(msWordPlainStrikeHeight, within: 0.000_1))
     }
 
     /// 픽셀로 — Menlo 40pt 보통(청록)·위 첨자(자홍)·아래 첨자(초록) 취소선을 한 줄에 그리면, 위
