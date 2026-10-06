@@ -1003,7 +1003,9 @@ run 블록 #165와 같은 표) 각주 이어짐의 본문 하한(`footnoteBodyBo
     줄 예약(`HwpTextRunBuilder.inlineObjectReservation` → `HwpTableLayout.reservedWidth`)이
     같은 값을 쓴다 — 한글은 예약한 폭 그대로 그린다(종전에는 예약 450·그림 425.2pt였다).
     상대 기준 표의 예약 열쇠는 저장값 대신 100%(`fullBasisWidthRaw`)를 실어 다른 단으로 다시
-    풀어도 그 단 폭이 된다.
+    풀어도 그 단 폭이 된다. 다만 그 단에서 칸이 1pt 하한에 걸리면 표는 기준 폭보다 넓게
+    그려지므로, 조각이 다른 단으로 이월될 때는 `HwpPaginator.rescaledInlineTableHeights`가 그 단에서
+    다시 조판한 바깥 폭으로 예약 폭도 고친다(높이와 함께 — #254 PR 리뷰).
   - **줄보다 넓은 줄은 문단 정렬과 무관하게 줄 시작**(문단 왼쪽 여백 + 첫 줄 들여쓰기)에서
     시작해 오른쪽으로만 넘친다 — 가운데·오른쪽·양쪽·배분 정렬 모두. 글자처럼 취급 표에서
     확인했고 사각형 같은 다른 개체도 같다(한글은 개체 뒤 글자를 다음 줄로 보내고 그 줄은
@@ -2454,9 +2456,11 @@ paraShape와 같은 값**이어야 한다.
   (종이·쪽·절대). **글자처럼 취급 표는 예외다** (#214): 예약이 그려지는 높이라 단 폭의 함수다
   (폭 기준이 단·문단이면 표 폭이 그 기준 폭 100%를 따라 셀 줄바꿈이 달라진다 — 절대 폭 표는
   #254부터 단 폭으로 잘리지 않으므로 단과 무관하다) — `placedFragment`가 폭을
-  다시 푼 뒤 조각에 든 표 마커의 예약 높이를 놓이는 단에서 조판한 높이로 다시 잡는다
-  (`HwpPaginator.rescaledInlineTableHeights` → `HwpInlineObjectReservation.withReservedHeights`,
-  폭은 마커가 예약한 값 그대로, 예약 없는 마커는 새로 만들지 않는다). 각주 해석기(`forFootnoteArea`)처럼 기준을 **고정**하는 처방은 여기
+  다시 푼 뒤 조각에 든 표 마커의 예약 높이·폭을 놓이는 단에서 조판한 바깥 상자로 다시 잡는다
+  (`HwpPaginator.rescaledInlineTableHeights` → `HwpInlineObjectReservation.withReservedHeights` —
+  폭도 고치는 것은 다시 푼 기준 폭 100%가 칸이 1pt 하한에 걸린 표가 그려지는 폭보다 좁아서다,
+  #254 PR 리뷰. 예약 없는 마커는 새로 만들지 않는다). 각주 해석기(`forFootnoteArea`)처럼 기준을
+  **고정**하는 처방은 여기
   못 쓴다: 본문 조각은 단이 실제로 바뀌는 것이 옳고 틀린 쪽은 옛 단 값을 실은 예약이다.
   실물 코퍼스는 개체 크기를 전부 절대값으로 저장하므로 오라클은 합성뿐이다 —
   HWPX(`widthRelTo="COLUMN"/"PARA"`)는 이 값을 실을 수 있다.

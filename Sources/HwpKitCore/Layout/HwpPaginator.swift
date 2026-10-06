@@ -3913,6 +3913,14 @@ private extension HwpPaginator {
     /// 높이를 **그 단에서** 그려질 높이로 다시 잡은 사본 (#214) — 폭 기준이 단·문단이면 표 폭이
     /// 그 단 폭 100%를 따라(#254 — 절대 폭 표는 단과 무관하다) 셀 줄바꿈이 달라져 높이가 바뀌는데, 배치(`appendInlineAnchoredTable`)는
     /// 놓이는 단의 폭으로 표를 조판한다. 폭 예약을 다시 푸는 `rescaledForColumn`과 짝이다.
+    ///
+    /// 폭도 그 단에서 그려질 바깥 폭으로 다시 잡는다 (#254 PR 리뷰) — `rescaledForColumn`은
+    /// 상대 기준 표를 기준 폭 100%로만 다시 푸는데, 레이아웃(`HwpTableLayout.resolvedWidths`)은
+    /// 칸이 1pt 하한에 걸리면 그보다 넓게 그린다(`coveringWidth`). 예약이 그리는 폭보다 좁으면 표가
+    /// 뒤 글자를 덮고 앵커가 그려진 표와 갈린다. 여기 오는 마커는 줄을 잰 단에서 이미 예약을 받은
+    /// 표뿐이므로(빌더는 `reservedWidth`가 nil인 표를 예약하지 않는다) 조건 없이 그 단에서 그려질
+    /// 폭을 싣는다 — 목적 단의 기준 폭이 1pt로 접혀 저작 폭을 풀 수 없으면 레이아웃은 가용 폭으로
+    /// 그리는데, 다시 푼 예약은 1pt다.
     func rescaledInlineTableHeights(_ fragment: NSAttributedString) -> NSAttributedString {
         guard sections.indices.contains(nextSectionIndex),
               sections[nextSectionIndex].paragraph.indices.contains(nextParagraphIndex),
@@ -3920,6 +3928,7 @@ private extension HwpPaginator {
         else { return fragment }
         let scope = currentParagraphScope
         var outerHeights: [Int: CGFloat] = [:]
+        var outerWidths: [Int: CGFloat] = [:]
         for ordinal in HwpInlineObjectReservation.reservedMarkerControlIndices(in: fragment)
             where ctrls.indices.contains(ordinal)
         {
@@ -3929,10 +3938,13 @@ private extension HwpPaginator {
                       table, numbering: scope.container(controlIndex: ordinal)
                   )
             else { continue }
-            outerHeights[ordinal] = frame.flowBlockHeight
-                + HwpObjectAnchorGeometry.OuterMargins(table.commonCtrlProperty).vertical
+            let margins = HwpObjectAnchorGeometry.OuterMargins(table.commonCtrlProperty)
+            outerHeights[ordinal] = frame.flowBlockHeight + margins.vertical
+            outerWidths[ordinal] = frame.outerFrame.width + margins.horizontal
         }
-        return HwpInlineObjectReservation.withReservedHeights(fragment, outerHeights: outerHeights)
+        return HwpInlineObjectReservation.withReservedHeights(
+            fragment, outerHeights: outerHeights, outerWidths: outerWidths
+        )
     }
 
     /// 글자처럼 취급 표를 앵커 라인 위치에 배치한다. 앵커가 없으면 false
