@@ -322,6 +322,20 @@ Tests/CoreHwpTests/Fixtures/<fixture-id>/
   실물 근거다 — 라틴 사이 빈칸은 Menlo 20pt 고유 폭 12pt, 한글 앞뒤는 5pt다. 같은 세션의 PDF
   내보내기 글자 원점(README의 표)이 `HwpKitTests/FixtureSpaceWidthTests`의 오라클이고 두 글꼴이 결정론
   resolver의 글꼴과 같아 쪽 좌표를 기기 무관하게 핀한다. HWPX 쌍은 `HwpxFixtures/ms-word-space-width`.
+- `note-reference-strikethrough`: **MS 워드 호환 문서**(호환 문서 대상 프로그램 2)에 한글 슬롯 Apple
+  SD 산돌고딕 Neo·나머지 슬롯 Menlo로 취소선·글자 가운데 밑줄이 걸린 글자 사이에 각주·미주 참조 번호를
+  둔 7문단 — Menlo 20·40pt 실선 취소선(각주 1의 내용도 같은 취소선), 글자 가운데 밑줄, 위 첨자 글자
+  모양 안 번호, 긴 점선 취소선, 한글·라틴 슬롯이 섞인 80pt 두 문단(쪽 나누기로 2쪽에서 시작 — 1쪽 끝의
+  80pt·160% 문단 프레임 아래 여분이 각주 겹침 가드에 걸리지 않게, #271) — 을 실은 합성 HWPX(`footnote-endnote`
+  바탕, 구역 각주 모양·각주 자동 번호 위 첨자, 줄 배치 정보 없음)를 Hancom Office HWP for macOS 12.30.0
+  build 6523으로 2026-10-06에 열어 `.hwp`·`.hwpx`로 저장(3쪽 — 본문 2쪽 + 미주 1쪽). 한글이 각주·미주
+  참조 번호(0.75배 글꼴·0.21em 올림)에 걸린 **취소선·글자 가운데 밑줄을 번호가 놓인 글자 모양의 자리·
+  두께에** 그리고(위 첨자 글자 모양 안 번호는 그 첨자 선), 번호를 **앞뒤 글자와 따로 된 글자 모양
+  run으로** 그리는 규칙(#256)의 실물 근거다 — 긴 점선 무늬가 번호 시작과 번호 뒤 글자 시작에서 다시
+  시작하고, MS 워드 호환 취소선 높이를 번호는 자기 글꼴(Menlo)로, 번호 뒤 글자는 자기 첫 글리프의 글꼴로
+  잰다. 같은 세션의 PDF 내보내기 좌표(README의 표)가
+  `HwpKitTests/FixtureDecorationLineRenderTests+NoteReference`의 오라클이고 두 글꼴이 결정론 resolver의
+  글꼴과 같아 쪽 좌표를 기기 무관하게 핀한다. HWPX 쌍은 `HwpxFixtures/note-reference-strikethrough`.
 - `page-end-line-box`: 본문 높이 97.62pt의 작은 쪽(쪽 높이 28186 HWPUNIT)에 함초롬바탕 10pt·
   160% 채움 줄을 쌓고 쪽 끝 남은 자리에 16·18·17.62·17.61pt 한 줄, 상자보다 작은 고정 줄 간격,
   아래 간격 20pt, 세 줄 문단(보호 없음·문단 보호), 외톨이줄 보호 16pt 다섯 줄, 16pt 세 줄, 빈

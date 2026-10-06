@@ -183,6 +183,10 @@ final class FixturePreviewFidelityTests: XCTestCase {
         // 그리드는 표의 몇 pt 폭·자리 차이에 둔감하다(수정 전 코드도 0.0015). 이 값은 유실 가드이고, 폭·
         // 자리의 가드는 `FixtureWideTableTests`의 PDF 좌표 핀이다.
         "wide-tables": 0.0017, // 실측 0.0011 (2026-10-05, 두 폰트 모드 같음)
+        // 각주·미주 참조 번호에 걸린 장식선(#256) — 1쪽은 20·40pt 취소선·가운데 밑줄 5문단과 각주 영역이라
+        // 12×16 그리드는 번호에 걸린 선의 1pt 안 자리·두께 차이에 둔감하다. 이 값은 유실 가드이고, 선 자리의
+        // 가드는 `FixtureDecorationLineRenderTests+NoteReference`의 픽셀 핀이다.
+        "note-reference-strikethrough": 0.0034, // 실측 0.0024 (2026-10-06, 두 폰트 모드 같음)
         "공공누리": 0.004, // 실측 0.0028 (저해상 GIF)
         "문서이력관리": 0.001, // 실측 0.0000
         "변경내용추적": 0.001, // 실측 0.0000
